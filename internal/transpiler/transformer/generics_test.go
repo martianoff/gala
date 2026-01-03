@@ -45,6 +45,13 @@ import "martianoff/gala/std"
 type Box[T any] struct {
 	Value std.Immutable[T]
 }
+
+func (s Box[T]) Copy() Box[T] {
+	return Box[T]{Value: std.Copy(s.Value)}
+}
+func (s Box[T]) Equal(other Box[T]) bool {
+	return std.Equal(s.Value, other.Value)
+}
 `,
 		},
 		{
@@ -60,6 +67,13 @@ import "martianoff/gala/std"
 
 type Box[T any] struct {
 	Value std.Immutable[T]
+}
+
+func (s Box[T]) Copy() Box[T] {
+	return Box[T]{Value: std.Copy(s.Value)}
+}
+func (s Box[T]) Equal(other Box[T]) bool {
+	return std.Equal(s.Value, other.Value)
 }
 
 func getValue[T any](b Box[T]) T {
@@ -80,6 +94,13 @@ import "martianoff/gala/std"
 type Box[T any] struct {
 	Value std.Immutable[T]
 }
+
+func (s Box[T]) Copy() Box[T] {
+	return Box[T]{Value: std.Copy(s.Value)}
+}
+func (s Box[T]) Equal(other Box[T]) bool {
+	return std.Equal(s.Value, other.Value)
+}
 `,
 		},
 		{
@@ -90,8 +111,17 @@ type Box[T any] struct {
 }`,
 			expected: `package main
 
+import "martianoff/gala/std"
+
 type Box[T any] struct {
 	Value T
+}
+
+func (s Box[T]) Copy() Box[T] {
+	return Box[T]{Value: std.Copy(s.Value)}
+}
+func (s Box[T]) Equal(other Box[T]) bool {
+	return std.Equal(s.Value, other.Value)
 }
 `,
 		},

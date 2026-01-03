@@ -105,6 +105,24 @@ type Config struct {
 }
 ```
 
+### Automatic Copy and Equal Methods
+Every GALA struct automatically provides `Copy()` and `Equal(other)` methods, implementing the standard `Copyable` and `Equatable` interfaces from the `std` package.
+- `Copy()` creates a new struct, deeply copying all internal fields. It attempts to use the `Copy()` method of each field, falling back to reflection if not available.
+- `Equal(other)` compares the struct with another of the same type, deeply comparing all fields. It attempts to use the `Equal()` method of each field, falling back to reflection or deep equality.
+
+```gala
+type Point struct {
+    x int
+    y int
+}
+
+func main() {
+    p1 := Point{x: 1, y: 2}
+    p2 := p1.Copy()
+    val isSame = p1.Equal(p2) // true
+}
+```
+
 ## 5. Control Flow
 
 ### If Statement and Expression

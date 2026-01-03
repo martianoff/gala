@@ -4,8 +4,8 @@ go_library(
     name = "std",
     srcs = [
         "immutable.go",
+        "interfaces.go",
         "types.go",
-        "unapply.go",
     ],
     importpath = "martianoff/gala/std",
     visibility = ["//visibility:public"],

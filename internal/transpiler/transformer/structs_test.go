@@ -36,6 +36,13 @@ type Person struct {
 	Name std.Immutable[string]
 	Age  std.Immutable[int]
 }
+
+func (s Person) Copy() Person {
+	return Person{Name: std.Copy(s.Name), Age: std.Copy(s.Age)}
+}
+func (s Person) Equal(other Person) bool {
+	return std.Equal(s.Name, other.Name) && std.Equal(s.Age, other.Age)
+}
 `,
 		},
 		{
@@ -53,6 +60,13 @@ type Config struct {
 	ID    std.Immutable[string]
 	Count int
 }
+
+func (s Config) Copy() Config {
+	return Config{ID: std.Copy(s.ID), Count: std.Copy(s.Count)}
+}
+func (s Config) Equal(other Config) bool {
+	return std.Equal(s.ID, other.ID) && std.Equal(s.Count, other.Count)
+}
 `,
 		},
 		{
@@ -67,6 +81,13 @@ import "martianoff/gala/std"
 
 type User struct {
 	Name std.Immutable[string] "json:\"name\""
+}
+
+func (s User) Copy() User {
+	return User{Name: std.Copy(s.Name)}
+}
+func (s User) Equal(other User) bool {
+	return std.Equal(s.Name, other.Name)
 }
 `,
 		},

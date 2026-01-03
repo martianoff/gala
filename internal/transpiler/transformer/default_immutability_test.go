@@ -34,6 +34,13 @@ import "martianoff/gala/std"
 type Person struct {
 	Name std.Immutable[string]
 }
+
+func (s Person) Copy() Person {
+	return Person{Name: std.Copy(s.Name)}
+}
+func (s Person) Equal(other Person) bool {
+	return std.Equal(s.Name, other.Name)
+}
 `,
 		},
 		{
@@ -49,6 +56,13 @@ import "martianoff/gala/std"
 type Box[T any] struct {
 	Value std.Immutable[T]
 }
+
+func (s Box[T]) Copy() Box[T] {
+	return Box[T]{Value: std.Copy(s.Value)}
+}
+func (s Box[T]) Equal(other Box[T]) bool {
+	return std.Equal(s.Value, other.Value)
+}
 `,
 		},
 		{
@@ -59,8 +73,17 @@ type Counter struct {
 }`,
 			expected: `package main
 
+import "martianoff/gala/std"
+
 type Counter struct {
 	Count int
+}
+
+func (s Counter) Copy() Counter {
+	return Counter{Count: std.Copy(s.Count)}
+}
+func (s Counter) Equal(other Counter) bool {
+	return std.Equal(s.Count, other.Count)
 }
 `,
 		},

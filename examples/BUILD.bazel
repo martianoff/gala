@@ -37,3 +37,8 @@ gala_binary(
     name = "multi_vars",
     src = "multi_vars.gala",
 )
+
+gala_binary(
+    name = "struct_features",
+    src = "struct_features.gala",
+)

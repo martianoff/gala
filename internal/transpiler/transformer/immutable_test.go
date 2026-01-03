@@ -63,6 +63,13 @@ type Config struct {
 	ID std.Immutable[string]
 }
 
+func (s Config) Copy() Config {
+	return Config{ID: std.Copy(s.ID)}
+}
+func (s Config) Equal(other Config) bool {
+	return std.Equal(s.ID, other.ID)
+}
+
 func getID(c Config) string {
 	return c.ID.Get()
 }

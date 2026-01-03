@@ -96,12 +96,12 @@ func (t *galaASTTransformer) Transform(tree antlr.Tree) (*token.FileSet, *ast.Fi
 	}
 
 	for _, topDeclCtx := range sourceFile.AllTopLevelDeclaration() {
-		decl, err := t.transformTopLevelDeclaration(topDeclCtx)
+		decls, err := t.transformTopLevelDeclaration(topDeclCtx)
 		if err != nil {
 			return nil, nil, err
 		}
-		if decl != nil {
-			file.Decls = append(file.Decls, decl)
+		if decls != nil {
+			file.Decls = append(file.Decls, decls...)
 		}
 	}
 
@@ -124,15 +124,27 @@ func (t *galaASTTransformer) Transform(tree antlr.Tree) (*token.FileSet, *ast.Fi
 	return fset, file, nil
 }
 
-func (t *galaASTTransformer) transformTopLevelDeclaration(ctx grammar.ITopLevelDeclarationContext) (ast.Decl, error) {
+func (t *galaASTTransformer) transformTopLevelDeclaration(ctx grammar.ITopLevelDeclarationContext) ([]ast.Decl, error) {
 	if valCtx := ctx.ValDeclaration(); valCtx != nil {
-		return t.transformValDeclaration(valCtx.(*grammar.ValDeclarationContext))
+		decl, err := t.transformValDeclaration(valCtx.(*grammar.ValDeclarationContext))
+		if err != nil {
+			return nil, err
+		}
+		return []ast.Decl{decl}, nil
 	}
 	if varCtx := ctx.VarDeclaration(); varCtx != nil {
-		return t.transformVarDeclaration(varCtx.(*grammar.VarDeclarationContext))
+		decl, err := t.transformVarDeclaration(varCtx.(*grammar.VarDeclarationContext))
+		if err != nil {
+			return nil, err
+		}
+		return []ast.Decl{decl}, nil
 	}
 	if funcCtx := ctx.FunctionDeclaration(); funcCtx != nil {
-		return t.transformFunctionDeclaration(funcCtx.(*grammar.FunctionDeclarationContext))
+		decl, err := t.transformFunctionDeclaration(funcCtx.(*grammar.FunctionDeclarationContext))
+		if err != nil {
+			return nil, err
+		}
+		return []ast.Decl{decl}, nil
 	}
 	if typeCtx := ctx.TypeDeclaration(); typeCtx != nil {
 		return t.transformTypeDeclaration(typeCtx.(*grammar.TypeDeclarationContext))
@@ -154,8 +166,14 @@ func (t *galaASTTransformer) transformDeclaration(ctx grammar.IDeclarationContex
 		return decl, nil, err
 	}
 	if typeCtx := ctx.TypeDeclaration(); typeCtx != nil {
-		decl, err := t.transformTypeDeclaration(typeCtx.(*grammar.TypeDeclarationContext))
-		return decl, nil, err
+		decls, err := t.transformTypeDeclaration(typeCtx.(*grammar.TypeDeclarationContext))
+		if err != nil {
+			return nil, nil, err
+		}
+		if len(decls) > 0 {
+			return decls[0], nil, nil
+		}
+		return nil, nil, nil
 	}
 	if importCtx := ctx.ImportDeclaration(); importCtx != nil {
 		decl, err := t.transformImportDeclaration(importCtx.(*grammar.ImportDeclarationContext))
@@ -447,9 +465,9 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 	}, nil
 }
 
-func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarationContext) (ast.Decl, error) {
+func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarationContext) ([]ast.Decl, error) {
 	name := ctx.Identifier().GetText()
-	var spec ast.Spec
+	var decls []ast.Decl
 
 	// Process Type Parameters first
 	var tParams *ast.FieldList
@@ -480,19 +498,171 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 	if ctx.StructType() != nil {
 		structCtx := ctx.StructType().(*grammar.StructTypeContext)
 		fields := &ast.FieldList{}
+		var fieldNames []string
 		for _, fCtx := range structCtx.AllStructField() {
 			field, err := t.transformStructField(fCtx.(*grammar.StructFieldContext))
 			if err != nil {
 				return nil, err
 			}
 			fields.List = append(fields.List, field)
+			for _, n := range field.Names {
+				fieldNames = append(fieldNames, n.Name)
+			}
 		}
 		typeSpec := &ast.TypeSpec{
 			Name:       ast.NewIdent(name),
 			Type:       &ast.StructType{Fields: fields},
 			TypeParams: tParams,
 		}
-		spec = typeSpec
+		decls = append(decls, &ast.GenDecl{
+			Tok:   token.TYPE,
+			Specs: []ast.Spec{typeSpec},
+		})
+
+		t.needsStdImport = true
+
+		receiverType := ast.Expr(ast.NewIdent(name))
+		if tParams != nil {
+			var indices []ast.Expr
+			for _, p := range tParams.List {
+				for _, n := range p.Names {
+					indices = append(indices, ast.NewIdent(n.Name))
+				}
+			}
+			if len(indices) == 1 {
+				receiverType = &ast.IndexExpr{
+					X:     receiverType,
+					Index: indices[0],
+				}
+			} else if len(indices) > 1 {
+				receiverType = &ast.IndexListExpr{
+					X:       receiverType,
+					Indices: indices,
+				}
+			}
+		}
+
+		// Generate Copy method
+		var copyElts []ast.Expr
+		for _, fn := range fieldNames {
+			copyElts = append(copyElts, &ast.KeyValueExpr{
+				Key: ast.NewIdent(fn),
+				Value: &ast.CallExpr{
+					Fun: &ast.SelectorExpr{
+						X:   ast.NewIdent("std"),
+						Sel: ast.NewIdent("Copy"),
+					},
+					Args: []ast.Expr{
+						&ast.SelectorExpr{
+							X:   ast.NewIdent("s"),
+							Sel: ast.NewIdent(fn),
+						},
+					},
+				},
+			})
+		}
+
+		copyDecl := &ast.FuncDecl{
+			Recv: &ast.FieldList{
+				List: []*ast.Field{
+					{
+						Names: []*ast.Ident{ast.NewIdent("s")},
+						Type:  receiverType,
+					},
+				},
+			},
+			Name: ast.NewIdent("Copy"),
+			Type: &ast.FuncType{
+				Results: &ast.FieldList{
+					List: []*ast.Field{
+						{Type: receiverType},
+					},
+				},
+			},
+			Body: &ast.BlockStmt{
+				List: []ast.Stmt{
+					&ast.ReturnStmt{
+						Results: []ast.Expr{
+							&ast.CompositeLit{
+								Type: receiverType,
+								Elts: copyElts,
+							},
+						},
+					},
+				},
+			},
+		}
+		decls = append(decls, copyDecl)
+
+		// Generate Equal method
+		var equalExpr ast.Expr
+		if len(fieldNames) == 0 {
+			equalExpr = ast.NewIdent("true")
+		} else {
+			for _, fn := range fieldNames {
+				cond := &ast.CallExpr{
+					Fun: &ast.SelectorExpr{
+						X:   ast.NewIdent("std"),
+						Sel: ast.NewIdent("Equal"),
+					},
+					Args: []ast.Expr{
+						&ast.SelectorExpr{
+							X:   ast.NewIdent("s"),
+							Sel: ast.NewIdent(fn),
+						},
+						&ast.SelectorExpr{
+							X:   ast.NewIdent("other"),
+							Sel: ast.NewIdent(fn),
+						},
+					},
+				}
+				if equalExpr == nil {
+					equalExpr = cond
+				} else {
+					equalExpr = &ast.BinaryExpr{
+						X:  equalExpr,
+						Op: token.LAND,
+						Y:  cond,
+					}
+				}
+			}
+		}
+
+		equalDecl := &ast.FuncDecl{
+			Recv: &ast.FieldList{
+				List: []*ast.Field{
+					{
+						Names: []*ast.Ident{ast.NewIdent("s")},
+						Type:  receiverType,
+					},
+				},
+			},
+			Name: ast.NewIdent("Equal"),
+			Type: &ast.FuncType{
+				Params: &ast.FieldList{
+					List: []*ast.Field{
+						{
+							Names: []*ast.Ident{ast.NewIdent("other")},
+							Type:  receiverType,
+						},
+					},
+				},
+				Results: &ast.FieldList{
+					List: []*ast.Field{
+						{Type: ast.NewIdent("bool")},
+					},
+				},
+			},
+			Body: &ast.BlockStmt{
+				List: []ast.Stmt{
+					&ast.ReturnStmt{
+						Results: []ast.Expr{equalExpr},
+					},
+				},
+			},
+		}
+		decls = append(decls, equalDecl)
+
 	} else if ctx.InterfaceType() != nil {
 		// TODO: implement
 		return nil, galaerr.NewSemanticError("interface type not implemented yet")
@@ -501,10 +671,7 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 		return nil, galaerr.NewSemanticError("type alias not implemented yet")
 	}
 
-	return &ast.GenDecl{
-		Tok:   token.TYPE,
-		Specs: []ast.Spec{spec},
-	}, nil
+	return decls, nil
 }
 
 func (t *galaASTTransformer) transformImportDeclaration(ctx *grammar.ImportDeclarationContext) (ast.Decl, error) {

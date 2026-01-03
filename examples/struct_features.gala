@@ -1,0 +1,38 @@
+package main
+
+import "fmt"
+
+type Point struct {
+    var X int
+    var Y int
+}
+
+func createPoint(x int, y int) Point {
+    var p Point
+    p.X = x
+    p.Y = y
+    return p
+}
+
+type Person struct {
+    Name string
+    var Age int
+}
+
+func main() {
+    val p1 = createPoint(10, 20)
+    val p2 = p1.Copy()
+
+    fmt.Println("p1:", p1)
+    fmt.Println("p2 (copy of p1):", p2)
+    fmt.Println("p1 == p2?", p1.Equal(p2))
+
+    val p3 = createPoint(10, 21)
+    fmt.Println("p3:", p3)
+    fmt.Println("p1 == p3?", p1.Equal(p3))
+
+    // Test with immutable fields
+    // Since we don't have struct literals, we can't easily initialize immutable fields
+    // unless they are passed in constructor or something.
+    // In GALA, default for field is immutable.
+}
