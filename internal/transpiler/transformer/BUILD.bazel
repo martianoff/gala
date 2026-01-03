@@ -1,0 +1,30 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "transformer",
+    srcs = ["transformer.go"],
+    importpath = "martianoff/gala/internal/transpiler/transformer",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//internal/parser/grammar",
+        "//internal/transpiler",
+        "@com_github_antlr4_go_antlr_v4//:antlr",
+    ],
+)
+
+go_test(
+    name = "transformer_test",
+    srcs = [
+        "control_flow_test.go",
+        "functions_test.go",
+        "generics_test.go",
+        "structs_test.go",
+        "variables_test.go",
+    ],
+    deps = [
+        ":transformer",
+        "//internal/transpiler",
+        "//internal/transpiler/generator",
+        "@com_github_stretchr_testify//assert",
+    ],
+)

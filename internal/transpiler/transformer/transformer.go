@@ -1,0 +1,812 @@
+package transformer
+
+import (
+	"fmt"
+	"go/ast"
+	"go/token"
+	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/transpiler"
+
+	"github.com/antlr4-go/antlr/v4"
+)
+
+type galaASTTransformer struct {
+}
+
+// NewGalaASTTransformer creates a new instance of ASTTransformer for GALA.
+func NewGalaASTTransformer() transpiler.ASTTransformer {
+	return &galaASTTransformer{}
+}
+
+func (t *galaASTTransformer) Transform(tree antlr.Tree) (*token.FileSet, *ast.File, error) {
+	fset := token.NewFileSet()
+	sourceFile, ok := tree.(*grammar.SourceFileContext)
+	if !ok {
+		return nil, nil, fmt.Errorf("expected *grammar.SourceFileContext, got %T", tree)
+	}
+
+	file := &ast.File{
+		Name: ast.NewIdent("main"), // Default package name
+	}
+
+	var initBody []ast.Stmt
+
+	for _, declCtx := range sourceFile.AllDeclaration() {
+		if exprStmtCtx := declCtx.ExpressionStatement(); exprStmtCtx != nil {
+			// Top-level expression statement: wrap in init()
+			stmt, err := t.transformExpressionStatement(exprStmtCtx.(*grammar.ExpressionStatementContext))
+			if err != nil {
+				return nil, nil, err
+			}
+			initBody = append(initBody, stmt)
+			continue
+		}
+
+		decl, err := t.transformDeclaration(declCtx)
+		if err != nil {
+			return nil, nil, err
+		}
+		if decl != nil {
+			file.Decls = append(file.Decls, decl)
+		}
+	}
+
+	if len(initBody) > 0 {
+		file.Decls = append(file.Decls, &ast.FuncDecl{
+			Name: ast.NewIdent("init"),
+			Type: &ast.FuncType{Params: &ast.FieldList{}},
+			Body: &ast.BlockStmt{List: initBody},
+		})
+	}
+
+	return fset, file, nil
+}
+
+func (t *galaASTTransformer) transformDeclaration(ctx grammar.IDeclarationContext) (ast.Decl, error) {
+	if valCtx := ctx.ValDeclaration(); valCtx != nil {
+		return t.transformValDeclaration(valCtx.(*grammar.ValDeclarationContext))
+	}
+	if varCtx := ctx.VarDeclaration(); varCtx != nil {
+		return t.transformVarDeclaration(varCtx.(*grammar.VarDeclarationContext))
+	}
+	if funcCtx := ctx.FunctionDeclaration(); funcCtx != nil {
+		return t.transformFunctionDeclaration(funcCtx.(*grammar.FunctionDeclarationContext))
+	}
+	if typeCtx := ctx.TypeDeclaration(); typeCtx != nil {
+		return t.transformTypeDeclaration(typeCtx.(*grammar.TypeDeclarationContext))
+	}
+	if importCtx := ctx.ImportDeclaration(); importCtx != nil {
+		return t.transformImportDeclaration(importCtx.(*grammar.ImportDeclarationContext))
+	}
+	return nil, nil
+}
+
+func (t *galaASTTransformer) transformExpressionStatement(ctx *grammar.ExpressionStatementContext) (ast.Stmt, error) {
+	expr, err := t.transformExpression(ctx.Expression())
+	if err != nil {
+		return nil, err
+	}
+	return &ast.ExprStmt{X: expr}, nil
+}
+
+func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclarationContext) (ast.Decl, error) {
+	name := ctx.Identifier().GetText()
+	expr, err := t.transformExpression(ctx.Expression())
+	if err != nil {
+		return nil, err
+	}
+
+	// val x = expr  =>  var x = expr (Go doesn't have immutable val at top level easily)
+	// Actually, for top level, 'var' is appropriate.
+	spec := &ast.ValueSpec{
+		Names:  []*ast.Ident{ast.NewIdent(name)},
+		Values: []ast.Expr{expr},
+	}
+	if ctx.Type_() != nil {
+		typeExpr, err := t.transformType(ctx.Type_())
+		if err != nil {
+			return nil, err
+		}
+		spec.Type = typeExpr
+	}
+
+	return &ast.GenDecl{
+		Tok:   token.VAR,
+		Specs: []ast.Spec{spec},
+	}, nil
+}
+
+func (t *galaASTTransformer) transformVarDeclaration(ctx *grammar.VarDeclarationContext) (ast.Decl, error) {
+	name := ctx.Identifier().GetText()
+	spec := &ast.ValueSpec{
+		Names: []*ast.Ident{ast.NewIdent(name)},
+	}
+	if ctx.Expression() != nil {
+		expr, err := t.transformExpression(ctx.Expression())
+		if err != nil {
+			return nil, err
+		}
+		spec.Values = []ast.Expr{expr}
+	}
+	if ctx.Type_() != nil {
+		typeExpr, err := t.transformType(ctx.Type_())
+		if err != nil {
+			return nil, err
+		}
+		spec.Type = typeExpr
+	}
+
+	return &ast.GenDecl{
+		Tok:   token.VAR,
+		Specs: []ast.Spec{spec},
+	}, nil
+}
+
+func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionDeclarationContext) (ast.Decl, error) {
+	name := ctx.Identifier().GetText()
+
+	// Signature
+	sigCtx := ctx.Signature().(*grammar.SignatureContext)
+	paramsCtx := sigCtx.Parameters().(*grammar.ParametersContext)
+
+	fieldList := &ast.FieldList{}
+	if paramsCtx.ParameterList() != nil {
+		for _, pCtx := range paramsCtx.ParameterList().(*grammar.ParameterListContext).AllParameter() {
+			field, err := t.transformParameter(pCtx.(*grammar.ParameterContext))
+			if err != nil {
+				return nil, err
+			}
+			fieldList.List = append(fieldList.List, field)
+		}
+	}
+
+	var results *ast.FieldList
+	if sigCtx.Type_() != nil {
+		retType, err := t.transformType(sigCtx.Type_())
+		if err != nil {
+			return nil, err
+		}
+		results = &ast.FieldList{
+			List: []*ast.Field{{Type: retType}},
+		}
+	}
+
+	funcType := &ast.FuncType{
+		Params:  fieldList,
+		Results: results,
+	}
+
+	// Generics
+	if ctx.TypeParameters() != nil {
+		// Go AST for generics uses TypeParams field in FuncDecl
+		tParams, err := t.transformTypeParameters(ctx.TypeParameters().(*grammar.TypeParametersContext))
+		if err != nil {
+			return nil, err
+		}
+		funcType.TypeParams = tParams
+	}
+
+	var body *ast.BlockStmt
+	if ctx.Block() != nil {
+		b, err := t.transformBlock(ctx.Block().(*grammar.BlockContext))
+		if err != nil {
+			return nil, err
+		}
+		body = b
+	} else if ctx.Expression() != nil {
+		// func f(x int) int = x * x  =>  { return x * x }
+		expr, err := t.transformExpression(ctx.Expression())
+		if err != nil {
+			return nil, err
+		}
+		body = &ast.BlockStmt{
+			List: []ast.Stmt{
+				&ast.ReturnStmt{Results: []ast.Expr{expr}},
+			},
+		}
+	}
+
+	return &ast.FuncDecl{
+		Name: ast.NewIdent(name),
+		Type: funcType,
+		Body: body,
+	}, nil
+}
+
+func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarationContext) (ast.Decl, error) {
+	name := ctx.Identifier().GetText()
+	var spec ast.Spec
+
+	if ctx.StructType() != nil {
+		structCtx := ctx.StructType().(*grammar.StructTypeContext)
+		fields := &ast.FieldList{}
+		for _, fCtx := range structCtx.AllStructField() {
+			field, err := t.transformStructField(fCtx.(*grammar.StructFieldContext))
+			if err != nil {
+				return nil, err
+			}
+			fields.List = append(fields.List, field)
+		}
+		typeSpec := &ast.TypeSpec{
+			Name: ast.NewIdent(name),
+			Type: &ast.StructType{Fields: fields},
+		}
+		if ctx.TypeParameters() != nil {
+			tParams, err := t.transformTypeParameters(ctx.TypeParameters().(*grammar.TypeParametersContext))
+			if err != nil {
+				return nil, err
+			}
+			typeSpec.TypeParams = tParams
+		}
+		spec = typeSpec
+	} else if ctx.InterfaceType() != nil {
+		// TODO: implement
+		return nil, fmt.Errorf("interface type not implemented yet")
+	} else if ctx.TypeAlias() != nil {
+		// TODO: implement
+		return nil, fmt.Errorf("type alias not implemented yet")
+	}
+
+	return &ast.GenDecl{
+		Tok:   token.TYPE,
+		Specs: []ast.Spec{spec},
+	}, nil
+}
+
+func (t *galaASTTransformer) transformImportDeclaration(ctx *grammar.ImportDeclarationContext) (ast.Decl, error) {
+	// import "pkg"  or import ( "pkg1" "pkg2" )
+	var specs []ast.Spec
+	for _, s := range ctx.AllSTRING() {
+		specs = append(specs, &ast.ImportSpec{
+			Path: &ast.BasicLit{Kind: token.STRING, Value: s.GetText()},
+		})
+	}
+	return &ast.GenDecl{
+		Tok:   token.IMPORT,
+		Specs: specs,
+	}, nil
+}
+
+func (t *galaASTTransformer) transformParameter(ctx *grammar.ParameterContext) (*ast.Field, error) {
+	name := ctx.Identifier().GetText()
+	field := &ast.Field{
+		Names: []*ast.Ident{ast.NewIdent(name)},
+	}
+	if ctx.Type_() != nil {
+		typ, err := t.transformType(ctx.Type_())
+		if err != nil {
+			return nil, err
+		}
+		field.Type = typ
+	}
+	// val/var are ignored in Go transpilation for now
+	return field, nil
+}
+
+func (t *galaASTTransformer) transformStructField(ctx *grammar.StructFieldContext) (*ast.Field, error) {
+	name := ctx.Identifier().GetText()
+	typ, err := t.transformType(ctx.Type_())
+	if err != nil {
+		return nil, err
+	}
+	field := &ast.Field{
+		Names: []*ast.Ident{ast.NewIdent(name)},
+		Type:  typ,
+	}
+	if ctx.STRING() != nil {
+		field.Tag = &ast.BasicLit{Kind: token.STRING, Value: ctx.STRING().GetText()}
+	}
+	return field, nil
+}
+
+func (t *galaASTTransformer) transformTypeParameters(ctx *grammar.TypeParametersContext) (*ast.FieldList, error) {
+	list := &ast.FieldList{}
+	for _, tpCtx := range ctx.TypeParameterList().(*grammar.TypeParameterListContext).AllTypeParameter() {
+		tp := tpCtx.(*grammar.TypeParameterContext)
+		list.List = append(list.List, &ast.Field{
+			Names: []*ast.Ident{ast.NewIdent(tp.Identifier(0).GetText())},
+			Type:  ast.NewIdent(tp.Identifier(1).GetText()),
+		})
+	}
+	return list, nil
+}
+
+func (t *galaASTTransformer) transformBlock(ctx *grammar.BlockContext) (*ast.BlockStmt, error) {
+	block := &ast.BlockStmt{}
+	for _, stmtCtx := range ctx.AllStatement() {
+		stmt, err := t.transformStatement(stmtCtx.(*grammar.StatementContext))
+		if err != nil {
+			return nil, err
+		}
+		block.List = append(block.List, stmt)
+	}
+	return block, nil
+}
+
+func (t *galaASTTransformer) transformStatement(ctx *grammar.StatementContext) (ast.Stmt, error) {
+	if declCtx := ctx.Declaration(); declCtx != nil {
+		decl, err := t.transformDeclaration(declCtx)
+		if err != nil {
+			return nil, err
+		}
+		return &ast.DeclStmt{Decl: decl}, nil
+	}
+	if exprStmtCtx := ctx.ExpressionStatement(); exprStmtCtx != nil {
+		expr, err := t.transformExpression(exprStmtCtx.Expression())
+		if err != nil {
+			return nil, err
+		}
+		return &ast.ExprStmt{X: expr}, nil
+	}
+	if retCtx := ctx.ReturnStatement(); retCtx != nil {
+		var results []ast.Expr
+		if retCtx.Expression() != nil {
+			expr, err := t.transformExpression(retCtx.Expression())
+			if err != nil {
+				return nil, err
+			}
+			results = append(results, expr)
+		}
+		return &ast.ReturnStmt{Results: results}, nil
+	}
+	if ifCtx := ctx.IfStatement(); ifCtx != nil {
+		// TODO: implement
+		return nil, fmt.Errorf("if statement not implemented yet")
+	}
+	if forCtx := ctx.ForStatement(); forCtx != nil {
+		// TODO: implement
+		return nil, fmt.Errorf("for statement not implemented yet")
+	}
+	return nil, nil
+}
+
+func (t *galaASTTransformer) transformExpression(ctx grammar.IExpressionContext) (ast.Expr, error) {
+	if ctx == nil {
+		return nil, nil
+	}
+
+	// expression: primary
+	if p := ctx.Primary(); p != nil {
+		return t.transformPrimary(p.(*grammar.PrimaryContext))
+	}
+
+	// expression: lambdaExpression
+	if l := ctx.LambdaExpression(); l != nil {
+		return t.transformLambda(l.(*grammar.LambdaExpressionContext))
+	}
+
+	// expression: ifExpression
+	if i := ctx.IfExpression(); i != nil {
+		return t.transformIfExpression(i.(*grammar.IfExpressionContext))
+	}
+
+	// expression: expression 'match' '{' caseClause+ '}'
+	// We check if it's a match by checking the number of children and existence of MATCH token
+	if ctx.GetChildCount() >= 4 {
+		for i := 0; i < ctx.GetChildCount(); i++ {
+			if ctx.GetChild(i).(antlr.ParseTree).GetText() == "match" {
+				return t.transformMatchExpression(ctx)
+			}
+		}
+	}
+
+	// Handle recursive expression patterns
+	// Since there are no labels, we check the number of children and the tokens
+	childCount := ctx.GetChildCount()
+	if childCount == 2 {
+		child1 := ctx.GetChild(0)
+		child2 := ctx.GetChild(1)
+
+		if _, ok := child1.(*grammar.UnaryOpContext); ok {
+			expr, err := t.transformExpression(child2.(grammar.IExpressionContext))
+			if err != nil {
+				return nil, err
+			}
+			opText := child1.(antlr.ParseTree).GetText()
+			if opText == "*" {
+				return &ast.StarExpr{X: expr}, nil
+			}
+			return &ast.UnaryExpr{
+				Op: t.getUnaryToken(opText),
+				X:  expr,
+			}, nil
+		}
+	}
+
+	if childCount == 3 {
+		child1 := ctx.GetChild(0)
+		child2 := ctx.GetChild(1)
+		child3 := ctx.GetChild(2)
+
+		c2Text := child2.(antlr.ParseTree).GetText()
+
+		if c2Text == "." {
+			// expression '.' identifier
+			x, err := t.transformExpression(child1.(grammar.IExpressionContext))
+			if err != nil {
+				return nil, err
+			}
+			return &ast.SelectorExpr{
+				X:   x,
+				Sel: ast.NewIdent(child3.(antlr.ParseTree).GetText()),
+			}, nil
+		}
+
+		if c2Text == "(" && child3.(antlr.ParseTree).GetText() == ")" {
+			// expression '(' ')'
+			x, err := t.transformExpression(child1.(grammar.IExpressionContext))
+			if err != nil {
+				return nil, err
+			}
+			return &ast.CallExpr{Fun: x}, nil
+		}
+
+		// expression binaryOp expression
+		// Note: child2 might be the binaryOp rule or a terminal.
+		// In our grammar, binaryOp is a rule.
+		if _, ok := child2.(*grammar.BinaryOpContext); ok {
+			left, err := t.transformExpression(child1.(grammar.IExpressionContext))
+			if err != nil {
+				return nil, err
+			}
+			right, err := t.transformExpression(child3.(grammar.IExpressionContext))
+			if err != nil {
+				return nil, err
+			}
+			return &ast.BinaryExpr{
+				X:  left,
+				Op: t.getBinaryToken(c2Text),
+				Y:  right,
+			}, nil
+		}
+	}
+
+	if childCount == 4 {
+		child1 := ctx.GetChild(0)
+		child2 := ctx.GetChild(1)
+		// child3 is expressionList
+		child4 := ctx.GetChild(3)
+
+		c2Text := child2.(antlr.ParseTree).GetText()
+		c4Text := child4.(antlr.ParseTree).GetText()
+
+		if c2Text == "(" && c4Text == ")" {
+			// expression '(' expressionList ')'
+			x, err := t.transformExpression(child1.(grammar.IExpressionContext))
+			if err != nil {
+				return nil, err
+			}
+			args, err := t.transformExpressionList(ctx.GetChild(2).(*grammar.ExpressionListContext))
+			if err != nil {
+				return nil, err
+			}
+			return &ast.CallExpr{Fun: x, Args: args}, nil
+		}
+
+		if c2Text == "[" && c4Text == "]" {
+			// expression '[' expressionList ']'
+			x, err := t.transformExpression(child1.(grammar.IExpressionContext))
+			if err != nil {
+				return nil, err
+			}
+			indices, err := t.transformExpressionList(ctx.GetChild(2).(*grammar.ExpressionListContext))
+			if err != nil {
+				return nil, err
+			}
+			if len(indices) == 1 {
+				return &ast.IndexExpr{X: x, Index: indices[0]}, nil
+			} else {
+				return &ast.IndexListExpr{X: x, Indices: indices}, nil
+			}
+		}
+	}
+
+	return nil, fmt.Errorf("expression transformation not fully implemented for %T: %s", ctx, ctx.GetText())
+}
+
+func (t *galaASTTransformer) transformExpressionList(ctx *grammar.ExpressionListContext) ([]ast.Expr, error) {
+	var exprs []ast.Expr
+	for _, eCtx := range ctx.AllExpression() {
+		e, err := t.transformExpression(eCtx)
+		if err != nil {
+			return nil, err
+		}
+		exprs = append(exprs, e)
+	}
+	return exprs, nil
+}
+
+func (t *galaASTTransformer) getBinaryToken(op string) token.Token {
+	switch op {
+	case "||":
+		return token.LOR
+	case "&&":
+		return token.LAND
+	case "==":
+		return token.EQL
+	case "!=":
+		return token.NEQ
+	case "<":
+		return token.LSS
+	case "<=":
+		return token.LEQ
+	case ">":
+		return token.GTR
+	case ">=":
+		return token.GEQ
+	case "+":
+		return token.ADD
+	case "-":
+		return token.SUB
+	case "|":
+		return token.OR
+	case "^":
+		return token.XOR
+	case "*":
+		return token.MUL
+	case "/":
+		return token.QUO
+	case "%":
+		return token.REM
+	case "<<":
+		return token.SHL
+	case ">>":
+		return token.SHR
+	case "&":
+		return token.AND
+	case "&^":
+		return token.AND_NOT
+	default:
+		return token.ILLEGAL
+	}
+}
+
+func (t *galaASTTransformer) getUnaryToken(op string) token.Token {
+	switch op {
+	case "+":
+		return token.ADD
+	case "-":
+		return token.SUB
+	case "!":
+		return token.NOT
+	case "^":
+		return token.XOR
+	case "&":
+		return token.AND
+	default:
+		return token.ILLEGAL
+	}
+}
+
+func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.Expr, error) {
+	if ctx.Identifier() != nil {
+		return ast.NewIdent(ctx.Identifier().GetText()), nil
+	}
+	if ctx.Literal() != nil {
+		return t.transformLiteral(ctx.Literal().(*grammar.LiteralContext))
+	}
+	if ctx.Expression() != nil {
+		return t.transformExpression(ctx.Expression())
+	}
+	return nil, nil
+}
+
+func (t *galaASTTransformer) transformLiteral(ctx *grammar.LiteralContext) (ast.Expr, error) {
+	if ctx.INT_LIT() != nil {
+		return &ast.BasicLit{Kind: token.INT, Value: ctx.INT_LIT().GetText()}, nil
+	}
+	if ctx.FLOAT_LIT() != nil {
+		return &ast.BasicLit{Kind: token.FLOAT, Value: ctx.FLOAT_LIT().GetText()}, nil
+	}
+	if ctx.STRING() != nil {
+		return &ast.BasicLit{Kind: token.STRING, Value: ctx.STRING().GetText()}, nil
+	}
+	if ctx.GetText() == "true" || ctx.GetText() == "false" {
+		return ast.NewIdent(ctx.GetText()), nil
+	}
+	if ctx.GetText() == "nil" {
+		return ast.NewIdent("nil"), nil
+	}
+	return nil, nil
+}
+
+func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, error) {
+	if ctx == nil {
+		return nil, nil
+	}
+	// Simplified type handling
+	if ctx.Identifier() != nil {
+		ident := ast.NewIdent(ctx.Identifier().GetText())
+		if ctx.TypeArguments() != nil {
+			// Generic type: T[A, B] -> *ast.IndexExpr or *ast.IndexListExpr
+			args := ctx.TypeArguments().(*grammar.TypeArgumentsContext).TypeList().(*grammar.TypeListContext).AllType_()
+			var argExprs []ast.Expr
+			for _, arg := range args {
+				ae, err := t.transformType(arg)
+				if err != nil {
+					return nil, err
+				}
+				argExprs = append(argExprs, ae)
+			}
+			if len(argExprs) == 1 {
+				return &ast.IndexExpr{X: ident, Index: argExprs[0]}, nil
+			} else {
+				return &ast.IndexListExpr{X: ident, Indices: argExprs}, nil
+			}
+		}
+		return ident, nil
+	}
+	if ctx.GetChildCount() > 0 && ctx.GetChild(0).(antlr.ParseTree).GetText() == "*" {
+		typ, err := t.transformType(ctx.GetChild(1).(grammar.ITypeContext))
+		if err != nil {
+			return nil, err
+		}
+		return &ast.StarExpr{X: typ}, nil
+	}
+	return ast.NewIdent(ctx.GetText()), nil
+}
+
+func (t *galaASTTransformer) transformLambda(ctx *grammar.LambdaExpressionContext) (ast.Expr, error) {
+	paramsCtx := ctx.Parameters().(*grammar.ParametersContext)
+	fieldList := &ast.FieldList{}
+	if paramsCtx.ParameterList() != nil {
+		for _, pCtx := range paramsCtx.ParameterList().(*grammar.ParameterListContext).AllParameter() {
+			field, err := t.transformParameter(pCtx.(*grammar.ParameterContext))
+			if err != nil {
+				return nil, err
+			}
+			fieldList.List = append(fieldList.List, field)
+		}
+	}
+
+	var body *ast.BlockStmt
+	if ctx.Block() != nil {
+		b, err := t.transformBlock(ctx.Block().(*grammar.BlockContext))
+		if err != nil {
+			return nil, err
+		}
+		body = b
+	} else if ctx.Expression() != nil {
+		expr, err := t.transformExpression(ctx.Expression())
+		if err != nil {
+			return nil, err
+		}
+		body = &ast.BlockStmt{
+			List: []ast.Stmt{
+				&ast.ReturnStmt{Results: []ast.Expr{expr}},
+			},
+		}
+	}
+
+	return &ast.FuncLit{
+		Type: &ast.FuncType{
+			Params: fieldList,
+		},
+		Body: body,
+	}, nil
+}
+
+func (t *galaASTTransformer) transformIfExpression(ctx *grammar.IfExpressionContext) (ast.Expr, error) {
+	// 'if' '(' cond ')' thenExpr 'else' elseExpr
+	cond, err := t.transformExpression(ctx.Expression(0))
+	if err != nil {
+		return nil, err
+	}
+	thenExpr, err := t.transformExpression(ctx.Expression(1))
+	if err != nil {
+		return nil, err
+	}
+	elseExpr, err := t.transformExpression(ctx.Expression(2))
+	if err != nil {
+		return nil, err
+	}
+
+	// Transpile to IIFE: func() any { if cond { return thenExpr }; return elseExpr }()
+	return &ast.CallExpr{
+		Fun: &ast.FuncLit{
+			Type: &ast.FuncType{
+				Params: &ast.FieldList{},
+				Results: &ast.FieldList{
+					List: []*ast.Field{{Type: ast.NewIdent("any")}},
+				},
+			},
+			Body: &ast.BlockStmt{
+				List: []ast.Stmt{
+					&ast.IfStmt{
+						Cond: cond,
+						Body: &ast.BlockStmt{
+							List: []ast.Stmt{
+								&ast.ReturnStmt{Results: []ast.Expr{thenExpr}},
+							},
+						},
+					},
+					&ast.ReturnStmt{Results: []ast.Expr{elseExpr}},
+				},
+			},
+		},
+	}, nil
+}
+
+func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionContext) (ast.Expr, error) {
+	// expression 'match' '{' caseClause+ '}'
+	// Use children because it's not a distinct context type
+	exprCtx := ctx.GetChild(0).(grammar.IExpressionContext)
+	expr, err := t.transformExpression(exprCtx)
+	if err != nil {
+		return nil, err
+	}
+
+	var clauses []ast.Stmt
+	// case clauses start from child 3 (0: expr, 1: match, 2: {, 3: case...)
+	for i := 3; i < ctx.GetChildCount()-1; i++ {
+		ccCtx, ok := ctx.GetChild(i).(*grammar.CaseClauseContext)
+		if !ok {
+			continue
+		}
+		clause, err := t.transformCaseClause(ccCtx)
+		if err != nil {
+			return nil, err
+		}
+		clauses = append(clauses, clause)
+	}
+
+	// Transpile to IIFE: func() any { switch expr { clauses... }; return nil }()
+	return &ast.CallExpr{
+		Fun: &ast.FuncLit{
+			Type: &ast.FuncType{
+				Params: &ast.FieldList{},
+				Results: &ast.FieldList{
+					List: []*ast.Field{{Type: ast.NewIdent("any")}},
+				},
+			},
+			Body: &ast.BlockStmt{
+				List: []ast.Stmt{
+					&ast.SwitchStmt{
+						Tag: expr,
+						Body: &ast.BlockStmt{
+							List: clauses,
+						},
+					},
+					&ast.ReturnStmt{Results: []ast.Expr{ast.NewIdent("nil")}},
+				},
+			},
+		},
+	}, nil
+}
+
+func (t *galaASTTransformer) transformCaseClause(ctx *grammar.CaseClauseContext) (ast.Stmt, error) {
+	// 'case' expression '=>' (expression | block)
+	patExpr, err := t.transformExpression(ctx.Expression(0))
+	if err != nil {
+		return nil, err
+	}
+
+	var body []ast.Stmt
+	if ctx.Block() != nil {
+		b, err := t.transformBlock(ctx.Block().(*grammar.BlockContext))
+		if err != nil {
+			return nil, err
+		}
+		body = b.List
+	} else if len(ctx.AllExpression()) > 1 {
+		expr, err := t.transformExpression(ctx.Expression(1))
+		if err != nil {
+			return nil, err
+		}
+		body = []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{expr}}}
+	}
+
+	if ident, ok := patExpr.(*ast.Ident); ok && ident.Name == "_" {
+		return &ast.CaseClause{
+			List: nil,
+			Body: body,
+		}, nil
+	}
+
+	return &ast.CaseClause{
+		List: []ast.Expr{patExpr},
+		Body: body,
+	}, nil
+}
+
+var _ transpiler.ASTTransformer = (*galaASTTransformer)(nil)
