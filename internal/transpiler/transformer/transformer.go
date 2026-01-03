@@ -12,21 +12,25 @@ import (
 )
 
 type scope struct {
-	vals   map[string]bool
-	parent *scope
+	vals     map[string]bool
+	valTypes map[string]string
+	parent   *scope
 }
 
 type galaASTTransformer struct {
-	currentScope     *scope
-	immutFields      map[string]bool
-	needsStdImport   bool
-	activeTypeParams map[string]bool
+	currentScope      *scope
+	immutFields       map[string]bool
+	structImmutFields map[string][]bool
+	needsStdImport    bool
+	activeTypeParams  map[string]bool
+	structFields      map[string][]string
 }
 
 func (t *galaASTTransformer) pushScope() {
 	t.currentScope = &scope{
-		vals:   make(map[string]bool),
-		parent: t.currentScope,
+		vals:     make(map[string]bool),
+		valTypes: make(map[string]string),
+		parent:   t.currentScope,
 	}
 }
 
@@ -36,16 +40,150 @@ func (t *galaASTTransformer) popScope() {
 	}
 }
 
-func (t *galaASTTransformer) addVal(name string) {
+func (t *galaASTTransformer) addVal(name string, typeName string) {
 	if t.currentScope != nil {
 		t.currentScope.vals[name] = true
+		t.currentScope.valTypes[name] = typeName
 	}
 }
 
-func (t *galaASTTransformer) addVar(name string) {
+func (t *galaASTTransformer) addVar(name string, typeName string) {
 	if t.currentScope != nil {
 		t.currentScope.vals[name] = false
+		t.currentScope.valTypes[name] = typeName
 	}
+}
+
+func (t *galaASTTransformer) getType(name string) string {
+	s := t.currentScope
+	for s != nil {
+		if typeName, ok := s.valTypes[name]; ok {
+			return typeName
+		}
+		s = s.parent
+	}
+	return ""
+}
+
+func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *grammar.ArgumentListContext) (ast.Expr, error) {
+	// 1. Identify receiver type
+	var typeName string
+	if id, ok := receiver.(*ast.Ident); ok {
+		typeName = t.getType(id.Name)
+	} else if call, ok := receiver.(*ast.CallExpr); ok {
+		// Handle p.Get().Copy() case where p is std.Immutable[T]
+		if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Get" {
+			if id, ok := sel.X.(*ast.Ident); ok {
+				typeName = t.getType(id.Name)
+			}
+		}
+	}
+
+	if typeName == "" {
+		// If we can't find the type, we might still be able to proceed if it's a direct struct literal copy,
+		// but GALA seems to prefer explicit types for Copy overrides.
+		// For now, let's assume it's required to know the type for overrides.
+		// If no overrides, we just call the regular Copy() method.
+		if argListCtx == nil || len(argListCtx.AllArgument()) == 0 {
+			return &ast.CallExpr{
+				Fun: &ast.SelectorExpr{
+					X:   receiver,
+					Sel: ast.NewIdent("Copy"),
+				},
+			}, nil
+		}
+		// If there are overrides, we need the type.
+		return nil, galaerr.NewSemanticError("cannot use Copy overrides: type of receiver unknown")
+	}
+
+	fields, ok := t.structFields[typeName]
+	if !ok {
+		// If it's not a struct type but we have overrides, compilation error
+		if len(argListCtx.AllArgument()) > 0 {
+			for _, argCtx := range argListCtx.AllArgument() {
+				arg := argCtx.(*grammar.ArgumentContext)
+				if arg.Identifier() != nil {
+					return nil, galaerr.NewSemanticError("Copy overrides only supported for struct types")
+				}
+			}
+		}
+		// Fallback to regular Copy() call if no named overrides (though the grammar allows them now)
+		return &ast.CallExpr{
+			Fun: &ast.SelectorExpr{
+				X:   receiver,
+				Sel: ast.NewIdent("Copy"),
+			},
+		}, nil
+	}
+
+	// 2. Parse overrides
+	overrides := make(map[string]ast.Expr)
+	for _, argCtx := range argListCtx.AllArgument() {
+		arg := argCtx.(*grammar.ArgumentContext)
+		if arg.Identifier() == nil {
+			return nil, galaerr.NewSemanticError("Copy overrides must be named: Copy(field = value)")
+		}
+		fieldName := arg.Identifier().GetText()
+		found := false
+		for _, f := range fields {
+			if f == fieldName {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, galaerr.NewSemanticError(fmt.Sprintf("struct %s has no field %s", typeName, fieldName))
+		}
+		val, err := t.transformExpression(arg.Expression())
+		if err != nil {
+			return nil, err
+		}
+		overrides[fieldName] = val
+	}
+
+	// 3. Construct new struct instance
+	var elts []ast.Expr
+	immutFlags := t.structImmutFields[typeName]
+	for i, fn := range fields {
+		if val, ok := overrides[fn]; ok {
+			finalVal := val
+			if i < len(immutFlags) && immutFlags[i] {
+				t.needsStdImport = true
+				finalVal = &ast.CallExpr{
+					Fun: &ast.SelectorExpr{
+						X:   ast.NewIdent("std"),
+						Sel: ast.NewIdent("NewImmutable"),
+					},
+					Args: []ast.Expr{val},
+				}
+			}
+			elts = append(elts, &ast.KeyValueExpr{
+				Key:   ast.NewIdent(fn),
+				Value: finalVal,
+			})
+		} else {
+			elts = append(elts, &ast.KeyValueExpr{
+				Key: ast.NewIdent(fn),
+				Value: &ast.CallExpr{
+					Fun: &ast.SelectorExpr{
+						X:   ast.NewIdent("std"),
+						Sel: ast.NewIdent("Copy"),
+					},
+					Args: []ast.Expr{
+						&ast.SelectorExpr{
+							X:   receiver,
+							Sel: ast.NewIdent(fn),
+						},
+					},
+				},
+			})
+		}
+	}
+
+	return &ast.CompositeLit{
+		Type: ast.NewIdent(typeName),
+		Elts: elts,
+	}, nil
 }
 
 func (t *galaASTTransformer) isVal(name string) bool {
@@ -62,8 +200,10 @@ func (t *galaASTTransformer) isVal(name string) bool {
 // NewGalaASTTransformer creates a new instance of ASTTransformer for GALA.
 func NewGalaASTTransformer() transpiler.ASTTransformer {
 	return &galaASTTransformer{
-		immutFields:      make(map[string]bool),
-		activeTypeParams: make(map[string]bool),
+		immutFields:       make(map[string]bool),
+		structImmutFields: make(map[string][]bool),
+		activeTypeParams:  make(map[string]bool),
+		structFields:      make(map[string][]string),
 	}
 }
 
@@ -71,7 +211,9 @@ func (t *galaASTTransformer) Transform(tree antlr.Tree) (*token.FileSet, *ast.Fi
 	t.currentScope = nil
 	t.needsStdImport = false
 	t.immutFields = make(map[string]bool)
+	t.structImmutFields = make(map[string][]bool)
 	t.activeTypeParams = make(map[string]bool)
+	t.structFields = make(map[string][]string)
 	t.pushScope() // Global scope
 	defer t.popScope()
 
@@ -148,6 +290,9 @@ func (t *galaASTTransformer) transformTopLevelDeclaration(ctx grammar.ITopLevelD
 	}
 	if typeCtx := ctx.TypeDeclaration(); typeCtx != nil {
 		return t.transformTypeDeclaration(typeCtx.(*grammar.TypeDeclarationContext))
+	}
+	if structShorthandCtx := ctx.StructShorthandDeclaration(); structShorthandCtx != nil {
+		return t.transformStructShorthandDeclaration(structShorthandCtx.(*grammar.StructShorthandDeclarationContext))
 	}
 	return nil, nil
 }
@@ -271,19 +416,28 @@ func (t *galaASTTransformer) transformShortVarDecl(ctx *grammar.ShortVarDeclCont
 		return nil, err
 	}
 
-	if len(rhsExprs) != len(idsCtx) {
-		if len(rhsExprs) == 1 && len(idsCtx) > 1 {
-			return nil, galaerr.NewSemanticError("multi-value assignment not supported for immutable variables yet")
-		}
-		return nil, galaerr.NewSemanticError("assignment mismatch")
-	}
-
 	lhs := make([]ast.Expr, 0)
 	wrappedRhs := make([]ast.Expr, 0)
 	for i, idCtx := range idsCtx {
 		name := idCtx.GetText()
-		t.addVal(name)
+		typeName := ""
+		if len(idsCtx) == len(rhsExprs) {
+			// This is a bit naive, but good enough for simple cases
+			if lit, ok := rhsExprs[i].(*ast.CompositeLit); ok {
+				if id, ok := lit.Type.(*ast.Ident); ok {
+					typeName = id.Name
+				}
+			}
+		}
+		t.addVal(name, typeName)
 		lhs = append(lhs, ast.NewIdent(name))
+
+		var val ast.Expr
+		if i < len(rhsExprs) {
+			val = rhsExprs[i]
+		} else {
+			val = &ast.IndexExpr{X: rhsExprs[0], Index: &ast.BasicLit{Kind: token.INT, Value: fmt.Sprintf("%d", i)}}
+		}
 
 		t.needsStdImport = true
 		wrappedRhs = append(wrappedRhs, &ast.CallExpr{
@@ -291,7 +445,7 @@ func (t *galaASTTransformer) transformShortVarDecl(ctx *grammar.ShortVarDeclCont
 				X:   ast.NewIdent("std"),
 				Sel: ast.NewIdent("NewImmutable"),
 			},
-			Args: []ast.Expr{rhsExprs[i]},
+			Args: []ast.Expr{val},
 		})
 	}
 
@@ -311,9 +465,10 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 
 	if len(rhsExprs) != len(namesCtx) {
 		if len(rhsExprs) == 1 && len(namesCtx) > 1 {
-			return nil, galaerr.NewSemanticError("multi-value assignment not supported for immutable variables yet")
+			// multi-value from a single expression (e.g. function call)
+		} else {
+			return nil, galaerr.NewSemanticError("assignment mismatch")
 		}
-		return nil, galaerr.NewSemanticError("assignment mismatch")
 	}
 
 	t.needsStdImport = true
@@ -321,14 +476,36 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 	var wrappedValues []ast.Expr
 	for i, idCtx := range namesCtx {
 		name := idCtx.GetText()
-		t.addVal(name)
+		typeName := ""
+		if ctx.Type_() != nil {
+			typeExpr, _ := t.transformType(ctx.Type_())
+			if id, ok := typeExpr.(*ast.Ident); ok {
+				typeName = id.Name
+			}
+		} else if len(rhsExprs) == len(namesCtx) {
+			if lit, ok := rhsExprs[i].(*ast.CompositeLit); ok {
+				if id, ok := lit.Type.(*ast.Ident); ok {
+					typeName = id.Name
+				}
+			}
+		}
+
+		t.addVal(name, typeName)
 		idents = append(idents, ast.NewIdent(name))
+
+		var val ast.Expr
+		if i < len(rhsExprs) {
+			val = rhsExprs[i]
+		} else {
+			val = &ast.IndexExpr{X: rhsExprs[0], Index: &ast.BasicLit{Kind: token.INT, Value: fmt.Sprintf("%d", i)}}
+		}
+
 		wrappedValues = append(wrappedValues, &ast.CallExpr{
 			Fun: &ast.SelectorExpr{
 				X:   ast.NewIdent("std"),
 				Sel: ast.NewIdent("NewImmutable"),
 			},
-			Args: []ast.Expr{rhsExprs[i]},
+			Args: []ast.Expr{val},
 		})
 	}
 
@@ -362,7 +539,15 @@ func (t *galaASTTransformer) transformVarDeclaration(ctx *grammar.VarDeclaration
 	var idents []*ast.Ident
 	for _, idCtx := range namesCtx {
 		name := idCtx.GetText()
-		t.addVar(name)
+		typeName := ""
+		if ctx.Type_() != nil {
+			// Try to get type name from transformed type
+			typeExpr, _ := t.transformType(ctx.Type_())
+			if id, ok := typeExpr.(*ast.Ident); ok {
+				typeName = id.Name
+			}
+		}
+		t.addVar(name, typeName)
 		idents = append(idents, ast.NewIdent(name))
 	}
 
@@ -465,6 +650,84 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 	}, nil
 }
 
+func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.StructShorthandDeclarationContext) ([]ast.Decl, error) {
+	name := ctx.Identifier().GetText()
+	paramsCtx := ctx.Parameters().(*grammar.ParametersContext)
+	t.pushScope()
+	defer t.popScope()
+
+	fields := &ast.FieldList{}
+	var fieldNames []string
+	var immutFlags []bool
+	if paramsCtx.ParameterList() != nil {
+		for _, pCtx := range paramsCtx.ParameterList().(*grammar.ParameterListContext).AllParameter() {
+			param := pCtx.(*grammar.ParameterContext)
+			isVal := param.VAR() == nil // Default to immutable if VAR is not present
+
+			// For shorthand structs, we want the fields in the struct to be std.Immutable if isVal
+			// but transformParameter handles function parameters.
+			// We'll transform it as a parameter first, then adjust for the struct field.
+			field, err := t.transformParameter(param)
+			if err != nil {
+				return nil, err
+			}
+
+			if isVal {
+				t.needsStdImport = true
+				if typ, ok := field.Type.(*ast.Ident); ok {
+					// Add to immutFields only if it's a field name we are processing
+					// But we also need to wrap it in std.Immutable in the struct type
+					field.Type = &ast.IndexExpr{
+						X: &ast.SelectorExpr{
+							X:   ast.NewIdent("std"),
+							Sel: ast.NewIdent("Immutable"),
+						},
+						Index: typ,
+					}
+				}
+			}
+
+			fields.List = append(fields.List, field)
+			for _, n := range field.Names {
+				fieldNames = append(fieldNames, n.Name)
+				immutFlags = append(immutFlags, isVal)
+				if isVal {
+					t.immutFields[n.Name] = true
+				}
+			}
+		}
+	}
+
+	t.structFields[name] = fieldNames
+	t.structImmutFields[name] = immutFlags
+	typeSpec := &ast.TypeSpec{
+		Name: ast.NewIdent(name),
+		Type: &ast.StructType{Fields: fields},
+	}
+
+	decls := []ast.Decl{
+		&ast.GenDecl{
+			Tok:   token.TYPE,
+			Specs: []ast.Spec{typeSpec},
+		},
+	}
+
+	// Copy and Equal methods
+	copyMethod, err := t.generateCopyMethod(name, fields, nil)
+	if err != nil {
+		return nil, err
+	}
+	decls = append(decls, copyMethod)
+
+	equalMethod, err := t.generateEqualMethod(name, fields, nil)
+	if err != nil {
+		return nil, err
+	}
+	decls = append(decls, equalMethod)
+
+	return decls, nil
+}
+
 func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarationContext) ([]ast.Decl, error) {
 	name := ctx.Identifier().GetText()
 	var decls []ast.Decl
@@ -499,16 +762,23 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 		structCtx := ctx.StructType().(*grammar.StructTypeContext)
 		fields := &ast.FieldList{}
 		var fieldNames []string
+		var immutFlags []bool
 		for _, fCtx := range structCtx.AllStructField() {
-			field, err := t.transformStructField(fCtx.(*grammar.StructFieldContext))
+			fieldCtx := fCtx.(*grammar.StructFieldContext)
+			isVal := fieldCtx.VAR() == nil
+
+			field, err := t.transformStructField(fieldCtx)
 			if err != nil {
 				return nil, err
 			}
 			fields.List = append(fields.List, field)
 			for _, n := range field.Names {
 				fieldNames = append(fieldNames, n.Name)
+				immutFlags = append(immutFlags, isVal)
 			}
 		}
+		t.structFields[name] = fieldNames
+		t.structImmutFields[name] = immutFlags
 		typeSpec := &ast.TypeSpec{
 			Name:       ast.NewIdent(name),
 			Type:       &ast.StructType{Fields: fields},
@@ -706,11 +976,18 @@ func (t *galaASTTransformer) transformParameter(ctx *grammar.ParameterContext) (
 		Names: []*ast.Ident{ast.NewIdent(name)},
 	}
 
+	typeName := ""
+	if ctx.Type_() != nil {
+		typeExpr, _ := t.transformType(ctx.Type_())
+		if id, ok := typeExpr.(*ast.Ident); ok {
+			typeName = id.Name
+		}
+	}
 	isVal := ctx.VAL() != nil
 	if isVal {
-		t.addVal(name)
+		t.addVal(name, typeName)
 	} else {
-		t.addVar(name)
+		t.addVar(name, typeName)
 	}
 
 	if ctx.Type_() != nil {
@@ -821,6 +1098,122 @@ func (t *galaASTTransformer) transformStatement(ctx *grammar.StatementContext) (
 	return nil, nil
 }
 
+func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (ast.Expr, error) {
+	// expression '(' argumentList? ')'
+	child1 := ctx.GetChild(0)
+	x, err := t.transformExpression(child1.(grammar.IExpressionContext))
+	if err != nil {
+		return nil, err
+	}
+
+	var args []ast.Expr
+	var namedArgs map[string]ast.Expr
+	if ctx.GetChildCount() >= 3 {
+		if argListCtx, ok := ctx.GetChild(2).(*grammar.ArgumentListContext); ok {
+			// Handle Copy method call with overrides
+			if sel, ok := x.(*ast.SelectorExpr); ok && sel.Sel.Name == "Copy" {
+				return t.transformCopyCall(sel.X, argListCtx)
+			}
+
+			for _, argCtx := range argListCtx.AllArgument() {
+				arg := argCtx.(*grammar.ArgumentContext)
+				expr, err := t.transformExpression(arg.Expression())
+				if err != nil {
+					return nil, err
+				}
+
+				if arg.Identifier() != nil {
+					if namedArgs == nil {
+						namedArgs = make(map[string]ast.Expr)
+					}
+					namedArgs[arg.Identifier().GetText()] = expr
+				} else {
+					args = append(args, expr)
+				}
+			}
+		}
+	}
+
+	// Handle case where we have TypeName(...) which is a constructor call
+	// GALA doesn't seem to have a specific rule for constructor calls,
+	// but TypeName(...) should be transformed to TypeName{...} if it's a struct.
+	if id, ok := x.(*ast.Ident); ok {
+		if fields, ok := t.structFields[id.Name]; ok {
+			immutFlags := t.structImmutFields[id.Name]
+			var elts []ast.Expr
+			if namedArgs != nil {
+				if len(args) > 0 {
+					return nil, galaerr.NewSemanticError("cannot mix positional and named arguments in struct construction")
+				}
+				// Use fields order for stable output
+				for i, name := range fields {
+					if val, ok := namedArgs[name]; ok {
+						finalVal := val
+						if i < len(immutFlags) && immutFlags[i] {
+							t.needsStdImport = true
+							finalVal = &ast.CallExpr{
+								Fun: &ast.SelectorExpr{
+									X:   ast.NewIdent("std"),
+									Sel: ast.NewIdent("NewImmutable"),
+								},
+								Args: []ast.Expr{val},
+							}
+						}
+
+						elts = append(elts, &ast.KeyValueExpr{
+							Key:   ast.NewIdent(name),
+							Value: finalVal,
+						})
+					}
+				}
+				// Validation for unknown fields
+				for name := range namedArgs {
+					found := false
+					for _, f := range fields {
+						if f == name {
+							found = true
+							break
+						}
+					}
+					if !found {
+						return nil, galaerr.NewSemanticError(fmt.Sprintf("struct %s has no field %s", id.Name, name))
+					}
+				}
+			} else {
+				for i, arg := range args {
+					if i < len(fields) {
+						val := arg
+						if i < len(immutFlags) && immutFlags[i] {
+							t.needsStdImport = true
+							val = &ast.CallExpr{
+								Fun: &ast.SelectorExpr{
+									X:   ast.NewIdent("std"),
+									Sel: ast.NewIdent("NewImmutable"),
+								},
+								Args: []ast.Expr{arg},
+							}
+						}
+
+						elts = append(elts, &ast.KeyValueExpr{
+							Key:   ast.NewIdent(fields[i]),
+							Value: val,
+						})
+					}
+				}
+			}
+			return &ast.CompositeLit{
+				Type: id,
+				Elts: elts,
+			}, nil
+		}
+	}
+
+	if namedArgs != nil {
+		return nil, galaerr.NewSemanticError("named arguments only supported for Copy method or struct construction")
+	}
+
+	return &ast.CallExpr{Fun: x, Args: args}, nil
+}
 func (t *galaASTTransformer) transformExpression(ctx grammar.IExpressionContext) (ast.Expr, error) {
 	if ctx == nil {
 		return nil, nil
@@ -905,11 +1298,7 @@ func (t *galaASTTransformer) transformExpression(ctx grammar.IExpressionContext)
 
 		if c2Text == "(" && child3.(antlr.ParseTree).GetText() == ")" {
 			// expression '(' ')'
-			x, err := t.transformExpression(child1.(grammar.IExpressionContext))
-			if err != nil {
-				return nil, err
-			}
-			return &ast.CallExpr{Fun: x}, nil
+			return t.transformCallExpr(ctx.(*grammar.ExpressionContext))
 		}
 
 		// expression binaryOp expression
@@ -933,34 +1322,26 @@ func (t *galaASTTransformer) transformExpression(ctx grammar.IExpressionContext)
 	}
 
 	if childCount == 4 {
-		child1 := ctx.GetChild(0)
 		child2 := ctx.GetChild(1)
-		// child3 is expressionList
 		child4 := ctx.GetChild(3)
 
 		c2Text := child2.(antlr.ParseTree).GetText()
 		c4Text := child4.(antlr.ParseTree).GetText()
 
 		if c2Text == "(" && c4Text == ")" {
-			// expression '(' expressionList ')'
-			x, err := t.transformExpression(child1.(grammar.IExpressionContext))
-			if err != nil {
-				return nil, err
-			}
-			args, err := t.transformExpressionList(ctx.GetChild(2).(*grammar.ExpressionListContext))
-			if err != nil {
-				return nil, err
-			}
-			return &ast.CallExpr{Fun: x, Args: args}, nil
+			// expression '(' argumentList? ')'
+			return t.transformCallExpr(ctx.(*grammar.ExpressionContext))
 		}
 
 		if c2Text == "[" && c4Text == "]" {
 			// expression '[' expressionList ']'
+			child1 := ctx.GetChild(0)
+			child3 := ctx.GetChild(2)
 			x, err := t.transformExpression(child1.(grammar.IExpressionContext))
 			if err != nil {
 				return nil, err
 			}
-			indices, err := t.transformExpressionList(ctx.GetChild(2).(*grammar.ExpressionListContext))
+			indices, err := t.transformExpressionList(child3.(*grammar.ExpressionListContext))
 			if err != nil {
 				return nil, err
 			}
@@ -1269,7 +1650,7 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 
 	t.pushScope()
 	defer t.popScope()
-	t.addVar(paramName)
+	t.addVar(paramName, "")
 
 	var clauses []ast.Stmt
 	var defaultBody []ast.Stmt
@@ -1393,6 +1774,156 @@ func (t *galaASTTransformer) transformCaseClause(ctx *grammar.CaseClauseContext,
 	return &ast.CaseClause{
 		List: []ast.Expr{check},
 		Body: body,
+	}, nil
+}
+
+func (t *galaASTTransformer) generateCopyMethod(name string, fields *ast.FieldList, tParams *ast.FieldList) (*ast.FuncDecl, error) {
+	var elts []ast.Expr
+	for _, field := range fields.List {
+		for _, fieldName := range field.Names {
+			elts = append(elts, &ast.KeyValueExpr{
+				Key: ast.NewIdent(fieldName.Name),
+				Value: &ast.CallExpr{
+					Fun: &ast.SelectorExpr{
+						X:   ast.NewIdent("std"),
+						Sel: ast.NewIdent("Copy"),
+					},
+					Args: []ast.Expr{
+						&ast.SelectorExpr{
+							X:   ast.NewIdent("s"),
+							Sel: ast.NewIdent(fieldName.Name),
+						},
+					},
+				},
+			})
+		}
+	}
+
+	retType := ast.Expr(ast.NewIdent(name))
+	if tParams != nil {
+		var indices []ast.Expr
+		for _, p := range tParams.List {
+			for _, n := range p.Names {
+				indices = append(indices, ast.NewIdent(n.Name))
+			}
+		}
+		retType = &ast.IndexListExpr{
+			X:       ast.NewIdent(name),
+			Indices: indices,
+		}
+	}
+
+	return &ast.FuncDecl{
+		Recv: &ast.FieldList{
+			List: []*ast.Field{
+				{
+					Names: []*ast.Ident{ast.NewIdent("s")},
+					Type:  retType,
+				},
+			},
+		},
+		Name: ast.NewIdent("Copy"),
+		Type: &ast.FuncType{
+			Results: &ast.FieldList{
+				List: []*ast.Field{{Type: retType}},
+			},
+		},
+		Body: &ast.BlockStmt{
+			List: []ast.Stmt{
+				&ast.ReturnStmt{
+					Results: []ast.Expr{
+						&ast.CompositeLit{
+							Type: retType,
+							Elts: elts,
+						},
+					},
+				},
+			},
+		},
+	}, nil
+}
+
+func (t *galaASTTransformer) generateEqualMethod(name string, fields *ast.FieldList, tParams *ast.FieldList) (*ast.FuncDecl, error) {
+	var condition ast.Expr
+	for _, field := range fields.List {
+		for _, fieldName := range field.Names {
+			expr := &ast.CallExpr{
+				Fun: &ast.SelectorExpr{
+					X:   ast.NewIdent("std"),
+					Sel: ast.NewIdent("Equal"),
+				},
+				Args: []ast.Expr{
+					&ast.SelectorExpr{
+						X:   ast.NewIdent("s"),
+						Sel: ast.NewIdent(fieldName.Name),
+					},
+					&ast.SelectorExpr{
+						X:   ast.NewIdent("other"),
+						Sel: ast.NewIdent(fieldName.Name),
+					},
+				},
+			}
+
+			if condition == nil {
+				condition = expr
+			} else {
+				condition = &ast.BinaryExpr{
+					X:  condition,
+					Op: token.LAND,
+					Y:  expr,
+				}
+			}
+		}
+	}
+
+	if condition == nil {
+		condition = ast.NewIdent("true")
+	}
+
+	retType := ast.Expr(ast.NewIdent(name))
+	if tParams != nil {
+		var indices []ast.Expr
+		for _, p := range tParams.List {
+			for _, n := range p.Names {
+				indices = append(indices, ast.NewIdent(n.Name))
+			}
+		}
+		retType = &ast.IndexListExpr{
+			X:       ast.NewIdent(name),
+			Indices: indices,
+		}
+	}
+
+	return &ast.FuncDecl{
+		Recv: &ast.FieldList{
+			List: []*ast.Field{
+				{
+					Names: []*ast.Ident{ast.NewIdent("s")},
+					Type:  retType,
+				},
+			},
+		},
+		Name: ast.NewIdent("Equal"),
+		Type: &ast.FuncType{
+			Params: &ast.FieldList{
+				List: []*ast.Field{
+					{
+						Names: []*ast.Ident{ast.NewIdent("other")},
+						Type:  retType,
+					},
+				},
+			},
+			Results: &ast.FieldList{
+				List: []*ast.Field{{Type: ast.NewIdent("bool")}},
+			},
+		},
+		Body: &ast.BlockStmt{
+			List: []ast.Stmt{
+				&ast.ReturnStmt{
+					Results: []ast.Expr{condition},
+				},
+			},
+		},
 	}, nil
 }
 

@@ -75,7 +75,6 @@ func (s Box[T]) Copy() Box[T] {
 func (s Box[T]) Equal(other Box[T]) bool {
 	return std.Equal(s.Value, other.Value)
 }
-
 func getValue[T any](b Box[T]) T {
 	return b.Value.Get()
 }

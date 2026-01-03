@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestImmutable(t *testing.T) {
+func TestEqualMethod(t *testing.T) {
 	p := transpiler.NewAntlrGalaParser()
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
@@ -22,55 +22,42 @@ func TestImmutable(t *testing.T) {
 		expected string
 	}{
 		{
-			name: "val variable and usage",
+			name: "Struct with basic fields",
 			input: `package main
-val x = 10
-val y = x + 1
-`,
+struct Point(x int, y int)`,
 			expected: `package main
 
 import "martianoff/gala/std"
 
-var x = std.NewImmutable(10)
-var y = std.NewImmutable(x.Get() + 1)
-`,
-		},
-		{
-			name: "val parameter usage",
-			input: `package main
-func f(val x int) int = x + 1`,
-			expected: `package main
+type Point struct {
+	x int
+	y int
+}
 
-import "martianoff/gala/std"
-
-func f(x std.Immutable[int]) int {
-	return x.Get() + 1
+func (s Point) Copy() Point {
+	return Point{x: std.Copy(s.x), y: std.Copy(s.y)}
+}
+func (s Point) Equal(other Point) bool {
+	return std.Equal(s.x, other.x) && std.Equal(s.y, other.y)
 }
 `,
 		},
 		{
-			name: "val struct field and usage",
+			name: "Empty struct",
 			input: `package main
-type Config struct {
-	val ID string
-}
-func getID(c Config) string = c.ID`,
+struct Empty()`,
 			expected: `package main
 
 import "martianoff/gala/std"
 
-type Config struct {
-	ID std.Immutable[string]
+type Empty struct {
 }
 
-func (s Config) Copy() Config {
-	return Config{ID: std.Copy(s.ID)}
+func (s Empty) Copy() Empty {
+	return Empty{}
 }
-func (s Config) Equal(other Config) bool {
-	return std.Equal(s.ID, other.ID)
-}
-func getID(c Config) string {
-	return c.ID.Get()
+func (s Empty) Equal(other Empty) bool {
+	return true
 }
 `,
 		},

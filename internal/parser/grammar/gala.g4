@@ -10,7 +10,10 @@ topLevelDeclaration
     | varDeclaration
     | functionDeclaration
     | typeDeclaration
+    | structShorthandDeclaration
     ;
+
+structShorthandDeclaration: 'struct' identifier parameters;
 
 declaration
     : valDeclaration
@@ -80,13 +83,15 @@ expressionList: expression (',' expression)*;
 
 expression
     : primary
-    | expression ('.' identifier | '[' expressionList ']' | '(' expressionList? ')' )
+    | expression ('.' identifier | '[' expressionList ']' | '(' argumentList? ')' )
     | unaryOp expression
     | expression binaryOp expression
     | lambdaExpression
     | expression 'match' '{' caseClause+ '}'
     | ifExpression
     ;
+argumentList: argument (',' argument)*;
+argument: (identifier '=')? expression;
 
 primary
     : identifier

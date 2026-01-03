@@ -81,46 +81,61 @@ func process(val data string, var count int) {
 ## 4. Types and Structs
 
 ### Structs
-Struct fields are **immutable by default**. To make a field mutable, use the `var` keyword.
+GALA supports two ways to define structs: traditional Go-style blocks and concise shorthand declarations. In both cases, fields are **immutable by default**. To make a field mutable, use the `var` keyword.
+
+#### Shorthand Struct Declaration
+A concise way to define a struct, similar to Scala case classes.
+
+```gala
+struct Person(name string, age int, var score int)
+```
+
+#### Block Struct Declaration
+Traditional Go-style declaration.
 
 ```gala
 type Person struct {
-    Name string    // Immutable by default
-    var Age int    // Mutable
-}
-
-func main() {
-    p := Person{Name: "Alice", Age: 30}
-    // p.Name = "Bob" // Compile error
-    p.Age = 31        // OK
+    Name string    // Immutable
+    age  int       // Immutable
+    var Score int  // Mutable
 }
 ```
 
-You can also explicitly use `val` for fields, though it's the default.
+#### Struct Construction
+Structs can be constructed using traditional Go-style named fields or using a functional shorthand (positional or named arguments).
 
 ```gala
-type Config struct {
-    val ID string
-    var Timeout int
-}
+// Named fields (Go-style)
+val p1 = Person{Name: "Alice", Age: 30}
+
+// Positional fields (Functional-style)
+val p2 = Person("Bob", 25)
+
+// Named arguments (Functional-style)
+val p3 = Person(age = 20, name = "Charlie")
 ```
 
 ### Automatic Copy and Equal Methods
-Every GALA struct automatically provides `Copy()` and `Equal(other)` methods, implementing the standard `Copyable` and `Equatable` interfaces from the `std` package.
-- `Copy()` creates a new struct, deeply copying all internal fields. It attempts to use the `Copy()` method of each field, falling back to reflection if not available.
-- `Equal(other)` compares the struct with another of the same type, deeply comparing all fields. It attempts to use the `Equal()` method of each field, falling back to reflection or deep equality.
+Every GALA struct automatically provides `Copy()` and `Equal(other)` methods.
+
+#### Copy Method with Overrides
+The `Copy()` method allows creating a copy of a struct with optional field overrides. This is similar to Scala's `copy` method.
 
 ```gala
-type Point struct {
-    x int
-    y int
-}
+val p1 = Person("Alice", 30)
+val p2 = p1.Copy(age = 31) // p2 is Person("Alice", 31)
+```
 
-func main() {
-    p1 := Point{x: 1, y: 2}
-    p2 := p1.Copy()
-    val isSame = p1.Equal(p2) // true
-}
+If no overrides are provided, it performs a complete copy of the original object.
+**Note:** Providing an override on non-struct types will result in a compilation error.
+
+#### Equal Method
+The `Equal(other)` method compares the struct with another of the same type, deeply comparing all fields.
+
+```gala
+val p1 = Person("Alice", 30)
+val p2 = Person("Alice", 30)
+val same = p1.Equal(p2) // true
 ```
 
 ## 5. Control Flow

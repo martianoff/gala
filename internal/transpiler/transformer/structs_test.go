@@ -91,6 +91,30 @@ func (s User) Equal(other User) bool {
 }
 `,
 		},
+		{
+			name: "Shorthand struct with named arguments",
+			input: `package main
+struct Person(name string, age int)
+val p = Person(age = 30, name = "Alice")`,
+			expected: `package main
+
+import "martianoff/gala/std"
+
+type Person struct {
+	name std.Immutable[string]
+	age  std.Immutable[int]
+}
+
+func (s Person) Copy() Person {
+	return Person{name: std.Copy(s.name), age: std.Copy(s.age)}
+}
+func (s Person) Equal(other Person) bool {
+	return std.Equal(s.name, other.name) && std.Equal(s.age, other.age)
+}
+
+var p = std.NewImmutable(Person{name: std.NewImmutable("Alice"), age: std.NewImmutable(30)})
+`,
+		},
 	}
 
 	for _, tt := range tests {

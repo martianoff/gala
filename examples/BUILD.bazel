@@ -42,3 +42,8 @@ gala_binary(
     name = "struct_features",
     src = "struct_features.gala",
 )
+
+gala_binary(
+    name = "copy_and_equal",
+    src = "copy_and_equal.gala",
+)

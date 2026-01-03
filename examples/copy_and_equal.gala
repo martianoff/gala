@@ -1,0 +1,32 @@
+package main
+
+import "fmt"
+
+struct Person(val name string, age int)
+
+func main() {
+    val p1 = Person("Alice", 30)
+    fmt.Println("Original:", p1)
+
+    // Copy with one override
+    val p2 = p1.Copy(age = 31)
+    fmt.Println("Overridden age:", p2)
+
+    // Copy with multiple overrides
+    val p3 = p1.Copy(age = 25, name = "Bob")
+    fmt.Println("Overridden both:", p3)
+
+    // Check Equality
+    val p1_again = Person("Alice", 30)
+    if (p1.Equal(p1_again)) {
+        fmt.Println("p1 and p1_again are equal")
+    } else {
+        fmt.Println("p1 and p1_again are NOT equal")
+    }
+
+    if (p1.Equal(p2)) {
+        fmt.Println("p1 and p2 are equal")
+    } else {
+        fmt.Println("p1 and p2 are NOT equal")
+    }
+}

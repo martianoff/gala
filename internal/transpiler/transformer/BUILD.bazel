@@ -18,6 +18,7 @@ go_test(
     srcs = [
         "assignment_test.go",
         "control_flow_test.go",
+        "copy_test.go",
         "default_immutability_test.go",
         "functions_test.go",
         "generics_test.go",
