@@ -40,11 +40,17 @@ func (t *galaASTTransformer) addVal(name string) {
 	}
 }
 
+func (t *galaASTTransformer) addVar(name string) {
+	if t.currentScope != nil {
+		t.currentScope.vals[name] = false
+	}
+}
+
 func (t *galaASTTransformer) isVal(name string) bool {
 	s := t.currentScope
 	for s != nil {
-		if s.vals[name] {
-			return true
+		if isImmutable, ok := s.vals[name]; ok {
+			return isImmutable
 		}
 		s = s.parent
 	}
@@ -198,6 +204,7 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 
 func (t *galaASTTransformer) transformVarDeclaration(ctx *grammar.VarDeclarationContext) (ast.Decl, error) {
 	name := ctx.Identifier().GetText()
+	t.addVar(name)
 	spec := &ast.ValueSpec{
 		Names: []*ast.Ident{ast.NewIdent(name)},
 	}
@@ -358,6 +365,8 @@ func (t *galaASTTransformer) transformParameter(ctx *grammar.ParameterContext) (
 	isVal := ctx.VAL() != nil
 	if isVal {
 		t.addVal(name)
+	} else {
+		t.addVar(name)
 	}
 
 	if ctx.Type_() != nil {
@@ -874,6 +883,17 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 		return nil, err
 	}
 
+	paramName := "obj"
+	if primary := exprCtx.Primary(); primary != nil {
+		if p, ok := primary.(*grammar.PrimaryContext); ok && p.Identifier() != nil {
+			paramName = p.Identifier().GetText()
+		}
+	}
+
+	t.pushScope()
+	defer t.popScope()
+	t.addVar(paramName)
+
 	var clauses []ast.Stmt
 	// case clauses start from child 3 (0: expr, 1: match, 2: {, 3: case...)
 	for i := 3; i < ctx.GetChildCount()-1; i++ {
@@ -888,11 +908,18 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 		clauses = append(clauses, clause)
 	}
 
-	// Transpile to IIFE: func() any { switch expr { clauses... }; return nil }()
+	// Transpile to IIFE: func(obj any) any { switch obj { clauses... }; return nil }(expr)
 	return &ast.CallExpr{
 		Fun: &ast.FuncLit{
 			Type: &ast.FuncType{
-				Params: &ast.FieldList{},
+				Params: &ast.FieldList{
+					List: []*ast.Field{
+						{
+							Names: []*ast.Ident{ast.NewIdent(paramName)},
+							Type:  ast.NewIdent("any"),
+						},
+					},
+				},
 				Results: &ast.FieldList{
 					List: []*ast.Field{{Type: ast.NewIdent("any")}},
 				},
@@ -900,7 +927,7 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 			Body: &ast.BlockStmt{
 				List: []ast.Stmt{
 					&ast.SwitchStmt{
-						Tag: expr,
+						Tag: ast.NewIdent(paramName),
 						Body: &ast.BlockStmt{
 							List: clauses,
 						},
@@ -909,6 +936,7 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 				},
 			},
 		},
+		Args: []ast.Expr{expr},
 	}, nil
 }
 

@@ -32,7 +32,7 @@ func TestControlFlow(t *testing.T) {
 
 import "martianoff/gala/std"
 
-var res = std.NewImmutable(func() any {
+var res = std.NewImmutable(func(x any) any {
 	switch x {
 	case 1:
 		return "one"
@@ -42,7 +42,27 @@ var res = std.NewImmutable(func() any {
 		return "many"
 	}
 	return nil
-}())
+}(x))
+`,
+		},
+		{
+			name: "Match expression with shadowing",
+			input: `val x = 10
+val res = x match {
+	case 10 => x
+}`,
+			expected: `package main
+
+import "martianoff/gala/std"
+
+var x = std.NewImmutable(10)
+var res = std.NewImmutable(func(x any) any {
+	switch x {
+	case 10:
+		return x
+	}
+	return nil
+}(x.Get()))
 `,
 		},
 		{
