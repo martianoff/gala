@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 
@@ -77,7 +78,7 @@ func (t *galaASTTransformer) Transform(tree antlr.Tree) (*token.FileSet, *ast.Fi
 	fset := token.NewFileSet()
 	sourceFile, ok := tree.(*grammar.SourceFileContext)
 	if !ok {
-		return nil, nil, fmt.Errorf("expected *grammar.SourceFileContext, got %T", tree)
+		return nil, nil, galaerr.NewSemanticError(fmt.Sprintf("expected *grammar.SourceFileContext, got %T", tree))
 	}
 
 	pkgName := sourceFile.PackageClause().(*grammar.PackageClauseContext).Identifier().GetText()
@@ -166,7 +167,7 @@ func (t *galaASTTransformer) transformDeclaration(ctx grammar.IDeclarationContex
 	}
 	if forCtx := ctx.ForStatement(); forCtx != nil {
 		// TODO: implement
-		return nil, nil, fmt.Errorf("for statement not implemented yet")
+		return nil, nil, galaerr.NewSemanticError("for statement not implemented yet")
 	}
 	if exprCtx := ctx.ExpressionStatement(); exprCtx != nil {
 		stmt, err := t.transformExpressionStatement(exprCtx.(*grammar.ExpressionStatementContext))
@@ -376,10 +377,10 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 		spec = typeSpec
 	} else if ctx.InterfaceType() != nil {
 		// TODO: implement
-		return nil, fmt.Errorf("interface type not implemented yet")
+		return nil, galaerr.NewSemanticError("interface type not implemented yet")
 	} else if ctx.TypeAlias() != nil {
 		// TODO: implement
-		return nil, fmt.Errorf("type alias not implemented yet")
+		return nil, galaerr.NewSemanticError("type alias not implemented yet")
 	}
 
 	return &ast.GenDecl{
@@ -674,7 +675,7 @@ func (t *galaASTTransformer) transformExpression(ctx grammar.IExpressionContext)
 		}
 	}
 
-	return nil, fmt.Errorf("expression transformation not fully implemented for %T: %s", ctx, ctx.GetText())
+	return nil, galaerr.NewSemanticError(fmt.Sprintf("expression transformation not fully implemented for %T: %s", ctx, ctx.GetText()))
 }
 
 func (t *galaASTTransformer) transformExpressionList(ctx *grammar.ExpressionListContext) ([]ast.Expr, error) {
@@ -1000,7 +1001,7 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 		patExprCtx := ccCtx.Expression(0)
 		if patExprCtx.GetText() == "_" {
 			if foundDefault {
-				return nil, fmt.Errorf("multiple default cases in match")
+				return nil, galaerr.NewSemanticError("multiple default cases in match")
 			}
 			foundDefault = true
 
@@ -1029,7 +1030,7 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 	}
 
 	if !foundDefault {
-		return nil, fmt.Errorf("match expression must have a default case (case _ => ...)")
+		return nil, galaerr.NewSemanticError("match expression must have a default case (case _ => ...)")
 	}
 
 	t.needsStdImport = true

@@ -1,7 +1,7 @@
 package parser
 
 import (
-	"fmt"
+	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
 
 	"github.com/antlr4-go/antlr/v4"
@@ -27,7 +27,7 @@ func (p *AntlrGalaParser) Parse(input string) (antlr.Tree, error) {
 	tree := parser.SourceFile()
 
 	if len(errorListener.Errors) > 0 {
-		return nil, fmt.Errorf("parsing errors: %v", errorListener.Errors)
+		return nil, &galaerr.MultiError{Errors: errorListener.Errors}
 	}
 
 	return tree, nil
@@ -35,9 +35,9 @@ func (p *AntlrGalaParser) Parse(input string) (antlr.Tree, error) {
 
 type GalaErrorListener struct {
 	*antlr.DefaultErrorListener
-	Errors []string
+	Errors []error
 }
 
 func (l *GalaErrorListener) SyntaxError(recognizer antlr.Recognizer, offendingSymbol interface{}, line, column int, msg string, e antlr.RecognitionException) {
-	l.Errors = append(l.Errors, fmt.Sprintf("line %d:%d %s", line, column, msg))
+	l.Errors = append(l.Errors, galaerr.NewSyntaxError(line, column, msg))
 }

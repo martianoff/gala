@@ -1,0 +1,17 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "galaerr",
+    srcs = ["errors.go"],
+    importpath = "martianoff/gala/galaerr",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "galaerr_test",
+    srcs = ["errors_test.go"],
+    deps = [
+        ":galaerr",
+        "@com_github_stretchr_testify//assert",
+    ],
+)
