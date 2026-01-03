@@ -19,7 +19,7 @@ typeDeclaration: 'type' identifier (typeParameters)? (structType | interfaceType
 typeAlias: identifier | type;
 
 structType: 'struct' '{' structField* '}';
-structField: identifier type (STRING)?;
+structField: (VAL | VAR)? identifier type (STRING)?;
 
 interfaceType: 'interface' '{' methodSpec* '}';
 methodSpec: identifier signature;
@@ -33,7 +33,7 @@ signature: parameters (type)?;
 
 parameters: '(' parameterList? ')';
 parameterList: parameter (',' parameter)*;
-parameter: identifier (type)?;
+parameter: (VAL | VAR)? identifier (type)?;
 
 typeParameters: '[' typeParameterList ']';
 typeParameterList: typeParameter (',' typeParameter)*;
