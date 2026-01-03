@@ -895,12 +895,41 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 	t.addVar(paramName)
 
 	var clauses []ast.Stmt
+	var defaultBody []ast.Stmt
+	foundDefault := false
+
 	// case clauses start from child 3 (0: expr, 1: match, 2: {, 3: case...)
 	for i := 3; i < ctx.GetChildCount()-1; i++ {
 		ccCtx, ok := ctx.GetChild(i).(*grammar.CaseClauseContext)
 		if !ok {
 			continue
 		}
+
+		// Check if it's a default case
+		patExprCtx := ccCtx.Expression(0)
+		if patExprCtx.GetText() == "_" {
+			if foundDefault {
+				return nil, fmt.Errorf("multiple default cases in match")
+			}
+			foundDefault = true
+
+			// Transform the body of default case
+			if ccCtx.Block() != nil {
+				b, err := t.transformBlock(ccCtx.Block().(*grammar.BlockContext))
+				if err != nil {
+					return nil, err
+				}
+				defaultBody = b.List
+			} else if len(ccCtx.AllExpression()) > 1 {
+				expr, err := t.transformExpression(ccCtx.Expression(1))
+				if err != nil {
+					return nil, err
+				}
+				defaultBody = []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{expr}}}
+			}
+			continue
+		}
+
 		clause, err := t.transformCaseClause(ccCtx)
 		if err != nil {
 			return nil, err
@@ -908,8 +937,12 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 		clauses = append(clauses, clause)
 	}
 
+	if !foundDefault {
+		return nil, fmt.Errorf("match expression must have a default case (case _ => ...)")
+	}
+
 	t.needsStdImport = true
-	// Transpile to IIFE: func(obj any) any { switch obj { clauses... }; return nil }(expr)
+	// Transpile to IIFE: func(obj any) any { ... }(expr)
 	return &ast.CallExpr{
 		Fun: &ast.FuncLit{
 			Type: &ast.FuncType{
@@ -926,7 +959,7 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 				},
 			},
 			Body: &ast.BlockStmt{
-				List: []ast.Stmt{
+				List: append([]ast.Stmt{
 					&ast.IfStmt{
 						Init: &ast.AssignStmt{
 							Lhs: []ast.Expr{ast.NewIdent("u"), ast.NewIdent("ok")},
@@ -965,8 +998,7 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 							List: clauses,
 						},
 					},
-					&ast.ReturnStmt{Results: []ast.Expr{ast.NewIdent("nil")}},
-				},
+				}, defaultBody...),
 			},
 		},
 		Args: []ast.Expr{expr},

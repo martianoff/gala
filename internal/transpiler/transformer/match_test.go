@@ -20,6 +20,7 @@ func TestMatch(t *testing.T) {
 		name     string
 		input    string
 		expected string
+		wantErr  bool
 	}{
 		{
 			name: "Match expression",
@@ -41,10 +42,8 @@ var res = std.NewImmutable(func(x any) any {
 		return "one"
 	case 2:
 		return "two"
-	default:
-		return "many"
 	}
-	return nil
+	return "many"
 }(x))
 `,
 		},
@@ -53,6 +52,7 @@ var res = std.NewImmutable(func(x any) any {
 			input: `val x = 10
 val res = x match {
 	case 10 => x
+	case _ => 0
 }`,
 			expected: `package main
 
@@ -67,7 +67,7 @@ var res = std.NewImmutable(func(x any) any {
 	case 10:
 		return x
 	}
-	return nil
+	return 0
 }(x.Get()))
 `,
 		},
@@ -75,6 +75,7 @@ var res = std.NewImmutable(func(x any) any {
 			name: "Match expression with Unapply",
 			input: `val res = x match {
 				case "unapplied" => "success"
+				case _ => "fail"
 			}`,
 			expected: `package main
 
@@ -88,15 +89,26 @@ var res = std.NewImmutable(func(x any) any {
 	case "unapplied":
 		return "success"
 	}
-	return nil
+	return "fail"
 }(x))
 `,
+		},
+		{
+			name: "Missing default case",
+			input: `val res = x match {
+				case 1 => "one"
+			}`,
+			wantErr: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := trans.Transpile(tt.input)
+			if tt.wantErr {
+				assert.Error(t, err)
+				return
+			}
 			assert.NoError(t, err)
 			assert.Equal(t, strings.TrimSpace(tt.expected), strings.TrimSpace(got))
 		})
