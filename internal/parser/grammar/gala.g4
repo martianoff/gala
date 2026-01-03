@@ -1,7 +1,19 @@
 grammar gala;
 
 // Entry point
-sourceFile: declaration* EOF;
+sourceFile: packageClause importDeclaration* topLevelDeclaration* EOF;
+
+packageClause: PACKAGE identifier;
+
+topLevelDeclaration
+    : valDeclaration
+    | varDeclaration
+    | functionDeclaration
+    | typeDeclaration
+    | ifStatement
+    | forStatement
+    | expressionStatement
+    ;
 
 declaration
     : valDeclaration
@@ -127,6 +139,7 @@ FOR: 'for';
 RANGE: 'range';
 RETURN: 'return';
 IMPORT: 'import';
+PACKAGE: 'package';
 
 binaryOp: '||' | '&&' | '==' | '!=' | '<' | '<=' | '>' | '>=' | '+' | '-' | '|' | '^' | '*' | '/' | '%' | '<<' | '>>' | '&' | '&^';
 unaryOp: '+' | '-' | '!' | '^' | '*' | '&' | '<-';

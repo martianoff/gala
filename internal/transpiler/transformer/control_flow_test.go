@@ -22,8 +22,9 @@ func TestControlFlow(t *testing.T) {
 		expected string
 	}{
 		{
-			name:  "Top-level expression",
-			input: `println("hello")`,
+			name: "Top-level expression",
+			input: `package main
+println("hello")`,
 			expected: `package main
 
 func main() {

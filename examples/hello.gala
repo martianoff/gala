@@ -1,2 +1,4 @@
+package main
+
 val message = "Hello, GALA!"
 println(message)

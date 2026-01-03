@@ -22,8 +22,9 @@ func TestFunctions(t *testing.T) {
 		expected string
 	}{
 		{
-			name:  "Standard Go-style function",
-			input: `func add(a int, b int) int { return a + b }`,
+			name: "Standard Go-style function",
+			input: `package main
+func add(a int, b int) int { return a + b }`,
 			expected: `package main
 
 func add(a int, b int) int {
@@ -32,8 +33,9 @@ func add(a int, b int) int {
 `,
 		},
 		{
-			name:  "Scala-style shorthand function",
-			input: `func square(x int) int = x * x`,
+			name: "Scala-style shorthand function",
+			input: `package main
+func square(x int) int = x * x`,
 			expected: `package main
 
 func square(x int) int {
@@ -42,8 +44,9 @@ func square(x int) int {
 `,
 		},
 		{
-			name:  "Lambda expression",
-			input: `val f = (x int) => x * x`,
+			name: "Lambda expression",
+			input: `package main
+val f = (x int) => x * x`,
 			expected: `package main
 
 import "martianoff/gala/std"
@@ -54,8 +57,9 @@ var f = std.NewImmutable(func(x int) {
 `,
 		},
 		{
-			name:  "If expression",
-			input: `val res = if (c) 1 else 2`,
+			name: "If expression",
+			input: `package main
+val res = if (c) 1 else 2`,
 			expected: `package main
 
 import "martianoff/gala/std"

@@ -24,11 +24,12 @@ func TestMatch(t *testing.T) {
 	}{
 		{
 			name: "Match expression",
-			input: `val res = x match {
-				case 1 => "one"
-				case 2 => "two"
-				case _ => "many"
-			}`,
+			input: `package main
+val res = x match {
+	case 1 => "one"
+	case 2 => "two"
+	case _ => "many"
+}`,
 			expected: `package main
 
 import "martianoff/gala/std"
@@ -46,7 +47,8 @@ var res = std.NewImmutable(func(x any) any {
 		},
 		{
 			name: "Match expression with shadowing",
-			input: `val x = 10
+			input: `package main
+val x = 10
 val res = x match {
 	case 10 => x
 	case _ => 0
@@ -67,10 +69,11 @@ var res = std.NewImmutable(func(x any) any {
 		},
 		{
 			name: "Match expression with Unapply",
-			input: `val res = x match {
-				case "unapplied" => "success"
-				case _ => "fail"
-			}`,
+			input: `package main
+val res = x match {
+	case "unapplied" => "success"
+	case _ => "fail"
+}`,
 			expected: `package main
 
 import "martianoff/gala/std"

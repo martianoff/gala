@@ -57,7 +57,7 @@ Yes, it should include unit tests to verify the functionality end-to-end. Please
 Use bazel to run tests `bazel test //...`
 
 ## 10. Whether Junie should build the project before submitting the result
-Yes, the project should be buildable with bazel.
+Yes, the project should be buildable with bazel. Code under "examples" should be executable with bazel and shouldn't return compiler errors.
 
 ## 11. Code-style-related instructions
 Follow golang best practices

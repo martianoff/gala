@@ -23,10 +23,11 @@ func TestStructs(t *testing.T) {
 	}{
 		{
 			name: "Simple struct",
-			input: `type Person struct {
-				Name string
-				Age int
-			}`,
+			input: `package main
+type Person struct {
+	Name string
+	Age  int
+}`,
 			expected: `package main
 
 type Person struct {
@@ -37,10 +38,11 @@ type Person struct {
 		},
 		{
 			name: "Struct with val and var fields",
-			input: `type Config struct {
-				val ID string
-				var Count int
-			}`,
+			input: `package main
+type Config struct {
+	val ID string
+	var Count int
+}`,
 			expected: `package main
 
 import "martianoff/gala/std"
@@ -53,9 +55,10 @@ type Config struct {
 		},
 		{
 			name: "Struct with tags",
-			input: `type User struct {
-				Name string "json:\"name\""
-			}`,
+			input: `package main
+type User struct {
+	Name string "json:\"name\""
+}`,
 			expected: `package main
 
 type User struct {

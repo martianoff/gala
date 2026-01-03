@@ -23,12 +23,11 @@ func TestImmutable(t *testing.T) {
 	}{
 		{
 			name: "val variable and usage",
-			input: `
+			input: `package main
 val x = 10
 val y = x + 1
 `,
-			expected: `
-package main
+			expected: `package main
 
 import "martianoff/gala/std"
 
@@ -38,11 +37,9 @@ var y = std.NewImmutable(x.Get() + 1)
 		},
 		{
 			name: "val parameter usage",
-			input: `
-func f(val x int) int = x + 1
-`,
-			expected: `
-package main
+			input: `package main
+func f(val x int) int = x + 1`,
+			expected: `package main
 
 import "martianoff/gala/std"
 
@@ -53,14 +50,12 @@ func f(x std.Immutable[int]) int {
 		},
 		{
 			name: "val struct field and usage",
-			input: `
+			input: `package main
 type Config struct {
 	val ID string
 }
-func getID(c Config) string = c.ID
-`,
-			expected: `
-package main
+func getID(c Config) string = c.ID`,
+			expected: `package main
 
 import "martianoff/gala/std"
 

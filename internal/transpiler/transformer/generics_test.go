@@ -22,8 +22,9 @@ func TestGenerics(t *testing.T) {
 		expected string
 	}{
 		{
-			name:  "Generic function",
-			input: `func identity[T any](x T) T { return x }`,
+			name: "Generic function",
+			input: `package main
+func identity[T any](x T) T { return x }`,
 			expected: `package main
 
 func identity[T any](x T) T {
@@ -33,9 +34,10 @@ func identity[T any](x T) T {
 		},
 		{
 			name: "Generic struct",
-			input: `type Box[T any] struct {
-				Value T
-			}`,
+			input: `package main
+type Box[T any] struct {
+	Value T
+}`,
 			expected: `package main
 
 type Box[T any] struct {

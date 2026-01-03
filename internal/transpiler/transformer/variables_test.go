@@ -22,8 +22,9 @@ func TestVariables(t *testing.T) {
 		expected string
 	}{
 		{
-			name:  "val declaration",
-			input: `val x = 10`,
+			name: "val declaration",
+			input: `package main
+val x = 10`,
 			expected: `package main
 
 import "martianoff/gala/std"
@@ -32,16 +33,18 @@ var x = std.NewImmutable(10)
 `,
 		},
 		{
-			name:  "var declaration",
-			input: `var y = 20`,
+			name: "var declaration",
+			input: `package main
+var y = 20`,
 			expected: `package main
 
 var y = 20
 `,
 		},
 		{
-			name:  "val with type",
-			input: `val s string = "hello"`,
+			name: "val with type",
+			input: `package main
+val s string = "hello"`,
 			expected: `package main
 
 import "martianoff/gala/std"
