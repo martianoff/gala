@@ -16,9 +16,10 @@ type scope struct {
 }
 
 type galaASTTransformer struct {
-	currentScope   *scope
-	immutFields    map[string]bool
-	needsStdImport bool
+	currentScope     *scope
+	immutFields      map[string]bool
+	needsStdImport   bool
+	activeTypeParams map[string]bool
 }
 
 func (t *galaASTTransformer) pushScope() {
@@ -60,7 +61,8 @@ func (t *galaASTTransformer) isVal(name string) bool {
 // NewGalaASTTransformer creates a new instance of ASTTransformer for GALA.
 func NewGalaASTTransformer() transpiler.ASTTransformer {
 	return &galaASTTransformer{
-		immutFields: make(map[string]bool),
+		immutFields:      make(map[string]bool),
+		activeTypeParams: make(map[string]bool),
 	}
 }
 
@@ -68,6 +70,7 @@ func (t *galaASTTransformer) Transform(tree antlr.Tree) (*token.FileSet, *ast.Fi
 	t.currentScope = nil
 	t.needsStdImport = false
 	t.immutFields = make(map[string]bool)
+	t.activeTypeParams = make(map[string]bool)
 	t.pushScope() // Global scope
 	defer t.popScope()
 
@@ -329,6 +332,32 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 	name := ctx.Identifier().GetText()
 	var spec ast.Spec
 
+	// Process Type Parameters first
+	var tParams *ast.FieldList
+	if ctx.TypeParameters() != nil {
+		var err error
+		tParams, err = t.transformTypeParameters(ctx.TypeParameters().(*grammar.TypeParametersContext))
+		if err != nil {
+			return nil, err
+		}
+		// Populate activeTypeParams
+		for _, field := range tParams.List {
+			for _, id := range field.Names {
+				t.activeTypeParams[id.Name] = true
+			}
+		}
+	}
+	defer func() {
+		// Clear activeTypeParams after processing
+		if tParams != nil {
+			for _, field := range tParams.List {
+				for _, id := range field.Names {
+					delete(t.activeTypeParams, id.Name)
+				}
+			}
+		}
+	}()
+
 	if ctx.StructType() != nil {
 		structCtx := ctx.StructType().(*grammar.StructTypeContext)
 		fields := &ast.FieldList{}
@@ -340,15 +369,9 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 			fields.List = append(fields.List, field)
 		}
 		typeSpec := &ast.TypeSpec{
-			Name: ast.NewIdent(name),
-			Type: &ast.StructType{Fields: fields},
-		}
-		if ctx.TypeParameters() != nil {
-			tParams, err := t.transformTypeParameters(ctx.TypeParameters().(*grammar.TypeParametersContext))
-			if err != nil {
-				return nil, err
-			}
-			typeSpec.TypeParams = tParams
+			Name:       ast.NewIdent(name),
+			Type:       &ast.StructType{Fields: fields},
+			TypeParams: tParams,
 		}
 		spec = typeSpec
 	} else if ctx.InterfaceType() != nil {
@@ -420,7 +443,8 @@ func (t *galaASTTransformer) transformStructField(ctx *grammar.StructFieldContex
 		return nil, err
 	}
 
-	isVal := ctx.VAL() != nil
+	isVal := ctx.VAR() == nil
+
 	field := &ast.Field{
 		Names: []*ast.Ident{ast.NewIdent(name)},
 	}

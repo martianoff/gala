@@ -30,9 +30,11 @@ type Person struct {
 }`,
 			expected: `package main
 
+import "martianoff/gala/std"
+
 type Person struct {
-	Name string
-	Age  int
+	Name std.Immutable[string]
+	Age  std.Immutable[int]
 }
 `,
 		},
@@ -61,8 +63,10 @@ type User struct {
 }`,
 			expected: `package main
 
+import "martianoff/gala/std"
+
 type User struct {
-	Name string "json:\"name\""
+	Name std.Immutable[string] "json:\"name\""
 }
 `,
 		},

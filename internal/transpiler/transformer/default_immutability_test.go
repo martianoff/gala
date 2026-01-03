@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestGenerics(t *testing.T) {
+func TestDefaultImmutability(t *testing.T) {
 	p := transpiler.NewAntlrGalaParser()
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
@@ -22,18 +22,22 @@ func TestGenerics(t *testing.T) {
 		expected string
 	}{
 		{
-			name: "Generic function",
+			name: "Static field immutable by default",
 			input: `package main
-func identity[T any](x T) T { return x }`,
+type Person struct {
+	Name string
+}`,
 			expected: `package main
 
-func identity[T any](x T) T {
-	return x
+import "martianoff/gala/std"
+
+type Person struct {
+	Name std.Immutable[string]
 }
 `,
 		},
 		{
-			name: "Generic struct",
+			name: "Generic field immutable by default",
 			input: `package main
 type Box[T any] struct {
 	Value T
@@ -48,50 +52,15 @@ type Box[T any] struct {
 `,
 		},
 		{
-			name: "Generic struct field usage",
+			name: "Explicit var field stays mutable",
 			input: `package main
-type Box[T any] struct {
-	Value T
-}
-func getValue[T any](b Box[T]) T = b.Value`,
-			expected: `package main
-
-import "martianoff/gala/std"
-
-type Box[T any] struct {
-	Value std.Immutable[T]
-}
-
-func getValue[T any](b Box[T]) T {
-	return b.Value.Get()
-}
-`,
-		},
-		{
-			name: "Generic struct with immutable field",
-			input: `package main
-type Box[T any] struct {
-	val Value T
+type Counter struct {
+	var Count int
 }`,
 			expected: `package main
 
-import "martianoff/gala/std"
-
-type Box[T any] struct {
-	Value std.Immutable[T]
-}
-`,
-		},
-		{
-			name: "Generic struct with mutable field",
-			input: `package main
-type Box[T any] struct {
-	var Value T
-}`,
-			expected: `package main
-
-type Box[T any] struct {
-	Value T
+type Counter struct {
+	Count int
 }
 `,
 		},
