@@ -1,0 +1,16 @@
+load("//:gala.bzl", "gala_binary")
+
+gala_binary(
+    name = "hello",
+    src = "hello.gala",
+)
+
+gala_binary(
+    name = "with_main",
+    src = "with_main.gala",
+)
+
+gala_binary(
+    name = "complex",
+    src = "complex.gala",
+)

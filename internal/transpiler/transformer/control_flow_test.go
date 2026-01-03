@@ -26,7 +26,7 @@ func TestControlFlow(t *testing.T) {
 			input: `println("hello")`,
 			expected: `package main
 
-func init() {
+func main() {
 	println("hello")
 }
 `,

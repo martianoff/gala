@@ -9,6 +9,8 @@ declaration
     | functionDeclaration
     | typeDeclaration
     | importDeclaration
+    | ifStatement
+    | forStatement
     | expressionStatement
     ;
 
@@ -43,10 +45,7 @@ block: '{' statement* '}';
 
 statement
     : declaration
-    | expressionStatement
     | returnStatement
-    | ifStatement
-    | forStatement
     ;
 
 expressionStatement: expression;

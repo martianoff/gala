@@ -1,0 +1,6 @@
+func main() {
+    val x = 10
+    println("Main function: x =", x)
+}
+
+println("Top level")
