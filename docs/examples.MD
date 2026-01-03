@@ -11,18 +11,12 @@ package main
 
 import "fmt"
 
-type Point struct {
-    X int
-    Y int
-}
+struct Point(X, Y int)
 
-func moveX(p Point, delta int) Point = Point{
-    X: p.X + delta,
-    Y: p.Y,
-}
+func moveX(p Point, delta int) Point = p.Copy(X = p.X + delta)
 
 func main() {
-    val p1 = Point{X: 10, Y: 20}
+    val p1 = Point(10, 20)
     val p2 = moveX(p1, 5)
     
     val msg = if (p2.X > 10) "moved" else "static"
