@@ -1,0 +1,19 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "parser",
+    srcs = ["parser.go"],
+    importpath = "martianoff/gala/internal/parser",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//internal/parser/grammar",
+        "@com_github_antlr4_go_antlr_v4//:antlr",
+    ],
+)
+
+go_test(
+    name = "parser_test",
+    srcs = ["parser_test.go"],
+    embed = [":parser"],
+    deps = ["@com_github_stretchr_testify//assert"],
+)
