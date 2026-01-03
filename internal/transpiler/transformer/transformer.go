@@ -169,23 +169,109 @@ func (t *galaASTTransformer) transformDeclaration(ctx grammar.IDeclarationContex
 		// TODO: implement
 		return nil, nil, galaerr.NewSemanticError("for statement not implemented yet")
 	}
-	if exprCtx := ctx.ExpressionStatement(); exprCtx != nil {
-		stmt, err := t.transformExpressionStatement(exprCtx.(*grammar.ExpressionStatementContext))
+	if simpleCtx := ctx.SimpleStatement(); simpleCtx != nil {
+		stmt, err := t.transformSimpleStatement(simpleCtx.(*grammar.SimpleStatementContext))
 		return nil, stmt, err
 	}
 	return nil, nil, nil
 }
 
-func (t *galaASTTransformer) transformExpressionStatement(ctx *grammar.ExpressionStatementContext) (ast.Stmt, error) {
-	expr, err := t.transformExpression(ctx.Expression())
+func (t *galaASTTransformer) transformSimpleStatement(ctx grammar.ISimpleStatementContext) (ast.Stmt, error) {
+	if exprCtx := ctx.Expression(); exprCtx != nil {
+		expr, err := t.transformExpression(exprCtx)
+		if err != nil {
+			return nil, err
+		}
+		return &ast.ExprStmt{X: expr}, nil
+	}
+	if assignCtx := ctx.Assignment(); assignCtx != nil {
+		return t.transformAssignment(assignCtx.(*grammar.AssignmentContext))
+	}
+	if shortCtx := ctx.ShortVarDecl(); shortCtx != nil {
+		return t.transformShortVarDecl(shortCtx.(*grammar.ShortVarDeclContext))
+	}
+	return nil, nil
+}
+
+func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext) (ast.Stmt, error) {
+	lhsCtx := ctx.GetChild(0).(*grammar.ExpressionListContext)
+	for _, exprCtx := range lhsCtx.AllExpression() {
+		if p := exprCtx.Primary(); p != nil {
+			pc := p.(*grammar.PrimaryContext)
+			if pc.Identifier() != nil {
+				name := pc.Identifier().GetText()
+				if t.isVal(name) {
+					return nil, galaerr.NewSemanticError(fmt.Sprintf("cannot assign to immutable variable %s", name))
+				}
+			}
+		}
+		if exprCtx.GetChildCount() == 3 && exprCtx.GetChild(1).(antlr.ParseTree).GetText() == "." {
+			selName := exprCtx.GetChild(2).(antlr.ParseTree).GetText()
+			if t.immutFields[selName] {
+				return nil, galaerr.NewSemanticError(fmt.Sprintf("cannot assign to immutable field %s", selName))
+			}
+		}
+	}
+
+	lhsExprs, err := t.transformExpressionList(lhsCtx)
 	if err != nil {
 		return nil, err
 	}
-	return &ast.ExprStmt{X: expr}, nil
+	rhsExprs, err := t.transformExpressionList(ctx.GetChild(2).(*grammar.ExpressionListContext))
+	if err != nil {
+		return nil, err
+	}
+
+	op := ctx.GetChild(1).(antlr.TerminalNode).GetText()
+	var tok token.Token
+	switch op {
+	case "=":
+		tok = token.ASSIGN
+	case "+=":
+		tok = token.ADD_ASSIGN
+	case "-=":
+		tok = token.SUB_ASSIGN
+	case "*=":
+		tok = token.MUL_ASSIGN
+	case "/=":
+		tok = token.QUO_ASSIGN
+	default:
+		return nil, galaerr.NewSemanticError(fmt.Sprintf("unknown assignment operator: %s", op))
+	}
+
+	return &ast.AssignStmt{
+		Lhs: lhsExprs,
+		Tok: tok,
+		Rhs: rhsExprs,
+	}, nil
+}
+
+func (t *galaASTTransformer) transformShortVarDecl(ctx *grammar.ShortVarDeclContext) (ast.Stmt, error) {
+	ids := ctx.IdentifierList().(*grammar.IdentifierListContext)
+	lhs := make([]ast.Expr, 0)
+	for _, idCtx := range ids.AllIdentifier() {
+		name := idCtx.GetText()
+		t.addVar(name)
+		lhs = append(lhs, ast.NewIdent(name))
+	}
+
+	rhs, err := t.transformExpressionList(ctx.ExpressionList().(*grammar.ExpressionListContext))
+	if err != nil {
+		return nil, err
+	}
+
+	return &ast.AssignStmt{
+		Lhs: lhs,
+		Tok: token.DEFINE,
+		Rhs: rhs,
+	}, nil
 }
 
 func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclarationContext) (ast.Decl, error) {
 	name := ctx.Identifier().GetText()
+	if ctx.Expression() == nil {
+		return nil, galaerr.NewSemanticError("val declaration requires a value")
+	}
 	expr, err := t.transformExpression(ctx.Expression())
 	if err != nil {
 		return nil, err
@@ -952,18 +1038,6 @@ func (t *galaASTTransformer) transformIfStatement(ctx *grammar.IfStatementContex
 	}
 
 	return stmt, nil
-}
-
-func (t *galaASTTransformer) transformSimpleStatement(ctx *grammar.SimpleStatementContext) (ast.Stmt, error) {
-	if ctx.Expression() != nil {
-		expr, err := t.transformExpression(ctx.Expression())
-		if err != nil {
-			return nil, err
-		}
-		return &ast.ExprStmt{X: expr}, nil
-	}
-	// TODO: assignment, shortVarDecl
-	return nil, nil
 }
 
 func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionContext) (ast.Expr, error) {

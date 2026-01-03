@@ -1,7 +1,6 @@
 package parser
 
 import (
-	"martianoff/gala/galaerr"
 	"testing"
 
 	"github.com/stretchr/testify/assert"

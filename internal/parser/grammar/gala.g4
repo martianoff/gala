@@ -20,7 +20,7 @@ declaration
     | importDeclaration
     | ifStatement
     | forStatement
-    | expressionStatement
+    | simpleStatement
     ;
 
 importDeclaration: 'import' ( STRING | '(' STRING+ ')' );
@@ -57,7 +57,6 @@ statement
     | returnStatement
     ;
 
-expressionStatement: expression;
 returnStatement: 'return' expression?;
 
 ifStatement: 'if' (simpleStatement ';')? expression block ('else' (block | ifStatement))?;
