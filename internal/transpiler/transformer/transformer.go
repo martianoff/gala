@@ -247,51 +247,76 @@ func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext)
 }
 
 func (t *galaASTTransformer) transformShortVarDecl(ctx *grammar.ShortVarDeclContext) (ast.Stmt, error) {
-	ids := ctx.IdentifierList().(*grammar.IdentifierListContext)
-	lhs := make([]ast.Expr, 0)
-	for _, idCtx := range ids.AllIdentifier() {
-		name := idCtx.GetText()
-		t.addVar(name)
-		lhs = append(lhs, ast.NewIdent(name))
-	}
-
-	rhs, err := t.transformExpressionList(ctx.ExpressionList().(*grammar.ExpressionListContext))
+	idsCtx := ctx.IdentifierList().(*grammar.IdentifierListContext).AllIdentifier()
+	rhsExprs, err := t.transformExpressionList(ctx.ExpressionList().(*grammar.ExpressionListContext))
 	if err != nil {
 		return nil, err
+	}
+
+	if len(rhsExprs) != len(idsCtx) {
+		if len(rhsExprs) == 1 && len(idsCtx) > 1 {
+			return nil, galaerr.NewSemanticError("multi-value assignment not supported for immutable variables yet")
+		}
+		return nil, galaerr.NewSemanticError("assignment mismatch")
+	}
+
+	lhs := make([]ast.Expr, 0)
+	wrappedRhs := make([]ast.Expr, 0)
+	for i, idCtx := range idsCtx {
+		name := idCtx.GetText()
+		t.addVal(name)
+		lhs = append(lhs, ast.NewIdent(name))
+
+		t.needsStdImport = true
+		wrappedRhs = append(wrappedRhs, &ast.CallExpr{
+			Fun: &ast.SelectorExpr{
+				X:   ast.NewIdent("std"),
+				Sel: ast.NewIdent("NewImmutable"),
+			},
+			Args: []ast.Expr{rhsExprs[i]},
+		})
 	}
 
 	return &ast.AssignStmt{
 		Lhs: lhs,
 		Tok: token.DEFINE,
-		Rhs: rhs,
+		Rhs: wrappedRhs,
 	}, nil
 }
 
 func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclarationContext) (ast.Decl, error) {
-	name := ctx.Identifier().GetText()
-	if ctx.Expression() == nil {
-		return nil, galaerr.NewSemanticError("val declaration requires a value")
-	}
-	expr, err := t.transformExpression(ctx.Expression())
+	namesCtx := ctx.IdentifierList().(*grammar.IdentifierListContext).AllIdentifier()
+	rhsExprs, err := t.transformExpressionList(ctx.ExpressionList().(*grammar.ExpressionListContext))
 	if err != nil {
 		return nil, err
 	}
 
-	t.needsStdImport = true
-	t.addVal(name)
+	if len(rhsExprs) != len(namesCtx) {
+		if len(rhsExprs) == 1 && len(namesCtx) > 1 {
+			return nil, galaerr.NewSemanticError("multi-value assignment not supported for immutable variables yet")
+		}
+		return nil, galaerr.NewSemanticError("assignment mismatch")
+	}
 
-	// Wrap value: std.NewImmutable(expr)
-	wrappedValue := &ast.CallExpr{
-		Fun: &ast.SelectorExpr{
-			X:   ast.NewIdent("std"),
-			Sel: ast.NewIdent("NewImmutable"),
-		},
-		Args: []ast.Expr{expr},
+	t.needsStdImport = true
+	var idents []*ast.Ident
+	var wrappedValues []ast.Expr
+	for i, idCtx := range namesCtx {
+		name := idCtx.GetText()
+		t.addVal(name)
+		idents = append(idents, ast.NewIdent(name))
+		wrappedValues = append(wrappedValues, &ast.CallExpr{
+			Fun: &ast.SelectorExpr{
+				X:   ast.NewIdent("std"),
+				Sel: ast.NewIdent("NewImmutable"),
+			},
+			Args: []ast.Expr{rhsExprs[i]},
+		})
 	}
 
 	spec := &ast.ValueSpec{
-		Names:  []*ast.Ident{ast.NewIdent(name)},
-		Values: []ast.Expr{wrappedValue},
+		Names:  idents,
+		Values: wrappedValues,
 	}
 
 	if ctx.Type_() != nil {
@@ -299,7 +324,6 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 		if err != nil {
 			return nil, err
 		}
-		// Change type to std.Immutable[typeExpr]
 		spec.Type = &ast.IndexExpr{
 			X: &ast.SelectorExpr{
 				X:   ast.NewIdent("std"),
@@ -316,18 +340,26 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 }
 
 func (t *galaASTTransformer) transformVarDeclaration(ctx *grammar.VarDeclarationContext) (ast.Decl, error) {
-	name := ctx.Identifier().GetText()
-	t.addVar(name)
-	spec := &ast.ValueSpec{
-		Names: []*ast.Ident{ast.NewIdent(name)},
+	namesCtx := ctx.IdentifierList().(*grammar.IdentifierListContext).AllIdentifier()
+	var idents []*ast.Ident
+	for _, idCtx := range namesCtx {
+		name := idCtx.GetText()
+		t.addVar(name)
+		idents = append(idents, ast.NewIdent(name))
 	}
-	if ctx.Expression() != nil {
-		expr, err := t.transformExpression(ctx.Expression())
+
+	spec := &ast.ValueSpec{
+		Names: idents,
+	}
+
+	if ctx.ExpressionList() != nil {
+		rhs, err := t.transformExpressionList(ctx.ExpressionList().(*grammar.ExpressionListContext))
 		if err != nil {
 			return nil, err
 		}
-		spec.Values = []ast.Expr{expr}
+		spec.Values = rhs
 	}
+
 	if ctx.Type_() != nil {
 		typeExpr, err := t.transformType(ctx.Type_())
 		if err != nil {

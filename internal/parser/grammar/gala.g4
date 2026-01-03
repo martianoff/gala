@@ -37,8 +37,8 @@ structField: (VAL | VAR)? identifier type (STRING)?;
 interfaceType: 'interface' '{' methodSpec* '}';
 methodSpec: identifier signature;
 
-valDeclaration: 'val' identifier (type)? '=' expression;
-varDeclaration: 'var' identifier (type)? ('=' expression)?;
+valDeclaration: 'val' identifierList (type)? '=' expressionList;
+varDeclaration: 'var' identifierList (type)? ('=' expressionList)?;
 
 functionDeclaration: 'func' identifier (typeParameters)? signature (block | '=' expression);
 

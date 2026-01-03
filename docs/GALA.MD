@@ -23,28 +23,30 @@ import (
 GALA distinguishes between immutable and mutable variables.
 
 ### Immutable (`val`)
-Variables declared with `val` are immutable. They must be initialized with a value at the time of declaration.
+Variables declared with `val` are immutable. They must be initialized with a value at the time of declaration. Multiple variables can be declared at once.
 
 ```gala
 val x = 10
+val a, b = 1, 2
 // x = 20 // Compile error: cannot assign to immutable variable
 ```
 
 ### Mutable (`var`)
-Variables declared with `var` are mutable and can be reassigned.
+Variables declared with `var` are mutable and can be reassigned. Multiple variables can be declared at once.
 
 ```gala
 var y = 20
+var x, y int = 10, 20
 y = 30 // OK
 ```
 
 ### Short Variable Declaration
-Inside functions, you can use the short variable declaration operator `:=`. Variables declared this way are mutable.
+Inside functions, you can use the short variable declaration operator `:=`. Variables declared this way are **immutable** in GALA.
 
 ```gala
 func main() {
     z := 40
-    z = 50
+    // z = 50 // Compile error: cannot assign to immutable variable
 }
 ```
 

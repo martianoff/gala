@@ -32,3 +32,8 @@ gala_binary(
     src = "use_lib.gala",
     deps = [":mathlib"],
 )
+
+gala_binary(
+    name = "multi_vars",
+    src = "multi_vars.gala",
+)

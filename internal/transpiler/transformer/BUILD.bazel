@@ -24,6 +24,7 @@ go_test(
         "immutable_test.go",
         "import_test.go",
         "match_test.go",
+        "multi_var_test.go",
         "structs_test.go",
         "variables_test.go",
     ],

@@ -1,0 +1,21 @@
+package main
+
+import "fmt"
+
+func main() {
+    // Multiple val declaration
+    val a, b = 10, 20
+    fmt.Println("a =", a, "b =", b)
+
+    // Multiple var declaration
+    var x, y int = 30, 40
+    fmt.Println("x =", x, "y =", y)
+    x = 35
+    y = 45
+    fmt.Println("x =", x, "y =", y)
+
+    // Short variable declaration (immutable)
+    z1, z2 := 50, 60
+    fmt.Println("z1 =", z1, "z2 =", z2)
+    // z1 = 55 // Error: cannot assign to immutable variable z1
+}
