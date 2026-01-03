@@ -43,8 +43,10 @@ type Person struct {
 			}`,
 			expected: `package main
 
+import "martianoff/gala/std"
+
 type Config struct {
-	ID    string
+	ID    std.Immutable[string]
 	Count int
 }
 `,

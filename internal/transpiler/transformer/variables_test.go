@@ -26,7 +26,9 @@ func TestVariables(t *testing.T) {
 			input: `val x = 10`,
 			expected: `package main
 
-var x = 10
+import "martianoff/gala/std"
+
+var x = std.NewImmutable(10)
 `,
 		},
 		{
@@ -42,7 +44,9 @@ var y = 20
 			input: `val s string = "hello"`,
 			expected: `package main
 
-var s string = "hello"
+import "martianoff/gala/std"
+
+var s std.Immutable[string] = std.NewImmutable("hello")
 `,
 		},
 	}

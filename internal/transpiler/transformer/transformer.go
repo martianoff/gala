@@ -10,15 +10,61 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 )
 
+type scope struct {
+	vals   map[string]bool
+	parent *scope
+}
+
 type galaASTTransformer struct {
+	currentScope   *scope
+	immutFields    map[string]bool
+	needsStdImport bool
+}
+
+func (t *galaASTTransformer) pushScope() {
+	t.currentScope = &scope{
+		vals:   make(map[string]bool),
+		parent: t.currentScope,
+	}
+}
+
+func (t *galaASTTransformer) popScope() {
+	if t.currentScope != nil {
+		t.currentScope = t.currentScope.parent
+	}
+}
+
+func (t *galaASTTransformer) addVal(name string) {
+	if t.currentScope != nil {
+		t.currentScope.vals[name] = true
+	}
+}
+
+func (t *galaASTTransformer) isVal(name string) bool {
+	s := t.currentScope
+	for s != nil {
+		if s.vals[name] {
+			return true
+		}
+		s = s.parent
+	}
+	return false
 }
 
 // NewGalaASTTransformer creates a new instance of ASTTransformer for GALA.
 func NewGalaASTTransformer() transpiler.ASTTransformer {
-	return &galaASTTransformer{}
+	return &galaASTTransformer{
+		immutFields: make(map[string]bool),
+	}
 }
 
 func (t *galaASTTransformer) Transform(tree antlr.Tree) (*token.FileSet, *ast.File, error) {
+	t.currentScope = nil
+	t.needsStdImport = false
+	t.immutFields = make(map[string]bool)
+	t.pushScope() // Global scope
+	defer t.popScope()
+
 	fset := token.NewFileSet()
 	sourceFile, ok := tree.(*grammar.SourceFileContext)
 	if !ok {
@@ -59,6 +105,22 @@ func (t *galaASTTransformer) Transform(tree antlr.Tree) (*token.FileSet, *ast.Fi
 		})
 	}
 
+	if t.needsStdImport {
+		// Add import at the beginning
+		importDecl := &ast.GenDecl{
+			Tok: token.IMPORT,
+			Specs: []ast.Spec{
+				&ast.ImportSpec{
+					Path: &ast.BasicLit{
+						Kind:  token.STRING,
+						Value: "\"martianoff/gala/std\"",
+					},
+				},
+			},
+		}
+		file.Decls = append([]ast.Decl{importDecl}, file.Decls...)
+	}
+
 	return fset, file, nil
 }
 
@@ -96,18 +158,36 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 		return nil, err
 	}
 
-	// val x = expr  =>  var x = expr (Go doesn't have immutable val at top level easily)
-	// Actually, for top level, 'var' is appropriate.
+	t.needsStdImport = true
+	t.addVal(name)
+
+	// Wrap value: std.NewImmutable(expr)
+	wrappedValue := &ast.CallExpr{
+		Fun: &ast.SelectorExpr{
+			X:   ast.NewIdent("std"),
+			Sel: ast.NewIdent("NewImmutable"),
+		},
+		Args: []ast.Expr{expr},
+	}
+
 	spec := &ast.ValueSpec{
 		Names:  []*ast.Ident{ast.NewIdent(name)},
-		Values: []ast.Expr{expr},
+		Values: []ast.Expr{wrappedValue},
 	}
+
 	if ctx.Type_() != nil {
 		typeExpr, err := t.transformType(ctx.Type_())
 		if err != nil {
 			return nil, err
 		}
-		spec.Type = typeExpr
+		// Change type to std.Immutable[typeExpr]
+		spec.Type = &ast.IndexExpr{
+			X: &ast.SelectorExpr{
+				X:   ast.NewIdent("std"),
+				Sel: ast.NewIdent("Immutable"),
+			},
+			Index: typeExpr,
+		}
 	}
 
 	return &ast.GenDecl{
@@ -143,6 +223,8 @@ func (t *galaASTTransformer) transformVarDeclaration(ctx *grammar.VarDeclaration
 }
 
 func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionDeclarationContext) (ast.Decl, error) {
+	t.pushScope()
+	defer t.popScope()
 	name := ctx.Identifier().GetText()
 
 	// Signature
@@ -272,14 +354,30 @@ func (t *galaASTTransformer) transformParameter(ctx *grammar.ParameterContext) (
 	field := &ast.Field{
 		Names: []*ast.Ident{ast.NewIdent(name)},
 	}
+
+	isVal := ctx.VAL() != nil
+	if isVal {
+		t.addVal(name)
+	}
+
 	if ctx.Type_() != nil {
 		typ, err := t.transformType(ctx.Type_())
 		if err != nil {
 			return nil, err
 		}
-		field.Type = typ
+		if isVal {
+			t.needsStdImport = true
+			field.Type = &ast.IndexExpr{
+				X: &ast.SelectorExpr{
+					X:   ast.NewIdent("std"),
+					Sel: ast.NewIdent("Immutable"),
+				},
+				Index: typ,
+			}
+		} else {
+			field.Type = typ
+		}
 	}
-	// val/var are ignored in Go transpilation for now
 	return field, nil
 }
 
@@ -289,10 +387,26 @@ func (t *galaASTTransformer) transformStructField(ctx *grammar.StructFieldContex
 	if err != nil {
 		return nil, err
 	}
+
+	isVal := ctx.VAL() != nil
 	field := &ast.Field{
 		Names: []*ast.Ident{ast.NewIdent(name)},
-		Type:  typ,
 	}
+
+	if isVal {
+		t.needsStdImport = true
+		t.immutFields[name] = true
+		field.Type = &ast.IndexExpr{
+			X: &ast.SelectorExpr{
+				X:   ast.NewIdent("std"),
+				Sel: ast.NewIdent("Immutable"),
+			},
+			Index: typ,
+		}
+	} else {
+		field.Type = typ
+	}
+
 	if ctx.STRING() != nil {
 		field.Tag = &ast.BasicLit{Kind: token.STRING, Value: ctx.STRING().GetText()}
 	}
@@ -312,6 +426,8 @@ func (t *galaASTTransformer) transformTypeParameters(ctx *grammar.TypeParameters
 }
 
 func (t *galaASTTransformer) transformBlock(ctx *grammar.BlockContext) (*ast.BlockStmt, error) {
+	t.pushScope()
+	defer t.popScope()
 	block := &ast.BlockStmt{}
 	for _, stmtCtx := range ctx.AllStatement() {
 		stmt, err := t.transformStatement(stmtCtx.(*grammar.StatementContext))
@@ -426,10 +542,20 @@ func (t *galaASTTransformer) transformExpression(ctx grammar.IExpressionContext)
 			if err != nil {
 				return nil, err
 			}
-			return &ast.SelectorExpr{
+			selName := child3.(antlr.ParseTree).GetText()
+			selExpr := &ast.SelectorExpr{
 				X:   x,
-				Sel: ast.NewIdent(child3.(antlr.ParseTree).GetText()),
-			}, nil
+				Sel: ast.NewIdent(selName),
+			}
+			if t.immutFields[selName] {
+				return &ast.CallExpr{
+					Fun: &ast.SelectorExpr{
+						X:   selExpr,
+						Sel: ast.NewIdent("Get"),
+					},
+				}, nil
+			}
+			return selExpr, nil
 		}
 
 		if c2Text == "(" && child3.(antlr.ParseTree).GetText() == ")" {
@@ -580,7 +706,17 @@ func (t *galaASTTransformer) getUnaryToken(op string) token.Token {
 
 func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.Expr, error) {
 	if ctx.Identifier() != nil {
-		return ast.NewIdent(ctx.Identifier().GetText()), nil
+		name := ctx.Identifier().GetText()
+		ident := ast.NewIdent(name)
+		if t.isVal(name) {
+			return &ast.CallExpr{
+				Fun: &ast.SelectorExpr{
+					X:   ident,
+					Sel: ast.NewIdent("Get"),
+				},
+			}, nil
+		}
+		return ident, nil
 	}
 	if ctx.Literal() != nil {
 		return t.transformLiteral(ctx.Literal().(*grammar.LiteralContext))
@@ -647,6 +783,8 @@ func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, 
 }
 
 func (t *galaASTTransformer) transformLambda(ctx *grammar.LambdaExpressionContext) (ast.Expr, error) {
+	t.pushScope()
+	defer t.popScope()
 	paramsCtx := ctx.Parameters().(*grammar.ParametersContext)
 	fieldList := &ast.FieldList{}
 	if paramsCtx.ParameterList() != nil {

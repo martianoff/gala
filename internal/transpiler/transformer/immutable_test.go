@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestControlFlow(t *testing.T) {
+func TestImmutable(t *testing.T) {
 	p := transpiler.NewAntlrGalaParser()
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
@@ -22,36 +22,54 @@ func TestControlFlow(t *testing.T) {
 		expected string
 	}{
 		{
-			name: "Match expression",
-			input: `val res = x match {
-				case 1 => "one"
-				case 2 => "two"
-				case _ => "many"
-			}`,
-			expected: `package main
+			name: "val variable and usage",
+			input: `
+val x = 10
+val y = x + 1
+`,
+			expected: `
+package main
 
 import "martianoff/gala/std"
 
-var res = std.NewImmutable(func() any {
-	switch x {
-	case 1:
-		return "one"
-	case 2:
-		return "two"
-	default:
-		return "many"
-	}
-	return nil
-}())
+var x = std.NewImmutable(10)
+var y = std.NewImmutable(x.Get() + 1)
 `,
 		},
 		{
-			name:  "Top-level expression",
-			input: `println("hello")`,
-			expected: `package main
+			name: "val parameter usage",
+			input: `
+func f(val x int) int = x + 1
+`,
+			expected: `
+package main
 
-func init() {
-	println("hello")
+import "martianoff/gala/std"
+
+func f(x std.Immutable[int]) int {
+	return x.Get() + 1
+}
+`,
+		},
+		{
+			name: "val struct field and usage",
+			input: `
+type Config struct {
+	val ID string
+}
+func getID(c Config) string = c.ID
+`,
+			expected: `
+package main
+
+import "martianoff/gala/std"
+
+type Config struct {
+	ID std.Immutable[string]
+}
+
+func getID(c Config) string {
+	return c.ID.Get()
 }
 `,
 		},

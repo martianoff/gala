@@ -46,9 +46,11 @@ func square(x int) int {
 			input: `val f = (x int) => x * x`,
 			expected: `package main
 
-var f = func(x int) {
+import "martianoff/gala/std"
+
+var f = std.NewImmutable(func(x int) {
 	return x * x
-}
+})
 `,
 		},
 		{
@@ -56,12 +58,14 @@ var f = func(x int) {
 			input: `val res = if (c) 1 else 2`,
 			expected: `package main
 
-var res = func() any {
+import "martianoff/gala/std"
+
+var res = std.NewImmutable(func() any {
 	if c {
 		return 1
 	}
 	return 2
-}()
+}())
 `,
 		},
 	}

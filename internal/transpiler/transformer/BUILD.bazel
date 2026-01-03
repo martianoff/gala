@@ -18,6 +18,7 @@ go_test(
         "control_flow_test.go",
         "functions_test.go",
         "generics_test.go",
+        "immutable_test.go",
         "structs_test.go",
         "variables_test.go",
     ],
