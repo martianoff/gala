@@ -163,29 +163,6 @@ type Box[T any] struct {
 
 When GALA transpiles to Go, immutable values are wrapped in a `std.Immutable[T]` container to ensure safety and provide consistent semantics, especially for struct fields and global variables.
 
-## Examples
+## Further Reading
 
-### Complete Example
-```gala
-package main
-
-import "fmt"
-
-type Point struct {
-    X int
-    Y int
-}
-
-func moveX(p Point, delta int) Point = Point{
-    X: p.X + delta,
-    Y: p.Y,
-}
-
-func main() {
-    val p1 = Point{X: 10, Y: 20}
-    val p2 = moveX(p1, 5)
-    
-    val msg = if (p2.X > 10) "moved" else "static"
-    fmt.Println(msg, p2)
-}
-```
+- [Examples](examples.md) - More examples of GALA code.

@@ -78,3 +78,6 @@ bazel mod tidy
 
 ## 14. Strict rules
 - Do not modify code generated files internal/parser/grammar/*.go
+
+## 15. Documentation
+- When you make changes to the grammar or add new features, update the docs/GALA.MD file with corresponding changes.
