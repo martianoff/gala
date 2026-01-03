@@ -91,3 +91,6 @@ fabric.properties
 /.ijwb/
 /.aswb/
 /.clwb/
+
+# Generated files
+internal/parser/grammar/*.go

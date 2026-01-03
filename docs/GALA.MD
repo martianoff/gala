@@ -6,10 +6,16 @@ GALA (Go Alternative LAnguage) is a modern programming language that transpiles 
 
 GALA files use the `.gala` extension. Every file must start with a package declaration.
 
+GALA supports Go-style imports, including aliases and dot imports.
+
 ```gala
 package main
 
-import "fmt"
+import (
+    "fmt"
+    m "math"
+    . "net/http"
+)
 ```
 
 ## 2. Variable Declarations
@@ -162,6 +168,34 @@ type Box[T any] struct {
 ## 8. Immutability Under the Hood
 
 When GALA transpiles to Go, immutable values are wrapped in a `std.Immutable[T]` container to ensure safety and provide consistent semantics, especially for struct fields and global variables.
+
+## 9. GALA Packages
+
+GALA supports importing other GALA packages. Since GALA transpiles to Go, a GALA package is essentially a Go package after transpilation. To import a GALA package, you use its Go import path.
+
+**Example:**
+
+`mathlib/math.gala`
+```gala
+package mathlib
+
+func Add(a int, b int) int = a + b
+```
+
+`main.gala`
+```gala
+package main
+
+import (
+    "fmt"
+    "martianoff/gala/examples/mathlib"
+)
+
+func main() {
+    val sum = mathlib.Add(10, 20)
+    fmt.Println("Sum is", sum)
+}
+```
 
 ## Further Reading
 

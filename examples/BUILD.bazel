@@ -1,4 +1,11 @@
-load("//:gala.bzl", "gala_binary")
+load("//:gala.bzl", "gala_binary", "gala_library")
+
+gala_library(
+    name = "mathlib",
+    src = "mathlib/math.gala",
+    importpath = "martianoff/gala/examples/mathlib",
+    visibility = ["//visibility:public"],
+)
 
 gala_binary(
     name = "hello",
@@ -13,4 +20,15 @@ gala_binary(
 gala_binary(
     name = "complex",
     src = "complex.gala",
+)
+
+gala_binary(
+    name = "imports",
+    src = "imports.gala",
+)
+
+gala_binary(
+    name = "use_lib",
+    src = "use_lib.gala",
+    deps = [":mathlib"],
 )

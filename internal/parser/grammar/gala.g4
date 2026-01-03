@@ -23,7 +23,9 @@ declaration
     | simpleStatement
     ;
 
-importDeclaration: 'import' ( STRING | '(' STRING+ ')' );
+importDeclaration: 'import' ( importSpec | '(' importSpec* ')' );
+
+importSpec: ('.' | identifier)? STRING;
 
 typeDeclaration: 'type' identifier (typeParameters)? (structType | interfaceType | typeAlias);
 

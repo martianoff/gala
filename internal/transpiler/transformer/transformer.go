@@ -478,10 +478,22 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 func (t *galaASTTransformer) transformImportDeclaration(ctx *grammar.ImportDeclarationContext) (ast.Decl, error) {
 	// import "pkg"  or import ( "pkg1" "pkg2" )
 	var specs []ast.Spec
-	for _, s := range ctx.AllSTRING() {
-		specs = append(specs, &ast.ImportSpec{
-			Path: &ast.BasicLit{Kind: token.STRING, Value: s.GetText()},
-		})
+	for _, specCtx := range ctx.AllImportSpec() {
+		s := specCtx.(*grammar.ImportSpecContext)
+		importSpec := &ast.ImportSpec{
+			Path: &ast.BasicLit{Kind: token.STRING, Value: s.STRING().GetText()},
+		}
+		if s.Identifier() != nil {
+			importSpec.Name = ast.NewIdent(s.Identifier().GetText())
+		} else if s.GetChildCount() > 1 {
+			// Check for '.'
+			if dot := s.GetChild(0); dot != nil {
+				if terminal, ok := dot.(antlr.TerminalNode); ok && terminal.GetText() == "." {
+					importSpec.Name = ast.NewIdent(".")
+				}
+			}
+		}
+		specs = append(specs, importSpec)
 	}
 	return &ast.GenDecl{
 		Tok:   token.IMPORT,
