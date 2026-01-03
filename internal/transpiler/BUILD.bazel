@@ -1,0 +1,12 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "transpiler",
+    srcs = [
+        "parser.go",
+        "transpiler.go",
+    ],
+    importpath = "martianoff/gala/internal/transpiler",
+    visibility = ["//:__subpackages__"],
+    deps = ["@com_github_antlr4_go_antlr_v4//:antlr"],
+)

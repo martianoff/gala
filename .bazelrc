@@ -1,0 +1,5 @@
+# This tells Bazel how to interact with the version control system
+common --enable_bzlmod
+common --enable_workspace
+build --java_runtime_version=remotejdk_17 --enable_runfiles
+#startup --windows_enable_symlinks

@@ -1,0 +1,36 @@
+load("@rules_antlr//antlr:antlr4.bzl", "antlr")
+load("@rules_go//go:def.bzl", "go_library")
+
+antlr(
+    name = "gala_grammar",
+    srcs = ["gala.g4"],
+    language = "Go",
+    package = "grammar",
+)
+
+genrule(
+    name = "gala_grammar_go",
+    srcs = [":gala_grammar"],
+    outs = [
+        "gala_base_listener.go",
+        "gala_lexer.go",
+        "gala_listener.go",
+        "gala_parser.go",
+    ],
+    cmd = "cp $(SRCS)/grammar/*.go $(@D)/ && sed -i 's|github.com/antlr/antlr4/runtime/Go/antlr|github.com/antlr4-go/antlr/v4|g' $(@D)/*.go",
+)
+
+go_library(
+    name = "grammar",
+    srcs = [
+        "gala_base_listener.go",
+        "gala_lexer.go",
+        "gala_listener.go",
+        "gala_parser.go",
+    ],
+    importpath = "martianoff/gala/internal/parser/grammar",
+    visibility = ["//visibility:public"],
+    deps = ["@com_github_antlr4_go_antlr_v4//:antlr"],  # keep
+)
+
+exports_files(["gala.g4"])

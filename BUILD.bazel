@@ -1,0 +1,18 @@
+load("@gazelle//:def.bzl", "gazelle")
+
+# gazelle:prefix martianoff/gala
+gazelle(
+    name = "gazelle",
+    args = [],
+)
+
+# gazelle:prefix martianoff/gala
+gazelle(
+    name = "gazelle-update-repos",
+    args = [
+        "-from_file=go.mod",
+        "-to_macro=deps.bzl%go_dependencies",
+        "-prune",
+    ],
+    command = "update-repos",
+)
