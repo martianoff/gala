@@ -1,11 +1,19 @@
-load("@rules_go//go:def.bzl", "go_library")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "std",
     srcs = [
         "immutable.go",
+        "types.go",
         "unapply.go",
     ],
     importpath = "martianoff/gala/std",
     visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "std_test",
+    srcs = ["unapply_test.go"],
+    embed = [":std"],
+    deps = ["@com_github_stretchr_testify//assert"],
 )

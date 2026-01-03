@@ -930,7 +930,7 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 			continue
 		}
 
-		clause, err := t.transformCaseClause(ccCtx)
+		clause, err := t.transformCaseClause(ccCtx, paramName)
 		if err != nil {
 			return nil, err
 		}
@@ -960,40 +960,7 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 			},
 			Body: &ast.BlockStmt{
 				List: append([]ast.Stmt{
-					&ast.IfStmt{
-						Init: &ast.AssignStmt{
-							Lhs: []ast.Expr{ast.NewIdent("u"), ast.NewIdent("ok")},
-							Tok: token.DEFINE,
-							Rhs: []ast.Expr{
-								&ast.TypeAssertExpr{
-									X: ast.NewIdent(paramName),
-									Type: &ast.SelectorExpr{
-										X:   ast.NewIdent("std"),
-										Sel: ast.NewIdent("Unapply"),
-									},
-								},
-							},
-						},
-						Cond: ast.NewIdent("ok"),
-						Body: &ast.BlockStmt{
-							List: []ast.Stmt{
-								&ast.AssignStmt{
-									Lhs: []ast.Expr{ast.NewIdent(paramName)},
-									Tok: token.ASSIGN,
-									Rhs: []ast.Expr{
-										&ast.CallExpr{
-											Fun: &ast.SelectorExpr{
-												X:   ast.NewIdent("u"),
-												Sel: ast.NewIdent("Unapply"),
-											},
-										},
-									},
-								},
-							},
-						},
-					},
 					&ast.SwitchStmt{
-						Tag: ast.NewIdent(paramName),
 						Body: &ast.BlockStmt{
 							List: clauses,
 						},
@@ -1005,7 +972,7 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 	}, nil
 }
 
-func (t *galaASTTransformer) transformCaseClause(ctx *grammar.CaseClauseContext) (ast.Stmt, error) {
+func (t *galaASTTransformer) transformCaseClause(ctx *grammar.CaseClauseContext, paramName string) (ast.Stmt, error) {
 	// 'case' expression '=>' (expression | block)
 	patExpr, err := t.transformExpression(ctx.Expression(0))
 	if err != nil {
@@ -1034,8 +1001,20 @@ func (t *galaASTTransformer) transformCaseClause(ctx *grammar.CaseClauseContext)
 		}, nil
 	}
 
+	// Use std.UnapplyCheck(paramName, patExpr)
+	check := &ast.CallExpr{
+		Fun: &ast.SelectorExpr{
+			X:   ast.NewIdent("std"),
+			Sel: ast.NewIdent("UnapplyCheck"),
+		},
+		Args: []ast.Expr{
+			ast.NewIdent(paramName),
+			patExpr,
+		},
+	}
+
 	return &ast.CaseClause{
-		List: []ast.Expr{patExpr},
+		List: []ast.Expr{check},
 		Body: body,
 	}, nil
 }

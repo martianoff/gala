@@ -34,13 +34,10 @@ func TestMatch(t *testing.T) {
 import "martianoff/gala/std"
 
 var res = std.NewImmutable(func(x any) any {
-	if u, ok := x.(std.Unapply); ok {
-		x = u.Unapply()
-	}
-	switch x {
-	case 1:
+	switch {
+	case std.UnapplyCheck(x, 1):
 		return "one"
-	case 2:
+	case std.UnapplyCheck(x, 2):
 		return "two"
 	}
 	return "many"
@@ -60,11 +57,8 @@ import "martianoff/gala/std"
 
 var x = std.NewImmutable(10)
 var res = std.NewImmutable(func(x any) any {
-	if u, ok := x.(std.Unapply); ok {
-		x = u.Unapply()
-	}
-	switch x {
-	case 10:
+	switch {
+	case std.UnapplyCheck(x, 10):
 		return x
 	}
 	return 0
@@ -82,11 +76,8 @@ var res = std.NewImmutable(func(x any) any {
 import "martianoff/gala/std"
 
 var res = std.NewImmutable(func(x any) any {
-	if u, ok := x.(std.Unapply); ok {
-		x = u.Unapply()
-	}
-	switch x {
-	case "unapplied":
+	switch {
+	case std.UnapplyCheck(x, "unapplied"):
 		return "success"
 	}
 	return "fail"

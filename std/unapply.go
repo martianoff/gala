@@ -1,5 +1,5 @@
 package std
 
 type Unapply interface {
-	Unapply() any
+	Unapply(v any) bool
 }
