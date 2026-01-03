@@ -30,8 +30,8 @@ struct Point(x int, y int)`,
 import "martianoff/gala/std"
 
 type Point struct {
-	x int
-	y int
+	x std.Immutable[int]
+	y std.Immutable[int]
 }
 
 func (s Point) Copy() Point {
@@ -48,8 +48,6 @@ func (s Point) Equal(other Point) bool {
 struct Empty()`,
 			expected: `package main
 
-import "martianoff/gala/std"
-
 type Empty struct {
 }
 
@@ -58,6 +56,54 @@ func (s Empty) Copy() Empty {
 }
 func (s Empty) Equal(other Empty) bool {
 	return true
+}
+`,
+		},
+		{
+			name: "Struct with mixed val and var fields",
+			input: `package main
+type Mixed struct {
+	val Name string
+	var Age  int
+}`,
+			expected: `package main
+
+import "martianoff/gala/std"
+
+type Mixed struct {
+	Name std.Immutable[string]
+	Age  int
+}
+
+func (s Mixed) Copy() Mixed {
+	return Mixed{Name: std.Copy(s.Name), Age: std.Copy(s.Age)}
+}
+func (s Mixed) Equal(other Mixed) bool {
+	return std.Equal(s.Name, other.Name) && std.Equal(s.Age, other.Age)
+}
+`,
+		},
+		{
+			name: "Struct with only var fields",
+			input: `package main
+type Mutable struct {
+	var X int
+	var Y int
+}`,
+			expected: `package main
+
+import "martianoff/gala/std"
+
+type Mutable struct {
+	X int
+	Y int
+}
+
+func (s Mutable) Copy() Mutable {
+	return Mutable{X: std.Copy(s.X), Y: std.Copy(s.Y)}
+}
+func (s Mutable) Equal(other Mutable) bool {
+	return std.Equal(s.X, other.X) && std.Equal(s.Y, other.Y)
 }
 `,
 		},
