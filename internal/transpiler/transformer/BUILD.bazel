@@ -19,6 +19,7 @@ go_test(
         "functions_test.go",
         "generics_test.go",
         "immutable_test.go",
+        "match_test.go",
         "structs_test.go",
         "variables_test.go",
     ],

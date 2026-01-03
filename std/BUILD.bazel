@@ -2,7 +2,10 @@ load("@rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "std",
-    srcs = ["immutable.go"],
+    srcs = [
+        "immutable.go",
+        "unapply.go",
+    ],
     importpath = "martianoff/gala/std",
     visibility = ["//visibility:public"],
 )

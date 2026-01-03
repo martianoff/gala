@@ -908,6 +908,7 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 		clauses = append(clauses, clause)
 	}
 
+	t.needsStdImport = true
 	// Transpile to IIFE: func(obj any) any { switch obj { clauses... }; return nil }(expr)
 	return &ast.CallExpr{
 		Fun: &ast.FuncLit{
@@ -926,6 +927,38 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 			},
 			Body: &ast.BlockStmt{
 				List: []ast.Stmt{
+					&ast.IfStmt{
+						Init: &ast.AssignStmt{
+							Lhs: []ast.Expr{ast.NewIdent("u"), ast.NewIdent("ok")},
+							Tok: token.DEFINE,
+							Rhs: []ast.Expr{
+								&ast.TypeAssertExpr{
+									X: ast.NewIdent(paramName),
+									Type: &ast.SelectorExpr{
+										X:   ast.NewIdent("std"),
+										Sel: ast.NewIdent("Unapply"),
+									},
+								},
+							},
+						},
+						Cond: ast.NewIdent("ok"),
+						Body: &ast.BlockStmt{
+							List: []ast.Stmt{
+								&ast.AssignStmt{
+									Lhs: []ast.Expr{ast.NewIdent(paramName)},
+									Tok: token.ASSIGN,
+									Rhs: []ast.Expr{
+										&ast.CallExpr{
+											Fun: &ast.SelectorExpr{
+												X:   ast.NewIdent("u"),
+												Sel: ast.NewIdent("Unapply"),
+											},
+										},
+									},
+								},
+							},
+						},
+					},
 					&ast.SwitchStmt{
 						Tag: ast.NewIdent(paramName),
 						Body: &ast.BlockStmt{

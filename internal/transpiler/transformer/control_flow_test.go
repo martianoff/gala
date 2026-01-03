@@ -22,50 +22,6 @@ func TestControlFlow(t *testing.T) {
 		expected string
 	}{
 		{
-			name: "Match expression",
-			input: `val res = x match {
-				case 1 => "one"
-				case 2 => "two"
-				case _ => "many"
-			}`,
-			expected: `package main
-
-import "martianoff/gala/std"
-
-var res = std.NewImmutable(func(x any) any {
-	switch x {
-	case 1:
-		return "one"
-	case 2:
-		return "two"
-	default:
-		return "many"
-	}
-	return nil
-}(x))
-`,
-		},
-		{
-			name: "Match expression with shadowing",
-			input: `val x = 10
-val res = x match {
-	case 10 => x
-}`,
-			expected: `package main
-
-import "martianoff/gala/std"
-
-var x = std.NewImmutable(10)
-var res = std.NewImmutable(func(x any) any {
-	switch x {
-	case 10:
-		return x
-	}
-	return nil
-}(x.Get()))
-`,
-		},
-		{
 			name:  "Top-level expression",
 			input: `println("hello")`,
 			expected: `package main
