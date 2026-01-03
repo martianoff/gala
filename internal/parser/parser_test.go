@@ -76,10 +76,10 @@ type Person struct {
 			wantErr: false,
 		},
 		{
-			name: "Everything is a function (expression statement)",
+			name: "Expression statement (not allowed at top level)",
 			input: `package main
 1 + 1`,
-			wantErr: false,
+			wantErr: true,
 		},
 		{
 			name: "Struct with mutable and immutable fields",

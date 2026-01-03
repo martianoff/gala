@@ -7,17 +7,22 @@ val y = 20
 
 func add(a int, b int) int = a + b
 
-val res = add(x, y)
-println("Result of add:", res)
+func init() {
+    val res = add(x, y)
+    println("Result of add:", res)
 
-val status = x match {
-    case 10 => "is ten"
-    case _ => "is not ten"
+    val status = x match {
+        case 10 => "is ten"
+        case _ => "is not ten"
+    }
+    println("Status of x:", fmt.Sprintf("%s", status))
+
+    if (res > 25) {
+        println("Result is greater than 25")
+    } else {
+        println("Result is less than or equal to 25")
+    }
 }
-println("Status of x:", fmt.Sprintf("%s", status))
 
-if (res > 25) {
-    println("Result is greater than 25")
-} else {
-    println("Result is less than or equal to 25")
+func main() {
 }

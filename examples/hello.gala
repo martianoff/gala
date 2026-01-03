@@ -1,4 +1,10 @@
 package main
 
 val message = "Hello, GALA!"
-println(message)
+func test() {
+    println(message)
+}
+
+func main() {
+    test()
+}

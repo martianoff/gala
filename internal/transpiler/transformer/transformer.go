@@ -91,35 +91,14 @@ func (t *galaASTTransformer) Transform(tree antlr.Tree) (*token.FileSet, *ast.Fi
 		file.Decls = append(file.Decls, decl)
 	}
 
-	var initBody []ast.Stmt
-	var hasMain bool
-
 	for _, topDeclCtx := range sourceFile.AllTopLevelDeclaration() {
-		decl, stmt, err := t.transformTopLevelDeclaration(topDeclCtx)
+		decl, err := t.transformTopLevelDeclaration(topDeclCtx)
 		if err != nil {
 			return nil, nil, err
 		}
 		if decl != nil {
-			if funcDecl, ok := decl.(*ast.FuncDecl); ok && funcDecl.Name.Name == "main" {
-				hasMain = true
-			}
 			file.Decls = append(file.Decls, decl)
 		}
-		if stmt != nil {
-			initBody = append(initBody, stmt)
-		}
-	}
-
-	if len(initBody) > 0 {
-		funcName := "main"
-		if hasMain {
-			funcName = "init"
-		}
-		file.Decls = append(file.Decls, &ast.FuncDecl{
-			Name: ast.NewIdent(funcName),
-			Type: &ast.FuncType{Params: &ast.FieldList{}},
-			Body: &ast.BlockStmt{List: initBody},
-		})
 	}
 
 	if t.needsStdImport {
@@ -141,36 +120,20 @@ func (t *galaASTTransformer) Transform(tree antlr.Tree) (*token.FileSet, *ast.Fi
 	return fset, file, nil
 }
 
-func (t *galaASTTransformer) transformTopLevelDeclaration(ctx grammar.ITopLevelDeclarationContext) (ast.Decl, ast.Stmt, error) {
+func (t *galaASTTransformer) transformTopLevelDeclaration(ctx grammar.ITopLevelDeclarationContext) (ast.Decl, error) {
 	if valCtx := ctx.ValDeclaration(); valCtx != nil {
-		decl, err := t.transformValDeclaration(valCtx.(*grammar.ValDeclarationContext))
-		return decl, nil, err
+		return t.transformValDeclaration(valCtx.(*grammar.ValDeclarationContext))
 	}
 	if varCtx := ctx.VarDeclaration(); varCtx != nil {
-		decl, err := t.transformVarDeclaration(varCtx.(*grammar.VarDeclarationContext))
-		return decl, nil, err
+		return t.transformVarDeclaration(varCtx.(*grammar.VarDeclarationContext))
 	}
 	if funcCtx := ctx.FunctionDeclaration(); funcCtx != nil {
-		decl, err := t.transformFunctionDeclaration(funcCtx.(*grammar.FunctionDeclarationContext))
-		return decl, nil, err
+		return t.transformFunctionDeclaration(funcCtx.(*grammar.FunctionDeclarationContext))
 	}
 	if typeCtx := ctx.TypeDeclaration(); typeCtx != nil {
-		decl, err := t.transformTypeDeclaration(typeCtx.(*grammar.TypeDeclarationContext))
-		return decl, nil, err
+		return t.transformTypeDeclaration(typeCtx.(*grammar.TypeDeclarationContext))
 	}
-	if ifCtx := ctx.IfStatement(); ifCtx != nil {
-		stmt, err := t.transformIfStatement(ifCtx.(*grammar.IfStatementContext))
-		return nil, stmt, err
-	}
-	if forCtx := ctx.ForStatement(); forCtx != nil {
-		// TODO: implement
-		return nil, nil, fmt.Errorf("for statement not implemented yet")
-	}
-	if exprCtx := ctx.ExpressionStatement(); exprCtx != nil {
-		stmt, err := t.transformExpressionStatement(exprCtx.(*grammar.ExpressionStatementContext))
-		return nil, stmt, err
-	}
-	return nil, nil, nil
+	return nil, nil
 }
 
 func (t *galaASTTransformer) transformDeclaration(ctx grammar.IDeclarationContext) (ast.Decl, ast.Stmt, error) {

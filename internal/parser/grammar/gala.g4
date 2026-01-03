@@ -10,9 +10,6 @@ topLevelDeclaration
     | varDeclaration
     | functionDeclaration
     | typeDeclaration
-    | ifStatement
-    | forStatement
-    | expressionStatement
     ;
 
 declaration

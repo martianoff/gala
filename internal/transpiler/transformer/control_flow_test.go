@@ -22,13 +22,23 @@ func TestControlFlow(t *testing.T) {
 		expected string
 	}{
 		{
-			name: "Top-level expression",
+			name: "If statement in function",
 			input: `package main
-println("hello")`,
+func check(x int) string {
+	if x > 0 {
+		return "positive"
+	} else {
+		return "non-positive"
+	}
+}`,
 			expected: `package main
 
-func main() {
-	println("hello")
+func check(x int) string {
+	if x > 0 {
+		return "positive"
+	} else {
+		return "non-positive"
+	}
 }
 `,
 		},
