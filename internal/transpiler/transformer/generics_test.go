@@ -24,6 +24,7 @@ func TestGenerics(t *testing.T) {
 		{
 			name: "Generic function",
 			input: `package main
+
 func identity[T any](x T) T { return x }`,
 			expected: `package main
 
@@ -35,6 +36,7 @@ func identity[T any](x T) T {
 		{
 			name: "Generic struct",
 			input: `package main
+
 type Box[T any] struct {
 	Value T
 }`,
@@ -57,6 +59,7 @@ func (s Box[T]) Equal(other Box[T]) bool {
 		{
 			name: "Generic struct field usage",
 			input: `package main
+
 type Box[T any] struct {
 	Value T
 }
@@ -83,6 +86,7 @@ func getValue[T any](b Box[T]) T {
 		{
 			name: "Generic struct with immutable field",
 			input: `package main
+
 type Box[T any] struct {
 	val Value T
 }`,
@@ -105,6 +109,7 @@ func (s Box[T]) Equal(other Box[T]) bool {
 		{
 			name: "Generic struct with mutable field",
 			input: `package main
+
 type Box[T any] struct {
 	var Value T
 }`,

@@ -24,6 +24,7 @@ func TestEqualMethod(t *testing.T) {
 		{
 			name: "Struct with basic fields",
 			input: `package main
+
 struct Point(x int, y int)`,
 			expected: `package main
 
@@ -45,6 +46,7 @@ func (s Point) Equal(other Point) bool {
 		{
 			name: "Empty struct",
 			input: `package main
+
 struct Empty()`,
 			expected: `package main
 
@@ -62,6 +64,7 @@ func (s Empty) Equal(other Empty) bool {
 		{
 			name: "Struct with mixed val and var fields",
 			input: `package main
+
 type Mixed struct {
 	val Name string
 	var Age  int
@@ -86,6 +89,7 @@ func (s Mixed) Equal(other Mixed) bool {
 		{
 			name: "Struct with only var fields",
 			input: `package main
+
 type Mutable struct {
 	var X int
 	var Y int

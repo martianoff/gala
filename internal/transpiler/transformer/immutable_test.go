@@ -24,6 +24,7 @@ func TestImmutable(t *testing.T) {
 		{
 			name: "val variable and usage",
 			input: `package main
+
 val x = 10
 val y = x + 1
 `,
@@ -38,6 +39,7 @@ var y = std.NewImmutable(x.Get() + 1)
 		{
 			name: "val parameter usage",
 			input: `package main
+
 func f(val x int) int = x + 1`,
 			expected: `package main
 
@@ -51,6 +53,7 @@ func f(x std.Immutable[int]) int {
 		{
 			name: "val struct field and usage",
 			input: `package main
+
 type Config struct {
 	val ID string
 }

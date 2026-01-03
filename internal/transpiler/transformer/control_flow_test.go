@@ -24,6 +24,7 @@ func TestControlFlow(t *testing.T) {
 		{
 			name: "If statement in function",
 			input: `package main
+
 func check(x int) string {
 	if x > 0 {
 		return "positive"

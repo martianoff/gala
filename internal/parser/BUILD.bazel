@@ -14,7 +14,10 @@ go_library(
 
 go_test(
     name = "parser_test",
-    srcs = ["parser_test.go"],
+    srcs = [
+        "grammar_test.go",
+        "parser_test.go",
+    ],
     embed = [":parser"],
     deps = ["@com_github_stretchr_testify//assert"],
 )

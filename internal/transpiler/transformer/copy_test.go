@@ -24,6 +24,7 @@ func TestCopyOverrides(t *testing.T) {
 		{
 			name: "Struct Copy with one override",
 			input: `package main
+
 struct Person(val name string, age int)
 val p = Person("Alice", 30)
 val p2 = p.Copy(age = 31)`,
@@ -50,6 +51,7 @@ var p2 = std.NewImmutable(Person{name: std.Copy(p.Get().name), age: std.NewImmut
 		{
 			name: "Struct Copy with multiple overrides",
 			input: `package main
+
 struct Person(name string, age int)
 val p = Person("Alice", 30)
 val p2 = p.Copy(age = 31, name = "Bob")`,
@@ -76,6 +78,7 @@ var p2 = std.NewImmutable(Person{name: std.NewImmutable("Bob"), age: std.NewImmu
 		{
 			name: "Copy without overrides",
 			input: `package main
+
 struct Person(name string)
 val p = Person("Alice")
 val p2 = p.Copy()`,
@@ -123,6 +126,7 @@ func TestCopyOverridesErrors(t *testing.T) {
 		{
 			name: "Override on non-struct type",
 			input: `package main
+
 val x = 1
 val y = x.Copy(value = 2)`,
 			expectedError: "cannot use Copy overrides: type of receiver unknown",
@@ -130,6 +134,7 @@ val y = x.Copy(value = 2)`,
 		{
 			name: "Override non-existent field",
 			input: `package main
+
 struct Person(name string)
 val p = Person("Alice")
 val p2 = p.Copy(age = 30)`,
@@ -138,6 +143,7 @@ val p2 = p.Copy(age = 30)`,
 		{
 			name: "Unnamed override",
 			input: `package main
+
 struct Person(name string)
 val p = Person("Alice")
 val p2 = p.Copy("Bob")`,

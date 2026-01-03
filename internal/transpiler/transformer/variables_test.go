@@ -24,6 +24,7 @@ func TestVariables(t *testing.T) {
 		{
 			name: "val declaration",
 			input: `package main
+
 val x = 10`,
 			expected: `package main
 
@@ -35,6 +36,7 @@ var x = std.NewImmutable(10)
 		{
 			name: "var declaration",
 			input: `package main
+
 var y = 20`,
 			expected: `package main
 
@@ -44,6 +46,7 @@ var y = 20
 		{
 			name: "val with type",
 			input: `package main
+
 val s string = "hello"`,
 			expected: `package main
 

@@ -25,6 +25,7 @@ func TestAssignment(t *testing.T) {
 		{
 			name: "assign to var",
 			input: `package main
+
 func main() {
     var x = 10
     x = 20
@@ -39,6 +40,7 @@ func main() {
 		{
 			name: "assign to val (should fail)",
 			input: `package main
+
 func main() {
     val x = 10
     x = 20
@@ -48,12 +50,14 @@ func main() {
 		{
 			name: "val declaration without value (should fail)",
 			input: `package main
+
 val x int`,
 			expectError: true,
 		},
 		{
 			name: "var declaration without value",
 			input: `package main
+
 var x int`,
 			expectError: false,
 			expected: `package main

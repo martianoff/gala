@@ -25,6 +25,7 @@ func TestMatch(t *testing.T) {
 		{
 			name: "Match expression",
 			input: `package main
+
 val res = x match {
 	case 1 => "one"
 	case 2 => "two"
@@ -48,6 +49,7 @@ var res = std.NewImmutable(func(x any) any {
 		{
 			name: "Match expression with shadowing",
 			input: `package main
+
 val x = 10
 val res = x match {
 	case 10 => x
@@ -70,6 +72,7 @@ var res = std.NewImmutable(func(x any) any {
 		{
 			name: "Match expression with Unapply",
 			input: `package main
+
 val res = x match {
 	case "unapplied" => "success"
 	case _ => "fail"

@@ -24,6 +24,7 @@ func TestDefaultImmutability(t *testing.T) {
 		{
 			name: "Static field immutable by default",
 			input: `package main
+
 type Person struct {
 	Name string
 }`,
@@ -46,6 +47,7 @@ func (s Person) Equal(other Person) bool {
 		{
 			name: "Generic field immutable by default",
 			input: `package main
+
 type Box[T any] struct {
 	Value T
 }`,
@@ -68,6 +70,7 @@ func (s Box[T]) Equal(other Box[T]) bool {
 		{
 			name: "Explicit var field stays mutable",
 			input: `package main
+
 type Counter struct {
 	var Count int
 }`,

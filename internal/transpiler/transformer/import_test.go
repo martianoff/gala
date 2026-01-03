@@ -25,6 +25,7 @@ func TestImports(t *testing.T) {
 		{
 			name: "single import",
 			input: `package main
+
 import "fmt"`,
 			expected: `package main
 
@@ -34,6 +35,7 @@ import "fmt"
 		{
 			name: "multiple imports",
 			input: `package main
+
 import (
     "fmt"
     "math"
@@ -49,6 +51,7 @@ import (
 		{
 			name: "aliased import",
 			input: `package main
+
 import f "fmt"`,
 			expected: `package main
 
@@ -58,6 +61,7 @@ import f "fmt"
 		{
 			name: "dot import",
 			input: `package main
+
 import . "math"`,
 			expected: `package main
 
@@ -67,6 +71,7 @@ import . "math"
 		{
 			name: "mixed imports in block",
 			input: `package main
+
 import (
     "fmt"
     m "math"

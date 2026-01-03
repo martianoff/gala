@@ -24,6 +24,7 @@ func TestStructs(t *testing.T) {
 		{
 			name: "Simple struct",
 			input: `package main
+
 type Person struct {
 	Name string
 	Age  int
@@ -48,6 +49,7 @@ func (s Person) Equal(other Person) bool {
 		{
 			name: "Struct with val and var fields",
 			input: `package main
+
 type Config struct {
 	val ID string
 	var Count int
@@ -72,6 +74,7 @@ func (s Config) Equal(other Config) bool {
 		{
 			name: "Struct with tags",
 			input: `package main
+
 type User struct {
 	Name string "json:\"name\""
 }`,
@@ -94,6 +97,7 @@ func (s User) Equal(other User) bool {
 		{
 			name: "Shorthand struct with named arguments",
 			input: `package main
+
 struct Person(name string, age int)
 val p = Person(age = 30, name = "Alice")`,
 			expected: `package main

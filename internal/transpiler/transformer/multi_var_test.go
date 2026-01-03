@@ -24,6 +24,7 @@ func TestMultiVariables(t *testing.T) {
 		{
 			name: "multi val declaration",
 			input: `package main
+
 val a, b = 1, 2`,
 			expected: `package main
 
@@ -35,6 +36,7 @@ var a, b = std.NewImmutable(1), std.NewImmutable(2)
 		{
 			name: "multi var declaration",
 			input: `package main
+
 var x, y int = 10, 20`,
 			expected: `package main
 
@@ -44,6 +46,7 @@ var x, y int = 10, 20
 		{
 			name: "short var decl is immutable",
 			input: `package main
+
 func main() {
     z := 30
     // z = 40 // this would be an error if checked by transpiler
@@ -60,6 +63,7 @@ func main() {
 		{
 			name: "multi short var decl is immutable",
 			input: `package main
+
 func main() {
     a, b := 1, 2
 }`,
@@ -90,6 +94,7 @@ func TestImmutableAssignmentError(t *testing.T) {
 	trans := transpiler.NewGalaToGoTranspiler(p, tr, g)
 
 	input := `package main
+
 func main() {
     x := 10
     x = 20
