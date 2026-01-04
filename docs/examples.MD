@@ -42,6 +42,24 @@ func main() {
 }
 ```
 
+## Generic Methods Example
+
+```gala
+package main
+
+import "fmt"
+
+type Box[T any] struct { Value T }
+
+func (b Box[T]) Transform[U any](f func(T) U) Box[U] = Box[U](Value = f(b.Value))
+
+func main() {
+    val b = Box[int](Value = 10)
+    val s = b.Transform((i int) => "Value is " + fmt.Sprintf("%d", i))
+    fmt.Println(s.Value)
+}
+```
+
 ## More Examples
 
 You can find more examples in the `examples/` directory of the project:

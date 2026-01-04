@@ -43,7 +43,9 @@ methodSpec: identifier signature;
 valDeclaration: 'val' identifierList (type)? '=' expressionList;
 varDeclaration: 'var' identifierList (type)? ('=' expressionList)?;
 
-functionDeclaration: 'func' identifier (typeParameters)? signature (block | '=' expression);
+functionDeclaration: 'func' (receiver)? identifier (typeParameters)? signature (block | '=' expression);
+
+receiver: '(' (VAL | VAR)? identifier type ')';
 
 signature: parameters (type)?;
 

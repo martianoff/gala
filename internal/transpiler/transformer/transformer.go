@@ -24,6 +24,7 @@ type galaASTTransformer struct {
 	needsStdImport    bool
 	activeTypeParams  map[string]bool
 	structFields      map[string][]string
+	genericMethods    map[string]map[string]bool // receiverType -> methodName -> isGeneric
 }
 
 func (t *galaASTTransformer) pushScope() {
@@ -204,6 +205,7 @@ func NewGalaASTTransformer() transpiler.ASTTransformer {
 		structImmutFields: make(map[string][]bool),
 		activeTypeParams:  make(map[string]bool),
 		structFields:      make(map[string][]string),
+		genericMethods:    make(map[string]map[string]bool),
 	}
 }
 
@@ -214,6 +216,7 @@ func (t *galaASTTransformer) Transform(tree antlr.Tree) (*token.FileSet, *ast.Fi
 	t.structImmutFields = make(map[string][]bool)
 	t.activeTypeParams = make(map[string]bool)
 	t.structFields = make(map[string][]string)
+	t.genericMethods = make(map[string]map[string]bool)
 	t.pushScope() // Global scope
 	defer t.popScope()
 
@@ -499,14 +502,10 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 		typeName := ""
 		if ctx.Type_() != nil {
 			typeExpr, _ := t.transformType(ctx.Type_())
-			if id, ok := typeExpr.(*ast.Ident); ok {
-				typeName = id.Name
-			}
+			typeName = t.getBaseTypeName(typeExpr)
 		} else if len(rhsExprs) == len(namesCtx) {
 			if lit, ok := rhsExprs[i].(*ast.CompositeLit); ok {
-				if id, ok := lit.Type.(*ast.Ident); ok {
-					typeName = id.Name
-				}
+				typeName = t.getBaseTypeName(lit.Type)
 			}
 		}
 
@@ -567,9 +566,7 @@ func (t *galaASTTransformer) transformVarDeclaration(ctx *grammar.VarDeclaration
 		if ctx.Type_() != nil {
 			// Try to get type name from transformed type
 			typeExpr, _ := t.transformType(ctx.Type_())
-			if id, ok := typeExpr.(*ast.Ident); ok {
-				typeName = id.Name
-			}
+			typeName = t.getBaseTypeName(typeExpr)
 		}
 		t.addVar(name, typeName)
 		idents = append(idents, ast.NewIdent(name))
@@ -615,6 +612,61 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 	defer t.popScope()
 	name := ctx.Identifier().GetText()
 
+	// Receiver
+	var receiver *ast.FieldList
+	var receiverTypeName string
+	if ctx.Receiver() != nil {
+		recvCtx := ctx.Receiver().(*grammar.ReceiverContext)
+		recvName := recvCtx.Identifier().GetText()
+		recvTypeExpr, err := t.transformType(recvCtx.Type_())
+		if err != nil {
+			return nil, err
+		}
+
+		receiverTypeName = t.getBaseTypeName(recvTypeExpr)
+
+		isVal := recvCtx.VAL() != nil
+		if isVal {
+			t.addVal(recvName, "")
+			t.needsStdImport = true
+			recvTypeExpr = &ast.IndexExpr{
+				X: &ast.SelectorExpr{
+					X:   ast.NewIdent("std"),
+					Sel: ast.NewIdent("Immutable"),
+				},
+				Index: recvTypeExpr,
+			}
+		} else {
+			t.addVar(recvName, "")
+		}
+
+		receiver = &ast.FieldList{
+			List: []*ast.Field{
+				{
+					Names: []*ast.Ident{ast.NewIdent(recvName)},
+					Type:  recvTypeExpr,
+				},
+			},
+		}
+
+		if t.genericMethods[receiverTypeName] == nil {
+			t.genericMethods[receiverTypeName] = make(map[string]bool)
+		}
+		if ctx.TypeParameters() != nil {
+			t.genericMethods[receiverTypeName][name] = true
+		}
+	}
+
+	// Type Parameters
+	var typeParams *ast.FieldList
+	if ctx.TypeParameters() != nil {
+		tp, err := t.transformTypeParameters(ctx.TypeParameters().(*grammar.TypeParametersContext))
+		if err != nil {
+			return nil, err
+		}
+		typeParams = tp
+	}
+
 	// Signature
 	sigCtx := ctx.Signature().(*grammar.SignatureContext)
 	paramsCtx := sigCtx.Parameters().(*grammar.ParametersContext)
@@ -630,6 +682,33 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		}
 	}
 
+	if receiver != nil && typeParams != nil {
+		// Generic method: transform to standalone function
+		name = receiverTypeName + "_" + name
+		// 1. Add receiver as first parameter
+		fieldList.List = append([]*ast.Field{receiver.List[0]}, fieldList.List...)
+
+		// 2. Extract type parameters from receiver type and add to typeParams
+		recvTypeParams := t.extractTypeParams(receiver.List[0].Type)
+		if len(recvTypeParams) > 0 {
+			// Check for duplicates
+			for _, rtp := range recvTypeParams {
+				exists := false
+				for _, tp := range typeParams.List {
+					if tp.Names[0].Name == rtp.Names[0].Name {
+						exists = true
+						break
+					}
+				}
+				if !exists {
+					typeParams.List = append([]*ast.Field{rtp}, typeParams.List...)
+				}
+			}
+		}
+
+		receiver = nil // No longer a method
+	}
+
 	var results *ast.FieldList
 	if sigCtx.Type_() != nil {
 		retType, err := t.transformType(sigCtx.Type_())
@@ -642,18 +721,9 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 	}
 
 	funcType := &ast.FuncType{
-		Params:  fieldList,
-		Results: results,
-	}
-
-	// Generics
-	if ctx.TypeParameters() != nil {
-		// Go AST for generics uses TypeParams field in FuncDecl
-		tParams, err := t.transformTypeParameters(ctx.TypeParameters().(*grammar.TypeParametersContext))
-		if err != nil {
-			return nil, err
-		}
-		funcType.TypeParams = tParams
+		Params:     fieldList,
+		Results:    results,
+		TypeParams: typeParams,
 	}
 
 	var body *ast.BlockStmt
@@ -677,6 +747,7 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 	}
 
 	return &ast.FuncDecl{
+		Recv: receiver,
 		Name: ast.NewIdent(name),
 		Type: funcType,
 		Body: body,
@@ -1148,33 +1219,72 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 				return t.transformCopyCall(sel.X, argListCtx)
 			}
 
-			// Handle monadic method calls: o.Map(f) -> std.Map(o, f)
+			// Handle generic method calls or monadic methods: o.Map[T](f) -> Map[T](o, f)
+			var receiver ast.Expr
+			var method string
+			var typeArgs []ast.Expr
+
 			if sel, ok := x.(*ast.SelectorExpr); ok {
-				monadicMethods := map[string]bool{
-					"Map":     true,
-					"FlatMap": true,
-					"Filter":  true,
-					"ForEach": true,
+				receiver = sel.X
+				method = sel.Sel.Name
+			} else if idx, ok := x.(*ast.IndexExpr); ok {
+				if sel, ok := idx.X.(*ast.SelectorExpr); ok {
+					receiver = sel.X
+					method = sel.Sel.Name
+					typeArgs = []ast.Expr{idx.Index}
 				}
-				if monadicMethods[sel.Sel.Name] {
-					t.needsStdImport = true
-					var mArgs []ast.Expr
-					for _, argCtx := range argListCtx.AllArgument() {
-						arg := argCtx.(*grammar.ArgumentContext)
-						expr, err := t.transformExpression(arg.Expression())
-						if err != nil {
-							return nil, err
-						}
-						mArgs = append(mArgs, expr)
+			} else if idxList, ok := x.(*ast.IndexListExpr); ok {
+				if sel, ok := idxList.X.(*ast.SelectorExpr); ok {
+					receiver = sel.X
+					method = sel.Sel.Name
+					typeArgs = idxList.Indices
+				}
+			}
+
+			monadicMethods := map[string]bool{
+				"Map":     true,
+				"FlatMap": true,
+				"Filter":  true,
+				"ForEach": true,
+			}
+
+			recvTypeName := t.getExprTypeName(receiver)
+			isGenericMethod := len(typeArgs) > 0 || (recvTypeName != "" && t.genericMethods[recvTypeName] != nil && t.genericMethods[recvTypeName][method])
+
+			if receiver != nil && (isGenericMethod || monadicMethods[method]) {
+				var mArgs []ast.Expr
+				for _, argCtx := range argListCtx.AllArgument() {
+					arg := argCtx.(*grammar.ArgumentContext)
+					expr, err := t.transformExpression(arg.Expression())
+					if err != nil {
+						return nil, err
 					}
-					return &ast.CallExpr{
-						Fun: &ast.SelectorExpr{
-							X:   ast.NewIdent("std"),
-							Sel: ast.NewIdent(sel.Sel.Name),
-						},
-						Args: append([]ast.Expr{sel.X}, mArgs...),
-					}, nil
+					mArgs = append(mArgs, expr)
 				}
+
+				var fun ast.Expr = ast.NewIdent(method)
+				if monadicMethods[method] {
+					t.needsStdImport = true
+					fun = &ast.SelectorExpr{
+						X:   ast.NewIdent("std"),
+						Sel: ast.NewIdent(method),
+					}
+				} else if isGenericMethod {
+					if recvTypeName != "" {
+						fun = ast.NewIdent(recvTypeName + "_" + method)
+					}
+				}
+
+				if len(typeArgs) == 1 {
+					fun = &ast.IndexExpr{X: fun, Index: typeArgs[0]}
+				} else if len(typeArgs) > 1 {
+					fun = &ast.IndexListExpr{X: fun, Indices: typeArgs}
+				}
+
+				return &ast.CallExpr{
+					Fun:  fun,
+					Args: append([]ast.Expr{receiver}, mArgs...),
+				}, nil
 			}
 
 			for _, argCtx := range argListCtx.AllArgument() {
@@ -1199,9 +1309,26 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 	// Handle case where we have TypeName(...) which is a constructor call
 	// GALA doesn't seem to have a specific rule for constructor calls,
 	// but TypeName(...) should be transformed to TypeName{...} if it's a struct.
+	var typeName string
+	var typeExpr ast.Expr
 	if id, ok := x.(*ast.Ident); ok {
-		if fields, ok := t.structFields[id.Name]; ok {
-			immutFlags := t.structImmutFields[id.Name]
+		typeName = id.Name
+		typeExpr = id
+	} else if idx, ok := x.(*ast.IndexExpr); ok {
+		if id, ok := idx.X.(*ast.Ident); ok {
+			typeName = id.Name
+			typeExpr = idx
+		}
+	} else if idxList, ok := x.(*ast.IndexListExpr); ok {
+		if id, ok := idxList.X.(*ast.Ident); ok {
+			typeName = id.Name
+			typeExpr = idxList
+		}
+	}
+
+	if typeName != "" {
+		if fields, ok := t.structFields[typeName]; ok {
+			immutFlags := t.structImmutFields[typeName]
 			var elts []ast.Expr
 			if namedArgs != nil {
 				if len(args) > 0 {
@@ -1238,7 +1365,7 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 						}
 					}
 					if !found {
-						return nil, galaerr.NewSemanticError(fmt.Sprintf("struct %s has no field %s", id.Name, name))
+						return nil, galaerr.NewSemanticError(fmt.Sprintf("struct %s has no field %s", typeName, name))
 					}
 				}
 			} else {
@@ -1264,7 +1391,7 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 				}
 			}
 			return &ast.CompositeLit{
-				Type: id,
+				Type: typeExpr,
 				Elts: elts,
 			}, nil
 		}
@@ -2013,3 +2140,64 @@ func (t *galaASTTransformer) generateEqualMethod(name string, fields *ast.FieldL
 }
 
 var _ transpiler.ASTTransformer = (*galaASTTransformer)(nil)
+
+func (t *galaASTTransformer) extractTypeParams(typ ast.Expr) []*ast.Field {
+	var params []*ast.Field
+	switch e := typ.(type) {
+	case *ast.IndexExpr:
+		if id, ok := e.Index.(*ast.Ident); ok {
+			params = append(params, &ast.Field{
+				Names: []*ast.Ident{id},
+				Type:  ast.NewIdent("any"),
+			})
+		}
+	case *ast.IndexListExpr:
+		for _, index := range e.Indices {
+			if id, ok := index.(*ast.Ident); ok {
+				params = append(params, &ast.Field{
+					Names: []*ast.Ident{id},
+					Type:  ast.NewIdent("any"),
+				})
+			}
+		}
+	}
+	return params
+}
+
+func (t *galaASTTransformer) getBaseTypeName(expr ast.Expr) string {
+	switch e := expr.(type) {
+	case *ast.Ident:
+		return e.Name
+	case *ast.IndexExpr:
+		return t.getBaseTypeName(e.X)
+	case *ast.IndexListExpr:
+		return t.getBaseTypeName(e.X)
+	case *ast.StarExpr:
+		return t.getBaseTypeName(e.X)
+	case *ast.SelectorExpr:
+		return e.Sel.Name
+	}
+	return ""
+}
+
+func (t *galaASTTransformer) getExprTypeName(expr ast.Expr) string {
+	switch e := expr.(type) {
+	case *ast.Ident:
+		if t.currentScope != nil {
+			if typ, ok := t.currentScope.valTypes[e.Name]; ok {
+				return typ
+			}
+		}
+	case *ast.CallExpr:
+		// Handle b.Get()
+		if sel, ok := e.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Get" {
+			return t.getExprTypeName(sel.X)
+		}
+		if id, ok := e.Fun.(*ast.Ident); ok {
+			return id.Name
+		}
+	case *ast.CompositeLit:
+		return t.getBaseTypeName(e.Type)
+	}
+	return ""
+}

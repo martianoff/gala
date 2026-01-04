@@ -78,6 +78,24 @@ func process(val data string, var count int) {
 }
 ```
 
+### Methods
+GALA supports methods on structs. Methods are declared by providing a receiver before the function name. GALA methods can have their own type parameters, a feature not natively supported by Go.
+
+```gala
+type Box[T any] struct { Value T }
+
+// Simple method
+func (b Box[T]) GetValue() T = b.Value
+
+// Generic method on a generic struct
+func (b Box[T]) Transform[U any](f func(T) U) Box[U] = Box[U](Value = f(b.Value))
+
+func main() {
+    val b = Box[int](Value = 10)
+    val s = b.Transform((i int) => "Value is " + fmt.Sprintf("%d", i))
+}
+```
+
 ## 4. Types and Structs
 
 ### Structs

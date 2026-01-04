@@ -52,3 +52,8 @@ gala_binary(
     name = "option_complex",
     src = "option_complex.gala",
 )
+
+gala_binary(
+    name = "generic_methods",
+    src = "generic_methods.gala",
+)

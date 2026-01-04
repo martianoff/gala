@@ -1,0 +1,31 @@
+package main
+
+import "fmt"
+
+type Box[T any] struct {
+    Value T
+}
+
+func (b Box[T]) Transform[U any](f func(T) U) Box[U] = Box[U](Value = f(b.Value))
+
+type Pair[A any, B any] struct {
+    First A
+    Second B
+}
+
+func (p Pair[A, B]) Swap() Pair[B, A] = Pair[B, A](First = p.Second, Second = p.First)
+
+func (p Pair[A, B]) MapFirst[C any](f func(A) C) Pair[C, B] = Pair[C, B](First = f(p.First), Second = p.Second)
+
+func main() {
+    val b = Box[int](Value = 10)
+    val res1 = b.Transform((i int) => i * 2)
+    fmt.Println("Box:", res1.Value)
+
+    val p = Pair[int, string](First = 1, Second = "hello")
+    val p2 = p.Swap()
+    fmt.Println("Swapped Pair:", p2.First, p2.Second)
+
+    val p3 = p.MapFirst((i int) => i > 0)
+    fmt.Println("Mapped Pair:", p3.First, p3.Second)
+}
