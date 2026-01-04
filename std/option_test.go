@@ -1,0 +1,80 @@
+package std
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
+
+func TestOptionImplementation(t *testing.T) {
+	t.Run("Some", func(t *testing.T) {
+		o := Some(10)
+		assert.True(t, o.IsDefined())
+		assert.False(t, o.IsEmpty())
+		assert.Equal(t, 10, o.Get())
+		assert.Equal(t, 10, o.GetOrElse(20))
+	})
+
+	t.Run("None", func(t *testing.T) {
+		o := None[int]()
+		assert.False(t, o.IsDefined())
+		assert.True(t, o.IsEmpty())
+		assert.Panics(t, func() { o.Get() })
+		assert.Equal(t, 20, o.GetOrElse(20))
+	})
+
+	t.Run("Map", func(t *testing.T) {
+		o := Some(10)
+		m := Map(o, func(v int) string { return "val" })
+		assert.True(t, m.IsDefined())
+		assert.Equal(t, "val", m.Get())
+
+		n := None[int]()
+		nm := Map(n, func(v int) string { return "val" })
+		assert.True(t, nm.IsEmpty())
+	})
+
+	t.Run("FlatMap", func(t *testing.T) {
+		o := Some(10)
+		m := FlatMap(o, func(v int) any { return Some("val") })
+		assert.True(t, m.IsDefined())
+		assert.Equal(t, "val", m.Get())
+
+		nm := FlatMap(o, func(v int) any { return None[string]() })
+		assert.True(t, nm.IsEmpty())
+	})
+
+	t.Run("Filter", func(t *testing.T) {
+		o := Some(10)
+		assert.True(t, Filter(o, func(v int) any { return v > 5 }).IsDefined())
+		assert.True(t, Filter(o, func(v int) any { return v > 15 }).IsEmpty())
+	})
+
+	t.Run("ForEach", func(t *testing.T) {
+		count := 0
+		Some(10).ForEach(func(v int) {
+			count += v
+		})
+		assert.Equal(t, 10, count)
+
+		None[int]().ForEach(func(v int) {
+			count += v
+		})
+		assert.Equal(t, 10, count)
+
+		// Test with func(T) any which is what GALA transpiles to
+		Some(20).ForEach(func(v int) any {
+			count += v
+			return nil
+		})
+		assert.Equal(t, 30, count)
+	})
+
+	t.Run("Unapply", func(t *testing.T) {
+		assert.True(t, Some(10).Unapply(10))
+		assert.False(t, Some(10).Unapply(20))
+		assert.False(t, None[int]().Unapply(10))
+		// Test matching against None() itself?
+		assert.False(t, None[int]().Unapply(None[int]()))
+	})
+}

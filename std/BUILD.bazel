@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "immutable.go",
         "interfaces.go",
+        "option.go",
         "types.go",
     ],
     importpath = "martianoff/gala/std",
@@ -13,7 +14,10 @@ go_library(
 
 go_test(
     name = "std_test",
-    srcs = ["unapply_test.go"],
+    srcs = [
+        "option_test.go",
+        "unapply_test.go",
+    ],
     embed = [":std"],
     deps = ["@com_github_stretchr_testify//assert"],
 )

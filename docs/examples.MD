@@ -24,10 +24,29 @@ func main() {
 }
 ```
 
+## Option Monad Example
+
+```gala
+package main
+
+import "fmt"
+
+func main() {
+    val x = Some(10)
+    val y = x.Map((v int) => v * 2)
+    val z = None().GetOrElse(42)
+
+    val res = if (y.IsDefined()) y.Get() else 0
+    
+    fmt.Println(res, z)
+}
+```
+
 ## More Examples
 
 You can find more examples in the `examples/` directory of the project:
 - `complex.gala`: A more complex example showing pattern matching and `init()` function.
+- `option_complex.gala`: Demonstrates advanced usage of the `Option` monad (`Map`, `FlatMap`, `Filter`).
 - `hello.gala`: A simple "Hello, World!" example.
 - `with_main.gala`: An example with a `main` function.
 - `imports.gala`: Demonstrates importing standard Go packages with aliases and dot imports.

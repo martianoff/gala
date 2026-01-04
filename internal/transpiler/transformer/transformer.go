@@ -409,6 +409,22 @@ func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext)
 	}, nil
 }
 
+func (t *galaASTTransformer) isNoneCall(expr ast.Expr) bool {
+	call, ok := expr.(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	x, ok := sel.X.(*ast.Ident)
+	if !ok {
+		return false
+	}
+	return x.Name == "std" && sel.Sel.Name == "None"
+}
+
 func (t *galaASTTransformer) transformShortVarDecl(ctx *grammar.ShortVarDeclContext) (ast.Stmt, error) {
 	idsCtx := ctx.IdentifierList().(*grammar.IdentifierListContext).AllIdentifier()
 	rhsExprs, err := t.transformExpressionList(ctx.ExpressionList().(*grammar.ExpressionListContext))
@@ -437,6 +453,10 @@ func (t *galaASTTransformer) transformShortVarDecl(ctx *grammar.ShortVarDeclCont
 			val = rhsExprs[i]
 		} else {
 			val = &ast.IndexExpr{X: rhsExprs[0], Index: &ast.BasicLit{Kind: token.INT, Value: fmt.Sprintf("%d", i)}}
+		}
+
+		if t.isNoneCall(val) {
+			return nil, galaerr.NewSemanticError("variable assigned to None() must have an explicit type")
 		}
 
 		t.needsStdImport = true
@@ -500,6 +520,10 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 			val = &ast.IndexExpr{X: rhsExprs[0], Index: &ast.BasicLit{Kind: token.INT, Value: fmt.Sprintf("%d", i)}}
 		}
 
+		if t.isNoneCall(val) && ctx.Type_() == nil {
+			return nil, galaerr.NewSemanticError("variable assigned to None() must have an explicit type")
+		}
+
 		wrappedValues = append(wrappedValues, &ast.CallExpr{
 			Fun: &ast.SelectorExpr{
 				X:   ast.NewIdent("std"),
@@ -560,6 +584,15 @@ func (t *galaASTTransformer) transformVarDeclaration(ctx *grammar.VarDeclaration
 		if err != nil {
 			return nil, err
 		}
+
+		if ctx.Type_() == nil {
+			for _, r := range rhs {
+				if t.isNoneCall(r) {
+					return nil, galaerr.NewSemanticError("variable assigned to None() must have an explicit type")
+				}
+			}
+		}
+
 		spec.Values = rhs
 	}
 
@@ -1115,6 +1148,35 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 				return t.transformCopyCall(sel.X, argListCtx)
 			}
 
+			// Handle monadic method calls: o.Map(f) -> std.Map(o, f)
+			if sel, ok := x.(*ast.SelectorExpr); ok {
+				monadicMethods := map[string]bool{
+					"Map":     true,
+					"FlatMap": true,
+					"Filter":  true,
+					"ForEach": true,
+				}
+				if monadicMethods[sel.Sel.Name] {
+					t.needsStdImport = true
+					var mArgs []ast.Expr
+					for _, argCtx := range argListCtx.AllArgument() {
+						arg := argCtx.(*grammar.ArgumentContext)
+						expr, err := t.transformExpression(arg.Expression())
+						if err != nil {
+							return nil, err
+						}
+						mArgs = append(mArgs, expr)
+					}
+					return &ast.CallExpr{
+						Fun: &ast.SelectorExpr{
+							X:   ast.NewIdent("std"),
+							Sel: ast.NewIdent(sel.Sel.Name),
+						},
+						Args: append([]ast.Expr{sel.X}, mArgs...),
+					}, nil
+				}
+			}
+
 			for _, argCtx := range argListCtx.AllArgument() {
 				arg := argCtx.(*grammar.ArgumentContext)
 				expr, err := t.transformExpression(arg.Expression())
@@ -1433,6 +1495,13 @@ func (t *galaASTTransformer) getUnaryToken(op string) token.Token {
 func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.Expr, error) {
 	if ctx.Identifier() != nil {
 		name := ctx.Identifier().GetText()
+		if name == "Some" || name == "None" {
+			t.needsStdImport = true
+			return &ast.SelectorExpr{
+				X:   ast.NewIdent("std"),
+				Sel: ast.NewIdent(name),
+			}, nil
+		}
 		ident := ast.NewIdent(name)
 		if t.isVal(name) {
 			return &ast.CallExpr{
@@ -1478,7 +1547,16 @@ func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, 
 	}
 	// Simplified type handling
 	if ctx.Identifier() != nil {
-		ident := ast.NewIdent(ctx.Identifier().GetText())
+		typeName := ctx.Identifier().GetText()
+		var ident ast.Expr = ast.NewIdent(typeName)
+		if typeName == "Option" {
+			t.needsStdImport = true
+			ident = &ast.SelectorExpr{
+				X:   ast.NewIdent("std"),
+				Sel: ast.NewIdent("Option"),
+			}
+		}
+
 		if ctx.TypeArguments() != nil {
 			// Generic type: T[A, B] -> *ast.IndexExpr or *ast.IndexListExpr
 			args := ctx.TypeArguments().(*grammar.TypeArgumentsContext).TypeList().(*grammar.TypeListContext).AllType_()
@@ -1529,6 +1607,8 @@ func (t *galaASTTransformer) transformLambda(ctx *grammar.LambdaExpressionContex
 		if err != nil {
 			return nil, err
 		}
+		// Add return nil to ensure Go compiler is happy with 'any' return type
+		b.List = append(b.List, &ast.ReturnStmt{Results: []ast.Expr{ast.NewIdent("nil")}})
 		body = b
 	} else if ctx.Expression() != nil {
 		expr, err := t.transformExpression(ctx.Expression())
@@ -1545,6 +1625,11 @@ func (t *galaASTTransformer) transformLambda(ctx *grammar.LambdaExpressionContex
 	return &ast.FuncLit{
 		Type: &ast.FuncType{
 			Params: fieldList,
+			Results: &ast.FieldList{
+				List: []*ast.Field{
+					{Type: ast.NewIdent("any")},
+				},
+			},
 		},
 		Body: body,
 	}, nil

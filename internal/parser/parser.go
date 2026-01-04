@@ -22,8 +22,12 @@ func (p *AntlrGalaParser) Parse(input string) (antlr.Tree, error) {
 	stream := antlr.NewCommonTokenStream(lexer, antlr.TokenDefaultChannel)
 	parser := grammar.NewgalaParser(stream)
 
-	parser.RemoveErrorListeners()
 	errorListener := &GalaErrorListener{}
+
+	lexer.RemoveErrorListeners()
+	lexer.AddErrorListener(errorListener)
+
+	parser.RemoveErrorListeners()
 	parser.AddErrorListener(errorListener)
 
 	tree := parser.SourceFile()

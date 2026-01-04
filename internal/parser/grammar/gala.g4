@@ -143,6 +143,7 @@ RANGE: 'range';
 RETURN: 'return';
 IMPORT: 'import';
 PACKAGE: 'package';
+COLON: ':';
 
 binaryOp: '||' | '&&' | '==' | '!=' | '<' | '<=' | '>' | '>=' | '+' | '-' | '|' | '^' | '*' | '/' | '%' | '<<' | '>>' | '&' | '&^';
 unaryOp: '+' | '-' | '!' | '^' | '*' | '&' | '<-';

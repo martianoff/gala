@@ -200,11 +200,38 @@ type Box[T any] struct {
 }
 ```
 
-## 8. Immutability Under the Hood
+## 8. Option Monad
+
+GALA provides a built-in `Option[T]` monad for handling optional values safely, similar to Scala.
+
+### Creating Options
+Use `Some(v)` to create an option with a value, and `None()` for an empty option.
+
+```gala
+val x Option[int] = Some(10)
+val y Option[int] = None()
+```
+
+### Monadic Operations
+`Option` provides common monadic operations like `Map`, `FlatMap`, and `Filter`.
+
+```gala
+val result = Some(10).Map((x int) => x * 2) // Some(20)
+val empty = None().Map((x int) => x * 2)   // None()
+```
+
+### Accessing Values
+Use `GetOrElse` to safely access the value with a default.
+
+```gala
+val value = x.GetOrElse(0)
+```
+
+## 9. Immutability Under the Hood
 
 When GALA transpiles to Go, immutable values are wrapped in a `std.Immutable[T]` container to ensure safety and provide consistent semantics, especially for struct fields and global variables.
 
-## 9. GALA Packages
+## 10. GALA Packages
 
 GALA supports importing other GALA packages. Since GALA transpiles to Go, a GALA package is essentially a Go package after transpilation. To import a GALA package, you use its Go import path.
 

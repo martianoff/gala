@@ -1,0 +1,49 @@
+package main
+
+import "fmt"
+
+struct Product(id int, name string, price float64)
+
+func findProduct(id int) Option[Product] {
+    if (id == 1) {
+        return Some(Product(1, "Laptop", 1200.0))
+    }
+    if (id == 2) {
+        return Some(Product(2, "Mouse", 25.0))
+    }
+    return None[Product]()
+}
+
+func main() {
+    // Explicit type using generic None[T]() call
+    val noProduct Option[Product] = None[Product]()
+    fmt.Println("Empty product defined:", noProduct.IsDefined())
+
+    val p1 = findProduct(1)
+    val p2 = findProduct(2)
+    val p3 = findProduct(3)
+
+    // Demonstrate Map
+    val names = p1.Map((p Product) => p.name)
+    fmt.Println("P1 name:", names.GetOrElse("Unknown"))
+
+    // Demonstrate Filter
+    val expensive = p1.Filter((p Product) => p.price > 1000.0)
+    val expensive2 = p2.Filter((p Product) => p.price > 1000.0)
+
+    fmt.Println("P1 is expensive:", expensive.IsDefined())
+    fmt.Println("P2 is expensive:", expensive2.IsDefined())
+
+    // Demonstrate GetOrElse
+    val p3Name = p3.Map((p Product) => p.name).GetOrElse("Not Found")
+    fmt.Println("P3 result:", p3Name)
+
+    // Using Option in a match expression with inner value matching
+    p1.Map((p Product) => p.id).ForEach((id int) => {
+        fmt.Println(id match {
+            case 1 => "Found first product"
+            case 2 => "Found second product"
+            case _ => "Found other product"
+        })
+    })
+}

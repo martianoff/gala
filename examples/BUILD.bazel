@@ -47,3 +47,8 @@ gala_binary(
     name = "copy_and_equal",
     src = "copy_and_equal.gala",
 )
+
+gala_binary(
+    name = "option_complex",
+    src = "option_complex.gala",
+)
