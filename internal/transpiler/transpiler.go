@@ -7,10 +7,44 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 )
 
+const (
+	StdPackage    = "std"
+	StdImportPath = "martianoff/gala/std"
+
+	TypeOption    = "Option"
+	TypeImmutable = "Immutable"
+
+	FuncSome         = "Some"
+	FuncNone         = "None"
+	FuncNewImmutable = "NewImmutable"
+	FuncCopy         = "Copy"
+	MethodGet        = "Get"
+)
+
 // RichAST provides metadata about a Gala source file.
 type RichAST struct {
-	Tree  antlr.Tree
-	Types map[string]*TypeMetadata
+	Tree      antlr.Tree
+	Types     map[string]*TypeMetadata
+	Functions map[string]*FunctionMetadata
+}
+
+// Merge combines metadata from another RichAST into this one.
+func (r *RichAST) Merge(other *RichAST) {
+	if other == nil {
+		return
+	}
+	if r.Types == nil {
+		r.Types = make(map[string]*TypeMetadata)
+	}
+	if r.Functions == nil {
+		r.Functions = make(map[string]*FunctionMetadata)
+	}
+	for k, v := range other.Types {
+		r.Types[k] = v
+	}
+	for k, v := range other.Functions {
+		r.Functions[k] = v
+	}
 }
 
 type TypeMetadata struct {
@@ -23,6 +57,13 @@ type TypeMetadata struct {
 
 type MethodMetadata struct {
 	Name       string
+	TypeParams []string
+	IsGeneric  bool // Force transformation to standalone function
+}
+
+type FunctionMetadata struct {
+	Name       string
+	ReturnType string
 	TypeParams []string
 }
 

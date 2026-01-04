@@ -2,17 +2,60 @@ package analyzer
 
 import (
 	"fmt"
+	"io/ioutil"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
+	"path/filepath"
 
 	"github.com/antlr4-go/antlr/v4"
 )
 
-type galaAnalyzer struct{}
+// GetBaseMetadata loads standard library metadata from .gala files.
+func GetBaseMetadata(p transpiler.GalaParser, searchPaths []string) *transpiler.RichAST {
+	base := &transpiler.RichAST{
+		Types:     make(map[string]*transpiler.TypeMetadata),
+		Functions: make(map[string]*transpiler.FunctionMetadata),
+	}
+	temp := NewGalaAnalyzer()
+	stdFiles := []string{"std/option.gala", "std/immutable.gala"}
+
+	for _, sf := range stdFiles {
+		var content []byte
+		var err error
+		for _, path := range searchPaths {
+			content, err = ioutil.ReadFile(filepath.Join(path, sf))
+			if err == nil {
+				break
+			}
+		}
+		if err != nil {
+			continue
+		}
+		tree, err := p.Parse(string(content))
+		if err != nil {
+			continue
+		}
+		rich, err := temp.Analyze(tree)
+		if err != nil {
+			continue
+		}
+		base.Merge(rich)
+	}
+	return base
+}
+
+type galaAnalyzer struct {
+	baseMetadata *transpiler.RichAST
+}
 
 // NewGalaAnalyzer creates a new transpiler.Analyzer implementation.
 func NewGalaAnalyzer() transpiler.Analyzer {
 	return &galaAnalyzer{}
+}
+
+// NewGalaAnalyzerWithBase creates a new transpiler.Analyzer with base metadata.
+func NewGalaAnalyzerWithBase(base *transpiler.RichAST) transpiler.Analyzer {
+	return &galaAnalyzer{baseMetadata: base}
 }
 
 // Analyze walk the ANTLR tree and collects metadata for RichAST.
@@ -23,8 +66,14 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree) (*transpiler.RichAST, error) {
 	}
 
 	richAST := &transpiler.RichAST{
-		Tree:  tree,
-		Types: make(map[string]*transpiler.TypeMetadata),
+		Tree:      tree,
+		Types:     make(map[string]*transpiler.TypeMetadata),
+		Functions: make(map[string]*transpiler.FunctionMetadata),
+	}
+
+	// 0. Populate base metadata if provided
+	if a.baseMetadata != nil {
+		richAST.Merge(a.baseMetadata)
 	}
 
 	// 1. Collect all types
@@ -33,10 +82,16 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree) (*transpiler.RichAST, error) {
 			ctx := typeDecl.(*grammar.TypeDeclarationContext)
 			typeName := ctx.Identifier().GetText()
 
-			meta := &transpiler.TypeMetadata{
-				Name:    typeName,
-				Methods: make(map[string]*transpiler.MethodMetadata),
-				Fields:  make(map[string]string),
+			var meta *transpiler.TypeMetadata
+			if existing, ok := richAST.Types[typeName]; ok {
+				meta = existing
+			} else {
+				meta = &transpiler.TypeMetadata{
+					Name:    typeName,
+					Methods: make(map[string]*transpiler.MethodMetadata),
+					Fields:  make(map[string]string),
+				}
+				richAST.Types[typeName] = meta
 			}
 
 			if ctx.TypeParameters() != nil {
@@ -59,18 +114,22 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree) (*transpiler.RichAST, error) {
 					meta.FieldNames = append(meta.FieldNames, fieldName)
 				}
 			}
-
-			richAST.Types[typeName] = meta
 		}
 
 		if shorthandCtx := topDecl.StructShorthandDeclaration(); shorthandCtx != nil {
 			ctx := shorthandCtx.(*grammar.StructShorthandDeclarationContext)
 			typeName := ctx.Identifier().GetText()
 
-			meta := &transpiler.TypeMetadata{
-				Name:    typeName,
-				Methods: make(map[string]*transpiler.MethodMetadata),
-				Fields:  make(map[string]string),
+			var meta *transpiler.TypeMetadata
+			if existing, ok := richAST.Types[typeName]; ok {
+				meta = existing
+			} else {
+				meta = &transpiler.TypeMetadata{
+					Name:    typeName,
+					Methods: make(map[string]*transpiler.MethodMetadata),
+					Fields:  make(map[string]string),
+				}
+				richAST.Types[typeName] = meta
 			}
 
 			if ctx.Parameters() != nil {
@@ -88,11 +147,10 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree) (*transpiler.RichAST, error) {
 					}
 				}
 			}
-			richAST.Types[typeName] = meta
 		}
 	}
 
-	// 2. Collect methods
+	// 2. Collect methods and functions
 	for _, topDecl := range sourceFile.AllTopLevelDeclaration() {
 		if funcDeclCtx := topDecl.FunctionDeclaration(); funcDeclCtx != nil {
 			ctx := funcDeclCtx.(*grammar.FunctionDeclarationContext)
@@ -115,6 +173,10 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree) (*transpiler.RichAST, error) {
 					}
 
 					if typeMeta, ok := richAST.Types[baseType]; ok {
+						if existing, exists := typeMeta.Methods[methodName]; exists {
+							// Preserve IsGeneric if it was pre-populated
+							methodMeta.IsGeneric = existing.IsGeneric
+						}
 						typeMeta.Methods[methodName] = methodMeta
 					} else {
 						// Even if type is not in this file, we might want to collect it?
@@ -127,6 +189,25 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree) (*transpiler.RichAST, error) {
 						}
 					}
 				}
+			} else {
+				// Top-level function
+				funcName := ctx.Identifier().GetText()
+				funcMeta := &transpiler.FunctionMetadata{
+					Name: funcName,
+				}
+				if ctx.Signature().Type_() != nil {
+					funcMeta.ReturnType = getBaseTypeName(ctx.Signature().Type_())
+				}
+				if ctx.TypeParameters() != nil {
+					tpCtx := ctx.TypeParameters().(*grammar.TypeParametersContext)
+					if tpList := tpCtx.TypeParameterList(); tpList != nil {
+						for _, tp := range tpList.(*grammar.TypeParameterListContext).AllTypeParameter() {
+							tpId := tp.(*grammar.TypeParameterContext).Identifier(0)
+							funcMeta.TypeParams = append(funcMeta.TypeParams, tpId.GetText())
+						}
+					}
+				}
+				richAST.Functions[funcName] = funcMeta
 			}
 		}
 	}

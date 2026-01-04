@@ -25,29 +25,29 @@ func TestOptionImplementation(t *testing.T) {
 
 	t.Run("Map", func(t *testing.T) {
 		o := Some(10)
-		m := Map(o, func(v int) string { return "val" })
+		m := Option_Map(o, func(v int) string { return "val" })
 		assert.True(t, m.IsDefined())
 		assert.Equal(t, "val", m.Get())
 
 		n := None[int]()
-		nm := Map(n, func(v int) string { return "val" })
+		nm := Option_Map(n, func(v int) string { return "val" })
 		assert.True(t, nm.IsEmpty())
 	})
 
 	t.Run("FlatMap", func(t *testing.T) {
 		o := Some(10)
-		m := FlatMap(o, func(v int) Option[string] { return Some("val") })
+		m := Option_FlatMap(o, func(v int) Option[string] { return Some("val") })
 		assert.True(t, m.IsDefined())
 		assert.Equal(t, "val", m.Get())
 
-		nm := FlatMap(o, func(v int) Option[string] { return None[string]() })
+		nm := Option_FlatMap(o, func(v int) Option[string] { return None[string]() })
 		assert.True(t, nm.IsEmpty())
 	})
 
 	t.Run("Filter", func(t *testing.T) {
 		o := Some(10)
-		assert.True(t, Filter(o, func(v int) bool { return v > 5 }).IsDefined())
-		assert.True(t, Filter(o, func(v int) bool { return v > 15 }).IsEmpty())
+		assert.True(t, o.Filter(func(v int) bool { return v > 5 }).IsDefined())
+		assert.True(t, o.Filter(func(v int) bool { return v > 15 }).IsEmpty())
 	})
 
 	t.Run("ForEach", func(t *testing.T) {

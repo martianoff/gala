@@ -15,6 +15,10 @@ go_library(
 go_test(
     name = "analyzer_test",
     srcs = ["analyzer_test.go"],
+    data = [
+        "//std:immutable.gala",
+        "//std:option.gala",
+    ],
     deps = [
         ":analyzer",
         "//internal/transpiler",

@@ -7,6 +7,7 @@ import (
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
+	"strings"
 
 	"github.com/antlr4-go/antlr/v4"
 )
@@ -27,6 +28,7 @@ type galaASTTransformer struct {
 	structFields      map[string][]string
 	structFieldTypes  map[string]map[string]string // structName -> fieldName -> typeName
 	genericMethods    map[string]map[string]bool   // receiverType -> methodName -> isGeneric
+	functions         map[string]*transpiler.FunctionMetadata
 }
 
 func (t *galaASTTransformer) pushScope() {
@@ -75,7 +77,7 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 		typeName = t.getType(id.Name)
 	} else if call, ok := receiver.(*ast.CallExpr); ok {
 		// Handle p.Get().Copy() case where p is std.Immutable[T]
-		if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Get" {
+		if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == transpiler.MethodGet {
 			if id, ok := sel.X.(*ast.Ident); ok {
 				typeName = t.getType(id.Name)
 			}
@@ -152,7 +154,7 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 			finalVal := val
 			if i < len(immutFlags) && immutFlags[i] {
 				finalVal = &ast.CallExpr{
-					Fun:  t.stdIdent("NewImmutable"),
+					Fun:  t.stdIdent(transpiler.FuncNewImmutable),
 					Args: []ast.Expr{val},
 				}
 			}
@@ -164,7 +166,7 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 			elts = append(elts, &ast.KeyValueExpr{
 				Key: ast.NewIdent(fn),
 				Value: &ast.CallExpr{
-					Fun: t.stdIdent("Copy"),
+					Fun: t.stdIdent(transpiler.FuncCopy),
 					Args: []ast.Expr{
 						&ast.SelectorExpr{
 							X:   receiver,
@@ -195,43 +197,32 @@ func (t *galaASTTransformer) isVal(name string) bool {
 
 func (t *galaASTTransformer) stdIdent(name string) ast.Expr {
 	t.needsStdImport = true
-	if t.packageName == "std" {
+	if t.packageName == transpiler.StdPackage {
 		return ast.NewIdent(name)
 	}
 	return &ast.SelectorExpr{
-		X:   ast.NewIdent("std"),
+		X:   ast.NewIdent(transpiler.StdPackage),
 		Sel: ast.NewIdent(name),
 	}
 }
 
 // NewGalaASTTransformer creates a new instance of ASTTransformer for GALA.
 func NewGalaASTTransformer() transpiler.ASTTransformer {
-	t := &galaASTTransformer{
+	return &galaASTTransformer{
 		immutFields:       make(map[string]bool),
 		structImmutFields: make(map[string][]bool),
 		activeTypeParams:  make(map[string]bool),
 		structFields:      make(map[string][]string),
 		structFieldTypes:  make(map[string]map[string]string),
 		genericMethods:    make(map[string]map[string]bool),
+		functions:         make(map[string]*transpiler.FunctionMetadata),
 	}
-	t.genericMethods["Option"] = map[string]bool{
-		"Map":     true,
-		"FlatMap": true,
-	}
-	t.genericMethods["Immutable"] = map[string]bool{
-		"Map":     true,
-		"FlatMap": true,
-	}
-	return t
 }
 
 func (t *galaASTTransformer) initGenericMethods() {
 	t.genericMethods = make(map[string]map[string]bool)
 	t.structFieldTypes = make(map[string]map[string]string)
-	t.genericMethods["Option"] = map[string]bool{
-		"Map":     true,
-		"FlatMap": true,
-	}
+	t.functions = make(map[string]*transpiler.FunctionMetadata)
 }
 
 func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (*token.FileSet, *ast.File, error) {
@@ -243,15 +234,18 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (*token.File
 	t.activeTypeParams = make(map[string]bool)
 	t.structFields = make(map[string][]string)
 	t.structFieldTypes = make(map[string]map[string]string)
+	t.genericMethods = make(map[string]map[string]bool)
+	t.functions = richAST.Functions
 
 	// Populate metadata from RichAST
-	t.genericMethods = make(map[string]map[string]bool)
 	for typeName, meta := range richAST.Types {
 		t.structFieldTypes[typeName] = meta.Fields
 		t.structFields[typeName] = meta.FieldNames
-		t.genericMethods[typeName] = make(map[string]bool)
+		if _, ok := t.genericMethods[typeName]; !ok {
+			t.genericMethods[typeName] = make(map[string]bool)
+		}
 		for methodName, methodMeta := range meta.Methods {
-			if len(methodMeta.TypeParams) > 0 {
+			if len(methodMeta.TypeParams) > 0 || methodMeta.IsGeneric {
 				t.genericMethods[typeName][methodName] = true
 			}
 		}
@@ -291,7 +285,7 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (*token.File
 		}
 	}
 
-	if t.needsStdImport && t.packageName != "std" {
+	if t.needsStdImport && t.packageName != transpiler.StdPackage {
 		// Add import at the beginning
 		importDecl := &ast.GenDecl{
 			Tok: token.IMPORT,
@@ -299,7 +293,7 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (*token.File
 				&ast.ImportSpec{
 					Path: &ast.BasicLit{
 						Kind:  token.STRING,
-						Value: "\"martianoff/gala/std\"",
+						Value: fmt.Sprintf("\"%s\"", transpiler.StdImportPath),
 					},
 				},
 			},
@@ -657,7 +651,7 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		if isVal {
 			t.addVal(recvName, "")
 			recvTypeExpr = &ast.IndexExpr{
-				X:     t.stdIdent("Immutable"),
+				X:     t.stdIdent(transpiler.TypeImmutable),
 				Index: recvTypeExpr,
 			}
 		} else {
@@ -706,7 +700,7 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		}
 	}
 
-	if receiver != nil && typeParams != nil {
+	if receiver != nil && (typeParams != nil || (t.genericMethods[receiverTypeName] != nil && t.genericMethods[receiverTypeName][name])) {
 		// Generic method: transform to standalone function
 		name = receiverTypeName + "_" + name
 		// 1. Add receiver as first parameter
@@ -715,6 +709,9 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		// 2. Extract type parameters from receiver type and add to typeParams
 		recvTypeParams := t.extractTypeParams(receiver.List[0].Type)
 		if len(recvTypeParams) > 0 {
+			if typeParams == nil {
+				typeParams = &ast.FieldList{}
+			}
 			// Check for duplicates
 			for _, rtp := range recvTypeParams {
 				exists := false
@@ -1280,11 +1277,6 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 			recvTypeName := t.getExprTypeName(receiver)
 			isGenericMethod := len(typeArgs) > 0 || (recvTypeName != "" && t.genericMethods[recvTypeName] != nil && t.genericMethods[recvTypeName][method])
 
-			// Fallback for monadic methods when type is not inferred
-			if !isGenericMethod && (method == "Map" || method == "FlatMap") {
-				isGenericMethod = true
-			}
-
 			if receiver != nil && isGenericMethod {
 				var mArgs []ast.Expr
 				for _, argCtx := range argListCtx.AllArgument() {
@@ -1299,17 +1291,13 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 				var fun ast.Expr
 				if recvTypeName != "" {
 					fullName := recvTypeName + "_" + method
-					if recvTypeName == "Option" || recvTypeName == "Immutable" {
+					if recvTypeName == transpiler.TypeOption || recvTypeName == transpiler.TypeImmutable {
 						fun = t.stdIdent(fullName)
 					} else {
 						fun = ast.NewIdent(fullName)
 					}
 				} else {
-					if method == "Map" || method == "FlatMap" || method == "Filter" || method == "ForEach" {
-						fun = t.stdIdent(method)
-					} else {
-						fun = ast.NewIdent(method)
-					}
+					fun = ast.NewIdent(method)
 				}
 
 				if len(typeArgs) == 1 {
@@ -1651,7 +1639,7 @@ func (t *galaASTTransformer) getUnaryToken(op string) token.Token {
 func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.Expr, error) {
 	if ctx.Identifier() != nil {
 		name := ctx.Identifier().GetText()
-		if name == "Some" || name == "None" || name == "Map" || name == "FlatMap" || name == "Filter" || name == "ForEach" {
+		if name == transpiler.FuncSome || name == transpiler.FuncNone {
 			return t.stdIdent(name), nil
 		}
 		ident := ast.NewIdent(name)
@@ -1659,7 +1647,7 @@ func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.
 			return &ast.CallExpr{
 				Fun: &ast.SelectorExpr{
 					X:   ident,
-					Sel: ast.NewIdent("Get"),
+					Sel: ast.NewIdent(transpiler.MethodGet),
 				},
 			}, nil
 		}
@@ -1701,8 +1689,8 @@ func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, 
 	if ctx.Identifier() != nil {
 		typeName := ctx.Identifier().GetText()
 		var ident ast.Expr = ast.NewIdent(typeName)
-		if typeName == "Option" {
-			ident = t.stdIdent("Option")
+		if typeName == transpiler.TypeOption {
+			ident = t.stdIdent(transpiler.TypeOption)
 		}
 
 		if ctx.TypeArguments() != nil {
@@ -1752,6 +1740,9 @@ func (t *galaASTTransformer) getExprType(expr ast.Expr) ast.Expr {
 	}
 	typeName := t.getExprTypeName(expr)
 	if typeName != "" {
+		if typeName == transpiler.TypeOption || typeName == transpiler.TypeImmutable {
+			return t.stdIdent(typeName)
+		}
 		return ast.NewIdent(typeName)
 	}
 	return ast.NewIdent("any")
@@ -2221,11 +2212,7 @@ func (t *galaASTTransformer) getBaseTypeName(expr ast.Expr) string {
 func (t *galaASTTransformer) getExprTypeName(expr ast.Expr) string {
 	switch e := expr.(type) {
 	case *ast.Ident:
-		if t.currentScope != nil {
-			if typ, ok := t.currentScope.valTypes[e.Name]; ok {
-				return typ
-			}
-		}
+		return t.getType(e.Name)
 	case *ast.SelectorExpr:
 		xTypeName := t.getExprTypeName(e.X)
 		if xTypeName != "" && t.structFieldTypes[xTypeName] != nil {
@@ -2236,22 +2223,31 @@ func (t *galaASTTransformer) getExprTypeName(expr ast.Expr) string {
 	case *ast.CallExpr:
 		// Handle b.Get() or std.Some()
 		if sel, ok := e.Fun.(*ast.SelectorExpr); ok {
-			if sel.Sel.Name == "Get" {
+			if sel.Sel.Name == transpiler.MethodGet {
 				return t.getExprTypeName(sel.X)
 			}
-			if sel.Sel.Name == "Some" || sel.Sel.Name == "None" {
-				return "Option"
+			if sel.Sel.Name == transpiler.FuncSome || sel.Sel.Name == transpiler.FuncNone {
+				return transpiler.TypeOption
+			}
+			if strings.HasPrefix(sel.Sel.Name, transpiler.TypeOption+"_") {
+				return transpiler.TypeOption
 			}
 			if _, ok := t.structFields[sel.Sel.Name]; ok {
 				return sel.Sel.Name
 			}
 		}
 		if id, ok := e.Fun.(*ast.Ident); ok {
-			if id.Name == "Some" || id.Name == "None" {
-				return "Option"
+			if id.Name == transpiler.FuncSome || id.Name == transpiler.FuncNone {
+				return transpiler.TypeOption
+			}
+			if strings.HasPrefix(id.Name, transpiler.TypeOption+"_") {
+				return transpiler.TypeOption
 			}
 			if _, ok := t.structFields[id.Name]; ok {
 				return id.Name
+			}
+			if fMeta, ok := t.functions[id.Name]; ok {
+				return fMeta.ReturnType
 			}
 		}
 	case *ast.CompositeLit:

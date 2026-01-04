@@ -13,7 +13,8 @@ import (
 
 func TestOption(t *testing.T) {
 	p := transpiler.NewAntlrGalaParser()
-	a := analyzer.NewGalaAnalyzer()
+	base := analyzer.GetBaseMetadata(p, []string{"../../../", "../../", "../"})
+	a := analyzer.NewGalaAnalyzerWithBase(base)
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
 	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
@@ -65,7 +66,7 @@ var x = std.NewImmutable(std.Some(10))
 var y = std.NewImmutable(std.Option_Map(x.Get(), func(v int) any {
 	return v * 2
 }))
-var z = std.NewImmutable(std.FlatMap(y.Get(), func(v int) Option {
+var z = std.NewImmutable(std.Option_FlatMap(y.Get(), func(v int) std.Option {
 	return std.Some(v + 1)
 }))
 `,

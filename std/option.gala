@@ -81,15 +81,3 @@ func (o Option[T]) Unapply(v any) bool {
     }
     return UnapplyCheck(o.Value, v)
 }
-
-// ForEach applies the given procedure f to the option's value, if it is nonempty.
-func ForEach[T any](o Option[T], f func(T) any) = o.ForEach(f)
-
-// Map builds a new option by applying a function to all values of this option.
-func Map[T any, U any](o Option[T], f func(T) U) Option[U] = o.Map(f)
-
-// FlatMap returns the result of applying f to this option's value if this option is nonempty.
-func FlatMap[T any, U any](o Option[T], f func(T) Option[U]) Option[U] = o.FlatMap(f)
-
-// Filter returns this option if it is nonempty and applying the predicate p to this option's value returns true.
-func Filter[T any](o Option[T], p func(T) bool) Option[T] = o.Filter(p)

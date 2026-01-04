@@ -33,6 +33,10 @@ go_test(
         "structs_test.go",
         "variables_test.go",
     ],
+    data = [
+        "//std:immutable.gala",
+        "//std:option.gala",
+    ],
     deps = [
         ":transformer",
         "//internal/transpiler",

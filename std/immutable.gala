@@ -1,0 +1,12 @@
+package std
+
+// Immutable[T] is a core GALA type that provides immutability wrappers.
+type Immutable[T any] struct {
+    var value T
+}
+
+// Get returns the underlying value.
+func (i Immutable[T]) Get() T = i.value
+
+// NewImmutable creates a new Immutable wrapper.
+func NewImmutable[T any](v T) Immutable[T] = Immutable[T](value = v)

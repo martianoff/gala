@@ -1,10 +1,21 @@
 load("@rules_go//go:def.bzl", "go_library", "go_test")
 load("//:gala.bzl", "gala_binary", "gala_library", "gala_transpile")
 
+exports_files([
+    "option.gala",
+    "immutable.gala",
+])
+
 gala_transpile(
     name = "option_go",
     src = "option.gala",
     out = "option.go",
+)
+
+gala_transpile(
+    name = "immutable_go",
+    src = "immutable.gala",
+    out = "immutable.go",
 )
 
 go_library(
