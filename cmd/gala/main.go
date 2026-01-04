@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 
 	"martianoff/gala/internal/transpiler"
+	"martianoff/gala/internal/transpiler/analyzer"
 	"martianoff/gala/internal/transpiler/generator"
 	"martianoff/gala/internal/transpiler/transformer"
 )
@@ -42,9 +43,10 @@ func main() {
 	}
 
 	p := transpiler.NewAntlrGalaParser()
+	a := analyzer.NewGalaAnalyzer()
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	t := transpiler.NewGalaToGoTranspiler(p, tr, g)
+	t := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
 
 	goCode, err := t.Transpile(string(content))
 	if err != nil {

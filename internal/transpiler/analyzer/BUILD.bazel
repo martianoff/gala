@@ -1,0 +1,24 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "analyzer",
+    srcs = ["analyzer.go"],
+    importpath = "martianoff/gala/internal/transpiler/analyzer",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//internal/parser/grammar",
+        "//internal/transpiler",
+        "@com_github_antlr4_go_antlr_v4//:antlr",
+    ],
+)
+
+go_test(
+    name = "analyzer_test",
+    srcs = ["analyzer_test.go"],
+    deps = [
+        ":analyzer",
+        "//internal/transpiler",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
+)

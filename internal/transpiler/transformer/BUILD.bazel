@@ -36,6 +36,7 @@ go_test(
     deps = [
         ":transformer",
         "//internal/transpiler",
+        "//internal/transpiler/analyzer",
         "//internal/transpiler/generator",
         "@com_github_stretchr_testify//assert",
     ],

@@ -2,6 +2,7 @@ package transformer_test
 
 import (
 	"martianoff/gala/internal/transpiler"
+	"martianoff/gala/internal/transpiler/analyzer"
 	"martianoff/gala/internal/transpiler/generator"
 	"martianoff/gala/internal/transpiler/transformer"
 	"strings"
@@ -12,9 +13,10 @@ import (
 
 func TestMethods(t *testing.T) {
 	p := transpiler.NewAntlrGalaParser()
+	a := analyzer.NewGalaAnalyzer()
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	trans := transpiler.NewGalaToGoTranspiler(p, tr, g)
+	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
 
 	tests := []struct {
 		name     string

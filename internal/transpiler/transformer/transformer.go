@@ -234,7 +234,8 @@ func (t *galaASTTransformer) initGenericMethods() {
 	}
 }
 
-func (t *galaASTTransformer) Transform(tree antlr.Tree) (*token.FileSet, *ast.File, error) {
+func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (*token.FileSet, *ast.File, error) {
+	tree := richAST.Tree
 	t.currentScope = nil
 	t.needsStdImport = false
 	t.immutFields = make(map[string]bool)
@@ -242,7 +243,20 @@ func (t *galaASTTransformer) Transform(tree antlr.Tree) (*token.FileSet, *ast.Fi
 	t.activeTypeParams = make(map[string]bool)
 	t.structFields = make(map[string][]string)
 	t.structFieldTypes = make(map[string]map[string]string)
-	t.initGenericMethods()
+
+	// Populate metadata from RichAST
+	t.genericMethods = make(map[string]map[string]bool)
+	for typeName, meta := range richAST.Types {
+		t.structFieldTypes[typeName] = meta.Fields
+		t.structFields[typeName] = meta.FieldNames
+		t.genericMethods[typeName] = make(map[string]bool)
+		for methodName, methodMeta := range meta.Methods {
+			if len(methodMeta.TypeParams) > 0 {
+				t.genericMethods[typeName][methodName] = true
+			}
+		}
+	}
+
 	t.pushScope() // Global scope
 	defer t.popScope()
 
