@@ -1,0 +1,5 @@
+Original: {{Alice} {30}}
+Overridden age: {{Alice} {31}}
+Overridden both: {{Bob} {25}}
+p1 and p1_again are equal
+p1 and p2 are NOT equal

@@ -1,5 +1,58 @@
 load("@rules_go//go:def.bzl", "go_binary", "go_library")
 
+def _gala_test_impl(ctx):
+    binary = ctx.executable.binary
+    expected = ctx.file.expected
+    runner = ctx.executable._runner
+
+    is_windows = ctx.attr.is_windows
+    extension = ".bat" if is_windows else ".sh"
+    executable = ctx.actions.declare_file(ctx.label.name + extension)
+
+    if is_windows:
+        # Use backslashes for Windows paths to avoid issues with %c etc in .bat
+        runner_path = runner.short_path.replace("/", "\\")
+        binary_path = binary.short_path.replace("/", "\\")
+        expected_path = expected.short_path.replace("/", "\\")
+        ctx.actions.write(
+            output = executable,
+            content = "@echo off\n\"%s\" %%* \"%s\" \"%s\"" % (runner_path, binary_path, expected_path),
+            is_executable = True,
+        )
+    else:
+        ctx.actions.write(
+            output = executable,
+            content = "#!/bin/bash\n%s \"$@\" %s %s" % (runner.short_path, binary.short_path, expected.short_path),
+            is_executable = True,
+        )
+
+    return [DefaultInfo(
+        executable = executable,
+        runfiles = ctx.runfiles(files = [binary, expected, runner]),
+    )]
+
+gala_exec_test = rule(
+    implementation = _gala_test_impl,
+    test = True,
+    attrs = {
+        "binary": attr.label(
+            executable = True,
+            cfg = "target",
+            mandatory = True,
+        ),
+        "expected": attr.label(
+            allow_single_file = True,
+            mandatory = True,
+        ),
+        "is_windows": attr.bool(default = False),
+        "_runner": attr.label(
+            default = "//cmd/gala_test_runner",
+            executable = True,
+            cfg = "target",
+        ),
+    },
+)
+
 def gala_transpile(name, src, out = None):
     if not out:
         out = name + ".go"
@@ -39,4 +92,22 @@ def gala_binary(name, src, deps = [], **kwargs):
         srcs = [go_src],
         deps = deps + ["//std"],
         **kwargs
+    )
+
+def gala_test(name, src, expected, deps = [], **kwargs):
+    binary_name = name + "_bin"
+    gala_binary(
+        name = binary_name,
+        src = src,
+        deps = deps,
+        **kwargs
+    )
+    gala_exec_test(
+        name = name,
+        binary = ":" + binary_name,
+        expected = expected,
+        is_windows = select({
+            "@platforms//os:windows": True,
+            "//conditions:default": False,
+        }),
     )

@@ -1,4 +1,4 @@
-load("//:gala.bzl", "gala_binary", "gala_library")
+load("//:gala.bzl", "gala_binary", "gala_library", "gala_test")
 
 gala_library(
     name = "mathlib",
@@ -7,53 +7,63 @@ gala_library(
     visibility = ["//visibility:public"],
 )
 
-gala_binary(
+gala_test(
     name = "hello",
     src = "hello.gala",
+    expected = "hello.out",
 )
 
-gala_binary(
+gala_test(
     name = "with_main",
     src = "with_main.gala",
+    expected = "with_main.out",
 )
 
-gala_binary(
+gala_test(
     name = "complex",
     src = "complex.gala",
+    expected = "complex.out",
 )
 
-gala_binary(
+gala_test(
     name = "imports",
     src = "imports.gala",
+    expected = "imports.out",
 )
 
-gala_binary(
+gala_test(
     name = "use_lib",
     src = "use_lib.gala",
+    expected = "use_lib.out",
     deps = [":mathlib"],
 )
 
-gala_binary(
+gala_test(
     name = "multi_vars",
     src = "multi_vars.gala",
+    expected = "multi_vars.out",
 )
 
-gala_binary(
+gala_test(
     name = "struct_features",
     src = "struct_features.gala",
+    expected = "struct_features.out",
 )
 
-gala_binary(
+gala_test(
     name = "copy_and_equal",
     src = "copy_and_equal.gala",
+    expected = "copy_and_equal.out",
 )
 
-gala_binary(
+gala_test(
     name = "option_complex",
     src = "option_complex.gala",
+    expected = "option_complex.out",
 )
 
-gala_binary(
+gala_test(
     name = "generic_methods",
     src = "generic_methods.gala",
+    expected = "generic_methods.out",
 )

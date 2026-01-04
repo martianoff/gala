@@ -1,0 +1,14 @@
+load("@rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "gala_test_runner_lib",
+    srcs = ["main.go"],
+    importpath = "martianoff/gala/cmd/gala_test_runner",
+    visibility = ["//visibility:private"],
+)
+
+go_binary(
+    name = "gala_test_runner",
+    embed = [":gala_test_runner_lib"],
+    visibility = ["//visibility:public"],
+)

@@ -52,7 +52,7 @@ _* Implement integration tests for critical paths_
 
 ## 8. Whether Junie should run tests to check the correctness of the proposed solution
 
-Yes, it should include unit tests to verify the functionality end-to-end. Please follow a pattern of existing tests.
+Yes, it should include unit tests to verify the functionality end-to-end. Please follow a pattern of existing tests. If new GALA language features or semantic changes are introduced, they should be verified with a new example placed in the "examples" folder.
 
 ## 9. How does Junie run tests?
 

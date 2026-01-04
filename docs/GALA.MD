@@ -277,6 +277,25 @@ func main() {
 }
 ```
 
+## 11. Testing
+
+GALA supports Bazel for building and testing. You can use the `gala_test` macro in your `BUILD.bazel` files to define tests that compare the execution output of a GALA program against an expected output file.
+
+```python
+load("//:gala.bzl", "gala_test")
+
+gala_test(
+    name = "my_test",
+    src = "my_test.gala",
+    expected = "my_test.out",
+)
+```
+
+To run all tests:
+```bash
+bazel test //...
+```
+
 ## Further Reading
 
 - [Examples](examples.md) - More examples of GALA code.
