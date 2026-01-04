@@ -1,7 +1,7 @@
 package std
 
 type Unapply interface {
-	Unapply(v any) bool
+	Unapply(v any) any
 }
 
 type Copyable[T any] interface {

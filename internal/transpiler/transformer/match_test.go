@@ -38,13 +38,13 @@ val res = x match {
 import "martianoff/gala/std"
 
 var res = std.NewImmutable(func(x any) any {
-	switch {
-	case std.UnapplyCheck(x, 1):
+	if std.UnapplyCheck(x, 1) {
 		return "one"
-	case std.UnapplyCheck(x, 2):
+	} else if std.UnapplyCheck(x, 2) {
 		return "two"
+	} else {
+		return "many"
 	}
-	return "many"
 }(x))
 `,
 		},
@@ -63,11 +63,11 @@ import "martianoff/gala/std"
 
 var x = std.NewImmutable(10)
 var res = std.NewImmutable(func(x any) any {
-	switch {
-	case std.UnapplyCheck(x, 10):
+	if std.UnapplyCheck(x, 10) {
 		return x
+	} else {
+		return 0
 	}
-	return 0
 }(x.Get()))
 `,
 		},
@@ -84,12 +84,63 @@ val res = x match {
 import "martianoff/gala/std"
 
 var res = std.NewImmutable(func(x any) any {
-	switch {
-	case std.UnapplyCheck(x, "unapplied"):
+	if std.UnapplyCheck(x, "unapplied") {
 		return "success"
+	} else {
+		return "fail"
 	}
-	return "fail"
 }(x))
+`,
+		},
+		{
+			name: "Match expression with var binding",
+			input: `package main
+
+val res = x match {
+	case y => y
+	case _ => "fail"
+}`,
+			expected: `package main
+
+import "martianoff/gala/std"
+
+var res = std.NewImmutable(func(x any) any {
+	{
+		y := x
+		if true {
+			return y
+		} else {
+			return "fail"
+		}
+	}
+}(x))
+`,
+		},
+		{
+			name: "Match expression with extraction and var binding",
+			input: `package main
+
+val x = Some(1)
+val res = x match {
+	case Some(y) => y
+	case _ => "fail"
+}`,
+			expected: `package main
+
+import "martianoff/gala/std"
+
+var x = std.NewImmutable(std.Some(1))
+var res = std.NewImmutable(func(x any) any {
+	{
+		_tmp_1, _tmp_2 := std.UnapplySome(x)
+		y := _tmp_1
+		if _tmp_2 && true {
+			return y
+		} else {
+			return "fail"
+		}
+	}
+}(x.Get()))
 `,
 		},
 		{

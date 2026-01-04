@@ -75,9 +75,12 @@ func (o Option[T]) Filter(p func(T) bool) Option[T] {
 }
 
 // Unapply is used for pattern matching.
-func (o Option[T]) Unapply(v any) bool {
+func (o Option[T]) Unapply(v any) Option[T] {
     if !o.Defined {
-        return false
+        return None[T]()
     }
-    return UnapplyCheck(o.Value, v)
+    if UnapplyCheck(o.Value, v) {
+        return Some[T](o.Value)
+    }
+    return None[T]()
 }

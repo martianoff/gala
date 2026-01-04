@@ -174,15 +174,31 @@ val status = if (score > 50) "pass" else "fail"
 ```
 
 ### Match Expression
-The `match` expression provides powerful pattern matching. It currently requires a default case (`_`).
+The `match` expression provides powerful pattern matching, supporting literals, variable bindings, and extractors (extracting values from objects using an `Unapply` method). It currently requires a default case (`_`).
 
 ```gala
 val result = x match {
     case 1 => "one"
     case 2 => "two"
+    case n => "Value is " + fmt.Sprintf("%d", n) // Binding: n is bound to x
     case _ => "other"
 }
 ```
+
+#### Extractors and `Unapply`
+GALA follows Scala semantics for extractors. A struct can implement an `Unapply` method that returns an `Option[T]`. When used in a pattern, the method is called, and if it returns `Some(v)`, the pattern matches and `v` can be bound to a variable.
+
+```gala
+type Even struct {}
+func (e Even) Unapply(i int) Option[int] = if (i % 2 == 0) Some(i) else None[int]()
+
+val description = number match {
+    case Even(n) => fmt.Sprintf("%d is even", n)
+    case _       => "odd"
+}
+```
+
+Extractors can be nested: `case Some(Even(n)) => ...`
 
 ### For Statement
 *Note: The `for` statement is currently under development and not yet fully supported in the transpiler.*

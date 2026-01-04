@@ -67,3 +67,9 @@ gala_test(
     src = "generic_methods.gala",
     expected = "generic_methods.out",
 )
+
+gala_test(
+    name = "match_extractors",
+    src = "match_extractors.gala",
+    expected = "match_extractors.out",
+)

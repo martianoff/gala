@@ -1,10 +1,11 @@
 package std
 
 import "reflect"
+import "strings"
 
 type Int int
 
-func (v Int) Unapply(p any) bool {
+func (v Int) Unapply(p any) any {
 	return reflect.DeepEqual(int(v), p)
 }
 
@@ -21,7 +22,7 @@ var _ Equatable[Int] = (Int)(0)
 
 type Int8 int8
 
-func (v Int8) Unapply(p any) bool {
+func (v Int8) Unapply(p any) any {
 	return reflect.DeepEqual(int8(v), p)
 }
 
@@ -38,7 +39,7 @@ var _ Equatable[Int8] = (Int8)(0)
 
 type Int16 int16
 
-func (v Int16) Unapply(p any) bool {
+func (v Int16) Unapply(p any) any {
 	return reflect.DeepEqual(int16(v), p)
 }
 
@@ -55,7 +56,7 @@ var _ Equatable[Int16] = (Int16)(0)
 
 type Int32 int32
 
-func (v Int32) Unapply(p any) bool {
+func (v Int32) Unapply(p any) any {
 	return reflect.DeepEqual(int32(v), p)
 }
 
@@ -72,7 +73,7 @@ var _ Equatable[Int32] = (Int32)(0)
 
 type Int64 int64
 
-func (v Int64) Unapply(p any) bool {
+func (v Int64) Unapply(p any) any {
 	return reflect.DeepEqual(int64(v), p)
 }
 
@@ -89,7 +90,7 @@ var _ Equatable[Int64] = (Int64)(0)
 
 type Uint uint
 
-func (v Uint) Unapply(p any) bool {
+func (v Uint) Unapply(p any) any {
 	return reflect.DeepEqual(uint(v), p)
 }
 
@@ -106,7 +107,7 @@ var _ Equatable[Uint] = (Uint)(0)
 
 type Uint8 uint8
 
-func (v Uint8) Unapply(p any) bool {
+func (v Uint8) Unapply(p any) any {
 	return reflect.DeepEqual(uint8(v), p)
 }
 
@@ -123,7 +124,7 @@ var _ Equatable[Uint8] = (Uint8)(0)
 
 type Uint16 uint16
 
-func (v Uint16) Unapply(p any) bool {
+func (v Uint16) Unapply(p any) any {
 	return reflect.DeepEqual(uint16(v), p)
 }
 
@@ -140,7 +141,7 @@ var _ Equatable[Uint16] = (Uint16)(0)
 
 type Uint32 uint32
 
-func (v Uint32) Unapply(p any) bool {
+func (v Uint32) Unapply(p any) any {
 	return reflect.DeepEqual(uint32(v), p)
 }
 
@@ -157,7 +158,7 @@ var _ Equatable[Uint32] = (Uint32)(0)
 
 type Uint64 uint64
 
-func (v Uint64) Unapply(p any) bool {
+func (v Uint64) Unapply(p any) any {
 	return reflect.DeepEqual(uint64(v), p)
 }
 
@@ -174,7 +175,7 @@ var _ Equatable[Uint64] = (Uint64)(0)
 
 type String string
 
-func (v String) Unapply(p any) bool {
+func (v String) Unapply(p any) any {
 	return reflect.DeepEqual(string(v), p)
 }
 
@@ -191,7 +192,7 @@ var _ Equatable[String] = (String)("")
 
 type Bool bool
 
-func (v Bool) Unapply(p any) bool {
+func (v Bool) Unapply(p any) any {
 	return reflect.DeepEqual(bool(v), p)
 }
 
@@ -208,7 +209,7 @@ var _ Equatable[Bool] = (Bool)(false)
 
 type Float32 float32
 
-func (v Float32) Unapply(p any) bool {
+func (v Float32) Unapply(p any) any {
 	return reflect.DeepEqual(float32(v), p)
 }
 
@@ -225,7 +226,7 @@ var _ Equatable[Float32] = (Float32)(0)
 
 type Float64 float64
 
-func (v Float64) Unapply(p any) bool {
+func (v Float64) Unapply(p any) any {
 	return reflect.DeepEqual(float64(v), p)
 }
 
@@ -241,10 +242,216 @@ var _ Copyable[Float64] = (Float64)(0)
 var _ Equatable[Float64] = (Float64)(0)
 
 func UnapplyCheck(obj any, pattern any) bool {
-	if u, ok := obj.(Unapply); ok {
-		return u.Unapply(pattern)
+	_, ok := UnapplyFull(obj, pattern)
+	return ok
+}
+
+func UnapplyFull(obj any, pattern any) (any, bool) {
+	obj = unwrapImmutable(obj)
+
+	// Try pattern.Unapply(obj) first (Scala-style extractors)
+	if u, ok := pattern.(Unapply); ok {
+		res := u.Unapply(obj)
+		if isDefined(res) {
+			return getSomeValue(res), true
+		}
+		return nil, false
 	}
-	return reflect.DeepEqual(obj, pattern)
+
+	// Try pattern.Unapply(obj) via reflection if interface not satisfied
+	patVal := reflect.ValueOf(pattern)
+	if !patVal.IsValid() {
+		return nil, false
+	}
+	unapplyMeth := patVal.MethodByName("Unapply")
+	if unapplyMeth.IsValid() && unapplyMeth.Type().NumIn() == 1 {
+		// Call it with obj. Handle nil obj by using zero value of the expected type.
+		argVal := reflect.ValueOf(obj)
+		if !argVal.IsValid() {
+			argVal = reflect.Zero(unapplyMeth.Type().In(0))
+		} else if argVal.Type() != unapplyMeth.Type().In(0) && !argVal.Type().AssignableTo(unapplyMeth.Type().In(0)) {
+			// Try to convert if possible, or return false if types are incompatible
+			if argVal.Type().ConvertibleTo(unapplyMeth.Type().In(0)) {
+				argVal = argVal.Convert(unapplyMeth.Type().In(0))
+			} else {
+				return nil, false
+			}
+		}
+
+		resVals := unapplyMeth.Call([]reflect.Value{argVal})
+		if len(resVals) > 0 {
+			res := resVals[0].Interface()
+			if isDefined(res) {
+				return getSomeValue(res), true
+			}
+			return nil, false
+		}
+	}
+
+	// Try obj.Unapply(pattern) (GALA-style matching)
+	if u, ok := obj.(Unapply); ok {
+		res := u.Unapply(pattern)
+		if b, ok := res.(bool); ok {
+			if b {
+				return obj, true
+			}
+			return nil, false
+		}
+		if isDefined(res) {
+			return getSomeValue(res), true
+		}
+	}
+
+	// Also try obj.Unapply(pattern) via reflection
+	objVal := reflect.ValueOf(obj)
+	if !objVal.IsValid() {
+		return nil, false
+	}
+	objUnapplyMeth := objVal.MethodByName("Unapply")
+	if objUnapplyMeth.IsValid() && objUnapplyMeth.Type().NumIn() == 1 {
+		argVal := reflect.ValueOf(pattern)
+		if !argVal.IsValid() {
+			argVal = reflect.Zero(objUnapplyMeth.Type().In(0))
+		} else if argVal.Type() != objUnapplyMeth.Type().In(0) && !argVal.Type().AssignableTo(objUnapplyMeth.Type().In(0)) {
+			if argVal.Type().ConvertibleTo(objUnapplyMeth.Type().In(0)) {
+				argVal = argVal.Convert(objUnapplyMeth.Type().In(0))
+			} else {
+				return nil, false
+			}
+		}
+
+		resVals := objUnapplyMeth.Call([]reflect.Value{argVal})
+		if len(resVals) > 0 {
+			res := resVals[0].Interface()
+			if b, ok := res.(bool); ok {
+				if b {
+					return obj, true
+				}
+				return nil, false
+			}
+			if isDefined(res) {
+				return getSomeValue(res), true
+			}
+		}
+	}
+
+	if reflect.DeepEqual(obj, pattern) {
+		return obj, true
+	}
+	return nil, false
+}
+
+func UnapplySome(obj any) (any, bool) {
+	obj = unwrapImmutable(obj)
+	if isDefined(obj) {
+		return getSomeValue(obj), true
+	}
+	return nil, false
+}
+
+func UnapplyNone(obj any) (any, bool) {
+	obj = unwrapImmutable(obj)
+	if !isDefined(obj) {
+		return nil, true
+	}
+	return nil, false
+}
+
+func unwrapImmutable(obj any) any {
+	if obj == nil {
+		return nil
+	}
+	v := reflect.ValueOf(obj)
+	if v.Kind() == reflect.Struct {
+		// Only unwrap if it's actually an Immutable struct.
+		// Check type name because it might be generic (e.g. Immutable[int])
+		typeName := v.Type().Name()
+		if typeName == "" {
+			// Might be a generic instantiation, check the string representation
+			s := v.Type().String()
+			if !strings.Contains(s, "Immutable") {
+				return obj
+			}
+		} else if !strings.Contains(typeName, "Immutable") {
+			return obj
+		}
+
+		meth := v.MethodByName("Get")
+		if meth.IsValid() {
+			res := meth.Call(nil)
+			if len(res) > 0 {
+				return res[0].Interface()
+			}
+		}
+	}
+	return obj
+}
+
+func isDefined(opt any) bool {
+	if opt == nil {
+		return false
+	}
+	if b, ok := opt.(bool); ok {
+		return b
+	}
+	v := reflect.ValueOf(opt)
+	meth := v.MethodByName("IsDefined")
+	if meth.IsValid() {
+		res := meth.Call(nil)
+		if len(res) > 0 && res[0].Kind() == reflect.Bool {
+			return res[0].Bool()
+		}
+	}
+	// Also check Defined field directly if it's an Option struct
+	if v.Kind() == reflect.Struct {
+		f := v.FieldByName("Defined")
+		if f.IsValid() {
+			if f.Kind() == reflect.Bool {
+				return f.Bool()
+			}
+			// Handle Immutable[bool]
+			meth := f.MethodByName("Get")
+			if meth.IsValid() {
+				res := meth.Call(nil)
+				if len(res) > 0 && res[0].Kind() == reflect.Bool {
+					return res[0].Bool()
+				}
+			}
+		}
+	}
+	return false
+}
+
+func getSomeValue(opt any) any {
+	if opt == nil {
+		return nil
+	}
+	v := reflect.ValueOf(opt)
+	meth := v.MethodByName("Get")
+	if meth.IsValid() {
+		res := meth.Call(nil)
+		if len(res) > 0 {
+			return res[0].Interface()
+		}
+	}
+	// Also check Value field directly
+	if v.Kind() == reflect.Struct {
+		f := v.FieldByName("Value")
+		if f.IsValid() {
+			val := f.Interface()
+			// Handle Immutable[T]
+			v2 := reflect.ValueOf(val)
+			meth2 := v2.MethodByName("Get")
+			if meth2.IsValid() {
+				res := meth2.Call(nil)
+				if len(res) > 0 {
+					return res[0].Interface()
+				}
+			}
+			return val
+		}
+	}
+	return opt
 }
 
 func Copy[T any](v T) T {

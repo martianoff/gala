@@ -29,6 +29,12 @@ type galaASTTransformer struct {
 	structFieldTypes  map[string]map[string]string // structName -> fieldName -> typeName
 	genericMethods    map[string]map[string]bool   // receiverType -> methodName -> isGeneric
 	functions         map[string]*transpiler.FunctionMetadata
+	tempVarCount      int
+}
+
+func (t *galaASTTransformer) nextTempVar() string {
+	t.tempVarCount++
+	return fmt.Sprintf("_tmp_%d", t.tempVarCount)
 }
 
 func (t *galaASTTransformer) pushScope() {
@@ -629,6 +635,22 @@ func (t *galaASTTransformer) transformVarDeclaration(ctx *grammar.VarDeclaration
 	}, nil
 }
 
+func (t *galaASTTransformer) wrapWithAssertion(expr ast.Expr, targetType ast.Expr) ast.Expr {
+	if targetType == nil {
+		return expr
+	}
+	// If it's a CallExpr to a FuncLit (like match generates), we should assert
+	if call, ok := expr.(*ast.CallExpr); ok {
+		if _, ok := call.Fun.(*ast.FuncLit); ok {
+			return &ast.TypeAssertExpr{
+				X:    expr,
+				Type: targetType,
+			}
+		}
+	}
+	return expr
+}
+
 func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionDeclarationContext) (ast.Decl, error) {
 	t.pushScope()
 	defer t.popScope()
@@ -761,6 +783,7 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 			return nil, err
 		}
 		if results != nil && len(results.List) > 0 {
+			expr = t.wrapWithAssertion(expr, results.List[0].Type)
 			body = &ast.BlockStmt{
 				List: []ast.Stmt{
 					&ast.ReturnStmt{Results: []ast.Expr{expr}},
@@ -1882,6 +1905,18 @@ func (t *galaASTTransformer) transformIfStatement(ctx *grammar.IfStatementContex
 	return stmt, nil
 }
 
+func findLeafIf(stmt ast.Stmt) *ast.IfStmt {
+	switch s := stmt.(type) {
+	case *ast.IfStmt:
+		return s
+	case *ast.BlockStmt:
+		if len(s.List) > 0 {
+			return findLeafIf(s.List[len(s.List)-1])
+		}
+	}
+	return nil
+}
+
 func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionContext) (ast.Expr, error) {
 	// expression 'match' '{' caseClause+ '}'
 	// Use children because it's not a distinct context type
@@ -1951,6 +1986,34 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 
 	t.needsStdImport = true
 	// Transpile to IIFE: func(obj any) any { ... }(expr)
+	var body []ast.Stmt
+	// Add clauses as if-else chain
+	var rootIf ast.Stmt
+	var currentIf *ast.IfStmt
+
+	for _, clause := range clauses {
+		if rootIf == nil {
+			rootIf = clause
+			currentIf = findLeafIf(clause)
+		} else {
+			if currentIf != nil {
+				currentIf.Else = clause
+				currentIf = findLeafIf(clause)
+			}
+		}
+	}
+
+	if rootIf != nil {
+		if len(defaultBody) > 0 {
+			if currentIf != nil {
+				currentIf.Else = &ast.BlockStmt{List: defaultBody}
+			}
+		}
+		body = []ast.Stmt{rootIf}
+	} else {
+		body = defaultBody
+	}
+
 	return &ast.CallExpr{
 		Fun: &ast.FuncLit{
 			Type: &ast.FuncType{
@@ -1967,22 +2030,143 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 				},
 			},
 			Body: &ast.BlockStmt{
-				List: append([]ast.Stmt{
-					&ast.SwitchStmt{
-						Body: &ast.BlockStmt{
-							List: clauses,
-						},
-					},
-				}, defaultBody...),
+				List: body,
 			},
 		},
 		Args: []ast.Expr{expr},
 	}, nil
 }
 
+func (t *galaASTTransformer) transformPattern(patCtx grammar.IExpressionContext, objExpr ast.Expr) (ast.Expr, []ast.Stmt, error) {
+	if patCtx.GetText() == "_" {
+		return ast.NewIdent("true"), nil, nil
+	}
+
+	// Simple Binding
+	if p, ok := patCtx.Primary().(*grammar.PrimaryContext); ok && p.Identifier() != nil {
+		name := p.Identifier().GetText()
+		t.currentScope.vals[name] = false // Treat as var to avoid .Get() wrapping
+		assign := &ast.AssignStmt{
+			Lhs: []ast.Expr{ast.NewIdent(name)},
+			Tok: token.DEFINE,
+			Rhs: []ast.Expr{objExpr},
+		}
+		return ast.NewIdent("true"), []ast.Stmt{assign}, nil
+	}
+
+	// Extractor
+	if patCtx.GetChildCount() >= 3 && patCtx.GetChild(1).(antlr.ParseTree).GetText() == "(" {
+		extractorCtx := patCtx.GetChild(0).(grammar.IExpressionContext)
+		extName := extractorCtx.GetText()
+
+		var unapplyFun ast.Expr = t.stdIdent("UnapplyFull")
+		var patternExpr ast.Expr
+
+		if extName == "Some" {
+			unapplyFun = t.stdIdent("UnapplySome")
+		} else if extName == "None" {
+			unapplyFun = t.stdIdent("UnapplyNone")
+		} else {
+			var err error
+			patternExpr, err = t.transformExpression(extractorCtx)
+			if err != nil {
+				return nil, nil, err
+			}
+			// If it's a type name, use composite lit
+			if id, ok := patternExpr.(*ast.Ident); ok {
+				if _, ok := t.structFields[id.Name]; ok {
+					patternExpr = &ast.CompositeLit{Type: id}
+				}
+			}
+		}
+
+		var argList *grammar.ArgumentListContext
+		if ctx, ok := patCtx.GetChild(2).(*grammar.ArgumentListContext); ok {
+			argList = ctx
+		}
+
+		valName := t.nextTempVar()
+		okName := t.nextTempVar()
+
+		// Only use valName if there are nested patterns
+		lhsVal := ast.NewIdent("_")
+		if argList != nil && len(argList.AllArgument()) > 0 {
+			lhsVal = ast.NewIdent(valName)
+		}
+
+		args := []ast.Expr{objExpr}
+		if patternExpr != nil {
+			args = append(args, patternExpr)
+		}
+
+		init := &ast.AssignStmt{
+			Lhs: []ast.Expr{lhsVal, ast.NewIdent(okName)},
+			Tok: token.DEFINE,
+			Rhs: []ast.Expr{
+				&ast.CallExpr{
+					Fun:  unapplyFun,
+					Args: args,
+				},
+			},
+		}
+
+		var allBindings []ast.Stmt
+		allBindings = append(allBindings, init)
+
+		var conds []ast.Expr
+		conds = append(conds, ast.NewIdent(okName))
+
+		// Handle arguments (nested patterns)
+		if argList != nil {
+			for i, argCtx := range argList.AllArgument() {
+				arg := argCtx.(*grammar.ArgumentContext)
+				// For now only support single value extractors as per issue
+				if i == 0 {
+					subCond, subBindings, err := t.transformPattern(arg.Expression(), ast.NewIdent(valName))
+					if err != nil {
+						return nil, nil, err
+					}
+					if subCond != nil {
+						conds = append(conds, subCond)
+					}
+					allBindings = append(allBindings, subBindings...)
+				}
+			}
+		}
+
+		var finalCond ast.Expr = conds[0]
+		for i := 1; i < len(conds); i++ {
+			finalCond = &ast.BinaryExpr{
+				X:  finalCond,
+				Op: token.LAND,
+				Y:  conds[i],
+			}
+		}
+
+		return finalCond, allBindings, nil
+	}
+
+	// Literal or other
+	patExpr, err := t.transformExpression(patCtx)
+	if err != nil {
+		return nil, nil, err
+	}
+	cond := &ast.CallExpr{
+		Fun: t.stdIdent("UnapplyCheck"),
+		Args: []ast.Expr{
+			objExpr,
+			patExpr,
+		},
+	}
+	return cond, nil, nil
+}
+
 func (t *galaASTTransformer) transformCaseClause(ctx *grammar.CaseClauseContext, paramName string) (ast.Stmt, error) {
-	// 'case' expression '=>' (expression | block)
-	patExpr, err := t.transformExpression(ctx.Expression(0))
+	t.pushScope()
+	defer t.popScope()
+
+	patCtx := ctx.Expression(0)
+	cond, bindings, err := t.transformPattern(patCtx, ast.NewIdent(paramName))
 	if err != nil {
 		return nil, err
 	}
@@ -2002,26 +2186,20 @@ func (t *galaASTTransformer) transformCaseClause(ctx *grammar.CaseClauseContext,
 		body = []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{expr}}}
 	}
 
-	if ident, ok := patExpr.(*ast.Ident); ok && ident.Name == "_" {
-		return &ast.CaseClause{
-			List: nil,
-			Body: body,
+	bodyBlock := &ast.BlockStmt{List: body}
+
+	ifStmt := &ast.IfStmt{
+		Cond: cond,
+		Body: bodyBlock,
+	}
+
+	if len(bindings) > 0 {
+		return &ast.BlockStmt{
+			List: append(bindings, ifStmt),
 		}, nil
 	}
 
-	// Use std.UnapplyCheck(paramName, patExpr)
-	check := &ast.CallExpr{
-		Fun: t.stdIdent("UnapplyCheck"),
-		Args: []ast.Expr{
-			ast.NewIdent(paramName),
-			patExpr,
-		},
-	}
-
-	return &ast.CaseClause{
-		List: []ast.Expr{check},
-		Body: body,
-	}, nil
+	return ifStmt, nil
 }
 
 func (t *galaASTTransformer) generateCopyMethod(name string, fields *ast.FieldList, tParams *ast.FieldList) (*ast.FuncDecl, error) {

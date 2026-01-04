@@ -60,6 +60,37 @@ func main() {
 }
 ```
 
+## Pattern Matching with Extractors Example
+
+```gala
+package main
+
+import "fmt"
+
+type Even struct {}
+func (e Even) Unapply(i int) Option[int] = if (i % 2 == 0) Some(i) else None[int]()
+
+func main() {
+    val number = 42
+    
+    val description = number match {
+        case Even(n) => fmt.Sprintf("%d is an even number", n)
+        case _       => fmt.Sprintf("%d is odd", number)
+    }
+    
+    fmt.Println(description)
+    
+    // Nested patterns
+    val opt = Some(10)
+    opt match {
+        case Some(Even(n)) => fmt.Println("Found some even number", n)
+        case Some(n)       => fmt.Println("Found some odd number", n)
+        case None          => fmt.Println("Nothing found")
+        case _             => fmt.Println("Other")
+    }
+}
+```
+
 ## More Examples
 
 You can find more examples in the `examples/` directory of the project:
