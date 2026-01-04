@@ -1,0 +1,179 @@
+package transformer
+
+import (
+	"github.com/antlr4-go/antlr/v4"
+	"go/ast"
+	"go/token"
+	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/transpiler"
+	"strings"
+)
+
+func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, error) {
+	if ctx == nil {
+		return nil, nil
+	}
+	// Simplified type handling
+	if ctx.Identifier() != nil {
+		typeName := ctx.Identifier().GetText()
+		var ident ast.Expr = ast.NewIdent(typeName)
+		if typeName == transpiler.TypeOption {
+			ident = t.stdIdent(transpiler.TypeOption)
+		}
+
+		if ctx.TypeArguments() != nil {
+			// Generic type: T[A, B] -> *ast.IndexExpr or *ast.IndexListExpr
+			args := ctx.TypeArguments().(*grammar.TypeArgumentsContext).TypeList().(*grammar.TypeListContext).AllType_()
+			var argExprs []ast.Expr
+			for _, arg := range args {
+				ae, err := t.transformType(arg)
+				if err != nil {
+					return nil, err
+				}
+				argExprs = append(argExprs, ae)
+			}
+			if len(argExprs) == 1 {
+				return &ast.IndexExpr{X: ident, Index: argExprs[0]}, nil
+			} else {
+				return &ast.IndexListExpr{X: ident, Indices: argExprs}, nil
+			}
+		}
+		return ident, nil
+	}
+	if ctx.GetChildCount() > 0 && ctx.GetChild(0).(antlr.ParseTree).GetText() == "*" {
+		typ, err := t.transformType(ctx.GetChild(1).(grammar.ITypeContext))
+		if err != nil {
+			return nil, err
+		}
+		return &ast.StarExpr{X: typ}, nil
+	}
+	return ast.NewIdent(ctx.GetText()), nil
+}
+
+func (t *galaASTTransformer) getExprType(expr ast.Expr) ast.Expr {
+	switch e := expr.(type) {
+	case *ast.BinaryExpr:
+		switch e.Op {
+		case token.LOR, token.LAND, token.EQL, token.NEQ, token.LSS, token.LEQ, token.GTR, token.GEQ:
+			return ast.NewIdent("bool")
+		}
+	case *ast.UnaryExpr:
+		if e.Op == token.NOT {
+			return ast.NewIdent("bool")
+		}
+	case *ast.Ident:
+		if e.Name == "true" || e.Name == "false" {
+			return ast.NewIdent("bool")
+		}
+	}
+	typeName := t.getExprTypeName(expr)
+	if typeName != "" {
+		if typeName == transpiler.TypeOption || typeName == transpiler.TypeImmutable {
+			return t.stdIdent(typeName)
+		}
+		return ast.NewIdent(typeName)
+	}
+	return ast.NewIdent("any")
+}
+
+func (t *galaASTTransformer) wrapWithAssertion(expr ast.Expr, targetType ast.Expr) ast.Expr {
+	if targetType == nil {
+		return expr
+	}
+	// If it's a CallExpr to a FuncLit (like match generates), we should assert
+	if call, ok := expr.(*ast.CallExpr); ok {
+		if _, ok := call.Fun.(*ast.FuncLit); ok {
+			return &ast.TypeAssertExpr{
+				X:    expr,
+				Type: targetType,
+			}
+		}
+	}
+	return expr
+}
+
+func (t *galaASTTransformer) extractTypeParams(typ ast.Expr) []*ast.Field {
+	var params []*ast.Field
+	switch e := typ.(type) {
+	case *ast.IndexExpr:
+		if id, ok := e.Index.(*ast.Ident); ok {
+			params = append(params, &ast.Field{
+				Names: []*ast.Ident{id},
+				Type:  ast.NewIdent("any"),
+			})
+		}
+	case *ast.IndexListExpr:
+		for _, index := range e.Indices {
+			if id, ok := index.(*ast.Ident); ok {
+				params = append(params, &ast.Field{
+					Names: []*ast.Ident{id},
+					Type:  ast.NewIdent("any"),
+				})
+			}
+		}
+	}
+	return params
+}
+
+func (t *galaASTTransformer) getBaseTypeName(expr ast.Expr) string {
+	switch e := expr.(type) {
+	case *ast.Ident:
+		return e.Name
+	case *ast.IndexExpr:
+		return t.getBaseTypeName(e.X)
+	case *ast.IndexListExpr:
+		return t.getBaseTypeName(e.X)
+	case *ast.StarExpr:
+		return t.getBaseTypeName(e.X)
+	case *ast.SelectorExpr:
+		return e.Sel.Name
+	}
+	return ""
+}
+
+func (t *galaASTTransformer) getExprTypeName(expr ast.Expr) string {
+	switch e := expr.(type) {
+	case *ast.Ident:
+		return t.getType(e.Name)
+	case *ast.SelectorExpr:
+		xTypeName := t.getExprTypeName(e.X)
+		if xTypeName != "" && t.structFieldTypes[xTypeName] != nil {
+			if fType, ok := t.structFieldTypes[xTypeName][e.Sel.Name]; ok && fType != "" {
+				return fType
+			}
+		}
+	case *ast.CallExpr:
+		// Handle b.Get() or std.Some()
+		if sel, ok := e.Fun.(*ast.SelectorExpr); ok {
+			if sel.Sel.Name == transpiler.MethodGet {
+				return t.getExprTypeName(sel.X)
+			}
+			if sel.Sel.Name == transpiler.FuncSome || sel.Sel.Name == transpiler.FuncNone {
+				return transpiler.TypeOption
+			}
+			if strings.HasPrefix(sel.Sel.Name, transpiler.TypeOption+"_") {
+				return transpiler.TypeOption
+			}
+			if _, ok := t.structFields[sel.Sel.Name]; ok {
+				return sel.Sel.Name
+			}
+		}
+		if id, ok := e.Fun.(*ast.Ident); ok {
+			if id.Name == transpiler.FuncSome || id.Name == transpiler.FuncNone {
+				return transpiler.TypeOption
+			}
+			if strings.HasPrefix(id.Name, transpiler.TypeOption+"_") {
+				return transpiler.TypeOption
+			}
+			if _, ok := t.structFields[id.Name]; ok {
+				return id.Name
+			}
+			if fMeta, ok := t.functions[id.Name]; ok {
+				return fMeta.ReturnType
+			}
+		}
+	case *ast.CompositeLit:
+		return t.getBaseTypeName(e.Type)
+	}
+	return ""
+}

@@ -2,7 +2,17 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "transformer",
-    srcs = ["transformer.go"],
+    srcs = [
+        "declarations.go",
+        "expressions.go",
+        "match.go",
+        "methods.go",
+        "scope.go",
+        "statements.go",
+        "transformer.go",
+        "types.go",
+        "utils.go",
+    ],
     importpath = "martianoff/gala/internal/transpiler/transformer",
     visibility = ["//:__subpackages__"],
     deps = [
