@@ -61,6 +61,15 @@ func (s Empty) Copy() Empty {
 func (s Empty) Equal(other Empty) bool {
 	return true
 }
+func (s Empty) Unapply(v any) bool {
+	if _, ok := v.(Empty); ok {
+		return true
+	}
+	if _, ok := v.(*Empty); ok {
+		return true
+	}
+	return false
+}
 `,
 		},
 		{
@@ -86,6 +95,15 @@ func (s Mixed) Copy() Mixed {
 func (s Mixed) Equal(other Mixed) bool {
 	return std.Equal(s.Name, other.Name) && std.Equal(s.Age, other.Age)
 }
+func (s Mixed) Unapply(v any) (std.Immutable[string], int, bool) {
+	if p, ok := v.(Mixed); ok {
+		return p.Name, p.Age, true
+	}
+	if p, ok := v.(*Mixed); ok && p != nil {
+		return p.Name, p.Age, true
+	}
+	return *new(std.Immutable[string]), *new(int), false
+}
 `,
 		},
 		{
@@ -110,6 +128,15 @@ func (s Mutable) Copy() Mutable {
 }
 func (s Mutable) Equal(other Mutable) bool {
 	return std.Equal(s.X, other.X) && std.Equal(s.Y, other.Y)
+}
+func (s Mutable) Unapply(v any) (int, int, bool) {
+	if p, ok := v.(Mutable); ok {
+		return p.X, p.Y, true
+	}
+	if p, ok := v.(*Mutable); ok && p != nil {
+		return p.X, p.Y, true
+	}
+	return *new(int), *new(int), false
 }
 `,
 		},

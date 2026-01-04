@@ -133,7 +133,7 @@ var x = std.NewImmutable(std.Some(1))
 var res = std.NewImmutable(func(x any) any {
 	{
 		_tmp_1, _tmp_2 := std.UnapplySome(x)
-		y := _tmp_1
+		y := std.GetSafe(_tmp_1, 0)
 		if _tmp_2 && true {
 			return y
 		} else {

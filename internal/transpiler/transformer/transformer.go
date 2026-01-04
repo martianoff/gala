@@ -29,6 +29,7 @@ type galaASTTransformer struct {
 	structFieldTypes  map[string]map[string]string // structName -> fieldName -> typeName
 	genericMethods    map[string]map[string]bool   // receiverType -> methodName -> isGeneric
 	functions         map[string]*transpiler.FunctionMetadata
+	typeMetas         map[string]*transpiler.TypeMetadata
 	tempVarCount      int
 }
 
@@ -222,6 +223,7 @@ func NewGalaASTTransformer() transpiler.ASTTransformer {
 		structFieldTypes:  make(map[string]map[string]string),
 		genericMethods:    make(map[string]map[string]bool),
 		functions:         make(map[string]*transpiler.FunctionMetadata),
+		typeMetas:         make(map[string]*transpiler.TypeMetadata),
 	}
 }
 
@@ -229,6 +231,7 @@ func (t *galaASTTransformer) initGenericMethods() {
 	t.genericMethods = make(map[string]map[string]bool)
 	t.structFieldTypes = make(map[string]map[string]string)
 	t.functions = make(map[string]*transpiler.FunctionMetadata)
+	t.typeMetas = make(map[string]*transpiler.TypeMetadata)
 }
 
 func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (*token.FileSet, *ast.File, error) {
@@ -242,6 +245,8 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (*token.File
 	t.structFieldTypes = make(map[string]map[string]string)
 	t.genericMethods = make(map[string]map[string]bool)
 	t.functions = richAST.Functions
+	t.typeMetas = richAST.Types
+	t.tempVarCount = 0
 
 	// Populate metadata from RichAST
 	for typeName, meta := range richAST.Types {
@@ -892,6 +897,14 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 	}
 	decls = append(decls, equalMethod)
 
+	unapplyMethod, err := t.generateUnapplyMethod(name, fields, nil)
+	if err != nil {
+		return nil, err
+	}
+	if unapplyMethod != nil {
+		decls = append(decls, unapplyMethod)
+	}
+
 	return decls, nil
 }
 
@@ -1102,6 +1115,15 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 			},
 		}
 		decls = append(decls, equalDecl)
+
+		// Generate Unapply method
+		unapplyDecl, err := t.generateUnapplyMethod(name, fields, tParams)
+		if err != nil {
+			return nil, err
+		}
+		if unapplyDecl != nil {
+			decls = append(decls, unapplyDecl)
+		}
 
 	} else if ctx.InterfaceType() != nil {
 		// TODO: implement
@@ -2085,13 +2107,22 @@ func (t *galaASTTransformer) transformPattern(patCtx grammar.IExpressionContext,
 			argList = ctx
 		}
 
-		valName := t.nextTempVar()
+		resName := t.nextTempVar()
 		okName := t.nextTempVar()
 
-		// Only use valName if there are nested patterns
-		lhsVal := ast.NewIdent("_")
+		// Only use resName if there are nested patterns that need it
+		lhsRes := ast.NewIdent("_")
 		if argList != nil && len(argList.AllArgument()) > 0 {
-			lhsVal = ast.NewIdent(valName)
+			hasNonUnderscore := false
+			for _, argCtx := range argList.AllArgument() {
+				if argCtx.(*grammar.ArgumentContext).Expression().GetText() != "_" {
+					hasNonUnderscore = true
+					break
+				}
+			}
+			if hasNonUnderscore {
+				lhsRes = ast.NewIdent(resName)
+			}
 		}
 
 		args := []ast.Expr{objExpr}
@@ -2100,7 +2131,7 @@ func (t *galaASTTransformer) transformPattern(patCtx grammar.IExpressionContext,
 		}
 
 		init := &ast.AssignStmt{
-			Lhs: []ast.Expr{lhsVal, ast.NewIdent(okName)},
+			Lhs: []ast.Expr{lhsRes, ast.NewIdent(okName)},
 			Tok: token.DEFINE,
 			Rhs: []ast.Expr{
 				&ast.CallExpr{
@@ -2120,17 +2151,27 @@ func (t *galaASTTransformer) transformPattern(patCtx grammar.IExpressionContext,
 		if argList != nil {
 			for i, argCtx := range argList.AllArgument() {
 				arg := argCtx.(*grammar.ArgumentContext)
-				// For now only support single value extractors as per issue
-				if i == 0 {
-					subCond, subBindings, err := t.transformPattern(arg.Expression(), ast.NewIdent(valName))
-					if err != nil {
-						return nil, nil, err
-					}
-					if subCond != nil {
-						conds = append(conds, subCond)
-					}
-					allBindings = append(allBindings, subBindings...)
+
+				if arg.Expression().GetText() == "_" {
+					continue
 				}
+
+				valExpr := &ast.CallExpr{
+					Fun: t.stdIdent("GetSafe"),
+					Args: []ast.Expr{
+						ast.NewIdent(resName),
+						&ast.BasicLit{Kind: token.INT, Value: fmt.Sprintf("%d", i)},
+					},
+				}
+
+				subCond, subBindings, err := t.transformPattern(arg.Expression(), valExpr)
+				if err != nil {
+					return nil, nil, err
+				}
+				if subCond != nil {
+					conds = append(conds, subCond)
+				}
+				allBindings = append(allBindings, subBindings...)
 			}
 		}
 
@@ -2343,6 +2384,153 @@ func (t *galaASTTransformer) generateEqualMethod(name string, fields *ast.FieldL
 				},
 			},
 		},
+	}, nil
+}
+
+func (t *galaASTTransformer) generateUnapplyMethod(name string, fields *ast.FieldList, tParams *ast.FieldList) (*ast.FuncDecl, error) {
+	if meta, ok := t.typeMetas[name]; ok {
+		if _, ok := meta.Methods["Unapply"]; ok {
+			return nil, nil
+		}
+	}
+
+	// Only generate Unapply if all fields are Public (exported)
+	for _, field := range fields.List {
+		for _, fieldName := range field.Names {
+			if !ast.IsExported(fieldName.Name) {
+				return nil, nil
+			}
+		}
+	}
+
+	retType := ast.Expr(ast.NewIdent(name))
+	if tParams != nil {
+		var indices []ast.Expr
+		for _, p := range tParams.List {
+			for _, n := range p.Names {
+				indices = append(indices, ast.NewIdent(n.Name))
+			}
+		}
+		if len(indices) == 1 {
+			retType = &ast.IndexExpr{
+				X:     ast.NewIdent(name),
+				Index: indices[0],
+			}
+		} else if len(indices) > 1 {
+			retType = &ast.IndexListExpr{
+				X:       ast.NewIdent(name),
+				Indices: indices,
+			}
+		}
+	}
+
+	var results []*ast.Field
+	var retVals []ast.Expr
+	var zeroVals []ast.Expr
+
+	hasFields := false
+	for _, field := range fields.List {
+		for _, fieldName := range field.Names {
+			hasFields = true
+			results = append(results, &ast.Field{Type: field.Type})
+			retVals = append(retVals, &ast.SelectorExpr{
+				X:   ast.NewIdent("p"),
+				Sel: ast.NewIdent(fieldName.Name),
+			})
+			// Zero value trick: *new(Type)
+			zeroVals = append(zeroVals, &ast.StarExpr{
+				X: &ast.CallExpr{
+					Fun:  ast.NewIdent("new"),
+					Args: []ast.Expr{field.Type},
+				},
+			})
+		}
+	}
+	results = append(results, &ast.Field{Type: ast.NewIdent("bool")})
+	retVals = append(retVals, ast.NewIdent("true"))
+	zeroVals = append(zeroVals, ast.NewIdent("false"))
+
+	pName := "p"
+	if !hasFields {
+		pName = "_"
+	}
+
+	body := []ast.Stmt{
+		&ast.IfStmt{
+			Init: &ast.AssignStmt{
+				Lhs: []ast.Expr{ast.NewIdent(pName), ast.NewIdent("ok")},
+				Tok: token.DEFINE,
+				Rhs: []ast.Expr{
+					&ast.TypeAssertExpr{
+						X:    ast.NewIdent("v"),
+						Type: retType,
+					},
+				},
+			},
+			Cond: ast.NewIdent("ok"),
+			Body: &ast.BlockStmt{
+				List: []ast.Stmt{
+					&ast.ReturnStmt{Results: retVals},
+				},
+			},
+		},
+		&ast.IfStmt{
+			Init: &ast.AssignStmt{
+				Lhs: []ast.Expr{ast.NewIdent(pName), ast.NewIdent("ok")},
+				Tok: token.DEFINE,
+				Rhs: []ast.Expr{
+					&ast.TypeAssertExpr{
+						X:    ast.NewIdent("v"),
+						Type: &ast.StarExpr{X: retType},
+					},
+				},
+			},
+			Cond: &ast.BinaryExpr{
+				X:  ast.NewIdent("ok"),
+				Op: token.LAND,
+				Y: &ast.BinaryExpr{
+					X:  ast.NewIdent("p"), // still use p here for nil check if it exists
+					Op: token.NEQ,
+					Y:  ast.NewIdent("nil"),
+				},
+			},
+			Body: &ast.BlockStmt{
+				List: []ast.Stmt{
+					&ast.ReturnStmt{Results: retVals},
+				},
+			},
+		},
+		&ast.ReturnStmt{Results: zeroVals},
+	}
+
+	// Update the nil check if p is _
+	if !hasFields {
+		ifStmt := body[1].(*ast.IfStmt)
+		ifStmt.Cond = ast.NewIdent("ok") // No nil check needed if we don't use p
+	}
+
+	return &ast.FuncDecl{
+		Recv: &ast.FieldList{
+			List: []*ast.Field{
+				{
+					Names: []*ast.Ident{ast.NewIdent("s")},
+					Type:  retType,
+				},
+			},
+		},
+		Name: ast.NewIdent("Unapply"),
+		Type: &ast.FuncType{
+			Params: &ast.FieldList{
+				List: []*ast.Field{
+					{
+						Names: []*ast.Ident{ast.NewIdent("v")},
+						Type:  ast.NewIdent("any"),
+					},
+				},
+			},
+			Results: &ast.FieldList{List: results},
+		},
+		Body: &ast.BlockStmt{List: body},
 	}, nil
 }
 

@@ -56,6 +56,15 @@ func (s Box[T]) Copy() Box[T] {
 func (s Box[T]) Equal(other Box[T]) bool {
 	return std.Equal(s.Value, other.Value)
 }
+func (s Box[T]) Unapply(v any) (std.Immutable[T], bool) {
+	if p, ok := v.(Box[T]); ok {
+		return p.Value, true
+	}
+	if p, ok := v.(*Box[T]); ok && p != nil {
+		return p.Value, true
+	}
+	return *new(std.Immutable[T]), false
+}
 `,
 		},
 		{
@@ -79,6 +88,15 @@ func (s Box[T]) Copy() Box[T] {
 }
 func (s Box[T]) Equal(other Box[T]) bool {
 	return std.Equal(s.Value, other.Value)
+}
+func (s Box[T]) Unapply(v any) (std.Immutable[T], bool) {
+	if p, ok := v.(Box[T]); ok {
+		return p.Value, true
+	}
+	if p, ok := v.(*Box[T]); ok && p != nil {
+		return p.Value, true
+	}
+	return *new(std.Immutable[T]), false
 }
 func getValue[T any](b Box[T]) T {
 	return b.Value.Get()
@@ -106,6 +124,15 @@ func (s Box[T]) Copy() Box[T] {
 func (s Box[T]) Equal(other Box[T]) bool {
 	return std.Equal(s.Value, other.Value)
 }
+func (s Box[T]) Unapply(v any) (std.Immutable[T], bool) {
+	if p, ok := v.(Box[T]); ok {
+		return p.Value, true
+	}
+	if p, ok := v.(*Box[T]); ok && p != nil {
+		return p.Value, true
+	}
+	return *new(std.Immutable[T]), false
+}
 `,
 		},
 		{
@@ -128,6 +155,15 @@ func (s Box[T]) Copy() Box[T] {
 }
 func (s Box[T]) Equal(other Box[T]) bool {
 	return std.Equal(s.Value, other.Value)
+}
+func (s Box[T]) Unapply(v any) (T, bool) {
+	if p, ok := v.(Box[T]); ok {
+		return p.Value, true
+	}
+	if p, ok := v.(*Box[T]); ok && p != nil {
+		return p.Value, true
+	}
+	return *new(T), false
 }
 `,
 		},

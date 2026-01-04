@@ -74,6 +74,15 @@ func (s Config) Copy() Config {
 func (s Config) Equal(other Config) bool {
 	return std.Equal(s.ID, other.ID)
 }
+func (s Config) Unapply(v any) (std.Immutable[string], bool) {
+	if p, ok := v.(Config); ok {
+		return p.ID, true
+	}
+	if p, ok := v.(*Config); ok && p != nil {
+		return p.ID, true
+	}
+	return *new(std.Immutable[string]), false
+}
 func getID(c Config) string {
 	return c.ID.Get()
 }

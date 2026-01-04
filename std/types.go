@@ -246,14 +246,14 @@ func UnapplyCheck(obj any, pattern any) bool {
 	return ok
 }
 
-func UnapplyFull(obj any, pattern any) (any, bool) {
+func UnapplyFull(obj any, pattern any) ([]any, bool) {
 	obj = unwrapImmutable(obj)
 
 	// Try pattern.Unapply(obj) first (Scala-style extractors)
 	if u, ok := pattern.(Unapply); ok {
 		res := u.Unapply(obj)
 		if isDefined(res) {
-			return getSomeValue(res), true
+			return []any{getSomeValue(res)}, true
 		}
 		return nil, false
 	}
@@ -280,34 +280,55 @@ func UnapplyFull(obj any, pattern any) (any, bool) {
 
 		resVals := unapplyMeth.Call([]reflect.Value{argVal})
 		if len(resVals) > 0 {
+			// Check if last return value is bool (positional extraction)
+			lastIdx := len(resVals) - 1
+			if resVals[lastIdx].Kind() == reflect.Bool {
+				if !resVals[lastIdx].Bool() {
+					return nil, false
+				}
+				var results []any
+				for i := 0; i < lastIdx; i++ {
+					results = append(results, resVals[i].Interface())
+				}
+				return results, true
+			}
+
+			// Handle Option-style (single return value)
 			res := resVals[0].Interface()
 			if isDefined(res) {
-				return getSomeValue(res), true
+				return []any{getSomeValue(res)}, true
 			}
 			return nil, false
 		}
 	}
 
 	if reflect.DeepEqual(obj, pattern) {
-		return obj, true
+		return []any{obj}, true
 	}
 	return nil, false
 }
 
-func UnapplySome(obj any) (any, bool) {
+func UnapplySome(obj any) ([]any, bool) {
 	obj = unwrapImmutable(obj)
 	if isDefined(obj) {
-		return getSomeValue(obj), true
+		return []any{getSomeValue(obj)}, true
 	}
 	return nil, false
 }
 
-func UnapplyNone(obj any) (any, bool) {
+func UnapplyNone(obj any) ([]any, bool) {
 	obj = unwrapImmutable(obj)
 	if !isDefined(obj) {
-		return nil, true
+		return []any{}, true
 	}
 	return nil, false
+}
+
+func GetSafe(res []any, i int) any {
+	if i < 0 || i >= len(res) {
+		return nil
+	}
+	return res[i]
 }
 
 func unwrapImmutable(obj any) any {

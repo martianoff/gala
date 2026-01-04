@@ -186,7 +186,22 @@ val result = x match {
 ```
 
 #### Extractors and `Unapply`
-GALA follows Scala semantics for extractors. When a struct or object is used as a pattern, its `Unapply` method is called with the matched object as an argument. The method should return an `Option[T]` or a `bool`. If it returns `Some(v)` or `true`, the pattern matches.
+GALA follows Scala semantics for extractors. When a struct or object is used as a pattern, its `Unapply` method is called with the matched object as an argument.
+
+Every GALA struct automatically generates an `Unapply` method, provided all its fields are public (starting with an uppercase letter). This allows for positional property extraction.
+
+```gala
+struct Person(Name string, Age int)
+
+val p = Person("Alice", 30)
+val msg = p match {
+    case Person(name, 30) => "Alice is 30"
+    case Person(_, age)   => "Someone else is " + fmt.Sprintf("%d", age)
+    case _                => "Unknown"
+}
+```
+
+You can also define custom extractors by implementing an `Unapply` method that returns an `Option[T]`, a `bool`, or multiple values followed by a `bool`.
 
 ```gala
 type Even struct {}
@@ -198,7 +213,7 @@ val description = number match {
 }
 ```
 
-Extractors can be nested: `case Some(Even(n)) => ...`
+Extractors can be nested: `case Some(Even(n)) => ...`. You can use the underscore `_` to skip variable bindings in any extractor: `case Some(_) => "Got something"`.
 
 ### For Statement
 *Note: The `for` statement is currently under development and not yet fully supported in the transpiler.*

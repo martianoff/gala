@@ -46,6 +46,15 @@ func (s Person) Copy() Person {
 func (s Person) Equal(other Person) bool {
 	return std.Equal(s.Name, other.Name) && std.Equal(s.Age, other.Age)
 }
+func (s Person) Unapply(v any) (std.Immutable[string], std.Immutable[int], bool) {
+	if p, ok := v.(Person); ok {
+		return p.Name, p.Age, true
+	}
+	if p, ok := v.(*Person); ok && p != nil {
+		return p.Name, p.Age, true
+	}
+	return *new(std.Immutable[string]), *new(std.Immutable[int]), false
+}
 `,
 		},
 		{
@@ -71,6 +80,15 @@ func (s Config) Copy() Config {
 func (s Config) Equal(other Config) bool {
 	return std.Equal(s.ID, other.ID) && std.Equal(s.Count, other.Count)
 }
+func (s Config) Unapply(v any) (std.Immutable[string], int, bool) {
+	if p, ok := v.(Config); ok {
+		return p.ID, p.Count, true
+	}
+	if p, ok := v.(*Config); ok && p != nil {
+		return p.ID, p.Count, true
+	}
+	return *new(std.Immutable[string]), *new(int), false
+}
 `,
 		},
 		{
@@ -93,6 +111,15 @@ func (s User) Copy() User {
 }
 func (s User) Equal(other User) bool {
 	return std.Equal(s.Name, other.Name)
+}
+func (s User) Unapply(v any) (std.Immutable[string], bool) {
+	if p, ok := v.(User); ok {
+		return p.Name, true
+	}
+	if p, ok := v.(*User); ok && p != nil {
+		return p.Name, true
+	}
+	return *new(std.Immutable[string]), false
 }
 `,
 		},
