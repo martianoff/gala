@@ -51,22 +51,29 @@ _* Implement integration tests for critical paths_
 * Use appropriate timeouts for shutdown
 
 ## 8. Whether Junie should run tests to check the correctness of the proposed solution
+
 Yes, it should include unit tests to verify the functionality end-to-end. Please follow a pattern of existing tests.
 
 ## 9. How does Junie run tests?
+
 Use bazel to run tests `bazel test //...`
 
 ## 10. Whether Junie should build the project before submitting the result
+
 Yes, the project should be buildable with bazel. Code under "examples" should be executable with bazel and shouldn't return compiler errors.
 
 ## 11. Code-style-related instructions
+
 Follow golang best practices
 For each implementation of interface add compiler safe validator like `var _ Interface = (*Implementation)(nil)`
+Prefer generics where possible over reflection
 
 ## 12. Whether Junie generate BUILD files?
+
 Yes, use `bazel run //:gazelle` to create BUILD files
 
 ## 13. Update go dependencies
+
 If needed, use the following commands to update BUILD files and configuration:
 ```shell
 go mod tidy
