@@ -1,18 +1,26 @@
 package std
 
+// Option represents an optional value: every instance of Option is either an instance
+// of Some containing a value, or None representing an empty value.
 type Option[T any] struct {
     Value T
     Defined bool
 }
 
+// Some returns an Option containing the given value.
+// v: the value to wrap in an Option.
 func Some[T any](v T) Option[T] = Option[T](Value = v, Defined = true)
 
+// None returns an empty Option.
 func None[T any]() Option[T] = Option[T](Defined = false)
 
+// IsDefined returns true if the option is an instance of Some, false otherwise.
 func (o Option[T]) IsDefined() bool = o.Defined
 
+// IsEmpty returns true if the option is None, false otherwise.
 func (o Option[T]) IsEmpty() bool = !o.Defined
 
+// Get returns the option's value if the option is Some, otherwise it panics.
 func (o Option[T]) Get() T {
     if !o.Defined {
         panic("Option.Get on None")
@@ -20,6 +28,8 @@ func (o Option[T]) Get() T {
     return o.Value
 }
 
+// GetOrElse returns the option's value if the option is Some, otherwise returns the result of evaluating defaultValue.
+// defaultValue: the default value to return if the option is empty.
 func (o Option[T]) GetOrElse(defaultValue T) T {
     if o.Defined {
         return o.Value
@@ -27,12 +37,17 @@ func (o Option[T]) GetOrElse(defaultValue T) T {
     return defaultValue
 }
 
+// ForEach applies the given procedure f to the option's value, if it is nonempty.
+// f: the procedure to apply.
 func (o Option[T]) ForEach(f func(T) any) {
     if o.Defined {
         f(o.Value)
     }
 }
 
+// Map builds a new option by applying a function to all values of this option.
+// f: the function to apply.
+// Returns a new Option containing the result of applying f to this option's value if it is nonempty.
 func (o Option[T]) Map[U any](f func(T) U) Option[U] {
     if o.Defined {
         return Some[U](f(o.Value))
@@ -40,6 +55,9 @@ func (o Option[T]) Map[U any](f func(T) U) Option[U] {
     return None[U]()
 }
 
+// FlatMap returns the result of applying f to this option's value if this option is nonempty.
+// Returns None if this option is empty.
+// f: the function to apply.
 func (o Option[T]) FlatMap[U any](f func(T) Option[U]) Option[U] {
     if o.Defined {
         return f(o.Value)
@@ -47,6 +65,8 @@ func (o Option[T]) FlatMap[U any](f func(T) Option[U]) Option[U] {
     return None[U]()
 }
 
+// Filter returns this option if it is nonempty and applying the predicate p to this option's value returns true.
+// p: the predicate used for testing.
 func (o Option[T]) Filter(p func(T) bool) Option[T] {
     if o.Defined && p(o.Value) {
         return o
@@ -54,6 +74,7 @@ func (o Option[T]) Filter(p func(T) bool) Option[T] {
     return None[T]()
 }
 
+// Unapply is used for pattern matching.
 func (o Option[T]) Unapply(v any) bool {
     if !o.Defined {
         return false
@@ -61,8 +82,14 @@ func (o Option[T]) Unapply(v any) bool {
     return UnapplyCheck(o.Value, v)
 }
 
-// Compatibility global functions
+// ForEach applies the given procedure f to the option's value, if it is nonempty.
 func ForEach[T any](o Option[T], f func(T) any) = o.ForEach(f)
+
+// Map builds a new option by applying a function to all values of this option.
 func Map[T any, U any](o Option[T], f func(T) U) Option[U] = o.Map(f)
+
+// FlatMap returns the result of applying f to this option's value if this option is nonempty.
 func FlatMap[T any, U any](o Option[T], f func(T) Option[U]) Option[U] = o.FlatMap(f)
+
+// Filter returns this option if it is nonempty and applying the predicate p to this option's value returns true.
 func Filter[T any](o Option[T], p func(T) bool) Option[T] = o.Filter(p)
