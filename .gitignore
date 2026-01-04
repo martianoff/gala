@@ -94,3 +94,4 @@ fabric.properties
 
 # Generated files
 internal/parser/grammar/*.go
+std/option.go

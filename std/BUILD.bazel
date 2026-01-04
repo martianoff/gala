@@ -1,4 +1,11 @@
 load("@rules_go//go:def.bzl", "go_library", "go_test")
+load("//:gala.bzl", "gala_binary", "gala_library", "gala_transpile")
+
+gala_transpile(
+    name = "option_go",
+    src = "option.gala",
+    out = "option.go",
+)
 
 go_library(
     name = "std",

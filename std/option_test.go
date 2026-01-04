@@ -36,38 +36,33 @@ func TestOptionImplementation(t *testing.T) {
 
 	t.Run("FlatMap", func(t *testing.T) {
 		o := Some(10)
-		m := FlatMap(o, func(v int) any { return Some("val") })
+		m := FlatMap(o, func(v int) Option[string] { return Some("val") })
 		assert.True(t, m.IsDefined())
 		assert.Equal(t, "val", m.Get())
 
-		nm := FlatMap(o, func(v int) any { return None[string]() })
+		nm := FlatMap(o, func(v int) Option[string] { return None[string]() })
 		assert.True(t, nm.IsEmpty())
 	})
 
 	t.Run("Filter", func(t *testing.T) {
 		o := Some(10)
-		assert.True(t, Filter(o, func(v int) any { return v > 5 }).IsDefined())
-		assert.True(t, Filter(o, func(v int) any { return v > 15 }).IsEmpty())
+		assert.True(t, Filter(o, func(v int) bool { return v > 5 }).IsDefined())
+		assert.True(t, Filter(o, func(v int) bool { return v > 15 }).IsEmpty())
 	})
 
 	t.Run("ForEach", func(t *testing.T) {
 		count := 0
-		Some(10).ForEach(func(v int) {
-			count += v
-		})
-		assert.Equal(t, 10, count)
-
-		None[int]().ForEach(func(v int) {
-			count += v
-		})
-		assert.Equal(t, 10, count)
-
-		// Test with func(T) any which is what GALA transpiles to
-		Some(20).ForEach(func(v int) any {
+		Some(10).ForEach(func(v int) any {
 			count += v
 			return nil
 		})
-		assert.Equal(t, 30, count)
+		assert.Equal(t, 10, count)
+
+		None[int]().ForEach(func(v int) any {
+			count += v
+			return nil
+		})
+		assert.Equal(t, 10, count)
 	})
 
 	t.Run("Unapply", func(t *testing.T) {

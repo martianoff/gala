@@ -1,0 +1,68 @@
+package std
+
+type Option[T any] struct {
+    Value T
+    Defined bool
+}
+
+func Some[T any](v T) Option[T] = Option[T](Value = v, Defined = true)
+
+func None[T any]() Option[T] = Option[T](Defined = false)
+
+func (o Option[T]) IsDefined() bool = o.Defined
+
+func (o Option[T]) IsEmpty() bool = !o.Defined
+
+func (o Option[T]) Get() T {
+    if !o.Defined {
+        panic("Option.Get on None")
+    }
+    return o.Value
+}
+
+func (o Option[T]) GetOrElse(defaultValue T) T {
+    if o.Defined {
+        return o.Value
+    }
+    return defaultValue
+}
+
+func (o Option[T]) ForEach(f func(T) any) {
+    if o.Defined {
+        f(o.Value)
+    }
+}
+
+func (o Option[T]) Map[U any](f func(T) U) Option[U] {
+    if o.Defined {
+        return Some[U](f(o.Value))
+    }
+    return None[U]()
+}
+
+func (o Option[T]) FlatMap[U any](f func(T) Option[U]) Option[U] {
+    if o.Defined {
+        return f(o.Value)
+    }
+    return None[U]()
+}
+
+func (o Option[T]) Filter(p func(T) bool) Option[T] {
+    if o.Defined && p(o.Value) {
+        return o
+    }
+    return None[T]()
+}
+
+func (o Option[T]) Unapply(v any) bool {
+    if !o.Defined {
+        return false
+    }
+    return UnapplyCheck(o.Value, v)
+}
+
+// Compatibility global functions
+func ForEach[T any](o Option[T], f func(T) any) = o.ForEach(f)
+func Map[T any, U any](o Option[T], f func(T) U) Option[U] = o.Map(f)
+func FlatMap[T any, U any](o Option[T], f func(T) Option[U]) Option[U] = o.FlatMap(f)
+func Filter[T any](o Option[T], p func(T) bool) Option[T] = o.Filter(p)

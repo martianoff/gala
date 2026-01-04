@@ -19,12 +19,14 @@ type scope struct {
 
 type galaASTTransformer struct {
 	currentScope      *scope
+	packageName       string
 	immutFields       map[string]bool
 	structImmutFields map[string][]bool
 	needsStdImport    bool
 	activeTypeParams  map[string]bool
 	structFields      map[string][]string
-	genericMethods    map[string]map[string]bool // receiverType -> methodName -> isGeneric
+	structFieldTypes  map[string]map[string]string // structName -> fieldName -> typeName
+	genericMethods    map[string]map[string]bool   // receiverType -> methodName -> isGeneric
 }
 
 func (t *galaASTTransformer) pushScope() {
@@ -149,12 +151,8 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 		if val, ok := overrides[fn]; ok {
 			finalVal := val
 			if i < len(immutFlags) && immutFlags[i] {
-				t.needsStdImport = true
 				finalVal = &ast.CallExpr{
-					Fun: &ast.SelectorExpr{
-						X:   ast.NewIdent("std"),
-						Sel: ast.NewIdent("NewImmutable"),
-					},
+					Fun:  t.stdIdent("NewImmutable"),
 					Args: []ast.Expr{val},
 				}
 			}
@@ -166,10 +164,7 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 			elts = append(elts, &ast.KeyValueExpr{
 				Key: ast.NewIdent(fn),
 				Value: &ast.CallExpr{
-					Fun: &ast.SelectorExpr{
-						X:   ast.NewIdent("std"),
-						Sel: ast.NewIdent("Copy"),
-					},
+					Fun: t.stdIdent("Copy"),
 					Args: []ast.Expr{
 						&ast.SelectorExpr{
 							X:   receiver,
@@ -198,14 +193,44 @@ func (t *galaASTTransformer) isVal(name string) bool {
 	return false
 }
 
+func (t *galaASTTransformer) stdIdent(name string) ast.Expr {
+	t.needsStdImport = true
+	if t.packageName == "std" {
+		return ast.NewIdent(name)
+	}
+	return &ast.SelectorExpr{
+		X:   ast.NewIdent("std"),
+		Sel: ast.NewIdent(name),
+	}
+}
+
 // NewGalaASTTransformer creates a new instance of ASTTransformer for GALA.
 func NewGalaASTTransformer() transpiler.ASTTransformer {
-	return &galaASTTransformer{
+	t := &galaASTTransformer{
 		immutFields:       make(map[string]bool),
 		structImmutFields: make(map[string][]bool),
 		activeTypeParams:  make(map[string]bool),
 		structFields:      make(map[string][]string),
+		structFieldTypes:  make(map[string]map[string]string),
 		genericMethods:    make(map[string]map[string]bool),
+	}
+	t.genericMethods["Option"] = map[string]bool{
+		"Map":     true,
+		"FlatMap": true,
+	}
+	t.genericMethods["Immutable"] = map[string]bool{
+		"Map":     true,
+		"FlatMap": true,
+	}
+	return t
+}
+
+func (t *galaASTTransformer) initGenericMethods() {
+	t.genericMethods = make(map[string]map[string]bool)
+	t.structFieldTypes = make(map[string]map[string]string)
+	t.genericMethods["Option"] = map[string]bool{
+		"Map":     true,
+		"FlatMap": true,
 	}
 }
 
@@ -216,7 +241,8 @@ func (t *galaASTTransformer) Transform(tree antlr.Tree) (*token.FileSet, *ast.Fi
 	t.structImmutFields = make(map[string][]bool)
 	t.activeTypeParams = make(map[string]bool)
 	t.structFields = make(map[string][]string)
-	t.genericMethods = make(map[string]map[string]bool)
+	t.structFieldTypes = make(map[string]map[string]string)
+	t.initGenericMethods()
 	t.pushScope() // Global scope
 	defer t.popScope()
 
@@ -227,6 +253,7 @@ func (t *galaASTTransformer) Transform(tree antlr.Tree) (*token.FileSet, *ast.Fi
 	}
 
 	pkgName := sourceFile.PackageClause().(*grammar.PackageClauseContext).Identifier().GetText()
+	t.packageName = pkgName
 	file := &ast.File{
 		Name: ast.NewIdent(pkgName),
 	}
@@ -250,7 +277,7 @@ func (t *galaASTTransformer) Transform(tree antlr.Tree) (*token.FileSet, *ast.Fi
 		}
 	}
 
-	if t.needsStdImport {
+	if t.needsStdImport && t.packageName != "std" {
 		// Add import at the beginning
 		importDecl := &ast.GenDecl{
 			Tok: token.IMPORT,
@@ -462,12 +489,8 @@ func (t *galaASTTransformer) transformShortVarDecl(ctx *grammar.ShortVarDeclCont
 			return nil, galaerr.NewSemanticError("variable assigned to None() must have an explicit type")
 		}
 
-		t.needsStdImport = true
 		wrappedRhs = append(wrappedRhs, &ast.CallExpr{
-			Fun: &ast.SelectorExpr{
-				X:   ast.NewIdent("std"),
-				Sel: ast.NewIdent("NewImmutable"),
-			},
+			Fun:  t.stdIdent("NewImmutable"),
 			Args: []ast.Expr{val},
 		})
 	}
@@ -494,7 +517,6 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 		}
 	}
 
-	t.needsStdImport = true
 	var idents []*ast.Ident
 	var wrappedValues []ast.Expr
 	for i, idCtx := range namesCtx {
@@ -504,9 +526,7 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 			typeExpr, _ := t.transformType(ctx.Type_())
 			typeName = t.getBaseTypeName(typeExpr)
 		} else if len(rhsExprs) == len(namesCtx) {
-			if lit, ok := rhsExprs[i].(*ast.CompositeLit); ok {
-				typeName = t.getBaseTypeName(lit.Type)
-			}
+			typeName = t.getExprTypeName(rhsExprs[i])
 		}
 
 		t.addVal(name, typeName)
@@ -524,10 +544,7 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 		}
 
 		wrappedValues = append(wrappedValues, &ast.CallExpr{
-			Fun: &ast.SelectorExpr{
-				X:   ast.NewIdent("std"),
-				Sel: ast.NewIdent("NewImmutable"),
-			},
+			Fun:  t.stdIdent("NewImmutable"),
 			Args: []ast.Expr{val},
 		})
 	}
@@ -543,10 +560,7 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 			return nil, err
 		}
 		spec.Type = &ast.IndexExpr{
-			X: &ast.SelectorExpr{
-				X:   ast.NewIdent("std"),
-				Sel: ast.NewIdent("Immutable"),
-			},
+			X:     t.stdIdent("Immutable"),
 			Index: typeExpr,
 		}
 	}
@@ -628,12 +642,8 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		isVal := recvCtx.VAL() != nil
 		if isVal {
 			t.addVal(recvName, "")
-			t.needsStdImport = true
 			recvTypeExpr = &ast.IndexExpr{
-				X: &ast.SelectorExpr{
-					X:   ast.NewIdent("std"),
-					Sel: ast.NewIdent("Immutable"),
-				},
+				X:     t.stdIdent("Immutable"),
 				Index: recvTypeExpr,
 			}
 		} else {
@@ -739,10 +749,18 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		if err != nil {
 			return nil, err
 		}
-		body = &ast.BlockStmt{
-			List: []ast.Stmt{
-				&ast.ReturnStmt{Results: []ast.Expr{expr}},
-			},
+		if results != nil && len(results.List) > 0 {
+			body = &ast.BlockStmt{
+				List: []ast.Stmt{
+					&ast.ReturnStmt{Results: []ast.Expr{expr}},
+				},
+			}
+		} else {
+			body = &ast.BlockStmt{
+				List: []ast.Stmt{
+					&ast.ExprStmt{X: expr},
+				},
+			}
 		}
 	}
 
@@ -777,15 +795,11 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 			}
 
 			if isVal {
-				t.needsStdImport = true
 				if typ, ok := field.Type.(*ast.Ident); ok {
 					// Add to immutFields only if it's a field name we are processing
 					// But we also need to wrap it in std.Immutable in the struct type
 					field.Type = &ast.IndexExpr{
-						X: &ast.SelectorExpr{
-							X:   ast.NewIdent("std"),
-							Sel: ast.NewIdent("Immutable"),
-						},
+						X:     t.stdIdent("Immutable"),
 						Index: typ,
 					}
 				}
@@ -803,6 +817,21 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 	}
 
 	t.structFields[name] = fieldNames
+	if t.structFieldTypes[name] == nil {
+		t.structFieldTypes[name] = make(map[string]string)
+	}
+	if paramsCtx.ParameterList() != nil {
+		for _, pCtx := range paramsCtx.ParameterList().(*grammar.ParameterListContext).AllParameter() {
+			param := pCtx.(*grammar.ParameterContext)
+			pName := param.Identifier().GetText()
+			pType := ""
+			if param.Type_() != nil {
+				typeExpr, _ := t.transformType(param.Type_())
+				pType = t.getBaseTypeName(typeExpr)
+			}
+			t.structFieldTypes[name][pName] = pType
+		}
+	}
 	t.structImmutFields[name] = immutFlags
 	typeSpec := &ast.TypeSpec{
 		Name: ast.NewIdent(name),
@@ -883,6 +912,15 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 		}
 		t.structFields[name] = fieldNames
 		t.structImmutFields[name] = immutFlags
+		if t.structFieldTypes[name] == nil {
+			t.structFieldTypes[name] = make(map[string]string)
+		}
+		for _, fCtx := range structCtx.AllStructField() {
+			fieldCtx := fCtx.(*grammar.StructFieldContext)
+			fName := fieldCtx.Identifier().GetText()
+			fTypeExpr, _ := t.transformType(fieldCtx.Type_())
+			t.structFieldTypes[name][fName] = t.getBaseTypeName(fTypeExpr)
+		}
 		typeSpec := &ast.TypeSpec{
 			Name:       ast.NewIdent(name),
 			Type:       &ast.StructType{Fields: fields},
@@ -922,10 +960,7 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 			copyElts = append(copyElts, &ast.KeyValueExpr{
 				Key: ast.NewIdent(fn),
 				Value: &ast.CallExpr{
-					Fun: &ast.SelectorExpr{
-						X:   ast.NewIdent("std"),
-						Sel: ast.NewIdent("Copy"),
-					},
+					Fun: t.stdIdent("Copy"),
 					Args: []ast.Expr{
 						&ast.SelectorExpr{
 							X:   ast.NewIdent("s"),
@@ -975,10 +1010,7 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 		} else {
 			for _, fn := range fieldNames {
 				cond := &ast.CallExpr{
-					Fun: &ast.SelectorExpr{
-						X:   ast.NewIdent("std"),
-						Sel: ast.NewIdent("Equal"),
-					},
+					Fun: t.stdIdent("Equal"),
 					Args: []ast.Expr{
 						&ast.SelectorExpr{
 							X:   ast.NewIdent("s"),
@@ -1083,9 +1115,7 @@ func (t *galaASTTransformer) transformParameter(ctx *grammar.ParameterContext) (
 	typeName := ""
 	if ctx.Type_() != nil {
 		typeExpr, _ := t.transformType(ctx.Type_())
-		if id, ok := typeExpr.(*ast.Ident); ok {
-			typeName = id.Name
-		}
+		typeName = t.getBaseTypeName(typeExpr)
 	}
 	isVal := ctx.VAL() != nil
 	if isVal {
@@ -1100,12 +1130,8 @@ func (t *galaASTTransformer) transformParameter(ctx *grammar.ParameterContext) (
 			return nil, err
 		}
 		if isVal {
-			t.needsStdImport = true
 			field.Type = &ast.IndexExpr{
-				X: &ast.SelectorExpr{
-					X:   ast.NewIdent("std"),
-					Sel: ast.NewIdent("Immutable"),
-				},
+				X:     t.stdIdent("Immutable"),
 				Index: typ,
 			}
 		} else {
@@ -1129,13 +1155,9 @@ func (t *galaASTTransformer) transformStructField(ctx *grammar.StructFieldContex
 	}
 
 	if isVal {
-		t.needsStdImport = true
 		t.immutFields[name] = true
 		field.Type = &ast.IndexExpr{
-			X: &ast.SelectorExpr{
-				X:   ast.NewIdent("std"),
-				Sel: ast.NewIdent("Immutable"),
-			},
+			X:     t.stdIdent("Immutable"),
 			Index: typ,
 		}
 	} else {
@@ -1241,17 +1263,15 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 				}
 			}
 
-			monadicMethods := map[string]bool{
-				"Map":     true,
-				"FlatMap": true,
-				"Filter":  true,
-				"ForEach": true,
-			}
-
 			recvTypeName := t.getExprTypeName(receiver)
 			isGenericMethod := len(typeArgs) > 0 || (recvTypeName != "" && t.genericMethods[recvTypeName] != nil && t.genericMethods[recvTypeName][method])
 
-			if receiver != nil && (isGenericMethod || monadicMethods[method]) {
+			// Fallback for monadic methods when type is not inferred
+			if !isGenericMethod && (method == "Map" || method == "FlatMap") {
+				isGenericMethod = true
+			}
+
+			if receiver != nil && isGenericMethod {
 				var mArgs []ast.Expr
 				for _, argCtx := range argListCtx.AllArgument() {
 					arg := argCtx.(*grammar.ArgumentContext)
@@ -1262,16 +1282,19 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 					mArgs = append(mArgs, expr)
 				}
 
-				var fun ast.Expr = ast.NewIdent(method)
-				if monadicMethods[method] {
-					t.needsStdImport = true
-					fun = &ast.SelectorExpr{
-						X:   ast.NewIdent("std"),
-						Sel: ast.NewIdent(method),
+				var fun ast.Expr
+				if recvTypeName != "" {
+					fullName := recvTypeName + "_" + method
+					if recvTypeName == "Option" || recvTypeName == "Immutable" {
+						fun = t.stdIdent(fullName)
+					} else {
+						fun = ast.NewIdent(fullName)
 					}
-				} else if isGenericMethod {
-					if recvTypeName != "" {
-						fun = ast.NewIdent(recvTypeName + "_" + method)
+				} else {
+					if method == "Map" || method == "FlatMap" || method == "Filter" || method == "ForEach" {
+						fun = t.stdIdent(method)
+					} else {
+						fun = ast.NewIdent(method)
 					}
 				}
 
@@ -1339,12 +1362,8 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 					if val, ok := namedArgs[name]; ok {
 						finalVal := val
 						if i < len(immutFlags) && immutFlags[i] {
-							t.needsStdImport = true
 							finalVal = &ast.CallExpr{
-								Fun: &ast.SelectorExpr{
-									X:   ast.NewIdent("std"),
-									Sel: ast.NewIdent("NewImmutable"),
-								},
+								Fun:  t.stdIdent("NewImmutable"),
 								Args: []ast.Expr{val},
 							}
 						}
@@ -1373,12 +1392,8 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 					if i < len(fields) {
 						val := arg
 						if i < len(immutFlags) && immutFlags[i] {
-							t.needsStdImport = true
 							val = &ast.CallExpr{
-								Fun: &ast.SelectorExpr{
-									X:   ast.NewIdent("std"),
-									Sel: ast.NewIdent("NewImmutable"),
-								},
+								Fun:  t.stdIdent("NewImmutable"),
 								Args: []ast.Expr{arg},
 							}
 						}
@@ -1622,12 +1637,8 @@ func (t *galaASTTransformer) getUnaryToken(op string) token.Token {
 func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.Expr, error) {
 	if ctx.Identifier() != nil {
 		name := ctx.Identifier().GetText()
-		if name == "Some" || name == "None" {
-			t.needsStdImport = true
-			return &ast.SelectorExpr{
-				X:   ast.NewIdent("std"),
-				Sel: ast.NewIdent(name),
-			}, nil
+		if name == "Some" || name == "None" || name == "Map" || name == "FlatMap" || name == "Filter" || name == "ForEach" {
+			return t.stdIdent(name), nil
 		}
 		ident := ast.NewIdent(name)
 		if t.isVal(name) {
@@ -1677,11 +1688,7 @@ func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, 
 		typeName := ctx.Identifier().GetText()
 		var ident ast.Expr = ast.NewIdent(typeName)
 		if typeName == "Option" {
-			t.needsStdImport = true
-			ident = &ast.SelectorExpr{
-				X:   ast.NewIdent("std"),
-				Sel: ast.NewIdent("Option"),
-			}
+			ident = t.stdIdent("Option")
 		}
 
 		if ctx.TypeArguments() != nil {
@@ -1713,6 +1720,29 @@ func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, 
 	return ast.NewIdent(ctx.GetText()), nil
 }
 
+func (t *galaASTTransformer) getExprType(expr ast.Expr) ast.Expr {
+	switch e := expr.(type) {
+	case *ast.BinaryExpr:
+		switch e.Op {
+		case token.LOR, token.LAND, token.EQL, token.NEQ, token.LSS, token.LEQ, token.GTR, token.GEQ:
+			return ast.NewIdent("bool")
+		}
+	case *ast.UnaryExpr:
+		if e.Op == token.NOT {
+			return ast.NewIdent("bool")
+		}
+	case *ast.Ident:
+		if e.Name == "true" || e.Name == "false" {
+			return ast.NewIdent("bool")
+		}
+	}
+	typeName := t.getExprTypeName(expr)
+	if typeName != "" {
+		return ast.NewIdent(typeName)
+	}
+	return ast.NewIdent("any")
+}
+
 func (t *galaASTTransformer) transformLambda(ctx *grammar.LambdaExpressionContext) (ast.Expr, error) {
 	t.pushScope()
 	defer t.popScope()
@@ -1729,6 +1759,8 @@ func (t *galaASTTransformer) transformLambda(ctx *grammar.LambdaExpressionContex
 	}
 
 	var body *ast.BlockStmt
+	var retType ast.Expr = ast.NewIdent("any")
+
 	if ctx.Block() != nil {
 		b, err := t.transformBlock(ctx.Block().(*grammar.BlockContext))
 		if err != nil {
@@ -1742,6 +1774,7 @@ func (t *galaASTTransformer) transformLambda(ctx *grammar.LambdaExpressionContex
 		if err != nil {
 			return nil, err
 		}
+		retType = t.getExprType(expr)
 		body = &ast.BlockStmt{
 			List: []ast.Stmt{
 				&ast.ReturnStmt{Results: []ast.Expr{expr}},
@@ -1754,7 +1787,7 @@ func (t *galaASTTransformer) transformLambda(ctx *grammar.LambdaExpressionContex
 			Params: fieldList,
 			Results: &ast.FieldList{
 				List: []*ast.Field{
-					{Type: ast.NewIdent("any")},
+					{Type: retType},
 				},
 			},
 		},
@@ -1973,10 +2006,7 @@ func (t *galaASTTransformer) transformCaseClause(ctx *grammar.CaseClauseContext,
 
 	// Use std.UnapplyCheck(paramName, patExpr)
 	check := &ast.CallExpr{
-		Fun: &ast.SelectorExpr{
-			X:   ast.NewIdent("std"),
-			Sel: ast.NewIdent("UnapplyCheck"),
-		},
+		Fun: t.stdIdent("UnapplyCheck"),
 		Args: []ast.Expr{
 			ast.NewIdent(paramName),
 			patExpr,
@@ -1996,10 +2026,7 @@ func (t *galaASTTransformer) generateCopyMethod(name string, fields *ast.FieldLi
 			elts = append(elts, &ast.KeyValueExpr{
 				Key: ast.NewIdent(fieldName.Name),
 				Value: &ast.CallExpr{
-					Fun: &ast.SelectorExpr{
-						X:   ast.NewIdent("std"),
-						Sel: ast.NewIdent("Copy"),
-					},
+					Fun: t.stdIdent("Copy"),
 					Args: []ast.Expr{
 						&ast.SelectorExpr{
 							X:   ast.NewIdent("s"),
@@ -2060,10 +2087,7 @@ func (t *galaASTTransformer) generateEqualMethod(name string, fields *ast.FieldL
 	for _, field := range fields.List {
 		for _, fieldName := range field.Names {
 			expr := &ast.CallExpr{
-				Fun: &ast.SelectorExpr{
-					X:   ast.NewIdent("std"),
-					Sel: ast.NewIdent("Equal"),
-				},
+				Fun: t.stdIdent("Equal"),
 				Args: []ast.Expr{
 					&ast.SelectorExpr{
 						X:   ast.NewIdent("s"),
@@ -2188,13 +2212,33 @@ func (t *galaASTTransformer) getExprTypeName(expr ast.Expr) string {
 				return typ
 			}
 		}
+	case *ast.SelectorExpr:
+		xTypeName := t.getExprTypeName(e.X)
+		if xTypeName != "" && t.structFieldTypes[xTypeName] != nil {
+			if fType, ok := t.structFieldTypes[xTypeName][e.Sel.Name]; ok && fType != "" {
+				return fType
+			}
+		}
 	case *ast.CallExpr:
-		// Handle b.Get()
-		if sel, ok := e.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Get" {
-			return t.getExprTypeName(sel.X)
+		// Handle b.Get() or std.Some()
+		if sel, ok := e.Fun.(*ast.SelectorExpr); ok {
+			if sel.Sel.Name == "Get" {
+				return t.getExprTypeName(sel.X)
+			}
+			if sel.Sel.Name == "Some" || sel.Sel.Name == "None" {
+				return "Option"
+			}
+			if _, ok := t.structFields[sel.Sel.Name]; ok {
+				return sel.Sel.Name
+			}
 		}
 		if id, ok := e.Fun.(*ast.Ident); ok {
-			return id.Name
+			if id.Name == "Some" || id.Name == "None" {
+				return "Option"
+			}
+			if _, ok := t.structFields[id.Name]; ok {
+				return id.Name
+			}
 		}
 	case *ast.CompositeLit:
 		return t.getBaseTypeName(e.Type)
