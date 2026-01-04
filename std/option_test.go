@@ -64,12 +64,4 @@ func TestOptionImplementation(t *testing.T) {
 		})
 		assert.Equal(t, 10, count)
 	})
-
-	t.Run("Unapply", func(t *testing.T) {
-		assert.True(t, Some(10).Unapply(10).IsDefined())
-		assert.False(t, Some(10).Unapply(20).IsDefined())
-		assert.False(t, None[int]().Unapply(10).IsDefined())
-		// Test matching against None() itself?
-		assert.False(t, None[int]().Unapply(None[int]()).IsDefined())
-	})
 }

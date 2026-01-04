@@ -174,7 +174,7 @@ val status = if (score > 50) "pass" else "fail"
 ```
 
 ### Match Expression
-The `match` expression provides powerful pattern matching, supporting literals, variable bindings, and extractors (extracting values from objects using an `Unapply` method). It currently requires a default case (`_`).
+The `match` expression provides powerful pattern matching, supporting literals, variable bindings, and extractors. GALA follows Scala semantics for pattern matching, where the pattern (or an extractor) is responsible for matching against the object. It currently requires a default case (`_`).
 
 ```gala
 val result = x match {
@@ -186,7 +186,7 @@ val result = x match {
 ```
 
 #### Extractors and `Unapply`
-GALA follows Scala semantics for extractors. A struct can implement an `Unapply` method that returns an `Option[T]`. When used in a pattern, the method is called, and if it returns `Some(v)`, the pattern matches and `v` can be bound to a variable.
+GALA follows Scala semantics for extractors. When a struct or object is used as a pattern, its `Unapply` method is called with the matched object as an argument. The method should return an `Option[T]` or a `bool`. If it returns `Some(v)` or `true`, the pattern matches.
 
 ```gala
 type Even struct {}

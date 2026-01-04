@@ -258,7 +258,7 @@ func UnapplyFull(obj any, pattern any) (any, bool) {
 		return nil, false
 	}
 
-	// Try pattern.Unapply(obj) via reflection if interface not satisfied
+	// Also try pattern.Unapply(obj) via reflection if interface not satisfied
 	patVal := reflect.ValueOf(pattern)
 	if !patVal.IsValid() {
 		return nil, false
@@ -285,53 +285,6 @@ func UnapplyFull(obj any, pattern any) (any, bool) {
 				return getSomeValue(res), true
 			}
 			return nil, false
-		}
-	}
-
-	// Try obj.Unapply(pattern) (GALA-style matching)
-	if u, ok := obj.(Unapply); ok {
-		res := u.Unapply(pattern)
-		if b, ok := res.(bool); ok {
-			if b {
-				return obj, true
-			}
-			return nil, false
-		}
-		if isDefined(res) {
-			return getSomeValue(res), true
-		}
-	}
-
-	// Also try obj.Unapply(pattern) via reflection
-	objVal := reflect.ValueOf(obj)
-	if !objVal.IsValid() {
-		return nil, false
-	}
-	objUnapplyMeth := objVal.MethodByName("Unapply")
-	if objUnapplyMeth.IsValid() && objUnapplyMeth.Type().NumIn() == 1 {
-		argVal := reflect.ValueOf(pattern)
-		if !argVal.IsValid() {
-			argVal = reflect.Zero(objUnapplyMeth.Type().In(0))
-		} else if argVal.Type() != objUnapplyMeth.Type().In(0) && !argVal.Type().AssignableTo(objUnapplyMeth.Type().In(0)) {
-			if argVal.Type().ConvertibleTo(objUnapplyMeth.Type().In(0)) {
-				argVal = argVal.Convert(objUnapplyMeth.Type().In(0))
-			} else {
-				return nil, false
-			}
-		}
-
-		resVals := objUnapplyMeth.Call([]reflect.Value{argVal})
-		if len(resVals) > 0 {
-			res := resVals[0].Interface()
-			if b, ok := res.(bool); ok {
-				if b {
-					return obj, true
-				}
-				return nil, false
-			}
-			if isDefined(res) {
-				return getSomeValue(res), true
-			}
 		}
 	}
 
