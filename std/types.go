@@ -361,66 +361,11 @@ func unwrapImmutable(obj any) any {
 	return obj
 }
 
-func IsLeft(e any) bool {
-	e = unwrapImmutable(e)
-	if e == nil {
-		return false
-	}
-	v := reflect.ValueOf(e)
-	if v.Kind() == reflect.Struct && (strings.Contains(v.Type().Name(), "Either") || strings.Contains(v.Type().String(), "Either")) {
-		isLeftVal := v.FieldByName("IsLeft")
-		if isLeftVal.IsValid() {
-			isLeft := unwrapImmutable(isLeftVal.Interface())
-			if b, ok := isLeft.(bool); ok {
-				return b
-			}
-		}
-	}
-	return false
-}
-
-func IsRight(e any) bool {
-	e = unwrapImmutable(e)
-	if e == nil {
-		return false
-	}
-	v := reflect.ValueOf(e)
-	if v.Kind() == reflect.Struct && (strings.Contains(v.Type().Name(), "Either") || strings.Contains(v.Type().String(), "Either")) {
-		isLeftVal := v.FieldByName("IsLeft")
-		if isLeftVal.IsValid() {
-			isLeft := unwrapImmutable(isLeftVal.Interface())
-			if b, ok := isLeft.(bool); ok {
-				return !b
-			}
-		}
-	}
-	return false
-}
-
-func GetLeftValue(e any) any {
-	e = unwrapImmutable(e)
-	if e == nil {
-		return nil
-	}
-	v := reflect.ValueOf(e)
-	f := v.FieldByName("LeftValue")
-	if f.IsValid() {
-		return unwrapImmutable(f.Interface())
-	}
-	return nil
-}
-
-func GetRightValue(e any) any {
-	e = unwrapImmutable(e)
-	if e == nil {
-		return nil
-	}
-	v := reflect.ValueOf(e)
-	f := v.FieldByName("RightValue")
-	if f.IsValid() {
-		return unwrapImmutable(f.Interface())
-	}
-	return nil
+type EitherInterface interface {
+	GetIsLeft() bool
+	IsRight() bool
+	GetLeftValue() any
+	GetRightValue() any
 }
 
 func IsDefined(opt any) bool {

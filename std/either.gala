@@ -8,6 +8,10 @@ type Either[A any, B any] struct {
     IsLeft bool
 }
 
+func (e Either[A, B]) GetIsLeft() bool = e.IsLeft
+func (e Either[A, B]) GetLeftValue() any = e.LeftValue
+func (e Either[A, B]) GetRightValue() any = e.RightValue
+
 type Left struct {}
 func (l Left) Apply[A any, B any](v A) Either[A, B] = Either[A, B](LeftValue = v, IsLeft = true)
 func (l Left) Unapply(e any) any = if (IsLeft(e)) Some(GetLeftValue(e)) else None[any]()
@@ -15,6 +19,30 @@ func (l Left) Unapply(e any) any = if (IsLeft(e)) Some(GetLeftValue(e)) else Non
 type Right struct {}
 func (r Right) Apply[A any, B any](v B) Either[A, B] = Either[A, B](RightValue = v, IsLeft = false)
 func (r Right) Unapply(e any) any = if (IsRight(e)) Some(GetRightValue(e)) else None[any]()
+
+// IsLeft returns true if this is a Left, false otherwise.
+func IsLeft(e any) bool = e match {
+    case ei: EitherInterface => ei.GetIsLeft()
+    case _ => false
+}
+
+// IsRight returns true if this is a Right, false otherwise.
+func IsRight(e any) bool = e match {
+    case ei: EitherInterface => ei.IsRight()
+    case _ => false
+}
+
+// GetLeftValue returns the left value if this is a Left, otherwise it returns nil.
+func GetLeftValue(e any) any = e match {
+    case ei: EitherInterface => ei.GetLeftValue()
+    case _ => nil
+}
+
+// GetRightValue returns the right value if this is a Right, otherwise it returns nil.
+func GetRightValue(e any) any = e match {
+    case ei: EitherInterface => ei.GetRightValue()
+    case _ => nil
+}
 
 // IsRight returns true if this is a Right, false otherwise.
 func (e Either[A, B]) IsRight() bool = !e.IsLeft

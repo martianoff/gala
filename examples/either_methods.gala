@@ -1,0 +1,22 @@
+package main
+
+import "fmt"
+
+func main() {
+    val e = Left[int, string](42)
+
+    if (IsLeft(e)) {
+        fmt.Println("It is Left")
+    }
+
+    val v = GetLeftValue(e)
+    fmt.Printf("Value: %v\n", v)
+
+    val e2 = Right[int, string]("hello")
+    if (IsRight(e2)) {
+        fmt.Println("It is Right")
+    }
+
+    val v2 = GetRightValue(e2)
+    fmt.Printf("Value2: %v\n", v2)
+}

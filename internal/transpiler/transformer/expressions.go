@@ -479,7 +479,9 @@ func (t *galaASTTransformer) getUnaryToken(op string) token.Token {
 func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.Expr, error) {
 	if ctx.Identifier() != nil {
 		name := ctx.Identifier().GetText()
-		if name == transpiler.FuncSome || name == transpiler.FuncNone || name == transpiler.FuncLeft || name == transpiler.FuncRight || name == transpiler.TypeTuple || name == transpiler.TypeEither {
+		if name == transpiler.FuncSome || name == transpiler.FuncNone || name == transpiler.FuncLeft || name == transpiler.FuncRight ||
+			name == transpiler.FuncIsLeft || name == transpiler.FuncIsRight || name == transpiler.FuncGetLeftValue || name == transpiler.FuncGetRightValue ||
+			name == transpiler.TypeTuple || name == transpiler.TypeEither {
 			return t.stdIdent(name), nil
 		}
 		ident := ast.NewIdent(name)
