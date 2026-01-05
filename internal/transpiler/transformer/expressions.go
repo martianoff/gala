@@ -33,19 +33,31 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 			var typeArgs []ast.Expr
 
 			if sel, ok := x.(*ast.SelectorExpr); ok {
-				receiver = sel.X
-				method = sel.Sel.Name
-			} else if idx, ok := x.(*ast.IndexExpr); ok {
-				if sel, ok := idx.X.(*ast.SelectorExpr); ok {
+				if id, ok := sel.X.(*ast.Ident); ok && id.Name == transpiler.StdPackage {
+					// Not a method call
+				} else {
 					receiver = sel.X
 					method = sel.Sel.Name
-					typeArgs = []ast.Expr{idx.Index}
+				}
+			} else if idx, ok := x.(*ast.IndexExpr); ok {
+				if sel, ok := idx.X.(*ast.SelectorExpr); ok {
+					if id, ok := sel.X.(*ast.Ident); ok && id.Name == transpiler.StdPackage {
+						// Not a method call
+					} else {
+						receiver = sel.X
+						method = sel.Sel.Name
+						typeArgs = []ast.Expr{idx.Index}
+					}
 				}
 			} else if idxList, ok := x.(*ast.IndexListExpr); ok {
 				if sel, ok := idxList.X.(*ast.SelectorExpr); ok {
-					receiver = sel.X
-					method = sel.Sel.Name
-					typeArgs = idxList.Indices
+					if id, ok := sel.X.(*ast.Ident); ok && id.Name == transpiler.StdPackage {
+						// Not a method call
+					} else {
+						receiver = sel.X
+						method = sel.Sel.Name
+						typeArgs = idxList.Indices
+					}
 				}
 			}
 
@@ -66,7 +78,7 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 				var fun ast.Expr
 				if recvTypeName != "" {
 					fullName := recvTypeName + "_" + method
-					if recvTypeName == transpiler.TypeOption || recvTypeName == transpiler.TypeImmutable {
+					if recvTypeName == transpiler.TypeOption || recvTypeName == transpiler.TypeImmutable || recvTypeName == transpiler.TypeTuple || recvTypeName == transpiler.TypeEither {
 						fun = t.stdIdent(fullName)
 					} else {
 						fun = ast.NewIdent(fullName)
@@ -109,22 +121,8 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 	// Handle case where we have TypeName(...) which is a constructor call
 	// GALA doesn't seem to have a specific rule for constructor calls,
 	// but TypeName(...) should be transformed to TypeName{...} if it's a struct.
-	var typeName string
-	var typeExpr ast.Expr
-	if id, ok := x.(*ast.Ident); ok {
-		typeName = id.Name
-		typeExpr = id
-	} else if idx, ok := x.(*ast.IndexExpr); ok {
-		if id, ok := idx.X.(*ast.Ident); ok {
-			typeName = id.Name
-			typeExpr = idx
-		}
-	} else if idxList, ok := x.(*ast.IndexListExpr); ok {
-		if id, ok := idxList.X.(*ast.Ident); ok {
-			typeName = id.Name
-			typeExpr = idxList
-		}
-	}
+	typeName := t.getBaseTypeName(x)
+	typeExpr := x
 
 	if typeName != "" {
 		if fieldNames, ok := t.structFields[typeName]; ok {
@@ -395,7 +393,7 @@ func (t *galaASTTransformer) getUnaryToken(op string) token.Token {
 func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.Expr, error) {
 	if ctx.Identifier() != nil {
 		name := ctx.Identifier().GetText()
-		if name == transpiler.FuncSome || name == transpiler.FuncNone {
+		if name == transpiler.FuncSome || name == transpiler.FuncNone || name == transpiler.FuncLeft || name == transpiler.FuncRight || name == transpiler.TypeTuple || name == transpiler.TypeEither {
 			return t.stdIdent(name), nil
 		}
 		ident := ast.NewIdent(name)

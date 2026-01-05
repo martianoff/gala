@@ -1,0 +1,66 @@
+package std
+
+// Either represents a value of one of two possible types (a disjoint union).
+// An instance of Either is an instance of either Left or Right.
+type Either[A any, B any] struct {
+    LeftValue A
+    RightValue B
+    IsLeft bool
+}
+
+// Left returns an Either containing a left value.
+func Left[A any, B any](v A) Either[A, B] = Either[A, B](LeftValue = v, IsLeft = true)
+
+// Right returns an Either containing a right value.
+func Right[A any, B any](v B) Either[A, B] = Either[A, B](RightValue = v, IsLeft = false)
+
+// IsRight returns true if this is a Right, false otherwise.
+func (e Either[A, B]) IsRight() bool = !e.IsLeft
+
+// GetLeft returns the left value if this is a Left, otherwise it panics.
+func (e Either[A, B]) GetLeft() A {
+    if !e.IsLeft {
+        panic("Either.GetLeft on Right")
+    }
+    return e.LeftValue
+}
+
+// GetRight returns the right value if this is a Right, otherwise it panics.
+func (e Either[A, B]) GetRight() B {
+    if e.IsLeft {
+        panic("Either.GetRight on Left")
+    }
+    return e.RightValue
+}
+
+// Swap returns the left as right and vice versa.
+func (e Either[A, B]) Swap() Either[B, A] {
+    if e.IsLeft {
+        return Right[B, A](e.LeftValue)
+    }
+    return Left[B, A](e.RightValue)
+}
+
+// Fold applies f1 to the left value or f2 to the right value.
+func (e Either[A, B]) Fold[C any](f1 func(A) C, f2 func(B) C) C {
+    if e.IsLeft {
+        return f1(e.LeftValue)
+    }
+    return f2(e.RightValue)
+}
+
+// Map applies a function to the right value if this is a Right.
+func (e Either[A, B]) Map[C any](f func(B) C) Either[A, C] {
+    if e.IsLeft {
+        return Left[A, C](e.LeftValue)
+    }
+    return Right[A, C](f(e.RightValue))
+}
+
+// FlatMap applies a function to the right value if this is a Right.
+func (e Either[A, B]) FlatMap[C any](f func(B) Either[A, C]) Either[A, C] {
+    if e.IsLeft {
+        return Left[A, C](e.LeftValue)
+    }
+    return f(e.RightValue)
+}

@@ -1,0 +1,28 @@
+package main
+
+import "fmt"
+
+func main() {
+    val e1 = Left[int, string](10)
+    val e2 = Right[int, string]("world")
+
+    val res3 = e1 match {
+        case Left(n)  => fmt.Sprintf("Left value: %d", n)
+        case Right(s) => fmt.Sprintf("Right value: %s", s)
+        case _        => "Unknown"
+    }
+    fmt.Println(res3)
+
+    val res4 = e2 match {
+        case Left(n)  => fmt.Sprintf("Left value: %d", n)
+        case Right(s) => fmt.Sprintf("Right value: %s", s)
+        case _        => "Unknown"
+    }
+    fmt.Println(res4)
+
+    val mapped = e1.Map[int]((s string) => len(s))
+    fmt.Printf("Mapped e1: %v\n", mapped)
+
+    val mapped2 = e2.Map[int]((s string) => len(s))
+    fmt.Printf("Mapped e2 length: %v\n", mapped2.GetRight())
+}

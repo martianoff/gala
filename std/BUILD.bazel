@@ -4,6 +4,8 @@ load("//:gala.bzl", "gala_binary", "gala_library", "gala_transpile")
 exports_files([
     "option.gala",
     "immutable.gala",
+    "tuple.gala",
+    "either.gala",
 ])
 
 gala_transpile(
@@ -18,12 +20,26 @@ gala_transpile(
     out = "immutable.go",
 )
 
+gala_transpile(
+    name = "tuple_go",
+    src = "tuple.gala",
+    out = "tuple.go",
+)
+
+gala_transpile(
+    name = "either_go",
+    src = "either.gala",
+    out = "either.go",
+)
+
 go_library(
     name = "std",
     srcs = [
+        "either.go",
         "immutable.go",
         "interfaces.go",
         "option.go",
+        "tuple.go",
         "types.go",
     ],
     importpath = "martianoff/gala/std",

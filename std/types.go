@@ -324,6 +324,64 @@ func UnapplyNone(obj any) ([]any, bool) {
 	return nil, false
 }
 
+func UnapplyTuple(obj any) ([]any, bool) {
+	obj = unwrapImmutable(obj)
+	if obj == nil {
+		return nil, false
+	}
+	v := reflect.ValueOf(obj)
+	if v.Kind() == reflect.Struct && (strings.Contains(v.Type().Name(), "Tuple") || strings.Contains(v.Type().String(), "Tuple")) {
+		f1 := v.FieldByName("V1")
+		f2 := v.FieldByName("V2")
+		if f1.IsValid() && f2.IsValid() {
+			return []any{unwrapImmutable(f1.Interface()), unwrapImmutable(f2.Interface())}, true
+		}
+	}
+	return nil, false
+}
+
+func UnapplyLeft(obj any) ([]any, bool) {
+	obj = unwrapImmutable(obj)
+	if obj == nil {
+		return nil, false
+	}
+	v := reflect.ValueOf(obj)
+	if v.Kind() == reflect.Struct && (strings.Contains(v.Type().Name(), "Either") || strings.Contains(v.Type().String(), "Either")) {
+		isLeftVal := v.FieldByName("IsLeft")
+		if isLeftVal.IsValid() {
+			isLeft := unwrapImmutable(isLeftVal.Interface())
+			if b, ok := isLeft.(bool); ok && b {
+				val := v.FieldByName("LeftValue")
+				if val.IsValid() {
+					return []any{unwrapImmutable(val.Interface())}, true
+				}
+			}
+		}
+	}
+	return nil, false
+}
+
+func UnapplyRight(obj any) ([]any, bool) {
+	obj = unwrapImmutable(obj)
+	if obj == nil {
+		return nil, false
+	}
+	v := reflect.ValueOf(obj)
+	if v.Kind() == reflect.Struct && (strings.Contains(v.Type().Name(), "Either") || strings.Contains(v.Type().String(), "Either")) {
+		isLeftVal := v.FieldByName("IsLeft")
+		if isLeftVal.IsValid() {
+			isLeft := unwrapImmutable(isLeftVal.Interface())
+			if b, ok := isLeft.(bool); ok && !b {
+				val := v.FieldByName("RightValue")
+				if val.IsValid() {
+					return []any{unwrapImmutable(val.Interface())}, true
+				}
+			}
+		}
+	}
+	return nil, false
+}
+
 func GetSafe(res []any, i int) any {
 	if i < 0 || i >= len(res) {
 		return nil

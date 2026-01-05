@@ -1,0 +1,20 @@
+package main
+
+import "fmt"
+
+func main() {
+    // 1. Tuple test
+    val t = Tuple[int, string](V1 = 1, V2 = "hello")
+    val res1 = t match {
+        case Tuple(a, b) => fmt.Sprintf("Tuple(%d, %s)", a, b)
+        case _ => "Unknown"
+    }
+    fmt.Println(res1)
+
+    val t2 = Tuple[int, bool](V1 = 42, V2 = true)
+    val res2 = t2 match {
+        case Tuple(n, b) => fmt.Sprintf("Tuple(%d, %v)", n, b)
+        case _ => "Unknown"
+    }
+    fmt.Println(res2)
+}

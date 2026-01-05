@@ -13,9 +13,13 @@ const (
 
 	TypeOption    = "Option"
 	TypeImmutable = "Immutable"
+	TypeTuple     = "Tuple"
+	TypeEither    = "Either"
 
 	FuncSome         = "Some"
 	FuncNone         = "None"
+	FuncLeft         = "Left"
+	FuncRight        = "Right"
 	FuncNewImmutable = "NewImmutable"
 	FuncCopy         = "Copy"
 	MethodGet        = "Get"
@@ -53,6 +57,7 @@ type TypeMetadata struct {
 	Fields     map[string]string // Name -> Type
 	FieldNames []string          // To preserve order
 	TypeParams []string
+	ImmutFlags []bool
 }
 
 type MethodMetadata struct {

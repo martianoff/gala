@@ -296,7 +296,7 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 					}
 				}
 				if !exists {
-					typeParams.List = append([]*ast.Field{rtp}, typeParams.List...)
+					typeParams.List = append(typeParams.List, rtp)
 				}
 			}
 		}

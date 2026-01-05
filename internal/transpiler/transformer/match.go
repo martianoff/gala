@@ -158,6 +158,12 @@ func (t *galaASTTransformer) transformPattern(patCtx grammar.IExpressionContext,
 			unapplyFun = t.stdIdent("UnapplySome")
 		} else if extName == "None" {
 			unapplyFun = t.stdIdent("UnapplyNone")
+		} else if extName == "Tuple" {
+			unapplyFun = t.stdIdent("UnapplyTuple")
+		} else if extName == "Left" {
+			unapplyFun = t.stdIdent("UnapplyLeft")
+		} else if extName == "Right" {
+			unapplyFun = t.stdIdent("UnapplyRight")
 		} else {
 			var err error
 			patternExpr, err = t.transformExpression(extractorCtx)

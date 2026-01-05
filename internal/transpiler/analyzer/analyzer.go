@@ -17,7 +17,7 @@ func GetBaseMetadata(p transpiler.GalaParser, searchPaths []string) *transpiler.
 		Functions: make(map[string]*transpiler.FunctionMetadata),
 	}
 	temp := NewGalaAnalyzer()
-	stdFiles := []string{"std/option.gala", "std/immutable.gala"}
+	stdFiles := []string{"std/option.gala", "std/immutable.gala", "std/tuple.gala", "std/either.gala"}
 
 	for _, sf := range stdFiles {
 		var content []byte
@@ -112,6 +112,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree) (*transpiler.RichAST, error) {
 					fieldType := fctx.Type_().GetText()
 					meta.Fields[fieldName] = fieldType
 					meta.FieldNames = append(meta.FieldNames, fieldName)
+					meta.ImmutFlags = append(meta.ImmutFlags, fctx.VAR() == nil)
 				}
 			}
 		}
@@ -144,6 +145,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree) (*transpiler.RichAST, error) {
 						}
 						meta.Fields[fieldName] = fieldType
 						meta.FieldNames = append(meta.FieldNames, fieldName)
+						meta.ImmutFlags = append(meta.ImmutFlags, pctx.VAR() == nil)
 					}
 				}
 			}

@@ -100,3 +100,5 @@ You can find more examples in the `examples/` directory of the project:
 - `with_main.gala`: An example with a `main` function.
 - `imports.gala`: Demonstrates importing standard Go packages with aliases and dot imports.
 - `use_lib.gala`: Demonstrates importing another GALA package (`mathlib`).
+- `tuple.gala`: Demonstrates using `Tuple[A, B]` with pattern matching.
+- `either.gala`: Demonstrates using `Either[A, B]` with monadic operations and pattern matching.

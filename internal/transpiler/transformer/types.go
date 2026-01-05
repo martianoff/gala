@@ -1,12 +1,13 @@
 package transformer
 
 import (
-	"github.com/antlr4-go/antlr/v4"
 	"go/ast"
 	"go/token"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 	"strings"
+
+	"github.com/antlr4-go/antlr/v4"
 )
 
 func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, error) {
@@ -17,8 +18,8 @@ func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, 
 	if ctx.Identifier() != nil {
 		typeName := ctx.Identifier().GetText()
 		var ident ast.Expr = ast.NewIdent(typeName)
-		if typeName == transpiler.TypeOption {
-			ident = t.stdIdent(transpiler.TypeOption)
+		if typeName == transpiler.TypeOption || typeName == transpiler.TypeTuple || typeName == transpiler.TypeEither {
+			ident = t.stdIdent(typeName)
 		}
 
 		if ctx.TypeArguments() != nil {
@@ -68,7 +69,7 @@ func (t *galaASTTransformer) getExprType(expr ast.Expr) ast.Expr {
 	}
 	typeName := t.getExprTypeName(expr)
 	if typeName != "" {
-		if typeName == transpiler.TypeOption || typeName == transpiler.TypeImmutable {
+		if typeName == transpiler.TypeOption || typeName == transpiler.TypeImmutable || typeName == transpiler.TypeTuple || typeName == transpiler.TypeEither {
 			return t.stdIdent(typeName)
 		}
 		return ast.NewIdent(typeName)
@@ -144,26 +145,60 @@ func (t *galaASTTransformer) getExprTypeName(expr ast.Expr) string {
 		}
 	case *ast.CallExpr:
 		// Handle b.Get() or std.Some()
-		if sel, ok := e.Fun.(*ast.SelectorExpr); ok {
+		fun := e.Fun
+		if idx, ok := fun.(*ast.IndexExpr); ok {
+			fun = idx.X
+		} else if idxList, ok := fun.(*ast.IndexListExpr); ok {
+			fun = idxList.X
+		}
+
+		if sel, ok := fun.(*ast.SelectorExpr); ok {
 			if sel.Sel.Name == transpiler.MethodGet {
 				return t.getExprTypeName(sel.X)
 			}
 			if sel.Sel.Name == transpiler.FuncSome || sel.Sel.Name == transpiler.FuncNone {
 				return transpiler.TypeOption
 			}
+			if sel.Sel.Name == transpiler.FuncLeft || sel.Sel.Name == transpiler.FuncRight {
+				return transpiler.TypeEither
+			}
+			if sel.Sel.Name == transpiler.TypeTuple {
+				return transpiler.TypeTuple
+			}
 			if strings.HasPrefix(sel.Sel.Name, transpiler.TypeOption+"_") {
 				return transpiler.TypeOption
+			}
+			if strings.HasPrefix(sel.Sel.Name, transpiler.TypeEither+"_") {
+				return transpiler.TypeEither
+			}
+			if strings.HasPrefix(sel.Sel.Name, transpiler.TypeTuple+"_") {
+				return transpiler.TypeTuple
 			}
 			if _, ok := t.structFields[sel.Sel.Name]; ok {
 				return sel.Sel.Name
 			}
 		}
-		if id, ok := e.Fun.(*ast.Ident); ok {
+		if id, ok := fun.(*ast.Ident); ok {
 			if id.Name == transpiler.FuncSome || id.Name == transpiler.FuncNone {
 				return transpiler.TypeOption
 			}
+			if id.Name == transpiler.FuncLeft || id.Name == transpiler.FuncRight {
+				return transpiler.TypeEither
+			}
+			if id.Name == transpiler.TypeTuple {
+				return transpiler.TypeTuple
+			}
 			if strings.HasPrefix(id.Name, transpiler.TypeOption+"_") {
 				return transpiler.TypeOption
+			}
+			if strings.HasPrefix(id.Name, transpiler.TypeEither+"_") {
+				return transpiler.TypeEither
+			}
+			if strings.HasPrefix(id.Name, transpiler.TypeTuple+"_") {
+				return transpiler.TypeTuple
+			}
+			if id.Name == "len" {
+				return "int"
 			}
 			if _, ok := t.structFields[id.Name]; ok {
 				return id.Name

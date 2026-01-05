@@ -56,6 +56,7 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (*token.File
 	for typeName, meta := range richAST.Types {
 		t.structFieldTypes[typeName] = meta.Fields
 		t.structFields[typeName] = meta.FieldNames
+		t.structImmutFields[typeName] = meta.ImmutFlags
 		if _, ok := t.genericMethods[typeName]; !ok {
 			t.genericMethods[typeName] = make(map[string]bool)
 		}

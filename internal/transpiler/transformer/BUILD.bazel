@@ -41,11 +41,14 @@ go_test(
         "multi_var_test.go",
         "option_test.go",
         "structs_test.go",
+        "tuple_either_test.go",
         "variables_test.go",
     ],
     data = [
+        "//std:either.gala",
         "//std:immutable.gala",
         "//std:option.gala",
+        "//std:tuple.gala",
     ],
     deps = [
         ":transformer",

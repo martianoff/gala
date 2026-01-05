@@ -73,3 +73,15 @@ gala_test(
     src = "match_extractors.gala",
     expected = "match_extractors.out",
 )
+
+gala_test(
+    name = "tuple",
+    src = "tuple.gala",
+    expected = "tuple.out",
+)
+
+gala_test(
+    name = "either",
+    src = "either.gala",
+    expected = "either.out",
+)

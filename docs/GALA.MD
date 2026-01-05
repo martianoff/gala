@@ -249,31 +249,44 @@ type Box[T any] struct {
 }
 ```
 
-## 8. Option Monad
+## 8. Standard Library Types
 
-GALA provides a built-in `Option[T]` monad for handling optional values safely, similar to Scala.
+GALA provides several built-in types in the `std` package for common patterns.
 
-### Creating Options
-Use `Some(v)` to create an option with a value, and `None()` for an empty option.
+### Option Monad
+`Option[T]` is used for handling optional values safely.
 
 ```gala
 val x Option[int] = Some(10)
 val y Option[int] = None()
+
+val result = x.Map((i int) => i * 2)
 ```
 
-### Monadic Operations
-`Option` provides common monadic operations like `Map`, `FlatMap`, and `Filter`.
+### Tuple
+`Tuple[A, B]` represents a pair of values.
 
 ```gala
-val result = Some(10).Map((x int) => x * 2) // Some(20)
-val empty = None().Map((x int) => x * 2)   // None()
+val t = Tuple[int, string](V1 = 1, V2 = "hello")
+val msg = t match {
+    case Tuple(a, b) => fmt.Sprintf("Got %d and %s", a, b)
+    case _           => "Unknown"
+}
 ```
 
-### Accessing Values
-Use `GetOrElse` to safely access the value with a default.
+### Either
+`Either[A, B]` represents a value that can be one of two types. It is often used for error handling where `Left` is the error and `Right` is the success value.
 
 ```gala
-val value = x.GetOrElse(0)
+val e: Either[int, string] = Right("success")
+val msg = e match {
+    case Left(code) => fmt.Sprintf("Error code: %d", code)
+    case Right(s)   => "Result: " + s
+    case _          => "Unknown"
+}
+
+// Monadic operations are biased towards Right
+val length = e.Map((s string) => len(s))
 ```
 
 ## 9. Immutability Under the Hood

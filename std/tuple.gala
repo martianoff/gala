@@ -1,0 +1,7 @@
+package std
+
+// Tuple represents a pair of values.
+type Tuple[A any, B any] struct {
+    V1 A
+    V2 B
+}
