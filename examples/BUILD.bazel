@@ -97,3 +97,15 @@ gala_test(
     src = "option_apply_unapply.gala",
     expected = "option_apply_unapply.out",
 )
+
+gala_test(
+    name = "type_match",
+    src = "type_match.gala",
+    expected = "type_match.out",
+)
+
+gala_test(
+    name = "nested_type_match",
+    src = "nested_type_match.gala",
+    expected = "nested_type_match.out",
+)

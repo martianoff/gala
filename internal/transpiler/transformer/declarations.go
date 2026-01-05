@@ -125,8 +125,20 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 			return nil, galaerr.NewSemanticError("variable assigned to None() must have an explicit type")
 		}
 
+		var fun ast.Expr = t.stdIdent("NewImmutable")
+		if ctx.Type_() != nil {
+			typeExpr, err := t.transformType(ctx.Type_())
+			if err != nil {
+				return nil, err
+			}
+			fun = &ast.IndexExpr{
+				X:     fun,
+				Index: typeExpr,
+			}
+		}
+
 		wrappedValues = append(wrappedValues, &ast.CallExpr{
-			Fun:  t.stdIdent("NewImmutable"),
+			Fun:  fun,
 			Args: []ast.Expr{val},
 		})
 	}

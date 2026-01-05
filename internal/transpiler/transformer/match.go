@@ -42,8 +42,8 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 		}
 
 		// Check if it's a default case
-		patExprCtx := ccCtx.Expression(0)
-		if patExprCtx.GetText() == "_" {
+		patCtx := ccCtx.Pattern()
+		if patCtx.GetText() == "_" {
 			if foundDefault {
 				return nil, galaerr.NewSemanticError("multiple default cases in match")
 			}
@@ -56,8 +56,8 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 					return nil, err
 				}
 				defaultBody = b.List
-			} else if len(ccCtx.AllExpression()) > 1 {
-				expr, err := t.transformExpression(ccCtx.Expression(1))
+			} else if ccCtx.Expression() != nil {
+				expr, err := t.transformExpression(ccCtx.Expression())
 				if err != nil {
 					return nil, err
 				}
@@ -130,26 +130,43 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 	}, nil
 }
 
-func (t *galaASTTransformer) transformPattern(patCtx grammar.IExpressionContext, objExpr ast.Expr) (ast.Expr, []ast.Stmt, error) {
+func (t *galaASTTransformer) transformPattern(patCtx grammar.IPatternContext, objExpr ast.Expr) (ast.Expr, []ast.Stmt, error) {
 	if patCtx.GetText() == "_" {
 		return ast.NewIdent("true"), nil, nil
 	}
 
+	switch ctx := patCtx.(type) {
+	case *grammar.ExpressionPatternContext:
+		return t.transformExpressionPattern(ctx.Expression(), objExpr)
+	case *grammar.TypedPatternContext:
+		return t.transformTypedPattern(ctx, objExpr)
+	default:
+		return nil, nil, fmt.Errorf("unknown pattern type: %T", patCtx)
+	}
+}
+
+func (t *galaASTTransformer) transformExpressionPattern(patExprCtx grammar.IExpressionContext, objExpr ast.Expr) (ast.Expr, []ast.Stmt, error) {
+	if patExprCtx.GetText() == "_" {
+		return ast.NewIdent("true"), nil, nil
+	}
+
 	// Simple Binding
-	if p, ok := patCtx.Primary().(*grammar.PrimaryContext); ok && p.Identifier() != nil {
-		name := p.Identifier().GetText()
-		t.currentScope.vals[name] = false // Treat as var to avoid .Get() wrapping
-		assign := &ast.AssignStmt{
-			Lhs: []ast.Expr{ast.NewIdent(name)},
-			Tok: token.DEFINE,
-			Rhs: []ast.Expr{objExpr},
+	if primary := patExprCtx.Primary(); primary != nil {
+		if p, ok := primary.(*grammar.PrimaryContext); ok && p.Identifier() != nil {
+			name := p.Identifier().GetText()
+			t.currentScope.vals[name] = false // Treat as var to avoid .Get() wrapping
+			assign := &ast.AssignStmt{
+				Lhs: []ast.Expr{ast.NewIdent(name)},
+				Tok: token.DEFINE,
+				Rhs: []ast.Expr{objExpr},
+			}
+			return ast.NewIdent("true"), []ast.Stmt{assign}, nil
 		}
-		return ast.NewIdent("true"), []ast.Stmt{assign}, nil
 	}
 
 	// Extractor
-	if patCtx.GetChildCount() >= 3 && patCtx.GetChild(1).(antlr.ParseTree).GetText() == "(" {
-		extractorCtx := patCtx.GetChild(0).(grammar.IExpressionContext)
+	if patExprCtx.GetChildCount() >= 3 && patExprCtx.GetChild(1).(antlr.ParseTree).GetText() == "(" {
+		extractorCtx := patExprCtx.GetChild(0).(grammar.IExpressionContext)
 		patternExpr, err := t.transformExpression(extractorCtx)
 		if err != nil {
 			return nil, nil, err
@@ -180,7 +197,7 @@ func (t *galaASTTransformer) transformPattern(patCtx grammar.IExpressionContext,
 		}
 
 		var argList *grammar.ArgumentListContext
-		if ctx, ok := patCtx.GetChild(2).(*grammar.ArgumentListContext); ok {
+		if ctx, ok := patExprCtx.GetChild(2).(*grammar.ArgumentListContext); ok {
 			argList = ctx
 		}
 
@@ -192,7 +209,7 @@ func (t *galaASTTransformer) transformPattern(patCtx grammar.IExpressionContext,
 		if argList != nil && len(argList.AllArgument()) > 0 {
 			hasNonUnderscore := false
 			for _, argCtx := range argList.AllArgument() {
-				if argCtx.(*grammar.ArgumentContext).Expression().GetText() != "_" {
+				if argCtx.(*grammar.ArgumentContext).Pattern().GetText() != "_" {
 					hasNonUnderscore = true
 					break
 				}
@@ -238,7 +255,7 @@ func (t *galaASTTransformer) transformPattern(patCtx grammar.IExpressionContext,
 			for i, argCtx := range argList.AllArgument() {
 				arg := argCtx.(*grammar.ArgumentContext)
 
-				if arg.Expression().GetText() == "_" {
+				if arg.Pattern().GetText() == "_" {
 					continue
 				}
 
@@ -250,7 +267,7 @@ func (t *galaASTTransformer) transformPattern(patCtx grammar.IExpressionContext,
 					},
 				}
 
-				subCond, subBindings, err := t.transformPattern(arg.Expression(), valExpr)
+				subCond, subBindings, err := t.transformPattern(arg.Pattern(), valExpr)
 				if err != nil {
 					return nil, nil, err
 				}
@@ -274,7 +291,7 @@ func (t *galaASTTransformer) transformPattern(patCtx grammar.IExpressionContext,
 	}
 
 	// Literal or other
-	patExpr, err := t.transformExpression(patCtx)
+	patExpr, err := t.transformExpression(patExprCtx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -288,11 +305,40 @@ func (t *galaASTTransformer) transformPattern(patCtx grammar.IExpressionContext,
 	return cond, nil, nil
 }
 
+func (t *galaASTTransformer) transformTypedPattern(ctx *grammar.TypedPatternContext, objExpr ast.Expr) (ast.Expr, []ast.Stmt, error) {
+	name := ctx.Identifier().GetText()
+	typeExpr, err := t.transformType(ctx.Type_())
+	if err != nil {
+		return nil, nil, err
+	}
+
+	t.currentScope.vals[name] = false // Bind as variable
+
+	okName := t.nextTempVar()
+
+	// v, ok := std.As[T](obj)
+	asCall := &ast.CallExpr{
+		Fun: &ast.IndexExpr{
+			X:     t.stdIdent("As"),
+			Index: typeExpr,
+		},
+		Args: []ast.Expr{objExpr},
+	}
+
+	assign := &ast.AssignStmt{
+		Lhs: []ast.Expr{ast.NewIdent(name), ast.NewIdent(okName)},
+		Tok: token.DEFINE,
+		Rhs: []ast.Expr{asCall},
+	}
+
+	return ast.NewIdent(okName), []ast.Stmt{assign}, nil
+}
+
 func (t *galaASTTransformer) transformCaseClause(ctx *grammar.CaseClauseContext, paramName string) (ast.Stmt, error) {
 	t.pushScope()
 	defer t.popScope()
 
-	patCtx := ctx.Expression(0)
+	patCtx := ctx.Pattern()
 	cond, bindings, err := t.transformPattern(patCtx, ast.NewIdent(paramName))
 	if err != nil {
 		return nil, err
@@ -305,8 +351,8 @@ func (t *galaASTTransformer) transformCaseClause(ctx *grammar.CaseClauseContext,
 			return nil, err
 		}
 		body = b.List
-	} else if len(ctx.AllExpression()) > 1 {
-		expr, err := t.transformExpression(ctx.Expression(1))
+	} else if ctx.Expression() != nil {
+		expr, err := t.transformExpression(ctx.Expression())
 		if err != nil {
 			return nil, err
 		}

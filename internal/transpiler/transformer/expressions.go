@@ -68,7 +68,12 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 				var mArgs []ast.Expr
 				for _, argCtx := range argListCtx.AllArgument() {
 					arg := argCtx.(*grammar.ArgumentContext)
-					expr, err := t.transformExpression(arg.Expression())
+					pat := arg.Pattern()
+					ep, ok := pat.(*grammar.ExpressionPatternContext)
+					if !ok {
+						return nil, galaerr.NewSemanticError("only expressions allowed as function arguments")
+					}
+					expr, err := t.transformExpression(ep.Expression())
 					if err != nil {
 						return nil, err
 					}
@@ -101,7 +106,12 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 
 			for _, argCtx := range argListCtx.AllArgument() {
 				arg := argCtx.(*grammar.ArgumentContext)
-				expr, err := t.transformExpression(arg.Expression())
+				pat := arg.Pattern()
+				ep, ok := pat.(*grammar.ExpressionPatternContext)
+				if !ok {
+					return nil, galaerr.NewSemanticError("only expressions allowed as function arguments")
+				}
+				expr, err := t.transformExpression(ep.Expression())
 				if err != nil {
 					return nil, err
 				}

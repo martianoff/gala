@@ -91,6 +91,26 @@ func main() {
 }
 ```
 
+## Type-Based Pattern Matching Example
+
+```gala
+package main
+
+import "fmt"
+
+func main() {
+    val x any = "hello"
+    
+    val res = x match {
+        case s: string => "string: " + s
+        case i: int    => fmt.Sprintf("int: %d", i)
+        case _         => "unknown"
+    }
+    
+    fmt.Println(res)
+}
+```
+
 ## Apply Method Example
 
 ```gala

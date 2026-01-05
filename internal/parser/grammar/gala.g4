@@ -93,7 +93,7 @@ expression
     | ifExpression
     ;
 argumentList: argument (',' argument)*;
-argument: (identifier '=')? expression;
+argument: (identifier '=')? pattern;
 
 primary
     : identifier
@@ -103,7 +103,12 @@ primary
 
 lambdaExpression: parameters '=>' (expression | block);
 
-caseClause: 'case' expression '=>' (expression | block);
+caseClause: 'case' pattern '=>' (expression | block);
+
+pattern
+    : expression            # expressionPattern
+    | identifier ':' type   # typedPattern
+    ;
 
 ifExpression: 'if' '(' expression ')' expression 'else' expression;
 

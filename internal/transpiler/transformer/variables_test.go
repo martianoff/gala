@@ -54,7 +54,7 @@ val s string = "hello"`,
 
 import "martianoff/gala/std"
 
-var s std.Immutable[string] = std.NewImmutable("hello")
+var s std.Immutable[string] = std.NewImmutable[string]("hello")
 `,
 		},
 	}

@@ -205,6 +205,28 @@ val result = x match {
 }
 ```
 
+#### Type-Based Pattern Matching
+GALA supports matching based on the type of an object. This is useful when working with `any` or interface types.
+
+```gala
+val res = x match {
+    case s: string => "Found string: " + s
+    case i: int    => "Found int: " + fmt.Sprintf("%d", i)
+    case _         => "Unknown type"
+}
+```
+
+Typed patterns can also be nested within other patterns:
+
+```gala
+val opt = Some(42)
+opt match {
+    case Some(i: int) => fmt.Println("Integer:", i)
+    case Some(s: string) => fmt.Println("String:", s)
+    case _ => fmt.Println("Other")
+}
+```
+
 #### Extractors and `Unapply`
 GALA follows Scala semantics for extractors. When a struct or object is used as a pattern, its `Unapply` method is called with the matched object as an argument.
 

@@ -8,6 +8,6 @@
 - [ ] Support filters in pattern matching
 - [x] Avoid gala style pattern matching
 - [x] Support Some/None as structs in GALA
-- [ ] Pattern matching for types
+- [x] Pattern matching for types
 - [ ] Remove special casing for Tuples
 - [ ] Imported packages in GALA are analyzed with analyzers so they can support GALA features like generic methods

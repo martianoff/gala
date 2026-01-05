@@ -36,7 +36,7 @@ val y Option[int] = None()`,
 import "martianoff/gala/std"
 
 var x = std.NewImmutable(std.Some_Apply(std.Some{}, 10))
-var y std.Immutable[std.Option[int]] = std.NewImmutable(std.None_Apply(std.None{}))
+var y std.Immutable[std.Option[int]] = std.NewImmutable[std.Option[int]](std.None_Apply(std.None{}))
 `,
 		},
 		{
@@ -48,7 +48,7 @@ val x Option[int] = Some(10)`,
 
 import "martianoff/gala/std"
 
-var x std.Immutable[std.Option[int]] = std.NewImmutable(std.Some_Apply(std.Some{}, 10))
+var x std.Immutable[std.Option[int]] = std.NewImmutable[std.Option[int]](std.Some_Apply(std.Some{}, 10))
 `,
 		},
 		{

@@ -560,3 +560,11 @@ func Equal[T any](v1, v2 T) bool {
 	}
 	return true
 }
+
+func As[T any](obj any) (T, bool) {
+	obj = unwrapImmutable(obj)
+	if v, ok := obj.(T); ok {
+		return v, true
+	}
+	return *new(T), false
+}

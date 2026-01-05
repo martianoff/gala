@@ -1,0 +1,24 @@
+package main
+
+import "fmt"
+
+func main() {
+    val opt = Some("hello")
+
+    val res = opt match {
+        case Some(s: string) => "Found string: " + s
+        case Some(i: int)    => "Found int: " + fmt.Sprintf("%d", i)
+        case None()          => "Nothing"
+        case _               => "Other"
+    }
+
+    fmt.Println(res)
+
+    val opt2 = Some(42)
+    val res2 = opt2 match {
+        case Some(s: string) => "Found string: " + s
+        case Some(i: int)    => fmt.Sprintf("Found int: %d", i)
+        case _               => "Other"
+    }
+    fmt.Println(res2)
+}

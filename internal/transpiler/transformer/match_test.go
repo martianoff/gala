@@ -144,6 +144,61 @@ var res = std.NewImmutable(func(x any) any {
 `,
 		},
 		{
+			name: "Type-based pattern match",
+			input: `package main
+
+val res = x match {
+	case s: string => s
+	case i: int => i
+	case _ => "unknown"
+}`,
+			expected: `package main
+
+import "martianoff/gala/std"
+
+var res = std.NewImmutable(func(x any) any {
+	{
+		s, _tmp_1 := std.As[string](x)
+		if _tmp_1 {
+			return s
+		} else {
+			i, _tmp_2 := std.As[int](x)
+			if _tmp_2 {
+				return i
+			} else {
+				return "unknown"
+			}
+		}
+	}
+}(x))
+`,
+		},
+		{
+			name: "Nested type-based pattern match",
+			input: `package main
+
+val res = x match {
+	case Some(s: string) => s
+	case _ => "unknown"
+}`,
+			expected: `package main
+
+import "martianoff/gala/std"
+
+var res = std.NewImmutable(func(x any) any {
+	{
+		_tmp_1, _tmp_2 := std.UnapplyFull(x, std.Some{})
+		s, _tmp_3 := std.As[string](std.GetSafe(_tmp_1, 0))
+		if _tmp_2 && _tmp_3 {
+			return s
+		} else {
+			return "unknown"
+		}
+	}
+}(x))
+`,
+		},
+		{
 			name: "Missing default case",
 			input: `val res = x match {
 				case 1 => "one"

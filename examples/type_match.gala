@@ -1,0 +1,24 @@
+package main
+
+import "fmt"
+
+func main() {
+    val x = "hello"
+
+    val res1 = x match {
+        case s: string => "string: " + s
+        case i: int    => "int: " + fmt.Sprintf("%d", i)
+        case _         => "unknown"
+    }
+
+    fmt.Println(res1)
+
+    val y = Some(3)
+    val res2 = y match {
+        case s: string => "string: " + s
+        case i: int    => "int: " + fmt.Sprintf("%d", i)
+        case _         => "unknown"
+    }
+
+    fmt.Println(res2)
+}
