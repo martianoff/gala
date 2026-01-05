@@ -252,8 +252,8 @@ func UnapplyFull(obj any, pattern any) ([]any, bool) {
 	// Try pattern.Unapply(obj) first (Scala-style extractors)
 	if u, ok := pattern.(Unapply); ok {
 		res := u.Unapply(obj)
-		if isDefined(res) {
-			return []any{getSomeValue(res)}, true
+		if IsDefined(res) {
+			return []any{GetSomeValue(res)}, true
 		}
 		return nil, false
 	}
@@ -295,8 +295,8 @@ func UnapplyFull(obj any, pattern any) ([]any, bool) {
 
 			// Handle Option-style (single return value)
 			res := resVals[0].Interface()
-			if isDefined(res) {
-				return []any{getSomeValue(res)}, true
+			if IsDefined(res) {
+				return []any{GetSomeValue(res)}, true
 			}
 			return nil, false
 		}
@@ -304,22 +304,6 @@ func UnapplyFull(obj any, pattern any) ([]any, bool) {
 
 	if reflect.DeepEqual(obj, pattern) {
 		return []any{obj}, true
-	}
-	return nil, false
-}
-
-func UnapplySome(obj any) ([]any, bool) {
-	obj = unwrapImmutable(obj)
-	if isDefined(obj) {
-		return []any{getSomeValue(obj)}, true
-	}
-	return nil, false
-}
-
-func UnapplyNone(obj any) ([]any, bool) {
-	obj = unwrapImmutable(obj)
-	if !isDefined(obj) {
-		return []any{}, true
 	}
 	return nil, false
 }
@@ -335,48 +319,6 @@ func UnapplyTuple(obj any) ([]any, bool) {
 		f2 := v.FieldByName("V2")
 		if f1.IsValid() && f2.IsValid() {
 			return []any{unwrapImmutable(f1.Interface()), unwrapImmutable(f2.Interface())}, true
-		}
-	}
-	return nil, false
-}
-
-func UnapplyLeft(obj any) ([]any, bool) {
-	obj = unwrapImmutable(obj)
-	if obj == nil {
-		return nil, false
-	}
-	v := reflect.ValueOf(obj)
-	if v.Kind() == reflect.Struct && (strings.Contains(v.Type().Name(), "Either") || strings.Contains(v.Type().String(), "Either")) {
-		isLeftVal := v.FieldByName("IsLeft")
-		if isLeftVal.IsValid() {
-			isLeft := unwrapImmutable(isLeftVal.Interface())
-			if b, ok := isLeft.(bool); ok && b {
-				val := v.FieldByName("LeftValue")
-				if val.IsValid() {
-					return []any{unwrapImmutable(val.Interface())}, true
-				}
-			}
-		}
-	}
-	return nil, false
-}
-
-func UnapplyRight(obj any) ([]any, bool) {
-	obj = unwrapImmutable(obj)
-	if obj == nil {
-		return nil, false
-	}
-	v := reflect.ValueOf(obj)
-	if v.Kind() == reflect.Struct && (strings.Contains(v.Type().Name(), "Either") || strings.Contains(v.Type().String(), "Either")) {
-		isLeftVal := v.FieldByName("IsLeft")
-		if isLeftVal.IsValid() {
-			isLeft := unwrapImmutable(isLeftVal.Interface())
-			if b, ok := isLeft.(bool); ok && !b {
-				val := v.FieldByName("RightValue")
-				if val.IsValid() {
-					return []any{unwrapImmutable(val.Interface())}, true
-				}
-			}
 		}
 	}
 	return nil, false
@@ -419,7 +361,69 @@ func unwrapImmutable(obj any) any {
 	return obj
 }
 
-func isDefined(opt any) bool {
+func IsLeft(e any) bool {
+	e = unwrapImmutable(e)
+	if e == nil {
+		return false
+	}
+	v := reflect.ValueOf(e)
+	if v.Kind() == reflect.Struct && (strings.Contains(v.Type().Name(), "Either") || strings.Contains(v.Type().String(), "Either")) {
+		isLeftVal := v.FieldByName("IsLeft")
+		if isLeftVal.IsValid() {
+			isLeft := unwrapImmutable(isLeftVal.Interface())
+			if b, ok := isLeft.(bool); ok {
+				return b
+			}
+		}
+	}
+	return false
+}
+
+func IsRight(e any) bool {
+	e = unwrapImmutable(e)
+	if e == nil {
+		return false
+	}
+	v := reflect.ValueOf(e)
+	if v.Kind() == reflect.Struct && (strings.Contains(v.Type().Name(), "Either") || strings.Contains(v.Type().String(), "Either")) {
+		isLeftVal := v.FieldByName("IsLeft")
+		if isLeftVal.IsValid() {
+			isLeft := unwrapImmutable(isLeftVal.Interface())
+			if b, ok := isLeft.(bool); ok {
+				return !b
+			}
+		}
+	}
+	return false
+}
+
+func GetLeftValue(e any) any {
+	e = unwrapImmutable(e)
+	if e == nil {
+		return nil
+	}
+	v := reflect.ValueOf(e)
+	f := v.FieldByName("LeftValue")
+	if f.IsValid() {
+		return unwrapImmutable(f.Interface())
+	}
+	return nil
+}
+
+func GetRightValue(e any) any {
+	e = unwrapImmutable(e)
+	if e == nil {
+		return nil
+	}
+	v := reflect.ValueOf(e)
+	f := v.FieldByName("RightValue")
+	if f.IsValid() {
+		return unwrapImmutable(f.Interface())
+	}
+	return nil
+}
+
+func IsDefined(opt any) bool {
 	if opt == nil {
 		return false
 	}
@@ -454,7 +458,7 @@ func isDefined(opt any) bool {
 	return false
 }
 
-func getSomeValue(opt any) any {
+func GetSomeValue(opt any) any {
 	if opt == nil {
 		return nil
 	}

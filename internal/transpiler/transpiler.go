@@ -62,6 +62,7 @@ type TypeMetadata struct {
 
 type MethodMetadata struct {
 	Name       string
+	ReturnType string
 	TypeParams []string
 	IsGeneric  bool // Force transformation to standalone function
 }

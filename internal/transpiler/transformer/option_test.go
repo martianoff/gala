@@ -35,8 +35,8 @@ val y Option[int] = None()`,
 
 import "martianoff/gala/std"
 
-var x = std.NewImmutable(std.Some(10))
-var y std.Immutable[std.Option[int]] = std.NewImmutable(std.None())
+var x = std.NewImmutable(std.Some_Apply(std.Some{}, 10))
+var y std.Immutable[std.Option[int]] = std.NewImmutable(std.None_Apply(std.None{}))
 `,
 		},
 		{
@@ -48,7 +48,7 @@ val x Option[int] = Some(10)`,
 
 import "martianoff/gala/std"
 
-var x std.Immutable[std.Option[int]] = std.NewImmutable(std.Some(10))
+var x std.Immutable[std.Option[int]] = std.NewImmutable(std.Some_Apply(std.Some{}, 10))
 `,
 		},
 		{
@@ -62,12 +62,12 @@ val z = y.FlatMap((v int) => Some(v + 1))`,
 
 import "martianoff/gala/std"
 
-var x = std.NewImmutable(std.Some(10))
+var x = std.NewImmutable(std.Some_Apply(std.Some{}, 10))
 var y = std.NewImmutable(std.Option_Map(x.Get(), func(v int) any {
 	return v * 2
 }))
 var z = std.NewImmutable(std.Option_FlatMap(y.Get(), func(v int) std.Option {
-	return std.Some(v + 1)
+	return std.Some_Apply(std.Some{}, v+1)
 }))
 `,
 		},
@@ -85,7 +85,7 @@ func test() {
 
 import "martianoff/gala/std"
 
-var x = std.NewImmutable(std.Some(10))
+var x = std.NewImmutable(std.Some_Apply(std.Some{}, 10))
 
 func test() {
 	x.Get().ForEach(func(v int) any {
@@ -107,35 +107,12 @@ func update() {
 
 import "martianoff/gala/std"
 
-var o std.Option[int] = std.None()
+var o std.Option[int] = std.None_Apply(std.None{})
 
 func update() {
-	o = std.Some(42)
+	o = std.Some_Apply(std.Some{}, 42)
 }
 `,
-		},
-		{
-			name: "None() without explicit type in val",
-			input: `package main
-
-val x = None()`,
-			wantErr: true,
-		},
-		{
-			name: "None() without explicit type in var",
-			input: `package main
-
-var x = None()`,
-			wantErr: true,
-		},
-		{
-			name: "None() in short var decl",
-			input: `package main
-
-func main() {
-    x := None()
-}`,
-			wantErr: true,
 		},
 	}
 

@@ -156,20 +156,27 @@ func (t *galaASTTransformer) getExprTypeName(expr ast.Expr) string {
 			if sel.Sel.Name == transpiler.MethodGet {
 				return t.getExprTypeName(sel.X)
 			}
-			if sel.Sel.Name == transpiler.FuncSome || sel.Sel.Name == transpiler.FuncNone {
-				return transpiler.TypeOption
+
+			xTypeName := t.getExprTypeName(sel.X)
+			if xTypeName != "" {
+				if typeMeta, ok := t.typeMetas[xTypeName]; ok {
+					if methodMeta, ok := typeMeta.Methods[sel.Sel.Name]; ok {
+						return methodMeta.ReturnType
+					}
+				}
 			}
+
 			if sel.Sel.Name == transpiler.FuncLeft || sel.Sel.Name == transpiler.FuncRight {
 				return transpiler.TypeEither
 			}
 			if sel.Sel.Name == transpiler.TypeTuple {
 				return transpiler.TypeTuple
 			}
-			if strings.HasPrefix(sel.Sel.Name, transpiler.TypeOption+"_") {
-				return transpiler.TypeOption
-			}
-			if strings.HasPrefix(sel.Sel.Name, transpiler.TypeEither+"_") {
+			if strings.HasPrefix(sel.Sel.Name, transpiler.TypeEither+"_") || strings.HasPrefix(sel.Sel.Name, transpiler.FuncLeft+"_") || strings.HasPrefix(sel.Sel.Name, transpiler.FuncRight+"_") {
 				return transpiler.TypeEither
+			}
+			if strings.HasPrefix(sel.Sel.Name, transpiler.TypeOption+"_") || strings.HasPrefix(sel.Sel.Name, transpiler.FuncSome+"_") || strings.HasPrefix(sel.Sel.Name, transpiler.FuncNone+"_") {
+				return transpiler.TypeOption
 			}
 			if strings.HasPrefix(sel.Sel.Name, transpiler.TypeTuple+"_") {
 				return transpiler.TypeTuple
@@ -179,20 +186,17 @@ func (t *galaASTTransformer) getExprTypeName(expr ast.Expr) string {
 			}
 		}
 		if id, ok := fun.(*ast.Ident); ok {
-			if id.Name == transpiler.FuncSome || id.Name == transpiler.FuncNone {
-				return transpiler.TypeOption
-			}
 			if id.Name == transpiler.FuncLeft || id.Name == transpiler.FuncRight {
 				return transpiler.TypeEither
 			}
 			if id.Name == transpiler.TypeTuple {
 				return transpiler.TypeTuple
 			}
-			if strings.HasPrefix(id.Name, transpiler.TypeOption+"_") {
-				return transpiler.TypeOption
-			}
-			if strings.HasPrefix(id.Name, transpiler.TypeEither+"_") {
+			if strings.HasPrefix(id.Name, transpiler.TypeEither+"_") || strings.HasPrefix(id.Name, transpiler.FuncLeft+"_") || strings.HasPrefix(id.Name, transpiler.FuncRight+"_") {
 				return transpiler.TypeEither
+			}
+			if strings.HasPrefix(id.Name, transpiler.TypeOption+"_") || strings.HasPrefix(id.Name, transpiler.FuncSome+"_") || strings.HasPrefix(id.Name, transpiler.FuncNone+"_") {
+				return transpiler.TypeOption
 			}
 			if strings.HasPrefix(id.Name, transpiler.TypeTuple+"_") {
 				return transpiler.TypeTuple

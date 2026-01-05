@@ -1,0 +1,16 @@
+package main
+
+import "fmt"
+
+type MySome struct {}
+func (s MySome) Apply[T any](v T) string = "Some"
+func (s MySome) Unapply(v any) bool = true
+
+func main() {
+    val x = MySome(10)
+    val res = x match {
+        case MySome() => "matched"
+        case _ => "not matched"
+    }
+    fmt.Println(res)
+}

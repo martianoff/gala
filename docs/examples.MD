@@ -85,7 +85,7 @@ func main() {
     opt match {
         case Some(Even(n)) => fmt.Println("Found some even number", n)
         case Some(n)       => fmt.Println("Found some odd number", n)
-        case None          => fmt.Println("Nothing found")
+        case None()        => fmt.Println("Nothing found")
         case _             => fmt.Println("Other")
     }
 }

@@ -8,7 +8,7 @@ import (
 
 func TestOptionImplementation(t *testing.T) {
 	t.Run("Some", func(t *testing.T) {
-		o := Some(10)
+		o := Some_Apply(Some{}, 10)
 		assert.True(t, o.IsDefined())
 		assert.False(t, o.IsEmpty())
 		assert.Equal(t, 10, o.Get())
@@ -16,7 +16,7 @@ func TestOptionImplementation(t *testing.T) {
 	})
 
 	t.Run("None", func(t *testing.T) {
-		o := None[int]()
+		o := None_Apply[int](None{})
 		assert.False(t, o.IsDefined())
 		assert.True(t, o.IsEmpty())
 		assert.Panics(t, func() { o.Get() })
@@ -24,41 +24,41 @@ func TestOptionImplementation(t *testing.T) {
 	})
 
 	t.Run("Map", func(t *testing.T) {
-		o := Some(10)
-		m := Option_Map(o, func(v int) string { return "val" })
+		o := Some_Apply(Some{}, 10)
+		m := Option_Map[string, int](o, func(v int) string { return "val" })
 		assert.True(t, m.IsDefined())
 		assert.Equal(t, "val", m.Get())
 
-		n := None[int]()
-		nm := Option_Map(n, func(v int) string { return "val" })
+		n := None_Apply[int](None{})
+		nm := Option_Map[string, int](n, func(v int) string { return "val" })
 		assert.True(t, nm.IsEmpty())
 	})
 
 	t.Run("FlatMap", func(t *testing.T) {
-		o := Some(10)
-		m := Option_FlatMap(o, func(v int) Option[string] { return Some("val") })
+		o := Some_Apply(Some{}, 10)
+		m := Option_FlatMap[string, int](o, func(v int) Option[string] { return Some_Apply(Some{}, "val") })
 		assert.True(t, m.IsDefined())
 		assert.Equal(t, "val", m.Get())
 
-		nm := Option_FlatMap(o, func(v int) Option[string] { return None[string]() })
+		nm := Option_FlatMap[string, int](o, func(v int) Option[string] { return None_Apply[string](None{}) })
 		assert.True(t, nm.IsEmpty())
 	})
 
 	t.Run("Filter", func(t *testing.T) {
-		o := Some(10)
+		o := Some_Apply(Some{}, 10)
 		assert.True(t, o.Filter(func(v int) bool { return v > 5 }).IsDefined())
 		assert.True(t, o.Filter(func(v int) bool { return v > 15 }).IsEmpty())
 	})
 
 	t.Run("ForEach", func(t *testing.T) {
 		count := 0
-		Some(10).ForEach(func(v int) any {
+		Some_Apply(Some{}, 10).ForEach(func(v int) any {
 			count += v
 			return nil
 		})
 		assert.Equal(t, 10, count)
 
-		None[int]().ForEach(func(v int) any {
+		None_Apply[int](None{}).ForEach(func(v int) any {
 			count += v
 			return nil
 		})

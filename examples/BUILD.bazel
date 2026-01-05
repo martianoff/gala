@@ -91,3 +91,9 @@ gala_test(
     src = "apply_method.gala",
     expected = "apply_method.out",
 )
+
+gala_test(
+    name = "option_apply_unapply",
+    src = "option_apply_unapply.gala",
+    expected = "option_apply_unapply.out",
+)

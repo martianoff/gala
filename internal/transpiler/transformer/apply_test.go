@@ -176,7 +176,7 @@ func (i Identity[T]) Apply(v T) T {
 	return v
 }
 func main() {
-	var res = std.NewImmutable(Identity[int]{}.Apply(10))
+	var res = std.NewImmutable(Identity_Apply[int](Identity{}, 10))
 }`,
 		},
 	}

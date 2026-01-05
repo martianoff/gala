@@ -7,12 +7,13 @@ type Option[T any] struct {
     Defined bool
 }
 
-// Some returns an Option containing the given value.
-// v: the value to wrap in an Option.
-func Some[T any](v T) Option[T] = Option[T](Value = v, Defined = true)
+type Some struct {}
+func (s Some) Apply[T any](v T) Option[T] = Option[T](Value = v, Defined = true)
+func (s Some) Unapply(o any) any = if (IsDefined(o)) Some(GetSomeValue(o)) else None[any]()
 
-// None returns an empty Option.
-func None[T any]() Option[T] = Option[T](Defined = false)
+type None struct {}
+func (n None) Apply[T any]() Option[T] = Option[T](Defined = false)
+func (n None) Unapply(o any) bool = !IsDefined(o)
 
 // IsDefined returns true if the option is an instance of Some, false otherwise.
 func (o Option[T]) IsDefined() bool = o.Defined

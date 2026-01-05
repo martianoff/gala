@@ -128,7 +128,20 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 	exprTypeName := t.getExprTypeName(x)
 	if exprTypeName != "" {
 		if typeMeta, ok := t.typeMetas[exprTypeName]; ok {
-			if _, hasApply := typeMeta.Methods["Apply"]; hasApply {
+			if methodMeta, hasApply := typeMeta.Methods["Apply"]; hasApply {
+				isGeneric := methodMeta.IsGeneric || len(methodMeta.TypeParams) > 0
+				if isGeneric {
+					fullName := exprTypeName + "_Apply"
+					var fun ast.Expr = ast.NewIdent(fullName)
+					if exprTypeName == transpiler.TypeOption || exprTypeName == transpiler.TypeImmutable || exprTypeName == transpiler.TypeTuple || exprTypeName == transpiler.TypeEither ||
+						exprTypeName == transpiler.FuncSome || exprTypeName == transpiler.FuncNone || exprTypeName == transpiler.FuncLeft || exprTypeName == transpiler.FuncRight {
+						fun = t.stdIdent(fullName)
+					}
+					return &ast.CallExpr{
+						Fun:  fun,
+						Args: append([]ast.Expr{x}, args...),
+					}, nil
+				}
 				return &ast.CallExpr{
 					Fun: &ast.SelectorExpr{
 						X:   x,
@@ -143,14 +156,44 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 	if typeName != "" {
 		if fieldNames, ok := t.structFields[typeName]; ok {
 			// If it has no fields and has Apply method, it might be Implode("apple") -> Implode{}.Apply("apple")
-			if len(fieldNames) == 0 && len(args) > 0 {
-				if typeMeta, ok := t.typeMetas[typeName]; ok {
-					if _, hasApply := typeMeta.Methods["Apply"]; hasApply {
+			// or None() -> None{}.Apply()
+			if typeMeta, ok := t.typeMetas[typeName]; ok {
+				if methodMeta, hasApply := typeMeta.Methods["Apply"]; hasApply {
+					if len(fieldNames) == 0 {
+						var typeArgs []ast.Expr
+						realTypeExpr := typeExpr
+						if idx, ok := typeExpr.(*ast.IndexExpr); ok {
+							typeArgs = []ast.Expr{idx.Index}
+							realTypeExpr = idx.X
+						} else if idxList, ok := typeExpr.(*ast.IndexListExpr); ok {
+							typeArgs = idxList.Indices
+							realTypeExpr = idxList.X
+						}
+
+						receiver := &ast.CompositeLit{
+							Type: realTypeExpr,
+						}
+						isGeneric := methodMeta.IsGeneric || len(methodMeta.TypeParams) > 0 || len(typeArgs) > 0
+						if isGeneric {
+							fullName := typeName + "_Apply"
+							var fun ast.Expr = ast.NewIdent(fullName)
+							if typeName == transpiler.TypeOption || typeName == transpiler.TypeImmutable || typeName == transpiler.TypeTuple || typeName == transpiler.TypeEither ||
+								typeName == transpiler.FuncSome || typeName == transpiler.FuncNone || typeName == transpiler.FuncLeft || typeName == transpiler.FuncRight {
+								fun = t.stdIdent(fullName)
+							}
+							if len(typeArgs) == 1 {
+								fun = &ast.IndexExpr{X: fun, Index: typeArgs[0]}
+							} else if len(typeArgs) > 1 {
+								fun = &ast.IndexListExpr{X: fun, Indices: typeArgs}
+							}
+							return &ast.CallExpr{
+								Fun:  fun,
+								Args: append([]ast.Expr{receiver}, args...),
+							}, nil
+						}
 						return &ast.CallExpr{
 							Fun: &ast.SelectorExpr{
-								X: &ast.CompositeLit{
-									Type: typeExpr,
-								},
+								X:   receiver,
 								Sel: ast.NewIdent("Apply"),
 							},
 							Args: args,

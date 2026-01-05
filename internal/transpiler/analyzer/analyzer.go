@@ -174,6 +174,10 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree) (*transpiler.RichAST, error) {
 						}
 					}
 
+					if ctx.Signature().Type_() != nil {
+						methodMeta.ReturnType = getBaseTypeName(ctx.Signature().Type_())
+					}
+
 					if typeMeta, ok := richAST.Types[baseType]; ok {
 						if existing, exists := typeMeta.Methods[methodName]; exists {
 							// Preserve IsGeneric if it was pre-populated

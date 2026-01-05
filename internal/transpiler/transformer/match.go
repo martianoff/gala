@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/transpiler"
 )
 
 func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionContext) (ast.Expr, error) {
@@ -149,31 +150,31 @@ func (t *galaASTTransformer) transformPattern(patCtx grammar.IExpressionContext,
 	// Extractor
 	if patCtx.GetChildCount() >= 3 && patCtx.GetChild(1).(antlr.ParseTree).GetText() == "(" {
 		extractorCtx := patCtx.GetChild(0).(grammar.IExpressionContext)
-		extName := extractorCtx.GetText()
+		patternExpr, err := t.transformExpression(extractorCtx)
+		if err != nil {
+			return nil, nil, err
+		}
 
 		var unapplyFun ast.Expr = t.stdIdent("UnapplyFull")
-		var patternExpr ast.Expr
 
-		if extName == "Some" {
-			unapplyFun = t.stdIdent("UnapplySome")
-		} else if extName == "None" {
-			unapplyFun = t.stdIdent("UnapplyNone")
-		} else if extName == "Tuple" {
-			unapplyFun = t.stdIdent("UnapplyTuple")
-		} else if extName == "Left" {
-			unapplyFun = t.stdIdent("UnapplyLeft")
-		} else if extName == "Right" {
-			unapplyFun = t.stdIdent("UnapplyRight")
-		} else {
-			var err error
-			patternExpr, err = t.transformExpression(extractorCtx)
-			if err != nil {
-				return nil, nil, err
-			}
-			// If it's a type name, use composite lit
-			if id, ok := patternExpr.(*ast.Ident); ok {
-				if _, ok := t.structFields[id.Name]; ok {
+		// If it's a type name, use composite lit
+		if id, ok := patternExpr.(*ast.Ident); ok {
+			if _, ok := t.structFields[id.Name]; ok {
+				typeName := id.Name
+				if typeName == "Tuple" {
+					unapplyFun = t.stdIdent("UnapplyTuple")
+				} else {
 					patternExpr = &ast.CompositeLit{Type: id}
+				}
+			}
+		} else if sel, ok := patternExpr.(*ast.SelectorExpr); ok {
+			// Handle std.Some
+			if id, ok := sel.X.(*ast.Ident); ok && id.Name == transpiler.StdPackage {
+				typeName := sel.Sel.Name
+				if typeName == "Tuple" {
+					unapplyFun = t.stdIdent("UnapplyTuple")
+				} else {
+					patternExpr = &ast.CompositeLit{Type: sel}
 				}
 			}
 		}
@@ -202,7 +203,16 @@ func (t *galaASTTransformer) transformPattern(patCtx grammar.IExpressionContext,
 		}
 
 		args := []ast.Expr{objExpr}
-		if patternExpr != nil {
+		// If it's a specialized Unapply, it only takes one arg (the object)
+		// For UnapplyFull, it takes (obj, pattern)
+		isUnapplyFull := false
+		if sel, ok := unapplyFun.(*ast.SelectorExpr); ok {
+			if sel.Sel.Name == "UnapplyFull" {
+				isUnapplyFull = true
+			}
+		}
+
+		if isUnapplyFull && patternExpr != nil {
 			args = append(args, patternExpr)
 		}
 

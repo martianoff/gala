@@ -54,9 +54,9 @@ func main() {
     }
 }`,
 			expected: []string{
-				"std.Left",
-				"std.UnapplyLeft(e)",
-				"std.UnapplyRight(e)",
+				"std.Left_Apply",
+				"std.UnapplyFull(e, std.Left{})",
+				"std.UnapplyFull(e, std.Right{})",
 			},
 		},
 		{

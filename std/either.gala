@@ -8,11 +8,13 @@ type Either[A any, B any] struct {
     IsLeft bool
 }
 
-// Left returns an Either containing a left value.
-func Left[A any, B any](v A) Either[A, B] = Either[A, B](LeftValue = v, IsLeft = true)
+type Left struct {}
+func (l Left) Apply[A any, B any](v A) Either[A, B] = Either[A, B](LeftValue = v, IsLeft = true)
+func (l Left) Unapply(e any) any = if (IsLeft(e)) Some(GetLeftValue(e)) else None[any]()
 
-// Right returns an Either containing a right value.
-func Right[A any, B any](v B) Either[A, B] = Either[A, B](RightValue = v, IsLeft = false)
+type Right struct {}
+func (r Right) Apply[A any, B any](v B) Either[A, B] = Either[A, B](RightValue = v, IsLeft = false)
+func (r Right) Unapply(e any) any = if (IsRight(e)) Some(GetRightValue(e)) else None[any]()
 
 // IsRight returns true if this is a Right, false otherwise.
 func (e Either[A, B]) IsRight() bool = !e.IsLeft
