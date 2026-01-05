@@ -176,7 +176,43 @@ func (i Implode) Apply(params []string) string = strings.Join(params, "")
 val res = Implode([]string{"a", "b"}) // expanded to Implode{}.Apply([]string{"a", "b"})
 ```
 
-## 5. Control Flow
+## 5. Interfaces
+
+GALA supports interfaces with semantics similar to Go. Interfaces define a set of method signatures that a type must implement to satisfy the interface.
+
+```gala
+type Shaper interface {
+    Area() float64
+}
+
+struct Rect(width float64, height float64)
+
+func (r Rect) Area() float64 = r.width * r.height
+
+func main() {
+    val r = Rect(10.0, 5.0)
+    val s Shaper = r
+    fmt.Println(s.Area())
+}
+```
+
+Interfaces can also be generic:
+
+```gala
+type Container[T any] interface {
+    Get() T
+}
+
+struct MyInt(v int)
+func (m MyInt) Get() int = m.v
+
+func main() {
+    val c Container[int] = MyInt(42)
+    fmt.Println(c.Get())
+}
+```
+
+## 6. Control Flow
 
 ### If Statement and Expression
 GALA supports `if` both as a statement and as an expression.
@@ -266,7 +302,7 @@ for i := 0; i < 10; i = i + 1 {
 }
 ```
 
-## 6. Functional Features
+## 7. Functional Features
 
 ### Lambda Expressions
 Lambdas use the `=>` syntax.
@@ -279,7 +315,7 @@ val g = (a int, b int) => {
 }
 ```
 
-## 7. Generics
+## 8. Generics
 
 GALA supports generics using square brackets `[]`.
 
@@ -291,7 +327,7 @@ type Box[T any] struct {
 }
 ```
 
-## 8. Standard Library Types
+## 9. Standard Library Types
 
 GALA provides several built-in types in the `std` package for common patterns.
 
@@ -331,11 +367,11 @@ val msg = e match {
 val length = e.Map((s string) => len(s))
 ```
 
-## 9. Immutability Under the Hood
+## 10. Immutability Under the Hood
 
 When GALA transpiles to Go, immutable values are wrapped in a `std.Immutable[T]` container to ensure safety and provide consistent semantics, especially for struct fields and global variables.
 
-## 10. GALA Packages
+## 11. GALA Packages
 
 GALA supports importing other GALA packages. Since GALA transpiles to Go, a GALA package is essentially a Go package after transpilation. To import a GALA package, you use its Go import path.
 
@@ -363,7 +399,7 @@ func main() {
 }
 ```
 
-## 11. Testing
+## 12. Testing
 
 GALA supports Bazel for building and testing. You can use the `gala_test` macro in your `BUILD.bazel` files to define tests that compare the execution output of a GALA program against an expected output file.
 

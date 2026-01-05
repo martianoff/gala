@@ -272,66 +272,38 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 	}
 
 	// Signature
-	sigCtx := ctx.Signature().(*grammar.SignatureContext)
-	paramsCtx := sigCtx.Parameters().(*grammar.ParametersContext)
-
-	fieldList := &ast.FieldList{}
-	if paramsCtx.ParameterList() != nil {
-		for _, pCtx := range paramsCtx.ParameterList().(*grammar.ParameterListContext).AllParameter() {
-			field, err := t.transformParameter(pCtx.(*grammar.ParameterContext))
-			if err != nil {
-				return nil, err
-			}
-			fieldList.List = append(fieldList.List, field)
-		}
+	funcType, err := t.transformSignature(ctx.Signature().(*grammar.SignatureContext), typeParams)
+	if err != nil {
+		return nil, err
 	}
 
-	if receiver != nil && (typeParams != nil || (t.genericMethods[receiverTypeName] != nil && t.genericMethods[receiverTypeName][name])) {
+	if receiver != nil && (funcType.TypeParams != nil || (t.genericMethods[receiverTypeName] != nil && t.genericMethods[receiverTypeName][name])) {
 		// Generic method: transform to standalone function
 		name = receiverTypeName + "_" + name
 		// 1. Add receiver as first parameter
-		fieldList.List = append([]*ast.Field{receiver.List[0]}, fieldList.List...)
+		funcType.Params.List = append([]*ast.Field{receiver.List[0]}, funcType.Params.List...)
 
 		// 2. Extract type parameters from receiver type and add to typeParams
 		recvTypeParams := t.extractTypeParams(receiver.List[0].Type)
 		if len(recvTypeParams) > 0 {
-			if typeParams == nil {
-				typeParams = &ast.FieldList{}
+			if funcType.TypeParams == nil {
+				funcType.TypeParams = &ast.FieldList{}
 			}
 			// Check for duplicates
 			for _, rtp := range recvTypeParams {
 				exists := false
-				for _, tp := range typeParams.List {
+				for _, tp := range funcType.TypeParams.List {
 					if tp.Names[0].Name == rtp.Names[0].Name {
 						exists = true
 						break
 					}
 				}
 				if !exists {
-					typeParams.List = append(typeParams.List, rtp)
+					funcType.TypeParams.List = append(funcType.TypeParams.List, rtp)
 				}
 			}
 		}
 		receiver = nil
-	}
-
-	var results *ast.FieldList
-	if sigCtx.Type_() != nil {
-		retType, err := t.transformType(sigCtx.Type_())
-		if err != nil {
-			return nil, err
-		}
-		results = &ast.FieldList{
-			List: []*ast.Field{
-				{Type: retType},
-			},
-		}
-	}
-
-	funcType := &ast.FuncType{
-		TypeParams: typeParams,
-		Params:     fieldList,
-		Results:    results,
 	}
 
 	var body *ast.BlockStmt
@@ -346,8 +318,8 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		if err != nil {
 			return nil, err
 		}
-		if results != nil && len(results.List) > 0 {
-			expr = t.wrapWithAssertion(expr, results.List[0].Type)
+		if funcType.Results != nil && len(funcType.Results.List) > 0 {
+			expr = t.wrapWithAssertion(expr, funcType.Results.List[0].Type)
 		}
 		body = &ast.BlockStmt{
 			List: []ast.Stmt{
@@ -552,8 +524,21 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 		}
 
 	} else if ctx.InterfaceType() != nil {
-		// TODO: implement
-		return nil, galaerr.NewSemanticError("interface type not implemented yet")
+		interfaceType, err := t.transformInterfaceType(ctx.InterfaceType().(*grammar.InterfaceTypeContext))
+		if err != nil {
+			return nil, err
+		}
+
+		typeSpec := &ast.TypeSpec{
+			Name:       ast.NewIdent(name),
+			TypeParams: tParams,
+			Type:       interfaceType,
+		}
+
+		decls = append(decls, &ast.GenDecl{
+			Tok:   token.TYPE,
+			Specs: []ast.Spec{typeSpec},
+		})
 	} else if ctx.TypeAlias() != nil {
 		// TODO: implement
 		return nil, galaerr.NewSemanticError("type alias not implemented yet")
@@ -662,4 +647,61 @@ func (t *galaASTTransformer) transformTypeParameters(ctx *grammar.TypeParameters
 		})
 	}
 	return list, nil
+}
+
+func (t *galaASTTransformer) transformSignature(ctx *grammar.SignatureContext, typeParams *ast.FieldList) (*ast.FuncType, error) {
+	paramsCtx := ctx.Parameters().(*grammar.ParametersContext)
+
+	fieldList := &ast.FieldList{}
+	if paramsCtx.ParameterList() != nil {
+		for _, pCtx := range paramsCtx.ParameterList().(*grammar.ParameterListContext).AllParameter() {
+			field, err := t.transformParameter(pCtx.(*grammar.ParameterContext))
+			if err != nil {
+				return nil, err
+			}
+			fieldList.List = append(fieldList.List, field)
+		}
+	}
+
+	var results *ast.FieldList
+	if ctx.Type_() != nil {
+		retType, err := t.transformType(ctx.Type_())
+		if err != nil {
+			return nil, err
+		}
+		results = &ast.FieldList{
+			List: []*ast.Field{
+				{Type: retType},
+			},
+		}
+	}
+
+	return &ast.FuncType{
+		TypeParams: typeParams,
+		Params:     fieldList,
+		Results:    results,
+	}, nil
+}
+
+func (t *galaASTTransformer) transformInterfaceType(ctx *grammar.InterfaceTypeContext) (*ast.InterfaceType, error) {
+	methods := &ast.FieldList{}
+	for _, mCtx := range ctx.AllMethodSpec() {
+		spec := mCtx.(*grammar.MethodSpecContext)
+		name := spec.Identifier().GetText()
+		sig := spec.Signature().(*grammar.SignatureContext)
+
+		funcType, err := t.transformSignature(sig, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		methods.List = append(methods.List, &ast.Field{
+			Names: []*ast.Ident{ast.NewIdent(name)},
+			Type:  funcType,
+		})
+	}
+
+	return &ast.InterfaceType{
+		Methods: methods,
+	}, nil
 }

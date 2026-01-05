@@ -115,3 +115,15 @@ gala_test(
     src = "nested_type_match.gala",
     expected = "nested_type_match.out",
 )
+
+gala_test(
+    name = "interface",
+    src = "interface.gala",
+    expected = "interface.out",
+)
+
+gala_test(
+    name = "generic_interface",
+    src = "generic_interface.gala",
+    expected = "generic_interface.out",
+)

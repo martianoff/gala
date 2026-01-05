@@ -81,6 +81,12 @@ func (t *galaASTTransformer) wrapWithAssertion(expr ast.Expr, targetType ast.Exp
 	if targetType == nil {
 		return expr
 	}
+
+	// Don't wrap if target type is 'any'
+	if id, ok := targetType.(*ast.Ident); ok && id.Name == "any" {
+		return expr
+	}
+
 	// If it's a CallExpr to a FuncLit (like match generates), we should assert
 	if call, ok := expr.(*ast.CallExpr); ok {
 		if _, ok := call.Fun.(*ast.FuncLit); ok {

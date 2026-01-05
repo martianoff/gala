@@ -1,5 +1,12 @@
 package std
 
+type EitherInterface interface {
+    GetIsLeft() bool
+    IsRight() bool
+    GetLeftValue() any
+    GetRightValue() any
+}
+
 // Either represents a value of one of two possible types (a disjoint union).
 // An instance of Either is an instance of either Left or Right.
 type Either[A any, B any] struct {

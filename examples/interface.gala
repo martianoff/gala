@@ -1,0 +1,17 @@
+package main
+
+import "fmt"
+
+type Shaper interface {
+    Area() float64
+}
+
+struct Rect(width float64, height float64)
+
+func (r Rect) Area() float64 = r.width * r.height
+
+func main() {
+    val r = Rect(10.0, 5.0)
+    val s Shaper = r
+    fmt.Println(s.Area())
+}

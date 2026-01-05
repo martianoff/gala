@@ -1,5 +1,23 @@
 package std
 
+type OptionInterface interface {
+    IsDefined() bool
+    GetValue() any
+}
+
+// IsDefined returns true if the option is an instance of Some, or if it is a boolean true.
+func IsDefined(opt any) bool = opt match {
+    case b: bool => b
+    case oi: OptionInterface => oi.IsDefined()
+    case _ => false
+}
+
+// GetSomeValue returns the option's value if it is an Option, otherwise returns the value itself.
+func GetSomeValue(opt any) any = opt match {
+    case oi: OptionInterface => oi.GetValue()
+    case _ => opt
+}
+
 // Option represents an optional value: every instance of Option is either an instance
 // of Some containing a value, or None representing an empty value.
 type Option[T any] struct {
@@ -17,6 +35,9 @@ func (n None) Unapply(o any) bool = !IsDefined(o)
 
 // IsDefined returns true if the option is an instance of Some, false otherwise.
 func (o Option[T]) IsDefined() bool = o.Defined
+
+// GetValue returns the option's value as any.
+func (o Option[T]) GetValue() any = o.Value
 
 // IsEmpty returns true if the option is None, false otherwise.
 func (o Option[T]) IsEmpty() bool = !o.Defined

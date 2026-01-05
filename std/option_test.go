@@ -64,4 +64,22 @@ func TestOptionImplementation(t *testing.T) {
 		})
 		assert.Equal(t, 10, count)
 	})
+
+	t.Run("IsDefined_GetSomeValue", func(t *testing.T) {
+		assert.True(t, IsDefined(true))
+		assert.False(t, IsDefined(false))
+		assert.False(t, IsDefined(nil))
+		assert.False(t, IsDefined(10))
+
+		o := Some_Apply(Some{}, 10)
+		assert.True(t, IsDefined(o))
+		assert.Equal(t, 10, GetSomeValue(o))
+
+		n := None_Apply[int](None{})
+		assert.False(t, IsDefined(n))
+		assert.Equal(t, 0, GetSomeValue(n))
+
+		assert.Equal(t, "hello", GetSomeValue("hello"))
+		assert.Equal(t, nil, GetSomeValue(nil))
+	})
 }

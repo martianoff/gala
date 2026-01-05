@@ -1,0 +1,16 @@
+package main
+
+import "fmt"
+
+type Container[T any] interface {
+    Get() T
+}
+
+struct MyInt(v int)
+
+func (m MyInt) Get() int = m.v
+
+func main() {
+    val c Container[int] = MyInt(42)
+    fmt.Println(c.Get())
+}

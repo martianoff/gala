@@ -111,6 +111,35 @@ func main() {
 }
 ```
 
+## Interface Example
+
+```gala
+package main
+
+import "fmt"
+
+type Shaper interface {
+    Area() float64
+}
+
+struct Rect(width float64, height float64)
+func (r Rect) Area() float64 = r.width * r.height
+
+struct Circle(radius float64)
+func (c Circle) Area() float64 = 3.14159 * c.radius * c.radius
+
+func main() {
+    val r = Rect(10, 5)
+    val c = Circle(10)
+    
+    val s1 Shaper = r
+    val s2 Shaper = c
+    
+    fmt.Println("Area 1:", s1.Area())
+    fmt.Println("Area 2:", s2.Area())
+}
+```
+
 ## Apply Method Example
 
 ```gala
