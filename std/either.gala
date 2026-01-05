@@ -1,10 +1,10 @@
 package std
 
 type EitherInterface interface {
-    GetIsLeft() bool
-    IsRight() bool
-    GetLeftValue() any
-    GetRightValue() any
+    getIsLeft() bool
+    isRight() bool
+    getLeftValue() any
+    getRightValue() any
 }
 
 // Either represents a value of one of two possible types (a disjoint union).
@@ -12,51 +12,51 @@ type EitherInterface interface {
 type Either[A any, B any] struct {
     LeftValue A
     RightValue B
-    IsLeft bool
+    isLeft bool
 }
 
-func (e Either[A, B]) GetIsLeft() bool = e.IsLeft
-func (e Either[A, B]) GetLeftValue() any = e.LeftValue
-func (e Either[A, B]) GetRightValue() any = e.RightValue
+func (e Either[A, B]) getIsLeft() bool = e.isLeft
+func (e Either[A, B]) getLeftValue() any = e.LeftValue
+func (e Either[A, B]) getRightValue() any = e.RightValue
 
 type Left struct {}
-func (l Left) Apply[A any, B any](v A) Either[A, B] = Either[A, B](LeftValue = v, IsLeft = true)
-func (l Left) Unapply(e any) any = if (IsLeft(e)) Some(GetLeftValue(e)) else None[any]()
+func (l Left) Apply[A any, B any](v A) Either[A, B] = Either[A, B](LeftValue = v, isLeft = true)
+func (l Left) Unapply(e any) any = if (isLeft(e)) Some(getLeftValue(e)) else None[any]()
 
 type Right struct {}
-func (r Right) Apply[A any, B any](v B) Either[A, B] = Either[A, B](RightValue = v, IsLeft = false)
-func (r Right) Unapply(e any) any = if (IsRight(e)) Some(GetRightValue(e)) else None[any]()
+func (r Right) Apply[A any, B any](v B) Either[A, B] = Either[A, B](RightValue = v, isLeft = false)
+func (r Right) Unapply(e any) any = if (isRight(e)) Some(getRightValue(e)) else None[any]()
 
-// IsLeft returns true if this is a Left, false otherwise.
-func IsLeft(e any) bool = e match {
-    case ei: EitherInterface => ei.GetIsLeft()
+// isLeft returns true if this is a Left, false otherwise.
+func isLeft(e any) bool = e match {
+    case ei: EitherInterface => ei.getIsLeft()
     case _ => false
 }
 
-// IsRight returns true if this is a Right, false otherwise.
-func IsRight(e any) bool = e match {
-    case ei: EitherInterface => ei.IsRight()
+// isRight returns true if this is a Right, false otherwise.
+func isRight(e any) bool = e match {
+    case ei: EitherInterface => ei.isRight()
     case _ => false
 }
 
-// GetLeftValue returns the left value if this is a Left, otherwise it returns nil.
-func GetLeftValue(e any) any = e match {
-    case ei: EitherInterface => ei.GetLeftValue()
+// getLeftValue returns the left value if this is a Left, otherwise it returns nil.
+func getLeftValue(e any) any = e match {
+    case ei: EitherInterface => ei.getLeftValue()
     case _ => nil
 }
 
-// GetRightValue returns the right value if this is a Right, otherwise it returns nil.
-func GetRightValue(e any) any = e match {
-    case ei: EitherInterface => ei.GetRightValue()
+// getRightValue returns the right value if this is a Right, otherwise it returns nil.
+func getRightValue(e any) any = e match {
+    case ei: EitherInterface => ei.getRightValue()
     case _ => nil
 }
 
-// IsRight returns true if this is a Right, false otherwise.
-func (e Either[A, B]) IsRight() bool = !e.IsLeft
+// isRight returns true if this is a Right, false otherwise.
+func (e Either[A, B]) isRight() bool = !e.isLeft
 
 // GetLeft returns the left value if this is a Left, otherwise it panics.
 func (e Either[A, B]) GetLeft() A {
-    if !e.IsLeft {
+    if !e.isLeft {
         panic("Either.GetLeft on Right")
     }
     return e.LeftValue
@@ -64,7 +64,7 @@ func (e Either[A, B]) GetLeft() A {
 
 // GetRight returns the right value if this is a Right, otherwise it panics.
 func (e Either[A, B]) GetRight() B {
-    if e.IsLeft {
+    if e.isLeft {
         panic("Either.GetRight on Left")
     }
     return e.RightValue
@@ -72,7 +72,7 @@ func (e Either[A, B]) GetRight() B {
 
 // Swap returns the left as right and vice versa.
 func (e Either[A, B]) Swap() Either[B, A] {
-    if e.IsLeft {
+    if e.isLeft {
         return Right[B, A](e.LeftValue)
     }
     return Left[B, A](e.RightValue)
@@ -80,7 +80,7 @@ func (e Either[A, B]) Swap() Either[B, A] {
 
 // Fold applies f1 to the left value or f2 to the right value.
 func (e Either[A, B]) Fold[C any](f1 func(A) C, f2 func(B) C) C {
-    if e.IsLeft {
+    if e.isLeft {
         return f1(e.LeftValue)
     }
     return f2(e.RightValue)
@@ -88,7 +88,7 @@ func (e Either[A, B]) Fold[C any](f1 func(A) C, f2 func(B) C) C {
 
 // Map applies a function to the right value if this is a Right.
 func (e Either[A, B]) Map[C any](f func(B) C) Either[A, C] {
-    if e.IsLeft {
+    if e.isLeft {
         return Left[A, C](e.LeftValue)
     }
     return Right[A, C](f(e.RightValue))
@@ -96,7 +96,7 @@ func (e Either[A, B]) Map[C any](f func(B) C) Either[A, C] {
 
 // FlatMap applies a function to the right value if this is a Right.
 func (e Either[A, B]) FlatMap[C any](f func(B) Either[A, C]) Either[A, C] {
-    if e.IsLeft {
+    if e.isLeft {
         return Left[A, C](e.LeftValue)
     }
     return f(e.RightValue)

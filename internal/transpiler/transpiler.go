@@ -16,17 +16,13 @@ const (
 	TypeTuple     = "Tuple"
 	TypeEither    = "Either"
 
-	FuncSome          = "Some"
-	FuncNone          = "None"
-	FuncLeft          = "Left"
-	FuncRight         = "Right"
-	FuncIsLeft        = "IsLeft"
-	FuncIsRight       = "IsRight"
-	FuncGetLeftValue  = "GetLeftValue"
-	FuncGetRightValue = "GetRightValue"
-	FuncNewImmutable  = "NewImmutable"
-	FuncCopy          = "Copy"
-	MethodGet         = "Get"
+	FuncSome         = "Some"
+	FuncNone         = "None"
+	FuncLeft         = "Left"
+	FuncRight        = "Right"
+	FuncNewImmutable = "NewImmutable"
+	FuncCopy         = "Copy"
+	MethodGet        = "Get"
 )
 
 // RichAST provides metadata about a Gala source file.

@@ -9,7 +9,7 @@ import (
 func TestOptionImplementation(t *testing.T) {
 	t.Run("Some", func(t *testing.T) {
 		o := Some_Apply(Some{}, 10)
-		assert.True(t, o.IsDefined())
+		assert.True(t, o.isDefined())
 		assert.False(t, o.IsEmpty())
 		assert.Equal(t, 10, o.Get())
 		assert.Equal(t, 10, o.GetOrElse(20))
@@ -17,7 +17,7 @@ func TestOptionImplementation(t *testing.T) {
 
 	t.Run("None", func(t *testing.T) {
 		o := None_Apply[int](None{})
-		assert.False(t, o.IsDefined())
+		assert.False(t, o.isDefined())
 		assert.True(t, o.IsEmpty())
 		assert.Panics(t, func() { o.Get() })
 		assert.Equal(t, 20, o.GetOrElse(20))
@@ -26,7 +26,7 @@ func TestOptionImplementation(t *testing.T) {
 	t.Run("Map", func(t *testing.T) {
 		o := Some_Apply(Some{}, 10)
 		m := Option_Map[string, int](o, func(v int) string { return "val" })
-		assert.True(t, m.IsDefined())
+		assert.True(t, m.isDefined())
 		assert.Equal(t, "val", m.Get())
 
 		n := None_Apply[int](None{})
@@ -37,7 +37,7 @@ func TestOptionImplementation(t *testing.T) {
 	t.Run("FlatMap", func(t *testing.T) {
 		o := Some_Apply(Some{}, 10)
 		m := Option_FlatMap[string, int](o, func(v int) Option[string] { return Some_Apply(Some{}, "val") })
-		assert.True(t, m.IsDefined())
+		assert.True(t, m.isDefined())
 		assert.Equal(t, "val", m.Get())
 
 		nm := Option_FlatMap[string, int](o, func(v int) Option[string] { return None_Apply[string](None{}) })
@@ -46,7 +46,7 @@ func TestOptionImplementation(t *testing.T) {
 
 	t.Run("Filter", func(t *testing.T) {
 		o := Some_Apply(Some{}, 10)
-		assert.True(t, o.Filter(func(v int) bool { return v > 5 }).IsDefined())
+		assert.True(t, o.Filter(func(v int) bool { return v > 5 }).isDefined())
 		assert.True(t, o.Filter(func(v int) bool { return v > 15 }).IsEmpty())
 	})
 
@@ -66,20 +66,20 @@ func TestOptionImplementation(t *testing.T) {
 	})
 
 	t.Run("IsDefined_GetSomeValue", func(t *testing.T) {
-		assert.True(t, IsDefined(true))
-		assert.False(t, IsDefined(false))
-		assert.False(t, IsDefined(nil))
-		assert.False(t, IsDefined(10))
+		assert.True(t, isDefined(true))
+		assert.False(t, isDefined(false))
+		assert.False(t, isDefined(nil))
+		assert.False(t, isDefined(10))
 
 		o := Some_Apply(Some{}, 10)
-		assert.True(t, IsDefined(o))
-		assert.Equal(t, 10, GetSomeValue(o))
+		assert.True(t, isDefined(o))
+		assert.Equal(t, 10, getSomeValue(o))
 
 		n := None_Apply[int](None{})
-		assert.False(t, IsDefined(n))
-		assert.Equal(t, 0, GetSomeValue(n))
+		assert.False(t, isDefined(n))
+		assert.Equal(t, 0, getSomeValue(n))
 
-		assert.Equal(t, "hello", GetSomeValue("hello"))
-		assert.Equal(t, nil, GetSomeValue(nil))
+		assert.Equal(t, "hello", getSomeValue("hello"))
+		assert.Equal(t, nil, getSomeValue(nil))
 	})
 }

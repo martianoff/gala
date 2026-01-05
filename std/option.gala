@@ -1,20 +1,20 @@
 package std
 
 type OptionInterface interface {
-    IsDefined() bool
-    GetValue() any
+    isDefined() bool
+    getValue() any
 }
 
-// IsDefined returns true if the option is an instance of Some, or if it is a boolean true.
-func IsDefined(opt any) bool = opt match {
+// isDefined returns true if the option is an instance of Some, or if it is a boolean true.
+func isDefined(opt any) bool = opt match {
     case b: bool => b
-    case oi: OptionInterface => oi.IsDefined()
+    case oi: OptionInterface => oi.isDefined()
     case _ => false
 }
 
-// GetSomeValue returns the option's value if it is an Option, otherwise returns the value itself.
-func GetSomeValue(opt any) any = opt match {
-    case oi: OptionInterface => oi.GetValue()
+// getSomeValue returns the option's value if it is an Option, otherwise returns the value itself.
+func getSomeValue(opt any) any = opt match {
+    case oi: OptionInterface => oi.getValue()
     case _ => opt
 }
 
@@ -22,29 +22,29 @@ func GetSomeValue(opt any) any = opt match {
 // of Some containing a value, or None representing an empty value.
 type Option[T any] struct {
     Value T
-    Defined bool
+    defined bool
 }
 
 type Some struct {}
-func (s Some) Apply[T any](v T) Option[T] = Option[T](Value = v, Defined = true)
-func (s Some) Unapply(o any) any = if (IsDefined(o)) Some(GetSomeValue(o)) else None[any]()
+func (s Some) Apply[T any](v T) Option[T] = Option[T](Value = v, defined = true)
+func (s Some) Unapply(o any) any = if (isDefined(o)) Some(getSomeValue(o)) else None[any]()
 
 type None struct {}
-func (n None) Apply[T any]() Option[T] = Option[T](Defined = false)
-func (n None) Unapply(o any) bool = !IsDefined(o)
+func (n None) Apply[T any]() Option[T] = Option[T](defined = false)
+func (n None) Unapply(o any) bool = !isDefined(o)
 
-// IsDefined returns true if the option is an instance of Some, false otherwise.
-func (o Option[T]) IsDefined() bool = o.Defined
+// isDefined returns true if the option is an instance of Some, false otherwise.
+func (o Option[T]) isDefined() bool = o.defined
 
-// GetValue returns the option's value as any.
-func (o Option[T]) GetValue() any = o.Value
+// getValue returns the option's value as any.
+func (o Option[T]) getValue() any = o.Value
 
 // IsEmpty returns true if the option is None, false otherwise.
-func (o Option[T]) IsEmpty() bool = !o.Defined
+func (o Option[T]) IsEmpty() bool = !o.defined
 
 // Get returns the option's value if the option is Some, otherwise it panics.
 func (o Option[T]) Get() T {
-    if !o.Defined {
+    if !o.defined {
         panic("Option.Get on None")
     }
     return o.Value
@@ -53,7 +53,7 @@ func (o Option[T]) Get() T {
 // GetOrElse returns the option's value if the option is Some, otherwise returns the result of evaluating defaultValue.
 // defaultValue: the default value to return if the option is empty.
 func (o Option[T]) GetOrElse(defaultValue T) T {
-    if o.Defined {
+    if o.defined {
         return o.Value
     }
     return defaultValue
@@ -62,7 +62,7 @@ func (o Option[T]) GetOrElse(defaultValue T) T {
 // ForEach applies the given procedure f to the option's value, if it is nonempty.
 // f: the procedure to apply.
 func (o Option[T]) ForEach(f func(T) any) {
-    if o.Defined {
+    if o.defined {
         f(o.Value)
     }
 }
@@ -71,7 +71,7 @@ func (o Option[T]) ForEach(f func(T) any) {
 // f: the function to apply.
 // Returns a new Option containing the result of applying f to this option's value if it is nonempty.
 func (o Option[T]) Map[U any](f func(T) U) Option[U] {
-    if o.Defined {
+    if o.defined {
         return Some[U](f(o.Value))
     }
     return None[U]()
@@ -81,7 +81,7 @@ func (o Option[T]) Map[U any](f func(T) U) Option[U] {
 // Returns None if this option is empty.
 // f: the function to apply.
 func (o Option[T]) FlatMap[U any](f func(T) Option[U]) Option[U] {
-    if o.Defined {
+    if o.defined {
         return f(o.Value)
     }
     return None[U]()
@@ -90,7 +90,7 @@ func (o Option[T]) FlatMap[U any](f func(T) Option[U]) Option[U] {
 // Filter returns this option if it is nonempty and applying the predicate p to this option's value returns true.
 // p: the predicate used for testing.
 func (o Option[T]) Filter(p func(T) bool) Option[T] {
-    if o.Defined && p(o.Value) {
+    if o.defined && p(o.Value) {
         return o
     }
     return None[T]()

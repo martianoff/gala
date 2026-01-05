@@ -36,7 +36,10 @@ func main() {
     val y = x.Map((v int) => v * 2)
     val z = None().GetOrElse(42)
 
-    val res = if (y.IsDefined()) y.Get() else 0
+    val res = y match {
+        case Some(v) => v
+        case _       => 0
+    }
     
     fmt.Println(res, z)
 }

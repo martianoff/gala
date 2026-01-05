@@ -17,7 +17,7 @@ func findProduct(id int) Option[Product] {
 func main() {
     // Explicit type using generic None[T]() call
     val noProduct Option[Product] = None[Product]()
-    fmt.Println("Empty product defined:", noProduct.IsDefined())
+    fmt.Println("Empty product defined:", !noProduct.IsEmpty())
 
     val p1 = findProduct(1)
     val p2 = findProduct(2)
@@ -31,8 +31,8 @@ func main() {
     val expensive = p1.Filter((p Product) => p.price > 1000.0)
     val expensive2 = p2.Filter((p Product) => p.price > 1000.0)
 
-    fmt.Println("P1 is expensive:", expensive.IsDefined())
-    fmt.Println("P2 is expensive:", expensive2.IsDefined())
+    fmt.Println("P1 is expensive:", !expensive.IsEmpty())
+    fmt.Println("P2 is expensive:", !expensive2.IsEmpty())
 
     // Demonstrate GetOrElse
     val p3Name = p3.Map((p Product) => p.name).GetOrElse("Not Found")

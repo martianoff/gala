@@ -252,8 +252,8 @@ func UnapplyFull(obj any, pattern any) ([]any, bool) {
 	// Try pattern.Unapply(obj) first (Scala-style extractors)
 	if u, ok := pattern.(Unapply); ok {
 		res := u.Unapply(obj)
-		if IsDefined(res) {
-			return []any{GetSomeValue(res)}, true
+		if isDefined(res) {
+			return []any{getSomeValue(res)}, true
 		}
 		return nil, false
 	}
@@ -295,8 +295,8 @@ func UnapplyFull(obj any, pattern any) ([]any, bool) {
 
 			// Handle Option-style (single return value)
 			res := resVals[0].Interface()
-			if IsDefined(res) {
-				return []any{GetSomeValue(res)}, true
+			if isDefined(res) {
+				return []any{getSomeValue(res)}, true
 			}
 			return nil, false
 		}
