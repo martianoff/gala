@@ -124,8 +124,41 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 	typeName := t.getBaseTypeName(x)
 	typeExpr := x
 
+	// Check if the expression being called has an Apply method
+	exprTypeName := t.getExprTypeName(x)
+	if exprTypeName != "" {
+		if typeMeta, ok := t.typeMetas[exprTypeName]; ok {
+			if _, hasApply := typeMeta.Methods["Apply"]; hasApply {
+				return &ast.CallExpr{
+					Fun: &ast.SelectorExpr{
+						X:   x,
+						Sel: ast.NewIdent("Apply"),
+					},
+					Args: args,
+				}, nil
+			}
+		}
+	}
+
 	if typeName != "" {
 		if fieldNames, ok := t.structFields[typeName]; ok {
+			// If it has no fields and has Apply method, it might be Implode("apple") -> Implode{}.Apply("apple")
+			if len(fieldNames) == 0 && len(args) > 0 {
+				if typeMeta, ok := t.typeMetas[typeName]; ok {
+					if _, hasApply := typeMeta.Methods["Apply"]; hasApply {
+						return &ast.CallExpr{
+							Fun: &ast.SelectorExpr{
+								X: &ast.CompositeLit{
+									Type: typeExpr,
+								},
+								Sel: ast.NewIdent("Apply"),
+							},
+							Args: args,
+						}, nil
+					}
+				}
+			}
+
 			var elts []ast.Expr
 			immutFlags := t.structImmutFields[typeName]
 

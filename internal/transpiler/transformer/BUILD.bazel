@@ -26,6 +26,7 @@ go_library(
 go_test(
     name = "transformer_test",
     srcs = [
+        "apply_test.go",
         "assignment_test.go",
         "conflict_test.go",
         "control_flow_test.go",

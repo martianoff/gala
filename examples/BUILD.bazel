@@ -85,3 +85,9 @@ gala_test(
     src = "either.gala",
     expected = "either.out",
 )
+
+gala_test(
+    name = "apply_method",
+    src = "apply_method.gala",
+    expected = "apply_method.out",
+)

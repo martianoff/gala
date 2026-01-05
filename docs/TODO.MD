@@ -8,3 +8,4 @@
 - [ ] Support filters in pattern matching
 - [x] Avoid gala style pattern matching
 - [ ] Can we use Some/None as structs in GALA?
+- [ ] Imported packages in GALA are analyzed with analyzers so they can support GALA features like generic methods

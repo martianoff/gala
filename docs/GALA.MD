@@ -156,6 +156,26 @@ val p2 = Person("Alice", 30)
 val same = p1.Equal(p2) // true
 ```
 
+#### Apply Method
+If a struct has an `Apply` method, it can be called like a function. GALA automatically expands `object(args)` to `object.Apply(args)`.
+
+```gala
+type Append struct { Name string }
+func (a Append) Apply(param string) string = param + a.Name
+
+val a = Append("cherry")
+val res = a("apple") // expanded to a.Apply("apple")
+```
+
+If the struct has no properties, it can be called using the type name directly without explicit instantiation:
+
+```gala
+type Implode struct {}
+func (i Implode) Apply(params []string) string = strings.Join(params, "")
+
+val res = Implode([]string{"a", "b"}) // expanded to Implode{}.Apply([]string{"a", "b"})
+```
+
 ## 5. Control Flow
 
 ### If Statement and Expression

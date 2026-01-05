@@ -91,6 +91,29 @@ func main() {
 }
 ```
 
+## Apply Method Example
+
+```gala
+package main
+
+import "fmt"
+
+type Adder struct { Delta int }
+func (a Adder) Apply(x int) int = x + a.Delta
+
+type Multiply struct {}
+func (m Multiply) Apply(x int, y int) int = x * y
+
+func main() {
+    val add5 = Adder(5)
+    val res1 = add5(10) // 15
+    
+    val res2 = Multiply(3, 4) // 12
+    
+    fmt.Println(res1, res2)
+}
+```
+
 ## More Examples
 
 You can find more examples in the `examples/` directory of the project:
