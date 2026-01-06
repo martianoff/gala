@@ -114,6 +114,54 @@ func main() {
 }
 ```
 
+## Generic Type Pattern Matching Example
+
+```gala
+package main
+
+import "fmt"
+
+// Define a generic type
+type Wrap[T any] struct {
+    Value T
+}
+
+// Define an interface to handle any Wrap[T] in the extractor
+type WrapperInterface interface {
+    Get() any
+}
+
+func (w Wrap[T]) Get() any = w.Value
+
+// Define an extractor object
+type Wrapper struct {}
+func (w Wrapper) Apply[T any](v T) Wrap[T] = Wrap[T](Value = v)
+func (w Wrapper) Unapply(o any) any = o match {
+    case wi: WrapperInterface => Some(wi.Get())
+    case _ => None[any]()
+}
+
+func main() {
+    // 1. Matching specific generic type
+    val w1 = Wrap[int](Value = 42)
+    val res1 = w1 match {
+        case w: Wrap[int] => fmt.Sprintf("Matched Wrap[int]: %d", w.Value)
+        case w: Wrap[string] => "Matched Wrap[string]: " + w.Value
+        case _ => "Other"
+    }
+    fmt.Println(res1)
+
+    // 2. Using the generic extractor
+    val w2 = Wrapper("GALA")
+    val res2 = w2 match {
+        case Wrapper(s: string) => "Extracted string: " + s
+        case Wrapper(i: int) => fmt.Sprintf("Extracted int: %d", i)
+        case _ => "Other"
+    }
+    fmt.Println(res2)
+}
+```
+
 ## Interface Example
 
 ```gala

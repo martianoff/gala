@@ -252,6 +252,20 @@ val res = x match {
 }
 ```
 
+#### Generic Type Pattern Matching
+GALA supports matching against generic types. This is particularly useful for generic containers like `Option[T]`, `Either[A, B]`, or custom generic structs.
+
+```gala
+type Wrap[T any] struct { Value T }
+
+val w = Wrap[int](Value = 42)
+val res = w match {
+    case i: Wrap[int]    => "Wrapped int"
+    case s: Wrap[string] => "Wrapped string"
+    case _               => "Other"
+}
+```
+
 Typed patterns can also be nested within other patterns:
 
 ```gala
@@ -260,6 +274,16 @@ opt match {
     case Some(i: int) => fmt.Println("Integer:", i)
     case Some(s: string) => fmt.Println("String:", s)
     case _ => fmt.Println("Other")
+}
+```
+
+#### Wildcard Type Patterns
+GALA supports using the underscore `_` as a type in typed patterns. This matches any type and is equivalent to matching against `any`.
+
+```gala
+val res = x match {
+    case v: _ => "Matched any type: " + fmt.Sprintf("%T", v)
+    case _    => "unknown"
 }
 ```
 

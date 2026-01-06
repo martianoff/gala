@@ -121,3 +121,9 @@ gala_test(
     src = "generic_interface.gala",
     expected = "generic_interface.out",
 )
+
+gala_test(
+    name = "generic_wrap_match",
+    src = "generic_wrap_match.gala",
+    expected = "generic_wrap_match.out",
+)

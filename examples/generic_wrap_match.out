@@ -1,0 +1,6 @@
+Matched Wrap[int]: 42
+Matched Wrap[string]: hello
+Matched Wrap[_]: hello
+Extracted int: 100
+Extracted string: GALA
+Extracted GALA of type string

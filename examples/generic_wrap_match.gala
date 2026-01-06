@@ -1,0 +1,77 @@
+package main
+
+import "fmt"
+
+// 1. Define a generic type
+type Wrap[T any] struct {
+    Value T
+}
+
+// 2. Define an interface to handle any Wrap[T] in the extractor
+type WrapperInterface interface {
+    Get() any
+}
+
+func (w Wrap[T]) Get() any = w.Value
+
+// 3. Define an extractor object
+type Wrapper struct {}
+func (w Wrapper) Apply[T any](v T) Wrap[T] = Wrap[T](Value = v)
+func (w Wrapper) Unapply(o any) any = o match {
+    case wi: WrapperInterface => Some(wi.Get())
+    case _ => None[any]()
+}
+
+func main() {
+    // Case 1: Matching specific generic type
+    val w1 = Wrap[int](Value = 42)
+    val res1 = w1 match {
+        case w: Wrap[int] => fmt.Sprintf("Matched Wrap[int]: %d", w.Value)
+        case w: Wrap[string] => "Matched Wrap[string]: " + w.Value
+        case _ => "Other"
+    }
+    fmt.Println(res1)
+
+    // Case 2: Matching another specific generic type
+    val w2 = Wrap[string](Value = "hello")
+    val res2 = w2 match {
+        case w: Wrap[int] => fmt.Sprintf("Matched Wrap[int]: %d", w.Value)
+        case w: Wrap[string] => "Matched Wrap[string]: " + w.Value
+        case _ => "Other"
+    }
+    fmt.Println(res2)
+
+    // Case 3: Matching wildcard generic type via interface
+    val w3 = Wrap[string](Value = "hello")
+    val res3 = w3 match {
+        case w: WrapperInterface => fmt.Sprintf("Matched Wrap[_]: %v", w.Get())
+        case _ => "Other"
+    }
+    fmt.Println(res3)
+
+    // Case 4: Using the generic extractor
+    val w4 = Wrapper(100)
+    val res4 = w4 match {
+        case Wrapper(i: int) => fmt.Sprintf("Extracted int: %d", i)
+        case Wrapper(s: string) => "Extracted string: " + s
+        case _ => "Other"
+    }
+    fmt.Println(res4)
+
+    // Case 5: Using the generic extractor with another type
+    val w5 = Wrapper("GALA")
+    val res5 = w5 match {
+        case Wrapper(i: int) => fmt.Sprintf("Extracted int: %d", i)
+        case Wrapper(s: string) => "Extracted string: " + s
+        case _ => "Other"
+    }
+    fmt.Println(res5)
+
+    // Case 6: Using the generic extractor with wildcard generic type
+    val w6 = Wrapper("GALA")
+    val res6 = w6 match {
+        case Wrapper(v: _) => fmt.Sprintf("Extracted %v of type %T", v, v)
+        case _ => "Other"
+    }
+    fmt.Println(res6)
+}

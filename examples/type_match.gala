@@ -21,4 +21,12 @@ func main() {
     }
 
     fmt.Println(res2)
+
+    val b = Some(4)
+    val res3 = b match {
+        case v: _    => fmt.Sprintf("any: %T", v)
+        case _       => "unknown"
+    }
+
+    fmt.Println(res3)
 }
