@@ -1,12 +1,5 @@
 package std
 
-type EitherInterface interface {
-    getIsLeft() bool
-    isRight() bool
-    getLeftValue() any
-    getRightValue() any
-}
-
 // Either represents a value of one of two possible types (a disjoint union).
 // An instance of Either is an instance of either Left or Right.
 type Either[A any, B any] struct {
@@ -14,10 +7,6 @@ type Either[A any, B any] struct {
     RightValue B
     isLeft bool
 }
-
-func (e Either[A, B]) getIsLeft() bool = e.isLeft
-func (e Either[A, B]) getLeftValue() any = e.LeftValue
-func (e Either[A, B]) getRightValue() any = e.RightValue
 
 type Left struct {}
 func (l Left) Apply[A any, B any](v A) Either[A, B] = Either[A, B](LeftValue = v, isLeft = true)
@@ -27,27 +16,31 @@ type Right struct {}
 func (r Right) Apply[A any, B any](v B) Either[A, B] = Either[A, B](RightValue = v, isLeft = false)
 func (r Right) Unapply(e any) any = if (isRight(e)) Some(getRightValue(e)) else None[any]()
 
+func (e Either[A, B]) getIsLeft() bool = e.isLeft
+func (e Either[A, B]) getLeftValue() any = e.LeftValue
+func (e Either[A, B]) getRightValue() any = e.RightValue
+
 // isLeft returns true if this is a Left, false otherwise.
 func isLeft(e any) bool = e match {
-    case ei: EitherInterface => ei.getIsLeft()
+    case ei: EitherInterface => ei.isLeft
     case _ => false
 }
 
 // isRight returns true if this is a Right, false otherwise.
 func isRight(e any) bool = e match {
-    case ei: EitherInterface => ei.isRight()
+    case ei: EitherInterface => !ei.isLeft
     case _ => false
 }
 
 // getLeftValue returns the left value if this is a Left, otherwise it returns nil.
 func getLeftValue(e any) any = e match {
-    case ei: EitherInterface => ei.getLeftValue()
+    case ei: EitherInterface => ei.LeftValue
     case _ => nil
 }
 
 // getRightValue returns the right value if this is a Right, otherwise it returns nil.
 func getRightValue(e any) any = e match {
-    case ei: EitherInterface => ei.getRightValue()
+    case ei: EitherInterface => ei.RightValue
     case _ => nil
 }
 

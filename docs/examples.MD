@@ -126,19 +126,12 @@ type Wrap[T any] struct {
     Value T
 }
 
-// Define an interface to handle any Wrap[T] in the extractor
-type WrapperInterface interface {
-    Get() any
-}
-
-func (w Wrap[T]) Get() any = w.Value
-
 // Define an extractor object
 type Wrapper struct {}
 func (w Wrapper) Apply[T any](v T) Wrap[T] = Wrap[T](Value = v)
 func (w Wrapper) Unapply(o any) any = o match {
-    case wi: WrapperInterface => Some(wi.Get())
-    case _ => None[any]()
+    case wi: Wrap[_] => Some(wi.Value)
+    case _           => None[any]()
 }
 
 func main() {
@@ -151,14 +144,22 @@ func main() {
     }
     fmt.Println(res1)
 
-    // 2. Using the generic extractor
-    val w2 = Wrapper("GALA")
+    // 2. Matching wildcard generic type
+    val w2 = Wrap[string](Value = "hello")
     val res2 = w2 match {
+        case w: Wrap[_] => "Matched Wrap[_]: " + fmt.Sprintf("%v", w.Value)
+        case _          => "Other"
+    }
+    fmt.Println(res2)
+
+    // 3. Using the generic extractor
+    val w3 = Wrapper("GALA")
+    val res3 = w3 match {
         case Wrapper(s: string) => "Extracted string: " + s
         case Wrapper(i: int) => fmt.Sprintf("Extracted int: %d", i)
         case _ => "Other"
     }
-    fmt.Println(res2)
+    fmt.Println(res3)
 }
 ```
 

@@ -312,7 +312,8 @@ func (t *galaASTTransformer) transformTypedPattern(ctx *grammar.TypedPatternCont
 		return nil, nil, err
 	}
 
-	t.currentScope.vals[name] = false // Bind as variable
+	typeName := t.getBaseTypeName(typeExpr)
+	t.addVar(name, typeName)
 
 	okName := t.nextTempVar()
 

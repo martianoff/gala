@@ -1,20 +1,15 @@
 package std
 
-type OptionInterface interface {
-    isDefined() bool
-    getValue() any
-}
-
 // isDefined returns true if the option is an instance of Some, or if it is a boolean true.
 func isDefined(opt any) bool = opt match {
     case b: bool => b
-    case oi: OptionInterface => oi.isDefined()
+    case oi: OptionInterface => oi.defined
     case _ => false
 }
 
 // getSomeValue returns the option's value if it is an Option, otherwise returns the value itself.
 func getSomeValue(opt any) any = opt match {
-    case oi: OptionInterface => oi.getValue()
+    case oi: OptionInterface => oi.Value
     case _ => opt
 }
 

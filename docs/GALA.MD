@@ -287,6 +287,19 @@ val res = x match {
 }
 ```
 
+#### Generic Wildcard Type Patterns
+GALA supports wildcard matching for generic types using `Name[_]`. This allows matching any instantiation of a generic struct and accessing its fields.
+
+```gala
+type Wrap[T any] struct { Value T }
+
+val w = Wrap[int](Value = 42)
+val res = w match {
+    case w1: Wrap[_] => "Wrapped value: " + fmt.Sprintf("%v", w1.Value)
+    case _           => "Other"
+}
+```
+
 #### Extractors and `Unapply`
 GALA follows Scala semantics for extractors. When a struct or object is used as a pattern, its `Unapply` method is called with the matched object as an argument.
 

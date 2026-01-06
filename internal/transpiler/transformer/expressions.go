@@ -8,6 +8,7 @@ import (
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
+	"strings"
 )
 
 func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (ast.Expr, error) {
@@ -306,6 +307,9 @@ func (t *galaASTTransformer) transformExpression(ctx grammar.IExpressionContext)
 			if opText == "*" {
 				return &ast.StarExpr{X: expr}, nil
 			}
+			if opText == "!" {
+				expr = t.wrapWithAssertion(expr, ast.NewIdent("bool"))
+			}
 			return &ast.UnaryExpr{
 				Op: t.getUnaryToken(opText),
 				X:  expr,
@@ -331,6 +335,20 @@ func (t *galaASTTransformer) transformExpression(ctx grammar.IExpressionContext)
 				X:   x,
 				Sel: ast.NewIdent(selName),
 			}
+
+			// Handle field access on generic interfaces
+			if id, ok := x.(*ast.Ident); ok {
+				typeName := t.getType(id.Name)
+				if strings.HasSuffix(typeName, "Interface") {
+					return &ast.CallExpr{
+						Fun: &ast.SelectorExpr{
+							X:   x,
+							Sel: ast.NewIdent("Get_" + selName),
+						},
+					}, nil
+				}
+			}
+
 			if t.immutFields[selName] {
 				return &ast.CallExpr{
 					Fun: &ast.SelectorExpr{
@@ -339,6 +357,7 @@ func (t *galaASTTransformer) transformExpression(ctx grammar.IExpressionContext)
 					},
 				}, nil
 			}
+
 			return selExpr, nil
 		}
 

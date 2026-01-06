@@ -425,3 +425,121 @@ func (t *galaASTTransformer) generateUnapplyMethod(name string, fields *ast.Fiel
 		Body: &ast.BlockStmt{List: body},
 	}, nil
 }
+
+func (t *galaASTTransformer) generateGenericInterface(name string, fields *ast.FieldList, tParams *ast.FieldList) ([]ast.Decl, error) {
+	if tParams == nil || len(tParams.List) == 0 {
+		return nil, nil
+	}
+
+	interfaceName := name + "Interface"
+	var methods []*ast.Field
+
+	for _, field := range fields.List {
+		for _, fieldName := range field.Names {
+			// Getter method: Get_<FieldName>() any
+			methods = append(methods, &ast.Field{
+				Names: []*ast.Ident{ast.NewIdent("Get_" + fieldName.Name)},
+				Type: &ast.FuncType{
+					Params: &ast.FieldList{},
+					Results: &ast.FieldList{
+						List: []*ast.Field{
+							{Type: ast.NewIdent("any")},
+						},
+					},
+				},
+			})
+		}
+	}
+
+	interfaceDecl := &ast.GenDecl{
+		Tok: token.TYPE,
+		Specs: []ast.Spec{
+			&ast.TypeSpec{
+				Name: ast.NewIdent(interfaceName),
+				Type: &ast.InterfaceType{
+					Methods: &ast.FieldList{List: methods},
+				},
+			},
+		},
+	}
+
+	var decls []ast.Decl
+	decls = append(decls, interfaceDecl)
+
+	// Receiver type (Name[T])
+	var indices []ast.Expr
+	for _, p := range tParams.List {
+		for _, n := range p.Names {
+			indices = append(indices, ast.NewIdent(n.Name))
+		}
+	}
+	var recvType ast.Expr = ast.NewIdent(name)
+	if len(indices) == 1 {
+		recvType = &ast.IndexExpr{X: ast.NewIdent(name), Index: indices[0]}
+	} else if len(indices) > 1 {
+		recvType = &ast.IndexListExpr{X: ast.NewIdent(name), Indices: indices}
+	}
+
+	// Implement methods for the generic struct
+	for _, field := range fields.List {
+		for _, fieldName := range field.Names {
+			var bodyExpr ast.Expr = &ast.SelectorExpr{
+				X:   ast.NewIdent("r"),
+				Sel: ast.NewIdent(fieldName.Name),
+			}
+
+			// Check if it's an immutable field (wrapped in std.Immutable)
+			isImmut := false
+			if idx, ok := field.Type.(*ast.IndexExpr); ok {
+				if sel, ok := idx.X.(*ast.SelectorExpr); ok {
+					if id, ok := sel.X.(*ast.Ident); ok && id.Name == transpiler.StdPackage && sel.Sel.Name == "Immutable" {
+						isImmut = true
+					}
+				} else if id, ok := idx.X.(*ast.Ident); ok {
+					if id.Name == "Immutable" {
+						isImmut = true
+					}
+				}
+			}
+
+			if isImmut {
+				bodyExpr = &ast.CallExpr{
+					Fun: &ast.SelectorExpr{
+						X:   bodyExpr,
+						Sel: ast.NewIdent("Get"),
+					},
+				}
+			}
+
+			method := &ast.FuncDecl{
+				Recv: &ast.FieldList{
+					List: []*ast.Field{
+						{
+							Names: []*ast.Ident{ast.NewIdent("r")},
+							Type:  recvType,
+						},
+					},
+				},
+				Name: ast.NewIdent("Get_" + fieldName.Name),
+				Type: &ast.FuncType{
+					Params: &ast.FieldList{},
+					Results: &ast.FieldList{
+						List: []*ast.Field{
+							{Type: ast.NewIdent("any")},
+						},
+					},
+				},
+				Body: &ast.BlockStmt{
+					List: []ast.Stmt{
+						&ast.ReturnStmt{
+							Results: []ast.Expr{bodyExpr},
+						},
+					},
+				},
+			}
+			decls = append(decls, method)
+		}
+	}
+
+	return decls, nil
+}

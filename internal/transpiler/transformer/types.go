@@ -29,13 +29,25 @@ func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, 
 			// Generic type: T[A, B] -> *ast.IndexExpr or *ast.IndexListExpr
 			args := ctx.TypeArguments().(*grammar.TypeArgumentsContext).TypeList().(*grammar.TypeListContext).AllType_()
 			var argExprs []ast.Expr
+			isWildcard := false
 			for _, arg := range args {
+				if arg.GetText() == "_" {
+					isWildcard = true
+				}
 				ae, err := t.transformType(arg)
 				if err != nil {
 					return nil, err
 				}
 				argExprs = append(argExprs, ae)
 			}
+
+			if isWildcard {
+				if typeName == transpiler.TypeOption || typeName == transpiler.TypeTuple || typeName == transpiler.TypeEither {
+					return t.stdIdent(typeName + "Interface"), nil
+				}
+				return ast.NewIdent(typeName + "Interface"), nil
+			}
+
 			if len(argExprs) == 1 {
 				return &ast.IndexExpr{X: ident, Index: argExprs[0]}, nil
 			} else {
@@ -90,9 +102,21 @@ func (t *galaASTTransformer) wrapWithAssertion(expr ast.Expr, targetType ast.Exp
 		return expr
 	}
 
-	// If it's a CallExpr to a FuncLit (like match generates), we should assert
+	// If it's a CallExpr to a FuncLit (like match generates), or a Get_ call, we should assert
 	if call, ok := expr.(*ast.CallExpr); ok {
+		isFuncLit := false
 		if _, ok := call.Fun.(*ast.FuncLit); ok {
+			isFuncLit = true
+		}
+
+		isGetter := false
+		if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+			if strings.HasPrefix(sel.Sel.Name, "Get_") {
+				isGetter = true
+			}
+		}
+
+		if isFuncLit || isGetter {
 			return &ast.TypeAssertExpr{
 				X:    expr,
 				Type: targetType,

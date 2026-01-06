@@ -523,6 +523,13 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 			decls = append(decls, unapplyMethod)
 		}
 
+		// Generic interface
+		interfaceDecls, err := t.generateGenericInterface(name, fields, tParams)
+		if err != nil {
+			return nil, err
+		}
+		decls = append(decls, interfaceDecls...)
+
 	} else if ctx.InterfaceType() != nil {
 		interfaceType, err := t.transformInterfaceType(ctx.InterfaceType().(*grammar.InterfaceTypeContext))
 		if err != nil {
