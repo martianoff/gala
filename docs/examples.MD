@@ -114,6 +114,26 @@ func main() {
 }
 ```
 
+## Generic Wildcard Pattern Matching Example
+
+```gala
+package main
+
+import "fmt"
+
+type Wrap[T any] struct { Value T }
+func (w Wrap[T]) GetValue() any = w.Value
+
+func main() {
+    val w = Wrap[string](Value = "hello")
+    val res = w match {
+        case w1: Wrap[_] => fmt.Sprintf("Matched Wrap[_]: %v", w1.GetValue())
+        case _ => "Other"
+    }
+    fmt.Println(res)
+}
+```
+
 ## Generic Type Pattern Matching Example
 
 ```gala

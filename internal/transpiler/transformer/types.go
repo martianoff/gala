@@ -29,23 +29,12 @@ func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, 
 			// Generic type: T[A, B] -> *ast.IndexExpr or *ast.IndexListExpr
 			args := ctx.TypeArguments().(*grammar.TypeArgumentsContext).TypeList().(*grammar.TypeListContext).AllType_()
 			var argExprs []ast.Expr
-			isWildcard := false
 			for _, arg := range args {
-				if arg.GetText() == "_" {
-					isWildcard = true
-				}
 				ae, err := t.transformType(arg)
 				if err != nil {
 					return nil, err
 				}
 				argExprs = append(argExprs, ae)
-			}
-
-			if isWildcard {
-				if typeName == transpiler.TypeOption || typeName == transpiler.TypeTuple || typeName == transpiler.TypeEither {
-					return t.stdIdent(typeName + "Interface"), nil
-				}
-				return ast.NewIdent(typeName + "Interface"), nil
 			}
 
 			if len(argExprs) == 1 {
@@ -242,6 +231,17 @@ func (t *galaASTTransformer) getExprTypeName(expr ast.Expr) string {
 			}
 			if fMeta, ok := t.functions[id.Name]; ok {
 				return fMeta.ReturnType
+			}
+
+			// Handle generic methods transformed to standalone functions: Receiver_Method
+			if idx := strings.Index(id.Name, "_"); idx != -1 {
+				receiverType := id.Name[:idx]
+				methodName := id.Name[idx+1:]
+				if meta, ok := t.typeMetas[receiverType]; ok {
+					if mMeta, ok := meta.Methods[methodName]; ok {
+						return mMeta.ReturnType
+					}
+				}
 			}
 		}
 	case *ast.CompositeLit:

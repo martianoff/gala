@@ -172,10 +172,6 @@ func (s Identity[T]) Unapply(v any) bool {
 	}
 	return false
 }
-
-type IdentityInterface interface {
-}
-
 func (i Identity[T]) Apply(v T) T {
 	return v
 }

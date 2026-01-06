@@ -336,26 +336,29 @@ func (t *galaASTTransformer) transformExpression(ctx grammar.IExpressionContext)
 				Sel: ast.NewIdent(selName),
 			}
 
-			// Handle field access on generic interfaces
-			if id, ok := x.(*ast.Ident); ok {
-				typeName := t.getType(id.Name)
-				if strings.HasSuffix(typeName, "Interface") {
-					return &ast.CallExpr{
-						Fun: &ast.SelectorExpr{
-							X:   x,
-							Sel: ast.NewIdent("Get_" + selName),
-						},
-					}, nil
-				}
+			typeName := t.getExprTypeName(x)
+			baseTypeName := typeName
+			if idx := strings.Index(typeName, "["); idx != -1 {
+				baseTypeName = typeName[:idx]
+			}
+			if idx := strings.LastIndex(baseTypeName, "."); idx != -1 {
+				baseTypeName = baseTypeName[idx+1:]
 			}
 
-			if t.immutFields[selName] {
-				return &ast.CallExpr{
-					Fun: &ast.SelectorExpr{
-						X:   selExpr,
-						Sel: ast.NewIdent("Get"),
-					},
-				}, nil
+			if fields, ok := t.structFields[baseTypeName]; ok {
+				for i, f := range fields {
+					if f == selName {
+						if t.structImmutFields[baseTypeName][i] {
+							return &ast.CallExpr{
+								Fun: &ast.SelectorExpr{
+									X:   selExpr,
+									Sel: ast.NewIdent("Get"),
+								},
+							}, nil
+						}
+						break
+					}
+				}
 			}
 
 			return selExpr, nil

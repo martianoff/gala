@@ -167,14 +167,25 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 
 func (t *galaASTTransformer) transformVarDeclaration(ctx *grammar.VarDeclarationContext) (ast.Decl, error) {
 	namesCtx := ctx.IdentifierList().(*grammar.IdentifierListContext).AllIdentifier()
+	rhsExprs := make([]ast.Expr, 0)
+	if ctx.ExpressionList() != nil {
+		var err error
+		rhsExprs, err = t.transformExpressionList(ctx.ExpressionList().(*grammar.ExpressionListContext))
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	var idents []*ast.Ident
-	for _, idCtx := range namesCtx {
+	for i, idCtx := range namesCtx {
 		name := idCtx.GetText()
 		typeName := ""
 		if ctx.Type_() != nil {
 			// Try to get type name from transformed type
 			typeExpr, _ := t.transformType(ctx.Type_())
 			typeName = t.getBaseTypeName(typeExpr)
+		} else if len(rhsExprs) == len(namesCtx) {
+			typeName = t.getExprTypeName(rhsExprs[i])
 		}
 		t.addVar(name, typeName)
 		idents = append(idents, ast.NewIdent(name))
@@ -184,21 +195,16 @@ func (t *galaASTTransformer) transformVarDeclaration(ctx *grammar.VarDeclaration
 		Names: idents,
 	}
 
-	if ctx.ExpressionList() != nil {
-		rhs, err := t.transformExpressionList(ctx.ExpressionList().(*grammar.ExpressionListContext))
-		if err != nil {
-			return nil, err
-		}
-
+	if len(rhsExprs) > 0 {
 		if ctx.Type_() == nil {
-			for _, r := range rhs {
+			for _, r := range rhsExprs {
 				if t.isNoneCall(r) {
 					return nil, galaerr.NewSemanticError("variable assigned to None() must have an explicit type")
 				}
 			}
 		}
 
-		spec.Values = rhs
+		spec.Values = rhsExprs
 	}
 
 	if ctx.Type_() != nil {
@@ -235,13 +241,13 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 
 		isVal := recvCtx.VAL() != nil
 		if isVal {
-			t.addVal(recvName, "")
+			t.addVal(recvName, receiverTypeName)
 			recvTypeExpr = &ast.IndexExpr{
 				X:     t.stdIdent(transpiler.TypeImmutable),
 				Index: recvTypeExpr,
 			}
 		} else {
-			t.addVar(recvName, "")
+			t.addVar(recvName, receiverTypeName)
 		}
 
 		receiver = &ast.FieldList{
@@ -522,13 +528,6 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 		if unapplyMethod != nil {
 			decls = append(decls, unapplyMethod)
 		}
-
-		// Generic interface
-		interfaceDecls, err := t.generateGenericInterface(name, fields, tParams)
-		if err != nil {
-			return nil, err
-		}
-		decls = append(decls, interfaceDecls...)
 
 	} else if ctx.InterfaceType() != nil {
 		interfaceType, err := t.transformInterfaceType(ctx.InterfaceType().(*grammar.InterfaceTypeContext))

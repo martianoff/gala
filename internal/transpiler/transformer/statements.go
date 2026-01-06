@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
+	"strings"
 )
 
 func (t *galaASTTransformer) transformSimpleStatement(ctx grammar.ISimpleStatementContext) (ast.Stmt, error) {
@@ -68,8 +69,27 @@ func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext)
 		}
 		if exprCtx.GetChildCount() == 3 && exprCtx.GetChild(1).(antlr.ParseTree).GetText() == "." {
 			selName := exprCtx.GetChild(2).(antlr.ParseTree).GetText()
-			if t.immutFields[selName] {
-				return nil, galaerr.NewSemanticError(fmt.Sprintf("cannot assign to immutable field %s", selName))
+			xExpr, err := t.transformExpression(exprCtx.GetChild(0).(grammar.IExpressionContext))
+			if err == nil {
+				typeName := t.getExprTypeName(xExpr)
+				baseTypeName := typeName
+				if idx := strings.Index(typeName, "["); idx != -1 {
+					baseTypeName = typeName[:idx]
+				}
+				if idx := strings.LastIndex(baseTypeName, "."); idx != -1 {
+					baseTypeName = baseTypeName[idx+1:]
+				}
+
+				if fields, ok := t.structFields[baseTypeName]; ok {
+					for i, f := range fields {
+						if f == selName {
+							if t.structImmutFields[baseTypeName][i] {
+								return nil, galaerr.NewSemanticError(fmt.Sprintf("cannot assign to immutable field %s", selName))
+							}
+							break
+						}
+					}
+				}
 			}
 		}
 	}
@@ -118,15 +138,7 @@ func (t *galaASTTransformer) transformShortVarDecl(ctx *grammar.ShortVarDeclCont
 	wrappedRhs := make([]ast.Expr, 0)
 	for i, idCtx := range idsCtx {
 		name := idCtx.GetText()
-		typeName := ""
-		if len(idsCtx) == len(rhsExprs) {
-			// This is a bit naive, but good enough for simple cases
-			if lit, ok := rhsExprs[i].(*ast.CompositeLit); ok {
-				if id, ok := lit.Type.(*ast.Ident); ok {
-					typeName = id.Name
-				}
-			}
-		}
+		typeName := t.getExprTypeName(rhsExprs[i])
 		t.addVal(name, typeName)
 		lhs = append(lhs, ast.NewIdent(name))
 

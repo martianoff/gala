@@ -292,10 +292,11 @@ GALA supports wildcard matching for generic types using `Name[_]`. This allows m
 
 ```gala
 type Wrap[T any] struct { Value T }
+func (w Wrap[T]) GetValue() any = w.Value
 
 val w = Wrap[int](Value = 42)
 val res = w match {
-    case w1: Wrap[_] => "Wrapped value: " + fmt.Sprintf("%v", w1.Value)
+    case w1: Wrap[_] => "Wrapped value: " + fmt.Sprintf("%v", w1.GetValue())
     case _           => "Other"
 }
 ```

@@ -65,14 +65,6 @@ func (s Box[T]) Unapply(v any) (std.Immutable[T], bool) {
 	}
 	return *new(std.Immutable[T]), false
 }
-
-type BoxInterface interface {
-	Get_Value() any
-}
-
-func (r Box[T]) Get_Value() any {
-	return r.Value.Get()
-}
 `,
 		},
 		{
@@ -105,14 +97,6 @@ func (s Box[T]) Unapply(v any) (std.Immutable[T], bool) {
 		return p.Value, true
 	}
 	return *new(std.Immutable[T]), false
-}
-
-type BoxInterface interface {
-	Get_Value() any
-}
-
-func (r Box[T]) Get_Value() any {
-	return r.Value.Get()
 }
 func getValue[T any](b Box[T]) T {
 	return b.Value.Get()
@@ -149,14 +133,6 @@ func (s Box[T]) Unapply(v any) (std.Immutable[T], bool) {
 	}
 	return *new(std.Immutable[T]), false
 }
-
-type BoxInterface interface {
-	Get_Value() any
-}
-
-func (r Box[T]) Get_Value() any {
-	return r.Value.Get()
-}
 `,
 		},
 		{
@@ -188,14 +164,6 @@ func (s Box[T]) Unapply(v any) (T, bool) {
 		return p.Value, true
 	}
 	return *new(T), false
-}
-
-type BoxInterface interface {
-	Get_Value() any
-}
-
-func (r Box[T]) Get_Value() any {
-	return r.Value
 }
 `,
 		},

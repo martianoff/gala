@@ -85,14 +85,6 @@ func (s Box[T]) Unapply(v any) (std.Immutable[T], bool) {
 	}
 	return *new(std.Immutable[T]), false
 }
-
-type BoxInterface interface {
-	Get_Value() any
-}
-
-func (r Box[T]) Get_Value() any {
-	return r.Value.Get()
-}
 `,
 		},
 		{
