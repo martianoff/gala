@@ -50,14 +50,14 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 			foundDefault = true
 
 			// Transform the body of default case
-			if ccCtx.Block() != nil {
-				b, err := t.transformBlock(ccCtx.Block().(*grammar.BlockContext))
+			if ccCtx.GetBodyBlock() != nil {
+				b, err := t.transformBlock(ccCtx.GetBodyBlock().(*grammar.BlockContext))
 				if err != nil {
 					return nil, err
 				}
 				defaultBody = b.List
-			} else if ccCtx.Expression() != nil {
-				expr, err := t.transformExpression(ccCtx.Expression())
+			} else if ccCtx.GetBody() != nil {
+				expr, err := t.transformExpression(ccCtx.GetBody())
 				if err != nil {
 					return nil, err
 				}
@@ -345,15 +345,27 @@ func (t *galaASTTransformer) transformCaseClause(ctx *grammar.CaseClauseContext,
 		return nil, err
 	}
 
+	if ctx.GetGuard() != nil {
+		guard, err := t.transformExpression(ctx.GetGuard())
+		if err != nil {
+			return nil, err
+		}
+		cond = &ast.BinaryExpr{
+			X:  cond,
+			Op: token.LAND,
+			Y:  guard,
+		}
+	}
+
 	var body []ast.Stmt
-	if ctx.Block() != nil {
-		b, err := t.transformBlock(ctx.Block().(*grammar.BlockContext))
+	if ctx.GetBodyBlock() != nil {
+		b, err := t.transformBlock(ctx.GetBodyBlock().(*grammar.BlockContext))
 		if err != nil {
 			return nil, err
 		}
 		body = b.List
-	} else if ctx.Expression() != nil {
-		expr, err := t.transformExpression(ctx.Expression())
+	} else if ctx.GetBody() != nil {
+		expr, err := t.transformExpression(ctx.GetBody())
 		if err != nil {
 			return nil, err
 		}

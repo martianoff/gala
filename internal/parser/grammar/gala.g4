@@ -103,7 +103,7 @@ primary
 
 lambdaExpression: parameters '=>' (expression | block);
 
-caseClause: 'case' pattern '=>' (expression | block);
+caseClause: 'case' pattern (IF guard=expression)? '=>' (body=expression | bodyBlock=block);
 
 pattern
     : expression            # expressionPattern

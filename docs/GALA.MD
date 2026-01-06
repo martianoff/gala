@@ -331,6 +331,18 @@ val description = number match {
 
 Extractors can be nested: `case Some(Even(n)) => ...`. You can use the underscore `_` to skip variable bindings in any extractor: `case Some(_) => "Got something"`.
 
+#### Pattern Matching Filters (Guards)
+Similar to Scala, GALA supports additional `if` conditions in pattern match clauses, often referred to as guards. These filters allow you to apply additional constraints to the extracted variables.
+
+```gala
+val res = x match {
+    case i: int if i > 100 => "Large integer"
+    case i: int if i > 0   => "Positive integer"
+    case Person(name, age) if age < 18 => name + " is a minor"
+    case _ => "Other"
+}
+```
+
 ### For Statement
 *Note: The `for` statement is currently under development and not yet fully supported in the transpiler.*
 

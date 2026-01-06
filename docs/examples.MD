@@ -63,6 +63,34 @@ func main() {
 }
 ```
 
+## Pattern Matching with Filters (Guards) Example
+
+```gala
+package main
+
+import "fmt"
+
+struct Person(Name string, Age int)
+
+func main() {
+    val people = []Person{
+        Person("Alice", 25),
+        Person("Bob", 15),
+        Person("Charlie", 70),
+    }
+
+    for _, p := range people {
+        val status = p match {
+            case Person(name, age) if age < 18 => name + " is a minor"
+            case Person(name, age) if age > 65 => name + " is a senior"
+            case Person(name, _)               => name + " is an adult"
+            case _                             => "Unknown"
+        }
+        fmt.Println(status)
+    }
+}
+```
+
 ## Pattern Matching with Extractors Example
 
 ```gala

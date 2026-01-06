@@ -1,0 +1,35 @@
+package main
+
+import "fmt"
+
+struct Person(Name string, Age int)
+
+func main() {
+    val alice = Person("Alice", 25)
+    val bob = Person("Bob", 15)
+    val charlie = Person("Charlie", 70)
+
+    val p1 = alice match {
+        case Person(name: string, age: int) if age < 18 => name + " is a minor"
+        case Person(name: string, age: int) if age > 65 => name + " is a senior"
+        case Person(name: string, _)                    => name + " is an adult"
+        case _                                          => "Unknown"
+    }
+    fmt.Println(p1)
+
+    val p2 = bob match {
+        case Person(name: string, age: int) if age < 18 => name + " is a minor"
+        case Person(name: string, age: int) if age > 65 => name + " is a senior"
+        case Person(name: string, _)                    => name + " is an adult"
+        case _                                          => "Unknown"
+    }
+    fmt.Println(p2)
+
+    val p3 = charlie match {
+        case Person(name: string, age: int) if age < 18 => name + " is a minor"
+        case Person(name: string, age: int) if age > 65 => name + " is a senior"
+        case Person(name: string, _)                    => name + " is an adult"
+        case _                                          => "Unknown"
+    }
+    fmt.Println(p3)
+}
