@@ -22,25 +22,25 @@ func (e Either[A, B]) getRightValue() any = e.RightValue
 
 // isLeft returns true if this is a Left, false otherwise.
 func isLeft(e any) bool = e match {
-    case ei: EitherInterface => ei.isLeft
+    case ei: Either[_, _] => ei.isLeft
     case _ => false
 }
 
 // isRight returns true if this is a Right, false otherwise.
 func isRight(e any) bool = e match {
-    case ei: EitherInterface => !ei.isLeft
+    case ei: Either[_, _] => !ei.isLeft
     case _ => false
 }
 
 // getLeftValue returns the left value if this is a Left, otherwise it returns nil.
 func getLeftValue(e any) any = e match {
-    case ei: EitherInterface => ei.LeftValue
+    case ei: Either[_, _] => ei.LeftValue
     case _ => nil
 }
 
 // getRightValue returns the right value if this is a Right, otherwise it returns nil.
 func getRightValue(e any) any = e match {
-    case ei: EitherInterface => ei.RightValue
+    case ei: Either[_, _] => ei.RightValue
     case _ => nil
 }
 
