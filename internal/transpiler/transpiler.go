@@ -27,9 +27,11 @@ const (
 
 // RichAST provides metadata about a Gala source file.
 type RichAST struct {
-	Tree      antlr.Tree
-	Types     map[string]*TypeMetadata
-	Functions map[string]*FunctionMetadata
+	Tree        antlr.Tree
+	PackageName string
+	Types       map[string]*TypeMetadata
+	Functions   map[string]*FunctionMetadata
+	Packages    map[string]string // path -> pkgName
 }
 
 // Merge combines metadata from another RichAST into this one.
@@ -43,16 +45,23 @@ func (r *RichAST) Merge(other *RichAST) {
 	if r.Functions == nil {
 		r.Functions = make(map[string]*FunctionMetadata)
 	}
+	if r.Packages == nil {
+		r.Packages = make(map[string]string)
+	}
 	for k, v := range other.Types {
 		r.Types[k] = v
 	}
 	for k, v := range other.Functions {
 		r.Functions[k] = v
 	}
+	for k, v := range other.Packages {
+		r.Packages[k] = v
+	}
 }
 
 type TypeMetadata struct {
 	Name       string
+	Package    string
 	Methods    map[string]*MethodMetadata
 	Fields     map[string]string // Name -> Type
 	FieldNames []string          // To preserve order
@@ -62,6 +71,7 @@ type TypeMetadata struct {
 
 type MethodMetadata struct {
 	Name       string
+	Package    string
 	ReturnType string
 	TypeParams []string
 	IsGeneric  bool // Force transformation to standalone function
@@ -69,6 +79,7 @@ type MethodMetadata struct {
 
 type FunctionMetadata struct {
 	Name       string
+	Package    string
 	ReturnType string
 	TypeParams []string
 }

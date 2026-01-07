@@ -16,3 +16,14 @@ gazelle(
     ],
     command = "update-repos",
 )
+
+filegroup(
+    name = "all_gala_sources",
+    srcs = [
+        "//std:either.gala",
+        "//std:immutable.gala",
+        "//std:option.gala",
+        "//std:tuple.gala",
+    ],
+    visibility = ["//visibility:public"],
+)

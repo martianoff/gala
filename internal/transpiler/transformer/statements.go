@@ -76,9 +76,6 @@ func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext)
 				if idx := strings.Index(typeName, "["); idx != -1 {
 					baseTypeName = typeName[:idx]
 				}
-				if idx := strings.LastIndex(baseTypeName, "."); idx != -1 {
-					baseTypeName = baseTypeName[idx+1:]
-				}
 
 				if fields, ok := t.structFields[baseTypeName]; ok {
 					for i, f := range fields {
@@ -139,6 +136,9 @@ func (t *galaASTTransformer) transformShortVarDecl(ctx *grammar.ShortVarDeclCont
 	for i, idCtx := range idsCtx {
 		name := idCtx.GetText()
 		typeName := t.getExprTypeName(rhsExprs[i])
+		if qName := t.getType(typeName); qName != "" {
+			typeName = qName
+		}
 		t.addVal(name, typeName)
 		lhs = append(lhs, ast.NewIdent(name))
 

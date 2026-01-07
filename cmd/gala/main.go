@@ -13,18 +13,21 @@ import (
 	"martianoff/gala/internal/transpiler/analyzer"
 	"martianoff/gala/internal/transpiler/generator"
 	"martianoff/gala/internal/transpiler/transformer"
+	"strings"
 )
 
 func main() {
 	var (
-		inputPath  string
-		outputPath string
-		run        bool
+		inputPath   string
+		outputPath  string
+		run         bool
+		searchPaths string
 	)
 
 	flag.StringVar(&inputPath, "input", "", "Path to the input .gala file")
 	flag.StringVar(&outputPath, "output", "", "Path to the output .go file (optional if -run is used)")
 	flag.BoolVar(&run, "run", false, "Execute the generated Go code")
+	flag.StringVar(&searchPaths, "search", ".", "Comma-separated list of search paths for metadata")
 	flag.Parse()
 
 	if inputPath == "" {
@@ -45,9 +48,9 @@ func main() {
 	p := transpiler.NewAntlrGalaParser()
 
 	// Load std library metadata
-	searchPaths := []string{".", "..", "../.."}
-	baseMetadata := analyzer.GetBaseMetadata(p, searchPaths)
-	a := analyzer.NewGalaAnalyzerWithBase(baseMetadata, p, searchPaths)
+	paths := strings.Split(searchPaths, ",")
+	baseMetadata := analyzer.GetBaseMetadata(p, paths)
+	a := analyzer.NewGalaAnalyzerWithBase(baseMetadata, p, paths)
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
 	t := transpiler.NewGalaToGoTranspiler(p, a, tr, g)

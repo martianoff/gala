@@ -7,6 +7,7 @@ import (
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
+	"strings"
 
 	"github.com/antlr4-go/antlr/v4"
 )
@@ -111,6 +112,10 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 			typeName = t.getExprTypeName(rhsExprs[i])
 		}
 
+		if qName := t.getType(typeName); qName != "" {
+			typeName = qName
+		}
+
 		t.addVal(name, typeName)
 		idents = append(idents, ast.NewIdent(name))
 
@@ -187,6 +192,11 @@ func (t *galaASTTransformer) transformVarDeclaration(ctx *grammar.VarDeclaration
 		} else if len(rhsExprs) == len(namesCtx) {
 			typeName = t.getExprTypeName(rhsExprs[i])
 		}
+
+		if qName := t.getType(typeName); qName != "" {
+			typeName = qName
+		}
+
 		t.addVar(name, typeName)
 		idents = append(idents, ast.NewIdent(name))
 	}
@@ -436,12 +446,26 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 	}
 	decls = append(decls, equalMethod)
 
-	unapplyMethod, err := t.generateUnapplyMethod(name, fields, nil)
-	if err != nil {
-		return nil, err
+	// Check if Unapply already exists
+	hasUnapply := false
+	if meta, ok := t.typeMetas[name]; ok {
+		if _, ok := meta.Methods["Unapply"]; ok {
+			hasUnapply = true
+		}
+	} else if meta, ok := t.typeMetas[t.packageName+"."+name]; ok {
+		if _, ok := meta.Methods["Unapply"]; ok {
+			hasUnapply = true
+		}
 	}
-	if unapplyMethod != nil {
-		decls = append(decls, unapplyMethod)
+
+	if !hasUnapply {
+		unapplyMethod, err := t.generateUnapplyMethod(name, fields, nil)
+		if err != nil {
+			return nil, err
+		}
+		if unapplyMethod != nil {
+			decls = append(decls, unapplyMethod)
+		}
 	}
 
 	return decls, nil
@@ -529,12 +553,26 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 		}
 		decls = append(decls, equalMethod)
 
-		unapplyMethod, err := t.generateUnapplyMethod(name, fields, tParams)
-		if err != nil {
-			return nil, err
+		// Check if Unapply already exists
+		hasUnapply := false
+		fullTypeName := name
+		if t.packageName != "" && t.packageName != "main" && t.packageName != "test" {
+			fullTypeName = t.packageName + "." + name
 		}
-		if unapplyMethod != nil {
-			decls = append(decls, unapplyMethod)
+		if meta, ok := t.typeMetas[fullTypeName]; ok {
+			if _, ok := meta.Methods["Unapply"]; ok {
+				hasUnapply = true
+			}
+		}
+
+		if !hasUnapply {
+			unapplyMethod, err := t.generateUnapplyMethod(name, fields, tParams)
+			if err != nil {
+				return nil, err
+			}
+			if unapplyMethod != nil {
+				decls = append(decls, unapplyMethod)
+			}
 		}
 
 	} else if ctx.InterfaceType() != nil {
@@ -566,18 +604,29 @@ func (t *galaASTTransformer) transformImportDeclaration(ctx *grammar.ImportDecla
 	var specs []ast.Spec
 	for _, specCtx := range ctx.AllImportSpec() {
 		s := specCtx.(*grammar.ImportSpecContext)
+		path := strings.Trim(s.STRING().GetText(), "\"")
 		importSpec := &ast.ImportSpec{
 			Path: &ast.BasicLit{Kind: token.STRING, Value: s.STRING().GetText()},
 		}
 		if s.Identifier() != nil {
-			importSpec.Name = ast.NewIdent(s.Identifier().GetText())
+			alias := s.Identifier().GetText()
+			importSpec.Name = ast.NewIdent(alias)
+			t.imports[alias] = path
 		} else if s.GetChildCount() > 1 {
 			// Check for '.'
 			if dot := s.GetChild(0); dot != nil {
 				if terminal, ok := dot.(antlr.TerminalNode); ok && terminal.GetText() == "." {
 					importSpec.Name = ast.NewIdent(".")
+					parts := strings.Split(path, "/")
+					pkgName := parts[len(parts)-1]
+					t.dotImports = append(t.dotImports, pkgName)
 				}
 			}
+		} else {
+			// No alias, use the last part of path as package name
+			parts := strings.Split(path, "/")
+			pkgName := parts[len(parts)-1]
+			t.imports[pkgName] = path
 		}
 		specs = append(specs, importSpec)
 	}
@@ -599,6 +648,9 @@ func (t *galaASTTransformer) transformParameter(ctx *grammar.ParameterContext) (
 		typeName = t.getBaseTypeName(typeExpr)
 	}
 	isVal := ctx.VAL() != nil
+	if qName := t.getType(typeName); qName != "" {
+		typeName = qName
+	}
 	if isVal {
 		t.addVal(name, typeName)
 	} else {

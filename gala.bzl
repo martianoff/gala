@@ -56,11 +56,12 @@ gala_exec_test = rule(
 def gala_transpile(name, src, out = None):
     if not out:
         out = name + ".go"
+
     native.genrule(
         name = name,
-        srcs = [src],
+        srcs = [src, "//:all_gala_sources"],
         outs = [out],
-        cmd = "$(location //cmd/gala) -input $< -output $@",
+        cmd = "$(location //cmd/gala) -input $(location %s) -output $@ -search ." % src,
         tools = ["//cmd/gala"],
         visibility = ["//visibility:public"],
     )

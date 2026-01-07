@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"martianoff/gala/internal/transpiler"
+	"strings"
 )
 
 func (t *galaASTTransformer) nextTempVar() string {
@@ -36,6 +37,31 @@ func (t *galaASTTransformer) stdIdent(name string) ast.Expr {
 		X:   ast.NewIdent(transpiler.StdPackage),
 		Sel: ast.NewIdent(name),
 	}
+}
+
+func (t *galaASTTransformer) ident(name string) ast.Expr {
+	if idx := strings.Index(name, "."); idx != -1 {
+		pkg := name[:idx]
+		base := name[idx+1:]
+		if pkg == t.packageName {
+			return ast.NewIdent(base)
+		}
+		// Check if it's dot-imported
+		for _, di := range t.dotImports {
+			if di == pkg {
+				return ast.NewIdent(base)
+			}
+		}
+		// Check if we have an alias for this actual package name
+		if alias, ok := t.reverseImportAliases[pkg]; ok {
+			pkg = alias
+		}
+		return &ast.SelectorExpr{
+			X:   ast.NewIdent(pkg),
+			Sel: ast.NewIdent(base),
+		}
+	}
+	return ast.NewIdent(name)
 }
 
 func findLeafIf(stmt ast.Stmt) *ast.IfStmt {

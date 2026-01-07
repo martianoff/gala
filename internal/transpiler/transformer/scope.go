@@ -1,5 +1,10 @@
 package transformer
 
+import (
+	"martianoff/gala/internal/transpiler"
+	"strings"
+)
+
 type scope struct {
 	vals     map[string]bool
 	valTypes map[string]string
@@ -35,6 +40,21 @@ func (t *galaASTTransformer) addVar(name string, typeName string) {
 }
 
 func (t *galaASTTransformer) getType(name string) string {
+	// 1. If name already has a dot, it might be pkg.Type
+	if strings.Contains(name, ".") {
+		resolvedName := name
+		parts := strings.Split(name, ".")
+		if actual, ok := t.importAliases[parts[0]]; ok {
+			resolvedName = actual + "." + parts[1]
+		}
+		if _, ok := t.typeMetas[resolvedName]; ok {
+			return resolvedName
+		}
+		// If it has a dot but not found in metas, don't fall through to other searches
+		return ""
+	}
+
+	// 2. Search in current scope
 	s := t.currentScope
 	for s != nil {
 		if typeName, ok := s.valTypes[name]; ok {
@@ -42,6 +62,32 @@ func (t *galaASTTransformer) getType(name string) string {
 		}
 		s = s.parent
 	}
+
+	// 3. Search in current package symbols (no prefix in GALA, but might be prefixed in RichAST)
+	if _, ok := t.typeMetas[name]; ok {
+		return name
+	}
+	if t.packageName != "" && t.packageName != "main" {
+		fullName := t.packageName + "." + name
+		if _, ok := t.typeMetas[fullName]; ok {
+			return fullName
+		}
+	}
+
+	// 4. Search in dot-imported packages
+	for _, pkg := range t.dotImports {
+		fullName := pkg + "." + name
+		if _, ok := t.typeMetas[fullName]; ok {
+			return fullName
+		}
+	}
+
+	// 5. Check std package (auto-imported)
+	stdName := "std." + name
+	if _, ok := t.typeMetas[stdName]; ok {
+		return stdName
+	}
+
 	return ""
 }
 
@@ -54,4 +100,39 @@ func (t *galaASTTransformer) isVal(name string) bool {
 		s = s.parent
 	}
 	return false
+}
+
+func (t *galaASTTransformer) isVar(name string) bool {
+	s := t.currentScope
+	for s != nil {
+		if isImmutable, ok := s.vals[name]; ok {
+			return !isImmutable
+		}
+		s = s.parent
+	}
+	return false
+}
+
+func (t *galaASTTransformer) getFunction(name string) *transpiler.FunctionMetadata {
+	if fMeta, ok := t.functions[name]; ok {
+		return fMeta
+	}
+	if t.packageName != "" && t.packageName != "main" {
+		fullName := t.packageName + "." + name
+		if fMeta, ok := t.functions[fullName]; ok {
+			return fMeta
+		}
+	}
+	for _, pkg := range t.dotImports {
+		fullName := pkg + "." + name
+		if fMeta, ok := t.functions[fullName]; ok {
+			return fMeta
+		}
+	}
+	// Check std package
+	stdName := "std." + name
+	if fMeta, ok := t.functions[stdName]; ok {
+		return fMeta
+	}
+	return nil
 }

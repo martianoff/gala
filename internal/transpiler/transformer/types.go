@@ -160,6 +160,15 @@ func (t *galaASTTransformer) getBaseTypeName(expr ast.Expr) string {
 	case *ast.StarExpr:
 		return t.getBaseTypeName(e.X)
 	case *ast.SelectorExpr:
+		if x, ok := e.X.(*ast.Ident); ok {
+			if _, isPkg := t.imports[x.Name]; isPkg {
+				pkgName := x.Name
+				if actual, ok := t.importAliases[pkgName]; ok {
+					pkgName = actual
+				}
+				return pkgName + "." + e.Sel.Name
+			}
+		}
 		return e.Sel.Name
 	case *ast.FuncType:
 		return "func"
@@ -187,6 +196,16 @@ func (t *galaASTTransformer) getExprTypeName(expr ast.Expr) string {
 				return fType
 			}
 		}
+		// It might be a package-qualified name
+		if x, ok := e.X.(*ast.Ident); ok {
+			if _, isPkg := t.imports[x.Name]; isPkg {
+				pkgName := x.Name
+				if actual, ok := t.importAliases[pkgName]; ok {
+					pkgName = actual
+				}
+				return pkgName + "." + e.Sel.Name
+			}
+		}
 	case *ast.CallExpr:
 		// Handle b.Get() or std.Some()
 		fun := e.Fun
@@ -199,6 +218,38 @@ func (t *galaASTTransformer) getExprTypeName(expr ast.Expr) string {
 		if sel, ok := fun.(*ast.SelectorExpr); ok {
 			if sel.Sel.Name == transpiler.MethodGet {
 				return t.getExprTypeName(sel.X)
+			}
+
+			if sel.Sel.Name == transpiler.FuncNewImmutable || sel.Sel.Name == transpiler.TypeImmutable {
+				if len(e.Args) > 0 {
+					return t.getExprTypeName(e.Args[0])
+				}
+			}
+
+			if id, ok := sel.X.(*ast.Ident); ok {
+				if _, isPkg := t.imports[id.Name]; isPkg {
+					pkgName := id.Name
+					if actual, ok := t.importAliases[pkgName]; ok {
+						pkgName = actual
+					}
+					fullName := pkgName + "." + sel.Sel.Name
+					if fMeta, ok := t.functions[fullName]; ok {
+						return fMeta.ReturnType
+					}
+					// Handle Receiver_Method
+					if idx := strings.Index(sel.Sel.Name, "_"); idx != -1 {
+						receiverType := pkgName + "." + sel.Sel.Name[:idx]
+						methodName := sel.Sel.Name[idx+1:]
+						if meta, ok := t.typeMetas[receiverType]; ok {
+							if mMeta, ok := meta.Methods[methodName]; ok {
+								return mMeta.ReturnType
+							}
+						}
+					}
+					if _, ok := t.structFields[fullName]; ok {
+						return fullName
+					}
+				}
 			}
 
 			xTypeName := t.getExprTypeName(sel.X)
@@ -251,7 +302,7 @@ func (t *galaASTTransformer) getExprTypeName(expr ast.Expr) string {
 			if _, ok := t.structFields[id.Name]; ok {
 				return id.Name
 			}
-			if fMeta, ok := t.functions[id.Name]; ok {
+			if fMeta := t.getFunction(id.Name); fMeta != nil {
 				return fMeta.ReturnType
 			}
 
@@ -259,7 +310,11 @@ func (t *galaASTTransformer) getExprTypeName(expr ast.Expr) string {
 			if idx := strings.Index(id.Name, "_"); idx != -1 {
 				receiverType := id.Name[:idx]
 				methodName := id.Name[idx+1:]
-				if meta, ok := t.typeMetas[receiverType]; ok {
+				resolvedRecvType := t.getType(receiverType)
+				if resolvedRecvType == "" {
+					resolvedRecvType = receiverType
+				}
+				if meta, ok := t.typeMetas[resolvedRecvType]; ok {
 					if mMeta, ok := meta.Methods[methodName]; ok {
 						return mMeta.ReturnType
 					}

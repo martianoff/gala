@@ -63,46 +63,60 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 			}
 
 			recvTypeName := t.getExprTypeName(receiver)
+			if qName := t.getType(recvTypeName); qName != "" {
+				recvTypeName = qName
+			}
 			isGenericMethod := len(typeArgs) > 0 || (recvTypeName != "" && t.genericMethods[recvTypeName] != nil && t.genericMethods[recvTypeName][method])
 
 			if receiver != nil && isGenericMethod {
-				var mArgs []ast.Expr
-				for _, argCtx := range argListCtx.AllArgument() {
-					arg := argCtx.(*grammar.ArgumentContext)
-					pat := arg.Pattern()
-					ep, ok := pat.(*grammar.ExpressionPatternContext)
-					if !ok {
-						return nil, galaerr.NewSemanticError("only expressions allowed as function arguments")
+				// Check if receiver is a package name
+				isPkg := false
+				if id, ok := receiver.(*ast.Ident); ok {
+					if _, ok := t.imports[id.Name]; ok {
+						isPkg = true
 					}
-					expr, err := t.transformExpression(ep.Expression())
-					if err != nil {
-						return nil, err
-					}
-					mArgs = append(mArgs, expr)
 				}
 
-				var fun ast.Expr
-				if recvTypeName != "" {
-					fullName := recvTypeName + "_" + method
-					if recvTypeName == transpiler.TypeOption || recvTypeName == transpiler.TypeImmutable || recvTypeName == transpiler.TypeTuple || recvTypeName == transpiler.TypeEither {
-						fun = t.stdIdent(fullName)
+				if !isPkg {
+					var mArgs []ast.Expr
+					for _, argCtx := range argListCtx.AllArgument() {
+						arg := argCtx.(*grammar.ArgumentContext)
+						pat := arg.Pattern()
+						ep, ok := pat.(*grammar.ExpressionPatternContext)
+						if !ok {
+							return nil, galaerr.NewSemanticError("only expressions allowed as function arguments")
+						}
+						expr, err := t.transformExpression(ep.Expression())
+						if err != nil {
+							return nil, err
+						}
+						mArgs = append(mArgs, expr)
+					}
+
+					var fun ast.Expr
+					if recvTypeName != "" {
+						if recvTypeName == transpiler.TypeOption || recvTypeName == transpiler.TypeImmutable || recvTypeName == transpiler.TypeTuple || recvTypeName == transpiler.TypeEither {
+							fun = t.stdIdent(recvTypeName + "_" + method)
+						} else if strings.HasPrefix(recvTypeName, "std.") {
+							fun = t.stdIdent(strings.TrimPrefix(recvTypeName, "std.") + "_" + method)
+						} else {
+							fun = t.ident(recvTypeName + "_" + method)
+						}
 					} else {
-						fun = ast.NewIdent(fullName)
+						fun = ast.NewIdent(method)
 					}
-				} else {
-					fun = ast.NewIdent(method)
-				}
 
-				if len(typeArgs) == 1 {
-					fun = &ast.IndexExpr{X: fun, Index: typeArgs[0]}
-				} else if len(typeArgs) > 1 {
-					fun = &ast.IndexListExpr{X: fun, Indices: typeArgs}
-				}
+					if len(typeArgs) == 1 {
+						fun = &ast.IndexExpr{X: fun, Index: typeArgs[0]}
+					} else if len(typeArgs) > 1 {
+						fun = &ast.IndexListExpr{X: fun, Indices: typeArgs}
+					}
 
-				return &ast.CallExpr{
-					Fun:  fun,
-					Args: append([]ast.Expr{receiver}, mArgs...),
-				}, nil
+					return &ast.CallExpr{
+						Fun:  fun,
+						Args: append([]ast.Expr{receiver}, mArgs...),
+					}, nil
+				}
 			}
 
 			for _, argCtx := range argListCtx.AllArgument() {
@@ -132,30 +146,177 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 	// Handle case where we have TypeName(...) which is a constructor call
 	// GALA doesn't seem to have a specific rule for constructor calls,
 	// but TypeName(...) should be transformed to TypeName{...} if it's a struct.
-	typeName := t.getBaseTypeName(x)
+	rawTypeName := t.getBaseTypeName(x)
+	typeName := t.getType(rawTypeName)
+	if typeName == "" {
+		typeName = rawTypeName
+	}
 	typeExpr := x
+
+	if typeName != "" {
+		if fieldNames, ok := t.structFields[typeName]; ok {
+			// Check if we should treat it as a constructor or Apply call
+			isType := false
+			baseExpr := x
+			if idx, ok := x.(*ast.IndexExpr); ok {
+				baseExpr = idx.X
+			} else if idxList, ok := x.(*ast.IndexListExpr); ok {
+				baseExpr = idxList.X
+			}
+
+			if id, ok := baseExpr.(*ast.Ident); ok {
+				if !t.isVal(id.Name) && !t.isVar(id.Name) {
+					if _, ok := t.typeMetas[t.getType(id.Name)]; ok {
+						isType = true
+					}
+				}
+			} else if sel, ok := baseExpr.(*ast.SelectorExpr); ok {
+				if id, ok := sel.X.(*ast.Ident); ok {
+					if _, isPkg := t.imports[id.Name]; isPkg {
+						isType = true
+					}
+				}
+			}
+
+			// If it's a type and has fields, it's definitely a constructor
+			// If it's a type and has no fields, but has Apply, it's an Apply call on Type{}
+			if isType && len(fieldNames) > 0 {
+				var elts []ast.Expr
+				immutFlags := t.structImmutFields[typeName]
+
+				if namedArgs != nil {
+					for i, fn := range fieldNames {
+						if val, ok := namedArgs[fn]; ok {
+							if i < len(immutFlags) && immutFlags[i] {
+								val = &ast.CallExpr{
+									Fun:  t.stdIdent(transpiler.FuncNewImmutable),
+									Args: []ast.Expr{val},
+								}
+							}
+							elts = append(elts, &ast.KeyValueExpr{
+								Key:   ast.NewIdent(fn),
+								Value: val,
+							})
+						}
+					}
+				} else {
+					for i, arg := range args {
+						if i < len(fieldNames) {
+							if i < len(immutFlags) && immutFlags[i] {
+								arg = &ast.CallExpr{
+									Fun:  t.stdIdent(transpiler.FuncNewImmutable),
+									Args: []ast.Expr{arg},
+								}
+							}
+							elts = append(elts, &ast.KeyValueExpr{
+								Key:   ast.NewIdent(fieldNames[i]),
+								Value: arg,
+							})
+						}
+					}
+				}
+				return &ast.CompositeLit{
+					Type: typeExpr,
+					Elts: elts,
+				}, nil
+			}
+		}
+	}
 
 	// Check if the expression being called has an Apply method
 	exprTypeName := t.getExprTypeName(x)
+	if exprTypeName == "" {
+		exprTypeName = typeName
+	}
 	if exprTypeName != "" {
 		if typeMeta, ok := t.typeMetas[exprTypeName]; ok {
 			if methodMeta, hasApply := typeMeta.Methods["Apply"]; hasApply {
 				isGeneric := methodMeta.IsGeneric || len(methodMeta.TypeParams) > 0
 				if isGeneric {
 					fullName := exprTypeName + "_Apply"
-					var fun ast.Expr = ast.NewIdent(fullName)
-					if exprTypeName == transpiler.TypeOption || exprTypeName == transpiler.TypeImmutable || exprTypeName == transpiler.TypeTuple || exprTypeName == transpiler.TypeEither ||
+					var fun ast.Expr
+					if strings.HasPrefix(exprTypeName, "std.") || exprTypeName == transpiler.TypeOption || exprTypeName == transpiler.TypeImmutable || exprTypeName == transpiler.TypeTuple || exprTypeName == transpiler.TypeEither ||
 						exprTypeName == transpiler.FuncSome || exprTypeName == transpiler.FuncNone || exprTypeName == transpiler.FuncLeft || exprTypeName == transpiler.FuncRight {
-						fun = t.stdIdent(fullName)
+						fun = t.stdIdent(strings.TrimPrefix(fullName, "std."))
+					} else {
+						fun = t.ident(fullName)
 					}
+
+					// Extract type arguments if any
+					var typeArgs []ast.Expr
+					realX := x
+					if idx, ok := x.(*ast.IndexExpr); ok {
+						typeArgs = []ast.Expr{idx.Index}
+						realX = idx.X
+					} else if idxList, ok := x.(*ast.IndexListExpr); ok {
+						typeArgs = idxList.Indices
+						realX = idxList.X
+					}
+
+					if len(typeArgs) == 1 {
+						fun = &ast.IndexExpr{X: fun, Index: typeArgs[0]}
+					} else if len(typeArgs) > 1 {
+						fun = &ast.IndexListExpr{X: fun, Indices: typeArgs}
+					}
+
+					receiver := realX
+					isType := false
+					baseExpr := realX
+
+					if id, ok := baseExpr.(*ast.Ident); ok {
+						if !t.isVal(id.Name) && !t.isVar(id.Name) {
+							if _, ok := t.typeMetas[t.getType(id.Name)]; ok {
+								isType = true
+							}
+						}
+					} else if sel, ok := baseExpr.(*ast.SelectorExpr); ok {
+						if id, ok := sel.X.(*ast.Ident); ok {
+							if _, isPkg := t.imports[id.Name]; isPkg {
+								isType = true
+							}
+						}
+					}
+
+					if isType {
+						receiver = &ast.CompositeLit{Type: realX}
+					}
+
 					return &ast.CallExpr{
 						Fun:  fun,
-						Args: append([]ast.Expr{x}, args...),
+						Args: append([]ast.Expr{receiver}, args...),
 					}, nil
 				}
+
+				receiver := x
+				isType := false
+				baseExpr := x
+				if idx, ok := x.(*ast.IndexExpr); ok {
+					baseExpr = idx.X
+				} else if idxList, ok := x.(*ast.IndexListExpr); ok {
+					baseExpr = idxList.X
+				}
+
+				if id, ok := baseExpr.(*ast.Ident); ok {
+					if !t.isVal(id.Name) && !t.isVar(id.Name) {
+						if _, ok := t.typeMetas[t.getType(id.Name)]; ok {
+							isType = true
+						}
+					}
+				} else if sel, ok := baseExpr.(*ast.SelectorExpr); ok {
+					if id, ok := sel.X.(*ast.Ident); ok {
+						if _, isPkg := t.imports[id.Name]; isPkg {
+							isType = true
+						}
+					}
+				}
+
+				if isType {
+					receiver = &ast.CompositeLit{Type: x}
+				}
+
 				return &ast.CallExpr{
 					Fun: &ast.SelectorExpr{
-						X:   x,
+						X:   receiver,
 						Sel: ast.NewIdent("Apply"),
 					},
 					Args: args,
@@ -164,98 +325,8 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 		}
 	}
 
-	if typeName != "" {
-		if fieldNames, ok := t.structFields[typeName]; ok {
-			// If it has no fields and has Apply method, it might be Implode("apple") -> Implode{}.Apply("apple")
-			// or None() -> None{}.Apply()
-			if typeMeta, ok := t.typeMetas[typeName]; ok {
-				if methodMeta, hasApply := typeMeta.Methods["Apply"]; hasApply {
-					if len(fieldNames) == 0 {
-						var typeArgs []ast.Expr
-						realTypeExpr := typeExpr
-						if idx, ok := typeExpr.(*ast.IndexExpr); ok {
-							typeArgs = []ast.Expr{idx.Index}
-							realTypeExpr = idx.X
-						} else if idxList, ok := typeExpr.(*ast.IndexListExpr); ok {
-							typeArgs = idxList.Indices
-							realTypeExpr = idxList.X
-						}
-
-						receiver := &ast.CompositeLit{
-							Type: realTypeExpr,
-						}
-						isGeneric := methodMeta.IsGeneric || len(methodMeta.TypeParams) > 0 || len(typeArgs) > 0
-						if isGeneric {
-							fullName := typeName + "_Apply"
-							var fun ast.Expr = ast.NewIdent(fullName)
-							if typeName == transpiler.TypeOption || typeName == transpiler.TypeImmutable || typeName == transpiler.TypeTuple || typeName == transpiler.TypeEither ||
-								typeName == transpiler.FuncSome || typeName == transpiler.FuncNone || typeName == transpiler.FuncLeft || typeName == transpiler.FuncRight {
-								fun = t.stdIdent(fullName)
-							}
-							if len(typeArgs) == 1 {
-								fun = &ast.IndexExpr{X: fun, Index: typeArgs[0]}
-							} else if len(typeArgs) > 1 {
-								fun = &ast.IndexListExpr{X: fun, Indices: typeArgs}
-							}
-							return &ast.CallExpr{
-								Fun:  fun,
-								Args: append([]ast.Expr{receiver}, args...),
-							}, nil
-						}
-						return &ast.CallExpr{
-							Fun: &ast.SelectorExpr{
-								X:   receiver,
-								Sel: ast.NewIdent("Apply"),
-							},
-							Args: args,
-						}, nil
-					}
-				}
-			}
-
-			var elts []ast.Expr
-			immutFlags := t.structImmutFields[typeName]
-
-			if namedArgs != nil {
-				for i, fn := range fieldNames {
-					if val, ok := namedArgs[fn]; ok {
-						if i < len(immutFlags) && immutFlags[i] {
-							val = &ast.CallExpr{
-								Fun:  t.stdIdent(transpiler.FuncNewImmutable),
-								Args: []ast.Expr{val},
-							}
-						}
-						elts = append(elts, &ast.KeyValueExpr{
-							Key:   ast.NewIdent(fn),
-							Value: val,
-						})
-					}
-				}
-			} else {
-				for i, arg := range args {
-					if i < len(fieldNames) {
-						if i < len(immutFlags) && immutFlags[i] {
-							arg = &ast.CallExpr{
-								Fun:  t.stdIdent(transpiler.FuncNewImmutable),
-								Args: []ast.Expr{arg},
-							}
-						}
-						elts = append(elts, &ast.KeyValueExpr{
-							Key:   ast.NewIdent(fieldNames[i]),
-							Value: arg,
-						})
-					}
-				}
-			}
-			return &ast.CompositeLit{
-				Type: typeExpr,
-				Elts: elts,
-			}, nil
-		}
-	}
-
 	if namedArgs != nil {
-		return nil, galaerr.NewSemanticError("named arguments only supported for Copy method or struct construction")
+		return nil, galaerr.NewSemanticError(fmt.Sprintf("named arguments only supported for Copy method or struct construction (type: %s)", typeName))
 	}
 
 	return &ast.CallExpr{Fun: x, Args: args}, nil
@@ -340,9 +411,6 @@ func (t *galaASTTransformer) transformExpression(ctx grammar.IExpressionContext)
 			baseTypeName := typeName
 			if idx := strings.Index(typeName, "["); idx != -1 {
 				baseTypeName = typeName[:idx]
-			}
-			if idx := strings.LastIndex(baseTypeName, "."); idx != -1 {
-				baseTypeName = baseTypeName[idx+1:]
 			}
 
 			if fields, ok := t.structFields[baseTypeName]; ok {

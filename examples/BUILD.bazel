@@ -147,3 +147,17 @@ gala_test(
     expected = "use_lib_generic.out",
     deps = [":lib"],
 )
+
+gala_test(
+    name = "use_lib_qualified",
+    src = "use_lib_qualified.gala",
+    expected = "use_lib_generic.out",
+    deps = [":lib"],
+)
+
+gala_test(
+    name = "use_lib_alias",
+    src = "use_lib_alias.gala",
+    expected = "use_lib_generic.out",
+    deps = [":lib"],
+)

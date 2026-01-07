@@ -7,7 +7,6 @@ import (
 	"go/token"
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
-	"martianoff/gala/internal/transpiler"
 )
 
 func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionContext) (ast.Expr, error) {
@@ -175,24 +174,17 @@ func (t *galaASTTransformer) transformExpressionPattern(patExprCtx grammar.IExpr
 		var unapplyFun ast.Expr = t.stdIdent("UnapplyFull")
 
 		// If it's a type name, use composite lit
-		if id, ok := patternExpr.(*ast.Ident); ok {
-			if _, ok := t.structFields[id.Name]; ok {
-				typeName := id.Name
-				if typeName == "Tuple" {
-					unapplyFun = t.stdIdent("UnapplyTuple")
-				} else {
-					patternExpr = &ast.CompositeLit{Type: id}
-				}
-			}
-		} else if sel, ok := patternExpr.(*ast.SelectorExpr); ok {
-			// Handle std.Some
-			if id, ok := sel.X.(*ast.Ident); ok && id.Name == transpiler.StdPackage {
-				typeName := sel.Sel.Name
-				if typeName == "Tuple" {
-					unapplyFun = t.stdIdent("UnapplyTuple")
-				} else {
-					patternExpr = &ast.CompositeLit{Type: sel}
-				}
+		rawName := t.getBaseTypeName(patternExpr)
+		typeName := t.getType(rawName)
+		if typeName == "" {
+			typeName = rawName
+		}
+
+		if _, ok := t.structFields[typeName]; ok {
+			if typeName == "std.Tuple" || typeName == "Tuple" {
+				unapplyFun = t.stdIdent("UnapplyTuple")
+			} else {
+				patternExpr = &ast.CompositeLit{Type: t.ident(rawName)}
 			}
 		}
 
@@ -313,6 +305,9 @@ func (t *galaASTTransformer) transformTypedPattern(ctx *grammar.TypedPatternCont
 	}
 
 	typeName := t.getBaseTypeName(typeExpr)
+	if qName := t.getType(typeName); qName != "" {
+		typeName = qName
+	}
 	t.addVar(name, typeName)
 
 	okName := t.nextTempVar()

@@ -1,0 +1,12 @@
+package main
+
+import (
+    "fmt"
+    "martianoff/gala/examples/lib"
+)
+
+func main() {
+    val w = lib.Wrapper[int](V = 10)
+    val w2 = w.Map((x int) => x + 1)
+    fmt.Println(w2.V)
+}

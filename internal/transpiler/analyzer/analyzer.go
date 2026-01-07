@@ -17,7 +17,9 @@ func GetBaseMetadata(p transpiler.GalaParser, searchPaths []string) *transpiler.
 	base := &transpiler.RichAST{
 		Types:     make(map[string]*transpiler.TypeMetadata),
 		Functions: make(map[string]*transpiler.FunctionMetadata),
+		Packages:  make(map[string]string),
 	}
+	base.Packages[transpiler.StdImportPath] = transpiler.StdPackage
 	temp := NewGalaAnalyzer(p, searchPaths)
 	stdFiles := []string{"std/option.gala", "std/immutable.gala", "std/tuple.gala", "std/either.gala"}
 
@@ -79,10 +81,14 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree) (*transpiler.RichAST, error) {
 		return nil, fmt.Errorf("expected *grammar.SourceFileContext, got %T", tree)
 	}
 
+	pkgName := sourceFile.PackageClause().(*grammar.PackageClauseContext).Identifier().GetText()
+
 	richAST := &transpiler.RichAST{
-		Tree:      tree,
-		Types:     make(map[string]*transpiler.TypeMetadata),
-		Functions: make(map[string]*transpiler.FunctionMetadata),
+		Tree:        tree,
+		PackageName: pkgName,
+		Types:       make(map[string]*transpiler.TypeMetadata),
+		Functions:   make(map[string]*transpiler.FunctionMetadata),
+		Packages:    make(map[string]string),
 	}
 
 	// 0. Populate base metadata if provided
@@ -103,6 +109,18 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree) (*transpiler.RichAST, error) {
 					importedAST, err := a.analyzePackage(relPath)
 					if err == nil {
 						richAST.Merge(importedAST)
+						// Store package name from the imported package
+						if importedAST.PackageName != "" && importedAST.PackageName != "main" && importedAST.PackageName != "test" {
+							richAST.Packages[path] = importedAST.PackageName
+						} else {
+							// Fallback if PackageName is not set properly
+							for _, typeMeta := range importedAST.Types {
+								if typeMeta.Package != "" && typeMeta.Package != "main" && typeMeta.Package != "test" && typeMeta.Package != "std" {
+									richAST.Packages[path] = typeMeta.Package
+									break
+								}
+							}
+						}
 					}
 				}
 			}
@@ -114,17 +132,26 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree) (*transpiler.RichAST, error) {
 		if typeDecl := topDecl.TypeDeclaration(); typeDecl != nil {
 			ctx := typeDecl.(*grammar.TypeDeclarationContext)
 			typeName := ctx.Identifier().GetText()
+			fullTypeName := typeName
+			if pkgName != "" && pkgName != "main" && pkgName != "test" {
+				fullTypeName = pkgName + "." + typeName
+			}
 
 			var meta *transpiler.TypeMetadata
-			if existing, ok := richAST.Types[typeName]; ok {
+			if existing, ok := richAST.Types[fullTypeName]; ok && existing.Package == pkgName {
 				meta = existing
+				// Clear fields to avoid duplicates if re-analyzing
+				meta.Fields = make(map[string]string)
+				meta.FieldNames = nil
+				meta.ImmutFlags = nil
 			} else {
 				meta = &transpiler.TypeMetadata{
 					Name:    typeName,
+					Package: pkgName,
 					Methods: make(map[string]*transpiler.MethodMetadata),
 					Fields:  make(map[string]string),
 				}
-				richAST.Types[typeName] = meta
+				richAST.Types[fullTypeName] = meta
 			}
 
 			if ctx.TypeParameters() != nil {
@@ -153,17 +180,26 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree) (*transpiler.RichAST, error) {
 		if shorthandCtx := topDecl.StructShorthandDeclaration(); shorthandCtx != nil {
 			ctx := shorthandCtx.(*grammar.StructShorthandDeclarationContext)
 			typeName := ctx.Identifier().GetText()
+			fullTypeName := typeName
+			if pkgName != "" && pkgName != "main" && pkgName != "test" {
+				fullTypeName = pkgName + "." + typeName
+			}
 
 			var meta *transpiler.TypeMetadata
-			if existing, ok := richAST.Types[typeName]; ok {
+			if existing, ok := richAST.Types[fullTypeName]; ok && existing.Package == pkgName {
 				meta = existing
+				// Clear fields to avoid duplicates if re-analyzing
+				meta.Fields = make(map[string]string)
+				meta.FieldNames = nil
+				meta.ImmutFlags = nil
 			} else {
 				meta = &transpiler.TypeMetadata{
 					Name:    typeName,
+					Package: pkgName,
 					Methods: make(map[string]*transpiler.MethodMetadata),
 					Fields:  make(map[string]string),
 				}
-				richAST.Types[typeName] = meta
+				richAST.Types[fullTypeName] = meta
 			}
 
 			if ctx.Parameters() != nil {
@@ -194,8 +230,14 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree) (*transpiler.RichAST, error) {
 				baseType := getBaseTypeName(recvCtx.Type_())
 				if baseType != "" {
 					methodName := ctx.Identifier().GetText()
+					fullBaseType := baseType
+					if pkgName != "" && pkgName != "main" && pkgName != "test" && !strings.Contains(baseType, ".") {
+						fullBaseType = pkgName + "." + baseType
+					}
+
 					methodMeta := &transpiler.MethodMetadata{
-						Name: methodName,
+						Name:    methodName,
+						Package: pkgName,
 					}
 					if ctx.TypeParameters() != nil {
 						tpCtx := ctx.TypeParameters().(*grammar.TypeParametersContext)
@@ -208,10 +250,14 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree) (*transpiler.RichAST, error) {
 					}
 
 					if ctx.Signature().Type_() != nil {
-						methodMeta.ReturnType = getBaseTypeName(ctx.Signature().Type_())
+						retType := getBaseTypeName(ctx.Signature().Type_())
+						if pkgName != "" && pkgName != "main" && pkgName != "test" && !strings.Contains(retType, ".") {
+							retType = pkgName + "." + retType
+						}
+						methodMeta.ReturnType = retType
 					}
 
-					if typeMeta, ok := richAST.Types[baseType]; ok {
+					if typeMeta, ok := richAST.Types[fullBaseType]; ok {
 						if existing, exists := typeMeta.Methods[methodName]; exists {
 							// Preserve IsGeneric if it was pre-populated
 							methodMeta.IsGeneric = existing.IsGeneric
@@ -221,8 +267,9 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree) (*transpiler.RichAST, error) {
 						// Even if type is not in this file, we might want to collect it?
 						// But for now let's stick to what's requested.
 						// We can create a placeholder if needed.
-						richAST.Types[baseType] = &transpiler.TypeMetadata{
+						richAST.Types[fullBaseType] = &transpiler.TypeMetadata{
 							Name:    baseType,
+							Package: pkgName,
 							Methods: map[string]*transpiler.MethodMetadata{methodName: methodMeta},
 							Fields:  make(map[string]string),
 						}
@@ -231,11 +278,21 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree) (*transpiler.RichAST, error) {
 			} else {
 				// Top-level function
 				funcName := ctx.Identifier().GetText()
-				funcMeta := &transpiler.FunctionMetadata{
-					Name: funcName,
+				fullFuncName := funcName
+				if pkgName != "" && pkgName != "main" && pkgName != "test" {
+					fullFuncName = pkgName + "." + funcName
 				}
+				funcMeta := &transpiler.FunctionMetadata{
+					Name:    funcName,
+					Package: pkgName,
+				}
+				richAST.Functions[fullFuncName] = funcMeta
 				if ctx.Signature().Type_() != nil {
-					funcMeta.ReturnType = getBaseTypeName(ctx.Signature().Type_())
+					retType := getBaseTypeName(ctx.Signature().Type_())
+					if pkgName != "" && pkgName != "main" && pkgName != "test" && !strings.Contains(retType, ".") {
+						retType = pkgName + "." + retType
+					}
+					funcMeta.ReturnType = retType
 				}
 				if ctx.TypeParameters() != nil {
 					tpCtx := ctx.TypeParameters().(*grammar.TypeParametersContext)
@@ -276,6 +333,7 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 	pkgAST := &transpiler.RichAST{
 		Types:     make(map[string]*transpiler.TypeMetadata),
 		Functions: make(map[string]*transpiler.FunctionMetadata),
+		Packages:  make(map[string]string),
 	}
 
 	for _, f := range files {

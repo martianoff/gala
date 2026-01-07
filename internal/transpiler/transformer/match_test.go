@@ -132,7 +132,7 @@ import "martianoff/gala/std"
 var x = std.NewImmutable(std.Some(1))
 var res = std.NewImmutable(func(x any) any {
 	{
-		_tmp_1, _tmp_2 := std.UnapplyFull(x, std.Some{})
+		_tmp_1, _tmp_2 := std.UnapplyFull(x, std.Some)
 		y := std.GetSafe(_tmp_1, 0)
 		if _tmp_2 && true {
 			return y
@@ -187,7 +187,7 @@ import "martianoff/gala/std"
 
 var res = std.NewImmutable(func(x any) any {
 	{
-		_tmp_1, _tmp_2 := std.UnapplyFull(x, std.Some{})
+		_tmp_1, _tmp_2 := std.UnapplyFull(x, std.Some)
 		s, _tmp_3 := std.As[string](std.GetSafe(_tmp_1, 0))
 		if _tmp_2 && _tmp_3 {
 			return s
