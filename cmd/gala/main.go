@@ -45,8 +45,9 @@ func main() {
 	p := transpiler.NewAntlrGalaParser()
 
 	// Load std library metadata
-	baseMetadata := analyzer.GetBaseMetadata(p, []string{".", "..", "../.."})
-	a := analyzer.NewGalaAnalyzerWithBase(baseMetadata)
+	searchPaths := []string{".", "..", "../.."}
+	baseMetadata := analyzer.GetBaseMetadata(p, searchPaths)
+	a := analyzer.NewGalaAnalyzerWithBase(baseMetadata, p, searchPaths)
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
 	t := transpiler.NewGalaToGoTranspiler(p, a, tr, g)

@@ -7,6 +7,13 @@ gala_library(
     visibility = ["//visibility:public"],
 )
 
+gala_library(
+    name = "lib",
+    src = "lib/generic.gala",
+    importpath = "martianoff/gala/examples/lib",
+    visibility = ["//visibility:public"],
+)
+
 gala_test(
     name = "hello",
     src = "hello.gala",
@@ -132,4 +139,11 @@ gala_test(
     name = "pattern_match_filter",
     src = "pattern_match_filter.gala",
     expected = "pattern_match_filter.out",
+)
+
+gala_test(
+    name = "use_lib_generic",
+    src = "use_lib_generic.gala",
+    expected = "use_lib_generic.out",
+    deps = [":lib"],
 )

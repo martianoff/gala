@@ -610,6 +610,9 @@ func (t *galaASTTransformer) transformParameter(ctx *grammar.ParameterContext) (
 		} else {
 			field.Type = typ
 		}
+	} else {
+		// Default to any if type is not specified
+		field.Type = ast.NewIdent("any")
 	}
 	return field, nil
 }

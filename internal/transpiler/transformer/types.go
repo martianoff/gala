@@ -56,6 +56,9 @@ func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, 
 }
 
 func (t *galaASTTransformer) getExprType(expr ast.Expr) ast.Expr {
+	if expr == nil {
+		return ast.NewIdent("any")
+	}
 	switch e := expr.(type) {
 	case *ast.BinaryExpr:
 		switch e.Op {
@@ -155,6 +158,9 @@ func (t *galaASTTransformer) getBaseTypeName(expr ast.Expr) string {
 }
 
 func (t *galaASTTransformer) getExprTypeName(expr ast.Expr) string {
+	if expr == nil {
+		return ""
+	}
 	switch e := expr.(type) {
 	case *ast.Ident:
 		return t.getType(e.Name)

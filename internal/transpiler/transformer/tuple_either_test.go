@@ -14,8 +14,9 @@ import (
 func TestTupleEither(t *testing.T) {
 	p := transpiler.NewAntlrGalaParser()
 	// Load base metadata so Tuple/Either are recognized
-	base := analyzer.GetBaseMetadata(p, []string{"../../.."})
-	a := analyzer.NewGalaAnalyzerWithBase(base)
+	searchPaths := []string{"../../.."}
+	base := analyzer.GetBaseMetadata(p, searchPaths)
+	a := analyzer.NewGalaAnalyzerWithBase(base, p, searchPaths)
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
 	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)

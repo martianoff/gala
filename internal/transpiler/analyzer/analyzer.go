@@ -5,7 +5,9 @@ import (
 	"io/ioutil"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
+	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/antlr4-go/antlr/v4"
 )
@@ -16,7 +18,7 @@ func GetBaseMetadata(p transpiler.GalaParser, searchPaths []string) *transpiler.
 		Types:     make(map[string]*transpiler.TypeMetadata),
 		Functions: make(map[string]*transpiler.FunctionMetadata),
 	}
-	temp := NewGalaAnalyzer()
+	temp := NewGalaAnalyzer(p, searchPaths)
 	stdFiles := []string{"std/option.gala", "std/immutable.gala", "std/tuple.gala", "std/either.gala"}
 
 	for _, sf := range stdFiles {
@@ -46,16 +48,28 @@ func GetBaseMetadata(p transpiler.GalaParser, searchPaths []string) *transpiler.
 
 type galaAnalyzer struct {
 	baseMetadata *transpiler.RichAST
+	parser       transpiler.GalaParser
+	searchPaths  []string
+	analyzedPkgs map[string]bool
 }
 
 // NewGalaAnalyzer creates a new transpiler.Analyzer implementation.
-func NewGalaAnalyzer() transpiler.Analyzer {
-	return &galaAnalyzer{}
+func NewGalaAnalyzer(p transpiler.GalaParser, searchPaths []string) transpiler.Analyzer {
+	return &galaAnalyzer{
+		parser:       p,
+		searchPaths:  searchPaths,
+		analyzedPkgs: make(map[string]bool),
+	}
 }
 
 // NewGalaAnalyzerWithBase creates a new transpiler.Analyzer with base metadata.
-func NewGalaAnalyzerWithBase(base *transpiler.RichAST) transpiler.Analyzer {
-	return &galaAnalyzer{baseMetadata: base}
+func NewGalaAnalyzerWithBase(base *transpiler.RichAST, p transpiler.GalaParser, searchPaths []string) transpiler.Analyzer {
+	return &galaAnalyzer{
+		baseMetadata: base,
+		parser:       p,
+		searchPaths:  searchPaths,
+		analyzedPkgs: make(map[string]bool),
+	}
 }
 
 // Analyze walk the ANTLR tree and collects metadata for RichAST.
@@ -74,6 +88,25 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree) (*transpiler.RichAST, error) {
 	// 0. Populate base metadata if provided
 	if a.baseMetadata != nil {
 		richAST.Merge(a.baseMetadata)
+	}
+
+	// 0.5 Scan imports
+	for _, impDecl := range sourceFile.AllImportDeclaration() {
+		ctx := impDecl.(*grammar.ImportDeclarationContext)
+		for _, spec := range ctx.AllImportSpec() {
+			s := spec.(*grammar.ImportSpecContext)
+			path := strings.Trim(s.STRING().GetText(), "\"")
+			if strings.HasPrefix(path, "martianoff/gala/") {
+				relPath := strings.TrimPrefix(path, "martianoff/gala/")
+				if !a.analyzedPkgs[path] {
+					a.analyzedPkgs[path] = true
+					importedAST, err := a.analyzePackage(relPath)
+					if err == nil {
+						richAST.Merge(importedAST)
+					}
+				}
+			}
+		}
 	}
 
 	// 1. Collect all types
@@ -219,6 +252,49 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree) (*transpiler.RichAST, error) {
 	}
 
 	return richAST, nil
+}
+
+func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, error) {
+	var dirPath string
+	found := false
+	for _, p := range a.searchPaths {
+		dirPath = filepath.Join(p, relPath)
+		if info, err := os.Stat(dirPath); err == nil && info.IsDir() {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, fmt.Errorf("package not found: %s", relPath)
+	}
+
+	files, err := ioutil.ReadDir(dirPath)
+	if err != nil {
+		return nil, err
+	}
+
+	pkgAST := &transpiler.RichAST{
+		Types:     make(map[string]*transpiler.TypeMetadata),
+		Functions: make(map[string]*transpiler.FunctionMetadata),
+	}
+
+	for _, f := range files {
+		if !f.IsDir() && filepath.Ext(f.Name()) == ".gala" {
+			content, err := ioutil.ReadFile(filepath.Join(dirPath, f.Name()))
+			if err != nil {
+				continue
+			}
+			tree, err := a.parser.Parse(string(content))
+			if err != nil {
+				continue
+			}
+			res, err := a.Analyze(tree)
+			if err == nil {
+				pkgAST.Merge(res)
+			}
+		}
+	}
+	return pkgAST, nil
 }
 
 func getBaseTypeName(ctx grammar.ITypeContext) string {

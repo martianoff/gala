@@ -1,0 +1,7 @@
+package lib
+
+type Wrapper[T any] struct {
+    v T
+}
+
+func (w Wrapper[T]) Map[U any](f func(T) U) Wrapper[U] = Wrapper(v = f(w.v))

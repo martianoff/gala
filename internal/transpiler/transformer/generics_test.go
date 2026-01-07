@@ -13,7 +13,7 @@ import (
 
 func TestGenerics(t *testing.T) {
 	p := transpiler.NewAntlrGalaParser()
-	a := analyzer.NewGalaAnalyzer()
+	a := analyzer.NewGalaAnalyzer(p, []string{"."})
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
 	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)

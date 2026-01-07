@@ -13,8 +13,9 @@ import (
 
 func TestOption(t *testing.T) {
 	p := transpiler.NewAntlrGalaParser()
-	base := analyzer.GetBaseMetadata(p, []string{"../../../", "../../", "../"})
-	a := analyzer.NewGalaAnalyzerWithBase(base)
+	searchPaths := []string{"../../../", "../../", "../"}
+	base := analyzer.GetBaseMetadata(p, searchPaths)
+	a := analyzer.NewGalaAnalyzerWithBase(base, p, searchPaths)
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
 	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
