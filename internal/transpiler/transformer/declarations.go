@@ -121,9 +121,9 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 
 		var val ast.Expr
 		if i < len(rhsExprs) {
-			val = rhsExprs[i]
+			val = t.unwrapImmutable(rhsExprs[i])
 		} else {
-			val = &ast.IndexExpr{X: rhsExprs[0], Index: &ast.BasicLit{Kind: token.INT, Value: fmt.Sprintf("%d", i)}}
+			val = &ast.IndexExpr{X: t.unwrapImmutable(rhsExprs[0]), Index: &ast.BasicLit{Kind: token.INT, Value: fmt.Sprintf("%d", i)}}
 		}
 
 		if t.isNoneCall(val) && ctx.Type_() == nil {
@@ -214,7 +214,11 @@ func (t *galaASTTransformer) transformVarDeclaration(ctx *grammar.VarDeclaration
 			}
 		}
 
-		spec.Values = rhsExprs
+		unwrappedRhs := make([]ast.Expr, len(rhsExprs))
+		for i, r := range rhsExprs {
+			unwrappedRhs[i] = t.unwrapImmutable(r)
+		}
+		spec.Values = unwrappedRhs
 	}
 
 	if ctx.Type_() != nil {

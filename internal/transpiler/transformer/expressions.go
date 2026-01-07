@@ -570,7 +570,7 @@ func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.
 	if ctx.Identifier() != nil {
 		name := ctx.Identifier().GetText()
 		if name == transpiler.FuncSome || name == transpiler.FuncNone || name == transpiler.FuncLeft || name == transpiler.FuncRight ||
-			name == transpiler.TypeTuple || name == transpiler.TypeEither {
+			name == transpiler.TypeTuple || name == transpiler.TypeEither || name == transpiler.TypeImmutable || name == transpiler.FuncNewImmutable {
 			return t.stdIdent(name), nil
 		}
 		ident := ast.NewIdent(name)
@@ -703,4 +703,20 @@ func (t *galaASTTransformer) transformIfExpression(ctx *grammar.IfExpressionCont
 			},
 		},
 	}, nil
+}
+
+func (t *galaASTTransformer) unwrapImmutable(expr ast.Expr) ast.Expr {
+	if expr == nil {
+		return nil
+	}
+	typeName := t.getExprTypeName(expr)
+	if strings.HasPrefix(typeName, transpiler.TypeImmutable+"[") || typeName == transpiler.TypeImmutable {
+		return &ast.CallExpr{
+			Fun: &ast.SelectorExpr{
+				X:   expr,
+				Sel: ast.NewIdent(transpiler.MethodGet),
+			},
+		}
+	}
+	return expr
 }

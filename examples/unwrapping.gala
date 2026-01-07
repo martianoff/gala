@@ -1,0 +1,22 @@
+package main
+
+func getImm() Immutable[int] = NewImmutable(42)
+func f() int {
+    val t = 1
+    return t
+}
+
+func main() {
+    val x = 1
+    var y = x    // y should be int 1
+
+    val z = x    // z should be Immutable[int] with value 1
+
+    var w = getImm() // w should be int 42
+
+    println("y:", y)
+    println("z:", z)
+    println("w:", w)
+    var fv = f()
+    println("fv:", fv) // fv should be int 1
+}

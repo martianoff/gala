@@ -48,7 +48,7 @@ func (t *galaASTTransformer) transformStatement(ctx *grammar.StatementContext) (
 			if err != nil {
 				return nil, err
 			}
-			results = append(results, expr)
+			results = append(results, t.unwrapImmutable(expr))
 		}
 		return &ast.ReturnStmt{Results: results}, nil
 	}
@@ -100,6 +100,11 @@ func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext)
 		return nil, err
 	}
 
+	unwrappedRhs := make([]ast.Expr, len(rhsExprs))
+	for i, r := range rhsExprs {
+		unwrappedRhs[i] = t.unwrapImmutable(r)
+	}
+
 	op := ctx.GetChild(1).(antlr.TerminalNode).GetText()
 	var tok token.Token
 	switch op {
@@ -120,7 +125,7 @@ func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext)
 	return &ast.AssignStmt{
 		Lhs: lhsExprs,
 		Tok: tok,
-		Rhs: rhsExprs,
+		Rhs: unwrappedRhs,
 	}, nil
 }
 
@@ -144,9 +149,9 @@ func (t *galaASTTransformer) transformShortVarDecl(ctx *grammar.ShortVarDeclCont
 
 		var val ast.Expr
 		if i < len(rhsExprs) {
-			val = rhsExprs[i]
+			val = t.unwrapImmutable(rhsExprs[i])
 		} else {
-			val = &ast.IndexExpr{X: rhsExprs[0], Index: &ast.BasicLit{Kind: token.INT, Value: fmt.Sprintf("%d", i)}}
+			val = &ast.IndexExpr{X: t.unwrapImmutable(rhsExprs[0]), Index: &ast.BasicLit{Kind: token.INT, Value: fmt.Sprintf("%d", i)}}
 		}
 
 		if t.isNoneCall(val) {

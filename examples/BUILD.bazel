@@ -161,3 +161,9 @@ gala_test(
     expected = "use_lib_generic.out",
     deps = [":lib"],
 )
+
+gala_test(
+    name = "unwrapping",
+    src = "unwrapping.gala",
+    expected = "unwrapping.out",
+)

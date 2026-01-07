@@ -21,7 +21,7 @@ func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, 
 			return ast.NewIdent("any"), nil
 		}
 		var ident ast.Expr = ast.NewIdent(typeName)
-		if typeName == transpiler.TypeOption || typeName == transpiler.TypeTuple || typeName == transpiler.TypeEither {
+		if typeName == transpiler.TypeOption || typeName == transpiler.TypeTuple || typeName == transpiler.TypeEither || typeName == transpiler.TypeImmutable {
 			ident = t.stdIdent(typeName)
 		}
 
