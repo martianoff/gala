@@ -14,9 +14,22 @@ interface GalaTypes {
         val IDENTIFIER = GalaTokenType("IDENTIFIER")
         val NUMBER = GalaTokenType("NUMBER")
         val OPERATOR = GalaTokenType("OPERATOR")
-        val BRACKETS = GalaTokenType("BRACKETS")
+
+        val LPAREN = GalaTokenType("LPAREN")
+        val RPAREN = GalaTokenType("RPAREN")
+        val LBRACE = GalaTokenType("LBRACE")
+        val RBRACE = GalaTokenType("RBRACE")
+        val LBRACKET = GalaTokenType("LBRACKET")
+        val RBRACKET = GalaTokenType("RBRACKET")
+
+        val DOT = GalaTokenType("DOT")
+        val COMMA = GalaTokenType("COMMA")
 
         val WHITE_SPACE = GalaTokenType("WHITE_SPACE")
         val BAD_CHARACTER = GalaTokenType("BAD_CHARACTER")
+
+        val BLOCK = GalaElementType("BLOCK")
+        val FUNCTION = GalaElementType("FUNCTION")
+        val TYPE_DECL = GalaElementType("TYPE_DECL")
     }
 }

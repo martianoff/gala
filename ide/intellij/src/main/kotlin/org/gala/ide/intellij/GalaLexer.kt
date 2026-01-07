@@ -11,8 +11,9 @@ class GalaLexer : LexerBase() {
     private var tokenType: IElementType? = null
 
     private val keywords = setOf(
-        "package", "import", "val", "var", "func", "type", "struct",
-        "if", "else", "for", "return", "match", "case"
+        "package", "import", "val", "var", "func", "type", "struct", "interface",
+        "if", "else", "for", "range", "return", "match", "case",
+        "true", "false", "nil"
     )
 
     override fun start(buffer: CharSequence, startOffset: Int, endOffset: Int, initialState: Int) {
@@ -76,14 +77,63 @@ class GalaLexer : LexerBase() {
                 while (currentOffset < endOffset && buffer[currentOffset].isDigit()) {
                     currentOffset++
                 }
+                if (currentOffset < endOffset && buffer[currentOffset] == '.' && currentOffset + 1 < endOffset && buffer[currentOffset + 1].isDigit()) {
+                    currentOffset++
+                    while (currentOffset < endOffset && buffer[currentOffset].isDigit()) {
+                        currentOffset++
+                    }
+                }
                 tokenType = GalaTypes.NUMBER
             }
-            c in "(){}[]," -> {
-                currentOffset++
-                tokenType = GalaTypes.BRACKETS
+            c == '.' -> {
+                if (currentOffset + 1 < endOffset && buffer[currentOffset + 1].isDigit()) {
+                    currentOffset++
+                    while (currentOffset < endOffset && buffer[currentOffset].isDigit()) {
+                        currentOffset++
+                    }
+                    tokenType = GalaTypes.NUMBER
+                } else {
+                    currentOffset++
+                    tokenType = GalaTypes.DOT
+                }
             }
-            c in "+-*/=<>!&|:" -> {
+            c == ',' -> {
                 currentOffset++
+                tokenType = GalaTypes.COMMA
+            }
+            c == '(' -> {
+                currentOffset++
+                tokenType = GalaTypes.LPAREN
+            }
+            c == ')' -> {
+                currentOffset++
+                tokenType = GalaTypes.RPAREN
+            }
+            c == '{' -> {
+                currentOffset++
+                tokenType = GalaTypes.LBRACE
+            }
+            c == '}' -> {
+                currentOffset++
+                tokenType = GalaTypes.RBRACE
+            }
+            c == '[' -> {
+                currentOffset++
+                tokenType = GalaTypes.LBRACKET
+            }
+            c == ']' -> {
+                currentOffset++
+                tokenType = GalaTypes.RBRACKET
+            }
+            c in "+-*/=<>!&|:%" -> {
+                val start = currentOffset
+                currentOffset++
+                if (currentOffset < endOffset) {
+                    val op2 = buffer.subSequence(start, currentOffset + 1).toString()
+                    if (op2 in setOf("=>", ":=", "==", "!=", "<=", ">=", "&&", "||")) {
+                        currentOffset++
+                    }
+                }
                 tokenType = GalaTypes.OPERATOR
             }
             else -> {

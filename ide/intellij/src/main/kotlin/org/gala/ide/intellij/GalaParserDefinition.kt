@@ -34,10 +34,62 @@ class GalaParserDefinition : ParserDefinition {
     override fun createParser(project: Project?): PsiParser = PsiParser { root, builder ->
         val rootMarker = builder.mark()
         while (!builder.eof()) {
-            builder.advanceLexer()
+            val tokenType = builder.tokenType
+            when (tokenType) {
+                GalaTypes.LBRACE -> parseBlock(builder)
+                GalaTypes.KEYWORD -> {
+                    val text = builder.tokenText
+                    when (text) {
+                        "func" -> parseFunction(builder)
+                        "type" -> parseType(builder)
+                        else -> builder.advanceLexer()
+                    }
+                }
+                else -> builder.advanceLexer()
+            }
         }
         rootMarker.done(root)
         builder.treeBuilt
+    }
+
+    private fun parseFunction(builder: com.intellij.lang.PsiBuilder) {
+        val marker = builder.mark()
+        builder.advanceLexer() // consume func
+        while (!builder.eof() && builder.tokenType != GalaTypes.LBRACE && builder.tokenType != GalaTypes.KEYWORD) {
+            builder.advanceLexer()
+        }
+        if (builder.tokenType == GalaTypes.LBRACE) {
+            parseBlock(builder)
+        }
+        marker.done(GalaTypes.FUNCTION)
+    }
+
+    private fun parseType(builder: com.intellij.lang.PsiBuilder) {
+        val marker = builder.mark()
+        builder.advanceLexer() // consume type
+        while (!builder.eof() && builder.tokenType != GalaTypes.LBRACE && builder.tokenType != GalaTypes.KEYWORD) {
+            builder.advanceLexer()
+        }
+        if (builder.tokenType == GalaTypes.LBRACE) {
+            parseBlock(builder)
+        }
+        marker.done(GalaTypes.TYPE_DECL)
+    }
+
+    private fun parseBlock(builder: com.intellij.lang.PsiBuilder) {
+        val marker = builder.mark()
+        builder.advanceLexer() // consume {
+        while (!builder.eof() && builder.tokenType != GalaTypes.RBRACE) {
+            if (builder.tokenType == GalaTypes.LBRACE) {
+                parseBlock(builder)
+            } else {
+                builder.advanceLexer()
+            }
+        }
+        if (builder.tokenType == GalaTypes.RBRACE) {
+            builder.advanceLexer()
+        }
+        marker.done(GalaTypes.BLOCK)
     }
 
     override fun getFileNodeType(): IFileElementType = FILE
@@ -48,5 +100,10 @@ class GalaParserDefinition : ParserDefinition {
         return ParserDefinition.SpaceRequirements.MAY
     }
 
-    override fun createElement(node: ASTNode): PsiElement = ASTWrapperPsiElement(node)
+    override fun createElement(node: ASTNode): PsiElement {
+        if (node.elementType == GalaTypes.BLOCK) {
+            return ASTWrapperPsiElement(node)
+        }
+        return ASTWrapperPsiElement(node)
+    }
 }

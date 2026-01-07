@@ -12,7 +12,7 @@
     Initial release of GALA language support.
     ]]></change-notes>
 
-    <idea-version since-build="253" until-build="255.*"/>
+    <idea-version since-build="232" until-build="255.*"/>
 
     <depends>com.intellij.modules.platform</depends>
 
@@ -23,6 +23,11 @@
                                implementationClass="org.gala.ide.intellij.GalaParserDefinition"/>
         <lang.syntaxHighlighterFactory language="GALA"
                                        implementationClass="org.gala.ide.intellij.GalaSyntaxHighlighterFactory"/>
+        <lang.commenter language="GALA" implementationClass="org.gala.ide.intellij.GalaCommenter"/>
+        <lang.foldingBuilder language="GALA" implementationClass="org.gala.ide.intellij.GalaFoldingBuilder"/>
+        <lang.braceMatcher language="GALA" implementationClass="org.gala.ide.intellij.GalaPairedBraceMatcher"/>
+        <lang.psiStructureViewFactory language="GALA" implementationClass="org.gala.ide.intellij.GalaStructureViewFactory"/>
+        <completion.contributor language="GALA" implementationClass="org.gala.ide.intellij.GalaCompletionContributor"/>
     </extensions>
 
     <actions>
