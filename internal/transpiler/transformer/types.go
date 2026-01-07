@@ -60,17 +60,23 @@ func (t *galaASTTransformer) getExprType(expr ast.Expr) ast.Expr {
 		return ast.NewIdent("any")
 	}
 	switch e := expr.(type) {
+	case *ast.Ident:
+		if e.Name == "true" || e.Name == "false" {
+			return ast.NewIdent("bool")
+		}
+		typeName := t.getType(e.Name)
+		if typeName != "" {
+			return ast.NewIdent(typeName)
+		}
 	case *ast.BinaryExpr:
 		switch e.Op {
 		case token.LOR, token.LAND, token.EQL, token.NEQ, token.LSS, token.LEQ, token.GTR, token.GEQ:
 			return ast.NewIdent("bool")
+		default:
+			return t.getExprType(e.X)
 		}
 	case *ast.UnaryExpr:
 		if e.Op == token.NOT {
-			return ast.NewIdent("bool")
-		}
-	case *ast.Ident:
-		if e.Name == "true" || e.Name == "false" {
 			return ast.NewIdent("bool")
 		}
 	}
@@ -145,6 +151,8 @@ func (t *galaASTTransformer) getBaseTypeName(expr ast.Expr) string {
 	switch e := expr.(type) {
 	case *ast.Ident:
 		return e.Name
+	case *ast.ArrayType:
+		return "[]" + t.getBaseTypeName(e.Elt)
 	case *ast.IndexExpr:
 		return t.getBaseTypeName(e.X)
 	case *ast.IndexListExpr:
@@ -153,6 +161,8 @@ func (t *galaASTTransformer) getBaseTypeName(expr ast.Expr) string {
 		return t.getBaseTypeName(e.X)
 	case *ast.SelectorExpr:
 		return e.Sel.Name
+	case *ast.FuncType:
+		return "func"
 	}
 	return ""
 }
@@ -164,6 +174,12 @@ func (t *galaASTTransformer) getExprTypeName(expr ast.Expr) string {
 	switch e := expr.(type) {
 	case *ast.Ident:
 		return t.getType(e.Name)
+	case *ast.IndexExpr:
+		xTypeName := t.getExprTypeName(e.X)
+		if strings.HasPrefix(xTypeName, "[]") {
+			return xTypeName[2:]
+		}
+		return ""
 	case *ast.SelectorExpr:
 		xTypeName := t.getExprTypeName(e.X)
 		if xTypeName != "" && t.structFieldTypes[xTypeName] != nil {

@@ -1,0 +1,14 @@
+load("//:gala.bzl", "gala_binary", "gala_library")
+
+gala_library(
+    name = "test",
+    src = "framework.gala",
+    importpath = "martianoff/gala/test",
+    visibility = ["//visibility:public"],
+)
+
+gala_binary(
+    name = "framework_test",
+    src = "framework_test.gala",
+    deps = [":test"],
+)

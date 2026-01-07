@@ -64,7 +64,7 @@ val z = y.FlatMap((v int) => Some(v + 1))`,
 import "martianoff/gala/std"
 
 var x = std.NewImmutable(std.Some_Apply(std.Some{}, 10))
-var y = std.NewImmutable(std.Option_Map(x.Get(), func(v int) any {
+var y = std.NewImmutable(std.Option_Map(x.Get(), func(v int) int {
 	return v * 2
 }))
 var z = std.NewImmutable(std.Option_FlatMap(y.Get(), func(v int) std.Option {

@@ -56,7 +56,7 @@ val f = (x int) => x * x`,
 
 import "martianoff/gala/std"
 
-var f = std.NewImmutable(func(x int) any {
+var f = std.NewImmutable(func(x int) int {
 	return x * x
 })
 `,

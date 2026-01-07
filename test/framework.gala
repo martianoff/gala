@@ -1,0 +1,37 @@
+package test
+
+import (
+    "fmt"
+)
+
+struct TestCase(Name string, F func())
+
+func RunTest(t TestCase) {
+    fmt.Printf("Running test %s... ", t.Name)
+    t.F()
+    fmt.Println("OK")
+}
+
+func AssertEqual[T any](actual T, expected T) {
+    if !std.Equal(actual, expected) {
+        panic(fmt.Sprintf("Assertion failed: actual [%v] != expected [%v]", actual, expected))
+    }
+}
+
+func AssertNotEqual[T any](actual T, expected T) {
+    if std.Equal(actual, expected) {
+        panic(fmt.Sprintf("Assertion failed: actual [%v] == expected [%v]", actual, expected))
+    }
+}
+
+func AssertTrue(condition bool) {
+    if !condition {
+        panic("Assertion failed: expected true, got false")
+    }
+}
+
+func AssertFalse(condition bool) {
+    if condition {
+        panic("Assertion failed: expected false, got true")
+    }
+}

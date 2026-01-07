@@ -365,12 +365,20 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 			}
 
 			if isVal {
-				if typ, ok := field.Type.(*ast.Ident); ok {
-					// Add to immutFields only if it's a field name we are processing
-					// But we also need to wrap it in std.Immutable in the struct type
+				// Only wrap if it's not already wrapped by transformParameter (e.g. if 'val' was explicit)
+				alreadyWrapped := false
+				if idxExpr, ok := field.Type.(*ast.IndexExpr); ok {
+					if sel, ok := idxExpr.X.(*ast.SelectorExpr); ok {
+						if sel.Sel.Name == "Immutable" {
+							alreadyWrapped = true
+						}
+					}
+				}
+
+				if !alreadyWrapped {
 					field.Type = &ast.IndexExpr{
 						X:     t.stdIdent("Immutable"),
-						Index: typ,
+						Index: field.Type,
 					}
 				}
 			}

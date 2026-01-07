@@ -12,7 +12,8 @@ Maintain this folder structure:
 internal/parser/grammar - gala grammar in ANTLR4 format
 internal/transpiler/generator - generate GO code from GALA AST tree
 internal/transpiler/transformer - transform GALA AST tree to GO AST tree
-std - GALA standard library, contains common classes and functions that are going to be imported into GO code as required by transpiler, for example `Immutable` class
+std - GALA standard library, contains common classes and functions that are automatically imported into GALA code as required by transpiler, for example `Immutable` class
+test - GALA test framework
 
 ## 2. Dependency Injection with Explicit Construction
 
@@ -64,9 +65,16 @@ Yes, the project should be buildable with bazel. Code under "examples" should be
 
 ## 11. Code-style-related instructions
 
+### Go Code
+
 Follow golang best practices
 For each implementation of interface add compiler safe validator like `var _ Interface = (*Implementation)(nil)`
 Prefer generics where possible over reflection
+
+### GALA Code
+
+Prefer functional code, pattern matching and immutable variables unless otherwise needed by use case.
+Prefer generic methods and type safe programming.
 
 ## 12. Whether Junie generate BUILD files?
 

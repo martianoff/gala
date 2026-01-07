@@ -304,6 +304,9 @@ func getBaseTypeName(ctx grammar.ITypeContext) string {
 	if ctx.Identifier() != nil {
 		return ctx.Identifier().GetText()
 	}
+	if strings.HasPrefix(ctx.GetText(), "[]") && len(ctx.AllType_()) > 0 {
+		return "[]" + getBaseTypeName(ctx.Type_(0))
+	}
 	if len(ctx.AllType_()) > 0 {
 		// Handles pointers (*T) and potentially other nested types
 		return getBaseTypeName(ctx.Type_(0))

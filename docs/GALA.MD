@@ -471,3 +471,30 @@ bazel test //...
 ## Further Reading
 
 - [Examples](examples.md) - More examples of GALA code.
+
+## 10. Test Framework
+
+GALA provides a functional test framework in the `test` package. It allows for defining test cases and making assertions.
+
+### Test Cases
+A test case is defined using the `TestCase` struct, which takes a name and a function to run.
+
+```gala
+import . "martianoff/gala/test"
+
+func testAddition() {
+    val x = 1 + 1
+    AssertEqual[int](x, 2)
+}
+
+func main() {
+    RunTest(TestCase(Name = "Addition", F = testAddition))
+}
+```
+
+### Assertions
+The following assertions are available:
+- `AssertEqual[T](actual, expected)`
+- `AssertNotEqual[T](actual, expected)`
+- `AssertTrue(condition)`
+- `AssertFalse(condition)`
