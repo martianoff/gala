@@ -547,3 +547,25 @@ The following assertions are available:
 ## 13. Further Reading
 
 - [Examples](examples.md) - More examples of GALA code.
+
+## IDE Support
+
+### IntelliJ IDEA
+A basic IntelliJ IDEA plugin is available in `ide/intellij`.
+
+#### How to Build and Install
+1. Build the plugin using Bazel from the project root:
+   ```bash
+   bazel build //ide/intellij:plugin
+   ```
+   The resulting ZIP file will be at `bazel-bin/ide/intellij/gala-intellij-plugin.zip`.
+2. Alternatively, build using Gradle in `ide/intellij`:
+   ```bash
+   gradle buildPlugin
+   ```
+3. Install the resulting ZIP file into IntelliJ via `Settings > Plugins > Install Plugin from Disk...`.
+
+The plugin provides:
+- Syntax highlighting
+- File type recognition (`.gala`)
+- Basic code structure support

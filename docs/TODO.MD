@@ -14,4 +14,4 @@
 - [x] Imported packages in GALA are analyzed with analyzers so they can support GALA features like generic methods
 - [ ] Dependency management
 - [x] Test framework
-- [ ] JetBrains language plugin
+- [x] JetBrains language plugin

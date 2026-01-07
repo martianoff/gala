@@ -1,0 +1,21 @@
+package(default_visibility = ["//visibility:public"])
+
+genrule(
+    name = "plugin",
+    srcs = glob([
+        "src/**",
+        "build.gradle.kts",
+        "settings.gradle.kts",
+    ]) + ["@gradle_bin//:all_files"],
+    outs = ["gala-intellij-plugin.zip"],
+    cmd = """
+        export JAVA_HOME=$$(pwd)/$$(echo $(JAVA) | sed 's|/bin/java.exe$$||')
+        export GRADLE_HOME=$$(pwd)/external/gradle_bin
+
+        # Run gradle from the external repository
+        ./external/gradle_bin/bin/gradle -p ide/intellij buildPlugin --no-daemon
+
+        cp ide/intellij/build/distributions/*.zip $@
+    """,
+    toolchains = ["@bazel_tools//tools/jdk:current_java_runtime"],
+)
