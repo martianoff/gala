@@ -425,28 +425,59 @@ When GALA transpiles to Go, immutable values are wrapped in a `std.Immutable[T]`
 
 GALA supports importing other GALA packages. Since GALA transpiles to Go, a GALA package is essentially a Go package after transpilation. To import a GALA package, you use its Go import path.
 
-**Example:**
+### Import Syntax
 
-`mathlib/math.gala`
+GALA uses Go-style import declarations. You can import multiple packages in a block or individually.
+
 ```gala
-package mathlib
-
-func Add(a int, b int) int = a + b
+import "fmt"
+import (
+    "math"
+    "martianoff/gala/examples/mathlib"
+)
 ```
 
-`main.gala`
+### Aliases and Dot Imports
+
+You can use aliases to avoid name conflicts or to use a shorter name. Dot imports allow you to access symbols from a package without using the package prefix.
+
+```gala
+import m "math"
+import . "martianoff/gala/examples/mathlib"
+
+func main() {
+    val res = m.Sqrt(16.0)
+    val sum = Add(10, 20) // Add is from mathlib via dot import
+}
+```
+
+### Using Symbols from Other Packages
+
+Types and functions from other packages are accessed using the package name (or alias) followed by a dot.
+
+#### Generic Methods and Standalone Functions
+
+GALA methods on generic structs are transpiled to standalone functions in Go (named `Struct_Method`). When calling these from another package, the transpiler handles the name resolution automatically. You can use the method call syntax, and it will be correctly transpiled.
+
 ```gala
 package main
 
 import (
     "fmt"
-    "martianoff/gala/examples/mathlib"
+    "martianoff/gala/examples/lib"
 )
 
 func main() {
-    val sum = mathlib.Add(10, 20)
-    fmt.Println("Sum is", sum)
+    val w = lib.Wrapper[int](V = 10)
+    val w2 = w.Map((x int) => x + 1) // Transpiles to lib.Wrapper_Map(w.Get(), ...)
+    fmt.Println(w2.V)
 }
+```
+
+Alternatively, you can call the transpiled function directly using its qualified name:
+
+```gala
+val w2 = lib.Wrapper_Map(w, (x int) => x + 1)
 ```
 
 ## 12. Testing

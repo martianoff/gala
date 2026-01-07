@@ -263,6 +263,43 @@ func main() {
 }
 ```
 
+## Using External Libraries
+
+GALA allows you to organize your code into multiple packages and import them as needed.
+
+`mathlib/math.gala`
+```gala
+package mathlib
+
+func Add(a int, b int) int = a + b
+```
+
+`main.gala`
+```gala
+package main
+
+import (
+    "fmt"
+    "martianoff/gala/examples/mathlib"
+)
+
+func main() {
+    val sum = mathlib.Add(10, 20)
+    fmt.Println("Sum is", sum)
+}
+```
+
+You can also use dot imports to bring symbols into the current namespace:
+
+```gala
+import . "martianoff/gala/examples/mathlib"
+
+func main() {
+    val sum = Add(10, 20)
+    fmt.Println("Sum is", sum)
+}
+```
+
 ## More Examples
 
 You can find more examples in the `examples/` directory of the project:
