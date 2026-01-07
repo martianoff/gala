@@ -70,7 +70,7 @@ var x int`,
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := trans.Transpile(tt.input)
+			got, err := trans.Transpile(tt.input, "")
 			if tt.expectError {
 				assert.Error(t, err)
 			} else {

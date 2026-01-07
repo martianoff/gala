@@ -4,7 +4,7 @@ GALA (Go Alternative LAnguage) is a modern programming language that transpiles 
 
 ## 1. Project Structure
 
-GALA files use the `.gala` extension. Every file must start with a package declaration, followed by an empty line.
+GALA files use the `.gala` extension. Every file must start with a package declaration, followed by an empty line. All GALA files in the same directory must belong to the same package.
 
 GALA supports Go-style imports, including aliases and dot imports. Import declarations must also be followed by an empty line.
 

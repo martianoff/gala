@@ -183,7 +183,7 @@ func main() {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := trans.Transpile(tt.input)
+			got, err := trans.Transpile(tt.input, "")
 			if err != nil {
 				t.Fatalf("Transpile failed: %v", err)
 			}

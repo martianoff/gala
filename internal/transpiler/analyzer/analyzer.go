@@ -39,7 +39,7 @@ func GetBaseMetadata(p transpiler.GalaParser, searchPaths []string) *transpiler.
 		if err != nil {
 			continue
 		}
-		rich, err := temp.Analyze(tree)
+		rich, err := temp.Analyze(tree, sf)
 		if err != nil {
 			continue
 		}
@@ -53,6 +53,7 @@ type galaAnalyzer struct {
 	parser       transpiler.GalaParser
 	searchPaths  []string
 	analyzedPkgs map[string]bool
+	checkedDirs  map[string]bool
 }
 
 // NewGalaAnalyzer creates a new transpiler.Analyzer implementation.
@@ -61,6 +62,7 @@ func NewGalaAnalyzer(p transpiler.GalaParser, searchPaths []string) transpiler.A
 		parser:       p,
 		searchPaths:  searchPaths,
 		analyzedPkgs: make(map[string]bool),
+		checkedDirs:  make(map[string]bool),
 	}
 }
 
@@ -71,17 +73,53 @@ func NewGalaAnalyzerWithBase(base *transpiler.RichAST, p transpiler.GalaParser, 
 		parser:       p,
 		searchPaths:  searchPaths,
 		analyzedPkgs: make(map[string]bool),
+		checkedDirs:  make(map[string]bool),
 	}
 }
 
 // Analyze walk the ANTLR tree and collects metadata for RichAST.
-func (a *galaAnalyzer) Analyze(tree antlr.Tree) (*transpiler.RichAST, error) {
+func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.RichAST, error) {
 	sourceFile, ok := tree.(*grammar.SourceFileContext)
 	if !ok {
 		return nil, fmt.Errorf("expected *grammar.SourceFileContext, got %T", tree)
 	}
 
 	pkgName := sourceFile.PackageClause().(*grammar.PackageClauseContext).Identifier().GetText()
+
+	if filePath != "" {
+		dirPath := filepath.Dir(filePath)
+		absDirPath, err := filepath.Abs(dirPath)
+		if err == nil && !a.checkedDirs[absDirPath] {
+			a.checkedDirs[absDirPath] = true
+			files, err := ioutil.ReadDir(dirPath)
+			if err == nil {
+				for _, f := range files {
+					if !f.IsDir() && filepath.Ext(f.Name()) == ".gala" {
+						otherPath := filepath.Join(dirPath, f.Name())
+						if otherPath == filePath {
+							continue
+						}
+						content, err := ioutil.ReadFile(otherPath)
+						if err != nil {
+							continue
+						}
+						tree, err := a.parser.Parse(string(content))
+						if err != nil {
+							continue
+						}
+						otherSF, ok := tree.(*grammar.SourceFileContext)
+						if !ok {
+							continue
+						}
+						otherPkgName := otherSF.PackageClause().(*grammar.PackageClauseContext).Identifier().GetText()
+						if otherPkgName != pkgName {
+							return nil, fmt.Errorf("multiple package names in directory %s: %s and %s", dirPath, pkgName, otherPkgName)
+						}
+					}
+				}
+			}
+		}
+	}
 
 	richAST := &transpiler.RichAST{
 		Tree:        tree,
@@ -338,7 +376,8 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 
 	for _, f := range files {
 		if !f.IsDir() && filepath.Ext(f.Name()) == ".gala" {
-			content, err := ioutil.ReadFile(filepath.Join(dirPath, f.Name()))
+			filePath := filepath.Join(dirPath, f.Name())
+			content, err := ioutil.ReadFile(filePath)
 			if err != nil {
 				continue
 			}
@@ -346,8 +385,13 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 			if err != nil {
 				continue
 			}
-			res, err := a.Analyze(tree)
+			res, err := a.Analyze(tree, filePath)
 			if err == nil {
+				if pkgAST.PackageName == "" {
+					pkgAST.PackageName = res.PackageName
+				} else if pkgAST.PackageName != res.PackageName {
+					return nil, fmt.Errorf("multiple package names in directory %s: %s and %s", dirPath, pkgAST.PackageName, res.PackageName)
+				}
 				pkgAST.Merge(res)
 			}
 		}

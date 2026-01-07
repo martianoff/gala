@@ -92,7 +92,7 @@ import (
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := trans.Transpile(tt.input)
+			got, err := trans.Transpile(tt.input, "")
 			if tt.wantErr {
 				// It might fail at parsing or transformation
 				if err != nil {

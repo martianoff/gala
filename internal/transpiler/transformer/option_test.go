@@ -119,7 +119,7 @@ func update() {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := trans.Transpile(tt.input)
+			got, err := trans.Transpile(tt.input, "")
 			if tt.wantErr {
 				assert.Error(t, err)
 				assert.Contains(t, err.Error(), "variable assigned to None() must have an explicit type")

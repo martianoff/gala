@@ -9,6 +9,6 @@ gala_library(
 
 gala_unit_test(
     name = "framework_test",
-    src = "framework_test.gala",
+    src = "framework_test/main.gala",
     deps = [":test"],
 )

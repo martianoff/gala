@@ -171,7 +171,7 @@ func (s Box[T]) Unapply(v any) (T, bool) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := trans.Transpile(tt.input)
+			got, err := trans.Transpile(tt.input, "")
 			assert.NoError(t, err)
 			assert.Equal(t, strings.TrimSpace(tt.expected), strings.TrimSpace(got))
 		})

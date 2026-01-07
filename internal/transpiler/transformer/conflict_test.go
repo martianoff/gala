@@ -26,7 +26,7 @@ func (b Box[T]) Transform[U any](f func(T) U) Box[U] = Box(f(b.Value))
 type Other[T any] struct { Value T }
 func (o Other[T]) Transform[U any](f func(T) U) Other[U] = Other(f(o.Value))
 `
-	got, err := trans.Transpile(input)
+	got, err := trans.Transpile(input, "")
 	assert.NoError(t, err)
 
 	// Check that we have both Box_Transform and Other_Transform

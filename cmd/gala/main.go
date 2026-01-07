@@ -55,7 +55,7 @@ func main() {
 	g := generator.NewGoCodeGenerator()
 	t := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
 
-	goCode, err := t.Transpile(string(content))
+	goCode, err := t.Transpile(string(content), inputPath)
 	if err != nil {
 		log.Fatalf("transpilation failed: %v", err)
 	}

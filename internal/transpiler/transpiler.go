@@ -91,7 +91,7 @@ type GalaParser interface {
 
 // Analyzer analyzes a Gala ANTLR parse tree and produces a RichAST.
 type Analyzer interface {
-	Analyze(tree antlr.Tree) (*RichAST, error)
+	Analyze(tree antlr.Tree, filePath string) (*RichAST, error)
 }
 
 // ASTTransformer transforms a Gala RichAST into a Go AST file and its FileSet.
@@ -106,7 +106,7 @@ type CodeGenerator interface {
 
 // Transpiler defines the high-level interface for the Gala to Go conversion.
 type Transpiler interface {
-	Transpile(input string) (string, error)
+	Transpile(input string, filePath string) (string, error)
 }
 
 // GalaToGoTranspiler orchestrates the transpilation process.
@@ -133,13 +133,13 @@ func NewGalaToGoTranspiler(
 }
 
 // Transpile executes the full transpilation pipeline.
-func (t *GalaToGoTranspiler) Transpile(input string) (string, error) {
+func (t *GalaToGoTranspiler) Transpile(input string, filePath string) (string, error) {
 	tree, err := t.parser.Parse(input)
 	if err != nil {
 		return "", err
 	}
 
-	richAST, err := t.analyzer.Analyze(tree)
+	richAST, err := t.analyzer.Analyze(tree, filePath)
 	if err != nil {
 		return "", err
 	}

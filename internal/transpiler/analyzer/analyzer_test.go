@@ -128,7 +128,7 @@ func (e External) Action() = 1`,
 			tree, err := p.Parse(tt.input)
 			require.NoError(t, err)
 
-			richAST, err := a.Analyze(tree)
+			richAST, err := a.Analyze(tree, "")
 			require.NoError(t, err)
 			require.NotNil(t, richAST)
 

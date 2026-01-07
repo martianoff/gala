@@ -107,7 +107,7 @@ var p2 = std.NewImmutable(p.Get().Copy())
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := trans.Transpile(tt.input)
+			got, err := trans.Transpile(tt.input, "")
 			assert.NoError(t, err)
 			assert.Equal(t, strings.TrimSpace(tt.expected), strings.TrimSpace(got))
 		})
@@ -156,7 +156,7 @@ val p2 = p.Copy("Bob")`,
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := trans.Transpile(tt.input)
+			_, err := trans.Transpile(tt.input, "")
 			assert.Error(t, err)
 			assert.Contains(t, err.Error(), tt.expectedError)
 		})

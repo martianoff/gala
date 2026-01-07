@@ -82,7 +82,7 @@ func main() {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := trans.Transpile(tt.input)
+			got, err := trans.Transpile(tt.input, "")
 			assert.NoError(t, err)
 			assert.Equal(t, strings.TrimSpace(tt.expected), strings.TrimSpace(got))
 		})
@@ -102,7 +102,7 @@ func main() {
     x := 10
     x = 20
 }`
-	_, err := trans.Transpile(input)
+	_, err := trans.Transpile(input, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot assign to immutable variable x")
 }
