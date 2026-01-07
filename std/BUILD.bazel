@@ -50,7 +50,6 @@ go_test(
     name = "std_test",
     srcs = [
         "as_test.go",
-        "option_test.go",
         "unapply_test.go",
     ],
     embed = [":std"],

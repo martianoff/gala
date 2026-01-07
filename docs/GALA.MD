@@ -482,7 +482,11 @@ val w2 = lib.Wrapper_Map(w, (x int) => x + 1)
 
 ## 12. Testing
 
-GALA supports Bazel for building and testing. You can use the `gala_test` macro in your `BUILD.bazel` files to define tests that compare the execution output of a GALA program against an expected output file.
+GALA supports Bazel for building and testing. There are two main ways to define tests:
+
+### Output Comparison Tests (`gala_test`)
+
+Use the `gala_test` macro in your `BUILD.bazel` files to define tests that compare the execution output of a GALA program against an expected output file.
 
 ```python
 load("//:gala.bzl", "gala_test")
@@ -494,20 +498,30 @@ gala_test(
 )
 ```
 
+### Unit Tests (`gala_unit_test`)
+
+Use the `gala_unit_test` macro to run GALA programs that use the functional test framework and assert conditions in code. A unit test passes if the program exits with code 0.
+
+```python
+load("//:gala.bzl", "gala_unit_test")
+
+gala_unit_test(
+    name = "my_unit_test",
+    src = "my_unit_test.gala",
+    deps = ["//test"],
+)
+```
+
 To run all tests:
 ```bash
 bazel test //...
 ```
 
-## Further Reading
-
-- [Examples](examples.md) - More examples of GALA code.
-
-## 10. Test Framework
+### Functional Test Framework
 
 GALA provides a functional test framework in the `test` package. It allows for defining test cases and making assertions.
 
-### Test Cases
+#### Test Cases
 A test case is defined using the `TestCase` struct, which takes a name and a function to run.
 
 ```gala
@@ -523,9 +537,13 @@ func main() {
 }
 ```
 
-### Assertions
+#### Assertions
 The following assertions are available:
 - `AssertEqual[T](actual, expected)`
 - `AssertNotEqual[T](actual, expected)`
 - `AssertTrue(condition)`
 - `AssertFalse(condition)`
+
+## 13. Further Reading
+
+- [Examples](examples.md) - More examples of GALA code.

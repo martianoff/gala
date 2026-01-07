@@ -1,4 +1,4 @@
-load("//:gala.bzl", "gala_binary", "gala_library")
+load("//:gala.bzl", "gala_binary", "gala_library", "gala_unit_test")
 
 gala_library(
     name = "test",
@@ -7,7 +7,7 @@ gala_library(
     visibility = ["//visibility:public"],
 )
 
-gala_binary(
+gala_unit_test(
     name = "framework_test",
     src = "framework_test.gala",
     deps = [":test"],

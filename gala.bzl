@@ -95,6 +95,61 @@ def gala_binary(name, src, deps = [], **kwargs):
         **kwargs
     )
 
+def _gala_unit_test_impl(ctx):
+    binary = ctx.executable.binary
+    is_windows = ctx.attr.is_windows
+    extension = ".bat" if is_windows else ".sh"
+    executable = ctx.actions.declare_file(ctx.label.name + extension)
+
+    if is_windows:
+        binary_path = binary.short_path.replace("/", "\\")
+        ctx.actions.write(
+            output = executable,
+            content = "@echo off\n\"%s\" %%*" % (binary_path),
+            is_executable = True,
+        )
+    else:
+        ctx.actions.write(
+            output = executable,
+            content = "#!/bin/bash\n%s \"$@\"" % (binary.short_path),
+            is_executable = True,
+        )
+
+    return [DefaultInfo(
+        executable = executable,
+        runfiles = ctx.runfiles(files = [binary]),
+    )]
+
+gala_internal_unit_test = rule(
+    implementation = _gala_unit_test_impl,
+    test = True,
+    attrs = {
+        "binary": attr.label(
+            executable = True,
+            cfg = "target",
+            mandatory = True,
+        ),
+        "is_windows": attr.bool(default = False),
+    },
+)
+
+def gala_unit_test(name, src, deps = [], **kwargs):
+    binary_name = name + "_bin"
+    gala_binary(
+        name = binary_name,
+        src = src,
+        deps = deps,
+        **kwargs
+    )
+    gala_internal_unit_test(
+        name = name,
+        binary = ":" + binary_name,
+        is_windows = select({
+            "@platforms//os:windows": True,
+            "//conditions:default": False,
+        }),
+    )
+
 def gala_test(name, src, expected, deps = [], **kwargs):
     binary_name = name + "_bin"
     gala_binary(
