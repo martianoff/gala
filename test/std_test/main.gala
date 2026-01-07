@@ -1,0 +1,191 @@
+package main
+
+import (
+    . "martianoff/gala/test"
+)
+
+func main() {
+    // Option tests
+    RunTest(TestCase(Name = "Option: Some", F = testOptionSome))
+    RunTest(TestCase(Name = "Option: None", F = testOptionNone))
+    RunTest(TestCase(Name = "Option: Map", F = testOptionMap))
+    RunTest(TestCase(Name = "Option: FlatMap", F = testOptionFlatMap))
+    RunTest(TestCase(Name = "Option: Filter", F = testOptionFilter))
+    RunTest(TestCase(Name = "Option: Pattern Matching", F = testOptionPatternMatching))
+
+    // Either tests
+    RunTest(TestCase(Name = "Either: Left", F = testEitherLeft))
+    RunTest(TestCase(Name = "Either: Right", F = testEitherRight))
+    RunTest(TestCase(Name = "Either: Swap", F = testEitherSwap))
+    RunTest(TestCase(Name = "Either: Fold", F = testEitherFold))
+    RunTest(TestCase(Name = "Either: Map", F = testEitherMap))
+    RunTest(TestCase(Name = "Either: FlatMap", F = testEitherFlatMap))
+    RunTest(TestCase(Name = "Either: Pattern Matching", F = testEitherPatternMatching))
+}
+
+func testOptionSome() {
+    val opt = Some(42)
+    AssertFalse(opt.IsEmpty())
+    AssertEqual[int](opt.Get(), 42)
+    AssertEqual[int](opt.GetOrElse(0), 42)
+}
+
+func testOptionNone() {
+    val opt Option[int] = None[int]()
+    AssertTrue(opt.IsEmpty())
+    AssertEqual[int](opt.GetOrElse(42), 42)
+}
+
+func testOptionMap() {
+    val opt = Some(21)
+    val mapped Option[int] = opt.Map((x int) => x * 2)
+    AssertEqual[int](mapped.Get(), 42)
+
+    val none Option[int] = None[int]()
+    val noneMapped Option[int] = none.Map((x int) => x * 2)
+    AssertTrue(noneMapped.IsEmpty())
+}
+
+func testOptionFlatMap() {
+    val opt = Some(21)
+    val flatMapped Option[int] = opt.FlatMap((x int) => Some(x * 2))
+    AssertEqual[int](flatMapped.Get(), 42)
+
+    val none Option[int] = None[int]()
+    val noneFlatMapped Option[int] = none.FlatMap((x int) => Some(x * 2))
+    AssertTrue(noneFlatMapped.IsEmpty())
+}
+
+func testOptionFilter() {
+    val opt = Some(42)
+    val filtered Option[int] = opt.Filter((x int) => x > 40)
+    AssertEqual[int](filtered.Get(), 42)
+
+    val filteredNone Option[int] = opt.Filter((x int) => x < 40)
+    AssertTrue(filteredNone.IsEmpty())
+}
+
+func testOptionPatternMatching() {
+    val some = Some(42)
+    val vAny = some match {
+        case Some(x: int) => x
+        case _ => -1
+    }
+    // Compare as any or use if
+    if (vAny != 42) {
+        panic("Match failed")
+    }
+
+    val none Option[int] = None[int]()
+    val isNoneAny = none match {
+        case None() => true
+        case _ => false
+    }
+    if (isNoneAny != true) {
+        panic("Match failed")
+    }
+}
+
+func testEitherLeft() {
+    val e Either[int, string] = Left[int, string](42)
+    val isLeft = e match {
+        case Left(_) => true
+        case _ => false
+    }
+    if (isLeft != true) {
+        panic("Should be Left")
+    }
+    AssertEqual[int](e.GetLeft(), 42)
+}
+
+func testEitherRight() {
+    val e Either[int, string] = Right[int, string]("hello")
+    val isRight = e match {
+        case Right(_) => true
+        case _ => false
+    }
+    if (isRight != true) {
+        panic("Should be Right")
+    }
+    AssertEqual[string](e.GetRight(), "hello")
+}
+
+func testEitherSwap() {
+    val e Either[int, string] = Left[int, string](42)
+    val swapped Either[string, int] = e.Swap()
+    val isRight = swapped match {
+        case Right(_) => true
+        case _ => false
+    }
+    if (isRight != true) {
+        panic("Should be Right")
+    }
+    AssertEqual[int](swapped.GetRight(), 42)
+}
+
+func testEitherFold() {
+    val l Either[int, string] = Left[int, string](42)
+    val fl any = l.Fold[int]((x int) => x, (s string) => 0)
+    if (fl != 42) {
+        panic("Fold failed")
+    }
+
+    val r Either[int, string] = Right[int, string]("hello")
+    val fr any = r.Fold[int]((x int) => 0, (s string) => 1)
+    if (fr != 1) {
+        panic("Fold failed")
+    }
+}
+
+func testEitherMap() {
+    val r Either[int, int] = Right[int, int](21)
+    val mapped Either[int, int] = r.Map((x int) => x * 2)
+    AssertEqual[int](mapped.GetRight(), 42)
+
+    val l Either[int, int] = Left[int, int](21)
+    val mappedL Either[int, int] = l.Map((x int) => x * 2)
+    val isLeft = mappedL match {
+        case Left(_) => true
+        case _ => false
+    }
+    if (isLeft != true) {
+        panic("Should be Left")
+    }
+    AssertEqual[int](mappedL.GetLeft(), 21)
+}
+
+func testEitherFlatMap() {
+    val r Either[int, int] = Right[int, int](21)
+    val flatMapped Either[int, int] = r.FlatMap((x int) => Right[int, int](x * 2))
+    AssertEqual[int](flatMapped.GetRight(), 42)
+
+    val l Either[int, int] = Left[int, int](21)
+    val flatMappedL Either[int, int] = l.FlatMap((x int) => Right[int, int](x * 2))
+    val isLeft = flatMappedL match {
+        case Left(_) => true
+        case _ => false
+    }
+    if (isLeft != true) {
+        panic("Should be Left")
+    }
+}
+
+func testEitherPatternMatching() {
+    val l Either[int, string] = Left[int, string](42)
+    val isLeft42 = l match {
+        case Left(x: int) if x == 42 => true
+        case _ => false
+    }
+    if (isLeft42 != true) {
+        panic("Match failed")
+    }
+
+    val r Either[int, string] = Right[int, string]("hello")
+    val isRightHello = r match {
+        case Right(x: string) if x == "hello" => true
+        case _ => false
+    }
+    if (isRightHello != true) {
+        panic("Match failed")
+    }
+}

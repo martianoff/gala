@@ -1,4 +1,4 @@
-load("//:gala.bzl", "gala_binary", "gala_library", "gala_unit_test")
+load("//:gala.bzl", "gala_binary", "gala_library", "gala_test", "gala_unit_test")
 
 gala_library(
     name = "test",
