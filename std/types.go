@@ -250,11 +250,11 @@ func UnapplyCheck(obj any, pattern any) bool {
 func UnapplyFull(obj any, pattern any) ([]any, bool) {
 	obj = unwrapImmutable(obj)
 
-	// Try pattern.Unapply(obj) first (Scala-style extractors)
 	if u, ok := pattern.(Unapply); ok {
 		res := u.Unapply(obj)
 		if isDefined(res) {
-			return []any{getSomeValue(res)}, true
+			val := getSomeValue(res)
+			return []any{val}, true
 		}
 		return nil, false
 	}

@@ -16,6 +16,7 @@ type galaASTTransformer struct {
 	immutFields          map[string]bool
 	structImmutFields    map[string][]bool
 	needsStdImport       bool
+	needsFmtImport       bool
 	activeTypeParams     map[string]bool
 	structFields         map[string][]string
 	structFieldTypes     map[string]map[string]string // structName -> fieldName -> typeName
@@ -51,6 +52,7 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (*token.File
 	tree := richAST.Tree
 	t.currentScope = nil
 	t.needsStdImport = false
+	t.needsFmtImport = false
 	t.immutFields = make(map[string]bool)
 	t.structImmutFields = make(map[string][]bool)
 	t.activeTypeParams = make(map[string]bool)
@@ -147,6 +149,32 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (*token.File
 			},
 		}
 		file.Decls = append([]ast.Decl{importDecl}, file.Decls...)
+	}
+
+	if t.needsFmtImport {
+		hasFmt := false
+		for _, path := range t.imports {
+			if path == "fmt" {
+				hasFmt = true
+				break
+			}
+		}
+
+		if !hasFmt {
+			importDecl := &ast.GenDecl{
+				Tok: token.IMPORT,
+				Specs: []ast.Spec{
+					&ast.ImportSpec{
+						Path: &ast.BasicLit{
+							Kind:  token.STRING,
+							Value: "\"fmt\"",
+						},
+					},
+				},
+			}
+			// If std was added, it's at index 0. We want fmt to be there too.
+			file.Decls = append([]ast.Decl{importDecl}, file.Decls...)
+		}
 	}
 
 	return fset, file, nil

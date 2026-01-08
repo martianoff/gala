@@ -1,5 +1,7 @@
 package main
 
+import "fmt"
+
 func getImm() Immutable[int] = NewImmutable(42)
 func f() int {
     val t = 1
@@ -14,9 +16,16 @@ func main() {
 
     var w = getImm() // w should be int 42
 
-    println("y:", y)
-    println("z:", z)
-    println("w:", w)
+    fmt.Println("y:", y)
+    fmt.Println("z:", z)
+    fmt.Println("w:", w)
     var fv = f()
-    println("fv:", fv) // fv should be int 1
+    fmt.Println("fv:", fv) // fv should be int 1
+
+    var m = x match {
+        case Some(i) => i
+        case _ => 0
+    }
+
+    fmt.Println("m:", m) // m should be int 1
 }

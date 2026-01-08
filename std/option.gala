@@ -1,10 +1,12 @@
 package std
 
-// isDefined returns true if the option is an instance of Some, or if it is a boolean true.
-func isDefined(opt any) bool = opt match {
+// isDefined returns true if the value is defined.
+// It handles Option types by checking defined field, bool types by their value,
+// nil as false, and all other types as true.
+func isDefined(opt any) bool = if (opt == nil) false else opt match {
     case b: bool => b
     case oi: Option[_] => oi.defined
-    case _ => false
+    case _ => true
 }
 
 // getSomeValue returns the option's value if it is an Option, otherwise returns the value itself.
@@ -22,7 +24,7 @@ type Option[T any] struct {
 
 type Some struct {}
 func (s Some) Apply[T any](v T) Option[T] = Option[T](Value = v, defined = true)
-func (s Some) Unapply(o any) any = if (isDefined(o)) Some(getSomeValue(o)) else None[any]()
+func (s Some) Unapply(o any) any = if (isDefined(o)) getSomeValue(o) else nil
 
 type None struct {}
 func (n None) Apply[T any]() Option[T] = Option[T](defined = false)

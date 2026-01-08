@@ -710,7 +710,8 @@ func (t *galaASTTransformer) unwrapImmutable(expr ast.Expr) ast.Expr {
 		return nil
 	}
 	typeName := t.getExprTypeName(expr)
-	if strings.HasPrefix(typeName, transpiler.TypeImmutable+"[") || typeName == transpiler.TypeImmutable {
+	if strings.HasPrefix(typeName, transpiler.TypeImmutable+"[") || typeName == transpiler.TypeImmutable ||
+		strings.HasPrefix(typeName, "std."+transpiler.TypeImmutable+"[") || typeName == "std."+transpiler.TypeImmutable {
 		return &ast.CallExpr{
 			Fun: &ast.SelectorExpr{
 				X:   expr,
