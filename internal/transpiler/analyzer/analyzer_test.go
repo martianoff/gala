@@ -30,8 +30,8 @@ struct Person(val name string, var age int)`,
 				meta := ast.Types["Person"]
 				assert.Equal(t, "Person", meta.Name)
 				assert.Equal(t, []string{"name", "age"}, meta.FieldNames)
-				assert.Equal(t, "string", meta.Fields["name"])
-				assert.Equal(t, "int", meta.Fields["age"])
+				assert.Equal(t, "string", meta.Fields["name"].String())
+				assert.Equal(t, "int", meta.Fields["age"].String())
 			},
 		},
 		{
@@ -45,7 +45,7 @@ type Box[T any] struct {
 				require.Contains(t, ast.Types, "Box")
 				meta := ast.Types["Box"]
 				assert.Equal(t, []string{"T"}, meta.TypeParams)
-				assert.Equal(t, "T", meta.Fields["Value"])
+				assert.Equal(t, "T", meta.Fields["Value"].String())
 			},
 		},
 		{

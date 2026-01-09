@@ -11,18 +11,19 @@ import (
 
 func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *grammar.ArgumentListContext) (ast.Expr, error) {
 	// 1. Identify receiver type
-	var typeName string
+	var typeObj transpiler.Type = transpiler.NilType{}
 	if id, ok := receiver.(*ast.Ident); ok {
-		typeName = t.getType(id.Name)
+		typeObj = t.getType(id.Name)
 	} else if call, ok := receiver.(*ast.CallExpr); ok {
 		// Handle p.Get().Copy() case where p is std.Immutable[T]
 		if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == transpiler.MethodGet {
 			if id, ok := sel.X.(*ast.Ident); ok {
-				typeName = t.getType(id.Name)
+				typeObj = t.getType(id.Name)
 			}
 		}
 	}
 
+	typeName := typeObj.String()
 	if typeName == "" {
 		// If we can't find the type, we might still be able to proceed if it's a direct struct literal copy,
 		// but GALA seems to prefer explicit types for Copy overrides.
@@ -130,7 +131,7 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 
 func (t *galaASTTransformer) initGenericMethods() {
 	t.genericMethods = make(map[string]map[string]bool)
-	t.structFieldTypes = make(map[string]map[string]string)
+	t.structFieldTypes = make(map[string]map[string]transpiler.Type)
 	t.functions = make(map[string]*transpiler.FunctionMetadata)
 	t.typeMetas = make(map[string]*transpiler.TypeMetadata)
 }

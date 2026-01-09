@@ -74,7 +74,7 @@ Prefer generics where possible over reflection
 ### GALA Code
 
 Prefer functional code, pattern matching and immutable variables unless otherwise needed by use case.
-Prefer generic methods and type safe programming.
+Prefer generic methods and type safe programming. Do not provide explicit types whenever it is possible.
 
 ## 12. Whether Junie generate BUILD files?
 

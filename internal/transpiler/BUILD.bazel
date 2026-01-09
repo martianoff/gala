@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "parser.go",
         "transpiler.go",
+        "types.go",
     ],
     importpath = "martianoff/gala/internal/transpiler",
     visibility = ["//:__subpackages__"],

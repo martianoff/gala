@@ -19,8 +19,8 @@ type galaASTTransformer struct {
 	needsFmtImport       bool
 	activeTypeParams     map[string]bool
 	structFields         map[string][]string
-	structFieldTypes     map[string]map[string]string // structName -> fieldName -> typeName
-	genericMethods       map[string]map[string]bool   // receiverType -> methodName -> isGeneric
+	structFieldTypes     map[string]map[string]transpiler.Type // structName -> fieldName -> typeName
+	genericMethods       map[string]map[string]bool            // receiverType -> methodName -> isGeneric
 	functions            map[string]*transpiler.FunctionMetadata
 	typeMetas            map[string]*transpiler.TypeMetadata
 	imports              map[string]string // alias or pkgName -> package path
@@ -37,7 +37,7 @@ func NewGalaASTTransformer() transpiler.ASTTransformer {
 		structImmutFields:    make(map[string][]bool),
 		activeTypeParams:     make(map[string]bool),
 		structFields:         make(map[string][]string),
-		structFieldTypes:     make(map[string]map[string]string),
+		structFieldTypes:     make(map[string]map[string]transpiler.Type),
 		genericMethods:       make(map[string]map[string]bool),
 		functions:            make(map[string]*transpiler.FunctionMetadata),
 		typeMetas:            make(map[string]*transpiler.TypeMetadata),
@@ -57,7 +57,7 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (*token.File
 	t.structImmutFields = make(map[string][]bool)
 	t.activeTypeParams = make(map[string]bool)
 	t.structFields = make(map[string][]string)
-	t.structFieldTypes = make(map[string]map[string]string)
+	t.structFieldTypes = make(map[string]map[string]transpiler.Type)
 	t.genericMethods = make(map[string]map[string]bool)
 	t.functions = richAST.Functions
 	t.typeMetas = richAST.Types

@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/transpiler"
 )
 
 func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionContext) (ast.Expr, error) {
@@ -27,7 +28,7 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 
 	t.pushScope()
 	defer t.popScope()
-	t.addVar(paramName, "")
+	t.addVar(paramName, transpiler.NilType{})
 
 	var clauses []ast.Stmt
 	var defaultBody []ast.Stmt
@@ -175,10 +176,14 @@ func (t *galaASTTransformer) transformExpressionPattern(patExprCtx grammar.IExpr
 
 		// If it's a type name, use composite lit
 		rawName := t.getBaseTypeName(patternExpr)
-		typeName := t.getType(rawName)
-		if typeName == "" {
-			typeName = rawName
+		var typeObj transpiler.Type = transpiler.NilType{}
+		if rawName != "" {
+			typeObj = t.getType(rawName)
+			if typeObj.IsNil() {
+				typeObj = transpiler.ParseType(rawName)
+			}
 		}
+		typeName := typeObj.String()
 
 		if _, ok := t.structFields[typeName]; ok {
 			if typeName == "std.Tuple" || typeName == "Tuple" {
@@ -304,8 +309,8 @@ func (t *galaASTTransformer) transformTypedPattern(ctx *grammar.TypedPatternCont
 		return nil, nil, err
 	}
 
-	typeName := t.getBaseTypeName(typeExpr)
-	if qName := t.getType(typeName); qName != "" {
+	typeName := t.resolveType(t.getBaseTypeName(typeExpr))
+	if qName := t.getType(typeName.String()); !qName.IsNil() {
 		typeName = qName
 	}
 	t.addVar(name, typeName)

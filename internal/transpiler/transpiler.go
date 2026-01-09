@@ -63,8 +63,8 @@ type TypeMetadata struct {
 	Name       string
 	Package    string
 	Methods    map[string]*MethodMetadata
-	Fields     map[string]string // Name -> Type
-	FieldNames []string          // To preserve order
+	Fields     map[string]Type // Name -> Type
+	FieldNames []string        // To preserve order
 	TypeParams []string
 	ImmutFlags []bool
 }
@@ -72,7 +72,7 @@ type TypeMetadata struct {
 type MethodMetadata struct {
 	Name       string
 	Package    string
-	ReturnType string
+	ReturnType Type
 	TypeParams []string
 	IsGeneric  bool // Force transformation to standalone function
 }
@@ -80,7 +80,7 @@ type MethodMetadata struct {
 type FunctionMetadata struct {
 	Name       string
 	Package    string
-	ReturnType string
+	ReturnType Type
 	TypeParams []string
 }
 

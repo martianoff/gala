@@ -7,14 +7,14 @@ import (
 
 type scope struct {
 	vals     map[string]bool
-	valTypes map[string]string
+	valTypes map[string]transpiler.Type
 	parent   *scope
 }
 
 func (t *galaASTTransformer) pushScope() {
 	t.currentScope = &scope{
 		vals:     make(map[string]bool),
-		valTypes: make(map[string]string),
+		valTypes: make(map[string]transpiler.Type),
 		parent:   t.currentScope,
 	}
 }
@@ -25,21 +25,21 @@ func (t *galaASTTransformer) popScope() {
 	}
 }
 
-func (t *galaASTTransformer) addVal(name string, typeName string) {
+func (t *galaASTTransformer) addVal(name string, typeName transpiler.Type) {
 	if t.currentScope != nil {
 		t.currentScope.vals[name] = true
 		t.currentScope.valTypes[name] = typeName
 	}
 }
 
-func (t *galaASTTransformer) addVar(name string, typeName string) {
+func (t *galaASTTransformer) addVar(name string, typeName transpiler.Type) {
 	if t.currentScope != nil {
 		t.currentScope.vals[name] = false
 		t.currentScope.valTypes[name] = typeName
 	}
 }
 
-func (t *galaASTTransformer) getType(name string) string {
+func (t *galaASTTransformer) getType(name string) transpiler.Type {
 	// 1. If name already has a dot, it might be pkg.Type
 	if strings.Contains(name, ".") {
 		resolvedName := name
@@ -48,10 +48,10 @@ func (t *galaASTTransformer) getType(name string) string {
 			resolvedName = actual + "." + parts[1]
 		}
 		if _, ok := t.typeMetas[resolvedName]; ok {
-			return resolvedName
+			return transpiler.ParseType(resolvedName)
 		}
 		// If it has a dot but not found in metas, don't fall through to other searches
-		return ""
+		return transpiler.NilType{}
 	}
 
 	// 2. Search in current scope
@@ -65,12 +65,12 @@ func (t *galaASTTransformer) getType(name string) string {
 
 	// 3. Search in current package symbols (no prefix in GALA, but might be prefixed in RichAST)
 	if _, ok := t.typeMetas[name]; ok {
-		return name
+		return transpiler.ParseType(name)
 	}
 	if t.packageName != "" && t.packageName != "main" {
 		fullName := t.packageName + "." + name
 		if _, ok := t.typeMetas[fullName]; ok {
-			return fullName
+			return transpiler.ParseType(fullName)
 		}
 	}
 
@@ -78,17 +78,17 @@ func (t *galaASTTransformer) getType(name string) string {
 	for _, pkg := range t.dotImports {
 		fullName := pkg + "." + name
 		if _, ok := t.typeMetas[fullName]; ok {
-			return fullName
+			return transpiler.ParseType(fullName)
 		}
 	}
 
 	// 5. Check std package (auto-imported)
 	stdName := "std." + name
 	if _, ok := t.typeMetas[stdName]; ok {
-		return stdName
+		return transpiler.ParseType(stdName)
 	}
 
-	return ""
+	return transpiler.NilType{}
 }
 
 func (t *galaASTTransformer) isVal(name string) bool {

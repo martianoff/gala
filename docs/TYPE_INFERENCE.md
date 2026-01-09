@@ -107,12 +107,12 @@ Unwrapping is based on the inferred type name. If the type name starts with `Imm
 The following improvements are proposed to make the type inference system more robust and powerful.
 
 ### Phase 1: Foundation
-1.  **Robust Type Representation**: Replace string-based type names with a structured `Type` representation. This allows for reliable comparisons and manipulation of complex types (generics, arrays, pointers).
+1.  [x] **Robust Type Representation**: Replace string-based type names with a structured `Type` representation. This allows for reliable comparisons and manipulation of complex types (generics, arrays, pointers).
 2.  **Literal Type Inference**: Explicitly handle `*ast.BasicLit` in `getExprTypeName` (e.g., `INT` -> `int`, `STRING` -> `string`) supporting all standard types. Drop support of std.Int, std.Int32, etc. as they create friction with go compatibility.
 
 ### Phase 2: Coverage & Depth
 3.  **Expanded Expression Coverage**: Extend `getExprTypeName` to support more Go AST expression types like `BinaryExpr`, `UnaryExpr`, and `ParenExpr`.
-4.  **Recursive Unwrapping**: Throw a compiler exception if multiple levels of Immutable, ie Immutable[Immutable[T]] infered
+4.  **Recursive Unwrapping**: Throw a compiler exception if multiple levels of Immutable wrapping were found, ie Immutable[Immutable[T]] were inferred
 
 ### Phase 3: Advanced Inference
 5.  **Enhanced `match` and `if` Inference**: Attempt to find a common base type for branches. If this is not possible, throw a compiler error and tell the user to provide a type explicitly.

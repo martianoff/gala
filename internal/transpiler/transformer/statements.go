@@ -71,7 +71,7 @@ func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext)
 			selName := exprCtx.GetChild(2).(antlr.ParseTree).GetText()
 			xExpr, err := t.transformExpression(exprCtx.GetChild(0).(grammar.IExpressionContext))
 			if err == nil {
-				typeName := t.getExprTypeName(xExpr)
+				typeName := t.getExprTypeName(xExpr).String()
 				baseTypeName := typeName
 				if idx := strings.Index(typeName, "["); idx != -1 {
 					baseTypeName = typeName[:idx]
@@ -141,7 +141,7 @@ func (t *galaASTTransformer) transformShortVarDecl(ctx *grammar.ShortVarDeclCont
 	for i, idCtx := range idsCtx {
 		name := idCtx.GetText()
 		typeName := t.getExprTypeName(rhsExprs[i])
-		if qName := t.getType(typeName); qName != "" {
+		if qName := t.getType(typeName.String()); !qName.IsNil() {
 			typeName = qName
 		}
 		t.addVal(name, typeName)

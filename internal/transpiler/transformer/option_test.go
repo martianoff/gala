@@ -67,7 +67,7 @@ var x = std.NewImmutable(std.Some_Apply(std.Some{}, 10))
 var y = std.NewImmutable(std.Option_Map(x.Get(), func(v int) int {
 	return v * 2
 }))
-var z = std.NewImmutable(std.Option_FlatMap(y.Get(), func(v int) std.Option {
+var z = std.NewImmutable(std.Option_FlatMap(y.Get(), func(v int) std.Option[T] {
 	return std.Some_Apply(std.Some{}, v+1)
 }))
 `,

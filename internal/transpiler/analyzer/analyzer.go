@@ -179,7 +179,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 			if existing, ok := richAST.Types[fullTypeName]; ok && existing.Package == pkgName {
 				meta = existing
 				// Clear fields to avoid duplicates if re-analyzing
-				meta.Fields = make(map[string]string)
+				meta.Fields = make(map[string]transpiler.Type)
 				meta.FieldNames = nil
 				meta.ImmutFlags = nil
 			} else {
@@ -187,7 +187,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 					Name:    typeName,
 					Package: pkgName,
 					Methods: make(map[string]*transpiler.MethodMetadata),
-					Fields:  make(map[string]string),
+					Fields:  make(map[string]transpiler.Type),
 				}
 				richAST.Types[fullTypeName] = meta
 			}
@@ -207,8 +207,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 				for _, field := range structType.AllStructField() {
 					fctx := field.(*grammar.StructFieldContext)
 					fieldName := fctx.Identifier().GetText()
-					fieldType := fctx.Type_().GetText()
-					meta.Fields[fieldName] = fieldType
+					meta.Fields[fieldName] = a.resolveType(fctx.Type_().GetText(), pkgName)
 					meta.FieldNames = append(meta.FieldNames, fieldName)
 					meta.ImmutFlags = append(meta.ImmutFlags, fctx.VAR() == nil)
 				}
@@ -227,7 +226,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 			if existing, ok := richAST.Types[fullTypeName]; ok && existing.Package == pkgName {
 				meta = existing
 				// Clear fields to avoid duplicates if re-analyzing
-				meta.Fields = make(map[string]string)
+				meta.Fields = make(map[string]transpiler.Type)
 				meta.FieldNames = nil
 				meta.ImmutFlags = nil
 			} else {
@@ -235,7 +234,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 					Name:    typeName,
 					Package: pkgName,
 					Methods: make(map[string]*transpiler.MethodMetadata),
-					Fields:  make(map[string]string),
+					Fields:  make(map[string]transpiler.Type),
 				}
 				richAST.Types[fullTypeName] = meta
 			}
@@ -250,7 +249,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 						if pctx.Type_() != nil {
 							fieldType = pctx.Type_().GetText()
 						}
-						meta.Fields[fieldName] = fieldType
+						meta.Fields[fieldName] = a.resolveType(fieldType, pkgName)
 						meta.FieldNames = append(meta.FieldNames, fieldName)
 						meta.ImmutFlags = append(meta.ImmutFlags, pctx.VAR() == nil)
 					}
@@ -288,11 +287,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 					}
 
 					if ctx.Signature().Type_() != nil {
-						retType := getBaseTypeName(ctx.Signature().Type_())
-						if pkgName != "" && pkgName != "main" && pkgName != "test" && !strings.Contains(retType, ".") {
-							retType = pkgName + "." + retType
-						}
-						methodMeta.ReturnType = retType
+						methodMeta.ReturnType = a.resolveType(ctx.Signature().Type_().GetText(), pkgName)
 					}
 
 					if typeMeta, ok := richAST.Types[fullBaseType]; ok {
@@ -309,7 +304,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 							Name:    baseType,
 							Package: pkgName,
 							Methods: map[string]*transpiler.MethodMetadata{methodName: methodMeta},
-							Fields:  make(map[string]string),
+							Fields:  make(map[string]transpiler.Type),
 						}
 					}
 				}
@@ -326,11 +321,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 				}
 				richAST.Functions[fullFuncName] = funcMeta
 				if ctx.Signature().Type_() != nil {
-					retType := getBaseTypeName(ctx.Signature().Type_())
-					if pkgName != "" && pkgName != "main" && pkgName != "test" && !strings.Contains(retType, ".") {
-						retType = pkgName + "." + retType
-					}
-					funcMeta.ReturnType = retType
+					funcMeta.ReturnType = a.resolveType(ctx.Signature().Type_().GetText(), pkgName)
 				}
 				if ctx.TypeParameters() != nil {
 					tpCtx := ctx.TypeParameters().(*grammar.TypeParametersContext)
@@ -347,6 +338,27 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 	}
 
 	return richAST, nil
+}
+
+func (a *galaAnalyzer) resolveType(typeName string, pkgName string) transpiler.Type {
+	if typeName == "" {
+		return transpiler.NilType{}
+	}
+	// If it's already package-qualified, just parse it
+	if strings.Contains(typeName, ".") {
+		return transpiler.ParseType(typeName)
+	}
+
+	// Check if it's a builtin
+	switch typeName {
+	case "int", "int32", "int64", "float32", "float64", "string", "bool", "any", "error":
+		return transpiler.ParseType(typeName)
+	}
+
+	if pkgName != "" && pkgName != "main" && pkgName != "test" {
+		return transpiler.ParseType(pkgName + "." + typeName)
+	}
+	return transpiler.ParseType(typeName)
 }
 
 func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, error) {

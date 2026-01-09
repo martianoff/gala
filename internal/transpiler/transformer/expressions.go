@@ -62,11 +62,12 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 				}
 			}
 
-			recvTypeName := t.getExprTypeName(receiver)
-			if qName := t.getType(recvTypeName); qName != "" {
-				recvTypeName = qName
+			recvType := t.getExprTypeName(receiver)
+			if qName := t.getType(recvType.BaseName()); !qName.IsNil() {
+				recvType = qName
 			}
-			isGenericMethod := len(typeArgs) > 0 || (recvTypeName != "" && t.genericMethods[recvTypeName] != nil && t.genericMethods[recvTypeName][method])
+			recvBaseName := recvType.BaseName()
+			isGenericMethod := len(typeArgs) > 0 || (recvBaseName != "" && t.genericMethods[recvBaseName] != nil && t.genericMethods[recvBaseName][method])
 
 			if receiver != nil && isGenericMethod {
 				// Check if receiver is a package name
@@ -94,13 +95,13 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 					}
 
 					var fun ast.Expr
-					if recvTypeName != "" {
-						if recvTypeName == transpiler.TypeOption || recvTypeName == transpiler.TypeImmutable || recvTypeName == transpiler.TypeTuple || recvTypeName == transpiler.TypeEither {
-							fun = t.stdIdent(recvTypeName + "_" + method)
-						} else if strings.HasPrefix(recvTypeName, "std.") {
-							fun = t.stdIdent(strings.TrimPrefix(recvTypeName, "std.") + "_" + method)
+					if !recvType.IsNil() {
+						if recvBaseName == transpiler.TypeOption || recvBaseName == transpiler.TypeImmutable || recvBaseName == transpiler.TypeTuple || recvBaseName == transpiler.TypeEither {
+							fun = t.stdIdent(recvBaseName + "_" + method)
+						} else if strings.HasPrefix(recvBaseName, "std.") {
+							fun = t.stdIdent(strings.TrimPrefix(recvBaseName, "std.") + "_" + method)
 						} else {
-							fun = t.ident(recvTypeName + "_" + method)
+							fun = t.ident(recvBaseName + "_" + method)
 						}
 					} else {
 						fun = ast.NewIdent(method)
@@ -147,10 +148,14 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 	// GALA doesn't seem to have a specific rule for constructor calls,
 	// but TypeName(...) should be transformed to TypeName{...} if it's a struct.
 	rawTypeName := t.getBaseTypeName(x)
-	typeName := t.getType(rawTypeName)
-	if typeName == "" {
-		typeName = rawTypeName
+	var typeObj transpiler.Type = transpiler.NilType{}
+	if rawTypeName != "" {
+		typeObj = t.getType(rawTypeName)
+		if typeObj.IsNil() {
+			typeObj = transpiler.ParseType(rawTypeName)
+		}
 	}
+	typeName := typeObj.String()
 	typeExpr := x
 
 	if typeName != "" {
@@ -166,7 +171,7 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 
 			if id, ok := baseExpr.(*ast.Ident); ok {
 				if !t.isVal(id.Name) && !t.isVar(id.Name) {
-					if _, ok := t.typeMetas[t.getType(id.Name)]; ok {
+					if !t.getType(id.Name).IsNil() {
 						isType = true
 					}
 				}
@@ -224,19 +229,20 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 	}
 
 	// Check if the expression being called has an Apply method
-	exprTypeName := t.getExprTypeName(x)
-	if exprTypeName == "" {
-		exprTypeName = typeName
+	exprType := t.getExprTypeName(x)
+	if exprType.IsNil() {
+		exprType = typeObj
 	}
-	if exprTypeName != "" {
-		if typeMeta, ok := t.typeMetas[exprTypeName]; ok {
+	exprBaseName := exprType.BaseName()
+	if exprBaseName != "" {
+		if typeMeta, ok := t.typeMetas[exprBaseName]; ok {
 			if methodMeta, hasApply := typeMeta.Methods["Apply"]; hasApply {
 				isGeneric := methodMeta.IsGeneric || len(methodMeta.TypeParams) > 0
 				if isGeneric {
-					fullName := exprTypeName + "_Apply"
+					fullName := exprBaseName + "_Apply"
 					var fun ast.Expr
-					if strings.HasPrefix(exprTypeName, "std.") || exprTypeName == transpiler.TypeOption || exprTypeName == transpiler.TypeImmutable || exprTypeName == transpiler.TypeTuple || exprTypeName == transpiler.TypeEither ||
-						exprTypeName == transpiler.FuncSome || exprTypeName == transpiler.FuncNone || exprTypeName == transpiler.FuncLeft || exprTypeName == transpiler.FuncRight {
+					if strings.HasPrefix(exprBaseName, "std.") || exprBaseName == transpiler.TypeOption || exprBaseName == transpiler.TypeImmutable || exprBaseName == transpiler.TypeTuple || exprBaseName == transpiler.TypeEither ||
+						exprBaseName == transpiler.FuncSome || exprBaseName == transpiler.FuncNone || exprBaseName == transpiler.FuncLeft || exprBaseName == transpiler.FuncRight {
 						fun = t.stdIdent(strings.TrimPrefix(fullName, "std."))
 					} else {
 						fun = t.ident(fullName)
@@ -265,7 +271,7 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 
 					if id, ok := baseExpr.(*ast.Ident); ok {
 						if !t.isVal(id.Name) && !t.isVar(id.Name) {
-							if _, ok := t.typeMetas[t.getType(id.Name)]; ok {
+							if !t.getType(id.Name).IsNil() {
 								isType = true
 							}
 						}
@@ -298,7 +304,7 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 
 				if id, ok := baseExpr.(*ast.Ident); ok {
 					if !t.isVal(id.Name) && !t.isVar(id.Name) {
-						if _, ok := t.typeMetas[t.getType(id.Name)]; ok {
+						if !t.getType(id.Name).IsNil() {
 							isType = true
 						}
 					}
@@ -407,7 +413,7 @@ func (t *galaASTTransformer) transformExpression(ctx grammar.IExpressionContext)
 				Sel: ast.NewIdent(selName),
 			}
 
-			typeName := t.getExprTypeName(x)
+			typeName := t.getExprTypeName(x).String()
 			baseTypeName := typeName
 			if idx := strings.Index(typeName, "["); idx != -1 {
 				baseTypeName = typeName[:idx]
@@ -587,8 +593,17 @@ func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.
 	if ctx.Literal() != nil {
 		return t.transformLiteral(ctx.Literal().(*grammar.LiteralContext))
 	}
-	if ctx.Expression() != nil {
-		return t.transformExpression(ctx.Expression())
+	for i := 0; i < ctx.GetChildCount(); i++ {
+		if exprListCtx, ok := ctx.GetChild(i).(grammar.IExpressionListContext); ok {
+			exprs, err := t.transformExpressionList(exprListCtx.(*grammar.ExpressionListContext))
+			if err != nil {
+				return nil, err
+			}
+			if len(exprs) == 1 {
+				return &ast.ParenExpr{X: exprs[0]}, nil
+			}
+			return nil, galaerr.NewSemanticError("multiple expressions in parentheses not supported")
+		}
 	}
 	return nil, nil
 }
@@ -709,7 +724,8 @@ func (t *galaASTTransformer) unwrapImmutable(expr ast.Expr) ast.Expr {
 	if expr == nil {
 		return nil
 	}
-	typeName := t.getExprTypeName(expr)
+	typeObj := t.getExprTypeName(expr)
+	typeName := typeObj.String()
 	if strings.HasPrefix(typeName, transpiler.TypeImmutable+"[") || typeName == transpiler.TypeImmutable ||
 		strings.HasPrefix(typeName, "std."+transpiler.TypeImmutable+"[") || typeName == "std."+transpiler.TypeImmutable {
 		return &ast.CallExpr{

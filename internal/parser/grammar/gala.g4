@@ -98,7 +98,7 @@ argument: (identifier '=')? pattern;
 primary
     : identifier
     | literal
-    | '(' expression ')'
+    | '(' expressionList? ')'
     ;
 
 lambdaExpression: parameters '=>' (expression | block);

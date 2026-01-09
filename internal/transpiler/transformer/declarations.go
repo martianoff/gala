@@ -104,15 +104,15 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 	var wrappedValues []ast.Expr
 	for i, idCtx := range namesCtx {
 		name := idCtx.GetText()
-		typeName := ""
+		var typeName transpiler.Type = transpiler.NilType{}
 		if ctx.Type_() != nil {
 			typeExpr, _ := t.transformType(ctx.Type_())
-			typeName = t.getBaseTypeName(typeExpr)
+			typeName = t.resolveType(t.getBaseTypeName(typeExpr))
 		} else if len(rhsExprs) == len(namesCtx) {
 			typeName = t.getExprTypeName(rhsExprs[i])
 		}
 
-		if qName := t.getType(typeName); qName != "" {
+		if qName := t.getType(typeName.String()); !qName.IsNil() {
 			typeName = qName
 		}
 
@@ -184,16 +184,16 @@ func (t *galaASTTransformer) transformVarDeclaration(ctx *grammar.VarDeclaration
 	var idents []*ast.Ident
 	for i, idCtx := range namesCtx {
 		name := idCtx.GetText()
-		typeName := ""
+		var typeName transpiler.Type = transpiler.NilType{}
 		if ctx.Type_() != nil {
 			// Try to get type name from transformed type
 			typeExpr, _ := t.transformType(ctx.Type_())
-			typeName = t.getBaseTypeName(typeExpr)
+			typeName = t.resolveType(t.getBaseTypeName(typeExpr))
 		} else if len(rhsExprs) == len(namesCtx) {
 			typeName = t.getExprTypeName(rhsExprs[i])
 		}
 
-		if qName := t.getType(typeName); qName != "" {
+		if qName := t.getType(typeName.String()); !qName.IsNil() {
 			typeName = qName
 		}
 
@@ -251,17 +251,18 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 			return nil, err
 		}
 
-		receiverTypeName = t.getBaseTypeName(recvTypeExpr)
+		receiverType := t.resolveType(t.getBaseTypeName(recvTypeExpr))
+		receiverBaseName := receiverType.BaseName()
 
 		isVal := recvCtx.VAL() != nil
 		if isVal {
-			t.addVal(recvName, receiverTypeName)
+			t.addVal(recvName, receiverType)
 			recvTypeExpr = &ast.IndexExpr{
 				X:     t.stdIdent(transpiler.TypeImmutable),
 				Index: recvTypeExpr,
 			}
 		} else {
-			t.addVar(recvName, receiverTypeName)
+			t.addVar(recvName, receiverType)
 		}
 
 		receiver = &ast.FieldList{
@@ -273,12 +274,15 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 			},
 		}
 
-		if t.genericMethods[receiverTypeName] == nil {
-			t.genericMethods[receiverTypeName] = make(map[string]bool)
+		if t.genericMethods[receiverBaseName] == nil {
+			t.genericMethods[receiverBaseName] = make(map[string]bool)
 		}
 		if ctx.TypeParameters() != nil {
-			t.genericMethods[receiverTypeName][name] = true
+			t.genericMethods[receiverBaseName][name] = true
 		}
+
+		// Keep track of the base name for standalone function transformation
+		receiverTypeName = receiverBaseName
 	}
 
 	// Type Parameters
@@ -299,7 +303,16 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 
 	if receiver != nil && (funcType.TypeParams != nil || (t.genericMethods[receiverTypeName] != nil && t.genericMethods[receiverTypeName][name])) {
 		// Generic method: transform to standalone function
-		name = receiverTypeName + "_" + name
+		identName := receiverTypeName
+		if strings.HasPrefix(identName, t.packageName+".") {
+			identName = strings.TrimPrefix(identName, t.packageName+".")
+		}
+		identName = strings.ReplaceAll(identName, ".", "_")
+		if identName == "" {
+			identName = "Unknown"
+		}
+
+		name = identName + "_" + name
 		// 1. Add receiver as first parameter
 		funcType.Params.List = append([]*ast.Field{receiver.List[0]}, funcType.Params.List...)
 
@@ -410,16 +423,16 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 
 	t.structFields[name] = fieldNames
 	if t.structFieldTypes[name] == nil {
-		t.structFieldTypes[name] = make(map[string]string)
+		t.structFieldTypes[name] = make(map[string]transpiler.Type)
 	}
 	if paramsCtx.ParameterList() != nil {
 		for _, pCtx := range paramsCtx.ParameterList().(*grammar.ParameterListContext).AllParameter() {
 			param := pCtx.(*grammar.ParameterContext)
 			pName := param.Identifier().GetText()
-			pType := ""
+			var pType transpiler.Type = transpiler.NilType{}
 			if param.Type_() != nil {
 				typeExpr, _ := t.transformType(param.Type_())
-				pType = t.getBaseTypeName(typeExpr)
+				pType = t.resolveType(t.getBaseTypeName(typeExpr))
 			}
 			t.structFieldTypes[name][pName] = pType
 		}
@@ -509,7 +522,7 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 		var immutFlags []bool
 
 		if t.structFieldTypes[name] == nil {
-			t.structFieldTypes[name] = make(map[string]string)
+			t.structFieldTypes[name] = make(map[string]transpiler.Type)
 		}
 
 		for _, fCtx := range structCtx.AllStructField() {
@@ -522,10 +535,10 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 				fieldNames = append(fieldNames, n.Name)
 				immutFlags = append(immutFlags, fCtx.(*grammar.StructFieldContext).VAR() == nil)
 
-				fType := ""
+				var fType transpiler.Type = transpiler.NilType{}
 				if fCtx.(*grammar.StructFieldContext).Type_() != nil {
 					typeExpr, _ := t.transformType(fCtx.(*grammar.StructFieldContext).Type_())
-					fType = t.getBaseTypeName(typeExpr)
+					fType = t.resolveType(t.getBaseTypeName(typeExpr))
 				}
 				t.structFieldTypes[name][n.Name] = fType
 			}
@@ -646,13 +659,13 @@ func (t *galaASTTransformer) transformParameter(ctx *grammar.ParameterContext) (
 		Names: []*ast.Ident{ast.NewIdent(name)},
 	}
 
-	typeName := ""
+	var typeName transpiler.Type = transpiler.NilType{}
 	if ctx.Type_() != nil {
 		typeExpr, _ := t.transformType(ctx.Type_())
-		typeName = t.getBaseTypeName(typeExpr)
+		typeName = t.resolveType(t.getBaseTypeName(typeExpr))
 	}
 	isVal := ctx.VAL() != nil
-	if qName := t.getType(typeName); qName != "" {
+	if qName := t.getType(typeName.String()); !qName.IsNil() {
 		typeName = qName
 	}
 	if isVal {
