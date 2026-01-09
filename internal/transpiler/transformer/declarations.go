@@ -107,7 +107,10 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 		var typeName transpiler.Type = transpiler.NilType{}
 		if ctx.Type_() != nil {
 			typeExpr, _ := t.transformType(ctx.Type_())
-			typeName = t.resolveType(t.getBaseTypeName(typeExpr))
+			typeName = t.exprToType(typeExpr)
+			if t.isImmutableType(typeName) {
+				panic(galaerr.NewSemanticError("recursive Immutable wrapping is not allowed"))
+			}
 		} else if len(rhsExprs) == len(namesCtx) {
 			typeName = t.getExprTypeName(rhsExprs[i])
 		}
@@ -188,7 +191,8 @@ func (t *galaASTTransformer) transformVarDeclaration(ctx *grammar.VarDeclaration
 		if ctx.Type_() != nil {
 			// Try to get type name from transformed type
 			typeExpr, _ := t.transformType(ctx.Type_())
-			typeName = t.resolveType(t.getBaseTypeName(typeExpr))
+			typeName = t.exprToType(typeExpr)
+			t.isImmutableType(typeName) // This will panic if recursive
 		} else if len(rhsExprs) == len(namesCtx) {
 			typeName = t.getExprTypeName(rhsExprs[i])
 		}
@@ -538,7 +542,7 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 				var fType transpiler.Type = transpiler.NilType{}
 				if fCtx.(*grammar.StructFieldContext).Type_() != nil {
 					typeExpr, _ := t.transformType(fCtx.(*grammar.StructFieldContext).Type_())
-					fType = t.resolveType(t.getBaseTypeName(typeExpr))
+					fType = t.exprToType(typeExpr)
 				}
 				t.structFieldTypes[name][n.Name] = fType
 			}
@@ -679,6 +683,8 @@ func (t *galaASTTransformer) transformParameter(ctx *grammar.ParameterContext) (
 		if err != nil {
 			return nil, err
 		}
+		typeName = t.exprToType(typ)
+		t.isImmutableType(typeName)
 		if isVal {
 			field.Type = &ast.IndexExpr{
 				X:     t.stdIdent("Immutable"),
@@ -700,6 +706,7 @@ func (t *galaASTTransformer) transformStructField(ctx *grammar.StructFieldContex
 	if err != nil {
 		return nil, err
 	}
+	t.isImmutableType(t.exprToType(typ))
 
 	isVal := ctx.VAR() == nil
 
@@ -755,6 +762,7 @@ func (t *galaASTTransformer) transformSignature(ctx *grammar.SignatureContext, t
 		if err != nil {
 			return nil, err
 		}
+		t.isImmutableType(t.exprToType(retType))
 		results = &ast.FieldList{
 			List: []*ast.Field{
 				{Type: retType},

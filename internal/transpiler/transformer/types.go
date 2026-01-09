@@ -3,6 +3,7 @@ package transformer
 import (
 	"go/ast"
 	"go/token"
+	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 	"strings"
@@ -190,6 +191,40 @@ func (t *galaASTTransformer) extractTypeParams(typ ast.Expr) []*ast.Field {
 	return params
 }
 
+func (t *galaASTTransformer) exprToType(expr ast.Expr) transpiler.Type {
+	if expr == nil {
+		return transpiler.NilType{}
+	}
+	switch e := expr.(type) {
+	case *ast.Ident:
+		return t.resolveType(e.Name)
+	case *ast.SelectorExpr:
+		x, ok := e.X.(*ast.Ident)
+		if !ok {
+			return transpiler.NilType{}
+		}
+		return transpiler.NamedType{Package: x.Name, Name: e.Sel.Name}
+	case *ast.IndexExpr:
+		base := t.exprToType(e.X)
+		param := t.exprToType(e.Index)
+		return transpiler.GenericType{Base: base, Params: []transpiler.Type{param}}
+	case *ast.IndexListExpr:
+		base := t.exprToType(e.X)
+		params := make([]transpiler.Type, len(e.Indices))
+		for i, idx := range e.Indices {
+			params[i] = t.exprToType(idx)
+		}
+		return transpiler.GenericType{Base: base, Params: params}
+	case *ast.StarExpr:
+		// Simplified, just return base name with *
+		return t.resolveType("*" + t.getBaseTypeName(e.X))
+	case *ast.ArrayType:
+		// Simplified
+		return t.resolveType("[]" + t.getBaseTypeName(e.Elt))
+	}
+	return transpiler.NilType{}
+}
+
 func (t *galaASTTransformer) getBaseTypeName(expr ast.Expr) string {
 	switch e := expr.(type) {
 	case *ast.Ident:
@@ -217,6 +252,27 @@ func (t *galaASTTransformer) getBaseTypeName(expr ast.Expr) string {
 		return "func"
 	}
 	return ""
+}
+
+func (t *galaASTTransformer) isImmutableType(typ transpiler.Type) bool {
+	if typ == nil || typ.IsNil() {
+		return false
+	}
+	baseName := typ.BaseName()
+	isImm := baseName == transpiler.TypeImmutable || baseName == "std."+transpiler.TypeImmutable ||
+		baseName == "std.Immutable"
+
+	if isImm {
+		if gen, ok := typ.(transpiler.GenericType); ok {
+			for _, p := range gen.Params {
+				if t.isImmutableType(p) {
+					panic(galaerr.NewSemanticError("recursive Immutable wrapping is not allowed"))
+				}
+			}
+		}
+	}
+
+	return isImm
 }
 
 func (t *galaASTTransformer) getExprTypeName(expr ast.Expr) transpiler.Type {
@@ -319,7 +375,14 @@ func (t *galaASTTransformer) getExprTypeName(expr ast.Expr) transpiler.Type {
 
 			if sel.Sel.Name == transpiler.FuncNewImmutable || sel.Sel.Name == transpiler.TypeImmutable {
 				if len(e.Args) > 0 {
-					return t.getExprTypeName(e.Args[0])
+					innerType := t.getExprTypeName(e.Args[0])
+					if t.isImmutableType(innerType) {
+						panic(galaerr.NewSemanticError("recursive Immutable wrapping is not allowed"))
+					}
+					return transpiler.GenericType{
+						Base:   transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeImmutable},
+						Params: []transpiler.Type{innerType},
+					}
 				}
 			}
 
@@ -379,6 +442,18 @@ func (t *galaASTTransformer) getExprTypeName(expr ast.Expr) transpiler.Type {
 			}
 		}
 		if id, ok := fun.(*ast.Ident); ok {
+			if id.Name == transpiler.FuncNewImmutable || id.Name == transpiler.TypeImmutable {
+				if len(e.Args) > 0 {
+					innerType := t.getExprTypeName(e.Args[0])
+					if t.isImmutableType(innerType) {
+						panic(galaerr.NewSemanticError("recursive Immutable wrapping is not allowed"))
+					}
+					return transpiler.GenericType{
+						Base:   transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeImmutable},
+						Params: []transpiler.Type{innerType},
+					}
+				}
+			}
 			if id.Name == transpiler.FuncLeft || id.Name == transpiler.FuncRight {
 				return transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeEither}
 			}

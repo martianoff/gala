@@ -48,7 +48,16 @@ func NewGalaASTTransformer() transpiler.ASTTransformer {
 	}
 }
 
-func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (*token.FileSet, *ast.File, error) {
+func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token.FileSet, file *ast.File, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			if semErr, ok := r.(*galaerr.SemanticError); ok {
+				err = semErr
+			} else {
+				panic(r)
+			}
+		}
+	}()
 	tree := richAST.Tree
 	t.currentScope = nil
 	t.needsStdImport = false
@@ -92,7 +101,7 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (*token.File
 	t.pushScope() // Global scope
 	defer t.popScope()
 
-	fset := token.NewFileSet()
+	fset = token.NewFileSet()
 	sourceFile, ok := any(tree).(*grammar.SourceFileContext)
 	if !ok {
 		return nil, nil, galaerr.NewSemanticError(fmt.Sprintf("expected *grammar.SourceFileContext, got %T", tree))
@@ -100,7 +109,7 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (*token.File
 
 	pkgName := sourceFile.PackageClause().(*grammar.PackageClauseContext).Identifier().GetText()
 	t.packageName = pkgName
-	file := &ast.File{
+	file = &ast.File{
 		Name: ast.NewIdent(pkgName),
 	}
 

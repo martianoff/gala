@@ -111,7 +111,7 @@ The following improvements are proposed to make the type inference system more r
 
 ### Phase 2: Coverage & Depth
 3.  [x] **Expanded Expression Coverage**: Extend `getExprTypeName` to support more Go AST expression types like `BinaryExpr`, `UnaryExpr`, and `ParenExpr`.
-4.  **Recursive Unwrapping**: Throw a compiler exception if multiple levels of Immutable wrapping were found, ie Immutable[Immutable[T]] were inferred
+4.  [x] **Recursive Unwrapping**: Throw a compiler exception if multiple levels of Immutable wrapping were found, ie Immutable[Immutable[T]] were inferred
 
 ### Phase 3: Advanced Inference
 5.  **Enhanced `match` and `if` Inference**: Attempt to find a common base type for branches. If this is not possible, throw a compiler error and tell the user to provide a type explicitly.
