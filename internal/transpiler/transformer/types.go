@@ -224,7 +224,23 @@ func (t *galaASTTransformer) getExprTypeName(expr ast.Expr) transpiler.Type {
 		return transpiler.NilType{}
 	}
 	switch e := expr.(type) {
+	case *ast.BasicLit:
+		switch e.Kind {
+		case token.INT:
+			return transpiler.BasicType{Name: "int"}
+		case token.FLOAT:
+			return transpiler.BasicType{Name: "float64"}
+		case token.IMAG:
+			return transpiler.BasicType{Name: "complex128"}
+		case token.CHAR:
+			return transpiler.BasicType{Name: "rune"}
+		case token.STRING:
+			return transpiler.BasicType{Name: "string"}
+		}
 	case *ast.Ident:
+		if e.Name == "true" || e.Name == "false" {
+			return transpiler.BasicType{Name: "bool"}
+		}
 		return t.getType(e.Name)
 	case *ast.IndexExpr:
 		xType := t.getExprTypeName(e.X)

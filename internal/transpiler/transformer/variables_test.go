@@ -57,6 +57,20 @@ import "martianoff/gala/std"
 var s std.Immutable[string] = std.NewImmutable[string]("hello")
 `,
 		},
+		{
+			name: "val inferred from literal and used in var",
+			input: `package main
+
+val x = 10
+var y = x`,
+			expected: `package main
+
+import "martianoff/gala/std"
+
+var x = std.NewImmutable(10)
+var y = x.Get()
+`,
+		},
 	}
 
 	for _, tt := range tests {

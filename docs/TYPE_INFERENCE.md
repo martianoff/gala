@@ -50,7 +50,7 @@ The core of GALA's type inference is the `getExprTypeName` method in `internal/t
 
 ### Supported Expressions
 - **Identifiers**: Looks up the type in the current scope.
-- **Literals**: Currently, literals like integers or strings are **not** explicitly inferred and return an empty string, relying on Go's type inference for the final generated code.
+- **Literals**: Explicitly inferred (e.g., `1` -> `int`, `"foo"` -> `string`).
 - **Function Calls**: Uses return type information from the `Functions` metadata in `RichAST`.
 - **Struct Fields**: Uses field type information from the `Types` metadata in `RichAST`.
 - **Selector Expressions**: Handles package-qualified names and struct fields.
@@ -99,7 +99,6 @@ Unwrapping is based on the inferred type name. If the type name starts with `Imm
 
 - **String-based matching**: Type checks rely heavily on string prefixes and names, which can be fragile when dealing with type aliases or complex generic types.
 - **`any` Types**: Some expressions like `match` or `if` expressions currently default to returning `any` in the generated Go code, losing specific type information during transpilation.
-- **Literal Inference**: The lack of literal inference in the transpiler means that some complex expressions involving literals might not be fully unwrapped if the transpiler cannot "see" the intermediate types.
 - **Recursive Unwrapping**: `unwrapImmutable` currently performs only one level of unwrapping. But multiple wrapping should never happen in the first place
 
 ## Proposed Improvements
@@ -108,7 +107,7 @@ The following improvements are proposed to make the type inference system more r
 
 ### Phase 1: Foundation
 1.  [x] **Robust Type Representation**: Replace string-based type names with a structured `Type` representation. This allows for reliable comparisons and manipulation of complex types (generics, arrays, pointers).
-2.  **Literal Type Inference**: Explicitly handle `*ast.BasicLit` in `getExprTypeName` (e.g., `INT` -> `int`, `STRING` -> `string`) supporting all standard types. Drop support of std.Int, std.Int32, etc. as they create friction with go compatibility.
+2.  [x] **Literal Type Inference**: Explicitly handle `*ast.BasicLit` in `getExprTypeName` (e.g., `INT` -> `int`, `STRING` -> `string`) supporting all standard types. Drop support of std.Int, std.Int32, etc. as they create friction with go compatibility.
 
 ### Phase 2: Coverage & Depth
 3.  **Expanded Expression Coverage**: Extend `getExprTypeName` to support more Go AST expression types like `BinaryExpr`, `UnaryExpr`, and `ParenExpr`.

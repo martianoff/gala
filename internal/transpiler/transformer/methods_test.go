@@ -129,7 +129,7 @@ func Box_MyMap[U any, T any](b Box[T], f func(T)U) Box[U] {
 }
 func main() {
 	var b = std.NewImmutable(Box{Value: std.NewImmutable(1)})
-	var b2 = std.NewImmutable(Box_MyMap[string](b.Get(), func(i int) any {
+	var b2 = std.NewImmutable(Box_MyMap[string](b.Get(), func(i int) string {
 		return "res"
 	}))
 }

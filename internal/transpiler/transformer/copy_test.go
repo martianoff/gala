@@ -132,7 +132,7 @@ func TestCopyOverridesErrors(t *testing.T) {
 
 val x = 1
 val y = x.Copy(value = 2)`,
-			expectedError: "cannot use Copy overrides: type of receiver unknown",
+			expectedError: "Copy overrides only supported for struct types",
 		},
 		{
 			name: "Override non-existent field",
