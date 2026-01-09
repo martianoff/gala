@@ -95,4 +95,4 @@ bazel mod tidy
 - Do not modify code generated files internal/parser/grammar/*.go
 
 ## 15. Documentation
-- When you make changes to the grammar or add new features, update the docs/GALA.MD and docs/examples.MD files with corresponding changes. In docs/examples.MD, prefer short functional syntax to demonstrate benefits over go code.
+- When you make changes to the grammar or add new features, update the docs/GALA.MD, docs/TYPE_INFERENCE.md and docs/examples.MD files with corresponding changes. In docs/examples.MD, prefer short functional syntax to demonstrate benefits over go code.
