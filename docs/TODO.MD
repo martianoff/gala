@@ -15,3 +15,4 @@
 - [ ] Dependency management
 - [x] Test framework
 - [x] JetBrains language plugin
+- [ ] Pointers to immutable vars

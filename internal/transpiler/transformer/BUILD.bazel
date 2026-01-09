@@ -44,6 +44,7 @@ go_test(
         "option_test.go",
         "structs_test.go",
         "tuple_either_test.go",
+        "type_inference_test.go",
         "variables_test.go",
     ],
     data = [

@@ -110,7 +110,7 @@ The following improvements are proposed to make the type inference system more r
 2.  [x] **Literal Type Inference**: Explicitly handle `*ast.BasicLit` in `getExprTypeName` (e.g., `INT` -> `int`, `STRING` -> `string`) supporting all standard types. Drop support of std.Int, std.Int32, etc. as they create friction with go compatibility.
 
 ### Phase 2: Coverage & Depth
-3.  **Expanded Expression Coverage**: Extend `getExprTypeName` to support more Go AST expression types like `BinaryExpr`, `UnaryExpr`, and `ParenExpr`.
+3.  [x] **Expanded Expression Coverage**: Extend `getExprTypeName` to support more Go AST expression types like `BinaryExpr`, `UnaryExpr`, and `ParenExpr`.
 4.  **Recursive Unwrapping**: Throw a compiler exception if multiple levels of Immutable wrapping were found, ie Immutable[Immutable[T]] were inferred
 
 ### Phase 3: Advanced Inference

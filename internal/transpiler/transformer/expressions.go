@@ -387,6 +387,10 @@ func (t *galaASTTransformer) transformExpression(ctx grammar.IExpressionContext)
 			if opText == "!" {
 				expr = t.wrapWithAssertion(expr, ast.NewIdent("bool"))
 			}
+			// Automatic unwrapping for unary operands
+			if opText != "&" {
+				expr = t.unwrapImmutable(expr)
+			}
 			return &ast.UnaryExpr{
 				Op: t.getUnaryToken(opText),
 				X:  expr,
@@ -408,15 +412,27 @@ func (t *galaASTTransformer) transformExpression(ctx grammar.IExpressionContext)
 				return nil, err
 			}
 			selName := child3.(antlr.ParseTree).GetText()
+			// Don't unwrap if we're accessing Immutable's own fields/methods
+			xType := t.getExprTypeName(x)
+			xTypeName := xType.String()
+			isImmutable := strings.HasPrefix(xTypeName, transpiler.TypeImmutable+"[") || xTypeName == transpiler.TypeImmutable ||
+				strings.HasPrefix(xTypeName, "std."+transpiler.TypeImmutable+"[") || xTypeName == "std."+transpiler.TypeImmutable
+
+			if !isImmutable || (selName != "Get" && selName != "value") {
+				x = t.unwrapImmutable(x)
+			}
+
 			selExpr := &ast.SelectorExpr{
 				X:   x,
 				Sel: ast.NewIdent(selName),
 			}
 
-			typeName := t.getExprTypeName(x).String()
-			baseTypeName := typeName
-			if idx := strings.Index(typeName, "["); idx != -1 {
-				baseTypeName = typeName[:idx]
+			// Re-evaluate type after potential unwrap
+			xType = t.getExprTypeName(x)
+			xTypeName = xType.String()
+			baseTypeName := xTypeName
+			if idx := strings.Index(xTypeName, "["); idx != -1 {
+				baseTypeName = xTypeName[:idx]
 			}
 
 			if fields, ok := t.structFields[baseTypeName]; ok {
@@ -455,6 +471,9 @@ func (t *galaASTTransformer) transformExpression(ctx grammar.IExpressionContext)
 			if err != nil {
 				return nil, err
 			}
+			// Automatic unwrapping for binary operands
+			left = t.unwrapImmutable(left)
+			right = t.unwrapImmutable(right)
 			return &ast.BinaryExpr{
 				X:  left,
 				Op: t.getBinaryToken(c2Text),
@@ -483,6 +502,7 @@ func (t *galaASTTransformer) transformExpression(ctx grammar.IExpressionContext)
 			if err != nil {
 				return nil, err
 			}
+			x = t.unwrapImmutable(x)
 			indices, err := t.transformExpressionList(child3.(*grammar.ExpressionListContext))
 			if err != nil {
 				return nil, err
@@ -724,6 +744,31 @@ func (t *galaASTTransformer) unwrapImmutable(expr ast.Expr) ast.Expr {
 	if expr == nil {
 		return nil
 	}
+	if paren, ok := expr.(*ast.ParenExpr); ok {
+		return &ast.ParenExpr{
+			X: t.unwrapImmutable(paren.X),
+		}
+	}
+
+	// Don't unwrap if it's a type name (identifier or selector)
+	if ident, ok := expr.(*ast.Ident); ok {
+		if !t.isVal(ident.Name) && !t.isVar(ident.Name) {
+			if !t.getType(ident.Name).IsNil() {
+				return expr
+			}
+		}
+	}
+	if sel, ok := expr.(*ast.SelectorExpr); ok {
+		if xIdent, ok := sel.X.(*ast.Ident); ok {
+			fullPath := xIdent.Name + "." + sel.Sel.Name
+			if !t.isVal(fullPath) && !t.isVar(fullPath) {
+				if !t.getType(fullPath).IsNil() {
+					return expr
+				}
+			}
+		}
+	}
+
 	typeObj := t.getExprTypeName(expr)
 	typeName := typeObj.String()
 	if strings.HasPrefix(typeName, transpiler.TypeImmutable+"[") || typeName == transpiler.TypeImmutable ||

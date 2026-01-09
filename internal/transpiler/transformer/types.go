@@ -248,6 +248,30 @@ func (t *galaASTTransformer) getExprTypeName(expr ast.Expr) transpiler.Type {
 			return arr.Elem
 		}
 		return transpiler.NilType{}
+	case *ast.ParenExpr:
+		return t.getExprTypeName(e.X)
+	case *ast.UnaryExpr:
+		switch e.Op {
+		case token.NOT:
+			return transpiler.BasicType{Name: "bool"}
+		case token.AND:
+			return transpiler.PointerType{Elem: t.getExprTypeName(e.X)}
+		case token.MUL:
+			xType := t.getExprTypeName(e.X)
+			if ptr, ok := xType.(transpiler.PointerType); ok {
+				return ptr.Elem
+			}
+			return transpiler.NilType{}
+		default:
+			return t.getExprTypeName(e.X)
+		}
+	case *ast.BinaryExpr:
+		switch e.Op {
+		case token.EQL, token.NEQ, token.LSS, token.LEQ, token.GTR, token.GEQ, token.LAND, token.LOR:
+			return transpiler.BasicType{Name: "bool"}
+		default:
+			return t.getExprTypeName(e.X)
+		}
 	case *ast.SelectorExpr:
 		xType := t.getExprTypeName(e.X)
 		xTypeName := xType.String()
