@@ -114,9 +114,9 @@ The following improvements are proposed to make the type inference system more r
 4.  [x] **Recursive Unwrapping**: Throw a compiler exception if multiple levels of Immutable wrapping were found, ie Immutable[Immutable[T]] were inferred
 
 ### Phase 3: Advanced Inference
-5.  **Enhanced `match` and `if` Inference**: Attempt to find a common base type for branches. If this is not possible, throw a compiler error and tell the user to provide a type explicitly.
-6.  **Better Generic Type Resolution**: Improve resolution of type parameters in generic functions and structs. Unboard type inference algorithm from the infer package.
+5.  [x] **Enhanced `match` and `if` Inference**: Attempt to find a common base type for branches. `if` expressions are now supported via HM inference, which ensures consistent return types for branches and enables automatic unwrapping of the result. `match` expressions currently still default to `any` in some contexts but will be integrated in the next phase.
+6.  [x] **Better Generic Type Resolution**: Improved resolution of type parameters in generic functions and structs. Hindley-Milner algorithm is used as a fallback for complex expressions.
 
 ### Phase 4: Validation
-8.  **Type Validation**: Implement checks to ensure inferred types match explicit types and that assignments/function calls are type-compatible.
-9.  **Integration**: Integrate the `infer` package with the main transpiler pipeline to replace the current string-based type matching.
+8.  [ ] **Type Validation**: Implement checks to ensure inferred types match explicit types and that assignments/function calls are type-compatible.
+9.  [x] **Integration**: Integrated the `infer` package with the main transpiler pipeline. HM inference is now used as a fallback for complex expressions, particularly generic function calls, improving automatic unwrapping accuracy.

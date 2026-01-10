@@ -113,6 +113,11 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 			}
 		} else if len(rhsExprs) == len(namesCtx) {
 			typeName = t.getExprTypeName(rhsExprs[i])
+			if t.isImmutableType(typeName) {
+				if gen, ok := typeName.(transpiler.GenericType); ok && len(gen.Params) > 0 {
+					typeName = gen.Params[0]
+				}
+			}
 		}
 
 		if qName := t.getType(typeName.String()); !qName.IsNil() {
@@ -195,6 +200,12 @@ func (t *galaASTTransformer) transformVarDeclaration(ctx *grammar.VarDeclaration
 			t.isImmutableType(typeName) // This will panic if recursive
 		} else if len(rhsExprs) == len(namesCtx) {
 			typeName = t.getExprTypeName(rhsExprs[i])
+		}
+
+		if t.isImmutableType(typeName) {
+			if gen, ok := typeName.(transpiler.GenericType); ok && len(gen.Params) > 0 {
+				typeName = gen.Params[0]
+			}
 		}
 
 		if qName := t.getType(typeName.String()); !qName.IsNil() {

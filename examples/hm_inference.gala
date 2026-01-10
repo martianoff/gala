@@ -1,0 +1,15 @@
+package main
+
+import "fmt"
+
+func identity[T any](x T) T = x
+
+func main() {
+    val x = 10
+    val y = identity(x) // HM should infer 'int' here
+    fmt.Printf("y: %d\n", y)
+
+    val s = "hello"
+    val t = identity(s) // HM should infer 'string' here
+    fmt.Printf("t: %s\n", t)
+}

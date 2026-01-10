@@ -72,6 +72,7 @@ type TypeMetadata struct {
 type MethodMetadata struct {
 	Name       string
 	Package    string
+	ParamTypes []Type
 	ReturnType Type
 	TypeParams []string
 	IsGeneric  bool // Force transformation to standalone function
@@ -80,6 +81,7 @@ type MethodMetadata struct {
 type FunctionMetadata struct {
 	Name       string
 	Package    string
+	ParamTypes []Type
 	ReturnType Type
 	TypeParams []string
 }

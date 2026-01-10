@@ -1,0 +1,11 @@
+package main
+
+import "fmt"
+
+func identity[T any](x T) T = x
+func getImm[T any](x T) Immutable[T] = NewImmutable(x)
+
+func main() {
+    var x = identity(getImm(42)) // HM should infer Immutable[int], so unwrapped to int
+    fmt.Printf("x: %d\n", x)
+}

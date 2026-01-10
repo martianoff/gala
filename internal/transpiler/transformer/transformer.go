@@ -7,6 +7,7 @@ import (
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
+	"martianoff/gala/internal/transpiler/infer"
 	"strings"
 )
 
@@ -28,6 +29,7 @@ type galaASTTransformer struct {
 	reverseImportAliases map[string]string // actual pkgName -> alias
 	dotImports           []string          // package names
 	tempVarCount         int
+	inferer              *infer.Inferer
 }
 
 // NewGalaASTTransformer creates a new instance of ASTTransformer for GALA.
@@ -45,6 +47,7 @@ func NewGalaASTTransformer() transpiler.ASTTransformer {
 		importAliases:        make(map[string]string),
 		reverseImportAliases: make(map[string]string),
 		dotImports:           make([]string, 0),
+		inferer:              infer.NewInferer(),
 	}
 }
 

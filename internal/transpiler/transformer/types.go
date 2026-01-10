@@ -279,6 +279,70 @@ func (t *galaASTTransformer) getExprTypeName(expr ast.Expr) transpiler.Type {
 	if expr == nil {
 		return transpiler.NilType{}
 	}
+
+	// Try manual inference first for speed and simple cases
+	res := t.getExprTypeNameManual(expr)
+	if !res.IsNil() && !t.hasTypeParams(res) && res.String() != "any" {
+		return res
+	}
+
+	// Fallback to Hindley-Milner for more complex cases
+	hmRes, err := t.inferExprType(expr)
+	if err == nil && !hmRes.IsNil() && hmRes.String() != "any" {
+		return hmRes
+	}
+
+	return res
+}
+
+func (t *galaASTTransformer) hasTypeParams(typ transpiler.Type) bool {
+	if typ == nil || typ.IsNil() {
+		return false
+	}
+	switch v := typ.(type) {
+	case transpiler.BasicType:
+		// Check if it's a known type parameter in current scope
+		// OR if it's a single uppercase letter (common convention for type params)
+		if t.activeTypeParams[v.Name] {
+			return true
+		}
+		if len(v.Name) == 1 && v.Name[0] >= 'A' && v.Name[0] <= 'Z' {
+			return true
+		}
+		return false
+	case transpiler.GenericType:
+		for _, p := range v.Params {
+			if t.hasTypeParams(p) {
+				return true
+			}
+		}
+		return t.hasTypeParams(v.Base)
+	case transpiler.ArrayType:
+		return t.hasTypeParams(v.Elem)
+	case transpiler.PointerType:
+		return t.hasTypeParams(v.Elem)
+	case transpiler.MapType:
+		return t.hasTypeParams(v.Key) || t.hasTypeParams(v.Elem)
+	case transpiler.FuncType:
+		for _, p := range v.Params {
+			if t.hasTypeParams(p) {
+				return true
+			}
+		}
+		for _, r := range v.Results {
+			if t.hasTypeParams(r) {
+				return true
+			}
+		}
+		return false
+	}
+	return false
+}
+
+func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Type {
+	if expr == nil {
+		return transpiler.NilType{}
+	}
 	switch e := expr.(type) {
 	case *ast.BasicLit:
 		switch e.Kind {
@@ -299,37 +363,37 @@ func (t *galaASTTransformer) getExprTypeName(expr ast.Expr) transpiler.Type {
 		}
 		return t.getType(e.Name)
 	case *ast.IndexExpr:
-		xType := t.getExprTypeName(e.X)
+		xType := t.getExprTypeNameManual(e.X)
 		if arr, ok := xType.(transpiler.ArrayType); ok {
 			return arr.Elem
 		}
 		return transpiler.NilType{}
 	case *ast.ParenExpr:
-		return t.getExprTypeName(e.X)
+		return t.getExprTypeNameManual(e.X)
 	case *ast.UnaryExpr:
 		switch e.Op {
 		case token.NOT:
 			return transpiler.BasicType{Name: "bool"}
 		case token.AND:
-			return transpiler.PointerType{Elem: t.getExprTypeName(e.X)}
+			return transpiler.PointerType{Elem: t.getExprTypeNameManual(e.X)}
 		case token.MUL:
-			xType := t.getExprTypeName(e.X)
+			xType := t.getExprTypeNameManual(e.X)
 			if ptr, ok := xType.(transpiler.PointerType); ok {
 				return ptr.Elem
 			}
 			return transpiler.NilType{}
 		default:
-			return t.getExprTypeName(e.X)
+			return t.getExprTypeNameManual(e.X)
 		}
 	case *ast.BinaryExpr:
 		switch e.Op {
 		case token.EQL, token.NEQ, token.LSS, token.LEQ, token.GTR, token.GEQ, token.LAND, token.LOR:
 			return transpiler.BasicType{Name: "bool"}
 		default:
-			return t.getExprTypeName(e.X)
+			return t.getExprTypeNameManual(e.X)
 		}
 	case *ast.SelectorExpr:
-		xType := t.getExprTypeName(e.X)
+		xType := t.getExprTypeNameManual(e.X)
 		xTypeName := xType.String()
 		if !xType.IsNil() && t.structFieldTypes[xTypeName] != nil {
 			if fType, ok := t.structFieldTypes[xTypeName][e.Sel.Name]; ok && !fType.IsNil() {
@@ -347,6 +411,13 @@ func (t *galaASTTransformer) getExprTypeName(expr ast.Expr) transpiler.Type {
 			}
 		}
 	case *ast.CallExpr:
+		// Handle IIFE (used by if/match expressions)
+		if fl, ok := e.Fun.(*ast.FuncLit); ok {
+			if fl.Type != nil && fl.Type.Results != nil && len(fl.Type.Results.List) > 0 {
+				return t.exprToType(fl.Type.Results.List[0].Type)
+			}
+		}
+
 		// Handle b.Get() or std.Some()
 		fun := e.Fun
 		if idx, ok := fun.(*ast.IndexExpr); ok {
@@ -362,7 +433,7 @@ func (t *galaASTTransformer) getExprTypeName(expr ast.Expr) transpiler.Type {
 						return t.getType(id.Name)
 					}
 				}
-				xType := t.getExprTypeName(sel.X)
+				xType := t.getExprTypeNameManual(sel.X)
 				xBaseName := xType.BaseName()
 				if xBaseName == transpiler.TypeImmutable || xBaseName == "std."+transpiler.TypeImmutable ||
 					xBaseName == transpiler.TypeOption || xBaseName == "std."+transpiler.TypeOption {
@@ -375,7 +446,7 @@ func (t *galaASTTransformer) getExprTypeName(expr ast.Expr) transpiler.Type {
 
 			if sel.Sel.Name == transpiler.FuncNewImmutable || sel.Sel.Name == transpiler.TypeImmutable {
 				if len(e.Args) > 0 {
-					innerType := t.getExprTypeName(e.Args[0])
+					innerType := t.getExprTypeNameManual(e.Args[0])
 					if t.isImmutableType(innerType) {
 						panic(galaerr.NewSemanticError("recursive Immutable wrapping is not allowed"))
 					}
@@ -412,7 +483,7 @@ func (t *galaASTTransformer) getExprTypeName(expr ast.Expr) transpiler.Type {
 				}
 			}
 
-			xType := t.getExprTypeName(sel.X)
+			xType := t.getExprTypeNameManual(sel.X)
 			xTypeName := xType.String()
 			if !xType.IsNil() {
 				if typeMeta, ok := t.typeMetas[xTypeName]; ok {
@@ -444,7 +515,7 @@ func (t *galaASTTransformer) getExprTypeName(expr ast.Expr) transpiler.Type {
 		if id, ok := fun.(*ast.Ident); ok {
 			if id.Name == transpiler.FuncNewImmutable || id.Name == transpiler.TypeImmutable {
 				if len(e.Args) > 0 {
-					innerType := t.getExprTypeName(e.Args[0])
+					innerType := t.getExprTypeNameManual(e.Args[0])
 					if t.isImmutableType(innerType) {
 						panic(galaerr.NewSemanticError("recursive Immutable wrapping is not allowed"))
 					}

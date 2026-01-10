@@ -34,7 +34,7 @@ func NewInferer() *Inferer {
 	return &Inferer{nextID: 0}
 }
 
-func (inf *Inferer) newTypeVar() *TypeVariable {
+func (inf *Inferer) NewTypeVar() *TypeVariable {
 	inf.nextID++
 	return &TypeVariable{ID: inf.nextID}
 }
@@ -42,7 +42,7 @@ func (inf *Inferer) newTypeVar() *TypeVariable {
 func (inf *Inferer) instantiate(s *Scheme) Type {
 	sub := make(Substitution)
 	for _, v := range s.Vars {
-		sub[v] = inf.newTypeVar()
+		sub[v] = inf.NewTypeVar()
 	}
 	return s.Type.Apply(sub)
 }
@@ -126,7 +126,7 @@ func (inf *Inferer) infer(env TypeEnv, e Expr) (Type, Substitution, error) {
 		return nil, nil, fmt.Errorf("undefined variable: %s", expr.Name)
 
 	case *Abs:
-		tv := inf.newTypeVar()
+		tv := inf.NewTypeVar()
 		newEnv := make(TypeEnv)
 		for k, v := range env {
 			newEnv[k] = v
@@ -139,7 +139,7 @@ func (inf *Inferer) infer(env TypeEnv, e Expr) (Type, Substitution, error) {
 		return (&TypeApp{Name: "->", Args: []Type{tv.Apply(s), t}}), s, nil
 
 	case *App:
-		tv := inf.newTypeVar()
+		tv := inf.NewTypeVar()
 		tFn, s1, err := inf.infer(env, expr.Fn)
 		if err != nil {
 			return nil, nil, err
@@ -167,6 +167,29 @@ func (inf *Inferer) infer(env TypeEnv, e Expr) (Type, Substitution, error) {
 			return nil, nil, err
 		}
 		return tBody, s2.Compose(s1), nil
+	case *If:
+		tCond, s1, err := inf.infer(env, expr.Cond)
+		if err != nil {
+			return nil, nil, err
+		}
+		s2, err := inf.unify(tCond, &TypeConst{Name: "bool"})
+		if err != nil {
+			return nil, nil, fmt.Errorf("if condition must be bool, got %s", tCond)
+		}
+		newEnv := env.Apply(s2).Apply(s1)
+		tThen, s3, err := inf.infer(newEnv, expr.Then)
+		if err != nil {
+			return nil, nil, err
+		}
+		tElse, s4, err := inf.infer(newEnv.Apply(s3), expr.Else)
+		if err != nil {
+			return nil, nil, err
+		}
+		s5, err := inf.unify(tThen.Apply(s4), tElse)
+		if err != nil {
+			return nil, nil, fmt.Errorf("if branches must have same type: %s and %s", tThen.Apply(s4), tElse)
+		}
+		return tThen.Apply(s4).Apply(s5), s5.Compose(s4).Compose(s3).Compose(s2).Compose(s1), nil
 	}
 
 	return nil, nil, fmt.Errorf("unknown expression type: %T", e)

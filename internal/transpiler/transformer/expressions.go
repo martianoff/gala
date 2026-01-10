@@ -714,13 +714,20 @@ func (t *galaASTTransformer) transformIfExpression(ctx *grammar.IfExpressionCont
 		return nil, err
 	}
 
-	// Transpile to IIFE: func() any { if cond { return thenExpr }; return elseExpr }()
+	retType := transpiler.Type(transpiler.NilType{})
+	if inferred, err := t.inferIfType(cond, thenExpr, elseExpr); err == nil && !inferred.IsNil() {
+		retType = inferred
+	}
+
+	retTypeExpr := t.typeToExpr(retType)
+
+	// Transpile to IIFE: func() T { if cond { return thenExpr }; return elseExpr }()
 	return &ast.CallExpr{
 		Fun: &ast.FuncLit{
 			Type: &ast.FuncType{
 				Params: &ast.FieldList{},
 				Results: &ast.FieldList{
-					List: []*ast.Field{{Type: ast.NewIdent("any")}},
+					List: []*ast.Field{{Type: retTypeExpr}},
 				},
 			},
 			Body: &ast.BlockStmt{

@@ -56,3 +56,14 @@ type Let struct {
 func (e *Let) String() string {
 	return fmt.Sprintf("(let %s = %s in %s)", e.Name, e.Value, e.Body)
 }
+
+// If represents an if-then-else expression.
+type If struct {
+	Cond Expr
+	Then Expr
+	Else Expr
+}
+
+func (e *If) String() string {
+	return fmt.Sprintf("(if %s then %s else %s)", e.Cond, e.Then, e.Else)
+}

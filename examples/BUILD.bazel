@@ -167,3 +167,39 @@ gala_test(
     src = "unwrapping.gala",
     expected = "unwrapping.out",
 )
+
+gala_test(
+    name = "hm_inference",
+    src = "hm_inference.gala",
+    expected = "hm_inference.out",
+)
+
+gala_test(
+    name = "hm_unwrapping",
+    src = "hm_unwrapping.gala",
+    expected = "hm_unwrapping.out",
+)
+
+gala_test(
+    name = "hm_generic_unwrapping",
+    src = "hm_generic_unwrapping.gala",
+    expected = "hm_unwrapping.out",
+)
+
+gala_test(
+    name = "hm_generic_identity_unwrapping",
+    src = "hm_generic_identity_unwrapping.gala",
+    expected = "hm_generic_identity_unwrapping.out",
+)
+
+gala_test(
+    name = "hm_advanced_unwrapping",
+    src = "hm_advanced_unwrapping.gala",
+    expected = "hm_unwrapping.out",
+)
+
+gala_test(
+    name = "if_else_unwrapping",
+    src = "if_else_unwrapping.gala",
+    expected = "if_else_unwrapping.out",
+)

@@ -1,0 +1,10 @@
+package main
+
+import "fmt"
+
+func getImm() Immutable[int] = NewImmutable(42)
+
+func main() {
+    var x = getImm() // Inferred as int, automatically unwrapped
+    fmt.Printf("x: %d\n", x)
+}

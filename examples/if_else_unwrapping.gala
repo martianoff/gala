@@ -1,0 +1,18 @@
+package main
+
+import "fmt"
+
+func getImm() Immutable[int] = NewImmutable(42)
+
+func identity[T any](x T) T = x
+
+func main() {
+    val x = 10
+    var res = if (x > 5) getImm() else NewImmutable(0)
+    fmt.Printf("res: %d\n", res)
+
+    val a = NewImmutable(100)
+    val b = NewImmutable(200)
+    var res2 = if (x < 5) identity(a) else b
+    fmt.Printf("res2: %d\n", res2)
+}

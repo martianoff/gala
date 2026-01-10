@@ -1,0 +1,10 @@
+package main
+
+import "fmt"
+
+func wrap[T any](x T) Immutable[T] = NewImmutable(x)
+
+func main() {
+    var x = wrap(42) // HM should infer Immutable[int], then GALA unwraps it to int
+    fmt.Printf("x: %d\n", x)
+}

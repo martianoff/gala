@@ -290,6 +290,20 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 						methodMeta.ReturnType = a.resolveType(ctx.Signature().Type_().GetText(), pkgName)
 					}
 
+					if ctx.Signature().Parameters() != nil {
+						pCtx := ctx.Signature().Parameters().(*grammar.ParametersContext)
+						if pList := pCtx.ParameterList(); pList != nil {
+							for _, p := range pList.(*grammar.ParameterListContext).AllParameter() {
+								paramCtx := p.(*grammar.ParameterContext)
+								if paramCtx.Type_() != nil {
+									methodMeta.ParamTypes = append(methodMeta.ParamTypes, a.resolveType(paramCtx.Type_().GetText(), pkgName))
+								} else {
+									methodMeta.ParamTypes = append(methodMeta.ParamTypes, transpiler.NilType{})
+								}
+							}
+						}
+					}
+
 					if typeMeta, ok := richAST.Types[fullBaseType]; ok {
 						if existing, exists := typeMeta.Methods[methodName]; exists {
 							// Preserve IsGeneric if it was pre-populated
@@ -322,6 +336,19 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 				richAST.Functions[fullFuncName] = funcMeta
 				if ctx.Signature().Type_() != nil {
 					funcMeta.ReturnType = a.resolveType(ctx.Signature().Type_().GetText(), pkgName)
+				}
+				if ctx.Signature().Parameters() != nil {
+					pCtx := ctx.Signature().Parameters().(*grammar.ParametersContext)
+					if pList := pCtx.ParameterList(); pList != nil {
+						for _, p := range pList.(*grammar.ParameterListContext).AllParameter() {
+							paramCtx := p.(*grammar.ParameterContext)
+							if paramCtx.Type_() != nil {
+								funcMeta.ParamTypes = append(funcMeta.ParamTypes, a.resolveType(paramCtx.Type_().GetText(), pkgName))
+							} else {
+								funcMeta.ParamTypes = append(funcMeta.ParamTypes, transpiler.NilType{})
+							}
+						}
+					}
 				}
 				if ctx.TypeParameters() != nil {
 					tpCtx := ctx.TypeParameters().(*grammar.TypeParametersContext)

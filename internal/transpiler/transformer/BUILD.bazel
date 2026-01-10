@@ -3,6 +3,7 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "transformer",
     srcs = [
+        "bridge.go",
         "declarations.go",
         "expressions.go",
         "match.go",
@@ -19,6 +20,7 @@ go_library(
         "//galaerr",
         "//internal/parser/grammar",
         "//internal/transpiler",
+        "//internal/transpiler/infer",
         "@com_github_antlr4_go_antlr_v4//:antlr",
     ],
 )

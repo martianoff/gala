@@ -300,6 +300,25 @@ func main() {
 }
 ```
 
+## Advanced Type Inference Example
+
+GALA uses the Hindley-Milner algorithm to infer types in complex scenarios, such as generic function calls. This enables features like automatic unwrapping of `Immutable` values even when they are returned from generic functions.
+
+```gala
+package main
+
+import "fmt"
+
+func identity[T any](x T) T = x
+func getImm[T any](x T) Immutable[T] = NewImmutable(x)
+
+func main() {
+    // HM infers Immutable[int], which GALA then automatically unwraps to int
+    var x = identity(getImm(42)) 
+    fmt.Printf("x: %d\n", x)
+}
+```
+
 ## More Examples
 
 You can find more examples in the `examples/` directory of the project:
