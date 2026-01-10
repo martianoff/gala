@@ -115,7 +115,8 @@ The following improvements are proposed to make the type inference system more r
 
 ### Phase 3: Advanced Inference
 5.  **Enhanced `match` and `if` Inference**: Attempt to find a common base type for branches. If this is not possible, throw a compiler error and tell the user to provide a type explicitly.
-6.  **Better Generic Type Resolution**: Improve resolution of type parameters in generic functions and structs. Unboard enterprise level type inference algorithm.
+6.  **Better Generic Type Resolution**: Improve resolution of type parameters in generic functions and structs. Unboard type inference algorithm from the infer package.
 
 ### Phase 4: Validation
-7.  **Type Validation**: Implement checks to ensure inferred types match explicit types and that assignments/function calls are type-compatible.
+8.  **Type Validation**: Implement checks to ensure inferred types match explicit types and that assignments/function calls are type-compatible.
+9.  **Integration**: Integrate the `infer` package with the main transpiler pipeline to replace the current string-based type matching.

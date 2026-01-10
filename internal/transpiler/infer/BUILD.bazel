@@ -1,0 +1,19 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "infer",
+    srcs = [
+        "expr.go",
+        "infer.go",
+        "types.go",
+    ],
+    importpath = "martianoff/gala/internal/transpiler/infer",
+    visibility = ["//:__subpackages__"],
+)
+
+go_test(
+    name = "infer_test",
+    srcs = ["infer_test.go"],
+    embed = [":infer"],
+    deps = ["@com_github_stretchr_testify//assert"],
+)
