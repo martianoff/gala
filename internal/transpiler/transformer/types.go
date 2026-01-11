@@ -467,10 +467,20 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 					if fMeta, ok := t.functions[fullName]; ok {
 						return fMeta.ReturnType
 					}
-					// Handle Receiver_Method
+					// Handle Receiver_Method (e.g., std.Some_Apply)
 					if idx := strings.Index(sel.Sel.Name, "_"); idx != -1 {
 						receiverType := pkgName + "." + sel.Sel.Name[:idx]
 						methodName := sel.Sel.Name[idx+1:]
+						// Special handling for Some_Apply to infer type parameter from argument
+						if sel.Sel.Name == transpiler.FuncSome+"_Apply" && len(e.Args) >= 2 {
+							argType := t.getExprTypeNameManual(e.Args[1])
+							if !argType.IsNil() && argType.String() != "any" {
+								return transpiler.GenericType{
+									Base:   transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeOption},
+									Params: []transpiler.Type{argType},
+								}
+							}
+						}
 						if meta, ok := t.typeMetas[receiverType]; ok {
 							if mMeta, ok := meta.Methods[methodName]; ok {
 								return mMeta.ReturnType
@@ -503,6 +513,17 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 				return transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeEither}
 			}
 			if strings.HasPrefix(sel.Sel.Name, transpiler.TypeOption+"_") || strings.HasPrefix(sel.Sel.Name, transpiler.FuncSome+"_") || strings.HasPrefix(sel.Sel.Name, transpiler.FuncNone+"_") {
+				// For Some_Apply, infer the type parameter from the second argument (the value)
+				// Some_Apply(std.Some{}, value) -> Option[typeof(value)]
+				if sel.Sel.Name == transpiler.FuncSome+"_Apply" && len(e.Args) >= 2 {
+					argType := t.getExprTypeNameManual(e.Args[1])
+					if !argType.IsNil() && argType.String() != "any" {
+						return transpiler.GenericType{
+							Base:   transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeOption},
+							Params: []transpiler.Type{argType},
+						}
+					}
+				}
 				return transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeOption}
 			}
 			if strings.HasPrefix(sel.Sel.Name, transpiler.TypeTuple+"_") {

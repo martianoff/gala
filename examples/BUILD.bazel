@@ -203,3 +203,9 @@ gala_test(
     src = "if_else_unwrapping.gala",
     expected = "if_else_unwrapping.out",
 )
+
+gala_test(
+    name = "unapply_inference",
+    src = "unapply_inference.gala",
+    expected = "unapply_inference.out",
+)

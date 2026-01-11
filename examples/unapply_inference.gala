@@ -1,0 +1,12 @@
+package main
+
+import "fmt"
+
+func main() {
+    val x = Some(123)
+    val res = x match {
+        case Some(v) => fmt.Sprintf("res: %d", v + 1)
+        case _       => "none"
+    }
+    fmt.Println(res)
+}

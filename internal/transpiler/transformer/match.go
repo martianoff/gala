@@ -26,9 +26,25 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 		}
 	}
 
+	// Get the type of the matched expression
+	// Try multiple approaches to get the concrete instantiated type
+	var matchedType transpiler.Type
+
+	// First try manual type extraction which handles .Get() calls specially
+	matchedType = t.getExprTypeNameManual(expr)
+
+	// If that didn't work, try HM inference
+	if matchedType == nil || matchedType.IsNil() {
+		matchedType, _ = t.inferExprType(expr)
+	}
+
+	if matchedType == nil {
+		matchedType = transpiler.NilType{}
+	}
+
 	t.pushScope()
 	defer t.popScope()
-	t.addVar(paramName, transpiler.NilType{})
+	t.addVar(paramName, matchedType)
 
 	var clauses []ast.Stmt
 	var defaultBody []ast.Stmt
@@ -247,6 +263,21 @@ func (t *galaASTTransformer) transformExpressionPattern(patExprCtx grammar.IExpr
 		var conds []ast.Expr
 		conds = append(conds, ast.NewIdent(okName))
 
+		// Infer the type of the matched object to enable type-safe extraction
+		var extractedType transpiler.Type
+		var objType transpiler.Type
+		// First try to get type directly from scope if objExpr is an identifier
+		if ident, ok := objExpr.(*ast.Ident); ok {
+			objType = t.getType(ident.Name)
+		}
+		// Fall back to type inference if direct lookup didn't work
+		if objType == nil || objType.IsNil() {
+			objType, _ = t.inferExprType(objExpr)
+		}
+		if objType != nil && !objType.IsNil() {
+			extractedType = t.getExtractedType(rawName, objType)
+		}
+
 		// Handle arguments (nested patterns)
 		if argList != nil {
 			for i, argCtx := range argList.AllArgument() {
@@ -256,12 +287,18 @@ func (t *galaASTTransformer) transformExpressionPattern(patExprCtx grammar.IExpr
 					continue
 				}
 
-				valExpr := &ast.CallExpr{
+				getSafeExpr := &ast.CallExpr{
 					Fun: t.stdIdent("GetSafe"),
 					Args: []ast.Expr{
 						ast.NewIdent(resName),
 						&ast.BasicLit{Kind: token.INT, Value: fmt.Sprintf("%d", i)},
 					},
+				}
+
+				// Add type assertion if we know the extracted type
+				var valExpr ast.Expr = getSafeExpr
+				if extractedType != nil && !extractedType.IsNil() {
+					valExpr = t.wrapWithTypeAssertion(getSafeExpr, extractedType)
 				}
 
 				subCond, subBindings, err := t.transformPattern(arg.Pattern(), valExpr)
@@ -386,4 +423,64 @@ func (t *galaASTTransformer) transformCaseClause(ctx *grammar.CaseClauseContext,
 	}
 
 	return ifStmt, nil
+}
+
+// getExtractedType determines the type of the value extracted by an extractor pattern.
+// For example, when matching Some(v) against Option[int], the extracted type is int.
+func (t *galaASTTransformer) getExtractedType(extractorName string, objType transpiler.Type) transpiler.Type {
+	genType, ok := objType.(transpiler.GenericType)
+	if !ok || len(genType.Params) == 0 {
+		return nil
+	}
+
+	baseName := genType.Base.BaseName()
+
+	var extractedType transpiler.Type
+	switch extractorName {
+	case "Some", "std.Some":
+		// Some extracts from Option[T], returning T
+		if baseName == "Option" || baseName == "std.Option" {
+			extractedType = genType.Params[0]
+		}
+	case "Left", "std.Left":
+		// Left extracts from Either[A, B], returning A
+		if baseName == "Either" || baseName == "std.Either" {
+			extractedType = genType.Params[0]
+		}
+	case "Right", "std.Right":
+		// Right extracts from Either[A, B], returning B
+		if baseName == "Either" || baseName == "std.Either" {
+			if len(genType.Params) > 1 {
+				extractedType = genType.Params[1]
+			}
+		}
+	}
+
+	// Check if the extracted type is a type parameter (like T, U, A, B)
+	// If so, return nil to avoid generating invalid type assertions
+	if extractedType != nil {
+		if basic, ok := extractedType.(transpiler.BasicType); ok {
+			name := basic.Name
+			// Type parameters are typically single uppercase letters or short names
+			if len(name) == 1 && name[0] >= 'A' && name[0] <= 'Z' {
+				return nil
+			}
+		}
+	}
+
+	return extractedType
+}
+
+// wrapWithTypeAssertion wraps an expression with a type assertion.
+// For example, wraps `std.GetSafe(res, 0)` to `std.GetSafe(res, 0).(int)`
+func (t *galaASTTransformer) wrapWithTypeAssertion(expr ast.Expr, typ transpiler.Type) ast.Expr {
+	typeExpr := t.typeToExpr(typ)
+	if typeExpr == nil {
+		return expr
+	}
+
+	return &ast.TypeAssertExpr{
+		X:    expr,
+		Type: typeExpr,
+	}
 }
