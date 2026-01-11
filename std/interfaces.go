@@ -1,7 +1,7 @@
 package std
 
-type Unapply interface {
-	Unapply(v any) any
+type Unapply[U any, T any] interface {
+	Unapply(u U) Option[T]
 }
 
 type Copyable[T any] interface {

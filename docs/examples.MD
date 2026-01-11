@@ -177,8 +177,8 @@ type Wrap[T any] struct {
 // Define an extractor object
 type Wrapper struct {}
 func (w Wrapper) Apply[T any](v T) Wrap[T] = Wrap[T](Value = v)
-func (w Wrapper) Unapply(o any) any = o match {
-    case wi: Wrap[_] => Some(wi.Value)
+func (w Wrapper) Unapply(o any) Option[any] = o match {
+    case wi: Wrap[_] => Some[any](wi.Value)
     case _           => None[any]()
 }
 

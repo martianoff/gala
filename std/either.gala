@@ -10,11 +10,21 @@ type Either[A any, B any] struct {
 
 type Left struct {}
 func (l Left) Apply[A any, B any](v A) Either[A, B] = Either[A, B](LeftValue = v, isLeft = true)
-func (l Left) Unapply(e any) any = if (isLeft(e)) getLeftValue(e) else nil
+func (l Left) Unapply(e any) Option[any] {
+    if isLeft(e) {
+        return Some[any](getLeftValue(e))
+    }
+    return None[any]()
+}
 
 type Right struct {}
 func (r Right) Apply[A any, B any](v B) Either[A, B] = Either[A, B](RightValue = v, isLeft = false)
-func (r Right) Unapply(e any) any = if (isRight(e)) getRightValue(e) else nil
+func (r Right) Unapply(e any) Option[any] {
+    if isRight(e) {
+        return Some[any](getRightValue(e))
+    }
+    return None[any]()
+}
 
 func (e Either[A, B]) getIsLeft() bool = e.isLeft
 func (e Either[A, B]) getLeftValue() any = e.LeftValue

@@ -24,11 +24,21 @@ type Option[T any] struct {
 
 type Some struct {}
 func (s Some) Apply[T any](v T) Option[T] = Option[T](Value = v, defined = true)
-func (s Some) Unapply(o any) any = if (isDefined(o)) getSomeValue(o) else nil
+func (s Some) Unapply(o any) Option[any] {
+    if isDefined(o) {
+        return Some[any](getSomeValue(o))
+    }
+    return None[any]()
+}
 
 type None struct {}
 func (n None) Apply[T any]() Option[T] = Option[T](defined = false)
-func (n None) Unapply(o any) bool = !isDefined(o)
+func (n None) Unapply(o any) Option[bool] {
+    if !isDefined(o) {
+        return Some[bool](true)
+    }
+    return None[bool]()
+}
 
 // isDefined returns true if the option is an instance of Some, false otherwise.
 func (o Option[T]) isDefined() bool = o.defined

@@ -12,16 +12,7 @@ func UnapplyCheck(obj any, pattern any) bool {
 func UnapplyFull(obj any, pattern any) ([]any, bool) {
 	obj = unwrapImmutable(obj)
 
-	if u, ok := pattern.(Unapply); ok {
-		res := u.Unapply(obj)
-		if isDefined(res) {
-			val := getSomeValue(res)
-			return []any{val}, true
-		}
-		return nil, false
-	}
-
-	// Also try pattern.Unapply(obj) via reflection if interface not satisfied
+	// Use reflection to call Unapply method since Unapply interface is generic
 	patVal := reflect.ValueOf(pattern)
 	if !patVal.IsValid() {
 		return nil, false
