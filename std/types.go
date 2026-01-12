@@ -12,7 +12,17 @@ func UnapplyCheck(obj any, pattern any) bool {
 func UnapplyFull(obj any, pattern any) ([]any, bool) {
 	obj = unwrapImmutable(obj)
 
-	// Use reflection to call Unapply method since Unapply interface is generic
+	// Try the Unapply[any, any] interface first (covers Some, Left, Right)
+	if u, ok := pattern.(Unapply[any, any]); ok {
+		res := u.Unapply(obj)
+		if isDefined(res) {
+			return []any{getSomeValue(res)}, true
+		}
+		return nil, false
+	}
+
+	// Fall back to reflection for other Unapply implementations (e.g., None returns Option[bool],
+	// or custom extractors with different type parameters)
 	patVal := reflect.ValueOf(pattern)
 	if !patVal.IsValid() {
 		return nil, false

@@ -12,3 +12,9 @@ gala_unit_test(
     src = "framework_test/main.gala",
     deps = [":test"],
 )
+
+gala_unit_test(
+    name = "std_test",
+    src = "std_test/main.gala",
+    deps = [":test"],
+)
