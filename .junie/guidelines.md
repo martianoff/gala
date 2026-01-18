@@ -94,6 +94,7 @@ bazel mod tidy
 ## 14. Strict rules
 - Do not modify code generated files internal/parser/grammar/*.go
 - Standard library (`std`) written in GALA must not be treated differently than user-contributed libraries. The transpiler must not hardcode or give special treatment to std library code - it should be processed through the same import/resolution mechanisms as any other GALA library.
+- GALA is a type-safe language. Transpiler should always generate concrete types instead of "any", unless "any" is explicitly asked in GALA code, and fail if it is not possible.
 
 ## 15. Documentation
 - When you make changes to the grammar or add new features, update the docs/GALA.MD, docs/TYPE_INFERENCE.md and docs/examples.MD files with corresponding changes. In docs/examples.MD, prefer short functional syntax to demonstrate benefits over go code.

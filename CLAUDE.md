@@ -21,6 +21,8 @@ Maintain this folder structure:
 
 **Standard library (`std`) must not receive special treatment** - GALA code in `std` must be processed through the same import/resolution mechanisms as any other GALA library. Do not hardcode or give special treatment to std library code in the transpiler.
 
+**GALA is a type-safe language** - Transpiler should always generate concrete types instead of "any", unless "any" is explicitly asked in GALA code, and fail if it is not possible.
+
 ## Building and Testing
 
 ### Running Tests
