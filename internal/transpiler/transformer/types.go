@@ -579,6 +579,17 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 						return methodMeta.ReturnType
 					}
 				}
+				// Fallback: try base type name for generic types
+				// e.g., for Pair[int, string].Swap(), try looking up Pair
+				if genType, ok := xType.(transpiler.GenericType); ok {
+					baseTypeName := genType.Base.String()
+					if typeMeta, ok := t.typeMetas[baseTypeName]; ok {
+						if methodMeta, ok := typeMeta.Methods[sel.Sel.Name]; ok {
+							// Substitute type parameters in return type
+							return t.substituteConcreteTypes(methodMeta.ReturnType, typeMeta.TypeParams, genType.Params)
+						}
+					}
+				}
 			}
 
 			if sel.Sel.Name == transpiler.FuncLeft || sel.Sel.Name == transpiler.FuncRight {
@@ -726,4 +737,80 @@ func (t *galaASTTransformer) resolveType(name string) transpiler.Type {
 		return transpiler.NilType{}
 	}
 	return transpiler.ParseType(name)
+}
+
+// substituteConcreteTypes substitutes type parameters in a type with concrete types.
+// For example, if returnType is Pair[B, A], typeParams is ["A", "B"], and concreteTypes is [int, string],
+// the result will be Pair[string, int].
+func (t *galaASTTransformer) substituteConcreteTypes(returnType transpiler.Type, typeParams []string, concreteTypes []transpiler.Type) transpiler.Type {
+	if returnType == nil || returnType.IsNil() {
+		return returnType
+	}
+
+	// Build a mapping from type parameter names to concrete types
+	paramMap := make(map[string]transpiler.Type)
+	for i, param := range typeParams {
+		if i < len(concreteTypes) {
+			paramMap[param] = concreteTypes[i]
+		}
+	}
+
+	return t.substituteInType(returnType, paramMap)
+}
+
+// substituteInType recursively substitutes type parameters in a type
+func (t *galaASTTransformer) substituteInType(typ transpiler.Type, paramMap map[string]transpiler.Type) transpiler.Type {
+	if typ == nil || typ.IsNil() {
+		return typ
+	}
+
+	switch v := typ.(type) {
+	case transpiler.BasicType:
+		if concrete, ok := paramMap[v.Name]; ok {
+			return concrete
+		}
+		return v
+	case transpiler.NamedType:
+		if concrete, ok := paramMap[v.Name]; ok {
+			return concrete
+		}
+		return v
+	case transpiler.GenericType:
+		newParams := make([]transpiler.Type, len(v.Params))
+		for i, param := range v.Params {
+			newParams[i] = t.substituteInType(param, paramMap)
+		}
+		newBase := t.substituteInType(v.Base, paramMap)
+		if namedBase, ok := newBase.(transpiler.NamedType); ok {
+			return transpiler.GenericType{
+				Base:   namedBase,
+				Params: newParams,
+			}
+		}
+		return transpiler.GenericType{
+			Base:   v.Base,
+			Params: newParams,
+		}
+	case transpiler.ArrayType:
+		return transpiler.ArrayType{Elem: t.substituteInType(v.Elem, paramMap)}
+	case transpiler.PointerType:
+		return transpiler.PointerType{Elem: t.substituteInType(v.Elem, paramMap)}
+	case transpiler.MapType:
+		return transpiler.MapType{
+			Key:  t.substituteInType(v.Key, paramMap),
+			Elem: t.substituteInType(v.Elem, paramMap),
+		}
+	case transpiler.FuncType:
+		newParams := make([]transpiler.Type, len(v.Params))
+		for i, p := range v.Params {
+			newParams[i] = t.substituteInType(p, paramMap)
+		}
+		newResults := make([]transpiler.Type, len(v.Results))
+		for i, r := range v.Results {
+			newResults[i] = t.substituteInType(r, paramMap)
+		}
+		return transpiler.FuncType{Params: newParams, Results: newResults}
+	default:
+		return typ
+	}
 }
