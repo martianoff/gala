@@ -189,6 +189,76 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 				var elts []ast.Expr
 				immutFlags := t.structImmutFields[typeName]
 
+				// Check if this is a generic type without explicit type parameters
+				// If so, we need to infer the type parameters from field values
+				typeMeta, hasTypeMeta := t.typeMetas[rawTypeName]
+				hasExplicitTypeArgs := false
+				if _, ok := x.(*ast.IndexExpr); ok {
+					hasExplicitTypeArgs = true
+				} else if _, ok := x.(*ast.IndexListExpr); ok {
+					hasExplicitTypeArgs = true
+				}
+
+				if hasTypeMeta && len(typeMeta.TypeParams) > 0 && !hasExplicitTypeArgs {
+					// Need to infer type parameters from field values
+					typeParamToType := make(map[string]transpiler.Type)
+
+					// Build mapping of field values to use for inference
+					fieldValues := make(map[string]ast.Expr)
+					if namedArgs != nil {
+						fieldValues = namedArgs
+					} else {
+						for i, arg := range args {
+							if i < len(fieldNames) {
+								fieldValues[fieldNames[i]] = arg
+							}
+						}
+					}
+
+					// For each field, check if its type uses a type parameter
+					// and infer the concrete type from the field value
+					for fieldName, fieldType := range typeMeta.Fields {
+						if val, ok := fieldValues[fieldName]; ok {
+							// Check if fieldType is a type parameter
+							fieldTypeStr := fieldType.String()
+							for _, tp := range typeMeta.TypeParams {
+								if fieldTypeStr == tp {
+									// This field uses a type parameter, infer its type from the value
+									valType := t.getExprTypeName(val)
+									if valType != nil && !valType.IsNil() {
+										typeParamToType[tp] = valType
+									}
+								}
+							}
+						}
+					}
+
+					// Build the new typeExpr with inferred type arguments
+					if len(typeParamToType) > 0 {
+						var inferredTypeArgs []ast.Expr
+						for _, tp := range typeMeta.TypeParams {
+							if inferredType, ok := typeParamToType[tp]; ok {
+								inferredTypeArgs = append(inferredTypeArgs, t.typeToExpr(inferredType))
+							} else {
+								// Fallback to any if we can't infer
+								inferredTypeArgs = append(inferredTypeArgs, ast.NewIdent("any"))
+							}
+						}
+
+						if len(inferredTypeArgs) == 1 {
+							typeExpr = &ast.IndexExpr{
+								X:     baseExpr,
+								Index: inferredTypeArgs[0],
+							}
+						} else if len(inferredTypeArgs) > 1 {
+							typeExpr = &ast.IndexListExpr{
+								X:       baseExpr,
+								Indices: inferredTypeArgs,
+							}
+						}
+					}
+				}
+
 				if namedArgs != nil {
 					for i, fn := range fieldNames {
 						if val, ok := namedArgs[fn]; ok {

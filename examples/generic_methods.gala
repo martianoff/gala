@@ -28,4 +28,9 @@ func main() {
 
     val p3 = p.MapFirst((i int) => i > 0)
     fmt.Println("Mapped Pair:", p3.First, p3.Second)
+
+    // implicit types
+    val p4 = Pair(First = "world", Second = 22)
+    val p5 = p4.Swap()
+    fmt.Println("Implicit Swapped Pair:", p5.First, p5.Second)
 }
