@@ -96,10 +96,11 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 
 					var fun ast.Expr
 					if !recvType.IsNil() {
-						if recvBaseName == transpiler.TypeOption || recvBaseName == transpiler.TypeImmutable || recvBaseName == transpiler.TypeTuple || recvBaseName == transpiler.TypeEither {
-							fun = t.stdIdent(recvBaseName + "_" + method)
-						} else if strings.HasPrefix(recvBaseName, "std.") {
-							fun = t.stdIdent(strings.TrimPrefix(recvBaseName, "std.") + "_" + method)
+						recvPkg := recvType.GetPackage()
+						if recvPkg == transpiler.StdPackage || strings.HasPrefix(recvBaseName, "std.") {
+							// Receiver is from std package
+							baseName := strings.TrimPrefix(recvBaseName, "std.")
+							fun = t.stdIdent(baseName + "_" + method)
 						} else {
 							fun = t.ident(recvBaseName + "_" + method)
 						}
@@ -323,8 +324,13 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 				if isGeneric {
 					fullName := exprBaseName + "_Apply"
 					var fun ast.Expr
-					if strings.HasPrefix(exprBaseName, "std.") || exprBaseName == transpiler.TypeOption || exprBaseName == transpiler.TypeImmutable || exprBaseName == transpiler.TypeTuple || exprBaseName == transpiler.TypeEither ||
-						exprBaseName == transpiler.FuncSome || exprBaseName == transpiler.FuncNone || exprBaseName == transpiler.FuncLeft || exprBaseName == transpiler.FuncRight {
+					// Check if type belongs to std package using resolution
+					isStdType := strings.HasPrefix(exprBaseName, "std.")
+					if !isStdType {
+						resolvedType := t.getType(exprBaseName)
+						isStdType = !resolvedType.IsNil() && resolvedType.GetPackage() == transpiler.StdPackage
+					}
+					if isStdType {
 						fun = t.stdIdent(strings.TrimPrefix(fullName, "std."))
 					} else {
 						fun = t.ident(fullName)
@@ -496,9 +502,7 @@ func (t *galaASTTransformer) transformExpression(ctx grammar.IExpressionContext)
 			selName := child3.(antlr.ParseTree).GetText()
 			// Don't unwrap if we're accessing Immutable's own fields/methods
 			xType := t.getExprTypeName(x)
-			xTypeName := xType.String()
-			isImmutable := strings.HasPrefix(xTypeName, transpiler.TypeImmutable+"[") || xTypeName == transpiler.TypeImmutable ||
-				strings.HasPrefix(xTypeName, "std."+transpiler.TypeImmutable+"[") || xTypeName == "std."+transpiler.TypeImmutable
+			isImmutable := t.isImmutableType(xType)
 
 			if !isImmutable || (selName != "Get" && selName != "value") {
 				x = t.unwrapImmutable(x)
@@ -511,7 +515,7 @@ func (t *galaASTTransformer) transformExpression(ctx grammar.IExpressionContext)
 
 			// Re-evaluate type after potential unwrap
 			xType = t.getExprTypeName(x)
-			xTypeName = xType.String()
+			xTypeName := xType.String()
 			baseTypeName := xTypeName
 			if idx := strings.Index(xTypeName, "["); idx != -1 {
 				baseTypeName = xTypeName[:idx]
@@ -677,18 +681,30 @@ func (t *galaASTTransformer) getUnaryToken(op string) token.Token {
 func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.Expr, error) {
 	if ctx.Identifier() != nil {
 		name := ctx.Identifier().GetText()
-		if name == transpiler.FuncSome || name == transpiler.FuncNone || name == transpiler.FuncLeft || name == transpiler.FuncRight ||
-			name == transpiler.TypeTuple || name == transpiler.TypeEither || name == transpiler.TypeImmutable || name == transpiler.FuncNewImmutable {
+		ident := ast.NewIdent(name)
+
+		// First check if it's a local variable - if so, don't try to resolve as std type
+		if t.isVal(name) || t.isVar(name) {
+			if t.isVal(name) {
+				return &ast.CallExpr{
+					Fun: &ast.SelectorExpr{
+						X:   ident,
+						Sel: ast.NewIdent(transpiler.MethodGet),
+					},
+				}, nil
+			}
+			return ident, nil
+		}
+
+		// Check if this identifier is a std package type (not a variable with std type)
+		// Only check typeMetas directly to see if std.name exists as a type definition
+		if _, isStdType := t.typeMetas["std."+name]; isStdType {
 			return t.stdIdent(name), nil
 		}
-		ident := ast.NewIdent(name)
-		if t.isVal(name) {
-			return &ast.CallExpr{
-				Fun: &ast.SelectorExpr{
-					X:   ident,
-					Sel: ast.NewIdent(transpiler.MethodGet),
-				},
-			}, nil
+		// Check if it's a std function
+		resolvedFunc := t.getFunction(name)
+		if resolvedFunc != nil && resolvedFunc.Package == transpiler.StdPackage {
+			return t.stdIdent(name), nil
 		}
 		return ident, nil
 	}
@@ -859,9 +875,7 @@ func (t *galaASTTransformer) unwrapImmutable(expr ast.Expr) ast.Expr {
 	}
 
 	typeObj := t.getExprTypeName(expr)
-	typeName := typeObj.String()
-	if strings.HasPrefix(typeName, transpiler.TypeImmutable+"[") || typeName == transpiler.TypeImmutable ||
-		strings.HasPrefix(typeName, "std."+transpiler.TypeImmutable+"[") || typeName == "std."+transpiler.TypeImmutable {
+	if t.isImmutableType(typeObj) {
 		return &ast.CallExpr{
 			Fun: &ast.SelectorExpr{
 				X:   expr,

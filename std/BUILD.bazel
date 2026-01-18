@@ -8,6 +8,13 @@ exports_files([
     "either.gala",
 ])
 
+# Filegroup for all GALA source files in std - used by tests
+filegroup(
+    name = "gala_sources",
+    srcs = glob(["*.gala"]),
+    visibility = ["//visibility:public"],
+)
+
 gala_transpile(
     name = "option_go",
     src = "option.gala",

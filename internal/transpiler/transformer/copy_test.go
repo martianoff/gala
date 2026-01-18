@@ -13,7 +13,7 @@ import (
 
 func TestCopyOverrides(t *testing.T) {
 	p := transpiler.NewAntlrGalaParser()
-	a := analyzer.NewGalaAnalyzer(p, []string{"."})
+	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
 	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
@@ -116,7 +116,7 @@ var p2 = std.NewImmutable(p.Get().Copy())
 
 func TestCopyOverridesErrors(t *testing.T) {
 	p := transpiler.NewAntlrGalaParser()
-	a := analyzer.NewGalaAnalyzer(p, []string{"."})
+	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
 	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)

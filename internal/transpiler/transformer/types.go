@@ -20,8 +20,17 @@ func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, 
 			return ast.NewIdent("any"), nil
 		}
 		var ident ast.Expr = ast.NewIdent(typeName)
-		if typeName == transpiler.TypeOption || typeName == transpiler.TypeTuple || typeName == transpiler.TypeEither || typeName == transpiler.TypeImmutable {
-			ident = t.stdIdent(typeName)
+		// Use resolution to determine if this type belongs to an imported package
+		resolvedType := t.getType(typeName)
+		if !resolvedType.IsNil() {
+			if pkg := resolvedType.GetPackage(); pkg != "" && pkg != t.packageName {
+				// Type belongs to an imported package, use package-qualified identifier
+				if pkg == transpiler.StdPackage {
+					ident = t.stdIdent(typeName)
+				} else if alias, ok := t.reverseImportAliases[pkg]; ok {
+					ident = &ast.SelectorExpr{X: ast.NewIdent(alias), Sel: ast.NewIdent(typeName)}
+				}
+			}
 		}
 
 		if ctx.TypeArguments() != nil {
@@ -300,8 +309,9 @@ func (t *galaASTTransformer) isImmutableType(typ transpiler.Type) bool {
 		return false
 	}
 	baseName := typ.BaseName()
-	isImm := baseName == transpiler.TypeImmutable || baseName == "std."+transpiler.TypeImmutable ||
-		baseName == "std.Immutable"
+	// Check if base name is Immutable (with or without package prefix)
+	isImm := baseName == transpiler.TypeImmutable ||
+		strings.HasSuffix(baseName, "."+transpiler.TypeImmutable)
 
 	if isImm {
 		if gen, ok := typ.(transpiler.GenericType); ok {

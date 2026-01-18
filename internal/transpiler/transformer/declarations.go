@@ -411,7 +411,8 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 				alreadyWrapped := false
 				if idxExpr, ok := field.Type.(*ast.IndexExpr); ok {
 					if sel, ok := idxExpr.X.(*ast.SelectorExpr); ok {
-						if sel.Sel.Name == "Immutable" {
+						// Check if it's std.Immutable or any package's Immutable
+						if sel.Sel.Name == transpiler.TypeImmutable {
 							alreadyWrapped = true
 						}
 					}

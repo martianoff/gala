@@ -9,7 +9,7 @@
 - [x] Avoid gala style pattern matching
 - [x] Support Some/None as structs in GALA
 - [x] Pattern matching for types
-- [ ] Remove special casing for Tuples
+- [x] Remove special casing for Tuples
 - [ ] Extend Tuples class to Tuple3, Tuple4 ... Tuple10. Make (A, B) a synonym of Tuple(A,B), (A, B, C) a synonym of Tuple(A,B,C) and so on. Synonyms should work for construction and pattern matching
 - [x] Imported packages in GALA are analyzed with analyzers so they can support GALA features like generic methods
 - [ ] Dependency management

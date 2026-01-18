@@ -11,9 +11,8 @@ import (
 
 func TestAnalyzer(t *testing.T) {
 	p := transpiler.NewAntlrGalaParser()
-	searchPaths := []string{"../../../", "../../", "../"}
-	base := analyzer.GetBaseMetadata(p, searchPaths)
-	a := analyzer.NewGalaAnalyzerWithBase(base, p, searchPaths)
+	searchPaths := getStdSearchPath()
+	a := analyzer.NewGalaAnalyzer(p, searchPaths)
 
 	tests := []struct {
 		name     string

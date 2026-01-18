@@ -5,11 +5,20 @@ import (
 	"go/ast"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/infer"
+	"strings"
 )
 
+// normalizeTypeName resolves an unqualified type name to its fully qualified form
+// using the import resolution mechanism. Types already qualified are returned as-is.
 func (t *galaASTTransformer) normalizeTypeName(name string) string {
-	if name == "Immutable" || name == "Option" || name == "Either" || name == "Tuple" {
-		return "std." + name
+	// If already qualified (contains a dot), return as-is
+	if strings.Contains(name, ".") {
+		return name
+	}
+	// Use the unified type resolution mechanism
+	resolvedType := t.getType(name)
+	if !resolvedType.IsNil() {
+		return resolvedType.String()
 	}
 	return name
 }

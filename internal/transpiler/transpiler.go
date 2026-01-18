@@ -25,6 +25,20 @@ const (
 	MethodGet        = "Get"
 )
 
+// StdExportedTypes lists all types exported by the std package.
+// Used for conflict detection to prevent user code from shadowing std types.
+var StdExportedTypes = []string{
+	TypeOption, TypeImmutable, TypeEither, TypeTuple,
+	FuncSome, FuncNone, FuncLeft, FuncRight, // Companion objects (also act as types)
+}
+
+// StdExportedFunctions lists all functions exported by the std package.
+// Used for conflict detection to prevent user code from shadowing std functions.
+var StdExportedFunctions = []string{
+	FuncNewImmutable, FuncCopy, "Equal",
+	FuncSome, FuncNone, FuncLeft, FuncRight, // Companion constructors
+}
+
 // RichAST provides metadata about a Gala source file.
 type RichAST struct {
 	Tree             antlr.Tree

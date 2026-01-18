@@ -12,9 +12,7 @@ import (
 
 func TestRecursiveImmutableError(t *testing.T) {
 	p := transpiler.NewAntlrGalaParser()
-	searchPaths := []string{"../../.."}
-	base := analyzer.GetBaseMetadata(p, searchPaths)
-	a := analyzer.NewGalaAnalyzerWithBase(base, p, searchPaths)
+	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
 	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)

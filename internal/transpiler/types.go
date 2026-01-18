@@ -9,6 +9,7 @@ type Type interface {
 	String() string
 	IsNil() bool
 	BaseName() string
+	GetPackage() string // Returns the package of the type, or "" if none
 }
 
 // BasicType represents a basic type like int, string, bool.
@@ -16,9 +17,10 @@ type BasicType struct {
 	Name string
 }
 
-func (t BasicType) String() string   { return t.Name }
-func (t BasicType) IsNil() bool      { return false }
-func (t BasicType) BaseName() string { return t.Name }
+func (t BasicType) String() string     { return t.Name }
+func (t BasicType) IsNil() bool        { return false }
+func (t BasicType) BaseName() string   { return t.Name }
+func (t BasicType) GetPackage() string { return "" }
 
 // NamedType represents a named type, potentially package-qualified.
 type NamedType struct {
@@ -32,8 +34,9 @@ func (t NamedType) String() string {
 	}
 	return t.Name
 }
-func (t NamedType) IsNil() bool      { return false }
-func (t NamedType) BaseName() string { return t.String() }
+func (t NamedType) IsNil() bool        { return false }
+func (t NamedType) BaseName() string   { return t.String() }
+func (t NamedType) GetPackage() string { return t.Package }
 
 // GenericType represents a generic type like Immutable[int] or Tuple[int, string].
 type GenericType struct {
@@ -56,8 +59,9 @@ func (t GenericType) String() string {
 	sb.WriteByte(']')
 	return sb.String()
 }
-func (t GenericType) IsNil() bool      { return false }
-func (t GenericType) BaseName() string { return t.Base.BaseName() }
+func (t GenericType) IsNil() bool        { return false }
+func (t GenericType) BaseName() string   { return t.Base.BaseName() }
+func (t GenericType) GetPackage() string { return t.Base.GetPackage() }
 
 // ArrayType represents a slice or array type.
 type ArrayType struct {
@@ -70,8 +74,9 @@ func (t ArrayType) String() string {
 	}
 	return "[]" + t.Elem.String()
 }
-func (t ArrayType) IsNil() bool      { return false }
-func (t ArrayType) BaseName() string { return "[]" + t.Elem.BaseName() }
+func (t ArrayType) IsNil() bool        { return false }
+func (t ArrayType) BaseName() string   { return "[]" + t.Elem.BaseName() }
+func (t ArrayType) GetPackage() string { return "" }
 
 // MapType represents a map type.
 type MapType struct {
@@ -82,8 +87,9 @@ type MapType struct {
 func (t MapType) String() string {
 	return "map[" + t.Key.String() + "]" + t.Elem.String()
 }
-func (t MapType) IsNil() bool      { return false }
-func (t MapType) BaseName() string { return "map" }
+func (t MapType) IsNil() bool        { return false }
+func (t MapType) BaseName() string   { return "map" }
+func (t MapType) GetPackage() string { return "" }
 
 // PointerType represents a pointer type.
 type PointerType struct {
@@ -93,8 +99,9 @@ type PointerType struct {
 func (t PointerType) String() string {
 	return "*" + t.Elem.String()
 }
-func (t PointerType) IsNil() bool      { return false }
-func (t PointerType) BaseName() string { return "*" + t.Elem.BaseName() }
+func (t PointerType) IsNil() bool        { return false }
+func (t PointerType) BaseName() string   { return "*" + t.Elem.BaseName() }
+func (t PointerType) GetPackage() string { return "" }
 
 // FuncType represents a function type.
 type FuncType struct {
@@ -102,16 +109,18 @@ type FuncType struct {
 	Results []Type
 }
 
-func (t FuncType) String() string   { return "func" }
-func (t FuncType) IsNil() bool      { return false }
-func (t FuncType) BaseName() string { return "func" }
+func (t FuncType) String() string     { return "func" }
+func (t FuncType) IsNil() bool        { return false }
+func (t FuncType) BaseName() string   { return "func" }
+func (t FuncType) GetPackage() string { return "" }
 
 // NilType represents an unknown or nil type.
 type NilType struct{}
 
-func (t NilType) String() string   { return "" }
-func (t NilType) IsNil() bool      { return true }
-func (t NilType) BaseName() string { return "" }
+func (t NilType) String() string     { return "" }
+func (t NilType) IsNil() bool        { return true }
+func (t NilType) BaseName() string   { return "" }
+func (t NilType) GetPackage() string { return "" }
 
 // ParseType is a helper to transition from string-based types to structured types.
 // It should be used sparingly as we want the analyzer to produce structured types directly.

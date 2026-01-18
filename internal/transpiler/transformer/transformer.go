@@ -85,12 +85,12 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 	t.dotImports = make([]string, 0)
 	t.tempVarCount = 0
 
-	t.imports[transpiler.StdPackage] = transpiler.StdImportPath
-	t.importAliases[transpiler.StdPackage] = transpiler.StdPackage
-	t.reverseImportAliases[transpiler.StdPackage] = transpiler.StdPackage
-
-	// Populate importAliases from richAST.Packages
-	// We'll do this in Transform after we have the imports from the current file.
+	// Populate imports from richAST.Packages (includes implicit std import from analyzer)
+	for path, pkgName := range richAST.Packages {
+		t.imports[pkgName] = path
+		t.importAliases[pkgName] = pkgName
+		t.reverseImportAliases[pkgName] = pkgName
+	}
 
 	// Populate metadata from RichAST
 	for typeName, meta := range richAST.Types {
@@ -134,12 +134,24 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 	for alias, path := range t.imports {
 		if actualPkgName, ok := richAST.Packages[path]; ok {
 			t.importAliases[alias] = actualPkgName
-			t.reverseImportAliases[actualPkgName] = alias
+			// Only update reverseImportAliases if alias is different from actualPkgName
+			// This ensures explicit import aliases (like libalias "pkg/lib") take precedence
+			// over implicit aliases set from richAST.Packages
+			if alias != actualPkgName {
+				t.reverseImportAliases[actualPkgName] = alias
+			} else if _, exists := t.reverseImportAliases[actualPkgName]; !exists {
+				// Only set if no explicit alias exists
+				t.reverseImportAliases[actualPkgName] = alias
+			}
 		} else {
 			parts := strings.Split(path, "/")
 			pkg := parts[len(parts)-1]
 			t.importAliases[alias] = pkg
-			t.reverseImportAliases[pkg] = alias
+			if alias != pkg {
+				t.reverseImportAliases[pkg] = alias
+			} else if _, exists := t.reverseImportAliases[pkg]; !exists {
+				t.reverseImportAliases[pkg] = alias
+			}
 		}
 	}
 

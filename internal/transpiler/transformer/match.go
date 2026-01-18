@@ -532,6 +532,10 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 			} else {
 				patternExpr = &ast.CompositeLit{Type: t.ident(rawName)}
 			}
+		} else if t.getCompanionObjectMetadata(rawName) != nil {
+			// For companion objects like Some, Left, Right, create a composite literal
+			// so we generate std.Some{} instead of std.Some
+			patternExpr = &ast.CompositeLit{Type: patternExpr}
 		}
 
 		var argList *grammar.ArgumentListContext

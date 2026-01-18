@@ -13,7 +13,8 @@ import (
 
 func TestImmutableUnwrapping(t *testing.T) {
 	p := transpiler.NewAntlrGalaParser()
-	a := analyzer.NewGalaAnalyzer(p, []string{"."})
+	// Module root will be found automatically by looking for go.mod
+	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
 	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)

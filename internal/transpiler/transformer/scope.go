@@ -82,10 +82,16 @@ func (t *galaASTTransformer) getType(name string) transpiler.Type {
 		}
 	}
 
-	// 5. Check std package (auto-imported)
-	stdName := "std." + name
-	if _, ok := t.typeMetas[stdName]; ok {
-		return transpiler.ParseType(stdName)
+	// 5. Search in all imported packages (including implicit std import)
+	for alias := range t.imports {
+		actualPkg := alias
+		if actual, ok := t.importAliases[alias]; ok {
+			actualPkg = actual
+		}
+		fullName := actualPkg + "." + name
+		if _, ok := t.typeMetas[fullName]; ok {
+			return transpiler.ParseType(fullName)
+		}
 	}
 
 	return transpiler.NilType{}
@@ -129,10 +135,16 @@ func (t *galaASTTransformer) getFunction(name string) *transpiler.FunctionMetada
 			return fMeta
 		}
 	}
-	// Check std package
-	stdName := "std." + name
-	if fMeta, ok := t.functions[stdName]; ok {
-		return fMeta
+	// Search in all imported packages (including implicit std import)
+	for alias := range t.imports {
+		actualPkg := alias
+		if actual, ok := t.importAliases[alias]; ok {
+			actualPkg = actual
+		}
+		fullName := actualPkg + "." + name
+		if fMeta, ok := t.functions[fullName]; ok {
+			return fMeta
+		}
 	}
 	return nil
 }

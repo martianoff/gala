@@ -14,17 +14,18 @@ go_library(
 
 go_test(
     name = "analyzer_test",
-    srcs = ["analyzer_test.go"],
+    srcs = [
+        "analyzer_test.go",
+        "test_helper.go",
+    ],
     data = [
-        "//std:either.gala",
-        "//std:immutable.gala",
-        "//std:option.gala",
-        "//std:tuple.gala",
+        "//std:gala_sources",
     ],
     deps = [
         ":analyzer",
         "//internal/transpiler",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
+        "@rules_go//go/tools/bazel:go_default_library",
     ],
 )

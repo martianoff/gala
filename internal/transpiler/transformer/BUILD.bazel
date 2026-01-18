@@ -46,15 +46,13 @@ go_test(
         "option_test.go",
         "recursive_immutable_test.go",
         "structs_test.go",
+        "test_helper.go",
         "tuple_either_test.go",
         "type_inference_test.go",
         "variables_test.go",
     ],
     data = [
-        "//std:either.gala",
-        "//std:immutable.gala",
-        "//std:option.gala",
-        "//std:tuple.gala",
+        "//std:gala_sources",
     ],
     deps = [
         ":transformer",
@@ -62,5 +60,6 @@ go_test(
         "//internal/transpiler/analyzer",
         "//internal/transpiler/generator",
         "@com_github_stretchr_testify//assert",
+        "@rules_go//go/tools/bazel:go_default_library",
     ],
 )
