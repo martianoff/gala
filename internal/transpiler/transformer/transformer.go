@@ -24,10 +24,11 @@ type galaASTTransformer struct {
 	genericMethods       map[string]map[string]bool            // receiverType -> methodName -> isGeneric
 	functions            map[string]*transpiler.FunctionMetadata
 	typeMetas            map[string]*transpiler.TypeMetadata
-	imports              map[string]string // alias or pkgName -> package path
-	importAliases        map[string]string // alias -> actual pkgName
-	reverseImportAliases map[string]string // actual pkgName -> alias
-	dotImports           []string          // package names
+	companionObjects     map[string]*transpiler.CompanionObjectMetadata // companion name -> metadata
+	imports              map[string]string                              // alias or pkgName -> package path
+	importAliases        map[string]string                              // alias -> actual pkgName
+	reverseImportAliases map[string]string                              // actual pkgName -> alias
+	dotImports           []string                                       // package names
 	tempVarCount         int
 	inferer              *infer.Inferer
 }
@@ -43,6 +44,7 @@ func NewGalaASTTransformer() transpiler.ASTTransformer {
 		genericMethods:       make(map[string]map[string]bool),
 		functions:            make(map[string]*transpiler.FunctionMetadata),
 		typeMetas:            make(map[string]*transpiler.TypeMetadata),
+		companionObjects:     make(map[string]*transpiler.CompanionObjectMetadata),
 		imports:              make(map[string]string),
 		importAliases:        make(map[string]string),
 		reverseImportAliases: make(map[string]string),
@@ -73,6 +75,10 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 	t.genericMethods = make(map[string]map[string]bool)
 	t.functions = richAST.Functions
 	t.typeMetas = richAST.Types
+	t.companionObjects = richAST.CompanionObjects
+	if t.companionObjects == nil {
+		t.companionObjects = make(map[string]*transpiler.CompanionObjectMetadata)
+	}
 	t.imports = make(map[string]string)
 	t.importAliases = make(map[string]string)
 	t.reverseImportAliases = make(map[string]string)

@@ -191,7 +191,11 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 
 				// Check if this is a generic type without explicit type parameters
 				// If so, we need to infer the type parameters from field values
-				typeMeta, hasTypeMeta := t.typeMetas[rawTypeName]
+				// Try both rawTypeName and qualified typeName for lookup
+				typeMeta, hasTypeMeta := t.typeMetas[typeName]
+				if !hasTypeMeta {
+					typeMeta, hasTypeMeta = t.typeMetas[rawTypeName]
+				}
 				hasExplicitTypeArgs := false
 				if _, ok := x.(*ast.IndexExpr); ok {
 					hasExplicitTypeArgs = true

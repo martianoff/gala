@@ -15,9 +15,10 @@ import (
 // GetBaseMetadata loads standard library metadata from .gala files.
 func GetBaseMetadata(p transpiler.GalaParser, searchPaths []string) *transpiler.RichAST {
 	base := &transpiler.RichAST{
-		Types:     make(map[string]*transpiler.TypeMetadata),
-		Functions: make(map[string]*transpiler.FunctionMetadata),
-		Packages:  make(map[string]string),
+		Types:            make(map[string]*transpiler.TypeMetadata),
+		Functions:        make(map[string]*transpiler.FunctionMetadata),
+		Packages:         make(map[string]string),
+		CompanionObjects: make(map[string]*transpiler.CompanionObjectMetadata),
 	}
 	base.Packages[transpiler.StdImportPath] = transpiler.StdPackage
 	temp := NewGalaAnalyzer(p, searchPaths)
@@ -122,11 +123,12 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 	}
 
 	richAST := &transpiler.RichAST{
-		Tree:        tree,
-		PackageName: pkgName,
-		Types:       make(map[string]*transpiler.TypeMetadata),
-		Functions:   make(map[string]*transpiler.FunctionMetadata),
-		Packages:    make(map[string]string),
+		Tree:             tree,
+		PackageName:      pkgName,
+		Types:            make(map[string]*transpiler.TypeMetadata),
+		Functions:        make(map[string]*transpiler.FunctionMetadata),
+		Packages:         make(map[string]string),
+		CompanionObjects: make(map[string]*transpiler.CompanionObjectMetadata),
 	}
 
 	// 0. Populate base metadata if provided
@@ -207,7 +209,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 				for _, field := range structType.AllStructField() {
 					fctx := field.(*grammar.StructFieldContext)
 					fieldName := fctx.Identifier().GetText()
-					meta.Fields[fieldName] = a.resolveType(fctx.Type_().GetText(), pkgName)
+					meta.Fields[fieldName] = a.resolveTypeWithParams(fctx.Type_().GetText(), pkgName, meta.TypeParams)
 					meta.FieldNames = append(meta.FieldNames, fieldName)
 					meta.ImmutFlags = append(meta.ImmutFlags, fctx.VAR() == nil)
 				}
@@ -249,7 +251,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 						if pctx.Type_() != nil {
 							fieldType = pctx.Type_().GetText()
 						}
-						meta.Fields[fieldName] = a.resolveType(fieldType, pkgName)
+						meta.Fields[fieldName] = a.resolveTypeWithParams(fieldType, pkgName, meta.TypeParams)
 						meta.FieldNames = append(meta.FieldNames, fieldName)
 						meta.ImmutFlags = append(meta.ImmutFlags, pctx.VAR() == nil)
 					}
@@ -364,16 +366,133 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 		}
 	}
 
+	// 3. Discover companion objects - types with Unapply methods that can be used for pattern matching
+	a.discoverCompanionObjects(richAST)
+
 	return richAST, nil
 }
 
+// discoverCompanionObjects identifies types that can be used as pattern extractors.
+// A companion object is a type that has an Unapply method and optionally an Apply method.
+// From the Apply method, we can determine what container type it works with and which
+// type parameter indices are extracted.
+func (a *galaAnalyzer) discoverCompanionObjects(richAST *transpiler.RichAST) {
+	for typeName, meta := range richAST.Types {
+		// Check if this type has an Unapply method
+		if _, hasUnapply := meta.Methods["Unapply"]; !hasUnapply {
+			continue
+		}
+
+		// Check if this type has an Apply method
+		applyMethod, hasApply := meta.Methods["Apply"]
+		if !hasApply {
+			continue
+		}
+
+		// Get the return type of Apply to determine the target container type
+		if applyMethod.ReturnType == nil || applyMethod.ReturnType.IsNil() {
+			continue
+		}
+
+		// Parse the return type to get the container type and its type parameters
+		returnType := applyMethod.ReturnType
+		var targetType string
+		var containerTypeParams []string
+
+		switch rt := returnType.(type) {
+		case transpiler.GenericType:
+			targetType = rt.Base.BaseName()
+			for _, param := range rt.Params {
+				containerTypeParams = append(containerTypeParams, param.String())
+			}
+		case transpiler.BasicType:
+			targetType = rt.Name
+		case transpiler.NamedType:
+			targetType = rt.Name
+		default:
+			continue
+		}
+
+		// Determine which indices are extracted based on Apply method parameters
+		// The Apply method's parameter types tell us which container type params are extracted
+		extractIndices := a.computeExtractIndices(applyMethod, containerTypeParams)
+
+		companionMeta := &transpiler.CompanionObjectMetadata{
+			Name:           meta.Name,
+			Package:        meta.Package,
+			TargetType:     targetType,
+			ExtractIndices: extractIndices,
+		}
+
+		// Store with both short and full name for lookup
+		richAST.CompanionObjects[meta.Name] = companionMeta
+		if meta.Package != "" && meta.Package != "main" && meta.Package != "test" {
+			richAST.CompanionObjects[typeName] = companionMeta
+		}
+	}
+}
+
+// computeExtractIndices determines which type parameter indices are extracted by a companion object.
+// It looks at the Apply method's parameters and finds their positions in the container's type parameters.
+func (a *galaAnalyzer) computeExtractIndices(applyMethod *transpiler.MethodMetadata, containerTypeParams []string) []int {
+	var indices []int
+
+	// For each parameter type in Apply, find its index in the container's type parameters
+	for _, paramType := range applyMethod.ParamTypes {
+		if paramType == nil || paramType.IsNil() {
+			continue
+		}
+		paramTypeName := normalizeTypeName(paramType.String())
+
+		// Find this type in the container's type parameters
+		for idx, containerParam := range containerTypeParams {
+			normalizedContainerParam := normalizeTypeName(containerParam)
+			if normalizedContainerParam == paramTypeName {
+				indices = append(indices, idx)
+				break
+			}
+		}
+	}
+
+	// If we couldn't determine indices from parameters, default to [0]
+	// This handles cases like None which has no parameters
+	if len(indices) == 0 && len(containerTypeParams) > 0 {
+		// For extractors with no params (like None), don't add any indices
+		// They match but don't extract values
+	}
+
+	return indices
+}
+
+// normalizeTypeName removes package prefixes for comparison purposes.
+func normalizeTypeName(name string) string {
+	// Remove common package prefixes
+	if strings.HasPrefix(name, "std.") {
+		return name[4:]
+	}
+	return name
+}
+
 func (a *galaAnalyzer) resolveType(typeName string, pkgName string) transpiler.Type {
+	return a.resolveTypeWithParams(typeName, pkgName, nil)
+}
+
+// resolveTypeWithParams resolves a type name, taking into account type parameters
+// that should not be prefixed with the package name.
+func (a *galaAnalyzer) resolveTypeWithParams(typeName string, pkgName string, typeParams []string) transpiler.Type {
 	if typeName == "" {
 		return transpiler.NilType{}
 	}
 	// If it's already package-qualified, just parse it
 	if strings.Contains(typeName, ".") {
 		return transpiler.ParseType(typeName)
+	}
+
+	// Check if it's a type parameter - these should not be prefixed
+	for _, tp := range typeParams {
+		if typeName == tp {
+			return transpiler.ParseType(typeName)
+		}
 	}
 
 	// Check if it's a builtin
@@ -408,9 +527,10 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 	}
 
 	pkgAST := &transpiler.RichAST{
-		Types:     make(map[string]*transpiler.TypeMetadata),
-		Functions: make(map[string]*transpiler.FunctionMetadata),
-		Packages:  make(map[string]string),
+		Types:            make(map[string]*transpiler.TypeMetadata),
+		Functions:        make(map[string]*transpiler.FunctionMetadata),
+		Packages:         make(map[string]string),
+		CompanionObjects: make(map[string]*transpiler.CompanionObjectMetadata),
 	}
 
 	for _, f := range files {

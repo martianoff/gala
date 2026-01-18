@@ -13,7 +13,9 @@ import (
 
 func TestMatch(t *testing.T) {
 	p := transpiler.NewAntlrGalaParser()
-	a := analyzer.NewGalaAnalyzer(p, []string{"."})
+	searchPaths := []string{"../../../", "../../", "../"}
+	base := analyzer.GetBaseMetadata(p, searchPaths)
+	a := analyzer.NewGalaAnalyzerWithBase(base, p, searchPaths)
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
 	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
@@ -135,10 +137,10 @@ val res = x match {
 
 import "martianoff/gala/std"
 
-var x std.Immutable[std.Option[int]] = std.NewImmutable[std.Option[int]](std.Some(1))
+var x std.Immutable[std.Option[int]] = std.NewImmutable[std.Option[int]](std.Some_Apply(std.Some{}, 1))
 var res = std.NewImmutable(func(x std.Option[int]) int {
 	{
-		_tmp_1, _tmp_2 := std.UnapplyFull(x, std.Some)
+		_tmp_1, _tmp_2 := std.UnapplyFull(x, std.Some{})
 		y, _tmp_3 := std.As[int](std.GetSafe(_tmp_1, 0))
 		if _tmp_2 && _tmp_3 {
 			return y
@@ -162,10 +164,10 @@ val res = x match {
 
 import "martianoff/gala/std"
 
-var x std.Immutable[std.Option[any]] = std.NewImmutable[std.Option[any]](std.Some("test"))
+var x std.Immutable[std.Option[any]] = std.NewImmutable[std.Option[any]](std.Some_Apply(std.Some{}, "test"))
 var res = std.NewImmutable(func(x std.Option[any]) string {
 	{
-		_tmp_1, _tmp_2 := std.UnapplyFull(x, std.Some)
+		_tmp_1, _tmp_2 := std.UnapplyFull(x, std.Some{})
 		s, _tmp_4 := std.As[string](std.GetSafe(_tmp_1, 0))
 		if _tmp_2 && _tmp_4 {
 			return s

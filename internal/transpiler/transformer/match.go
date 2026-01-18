@@ -513,7 +513,7 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 
 		var unapplyFun ast.Expr = t.stdIdent("UnapplyFull")
 
-		// If it's a type name, use composite lit
+		// If it's a type name, determine how to match it
 		rawName := t.getBaseTypeName(patternExpr)
 		var typeObj transpiler.Type = transpiler.NilType{}
 		if rawName != "" {
@@ -525,7 +525,9 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 		typeName := typeObj.String()
 
 		if _, ok := t.structFields[typeName]; ok {
-			if typeName == "std.Tuple" || typeName == "Tuple" {
+			// Check if this is a direct struct match (pattern type equals container type)
+			// This handles cases like Tuple(a, b) matching against Tuple[A, B]
+			if t.isDirectStructMatch(rawName, matchedType) {
 				unapplyFun = t.stdIdent("UnapplyTuple")
 			} else {
 				patternExpr = &ast.CompositeLit{Type: t.ident(rawName)}
@@ -797,6 +799,7 @@ func (t *galaASTTransformer) getExtractedType(extractorName string, objType tran
 }
 
 // getExtractedTypeAtIndex determines the type of the value extracted at a specific index.
+// It uses companion object metadata discovered by the analyzer instead of hardcoding extractor names.
 // For Tuple[A, B], index 0 returns A, index 1 returns B.
 func (t *galaASTTransformer) getExtractedTypeAtIndex(extractorName string, objType transpiler.Type, index int) transpiler.Type {
 	genType, ok := objType.(transpiler.GenericType)
@@ -807,29 +810,41 @@ func (t *galaASTTransformer) getExtractedTypeAtIndex(extractorName string, objTy
 	baseName := genType.Base.BaseName()
 
 	var extractedType transpiler.Type
-	switch extractorName {
-	case "Some", "std.Some":
-		// Some extracts from Option[T], returning T
-		if baseName == "Option" || baseName == "std.Option" {
-			extractedType = genType.Params[0]
+
+	// Normalize extractor name by removing package prefix for lookup
+	normalizedName := extractorName
+	if len(normalizedName) > 4 && normalizedName[:4] == "std." {
+		normalizedName = normalizedName[4:]
+	}
+
+	// Check if this is a direct struct match (extractor type equals container type)
+	// This handles cases like Tuple(a, b) matching against Tuple[A, B]
+	if normalizedName == baseName || extractorName == baseName {
+		// Direct struct match - extract type param at the specified index
+		if index < len(genType.Params) {
+			extractedType = genType.Params[index]
 		}
-	case "Left", "std.Left":
-		// Left extracts from Either[A, B], returning A
-		if baseName == "Either" || baseName == "std.Either" {
-			extractedType = genType.Params[0]
-		}
-	case "Right", "std.Right":
-		// Right extracts from Either[A, B], returning B
-		if baseName == "Either" || baseName == "std.Either" {
-			if len(genType.Params) > 1 {
-				extractedType = genType.Params[1]
-			}
-		}
-	case "Tuple", "std.Tuple":
-		// Tuple extracts from Tuple[A, B, ...], returning the type at the specified index
-		if baseName == "Tuple" || baseName == "std.Tuple" {
-			if index < len(genType.Params) {
-				extractedType = genType.Params[index]
+	} else {
+		// Look up companion object metadata
+		companionMeta := t.getCompanionObjectMetadata(extractorName)
+		if companionMeta != nil {
+			// Verify the companion works with this container type
+			if companionMeta.TargetType == baseName ||
+				companionMeta.TargetType == "std."+baseName ||
+				"std."+companionMeta.TargetType == baseName {
+				// Find which container type param index to extract
+				if index < len(companionMeta.ExtractIndices) {
+					paramIndex := companionMeta.ExtractIndices[index]
+					if paramIndex < len(genType.Params) {
+						extractedType = genType.Params[paramIndex]
+					}
+				} else if len(companionMeta.ExtractIndices) == 1 && index == 0 {
+					// Common case: companion extracts one value, use its index
+					paramIndex := companionMeta.ExtractIndices[0]
+					if paramIndex < len(genType.Params) {
+						extractedType = genType.Params[paramIndex]
+					}
+				}
 			}
 		}
 	}
@@ -847,6 +862,67 @@ func (t *galaASTTransformer) getExtractedTypeAtIndex(extractorName string, objTy
 	}
 
 	return extractedType
+}
+
+// isDirectStructMatch checks if the pattern type directly matches the container type
+// AND the matched type is a generic type with type parameters.
+// For example, Tuple pattern matching against Tuple[A, B] is a direct match.
+// This is different from:
+// - Companion objects like Some matching Option[T]
+// - Non-generic struct matching (like Person matching Person) which should use UnapplyFull
+func (t *galaASTTransformer) isDirectStructMatch(patternTypeName string, matchedType transpiler.Type) bool {
+	if matchedType == nil || matchedType.IsNil() {
+		return false
+	}
+
+	// Only consider generic types for direct struct matching
+	// Non-generic structs should use UnapplyFull with their own Unapply method
+	genType, ok := matchedType.(transpiler.GenericType)
+	if !ok || len(genType.Params) == 0 {
+		return false
+	}
+
+	containerBaseName := genType.Base.BaseName()
+
+	// Normalize names by removing package prefixes
+	normalizedPattern := patternTypeName
+	if len(normalizedPattern) > 4 && normalizedPattern[:4] == "std." {
+		normalizedPattern = normalizedPattern[4:]
+	}
+
+	normalizedContainer := containerBaseName
+	if len(normalizedContainer) > 4 && normalizedContainer[:4] == "std." {
+		normalizedContainer = normalizedContainer[4:]
+	}
+
+	return normalizedPattern == normalizedContainer
+}
+
+// getCompanionObjectMetadata looks up companion object metadata by name.
+// It tries various name formats: short name, std-prefixed name, and fully qualified name.
+func (t *galaASTTransformer) getCompanionObjectMetadata(name string) *transpiler.CompanionObjectMetadata {
+	if t.companionObjects == nil {
+		return nil
+	}
+
+	// Try exact name first
+	if meta, ok := t.companionObjects[name]; ok {
+		return meta
+	}
+
+	// Try with std prefix
+	if meta, ok := t.companionObjects["std."+name]; ok {
+		return meta
+	}
+
+	// Try without std prefix
+	if len(name) > 4 && name[:4] == "std." {
+		if meta, ok := t.companionObjects[name[4:]]; ok {
+			return meta
+		}
+	}
+
+	return nil
 }
 
 // wrapWithTypeAssertion wraps an expression with a type assertion.

@@ -17,4 +17,12 @@ func main() {
         case _ => "Unknown"
     }
     fmt.Println(res2)
+
+    // implicit declaration
+    val t3 = Tuple(V1 = 42, V2 = true)
+    val res3 = t3 match {
+        case Tuple(a, b) => fmt.Sprintf("Tuple(%d, %v)", a, b)
+        case _ => "Unknown"
+    }
+    fmt.Println(res3)
 }

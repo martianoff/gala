@@ -16,8 +16,10 @@ go_test(
     name = "analyzer_test",
     srcs = ["analyzer_test.go"],
     data = [
+        "//std:either.gala",
         "//std:immutable.gala",
         "//std:option.gala",
+        "//std:tuple.gala",
     ],
     deps = [
         ":analyzer",

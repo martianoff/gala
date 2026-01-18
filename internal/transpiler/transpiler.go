@@ -27,11 +27,12 @@ const (
 
 // RichAST provides metadata about a Gala source file.
 type RichAST struct {
-	Tree        antlr.Tree
-	PackageName string
-	Types       map[string]*TypeMetadata
-	Functions   map[string]*FunctionMetadata
-	Packages    map[string]string // path -> pkgName
+	Tree             antlr.Tree
+	PackageName      string
+	Types            map[string]*TypeMetadata
+	Functions        map[string]*FunctionMetadata
+	Packages         map[string]string                   // path -> pkgName
+	CompanionObjects map[string]*CompanionObjectMetadata // companion name -> metadata
 }
 
 // Merge combines metadata from another RichAST into this one.
@@ -48,6 +49,9 @@ func (r *RichAST) Merge(other *RichAST) {
 	if r.Packages == nil {
 		r.Packages = make(map[string]string)
 	}
+	if r.CompanionObjects == nil {
+		r.CompanionObjects = make(map[string]*CompanionObjectMetadata)
+	}
 	for k, v := range other.Types {
 		r.Types[k] = v
 	}
@@ -56,6 +60,9 @@ func (r *RichAST) Merge(other *RichAST) {
 	}
 	for k, v := range other.Packages {
 		r.Packages[k] = v
+	}
+	for k, v := range other.CompanionObjects {
+		r.CompanionObjects[k] = v
 	}
 }
 
@@ -84,6 +91,15 @@ type FunctionMetadata struct {
 	ParamTypes []Type
 	ReturnType Type
 	TypeParams []string
+}
+
+// CompanionObjectMetadata stores information about companion objects that can be used
+// for pattern matching (types with Unapply methods).
+type CompanionObjectMetadata struct {
+	Name           string // e.g., "Some", "Left", "Right"
+	Package        string // e.g., "std"
+	TargetType     string // The container type this extracts from, e.g., "Option", "Either"
+	ExtractIndices []int  // Which type param indices to extract (e.g., [0] for Some, [1] for Right)
 }
 
 // GalaParser defines the interface for parsing Gala source code.

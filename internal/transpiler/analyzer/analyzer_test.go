@@ -136,3 +136,45 @@ func (e External) Action() = 1`,
 		})
 	}
 }
+
+func TestCompanionObjectDiscovery(t *testing.T) {
+	p := transpiler.NewAntlrGalaParser()
+	searchPaths := []string{"../../../", "../../", "../"}
+	base := analyzer.GetBaseMetadata(p, searchPaths)
+
+	// Test that companion objects are discovered from std library
+	t.Run("Some companion object", func(t *testing.T) {
+		require.NotNil(t, base.CompanionObjects)
+		// Check for Some companion object
+		someMeta, found := base.CompanionObjects["Some"]
+		if !found {
+			someMeta, found = base.CompanionObjects["std.Some"]
+		}
+		require.True(t, found, "Some companion object should be discovered")
+		assert.Equal(t, "Some", someMeta.Name)
+		assert.Contains(t, someMeta.TargetType, "Option")
+		assert.Equal(t, []int{0}, someMeta.ExtractIndices)
+	})
+
+	t.Run("Left companion object", func(t *testing.T) {
+		leftMeta, found := base.CompanionObjects["Left"]
+		if !found {
+			leftMeta, found = base.CompanionObjects["std.Left"]
+		}
+		require.True(t, found, "Left companion object should be discovered")
+		assert.Equal(t, "Left", leftMeta.Name)
+		assert.Contains(t, leftMeta.TargetType, "Either")
+		assert.Equal(t, []int{0}, leftMeta.ExtractIndices)
+	})
+
+	t.Run("Right companion object", func(t *testing.T) {
+		rightMeta, found := base.CompanionObjects["Right"]
+		if !found {
+			rightMeta, found = base.CompanionObjects["std.Right"]
+		}
+		require.True(t, found, "Right companion object should be discovered")
+		assert.Equal(t, "Right", rightMeta.Name)
+		assert.Contains(t, rightMeta.TargetType, "Either")
+		assert.Equal(t, []int{1}, rightMeta.ExtractIndices)
+	})
+}
