@@ -12,7 +12,7 @@ Maintain this folder structure:
 internal/parser/grammar - gala grammar in ANTLR4 format
 internal/transpiler/generator - generate GO code from GALA AST tree
 internal/transpiler/transformer - transform GALA AST tree to GO AST tree
-std - GALA standard library, contains common classes and functions that are automatically imported into GALA code as required by transpiler, for example `Immutable` class
+std - GALA standard library written in GALA, contains common classes and functions (e.g., `Immutable` class)
 test - GALA test framework
 
 ## 2. Dependency Injection with Explicit Construction
@@ -93,6 +93,7 @@ bazel mod tidy
 
 ## 14. Strict rules
 - Do not modify code generated files internal/parser/grammar/*.go
+- Standard library (`std`) written in GALA must not be treated differently than user-contributed libraries. The transpiler must not hardcode or give special treatment to std library code - it should be processed through the same import/resolution mechanisms as any other GALA library.
 
 ## 15. Documentation
 - When you make changes to the grammar or add new features, update the docs/GALA.MD, docs/TYPE_INFERENCE.md and docs/examples.MD files with corresponding changes. In docs/examples.MD, prefer short functional syntax to demonstrate benefits over go code.
