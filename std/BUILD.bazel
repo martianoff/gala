@@ -1,5 +1,5 @@
 load("@rules_go//go:def.bzl", "go_library", "go_test")
-load("//:gala.bzl", "gala_binary", "gala_library", "gala_transpile")
+load("//:gala.bzl", "gala_transpile")
 
 exports_files([
     "option.gala",
@@ -11,7 +11,7 @@ exports_files([
 # Filegroup for all GALA source files in std - used by tests
 filegroup(
     name = "gala_sources",
-    srcs = glob(["*.gala"]),
+    srcs = glob(["*.gala"], exclude = ["*_test.gala"]),
     visibility = ["//visibility:public"],
 )
 
@@ -54,7 +54,7 @@ go_library(
 )
 
 go_test(
-    name = "std_test",
+    name = "std_go_test",
     srcs = [
         "as_test.go",
         "unapply_test.go",

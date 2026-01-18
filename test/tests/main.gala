@@ -1,0 +1,25 @@
+package main
+
+import . "martianoff/gala/test"
+
+// Tests for the test framework itself
+
+func TestAddition(t T) T {
+    val x = 1 + 1
+    return Eq[int](t, x, 2)
+}
+
+func TestEquality(t T) T {
+    var t1 = Eq[string](t, "hello", "hello")
+    return NotEq[string](t1, "hello", "world")
+}
+
+func TestBooleans(t T) T {
+    var t1 = IsTrue(t, true)
+    return IsFalse(t1, false)
+}
+
+func TestSubtests(t T) T {
+    var t1 = t.Run("first", (t T) => Eq[int](t, 1, 1))
+    return t1.Run("second", (t T) => Eq[int](t, 2, 2))
+}

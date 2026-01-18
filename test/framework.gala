@@ -2,36 +2,185 @@ package test
 
 import (
     "fmt"
+    "os"
 )
 
-struct TestCase(Name string, F func())
-
-func RunTest(t TestCase) {
-    fmt.Printf("Running test %s... ", t.Name)
-    t.F()
-    fmt.Println("OK")
+// T is the test context, similar to Go's *testing.T.
+// It tracks test state and provides assertion and logging methods.
+type T struct {
+    name     string
+    var failed   bool
+    var skipped  bool
 }
 
-func AssertEqual[T any](actual T, expected T) {
+// newT creates a new test context with the given name.
+func newT(name string) T {
+    return T(name = name, failed = false, skipped = false)
+}
+
+// Name returns the name of the test.
+func (t T) Name() string = t.name
+
+// Failed returns whether the test has failed.
+func (t T) Failed() bool = t.failed
+
+// Skipped returns whether the test was skipped.
+func (t T) Skipped() bool = t.skipped
+
+// Fail marks the test as failed.
+func (t T) Fail() T {
+    return T(name = t.name, failed = true, skipped = t.skipped)
+}
+
+// Skip marks the test as skipped.
+func (t T) Skip() T {
+    return T(name = t.name, failed = t.failed, skipped = true)
+}
+
+// Log prints a message to the test output.
+func (t T) Log(msg string) {
+    fmt.Printf("    %s\n", msg)
+}
+
+// Error logs an error message and marks the test as failed.
+func (t T) Error(msg string) T {
+    fmt.Printf("    ERROR: %s\n", msg)
+    return T(name = t.name, failed = true, skipped = t.skipped)
+}
+
+// Fatal logs an error message, marks the test as failed, and stops execution.
+func (t T) Fatal(msg string) {
+    fmt.Printf("    FATAL: %s\n", msg)
+    panic(fmt.Sprintf("Test %s fatal error: %s", t.name, msg))
+}
+
+// Run runs a subtest with the given name and function.
+// This enables table-driven testing patterns.
+func (t T) Run(name string, f func(T) T) T {
+    var subT = newT(t.name + "/" + name)
+    fmt.Printf("=== RUN   %s\n", subT.name)
+
+    var result = runTest(subT, f)
+
+    if result.failed {
+        fmt.Printf("--- FAIL: %s\n", subT.name)
+        return T(name = t.name, failed = true, skipped = t.skipped)
+    } else if result.skipped {
+        fmt.Printf("--- SKIP: %s\n", subT.name)
+        return t
+    } else {
+        fmt.Printf("--- PASS: %s\n", subT.name)
+        return t
+    }
+}
+
+// runTest runs a test function.
+func runTest(t T, f func(T) T) T {
+    return f(t)
+}
+
+// ============================================================================
+// Test Runner
+// ============================================================================
+
+// TestFunc represents a test function that takes a T.
+type TestFunc struct {
+    Name string
+    F    func(T) T
+}
+
+// Run executes the test function.
+func (tf TestFunc) Run() bool {
+    var t = newT(tf.Name)
+    fmt.Printf("=== RUN   %s\n", t.name)
+
+    var result = runTest(t, tf.F)
+
+    // Print result
+    if result.failed {
+        fmt.Printf("--- FAIL: %s\n", t.name)
+        return false
+    } else if result.skipped {
+        fmt.Printf("--- SKIP: %s\n", t.name)
+        return true
+    } else {
+        fmt.Printf("--- PASS: %s\n", t.name)
+        return true
+    }
+}
+
+// RunTests runs all provided test functions and exits with appropriate code.
+// This is the main entry point for running tests.
+func RunTests(tests ...TestFunc) {
+    var passed = 0
+    var failed = 0
+
+    fmt.Println("=== STARTING TESTS ===")
+    var i = 0
+    for ; i < len(tests) ; {
+        var test = tests[i]
+        if test.Run() {
+            passed = passed + 1
+        } else {
+            failed = failed + 1
+        }
+        i = i + 1
+    }
+
+    fmt.Println()
+    fmt.Println("=== RESULTS ===")
+    fmt.Printf("Passed: %d, Failed: %d\n", passed, failed)
+
+    if failed > 0 {
+        fmt.Println("FAIL")
+        os.Exit(1)
+    }
+    fmt.Println("PASS")
+}
+
+// ============================================================================
+// Table-Driven Test Support
+// ============================================================================
+
+// Case represents a single test case for table-driven tests.
+type Case[In any, Out any] struct {
+    Name     string
+    Input    In
+    Expected Out
+}
+
+// ============================================================================
+// Assertions
+// ============================================================================
+
+// Eq asserts that actual equals expected.
+func Eq[V any](t T, actual V, expected V) T {
     if !std.Equal(actual, expected) {
-        panic(fmt.Sprintf("Assertion failed: actual [%v] != expected [%v]", actual, expected))
+        return t.Error(fmt.Sprintf("expected %v, got %v", expected, actual))
     }
+    return t
 }
 
-func AssertNotEqual[T any](actual T, expected T) {
+// NotEq asserts that actual does not equal expected.
+func NotEq[V any](t T, actual V, expected V) T {
     if std.Equal(actual, expected) {
-        panic(fmt.Sprintf("Assertion failed: actual [%v] == expected [%v]", actual, expected))
+        return t.Error(fmt.Sprintf("expected value different from %v", expected))
     }
+    return t
 }
 
-func AssertTrue(condition bool) {
+// IsTrue asserts that condition is true.
+func IsTrue(t T, condition bool) T {
     if !condition {
-        panic("Assertion failed: expected true, got false")
+        return t.Error("expected true, got false")
     }
+    return t
 }
 
-func AssertFalse(condition bool) {
+// IsFalse asserts that condition is false.
+func IsFalse(t T, condition bool) T {
     if condition {
-        panic("Assertion failed: expected false, got true")
+        return t.Error("expected false, got true")
     }
+    return t
 }

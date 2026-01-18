@@ -78,6 +78,52 @@ func process(val data string, var count int) {
 }
 ```
 
+### Variadic Functions
+GALA supports variadic functions using the `...T` syntax, allowing functions to accept a variable number of arguments. The variadic parameter must be the last parameter.
+
+```gala
+// Simple variadic function
+func sum(numbers ...int) int {
+    var total = 0
+    var i = 0
+    for ; i < len(numbers) ; {
+        total = total + numbers[i]
+        i = i + 1
+    }
+    return total
+}
+
+// Usage
+val result = sum(1, 2, 3, 4, 5) // result = 15
+```
+
+#### Generic Variadic Functions
+Variadic functions can be combined with generics for flexible factory functions.
+
+```gala
+func ListOf[T any](elements ...T) List[T] {
+    var result = EmptyList[T]()
+    var i = len(elements) - 1
+    for ; i >= 0 ; {
+        result = result.Prepend(elements[i])
+        i = i - 1
+    }
+    return result
+}
+
+// Usage
+val numbers = ListOf[int](1, 2, 3)
+val names = ListOf[string]("Alice", "Bob", "Charlie")
+```
+
+#### Spreading Slices
+You can spread a slice into a variadic function call using `...`.
+
+```gala
+val items = []int{1, 2, 3, 4}
+val total = sum(items...)  // Spreads slice as variadic arguments
+```
+
 ### Methods
 GALA supports methods on structs. Methods are declared by providing a receiver before the function name. GALA methods can have their own type parameters, a feature not natively supported by Go.
 
@@ -482,67 +528,139 @@ val w2 = lib.Wrapper_Map(w, (x int) => x + 1)
 
 ## 12. Testing
 
-GALA supports Bazel for building and testing. There are two main ways to define tests:
+GALA provides a test framework following Go conventions. Tests are collocated with source code and use familiar patterns.
 
-### Output Comparison Tests (`gala_test`)
+### Test File Convention
 
-Use the `gala_test` macro in your `BUILD.bazel` files to define tests that compare the execution output of a GALA program against an expected output file.
+Test files should be named with the `_test.gala` suffix or placed in a `tests/` subdirectory:
+
+```
+mypackage/
+  mycode.gala
+  tests/
+    main.gala    # Test file with package main
+```
+
+### Writing Tests
+
+Test functions must:
+- Use `package main` and import the modules being tested
+- Start with `Test` prefix (e.g., `TestAddition`)
+- Take a single parameter of type `T` and return `T`
+- Return the modified test context after assertions
+
+```gala
+package main
+
+import (
+    . "martianoff/gala/test"
+    . "martianoff/gala/std"  // Import the package being tested
+)
+
+func TestAddition(t T) T {
+    val x = 1 + 1
+    return Eq[int](t, x, 2)
+}
+
+func TestMultiplication(t T) T {
+    val x = 2 * 3
+    return Eq[int](t, x, 6)
+}
+```
+
+### Assertions
+
+The following assertions are available in the `test` package. Each assertion returns the modified test context `T`:
+- `Eq[V](t, actual, expected) T` - Assert values are equal
+- `NotEq[V](t, actual, expected) T` - Assert values are not equal
+- `IsTrue(t, condition) T` - Assert condition is true
+- `IsFalse(t, condition) T` - Assert condition is false
+
+Chain assertions by passing the result of one to the next:
+
+```gala
+func TestChained(t T) T {
+    var t1 = Eq[int](t, 1 + 1, 2)
+    var t2 = IsTrue(t1, true)
+    return IsFalse(t2, false)
+}
+```
+
+### Subtests
+
+Use `t.Run()` to create subtests for better organization:
+
+```gala
+func TestMath(t T) T {
+    var t1 = t.Run("addition", (t T) => Eq[int](t, 1 + 1, 2))
+    return t1.Run("multiplication", (t T) => Eq[int](t, 2 * 3, 6))
+}
+```
+
+### Table-Driven Tests
+
+GALA supports table-driven tests using subtests:
+
+```gala
+func TestDouble(t T) T {
+    var t1 = t.Run("zero", (t T) => Eq[int](t, 0 * 2, 0))
+    var t2 = t1.Run("positive", (t T) => Eq[int](t, 5 * 2, 10))
+    return t2.Run("negative", (t T) => Eq[int](t, -3 * 2, -6))
+}
+```
+
+### Test Context Methods
+
+The `T` test context provides methods:
+- `t.Run(name, func(T) T) T` - Run a subtest
+- `t.Log(msg)` - Log a message
+- `t.Error(msg) T` - Log error and mark test as failed
+- `t.Fatal(msg)` - Log error and stop test execution (panics)
+- `t.Fail() T` - Mark test as failed
+- `t.Skip() T` - Skip the test
+- `t.Name() string` - Get the test name
+- `t.Failed() bool` - Check if test has failed
+- `t.Skipped() bool` - Check if test was skipped
+
+### BUILD.bazel Configuration
+
+Use the `gala_go_test` macro to define tests:
+
+```python
+load("//:gala.bzl", "gala_go_test")
+
+gala_go_test(
+    name = "mycode_test",
+    srcs = ["main.gala"],
+    deps = [":mypackage"],
+)
+```
+
+### Output Comparison Tests
+
+For tests that compare program output against expected files, use `gala_test`:
 
 ```python
 load("//:gala.bzl", "gala_test")
 
 gala_test(
-    name = "my_test",
-    src = "my_test.gala",
-    expected = "my_test.out",
+    name = "output_test",
+    src = "output_test.gala",
+    expected = "output_test.out",
 )
 ```
 
-### Unit Tests (`gala_unit_test`)
+### Running Tests
 
-Use the `gala_unit_test` macro to run GALA programs that use the functional test framework and assert conditions in code. A unit test passes if the program exits with code 0.
-
-```python
-load("//:gala.bzl", "gala_unit_test")
-
-gala_unit_test(
-    name = "my_unit_test",
-    src = "my_unit_test.gala",
-    deps = ["//test"],
-)
-```
-
-To run all tests:
+Run all tests:
 ```bash
 bazel test //...
 ```
 
-### Functional Test Framework
-
-GALA provides a functional test framework in the `test` package. It allows for defining test cases and making assertions.
-
-#### Test Cases
-A test case is defined using the `TestCase` struct, which takes a name and a function to run.
-
-```gala
-import . "martianoff/gala/test"
-
-func testAddition() {
-    val x = 1 + 1
-    AssertEqual[int](x, 2)
-}
-
-func main() {
-    RunTest(TestCase(Name = "Addition", F = testAddition))
-}
+Run specific tests:
+```bash
+bazel test //mypackage:mycode_test
 ```
-
-#### Assertions
-The following assertions are available:
-- `AssertEqual[T](actual, expected)`
-- `AssertNotEqual[T](actual, expected)`
-- `AssertTrue(condition)`
-- `AssertFalse(condition)`
 
 ## 13. Further Reading
 

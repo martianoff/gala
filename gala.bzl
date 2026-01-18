@@ -167,3 +167,108 @@ def gala_test(name, src, expected, deps = [], **kwargs):
             "//conditions:default": False,
         }),
     )
+
+def _gala_go_test_gen_impl(ctx):
+    """Generate a main.gala file that runs all Test* functions."""
+    out = ctx.actions.declare_file(ctx.label.name + "_main.gala")
+
+    # Build the command to scan test files and generate main
+    args = ctx.actions.args()
+    args.add("-output", out)
+    args.add("-package", ctx.attr.pkg)
+    args.add_all(ctx.files.srcs)
+
+    ctx.actions.run(
+        outputs = [out],
+        inputs = ctx.files.srcs,
+        executable = ctx.executable._test_gen,
+        arguments = [args],
+        mnemonic = "GalaTestGen",
+        progress_message = "Generating test main for %s" % ctx.label,
+    )
+
+    return [DefaultInfo(files = depset([out]))]
+
+gala_go_test_gen = rule(
+    implementation = _gala_go_test_gen_impl,
+    attrs = {
+        "srcs": attr.label_list(
+            allow_files = [".gala"],
+            mandatory = True,
+        ),
+        "pkg": attr.string(
+            default = "main",
+            doc = "Package name for the generated main file",
+        ),
+        "_test_gen": attr.label(
+            default = "//cmd/gala_test_gen",
+            executable = True,
+            cfg = "exec",
+        ),
+    },
+)
+
+def gala_go_test(name, srcs, deps = [], **kwargs):
+    """
+    Creates a GALA test using Go-style conventions.
+
+    Test functions must:
+    - Start with "Test" prefix (e.g., TestAddition)
+    - Take a single parameter of type T (e.g., func TestXxx(t T) T)
+    - Use package main and import the packages being tested
+
+    The macro automatically generates a main function that discovers and runs
+    all Test* functions.
+
+    Args:
+        name: The name of the test target.
+        srcs: List of test source files (e.g., ["foo_test.gala"]).
+        deps: Dependencies for the test.
+        **kwargs: Additional arguments passed to the underlying rules.
+    """
+    # Generate the main.gala file
+    gen_name = name + "_gen"
+    gala_go_test_gen(
+        name = gen_name,
+        srcs = srcs,
+    )
+
+    # Transpile each test source file
+    transpiled_srcs = []
+    for i, src in enumerate(srcs):
+        transpile_name = name + "_transpile_" + str(i)
+        go_src = name + "_test_" + str(i) + ".go"
+        gala_transpile(
+            name = transpile_name,
+            src = src,
+            out = go_src,
+        )
+        transpiled_srcs.append(go_src)
+
+    # Transpile the generated main
+    main_transpile_name = name + "_main_transpile"
+    main_go_src = name + "_main.go"
+    gala_transpile(
+        name = main_transpile_name,
+        src = ":" + gen_name,
+        out = main_go_src,
+    )
+
+    # Build the test binary
+    binary_name = name + "_bin"
+    go_binary(
+        name = binary_name,
+        srcs = transpiled_srcs + [main_go_src],
+        deps = deps + ["//std", "//test"],
+        **kwargs
+    )
+
+    # Create the test rule
+    gala_internal_unit_test(
+        name = name,
+        binary = ":" + binary_name,
+        is_windows = select({
+            "@platforms//os:windows": True,
+            "//conditions:default": False,
+        }),
+    )

@@ -1,20 +1,8 @@
-load("//:gala.bzl", "gala_binary", "gala_library", "gala_test", "gala_unit_test")
+load("//:gala.bzl", "gala_library")
 
 gala_library(
     name = "test",
     src = "framework.gala",
     importpath = "martianoff/gala/test",
     visibility = ["//visibility:public"],
-)
-
-gala_unit_test(
-    name = "framework_test",
-    src = "framework_test/main.gala",
-    deps = [":test"],
-)
-
-gala_unit_test(
-    name = "std_test",
-    src = "std_test/main.gala",
-    deps = [":test"],
 )

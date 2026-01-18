@@ -1,0 +1,6 @@
+load("//:gala.bzl", "gala_go_test")
+
+gala_go_test(
+    name = "std_test",
+    srcs = ["main.gala"],
+)
