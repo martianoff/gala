@@ -43,7 +43,25 @@ func main() {
 			},
 		},
 		{
-			name: "Either extraction",
+			name: "Either extraction explicit type",
+			input: `package main
+
+func main() {
+    val e Either[int, string] = Left[int, string](10)
+    val res = e match {
+        case Left(n) => n
+        case Right(s) => len(s)
+        case _ => 0
+    }
+}`,
+			expected: []string{
+				"std.Left_Apply",
+				"std.UnapplyFull(e, std.Left{})",
+				"std.UnapplyFull(e, std.Right{})",
+			},
+		},
+		{
+			name: "Either extraction implicit type",
 			input: `package main
 
 func main() {
@@ -70,6 +88,25 @@ func main() {
 }`,
 			expected: []string{
 				"std.Either_Map[int](e",
+			},
+		},
+		{
+			name: "Either inferred type match",
+			input: `package main
+
+import "fmt"
+
+func main() {
+    val e1 = Left[int, string](10)
+    val res = e1 match {
+        case Left(n) => fmt.Sprintf("Left: %d", n)
+        case Right(s) => fmt.Sprintf("Right: %s", s)
+        case _ => "Unknown"
+    }
+}`,
+			expected: []string{
+				"std.Either[int, string]",
+				"std.UnapplyFull(e1, std.Left{})",
 			},
 		},
 	}

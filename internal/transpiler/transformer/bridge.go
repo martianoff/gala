@@ -50,6 +50,7 @@ func (t *galaASTTransformer) toInferType(typ transpiler.Type) infer.Type {
 }
 
 // fromInferType converts an infer.Type back to a transpiler.Type
+// Returns NilType for unresolved type variables (caller should check and handle)
 func (t *galaASTTransformer) fromInferType(typ infer.Type) transpiler.Type {
 	if typ == nil {
 		return transpiler.NilType{}
@@ -59,7 +60,8 @@ func (t *galaASTTransformer) fromInferType(typ infer.Type) transpiler.Type {
 	case *infer.TypeConst:
 		return transpiler.ParseType(v.Name)
 	case *infer.TypeVariable:
-		return transpiler.BasicType{Name: "any"} // Fallback for unknown type variables
+		// Unresolved type variable - return NilType to signal inference failure
+		return transpiler.NilType{}
 	case *infer.TypeApp:
 		if v.Name == "->" {
 			// This is more complex because it's curried

@@ -147,8 +147,10 @@ func (t *galaASTTransformer) wrapWithAssertion(expr ast.Expr, targetType ast.Exp
 	// If it's a CallExpr to a FuncLit (like match generates), or a Get_ call, we should assert
 	if call, ok := expr.(*ast.CallExpr); ok {
 		isFuncLit := false
-		if _, ok := call.Fun.(*ast.FuncLit); ok {
+		var funcLit *ast.FuncLit
+		if fl, ok := call.Fun.(*ast.FuncLit); ok {
 			isFuncLit = true
+			funcLit = fl
 		}
 
 		isGetter := false
@@ -158,7 +160,27 @@ func (t *galaASTTransformer) wrapWithAssertion(expr ast.Expr, targetType ast.Exp
 			}
 		}
 
-		if isFuncLit || isGetter {
+		if isFuncLit {
+			// Check if the FuncLit already returns the target type
+			// If so, no assertion is needed
+			if funcLit.Type.Results != nil && len(funcLit.Type.Results.List) > 0 {
+				resultType := funcLit.Type.Results.List[0].Type
+				if t.typeExprsEqual(resultType, targetType) {
+					return expr
+				}
+				// If result type is concrete (not 'any'), the IIFE returns a concrete type - no assertion needed
+				// Concrete types include: non-any identifiers, generic types (IndexExpr), qualified types (SelectorExpr)
+				if !t.isAnyType(resultType) {
+					return expr
+				}
+			}
+			return &ast.TypeAssertExpr{
+				X:    expr,
+				Type: targetType,
+			}
+		}
+
+		if isGetter {
 			return &ast.TypeAssertExpr{
 				X:    expr,
 				Type: targetType,
@@ -166,6 +188,25 @@ func (t *galaASTTransformer) wrapWithAssertion(expr ast.Expr, targetType ast.Exp
 		}
 	}
 	return expr
+}
+
+// typeExprsEqual checks if two type expressions represent the same type
+func (t *galaASTTransformer) typeExprsEqual(a, b ast.Expr) bool {
+	aIdent, aOk := a.(*ast.Ident)
+	bIdent, bOk := b.(*ast.Ident)
+	if aOk && bOk {
+		return aIdent.Name == bIdent.Name
+	}
+	return false
+}
+
+// isAnyType checks if a type expression represents the 'any' type
+func (t *galaASTTransformer) isAnyType(typeExpr ast.Expr) bool {
+	if id, ok := typeExpr.(*ast.Ident); ok {
+		return id.Name == "any"
+	}
+	// Generic types (IndexExpr), qualified types (SelectorExpr), etc. are not 'any'
+	return false
 }
 
 func (t *galaASTTransformer) extractTypeParams(typ ast.Expr) []*ast.Field {
@@ -367,7 +408,11 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 		if arr, ok := xType.(transpiler.ArrayType); ok {
 			return arr.Elem
 		}
-		return transpiler.NilType{}
+		// Handle generic type expression like Option[int]
+		return t.exprToType(e)
+	case *ast.IndexListExpr:
+		// Handle generic type expression like Tuple[int, string]
+		return t.exprToType(e)
 	case *ast.ParenExpr:
 		return t.getExprTypeNameManual(e.X)
 	case *ast.UnaryExpr:
@@ -419,11 +464,17 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 		}
 
 		// Handle b.Get() or std.Some()
+		// Capture type arguments from generic calls like Tuple[int, string](...)
 		fun := e.Fun
+		var typeArgs []transpiler.Type
 		if idx, ok := fun.(*ast.IndexExpr); ok {
 			fun = idx.X
+			typeArgs = []transpiler.Type{t.exprToType(idx.Index)}
 		} else if idxList, ok := fun.(*ast.IndexListExpr); ok {
 			fun = idxList.X
+			for _, idx := range idxList.Indices {
+				typeArgs = append(typeArgs, t.exprToType(idx))
+			}
 		}
 
 		if sel, ok := fun.(*ast.SelectorExpr); ok {
@@ -453,6 +504,33 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 					return transpiler.GenericType{
 						Base:   transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeImmutable},
 						Params: []transpiler.Type{innerType},
+					}
+				}
+			}
+
+			// IMPORTANT: Check for explicit type args BEFORE looking up metadata return types
+			// This ensures Left_Apply[int, string] uses [int, string] instead of [A, B] from metadata
+			if len(typeArgs) > 0 {
+				if sel.Sel.Name == transpiler.FuncLeft || sel.Sel.Name == transpiler.FuncRight ||
+					strings.HasPrefix(sel.Sel.Name, transpiler.FuncLeft+"_") || strings.HasPrefix(sel.Sel.Name, transpiler.FuncRight+"_") ||
+					strings.HasPrefix(sel.Sel.Name, transpiler.TypeEither+"_") {
+					return transpiler.GenericType{
+						Base:   transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeEither},
+						Params: typeArgs,
+					}
+				}
+				if sel.Sel.Name == transpiler.FuncSome || sel.Sel.Name == transpiler.FuncNone ||
+					strings.HasPrefix(sel.Sel.Name, transpiler.FuncSome+"_") || strings.HasPrefix(sel.Sel.Name, transpiler.FuncNone+"_") ||
+					strings.HasPrefix(sel.Sel.Name, transpiler.TypeOption+"_") {
+					return transpiler.GenericType{
+						Base:   transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeOption},
+						Params: typeArgs,
+					}
+				}
+				if sel.Sel.Name == transpiler.TypeTuple || strings.HasPrefix(sel.Sel.Name, transpiler.TypeTuple+"_") {
+					return transpiler.GenericType{
+						Base:   transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeTuple},
+						Params: typeArgs,
 					}
 				}
 			}
@@ -504,13 +582,33 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 			}
 
 			if sel.Sel.Name == transpiler.FuncLeft || sel.Sel.Name == transpiler.FuncRight {
-				return transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeEither}
+				baseType := transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeEither}
+				if len(typeArgs) > 0 {
+					return transpiler.GenericType{Base: baseType, Params: typeArgs}
+				}
+				return baseType
 			}
 			if sel.Sel.Name == transpiler.TypeTuple {
-				return transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeTuple}
+				baseType := transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeTuple}
+				if len(typeArgs) > 0 {
+					return transpiler.GenericType{Base: baseType, Params: typeArgs}
+				}
+				return baseType
 			}
 			if strings.HasPrefix(sel.Sel.Name, transpiler.TypeEither+"_") || strings.HasPrefix(sel.Sel.Name, transpiler.FuncLeft+"_") || strings.HasPrefix(sel.Sel.Name, transpiler.FuncRight+"_") {
-				return transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeEither}
+				baseType := transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeEither}
+				if len(typeArgs) > 0 {
+					return transpiler.GenericType{Base: baseType, Params: typeArgs}
+				}
+				// For Left_Apply/Right_Apply, infer type parameters from the first argument (the type hint)
+				// Left_Apply(std.Left[int, string]{}, value) -> Either[int, string]
+				if (sel.Sel.Name == transpiler.FuncLeft+"_Apply" || sel.Sel.Name == transpiler.FuncRight+"_Apply") && len(e.Args) >= 1 {
+					firstArgType := t.getExprTypeNameManual(e.Args[0])
+					if genType, ok := firstArgType.(transpiler.GenericType); ok && len(genType.Params) > 0 {
+						return transpiler.GenericType{Base: baseType, Params: genType.Params}
+					}
+				}
+				return baseType
 			}
 			if strings.HasPrefix(sel.Sel.Name, transpiler.TypeOption+"_") || strings.HasPrefix(sel.Sel.Name, transpiler.FuncSome+"_") || strings.HasPrefix(sel.Sel.Name, transpiler.FuncNone+"_") {
 				// For Some_Apply, infer the type parameter from the second argument (the value)
@@ -527,7 +625,11 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 				return transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeOption}
 			}
 			if strings.HasPrefix(sel.Sel.Name, transpiler.TypeTuple+"_") {
-				return transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeTuple}
+				baseType := transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeTuple}
+				if len(typeArgs) > 0 {
+					return transpiler.GenericType{Base: baseType, Params: typeArgs}
+				}
+				return baseType
 			}
 			if _, ok := t.structFields[sel.Sel.Name]; ok {
 				return transpiler.BasicType{Name: sel.Sel.Name}
@@ -547,19 +649,39 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 				}
 			}
 			if id.Name == transpiler.FuncLeft || id.Name == transpiler.FuncRight {
-				return transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeEither}
+				baseType := transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeEither}
+				if len(typeArgs) > 0 {
+					return transpiler.GenericType{Base: baseType, Params: typeArgs}
+				}
+				return baseType
 			}
 			if id.Name == transpiler.TypeTuple {
-				return transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeTuple}
+				baseType := transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeTuple}
+				if len(typeArgs) > 0 {
+					return transpiler.GenericType{Base: baseType, Params: typeArgs}
+				}
+				return baseType
 			}
 			if strings.HasPrefix(id.Name, transpiler.TypeEither+"_") || strings.HasPrefix(id.Name, transpiler.FuncLeft+"_") || strings.HasPrefix(id.Name, transpiler.FuncRight+"_") {
-				return transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeEither}
+				baseType := transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeEither}
+				if len(typeArgs) > 0 {
+					return transpiler.GenericType{Base: baseType, Params: typeArgs}
+				}
+				return baseType
 			}
 			if strings.HasPrefix(id.Name, transpiler.TypeOption+"_") || strings.HasPrefix(id.Name, transpiler.FuncSome+"_") || strings.HasPrefix(id.Name, transpiler.FuncNone+"_") {
-				return transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeOption}
+				baseType := transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeOption}
+				if len(typeArgs) > 0 {
+					return transpiler.GenericType{Base: baseType, Params: typeArgs}
+				}
+				return baseType
 			}
 			if strings.HasPrefix(id.Name, transpiler.TypeTuple+"_") {
-				return transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeTuple}
+				baseType := transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeTuple}
+				if len(typeArgs) > 0 {
+					return transpiler.GenericType{Base: baseType, Params: typeArgs}
+				}
+				return baseType
 			}
 			if id.Name == "len" {
 				return transpiler.BasicType{Name: "int"}
@@ -588,6 +710,11 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 			}
 		}
 	case *ast.CompositeLit:
+		// Use exprToType to preserve generic type parameters
+		typ := t.exprToType(e.Type)
+		if !typ.IsNil() {
+			return typ
+		}
 		typeName := t.getBaseTypeName(e.Type)
 		return t.resolveType(typeName)
 	}

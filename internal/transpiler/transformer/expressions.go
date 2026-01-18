@@ -235,7 +235,15 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 	}
 	exprBaseName := exprType.BaseName()
 	if exprBaseName != "" {
-		if typeMeta, ok := t.typeMetas[exprBaseName]; ok {
+		// Try to find type metadata - check both raw name and std-prefixed name
+		typeMeta, ok := t.typeMetas[exprBaseName]
+		if !ok && !strings.HasPrefix(exprBaseName, "std.") {
+			typeMeta, ok = t.typeMetas["std."+exprBaseName]
+			if ok {
+				exprBaseName = "std." + exprBaseName
+			}
+		}
+		if ok {
 			if methodMeta, hasApply := typeMeta.Methods["Apply"]; hasApply {
 				isGeneric := methodMeta.IsGeneric || len(methodMeta.TypeParams) > 0
 				if isGeneric {

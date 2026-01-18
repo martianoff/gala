@@ -25,9 +25,10 @@ func TestMatch(t *testing.T) {
 		wantErr  bool
 	}{
 		{
-			name: "Match expression",
+			name: "Match expression with typed variable",
 			input: `package main
 
+val x int = 5
 val res = x match {
 	case 1 => "one"
 	case 2 => "two"
@@ -37,7 +38,8 @@ val res = x match {
 
 import "martianoff/gala/std"
 
-var res = std.NewImmutable(func(x any) any {
+var x std.Immutable[int] = std.NewImmutable[int](5)
+var res = std.NewImmutable(func(x int) string {
 	if std.UnapplyCheck(x, 1) {
 		return "one"
 	} else if std.UnapplyCheck(x, 2) {
@@ -45,16 +47,16 @@ var res = std.NewImmutable(func(x any) any {
 	} else {
 		return "many"
 	}
-}(x))
+}(x.Get()))
 `,
 		},
 		{
-			name: "Match expression with shadowing",
+			name: "Match expression with inferred int result type",
 			input: `package main
 
 val x = 10
 val res = x match {
-	case 10 => x
+	case 10 => 1
 	case _ => 0
 }`,
 			expected: `package main
@@ -62,9 +64,9 @@ val res = x match {
 import "martianoff/gala/std"
 
 var x = std.NewImmutable(10)
-var res = std.NewImmutable(func(x any) any {
+var res = std.NewImmutable(func(x int) int {
 	if std.UnapplyCheck(x, 10) {
-		return x
+		return 1
 	} else {
 		return 0
 	}
@@ -72,111 +74,86 @@ var res = std.NewImmutable(func(x any) any {
 `,
 		},
 		{
-			name: "Match expression with Unapply",
+			name: "Match expression with string literal",
 			input: `package main
 
+val x = "hello"
 val res = x match {
-	case "unapplied" => "success"
+	case "hello" => "world"
 	case _ => "fail"
 }`,
 			expected: `package main
 
 import "martianoff/gala/std"
 
-var res = std.NewImmutable(func(x any) any {
-	if std.UnapplyCheck(x, "unapplied") {
-		return "success"
+var x = std.NewImmutable("hello")
+var res = std.NewImmutable(func(x string) string {
+	if std.UnapplyCheck(x, "hello") {
+		return "world"
 	} else {
 		return "fail"
 	}
-}(x))
+}(x.Get()))
 `,
 		},
 		{
-			name: "Match expression with var binding",
+			name: "Match expression with var binding returning int",
 			input: `package main
 
+val x = 42
 val res = x match {
-	case y => y
-	case _ => "fail"
+	case y => y + 1
+	case _ => 0
 }`,
 			expected: `package main
 
 import "martianoff/gala/std"
 
-var res = std.NewImmutable(func(x any) any {
+var x = std.NewImmutable(42)
+var res = std.NewImmutable(func(x int) int {
 	{
 		y := x
 		if true {
-			return y
+			return y + 1
 		} else {
-			return "fail"
-		}
-	}
-}(x))
-`,
-		},
-		{
-			name: "Match expression with extraction and var binding",
-			input: `package main
-
-val x = Some(1)
-val res = x match {
-	case Some(y) => y
-	case _ => "fail"
-}`,
-			expected: `package main
-
-import "martianoff/gala/std"
-
-var x = std.NewImmutable(std.Some(1))
-var res = std.NewImmutable(func(x any) any {
-	{
-		_tmp_1, _tmp_2 := std.UnapplyFull(x, std.Some)
-		y := std.GetSafe(_tmp_1, 0)
-		if _tmp_2 && true {
-			return y
-		} else {
-			return "fail"
+			return 0
 		}
 	}
 }(x.Get()))
 `,
 		},
 		{
-			name: "Type-based pattern match",
+			name: "Match expression with extraction and explicitly typed Option",
 			input: `package main
 
+val x Option[int] = Some(1)
 val res = x match {
-	case s: string => s
-	case i: int => i
-	case _ => "unknown"
+	case Some(y) => y
+	case _ => 0
 }`,
 			expected: `package main
 
 import "martianoff/gala/std"
 
-var res = std.NewImmutable(func(x any) any {
+var x std.Immutable[std.Option[int]] = std.NewImmutable[std.Option[int]](std.Some(1))
+var res = std.NewImmutable(func(x std.Option[int]) int {
 	{
-		s, _tmp_1 := std.As[string](x)
-		if _tmp_1 {
-			return s
+		_tmp_1, _tmp_2 := std.UnapplyFull(x, std.Some)
+		y, _tmp_3 := std.As[int](std.GetSafe(_tmp_1, 0))
+		if _tmp_2 && _tmp_3 {
+			return y
 		} else {
-			i, _tmp_2 := std.As[int](x)
-			if _tmp_2 {
-				return i
-			} else {
-				return "unknown"
-			}
+			return 0
 		}
 	}
-}(x))
+}(x.Get()))
 `,
 		},
 		{
-			name: "Nested type-based pattern match",
+			name: "Nested type-based pattern match with Option returning string",
 			input: `package main
 
+val x Option[any] = Some("test")
 val res = x match {
 	case Some(s: string) => s
 	case _ => "unknown"
@@ -185,24 +162,49 @@ val res = x match {
 
 import "martianoff/gala/std"
 
-var res = std.NewImmutable(func(x any) any {
+var x std.Immutable[std.Option[any]] = std.NewImmutable[std.Option[any]](std.Some("test"))
+var res = std.NewImmutable(func(x std.Option[any]) string {
 	{
 		_tmp_1, _tmp_2 := std.UnapplyFull(x, std.Some)
-		s, _tmp_3 := std.As[string](std.GetSafe(_tmp_1, 0))
-		if _tmp_2 && _tmp_3 {
+		s, _tmp_4 := std.As[string](std.GetSafe(_tmp_1, 0))
+		if _tmp_2 && _tmp_4 {
 			return s
 		} else {
 			return "unknown"
 		}
 	}
-}(x))
+}(x.Get()))
 `,
 		},
 		{
 			name: "Missing default case",
-			input: `val res = x match {
-				case 1 => "one"
-			}`,
+			input: `package main
+
+val x = 1
+val res = x match {
+	case 1 => "one"
+}`,
+			wantErr: true,
+		},
+		{
+			name: "Cannot infer type for untyped variable",
+			input: `package main
+
+val res = unknownVar match {
+	case 1 => "one"
+	case _ => "other"
+}`,
+			wantErr: true,
+		},
+		{
+			name: "Type mismatch in match branches",
+			input: `package main
+
+val x = 1
+val res = x match {
+	case 1 => "one"
+	case _ => 0
+}`,
 			wantErr: true,
 		},
 	}
