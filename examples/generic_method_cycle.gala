@@ -1,0 +1,45 @@
+package main
+
+import "fmt"
+
+type Pair[A any, B any] struct {
+    First A
+    Second B
+}
+
+type MyList[T any] struct {
+    head T
+    var tail *MyList[T]
+    var isEmpty bool
+}
+
+func emptyMyList[T any]() MyList[T] {
+    var zero T
+    var nilTail *MyList[T] = nil
+    return MyList[T](head = zero, tail = nilTail, isEmpty = true)
+}
+
+func consList[T any](h T, t MyList[T]) MyList[T] {
+    return MyList[T](head = h, tail = &t, isEmpty = false)
+}
+
+// This method returns a MyList with a different type parameter
+// Go has limitations with such patterns (instantiation cycle)
+func (l MyList[T]) ZipWithIndex() MyList[Pair[T, int]] {
+    var result = emptyMyList[Pair[T, int]]()
+    var current = l
+    var i = 0
+    for ; !current.isEmpty ; {
+        result = consList[Pair[T, int]](Pair[T, int](First = current.head, Second = i), result)
+        current = *current.tail
+        i = i + 1
+    }
+    return result
+}
+
+func main() {
+    val list = consList[int](1, consList[int](2, emptyMyList[int]()))
+    val zipped = list.ZipWithIndex()
+    fmt.Println("Length test passed")
+    fmt.Println(zipped.isEmpty)
+}

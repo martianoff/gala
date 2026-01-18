@@ -24,6 +24,8 @@ filegroup(
         "//std:immutable.gala",
         "//std:option.gala",
         "//std:tuple.gala",
+        "//collection_immutable:list.gala",
+        "//collection_immutable:array.gala",
     ],
     visibility = ["//visibility:public"],
 )

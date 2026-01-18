@@ -1,0 +1,67 @@
+load("//:gala.bzl", "gala_library", "gala_unit_test")
+
+exports_files([
+    "list.gala",
+    "array.gala",
+])
+
+# Filegroup for all GALA source files in collection_immutable
+filegroup(
+    name = "gala_sources",
+    srcs = glob(["*.gala"]),
+    visibility = ["//visibility:public"],
+)
+
+gala_library(
+    name = "collection_immutable",
+    src = "list.gala",
+    importpath = "martianoff/gala/collection_immutable",
+    visibility = ["//visibility:public"],
+)
+
+# Note: Array depends on List for ToList() method, so we need a combined library
+# For now, we'll create separate transpile rules and combine them
+
+load("@rules_go//go:def.bzl", "go_library")
+load("//:gala.bzl", "gala_transpile")
+
+gala_transpile(
+    name = "list_go",
+    src = "list.gala",
+    out = "list.go",
+)
+
+gala_transpile(
+    name = "array_go",
+    src = "array.gala",
+    out = "array.go",
+)
+
+go_library(
+    name = "collection_immutable_lib",
+    srcs = [
+        "array.go",
+        "list.go",
+    ],
+    importpath = "martianoff/gala/collection_immutable",
+    visibility = ["//visibility:public"],
+    deps = ["//std"],
+)
+
+gala_unit_test(
+    name = "list_test",
+    src = "list_test/main.gala",
+    deps = [
+        ":collection_immutable_lib",
+        "//test",
+    ],
+)
+
+gala_unit_test(
+    name = "array_test",
+    src = "array_test/main.gala",
+    deps = [
+        ":collection_immutable_lib",
+        "//test",
+    ],
+)

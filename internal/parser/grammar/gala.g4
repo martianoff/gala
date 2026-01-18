@@ -51,7 +51,9 @@ signature: parameters (type)?;
 
 parameters: '(' parameterList? ')';
 parameterList: parameter (',' parameter)*;
-parameter: (VAL | VAR)? identifier (type)?;
+parameter: (VAL | VAR)? identifier ELLIPSIS? (type)?;
+
+ELLIPSIS: '...';
 
 typeParameters: '[' typeParameterList ']';
 typeParameterList: typeParameter (',' typeParameter)*;

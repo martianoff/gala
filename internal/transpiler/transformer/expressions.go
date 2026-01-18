@@ -19,128 +19,141 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 		return nil, err
 	}
 
+	// Get argument list if present (for calls with arguments)
+	var argListCtx *grammar.ArgumentListContext
+	if ctx.GetChildCount() >= 3 {
+		if alCtx, ok := ctx.GetChild(2).(*grammar.ArgumentListContext); ok {
+			argListCtx = alCtx
+		}
+	}
+
+	// Handle Copy method call with overrides
+	if argListCtx != nil {
+		if sel, ok := x.(*ast.SelectorExpr); ok && sel.Sel.Name == "Copy" {
+			return t.transformCopyCall(sel.X, argListCtx)
+		}
+	}
+
+	// Handle generic method calls or monadic methods: o.Map[T](f) -> Map[T](o, f)
+	// This must happen for BOTH zero-argument and argument calls
+	var receiver ast.Expr
+	var method string
+	var typeArgs []ast.Expr
+
+	if sel, ok := x.(*ast.SelectorExpr); ok {
+		if id, ok := sel.X.(*ast.Ident); ok && id.Name == transpiler.StdPackage {
+			// Not a method call
+		} else {
+			receiver = sel.X
+			method = sel.Sel.Name
+		}
+	} else if idx, ok := x.(*ast.IndexExpr); ok {
+		if sel, ok := idx.X.(*ast.SelectorExpr); ok {
+			if id, ok := sel.X.(*ast.Ident); ok && id.Name == transpiler.StdPackage {
+				// Not a method call
+			} else {
+				receiver = sel.X
+				method = sel.Sel.Name
+				typeArgs = []ast.Expr{idx.Index}
+			}
+		}
+	} else if idxList, ok := x.(*ast.IndexListExpr); ok {
+		if sel, ok := idxList.X.(*ast.SelectorExpr); ok {
+			if id, ok := sel.X.(*ast.Ident); ok && id.Name == transpiler.StdPackage {
+				// Not a method call
+			} else {
+				receiver = sel.X
+				method = sel.Sel.Name
+				typeArgs = idxList.Indices
+			}
+		}
+	}
+
+	recvType := t.getExprTypeName(receiver)
+	if qName := t.getType(recvType.BaseName()); !qName.IsNil() {
+		recvType = qName
+	}
+	recvBaseName := recvType.BaseName()
+	isGenericMethod := len(typeArgs) > 0 || (recvBaseName != "" && t.genericMethods[recvBaseName] != nil && t.genericMethods[recvBaseName][method])
+
+	if receiver != nil && isGenericMethod {
+		// Check if receiver is a package name
+		isPkg := false
+		if id, ok := receiver.(*ast.Ident); ok {
+			if _, ok := t.imports[id.Name]; ok {
+				isPkg = true
+			}
+		}
+
+		if !isPkg {
+			// Transform generic method call to standalone function call
+			var mArgs []ast.Expr
+			if argListCtx != nil {
+				for _, argCtx := range argListCtx.AllArgument() {
+					arg := argCtx.(*grammar.ArgumentContext)
+					pat := arg.Pattern()
+					ep, ok := pat.(*grammar.ExpressionPatternContext)
+					if !ok {
+						return nil, galaerr.NewSemanticError("only expressions allowed as function arguments")
+					}
+					expr, err := t.transformExpression(ep.Expression())
+					if err != nil {
+						return nil, err
+					}
+					mArgs = append(mArgs, expr)
+				}
+			}
+
+			var fun ast.Expr
+			if !recvType.IsNil() {
+				recvPkg := recvType.GetPackage()
+				if recvPkg == transpiler.StdPackage || strings.HasPrefix(recvBaseName, "std.") {
+					// Receiver is from std package
+					baseName := strings.TrimPrefix(recvBaseName, "std.")
+					fun = t.stdIdent(baseName + "_" + method)
+				} else {
+					fun = t.ident(recvBaseName + "_" + method)
+				}
+			} else {
+				fun = ast.NewIdent(method)
+			}
+
+			if len(typeArgs) == 1 {
+				fun = &ast.IndexExpr{X: fun, Index: typeArgs[0]}
+			} else if len(typeArgs) > 1 {
+				fun = &ast.IndexListExpr{X: fun, Indices: typeArgs}
+			}
+
+			return &ast.CallExpr{
+				Fun:  fun,
+				Args: append([]ast.Expr{receiver}, mArgs...),
+			}, nil
+		}
+	}
+
+	// Regular call: parse arguments
 	var args []ast.Expr
 	var namedArgs map[string]ast.Expr
-	if ctx.GetChildCount() >= 3 {
-		if argListCtx, ok := ctx.GetChild(2).(*grammar.ArgumentListContext); ok {
-			// Handle Copy method call with overrides
-			if sel, ok := x.(*ast.SelectorExpr); ok && sel.Sel.Name == "Copy" {
-				return t.transformCopyCall(sel.X, argListCtx)
+	if argListCtx != nil {
+		for _, argCtx := range argListCtx.AllArgument() {
+			arg := argCtx.(*grammar.ArgumentContext)
+			pat := arg.Pattern()
+			ep, ok := pat.(*grammar.ExpressionPatternContext)
+			if !ok {
+				return nil, galaerr.NewSemanticError("only expressions allowed as function arguments")
+			}
+			expr, err := t.transformExpression(ep.Expression())
+			if err != nil {
+				return nil, err
 			}
 
-			// Handle generic method calls or monadic methods: o.Map[T](f) -> Map[T](o, f)
-			var receiver ast.Expr
-			var method string
-			var typeArgs []ast.Expr
-
-			if sel, ok := x.(*ast.SelectorExpr); ok {
-				if id, ok := sel.X.(*ast.Ident); ok && id.Name == transpiler.StdPackage {
-					// Not a method call
-				} else {
-					receiver = sel.X
-					method = sel.Sel.Name
+			if arg.Identifier() != nil {
+				if namedArgs == nil {
+					namedArgs = make(map[string]ast.Expr)
 				}
-			} else if idx, ok := x.(*ast.IndexExpr); ok {
-				if sel, ok := idx.X.(*ast.SelectorExpr); ok {
-					if id, ok := sel.X.(*ast.Ident); ok && id.Name == transpiler.StdPackage {
-						// Not a method call
-					} else {
-						receiver = sel.X
-						method = sel.Sel.Name
-						typeArgs = []ast.Expr{idx.Index}
-					}
-				}
-			} else if idxList, ok := x.(*ast.IndexListExpr); ok {
-				if sel, ok := idxList.X.(*ast.SelectorExpr); ok {
-					if id, ok := sel.X.(*ast.Ident); ok && id.Name == transpiler.StdPackage {
-						// Not a method call
-					} else {
-						receiver = sel.X
-						method = sel.Sel.Name
-						typeArgs = idxList.Indices
-					}
-				}
-			}
-
-			recvType := t.getExprTypeName(receiver)
-			if qName := t.getType(recvType.BaseName()); !qName.IsNil() {
-				recvType = qName
-			}
-			recvBaseName := recvType.BaseName()
-			isGenericMethod := len(typeArgs) > 0 || (recvBaseName != "" && t.genericMethods[recvBaseName] != nil && t.genericMethods[recvBaseName][method])
-
-			if receiver != nil && isGenericMethod {
-				// Check if receiver is a package name
-				isPkg := false
-				if id, ok := receiver.(*ast.Ident); ok {
-					if _, ok := t.imports[id.Name]; ok {
-						isPkg = true
-					}
-				}
-
-				if !isPkg {
-					var mArgs []ast.Expr
-					for _, argCtx := range argListCtx.AllArgument() {
-						arg := argCtx.(*grammar.ArgumentContext)
-						pat := arg.Pattern()
-						ep, ok := pat.(*grammar.ExpressionPatternContext)
-						if !ok {
-							return nil, galaerr.NewSemanticError("only expressions allowed as function arguments")
-						}
-						expr, err := t.transformExpression(ep.Expression())
-						if err != nil {
-							return nil, err
-						}
-						mArgs = append(mArgs, expr)
-					}
-
-					var fun ast.Expr
-					if !recvType.IsNil() {
-						recvPkg := recvType.GetPackage()
-						if recvPkg == transpiler.StdPackage || strings.HasPrefix(recvBaseName, "std.") {
-							// Receiver is from std package
-							baseName := strings.TrimPrefix(recvBaseName, "std.")
-							fun = t.stdIdent(baseName + "_" + method)
-						} else {
-							fun = t.ident(recvBaseName + "_" + method)
-						}
-					} else {
-						fun = ast.NewIdent(method)
-					}
-
-					if len(typeArgs) == 1 {
-						fun = &ast.IndexExpr{X: fun, Index: typeArgs[0]}
-					} else if len(typeArgs) > 1 {
-						fun = &ast.IndexListExpr{X: fun, Indices: typeArgs}
-					}
-
-					return &ast.CallExpr{
-						Fun:  fun,
-						Args: append([]ast.Expr{receiver}, mArgs...),
-					}, nil
-				}
-			}
-
-			for _, argCtx := range argListCtx.AllArgument() {
-				arg := argCtx.(*grammar.ArgumentContext)
-				pat := arg.Pattern()
-				ep, ok := pat.(*grammar.ExpressionPatternContext)
-				if !ok {
-					return nil, galaerr.NewSemanticError("only expressions allowed as function arguments")
-				}
-				expr, err := t.transformExpression(ep.Expression())
-				if err != nil {
-					return nil, err
-				}
-
-				if arg.Identifier() != nil {
-					if namedArgs == nil {
-						namedArgs = make(map[string]ast.Expr)
-					}
-					namedArgs[arg.Identifier().GetText()] = expr
-				} else {
-					args = append(args, expr)
-				}
+				namedArgs[arg.Identifier().GetText()] = expr
+			} else {
+				args = append(args, expr)
 			}
 		}
 	}
@@ -264,13 +277,71 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 					}
 				}
 
+				// Build a map of type parameter -> instantiated type from explicit type arguments
+				typeParamInstantiations := make(map[string]string)
+				if hasTypeMeta && hasExplicitTypeArgs {
+					if idxExpr, ok := x.(*ast.IndexExpr); ok {
+						// Single type argument
+						if len(typeMeta.TypeParams) > 0 {
+							if id, ok := idxExpr.Index.(*ast.Ident); ok {
+								typeParamInstantiations[typeMeta.TypeParams[0]] = id.Name
+							}
+						}
+					} else if idxList, ok := x.(*ast.IndexListExpr); ok {
+						// Multiple type arguments
+						for i, idx := range idxList.Indices {
+							if i < len(typeMeta.TypeParams) {
+								if id, ok := idx.(*ast.Ident); ok {
+									typeParamInstantiations[typeMeta.TypeParams[i]] = id.Name
+								}
+							}
+						}
+					}
+				}
+
+				// Helper to check if field type resolves to 'any' in the current instantiation
+				isFieldTypeAny := func(fieldName string) bool {
+					if hasTypeMeta {
+						if fType, ok := typeMeta.Fields[fieldName]; ok {
+							fTypeStr := fType.String()
+							// If field type is directly 'any'
+							if fTypeStr == "any" {
+								return true
+							}
+							// If field type is a type parameter, check what it was instantiated to
+							if instantiatedType, ok := typeParamInstantiations[fTypeStr]; ok {
+								return instantiatedType == "any"
+							}
+						}
+					}
+					return false
+				}
+
 				if namedArgs != nil {
 					for i, fn := range fieldNames {
 						if val, ok := namedArgs[fn]; ok {
 							if i < len(immutFlags) && immutFlags[i] {
-								val = &ast.CallExpr{
-									Fun:  t.stdIdent(transpiler.FuncNewImmutable),
-									Args: []ast.Expr{val},
+								// Only wrap if value is not already Immutable
+								valType := t.getExprTypeName(val)
+								if !t.isImmutableType(valType) {
+									// If field type is 'any', cast value to any first
+									if isFieldTypeAny(fn) {
+										val = &ast.CallExpr{
+											Fun: &ast.IndexExpr{
+												X:     t.stdIdent(transpiler.FuncNewImmutable),
+												Index: ast.NewIdent("any"),
+											},
+											Args: []ast.Expr{&ast.CallExpr{
+												Fun:  ast.NewIdent("any"),
+												Args: []ast.Expr{val},
+											}},
+										}
+									} else {
+										val = &ast.CallExpr{
+											Fun:  t.stdIdent(transpiler.FuncNewImmutable),
+											Args: []ast.Expr{val},
+										}
+									}
 								}
 							}
 							elts = append(elts, &ast.KeyValueExpr{
@@ -283,9 +354,27 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 					for i, arg := range args {
 						if i < len(fieldNames) {
 							if i < len(immutFlags) && immutFlags[i] {
-								arg = &ast.CallExpr{
-									Fun:  t.stdIdent(transpiler.FuncNewImmutable),
-									Args: []ast.Expr{arg},
+								// Only wrap if value is not already Immutable
+								argType := t.getExprTypeName(arg)
+								if !t.isImmutableType(argType) {
+									// If field type is 'any', cast value to any first
+									if isFieldTypeAny(fieldNames[i]) {
+										arg = &ast.CallExpr{
+											Fun: &ast.IndexExpr{
+												X:     t.stdIdent(transpiler.FuncNewImmutable),
+												Index: ast.NewIdent("any"),
+											},
+											Args: []ast.Expr{&ast.CallExpr{
+												Fun:  ast.NewIdent("any"),
+												Args: []ast.Expr{arg},
+											}},
+										}
+									} else {
+										arg = &ast.CallExpr{
+											Fun:  t.stdIdent(transpiler.FuncNewImmutable),
+											Args: []ast.Expr{arg},
+										}
+									}
 								}
 							}
 							elts = append(elts, &ast.KeyValueExpr{
@@ -520,11 +609,17 @@ func (t *galaASTTransformer) transformExpression(ctx grammar.IExpressionContext)
 			if idx := strings.Index(xTypeName, "["); idx != -1 {
 				baseTypeName = xTypeName[:idx]
 			}
+			// Strip pointer prefix for struct field lookup
+			baseTypeName = strings.TrimPrefix(baseTypeName, "*")
 
-			if fields, ok := t.structFields[baseTypeName]; ok {
+			// Try to find struct fields - check multiple name variants
+			// Maps are keyed by fully qualified name (e.g., "collection_immutable.List")
+			// but baseTypeName might just be "List"
+			resolvedTypeName := t.resolveStructTypeName(baseTypeName)
+			if fields, ok := t.structFields[resolvedTypeName]; ok {
 				for i, f := range fields {
 					if f == selName {
-						if t.structImmutFields[baseTypeName][i] {
+						if t.structImmutFields[resolvedTypeName][i] {
 							return &ast.CallExpr{
 								Fun: &ast.SelectorExpr{
 									X:   selExpr,

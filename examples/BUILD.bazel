@@ -209,3 +209,9 @@ gala_test(
     src = "unapply_inference.gala",
     expected = "unapply_inference.out",
 )
+
+gala_test(
+    name = "generic_method_cycle",
+    src = "generic_method_cycle.gala",
+    expected = "generic_method_cycle.out",
+)

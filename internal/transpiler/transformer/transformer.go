@@ -211,3 +211,70 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 }
 
 var _ transpiler.ASTTransformer = (*galaASTTransformer)(nil)
+
+// resolveStructTypeName tries to resolve a type name to the key used in structFields/structImmutFields maps.
+// The maps are keyed by fully qualified names (e.g., "collection_immutable.List", "std.Tuple"),
+// but we may receive unqualified names (e.g., "List", "Tuple").
+func (t *galaASTTransformer) resolveStructTypeName(typeName string) string {
+	// 1. Try exact match first
+	if _, ok := t.structFields[typeName]; ok {
+		return typeName
+	}
+
+	// 2. If typeName has a package prefix, extract the simple name and try other packages
+	if idx := strings.LastIndex(typeName, "."); idx != -1 {
+		simpleName := typeName[idx+1:]
+		// Try std package for standard library types like Tuple, Option, etc.
+		stdName := transpiler.StdPackage + "." + simpleName
+		if _, ok := t.structFields[stdName]; ok {
+			return stdName
+		}
+		// Try current package
+		if t.packageName != "" {
+			fullName := t.packageName + "." + simpleName
+			if _, ok := t.structFields[fullName]; ok {
+				return fullName
+			}
+		}
+		// Try imported packages
+		for alias := range t.imports {
+			actualPkg := alias
+			if actual, ok := t.importAliases[alias]; ok {
+				actualPkg = actual
+			}
+			fullName := actualPkg + "." + simpleName
+			if _, ok := t.structFields[fullName]; ok {
+				return fullName
+			}
+		}
+	}
+
+	// 3. Try current package prefix (including "main")
+	if t.packageName != "" {
+		fullName := t.packageName + "." + typeName
+		if _, ok := t.structFields[fullName]; ok {
+			return fullName
+		}
+	}
+
+	// 4. Try std package prefix
+	stdName := transpiler.StdPackage + "." + typeName
+	if _, ok := t.structFields[stdName]; ok {
+		return stdName
+	}
+
+	// 5. Try all imported packages
+	for alias := range t.imports {
+		actualPkg := alias
+		if actual, ok := t.importAliases[alias]; ok {
+			actualPkg = actual
+		}
+		fullName := actualPkg + "." + typeName
+		if _, ok := t.structFields[fullName]; ok {
+			return fullName
+		}
+	}
+
+	// Return original if not found
+	return typeName
+}

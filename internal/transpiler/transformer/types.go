@@ -241,6 +241,98 @@ func (t *galaASTTransformer) extractTypeParams(typ ast.Expr) []*ast.Field {
 	return params
 }
 
+// causesInstantiationCycle checks if a method return type would cause a Go generics
+// instantiation cycle. This happens when:
+// - The receiver is a generic type (e.g., MyList[T])
+// - The return type is the same base type (e.g., MyList)
+// - But with different type arguments (e.g., MyList[Pair[T, int]])
+// Go's compiler detects this as a potential infinite instantiation chain.
+func (t *galaASTTransformer) causesInstantiationCycle(receiverType ast.Expr, returnType ast.Expr) bool {
+	if receiverType == nil || returnType == nil {
+		return false
+	}
+
+	// Get base type name and type args from receiver
+	recvBase, recvArgs := t.getBaseTypeAndArgs(receiverType)
+	if recvBase == "" || len(recvArgs) == 0 {
+		return false // Not a generic receiver
+	}
+
+	// Get base type name and type args from return type
+	retBase, retArgs := t.getBaseTypeAndArgs(returnType)
+	if retBase == "" {
+		return false
+	}
+
+	// Check if base types match
+	if recvBase != retBase {
+		return false
+	}
+
+	// Check if type arguments differ
+	// If they're exactly the same, no cycle (e.g., MyList[T] -> MyList[T])
+	// If they differ, potential cycle (e.g., MyList[T] -> MyList[Pair[T, int]])
+	if len(recvArgs) != len(retArgs) {
+		return true // Different number of args = different
+	}
+
+	for i, recvArg := range recvArgs {
+		if recvArg != retArgs[i] {
+			return true // Different arg = potential cycle
+		}
+	}
+
+	return false
+}
+
+// getBaseTypeAndArgs extracts the base type name and type arguments from a type expression
+func (t *galaASTTransformer) getBaseTypeAndArgs(typ ast.Expr) (string, []string) {
+	switch e := typ.(type) {
+	case *ast.Ident:
+		return e.Name, nil
+	case *ast.SelectorExpr:
+		if x, ok := e.X.(*ast.Ident); ok {
+			return x.Name + "." + e.Sel.Name, nil
+		}
+	case *ast.IndexExpr:
+		base, _ := t.getBaseTypeAndArgs(e.X)
+		argStr := t.typeArgToString(e.Index)
+		return base, []string{argStr}
+	case *ast.IndexListExpr:
+		base, _ := t.getBaseTypeAndArgs(e.X)
+		var args []string
+		for _, idx := range e.Indices {
+			args = append(args, t.typeArgToString(idx))
+		}
+		return base, args
+	}
+	return "", nil
+}
+
+// typeArgToString converts a type argument expression to a string for comparison
+func (t *galaASTTransformer) typeArgToString(arg ast.Expr) string {
+	switch e := arg.(type) {
+	case *ast.Ident:
+		return e.Name
+	case *ast.SelectorExpr:
+		if x, ok := e.X.(*ast.Ident); ok {
+			return x.Name + "." + e.Sel.Name
+		}
+	case *ast.IndexExpr:
+		base := t.typeArgToString(e.X)
+		inner := t.typeArgToString(e.Index)
+		return base + "[" + inner + "]"
+	case *ast.IndexListExpr:
+		base := t.typeArgToString(e.X)
+		var inners []string
+		for _, idx := range e.Indices {
+			inners = append(inners, t.typeArgToString(idx))
+		}
+		return base + "[" + strings.Join(inners, ", ") + "]"
+	}
+	return ""
+}
+
 func (t *galaASTTransformer) exprToType(expr ast.Expr) transpiler.Type {
 	if expr == nil {
 		return transpiler.NilType{}
@@ -425,6 +517,13 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 		return t.exprToType(e)
 	case *ast.ParenExpr:
 		return t.getExprTypeNameManual(e.X)
+	case *ast.StarExpr:
+		// Handle pointer dereference *x
+		xType := t.getExprTypeNameManual(e.X)
+		if ptr, ok := xType.(transpiler.PointerType); ok {
+			return ptr.Elem
+		}
+		return transpiler.NilType{}
 	case *ast.UnaryExpr:
 		switch e.Op {
 		case token.NOT:
@@ -450,8 +549,17 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 	case *ast.SelectorExpr:
 		xType := t.getExprTypeNameManual(e.X)
 		xTypeName := xType.String()
-		if !xType.IsNil() && t.structFieldTypes[xTypeName] != nil {
-			if fType, ok := t.structFieldTypes[xTypeName][e.Sel.Name]; ok && !fType.IsNil() {
+		// Extract base type name (strip generic parameters like List[T] -> List)
+		baseTypeName := xTypeName
+		if idx := strings.Index(xTypeName, "["); idx != -1 {
+			baseTypeName = xTypeName[:idx]
+		}
+		// Strip pointer prefix for struct field lookup
+		baseTypeName = strings.TrimPrefix(baseTypeName, "*")
+		// Resolve to fully qualified name for map lookup
+		resolvedTypeName := t.resolveStructTypeName(baseTypeName)
+		if !xType.IsNil() && t.structFieldTypes[resolvedTypeName] != nil {
+			if fType, ok := t.structFieldTypes[resolvedTypeName][e.Sel.Name]; ok && !fType.IsNil() {
 				return fType
 			}
 		}

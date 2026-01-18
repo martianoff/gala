@@ -77,10 +77,11 @@ func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext)
 					baseTypeName = typeName[:idx]
 				}
 
-				if fields, ok := t.structFields[baseTypeName]; ok {
+				resolvedTypeName := t.resolveStructTypeName(baseTypeName)
+				if fields, ok := t.structFields[resolvedTypeName]; ok {
 					for i, f := range fields {
 						if f == selName {
-							if t.structImmutFields[baseTypeName][i] {
+							if t.structImmutFields[resolvedTypeName][i] {
 								return nil, galaerr.NewSemanticError(fmt.Sprintf("cannot assign to immutable field %s", selName))
 							}
 							break
@@ -183,6 +184,105 @@ func (t *galaASTTransformer) transformBlock(ctx *grammar.BlockContext) (*ast.Blo
 		block.List = append(block.List, stmt)
 	}
 	return block, nil
+}
+
+func (t *galaASTTransformer) transformForStatement(ctx *grammar.ForStatementContext) (ast.Stmt, error) {
+	body, err := t.transformBlock(ctx.Block().(*grammar.BlockContext))
+	if err != nil {
+		return nil, err
+	}
+
+	// Handle range clause: for x := range expr
+	if rangeCtx := ctx.RangeClause(); rangeCtx != nil {
+		rangeClause := rangeCtx.(*grammar.RangeClauseContext)
+
+		// Transform the range expression
+		rangeExpr, err := t.transformExpression(rangeClause.Expression())
+		if err != nil {
+			return nil, err
+		}
+
+		// Set up key and value identifiers
+		var key, value ast.Expr
+		if idListCtx := rangeClause.IdentifierList(); idListCtx != nil {
+			ids := idListCtx.(*grammar.IdentifierListContext).AllIdentifier()
+			if len(ids) >= 1 {
+				keyName := ids[0].GetText()
+				t.addVar(keyName, nil)
+				key = ast.NewIdent(keyName)
+			}
+			if len(ids) >= 2 {
+				valueName := ids[1].GetText()
+				t.addVar(valueName, nil)
+				value = ast.NewIdent(valueName)
+			}
+		}
+
+		// Determine if using := or =
+		tok := token.DEFINE
+		if rangeClause.GetChildCount() > 1 {
+			for i := 0; i < rangeClause.GetChildCount(); i++ {
+				if child := rangeClause.GetChild(i); child != nil {
+					if termNode, ok := child.(antlr.TerminalNode); ok && termNode.GetText() == "=" {
+						tok = token.ASSIGN
+						break
+					}
+				}
+			}
+		}
+
+		return &ast.RangeStmt{
+			Key:   key,
+			Value: value,
+			Tok:   tok,
+			X:     rangeExpr,
+			Body:  body,
+		}, nil
+	}
+
+	// Handle for clause: for init; condition; post
+	if forClauseCtx := ctx.ForClause(); forClauseCtx != nil {
+		forClause := forClauseCtx.(*grammar.ForClauseContext)
+
+		var init ast.Stmt
+		var cond ast.Expr
+		var post ast.Stmt
+
+		// Process init and post statements
+		simpleStmts := forClause.AllSimpleStatement()
+		if len(simpleStmts) >= 1 && simpleStmts[0] != nil {
+			init, err = t.transformSimpleStatement(simpleStmts[0].(*grammar.SimpleStatementContext))
+			if err != nil {
+				return nil, err
+			}
+		}
+		if len(simpleStmts) >= 2 && simpleStmts[1] != nil {
+			post, err = t.transformSimpleStatement(simpleStmts[1].(*grammar.SimpleStatementContext))
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		// Process condition
+		if forClause.Expression() != nil {
+			cond, err = t.transformExpression(forClause.Expression())
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		return &ast.ForStmt{
+			Init: init,
+			Cond: cond,
+			Post: post,
+			Body: body,
+		}, nil
+	}
+
+	// Infinite loop: for { ... }
+	return &ast.ForStmt{
+		Body: body,
+	}, nil
 }
 
 func (t *galaASTTransformer) transformIfStatement(ctx *grammar.IfStatementContext) (ast.Stmt, error) {

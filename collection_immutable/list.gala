@@ -1,0 +1,515 @@
+package collection_immutable
+
+import "fmt"
+
+// List is an immutable linked list with the following performance characteristics:
+// - Head:    O(1)
+// - Tail:    O(1)
+// - Prepend: O(1)
+// - Append:  O(n)
+// - Lookup:  O(n)
+// - Update:  O(n)
+// - Length:  O(1) - cached
+
+// List represents an immutable singly-linked list.
+// Every List is either Cons (non-empty) or Nil (empty).
+type List[T any] struct {
+    head    T
+    tail    *List[T]
+    length  int
+    isEmpty bool
+}
+
+// Internal helper to create empty list
+func emptyList[T any]() List[T] {
+    var zeroT T
+    var nilTail *List[T] = nil
+    return List[T](head = zeroT, tail = nilTail, length = 0, isEmpty = true)
+}
+
+// Internal helper to prepend element to list
+func consList[T any](head T, tail List[T]) List[T] {
+    return List[T](head = head, tail = &tail, length = tail.length + 1, isEmpty = false)
+}
+
+// Cons extractor for pattern matching on non-empty lists.
+type Cons struct {}
+func (c Cons) Unapply(l any) Option[Tuple[any, any]] = l match {
+    case li: List[_] if !li.isEmpty => Some(Tuple[any, any](V1 = li.head, V2 = *li.tail))
+    case _ => None[Tuple[any, any]]()
+}
+
+// Nil extractor for pattern matching on empty lists.
+type Nil struct {}
+func (n Nil) Unapply(l any) Option[bool] = l match {
+    case li: List[_] if li.isEmpty => Some[bool](true)
+    case _ => None[bool]()
+}
+
+// ListOf creates a List from variadic arguments.
+// Example: ListOf[int](1, 2, 3) creates List(1, 2, 3)
+func ListOf[T any](elements ...T) List[T] {
+    var result = emptyList[T]()
+    var i = len(elements) - 1
+    for ; i >= 0 ; {
+        result = consList[T](elements[i], result)
+        i = i - 1
+    }
+    return result
+}
+
+// ListFromSlice creates a List from a slice.
+func ListFromSlice[T any](elements []T) List[T] {
+    var result = emptyList[T]()
+    var i = len(elements) - 1
+    for ; i >= 0 ; {
+        result = consList[T](elements[i], result)
+        i = i - 1
+    }
+    return result
+}
+
+// EmptyList returns an empty list.
+func EmptyList[T any]() List[T] = emptyList[T]()
+
+// IsEmpty returns true if the list is empty.
+func (l List[T]) IsEmpty() bool = l.isEmpty
+
+// NonEmpty returns true if the list is not empty.
+func (l List[T]) NonEmpty() bool = !l.isEmpty
+
+// Head returns the first element of the list.
+// Panics if the list is empty.
+func (l List[T]) Head() T {
+    if l.isEmpty {
+        panic("List.Head on empty list")
+    }
+    return l.head
+}
+
+// HeadOption returns the first element wrapped in Option.
+func (l List[T]) HeadOption() Option[T] {
+    if l.isEmpty {
+        return None[T]()
+    }
+    return Some[T](l.head)
+}
+
+// Tail returns all elements except the first.
+// Panics if the list is empty.
+func (l List[T]) Tail() List[T] {
+    if l.isEmpty {
+        panic("List.Tail on empty list")
+    }
+    return *l.tail
+}
+
+// TailOption returns the tail wrapped in Option.
+func (l List[T]) TailOption() Option[List[T]] {
+    if l.isEmpty {
+        return None[List[T]]()
+    }
+    return Some[List[T]](*l.tail)
+}
+
+// Length returns the number of elements in the list. O(1) - cached.
+func (l List[T]) Length() int = l.length
+
+// Size is an alias for Length.
+func (l List[T]) Size() int = l.length
+
+// Prepend adds an element to the front of the list. O(1).
+func (l List[T]) Prepend(elem T) List[T] = consList[T](elem, l)
+
+// PrependAll prepends all elements from another list. O(m) where m is other's length.
+func (l List[T]) PrependAll(other List[T]) List[T] {
+    if other.isEmpty {
+        return l
+    }
+    // Iterative implementation to avoid lambda type issues
+    var result = l
+    var stack = emptyList[T]()
+    var current = other
+    for ; !current.isEmpty ; {
+        stack = consList[T](current.head, stack)
+        current = *current.tail
+    }
+    for ; !stack.isEmpty ; {
+        result = result.Prepend(stack.head)
+        stack = *stack.tail
+    }
+    return result
+}
+
+// Append adds an element to the end of the list. O(n).
+func (l List[T]) Append(elem T) List[T] = l.AppendAll(consList[T](elem, emptyList[T]()))
+
+// AppendAll appends all elements from another list. O(n).
+func (l List[T]) AppendAll(other List[T]) List[T] {
+    if l.isEmpty {
+        return other
+    }
+    // Iterative implementation using a stack to reverse, then prepend
+    var stack = emptyList[T]()
+    var current = l
+    for ; !current.isEmpty ; {
+        stack = consList[T](current.head, stack)
+        current = *current.tail
+    }
+    var result = other
+    for ; !stack.isEmpty ; {
+        result = consList[T](stack.head, result)
+        stack = *stack.tail
+    }
+    return result
+}
+
+// Get returns the element at the given index. O(n).
+// Panics if index is out of bounds.
+func (l List[T]) Get(index int) T {
+    if (index < 0) || (index >= l.length) {
+        panic(fmt.Sprintf("List.Get: index %d out of bounds [0, %d)", index, l.length))
+    }
+    var current = l
+    var i = 0
+    for ; i < index ; {
+        current = *current.tail
+        i = i + 1
+    }
+    return current.head
+}
+
+// GetOption returns the element at index wrapped in Option.
+func (l List[T]) GetOption(index int) Option[T] {
+    if (index < 0) || (index >= l.length) {
+        return None[T]()
+    }
+    return Some[T](l.Get(index))
+}
+
+// Updated returns a new list with element at index replaced. O(n).
+func (l List[T]) Updated(index int, elem T) List[T] {
+    if (index < 0) || (index >= l.length) {
+        panic(fmt.Sprintf("List.Updated: index %d out of bounds [0, %d)", index, l.length))
+    }
+    if index == 0 {
+        return consList[T](elem, *l.tail)
+    }
+    return consList[T](l.head, l.tail.Updated(index - 1, elem))
+}
+
+// Last returns the last element of the list. O(n).
+// Panics if the list is empty.
+func (l List[T]) Last() T {
+    if l.isEmpty {
+        panic("List.Last on empty list")
+    }
+    var current = l
+    var next = *current.tail
+    for ; !next.isEmpty ; {
+        current = next
+        next = *current.tail
+    }
+    return current.head
+}
+
+// LastOption returns the last element wrapped in Option.
+func (l List[T]) LastOption() Option[T] {
+    if l.isEmpty {
+        return None[T]()
+    }
+    return Some[T](l.Last())
+}
+
+// Init returns all elements except the last. O(n).
+// Panics if the list is empty.
+func (l List[T]) Init() List[T] {
+    if l.isEmpty {
+        panic("List.Init on empty list")
+    }
+    var tail = *l.tail
+    if tail.isEmpty {
+        return emptyList[T]()
+    }
+    return consList[T](l.head, tail.Init())
+}
+
+// Take returns the first n elements. O(n).
+func (l List[T]) Take(n int) List[T] {
+    if n <= 0 || l.isEmpty {
+        return emptyList[T]()
+    }
+    return consList[T](l.head, l.tail.Take(n - 1))
+}
+
+// Drop returns all elements except the first n. O(n).
+func (l List[T]) Drop(n int) List[T] {
+    if n <= 0 || l.isEmpty {
+        return l
+    }
+    return l.tail.Drop(n - 1)
+}
+
+// TakeWhile returns the longest prefix of elements that satisfy the predicate.
+func (l List[T]) TakeWhile(p func(T) bool) List[T] {
+    if l.isEmpty || !p(l.head) {
+        return emptyList[T]()
+    }
+    return consList[T](l.head, l.tail.TakeWhile(p))
+}
+
+// DropWhile drops the longest prefix of elements that satisfy the predicate.
+func (l List[T]) DropWhile(p func(T) bool) List[T] {
+    if l.isEmpty || !p(l.head) {
+        return l
+    }
+    return l.tail.DropWhile(p)
+}
+
+// Contains checks if the list contains the given element. O(n).
+func (l List[T]) Contains(elem T) bool {
+    if l.isEmpty {
+        return false
+    }
+    if std.Equal(l.head, elem) {
+        return true
+    }
+    return l.tail.Contains(elem)
+}
+
+// IndexOf returns the index of the first occurrence of elem, or -1 if not found. O(n).
+func (l List[T]) IndexOf(elem T) int {
+    var current = l
+    var i = 0
+    for ; !current.isEmpty ; {
+        if std.Equal(current.head, elem) {
+            return i
+        }
+        current = *current.tail
+        i = i + 1
+    }
+    return -1
+}
+
+// Reverse returns a new list with elements in reverse order. O(n).
+func (l List[T]) Reverse() List[T] {
+    var result = emptyList[T]()
+    var current = l
+    for ; !current.isEmpty ; {
+        result = consList[T](current.head, result)
+        current = *current.tail
+    }
+    return result
+}
+
+// Map applies a function to each element and returns a new list.
+func (l List[T]) Map[U any](f func(T) U) List[U] {
+    if l.isEmpty {
+        return emptyList[U]()
+    }
+    var tail = *l.tail
+    return consList[U](f(l.head), tail.Map[U](f))
+}
+
+// FlatMap applies a function that returns a list to each element and flattens the result.
+func (l List[T]) FlatMap[U any](f func(T) List[U]) List[U] {
+    if l.isEmpty {
+        return emptyList[U]()
+    }
+    var tail = *l.tail
+    return f(l.head).AppendAll(tail.FlatMap[U](f))
+}
+
+// Filter returns a new list with only elements that satisfy the predicate.
+func (l List[T]) Filter(p func(T) bool) List[T] {
+    if l.isEmpty {
+        return emptyList[T]()
+    }
+    if p(l.head) {
+        return consList[T](l.head, l.tail.Filter(p))
+    }
+    return l.tail.Filter(p)
+}
+
+// FilterNot returns a new list with elements that do not satisfy the predicate.
+func (l List[T]) FilterNot(p func(T) bool) List[T] = l.Filter((elem T) => !p(elem))
+
+// Partition splits the list into two lists based on a predicate.
+func (l List[T]) Partition(p func(T) bool) Tuple[List[T], List[T]] {
+    var left = l.Filter(p)
+    var right = l.FilterNot(p)
+    return Tuple[List[T], List[T]](V1 = left, V2 = right)
+}
+
+// FoldLeft applies a binary operator from left to right.
+func (l List[T]) FoldLeft[U any](initial U, f func(U, T) U) U {
+    var acc = initial
+    var current = l
+    for ; !current.isEmpty ; {
+        acc = f(acc, current.head)
+        current = *current.tail
+    }
+    return acc
+}
+
+// FoldRight applies a binary operator from right to left.
+func (l List[T]) FoldRight[U any](initial U, f func(T, U) U) U {
+    if l.isEmpty {
+        return initial
+    }
+    var tail = *l.tail
+    return f(l.head, tail.FoldRight[U](initial, f))
+}
+
+// Reduce applies a binary operator from left to right, starting with the first element.
+// Panics if the list is empty.
+func (l List[T]) Reduce(f func(T, T) T) T {
+    if l.isEmpty {
+        panic("List.Reduce on empty list")
+    }
+    var tail = *l.tail
+    return tail.FoldLeft[T](l.head, f)
+}
+
+// ReduceOption is like Reduce but returns None for empty list.
+func (l List[T]) ReduceOption(f func(T, T) T) Option[T] {
+    if l.isEmpty {
+        return None[T]()
+    }
+    return Some[T](l.Reduce(f))
+}
+
+// ForEach applies a function to each element for side effects.
+func (l List[T]) ForEach(f func(T) any) {
+    var current = l
+    for ; !current.isEmpty ; {
+        f(current.head)
+        current = *current.tail
+    }
+}
+
+// Exists returns true if any element satisfies the predicate.
+func (l List[T]) Exists(p func(T) bool) bool {
+    var current = l
+    for ; !current.isEmpty ; {
+        if p(current.head) {
+            return true
+        }
+        current = *current.tail
+    }
+    return false
+}
+
+// ForAll returns true if all elements satisfy the predicate.
+func (l List[T]) ForAll(p func(T) bool) bool {
+    var current = l
+    for ; !current.isEmpty ; {
+        if !p(current.head) {
+            return false
+        }
+        current = *current.tail
+    }
+    return true
+}
+
+// Find returns the first element that satisfies the predicate.
+func (l List[T]) Find(p func(T) bool) Option[T] {
+    var current = l
+    for ; !current.isEmpty ; {
+        if p(current.head) {
+            return Some[T](current.head)
+        }
+        current = *current.tail
+    }
+    return None[T]()
+}
+
+// Count returns the number of elements satisfying the predicate.
+func (l List[T]) Count(p func(T) bool) int {
+    var count = 0
+    var current = l
+    for ; !current.isEmpty ; {
+        if p(current.head) {
+            count = count + 1
+        }
+        current = *current.tail
+    }
+    return count
+}
+
+// Zip combines two lists into a list of tuples. Result length is the minimum of both.
+func (l List[T]) Zip[U any](other List[U]) List[Tuple[T, U]] {
+    if l.isEmpty || other.isEmpty {
+        return emptyList[Tuple[T, U]]()
+    }
+    val pair = Tuple[T, U](V1 = l.head, V2 = other.head)
+    var lTail = *l.tail
+    var otherTail = *other.tail
+    return consList[Tuple[T, U]](pair, lTail.Zip[U](otherTail))
+}
+
+// ZipWithIndex pairs each element with its index.
+func (l List[T]) ZipWithIndex() List[Tuple[T, int]] {
+    var result = emptyList[Tuple[T, int]]()
+    var current = l
+    var i = 0
+    for ; !current.isEmpty ; {
+        result = consList[Tuple[T, int]](Tuple[T, int](V1 = current.head, V2 = i), result)
+        current = *current.tail
+        i = i + 1
+    }
+    return result.Reverse()
+}
+
+// Distinct returns a new list with duplicate elements removed. O(n^2).
+func (l List[T]) Distinct() List[T] {
+    if l.isEmpty {
+        return emptyList[T]()
+    }
+    val tailDistinct = l.tail.Distinct()
+    if tailDistinct.Contains(l.head) {
+        return tailDistinct
+    }
+    return consList[T](l.head, tailDistinct)
+}
+
+// SplitAt splits the list at the given index.
+func (l List[T]) SplitAt(n int) Tuple[List[T], List[T]] = Tuple[List[T], List[T]](V1 = l.Take(n), V2 = l.Drop(n))
+
+// Flatten flattens a list of lists.
+func Flatten[T any](ll List[List[T]]) List[T] {
+    if ll.isEmpty {
+        return emptyList[T]()
+    }
+    return ll.head.AppendAll(Flatten[T](*ll.tail))
+}
+
+// ToSlice converts the list to a Go slice.
+func (l List[T]) ToSlice() []T {
+    var result []T
+    var current = l
+    for ; !current.isEmpty ; {
+        result = append(result, current.head)
+        current = *current.tail
+    }
+    return result
+}
+
+// String returns a string representation of the list.
+func (l List[T]) String() string {
+    if l.isEmpty {
+        return "List()"
+    }
+    var result = "List("
+    var current = l
+    var first = true
+    for ; !current.isEmpty ; {
+        if !first {
+            result = result + ", "
+        }
+        result = result + fmt.Sprintf("%v", current.head)
+        current = *current.tail
+        first = false
+    }
+    return result + ")"
+}

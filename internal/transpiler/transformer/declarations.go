@@ -75,8 +75,8 @@ func (t *galaASTTransformer) transformDeclaration(ctx grammar.IDeclarationContex
 		return nil, stmt, err
 	}
 	if forCtx := ctx.ForStatement(); forCtx != nil {
-		// TODO: implement
-		return nil, nil, galaerr.NewSemanticError("for statement not implemented yet")
+		stmt, err := t.transformForStatement(forCtx.(*grammar.ForStatementContext))
+		return nil, stmt, err
 	}
 	if simpleCtx := ctx.SimpleStatement(); simpleCtx != nil {
 		stmt, err := t.transformSimpleStatement(simpleCtx.(*grammar.SimpleStatementContext))
@@ -258,6 +258,7 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 	// Receiver
 	var receiver *ast.FieldList
 	var receiverTypeName string
+	var originalRecvTypeExpr ast.Expr // Keep original for cycle detection
 	if ctx.Receiver() != nil {
 		recvCtx := ctx.Receiver().(*grammar.ReceiverContext)
 		recvName := recvCtx.Identifier().GetText()
@@ -265,6 +266,7 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		if err != nil {
 			return nil, err
 		}
+		originalRecvTypeExpr = recvTypeExpr // Store before potential Immutable wrapping
 
 		receiverType := t.resolveType(t.getBaseTypeName(recvTypeExpr))
 		receiverBaseName := receiverType.BaseName()
@@ -316,8 +318,25 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		return nil, err
 	}
 
-	if receiver != nil && (funcType.TypeParams != nil || (t.genericMethods[receiverTypeName] != nil && t.genericMethods[receiverTypeName][name])) {
-		// Generic method: transform to standalone function
+	// Check if method return type would cause Go instantiation cycle
+	// This happens when a method of Container[T] returns Container[SomeType[T, ...]]
+	wouldCauseCycle := false
+	if receiver != nil && funcType.Results != nil && len(funcType.Results.List) > 0 {
+		returnType := funcType.Results.List[0].Type
+		wouldCauseCycle = t.causesInstantiationCycle(originalRecvTypeExpr, returnType)
+	}
+
+	// Register method as generic if it would cause instantiation cycle
+	// This ensures call sites are also transformed to function calls
+	if wouldCauseCycle && receiverTypeName != "" {
+		if t.genericMethods[receiverTypeName] == nil {
+			t.genericMethods[receiverTypeName] = make(map[string]bool)
+		}
+		t.genericMethods[receiverTypeName][name] = true
+	}
+
+	if receiver != nil && (funcType.TypeParams != nil || wouldCauseCycle || (t.genericMethods[receiverTypeName] != nil && t.genericMethods[receiverTypeName][name])) {
+		// Generic method or method with instantiation cycle: transform to standalone function
 		identName := receiverTypeName
 		if strings.HasPrefix(identName, t.packageName+".") {
 			identName = strings.TrimPrefix(identName, t.packageName+".")
@@ -332,7 +351,8 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		funcType.Params.List = append([]*ast.Field{receiver.List[0]}, funcType.Params.List...)
 
 		// 2. Extract type parameters from receiver type and add to typeParams
-		recvTypeParams := t.extractTypeParams(receiver.List[0].Type)
+		// Use originalRecvTypeExpr to avoid issues with Immutable-wrapped types
+		recvTypeParams := t.extractTypeParams(originalRecvTypeExpr)
 		if len(recvTypeParams) > 0 {
 			if funcType.TypeParams == nil {
 				funcType.TypeParams = &ast.FieldList{}
@@ -681,6 +701,7 @@ func (t *galaASTTransformer) transformParameter(ctx *grammar.ParameterContext) (
 		typeName = t.resolveType(t.getBaseTypeName(typeExpr))
 	}
 	isVal := ctx.VAL() != nil
+	isVariadic := ctx.ELLIPSIS() != nil
 	if qName := t.getType(typeName.String()); !qName.IsNil() {
 		typeName = qName
 	}
@@ -697,7 +718,10 @@ func (t *galaASTTransformer) transformParameter(ctx *grammar.ParameterContext) (
 		}
 		typeName = t.exprToType(typ)
 		t.isImmutableType(typeName)
-		if isVal {
+		if isVariadic {
+			// Variadic parameter: ...T becomes ...T in Go
+			field.Type = &ast.Ellipsis{Elt: typ}
+		} else if isVal {
 			field.Type = &ast.IndexExpr{
 				X:     t.stdIdent("Immutable"),
 				Index: typ,
@@ -707,7 +731,11 @@ func (t *galaASTTransformer) transformParameter(ctx *grammar.ParameterContext) (
 		}
 	} else {
 		// Default to any if type is not specified
-		field.Type = ast.NewIdent("any")
+		if isVariadic {
+			field.Type = &ast.Ellipsis{Elt: ast.NewIdent("any")}
+		} else {
+			field.Type = ast.NewIdent("any")
+		}
 	}
 	return field, nil
 }

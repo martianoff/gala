@@ -431,6 +431,15 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 
 					if ctx.Signature().Type_() != nil {
 						methodMeta.ReturnType = a.resolveType(ctx.Signature().Type_().GetText(), pkgName)
+
+						// Detect Go generics instantiation cycle:
+						// If receiver is Container[T] and return is Container[SomeType[T, ...]]
+						// Go would detect infinite type instantiation
+						recvTypeStr := recvCtx.Type_().GetText()
+						retTypeStr := ctx.Signature().Type_().GetText()
+						if a.causesInstantiationCycle(recvTypeStr, retTypeStr) {
+							methodMeta.IsGeneric = true
+						}
 					}
 
 					if ctx.Signature().Parameters() != nil {
@@ -618,6 +627,88 @@ func normalizeTypeName(name string) string {
 		return name[4:]
 	}
 	return name
+}
+
+// causesInstantiationCycle checks if a method return type would cause a Go generics
+// instantiation cycle. This happens when:
+// - The receiver is a generic type (e.g., MyList[T])
+// - The return type is the same base type (e.g., MyList)
+// - But with different type arguments (e.g., MyList[Pair[T, int]])
+// Go's compiler detects this as a potential infinite instantiation chain.
+func (a *galaAnalyzer) causesInstantiationCycle(recvTypeStr, retTypeStr string) bool {
+	// Extract base type and type args from receiver
+	recvBase, recvArgs := extractBaseAndArgs(recvTypeStr)
+	if recvBase == "" || len(recvArgs) == 0 {
+		return false // Not a generic receiver
+	}
+
+	// Extract base type and type args from return type
+	retBase, retArgs := extractBaseAndArgs(retTypeStr)
+	if retBase == "" {
+		return false
+	}
+
+	// Check if base types match
+	if recvBase != retBase {
+		return false
+	}
+
+	// Check if type arguments differ
+	// If they're exactly the same, no cycle (e.g., MyList[T] -> MyList[T])
+	// If they differ, potential cycle (e.g., MyList[T] -> MyList[Pair[T, int]])
+	if len(recvArgs) != len(retArgs) {
+		return true // Different number of args = different
+	}
+
+	for i, recvArg := range recvArgs {
+		if recvArg != retArgs[i] {
+			return true // Different arg = potential cycle
+		}
+	}
+
+	return false
+}
+
+// extractBaseAndArgs extracts the base type name and type arguments from a type string.
+// For example, "MyList[T]" returns ("MyList", ["T"])
+// "MyList[Pair[T, int]]" returns ("MyList", ["Pair[T, int]"])
+func extractBaseAndArgs(typeStr string) (string, []string) {
+	// Find the first '[' to separate base from args
+	bracketIdx := strings.Index(typeStr, "[")
+	if bracketIdx == -1 {
+		return typeStr, nil
+	}
+
+	base := typeStr[:bracketIdx]
+	argsStr := typeStr[bracketIdx+1 : len(typeStr)-1] // Remove outer brackets
+
+	// Parse the type arguments, handling nested brackets
+	var args []string
+	depth := 0
+	start := 0
+	for i, ch := range argsStr {
+		switch ch {
+		case '[':
+			depth++
+		case ']':
+			depth--
+		case ',':
+			if depth == 0 {
+				arg := strings.TrimSpace(argsStr[start:i])
+				if arg != "" {
+					args = append(args, arg)
+				}
+				start = i + 1
+			}
+		}
+	}
+	// Add the last argument
+	lastArg := strings.TrimSpace(argsStr[start:])
+	if lastArg != "" {
+		args = append(args, lastArg)
+	}
+
+	return base, args
 }
 
 func (a *galaAnalyzer) resolveType(typeName string, pkgName string) transpiler.Type {

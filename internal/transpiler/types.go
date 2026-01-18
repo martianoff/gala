@@ -135,6 +135,13 @@ func ParseType(s string) Type {
 	if strings.HasPrefix(s, "*") {
 		return PointerType{Elem: ParseType(s[1:])}
 	}
+	// Handle package-prefixed pointer types like "pkg.*Type" or "pkg.*Type[T]"
+	if idx := strings.Index(s, ".*"); idx != -1 {
+		pkg := s[:idx]
+		rest := s[idx+2:] // Skip ".*"
+		innerType := ParseType(pkg + "." + rest)
+		return PointerType{Elem: innerType}
+	}
 	if strings.HasPrefix(s, "map[") {
 		// Very simple map parsing, doesn't handle nested maps well
 		closingBracket := strings.Index(s, "]")

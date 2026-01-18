@@ -88,6 +88,112 @@ func getID(c Config) string {
 }
 `,
 		},
+		{
+			name: "local var with immutable field access",
+			input: `package main
+
+type Node struct {
+	value int
+	isEmpty bool
+}
+
+func test(n Node) bool {
+	var local = n
+	return local.isEmpty
+}`,
+			expected: `package main
+
+import "martianoff/gala/std"
+
+type Node struct {
+	value   std.Immutable[int]
+	isEmpty std.Immutable[bool]
+}
+
+func (s Node) Copy() Node {
+	return Node{value: std.Copy(s.value), isEmpty: std.Copy(s.isEmpty)}
+}
+func (s Node) Equal(other Node) bool {
+	return std.Equal(s.value, other.value) && std.Equal(s.isEmpty, other.isEmpty)
+}
+func test(n Node) bool {
+	var local = n
+	return local.isEmpty.Get()
+}
+`,
+		},
+		{
+			name: "generic type with local var immutable field access",
+			input: `package main
+
+type Container[T any] struct {
+	value T
+	isEmpty bool
+}
+
+func testEmpty[T any](c Container[T]) bool {
+	var local = c
+	return local.isEmpty
+}`,
+			expected: `package main
+
+import "martianoff/gala/std"
+
+type Container[T any] struct {
+	value   std.Immutable[T]
+	isEmpty std.Immutable[bool]
+}
+
+func (s Container[T]) Copy() Container[T] {
+	return Container[T]{value: std.Copy(s.value), isEmpty: std.Copy(s.isEmpty)}
+}
+func (s Container[T]) Equal(other Container[T]) bool {
+	return std.Equal(s.value, other.value) && std.Equal(s.isEmpty, other.isEmpty)
+}
+func testEmpty[T any](c Container[T]) bool {
+	var local = c
+	return local.isEmpty.Get()
+}
+`,
+		},
+		{
+			name: "pointer dereference with immutable field access",
+			input: `package main
+
+type Node struct {
+	value int
+	next *Node
+	isEmpty bool
+}
+
+func test(n Node) bool {
+	var current = n
+	var next = *current.next
+	return next.isEmpty
+}`,
+			expected: `package main
+
+import "martianoff/gala/std"
+
+type Node struct {
+	value   std.Immutable[int]
+	next    std.Immutable[*Node]
+	isEmpty std.Immutable[bool]
+}
+
+func (s Node) Copy() Node {
+	return Node{value: std.Copy(s.value), next: std.Copy(s.next), isEmpty: std.Copy(s.isEmpty)}
+}
+func (s Node) Equal(other Node) bool {
+	return std.Equal(s.value, other.value) && std.Equal(s.next, other.next) && std.Equal(s.isEmpty, other.isEmpty)
+}
+func test(n Node) bool {
+	var current = n
+	var next = *current.next.Get()
+	return next.isEmpty.Get()
+}
+`,
+		},
 	}
 
 	for _, tt := range tests {
