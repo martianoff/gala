@@ -481,6 +481,64 @@ Array is implemented as a 32-way branching trie (similar to Scala's Vector and C
 
 ---
 
+## Performance Benchmarks
+
+Benchmark results comparing GALA immutable collections to Go native slices. Tests performed with collections of 30 elements.
+
+### Running the Benchmarks
+
+```shell
+# GALA immutable collections benchmark
+bazel run //collection_immutable:perf_gala
+
+# Go native slices benchmark
+bazel run //collection_immutable:perf_go
+```
+
+### Results (ns/op)
+
+| Datastructure | Creation(30) | Prepend | Append | Head | Get(15) | Filter |
+|---------------|-------------:|--------:|-------:|-----:|--------:|-------:|
+| GALA List | 531 | 0-1 | - | 0-1 | 7 | 372 |
+| GALA Array | 3,786 | - | 131 | 2 | 2 | 1,692 |
+| Go Slice (mutable) | 68 | - | - | 0-1 | 0-1 | 51 |
+| Go Slice (immutable) | 1,012 | - | 52 | 0-1 | 0-1 | 51 |
+
+**Notes:**
+- GALA List uses Prepend (O(1)), GALA Array uses Append (O(eC))
+- Go Slice (mutable): pre-allocated capacity, standard append
+- Go Slice (immutable): copy-on-write style, full copy on each modification
+- `-` indicates operation not applicable or not the primary use case
+
+### Analysis
+
+**List vs Mutable Slice:**
+- List prepend is competitive with mutable slice append for incremental additions
+- List provides O(1) prepend without capacity planning or reallocation overhead
+- List creation is ~8x slower than mutable slice due to node allocations
+
+**List vs Immutable Slice (copy-on-write):**
+- List creation (531 ns) is ~2x faster than immutable slice creation (1,012 ns)
+- List prepend (0-1 ns) is much faster than immutable slice append (52 ns)
+- List provides true immutability with structural sharing
+
+**Array (Trie) vs Slice:**
+- Array random access (2 ns) is slightly slower than slice (0-1 ns) due to trie traversal
+- Array append (131 ns) is slower than immutable slice append (52 ns) but provides better sharing
+- Array shines for large collections where O(eC) beats slice's O(n) copy-on-update
+
+**When to Use Each:**
+
+| Scenario | Recommendation |
+|----------|----------------|
+| Building collections incrementally | List (prepend) or mutable slice |
+| Need immutability with frequent modifications | List or Array |
+| Random access on large collections | Array |
+| Simple iteration with no modifications | Go slice |
+| Functional programming patterns | List or Array |
+
+---
+
 ## Example: Building a Collection
 
 ```gala

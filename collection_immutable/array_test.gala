@@ -244,3 +244,138 @@ func TestEmptyArrayString(t T) T {
     var arr = EmptyArray[int]()
     return Eq[string](t, arr.String(), "Array()")
 }
+
+// === Pattern Matching Tests ===
+
+// Test using HeadOption with GetOrElse (functional pattern)
+func TestArrayPatternMatchHeadOption(t T) T {
+    var empty = EmptyArray[int]()
+    var nonEmpty = ArrayOf[int](42, 2, 3)
+    // GetOrElse is the functional way to handle Option
+    var t1 = Eq[int](t, empty.HeadOption().GetOrElse(-1), -1)
+    return Eq[int](t1, nonEmpty.HeadOption().GetOrElse(-1), 42)
+}
+
+// Test using GetOption with GetOrElse for safe access
+func TestArrayPatternMatchGetOption(t T) T {
+    var arr = ArrayOf[int](10, 20, 30)
+    var t1 = Eq[int](t, arr.GetOption(0).GetOrElse(0), 10)
+    var t2 = Eq[int](t1, arr.GetOption(1).GetOrElse(0), 20)
+    var t3 = Eq[int](t2, arr.GetOption(2).GetOrElse(0), 30)
+    return Eq[int](t3, arr.GetOption(99).GetOrElse(0), 0)
+}
+
+// Test processing array with isEmpty check (functional pattern)
+func TestArrayEmptyNonEmptyCheck(t T) T {
+    var empty = EmptyArray[int]()
+    var nonEmpty = ArrayOf[int](1, 2, 3)
+    var t1 = IsTrue(t, empty.IsEmpty())
+    var t2 = IsFalse(t1, nonEmpty.IsEmpty())
+    var t3 = IsFalse(t2, empty.NonEmpty())
+    return IsTrue(t3, nonEmpty.NonEmpty())
+}
+
+// Test Find with pattern matching behavior
+func TestArrayFindPattern(t T) T {
+    var arr = ArrayOf[int](1, 5, 10, 15)
+    var found = arr.Find(isGreaterThanTen)
+    var notFound = arr.Find((x int) => x > 100)
+    var t1 = IsFalse(t, found.IsEmpty())
+    var t2 = Eq[int](t1, found.GetOrElse(0), 15)
+    return IsTrue(t2, notFound.IsEmpty())
+}
+
+// === Immutability Tests ===
+
+func TestArrayAppendImmutability(t T) T {
+    // Original array should remain unchanged after append
+    var original = ArrayOf[int](1, 2, 3)
+    var modified = original.Append(4)
+    var t1 = Eq[int](t, original.Length(), 3)
+    var t2 = Eq[int](t1, modified.Length(), 4)
+    var t3 = Eq[int](t2, original.Get(0), 1)
+    var t4 = Eq[int](t3, original.Get(1), 2)
+    return Eq[int](t4, original.Get(2), 3)
+}
+
+func TestArrayPrependImmutability(t T) T {
+    // Original array should remain unchanged after prepend
+    var original = ArrayOf[int](2, 3, 4)
+    var modified = original.Prepend(1)
+    var t1 = Eq[int](t, original.Length(), 3)
+    var t2 = Eq[int](t1, modified.Length(), 4)
+    var t3 = Eq[int](t2, original.Head(), 2)
+    return Eq[int](t3, modified.Head(), 1)
+}
+
+func TestArrayUpdatedImmutability(t T) T {
+    // Original array should remain unchanged after update
+    var original = ArrayOf[int](1, 2, 3)
+    var modified = original.Updated(1, 99)
+    var t1 = Eq[int](t, original.Get(1), 2)
+    var t2 = Eq[int](t1, modified.Get(1), 99)
+    // Verify other elements unchanged
+    var t3 = Eq[int](t2, original.Get(0), 1)
+    return Eq[int](t3, original.Get(2), 3)
+}
+
+func TestArrayTailImmutability(t T) T {
+    // Original array should remain unchanged after tail
+    var original = ArrayOf[int](1, 2, 3)
+    var tail = original.Tail()
+    var t1 = Eq[int](t, original.Length(), 3)
+    var t2 = Eq[int](t1, tail.Length(), 2)
+    return Eq[int](t2, original.Head(), 1)
+}
+
+func TestArrayFilterImmutability(t T) T {
+    // Original array should remain unchanged after filter
+    var original = ArrayOf[int](1, 2, 3, 4, 5)
+    var filtered = original.Filter(isEven)
+    var t1 = Eq[int](t, original.Length(), 5)
+    var t2 = Eq[int](t1, filtered.Length(), 2)
+    // Original still has all elements
+    var t3 = Eq[int](t2, original.Get(0), 1)
+    return Eq[int](t3, original.Get(4), 5)
+}
+
+func TestArrayMapImmutability(t T) T {
+    // Original array should remain unchanged after map
+    var original = ArrayOf[int](1, 2, 3)
+    var mapped = original.Map[int](doubleValue)
+    var t1 = Eq[int](t, original.Get(0), 1)
+    var t2 = Eq[int](t1, original.Get(1), 2)
+    var t3 = Eq[int](t2, original.Get(2), 3)
+    var t4 = Eq[int](t3, mapped.Get(0), 2)
+    return Eq[int](t4, mapped.Get(1), 4)
+}
+
+func TestArrayReverseImmutability(t T) T {
+    // Original array should remain unchanged after reverse
+    var original = ArrayOf[int](1, 2, 3)
+    var reversed = original.Reverse()
+    var t1 = Eq[int](t, original.Get(0), 1)
+    var t2 = Eq[int](t1, original.Get(2), 3)
+    var t3 = Eq[int](t2, reversed.Get(0), 3)
+    return Eq[int](t3, reversed.Get(2), 1)
+}
+
+func TestArrayMultipleModificationsImmutability(t T) T {
+    // Chain of operations should not affect original
+    var original = ArrayOf[int](1, 2, 3)
+    var step1 = original.Append(4)
+    var step2 = step1.Prepend(0)
+    var step3 = step2.Updated(2, 99)
+    // Original unchanged
+    var t1 = Eq[int](t, original.Length(), 3)
+    var t2 = Eq[int](t1, original.Get(0), 1)
+    // step1 unchanged
+    var t3 = Eq[int](t2, step1.Length(), 4)
+    var t4 = Eq[int](t3, step1.Get(0), 1)
+    // step2 unchanged
+    var t5 = Eq[int](t4, step2.Length(), 5)
+    var t6 = Eq[int](t5, step2.Get(0), 0)
+    // step3 has all modifications
+    var t7 = Eq[int](t6, step3.Length(), 5)
+    return Eq[int](t7, step3.Get(2), 99)
+}

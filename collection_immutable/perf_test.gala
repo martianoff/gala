@@ -1,0 +1,179 @@
+package main
+
+import (
+    "fmt"
+    "time"
+    . "martianoff/gala/collection_immutable"
+)
+
+// Performance test utilities
+func measureNs(iterations int, f func() any) int64 {
+    var start = time.Now()
+    var i = 0
+    for ; i < iterations ; {
+        f()
+        i = i + 1
+    }
+    var elapsed = time.Since(start)
+    return elapsed.Nanoseconds() / int64(iterations)
+}
+
+func printResult(name string, nsPerOp int64) {
+    fmt.Printf("%-30s %10d ns/op\n", name, nsPerOp)
+}
+
+// List creation benchmark
+func benchListCreation() {
+    var ns = measureNs(10000, () => {
+        var list = EmptyList[int]()
+        var i = 0
+        for ; i < 30 ; {
+            list = list.Prepend(i)
+            i = i + 1
+        }
+    })
+    printResult("ListCreation(30)", ns)
+}
+
+// List prepend benchmark
+func benchListPrepend() {
+    var list = EmptyList[int]()
+    var i = 0
+    for ; i < 30 ; {
+        list = list.Prepend(i)
+        i = i + 1
+    }
+    var ns = measureNs(1000000, () => {
+        var _ = list.Prepend(999)
+    })
+    printResult("ListPrepend", ns)
+}
+
+// List head benchmark
+func benchListHead() {
+    var list = EmptyList[int]()
+    var i = 0
+    for ; i < 30 ; {
+        list = list.Prepend(i)
+        i = i + 1
+    }
+    var ns = measureNs(1000000, () => {
+        var _ = list.Head()
+    })
+    printResult("ListHead", ns)
+}
+
+// List get benchmark
+func benchListGet() {
+    var list = EmptyList[int]()
+    var i = 0
+    for ; i < 30 ; {
+        list = list.Prepend(i)
+        i = i + 1
+    }
+    var ns = measureNs(100000, () => {
+        var _ = list.Get(15)
+    })
+    printResult("ListGet(15)", ns)
+}
+
+// List filter benchmark
+func benchListFilter() {
+    var list = EmptyList[int]()
+    var i = 0
+    for ; i < 30 ; {
+        list = list.Prepend(i)
+        i = i + 1
+    }
+    var ns = measureNs(10000, () => {
+        var _ = list.Filter((x int) => x % 2 == 0)
+    })
+    printResult("ListFilter", ns)
+}
+
+// Array creation benchmark
+func benchArrayCreation() {
+    var ns = measureNs(10000, () => {
+        var arr = EmptyArray[int]()
+        var i = 0
+        for ; i < 30 ; {
+            arr = arr.Append(i)
+            i = i + 1
+        }
+    })
+    printResult("ArrayCreation(30)", ns)
+}
+
+// Array append benchmark
+func benchArrayAppend() {
+    var arr = EmptyArray[int]()
+    var i = 0
+    for ; i < 30 ; {
+        arr = arr.Append(i)
+        i = i + 1
+    }
+    var ns = measureNs(100000, () => {
+        var _ = arr.Append(999)
+    })
+    printResult("ArrayAppend", ns)
+}
+
+// Array head benchmark
+func benchArrayHead() {
+    var arr = EmptyArray[int]()
+    var i = 0
+    for ; i < 30 ; {
+        arr = arr.Append(i)
+        i = i + 1
+    }
+    var ns = measureNs(1000000, () => {
+        var _ = arr.Head()
+    })
+    printResult("ArrayHead", ns)
+}
+
+// Array get benchmark
+func benchArrayGet() {
+    var arr = EmptyArray[int]()
+    var i = 0
+    for ; i < 30 ; {
+        arr = arr.Append(i)
+        i = i + 1
+    }
+    var ns = measureNs(1000000, () => {
+        var _ = arr.Get(15)
+    })
+    printResult("ArrayGet(15)", ns)
+}
+
+// Array filter benchmark
+func benchArrayFilter() {
+    var arr = EmptyArray[int]()
+    var i = 0
+    for ; i < 30 ; {
+        arr = arr.Append(i)
+        i = i + 1
+    }
+    var ns = measureNs(10000, () => {
+        var _ = arr.Filter((x int) => x % 2 == 0)
+    })
+    printResult("ArrayFilter", ns)
+}
+
+func main() {
+    fmt.Println("=== GALA Immutable Collections Performance ===")
+    fmt.Println("")
+    fmt.Println("--- List Operations ---")
+    benchListCreation()
+    benchListPrepend()
+    benchListHead()
+    benchListGet()
+    benchListFilter()
+    fmt.Println("")
+    fmt.Println("--- Array Operations ---")
+    benchArrayCreation()
+    benchArrayAppend()
+    benchArrayHead()
+    benchArrayGet()
+    benchArrayFilter()
+}

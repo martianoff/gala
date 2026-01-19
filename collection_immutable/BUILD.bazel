@@ -1,5 +1,5 @@
-load("//:gala.bzl", "gala_go_test", "gala_library", "gala_transpile")
-load("@rules_go//go:def.bzl", "go_library")
+load("//:gala.bzl", "gala_binary", "gala_go_test", "gala_library", "gala_transpile")
+load("@rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 
 exports_files([
     "list.gala",
@@ -46,4 +46,16 @@ gala_go_test(
     name = "list_test",
     srcs = ["list_test.gala"],
     deps = [":collection_immutable"],
+)
+
+# Performance benchmarks
+gala_binary(
+    name = "perf_gala",
+    src = "perf_test.gala",
+    deps = [":collection_immutable"],
+)
+
+go_binary(
+    name = "perf_go",
+    srcs = ["go_native_perf_test.go"],
 )
