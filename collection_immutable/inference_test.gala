@@ -1,0 +1,137 @@
+package main
+
+import (
+    . "martianoff/gala/test"
+    . "martianoff/gala/collection_immutable"
+)
+
+// === Implicit Type Tests ===
+
+// Test if ArrayOf can infer type from elements
+func TestArrayImplicitType(t T) T {
+    // Try creating array without explicit type parameter
+    var arr = ArrayOf(1, 2, 3)
+    var t1 = Eq[int](t, arr.Length(), 3)
+    var t2 = Eq[int](t1, arr.Get(0), 1)
+    return Eq[int](t2, arr.Get(2), 3)
+}
+
+// Test if ListOf can infer type from elements
+func TestListImplicitType(t T) T {
+    // Try creating list without explicit type parameter
+    var list = ListOf(1, 2, 3)
+    var t1 = Eq[int](t, list.Length(), 3)
+    var t2 = Eq[int](t1, list.Head(), 1)
+    return Eq[int](t2, list.Last(), 3)
+}
+
+// Test implicit type with strings
+func TestArrayImplicitTypeString(t T) T {
+    var arr = ArrayOf("a", "b", "c")
+    var t1 = Eq[int](t, arr.Length(), 3)
+    return Eq[string](t1, arr.Head(), "a")
+}
+
+func TestListImplicitTypeString(t T) T {
+    var list = ListOf("x", "y", "z")
+    var t1 = Eq[int](t, list.Length(), 3)
+    return Eq[string](t1, list.Head(), "x")
+}
+
+// === Pattern Matching with IsEmpty/NonEmpty ===
+// Note: Cons/Nil extractors exist but tuple unpacking in patterns requires
+// explicit handling. Use functional Head/Tail/HeadOption/TailOption approach.
+
+// Test functional pattern matching - List to (head, tail) via methods
+func TestListToHeadTail(t T) T {
+    var list = ListOf(1, 2, 3)
+    // Extract head and tail functionally
+    var head = list.Head()
+    var tail = list.Tail()
+    var t1 = Eq[int](t, head, 1)
+    var t2 = Eq[int](t1, tail.Head(), 2)
+    return Eq[int](t2, tail.Length(), 2)
+}
+
+// Test pattern matching with IsEmpty/NonEmpty checks
+func TestListIsEmptyPatternMatch(t T) T {
+    var empty = EmptyList[int]()
+    var nonEmpty = ListOf(42, 2, 3)
+    var t1 = IsTrue(t, empty.IsEmpty())
+    return IsFalse(t1, nonEmpty.IsEmpty())
+}
+
+// Test extracting head and tail via HeadOption/TailOption (safe pattern)
+func TestListHeadTailOption(t T) T {
+    var list = ListOf(10, 20, 30)
+    var headOpt = list.HeadOption()
+    var tailOpt = list.TailOption()
+    var t1 = Eq[int](t, headOpt.GetOrElse(-1), 10)
+    var t2 = IsFalse(t1, tailOpt.IsEmpty())
+    // Access tail's head
+    var tail = list.Tail()
+    return Eq[int](t2, tail.Head(), 20)
+}
+
+// Test empty list returns None for HeadOption/TailOption
+func TestEmptyListOptions(t T) T {
+    var empty = EmptyList[int]()
+    var t1 = IsTrue(t, empty.HeadOption().IsEmpty())
+    return IsTrue(t1, empty.TailOption().IsEmpty())
+}
+
+// Test recursive list processing pattern - sum via FoldLeft
+func TestListFunctionalPattern(t T) T {
+    var list = ListOf(1, 2, 3, 4, 5)
+    var sum = list.FoldLeft[int](0, (acc int, x int) => acc + x)
+    return Eq[int](t, sum, 15)
+}
+
+// === Array Pattern Matching ===
+// Arrays use indexed access for element extraction
+
+// Test extracting Array(a, b, c) elements via Get
+func TestArrayElementExtraction(t T) T {
+    var arr = ArrayOf(10, 20, 30)
+    // Extract elements by position - simulates Array(a, b, c) pattern
+    var a = arr.Get(0)
+    var b = arr.Get(1)
+    var c = arr.Get(2)
+    var t1 = Eq[int](t, a, 10)
+    var t2 = Eq[int](t1, b, 20)
+    return Eq[int](t2, c, 30)
+}
+
+// Test safe element extraction with GetOption
+func TestArraySafeExtraction(t T) T {
+    var arr = ArrayOf(1, 2, 3)
+    var first = arr.GetOption(0).GetOrElse(-1)
+    var outOfBounds = arr.GetOption(99).GetOrElse(-1)
+    var t1 = Eq[int](t, first, 1)
+    return Eq[int](t1, outOfBounds, -1)
+}
+
+// Test Array IsEmpty/NonEmpty pattern
+func TestArrayIsEmptyPattern(t T) T {
+    var empty = EmptyArray[int]()
+    var nonEmpty = ArrayOf(42)
+    var t1 = IsTrue(t, empty.IsEmpty())
+    return IsFalse(t1, nonEmpty.IsEmpty())
+}
+
+// Test Array head and tail extraction
+func TestArrayHeadTail(t T) T {
+    var arr = ArrayOf(10, 20, 30)
+    var head = arr.Head()
+    var tail = arr.Tail()
+    var t1 = Eq[int](t, head, 10)
+    var t2 = Eq[int](t1, tail.Head(), 20)
+    return Eq[int](t2, tail.Length(), 2)
+}
+
+// Test Array functional pattern - sum via FoldLeft
+func TestArrayFunctionalPattern(t T) T {
+    var arr = ArrayOf(1, 2, 3, 4, 5)
+    var sum = arr.FoldLeft[int](0, (acc int, x int) => acc + x)
+    return Eq[int](t, sum, 15)
+}

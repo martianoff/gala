@@ -48,6 +48,12 @@ gala_go_test(
     deps = [":collection_immutable"],
 )
 
+gala_go_test(
+    name = "inference_test",
+    srcs = ["inference_test.gala"],
+    deps = [":collection_immutable"],
+)
+
 # Performance benchmarks
 gala_binary(
     name = "perf_gala",
