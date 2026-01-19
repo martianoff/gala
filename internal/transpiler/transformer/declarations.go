@@ -817,6 +817,73 @@ func (t *galaASTTransformer) transformSignature(ctx *grammar.SignatureContext, t
 	}, nil
 }
 
+// transformFuncTypeSignature transforms a function type's signature (used in type positions like func(T) bool).
+// In function types, parameters without explicit types should be treated as anonymous params with the identifier as the type.
+func (t *galaASTTransformer) transformFuncTypeSignature(ctx *grammar.SignatureContext) (*ast.FuncType, error) {
+	paramsCtx := ctx.Parameters().(*grammar.ParametersContext)
+
+	fieldList := &ast.FieldList{}
+	if paramsCtx.ParameterList() != nil {
+		for _, pCtx := range paramsCtx.ParameterList().(*grammar.ParameterListContext).AllParameter() {
+			paramCtx := pCtx.(*grammar.ParameterContext)
+			field := &ast.Field{}
+
+			if paramCtx.Type_() != nil {
+				// Explicit type provided: `name type` -> use type for the field
+				typ, err := t.transformType(paramCtx.Type_())
+				if err != nil {
+					return nil, err
+				}
+				field.Type = typ
+			} else {
+				// No explicit type: treat identifier as the type (for function types like func(T) bool)
+				typeName := paramCtx.Identifier().GetText()
+				// Check if this identifier resolves to a known type
+				resolvedType := t.getType(typeName)
+				if !resolvedType.IsNil() {
+					if pkg := resolvedType.GetPackage(); pkg != "" && pkg != t.packageName {
+						if pkg == transpiler.StdPackage {
+							field.Type = t.stdIdent(typeName)
+						} else if alias, ok := t.reverseImportAliases[pkg]; ok {
+							field.Type = &ast.SelectorExpr{X: ast.NewIdent(alias), Sel: ast.NewIdent(typeName)}
+						} else {
+							field.Type = ast.NewIdent(typeName)
+						}
+					} else {
+						field.Type = ast.NewIdent(typeName)
+					}
+				} else {
+					field.Type = ast.NewIdent(typeName)
+				}
+			}
+
+			if paramCtx.ELLIPSIS() != nil {
+				field.Type = &ast.Ellipsis{Elt: field.Type}
+			}
+
+			fieldList.List = append(fieldList.List, field)
+		}
+	}
+
+	var results *ast.FieldList
+	if ctx.Type_() != nil {
+		retType, err := t.transformType(ctx.Type_())
+		if err != nil {
+			return nil, err
+		}
+		results = &ast.FieldList{
+			List: []*ast.Field{
+				{Type: retType},
+			},
+		}
+	}
+
+	return &ast.FuncType{
+		Params:  fieldList,
+		Results: results,
+	}, nil
+}
+
 func (t *galaASTTransformer) transformInterfaceType(ctx *grammar.InterfaceTypeContext) (*ast.InterfaceType, error) {
 	methods := &ast.FieldList{}
 	for _, mCtx := range ctx.AllMethodSpec() {
@@ -824,7 +891,17 @@ func (t *galaASTTransformer) transformInterfaceType(ctx *grammar.InterfaceTypeCo
 		name := spec.Identifier().GetText()
 		sig := spec.Signature().(*grammar.SignatureContext)
 
-		funcType, err := t.transformSignature(sig, nil)
+		// Check for method-level type parameters
+		var typeParams *ast.FieldList
+		if spec.TypeParameters() != nil {
+			var err error
+			typeParams, err = t.transformTypeParameters(spec.TypeParameters().(*grammar.TypeParametersContext))
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		funcType, err := t.transformSignature(sig, typeParams)
 		if err != nil {
 			return nil, err
 		}

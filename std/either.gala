@@ -57,6 +57,12 @@ func getRightValue(e any) any = e match {
 // isRight returns true if this is a Right, false otherwise.
 func (e Either[A, B]) isRight() bool = !e.isLeft
 
+// IsLeft returns true if this is a Left, false otherwise. (exported)
+func (e Either[A, B]) IsLeft() bool = e.isLeft
+
+// IsRight returns true if this is a Right, false otherwise. (exported)
+func (e Either[A, B]) IsRight() bool = !e.isLeft
+
 // GetLeft returns the left value if this is a Left, otherwise it panics.
 func (e Either[A, B]) GetLeft() A {
     if !e.isLeft {

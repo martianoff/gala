@@ -723,6 +723,12 @@ func (a *galaAnalyzer) resolveTypeWithParams(typeName string, pkgName string, ty
 	if typeName == "" {
 		return transpiler.NilType{}
 	}
+
+	// Handle function types: func(params) results
+	if strings.HasPrefix(typeName, "func(") {
+		return a.resolveFuncType(typeName, pkgName, typeParams)
+	}
+
 	// If it's already package-qualified, just parse it
 	if strings.Contains(typeName, ".") {
 		return transpiler.ParseType(typeName)
@@ -755,6 +761,94 @@ func (a *galaAnalyzer) resolveTypeWithParams(typeName string, pkgName string, ty
 		return transpiler.ParseType(pkgName + "." + typeName)
 	}
 	return transpiler.ParseType(typeName)
+}
+
+// resolveFuncType resolves a function type string like "func(T) Option[U]"
+func (a *galaAnalyzer) resolveFuncType(typeName string, pkgName string, typeParams []string) transpiler.Type {
+	// Find the matching closing parenthesis for the parameters
+	openParen := strings.Index(typeName, "(")
+	if openParen == -1 {
+		return transpiler.ParseType(typeName)
+	}
+
+	parenCount := 0
+	closeParen := -1
+	for i := openParen; i < len(typeName); i++ {
+		switch typeName[i] {
+		case '(':
+			parenCount++
+		case ')':
+			parenCount--
+			if parenCount == 0 {
+				closeParen = i
+				break
+			}
+		}
+		if closeParen != -1 {
+			break
+		}
+	}
+
+	if closeParen == -1 {
+		return transpiler.ParseType(typeName)
+	}
+
+	paramsStr := typeName[openParen+1 : closeParen]
+	resultStr := strings.TrimSpace(typeName[closeParen+1:])
+
+	// Parse parameters
+	var params []transpiler.Type
+	if paramsStr != "" {
+		paramStrs := a.splitTypeList(paramsStr)
+		for _, p := range paramStrs {
+			params = append(params, a.resolveTypeWithParams(strings.TrimSpace(p), pkgName, typeParams))
+		}
+	}
+
+	// Parse results
+	var results []transpiler.Type
+	if resultStr != "" {
+		// Handle tuple results like (int, string)
+		if strings.HasPrefix(resultStr, "(") && strings.HasSuffix(resultStr, ")") {
+			resultStrs := a.splitTypeList(resultStr[1 : len(resultStr)-1])
+			for _, r := range resultStrs {
+				results = append(results, a.resolveTypeWithParams(strings.TrimSpace(r), pkgName, typeParams))
+			}
+		} else {
+			results = append(results, a.resolveTypeWithParams(resultStr, pkgName, typeParams))
+		}
+	}
+
+	return transpiler.FuncType{Params: params, Results: results}
+}
+
+// splitTypeList splits a comma-separated type list, respecting brackets
+func (a *galaAnalyzer) splitTypeList(s string) []string {
+	var result []string
+	bracketCount := 0
+	parenCount := 0
+	start := 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '[':
+			bracketCount++
+		case ']':
+			bracketCount--
+		case '(':
+			parenCount++
+		case ')':
+			parenCount--
+		case ',':
+			if bracketCount == 0 && parenCount == 0 {
+				result = append(result, s[start:i])
+				start = i + 1
+			}
+		}
+	}
+	if start < len(s) {
+		result = append(result, s[start:])
+	}
+	return result
 }
 
 // isStdType checks if a type name is a known std library type
@@ -851,8 +945,9 @@ func getBaseTypeName(ctx grammar.ITypeContext) string {
 	if ctx == nil {
 		return ""
 	}
-	if ctx.Identifier() != nil {
-		return ctx.Identifier().GetText()
+	if ctx.QualifiedIdentifier() != nil {
+		// Get the full qualified name (e.g., "std.Option" or just "Option")
+		return ctx.QualifiedIdentifier().GetText()
 	}
 	if strings.HasPrefix(ctx.GetText(), "[]") && len(ctx.AllType_()) > 0 {
 		return "[]" + getBaseTypeName(ctx.Type_(0))

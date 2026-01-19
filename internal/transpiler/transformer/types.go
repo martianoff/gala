@@ -13,23 +13,37 @@ func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, 
 	if ctx == nil {
 		return nil, nil
 	}
-	// Simplified type handling
-	if ctx.Identifier() != nil {
-		typeName := ctx.Identifier().GetText()
-		if typeName == "_" {
-			return ast.NewIdent("any"), nil
-		}
-		var ident ast.Expr = ast.NewIdent(typeName)
-		// Use resolution to determine if this type belongs to an imported package
-		resolvedType := t.getType(typeName)
-		if !resolvedType.IsNil() {
-			if pkg := resolvedType.GetPackage(); pkg != "" && pkg != t.packageName {
-				// Type belongs to an imported package, use package-qualified identifier
-				if pkg == transpiler.StdPackage {
-					ident = t.stdIdent(typeName)
-				} else if alias, ok := t.reverseImportAliases[pkg]; ok {
-					ident = &ast.SelectorExpr{X: ast.NewIdent(alias), Sel: ast.NewIdent(typeName)}
+	// Handle qualified identifier types (e.g., std.Option[T] or just Option[T])
+	if ctx.QualifiedIdentifier() != nil {
+		qid := ctx.QualifiedIdentifier().(*grammar.QualifiedIdentifierContext)
+		identifiers := qid.AllIdentifier()
+
+		var ident ast.Expr
+		if len(identifiers) == 1 {
+			// Simple type name
+			typeName := identifiers[0].GetText()
+			if typeName == "_" {
+				return ast.NewIdent("any"), nil
+			}
+			ident = ast.NewIdent(typeName)
+			// Use resolution to determine if this type belongs to an imported package
+			resolvedType := t.getType(typeName)
+			if !resolvedType.IsNil() {
+				if pkg := resolvedType.GetPackage(); pkg != "" && pkg != t.packageName {
+					// Type belongs to an imported package, use package-qualified identifier
+					if pkg == transpiler.StdPackage {
+						ident = t.stdIdent(typeName)
+					} else if alias, ok := t.reverseImportAliases[pkg]; ok {
+						ident = &ast.SelectorExpr{X: ast.NewIdent(alias), Sel: ast.NewIdent(typeName)}
+					}
 				}
+			}
+		} else {
+			// Qualified type name (e.g., std.Option)
+			// Build selector expression from left to right
+			ident = ast.NewIdent(identifiers[0].GetText())
+			for i := 1; i < len(identifiers); i++ {
+				ident = &ast.SelectorExpr{X: ident, Sel: ast.NewIdent(identifiers[i].GetText())}
 			}
 		}
 
@@ -68,6 +82,16 @@ func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, 
 			return nil, err
 		}
 		return &ast.ArrayType{Elt: typ}, nil
+	}
+
+	// Handle function types: func(params) results
+	if ctx.Signature() != nil {
+		sig := ctx.Signature().(*grammar.SignatureContext)
+		funcType, err := t.transformFuncTypeSignature(sig)
+		if err != nil {
+			return nil, err
+		}
+		return funcType, nil
 	}
 
 	return ast.NewIdent(txt), nil
@@ -139,6 +163,22 @@ func (t *galaASTTransformer) typeToExpr(typ transpiler.Type) ast.Expr {
 		return &ast.StarExpr{X: t.typeToExpr(v.Elem)}
 	case transpiler.MapType:
 		return &ast.MapType{Key: t.typeToExpr(v.Key), Value: t.typeToExpr(v.Elem)}
+	case transpiler.FuncType:
+		var params *ast.FieldList
+		if len(v.Params) > 0 {
+			params = &ast.FieldList{}
+			for _, p := range v.Params {
+				params.List = append(params.List, &ast.Field{Type: t.typeToExpr(p)})
+			}
+		}
+		var results *ast.FieldList
+		if len(v.Results) > 0 {
+			results = &ast.FieldList{}
+			for _, r := range v.Results {
+				results.List = append(results.List, &ast.Field{Type: t.typeToExpr(r)})
+			}
+		}
+		return &ast.FuncType{Params: params, Results: results}
 	}
 	return ast.NewIdent(typ.String())
 }

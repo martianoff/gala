@@ -78,6 +78,72 @@ func process(val data string, var count int) {
 }
 ```
 
+### Function Type Parameters (Higher-Order Functions)
+GALA supports functions as first-class values. You can pass functions as parameters and return them from other functions.
+
+#### Basic Function Parameters
+Use the `func` keyword followed by the parameter and return types:
+
+```gala
+func apply(x int, f func(int) int) int = f(x)
+
+func main() {
+    val double = (x int) => x * 2
+    val result = apply(5, double) // result = 10
+}
+```
+
+#### Generic Function Parameters
+Function type parameters work seamlessly with generics:
+
+```gala
+func map[T any, U any](value T, f func(T) U) U = f(value)
+
+func main() {
+    val result = map[int, string](42, (x int) => fmt.Sprintf("%d", x))
+}
+```
+
+#### Functions Returning Functions
+Functions can return other functions:
+
+```gala
+func multiplier(factor int) func(int) int {
+    return (x int) => x * factor
+}
+
+func main() {
+    val triple = multiplier(3)
+    val result = triple(10) // result = 30
+}
+```
+
+#### Function Parameters with Multiple Arguments
+Function types can have multiple parameters:
+
+```gala
+func combine(a int, b int, f func(int, int) int) int = f(a, b)
+
+func main() {
+    val sum = combine(3, 4, (x int, y int) => x + y)      // sum = 7
+    val product = combine(3, 4, (x int, y int) => x * y)  // product = 12
+}
+```
+
+#### Function Parameters in Generic Methods
+Methods on generic structs can accept function parameters:
+
+```gala
+type Box[T any] struct { Value T }
+
+func (b Box[T]) Transform[U any](f func(T) U) Box[U] = Box[U](Value = f(b.Value))
+
+func main() {
+    val intBox = Box[int](Value = 42)
+    val strBox = intBox.Transform((x int) => fmt.Sprintf("Value: %d", x))
+}
+```
+
 ### Variadic Functions
 GALA supports variadic functions using the `...T` syntax, allowing functions to accept a variable number of arguments. The variadic parameter must be the last parameter.
 
@@ -125,7 +191,7 @@ val total = sum(items...)  // Spreads slice as variadic arguments
 ```
 
 ### Methods
-GALA supports methods on structs. Methods are declared by providing a receiver before the function name. GALA methods can have their own type parameters, a feature not natively supported by Go.
+GALA supports methods as well as generic methods on structs. Methods are declared by providing a receiver before the function name. GALA methods can have their own type parameters.
 
 ```gala
 type Box[T any] struct { Value T }

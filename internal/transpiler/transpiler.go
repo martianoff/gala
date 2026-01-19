@@ -11,18 +11,20 @@ const (
 	StdPackage    = "std"
 	StdImportPath = "martianoff/gala/std"
 
-	TypeOption    = "Option"
-	TypeImmutable = "Immutable"
-	TypeTuple     = "Tuple"
-	TypeTuple3    = "Tuple3"
-	TypeTuple4    = "Tuple4"
-	TypeTuple5    = "Tuple5"
-	TypeTuple6    = "Tuple6"
-	TypeTuple7    = "Tuple7"
-	TypeTuple8    = "Tuple8"
-	TypeTuple9    = "Tuple9"
-	TypeTuple10   = "Tuple10"
-	TypeEither    = "Either"
+	TypeOption      = "Option"
+	TypeImmutable   = "Immutable"
+	TypeTuple       = "Tuple"
+	TypeTuple3      = "Tuple3"
+	TypeTuple4      = "Tuple4"
+	TypeTuple5      = "Tuple5"
+	TypeTuple6      = "Tuple6"
+	TypeTuple7      = "Tuple7"
+	TypeTuple8      = "Tuple8"
+	TypeTuple9      = "Tuple9"
+	TypeTuple10     = "Tuple10"
+	TypeEither      = "Either"
+	TypeTraversable = "Traversable"
+	TypeIterable    = "Iterable"
 
 	FuncSome         = "Some"
 	FuncNone         = "None"
@@ -38,6 +40,7 @@ const (
 var StdExportedTypes = []string{
 	TypeOption, TypeImmutable, TypeEither, TypeTuple,
 	TypeTuple3, TypeTuple4, TypeTuple5, TypeTuple6, TypeTuple7, TypeTuple8, TypeTuple9, TypeTuple10,
+	TypeTraversable, TypeIterable,
 	FuncSome, FuncNone, FuncLeft, FuncRight, // Companion objects (also act as types)
 }
 

@@ -796,15 +796,25 @@ func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.
 		if _, isStdType := t.typeMetas["std."+name]; isStdType {
 			return t.stdIdent(name), nil
 		}
-		// Check if it's a std function
+		// Check if it's a std function (from metadata)
 		resolvedFunc := t.getFunction(name)
 		if resolvedFunc != nil && resolvedFunc.Package == transpiler.StdPackage {
 			return t.stdIdent(name), nil
+		}
+		// Check if it's a known std exported function (defined in Go, not GALA)
+		for _, stdFunc := range transpiler.StdExportedFunctions {
+			if name == stdFunc {
+				return t.stdIdent(name), nil
+			}
 		}
 		return ident, nil
 	}
 	if ctx.Literal() != nil {
 		return t.transformLiteral(ctx.Literal().(*grammar.LiteralContext))
+	}
+	// Handle composite literal (e.g., map[K]V{}, []int{1, 2, 3})
+	if ctx.CompositeLiteral() != nil {
+		return t.transformCompositeLiteral(ctx.CompositeLiteral().(*grammar.CompositeLiteralContext))
 	}
 	for i := 0; i < ctx.GetChildCount(); i++ {
 		if exprListCtx, ok := ctx.GetChild(i).(grammar.IExpressionListContext); ok {
@@ -820,6 +830,48 @@ func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.
 		}
 	}
 	return nil, nil
+}
+
+func (t *galaASTTransformer) transformCompositeLiteral(ctx *grammar.CompositeLiteralContext) (ast.Expr, error) {
+	// Transform the type
+	typeExpr, err := t.transformType(ctx.Type_())
+	if err != nil {
+		return nil, err
+	}
+
+	// Transform the elements
+	var elts []ast.Expr
+	if ctx.ElementList() != nil {
+		elemList := ctx.ElementList().(*grammar.ElementListContext)
+		for _, keyedElem := range elemList.AllKeyedElement() {
+			kv := keyedElem.(*grammar.KeyedElementContext)
+			exprs := kv.AllExpression()
+			if len(exprs) == 2 {
+				// Key-value pair
+				key, err := t.transformExpression(exprs[0].(*grammar.ExpressionContext))
+				if err != nil {
+					return nil, err
+				}
+				value, err := t.transformExpression(exprs[1].(*grammar.ExpressionContext))
+				if err != nil {
+					return nil, err
+				}
+				elts = append(elts, &ast.KeyValueExpr{Key: key, Value: value})
+			} else if len(exprs) == 1 {
+				// Value only
+				value, err := t.transformExpression(exprs[0].(*grammar.ExpressionContext))
+				if err != nil {
+					return nil, err
+				}
+				elts = append(elts, value)
+			}
+		}
+	}
+
+	return &ast.CompositeLit{
+		Type: typeExpr,
+		Elts: elts,
+	}, nil
 }
 
 func (t *galaASTTransformer) transformLiteral(ctx *grammar.LiteralContext) (ast.Expr, error) {

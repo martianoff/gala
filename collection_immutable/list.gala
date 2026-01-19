@@ -271,7 +271,7 @@ func (l List[T]) Contains(elem T) bool {
     if l.isEmpty {
         return false
     }
-    if std.Equal(l.head, elem) {
+    if Equal(l.head, elem) {
         return true
     }
     return l.tail.Contains(elem)
@@ -282,7 +282,7 @@ func (l List[T]) IndexOf(elem T) int {
     var current = l
     var i = 0
     for ; !current.isEmpty ; {
-        if std.Equal(current.head, elem) {
+        if Equal(current.head, elem) {
             return i
         }
         current = *current.tail
@@ -318,6 +318,32 @@ func (l List[T]) FlatMap[U any](f func(T) List[U]) List[U] {
     }
     var tail = *l.tail
     return f(l.head).AppendAll(tail.FlatMap[U](f))
+}
+
+// Collect applies a partial function to each element and collects the results.
+// Elements for which the function returns None are filtered out.
+func (l List[T]) Collect[U any](pf func(T) Option[U]) List[U] {
+    if l.isEmpty {
+        return emptyList[U]()
+    }
+    val opt = pf(l.head)
+    var tail = *l.tail
+    if opt.IsDefined() {
+        return consList[U](opt.Get(), tail.Collect[U](pf))
+    }
+    return tail.Collect[U](pf)
+}
+
+// Concat returns a new list containing all elements of this list followed by
+// all elements of the other iterable.
+func (l List[T]) Concat(other Iterable[T]) List[T] {
+    // First collect other's elements into a temporary list
+    var otherList = emptyList[T]()
+    other.ForEach((elem T) => {
+        otherList = otherList.Append(elem)
+        return nil
+    })
+    return l.AppendAll(otherList)
 }
 
 // Filter returns a new list with only elements that satisfy the predicate.
@@ -475,6 +501,89 @@ func (l List[T]) Distinct() List[T] {
 
 // SplitAt splits the list at the given index.
 func (l List[T]) SplitAt(n int) Tuple[List[T], List[T]] = Tuple[List[T], List[T]](V1 = l.Take(n), V2 = l.Drop(n))
+
+// Slice returns elements from index start (inclusive) to end (exclusive).
+func (l List[T]) Slice(start int, end int) List[T] = l.Drop(start).Take(end - start)
+
+// Span splits the list into a prefix/suffix pair according to a predicate.
+// The first element contains the longest prefix of elements that satisfy p.
+func (l List[T]) Span(p func(T) bool) Tuple[List[T], List[T]] {
+    // Build prefix iteratively
+    var prefix = emptyList[T]()
+    var current = l
+    for ; !current.isEmpty && p(current.head) ; {
+        prefix = prefix.Append(current.head)
+        current = *current.tail
+    }
+    // current is now the suffix (first element that doesn't satisfy p)
+    return Tuple[List[T], List[T]](V1 = prefix, V2 = current)
+}
+
+// PartitionMap applies a function to each element and partitions results into Left and Right.
+func (l List[T]) PartitionMap[A any, B any](f func(T) Either[A, B]) Tuple[List[A], List[B]] {
+    var lefts = emptyList[A]()
+    var rights = emptyList[B]()
+    var current = l
+    for ; !current.isEmpty ; {
+        val either = f(current.head)
+        if either.IsLeft() {
+            lefts = lefts.Append(either.GetLeft())
+        } else {
+            rights = rights.Append(either.GetRight())
+        }
+        current = *current.tail
+    }
+    return Tuple[List[A], List[B]](V1 = lefts, V2 = rights)
+}
+
+// GroupBy partitions this list into a map of lists according to a discriminator function.
+func (l List[T]) GroupBy[K comparable](f func(T) K) map[K]List[T] {
+    var result = map[K]List[T]{}
+    var current = l
+    for ; !current.isEmpty ; {
+        val elem = current.head
+        val key = f(elem)
+        val existing = result[key]
+        result[key] = existing.Append(elem)
+        current = *current.tail
+    }
+    return result
+}
+
+// GroupMap partitions elements and maps values according to discriminator and value functions.
+func (l List[T]) GroupMap[K comparable, V any](key func(T) K, value func(T) V) map[K]List[V] {
+    var result = map[K]List[V]{}
+    var current = l
+    for ; !current.isEmpty ; {
+        val elem = current.head
+        val k = key(elem)
+        val v = value(elem)
+        val existing = result[k]
+        result[k] = existing.Append(v)
+        current = *current.tail
+    }
+    return result
+}
+
+// GroupMapReduce partitions elements, maps values, and reduces them with a combining function.
+func (l List[T]) GroupMapReduce[K comparable, V any](key func(T) K, value func(T) V, reduce func(V, V) V) map[K]V {
+    var result = map[K]V{}
+    var seen = map[K]bool{}
+    var current = l
+    for ; !current.isEmpty ; {
+        val elem = current.head
+        val k = key(elem)
+        val v = value(elem)
+        if seen[k] {
+            result[k] = reduce(result[k], v)
+        } else {
+            result[k] = v
+            seen[k] = true
+        }
+        current = *current.tail
+    }
+    return result
+}
 
 // Flatten flattens a list of lists.
 func Flatten[T any](ll List[List[T]]) List[T] {

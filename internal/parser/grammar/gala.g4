@@ -38,7 +38,7 @@ structType: 'struct' '{' structField* '}';
 structField: (VAL | VAR)? identifier type (STRING)?;
 
 interfaceType: 'interface' '{' methodSpec* '}';
-methodSpec: identifier signature;
+methodSpec: identifier (typeParameters)? signature;
 
 valDeclaration: 'val' identifierList (type)? '=' expressionList;
 varDeclaration: 'var' identifierList (type)? ('=' expressionList)?;
@@ -101,7 +101,12 @@ primary
     : identifier
     | literal
     | '(' expressionList? ')'
+    | compositeLiteral
     ;
+
+compositeLiteral: type ('{' (elementList ','?)? '}');
+elementList: keyedElement (',' keyedElement)*;
+keyedElement: (expression ':')? expression;
 
 lambdaExpression: parameters '=>' (expression | block);
 
@@ -115,7 +120,7 @@ pattern
 ifExpression: 'if' '(' expression ')' expression 'else' expression;
 
 type
-    : identifier (typeArguments)?
+    : qualifiedIdentifier (typeArguments)?
     | '[' ']' type // slice
     | '*' type     // pointer
     | 'map' '[' type ']' type
@@ -125,6 +130,7 @@ type
 typeArguments: '[' typeList ']';
 typeList: type (',' type)*;
 
+qualifiedIdentifier: identifier ('.' identifier)*;
 identifier: IDENTIFIER;
 
 literal

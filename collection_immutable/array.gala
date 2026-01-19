@@ -418,7 +418,7 @@ func (a Array[T]) Slice(start int, end int) Array[T] {
 func (a Array[T]) Contains(elem T) bool {
     var i = 0
     for ; i < a.length ; {
-        if std.Equal(a.Get(i), elem) {
+        if Equal(a.Get(i), elem) {
             return true
         }
         i = i + 1
@@ -430,7 +430,7 @@ func (a Array[T]) Contains(elem T) bool {
 func (a Array[T]) IndexOf(elem T) int {
     var i = 0
     for ; i < a.length ; {
-        if std.Equal(a.Get(i), elem) {
+        if Equal(a.Get(i), elem) {
             return i
         }
         i = i + 1
@@ -442,7 +442,7 @@ func (a Array[T]) IndexOf(elem T) int {
 func (a Array[T]) LastIndexOf(elem T) int {
     var i = a.length - 1
     for ; i >= 0 ; {
-        if std.Equal(a.Get(i), elem) {
+        if Equal(a.Get(i), elem) {
             return i
         }
         i = i - 1
@@ -480,6 +480,32 @@ func (a Array[T]) FlatMap[U any](f func(T) Array[U]) Array[U] {
         result = result.AppendAll(f(a.Get(i)))
         i = i + 1
     }
+    return result
+}
+
+// Collect applies a partial function to each element and collects the results.
+// Elements for which the function returns None are filtered out.
+func (a Array[T]) Collect[U any](pf func(T) Option[U]) Array[U] {
+    var result = EmptyArray[U]()
+    var i = 0
+    for ; i < a.length ; {
+        val opt = pf(a.Get(i))
+        if opt.IsDefined() {
+            result = result.Append(opt.Get())
+        }
+        i = i + 1
+    }
+    return result
+}
+
+// Concat returns a new array containing all elements of this array followed by
+// all elements of the other iterable.
+func (a Array[T]) Concat(other Iterable[T]) Array[T] {
+    var result = a
+    other.ForEach((elem T) => {
+        result = result.Append(elem)
+        return nil
+    })
     return result
 }
 
@@ -662,6 +688,82 @@ func (a Array[T]) Distinct() Array[T] {
 
 // SplitAt splits the array at the given index.
 func (a Array[T]) SplitAt(n int) Tuple[Array[T], Array[T]] = Tuple[Array[T], Array[T]](V1 = a.Take(n), V2 = a.Drop(n))
+
+// Span splits the array into a prefix/suffix pair according to a predicate.
+// The first element contains the longest prefix of elements that satisfy p.
+func (a Array[T]) Span(p func(T) bool) Tuple[Array[T], Array[T]] {
+    var i = 0
+    for ; i < a.length && p(a.Get(i)) ; {
+        i = i + 1
+    }
+    return a.SplitAt(i)
+}
+
+// PartitionMap applies a function to each element and partitions results into Left and Right.
+func (a Array[T]) PartitionMap[A any, B any](f func(T) Either[A, B]) Tuple[Array[A], Array[B]] {
+    var lefts = EmptyArray[A]()
+    var rights = EmptyArray[B]()
+    var i = 0
+    for ; i < a.length ; {
+        val either = f(a.Get(i))
+        if either.IsLeft() {
+            lefts = lefts.Append(either.GetLeft())
+        } else {
+            rights = rights.Append(either.GetRight())
+        }
+        i = i + 1
+    }
+    return Tuple[Array[A], Array[B]](V1 = lefts, V2 = rights)
+}
+
+// GroupBy partitions this array into a map of arrays according to a discriminator function.
+func (a Array[T]) GroupBy[K comparable](f func(T) K) map[K]Array[T] {
+    var result = map[K]Array[T]{}
+    var i = 0
+    for ; i < a.length ; {
+        val elem = a.Get(i)
+        val key = f(elem)
+        val existing = result[key]
+        result[key] = existing.Append(elem)
+        i = i + 1
+    }
+    return result
+}
+
+// GroupMap partitions elements and maps values according to discriminator and value functions.
+func (a Array[T]) GroupMap[K comparable, V any](key func(T) K, value func(T) V) map[K]Array[V] {
+    var result = map[K]Array[V]{}
+    var i = 0
+    for ; i < a.length ; {
+        val elem = a.Get(i)
+        val k = key(elem)
+        val v = value(elem)
+        val existing = result[k]
+        result[k] = existing.Append(v)
+        i = i + 1
+    }
+    return result
+}
+
+// GroupMapReduce partitions elements, maps values, and reduces them with a combining function.
+func (a Array[T]) GroupMapReduce[K comparable, V any](key func(T) K, value func(T) V, reduce func(V, V) V) map[K]V {
+    var result = map[K]V{}
+    var seen = map[K]bool{}
+    var i = 0
+    for ; i < a.length ; {
+        val elem = a.Get(i)
+        val k = key(elem)
+        val v = value(elem)
+        if seen[k] {
+            result[k] = reduce(result[k], v)
+        } else {
+            result[k] = v
+            seen[k] = true
+        }
+        i = i + 1
+    }
+    return result
+}
 
 // Grouped splits the array into groups of size n.
 func (a Array[T]) Grouped(n int) Array[Array[T]] {

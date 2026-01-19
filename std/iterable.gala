@@ -1,0 +1,67 @@
+package std
+
+// Traversable is the root trait for all traversable collections.
+// It provides the most basic way to traverse elements: the ForEach method.
+// Any collection that can be traversed element by element should implement this interface.
+type Traversable[T any] interface {
+    // ForEach applies a function to each element for side effects.
+    ForEach(f func(T) any)
+    // Size returns the number of elements in this collection.
+    Size() int
+    // IsEmpty returns true if the collection contains no elements.
+    IsEmpty() bool
+    // NonEmpty returns true if the collection contains at least one element.
+    NonEmpty() bool
+}
+
+// Iterable is a trait for collections that can produce an Iterator.
+// It extends the concept of Traversable by providing rich iteration capabilities
+// similar to Scala's Iterable trait.
+//
+// Note: Generic methods (Map, FlatMap, Collect, FoldLeft, FoldRight, PartitionMap,
+// GroupBy, GroupMap, GroupMapReduce) are implemented on concrete collection types
+// because Go interfaces do not support methods with additional type parameters.
+type Iterable[T any] interface {
+    // Traversable methods
+    ForEach(f func(T) any)
+    Size() int
+    IsEmpty() bool
+    NonEmpty() bool
+
+    // Element access
+    Head() T
+    Last() T
+    HeadOption() Option[T]
+    LastOption() Option[T]
+
+    // Search operations
+    Find(p func(T) bool) Option[T]
+    Exists(p func(T) bool) bool
+    ForAll(p func(T) bool) bool
+    Count(p func(T) bool) int
+
+    // Reduction (same-type only)
+    Reduce(f func(T, T) T) T
+
+    // Sub-collection retrieval
+    Tail() Iterable[T]
+    Init() Iterable[T]
+    Slice(from int, until int) Iterable[T]
+    Take(n int) Iterable[T]
+    Drop(n int) Iterable[T]
+    TakeWhile(p func(T) bool) Iterable[T]
+    DropWhile(p func(T) bool) Iterable[T]
+    Filter(p func(T) bool) Iterable[T]
+    FilterNot(p func(T) bool) Iterable[T]
+
+    // Subdivision operations
+    SplitAt(n int) Tuple[Iterable[T], Iterable[T]]
+    Span(p func(T) bool) Tuple[Iterable[T], Iterable[T]]
+    Partition(p func(T) bool) Tuple[Iterable[T], Iterable[T]]
+
+    // Concatenation
+    Concat(other Iterable[T]) Iterable[T]
+
+    // String representation
+    String() string
+}
