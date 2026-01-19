@@ -2,49 +2,66 @@ package main
 
 import "fmt"
 
+// Function returning a tuple using parentheses syntax
+func getPair() Tuple[int, string] {
+    return (42, "answer")
+}
+
+// Function returning a Tuple3 using parentheses syntax
+func getTriple() Tuple3[int, string, bool] {
+    return (1, "hello", true)
+}
+
 func main() {
     // 1. Tuple construction with parentheses syntax
     val pair = (1, "hello")
     val res1 = pair match {
-        case Tuple(a, b) => fmt.Sprintf("Pair: (%d, %s)", a, b)
+        case (a, b) => fmt.Sprintf("Pair: (%d, %s)", a, b)
         case _ => "Unknown"
     }
     fmt.Println(res1)
 
     val triple = (42, "world", true)
     val res2 = triple match {
-        case Tuple3(x, y, z) => fmt.Sprintf("Triple: (%d, %s, %v)", x, y, z)
+        case (x, y, z) => fmt.Sprintf("Triple: (%d, %s, %v)", x, y, z)
         case _ => "Unknown"
     }
     fmt.Println(res2)
 
     val quad = (1, 2, 3, 4)
     val res3 = quad match {
-        case Tuple4(a, b, c, d) => fmt.Sprintf("Quad: (%d, %d, %d, %d)", a, b, c, d)
+        case (a, b, c, d) => fmt.Sprintf("Quad: (%d, %d, %d, %d)", a, b, c, d)
         case _ => "Unknown"
     }
     fmt.Println(res3)
 
-    // 2. Mixing explicit and implicit tuple construction
-    val explicitPair = Tuple[int, string](V1 = 10, V2 = "explicit")
-    val implicitPair = (10, "implicit")
-    val res4 = explicitPair match {
-        case Tuple(a, b) => fmt.Sprintf("Explicit: (%d, %s)", a, b)
+    // 2. Pattern matching with explicit Tuple name (still works)
+    val res4 = pair match {
+        case Tuple(x, y) => fmt.Sprintf("Explicit Tuple: (%d, %s)", x, y)
         case _ => "Unknown"
     }
     fmt.Println(res4)
 
-    val res5 = implicitPair match {
-        case Tuple(a, b) => fmt.Sprintf("Implicit: (%d, %s)", a, b)
+    // 3. Function returning tuple
+    val fromFunc = getPair()
+    val res5 = fromFunc match {
+        case (n, s) => fmt.Sprintf("From function: (%d, %s)", n, s)
         case _ => "Unknown"
     }
     fmt.Println(res5)
 
-    // 3. Tuple5 example
-    val quint = (1, 2, 3, 4, 5)
-    val res6 = quint match {
-        case Tuple5(a, b, c, d, e) => fmt.Sprintf("Quint: (%d, %d, %d, %d, %d)", a, b, c, d, e)
+    val fromFunc3 = getTriple()
+    val res6 = fromFunc3 match {
+        case (a, b, c) => fmt.Sprintf("From function triple: (%d, %s, %v)", a, b, c)
         case _ => "Unknown"
     }
     fmt.Println(res6)
+
+    // 4. Tuple5 example
+    val quint = (1, 2, 3, 4, 5)
+    val res7 = quint match {
+        case (a, b, c, d, e) => fmt.Sprintf("Quint: (%d, %d, %d, %d, %d)", a, b, c, d, e)
+        case _ => "Unknown"
+    }
+    fmt.Println(res7)
 }

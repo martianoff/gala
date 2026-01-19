@@ -482,6 +482,21 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 		return ast.NewIdent("true"), nil, nil
 	}
 
+	// Tuple pattern with parentheses syntax: (a, b, c) => Tuple3(a, b, c)
+	if primary := patExprCtx.Primary(); primary != nil {
+		if p, ok := primary.(*grammar.PrimaryContext); ok {
+			if exprList := p.ExpressionList(); exprList != nil {
+				if el, ok := exprList.(*grammar.ExpressionListContext); ok {
+					exprs := el.AllExpression()
+					if len(exprs) >= 2 {
+						// This is a tuple pattern (a, b, c) - transform to TupleN pattern
+						return t.transformTuplePattern(exprs, objExpr, matchedType)
+					}
+				}
+			}
+		}
+	}
+
 	// Simple Binding - bind variable with the matched type
 	if primary := patExprCtx.Primary(); primary != nil {
 		if p, ok := primary.(*grammar.PrimaryContext); ok && p.Identifier() != nil {
@@ -963,6 +978,149 @@ func (t *galaASTTransformer) getUnapplyTupleFunc(patternTypeName string, matched
 	default:
 		return t.stdIdent("UnapplyTuple")
 	}
+}
+
+// transformTuplePattern transforms a tuple pattern like (a, b, c) into the appropriate
+// UnapplyTupleN call and variable bindings.
+func (t *galaASTTransformer) transformTuplePattern(patternExprs []grammar.IExpressionContext, objExpr ast.Expr, matchedType transpiler.Type) (ast.Expr, []ast.Stmt, error) {
+	n := len(patternExprs)
+	if n < 2 || n > 10 {
+		return nil, nil, galaerr.NewSemanticError(fmt.Sprintf("tuple patterns must have 2-10 elements, got %d", n))
+	}
+
+	// Determine the unapply function based on arity
+	var unapplyFunc string
+	switch n {
+	case 2:
+		unapplyFunc = "UnapplyTuple"
+	case 3:
+		unapplyFunc = "UnapplyTuple3"
+	case 4:
+		unapplyFunc = "UnapplyTuple4"
+	case 5:
+		unapplyFunc = "UnapplyTuple5"
+	case 6:
+		unapplyFunc = "UnapplyTuple6"
+	case 7:
+		unapplyFunc = "UnapplyTuple7"
+	case 8:
+		unapplyFunc = "UnapplyTuple8"
+	case 9:
+		unapplyFunc = "UnapplyTuple9"
+	case 10:
+		unapplyFunc = "UnapplyTuple10"
+	}
+
+	// Generate temporary variables for result and ok
+	resName := t.nextTempVar()
+	okName := t.nextTempVar()
+
+	// Check if we need the result (i.e., there are non-underscore patterns)
+	hasNonUnderscore := false
+	for _, patExpr := range patternExprs {
+		if patExpr.GetText() != "_" {
+			hasNonUnderscore = true
+			break
+		}
+	}
+
+	lhsRes := ast.NewIdent("_")
+	if hasNonUnderscore {
+		lhsRes = ast.NewIdent(resName)
+	}
+
+	// Generate: res, ok := std.UnapplyTupleN(obj)
+	unapplyCall := &ast.CallExpr{
+		Fun:  t.stdIdent(unapplyFunc),
+		Args: []ast.Expr{objExpr},
+	}
+
+	unapplyStmt := &ast.AssignStmt{
+		Lhs: []ast.Expr{lhsRes, ast.NewIdent(okName)},
+		Tok: token.DEFINE,
+		Rhs: []ast.Expr{unapplyCall},
+	}
+
+	stmts := []ast.Stmt{unapplyStmt}
+
+	// Extract element types from matched type if available
+	var elementTypes []transpiler.Type
+	if genType, ok := matchedType.(transpiler.GenericType); ok {
+		elementTypes = genType.Params
+	}
+
+	// Generate bindings for each pattern element
+	for i, patExpr := range patternExprs {
+		patText := patExpr.GetText()
+		if patText == "_" {
+			continue
+		}
+
+		// Determine the type for this element
+		var elemType transpiler.Type = transpiler.BasicType{Name: "any"}
+		if i < len(elementTypes) {
+			elemType = elementTypes[i]
+		}
+
+		// Get the element from the result slice: std.GetSafe(res, i)
+		elemExpr := &ast.CallExpr{
+			Fun: t.stdIdent("GetSafe"),
+			Args: []ast.Expr{
+				ast.NewIdent(resName),
+				&ast.BasicLit{Kind: token.INT, Value: fmt.Sprintf("%d", i)},
+			},
+		}
+
+		// Check if this is a simple binding (identifier) or nested pattern
+		if primary := patExpr.Primary(); primary != nil {
+			if p, ok := primary.(*grammar.PrimaryContext); ok && p.Identifier() != nil {
+				// Simple binding: x := std.GetSafe(res, i).(type)
+				name := p.Identifier().GetText()
+				t.currentScope.vals[name] = false
+				t.currentScope.valTypes[name] = elemType
+
+				var rhs ast.Expr = elemExpr
+				if elemType.String() != "any" {
+					rhs = &ast.TypeAssertExpr{
+						X:    elemExpr,
+						Type: t.typeToExpr(elemType),
+					}
+				}
+
+				assign := &ast.AssignStmt{
+					Lhs: []ast.Expr{ast.NewIdent(name)},
+					Tok: token.DEFINE,
+					Rhs: []ast.Expr{rhs},
+				}
+				stmts = append(stmts, assign)
+				continue
+			}
+		}
+
+		// Handle nested patterns recursively
+		nestedCond, nestedStmts, err := t.transformExpressionPatternWithType(patExpr, elemExpr, elemType)
+		if err != nil {
+			return nil, nil, err
+		}
+		stmts = append(stmts, nestedStmts...)
+
+		// If nested pattern has a condition other than "true", we need to AND it with ok
+		if ident, ok := nestedCond.(*ast.Ident); !ok || ident.Name != "true" {
+			// okName = okName && nestedCond
+			stmts = append(stmts, &ast.AssignStmt{
+				Lhs: []ast.Expr{ast.NewIdent(okName)},
+				Tok: token.ASSIGN,
+				Rhs: []ast.Expr{&ast.BinaryExpr{
+					X:  ast.NewIdent(okName),
+					Op: token.LAND,
+					Y:  nestedCond,
+				}},
+			})
+		}
+	}
+
+	t.needsStdImport = true
+	return ast.NewIdent(okName), stmts, nil
 }
 
 // getCompanionObjectMetadata looks up companion object metadata by name.

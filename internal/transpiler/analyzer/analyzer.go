@@ -741,10 +741,30 @@ func (a *galaAnalyzer) resolveTypeWithParams(typeName string, pkgName string, ty
 		return transpiler.ParseType(typeName)
 	}
 
+	// Check if it's a known std type (including generic types like Tuple[int, string])
+	// Extract base type name for generic types
+	baseTypeName := typeName
+	if idx := strings.Index(typeName, "["); idx != -1 {
+		baseTypeName = typeName[:idx]
+	}
+	if a.isStdType(baseTypeName) {
+		return transpiler.ParseType(transpiler.StdPackage + "." + typeName)
+	}
+
 	if pkgName != "" && pkgName != "main" && pkgName != "test" {
 		return transpiler.ParseType(pkgName + "." + typeName)
 	}
 	return transpiler.ParseType(typeName)
+}
+
+// isStdType checks if a type name is a known std library type
+func (a *galaAnalyzer) isStdType(name string) bool {
+	for _, stdType := range transpiler.StdExportedTypes {
+		if name == stdType {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, error) {

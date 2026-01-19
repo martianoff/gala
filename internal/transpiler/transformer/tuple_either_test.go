@@ -205,6 +205,57 @@ func main() {
 				"std.UnapplyTuple(pair)",
 			},
 		},
+		{
+			name: "Tuple pattern matching with parentheses syntax",
+			input: `package main
+
+func main() {
+    val pair = (1, "world")
+    val res = pair match {
+        case (x, y) => x
+        case _ => 0
+    }
+}`,
+			expected: []string{
+				"std.Tuple[int, string]",
+				"std.UnapplyTuple(pair)",
+				"std.GetSafe",
+			},
+		},
+		{
+			name: "Tuple3 pattern matching with parentheses syntax",
+			input: `package main
+
+func main() {
+    val triple = (1, "hello", true)
+    val res = triple match {
+        case (a, b, c) => a
+        case _ => 0
+    }
+}`,
+			expected: []string{
+				"std.Tuple3[int, string, bool]",
+				"std.UnapplyTuple3(triple)",
+				"std.GetSafe",
+			},
+		},
+		{
+			name: "Function returning tuple with parentheses",
+			input: `package main
+
+func getPair() Tuple[int, string] {
+    return (42, "answer")
+}
+
+func main() {
+    val p = getPair()
+}`,
+			expected: []string{
+				"std.Tuple[int, string]",
+				"V1: std.NewImmutable(42)",
+				"V2: std.NewImmutable(\"answer\")",
+			},
+		},
 	}
 
 	for _, tt := range tests {
