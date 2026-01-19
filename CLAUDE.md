@@ -1,94 +1,92 @@
-# Claude Code Rules for GALA Project
+# GALA Project - Claude Code Instructions
 
-## Project Overview
+GALA is a programming language that transpiles to Go. Build system: Bazel.
 
-This is the GALA programming language transpiler - a language that compiles to Go. The project uses Bazel for building and testing.
+---
+
+## CRITICAL RULES (NEVER VIOLATE)
+
+1. **NEVER modify `internal/parser/grammar/*.go`** - These are ANTLR-generated. Changes will be overwritten.
+
+2. **NEVER give special treatment to `std` library** - The standard library MUST use the same import/resolution mechanisms as any other GALA library. No hardcoding, no special cases in the transpiler.
+
+3. **ALWAYS generate concrete types** - GALA is type-safe. The transpiler MUST generate concrete Go types, NEVER `any`/`interface{}` unless explicitly requested in GALA source. If type cannot be resolved, fail with an error.
+
+---
 
 ## Project Structure
 
-Maintain this folder structure:
-- `internal/parser/grammar` - GALA grammar in ANTLR4 format
-- `internal/transpiler/generator` - Generate Go code from GALA AST tree
-- `internal/transpiler/transformer` - Transform GALA AST tree to Go AST tree
-- `std` - GALA standard library written in GALA (common classes/functions, e.g., `Immutable` class)
-- `test` - GALA test framework
-- `examples` - Example GALA programs for verification
-- `docs` - Documentation files
+| Directory | Purpose |
+|-----------|---------|
+| `internal/parser/grammar` | ANTLR4 grammar (DO NOT edit `*.go` files) |
+| `internal/transpiler/generator` | Go code generation from AST |
+| `internal/transpiler/transformer` | GALA AST to Go AST transformation |
+| `std` | Standard library (written in GALA) |
+| `test` | Test framework |
+| `examples` | Verification programs |
+| `docs` | Documentation |
 
-## Strict Rules
+---
 
-**DO NOT modify generated files in `internal/parser/grammar/*.go`** - These are ANTLR-generated files.
+## Commands Reference
 
-**Standard library (`std`) must not receive special treatment** - GALA code in `std` must be processed through the same import/resolution mechanisms as any other GALA library. Do not hardcode or give special treatment to std library code in the transpiler.
+| Task | Command |
+|------|---------|
+| Build | `bazel build //...` |
+| Test | `bazel test //...` |
+| Generate BUILD files | `bazel run //:gazelle` |
 
-**GALA is a type-safe language** - Transpiler should always generate concrete types instead of "any", unless "any" is explicitly asked in GALA code, and fail if it is not possible.
-
-## Building and Testing
-
-### Running Tests
+**Update Go dependencies (run in order):**
 ```shell
-bazel test //...
+go mod tidy && bazel run //:gazelle && bazel run //:gazelle-update-repos && bazel run //:gazelle && bazel mod tidy
 ```
 
-### Building the Project
-```shell
-bazel build //...
-```
+---
 
-### Generating BUILD Files
-```shell
-bazel run //:gazelle
-```
-
-### Updating Go Dependencies
-```shell
-go mod tidy
-bazel run //:gazelle
-bazel run //:gazelle-update-repos
-bazel run //:gazelle
-bazel mod tidy
-```
-
-## Code Style Guidelines
+## Code Style
 
 ### Go Code
-- Follow Go best practices
-- For each interface implementation, add a compile-safe validator:
-  ```go
-  var _ Interface = (*Implementation)(nil)
-  ```
-- Prefer generics over reflection where possible
-- Use dependency injection with explicit construction - pass dependencies via constructors
-- Avoid global variables or singletons
-- Use interfaces to define dependencies for better testability
-- Define custom error types for different error categories using the errors package
-- Use context for request-scoped values and cancellation
+
+- Add compile-time interface checks: `var _ Interface = (*Implementation)(nil)`
+- Prefer generics over reflection
+- Use dependency injection via constructors
+- Avoid global variables and singletons
+- Define custom error types with the errors package
+- Use context for request-scoped values
 
 ### GALA Code
-- Prefer functional code, pattern matching, and immutable variables
-- Prefer generic methods and type-safe programming
-- Prefer implicit var/val declarations
-- Prefer table driven tests
-- Do not provide explicit types when it is not required
 
-## Testing Requirements
+- Prefer: functional style, pattern matching, immutable variables
+- Prefer: generics, type-safe programming
+- Prefer: implicit `var`/`val` declarations (omit types when inferrable)
+- Prefer: table-driven tests
 
-- Write unit tests for business logic
-- Use Go's `testing` package and `testify` for assertions
-- Prefer table-driven tests
-- Use multi-line input when new lines are required in test cases
-- When adding new GALA language features or semantic changes, verify with a new example in the `examples` folder
+---
 
-## Documentation Updates
+## Testing
 
-When making changes to the grammar or adding new features, update:
-- `docs/GALA.MD` - Language documentation
-- `docs/TYPE_INFERENCE.md` - Type inference documentation
-- `docs/examples.MD` - Examples (prefer short functional syntax to demonstrate benefits over Go)
+- Use Go `testing` package with `testify` assertions
+- Write table-driven tests
+- Use multi-line strings for test inputs requiring newlines
+- **When adding GALA language features:** MUST add verification example in `examples/`
 
-## Before Submitting Changes
+---
 
-1. Ensure the project builds: `bazel build //...`
-2. Run all tests: `bazel test //...`
-3. Regenerate BUILD files if needed: `bazel run //:gazelle`
-4. Verify examples in `examples/` folder are executable without compiler errors
+## Documentation
+
+When modifying grammar or adding features, update:
+- `docs/GALA.MD` - Language reference
+- `docs/TYPE_INFERENCE.md` - Type inference rules
+- `docs/examples.MD` - Feature examples (use concise functional syntax)
+
+---
+
+## Pre-Commit Checklist
+
+MUST complete ALL steps in order before considering work done:
+
+1. [ ] `bazel build //...` passes
+2. [ ] `bazel test //...` passes
+3. [ ] `bazel run //:gazelle` (if files added/removed)
+4. [ ] Examples in `examples/` compile without errors
+5. [ ] Documentation updated (if grammar/features changed)
