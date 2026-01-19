@@ -9,10 +9,8 @@ import (
 // Performance test utilities
 func measureNs(iterations int, f func() any) int64 {
     var start = time.Now()
-    var i = 0
-    for ; i < iterations ; {
+    for i := 0; i < iterations; i++ {
         f()
-        i = i + 1
     }
     var elapsed = time.Since(start)
     return elapsed.Nanoseconds() / int64(iterations)
@@ -26,10 +24,8 @@ func printResult(name string, nsPerOp int64) {
 func benchListCreation() {
     var ns = measureNs(10000, () => {
         var list = EmptyList[int]()
-        var i = 0
-        for ; i < 30 ; {
+        for i := 0; i < 30; i++ {
             list = list.Prepend(i)
-            i = i + 1
         }
     })
     printResult("ListCreation(30)", ns)
@@ -38,10 +34,8 @@ func benchListCreation() {
 // List prepend benchmark
 func benchListPrepend() {
     var list = EmptyList[int]()
-    var i = 0
-    for ; i < 30 ; {
+    for i := 0; i < 30; i++ {
         list = list.Prepend(i)
-        i = i + 1
     }
     var ns = measureNs(1000000, () => {
         var _ = list.Prepend(999)
@@ -52,10 +46,8 @@ func benchListPrepend() {
 // List head benchmark
 func benchListHead() {
     var list = EmptyList[int]()
-    var i = 0
-    for ; i < 30 ; {
+    for i := 0; i < 30; i++ {
         list = list.Prepend(i)
-        i = i + 1
     }
     var ns = measureNs(1000000, () => {
         var _ = list.Head()
@@ -66,10 +58,8 @@ func benchListHead() {
 // List get benchmark
 func benchListGet() {
     var list = EmptyList[int]()
-    var i = 0
-    for ; i < 30 ; {
+    for i := 0; i < 30; i++ {
         list = list.Prepend(i)
-        i = i + 1
     }
     var ns = measureNs(100000, () => {
         var _ = list.Get(15)
@@ -80,10 +70,8 @@ func benchListGet() {
 // List filter benchmark
 func benchListFilter() {
     var list = EmptyList[int]()
-    var i = 0
-    for ; i < 30 ; {
+    for i := 0; i < 30; i++ {
         list = list.Prepend(i)
-        i = i + 1
     }
     var ns = measureNs(10000, () => {
         var _ = list.Filter((x int) => x % 2 == 0)
@@ -95,10 +83,8 @@ func benchListFilter() {
 func benchArrayCreation() {
     var ns = measureNs(10000, () => {
         var arr = EmptyArray[int]()
-        var i = 0
-        for ; i < 30 ; {
+        for i := 0; i < 30; i++ {
             arr = arr.Append(i)
-            i = i + 1
         }
     })
     printResult("ArrayCreation(30)", ns)
@@ -107,10 +93,8 @@ func benchArrayCreation() {
 // Array append benchmark
 func benchArrayAppend() {
     var arr = EmptyArray[int]()
-    var i = 0
-    for ; i < 30 ; {
+    for i := 0; i < 30; i++ {
         arr = arr.Append(i)
-        i = i + 1
     }
     var ns = measureNs(100000, () => {
         var _ = arr.Append(999)
@@ -121,10 +105,8 @@ func benchArrayAppend() {
 // Array head benchmark
 func benchArrayHead() {
     var arr = EmptyArray[int]()
-    var i = 0
-    for ; i < 30 ; {
+    for i := 0; i < 30; i++ {
         arr = arr.Append(i)
-        i = i + 1
     }
     var ns = measureNs(1000000, () => {
         var _ = arr.Head()
@@ -135,10 +117,8 @@ func benchArrayHead() {
 // Array get benchmark
 func benchArrayGet() {
     var arr = EmptyArray[int]()
-    var i = 0
-    for ; i < 30 ; {
+    for i := 0; i < 30; i++ {
         arr = arr.Append(i)
-        i = i + 1
     }
     var ns = measureNs(1000000, () => {
         var _ = arr.Get(15)
@@ -149,10 +129,8 @@ func benchArrayGet() {
 // Array filter benchmark
 func benchArrayFilter() {
     var arr = EmptyArray[int]()
-    var i = 0
-    for ; i < 30 ; {
+    for i := 0; i < 30; i++ {
         arr = arr.Append(i)
-        i = i + 1
     }
     var ns = measureNs(10000, () => {
         var _ = arr.Filter((x int) => x % 2 == 0)

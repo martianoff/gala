@@ -47,10 +47,8 @@ func EmptyArray[T any]() Array[T] {
 // Example: ArrayOf[int](1, 2, 3) creates Array(1, 2, 3)
 func ArrayOf[T any](elements ...T) Array[T] {
     var result = EmptyArray[T]()
-    var i = 0
-    for ; i < len(elements) ; {
+    for i := 0; i < len(elements); i++ {
         result = result.Append(elements[i])
-        i = i + 1
     }
     return result
 }
@@ -58,10 +56,8 @@ func ArrayOf[T any](elements ...T) Array[T] {
 // ArrayFromSlice creates an Array from a slice.
 func ArrayFromSlice[T any](elements []T) Array[T] {
     var result = EmptyArray[T]()
-    var i = 0
-    for ; i < len(elements) ; {
+    for i := 0; i < len(elements); i++ {
         result = result.Append(elements[i])
-        i = i + 1
     }
     return result
 }
@@ -84,10 +80,8 @@ func requiredDepth(size int) int {
         return 1
     }
     var d = 1
-    var capacity = branchingFactor
-    for ; capacity < size ; {
+    for capacity := branchingFactor; capacity < size; d++ {
         capacity = capacity * branchingFactor
-        d = d + 1
     }
     return d
 }
@@ -109,10 +103,8 @@ func copyNode[T any](node *arrayNode[T]) *arrayNode[T] {
 // Helper to copy a slice.
 func copySlice[T any](src []T) []T {
     var dst []T
-    var i = 0
-    for ; i < len(src) ; {
+    for i := 0; i < len(src); i++ {
         dst = append(dst, src[i])
-        i = i + 1
     }
     return dst
 }
@@ -120,10 +112,8 @@ func copySlice[T any](src []T) []T {
 // Helper to copy a node slice.
 func copyNodeSlice[T any](src []*arrayNode[T]) []*arrayNode[T] {
     var dst []*arrayNode[T]
-    var i = 0
-    for ; i < len(src) ; {
+    for i := 0; i < len(src); i++ {
         dst = append(dst, src[i])
-        i = i + 1
     }
     return dst
 }
@@ -217,10 +207,8 @@ func appendToTree[T any](root *arrayNode[T], index int, value T, depth int) Tupl
 
     // Check if we need to grow the tree
     var maxCapacity = 1
-    var i = 0
-    for ; i < depth ; {
+    for i := 0; i < depth; i++ {
         maxCapacity = maxCapacity * branchingFactor
-        i = i + 1
     }
 
     if index >= maxCapacity {
@@ -255,10 +243,8 @@ func appendToNode[T any](node *arrayNode[T], index int, value T, depth int) *arr
 
     if node == nil {
         var children []*arrayNode[T]
-        var j = 0
-        for ; j <= childIndex ; {
+        for j := 0; j <= childIndex; j++ {
             children = append(children, nil)
-            j = j + 1
         }
         var newNode = &arrayNode[T](children = children, isLeaf = false)
         newNode.children[childIndex] = appendToNode[T](nil, index, value, depth - 1)
@@ -268,7 +254,7 @@ func appendToNode[T any](node *arrayNode[T], index int, value T, depth int) *arr
     var newNode = copyNode[T](node)
 
     // Expand children array if needed
-    for ; len(newNode.children) <= childIndex ; {
+    for len(newNode.children) <= childIndex {
         newNode.children = append(newNode.children, nil)
     }
 
@@ -294,10 +280,8 @@ func (a Array[T]) Append(value T) Array[T] {
 // AppendAll appends all elements from another array.
 func (a Array[T]) AppendAll(other Array[T]) Array[T] {
     var result = a
-    var i = 0
-    for ; i < other.length ; {
+    for i := 0; i < other.length; i++ {
         result = result.Append(other.Get(i))
-        i = i + 1
     }
     return result
 }
@@ -307,10 +291,8 @@ func (a Array[T]) AppendAll(other Array[T]) Array[T] {
 func (a Array[T]) Prepend(value T) Array[T] {
     // Simple implementation: rebuild with shifted indices
     var result = EmptyArray[T]().Append(value)
-    var i = 0
-    for ; i < a.length ; {
+    for i := 0; i < a.length; i++ {
         result = result.Append(a.Get(i))
-        i = i + 1
     }
     return result
 }
@@ -351,10 +333,8 @@ func (a Array[T]) Take(n int) Array[T] {
         return a
     }
     var result = EmptyArray[T]()
-    var i = 0
-    for ; i < n ; {
+    for i := 0; i < n; i++ {
         result = result.Append(a.Get(i))
-        i = i + 1
     }
     return result
 }
@@ -368,10 +348,8 @@ func (a Array[T]) Drop(n int) Array[T] {
         return EmptyArray[T]()
     }
     var result = EmptyArray[T]()
-    var i = n
-    for ; i < a.length ; {
+    for i := n; i < a.length; i++ {
         result = result.Append(a.Get(i))
-        i = i + 1
     }
     return result
 }
@@ -379,14 +357,12 @@ func (a Array[T]) Drop(n int) Array[T] {
 // TakeWhile returns the longest prefix of elements that satisfy the predicate.
 func (a Array[T]) TakeWhile(p func(T) bool) Array[T] {
     var result = EmptyArray[T]()
-    var i = 0
-    for ; i < a.length ; {
+    for i := 0; i < a.length; i++ {
         var elem = a.Get(i)
         if !p(elem) {
             return result
         }
         result = result.Append(elem)
-        i = i + 1
     }
     return result
 }
@@ -394,8 +370,8 @@ func (a Array[T]) TakeWhile(p func(T) bool) Array[T] {
 // DropWhile drops the longest prefix of elements that satisfy the predicate.
 func (a Array[T]) DropWhile(p func(T) bool) Array[T] {
     var start = 0
-    for ; start < a.length && p(a.Get(start)) ; {
-        start = start + 1
+    for start < a.length && p(a.Get(start)) {
+        start++
     }
     return a.Drop(start)
 }
@@ -416,36 +392,30 @@ func (a Array[T]) Slice(start int, end int) Array[T] {
 
 // Contains checks if the array contains the given element. O(n).
 func (a Array[T]) Contains(elem T) bool {
-    var i = 0
-    for ; i < a.length ; {
+    for i := 0; i < a.length; i++ {
         if Equal(a.Get(i), elem) {
             return true
         }
-        i = i + 1
     }
     return false
 }
 
 // IndexOf returns the index of the first occurrence of elem, or -1 if not found.
 func (a Array[T]) IndexOf(elem T) int {
-    var i = 0
-    for ; i < a.length ; {
+    for i := 0; i < a.length; i++ {
         if Equal(a.Get(i), elem) {
             return i
         }
-        i = i + 1
     }
     return -1
 }
 
 // LastIndexOf returns the index of the last occurrence of elem, or -1 if not found.
 func (a Array[T]) LastIndexOf(elem T) int {
-    var i = a.length - 1
-    for ; i >= 0 ; {
+    for i := a.length - 1; i >= 0; i-- {
         if Equal(a.Get(i), elem) {
             return i
         }
-        i = i - 1
     }
     return -1
 }
@@ -453,10 +423,8 @@ func (a Array[T]) LastIndexOf(elem T) int {
 // Reverse returns a new array with elements in reverse order.
 func (a Array[T]) Reverse() Array[T] {
     var result = EmptyArray[T]()
-    var i = a.length - 1
-    for ; i >= 0 ; {
+    for i := a.length - 1; i >= 0; i-- {
         result = result.Append(a.Get(i))
-        i = i - 1
     }
     return result
 }
@@ -464,10 +432,8 @@ func (a Array[T]) Reverse() Array[T] {
 // Map applies a function to each element and returns a new array.
 func (a Array[T]) Map[U any](f func(T) U) Array[U] {
     var result = EmptyArray[U]()
-    var i = 0
-    for ; i < a.length ; {
+    for i := 0; i < a.length; i++ {
         result = result.Append(f(a.Get(i)))
-        i = i + 1
     }
     return result
 }
@@ -475,10 +441,8 @@ func (a Array[T]) Map[U any](f func(T) U) Array[U] {
 // FlatMap applies a function that returns an array to each element and flattens.
 func (a Array[T]) FlatMap[U any](f func(T) Array[U]) Array[U] {
     var result = EmptyArray[U]()
-    var i = 0
-    for ; i < a.length ; {
+    for i := 0; i < a.length; i++ {
         result = result.AppendAll(f(a.Get(i)))
-        i = i + 1
     }
     return result
 }
@@ -487,13 +451,11 @@ func (a Array[T]) FlatMap[U any](f func(T) Array[U]) Array[U] {
 // Elements for which the function returns None are filtered out.
 func (a Array[T]) Collect[U any](pf func(T) Option[U]) Array[U] {
     var result = EmptyArray[U]()
-    var i = 0
-    for ; i < a.length ; {
+    for i := 0; i < a.length; i++ {
         val opt = pf(a.Get(i))
         if opt.IsDefined() {
             result = result.Append(opt.Get())
         }
-        i = i + 1
     }
     return result
 }
@@ -512,13 +474,11 @@ func (a Array[T]) Concat(other Iterable[T]) Array[T] {
 // Filter returns a new array with only elements that satisfy the predicate.
 func (a Array[T]) Filter(p func(T) bool) Array[T] {
     var result = EmptyArray[T]()
-    var i = 0
-    for ; i < a.length ; {
+    for i := 0; i < a.length; i++ {
         var elem = a.Get(i)
         if p(elem) {
             result = result.Append(elem)
         }
-        i = i + 1
     }
     return result
 }
@@ -536,10 +496,8 @@ func (a Array[T]) Partition(p func(T) bool) Tuple[Array[T], Array[T]] {
 // FoldLeft applies a binary operator from left to right.
 func (a Array[T]) FoldLeft[U any](initial U, f func(U, T) U) U {
     var acc = initial
-    var i = 0
-    for ; i < a.length ; {
+    for i := 0; i < a.length; i++ {
         acc = f(acc, a.Get(i))
-        i = i + 1
     }
     return acc
 }
@@ -547,10 +505,8 @@ func (a Array[T]) FoldLeft[U any](initial U, f func(U, T) U) U {
 // FoldRight applies a binary operator from right to left.
 func (a Array[T]) FoldRight[U any](initial U, f func(T, U) U) U {
     var acc = initial
-    var i = a.length - 1
-    for ; i >= 0 ; {
+    for i := a.length - 1; i >= 0; i-- {
         acc = f(a.Get(i), acc)
-        i = i - 1
     }
     return acc
 }
@@ -576,59 +532,49 @@ func (a Array[T]) ReduceOption(f func(T, T) T) Option[T] {
 
 // ForEach applies a function to each element for side effects.
 func (a Array[T]) ForEach(f func(T) any) {
-    var i = 0
-    for ; i < a.length ; {
+    for i := 0; i < a.length; i++ {
         f(a.Get(i))
-        i = i + 1
     }
 }
 
 // Exists returns true if any element satisfies the predicate.
 func (a Array[T]) Exists(p func(T) bool) bool {
-    var i = 0
-    for ; i < a.length ; {
+    for i := 0; i < a.length; i++ {
         if p(a.Get(i)) {
             return true
         }
-        i = i + 1
     }
     return false
 }
 
 // ForAll returns true if all elements satisfy the predicate.
 func (a Array[T]) ForAll(p func(T) bool) bool {
-    var i = 0
-    for ; i < a.length ; {
+    for i := 0; i < a.length; i++ {
         if !p(a.Get(i)) {
             return false
         }
-        i = i + 1
     }
     return true
 }
 
 // Find returns the first element that satisfies the predicate.
 func (a Array[T]) Find(p func(T) bool) Option[T] {
-    var i = 0
-    for ; i < a.length ; {
+    for i := 0; i < a.length; i++ {
         var elem = a.Get(i)
         if p(elem) {
             return Some[T](elem)
         }
-        i = i + 1
     }
     return None[T]()
 }
 
 // FindLast returns the last element that satisfies the predicate.
 func (a Array[T]) FindLast(p func(T) bool) Option[T] {
-    var i = a.length - 1
-    for ; i >= 0 ; {
+    for i := a.length - 1; i >= 0; i-- {
         var elem = a.Get(i)
         if p(elem) {
             return Some[T](elem)
         }
-        i = i - 1
     }
     return None[T]()
 }
@@ -636,12 +582,10 @@ func (a Array[T]) FindLast(p func(T) bool) Option[T] {
 // Count returns the number of elements satisfying the predicate.
 func (a Array[T]) Count(p func(T) bool) int {
     var count = 0
-    var i = 0
-    for ; i < a.length ; {
+    for i := 0; i < a.length; i++ {
         if p(a.Get(i)) {
-            count = count + 1
+            count++
         }
-        i = i + 1
     }
     return count
 }
@@ -653,10 +597,8 @@ func (a Array[T]) Zip[U any](other Array[U]) Array[Tuple[T, U]] {
         minLen = other.length
     }
     var result = EmptyArray[Tuple[T, U]]()
-    var i = 0
-    for ; i < minLen ; {
+    for i := 0; i < minLen; i++ {
         result = result.Append(Tuple[T, U](V1 = a.Get(i), V2 = other.Get(i)))
-        i = i + 1
     }
     return result
 }
@@ -664,10 +606,8 @@ func (a Array[T]) Zip[U any](other Array[U]) Array[Tuple[T, U]] {
 // ZipWithIndex pairs each element with its index.
 func (a Array[T]) ZipWithIndex() Array[Tuple[T, int]] {
     var result = EmptyArray[Tuple[T, int]]()
-    var i = 0
-    for ; i < a.length ; {
+    for i := 0; i < a.length; i++ {
         result = result.Append(Tuple[T, int](V1 = a.Get(i), V2 = i))
-        i = i + 1
     }
     return result
 }
@@ -675,13 +615,11 @@ func (a Array[T]) ZipWithIndex() Array[Tuple[T, int]] {
 // Distinct returns a new array with duplicate elements removed.
 func (a Array[T]) Distinct() Array[T] {
     var result = EmptyArray[T]()
-    var i = 0
-    for ; i < a.length ; {
+    for i := 0; i < a.length; i++ {
         var elem = a.Get(i)
         if !result.Contains(elem) {
             result = result.Append(elem)
         }
-        i = i + 1
     }
     return result
 }
@@ -693,8 +631,8 @@ func (a Array[T]) SplitAt(n int) Tuple[Array[T], Array[T]] = Tuple[Array[T], Arr
 // The first element contains the longest prefix of elements that satisfy p.
 func (a Array[T]) Span(p func(T) bool) Tuple[Array[T], Array[T]] {
     var i = 0
-    for ; i < a.length && p(a.Get(i)) ; {
-        i = i + 1
+    for i < a.length && p(a.Get(i)) {
+        i++
     }
     return a.SplitAt(i)
 }
@@ -703,15 +641,13 @@ func (a Array[T]) Span(p func(T) bool) Tuple[Array[T], Array[T]] {
 func (a Array[T]) PartitionMap[A any, B any](f func(T) Either[A, B]) Tuple[Array[A], Array[B]] {
     var lefts = EmptyArray[A]()
     var rights = EmptyArray[B]()
-    var i = 0
-    for ; i < a.length ; {
+    for i := 0; i < a.length; i++ {
         val either = f(a.Get(i))
         if either.IsLeft() {
             lefts = lefts.Append(either.GetLeft())
         } else {
             rights = rights.Append(either.GetRight())
         }
-        i = i + 1
     }
     return Tuple[Array[A], Array[B]](V1 = lefts, V2 = rights)
 }
@@ -719,13 +655,11 @@ func (a Array[T]) PartitionMap[A any, B any](f func(T) Either[A, B]) Tuple[Array
 // GroupBy partitions this array into a map of arrays according to a discriminator function.
 func (a Array[T]) GroupBy[K comparable](f func(T) K) map[K]Array[T] {
     var result = map[K]Array[T]{}
-    var i = 0
-    for ; i < a.length ; {
+    for i := 0; i < a.length; i++ {
         val elem = a.Get(i)
         val key = f(elem)
         val existing = result[key]
         result[key] = existing.Append(elem)
-        i = i + 1
     }
     return result
 }
@@ -733,14 +667,12 @@ func (a Array[T]) GroupBy[K comparable](f func(T) K) map[K]Array[T] {
 // GroupMap partitions elements and maps values according to discriminator and value functions.
 func (a Array[T]) GroupMap[K comparable, V any](key func(T) K, value func(T) V) map[K]Array[V] {
     var result = map[K]Array[V]{}
-    var i = 0
-    for ; i < a.length ; {
+    for i := 0; i < a.length; i++ {
         val elem = a.Get(i)
         val k = key(elem)
         val v = value(elem)
         val existing = result[k]
         result[k] = existing.Append(v)
-        i = i + 1
     }
     return result
 }
@@ -749,8 +681,7 @@ func (a Array[T]) GroupMap[K comparable, V any](key func(T) K, value func(T) V) 
 func (a Array[T]) GroupMapReduce[K comparable, V any](key func(T) K, value func(T) V, reduce func(V, V) V) map[K]V {
     var result = map[K]V{}
     var seen = map[K]bool{}
-    var i = 0
-    for ; i < a.length ; {
+    for i := 0; i < a.length; i++ {
         val elem = a.Get(i)
         val k = key(elem)
         val v = value(elem)
@@ -760,7 +691,6 @@ func (a Array[T]) GroupMapReduce[K comparable, V any](key func(T) K, value func(
             result[k] = v
             seen[k] = true
         }
-        i = i + 1
     }
     return result
 }
@@ -771,14 +701,12 @@ func (a Array[T]) Grouped(n int) Array[Array[T]] {
         panic("Array.Grouped: group size must be positive")
     }
     var result = EmptyArray[Array[T]]()
-    var i = 0
-    for ; i < a.length ; {
+    for i := 0; i < a.length; i += n {
         var end = i + n
         if end > a.length {
             end = a.length
         }
         result = result.Append(a.Slice(i, end))
-        i = i + n
     }
     return result
 }
@@ -792,11 +720,9 @@ func (a Array[T]) Sliding(size int) Array[Array[T]] {
         return EmptyArray[Array[T]]()
     }
     var result = EmptyArray[Array[T]]()
-    var i = 0
     var limit = a.length - size
-    for ; i <= limit ; {
+    for i := 0; i <= limit; i++ {
         result = result.Append(a.Slice(i, i + size))
-        i = i + 1
     }
     return result
 }
@@ -804,10 +730,8 @@ func (a Array[T]) Sliding(size int) Array[Array[T]] {
 // ToSlice converts the array to a Go slice.
 func (a Array[T]) ToSlice() []T {
     var result []T
-    var i = 0
-    for ; i < a.length ; {
+    for i := 0; i < a.length; i++ {
         result = append(result, a.Get(i))
-        i = i + 1
     }
     return result
 }
@@ -815,10 +739,8 @@ func (a Array[T]) ToSlice() []T {
 // ToList converts the array to a List.
 func (a Array[T]) ToList() List[T] {
     var result = emptyList[T]()
-    var i = a.length - 1
-    for ; i >= 0 ; {
+    for i := a.length - 1; i >= 0; i-- {
         result = consList[T](a.Get(i), result)
-        i = i - 1
     }
     return result
 }
@@ -829,13 +751,11 @@ func (a Array[T]) String() string {
         return "Array()"
     }
     var result = "Array("
-    var i = 0
-    for ; i < a.length ; {
+    for i := 0; i < a.length; i++ {
         if i > 0 {
             result = result + ", "
         }
         result = result + fmt.Sprintf("%v", a.Get(i))
-        i = i + 1
     }
     return result + ")"
 }

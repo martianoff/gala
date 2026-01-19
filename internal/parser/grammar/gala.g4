@@ -70,15 +70,19 @@ returnStatement: 'return' expression?;
 
 ifStatement: 'if' (simpleStatement ';')? expression block ('else' (block | ifStatement))?;
 
-forStatement: 'for' (forClause | rangeClause)? block;
+forStatement: 'for' (forClause | rangeClause | forCondition)? block;
 forClause: simpleStatement? ';' expression? ';' simpleStatement?;
+forCondition: expression;
 rangeClause: (identifierList (':=' | '=') )? 'range' expression;
 
 simpleStatement
-    : expression
+    : incDecStmt
     | assignment
     | shortVarDecl
+    | expression
     ;
+
+incDecStmt: expression ('++' | '--');
 
 identifierList: identifier (',' identifier)*;
 assignment: expressionList ('=' | '+=' | '-=' | '*=' | '/=') expressionList;

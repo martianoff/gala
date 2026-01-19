@@ -50,10 +50,8 @@ func (n Nil) Unapply(l any) Option[bool] = l match {
 // Example: ListOf[int](1, 2, 3) creates List(1, 2, 3)
 func ListOf[T any](elements ...T) List[T] {
     var result = emptyList[T]()
-    var i = len(elements) - 1
-    for ; i >= 0 ; {
+    for i := len(elements) - 1; i >= 0; i-- {
         result = consList[T](elements[i], result)
-        i = i - 1
     }
     return result
 }
@@ -61,10 +59,8 @@ func ListOf[T any](elements ...T) List[T] {
 // ListFromSlice creates a List from a slice.
 func ListFromSlice[T any](elements []T) List[T] {
     var result = emptyList[T]()
-    var i = len(elements) - 1
-    for ; i >= 0 ; {
+    for i := len(elements) - 1; i >= 0; i-- {
         result = consList[T](elements[i], result)
-        i = i - 1
     }
     return result
 }
@@ -130,11 +126,11 @@ func (l List[T]) PrependAll(other List[T]) List[T] {
     var result = l
     var stack = emptyList[T]()
     var current = other
-    for ; !current.isEmpty ; {
+    for !current.isEmpty {
         stack = consList[T](current.head, stack)
         current = *current.tail
     }
-    for ; !stack.isEmpty ; {
+    for !stack.isEmpty {
         result = result.Prepend(stack.head)
         stack = *stack.tail
     }
@@ -152,12 +148,12 @@ func (l List[T]) AppendAll(other List[T]) List[T] {
     // Iterative implementation using a stack to reverse, then prepend
     var stack = emptyList[T]()
     var current = l
-    for ; !current.isEmpty ; {
+    for !current.isEmpty {
         stack = consList[T](current.head, stack)
         current = *current.tail
     }
     var result = other
-    for ; !stack.isEmpty ; {
+    for !stack.isEmpty {
         result = consList[T](stack.head, result)
         stack = *stack.tail
     }
@@ -171,10 +167,8 @@ func (l List[T]) Get(index int) T {
         panic(fmt.Sprintf("List.Get: index %d out of bounds [0, %d)", index, l.length))
     }
     var current = l
-    var i = 0
-    for ; i < index ; {
+    for i := 0; i < index; i++ {
         current = *current.tail
-        i = i + 1
     }
     return current.head
 }
@@ -206,7 +200,7 @@ func (l List[T]) Last() T {
     }
     var current = l
     var next = *current.tail
-    for ; !next.isEmpty ; {
+    for !next.isEmpty {
         current = next
         next = *current.tail
     }
@@ -280,13 +274,11 @@ func (l List[T]) Contains(elem T) bool {
 // IndexOf returns the index of the first occurrence of elem, or -1 if not found. O(n).
 func (l List[T]) IndexOf(elem T) int {
     var current = l
-    var i = 0
-    for ; !current.isEmpty ; {
+    for i := 0; !current.isEmpty; i++ {
         if Equal(current.head, elem) {
             return i
         }
         current = *current.tail
-        i = i + 1
     }
     return -1
 }
@@ -295,7 +287,7 @@ func (l List[T]) IndexOf(elem T) int {
 func (l List[T]) Reverse() List[T] {
     var result = emptyList[T]()
     var current = l
-    for ; !current.isEmpty ; {
+    for !current.isEmpty {
         result = consList[T](current.head, result)
         current = *current.tail
     }
@@ -371,7 +363,7 @@ func (l List[T]) Partition(p func(T) bool) Tuple[List[T], List[T]] {
 func (l List[T]) FoldLeft[U any](initial U, f func(U, T) U) U {
     var acc = initial
     var current = l
-    for ; !current.isEmpty ; {
+    for !current.isEmpty {
         acc = f(acc, current.head)
         current = *current.tail
     }
@@ -408,7 +400,7 @@ func (l List[T]) ReduceOption(f func(T, T) T) Option[T] {
 // ForEach applies a function to each element for side effects.
 func (l List[T]) ForEach(f func(T) any) {
     var current = l
-    for ; !current.isEmpty ; {
+    for !current.isEmpty {
         f(current.head)
         current = *current.tail
     }
@@ -417,7 +409,7 @@ func (l List[T]) ForEach(f func(T) any) {
 // Exists returns true if any element satisfies the predicate.
 func (l List[T]) Exists(p func(T) bool) bool {
     var current = l
-    for ; !current.isEmpty ; {
+    for !current.isEmpty {
         if p(current.head) {
             return true
         }
@@ -429,7 +421,7 @@ func (l List[T]) Exists(p func(T) bool) bool {
 // ForAll returns true if all elements satisfy the predicate.
 func (l List[T]) ForAll(p func(T) bool) bool {
     var current = l
-    for ; !current.isEmpty ; {
+    for !current.isEmpty {
         if !p(current.head) {
             return false
         }
@@ -441,7 +433,7 @@ func (l List[T]) ForAll(p func(T) bool) bool {
 // Find returns the first element that satisfies the predicate.
 func (l List[T]) Find(p func(T) bool) Option[T] {
     var current = l
-    for ; !current.isEmpty ; {
+    for !current.isEmpty {
         if p(current.head) {
             return Some[T](current.head)
         }
@@ -454,9 +446,9 @@ func (l List[T]) Find(p func(T) bool) Option[T] {
 func (l List[T]) Count(p func(T) bool) int {
     var count = 0
     var current = l
-    for ; !current.isEmpty ; {
+    for !current.isEmpty {
         if p(current.head) {
-            count = count + 1
+            count++
         }
         current = *current.tail
     }
@@ -478,11 +470,9 @@ func (l List[T]) Zip[U any](other List[U]) List[Tuple[T, U]] {
 func (l List[T]) ZipWithIndex() List[Tuple[T, int]] {
     var result = emptyList[Tuple[T, int]]()
     var current = l
-    var i = 0
-    for ; !current.isEmpty ; {
+    for i := 0; !current.isEmpty; i++ {
         result = consList[Tuple[T, int]](Tuple[T, int](V1 = current.head, V2 = i), result)
         current = *current.tail
-        i = i + 1
     }
     return result.Reverse()
 }
@@ -511,7 +501,7 @@ func (l List[T]) Span(p func(T) bool) Tuple[List[T], List[T]] {
     // Build prefix iteratively
     var prefix = emptyList[T]()
     var current = l
-    for ; !current.isEmpty && p(current.head) ; {
+    for !current.isEmpty && p(current.head) {
         prefix = prefix.Append(current.head)
         current = *current.tail
     }
@@ -524,7 +514,7 @@ func (l List[T]) PartitionMap[A any, B any](f func(T) Either[A, B]) Tuple[List[A
     var lefts = emptyList[A]()
     var rights = emptyList[B]()
     var current = l
-    for ; !current.isEmpty ; {
+    for !current.isEmpty {
         val either = f(current.head)
         if either.IsLeft() {
             lefts = lefts.Append(either.GetLeft())
@@ -540,7 +530,7 @@ func (l List[T]) PartitionMap[A any, B any](f func(T) Either[A, B]) Tuple[List[A
 func (l List[T]) GroupBy[K comparable](f func(T) K) map[K]List[T] {
     var result = map[K]List[T]{}
     var current = l
-    for ; !current.isEmpty ; {
+    for !current.isEmpty {
         val elem = current.head
         val key = f(elem)
         val existing = result[key]
@@ -554,7 +544,7 @@ func (l List[T]) GroupBy[K comparable](f func(T) K) map[K]List[T] {
 func (l List[T]) GroupMap[K comparable, V any](key func(T) K, value func(T) V) map[K]List[V] {
     var result = map[K]List[V]{}
     var current = l
-    for ; !current.isEmpty ; {
+    for !current.isEmpty {
         val elem = current.head
         val k = key(elem)
         val v = value(elem)
@@ -570,7 +560,7 @@ func (l List[T]) GroupMapReduce[K comparable, V any](key func(T) K, value func(T
     var result = map[K]V{}
     var seen = map[K]bool{}
     var current = l
-    for ; !current.isEmpty ; {
+    for !current.isEmpty {
         val elem = current.head
         val k = key(elem)
         val v = value(elem)
@@ -597,7 +587,7 @@ func Flatten[T any](ll List[List[T]]) List[T] {
 func (l List[T]) ToSlice() []T {
     var result []T
     var current = l
-    for ; !current.isEmpty ; {
+    for !current.isEmpty {
         result = append(result, current.head)
         current = *current.tail
     }
@@ -612,7 +602,7 @@ func (l List[T]) String() string {
     var result = "List("
     var current = l
     var first = true
-    for ; !current.isEmpty ; {
+    for !current.isEmpty {
         if !first {
             result = result + ", "
         }

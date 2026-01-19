@@ -11,6 +11,25 @@ import (
 )
 
 func (t *galaASTTransformer) transformSimpleStatement(ctx grammar.ISimpleStatementContext) (ast.Stmt, error) {
+	return t.transformSimpleStatementWithMutability(ctx, false)
+}
+
+// transformForLoopInitStatement transforms a simple statement in a for loop init context.
+// Variables declared with := in this context are mutable (can be incremented/decremented).
+func (t *galaASTTransformer) transformForLoopInitStatement(ctx grammar.ISimpleStatementContext) (ast.Stmt, error) {
+	return t.transformSimpleStatementWithMutability(ctx, true)
+}
+
+func (t *galaASTTransformer) transformSimpleStatementWithMutability(ctx grammar.ISimpleStatementContext, mutable bool) (ast.Stmt, error) {
+	if incDecCtx := ctx.IncDecStmt(); incDecCtx != nil {
+		return t.transformIncDecStmt(incDecCtx.(*grammar.IncDecStmtContext))
+	}
+	if assignCtx := ctx.Assignment(); assignCtx != nil {
+		return t.transformAssignment(assignCtx.(*grammar.AssignmentContext))
+	}
+	if shortCtx := ctx.ShortVarDecl(); shortCtx != nil {
+		return t.transformShortVarDeclWithMutability(shortCtx.(*grammar.ShortVarDeclContext), mutable)
+	}
 	if exprCtx := ctx.Expression(); exprCtx != nil {
 		expr, err := t.transformExpression(exprCtx)
 		if err != nil {
@@ -18,13 +37,35 @@ func (t *galaASTTransformer) transformSimpleStatement(ctx grammar.ISimpleStateme
 		}
 		return &ast.ExprStmt{X: expr}, nil
 	}
-	if assignCtx := ctx.Assignment(); assignCtx != nil {
-		return t.transformAssignment(assignCtx.(*grammar.AssignmentContext))
-	}
-	if shortCtx := ctx.ShortVarDecl(); shortCtx != nil {
-		return t.transformShortVarDecl(shortCtx.(*grammar.ShortVarDeclContext))
-	}
 	return nil, nil
+}
+
+func (t *galaASTTransformer) transformIncDecStmt(ctx *grammar.IncDecStmtContext) (ast.Stmt, error) {
+	expr, err := t.transformExpression(ctx.Expression())
+	if err != nil {
+		return nil, err
+	}
+
+	// Check for mutability - get the name if it's an identifier
+	if ident, ok := expr.(*ast.Ident); ok {
+		if t.isVal(ident.Name) {
+			return nil, galaerr.NewSemanticError(fmt.Sprintf("cannot increment/decrement immutable variable %s", ident.Name))
+		}
+	}
+
+	// Determine the token (++ or --)
+	tok := token.INC
+	if ctx.GetChildCount() >= 2 {
+		opText := ctx.GetChild(1).(antlr.TerminalNode).GetText()
+		if opText == "--" {
+			tok = token.DEC
+		}
+	}
+
+	return &ast.IncDecStmt{
+		X:   expr,
+		Tok: tok,
+	}, nil
 }
 
 func (t *galaASTTransformer) transformStatement(ctx *grammar.StatementContext) (ast.Stmt, error) {
@@ -131,6 +172,10 @@ func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext)
 }
 
 func (t *galaASTTransformer) transformShortVarDecl(ctx *grammar.ShortVarDeclContext) (ast.Stmt, error) {
+	return t.transformShortVarDeclWithMutability(ctx, false)
+}
+
+func (t *galaASTTransformer) transformShortVarDeclWithMutability(ctx *grammar.ShortVarDeclContext, mutable bool) (ast.Stmt, error) {
 	idsCtx := ctx.IdentifierList().(*grammar.IdentifierListContext).AllIdentifier()
 	rhsExprs, err := t.transformExpressionList(ctx.ExpressionList().(*grammar.ExpressionListContext))
 	if err != nil {
@@ -138,14 +183,18 @@ func (t *galaASTTransformer) transformShortVarDecl(ctx *grammar.ShortVarDeclCont
 	}
 
 	lhs := make([]ast.Expr, 0)
-	wrappedRhs := make([]ast.Expr, 0)
+	rhs := make([]ast.Expr, 0)
 	for i, idCtx := range idsCtx {
 		name := idCtx.GetText()
 		typeName := t.getExprTypeName(rhsExprs[i])
 		if qName := t.getType(typeName.String()); !qName.IsNil() {
 			typeName = qName
 		}
-		t.addVal(name, typeName)
+		if mutable {
+			t.addVar(name, typeName)
+		} else {
+			t.addVal(name, typeName)
+		}
 		lhs = append(lhs, ast.NewIdent(name))
 
 		var val ast.Expr
@@ -159,16 +208,21 @@ func (t *galaASTTransformer) transformShortVarDecl(ctx *grammar.ShortVarDeclCont
 			return nil, galaerr.NewSemanticError("variable assigned to None() must have an explicit type")
 		}
 
-		wrappedRhs = append(wrappedRhs, &ast.CallExpr{
-			Fun:  t.stdIdent("NewImmutable"),
-			Args: []ast.Expr{val},
-		})
+		if mutable {
+			// For mutable variables (e.g., for loop init), don't wrap in Immutable
+			rhs = append(rhs, val)
+		} else {
+			rhs = append(rhs, &ast.CallExpr{
+				Fun:  t.stdIdent("NewImmutable"),
+				Args: []ast.Expr{val},
+			})
+		}
 	}
 
 	return &ast.AssignStmt{
 		Lhs: lhs,
 		Tok: token.DEFINE,
-		Rhs: wrappedRhs,
+		Rhs: rhs,
 	}, nil
 }
 
@@ -190,6 +244,18 @@ func (t *galaASTTransformer) transformForStatement(ctx *grammar.ForStatementCont
 	body, err := t.transformBlock(ctx.Block().(*grammar.BlockContext))
 	if err != nil {
 		return nil, err
+	}
+
+	// Handle condition-only for loop: for condition { ... }
+	if condCtx := ctx.ForCondition(); condCtx != nil {
+		cond, err := t.transformExpression(condCtx.(*grammar.ForConditionContext).Expression())
+		if err != nil {
+			return nil, err
+		}
+		return &ast.ForStmt{
+			Cond: cond,
+			Body: body,
+		}, nil
 	}
 
 	// Handle range clause: for x := range expr
@@ -249,9 +315,10 @@ func (t *galaASTTransformer) transformForStatement(ctx *grammar.ForStatementCont
 		var post ast.Stmt
 
 		// Process init and post statements
+		// Note: init uses transformForLoopInitStatement to make := declarations mutable
 		simpleStmts := forClause.AllSimpleStatement()
 		if len(simpleStmts) >= 1 && simpleStmts[0] != nil {
-			init, err = t.transformSimpleStatement(simpleStmts[0].(*grammar.SimpleStatementContext))
+			init, err = t.transformForLoopInitStatement(simpleStmts[0].(*grammar.SimpleStatementContext))
 			if err != nil {
 				return nil, err
 			}

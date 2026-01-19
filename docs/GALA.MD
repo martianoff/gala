@@ -456,13 +456,67 @@ val res = x match {
 ```
 
 ### For Statement
-*Note: The `for` statement is currently under development and not yet fully supported in the transpiler.*
+GALA supports Go-style for loops with the following variants:
+
+#### Full For Loop
+The classic C-style for loop with init, condition, and post statements:
 
 ```gala
-for i := 0; i < 10; i = i + 1 {
+for i := 0; i < 10; i++ {
     fmt.Println(i)
 }
 ```
+
+Variables declared with `:=` in the init statement are **mutable**, allowing them to be modified by the post statement (`i++` or `i--`).
+
+#### Condition-Only Loop
+A while-style loop that runs as long as the condition is true:
+
+```gala
+var count = 0
+for count < 5 {
+    fmt.Println(count)
+    count++
+}
+```
+
+#### Infinite Loop
+An infinite loop that runs until explicitly broken:
+
+```gala
+for {
+    // Process forever or break when done
+    if shouldStop() {
+        break
+    }
+}
+```
+
+#### Range Loop
+Iterate over slices, arrays, or maps:
+
+```gala
+val items = []int{1, 2, 3}
+for i, v := range items {
+    fmt.Printf("index %d: %d\n", i, v)
+}
+```
+
+#### Increment and Decrement Operators
+GALA supports `++` and `--` operators for incrementing and decrementing mutable variables:
+
+```gala
+var x = 0
+x++  // x is now 1
+x--  // x is now 0
+
+// Commonly used in for loops
+for i := 0; i < 10; i++ {
+    // ...
+}
+```
+
+**Note:** The `++` and `--` operators can only be used on **mutable** variables (declared with `var` or `:=` in for loop init).
 
 ## 7. Functional Features
 

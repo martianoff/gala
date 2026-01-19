@@ -116,15 +116,13 @@ func RunTests(tests ...TestFunc) {
     var failed = 0
 
     fmt.Println("=== STARTING TESTS ===")
-    var i = 0
-    for ; i < len(tests) ; {
+    for i := 0; i < len(tests); i++ {
         var test = tests[i]
         if test.Run() {
-            passed = passed + 1
+            passed++
         } else {
-            failed = failed + 1
+            failed++
         }
-        i = i + 1
     }
 
     fmt.Println()

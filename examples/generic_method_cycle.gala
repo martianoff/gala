@@ -28,11 +28,9 @@ func consList[T any](h T, t MyList[T]) MyList[T] {
 func (l MyList[T]) ZipWithIndex() MyList[Pair[T, int]] {
     var result = emptyMyList[Pair[T, int]]()
     var current = l
-    var i = 0
-    for ; !current.isEmpty ; {
+    for i := 0; !current.isEmpty; i++ {
         result = consList[Pair[T, int]](Pair[T, int](First = current.head, Second = i), result)
         current = *current.tail
-        i = i + 1
     }
     return result
 }
