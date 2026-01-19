@@ -1,4 +1,4 @@
-load("//:gala.bzl", "gala_library", "gala_transpile")
+load("//:gala.bzl", "gala_go_test", "gala_library", "gala_transpile")
 load("@rules_go//go:def.bzl", "go_library")
 
 exports_files([
@@ -34,4 +34,16 @@ go_library(
     importpath = "martianoff/gala/collection_immutable",
     visibility = ["//visibility:public"],
     deps = ["//std"],
+)
+
+gala_go_test(
+    name = "array_test",
+    srcs = ["array_test.gala"],
+    deps = [":collection_immutable"],
+)
+
+gala_go_test(
+    name = "list_test",
+    srcs = ["list_test.gala"],
+    deps = [":collection_immutable"],
 )

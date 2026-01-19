@@ -67,7 +67,9 @@ bazel mod tidy
 ### GALA Code
 - Prefer functional code, pattern matching, and immutable variables
 - Prefer generic methods and type-safe programming
-- Do not provide explicit types when they can be inferred
+- Prefer implicit var/val declarations
+- Prefer table driven tests
+- Do not provide explicit types when it is not required
 
 ## Testing Requirements
 

@@ -1,8 +1,13 @@
-load("//:gala.bzl", "gala_library")
+load("//:gala.bzl", "gala_go_test", "gala_library")
 
 gala_library(
     name = "test",
     src = "framework.gala",
     importpath = "martianoff/gala/test",
     visibility = ["//visibility:public"],
+)
+
+gala_go_test(
+    name = "framework_test",
+    srcs = ["framework_test.gala"],
 )

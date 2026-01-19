@@ -1,6 +1,8 @@
 package main
 
-import . "martianoff/gala/test"
+import (
+    . "martianoff/gala/test"
+)
 
 // Tests for the test framework itself
 
@@ -19,7 +21,15 @@ func TestBooleans(t T) T {
     return IsFalse(t1, false)
 }
 
+func subtest1(t T) T {
+    return Eq[int](t, 1, 1)
+}
+
+func subtest2(t T) T {
+    return Eq[int](t, 2, 2)
+}
+
 func TestSubtests(t T) T {
-    var t1 = t.Run("first", (t T) => Eq[int](t, 1, 1))
-    return t1.Run("second", (t T) => Eq[int](t, 2, 2))
+    var t1 = t.Run("first", subtest1)
+    return t1.Run("second", subtest2)
 }

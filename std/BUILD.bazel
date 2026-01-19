@@ -1,5 +1,5 @@
 load("@rules_go//go:def.bzl", "go_library", "go_test")
-load("//:gala.bzl", "gala_transpile")
+load("//:gala.bzl", "gala_go_test", "gala_transpile")
 
 exports_files([
     "option.gala",
@@ -61,4 +61,9 @@ go_test(
     ],
     embed = [":std"],
     deps = ["@com_github_stretchr_testify//assert"],
+)
+
+gala_go_test(
+    name = "std_test",
+    srcs = ["std_test.gala"],
 )

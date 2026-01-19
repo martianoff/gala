@@ -1,0 +1,129 @@
+package main
+
+import (
+    . "martianoff/gala/test"
+)
+
+// === Option Tests ===
+
+func TestSomeNotEmpty(t T) T {
+    var opt = std.Some[int](42)
+    return IsFalse(t, opt.IsEmpty())
+}
+
+func TestNoneIsEmpty(t T) T {
+    var opt = std.None[int]()
+    return IsTrue(t, opt.IsEmpty())
+}
+
+func TestSomeGet(t T) T {
+    var opt = std.Some[string]("hello")
+    return Eq[string](t, opt.Get(), "hello")
+}
+
+func TestSomeGetOrElse(t T) T {
+    var opt = std.Some[int](42)
+    return Eq[int](t, opt.GetOrElse(0), 42)
+}
+
+func TestNoneGetOrElse(t T) T {
+    var opt = std.None[int]()
+    return Eq[int](t, opt.GetOrElse(99), 99)
+}
+
+func mapIntToString(x int) string {
+    if x == 42 {
+        return "forty-two"
+    }
+    return "other"
+}
+
+func TestSomeMap(t T) T {
+    var opt = std.Some[int](42)
+    var mapped = opt.Map[string](mapIntToString)
+    var t1 = IsFalse(t, mapped.IsEmpty())
+    return Eq[string](t1, mapped.Get(), "forty-two")
+}
+
+func TestNoneMap(t T) T {
+    var opt = std.None[int]()
+    var mapped = opt.Map[string](mapIntToString)
+    return IsTrue(t, mapped.IsEmpty())
+}
+
+func isPositive(x int) bool {
+    return x > 0
+}
+
+func TestSomeFilterPass(t T) T {
+    var opt = std.Some[int](42)
+    var filtered = opt.Filter(isPositive)
+    var t1 = IsFalse(t, filtered.IsEmpty())
+    return Eq[int](t1, filtered.Get(), 42)
+}
+
+func TestSomeFilterFail(t T) T {
+    var opt = std.Some[int](-5)
+    var filtered = opt.Filter(isPositive)
+    return IsTrue(t, filtered.IsEmpty())
+}
+
+func TestNoneFilter(t T) T {
+    var opt = std.None[int]()
+    var filtered = opt.Filter(isPositive)
+    return IsTrue(t, filtered.IsEmpty())
+}
+
+// === Either Tests ===
+
+func TestLeftGetLeft(t T) T {
+    var e = std.Left[string, int]("error")
+    return Eq[string](t, e.GetLeft(), "error")
+}
+
+func TestRightGetRight(t T) T {
+    var e = std.Right[string, int](42)
+    return Eq[int](t, e.GetRight(), 42)
+}
+
+func TestEitherSwap(t T) T {
+    var e = std.Left[string, int]("error")
+    var swapped = e.Swap()
+    return Eq[string](t, swapped.GetRight(), "error")
+}
+
+func handleLeft(s string) int {
+    return -1
+}
+
+func handleRight(n int) int {
+    return n * 2
+}
+
+func TestLeftFold(t T) T {
+    var e = std.Left[string, int]("error")
+    var result = e.Fold[int](handleLeft, handleRight)
+    return Eq[int](t, result, -1)
+}
+
+func TestRightFold(t T) T {
+    var e = std.Right[string, int](21)
+    var result = e.Fold[int](handleLeft, handleRight)
+    return Eq[int](t, result, 42)
+}
+
+func doubleInt(x int) int {
+    return x * 2
+}
+
+func TestRightMap(t T) T {
+    var e = std.Right[string, int](21)
+    var mapped = e.Map[int](doubleInt)
+    return Eq[int](t, mapped.GetRight(), 42)
+}
+
+func TestLeftMap(t T) T {
+    var e = std.Left[string, int]("error")
+    var mapped = e.Map[int](doubleInt)
+    return Eq[string](t, mapped.GetLeft(), "error")
+}

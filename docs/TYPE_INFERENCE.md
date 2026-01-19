@@ -98,25 +98,4 @@ Unwrapping is based on the inferred type name. If the type name starts with `Imm
 ## Limitations and Edge Cases
 
 - **String-based matching**: Type checks rely heavily on string prefixes and names, which can be fragile when dealing with type aliases or complex generic types.
-- **`any` Types**: Some expressions like `match` or `if` expressions currently default to returning `any` in the generated Go code, losing specific type information during transpilation.
 - **Recursive Unwrapping**: `unwrapImmutable` currently performs only one level of unwrapping. But multiple wrapping should never happen in the first place
-
-## Proposed Improvements
-
-The following improvements are proposed to make the type inference system more robust and powerful.
-
-### Phase 1: Foundation
-1.  [x] **Robust Type Representation**: Replace string-based type names with a structured `Type` representation. This allows for reliable comparisons and manipulation of complex types (generics, arrays, pointers).
-2.  [x] **Literal Type Inference**: Explicitly handle `*ast.BasicLit` in `getExprTypeName` (e.g., `INT` -> `int`, `STRING` -> `string`) supporting all standard types. Drop support of std.Int, std.Int32, etc. as they create friction with go compatibility.
-
-### Phase 2: Coverage & Depth
-3.  [x] **Expanded Expression Coverage**: Extend `getExprTypeName` to support more Go AST expression types like `BinaryExpr`, `UnaryExpr`, and `ParenExpr`.
-4.  [x] **Recursive Unwrapping**: Throw a compiler exception if multiple levels of Immutable wrapping were found, ie Immutable[Immutable[T]] were inferred
-
-### Phase 3: Advanced Inference
-5.  [x] **Enhanced `match` and `if` Inference**: Attempt to find a common base type for branches. `if` expressions are now supported via HM inference, which ensures consistent return types for branches and enables automatic unwrapping of the result. `match` expressions currently still default to `any` in some contexts but will be integrated in the next phase.
-6.  [x] **Better Generic Type Resolution**: Improved resolution of type parameters in generic functions and structs. Hindley-Milner algorithm is used as a fallback for complex expressions.
-
-### Phase 4: Validation
-8.  [ ] **Type Validation**: Implement checks to ensure inferred types match explicit types and that assignments/function calls are type-compatible.
-9.  [x] **Integration**: Integrated the `infer` package with the main transpiler pipeline. HM inference is now used as a fallback for complex expressions, particularly generic function calls, improving automatic unwrapping accuracy.

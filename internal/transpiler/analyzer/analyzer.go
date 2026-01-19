@@ -212,7 +212,9 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 							continue
 						}
 						otherPkgName := otherSF.PackageClause().(*grammar.PackageClauseContext).Identifier().GetText()
-						if otherPkgName != pkgName {
+						// Allow _test.gala files to have different package names (like Go's _test.go convention)
+						isTestFile := strings.HasSuffix(f.Name(), "_test.gala") || strings.HasSuffix(filePath, "_test.gala")
+						if otherPkgName != pkgName && !isTestFile {
 							return nil, fmt.Errorf("multiple package names in directory %s: %s and %s", dirPath, pkgName, otherPkgName)
 						}
 					}
@@ -811,6 +813,11 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 				if pkgAST.PackageName == "" {
 					pkgAST.PackageName = res.PackageName
 				} else if pkgAST.PackageName != res.PackageName {
+					// Allow _test.gala files to have different package names (like Go's _test.go convention)
+					// Skip merging them into package AST since they're external tests
+					if strings.HasSuffix(f.Name(), "_test.gala") {
+						continue
+					}
 					return nil, fmt.Errorf("multiple package names in directory %s: %s and %s", dirPath, pkgAST.PackageName, res.PackageName)
 				}
 				pkgAST.Merge(res)

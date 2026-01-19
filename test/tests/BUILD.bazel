@@ -1,6 +1,0 @@
-load("//:gala.bzl", "gala_go_test")
-
-gala_go_test(
-    name = "framework_test",
-    srcs = ["main.gala"],
-)

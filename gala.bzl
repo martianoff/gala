@@ -169,8 +169,8 @@ def gala_test(name, src, expected, deps = [], **kwargs):
     )
 
 def _gala_go_test_gen_impl(ctx):
-    """Generate a main.gala file that runs all Test* functions."""
-    out = ctx.actions.declare_file(ctx.label.name + "_main.gala")
+    """Generate a main.go file that runs all Test* functions."""
+    out = ctx.actions.declare_file(ctx.label.name + "_main.go")
 
     # Build the command to scan test files and generate main
     args = ctx.actions.args()
@@ -208,14 +208,20 @@ gala_go_test_gen = rule(
     },
 )
 
-def gala_go_test(name, srcs, deps = [], **kwargs):
+def gala_go_test(name, srcs, deps = [], pkg = "main", embed = [], **kwargs):
     """
     Creates a GALA test using Go-style conventions.
 
     Test functions must:
     - Start with "Test" prefix (e.g., TestAddition)
     - Take a single parameter of type T (e.g., func TestXxx(t T) T)
+
+    For external tests (pkg="main"):
     - Use package main and import the packages being tested
+
+    For internal tests (pkg=same as library):
+    - Use the same package as the library
+    - Specify embed parameter with library Go sources
 
     The macro automatically generates a main function that discovers and runs
     all Test* functions.
@@ -224,6 +230,8 @@ def gala_go_test(name, srcs, deps = [], **kwargs):
         name: The name of the test target.
         srcs: List of test source files (e.g., ["foo_test.gala"]).
         deps: Dependencies for the test.
+        pkg: Package name for tests (default "main" for external tests).
+        embed: Go source files to embed (for internal tests in same package).
         **kwargs: Additional arguments passed to the underlying rules.
     """
     # Generate the main.gala file
@@ -231,6 +239,7 @@ def gala_go_test(name, srcs, deps = [], **kwargs):
     gala_go_test_gen(
         name = gen_name,
         srcs = srcs,
+        pkg = pkg,
     )
 
     # Transpile each test source file
@@ -245,21 +254,25 @@ def gala_go_test(name, srcs, deps = [], **kwargs):
         )
         transpiled_srcs.append(go_src)
 
-    # Transpile the generated main
-    main_transpile_name = name + "_main_transpile"
-    main_go_src = name + "_main.go"
-    gala_transpile(
-        name = main_transpile_name,
-        src = ":" + gen_name,
-        out = main_go_src,
-    )
+    # The generated main is already Go code, no transpiling needed
+    # Use the output from gala_go_test_gen directly
+    main_go_src = ":" + gen_name
 
     # Build the test binary
     binary_name = name + "_bin"
+    all_srcs = transpiled_srcs + [main_go_src] + embed
+
+    # Determine deps - skip //test and //std if testing those packages
+    final_deps = list(deps)
+    if pkg != "test":
+        final_deps.append("//test")
+    if pkg != "std":
+        final_deps.append("//std")
+
     go_binary(
         name = binary_name,
-        srcs = transpiled_srcs + [main_go_src],
-        deps = deps + ["//std", "//test"],
+        srcs = all_srcs,
+        deps = final_deps,
         **kwargs
     )
 

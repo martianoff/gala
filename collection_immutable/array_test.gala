@@ -1,0 +1,246 @@
+package main
+
+import (
+    . "martianoff/gala/test"
+    . "martianoff/gala/collection_immutable"
+)
+
+// === Array Creation Tests ===
+
+func TestEmptyArray(t T) T {
+    var arr = EmptyArray[int]()
+    var t1 = IsTrue(t, arr.IsEmpty())
+    return Eq[int](t1, arr.Length(), 0)
+}
+
+func TestArrayOf(t T) T {
+    var arr = ArrayOf[int](1, 2, 3)
+    var t1 = IsFalse(t, arr.IsEmpty())
+    return Eq[int](t1, arr.Length(), 3)
+}
+
+func TestArrayToSlice(t T) T {
+    var arr = ArrayOf[int](10, 20, 30)
+    var slice = arr.ToSlice()
+    var t1 = Eq[int](t, len(slice), 3)
+    return Eq[int](t1, slice[0], 10)
+}
+
+// === Array Access Tests ===
+
+func TestArrayGet(t T) T {
+    var arr = ArrayOf[int](10, 20, 30)
+    var t1 = Eq[int](t, arr.Get(0), 10)
+    var t2 = Eq[int](t1, arr.Get(1), 20)
+    return Eq[int](t2, arr.Get(2), 30)
+}
+
+func TestArrayHead(t T) T {
+    var arr = ArrayOf[string]("first", "second", "third")
+    return Eq[string](t, arr.Head(), "first")
+}
+
+func TestArrayLast(t T) T {
+    var arr = ArrayOf[string]("first", "second", "third")
+    return Eq[string](t, arr.Last(), "third")
+}
+
+func TestArrayHeadOption(t T) T {
+    var arr = ArrayOf[int](42)
+    var opt = arr.HeadOption()
+    var t1 = IsFalse(t, opt.IsEmpty())
+    return Eq[int](t1, opt.Get(), 42)
+}
+
+func TestArrayHeadOptionEmpty(t T) T {
+    var arr = EmptyArray[int]()
+    var opt = arr.HeadOption()
+    return IsTrue(t, opt.IsEmpty())
+}
+
+// === Array Modification Tests ===
+
+func TestArrayAppend(t T) T {
+    var arr = ArrayOf[int](1, 2)
+    var newArr = arr.Append(3)
+    var t1 = Eq[int](t, arr.Length(), 2)
+    var t2 = Eq[int](t1, newArr.Length(), 3)
+    return Eq[int](t2, newArr.Get(2), 3)
+}
+
+func TestArrayPrepend(t T) T {
+    var arr = ArrayOf[int](2, 3)
+    var newArr = arr.Prepend(1)
+    var t1 = Eq[int](t, newArr.Length(), 3)
+    return Eq[int](t1, newArr.Head(), 1)
+}
+
+func TestArrayUpdated(t T) T {
+    var arr = ArrayOf[int](1, 2, 3)
+    var newArr = arr.Updated(1, 99)
+    var t1 = Eq[int](t, arr.Get(1), 2)
+    return Eq[int](t1, newArr.Get(1), 99)
+}
+
+func TestArrayTail(t T) T {
+    var arr = ArrayOf[int](1, 2, 3)
+    var tail = arr.Tail()
+    var t1 = Eq[int](t, tail.Length(), 2)
+    return Eq[int](t1, tail.Head(), 2)
+}
+
+func TestArrayTake(t T) T {
+    var arr = ArrayOf[int](1, 2, 3, 4, 5)
+    var taken = arr.Take(3)
+    var t1 = Eq[int](t, taken.Length(), 3)
+    return Eq[int](t1, taken.Last(), 3)
+}
+
+func TestArrayDrop(t T) T {
+    var arr = ArrayOf[int](1, 2, 3, 4, 5)
+    var dropped = arr.Drop(2)
+    var t1 = Eq[int](t, dropped.Length(), 3)
+    return Eq[int](t1, dropped.Head(), 3)
+}
+
+func TestArraySlice(t T) T {
+    var arr = ArrayOf[int](1, 2, 3, 4, 5)
+    var sliced = arr.Slice(1, 4)
+    var t1 = Eq[int](t, sliced.Length(), 3)
+    var t2 = Eq[int](t1, sliced.Head(), 2)
+    return Eq[int](t2, sliced.Last(), 4)
+}
+
+func TestArrayReverse(t T) T {
+    var arr = ArrayOf[int](1, 2, 3)
+    var reversed = arr.Reverse()
+    var t1 = Eq[int](t, reversed.Get(0), 3)
+    var t2 = Eq[int](t1, reversed.Get(1), 2)
+    return Eq[int](t2, reversed.Get(2), 1)
+}
+
+// === Array Search Tests ===
+
+func TestArrayContains(t T) T {
+    var arr = ArrayOf[int](1, 2, 3)
+    var t1 = IsTrue(t, arr.Contains(2))
+    return IsFalse(t1, arr.Contains(5))
+}
+
+func TestArrayIndexOf(t T) T {
+    var arr = ArrayOf[string]("a", "b", "c")
+    var t1 = Eq[int](t, arr.IndexOf("b"), 1)
+    return Eq[int](t1, arr.IndexOf("z"), -1)
+}
+
+// === Array Transformation Tests ===
+
+func doubleValue(x int) int {
+    return x * 2
+}
+
+func TestArrayMap(t T) T {
+    var arr = ArrayOf[int](1, 2, 3)
+    var mapped = arr.Map[int](doubleValue)
+    var t1 = Eq[int](t, mapped.Get(0), 2)
+    var t2 = Eq[int](t1, mapped.Get(1), 4)
+    return Eq[int](t2, mapped.Get(2), 6)
+}
+
+func isEven(x int) bool {
+    return x % 2 == 0
+}
+
+func TestArrayFilter(t T) T {
+    var arr = ArrayOf[int](1, 2, 3, 4, 5)
+    var filtered = arr.Filter(isEven)
+    var t1 = Eq[int](t, filtered.Length(), 2)
+    var t2 = Eq[int](t1, filtered.Get(0), 2)
+    return Eq[int](t2, filtered.Get(1), 4)
+}
+
+func sum(acc int, x int) int {
+    return acc + x
+}
+
+func TestArrayFoldLeft(t T) T {
+    var arr = ArrayOf[int](1, 2, 3, 4)
+    var result = arr.FoldLeft[int](0, sum)
+    return Eq[int](t, result, 10)
+}
+
+// === Array Predicate Tests ===
+
+func isGreaterThanZero(x int) bool {
+    return x > 0
+}
+
+func TestArrayExists(t T) T {
+    var arr = ArrayOf[int](-1, 0, 1, 2)
+    return IsTrue(t, arr.Exists(isGreaterThanZero))
+}
+
+func TestArrayForAll(t T) T {
+    var arr1 = ArrayOf[int](1, 2, 3)
+    var arr2 = ArrayOf[int](-1, 0, 1)
+    var t1 = IsTrue(t, arr1.ForAll(isGreaterThanZero))
+    return IsFalse(t1, arr2.ForAll(isGreaterThanZero))
+}
+
+func isGreaterThanTen(x int) bool {
+    return x > 10
+}
+
+func TestArrayFind(t T) T {
+    var arr = ArrayOf[int](5, 15, 25)
+    var found = arr.Find(isGreaterThanTen)
+    var t1 = IsFalse(t, found.IsEmpty())
+    return Eq[int](t1, found.Get(), 15)
+}
+
+func TestArrayFindNone(t T) T {
+    var arr = ArrayOf[int](1, 2, 3)
+    var found = arr.Find(isGreaterThanTen)
+    return IsTrue(t, found.IsEmpty())
+}
+
+func TestArrayCount(t T) T {
+    var arr = ArrayOf[int](1, 2, 3, 4, 5)
+    var count = arr.Count(isEven)
+    return Eq[int](t, count, 2)
+}
+
+// === Array Utility Tests ===
+
+func TestArrayDistinct(t T) T {
+    var arr = ArrayOf[int](1, 2, 2, 3, 3, 3)
+    var distinct = arr.Distinct()
+    return Eq[int](t, distinct.Length(), 3)
+}
+
+func TestArrayGrouped(t T) T {
+    var arr = ArrayOf[int](1, 2, 3, 4, 5)
+    var grouped = arr.Grouped(2)
+    var t1 = Eq[int](t, grouped.Length(), 3)
+    var t2 = Eq[int](t1, grouped.Get(0).Length(), 2)
+    return Eq[int](t2, grouped.Get(2).Length(), 1)
+}
+
+func TestArrayAppendAll(t T) T {
+    var arr1 = ArrayOf[int](1, 2)
+    var arr2 = ArrayOf[int](3, 4)
+    var combined = arr1.AppendAll(arr2)
+    var t1 = Eq[int](t, combined.Length(), 4)
+    var t2 = Eq[int](t1, combined.Get(0), 1)
+    return Eq[int](t2, combined.Get(3), 4)
+}
+
+func TestArrayString(t T) T {
+    var arr = ArrayOf[int](1, 2, 3)
+    return Eq[string](t, arr.String(), "Array(1, 2, 3)")
+}
+
+func TestEmptyArrayString(t T) T {
+    var arr = EmptyArray[int]()
+    return Eq[string](t, arr.String(), "Array()")
+}

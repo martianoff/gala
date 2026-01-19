@@ -1,0 +1,273 @@
+package main
+
+import (
+    . "martianoff/gala/test"
+    . "martianoff/gala/collection_immutable"
+)
+
+// === List Creation Tests ===
+
+func TestEmptyList(t T) T {
+    var list = EmptyList[int]()
+    var t1 = IsTrue(t, list.IsEmpty())
+    return Eq[int](t1, list.Length(), 0)
+}
+
+func TestListOf(t T) T {
+    var list = ListOf[int](1, 2, 3)
+    var t1 = IsFalse(t, list.IsEmpty())
+    return Eq[int](t1, list.Length(), 3)
+}
+
+func TestListToSlice(t T) T {
+    var list = ListOf[int](10, 20, 30)
+    var slice = list.ToSlice()
+    var t1 = Eq[int](t, len(slice), 3)
+    return Eq[int](t1, slice[0], 10)
+}
+
+// === List Access Tests ===
+
+func TestListHead(t T) T {
+    var list = ListOf[string]("first", "second", "third")
+    return Eq[string](t, list.Head(), "first")
+}
+
+func TestListTail(t T) T {
+    var list = ListOf[int](1, 2, 3)
+    var tail = list.Tail()
+    var t1 = Eq[int](t, tail.Length(), 2)
+    return Eq[int](t1, tail.Head(), 2)
+}
+
+func TestListLast(t T) T {
+    var list = ListOf[string]("first", "second", "third")
+    return Eq[string](t, list.Last(), "third")
+}
+
+func TestListGet(t T) T {
+    var list = ListOf[int](10, 20, 30)
+    var t1 = Eq[int](t, list.Get(0), 10)
+    var t2 = Eq[int](t1, list.Get(1), 20)
+    return Eq[int](t2, list.Get(2), 30)
+}
+
+func TestListHeadOption(t T) T {
+    var list = ListOf[int](42)
+    var opt = list.HeadOption()
+    var t1 = IsFalse(t, opt.IsEmpty())
+    return Eq[int](t1, opt.Get(), 42)
+}
+
+func TestListHeadOptionEmpty(t T) T {
+    var list = EmptyList[int]()
+    var opt = list.HeadOption()
+    return IsTrue(t, opt.IsEmpty())
+}
+
+// === List Modification Tests ===
+
+func TestListPrepend(t T) T {
+    var list = ListOf[int](2, 3)
+    var newList = list.Prepend(1)
+    var t1 = Eq[int](t, newList.Length(), 3)
+    return Eq[int](t1, newList.Head(), 1)
+}
+
+func TestListAppend(t T) T {
+    var list = ListOf[int](1, 2)
+    var newList = list.Append(3)
+    var t1 = Eq[int](t, list.Length(), 2)
+    var t2 = Eq[int](t1, newList.Length(), 3)
+    return Eq[int](t2, newList.Last(), 3)
+}
+
+func TestListUpdated(t T) T {
+    var list = ListOf[int](1, 2, 3)
+    var newList = list.Updated(1, 99)
+    var t1 = Eq[int](t, list.Get(1), 2)
+    return Eq[int](t1, newList.Get(1), 99)
+}
+
+func TestListTake(t T) T {
+    var list = ListOf[int](1, 2, 3, 4, 5)
+    var taken = list.Take(3)
+    var t1 = Eq[int](t, taken.Length(), 3)
+    return Eq[int](t1, taken.Last(), 3)
+}
+
+func TestListDrop(t T) T {
+    var list = ListOf[int](1, 2, 3, 4, 5)
+    var dropped = list.Drop(2)
+    var t1 = Eq[int](t, dropped.Length(), 3)
+    return Eq[int](t1, dropped.Head(), 3)
+}
+
+func TestListReverse(t T) T {
+    var list = ListOf[int](1, 2, 3)
+    var reversed = list.Reverse()
+    var t1 = Eq[int](t, reversed.Get(0), 3)
+    var t2 = Eq[int](t1, reversed.Get(1), 2)
+    return Eq[int](t2, reversed.Get(2), 1)
+}
+
+func TestListInit(t T) T {
+    var list = ListOf[int](1, 2, 3)
+    var init = list.Init()
+    var t1 = Eq[int](t, init.Length(), 2)
+    return Eq[int](t1, init.Last(), 2)
+}
+
+// === List Search Tests ===
+
+func TestListContains(t T) T {
+    var list = ListOf[int](1, 2, 3)
+    var t1 = IsTrue(t, list.Contains(2))
+    return IsFalse(t1, list.Contains(5))
+}
+
+func TestListIndexOf(t T) T {
+    var list = ListOf[string]("a", "b", "c")
+    var t1 = Eq[int](t, list.IndexOf("b"), 1)
+    return Eq[int](t1, list.IndexOf("z"), -1)
+}
+
+// === List Transformation Tests ===
+
+func doubleValue(x int) int {
+    return x * 2
+}
+
+func TestListMap(t T) T {
+    var list = ListOf[int](1, 2, 3)
+    var mapped = list.Map[int](doubleValue)
+    var t1 = Eq[int](t, mapped.Get(0), 2)
+    var t2 = Eq[int](t1, mapped.Get(1), 4)
+    return Eq[int](t2, mapped.Get(2), 6)
+}
+
+func isEven(x int) bool {
+    return x % 2 == 0
+}
+
+func TestListFilter(t T) T {
+    var list = ListOf[int](1, 2, 3, 4, 5)
+    var filtered = list.Filter(isEven)
+    var t1 = Eq[int](t, filtered.Length(), 2)
+    var t2 = Eq[int](t1, filtered.Get(0), 2)
+    return Eq[int](t2, filtered.Get(1), 4)
+}
+
+func sum(acc int, x int) int {
+    return acc + x
+}
+
+func TestListFoldLeft(t T) T {
+    var list = ListOf[int](1, 2, 3, 4)
+    var result = list.FoldLeft[int](0, sum)
+    return Eq[int](t, result, 10)
+}
+
+func multiply(x int, acc int) int {
+    return x * acc
+}
+
+func TestListFoldRight(t T) T {
+    var list = ListOf[int](1, 2, 3, 4)
+    var result = list.FoldRight[int](1, multiply)
+    return Eq[int](t, result, 24)
+}
+
+// === List Predicate Tests ===
+
+func isGreaterThanZero(x int) bool {
+    return x > 0
+}
+
+func TestListExists(t T) T {
+    var list = ListOf[int](-1, 0, 1, 2)
+    return IsTrue(t, list.Exists(isGreaterThanZero))
+}
+
+func TestListForAll(t T) T {
+    var list1 = ListOf[int](1, 2, 3)
+    var list2 = ListOf[int](-1, 0, 1)
+    var t1 = IsTrue(t, list1.ForAll(isGreaterThanZero))
+    return IsFalse(t1, list2.ForAll(isGreaterThanZero))
+}
+
+func isGreaterThanTen(x int) bool {
+    return x > 10
+}
+
+func TestListFind(t T) T {
+    var list = ListOf[int](5, 15, 25)
+    var found = list.Find(isGreaterThanTen)
+    var t1 = IsFalse(t, found.IsEmpty())
+    return Eq[int](t1, found.Get(), 15)
+}
+
+func TestListFindNone(t T) T {
+    var list = ListOf[int](1, 2, 3)
+    var found = list.Find(isGreaterThanTen)
+    return IsTrue(t, found.IsEmpty())
+}
+
+func TestListCount(t T) T {
+    var list = ListOf[int](1, 2, 3, 4, 5)
+    var count = list.Count(isEven)
+    return Eq[int](t, count, 2)
+}
+
+// === List Utility Tests ===
+
+func TestListDistinct(t T) T {
+    var list = ListOf[int](1, 2, 2, 3, 3, 3)
+    var distinct = list.Distinct()
+    return Eq[int](t, distinct.Length(), 3)
+}
+
+func TestListAppendAll(t T) T {
+    var list1 = ListOf[int](1, 2)
+    var list2 = ListOf[int](3, 4)
+    var combined = list1.AppendAll(list2)
+    var t1 = Eq[int](t, combined.Length(), 4)
+    var t2 = Eq[int](t1, combined.Get(0), 1)
+    return Eq[int](t2, combined.Get(3), 4)
+}
+
+func TestListPrependAll(t T) T {
+    var list1 = ListOf[int](3, 4)
+    var list2 = ListOf[int](1, 2)
+    var combined = list1.PrependAll(list2)
+    var t1 = Eq[int](t, combined.Length(), 4)
+    return Eq[int](t1, combined.Head(), 1)
+}
+
+func TestListString(t T) T {
+    var list = ListOf[int](1, 2, 3)
+    return Eq[string](t, list.String(), "List(1, 2, 3)")
+}
+
+func TestEmptyListString(t T) T {
+    var list = EmptyList[int]()
+    return Eq[string](t, list.String(), "List()")
+}
+
+func lessThanThree(x int) bool {
+    return x < 3
+}
+
+func TestListTakeWhile(t T) T {
+    var list = ListOf[int](1, 2, 3, 4, 5)
+    var taken = list.TakeWhile(lessThanThree)
+    var t1 = Eq[int](t, taken.Length(), 2)
+    return Eq[int](t1, taken.Last(), 2)
+}
+
+func TestListDropWhile(t T) T {
+    var list = ListOf[int](1, 2, 3, 4, 5)
+    var dropped = list.DropWhile(lessThanThree)
+    var t1 = Eq[int](t, dropped.Length(), 3)
+    return Eq[int](t1, dropped.Head(), 3)
+}

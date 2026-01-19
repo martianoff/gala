@@ -1,5 +1,5 @@
-// gala_test_gen generates a main.gala file that runs all Test* functions found in the input files.
-// This enables Go-style test conventions where test functions start with "Test" and take a *T parameter.
+// gala_test_gen generates a main.go file that runs all Test* functions found in the input files.
+// This enables Go-style test conventions where test functions start with "Test" and take a T parameter.
 package main
 
 import (
@@ -23,7 +23,7 @@ func main() {
 		pkgName    string
 	)
 
-	flag.StringVar(&outputPath, "output", "", "Path to the output main.gala file")
+	flag.StringVar(&outputPath, "output", "", "Path to the output main.go file")
 	flag.StringVar(&pkgName, "package", "main", "Package name for the generated file")
 	flag.Parse()
 
@@ -46,7 +46,7 @@ func main() {
 		}
 	}
 
-	// Generate the main.gala file
+	// Generate the main.go file (Go code, not GALA)
 	code := generateMainFile(pkgName, testFuncs)
 
 	if outputPath != "" {
@@ -88,12 +88,15 @@ func generateMainFile(pkgName string, testFuncs map[string][]string) string {
 	var sb strings.Builder
 
 	sb.WriteString(fmt.Sprintf("package %s\n\n", pkgName))
-	// Only import the test framework if not in the test package itself (to avoid circular import)
+
+	// Always import std for NewImmutable
+	sb.WriteString("import \"martianoff/gala/std\"\n")
+
+	// Import test framework if not in package test (to avoid circular import)
 	if pkgName != "test" {
-		sb.WriteString("import (\n")
-		sb.WriteString("    . \"martianoff/gala/test\"\n")
-		sb.WriteString(")\n\n")
+		sb.WriteString("import . \"martianoff/gala/test\"\n")
 	}
+	sb.WriteString("\n")
 
 	// Collect all functions sorted for deterministic output
 	var allFuncs []string
@@ -103,16 +106,17 @@ func generateMainFile(pkgName string, testFuncs map[string][]string) string {
 	sort.Strings(allFuncs)
 
 	sb.WriteString("func main() {\n")
-	sb.WriteString("    RunTests(\n")
+	sb.WriteString("\tRunTests(")
 
 	for i, funcName := range allFuncs {
 		if i > 0 {
-			sb.WriteString(",\n")
+			sb.WriteString(", ")
 		}
-		sb.WriteString(fmt.Sprintf("        TestFunc(Name = \"%s\", F = %s)", funcName, funcName))
+		// Generate Go struct literal syntax
+		sb.WriteString(fmt.Sprintf("TestFunc{Name: std.NewImmutable(\"%s\"), F: std.NewImmutable(%s)}", funcName, funcName))
 	}
 
-	sb.WriteString("\n    )\n")
+	sb.WriteString(")\n")
 	sb.WriteString("}\n")
 
 	return sb.String()
