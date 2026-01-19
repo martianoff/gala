@@ -11,7 +11,10 @@ exports_files([
 # Filegroup for all GALA source files in std - used by tests
 filegroup(
     name = "gala_sources",
-    srcs = glob(["*.gala"], exclude = ["*_test.gala"]),
+    srcs = glob(
+        ["*.gala"],
+        exclude = ["*_test.gala"],
+    ),
     visibility = ["//visibility:public"],
 )
 

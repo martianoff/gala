@@ -1,5 +1,5 @@
-load("//:gala.bzl", "gala_binary", "gala_go_test", "gala_library", "gala_transpile")
 load("@rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("//:gala.bzl", "gala_binary", "gala_go_test", "gala_library", "gala_transpile")
 
 exports_files([
     "list.gala",
@@ -9,7 +9,10 @@ exports_files([
 # Filegroup for all GALA source files in collection_immutable
 filegroup(
     name = "gala_sources",
-    srcs = glob(["*.gala"], exclude = ["*_test.gala"]),
+    srcs = glob(
+        ["*.gala"],
+        exclude = ["*_test.gala"],
+    ),
     visibility = ["//visibility:public"],
 )
 
@@ -65,3 +68,6 @@ go_binary(
     name = "perf_go",
     srcs = ["go_native_perf_test.go"],
 )
+
+# Note: go_native_perf_test.go is a standalone benchmark file (package main)
+# Run with: go run go_native_perf_test.go

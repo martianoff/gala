@@ -215,3 +215,9 @@ gala_test(
     src = "generic_method_cycle.gala",
     expected = "generic_method_cycle.out",
 )
+
+gala_test(
+    name = "tuple_syntax",
+    src = "tuple_syntax.gala",
+    expected = "tuple_syntax.out",
+)

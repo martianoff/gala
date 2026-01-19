@@ -20,12 +20,12 @@ gazelle(
 filegroup(
     name = "all_gala_sources",
     srcs = [
+        "//collection_immutable:array.gala",
+        "//collection_immutable:list.gala",
         "//std:either.gala",
         "//std:immutable.gala",
         "//std:option.gala",
         "//std:tuple.gala",
-        "//collection_immutable:list.gala",
-        "//collection_immutable:array.gala",
     ],
     visibility = ["//visibility:public"],
 )

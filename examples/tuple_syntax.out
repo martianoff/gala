@@ -1,0 +1,6 @@
+Pair: (1, hello)
+Triple: (42, world, true)
+Quad: (1, 2, 3, 4)
+Explicit: (10, explicit)
+Implicit: (10, implicit)
+Quint: (1, 2, 3, 4, 5)

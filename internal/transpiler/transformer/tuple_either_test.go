@@ -118,3 +118,102 @@ func main() {
 		})
 	}
 }
+
+func TestTupleSyntax(t *testing.T) {
+	p := transpiler.NewAntlrGalaParser()
+	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
+	tr := transformer.NewGalaASTTransformer()
+	g := generator.NewGoCodeGenerator()
+	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+
+	tests := []struct {
+		name     string
+		input    string
+		expected []string
+	}{
+		{
+			name: "Tuple literal syntax pair",
+			input: `package main
+
+func main() {
+    val pair = (1, "hello")
+}`,
+			expected: []string{
+				"std.Tuple[int, string]",
+				"V1: std.NewImmutable(1)",
+				"V2: std.NewImmutable(\"hello\")",
+			},
+		},
+		{
+			name: "Tuple literal syntax triple",
+			input: `package main
+
+func main() {
+    val triple = (42, "world", true)
+}`,
+			expected: []string{
+				"std.Tuple3[int, string, bool]",
+				"V1: std.NewImmutable(42)",
+				"V2: std.NewImmutable(\"world\")",
+				"V3: std.NewImmutable(true)",
+			},
+		},
+		{
+			name: "Tuple literal syntax quad",
+			input: `package main
+
+func main() {
+    val quad = (1, 2, 3, 4)
+}`,
+			expected: []string{
+				"std.Tuple4[int, int, int, int]",
+				"V1: std.NewImmutable(1)",
+				"V2: std.NewImmutable(2)",
+				"V3: std.NewImmutable(3)",
+				"V4: std.NewImmutable(4)",
+			},
+		},
+		{
+			name: "Tuple3 pattern matching",
+			input: `package main
+
+func main() {
+    val t = (42, "hello", true)
+    val res = t match {
+        case Tuple3(a, b, c) => a
+        case _ => 0
+    }
+}`,
+			expected: []string{
+				"std.Tuple3[int, string, bool]",
+				"std.UnapplyTuple3(t)",
+			},
+		},
+		{
+			name: "Tuple pattern matching with pair",
+			input: `package main
+
+func main() {
+    val pair = (1, "world")
+    val res = pair match {
+        case Tuple(x, y) => x
+        case _ => 0
+    }
+}`,
+			expected: []string{
+				"std.Tuple[int, string]",
+				"std.UnapplyTuple(pair)",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := trans.Transpile(tt.input, "")
+			assert.NoError(t, err)
+			for _, exp := range tt.expected {
+				assert.True(t, strings.Contains(got, exp), "Output missing %q\nGot:\n%s", exp, got)
+			}
+		})
+	}
+}

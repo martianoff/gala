@@ -5,3 +5,87 @@ type Tuple[A any, B any] struct {
     V1 A
     V2 B
 }
+
+// Tuple3 represents a triple of values.
+type Tuple3[A any, B any, C any] struct {
+    V1 A
+    V2 B
+    V3 C
+}
+
+// Tuple4 represents a quadruple of values.
+type Tuple4[A any, B any, C any, D any] struct {
+    V1 A
+    V2 B
+    V3 C
+    V4 D
+}
+
+// Tuple5 represents a quintuple of values.
+type Tuple5[A any, B any, C any, D any, E any] struct {
+    V1 A
+    V2 B
+    V3 C
+    V4 D
+    V5 E
+}
+
+// Tuple6 represents a sextuple of values.
+type Tuple6[A any, B any, C any, D any, E any, F any] struct {
+    V1 A
+    V2 B
+    V3 C
+    V4 D
+    V5 E
+    V6 F
+}
+
+// Tuple7 represents a septuple of values.
+type Tuple7[A any, B any, C any, D any, E any, F any, G any] struct {
+    V1 A
+    V2 B
+    V3 C
+    V4 D
+    V5 E
+    V6 F
+    V7 G
+}
+
+// Tuple8 represents an octuple of values.
+type Tuple8[A any, B any, C any, D any, E any, F any, G any, H any] struct {
+    V1 A
+    V2 B
+    V3 C
+    V4 D
+    V5 E
+    V6 F
+    V7 G
+    V8 H
+}
+
+// Tuple9 represents a nonuple of values.
+type Tuple9[A any, B any, C any, D any, E any, F any, G any, H any, I any] struct {
+    V1 A
+    V2 B
+    V3 C
+    V4 D
+    V5 E
+    V6 F
+    V7 G
+    V8 H
+    V9 I
+}
+
+// Tuple10 represents a decuple of values.
+type Tuple10[A any, B any, C any, D any, E any, F any, G any, H any, I any, J any] struct {
+    V1 A
+    V2 B
+    V3 C
+    V4 D
+    V5 E
+    V6 F
+    V7 G
+    V8 H
+    V9 I
+    V10 J
+}

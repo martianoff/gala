@@ -528,7 +528,8 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 			// Check if this is a direct struct match (pattern type equals container type)
 			// This handles cases like Tuple(a, b) matching against Tuple[A, B]
 			if t.isDirectStructMatch(rawName, matchedType) {
-				unapplyFun = t.stdIdent("UnapplyTuple")
+				// Select the appropriate UnapplyTupleN function based on the tuple type
+				unapplyFun = t.getUnapplyTupleFunc(rawName, matchedType)
 			} else {
 				patternExpr = &ast.CompositeLit{Type: t.ident(rawName)}
 			}
@@ -899,7 +900,69 @@ func (t *galaASTTransformer) isDirectStructMatch(patternTypeName string, matched
 		normalizedContainer = normalizedContainer[4:]
 	}
 
-	return normalizedPattern == normalizedContainer
+	// Check for exact match
+	if normalizedPattern == normalizedContainer {
+		return true
+	}
+
+	// Check for tuple pattern matching with parentheses syntax
+	// When using (a, b, c) pattern, the patternTypeName might not be set,
+	// but we want to match against TupleN types
+	if t.isTupleType(normalizedContainer) {
+		return true
+	}
+
+	return false
+}
+
+// isTupleType checks if a type name is a Tuple type (Tuple, Tuple3, ..., Tuple10)
+func (t *galaASTTransformer) isTupleType(typeName string) bool {
+	switch typeName {
+	case transpiler.TypeTuple, transpiler.TypeTuple3, transpiler.TypeTuple4,
+		transpiler.TypeTuple5, transpiler.TypeTuple6, transpiler.TypeTuple7,
+		transpiler.TypeTuple8, transpiler.TypeTuple9, transpiler.TypeTuple10:
+		return true
+	}
+	return false
+}
+
+// getUnapplyTupleFunc returns the appropriate UnapplyTupleN function based on the tuple type.
+func (t *galaASTTransformer) getUnapplyTupleFunc(patternTypeName string, matchedType transpiler.Type) ast.Expr {
+	// Get the tuple arity from the matched type
+	genType, ok := matchedType.(transpiler.GenericType)
+	if !ok {
+		return t.stdIdent("UnapplyTuple")
+	}
+
+	containerBaseName := genType.Base.BaseName()
+	// Normalize by removing package prefix
+	if len(containerBaseName) > 4 && containerBaseName[:4] == "std." {
+		containerBaseName = containerBaseName[4:]
+	}
+
+	// Select the appropriate unapply function based on the tuple type
+	switch containerBaseName {
+	case transpiler.TypeTuple:
+		return t.stdIdent("UnapplyTuple")
+	case transpiler.TypeTuple3:
+		return t.stdIdent("UnapplyTuple3")
+	case transpiler.TypeTuple4:
+		return t.stdIdent("UnapplyTuple4")
+	case transpiler.TypeTuple5:
+		return t.stdIdent("UnapplyTuple5")
+	case transpiler.TypeTuple6:
+		return t.stdIdent("UnapplyTuple6")
+	case transpiler.TypeTuple7:
+		return t.stdIdent("UnapplyTuple7")
+	case transpiler.TypeTuple8:
+		return t.stdIdent("UnapplyTuple8")
+	case transpiler.TypeTuple9:
+		return t.stdIdent("UnapplyTuple9")
+	case transpiler.TypeTuple10:
+		return t.stdIdent("UnapplyTuple10")
+	default:
+		return t.stdIdent("UnapplyTuple")
+	}
 }
 
 // getCompanionObjectMetadata looks up companion object metadata by name.

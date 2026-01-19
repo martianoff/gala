@@ -1,6 +1,7 @@
 package std
 
 import "reflect"
+import "strconv"
 import "strings"
 import "unsafe"
 
@@ -86,6 +87,64 @@ func UnapplyTuple(obj any) ([]any, bool) {
 		}
 	}
 	return nil, false
+}
+
+// unapplyTupleN is a helper function to unapply tuples of any arity.
+func unapplyTupleN(obj any, n int, typeName string) ([]any, bool) {
+	obj = unwrapImmutable(obj)
+	if obj == nil {
+		return nil, false
+	}
+	v := reflect.ValueOf(obj)
+	if v.Kind() != reflect.Struct {
+		return nil, false
+	}
+	typeStr := v.Type().String()
+	if !strings.Contains(v.Type().Name(), typeName) && !strings.Contains(typeStr, typeName) {
+		return nil, false
+	}
+	var result []any
+	for i := 1; i <= n; i++ {
+		fieldName := "V" + strconv.Itoa(i)
+		f := v.FieldByName(fieldName)
+		if !f.IsValid() {
+			return nil, false
+		}
+		result = append(result, unwrapImmutable(f.Interface()))
+	}
+	return result, true
+}
+
+func UnapplyTuple3(obj any) ([]any, bool) {
+	return unapplyTupleN(obj, 3, "Tuple3")
+}
+
+func UnapplyTuple4(obj any) ([]any, bool) {
+	return unapplyTupleN(obj, 4, "Tuple4")
+}
+
+func UnapplyTuple5(obj any) ([]any, bool) {
+	return unapplyTupleN(obj, 5, "Tuple5")
+}
+
+func UnapplyTuple6(obj any) ([]any, bool) {
+	return unapplyTupleN(obj, 6, "Tuple6")
+}
+
+func UnapplyTuple7(obj any) ([]any, bool) {
+	return unapplyTupleN(obj, 7, "Tuple7")
+}
+
+func UnapplyTuple8(obj any) ([]any, bool) {
+	return unapplyTupleN(obj, 8, "Tuple8")
+}
+
+func UnapplyTuple9(obj any) ([]any, bool) {
+	return unapplyTupleN(obj, 9, "Tuple9")
+}
+
+func UnapplyTuple10(obj any) ([]any, bool) {
+	return unapplyTupleN(obj, 10, "Tuple10")
 }
 
 func GetSafe(res []any, i int) any {

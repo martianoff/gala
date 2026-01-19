@@ -815,7 +815,8 @@ func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.
 			if len(exprs) == 1 {
 				return &ast.ParenExpr{X: exprs[0]}, nil
 			}
-			return nil, galaerr.NewSemanticError("multiple expressions in parentheses not supported")
+			// Multiple expressions in parentheses -> tuple literal syntax
+			return t.transformTupleLiteral(exprs)
 		}
 	}
 	return nil, nil
@@ -979,4 +980,81 @@ func (t *galaASTTransformer) unwrapImmutable(expr ast.Expr) ast.Expr {
 		}
 	}
 	return expr
+}
+
+// transformTupleLiteral transforms (a, b) to std.Tuple{V1: NewImmutable(a), V2: NewImmutable(b)},
+// (a, b, c) to std.Tuple3{V1: NewImmutable(a), V2: NewImmutable(b), V3: NewImmutable(c)}, etc.
+func (t *galaASTTransformer) transformTupleLiteral(exprs []ast.Expr) (ast.Expr, error) {
+	n := len(exprs)
+	if n < 2 || n > 10 {
+		return nil, galaerr.NewSemanticError(fmt.Sprintf("tuple literals must have 2-10 elements, got %d", n))
+	}
+
+	// Determine tuple type name based on arity
+	var typeName string
+	switch n {
+	case 2:
+		typeName = transpiler.TypeTuple
+	case 3:
+		typeName = transpiler.TypeTuple3
+	case 4:
+		typeName = transpiler.TypeTuple4
+	case 5:
+		typeName = transpiler.TypeTuple5
+	case 6:
+		typeName = transpiler.TypeTuple6
+	case 7:
+		typeName = transpiler.TypeTuple7
+	case 8:
+		typeName = transpiler.TypeTuple8
+	case 9:
+		typeName = transpiler.TypeTuple9
+	case 10:
+		typeName = transpiler.TypeTuple10
+	}
+
+	// Infer type parameters from expression types
+	var typeParams []ast.Expr
+	for _, expr := range exprs {
+		exprType := t.getExprTypeName(expr)
+		if exprType.IsNil() || exprType.String() == "any" {
+			typeParams = append(typeParams, ast.NewIdent("any"))
+		} else {
+			typeParams = append(typeParams, t.typeToExpr(exprType))
+		}
+	}
+
+	// Build the type expression: std.TupleN[T1, T2, ...]
+	var typeExpr ast.Expr = t.stdIdent(typeName)
+	if len(typeParams) == 1 {
+		typeExpr = &ast.IndexExpr{X: typeExpr, Index: typeParams[0]}
+	} else if len(typeParams) > 1 {
+		typeExpr = &ast.IndexListExpr{X: typeExpr, Indices: typeParams}
+	}
+
+	// Build the composite literal: std.TupleN[...]{V1: NewImmutable(a), V2: NewImmutable(b), ...}
+	// Tuple fields are Immutable, so we need to wrap each value
+	var elts []ast.Expr
+	for i, expr := range exprs {
+		fieldName := fmt.Sprintf("V%d", i+1)
+		// Wrap value in NewImmutable unless it's already immutable
+		wrappedExpr := expr
+		exprType := t.getExprTypeName(expr)
+		if !t.isImmutableType(exprType) {
+			wrappedExpr = &ast.CallExpr{
+				Fun:  t.stdIdent(transpiler.FuncNewImmutable),
+				Args: []ast.Expr{expr},
+			}
+		}
+		elts = append(elts, &ast.KeyValueExpr{
+			Key:   ast.NewIdent(fieldName),
+			Value: wrappedExpr,
+		})
+	}
+
+	t.needsStdImport = true
+	return &ast.CompositeLit{
+		Type: typeExpr,
+		Elts: elts,
+	}, nil
 }

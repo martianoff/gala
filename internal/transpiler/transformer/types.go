@@ -645,9 +645,10 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 						Params: typeArgs,
 					}
 				}
-				if sel.Sel.Name == transpiler.TypeTuple || strings.HasPrefix(sel.Sel.Name, transpiler.TypeTuple+"_") {
+				if t.isTupleTypeName(sel.Sel.Name) || t.hasTupleTypePrefix(sel.Sel.Name) {
+					tupleType := t.getTupleTypeFromName(sel.Sel.Name)
 					return transpiler.GenericType{
-						Base:   transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeTuple},
+						Base:   transpiler.NamedType{Package: transpiler.StdPackage, Name: tupleType},
 						Params: typeArgs,
 					}
 				}
@@ -717,8 +718,9 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 				}
 				return baseType
 			}
-			if sel.Sel.Name == transpiler.TypeTuple {
-				baseType := transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeTuple}
+			if t.isTupleTypeName(sel.Sel.Name) {
+				tupleType := t.getTupleTypeFromName(sel.Sel.Name)
+				baseType := transpiler.NamedType{Package: transpiler.StdPackage, Name: tupleType}
 				if len(typeArgs) > 0 {
 					return transpiler.GenericType{Base: baseType, Params: typeArgs}
 				}
@@ -753,8 +755,9 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 				}
 				return transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeOption}
 			}
-			if strings.HasPrefix(sel.Sel.Name, transpiler.TypeTuple+"_") {
-				baseType := transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeTuple}
+			if t.hasTupleTypePrefix(sel.Sel.Name) {
+				tupleType := t.getTupleTypeFromName(sel.Sel.Name)
+				baseType := transpiler.NamedType{Package: transpiler.StdPackage, Name: tupleType}
 				if len(typeArgs) > 0 {
 					return transpiler.GenericType{Base: baseType, Params: typeArgs}
 				}
@@ -784,8 +787,9 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 				}
 				return baseType
 			}
-			if id.Name == transpiler.TypeTuple {
-				baseType := transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeTuple}
+			if t.isTupleTypeName(id.Name) {
+				tupleType := t.getTupleTypeFromName(id.Name)
+				baseType := transpiler.NamedType{Package: transpiler.StdPackage, Name: tupleType}
 				if len(typeArgs) > 0 {
 					return transpiler.GenericType{Base: baseType, Params: typeArgs}
 				}
@@ -805,8 +809,9 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 				}
 				return baseType
 			}
-			if strings.HasPrefix(id.Name, transpiler.TypeTuple+"_") {
-				baseType := transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeTuple}
+			if t.hasTupleTypePrefix(id.Name) {
+				tupleType := t.getTupleTypeFromName(id.Name)
+				baseType := transpiler.NamedType{Package: transpiler.StdPackage, Name: tupleType}
 				if len(typeArgs) > 0 {
 					return transpiler.GenericType{Base: baseType, Params: typeArgs}
 				}
@@ -931,4 +936,46 @@ func (t *galaASTTransformer) substituteInType(typ transpiler.Type, paramMap map[
 	default:
 		return typ
 	}
+}
+
+// isTupleTypeName checks if a name is exactly a TupleN type name
+func (t *galaASTTransformer) isTupleTypeName(name string) bool {
+	switch name {
+	case transpiler.TypeTuple, transpiler.TypeTuple3, transpiler.TypeTuple4,
+		transpiler.TypeTuple5, transpiler.TypeTuple6, transpiler.TypeTuple7,
+		transpiler.TypeTuple8, transpiler.TypeTuple9, transpiler.TypeTuple10:
+		return true
+	}
+	return false
+}
+
+// hasTupleTypePrefix checks if a name has a TupleN_ prefix
+func (t *galaASTTransformer) hasTupleTypePrefix(name string) bool {
+	tupleTypes := []string{
+		transpiler.TypeTuple10, transpiler.TypeTuple9, transpiler.TypeTuple8,
+		transpiler.TypeTuple7, transpiler.TypeTuple6, transpiler.TypeTuple5,
+		transpiler.TypeTuple4, transpiler.TypeTuple3, transpiler.TypeTuple,
+	}
+	for _, tt := range tupleTypes {
+		if strings.HasPrefix(name, tt+"_") {
+			return true
+		}
+	}
+	return false
+}
+
+// getTupleTypeFromName extracts the TupleN type name from a name that starts with a tuple type
+func (t *galaASTTransformer) getTupleTypeFromName(name string) string {
+	// Check in order of longest to shortest to handle Tuple10 before Tuple
+	tupleTypes := []string{
+		transpiler.TypeTuple10, transpiler.TypeTuple9, transpiler.TypeTuple8,
+		transpiler.TypeTuple7, transpiler.TypeTuple6, transpiler.TypeTuple5,
+		transpiler.TypeTuple4, transpiler.TypeTuple3, transpiler.TypeTuple,
+	}
+	for _, tt := range tupleTypes {
+		if name == tt || strings.HasPrefix(name, tt+"_") {
+			return tt
+		}
+	}
+	return transpiler.TypeTuple
 }
