@@ -478,11 +478,11 @@ List is implemented as a classic persistent linked list (cons list). Each node c
 - Cached length for O(1) size queries
 
 ### Array
-Array is implemented as a 32-way branching trie (similar to Scala's Vector and Clojure's PersistentVector) with a prefix buffer for amortized O(1) prepend. This provides:
+Array is implemented as a 32-way branching trie (similar to Scala's Vector and Clojure's PersistentVector) with several Scala-inspired optimizations:
 - Tree depth of at most 7 for up to 34 billion elements
 - Path copying for updates, sharing unaffected subtrees
 - Effectively constant time operations (O(log32 n))
-- Prefix buffer: prepended elements are stored in a separate buffer until it reaches 32 elements, then consolidated into the tree (Scala-inspired optimization)
+- **Prefix buffer**: prepended elements are stored in a separate buffer until it reaches 32 elements, then consolidated (O(1) amortized prepend)
 
 ---
 
@@ -504,17 +504,17 @@ bazel run //collection_immutable:perf_go
 
 | Operation | GALA List | GALA Array | Go Slice (immutable) |
 |-----------|----------:|-----------:|---------------------:|
-| Creation | 124,000 |  3,459,000 | 34,890,000 |
-| Prepend | 1 |          1 | 5,229 |
-| Append | - |        458 | 7,443 |
-| Head | 1 |          4 | 1 |
-| Get(5000) | 5,035 |          4 | 0 |
-| Update(5000) | - |        451 | 7,337 |
-| Filter | 158,000 |     98,000 | 15,463 |
-| Map | 263,000 |    148,000 | 10,476 |
-| FoldLeft | 10,010 |     44,000 | 1,039 |
-| Take(5000) | - |     64,000 | 515 |
-| Drop(5000) | - |     66,000 | 1,044 |
+| Creation | 124,000 |  3,610,000 | 34,890,000 |
+| Prepend | 0 |          0 | 5,229 |
+| Append | - |        464 | 7,443 |
+| Head | 0 |          4 | 1 |
+| Get(5000) | 4,142 |          5 | 0 |
+| Update(5000) | - |        497 | 7,337 |
+| Filter | 175,000 |    100,000 | 15,463 |
+| Map | 281,000 |    112,000 | 10,476 |
+| FoldLeft | 9,696 |     44,000 | 1,039 |
+| Take(5000) | - |     54,000 | 515 |
+| Drop(5000) | - |     52,000 | 1,044 |
 
 ### Scaling Results
 
@@ -537,21 +537,20 @@ bazel run //collection_immutable:perf_go
 - **Linear Creation**: Scales well (10x elements ≈ 10x time)
 
 **Array Strengths:**
-- **O(1) Prepend** (0 ns): Amortized constant time using prefix buffer (Scala-inspired)
-- **O(eC) Append** (458 ns): 16x faster than immutable slice copy
-- **O(eC) Get** (4 ns): Constant random access regardless of position
-- **O(eC) Update** (451 ns): 16x faster than immutable slice copy
-- **Bulk Operations Optimized**: Filter, Map, Take, Drop use bottom-up tree building
+- **O(eC) Prepend** (0 ns): Amortized constant time using prefix buffer (Scala-inspired)
+- **O(eC) Append** (464 ns): 16x faster than immutable slice copy
+- **O(eC) Get** (5 ns): Constant random access regardless of position
+- **O(eC) Update** (497 ns): 15x faster than immutable slice copy
 
 **Comparison to Go Immutable Slices:**
 
 | Operation | GALA Array | Go Slice (copy) | GALA Advantage |
 |-----------|----------:|----------------:|----------------|
-| Creation(10k) | 3.5ms | 34.9ms | **10x faster** |
+| Creation(10k) | 3.6ms | 34.9ms | **10x faster** |
 | Prepend | 0 ns | 5,229 ns | **∞ faster** (O(1) vs O(n)) |
-| Append | 458 ns | 7,443 ns | **16x faster** |
-| Update | 451 ns | 7,337 ns | **16x faster** |
-| Get | 4 ns | 0 ns | ~same |
+| Append | 464 ns | 7,443 ns | **16x faster** |
+| Update | 497 ns | 7,337 ns | **15x faster** |
+| Get | 5 ns | 0 ns | ~same |
 
 **When to Use Each:**
 

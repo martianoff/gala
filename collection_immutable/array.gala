@@ -105,6 +105,124 @@ func ArrayFromSlice[T any](elements []T) Array[T] {
     return Array[T](root = currentLevel[0], length = n, depth = depth, prefix = emptyPrefix)
 }
 
+// arrayBuilder builds an Array incrementally without intermediate slice conversion.
+// Uses Scala-inspired display arrays for O(1) amortized append.
+type arrayBuilder[T any] struct {
+    var display0 []T                 // Current leaf being built (up to 32 elements)
+    var display1 []*arrayNode[T]     // Completed leaf nodes
+    var display2 [][]*arrayNode[T]   // Groups of 32 leaf nodes
+    var length   int                 // Total elements added
+}
+
+// newArrayBuilder creates a new arrayBuilder.
+func newArrayBuilder[T any]() *arrayBuilder[T] {
+    var d0 []T
+    var d1 []*arrayNode[T]
+    var d2 [][]*arrayNode[T]
+    return &arrayBuilder[T](display0 = d0, display1 = d1, display2 = d2, length = 0)
+}
+
+// Add appends an element to the builder. O(1) amortized.
+func (b *arrayBuilder[T]) Add(elem T) {
+    b.display0 = append(b.display0, elem)
+    b.length++
+
+    // If display0 is full, flush to display1
+    if len(b.display0) >= branchingFactor {
+        b.flushDisplay0()
+    }
+}
+
+// flushDisplay0 creates a leaf node from display0 and adds to display1.
+func (b *arrayBuilder[T]) flushDisplay0() {
+    if len(b.display0) == 0 {
+        return
+    }
+    var leaf = &arrayNode[T](values = b.display0, isLeaf = true)
+    b.display1 = append(b.display1, leaf)
+    var newD0 []T
+    b.display0 = newD0
+
+    // If display1 is full, flush to display2
+    if len(b.display1) >= branchingFactor {
+        b.flushDisplay1()
+    }
+}
+
+// flushDisplay1 groups display1 nodes and adds to display2.
+func (b *arrayBuilder[T]) flushDisplay1() {
+    if len(b.display1) == 0 {
+        return
+    }
+    b.display2 = append(b.display2, b.display1)
+    var newD1 []*arrayNode[T]
+    b.display1 = newD1
+}
+
+// Result builds and returns the final Array.
+func (b *arrayBuilder[T]) Result() Array[T] {
+    if b.length == 0 {
+        return EmptyArray[T]()
+    }
+
+    // Flush any remaining elements in display0
+    if len(b.display0) > 0 {
+        var leaf = &arrayNode[T](values = b.display0, isLeaf = true)
+        b.display1 = append(b.display1, leaf)
+    }
+
+    // If we only have display1 (no display2), build directly
+    if len(b.display2) == 0 {
+        if len(b.display1) == 1 {
+            // Single leaf node
+            var emptyPrefix []T
+            return Array[T](root = b.display1[0], length = b.length, depth = 1, prefix = emptyPrefix)
+        }
+        // Multiple leaves, need internal node
+        var root = &arrayNode[T](children = b.display1, isLeaf = false)
+        var emptyPrefix []T
+        return Array[T](root = root, length = b.length, depth = 2, prefix = emptyPrefix)
+    }
+
+    // We have display2 - need to build deeper tree
+    // First, add remaining display1 to display2
+    if len(b.display1) > 0 {
+        b.display2 = append(b.display2, b.display1)
+    }
+
+    // Build internal nodes from display2 groups
+    var level2Nodes []*arrayNode[T]
+    for i := 0; i < len(b.display2); i++ {
+        var node = &arrayNode[T](children = b.display2[i], isLeaf = false)
+        level2Nodes = append(level2Nodes, node)
+    }
+
+    // Continue building up the tree
+    var currentLevel = level2Nodes
+    var depth = 3
+
+    for len(currentLevel) > 1 {
+        var nextLevel []*arrayNode[T]
+        for i := 0; i < len(currentLevel); i += branchingFactor {
+            var end = i + branchingFactor
+            if end > len(currentLevel) {
+                end = len(currentLevel)
+            }
+            var children []*arrayNode[T]
+            for j := i; j < end; j++ {
+                children = append(children, currentLevel[j])
+            }
+            var node = &arrayNode[T](children = children, isLeaf = false)
+            nextLevel = append(nextLevel, node)
+        }
+        currentLevel = nextLevel
+        depth++
+    }
+
+    var emptyPrefix []T
+    return Array[T](root = currentLevel[0], length = b.length, depth = depth, prefix = emptyPrefix)
+}
+
 // IsEmpty returns true if the array is empty.
 func (a Array[T]) IsEmpty() bool = a.length == 0
 
@@ -384,22 +502,22 @@ func (a Array[T]) Prepend(value T) Array[T] {
 }
 
 // consolidateWithPrefix merges the prefix buffer into a new tree.
+// Uses arrayBuilder to avoid intermediate slice conversion.
 func (a Array[T]) consolidateWithPrefix(newPrefix []T) Array[T] {
-    // Build full slice: prefix + tree elements
-    var slice []T
+    var builder = newArrayBuilder[T]()
 
     // Add prefix elements (already in forward order)
     for i := 0; i < len(newPrefix); i++ {
-        slice = append(slice, newPrefix[i])
+        builder.Add(newPrefix[i])
     }
 
     // Add tree elements
     var treeLen = a.length - len(a.prefix)
     for i := 0; i < treeLen; i++ {
-        slice = append(slice, getFromNode[T](a.root, i, a.depth))
+        builder.Add(getFromNode[T](a.root, i, a.depth))
     }
 
-    return ArrayFromSlice[T](slice)
+    return builder.Result()
 }
 
 // PrependAll prepends all elements from another array.
@@ -429,7 +547,7 @@ func (a Array[T]) Init() Array[T] {
     return a.Take(a.length - 1)
 }
 
-// Take returns the first n elements. Uses bulk building.
+// Take returns the first n elements. Uses arrayBuilder.
 func (a Array[T]) Take(n int) Array[T] {
     if n <= 0 {
         return EmptyArray[T]()
@@ -437,14 +555,14 @@ func (a Array[T]) Take(n int) Array[T] {
     if n >= a.length {
         return a
     }
-    var slice []T
+    var builder = newArrayBuilder[T]()
     for i := 0; i < n; i++ {
-        slice = append(slice, a.Get(i))
+        builder.Add(a.Get(i))
     }
-    return ArrayFromSlice[T](slice)
+    return builder.Result()
 }
 
-// Drop returns all elements except the first n. Uses bulk building.
+// Drop returns all elements except the first n. Uses arrayBuilder.
 func (a Array[T]) Drop(n int) Array[T] {
     if n <= 0 {
         return a
@@ -452,24 +570,25 @@ func (a Array[T]) Drop(n int) Array[T] {
     if n >= a.length {
         return EmptyArray[T]()
     }
-    var slice []T
+    var builder = newArrayBuilder[T]()
     for i := n; i < a.length; i++ {
-        slice = append(slice, a.Get(i))
+        builder.Add(a.Get(i))
     }
-    return ArrayFromSlice[T](slice)
+    return builder.Result()
 }
 
 // TakeWhile returns the longest prefix of elements that satisfy the predicate.
+// Uses arrayBuilder.
 func (a Array[T]) TakeWhile(p func(T) bool) Array[T] {
-    var slice []T
+    var builder = newArrayBuilder[T]()
     for i := 0; i < a.length; i++ {
         var elem = a.Get(i)
         if !p(elem) {
-            return ArrayFromSlice[T](slice)
+            return builder.Result()
         }
-        slice = append(slice, elem)
+        builder.Add(elem)
     }
-    return ArrayFromSlice[T](slice)
+    return builder.Result()
 }
 
 // DropWhile drops the longest prefix of elements that satisfy the predicate.
@@ -525,73 +644,77 @@ func (a Array[T]) LastIndexOf(elem T) int {
     return -1
 }
 
-// Reverse returns a new array with elements in reverse order. Uses bulk building.
+// Reverse returns a new array with elements in reverse order. Uses arrayBuilder.
 func (a Array[T]) Reverse() Array[T] {
-    var slice []T
+    var builder = newArrayBuilder[T]()
     for i := a.length - 1; i >= 0; i-- {
-        slice = append(slice, a.Get(i))
+        builder.Add(a.Get(i))
     }
-    return ArrayFromSlice[T](slice)
+    return builder.Result()
 }
 
-// Map applies a function to each element and returns a new array. Uses bulk building.
+// Map applies a function to each element and returns a new array.
+// Uses arrayBuilder to avoid intermediate slice conversion.
 func (a Array[T]) Map[U any](f func(T) U) Array[U] {
-    var slice []U
+    var builder = newArrayBuilder[U]()
     for i := 0; i < a.length; i++ {
-        slice = append(slice, f(a.Get(i)))
+        builder.Add(f(a.Get(i)))
     }
-    return ArrayFromSlice[U](slice)
+    return builder.Result()
 }
 
 // FlatMap applies a function that returns an array to each element and flattens.
+// Uses arrayBuilder to avoid intermediate slice conversion.
 func (a Array[T]) FlatMap[U any](f func(T) Array[U]) Array[U] {
-    var slice []U
+    var builder = newArrayBuilder[U]()
     for i := 0; i < a.length; i++ {
         var inner = f(a.Get(i))
         for j := 0; j < inner.Length(); j++ {
-            slice = append(slice, inner.Get(j))
+            builder.Add(inner.Get(j))
         }
     }
-    return ArrayFromSlice[U](slice)
+    return builder.Result()
 }
 
 // Collect applies a partial function to each element and collects the results.
 // Elements for which the function returns None are filtered out.
+// Uses arrayBuilder to avoid intermediate slice conversion.
 func (a Array[T]) Collect[U any](pf func(T) Option[U]) Array[U] {
-    var slice []U
+    var builder = newArrayBuilder[U]()
     for i := 0; i < a.length; i++ {
         val opt = pf(a.Get(i))
         if opt.IsDefined() {
-            slice = append(slice, opt.Get())
+            builder.Add(opt.Get())
         }
     }
-    return ArrayFromSlice[U](slice)
+    return builder.Result()
 }
 
 // Concat returns a new array containing all elements of this array followed by
-// all elements of the other iterable. Uses bulk building.
+// all elements of the other iterable. Uses arrayBuilder.
 func (a Array[T]) Concat(other Iterable[T]) Array[T] {
-    var slice []T
+    var builder = newArrayBuilder[T]()
     for i := 0; i < a.length; i++ {
-        slice = append(slice, a.Get(i))
+        builder.Add(a.Get(i))
     }
     other.ForEach((elem T) => {
-        slice = append(slice, elem)
+        builder.Add(elem)
         return nil
     })
-    return ArrayFromSlice[T](slice)
+    return builder.Result()
 }
 
-// Filter returns a new array with only elements that satisfy the predicate. Uses bulk building.
+// Filter returns a new array with only elements that satisfy the predicate.
+// Uses arrayBuilder to avoid intermediate slice conversion.
 func (a Array[T]) Filter(p func(T) bool) Array[T] {
-    var slice []T
+    var builder = newArrayBuilder[T]()
     for i := 0; i < a.length; i++ {
         var elem = a.Get(i)
         if p(elem) {
-            slice = append(slice, elem)
+            builder.Add(elem)
         }
     }
-    return ArrayFromSlice[T](slice)
+    return builder.Result()
 }
 
 // FilterNot returns a new array with elements that do not satisfy the predicate.
