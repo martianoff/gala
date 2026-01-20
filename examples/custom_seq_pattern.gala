@@ -1,0 +1,62 @@
+package main
+
+import "fmt"
+
+// Custom sequence type - not predefined in the transpiler
+type IntStack struct {
+    var elements []int
+}
+
+func NewIntStack(elems ...int) IntStack {
+    return IntStack{elements: elems}
+}
+
+// Implement Seq interface
+func (s IntStack) Size() int = len(s.elements)
+
+func (s IntStack) Get(index int) int = s.elements[index]
+
+func (s IntStack) SeqDrop(n int) any {
+    if n >= len(s.elements) {
+        return IntStack{elements: []int{}}
+    }
+    var result []int
+    for i := n; i < len(s.elements); i++ {
+        result = append(result, s.elements[i])
+    }
+    return IntStack{elements: result}
+}
+
+func main() {
+    val stack = NewIntStack(10, 20, 30, 40)
+
+    // Test 1: Extract first two elements
+    val res1 = stack match {
+        case IntStack(first, second, _...) => fmt.Sprintf("First: %d, Second: %d", first, second)
+        case _ => "Not enough elements"
+    }
+    fmt.Println(res1)
+
+    // Test 2: Extract head and capture rest
+    val res2 = stack match {
+        case IntStack(head, tail...) => fmt.Sprintf("Head: %d, Tail size: %d", head, tail.Size())
+        case _ => "Empty"
+    }
+    fmt.Println(res2)
+
+    // Test 3: Empty stack
+    val emptyStack = NewIntStack()
+    val res3 = emptyStack match {
+        case IntStack(first, _...) => fmt.Sprintf("First: %d", first)
+        case _ => "Empty stack"
+    }
+    fmt.Println(res3)
+
+    // Test 4: Single element
+    val singleStack = NewIntStack(99)
+    val res4 = singleStack match {
+        case IntStack(only, rest...) => fmt.Sprintf("Only: %d, Rest size: %d", only, rest.Size())
+        case _ => "Empty"
+    }
+    fmt.Println(res4)
+}
