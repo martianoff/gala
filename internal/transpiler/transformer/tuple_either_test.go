@@ -52,9 +52,9 @@ func main() {
     }
 }`,
 			expected: []string{
-				"std.Left_Apply",
-				"std.UnapplyFull(e, std.Left{})",
-				"std.UnapplyFull(e, std.Right{})",
+				"std.Left[int, string]{}.Apply",
+				"std.Left[int, string]{}.Unapply(e)",
+				"std.Right[int, string]{}.Unapply(e)",
 			},
 		},
 		{
@@ -70,9 +70,9 @@ func main() {
     }
 }`,
 			expected: []string{
-				"std.Left_Apply",
-				"std.UnapplyFull(e, std.Left{})",
-				"std.UnapplyFull(e, std.Right{})",
+				"std.Left[int, string]{}.Apply",
+				"std.Left[int, string]{}.Unapply(e)",
+				"std.Right[int, string]{}.Unapply(e)",
 			},
 		},
 		{
@@ -103,7 +103,7 @@ func main() {
 }`,
 			expected: []string{
 				"std.Either[int, string]",
-				"std.UnapplyFull(e1, std.Left{})",
+				"std.Left[int, string]{}.Unapply(e1)",
 			},
 		},
 	}

@@ -22,7 +22,9 @@ func main() {
     var fv = f()
     fmt.Println("fv:", fv) // fv should be int 1
 
-    var m = x match {
+    // Wrap x in an Option to test Some pattern matching
+    var optX = Some(x)
+    var m = optX match {
         case Some(i) => i
         case _ => 0
     }

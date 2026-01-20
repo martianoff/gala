@@ -135,12 +135,17 @@ val res = x match {
 
 import "martianoff/gala/std"
 
-var x std.Immutable[std.Option[int]] = std.NewImmutable[std.Option[int]](std.Some_Apply(std.Some{}, 1))
+var x std.Immutable[std.Option[int]] = std.NewImmutable[std.Option[int]](std.Some[int]{}.Apply(1))
 var res = std.NewImmutable(func(x std.Option[int]) int {
 	{
-		_tmp_1, _tmp_2 := std.UnapplyFull(x, std.Some{})
-		y, _tmp_3 := std.As[int](std.GetSafe(_tmp_1, 0))
-		if _tmp_2 && _tmp_3 {
+		_tmp_1 := std.Some[int]{}.Unapply(x)
+		_tmp_2 := _tmp_1.IsDefined()
+		var _tmp_3 int
+		if _tmp_2 {
+			_tmp_3 = _tmp_1.Get()
+		}
+		y := _tmp_3
+		if _tmp_2 {
 			return y
 		} else {
 			return 0
@@ -162,11 +167,16 @@ val res = x match {
 
 import "martianoff/gala/std"
 
-var x std.Immutable[std.Option[any]] = std.NewImmutable[std.Option[any]](std.Some_Apply(std.Some{}, "test"))
+var x std.Immutable[std.Option[any]] = std.NewImmutable[std.Option[any]](std.Some[string]{}.Apply("test"))
 var res = std.NewImmutable(func(x std.Option[any]) string {
 	{
-		_tmp_1, _tmp_2 := std.UnapplyFull(x, std.Some{})
-		s, _tmp_4 := std.As[string](std.GetSafe(_tmp_1, 0))
+		_tmp_1 := std.Some[any]{}.Unapply(x)
+		_tmp_2 := _tmp_1.IsDefined()
+		var _tmp_3 any
+		if _tmp_2 {
+			_tmp_3 = _tmp_1.Get()
+		}
+		s, _tmp_4 := std.As[string](_tmp_3)
 		if _tmp_2 && _tmp_4 {
 			return s
 		} else {

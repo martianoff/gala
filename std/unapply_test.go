@@ -9,17 +9,17 @@ import (
 // Compile-time interface compliance checks for Unapply interface
 // These verify that option.gala and either.gala's Unapply methods implement the Unapply interface
 
-// Some implements Unapply[any, any] - extracts value from Option
-var _ Unapply[any, any] = Some{}
+// Some[T] implements Unapply[Option[T], T] - extracts value from Option
+var _ Unapply[Option[any], any] = Some[any]{}
 
-// None implements Unapply[any, bool] - returns true if value is None/nil
-var _ Unapply[any, bool] = None{}
+// None[T] implements Unapply[Option[T], bool] - returns true if value is None/nil
+var _ Unapply[Option[any], bool] = None[any]{}
 
-// Left implements Unapply[any, any] - extracts left value from Either
-var _ Unapply[any, any] = Left{}
+// Left[A, B] implements Unapply[Either[A, B], A] - extracts left value from Either
+var _ Unapply[Either[any, any], any] = Left[any, any]{}
 
-// Right implements Unapply[any, any] - extracts right value from Either
-var _ Unapply[any, any] = Right{}
+// Right[A, B] implements Unapply[Either[A, B], B] - extracts right value from Either
+var _ Unapply[Either[any, any], any] = Right[any, any]{}
 
 func TestUnapplyCheck(t *testing.T) {
 	// 1. Basic equality

@@ -34,8 +34,8 @@ val y Option[int] = None()`,
 
 import "martianoff/gala/std"
 
-var x = std.NewImmutable(std.Some_Apply(std.Some{}, 10))
-var y std.Immutable[std.Option[int]] = std.NewImmutable[std.Option[int]](std.None_Apply(std.None{}))
+var x = std.NewImmutable(std.Some[int]{}.Apply(10))
+var y std.Immutable[std.Option[int]] = std.NewImmutable[std.Option[int]](std.None[any]{}.Apply())
 `,
 		},
 		{
@@ -47,7 +47,7 @@ val x Option[int] = Some(10)`,
 
 import "martianoff/gala/std"
 
-var x std.Immutable[std.Option[int]] = std.NewImmutable[std.Option[int]](std.Some_Apply(std.Some{}, 10))
+var x std.Immutable[std.Option[int]] = std.NewImmutable[std.Option[int]](std.Some[int]{}.Apply(10))
 `,
 		},
 		{
@@ -61,12 +61,12 @@ val z = y.FlatMap((v int) => Some(v + 1))`,
 
 import "martianoff/gala/std"
 
-var x = std.NewImmutable(std.Some_Apply(std.Some{}, 10))
+var x = std.NewImmutable(std.Some[int]{}.Apply(10))
 var y = std.NewImmutable(std.Option_Map(x.Get(), func(v int) int {
 	return v * 2
 }))
 var z = std.NewImmutable(std.Option_FlatMap(y.Get(), func(v int) std.Option[int] {
-	return std.Some_Apply(std.Some{}, v+1)
+	return std.Some[int]{}.Apply(v + 1)
 }))
 `,
 		},
@@ -84,7 +84,7 @@ func test() {
 
 import "martianoff/gala/std"
 
-var x = std.NewImmutable(std.Some_Apply(std.Some{}, 10))
+var x = std.NewImmutable(std.Some[int]{}.Apply(10))
 
 func test() {
 	x.Get().ForEach(func(v int) any {
@@ -106,10 +106,10 @@ func update() {
 
 import "martianoff/gala/std"
 
-var o std.Option[int] = std.None_Apply(std.None{})
+var o std.Option[int] = std.None[any]{}.Apply()
 
 func update() {
-	o = std.Some_Apply(std.Some{}, 42)
+	o = std.Some[int]{}.Apply(42)
 }
 `,
 		},

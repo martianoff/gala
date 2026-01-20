@@ -473,10 +473,13 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 				receiver := x
 				isType := false
 				baseExpr := x
+				hasTypeArgs := false
 				if idx, ok := x.(*ast.IndexExpr); ok {
 					baseExpr = idx.X
+					hasTypeArgs = true
 				} else if idxList, ok := x.(*ast.IndexListExpr); ok {
 					baseExpr = idxList.X
+					hasTypeArgs = true
 				}
 
 				if id, ok := baseExpr.(*ast.Ident); ok {
@@ -494,7 +497,36 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 				}
 
 				if isType {
-					receiver = &ast.CompositeLit{Type: x}
+					typeExpr := x
+					// If the type has type parameters but no type arguments were provided,
+					// infer them from the Apply method parameter types and actual arguments
+					if !hasTypeArgs && len(typeMeta.TypeParams) > 0 {
+						var typeArgExprs []ast.Expr
+						if len(methodMeta.ParamTypes) > 0 && len(args) > 0 {
+							// Try to infer type arguments from the first argument's type
+							// e.g., Some(10) -> Some[int]{}.Apply(10)
+							inferredTypes := t.inferTypeArgsFromApply(typeMeta, methodMeta, args)
+							if len(inferredTypes) == len(typeMeta.TypeParams) {
+								typeArgExprs = make([]ast.Expr, len(inferredTypes))
+								for i, tp := range inferredTypes {
+									typeArgExprs[i] = t.typeToExpr(tp)
+								}
+							}
+						}
+						// If inference failed (or no args), fall back to 'any' for each type param
+						if len(typeArgExprs) == 0 {
+							typeArgExprs = make([]ast.Expr, len(typeMeta.TypeParams))
+							for i := range typeMeta.TypeParams {
+								typeArgExprs[i] = ast.NewIdent("any")
+							}
+						}
+						if len(typeArgExprs) == 1 {
+							typeExpr = &ast.IndexExpr{X: baseExpr, Index: typeArgExprs[0]}
+						} else {
+							typeExpr = &ast.IndexListExpr{X: baseExpr, Indices: typeArgExprs}
+						}
+					}
+					receiver = &ast.CompositeLit{Type: typeExpr}
 				}
 
 				return &ast.CallExpr{
@@ -1109,4 +1141,61 @@ func (t *galaASTTransformer) transformTupleLiteral(exprs []ast.Expr) (ast.Expr, 
 		Type: typeExpr,
 		Elts: elts,
 	}, nil
+}
+
+// inferTypeArgsFromApply infers type arguments for a generic type from its Apply method arguments.
+// For example, when calling Some(10), this infers T=int from the argument type.
+// It matches the type's type parameters with the Apply method's parameter types to determine
+// which argument positions correspond to which type parameters.
+func (t *galaASTTransformer) inferTypeArgsFromApply(
+	typeMeta *transpiler.TypeMetadata,
+	methodMeta *transpiler.MethodMetadata,
+	args []ast.Expr,
+) []transpiler.Type {
+	if len(typeMeta.TypeParams) == 0 || len(methodMeta.ParamTypes) == 0 || len(args) == 0 {
+		return nil
+	}
+
+	result := make([]transpiler.Type, len(typeMeta.TypeParams))
+
+	// Build a map from type parameter name to its index
+	typeParamIndex := make(map[string]int)
+	for i, tp := range typeMeta.TypeParams {
+		typeParamIndex[tp] = i
+	}
+
+	// For each Apply method parameter, check if it corresponds to a type parameter
+	for i, paramType := range methodMeta.ParamTypes {
+		if i >= len(args) {
+			break
+		}
+
+		// Check if this parameter type is one of the type parameters
+		// ParamTypes may be package-qualified (e.g., "std.T") so we need to check both
+		paramBaseName := paramType.BaseName()
+		// Strip package prefix if present (e.g., "std.T" -> "T")
+		if idx := strings.LastIndex(paramBaseName, "."); idx != -1 {
+			paramBaseName = paramBaseName[idx+1:]
+		}
+		if idx, ok := typeParamIndex[paramBaseName]; ok {
+			// Get the argument's actual type
+			argType := t.getExprTypeName(args[i])
+			if !argType.IsNil() {
+				result[idx] = argType
+			}
+		}
+	}
+
+	// Check if all type parameters were inferred with concrete types
+	for _, tp := range result {
+		if tp == nil || tp.IsNil() {
+			return nil // Could not infer all type parameters
+		}
+		// Make sure we didn't infer a type parameter (like T) instead of a concrete type
+		if t.hasTypeParams(tp) {
+			return nil // Inferred type still contains type parameters
+		}
+	}
+
+	return result
 }

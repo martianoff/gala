@@ -536,7 +536,8 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 		}
 
 		// Check if we can use direct Unapply call (no reflection)
-		// This applies to generic extractors like Cons[T], Nil[T] where we know the types
+		// This applies to generic extractors like Cons[T], Nil[T], Some[T], None[T], Left[A,B], Right[A,B]
+		// where we know the types at transpile time
 		if resolvedTypeName != "" {
 			if meta, ok := t.typeMetas[resolvedTypeName]; ok && len(meta.TypeParams) > 0 {
 				if unapplyMeta, hasUnapply := meta.Methods["Unapply"]; hasUnapply {

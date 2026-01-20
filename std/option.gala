@@ -22,19 +22,19 @@ type Option[T any] struct {
     defined bool
 }
 
-type Some struct {}
-func (s Some) Apply[T any](v T) Option[T] = Option[T](Value = v, defined = true)
-func (s Some) Unapply(o any) Option[any] {
-    if isDefined(o) {
-        return Some[any](getSomeValue(o))
+type Some[T any] struct {}
+func (s Some[T]) Apply(v T) Option[T] = Option[T](Value = v, defined = true)
+func (s Some[T]) Unapply(o Option[T]) Option[T] {
+    if o.IsDefined() {
+        return Some[T](o.Get())
     }
-    return None[any]()
+    return None[T]()
 }
 
-type None struct {}
-func (n None) Apply[T any]() Option[T] = Option[T](defined = false)
-func (n None) Unapply(o any) Option[bool] {
-    if !isDefined(o) {
+type None[T any] struct {}
+func (n None[T]) Apply() Option[T] = Option[T](defined = false)
+func (n None[T]) Unapply(o Option[T]) Option[bool] {
+    if !o.IsDefined() {
         return Some[bool](true)
     }
     return None[bool]()

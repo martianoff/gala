@@ -8,22 +8,22 @@ type Either[A any, B any] struct {
     isLeft bool
 }
 
-type Left struct {}
-func (l Left) Apply[A any, B any](v A) Either[A, B] = Either[A, B](LeftValue = v, isLeft = true)
-func (l Left) Unapply(e any) Option[any] {
-    if isLeft(e) {
-        return Some[any](getLeftValue(e))
+type Left[A any, B any] struct {}
+func (l Left[A, B]) Apply(v A) Either[A, B] = Either[A, B](LeftValue = v, isLeft = true)
+func (l Left[A, B]) Unapply(e Either[A, B]) Option[A] {
+    if e.IsLeft() {
+        return Some[A](e.GetLeft())
     }
-    return None[any]()
+    return None[A]()
 }
 
-type Right struct {}
-func (r Right) Apply[A any, B any](v B) Either[A, B] = Either[A, B](RightValue = v, isLeft = false)
-func (r Right) Unapply(e any) Option[any] {
-    if isRight(e) {
-        return Some[any](getRightValue(e))
+type Right[A any, B any] struct {}
+func (r Right[A, B]) Apply(v B) Either[A, B] = Either[A, B](RightValue = v, isLeft = false)
+func (r Right[A, B]) Unapply(e Either[A, B]) Option[B] {
+    if e.IsRight() {
+        return Some[B](e.GetRight())
     }
-    return None[any]()
+    return None[B]()
 }
 
 func (e Either[A, B]) getIsLeft() bool = e.isLeft
