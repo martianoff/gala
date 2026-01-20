@@ -33,17 +33,23 @@ func consList[T any](head T, tail List[T]) List[T] {
 }
 
 // Cons extractor for pattern matching on non-empty lists.
-type Cons struct {}
-func (c Cons) Unapply(l any) Option[Tuple[any, any]] = l match {
-    case li: List[_] if !li.isEmpty => Some(Tuple[any, any](V1 = li.head, V2 = *li.tail))
-    case _ => None[Tuple[any, any]]()
+// Generic type parameter T is inferred from the matched List[T] type.
+type Cons[T any] struct {}
+func (c Cons[T]) Unapply(l List[T]) Option[Tuple[T, List[T]]] {
+    if l.IsEmpty() {
+        return None[Tuple[T, List[T]]]()
+    }
+    return Some[Tuple[T, List[T]]](Tuple[T, List[T]](V1 = l.Head(), V2 = l.Tail()))
 }
 
 // Nil extractor for pattern matching on empty lists.
-type Nil struct {}
-func (n Nil) Unapply(l any) Option[bool] = l match {
-    case li: List[_] if li.isEmpty => Some[bool](true)
-    case _ => None[bool]()
+// Generic type parameter T is inferred from the matched List[T] type.
+type Nil[T any] struct {}
+func (n Nil[T]) Unapply(l List[T]) Option[bool] {
+    if l.IsEmpty() {
+        return Some[bool](true)
+    }
+    return None[bool]()
 }
 
 // ListOf creates a List from variadic arguments.

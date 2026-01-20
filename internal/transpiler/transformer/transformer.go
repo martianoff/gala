@@ -278,3 +278,77 @@ func (t *galaASTTransformer) resolveStructTypeName(typeName string) string {
 	// Return original if not found
 	return typeName
 }
+
+// resolveTypeMetaName tries to resolve a type name to the key used in typeMetas map.
+// Similar to resolveStructTypeName but for typeMetas.
+func (t *galaASTTransformer) resolveTypeMetaName(typeName string) string {
+	// 1. Try exact match first
+	if _, ok := t.typeMetas[typeName]; ok {
+		return typeName
+	}
+
+	// 2. If typeName has a package prefix, extract the simple name and try other packages
+	if idx := strings.LastIndex(typeName, "."); idx != -1 {
+		simpleName := typeName[idx+1:]
+		// Try std package for standard library types like Tuple, Option, etc.
+		stdName := transpiler.StdPackage + "." + simpleName
+		if _, ok := t.typeMetas[stdName]; ok {
+			return stdName
+		}
+		// Try current package
+		if t.packageName != "" {
+			fullName := t.packageName + "." + simpleName
+			if _, ok := t.typeMetas[fullName]; ok {
+				return fullName
+			}
+		}
+		// Try imported packages
+		for alias := range t.imports {
+			actualPkg := alias
+			if actual, ok := t.importAliases[alias]; ok {
+				actualPkg = actual
+			}
+			fullName := actualPkg + "." + simpleName
+			if _, ok := t.typeMetas[fullName]; ok {
+				return fullName
+			}
+		}
+	}
+
+	// 3. Try current package prefix (including "main")
+	if t.packageName != "" {
+		fullName := t.packageName + "." + typeName
+		if _, ok := t.typeMetas[fullName]; ok {
+			return fullName
+		}
+	}
+
+	// 4. Try std package prefix
+	stdName := transpiler.StdPackage + "." + typeName
+	if _, ok := t.typeMetas[stdName]; ok {
+		return stdName
+	}
+
+	// 5. Try all imported packages
+	for alias := range t.imports {
+		actualPkg := alias
+		if actual, ok := t.importAliases[alias]; ok {
+			actualPkg = actual
+		}
+		fullName := actualPkg + "." + typeName
+		if _, ok := t.typeMetas[fullName]; ok {
+			return fullName
+		}
+	}
+
+	// 6. Try dot imports
+	for _, dotPkg := range t.dotImports {
+		fullName := dotPkg + "." + typeName
+		if _, ok := t.typeMetas[fullName]; ok {
+			return fullName
+		}
+	}
+
+	// Return empty string if not found
+	return ""
+}

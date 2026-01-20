@@ -12,6 +12,7 @@ GALA is a programming language that transpiles to Go. Build system: Bazel.
 
 3. **ALWAYS generate concrete types** - GALA is type-safe. The transpiler MUST generate concrete Go types, NEVER `any`/`interface{}` unless explicitly requested in GALA source. If type cannot be resolved, fail with an error.
 
+4. **ALWAYS use bazel for testing, compilation** - Both GO and GALA have build-in bazel actions for compilation and testing.
 ---
 
 ## Project Structure

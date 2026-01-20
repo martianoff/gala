@@ -1,0 +1,39 @@
+package main
+
+import "fmt"
+import . "martianoff/gala/collection_immutable"
+
+func main() {
+    // Create a list
+    var list = ListOf[int](1, 2, 3, 4, 5)
+
+    // Pattern match with explicit Tuple extractor
+    // Cons returns Option[Tuple[any, any]] containing (head, tail)
+    val res1 = list match {
+        case Cons(Tuple(head, tail)) => fmt.Sprintf("Explicit Tuple: head=%v, tail=%v", head, tail)
+        case Nil() => "Empty list"
+        case _ => "Unknown"
+    }
+    fmt.Println(res1)
+
+    // Pattern match with implicit tuple expansion (syntactic sugar)
+    // Cons(head, tail) is equivalent to Cons(Tuple(head, tail))
+    val res2 = list match {
+        case Cons(head, tail) => fmt.Sprintf("Implicit expansion: head=%v, tail=%v", head, tail)
+        case Nil() => "Empty list"
+        case _ => "Unknown"
+    }
+    fmt.Println(res2)
+
+    // Empty list matching
+    var emptyList = EmptyList[int]()
+    val res3 = emptyList match {
+        case Cons(head, _) => fmt.Sprintf("Head: %v", head)
+        case Nil() => "Empty!"
+        case _ => "Unknown"
+    }
+    fmt.Println(res3)
+
+    // List length
+    fmt.Println(fmt.Sprintf("List length: %d", list.Length()))
+}

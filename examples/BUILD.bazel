@@ -221,3 +221,10 @@ gala_test(
     src = "tuple_syntax.gala",
     expected = "tuple_syntax.out",
 )
+
+gala_test(
+    name = "list_pattern_match",
+    src = "list_pattern_match.gala",
+    expected = "list_pattern_match.out",
+    deps = ["//collection_immutable"],
+)

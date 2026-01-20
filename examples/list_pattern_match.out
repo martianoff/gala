@@ -1,0 +1,4 @@
+Explicit Tuple: head=1, tail=List(2, 3, 4, 5)
+Implicit expansion: head=1, tail=List(2, 3, 4, 5)
+Empty!
+List length: 5

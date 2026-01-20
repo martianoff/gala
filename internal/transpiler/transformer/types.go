@@ -129,22 +129,61 @@ func (t *galaASTTransformer) getExprType(expr ast.Expr) ast.Expr {
 	return ast.NewIdent("any")
 }
 
+// isKnownStdType checks if a type name is a known standard library type
+// that should always be prefixed with std.
+func (t *galaASTTransformer) isKnownStdType(name string) bool {
+	knownStdTypes := map[string]bool{
+		"Tuple":     true,
+		"Tuple2":    true,
+		"Tuple3":    true,
+		"Tuple4":    true,
+		"Tuple5":    true,
+		"Tuple6":    true,
+		"Tuple7":    true,
+		"Tuple8":    true,
+		"Tuple9":    true,
+		"Tuple10":   true,
+		"Option":    true,
+		"Either":    true,
+		"Some":      true,
+		"None":      true,
+		"Left":      true,
+		"Right":     true,
+		"Immutable": true,
+	}
+	return knownStdTypes[name]
+}
+
 func (t *galaASTTransformer) typeToExpr(typ transpiler.Type) ast.Expr {
 	if typ.IsNil() {
 		return ast.NewIdent("any")
 	}
 	switch v := typ.(type) {
 	case transpiler.BasicType:
+		// Check if this is a known std type without package prefix
+		if t.isKnownStdType(v.Name) {
+			return t.stdIdent(v.Name)
+		}
 		return ast.NewIdent(v.Name)
 	case transpiler.NamedType:
 		if v.Package != "" {
 			if v.Package == transpiler.StdPackage {
 				return t.stdIdent(v.Name)
 			}
+			// Check if this is a dot import - if so, use just the type name
+			for _, dotPkg := range t.dotImports {
+				if dotPkg == v.Package {
+					return ast.NewIdent(v.Name)
+				}
+			}
 			return &ast.SelectorExpr{
 				X:   ast.NewIdent(v.Package),
 				Sel: ast.NewIdent(v.Name),
 			}
+		}
+		// Check if this is a known std type without package prefix
+		if t.isKnownStdType(v.Name) {
+			return t.stdIdent(v.Name)
 		}
 		return ast.NewIdent(v.Name)
 	case transpiler.GenericType:
@@ -864,6 +903,10 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 				return transpiler.BasicType{Name: id.Name}
 			}
 			if fMeta := t.getFunction(id.Name); fMeta != nil {
+				// Substitute type arguments if the function is generic
+				if len(typeArgs) > 0 && len(fMeta.TypeParams) > 0 {
+					return t.substituteConcreteTypes(fMeta.ReturnType, fMeta.TypeParams, typeArgs)
+				}
 				return fMeta.ReturnType
 			}
 
