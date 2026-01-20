@@ -228,3 +228,10 @@ gala_test(
     expected = "list_pattern_match.out",
     deps = ["//collection_immutable"],
 )
+
+gala_test(
+    name = "seq_pattern_match",
+    src = "seq_pattern_match.gala",
+    expected = "seq_pattern_match.out",
+    deps = ["//collection_immutable"],
+)

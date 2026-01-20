@@ -760,6 +760,10 @@ func (a Array[T]) String() string {
     return result + ")"
 }
 
+// SeqDrop implements the Seq interface for sequence pattern matching.
+// Returns the array with the first n elements removed.
+func (a Array[T]) SeqDrop(n int) any = a.Drop(n)
+
 // ArrayEmpty extractor for pattern matching
 type ArrayEmpty struct {}
 func (ae ArrayEmpty) Unapply(a any) Option[bool] = a match {

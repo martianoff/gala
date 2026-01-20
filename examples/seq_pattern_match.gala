@@ -1,0 +1,48 @@
+package main
+
+import "fmt"
+import . "martianoff/gala/collection_immutable"
+
+func main() {
+    // Test Array sequence pattern matching
+    val arr = ArrayOf[int](1, 2, 3, 4, 5)
+
+    // Case 1: Extract first two elements, ignore rest
+    val res1 = arr match {
+        case Array(first, second, _...) => fmt.Sprintf("First: %d, Second: %d", first, second)
+        case _ => "Not enough elements"
+    }
+    fmt.Println(res1)
+
+    // Case 2: Extract first element and capture rest
+    val res2 = arr match {
+        case Array(head, tail...) => fmt.Sprintf("Head: %d, Tail size: %d", head, tail.Size())
+        case _ => "Empty"
+    }
+    fmt.Println(res2)
+
+    // Case 3: Match empty array
+    val emptyArr = ArrayOf[int]()
+    val res3 = emptyArr match {
+        case Array(first, _...) => fmt.Sprintf("First: %d", first)
+        case _ => "Empty array"
+    }
+    fmt.Println(res3)
+
+    // Test List sequence pattern matching
+    val list = ListOf[string]("a", "b", "c", "d")
+
+    // Case 4: Extract first two elements from list
+    val res4 = list match {
+        case List(first, second, rest...) => fmt.Sprintf("First: %s, Second: %s, Rest size: %d", first, second, rest.Size())
+        case _ => "Not enough elements"
+    }
+    fmt.Println(res4)
+
+    // Case 5: Just check if list has at least 3 elements
+    val res5 = list match {
+        case List(_, _, _, _...) => "Has at least 3 elements"
+        case _ => "Less than 3 elements"
+    }
+    fmt.Println(res5)
+}

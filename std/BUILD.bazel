@@ -49,6 +49,12 @@ gala_transpile(
     out = "iterable.go",
 )
 
+gala_transpile(
+    name = "seq_go",
+    src = "seq.gala",
+    out = "seq.go",
+)
+
 go_library(
     name = "std",
     srcs = [
@@ -57,6 +63,7 @@ go_library(
         "interfaces.go",
         "iterable.go",
         "option.go",
+        "seq.go",
         "tuple.go",
         "types.go",
     ],

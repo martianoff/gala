@@ -618,3 +618,7 @@ func (l List[T]) String() string {
     }
     return result + ")"
 }
+
+// SeqDrop implements the Seq interface for sequence pattern matching.
+// Returns the list with the first n elements removed.
+func (l List[T]) SeqDrop(n int) any = l.Drop(n)

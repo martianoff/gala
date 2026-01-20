@@ -1,0 +1,19 @@
+package std
+
+// Seq[T] is an interface for indexed sequences that support pattern matching.
+// Types implementing Seq can be matched with sequence patterns like:
+//   case Array(first, second, rest...) => ...
+//   case List(head, _...) => ...
+type Seq[T any] interface {
+    // Size returns the number of elements in the sequence.
+    Size() int
+
+    // Get returns the element at the given index.
+    // Panics if index is out of bounds.
+    Get(index int) T
+
+    // SeqDrop returns a new sequence with the first n elements removed.
+    // This method is used for capturing the "rest" in sequence patterns.
+    // The return type is any to allow covariant returns (List returns List, Array returns Array).
+    SeqDrop(n int) any
+}

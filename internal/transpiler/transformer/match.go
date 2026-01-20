@@ -468,6 +468,10 @@ func (t *galaASTTransformer) transformPatternWithType(patCtx grammar.IPatternCon
 		return t.transformExpressionPatternWithType(ctx.Expression(), objExpr, matchedType)
 	case *grammar.TypedPatternContext:
 		return t.transformTypedPattern(ctx, objExpr)
+	case *grammar.RestPatternContext:
+		// Rest pattern like "rest..." or "_..." - these should only appear in argument lists
+		// If we get here, it's an error (rest patterns must be part of a sequence pattern)
+		return nil, nil, galaerr.NewSemanticError("rest pattern (...) can only be used as the last argument in a sequence pattern like Array(first, second, rest...)")
 	default:
 		return nil, nil, fmt.Errorf("unknown pattern type: %T", patCtx)
 	}
@@ -562,6 +566,16 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 					return t.generateDirectUnapplyPattern(rawName, meta, inferredTypes, unapplyMeta, objExpr, argList, matchedType)
 				}
 			}
+		}
+
+		// Check if this is a sequence pattern with rest arguments (e.g., Array(first, second, rest...))
+		// This handles Seq types like Array and List with variable-length extraction
+		if t.hasRestPattern(argList) {
+			if t.isSeqType(matchedType) {
+				return t.generateSeqPatternMatch(objExpr, argList, matchedType)
+			}
+			return nil, nil, galaerr.NewSemanticError(
+				fmt.Sprintf("rest pattern (...) requires a sequence type (Array, List, or type implementing Seq). Got '%s'", matchedType.String()))
 		}
 
 		// Check if this is a direct struct match for tuples (pattern type equals container type)
@@ -1042,6 +1056,373 @@ func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, ar
 			stmts = append(stmts, asAssign)
 			conds = append(conds, ast.NewIdent(okName))
 		}
+	}
+
+	t.needsStdImport = true
+
+	// Combine all conditions
+	if len(conds) == 0 {
+		return ast.NewIdent("true"), stmts, nil
+	}
+
+	finalCond := conds[0]
+	for i := 1; i < len(conds); i++ {
+		finalCond = &ast.BinaryExpr{
+			X:  finalCond,
+			Op: token.LAND,
+			Y:  conds[i],
+		}
+	}
+	return finalCond, stmts, nil
+}
+
+// hasRestPattern checks if any argument in the argument list is a rest pattern (ends with ...).
+func (t *galaASTTransformer) hasRestPattern(argList *grammar.ArgumentListContext) bool {
+	if argList == nil {
+		return false
+	}
+	for _, argCtx := range argList.AllArgument() {
+		arg := argCtx.(*grammar.ArgumentContext)
+		if _, ok := arg.Pattern().(*grammar.RestPatternContext); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// isSeqType checks if a type implements the Seq interface (has Size, Get, SeqDrop methods).
+func (t *galaASTTransformer) isSeqType(typ transpiler.Type) bool {
+	if typ == nil || typ.IsNil() {
+		return false
+	}
+
+	// Get the base type name
+	var baseName string
+	if genType, ok := typ.(transpiler.GenericType); ok {
+		baseName = genType.Base.BaseName()
+	} else if basicType, ok := typ.(transpiler.BasicType); ok {
+		baseName = basicType.Name
+	} else {
+		return false
+	}
+
+	// Check if it's a known Seq type
+	switch baseName {
+	case "Array", "collection_immutable.Array", "List", "collection_immutable.List":
+		return true
+	}
+
+	// Check if the type has the required methods
+	resolvedName := t.resolveStructTypeName(baseName)
+	if meta, ok := t.typeMetas[resolvedName]; ok {
+		_, hasSize := meta.Methods["Size"]
+		_, hasGet := meta.Methods["Get"]
+		_, hasSeqDrop := meta.Methods["SeqDrop"]
+		return hasSize && hasGet && hasSeqDrop
+	}
+
+	return false
+}
+
+// getSeqElementType extracts the element type from a Seq type like Array[int] or List[string].
+func (t *galaASTTransformer) getSeqElementType(typ transpiler.Type) transpiler.Type {
+	if genType, ok := typ.(transpiler.GenericType); ok {
+		if len(genType.Params) > 0 {
+			return genType.Params[0]
+		}
+	}
+	return transpiler.BasicType{Name: "any"}
+}
+
+// generateSeqPatternMatch generates code for sequence pattern matching with rest patterns.
+// For example, Array(first, second, rest...) matching against Array[int] generates:
+//
+//	_tmp_ok := obj.Size() >= 2
+//	var first int
+//	var second int
+//	var rest Array[int]
+//	if _tmp_ok {
+//	    first = obj.Get(0)
+//	    second = obj.Get(1)
+//	    rest = obj.SeqDrop(2).(Array[int])
+//	}
+//	if _tmp_ok { ... body }
+func (t *galaASTTransformer) generateSeqPatternMatch(objExpr ast.Expr, argList *grammar.ArgumentListContext, matchedType transpiler.Type) (ast.Expr, []ast.Stmt, error) {
+	if argList == nil {
+		return ast.NewIdent("true"), nil, nil
+	}
+
+	args := argList.AllArgument()
+	if len(args) == 0 {
+		return ast.NewIdent("true"), nil, nil
+	}
+
+	var stmts []ast.Stmt
+	var conds []ast.Expr
+
+	// Find the rest pattern and count non-rest arguments
+	var restPatternIndex int = -1
+	var restPatternName string
+	nonRestCount := 0
+
+	for i, argCtx := range args {
+		arg := argCtx.(*grammar.ArgumentContext)
+		if restPat, ok := arg.Pattern().(*grammar.RestPatternContext); ok {
+			restPatternIndex = i
+			// Get the identifier before ...
+			exprText := restPat.Expression().GetText()
+			if exprText != "_" {
+				restPatternName = exprText
+			}
+		} else {
+			nonRestCount++
+		}
+	}
+
+	// Rest pattern must be the last argument
+	if restPatternIndex >= 0 && restPatternIndex != len(args)-1 {
+		return nil, nil, galaerr.NewSemanticError("rest pattern (...) must be the last argument in a sequence pattern")
+	}
+
+	// Generate size check: _tmp_ok := obj.Size() >= minRequired
+	sizeCheckName := t.nextTempVar()
+	sizeCheck := &ast.AssignStmt{
+		Lhs: []ast.Expr{ast.NewIdent(sizeCheckName)},
+		Tok: token.DEFINE,
+		Rhs: []ast.Expr{
+			&ast.BinaryExpr{
+				X: &ast.CallExpr{
+					Fun: &ast.SelectorExpr{
+						X:   objExpr,
+						Sel: ast.NewIdent("Size"),
+					},
+				},
+				Op: token.GEQ,
+				Y:  &ast.BasicLit{Kind: token.INT, Value: fmt.Sprintf("%d", nonRestCount)},
+			},
+		},
+	}
+	stmts = append(stmts, sizeCheck)
+	conds = append(conds, ast.NewIdent(sizeCheckName))
+
+	// Get the element type
+	elemType := t.getSeqElementType(matchedType)
+	elemTypeExpr := t.typeToExpr(elemType)
+	if elemTypeExpr == nil {
+		elemTypeExpr = ast.NewIdent("any")
+	}
+
+	// Collect variable declarations and guarded assignments
+	var varDecls []ast.Stmt
+	var guardedAssigns []ast.Stmt
+	var bindingNames []string
+
+	// Process non-rest arguments
+	argIndex := 0
+	for _, argCtx := range args {
+		arg := argCtx.(*grammar.ArgumentContext)
+		patCtx := arg.Pattern()
+
+		// Skip rest pattern for now
+		if _, ok := patCtx.(*grammar.RestPatternContext); ok {
+			continue
+		}
+
+		patternText := patCtx.GetText()
+		if patternText == "_" {
+			argIndex++
+			continue
+		}
+
+		// Handle different pattern types
+		if exprPat, ok := patCtx.(*grammar.ExpressionPatternContext); ok {
+			if primary := exprPat.Expression().Primary(); primary != nil {
+				if p, ok := primary.(*grammar.PrimaryContext); ok && p.Identifier() != nil {
+					// Simple binding: declare var, then assign inside guard
+					name := p.Identifier().GetText()
+					bindingNames = append(bindingNames, name)
+					t.currentScope.vals[name] = false
+					t.currentScope.valTypes[name] = elemType
+
+					// var name ElemType
+					varDecl := &ast.DeclStmt{
+						Decl: &ast.GenDecl{
+							Tok: token.VAR,
+							Specs: []ast.Spec{
+								&ast.ValueSpec{
+									Names: []*ast.Ident{ast.NewIdent(name)},
+									Type:  elemTypeExpr,
+								},
+							},
+						},
+					}
+					varDecls = append(varDecls, varDecl)
+
+					// name = obj.Get(i) (inside guard)
+					guardedAssigns = append(guardedAssigns, &ast.AssignStmt{
+						Lhs: []ast.Expr{ast.NewIdent(name)},
+						Tok: token.ASSIGN,
+						Rhs: []ast.Expr{
+							&ast.CallExpr{
+								Fun: &ast.SelectorExpr{
+									X:   objExpr,
+									Sel: ast.NewIdent("Get"),
+								},
+								Args: []ast.Expr{&ast.BasicLit{Kind: token.INT, Value: fmt.Sprintf("%d", argIndex)}},
+							},
+						},
+					})
+
+					argIndex++
+					continue
+				}
+			}
+
+			// Nested pattern - need to handle more carefully
+			// For now, just generate the Get call and transform
+			tempName := t.nextTempVar()
+			varDecl := &ast.DeclStmt{
+				Decl: &ast.GenDecl{
+					Tok: token.VAR,
+					Specs: []ast.Spec{
+						&ast.ValueSpec{
+							Names: []*ast.Ident{ast.NewIdent(tempName)},
+							Type:  elemTypeExpr,
+						},
+					},
+				},
+			}
+			varDecls = append(varDecls, varDecl)
+
+			guardedAssigns = append(guardedAssigns, &ast.AssignStmt{
+				Lhs: []ast.Expr{ast.NewIdent(tempName)},
+				Tok: token.ASSIGN,
+				Rhs: []ast.Expr{
+					&ast.CallExpr{
+						Fun: &ast.SelectorExpr{
+							X:   objExpr,
+							Sel: ast.NewIdent("Get"),
+						},
+						Args: []ast.Expr{&ast.BasicLit{Kind: token.INT, Value: fmt.Sprintf("%d", argIndex)}},
+					},
+				},
+			})
+
+			// Transform the nested pattern using the temp variable
+			nestedCond, nestedStmts, err := t.transformExpressionPatternWithType(exprPat.Expression(), ast.NewIdent(tempName), elemType)
+			if err != nil {
+				return nil, nil, err
+			}
+			guardedAssigns = append(guardedAssigns, nestedStmts...)
+			if ident, ok := nestedCond.(*ast.Ident); !ok || ident.Name != "true" {
+				conds = append(conds, nestedCond)
+			}
+		} else if typedPat, ok := patCtx.(*grammar.TypedPatternContext); ok {
+			// Typed pattern: case Array(x: int, y: string, ...)
+			varName := typedPat.Identifier().GetText()
+
+			typeExpr, err := t.transformType(typedPat.Type_())
+			if err != nil {
+				return nil, nil, err
+			}
+
+			expectedType := t.resolveType(t.getBaseTypeName(typeExpr))
+			t.currentScope.vals[varName] = false
+			t.currentScope.valTypes[varName] = expectedType
+
+			// var varName ExpectedType
+			varDecl := &ast.DeclStmt{
+				Decl: &ast.GenDecl{
+					Tok: token.VAR,
+					Specs: []ast.Spec{
+						&ast.ValueSpec{
+							Names: []*ast.Ident{ast.NewIdent(varName)},
+							Type:  typeExpr,
+						},
+					},
+				},
+			}
+			varDecls = append(varDecls, varDecl)
+
+			// Generate: varName, okN := std.As[ExpectedType](obj.Get(i)) inside guard
+			okName := t.nextTempVar()
+			asCall := &ast.CallExpr{
+				Fun: &ast.IndexExpr{
+					X:     t.stdIdent("As"),
+					Index: typeExpr,
+				},
+				Args: []ast.Expr{
+					&ast.CallExpr{
+						Fun: &ast.SelectorExpr{
+							X:   objExpr,
+							Sel: ast.NewIdent("Get"),
+						},
+						Args: []ast.Expr{&ast.BasicLit{Kind: token.INT, Value: fmt.Sprintf("%d", argIndex)}},
+					},
+				},
+			}
+
+			guardedAssigns = append(guardedAssigns, &ast.AssignStmt{
+				Lhs: []ast.Expr{ast.NewIdent(varName), ast.NewIdent(okName)},
+				Tok: token.DEFINE,
+				Rhs: []ast.Expr{asCall},
+			})
+			conds = append(conds, ast.NewIdent(okName))
+		}
+
+		argIndex++
+	}
+
+	// Handle rest pattern if present and named
+	if restPatternName != "" {
+		t.currentScope.vals[restPatternName] = false
+		t.currentScope.valTypes[restPatternName] = matchedType
+
+		// var restPatternName MatchedType
+		varDecl := &ast.DeclStmt{
+			Decl: &ast.GenDecl{
+				Tok: token.VAR,
+				Specs: []ast.Spec{
+					&ast.ValueSpec{
+						Names: []*ast.Ident{ast.NewIdent(restPatternName)},
+						Type:  t.typeToExpr(matchedType),
+					},
+				},
+			},
+		}
+		varDecls = append(varDecls, varDecl)
+
+		// rest = obj.SeqDrop(n).(MatchedType) inside guard
+		guardedAssigns = append(guardedAssigns, &ast.AssignStmt{
+			Lhs: []ast.Expr{ast.NewIdent(restPatternName)},
+			Tok: token.ASSIGN,
+			Rhs: []ast.Expr{
+				&ast.TypeAssertExpr{
+					X: &ast.CallExpr{
+						Fun: &ast.SelectorExpr{
+							X:   objExpr,
+							Sel: ast.NewIdent("SeqDrop"),
+						},
+						Args: []ast.Expr{&ast.BasicLit{Kind: token.INT, Value: fmt.Sprintf("%d", nonRestCount)}},
+					},
+					Type: t.typeToExpr(matchedType),
+				},
+			},
+		})
+	}
+
+	// Add variable declarations
+	stmts = append(stmts, varDecls...)
+
+	// Generate guarded assignment block: if sizeCheck { assignments... }
+	if len(guardedAssigns) > 0 {
+		guardedBlock := &ast.IfStmt{
+			Cond: ast.NewIdent(sizeCheckName),
+			Body: &ast.BlockStmt{
+				List: guardedAssigns,
+			},
+		}
+		stmts = append(stmts, guardedBlock)
 	}
 
 	t.needsStdImport = true

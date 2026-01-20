@@ -491,6 +491,63 @@ val res = x match {
 }
 ```
 
+#### Sequence Pattern Matching
+GALA supports Scala-like sequence pattern matching for collections that implement the `Seq` interface (such as `Array` and `List` from `collection_immutable`). This allows extracting elements from sequences with rest patterns.
+
+##### Basic Sequence Patterns
+Use the `...` suffix to match zero or more remaining elements:
+
+```gala
+import . "martianoff/gala/collection_immutable"
+
+val arr = ArrayOf[int](1, 2, 3, 4, 5)
+
+// Extract first two elements, ignore rest
+val res1 = arr match {
+    case Array(first, second, _...) => fmt.Sprintf("First: %d, Second: %d", first, second)
+    case _ => "Not enough elements"
+}
+
+// Extract head and capture tail
+val res2 = arr match {
+    case Array(head, tail...) => fmt.Sprintf("Head: %d, Tail size: %d", head, tail.Size())
+    case _ => "Empty"
+}
+```
+
+##### Rest Pattern Variants
+- `_...` - Match and discard remaining elements (wildcard rest)
+- `name...` - Match and capture remaining elements as a sequence
+
+```gala
+val list = ListOf[string]("a", "b", "c", "d")
+
+// Capture the rest as a variable
+val res = list match {
+    case List(first, second, rest...) => fmt.Sprintf("First: %s, Second: %s, Rest size: %d", first, second, rest.Size())
+    case _ => "Not enough elements"
+}
+
+// Check minimum length without capturing
+val hasThree = list match {
+    case List(_, _, _, _...) => "Has at least 3 elements"
+    case _ => "Less than 3 elements"
+}
+```
+
+##### How It Works
+Sequence patterns work with any type implementing the `Seq[T]` interface:
+
+```gala
+type Seq[T any] interface {
+    Size() int
+    Get(index int) T
+    SeqDrop(n int) any
+}
+```
+
+The pattern generates a size check (`Size() >= N`) before extracting elements, ensuring safe access. The rest pattern (`...`) captures remaining elements using `SeqDrop(N)`.
+
 ### For Statement
 GALA supports Go-style for loops with the following variants:
 
