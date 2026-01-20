@@ -31,16 +31,19 @@ type arrayNode[T any] struct {
 }
 
 // Array represents an immutable indexed sequence.
+// Uses a prefix buffer for amortized O(1) prepend (Scala-inspired).
 type Array[T any] struct {
-    root   *arrayNode[T]
-    length int
-    depth  int
+    root     *arrayNode[T]
+    length   int           // Total logical length (prefix + tree)
+    depth    int
+    prefix   []T           // Prepended elements in forward order (prefix[0] is logical index 0)
 }
 
 // EmptyArray returns an empty Array.
 func EmptyArray[T any]() Array[T] {
     var nilRoot *arrayNode[T] = nil
-    return Array[T](root = nilRoot, length = 0, depth = 0)
+    var emptyPrefix []T
+    return Array[T](root = nilRoot, length = 0, depth = 0, prefix = emptyPrefix)
 }
 
 // ArrayOf creates an Array from variadic arguments.
@@ -54,12 +57,52 @@ func ArrayOf[T any](elements ...T) Array[T] {
 }
 
 // ArrayFromSlice creates an Array from a slice.
+// Optimized to build the tree bottom-up in O(n) time.
 func ArrayFromSlice[T any](elements []T) Array[T] {
-    var result = EmptyArray[T]()
-    for i := 0; i < len(elements); i++ {
-        result = result.Append(elements[i])
+    var n = len(elements)
+    if n == 0 {
+        return EmptyArray[T]()
     }
-    return result
+
+    // Build leaf nodes - each holds up to 32 elements
+    var leaves []*arrayNode[T]
+    for i := 0; i < n; i += branchingFactor {
+        var end = i + branchingFactor
+        if end > n {
+            end = n
+        }
+        var values []T
+        for j := i; j < end; j++ {
+            values = append(values, elements[j])
+        }
+        var leaf = &arrayNode[T](values = values, isLeaf = true)
+        leaves = append(leaves, leaf)
+    }
+
+    // Build tree bottom-up
+    var currentLevel = leaves
+    var depth = 1
+
+    for len(currentLevel) > 1 {
+        var nextLevel []*arrayNode[T]
+        for i := 0; i < len(currentLevel); i += branchingFactor {
+            var end = i + branchingFactor
+            if end > len(currentLevel) {
+                end = len(currentLevel)
+            }
+            var children []*arrayNode[T]
+            for j := i; j < end; j++ {
+                children = append(children, currentLevel[j])
+            }
+            var node = &arrayNode[T](children = children, isLeaf = false)
+            nextLevel = append(nextLevel, node)
+        }
+        currentLevel = nextLevel
+        depth++
+    }
+
+    var emptyPrefix []T
+    return Array[T](root = currentLevel[0], length = n, depth = depth, prefix = emptyPrefix)
 }
 
 // IsEmpty returns true if the array is empty.
@@ -133,7 +176,17 @@ func (a Array[T]) Get(index int) T {
     if (index < 0) || (index >= a.length) {
         panic(fmt.Sprintf("Array.Get: index %d out of bounds [0, %d)", index, a.length))
     }
-    return getFromNode[T](a.root, index, a.depth)
+
+    // Check if index is in prefix (prefix is stored in forward order)
+    var prefixLen = len(a.prefix)
+    if index < prefixLen {
+        // Prefix stores elements in forward order: prefix[0] is logical index 0
+        return a.prefix[index]
+    }
+
+    // Otherwise, get from tree (adjusting index for prefix)
+    var treeIndex = index - prefixLen
+    return getFromNode[T](a.root, treeIndex, a.depth)
 }
 
 // GetOption returns the element at index wrapped in Option.
@@ -196,8 +249,25 @@ func (a Array[T]) Updated(index int, value T) Array[T] {
     if (index < 0) || (index >= a.length) {
         panic(fmt.Sprintf("Array.Updated: index %d out of bounds [0, %d)", index, a.length))
     }
-    var newRoot = updateInNode[T](a.root, index, value, a.depth)
-    return Array[T](root = newRoot, length = a.length, depth = a.depth)
+
+    var prefixLen = len(a.prefix)
+    if index < prefixLen {
+        // Update is in prefix - create new prefix with updated value
+        var newPrefix []T
+        for i := 0; i < prefixLen; i++ {
+            if i == index {
+                newPrefix = append(newPrefix, value)
+            } else {
+                newPrefix = append(newPrefix, a.prefix[i])
+            }
+        }
+        return Array[T](root = a.root, length = a.length, depth = a.depth, prefix = newPrefix)
+    }
+
+    // Update is in tree
+    var treeIndex = index - prefixLen
+    var newRoot = updateInNode[T](a.root, treeIndex, value, a.depth)
+    return Array[T](root = newRoot, length = a.length, depth = a.depth, prefix = a.prefix)
 }
 
 // Helper to append to tree, potentially growing it.
@@ -258,23 +328,31 @@ func appendToNode[T any](node *arrayNode[T], index int, value T, depth int) *arr
         newNode.children = append(newNode.children, nil)
     }
 
-    newNode.children[childIndex] = appendToNode[T](node.children[childIndex], index, value, depth - 1)
+    // Get existing child if it exists, otherwise nil
+    var existingChild *arrayNode[T] = nil
+    if childIndex < len(node.children) {
+        existingChild = node.children[childIndex]
+    }
+    newNode.children[childIndex] = appendToNode[T](existingChild, index, value, depth - 1)
     return newNode
 }
 
 // Append adds an element to the end. O(log32 n) = effectively constant.
 func (a Array[T]) Append(value T) Array[T] {
-    if a.length == 0 {
+    // Calculate tree length (excluding prefix)
+    var treeLen = a.length - len(a.prefix)
+
+    if treeLen == 0 {
         var values []T
         values = append(values, value)
         var leaf = &arrayNode[T](values = values, isLeaf = true)
-        return Array[T](root = leaf, length = 1, depth = 1)
+        return Array[T](root = leaf, length = a.length + 1, depth = 1, prefix = a.prefix)
     }
 
-    var result = appendToTree[T](a.root, a.length, value, a.depth)
+    var result = appendToTree[T](a.root, treeLen, value, a.depth)
     var newRoot = result.V1
     var newDepth = result.V2
-    return Array[T](root = newRoot, length = a.length + 1, depth = newDepth)
+    return Array[T](root = newRoot, length = a.length + 1, depth = newDepth, prefix = a.prefix)
 }
 
 // AppendAll appends all elements from another array.
@@ -286,15 +364,42 @@ func (a Array[T]) AppendAll(other Array[T]) Array[T] {
     return result
 }
 
-// Prepend adds an element to the front. O(n) for current implementation.
-// Note: A more optimized version could achieve O(log32 n) with a different structure.
+// Prepend adds an element to the front. O(1) amortized - uses prefix buffer.
+// The prefix buffer is consolidated into the tree when it reaches 32 elements.
 func (a Array[T]) Prepend(value T) Array[T] {
-    // Simple implementation: rebuild with shifted indices
-    var result = EmptyArray[T]().Append(value)
-    for i := 0; i < a.length; i++ {
-        result = result.Append(a.Get(i))
+    // Create new prefix with value at front (forward order: prefix[0] is logical index 0)
+    var newPrefix []T
+    newPrefix = append(newPrefix, value)
+    for i := 0; i < len(a.prefix); i++ {
+        newPrefix = append(newPrefix, a.prefix[i])
     }
-    return result
+
+    // If prefix is getting too large, consolidate into tree
+    if len(newPrefix) >= branchingFactor {
+        return a.consolidateWithPrefix(newPrefix)
+    }
+
+    // Otherwise, just update prefix
+    return Array[T](root = a.root, length = a.length + 1, depth = a.depth, prefix = newPrefix)
+}
+
+// consolidateWithPrefix merges the prefix buffer into a new tree.
+func (a Array[T]) consolidateWithPrefix(newPrefix []T) Array[T] {
+    // Build full slice: prefix + tree elements
+    var slice []T
+
+    // Add prefix elements (already in forward order)
+    for i := 0; i < len(newPrefix); i++ {
+        slice = append(slice, newPrefix[i])
+    }
+
+    // Add tree elements
+    var treeLen = a.length - len(a.prefix)
+    for i := 0; i < treeLen; i++ {
+        slice = append(slice, getFromNode[T](a.root, i, a.depth))
+    }
+
+    return ArrayFromSlice[T](slice)
 }
 
 // PrependAll prepends all elements from another array.
@@ -324,7 +429,7 @@ func (a Array[T]) Init() Array[T] {
     return a.Take(a.length - 1)
 }
 
-// Take returns the first n elements.
+// Take returns the first n elements. Uses bulk building.
 func (a Array[T]) Take(n int) Array[T] {
     if n <= 0 {
         return EmptyArray[T]()
@@ -332,14 +437,14 @@ func (a Array[T]) Take(n int) Array[T] {
     if n >= a.length {
         return a
     }
-    var result = EmptyArray[T]()
+    var slice []T
     for i := 0; i < n; i++ {
-        result = result.Append(a.Get(i))
+        slice = append(slice, a.Get(i))
     }
-    return result
+    return ArrayFromSlice[T](slice)
 }
 
-// Drop returns all elements except the first n.
+// Drop returns all elements except the first n. Uses bulk building.
 func (a Array[T]) Drop(n int) Array[T] {
     if n <= 0 {
         return a
@@ -347,24 +452,24 @@ func (a Array[T]) Drop(n int) Array[T] {
     if n >= a.length {
         return EmptyArray[T]()
     }
-    var result = EmptyArray[T]()
+    var slice []T
     for i := n; i < a.length; i++ {
-        result = result.Append(a.Get(i))
+        slice = append(slice, a.Get(i))
     }
-    return result
+    return ArrayFromSlice[T](slice)
 }
 
 // TakeWhile returns the longest prefix of elements that satisfy the predicate.
 func (a Array[T]) TakeWhile(p func(T) bool) Array[T] {
-    var result = EmptyArray[T]()
+    var slice []T
     for i := 0; i < a.length; i++ {
         var elem = a.Get(i)
         if !p(elem) {
-            return result
+            return ArrayFromSlice[T](slice)
         }
-        result = result.Append(elem)
+        slice = append(slice, elem)
     }
-    return result
+    return ArrayFromSlice[T](slice)
 }
 
 // DropWhile drops the longest prefix of elements that satisfy the predicate.
@@ -420,67 +525,73 @@ func (a Array[T]) LastIndexOf(elem T) int {
     return -1
 }
 
-// Reverse returns a new array with elements in reverse order.
+// Reverse returns a new array with elements in reverse order. Uses bulk building.
 func (a Array[T]) Reverse() Array[T] {
-    var result = EmptyArray[T]()
+    var slice []T
     for i := a.length - 1; i >= 0; i-- {
-        result = result.Append(a.Get(i))
+        slice = append(slice, a.Get(i))
     }
-    return result
+    return ArrayFromSlice[T](slice)
 }
 
-// Map applies a function to each element and returns a new array.
+// Map applies a function to each element and returns a new array. Uses bulk building.
 func (a Array[T]) Map[U any](f func(T) U) Array[U] {
-    var result = EmptyArray[U]()
+    var slice []U
     for i := 0; i < a.length; i++ {
-        result = result.Append(f(a.Get(i)))
+        slice = append(slice, f(a.Get(i)))
     }
-    return result
+    return ArrayFromSlice[U](slice)
 }
 
 // FlatMap applies a function that returns an array to each element and flattens.
 func (a Array[T]) FlatMap[U any](f func(T) Array[U]) Array[U] {
-    var result = EmptyArray[U]()
+    var slice []U
     for i := 0; i < a.length; i++ {
-        result = result.AppendAll(f(a.Get(i)))
+        var inner = f(a.Get(i))
+        for j := 0; j < inner.Length(); j++ {
+            slice = append(slice, inner.Get(j))
+        }
     }
-    return result
+    return ArrayFromSlice[U](slice)
 }
 
 // Collect applies a partial function to each element and collects the results.
 // Elements for which the function returns None are filtered out.
 func (a Array[T]) Collect[U any](pf func(T) Option[U]) Array[U] {
-    var result = EmptyArray[U]()
+    var slice []U
     for i := 0; i < a.length; i++ {
         val opt = pf(a.Get(i))
         if opt.IsDefined() {
-            result = result.Append(opt.Get())
+            slice = append(slice, opt.Get())
         }
     }
-    return result
+    return ArrayFromSlice[U](slice)
 }
 
 // Concat returns a new array containing all elements of this array followed by
-// all elements of the other iterable.
+// all elements of the other iterable. Uses bulk building.
 func (a Array[T]) Concat(other Iterable[T]) Array[T] {
-    var result = a
+    var slice []T
+    for i := 0; i < a.length; i++ {
+        slice = append(slice, a.Get(i))
+    }
     other.ForEach((elem T) => {
-        result = result.Append(elem)
+        slice = append(slice, elem)
         return nil
     })
-    return result
+    return ArrayFromSlice[T](slice)
 }
 
-// Filter returns a new array with only elements that satisfy the predicate.
+// Filter returns a new array with only elements that satisfy the predicate. Uses bulk building.
 func (a Array[T]) Filter(p func(T) bool) Array[T] {
-    var result = EmptyArray[T]()
+    var slice []T
     for i := 0; i < a.length; i++ {
         var elem = a.Get(i)
         if p(elem) {
-            result = result.Append(elem)
+            slice = append(slice, elem)
         }
     }
-    return result
+    return ArrayFromSlice[T](slice)
 }
 
 // FilterNot returns a new array with elements that do not satisfy the predicate.

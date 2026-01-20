@@ -18,7 +18,7 @@ import . "martianoff/gala/collection_immutable"
 |-----------|------|-------|
 | Head | O(1) | O(eC) |
 | Tail | O(1) | O(n) |
-| Prepend | O(1) | O(n) |
+| Prepend | O(1) | O(1)* |
 | Append | O(n) | O(eC) |
 | Lookup | O(n) | O(eC) |
 | Update | O(n) | O(eC) |
@@ -26,6 +26,7 @@ import . "martianoff/gala/collection_immutable"
 
 **Legend:**
 - O(1) - Constant time
+- O(1)* - Amortized constant time (uses prefix buffer, consolidates every 32 prepends)
 - O(n) - Linear time
 - O(eC) - Effectively constant (O(log32 n) ≈ 7 operations for 1 billion elements)
 
@@ -314,7 +315,7 @@ arr.Append(5)                // Array(2, 3, 4, 5)
 // AppendAll
 arr.AppendAll(ArrayOf[int](5, 6))   // Array(2, 3, 4, 5, 6)
 
-// Prepend - O(n)
+// Prepend - O(1) amortized (uses prefix buffer)
 arr.Prepend(1)               // Array(1, 2, 3, 4)
 
 // PrependAll
@@ -445,12 +446,14 @@ arr.ForEach((x int) => {
 
 | Use Case | Recommended |
 |----------|-------------|
-| Stack operations (push/pop from front) | List |
+| Stack operations (push/pop from front) | List or Array |
 | Random access by index | Array |
 | Frequent appends to end | Array |
-| Frequent prepends to front | List |
+| Frequent prepends to front | List or Array |
 | Recursive algorithms on sequences | List |
 | Large sequences with updates | Array |
+
+**Note:** With the prefix buffer optimization, Array now has O(1) amortized prepend, making it competitive with List for prepend-heavy workloads. Choose List when you need true O(1) without amortization, or Array when you also need random access.
 
 ### List Advantages
 - O(1) prepend (cons)
@@ -461,6 +464,7 @@ arr.ForEach((x int) => {
 ### Array Advantages
 - O(eC) random access
 - O(eC) append
+- O(1) amortized prepend (using prefix buffer)
 - O(eC) update at any position
 - Better cache locality for iteration
 
@@ -474,16 +478,17 @@ List is implemented as a classic persistent linked list (cons list). Each node c
 - Cached length for O(1) size queries
 
 ### Array
-Array is implemented as a 32-way branching trie (similar to Scala's Vector and Clojure's PersistentVector). This provides:
+Array is implemented as a 32-way branching trie (similar to Scala's Vector and Clojure's PersistentVector) with a prefix buffer for amortized O(1) prepend. This provides:
 - Tree depth of at most 7 for up to 34 billion elements
 - Path copying for updates, sharing unaffected subtrees
 - Effectively constant time operations (O(log32 n))
+- Prefix buffer: prepended elements are stored in a separate buffer until it reaches 32 elements, then consolidated into the tree (Scala-inspired optimization)
 
 ---
 
 ## Performance Benchmarks
 
-Benchmark results comparing GALA immutable collections to Go native slices. Tests performed with collections of 30 elements.
+Benchmark results comparing GALA immutable collections to Go native slices (immutable style with copy-on-write).
 
 ### Running the Benchmarks
 
@@ -491,51 +496,74 @@ Benchmark results comparing GALA immutable collections to Go native slices. Test
 # GALA immutable collections benchmark
 bazel run //collection_immutable:perf_gala
 
-# Go native slices benchmark
+# Go native slices benchmark (immutable style)
 bazel run //collection_immutable:perf_go
 ```
 
-### Results (ns/op)
+### Results (ns/op) - 10,000 Elements
 
-| Datastructure | Creation(30) | Prepend | Append | Head | Get(15) | Filter |
-|---------------|-------------:|--------:|-------:|-----:|--------:|-------:|
-| GALA List | 531 | 0-1 | - | 0-1 | 7 | 372 |
-| GALA Array | 3,786 | - | 131 | 2 | 2 | 1,692 |
-| Go Slice (mutable) | 68 | - | - | 0-1 | 0-1 | 51 |
-| Go Slice (immutable) | 1,012 | - | 52 | 0-1 | 0-1 | 51 |
+| Operation | GALA List | GALA Array | Go Slice (immutable) |
+|-----------|----------:|-----------:|---------------------:|
+| Creation | 124,000 |  3,459,000 | 34,890,000 |
+| Prepend | 1 |          1 | 5,229 |
+| Append | - |        458 | 7,443 |
+| Head | 1 |          4 | 1 |
+| Get(5000) | 5,035 |          4 | 0 |
+| Update(5000) | - |        451 | 7,337 |
+| Filter | 158,000 |     98,000 | 15,463 |
+| Map | 263,000 |    148,000 | 10,476 |
+| FoldLeft | 10,010 |     44,000 | 1,039 |
+| Take(5000) | - |     64,000 | 515 |
+| Drop(5000) | - |     66,000 | 1,044 |
+
+### Scaling Results
+
+| Operation | 100 elements | 10,000 elements | 100,000 elements |
+|-----------|-------------:|----------------:|-----------------:|
+| List.Creation | 2,029 ns | 136,000 ns | 1,856,000 ns |
+| Array.Creation | 15,926 ns | 3,443,000 ns | 52,713,000 ns |
 
 **Notes:**
 - GALA List uses Prepend (O(1)), GALA Array uses Append (O(eC))
-- Go Slice (mutable): pre-allocated capacity, standard append
 - Go Slice (immutable): copy-on-write style, full copy on each modification
-- `-` indicates operation not applicable or not the primary use case
+- `-` indicates operation not measured or not the primary use case
+- Array uses optimized bulk building for Filter, Map, Take, Drop operations
 
-### Analysis
+### Key Performance Insights
 
-**List vs Mutable Slice:**
-- List prepend is competitive with mutable slice append for incremental additions
-- List provides O(1) prepend without capacity planning or reallocation overhead
-- List creation is ~8x slower than mutable slice due to node allocations
+**List Strengths:**
+- **O(1) Prepend** (1 ns): Fastest way to build collections from the front
+- **O(1) Head/Tail**: Efficient for stack-like patterns
+- **Linear Creation**: Scales well (10x elements ≈ 10x time)
 
-**List vs Immutable Slice (copy-on-write):**
-- List creation (531 ns) is ~2x faster than immutable slice creation (1,012 ns)
-- List prepend (0-1 ns) is much faster than immutable slice append (52 ns)
-- List provides true immutability with structural sharing
+**Array Strengths:**
+- **O(1) Prepend** (0 ns): Amortized constant time using prefix buffer (Scala-inspired)
+- **O(eC) Append** (458 ns): 16x faster than immutable slice copy
+- **O(eC) Get** (4 ns): Constant random access regardless of position
+- **O(eC) Update** (451 ns): 16x faster than immutable slice copy
+- **Bulk Operations Optimized**: Filter, Map, Take, Drop use bottom-up tree building
 
-**Array (Trie) vs Slice:**
-- Array random access (2 ns) is slightly slower than slice (0-1 ns) due to trie traversal
-- Array append (131 ns) is slower than immutable slice append (52 ns) but provides better sharing
-- Array shines for large collections where O(eC) beats slice's O(n) copy-on-update
+**Comparison to Go Immutable Slices:**
+
+| Operation | GALA Array | Go Slice (copy) | GALA Advantage |
+|-----------|----------:|----------------:|----------------|
+| Creation(10k) | 3.5ms | 34.9ms | **10x faster** |
+| Prepend | 0 ns | 5,229 ns | **∞ faster** (O(1) vs O(n)) |
+| Append | 458 ns | 7,443 ns | **16x faster** |
+| Update | 451 ns | 7,337 ns | **16x faster** |
+| Get | 4 ns | 0 ns | ~same |
 
 **When to Use Each:**
 
 | Scenario | Recommendation |
 |----------|----------------|
-| Building collections incrementally | List (prepend) or mutable slice |
-| Need immutability with frequent modifications | List or Array |
-| Random access on large collections | Array |
-| Simple iteration with no modifications | Go slice |
-| Functional programming patterns | List or Array |
+| Stack operations (LIFO) | List |
+| Queue-like building (append) | Array |
+| Random access needed | Array |
+| Frequent updates | Array |
+| Large collections with sharing | Array |
+| Recursive algorithms | List |
+| Simple iteration only | Go slice |
 
 ---
 

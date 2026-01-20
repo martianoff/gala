@@ -379,3 +379,174 @@ func TestArrayMultipleModificationsImmutability(t T) T {
     var t7 = Eq[int](t6, step3.Length(), 5)
     return Eq[int](t7, step3.Get(2), 99)
 }
+
+// === Large Array Tests (Tree Growth) ===
+
+// Test that appending beyond 32 elements (branching factor) works correctly.
+// This tests the fix for the bounds check bug in appendToNode where
+// node.children[childIndex] was accessed without verifying childIndex < len(node.children).
+func TestArrayAppendBeyondBranchingFactor(t T) T {
+    var arr = EmptyArray[int]()
+    // Append 100 elements - this will cause the tree to grow beyond depth 1
+    for i := 0; i < 100; i++ {
+        arr = arr.Append(i)
+    }
+    // Verify length
+    var t1 = Eq[int](t, arr.Length(), 100)
+    // Verify first, middle, and last elements
+    var t2 = Eq[int](t1, arr.Get(0), 0)
+    var t3 = Eq[int](t2, arr.Get(50), 50)
+    return Eq[int](t3, arr.Get(99), 99)
+}
+
+// Test large array creation using ArrayOf (which uses Append internally)
+func TestArrayOfLarge(t T) T {
+    // Create array with 50 elements - will cause tree growth
+    var arr = EmptyArray[int]()
+    for i := 0; i < 50; i++ {
+        arr = arr.Append(i * 2)
+    }
+    var t1 = Eq[int](t, arr.Length(), 50)
+    var t2 = Eq[int](t1, arr.Get(0), 0)
+    var t3 = Eq[int](t2, arr.Get(25), 50)
+    return Eq[int](t3, arr.Get(49), 98)
+}
+
+// Test bulk operations on large arrays
+func TestArrayFromSliceLarge(t T) T {
+    // Build using ArrayFromSlice (optimized bottom-up construction)
+    var slice []int
+    for i := 0; i < 100; i++ {
+        slice = append(slice, i)
+    }
+    var arr = ArrayFromSlice[int](slice)
+    var t1 = Eq[int](t, arr.Length(), 100)
+    var t2 = Eq[int](t1, arr.Get(0), 0)
+    var t3 = Eq[int](t2, arr.Get(32), 32)  // First element in second node
+    var t4 = Eq[int](t3, arr.Get(64), 64)  // First element in third node
+    return Eq[int](t4, arr.Get(99), 99)
+}
+
+// Test that updates work correctly on large arrays
+func TestArrayUpdatedLarge(t T) T {
+    var arr = EmptyArray[int]()
+    for i := 0; i < 64; i++ {
+        arr = arr.Append(i)
+    }
+    // Update element at position 33 (in second node)
+    var updated = arr.Updated(33, 999)
+    var t1 = Eq[int](t, arr.Get(33), 33)      // Original unchanged
+    var t2 = Eq[int](t1, updated.Get(33), 999) // Updated has new value
+    var t3 = Eq[int](t2, updated.Get(32), 32)  // Adjacent unchanged
+    return Eq[int](t3, updated.Get(34), 34)    // Adjacent unchanged
+}
+
+// === Prefix Buffer Tests (O(1) Prepend) ===
+
+// Test multiple prepends that stay within the prefix buffer (< 32)
+func TestArrayPrependMultiple(t T) T {
+    var arr = ArrayOf[int](100, 200, 300)
+    // Prepend 5 elements - should all stay in prefix buffer
+    arr = arr.Prepend(5)
+    arr = arr.Prepend(4)
+    arr = arr.Prepend(3)
+    arr = arr.Prepend(2)
+    arr = arr.Prepend(1)
+    var t1 = Eq[int](t, arr.Length(), 8)
+    var t2 = Eq[int](t1, arr.Get(0), 1)  // First prepended (most recent at logical 0)
+    var t3 = Eq[int](t2, arr.Get(4), 5)  // Last prepended
+    var t4 = Eq[int](t3, arr.Get(5), 100) // Original first element
+    return Eq[int](t4, arr.Get(7), 300) // Original last element
+}
+
+// Test prepend that triggers consolidation (32+ prepends)
+func TestArrayPrependConsolidation(t T) T {
+    var arr = ArrayOf[int](999)
+    // Prepend 35 elements - should trigger consolidation at 32
+    for i := 35; i >= 1; i-- {
+        arr = arr.Prepend(i)
+    }
+    var t1 = Eq[int](t, arr.Length(), 36)
+    var t2 = Eq[int](t1, arr.Get(0), 1)   // First prepended
+    var t3 = Eq[int](t2, arr.Get(34), 35) // Last prepended
+    return Eq[int](t3, arr.Get(35), 999)  // Original element
+}
+
+// Test mixed prepend and append operations
+func TestArrayPrependAndAppendMixed(t T) T {
+    var arr = ArrayOf[int](50)
+    arr = arr.Prepend(25)  // Add to front
+    arr = arr.Append(75)   // Add to back
+    arr = arr.Prepend(10)  // Add to front again
+    arr = arr.Append(90)   // Add to back again
+    var t1 = Eq[int](t, arr.Length(), 5)
+    var t2 = Eq[int](t1, arr.Get(0), 10)  // First (most recent prepend)
+    var t3 = Eq[int](t2, arr.Get(1), 25)  // Second prepend
+    var t4 = Eq[int](t3, arr.Get(2), 50)  // Original
+    var t5 = Eq[int](t4, arr.Get(3), 75)  // First append
+    return Eq[int](t5, arr.Get(4), 90)    // Second append
+}
+
+// Test prepend on empty array
+func TestArrayPrependEmpty(t T) T {
+    var arr = EmptyArray[int]()
+    arr = arr.Prepend(42)
+    var t1 = Eq[int](t, arr.Length(), 1)
+    return Eq[int](t1, arr.Get(0), 42)
+}
+
+// Test prepend chain
+func TestArrayPrependChain(t T) T {
+    var arr = EmptyArray[int]()
+    // Build array by prepending: result should be 1, 2, 3, 4, 5
+    arr = arr.Prepend(5).Prepend(4).Prepend(3).Prepend(2).Prepend(1)
+    var t1 = Eq[int](t, arr.Length(), 5)
+    var t2 = Eq[int](t1, arr.Get(0), 1)
+    var t3 = Eq[int](t2, arr.Get(2), 3)
+    return Eq[int](t3, arr.Get(4), 5)
+}
+
+// Test Updated on array with prefix
+func TestArrayUpdatedWithPrefix(t T) T {
+    var arr = ArrayOf[int](100, 200, 300)
+    arr = arr.Prepend(50)
+    arr = arr.Prepend(25)
+    // Array is now: [25, 50, 100, 200, 300]
+    // Update in prefix (index 0)
+    var updated1 = arr.Updated(0, 999)
+    var t1 = Eq[int](t, updated1.Get(0), 999)
+    var t2 = Eq[int](t1, updated1.Get(1), 50) // Other prefix element unchanged
+    // Update in tree (index 3)
+    var updated2 = arr.Updated(3, 888)
+    var t3 = Eq[int](t2, updated2.Get(3), 888)
+    var t4 = Eq[int](t3, updated2.Get(0), 25) // Prefix unchanged
+    // Original unchanged
+    return Eq[int](t4, arr.Get(0), 25)
+}
+
+// Test that prepend maintains immutability
+func TestArrayPrependImmutabilityDeep(t T) T {
+    var arr1 = ArrayOf[int](100, 200)
+    var arr2 = arr1.Prepend(50)
+    var arr3 = arr2.Prepend(25)
+    // All arrays should be independent
+    var t1 = Eq[int](t, arr1.Length(), 2)
+    var t2 = Eq[int](t1, arr2.Length(), 3)
+    var t3 = Eq[int](t2, arr3.Length(), 4)
+    var t4 = Eq[int](t3, arr1.Get(0), 100) // arr1 unchanged
+    var t5 = Eq[int](t4, arr2.Get(0), 50)  // arr2 has its own state
+    return Eq[int](t5, arr3.Get(0), 25)    // arr3 has its own state
+}
+
+// Test large prepend then access all elements
+func TestArrayPrependLargeAccess(t T) T {
+    var arr = EmptyArray[int]()
+    // Build array of 50 elements by prepend
+    for i := 50; i >= 1; i-- {
+        arr = arr.Prepend(i)
+    }
+    var t1 = Eq[int](t, arr.Length(), 50)
+    var t2 = Eq[int](t1, arr.Get(0), 1)
+    var t3 = Eq[int](t2, arr.Get(24), 25)
+    return Eq[int](t3, arr.Get(49), 50)
+}

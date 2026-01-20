@@ -17,141 +17,339 @@ func measureNs(iterations int, f func() any) int64 {
 }
 
 func printResult(name string, nsPerOp int64) {
-    fmt.Printf("%-30s %10d ns/op\n", name, nsPerOp)
+    fmt.Printf("%-40s %12d ns/op\n", name, nsPerOp)
 }
 
-// List creation benchmark
-func benchListCreation() {
-    var ns = measureNs(10000, () => {
+// ============ LIST BENCHMARKS ============
+
+// List creation benchmark - small
+func benchListCreation100() {
+    var ns = measureNs(1000, () => {
         var list = EmptyList[int]()
-        for i := 0; i < 30; i++ {
+        for i := 0; i < 100; i++ {
             list = list.Prepend(i)
         }
     })
-    printResult("ListCreation(30)", ns)
+    printResult("List.Creation(100)", ns)
+}
+
+// List creation benchmark - medium
+func benchListCreation10000() {
+    var ns = measureNs(100, () => {
+        var list = EmptyList[int]()
+        for i := 0; i < 10000; i++ {
+            list = list.Prepend(i)
+        }
+    })
+    printResult("List.Creation(10000)", ns)
+}
+
+// List creation benchmark - large
+func benchListCreation100000() {
+    var ns = measureNs(10, () => {
+        var list = EmptyList[int]()
+        for i := 0; i < 100000; i++ {
+            list = list.Prepend(i)
+        }
+    })
+    printResult("List.Creation(100000)", ns)
 }
 
 // List prepend benchmark
 func benchListPrepend() {
     var list = EmptyList[int]()
-    for i := 0; i < 30; i++ {
+    for i := 0; i < 10000; i++ {
         list = list.Prepend(i)
     }
     var ns = measureNs(1000000, () => {
         var _ = list.Prepend(999)
     })
-    printResult("ListPrepend", ns)
+    printResult("List.Prepend (size=10000)", ns)
 }
 
 // List head benchmark
 func benchListHead() {
     var list = EmptyList[int]()
-    for i := 0; i < 30; i++ {
+    for i := 0; i < 10000; i++ {
         list = list.Prepend(i)
     }
     var ns = measureNs(1000000, () => {
         var _ = list.Head()
     })
-    printResult("ListHead", ns)
+    printResult("List.Head (size=10000)", ns)
 }
 
-// List get benchmark
-func benchListGet() {
+// List get benchmark - beginning
+func benchListGetFirst() {
     var list = EmptyList[int]()
-    for i := 0; i < 30; i++ {
+    for i := 0; i < 10000; i++ {
         list = list.Prepend(i)
     }
     var ns = measureNs(100000, () => {
-        var _ = list.Get(15)
+        var _ = list.Get(0)
     })
-    printResult("ListGet(15)", ns)
+    printResult("List.Get(0) (size=10000)", ns)
+}
+
+// List get benchmark - middle
+func benchListGetMiddle() {
+    var list = EmptyList[int]()
+    for i := 0; i < 10000; i++ {
+        list = list.Prepend(i)
+    }
+    var ns = measureNs(1000, () => {
+        var _ = list.Get(5000)
+    })
+    printResult("List.Get(5000) (size=10000)", ns)
 }
 
 // List filter benchmark
 func benchListFilter() {
     var list = EmptyList[int]()
-    for i := 0; i < 30; i++ {
+    for i := 0; i < 10000; i++ {
         list = list.Prepend(i)
     }
-    var ns = measureNs(10000, () => {
+    var ns = measureNs(100, () => {
         var _ = list.Filter((x int) => x % 2 == 0)
     })
-    printResult("ListFilter", ns)
+    printResult("List.Filter (size=10000)", ns)
 }
 
-// Array creation benchmark
-func benchArrayCreation() {
-    var ns = measureNs(10000, () => {
+// List map benchmark
+func benchListMap() {
+    var list = EmptyList[int]()
+    for i := 0; i < 10000; i++ {
+        list = list.Prepend(i)
+    }
+    var ns = measureNs(100, () => {
+        var _ = list.Map((x int) => x * 2)
+    })
+    printResult("List.Map (size=10000)", ns)
+}
+
+// List foldLeft benchmark
+func benchListFoldLeft() {
+    var list = EmptyList[int]()
+    for i := 0; i < 10000; i++ {
+        list = list.Prepend(i)
+    }
+    var ns = measureNs(1000, () => {
+        var _ = List_FoldLeft[int](list, 0, (acc int, x int) => acc + x)
+    })
+    printResult("List.FoldLeft (size=10000)", ns)
+}
+
+// ============ ARRAY (VECTOR) BENCHMARKS ============
+
+// Array creation benchmark - small
+func benchArrayCreation100() {
+    var ns = measureNs(1000, () => {
         var arr = EmptyArray[int]()
-        for i := 0; i < 30; i++ {
+        for i := 0; i < 100; i++ {
             arr = arr.Append(i)
         }
     })
-    printResult("ArrayCreation(30)", ns)
+    printResult("Array.Creation(100)", ns)
+}
+
+// Array creation benchmark - medium
+func benchArrayCreation10000() {
+    var ns = measureNs(100, () => {
+        var arr = EmptyArray[int]()
+        for i := 0; i < 10000; i++ {
+            arr = arr.Append(i)
+        }
+    })
+    printResult("Array.Creation(10000)", ns)
+}
+
+// Array creation benchmark - large
+func benchArrayCreation100000() {
+    var ns = measureNs(10, () => {
+        var arr = EmptyArray[int]()
+        for i := 0; i < 100000; i++ {
+            arr = arr.Append(i)
+        }
+    })
+    printResult("Array.Creation(100000)", ns)
 }
 
 // Array append benchmark
 func benchArrayAppend() {
     var arr = EmptyArray[int]()
-    for i := 0; i < 30; i++ {
+    for i := 0; i < 10000; i++ {
         arr = arr.Append(i)
     }
     var ns = measureNs(100000, () => {
         var _ = arr.Append(999)
     })
-    printResult("ArrayAppend", ns)
+    printResult("Array.Append (size=10000)", ns)
+}
+
+// Array prepend benchmark
+func benchArrayPrepend() {
+    var arr = EmptyArray[int]()
+    for i := 0; i < 10000; i++ {
+        arr = arr.Append(i)
+    }
+    var ns = measureNs(100, () => {
+        var _ = arr.Prepend(999)
+    })
+    printResult("Array.Prepend (size=10000)", ns)
 }
 
 // Array head benchmark
 func benchArrayHead() {
     var arr = EmptyArray[int]()
-    for i := 0; i < 30; i++ {
+    for i := 0; i < 10000; i++ {
         arr = arr.Append(i)
     }
     var ns = measureNs(1000000, () => {
         var _ = arr.Head()
     })
-    printResult("ArrayHead", ns)
+    printResult("Array.Head (size=10000)", ns)
 }
 
-// Array get benchmark
-func benchArrayGet() {
+// Array get benchmark - beginning
+func benchArrayGetFirst() {
     var arr = EmptyArray[int]()
-    for i := 0; i < 30; i++ {
+    for i := 0; i < 10000; i++ {
         arr = arr.Append(i)
     }
     var ns = measureNs(1000000, () => {
-        var _ = arr.Get(15)
+        var _ = arr.Get(0)
     })
-    printResult("ArrayGet(15)", ns)
+    printResult("Array.Get(0) (size=10000)", ns)
+}
+
+// Array get benchmark - middle
+func benchArrayGetMiddle() {
+    var arr = EmptyArray[int]()
+    for i := 0; i < 10000; i++ {
+        arr = arr.Append(i)
+    }
+    var ns = measureNs(1000000, () => {
+        var _ = arr.Get(5000)
+    })
+    printResult("Array.Get(5000) (size=10000)", ns)
+}
+
+// Array get benchmark - end
+func benchArrayGetLast() {
+    var arr = EmptyArray[int]()
+    for i := 0; i < 10000; i++ {
+        arr = arr.Append(i)
+    }
+    var ns = measureNs(1000000, () => {
+        var _ = arr.Get(9999)
+    })
+    printResult("Array.Get(9999) (size=10000)", ns)
+}
+
+// Array update benchmark
+func benchArrayUpdate() {
+    var arr = EmptyArray[int]()
+    for i := 0; i < 10000; i++ {
+        arr = arr.Append(i)
+    }
+    var ns = measureNs(100000, () => {
+        var _ = arr.Updated(5000, 999)
+    })
+    printResult("Array.Updated(5000) (size=10000)", ns)
 }
 
 // Array filter benchmark
 func benchArrayFilter() {
     var arr = EmptyArray[int]()
-    for i := 0; i < 30; i++ {
+    for i := 0; i < 10000; i++ {
         arr = arr.Append(i)
     }
-    var ns = measureNs(10000, () => {
+    var ns = measureNs(100, () => {
         var _ = arr.Filter((x int) => x % 2 == 0)
     })
-    printResult("ArrayFilter", ns)
+    printResult("Array.Filter (size=10000)", ns)
+}
+
+// Array map benchmark
+func benchArrayMap() {
+    var arr = EmptyArray[int]()
+    for i := 0; i < 10000; i++ {
+        arr = arr.Append(i)
+    }
+    var ns = measureNs(100, () => {
+        var _ = arr.Map((x int) => x * 2)
+    })
+    printResult("Array.Map (size=10000)", ns)
+}
+
+// Array foldLeft benchmark
+func benchArrayFoldLeft() {
+    var arr = EmptyArray[int]()
+    for i := 0; i < 10000; i++ {
+        arr = arr.Append(i)
+    }
+    var ns = measureNs(1000, () => {
+        var _ = Array_FoldLeft[int](arr, 0, (acc int, x int) => acc + x)
+    })
+    printResult("Array.FoldLeft (size=10000)", ns)
+}
+
+// Array take benchmark
+func benchArrayTake() {
+    var arr = EmptyArray[int]()
+    for i := 0; i < 10000; i++ {
+        arr = arr.Append(i)
+    }
+    var ns = measureNs(1000, () => {
+        var _ = arr.Take(5000)
+    })
+    printResult("Array.Take(5000) (size=10000)", ns)
+}
+
+// Array drop benchmark
+func benchArrayDrop() {
+    var arr = EmptyArray[int]()
+    for i := 0; i < 10000; i++ {
+        arr = arr.Append(i)
+    }
+    var ns = measureNs(1000, () => {
+        var _ = arr.Drop(5000)
+    })
+    printResult("Array.Drop(5000) (size=10000)", ns)
 }
 
 func main() {
     fmt.Println("=== GALA Immutable Collections Performance ===")
+    fmt.Println("Testing with 10,000 - 100,000 elements")
     fmt.Println("")
+
     fmt.Println("--- List Operations ---")
-    benchListCreation()
+    benchListCreation100()
+    benchListCreation10000()
+    benchListCreation100000()
     benchListPrepend()
     benchListHead()
-    benchListGet()
+    benchListGetFirst()
+    benchListGetMiddle()
     benchListFilter()
+    benchListMap()
+    benchListFoldLeft()
+
     fmt.Println("")
-    fmt.Println("--- Array Operations ---")
-    benchArrayCreation()
+    fmt.Println("--- Array (Vector) Operations ---")
+    benchArrayCreation100()
+    benchArrayCreation10000()
+    benchArrayCreation100000()
     benchArrayAppend()
+    benchArrayPrepend()
     benchArrayHead()
-    benchArrayGet()
+    benchArrayGetFirst()
+    benchArrayGetMiddle()
+    benchArrayGetLast()
+    benchArrayUpdate()
     benchArrayFilter()
+    benchArrayMap()
+    benchArrayFoldLeft()
+    benchArrayTake()
+    benchArrayDrop()
 }
