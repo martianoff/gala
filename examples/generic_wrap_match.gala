@@ -8,13 +8,10 @@ type Wrap[T any] struct {
 }
 func (w Wrap[T]) GetValue() any = w.Value
 
-// 3. Define an extractor object
-type Wrapper struct {}
-func (w Wrapper) Apply[T any](v T) Wrap[T] = Wrap[T](Value = v)
-func (w Wrapper) Unapply(o any) any = o match {
-    case wi: Wrap[_] => Some(wi.Value)
-    case _ => None[any]()
-}
+// 3. Define a generic extractor object
+type Wrapper[T any] struct {}
+func (w Wrapper[T]) Apply(v T) Wrap[T] = Wrap[T](Value = v)
+func (w Wrapper[T]) Unapply(o Wrap[T]) Option[T] = Some[T](o.Value)
 
 func main() {
     // Case 1: Matching specific generic type

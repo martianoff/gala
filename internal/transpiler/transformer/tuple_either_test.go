@@ -36,7 +36,8 @@ func main() {
 }`,
 			expected: []string{
 				"std.Tuple[int, string]",
-				"std.UnapplyTuple(t)",
+				"t.V1.Get()",
+				"t.V2.Get()",
 			},
 		},
 		{
@@ -186,7 +187,9 @@ func main() {
 }`,
 			expected: []string{
 				"std.Tuple3[int, string, bool]",
-				"std.UnapplyTuple3(t)",
+				"t.V1.Get()",
+				"t.V2.Get()",
+				"t.V3.Get()",
 			},
 		},
 		{
@@ -202,7 +205,8 @@ func main() {
 }`,
 			expected: []string{
 				"std.Tuple[int, string]",
-				"std.UnapplyTuple(pair)",
+				"pair.V1.Get()",
+				"pair.V2.Get()",
 			},
 		},
 		{
@@ -218,8 +222,8 @@ func main() {
 }`,
 			expected: []string{
 				"std.Tuple[int, string]",
-				"std.UnapplyTuple(pair)",
-				"std.GetSafe",
+				"pair.V1.Get()",
+				"pair.V2.Get()",
 			},
 		},
 		{
@@ -235,8 +239,9 @@ func main() {
 }`,
 			expected: []string{
 				"std.Tuple3[int, string, bool]",
-				"std.UnapplyTuple3(triple)",
-				"std.GetSafe",
+				"triple.V1.Get()",
+				"triple.V2.Get()",
+				"triple.V3.Get()",
 			},
 		},
 		{

@@ -40,9 +40,9 @@ import "martianoff/gala/std"
 
 var x std.Immutable[int] = std.NewImmutable[int](5)
 var res = std.NewImmutable(func(x int) string {
-	if std.UnapplyCheck(x, 1) {
+	if x == 1 {
 		return "one"
-	} else if std.UnapplyCheck(x, 2) {
+	} else if x == 2 {
 		return "two"
 	} else {
 		return "many"
@@ -65,7 +65,7 @@ import "martianoff/gala/std"
 
 var x = std.NewImmutable(10)
 var res = std.NewImmutable(func(x int) int {
-	if std.UnapplyCheck(x, 10) {
+	if x == 10 {
 		return 1
 	} else {
 		return 0
@@ -88,7 +88,7 @@ import "martianoff/gala/std"
 
 var x = std.NewImmutable("hello")
 var res = std.NewImmutable(func(x string) string {
-	if std.UnapplyCheck(x, "hello") {
+	if x == "hello" {
 		return "world"
 	} else {
 		return "fail"

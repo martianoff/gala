@@ -429,17 +429,53 @@ val msg = p match {
 }
 ```
 
-You can also define custom extractors by implementing an `Unapply` method that returns an `Option[T]`, a `bool`, or multiple values followed by a `bool`.
+##### Defining Custom Extractors
 
+Custom extractors must implement an `Unapply` method with one of the following signatures:
+
+**1. Option-returning extractors** (for extracting values):
 ```gala
+// Non-generic extractor with concrete parameter type
 type Even struct {}
 func (e Even) Unapply(i int) Option[int] = if (i % 2 == 0) Some(i) else None[int]()
 
-val description = number match {
-    case Even(n) => fmt.Sprintf("%d is even", n)
-    case _       => "odd"
+// Generic extractor with parameterized type
+type Wrapper[T any] struct {}
+func (w Wrapper[T]) Unapply(o Wrap[T]) Option[T] = Some[T](o.Value)
+```
+
+**2. Boolean-returning extractors** (for guard patterns):
+```gala
+type Positive struct {}
+func (p Positive) Unapply(i int) bool = i > 0
+```
+
+**Important:** The parameter and return types must be concrete or properly parameterized. The following is **NOT allowed**:
+```gala
+// INVALID - will cause a compile error
+func (e MyExtractor) Unapply(v any) any  // Unapply(any) any is not supported
+```
+
+##### Generic Extractors
+
+For extractors that work with generic container types, define a generic extractor that mirrors the container's type parameters:
+
+```gala
+// Extractor for Wrap[T] containers
+type Wrapper[T any] struct {}
+func (w Wrapper[T]) Apply(v T) Wrap[T] = Wrap[T](Value = v)
+func (w Wrapper[T]) Unapply(o Wrap[T]) Option[T] = Some[T](o.Value)
+
+val w = Wrapper(100)  // Creates Wrap[int]
+val res = w match {
+    case Wrapper(i: int) => fmt.Sprintf("Extracted: %d", i)
+    case _ => "Other"
 }
 ```
+
+The transpiler infers the type parameter `T` from the matched type, so `Wrapper` in the pattern becomes `Wrapper[int]`.
+
+##### Using Extractors
 
 Extractors can be nested: `case Some(Even(n)) => ...`. You can use the underscore `_` to skip variable bindings in any extractor: `case Some(_) => "Got something"`.
 
