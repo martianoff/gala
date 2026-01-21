@@ -462,7 +462,43 @@ arr.ForEach((x int) => {
 
 An immutable set with effectively constant time operations. Uses a Hash Array Mapped Trie (HAMT) structure similar to Scala's HashSet.
 
-**Note:** T must be a `comparable` type (e.g., int, string, structs with comparable fields).
+**Type Requirements:** T must be `comparable` and either:
+- A **primitive type** (int, string, bool, float, etc.) - hashed automatically
+- A **custom type** implementing the `Hashable` interface
+
+### Hashable Interface
+
+Custom types must implement the `Hashable` interface to be used in HashSet:
+
+```gala
+// The Hashable interface
+type Hashable interface {
+    Hash() uint32
+}
+
+// Example: Custom type implementing Hashable
+type Person struct {
+    Name string
+    Age  int
+}
+
+func (p Person) Hash() uint32 {
+    return HashCombine(HashString(p.Name), HashInt(int64(p.Age)))
+}
+
+// Now Person can be used in HashSet
+val people = HashSetOf[Person](
+    Person(Name = "Alice", Age = 30),
+    Person(Name = "Bob", Age = 25),
+)
+```
+
+**Available hash helper functions:**
+- `HashInt(n int64) uint32` - Hash integers
+- `HashUint(n uint64) uint32` - Hash unsigned integers
+- `HashString(s string) uint32` - Hash strings
+- `HashBool(b bool) uint32` - Hash booleans
+- `HashCombine(h1, h2 uint32) uint32` - Combine two hashes (for structs)
 
 ### Construction
 

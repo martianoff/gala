@@ -122,6 +122,21 @@ func (t NilType) IsNil() bool        { return true }
 func (t NilType) BaseName() string   { return "" }
 func (t NilType) GetPackage() string { return "" }
 
+// IsPrimitiveType checks if a type name is a Go primitive/builtin type.
+// Primitive types should never be package-qualified.
+func IsPrimitiveType(name string) bool {
+	switch name {
+	case "int", "int8", "int16", "int32", "int64",
+		"uint", "uint8", "uint16", "uint32", "uint64", "uintptr",
+		"float32", "float64",
+		"complex64", "complex128",
+		"bool", "byte", "rune", "string",
+		"any", "error":
+		return true
+	}
+	return false
+}
+
 // ParseType is a helper to transition from string-based types to structured types.
 // It should be used sparingly as we want the analyzer to produce structured types directly.
 func ParseType(s string) Type {

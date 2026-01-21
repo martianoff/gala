@@ -55,10 +55,17 @@ gala_transpile(
     out = "seq.go",
 )
 
+gala_transpile(
+    name = "hashable_go",
+    src = "hashable.gala",
+    out = "hashable.go",
+)
+
 go_library(
     name = "std",
     srcs = [
         "either.go",
+        "hashable.go",
         "immutable.go",
         "interfaces.go",
         "iterable.go",

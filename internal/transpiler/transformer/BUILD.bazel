@@ -34,6 +34,7 @@ go_test(
         "control_flow_test.go",
         "copy_test.go",
         "default_immutability_test.go",
+        "dot_import_test.go",
         "equal_test.go",
         "functions_test.go",
         "generics_test.go",

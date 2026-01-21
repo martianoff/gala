@@ -749,9 +749,8 @@ func (a *galaAnalyzer) resolveTypeWithParams(typeName string, pkgName string, ty
 		}
 	}
 
-	// Check if it's a builtin
-	switch typeName {
-	case "int", "int32", "int64", "float32", "float64", "string", "bool", "any", "error":
+	// Check if it's a builtin/primitive type - these should never be package-qualified
+	if transpiler.IsPrimitiveType(typeName) {
 		return transpiler.ParseType(typeName)
 	}
 

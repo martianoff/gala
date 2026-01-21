@@ -1,0 +1,89 @@
+package std
+
+// Hashable is an interface that types can implement to provide custom hash functions.
+// Used by HashSet and HashMap for efficient hashing.
+//
+// Primitive types (int, string, bool, etc.) are handled automatically.
+// Custom types should implement this interface for use in hash-based collections.
+//
+// Example:
+//   type Person struct {
+//       Name string
+//       Age  int
+//   }
+//   func (p Person) Hash() uint32 {
+//       return HashCombine(HashString(p.Name), HashInt(int64(p.Age)))
+//   }
+type Hashable interface {
+    Hash() uint32
+}
+
+// HashInt hashes an int64 value using FNV-1a bit mixing.
+func HashInt(n int64) uint32 {
+    var h uint32 = 2166136261
+    h = h ^ uint32(n&255)
+    h = h * 16777619
+    h = h ^ uint32((n>>8)&255)
+    h = h * 16777619
+    h = h ^ uint32((n>>16)&255)
+    h = h * 16777619
+    h = h ^ uint32((n>>24)&255)
+    h = h * 16777619
+    h = h ^ uint32((n>>32)&255)
+    h = h * 16777619
+    h = h ^ uint32((n>>40)&255)
+    h = h * 16777619
+    h = h ^ uint32((n>>48)&255)
+    h = h * 16777619
+    h = h ^ uint32((n>>56)&255)
+    h = h * 16777619
+    return h
+}
+
+// HashUint hashes a uint64 value using FNV-1a bit mixing.
+func HashUint(n uint64) uint32 {
+    var h uint32 = 2166136261
+    h = h ^ uint32(n&255)
+    h = h * 16777619
+    h = h ^ uint32((n>>8)&255)
+    h = h * 16777619
+    h = h ^ uint32((n>>16)&255)
+    h = h * 16777619
+    h = h ^ uint32((n>>24)&255)
+    h = h * 16777619
+    h = h ^ uint32((n>>32)&255)
+    h = h * 16777619
+    h = h ^ uint32((n>>40)&255)
+    h = h * 16777619
+    h = h ^ uint32((n>>48)&255)
+    h = h * 16777619
+    h = h ^ uint32((n>>56)&255)
+    h = h * 16777619
+    return h
+}
+
+// HashString hashes a string value using FNV-1a.
+func HashString(s string) uint32 {
+    var h uint32 = 2166136261
+    for i := 0; i < len(s); i++ {
+        h = h ^ uint32(s[i])
+        h = h * 16777619
+    }
+    return h
+}
+
+// HashBool hashes a boolean value.
+func HashBool(b bool) uint32 {
+    if b {
+        return 1231
+    }
+    return 1237
+}
+
+// HashCombine combines two hash values into one.
+// Useful for hashing structs with multiple fields.
+// Example: HashCombine(HashString(name), HashInt(age))
+func HashCombine(h1 uint32, h2 uint32) uint32 {
+    // 0x9e3779b9 = 2654435769 (golden ratio constant)
+    return h1 ^ (h2 + 2654435769 + (h1 << 6) + (h1 >> 2))
+}

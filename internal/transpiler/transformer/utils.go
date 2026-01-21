@@ -29,10 +29,18 @@ func (t *galaASTTransformer) isNoneCall(expr ast.Expr) bool {
 }
 
 func (t *galaASTTransformer) stdIdent(name string) ast.Expr {
-	t.needsStdImport = true
+	// If we're in the std package, no prefix needed
 	if t.packageName == transpiler.StdPackage {
 		return ast.NewIdent(name)
 	}
+	// If std is dot-imported, no prefix needed
+	for _, di := range t.dotImports {
+		if di == transpiler.StdPackage {
+			return ast.NewIdent(name)
+		}
+	}
+	// Otherwise, need the std. prefix and import
+	t.needsStdImport = true
 	return &ast.SelectorExpr{
 		X:   ast.NewIdent(transpiler.StdPackage),
 		Sel: ast.NewIdent(name),

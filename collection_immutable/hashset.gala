@@ -1,9 +1,16 @@
 package collection_immutable
 
-import "fmt"
+import (
+    "fmt"
+    . "martianoff/gala/std"
+)
 
 // HashSet is an immutable set with effectively constant time operations.
 // It uses a Hash Array Mapped Trie (HAMT) structure similar to Scala's HashSet.
+//
+// Elements must be either:
+// - Primitive types (int, string, bool, etc.) - hashed automatically
+// - Types implementing the Hashable interface
 //
 // Performance characteristics (eC = effectively constant, log32(n)):
 // - Add:      O(eC)
@@ -65,101 +72,39 @@ func (s HashSet[T]) Size() int = s.size
 // Length is an alias for Size.
 func (s HashSet[T]) Length() int = s.size
 
-// hash computes a hash code for a value using FNV-1a.
-// Uses type-specific implementations for common types to avoid fmt.Sprintf overhead.
+// hash computes a hash code for a value.
+// Priority:
+// 1. For primitives (int, string, bool, etc.), use built-in efficient hashing
+// 2. If the value implements Hashable, use its Hash() method
+// 3. For other types, panic - they must implement Hashable
 func hash[T comparable](value T) uint32 {
     val v any = value
+
+    // Check primitives first (common case), then Hashable interface
     val result = v match {
-        case i: int => hashInt(int64(i))
-        case i: int8 => hashInt(int64(i))
-        case i: int16 => hashInt(int64(i))
-        case i: int32 => hashInt(int64(i))
-        case i: int64 => hashInt(i)
-        case u: uint => hashUint(uint64(u))
-        case u: uint8 => hashUint(uint64(u))
-        case u: uint16 => hashUint(uint64(u))
-        case u: uint32 => hashUint(uint64(u))
-        case u: uint64 => hashUint(u)
-        case s: string => hashString(s)
-        case b: bool => hashBool(b)
-        case _ => hashGeneric(v)
+        case i: int => HashInt(int64(i))
+        case s: string => HashString(s)
+        case i: int64 => HashInt(i)
+        case i: int32 => HashInt(int64(i))
+        case u: uint => HashUint(uint64(u))
+        case u: uint64 => HashUint(u)
+        case u: uint32 => HashUint(uint64(u))
+        case b: bool => HashBool(b)
+        case i: int8 => HashInt(int64(i))
+        case i: int16 => HashInt(int64(i))
+        case u: uint8 => HashUint(uint64(u))
+        case u: uint16 => HashUint(uint64(u))
+        case f: float64 => HashUint(uint64(f))
+        case f: float32 => HashUint(uint64(f))
+        case h: Hashable => h.Hash()
+        case _ => panicNotHashable(v)
     }
     return result
 }
 
-// hashInt hashes an int64 value using FNV-1a bit mixing.
-func hashInt(n int64) uint32 {
-    var h uint32 = 2166136261
-    // Mix 8 bytes of the int64
-    h = h ^ uint32(n&255)
-    h = h * 16777619
-    h = h ^ uint32((n>>8)&255)
-    h = h * 16777619
-    h = h ^ uint32((n>>16)&255)
-    h = h * 16777619
-    h = h ^ uint32((n>>24)&255)
-    h = h * 16777619
-    h = h ^ uint32((n>>32)&255)
-    h = h * 16777619
-    h = h ^ uint32((n>>40)&255)
-    h = h * 16777619
-    h = h ^ uint32((n>>48)&255)
-    h = h * 16777619
-    h = h ^ uint32((n>>56)&255)
-    h = h * 16777619
-    return h
-}
-
-// hashUint hashes a uint64 value using FNV-1a bit mixing.
-func hashUint(n uint64) uint32 {
-    var h uint32 = 2166136261
-    // Mix 8 bytes of the uint64
-    h = h ^ uint32(n&255)
-    h = h * 16777619
-    h = h ^ uint32((n>>8)&255)
-    h = h * 16777619
-    h = h ^ uint32((n>>16)&255)
-    h = h * 16777619
-    h = h ^ uint32((n>>24)&255)
-    h = h * 16777619
-    h = h ^ uint32((n>>32)&255)
-    h = h * 16777619
-    h = h ^ uint32((n>>40)&255)
-    h = h * 16777619
-    h = h ^ uint32((n>>48)&255)
-    h = h * 16777619
-    h = h ^ uint32((n>>56)&255)
-    h = h * 16777619
-    return h
-}
-
-// hashString hashes a string value using FNV-1a.
-func hashString(s string) uint32 {
-    var h uint32 = 2166136261
-    for i := 0; i < len(s); i++ {
-        h = h ^ uint32(s[i])
-        h = h * 16777619
-    }
-    return h
-}
-
-// hashBool hashes a boolean value.
-func hashBool(b bool) uint32 {
-    if b {
-        return 1231  // True hash (same as Java)
-    }
-    return 1237  // False hash (same as Java)
-}
-
-// hashGeneric is a fallback for types not handled specially.
-func hashGeneric(v any) uint32 {
-    val str = fmt.Sprintf("%v", v)
-    var h uint32 = 2166136261
-    for i := 0; i < len(str); i++ {
-        h = h ^ uint32(str[i])
-        h = h * 16777619
-    }
-    return h
+// panicNotHashable panics with a helpful error message for types that don't implement Hashable.
+func panicNotHashable(v any) uint32 {
+    panic(fmt.Sprintf("HashSet: type %T must implement std.Hashable interface", v))
 }
 
 // bitpos returns the bit position for a hash at a given level.

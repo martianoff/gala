@@ -3,6 +3,7 @@ package main
 import (
     . "martianoff/gala/test"
     . "martianoff/gala/collection_immutable"
+    . "martianoff/gala/std"
 )
 
 // Basic operations tests
@@ -240,4 +241,78 @@ func TestHashSetReduceOption(t T) T {
 
     var t1 = IsTrue(t, s.ReduceOption((a int, b int) => a + b).IsDefined())
     return IsTrue(t1, empty.ReduceOption((a int, b int) => a + b).IsEmpty())
+}
+
+// ============ Hashable Interface Tests ============
+
+// Person is a custom type that implements Hashable
+type Person struct {
+    Name string
+    Age  int
+}
+
+// Hash implements the Hashable interface for Person
+func (p Person) Hash() uint32 {
+    return HashCombine(HashString(p.Name), HashInt(int64(p.Age)))
+}
+
+func TestHashSetWithHashable(t T) T {
+    val p1 = Person(Name = "Alice", Age = 30)
+    val p2 = Person(Name = "Bob", Age = 25)
+    val p3 = Person(Name = "Charlie", Age = 35)
+
+    val s = EmptyHashSet[Person]()
+    val s1 = s.Add(p1)
+    val s2 = s1.Add(p2)
+    val s3 = s2.Add(p3)
+
+    var t1 = Eq[int](t, s3.Size(), 3)
+    var t2 = IsTrue(t1, s3.Contains(p1))
+    var t3 = IsTrue(t2, s3.Contains(p2))
+    return IsTrue(t3, s3.Contains(p3))
+}
+
+func TestHashSetHashableNoDuplicates(t T) T {
+    val p1 = Person(Name = "Alice", Age = 30)
+    val p1copy = Person(Name = "Alice", Age = 30)
+
+    val s = EmptyHashSet[Person]()
+    val s1 = s.Add(p1)
+    val s2 = s1.Add(p1copy)
+
+    return Eq[int](t, s2.Size(), 1)
+}
+
+func TestHashSetHashableRemove(t T) T {
+    val p1 = Person(Name = "Alice", Age = 30)
+    val p2 = Person(Name = "Bob", Age = 25)
+
+    val s = HashSetOf[Person](p1, p2)
+    val s2 = s.Remove(p1)
+
+    var t1 = Eq[int](t, s2.Size(), 1)
+    var t2 = IsFalse(t1, s2.Contains(p1))
+    return IsTrue(t2, s2.Contains(p2))
+}
+
+// Test that exported hash functions work correctly
+func TestHashFunctions(t T) T {
+    // HashInt should produce consistent results
+    val h1 = HashInt(int64(42))
+    val h2 = HashInt(int64(42))
+    var t1 = Eq[uint32](t, h1, h2)
+
+    // HashString should produce consistent results
+    val h3 = HashString("hello")
+    val h4 = HashString("hello")
+    var t2 = Eq[uint32](t1, h3, h4)
+
+    // Different values should (usually) produce different hashes
+    val h5 = HashInt(int64(1))
+    val h6 = HashInt(int64(2))
+    var t3 = IsTrue(t2, h5 != h6)
+
+    // HashCombine should work
+    val combined = HashCombine(h1, h3)
+    return IsTrue(t3, combined != 0)
 }

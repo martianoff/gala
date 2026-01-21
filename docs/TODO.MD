@@ -17,3 +17,4 @@
 - [x] JetBrains language plugin
 - [ ] Pointers to immutable vars
 - [ ] TreeSet
+- [ ] Hash() function should be dynamically generated?

@@ -129,19 +129,9 @@ func (t *galaASTTransformer) getExprType(expr ast.Expr) ast.Expr {
 	return ast.NewIdent("any")
 }
 
-// isPrimitiveType checks if a type name is a Go primitive/builtin type
-// These types should never be package-qualified.
+// isPrimitiveType is an alias for transpiler.IsPrimitiveType for local use.
 func isPrimitiveType(name string) bool {
-	switch name {
-	case "int", "int8", "int16", "int32", "int64",
-		"uint", "uint8", "uint16", "uint32", "uint64", "uintptr",
-		"float32", "float64",
-		"complex64", "complex128",
-		"bool", "byte", "rune", "string",
-		"any", "error":
-		return true
-	}
-	return false
+	return transpiler.IsPrimitiveType(name)
 }
 
 // isKnownStdType checks if a type name is a known standard library type
