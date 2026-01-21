@@ -129,6 +129,21 @@ func (t *galaASTTransformer) getExprType(expr ast.Expr) ast.Expr {
 	return ast.NewIdent("any")
 }
 
+// isPrimitiveType checks if a type name is a Go primitive/builtin type
+// These types should never be package-qualified.
+func isPrimitiveType(name string) bool {
+	switch name {
+	case "int", "int8", "int16", "int32", "int64",
+		"uint", "uint8", "uint16", "uint32", "uint64", "uintptr",
+		"float32", "float64",
+		"complex64", "complex128",
+		"bool", "byte", "rune", "string",
+		"any", "error":
+		return true
+	}
+	return false
+}
+
 // isKnownStdType checks if a type name is a known standard library type
 // that should always be prefixed with std.
 func (t *galaASTTransformer) isKnownStdType(name string) bool {
@@ -167,6 +182,12 @@ func (t *galaASTTransformer) typeToExpr(typ transpiler.Type) ast.Expr {
 		return ast.NewIdent(v.Name)
 	case transpiler.NamedType:
 		if v.Package != "" {
+			// CRITICAL: Primitive types must never be package-qualified
+			// This can happen when type resolution incorrectly adds a package prefix
+			// to a primitive type name like "uint32" or "string"
+			if isPrimitiveType(v.Name) {
+				return ast.NewIdent(v.Name)
+			}
 			if v.Package == transpiler.StdPackage {
 				return t.stdIdent(v.Name)
 			}
@@ -916,6 +937,11 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 			}
 			if id.Name == "len" {
 				return transpiler.BasicType{Name: "int"}
+			}
+			// Handle type conversions like uint32(x), int64(y), string(z)
+			// When a primitive type name is used as a function call, it's a type conversion
+			if isPrimitiveType(id.Name) {
+				return transpiler.BasicType{Name: id.Name}
 			}
 			if _, ok := t.structFields[id.Name]; ok {
 				return transpiler.BasicType{Name: id.Name}

@@ -40,6 +40,7 @@ go_test(
         "immutable_test.go",
         "immutable_unwrapping_test.go",
         "import_test.go",
+        "match_return_type_test.go",
         "match_test.go",
         "methods_test.go",
         "multi_var_test.go",
