@@ -4,6 +4,7 @@ load("//:gala.bzl", "gala_binary", "gala_go_test", "gala_library", "gala_transpi
 exports_files([
     "list.gala",
     "array.gala",
+    "hashset.gala",
 ])
 
 # Filegroup for all GALA source files in collection_immutable
@@ -28,10 +29,17 @@ gala_transpile(
     out = "array.go",
 )
 
+gala_transpile(
+    name = "hashset_go",
+    src = "hashset.gala",
+    out = "hashset.go",
+)
+
 go_library(
     name = "collection_immutable",
     srcs = [
         "array.go",
+        "hashset.go",
         "list.go",
     ],
     importpath = "martianoff/gala/collection_immutable",
@@ -60,6 +68,12 @@ gala_go_test(
 gala_go_test(
     name = "validation_test",
     srcs = ["validation_test.gala"],
+    deps = [":collection_immutable"],
+)
+
+gala_go_test(
+    name = "hashset_test",
+    srcs = ["hashset_test.gala"],
     deps = [":collection_immutable"],
 )
 

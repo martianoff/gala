@@ -318,6 +318,129 @@ func benchArrayDrop() {
     printResult("Array.Drop(5000) (size=10000)", ns)
 }
 
+// ============ HASHSET BENCHMARKS ============
+
+// HashSet creation benchmark - small
+func benchHashSetCreation100() {
+    var ns = measureNs(1000, () => {
+        var set = EmptyHashSet[int]()
+        for i := 0; i < 100; i++ {
+            set = set.Add(i)
+        }
+    })
+    printResult("HashSet.Creation(100)", ns)
+}
+
+// HashSet creation benchmark - medium
+func benchHashSetCreation10000() {
+    var ns = measureNs(100, () => {
+        var set = EmptyHashSet[int]()
+        for i := 0; i < 10000; i++ {
+            set = set.Add(i)
+        }
+    })
+    printResult("HashSet.Creation(10000)", ns)
+}
+
+// HashSet creation benchmark - large
+func benchHashSetCreation100000() {
+    var ns = measureNs(10, () => {
+        var set = EmptyHashSet[int]()
+        for i := 0; i < 100000; i++ {
+            set = set.Add(i)
+        }
+    })
+    printResult("HashSet.Creation(100000)", ns)
+}
+
+// HashSet add benchmark (single element)
+func benchHashSetAdd() {
+    var set = EmptyHashSet[int]()
+    for i := 0; i < 10000; i++ {
+        set = set.Add(i)
+    }
+    var ns = measureNs(100000, () => {
+        var _ = set.Add(99999)
+    })
+    printResult("HashSet.Add (size=10000)", ns)
+}
+
+// HashSet contains benchmark - hit
+func benchHashSetContainsHit() {
+    var set = EmptyHashSet[int]()
+    for i := 0; i < 10000; i++ {
+        set = set.Add(i)
+    }
+    var ns = measureNs(1000000, () => {
+        var _ = set.Contains(5000)
+    })
+    printResult("HashSet.Contains (hit, size=10000)", ns)
+}
+
+// HashSet contains benchmark - miss
+func benchHashSetContainsMiss() {
+    var set = EmptyHashSet[int]()
+    for i := 0; i < 10000; i++ {
+        set = set.Add(i)
+    }
+    var ns = measureNs(1000000, () => {
+        var _ = set.Contains(20000)
+    })
+    printResult("HashSet.Contains (miss, size=10000)", ns)
+}
+
+// HashSet remove benchmark
+func benchHashSetRemove() {
+    var set = EmptyHashSet[int]()
+    for i := 0; i < 10000; i++ {
+        set = set.Add(i)
+    }
+    var ns = measureNs(100000, () => {
+        var _ = set.Remove(5000)
+    })
+    printResult("HashSet.Remove (size=10000)", ns)
+}
+
+// HashSet filter benchmark
+func benchHashSetFilter() {
+    var set = EmptyHashSet[int]()
+    for i := 0; i < 10000; i++ {
+        set = set.Add(i)
+    }
+    var ns = measureNs(100, () => {
+        var _ = set.Filter((x int) => x % 2 == 0)
+    })
+    printResult("HashSet.Filter (size=10000)", ns)
+}
+
+// HashSet union benchmark
+func benchHashSetUnion() {
+    var set1 = EmptyHashSet[int]()
+    var set2 = EmptyHashSet[int]()
+    for i := 0; i < 1000; i++ {
+        set1 = set1.Add(i)
+        set2 = set2.Add(i + 500)
+    }
+    var ns = measureNs(100, () => {
+        var _ = set1.Union(set2)
+    })
+    printResult("HashSet.Union (2x1000)", ns)
+}
+
+// HashSet intersection benchmark
+func benchHashSetIntersect() {
+    var set1 = EmptyHashSet[int]()
+    var set2 = EmptyHashSet[int]()
+    for i := 0; i < 1000; i++ {
+        set1 = set1.Add(i)
+        set2 = set2.Add(i + 500)
+    }
+    var ns = measureNs(100, () => {
+        var _ = set1.Intersect(set2)
+    })
+    printResult("HashSet.Intersect (2x1000)", ns)
+}
+
 func main() {
     fmt.Println("=== GALA Immutable Collections Performance ===")
     fmt.Println("Testing with 10,000 - 100,000 elements")
@@ -352,4 +475,17 @@ func main() {
     benchArrayFoldLeft()
     benchArrayTake()
     benchArrayDrop()
+
+    fmt.Println("")
+    fmt.Println("--- HashSet Operations ---")
+    benchHashSetCreation100()
+    benchHashSetCreation10000()
+    benchHashSetCreation100000()
+    benchHashSetAdd()
+    benchHashSetContainsHit()
+    benchHashSetContainsMiss()
+    benchHashSetRemove()
+    benchHashSetFilter()
+    benchHashSetUnion()
+    benchHashSetIntersect()
 }

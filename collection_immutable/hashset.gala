@@ -1,0 +1,718 @@
+package collection_immutable
+
+import "fmt"
+
+// HashSet is an immutable set with effectively constant time operations.
+// It uses a Hash Array Mapped Trie (HAMT) structure similar to Scala's HashSet.
+//
+// Performance characteristics (eC = effectively constant, log32(n)):
+// - Add:      O(eC)
+// - Remove:   O(eC)
+// - Contains: O(eC)
+// - Size:     O(1) - cached
+// - Union:    O(m) where m is the smaller set
+// - Intersect: O(m) where m is the smaller set
+
+// hashSetNode represents a node in the HAMT structure.
+// Uses bitmap to track which children exist.
+type hashSetNode[T comparable] struct {
+    bitmap   uint32
+    entries  []T                   // Direct entries at this node (for leaf collisions)
+    children []*hashSetNode[T]     // Child nodes (for internal nodes)
+    isLeaf   bool
+}
+
+// HashSet represents an immutable set.
+type HashSet[T comparable] struct {
+    root   *hashSetNode[T]
+    size   int
+}
+
+// EmptyHashSet returns an empty HashSet.
+func EmptyHashSet[T comparable]() HashSet[T] {
+    var nilRoot *hashSetNode[T] = nil
+    return HashSet[T](root = nilRoot, size = 0)
+}
+
+// HashSetOf creates a HashSet from variadic arguments.
+// Example: HashSetOf[int](1, 2, 3) creates HashSet(1, 2, 3)
+func HashSetOf[T comparable](elements ...T) HashSet[T] {
+    var result = EmptyHashSet[T]()
+    for i := 0; i < len(elements); i++ {
+        result = result.Add(elements[i])
+    }
+    return result
+}
+
+// HashSetFromSlice creates a HashSet from a slice.
+func HashSetFromSlice[T comparable](elements []T) HashSet[T] {
+    var result = EmptyHashSet[T]()
+    for i := 0; i < len(elements); i++ {
+        result = result.Add(elements[i])
+    }
+    return result
+}
+
+// IsEmpty returns true if the set is empty.
+func (s HashSet[T]) IsEmpty() bool = s.size == 0
+
+// NonEmpty returns true if the set is not empty.
+func (s HashSet[T]) NonEmpty() bool = s.size > 0
+
+// Size returns the number of elements. O(1) - cached.
+func (s HashSet[T]) Size() int = s.size
+
+// Length is an alias for Size.
+func (s HashSet[T]) Length() int = s.size
+
+// hash computes a hash code for a value using FNV-1a.
+// Uses type-specific implementations for common types to avoid fmt.Sprintf overhead.
+func hash[T comparable](value T) uint32 {
+    val v any = value
+    val result = v match {
+        case i: int => hashInt(int64(i))
+        case i: int8 => hashInt(int64(i))
+        case i: int16 => hashInt(int64(i))
+        case i: int32 => hashInt(int64(i))
+        case i: int64 => hashInt(i)
+        case u: uint => hashUint(uint64(u))
+        case u: uint8 => hashUint(uint64(u))
+        case u: uint16 => hashUint(uint64(u))
+        case u: uint32 => hashUint(uint64(u))
+        case u: uint64 => hashUint(u)
+        case s: string => hashString(s)
+        case b: bool => hashBool(b)
+        case _ => hashGeneric(v)
+    }
+    return result
+}
+
+// hashInt hashes an int64 value using FNV-1a bit mixing.
+func hashInt(n int64) uint32 {
+    var h uint32 = 2166136261
+    // Mix 8 bytes of the int64
+    h = h ^ uint32(n&255)
+    h = h * 16777619
+    h = h ^ uint32((n>>8)&255)
+    h = h * 16777619
+    h = h ^ uint32((n>>16)&255)
+    h = h * 16777619
+    h = h ^ uint32((n>>24)&255)
+    h = h * 16777619
+    h = h ^ uint32((n>>32)&255)
+    h = h * 16777619
+    h = h ^ uint32((n>>40)&255)
+    h = h * 16777619
+    h = h ^ uint32((n>>48)&255)
+    h = h * 16777619
+    h = h ^ uint32((n>>56)&255)
+    h = h * 16777619
+    return h
+}
+
+// hashUint hashes a uint64 value using FNV-1a bit mixing.
+func hashUint(n uint64) uint32 {
+    var h uint32 = 2166136261
+    // Mix 8 bytes of the uint64
+    h = h ^ uint32(n&255)
+    h = h * 16777619
+    h = h ^ uint32((n>>8)&255)
+    h = h * 16777619
+    h = h ^ uint32((n>>16)&255)
+    h = h * 16777619
+    h = h ^ uint32((n>>24)&255)
+    h = h * 16777619
+    h = h ^ uint32((n>>32)&255)
+    h = h * 16777619
+    h = h ^ uint32((n>>40)&255)
+    h = h * 16777619
+    h = h ^ uint32((n>>48)&255)
+    h = h * 16777619
+    h = h ^ uint32((n>>56)&255)
+    h = h * 16777619
+    return h
+}
+
+// hashString hashes a string value using FNV-1a.
+func hashString(s string) uint32 {
+    var h uint32 = 2166136261
+    for i := 0; i < len(s); i++ {
+        h = h ^ uint32(s[i])
+        h = h * 16777619
+    }
+    return h
+}
+
+// hashBool hashes a boolean value.
+func hashBool(b bool) uint32 {
+    if b {
+        return 1231  // True hash (same as Java)
+    }
+    return 1237  // False hash (same as Java)
+}
+
+// hashGeneric is a fallback for types not handled specially.
+func hashGeneric(v any) uint32 {
+    val str = fmt.Sprintf("%v", v)
+    var h uint32 = 2166136261
+    for i := 0; i < len(str); i++ {
+        h = h ^ uint32(str[i])
+        h = h * 16777619
+    }
+    return h
+}
+
+// bitpos returns the bit position for a hash at a given level.
+func bitpos(hashCode uint32, level int) uint32 {
+    var shift = uint(level * 5)
+    var idx = (hashCode >> shift) & 31
+    return uint32(1) << idx
+}
+
+// index returns the array index for a bit position in a bitmap.
+func index(bitmap uint32, bit uint32) int {
+    return popcount(bitmap & (bit - 1))
+}
+
+// popcount returns the number of set bits in a uint32.
+func popcount(x uint32) int {
+    var count = 0
+    for x != 0 {
+        count++
+        x = x & (x - 1)
+    }
+    return count
+}
+
+// Contains checks if the set contains the given element. O(eC).
+func (s HashSet[T]) Contains(elem T) bool {
+    if s.root == nil {
+        return false
+    }
+    val hashCode = hash[T](elem)
+    return containsInNode[T](s.root, elem, hashCode, 0)
+}
+
+// containsInNode searches for an element in a node.
+func containsInNode[T comparable](node *hashSetNode[T], elem T, hashCode uint32, level int) bool {
+    if node.isLeaf {
+        // Check entries at this leaf
+        for i := 0; i < len(node.entries); i++ {
+            if node.entries[i] == elem {
+                return true
+            }
+        }
+        return false
+    }
+
+    val bit = bitpos(hashCode, level)
+    if (node.bitmap & bit) == 0 {
+        return false
+    }
+
+    val idx = index(node.bitmap, bit)
+    return containsInNode[T](node.children[idx], elem, hashCode, level + 1)
+}
+
+// Add adds an element to the set. Returns a new set with the element. O(eC).
+func (s HashSet[T]) Add(elem T) HashSet[T] {
+    val hashCode = hash[T](elem)
+
+    // Check if already contains (single hash computation)
+    if s.root != nil && containsInNode[T](s.root, elem, hashCode, 0) {
+        return s
+    }
+
+    var newRoot *hashSetNode[T]
+    if s.root == nil {
+        // Create new leaf node
+        var entries []T
+        entries = append(entries, elem)
+        newRoot = &hashSetNode[T](entries = entries, isLeaf = true)
+    } else {
+        newRoot = addToNode[T](s.root, elem, hashCode, 0)
+    }
+
+    return HashSet[T](root = newRoot, size = s.size + 1)
+}
+
+// addToNode adds an element to a node, returning a new node.
+func addToNode[T comparable](node *hashSetNode[T], elem T, hashCode uint32, level int) *hashSetNode[T] {
+    if node.isLeaf {
+        // Add to leaf's entries or expand to internal node
+        if level >= 6 {
+            // Max depth reached, just add to entries (hash collision)
+            var newEntries []T
+            for i := 0; i < len(node.entries); i++ {
+                newEntries = append(newEntries, node.entries[i])
+            }
+            newEntries = append(newEntries, elem)
+            return &hashSetNode[T](entries = newEntries, isLeaf = true)
+        }
+
+        // Create a new internal node and distribute elements
+        var newNode = &hashSetNode[T](bitmap = uint32(0), isLeaf = false)
+
+        // Add existing entries
+        for i := 0; i < len(node.entries); i++ {
+            val existingHash = hash[T](node.entries[i])
+            newNode = insertIntoInternalNode[T](newNode, node.entries[i], existingHash, level)
+        }
+
+        // Add new element
+        return insertIntoInternalNode[T](newNode, elem, hashCode, level)
+    }
+
+    // Internal node
+    val bit = bitpos(hashCode, level)
+    val idx = index(node.bitmap, bit)
+
+    if (node.bitmap & bit) == 0 {
+        // No child at this position, create new leaf
+        var newEntries []T
+        newEntries = append(newEntries, elem)
+        val newLeaf = &hashSetNode[T](entries = newEntries, isLeaf = true)
+
+        // Copy children and insert new leaf
+        var newChildren []*hashSetNode[T]
+        for i := 0; i < idx; i++ {
+            newChildren = append(newChildren, node.children[i])
+        }
+        newChildren = append(newChildren, newLeaf)
+        for i := idx; i < len(node.children); i++ {
+            newChildren = append(newChildren, node.children[i])
+        }
+
+        return &hashSetNode[T](bitmap = node.bitmap | bit, children = newChildren, isLeaf = false)
+    }
+
+    // Child exists, recurse
+    val newChild = addToNode[T](node.children[idx], elem, hashCode, level + 1)
+
+    // Copy children with updated child
+    var newChildren []*hashSetNode[T]
+    for i := 0; i < len(node.children); i++ {
+        if i == idx {
+            newChildren = append(newChildren, newChild)
+        } else {
+            newChildren = append(newChildren, node.children[i])
+        }
+    }
+
+    return &hashSetNode[T](bitmap = node.bitmap, children = newChildren, isLeaf = false)
+}
+
+// insertIntoInternalNode inserts an element into an internal node.
+func insertIntoInternalNode[T comparable](node *hashSetNode[T], elem T, hashCode uint32, level int) *hashSetNode[T] {
+    val bit = bitpos(hashCode, level)
+    val idx = index(node.bitmap, bit)
+
+    if (node.bitmap & bit) == 0 {
+        // No child at this position, create new leaf
+        var newEntries []T
+        newEntries = append(newEntries, elem)
+        val newLeaf = &hashSetNode[T](entries = newEntries, isLeaf = true)
+
+        // Copy children and insert new leaf
+        var newChildren []*hashSetNode[T]
+        for i := 0; i < idx; i++ {
+            newChildren = append(newChildren, node.children[i])
+        }
+        newChildren = append(newChildren, newLeaf)
+        for i := idx; i < len(node.children); i++ {
+            newChildren = append(newChildren, node.children[i])
+        }
+
+        return &hashSetNode[T](bitmap = node.bitmap | bit, children = newChildren, isLeaf = false)
+    }
+
+    // Child exists, recurse
+    val newChild = addToNode[T](node.children[idx], elem, hashCode, level + 1)
+
+    // Copy children with updated child
+    var newChildren []*hashSetNode[T]
+    for i := 0; i < len(node.children); i++ {
+        if i == idx {
+            newChildren = append(newChildren, newChild)
+        } else {
+            newChildren = append(newChildren, node.children[i])
+        }
+    }
+
+    return &hashSetNode[T](bitmap = node.bitmap, children = newChildren, isLeaf = false)
+}
+
+// Remove removes an element from the set. Returns a new set without the element. O(eC).
+func (s HashSet[T]) Remove(elem T) HashSet[T] {
+    val hashCode = hash[T](elem)
+
+    // Check if contains (single hash computation)
+    if s.root == nil || !containsInNode[T](s.root, elem, hashCode, 0) {
+        return s
+    }
+
+    if s.size == 1 {
+        return EmptyHashSet[T]()
+    }
+
+    val newRoot = removeFromNode[T](s.root, elem, hashCode, 0)
+    return HashSet[T](root = newRoot, size = s.size - 1)
+}
+
+// removeFromNode removes an element from a node, returning a new node.
+func removeFromNode[T comparable](node *hashSetNode[T], elem T, hashCode uint32, level int) *hashSetNode[T] {
+    if node.isLeaf {
+        var newEntries []T
+        for i := 0; i < len(node.entries); i++ {
+            if node.entries[i] != elem {
+                newEntries = append(newEntries, node.entries[i])
+            }
+        }
+        if len(newEntries) == 0 {
+            return nil
+        }
+        return &hashSetNode[T](entries = newEntries, isLeaf = true)
+    }
+
+    val bit = bitpos(hashCode, level)
+    val idx = index(node.bitmap, bit)
+
+    if (node.bitmap & bit) == 0 {
+        return node
+    }
+
+    val newChild = removeFromNode[T](node.children[idx], elem, hashCode, level + 1)
+
+    if newChild == nil {
+        // Child is now empty, remove it
+        if popcount(node.bitmap) == 1 {
+            return nil
+        }
+
+        var newChildren []*hashSetNode[T]
+        for i := 0; i < len(node.children); i++ {
+            if i != idx {
+                newChildren = append(newChildren, node.children[i])
+            }
+        }
+        return &hashSetNode[T](bitmap = node.bitmap & (^bit), children = newChildren, isLeaf = false)
+    }
+
+    // Copy children with updated child
+    var newChildren []*hashSetNode[T]
+    for i := 0; i < len(node.children); i++ {
+        if i == idx {
+            newChildren = append(newChildren, newChild)
+        } else {
+            newChildren = append(newChildren, node.children[i])
+        }
+    }
+
+    return &hashSetNode[T](bitmap = node.bitmap, children = newChildren, isLeaf = false)
+}
+
+// AddAll adds all elements from another set. Returns a new set.
+func (s HashSet[T]) AddAll(other HashSet[T]) HashSet[T] {
+    var result = s
+    other.ForEach((elem T) => {
+        result = result.Add(elem)
+        return nil
+    })
+    return result
+}
+
+// Union returns a new set containing all elements from both sets.
+func (s HashSet[T]) Union(other HashSet[T]) HashSet[T] = s.AddAll(other)
+
+// Intersect returns a new set containing only elements present in both sets.
+func (s HashSet[T]) Intersect(other HashSet[T]) HashSet[T] {
+    // Iterate over the smaller set for efficiency
+    var smaller HashSet[T]
+    var larger HashSet[T]
+    if s.size <= other.size {
+        smaller = s
+        larger = other
+    } else {
+        smaller = other
+        larger = s
+    }
+
+    var result = EmptyHashSet[T]()
+    smaller.ForEach((elem T) => {
+        if larger.Contains(elem) {
+            result = result.Add(elem)
+        }
+        return nil
+    })
+    return result
+}
+
+// Diff returns a new set containing elements in this set but not in other.
+func (s HashSet[T]) Diff(other HashSet[T]) HashSet[T] {
+    var result = EmptyHashSet[T]()
+    s.ForEach((elem T) => {
+        if !other.Contains(elem) {
+            result = result.Add(elem)
+        }
+        return nil
+    })
+    return result
+}
+
+// SubsetOf returns true if this set is a subset of other.
+func (s HashSet[T]) SubsetOf(other HashSet[T]) bool {
+    if s.size > other.size {
+        return false
+    }
+    var isSubset = true
+    s.ForEach((elem T) => {
+        if !other.Contains(elem) {
+            isSubset = false
+        }
+        return nil
+    })
+    return isSubset
+}
+
+// ForEach applies a function to each element for side effects.
+func (s HashSet[T]) ForEach(f func(T) any) {
+    if s.root != nil {
+        forEachInNode[T](s.root, f)
+    }
+}
+
+// forEachInNode traverses a node and applies f to each element.
+func forEachInNode[T comparable](node *hashSetNode[T], f func(T) any) {
+    if node.isLeaf {
+        for i := 0; i < len(node.entries); i++ {
+            f(node.entries[i])
+        }
+        return
+    }
+
+    for i := 0; i < len(node.children); i++ {
+        forEachInNode[T](node.children[i], f)
+    }
+}
+
+// MapHashSet applies a function to each element and returns a new set.
+// Note: Defined as standalone function to preserve type constraints.
+func MapHashSet[T comparable, U comparable](s HashSet[T], f func(T) U) HashSet[U] {
+    var result = EmptyHashSet[U]()
+    s.ForEach((elem T) => {
+        result = result.Add(f(elem))
+        return nil
+    })
+    return result
+}
+
+// FlatMapHashSet applies a function that returns a set to each element and flattens.
+// Note: Defined as standalone function to preserve type constraints.
+func FlatMapHashSet[T comparable, U comparable](s HashSet[T], f func(T) HashSet[U]) HashSet[U] {
+    var result = EmptyHashSet[U]()
+    s.ForEach((elem T) => {
+        f(elem).ForEach((inner U) => {
+            result = result.Add(inner)
+            return nil
+        })
+        return nil
+    })
+    return result
+}
+
+// Filter returns a new set with only elements that satisfy the predicate.
+func (s HashSet[T]) Filter(p func(T) bool) HashSet[T] {
+    var result = EmptyHashSet[T]()
+    s.ForEach((elem T) => {
+        if p(elem) {
+            result = result.Add(elem)
+        }
+        return nil
+    })
+    return result
+}
+
+// FilterNot returns a new set with elements that do not satisfy the predicate.
+func (s HashSet[T]) FilterNot(p func(T) bool) HashSet[T] = s.Filter((elem T) => !p(elem))
+
+// Partition splits the set into two sets based on a predicate.
+func (s HashSet[T]) Partition(p func(T) bool) Tuple[HashSet[T], HashSet[T]] {
+    var left = s.Filter(p)
+    var right = s.FilterNot(p)
+    return Tuple[HashSet[T], HashSet[T]](V1 = left, V2 = right)
+}
+
+// FoldLeftHashSet applies a binary operator from left to right.
+// Note: Defined as standalone function to preserve type constraints.
+func FoldLeftHashSet[T comparable, U any](s HashSet[T], initial U, f func(U, T) U) U {
+    var acc = initial
+    s.ForEach((elem T) => {
+        acc = f(acc, elem)
+        return nil
+    })
+    return acc
+}
+
+// Reduce applies a binary operator, starting with the first element.
+// Panics if the set is empty.
+func (s HashSet[T]) Reduce(f func(T, T) T) T {
+    if s.size == 0 {
+        panic("HashSet.Reduce on empty set")
+    }
+    var first = true
+    var acc T
+    s.ForEach((elem T) => {
+        if first {
+            acc = elem
+            first = false
+        } else {
+            acc = f(acc, elem)
+        }
+        return nil
+    })
+    return acc
+}
+
+// ReduceOption is like Reduce but returns None for empty set.
+func (s HashSet[T]) ReduceOption(f func(T, T) T) Option[T] {
+    if s.size == 0 {
+        return None[T]()
+    }
+    return Some[T](s.Reduce(f))
+}
+
+// Exists returns true if any element satisfies the predicate.
+func (s HashSet[T]) Exists(p func(T) bool) bool {
+    var found = false
+    s.ForEach((elem T) => {
+        if p(elem) {
+            found = true
+        }
+        return nil
+    })
+    return found
+}
+
+// ForAll returns true if all elements satisfy the predicate.
+func (s HashSet[T]) ForAll(p func(T) bool) bool {
+    var all = true
+    s.ForEach((elem T) => {
+        if !p(elem) {
+            all = false
+        }
+        return nil
+    })
+    return all
+}
+
+// Find returns the first element that satisfies the predicate.
+func (s HashSet[T]) Find(p func(T) bool) Option[T] {
+    var result Option[T] = None[T]()
+    s.ForEach((elem T) => {
+        if result.IsEmpty() && p(elem) {
+            result = Some[T](elem)
+        }
+        return nil
+    })
+    return result
+}
+
+// Count returns the number of elements satisfying the predicate.
+func (s HashSet[T]) Count(p func(T) bool) int {
+    var count = 0
+    s.ForEach((elem T) => {
+        if p(elem) {
+            count++
+        }
+        return nil
+    })
+    return count
+}
+
+// Head returns an arbitrary element from the set.
+// Panics if the set is empty.
+func (s HashSet[T]) Head() T {
+    if s.size == 0 {
+        panic("HashSet.Head on empty set")
+    }
+    var result T
+    var found = false
+    s.ForEach((elem T) => {
+        if !found {
+            result = elem
+            found = true
+        }
+        return nil
+    })
+    return result
+}
+
+// HeadOption returns an arbitrary element wrapped in Option.
+func (s HashSet[T]) HeadOption() Option[T] {
+    if s.size == 0 {
+        return None[T]()
+    }
+    return Some[T](s.Head())
+}
+
+// ToSlice converts the set to a Go slice.
+func (s HashSet[T]) ToSlice() []T {
+    var result []T
+    s.ForEach((elem T) => {
+        result = append(result, elem)
+        return nil
+    })
+    return result
+}
+
+// ToList converts the set to a List.
+func (s HashSet[T]) ToList() List[T] {
+    var result = emptyList[T]()
+    s.ForEach((elem T) => {
+        result = consList[T](elem, result)
+        return nil
+    })
+    return result
+}
+
+// ToArray converts the set to an Array.
+func (s HashSet[T]) ToArray() Array[T] {
+    var result = EmptyArray[T]()
+    s.ForEach((elem T) => {
+        result = result.Append(elem)
+        return nil
+    })
+    return result
+}
+
+// String returns a string representation of the set.
+func (s HashSet[T]) String() string {
+    if s.size == 0 {
+        return "HashSet()"
+    }
+    var result = "HashSet("
+    var first = true
+    s.ForEach((elem T) => {
+        if !first {
+            result = result + ", "
+        }
+        result = result + fmt.Sprintf("%v", elem)
+        first = false
+        return nil
+    })
+    return result + ")"
+}
+
+// HashSetEmpty extractor for pattern matching on empty sets.
+type HashSetEmpty struct {}
+func (hse HashSetEmpty) Unapply(s any) Option[bool] = s match {
+    case set: HashSet[_] if set.size == 0 => Some[bool](true)
+    case _ => None[bool]()
+}
+
+// HashSetNonEmpty extractor for pattern matching on non-empty sets.
+type HashSetNonEmpty struct {}
+func (hsne HashSetNonEmpty) Unapply(s any) Option[any] = s match {
+    case set: HashSet[_] if set.size > 0 => Some[any](set)
+    case _ => None[any]()
+}

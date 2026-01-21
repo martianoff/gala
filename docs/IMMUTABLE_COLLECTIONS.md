@@ -14,6 +14,8 @@ import . "martianoff/gala/collection_immutable"
 
 ## Performance Characteristics
 
+### Sequence Collections (List, Array)
+
 | Operation | List | Array |
 |-----------|------|-------|
 | Head | O(1) | O(eC) |
@@ -22,12 +24,26 @@ import . "martianoff/gala/collection_immutable"
 | Append | O(n) | O(eC) |
 | Lookup | O(n) | O(eC) |
 | Update | O(n) | O(eC) |
+| Contains | O(n) | O(n) |
 | Length | O(1) | O(1) |
+
+### Set Collections (HashSet)
+
+| Operation | HashSet |
+|-----------|---------|
+| Add | O(eC) |
+| Remove | O(eC) |
+| Contains | O(eC) |
+| Union | O(m) |
+| Intersect | O(m) |
+| Diff | O(n) |
+| Size | O(1) |
 
 **Legend:**
 - O(1) - Constant time
 - O(1)* - Amortized constant time (uses prefix buffer, consolidates every 32 prepends)
-- O(n) - Linear time
+- O(n) - Linear time (n = this collection's size)
+- O(m) - Linear in smaller set (m = min(this.size, other.size))
 - O(eC) - Effectively constant (O(log32 n) ≈ 7 operations for 1 billion elements)
 
 ---
@@ -442,7 +458,149 @@ arr.ForEach((x int) => {
 
 ---
 
-## Choosing Between List and Array
+## HashSet[T]
+
+An immutable set with effectively constant time operations. Uses a Hash Array Mapped Trie (HAMT) structure similar to Scala's HashSet.
+
+**Note:** T must be a `comparable` type (e.g., int, string, structs with comparable fields).
+
+### Construction
+
+```gala
+// Empty set
+val empty = EmptyHashSet[int]()
+
+// From elements
+val set = HashSetOf[int](1, 2, 3, 4, 5)
+
+// From slice
+val slice = []int{1, 2, 3}
+val set2 = HashSetFromSlice[int](slice)
+```
+
+### Basic Operations
+
+```gala
+val set = HashSetOf[int](1, 2, 3, 4, 5)
+
+set.IsEmpty()      // false
+set.NonEmpty()     // true
+set.Size()         // 5
+set.Length()       // 5 (alias for Size)
+```
+
+### Element Operations - O(eC)
+
+```gala
+val set = HashSetOf[int](1, 2, 3)
+
+// Add element (returns new set)
+set.Add(4)               // HashSet(1, 2, 3, 4)
+
+// Remove element (returns new set)
+set.Remove(2)            // HashSet(1, 3)
+
+// Check membership
+set.Contains(2)          // true
+set.Contains(10)         // false
+```
+
+### Set Operations
+
+```gala
+val a = HashSetOf[int](1, 2, 3, 4)
+val b = HashSetOf[int](3, 4, 5, 6)
+
+// Union - all elements from both sets
+a.Union(b)               // HashSet(1, 2, 3, 4, 5, 6)
+
+// Intersection - elements in both sets
+a.Intersect(b)           // HashSet(3, 4)
+
+// Difference - elements in a but not in b
+a.Diff(b)                // HashSet(1, 2)
+
+// Subset check
+HashSetOf[int](1, 2).SubsetOf(a)  // true
+```
+
+### Transformations
+
+```gala
+val set = HashSetOf[int](1, 2, 3, 4, 5)
+
+// Filter
+set.Filter((x int) => x % 2 == 0)     // HashSet(2, 4)
+set.FilterNot((x int) => x % 2 == 0)  // HashSet(1, 3, 5)
+
+// Partition
+set.Partition((x int) => x > 3)
+// Tuple(HashSet(4, 5), HashSet(1, 2, 3))
+
+// Map (use standalone function)
+MapHashSet[int, int](set, (x int) => x * 2)  // HashSet(2, 4, 6, 8, 10)
+```
+
+### Folding and Reduction
+
+```gala
+val set = HashSetOf[int](1, 2, 3, 4, 5)
+
+// FoldLeft (use standalone function)
+FoldLeftHashSet[int, int](set, 0, (acc int, x int) => acc + x)  // 15
+
+// Reduce
+set.Reduce((a int, b int) => a + b)  // 15
+
+// ReduceOption (safe for empty sets)
+set.ReduceOption((a int, b int) => a + b)  // Some(15)
+```
+
+### Predicates
+
+```gala
+val set = HashSetOf[int](2, 4, 6, 8)
+
+set.Exists((x int) => x > 5)           // true
+set.ForAll((x int) => x % 2 == 0)      // true
+set.Count((x int) => x > 4)            // 2
+set.Find((x int) => x > 5)             // Some(6) or Some(8)
+```
+
+### Conversion
+
+```gala
+val set = HashSetOf[int](1, 2, 3)
+
+set.ToSlice()   // []int{1, 2, 3} (order not guaranteed)
+set.ToList()    // List(1, 2, 3) (order not guaranteed)
+set.ToArray()   // Array(1, 2, 3) (order not guaranteed)
+set.String()    // "HashSet(1, 2, 3)"
+```
+
+### ForEach (Side Effects)
+
+```gala
+set.ForEach((x int) => {
+    fmt.Println(x)
+})
+```
+
+### Pattern Matching
+
+```gala
+val set = HashSetOf[int](1, 2, 3)
+
+val result = set match {
+    case s: HashSet[_] if s.IsEmpty() => "empty"
+    case s: HashSet[_] => fmt.Sprintf("has %d elements", s.Size())
+    case _ => "unknown"
+}
+```
+
+---
+
+## Choosing Between List, Array, and HashSet
 
 | Use Case | Recommended |
 |----------|-------------|
@@ -452,6 +610,9 @@ arr.ForEach((x int) => {
 | Frequent prepends to front | List or Array |
 | Recursive algorithms on sequences | List |
 | Large sequences with updates | Array |
+| Fast membership testing | HashSet |
+| Set operations (union, intersection) | HashSet |
+| Unique elements collection | HashSet |
 
 **Note:** With the prefix buffer optimization, Array now has O(1) amortized prepend, making it competitive with List for prepend-heavy workloads. Choose List when you need true O(1) without amortization, or Array when you also need random access.
 
@@ -467,6 +628,12 @@ arr.ForEach((x int) => {
 - O(1) amortized prepend (using prefix buffer)
 - O(eC) update at any position
 - Better cache locality for iteration
+
+### HashSet Advantages
+- O(eC) add, remove, and contains operations
+- Efficient set operations (union, intersection, difference)
+- No duplicate elements
+- Works with any `comparable` type
 
 ---
 
@@ -484,6 +651,14 @@ Array is implemented as a 32-way branching trie (similar to Scala's Vector and C
 - Effectively constant time operations (O(log32 n))
 - **Prefix buffer**: prepended elements are stored in a separate buffer until it reaches 32 elements, then consolidated (O(1) amortized prepend)
 
+### HashSet
+HashSet is implemented as a Hash Array Mapped Trie (HAMT), similar to Scala's HashSet:
+- 32-way branching trie with bitmap indexing
+- Hash values determine path through the trie
+- Collision handling at leaf nodes (when max depth reached)
+- Path copying for updates, sharing unaffected subtrees
+- Effectively constant time operations (O(log32 n))
+
 ---
 
 ## Performance Benchmarks
@@ -500,34 +675,59 @@ bazel run //collection_immutable:perf_gala
 bazel run //collection_immutable:perf_go
 ```
 
-### Results (ns/op) - 10,000 Elements
+### Sequence Results (ns/op) - 10,000 Elements
 
 | Operation | GALA List | GALA Array | Go Slice (immutable) |
 |-----------|----------:|-----------:|---------------------:|
-| Creation | 124,000 |  3,610,000 | 34,890,000 |
-| Prepend | 0 |          0 | 5,229 |
-| Append | - |        464 | 7,443 |
-| Head | 0 |          4 | 1 |
-| Get(5000) | 4,142 |          5 | 0 |
-| Update(5000) | - |        497 | 7,337 |
-| Filter | 175,000 |    100,000 | 15,463 |
-| Map | 281,000 |    112,000 | 10,476 |
-| FoldLeft | 9,696 |     44,000 | 1,039 |
+| Creation | 136,000 |  3,453,000 | 34,890,000 |
+| Prepend | 1 |          0 | 5,229 |
+| Append | - |        460 | 7,443 |
+| Head | 1 |          5 | 1 |
+| Get(5000) | 4,088 |          5 | 0 |
+| Update(5000) | - |        544 | 7,337 |
+| Filter | 169,000 |    78,000 | 15,463 |
+| Map | 265,000 |    114,000 | 10,476 |
+| FoldLeft | 9,527 |     41,000 | 1,039 |
 | Take(5000) | - |     54,000 | 515 |
 | Drop(5000) | - |     52,000 | 1,044 |
 
-### Scaling Results
+### HashSet Results (ns/op) - 10,000 Elements
+
+| Operation | GALA HashSet |
+|-----------|-------------:|
+| Creation | 6,958,000 |
+| Add | 1,066 |
+| Contains (hit) | 36 |
+| Contains (miss) | 27 |
+| Remove | 792 |
+| Filter | 3,390,000 |
+
+### HashSet Set Operations (ns/op) - 1,000 Elements Each
+
+| Operation | Time |
+|-----------|-----:|
+| Union | 355,000 |
+| Intersect | 252,000 |
+
+### Scaling Results - Sequences
 
 | Operation | 100 elements | 10,000 elements | 100,000 elements |
 |-----------|-------------:|----------------:|-----------------:|
-| List.Creation | 2,029 ns | 136,000 ns | 1,856,000 ns |
-| Array.Creation | 15,926 ns | 3,443,000 ns | 52,713,000 ns |
+| List.Creation | 2,067 ns | 136,000 ns | 1,239,000 ns |
+| Array.Creation | 17,011 ns | 3,453,000 ns | 52,193,000 ns |
+
+### Scaling Results - HashSet
+
+| Operation | 100 elements | 10,000 elements | 100,000 elements |
+|-----------|-------------:|----------------:|-----------------:|
+| HashSet.Creation | 29,390 ns | 6,958,000 ns | 105,000,000 ns |
 
 **Notes:**
-- GALA List uses Prepend (O(1)), GALA Array uses Append (O(eC))
+- GALA List uses Prepend (O(1)), GALA Array uses Append (O(eC)), GALA HashSet uses Add (O(eC))
 - Go Slice (immutable): copy-on-write style, full copy on each modification
 - `-` indicates operation not measured or not the primary use case
 - Array uses optimized bulk building for Filter, Map, Take, Drop operations
+- HashSet Contains is O(eC) regardless of set size
 
 ### Key Performance Insights
 
@@ -538,9 +738,15 @@ bazel run //collection_immutable:perf_go
 
 **Array Strengths:**
 - **O(eC) Prepend** (0 ns): Amortized constant time using prefix buffer (Scala-inspired)
-- **O(eC) Append** (464 ns): 16x faster than immutable slice copy
+- **O(eC) Append** (460 ns): 16x faster than immutable slice copy
 - **O(eC) Get** (5 ns): Constant random access regardless of position
-- **O(eC) Update** (497 ns): 15x faster than immutable slice copy
+- **O(eC) Update** (544 ns): 14x faster than immutable slice copy
+
+**HashSet Strengths:**
+- **O(eC) Contains** (36 ns): Fast membership testing regardless of set size
+- **O(eC) Add** (1,066 ns): Efficient element insertion
+- **O(eC) Remove** (792 ns): Efficient element removal
+- **Set operations**: Union, intersection, difference in O(m) time (m = smaller set)
 
 **Comparison to Go Immutable Slices:**
 
@@ -562,6 +768,9 @@ bazel run //collection_immutable:perf_go
 | Frequent updates | Array |
 | Large collections with sharing | Array |
 | Recursive algorithms | List |
+| Fast membership testing | HashSet |
+| Set operations (union, intersect) | HashSet |
+| Unique elements only | HashSet |
 | Simple iteration only | Go slice |
 
 ---

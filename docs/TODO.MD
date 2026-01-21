@@ -10,9 +10,10 @@
 - [x] Support Some/None as structs in GALA
 - [x] Pattern matching for types
 - [x] Remove special casing for Tuples
-- [ ] Extend Tuples class to Tuple3, Tuple4 ... Tuple10. Make (A, B) a synonym of Tuple(A,B), (A, B, C) a synonym of Tuple(A,B,C) and so on. Synonyms should work for construction and pattern matching
+- [x] Extend Tuples class to Tuple3, Tuple4 ... Tuple10. Make (A, B) a synonym of Tuple(A,B), (A, B, C) a synonym of Tuple(A,B,C) and so on. Synonyms should work for construction and pattern matching
 - [x] Imported packages in GALA are analyzed with analyzers so they can support GALA features like generic methods
 - [ ] Dependency management
 - [x] Test framework
 - [x] JetBrains language plugin
 - [ ] Pointers to immutable vars
+- [ ] TreeSet

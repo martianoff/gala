@@ -1,0 +1,243 @@
+package main
+
+import (
+    . "martianoff/gala/test"
+    . "martianoff/gala/collection_immutable"
+)
+
+// Basic operations tests
+func TestHashSetEmpty(t T) T {
+    val s = EmptyHashSet[int]()
+    var t1 = IsTrue(t, s.IsEmpty())
+    var t2 = IsFalse(t1, s.NonEmpty())
+    return Eq[int](t2, s.Size(), 0)
+}
+
+func TestHashSetOf(t T) T {
+    val s = HashSetOf[int](1, 2, 3, 4, 5)
+    var t1 = IsFalse(t, s.IsEmpty())
+    var t2 = IsTrue(t1, s.NonEmpty())
+    return Eq[int](t2, s.Size(), 5)
+}
+
+func TestHashSetContains(t T) T {
+    val s = HashSetOf[int](1, 2, 3, 4, 5)
+    var t1 = IsTrue(t, s.Contains(1))
+    var t2 = IsTrue(t1, s.Contains(3))
+    var t3 = IsTrue(t2, s.Contains(5))
+    var t4 = IsFalse(t3, s.Contains(0))
+    return IsFalse(t4, s.Contains(6))
+}
+
+func TestHashSetAdd(t T) T {
+    val s = EmptyHashSet[int]()
+    val s1 = s.Add(1)
+    val s2 = s1.Add(2)
+    val s3 = s2.Add(3)
+
+    var t1 = Eq[int](t, s.Size(), 0)
+    var t2 = Eq[int](t1, s1.Size(), 1)
+    var t3 = Eq[int](t2, s2.Size(), 2)
+    var t4 = Eq[int](t3, s3.Size(), 3)
+    var t5 = IsTrue(t4, s3.Contains(1))
+    var t6 = IsTrue(t5, s3.Contains(2))
+    return IsTrue(t6, s3.Contains(3))
+}
+
+func TestHashSetAddDuplicate(t T) T {
+    val s = HashSetOf[int](1, 2, 3)
+    val s2 = s.Add(2)
+    return Eq[int](t, s2.Size(), 3)
+}
+
+func TestHashSetRemove(t T) T {
+    val s = HashSetOf[int](1, 2, 3, 4, 5)
+    val s2 = s.Remove(3)
+
+    var t1 = Eq[int](t, s2.Size(), 4)
+    var t2 = IsFalse(t1, s2.Contains(3))
+    var t3 = IsTrue(t2, s2.Contains(1))
+    return IsTrue(t3, s2.Contains(5))
+}
+
+func TestHashSetRemoveNonExistent(t T) T {
+    val s = HashSetOf[int](1, 2, 3)
+    val s2 = s.Remove(5)
+    return Eq[int](t, s2.Size(), 3)
+}
+
+// Set operations tests
+func TestHashSetUnion(t T) T {
+    val s1 = HashSetOf[int](1, 2, 3)
+    val s2 = HashSetOf[int](3, 4, 5)
+    val union = s1.Union(s2)
+
+    var t1 = Eq[int](t, union.Size(), 5)
+    var t2 = IsTrue(t1, union.Contains(1))
+    var t3 = IsTrue(t2, union.Contains(3))
+    return IsTrue(t3, union.Contains(5))
+}
+
+func TestHashSetIntersect(t T) T {
+    val s1 = HashSetOf[int](1, 2, 3, 4)
+    val s2 = HashSetOf[int](3, 4, 5, 6)
+    val intersect = s1.Intersect(s2)
+
+    var t1 = Eq[int](t, intersect.Size(), 2)
+    var t2 = IsTrue(t1, intersect.Contains(3))
+    return IsTrue(t2, intersect.Contains(4))
+}
+
+func TestHashSetDiff(t T) T {
+    val s1 = HashSetOf[int](1, 2, 3, 4)
+    val s2 = HashSetOf[int](3, 4, 5, 6)
+    val diff = s1.Diff(s2)
+
+    var t1 = Eq[int](t, diff.Size(), 2)
+    var t2 = IsTrue(t1, diff.Contains(1))
+    var t3 = IsTrue(t2, diff.Contains(2))
+    var t4 = IsFalse(t3, diff.Contains(3))
+    return IsFalse(t4, diff.Contains(4))
+}
+
+func TestHashSetSubsetOf(t T) T {
+    val s1 = HashSetOf[int](1, 2, 3)
+    val s2 = HashSetOf[int](1, 2, 3, 4, 5)
+    val s3 = HashSetOf[int](1, 2, 6)
+
+    var t1 = IsTrue(t, s1.SubsetOf(s2))
+    return IsFalse(t1, s3.SubsetOf(s2))
+}
+
+// Transformation tests
+func TestHashSetFilter(t T) T {
+    val s = HashSetOf[int](1, 2, 3, 4, 5, 6)
+    val even = s.Filter((x int) => x % 2 == 0)
+
+    var t1 = Eq[int](t, even.Size(), 3)
+    var t2 = IsTrue(t1, even.Contains(2))
+    var t3 = IsTrue(t2, even.Contains(4))
+    var t4 = IsTrue(t3, even.Contains(6))
+    return IsFalse(t4, even.Contains(1))
+}
+
+func TestHashSetMap(t T) T {
+    val s = HashSetOf[int](1, 2, 3)
+    val doubled = MapHashSet[int, int](s, (x int) => x * 2)
+
+    var t1 = Eq[int](t, doubled.Size(), 3)
+    var t2 = IsTrue(t1, doubled.Contains(2))
+    var t3 = IsTrue(t2, doubled.Contains(4))
+    return IsTrue(t3, doubled.Contains(6))
+}
+
+func TestHashSetFoldLeft(t T) T {
+    val s = HashSetOf[int](1, 2, 3, 4, 5)
+    val sum = FoldLeftHashSet[int, int](s, 0, (acc int, x int) => acc + x)
+    return Eq[int](t, sum, 15)
+}
+
+// Predicate tests
+func TestHashSetExists(t T) T {
+    val s = HashSetOf[int](1, 2, 3, 4, 5)
+    var t1 = IsTrue(t, s.Exists((x int) => x > 4))
+    return IsFalse(t1, s.Exists((x int) => x > 5))
+}
+
+func TestHashSetForAll(t T) T {
+    val s = HashSetOf[int](2, 4, 6, 8)
+    var t1 = IsTrue(t, s.ForAll((x int) => x % 2 == 0))
+    return IsFalse(t1, s.ForAll((x int) => x < 5))
+}
+
+func TestHashSetCount(t T) T {
+    val s = HashSetOf[int](1, 2, 3, 4, 5, 6)
+    return Eq[int](t, s.Count((x int) => x > 3), 3)
+}
+
+func TestHashSetFind(t T) T {
+    val s = HashSetOf[int](1, 2, 3, 4, 5)
+    val found = s.Find((x int) => x > 3)
+    return IsTrue(t, found.IsDefined())
+}
+
+// Conversion tests
+func TestHashSetToSlice(t T) T {
+    val s = HashSetOf[int](1, 2, 3)
+    val slice = s.ToSlice()
+    return Eq[int](t, len(slice), 3)
+}
+
+func TestHashSetToList(t T) T {
+    val s = HashSetOf[int](1, 2, 3)
+    val list = s.ToList()
+    return Eq[int](t, list.Size(), 3)
+}
+
+func TestHashSetToArray(t T) T {
+    val s = HashSetOf[int](1, 2, 3)
+    val arr = s.ToArray()
+    return Eq[int](t, arr.Size(), 3)
+}
+
+// String tests
+func TestHashSetStrings(t T) T {
+    val s = HashSetOf[string]("apple", "banana", "cherry")
+    var t1 = Eq[int](t, s.Size(), 3)
+    var t2 = IsTrue(t1, s.Contains("apple"))
+    var t3 = IsTrue(t2, s.Contains("banana"))
+    return IsTrue(t3, s.Contains("cherry"))
+}
+
+// Large set test
+func TestHashSetLarge(t T) T {
+    var s = EmptyHashSet[int]()
+    for i := 0; i < 1000; i++ {
+        s = s.Add(i)
+    }
+    var t1 = Eq[int](t, s.Size(), 1000)
+    var t2 = IsTrue(t1, s.Contains(0))
+    var t3 = IsTrue(t2, s.Contains(500))
+    return IsTrue(t3, s.Contains(999))
+}
+
+// Head and HeadOption tests
+func TestHashSetHead(t T) T {
+    val s = HashSetOf[int](1, 2, 3)
+    val head = s.Head()
+    return IsTrue(t, s.Contains(head))
+}
+
+func TestHashSetHeadOption(t T) T {
+    val s = HashSetOf[int](1, 2, 3)
+    val empty = EmptyHashSet[int]()
+
+    var t1 = IsTrue(t, s.HeadOption().IsDefined())
+    return IsTrue(t1, empty.HeadOption().IsEmpty())
+}
+
+// Partition test
+func TestHashSetPartition(t T) T {
+    val s = HashSetOf[int](1, 2, 3, 4, 5, 6)
+    val result = s.Partition((x int) => x % 2 == 0)
+    val even = result.V1
+    val odd = result.V2
+
+    var t1 = Eq[int](t, even.Size(), 3)
+    return Eq[int](t1, odd.Size(), 3)
+}
+
+// Reduce tests
+func TestHashSetReduce(t T) T {
+    val s = HashSetOf[int](1, 2, 3, 4, 5)
+    val sum = s.Reduce((a int, b int) => a + b)
+    return Eq[int](t, sum, 15)
+}
+
+func TestHashSetReduceOption(t T) T {
+    val s = HashSetOf[int](1, 2, 3)
+    val empty = EmptyHashSet[int]()
+
+    var t1 = IsTrue(t, s.ReduceOption((a int, b int) => a + b).IsDefined())
+    return IsTrue(t1, empty.ReduceOption((a int, b int) => a + b).IsEmpty())
+}
