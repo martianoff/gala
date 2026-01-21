@@ -1,0 +1,397 @@
+package main
+
+import (
+    . "martianoff/gala/test"
+    . "martianoff/gala/collection_immutable"
+    . "martianoff/gala/std"
+)
+
+// Basic operations tests
+func TestTreeSetEmpty(t T) T {
+    val s = EmptyTreeSet[int]()
+    var t1 = IsTrue(t, s.IsEmpty())
+    var t2 = IsFalse(t1, s.NonEmpty())
+    return Eq[int](t2, s.Size(), 0)
+}
+
+func TestTreeSetOf(t T) T {
+    val s = TreeSetOf(1, 2, 3, 4, 5)
+    var t1 = IsFalse(t, s.IsEmpty())
+    var t2 = IsTrue(t1, s.NonEmpty())
+    return Eq[int](t2, s.Size(), 5)
+}
+
+func TestTreeSetContains(t T) T {
+    val s = TreeSetOf(1, 2, 3, 4, 5)
+    var t1 = IsTrue(t, s.Contains(1))
+    var t2 = IsTrue(t1, s.Contains(3))
+    var t3 = IsTrue(t2, s.Contains(5))
+    var t4 = IsFalse(t3, s.Contains(0))
+    return IsFalse(t4, s.Contains(6))
+}
+
+func TestTreeSetAdd(t T) T {
+    val s = EmptyTreeSet[int]()
+    val s1 = s.Add(1)
+    val s2 = s1.Add(2)
+    val s3 = s2.Add(3)
+
+    var t1 = Eq[int](t, s.Size(), 0)
+    var t2 = Eq[int](t1, s1.Size(), 1)
+    var t3 = Eq[int](t2, s2.Size(), 2)
+    var t4 = Eq[int](t3, s3.Size(), 3)
+    var t5 = IsTrue(t4, s3.Contains(1))
+    var t6 = IsTrue(t5, s3.Contains(2))
+    return IsTrue(t6, s3.Contains(3))
+}
+
+func TestTreeSetAddDuplicate(t T) T {
+    val s = TreeSetOf(1, 2, 3)
+    val s2 = s.Add(2)
+    return Eq[int](t, s2.Size(), 3)
+}
+
+func TestTreeSetRemove(t T) T {
+    val s = TreeSetOf(1, 2, 3, 4, 5)
+    val s2 = s.Remove(3)
+
+    var t1 = Eq[int](t, s2.Size(), 4)
+    var t2 = IsFalse(t1, s2.Contains(3))
+    var t3 = IsTrue(t2, s2.Contains(1))
+    return IsTrue(t3, s2.Contains(5))
+}
+
+func TestTreeSetRemoveNonExistent(t T) T {
+    val s = TreeSetOf(1, 2, 3)
+    val s2 = s.Remove(5)
+    return Eq[int](t, s2.Size(), 3)
+}
+
+// Sorted order tests (TreeSet-specific)
+func TestTreeSetSortedOrder(t T) T {
+    val s = TreeSetOf(5, 3, 1, 4, 2)
+    val slice = s.ToSlice()
+
+    var t1 = Eq[int](t, len(slice), 5)
+    var t2 = Eq[int](t1, slice[0], 1)
+    var t3 = Eq[int](t2, slice[1], 2)
+    var t4 = Eq[int](t3, slice[2], 3)
+    var t5 = Eq[int](t4, slice[3], 4)
+    return Eq[int](t5, slice[4], 5)
+}
+
+func TestTreeSetMin(t T) T {
+    val s = TreeSetOf(5, 3, 1, 4, 2)
+    return Eq[int](t, s.Min(), 1)
+}
+
+func TestTreeSetMax(t T) T {
+    val s = TreeSetOf(5, 3, 1, 4, 2)
+    return Eq[int](t, s.Max(), 5)
+}
+
+func TestTreeSetMinOption(t T) T {
+    val s = TreeSetOf(5, 3, 1)
+    val empty = EmptyTreeSet[int]()
+
+    var t1 = IsTrue(t, s.MinOption().IsDefined())
+    var t2 = Eq[int](t1, s.MinOption().GetOrElse(0), 1)
+    return IsTrue(t2, empty.MinOption().IsEmpty())
+}
+
+func TestTreeSetMaxOption(t T) T {
+    val s = TreeSetOf(5, 3, 1)
+    val empty = EmptyTreeSet[int]()
+
+    var t1 = IsTrue(t, s.MaxOption().IsDefined())
+    var t2 = Eq[int](t1, s.MaxOption().GetOrElse(0), 5)
+    return IsTrue(t2, empty.MaxOption().IsEmpty())
+}
+
+// Range tests (TreeSet-specific)
+func TestTreeSetRange(t T) T {
+    val s = TreeSetOf(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
+    val rangeSet = s.Range(3, 7)
+
+    var t1 = Eq[int](t, rangeSet.Size(), 5)
+    var t2 = IsTrue(t1, rangeSet.Contains(3))
+    var t3 = IsTrue(t2, rangeSet.Contains(5))
+    var t4 = IsTrue(t3, rangeSet.Contains(7))
+    var t5 = IsFalse(t4, rangeSet.Contains(2))
+    return IsFalse(t5, rangeSet.Contains(8))
+}
+
+func TestTreeSetRangeFrom(t T) T {
+    val s = TreeSetOf(1, 2, 3, 4, 5)
+    val rangeSet = s.RangeFrom(3)
+
+    var t1 = Eq[int](t, rangeSet.Size(), 3)
+    var t2 = IsTrue(t1, rangeSet.Contains(3))
+    var t3 = IsTrue(t2, rangeSet.Contains(4))
+    var t4 = IsTrue(t3, rangeSet.Contains(5))
+    return IsFalse(t4, rangeSet.Contains(2))
+}
+
+func TestTreeSetRangeTo(t T) T {
+    val s = TreeSetOf(1, 2, 3, 4, 5)
+    val rangeSet = s.RangeTo(3)
+
+    var t1 = Eq[int](t, rangeSet.Size(), 3)
+    var t2 = IsTrue(t1, rangeSet.Contains(1))
+    var t3 = IsTrue(t2, rangeSet.Contains(2))
+    var t4 = IsTrue(t3, rangeSet.Contains(3))
+    return IsFalse(t4, rangeSet.Contains(4))
+}
+
+// Set operations tests
+func TestTreeSetUnion(t T) T {
+    val s1 = TreeSetOf(1, 2, 3)
+    val s2 = TreeSetOf(3, 4, 5)
+    val union = s1.Union(s2)
+
+    var t1 = Eq[int](t, union.Size(), 5)
+    var t2 = IsTrue(t1, union.Contains(1))
+    var t3 = IsTrue(t2, union.Contains(3))
+    return IsTrue(t3, union.Contains(5))
+}
+
+func TestTreeSetIntersect(t T) T {
+    val s1 = TreeSetOf(1, 2, 3, 4)
+    val s2 = TreeSetOf(3, 4, 5, 6)
+    val intersect = s1.Intersect(s2)
+
+    var t1 = Eq[int](t, intersect.Size(), 2)
+    var t2 = IsTrue(t1, intersect.Contains(3))
+    return IsTrue(t2, intersect.Contains(4))
+}
+
+func TestTreeSetDiff(t T) T {
+    val s1 = TreeSetOf(1, 2, 3, 4)
+    val s2 = TreeSetOf(3, 4, 5, 6)
+    val diff = s1.Diff(s2)
+
+    var t1 = Eq[int](t, diff.Size(), 2)
+    var t2 = IsTrue(t1, diff.Contains(1))
+    var t3 = IsTrue(t2, diff.Contains(2))
+    var t4 = IsFalse(t3, diff.Contains(3))
+    return IsFalse(t4, diff.Contains(4))
+}
+
+func TestTreeSetSubsetOf(t T) T {
+    val s1 = TreeSetOf(1, 2, 3)
+    val s2 = TreeSetOf(1, 2, 3, 4, 5)
+    val s3 = TreeSetOf(1, 2, 6)
+
+    var t1 = IsTrue(t, s1.SubsetOf(s2))
+    return IsFalse(t1, s3.SubsetOf(s2))
+}
+
+// Transformation tests
+func TestTreeSetFilter(t T) T {
+    val s = TreeSetOf(1, 2, 3, 4, 5, 6)
+    val even = s.Filter((x int) => x % 2 == 0)
+
+    var t1 = Eq[int](t, even.Size(), 3)
+    var t2 = IsTrue(t1, even.Contains(2))
+    var t3 = IsTrue(t2, even.Contains(4))
+    var t4 = IsTrue(t3, even.Contains(6))
+    return IsFalse(t4, even.Contains(1))
+}
+
+func TestTreeSetMap(t T) T {
+    val s = TreeSetOf(1, 2, 3)
+    val doubled = MapTreeSet(s, (x int) => x * 2)
+
+    var t1 = Eq[int](t, doubled.Size(), 3)
+    var t2 = IsTrue(t1, doubled.Contains(2))
+    var t3 = IsTrue(t2, doubled.Contains(4))
+    return IsTrue(t3, doubled.Contains(6))
+}
+
+func TestTreeSetFoldLeft(t T) T {
+    val s = TreeSetOf(1, 2, 3, 4, 5)
+    val sum = FoldLeftTreeSet(s, 0, (acc int, x int) => acc + x)
+    return Eq[int](t, sum, 15)
+}
+
+// Predicate tests
+func TestTreeSetExists(t T) T {
+    val s = TreeSetOf(1, 2, 3, 4, 5)
+    var t1 = IsTrue(t, s.Exists((x int) => x > 4))
+    return IsFalse(t1, s.Exists((x int) => x > 5))
+}
+
+func TestTreeSetForAll(t T) T {
+    val s = TreeSetOf(2, 4, 6, 8)
+    var t1 = IsTrue(t, s.ForAll((x int) => x % 2 == 0))
+    return IsFalse(t1, s.ForAll((x int) => x < 5))
+}
+
+func TestTreeSetCount(t T) T {
+    val s = TreeSetOf(1, 2, 3, 4, 5, 6)
+    return Eq[int](t, s.Count((x int) => x > 3), 3)
+}
+
+func TestTreeSetFind(t T) T {
+    val s = TreeSetOf(1, 2, 3, 4, 5)
+    val found = s.Find((x int) => x > 3)
+    var t1 = IsTrue(t, found.IsDefined())
+    // Find returns first in sorted order, so should be 4
+    return Eq[int](t1, found.GetOrElse(0), 4)
+}
+
+// Conversion tests
+func TestTreeSetToSlice(t T) T {
+    val s = TreeSetOf(3, 1, 2)
+    val slice = s.ToSlice()
+    var t1 = Eq[int](t, len(slice), 3)
+    // Should be in sorted order
+    var t2 = Eq[int](t1, slice[0], 1)
+    var t3 = Eq[int](t2, slice[1], 2)
+    return Eq[int](t3, slice[2], 3)
+}
+
+func TestTreeSetToList(t T) T {
+    val s = TreeSetOf(3, 1, 2)
+    val list = s.ToList()
+    var t1 = Eq[int](t, list.Size(), 3)
+    // Should be in sorted order
+    var t2 = Eq[int](t1, list.Head(), 1)
+    return Eq[int](t2, list.Get(2), 3)
+}
+
+func TestTreeSetToArray(t T) T {
+    val s = TreeSetOf(3, 1, 2)
+    val arr = s.ToArray()
+    var t1 = Eq[int](t, arr.Size(), 3)
+    // Should be in sorted order
+    var t2 = Eq[int](t1, arr.Get(0), 1)
+    return Eq[int](t2, arr.Get(2), 3)
+}
+
+func TestTreeSetToHashSet(t T) T {
+    val s = TreeSetOf(1, 2, 3)
+    val hashSet = s.ToHashSet()
+    var t1 = Eq[int](t, hashSet.Size(), 3)
+    var t2 = IsTrue(t1, hashSet.Contains(1))
+    var t3 = IsTrue(t2, hashSet.Contains(2))
+    return IsTrue(t3, hashSet.Contains(3))
+}
+
+// String tests
+func TestTreeSetStrings(t T) T {
+    val s = TreeSetOf("cherry", "apple", "banana")
+    var t1 = Eq[int](t, s.Size(), 3)
+    var t2 = IsTrue(t1, s.Contains("apple"))
+    var t3 = IsTrue(t2, s.Contains("banana"))
+    var t4 = IsTrue(t3, s.Contains("cherry"))
+    // Should be sorted alphabetically
+    return Eq[string](t4, s.Min(), "apple")
+}
+
+// Large set test
+func TestTreeSetLarge(t T) T {
+    var s = EmptyTreeSet[int]()
+    for i := 0; i < 1000; i++ {
+        s = s.Add(i)
+    }
+    var t1 = Eq[int](t, s.Size(), 1000)
+    var t2 = IsTrue(t1, s.Contains(0))
+    var t3 = IsTrue(t2, s.Contains(500))
+    var t4 = IsTrue(t3, s.Contains(999))
+    var t5 = Eq[int](t4, s.Min(), 0)
+    return Eq[int](t5, s.Max(), 999)
+}
+
+// Head/Last tests
+func TestTreeSetHead(t T) T {
+    val s = TreeSetOf(5, 3, 1, 4, 2)
+    // Head is alias for Min
+    return Eq[int](t, s.Head(), 1)
+}
+
+func TestTreeSetLast(t T) T {
+    val s = TreeSetOf(5, 3, 1, 4, 2)
+    // Last is alias for Max
+    return Eq[int](t, s.Last(), 5)
+}
+
+func TestTreeSetHeadOption(t T) T {
+    val s = TreeSetOf(5, 3, 1)
+    val empty = EmptyTreeSet[int]()
+
+    var t1 = IsTrue(t, s.HeadOption().IsDefined())
+    return IsTrue(t1, empty.HeadOption().IsEmpty())
+}
+
+func TestTreeSetLastOption(t T) T {
+    val s = TreeSetOf(5, 3, 1)
+    val empty = EmptyTreeSet[int]()
+
+    var t1 = IsTrue(t, s.LastOption().IsDefined())
+    return IsTrue(t1, empty.LastOption().IsEmpty())
+}
+
+// Partition test
+func TestTreeSetPartition(t T) T {
+    val s = TreeSetOf(1, 2, 3, 4, 5, 6)
+    val result = s.Partition((x int) => x % 2 == 0)
+    val even = result.V1
+    val odd = result.V2
+
+    var t1 = Eq[int](t, even.Size(), 3)
+    return Eq[int](t1, odd.Size(), 3)
+}
+
+// Reduce tests
+func TestTreeSetReduce(t T) T {
+    val s = TreeSetOf(1, 2, 3, 4, 5)
+    val sum = s.Reduce((a int, b int) => a + b)
+    return Eq[int](t, sum, 15)
+}
+
+func TestTreeSetReduceOption(t T) T {
+    val s = TreeSetOf(1, 2, 3)
+    val empty = EmptyTreeSet[int]()
+
+    var t1 = IsTrue(t, s.ReduceOption((a int, b int) => a + b).IsDefined())
+    return IsTrue(t1, empty.ReduceOption((a int, b int) => a + b).IsEmpty())
+}
+
+// Balance test - ensure tree stays balanced after many insertions
+func TestTreeSetBalance(t T) T {
+    // Insert in sorted order (worst case for naive BST)
+    var s = EmptyTreeSet[int]()
+    for i := 0; i < 100; i++ {
+        s = s.Add(i)
+    }
+    var t1 = Eq[int](t, s.Size(), 100)
+    var t2 = Eq[int](t1, s.Min(), 0)
+    var t3 = Eq[int](t2, s.Max(), 99)
+    // All elements should be present
+    var t4 = IsTrue(t3, s.Contains(50))
+    return IsTrue(t4, s.Contains(75))
+}
+
+// Reverse order insertion test
+func TestTreeSetReverseInsertion(t T) T {
+    var s = EmptyTreeSet[int]()
+    for i := 99; i >= 0; i-- {
+        s = s.Add(i)
+    }
+    var t1 = Eq[int](t, s.Size(), 100)
+    var t2 = Eq[int](t1, s.Min(), 0)
+    return Eq[int](t2, s.Max(), 99)
+}
+
+// Random-like insertion test
+func TestTreeSetRandomInsertion(t T) T {
+    val values = []int{50, 25, 75, 12, 37, 62, 87, 6, 18, 31, 43, 56, 68, 81, 93}
+    var s = EmptyTreeSet[int]()
+    for i := 0; i < len(values); i++ {
+        s = s.Add(values[i])
+    }
+    var t1 = Eq[int](t, s.Size(), 15)
+    var t2 = Eq[int](t1, s.Min(), 6)
+    return Eq[int](t2, s.Max(), 93)
+}

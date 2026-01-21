@@ -27,17 +27,19 @@ import . "martianoff/gala/collection_immutable"
 | Contains | O(n) | O(n) |
 | Length | O(1) | O(1) |
 
-### Set Collections (HashSet)
+### Set Collections (HashSet, TreeSet)
 
-| Operation | HashSet |
-|-----------|---------|
-| Add | O(eC) |
-| Remove | O(eC) |
-| Contains | O(eC) |
-| Union | O(m) |
-| Intersect | O(m) |
-| Diff | O(n) |
-| Size | O(1) |
+| Operation | HashSet | TreeSet |
+|-----------|---------|---------|
+| Add | O(eC) | O(log n) |
+| Remove | O(eC) | O(log n) |
+| Contains | O(eC) | O(log n) |
+| Min/Max | O(n) | O(log n) |
+| Range | O(n) | O(log n + k) |
+| Union | O(m) | O(m log n) |
+| Intersect | O(m) | O(m log n) |
+| Diff | O(n) | O(n log m) |
+| Size | O(1) | O(1) |
 
 **Legend:**
 - O(1) - Constant time
@@ -636,7 +638,218 @@ val result = set match {
 
 ---
 
-## Choosing Between List, Array, and HashSet
+## TreeSet[T]
+
+An immutable sorted set implemented as a Red-Black tree. Maintains elements in sorted order and provides O(log n) operations with additional features like min/max and range queries.
+
+**Type Requirements:** T must be `comparable` and either:
+- A **primitive type** (int, string, float64, etc.) - compared automatically
+- A **custom type** implementing the `Ordered[T]` interface
+
+### Ordered Interface
+
+Custom types must implement the `Ordered[T]` interface to be used in TreeSet:
+
+```gala
+// The Ordered interface
+type Ordered[T any] interface {
+    Compare(other T) int  // Returns -1, 0, or 1
+}
+
+// Example: Custom type implementing Ordered
+type Person struct {
+    Name string
+    Age  int
+}
+
+func (p Person) Compare(other Person) int {
+    if p.Age < other.Age { return -1 }
+    if p.Age > other.Age { return 1 }
+    return 0
+}
+
+// Now Person can be used in TreeSet (sorted by age)
+val people = TreeSetOf(
+    Person(Name = "Alice", Age = 30),
+    Person(Name = "Bob", Age = 25),
+)
+// people.Min() returns Person("Bob", 25)
+```
+
+### Construction
+
+```gala
+// Empty set
+val empty = EmptyTreeSet[int]()
+
+// From elements
+val set = TreeSetOf(1, 2, 3, 4, 5)
+
+// From slice
+val slice = []int{3, 1, 4, 1, 5}
+val set2 = TreeSetFromSlice(slice)  // TreeSet(1, 3, 4, 5) - sorted, no duplicates
+```
+
+### Basic Operations
+
+```gala
+val set = TreeSetOf(5, 3, 1, 4, 2)
+
+set.IsEmpty()      // false
+set.NonEmpty()     // true
+set.Size()         // 5
+set.Length()       // 5 (alias for Size)
+```
+
+### Element Operations - O(log n)
+
+```gala
+val set = TreeSetOf(1, 2, 3)
+
+// Add element (returns new set)
+set.Add(4)               // TreeSet(1, 2, 3, 4)
+
+// Remove element (returns new set)
+set.Remove(2)            // TreeSet(1, 3)
+
+// Check membership
+set.Contains(2)          // true
+set.Contains(10)         // false
+```
+
+### Min/Max Operations - O(log n)
+
+TreeSet's main advantage over HashSet: efficient min/max access.
+
+```gala
+val set = TreeSetOf(5, 3, 1, 4, 2)
+
+// Min - smallest element
+set.Min()                // 1
+set.MinOption()          // Some(1)
+
+// Max - largest element
+set.Max()                // 5
+set.MaxOption()          // Some(5)
+
+// Head/Last (aliases for Min/Max)
+set.Head()               // 1 (same as Min)
+set.Last()               // 5 (same as Max)
+```
+
+### Range Operations - TreeSet-specific
+
+```gala
+val set = TreeSetOf(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
+
+// Range [from, to] inclusive
+set.Range(3, 7)          // TreeSet(3, 4, 5, 6, 7)
+
+// Range from (>= value)
+set.RangeFrom(7)         // TreeSet(7, 8, 9, 10)
+
+// Range to (<= value)
+set.RangeTo(4)           // TreeSet(1, 2, 3, 4)
+```
+
+### Set Operations
+
+```gala
+val a = TreeSetOf(1, 2, 3, 4)
+val b = TreeSetOf(3, 4, 5, 6)
+
+// Union - all elements from both sets
+a.Union(b)               // TreeSet(1, 2, 3, 4, 5, 6)
+
+// Intersection - elements in both sets
+a.Intersect(b)           // TreeSet(3, 4)
+
+// Difference - elements in a but not in b
+a.Diff(b)                // TreeSet(1, 2)
+
+// Subset check
+TreeSetOf(1, 2).SubsetOf(a)  // true
+```
+
+### Transformations
+
+```gala
+val set = TreeSetOf(1, 2, 3, 4, 5)
+
+// Filter
+set.Filter((x int) => x % 2 == 0)     // TreeSet(2, 4)
+set.FilterNot((x int) => x % 2 == 0)  // TreeSet(1, 3, 5)
+
+// Partition
+set.Partition((x int) => x > 3)
+// Tuple(TreeSet(4, 5), TreeSet(1, 2, 3))
+
+// Map (use standalone function)
+MapTreeSet(set, (x int) => x * 2)  // TreeSet(2, 4, 6, 8, 10)
+```
+
+### Folding and Reduction
+
+```gala
+val set = TreeSetOf(1, 2, 3, 4, 5)
+
+// FoldLeft - processes elements in sorted order!
+FoldLeftTreeSet(set, 0, (acc int, x int) => acc + x)  // 15
+
+// Reduce
+set.Reduce((a int, b int) => a + b)  // 15
+
+// ReduceOption (safe for empty sets)
+set.ReduceOption((a int, b int) => a + b)  // Some(15)
+```
+
+### Predicates
+
+```gala
+val set = TreeSetOf(2, 4, 6, 8)
+
+set.Exists((x int) => x > 5)           // true
+set.ForAll((x int) => x % 2 == 0)      // true
+set.Count((x int) => x > 4)            // 2
+set.Find((x int) => x > 5)             // Some(6) - first in sorted order
+```
+
+### Conversion
+
+```gala
+val set = TreeSetOf(3, 1, 2)
+
+set.ToSlice()     // []int{1, 2, 3} - sorted order
+set.ToList()      // List(1, 2, 3) - sorted order
+set.ToArray()     // Array(1, 2, 3) - sorted order
+set.ToHashSet()   // HashSet(1, 2, 3) - loses order, gains O(eC) lookup
+set.String()      // "TreeSet(1, 2, 3)"
+```
+
+### ForEach (Side Effects) - Sorted Order
+
+```gala
+// Elements processed in sorted order
+set.ForEach((x int) => {
+    fmt.Println(x)  // Prints: 1, 2, 3 (in order)
+})
+```
+
+### Pattern Matching
+
+```gala
+val set = TreeSetOf(1, 2, 3)
+
+val result = set match {
+    case s: TreeSet[_] if s.IsEmpty() => "empty"
+    case s: TreeSet[_] => fmt.Sprintf("has %d elements, min=%v", s.Size(), s.Min())
+    case _ => "unknown"
+}
+```
+
+---
+
+## Choosing Between List, Array, HashSet, and TreeSet
 
 | Use Case | Recommended |
 |----------|-------------|
@@ -647,8 +860,11 @@ val result = set match {
 | Recursive algorithms on sequences | List |
 | Large sequences with updates | Array |
 | Fast membership testing | HashSet |
-| Set operations (union, intersection) | HashSet |
-| Unique elements collection | HashSet |
+| Set operations (union, intersection) | HashSet or TreeSet |
+| Unique elements collection | HashSet or TreeSet |
+| Sorted iteration needed | TreeSet |
+| Need min/max of set | TreeSet |
+| Range queries (elements between X and Y) | TreeSet |
 
 **Note:** With the prefix buffer optimization, Array now has O(1) amortized prepend, making it competitive with List for prepend-heavy workloads. Choose List when you need true O(1) without amortization, or Array when you also need random access.
 
@@ -666,10 +882,19 @@ val result = set match {
 - Better cache locality for iteration
 
 ### HashSet Advantages
-- O(eC) add, remove, and contains operations
+- O(eC) add, remove, and contains operations (faster than TreeSet)
 - Efficient set operations (union, intersection, difference)
 - No duplicate elements
 - Works with any `comparable` type
+- Best choice when order doesn't matter
+
+### TreeSet Advantages
+- O(log n) add, remove, and contains operations
+- Elements maintained in sorted order
+- O(log n) min/max access
+- Range queries (elements in [from, to])
+- Sorted iteration guaranteed
+- Best choice when you need ordering or range operations
 
 ---
 
@@ -694,6 +919,14 @@ HashSet is implemented as a Hash Array Mapped Trie (HAMT), similar to Scala's Ha
 - Collision handling at leaf nodes (when max depth reached)
 - Path copying for updates, sharing unaffected subtrees
 - Effectively constant time operations (O(log32 n))
+
+### TreeSet
+TreeSet is implemented as a persistent Red-Black tree, similar to Scala's TreeSet:
+- Self-balancing binary search tree with red/black coloring
+- Height guaranteed to be at most 2*log(n+1)
+- Path copying for updates, sharing unaffected subtrees
+- O(log n) operations with in-order traversal for sorted iteration
+- Supports range queries by exploiting tree structure
 
 ---
 
@@ -727,23 +960,26 @@ bazel run //collection_immutable:perf_go
 | Take(5000) | - |     54,000 | 515 |
 | Drop(5000) | - |     52,000 | 1,044 |
 
-### HashSet Results (ns/op) - 10,000 Elements
+### Set Results (ns/op) - 10,000 Elements
 
-| Operation | GALA HashSet |
-|-----------|-------------:|
-| Creation | 6,958,000 |
-| Add | 1,066 |
-| Contains (hit) | 36 |
-| Contains (miss) | 27 |
-| Remove | 792 |
-| Filter | 3,390,000 |
+| Operation | HashSet | TreeSet |
+|-----------|--------:|--------:|
+| Creation | 8,608,872 | 24,472,566 |
+| Add | 1,872 | 2,560 |
+| Contains (hit) | 66 | 707 |
+| Contains (miss) | 44 | 952 |
+| Remove | 1,430 | 1,932 |
+| Min | O(n) | 17 |
+| Max | O(n) | 27 |
+| Filter | 6,470,311 | 12,195,500 |
 
-### HashSet Set Operations (ns/op) - 1,000 Elements Each
+### Set Operations (ns/op) - 1,000 Elements Each
 
-| Operation | Time |
-|-----------|-----:|
-| Union | 355,000 |
-| Intersect | 252,000 |
+| Operation | HashSet | TreeSet |
+|-----------|--------:|--------:|
+| Union | 678,951 | 1,353,863 |
+| Intersect | 500,559 | 1,196,271 |
+| Range | O(n) | 12,695,384 |
 
 ### Scaling Results - Sequences
 
@@ -752,11 +988,12 @@ bazel run //collection_immutable:perf_go
 | List.Creation | 2,067 ns | 136,000 ns | 1,239,000 ns |
 | Array.Creation | 17,011 ns | 3,453,000 ns | 52,193,000 ns |
 
-### Scaling Results - HashSet
+### Scaling Results - Sets
 
 | Operation | 100 elements | 10,000 elements | 100,000 elements |
 |-----------|-------------:|----------------:|-----------------:|
-| HashSet.Creation | 29,390 ns | 6,958,000 ns | 105,000,000 ns |
+| HashSet.Creation | 34,120 ns | 8,608,872 ns | 174,706,970 ns |
+| TreeSet.Creation | 81,696 ns | 24,472,566 ns | 345,415,150 ns |
 
 **Notes:**
 - GALA List uses Prepend (O(1)), GALA Array uses Append (O(eC)), GALA HashSet uses Add (O(eC))
@@ -779,10 +1016,26 @@ bazel run //collection_immutable:perf_go
 - **O(eC) Update** (544 ns): 14x faster than immutable slice copy
 
 **HashSet Strengths:**
-- **O(eC) Contains** (36 ns): Fast membership testing regardless of set size
-- **O(eC) Add** (1,066 ns): Efficient element insertion
-- **O(eC) Remove** (792 ns): Efficient element removal
+- **O(eC) Contains** (66 ns): Fast membership testing regardless of set size
+- **O(eC) Add** (1,872 ns): Efficient element insertion
+- **O(eC) Remove** (1,430 ns): Efficient element removal
 - **Set operations**: Union, intersection, difference in O(m) time (m = smaller set)
+
+**TreeSet Strengths:**
+- **Sorted order**: Elements always maintained in sorted order
+- **O(log n) Min/Max** (17-27 ns): Instant access to smallest/largest elements
+- **Range queries**: Efficient retrieval of elements in a range
+- **Sorted iteration**: ForEach, ToSlice, etc. all produce sorted output
+
+**When to Choose HashSet vs TreeSet:**
+
+| Need | Choose |
+|------|--------|
+| Fastest contains/add/remove | HashSet (O(eC) vs O(log n)) |
+| Elements in sorted order | TreeSet |
+| Min/Max of set | TreeSet (O(log n) vs O(n)) |
+| Range queries | TreeSet |
+| Order doesn't matter | HashSet |
 
 **Comparison to Go Immutable Slices:**
 
@@ -805,8 +1058,11 @@ bazel run //collection_immutable:perf_go
 | Large collections with sharing | Array |
 | Recursive algorithms | List |
 | Fast membership testing | HashSet |
-| Set operations (union, intersect) | HashSet |
-| Unique elements only | HashSet |
+| Set operations (union, intersect) | HashSet (fastest) or TreeSet (sorted) |
+| Unique elements only | HashSet or TreeSet |
+| Need sorted set | TreeSet |
+| Need min/max of set | TreeSet |
+| Need range queries | TreeSet |
 | Simple iteration only | Go slice |
 
 ---

@@ -61,6 +61,12 @@ gala_transpile(
     out = "hashable.go",
 )
 
+gala_transpile(
+    name = "ordered_go",
+    src = "ordered.gala",
+    out = "ordered.go",
+)
+
 go_library(
     name = "std",
     srcs = [
@@ -70,6 +76,7 @@ go_library(
         "interfaces.go",
         "iterable.go",
         "option.go",
+        "ordered.go",
         "seq.go",
         "tuple.go",
         "types.go",

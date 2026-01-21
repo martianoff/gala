@@ -441,6 +441,165 @@ func benchHashSetIntersect() {
     printResult("HashSet.Intersect (2x1000)", ns)
 }
 
+// ============ TREESET BENCHMARKS ============
+
+// TreeSet creation benchmark - small
+func benchTreeSetCreation100() {
+    var ns = measureNs(1000, () => {
+        var set = EmptyTreeSet[int]()
+        for i := 0; i < 100; i++ {
+            set = set.Add(i)
+        }
+    })
+    printResult("TreeSet.Creation(100)", ns)
+}
+
+// TreeSet creation benchmark - medium
+func benchTreeSetCreation10000() {
+    var ns = measureNs(100, () => {
+        var set = EmptyTreeSet[int]()
+        for i := 0; i < 10000; i++ {
+            set = set.Add(i)
+        }
+    })
+    printResult("TreeSet.Creation(10000)", ns)
+}
+
+// TreeSet creation benchmark - large
+func benchTreeSetCreation100000() {
+    var ns = measureNs(10, () => {
+        var set = EmptyTreeSet[int]()
+        for i := 0; i < 100000; i++ {
+            set = set.Add(i)
+        }
+    })
+    printResult("TreeSet.Creation(100000)", ns)
+}
+
+// TreeSet add benchmark (single element)
+func benchTreeSetAdd() {
+    var set = EmptyTreeSet[int]()
+    for i := 0; i < 10000; i++ {
+        set = set.Add(i)
+    }
+    var ns = measureNs(100000, () => {
+        var _ = set.Add(99999)
+    })
+    printResult("TreeSet.Add (size=10000)", ns)
+}
+
+// TreeSet contains benchmark - hit
+func benchTreeSetContainsHit() {
+    var set = EmptyTreeSet[int]()
+    for i := 0; i < 10000; i++ {
+        set = set.Add(i)
+    }
+    var ns = measureNs(1000000, () => {
+        var _ = set.Contains(5000)
+    })
+    printResult("TreeSet.Contains (hit, size=10000)", ns)
+}
+
+// TreeSet contains benchmark - miss
+func benchTreeSetContainsMiss() {
+    var set = EmptyTreeSet[int]()
+    for i := 0; i < 10000; i++ {
+        set = set.Add(i)
+    }
+    var ns = measureNs(1000000, () => {
+        var _ = set.Contains(20000)
+    })
+    printResult("TreeSet.Contains (miss, size=10000)", ns)
+}
+
+// TreeSet remove benchmark
+func benchTreeSetRemove() {
+    var set = EmptyTreeSet[int]()
+    for i := 0; i < 10000; i++ {
+        set = set.Add(i)
+    }
+    var ns = measureNs(100000, () => {
+        var _ = set.Remove(5000)
+    })
+    printResult("TreeSet.Remove (size=10000)", ns)
+}
+
+// TreeSet min benchmark
+func benchTreeSetMin() {
+    var set = EmptyTreeSet[int]()
+    for i := 0; i < 10000; i++ {
+        set = set.Add(i)
+    }
+    var ns = measureNs(1000000, () => {
+        var _ = set.Min()
+    })
+    printResult("TreeSet.Min (size=10000)", ns)
+}
+
+// TreeSet max benchmark
+func benchTreeSetMax() {
+    var set = EmptyTreeSet[int]()
+    for i := 0; i < 10000; i++ {
+        set = set.Add(i)
+    }
+    var ns = measureNs(1000000, () => {
+        var _ = set.Max()
+    })
+    printResult("TreeSet.Max (size=10000)", ns)
+}
+
+// TreeSet filter benchmark
+func benchTreeSetFilter() {
+    var set = EmptyTreeSet[int]()
+    for i := 0; i < 10000; i++ {
+        set = set.Add(i)
+    }
+    var ns = measureNs(100, () => {
+        var _ = set.Filter((x int) => x % 2 == 0)
+    })
+    printResult("TreeSet.Filter (size=10000)", ns)
+}
+
+// TreeSet union benchmark
+func benchTreeSetUnion() {
+    var set1 = EmptyTreeSet[int]()
+    var set2 = EmptyTreeSet[int]()
+    for i := 0; i < 1000; i++ {
+        set1 = set1.Add(i)
+        set2 = set2.Add(i + 500)
+    }
+    var ns = measureNs(100, () => {
+        var _ = set1.Union(set2)
+    })
+    printResult("TreeSet.Union (2x1000)", ns)
+}
+
+// TreeSet intersection benchmark
+func benchTreeSetIntersect() {
+    var set1 = EmptyTreeSet[int]()
+    var set2 = EmptyTreeSet[int]()
+    for i := 0; i < 1000; i++ {
+        set1 = set1.Add(i)
+        set2 = set2.Add(i + 500)
+    }
+    var ns = measureNs(100, () => {
+        var _ = set1.Intersect(set2)
+    })
+    printResult("TreeSet.Intersect (2x1000)", ns)
+}
+
+// TreeSet range benchmark
+func benchTreeSetRange() {
+    var set = EmptyTreeSet[int]()
+    for i := 0; i < 10000; i++ {
+        set = set.Add(i)
+    }
+    var ns = measureNs(1000, () => {
+        var _ = set.Range(2500, 7500)
+    })
+    printResult("TreeSet.Range (size=10000)", ns)
+}
+
 func main() {
     fmt.Println("=== GALA Immutable Collections Performance ===")
     fmt.Println("Testing with 10,000 - 100,000 elements")
@@ -488,4 +647,20 @@ func main() {
     benchHashSetFilter()
     benchHashSetUnion()
     benchHashSetIntersect()
+
+    fmt.Println("")
+    fmt.Println("--- TreeSet Operations ---")
+    benchTreeSetCreation100()
+    benchTreeSetCreation10000()
+    benchTreeSetCreation100000()
+    benchTreeSetAdd()
+    benchTreeSetContainsHit()
+    benchTreeSetContainsMiss()
+    benchTreeSetRemove()
+    benchTreeSetMin()
+    benchTreeSetMax()
+    benchTreeSetFilter()
+    benchTreeSetUnion()
+    benchTreeSetIntersect()
+    benchTreeSetRange()
 }

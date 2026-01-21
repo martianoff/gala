@@ -5,6 +5,7 @@ exports_files([
     "list.gala",
     "array.gala",
     "hashset.gala",
+    "treeset.gala",
 ])
 
 # Filegroup for all GALA source files in collection_immutable
@@ -35,12 +36,19 @@ gala_transpile(
     out = "hashset.go",
 )
 
+gala_transpile(
+    name = "treeset_go",
+    src = "treeset.gala",
+    out = "treeset.go",
+)
+
 go_library(
     name = "collection_immutable",
     srcs = [
         "array.go",
         "hashset.go",
         "list.go",
+        "treeset.go",
     ],
     importpath = "martianoff/gala/collection_immutable",
     visibility = ["//visibility:public"],
@@ -74,6 +82,12 @@ gala_go_test(
 gala_go_test(
     name = "hashset_test",
     srcs = ["hashset_test.gala"],
+    deps = [":collection_immutable"],
+)
+
+gala_go_test(
+    name = "treeset_test",
+    srcs = ["treeset_test.gala"],
     deps = [":collection_immutable"],
 )
 

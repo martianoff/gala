@@ -1,0 +1,70 @@
+package std
+
+// Ordered is an interface that types can implement to provide custom ordering.
+// Used by TreeSet and TreeMap for sorted collections.
+//
+// Primitive types (int, string, float64, etc.) are handled automatically via Go's cmp.Ordered.
+// Custom types should implement this interface for use in tree-based collections.
+//
+// The Compare method must return:
+//   - negative if receiver < other
+//   - zero if receiver == other
+//   - positive if receiver > other
+//
+// Example:
+//   type Person struct {
+//       Name string
+//       Age  int
+//   }
+//   func (p Person) Compare(other Person) int {
+//       if p.Age < other.Age { return -1 }
+//       if p.Age > other.Age { return 1 }
+//       return 0
+//   }
+type Ordered[T any] interface {
+    Compare(other T) int
+}
+
+// CompareInt compares two int64 values.
+func CompareInt(a int64, b int64) int {
+    if a < b {
+        return -1
+    }
+    if a > b {
+        return 1
+    }
+    return 0
+}
+
+// CompareUint compares two uint64 values.
+func CompareUint(a uint64, b uint64) int {
+    if a < b {
+        return -1
+    }
+    if a > b {
+        return 1
+    }
+    return 0
+}
+
+// CompareFloat compares two float64 values.
+func CompareFloat(a float64, b float64) int {
+    if a < b {
+        return -1
+    }
+    if a > b {
+        return 1
+    }
+    return 0
+}
+
+// CompareString compares two strings lexicographically.
+func CompareString(a string, b string) int {
+    if a < b {
+        return -1
+    }
+    if a > b {
+        return 1
+    }
+    return 0
+}

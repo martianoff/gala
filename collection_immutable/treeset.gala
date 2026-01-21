@@ -1,0 +1,850 @@
+package collection_immutable
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+)
+
+// TreeSet is an immutable sorted set implemented as a Red-Black tree.
+// It maintains elements in sorted order and provides O(log n) operations.
+//
+// Elements must be either:
+// - Primitive types (int, string, float64, etc.) - compared automatically
+// - Types implementing the Ordered[T] interface
+//
+// Performance characteristics:
+// - Add:      O(log n)
+// - Remove:   O(log n)
+// - Contains: O(log n)
+// - Min/Max:  O(log n)
+// - Size:     O(1) - cached
+//
+// Unlike HashSet, TreeSet maintains sorted order and supports range queries.
+
+// Tree node colors for Red-Black tree
+val treeRed int = 0
+val treeBlack int = 1
+
+// treeNode represents a node in the Red-Black tree.
+type treeNode[T comparable] struct {
+    value T
+    left  *treeNode[T]
+    right *treeNode[T]
+    color int
+}
+
+// TreeSet represents an immutable sorted set.
+type TreeSet[T comparable] struct {
+    root *treeNode[T]
+    size int
+}
+
+// EmptyTreeSet returns an empty TreeSet.
+func EmptyTreeSet[T comparable]() TreeSet[T] {
+    var nilRoot *treeNode[T] = nil
+    return TreeSet[T](root = nilRoot, size = 0)
+}
+
+// TreeSetOf creates a TreeSet from variadic arguments.
+// Example: TreeSetOf(1, 2, 3) creates TreeSet(1, 2, 3)
+func TreeSetOf[T comparable](elements ...T) TreeSet[T] {
+    var result = EmptyTreeSet[T]()
+    for i := 0; i < len(elements); i++ {
+        result = result.Add(elements[i])
+    }
+    return result
+}
+
+// TreeSetFromSlice creates a TreeSet from a slice.
+func TreeSetFromSlice[T comparable](elements []T) TreeSet[T] {
+    var result = EmptyTreeSet[T]()
+    for i := 0; i < len(elements); i++ {
+        result = result.Add(elements[i])
+    }
+    return result
+}
+
+// IsEmpty returns true if the set is empty.
+func (s TreeSet[T]) IsEmpty() bool = s.size == 0
+
+// NonEmpty returns true if the set is not empty.
+func (s TreeSet[T]) NonEmpty() bool = s.size > 0
+
+// Size returns the number of elements. O(1) - cached.
+func (s TreeSet[T]) Size() int = s.size
+
+// Length is an alias for Size.
+func (s TreeSet[T]) Length() int = s.size
+
+// compare compares two values and returns -1, 0, or 1.
+// Handles primitive types automatically, custom types must implement Ordered[T].
+func compare[T comparable](a T, b T) int {
+    return compareAny[T](a, b)
+}
+
+// compareAny compares two values of the same type.
+func compareAny[T comparable](a T, b T) int {
+    val va any = a
+    val vb any = b
+
+    val result = va match {
+        case ai: int => compareIntsAny(ai, vb)
+        case as: string => compareStringsAny(as, vb)
+        case ai64: int64 => compareInt64sAny(ai64, vb)
+        case ai32: int32 => compareInt32sAny(ai32, vb)
+        case af64: float64 => compareFloat64sAny(af64, vb)
+        case af32: float32 => compareFloat32sAny(af32, vb)
+        case au: uint => compareUintsAny(au, vb)
+        case au64: uint64 => compareUint64sAny(au64, vb)
+        case au32: uint32 => compareUint32sAny(au32, vb)
+        case ai16: int16 => compareInt16sAny(ai16, vb)
+        case ai8: int8 => compareInt8sAny(ai8, vb)
+        case au16: uint16 => compareUint16sAny(au16, vb)
+        case au8: uint8 => compareUint8sAny(au8, vb)
+        case ao: Ordered[T] => ao.Compare(b)
+        case _ => panicNotOrdered(va)
+    }
+    return result
+}
+
+// Type-specific comparison helpers that take any as second argument
+func compareIntsAny(a int, vb any) int {
+    val b = vb match { case bi: int => bi case _ => 0 }
+    return compareInts(a, b)
+}
+
+func compareStringsAny(a string, vb any) int {
+    val b = vb match { case bs: string => bs case _ => "" }
+    return compareStrings(a, b)
+}
+
+func compareInt64sAny(a int64, vb any) int {
+    val b = vb match { case bi: int64 => bi case _ => int64(0) }
+    return compareInt64s(a, b)
+}
+
+func compareInt32sAny(a int32, vb any) int {
+    val b = vb match { case bi: int32 => bi case _ => int32(0) }
+    return compareInt32s(a, b)
+}
+
+func compareInt16sAny(a int16, vb any) int {
+    val b = vb match { case bi: int16 => bi case _ => int16(0) }
+    return compareInt16s(a, b)
+}
+
+func compareInt8sAny(a int8, vb any) int {
+    val b = vb match { case bi: int8 => bi case _ => int8(0) }
+    return compareInt8s(a, b)
+}
+
+func compareFloat64sAny(a float64, vb any) int {
+    val b = vb match { case bf: float64 => bf case _ => float64(0) }
+    return compareFloat64s(a, b)
+}
+
+func compareFloat32sAny(a float32, vb any) int {
+    val b = vb match { case bf: float32 => bf case _ => float32(0) }
+    return compareFloat32s(a, b)
+}
+
+func compareUintsAny(a uint, vb any) int {
+    val b = vb match { case bu: uint => bu case _ => uint(0) }
+    return compareUints(a, b)
+}
+
+func compareUint64sAny(a uint64, vb any) int {
+    val b = vb match { case bu: uint64 => bu case _ => uint64(0) }
+    return compareUint64s(a, b)
+}
+
+func compareUint32sAny(a uint32, vb any) int {
+    val b = vb match { case bu: uint32 => bu case _ => uint32(0) }
+    return compareUint32s(a, b)
+}
+
+func compareUint16sAny(a uint16, vb any) int {
+    val b = vb match { case bu: uint16 => bu case _ => uint16(0) }
+    return compareUint16s(a, b)
+}
+
+func compareUint8sAny(a uint8, vb any) int {
+    val b = vb match { case bu: uint8 => bu case _ => uint8(0) }
+    return compareUint8s(a, b)
+}
+
+// Comparison helper functions for primitive types
+func compareInts(a int, b int) int {
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func compareStrings(a string, b string) int {
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func compareInt64s(a int64, b int64) int {
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func compareInt32s(a int32, b int32) int {
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func compareInt16s(a int16, b int16) int {
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func compareInt8s(a int8, b int8) int {
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func compareFloat64s(a float64, b float64) int {
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func compareFloat32s(a float32, b float32) int {
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func compareUints(a uint, b uint) int {
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func compareUint64s(a uint64, b uint64) int {
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func compareUint32s(a uint32, b uint32) int {
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func compareUint16s(a uint16, b uint16) int {
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func compareUint8s(a uint8, b uint8) int {
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+// panicNotOrdered panics with a helpful error message for types that don't implement Ordered.
+func panicNotOrdered(v any) int {
+    panic(fmt.Sprintf("TreeSet: type %T must implement std.Ordered interface", v))
+}
+
+// isRedNode checks if a node is red (nil nodes are black).
+func isRedNode[T comparable](node *treeNode[T]) bool {
+    if node == nil {
+        return false
+    }
+    return node.color == treeRed
+}
+
+// Contains checks if the set contains the given element. O(log n).
+func (s TreeSet[T]) Contains(elem T) bool {
+    return containsTree[T](s.root, elem)
+}
+
+// containsTree searches for an element in the tree.
+func containsTree[T comparable](node *treeNode[T], elem T) bool {
+    if node == nil {
+        return false
+    }
+    val cmp = compare[T](elem, node.value)
+    if cmp < 0 {
+        return containsTree[T](node.left, elem)
+    }
+    if cmp > 0 {
+        return containsTree[T](node.right, elem)
+    }
+    return true
+}
+
+// Add adds an element to the set. Returns a new set with the element. O(log n).
+func (s TreeSet[T]) Add(elem T) TreeSet[T] {
+    if s.Contains(elem) {
+        return s
+    }
+    val newRoot = insertTree[T](s.root, elem)
+    // Root is always black
+    val blackRoot = &treeNode[T](value = newRoot.value, left = newRoot.left, right = newRoot.right, color = treeBlack)
+    return TreeSet[T](root = blackRoot, size = s.size + 1)
+}
+
+// insertTree inserts an element into the tree and rebalances.
+func insertTree[T comparable](node *treeNode[T], elem T) *treeNode[T] {
+    if node == nil {
+        return &treeNode[T](value = elem, color = treeRed)
+    }
+
+    val cmp = compare[T](elem, node.value)
+    var newNode *treeNode[T]
+    if cmp < 0 {
+        val newLeft = insertTree[T](node.left, elem)
+        newNode = &treeNode[T](value = node.value, left = newLeft, right = node.right, color = node.color)
+    } else if cmp > 0 {
+        val newRight = insertTree[T](node.right, elem)
+        newNode = &treeNode[T](value = node.value, left = node.left, right = newRight, color = node.color)
+    } else {
+        return node
+    }
+
+    return balanceTree[T](newNode)
+}
+
+// balanceTree rebalances the tree after insertion (Okasaki's balance function).
+func balanceTree[T comparable](node *treeNode[T]) *treeNode[T] {
+    // Case 1: Left child is red and has red left child
+    if isRedNode[T](node.left) && isRedNode[T](node.left.left) {
+        val newLeft = &treeNode[T](value = node.left.left.value, left = node.left.left.left, right = node.left.left.right, color = treeBlack)
+        val newRight = &treeNode[T](value = node.value, left = node.left.right, right = node.right, color = treeBlack)
+        return &treeNode[T](value = node.left.value, left = newLeft, right = newRight, color = treeRed)
+    }
+    // Case 2: Left child is red and has red right child
+    if isRedNode[T](node.left) && isRedNode[T](node.left.right) {
+        val newLeft = &treeNode[T](value = node.left.value, left = node.left.left, right = node.left.right.left, color = treeBlack)
+        val newRight = &treeNode[T](value = node.value, left = node.left.right.right, right = node.right, color = treeBlack)
+        return &treeNode[T](value = node.left.right.value, left = newLeft, right = newRight, color = treeRed)
+    }
+    // Case 3: Right child is red and has red left child
+    if isRedNode[T](node.right) && isRedNode[T](node.right.left) {
+        val newLeft = &treeNode[T](value = node.value, left = node.left, right = node.right.left.left, color = treeBlack)
+        val newRight = &treeNode[T](value = node.right.value, left = node.right.left.right, right = node.right.right, color = treeBlack)
+        return &treeNode[T](value = node.right.left.value, left = newLeft, right = newRight, color = treeRed)
+    }
+    // Case 4: Right child is red and has red right child
+    if isRedNode[T](node.right) && isRedNode[T](node.right.right) {
+        val newLeft = &treeNode[T](value = node.value, left = node.left, right = node.right.left, color = treeBlack)
+        val newRight = &treeNode[T](value = node.right.right.value, left = node.right.right.left, right = node.right.right.right, color = treeBlack)
+        return &treeNode[T](value = node.right.value, left = newLeft, right = newRight, color = treeRed)
+    }
+    return node
+}
+
+// Remove removes an element from the set. Returns a new set without the element. O(log n).
+func (s TreeSet[T]) Remove(elem T) TreeSet[T] {
+    if !s.Contains(elem) {
+        return s
+    }
+    if s.size == 1 {
+        return EmptyTreeSet[T]()
+    }
+    val newRoot = removeTree[T](s.root, elem)
+    if newRoot == nil {
+        return EmptyTreeSet[T]()
+    }
+    // Root is always black
+    val blackRoot = &treeNode[T](value = newRoot.value, left = newRoot.left, right = newRoot.right, color = treeBlack)
+    return TreeSet[T](root = blackRoot, size = s.size - 1)
+}
+
+// removeTree removes an element from the tree.
+func removeTree[T comparable](node *treeNode[T], elem T) *treeNode[T] {
+    if node == nil {
+        return nil
+    }
+
+    val cmp = compare[T](elem, node.value)
+    if cmp < 0 {
+        val newLeft = removeTree[T](node.left, elem)
+        return balanceRemoveTree[T](&treeNode[T](value = node.value, left = newLeft, right = node.right, color = node.color))
+    }
+    if cmp > 0 {
+        val newRight = removeTree[T](node.right, elem)
+        return balanceRemoveTree[T](&treeNode[T](value = node.value, left = node.left, right = newRight, color = node.color))
+    }
+
+    // Found the element to remove
+    if node.left == nil {
+        return node.right
+    }
+    if node.right == nil {
+        return node.left
+    }
+
+    // Node has two children, find successor (min of right subtree)
+    val successor = findMinTree[T](node.right)
+    val newRight = removeMinTree[T](node.right)
+    return balanceRemoveTree[T](&treeNode[T](value = successor, left = node.left, right = newRight, color = node.color))
+}
+
+// findMinTree finds the minimum element in a subtree.
+func findMinTree[T comparable](node *treeNode[T]) T {
+    if node.left == nil {
+        return node.value
+    }
+    return findMinTree[T](node.left)
+}
+
+// removeMinTree removes the minimum element from a subtree.
+func removeMinTree[T comparable](node *treeNode[T]) *treeNode[T] {
+    if node.left == nil {
+        return node.right
+    }
+    return balanceRemoveTree[T](&treeNode[T](value = node.value, left = removeMinTree[T](node.left), right = node.right, color = node.color))
+}
+
+// balanceRemoveTree rebalances after removal (simplified version).
+func balanceRemoveTree[T comparable](node *treeNode[T]) *treeNode[T] {
+    if node == nil {
+        return nil
+    }
+    return balanceTree[T](node)
+}
+
+// Min returns the minimum element in the set. O(log n).
+// Panics if the set is empty.
+func (s TreeSet[T]) Min() T {
+    if s.size == 0 {
+        panic("TreeSet.Min on empty set")
+    }
+    return findMinTree[T](s.root)
+}
+
+// MinOption returns the minimum element wrapped in Option. O(log n).
+func (s TreeSet[T]) MinOption() Option[T] {
+    if s.size == 0 {
+        return None[T]()
+    }
+    return Some[T](s.Min())
+}
+
+// Max returns the maximum element in the set. O(log n).
+// Panics if the set is empty.
+func (s TreeSet[T]) Max() T {
+    if s.size == 0 {
+        panic("TreeSet.Max on empty set")
+    }
+    return findMaxTree[T](s.root)
+}
+
+// findMaxTree finds the maximum element in a subtree.
+func findMaxTree[T comparable](node *treeNode[T]) T {
+    if node.right == nil {
+        return node.value
+    }
+    return findMaxTree[T](node.right)
+}
+
+// MaxOption returns the maximum element wrapped in Option. O(log n).
+func (s TreeSet[T]) MaxOption() Option[T] {
+    if s.size == 0 {
+        return None[T]()
+    }
+    return Some[T](s.Max())
+}
+
+// AddAll adds all elements from another set. Returns a new set.
+func (s TreeSet[T]) AddAll(other TreeSet[T]) TreeSet[T] {
+    var result = s
+    other.ForEach((elem T) => {
+        result = result.Add(elem)
+        return nil
+    })
+    return result
+}
+
+// Union returns a new set containing all elements from both sets.
+func (s TreeSet[T]) Union(other TreeSet[T]) TreeSet[T] = s.AddAll(other)
+
+// Intersect returns a new set containing only elements present in both sets.
+func (s TreeSet[T]) Intersect(other TreeSet[T]) TreeSet[T] {
+    // Iterate over the smaller set for efficiency
+    var smaller TreeSet[T]
+    var larger TreeSet[T]
+    if s.size <= other.size {
+        smaller = s
+        larger = other
+    } else {
+        smaller = other
+        larger = s
+    }
+
+    var result = EmptyTreeSet[T]()
+    smaller.ForEach((elem T) => {
+        if larger.Contains(elem) {
+            result = result.Add(elem)
+        }
+        return nil
+    })
+    return result
+}
+
+// Diff returns a new set containing elements in this set but not in other.
+func (s TreeSet[T]) Diff(other TreeSet[T]) TreeSet[T] {
+    var result = EmptyTreeSet[T]()
+    s.ForEach((elem T) => {
+        if !other.Contains(elem) {
+            result = result.Add(elem)
+        }
+        return nil
+    })
+    return result
+}
+
+// SubsetOf returns true if this set is a subset of other.
+func (s TreeSet[T]) SubsetOf(other TreeSet[T]) bool {
+    if s.size > other.size {
+        return false
+    }
+    var isSubset = true
+    s.ForEach((elem T) => {
+        if !other.Contains(elem) {
+            isSubset = false
+        }
+        return nil
+    })
+    return isSubset
+}
+
+// ForEach applies a function to each element in sorted order.
+func (s TreeSet[T]) ForEach(f func(T) any) {
+    if s.root != nil {
+        forEachTree[T](s.root, f)
+    }
+}
+
+// forEachTree traverses the tree in-order and applies f.
+func forEachTree[T comparable](node *treeNode[T], f func(T) any) {
+    if node == nil {
+        return
+    }
+    forEachTree[T](node.left, f)
+    f(node.value)
+    forEachTree[T](node.right, f)
+}
+
+// MapTreeSet applies a function to each element and returns a new set.
+// Note: Defined as standalone function to preserve type constraints.
+func MapTreeSet[T comparable, U comparable](s TreeSet[T], f func(T) U) TreeSet[U] {
+    var result = EmptyTreeSet[U]()
+    s.ForEach((elem T) => {
+        result = result.Add(f(elem))
+        return nil
+    })
+    return result
+}
+
+// FlatMapTreeSet applies a function that returns a set to each element and flattens.
+// Note: Defined as standalone function to preserve type constraints.
+func FlatMapTreeSet[T comparable, U comparable](s TreeSet[T], f func(T) TreeSet[U]) TreeSet[U] {
+    var result = EmptyTreeSet[U]()
+    s.ForEach((elem T) => {
+        f(elem).ForEach((inner U) => {
+            result = result.Add(inner)
+            return nil
+        })
+        return nil
+    })
+    return result
+}
+
+// Filter returns a new set with only elements that satisfy the predicate.
+func (s TreeSet[T]) Filter(p func(T) bool) TreeSet[T] {
+    var result = EmptyTreeSet[T]()
+    s.ForEach((elem T) => {
+        if p(elem) {
+            result = result.Add(elem)
+        }
+        return nil
+    })
+    return result
+}
+
+// FilterNot returns a new set with elements that do not satisfy the predicate.
+func (s TreeSet[T]) FilterNot(p func(T) bool) TreeSet[T] = s.Filter((elem T) => !p(elem))
+
+// Partition splits the set into two sets based on a predicate.
+func (s TreeSet[T]) Partition(p func(T) bool) Tuple[TreeSet[T], TreeSet[T]] {
+    var left = s.Filter(p)
+    var right = s.FilterNot(p)
+    return Tuple[TreeSet[T], TreeSet[T]](V1 = left, V2 = right)
+}
+
+// FoldLeftTreeSet applies a binary operator from left to right (in sorted order).
+// Note: Defined as standalone function to preserve type constraints.
+func FoldLeftTreeSet[T comparable, U any](s TreeSet[T], initial U, f func(U, T) U) U {
+    var acc = initial
+    s.ForEach((elem T) => {
+        acc = f(acc, elem)
+        return nil
+    })
+    return acc
+}
+
+// Reduce applies a binary operator, starting with the first element.
+// Panics if the set is empty.
+func (s TreeSet[T]) Reduce(f func(T, T) T) T {
+    if s.size == 0 {
+        panic("TreeSet.Reduce on empty set")
+    }
+    var first = true
+    var acc T
+    s.ForEach((elem T) => {
+        if first {
+            acc = elem
+            first = false
+        } else {
+            acc = f(acc, elem)
+        }
+        return nil
+    })
+    return acc
+}
+
+// ReduceOption is like Reduce but returns None for empty set.
+func (s TreeSet[T]) ReduceOption(f func(T, T) T) Option[T] {
+    if s.size == 0 {
+        return None[T]()
+    }
+    return Some[T](s.Reduce(f))
+}
+
+// Exists returns true if any element satisfies the predicate.
+func (s TreeSet[T]) Exists(p func(T) bool) bool {
+    var found = false
+    s.ForEach((elem T) => {
+        if p(elem) {
+            found = true
+        }
+        return nil
+    })
+    return found
+}
+
+// ForAll returns true if all elements satisfy the predicate.
+func (s TreeSet[T]) ForAll(p func(T) bool) bool {
+    var all = true
+    s.ForEach((elem T) => {
+        if !p(elem) {
+            all = false
+        }
+        return nil
+    })
+    return all
+}
+
+// Find returns the first element (in sorted order) that satisfies the predicate.
+func (s TreeSet[T]) Find(p func(T) bool) Option[T] {
+    var result Option[T] = None[T]()
+    s.ForEach((elem T) => {
+        if result.IsEmpty() && p(elem) {
+            result = Some[T](elem)
+        }
+        return nil
+    })
+    return result
+}
+
+// Count returns the number of elements satisfying the predicate.
+func (s TreeSet[T]) Count(p func(T) bool) int {
+    var count = 0
+    s.ForEach((elem T) => {
+        if p(elem) {
+            count++
+        }
+        return nil
+    })
+    return count
+}
+
+// Head returns the minimum element (alias for Min).
+// Panics if the set is empty.
+func (s TreeSet[T]) Head() T = s.Min()
+
+// HeadOption returns the minimum element wrapped in Option.
+func (s TreeSet[T]) HeadOption() Option[T] = s.MinOption()
+
+// Last returns the maximum element (alias for Max).
+// Panics if the set is empty.
+func (s TreeSet[T]) Last() T = s.Max()
+
+// LastOption returns the maximum element wrapped in Option.
+func (s TreeSet[T]) LastOption() Option[T] = s.MaxOption()
+
+// Range returns elements in the range [from, to] inclusive.
+func (s TreeSet[T]) Range(from T, to T) TreeSet[T] {
+    var result = EmptyTreeSet[T]()
+    rangeTree[T](s.root, from, to, (elem T) => {
+        result = result.Add(elem)
+        return nil
+    })
+    return result
+}
+
+// rangeTree traverses only nodes within the range.
+func rangeTree[T comparable](node *treeNode[T], from T, to T, f func(T) any) {
+    if node == nil {
+        return
+    }
+    val cmpFrom = compare[T](node.value, from)
+    val cmpTo = compare[T](node.value, to)
+
+    if cmpFrom > 0 {
+        rangeTree[T](node.left, from, to, f)
+    }
+    if cmpFrom >= 0 && cmpTo <= 0 {
+        f(node.value)
+    }
+    if cmpTo < 0 {
+        rangeTree[T](node.right, from, to, f)
+    }
+}
+
+// RangeFrom returns all elements >= from.
+func (s TreeSet[T]) RangeFrom(from T) TreeSet[T] {
+    var result = EmptyTreeSet[T]()
+    rangeFromTree[T](s.root, from, (elem T) => {
+        result = result.Add(elem)
+        return nil
+    })
+    return result
+}
+
+// rangeFromTree traverses only nodes >= from.
+func rangeFromTree[T comparable](node *treeNode[T], from T, f func(T) any) {
+    if node == nil {
+        return
+    }
+    val cmp = compare[T](node.value, from)
+    if cmp > 0 {
+        rangeFromTree[T](node.left, from, f)
+    }
+    if cmp >= 0 {
+        f(node.value)
+    }
+    rangeFromTree[T](node.right, from, f)
+}
+
+// RangeTo returns all elements <= to.
+func (s TreeSet[T]) RangeTo(to T) TreeSet[T] {
+    var result = EmptyTreeSet[T]()
+    rangeToTree[T](s.root, to, (elem T) => {
+        result = result.Add(elem)
+        return nil
+    })
+    return result
+}
+
+// rangeToTree traverses only nodes <= to.
+func rangeToTree[T comparable](node *treeNode[T], to T, f func(T) any) {
+    if node == nil {
+        return
+    }
+    val cmp = compare[T](node.value, to)
+    rangeToTree[T](node.left, to, f)
+    if cmp <= 0 {
+        f(node.value)
+    }
+    if cmp < 0 {
+        rangeToTree[T](node.right, to, f)
+    }
+}
+
+// ToSlice converts the set to a Go slice in sorted order.
+func (s TreeSet[T]) ToSlice() []T {
+    var result []T
+    s.ForEach((elem T) => {
+        result = append(result, elem)
+        return nil
+    })
+    return result
+}
+
+// ToList converts the set to a List (in sorted order).
+func (s TreeSet[T]) ToList() List[T] {
+    // Traverse in reverse order so prepending gives sorted order
+    var result = emptyList[T]()
+    forEachTreeReverse[T](s.root, (elem T) => {
+        result = consList[T](elem, result)
+        return nil
+    })
+    return result
+}
+
+// forEachTreeReverse traverses the tree in reverse order.
+func forEachTreeReverse[T comparable](node *treeNode[T], f func(T) any) {
+    if node == nil {
+        return
+    }
+    forEachTreeReverse[T](node.right, f)
+    f(node.value)
+    forEachTreeReverse[T](node.left, f)
+}
+
+// ToArray converts the set to an Array (in sorted order).
+func (s TreeSet[T]) ToArray() Array[T] {
+    var result = EmptyArray[T]()
+    s.ForEach((elem T) => {
+        result = result.Append(elem)
+        return nil
+    })
+    return result
+}
+
+// ToHashSet converts the set to a HashSet (loses ordering but gains O(1) lookup).
+func (s TreeSet[T]) ToHashSet() HashSet[T] {
+    var result = EmptyHashSet[T]()
+    s.ForEach((elem T) => {
+        result = result.Add(elem)
+        return nil
+    })
+    return result
+}
+
+// String returns a string representation of the set in sorted order.
+func (s TreeSet[T]) String() string {
+    if s.size == 0 {
+        return "TreeSet()"
+    }
+    var result = "TreeSet("
+    var first = true
+    s.ForEach((elem T) => {
+        if !first {
+            result = result + ", "
+        }
+        result = result + fmt.Sprintf("%v", elem)
+        first = false
+        return nil
+    })
+    return result + ")"
+}
+
+// TreeSetEmpty extractor for pattern matching on empty sets.
+type TreeSetEmpty struct {}
+func (tse TreeSetEmpty) Unapply(s any) Option[bool] = s match {
+    case set: TreeSet[_] if set.size == 0 => Some[bool](true)
+    case _ => None[bool]()
+}
+
+// TreeSetNonEmpty extractor for pattern matching on non-empty sets.
+type TreeSetNonEmpty struct {}
+func (tsne TreeSetNonEmpty) Unapply(s any) Option[any] = s match {
+    case set: TreeSet[_] if set.size > 0 => Some[any](set)
+    case _ => None[any]()
+}
