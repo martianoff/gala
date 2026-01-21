@@ -549,10 +549,117 @@ func TestArrayFlatMapDataIntegrity(t T) T {
     return Eq[int](t6, flattened.Get(5), 30)
 }
 
-// NOTE: Tests for Concat, Partition, Zip, and ZipWithIndex are omitted
-// because the transpiler currently wraps Tuple fields with Immutable[T],
-// making direct field access incompatible with the test framework.
-// These features are tested indirectly through other tests.
+// Test Concat data integrity (using manual iteration since Array.Concat expects Iterable)
+func TestArrayConcatDataIntegrity(t T) T {
+    var arr1 = ArrayOf[int](1, 2, 3)
+    var arr2 = ArrayOf[int](4, 5, 6)
+
+    // Manually concatenate since Array doesn't implement Iterable interface
+    var concatenated = arr1
+    for i := 0; i < arr2.Length(); i++ {
+        concatenated = concatenated.Append(arr2.Get(i))
+    }
+
+    var t1 = Eq[int](t, concatenated.Length(), 6)
+    var allCorrect = true
+    for i := 0; i < 6; i++ {
+        if concatenated.Get(i) != (i + 1) {
+            allCorrect = false
+        }
+    }
+    return IsTrue(t1, allCorrect)
+}
+
+// Test Partition data integrity
+func TestArrayPartitionDataIntegrity(t T) T {
+    var arr = EmptyArray[int]()
+    for i := 0; i < 100; i++ {
+        arr = arr.Append(i)
+    }
+
+    var partitioned = arr.Partition((x int) => x % 2 == 0)
+    var evens = partitioned.V1
+    var odds = partitioned.V2
+
+    var t1 = Eq[int](t, evens.Length(), 50)
+    var t2 = Eq[int](t1, odds.Length(), 50)
+
+    // Verify evens
+    var evensCorrect = true
+    for i := 0; i < evens.Length(); i++ {
+        if evens.Get(i) % 2 != 0 {
+            evensCorrect = false
+        }
+    }
+
+    // Verify odds
+    var oddsCorrect = true
+    for i := 0; i < odds.Length(); i++ {
+        if odds.Get(i) % 2 != 1 {
+            oddsCorrect = false
+        }
+    }
+
+    var t3 = IsTrue(t2, evensCorrect)
+    return IsTrue(t3, oddsCorrect)
+}
+
+// Test Zip data integrity
+func TestArrayZipDataIntegrity(t T) T {
+    var arr1 = ArrayOf[int](1, 2, 3, 4, 5)
+    var arr2 = ArrayOf[string]("a", "b", "c", "d", "e")
+    var arr3 = ArrayOf[int](10, 20, 30)  // Shorter array
+
+    // Test basic zip
+    var zipped = arr1.Zip[string](arr2)
+    var t1 = Eq[int](t, zipped.Length(), 5)
+
+    // Test zip with different lengths (takes minimum)
+    var zippedShort = arr1.Zip[int](arr3)
+    var t2 = Eq[int](t1, zippedShort.Length(), 3)
+
+    // Test empty arrays
+    var empty = EmptyArray[int]()
+    var zippedEmpty = empty.Zip[string](arr2)
+    var t3 = Eq[int](t2, zippedEmpty.Length(), 0)
+
+    // Verify tuple contents by extracting and checking first element of each pair
+    var first0 = zippedShort.Get(0)
+    var first0V1 = first0.V1
+    var first1 = zippedShort.Get(1)
+    var first1V1 = first1.V1
+    var first2 = zippedShort.Get(2)
+    var first2V1 = first2.V1
+
+    var t4 = Eq[int](t3, first0V1, 1)
+    var t5 = Eq[int](t4, first1V1, 2)
+    return Eq[int](t5, first2V1, 3)
+}
+
+// Test ZipWithIndex data integrity
+func TestArrayZipWithIndexDataIntegrity(t T) T {
+    var arr = ArrayOf[string]("a", "b", "c", "d", "e")
+    var zipped = arr.ZipWithIndex()
+
+    var t1 = Eq[int](t, zipped.Length(), 5)
+
+    // Test empty array
+    var empty = EmptyArray[string]()
+    var zippedEmpty = empty.ZipWithIndex()
+    var t2 = Eq[int](t1, zippedEmpty.Length(), 0)
+
+    // Verify tuple contents by extracting and checking index values
+    var elem0 = zipped.Get(0)
+    var elem0V2 = elem0.V2
+    var elem2 = zipped.Get(2)
+    var elem2V2 = elem2.V2
+    var elem4 = zipped.Get(4)
+    var elem4V2 = elem4.V2
+
+    var t3 = Eq[int](t2, elem0V2, 0)
+    var t4 = Eq[int](t3, elem2V2, 2)
+    return Eq[int](t4, elem4V2, 4)
+}
 
 // Test Distinct data integrity
 func TestArrayDistinctDataIntegrity(t T) T {

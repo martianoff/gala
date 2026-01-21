@@ -1,0 +1,45 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/collection_immutable"
+)
+
+func main() {
+    // Test 1: Tuple with primitive types - field access should auto-unwrap
+    val pair = Tuple[int, string](V1 = 42, V2 = "hello")
+    val v1 = pair.V1  // Should be int, not Immutable[int]
+    val v2 = pair.V2  // Should be string, not Immutable[string]
+    fmt.Printf("v1=%d, v2=%s\n", v1, v2)
+
+    // Test 2: Tuple with complex types - this already works
+    val arr1 = ArrayOf[int](1, 2, 3)
+    val arr2 = ArrayOf[int](4, 5, 6)
+    val partitioned = Tuple[Array[int], Array[int]](V1 = arr1, V2 = arr2)
+    val left = partitioned.V1  // Should be Array[int]
+    val right = partitioned.V2  // Should be Array[int]
+    fmt.Printf("left length=%d, right length=%d\n", left.Length(), right.Length())
+
+    // Test 3: Nested tuple field access
+    val nested = Tuple[int, int](V1 = 10, V2 = 20)
+    val sum = nested.V1 + nested.V2  // Should work with int + int
+    fmt.Printf("sum=%d\n", sum)
+
+    // Test 4: Tuple from Array.Zip - THIS IS THE FAILING CASE
+    val nums = ArrayOf[int](1, 2, 3)
+    val strs = ArrayOf[string]("a", "b", "c")
+    val zipped = nums.Zip[string](strs)
+
+    // Get first tuple from array and access its fields
+    val firstTuple = zipped.Get(0)
+    val firstV1 = firstTuple.V1  // Should be int, but currently stays Immutable[int]
+    val firstV2 = firstTuple.V2  // Should be string
+    fmt.Printf("firstV1=%d, firstV2=%s\n", firstV1, firstV2)
+
+    // Test 5: Tuple from Array.ZipWithIndex
+    val indexed = strs.ZipWithIndex()
+    val elem = indexed.Get(1)
+    val elemStr = elem.V1   // Should be string
+    val elemIdx = elem.V2   // Should be int
+    fmt.Printf("elemStr=%s, elemIdx=%d\n", elemStr, elemIdx)
+}

@@ -676,6 +676,7 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 
 		if sel, ok := fun.(*ast.SelectorExpr); ok {
 			if sel.Sel.Name == transpiler.MethodGet {
+				// Special case: x.Get() where x is a known val - return the val's type directly
 				if id, ok := sel.X.(*ast.Ident); ok {
 					if t.isVal(id.Name) {
 						return t.getType(id.Name)
@@ -683,10 +684,21 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 				}
 				xType := t.getExprTypeNameManual(sel.X)
 				xBaseName := xType.BaseName()
+				// For Immutable[T].Get() and Option[T].Get(), return the inner type T
 				if xBaseName == transpiler.TypeImmutable || xBaseName == "std."+transpiler.TypeImmutable ||
 					xBaseName == transpiler.TypeOption || xBaseName == "std."+transpiler.TypeOption {
 					if gen, ok := xType.(transpiler.GenericType); ok && len(gen.Params) > 0 {
 						return gen.Params[0]
+					}
+				}
+				// For other types, use generic method lookup via typeMetas
+				// This handles Array[T].Get() -> T, List[T].Get() -> T, etc.
+				if genType, ok := xType.(transpiler.GenericType); ok {
+					baseTypeName := genType.Base.String()
+					if typeMeta, ok := t.typeMetas[baseTypeName]; ok {
+						if methodMeta, ok := typeMeta.Methods[sel.Sel.Name]; ok {
+							return t.substituteConcreteTypes(methodMeta.ReturnType, typeMeta.TypeParams, genType.Params)
+						}
 					}
 				}
 				return xType
@@ -784,7 +796,13 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 					if typeMeta, ok := t.typeMetas[baseTypeName]; ok {
 						if methodMeta, ok := typeMeta.Methods[sel.Sel.Name]; ok {
 							// Substitute type parameters in return type
-							return t.substituteConcreteTypes(methodMeta.ReturnType, typeMeta.TypeParams, genType.Params)
+							// First, substitute struct-level type params (e.g., T -> int for Array[int])
+							result := t.substituteConcreteTypes(methodMeta.ReturnType, typeMeta.TypeParams, genType.Params)
+							// Then, substitute method-level type params (e.g., U -> string for Zip[string])
+							if len(methodMeta.TypeParams) > 0 && len(typeArgs) > 0 {
+								result = t.substituteConcreteTypes(result, methodMeta.TypeParams, typeArgs)
+							}
+							return result
 						}
 					}
 				}
@@ -911,6 +929,9 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 			}
 
 			// Handle generic methods transformed to standalone functions: Receiver_Method
+			// e.g., Array_Zip[string](nums.Get(), strs.Get())
+			// The first argument is the receiver (nums.Get() -> Array[int])
+			// typeArgs are the method's explicit type arguments ([string])
 			if idx := strings.Index(id.Name, "_"); idx != -1 {
 				receiverType := id.Name[:idx]
 				methodName := id.Name[idx+1:]
@@ -921,7 +942,22 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 				}
 				if meta, ok := t.typeMetas[resolvedRecvTypeName]; ok {
 					if mMeta, ok := meta.Methods[methodName]; ok {
-						return mMeta.ReturnType
+						result := mMeta.ReturnType
+						// Substitute receiver's type params from first argument
+						// e.g., Array_Zip[string](nums.Get(), ...) where nums.Get() is Array[int]
+						// needs to substitute T -> int from the first arg's generic type
+						if len(e.Args) > 0 {
+							firstArgType := t.getExprTypeNameManual(e.Args[0])
+							if genType, ok := firstArgType.(transpiler.GenericType); ok && len(meta.TypeParams) > 0 {
+								result = t.substituteConcreteTypes(result, meta.TypeParams, genType.Params)
+							}
+						}
+						// Substitute method's type params from explicit type args
+						// e.g., Array_Zip[string] needs to substitute U -> string
+						if len(typeArgs) > 0 && len(mMeta.TypeParams) > 0 {
+							result = t.substituteConcreteTypes(result, mMeta.TypeParams, typeArgs)
+						}
+						return result
 					}
 				}
 			}

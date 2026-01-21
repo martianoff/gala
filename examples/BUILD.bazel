@@ -223,6 +223,13 @@ gala_test(
 )
 
 gala_test(
+    name = "tuple_field_access",
+    src = "tuple_field_access.gala",
+    expected = "tuple_field_access.out",
+    deps = ["//collection_immutable"],
+)
+
+gala_test(
     name = "list_pattern_match",
     src = "list_pattern_match.gala",
     expected = "list_pattern_match.out",
