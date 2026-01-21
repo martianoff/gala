@@ -36,8 +36,8 @@ func main() {
 }`,
 			expected: []string{
 				"std.Tuple[int, string]",
-				"t.V1.Get()",
-				"t.V2.Get()",
+				"obj.V1.Get()",
+				"obj.V2.Get()",
 			},
 		},
 		{
@@ -54,8 +54,8 @@ func main() {
 }`,
 			expected: []string{
 				"std.Left[int, string]{}.Apply",
-				"std.Left[int, string]{}.Unapply(e)",
-				"std.Right[int, string]{}.Unapply(e)",
+				"std.Left[int, string]{}.Unapply(obj)",
+				"std.Right[int, string]{}.Unapply(obj)",
 			},
 		},
 		{
@@ -72,8 +72,8 @@ func main() {
 }`,
 			expected: []string{
 				"std.Left[int, string]{}.Apply",
-				"std.Left[int, string]{}.Unapply(e)",
-				"std.Right[int, string]{}.Unapply(e)",
+				"std.Left[int, string]{}.Unapply(obj)",
+				"std.Right[int, string]{}.Unapply(obj)",
 			},
 		},
 		{
@@ -104,7 +104,7 @@ func main() {
 }`,
 			expected: []string{
 				"std.Either[int, string]",
-				"std.Left[int, string]{}.Unapply(e1)",
+				"std.Left[int, string]{}.Unapply(obj)",
 			},
 		},
 	}
@@ -187,9 +187,9 @@ func main() {
 }`,
 			expected: []string{
 				"std.Tuple3[int, string, bool]",
-				"t.V1.Get()",
-				"t.V2.Get()",
-				"t.V3.Get()",
+				"obj.V1.Get()",
+				"obj.V2.Get()",
+				"obj.V3.Get()",
 			},
 		},
 		{
@@ -205,8 +205,8 @@ func main() {
 }`,
 			expected: []string{
 				"std.Tuple[int, string]",
-				"pair.V1.Get()",
-				"pair.V2.Get()",
+				"obj.V1.Get()",
+				"obj.V2.Get()",
 			},
 		},
 		{
@@ -222,8 +222,8 @@ func main() {
 }`,
 			expected: []string{
 				"std.Tuple[int, string]",
-				"pair.V1.Get()",
-				"pair.V2.Get()",
+				"obj.V1.Get()",
+				"obj.V2.Get()",
 			},
 		},
 		{
@@ -239,9 +239,9 @@ func main() {
 }`,
 			expected: []string{
 				"std.Tuple3[int, string, bool]",
-				"triple.V1.Get()",
-				"triple.V2.Get()",
-				"triple.V3.Get()",
+				"obj.V1.Get()",
+				"obj.V2.Get()",
+				"obj.V3.Get()",
 			},
 		},
 		{

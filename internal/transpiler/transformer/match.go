@@ -2,7 +2,6 @@ package transformer
 
 import (
 	"fmt"
-	"github.com/antlr4-go/antlr/v4"
 	"go/ast"
 	"go/token"
 	"martianoff/gala/galaerr"
@@ -20,9 +19,9 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 	}
 
 	paramName := "obj"
-	if primary := exprCtx.Primary(); primary != nil {
-		if p, ok := primary.(*grammar.PrimaryContext); ok && p.Identifier() != nil {
-			paramName = p.Identifier().GetText()
+	if primary := t.getPrimaryFromExpression(exprCtx); primary != nil {
+		if primary.Identifier() != nil {
+			paramName = primary.Identifier().GetText()
 		}
 	}
 
@@ -487,45 +486,23 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 	}
 
 	// Tuple pattern with parentheses syntax: (a, b, c) => Tuple3(a, b, c)
-	if primary := patExprCtx.Primary(); primary != nil {
-		if p, ok := primary.(*grammar.PrimaryContext); ok {
-			if exprList := p.ExpressionList(); exprList != nil {
-				if el, ok := exprList.(*grammar.ExpressionListContext); ok {
-					exprs := el.AllExpression()
-					if len(exprs) >= 2 {
-						// This is a tuple pattern (a, b, c) - transform to TupleN pattern
-						return t.transformTuplePattern(exprs, objExpr, matchedType)
-					}
+	if p := t.getPrimaryFromExpression(patExprCtx); p != nil {
+		if exprList := p.ExpressionList(); exprList != nil {
+			if el, ok := exprList.(*grammar.ExpressionListContext); ok {
+				exprs := el.AllExpression()
+				if len(exprs) >= 2 {
+					// This is a tuple pattern (a, b, c) - transform to TupleN pattern
+					return t.transformTuplePattern(exprs, objExpr, matchedType)
 				}
 			}
 		}
 	}
 
-	// Simple Binding - bind variable with the matched type
-	if primary := patExprCtx.Primary(); primary != nil {
-		if p, ok := primary.(*grammar.PrimaryContext); ok && p.Identifier() != nil {
-			name := p.Identifier().GetText()
-			t.currentScope.vals[name] = false // Treat as var to avoid .Get() wrapping
-			// Set the type of the bound variable to the matched type
-			if matchedType != nil && !matchedType.IsNil() {
-				t.currentScope.valTypes[name] = matchedType
-			} else {
-				// Type is unknown, explicitly set to any so type inference works correctly
-				t.currentScope.valTypes[name] = transpiler.BasicType{Name: "any"}
-			}
-			assign := &ast.AssignStmt{
-				Lhs: []ast.Expr{ast.NewIdent(name)},
-				Tok: token.DEFINE,
-				Rhs: []ast.Expr{objExpr},
-			}
-			return ast.NewIdent("true"), []ast.Stmt{assign}, nil
-		}
-	}
-
-	// Extractor
-	if patExprCtx.GetChildCount() >= 3 && patExprCtx.GetChild(1).(antlr.ParseTree).GetText() == "(" {
-		extractorCtx := patExprCtx.GetChild(0).(grammar.IExpressionContext)
-		patternExpr, err := t.transformExpression(extractorCtx)
+	// Extractor - check for call patterns like Left(n), Some(x), IntStack(first, second, _...) etc.
+	// This check must come BEFORE the simple binding check because a pattern like `Foo(x)`
+	// has a primary with identifier `Foo`, but it's not a simple binding.
+	if primaryExprCtx, argList := t.getCallPatternFromExpression(patExprCtx); primaryExprCtx != nil {
+		patternExpr, err := t.transformPrimaryExpr(primaryExprCtx)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -533,11 +510,6 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 		// If it's a type name, determine how to match it
 		rawName := t.getBaseTypeName(patternExpr)
 		resolvedTypeName := t.resolveTypeMetaName(rawName)
-
-		var argList *grammar.ArgumentListContext
-		if ctx, ok := patExprCtx.GetChild(2).(*grammar.ArgumentListContext); ok {
-			argList = ctx
-		}
 
 		// Check if we can use direct Unapply call (no reflection)
 		// This applies to any extractor with an Unapply method - both generic and non-generic
@@ -595,6 +567,27 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 		return nil, nil, galaerr.NewSemanticError(
 			fmt.Sprintf("extractor '%s' must define an Unapply method. For generic extractors use: func (e Extractor[T]) Unapply(v ContainerType[T]) Option[T]. For guard patterns use: func (e Extractor) Unapply(v ConcreteType) bool",
 				rawName))
+	}
+
+	// Simple Binding - bind variable with the matched type
+	// This check comes after the extractor check because extractors like `Foo(x)` have a primary
+	// with an identifier, but they're not simple bindings.
+	if p := t.getPrimaryFromExpression(patExprCtx); p != nil && p.Identifier() != nil {
+		name := p.Identifier().GetText()
+		t.currentScope.vals[name] = false // Treat as var to avoid .Get() wrapping
+		// Set the type of the bound variable to the matched type
+		if matchedType != nil && !matchedType.IsNil() {
+			t.currentScope.valTypes[name] = matchedType
+		} else {
+			// Type is unknown, explicitly set to any so type inference works correctly
+			t.currentScope.valTypes[name] = transpiler.BasicType{Name: "any"}
+		}
+		assign := &ast.AssignStmt{
+			Lhs: []ast.Expr{ast.NewIdent(name)},
+			Tok: token.DEFINE,
+			Rhs: []ast.Expr{objExpr},
+		}
+		return ast.NewIdent("true"), []ast.Stmt{assign}, nil
 	}
 
 	// Literal or other - use direct equality comparison
@@ -893,22 +886,20 @@ func (t *galaASTTransformer) generateDirectTupleStructMatch(objExpr ast.Expr, ar
 		// Check if this is a simple binding or a nested pattern
 		patCtx := arg.Pattern()
 		if exprPat, ok := patCtx.(*grammar.ExpressionPatternContext); ok {
-			if primary := exprPat.Expression().Primary(); primary != nil {
-				if p, ok := primary.(*grammar.PrimaryContext); ok && p.Identifier() != nil {
-					// Simple binding: name := obj.V{i+1}.Get()
-					// Note: .Get() already returns the concrete type, so no type assertion needed
-					name := p.Identifier().GetText()
-					t.currentScope.vals[name] = false
-					t.currentScope.valTypes[name] = elemType
+			if p := t.getPrimaryFromExpression(exprPat.Expression()); p != nil && p.Identifier() != nil {
+				// Simple binding: name := obj.V{i+1}.Get()
+				// Note: .Get() already returns the concrete type, so no type assertion needed
+				name := p.Identifier().GetText()
+				t.currentScope.vals[name] = false
+				t.currentScope.valTypes[name] = elemType
 
-					assign := &ast.AssignStmt{
-						Lhs: []ast.Expr{ast.NewIdent(name)},
-						Tok: token.DEFINE,
-						Rhs: []ast.Expr{elemExpr},
-					}
-					stmts = append(stmts, assign)
-					continue
+				assign := &ast.AssignStmt{
+					Lhs: []ast.Expr{ast.NewIdent(name)},
+					Tok: token.DEFINE,
+					Rhs: []ast.Expr{elemExpr},
 				}
+				stmts = append(stmts, assign)
+				continue
 			}
 
 			// Nested pattern - transform recursively
@@ -998,21 +989,19 @@ func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, ar
 		// Check if this is a simple binding or a nested pattern
 		patCtx := arg.Pattern()
 		if exprPat, ok := patCtx.(*grammar.ExpressionPatternContext); ok {
-			if primary := exprPat.Expression().Primary(); primary != nil {
-				if p, ok := primary.(*grammar.PrimaryContext); ok && p.Identifier() != nil {
-					// Simple binding: name := obj.FieldName.Get()
-					name := p.Identifier().GetText()
-					t.currentScope.vals[name] = false
-					t.currentScope.valTypes[name] = fieldType
+			if p := t.getPrimaryFromExpression(exprPat.Expression()); p != nil && p.Identifier() != nil {
+				// Simple binding: name := obj.FieldName.Get()
+				name := p.Identifier().GetText()
+				t.currentScope.vals[name] = false
+				t.currentScope.valTypes[name] = fieldType
 
-					assign := &ast.AssignStmt{
-						Lhs: []ast.Expr{ast.NewIdent(name)},
-						Tok: token.DEFINE,
-						Rhs: []ast.Expr{elemExpr},
-					}
-					stmts = append(stmts, assign)
-					continue
+				assign := &ast.AssignStmt{
+					Lhs: []ast.Expr{ast.NewIdent(name)},
+					Tok: token.DEFINE,
+					Rhs: []ast.Expr{elemExpr},
 				}
+				stmts = append(stmts, assign)
+				continue
 			}
 
 			// Nested pattern - transform recursively
@@ -1236,46 +1225,44 @@ func (t *galaASTTransformer) generateSeqPatternMatch(objExpr ast.Expr, argList *
 
 		// Handle different pattern types
 		if exprPat, ok := patCtx.(*grammar.ExpressionPatternContext); ok {
-			if primary := exprPat.Expression().Primary(); primary != nil {
-				if p, ok := primary.(*grammar.PrimaryContext); ok && p.Identifier() != nil {
-					// Simple binding: declare var, then assign inside guard
-					name := p.Identifier().GetText()
-					bindingNames = append(bindingNames, name)
-					t.currentScope.vals[name] = false
-					t.currentScope.valTypes[name] = elemType
+			if p := t.getPrimaryFromExpression(exprPat.Expression()); p != nil && p.Identifier() != nil {
+				// Simple binding: declare var, then assign inside guard
+				name := p.Identifier().GetText()
+				bindingNames = append(bindingNames, name)
+				t.currentScope.vals[name] = false
+				t.currentScope.valTypes[name] = elemType
 
-					// var name ElemType
-					varDecl := &ast.DeclStmt{
-						Decl: &ast.GenDecl{
-							Tok: token.VAR,
-							Specs: []ast.Spec{
-								&ast.ValueSpec{
-									Names: []*ast.Ident{ast.NewIdent(name)},
-									Type:  elemTypeExpr,
-								},
+				// var name ElemType
+				varDecl := &ast.DeclStmt{
+					Decl: &ast.GenDecl{
+						Tok: token.VAR,
+						Specs: []ast.Spec{
+							&ast.ValueSpec{
+								Names: []*ast.Ident{ast.NewIdent(name)},
+								Type:  elemTypeExpr,
 							},
 						},
-					}
-					varDecls = append(varDecls, varDecl)
-
-					// name = obj.Get(i) (inside guard)
-					guardedAssigns = append(guardedAssigns, &ast.AssignStmt{
-						Lhs: []ast.Expr{ast.NewIdent(name)},
-						Tok: token.ASSIGN,
-						Rhs: []ast.Expr{
-							&ast.CallExpr{
-								Fun: &ast.SelectorExpr{
-									X:   objExpr,
-									Sel: ast.NewIdent("Get"),
-								},
-								Args: []ast.Expr{&ast.BasicLit{Kind: token.INT, Value: fmt.Sprintf("%d", argIndex)}},
-							},
-						},
-					})
-
-					argIndex++
-					continue
+					},
 				}
+				varDecls = append(varDecls, varDecl)
+
+				// name = obj.Get(i) (inside guard)
+				guardedAssigns = append(guardedAssigns, &ast.AssignStmt{
+					Lhs: []ast.Expr{ast.NewIdent(name)},
+					Tok: token.ASSIGN,
+					Rhs: []ast.Expr{
+						&ast.CallExpr{
+							Fun: &ast.SelectorExpr{
+								X:   objExpr,
+								Sel: ast.NewIdent("Get"),
+							},
+							Args: []ast.Expr{&ast.BasicLit{Kind: token.INT, Value: fmt.Sprintf("%d", argIndex)}},
+						},
+					},
+				})
+
+				argIndex++
+				continue
 			}
 
 			// Nested pattern - need to handle more carefully
@@ -1486,22 +1473,20 @@ func (t *galaASTTransformer) transformTuplePattern(patternExprs []grammar.IExpre
 		}
 
 		// Check if this is a simple binding (identifier) or nested pattern
-		if primary := patExpr.Primary(); primary != nil {
-			if p, ok := primary.(*grammar.PrimaryContext); ok && p.Identifier() != nil {
-				// Simple binding: x := obj.V{i+1}.Get()
-				// Note: .Get() already returns the concrete type, so no type assertion needed
-				name := p.Identifier().GetText()
-				t.currentScope.vals[name] = false
-				t.currentScope.valTypes[name] = elemType
+		if p := t.getPrimaryFromExpression(patExpr); p != nil && p.Identifier() != nil {
+			// Simple binding: x := obj.V{i+1}.Get()
+			// Note: .Get() already returns the concrete type, so no type assertion needed
+			name := p.Identifier().GetText()
+			t.currentScope.vals[name] = false
+			t.currentScope.valTypes[name] = elemType
 
-				assign := &ast.AssignStmt{
-					Lhs: []ast.Expr{ast.NewIdent(name)},
-					Tok: token.DEFINE,
-					Rhs: []ast.Expr{elemExpr},
-				}
-				stmts = append(stmts, assign)
-				continue
+			assign := &ast.AssignStmt{
+				Lhs: []ast.Expr{ast.NewIdent(name)},
+				Tok: token.DEFINE,
+				Rhs: []ast.Expr{elemExpr},
 			}
+			stmts = append(stmts, assign)
+			continue
 		}
 
 		// Handle nested patterns recursively
@@ -1624,7 +1609,10 @@ func (t *galaASTTransformer) unifyTypes(pattern, concrete transpiler.Type, typeP
 
 	if patternIsGen && concreteIsGen {
 		// Both are generic - check base types match and unify parameters
-		if patternGen.Base.String() != concreteGen.Base.String() {
+		// Normalize base type names to handle package prefixes (e.g., "Option" vs "std.Option")
+		patternBase := patternGen.Base.BaseName()
+		concreteBase := concreteGen.Base.BaseName()
+		if patternBase != concreteBase {
 			return false
 		}
 		if len(patternGen.Params) != len(concreteGen.Params) {
@@ -1638,8 +1626,8 @@ func (t *galaASTTransformer) unifyTypes(pattern, concrete transpiler.Type, typeP
 		return true
 	}
 
-	// For non-generic types, check for exact match
-	return pattern.String() == concrete.String()
+	// For non-generic types, check for match using BaseName to handle package prefixes
+	return pattern.BaseName() == concrete.BaseName()
 }
 
 // getGenericExtractorResultTypeWithArgs determines the extracted type for a generic extractor.

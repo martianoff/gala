@@ -431,8 +431,16 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 						}
 					}
 
+					// Collect receiver's type parameters to include when resolving types
+					// e.g., for "func (s Some[T]) Unapply(o Option[T])", we need to know T is a type param
+					var allTypeParams []string
+					if typeMeta, ok := richAST.Types[fullBaseType]; ok {
+						allTypeParams = append(allTypeParams, typeMeta.TypeParams...)
+					}
+					allTypeParams = append(allTypeParams, methodMeta.TypeParams...)
+
 					if ctx.Signature().Type_() != nil {
-						methodMeta.ReturnType = a.resolveType(ctx.Signature().Type_().GetText(), pkgName)
+						methodMeta.ReturnType = a.resolveTypeWithParams(ctx.Signature().Type_().GetText(), pkgName, allTypeParams)
 
 						// Detect Go generics instantiation cycle:
 						// If receiver is Container[T] and return is Container[SomeType[T, ...]]
@@ -450,7 +458,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 							for _, p := range pList.(*grammar.ParameterListContext).AllParameter() {
 								paramCtx := p.(*grammar.ParameterContext)
 								if paramCtx.Type_() != nil {
-									methodMeta.ParamTypes = append(methodMeta.ParamTypes, a.resolveType(paramCtx.Type_().GetText(), pkgName))
+									methodMeta.ParamTypes = append(methodMeta.ParamTypes, a.resolveTypeWithParams(paramCtx.Type_().GetText(), pkgName, allTypeParams))
 								} else {
 									methodMeta.ParamTypes = append(methodMeta.ParamTypes, transpiler.NilType{})
 								}

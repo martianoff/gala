@@ -33,6 +33,12 @@ gala_test(
 )
 
 gala_test(
+    name = "bool_operator",
+    src = "bool_operator.gala",
+    expected = "bool_operator.out",
+)
+
+gala_test(
     name = "imports",
     src = "imports.gala",
     expected = "imports.out",

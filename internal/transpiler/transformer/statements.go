@@ -99,8 +99,7 @@ func (t *galaASTTransformer) transformStatement(ctx *grammar.StatementContext) (
 func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext) (ast.Stmt, error) {
 	lhsCtx := ctx.GetChild(0).(*grammar.ExpressionListContext)
 	for _, exprCtx := range lhsCtx.AllExpression() {
-		if p := exprCtx.Primary(); p != nil {
-			pc := p.(*grammar.PrimaryContext)
+		if pc := t.getPrimaryFromExpression(exprCtx); pc != nil {
 			if pc.Identifier() != nil {
 				name := pc.Identifier().GetText()
 				if t.isVal(name) {

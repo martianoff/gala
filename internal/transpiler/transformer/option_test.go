@@ -35,7 +35,7 @@ val y Option[int] = None()`,
 import "martianoff/gala/std"
 
 var x = std.NewImmutable(std.Some[int]{}.Apply(10))
-var y std.Immutable[std.Option[int]] = std.NewImmutable[std.Option[int]](std.None[any]{}.Apply())
+var y std.Immutable[std.Option[int]] = std.NewImmutable[std.Option[int]](std.None{}.Apply())
 `,
 		},
 		{
@@ -106,7 +106,7 @@ func update() {
 
 import "martianoff/gala/std"
 
-var o std.Option[int] = std.None[any]{}.Apply()
+var o std.Option[int] = std.None{}.Apply()
 
 func update() {
 	o = std.Some[int]{}.Apply(42)

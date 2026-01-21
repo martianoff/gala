@@ -89,13 +89,55 @@ assignment: expressionList ('=' | '+=' | '-=' | '*=' | '/=') expressionList;
 shortVarDecl: identifierList ':=' expressionList;
 expressionList: expression (',' expression)*;
 
+// Expression with proper operator precedence
+// Uses multiple rules to separate precedence levels clearly
 expression
+    : orExpr
+    ;
+
+orExpr
+    : andExpr ('||' andExpr)*
+    ;
+
+andExpr
+    : equalityExpr ('&&' equalityExpr)*
+    ;
+
+equalityExpr
+    : relationalExpr (('==' | '!=') relationalExpr)*
+    ;
+
+relationalExpr
+    : additiveExpr (('<' | '<=' | '>' | '>=') additiveExpr)*
+    ;
+
+additiveExpr
+    : multiplicativeExpr (('+' | '-' | '|' | '^') multiplicativeExpr)*
+    ;
+
+multiplicativeExpr
+    : unaryExpr (('*' | '/' | '%' | '<<' | '>>' | '&' | '&^') unaryExpr)*
+    ;
+
+unaryExpr
+    : unaryOp unaryExpr
+    | postfixExpr
+    ;
+
+postfixExpr
+    : primaryExpr postfixSuffix*
+    | primaryExpr 'match' '{' caseClause+ '}'
+    ;
+
+postfixSuffix
+    : '.' identifier
+    | '(' argumentList? ')'
+    | '[' expressionList ']'
+    ;
+
+primaryExpr
     : primary
-    | expression ('.' identifier | '[' expressionList ']' | '(' argumentList? ')' )
-    | unaryOp expression
-    | expression binaryOp expression
     | lambdaExpression
-    | expression 'match' '{' caseClause+ '}'
     | ifExpression
     ;
 argumentList: argument (',' argument)*;

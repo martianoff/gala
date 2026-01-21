@@ -552,183 +552,1086 @@ func (t *galaASTTransformer) transformExpression(ctx grammar.IExpressionContext)
 		return nil, nil
 	}
 
-	// expression: primary
-	if p := ctx.Primary(); p != nil {
-		return t.transformPrimary(p.(*grammar.PrimaryContext))
+	// With the new grammar, expression simply wraps orExpr
+	if orExpr := ctx.OrExpr(); orExpr != nil {
+		return t.transformOrExpr(orExpr.(*grammar.OrExprContext))
 	}
 
-	// expression: lambdaExpression
-	if l := ctx.LambdaExpression(); l != nil {
-		return t.transformLambda(l.(*grammar.LambdaExpressionContext))
+	return nil, galaerr.NewSemanticError("expression must contain orExpr")
+}
+
+func (t *galaASTTransformer) transformOrExpr(ctx *grammar.OrExprContext) (ast.Expr, error) {
+	andExprs := ctx.AllAndExpr()
+	if len(andExprs) == 0 {
+		return nil, galaerr.NewSemanticError("orExpr must have at least one andExpr")
 	}
 
-	// expression: ifExpression
-	if i := ctx.IfExpression(); i != nil {
-		return t.transformIfExpression(i.(*grammar.IfExpressionContext))
+	result, err := t.transformAndExpr(andExprs[0].(*grammar.AndExprContext))
+	if err != nil {
+		return nil, err
 	}
 
-	// expression: expression 'match' '{' caseClause+ '}'
-	// We check if it's a match by checking the number of children and existence of MATCH token
-	if ctx.GetChildCount() >= 4 {
+	for i := 1; i < len(andExprs); i++ {
+		right, err := t.transformAndExpr(andExprs[i].(*grammar.AndExprContext))
+		if err != nil {
+			return nil, err
+		}
+		result = t.unwrapImmutable(result)
+		right = t.unwrapImmutable(right)
+		result = &ast.BinaryExpr{X: result, Op: token.LOR, Y: right}
+	}
+
+	return result, nil
+}
+
+func (t *galaASTTransformer) transformAndExpr(ctx *grammar.AndExprContext) (ast.Expr, error) {
+	eqExprs := ctx.AllEqualityExpr()
+	if len(eqExprs) == 0 {
+		return nil, galaerr.NewSemanticError("andExpr must have at least one equalityExpr")
+	}
+
+	result, err := t.transformEqualityExpr(eqExprs[0].(*grammar.EqualityExprContext))
+	if err != nil {
+		return nil, err
+	}
+
+	for i := 1; i < len(eqExprs); i++ {
+		right, err := t.transformEqualityExpr(eqExprs[i].(*grammar.EqualityExprContext))
+		if err != nil {
+			return nil, err
+		}
+		result = t.unwrapImmutable(result)
+		right = t.unwrapImmutable(right)
+		result = &ast.BinaryExpr{X: result, Op: token.LAND, Y: right}
+	}
+
+	return result, nil
+}
+
+func (t *galaASTTransformer) transformEqualityExpr(ctx *grammar.EqualityExprContext) (ast.Expr, error) {
+	relExprs := ctx.AllRelationalExpr()
+	if len(relExprs) == 0 {
+		return nil, galaerr.NewSemanticError("equalityExpr must have at least one relationalExpr")
+	}
+
+	result, err := t.transformRelationalExpr(relExprs[0].(*grammar.RelationalExprContext))
+	if err != nil {
+		return nil, err
+	}
+
+	// Get the operators between expressions
+	for i := 1; i < len(relExprs); i++ {
+		// The operator is at position (i*2 - 1) in children
+		opText := ctx.GetChild(i*2 - 1).(antlr.ParseTree).GetText()
+		right, err := t.transformRelationalExpr(relExprs[i].(*grammar.RelationalExprContext))
+		if err != nil {
+			return nil, err
+		}
+		result = t.unwrapImmutable(result)
+		right = t.unwrapImmutable(right)
+		result = &ast.BinaryExpr{X: result, Op: t.getBinaryToken(opText), Y: right}
+	}
+
+	return result, nil
+}
+
+func (t *galaASTTransformer) transformRelationalExpr(ctx *grammar.RelationalExprContext) (ast.Expr, error) {
+	addExprs := ctx.AllAdditiveExpr()
+	if len(addExprs) == 0 {
+		return nil, galaerr.NewSemanticError("relationalExpr must have at least one additiveExpr")
+	}
+
+	result, err := t.transformAdditiveExpr(addExprs[0].(*grammar.AdditiveExprContext))
+	if err != nil {
+		return nil, err
+	}
+
+	for i := 1; i < len(addExprs); i++ {
+		opText := ctx.GetChild(i*2 - 1).(antlr.ParseTree).GetText()
+		right, err := t.transformAdditiveExpr(addExprs[i].(*grammar.AdditiveExprContext))
+		if err != nil {
+			return nil, err
+		}
+		result = t.unwrapImmutable(result)
+		right = t.unwrapImmutable(right)
+		result = &ast.BinaryExpr{X: result, Op: t.getBinaryToken(opText), Y: right}
+	}
+
+	return result, nil
+}
+
+func (t *galaASTTransformer) transformAdditiveExpr(ctx *grammar.AdditiveExprContext) (ast.Expr, error) {
+	mulExprs := ctx.AllMultiplicativeExpr()
+	if len(mulExprs) == 0 {
+		return nil, galaerr.NewSemanticError("additiveExpr must have at least one multiplicativeExpr")
+	}
+
+	result, err := t.transformMultiplicativeExpr(mulExprs[0].(*grammar.MultiplicativeExprContext))
+	if err != nil {
+		return nil, err
+	}
+
+	for i := 1; i < len(mulExprs); i++ {
+		opText := ctx.GetChild(i*2 - 1).(antlr.ParseTree).GetText()
+		right, err := t.transformMultiplicativeExpr(mulExprs[i].(*grammar.MultiplicativeExprContext))
+		if err != nil {
+			return nil, err
+		}
+		result = t.unwrapImmutable(result)
+		right = t.unwrapImmutable(right)
+		result = &ast.BinaryExpr{X: result, Op: t.getBinaryToken(opText), Y: right}
+	}
+
+	return result, nil
+}
+
+func (t *galaASTTransformer) transformMultiplicativeExpr(ctx *grammar.MultiplicativeExprContext) (ast.Expr, error) {
+	unaryExprs := ctx.AllUnaryExpr()
+	if len(unaryExprs) == 0 {
+		return nil, galaerr.NewSemanticError("multiplicativeExpr must have at least one unaryExpr")
+	}
+
+	result, err := t.transformUnaryExpr(unaryExprs[0].(*grammar.UnaryExprContext))
+	if err != nil {
+		return nil, err
+	}
+
+	for i := 1; i < len(unaryExprs); i++ {
+		opText := ctx.GetChild(i*2 - 1).(antlr.ParseTree).GetText()
+		right, err := t.transformUnaryExpr(unaryExprs[i].(*grammar.UnaryExprContext))
+		if err != nil {
+			return nil, err
+		}
+		result = t.unwrapImmutable(result)
+		right = t.unwrapImmutable(right)
+		result = &ast.BinaryExpr{X: result, Op: t.getBinaryToken(opText), Y: right}
+	}
+
+	return result, nil
+}
+
+func (t *galaASTTransformer) transformUnaryExpr(ctx *grammar.UnaryExprContext) (ast.Expr, error) {
+	// Check for unary operator
+	if unaryOp := ctx.UnaryOp(); unaryOp != nil {
+		innerUnary := ctx.UnaryExpr()
+		expr, err := t.transformUnaryExpr(innerUnary.(*grammar.UnaryExprContext))
+		if err != nil {
+			return nil, err
+		}
+		opText := unaryOp.GetText()
+		if opText == "*" {
+			return &ast.StarExpr{X: expr}, nil
+		}
+		if opText == "!" {
+			expr = t.wrapWithAssertion(expr, ast.NewIdent("bool"))
+		}
+		// Automatic unwrapping for unary operands
+		if opText != "&" {
+			expr = t.unwrapImmutable(expr)
+		}
+		return &ast.UnaryExpr{Op: t.getUnaryToken(opText), X: expr}, nil
+	}
+
+	// Otherwise it's a postfixExpr
+	if postfix := ctx.PostfixExpr(); postfix != nil {
+		return t.transformPostfixExpr(postfix.(*grammar.PostfixExprContext))
+	}
+
+	return nil, galaerr.NewSemanticError("unaryExpr must have unaryOp or postfixExpr")
+}
+
+func (t *galaASTTransformer) transformPostfixExpr(ctx *grammar.PostfixExprContext) (ast.Expr, error) {
+	// Check for match expression
+	if ctx.GetChildCount() > 1 {
 		for i := 0; i < ctx.GetChildCount(); i++ {
 			if ctx.GetChild(i).(antlr.ParseTree).GetText() == "match" {
-				return t.transformMatchExpression(ctx)
+				return t.transformPostfixMatchExpression(ctx)
 			}
 		}
 	}
 
-	// Handle recursive expression patterns
-	// Since there are no labels, we check the number of children and the tokens
-	childCount := ctx.GetChildCount()
-	if childCount == 2 {
-		child1 := ctx.GetChild(0)
-		child2 := ctx.GetChild(1)
+	// Get the primary expression
+	primaryExpr := ctx.PrimaryExpr()
+	if primaryExpr == nil {
+		return nil, galaerr.NewSemanticError("postfixExpr must have primaryExpr")
+	}
 
-		if _, ok := child1.(*grammar.UnaryOpContext); ok {
-			expr, err := t.transformExpression(child2.(grammar.IExpressionContext))
-			if err != nil {
-				return nil, err
-			}
-			opText := child1.(antlr.ParseTree).GetText()
-			if opText == "*" {
-				return &ast.StarExpr{X: expr}, nil
-			}
-			if opText == "!" {
-				expr = t.wrapWithAssertion(expr, ast.NewIdent("bool"))
-			}
-			// Automatic unwrapping for unary operands
-			if opText != "&" {
-				expr = t.unwrapImmutable(expr)
-			}
-			return &ast.UnaryExpr{
-				Op: t.getUnaryToken(opText),
-				X:  expr,
-			}, nil
+	result, err := t.transformPrimaryExpr(primaryExpr.(*grammar.PrimaryExprContext))
+	if err != nil {
+		return nil, err
+	}
+
+	// Apply postfix suffixes
+	suffixes := ctx.AllPostfixSuffix()
+	for _, suffix := range suffixes {
+		result, err = t.applyPostfixSuffix(result, suffix.(*grammar.PostfixSuffixContext))
+		if err != nil {
+			return nil, err
 		}
 	}
 
-	if childCount == 3 {
-		child1 := ctx.GetChild(0)
-		child2 := ctx.GetChild(1)
-		child3 := ctx.GetChild(2)
+	return result, nil
+}
 
-		c2Text := child2.(antlr.ParseTree).GetText()
+func (t *galaASTTransformer) applyPostfixSuffix(base ast.Expr, suffix *grammar.PostfixSuffixContext) (ast.Expr, error) {
+	// Check what type of suffix this is
+	if suffix.Identifier() != nil {
+		// Member access: . identifier
+		selName := suffix.Identifier().GetText()
 
-		if c2Text == "." {
-			// expression '.' identifier
-			x, err := t.transformExpression(child1.(grammar.IExpressionContext))
-			if err != nil {
-				return nil, err
-			}
-			selName := child3.(antlr.ParseTree).GetText()
-			// Don't unwrap if we're accessing Immutable's own fields/methods
-			xType := t.getExprTypeName(x)
-			isImmutable := t.isImmutableType(xType)
+		// Don't unwrap if we're accessing Immutable's own fields/methods
+		xType := t.getExprTypeName(base)
+		isImmutable := t.isImmutableType(xType)
 
-			if !isImmutable || (selName != "Get" && selName != "value") {
-				x = t.unwrapImmutable(x)
-			}
+		if !isImmutable || (selName != "Get" && selName != "value") {
+			base = t.unwrapImmutable(base)
+		}
 
-			selExpr := &ast.SelectorExpr{
-				X:   x,
-				Sel: ast.NewIdent(selName),
-			}
+		selExpr := &ast.SelectorExpr{
+			X:   base,
+			Sel: ast.NewIdent(selName),
+		}
 
-			// Re-evaluate type after potential unwrap
-			xType = t.getExprTypeName(x)
-			xTypeName := xType.String()
-			baseTypeName := xTypeName
-			if idx := strings.Index(xTypeName, "["); idx != -1 {
-				baseTypeName = xTypeName[:idx]
-			}
-			// Strip pointer prefix for struct field lookup
-			baseTypeName = strings.TrimPrefix(baseTypeName, "*")
+		// Re-evaluate type after potential unwrap
+		xType = t.getExprTypeName(base)
+		xTypeName := xType.String()
+		baseTypeName := xTypeName
+		if idx := strings.Index(xTypeName, "["); idx != -1 {
+			baseTypeName = xTypeName[:idx]
+		}
+		baseTypeName = strings.TrimPrefix(baseTypeName, "*")
 
-			// Try to find struct fields - check multiple name variants
-			// Maps are keyed by fully qualified name (e.g., "collection_immutable.List")
-			// but baseTypeName might just be "List"
-			resolvedTypeName := t.resolveStructTypeName(baseTypeName)
-			if fields, ok := t.structFields[resolvedTypeName]; ok {
-				for i, f := range fields {
-					if f == selName {
-						if t.structImmutFields[resolvedTypeName][i] {
-							return &ast.CallExpr{
-								Fun: &ast.SelectorExpr{
-									X:   selExpr,
-									Sel: ast.NewIdent("Get"),
-								},
-							}, nil
-						}
-						break
+		resolvedTypeName := t.resolveStructTypeName(baseTypeName)
+		if fields, ok := t.structFields[resolvedTypeName]; ok {
+			for i, f := range fields {
+				if f == selName {
+					if t.structImmutFields[resolvedTypeName][i] {
+						return &ast.CallExpr{
+							Fun: &ast.SelectorExpr{
+								X:   selExpr,
+								Sel: ast.NewIdent("Get"),
+							},
+						}, nil
 					}
+					break
 				}
 			}
-
-			return selExpr, nil
 		}
 
-		if c2Text == "(" && child3.(antlr.ParseTree).GetText() == ")" {
-			// expression '(' ')'
-			return t.transformCallExpr(ctx.(*grammar.ExpressionContext))
-		}
-
-		// expression binaryOp expression
-		// Note: child2 might be the binaryOp rule or a terminal.
-		// In our grammar, binaryOp is a rule.
-		if _, ok := child2.(*grammar.BinaryOpContext); ok {
-			left, err := t.transformExpression(child1.(grammar.IExpressionContext))
-			if err != nil {
-				return nil, err
-			}
-			right, err := t.transformExpression(child3.(grammar.IExpressionContext))
-			if err != nil {
-				return nil, err
-			}
-			// Automatic unwrapping for binary operands
-			left = t.unwrapImmutable(left)
-			right = t.unwrapImmutable(right)
-			return &ast.BinaryExpr{
-				X:  left,
-				Op: t.getBinaryToken(c2Text),
-				Y:  right,
-			}, nil
-		}
+		return selExpr, nil
 	}
 
-	if childCount == 4 {
-		child2 := ctx.GetChild(1)
-		child4 := ctx.GetChild(3)
+	// Check for function call or index
+	childCount := suffix.GetChildCount()
+	if childCount >= 2 {
+		firstChild := suffix.GetChild(0).(antlr.ParseTree).GetText()
 
-		c2Text := child2.(antlr.ParseTree).GetText()
-		c4Text := child4.(antlr.ParseTree).GetText()
-
-		if c2Text == "(" && c4Text == ")" {
-			// expression '(' argumentList? ')'
-			return t.transformCallExpr(ctx.(*grammar.ExpressionContext))
+		if firstChild == "(" {
+			// Function call
+			return t.applyCallSuffix(base, suffix)
 		}
 
-		if c2Text == "[" && c4Text == "]" {
-			// expression '[' expressionList ']'
-			child1 := ctx.GetChild(0)
-			child3 := ctx.GetChild(2)
-			x, err := t.transformExpression(child1.(grammar.IExpressionContext))
-			if err != nil {
-				return nil, err
+		if firstChild == "[" {
+			// Index expression
+			exprList := suffix.ExpressionList()
+			if exprList == nil {
+				return nil, galaerr.NewSemanticError("index expression requires expression list")
 			}
-			x = t.unwrapImmutable(x)
-			indices, err := t.transformExpressionList(child3.(*grammar.ExpressionListContext))
+			base = t.unwrapImmutable(base)
+			indices, err := t.transformExpressionList(exprList.(*grammar.ExpressionListContext))
 			if err != nil {
 				return nil, err
 			}
 			if len(indices) == 1 {
-				return &ast.IndexExpr{X: x, Index: indices[0]}, nil
+				return &ast.IndexExpr{X: base, Index: indices[0]}, nil
+			}
+			return &ast.IndexListExpr{X: base, Indices: indices}, nil
+		}
+	}
+
+	return nil, galaerr.NewSemanticError("unknown postfix suffix type")
+}
+
+func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.PostfixSuffixContext) (ast.Expr, error) {
+	argList := suffix.ArgumentList()
+	if argList == nil {
+		// Empty argument list - check for zero-argument Apply method
+		typeName := t.getBaseTypeName(base)
+		if typeName != "" {
+			// Try to find type metadata - check both raw name and std-prefixed name
+			typeMeta, ok := t.typeMetas[typeName]
+			if !ok && !strings.HasPrefix(typeName, "std.") {
+				typeMeta, ok = t.typeMetas["std."+typeName]
+				if ok {
+					typeName = "std." + typeName
+				}
+			}
+			if ok {
+				if methodMeta, hasApply := typeMeta.Methods["Apply"]; hasApply {
+					// Check if Apply takes zero arguments (zero-arg Apply method like None[T]())
+					if len(methodMeta.ParamTypes) == 0 {
+						// Check if the base expression is a type (not a variable)
+						isType := false
+						baseExpr := base
+						if idx, ok := base.(*ast.IndexExpr); ok {
+							baseExpr = idx.X
+						} else if idxList, ok := base.(*ast.IndexListExpr); ok {
+							baseExpr = idxList.X
+						}
+
+						if id, ok := baseExpr.(*ast.Ident); ok {
+							if !t.isVal(id.Name) && !t.isVar(id.Name) {
+								if !t.getType(id.Name).IsNil() {
+									isType = true
+								}
+							}
+						} else if sel, ok := baseExpr.(*ast.SelectorExpr); ok {
+							if id, ok := sel.X.(*ast.Ident); ok {
+								// Check if it's an explicitly imported package OR the std package
+								if _, isPkg := t.imports[id.Name]; isPkg || id.Name == transpiler.StdPackage {
+									isType = true
+								}
+							}
+						}
+
+						if isType {
+							// Non-generic zero-argument Apply method: TypeName[T]{}.Apply()
+							receiver := &ast.CompositeLit{Type: base}
+							return &ast.CallExpr{
+								Fun: &ast.SelectorExpr{
+									X:   receiver,
+									Sel: ast.NewIdent("Apply"),
+								},
+								Args: nil,
+							}, nil
+						}
+					}
+				}
+			}
+		}
+
+		// Check for zero-argument generic method call (e.g., p.Swap())
+		if sel, ok := base.(*ast.SelectorExpr); ok {
+			receiver := sel.X
+			method := sel.Sel.Name
+
+			recvType := t.getExprTypeName(receiver)
+			if qName := t.getType(recvType.BaseName()); !qName.IsNil() {
+				recvType = qName
+			}
+			recvBaseName := recvType.BaseName()
+
+			// Check if this is a generic method
+			isGenericMethod := recvBaseName != "" && t.genericMethods[recvBaseName] != nil && t.genericMethods[recvBaseName][method]
+			if isGenericMethod {
+				// Check if receiver is a package name
+				isPkg := false
+				if id, ok := receiver.(*ast.Ident); ok {
+					if _, ok := t.imports[id.Name]; ok {
+						isPkg = true
+					}
+				}
+
+				if !isPkg {
+					// Transform to standalone function call: TypeName_Method(receiver)
+					var funExpr ast.Expr
+					if !recvType.IsNil() {
+						recvPkg := recvType.GetPackage()
+						if recvPkg == transpiler.StdPackage || strings.HasPrefix(recvBaseName, "std.") {
+							baseName := strings.TrimPrefix(recvBaseName, "std.")
+							funExpr = t.stdIdent(baseName + "_" + method)
+						} else {
+							funExpr = t.ident(recvBaseName + "_" + method)
+						}
+					} else {
+						funExpr = ast.NewIdent(method)
+					}
+
+					return &ast.CallExpr{
+						Fun:  funExpr,
+						Args: []ast.Expr{receiver},
+					}, nil
+				}
+			}
+		}
+
+		return &ast.CallExpr{Fun: base, Args: nil}, nil
+	}
+
+	return t.transformCallWithArgsCtx(base, argList.(*grammar.ArgumentListContext))
+}
+
+func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *grammar.ArgumentListContext) (ast.Expr, error) {
+	// Handle Copy method call with overrides
+	if sel, ok := fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Copy" {
+		return t.transformCopyCall(sel.X, argListCtx)
+	}
+
+	// Handle generic method calls or monadic methods: o.Map[T](f) -> Map[T](o, f)
+	var receiver ast.Expr
+	var method string
+	var typeArgs []ast.Expr
+
+	if sel, ok := fun.(*ast.SelectorExpr); ok {
+		if id, ok := sel.X.(*ast.Ident); ok && id.Name == transpiler.StdPackage {
+			// Not a method call
+		} else {
+			receiver = sel.X
+			method = sel.Sel.Name
+		}
+	} else if idx, ok := fun.(*ast.IndexExpr); ok {
+		if sel, ok := idx.X.(*ast.SelectorExpr); ok {
+			if id, ok := sel.X.(*ast.Ident); ok && id.Name == transpiler.StdPackage {
+				// Not a method call
 			} else {
-				return &ast.IndexListExpr{X: x, Indices: indices}, nil
+				receiver = sel.X
+				method = sel.Sel.Name
+				typeArgs = []ast.Expr{idx.Index}
+			}
+		}
+	} else if idxList, ok := fun.(*ast.IndexListExpr); ok {
+		if sel, ok := idxList.X.(*ast.SelectorExpr); ok {
+			if id, ok := sel.X.(*ast.Ident); ok && id.Name == transpiler.StdPackage {
+				// Not a method call
+			} else {
+				receiver = sel.X
+				method = sel.Sel.Name
+				typeArgs = idxList.Indices
 			}
 		}
 	}
 
-	return nil, galaerr.NewSemanticError(fmt.Sprintf("expression transformation not fully implemented for %T: %s", ctx, ctx.GetText()))
+	recvType := t.getExprTypeName(receiver)
+	if qName := t.getType(recvType.BaseName()); !qName.IsNil() {
+		recvType = qName
+	}
+	recvBaseName := recvType.BaseName()
+	isGenericMethod := len(typeArgs) > 0 || (recvBaseName != "" && t.genericMethods[recvBaseName] != nil && t.genericMethods[recvBaseName][method])
+
+	if receiver != nil && isGenericMethod {
+		// Check if receiver is a package name
+		isPkg := false
+		if id, ok := receiver.(*ast.Ident); ok {
+			if _, ok := t.imports[id.Name]; ok {
+				isPkg = true
+			}
+		}
+
+		if !isPkg {
+			// Transform generic method call to standalone function call
+			var mArgs []ast.Expr
+			for _, argCtx := range argListCtx.AllArgument() {
+				arg := argCtx.(*grammar.ArgumentContext)
+				pat := arg.Pattern()
+				ep, ok := pat.(*grammar.ExpressionPatternContext)
+				if !ok {
+					return nil, galaerr.NewSemanticError("only expressions allowed as function arguments")
+				}
+				expr, err := t.transformExpression(ep.Expression())
+				if err != nil {
+					return nil, err
+				}
+				mArgs = append(mArgs, expr)
+			}
+
+			var funExpr ast.Expr
+			if !recvType.IsNil() {
+				recvPkg := recvType.GetPackage()
+				if recvPkg == transpiler.StdPackage || strings.HasPrefix(recvBaseName, "std.") {
+					baseName := strings.TrimPrefix(recvBaseName, "std.")
+					funExpr = t.stdIdent(baseName + "_" + method)
+				} else {
+					funExpr = t.ident(recvBaseName + "_" + method)
+				}
+			} else {
+				funExpr = ast.NewIdent(method)
+			}
+
+			if len(typeArgs) == 1 {
+				funExpr = &ast.IndexExpr{X: funExpr, Index: typeArgs[0]}
+			} else if len(typeArgs) > 1 {
+				funExpr = &ast.IndexListExpr{X: funExpr, Indices: typeArgs}
+			}
+
+			return &ast.CallExpr{
+				Fun:  funExpr,
+				Args: append([]ast.Expr{receiver}, mArgs...),
+			}, nil
+		}
+	}
+
+	// Regular function call - transform arguments
+	var args []ast.Expr
+	namedArgs := make(map[string]ast.Expr)
+
+	for _, argCtx := range argListCtx.AllArgument() {
+		arg := argCtx.(*grammar.ArgumentContext)
+		pat := arg.Pattern()
+
+		// Check for named argument
+		if arg.Identifier() != nil {
+			// This is a named argument
+			argName := arg.Identifier().GetText()
+			ep, ok := pat.(*grammar.ExpressionPatternContext)
+			if !ok {
+				return nil, galaerr.NewSemanticError("only expressions allowed as function arguments")
+			}
+			expr, err := t.transformExpression(ep.Expression())
+			if err != nil {
+				return nil, err
+			}
+			namedArgs[argName] = expr
+		} else {
+			// Positional argument
+			ep, ok := pat.(*grammar.ExpressionPatternContext)
+			if !ok {
+				return nil, galaerr.NewSemanticError("only expressions allowed as function arguments")
+			}
+			expr, err := t.transformExpression(ep.Expression())
+			if err != nil {
+				return nil, err
+			}
+			args = append(args, expr)
+		}
+	}
+
+	// If we have named args, this might be struct construction
+	if len(namedArgs) > 0 {
+		return t.handleNamedArgsCall(fun, args, namedArgs)
+	}
+
+	// Check if the function being called is a type with an Apply method
+	// This handles companion object calls like Some[A](value) -> Some[A]{}.Apply(value)
+	typeName := t.getBaseTypeName(fun)
+	if typeName != "" {
+		// Try to find type metadata - check both raw name and std-prefixed name
+		typeMeta, ok := t.typeMetas[typeName]
+		if !ok && !strings.HasPrefix(typeName, "std.") {
+			typeMeta, ok = t.typeMetas["std."+typeName]
+			if ok {
+				typeName = "std." + typeName
+			}
+		}
+		if ok {
+			// First check if this looks like positional struct construction
+			// (args match struct field count) - prefer struct construction over Apply
+			resolvedTypeName := t.resolveStructTypeName(typeName)
+			if fields, structOk := t.structFields[resolvedTypeName]; structOk && len(args) > 0 && len(args) == len(fields) {
+				// It's struct construction with positional arguments matching field count
+				var elts []ast.Expr
+				immutFlags := t.structImmutFields[resolvedTypeName]
+				for i, fieldName := range fields {
+					var valExpr ast.Expr
+					if immutFlags != nil && i < len(immutFlags) && immutFlags[i] {
+						valExpr = &ast.CallExpr{
+							Fun:  t.stdIdent("NewImmutable"),
+							Args: []ast.Expr{args[i]},
+						}
+					} else {
+						valExpr = args[i]
+					}
+					elts = append(elts, &ast.KeyValueExpr{
+						Key:   ast.NewIdent(fieldName),
+						Value: valExpr,
+					})
+				}
+				return &ast.CompositeLit{Type: fun, Elts: elts}, nil
+			}
+
+			if methodMeta, hasApply := typeMeta.Methods["Apply"]; hasApply {
+				// Check if the base expression is a type (not a variable)
+				isType := false
+				baseExpr := fun
+				hasTypeArgs := false
+				var typeArgs []ast.Expr
+
+				if idx, ok := fun.(*ast.IndexExpr); ok {
+					baseExpr = idx.X
+					hasTypeArgs = true
+					typeArgs = []ast.Expr{idx.Index}
+				} else if idxList, ok := fun.(*ast.IndexListExpr); ok {
+					baseExpr = idxList.X
+					hasTypeArgs = true
+					typeArgs = idxList.Indices
+				}
+
+				if id, ok := baseExpr.(*ast.Ident); ok {
+					if !t.isVal(id.Name) && !t.isVar(id.Name) {
+						if !t.getType(id.Name).IsNil() {
+							isType = true
+						}
+					}
+				} else if sel, ok := baseExpr.(*ast.SelectorExpr); ok {
+					if id, ok := sel.X.(*ast.Ident); ok {
+						// Check if it's an explicitly imported package OR the std package
+						if _, isPkg := t.imports[id.Name]; isPkg || id.Name == transpiler.StdPackage {
+							isType = true
+						}
+					}
+				}
+
+				if isType {
+					isGeneric := methodMeta.IsGeneric || len(methodMeta.TypeParams) > 0
+
+					// If no explicit type args but type has type parameters, infer them from argument types
+					if !hasTypeArgs && len(typeMeta.TypeParams) > 0 && len(args) > 0 {
+						var inferredTypeArgs []ast.Expr
+						// Match Apply method parameter types with argument types
+						for i, arg := range args {
+							if i < len(methodMeta.ParamTypes) {
+								paramTypeStr := methodMeta.ParamTypes[i].String()
+								// Check if param type is one of the type parameters
+								for _, tp := range typeMeta.TypeParams {
+									if paramTypeStr == tp {
+										// Infer type from argument expression
+										argType := t.getExprTypeName(arg)
+										if argType != nil && !argType.IsNil() {
+											inferredTypeArgs = append(inferredTypeArgs, t.typeToExpr(argType))
+										} else {
+											inferredTypeArgs = append(inferredTypeArgs, ast.NewIdent("any"))
+										}
+										break
+									}
+								}
+							}
+						}
+						// If we inferred all type args, use them
+						if len(inferredTypeArgs) == len(typeMeta.TypeParams) {
+							typeArgs = inferredTypeArgs
+							hasTypeArgs = true
+							// Update fun to include the type arguments
+							if len(typeArgs) == 1 {
+								fun = &ast.IndexExpr{X: baseExpr, Index: typeArgs[0]}
+							} else if len(typeArgs) > 1 {
+								fun = &ast.IndexListExpr{X: baseExpr, Indices: typeArgs}
+							}
+						}
+					}
+
+					if isGeneric {
+						// Generic Apply method: use standalone function
+						fullName := typeName + "_Apply"
+						var funExpr ast.Expr
+						isStdType := strings.HasPrefix(typeName, "std.")
+						if !isStdType {
+							resolvedType := t.getType(typeName)
+							isStdType = !resolvedType.IsNil() && resolvedType.GetPackage() == transpiler.StdPackage
+						}
+						if isStdType {
+							funExpr = t.stdIdent(strings.TrimPrefix(fullName, "std."))
+						} else {
+							funExpr = t.ident(fullName)
+						}
+
+						if len(typeArgs) == 1 {
+							funExpr = &ast.IndexExpr{X: funExpr, Index: typeArgs[0]}
+						} else if len(typeArgs) > 1 {
+							funExpr = &ast.IndexListExpr{X: funExpr, Indices: typeArgs}
+						}
+
+						receiver := &ast.CompositeLit{Type: baseExpr}
+						if hasTypeArgs {
+							receiver = &ast.CompositeLit{Type: fun}
+						}
+
+						return &ast.CallExpr{
+							Fun:  funExpr,
+							Args: append([]ast.Expr{receiver}, args...),
+						}, nil
+					}
+
+					// Non-generic Apply method: call Apply on instance
+					receiver := &ast.CompositeLit{Type: fun}
+					return &ast.CallExpr{
+						Fun: &ast.SelectorExpr{
+							X:   receiver,
+							Sel: ast.NewIdent("Apply"),
+						},
+						Args: args,
+					}, nil
+				}
+			} else {
+				// No Apply method - check if this is struct construction with positional args
+				resolvedTypeName := t.resolveStructTypeName(typeName)
+				if fields, ok := t.structFields[resolvedTypeName]; ok && len(args) > 0 {
+					// It's struct construction with positional arguments
+					var elts []ast.Expr
+					immutFlags := t.structImmutFields[resolvedTypeName]
+					for i, fieldName := range fields {
+						if i >= len(args) {
+							break
+						}
+						var valExpr ast.Expr
+						if immutFlags != nil && i < len(immutFlags) && immutFlags[i] {
+							valExpr = &ast.CallExpr{
+								Fun:  t.stdIdent("NewImmutable"),
+								Args: []ast.Expr{args[i]},
+							}
+						} else {
+							valExpr = args[i]
+						}
+						elts = append(elts, &ast.KeyValueExpr{
+							Key:   ast.NewIdent(fieldName),
+							Value: valExpr,
+						})
+					}
+					return &ast.CompositeLit{Type: fun, Elts: elts}, nil
+				}
+			}
+		}
+	}
+
+	// Check if fun is a CompositeLit (struct literal) whose type has an Apply method
+	// This handles cases like: Append("cherry")("apple") -> Append{...}.Apply("apple")
+	if compLit, ok := fun.(*ast.CompositeLit); ok {
+		var litTypeName string
+		switch lt := compLit.Type.(type) {
+		case *ast.Ident:
+			litTypeName = lt.Name
+		case *ast.SelectorExpr:
+			litTypeName = lt.Sel.Name
+		case *ast.IndexExpr:
+			if id, ok := lt.X.(*ast.Ident); ok {
+				litTypeName = id.Name
+			} else if sel, ok := lt.X.(*ast.SelectorExpr); ok {
+				litTypeName = sel.Sel.Name
+			}
+		case *ast.IndexListExpr:
+			if id, ok := lt.X.(*ast.Ident); ok {
+				litTypeName = id.Name
+			} else if sel, ok := lt.X.(*ast.SelectorExpr); ok {
+				litTypeName = sel.Sel.Name
+			}
+		}
+		if litTypeName != "" {
+			resolvedTypeName := t.resolveStructTypeName(litTypeName)
+			if typeMeta, ok := t.typeMetas[resolvedTypeName]; ok {
+				if _, hasApply := typeMeta.Methods["Apply"]; hasApply {
+					// Transform to structLit.Apply(args)
+					return &ast.CallExpr{
+						Fun: &ast.SelectorExpr{
+							X:   compLit,
+							Sel: ast.NewIdent("Apply"),
+						},
+						Args: args,
+					}, nil
+				}
+			}
+		}
+	}
+
+	// Check if fun is a variable whose type has an Apply method
+	// This handles cases like: val add5 = Adder(5); add5(10) -> add5.Apply(10)
+	// For vals, the expression is add5.Get() (a CallExpr), not just add5 (Ident)
+	var valName string
+	if id, ok := fun.(*ast.Ident); ok {
+		if t.isVal(id.Name) || t.isVar(id.Name) {
+			valName = id.Name
+		}
+	} else if call, ok := fun.(*ast.CallExpr); ok {
+		// Check if this is valName.Get()
+		if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == transpiler.MethodGet && len(call.Args) == 0 {
+			if id, ok := sel.X.(*ast.Ident); ok {
+				if t.isVal(id.Name) {
+					valName = id.Name
+				}
+			}
+		}
+	}
+
+	if valName != "" {
+		varType := t.getType(valName)
+		if !varType.IsNil() {
+			varTypeName := varType.BaseName()
+			// Resolve type name
+			resolvedTypeName := varTypeName
+			if !strings.Contains(resolvedTypeName, ".") {
+				if resolved := t.resolveStructTypeName(resolvedTypeName); resolved != "" {
+					resolvedTypeName = resolved
+				}
+			}
+			if typeMeta, ok := t.typeMetas[resolvedTypeName]; ok {
+				if _, hasApply := typeMeta.Methods["Apply"]; hasApply {
+					// Transform to variable.Apply(args) or variable.Get().Apply(args)
+					return &ast.CallExpr{
+						Fun: &ast.SelectorExpr{
+							X:   fun,
+							Sel: ast.NewIdent("Apply"),
+						},
+						Args: args,
+					}, nil
+				}
+			}
+		}
+	}
+
+	return &ast.CallExpr{Fun: fun, Args: args}, nil
+}
+
+func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, namedArgs map[string]ast.Expr) (ast.Expr, error) {
+	// Try to get the type name to check if it's struct construction
+	var typeName string
+	switch f := fun.(type) {
+	case *ast.Ident:
+		typeName = f.Name
+	case *ast.IndexExpr:
+		if id, ok := f.X.(*ast.Ident); ok {
+			typeName = id.Name
+		} else if sel, ok := f.X.(*ast.SelectorExpr); ok {
+			typeName = sel.Sel.Name
+		}
+	case *ast.IndexListExpr:
+		if id, ok := f.X.(*ast.Ident); ok {
+			typeName = id.Name
+		} else if sel, ok := f.X.(*ast.SelectorExpr); ok {
+			typeName = sel.Sel.Name
+		}
+	case *ast.SelectorExpr:
+		typeName = f.Sel.Name
+	}
+
+	// Check if this is a known struct type
+	resolvedTypeName := t.resolveStructTypeName(typeName)
+	if fields, ok := t.structFields[resolvedTypeName]; ok {
+		// It's struct construction with named arguments
+		var elts []ast.Expr
+		immutFlags := t.structImmutFields[resolvedTypeName]
+		fieldTypes := t.structFieldTypes[resolvedTypeName]
+
+		// Check if we need to infer type parameters
+		typeExpr := fun
+		// Check for expressions without explicit type args: Ident (Tuple) or SelectorExpr (std.Tuple)
+		needsTypeInference := false
+		if _, isIdent := fun.(*ast.Ident); isIdent {
+			needsTypeInference = true
+		} else if _, isSel := fun.(*ast.SelectorExpr); isSel {
+			needsTypeInference = true
+		}
+		if needsTypeInference {
+			// No explicit type args - check if the type has type parameters
+			if typeMeta, ok := t.typeMetas[resolvedTypeName]; ok && len(typeMeta.TypeParams) > 0 {
+				// Infer type args from field values
+				inferredTypeArgs := make([]ast.Expr, len(typeMeta.TypeParams))
+				typeParamIndices := make(map[string]int)
+				for i, tp := range typeMeta.TypeParams {
+					typeParamIndices[tp] = i
+				}
+
+				// Map each field's expected type to its inferred type from the value
+				for fieldName, fieldType := range fieldTypes {
+					if val, ok := namedArgs[fieldName]; ok {
+						valType := t.getExprTypeName(val)
+						if valType != nil && !valType.IsNil() {
+							// Check if the field type is a type parameter
+							fieldTypeStr := fieldType.String()
+							if idx, isTypeParam := typeParamIndices[fieldTypeStr]; isTypeParam {
+								if inferredTypeArgs[idx] == nil {
+									inferredTypeArgs[idx] = t.typeToExpr(valType)
+								}
+							}
+						}
+					}
+				}
+
+				// Check if all type args were inferred
+				allInferred := true
+				for _, arg := range inferredTypeArgs {
+					if arg == nil {
+						allInferred = false
+						break
+					}
+				}
+
+				if allInferred && len(inferredTypeArgs) > 0 {
+					// Create the type expression with inferred type args
+					// Preserve the original expression structure (Ident or SelectorExpr)
+					var baseExpr ast.Expr
+					if sel, isSel := fun.(*ast.SelectorExpr); isSel {
+						baseExpr = &ast.SelectorExpr{X: sel.X, Sel: ast.NewIdent(typeName)}
+					} else {
+						baseExpr = ast.NewIdent(typeName)
+					}
+					if len(inferredTypeArgs) == 1 {
+						typeExpr = &ast.IndexExpr{X: baseExpr, Index: inferredTypeArgs[0]}
+					} else {
+						typeExpr = &ast.IndexListExpr{X: baseExpr, Indices: inferredTypeArgs}
+					}
+				}
+			}
+		}
+
+		for i, fieldName := range fields {
+			if val, ok := namedArgs[fieldName]; ok {
+				var valExpr ast.Expr
+				if immutFlags != nil && i < len(immutFlags) && immutFlags[i] {
+					valExpr = &ast.CallExpr{
+						Fun:  t.stdIdent("NewImmutable"),
+						Args: []ast.Expr{val},
+					}
+				} else {
+					valExpr = val
+				}
+				elts = append(elts, &ast.KeyValueExpr{
+					Key:   ast.NewIdent(fieldName),
+					Value: valExpr,
+				})
+			}
+		}
+		return &ast.CompositeLit{Type: typeExpr, Elts: elts}, nil
+	}
+
+	return nil, galaerr.NewSemanticError(fmt.Sprintf("named arguments only supported for Copy method or struct construction (type: %s)", typeName))
+}
+
+func (t *galaASTTransformer) transformPrimaryExpr(ctx *grammar.PrimaryExprContext) (ast.Expr, error) {
+	if p := ctx.Primary(); p != nil {
+		return t.transformPrimary(p.(*grammar.PrimaryContext))
+	}
+
+	if l := ctx.LambdaExpression(); l != nil {
+		return t.transformLambda(l.(*grammar.LambdaExpressionContext))
+	}
+
+	if i := ctx.IfExpression(); i != nil {
+		return t.transformIfExpression(i.(*grammar.IfExpressionContext))
+	}
+
+	return nil, galaerr.NewSemanticError("primaryExpr must have primary, lambda, or if expression")
+}
+
+// transformPostfixMatchExpression handles match expressions with the new grammar
+func (t *galaASTTransformer) transformPostfixMatchExpression(ctx *grammar.PostfixExprContext) (ast.Expr, error) {
+	// Get the primary expression being matched
+	primaryExpr := ctx.PrimaryExpr()
+	if primaryExpr == nil {
+		return nil, galaerr.NewSemanticError("match expression must have subject")
+	}
+
+	subject, err := t.transformPrimaryExpr(primaryExpr.(*grammar.PrimaryExprContext))
+	if err != nil {
+		return nil, err
+	}
+
+	// Apply any suffixes before the match
+	suffixes := ctx.AllPostfixSuffix()
+	for _, suffix := range suffixes {
+		subject, err = t.applyPostfixSuffix(subject, suffix.(*grammar.PostfixSuffixContext))
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Now handle the match expression
+	caseClauses := ctx.AllCaseClause()
+	return t.buildMatchExpressionFromClauses(subject, "obj", caseClauses)
+}
+
+// buildMatchExpressionFromClauses builds a match expression from the subject and case clauses
+func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, paramName string, caseClauses []grammar.ICaseClauseContext) (ast.Expr, error) {
+	// Get the type of the matched expression
+	matchedType := t.getExprTypeNameManual(subject)
+	if matchedType == nil || matchedType.IsNil() {
+		matchedType, _ = t.inferExprType(subject)
+	}
+	if matchedType == nil || matchedType.IsNil() {
+		return nil, galaerr.NewSemanticError("cannot infer type of matched expression")
+	}
+
+	if t.typeHasUnresolvedParams(matchedType) {
+		matchedType = transpiler.BasicType{Name: "any"}
+	}
+
+	t.pushScope()
+	defer t.popScope()
+	t.addVar(paramName, matchedType)
+
+	var clauses []ast.Stmt
+	var defaultBody []ast.Stmt
+	foundDefault := false
+	var resultTypes []transpiler.Type
+	var casePatterns []string
+
+	for _, cc := range caseClauses {
+		ccCtx := cc.(*grammar.CaseClauseContext)
+
+		patCtx := ccCtx.Pattern()
+		patternText := patCtx.GetText()
+		if patternText == "_" {
+			if foundDefault {
+				return nil, galaerr.NewSemanticError("multiple default cases in match expression")
+			}
+			foundDefault = true
+
+			if ccCtx.GetBodyBlock() != nil {
+				b, err := t.transformBlock(ccCtx.GetBodyBlock().(*grammar.BlockContext))
+				if err != nil {
+					return nil, err
+				}
+				defaultBody = b.List
+				if len(b.List) > 0 {
+					if ret, ok := b.List[len(b.List)-1].(*ast.ReturnStmt); ok && len(ret.Results) > 0 {
+						resultTypes = append(resultTypes, t.inferResultType(ret.Results[0]))
+						casePatterns = append(casePatterns, "case _")
+					}
+				}
+			} else if ccCtx.GetBody() != nil {
+				bodyExpr, err := t.transformExpression(ccCtx.GetBody())
+				if err != nil {
+					return nil, err
+				}
+				defaultBody = []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{bodyExpr}}}
+				resultTypes = append(resultTypes, t.inferResultType(bodyExpr))
+				casePatterns = append(casePatterns, "case _")
+			}
+			continue
+		}
+
+		clause, resultType, err := t.transformCaseClauseWithType(ccCtx, paramName, matchedType)
+		if err != nil {
+			return nil, err
+		}
+		if clause != nil {
+			clauses = append(clauses, clause)
+		}
+		if resultType != nil {
+			resultTypes = append(resultTypes, resultType)
+			casePatterns = append(casePatterns, fmt.Sprintf("case %s", patternText))
+		}
+	}
+
+	// Infer common result type from all branches
+	resultType, err := t.inferCommonResultType(resultTypes, casePatterns)
+	if err != nil {
+		return nil, err
+	}
+
+	if t.typeHasUnresolvedParams(resultType) {
+		resultType = transpiler.BasicType{Name: "any"}
+	}
+
+	if len(clauses) == 0 && len(defaultBody) == 0 {
+		return nil, galaerr.NewSemanticError("match expression must have at least one case")
+	}
+
+	if len(defaultBody) == 0 {
+		return nil, galaerr.NewSemanticError("match expression must have a default case (case _ => ...)")
+	}
+
+	var stmts []ast.Stmt
+	for _, c := range clauses {
+		stmts = append(stmts, c)
+	}
+	stmts = append(stmts, defaultBody...)
+
+	funcLit := &ast.FuncLit{
+		Type: &ast.FuncType{
+			Params:  &ast.FieldList{List: []*ast.Field{{Names: []*ast.Ident{ast.NewIdent(paramName)}, Type: t.typeToExpr(matchedType)}}},
+			Results: &ast.FieldList{List: []*ast.Field{{Type: t.typeToExpr(resultType)}}},
+		},
+		Body: &ast.BlockStmt{List: stmts},
+	}
+
+	return &ast.CallExpr{Fun: funcLit, Args: []ast.Expr{subject}}, nil
 }
 
 func (t *galaASTTransformer) transformExpressionList(ctx *grammar.ExpressionListContext) ([]ast.Expr, error) {
@@ -741,6 +1644,150 @@ func (t *galaASTTransformer) transformExpressionList(ctx *grammar.ExpressionList
 		exprs = append(exprs, e)
 	}
 	return exprs, nil
+}
+
+func (t *galaASTTransformer) isBinaryOperator(op string) bool {
+	switch op {
+	case "||", "&&", "==", "!=", "<", "<=", ">", ">=",
+		"+", "-", "|", "^", "*", "/", "%", "<<", ">>", "&", "&^":
+		return true
+	default:
+		return false
+	}
+}
+
+// getPrimaryFromExpression navigates the new grammar structure to find the primary
+// This is used for backward compatibility with code that expects expr.Primary()
+func (t *galaASTTransformer) getPrimaryFromExpression(ctx grammar.IExpressionContext) *grammar.PrimaryContext {
+	if ctx == nil {
+		return nil
+	}
+	// expression -> orExpr
+	orExpr := ctx.OrExpr()
+	if orExpr == nil {
+		return nil
+	}
+	// orExpr -> andExpr
+	andExprs := orExpr.(*grammar.OrExprContext).AllAndExpr()
+	if len(andExprs) == 0 {
+		return nil
+	}
+	// andExpr -> equalityExpr
+	eqExprs := andExprs[0].(*grammar.AndExprContext).AllEqualityExpr()
+	if len(eqExprs) == 0 {
+		return nil
+	}
+	// equalityExpr -> relationalExpr
+	relExprs := eqExprs[0].(*grammar.EqualityExprContext).AllRelationalExpr()
+	if len(relExprs) == 0 {
+		return nil
+	}
+	// relationalExpr -> additiveExpr
+	addExprs := relExprs[0].(*grammar.RelationalExprContext).AllAdditiveExpr()
+	if len(addExprs) == 0 {
+		return nil
+	}
+	// additiveExpr -> multiplicativeExpr
+	mulExprs := addExprs[0].(*grammar.AdditiveExprContext).AllMultiplicativeExpr()
+	if len(mulExprs) == 0 {
+		return nil
+	}
+	// multiplicativeExpr -> unaryExpr
+	unaryExprs := mulExprs[0].(*grammar.MultiplicativeExprContext).AllUnaryExpr()
+	if len(unaryExprs) == 0 {
+		return nil
+	}
+	// unaryExpr -> postfixExpr (if no unaryOp)
+	unaryCtx := unaryExprs[0].(*grammar.UnaryExprContext)
+	postfixExpr := unaryCtx.PostfixExpr()
+	if postfixExpr == nil {
+		return nil
+	}
+	// postfixExpr -> primaryExpr
+	primaryExpr := postfixExpr.(*grammar.PostfixExprContext).PrimaryExpr()
+	if primaryExpr == nil {
+		return nil
+	}
+	// primaryExpr -> primary
+	return primaryExpr.(*grammar.PrimaryExprContext).Primary().(*grammar.PrimaryContext)
+}
+
+// getCallPatternFromExpression checks if an expression is a call pattern like Left(n)
+// and returns the base expression context and argument list.
+// Returns nil values if not a call pattern.
+func (t *galaASTTransformer) getCallPatternFromExpression(ctx grammar.IExpressionContext) (*grammar.PrimaryExprContext, *grammar.ArgumentListContext) {
+	if ctx == nil {
+		return nil, nil
+	}
+	// Navigate through: expression -> orExpr -> andExpr -> equalityExpr -> relationalExpr -> additiveExpr -> multiplicativeExpr -> unaryExpr -> postfixExpr
+	orExpr := ctx.OrExpr()
+	if orExpr == nil {
+		return nil, nil
+	}
+	andExprs := orExpr.(*grammar.OrExprContext).AllAndExpr()
+	if len(andExprs) == 0 || len(andExprs) > 1 {
+		return nil, nil // Not a simple expression
+	}
+	eqExprs := andExprs[0].(*grammar.AndExprContext).AllEqualityExpr()
+	if len(eqExprs) == 0 || len(eqExprs) > 1 {
+		return nil, nil
+	}
+	relExprs := eqExprs[0].(*grammar.EqualityExprContext).AllRelationalExpr()
+	if len(relExprs) == 0 || len(relExprs) > 1 {
+		return nil, nil
+	}
+	addExprs := relExprs[0].(*grammar.RelationalExprContext).AllAdditiveExpr()
+	if len(addExprs) == 0 || len(addExprs) > 1 {
+		return nil, nil
+	}
+	mulExprs := addExprs[0].(*grammar.AdditiveExprContext).AllMultiplicativeExpr()
+	if len(mulExprs) == 0 || len(mulExprs) > 1 {
+		return nil, nil
+	}
+	unaryExprs := mulExprs[0].(*grammar.MultiplicativeExprContext).AllUnaryExpr()
+	if len(unaryExprs) == 0 || len(unaryExprs) > 1 {
+		return nil, nil
+	}
+	unaryCtx := unaryExprs[0].(*grammar.UnaryExprContext)
+	// Check if there's a unary operator (like !)
+	if unaryCtx.UnaryOp() != nil {
+		return nil, nil
+	}
+	postfixExpr := unaryCtx.PostfixExpr()
+	if postfixExpr == nil {
+		return nil, nil
+	}
+	postfixCtx := postfixExpr.(*grammar.PostfixExprContext)
+
+	// Check if there's exactly one call suffix
+	suffixes := postfixCtx.AllPostfixSuffix()
+	if len(suffixes) != 1 {
+		return nil, nil
+	}
+	suffix := suffixes[0].(*grammar.PostfixSuffixContext)
+
+	// Check if it's a call suffix (starts with '(')
+	if suffix.GetChildCount() < 2 {
+		return nil, nil
+	}
+	firstChild := suffix.GetChild(0).(antlr.ParseTree).GetText()
+	if firstChild != "(" {
+		return nil, nil
+	}
+
+	// Get the primary expression
+	primaryExpr := postfixCtx.PrimaryExpr()
+	if primaryExpr == nil {
+		return nil, nil
+	}
+
+	// Get argument list (may be nil for empty calls)
+	var argList *grammar.ArgumentListContext
+	if al := suffix.ArgumentList(); al != nil {
+		argList = al.(*grammar.ArgumentListContext)
+	}
+
+	return primaryExpr.(*grammar.PrimaryExprContext), argList
 }
 
 func (t *galaASTTransformer) getBinaryToken(op string) token.Token {

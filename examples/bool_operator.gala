@@ -1,0 +1,56 @@
+package main
+
+import "fmt"
+
+type Obj struct {
+    flag bool
+}
+
+func isZero(n int) bool = n == 0
+
+func main() {
+    val a = 0
+    val b = 5
+
+    // Test || operator
+    if a == 0 || b == 0 {
+        fmt.Println("At least one is zero")
+    } else {
+        fmt.Println("Neither is zero")
+    }
+
+    // Test && operator
+    if a == 0 && b == 5 {
+        fmt.Println("a is zero AND b is five")
+    }
+
+    // Test combined
+    val x = 1
+    val y = 2
+    val z = 0
+    if x == 1 || y == 2 || z == 3 {
+        fmt.Println("At least one condition true")
+    }
+
+    // Test function call in binary expression
+    if a == 0 && isZero(b) {
+        fmt.Println("a is zero AND isZero(b)")
+    }
+
+    // Test: defined && p(value)
+    val defined = true
+    val value = 42
+    val p = (n int) => n > 0
+    if defined && p(value) {
+        fmt.Println("defined AND p(value)")
+    }
+
+    // Test unary ! with member access
+    // Should be: !(obj.flag) not (!obj).flag
+    val obj = Obj(flag = true)
+    if !obj.flag {
+        fmt.Println("flag is false")
+    } else {
+        fmt.Println("flag is true")
+    }
+}

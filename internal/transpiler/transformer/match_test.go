@@ -39,14 +39,14 @@ val res = x match {
 import "martianoff/gala/std"
 
 var x std.Immutable[int] = std.NewImmutable[int](5)
-var res = std.NewImmutable(func(x int) string {
-	if x == 1 {
+var res = std.NewImmutable(func(obj int) string {
+	if obj == 1 {
 		return "one"
-	} else if x == 2 {
-		return "two"
-	} else {
-		return "many"
 	}
+	if obj == 2 {
+		return "two"
+	}
+	return "many"
 }(x.Get()))
 `,
 		},
@@ -64,12 +64,11 @@ val res = x match {
 import "martianoff/gala/std"
 
 var x = std.NewImmutable(10)
-var res = std.NewImmutable(func(x int) int {
-	if x == 10 {
+var res = std.NewImmutable(func(obj int) int {
+	if obj == 10 {
 		return 1
-	} else {
-		return 0
 	}
+	return 0
 }(x.Get()))
 `,
 		},
@@ -87,12 +86,11 @@ val res = x match {
 import "martianoff/gala/std"
 
 var x = std.NewImmutable("hello")
-var res = std.NewImmutable(func(x string) string {
-	if x == "hello" {
+var res = std.NewImmutable(func(obj string) string {
+	if obj == "hello" {
 		return "world"
-	} else {
-		return "fail"
 	}
+	return "fail"
 }(x.Get()))
 `,
 		},
@@ -110,15 +108,14 @@ val res = x match {
 import "martianoff/gala/std"
 
 var x = std.NewImmutable(42)
-var res = std.NewImmutable(func(x int) int {
+var res = std.NewImmutable(func(obj int) int {
 	{
-		y := x
+		y := obj
 		if true {
 			return y + 1
-		} else {
-			return 0
 		}
 	}
+	return 0
 }(x.Get()))
 `,
 		},
@@ -136,9 +133,9 @@ val res = x match {
 import "martianoff/gala/std"
 
 var x std.Immutable[std.Option[int]] = std.NewImmutable[std.Option[int]](std.Some[int]{}.Apply(1))
-var res = std.NewImmutable(func(x std.Option[int]) int {
+var res = std.NewImmutable(func(obj std.Option[int]) int {
 	{
-		_tmp_1 := std.Some[int]{}.Unapply(x)
+		_tmp_1 := std.Some[int]{}.Unapply(obj)
 		_tmp_2 := _tmp_1.IsDefined()
 		var _tmp_3 int
 		if _tmp_2 {
@@ -147,10 +144,9 @@ var res = std.NewImmutable(func(x std.Option[int]) int {
 		y := _tmp_3
 		if _tmp_2 {
 			return y
-		} else {
-			return 0
 		}
 	}
+	return 0
 }(x.Get()))
 `,
 		},
@@ -168,9 +164,9 @@ val res = x match {
 import "martianoff/gala/std"
 
 var x std.Immutable[std.Option[any]] = std.NewImmutable[std.Option[any]](std.Some[string]{}.Apply("test"))
-var res = std.NewImmutable(func(x std.Option[any]) string {
+var res = std.NewImmutable(func(obj std.Option[any]) string {
 	{
-		_tmp_1 := std.Some[any]{}.Unapply(x)
+		_tmp_1 := std.Some[any]{}.Unapply(obj)
 		_tmp_2 := _tmp_1.IsDefined()
 		var _tmp_3 any
 		if _tmp_2 {
@@ -179,10 +175,9 @@ var res = std.NewImmutable(func(x std.Option[any]) string {
 		s, _tmp_4 := std.As[string](_tmp_3)
 		if _tmp_2 && _tmp_4 {
 			return s
-		} else {
-			return "unknown"
 		}
 	}
+	return "unknown"
 }(x.Get()))
 `,
 		},
