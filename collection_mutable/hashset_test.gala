@@ -1,0 +1,331 @@
+package main
+
+import (
+    . "martianoff/gala/test"
+    . "martianoff/gala/collection_mutable"
+)
+
+// === HashSet Creation Tests ===
+
+func TestEmptyHashSet(t T) T {
+    var s = EmptyHashSet[int]()
+    var t1 = IsTrue(t, s.IsEmpty())
+    return Eq[int](t1, s.Size(), 0)
+}
+
+func TestHashSetOf(t T) T {
+    var s = HashSetOf[int](1, 2, 3)
+    var t1 = IsFalse(t, s.IsEmpty())
+    return Eq[int](t1, s.Size(), 3)
+}
+
+func TestHashSetOfDuplicates(t T) T {
+    var s = HashSetOf[int](1, 2, 2, 3, 3, 3)
+    return Eq[int](t, s.Size(), 3)
+}
+
+func TestHashSetFromSlice(t T) T {
+    var slice = []int{10, 20, 30}
+    var s = HashSetFromSlice[int](slice)
+    var t1 = Eq[int](t, s.Size(), 3)
+    var t2 = IsTrue(t1, s.Contains(10))
+    var t3 = IsTrue(t2, s.Contains(20))
+    return IsTrue(t3, s.Contains(30))
+}
+
+// === HashSet Basic Operations Tests ===
+
+func TestHashSetAdd(t T) T {
+    var s = EmptyHashSet[int]()
+    var added1 = s.Add(1)
+    var added2 = s.Add(2)
+    var added3 = s.Add(1) // Duplicate
+    var t1 = IsTrue(t, added1)
+    var t2 = IsTrue(t1, added2)
+    var t3 = IsFalse(t2, added3)
+    return Eq[int](t3, s.Size(), 2)
+}
+
+func TestHashSetRemove(t T) T {
+    var s = HashSetOf[int](1, 2, 3)
+    var removed1 = s.Remove(2)
+    var removed2 = s.Remove(5) // Not present
+    var t1 = IsTrue(t, removed1)
+    var t2 = IsFalse(t1, removed2)
+    var t3 = Eq[int](t2, s.Size(), 2)
+    return IsFalse(t3, s.Contains(2))
+}
+
+func TestHashSetContains(t T) T {
+    var s = HashSetOf[int](1, 2, 3)
+    var t1 = IsTrue(t, s.Contains(1))
+    var t2 = IsTrue(t1, s.Contains(2))
+    var t3 = IsTrue(t2, s.Contains(3))
+    return IsFalse(t3, s.Contains(5))
+}
+
+func TestHashSetClear(t T) T {
+    var s = HashSetOf[int](1, 2, 3)
+    s.Clear()
+    return IsTrue(t, s.IsEmpty())
+}
+
+// === HashSet String Type Tests ===
+
+func TestHashSetStrings(t T) T {
+    var s = HashSetOf[string]("apple", "banana", "cherry")
+    var t1 = Eq[int](t, s.Size(), 3)
+    var t2 = IsTrue(t1, s.Contains("apple"))
+    var t3 = IsTrue(t2, s.Contains("banana"))
+    return IsFalse(t3, s.Contains("orange"))
+}
+
+// === HashSet Operations Tests ===
+
+func TestHashSetUnion(t T) T {
+    var s1 = HashSetOf[int](1, 2, 3)
+    var s2 = HashSetOf[int](3, 4, 5)
+    var union = s1.Union(s2)
+    var t1 = Eq[int](t, union.Size(), 5)
+    var t2 = IsTrue(t1, union.Contains(1))
+    var t3 = IsTrue(t2, union.Contains(3))
+    return IsTrue(t3, union.Contains(5))
+}
+
+func TestHashSetIntersect(t T) T {
+    var s1 = HashSetOf[int](1, 2, 3, 4)
+    var s2 = HashSetOf[int](3, 4, 5, 6)
+    var intersect = s1.Intersect(s2)
+    var t1 = Eq[int](t, intersect.Size(), 2)
+    var t2 = IsTrue(t1, intersect.Contains(3))
+    var t3 = IsTrue(t2, intersect.Contains(4))
+    var t4 = IsFalse(t3, intersect.Contains(1))
+    return IsFalse(t4, intersect.Contains(5))
+}
+
+func TestHashSetDiff(t T) T {
+    var s1 = HashSetOf[int](1, 2, 3, 4)
+    var s2 = HashSetOf[int](3, 4, 5, 6)
+    var diff = s1.Diff(s2)
+    var t1 = Eq[int](t, diff.Size(), 2)
+    var t2 = IsTrue(t1, diff.Contains(1))
+    var t3 = IsTrue(t2, diff.Contains(2))
+    return IsFalse(t3, diff.Contains(3))
+}
+
+func TestHashSetSymmetricDiff(t T) T {
+    var s1 = HashSetOf[int](1, 2, 3)
+    var s2 = HashSetOf[int](3, 4, 5)
+    var symDiff = s1.SymmetricDiff(s2)
+    var t1 = Eq[int](t, symDiff.Size(), 4)
+    var t2 = IsTrue(t1, symDiff.Contains(1))
+    var t3 = IsTrue(t2, symDiff.Contains(2))
+    var t4 = IsFalse(t3, symDiff.Contains(3))
+    var t5 = IsTrue(t4, symDiff.Contains(4))
+    return IsTrue(t5, symDiff.Contains(5))
+}
+
+func TestHashSetSubsetOf(t T) T {
+    var s1 = HashSetOf[int](1, 2)
+    var s2 = HashSetOf[int](1, 2, 3, 4)
+    var s3 = HashSetOf[int](1, 5)
+    var t1 = IsTrue(t, s1.SubsetOf(s2))
+    return IsFalse(t1, s3.SubsetOf(s2))
+}
+
+func TestHashSetSupersetOf(t T) T {
+    var s1 = HashSetOf[int](1, 2, 3, 4)
+    var s2 = HashSetOf[int](1, 2)
+    return IsTrue(t, s1.SupersetOf(s2))
+}
+
+func TestHashSetDisjoint(t T) T {
+    var s1 = HashSetOf[int](1, 2, 3)
+    var s2 = HashSetOf[int](4, 5, 6)
+    var s3 = HashSetOf[int](3, 4, 5)
+    var t1 = IsTrue(t, s1.Disjoint(s2))
+    return IsFalse(t1, s1.Disjoint(s3))
+}
+
+// === HashSet In-Place Operations Tests ===
+
+func TestHashSetUnionInPlace(t T) T {
+    var s1 = HashSetOf[int](1, 2, 3)
+    var s2 = HashSetOf[int](3, 4, 5)
+    s1.UnionInPlace(s2)
+    var t1 = Eq[int](t, s1.Size(), 5)
+    return IsTrue(t1, s1.Contains(4))
+}
+
+func TestHashSetIntersectInPlace(t T) T {
+    var s1 = HashSetOf[int](1, 2, 3, 4)
+    var s2 = HashSetOf[int](3, 4, 5, 6)
+    s1.IntersectInPlace(s2)
+    var t1 = Eq[int](t, s1.Size(), 2)
+    var t2 = IsTrue(t1, s1.Contains(3))
+    return IsFalse(t2, s1.Contains(1))
+}
+
+func TestHashSetDiffInPlace(t T) T {
+    var s1 = HashSetOf[int](1, 2, 3, 4)
+    var s2 = HashSetOf[int](3, 4, 5, 6)
+    s1.DiffInPlace(s2)
+    var t1 = Eq[int](t, s1.Size(), 2)
+    var t2 = IsTrue(t1, s1.Contains(1))
+    return IsFalse(t2, s1.Contains(3))
+}
+
+// === HashSet Functional Operations Tests ===
+
+func isHashSetEven(x int) bool = x % 2 == 0
+
+func TestHashSetFilter(t T) T {
+    var s = HashSetOf[int](1, 2, 3, 4, 5, 6)
+    var filtered = s.Filter(isHashSetEven)
+    var t1 = Eq[int](t, filtered.Size(), 3)
+    var t2 = IsTrue(t1, filtered.Contains(2))
+    var t3 = IsTrue(t2, filtered.Contains(4))
+    return IsFalse(t3, filtered.Contains(1))
+}
+
+func TestHashSetFilterNot(t T) T {
+    var s = HashSetOf[int](1, 2, 3, 4, 5, 6)
+    var filtered = s.FilterNot(isHashSetEven)
+    var t1 = Eq[int](t, filtered.Size(), 3)
+    var t2 = IsTrue(t1, filtered.Contains(1))
+    return IsFalse(t2, filtered.Contains(2))
+}
+
+func TestHashSetPartition(t T) T {
+    var s = HashSetOf[int](1, 2, 3, 4, 5, 6)
+    var parts = s.Partition(isHashSetEven)
+    var t1 = Eq[int](t, parts.V1.Size(), 3)
+    return Eq[int](t1, parts.V2.Size(), 3)
+}
+
+func hashSetAddFn(acc int, x int) int = acc + x
+
+func TestHashSetFoldLeft(t T) T {
+    var s = HashSetOf[int](1, 2, 3, 4)
+    var result = s.FoldLeft(0, hashSetAddFn)
+    return Eq[int](t, result, 10)
+}
+
+// === HashSet Predicate Tests ===
+
+func isHashSetGreaterThanTwo(x int) bool = x > 2
+
+func TestHashSetExists(t T) T {
+    var s = HashSetOf[int](1, 2, 3)
+    return IsTrue(t, s.Exists(isHashSetGreaterThanTwo))
+}
+
+func isHashSetGreaterThanTen(x int) bool = x > 10
+
+func TestHashSetExistsFalse(t T) T {
+    var s = HashSetOf[int](1, 2, 3)
+    return IsFalse(t, s.Exists(isHashSetGreaterThanTen))
+}
+
+func isHashSetPositive(x int) bool = x > 0
+
+func TestHashSetForAll(t T) T {
+    var s = HashSetOf[int](1, 2, 3)
+    return IsTrue(t, s.ForAll(isHashSetPositive))
+}
+
+func TestHashSetForAllFalse(t T) T {
+    var s = HashSetOf[int](-1, 0, 1)
+    return IsFalse(t, s.ForAll(isHashSetPositive))
+}
+
+func TestHashSetFind(t T) T {
+    var s = HashSetOf[int](1, 2, 3, 4, 5)
+    var found = s.Find(isHashSetGreaterThanTwo)
+    return IsFalse(t, found.IsEmpty())
+}
+
+func TestHashSetCount(t T) T {
+    var s = HashSetOf[int](1, 2, 3, 4, 5)
+    var count = s.Count(isHashSetGreaterThanTwo)
+    return Eq[int](t, count, 3)
+}
+
+// === HashSet Element Access Tests ===
+
+func TestHashSetHead(t T) T {
+    var s = HashSetOf[int](1, 2, 3)
+    var head = s.Head()
+    return IsTrue(t, s.Contains(head))
+}
+
+func TestHashSetHeadOption(t T) T {
+    var s = HashSetOf[int](1, 2, 3)
+    var opt = s.HeadOption()
+    return IsFalse(t, opt.IsEmpty())
+}
+
+func TestHashSetHeadOptionEmpty(t T) T {
+    var s = EmptyHashSet[int]()
+    var opt = s.HeadOption()
+    return IsTrue(t, opt.IsEmpty())
+}
+
+// === HashSet Conversion Tests ===
+
+func TestHashSetToSlice(t T) T {
+    var s = HashSetOf[int](1, 2, 3)
+    var slice = s.ToSlice()
+    return Eq[int](t, len(slice), 3)
+}
+
+func TestHashSetToArray(t T) T {
+    var s = HashSetOf[int](1, 2, 3)
+    var arr = s.ToArray()
+    return Eq[int](t, arr.Size(), 3)
+}
+
+func TestHashSetToList(t T) T {
+    var s = HashSetOf[int](1, 2, 3)
+    var list = s.ToList()
+    return Eq[int](t, list.Size(), 3)
+}
+
+func TestHashSetClone(t T) T {
+    var s = HashSetOf[int](1, 2, 3)
+    var clone = s.Clone()
+    clone.Add(4)
+    var t1 = Eq[int](t, s.Size(), 3)
+    return Eq[int](t1, clone.Size(), 4)
+}
+
+func TestHashSetString(t T) T {
+    var s = EmptyHashSet[int]()
+    return Eq[string](t, s.String(), "HashSet()")
+}
+
+// === Large HashSet Tests ===
+
+func TestHashSetLarge(t T) T {
+    var s = EmptyHashSet[int]()
+    for i := 0; i < 10000; i++ {
+        s.Add(i)
+    }
+    var t1 = Eq[int](t, s.Size(), 10000)
+    var t2 = IsTrue(t1, s.Contains(0))
+    var t3 = IsTrue(t2, s.Contains(5000))
+    return IsTrue(t3, s.Contains(9999))
+}
+
+func TestHashSetLargeRemove(t T) T {
+    var s = EmptyHashSet[int]()
+    for i := 0; i < 10000; i++ {
+        s.Add(i)
+    }
+    for i := 0; i < 5000; i++ {
+        s.Remove(i)
+    }
+    var t1 = Eq[int](t, s.Size(), 5000)
+    var t2 = IsFalse(t1, s.Contains(0))
+    return IsTrue(t2, s.Contains(5000))
+}

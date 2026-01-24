@@ -4,6 +4,8 @@ load("//:gala.bzl", "gala_binary", "gala_go_test", "gala_library", "gala_transpi
 exports_files([
     "list.gala",
     "array.gala",
+    "hashset.gala",
+    "treeset.gala",
 ])
 
 # Filegroup for all GALA source files in collection_mutable
@@ -28,11 +30,25 @@ gala_transpile(
     out = "array.go",
 )
 
+gala_transpile(
+    name = "hashset_go",
+    src = "hashset.gala",
+    out = "hashset.go",
+)
+
+gala_transpile(
+    name = "treeset_go",
+    src = "treeset.gala",
+    out = "treeset.go",
+)
+
 go_library(
     name = "collection_mutable",
     srcs = [
         "array.go",
         "list.go",
+        "hashset.go",
+        "treeset.go",
     ],
     importpath = "martianoff/gala/collection_mutable",
     visibility = ["//visibility:public"],
@@ -48,6 +64,18 @@ gala_go_test(
 gala_go_test(
     name = "list_test",
     srcs = ["list_test.gala"],
+    deps = [":collection_mutable"],
+)
+
+gala_go_test(
+    name = "hashset_test",
+    srcs = ["hashset_test.gala"],
+    deps = [":collection_mutable"],
+)
+
+gala_go_test(
+    name = "treeset_test",
+    srcs = ["treeset_test.gala"],
     deps = [":collection_mutable"],
 )
 

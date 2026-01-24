@@ -1,0 +1,612 @@
+package collection_mutable
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+)
+
+// HashSet is a mutable set with effectively constant time operations.
+// It uses hash buckets for O(1) average operations.
+//
+// Elements must be either:
+// - Primitive types (int, string, bool, etc.) - hashed automatically
+// - Types implementing the std.Hashable interface
+//
+// Performance characteristics:
+// - Add:      O(1) amortized
+// - Remove:   O(1) amortized
+// - Contains: O(1) average
+// - Size:     O(1)
+// - Clear:    O(1)
+
+// Initial number of buckets
+val hashSetInitialBuckets int = 16
+// Load factor threshold for resizing
+val hashSetLoadFactor float64 = 0.75
+
+// hashSetEntry represents an entry in a bucket.
+type hashSetEntry[T comparable] struct {
+    value    T
+    hashCode uint32
+    var next *hashSetEntry[T]
+}
+
+// HashSet represents a mutable hash-based set.
+type HashSet[T comparable] struct {
+    var buckets    []*hashSetEntry[T]
+    var size       int
+    var bucketMask uint32
+}
+
+// EmptyHashSet returns a new empty HashSet.
+func EmptyHashSet[T comparable]() *HashSet[T] {
+    var buckets = make([]*hashSetEntry[T], hashSetInitialBuckets)
+    return &HashSet[T](buckets = buckets, size = 0, bucketMask = uint32(hashSetInitialBuckets - 1))
+}
+
+// HashSetOf creates a HashSet from variadic arguments.
+// Example: HashSetOf[int](1, 2, 3) creates HashSet(1, 2, 3)
+func HashSetOf[T comparable](elements ...T) *HashSet[T] {
+    var result = EmptyHashSet[T]()
+    for i := 0; i < len(elements); i++ {
+        result.Add(elements[i])
+    }
+    return result
+}
+
+// HashSetFromSlice creates a HashSet from a slice.
+func HashSetFromSlice[T comparable](elements []T) *HashSet[T] {
+    var result = EmptyHashSet[T]()
+    for i := 0; i < len(elements); i++ {
+        result.Add(elements[i])
+    }
+    return result
+}
+
+// hashSetHash computes a hash code for a value.
+// Handles primitives automatically and calls Hash() for Hashable types.
+func hashSetHash[T comparable](value T) uint32 {
+    val v any = value
+
+    val result = v match {
+        case i: int => HashInt(int64(i))
+        case s: string => HashString(s)
+        case i: int64 => HashInt(i)
+        case i: int32 => HashInt(int64(i))
+        case u: uint => HashUint(uint64(u))
+        case u: uint64 => HashUint(u)
+        case u: uint32 => HashUint(uint64(u))
+        case b: bool => HashBool(b)
+        case i: int8 => HashInt(int64(i))
+        case i: int16 => HashInt(int64(i))
+        case u: uint8 => HashUint(uint64(u))
+        case u: uint16 => HashUint(uint64(u))
+        case f: float64 => HashUint(uint64(f))
+        case f: float32 => HashUint(uint64(f))
+        case h: Hashable => h.Hash()
+        case _ => hashSetPanicNotHashable(v)
+    }
+    return result
+}
+
+// hashSetPanicNotHashable panics with a helpful error message.
+func hashSetPanicNotHashable(v any) uint32 {
+    panic(fmt.Sprintf("HashSet: type %T must implement std.Hashable interface", v))
+}
+
+// === Basic Operations ===
+
+// IsEmpty returns true if the set is empty.
+func (s *HashSet[T]) IsEmpty() bool = s.size == 0
+
+// NonEmpty returns true if the set is not empty.
+func (s *HashSet[T]) NonEmpty() bool = s.size > 0
+
+// Size returns the number of elements. O(1).
+func (s *HashSet[T]) Size() int = s.size
+
+// Length is an alias for Size.
+func (s *HashSet[T]) Length() int = s.size
+
+// === Mutating Operations ===
+
+// Add adds an element to the set. O(1) amortized.
+// Returns true if the element was added (not already present).
+func (s *HashSet[T]) Add(elem T) bool {
+    val hashCode = hashSetHash[T](elem)
+    val idx = int(hashCode & s.bucketMask)
+
+    // Check if already present
+    var entry = s.buckets[idx]
+    for entry != nil {
+        if entry.hashCode == hashCode && entry.value == elem {
+            return false
+        }
+        entry = entry.next
+    }
+
+    // Add new entry at head of bucket
+    var newEntry = &hashSetEntry[T](value = elem, hashCode = hashCode, next = s.buckets[idx])
+    s.buckets[idx] = newEntry
+    s.size++
+
+    // Check if resize needed
+    if float64(s.size) > float64(len(s.buckets)) * hashSetLoadFactor {
+        s.resize()
+    }
+
+    return true
+}
+
+// resize doubles the bucket array and rehashes all entries.
+func (s *HashSet[T]) resize() {
+    var newSize = len(s.buckets) * 2
+    var newBuckets = make([]*hashSetEntry[T], newSize)
+    var newMask = uint32(newSize - 1)
+
+    // Rehash all entries
+    for i := 0; i < len(s.buckets); i++ {
+        var entry = s.buckets[i]
+        for entry != nil {
+            var nextEntry = entry.next
+            val newIdx = int(entry.hashCode & newMask)
+            entry.next = newBuckets[newIdx]
+            newBuckets[newIdx] = entry
+            entry = nextEntry
+        }
+    }
+
+    s.buckets = newBuckets
+    s.bucketMask = newMask
+}
+
+// AddAll adds all elements from a slice. O(m) where m = len(elements).
+func (s *HashSet[T]) AddAll(elements []T) {
+    for i := 0; i < len(elements); i++ {
+        s.Add(elements[i])
+    }
+}
+
+// AddFrom adds all elements from another HashSet.
+func (s *HashSet[T]) AddFrom(other *HashSet[T]) {
+    other.ForEach((elem T) => {
+        s.Add(elem)
+        return nil
+    })
+}
+
+// Remove removes an element from the set. O(1) amortized.
+// Returns true if the element was removed (was present).
+func (s *HashSet[T]) Remove(elem T) bool {
+    val hashCode = hashSetHash[T](elem)
+    val idx = int(hashCode & s.bucketMask)
+
+    var prev *hashSetEntry[T] = nil
+    var entry = s.buckets[idx]
+    for entry != nil {
+        if entry.hashCode == hashCode && entry.value == elem {
+            if prev == nil {
+                s.buckets[idx] = entry.next
+            } else {
+                prev.next = entry.next
+            }
+            s.size--
+            return true
+        }
+        prev = entry
+        entry = entry.next
+    }
+    return false
+}
+
+// RemoveAll removes all elements from a slice.
+func (s *HashSet[T]) RemoveAll(elements []T) {
+    for i := 0; i < len(elements); i++ {
+        s.Remove(elements[i])
+    }
+}
+
+// RemoveFrom removes all elements that are in another HashSet.
+func (s *HashSet[T]) RemoveFrom(other *HashSet[T]) {
+    other.ForEach((elem T) => {
+        s.Remove(elem)
+        return nil
+    })
+}
+
+// Clear removes all elements. O(n) to clear buckets.
+func (s *HashSet[T]) Clear() {
+    s.buckets = make([]*hashSetEntry[T], hashSetInitialBuckets)
+    s.size = 0
+    s.bucketMask = uint32(hashSetInitialBuckets - 1)
+}
+
+// === Query Operations ===
+
+// Contains checks if the set contains the given element. O(1) average.
+func (s *HashSet[T]) Contains(elem T) bool {
+    val hashCode = hashSetHash[T](elem)
+    val idx = int(hashCode & s.bucketMask)
+
+    var entry = s.buckets[idx]
+    for entry != nil {
+        if entry.hashCode == hashCode && entry.value == elem {
+            return true
+        }
+        entry = entry.next
+    }
+    return false
+}
+
+// ContainsAll returns true if the set contains all elements from a slice.
+func (s *HashSet[T]) ContainsAll(elements []T) bool {
+    for i := 0; i < len(elements); i++ {
+        if !s.Contains(elements[i]) {
+            return false
+        }
+    }
+    return true
+}
+
+// === Set Operations ===
+
+// Union returns a new set containing all elements from both sets.
+func (s *HashSet[T]) Union(other *HashSet[T]) *HashSet[T] {
+    var result = s.Clone()
+    result.AddFrom(other)
+    return result
+}
+
+// Intersect returns a new set containing only elements present in both sets.
+func (s *HashSet[T]) Intersect(other *HashSet[T]) *HashSet[T] {
+    var result = EmptyHashSet[T]()
+    // Iterate over the smaller set for efficiency
+    if s.Size() <= other.Size() {
+        s.ForEach((elem T) => {
+            if other.Contains(elem) {
+                result.Add(elem)
+            }
+            return nil
+        })
+    } else {
+        other.ForEach((elem T) => {
+            if s.Contains(elem) {
+                result.Add(elem)
+            }
+            return nil
+        })
+    }
+    return result
+}
+
+// Diff returns a new set containing elements in this set but not in other.
+func (s *HashSet[T]) Diff(other *HashSet[T]) *HashSet[T] {
+    var result = EmptyHashSet[T]()
+    s.ForEach((elem T) => {
+        if !other.Contains(elem) {
+            result.Add(elem)
+        }
+        return nil
+    })
+    return result
+}
+
+// SymmetricDiff returns a new set containing elements in either set but not both.
+func (s *HashSet[T]) SymmetricDiff(other *HashSet[T]) *HashSet[T] {
+    var result = EmptyHashSet[T]()
+    s.ForEach((elem T) => {
+        if !other.Contains(elem) {
+            result.Add(elem)
+        }
+        return nil
+    })
+    other.ForEach((elem T) => {
+        if !s.Contains(elem) {
+            result.Add(elem)
+        }
+        return nil
+    })
+    return result
+}
+
+// SubsetOf returns true if this set is a subset of other.
+func (s *HashSet[T]) SubsetOf(other *HashSet[T]) bool {
+    if s.Size() > other.Size() {
+        return false
+    }
+    var isSubset = true
+    s.ForEach((elem T) => {
+        if !other.Contains(elem) {
+            isSubset = false
+        }
+        return nil
+    })
+    return isSubset
+}
+
+// SupersetOf returns true if this set is a superset of other.
+func (s *HashSet[T]) SupersetOf(other *HashSet[T]) bool = other.SubsetOf(s)
+
+// Disjoint returns true if the sets have no elements in common.
+func (s *HashSet[T]) Disjoint(other *HashSet[T]) bool {
+    if s.Size() <= other.Size() {
+        var disjoint = true
+        s.ForEach((elem T) => {
+            if other.Contains(elem) {
+                disjoint = false
+            }
+            return nil
+        })
+        return disjoint
+    }
+    var disjoint = true
+    other.ForEach((elem T) => {
+        if s.Contains(elem) {
+            disjoint = false
+        }
+        return nil
+    })
+    return disjoint
+}
+
+// === In-place Set Operations ===
+
+// UnionInPlace adds all elements from other to this set.
+func (s *HashSet[T]) UnionInPlace(other *HashSet[T]) {
+    s.AddFrom(other)
+}
+
+// IntersectInPlace removes elements not in other.
+func (s *HashSet[T]) IntersectInPlace(other *HashSet[T]) {
+    var toRemove []T
+    s.ForEach((elem T) => {
+        if !other.Contains(elem) {
+            toRemove = append(toRemove, elem)
+        }
+        return nil
+    })
+    s.RemoveAll(toRemove)
+}
+
+// DiffInPlace removes elements that are in other.
+func (s *HashSet[T]) DiffInPlace(other *HashSet[T]) {
+    s.RemoveFrom(other)
+}
+
+// === Iteration ===
+
+// ForEach applies a function to each element for side effects.
+func (s *HashSet[T]) ForEach(f func(T) any) {
+    for i := 0; i < len(s.buckets); i++ {
+        var entry = s.buckets[i]
+        for entry != nil {
+            f(entry.value)
+            entry = entry.next
+        }
+    }
+}
+
+// === Transformation (return new sets) ===
+
+// Filter returns a new HashSet with only elements that satisfy the predicate.
+func (s *HashSet[T]) Filter(p func(T) bool) *HashSet[T] {
+    var result = EmptyHashSet[T]()
+    s.ForEach((elem T) => {
+        if p(elem) {
+            result.Add(elem)
+        }
+        return nil
+    })
+    return result
+}
+
+// FilterNot returns a new HashSet with elements that do not satisfy the predicate.
+func (s *HashSet[T]) FilterNot(p func(T) bool) *HashSet[T] = s.Filter((elem T) => !p(elem))
+
+// Partition splits the set into two sets based on a predicate.
+func (s *HashSet[T]) Partition(p func(T) bool) Tuple[*HashSet[T], *HashSet[T]] {
+    var left = s.Filter(p)
+    var right = s.FilterNot(p)
+    return Tuple[*HashSet[T], *HashSet[T]](V1 = left, V2 = right)
+}
+
+// Map applies a function to each element and returns a new set.
+func (s *HashSet[T]) Map[U comparable](f func(T) U) *HashSet[U] {
+    var result = EmptyHashSet[U]()
+    s.ForEach((elem T) => {
+        result.Add(f(elem))
+        return nil
+    })
+    return result
+}
+
+// FlatMap applies a function that returns a set to each element and flattens.
+func (s *HashSet[T]) FlatMap[U comparable](f func(T) *HashSet[U]) *HashSet[U] {
+    var result = EmptyHashSet[U]()
+    s.ForEach((elem T) => {
+        f(elem).ForEach((inner U) => {
+            result.Add(inner)
+            return nil
+        })
+        return nil
+    })
+    return result
+}
+
+// === Reduction Operations ===
+
+// FoldLeft applies a binary operator from left to right.
+func (s *HashSet[T]) FoldLeft[U any](initial U, f func(U, T) U) U {
+    var acc = initial
+    s.ForEach((elem T) => {
+        acc = f(acc, elem)
+        return nil
+    })
+    return acc
+}
+
+// Reduce applies a binary operator, starting with the first element.
+// Panics if the set is empty.
+func (s *HashSet[T]) Reduce(f func(T, T) T) T {
+    if s.Size() == 0 {
+        panic("HashSet.Reduce on empty set")
+    }
+    var first = true
+    var acc T
+    s.ForEach((elem T) => {
+        if first {
+            acc = elem
+            first = false
+        } else {
+            acc = f(acc, elem)
+        }
+        return nil
+    })
+    return acc
+}
+
+// ReduceOption is like Reduce but returns None for empty set.
+func (s *HashSet[T]) ReduceOption(f func(T, T) T) Option[T] {
+    if s.Size() == 0 {
+        return None[T]()
+    }
+    return Some[T](s.Reduce(f))
+}
+
+// === Predicate Operations ===
+
+// Exists returns true if any element satisfies the predicate.
+func (s *HashSet[T]) Exists(p func(T) bool) bool {
+    var found = false
+    s.ForEach((elem T) => {
+        if p(elem) {
+            found = true
+        }
+        return nil
+    })
+    return found
+}
+
+// ForAll returns true if all elements satisfy the predicate.
+func (s *HashSet[T]) ForAll(p func(T) bool) bool {
+    var all = true
+    s.ForEach((elem T) => {
+        if !p(elem) {
+            all = false
+        }
+        return nil
+    })
+    return all
+}
+
+// Find returns the first element that satisfies the predicate.
+func (s *HashSet[T]) Find(p func(T) bool) Option[T] {
+    var result Option[T] = None[T]()
+    s.ForEach((elem T) => {
+        if result.IsEmpty() && p(elem) {
+            result = Some[T](elem)
+        }
+        return nil
+    })
+    return result
+}
+
+// Count returns the number of elements satisfying the predicate.
+func (s *HashSet[T]) Count(p func(T) bool) int {
+    var count = 0
+    s.ForEach((elem T) => {
+        if p(elem) {
+            count++
+        }
+        return nil
+    })
+    return count
+}
+
+// === Element Access ===
+
+// Head returns an arbitrary element from the set.
+// Panics if the set is empty.
+func (s *HashSet[T]) Head() T {
+    if s.Size() == 0 {
+        panic("HashSet.Head on empty set")
+    }
+    var result T
+    var found = false
+    s.ForEach((elem T) => {
+        if !found {
+            result = elem
+            found = true
+        }
+        return nil
+    })
+    return result
+}
+
+// HeadOption returns an arbitrary element wrapped in Option.
+func (s *HashSet[T]) HeadOption() Option[T] {
+    if s.Size() == 0 {
+        return None[T]()
+    }
+    return Some[T](s.Head())
+}
+
+// === Conversion ===
+
+// ToSlice converts the set to a Go slice.
+func (s *HashSet[T]) ToSlice() []T {
+    var result []T
+    s.ForEach((elem T) => {
+        result = append(result, elem)
+        return nil
+    })
+    return result
+}
+
+// ToArray converts the set to a mutable Array.
+func (s *HashSet[T]) ToArray() *Array[T] {
+    var result = ArrayWithCapacity[T](s.Size())
+    s.ForEach((elem T) => {
+        result.Append(elem)
+        return nil
+    })
+    return result
+}
+
+// ToList converts the set to a mutable List.
+func (s *HashSet[T]) ToList() *List[T] {
+    var result = EmptyList[T]()
+    s.ForEach((elem T) => {
+        result.Append(elem)
+        return nil
+    })
+    return result
+}
+
+// Clone creates a shallow copy of the set.
+func (s *HashSet[T]) Clone() *HashSet[T] {
+    var result = EmptyHashSet[T]()
+    s.ForEach((elem T) => {
+        result.Add(elem)
+        return nil
+    })
+    return result
+}
+
+// String returns a string representation of the set.
+func (s *HashSet[T]) String() string {
+    if s.Size() == 0 {
+        return "HashSet()"
+    }
+    var result = "HashSet("
+    var first = true
+    s.ForEach((elem T) => {
+        if !first {
+            result = result + ", "
+        }
+        result = result + fmt.Sprintf("%v", elem)
+        first = false
+        return nil
+    })
+    return result + ")"
+}

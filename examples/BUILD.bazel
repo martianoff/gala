@@ -82,6 +82,12 @@ gala_test(
 )
 
 gala_test(
+    name = "generic_method_constraint",
+    src = "generic_method_constraint.gala",
+    expected = "generic_method_constraint.out",
+)
+
+gala_test(
     name = "match_extractors",
     src = "match_extractors.gala",
     expected = "match_extractors.out",

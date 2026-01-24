@@ -1,0 +1,429 @@
+package main
+
+import (
+    . "martianoff/gala/test"
+    . "martianoff/gala/collection_mutable"
+)
+
+// === TreeSet Creation Tests ===
+
+func TestEmptyTreeSet(t T) T {
+    var s = EmptyTreeSet[int]()
+    var t1 = IsTrue(t, s.IsEmpty())
+    return Eq[int](t1, s.Size(), 0)
+}
+
+func TestTreeSetOf(t T) T {
+    var s = TreeSetOf[int](3, 1, 2)
+    var t1 = IsFalse(t, s.IsEmpty())
+    return Eq[int](t1, s.Size(), 3)
+}
+
+func TestTreeSetOfDuplicates(t T) T {
+    var s = TreeSetOf[int](1, 2, 2, 3, 3, 3)
+    return Eq[int](t, s.Size(), 3)
+}
+
+func TestTreeSetFromSlice(t T) T {
+    var slice = []int{30, 10, 20}
+    var s = TreeSetFromSlice[int](slice)
+    var t1 = Eq[int](t, s.Size(), 3)
+    var t2 = IsTrue(t1, s.Contains(10))
+    var t3 = IsTrue(t2, s.Contains(20))
+    return IsTrue(t3, s.Contains(30))
+}
+
+// === TreeSet Basic Operations Tests ===
+
+func TestTreeSetAdd(t T) T {
+    var s = EmptyTreeSet[int]()
+    var added1 = s.Add(1)
+    var added2 = s.Add(2)
+    var added3 = s.Add(1) // Duplicate
+    var t1 = IsTrue(t, added1)
+    var t2 = IsTrue(t1, added2)
+    var t3 = IsFalse(t2, added3)
+    return Eq[int](t3, s.Size(), 2)
+}
+
+func TestTreeSetRemove(t T) T {
+    var s = TreeSetOf[int](1, 2, 3)
+    var removed1 = s.Remove(2)
+    var removed2 = s.Remove(5) // Not present
+    var t1 = IsTrue(t, removed1)
+    var t2 = IsFalse(t1, removed2)
+    var t3 = Eq[int](t2, s.Size(), 2)
+    return IsFalse(t3, s.Contains(2))
+}
+
+func TestTreeSetContains(t T) T {
+    var s = TreeSetOf[int](1, 2, 3)
+    var t1 = IsTrue(t, s.Contains(1))
+    var t2 = IsTrue(t1, s.Contains(2))
+    var t3 = IsTrue(t2, s.Contains(3))
+    return IsFalse(t3, s.Contains(5))
+}
+
+func TestTreeSetClear(t T) T {
+    var s = TreeSetOf[int](1, 2, 3)
+    s.Clear()
+    return IsTrue(t, s.IsEmpty())
+}
+
+// === TreeSet String Type Tests ===
+
+func TestTreeSetStrings(t T) T {
+    var s = TreeSetOf[string]("cherry", "apple", "banana")
+    var t1 = Eq[int](t, s.Size(), 3)
+    var t2 = IsTrue(t1, s.Contains("apple"))
+    var t3 = IsTrue(t2, s.Contains("banana"))
+    return IsFalse(t3, s.Contains("orange"))
+}
+
+// === TreeSet Ordering Tests ===
+
+func TestTreeSetMin(t T) T {
+    var s = TreeSetOf[int](5, 3, 7, 1, 9)
+    return Eq[int](t, s.Min(), 1)
+}
+
+func TestTreeSetMax(t T) T {
+    var s = TreeSetOf[int](5, 3, 7, 1, 9)
+    return Eq[int](t, s.Max(), 9)
+}
+
+func TestTreeSetMinOption(t T) T {
+    var s = TreeSetOf[int](5, 3, 7)
+    var opt = s.MinOption()
+    var t1 = IsFalse(t, opt.IsEmpty())
+    return Eq[int](t1, opt.Get(), 3)
+}
+
+func TestTreeSetMinOptionEmpty(t T) T {
+    var s = EmptyTreeSet[int]()
+    var opt = s.MinOption()
+    return IsTrue(t, opt.IsEmpty())
+}
+
+func TestTreeSetMaxOption(t T) T {
+    var s = TreeSetOf[int](5, 3, 7)
+    var opt = s.MaxOption()
+    var t1 = IsFalse(t, opt.IsEmpty())
+    return Eq[int](t1, opt.Get(), 7)
+}
+
+func TestTreeSetPopMin(t T) T {
+    var s = TreeSetOf[int](5, 3, 7, 1, 9)
+    var minVal = s.PopMin()
+    var t1 = Eq[int](t, minVal, 1)
+    var t2 = Eq[int](t1, s.Size(), 4)
+    return IsFalse(t2, s.Contains(1))
+}
+
+func TestTreeSetPopMax(t T) T {
+    var s = TreeSetOf[int](5, 3, 7, 1, 9)
+    var maxVal = s.PopMax()
+    var t1 = Eq[int](t, maxVal, 9)
+    var t2 = Eq[int](t1, s.Size(), 4)
+    return IsFalse(t2, s.Contains(9))
+}
+
+func TestTreeSetHead(t T) T {
+    var s = TreeSetOf[int](5, 3, 7)
+    return Eq[int](t, s.Head(), 3)
+}
+
+func TestTreeSetLast(t T) T {
+    var s = TreeSetOf[int](5, 3, 7)
+    return Eq[int](t, s.Last(), 7)
+}
+
+// === TreeSet Sorted Order Tests ===
+
+func TestTreeSetSortedOrder(t T) T {
+    var s = TreeSetOf[int](5, 3, 1, 4, 2)
+    var slice = s.ToSlice()
+    var t1 = Eq[int](t, slice[0], 1)
+    var t2 = Eq[int](t1, slice[1], 2)
+    var t3 = Eq[int](t2, slice[2], 3)
+    var t4 = Eq[int](t3, slice[3], 4)
+    return Eq[int](t4, slice[4], 5)
+}
+
+func TestTreeSetStringSorted(t T) T {
+    var s = TreeSetOf[string]("cherry", "apple", "banana")
+    var slice = s.ToSlice()
+    var t1 = Eq[string](t, slice[0], "apple")
+    var t2 = Eq[string](t1, slice[1], "banana")
+    return Eq[string](t2, slice[2], "cherry")
+}
+
+// === TreeSet Set Operations Tests ===
+
+func TestTreeSetUnion(t T) T {
+    var s1 = TreeSetOf[int](1, 2, 3)
+    var s2 = TreeSetOf[int](3, 4, 5)
+    var union = s1.Union(s2)
+    var t1 = Eq[int](t, union.Size(), 5)
+    var t2 = IsTrue(t1, union.Contains(1))
+    var t3 = IsTrue(t2, union.Contains(3))
+    return IsTrue(t3, union.Contains(5))
+}
+
+func TestTreeSetIntersect(t T) T {
+    var s1 = TreeSetOf[int](1, 2, 3, 4)
+    var s2 = TreeSetOf[int](3, 4, 5, 6)
+    var intersect = s1.Intersect(s2)
+    var t1 = Eq[int](t, intersect.Size(), 2)
+    var t2 = IsTrue(t1, intersect.Contains(3))
+    var t3 = IsTrue(t2, intersect.Contains(4))
+    var t4 = IsFalse(t3, intersect.Contains(1))
+    return IsFalse(t4, intersect.Contains(5))
+}
+
+func TestTreeSetDiff(t T) T {
+    var s1 = TreeSetOf[int](1, 2, 3, 4)
+    var s2 = TreeSetOf[int](3, 4, 5, 6)
+    var diff = s1.Diff(s2)
+    var t1 = Eq[int](t, diff.Size(), 2)
+    var t2 = IsTrue(t1, diff.Contains(1))
+    var t3 = IsTrue(t2, diff.Contains(2))
+    return IsFalse(t3, diff.Contains(3))
+}
+
+func TestTreeSetSubsetOf(t T) T {
+    var s1 = TreeSetOf[int](1, 2)
+    var s2 = TreeSetOf[int](1, 2, 3, 4)
+    var s3 = TreeSetOf[int](1, 5)
+    var t1 = IsTrue(t, s1.SubsetOf(s2))
+    return IsFalse(t1, s3.SubsetOf(s2))
+}
+
+func TestTreeSetSupersetOf(t T) T {
+    var s1 = TreeSetOf[int](1, 2, 3, 4)
+    var s2 = TreeSetOf[int](1, 2)
+    return IsTrue(t, s1.SupersetOf(s2))
+}
+
+// === TreeSet In-Place Operations Tests ===
+
+func TestTreeSetUnionInPlace(t T) T {
+    var s1 = TreeSetOf[int](1, 2, 3)
+    var s2 = TreeSetOf[int](3, 4, 5)
+    s1.UnionInPlace(s2)
+    var t1 = Eq[int](t, s1.Size(), 5)
+    return IsTrue(t1, s1.Contains(4))
+}
+
+func TestTreeSetIntersectInPlace(t T) T {
+    var s1 = TreeSetOf[int](1, 2, 3, 4)
+    var s2 = TreeSetOf[int](3, 4, 5, 6)
+    s1.IntersectInPlace(s2)
+    var t1 = Eq[int](t, s1.Size(), 2)
+    var t2 = IsTrue(t1, s1.Contains(3))
+    return IsFalse(t2, s1.Contains(1))
+}
+
+func TestTreeSetDiffInPlace(t T) T {
+    var s1 = TreeSetOf[int](1, 2, 3, 4)
+    var s2 = TreeSetOf[int](3, 4, 5, 6)
+    s1.DiffInPlace(s2)
+    var t1 = Eq[int](t, s1.Size(), 2)
+    var t2 = IsTrue(t1, s1.Contains(1))
+    return IsFalse(t2, s1.Contains(3))
+}
+
+// === TreeSet Range Operations Tests ===
+
+func TestTreeSetRange(t T) T {
+    var s = TreeSetOf[int](1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
+    var ranged = s.Range(3, 7)
+    var t1 = Eq[int](t, ranged.Size(), 5)
+    var t2 = IsTrue(t1, ranged.Contains(3))
+    var t3 = IsTrue(t2, ranged.Contains(7))
+    var t4 = IsFalse(t3, ranged.Contains(2))
+    return IsFalse(t4, ranged.Contains(8))
+}
+
+func TestTreeSetRangeFrom(t T) T {
+    var s = TreeSetOf[int](1, 2, 3, 4, 5)
+    var ranged = s.RangeFrom(3)
+    var t1 = Eq[int](t, ranged.Size(), 3)
+    var t2 = IsTrue(t1, ranged.Contains(3))
+    var t3 = IsTrue(t2, ranged.Contains(5))
+    return IsFalse(t3, ranged.Contains(2))
+}
+
+func TestTreeSetRangeTo(t T) T {
+    var s = TreeSetOf[int](1, 2, 3, 4, 5)
+    var ranged = s.RangeTo(3)
+    var t1 = Eq[int](t, ranged.Size(), 3)
+    var t2 = IsTrue(t1, ranged.Contains(1))
+    var t3 = IsTrue(t2, ranged.Contains(3))
+    return IsFalse(t3, ranged.Contains(4))
+}
+
+// === TreeSet Functional Operations Tests ===
+
+func isTreeSetEven(x int) bool = x % 2 == 0
+
+func TestTreeSetFilter(t T) T {
+    var s = TreeSetOf[int](1, 2, 3, 4, 5, 6)
+    var filtered = s.Filter(isTreeSetEven)
+    var t1 = Eq[int](t, filtered.Size(), 3)
+    var t2 = IsTrue(t1, filtered.Contains(2))
+    var t3 = IsTrue(t2, filtered.Contains(4))
+    return IsFalse(t3, filtered.Contains(1))
+}
+
+func TestTreeSetFilterNot(t T) T {
+    var s = TreeSetOf[int](1, 2, 3, 4, 5, 6)
+    var filtered = s.FilterNot(isTreeSetEven)
+    var t1 = Eq[int](t, filtered.Size(), 3)
+    var t2 = IsTrue(t1, filtered.Contains(1))
+    return IsFalse(t2, filtered.Contains(2))
+}
+
+func TestTreeSetPartition(t T) T {
+    var s = TreeSetOf[int](1, 2, 3, 4, 5, 6)
+    var parts = s.Partition(isTreeSetEven)
+    var t1 = Eq[int](t, parts.V1.Size(), 3)
+    return Eq[int](t1, parts.V2.Size(), 3)
+}
+
+func treeSetAddFn(acc int, x int) int = acc + x
+
+func TestTreeSetFoldLeft(t T) T {
+    var s = TreeSetOf[int](1, 2, 3, 4)
+    var result = s.FoldLeft(0, treeSetAddFn)
+    return Eq[int](t, result, 10)
+}
+
+// === TreeSet Predicate Tests ===
+
+func isTreeSetGreaterThanTwo(x int) bool = x > 2
+
+func TestTreeSetExists(t T) T {
+    var s = TreeSetOf[int](1, 2, 3)
+    return IsTrue(t, s.Exists(isTreeSetGreaterThanTwo))
+}
+
+func isTreeSetGreaterThanTen(x int) bool = x > 10
+
+func TestTreeSetExistsFalse(t T) T {
+    var s = TreeSetOf[int](1, 2, 3)
+    return IsFalse(t, s.Exists(isTreeSetGreaterThanTen))
+}
+
+func isTreeSetPositive(x int) bool = x > 0
+
+func TestTreeSetForAll(t T) T {
+    var s = TreeSetOf[int](1, 2, 3)
+    return IsTrue(t, s.ForAll(isTreeSetPositive))
+}
+
+func TestTreeSetForAllFalse(t T) T {
+    var s = TreeSetOf[int](-1, 0, 1)
+    return IsFalse(t, s.ForAll(isTreeSetPositive))
+}
+
+func TestTreeSetFind(t T) T {
+    var s = TreeSetOf[int](1, 2, 3, 4, 5)
+    var found = s.Find(isTreeSetGreaterThanTwo)
+    var t1 = IsFalse(t, found.IsEmpty())
+    return Eq[int](t1, found.Get(), 3) // First in sorted order > 2
+}
+
+func TestTreeSetCount(t T) T {
+    var s = TreeSetOf[int](1, 2, 3, 4, 5)
+    var count = s.Count(isTreeSetGreaterThanTwo)
+    return Eq[int](t, count, 3)
+}
+
+// === TreeSet Conversion Tests ===
+
+func TestTreeSetToSlice(t T) T {
+    var s = TreeSetOf[int](3, 1, 2)
+    var slice = s.ToSlice()
+    var t1 = Eq[int](t, len(slice), 3)
+    var t2 = Eq[int](t1, slice[0], 1) // Sorted
+    return Eq[int](t2, slice[2], 3)
+}
+
+func TestTreeSetToArray(t T) T {
+    var s = TreeSetOf[int](3, 1, 2)
+    var arr = s.ToArray()
+    var t1 = Eq[int](t, arr.Size(), 3)
+    return Eq[int](t1, arr.Get(0), 1) // Sorted
+}
+
+func TestTreeSetToList(t T) T {
+    var s = TreeSetOf[int](3, 1, 2)
+    var list = s.ToList()
+    var t1 = Eq[int](t, list.Size(), 3)
+    return Eq[int](t1, list.Head(), 1) // Sorted
+}
+
+func TestTreeSetToHashSet(t T) T {
+    var s = TreeSetOf[int](1, 2, 3)
+    var set = s.ToHashSet()
+    var t1 = Eq[int](t, set.Size(), 3)
+    return IsTrue(t1, set.Contains(2))
+}
+
+func TestTreeSetClone(t T) T {
+    var s = TreeSetOf[int](1, 2, 3)
+    var clone = s.Clone()
+    clone.Add(4)
+    var t1 = Eq[int](t, s.Size(), 3)
+    return Eq[int](t1, clone.Size(), 4)
+}
+
+func TestTreeSetString(t T) T {
+    var s = EmptyTreeSet[int]()
+    return Eq[string](t, s.String(), "TreeSet()")
+}
+
+func TestTreeSetStringOutput(t T) T {
+    var s = TreeSetOf[int](3, 1, 2)
+    return Eq[string](t, s.String(), "TreeSet(1, 2, 3)")
+}
+
+// === Large TreeSet Tests ===
+
+func TestTreeSetLarge(t T) T {
+    var s = EmptyTreeSet[int]()
+    for i := 0; i < 10000; i++ {
+        s.Add(i)
+    }
+    var t1 = Eq[int](t, s.Size(), 10000)
+    var t2 = IsTrue(t1, s.Contains(0))
+    var t3 = IsTrue(t2, s.Contains(5000))
+    var t4 = IsTrue(t3, s.Contains(9999))
+    var t5 = Eq[int](t4, s.Min(), 0)
+    return Eq[int](t5, s.Max(), 9999)
+}
+
+func TestTreeSetLargeRemove(t T) T {
+    var s = EmptyTreeSet[int]()
+    for i := 0; i < 10000; i++ {
+        s.Add(i)
+    }
+    for i := 0; i < 5000; i++ {
+        s.Remove(i)
+    }
+    var t1 = Eq[int](t, s.Size(), 5000)
+    var t2 = IsFalse(t1, s.Contains(0))
+    var t3 = IsTrue(t2, s.Contains(5000))
+    return Eq[int](t3, s.Min(), 5000)
+}
+
+func TestTreeSetLargeReverse(t T) T {
+    var s = EmptyTreeSet[int]()
+    for i := 9999; i >= 0; i-- {
+        s.Add(i)
+    }
+    var t1 = Eq[int](t, s.Size(), 10000)
+    var t2 = Eq[int](t1, s.Min(), 0)
+    return Eq[int](t2, s.Max(), 9999)
+}

@@ -1,0 +1,20 @@
+package main
+
+import "fmt"
+
+// A generic type with a constraint
+type Container[T comparable] struct {
+    value T
+}
+
+// A generic method that introduces a new type parameter
+// U must be comparable because Container[U] requires it
+func (c *Container[T]) Map[U comparable](f func(T) U) *Container[U] {
+    return &Container[U](value = f(c.value))
+}
+
+func main() {
+    var c = &Container[int](value = 42)
+    var result = c.Map[string]((x int) => fmt.Sprintf("%d", x))
+    fmt.Println(result.value)
+}

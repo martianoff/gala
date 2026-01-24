@@ -14,6 +14,8 @@ import . "martianoff/gala/collection_mutable"
 
 ## Performance Characteristics
 
+### Sequences
+
 | Operation | Array | List | Notes |
 |-----------|-------|------|-------|
 | Get/Set | O(1) | O(n) | Array: direct index; List: traversal |
@@ -28,11 +30,24 @@ import . "martianoff/gala/collection_mutable"
 | RemoveLast | O(1) | O(1) | Array: slice view; List: O(1) with tail ptr |
 | Length | O(1) | O(1) | |
 
+### Sets
+
+| Operation | HashSet | TreeSet | Notes |
+|-----------|---------|---------|-------|
+| Add | O(1)* | O(log n) | HashSet: amortized; TreeSet: balanced |
+| Remove | O(1) | O(log n) | |
+| Contains | O(1) | O(log n) | |
+| Min/Max | O(n) | O(log n) | TreeSet maintains sorted order |
+| Size | O(1) | O(1) | Cached |
+| Union | O(m) | O(m log n) | m = size of other set |
+| Intersect | O(min(n,m)) | O(min(n,m) log n) | |
+
 **Legend:**
 - O(1) - Constant time
 - O(1)* - Amortized constant time (may occasionally reallocate)
 - O(n) - Linear time in current size
 - O(m) - Linear time in elements being added
+- O(log n) - Logarithmic time (balanced tree)
 
 ---
 
@@ -363,6 +378,411 @@ list.String()     // "List(1, 2, 3)"
 
 ---
 
+## HashSet[T]
+
+A mutable hash-based set providing O(1) average-case operations. Best for fast membership testing and set operations.
+
+### Type Requirements
+
+Elements must be either:
+- **Primitive types**: `int`, `string`, `float64`, `bool`, etc. (handled automatically)
+- **Types implementing `Hashable`**: Custom types that provide a `Hash() uint32` method
+
+```gala
+import . "martianoff/gala/std"
+
+// Example custom type implementing Hashable
+type Point struct {
+    X int
+    Y int
+}
+
+func (p Point) Hash() uint32 {
+    return HashInt(int64(p.X)) ^ HashInt(int64(p.Y))
+}
+```
+
+### Construction
+
+```gala
+// Empty set
+var s = EmptyHashSet[int]()
+
+// From elements
+var s = HashSetOf[int](1, 2, 3, 4, 5)
+
+// From slice
+var slice = []int{1, 2, 3}
+var s = HashSetFromSlice[int](slice)
+```
+
+### Basic Operations
+
+```gala
+var s = HashSetOf[int](1, 2, 3, 4, 5)
+
+s.IsEmpty()      // false
+s.NonEmpty()     // true
+s.Size()         // 5
+s.Length()       // 5 (alias)
+```
+
+### Membership and Modification - O(1)
+
+```gala
+var s = HashSetOf[int](1, 2, 3)
+
+// Contains - O(1)
+s.Contains(2)           // true
+s.Contains(5)           // false
+
+// Add - O(1) amortized
+s.Add(4)                // true (was added)
+s.Add(2)                // false (already present)
+
+// Remove - O(1)
+s.Remove(2)             // true (was removed)
+s.Remove(10)            // false (not present)
+
+// Clear
+s.Clear()               // removes all elements
+```
+
+### Set Operations (return new HashSet)
+
+```gala
+var s1 = HashSetOf[int](1, 2, 3)
+var s2 = HashSetOf[int](2, 3, 4)
+
+// Union: elements in either set
+var union = s1.Union(s2)           // HashSet(1, 2, 3, 4)
+
+// Intersection: elements in both sets
+var inter = s1.Intersect(s2)       // HashSet(2, 3)
+
+// Difference: elements in s1 but not s2
+var diff = s1.Diff(s2)             // HashSet(1)
+
+// Symmetric Difference: elements in either but not both
+var symDiff = s1.SymmetricDiff(s2) // HashSet(1, 4)
+```
+
+### Set Operations (in-place modification)
+
+```gala
+var s1 = HashSetOf[int](1, 2, 3)
+var s2 = HashSetOf[int](2, 3, 4)
+
+// UnionInPlace: add all from s2 to s1
+s1.UnionInPlace(s2)      // s1 is now {1, 2, 3, 4}
+
+// IntersectInPlace: keep only elements also in s2
+s1.IntersectInPlace(s2)  // s1 is now {2, 3, 4}
+
+// DiffInPlace: remove elements that are in s2
+s1.DiffInPlace(s2)       // s1 is now {}
+```
+
+### Set Relationships
+
+```gala
+var s1 = HashSetOf[int](1, 2)
+var s2 = HashSetOf[int](1, 2, 3, 4)
+
+s1.SubsetOf(s2)          // true: all elements of s1 are in s2
+s2.SupersetOf(s1)        // true: s2 contains all of s1
+
+var s3 = HashSetOf[int](5, 6)
+s1.Disjoint(s3)          // true: no common elements
+```
+
+### Functional Operations
+
+```gala
+var s = HashSetOf[int](1, 2, 3, 4, 5, 6)
+
+// Filter - returns new HashSet
+var evens = s.Filter((x int) => x % 2 == 0)       // HashSet(2, 4, 6)
+var odds = s.FilterNot((x int) => x % 2 == 0)     // HashSet(1, 3, 5)
+
+// Partition - returns tuple of (matching, non-matching)
+var parts = s.Partition((x int) => x % 2 == 0)
+// parts.V1 = HashSet(2, 4, 6), parts.V2 = HashSet(1, 3, 5)
+
+// Map - returns new HashSet
+var doubled = s.Map[int]((x int) => x * 2)
+
+// FoldLeft
+var sum = s.FoldLeft[int](0, (acc int, x int) => acc + x)
+```
+
+### Predicates
+
+```gala
+var s = HashSetOf[int](1, 2, 3, 4, 5)
+
+s.Exists((x int) => x > 4)    // true: at least one > 4
+s.ForAll((x int) => x > 0)    // true: all are positive
+s.Count((x int) => x % 2 == 0) // 2: count of even numbers
+s.Find((x int) => x > 3)      // Some(4 or 5): first match (order not guaranteed)
+```
+
+### Element Access
+
+```gala
+var s = HashSetOf[int](1, 2, 3)
+
+s.Head()                  // any element (order not guaranteed)
+s.HeadOption()            // Some(element) or None for empty set
+```
+
+### Conversion
+
+```gala
+var s = HashSetOf[int](3, 1, 2)
+
+s.ToSlice()               // []int (order not guaranteed)
+s.ToArray()               // mutable Array
+s.ToList()                // mutable List
+s.Clone()                 // new HashSet with same elements
+s.String()                // "HashSet(1, 2, 3)" (order may vary)
+```
+
+---
+
+## TreeSet[T]
+
+A mutable sorted set implemented as a Red-Black tree. Maintains elements in sorted order and provides O(log n) operations.
+
+### Type Requirements
+
+Elements must be either:
+- **Primitive types**: `int`, `string`, `float64`, etc. (compared using natural ordering)
+- **Types implementing `Ordered[T]`**: Custom types that provide a `Compare(T) int` method
+
+```gala
+import . "martianoff/gala/std"
+
+// Example custom type implementing Ordered
+type Person struct {
+    Name string
+    Age  int
+}
+
+func (p Person) Compare(other Person) int {
+    if p.Age < other.Age { return -1 }
+    if p.Age > other.Age { return 1 }
+    return 0
+}
+```
+
+### Construction
+
+```gala
+// Empty tree set
+var s = EmptyTreeSet[int]()
+
+// From elements (sorted automatically)
+var s = TreeSetOf[int](3, 1, 4, 1, 5)  // TreeSet(1, 3, 4, 5)
+
+// From slice
+var slice = []int{3, 1, 2}
+var s = TreeSetFromSlice[int](slice)   // TreeSet(1, 2, 3)
+```
+
+### Basic Operations
+
+```gala
+var s = TreeSetOf[int](5, 3, 7, 1, 9)
+
+s.IsEmpty()      // false
+s.NonEmpty()     // true
+s.Size()         // 5
+s.Length()       // 5 (alias)
+```
+
+### Membership and Modification - O(log n)
+
+```gala
+var s = TreeSetOf[int](1, 3, 5)
+
+// Contains - O(log n)
+s.Contains(3)           // true
+s.Contains(4)           // false
+
+// Add - O(log n)
+s.Add(4)                // true, s is now TreeSet(1, 3, 4, 5)
+s.Add(3)                // false (already present)
+
+// Remove - O(log n)
+s.Remove(3)             // true, s is now TreeSet(1, 4, 5)
+
+// Clear
+s.Clear()
+```
+
+### Min/Max Operations - O(log n)
+
+```gala
+var s = TreeSetOf[int](5, 3, 7, 1, 9)
+
+// Get min/max
+s.Min()                  // 1
+s.Max()                  // 9
+s.MinOption()            // Some(1)
+s.MaxOption()            // Some(9)
+
+// Pop (remove and return)
+s.PopMin()               // 1, s is now TreeSet(3, 5, 7, 9)
+s.PopMax()               // 9, s is now TreeSet(3, 5, 7)
+
+// Head/Last (aliases)
+s.Head()                 // same as Min()
+s.Last()                 // same as Max()
+```
+
+### Range Queries (unique to TreeSet)
+
+```gala
+var s = TreeSetOf[int](1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
+
+// Range [from, to] inclusive - returns new TreeSet
+var range1 = s.Range(3, 7)     // TreeSet(3, 4, 5, 6, 7)
+
+// RangeFrom (>= value)
+var range2 = s.RangeFrom(7)    // TreeSet(7, 8, 9, 10)
+
+// RangeTo (<= value)
+var range3 = s.RangeTo(4)      // TreeSet(1, 2, 3, 4)
+```
+
+### Set Operations (return new TreeSet)
+
+```gala
+var s1 = TreeSetOf[int](1, 2, 3)
+var s2 = TreeSetOf[int](2, 3, 4)
+
+// Union
+var union = s1.Union(s2)         // TreeSet(1, 2, 3, 4)
+
+// Intersection
+var inter = s1.Intersect(s2)     // TreeSet(2, 3)
+
+// Difference
+var diff = s1.Diff(s2)           // TreeSet(1)
+```
+
+### Set Operations (in-place)
+
+```gala
+var s1 = TreeSetOf[int](1, 2, 3)
+var s2 = TreeSetOf[int](2, 3, 4)
+
+s1.UnionInPlace(s2)
+s1.IntersectInPlace(s2)
+s1.DiffInPlace(s2)
+```
+
+### Set Relationships
+
+```gala
+var s1 = TreeSetOf[int](1, 2)
+var s2 = TreeSetOf[int](1, 2, 3, 4)
+
+s1.SubsetOf(s2)          // true
+s2.SupersetOf(s1)        // true
+```
+
+### Iteration (sorted order)
+
+```gala
+var s = TreeSetOf[int](3, 1, 4, 1, 5)
+
+// Iterate in sorted order
+s.ForEach((x int) => {
+    fmt.Println(x)       // prints 1, 3, 4, 5
+    return nil
+})
+
+// Iterate in reverse order
+s.ForEachReverse((x int) => {
+    fmt.Println(x)       // prints 5, 4, 3, 1
+    return nil
+})
+```
+
+### Functional Operations
+
+```gala
+var s = TreeSetOf[int](1, 2, 3, 4, 5, 6)
+
+// Filter
+var evens = s.Filter((x int) => x % 2 == 0)     // TreeSet(2, 4, 6)
+
+// Partition
+var parts = s.Partition((x int) => x % 2 == 0)
+// parts.V1 = TreeSet(2, 4, 6), parts.V2 = TreeSet(1, 3, 5)
+
+// Map - returns new TreeSet
+var doubled = s.Map[int]((x int) => x * 2)
+
+// FoldLeft (iterates in sorted order)
+var sum = s.FoldLeft[int](0, (acc int, x int) => acc + x)
+
+// Reduce (uses sorted order)
+var sum2 = s.Reduce((a int, b int) => a + b)
+```
+
+### Predicates
+
+```gala
+var s = TreeSetOf[int](1, 2, 3, 4, 5)
+
+s.Exists((x int) => x > 4)    // true
+s.ForAll((x int) => x > 0)    // true
+s.Count((x int) => x % 2 == 0) // 2
+s.Find((x int) => x > 3)      // Some(4) - first in sorted order
+```
+
+### Conversion
+
+```gala
+var s = TreeSetOf[int](3, 1, 2)
+
+s.ToSlice()               // []int{1, 2, 3} (sorted)
+s.ToArray()               // mutable Array (sorted)
+s.ToList()                // mutable List (sorted)
+s.ToHashSet()             // HashSet (unordered, O(1) operations)
+s.Clone()                 // new TreeSet with same elements
+s.String()                // "TreeSet(1, 2, 3)"
+```
+
+---
+
+## Choosing Between HashSet and TreeSet
+
+| Use Case | Recommended | Reason |
+|----------|-------------|--------|
+| Fast membership testing | HashSet | O(1) vs O(log n) |
+| Sorted iteration needed | TreeSet | Maintains order |
+| Min/Max queries | TreeSet | O(log n) vs O(n) |
+| Range queries | TreeSet | Only TreeSet supports |
+| Set operations (union, intersect) | HashSet | Faster on average |
+| Priority queue semantics | TreeSet | PopMin/PopMax |
+
+### HashSet Advantages
+- O(1) average-case for add/remove/contains
+- Faster set operations (union, intersect, diff)
+- Lower constant factors for large sets
+
+### TreeSet Advantages
+- Sorted iteration
+- O(log n) min/max access
+- Range queries (Range, RangeFrom, RangeTo)
+- Consistent O(log n) worst-case (no hash collisions)
+
+---
+
 ## Pattern Matching with Mutable Collections
 
 GALA supports pattern matching on mutable collections. Since Array and List are generic structs, you can use type matching.
@@ -585,6 +1005,55 @@ bazel run //collection_mutable:perf_go
 
 *Array's O(n) InsertAt/RemoveAt uses efficient memory copy; List requires O(n) traversal first.
 
+### HashSet Performance (ns/op) - 10,000 Elements
+
+| Operation | GALA HashSet | Notes |
+|-----------|-------------:|-------|
+| Creation | 474,645 | Building set with 10k elements |
+| Add | 52 | O(1) amortized |
+| Contains (hit) | 17 | O(1) average |
+| Contains (miss) | 18 | O(1) average |
+| Remove | 51 | O(1) average |
+| Filter | 311,500 | Iterates all elements |
+| Union (5k+5k) | 600,776 | Combines two sets |
+| Intersect (5k+5k) | 273,991 | |
+| Clone | 559,014 | Full copy |
+
+### TreeSet Performance (ns/op) - 10,000 Elements
+
+| Operation | GALA TreeSet | Notes |
+|-----------|-------------:|-------|
+| Creation | 6,652,263 | Building sorted set with 10k elements |
+| Add | 1,478 | O(log n) with rebalancing |
+| Contains (hit) | 442 | O(log n) |
+| Contains (miss) | 711 | O(log n) |
+| Remove | 1,449 | O(log n) with rebalancing |
+| Min | 5 | O(log n), traverses left |
+| Max | 8 | O(log n), traverses right |
+| Filter | 3,207,835 | Creates new tree |
+| Union (5k+5k) | 6,120,501 | |
+| Intersect (5k+5k) | 3,330,017 | |
+| Range | 3,467,559 | Extract range [2500, 7500] |
+| Clone | 7,057,953 | Full tree copy |
+
+### Set Scaling Results
+
+| Operation | 100 elements | 10,000 elements | 100,000 elements |
+|-----------|-------------:|----------------:|-----------------:|
+| HashSet.Creation | 3,165 ns | 474,645 ns | 6,934,149 ns |
+| TreeSet.Creation | 18,644 ns | 6,652,263 ns | 91,282,413 ns |
+
+### When to Use Each Set Type
+
+| Scenario | Recommendation | Reason |
+|----------|----------------|--------|
+| Fast membership testing | HashSet | 17 ns vs 442 ns |
+| Sorted iteration | TreeSet | Only TreeSet maintains order |
+| Min/Max queries | TreeSet | 5 ns vs O(n) scan |
+| Range queries | TreeSet | Only TreeSet supports |
+| Large set operations | HashSet | 2-10x faster for union/intersect |
+| Consistent performance | TreeSet | No hash collision risk |
+
 ---
 
 ## Example: Building a Collection
@@ -676,3 +1145,90 @@ func main() {
     }
 }
 ```
+
+## Example: Using HashSet for Deduplication
+
+```gala
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/collection_mutable"
+)
+
+func main() {
+    // Find common elements between two datasets
+    var dataset1 = []int{1, 2, 3, 4, 5, 6, 7, 8}
+    var dataset2 = []int{5, 6, 7, 8, 9, 10, 11, 12}
+
+    var set1 = HashSetFromSlice[int](dataset1)
+    var set2 = HashSetFromSlice[int](dataset2)
+
+    // Find intersection (O(min(n,m)) average)
+    var common = set1.Intersect(set2)
+    fmt.Printf("Common elements: %s\n", common.String())  // HashSet(5, 6, 7, 8)
+
+    // Find elements only in first dataset
+    var onlyInFirst = set1.Diff(set2)
+    fmt.Printf("Only in first: %s\n", onlyInFirst.String())  // HashSet(1, 2, 3, 4)
+
+    // Check membership (O(1) average)
+    fmt.Printf("Contains 5: %t\n", set1.Contains(5))  // true
+}
+```
+
+## Example: Using TreeSet as Priority Queue
+
+```gala
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/collection_mutable"
+)
+
+func main() {
+    // Process tasks by priority (lower number = higher priority)
+    var tasks = EmptyTreeSet[int]()
+
+    // Add tasks with priorities
+    tasks.Add(5)   // low priority
+    tasks.Add(1)   // highest priority
+    tasks.Add(3)   // medium priority
+    tasks.Add(2)   // high priority
+
+    // Process in priority order
+    for tasks.NonEmpty() {
+        var priority = tasks.PopMin()  // O(log n)
+        fmt.Printf("Processing task with priority %d\n", priority)
+    }
+    // Output: 1, 2, 3, 5
+}
+```
+
+## Example: TreeSet Range Queries
+
+```gala
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/collection_mutable"
+)
+
+func main() {
+    // Find students with grades in specific ranges
+    var grades = TreeSetOf[int](45, 55, 65, 72, 78, 85, 92, 98)
+
+    // Find passing grades (60+)
+    var passing = grades.RangeFrom(60)
+    fmt.Printf("Passing: %s\n", passing.String())  // TreeSet(65, 72, 78, 85, 92, 98)
+
+    // Find B grades (80-89)
+    var bGrades = grades.Range(80, 89)
+    fmt.Printf("B grades: %s\n", bGrades.String())  // TreeSet(85)
+
+    // Find failing grades (<60)
+    var failing = grades.RangeTo(59)
+    fmt.Printf("Failing: %s\n", failing.String())  // TreeSet(45, 55)
+}

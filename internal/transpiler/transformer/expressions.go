@@ -89,16 +89,55 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 
 		if !isPkg {
 			// Transform generic method call to standalone function call
+			// Get method metadata for parameter types
+			var methodMeta *transpiler.MethodMetadata
+			var typeMeta *transpiler.TypeMetadata
+			if tm, ok := t.typeMetas[lookupBaseName]; ok && tm != nil {
+				typeMeta = tm
+				methodMeta = typeMeta.Methods[method]
+			}
+
+			// Build type argument substitution map
+			// For method Map[U] on Container[T], when called as c.Map[string]((x int) => ...)
+			// where c: *Container[int], we have U=string and T=int
+			typeSubst := make(map[string]string)
+			if methodMeta != nil && typeMeta != nil {
+				// Add receiver's type args (e.g., T -> int)
+				recvTypeArgs := t.getReceiverTypeArgStrings(recvType)
+				for i, tp := range typeMeta.TypeParams {
+					if i < len(recvTypeArgs) {
+						typeSubst[tp] = recvTypeArgs[i]
+					}
+				}
+				// Add method's explicit type args (e.g., U -> string)
+				// If no explicit type args provided, default to "any"
+				for i, tp := range methodMeta.TypeParams {
+					if i < len(typeArgs) {
+						typeSubst[tp] = t.exprToTypeString(typeArgs[i])
+					} else {
+						// No explicit type arg provided, default to "any"
+						typeSubst[tp] = "any"
+					}
+				}
+			}
+
 			var mArgs []ast.Expr
 			if argListCtx != nil {
-				for _, argCtx := range argListCtx.AllArgument() {
+				for i, argCtx := range argListCtx.AllArgument() {
 					arg := argCtx.(*grammar.ArgumentContext)
 					pat := arg.Pattern()
 					ep, ok := pat.(*grammar.ExpressionPatternContext)
 					if !ok {
 						return nil, galaerr.NewSemanticError("only expressions allowed as function arguments")
 					}
-					expr, err := t.transformExpression(ep.Expression())
+
+					// Get expected parameter type if available, with type substitution
+					var expectedType transpiler.Type = transpiler.NilType{}
+					if methodMeta != nil && i < len(methodMeta.ParamTypes) {
+						expectedType = t.substituteTranspilerTypeParams(methodMeta.ParamTypes[i], typeSubst)
+					}
+
+					expr, err := t.transformArgumentWithExpectedType(ep.Expression(), expectedType)
 					if err != nil {
 						return nil, err
 					}
@@ -1038,15 +1077,52 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 
 		if !isPkg {
 			// Transform generic method call to standalone function call
+			// Get method metadata for parameter types
+			var methodMeta *transpiler.MethodMetadata
+			var typeMeta *transpiler.TypeMetadata
+			if tm, ok := t.typeMetas[lookupBaseName]; ok && tm != nil {
+				typeMeta = tm
+				methodMeta = typeMeta.Methods[method]
+			}
+
+			// Build type argument substitution map
+			typeSubst := make(map[string]string)
+			if methodMeta != nil && typeMeta != nil {
+				// Add receiver's type args (e.g., T -> int)
+				recvTypeArgs := t.getReceiverTypeArgStrings(recvType)
+				for i, tp := range typeMeta.TypeParams {
+					if i < len(recvTypeArgs) {
+						typeSubst[tp] = recvTypeArgs[i]
+					}
+				}
+				// Add method's explicit type args (e.g., U -> string)
+				// If no explicit type args provided, default to "any"
+				for i, tp := range methodMeta.TypeParams {
+					if i < len(typeArgs) {
+						typeSubst[tp] = t.exprToTypeString(typeArgs[i])
+					} else {
+						// No explicit type arg provided, default to "any"
+						typeSubst[tp] = "any"
+					}
+				}
+			}
+
 			var mArgs []ast.Expr
-			for _, argCtx := range argListCtx.AllArgument() {
+			for i, argCtx := range argListCtx.AllArgument() {
 				arg := argCtx.(*grammar.ArgumentContext)
 				pat := arg.Pattern()
 				ep, ok := pat.(*grammar.ExpressionPatternContext)
 				if !ok {
 					return nil, galaerr.NewSemanticError("only expressions allowed as function arguments")
 				}
-				expr, err := t.transformExpression(ep.Expression())
+
+				// Get expected parameter type if available, with type substitution
+				var expectedType transpiler.Type = transpiler.NilType{}
+				if methodMeta != nil && i < len(methodMeta.ParamTypes) {
+					expectedType = t.substituteTranspilerTypeParams(methodMeta.ParamTypes[i], typeSubst)
+				}
+
+				expr, err := t.transformArgumentWithExpectedType(ep.Expression(), expectedType)
 				if err != nil {
 					return nil, err
 				}
@@ -2027,6 +2103,10 @@ func (t *galaASTTransformer) transformLiteral(ctx *grammar.LiteralContext) (ast.
 }
 
 func (t *galaASTTransformer) transformLambda(ctx *grammar.LambdaExpressionContext) (ast.Expr, error) {
+	return t.transformLambdaWithExpectedType(ctx, nil)
+}
+
+func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.LambdaExpressionContext, expectedRetType ast.Expr) (ast.Expr, error) {
 	t.pushScope()
 	defer t.popScope()
 	paramsCtx := ctx.Parameters().(*grammar.ParametersContext)
@@ -2044,20 +2124,35 @@ func (t *galaASTTransformer) transformLambda(ctx *grammar.LambdaExpressionContex
 	var body *ast.BlockStmt
 	var retType ast.Expr = ast.NewIdent("any")
 
+	// Check if expected type is a concrete type (not "any" or containing "any")
+	// We only use the expected type if it's more specific than "any"
+	isConcreteExpectedType := expectedRetType != nil && !containsAny(expectedRetType)
+
+	// Use expected return type if provided and concrete
+	if isConcreteExpectedType {
+		retType = expectedRetType
+	}
+
 	if ctx.Block() != nil {
 		b, err := t.transformBlock(ctx.Block().(*grammar.BlockContext))
 		if err != nil {
 			return nil, err
 		}
 		// Add return nil to ensure Go compiler is happy with 'any' return type
-		b.List = append(b.List, &ast.ReturnStmt{Results: []ast.Expr{ast.NewIdent("nil")}})
+		// Only add if we don't have a concrete expected type
+		if !isConcreteExpectedType {
+			b.List = append(b.List, &ast.ReturnStmt{Results: []ast.Expr{ast.NewIdent("nil")}})
+		}
 		body = b
 	} else if ctx.Expression() != nil {
 		expr, err := t.transformExpression(ctx.Expression())
 		if err != nil {
 			return nil, err
 		}
-		retType = t.getExprType(expr)
+		// Use expected type if concrete, otherwise infer from expression
+		if !isConcreteExpectedType {
+			retType = t.getExprType(expr)
+		}
 		body = &ast.BlockStmt{
 			List: []ast.Stmt{
 				&ast.ReturnStmt{Results: []ast.Expr{expr}},
@@ -2076,6 +2171,130 @@ func (t *galaASTTransformer) transformLambda(ctx *grammar.LambdaExpressionContex
 		},
 		Body: body,
 	}, nil
+}
+
+// transformArgumentWithExpectedType transforms an argument expression, using the expected
+// parameter type to properly type lambda expressions.
+func (t *galaASTTransformer) transformArgumentWithExpectedType(exprCtx grammar.IExpressionContext, expectedType transpiler.Type) (ast.Expr, error) {
+	// Try to find a lambda in this expression
+	if lambdaCtx := t.findLambdaInExpression(exprCtx); lambdaCtx != nil {
+		// Extract the expected return type from the function type
+		var expectedRetType ast.Expr
+		if funcType, ok := expectedType.(transpiler.FuncType); ok && len(funcType.Results) > 0 {
+			expectedRetType = t.typeToExpr(funcType.Results[0])
+		}
+		return t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType)
+	}
+	// Not a lambda, transform normally
+	return t.transformExpression(exprCtx)
+}
+
+// containsAny checks if the given type expression contains "any" as a type or type parameter.
+// This is used to determine if an expected type is concrete enough to use for lambda return type.
+func containsAny(expr ast.Expr) bool {
+	if expr == nil {
+		return false
+	}
+	switch e := expr.(type) {
+	case *ast.Ident:
+		return e.Name == "any"
+	case *ast.IndexExpr:
+		// Generic type like Option[any]
+		return containsAny(e.X) || containsAny(e.Index)
+	case *ast.IndexListExpr:
+		// Multiple type args like Map[K, V]
+		if containsAny(e.X) {
+			return true
+		}
+		for _, idx := range e.Indices {
+			if containsAny(idx) {
+				return true
+			}
+		}
+		return false
+	case *ast.SelectorExpr:
+		// pkg.Type - check X for any
+		return containsAny(e.X)
+	case *ast.StarExpr:
+		return containsAny(e.X)
+	case *ast.ArrayType:
+		return containsAny(e.Elt)
+	case *ast.MapType:
+		return containsAny(e.Key) || containsAny(e.Value)
+	case *ast.FuncType:
+		if e.Params != nil {
+			for _, f := range e.Params.List {
+				if containsAny(f.Type) {
+					return true
+				}
+			}
+		}
+		if e.Results != nil {
+			for _, f := range e.Results.List {
+				if containsAny(f.Type) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return false
+}
+
+// findLambdaInExpression traverses the expression tree to find a lambda expression
+// if the expression is simply a lambda (not part of a larger expression).
+func (t *galaASTTransformer) findLambdaInExpression(exprCtx grammar.IExpressionContext) *grammar.LambdaExpressionContext {
+	if exprCtx == nil {
+		return nil
+	}
+	orExpr := exprCtx.OrExpr()
+	if orExpr == nil {
+		return nil
+	}
+	orCtx := orExpr.(*grammar.OrExprContext)
+	if len(orCtx.AllAndExpr()) != 1 {
+		return nil
+	}
+	andCtx := orCtx.AndExpr(0).(*grammar.AndExprContext)
+	if len(andCtx.AllEqualityExpr()) != 1 {
+		return nil
+	}
+	eqCtx := andCtx.EqualityExpr(0).(*grammar.EqualityExprContext)
+	if len(eqCtx.AllRelationalExpr()) != 1 {
+		return nil
+	}
+	relCtx := eqCtx.RelationalExpr(0).(*grammar.RelationalExprContext)
+	if len(relCtx.AllAdditiveExpr()) != 1 {
+		return nil
+	}
+	addCtx := relCtx.AdditiveExpr(0).(*grammar.AdditiveExprContext)
+	if len(addCtx.AllMultiplicativeExpr()) != 1 {
+		return nil
+	}
+	mulCtx := addCtx.MultiplicativeExpr(0).(*grammar.MultiplicativeExprContext)
+	if len(mulCtx.AllUnaryExpr()) != 1 {
+		return nil
+	}
+	unaryCtx := mulCtx.UnaryExpr(0).(*grammar.UnaryExprContext)
+	postfixExpr := unaryCtx.PostfixExpr()
+	if postfixExpr == nil {
+		return nil
+	}
+	postfixCtx := postfixExpr.(*grammar.PostfixExprContext)
+	// Check that there are no postfix suffixes (no method calls, indexing, etc.)
+	if len(postfixCtx.AllPostfixSuffix()) > 0 {
+		return nil
+	}
+	primExpr := postfixCtx.PrimaryExpr()
+	if primExpr == nil {
+		return nil
+	}
+	primCtx := primExpr.(*grammar.PrimaryExprContext)
+	lambdaExpr := primCtx.LambdaExpression()
+	if lambdaExpr == nil {
+		return nil
+	}
+	return lambdaExpr.(*grammar.LambdaExpressionContext)
 }
 
 func (t *galaASTTransformer) transformIfExpression(ctx *grammar.IfExpressionContext) (ast.Expr, error) {

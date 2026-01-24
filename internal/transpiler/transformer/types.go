@@ -328,22 +328,77 @@ func (t *galaASTTransformer) extractTypeParams(typ ast.Expr) []*ast.Field {
 		return t.extractTypeParams(e.X)
 	case *ast.IndexExpr:
 		if id, ok := e.Index.(*ast.Ident); ok {
+			constraint := t.getTypeParamConstraint(e.X, id.Name, 0)
 			params = append(params, &ast.Field{
 				Names: []*ast.Ident{id},
-				Type:  ast.NewIdent("any"),
+				Type:  ast.NewIdent(constraint),
 			})
 		}
 	case *ast.IndexListExpr:
-		for _, index := range e.Indices {
+		for i, index := range e.Indices {
 			if id, ok := index.(*ast.Ident); ok {
+				constraint := t.getTypeParamConstraint(e.X, id.Name, i)
 				params = append(params, &ast.Field{
 					Names: []*ast.Ident{id},
-					Type:  ast.NewIdent("any"),
+					Type:  ast.NewIdent(constraint),
 				})
 			}
 		}
 	}
 	return params
+}
+
+// getTypeParamConstraint looks up the constraint for a type parameter from the type's metadata.
+// baseType is the type expression (e.g., the "Container" in "Container[T]")
+// paramName is the name of the type parameter (e.g., "T")
+// paramIndex is the position of the type parameter (used when paramName doesn't match)
+func (t *galaASTTransformer) getTypeParamConstraint(baseType ast.Expr, paramName string, paramIndex int) string {
+	typeName := ""
+	switch bt := baseType.(type) {
+	case *ast.Ident:
+		typeName = bt.Name
+	case *ast.SelectorExpr:
+		if id, ok := bt.X.(*ast.Ident); ok {
+			typeName = id.Name + "." + bt.Sel.Name
+		}
+	}
+
+	if typeName == "" {
+		return "any"
+	}
+
+	// Try to find the type in metadata
+	if meta, ok := t.typeMetas[typeName]; ok {
+		// First try to match by parameter name
+		if constraint, ok := meta.TypeParamConstraints[paramName]; ok {
+			return constraint
+		}
+		// If no match by name, try by index
+		if paramIndex < len(meta.TypeParams) {
+			tpName := meta.TypeParams[paramIndex]
+			if constraint, ok := meta.TypeParamConstraints[tpName]; ok {
+				return constraint
+			}
+		}
+	}
+
+	// Also check with package prefix if we have a current package
+	if t.packageName != "" && !strings.Contains(typeName, ".") {
+		fullName := t.packageName + "." + typeName
+		if meta, ok := t.typeMetas[fullName]; ok {
+			if constraint, ok := meta.TypeParamConstraints[paramName]; ok {
+				return constraint
+			}
+			if paramIndex < len(meta.TypeParams) {
+				tpName := meta.TypeParams[paramIndex]
+				if constraint, ok := meta.TypeParamConstraints[tpName]; ok {
+					return constraint
+				}
+			}
+		}
+	}
+
+	return "any"
 }
 
 // causesInstantiationCycle checks if a method return type would cause a Go generics
@@ -1198,4 +1253,94 @@ func (t *galaASTTransformer) getReceiverTypeArgs(recvType transpiler.Type) []ast
 		return args
 	}
 	return nil
+}
+
+// getReceiverTypeArgStrings extracts type arguments from a receiver type as strings.
+// For example, for *Container[int], it returns ["int"].
+func (t *galaASTTransformer) getReceiverTypeArgStrings(recvType transpiler.Type) []string {
+	if recvType == nil || recvType.IsNil() {
+		return nil
+	}
+	// Unwrap pointer type
+	if ptr, ok := recvType.(transpiler.PointerType); ok {
+		return t.getReceiverTypeArgStrings(ptr.Elem)
+	}
+	// Extract type params from generic type
+	if gen, ok := recvType.(transpiler.GenericType); ok {
+		var args []string
+		for _, param := range gen.Params {
+			args = append(args, param.String())
+		}
+		return args
+	}
+	return nil
+}
+
+// exprToTypeString converts an ast.Expr to a type string.
+func (t *galaASTTransformer) exprToTypeString(expr ast.Expr) string {
+	switch e := expr.(type) {
+	case *ast.Ident:
+		return e.Name
+	case *ast.SelectorExpr:
+		if x, ok := e.X.(*ast.Ident); ok {
+			return x.Name + "." + e.Sel.Name
+		}
+	case *ast.StarExpr:
+		return "*" + t.exprToTypeString(e.X)
+	case *ast.IndexExpr:
+		return t.exprToTypeString(e.X) + "[" + t.exprToTypeString(e.Index) + "]"
+	case *ast.IndexListExpr:
+		var params []string
+		for _, idx := range e.Indices {
+			params = append(params, t.exprToTypeString(idx))
+		}
+		return t.exprToTypeString(e.X) + "[" + strings.Join(params, ", ") + "]"
+	}
+	return ""
+}
+
+// substituteTranspilerTypeParams substitutes type parameters in a type with their concrete values.
+func (t *galaASTTransformer) substituteTranspilerTypeParams(typ transpiler.Type, subst map[string]string) transpiler.Type {
+	if typ == nil || typ.IsNil() || len(subst) == 0 {
+		return typ
+	}
+	switch ty := typ.(type) {
+	case transpiler.BasicType:
+		if replacement, ok := subst[ty.Name]; ok {
+			return transpiler.ParseType(replacement)
+		}
+		return ty
+	case transpiler.NamedType:
+		// Check if the full name or just the Name needs substitution
+		if replacement, ok := subst[ty.Name]; ok {
+			return transpiler.ParseType(replacement)
+		}
+		return ty
+	case transpiler.PointerType:
+		return transpiler.PointerType{Elem: t.substituteTranspilerTypeParams(ty.Elem, subst)}
+	case transpiler.ArrayType:
+		return transpiler.ArrayType{Elem: t.substituteTranspilerTypeParams(ty.Elem, subst)}
+	case transpiler.GenericType:
+		newParams := make([]transpiler.Type, len(ty.Params))
+		for i, p := range ty.Params {
+			newParams[i] = t.substituteTranspilerTypeParams(p, subst)
+		}
+		return transpiler.GenericType{Base: t.substituteTranspilerTypeParams(ty.Base, subst), Params: newParams}
+	case transpiler.FuncType:
+		newParams := make([]transpiler.Type, len(ty.Params))
+		for i, p := range ty.Params {
+			newParams[i] = t.substituteTranspilerTypeParams(p, subst)
+		}
+		newResults := make([]transpiler.Type, len(ty.Results))
+		for i, r := range ty.Results {
+			newResults[i] = t.substituteTranspilerTypeParams(r, subst)
+		}
+		return transpiler.FuncType{Params: newParams, Results: newResults}
+	case transpiler.MapType:
+		return transpiler.MapType{
+			Key:  t.substituteTranspilerTypeParams(ty.Key, subst),
+			Elem: t.substituteTranspilerTypeParams(ty.Elem, subst),
+		}
+	}
+	return typ
 }

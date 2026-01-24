@@ -406,6 +406,316 @@ func benchListRemoveLast() {
     printResult("List.RemoveLast (size=10000)", ns)
 }
 
+// ============ MUTABLE HASHSET BENCHMARKS ============
+
+// HashSet creation benchmark - small
+func benchHashSetCreation100() {
+    var ns = measureNs(10000, () => {
+        var s = EmptyHashSet[int]()
+        for i := 0; i < 100; i++ {
+            s.Add(i)
+        }
+    })
+    printResult("HashSet.Creation(100)", ns)
+}
+
+// HashSet creation benchmark - medium
+func benchHashSetCreation10000() {
+    var ns = measureNs(1000, () => {
+        var s = EmptyHashSet[int]()
+        for i := 0; i < 10000; i++ {
+            s.Add(i)
+        }
+    })
+    printResult("HashSet.Creation(10000)", ns)
+}
+
+// HashSet creation benchmark - large
+func benchHashSetCreation100000() {
+    var ns = measureNs(100, () => {
+        var s = EmptyHashSet[int]()
+        for i := 0; i < 100000; i++ {
+            s.Add(i)
+        }
+    })
+    printResult("HashSet.Creation(100000)", ns)
+}
+
+// HashSet add benchmark
+func benchHashSetAdd() {
+    var s = EmptyHashSet[int]()
+    for i := 0; i < 10000; i++ {
+        s.Add(i)
+    }
+    var ns = measureNs(1000000, () => {
+        s.Add(99999)
+        s.Remove(99999)
+    })
+    printResult("HashSet.Add (size=10000)", ns)
+}
+
+// HashSet contains benchmark - hit
+func benchHashSetContainsHit() {
+    var s = EmptyHashSet[int]()
+    for i := 0; i < 10000; i++ {
+        s.Add(i)
+    }
+    var ns = measureNs(10000000, () => {
+        var _ = s.Contains(5000)
+    })
+    printResult("HashSet.Contains hit (size=10000)", ns)
+}
+
+// HashSet contains benchmark - miss
+func benchHashSetContainsMiss() {
+    var s = EmptyHashSet[int]()
+    for i := 0; i < 10000; i++ {
+        s.Add(i)
+    }
+    var ns = measureNs(10000000, () => {
+        var _ = s.Contains(99999)
+    })
+    printResult("HashSet.Contains miss (size=10000)", ns)
+}
+
+// HashSet remove benchmark
+func benchHashSetRemove() {
+    var s = EmptyHashSet[int]()
+    for i := 0; i < 10000; i++ {
+        s.Add(i)
+    }
+    var ns = measureNs(1000000, () => {
+        s.Add(99999)
+        s.Remove(99999)
+    })
+    printResult("HashSet.Remove (size=10000)", ns)
+}
+
+// HashSet filter benchmark
+func benchHashSetFilter() {
+    var s = EmptyHashSet[int]()
+    for i := 0; i < 10000; i++ {
+        s.Add(i)
+    }
+    var ns = measureNs(1000, () => {
+        var _ = s.Filter((x int) => x % 2 == 0)
+    })
+    printResult("HashSet.Filter (size=10000)", ns)
+}
+
+// HashSet union benchmark
+func benchHashSetUnion() {
+    var s1 = EmptyHashSet[int]()
+    var s2 = EmptyHashSet[int]()
+    for i := 0; i < 5000; i++ {
+        s1.Add(i)
+        s2.Add(i + 2500)
+    }
+    var ns = measureNs(100, () => {
+        var _ = s1.Union(s2)
+    })
+    printResult("HashSet.Union (size=5000+5000)", ns)
+}
+
+// HashSet intersect benchmark
+func benchHashSetIntersect() {
+    var s1 = EmptyHashSet[int]()
+    var s2 = EmptyHashSet[int]()
+    for i := 0; i < 5000; i++ {
+        s1.Add(i)
+        s2.Add(i + 2500)
+    }
+    var ns = measureNs(100, () => {
+        var _ = s1.Intersect(s2)
+    })
+    printResult("HashSet.Intersect (size=5000+5000)", ns)
+}
+
+// HashSet clone benchmark
+func benchHashSetClone() {
+    var s = EmptyHashSet[int]()
+    for i := 0; i < 10000; i++ {
+        s.Add(i)
+    }
+    var ns = measureNs(1000, () => {
+        var _ = s.Clone()
+    })
+    printResult("HashSet.Clone (size=10000)", ns)
+}
+
+// ============ MUTABLE TREESET BENCHMARKS ============
+
+// TreeSet creation benchmark - small
+func benchTreeSetCreation100() {
+    var ns = measureNs(10000, () => {
+        var s = EmptyTreeSet[int]()
+        for i := 0; i < 100; i++ {
+            s.Add(i)
+        }
+    })
+    printResult("TreeSet.Creation(100)", ns)
+}
+
+// TreeSet creation benchmark - medium
+func benchTreeSetCreation10000() {
+    var ns = measureNs(1000, () => {
+        var s = EmptyTreeSet[int]()
+        for i := 0; i < 10000; i++ {
+            s.Add(i)
+        }
+    })
+    printResult("TreeSet.Creation(10000)", ns)
+}
+
+// TreeSet creation benchmark - large
+func benchTreeSetCreation100000() {
+    var ns = measureNs(100, () => {
+        var s = EmptyTreeSet[int]()
+        for i := 0; i < 100000; i++ {
+            s.Add(i)
+        }
+    })
+    printResult("TreeSet.Creation(100000)", ns)
+}
+
+// TreeSet add benchmark
+func benchTreeSetAdd() {
+    var s = EmptyTreeSet[int]()
+    for i := 0; i < 10000; i++ {
+        s.Add(i)
+    }
+    var ns = measureNs(100000, () => {
+        s.Add(99999)
+        s.Remove(99999)
+    })
+    printResult("TreeSet.Add (size=10000)", ns)
+}
+
+// TreeSet contains benchmark - hit
+func benchTreeSetContainsHit() {
+    var s = EmptyTreeSet[int]()
+    for i := 0; i < 10000; i++ {
+        s.Add(i)
+    }
+    var ns = measureNs(1000000, () => {
+        var _ = s.Contains(5000)
+    })
+    printResult("TreeSet.Contains hit (size=10000)", ns)
+}
+
+// TreeSet contains benchmark - miss
+func benchTreeSetContainsMiss() {
+    var s = EmptyTreeSet[int]()
+    for i := 0; i < 10000; i++ {
+        s.Add(i)
+    }
+    var ns = measureNs(1000000, () => {
+        var _ = s.Contains(99999)
+    })
+    printResult("TreeSet.Contains miss (size=10000)", ns)
+}
+
+// TreeSet remove benchmark
+func benchTreeSetRemove() {
+    var s = EmptyTreeSet[int]()
+    for i := 0; i < 10000; i++ {
+        s.Add(i)
+    }
+    var ns = measureNs(100000, () => {
+        s.Add(99999)
+        s.Remove(99999)
+    })
+    printResult("TreeSet.Remove (size=10000)", ns)
+}
+
+// TreeSet min benchmark
+func benchTreeSetMin() {
+    var s = EmptyTreeSet[int]()
+    for i := 0; i < 10000; i++ {
+        s.Add(i)
+    }
+    var ns = measureNs(10000000, () => {
+        var _ = s.Min()
+    })
+    printResult("TreeSet.Min (size=10000)", ns)
+}
+
+// TreeSet max benchmark
+func benchTreeSetMax() {
+    var s = EmptyTreeSet[int]()
+    for i := 0; i < 10000; i++ {
+        s.Add(i)
+    }
+    var ns = measureNs(10000000, () => {
+        var _ = s.Max()
+    })
+    printResult("TreeSet.Max (size=10000)", ns)
+}
+
+// TreeSet filter benchmark
+func benchTreeSetFilter() {
+    var s = EmptyTreeSet[int]()
+    for i := 0; i < 10000; i++ {
+        s.Add(i)
+    }
+    var ns = measureNs(1000, () => {
+        var _ = s.Filter((x int) => x % 2 == 0)
+    })
+    printResult("TreeSet.Filter (size=10000)", ns)
+}
+
+// TreeSet union benchmark
+func benchTreeSetUnion() {
+    var s1 = EmptyTreeSet[int]()
+    var s2 = EmptyTreeSet[int]()
+    for i := 0; i < 5000; i++ {
+        s1.Add(i)
+        s2.Add(i + 2500)
+    }
+    var ns = measureNs(100, () => {
+        var _ = s1.Union(s2)
+    })
+    printResult("TreeSet.Union (size=5000+5000)", ns)
+}
+
+// TreeSet intersect benchmark
+func benchTreeSetIntersect() {
+    var s1 = EmptyTreeSet[int]()
+    var s2 = EmptyTreeSet[int]()
+    for i := 0; i < 5000; i++ {
+        s1.Add(i)
+        s2.Add(i + 2500)
+    }
+    var ns = measureNs(100, () => {
+        var _ = s1.Intersect(s2)
+    })
+    printResult("TreeSet.Intersect (size=5000+5000)", ns)
+}
+
+// TreeSet range benchmark
+func benchTreeSetRange() {
+    var s = EmptyTreeSet[int]()
+    for i := 0; i < 10000; i++ {
+        s.Add(i)
+    }
+    var ns = measureNs(1000, () => {
+        var _ = s.Range(2500, 7500)
+    })
+    printResult("TreeSet.Range (size=10000)", ns)
+}
+
+// TreeSet clone benchmark
+func benchTreeSetClone() {
+    var s = EmptyTreeSet[int]()
+    for i := 0; i < 10000; i++ {
+        s.Add(i)
+    }
+    var ns = measureNs(1000, () => {
+        var _ = s.Clone()
+    })
+    printResult("TreeSet.Clone (size=10000)", ns)
+}
+
 func main() {
     fmt.Println("=== GALA Mutable Collections Performance ===")
     fmt.Println("Testing with 100 - 100,000 elements")
@@ -447,4 +757,35 @@ func main() {
     benchListReverse()
     benchListRemoveFirst()
     benchListRemoveLast()
+
+    fmt.Println("")
+    fmt.Println("--- HashSet Operations (Hash-based) ---")
+    benchHashSetCreation100()
+    benchHashSetCreation10000()
+    benchHashSetCreation100000()
+    benchHashSetAdd()
+    benchHashSetContainsHit()
+    benchHashSetContainsMiss()
+    benchHashSetRemove()
+    benchHashSetFilter()
+    benchHashSetUnion()
+    benchHashSetIntersect()
+    benchHashSetClone()
+
+    fmt.Println("")
+    fmt.Println("--- TreeSet Operations (Red-Black Tree) ---")
+    benchTreeSetCreation100()
+    benchTreeSetCreation10000()
+    benchTreeSetCreation100000()
+    benchTreeSetAdd()
+    benchTreeSetContainsHit()
+    benchTreeSetContainsMiss()
+    benchTreeSetRemove()
+    benchTreeSetMin()
+    benchTreeSetMax()
+    benchTreeSetFilter()
+    benchTreeSetUnion()
+    benchTreeSetIntersect()
+    benchTreeSetRange()
+    benchTreeSetClone()
 }

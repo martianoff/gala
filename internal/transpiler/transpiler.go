@@ -93,13 +93,14 @@ func (r *RichAST) Merge(other *RichAST) {
 }
 
 type TypeMetadata struct {
-	Name       string
-	Package    string
-	Methods    map[string]*MethodMetadata
-	Fields     map[string]Type // Name -> Type
-	FieldNames []string        // To preserve order
-	TypeParams []string
-	ImmutFlags []bool
+	Name                 string
+	Package              string
+	Methods              map[string]*MethodMetadata
+	Fields               map[string]Type // Name -> Type
+	FieldNames           []string        // To preserve order
+	TypeParams           []string
+	TypeParamConstraints map[string]string // TypeParam name -> constraint (e.g., "T" -> "comparable")
+	ImmutFlags           []bool
 }
 
 type MethodMetadata struct {
