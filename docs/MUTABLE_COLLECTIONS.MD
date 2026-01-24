@@ -14,22 +14,25 @@ import . "martianoff/gala/collection_mutable"
 
 ## Performance Characteristics
 
-| Operation | Array | List |
-|-----------|-------|------|
-| Get | O(1) | O(n) |
-| Set | O(1) | O(n) |
-| Head | O(1) | O(1) |
-| Last | O(1) | O(1) |
-| Append | O(1)* | O(1) |
-| Prepend | O(n) | O(1) |
-| Insert | O(n) | O(n) |
-| Remove | O(n) | O(n) |
-| Length | O(1) | O(1) |
+| Operation | Array | List | Notes |
+|-----------|-------|------|-------|
+| Get/Set | O(1) | O(n) | Array: direct index; List: traversal |
+| Head/Last | O(1) | O(1) | |
+| Append | O(1)* | O(1) | Array uses Go slice growth |
+| AppendAll | O(m)* | O(m) | m = elements added |
+| Prepend | O(n) | O(1) | Array shifts all elements |
+| PrependAll | O(n+m) | O(m) | |
+| Insert | O(n) | O(n) | |
+| RemoveAt | O(n) | O(n) | Array shifts; List traverses |
+| RemoveFirst | O(1) | O(1) | Array: slice view |
+| RemoveLast | O(1) | O(1) | Array: slice view; List: O(1) with tail ptr |
+| Length | O(1) | O(1) | |
 
 **Legend:**
 - O(1) - Constant time
-- O(1)* - Amortized constant time
-- O(n) - Linear time
+- O(1)* - Amortized constant time (may occasionally reallocate)
+- O(n) - Linear time in current size
+- O(m) - Linear time in elements being added
 
 ---
 
@@ -104,7 +107,7 @@ arr.Insert(2, 50)        // arr is now [0, 1, 50, 99, 3, 4]
 // Remove at index - O(n)
 arr.RemoveAt(2)          // arr is now [0, 1, 99, 3, 4]
 
-// Remove first/last - O(n) / O(1)
+// Remove first/last - O(1) (slice view operations)
 arr.RemoveFirst()        // returns 0, arr is now [1, 99, 3, 4]
 arr.RemoveLast()         // returns 4, arr is now [1, 99, 3]
 
@@ -120,12 +123,16 @@ arr.Reverse()
 ```gala
 var arr = ArrayOf[int](1, 2, 3)
 
-// Append multiple elements
-arr.AppendAll(4, 5, 6)
+// Append from a slice - O(m) amortized
+var more = []int{4, 5, 6}
+arr.AppendAll(more)
 
-// Append from another Array
+// Append from another Array - O(m) amortized
 var other = ArrayOf[int](7, 8, 9)
 arr.AppendFrom(other)
+
+// Prepend from a slice - O(n+m)
+arr.PrependAll([]int{-2, -1, 0})
 ```
 
 ### Structural Operations (return new arrays)
@@ -510,66 +517,73 @@ bazel run //collection_mutable:perf_go
 
 | Operation | GALA Array | Go Slice | Notes |
 |-----------|----------:|----------:|-------|
-| Creation | 34,685 | 36,391 | ~same |
-| CreationWithCap | 10,785 | 9,000 | ~same |
-| Append | 41,658 | 1 | Go slice reuses capacity |
-| Prepend | 132,122 | 7,018 | Both O(n), Go faster |
-| Get(5000) | 2 | 0 | Both O(1) |
-| Set(5000) | 3 | 1 | Both O(1) |
-| Filter | 41,003 | 16,001 | GALA creates new Array |
-| Map | 19,311 | 8,022 | GALA creates new Array |
-| FoldLeft | 3,044 | 850 | Go direct iteration |
-| Clone | 21,140 | 7,504 | GALA pre-allocates |
-| Reverse | 6,740 | 2,059 | In-place |
+| Creation | 34,577 | 29,551 | ~same |
+| CreationWithCap | 11,407 | 8,274 | ~same |
+| Append | 2 | 1 | Both O(1) amortized |
+| Prepend | 1,021 | 6,218 | **GALA 6x faster** |
+| Get(5000) | 1 | 0 | Both O(1) |
+| Set(5000) | 1 | 0 | Both O(1) |
+| Filter | 15,958 | 14,363 | ~same |
+| Map | 9,505 | 8,109 | ~same |
+| FoldLeft | 851 | 907 | ~same |
+| Clone | 9,185 | 6,188 | ~same |
+| Reverse | 2,907 | 1,929 | ~same |
 
 ### List vs Go container/list (ns/op) - 10,000 Elements
 
 | Operation | GALA List | Go List | Notes |
 |-----------|----------:|--------:|-------|
-| Creation | 230,618 | 226,329 | ~same |
-| Prepend | 26 | 18 | Both O(1) |
-| Append | 29 | 20 | Both O(1) |
-| Head | 1 | 1 | Both O(1) |
+| Creation | 119,868 | 230,021 | **GALA 48% faster** |
+| Prepend | 13 | 19 | **GALA 32% faster** |
+| Append | 14 | 20 | **GALA 30% faster** |
+| Head | 0 | 1 | Both O(1) |
 | Last | 1 | 1 | Both O(1) |
-| Get(5000) | 4,516 | 4,506 | Both O(n) |
-| Filter | 145,559 | 104,979 | GALA creates new List |
-| Map | 255,468 | 304,025 | GALA faster |
-| FoldLeft | 9,468 | 9,841 | ~same |
-| RemoveFirst | 26 | 20 | Both O(1) |
-| RemoveLast | 25 | 20 | Both O(1) |
+| Get(5000) | 3,506 | 4,356 | **GALA 20% faster** |
+| Filter | 74,552 | 100,465 | **GALA 26% faster** |
+| Map | 133,013 | 294,430 | **GALA 2.2x faster** |
+| FoldLeft | 9,221 | 9,450 | ~same |
+| RemoveFirst | 14 | 20 | **GALA 30% faster** |
+| RemoveLast | 15 | 20 | **GALA 25% faster** |
 
 ### Scaling Results
 
 | Operation | 100 elements | 10,000 elements | 100,000 elements |
 |-----------|-------------:|----------------:|-----------------:|
-| Array.Creation | 523 ns | 34,685 ns | 451,986 ns |
-| List.Creation | 2,463 ns | 230,618 ns | 2,806,160 ns |
+| Array.Creation | 477 ns | 34,577 ns | 445,573 ns |
+| List.Creation | 1,253 ns | 119,868 ns | 1,491,178 ns |
+| GoSlice.Creation | 472 ns | 29,551 ns | 384,056 ns |
+| GoList.Creation | 2,061 ns | 230,021 ns | 3,769,234 ns |
 
 ### Key Performance Insights
 
 **Array Strengths:**
-- **O(1) Get/Set**: Direct index access (2-3 ns)
+- **O(1) Get/Set**: Direct index access (1 ns)
 - **O(1) Head/Last**: Instant access to ends
-- **Optimized Map**: Pre-allocated capacity (19,311 ns for 10k elements)
+- **6x faster Prepend**: Optimized in-place shifting (1,021 ns vs Go's 6,218 ns)
+- **Optimized Map**: Pre-allocated capacity (9,505 ns for 10k elements)
 - **Good locality**: Better CPU cache utilization
 
 **List Strengths:**
-- **O(1) Prepend/Append**: Constant time at both ends (25-29 ns)
-- **O(1) RemoveFirst/RemoveLast**: No shifting required
+- **O(1) Prepend/Append**: Constant time at both ends (13-14 ns)
+- **O(1) RemoveFirst/RemoveLast**: No shifting required (14-15 ns)
+- **48% faster creation**: More efficient node allocation than Go's container/list
+- **2.2x faster Map**: 133,013 ns vs Go's 294,430 ns
 - **Stable iteration**: No reallocation during modification
-- **Faster Map**: 255,468 ns vs Go's 304,025 ns
 
 **When to Use Each:**
 
-| Scenario | Recommendation |
-|----------|----------------|
-| Random access needed | Array |
-| Building from end (append) | Array |
-| Building from front (prepend) | List |
-| Queue (FIFO) | List |
-| Stack (LIFO) | Either |
-| Large data processing | Array (cache locality) |
-| Frequent head/tail ops | List |
+| Scenario | Recommendation | Reason |
+|----------|----------------|--------|
+| Random access needed | Array | O(1) get/set |
+| Building from end (append) | Array | O(1) amortized, cache locality |
+| Building from front (prepend) | List | O(1), though Array is 6x faster than naive Go |
+| Queue (FIFO) | List | O(1) at both ends, no shifting |
+| Stack (LIFO) | Either | Both have O(1) push/pop |
+| Large data processing | Array | Better cache locality |
+| InsertAt/RemoveAt | Array* | Single copy vs traversal |
+| Many Map/Filter operations | List | 2x faster than container/list |
+
+*Array's O(n) InsertAt/RemoveAt uses efficient memory copy; List requires O(n) traversal first.
 
 ---
 

@@ -6,13 +6,17 @@ import "fmt"
 // Optimized for O(1) amortized append and O(1) random access.
 //
 // Performance characteristics:
-// - Get:     O(1)
-// - Set:     O(1)
-// - Append:  O(1) amortized
-// - Prepend: O(n)
-// - Insert:  O(n)
-// - Remove:  O(n)
-// - Length:  O(1)
+// - Get/Set:      O(1)
+// - Head/Last:    O(1)
+// - Append:       O(1) amortized
+// - AppendAll:    O(m) amortized, m = elements added
+// - Prepend:      O(n)
+// - PrependAll:   O(n+m)
+// - Insert:       O(n)
+// - RemoveAt:     O(n)
+// - RemoveFirst:  O(1) - returns slice view
+// - RemoveLast:   O(1) - returns slice view
+// - Length:       O(1)
 
 // Array represents a mutable indexed sequence.
 type Array[T any] struct {
@@ -138,40 +142,26 @@ func (a *Array[T]) Append(value T) {
     a.elements = append(a.elements, value)
 }
 
-// AppendAll appends all elements from a slice.
+// AppendAll appends all elements from a slice. O(m) where m = len(values).
 func (a *Array[T]) AppendAll(values []T) {
-    for i := 0; i < len(values); i++ {
-        a.elements = append(a.elements, values[i])
-    }
+    a.elements = std.SliceAppendAll(a.elements, values)
 }
 
-// AppendFrom appends all elements from another Array.
+// AppendFrom appends all elements from another Array. O(m) where m = other.Length().
 func (a *Array[T]) AppendFrom(other *Array[T]) {
-    for i := 0; i < len(other.elements); i++ {
-        a.elements = append(a.elements, other.elements[i])
-    }
+    a.elements = std.SliceAppendAll(a.elements, other.elements)
 }
 
 // Prepend adds an element to the front. O(n).
+// Uses single allocation with append+copy for efficiency.
 func (a *Array[T]) Prepend(value T) {
-    var newElements []T
-    newElements = append(newElements, value)
-    for i := 0; i < len(a.elements); i++ {
-        newElements = append(newElements, a.elements[i])
-    }
-    a.elements = newElements
+    a.elements = std.SlicePrepend(a.elements, value)
 }
 
-// PrependAll prepends all elements from a slice. O(n).
+// PrependAll prepends all elements from a slice. O(n+m).
+// Uses single allocation for efficiency.
 func (a *Array[T]) PrependAll(values []T) {
-    var newElements []T
-    for i := 0; i < len(values); i++ {
-        newElements = append(newElements, values[i])
-    }
-    for i := 0; i < len(a.elements); i++ {
-        newElements = append(newElements, a.elements[i])
-    }
-    a.elements = newElements
+    a.elements = std.SlicePrependAll(a.elements, values)
 }
 
 // Insert inserts an element at the given index. O(n).
@@ -180,15 +170,7 @@ func (a *Array[T]) Insert(index int, value T) {
     if (index < 0) || (index > len(a.elements)) {
         panic(fmt.Sprintf("Array.Insert: index %d out of bounds [0, %d]", index, len(a.elements)))
     }
-    var newElements []T
-    for i := 0; i < index; i++ {
-        newElements = append(newElements, a.elements[i])
-    }
-    newElements = append(newElements, value)
-    for i := index; i < len(a.elements); i++ {
-        newElements = append(newElements, a.elements[i])
-    }
-    a.elements = newElements
+    a.elements = std.SliceInsert(a.elements, index, value)
 }
 
 // RemoveAt removes the element at the given index. O(n).
@@ -197,32 +179,23 @@ func (a *Array[T]) RemoveAt(index int) {
     if (index < 0) || (index >= len(a.elements)) {
         panic(fmt.Sprintf("Array.RemoveAt: index %d out of bounds [0, %d)", index, len(a.elements)))
     }
-    var newElements []T
-    for i := 0; i < index; i++ {
-        newElements = append(newElements, a.elements[i])
-    }
-    for i := index + 1; i < len(a.elements); i++ {
-        newElements = append(newElements, a.elements[i])
-    }
-    a.elements = newElements
+    a.elements = std.SliceRemoveAt(a.elements, index)
 }
 
-// RemoveFirst removes the first element. O(n).
+// RemoveFirst removes and returns the first element. O(1).
+// Returns a slice view, so underlying memory is not reallocated.
 // Panics if the array is empty.
 func (a *Array[T]) RemoveFirst() T {
     if len(a.elements) == 0 {
         panic("Array.RemoveFirst on empty array")
     }
     var removed = a.elements[0]
-    var newElements []T
-    for i := 1; i < len(a.elements); i++ {
-        newElements = append(newElements, a.elements[i])
-    }
-    a.elements = newElements
+    a.elements = std.SliceDrop(a.elements, 1)
     return removed
 }
 
-// RemoveLast removes the last element. O(1).
+// RemoveLast removes and returns the last element. O(1).
+// Returns a slice view, so underlying memory is not reallocated.
 // Panics if the array is empty.
 func (a *Array[T]) RemoveLast() T {
     if len(a.elements) == 0 {
@@ -230,11 +203,7 @@ func (a *Array[T]) RemoveLast() T {
     }
     var lastIdx = len(a.elements) - 1
     var removed = a.elements[lastIdx]
-    var newElements []T
-    for i := 0; i < lastIdx; i++ {
-        newElements = append(newElements, a.elements[i])
-    }
-    a.elements = newElements
+    a.elements = std.SliceTake(a.elements, lastIdx)
     return removed
 }
 

@@ -195,3 +195,61 @@ func asInternal(obj any, targetType reflect.Type) (any, bool) {
 func setUnexportedField(field reflect.Value, value reflect.Value) {
 	reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).Elem().Set(value)
 }
+
+// === Slice Helper Functions for efficient operations ===
+
+// SliceAppendAll appends all elements from src to dst. O(m) where m = len(src).
+func SliceAppendAll[T any](dst []T, src []T) []T {
+	return append(dst, src...)
+}
+
+// SlicePrepend inserts a value at the front of a slice. O(n).
+// Uses in-place shift for efficiency.
+func SlicePrepend[T any](s []T, value T) []T {
+	s = append(s, value)
+	copy(s[1:], s[:len(s)-1])
+	s[0] = value
+	return s
+}
+
+// SlicePrependAll prepends all elements from values to s. O(n+m).
+func SlicePrependAll[T any](s []T, values []T) []T {
+	if len(values) == 0 {
+		return s
+	}
+	result := make([]T, len(s)+len(values))
+	copy(result, values)
+	copy(result[len(values):], s)
+	return result
+}
+
+// SliceInsert inserts a value at the given index. O(n).
+func SliceInsert[T any](s []T, index int, value T) []T {
+	var zero T
+	s = append(s, zero)
+	copy(s[index+1:], s[index:len(s)-1])
+	s[index] = value
+	return s
+}
+
+// SliceRemoveAt removes the element at the given index. O(n).
+func SliceRemoveAt[T any](s []T, index int) []T {
+	copy(s[index:], s[index+1:])
+	return s[:len(s)-1]
+}
+
+// SliceDrop returns a slice with the first n elements removed. O(1).
+func SliceDrop[T any](s []T, n int) []T {
+	if n >= len(s) {
+		return nil
+	}
+	return s[n:]
+}
+
+// SliceTake returns a slice with only the first n elements. O(1).
+func SliceTake[T any](s []T, n int) []T {
+	if n >= len(s) {
+		return s
+	}
+	return s[:n]
+}
