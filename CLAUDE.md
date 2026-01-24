@@ -15,6 +15,8 @@ GALA is a programming language that transpiles to Go. Build system: Bazel.
 4. **ALWAYS use bazel for testing, compilation** - Both GO and GALA have build-in bazel actions for compilation and testing.
 
 5. **ALWAYS research GALA syntax and best practices from docs/GALA.md before writing GALA code** - GALA is a functional language that extensively relies on pattern matching.
+
+6. **NEVER try to find workaround if you found a transpiler bug, you must create a repro test case and fix the transpiler issue before moving forward**
 ---
 
 ## Project Structure
