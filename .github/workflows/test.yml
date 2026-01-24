@@ -1,0 +1,27 @@
+name: Test
+
+on:
+  pull_request:
+    branches: [master]
+
+jobs:
+  test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bazel
+        uses: bazel-contrib/setup-bazel@0.14.0
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}
+          repository-cache: true
+
+      - name: Build
+        run: bazel build //...
+
+      - name: Test
+        run: bazel test //...
