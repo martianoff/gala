@@ -11,9 +11,24 @@ class GalaLexer : LexerBase() {
     private var tokenType: IElementType? = null
 
     private val keywords = setOf(
+        // Declaration keywords
         "package", "import", "val", "var", "func", "type", "struct", "interface",
+        // Control flow
         "if", "else", "for", "range", "return", "match", "case",
-        "true", "false", "nil"
+        "break", "continue", "defer", "go", "select", "switch", "default",
+        // Literals
+        "true", "false", "nil",
+        // Type keywords
+        "map", "chan"
+    )
+
+    private val builtinTypes = setOf(
+        "any", "bool", "byte", "rune", "error",
+        "int", "int8", "int16", "int32", "int64",
+        "uint", "uint8", "uint16", "uint32", "uint64", "uintptr",
+        "float32", "float64",
+        "complex64", "complex128",
+        "string"
     )
 
     override fun start(buffer: CharSequence, startOffset: Int, endOffset: Int, initialState: Int) {
@@ -49,17 +64,41 @@ class GalaLexer : LexerBase() {
                 tokenType = GalaTypes.WHITE_SPACE
             }
             c == '/' && currentOffset + 1 < endOffset && buffer[currentOffset + 1] == '/' -> {
+                // Single-line comment
                 while (currentOffset < endOffset && buffer[currentOffset] != '\n') {
                     currentOffset++
                 }
                 tokenType = GalaTypes.COMMENT
             }
+            c == '/' && currentOffset + 1 < endOffset && buffer[currentOffset + 1] == '*' -> {
+                // Multi-line comment
+                currentOffset += 2
+                while (currentOffset + 1 < endOffset) {
+                    if (buffer[currentOffset] == '*' && buffer[currentOffset + 1] == '/') {
+                        currentOffset += 2
+                        break
+                    }
+                    currentOffset++
+                }
+                if (currentOffset >= endOffset) currentOffset = endOffset
+                tokenType = GalaTypes.COMMENT
+            }
             c == '"' -> {
+                // Regular string
                 currentOffset++
                 while (currentOffset < endOffset && buffer[currentOffset] != '"') {
                     if (buffer[currentOffset] == '\\' && currentOffset + 1 < endOffset) {
                         currentOffset++
                     }
+                    currentOffset++
+                }
+                if (currentOffset < endOffset) currentOffset++
+                tokenType = GalaTypes.STRING
+            }
+            c == '`' -> {
+                // Raw string (backtick)
+                currentOffset++
+                while (currentOffset < endOffset && buffer[currentOffset] != '`') {
                     currentOffset++
                 }
                 if (currentOffset < endOffset) currentOffset++
@@ -71,7 +110,11 @@ class GalaLexer : LexerBase() {
                     currentOffset++
                 }
                 val text = buffer.subSequence(start, currentOffset).toString()
-                tokenType = if (text in keywords) GalaTypes.KEYWORD else GalaTypes.IDENTIFIER
+                tokenType = when {
+                    text in keywords -> GalaTypes.KEYWORD
+                    text in builtinTypes -> GalaTypes.TYPE
+                    else -> GalaTypes.IDENTIFIER
+                }
             }
             c.isDigit() -> {
                 while (currentOffset < endOffset && buffer[currentOffset].isDigit()) {
@@ -125,13 +168,33 @@ class GalaLexer : LexerBase() {
                 currentOffset++
                 tokenType = GalaTypes.RBRACKET
             }
-            c in "+-*/=<>!&|:%" -> {
+            c in "+-*/=<>!&|:%^~" -> {
                 val start = currentOffset
                 currentOffset++
                 if (currentOffset < endOffset) {
-                    val op2 = buffer.subSequence(start, currentOffset + 1).toString()
-                    if (op2 in setOf("=>", ":=", "==", "!=", "<=", ">=", "&&", "||")) {
-                        currentOffset++
+                    val next = buffer[currentOffset]
+                    val op2 = "$c$next"
+                    when {
+                        // Three-character operators
+                        op2 == "<<" && currentOffset + 1 < endOffset && buffer[currentOffset + 1] == '=' -> {
+                            currentOffset += 2 // <<=
+                        }
+                        op2 == ">>" && currentOffset + 1 < endOffset && buffer[currentOffset + 1] == '=' -> {
+                            currentOffset += 2 // >>=
+                        }
+                        op2 == "&^" && currentOffset + 1 < endOffset && buffer[currentOffset + 1] == '=' -> {
+                            currentOffset += 2 // &^=
+                        }
+                        // Ellipsis (...)
+                        c == '.' && next == '.' && currentOffset + 1 < endOffset && buffer[currentOffset + 1] == '.' -> {
+                            currentOffset += 2
+                        }
+                        // Two-character operators
+                        op2 in setOf("=>", ":=", "==", "!=", "<=", ">=", "&&", "||",
+                                    "++", "--", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=",
+                                    "<<", ">>", "&^", "<-") -> {
+                            currentOffset++
+                        }
                     }
                 }
                 tokenType = GalaTypes.OPERATOR

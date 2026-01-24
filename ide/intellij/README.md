@@ -4,9 +4,19 @@ This directory contains the source code for the GALA language support plugin for
 
 ## Features
 
-- Syntax highlighting
-- File type recognition (`.gala`)
-- Basic code structure support
+- **Syntax highlighting** for:
+  - Keywords (`val`, `var`, `func`, `match`, `case`, `if`, `else`, `for`, etc.)
+  - Built-in types (`int`, `string`, `bool`, `float64`, `any`, etc.)
+  - Strings (regular `"..."` and raw backtick strings)
+  - Comments (single-line `//` and multi-line `/* */`)
+  - Numbers (integers and floats)
+  - Operators (`=>`, `:=`, `++`, `--`, `...`, etc.)
+- **Code completion** for keywords, built-in types, and standard library types (`Option`, `Either`, `Tuple`, `List`, `Array`)
+- **Brace matching** for `()`, `{}`, `[]`
+- **Code folding** for blocks
+- **Comment/uncomment** support (Ctrl+/ for line, Ctrl+Shift+/ for block)
+- **Structure view** for navigating code
+- **File type recognition** (`.gala`)
 
 ## How to Build
 
@@ -30,7 +40,7 @@ Run the following command in this directory:
 gradle buildPlugin
 ```
 
-This will produce a ZIP file in `build/distributions/gala-intellij-plugin-1.0-SNAPSHOT.zip`.
+This will produce a ZIP file in `build/distributions/gala-intellij-plugin-1.1.0.zip`.
 
 ## How to Install
 

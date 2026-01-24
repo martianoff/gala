@@ -12,6 +12,7 @@ import com.intellij.psi.tree.IElementType
 class GalaSyntaxHighlighter : SyntaxHighlighterBase() {
     companion object {
         val KEYWORD = createTextAttributesKey("GALA_KEYWORD", DefaultLanguageHighlighterColors.KEYWORD)
+        val TYPE = createTextAttributesKey("GALA_TYPE", DefaultLanguageHighlighterColors.CLASS_NAME)
         val STRING = createTextAttributesKey("GALA_STRING", DefaultLanguageHighlighterColors.STRING)
         val COMMENT = createTextAttributesKey("GALA_COMMENT", DefaultLanguageHighlighterColors.LINE_COMMENT)
         val NUMBER = createTextAttributesKey("GALA_NUMBER", DefaultLanguageHighlighterColors.NUMBER)
@@ -24,6 +25,7 @@ class GalaSyntaxHighlighter : SyntaxHighlighterBase() {
         val BAD_CHARACTER = createTextAttributesKey("GALA_BAD_CHARACTER", HighlighterColors.BAD_CHARACTER)
 
         private val KEYWORD_KEYS = arrayOf(KEYWORD)
+        private val TYPE_KEYS = arrayOf(TYPE)
         private val STRING_KEYS = arrayOf(STRING)
         private val COMMENT_KEYS = arrayOf(COMMENT)
         private val NUMBER_KEYS = arrayOf(NUMBER)
@@ -42,6 +44,7 @@ class GalaSyntaxHighlighter : SyntaxHighlighterBase() {
     override fun getTokenHighlights(tokenType: IElementType): Array<TextAttributesKey> {
         return when (tokenType) {
             GalaTypes.KEYWORD -> KEYWORD_KEYS
+            GalaTypes.TYPE -> TYPE_KEYS
             GalaTypes.STRING -> STRING_KEYS
             GalaTypes.COMMENT -> COMMENT_KEYS
             GalaTypes.NUMBER -> NUMBER_KEYS

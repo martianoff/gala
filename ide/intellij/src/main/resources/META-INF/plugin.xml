@@ -1,15 +1,49 @@
 <idea-plugin>
     <id>org.gala.ide.intellij</id>
     <name>GALA</name>
-    <version>1.0-SNAPSHOT</version>
+    <version>1.1.0</version>
     <vendor email="support@gala.org" url="https://github.com/gala-lang/gala">GALA Team</vendor>
 
     <description><![CDATA[
     Support for GALA language (Go Alternative LAnguage).
+
+    GALA is a modern programming language that transpiles to Go, combining Go's efficiency
+    with features from Scala and other functional languages:
+
+    <ul>
+        <li>Immutability by default (val/var)</li>
+        <li>Pattern matching with extractors and guards</li>
+        <li>Expression-oriented (if/match as expressions)</li>
+        <li>Lambda expressions with => syntax</li>
+        <li>Generics and type inference</li>
+        <li>Option, Either, and Tuple monads</li>
+    </ul>
+
+    Features:
+    <ul>
+        <li>Syntax highlighting for keywords, types, strings, comments, operators</li>
+        <li>Code completion for keywords, built-in types, and standard library types</li>
+        <li>Brace matching and folding</li>
+        <li>Comment/uncomment support (// and /* */)</li>
+        <li>Structure view</li>
+    </ul>
     ]]></description>
 
     <change-notes><![CDATA[
-    Initial release of GALA language support.
+    <b>1.1.0</b>
+    <ul>
+        <li>Added support for multi-line comments (/* */)</li>
+        <li>Added support for raw strings (backticks)</li>
+        <li>Added highlighting for built-in types (int, string, bool, etc.)</li>
+        <li>Added new keywords: break, continue, defer, go, select, switch, default, map, chan</li>
+        <li>Added completion for standard library types (Option, Either, Tuple, List, Array)</li>
+        <li>Improved operator recognition (++, --, +=, ..., <-, etc.)</li>
+    </ul>
+
+    <b>1.0.0</b>
+    <ul>
+        <li>Initial release of GALA language support</li>
+    </ul>
     ]]></change-notes>
 
     <idea-version since-build="232" until-build="255.*"/>

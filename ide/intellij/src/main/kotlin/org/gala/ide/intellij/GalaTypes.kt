@@ -9,6 +9,7 @@ interface GalaTypes {
 
     companion object {
         val KEYWORD = GalaTokenType("KEYWORD")
+        val TYPE = GalaTokenType("TYPE")
         val STRING = GalaTokenType("STRING")
         val COMMENT = GalaTokenType("COMMENT")
         val IDENTIFIER = GalaTokenType("IDENTIFIER")
