@@ -88,16 +88,21 @@ jobs:
       - name: Create checksums
         run: |
           cd artifacts
-          # Move binaries from subdirectories to current directory
-          for dir in gala-*/; do
-            if [ -d "$dir" ]; then
-              mv "$dir"/* . 2>/dev/null || true
-              rmdir "$dir" 2>/dev/null || true
-            fi
-          done
+          # Debug: show structure
+          echo "=== Before ==="
+          ls -laR
+          # Move binaries from subdirectories, handling name conflicts
+          mkdir -p release
+          find . -mindepth 2 -type f -name 'gala-*' -exec mv {} release/ \;
+          # Remove empty artifact directories
+          rm -rf gala-*/
+          # Move files back to current directory
+          mv release/* .
+          rmdir release
           # Create checksums for all gala-* files
-          sha256sum gala-* > checksums-sha256.txt
+          echo "=== After ==="
           ls -la
+          sha256sum gala-* > checksums-sha256.txt
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
