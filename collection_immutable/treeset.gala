@@ -461,12 +461,7 @@ func (s TreeSet[T]) MaxOption() Option[T] {
 
 // AddAll adds all elements from another set. Returns a new set.
 func (s TreeSet[T]) AddAll(other TreeSet[T]) TreeSet[T] {
-    var result = s
-    other.ForEach((elem T) => {
-        result = result.Add(elem)
-        return nil
-    })
-    return result
+    return other.FoldLeft[TreeSet[T]](s, (acc TreeSet[T], elem T) => acc.Add(elem))
 }
 
 // Union returns a new set containing all elements from both sets.
@@ -485,26 +480,22 @@ func (s TreeSet[T]) Intersect(other TreeSet[T]) TreeSet[T] {
         larger = s
     }
 
-    var result = EmptyTreeSet[T]()
-    smaller.ForEach((elem T) => {
+    return smaller.FoldLeft[TreeSet[T]](EmptyTreeSet[T](), (acc TreeSet[T], elem T) => {
         if larger.Contains(elem) {
-            result = result.Add(elem)
+            return acc.Add(elem)
         }
-        return nil
+        return acc
     })
-    return result
 }
 
 // Diff returns a new set containing elements in this set but not in other.
 func (s TreeSet[T]) Diff(other TreeSet[T]) TreeSet[T] {
-    var result = EmptyTreeSet[T]()
-    s.ForEach((elem T) => {
+    return s.FoldLeft[TreeSet[T]](EmptyTreeSet[T](), (acc TreeSet[T], elem T) => {
         if !other.Contains(elem) {
-            result = result.Add(elem)
+            return acc.Add(elem)
         }
-        return nil
+        return acc
     })
-    return result
 }
 
 // SubsetOf returns true if this set is a subset of other.
@@ -512,14 +503,7 @@ func (s TreeSet[T]) SubsetOf(other TreeSet[T]) bool {
     if s.size > other.size {
         return false
     }
-    var isSubset = true
-    s.ForEach((elem T) => {
-        if !other.Contains(elem) {
-            isSubset = false
-        }
-        return nil
-    })
-    return isSubset
+    return s.FoldLeft[bool](true, (acc bool, elem T) => acc && other.Contains(elem))
 }
 
 // ForEach applies a function to each element in sorted order.
@@ -542,38 +526,23 @@ func forEachTree[T comparable](node *treeNode[T], f func(T) any) {
 // MapTreeSet applies a function to each element and returns a new set.
 // Note: Defined as standalone function to preserve type constraints.
 func MapTreeSet[T comparable, U comparable](s TreeSet[T], f func(T) U) TreeSet[U] {
-    var result = EmptyTreeSet[U]()
-    s.ForEach((elem T) => {
-        result = result.Add(f(elem))
-        return nil
-    })
-    return result
+    return s.FoldLeft[TreeSet[U]](EmptyTreeSet[U](), (acc TreeSet[U], elem T) => acc.Add(f(elem)))
 }
 
 // FlatMapTreeSet applies a function that returns a set to each element and flattens.
 // Note: Defined as standalone function to preserve type constraints.
 func FlatMapTreeSet[T comparable, U comparable](s TreeSet[T], f func(T) TreeSet[U]) TreeSet[U] {
-    var result = EmptyTreeSet[U]()
-    s.ForEach((elem T) => {
-        f(elem).ForEach((inner U) => {
-            result = result.Add(inner)
-            return nil
-        })
-        return nil
-    })
-    return result
+    return s.FoldLeft[TreeSet[U]](EmptyTreeSet[U](), (acc TreeSet[U], elem T) => acc.AddAll(f(elem)))
 }
 
 // Filter returns a new set with only elements that satisfy the predicate.
 func (s TreeSet[T]) Filter(p func(T) bool) TreeSet[T] {
-    var result = EmptyTreeSet[T]()
-    s.ForEach((elem T) => {
+    return s.FoldLeft[TreeSet[T]](EmptyTreeSet[T](), (acc TreeSet[T], elem T) => {
         if p(elem) {
-            result = result.Add(elem)
+            return acc.Add(elem)
         }
-        return nil
+        return acc
     })
-    return result
 }
 
 // FilterNot returns a new set with elements that do not satisfy the predicate.
@@ -586,9 +555,8 @@ func (s TreeSet[T]) Partition(p func(T) bool) Tuple[TreeSet[T], TreeSet[T]] {
     return Tuple[TreeSet[T], TreeSet[T]](V1 = left, V2 = right)
 }
 
-// FoldLeftTreeSet applies a binary operator from left to right (in sorted order).
-// Note: Defined as standalone function to preserve type constraints.
-func FoldLeftTreeSet[T comparable, U any](s TreeSet[T], initial U, f func(U, T) U) U {
+// FoldLeft applies a binary operator from left to right (in sorted order).
+func (s TreeSet[T]) FoldLeft[U any](initial U, f func(U, T) U) U {
     var acc = initial
     s.ForEach((elem T) => {
         acc = f(acc, elem)
@@ -627,50 +595,32 @@ func (s TreeSet[T]) ReduceOption(f func(T, T) T) Option[T] {
 
 // Exists returns true if any element satisfies the predicate.
 func (s TreeSet[T]) Exists(p func(T) bool) bool {
-    var found = false
-    s.ForEach((elem T) => {
-        if p(elem) {
-            found = true
-        }
-        return nil
-    })
-    return found
+    return s.FoldLeft[bool](false, (acc bool, elem T) => acc || p(elem))
 }
 
 // ForAll returns true if all elements satisfy the predicate.
 func (s TreeSet[T]) ForAll(p func(T) bool) bool {
-    var all = true
-    s.ForEach((elem T) => {
-        if !p(elem) {
-            all = false
-        }
-        return nil
-    })
-    return all
+    return s.FoldLeft[bool](true, (acc bool, elem T) => acc && p(elem))
 }
 
 // Find returns the first element (in sorted order) that satisfies the predicate.
 func (s TreeSet[T]) Find(p func(T) bool) Option[T] {
-    var result Option[T] = None[T]()
-    s.ForEach((elem T) => {
-        if result.IsEmpty() && p(elem) {
-            result = Some[T](elem)
+    return s.FoldLeft[Option[T]](None[T](), (acc Option[T], elem T) => {
+        if acc.IsEmpty() && p(elem) {
+            return Some[T](elem)
         }
-        return nil
+        return acc
     })
-    return result
 }
 
 // Count returns the number of elements satisfying the predicate.
 func (s TreeSet[T]) Count(p func(T) bool) int {
-    var count = 0
-    s.ForEach((elem T) => {
+    return s.FoldLeft[int](0, (acc int, elem T) => {
         if p(elem) {
-            count++
+            return acc + 1
         }
-        return nil
+        return acc
     })
-    return count
 }
 
 // Head returns the minimum element (alias for Min).
@@ -799,22 +749,12 @@ func forEachTreeReverse[T comparable](node *treeNode[T], f func(T) any) {
 
 // ToArray converts the set to an Array (in sorted order).
 func (s TreeSet[T]) ToArray() Array[T] {
-    var result = EmptyArray[T]()
-    s.ForEach((elem T) => {
-        result = result.Append(elem)
-        return nil
-    })
-    return result
+    return s.FoldLeft[Array[T]](EmptyArray[T](), (acc Array[T], elem T) => acc.Append(elem))
 }
 
 // ToHashSet converts the set to a HashSet (loses ordering but gains O(1) lookup).
 func (s TreeSet[T]) ToHashSet() HashSet[T] {
-    var result = EmptyHashSet[T]()
-    s.ForEach((elem T) => {
-        result = result.Add(elem)
-        return nil
-    })
-    return result
+    return s.FoldLeft[HashSet[T]](EmptyHashSet[T](), (acc HashSet[T], elem T) => acc.Add(elem))
 }
 
 // String returns a string representation of the set in sorted order.

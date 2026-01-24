@@ -584,8 +584,8 @@ MapHashSet[int, int](set, (x int) => x * 2)  // HashSet(2, 4, 6, 8, 10)
 ```gala
 val set = HashSetOf[int](1, 2, 3, 4, 5)
 
-// FoldLeft (use standalone function)
-FoldLeftHashSet[int, int](set, 0, (acc int, x int) => acc + x)  // 15
+// FoldLeft
+set.FoldLeft[int](0, (acc int, x int) => acc + x)  // 15
 
 // Reduce
 set.Reduce((a int, b int) => a + b)  // 15
@@ -794,7 +794,7 @@ MapTreeSet(set, (x int) => x * 2)  // TreeSet(2, 4, 6, 8, 10)
 val set = TreeSetOf(1, 2, 3, 4, 5)
 
 // FoldLeft - processes elements in sorted order!
-FoldLeftTreeSet(set, 0, (acc int, x int) => acc + x)  // 15
+set.FoldLeft[int](0, (acc int, x int) => acc + x)  // 15
 
 // Reduce
 set.Reduce((a int, b int) => a + b)  // 15

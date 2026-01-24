@@ -210,7 +210,7 @@ func TestTreeSetMap(t T) T {
 
 func TestTreeSetFoldLeft(t T) T {
     val s = TreeSetOf(1, 2, 3, 4, 5)
-    val sum = FoldLeftTreeSet(s, 0, (acc int, x int) => acc + x)
+    val sum = s.FoldLeft[int](0, (acc int, x int) => acc + x)
     return Eq[int](t, sum, 15)
 }
 

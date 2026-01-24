@@ -134,7 +134,7 @@ func TestHashSetMap(t T) T {
 
 func TestHashSetFoldLeft(t T) T {
     val s = HashSetOf[int](1, 2, 3, 4, 5)
-    val sum = FoldLeftHashSet[int, int](s, 0, (acc int, x int) => acc + x)
+    val sum = s.FoldLeft[int](0, (acc int, x int) => acc + x)
     return Eq[int](t, sum, 15)
 }
 
