@@ -1,11 +1,4 @@
 load("@rules_go//go:def.bzl", "go_library")
-load("@rules_java//java:defs.bzl", "java_binary")
-
-java_binary(
-    name = "antlr4",
-    main_class = "org.antlr.v4.Tool",
-    runtime_deps = ["@antlr4_tool//jar"],
-)
 
 genrule(
     name = "gala_grammar_go",
@@ -20,13 +13,14 @@ genrule(
         set -e && \
         ANTLR_OUT=antlr_tmp_$$$$ && \
         mkdir -p $$ANTLR_OUT && \
-        $(location :antlr4) -Dlanguage=Go -package grammar -o $$ANTLR_OUT $(location gala.g4) && \
+        $(JAVA) -jar $(location @antlr4_tool//jar) -Dlanguage=Go -package grammar -o $$ANTLR_OUT $(location gala.g4) && \
         for f in $$ANTLR_OUT/*.go; do \
             sed 's|github.com/antlr/antlr4/runtime/Go/antlr|github.com/antlr4-go/antlr/v4|g' "$$f" > "$(@D)/$$(basename $$f)"; \
         done && \
         rm -rf $$ANTLR_OUT
     """,
-    tools = [":antlr4"],
+    toolchains = ["@bazel_tools//tools/jdk:current_java_runtime"],
+    tools = ["@antlr4_tool//jar"],
 )
 
 go_library(
