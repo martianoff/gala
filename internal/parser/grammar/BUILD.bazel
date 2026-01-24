@@ -10,11 +10,25 @@ genrule(
         "gala_parser.go",
     ],
     cmd = """
-        set -e && \
+        set -ex && \
+        echo "=== DEBUG: pwd ===" && pwd && \
+        echo "=== DEBUG: JAVA = $(JAVA) ===" && \
+        echo "=== DEBUG: Java version ===" && \
+        "$(JAVA)" -version 2>&1 || echo "Java failed" && \
+        echo "=== DEBUG: JAR = $(location @antlr4_tool//jar) ===" && \
+        ls -la "$(location @antlr4_tool//jar)" && \
+        echo "=== DEBUG: Grammar = $(location gala.g4) ===" && \
+        ls -la "$(location gala.g4)" && \
         ANTLR_OUT=antlr_tmp_$$$$ && \
         mkdir -p $$ANTLR_OUT && \
-        "$(JAVA)" -jar $(location @antlr4_tool//jar) -Dlanguage=Go -package grammar -o $$ANTLR_OUT $(location gala.g4) && \
+        echo "=== DEBUG: Running ANTLR ===" && \
+        "$(JAVA)" -jar $(location @antlr4_tool//jar) -Dlanguage=Go -package grammar -o $$ANTLR_OUT $(location gala.g4) 2>&1 || echo "ANTLR failed with $$?" && \
+        echo "=== DEBUG: Output contents ===" && \
+        ls -laR $$ANTLR_OUT && \
+        echo "=== DEBUG: Finding .go files ===" && \
+        find $$ANTLR_OUT -name '*.go' -type f && \
         for f in $$ANTLR_OUT/*.go; do \
+            echo "Processing $$f" && \
             sed 's|github.com/antlr/antlr4/runtime/Go/antlr|github.com/antlr4-go/antlr/v4|g' "$$f" > "$(@D)/$$(basename $$f)"; \
         done && \
         rm -rf $$ANTLR_OUT
