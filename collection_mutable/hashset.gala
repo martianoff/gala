@@ -259,54 +259,47 @@ func (s *HashSet[T]) Union(other *HashSet[T]) *HashSet[T] {
 
 // Intersect returns a new set containing only elements present in both sets.
 func (s *HashSet[T]) Intersect(other *HashSet[T]) *HashSet[T] {
-    var result = EmptyHashSet[T]()
     // Iterate over the smaller set for efficiency
     if s.Size() <= other.Size() {
-        s.ForEach((elem T) => {
+        return s.FoldLeft[*HashSet[T]](EmptyHashSet[T](), (acc *HashSet[T], elem T) => {
             if other.Contains(elem) {
-                result.Add(elem)
+                acc.Add(elem)
             }
-            return nil
-        })
-    } else {
-        other.ForEach((elem T) => {
-            if s.Contains(elem) {
-                result.Add(elem)
-            }
-            return nil
+            return acc
         })
     }
-    return result
+    return other.FoldLeft[*HashSet[T]](EmptyHashSet[T](), (acc *HashSet[T], elem T) => {
+        if s.Contains(elem) {
+            acc.Add(elem)
+        }
+        return acc
+    })
 }
 
 // Diff returns a new set containing elements in this set but not in other.
 func (s *HashSet[T]) Diff(other *HashSet[T]) *HashSet[T] {
-    var result = EmptyHashSet[T]()
-    s.ForEach((elem T) => {
+    return s.FoldLeft[*HashSet[T]](EmptyHashSet[T](), (acc *HashSet[T], elem T) => {
         if !other.Contains(elem) {
-            result.Add(elem)
+            acc.Add(elem)
         }
-        return nil
+        return acc
     })
-    return result
 }
 
 // SymmetricDiff returns a new set containing elements in either set but not both.
 func (s *HashSet[T]) SymmetricDiff(other *HashSet[T]) *HashSet[T] {
-    var result = EmptyHashSet[T]()
-    s.ForEach((elem T) => {
+    val fromS = s.FoldLeft[*HashSet[T]](EmptyHashSet[T](), (acc *HashSet[T], elem T) => {
         if !other.Contains(elem) {
-            result.Add(elem)
+            acc.Add(elem)
         }
-        return nil
+        return acc
     })
-    other.ForEach((elem T) => {
+    return other.FoldLeft[*HashSet[T]](fromS, (acc *HashSet[T], elem T) => {
         if !s.Contains(elem) {
-            result.Add(elem)
+            acc.Add(elem)
         }
-        return nil
+        return acc
     })
-    return result
 }
 
 // SubsetOf returns true if this set is a subset of other.
@@ -314,14 +307,7 @@ func (s *HashSet[T]) SubsetOf(other *HashSet[T]) bool {
     if s.Size() > other.Size() {
         return false
     }
-    var isSubset = true
-    s.ForEach((elem T) => {
-        if !other.Contains(elem) {
-            isSubset = false
-        }
-        return nil
-    })
-    return isSubset
+    return s.FoldLeft[bool](true, (acc bool, elem T) => acc && other.Contains(elem))
 }
 
 // SupersetOf returns true if this set is a superset of other.
@@ -330,23 +316,9 @@ func (s *HashSet[T]) SupersetOf(other *HashSet[T]) bool = other.SubsetOf(s)
 // Disjoint returns true if the sets have no elements in common.
 func (s *HashSet[T]) Disjoint(other *HashSet[T]) bool {
     if s.Size() <= other.Size() {
-        var disjoint = true
-        s.ForEach((elem T) => {
-            if other.Contains(elem) {
-                disjoint = false
-            }
-            return nil
-        })
-        return disjoint
+        return s.FoldLeft[bool](true, (acc bool, elem T) => acc && !other.Contains(elem))
     }
-    var disjoint = true
-    other.ForEach((elem T) => {
-        if s.Contains(elem) {
-            disjoint = false
-        }
-        return nil
-    })
-    return disjoint
+    return other.FoldLeft[bool](true, (acc bool, elem T) => acc && !s.Contains(elem))
 }
 
 // === In-place Set Operations ===
@@ -390,14 +362,12 @@ func (s *HashSet[T]) ForEach(f func(T) any) {
 
 // Filter returns a new HashSet with only elements that satisfy the predicate.
 func (s *HashSet[T]) Filter(p func(T) bool) *HashSet[T] {
-    var result = EmptyHashSet[T]()
-    s.ForEach((elem T) => {
+    return s.FoldLeft[*HashSet[T]](EmptyHashSet[T](), (acc *HashSet[T], elem T) => {
         if p(elem) {
-            result.Add(elem)
+            acc.Add(elem)
         }
-        return nil
+        return acc
     })
-    return result
 }
 
 // FilterNot returns a new HashSet with elements that do not satisfy the predicate.
@@ -412,25 +382,18 @@ func (s *HashSet[T]) Partition(p func(T) bool) Tuple[*HashSet[T], *HashSet[T]] {
 
 // Map applies a function to each element and returns a new set.
 func (s *HashSet[T]) Map[U comparable](f func(T) U) *HashSet[U] {
-    var result = EmptyHashSet[U]()
-    s.ForEach((elem T) => {
-        result.Add(f(elem))
-        return nil
+    return s.FoldLeft[*HashSet[U]](EmptyHashSet[U](), (acc *HashSet[U], elem T) => {
+        acc.Add(f(elem))
+        return acc
     })
-    return result
 }
 
 // FlatMap applies a function that returns a set to each element and flattens.
 func (s *HashSet[T]) FlatMap[U comparable](f func(T) *HashSet[U]) *HashSet[U] {
-    var result = EmptyHashSet[U]()
-    s.ForEach((elem T) => {
-        f(elem).ForEach((inner U) => {
-            result.Add(inner)
-            return nil
-        })
-        return nil
+    return s.FoldLeft[*HashSet[U]](EmptyHashSet[U](), (acc *HashSet[U], elem T) => {
+        acc.AddFrom(f(elem))
+        return acc
     })
-    return result
 }
 
 // === Reduction Operations ===
@@ -477,50 +440,32 @@ func (s *HashSet[T]) ReduceOption(f func(T, T) T) Option[T] {
 
 // Exists returns true if any element satisfies the predicate.
 func (s *HashSet[T]) Exists(p func(T) bool) bool {
-    var found = false
-    s.ForEach((elem T) => {
-        if p(elem) {
-            found = true
-        }
-        return nil
-    })
-    return found
+    return s.FoldLeft[bool](false, (acc bool, elem T) => acc || p(elem))
 }
 
 // ForAll returns true if all elements satisfy the predicate.
 func (s *HashSet[T]) ForAll(p func(T) bool) bool {
-    var all = true
-    s.ForEach((elem T) => {
-        if !p(elem) {
-            all = false
-        }
-        return nil
-    })
-    return all
+    return s.FoldLeft[bool](true, (acc bool, elem T) => acc && p(elem))
 }
 
 // Find returns the first element that satisfies the predicate.
 func (s *HashSet[T]) Find(p func(T) bool) Option[T] {
-    var result Option[T] = None[T]()
-    s.ForEach((elem T) => {
-        if result.IsEmpty() && p(elem) {
-            result = Some[T](elem)
+    return s.FoldLeft[Option[T]](None[T](), (acc Option[T], elem T) => {
+        if acc.IsEmpty() && p(elem) {
+            return Some[T](elem)
         }
-        return nil
+        return acc
     })
-    return result
 }
 
 // Count returns the number of elements satisfying the predicate.
 func (s *HashSet[T]) Count(p func(T) bool) int {
-    var count = 0
-    s.ForEach((elem T) => {
+    return s.FoldLeft[int](0, (acc int, elem T) => {
         if p(elem) {
-            count++
+            return acc + 1
         }
-        return nil
+        return acc
     })
-    return count
 }
 
 // === Element Access ===
