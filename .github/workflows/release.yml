@@ -1,0 +1,99 @@
+name: Release
+
+on:
+  release:
+    types: [created]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }}-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+            runner: ubuntu-latest
+            platform: "@rules_go//go/toolchain:linux_amd64"
+            ext: ""
+          - os: linux
+            arch: arm64
+            runner: ubuntu-latest
+            platform: "@rules_go//go/toolchain:linux_arm64"
+            ext: ""
+          - os: darwin
+            arch: amd64
+            runner: macos-latest
+            platform: "@rules_go//go/toolchain:darwin_amd64"
+            ext: ""
+          - os: darwin
+            arch: arm64
+            runner: macos-latest
+            platform: "@rules_go//go/toolchain:darwin_arm64"
+            ext: ""
+          - os: windows
+            arch: amd64
+            runner: windows-latest
+            platform: "@rules_go//go/toolchain:windows_amd64"
+            ext: ".exe"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bazel
+        uses: bazel-contrib/setup-bazel@0.14.0
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}
+          repository-cache: true
+
+      - name: Build binary
+        run: bazel build //cmd/gala:gala --platforms=${{ matrix.platform }}
+
+      - name: Prepare binary (Unix)
+        if: matrix.os != 'windows'
+        run: |
+          mkdir -p dist
+          cp bazel-bin/cmd/gala/gala_/gala dist/gala-${{ matrix.os }}-${{ matrix.arch }}
+          chmod +x dist/gala-${{ matrix.os }}-${{ matrix.arch }}
+
+      - name: Prepare binary (Windows)
+        if: matrix.os == 'windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist
+          Copy-Item bazel-bin/cmd/gala/gala_/gala.exe dist/gala-${{ matrix.os }}-${{ matrix.arch }}.exe
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gala-${{ matrix.os }}-${{ matrix.arch }}
+          path: dist/gala-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}
+
+  upload-release:
+    name: Upload Release Assets
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create checksums
+        run: |
+          cd artifacts
+          find . -type f -name 'gala-*' -exec mv {} . \;
+          sha256sum gala-* > checksums-sha256.txt
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/gala-*
+            artifacts/checksums-sha256.txt
