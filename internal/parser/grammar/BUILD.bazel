@@ -17,6 +17,7 @@ genrule(
         "gala_parser.go",
     ],
     cmd = """
+        mkdir -p grammar && \
         $(location :antlr4) -Dlanguage=Go -package grammar -o grammar $(location gala.g4) && \
         for f in grammar/*.go; do \
             sed 's|github.com/antlr/antlr4/runtime/Go/antlr|github.com/antlr4-go/antlr/v4|g' "$$f" > "$(@D)/$$(basename $$f)"; \
