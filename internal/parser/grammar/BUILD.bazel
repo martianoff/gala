@@ -10,23 +10,13 @@ genrule(
         "gala_parser.go",
     ],
     cmd = """
-        set -ex && \
-        echo "=== DEBUG: pwd ===" && pwd && \
-        echo "=== DEBUG: JAVA = $(JAVA) ===" && \
-        "$(JAVA)" -version 2>&1 && \
+        set -e && \
         ANTLR_OUT=antlr_tmp_$$$$ && \
         mkdir -p $$ANTLR_OUT && \
-        echo "=== DEBUG: Running ANTLR ===" && \
         "$(JAVA)" -jar $(location @antlr4_tool//jar) -Dlanguage=Go -package grammar -o $$ANTLR_OUT $(location gala.g4) && \
-        echo "=== DEBUG: Output contents ===" && \
-        ls -laR $$ANTLR_OUT && \
-        echo "=== DEBUG: Processing .go files ===" && \
         find $$ANTLR_OUT -name '*.go' -type f | while read f; do \
-            echo "Processing $$f -> $(@D)/$$(basename $$f)" && \
             sed 's|github.com/antlr/antlr4/runtime/Go/antlr|github.com/antlr4-go/antlr/v4|g' "$$f" > "$(@D)/$$(basename $$f)"; \
         done && \
-        echo "=== DEBUG: Final output ===" && \
-        ls -la $(@D)/*.go && \
         rm -rf $$ANTLR_OUT
     """,
     toolchains = ["@bazel_tools//tools/jdk:current_host_java_runtime"],

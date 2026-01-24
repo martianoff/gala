@@ -88,8 +88,16 @@ jobs:
       - name: Create checksums
         run: |
           cd artifacts
-          find . -type f -name 'gala-*' -exec mv {} . \;
+          # Move binaries from subdirectories to current directory
+          for dir in gala-*/; do
+            if [ -d "$dir" ]; then
+              mv "$dir"/* . 2>/dev/null || true
+              rmdir "$dir" 2>/dev/null || true
+            fi
+          done
+          # Create checksums for all gala-* files
           sha256sum gala-* > checksums-sha256.txt
+          ls -la
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
