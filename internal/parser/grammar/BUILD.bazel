@@ -1,23 +1,28 @@
-load("@rules_antlr//antlr:antlr4.bzl", "antlr")
 load("@rules_go//go:def.bzl", "go_library")
+load("@rules_java//java:defs.bzl", "java_binary")
 
-antlr(
-    name = "gala_grammar",
-    srcs = ["gala.g4"],
-    language = "Go",
-    package = "grammar",
+java_binary(
+    name = "antlr4",
+    main_class = "org.antlr.v4.Tool",
+    runtime_deps = ["@antlr4_tool//jar"],
 )
 
 genrule(
     name = "gala_grammar_go",
-    srcs = [":gala_grammar"],
+    srcs = ["gala.g4"],
     outs = [
         "gala_base_listener.go",
         "gala_lexer.go",
         "gala_listener.go",
         "gala_parser.go",
     ],
-    cmd = "cp $(SRCS)/grammar/*.go $(@D)/ && sed -i 's|github.com/antlr/antlr4/runtime/Go/antlr|github.com/antlr4-go/antlr/v4|g' $(@D)/*.go",
+    cmd = """
+        $(location :antlr4) -Dlanguage=Go -package grammar -o grammar $(location gala.g4) && \
+        for f in grammar/*.go; do \
+            sed 's|github.com/antlr/antlr4/runtime/Go/antlr|github.com/antlr4-go/antlr/v4|g' "$$f" > "$(@D)/$$(basename $$f)"; \
+        done
+    """,
+    tools = [":antlr4"],
 )
 
 go_library(
