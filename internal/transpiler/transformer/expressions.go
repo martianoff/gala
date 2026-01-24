@@ -74,7 +74,9 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 		recvType = qName
 	}
 	recvBaseName := recvType.BaseName()
-	isGenericMethod := len(typeArgs) > 0 || (recvBaseName != "" && t.genericMethods[recvBaseName] != nil && t.genericMethods[recvBaseName][method])
+	// Strip pointer prefix for genericMethods lookup since methods are registered under base type name
+	lookupBaseName := strings.TrimPrefix(recvBaseName, "*")
+	isGenericMethod := len(typeArgs) > 0 || (lookupBaseName != "" && t.genericMethods[lookupBaseName] != nil && t.genericMethods[lookupBaseName][method])
 
 	if receiver != nil && isGenericMethod {
 		// Check if receiver is a package name
@@ -107,21 +109,26 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 			var fun ast.Expr
 			if !recvType.IsNil() {
 				recvPkg := recvType.GetPackage()
-				if recvPkg == transpiler.StdPackage || strings.HasPrefix(recvBaseName, "std.") {
+				if recvPkg == transpiler.StdPackage || strings.HasPrefix(lookupBaseName, "std.") {
 					// Receiver is from std package
-					baseName := strings.TrimPrefix(recvBaseName, "std.")
+					baseName := strings.TrimPrefix(lookupBaseName, "std.")
 					fun = t.stdIdent(baseName + "_" + method)
 				} else {
-					fun = t.ident(recvBaseName + "_" + method)
+					fun = t.ident(lookupBaseName + "_" + method)
 				}
 			} else {
 				fun = ast.NewIdent(method)
 			}
 
-			if len(typeArgs) == 1 {
-				fun = &ast.IndexExpr{X: fun, Index: typeArgs[0]}
-			} else if len(typeArgs) > 1 {
-				fun = &ast.IndexListExpr{X: fun, Indices: typeArgs}
+			// Prepend receiver's type arguments to explicit type arguments
+			// For example, arr.Map[int](f) where arr is *Array[int] becomes Array_Map[int, int](arr, f)
+			recvTypeArgs := t.getReceiverTypeArgs(recvType)
+			allTypeArgs := append(typeArgs, recvTypeArgs...)
+
+			if len(allTypeArgs) == 1 {
+				fun = &ast.IndexExpr{X: fun, Index: allTypeArgs[0]}
+			} else if len(allTypeArgs) > 1 {
+				fun = &ast.IndexListExpr{X: fun, Indices: allTypeArgs}
 			}
 
 			return &ast.CallExpr{
@@ -920,9 +927,11 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 				recvType = qName
 			}
 			recvBaseName := recvType.BaseName()
+			// Strip pointer prefix for genericMethods lookup since methods are registered under base type name
+			lookupBaseName := strings.TrimPrefix(recvBaseName, "*")
 
 			// Check if this is a generic method
-			isGenericMethod := recvBaseName != "" && t.genericMethods[recvBaseName] != nil && t.genericMethods[recvBaseName][method]
+			isGenericMethod := lookupBaseName != "" && t.genericMethods[lookupBaseName] != nil && t.genericMethods[lookupBaseName][method]
 			if isGenericMethod {
 				// Check if receiver is a package name
 				isPkg := false
@@ -933,18 +942,26 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 				}
 
 				if !isPkg {
-					// Transform to standalone function call: TypeName_Method(receiver)
+					// Transform to standalone function call: TypeName_Method[T](receiver)
 					var funExpr ast.Expr
 					if !recvType.IsNil() {
 						recvPkg := recvType.GetPackage()
-						if recvPkg == transpiler.StdPackage || strings.HasPrefix(recvBaseName, "std.") {
-							baseName := strings.TrimPrefix(recvBaseName, "std.")
+						if recvPkg == transpiler.StdPackage || strings.HasPrefix(lookupBaseName, "std.") {
+							baseName := strings.TrimPrefix(lookupBaseName, "std.")
 							funExpr = t.stdIdent(baseName + "_" + method)
 						} else {
-							funExpr = t.ident(recvBaseName + "_" + method)
+							funExpr = t.ident(lookupBaseName + "_" + method)
 						}
 					} else {
 						funExpr = ast.NewIdent(method)
+					}
+
+					// Add receiver's type arguments for the extracted function
+					recvTypeArgs := t.getReceiverTypeArgs(recvType)
+					if len(recvTypeArgs) == 1 {
+						funExpr = &ast.IndexExpr{X: funExpr, Index: recvTypeArgs[0]}
+					} else if len(recvTypeArgs) > 1 {
+						funExpr = &ast.IndexListExpr{X: funExpr, Indices: recvTypeArgs}
 					}
 
 					return &ast.CallExpr{
@@ -1006,7 +1023,9 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 		recvType = qName
 	}
 	recvBaseName := recvType.BaseName()
-	isGenericMethod := len(typeArgs) > 0 || (recvBaseName != "" && t.genericMethods[recvBaseName] != nil && t.genericMethods[recvBaseName][method])
+	// Strip pointer prefix for genericMethods lookup since methods are registered under base type name
+	lookupBaseName := strings.TrimPrefix(recvBaseName, "*")
+	isGenericMethod := len(typeArgs) > 0 || (lookupBaseName != "" && t.genericMethods[lookupBaseName] != nil && t.genericMethods[lookupBaseName][method])
 
 	if receiver != nil && isGenericMethod {
 		// Check if receiver is a package name
@@ -1037,20 +1056,24 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 			var funExpr ast.Expr
 			if !recvType.IsNil() {
 				recvPkg := recvType.GetPackage()
-				if recvPkg == transpiler.StdPackage || strings.HasPrefix(recvBaseName, "std.") {
-					baseName := strings.TrimPrefix(recvBaseName, "std.")
+				if recvPkg == transpiler.StdPackage || strings.HasPrefix(lookupBaseName, "std.") {
+					baseName := strings.TrimPrefix(lookupBaseName, "std.")
 					funExpr = t.stdIdent(baseName + "_" + method)
 				} else {
-					funExpr = t.ident(recvBaseName + "_" + method)
+					funExpr = t.ident(lookupBaseName + "_" + method)
 				}
 			} else {
 				funExpr = ast.NewIdent(method)
 			}
 
-			if len(typeArgs) == 1 {
-				funExpr = &ast.IndexExpr{X: funExpr, Index: typeArgs[0]}
-			} else if len(typeArgs) > 1 {
-				funExpr = &ast.IndexListExpr{X: funExpr, Indices: typeArgs}
+			// Prepend receiver's type arguments to explicit type arguments
+			recvTypeArgs := t.getReceiverTypeArgs(recvType)
+			allTypeArgs := append(typeArgs, recvTypeArgs...)
+
+			if len(allTypeArgs) == 1 {
+				funExpr = &ast.IndexExpr{X: funExpr, Index: allTypeArgs[0]}
+			} else if len(allTypeArgs) > 1 {
+				funExpr = &ast.IndexListExpr{X: funExpr, Indices: allTypeArgs}
 			}
 
 			return &ast.CallExpr{
@@ -1895,6 +1918,10 @@ func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.
 	if ctx.CompositeLiteral() != nil {
 		return t.transformCompositeLiteral(ctx.CompositeLiteral().(*grammar.CompositeLiteralContext))
 	}
+	// Handle make expression: make(type, size) or make(type, size, capacity)
+	if ctx.MakeExpression() != nil {
+		return t.transformMakeExpression(ctx.MakeExpression().(*grammar.MakeExpressionContext))
+	}
 	for i := 0; i < ctx.GetChildCount(); i++ {
 		if exprListCtx, ok := ctx.GetChild(i).(grammar.IExpressionListContext); ok {
 			exprs, err := t.transformExpressionList(exprListCtx.(*grammar.ExpressionListContext))
@@ -1909,6 +1936,33 @@ func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.
 		}
 	}
 	return nil, nil
+}
+
+// transformMakeExpression transforms make(type, size) or make(type, size, capacity)
+func (t *galaASTTransformer) transformMakeExpression(ctx *grammar.MakeExpressionContext) (ast.Expr, error) {
+	// Transform the type argument
+	typeExpr, err := t.transformType(ctx.Type_())
+	if err != nil {
+		return nil, err
+	}
+
+	// Build the arguments for make()
+	args := []ast.Expr{typeExpr}
+
+	// Transform size and capacity arguments
+	allExprs := ctx.AllExpression()
+	for _, exprCtx := range allExprs {
+		expr, err := t.transformExpression(exprCtx)
+		if err != nil {
+			return nil, err
+		}
+		args = append(args, expr)
+	}
+
+	return &ast.CallExpr{
+		Fun:  ast.NewIdent("make"),
+		Args: args,
+	}, nil
 }
 
 func (t *galaASTTransformer) transformCompositeLiteral(ctx *grammar.CompositeLiteralContext) (ast.Expr, error) {

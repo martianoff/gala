@@ -1085,6 +1085,11 @@ func (t *galaASTTransformer) isSeqType(typ transpiler.Type) bool {
 		return false
 	}
 
+	// Unwrap pointer types for mutable collections
+	if ptrType, ok := typ.(transpiler.PointerType); ok {
+		typ = ptrType.Elem
+	}
+
 	// Get the base type name
 	var baseName string
 	if genType, ok := typ.(transpiler.GenericType); ok {
@@ -1095,9 +1100,10 @@ func (t *galaASTTransformer) isSeqType(typ transpiler.Type) bool {
 		return false
 	}
 
-	// Check if it's a known Seq type
+	// Check if it's a known Seq type (includes both immutable and mutable collections)
 	switch baseName {
-	case "Array", "collection_immutable.Array", "List", "collection_immutable.List":
+	case "Array", "collection_immutable.Array", "collection_mutable.Array",
+		"List", "collection_immutable.List", "collection_mutable.List":
 		return true
 	}
 
@@ -1114,7 +1120,12 @@ func (t *galaASTTransformer) isSeqType(typ transpiler.Type) bool {
 }
 
 // getSeqElementType extracts the element type from a Seq type like Array[int] or List[string].
+// Also handles pointer types like *Array[int] for mutable collections.
 func (t *galaASTTransformer) getSeqElementType(typ transpiler.Type) transpiler.Type {
+	// Unwrap pointer types for mutable collections
+	if ptrType, ok := typ.(transpiler.PointerType); ok {
+		typ = ptrType.Elem
+	}
 	if genType, ok := typ.(transpiler.GenericType); ok {
 		if len(genType.Params) > 0 {
 			return genType.Params[0]

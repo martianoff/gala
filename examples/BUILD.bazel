@@ -254,3 +254,10 @@ gala_test(
     src = "custom_seq_pattern.gala",
     expected = "custom_seq_pattern.out",
 )
+
+gala_test(
+    name = "mutable_collections",
+    src = "mutable_collections.gala",
+    expected = "mutable_collections.out",
+    deps = ["//collection_mutable"],
+)

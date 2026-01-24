@@ -1,0 +1,670 @@
+package collection_mutable
+
+import "fmt"
+
+// Array is a mutable indexed sequence backed by a Go slice.
+// Optimized for O(1) amortized append and O(1) random access.
+//
+// Performance characteristics:
+// - Get:     O(1)
+// - Set:     O(1)
+// - Append:  O(1) amortized
+// - Prepend: O(n)
+// - Insert:  O(n)
+// - Remove:  O(n)
+// - Length:  O(1)
+
+// Array represents a mutable indexed sequence.
+type Array[T any] struct {
+    var elements []T
+}
+
+// EmptyArray returns a new empty Array.
+func EmptyArray[T any]() *Array[T] {
+    var elems []T
+    return &Array[T](elements = elems)
+}
+
+// ArrayOf creates an Array from variadic arguments.
+// Pre-allocates capacity for efficiency.
+func ArrayOf[T any](elements ...T) *Array[T] {
+    var elems = make([]T, 0, len(elements))
+    for i := 0; i < len(elements); i++ {
+        elems = append(elems, elements[i])
+    }
+    return &Array[T](elements = elems)
+}
+
+// ArrayFromSlice creates an Array from a slice (copies the slice).
+// Pre-allocates capacity for efficiency.
+func ArrayFromSlice[T any](elements []T) *Array[T] {
+    var elems = make([]T, 0, len(elements))
+    for i := 0; i < len(elements); i++ {
+        elems = append(elems, elements[i])
+    }
+    return &Array[T](elements = elems)
+}
+
+// ArrayWithCapacity creates an empty Array with pre-allocated capacity.
+// Use this when you know the approximate size upfront for better performance.
+func ArrayWithCapacity[T any](capacity int) *Array[T] {
+    var elems = make([]T, 0, capacity)
+    return &Array[T](elements = elems)
+}
+
+// === Basic Operations ===
+
+// IsEmpty returns true if the array is empty.
+func (a *Array[T]) IsEmpty() bool = len(a.elements) == 0
+
+// NonEmpty returns true if the array is not empty.
+func (a *Array[T]) NonEmpty() bool = len(a.elements) > 0
+
+// Length returns the number of elements. O(1).
+func (a *Array[T]) Length() int = len(a.elements)
+
+// Size is an alias for Length.
+func (a *Array[T]) Size() int = len(a.elements)
+
+// Capacity returns the current capacity of the underlying slice.
+func (a *Array[T]) Capacity() int = cap(a.elements)
+
+// === Access Operations ===
+
+// Get returns the element at the given index. O(1).
+// Panics if index is out of bounds.
+func (a *Array[T]) Get(index int) T {
+    if (index < 0) || (index >= len(a.elements)) {
+        panic(fmt.Sprintf("Array.Get: index %d out of bounds [0, %d)", index, len(a.elements)))
+    }
+    return a.elements[index]
+}
+
+// GetOption returns the element at index wrapped in Option.
+func (a *Array[T]) GetOption(index int) Option[T] {
+    if (index < 0) || (index >= len(a.elements)) {
+        return None[T]()
+    }
+    return Some[T](a.elements[index])
+}
+
+// Head returns the first element. O(1).
+// Panics if the array is empty.
+func (a *Array[T]) Head() T {
+    if len(a.elements) == 0 {
+        panic("Array.Head on empty array")
+    }
+    return a.elements[0]
+}
+
+// HeadOption returns the first element wrapped in Option.
+func (a *Array[T]) HeadOption() Option[T] {
+    if len(a.elements) == 0 {
+        return None[T]()
+    }
+    return Some[T](a.elements[0])
+}
+
+// Last returns the last element. O(1).
+// Panics if the array is empty.
+func (a *Array[T]) Last() T {
+    if len(a.elements) == 0 {
+        panic("Array.Last on empty array")
+    }
+    return a.elements[len(a.elements) - 1]
+}
+
+// LastOption returns the last element wrapped in Option.
+func (a *Array[T]) LastOption() Option[T] {
+    if len(a.elements) == 0 {
+        return None[T]()
+    }
+    return Some[T](a.elements[len(a.elements) - 1])
+}
+
+// === Mutating Operations ===
+
+// Set updates the element at index in place. O(1).
+// Panics if index is out of bounds.
+func (a *Array[T]) Set(index int, value T) {
+    if (index < 0) || (index >= len(a.elements)) {
+        panic(fmt.Sprintf("Array.Set: index %d out of bounds [0, %d)", index, len(a.elements)))
+    }
+    a.elements[index] = value
+}
+
+// Append adds an element to the end. O(1) amortized.
+func (a *Array[T]) Append(value T) {
+    a.elements = append(a.elements, value)
+}
+
+// AppendAll appends all elements from a slice.
+func (a *Array[T]) AppendAll(values []T) {
+    for i := 0; i < len(values); i++ {
+        a.elements = append(a.elements, values[i])
+    }
+}
+
+// AppendFrom appends all elements from another Array.
+func (a *Array[T]) AppendFrom(other *Array[T]) {
+    for i := 0; i < len(other.elements); i++ {
+        a.elements = append(a.elements, other.elements[i])
+    }
+}
+
+// Prepend adds an element to the front. O(n).
+func (a *Array[T]) Prepend(value T) {
+    var newElements []T
+    newElements = append(newElements, value)
+    for i := 0; i < len(a.elements); i++ {
+        newElements = append(newElements, a.elements[i])
+    }
+    a.elements = newElements
+}
+
+// PrependAll prepends all elements from a slice. O(n).
+func (a *Array[T]) PrependAll(values []T) {
+    var newElements []T
+    for i := 0; i < len(values); i++ {
+        newElements = append(newElements, values[i])
+    }
+    for i := 0; i < len(a.elements); i++ {
+        newElements = append(newElements, a.elements[i])
+    }
+    a.elements = newElements
+}
+
+// Insert inserts an element at the given index. O(n).
+// Panics if index is out of bounds (0 <= index <= length).
+func (a *Array[T]) Insert(index int, value T) {
+    if (index < 0) || (index > len(a.elements)) {
+        panic(fmt.Sprintf("Array.Insert: index %d out of bounds [0, %d]", index, len(a.elements)))
+    }
+    var newElements []T
+    for i := 0; i < index; i++ {
+        newElements = append(newElements, a.elements[i])
+    }
+    newElements = append(newElements, value)
+    for i := index; i < len(a.elements); i++ {
+        newElements = append(newElements, a.elements[i])
+    }
+    a.elements = newElements
+}
+
+// RemoveAt removes the element at the given index. O(n).
+// Panics if index is out of bounds.
+func (a *Array[T]) RemoveAt(index int) {
+    if (index < 0) || (index >= len(a.elements)) {
+        panic(fmt.Sprintf("Array.RemoveAt: index %d out of bounds [0, %d)", index, len(a.elements)))
+    }
+    var newElements []T
+    for i := 0; i < index; i++ {
+        newElements = append(newElements, a.elements[i])
+    }
+    for i := index + 1; i < len(a.elements); i++ {
+        newElements = append(newElements, a.elements[i])
+    }
+    a.elements = newElements
+}
+
+// RemoveFirst removes the first element. O(n).
+// Panics if the array is empty.
+func (a *Array[T]) RemoveFirst() T {
+    if len(a.elements) == 0 {
+        panic("Array.RemoveFirst on empty array")
+    }
+    var removed = a.elements[0]
+    var newElements []T
+    for i := 1; i < len(a.elements); i++ {
+        newElements = append(newElements, a.elements[i])
+    }
+    a.elements = newElements
+    return removed
+}
+
+// RemoveLast removes the last element. O(1).
+// Panics if the array is empty.
+func (a *Array[T]) RemoveLast() T {
+    if len(a.elements) == 0 {
+        panic("Array.RemoveLast on empty array")
+    }
+    var lastIdx = len(a.elements) - 1
+    var removed = a.elements[lastIdx]
+    var newElements []T
+    for i := 0; i < lastIdx; i++ {
+        newElements = append(newElements, a.elements[i])
+    }
+    a.elements = newElements
+    return removed
+}
+
+// Clear removes all elements. O(1).
+func (a *Array[T]) Clear() {
+    var empty []T
+    a.elements = empty
+}
+
+// EnsureCapacity grows the slice capacity if needed.
+func (a *Array[T]) EnsureCapacity(minCapacity int) {
+    // Since GALA doesn't have make(), we just let Go handle capacity automatically
+    // This is a no-op but kept for API compatibility
+}
+
+// Reverse reverses the array in place. O(n).
+func (a *Array[T]) Reverse() {
+    var n = len(a.elements)
+    for i := 0; i < n / 2; i++ {
+        var temp = a.elements[i]
+        a.elements[i] = a.elements[n - 1 - i]
+        a.elements[n - 1 - i] = temp
+    }
+}
+
+// === Search Operations ===
+
+// Contains checks if the array contains the given element. O(n).
+func (a *Array[T]) Contains(elem T) bool {
+    for i := 0; i < len(a.elements); i++ {
+        if Equal(a.elements[i], elem) {
+            return true
+        }
+    }
+    return false
+}
+
+// IndexOf returns the index of the first occurrence of elem, or -1 if not found.
+func (a *Array[T]) IndexOf(elem T) int {
+    for i := 0; i < len(a.elements); i++ {
+        if Equal(a.elements[i], elem) {
+            return i
+        }
+    }
+    return -1
+}
+
+// LastIndexOf returns the index of the last occurrence of elem, or -1 if not found.
+func (a *Array[T]) LastIndexOf(elem T) int {
+    for i := len(a.elements) - 1; i >= 0; i-- {
+        if Equal(a.elements[i], elem) {
+            return i
+        }
+    }
+    return -1
+}
+
+// === Structural Operations (return new arrays) ===
+
+// Take returns a new Array with the first n elements.
+func (a *Array[T]) Take(n int) *Array[T] {
+    if n <= 0 {
+        return EmptyArray[T]()
+    }
+    if n >= len(a.elements) {
+        return a.Clone()
+    }
+    var elems = make([]T, 0, n)
+    for i := 0; i < n; i++ {
+        elems = append(elems, a.elements[i])
+    }
+    return &Array[T](elements = elems)
+}
+
+// Drop returns a new Array without the first n elements.
+func (a *Array[T]) Drop(n int) *Array[T] {
+    if n <= 0 {
+        return a.Clone()
+    }
+    if n >= len(a.elements) {
+        return EmptyArray[T]()
+    }
+    var size = len(a.elements) - n
+    var elems = make([]T, 0, size)
+    for i := n; i < len(a.elements); i++ {
+        elems = append(elems, a.elements[i])
+    }
+    return &Array[T](elements = elems)
+}
+
+// Slice returns a new Array from start (inclusive) to end (exclusive).
+func (a *Array[T]) Slice(start int, end int) *Array[T] {
+    if start < 0 {
+        start = 0
+    }
+    if end > len(a.elements) {
+        end = len(a.elements)
+    }
+    if start >= end {
+        return EmptyArray[T]()
+    }
+    var size = end - start
+    var elems = make([]T, 0, size)
+    for i := start; i < end; i++ {
+        elems = append(elems, a.elements[i])
+    }
+    return &Array[T](elements = elems)
+}
+
+// Clone creates a shallow copy of the array.
+func (a *Array[T]) Clone() *Array[T] {
+    var elems = make([]T, 0, len(a.elements))
+    for i := 0; i < len(a.elements); i++ {
+        elems = append(elems, a.elements[i])
+    }
+    return &Array[T](elements = elems)
+}
+
+// Tail returns all elements except the first.
+func (a *Array[T]) Tail() *Array[T] {
+    if len(a.elements) == 0 {
+        panic("Array.Tail on empty array")
+    }
+    return a.Drop(1)
+}
+
+// Init returns all elements except the last.
+func (a *Array[T]) Init() *Array[T] {
+    if len(a.elements) == 0 {
+        panic("Array.Init on empty array")
+    }
+    return a.Take(len(a.elements) - 1)
+}
+
+// Reversed returns a new Array with elements in reverse order.
+func (a *Array[T]) Reversed() *Array[T] {
+    var result = a.Clone()
+    result.Reverse()
+    return result
+}
+
+// === Functional Operations (return new arrays) ===
+
+// Map applies a function to each element and returns a new Array.
+func (a *Array[T]) Map[U any](f func(T) U) *Array[U] {
+    var elems = make([]U, 0, len(a.elements))
+    for i := 0; i < len(a.elements); i++ {
+        elems = append(elems, f(a.elements[i]))
+    }
+    return &Array[U](elements = elems)
+}
+
+// FlatMap applies a function that returns a Array to each element and flattens.
+func (a *Array[T]) FlatMap[U any](f func(T) *Array[U]) *Array[U] {
+    var result = EmptyArray[U]()
+    for i := 0; i < len(a.elements); i++ {
+        var inner = f(a.elements[i])
+        result.AppendFrom(inner)
+    }
+    return result
+}
+
+// Collect applies a partial function to each element and collects the results.
+func (a *Array[T]) Collect[U any](pf func(T) Option[U]) *Array[U] {
+    var result = EmptyArray[U]()
+    for i := 0; i < len(a.elements); i++ {
+        var opt = pf(a.elements[i])
+        if opt.IsDefined() {
+            result.Append(opt.Get())
+        }
+    }
+    return result
+}
+
+// Filter returns a new Array with only elements that satisfy the predicate.
+func (a *Array[T]) Filter(p func(T) bool) *Array[T] {
+    var result = EmptyArray[T]()
+    for i := 0; i < len(a.elements); i++ {
+        if p(a.elements[i]) {
+            result.Append(a.elements[i])
+        }
+    }
+    return result
+}
+
+// FilterNot returns a new Array with elements that do not satisfy the predicate.
+func (a *Array[T]) FilterNot(p func(T) bool) *Array[T] = a.Filter((elem T) => !p(elem))
+
+// Partition splits the array into two based on a predicate.
+func (a *Array[T]) Partition(p func(T) bool) Tuple[*Array[T], *Array[T]] {
+    var left = a.Filter(p)
+    var right = a.FilterNot(p)
+    return Tuple[*Array[T], *Array[T]](V1 = left, V2 = right)
+}
+
+// TakeWhile returns the longest prefix of elements that satisfy the predicate.
+func (a *Array[T]) TakeWhile(p func(T) bool) *Array[T] {
+    var result = EmptyArray[T]()
+    for i := 0; i < len(a.elements); i++ {
+        if !p(a.elements[i]) {
+            return result
+        }
+        result.Append(a.elements[i])
+    }
+    return result
+}
+
+// DropWhile drops the longest prefix of elements that satisfy the predicate.
+func (a *Array[T]) DropWhile(p func(T) bool) *Array[T] {
+    var start = 0
+    for start < len(a.elements) && p(a.elements[start]) {
+        start++
+    }
+    return a.Drop(start)
+}
+
+// === Reduction Operations ===
+
+// FoldLeft applies a binary operator from left to right.
+func (a *Array[T]) FoldLeft[U any](initial U, f func(U, T) U) U {
+    var acc = initial
+    for i := 0; i < len(a.elements); i++ {
+        acc = f(acc, a.elements[i])
+    }
+    return acc
+}
+
+// FoldRight applies a binary operator from right to left.
+func (a *Array[T]) FoldRight[U any](initial U, f func(T, U) U) U {
+    var acc = initial
+    for i := len(a.elements) - 1; i >= 0; i-- {
+        acc = f(a.elements[i], acc)
+    }
+    return acc
+}
+
+// Reduce applies a binary operator from left to right, starting with the first element.
+// Panics if the array is empty.
+func (a *Array[T]) Reduce(f func(T, T) T) T {
+    if len(a.elements) == 0 {
+        panic("Array.Reduce on empty array")
+    }
+    var acc = a.elements[0]
+    for i := 1; i < len(a.elements); i++ {
+        acc = f(acc, a.elements[i])
+    }
+    return acc
+}
+
+// ReduceOption is like Reduce but returns None for empty array.
+func (a *Array[T]) ReduceOption(f func(T, T) T) Option[T] {
+    if len(a.elements) == 0 {
+        return None[T]()
+    }
+    return Some[T](a.Reduce(f))
+}
+
+// === Predicate Operations ===
+
+// ForEach applies a function to each element for side effects.
+func (a *Array[T]) ForEach(f func(T) any) {
+    for i := 0; i < len(a.elements); i++ {
+        f(a.elements[i])
+    }
+}
+
+// Exists returns true if any element satisfies the predicate.
+func (a *Array[T]) Exists(p func(T) bool) bool {
+    for i := 0; i < len(a.elements); i++ {
+        if p(a.elements[i]) {
+            return true
+        }
+    }
+    return false
+}
+
+// ForAll returns true if all elements satisfy the predicate.
+func (a *Array[T]) ForAll(p func(T) bool) bool {
+    for i := 0; i < len(a.elements); i++ {
+        if !p(a.elements[i]) {
+            return false
+        }
+    }
+    return true
+}
+
+// Find returns the first element that satisfies the predicate.
+func (a *Array[T]) Find(p func(T) bool) Option[T] {
+    for i := 0; i < len(a.elements); i++ {
+        if p(a.elements[i]) {
+            return Some[T](a.elements[i])
+        }
+    }
+    return None[T]()
+}
+
+// FindLast returns the last element that satisfies the predicate.
+func (a *Array[T]) FindLast(p func(T) bool) Option[T] {
+    for i := len(a.elements) - 1; i >= 0; i-- {
+        if p(a.elements[i]) {
+            return Some[T](a.elements[i])
+        }
+    }
+    return None[T]()
+}
+
+// Count returns the number of elements satisfying the predicate.
+func (a *Array[T]) Count(p func(T) bool) int {
+    var count = 0
+    for i := 0; i < len(a.elements); i++ {
+        if p(a.elements[i]) {
+            count++
+        }
+    }
+    return count
+}
+
+// === Utility Operations ===
+
+// Zip combines two arrays into an array of tuples. Result length is the minimum.
+func (a *Array[T]) Zip[U any](other *Array[U]) *Array[Tuple[T, U]] {
+    var minLen = len(a.elements)
+    if len(other.elements) < minLen {
+        minLen = len(other.elements)
+    }
+    var result = EmptyArray[Tuple[T, U]]()
+    for i := 0; i < minLen; i++ {
+        result.Append(Tuple[T, U](V1 = a.elements[i], V2 = other.elements[i]))
+    }
+    return result
+}
+
+// ZipWithIndex pairs each element with its index.
+func (a *Array[T]) ZipWithIndex() *Array[Tuple[T, int]] {
+    var result = EmptyArray[Tuple[T, int]]()
+    for i := 0; i < len(a.elements); i++ {
+        result.Append(Tuple[T, int](V1 = a.elements[i], V2 = i))
+    }
+    return result
+}
+
+// Distinct returns a new array with duplicate elements removed.
+func (a *Array[T]) Distinct() *Array[T] {
+    var result = EmptyArray[T]()
+    for i := 0; i < len(a.elements); i++ {
+        if !result.Contains(a.elements[i]) {
+            result.Append(a.elements[i])
+        }
+    }
+    return result
+}
+
+// SplitAt splits the array at the given index.
+func (a *Array[T]) SplitAt(n int) Tuple[*Array[T], *Array[T]] {
+    return Tuple[*Array[T], *Array[T]](V1 = a.Take(n), V2 = a.Drop(n))
+}
+
+// Grouped splits the array into groups of size n.
+func (a *Array[T]) Grouped(n int) *Array[*Array[T]] {
+    if n <= 0 {
+        panic("Array.Grouped: group size must be positive")
+    }
+    var result = EmptyArray[*Array[T]]()
+    for i := 0; i < len(a.elements); i += n {
+        var end = i + n
+        if end > len(a.elements) {
+            end = len(a.elements)
+        }
+        result.Append(a.Slice(i, end))
+    }
+    return result
+}
+
+// Sliding returns a sliding window over the array.
+func (a *Array[T]) Sliding(size int) *Array[*Array[T]] {
+    if size <= 0 {
+        panic("Array.Sliding: window size must be positive")
+    }
+    if len(a.elements) < size {
+        return EmptyArray[*Array[T]]()
+    }
+    var result = EmptyArray[*Array[T]]()
+    var limit = len(a.elements) - size
+    for i := 0; i <= limit; i++ {
+        result.Append(a.Slice(i, i + size))
+    }
+    return result
+}
+
+// GroupBy partitions this array into a map of arrays according to a discriminator function.
+func (a *Array[T]) GroupBy[K comparable](f func(T) K) map[K]*Array[T] {
+    var result = map[K]*Array[T]{}
+    for i := 0; i < len(a.elements); i++ {
+        var elem = a.elements[i]
+        var key = f(elem)
+        var existing = result[key]
+        if existing == nil {
+            existing = EmptyArray[T]()
+            result[key] = existing
+        }
+        existing.Append(elem)
+    }
+    return result
+}
+
+// === Conversion ===
+
+// ToSlice returns a copy of the underlying slice.
+func (a *Array[T]) ToSlice() []T {
+    var result []T
+    for i := 0; i < len(a.elements); i++ {
+        result = append(result, a.elements[i])
+    }
+    return result
+}
+
+// String returns a string representation of the array.
+func (a *Array[T]) String() string {
+    if len(a.elements) == 0 {
+        return "Array()"
+    }
+    var result = "Array("
+    for i := 0; i < len(a.elements); i++ {
+        if i > 0 {
+            result = result + ", "
+        }
+        result = result + fmt.Sprintf("%v", a.elements[i])
+    }
+    return result + ")"
+}
+
+// SeqDrop implements the Seq interface for sequence pattern matching.
+func (a *Array[T]) SeqDrop(n int) any = a.Drop(n)

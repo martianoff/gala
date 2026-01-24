@@ -1,0 +1,59 @@
+=== Mutable Collections Examples ===
+
+--- Array Pattern Matching ---
+empty array
+single: 42
+array[5]
+
+--- Find with Pattern Matching ---
+found: 2
+not found
+
+--- Number Analysis ---
+positive: all positive
+negative: all negative
+mixed: has zero
+withZero: has zero
+
+--- Size Comparison ---
+equal: 3
+first larger
+second larger
+
+--- List Pattern Matching ---
+empty list
+singleton
+list[3]
+
+--- Build and Transform ---
+Squares: Array(1, 4, 9, 16, 25)
+Even squares: Array(4, 16)
+Doubled: Array(2, 8, 18, 32, 50)
+
+--- Queue (List) ---
+Queue: List(task1, task2, task3)
+  Processing: task1
+  Processing: task2
+  Processing: task3
+
+--- Stack (Array) ---
+Stack: Array(1, 2, 3)
+  Popped: 3
+  Popped: 2
+  Popped: 1
+
+--- Grouped ---
+Groups of 3:
+  Array(1, 2, 3)
+  Array(4, 5, 6)
+  Array(7, 8, 9)
+
+--- Distinct ---
+Original: Array(1, 2, 2, 3, 3, 3, 4)
+Distinct: Array(1, 2, 3, 4)
+
+--- Sequence Pattern Matching ---
+starts with 1, 2
+starts with 42
+empty
+Sum: 15

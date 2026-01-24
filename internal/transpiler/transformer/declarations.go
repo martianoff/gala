@@ -698,7 +698,7 @@ func (t *galaASTTransformer) transformParameter(ctx *grammar.ParameterContext) (
 	var typeName transpiler.Type = transpiler.NilType{}
 	if ctx.Type_() != nil {
 		typeExpr, _ := t.transformType(ctx.Type_())
-		typeName = t.resolveType(t.getBaseTypeName(typeExpr))
+		typeName = t.exprToType(typeExpr)
 	}
 	isVal := ctx.VAL() != nil
 	isVariadic := ctx.ELLIPSIS() != nil

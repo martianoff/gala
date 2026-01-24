@@ -1,0 +1,66 @@
+load("@rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("//:gala.bzl", "gala_binary", "gala_go_test", "gala_library", "gala_transpile")
+
+exports_files([
+    "list.gala",
+    "array.gala",
+])
+
+# Filegroup for all GALA source files in collection_mutable
+filegroup(
+    name = "gala_sources",
+    srcs = glob(
+        ["*.gala"],
+        exclude = ["*_test.gala"],
+    ),
+    visibility = ["//visibility:public"],
+)
+
+gala_transpile(
+    name = "list_go",
+    src = "list.gala",
+    out = "list.go",
+)
+
+gala_transpile(
+    name = "array_go",
+    src = "array.gala",
+    out = "array.go",
+)
+
+go_library(
+    name = "collection_mutable",
+    srcs = [
+        "array.go",
+        "list.go",
+    ],
+    importpath = "martianoff/gala/collection_mutable",
+    visibility = ["//visibility:public"],
+    deps = ["//std"],
+)
+
+gala_go_test(
+    name = "array_test",
+    srcs = ["array_test.gala"],
+    deps = [":collection_mutable"],
+)
+
+gala_go_test(
+    name = "list_test",
+    srcs = ["list_test.gala"],
+    deps = [":collection_mutable"],
+)
+
+# Performance benchmarks - GALA mutable collections
+gala_binary(
+    name = "perf_gala",
+    src = "perf_test.gala",
+    deps = [":collection_mutable"],
+)
+
+# Performance benchmarks - Go native collections
+go_binary(
+    name = "perf_go",
+    srcs = ["go_native_perf_test.go"],
+)
+

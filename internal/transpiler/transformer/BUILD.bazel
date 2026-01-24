@@ -46,6 +46,7 @@ go_test(
         "methods_test.go",
         "multi_var_test.go",
         "option_test.go",
+        "pointer_receiver_test.go",
         "recursive_immutable_test.go",
         "structs_test.go",
         "test_helper.go",

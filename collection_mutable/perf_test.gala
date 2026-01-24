@@ -1,0 +1,450 @@
+package main
+
+import (
+    "fmt"
+    "time"
+    . "martianoff/gala/collection_mutable"
+)
+
+// Performance test utilities
+func measureNs(iterations int, f func() any) int64 {
+    var start = time.Now()
+    for i := 0; i < iterations; i++ {
+        f()
+    }
+    var elapsed = time.Since(start)
+    return elapsed.Nanoseconds() / int64(iterations)
+}
+
+func printResult(name string, nsPerOp int64) {
+    fmt.Printf("%-45s %12d ns/op\n", name, nsPerOp)
+}
+
+// ============ MUTABLE ARRAY BENCHMARKS ============
+
+// Array creation benchmark - small
+func benchArrayCreation100() {
+    var ns = measureNs(10000, () => {
+        var arr = EmptyArray[int]()
+        for i := 0; i < 100; i++ {
+            arr.Append(i)
+        }
+    })
+    printResult("Array.Creation(100)", ns)
+}
+
+// Array creation benchmark - medium
+func benchArrayCreation10000() {
+    var ns = measureNs(1000, () => {
+        var arr = EmptyArray[int]()
+        for i := 0; i < 10000; i++ {
+            arr.Append(i)
+        }
+    })
+    printResult("Array.Creation(10000)", ns)
+}
+
+// Array creation benchmark - large
+func benchArrayCreation100000() {
+    var ns = measureNs(100, () => {
+        var arr = EmptyArray[int]()
+        for i := 0; i < 100000; i++ {
+            arr.Append(i)
+        }
+    })
+    printResult("Array.Creation(100000)", ns)
+}
+
+// Array creation with capacity - medium
+func benchArrayCreationWithCapacity10000() {
+    var ns = measureNs(1000, () => {
+        var arr = ArrayWithCapacity[int](10000)
+        for i := 0; i < 10000; i++ {
+            arr.Append(i)
+        }
+    })
+    printResult("Array.CreationWithCap(10000)", ns)
+}
+
+// Array append benchmark
+func benchArrayAppend() {
+    var arr = ArrayWithCapacity[int](10001)
+    for i := 0; i < 10000; i++ {
+        arr.Append(i)
+    }
+    var ns = measureNs(1000000, () => {
+        arr.Append(999)
+        arr.RemoveLast()
+    })
+    printResult("Array.Append (size=10000)", ns)
+}
+
+// Array prepend benchmark
+func benchArrayPrepend() {
+    var arr = ArrayWithCapacity[int](10001)
+    for i := 0; i < 10000; i++ {
+        arr.Append(i)
+    }
+    var ns = measureNs(1000, () => {
+        arr.Prepend(999)
+        arr.RemoveFirst()
+    })
+    printResult("Array.Prepend (size=10000)", ns)
+}
+
+// Array head benchmark
+func benchArrayHead() {
+    var arr = EmptyArray[int]()
+    for i := 0; i < 10000; i++ {
+        arr.Append(i)
+    }
+    var ns = measureNs(10000000, () => {
+        var _ = arr.Head()
+    })
+    printResult("Array.Head (size=10000)", ns)
+}
+
+// Array get benchmark - beginning
+func benchArrayGetFirst() {
+    var arr = EmptyArray[int]()
+    for i := 0; i < 10000; i++ {
+        arr.Append(i)
+    }
+    var ns = measureNs(10000000, () => {
+        var _ = arr.Get(0)
+    })
+    printResult("Array.Get(0) (size=10000)", ns)
+}
+
+// Array get benchmark - middle
+func benchArrayGetMiddle() {
+    var arr = EmptyArray[int]()
+    for i := 0; i < 10000; i++ {
+        arr.Append(i)
+    }
+    var ns = measureNs(10000000, () => {
+        var _ = arr.Get(5000)
+    })
+    printResult("Array.Get(5000) (size=10000)", ns)
+}
+
+// Array get benchmark - end
+func benchArrayGetLast() {
+    var arr = EmptyArray[int]()
+    for i := 0; i < 10000; i++ {
+        arr.Append(i)
+    }
+    var ns = measureNs(10000000, () => {
+        var _ = arr.Get(9999)
+    })
+    printResult("Array.Get(9999) (size=10000)", ns)
+}
+
+// Array set benchmark
+func benchArraySet() {
+    var arr = EmptyArray[int]()
+    for i := 0; i < 10000; i++ {
+        arr.Append(i)
+    }
+    var ns = measureNs(10000000, () => {
+        arr.Set(5000, 999)
+    })
+    printResult("Array.Set(5000) (size=10000)", ns)
+}
+
+// Array filter benchmark
+func benchArrayFilter() {
+    var arr = EmptyArray[int]()
+    for i := 0; i < 10000; i++ {
+        arr.Append(i)
+    }
+    var ns = measureNs(1000, () => {
+        var _ = arr.Filter((x int) => x % 2 == 0)
+    })
+    printResult("Array.Filter (size=10000)", ns)
+}
+
+// Array map benchmark
+func benchArrayMap() {
+    var arr = EmptyArray[int]()
+    for i := 0; i < 10000; i++ {
+        arr.Append(i)
+    }
+    var ns = measureNs(1000, () => {
+        var _ = arr.Map((x int) => x * 2)
+    })
+    printResult("Array.Map (size=10000)", ns)
+}
+
+// Array foldLeft benchmark
+func benchArrayFoldLeft() {
+    var arr = EmptyArray[int]()
+    for i := 0; i < 10000; i++ {
+        arr.Append(i)
+    }
+    var ns = measureNs(10000, () => {
+        var _ = Array_FoldLeft[int](arr, 0, (acc int, x int) => acc + x)
+    })
+    printResult("Array.FoldLeft (size=10000)", ns)
+}
+
+// Array clone benchmark
+func benchArrayClone() {
+    var arr = EmptyArray[int]()
+    for i := 0; i < 10000; i++ {
+        arr.Append(i)
+    }
+    var ns = measureNs(1000, () => {
+        var _ = arr.Clone()
+    })
+    printResult("Array.Clone (size=10000)", ns)
+}
+
+// Array reverse in place benchmark
+func benchArrayReverse() {
+    var arr = EmptyArray[int]()
+    for i := 0; i < 10000; i++ {
+        arr.Append(i)
+    }
+    var ns = measureNs(10000, () => {
+        arr.Reverse()
+    })
+    printResult("Array.Reverse (size=10000)", ns)
+}
+
+// ============ MUTABLE LIST BENCHMARKS ============
+
+// List creation benchmark - small
+func benchListCreation100() {
+    var ns = measureNs(10000, () => {
+        var list = EmptyList[int]()
+        for i := 0; i < 100; i++ {
+            list.Append(i)
+        }
+    })
+    printResult("List.Creation(100)", ns)
+}
+
+// List creation benchmark - medium
+func benchListCreation10000() {
+    var ns = measureNs(1000, () => {
+        var list = EmptyList[int]()
+        for i := 0; i < 10000; i++ {
+            list.Append(i)
+        }
+    })
+    printResult("List.Creation(10000)", ns)
+}
+
+// List creation benchmark - large
+func benchListCreation100000() {
+    var ns = measureNs(100, () => {
+        var list = EmptyList[int]()
+        for i := 0; i < 100000; i++ {
+            list.Append(i)
+        }
+    })
+    printResult("List.Creation(100000)", ns)
+}
+
+// List prepend benchmark (O(1))
+func benchListPrepend() {
+    var list = EmptyList[int]()
+    for i := 0; i < 10000; i++ {
+        list.Append(i)
+    }
+    var ns = measureNs(1000000, () => {
+        list.Prepend(999)
+        list.RemoveFirst()
+    })
+    printResult("List.Prepend (size=10000)", ns)
+}
+
+// List append benchmark (O(1))
+func benchListAppend() {
+    var list = EmptyList[int]()
+    for i := 0; i < 10000; i++ {
+        list.Append(i)
+    }
+    var ns = measureNs(1000000, () => {
+        list.Append(999)
+        list.RemoveLast()
+    })
+    printResult("List.Append (size=10000)", ns)
+}
+
+// List head benchmark (O(1))
+func benchListHead() {
+    var list = EmptyList[int]()
+    for i := 0; i < 10000; i++ {
+        list.Append(i)
+    }
+    var ns = measureNs(10000000, () => {
+        var _ = list.Head()
+    })
+    printResult("List.Head (size=10000)", ns)
+}
+
+// List last benchmark (O(1))
+func benchListLast() {
+    var list = EmptyList[int]()
+    for i := 0; i < 10000; i++ {
+        list.Append(i)
+    }
+    var ns = measureNs(10000000, () => {
+        var _ = list.Last()
+    })
+    printResult("List.Last (size=10000)", ns)
+}
+
+// List get benchmark - beginning
+func benchListGetFirst() {
+    var list = EmptyList[int]()
+    for i := 0; i < 10000; i++ {
+        list.Append(i)
+    }
+    var ns = measureNs(100000, () => {
+        var _ = list.Get(0)
+    })
+    printResult("List.Get(0) (size=10000)", ns)
+}
+
+// List get benchmark - middle (bidirectional optimization)
+func benchListGetMiddle() {
+    var list = EmptyList[int]()
+    for i := 0; i < 10000; i++ {
+        list.Append(i)
+    }
+    var ns = measureNs(1000, () => {
+        var _ = list.Get(5000)
+    })
+    printResult("List.Get(5000) (size=10000)", ns)
+}
+
+// List get benchmark - end (bidirectional optimization)
+func benchListGetLast() {
+    var list = EmptyList[int]()
+    for i := 0; i < 10000; i++ {
+        list.Append(i)
+    }
+    var ns = measureNs(100000, () => {
+        var _ = list.Get(9999)
+    })
+    printResult("List.Get(9999) (size=10000)", ns)
+}
+
+// List filter benchmark
+func benchListFilter() {
+    var list = EmptyList[int]()
+    for i := 0; i < 10000; i++ {
+        list.Append(i)
+    }
+    var ns = measureNs(1000, () => {
+        var _ = list.Filter((x int) => x % 2 == 0)
+    })
+    printResult("List.Filter (size=10000)", ns)
+}
+
+// List map benchmark
+func benchListMap() {
+    var list = EmptyList[int]()
+    for i := 0; i < 10000; i++ {
+        list.Append(i)
+    }
+    var ns = measureNs(1000, () => {
+        var _ = list.Map((x int) => x * 2)
+    })
+    printResult("List.Map (size=10000)", ns)
+}
+
+// List foldLeft benchmark
+func benchListFoldLeft() {
+    var list = EmptyList[int]()
+    for i := 0; i < 10000; i++ {
+        list.Append(i)
+    }
+    var ns = measureNs(10000, () => {
+        var _ = List_FoldLeft[int](list, 0, (acc int, x int) => acc + x)
+    })
+    printResult("List.FoldLeft (size=10000)", ns)
+}
+
+// List reverse in place benchmark
+func benchListReverse() {
+    var list = EmptyList[int]()
+    for i := 0; i < 10000; i++ {
+        list.Append(i)
+    }
+    var ns = measureNs(10000, () => {
+        list.Reverse()
+    })
+    printResult("List.Reverse (size=10000)", ns)
+}
+
+// List removeFirst/removeLast benchmark
+func benchListRemoveFirst() {
+    var list = EmptyList[int]()
+    for i := 0; i < 10000; i++ {
+        list.Append(i)
+    }
+    var ns = measureNs(1000000, () => {
+        list.Prepend(0)
+        list.RemoveFirst()
+    })
+    printResult("List.RemoveFirst (size=10000)", ns)
+}
+
+func benchListRemoveLast() {
+    var list = EmptyList[int]()
+    for i := 0; i < 10000; i++ {
+        list.Append(i)
+    }
+    var ns = measureNs(1000000, () => {
+        list.Append(0)
+        list.RemoveLast()
+    })
+    printResult("List.RemoveLast (size=10000)", ns)
+}
+
+func main() {
+    fmt.Println("=== GALA Mutable Collections Performance ===")
+    fmt.Println("Testing with 100 - 100,000 elements")
+    fmt.Println("")
+
+    fmt.Println("--- Array Operations ---")
+    benchArrayCreation100()
+    benchArrayCreation10000()
+    benchArrayCreation100000()
+    benchArrayCreationWithCapacity10000()
+    benchArrayAppend()
+    benchArrayPrepend()
+    benchArrayHead()
+    benchArrayGetFirst()
+    benchArrayGetMiddle()
+    benchArrayGetLast()
+    benchArraySet()
+    benchArrayFilter()
+    benchArrayMap()
+    benchArrayFoldLeft()
+    benchArrayClone()
+    benchArrayReverse()
+
+    fmt.Println("")
+    fmt.Println("--- List Operations ---")
+    benchListCreation100()
+    benchListCreation10000()
+    benchListCreation100000()
+    benchListPrepend()
+    benchListAppend()
+    benchListHead()
+    benchListLast()
+    benchListGetFirst()
+    benchListGetMiddle()
+    benchListGetLast()
+    benchListFilter()
+    benchListMap()
+    benchListFoldLeft()
+    benchListReverse()
+    benchListRemoveFirst()
+    benchListRemoveLast()
+}

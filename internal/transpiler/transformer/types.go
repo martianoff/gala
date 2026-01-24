@@ -33,8 +33,20 @@ func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, 
 					// Type belongs to an imported package, use package-qualified identifier
 					if pkg == transpiler.StdPackage {
 						ident = t.stdIdent(typeName)
-					} else if alias, ok := t.reverseImportAliases[pkg]; ok {
-						ident = &ast.SelectorExpr{X: ast.NewIdent(alias), Sel: ast.NewIdent(typeName)}
+					} else {
+						// Check if this is a dot import - if so, don't qualify
+						isDotImport := false
+						for _, dotPkg := range t.dotImports {
+							if dotPkg == pkg {
+								isDotImport = true
+								break
+							}
+						}
+						if !isDotImport {
+							if alias, ok := t.reverseImportAliases[pkg]; ok {
+								ident = &ast.SelectorExpr{X: ast.NewIdent(alias), Sel: ast.NewIdent(typeName)}
+							}
+						}
 					}
 				}
 			}
@@ -311,6 +323,9 @@ func (t *galaASTTransformer) isAnyType(typeExpr ast.Expr) bool {
 func (t *galaASTTransformer) extractTypeParams(typ ast.Expr) []*ast.Field {
 	var params []*ast.Field
 	switch e := typ.(type) {
+	case *ast.StarExpr:
+		// Handle pointer types like *Array[T] - recurse into the base type
+		return t.extractTypeParams(e.X)
 	case *ast.IndexExpr:
 		if id, ok := e.Index.(*ast.Ident); ok {
 			params = append(params, &ast.Field{
@@ -378,6 +393,9 @@ func (t *galaASTTransformer) causesInstantiationCycle(receiverType ast.Expr, ret
 // getBaseTypeAndArgs extracts the base type name and type arguments from a type expression
 func (t *galaASTTransformer) getBaseTypeAndArgs(typ ast.Expr) (string, []string) {
 	switch e := typ.(type) {
+	case *ast.StarExpr:
+		// Handle pointer types like *Array[T] - recurse into the base type
+		return t.getBaseTypeAndArgs(e.X)
 	case *ast.Ident:
 		return e.Name, nil
 	case *ast.SelectorExpr:
@@ -402,6 +420,9 @@ func (t *galaASTTransformer) getBaseTypeAndArgs(typ ast.Expr) (string, []string)
 // typeArgToString converts a type argument expression to a string for comparison
 func (t *galaASTTransformer) typeArgToString(arg ast.Expr) string {
 	switch e := arg.(type) {
+	case *ast.StarExpr:
+		// Handle pointer types like *Array[T]
+		return "*" + t.typeArgToString(e.X)
 	case *ast.Ident:
 		return e.Name
 	case *ast.SelectorExpr:
@@ -429,6 +450,11 @@ func (t *galaASTTransformer) exprToType(expr ast.Expr) transpiler.Type {
 	}
 	switch e := expr.(type) {
 	case *ast.Ident:
+		// Try to resolve via getType first (handles dot imports, std types, etc.)
+		if resolved := t.getType(e.Name); !resolved.IsNil() {
+			return resolved
+		}
+		// Fall back to simple resolution (for type parameters like T, U, etc.)
 		return t.resolveType(e.Name)
 	case *ast.SelectorExpr:
 		x, ok := e.X.(*ast.Ident)
@@ -448,11 +474,9 @@ func (t *galaASTTransformer) exprToType(expr ast.Expr) transpiler.Type {
 		}
 		return transpiler.GenericType{Base: base, Params: params}
 	case *ast.StarExpr:
-		// Simplified, just return base name with *
-		return t.resolveType("*" + t.getBaseTypeName(e.X))
+		return transpiler.PointerType{Elem: t.exprToType(e.X)}
 	case *ast.ArrayType:
-		// Simplified
-		return t.resolveType("[]" + t.getBaseTypeName(e.Elt))
+		return transpiler.ArrayType{Elem: t.exprToType(e.Elt)}
 	}
 	return transpiler.NilType{}
 }
@@ -686,6 +710,40 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 		}
 
 		if sel, ok := fun.(*ast.SelectorExpr); ok {
+			// Handle Apply method on composite literal: Some[int]{}.Apply(value) -> Option[int]
+			if sel.Sel.Name == "Apply" {
+				if compLit, ok := sel.X.(*ast.CompositeLit); ok {
+					typeName := t.getBaseTypeName(compLit.Type)
+					if typeName != "" {
+						// Try to get type metadata
+						typeMeta, found := t.typeMetas[typeName]
+						if !found && !strings.HasPrefix(typeName, "std.") {
+							typeMeta, found = t.typeMetas["std."+typeName]
+							if found {
+								typeName = "std." + typeName
+							}
+						}
+						if found {
+							if methodMeta, hasApply := typeMeta.Methods["Apply"]; hasApply {
+								// Get type args from the composite literal type
+								var litTypeArgs []transpiler.Type
+								if idx, ok := compLit.Type.(*ast.IndexExpr); ok {
+									litTypeArgs = []transpiler.Type{t.exprToType(idx.Index)}
+								} else if idxList, ok := compLit.Type.(*ast.IndexListExpr); ok {
+									for _, idxExpr := range idxList.Indices {
+										litTypeArgs = append(litTypeArgs, t.exprToType(idxExpr))
+									}
+								}
+								// Substitute type parameters in return type
+								if len(litTypeArgs) > 0 && len(typeMeta.TypeParams) > 0 {
+									return t.substituteConcreteTypes(methodMeta.ReturnType, typeMeta.TypeParams, litTypeArgs)
+								}
+								return methodMeta.ReturnType
+							}
+						}
+					}
+				}
+			}
 			if sel.Sel.Name == transpiler.MethodGet {
 				// Special case: x.Get() where x is a known val - return the val's type directly
 				if id, ok := sel.X.(*ast.Ident); ok {
@@ -800,9 +858,15 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 						return methodMeta.ReturnType
 					}
 				}
+				// Unwrap pointer types to get to the underlying type for method lookup
+				// e.g., for *Array[int].Find(), unwrap to Array[int]
+				underlyingType := xType
+				if ptr, ok := xType.(transpiler.PointerType); ok {
+					underlyingType = ptr.Elem
+				}
 				// Fallback: try base type name for generic types
 				// e.g., for Pair[int, string].Swap(), try looking up Pair
-				if genType, ok := xType.(transpiler.GenericType); ok {
+				if genType, ok := underlyingType.(transpiler.GenericType); ok {
 					baseTypeName := genType.Base.String()
 					if typeMeta, ok := t.typeMetas[baseTypeName]; ok {
 						if methodMeta, ok := typeMeta.Methods[sel.Sel.Name]; ok {
@@ -1113,4 +1177,25 @@ func (t *galaASTTransformer) getTupleTypeFromName(name string) string {
 		}
 	}
 	return transpiler.TypeTuple
+}
+
+// getReceiverTypeArgs extracts type arguments from a receiver type and converts them to ast.Expr.
+// For example, for *Array[int] or Array[int], it returns [int] as []ast.Expr.
+func (t *galaASTTransformer) getReceiverTypeArgs(recvType transpiler.Type) []ast.Expr {
+	if recvType == nil || recvType.IsNil() {
+		return nil
+	}
+	// Unwrap pointer type
+	if ptr, ok := recvType.(transpiler.PointerType); ok {
+		return t.getReceiverTypeArgs(ptr.Elem)
+	}
+	// Extract type params from generic type
+	if gen, ok := recvType.(transpiler.GenericType); ok {
+		var args []ast.Expr
+		for _, param := range gen.Params {
+			args = append(args, t.typeToExpr(param))
+		}
+		return args
+	}
+	return nil
 }

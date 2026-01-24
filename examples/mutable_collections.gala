@@ -1,0 +1,227 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/collection_mutable"
+    . "martianoff/gala/std"
+)
+
+// Example: Pattern matching with mutable Array
+func describeArray[T any](arr *Array[T]) string {
+    return arr match {
+        case a: *Array[T] if a.IsEmpty() => "empty array"
+        case a: *Array[T] if a.Length() == 1 => fmt.Sprintf("single: %v", a.Head())
+        case _ => fmt.Sprintf("array[%d]", arr.Length())
+    }
+}
+
+// Example: Option pattern matching with Find
+func findAndDescribe(arr *Array[int], pred func(int) bool) string {
+    var found = arr.Find(pred)
+    return found match {
+        case Some(v) => fmt.Sprintf("found: %d", v)
+        case _ => "not found"
+    }
+}
+
+// Example: Processing with guards
+func analyzeNumbers(arr *Array[int]) string {
+    return arr match {
+        case a: *Array[int] if a.IsEmpty() => "no numbers"
+        case a: *Array[int] if a.ForAll((x int) => x > 0) => "all positive"
+        case a: *Array[int] if a.ForAll((x int) => x < 0) => "all negative"
+        case a: *Array[int] if a.Exists((x int) => x == 0) => "has zero"
+        case _ => "mixed"
+    }
+}
+
+// Example: Tuple pattern matching with arrays
+func compareSizes(a1 *Array[int], a2 *Array[int]) string {
+    var sizes = (a1.Length(), a2.Length())
+    return sizes match {
+        case (0, 0) => "both empty"
+        case (0, _) => "first empty"
+        case (_, 0) => "second empty"
+        case (n1, n2) if n1 == n2 => fmt.Sprintf("equal: %d", n1)
+        case (n1, n2) if n1 > n2 => "first larger"
+        case _ => "second larger"
+    }
+}
+
+// Example: List with pattern matching
+func describeList[T any](list *List[T]) string {
+    return list match {
+        case l: *List[T] if l.IsEmpty() => "empty list"
+        case l: *List[T] if l.Length() == 1 => "singleton"
+        case _ => fmt.Sprintf("list[%d]", list.Length())
+    }
+}
+
+// Example: Sequence pattern matching on Array
+func describeArraySeq(arr *Array[int]) string {
+    return arr match {
+        case Array(first, second, _...) => fmt.Sprintf("starts with %d, %d", first, second)
+        case Array(only, _...) => fmt.Sprintf("starts with %d", only)
+        case _ => "empty"
+    }
+}
+
+// Example: Extract head and tail from List
+func sumListSeq(list *List[int]) int {
+    return list match {
+        case List(head, tail...) => head + sumListSeq(tail)
+        case _ => 0
+    }
+}
+
+// Example: Building and transforming
+func buildSquares(n int) *Array[int] {
+    var arr = ArrayWithCapacity[int](n)
+    for i := 1; i <= n; i++ {
+        arr.Append(i * i)
+    }
+    return arr
+}
+
+// Example: Queue operations with List
+func runQueue() {
+    var queue = EmptyList[string]()
+
+    // Enqueue
+    queue.Append("task1")
+    queue.Append("task2")
+    queue.Append("task3")
+
+    fmt.Println("Queue:", queue.String())
+
+    // Dequeue
+    for queue.NonEmpty() {
+        var task = queue.RemoveFirst()
+        fmt.Printf("  Processing: %s\n", task)
+    }
+}
+
+// Example: Stack operations with Array
+func runStack() {
+    var stack = EmptyArray[int]()
+
+    // Push
+    stack.Append(1)
+    stack.Append(2)
+    stack.Append(3)
+
+    fmt.Println("Stack:", stack.String())
+
+    // Pop
+    for stack.NonEmpty() {
+        var item = stack.RemoveLast()
+        fmt.Printf("  Popped: %d\n", item)
+    }
+}
+
+func main() {
+    fmt.Println("=== Mutable Collections Examples ===")
+    fmt.Println()
+
+    // Array pattern matching
+    fmt.Println("--- Array Pattern Matching ---")
+    var empty = EmptyArray[int]()
+    var single = ArrayOf[int](42)
+    var multi = ArrayOf[int](1, 2, 3, 4, 5)
+
+    fmt.Println(describeArray[int](empty))   // empty array
+    fmt.Println(describeArray[int](single))  // single: 42
+    fmt.Println(describeArray[int](multi))   // array[5]
+    fmt.Println()
+
+    // Option pattern matching
+    fmt.Println("--- Find with Pattern Matching ---")
+    var isEven = (x int) => x % 2 == 0
+    var isNegative = (x int) => x < 0
+    fmt.Println(findAndDescribe(multi, isEven))     // found: 2
+    fmt.Println(findAndDescribe(multi, isNegative)) // not found
+    fmt.Println()
+
+    // Number analysis
+    fmt.Println("--- Number Analysis ---")
+    var positive = ArrayOf[int](1, 2, 3)
+    var negative = ArrayOf[int](-1, -2, -3)
+    var mixed = ArrayOf[int](-1, 0, 1)
+    var withZero = ArrayOf[int](1, 0, 2)
+
+    fmt.Println("positive:", analyzeNumbers(positive))   // all positive
+    fmt.Println("negative:", analyzeNumbers(negative))   // all negative
+    fmt.Println("mixed:", analyzeNumbers(mixed))         // has zero
+    fmt.Println("withZero:", analyzeNumbers(withZero))   // has zero
+    fmt.Println()
+
+    // Compare sizes
+    fmt.Println("--- Size Comparison ---")
+    var a1 = ArrayOf[int](1, 2, 3)
+    var a2 = ArrayOf[int](4, 5, 6)
+    var a3 = ArrayOf[int](1, 2)
+
+    fmt.Println(compareSizes(a1, a2))  // equal: 3
+    fmt.Println(compareSizes(a1, a3))  // first larger
+    fmt.Println(compareSizes(a3, a1))  // second larger
+    fmt.Println()
+
+    // List pattern matching
+    fmt.Println("--- List Pattern Matching ---")
+    var emptyList = EmptyList[string]()
+    var singleList = ListOf[string]("hello")
+    var multiList = ListOf[string]("a", "b", "c")
+
+    fmt.Println(describeList[string](emptyList))   // empty list
+    fmt.Println(describeList[string](singleList))  // singleton
+    fmt.Println(describeList[string](multiList))   // list[3]
+    fmt.Println()
+
+    // Building with capacity
+    fmt.Println("--- Build and Transform ---")
+    var squares = buildSquares(5)
+    fmt.Println("Squares:", squares.String())  // Array(1, 4, 9, 16, 25)
+
+    var evens = squares.Filter((x int) => x % 2 == 0)
+    fmt.Println("Even squares:", evens.String())  // Array(4, 16)
+
+    var doubled = squares.Map[int]((x int) => x * 2)
+    fmt.Println("Doubled:", doubled.String())  // Array(2, 8, 18, 32, 50)
+    fmt.Println()
+
+    // Queue example
+    fmt.Println("--- Queue (List) ---")
+    runQueue()
+    fmt.Println()
+
+    // Stack example
+    fmt.Println("--- Stack (Array) ---")
+    runStack()
+    fmt.Println()
+
+    // Grouped
+    fmt.Println("--- Grouped ---")
+    var nums = ArrayOf[int](1, 2, 3, 4, 5, 6, 7, 8, 9)
+    var groups = nums.Grouped(3)
+    fmt.Println("Groups of 3:")
+    groups.ForEach((g *Array[int]) => {
+        fmt.Printf("  %s\n", g.String())
+    })
+    fmt.Println()
+
+    // Distinct
+    fmt.Println("--- Distinct ---")
+    var withDups = ArrayOf[int](1, 2, 2, 3, 3, 3, 4)
+    fmt.Println("Original:", withDups.String())
+    fmt.Println("Distinct:", withDups.Distinct().String())
+    fmt.Println()
+
+    // Sequence pattern matching
+    fmt.Println("--- Sequence Pattern Matching ---")
+    fmt.Println(describeArraySeq(multi))    // starts with 1, 2
+    fmt.Println(describeArraySeq(single))   // starts with 42
+    fmt.Println(describeArraySeq(empty))    // empty
+
+    var numList = ListOf[int](1, 2, 3, 4, 5)
+    fmt.Println("Sum:", sumListSeq(numList))  // Sum: 15
+}

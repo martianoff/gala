@@ -166,19 +166,29 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 	}
 
 	if t.needsStdImport && t.packageName != transpiler.StdPackage {
-		// Add import at the beginning
-		importDecl := &ast.GenDecl{
-			Tok: token.IMPORT,
-			Specs: []ast.Spec{
-				&ast.ImportSpec{
-					Path: &ast.BasicLit{
-						Kind:  token.STRING,
-						Value: fmt.Sprintf("\"%s\"", transpiler.StdImportPath),
+		// Check if std is already imported (e.g., as a dot import)
+		stdAlreadyImported := false
+		for _, dotPkg := range t.dotImports {
+			if dotPkg == transpiler.StdPackage {
+				stdAlreadyImported = true
+				break
+			}
+		}
+		if !stdAlreadyImported {
+			// Add import at the beginning
+			importDecl := &ast.GenDecl{
+				Tok: token.IMPORT,
+				Specs: []ast.Spec{
+					&ast.ImportSpec{
+						Path: &ast.BasicLit{
+							Kind:  token.STRING,
+							Value: fmt.Sprintf("\"%s\"", transpiler.StdImportPath),
+						},
 					},
 				},
-			},
+			}
+			file.Decls = append([]ast.Decl{importDecl}, file.Decls...)
 		}
-		file.Decls = append([]ast.Decl{importDecl}, file.Decls...)
 	}
 
 	if t.needsFmtImport {
