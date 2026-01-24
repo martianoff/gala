@@ -88,20 +88,11 @@ jobs:
       - name: Create checksums
         run: |
           cd artifacts
-          # Debug: show structure
-          echo "=== Before ==="
-          ls -laR
-          # Move binaries from subdirectories, handling name conflicts
           mkdir -p release
           find . -mindepth 2 -type f -name 'gala-*' -exec mv {} release/ \;
-          # Remove empty artifact directories
           rm -rf gala-*/
-          # Move files back to current directory
           mv release/* .
           rmdir release
-          # Create checksums for all gala-* files
-          echo "=== After ==="
-          ls -la
           sha256sum gala-* > checksums-sha256.txt
 
       - name: Upload to release
