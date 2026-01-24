@@ -1,0 +1,13 @@
+package std
+
+// NoSuchElementError is returned when an expected element is not found.
+// Used by Try.Filter when the predicate does not hold, and by FromOption when the Option is None.
+type NoSuchElementError struct {
+    Message string
+}
+
+// Error returns the error message.
+func (e NoSuchElementError) Error() string = e.Message
+
+// NoSuchElement creates a NoSuchElementError with the given message.
+func NoSuchElement(msg string) error = NoSuchElementError(Message = msg)

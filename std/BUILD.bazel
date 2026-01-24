@@ -7,6 +7,8 @@ exports_files([
     "tuple.gala",
     "either.gala",
     "iterable.gala",
+    "try.gala",
+    "errors.gala",
 ])
 
 # Filegroup for all GALA source files in std - used by tests
@@ -67,10 +69,23 @@ gala_transpile(
     out = "ordered.go",
 )
 
+gala_transpile(
+    name = "try_go",
+    src = "try.gala",
+    out = "try.go",
+)
+
+gala_transpile(
+    name = "errors_go",
+    src = "errors.gala",
+    out = "errors.go",
+)
+
 go_library(
     name = "std",
     srcs = [
         "either.go",
+        "errors.go",
         "hashable.go",
         "immutable.go",
         "interfaces.go",
@@ -78,6 +93,7 @@ go_library(
         "option.go",
         "ordered.go",
         "seq.go",
+        "try.go",
         "tuple.go",
         "types.go",
     ],

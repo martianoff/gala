@@ -1590,6 +1590,25 @@ func (t *galaASTTransformer) inferExtractorTypeParams(extractorMeta *transpiler.
 	return result
 }
 
+// stripPackagePrefix removes package prefixes from type names for comparison.
+// For example, "std.Either" becomes "Either", "main.User" becomes "User".
+func stripPackagePrefix(name string) string {
+	if idx := len(name) - 1; idx >= 0 {
+		for i := idx; i >= 0; i-- {
+			if name[i] == '.' {
+				return name[i+1:]
+			}
+		}
+	}
+	return name
+}
+
+// typeNamesEqual compares two type names, ignoring package prefixes.
+// This handles cases like "Option" vs "std.Option" or "User" vs "main.User".
+func typeNamesEqual(name1, name2 string) bool {
+	return stripPackagePrefix(name1) == stripPackagePrefix(name2)
+}
+
 // unifyTypes attempts to unify two types and extract type parameter substitutions.
 // pattern is a type that may contain type parameters (e.g., List[T])
 // concrete is a concrete type (e.g., List[int])
@@ -1620,10 +1639,10 @@ func (t *galaASTTransformer) unifyTypes(pattern, concrete transpiler.Type, typeP
 
 	if patternIsGen && concreteIsGen {
 		// Both are generic - check base types match and unify parameters
-		// Normalize base type names to handle package prefixes (e.g., "Option" vs "std.Option")
+		// Use typeNamesEqual to handle package prefixes (e.g., "Option" vs "std.Option")
 		patternBase := patternGen.Base.BaseName()
 		concreteBase := concreteGen.Base.BaseName()
-		if patternBase != concreteBase {
+		if !typeNamesEqual(patternBase, concreteBase) {
 			return false
 		}
 		if len(patternGen.Params) != len(concreteGen.Params) {
@@ -1637,8 +1656,8 @@ func (t *galaASTTransformer) unifyTypes(pattern, concrete transpiler.Type, typeP
 		return true
 	}
 
-	// For non-generic types, check for match using BaseName to handle package prefixes
-	return pattern.BaseName() == concrete.BaseName()
+	// For non-generic types, check for match using normalized names to handle package prefixes
+	return typeNamesEqual(pattern.BaseName(), concrete.BaseName())
 }
 
 // getGenericExtractorResultTypeWithArgs determines the extracted type for a generic extractor.

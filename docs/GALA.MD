@@ -676,6 +676,72 @@ val msg = e match {
 val length = e.Map((s string) => len(s))
 ```
 
+### Try Monad
+`Try[T]` represents a computation that may either succeed with a value of type T or fail with an error. It provides a functional approach to error handling, similar to Scala's Try monad.
+
+```gala
+import . "std"
+
+// Create Try values
+val success Try[int] = Success(42)
+val failure Try[int] = Failure(NoSuchElementError(Message = "not found"))
+
+// Pattern matching
+val msg = success match {
+    case Success(n) => fmt.Sprintf("Got: %d", n)
+    case Failure(e) => fmt.Sprintf("Error: %s", e.Error())
+    case _          => "Unknown"
+}
+
+// Monadic operations
+val doubled = success.Map[int]((n int) => n * 2)
+val result = success.FlatMap[int]((n int) => divide(n, 2))
+
+// Recovery
+val recovered = failure.Recover((e error) => 0)
+val recoveredWith = failure.RecoverWith((e error) => Success[int](0))
+
+// Safe value extraction
+val value = failure.GetOrElse(0)
+val alternative = failure.OrElse(Success[int](100))
+
+// Conversion
+val opt = success.ToOption()      // Option[int]
+val either = success.ToEither()   // Either[error, int]
+```
+
+#### Railway-Oriented Programming
+Try enables elegant error handling pipelines where errors short-circuit the chain:
+
+```gala
+func processOrder(id int) Try[Receipt] =
+    fetchOrder(id)
+        .FlatMap[Order]((o Order) => validateOrder(o))
+        .FlatMap[Order]((o Order) => chargePayment(o))
+        .FlatMap[Receipt]((o Order) => createReceipt(o))
+        .RecoverWith((e error) => {
+            logError(e)
+            return Failure[Receipt](e)
+        })
+```
+
+#### Key Methods
+| Method | Description |
+|--------|-------------|
+| `IsSuccess()` / `IsFailure()` | Check the state |
+| `Get()` | Get value or panic |
+| `GetOrElse(default)` | Get value or return default |
+| `OrElse(alternative)` | Return this if Success, otherwise alternative |
+| `Map[U](f)` | Transform value if Success |
+| `FlatMap[U](f)` | Chain operations returning Try |
+| `Filter(predicate)` | Keep Success if predicate holds |
+| `Recover(f)` | Recover from Failure with a value |
+| `RecoverWith(f)` | Recover from Failure with a new Try |
+| `Transform[U](onSuccess, onFailure)` | Handle both cases |
+| `Fold[U](onFailure, onSuccess)` | Reduce to a single value |
+| `ToOption()` | Convert to Option |
+| `ToEither()` | Convert to Either[error, T] |
+
 ## 10. Immutability Under the Hood
 
 When GALA transpiles to Go, immutable values are wrapped in a `std.Immutable[T]` container to ensure safety and provide consistent semantics, especially for struct fields and global variables.

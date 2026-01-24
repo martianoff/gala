@@ -1,0 +1,76 @@
+package main
+
+import "fmt"
+
+// divide performs division, returning a Failure if divisor is zero.
+func divide(a int, b int) Try[int] {
+	if b == 0 {
+		return Failure[int](NoSuchElementError(Message = "division by zero"))
+	}
+	return Success[int](a / b)
+}
+
+// parsePositive returns a Success if the number is positive, Failure otherwise.
+func parsePositive(n int) Try[int] {
+	if n <= 0 {
+		return Failure[int](NoSuchElementError(Message = "number must be positive"))
+	}
+	return Success[int](n)
+}
+
+func main() {
+	// Basic Try creation - type inferred from value
+	val success = Success[int](42)
+	val failure Try[int] = Failure[int](NoSuchElementError(Message = "something went wrong"))
+
+	// Pattern matching
+	val msg1 = success match {
+		case Success(n) => fmt.Sprintf("Got value: %d", n)
+		case Failure(e) => fmt.Sprintf("Error: %s", e.Error())
+		case _ => "Unknown"
+	}
+	fmt.Println(msg1)
+
+	val msg2 = failure match {
+		case Success(n) => fmt.Sprintf("Got value: %d", n)
+		case Failure(e) => fmt.Sprintf("Error: %s", e.Error())
+		case _ => "Unknown"
+	}
+	fmt.Println(msg2)
+
+	// Using methods
+	fmt.Println("success.IsSuccess():", success.IsSuccess())
+	fmt.Println("failure.IsFailure():", failure.IsFailure())
+	fmt.Println("success.Get():", success.Get())
+	fmt.Println("failure.GetOrElse(0):", failure.GetOrElse(0))
+
+	// Map operation - type inferred
+	val doubled = success.Map((n int) => n * 2)
+	fmt.Println("doubled.Get():", doubled.Get())
+
+	// FlatMap operation (chaining)
+	val result = divide(10, 2).FlatMap((n int) => divide(n, 2))
+	fmt.Println("10 / 2 / 2 =", result.Get())
+
+	// Filter operation
+	val filtered = success.Filter((n int) => n > 50)
+	fmt.Println("filtered (>50):", filtered.IsSuccess())
+
+	// OrElse operation
+	val recovered = failure.OrElse(Success[int](100))
+	fmt.Println("recovered.Get():", recovered.Get())
+
+	// Conversion to Option
+	val opt = success.ToOption()
+	fmt.Println("toOption.IsDefined():", opt.IsDefined())
+
+	// Conversion to Either
+	val either = failure.ToEither()
+	fmt.Println("toEither.IsLeft():", either.IsLeft())
+
+	// FromOption conversion - type inferred from Some(99)
+	val fromSome = FromOption[int](Some[int](99))
+	val fromNone = FromOption[int](None[int]())
+	fmt.Println("fromSome.Get():", fromSome.Get())
+	fmt.Println("fromNone.IsFailure():", fromNone.IsFailure())
+}

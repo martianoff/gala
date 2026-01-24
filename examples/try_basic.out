@@ -1,0 +1,14 @@
+Got value: 42
+Error: something went wrong
+success.IsSuccess(): true
+failure.IsFailure(): true
+success.Get(): 42
+failure.GetOrElse(0): 0
+doubled.Get(): 84
+10 / 2 / 2 = 2
+filtered (>50): false
+recovered.Get(): 100
+toOption.IsDefined(): true
+toEither.IsLeft(): true
+fromSome.Get(): 99
+fromNone.IsFailure(): true

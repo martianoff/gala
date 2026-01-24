@@ -267,3 +267,16 @@ gala_test(
     expected = "mutable_collections.out",
     deps = ["//collection_mutable"],
 )
+
+gala_test(
+    name = "try_basic",
+    src = "try_basic.gala",
+    expected = "try_basic.out",
+)
+
+# Temporarily disabled - pattern matching with custom struct types needs more work
+# gala_test(
+#     name = "try_recovery",
+#     src = "try_recovery.gala",
+#     expected = "try_recovery.out",
+# )

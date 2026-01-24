@@ -23,6 +23,7 @@ const (
 	TypeTuple9      = "Tuple9"
 	TypeTuple10     = "Tuple10"
 	TypeEither      = "Either"
+	TypeTry         = "Try"
 	TypeTraversable = "Traversable"
 	TypeIterable    = "Iterable"
 
@@ -30,6 +31,8 @@ const (
 	FuncNone         = "None"
 	FuncLeft         = "Left"
 	FuncRight        = "Right"
+	FuncSuccess      = "Success"
+	FuncFailure      = "Failure"
 	FuncNewImmutable = "NewImmutable"
 	FuncCopy         = "Copy"
 	MethodGet        = "Get"
@@ -38,17 +41,18 @@ const (
 // StdExportedTypes lists all types exported by the std package.
 // Used for conflict detection to prevent user code from shadowing std types.
 var StdExportedTypes = []string{
-	TypeOption, TypeImmutable, TypeEither, TypeTuple,
+	TypeOption, TypeImmutable, TypeEither, TypeTry, TypeTuple,
 	TypeTuple3, TypeTuple4, TypeTuple5, TypeTuple6, TypeTuple7, TypeTuple8, TypeTuple9, TypeTuple10,
 	TypeTraversable, TypeIterable,
-	FuncSome, FuncNone, FuncLeft, FuncRight, // Companion objects (also act as types)
+	FuncSome, FuncNone, FuncLeft, FuncRight, FuncSuccess, FuncFailure, // Companion objects (also act as types)
 }
 
 // StdExportedFunctions lists all functions exported by the std package.
 // Used for conflict detection to prevent user code from shadowing std functions.
 var StdExportedFunctions = []string{
 	FuncNewImmutable, FuncCopy, "Equal",
-	FuncSome, FuncNone, FuncLeft, FuncRight, // Companion constructors
+	FuncSome, FuncNone, FuncLeft, FuncRight, FuncSuccess, FuncFailure, // Companion constructors
+	"FromOption", "FromEitherError", // Try conversion functions
 }
 
 // RichAST provides metadata about a Gala source file.

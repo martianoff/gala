@@ -46,8 +46,8 @@ go_library(
     name = "collection_mutable",
     srcs = [
         "array.go",
-        "list.go",
         "hashset.go",
+        "list.go",
         "treeset.go",
     ],
     importpath = "martianoff/gala/collection_mutable",
