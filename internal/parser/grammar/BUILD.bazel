@@ -10,32 +10,16 @@ genrule(
         "gala_parser.go",
     ],
     cmd = """
-        set -ex && \
-        echo "=== DEBUG: Current directory ===" && \
-        pwd && \
-        echo "=== DEBUG: JAVABASE = $(JAVABASE) ===" && \
-        echo "=== DEBUG: Java version ===" && \
-        "$(JAVABASE)/bin/java" -version 2>&1 || echo "Java not found" && \
-        echo "=== DEBUG: JAR location = $(location @antlr4_tool//jar) ===" && \
-        ls -la "$(location @antlr4_tool//jar)" || echo "JAR not found" && \
-        echo "=== DEBUG: Grammar file = $(location gala.g4) ===" && \
-        ls -la "$(location gala.g4)" || echo "Grammar not found" && \
+        set -e && \
         ANTLR_OUT=antlr_tmp_$$$$ && \
         mkdir -p $$ANTLR_OUT && \
-        echo "=== DEBUG: Running ANTLR ===" && \
-        "$(JAVABASE)/bin/java" -jar $(location @antlr4_tool//jar) -Dlanguage=Go -package grammar -o $$ANTLR_OUT $(location gala.g4) 2>&1 && \
-        echo "=== DEBUG: ANTLR output directory contents ===" && \
-        find $$ANTLR_OUT -type f 2>/dev/null || echo "No files found" && \
-        ls -laR $$ANTLR_OUT || echo "Cannot list directory" && \
-        GO_FILES=$$(find $$ANTLR_OUT -name '*.go' 2>/dev/null) && \
-        echo "=== DEBUG: Found Go files: $$GO_FILES ===" && \
-        for f in $$GO_FILES; do \
-            echo "Processing: $$f" && \
+        "$(JAVA)" -jar $(location @antlr4_tool//jar) -Dlanguage=Go -package grammar -o $$ANTLR_OUT $(location gala.g4) && \
+        for f in $$ANTLR_OUT/*.go; do \
             sed 's|github.com/antlr/antlr4/runtime/Go/antlr|github.com/antlr4-go/antlr/v4|g' "$$f" > "$(@D)/$$(basename $$f)"; \
         done && \
         rm -rf $$ANTLR_OUT
     """,
-    toolchains = ["@bazel_tools//tools/jdk:current_java_runtime"],
+    toolchains = ["@bazel_tools//tools/jdk:current_host_java_runtime"],
     tools = ["@antlr4_tool//jar"],
 )
 
