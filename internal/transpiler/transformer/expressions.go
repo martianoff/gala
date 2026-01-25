@@ -2,6 +2,7 @@ package transformer
 
 import (
 	"fmt"
+
 	"github.com/antlr4-go/antlr/v4"
 	"go/ast"
 	"go/token"
@@ -12,6 +13,7 @@ import (
 )
 
 func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (ast.Expr, error) {
+	// NOTE: This function is DEAD CODE. Call transformation goes through transformCallWithArgsCtx.
 	// expression '(' argumentList? ')'
 	child1 := ctx.GetChild(0)
 	x, err := t.transformExpression(child1.(grammar.IExpressionContext))
@@ -70,7 +72,13 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 	}
 
 	recvType := t.getExprTypeName(receiver)
-	if qName := t.getType(recvType.BaseName()); !qName.IsNil() {
+	// If recvType is a generic type, preserve its type parameters when resolving the base name
+	if gen, ok := recvType.(transpiler.GenericType); ok {
+		if qBase := t.getType(gen.Base.String()); !qBase.IsNil() {
+			// Keep the type parameters but use the resolved base type
+			recvType = transpiler.GenericType{Base: qBase, Params: gen.Params}
+		}
+	} else if qName := t.getType(recvType.BaseName()); !qName.IsNil() {
 		recvType = qName
 	}
 	recvBaseName := recvType.BaseName()
@@ -173,6 +181,75 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 			return &ast.CallExpr{
 				Fun:  fun,
 				Args: append([]ast.Expr{receiver}, mArgs...),
+			}, nil
+		}
+	}
+
+	// Handle regular method calls on generic types (methods without type params on receiver types with type params)
+	// These should remain as method calls but still need expected types for lambda arguments
+	// DEBUG: Check all methods
+	if method != "" && strings.Contains(method, "ecov") {
+		panic(fmt.Sprintf("DEBUG: method=%s receiver=%v isGenericMethod=%v argListCtx=%v lookupBaseName=%s",
+			method, receiver != nil, isGenericMethod, argListCtx != nil, lookupBaseName))
+	}
+	if receiver != nil && !isGenericMethod && method != "" && argListCtx != nil {
+		var methodMeta *transpiler.MethodMetadata
+		var typeMeta *transpiler.TypeMetadata
+		// Try to find type metadata - first with the full name, then without std. prefix (for dot-imported std types)
+		metaLookupName := lookupBaseName
+		if tm, ok := t.typeMetas[metaLookupName]; ok && tm != nil && len(tm.TypeParams) > 0 {
+			typeMeta = tm
+			methodMeta = typeMeta.Methods[method]
+		} else if strings.HasPrefix(lookupBaseName, "std.") {
+			metaLookupName = strings.TrimPrefix(lookupBaseName, "std.")
+			if tm, ok := t.typeMetas[metaLookupName]; ok && tm != nil && len(tm.TypeParams) > 0 {
+				typeMeta = tm
+				methodMeta = typeMeta.Methods[method]
+			}
+		}
+
+		// DEBUG: Panic to see values
+		if method == "Recover" || method == "RecoverWith" {
+			panic(fmt.Sprintf("DEBUG: method=%s lookupBaseName=%s recvType=%v typeMeta=%v methodMeta=%v",
+				method, lookupBaseName, recvType, typeMeta != nil, methodMeta != nil))
+		}
+
+		if methodMeta != nil {
+			// Build type substitution map from receiver's type arguments
+			typeSubst := make(map[string]string)
+			recvTypeArgs := t.getReceiverTypeArgStrings(recvType)
+			for i, tp := range typeMeta.TypeParams {
+				if i < len(recvTypeArgs) {
+					typeSubst[tp] = recvTypeArgs[i]
+				}
+			}
+
+			// Transform arguments with expected types
+			var mArgs []ast.Expr
+			for i, argCtx := range argListCtx.AllArgument() {
+				arg := argCtx.(*grammar.ArgumentContext)
+				pat := arg.Pattern()
+				ep, ok := pat.(*grammar.ExpressionPatternContext)
+				if !ok {
+					return nil, galaerr.NewSemanticError("only expressions allowed as function arguments")
+				}
+
+				var expectedType transpiler.Type = transpiler.NilType{}
+				if i < len(methodMeta.ParamTypes) {
+					expectedType = t.substituteTranspilerTypeParams(methodMeta.ParamTypes[i], typeSubst)
+				}
+
+				expr, err := t.transformArgumentWithExpectedType(ep.Expression(), expectedType)
+				if err != nil {
+					return nil, err
+				}
+				mArgs = append(mArgs, expr)
+			}
+
+			// Keep as method call: receiver.method(args)
+			return &ast.CallExpr{
+				Fun:  &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)},
+				Args: mArgs,
 			}, nil
 		}
 	}
@@ -962,7 +1039,13 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 			method := sel.Sel.Name
 
 			recvType := t.getExprTypeName(receiver)
-			if qName := t.getType(recvType.BaseName()); !qName.IsNil() {
+			// If recvType is a generic type, preserve its type parameters when resolving the base name
+			if gen, ok := recvType.(transpiler.GenericType); ok {
+				if qBase := t.getType(gen.Base.String()); !qBase.IsNil() {
+					// Keep the type parameters but use the resolved base type
+					recvType = transpiler.GenericType{Base: qBase, Params: gen.Params}
+				}
+			} else if qName := t.getType(recvType.BaseName()); !qName.IsNil() {
 				recvType = qName
 			}
 			recvBaseName := recvType.BaseName()
@@ -1058,7 +1141,13 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	}
 
 	recvType := t.getExprTypeName(receiver)
-	if qName := t.getType(recvType.BaseName()); !qName.IsNil() {
+	// If recvType is a generic type, preserve its type parameters when resolving the base name
+	if gen, ok := recvType.(transpiler.GenericType); ok {
+		if qBase := t.getType(gen.Base.String()); !qBase.IsNil() {
+			// Keep the type parameters but use the resolved base type
+			recvType = transpiler.GenericType{Base: qBase, Params: gen.Params}
+		}
+	} else if qName := t.getType(recvType.BaseName()); !qName.IsNil() {
 		recvType = qName
 	}
 	recvBaseName := recvType.BaseName()
@@ -1142,19 +1231,128 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 				funExpr = ast.NewIdent(method)
 			}
 
-			// Prepend receiver's type arguments to explicit type arguments
+			// Only add type arguments when they are explicitly provided
+			// If no explicit type args, let Go infer all type parameters
+			// This is important for methods with their own type params like Map[U]
+			// Get receiver type args, filtering out unresolved type params
 			recvTypeArgs := t.getReceiverTypeArgs(recvType)
-			allTypeArgs := append(typeArgs, recvTypeArgs...)
+			var concreteRecvTypeArgs []ast.Expr
+			for _, arg := range recvTypeArgs {
+				// Check if this is an unresolved type param (single uppercase letter)
+				if ident, ok := arg.(*ast.Ident); ok {
+					if len(ident.Name) == 1 && ident.Name[0] >= 'A' && ident.Name[0] <= 'Z' {
+						// Skip unresolved type params like T, U, K, V
+						continue
+					}
+				}
+				concreteRecvTypeArgs = append(concreteRecvTypeArgs, arg)
+			}
 
-			if len(allTypeArgs) == 1 {
-				funExpr = &ast.IndexExpr{X: funExpr, Index: allTypeArgs[0]}
-			} else if len(allTypeArgs) > 1 {
-				funExpr = &ast.IndexListExpr{X: funExpr, Indices: allTypeArgs}
+			// Decide whether to add type arguments:
+			// - If method has its own type params (e.g., Map[U]) and no explicit type args: let Go infer
+			// - Otherwise: combine explicit type args with concrete receiver type args
+			shouldAddTypeArgs := len(typeArgs) > 0 || (methodMeta == nil || len(methodMeta.TypeParams) == 0)
+			if shouldAddTypeArgs {
+				allTypeArgs := append(typeArgs, concreteRecvTypeArgs...)
+				if len(allTypeArgs) == 1 {
+					funExpr = &ast.IndexExpr{X: funExpr, Index: allTypeArgs[0]}
+				} else if len(allTypeArgs) > 1 {
+					funExpr = &ast.IndexListExpr{X: funExpr, Indices: allTypeArgs}
+				}
 			}
 
 			return &ast.CallExpr{
 				Fun:  funExpr,
 				Args: append([]ast.Expr{receiver}, mArgs...),
+			}, nil
+		}
+	}
+
+	// Handle regular method calls on generic types (methods without type params on receiver types with type params)
+	// These should remain as method calls but still need expected types for lambda arguments
+	if receiver != nil && !isGenericMethod && method != "" {
+		var methodMeta *transpiler.MethodMetadata
+		var typeMeta *transpiler.TypeMetadata
+		// Try to find type metadata - first with the full name, then without std. prefix (for dot-imported std types)
+		metaLookupName := lookupBaseName
+		if tm, ok := t.typeMetas[metaLookupName]; ok && tm != nil && len(tm.TypeParams) > 0 {
+			typeMeta = tm
+			methodMeta = typeMeta.Methods[method]
+		} else if strings.HasPrefix(lookupBaseName, "std.") {
+			metaLookupName = strings.TrimPrefix(lookupBaseName, "std.")
+			if tm, ok := t.typeMetas[metaLookupName]; ok && tm != nil && len(tm.TypeParams) > 0 {
+				typeMeta = tm
+				methodMeta = typeMeta.Methods[method]
+			}
+		}
+
+		if methodMeta != nil {
+			// Build type substitution map from receiver's type arguments
+			typeSubst := make(map[string]string)
+			recvTypeArgs := t.getReceiverTypeArgStrings(recvType)
+			hasUnresolvedTypeParams := false
+			for i, tp := range typeMeta.TypeParams {
+				if i < len(recvTypeArgs) {
+					arg := recvTypeArgs[i]
+					// Check if this type arg is an unresolved type param (single uppercase letter)
+					if len(arg) == 1 && arg[0] >= 'A' && arg[0] <= 'Z' {
+						hasUnresolvedTypeParams = true
+						break
+					}
+					typeSubst[tp] = arg
+				}
+			}
+
+			// If receiver has unresolved type params, skip expected type inference
+			// and let Go infer the lambda types from the body
+			if hasUnresolvedTypeParams {
+				// Transform arguments without expected types
+				var mArgs []ast.Expr
+				for _, argCtx := range argListCtx.AllArgument() {
+					arg := argCtx.(*grammar.ArgumentContext)
+					pat := arg.Pattern()
+					ep, ok := pat.(*grammar.ExpressionPatternContext)
+					if !ok {
+						return nil, galaerr.NewSemanticError("only expressions allowed as function arguments")
+					}
+					expr, err := t.transformExpression(ep.Expression())
+					if err != nil {
+						return nil, err
+					}
+					mArgs = append(mArgs, expr)
+				}
+				return &ast.CallExpr{
+					Fun:  &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)},
+					Args: mArgs,
+				}, nil
+			}
+
+			// Transform arguments with expected types
+			var mArgs []ast.Expr
+			for i, argCtx := range argListCtx.AllArgument() {
+				arg := argCtx.(*grammar.ArgumentContext)
+				pat := arg.Pattern()
+				ep, ok := pat.(*grammar.ExpressionPatternContext)
+				if !ok {
+					return nil, galaerr.NewSemanticError("only expressions allowed as function arguments")
+				}
+
+				var expectedType transpiler.Type = transpiler.NilType{}
+				if i < len(methodMeta.ParamTypes) {
+					expectedType = t.substituteTranspilerTypeParams(methodMeta.ParamTypes[i], typeSubst)
+				}
+
+				expr, err := t.transformArgumentWithExpectedType(ep.Expression(), expectedType)
+				if err != nil {
+					return nil, err
+				}
+				mArgs = append(mArgs, expr)
+			}
+
+			// Keep as method call: receiver.method(args)
+			return &ast.CallExpr{
+				Fun:  &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)},
+				Args: mArgs,
 			}, nil
 		}
 	}

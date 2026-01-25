@@ -280,3 +280,9 @@ gala_test(
     src = "try_recovery.gala",
     expected = "try_recovery.out",
 )
+
+gala_test(
+    name = "lambda_type_inference",
+    src = "lambda_type_inference.gala",
+    expected = "lambda_type_inference.out",
+)

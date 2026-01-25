@@ -1,0 +1,55 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+)
+
+// Minimal reproduction for lambda return type inference issue
+// This reproduces the pattern where a generic method passes a lambda
+// to another generic method, and the lambda's return type is not correctly inferred
+
+// Container is a simple generic wrapper
+type Container[T any] struct {
+    var items []T
+}
+
+// Filter returns items matching the predicate
+func (c Container[T]) Filter(p func(T) bool) Container[T] {
+    var result []T
+    for i := 0; i < len(c.items); i++ {
+        if p(c.items[i]) {
+            result = append(result, c.items[i])
+        }
+    }
+    return Container[T](items = result)
+}
+
+// FilterBy is a wrapper that delegates to Filter with a key extractor
+// This is the pattern that fails: (item T) => predicate(keyFn(item))
+func (c Container[T]) FilterBy[K any](keyFn func(T) K, predicate func(K) bool) Container[T] {
+    // This lambda should infer return type bool from Filter's parameter type
+    return c.Filter((item T) => predicate(keyFn(item)))
+}
+
+// Pair for testing
+type Pair struct {
+    Key   string
+    Value int
+}
+
+func main() {
+    var items []Pair
+    items = append(items, Pair(Key = "a", Value = 1))
+    items = append(items, Pair(Key = "b", Value = 2))
+    items = append(items, Pair(Key = "c", Value = 3))
+    val container = Container[Pair](items = items)
+
+    // This should work - FilterBy delegates to Filter
+    val keyFn = (p Pair) => p.Key
+    val predicate = (k string) => k != "b"
+    val filtered = container.FilterBy[string](keyFn, predicate)
+
+    fmt.Printf("Filtered count: %d\n", len(filtered.items))
+    fmt.Println("Done")
+}

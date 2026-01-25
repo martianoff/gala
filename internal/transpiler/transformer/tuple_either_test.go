@@ -85,7 +85,8 @@ func main() {
     val mapped = e.Map[int]((s string) => len(s))
 }`,
 			expected: []string{
-				"std.Either_Map[int](e",
+				// Explicit type args include both method type arg and receiver type args
+				"std.Either_Map[int, int, string](e.Get()",
 			},
 		},
 		{
