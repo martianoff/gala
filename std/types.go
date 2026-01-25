@@ -253,3 +253,40 @@ func SliceTake[T any](s []T, n int) []T {
 	}
 	return s[:n]
 }
+
+// === Slice Creation Functions ===
+
+// SliceEmpty creates an empty slice of type T.
+func SliceEmpty[T any]() []T {
+	return nil
+}
+
+// SliceOf creates a slice from variadic arguments.
+func SliceOf[T any](elements ...T) []T {
+	return elements
+}
+
+// SliceWithCapacity creates an empty slice with pre-allocated capacity.
+func SliceWithCapacity[T any](capacity int) []T {
+	return make([]T, 0, capacity)
+}
+
+// SliceWithSize creates a slice with specified length (zero-initialized).
+func SliceWithSize[T any](size int) []T {
+	return make([]T, size)
+}
+
+// SliceWithSizeAndCapacity creates a slice with specified length and capacity.
+func SliceWithSizeAndCapacity[T any](size int, capacity int) []T {
+	return make([]T, size, capacity)
+}
+
+// SliceCopy creates a copy of an existing slice.
+func SliceCopy[T any](elements []T) []T {
+	if elements == nil {
+		return nil
+	}
+	result := make([]T, len(elements))
+	copy(result, elements)
+	return result
+}

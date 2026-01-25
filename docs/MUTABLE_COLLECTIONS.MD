@@ -65,7 +65,7 @@ var arr = EmptyArray[int]()
 var arr = ArrayOf(1, 2, 3, 4, 5)
 
 // From slice (copies the slice)
-var slice = []int{1, 2, 3}
+var slice = SliceOf(1, 2, 3)
 var arr = ArrayFromSlice(slice)
 
 // With pre-allocated capacity (for known sizes)
@@ -139,7 +139,7 @@ arr.Reverse()
 var arr = ArrayOf(1, 2, 3)
 
 // Append from a slice - O(m) amortized
-var more = []int{4, 5, 6}
+var more = SliceOf(4, 5, 6)
 arr.AppendAll(more)
 
 // Append from another Array - O(m) amortized
@@ -147,7 +147,7 @@ var other = ArrayOf(7, 8, 9)
 arr.AppendFrom(other)
 
 // Prepend from a slice - O(n+m)
-arr.PrependAll([]int{-2, -1, 0})
+arr.PrependAll(SliceOf(-2, -1, 0))
 ```
 
 ### Structural Operations (return new arrays)
@@ -268,7 +268,7 @@ var list = EmptyList[int]()
 var list = ListOf(1, 2, 3, 4, 5)
 
 // From slice
-var slice = []int{1, 2, 3}
+var slice = SliceOf(1, 2, 3)
 var list = ListFromSlice(slice)
 ```
 
@@ -412,7 +412,7 @@ var s = EmptyHashSet[int]()
 var s = HashSetOf(1, 2, 3, 4, 5)
 
 // From slice
-var slice = []int{1, 2, 3}
+var slice = SliceOf(1, 2, 3)
 var s = HashSetFromSlice(slice)
 ```
 
@@ -586,7 +586,7 @@ var s = EmptyTreeSet[int]()
 var s = TreeSetOf(3, 1, 4, 1, 5)  // TreeSet(1, 3, 4, 5)
 
 // From slice
-var slice = []int{3, 1, 2}
+var slice = SliceOf(3, 1, 2)
 var s = TreeSetFromSlice(slice)   // TreeSet(1, 2, 3)
 ```
 
@@ -1158,8 +1158,8 @@ import (
 
 func main() {
     // Find common elements between two datasets
-    var dataset1 = []int{1, 2, 3, 4, 5, 6, 7, 8}
-    var dataset2 = []int{5, 6, 7, 8, 9, 10, 11, 12}
+    var dataset1 = SliceOf(1, 2, 3, 4, 5, 6, 7, 8)
+    var dataset2 = SliceOf(5, 6, 7, 8, 9, 10, 11, 12)
 
     var set1 = HashSetFromSlice(dataset1)
     var set2 = HashSetFromSlice(dataset2)

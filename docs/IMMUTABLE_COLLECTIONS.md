@@ -278,7 +278,7 @@ val empty Array[int] = EmptyArray[int]()
 val arr = ArrayOf(1, 2, 3, 4, 5)
 
 // From slice
-val slice = []int{1, 2, 3}
+val slice = SliceOf(1, 2, 3)
 val arr2 = ArrayFrom(slice)
 ```
 
@@ -512,7 +512,7 @@ val empty = EmptyHashSet[int]()
 val set = HashSetOf(1, 2, 3, 4, 5)
 
 // From slice
-val slice = []int{1, 2, 3}
+val slice = SliceOf(1, 2, 3)
 val set2 = HashSetFromSlice(slice)
 ```
 
@@ -686,7 +686,7 @@ val empty = EmptyTreeSet[int]()
 val set = TreeSetOf(1, 2, 3, 4, 5)
 
 // From slice
-val slice = []int{3, 1, 4, 1, 5}
+val slice = SliceOf(3, 1, 4, 1, 5)
 val set2 = TreeSetFromSlice(slice)  // TreeSet(1, 3, 4, 5) - sorted, no duplicates
 ```
 

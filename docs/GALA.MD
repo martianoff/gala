@@ -186,7 +186,7 @@ val names = ListOf("Alice", "Bob", "Charlie")
 You can spread a slice into a variadic function call using `...`.
 
 ```gala
-val items = []int{1, 2, 3, 4}
+val items = SliceOf(1, 2, 3, 4)
 val total = sum(items...)  // Spreads slice as variadic arguments
 ```
 
@@ -285,7 +285,7 @@ If the struct has no properties, it can be called using the type name directly w
 type Implode struct {}
 func (i Implode) Apply(params []string) string = strings.Join(params, "")
 
-val res = Implode([]string{"a", "b"}) // expanded to Implode{}.Apply([]string{"a", "b"})
+val res = Implode(SliceOf("a", "b")) // expanded to Implode{}.Apply(SliceOf("a", "b"))
 ```
 
 ## 5. Interfaces
@@ -589,7 +589,7 @@ for {
 Iterate over slices, arrays, or maps:
 
 ```gala
-val items = []int{1, 2, 3}
+val items = SliceOf(1, 2, 3)
 for i, v := range items {
     fmt.Printf("index %d: %d\n", i, v)
 }
@@ -742,6 +742,49 @@ func processOrder(id int) Try[Receipt] =
 | `ToOption()` | Convert to Option |
 | `ToEither()` | Convert to Either[error, T] |
 
+### Slices
+
+GALA provides type-safe functions for creating slices through the `std` package. Native Go slice literals (`[]int{1,2,3}`) and `make()` are not supported in GALA.
+
+```gala
+import . "martianoff/gala/std"
+
+// Create a slice from values
+val nums = SliceOf(1, 2, 3, 4, 5)
+
+// Create an empty slice
+val empty = SliceEmpty[int]()
+
+// Pre-allocate capacity for performance
+val buffer = SliceWithCapacity[string](100)
+
+// Create a slice with specific size (zero-initialized)
+val sized = SliceWithSize[int](10)
+
+// Copy an existing slice
+val copy = SliceCopy(original)
+```
+
+**Available Slice Functions:**
+
+| Function | Description |
+|----------|-------------|
+| `SliceOf(elements...)` | Create slice from values |
+| `SliceEmpty[T]()` | Create empty slice |
+| `SliceWithCapacity[T](cap)` | Empty slice with capacity |
+| `SliceWithSize[T](size)` | Zero-initialized slice |
+| `SliceWithSizeAndCapacity[T](size, cap)` | Slice with length and capacity |
+| `SliceCopy(slice)` | Copy a slice |
+| `SliceAppendAll(dst, src)` | Append all elements |
+| `SlicePrepend(s, value)` | Insert at front |
+| `SlicePrependAll(s, values)` | Prepend all elements |
+| `SliceInsert(s, index, value)` | Insert at index |
+| `SliceRemoveAt(s, index)` | Remove at index |
+| `SliceDrop(s, n)` | Drop first n elements |
+| `SliceTake(s, n)` | Take first n elements |
+
+**Note:** Slice types (`[]T`) are still valid in function signatures and struct fields.
+
 ## 10. Immutability Under the Hood
 
 When GALA transpiles to Go, immutable values are wrapped in a `std.Immutable[T]` container to ensure safety and provide consistent semantics, especially for struct fields and global variables.
@@ -794,15 +837,9 @@ import (
 
 func main() {
     val w = lib.Wrapper[int](V = 10)
-    val w2 = w.Map((x int) => x + 1) // Transpiles to lib.Wrapper_Map(w.Get(), ...)
+    val w2 = w.Map((x int) => x + 1)
     fmt.Println(w2.V)
 }
-```
-
-Alternatively, you can call the transpiled function directly using its qualified name:
-
-```gala
-val w2 = lib.Wrapper_Map(w, (x int) => x + 1)
 ```
 
 ## 12. Testing

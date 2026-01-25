@@ -2003,13 +2003,9 @@ func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.
 	if ctx.Literal() != nil {
 		return t.transformLiteral(ctx.Literal().(*grammar.LiteralContext))
 	}
-	// Handle composite literal (e.g., map[K]V{}, []int{1, 2, 3})
+	// Handle composite literal (e.g., map[K]V{}, struct{}{})
 	if ctx.CompositeLiteral() != nil {
 		return t.transformCompositeLiteral(ctx.CompositeLiteral().(*grammar.CompositeLiteralContext))
-	}
-	// Handle make expression: make(type, size) or make(type, size, capacity)
-	if ctx.MakeExpression() != nil {
-		return t.transformMakeExpression(ctx.MakeExpression().(*grammar.MakeExpressionContext))
 	}
 	for i := 0; i < ctx.GetChildCount(); i++ {
 		if exprListCtx, ok := ctx.GetChild(i).(grammar.IExpressionListContext); ok {
@@ -2027,38 +2023,16 @@ func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.
 	return nil, nil
 }
 
-// transformMakeExpression transforms make(type, size) or make(type, size, capacity)
-func (t *galaASTTransformer) transformMakeExpression(ctx *grammar.MakeExpressionContext) (ast.Expr, error) {
-	// Transform the type argument
-	typeExpr, err := t.transformType(ctx.Type_())
-	if err != nil {
-		return nil, err
-	}
-
-	// Build the arguments for make()
-	args := []ast.Expr{typeExpr}
-
-	// Transform size and capacity arguments
-	allExprs := ctx.AllExpression()
-	for _, exprCtx := range allExprs {
-		expr, err := t.transformExpression(exprCtx)
-		if err != nil {
-			return nil, err
-		}
-		args = append(args, expr)
-	}
-
-	return &ast.CallExpr{
-		Fun:  ast.NewIdent("make"),
-		Args: args,
-	}, nil
-}
-
 func (t *galaASTTransformer) transformCompositeLiteral(ctx *grammar.CompositeLiteralContext) (ast.Expr, error) {
 	// Transform the type
 	typeExpr, err := t.transformType(ctx.Type_())
 	if err != nil {
 		return nil, err
+	}
+
+	// Reject slice literals - users should use std.SliceOf() instead
+	if _, isArray := typeExpr.(*ast.ArrayType); isArray {
+		return nil, fmt.Errorf("slice literals are not supported in GALA; use std.SliceOf() or std.SliceEmpty() instead")
 	}
 
 	// Transform the elements

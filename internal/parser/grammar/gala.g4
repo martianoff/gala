@@ -148,11 +148,7 @@ primary
     | literal
     | '(' expressionList? ')'
     | compositeLiteral
-    | makeExpression
     ;
-
-// Built-in make function: make(type, size) or make(type, size, capacity)
-makeExpression: 'make' '(' type (',' expression (',' expression)?)? ')';
 
 compositeLiteral: type ('{' (elementList ','?)? '}');
 elementList: keyedElement (',' keyedElement)*;

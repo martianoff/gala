@@ -1,6 +1,9 @@
 package main
 
-import "fmt"
+import (
+    "fmt"
+    . "martianoff/gala/std"
+)
 
 // Custom sequence type - not predefined in the transpiler
 type IntStack struct {
@@ -18,9 +21,9 @@ func (s IntStack) Get(index int) int = s.elements[index]
 
 func (s IntStack) SeqDrop(n int) any {
     if n >= len(s.elements) {
-        return IntStack{elements: []int{}}
+        return IntStack{elements: SliceEmpty[int]()}
     }
-    var result []int
+    var result = SliceEmpty[int]()
     for i := n; i < len(s.elements); i++ {
         result = append(result, s.elements[i])
     }

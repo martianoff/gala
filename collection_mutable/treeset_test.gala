@@ -3,6 +3,7 @@ package main
 import (
     . "martianoff/gala/test"
     . "martianoff/gala/collection_mutable"
+    . "martianoff/gala/std"
 )
 
 // === TreeSet Creation Tests ===
@@ -25,8 +26,8 @@ func TestTreeSetOfDuplicates(t T) T {
 }
 
 func TestTreeSetFromSlice(t T) T {
-    var slice = []int{30, 10, 20}
-    var s = TreeSetFromSlice[int](slice)
+    var slice = SliceOf(30, 10, 20)
+    var s = TreeSetFromSlice(slice)
     var t1 = Eq[int](t, s.Size(), 3)
     var t2 = IsTrue(t1, s.Contains(10))
     var t3 = IsTrue(t2, s.Contains(20))

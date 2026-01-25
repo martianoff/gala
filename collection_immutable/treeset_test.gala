@@ -386,7 +386,7 @@ func TestTreeSetReverseInsertion(t T) T {
 
 // Random-like insertion test
 func TestTreeSetRandomInsertion(t T) T {
-    val values = []int{50, 25, 75, 12, 37, 62, 87, 6, 18, 31, 43, 56, 68, 81, 93}
+    val values = SliceOf(50, 25, 75, 12, 37, 62, 87, 6, 18, 31, 43, 56, 68, 81, 93)
     var s = EmptyTreeSet[int]()
     for i := 0; i < len(values); i++ {
         s = s.Add(values[i])

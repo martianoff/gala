@@ -4,6 +4,7 @@ import (
     "fmt"
     . "martianoff/gala/test"
     . "martianoff/gala/collection_mutable"
+    . "martianoff/gala/std"
 )
 
 // === List Creation Tests ===
@@ -21,8 +22,8 @@ func TestListOf(t T) T {
 }
 
 func TestListFromSlice(t T) T {
-    var slice = []int{10, 20, 30}
-    var list = ListFromSlice[int](slice)
+    var slice = SliceOf(10, 20, 30)
+    var list = ListFromSlice(slice)
     var t1 = Eq[int](t, list.Length(), 3)
     return Eq[int](t1, list.Get(0), 10)
 }
