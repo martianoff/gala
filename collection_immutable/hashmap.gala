@@ -480,6 +480,21 @@ func (m HashMap[K, V]) FilterValues(p func(V) bool) HashMap[K, V] {
     })
 }
 
+// Collect applies a partial function to each key-value pair and collects the results.
+// Entries for which the function returns None are filtered out.
+// Returns an Array since the result type may not be suitable for a HashMap.
+func (m HashMap[K, V]) Collect[U any](pf func(K, V) Option[U]) Array[U] {
+    var builder = newArrayBuilder[U]()
+    m.ForEachKV((k K, v V) => {
+        val opt = pf(k, v)
+        if opt.IsDefined() {
+            builder.Add(opt.Get())
+        }
+        return nil
+    })
+    return builder.Result()
+}
+
 // FilterNot returns a new map with entries that do not satisfy the predicate.
 func (m HashMap[K, V]) FilterNot(p func(K, V) bool) HashMap[K, V] {
     return m.FoldLeftKV[HashMap[K, V]](EmptyHashMap[K, V](), (acc HashMap[K, V], k K, v V) => {

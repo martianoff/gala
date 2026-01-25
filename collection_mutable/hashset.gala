@@ -373,6 +373,21 @@ func (s *HashSet[T]) Filter(p func(T) bool) *HashSet[T] {
 // FilterNot returns a new HashSet with elements that do not satisfy the predicate.
 func (s *HashSet[T]) FilterNot(p func(T) bool) *HashSet[T] = s.Filter((elem T) => !p(elem))
 
+// Collect applies a partial function to each element and collects the results.
+// Elements for which the function returns None are filtered out.
+// Returns a mutable Array since the result type may not be comparable.
+func (s *HashSet[T]) Collect[U any](pf func(T) Option[U]) *Array[U] {
+    var result = EmptyArray[U]()
+    s.ForEach((elem T) => {
+        var opt = pf(elem)
+        if opt.IsDefined() {
+            result.Append(opt.Get())
+        }
+        return nil
+    })
+    return result
+}
+
 // Partition splits the set into two sets based on a predicate.
 func (s *HashSet[T]) Partition(p func(T) bool) Tuple[*HashSet[T], *HashSet[T]] {
     var left = s.Filter(p)

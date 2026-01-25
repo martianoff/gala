@@ -820,6 +820,21 @@ func (s *TreeSet[T]) Filter(p func(T) bool) *TreeSet[T] {
 // FilterNot returns a new TreeSet with elements that do not satisfy the predicate.
 func (s *TreeSet[T]) FilterNot(p func(T) bool) *TreeSet[T] = s.Filter((elem T) => !p(elem))
 
+// Collect applies a partial function to each element and collects the results.
+// Elements for which the function returns None are filtered out.
+// Returns a mutable Array since the result type may not be comparable.
+func (s *TreeSet[T]) Collect[U any](pf func(T) Option[U]) *Array[U] {
+    var result = EmptyArray[U]()
+    s.ForEach((elem T) => {
+        var opt = pf(elem)
+        if opt.IsDefined() {
+            result.Append(opt.Get())
+        }
+        return nil
+    })
+    return result
+}
+
 // Partition splits the set into two sets based on a predicate.
 func (s *TreeSet[T]) Partition(p func(T) bool) Tuple[*TreeSet[T], *TreeSet[T]] {
     var left = s.Filter(p)

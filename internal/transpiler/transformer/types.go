@@ -880,6 +880,10 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 					if fMeta, ok := t.functions[fullName]; ok {
 						return fMeta.ReturnType
 					}
+					// Check for known Go stdlib functions (e.g., fmt.Sprintf -> string)
+					if retType := getKnownGoStdlibReturnType(fullName); retType != nil {
+						return retType
+					}
 					// Handle Receiver_Method (e.g., std.Some_Apply, std.Try_FlatMap)
 					if idx := strings.Index(sel.Sel.Name, "_"); idx != -1 {
 						receiverType := pkgName + "." + sel.Sel.Name[:idx]
@@ -924,6 +928,12 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 					}
 					if _, ok := t.structFields[fullName]; ok {
 						return transpiler.NamedType{Package: pkgName, Name: sel.Sel.Name}
+					}
+				} else {
+					// For external Go packages not in t.imports, still check known stdlib functions
+					fullName := id.Name + "." + sel.Sel.Name
+					if retType := getKnownGoStdlibReturnType(fullName); retType != nil {
+						return retType
 					}
 				}
 			}
@@ -1518,4 +1528,49 @@ func (t *galaASTTransformer) substituteTranspilerTypeParams(typ transpiler.Type,
 		}
 	}
 	return typ
+}
+
+// knownGoStdlibReturnTypes maps common Go stdlib functions to their return types.
+// This helps type inference for calls like fmt.Sprintf, strings.Join, etc.
+var knownGoStdlibReturnTypes = map[string]transpiler.Type{
+	// fmt package
+	"fmt.Sprintf":  transpiler.BasicType{Name: "string"},
+	"fmt.Sprint":   transpiler.BasicType{Name: "string"},
+	"fmt.Sprintln": transpiler.BasicType{Name: "string"},
+	// strings package
+	"strings.Join":       transpiler.BasicType{Name: "string"},
+	"strings.Replace":    transpiler.BasicType{Name: "string"},
+	"strings.ReplaceAll": transpiler.BasicType{Name: "string"},
+	"strings.ToLower":    transpiler.BasicType{Name: "string"},
+	"strings.ToUpper":    transpiler.BasicType{Name: "string"},
+	"strings.TrimSpace":  transpiler.BasicType{Name: "string"},
+	"strings.Trim":       transpiler.BasicType{Name: "string"},
+	"strings.TrimPrefix": transpiler.BasicType{Name: "string"},
+	"strings.TrimSuffix": transpiler.BasicType{Name: "string"},
+	"strings.Contains":   transpiler.BasicType{Name: "bool"},
+	"strings.HasPrefix":  transpiler.BasicType{Name: "bool"},
+	"strings.HasSuffix":  transpiler.BasicType{Name: "bool"},
+	"strings.Index":      transpiler.BasicType{Name: "int"},
+	"strings.Count":      transpiler.BasicType{Name: "int"},
+	// strconv package
+	"strconv.Itoa":       transpiler.BasicType{Name: "string"},
+	"strconv.FormatInt":  transpiler.BasicType{Name: "string"},
+	"strconv.FormatBool": transpiler.BasicType{Name: "string"},
+	// math package
+	"math.Abs":   transpiler.BasicType{Name: "float64"},
+	"math.Max":   transpiler.BasicType{Name: "float64"},
+	"math.Min":   transpiler.BasicType{Name: "float64"},
+	"math.Floor": transpiler.BasicType{Name: "float64"},
+	"math.Ceil":  transpiler.BasicType{Name: "float64"},
+	"math.Round": transpiler.BasicType{Name: "float64"},
+	"math.Sqrt":  transpiler.BasicType{Name: "float64"},
+	// len is a builtin, but handle it if needed
+}
+
+// getKnownGoStdlibReturnType returns the return type for a known Go stdlib function.
+func getKnownGoStdlibReturnType(fullName string) transpiler.Type {
+	if retType, ok := knownGoStdlibReturnTypes[fullName]; ok {
+		return retType
+	}
+	return nil
 }

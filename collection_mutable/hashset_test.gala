@@ -292,6 +292,19 @@ func TestHashSetToList(t T) T {
     return Eq[int](t, list.Size(), 3)
 }
 
+func TestHashSetCollect(t T) T {
+    var s = HashSetOf(1, 2, 3, 4, 5)
+    // Collect even numbers doubled
+    var result = s.Collect((x int) => {
+        if x % 2 == 0 {
+            return Some(x * 2)
+        }
+        return None[int]()
+    })
+    // Should have 2 elements (2*2=4, 4*2=8)
+    return Eq[int](t, result.Size(), 2)
+}
+
 func TestHashSetClone(t T) T {
     var s = HashSetOf[int](1, 2, 3)
     var clone = s.Clone()
