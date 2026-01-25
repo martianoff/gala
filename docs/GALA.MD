@@ -978,11 +978,72 @@ Run specific tests:
 bazel test //mypackage:mycode_test
 ```
 
-## 13. Further Reading
+## 13. Best Practices
+
+### Immutability
+- **Prefer `val` over `var`** - Use mutable variables only when necessary (accumulators, loop counters)
+- **Use `Copy()` for updates** - Instead of mutating, create modified copies: `person.Copy(age = 31)`
+
+### Functional Patterns
+- **Use FoldLeft for accumulation** - Replace `var acc; for { acc = f(acc, x) }` with `FoldLeft[T](init, f)`
+- **Keep loops for short-circuit ops** - `Exists`, `ForAll`, `Find`, `Contains` benefit from early exit
+- **Chain operations** - `list.Filter(p).Map(f)` is clearer than nested loops
+
+### Lambda Syntax
+```gala
+// Single expression - use expression body
+(x int) => x * 2
+
+// Multiple statements - use block body with explicit return
+(x int, y int) => {
+    val sum = x + y
+    return sum * sum
+}
+```
+
+### Pattern Matching
+- **Prefer `match` over if-else chains** for type/value dispatch
+- **Use extractors** - `case Some(x) =>` not `if opt.IsDefined() { x := opt.Get() }`
+- **Add guards for conditions** - `case n: int if n > 0 =>` not nested if inside case
+
+### Type Inference
+- **Omit type parameters when inferrable** - `Some(42)` not `Some[int](42)`
+- **Omit variable types** - `val x = 42` not `val x int = 42`
+- **Explicit types only when needed** - ambiguous cases, complex generics, or documentation
+```gala
+// Good - types inferred
+val list = ListOf(1, 2, 3)
+val doubled = list.Map((x int) => x * 2)
+```
+
+### Collections
+| Operation | Immutable | Mutable |
+|-----------|-----------|---------|
+| Create | `ListOf(1,2,3)` | `EmptyList[int]()` then `Append` |
+| Transform | `list.Map(f)` | `list.Map(f)` (returns new) |
+| Accumulate | `FoldLeft[U](init, f)` | `FoldLeft[U](init, f)` |
+
+### Error Handling
+- **Use `Option[T]`** for nullable values
+- **Use `Try[T]`** for operations that may fail
+- **Use `Either[E, T]`** when error type matters
+- **Chain with `FlatMap`** for railway-oriented programming
+
+### Naming
+- **PascalCase** for types, exported functions/fields
+- **camelCase** for local variables, unexported fields
+- **Descriptive lambda params** - `(elem T)` not `(x T)` in collection ops
+
+### Performance
+- **Prefer `Array` over `List`** for random access (O(log32 n) vs O(n))
+- **Prefer `List` for prepend-heavy** workloads (O(1) vs O(n))
+- **Use `arrayBuilder`** when building arrays incrementally
+
+## 14. Further Reading
 
 - [Examples](examples.md) - More examples of GALA code.
 
-## IDE Support
+## 15. IDE Support
 
 ### IntelliJ IDEA
 A basic IntelliJ IDEA plugin is available in `ide/intellij`.
