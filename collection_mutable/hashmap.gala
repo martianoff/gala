@@ -488,17 +488,11 @@ func (m *HashMap[K, V]) ValueArray() *Array[V] {
 
 // ToGoMap converts the map to a Go map.
 func (m *HashMap[K, V]) ToGoMap() map[K]V {
-    var result map[K]V
+    var result = MapEmpty[K, V]()
     m.ForEachKV((k K, v V) => {
-        if result == nil {
-            result = map[K]V{}
-        }
-        result[k] = v
+        MapPut[K, V](result, k, v)
         return nil
     })
-    if result == nil {
-        result = map[K]V{}
-    }
     return result
 }
 

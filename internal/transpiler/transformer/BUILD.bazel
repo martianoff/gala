@@ -50,6 +50,7 @@ go_test(
         "immutable_unwrapping_test.go",
         "import_test.go",
         "imports_test.go",
+        "literals_test.go",
         "match_return_type_test.go",
         "match_test.go",
         "methods_test.go",

@@ -90,6 +90,19 @@ func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, 
 		return &ast.ArrayType{Elt: typ}, nil
 	}
 
+	// Handle map types: map[K]V
+	if strings.HasPrefix(txt, "map[") && len(ctx.AllType_()) >= 2 {
+		keyType, err := t.transformType(ctx.Type_(0))
+		if err != nil {
+			return nil, err
+		}
+		valueType, err := t.transformType(ctx.Type_(1))
+		if err != nil {
+			return nil, err
+		}
+		return &ast.MapType{Key: keyType, Value: valueType}, nil
+	}
+
 	// Handle function types: func(params) results
 	if ctx.Signature() != nil {
 		sig := ctx.Signature().(*grammar.SignatureContext)

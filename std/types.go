@@ -290,3 +290,89 @@ func SliceCopy[T any](elements []T) []T {
 	copy(result, elements)
 	return result
 }
+
+// === Map Creation Functions ===
+
+// MapEmpty creates an empty map of type map[K]V.
+func MapEmpty[K comparable, V any]() map[K]V {
+	return make(map[K]V)
+}
+
+// MapWithCapacity creates an empty map with pre-allocated capacity.
+func MapWithCapacity[K comparable, V any](capacity int) map[K]V {
+	return make(map[K]V, capacity)
+}
+
+// === Map Mutation Functions ===
+
+// MapPut adds or updates a key-value pair. Returns the map for chaining.
+func MapPut[K comparable, V any](m map[K]V, k K, v V) map[K]V {
+	m[k] = v
+	return m
+}
+
+// MapDelete removes a key. Returns the map for chaining.
+func MapDelete[K comparable, V any](m map[K]V, k K) map[K]V {
+	delete(m, k)
+	return m
+}
+
+// === Map Query Functions ===
+
+// MapGet returns the value for a key and whether it exists.
+func MapGet[K comparable, V any](m map[K]V, k K) (V, bool) {
+	v, ok := m[k]
+	return v, ok
+}
+
+// MapContains checks if a key exists.
+func MapContains[K comparable, V any](m map[K]V, k K) bool {
+	_, ok := m[k]
+	return ok
+}
+
+// MapLen returns the number of entries.
+func MapLen[K comparable, V any](m map[K]V) int {
+	return len(m)
+}
+
+// === Map Iteration Functions ===
+
+// MapForEach applies a function to each key-value pair.
+func MapForEach[K comparable, V any](m map[K]V, f func(K, V)) {
+	for k, v := range m {
+		f(k, v)
+	}
+}
+
+// MapKeys returns a slice of all keys.
+func MapKeys[K comparable, V any](m map[K]V) []K {
+	keys := make([]K, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+// MapValues returns a slice of all values.
+func MapValues[K comparable, V any](m map[K]V) []V {
+	values := make([]V, 0, len(m))
+	for _, v := range m {
+		values = append(values, v)
+	}
+	return values
+}
+
+// === Map Copy Function ===
+
+// MapCopy creates a shallow copy of a map.
+func MapCopy[K comparable, V any](m map[K]V) map[K]V {
+	if m == nil {
+		return nil
+	}
+	result := make(map[K]V, len(m))
+	for k, v := range m {
+		result[k] = v
+	}
+	return result
+}

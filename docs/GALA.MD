@@ -853,6 +853,71 @@ val copy = SliceCopy(original)
 
 **Note:** Slice types (`[]T`) are still valid in function signatures and struct fields.
 
+### Maps
+
+GALA does not support direct Go map literals (`map[K]V{}`). Instead, use the type-safe collection types.
+
+#### Recommended: Type-Safe HashMaps
+
+For most use cases, use the collection types which provide rich functional APIs:
+
+```gala
+import "martianoff/gala/collection_immutable"
+import "martianoff/gala/collection_mutable"
+
+// Immutable HashMap (functional, thread-safe)
+val m1 = collection_immutable.EmptyHashMap[string, int]()
+val m2 = m1.Put("a", 1).Put("b", 2)  // Returns new map
+
+// Mutable HashMap (imperative, single-threaded)
+var m3 = collection_mutable.EmptyHashMap[string, int]()
+m3.Put("a", 1)  // Modifies in place
+```
+
+#### Go Interoperability: std.Map Functions
+
+When you need Go-native `map[K]V` for interoperability with Go libraries:
+
+```gala
+import . "martianoff/gala/std"
+
+// Create and populate
+var goMap = MapEmpty[string, int]()
+goMap = MapPut(goMap, "key", 42)
+
+// Query
+val value, ok = MapGet(goMap, "key")
+val exists = MapContains(goMap, "key")
+val size = MapLen(goMap)
+
+// Iterate
+MapForEach(goMap, (k string, v int) => {
+    fmt.Println(k, v)
+})
+
+// Convert between HashMap and Go map
+val hashMap = collection_immutable.HashMapFromGoMap(goMap)
+val backToGoMap = hashMap.ToGoMap()
+```
+
+**Available std.Map Functions:**
+
+| Function | Description |
+|----------|-------------|
+| `MapEmpty[K, V]()` | Create empty map |
+| `MapWithCapacity[K, V](n)` | Create map with capacity hint |
+| `MapPut(m, k, v)` | Add/update entry, returns map |
+| `MapGet(m, k)` | Get value and existence flag |
+| `MapContains(m, k)` | Check if key exists |
+| `MapDelete(m, k)` | Remove key, returns map |
+| `MapLen(m)` | Get entry count |
+| `MapForEach(m, fn)` | Iterate over entries |
+| `MapKeys(m)` | Get all keys as slice |
+| `MapValues(m)` | Get all values as slice |
+| `MapCopy(m)` | Shallow copy |
+
+**Note:** Map types (`map[K]V`) are still valid in function signatures and struct fields, similar to slices.
+
 ### HashMap
 
 GALA provides both immutable and mutable HashMap implementations for key-value storage. Both support generic key and value types, with keys requiring the `comparable` constraint.

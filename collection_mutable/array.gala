@@ -593,7 +593,7 @@ func (a *Array[T]) Sliding(size int) *Array[*Array[T]] {
 
 // GroupBy partitions this array into a map of arrays according to a discriminator function.
 func (a *Array[T]) GroupBy[K comparable](f func(T) K) map[K]*Array[T] {
-    var result = map[K]*Array[T]{}
+    var result = MapEmpty[K, *Array[T]]()
     for i := 0; i < len(a.elements); i++ {
         var elem = a.elements[i]
         var key = f(elem)
