@@ -286,3 +286,9 @@ gala_test(
     src = "lambda_type_inference.gala",
     expected = "lambda_type_inference.out",
 )
+
+gala_test(
+    name = "expr_body_multiline_lambda",
+    src = "expr_body_multiline_lambda.gala",
+    expected = "expr_body_multiline_lambda.out",
+)

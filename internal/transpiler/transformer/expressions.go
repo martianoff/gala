@@ -2323,10 +2323,14 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 		if err != nil {
 			return nil, err
 		}
-		// Add return nil to ensure Go compiler is happy with 'any' return type
-		// Only add if we don't have a concrete expected type
+		// Try to infer return type from the block's return statements
 		if !isConcreteExpectedType {
-			b.List = append(b.List, &ast.ReturnStmt{Results: []ast.Expr{ast.NewIdent("nil")}})
+			if inferredType := t.inferBlockReturnType(b); inferredType != nil {
+				retType = inferredType
+			} else {
+				// Only add return nil if we couldn't infer a type
+				b.List = append(b.List, &ast.ReturnStmt{Results: []ast.Expr{ast.NewIdent("nil")}})
+			}
 		}
 		body = b
 	} else if ctx.Expression() != nil {
@@ -2356,6 +2360,102 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 		},
 		Body: body,
 	}, nil
+}
+
+// inferBlockReturnType tries to infer the return type from a block's return statements.
+// Returns nil if no concrete type can be inferred.
+func (t *galaASTTransformer) inferBlockReturnType(block *ast.BlockStmt) ast.Expr {
+	// Build a map of val variable types from declarations in this block.
+	// When we see `var result = std.NewImmutable(X)`, we record the type of X for `result`.
+	valTypes := make(map[string]ast.Expr)
+	for _, stmt := range block.List {
+		// Handle val declarations: var result = std.NewImmutable(X)
+		if declStmt, ok := stmt.(*ast.DeclStmt); ok {
+			if genDecl, ok := declStmt.Decl.(*ast.GenDecl); ok && genDecl.Tok == token.VAR {
+				for _, spec := range genDecl.Specs {
+					if valueSpec, ok := spec.(*ast.ValueSpec); ok {
+						for i, name := range valueSpec.Names {
+							if i < len(valueSpec.Values) {
+								val := valueSpec.Values[i]
+								// Check if this is a std.NewImmutable(X) call
+								if callExpr, ok := val.(*ast.CallExpr); ok {
+									if t.isNewImmutableCall(callExpr) && len(callExpr.Args) > 0 {
+										// Store the type of the inner expression
+										innerType := t.getExprType(callExpr.Args[0])
+										if innerType != nil {
+											valTypes[name.Name] = innerType
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		// Also handle short var declarations: result := std.NewImmutable(X)
+		if assignStmt, ok := stmt.(*ast.AssignStmt); ok && assignStmt.Tok == token.DEFINE {
+			for i, lhs := range assignStmt.Lhs {
+				if ident, ok := lhs.(*ast.Ident); ok && i < len(assignStmt.Rhs) {
+					rhs := assignStmt.Rhs[i]
+					// Check if this is a std.NewImmutable(X) call
+					if callExpr, ok := rhs.(*ast.CallExpr); ok {
+						if t.isNewImmutableCall(callExpr) && len(callExpr.Args) > 0 {
+							// Store the type of the inner expression
+							innerType := t.getExprType(callExpr.Args[0])
+							if innerType != nil {
+								valTypes[ident.Name] = innerType
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	for _, stmt := range block.List {
+		if retStmt, ok := stmt.(*ast.ReturnStmt); ok {
+			if len(retStmt.Results) > 0 {
+				result := retStmt.Results[0]
+				// Handle the case of .Get() call on an Immutable (val)
+				if callExpr, ok := result.(*ast.CallExpr); ok {
+					if selExpr, ok := callExpr.Fun.(*ast.SelectorExpr); ok && selExpr.Sel.Name == "Get" {
+						// This is a .Get() call, check if the receiver is an identifier
+						if ident, ok := selExpr.X.(*ast.Ident); ok {
+							// Look up the type from declarations we found earlier
+							if typ, ok := valTypes[ident.Name]; ok {
+								return typ
+							}
+						}
+					}
+				}
+				// Fallback to direct type inference
+				inferredType := t.getExprType(result)
+				if inferredType != nil {
+					if ident, ok := inferredType.(*ast.Ident); ok && ident.Name != "any" {
+						return inferredType
+					}
+					// For non-ident types (like generic types), also return them
+					if _, ok := inferredType.(*ast.Ident); !ok {
+						return inferredType
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// isNewImmutableCall checks if a call expression is a call to std.NewImmutable
+func (t *galaASTTransformer) isNewImmutableCall(call *ast.CallExpr) bool {
+	if selExpr, ok := call.Fun.(*ast.SelectorExpr); ok {
+		if selExpr.Sel.Name == "NewImmutable" {
+			if ident, ok := selExpr.X.(*ast.Ident); ok {
+				return ident.Name == "std"
+			}
+		}
+	}
+	return false
 }
 
 // transformArgumentWithExpectedType transforms an argument expression, using the expected

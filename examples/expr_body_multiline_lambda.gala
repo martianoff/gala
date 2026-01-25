@@ -1,0 +1,29 @@
+package main
+
+import "fmt"
+
+// This file reproduces the bug where expression-bodied functions
+// don't work with multi-line lambda bodies.
+
+// Simple case - works fine (single line lambda)
+func simpleExprBody() int = fold(0, (acc int, x int) => acc + x)
+
+// Bug case - expression-bodied function with multi-line lambda body
+func bugExprBody() int = fold(0, (acc int, x int) => {
+    val result = acc + x
+    return result
+})
+
+// Helper function
+func fold(initial int, f func(int, int) int) int {
+    var acc = initial
+    acc = f(acc, 1)
+    acc = f(acc, 2)
+    acc = f(acc, 3)
+    return acc
+}
+
+func main() {
+    fmt.Println("Simple:", simpleExprBody())
+    fmt.Println("Bug case:", bugExprBody())
+}
