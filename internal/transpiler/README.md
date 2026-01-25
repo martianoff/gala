@@ -207,20 +207,6 @@ bazel run //:gazelle
 - Integration tests via examples in `examples/`
 - Each example has expected `.out` file for verification
 
-## Refactoring Status
-
-**Completed:**
-- Module resolution (`module/`) - Unified module root finding
-- Package registry (`registry/`) - Generic prelude system (replaces hardcoded std)
-- Import manager (`transformer/imports.go`) - Unified import tracking
-- Type resolution helpers (`getTypeMeta`, `getFunction`) - Unified metadata access
-- Type inference documentation (`docs/TYPE_INFERENCE.md`)
-- File splits (Phase 6) - Large files split for maintainability
-
-**Remaining:**
-- Type alias support (not implemented - see `declarations.go:649`)
-- Update remaining direct `typeMetas[...]` accesses to use `getTypeMeta()`
-
 ## Transformer File Structure
 
 The transformer package has been split into focused files for maintainability:

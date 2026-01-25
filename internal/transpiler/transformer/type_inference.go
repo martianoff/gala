@@ -136,10 +136,8 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 					typeName := t.getBaseTypeName(compLit.Type)
 					if typeName != "" {
 						// Use unified resolution to find type metadata
-						resolvedTypeName := t.resolveTypeMetaName(typeName)
-						typeMeta := t.typeMetas[resolvedTypeName]
+						typeMeta := t.getTypeMeta(typeName)
 						if typeMeta != nil {
-							typeName = resolvedTypeName
 							if methodMeta, hasApply := typeMeta.Methods["Apply"]; hasApply {
 								// Get type args from the composite literal type
 								var litTypeArgs []transpiler.Type
@@ -191,7 +189,7 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 				// This handles Array[T].Get() -> T, List[T].Get() -> T, etc.
 				if genType, ok := xType.(transpiler.GenericType); ok {
 					baseTypeName := genType.Base.String()
-					if typeMeta, ok := t.typeMetas[baseTypeName]; ok {
+					if typeMeta := t.getTypeMeta(baseTypeName); typeMeta != nil {
 						if methodMeta, ok := typeMeta.Methods[sel.Sel.Name]; ok {
 							return t.substituteConcreteTypes(methodMeta.ReturnType, typeMeta.TypeParams, genType.Params)
 						}
@@ -280,7 +278,7 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 								}
 							}
 						}
-						if typeMeta, ok := t.typeMetas[receiverType]; ok {
+						if typeMeta := t.getTypeMeta(receiverType); typeMeta != nil {
 							if methodMeta, ok := typeMeta.Methods[methodName]; ok {
 								// For Receiver_Method calls, the first arg is the receiver
 								// Get the receiver's type to substitute struct-level type params
@@ -323,7 +321,7 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 			xType := t.getExprTypeNameManual(sel.X)
 			xTypeName := xType.String()
 			if !xType.IsNil() {
-				if typeMeta, ok := t.typeMetas[xTypeName]; ok {
+				if typeMeta := t.getTypeMeta(xTypeName); typeMeta != nil {
 					if methodMeta, ok := typeMeta.Methods[sel.Sel.Name]; ok {
 						return methodMeta.ReturnType
 					}
@@ -338,7 +336,7 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 				// e.g., for Pair[int, string].Swap(), try looking up Pair
 				if genType, ok := underlyingType.(transpiler.GenericType); ok {
 					baseTypeName := genType.Base.String()
-					if typeMeta, ok := t.typeMetas[baseTypeName]; ok {
+					if typeMeta := t.getTypeMeta(baseTypeName); typeMeta != nil {
 						if methodMeta, ok := typeMeta.Methods[sel.Sel.Name]; ok {
 							// Substitute type parameters in return type
 							// First, substitute struct-level type params (e.g., T -> int for Array[int])
@@ -506,7 +504,7 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 				if resolvedRecvType.IsNil() {
 					resolvedRecvTypeName = receiverType
 				}
-				if meta, ok := t.typeMetas[resolvedRecvTypeName]; ok {
+				if meta := t.getTypeMeta(resolvedRecvTypeName); meta != nil {
 					if mMeta, ok := meta.Methods[methodName]; ok {
 						result := mMeta.ReturnType
 						// Substitute receiver's type params from first argument

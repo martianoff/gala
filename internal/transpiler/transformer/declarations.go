@@ -502,11 +502,7 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 
 	// Check if Unapply already exists
 	hasUnapply := false
-	if meta, ok := t.typeMetas[name]; ok {
-		if _, ok := meta.Methods["Unapply"]; ok {
-			hasUnapply = true
-		}
-	} else if meta, ok := t.typeMetas[t.packageName+"."+name]; ok {
+	if meta := t.getTypeMeta(name); meta != nil {
 		if _, ok := meta.Methods["Unapply"]; ok {
 			hasUnapply = true
 		}
@@ -609,11 +605,7 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 
 		// Check if Unapply already exists
 		hasUnapply := false
-		fullTypeName := name
-		if t.packageName != "" && t.packageName != "main" && t.packageName != "test" {
-			fullTypeName = t.packageName + "." + name
-		}
-		if meta, ok := t.typeMetas[fullTypeName]; ok {
+		if meta := t.getTypeMeta(name); meta != nil {
 			if _, ok := meta.Methods["Unapply"]; ok {
 				hasUnapply = true
 			}

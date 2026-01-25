@@ -23,10 +23,8 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 		typeName := t.getBaseTypeName(base)
 		if typeName != "" {
 			// Use unified resolution to find type metadata
-			resolvedTypeName := t.resolveTypeMetaName(typeName)
-			typeMeta := t.typeMetas[resolvedTypeName]
+			typeMeta := t.getTypeMeta(typeName)
 			if typeMeta != nil {
-				typeName = resolvedTypeName
 				if methodMeta, hasApply := typeMeta.Methods["Apply"]; hasApply {
 					// Check if Apply takes zero arguments (zero-arg Apply method like None[T]())
 					if len(methodMeta.ParamTypes) == 0 {
@@ -205,53 +203,14 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 
 		if !isPkg {
 			// Transform generic method call to standalone function call
-			// Get method metadata for parameter types
+			// Get method metadata for parameter types using unified resolution
+			typeMeta := t.getTypeMeta(lookupBaseName)
 			var methodMeta *transpiler.MethodMetadata
-			var typeMeta *transpiler.TypeMetadata
-			if tm, ok := t.typeMetas[lookupBaseName]; ok && tm != nil {
-				typeMeta = tm
+			if typeMeta != nil {
 				methodMeta = typeMeta.Methods[method]
-			} else {
-				// Try package-qualified name lookup (e.g., "collection_immutable.Array")
-				pkg := recvType.GetPackage()
-				if pkg != "" {
-					qualifiedName := pkg + "." + lookupBaseName
-					if tm, ok := t.typeMetas[qualifiedName]; ok && tm != nil {
-						typeMeta = tm
-						methodMeta = typeMeta.Methods[method]
-						// Update lookupBaseName for later use
-						lookupBaseName = qualifiedName
-					}
-				}
-				// If still not found, search through dot-imported packages
-				if typeMeta == nil {
-					for _, entry := range t.importManager.All() {
-						if !entry.IsDot {
-							continue
-						}
-						qualifiedName := entry.PkgName + "." + lookupBaseName
-						if tm, ok := t.typeMetas[qualifiedName]; ok && tm != nil {
-							typeMeta = tm
-							methodMeta = typeMeta.Methods[method]
-							lookupBaseName = qualifiedName
-							break
-						}
-					}
-				}
-				// If still not found, search through all imported packages
-				if typeMeta == nil {
-					for _, entry := range t.importManager.All() {
-						if entry.IsDot {
-							continue
-						}
-						qualifiedName := entry.PkgName + "." + lookupBaseName
-						if tm, ok := t.typeMetas[qualifiedName]; ok && tm != nil {
-							typeMeta = tm
-							methodMeta = typeMeta.Methods[method]
-							lookupBaseName = qualifiedName
-							break
-						}
-					}
+				// Update lookupBaseName to the resolved name for later use
+				if resolved := t.resolveTypeMetaName(lookupBaseName); resolved != "" {
+					lookupBaseName = resolved
 				}
 			}
 
@@ -353,18 +312,10 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	// These should remain as method calls but still need expected types for lambda arguments
 	if receiver != nil && !isGenericMethod && method != "" {
 		var methodMeta *transpiler.MethodMetadata
-		var typeMeta *transpiler.TypeMetadata
-		// Try to find type metadata - first with the full name, then without std. prefix (for dot-imported std types)
-		metaLookupName := lookupBaseName
-		if tm, ok := t.typeMetas[metaLookupName]; ok && tm != nil && len(tm.TypeParams) > 0 {
-			typeMeta = tm
+		// Use unified resolution to find type metadata
+		typeMeta := t.getTypeMeta(lookupBaseName)
+		if typeMeta != nil && len(typeMeta.TypeParams) > 0 {
 			methodMeta = typeMeta.Methods[method]
-		} else if strings.HasPrefix(lookupBaseName, "std.") {
-			metaLookupName = strings.TrimPrefix(lookupBaseName, "std.")
-			if tm, ok := t.typeMetas[metaLookupName]; ok && tm != nil && len(tm.TypeParams) > 0 {
-				typeMeta = tm
-				methodMeta = typeMeta.Methods[method]
-			}
 		}
 
 		if methodMeta != nil {
@@ -483,10 +434,12 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	typeName := t.getBaseTypeName(fun)
 	if typeName != "" {
 		// Use unified resolution to find type metadata
-		resolvedTypeName := t.resolveTypeMetaName(typeName)
-		typeMeta := t.typeMetas[resolvedTypeName]
+		typeMeta := t.getTypeMeta(typeName)
 		if typeMeta != nil {
-			typeName = resolvedTypeName
+			// Update typeName to resolved name for subsequent lookups
+			if resolved := t.resolveTypeMetaName(typeName); resolved != "" {
+				typeName = resolved
+			}
 			// First check if this looks like positional struct construction
 			// (args match struct field count) - prefer struct construction over Apply
 			resolvedTypeName := t.resolveStructTypeName(typeName)
@@ -678,8 +631,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 			}
 		}
 		if litTypeName != "" {
-			resolvedTypeName := t.resolveStructTypeName(litTypeName)
-			if typeMeta, ok := t.typeMetas[resolvedTypeName]; ok {
+			if typeMeta := t.getTypeMeta(litTypeName); typeMeta != nil {
 				if _, hasApply := typeMeta.Methods["Apply"]; hasApply {
 					// Transform to structLit.Apply(args)
 					return &ast.CallExpr{
@@ -717,14 +669,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 		varType := t.getType(valName)
 		if !varType.IsNil() {
 			varTypeName := varType.BaseName()
-			// Resolve type name
-			resolvedTypeName := varTypeName
-			if !strings.Contains(resolvedTypeName, ".") {
-				if resolved := t.resolveStructTypeName(resolvedTypeName); resolved != "" {
-					resolvedTypeName = resolved
-				}
-			}
-			if typeMeta, ok := t.typeMetas[resolvedTypeName]; ok {
+			if typeMeta := t.getTypeMeta(varTypeName); typeMeta != nil {
 				if _, hasApply := typeMeta.Methods["Apply"]; hasApply {
 					// Transform to variable.Apply(args) or variable.Get().Apply(args)
 					return &ast.CallExpr{
@@ -783,7 +728,7 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 		}
 		if needsTypeInference {
 			// No explicit type args - check if the type has type parameters
-			if typeMeta, ok := t.typeMetas[resolvedTypeName]; ok && len(typeMeta.TypeParams) > 0 {
+			if typeMeta := t.getTypeMeta(resolvedTypeName); typeMeta != nil && len(typeMeta.TypeParams) > 0 {
 				// Infer type args from field values
 				inferredTypeArgs := make([]ast.Expr, len(typeMeta.TypeParams))
 				typeParamIndices := make(map[string]int)
@@ -976,7 +921,7 @@ func (t *galaASTTransformer) isGenericMethodWithImports(lookupBaseName, recvPkg,
 
 // isMethodGenericViaTypeMeta checks if a method has type parameters via typeMetas lookup
 func (t *galaASTTransformer) isMethodGenericViaTypeMeta(typeName, methodName string) bool {
-	if typeMeta, ok := t.typeMetas[typeName]; ok {
+	if typeMeta := t.getTypeMeta(typeName); typeMeta != nil {
 		if methodMeta, ok := typeMeta.Methods[methodName]; ok {
 			return len(methodMeta.TypeParams) > 0 || methodMeta.IsGeneric
 		}

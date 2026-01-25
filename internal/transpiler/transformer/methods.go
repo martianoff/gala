@@ -281,7 +281,7 @@ func (t *galaASTTransformer) generateEqualMethod(name string, fields *ast.FieldL
 }
 
 func (t *galaASTTransformer) generateUnapplyMethod(name string, fields *ast.FieldList, tParams *ast.FieldList) (*ast.FuncDecl, error) {
-	if meta, ok := t.typeMetas[name]; ok {
+	if meta := t.getTypeMeta(name); meta != nil {
 		if _, ok := meta.Methods["Unapply"]; ok {
 			return nil, nil
 		}

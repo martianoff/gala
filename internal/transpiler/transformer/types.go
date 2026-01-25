@@ -340,8 +340,8 @@ func (t *galaASTTransformer) getTypeParamConstraint(baseType ast.Expr, paramName
 		return "any"
 	}
 
-	// Try to find the type in metadata
-	if meta, ok := t.typeMetas[typeName]; ok {
+	// Use unified resolution to find the type in metadata
+	if meta := t.getTypeMeta(typeName); meta != nil {
 		// First try to match by parameter name
 		if constraint, ok := meta.TypeParamConstraints[paramName]; ok {
 			return constraint
@@ -351,22 +351,6 @@ func (t *galaASTTransformer) getTypeParamConstraint(baseType ast.Expr, paramName
 			tpName := meta.TypeParams[paramIndex]
 			if constraint, ok := meta.TypeParamConstraints[tpName]; ok {
 				return constraint
-			}
-		}
-	}
-
-	// Also check with package prefix if we have a current package
-	if t.packageName != "" && !strings.Contains(typeName, ".") {
-		fullName := t.packageName + "." + typeName
-		if meta, ok := t.typeMetas[fullName]; ok {
-			if constraint, ok := meta.TypeParamConstraints[paramName]; ok {
-				return constraint
-			}
-			if paramIndex < len(meta.TypeParams) {
-				tpName := meta.TypeParams[paramIndex]
-				if constraint, ok := meta.TypeParamConstraints[tpName]; ok {
-					return constraint
-				}
 			}
 		}
 	}

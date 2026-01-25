@@ -69,34 +69,31 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 
 		// If it's a type name, determine how to match it
 		rawName := t.getBaseTypeName(patternExpr)
-		resolvedTypeName := t.resolveTypeMetaName(rawName)
 
 		// Check if we can use direct Unapply call (no reflection)
 		// This applies to any extractor with an Unapply method - both generic and non-generic
 		// For generic extractors like Cons[T], Some[T], we infer type params from the matched type
 		// For non-generic extractors like Even, we just call Even{}.Unapply(x) directly
 		// Requires Unapply to return bool or Option[T] - otherwise fall back to reflection
-		if resolvedTypeName != "" {
-			if meta, ok := t.typeMetas[resolvedTypeName]; ok {
-				if unapplyMeta, hasUnapply := meta.Methods["Unapply"]; hasUnapply {
-					var inferredTypes []transpiler.Type
-					if len(meta.TypeParams) > 0 {
-						inferredTypes = t.inferExtractorTypeParams(meta, matchedType)
-						if len(inferredTypes) != len(meta.TypeParams) {
-							return nil, nil, galaerr.NewSemanticError(
-								fmt.Sprintf("cannot infer type parameters for extractor '%s'. Ensure the Unapply method's parameter type matches the matched type", rawName))
-						}
-					}
-					// Check if return type is supported (bool or Option[T])
-					returnType := t.substituteConcreteTypes(unapplyMeta.ReturnType, meta.TypeParams, inferredTypes)
-					if !t.isDirectUnapplyReturnType(returnType) {
+		if meta := t.getTypeMeta(rawName); meta != nil {
+			if unapplyMeta, hasUnapply := meta.Methods["Unapply"]; hasUnapply {
+				var inferredTypes []transpiler.Type
+				if len(meta.TypeParams) > 0 {
+					inferredTypes = t.inferExtractorTypeParams(meta, matchedType)
+					if len(inferredTypes) != len(meta.TypeParams) {
 						return nil, nil, galaerr.NewSemanticError(
-							fmt.Sprintf("extractor '%s' must have Unapply returning bool or Option[T], got '%s'. Use Option[T] for extractors or bool for guard patterns. Unapply(any) any is not allowed",
-								rawName, returnType.String()))
+							fmt.Sprintf("cannot infer type parameters for extractor '%s'. Ensure the Unapply method's parameter type matches the matched type", rawName))
 					}
-					// Use direct Unapply call - no reflection needed!
-					return t.generateDirectUnapplyPattern(rawName, meta, inferredTypes, unapplyMeta, objExpr, argList, matchedType)
 				}
+				// Check if return type is supported (bool or Option[T])
+				returnType := t.substituteConcreteTypes(unapplyMeta.ReturnType, meta.TypeParams, inferredTypes)
+				if !t.isDirectUnapplyReturnType(returnType) {
+					return nil, nil, galaerr.NewSemanticError(
+						fmt.Sprintf("extractor '%s' must have Unapply returning bool or Option[T], got '%s'. Use Option[T] for extractors or bool for guard patterns. Unapply(any) any is not allowed",
+							rawName, returnType.String()))
+				}
+				// Use direct Unapply call - no reflection needed!
+				return t.generateDirectUnapplyPattern(rawName, meta, inferredTypes, unapplyMeta, objExpr, argList, matchedType)
 			}
 		}
 
@@ -668,8 +665,7 @@ func (t *galaASTTransformer) isSeqType(typ transpiler.Type) bool {
 	}
 
 	// Check if the type has the required methods
-	resolvedName := t.resolveStructTypeName(baseName)
-	if meta, ok := t.typeMetas[resolvedName]; ok {
+	if meta := t.getTypeMeta(baseName); meta != nil {
 		_, hasSize := meta.Methods["Size"]
 		_, hasGet := meta.Methods["Get"]
 		_, hasSeqDrop := meta.Methods["SeqDrop"]
@@ -1226,15 +1222,9 @@ func (t *galaASTTransformer) unifyTypes(pattern, concrete transpiler.Type, typeP
 // numArgs is the total number of arguments in the pattern (-1 means use default behavior).
 // If numArgs > 1 and the result is a Tuple with matching arity, individual elements are returned.
 func (t *galaASTTransformer) getGenericExtractorResultTypeWithArgs(extractorName string, objType transpiler.Type, index int, numArgs int) transpiler.Type {
-	// Resolve the extractor type name using the same logic as resolveStructTypeName
-	resolvedName := t.resolveTypeMetaName(extractorName)
-	if resolvedName == "" {
-		return nil
-	}
-
-	// Look up the extractor's type metadata
-	extractorMeta, ok := t.typeMetas[resolvedName]
-	if !ok || extractorMeta == nil || len(extractorMeta.TypeParams) == 0 {
+	// Use unified resolution to find the extractor's type metadata
+	extractorMeta := t.getTypeMeta(extractorName)
+	if extractorMeta == nil || len(extractorMeta.TypeParams) == 0 {
 		return nil
 	}
 
