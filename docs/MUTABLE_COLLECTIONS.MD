@@ -62,11 +62,11 @@ A mutable indexed sequence backed by a Go slice. Best for random access and appe
 var arr = EmptyArray[int]()
 
 // From elements (pre-allocates capacity)
-var arr = ArrayOf[int](1, 2, 3, 4, 5)
+var arr = ArrayOf(1, 2, 3, 4, 5)
 
 // From slice (copies the slice)
 var slice = []int{1, 2, 3}
-var arr = ArrayFromSlice[int](slice)
+var arr = ArrayFromSlice(slice)
 
 // With pre-allocated capacity (for known sizes)
 var arr = ArrayWithCapacity[int](1000)
@@ -75,7 +75,7 @@ var arr = ArrayWithCapacity[int](1000)
 ### Basic Operations
 
 ```gala
-var arr = ArrayOf[int](1, 2, 3, 4, 5)
+var arr = ArrayOf(1, 2, 3, 4, 5)
 
 arr.IsEmpty()      // false
 arr.NonEmpty()     // true
@@ -87,7 +87,7 @@ arr.Capacity()     // >= 5
 ### Element Access - O(1)
 
 ```gala
-var arr = ArrayOf[int](10, 20, 30)
+var arr = ArrayOf(10, 20, 30)
 
 // Direct access
 arr.Get(0)               // 10
@@ -105,7 +105,7 @@ arr.LastOption()         // Some(30)
 ### Mutation Operations
 
 ```gala
-var arr = ArrayOf[int](1, 2, 3)
+var arr = ArrayOf(1, 2, 3)
 
 // Set element - O(1)
 arr.Set(1, 99)           // arr is now [1, 99, 3]
@@ -136,14 +136,14 @@ arr.Reverse()
 ### Bulk Operations
 
 ```gala
-var arr = ArrayOf[int](1, 2, 3)
+var arr = ArrayOf(1, 2, 3)
 
 // Append from a slice - O(m) amortized
 var more = []int{4, 5, 6}
 arr.AppendAll(more)
 
 // Append from another Array - O(m) amortized
-var other = ArrayOf[int](7, 8, 9)
+var other = ArrayOf(7, 8, 9)
 arr.AppendFrom(other)
 
 // Prepend from a slice - O(n+m)
@@ -153,7 +153,7 @@ arr.PrependAll([]int{-2, -1, 0})
 ### Structural Operations (return new arrays)
 
 ```gala
-var arr = ArrayOf[int](1, 2, 3, 4, 5)
+var arr = ArrayOf(1, 2, 3, 4, 5)
 
 // Take first n elements
 arr.Take(3)              // new Array(1, 2, 3)
@@ -180,7 +180,7 @@ arr.Reversed()           // new Array(5, 4, 3, 2, 1)
 ### Functional Operations
 
 ```gala
-var arr = ArrayOf[int](1, 2, 3, 4, 5)
+var arr = ArrayOf(1, 2, 3, 4, 5)
 
 // Map - returns new Array
 var doubled = arr.Map[int]((x int) => x * 2)  // Array(2, 4, 6, 8, 10)
@@ -200,7 +200,7 @@ var result = arr.FoldRight[string]("", (x int, acc string) => {
 ### Searching
 
 ```gala
-var arr = ArrayOf[int](1, 2, 3, 2, 1)
+var arr = ArrayOf(1, 2, 3, 2, 1)
 
 arr.Contains(3)              // true
 arr.IndexOf(2)               // 1
@@ -214,7 +214,7 @@ arr.Count((x int) => x == 2) // 2
 ### Grouping
 
 ```gala
-var arr = ArrayOf[int](1, 2, 3, 4, 5)
+var arr = ArrayOf(1, 2, 3, 4, 5)
 
 // Split into groups of size n
 arr.Grouped(2)
@@ -231,14 +231,14 @@ arr.GroupBy[string]((x int) => {
 ### Distinct
 
 ```gala
-var arr = ArrayOf[int](1, 2, 2, 3, 3, 3)
+var arr = ArrayOf(1, 2, 2, 3, 3, 3)
 arr.Distinct()  // Array(1, 2, 3)
 ```
 
 ### Conversion
 
 ```gala
-var arr = ArrayOf[int](1, 2, 3)
+var arr = ArrayOf(1, 2, 3)
 
 arr.ToSlice()    // []int{1, 2, 3}
 arr.String()     // "Array(1, 2, 3)"
@@ -265,17 +265,17 @@ A mutable doubly-linked list. Best for frequent insertions/removals at both ends
 var list = EmptyList[int]()
 
 // From elements
-var list = ListOf[int](1, 2, 3, 4, 5)
+var list = ListOf(1, 2, 3, 4, 5)
 
 // From slice
 var slice = []int{1, 2, 3}
-var list = ListFromSlice[int](slice)
+var list = ListFromSlice(slice)
 ```
 
 ### Basic Operations
 
 ```gala
-var list = ListOf[int](1, 2, 3, 4, 5)
+var list = ListOf(1, 2, 3, 4, 5)
 
 list.IsEmpty()     // false
 list.NonEmpty()    // true
@@ -286,7 +286,7 @@ list.Size()        // 5
 ### Element Access
 
 ```gala
-var list = ListOf[int](10, 20, 30)
+var list = ListOf(10, 20, 30)
 
 // Head/Last - O(1)
 list.Head()              // 10
@@ -302,7 +302,7 @@ list.GetOption(1)        // Some(20)
 ### Mutation Operations - O(1) at ends
 
 ```gala
-var list = ListOf[int](2, 3, 4)
+var list = ListOf(2, 3, 4)
 
 // Prepend - O(1)
 list.Prepend(1)          // list is now [1, 2, 3, 4]
@@ -326,19 +326,19 @@ list.Reverse()
 ### Bulk Operations
 
 ```gala
-var list = ListOf[int](1, 2, 3)
+var list = ListOf(1, 2, 3)
 
 // Prepend multiple
-list.PrependAll(ListOf[int](-1, 0))  // [-1, 0, 1, 2, 3]
+list.PrependAll(ListOf(-1, 0))  // [-1, 0, 1, 2, 3]
 
 // Append multiple
-list.AppendAll(ListOf[int](4, 5))    // [-1, 0, 1, 2, 3, 4, 5]
+list.AppendAll(ListOf(4, 5))    // [-1, 0, 1, 2, 3, 4, 5]
 ```
 
 ### Functional Operations
 
 ```gala
-var list = ListOf[int](1, 2, 3, 4, 5)
+var list = ListOf(1, 2, 3, 4, 5)
 
 // Map
 var doubled = list.Map[int]((x int) => x * 2)
@@ -356,7 +356,7 @@ var result = list.FoldRight[string]("", foldHelper)
 ### Searching
 
 ```gala
-var list = ListOf[int](1, 2, 3, 2, 1)
+var list = ListOf(1, 2, 3, 2, 1)
 
 list.Contains(3)              // true
 list.IndexOf(2)               // 1
@@ -370,7 +370,7 @@ list.Count((x int) => x == 2) // 2
 ### Conversion
 
 ```gala
-var list = ListOf[int](1, 2, 3)
+var list = ListOf(1, 2, 3)
 
 list.ToSlice()    // []int{1, 2, 3}
 list.String()     // "List(1, 2, 3)"
@@ -409,17 +409,17 @@ func (p Point) Hash() uint32 {
 var s = EmptyHashSet[int]()
 
 // From elements
-var s = HashSetOf[int](1, 2, 3, 4, 5)
+var s = HashSetOf(1, 2, 3, 4, 5)
 
 // From slice
 var slice = []int{1, 2, 3}
-var s = HashSetFromSlice[int](slice)
+var s = HashSetFromSlice(slice)
 ```
 
 ### Basic Operations
 
 ```gala
-var s = HashSetOf[int](1, 2, 3, 4, 5)
+var s = HashSetOf(1, 2, 3, 4, 5)
 
 s.IsEmpty()      // false
 s.NonEmpty()     // true
@@ -430,7 +430,7 @@ s.Length()       // 5 (alias)
 ### Membership and Modification - O(1)
 
 ```gala
-var s = HashSetOf[int](1, 2, 3)
+var s = HashSetOf(1, 2, 3)
 
 // Contains - O(1)
 s.Contains(2)           // true
@@ -451,8 +451,8 @@ s.Clear()               // removes all elements
 ### Set Operations (return new HashSet)
 
 ```gala
-var s1 = HashSetOf[int](1, 2, 3)
-var s2 = HashSetOf[int](2, 3, 4)
+var s1 = HashSetOf(1, 2, 3)
+var s2 = HashSetOf(2, 3, 4)
 
 // Union: elements in either set
 var union = s1.Union(s2)           // HashSet(1, 2, 3, 4)
@@ -470,8 +470,8 @@ var symDiff = s1.SymmetricDiff(s2) // HashSet(1, 4)
 ### Set Operations (in-place modification)
 
 ```gala
-var s1 = HashSetOf[int](1, 2, 3)
-var s2 = HashSetOf[int](2, 3, 4)
+var s1 = HashSetOf(1, 2, 3)
+var s2 = HashSetOf(2, 3, 4)
 
 // UnionInPlace: add all from s2 to s1
 s1.UnionInPlace(s2)      // s1 is now {1, 2, 3, 4}
@@ -486,20 +486,20 @@ s1.DiffInPlace(s2)       // s1 is now {}
 ### Set Relationships
 
 ```gala
-var s1 = HashSetOf[int](1, 2)
-var s2 = HashSetOf[int](1, 2, 3, 4)
+var s1 = HashSetOf(1, 2)
+var s2 = HashSetOf(1, 2, 3, 4)
 
 s1.SubsetOf(s2)          // true: all elements of s1 are in s2
 s2.SupersetOf(s1)        // true: s2 contains all of s1
 
-var s3 = HashSetOf[int](5, 6)
+var s3 = HashSetOf(5, 6)
 s1.Disjoint(s3)          // true: no common elements
 ```
 
 ### Functional Operations
 
 ```gala
-var s = HashSetOf[int](1, 2, 3, 4, 5, 6)
+var s = HashSetOf(1, 2, 3, 4, 5, 6)
 
 // Filter - returns new HashSet
 var evens = s.Filter((x int) => x % 2 == 0)       // HashSet(2, 4, 6)
@@ -519,7 +519,7 @@ var sum = s.FoldLeft[int](0, (acc int, x int) => acc + x)
 ### Predicates
 
 ```gala
-var s = HashSetOf[int](1, 2, 3, 4, 5)
+var s = HashSetOf(1, 2, 3, 4, 5)
 
 s.Exists((x int) => x > 4)    // true: at least one > 4
 s.ForAll((x int) => x > 0)    // true: all are positive
@@ -530,7 +530,7 @@ s.Find((x int) => x > 3)      // Some(4 or 5): first match (order not guaranteed
 ### Element Access
 
 ```gala
-var s = HashSetOf[int](1, 2, 3)
+var s = HashSetOf(1, 2, 3)
 
 s.Head()                  // any element (order not guaranteed)
 s.HeadOption()            // Some(element) or None for empty set
@@ -539,7 +539,7 @@ s.HeadOption()            // Some(element) or None for empty set
 ### Conversion
 
 ```gala
-var s = HashSetOf[int](3, 1, 2)
+var s = HashSetOf(3, 1, 2)
 
 s.ToSlice()               // []int (order not guaranteed)
 s.ToArray()               // mutable Array
@@ -583,17 +583,17 @@ func (p Person) Compare(other Person) int {
 var s = EmptyTreeSet[int]()
 
 // From elements (sorted automatically)
-var s = TreeSetOf[int](3, 1, 4, 1, 5)  // TreeSet(1, 3, 4, 5)
+var s = TreeSetOf(3, 1, 4, 1, 5)  // TreeSet(1, 3, 4, 5)
 
 // From slice
 var slice = []int{3, 1, 2}
-var s = TreeSetFromSlice[int](slice)   // TreeSet(1, 2, 3)
+var s = TreeSetFromSlice(slice)   // TreeSet(1, 2, 3)
 ```
 
 ### Basic Operations
 
 ```gala
-var s = TreeSetOf[int](5, 3, 7, 1, 9)
+var s = TreeSetOf(5, 3, 7, 1, 9)
 
 s.IsEmpty()      // false
 s.NonEmpty()     // true
@@ -604,7 +604,7 @@ s.Length()       // 5 (alias)
 ### Membership and Modification - O(log n)
 
 ```gala
-var s = TreeSetOf[int](1, 3, 5)
+var s = TreeSetOf(1, 3, 5)
 
 // Contains - O(log n)
 s.Contains(3)           // true
@@ -624,7 +624,7 @@ s.Clear()
 ### Min/Max Operations - O(log n)
 
 ```gala
-var s = TreeSetOf[int](5, 3, 7, 1, 9)
+var s = TreeSetOf(5, 3, 7, 1, 9)
 
 // Get min/max
 s.Min()                  // 1
@@ -644,7 +644,7 @@ s.Last()                 // same as Max()
 ### Range Queries (unique to TreeSet)
 
 ```gala
-var s = TreeSetOf[int](1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
+var s = TreeSetOf(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
 
 // Range [from, to] inclusive - returns new TreeSet
 var range1 = s.Range(3, 7)     // TreeSet(3, 4, 5, 6, 7)
@@ -659,8 +659,8 @@ var range3 = s.RangeTo(4)      // TreeSet(1, 2, 3, 4)
 ### Set Operations (return new TreeSet)
 
 ```gala
-var s1 = TreeSetOf[int](1, 2, 3)
-var s2 = TreeSetOf[int](2, 3, 4)
+var s1 = TreeSetOf(1, 2, 3)
+var s2 = TreeSetOf(2, 3, 4)
 
 // Union
 var union = s1.Union(s2)         // TreeSet(1, 2, 3, 4)
@@ -675,8 +675,8 @@ var diff = s1.Diff(s2)           // TreeSet(1)
 ### Set Operations (in-place)
 
 ```gala
-var s1 = TreeSetOf[int](1, 2, 3)
-var s2 = TreeSetOf[int](2, 3, 4)
+var s1 = TreeSetOf(1, 2, 3)
+var s2 = TreeSetOf(2, 3, 4)
 
 s1.UnionInPlace(s2)
 s1.IntersectInPlace(s2)
@@ -686,8 +686,8 @@ s1.DiffInPlace(s2)
 ### Set Relationships
 
 ```gala
-var s1 = TreeSetOf[int](1, 2)
-var s2 = TreeSetOf[int](1, 2, 3, 4)
+var s1 = TreeSetOf(1, 2)
+var s2 = TreeSetOf(1, 2, 3, 4)
 
 s1.SubsetOf(s2)          // true
 s2.SupersetOf(s1)        // true
@@ -696,7 +696,7 @@ s2.SupersetOf(s1)        // true
 ### Iteration (sorted order)
 
 ```gala
-var s = TreeSetOf[int](3, 1, 4, 1, 5)
+var s = TreeSetOf(3, 1, 4, 1, 5)
 
 // Iterate in sorted order
 s.ForEach((x int) => {
@@ -714,7 +714,7 @@ s.ForEachReverse((x int) => {
 ### Functional Operations
 
 ```gala
-var s = TreeSetOf[int](1, 2, 3, 4, 5, 6)
+var s = TreeSetOf(1, 2, 3, 4, 5, 6)
 
 // Filter
 var evens = s.Filter((x int) => x % 2 == 0)     // TreeSet(2, 4, 6)
@@ -736,7 +736,7 @@ var sum2 = s.Reduce((a int, b int) => a + b)
 ### Predicates
 
 ```gala
-var s = TreeSetOf[int](1, 2, 3, 4, 5)
+var s = TreeSetOf(1, 2, 3, 4, 5)
 
 s.Exists((x int) => x > 4)    // true
 s.ForAll((x int) => x > 0)    // true
@@ -747,7 +747,7 @@ s.Find((x int) => x > 3)      // Some(4) - first in sorted order
 ### Conversion
 
 ```gala
-var s = TreeSetOf[int](3, 1, 2)
+var s = TreeSetOf(3, 1, 2)
 
 s.ToSlice()               // []int{1, 2, 3} (sorted)
 s.ToArray()               // mutable Array (sorted)
@@ -808,8 +808,8 @@ func describeArray[T any](arr *Array[T]) string {
 
 func main() {
     var empty = EmptyArray[int]()
-    var single = ArrayOf[int](42)
-    var multi = ArrayOf[int](1, 2, 3)
+    var single = ArrayOf(42)
+    var multi = ArrayOf(1, 2, 3)
 
     fmt.Println(describeArray[int](empty))   // "empty array"
     fmt.Println(describeArray[int](single))  // "single element: 42"
@@ -1134,7 +1134,7 @@ func categorize(n int) string {
 }
 
 func main() {
-    var numbers = ArrayOf[int](-5, -2, 0, 1, 2, 3, 4, 5)
+    var numbers = ArrayOf(-5, -2, 0, 1, 2, 3, 4, 5)
 
     // Group by category using pattern matching
     var groups = numbers.GroupBy[string](categorize)
@@ -1161,8 +1161,8 @@ func main() {
     var dataset1 = []int{1, 2, 3, 4, 5, 6, 7, 8}
     var dataset2 = []int{5, 6, 7, 8, 9, 10, 11, 12}
 
-    var set1 = HashSetFromSlice[int](dataset1)
-    var set2 = HashSetFromSlice[int](dataset2)
+    var set1 = HashSetFromSlice(dataset1)
+    var set2 = HashSetFromSlice(dataset2)
 
     // Find intersection (O(min(n,m)) average)
     var common = set1.Intersect(set2)
@@ -1218,7 +1218,7 @@ import (
 
 func main() {
     // Find students with grades in specific ranges
-    var grades = TreeSetOf[int](45, 55, 65, 72, 78, 85, 92, 98)
+    var grades = TreeSetOf(45, 55, 65, 72, 78, 85, 92, 98)
 
     // Find passing grades (60+)
     var passing = grades.RangeFrom(60)
@@ -1232,3 +1232,4 @@ func main() {
     var failing = grades.RangeTo(59)
     fmt.Printf("Failing: %s\n", failing.String())  // TreeSet(45, 55)
 }
+```

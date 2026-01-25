@@ -62,7 +62,7 @@ val empty List[int] = Nil[int]()
 val empty2 = EmptyList[int]()
 
 // From elements
-val list = ListOf[int](1, 2, 3, 4, 5)
+val list = ListOf(1, 2, 3, 4, 5)
 
 // Using Cons (prepend constructor)
 val list2 = Cons[int](1, Cons[int](2, Nil[int]()))
@@ -71,7 +71,7 @@ val list2 = Cons[int](1, Cons[int](2, Nil[int]()))
 ### Basic Operations
 
 ```gala
-val list = ListOf[int](1, 2, 3, 4, 5)
+val list = ListOf(1, 2, 3, 4, 5)
 
 list.IsEmpty()     // false
 list.NonEmpty()    // true
@@ -82,7 +82,7 @@ list.Size()        // 5 (alias for Length)
 ### Head/Tail Operations
 
 ```gala
-val list = ListOf[int](1, 2, 3)
+val list = ListOf(1, 2, 3)
 
 // Head - first element
 list.Head()              // 1
@@ -103,7 +103,7 @@ list.Init()              // List(1, 2)
 ### Element Access
 
 ```gala
-val list = ListOf[int](10, 20, 30)
+val list = ListOf(10, 20, 30)
 
 list.Get(0)              // 10
 list.Get(1)              // 20
@@ -117,25 +117,25 @@ list.Updated(1, 99)      // List(10, 99, 30)
 ### Adding Elements
 
 ```gala
-val list = ListOf[int](2, 3, 4)
+val list = ListOf(2, 3, 4)
 
 // Prepend - O(1)
 list.Prepend(1)              // List(1, 2, 3, 4)
 
 // PrependAll
-list.PrependAll(ListOf[int](0, 1))  // List(0, 1, 2, 3, 4)
+list.PrependAll(ListOf(0, 1))  // List(0, 1, 2, 3, 4)
 
 // Append - O(n)
 list.Append(5)               // List(2, 3, 4, 5)
 
 // AppendAll
-list.AppendAll(ListOf[int](5, 6))   // List(2, 3, 4, 5, 6)
+list.AppendAll(ListOf(5, 6))   // List(2, 3, 4, 5, 6)
 ```
 
 ### Slicing Operations
 
 ```gala
-val list = ListOf[int](1, 2, 3, 4, 5)
+val list = ListOf(1, 2, 3, 4, 5)
 
 list.Take(3)                 // List(1, 2, 3)
 list.Drop(2)                 // List(3, 4, 5)
@@ -147,7 +147,7 @@ list.SplitAt(2)              // Tuple(List(1, 2), List(3, 4, 5))
 ### Searching
 
 ```gala
-val list = ListOf[int](1, 2, 3, 4, 5)
+val list = ListOf(1, 2, 3, 4, 5)
 
 list.Contains(3)             // true
 list.IndexOf(3)              // 2
@@ -158,13 +158,13 @@ list.Find((x int) => x > 3)  // Some(4)
 ### Transformations
 
 ```gala
-val list = ListOf[int](1, 2, 3)
+val list = ListOf(1, 2, 3)
 
 // Map
 list.Map[int]((x int) => x * 2)  // List(2, 4, 6)
 
 // FlatMap
-list.FlatMap[int]((x int) => ListOf[int](x, x * 10))
+list.FlatMap[int]((x int) => ListOf(x, x * 10))
 // List(1, 10, 2, 20, 3, 30)
 
 // Filter
@@ -179,13 +179,13 @@ list.Partition((x int) => x > 2)
 list.Reverse()               // List(3, 2, 1)
 
 // Distinct
-ListOf[int](1, 2, 2, 3, 1).Distinct()  // List(1, 2, 3)
+ListOf(1, 2, 2, 3, 1).Distinct()  // List(1, 2, 3)
 ```
 
 ### Folding and Reduction
 
 ```gala
-val list = ListOf[int](1, 2, 3, 4)
+val list = ListOf(1, 2, 3, 4)
 
 // FoldLeft
 list.FoldLeft[int](0, (acc int, x int) => acc + x)  // 10
@@ -203,7 +203,7 @@ list.ReduceOption((a int, b int) => a + b)  // Some(10)
 ### Predicates
 
 ```gala
-val list = ListOf[int](2, 4, 6, 8)
+val list = ListOf(2, 4, 6, 8)
 
 list.Exists((x int) => x == 4)  // true
 list.ForAll((x int) => x % 2 == 0)  // true
@@ -213,8 +213,8 @@ list.Count((x int) => x > 4)  // 2
 ### Zipping
 
 ```gala
-val nums = ListOf[int](1, 2, 3)
-val strs = ListOf[string]("a", "b", "c")
+val nums = ListOf(1, 2, 3)
+val strs = ListOf("a", "b", "c")
 
 nums.Zip[string](strs)
 // List(Tuple(1, "a"), Tuple(2, "b"), Tuple(3, "c"))
@@ -226,7 +226,7 @@ nums.ZipWithIndex()
 ### Conversion
 
 ```gala
-val list = ListOf[int](1, 2, 3)
+val list = ListOf(1, 2, 3)
 
 list.ToSlice()  // []int{1, 2, 3}
 list.String()   // "List(1, 2, 3)"
@@ -235,9 +235,9 @@ list.String()   // "List(1, 2, 3)"
 ### Flattening Nested Lists
 
 ```gala
-val nested = ListOf[List[int]](
-    ListOf[int](1, 2),
-    ListOf[int](3, 4),
+val nested = ListOf(
+    ListOf(1, 2),
+    ListOf(3, 4),
 )
 Flatten[int](nested)  // List(1, 2, 3, 4)
 ```
@@ -245,7 +245,7 @@ Flatten[int](nested)  // List(1, 2, 3, 4)
 ### Pattern Matching
 
 ```gala
-val list = ListOf[int](1, 2, 3)
+val list = ListOf(1, 2, 3)
 
 val result = list match {
     case Cons(head, tail) => head  // Matches non-empty list
@@ -275,17 +275,17 @@ An immutable indexed sequence with effectively constant time for most operations
 val empty Array[int] = EmptyArray[int]()
 
 // From elements
-val arr = ArrayOf[int](1, 2, 3, 4, 5)
+val arr = ArrayOf(1, 2, 3, 4, 5)
 
 // From slice
 val slice = []int{1, 2, 3}
-val arr2 = ArrayFrom[int](slice)
+val arr2 = ArrayFrom(slice)
 ```
 
 ### Basic Operations
 
 ```gala
-val arr = ArrayOf[int](1, 2, 3, 4, 5)
+val arr = ArrayOf(1, 2, 3, 4, 5)
 
 arr.IsEmpty()      // false
 arr.NonEmpty()     // true
@@ -296,7 +296,7 @@ arr.Size()         // 5
 ### Head/Last Operations
 
 ```gala
-val arr = ArrayOf[int](1, 2, 3)
+val arr = ArrayOf(1, 2, 3)
 
 arr.Head()              // 1
 arr.HeadOption()        // Some(1)
@@ -311,7 +311,7 @@ arr.Init()              // Array(1, 2)
 ### Element Access - O(eC)
 
 ```gala
-val arr = ArrayOf[int](10, 20, 30)
+val arr = ArrayOf(10, 20, 30)
 
 arr.Get(0)               // 10
 arr.Get(1)               // 20
@@ -325,25 +325,25 @@ arr.Updated(1, 99)       // Array(10, 99, 30)
 ### Adding Elements
 
 ```gala
-val arr = ArrayOf[int](2, 3, 4)
+val arr = ArrayOf(2, 3, 4)
 
 // Append - O(eC)
 arr.Append(5)                // Array(2, 3, 4, 5)
 
 // AppendAll
-arr.AppendAll(ArrayOf[int](5, 6))   // Array(2, 3, 4, 5, 6)
+arr.AppendAll(ArrayOf(5, 6))   // Array(2, 3, 4, 5, 6)
 
 // Prepend - O(1) amortized (uses prefix buffer)
 arr.Prepend(1)               // Array(1, 2, 3, 4)
 
 // PrependAll
-arr.PrependAll(ArrayOf[int](0, 1))  // Array(0, 1, 2, 3, 4)
+arr.PrependAll(ArrayOf(0, 1))  // Array(0, 1, 2, 3, 4)
 ```
 
 ### Slicing Operations
 
 ```gala
-val arr = ArrayOf[int](1, 2, 3, 4, 5)
+val arr = ArrayOf(1, 2, 3, 4, 5)
 
 arr.Take(3)                  // Array(1, 2, 3)
 arr.Drop(2)                  // Array(3, 4, 5)
@@ -356,7 +356,7 @@ arr.SplitAt(2)               // Tuple(Array(1, 2), Array(3, 4, 5))
 ### Searching
 
 ```gala
-val arr = ArrayOf[int](1, 2, 3, 2, 1)
+val arr = ArrayOf(1, 2, 3, 2, 1)
 
 arr.Contains(3)              // true
 arr.IndexOf(2)               // 1
@@ -368,13 +368,13 @@ arr.FindLast((x int) => x < 3)  // Some(1)
 ### Transformations
 
 ```gala
-val arr = ArrayOf[int](1, 2, 3)
+val arr = ArrayOf(1, 2, 3)
 
 // Map
 arr.Map[int]((x int) => x * 2)  // Array(2, 4, 6)
 
 // FlatMap
-arr.FlatMap[int]((x int) => ArrayOf[int](x, x * 10))
+arr.FlatMap[int]((x int) => ArrayOf(x, x * 10))
 // Array(1, 10, 2, 20, 3, 30)
 
 // Filter
@@ -389,13 +389,13 @@ arr.Partition((x int) => x > 2)
 arr.Reverse()                // Array(3, 2, 1)
 
 // Distinct
-ArrayOf[int](1, 2, 2, 3, 1).Distinct()  // Array(1, 2, 3)
+ArrayOf(1, 2, 2, 3, 1).Distinct()  // Array(1, 2, 3)
 ```
 
 ### Folding and Reduction
 
 ```gala
-val arr = ArrayOf[int](1, 2, 3, 4)
+val arr = ArrayOf(1, 2, 3, 4)
 
 arr.FoldLeft[int](0, (acc int, x int) => acc + x)  // 10
 arr.FoldRight[int](0, (x int, acc int) => x + acc)  // 10
@@ -406,7 +406,7 @@ arr.ReduceOption((a int, b int) => a + b)  // Some(10)
 ### Predicates
 
 ```gala
-val arr = ArrayOf[int](2, 4, 6, 8)
+val arr = ArrayOf(2, 4, 6, 8)
 
 arr.Exists((x int) => x == 4)  // true
 arr.ForAll((x int) => x % 2 == 0)  // true
@@ -416,8 +416,8 @@ arr.Count((x int) => x > 4)  // 2
 ### Zipping
 
 ```gala
-val nums = ArrayOf[int](1, 2, 3)
-val strs = ArrayOf[string]("a", "b", "c")
+val nums = ArrayOf(1, 2, 3)
+val strs = ArrayOf("a", "b", "c")
 
 nums.Zip[string](strs)
 // Array(Tuple(1, "a"), Tuple(2, "b"), Tuple(3, "c"))
@@ -429,7 +429,7 @@ nums.ZipWithIndex()
 ### Grouping
 
 ```gala
-val arr = ArrayOf[int](1, 2, 3, 4, 5)
+val arr = ArrayOf(1, 2, 3, 4, 5)
 
 // Split into groups of size n
 arr.Grouped(2)
@@ -443,7 +443,7 @@ arr.Sliding(3)
 ### Conversion
 
 ```gala
-val arr = ArrayOf[int](1, 2, 3)
+val arr = ArrayOf(1, 2, 3)
 
 arr.ToSlice()   // []int{1, 2, 3}
 arr.ToList()    // List(1, 2, 3)
@@ -489,7 +489,7 @@ func (p Person) Hash() uint32 {
 }
 
 // Now Person can be used in HashSet
-val people = HashSetOf[Person](
+val people = HashSetOf(
     Person(Name = "Alice", Age = 30),
     Person(Name = "Bob", Age = 25),
 )
@@ -509,17 +509,17 @@ val people = HashSetOf[Person](
 val empty = EmptyHashSet[int]()
 
 // From elements
-val set = HashSetOf[int](1, 2, 3, 4, 5)
+val set = HashSetOf(1, 2, 3, 4, 5)
 
 // From slice
 val slice = []int{1, 2, 3}
-val set2 = HashSetFromSlice[int](slice)
+val set2 = HashSetFromSlice(slice)
 ```
 
 ### Basic Operations
 
 ```gala
-val set = HashSetOf[int](1, 2, 3, 4, 5)
+val set = HashSetOf(1, 2, 3, 4, 5)
 
 set.IsEmpty()      // false
 set.NonEmpty()     // true
@@ -530,7 +530,7 @@ set.Length()       // 5 (alias for Size)
 ### Element Operations - O(eC)
 
 ```gala
-val set = HashSetOf[int](1, 2, 3)
+val set = HashSetOf(1, 2, 3)
 
 // Add element (returns new set)
 set.Add(4)               // HashSet(1, 2, 3, 4)
@@ -546,8 +546,8 @@ set.Contains(10)         // false
 ### Set Operations
 
 ```gala
-val a = HashSetOf[int](1, 2, 3, 4)
-val b = HashSetOf[int](3, 4, 5, 6)
+val a = HashSetOf(1, 2, 3, 4)
+val b = HashSetOf(3, 4, 5, 6)
 
 // Union - all elements from both sets
 a.Union(b)               // HashSet(1, 2, 3, 4, 5, 6)
@@ -559,13 +559,13 @@ a.Intersect(b)           // HashSet(3, 4)
 a.Diff(b)                // HashSet(1, 2)
 
 // Subset check
-HashSetOf[int](1, 2).SubsetOf(a)  // true
+HashSetOf(1, 2).SubsetOf(a)  // true
 ```
 
 ### Transformations
 
 ```gala
-val set = HashSetOf[int](1, 2, 3, 4, 5)
+val set = HashSetOf(1, 2, 3, 4, 5)
 
 // Filter
 set.Filter((x int) => x % 2 == 0)     // HashSet(2, 4)
@@ -582,7 +582,7 @@ MapHashSet[int, int](set, (x int) => x * 2)  // HashSet(2, 4, 6, 8, 10)
 ### Folding and Reduction
 
 ```gala
-val set = HashSetOf[int](1, 2, 3, 4, 5)
+val set = HashSetOf(1, 2, 3, 4, 5)
 
 // FoldLeft
 set.FoldLeft[int](0, (acc int, x int) => acc + x)  // 15
@@ -597,7 +597,7 @@ set.ReduceOption((a int, b int) => a + b)  // Some(15)
 ### Predicates
 
 ```gala
-val set = HashSetOf[int](2, 4, 6, 8)
+val set = HashSetOf(2, 4, 6, 8)
 
 set.Exists((x int) => x > 5)           // true
 set.ForAll((x int) => x % 2 == 0)      // true
@@ -608,7 +608,7 @@ set.Find((x int) => x > 5)             // Some(6) or Some(8)
 ### Conversion
 
 ```gala
-val set = HashSetOf[int](1, 2, 3)
+val set = HashSetOf(1, 2, 3)
 
 set.ToSlice()   // []int{1, 2, 3} (order not guaranteed)
 set.ToList()    // List(1, 2, 3) (order not guaranteed)
@@ -627,7 +627,7 @@ set.ForEach((x int) => {
 ### Pattern Matching
 
 ```gala
-val set = HashSetOf[int](1, 2, 3)
+val set = HashSetOf(1, 2, 3)
 
 val result = set match {
     case s: HashSet[_] if s.IsEmpty() => "empty"
@@ -1079,7 +1079,7 @@ import (
 
 func main() {
     // Build a list of numbers
-    val numbers = ListOf[int](1, 2, 3, 4, 5)
+    val numbers = ListOf(1, 2, 3, 4, 5)
 
     // Transform: double each number
     val doubled = numbers.Map[int]((x int) => x * 2)

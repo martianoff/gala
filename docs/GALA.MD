@@ -178,8 +178,8 @@ func ListOf[T any](elements ...T) List[T] {
 }
 
 // Usage
-val numbers = ListOf[int](1, 2, 3)
-val names = ListOf[string]("Alice", "Bob", "Charlie")
+val numbers = ListOf(1, 2, 3)
+val names = ListOf("Alice", "Bob", "Charlie")
 ```
 
 #### Spreading Slices
@@ -500,7 +500,7 @@ Use the `...` suffix to match zero or more remaining elements:
 ```gala
 import . "martianoff/gala/collection_immutable"
 
-val arr = ArrayOf[int](1, 2, 3, 4, 5)
+val arr = ArrayOf(1, 2, 3, 4, 5)
 
 // Extract first two elements, ignore rest
 val res1 = arr match {
@@ -520,7 +520,7 @@ val res2 = arr match {
 - `name...` - Match and capture remaining elements as a sequence
 
 ```gala
-val list = ListOf[string]("a", "b", "c", "d")
+val list = ListOf("a", "b", "c", "d")
 
 // Capture the rest as a variable
 val res = list match {
@@ -699,11 +699,11 @@ val result = success.FlatMap[int]((n int) => divide(n, 2))
 
 // Recovery
 val recovered = failure.Recover((e error) => 0)
-val recoveredWith = failure.RecoverWith((e error) => Success[int](0))
+val recoveredWith = failure.RecoverWith((e error) => Success(0))
 
 // Safe value extraction
 val value = failure.GetOrElse(0)
-val alternative = failure.OrElse(Success[int](100))
+val alternative = failure.OrElse(Success(100))
 
 // Conversion
 val opt = success.ToOption()      // Option[int]
