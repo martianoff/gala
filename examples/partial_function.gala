@@ -1,0 +1,27 @@
+package main
+
+import "fmt"
+import . "martianoff/gala/std"
+import . "martianoff/gala/collection_immutable"
+
+func main() {
+    // Use with Collect - filter and transform
+    val arr = ArrayOf(Some(1), None[int](), Some(2), Some(3))
+    val doubled = arr.Collect({ case Some(n) => n * 2 })
+    fmt.Println(doubled.ToGoSlice())  // [2, 4, 6]
+
+    // Filter even numbers
+    val nums = ArrayOf(1, 2, 3, 4, 5, 6)
+    val evens = nums.Collect({ case n: int if n % 2 == 0 => n })
+    fmt.Println(evens.ToGoSlice())  // [2, 4, 6]
+
+    // Extract from nested structure
+    val nested = ArrayOf(Some(Some(1)), Some(None[int]()), None[Option[int]]())
+    val inner = nested.Collect({ case Some(Some(n)) => n })
+    fmt.Println(inner.ToGoSlice())  // [1]
+
+    // With Either - using explicit type params for Left/Right
+    val eithers = ArrayOf(Left[string, int]("a"), Right[string, int](1), Left[string, int]("b"), Right[string, int](2))
+    val rights = eithers.Collect({ case Right(n) => n * 10 })
+    fmt.Println(rights.ToGoSlice())  // [10, 20]
+}

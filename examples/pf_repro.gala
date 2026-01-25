@@ -1,0 +1,12 @@
+package main
+
+import "fmt"
+import . "martianoff/gala/std"
+import . "martianoff/gala/collection_immutable"
+
+func main() {
+    // Simplest case: filter even numbers with typed pattern
+    val nums = ArrayOf(1, 2, 3, 4, 5, 6)
+    val evens = nums.Collect({ case n: int if n % 2 == 0 => n })
+    fmt.Println(evens.ToGoSlice())
+}

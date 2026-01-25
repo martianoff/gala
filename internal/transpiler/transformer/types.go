@@ -800,14 +800,24 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 				}
 			}
 			if sel.Sel.Name == transpiler.MethodGet {
-				// Special case: x.Get() where x is a known val - return the val's type directly
+				// Get the type of x in x.Get()
+				var xType transpiler.Type
+				var isVal bool
 				if id, ok := sel.X.(*ast.Ident); ok {
 					if t.isVal(id.Name) {
-						valType := t.getType(id.Name)
-						return valType
+						isVal = true
+						// For vals, the stored type is already the inner type (e.g., Array[int] not Immutable[Array[int]])
+						// So x.Get() returns the stored type directly
+						xType = t.getType(id.Name)
 					}
 				}
-				xType := t.getExprTypeNameManual(sel.X)
+				if xType == nil || xType.IsNil() {
+					xType = t.getExprTypeNameManual(sel.X)
+				}
+				// For vals, the stored type is already unwrapped, so .Get() returns it directly
+				if isVal && xType != nil && !xType.IsNil() {
+					return xType
+				}
 				xBaseName := xType.BaseName()
 				// For Immutable[T].Get() and Option[T].Get(), return the inner type T
 				if xBaseName == transpiler.TypeImmutable || xBaseName == "std."+transpiler.TypeImmutable ||
@@ -878,6 +888,17 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 					}
 					fullName := pkgName + "." + sel.Sel.Name
 					if fMeta, ok := t.functions[fullName]; ok {
+						// Substitute explicit type arguments if provided
+						if len(typeArgs) > 0 && len(fMeta.TypeParams) > 0 {
+							return t.substituteConcreteTypes(fMeta.ReturnType, fMeta.TypeParams, typeArgs)
+						}
+						// Try to infer type parameters from arguments
+						if len(fMeta.TypeParams) > 0 {
+							inferredTypeArgs := t.inferFuncTypeParamsFromArgs(fMeta, e.Args)
+							if len(inferredTypeArgs) > 0 {
+								return t.substituteConcreteTypes(fMeta.ReturnType, fMeta.TypeParams, inferredTypeArgs)
+							}
+						}
 						return fMeta.ReturnType
 					}
 					// Check for known Go stdlib functions (e.g., fmt.Sprintf -> string)
@@ -1102,6 +1123,13 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 				if len(typeArgs) > 0 && len(fMeta.TypeParams) > 0 {
 					return t.substituteConcreteTypes(fMeta.ReturnType, fMeta.TypeParams, typeArgs)
 				}
+				// Try to infer type parameters from arguments
+				if len(fMeta.TypeParams) > 0 {
+					inferredTypeArgs := t.inferFuncTypeParamsFromArgs(fMeta, e.Args)
+					if len(inferredTypeArgs) > 0 {
+						return t.substituteConcreteTypes(fMeta.ReturnType, fMeta.TypeParams, inferredTypeArgs)
+					}
+				}
 				return fMeta.ReturnType
 			}
 
@@ -1265,6 +1293,67 @@ func (t *galaASTTransformer) inferMethodTypeParamsFromArgs(methodMeta *transpile
 	return result
 }
 
+// inferFuncTypeParamsFromArgs attempts to infer type parameters for standalone function calls.
+// For example, for ArrayOf[T any](elements ...T) Array[T] where the arguments are [1, 2, 3],
+// this function infers T = int.
+func (t *galaASTTransformer) inferFuncTypeParamsFromArgs(fMeta *transpiler.FunctionMetadata, args []ast.Expr) []transpiler.Type {
+	if len(fMeta.TypeParams) == 0 || len(args) == 0 {
+		return nil
+	}
+
+	// Build a mapping from type param names to inferred concrete types
+	inferredMap := make(map[string]transpiler.Type)
+
+	// Try to infer type params from each argument
+	for i, arg := range args {
+		var paramType transpiler.Type
+		if i < len(fMeta.ParamTypes) {
+			paramType = fMeta.ParamTypes[i]
+		} else if len(fMeta.ParamTypes) > 0 {
+			// For variadic functions, the last param type applies to remaining args
+			lastParamType := fMeta.ParamTypes[len(fMeta.ParamTypes)-1]
+			// Unwrap slice type for variadic parameters (e.g., ...T becomes T for each arg)
+			if arrType, ok := lastParamType.(transpiler.ArrayType); ok {
+				paramType = arrType.Elem
+			} else {
+				paramType = lastParamType
+			}
+		}
+		if paramType == nil {
+			continue
+		}
+
+		// Get the actual type of the argument
+		argType := t.getExprTypeNameManual(arg)
+		if argType == nil || argType.IsNil() {
+			argType, _ = t.inferExprType(arg)
+		}
+		if argType == nil || argType.IsNil() {
+			continue
+		}
+
+		// Try to unify paramType with argType to find type param substitutions
+		t.unifyForInference(paramType, argType, fMeta.TypeParams, inferredMap)
+	}
+
+	// Build result in order of type params
+	if len(inferredMap) == 0 {
+		return nil
+	}
+
+	result := make([]transpiler.Type, len(fMeta.TypeParams))
+	for i, paramName := range fMeta.TypeParams {
+		if inferredType, ok := inferredMap[paramName]; ok {
+			result[i] = inferredType
+		} else {
+			// Couldn't infer this type param
+			return nil
+		}
+	}
+
+	return result
+}
+
 // unifyForInference attempts to unify a pattern type with a concrete type to infer type parameters.
 // This is used to infer method-level type params from call arguments.
 func (t *galaASTTransformer) unifyForInference(pattern, concrete transpiler.Type, typeParams []string, inferredMap map[string]transpiler.Type) bool {
@@ -1274,8 +1363,10 @@ func (t *galaASTTransformer) unifyForInference(pattern, concrete transpiler.Type
 
 	// Check if pattern is one of the type parameters we're looking for
 	patternStr := pattern.String()
+	// Also try without package prefix (e.g., "collection_immutable.T" -> "T")
+	patternStrNoPackage := stripPackagePrefix(patternStr)
 	for _, tp := range typeParams {
-		if patternStr == tp {
+		if patternStr == tp || patternStrNoPackage == tp {
 			// Found a type parameter - record the inferred type
 			if existing, ok := inferredMap[tp]; ok {
 				// Already have an inference - check consistency
@@ -1574,3 +1665,4 @@ func getKnownGoStdlibReturnType(fullName string) transpiler.Type {
 	}
 	return nil
 }
+

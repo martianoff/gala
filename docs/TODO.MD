@@ -23,3 +23,4 @@
 - [x] Refactor documentation removing all explicit type where they are not required i.e. `var s = HashSetOf[int](1, 2, 3, 4, 5)` should be `var s = HashSetOf(1, 2, 3, 4, 5)`
 - [x] Mutable and immutable Maps
 - [x] Add Collect API to all collections
+- [x] Partial functions

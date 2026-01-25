@@ -139,7 +139,10 @@ primaryExpr
     : primary
     | lambdaExpression
     | ifExpression
+    | partialFunctionLiteral
     ;
+
+partialFunctionLiteral: '{' caseClause+ '}';
 argumentList: argument (',' argument)*;
 argument: (identifier '=')? pattern;
 

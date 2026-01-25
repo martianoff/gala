@@ -302,3 +302,21 @@ gala_test(
         "//collection_mutable",
     ],
 )
+
+gala_test(
+    name = "partial_function",
+    src = "partial_function.gala",
+    expected = "partial_function.out",
+    deps = [
+        "//collection_immutable",
+    ],
+)
+
+gala_test(
+    name = "pf_repro",
+    src = "pf_repro.gala",
+    expected = "pf_repro.out",
+    deps = [
+        "//collection_immutable",
+    ],
+)

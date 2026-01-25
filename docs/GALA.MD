@@ -624,6 +624,63 @@ val g = (a int, b int) => {
 }
 ```
 
+### Partial Function Literals
+GALA supports Scala-style partial function syntax where `{ case pattern => result }` creates a function that returns `Option[T]`. This enables concise pattern matching that automatically wraps results in `Some` and returns `None` for unmatched cases.
+
+```gala
+// Basic partial function with literal patterns
+val pf = { case 1 => "one" case 2 => "two" }
+
+val r1 = pf(1)  // Some("one")
+val r2 = pf(5)  // None[string]
+```
+
+#### Syntax
+A partial function literal is a block that starts with `case` clauses:
+
+```gala
+{ case pattern1 => result1 case pattern2 => result2 }
+```
+
+The resulting function has type `func(T) Option[U]` where:
+- `T` is inferred from the patterns or calling context
+- `U` is the type of the result expressions
+
+#### Return Type Behavior
+- Matched cases automatically wrap results in `Some(result)`
+- Unmatched cases return `None[U]()`
+
+```gala
+val describeNumber = { case 1 => "one" case 2 => "two" }
+
+// Equivalent to:
+val describeNumber = (x any) => x match {
+    case 1 => Some("one")
+    case 2 => Some("two")
+    case _ => None[string]()
+}
+```
+
+#### Use Cases
+Partial functions are especially useful with collection operations that expect optional results:
+
+```gala
+// Filter and transform in one operation
+val numbers = ArrayOf(1, 2, 3, 4, 5)
+val evenDoubled = numbers.Collect { case n if n % 2 == 0 => n * 2 }
+// Result: [4, 8]
+```
+
+#### Extractors in Partial Functions
+When using extractors like `Some(n)`, the parameter type needs to be inferrable from context:
+
+```gala
+// Type inferred from collection element type
+val options = ArrayOf(Some(1), None[int](), Some(2))
+val values = options.Collect { case Some(n) => n * 2 }
+// Result: [2, 4]
+```
+
 ## 8. Generics
 
 GALA supports generics using square brackets `[]`.

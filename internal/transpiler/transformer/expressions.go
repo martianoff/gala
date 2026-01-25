@@ -84,7 +84,9 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 	recvBaseName := recvType.BaseName()
 	// Strip pointer prefix for genericMethods lookup since methods are registered under base type name
 	lookupBaseName := strings.TrimPrefix(recvBaseName, "*")
-	isGenericMethod := len(typeArgs) > 0 || (lookupBaseName != "" && t.genericMethods[lookupBaseName] != nil && t.genericMethods[lookupBaseName][method])
+
+	// Check for generic method - try all possible package lookups
+	isGenericMethod := len(typeArgs) > 0 || t.isGenericMethodWithImports(lookupBaseName, recvType.GetPackage(), method)
 
 	if receiver != nil && isGenericMethod {
 		// Check if receiver is a package name
@@ -103,6 +105,46 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 			if tm, ok := t.typeMetas[lookupBaseName]; ok && tm != nil {
 				typeMeta = tm
 				methodMeta = typeMeta.Methods[method]
+			} else {
+				// Try package-qualified name lookup (e.g., "collection_immutable.Array")
+				pkg := recvType.GetPackage()
+				if pkg != "" {
+					qualifiedName := pkg + "." + lookupBaseName
+					if tm, ok := t.typeMetas[qualifiedName]; ok && tm != nil {
+						typeMeta = tm
+						methodMeta = typeMeta.Methods[method]
+						// Update lookupBaseName for later use
+						lookupBaseName = qualifiedName
+					}
+				}
+				// If still not found, search through dot-imported packages
+				if typeMeta == nil {
+					for _, dotPkg := range t.dotImports {
+						qualifiedName := dotPkg + "." + lookupBaseName
+						if tm, ok := t.typeMetas[qualifiedName]; ok && tm != nil {
+							typeMeta = tm
+							methodMeta = typeMeta.Methods[method]
+							lookupBaseName = qualifiedName
+							break
+						}
+					}
+				}
+				// If still not found, search through all imported packages
+				if typeMeta == nil {
+					for alias := range t.imports {
+						actualPkg := alias
+						if actual, ok := t.importAliases[alias]; ok {
+							actualPkg = actual
+						}
+						qualifiedName := actualPkg + "." + lookupBaseName
+						if tm, ok := t.typeMetas[qualifiedName]; ok && tm != nil {
+							typeMeta = tm
+							methodMeta = typeMeta.Methods[method]
+							lookupBaseName = qualifiedName
+							break
+						}
+					}
+				}
 			}
 
 			// Build type argument substitution map
@@ -187,11 +229,6 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 
 	// Handle regular method calls on generic types (methods without type params on receiver types with type params)
 	// These should remain as method calls but still need expected types for lambda arguments
-	// DEBUG: Check all methods
-	if method != "" && strings.Contains(method, "ecov") {
-		panic(fmt.Sprintf("DEBUG: method=%s receiver=%v isGenericMethod=%v argListCtx=%v lookupBaseName=%s",
-			method, receiver != nil, isGenericMethod, argListCtx != nil, lookupBaseName))
-	}
 	if receiver != nil && !isGenericMethod && method != "" && argListCtx != nil {
 		var methodMeta *transpiler.MethodMetadata
 		var typeMeta *transpiler.TypeMetadata
@@ -206,12 +243,6 @@ func (t *galaASTTransformer) transformCallExpr(ctx *grammar.ExpressionContext) (
 				typeMeta = tm
 				methodMeta = typeMeta.Methods[method]
 			}
-		}
-
-		// DEBUG: Panic to see values
-		if method == "Recover" || method == "RecoverWith" {
-			panic(fmt.Sprintf("DEBUG: method=%s lookupBaseName=%s recvType=%v typeMeta=%v methodMeta=%v",
-				method, lookupBaseName, recvType, typeMeta != nil, methodMeta != nil))
 		}
 
 		if methodMeta != nil {
@@ -1052,8 +1083,8 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 			// Strip pointer prefix for genericMethods lookup since methods are registered under base type name
 			lookupBaseName := strings.TrimPrefix(recvBaseName, "*")
 
-			// Check if this is a generic method
-			isGenericMethod := lookupBaseName != "" && t.genericMethods[lookupBaseName] != nil && t.genericMethods[lookupBaseName][method]
+			// Check if this is a generic method - try all possible package lookups
+			isGenericMethod := t.isGenericMethodWithImports(lookupBaseName, recvType.GetPackage(), method)
 			if isGenericMethod {
 				// Check if receiver is a package name
 				isPkg := false
@@ -1153,7 +1184,9 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	recvBaseName := recvType.BaseName()
 	// Strip pointer prefix for genericMethods lookup since methods are registered under base type name
 	lookupBaseName := strings.TrimPrefix(recvBaseName, "*")
-	isGenericMethod := len(typeArgs) > 0 || (lookupBaseName != "" && t.genericMethods[lookupBaseName] != nil && t.genericMethods[lookupBaseName][method])
+
+	// Check for generic method - try all possible package lookups
+	isGenericMethod := len(typeArgs) > 0 || t.isGenericMethodWithImports(lookupBaseName, recvType.GetPackage(), method)
 
 	if receiver != nil && isGenericMethod {
 		// Check if receiver is a package name
@@ -1172,6 +1205,46 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 			if tm, ok := t.typeMetas[lookupBaseName]; ok && tm != nil {
 				typeMeta = tm
 				methodMeta = typeMeta.Methods[method]
+			} else {
+				// Try package-qualified name lookup (e.g., "collection_immutable.Array")
+				pkg := recvType.GetPackage()
+				if pkg != "" {
+					qualifiedName := pkg + "." + lookupBaseName
+					if tm, ok := t.typeMetas[qualifiedName]; ok && tm != nil {
+						typeMeta = tm
+						methodMeta = typeMeta.Methods[method]
+						// Update lookupBaseName for later use
+						lookupBaseName = qualifiedName
+					}
+				}
+				// If still not found, search through dot-imported packages
+				if typeMeta == nil {
+					for _, dotPkg := range t.dotImports {
+						qualifiedName := dotPkg + "." + lookupBaseName
+						if tm, ok := t.typeMetas[qualifiedName]; ok && tm != nil {
+							typeMeta = tm
+							methodMeta = typeMeta.Methods[method]
+							lookupBaseName = qualifiedName
+							break
+						}
+					}
+				}
+				// If still not found, search through all imported packages
+				if typeMeta == nil {
+					for alias := range t.imports {
+						actualPkg := alias
+						if actual, ok := t.importAliases[alias]; ok {
+							actualPkg = actual
+						}
+						qualifiedName := actualPkg + "." + lookupBaseName
+						if tm, ok := t.typeMetas[qualifiedName]; ok && tm != nil {
+							typeMeta = tm
+							methodMeta = typeMeta.Methods[method]
+							lookupBaseName = qualifiedName
+							break
+						}
+					}
+				}
 			}
 
 			// Build type argument substitution map
@@ -1793,7 +1866,11 @@ func (t *galaASTTransformer) transformPrimaryExpr(ctx *grammar.PrimaryExprContex
 		return t.transformIfExpression(i.(*grammar.IfExpressionContext))
 	}
 
-	return nil, galaerr.NewSemanticError("primaryExpr must have primary, lambda, or if expression")
+	if pf := ctx.PartialFunctionLiteral(); pf != nil {
+		return t.transformPartialFunctionLiteral(pf.(*grammar.PartialFunctionLiteralContext), nil)
+	}
+
+	return nil, galaerr.NewSemanticError("primaryExpr must have primary, lambda, if expression, or partial function")
 }
 
 // transformPostfixMatchExpression handles match expressions with the new grammar
@@ -2459,8 +2536,13 @@ func (t *galaASTTransformer) isNewImmutableCall(call *ast.CallExpr) bool {
 }
 
 // transformArgumentWithExpectedType transforms an argument expression, using the expected
-// parameter type to properly type lambda expressions.
+// parameter type to properly type lambda expressions and partial function literals.
 func (t *galaASTTransformer) transformArgumentWithExpectedType(exprCtx grammar.IExpressionContext, expectedType transpiler.Type) (ast.Expr, error) {
+	// Try to find a partial function literal in this expression
+	if pfCtx := t.findPartialFunctionInExpression(exprCtx); pfCtx != nil {
+		return t.transformPartialFunctionLiteral(pfCtx, expectedType)
+	}
+
 	// Try to find a lambda in this expression
 	if lambdaCtx := t.findLambdaInExpression(exprCtx); lambdaCtx != nil {
 		// Extract the expected return type from the function type
@@ -2470,8 +2552,121 @@ func (t *galaASTTransformer) transformArgumentWithExpectedType(exprCtx grammar.I
 		}
 		return t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType)
 	}
-	// Not a lambda, transform normally
+	// Not a lambda or partial function, transform normally
 	return t.transformExpression(exprCtx)
+}
+
+// findPartialFunctionInExpression traverses the expression tree to find a partial function literal
+func (t *galaASTTransformer) findPartialFunctionInExpression(exprCtx grammar.IExpressionContext) *grammar.PartialFunctionLiteralContext {
+	if exprCtx == nil {
+		return nil
+	}
+
+	// Walk down the expression tree following the grammar structure
+	// expression -> orExpr -> andExpr -> ... -> postfixExpr -> primaryExpr -> partialFunctionLiteral
+	switch ctx := exprCtx.(type) {
+	case *grammar.ExpressionContext:
+		if ctx.OrExpr() != nil {
+			return t.findPartialFunctionInOrExpr(ctx.OrExpr().(*grammar.OrExprContext))
+		}
+	}
+	return nil
+}
+
+func (t *galaASTTransformer) findPartialFunctionInOrExpr(ctx *grammar.OrExprContext) *grammar.PartialFunctionLiteralContext {
+	if ctx == nil {
+		return nil
+	}
+	andExprs := ctx.AllAndExpr()
+	if len(andExprs) == 1 {
+		return t.findPartialFunctionInAndExpr(andExprs[0].(*grammar.AndExprContext))
+	}
+	return nil
+}
+
+func (t *galaASTTransformer) findPartialFunctionInAndExpr(ctx *grammar.AndExprContext) *grammar.PartialFunctionLiteralContext {
+	if ctx == nil {
+		return nil
+	}
+	eqExprs := ctx.AllEqualityExpr()
+	if len(eqExprs) == 1 {
+		return t.findPartialFunctionInEqualityExpr(eqExprs[0].(*grammar.EqualityExprContext))
+	}
+	return nil
+}
+
+func (t *galaASTTransformer) findPartialFunctionInEqualityExpr(ctx *grammar.EqualityExprContext) *grammar.PartialFunctionLiteralContext {
+	if ctx == nil {
+		return nil
+	}
+	relExprs := ctx.AllRelationalExpr()
+	if len(relExprs) == 1 {
+		return t.findPartialFunctionInRelationalExpr(relExprs[0].(*grammar.RelationalExprContext))
+	}
+	return nil
+}
+
+func (t *galaASTTransformer) findPartialFunctionInRelationalExpr(ctx *grammar.RelationalExprContext) *grammar.PartialFunctionLiteralContext {
+	if ctx == nil {
+		return nil
+	}
+	addExprs := ctx.AllAdditiveExpr()
+	if len(addExprs) == 1 {
+		return t.findPartialFunctionInAdditiveExpr(addExprs[0].(*grammar.AdditiveExprContext))
+	}
+	return nil
+}
+
+func (t *galaASTTransformer) findPartialFunctionInAdditiveExpr(ctx *grammar.AdditiveExprContext) *grammar.PartialFunctionLiteralContext {
+	if ctx == nil {
+		return nil
+	}
+	mulExprs := ctx.AllMultiplicativeExpr()
+	if len(mulExprs) == 1 {
+		return t.findPartialFunctionInMultiplicativeExpr(mulExprs[0].(*grammar.MultiplicativeExprContext))
+	}
+	return nil
+}
+
+func (t *galaASTTransformer) findPartialFunctionInMultiplicativeExpr(ctx *grammar.MultiplicativeExprContext) *grammar.PartialFunctionLiteralContext {
+	if ctx == nil {
+		return nil
+	}
+	unaryExprs := ctx.AllUnaryExpr()
+	if len(unaryExprs) == 1 {
+		return t.findPartialFunctionInUnaryExpr(unaryExprs[0].(*grammar.UnaryExprContext))
+	}
+	return nil
+}
+
+func (t *galaASTTransformer) findPartialFunctionInUnaryExpr(ctx *grammar.UnaryExprContext) *grammar.PartialFunctionLiteralContext {
+	if ctx == nil {
+		return nil
+	}
+	if ctx.PostfixExpr() != nil {
+		return t.findPartialFunctionInPostfixExpr(ctx.PostfixExpr().(*grammar.PostfixExprContext))
+	}
+	return nil
+}
+
+func (t *galaASTTransformer) findPartialFunctionInPostfixExpr(ctx *grammar.PostfixExprContext) *grammar.PartialFunctionLiteralContext {
+	if ctx == nil {
+		return nil
+	}
+	if ctx.PrimaryExpr() != nil {
+		return t.findPartialFunctionInPrimaryExpr(ctx.PrimaryExpr().(*grammar.PrimaryExprContext))
+	}
+	return nil
+}
+
+func (t *galaASTTransformer) findPartialFunctionInPrimaryExpr(ctx *grammar.PrimaryExprContext) *grammar.PartialFunctionLiteralContext {
+	if ctx == nil {
+		return nil
+	}
+	if pf := ctx.PartialFunctionLiteral(); pf != nil {
+		return pf.(*grammar.PartialFunctionLiteralContext)
+	}
+	return nil
 }
 
 // containsAny checks if the given type expression contains "any" as a type or type parameter.
@@ -2803,4 +2998,345 @@ func (t *galaASTTransformer) inferTypeArgsFromApply(
 	}
 
 	return result
+}
+
+// transformPartialFunctionLiteral transforms a partial function literal { case ... => ... }
+// into a function that returns Option[T], where matched cases return Some(result)
+// and unmatched cases return None[T]()
+func (t *galaASTTransformer) transformPartialFunctionLiteral(ctx *grammar.PartialFunctionLiteralContext, expectedType transpiler.Type) (ast.Expr, error) {
+	caseClauses := ctx.AllCaseClause()
+	if len(caseClauses) == 0 {
+		return nil, galaerr.NewSemanticError("partial function must have at least one case")
+	}
+
+	// Try to infer parameter type from expected function type or from patterns
+	var paramType transpiler.Type
+	if expectedType != nil {
+		if funcType, ok := expectedType.(transpiler.FuncType); ok && len(funcType.Params) > 0 {
+			paramType = funcType.Params[0]
+		}
+	}
+
+	// If we couldn't infer from context, try to infer from the patterns themselves
+	if paramType == nil || paramType.IsNil() {
+		paramType = t.inferPartialFunctionParamType(caseClauses)
+	}
+
+	// Fall back to 'any' if we still can't infer
+	if paramType == nil || paramType.IsNil() {
+		paramType = transpiler.BasicType{Name: "any"}
+	}
+
+	paramName := "_pf_arg"
+	t.pushScope()
+	defer t.popScope()
+	t.addVar(paramName, paramType)
+
+	var clauses []ast.Stmt
+	var resultTypes []transpiler.Type
+	var casePatterns []string
+
+	// Transform each case clause, wrapping results in Some(...)
+	for _, cc := range caseClauses {
+		ccCtx := cc.(*grammar.CaseClauseContext)
+		patCtx := ccCtx.Pattern()
+		patternText := patCtx.GetText()
+
+		// Even wildcard case gets wrapped in Some for partial functions
+		clause, resultType, err := t.transformPartialCaseClause(ccCtx, paramName, paramType)
+		if err != nil {
+			return nil, err
+		}
+		if clause != nil {
+			clauses = append(clauses, clause)
+		}
+		if resultType != nil {
+			resultTypes = append(resultTypes, resultType)
+			casePatterns = append(casePatterns, fmt.Sprintf("case %s", patternText))
+		}
+	}
+
+	// Infer common inner result type T from all branches
+	innerResultType, err := t.inferCommonResultType(resultTypes, casePatterns)
+	if err != nil {
+		return nil, err
+	}
+
+	if innerResultType == nil || innerResultType.IsNil() {
+		innerResultType = transpiler.BasicType{Name: "any"}
+	}
+
+	if t.typeHasUnresolvedParams(innerResultType) {
+		innerResultType = transpiler.BasicType{Name: "any"}
+	}
+
+	// The final result type is Option[T]
+	optionResultType := transpiler.GenericType{
+		Base:   transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeOption},
+		Params: []transpiler.Type{innerResultType},
+	}
+
+	// Generate default case: return None[T]()
+	noneReturn := t.generateNoneReturn(innerResultType)
+
+	// Build the function body
+	var stmts []ast.Stmt
+	stmts = append(stmts, clauses...)
+	stmts = append(stmts, noneReturn)
+
+	// Build function literal returning Option[T]
+	t.needsStdImport = true
+	funcLit := &ast.FuncLit{
+		Type: &ast.FuncType{
+			Params:  &ast.FieldList{List: []*ast.Field{{Names: []*ast.Ident{ast.NewIdent(paramName)}, Type: t.typeToExpr(paramType)}}},
+			Results: &ast.FieldList{List: []*ast.Field{{Type: t.typeToExpr(optionResultType)}}},
+		},
+		Body: &ast.BlockStmt{List: stmts},
+	}
+
+	return funcLit, nil
+}
+
+// inferPartialFunctionParamType tries to infer the parameter type from the patterns
+func (t *galaASTTransformer) inferPartialFunctionParamType(caseClauses []grammar.ICaseClauseContext) transpiler.Type {
+	for _, cc := range caseClauses {
+		ccCtx := cc.(*grammar.CaseClauseContext)
+		patCtx := ccCtx.Pattern()
+
+		// Check for typed pattern like "x: int"
+		if tp, ok := patCtx.(*grammar.TypedPatternContext); ok {
+			typeExpr, err := t.transformType(tp.Type_())
+			if err == nil {
+				return t.exprToType(typeExpr)
+			}
+		}
+
+		// Check for extractor patterns like Some(n), Left(x), etc.
+		if ep, ok := patCtx.(*grammar.ExpressionPatternContext); ok {
+			patternText := ep.GetText()
+			// Common Option patterns
+			if strings.HasPrefix(patternText, "Some(") || patternText == "None()" {
+				return transpiler.GenericType{
+					Base:   transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeOption},
+					Params: []transpiler.Type{transpiler.BasicType{Name: "any"}},
+				}
+			}
+			// Common Either patterns
+			if strings.HasPrefix(patternText, "Left(") || strings.HasPrefix(patternText, "Right(") {
+				return transpiler.GenericType{
+					Base:   transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeEither},
+					Params: []transpiler.Type{transpiler.BasicType{Name: "any"}, transpiler.BasicType{Name: "any"}},
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// transformPartialCaseClause transforms a case clause for partial function
+// The result expression is wrapped in Some(...)
+func (t *galaASTTransformer) transformPartialCaseClause(ctx *grammar.CaseClauseContext, paramName string, matchedType transpiler.Type) (ast.Stmt, transpiler.Type, error) {
+	t.pushScope()
+	defer t.popScope()
+
+	patCtx := ctx.Pattern()
+	cond, bindings, err := t.transformPatternWithType(patCtx, ast.NewIdent(paramName), matchedType)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Handle guard clause
+	if ctx.GetGuard() != nil {
+		guard, err := t.transformExpression(ctx.GetGuard())
+		if err != nil {
+			return nil, nil, err
+		}
+		cond = &ast.BinaryExpr{
+			X:  cond,
+			Op: token.LAND,
+			Y:  guard,
+		}
+	}
+
+	var body []ast.Stmt
+	var resultType transpiler.Type
+
+	if ctx.GetBodyBlock() != nil {
+		b, err := t.transformBlock(ctx.GetBodyBlock().(*grammar.BlockContext))
+		if err != nil {
+			return nil, nil, err
+		}
+		// Wrap the last expression/return in Some
+		body = t.wrapBlockReturnsInSome(b.List)
+		// Infer type from the original (unwrapped) last statement
+		if len(b.List) > 0 {
+			if ret, ok := b.List[len(b.List)-1].(*ast.ReturnStmt); ok && len(ret.Results) > 0 {
+				resultType = t.inferResultType(ret.Results[0])
+			}
+		}
+	} else if ctx.GetBody() != nil {
+		expr, err := t.transformExpression(ctx.GetBody())
+		if err != nil {
+			return nil, nil, err
+		}
+		// Wrap in Some(expr)
+		someCall := t.wrapInSome(expr)
+		body = []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{someCall}}}
+		resultType = t.inferResultType(expr)
+	}
+
+	bodyBlock := &ast.BlockStmt{List: body}
+	ifStmt := &ast.IfStmt{
+		Cond: cond,
+		Body: bodyBlock,
+	}
+
+	if len(bindings) > 0 {
+		return &ast.BlockStmt{
+			List: append(bindings, ifStmt),
+		}, resultType, nil
+	}
+
+	return ifStmt, resultType, nil
+}
+
+// wrapInSome generates: Some[T]{}.Apply(expr)
+func (t *galaASTTransformer) wrapInSome(expr ast.Expr) ast.Expr {
+	// Infer the type of expr for the type parameter
+	exprType := t.getExprTypeNameManual(expr)
+	if exprType == nil || exprType.IsNil() {
+		exprType, _ = t.inferExprType(expr)
+	}
+
+	var someTypeExpr ast.Expr
+	if exprType != nil && !exprType.IsNil() && exprType.String() != "any" {
+		someTypeExpr = &ast.IndexExpr{
+			X:     t.stdIdent("Some"),
+			Index: t.typeToExpr(exprType),
+		}
+	} else {
+		someTypeExpr = &ast.IndexExpr{
+			X:     t.stdIdent("Some"),
+			Index: ast.NewIdent("any"),
+		}
+	}
+
+	// Generate: Some[T]{}.Apply(expr)
+	return &ast.CallExpr{
+		Fun: &ast.SelectorExpr{
+			X:   &ast.CompositeLit{Type: someTypeExpr},
+			Sel: ast.NewIdent("Apply"),
+		},
+		Args: []ast.Expr{expr},
+	}
+}
+
+// generateNoneReturn generates: return None[T]{}.Apply()
+func (t *galaASTTransformer) generateNoneReturn(innerType transpiler.Type) ast.Stmt {
+	var noneTypeExpr ast.Expr
+	if innerType != nil && !innerType.IsNil() && innerType.String() != "any" {
+		noneTypeExpr = &ast.IndexExpr{
+			X:     t.stdIdent("None"),
+			Index: t.typeToExpr(innerType),
+		}
+	} else {
+		noneTypeExpr = &ast.IndexExpr{
+			X:     t.stdIdent("None"),
+			Index: ast.NewIdent("any"),
+		}
+	}
+
+	// Generate: return None[T]{}.Apply()
+	noneCall := &ast.CallExpr{
+		Fun: &ast.SelectorExpr{
+			X:   &ast.CompositeLit{Type: noneTypeExpr},
+			Sel: ast.NewIdent("Apply"),
+		},
+	}
+
+	return &ast.ReturnStmt{Results: []ast.Expr{noneCall}}
+}
+
+// wrapBlockReturnsInSome wraps the final return/expression in a block with Some
+func (t *galaASTTransformer) wrapBlockReturnsInSome(stmts []ast.Stmt) []ast.Stmt {
+	if len(stmts) == 0 {
+		return stmts
+	}
+
+	result := make([]ast.Stmt, len(stmts))
+	copy(result, stmts)
+
+	// Only wrap the last statement if it's a return
+	last := result[len(result)-1]
+	if ret, ok := last.(*ast.ReturnStmt); ok && len(ret.Results) > 0 {
+		result[len(result)-1] = &ast.ReturnStmt{
+			Results: []ast.Expr{t.wrapInSome(ret.Results[0])},
+		}
+	}
+
+	return result
+}
+
+// isGenericMethodName checks if a method is marked as generic for a given type name
+func (t *galaASTTransformer) isGenericMethodName(typeName, methodName string) bool {
+	if typeName == "" {
+		return false
+	}
+	return t.genericMethods[typeName] != nil && t.genericMethods[typeName][methodName]
+}
+
+// isGenericMethodWithImports checks if a method is generic, searching through all possible package lookups
+func (t *galaASTTransformer) isGenericMethodWithImports(lookupBaseName, recvPkg, methodName string) bool {
+	// First try the simple name
+	if t.isGenericMethodName(lookupBaseName, methodName) {
+		return true
+	}
+	// Try package-qualified name if receiver package is known
+	if recvPkg != "" {
+		if t.isGenericMethodName(recvPkg+"."+lookupBaseName, methodName) {
+			return true
+		}
+	}
+	// Search through dot-imported packages
+	for _, dotPkg := range t.dotImports {
+		if t.isGenericMethodName(dotPkg+"."+lookupBaseName, methodName) {
+			return true
+		}
+	}
+	// Search through all imported packages
+	for alias := range t.imports {
+		actualPkg := alias
+		if actual, ok := t.importAliases[alias]; ok {
+			actualPkg = actual
+		}
+		if t.isGenericMethodName(actualPkg+"."+lookupBaseName, methodName) {
+			return true
+		}
+	}
+	// Fallback: check typeMetas for methods with type parameters
+	// This handles cases where genericMethods map wasn't fully populated
+	if t.isMethodGenericViaTypeMeta(lookupBaseName, methodName) {
+		return true
+	}
+	if recvPkg != "" {
+		if t.isMethodGenericViaTypeMeta(recvPkg+"."+lookupBaseName, methodName) {
+			return true
+		}
+	}
+	for _, dotPkg := range t.dotImports {
+		if t.isMethodGenericViaTypeMeta(dotPkg+"."+lookupBaseName, methodName) {
+			return true
+		}
+	}
+	return false
+}
+
+// isMethodGenericViaTypeMeta checks if a method has type parameters via typeMetas lookup
+func (t *galaASTTransformer) isMethodGenericViaTypeMeta(typeName, methodName string) bool {
+	if typeMeta, ok := t.typeMetas[typeName]; ok {
+		if methodMeta, ok := typeMeta.Methods[methodName]; ok {
+			return len(methodMeta.TypeParams) > 0 || methodMeta.IsGeneric
+		}
+	}
+	return false
 }
