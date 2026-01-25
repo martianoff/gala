@@ -1,0 +1,214 @@
+package main
+
+import (
+    "fmt"
+    im "martianoff/gala/collection_immutable"
+    mu "martianoff/gala/collection_mutable"
+    . "martianoff/gala/std"
+)
+
+// This example demonstrates both immutable and mutable HashMap usage in GALA.
+
+// Person type with Hashable implementation for use as map key
+type Person struct {
+    Name string
+    Age  int
+}
+
+func (p Person) Hash() uint32 = HashCombine(HashString(p.Name), HashInt(int64(p.Age)))
+
+// Helper function for GetOrElseUpdate example
+func computeFive() int {
+    return 5
+}
+
+func main() {
+    fmt.Println("=== GALA HashMap Examples ===\n")
+
+    demonstrateImmutableHashMap()
+    demonstrateMutableHashMap()
+    demonstrateCustomKeyType()
+    demonstrateFunctionalOperations()
+}
+
+func demonstrateImmutableHashMap() {
+    fmt.Println("--- Immutable HashMap ---")
+
+    // Creating an immutable HashMap
+    val m1 = im.EmptyHashMap[string, int]()
+    val m2 = m1.Put("apple", 1)
+    val m3 = m2.Put("banana", 2)
+    val m4 = m3.Put("cherry", 3)
+
+    fmt.Printf("Original map size: %d\n", m1.Size())
+    fmt.Printf("After adding 3 items: %d\n", m4.Size())
+
+    // Immutability demonstration
+    val m5 = m4.Put("apple", 10)
+    fmt.Printf("m4 apple value: %d\n", m4.GetOrElse("apple", 0))
+    fmt.Printf("m5 apple value: %d\n", m5.GetOrElse("apple", 0))
+
+    // Getting values
+    val appleOpt = m4.Get("apple")
+    if appleOpt.IsDefined() {
+        fmt.Printf("Found apple: %d\n", appleOpt.Get())
+    }
+
+    val orangeOpt = m4.Get("orange")
+    if orangeOpt.IsEmpty() {
+        fmt.Println("Orange not found")
+    }
+
+    // Using GetOrElse
+    fmt.Printf("GetOrElse for banana: %d\n", m4.GetOrElse("banana", 0))
+    fmt.Printf("GetOrElse for missing: %d\n", m4.GetOrElse("missing", -1))
+
+    // Removing keys
+    val m6 = m4.Remove("banana")
+    fmt.Printf("After removing banana: %d items\n", m6.Size())
+    fmt.Printf("Contains banana: %v\n", m6.Contains("banana"))
+
+    fmt.Println()
+}
+
+func demonstrateMutableHashMap() {
+    fmt.Println("--- Mutable HashMap ---")
+
+    // Creating a mutable HashMap
+    val m = mu.EmptyHashMap[string, int]()
+    m.Put("one", 1)
+    m.Put("two", 2)
+    m.Put("three", 3)
+
+    fmt.Printf("Size: %d\n", m.Size())
+
+    // Update existing value
+    m.Put("one", 100)
+    fmt.Printf("Updated 'one': %d\n", m.GetOrElse("one", 0))
+
+    // PutIfAbsent
+    var added1 = m.PutIfAbsent("one", 999)
+    var added2 = m.PutIfAbsent("four", 4)
+    fmt.Printf("PutIfAbsent 'one' (existed): %v\n", added1)
+    fmt.Printf("PutIfAbsent 'four' (new): %v\n", added2)
+
+    // GetOrElseUpdate - computes and stores value if not present
+    m.GetOrElseUpdate("five", computeFive)
+    val v2 = m.GetOrElseUpdate("five", computeFive)
+    fmt.Printf("GetOrElseUpdate 'five': %d (same value)\n", v2)
+
+    // Update with function
+    m.Update("one", (v int) => v * 2)
+    fmt.Printf("After Update 'one' (*2): %d\n", m.GetOrElse("one", 0))
+
+    // Remove
+    m.Remove("two")
+    fmt.Printf("After removing 'two': %d items\n", m.Size())
+
+    // Clear
+    m.Clear()
+    fmt.Printf("After Clear: %d items\n", m.Size())
+
+    fmt.Println()
+}
+
+func demonstrateCustomKeyType() {
+    fmt.Println("--- Custom Key Type (Person) ---")
+
+    // Using Person as map key (implements Hashable)
+    val alice = Person(Name = "Alice", Age = 30)
+    val bob = Person(Name = "Bob", Age = 25)
+    val charlie = Person(Name = "Charlie", Age = 35)
+
+    // Immutable map with Person keys
+    val salaries = im.EmptyHashMap[Person, int]()
+    val s1 = salaries.Put(alice, 75000)
+    val s2 = s1.Put(bob, 65000)
+    val s3 = s2.Put(charlie, 85000)
+
+    fmt.Printf("Alice's salary: %d\n", s3.GetOrElse(alice, 0))
+    fmt.Printf("Bob's salary: %d\n", s3.GetOrElse(bob, 0))
+
+    // Same Person (by value) should match
+    val aliceCopy = Person(Name = "Alice", Age = 30)
+    fmt.Printf("Alice copy salary: %d\n", s3.GetOrElse(aliceCopy, 0))
+
+    fmt.Println()
+}
+
+func demonstrateFunctionalOperations() {
+    fmt.Println("--- Functional Operations ---")
+
+    // Create a map with some data
+    val scores = im.EmptyHashMap[string, int]()
+    val s = scores.Put("Alice", 85).Put("Bob", 92).Put("Charlie", 78).Put("Diana", 95)
+
+    // Filter - keep only high scores
+    val highScores = s.Filter((k string, v int) => v >= 90)
+    fmt.Printf("High scores (>=90): ")
+    highScores.ForEachKV((k string, v int) => {
+        fmt.Printf("%s=%d ", k, v)
+        return nil
+    })
+    fmt.Println()
+
+    // MapValues - convert to letter grades
+    val grades = s.MapValues[string]((score int) => score match {
+        case n if n >= 90 => "A"
+        case n if n >= 80 => "B"
+        case n if n >= 70 => "C"
+        case _ => "F"
+    })
+    fmt.Printf("Grades: ")
+    grades.ForEachKV((k string, v string) => {
+        fmt.Printf("%s=%s ", k, v)
+        return nil
+    })
+    fmt.Println()
+
+    // FoldLeftKV - calculate average
+    val total = s.FoldLeftKV[int](0, (acc int, k string, v int) => acc + v)
+    fmt.Printf("Average score: %d\n", total / s.Size())
+
+    // Exists - check if anyone has perfect score
+    fmt.Printf("Anyone with 100: %v\n", s.Exists((k string, v int) => v == 100))
+
+    // ForAll - check if everyone passed
+    fmt.Printf("Everyone passed (>=60): %v\n", s.ForAll((k string, v int) => v >= 60))
+
+    // Find - find first B student
+    val bStudent = s.Find((k string, v int) => v >= 80 && v < 90)
+    if bStudent.IsDefined() {
+        fmt.Printf("First B student: %s\n", bStudent.Get().V1)
+    }
+
+    // Keys and Values
+    fmt.Printf("All students: ")
+    s.ForEachKey((name string) => {
+        fmt.Printf("%s ", name)
+        return nil
+    })
+    fmt.Println()
+
+    // Partition - split by passing grade
+    val partitioned = s.Partition((k string, v int) => v >= 80)
+    fmt.Printf("Passed (>=80): %d students\n", partitioned.V1.Size())
+    fmt.Printf("Need improvement: %d students\n", partitioned.V2.Size())
+
+    // Merge two maps
+    val bonus = im.EmptyHashMap[string, int]().Put("Alice", 5).Put("Bob", 10)
+    val adjusted = s.Merge(bonus, (score int, b int) => score + b)
+    fmt.Printf("After bonus - Alice: %d, Bob: %d\n",
+        adjusted.GetOrElse("Alice", 0),
+        adjusted.GetOrElse("Bob", 0))
+
+    // Convert to Go map
+    val goMap = s.ToGoMap()
+    fmt.Printf("Go map type: map[string]int with %d entries\n", len(goMap))
+
+    // Create HashMap using HashMapOf with tuple syntax
+    val fromTuples = im.HashMapOf[string, int](("X", 100), ("Y", 200))
+    fmt.Printf("HashMap from tuples: %s\n", fromTuples.String())
+
+    fmt.Println()
+}

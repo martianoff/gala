@@ -292,3 +292,13 @@ gala_test(
     src = "expr_body_multiline_lambda.gala",
     expected = "expr_body_multiline_lambda.out",
 )
+
+gala_test(
+    name = "hashmap",
+    src = "hashmap.gala",
+    expected = "hashmap.out",
+    deps = [
+        "//collection_immutable",
+        "//collection_mutable",
+    ],
+)

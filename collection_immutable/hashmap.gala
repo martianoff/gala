@@ -1,0 +1,732 @@
+package collection_immutable
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+)
+
+// HashMap is an immutable map with effectively constant time operations.
+// It uses a Hash Array Mapped Trie (HAMT) structure similar to Scala's HashMap.
+//
+// Keys must be either:
+// - Primitive types (int, string, bool, etc.) - hashed automatically
+// - Types implementing the Hashable interface
+//
+// Performance characteristics (eC = effectively constant, log32(n)):
+// - Put:        O(eC)
+// - Get:        O(eC)
+// - Remove:     O(eC)
+// - Contains:   O(eC)
+// - Size:       O(1) - cached
+
+// hashMapNode represents a node in the HAMT structure.
+type hashMapNode[K comparable, V any] struct {
+    bitmap   uint32
+    keys     []K
+    values   []V
+    children []*hashMapNode[K, V]
+    isLeaf   bool
+}
+
+// HashMap represents an immutable map.
+type HashMap[K comparable, V any] struct {
+    root   *hashMapNode[K, V]
+    size   int
+}
+
+// EmptyHashMap returns an empty HashMap.
+func EmptyHashMap[K comparable, V any]() HashMap[K, V] {
+    var nilRoot *hashMapNode[K, V] = nil
+    return HashMap[K, V](root = nilRoot, size = 0)
+}
+
+// IsEmpty returns true if the map is empty.
+func (m HashMap[K, V]) IsEmpty() bool = m.size == 0
+
+// NonEmpty returns true if the map is not empty.
+func (m HashMap[K, V]) NonEmpty() bool = m.size > 0
+
+// Size returns the number of entries. O(1) - cached.
+func (m HashMap[K, V]) Size() int = m.size
+
+// Length is an alias for Size.
+func (m HashMap[K, V]) Length() int = m.size
+
+// hashMapHash computes a hash code for a key.
+func hashMapHash[K comparable](key K) uint32 {
+    val v any = key
+
+    val result = v match {
+        case i: int => HashInt(int64(i))
+        case s: string => HashString(s)
+        case i: int64 => HashInt(i)
+        case i: int32 => HashInt(int64(i))
+        case u: uint => HashUint(uint64(u))
+        case u: uint64 => HashUint(u)
+        case u: uint32 => HashUint(uint64(u))
+        case b: bool => HashBool(b)
+        case i: int8 => HashInt(int64(i))
+        case i: int16 => HashInt(int64(i))
+        case u: uint8 => HashUint(uint64(u))
+        case u: uint16 => HashUint(uint64(u))
+        case f: float64 => HashUint(uint64(f))
+        case f: float32 => HashUint(uint64(f))
+        case h: Hashable => h.Hash()
+        case _ => hashMapPanicNotHashable(v)
+    }
+    return result
+}
+
+// hashMapPanicNotHashable panics with a helpful error message.
+func hashMapPanicNotHashable(v any) uint32 {
+    panic(fmt.Sprintf("HashMap: type %T must implement std.Hashable interface", v))
+}
+
+// hashMapBitpos returns the bit position for a hash at a given level.
+func hashMapBitpos(hashCode uint32, level int) uint32 {
+    var shift = uint(level * 5)
+    var idx = (hashCode >> shift) & 31
+    return uint32(1) << idx
+}
+
+// hashMapIndex returns the array index for a bit position in a bitmap.
+func hashMapIndex(bitmap uint32, bit uint32) int {
+    return hashMapPopcount(bitmap & (bit - 1))
+}
+
+// hashMapPopcount returns the number of set bits in a uint32.
+func hashMapPopcount(x uint32) int {
+    var count = 0
+    for x != 0 {
+        count++
+        x = x & (x - 1)
+    }
+    return count
+}
+
+// Contains checks if the map contains the given key. O(eC).
+func (m HashMap[K, V]) Contains(key K) bool {
+    if m.root == nil {
+        return false
+    }
+    val hashCode = hashMapHash[K](key)
+    return containsKeyInNode[K, V](m.root, key, hashCode, 0)
+}
+
+// containsKeyInNode searches for a key in a node.
+func containsKeyInNode[K comparable, V any](node *hashMapNode[K, V], key K, hashCode uint32, level int) bool {
+    if node.isLeaf {
+        for i := 0; i < len(node.keys); i++ {
+            if node.keys[i] == key {
+                return true
+            }
+        }
+        return false
+    }
+
+    val bit = hashMapBitpos(hashCode, level)
+    if (node.bitmap & bit) == 0 {
+        return false
+    }
+
+    val idx = hashMapIndex(node.bitmap, bit)
+    return containsKeyInNode[K, V](node.children[idx], key, hashCode, level + 1)
+}
+
+// Get returns the value for a key wrapped in Option. O(eC).
+func (m HashMap[K, V]) Get(key K) Option[V] {
+    if m.root == nil {
+        return None[V]()
+    }
+    val hashCode = hashMapHash[K](key)
+    return getFromNodeMap[K, V](m.root, key, hashCode, 0)
+}
+
+// getFromNodeMap searches for a key in a node and returns its value.
+func getFromNodeMap[K comparable, V any](node *hashMapNode[K, V], key K, hashCode uint32, level int) Option[V] {
+    if node.isLeaf {
+        for i := 0; i < len(node.keys); i++ {
+            if node.keys[i] == key {
+                return Some[V](node.values[i])
+            }
+        }
+        return None[V]()
+    }
+
+    val bit = hashMapBitpos(hashCode, level)
+    if (node.bitmap & bit) == 0 {
+        return None[V]()
+    }
+
+    val idx = hashMapIndex(node.bitmap, bit)
+    return getFromNodeMap[K, V](node.children[idx], key, hashCode, level + 1)
+}
+
+// GetOrElse returns the value for a key, or the default if not found. O(eC).
+func (m HashMap[K, V]) GetOrElse(key K, defaultValue V) V {
+    return m.Get(key).GetOrElse(defaultValue)
+}
+
+// Apply returns the value for a key. Panics if key not found. O(eC).
+func (m HashMap[K, V]) Apply(key K) V {
+    val opt = m.Get(key)
+    if opt.IsEmpty() {
+        panic(fmt.Sprintf("HashMap: key not found: %v", key))
+    }
+    return opt.Get()
+}
+
+// Put adds or updates a key-value pair. Returns a new map. O(eC).
+func (m HashMap[K, V]) Put(key K, value V) HashMap[K, V] {
+    val hashCode = hashMapHash[K](key)
+
+    // Check if key exists (to determine if size changes)
+    var sizeChange = 1
+    if m.root != nil && containsKeyInNode[K, V](m.root, key, hashCode, 0) {
+        sizeChange = 0
+    }
+
+    var newRoot *hashMapNode[K, V]
+    if m.root == nil {
+        var keys []K
+        var values []V
+        keys = append(keys, key)
+        values = append(values, value)
+        newRoot = &hashMapNode[K, V](keys = keys, values = values, isLeaf = true)
+    } else {
+        newRoot = putToNode[K, V](m.root, key, value, hashCode, 0)
+    }
+
+    return HashMap[K, V](root = newRoot, size = m.size + sizeChange)
+}
+
+// putToNode adds an entry to a node, returning a new node.
+func putToNode[K comparable, V any](node *hashMapNode[K, V], key K, value V, hashCode uint32, level int) *hashMapNode[K, V] {
+    if node.isLeaf {
+        // Check if key already exists - update value
+        for i := 0; i < len(node.keys); i++ {
+            if node.keys[i] == key {
+                var newKeys []K
+                var newValues []V
+                for j := 0; j < len(node.keys); j++ {
+                    newKeys = append(newKeys, node.keys[j])
+                    if j == i {
+                        newValues = append(newValues, value)
+                    } else {
+                        newValues = append(newValues, node.values[j])
+                    }
+                }
+                return &hashMapNode[K, V](keys = newKeys, values = newValues, isLeaf = true)
+            }
+        }
+
+        // Add new entry or expand to internal node
+        if level >= 6 {
+            // Max depth reached, just add to entries (hash collision)
+            var newKeys []K
+            var newValues []V
+            for i := 0; i < len(node.keys); i++ {
+                newKeys = append(newKeys, node.keys[i])
+                newValues = append(newValues, node.values[i])
+            }
+            newKeys = append(newKeys, key)
+            newValues = append(newValues, value)
+            return &hashMapNode[K, V](keys = newKeys, values = newValues, isLeaf = true)
+        }
+
+        // Create a new internal node and distribute elements
+        var newNode = &hashMapNode[K, V](bitmap = uint32(0), isLeaf = false)
+
+        // Add existing entries
+        for i := 0; i < len(node.keys); i++ {
+            val existingHash = hashMapHash[K](node.keys[i])
+            newNode = insertIntoInternalNodeMap[K, V](newNode, node.keys[i], node.values[i], existingHash, level)
+        }
+
+        // Add new entry
+        return insertIntoInternalNodeMap[K, V](newNode, key, value, hashCode, level)
+    }
+
+    // Internal node
+    val bit = hashMapBitpos(hashCode, level)
+    val idx = hashMapIndex(node.bitmap, bit)
+
+    if (node.bitmap & bit) == 0 {
+        // No child at this position, create new leaf
+        var newKeys []K
+        var newValues []V
+        newKeys = append(newKeys, key)
+        newValues = append(newValues, value)
+        val newLeaf = &hashMapNode[K, V](keys = newKeys, values = newValues, isLeaf = true)
+
+        // Copy children and insert new leaf
+        var newChildren []*hashMapNode[K, V]
+        for i := 0; i < idx; i++ {
+            newChildren = append(newChildren, node.children[i])
+        }
+        newChildren = append(newChildren, newLeaf)
+        for i := idx; i < len(node.children); i++ {
+            newChildren = append(newChildren, node.children[i])
+        }
+
+        return &hashMapNode[K, V](bitmap = node.bitmap | bit, children = newChildren, isLeaf = false)
+    }
+
+    // Child exists, recurse
+    val newChild = putToNode[K, V](node.children[idx], key, value, hashCode, level + 1)
+
+    // Copy children with updated child
+    var newChildren []*hashMapNode[K, V]
+    for i := 0; i < len(node.children); i++ {
+        if i == idx {
+            newChildren = append(newChildren, newChild)
+        } else {
+            newChildren = append(newChildren, node.children[i])
+        }
+    }
+
+    return &hashMapNode[K, V](bitmap = node.bitmap, children = newChildren, isLeaf = false)
+}
+
+// insertIntoInternalNodeMap inserts an entry into an internal node.
+func insertIntoInternalNodeMap[K comparable, V any](node *hashMapNode[K, V], key K, value V, hashCode uint32, level int) *hashMapNode[K, V] {
+    val bit = hashMapBitpos(hashCode, level)
+    val idx = hashMapIndex(node.bitmap, bit)
+
+    if (node.bitmap & bit) == 0 {
+        // No child at this position, create new leaf
+        var newKeys []K
+        var newValues []V
+        newKeys = append(newKeys, key)
+        newValues = append(newValues, value)
+        val newLeaf = &hashMapNode[K, V](keys = newKeys, values = newValues, isLeaf = true)
+
+        // Copy children and insert new leaf
+        var newChildren []*hashMapNode[K, V]
+        for i := 0; i < idx; i++ {
+            newChildren = append(newChildren, node.children[i])
+        }
+        newChildren = append(newChildren, newLeaf)
+        for i := idx; i < len(node.children); i++ {
+            newChildren = append(newChildren, node.children[i])
+        }
+
+        return &hashMapNode[K, V](bitmap = node.bitmap | bit, children = newChildren, isLeaf = false)
+    }
+
+    // Child exists, recurse
+    val newChild = putToNode[K, V](node.children[idx], key, value, hashCode, level + 1)
+
+    // Copy children with updated child
+    var newChildren []*hashMapNode[K, V]
+    for i := 0; i < len(node.children); i++ {
+        if i == idx {
+            newChildren = append(newChildren, newChild)
+        } else {
+            newChildren = append(newChildren, node.children[i])
+        }
+    }
+
+    return &hashMapNode[K, V](bitmap = node.bitmap, children = newChildren, isLeaf = false)
+}
+
+// Remove removes a key from the map. Returns a new map. O(eC).
+func (m HashMap[K, V]) Remove(key K) HashMap[K, V] {
+    val hashCode = hashMapHash[K](key)
+
+    // Check if contains
+    if m.root == nil || !containsKeyInNode[K, V](m.root, key, hashCode, 0) {
+        return m
+    }
+
+    if m.size == 1 {
+        return EmptyHashMap[K, V]()
+    }
+
+    val newRoot = removeFromNodeMap[K, V](m.root, key, hashCode, 0)
+    return HashMap[K, V](root = newRoot, size = m.size - 1)
+}
+
+// removeFromNodeMap removes a key from a node, returning a new node.
+func removeFromNodeMap[K comparable, V any](node *hashMapNode[K, V], key K, hashCode uint32, level int) *hashMapNode[K, V] {
+    if node.isLeaf {
+        var newKeys []K
+        var newValues []V
+        for i := 0; i < len(node.keys); i++ {
+            if node.keys[i] != key {
+                newKeys = append(newKeys, node.keys[i])
+                newValues = append(newValues, node.values[i])
+            }
+        }
+        if len(newKeys) == 0 {
+            return nil
+        }
+        return &hashMapNode[K, V](keys = newKeys, values = newValues, isLeaf = true)
+    }
+
+    val bit = hashMapBitpos(hashCode, level)
+    val idx = hashMapIndex(node.bitmap, bit)
+
+    if (node.bitmap & bit) == 0 {
+        return node
+    }
+
+    val newChild = removeFromNodeMap[K, V](node.children[idx], key, hashCode, level + 1)
+
+    if newChild == nil {
+        // Child is now empty, remove it
+        if hashMapPopcount(node.bitmap) == 1 {
+            return nil
+        }
+
+        var newChildren []*hashMapNode[K, V]
+        for i := 0; i < len(node.children); i++ {
+            if i != idx {
+                newChildren = append(newChildren, node.children[i])
+            }
+        }
+        return &hashMapNode[K, V](bitmap = node.bitmap & (^bit), children = newChildren, isLeaf = false)
+    }
+
+    // Copy children with updated child
+    var newChildren []*hashMapNode[K, V]
+    for i := 0; i < len(node.children); i++ {
+        if i == idx {
+            newChildren = append(newChildren, newChild)
+        } else {
+            newChildren = append(newChildren, node.children[i])
+        }
+    }
+
+    return &hashMapNode[K, V](bitmap = node.bitmap, children = newChildren, isLeaf = false)
+}
+
+// Updated is an alias for Put.
+func (m HashMap[K, V]) Updated(key K, value V) HashMap[K, V] = m.Put(key, value)
+
+// === Iteration ===
+
+// ForEachKV applies a function to each key-value pair for side effects.
+func (m HashMap[K, V]) ForEachKV(f func(K, V) any) {
+    if m.root != nil {
+        forEachInNodeMapKV[K, V](m.root, f)
+    }
+}
+
+// forEachInNodeMapKV traverses a node and applies f to each entry.
+func forEachInNodeMapKV[K comparable, V any](node *hashMapNode[K, V], f func(K, V) any) {
+    if node.isLeaf {
+        for i := 0; i < len(node.keys); i++ {
+            f(node.keys[i], node.values[i])
+        }
+        return
+    }
+
+    for i := 0; i < len(node.children); i++ {
+        forEachInNodeMapKV[K, V](node.children[i], f)
+    }
+}
+
+// ForEachKey applies a function to each key for side effects.
+func (m HashMap[K, V]) ForEachKey(f func(K) any) {
+    m.ForEachKV((k K, v V) => {
+        f(k)
+        return nil
+    })
+}
+
+// ForEachValue applies a function to each value for side effects.
+func (m HashMap[K, V]) ForEachValue(f func(V) any) {
+    m.ForEachKV((k K, v V) => {
+        f(v)
+        return nil
+    })
+}
+
+// === Transformation ===
+
+// MapValues applies a function to each value and returns a new map.
+func (m HashMap[K, V]) MapValues[U any](f func(V) U) HashMap[K, U] {
+    return m.FoldLeftKV[HashMap[K, U]](EmptyHashMap[K, U](), (acc HashMap[K, U], k K, v V) => acc.Put(k, f(v)))
+}
+
+// Filter returns a new map with only entries that satisfy the predicate.
+func (m HashMap[K, V]) Filter(p func(K, V) bool) HashMap[K, V] {
+    return m.FoldLeftKV[HashMap[K, V]](EmptyHashMap[K, V](), (acc HashMap[K, V], k K, v V) => {
+        if p(k, v) {
+            return acc.Put(k, v)
+        }
+        return acc
+    })
+}
+
+// FilterKeys returns a new map with only entries whose keys satisfy the predicate.
+func (m HashMap[K, V]) FilterKeys(p func(K) bool) HashMap[K, V] {
+    return m.FoldLeftKV[HashMap[K, V]](EmptyHashMap[K, V](), (acc HashMap[K, V], k K, v V) => {
+        if p(k) {
+            return acc.Put(k, v)
+        }
+        return acc
+    })
+}
+
+// FilterValues returns a new map with only entries whose values satisfy the predicate.
+func (m HashMap[K, V]) FilterValues(p func(V) bool) HashMap[K, V] {
+    return m.FoldLeftKV[HashMap[K, V]](EmptyHashMap[K, V](), (acc HashMap[K, V], k K, v V) => {
+        if p(v) {
+            return acc.Put(k, v)
+        }
+        return acc
+    })
+}
+
+// FilterNot returns a new map with entries that do not satisfy the predicate.
+func (m HashMap[K, V]) FilterNot(p func(K, V) bool) HashMap[K, V] {
+    return m.FoldLeftKV[HashMap[K, V]](EmptyHashMap[K, V](), (acc HashMap[K, V], k K, v V) => {
+        if !p(k, v) {
+            return acc.Put(k, v)
+        }
+        return acc
+    })
+}
+
+// === Reduction ===
+
+// FoldLeftKV applies a binary operator from left to right with key-value pairs.
+func (m HashMap[K, V]) FoldLeftKV[U any](initial U, f func(U, K, V) U) U {
+    var acc = initial
+    m.ForEachKV((k K, v V) => {
+        acc = f(acc, k, v)
+        return nil
+    })
+    return acc
+}
+
+// === Predicate Operations ===
+
+// Exists returns true if any entry satisfies the predicate.
+// Uses early exit for performance.
+func (m HashMap[K, V]) Exists(p func(K, V) bool) bool {
+    if m.root == nil {
+        return false
+    }
+    return existsInNodeMap[K, V](m.root, p)
+}
+
+// existsInNodeMap searches for an entry satisfying p with early exit.
+func existsInNodeMap[K comparable, V any](node *hashMapNode[K, V], p func(K, V) bool) bool {
+    if node.isLeaf {
+        for i := 0; i < len(node.keys); i++ {
+            if p(node.keys[i], node.values[i]) {
+                return true
+            }
+        }
+        return false
+    }
+    for i := 0; i < len(node.children); i++ {
+        if existsInNodeMap[K, V](node.children[i], p) {
+            return true
+        }
+    }
+    return false
+}
+
+// ForAll returns true if all entries satisfy the predicate.
+// Uses early exit for performance.
+func (m HashMap[K, V]) ForAll(p func(K, V) bool) bool {
+    if m.root == nil {
+        return true
+    }
+    return forAllInNodeMap[K, V](m.root, p)
+}
+
+// forAllInNodeMap checks if all entries satisfy p with early exit.
+func forAllInNodeMap[K comparable, V any](node *hashMapNode[K, V], p func(K, V) bool) bool {
+    if node.isLeaf {
+        for i := 0; i < len(node.keys); i++ {
+            if !p(node.keys[i], node.values[i]) {
+                return false
+            }
+        }
+        return true
+    }
+    for i := 0; i < len(node.children); i++ {
+        if !forAllInNodeMap[K, V](node.children[i], p) {
+            return false
+        }
+    }
+    return true
+}
+
+// Count returns the number of entries satisfying the predicate.
+func (m HashMap[K, V]) Count(p func(K, V) bool) int {
+    return m.FoldLeftKV[int](0, (acc int, k K, v V) => {
+        if p(k, v) {
+            return acc + 1
+        }
+        return acc
+    })
+}
+
+// === Key/Value Access ===
+
+// Keys returns a HashSet of all keys.
+func (m HashMap[K, V]) Keys() HashSet[K] {
+    return m.FoldLeftKV[HashSet[K]](EmptyHashSet[K](), (acc HashSet[K], k K, v V) => acc.Add(k))
+}
+
+// Values returns a List of all values.
+func (m HashMap[K, V]) Values() List[V] {
+    return m.FoldLeftKV[List[V]](emptyList[V](), (acc List[V], k K, v V) => consList[V](v, acc))
+}
+
+// KeyArray returns an Array of all keys.
+func (m HashMap[K, V]) KeyArray() Array[K] {
+    return m.FoldLeftKV[Array[K]](EmptyArray[K](), (acc Array[K], k K, v V) => acc.Append(k))
+}
+
+// ValueArray returns an Array of all values.
+func (m HashMap[K, V]) ValueArray() Array[V] {
+    return m.FoldLeftKV[Array[V]](EmptyArray[V](), (acc Array[V], k K, v V) => acc.Append(v))
+}
+
+// === Merge Operations ===
+
+// PutAll adds all entries from another map. Returns a new map.
+func (m HashMap[K, V]) PutAll(other HashMap[K, V]) HashMap[K, V] {
+    return other.FoldLeftKV[HashMap[K, V]](m, (acc HashMap[K, V], k K, v V) => acc.Put(k, v))
+}
+
+// Merge merges another map with a combining function for duplicate keys.
+func (m HashMap[K, V]) Merge(other HashMap[K, V], f func(V, V) V) HashMap[K, V] {
+    return other.FoldLeftKV[HashMap[K, V]](m, (acc HashMap[K, V], k K, v V) => {
+        val existing = acc.Get(k)
+        if existing.IsDefined() {
+            return acc.Put(k, f(existing.Get(), v))
+        }
+        return acc.Put(k, v)
+    })
+}
+
+// === Conversion ===
+
+// ToGoMap converts the map to a Go map.
+func (m HashMap[K, V]) ToGoMap() map[K]V {
+    var result map[K]V
+    m.ForEachKV((k K, v V) => {
+        if result == nil {
+            result = map[K]V{}
+        }
+        result[k] = v
+        return nil
+    })
+    if result == nil {
+        result = map[K]V{}
+    }
+    return result
+}
+
+// ToList converts the map to a List of tuples.
+func (m HashMap[K, V]) ToList() List[Tuple[K, V]] {
+    return m.FoldLeftKV[List[Tuple[K, V]]](emptyList[Tuple[K, V]](), (acc List[Tuple[K, V]], k K, v V) => consList[Tuple[K, V]](Tuple[K, V](V1 = k, V2 = v), acc))
+}
+
+// String returns a string representation of the map.
+func (m HashMap[K, V]) String() string {
+    if m.size == 0 {
+        return "HashMap()"
+    }
+    var result = "HashMap("
+    var first = true
+    m.ForEachKV((k K, v V) => {
+        if !first {
+            result = result + ", "
+        }
+        result = result + fmt.Sprintf("%v -> %v", k, v)
+        first = false
+        return nil
+    })
+    return result + ")"
+}
+
+// KeySet returns a HashSet of all keys.
+func (m HashMap[K, V]) KeySet() HashSet[K] = m.Keys()
+
+// === Additional Operations ===
+
+// Find returns the first entry satisfying the predicate.
+func (m HashMap[K, V]) Find(p func(K, V) bool) Option[Tuple[K, V]] {
+    return m.FoldLeftKV[Option[Tuple[K, V]]](None[Tuple[K, V]](), (acc Option[Tuple[K, V]], k K, v V) => {
+        if acc.IsEmpty() && p(k, v) {
+            return Some[Tuple[K, V]](Tuple[K, V](V1 = k, V2 = v))
+        }
+        return acc
+    })
+}
+
+// Head returns the first entry. Panics if empty.
+func (m HashMap[K, V]) Head() Tuple[K, V] {
+    val opt = m.HeadOption()
+    if opt.IsEmpty() {
+        panic("HashMap: head of empty map")
+    }
+    return opt.Get()
+}
+
+// HeadOption returns the first entry as Option.
+func (m HashMap[K, V]) HeadOption() Option[Tuple[K, V]] {
+    if m.IsEmpty() {
+        return None[Tuple[K, V]]()
+    }
+    return m.FoldLeftKV[Option[Tuple[K, V]]](None[Tuple[K, V]](), (acc Option[Tuple[K, V]], k K, v V) => {
+        if acc.IsEmpty() {
+            return Some[Tuple[K, V]](Tuple[K, V](V1 = k, V2 = v))
+        }
+        return acc
+    })
+}
+
+// ToArray returns an immutable Array of key-value tuples.
+func (m HashMap[K, V]) ToArray() Array[Tuple[K, V]] {
+    return m.FoldLeftKV[Array[Tuple[K, V]]](EmptyArray[Tuple[K, V]](), (acc Array[Tuple[K, V]], k K, v V) => acc.Append(Tuple[K, V](V1 = k, V2 = v)))
+}
+
+// Partition partitions the map into two maps based on predicate.
+func (m HashMap[K, V]) Partition(p func(K, V) bool) Tuple[HashMap[K, V], HashMap[K, V]] {
+    val initial = Tuple[HashMap[K, V], HashMap[K, V]](V1 = EmptyHashMap[K, V](), V2 = EmptyHashMap[K, V]())
+    return m.FoldLeftKV[Tuple[HashMap[K, V], HashMap[K, V]]](initial, (acc Tuple[HashMap[K, V], HashMap[K, V]], k K, v V) => {
+        if p(k, v) {
+            return Tuple[HashMap[K, V], HashMap[K, V]](V1 = acc.V1.Put(k, v), V2 = acc.V2)
+        }
+        return Tuple[HashMap[K, V], HashMap[K, V]](V1 = acc.V1, V2 = acc.V2.Put(k, v))
+    })
+}
+
+// === Factory Functions ===
+
+// HashMapOf creates a HashMap from key-value tuples.
+func HashMapOf[K comparable, V any](entries ...Tuple[K, V]) HashMap[K, V] {
+    var result = EmptyHashMap[K, V]()
+    for i := 0; i < len(entries); i++ {
+        result = result.Put(entries[i].V1, entries[i].V2)
+    }
+    return result
+}
+
+// HashMapFromSlice creates a HashMap from a slice of tuples.
+func HashMapFromSlice[K comparable, V any](entries []Tuple[K, V]) HashMap[K, V] {
+    var result = EmptyHashMap[K, V]()
+    for i := 0; i < len(entries); i++ {
+        result = result.Put(entries[i].V1, entries[i].V2)
+    }
+    return result
+}
+
+// HashMapFromGoMap creates a HashMap from a Go map.
+func HashMapFromGoMap[K comparable, V any](m map[K]V) HashMap[K, V] {
+    var result = EmptyHashMap[K, V]()
+    for k, v := range m {
+        result = result.Put(k, v)
+    }
+    return result
+}

@@ -1,0 +1,640 @@
+package collection_mutable
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+)
+
+// HashMap is a mutable map with effectively constant time operations.
+// It uses hash buckets for O(1) average operations.
+//
+// Keys must be either:
+// - Primitive types (int, string, bool, etc.) - hashed automatically
+// - Types implementing the std.Hashable interface
+//
+// Performance characteristics:
+// - Put:      O(1) amortized
+// - Get:      O(1) average
+// - Remove:   O(1) amortized
+// - Contains: O(1) average
+// - Size:     O(1)
+// - Clear:    O(1)
+
+// Initial number of buckets
+val hashMapInitialBuckets int = 16
+// Load factor threshold for resizing
+val hashMapLoadFactor float64 = 0.75
+
+// hashMapEntry represents an entry in a bucket.
+type hashMapEntry[K comparable, V any] struct {
+    key      K
+    var value    V
+    hashCode uint32
+    var next *hashMapEntry[K, V]
+}
+
+// HashMap represents a mutable hash-based map.
+type HashMap[K comparable, V any] struct {
+    var buckets    []*hashMapEntry[K, V]
+    var size       int
+    var bucketMask uint32
+}
+
+// EmptyHashMap returns a new empty HashMap.
+func EmptyHashMap[K comparable, V any]() *HashMap[K, V] {
+    var buckets = SliceWithSize[*hashMapEntry[K, V]](hashMapInitialBuckets)
+    return &HashMap[K, V](buckets = buckets, size = 0, bucketMask = uint32(hashMapInitialBuckets - 1))
+}
+
+// hashMapHash computes a hash code for a key.
+func hashMapHash[K comparable](key K) uint32 {
+    val v any = key
+
+    val result = v match {
+        case i: int => HashInt(int64(i))
+        case s: string => HashString(s)
+        case i: int64 => HashInt(i)
+        case i: int32 => HashInt(int64(i))
+        case u: uint => HashUint(uint64(u))
+        case u: uint64 => HashUint(u)
+        case u: uint32 => HashUint(uint64(u))
+        case b: bool => HashBool(b)
+        case i: int8 => HashInt(int64(i))
+        case i: int16 => HashInt(int64(i))
+        case u: uint8 => HashUint(uint64(u))
+        case u: uint16 => HashUint(uint64(u))
+        case f: float64 => HashUint(uint64(f))
+        case f: float32 => HashUint(uint64(f))
+        case h: Hashable => h.Hash()
+        case _ => hashMapPanicNotHashable(v)
+    }
+    return result
+}
+
+// hashMapPanicNotHashable panics with a helpful error message.
+func hashMapPanicNotHashable(v any) uint32 {
+    panic(fmt.Sprintf("HashMap: type %T must implement std.Hashable interface", v))
+}
+
+// === Basic Operations ===
+
+// IsEmpty returns true if the map is empty.
+func (m *HashMap[K, V]) IsEmpty() bool = m.size == 0
+
+// NonEmpty returns true if the map is not empty.
+func (m *HashMap[K, V]) NonEmpty() bool = m.size > 0
+
+// Size returns the number of entries. O(1).
+func (m *HashMap[K, V]) Size() int = m.size
+
+// Length is an alias for Size.
+func (m *HashMap[K, V]) Length() int = m.size
+
+// === Mutating Operations ===
+
+// Put adds or updates a key-value pair. O(1) amortized.
+// Returns true if this is a new key, false if updating existing.
+func (m *HashMap[K, V]) Put(key K, value V) bool {
+    val hashCode = hashMapHash[K](key)
+    val idx = int(hashCode & m.bucketMask)
+
+    // Check if key already exists
+    var entry = m.buckets[idx]
+    for entry != nil {
+        if entry.hashCode == hashCode && entry.key == key {
+            entry.value = value
+            return false
+        }
+        entry = entry.next
+    }
+
+    // Add new entry at head of bucket
+    var newEntry = &hashMapEntry[K, V](key = key, value = value, hashCode = hashCode, next = m.buckets[idx])
+    m.buckets[idx] = newEntry
+    m.size++
+
+    // Check if resize needed
+    if float64(m.size) > float64(len(m.buckets)) * hashMapLoadFactor {
+        m.resize()
+    }
+
+    return true
+}
+
+// resize doubles the bucket array and rehashes all entries.
+func (m *HashMap[K, V]) resize() {
+    var newSize = len(m.buckets) * 2
+    var newBuckets = SliceWithSize[*hashMapEntry[K, V]](newSize)
+    var newMask = uint32(newSize - 1)
+
+    // Rehash all entries
+    for i := 0; i < len(m.buckets); i++ {
+        var entry = m.buckets[i]
+        for entry != nil {
+            var nextEntry = entry.next
+            val newIdx = int(entry.hashCode & newMask)
+            entry.next = newBuckets[newIdx]
+            newBuckets[newIdx] = entry
+            entry = nextEntry
+        }
+    }
+
+    m.buckets = newBuckets
+    m.bucketMask = newMask
+}
+
+// PutIfAbsent adds a key-value pair only if key is not present.
+// Returns true if the entry was added.
+func (m *HashMap[K, V]) PutIfAbsent(key K, value V) bool {
+    if m.Contains(key) {
+        return false
+    }
+    m.Put(key, value)
+    return true
+}
+
+// GetOrElseUpdate returns the value for a key, or computes and stores it if absent.
+func (m *HashMap[K, V]) GetOrElseUpdate(key K, f func() V) V {
+    val existing = m.Get(key)
+    if existing.IsDefined() {
+        return existing.Get()
+    }
+    val value = f()
+    m.Put(key, value)
+    return value
+}
+
+// Update updates the value for a key using a function.
+// Returns true if the key existed and was updated.
+func (m *HashMap[K, V]) Update(key K, f func(V) V) bool {
+    val hashCode = hashMapHash[K](key)
+    val idx = int(hashCode & m.bucketMask)
+
+    var entry = m.buckets[idx]
+    for entry != nil {
+        if entry.hashCode == hashCode && entry.key == key {
+            entry.value = f(entry.value)
+            return true
+        }
+        entry = entry.next
+    }
+    return false
+}
+
+// Remove removes a key from the map. O(1) amortized.
+// Returns true if the key was removed (was present).
+func (m *HashMap[K, V]) Remove(key K) bool {
+    val hashCode = hashMapHash[K](key)
+    val idx = int(hashCode & m.bucketMask)
+
+    var prev *hashMapEntry[K, V] = nil
+    var entry = m.buckets[idx]
+    for entry != nil {
+        if entry.hashCode == hashCode && entry.key == key {
+            if prev == nil {
+                m.buckets[idx] = entry.next
+            } else {
+                prev.next = entry.next
+            }
+            m.size--
+            return true
+        }
+        prev = entry
+        entry = entry.next
+    }
+    return false
+}
+
+// RemoveAllKeys removes all keys from an Array.
+func (m *HashMap[K, V]) RemoveAllKeys(keys *Array[K]) {
+    keys.ForEach((k K) => {
+        m.Remove(k)
+        return nil
+    })
+}
+
+// Clear removes all entries. O(n) to clear buckets.
+func (m *HashMap[K, V]) Clear() {
+    m.buckets = SliceWithSize[*hashMapEntry[K, V]](hashMapInitialBuckets)
+    m.size = 0
+    m.bucketMask = uint32(hashMapInitialBuckets - 1)
+}
+
+// === Query Operations ===
+
+// Contains checks if the map contains the given key. O(1) average.
+func (m *HashMap[K, V]) Contains(key K) bool {
+    val hashCode = hashMapHash[K](key)
+    val idx = int(hashCode & m.bucketMask)
+
+    var entry = m.buckets[idx]
+    for entry != nil {
+        if entry.hashCode == hashCode && entry.key == key {
+            return true
+        }
+        entry = entry.next
+    }
+    return false
+}
+
+// Get returns the value for a key wrapped in Option. O(1) average.
+func (m *HashMap[K, V]) Get(key K) Option[V] {
+    val hashCode = hashMapHash[K](key)
+    val idx = int(hashCode & m.bucketMask)
+
+    var entry = m.buckets[idx]
+    for entry != nil {
+        if entry.hashCode == hashCode && entry.key == key {
+            return Some[V](entry.value)
+        }
+        entry = entry.next
+    }
+    return None[V]()
+}
+
+// GetOrElse returns the value for a key, or the default if not found.
+func (m *HashMap[K, V]) GetOrElse(key K, defaultValue V) V {
+    return m.Get(key).GetOrElse(defaultValue)
+}
+
+// Apply returns the value for a key. Panics if key not found.
+func (m *HashMap[K, V]) Apply(key K) V {
+    val opt = m.Get(key)
+    if opt.IsEmpty() {
+        panic(fmt.Sprintf("HashMap: key not found: %v", key))
+    }
+    return opt.Get()
+}
+
+// ContainsAllKeys returns true if the map contains all keys from an Array.
+func (m *HashMap[K, V]) ContainsAllKeys(keys *Array[K]) bool {
+    var result = true
+    keys.ForEach((k K) => {
+        if !m.Contains(k) {
+            result = false
+        }
+        return nil
+    })
+    return result
+}
+
+// === Iteration ===
+
+// ForEachKV applies a function to each key-value pair for side effects.
+func (m *HashMap[K, V]) ForEachKV(f func(K, V) any) {
+    for i := 0; i < len(m.buckets); i++ {
+        var entry = m.buckets[i]
+        for entry != nil {
+            f(entry.key, entry.value)
+            entry = entry.next
+        }
+    }
+}
+
+// ForEachKey applies a function to each key for side effects.
+func (m *HashMap[K, V]) ForEachKey(f func(K) any) {
+    m.ForEachKV((k K, v V) => {
+        f(k)
+        return nil
+    })
+}
+
+// ForEachValue applies a function to each value for side effects.
+func (m *HashMap[K, V]) ForEachValue(f func(V) any) {
+    m.ForEachKV((k K, v V) => {
+        f(v)
+        return nil
+    })
+}
+
+// === Transformation (return new maps) ===
+
+// Filter returns a new HashMap with only entries that satisfy the predicate.
+func (m *HashMap[K, V]) Filter(p func(K, V) bool) *HashMap[K, V] {
+    return m.FoldLeftKV[*HashMap[K, V]](EmptyHashMap[K, V](), (acc *HashMap[K, V], k K, v V) => {
+        if p(k, v) {
+            acc.Put(k, v)
+        }
+        return acc
+    })
+}
+
+// FilterKeys returns a new HashMap with only entries whose keys satisfy the predicate.
+func (m *HashMap[K, V]) FilterKeys(p func(K) bool) *HashMap[K, V] {
+    return m.FoldLeftKV[*HashMap[K, V]](EmptyHashMap[K, V](), (acc *HashMap[K, V], k K, v V) => {
+        if p(k) {
+            acc.Put(k, v)
+        }
+        return acc
+    })
+}
+
+// FilterValues returns a new HashMap with only entries whose values satisfy the predicate.
+func (m *HashMap[K, V]) FilterValues(p func(V) bool) *HashMap[K, V] {
+    return m.FoldLeftKV[*HashMap[K, V]](EmptyHashMap[K, V](), (acc *HashMap[K, V], k K, v V) => {
+        if p(v) {
+            acc.Put(k, v)
+        }
+        return acc
+    })
+}
+
+// FilterNot returns a new HashMap with entries that do not satisfy the predicate.
+func (m *HashMap[K, V]) FilterNot(p func(K, V) bool) *HashMap[K, V] {
+    return m.FoldLeftKV[*HashMap[K, V]](EmptyHashMap[K, V](), (acc *HashMap[K, V], k K, v V) => {
+        if !p(k, v) {
+            acc.Put(k, v)
+        }
+        return acc
+    })
+}
+
+// MapValues applies a function to each value and returns a new map.
+func (m *HashMap[K, V]) MapValues[U any](f func(V) U) *HashMap[K, U] {
+    return m.FoldLeftKV[*HashMap[K, U]](EmptyHashMap[K, U](), (acc *HashMap[K, U], k K, v V) => {
+        acc.Put(k, f(v))
+        return acc
+    })
+}
+
+// === In-place Transformations ===
+
+// FilterInPlace removes entries that do not satisfy the predicate.
+func (m *HashMap[K, V]) FilterInPlace(p func(K, V) bool) {
+    val toRemove = m.FoldLeftKV[*Array[K]](EmptyArray[K](), (acc *Array[K], k K, v V) => {
+        if !p(k, v) {
+            acc.Append(k)
+        }
+        return acc
+    })
+    m.RemoveAllKeys(toRemove)
+}
+
+// UpdateAll updates all values using a function.
+func (m *HashMap[K, V]) UpdateAll(f func(K, V) V) {
+    for i := 0; i < len(m.buckets); i++ {
+        var entry = m.buckets[i]
+        for entry != nil {
+            entry.value = f(entry.key, entry.value)
+            entry = entry.next
+        }
+    }
+}
+
+// === Reduction Operations ===
+
+// FoldLeftKV applies a binary operator from left to right with key-value pairs.
+func (m *HashMap[K, V]) FoldLeftKV[U any](initial U, f func(U, K, V) U) U {
+    var acc = initial
+    m.ForEachKV((k K, v V) => {
+        acc = f(acc, k, v)
+        return nil
+    })
+    return acc
+}
+
+// === Predicate Operations ===
+
+// Exists returns true if any entry satisfies the predicate.
+// Uses early exit for performance.
+func (m *HashMap[K, V]) Exists(p func(K, V) bool) bool {
+    for i := 0; i < len(m.buckets); i++ {
+        var entry = m.buckets[i]
+        for entry != nil {
+            if p(entry.key, entry.value) {
+                return true
+            }
+            entry = entry.next
+        }
+    }
+    return false
+}
+
+// ForAll returns true if all entries satisfy the predicate.
+// Uses early exit for performance.
+func (m *HashMap[K, V]) ForAll(p func(K, V) bool) bool {
+    for i := 0; i < len(m.buckets); i++ {
+        var entry = m.buckets[i]
+        for entry != nil {
+            if !p(entry.key, entry.value) {
+                return false
+            }
+            entry = entry.next
+        }
+    }
+    return true
+}
+
+// Count returns the number of entries satisfying the predicate.
+func (m *HashMap[K, V]) Count(p func(K, V) bool) int {
+    return m.FoldLeftKV[int](0, (acc int, k K, v V) => {
+        if p(k, v) {
+            return acc + 1
+        }
+        return acc
+    })
+}
+
+// === Key/Value Access ===
+
+// Keys returns a mutable HashSet of all keys.
+func (m *HashMap[K, V]) Keys() *HashSet[K] {
+    return m.FoldLeftKV[*HashSet[K]](EmptyHashSet[K](), (acc *HashSet[K], k K, v V) => {
+        acc.Add(k)
+        return acc
+    })
+}
+
+// Values returns a mutable List of all values.
+func (m *HashMap[K, V]) Values() *List[V] {
+    return m.FoldLeftKV[*List[V]](EmptyList[V](), (acc *List[V], k K, v V) => {
+        acc.Append(v)
+        return acc
+    })
+}
+
+// KeyArray returns an Array of all keys.
+func (m *HashMap[K, V]) KeyArray() *Array[K] {
+    return m.FoldLeftKV[*Array[K]](EmptyArray[K](), (acc *Array[K], k K, v V) => {
+        acc.Append(k)
+        return acc
+    })
+}
+
+// ValueArray returns an Array of all values.
+func (m *HashMap[K, V]) ValueArray() *Array[V] {
+    return m.FoldLeftKV[*Array[V]](EmptyArray[V](), (acc *Array[V], k K, v V) => {
+        acc.Append(v)
+        return acc
+    })
+}
+
+// === Conversion ===
+
+// ToGoMap converts the map to a Go map.
+func (m *HashMap[K, V]) ToGoMap() map[K]V {
+    var result map[K]V
+    m.ForEachKV((k K, v V) => {
+        if result == nil {
+            result = map[K]V{}
+        }
+        result[k] = v
+        return nil
+    })
+    if result == nil {
+        result = map[K]V{}
+    }
+    return result
+}
+
+// ToArray converts the map to a mutable Array of tuples.
+func (m *HashMap[K, V]) ToArray() *Array[Tuple[K, V]] {
+    return m.FoldLeftKV[*Array[Tuple[K, V]]](ArrayWithCapacity[Tuple[K, V]](m.Size()), (acc *Array[Tuple[K, V]], k K, v V) => {
+        acc.Append(Tuple[K, V](V1 = k, V2 = v))
+        return acc
+    })
+}
+
+// ToList converts the map to a mutable List of tuples.
+func (m *HashMap[K, V]) ToList() *List[Tuple[K, V]] {
+    return m.FoldLeftKV[*List[Tuple[K, V]]](EmptyList[Tuple[K, V]](), (acc *List[Tuple[K, V]], k K, v V) => {
+        acc.Append(Tuple[K, V](V1 = k, V2 = v))
+        return acc
+    })
+}
+
+// Clone creates a shallow copy of the map.
+func (m *HashMap[K, V]) Clone() *HashMap[K, V] {
+    return m.FoldLeftKV[*HashMap[K, V]](EmptyHashMap[K, V](), (acc *HashMap[K, V], k K, v V) => {
+        acc.Put(k, v)
+        return acc
+    })
+}
+
+// String returns a string representation of the map.
+func (m *HashMap[K, V]) String() string {
+    if m.Size() == 0 {
+        return "HashMap()"
+    }
+    var result = "HashMap("
+    var first = true
+    m.ForEachKV((k K, v V) => {
+        if !first {
+            result = result + ", "
+        }
+        result = result + fmt.Sprintf("%v -> %v", k, v)
+        first = false
+        return nil
+    })
+    return result + ")"
+}
+
+// KeySet returns a mutable HashSet of all keys.
+func (m *HashMap[K, V]) KeySet() *HashSet[K] = m.Keys()
+
+// === Merge Operations ===
+
+// PutFrom adds all entries from another HashMap.
+func (m *HashMap[K, V]) PutFrom(other *HashMap[K, V]) {
+    other.ForEachKV((k K, v V) => {
+        m.Put(k, v)
+        return nil
+    })
+}
+
+// Merge merges another map, using a function for duplicate keys.
+func (m *HashMap[K, V]) Merge(other *HashMap[K, V], f func(V, V) V) {
+    other.ForEachKV((k K, v V) => {
+        val existing = m.Get(k)
+        if existing.IsDefined() {
+            m.Put(k, f(existing.Get(), v))
+        } else {
+            m.Put(k, v)
+        }
+        return nil
+    })
+}
+
+// PutAllEntries adds all entries from an Array of tuples.
+func (m *HashMap[K, V]) PutAllEntries(entries *Array[Tuple[K, V]]) {
+    entries.ForEach((entry Tuple[K, V]) => {
+        m.Put(entry.V1, entry.V2)
+        return nil
+    })
+}
+
+// === Additional Operations ===
+
+// Find returns the first entry satisfying the predicate.
+func (m *HashMap[K, V]) Find(p func(K, V) bool) Option[Tuple[K, V]] {
+    return m.FoldLeftKV[Option[Tuple[K, V]]](None[Tuple[K, V]](), (acc Option[Tuple[K, V]], k K, v V) => {
+        if acc.IsEmpty() && p(k, v) {
+            return Some[Tuple[K, V]](Tuple[K, V](V1 = k, V2 = v))
+        }
+        return acc
+    })
+}
+
+// Head returns the first entry. Panics if empty.
+func (m *HashMap[K, V]) Head() Tuple[K, V] {
+    val opt = m.HeadOption()
+    if opt.IsEmpty() {
+        panic("HashMap: head of empty map")
+    }
+    return opt.Get()
+}
+
+// HeadOption returns the first entry as Option.
+func (m *HashMap[K, V]) HeadOption() Option[Tuple[K, V]] {
+    if m.IsEmpty() {
+        return None[Tuple[K, V]]()
+    }
+    return m.FoldLeftKV[Option[Tuple[K, V]]](None[Tuple[K, V]](), (acc Option[Tuple[K, V]], k K, v V) => {
+        if acc.IsEmpty() {
+            return Some[Tuple[K, V]](Tuple[K, V](V1 = k, V2 = v))
+        }
+        return acc
+    })
+}
+
+// Partition partitions the map into two new maps based on predicate.
+func (m *HashMap[K, V]) Partition(p func(K, V) bool) Tuple[*HashMap[K, V], *HashMap[K, V]] {
+    val initial = Tuple[*HashMap[K, V], *HashMap[K, V]](V1 = EmptyHashMap[K, V](), V2 = EmptyHashMap[K, V]())
+    return m.FoldLeftKV[Tuple[*HashMap[K, V], *HashMap[K, V]]](initial, (acc Tuple[*HashMap[K, V], *HashMap[K, V]], k K, v V) => {
+        if p(k, v) {
+            acc.V1.Put(k, v)
+        } else {
+            acc.V2.Put(k, v)
+        }
+        return acc
+    })
+}
+
+// === Factory Functions ===
+
+// HashMapOf creates a HashMap from key-value tuples.
+func HashMapOf[K comparable, V any](entries ...Tuple[K, V]) *HashMap[K, V] {
+    var result = EmptyHashMap[K, V]()
+    for i := 0; i < len(entries); i++ {
+        result.Put(entries[i].V1, entries[i].V2)
+    }
+    return result
+}
+
+// HashMapFromSlice creates a HashMap from a slice of tuples.
+func HashMapFromSlice[K comparable, V any](entries []Tuple[K, V]) *HashMap[K, V] {
+    var result = EmptyHashMap[K, V]()
+    for i := 0; i < len(entries); i++ {
+        result.Put(entries[i].V1, entries[i].V2)
+    }
+    return result
+}
+
+// HashMapFromGoMap creates a HashMap from a Go map.
+func HashMapFromGoMap[K comparable, V any](m map[K]V) *HashMap[K, V] {
+    var result = EmptyHashMap[K, V]()
+    for k, v := range m {
+        result.Put(k, v)
+    }
+    return result
+}

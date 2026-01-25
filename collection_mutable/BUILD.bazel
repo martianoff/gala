@@ -42,17 +42,24 @@ gala_transpile(
     out = "treeset.go",
 )
 
+gala_transpile(
+    name = "hashmap_go",
+    src = "hashmap.gala",
+    out = "hashmap.go",
+)
+
 go_library(
     name = "collection_mutable",
     srcs = [
         "array.go",
+        "hashmap.go",
         "hashset.go",
         "list.go",
         "treeset.go",
     ],
     importpath = "martianoff/gala/collection_mutable",
     visibility = ["//visibility:public"],
-    deps = ["//std"],
+    deps = ["//std:std"],
 )
 
 gala_go_test(
@@ -76,6 +83,12 @@ gala_go_test(
 gala_go_test(
     name = "treeset_test",
     srcs = ["treeset_test.gala"],
+    deps = [":collection_mutable"],
+)
+
+gala_go_test(
+    name = "hashmap_test",
+    srcs = ["hashmap_test.gala"],
     deps = [":collection_mutable"],
 )
 

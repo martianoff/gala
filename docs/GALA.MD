@@ -651,14 +651,25 @@ val result = x.Map((i int) => i * 2)
 ```
 
 ### Tuple
-`Tuple[A, B]` represents a pair of values.
+`Tuple[A, B]` represents a pair of values. GALA supports concise parenthesis syntax for tuples (up to Tuple5).
 
 ```gala
-val t = Tuple[int, string](V1 = 1, V2 = "hello")
+// Concise syntax (preferred)
+val t = (1, "hello")
+val triple = (1, "hello", true)
+
+// Verbose syntax (when needed)
+val t2 = Tuple[int, string](V1 = 1, V2 = "hello")
+
+// Pattern matching works with both
 val msg = t match {
-    case Tuple(a, b) => fmt.Sprintf("Got %d and %s", a, b)
-    case _           => "Unknown"
+    case (a, b) => fmt.Sprintf("Got %d and %s", a, b)
+    case _      => "Unknown"
 }
+
+// Accessing fields
+val first = t.V1   // 1
+val second = t.V2  // "hello"
 ```
 
 ### Either
@@ -784,6 +795,148 @@ val copy = SliceCopy(original)
 | `SliceTake(s, n)` | Take first n elements |
 
 **Note:** Slice types (`[]T`) are still valid in function signatures and struct fields.
+
+### HashMap
+
+GALA provides both immutable and mutable HashMap implementations for key-value storage. Both support generic key and value types, with keys requiring the `comparable` constraint.
+
+#### Immutable HashMap (collection_immutable)
+
+The immutable HashMap uses a Hash Array Mapped Trie (HAMT) structure for effectively O(1) operations while maintaining immutability. All operations return new maps, leaving the original unchanged.
+
+```gala
+import . "martianoff/gala/collection_immutable"
+
+// Creating maps
+val m1 = EmptyHashMap[string, int]()
+val m2 = m1.Put("apple", 1).Put("banana", 2).Put("cherry", 3)
+
+// Using factory with tuple syntax
+val m3 = HashMapOf[string, int](("a", 1), ("b", 2))
+
+// From Go map
+var goMap = make(map[string]int)
+goMap["x"] = 100
+val m4 = HashMapFromGoMap[string, int](goMap)
+
+// Getting values
+val opt = m2.Get("apple")           // Option[int]
+val value = m2.GetOrElse("apple", 0) // int
+val exists = m2.Contains("banana")   // bool
+
+// Immutability: original map unchanged
+val m5 = m2.Remove("banana")
+fmt.Println(m2.Contains("banana"))  // true
+fmt.Println(m5.Contains("banana"))  // false
+```
+
+**Key Methods:**
+
+| Method | Description |
+|--------|-------------|
+| `Put(key, value)` | Add/update entry, returns new map |
+| `Get(key)` | Get value as Option[V] |
+| `GetOrElse(key, default)` | Get value or default |
+| `Contains(key)` | Check if key exists |
+| `Remove(key)` | Remove entry, returns new map |
+| `PutAll(other)` | Merge another map |
+| `Merge(other, f)` | Merge with custom combine function |
+| `Filter(predicate)` | Filter entries |
+| `MapValues[U](f)` | Transform values |
+| `FoldLeft[U](init, f)` | Reduce to single value |
+| `Keys()` | Get HashSet of keys |
+| `Values()` | Get List of values |
+| `ToGoMap()` | Convert to Go map |
+
+#### Mutable HashMap (collection_mutable)
+
+The mutable HashMap uses hash buckets with O(1) average operations. It modifies the map in place for better performance when mutation is acceptable.
+
+```gala
+import . "martianoff/gala/collection_mutable"
+
+// Creating maps
+val m = EmptyHashMap[string, int]()
+m.Put("apple", 1)
+m.Put("banana", 2)
+m.Put("cherry", 3)
+
+// Advanced operations
+m.PutIfAbsent("apple", 99)  // No change, key exists
+m.Update("apple", (v int) => v * 2)  // Double apple's value
+
+// Get or compute
+val value = m.GetOrElseUpdate("date", () => {
+    fmt.Println("Computing...")
+    return 4
+})
+
+// In-place transformations
+m.FilterInPlace((e Entry[string, int]) => e.Value > 1)
+m.UpdateAll((k string, v int) => v * 10)
+
+// Cloning for immutability when needed
+val snapshot = m.Clone()
+m.Clear()
+fmt.Println(snapshot.Size())  // Still has data
+```
+
+**Key Methods:**
+
+| Method | Description |
+|--------|-------------|
+| `Put(key, value)` | Add/update entry in place |
+| `PutIfAbsent(key, value)` | Add only if key missing |
+| `GetOrElseUpdate(key, f)` | Get or compute and store |
+| `Update(key, f)` | Update value with function |
+| `Remove(key)` | Remove entry in place |
+| `Clear()` | Remove all entries |
+| `FilterInPlace(predicate)` | Filter entries in place |
+| `UpdateAll(f)` | Update all values in place |
+| `Clone()` | Create a copy |
+| `Merge(other, f)` | Merge another map |
+
+#### Custom Key Types
+
+For custom types as keys, implement the `Hashable` interface:
+
+```gala
+import . "martianoff/gala/std"
+
+type Person struct {
+    Name string
+    Age  int
+}
+
+func (p Person) Hash() uint32 {
+    return HashCombine(HashString(p.Name), HashInt(int64(p.Age)))
+}
+
+// Now Person can be used as a map key
+val scores = EmptyHashMap[Person, int]()
+val alice = Person(Name = "Alice", Age = 30)
+val m = scores.Put(alice, 100)
+```
+
+#### Performance Characteristics
+
+| Operation | Immutable HashMap | Mutable HashMap |
+|-----------|------------------|-----------------|
+| Put | O(log32 n) ≈ O(1) | O(1) amortized |
+| Get | O(log32 n) ≈ O(1) | O(1) average |
+| Remove | O(log32 n) ≈ O(1) | O(1) amortized |
+| Contains | O(log32 n) ≈ O(1) | O(1) average |
+| Size | O(1) | O(1) |
+
+Choose immutable when you need:
+- Thread safety without locks
+- Undo/redo functionality
+- Functional programming patterns
+
+Choose mutable when you need:
+- Maximum performance
+- Frequent updates in a single thread
+- Memory efficiency
 
 ## 10. Immutability Under the Hood
 
@@ -1015,6 +1168,11 @@ bazel test //mypackage:mycode_test
 val list = ListOf(1, 2, 3)
 val doubled = list.Map((x int) => x * 2)
 ```
+
+### Tuple Syntax
+- **Prefer parenthesis syntax** - `(1, "hello")` not `Tuple[int, string](V1 = 1, V2 = "hello")`
+- **Use for map entries** - `HashMapOf[K, V](("a", 1), ("b", 2))`
+- **Unpack with pattern matching** - `case (a, b) =>` or `val (x, y) = tuple`
 
 ### Collections
 | Operation | Immutable | Mutable |

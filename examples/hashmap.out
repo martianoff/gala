@@ -1,0 +1,42 @@
+=== GALA HashMap Examples ===
+
+--- Immutable HashMap ---
+Original map size: 0
+After adding 3 items: 3
+m4 apple value: 1
+m5 apple value: 10
+Found apple: 1
+Orange not found
+GetOrElse for banana: 2
+GetOrElse for missing: -1
+After removing banana: 2 items
+Contains banana: false
+
+--- Mutable HashMap ---
+Size: 3
+Updated 'one': 100
+PutIfAbsent 'one' (existed): false
+PutIfAbsent 'four' (new): true
+GetOrElseUpdate 'five': 5 (same value)
+After Update 'one' (*2): 200
+After removing 'two': 4 items
+After Clear: 0 items
+
+--- Custom Key Type (Person) ---
+Alice's salary: 75000
+Bob's salary: 65000
+Alice copy salary: 75000
+
+--- Functional Operations ---
+High scores (>=90): Bob=92 Diana=95 
+Grades: Charlie=C Alice=B Bob=A Diana=A 
+Average score: 87
+Anyone with 100: false
+Everyone passed (>=60): true
+First B student: Alice
+All students: Charlie Alice Bob Diana 
+Passed (>=80): 3 students
+Need improvement: 1 students
+After bonus - Alice: 90, Bob: 102
+Go map type: map[string]int with 4 entries
+HashMap from tuples: HashMap(X -> 100, Y -> 200)

@@ -600,6 +600,166 @@ func benchTreeSetRange() {
     printResult("TreeSet.Range (size=10000)", ns)
 }
 
+// ============ HASHMAP BENCHMARKS ============
+
+// HashMap creation benchmark - small
+func benchHashMapCreation100() {
+    var ns = measureNs(1000, () => {
+        var m = EmptyHashMap[int, int]()
+        for i := 0; i < 100; i++ {
+            m = m.Put(i, i)
+        }
+    })
+    printResult("HashMap.Creation(100)", ns)
+}
+
+// HashMap creation benchmark - medium
+func benchHashMapCreation10000() {
+    var ns = measureNs(100, () => {
+        var m = EmptyHashMap[int, int]()
+        for i := 0; i < 10000; i++ {
+            m = m.Put(i, i)
+        }
+    })
+    printResult("HashMap.Creation(10000)", ns)
+}
+
+// HashMap creation benchmark - large
+func benchHashMapCreation100000() {
+    var ns = measureNs(10, () => {
+        var m = EmptyHashMap[int, int]()
+        for i := 0; i < 100000; i++ {
+            m = m.Put(i, i)
+        }
+    })
+    printResult("HashMap.Creation(100000)", ns)
+}
+
+// HashMap put benchmark (single element)
+func benchHashMapPut() {
+    var m = EmptyHashMap[int, int]()
+    for i := 0; i < 10000; i++ {
+        m = m.Put(i, i)
+    }
+    var ns = measureNs(100000, () => {
+        var _ = m.Put(99999, 99999)
+    })
+    printResult("HashMap.Put (size=10000)", ns)
+}
+
+// HashMap get benchmark - hit
+func benchHashMapGetHit() {
+    var m = EmptyHashMap[int, int]()
+    for i := 0; i < 10000; i++ {
+        m = m.Put(i, i)
+    }
+    var ns = measureNs(1000000, () => {
+        var _ = m.Get(5000)
+    })
+    printResult("HashMap.Get hit (size=10000)", ns)
+}
+
+// HashMap get benchmark - miss
+func benchHashMapGetMiss() {
+    var m = EmptyHashMap[int, int]()
+    for i := 0; i < 10000; i++ {
+        m = m.Put(i, i)
+    }
+    var ns = measureNs(1000000, () => {
+        var _ = m.Get(99999)
+    })
+    printResult("HashMap.Get miss (size=10000)", ns)
+}
+
+// HashMap contains benchmark - hit
+func benchHashMapContainsHit() {
+    var m = EmptyHashMap[int, int]()
+    for i := 0; i < 10000; i++ {
+        m = m.Put(i, i)
+    }
+    var ns = measureNs(1000000, () => {
+        var _ = m.Contains(5000)
+    })
+    printResult("HashMap.Contains (hit, size=10000)", ns)
+}
+
+// HashMap contains benchmark - miss
+func benchHashMapContainsMiss() {
+    var m = EmptyHashMap[int, int]()
+    for i := 0; i < 10000; i++ {
+        m = m.Put(i, i)
+    }
+    var ns = measureNs(1000000, () => {
+        var _ = m.Contains(20000)
+    })
+    printResult("HashMap.Contains (miss, size=10000)", ns)
+}
+
+// HashMap remove benchmark
+func benchHashMapRemove() {
+    var m = EmptyHashMap[int, int]()
+    for i := 0; i < 10000; i++ {
+        m = m.Put(i, i)
+    }
+    var ns = measureNs(100000, () => {
+        var _ = m.Remove(5000)
+    })
+    printResult("HashMap.Remove (size=10000)", ns)
+}
+
+// HashMap filter benchmark
+func benchHashMapFilter() {
+    var m = EmptyHashMap[int, int]()
+    for i := 0; i < 10000; i++ {
+        m = m.Put(i, i)
+    }
+    var ns = measureNs(100, () => {
+        var _ = m.Filter((k int, v int) => v % 2 == 0)
+    })
+    printResult("HashMap.Filter (size=10000)", ns)
+}
+
+// HashMap mapValues benchmark
+func benchHashMapMapValues() {
+    var m = EmptyHashMap[int, int]()
+    for i := 0; i < 10000; i++ {
+        m = m.Put(i, i)
+    }
+    var ns = measureNs(100, () => {
+        var _ = m.MapValues[int]((v int) => v * 2)
+    })
+    printResult("HashMap.MapValues (size=10000)", ns)
+}
+
+// HashMap putAll (merge) benchmark
+func benchHashMapPutAll() {
+    var m1 = EmptyHashMap[int, int]()
+    var m2 = EmptyHashMap[int, int]()
+    for i := 0; i < 1000; i++ {
+        m1 = m1.Put(i, i)
+        m2 = m2.Put(i + 500, i + 500)
+    }
+    var ns = measureNs(100, () => {
+        var _ = m1.PutAll(m2)
+    })
+    printResult("HashMap.PutAll (2x1000)", ns)
+}
+
+// HashMap string keys benchmark
+func benchHashMapStringKeys() {
+    var m = EmptyHashMap[string, int]()
+    var keys []string
+    for i := 0; i < 10000; i++ {
+        var key = "key" + string(rune(i%26+65)) + string(rune((i/26)%26+65))
+        keys = append(keys, key)
+        m = m.Put(key, i)
+    }
+    var ns = measureNs(100000, () => {
+        var _ = m.Get(keys[5000])
+    })
+    printResult("HashMap.Get string key (size=10000)", ns)
+}
+
 func main() {
     fmt.Println("=== GALA Immutable Collections Performance ===")
     fmt.Println("Testing with 10,000 - 100,000 elements")
@@ -663,4 +823,20 @@ func main() {
     benchTreeSetUnion()
     benchTreeSetIntersect()
     benchTreeSetRange()
+
+    fmt.Println("")
+    fmt.Println("--- HashMap Operations ---")
+    benchHashMapCreation100()
+    benchHashMapCreation10000()
+    benchHashMapCreation100000()
+    benchHashMapPut()
+    benchHashMapGetHit()
+    benchHashMapGetMiss()
+    benchHashMapContainsHit()
+    benchHashMapContainsMiss()
+    benchHashMapRemove()
+    benchHashMapFilter()
+    benchHashMapMapValues()
+    benchHashMapPutAll()
+    benchHashMapStringKeys()
 }
