@@ -803,7 +803,8 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 				// Special case: x.Get() where x is a known val - return the val's type directly
 				if id, ok := sel.X.(*ast.Ident); ok {
 					if t.isVal(id.Name) {
-						return t.getType(id.Name)
+						valType := t.getType(id.Name)
+						return valType
 					}
 				}
 				xType := t.getExprTypeNameManual(sel.X)
@@ -879,7 +880,7 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 					if fMeta, ok := t.functions[fullName]; ok {
 						return fMeta.ReturnType
 					}
-					// Handle Receiver_Method (e.g., std.Some_Apply)
+					// Handle Receiver_Method (e.g., std.Some_Apply, std.Try_FlatMap)
 					if idx := strings.Index(sel.Sel.Name, "_"); idx != -1 {
 						receiverType := pkgName + "." + sel.Sel.Name[:idx]
 						methodName := sel.Sel.Name[idx+1:]
@@ -893,9 +894,31 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 								}
 							}
 						}
-						if meta, ok := t.typeMetas[receiverType]; ok {
-							if mMeta, ok := meta.Methods[methodName]; ok {
-								return mMeta.ReturnType
+						if typeMeta, ok := t.typeMetas[receiverType]; ok {
+							if methodMeta, ok := typeMeta.Methods[methodName]; ok {
+								// For Receiver_Method calls, the first arg is the receiver
+								// Get the receiver's type to substitute struct-level type params
+								result := methodMeta.ReturnType
+								if len(e.Args) > 0 {
+									receiverArgType := t.getExprTypeNameManual(e.Args[0])
+									if genRecv, ok := receiverArgType.(transpiler.GenericType); ok {
+										// Substitute struct-level type params (e.g., T -> User for Try[User])
+										result = t.substituteConcreteTypes(result, typeMeta.TypeParams, genRecv.Params)
+										// For methods with their own type params (e.g., FlatMap[U])
+										// Try to infer them from the other arguments
+										if len(methodMeta.TypeParams) > 0 && len(typeArgs) == 0 {
+											// Arguments after the receiver are the method's regular params
+											methodArgs := e.Args[1:]
+											inferredTypeArgs := t.inferMethodTypeParamsFromArgs(methodMeta, methodArgs, typeMeta.TypeParams, genRecv.Params)
+											if len(inferredTypeArgs) > 0 {
+												result = t.substituteConcreteTypes(result, methodMeta.TypeParams, inferredTypeArgs)
+											}
+										} else if len(typeArgs) > 0 {
+											result = t.substituteConcreteTypes(result, methodMeta.TypeParams, typeArgs)
+										}
+									}
+								}
+								return result
 							}
 						}
 					}
@@ -929,8 +952,17 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 							// First, substitute struct-level type params (e.g., T -> int for Array[int])
 							result := t.substituteConcreteTypes(methodMeta.ReturnType, typeMeta.TypeParams, genType.Params)
 							// Then, substitute method-level type params (e.g., U -> string for Zip[string])
-							if len(methodMeta.TypeParams) > 0 && len(typeArgs) > 0 {
-								result = t.substituteConcreteTypes(result, methodMeta.TypeParams, typeArgs)
+							if len(methodMeta.TypeParams) > 0 {
+								if len(typeArgs) > 0 {
+									result = t.substituteConcreteTypes(result, methodMeta.TypeParams, typeArgs)
+								} else {
+									// Try to infer method-level type params from function arguments
+									// e.g., for FlatMap[U](f func(T) Try[U]), infer U from the lambda's return type
+									inferredTypeArgs := t.inferMethodTypeParamsFromArgs(methodMeta, e.Args, typeMeta.TypeParams, genType.Params)
+									if len(inferredTypeArgs) > 0 {
+										result = t.substituteConcreteTypes(result, methodMeta.TypeParams, inferredTypeArgs)
+									}
+								}
 							}
 							return result
 						}
@@ -1097,6 +1129,38 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 				}
 			}
 		}
+	case *ast.FuncLit:
+		// Handle lambda expressions - extract their function type
+		if e.Type != nil {
+			var params []transpiler.Type
+			var results []transpiler.Type
+			if e.Type.Params != nil {
+				for _, field := range e.Type.Params.List {
+					paramType := t.exprToType(field.Type)
+					// If there are multiple names, repeat the type for each
+					if len(field.Names) > 0 {
+						for range field.Names {
+							params = append(params, paramType)
+						}
+					} else {
+						params = append(params, paramType)
+					}
+				}
+			}
+			if e.Type.Results != nil {
+				for _, field := range e.Type.Results.List {
+					resultType := t.exprToType(field.Type)
+					if len(field.Names) > 0 {
+						for range field.Names {
+							results = append(results, resultType)
+						}
+					} else {
+						results = append(results, resultType)
+					}
+				}
+			}
+			return transpiler.FuncType{Params: params, Results: results}
+		}
 	case *ast.CompositeLit:
 		// Use exprToType to preserve generic type parameters
 		typ := t.exprToType(e.Type)
@@ -1133,6 +1197,117 @@ func (t *galaASTTransformer) substituteConcreteTypes(returnType transpiler.Type,
 	}
 
 	return t.substituteInType(returnType, paramMap)
+}
+
+// inferMethodTypeParamsFromArgs attempts to infer method-level type parameters from call arguments.
+// For example, for FlatMap[U](f func(T) Try[U]) where the argument is a lambda returning Try[User],
+// this function infers U = User.
+func (t *galaASTTransformer) inferMethodTypeParamsFromArgs(methodMeta *transpiler.MethodMetadata, args []ast.Expr, structTypeParams []string, structTypeArgs []transpiler.Type) []transpiler.Type {
+	if len(methodMeta.TypeParams) == 0 || len(methodMeta.ParamTypes) == 0 || len(args) == 0 {
+		return nil
+	}
+
+	// First substitute struct-level type params in method param types
+	// e.g., for Try[User].FlatMap, substitute T -> User in func(T) Try[U] to get func(User) Try[U]
+	substitutedParamTypes := make([]transpiler.Type, len(methodMeta.ParamTypes))
+	for i, pt := range methodMeta.ParamTypes {
+		substitutedParamTypes[i] = t.substituteConcreteTypes(pt, structTypeParams, structTypeArgs)
+	}
+
+	// Build a mapping from method type param names to inferred concrete types
+	inferredMap := make(map[string]transpiler.Type)
+
+	// Try to infer type params from each argument
+	for i, arg := range args {
+		if i >= len(substitutedParamTypes) {
+			break
+		}
+		paramType := substitutedParamTypes[i]
+
+		// Get the actual type of the argument
+		argType := t.getExprTypeNameManual(arg)
+		if argType == nil || argType.IsNil() {
+			argType, _ = t.inferExprType(arg)
+		}
+		if argType == nil || argType.IsNil() {
+			continue
+		}
+
+		// Try to unify paramType with argType to find type param substitutions
+		t.unifyForInference(paramType, argType, methodMeta.TypeParams, inferredMap)
+	}
+
+	// Build result in order of type params
+	if len(inferredMap) == 0 {
+		return nil
+	}
+
+	result := make([]transpiler.Type, len(methodMeta.TypeParams))
+	for i, paramName := range methodMeta.TypeParams {
+		if inferredType, ok := inferredMap[paramName]; ok {
+			result[i] = inferredType
+		} else {
+			// Couldn't infer this type param
+			return nil
+		}
+	}
+
+	return result
+}
+
+// unifyForInference attempts to unify a pattern type with a concrete type to infer type parameters.
+// This is used to infer method-level type params from call arguments.
+func (t *galaASTTransformer) unifyForInference(pattern, concrete transpiler.Type, typeParams []string, inferredMap map[string]transpiler.Type) bool {
+	if pattern == nil || concrete == nil || pattern.IsNil() || concrete.IsNil() {
+		return false
+	}
+
+	// Check if pattern is one of the type parameters we're looking for
+	patternStr := pattern.String()
+	for _, tp := range typeParams {
+		if patternStr == tp {
+			// Found a type parameter - record the inferred type
+			if existing, ok := inferredMap[tp]; ok {
+				// Already have an inference - check consistency
+				return existing.String() == concrete.String()
+			}
+			inferredMap[tp] = concrete
+			return true
+		}
+	}
+
+	// Check if both are function types
+	patternFunc, patternIsFunc := pattern.(transpiler.FuncType)
+	concreteFunc, concreteIsFunc := concrete.(transpiler.FuncType)
+	if patternIsFunc && concreteIsFunc {
+		// Try to unify result types
+		// This handles cases like func(T) Try[U] with func(User) Try[User]
+		for i, pResult := range patternFunc.Results {
+			if i < len(concreteFunc.Results) {
+				t.unifyForInference(pResult, concreteFunc.Results[i], typeParams, inferredMap)
+			}
+		}
+		return true
+	}
+
+	// Check if both are generic types
+	patternGen, patternIsGen := pattern.(transpiler.GenericType)
+	concreteGen, concreteIsGen := concrete.(transpiler.GenericType)
+	if patternIsGen && concreteIsGen {
+		// Check if base types are compatible
+		if stripPackagePrefix(patternGen.Base.BaseName()) != stripPackagePrefix(concreteGen.Base.BaseName()) {
+			return false
+		}
+		// Unify type parameters
+		for i := range patternGen.Params {
+			if i < len(concreteGen.Params) {
+				t.unifyForInference(patternGen.Params[i], concreteGen.Params[i], typeParams, inferredMap)
+			}
+		}
+		return true
+	}
+
+	return false
 }
 
 // substituteInType recursively substitutes type parameters in a type

@@ -157,10 +157,17 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 		body = defaultBody
 	}
 
-	// Fix up return statements that return 'any' values when result type is concrete
-	// This handles cases where pattern-bound variables have unknown types
-	if resultType != nil && !resultType.IsNil() && resultType.String() != "any" {
-		t.fixupReturnStatements(body, resultType)
+	// Check if result type is void (for side-effect only match statements)
+	_, isVoid := resultType.(transpiler.VoidType)
+	if isVoid {
+		// Strip return statements for void match - convert returns to expression statements
+		body = t.stripReturnStatements(body)
+	} else {
+		// Fix up return statements that return 'any' values when result type is concrete
+		// This handles cases where pattern-bound variables have unknown types
+		if resultType != nil && !resultType.IsNil() && resultType.String() != "any" {
+			t.fixupReturnStatements(body, resultType)
+		}
 	}
 
 	// Use concrete matched type for IIFE parameter
@@ -169,10 +176,16 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 		return nil, galaerr.NewSemanticError("cannot infer type of matched expression. Please add explicit type annotation")
 	}
 
-	// Use inferred result type
-	resultTypeExpr := t.typeToExpr(resultType)
-	if resultTypeExpr == nil {
-		return nil, galaerr.NewSemanticError("cannot infer result type of match expression. Please ensure all branches return the same type")
+	// Build IIFE with or without return type depending on void
+	var resultsField *ast.FieldList
+	if !isVoid {
+		resultTypeExpr := t.typeToExpr(resultType)
+		if resultTypeExpr == nil {
+			return nil, galaerr.NewSemanticError("cannot infer result type of match expression. Please ensure all branches return the same type")
+		}
+		resultsField = &ast.FieldList{
+			List: []*ast.Field{{Type: resultTypeExpr}},
+		}
 	}
 
 	return &ast.CallExpr{
@@ -186,9 +199,7 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 						},
 					},
 				},
-				Results: &ast.FieldList{
-					List: []*ast.Field{{Type: resultTypeExpr}},
-				},
+				Results: resultsField,
 			},
 			Body: &ast.BlockStmt{
 				List: body,
@@ -200,6 +211,21 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 
 // inferResultType infers the type of an expression used as a case clause result
 func (t *galaASTTransformer) inferResultType(expr ast.Expr) transpiler.Type {
+	// Check if this is a call to a known multi-return function (like fmt.Printf, fmt.Println)
+	// These should be treated as void for match statement purposes
+	if call, ok := expr.(*ast.CallExpr); ok {
+		if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+			if pkgIdent, ok := sel.X.(*ast.Ident); ok {
+				// Check specifically for known multi-return functions
+				pkgName := pkgIdent.Name
+				funcName := sel.Sel.Name
+				if t.isKnownMultiReturnFunction(pkgName, funcName) {
+					return transpiler.VoidType{}
+				}
+			}
+		}
+	}
+
 	// Try manual type extraction first
 	typ := t.getExprTypeNameManual(expr)
 	if typ != nil && !typ.IsNil() {
@@ -213,13 +239,64 @@ func (t *galaASTTransformer) inferResultType(expr ast.Expr) transpiler.Type {
 	return transpiler.NilType{}
 }
 
+// isKnownMultiReturnFunction checks if a function is known to return multiple values.
+// These functions are used for side effects and their return values shouldn't be used in match expressions.
+func (t *galaASTTransformer) isKnownMultiReturnFunction(pkgName, funcName string) bool {
+	// Resolve package alias
+	resolvedPkg := pkgName
+	if actual, ok := t.importAliases[pkgName]; ok {
+		resolvedPkg = actual
+	}
+
+	// List of known functions that return multiple values (usually (int, error) or similar)
+	switch resolvedPkg {
+	case "fmt":
+		switch funcName {
+		case "Print", "Printf", "Println",
+			"Fprint", "Fprintf", "Fprintln",
+			"Scan", "Scanf", "Scanln",
+			"Fscan", "Fscanf", "Fscanln",
+			"Sscan", "Sscanf", "Sscanln":
+			return true
+		}
+	case "log":
+		switch funcName {
+		case "Print", "Printf", "Println",
+			"Fatal", "Fatalf", "Fatalln",
+			"Panic", "Panicf", "Panicln":
+			return true
+		}
+	case "io":
+		switch funcName {
+		case "Copy", "CopyN", "CopyBuffer",
+			"ReadFull", "ReadAtLeast",
+			"WriteString":
+			return true
+		}
+	}
+
+	return false
+}
+
 // inferCommonResultType checks that all result types are compatible and returns the common type
 func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patterns []string) (transpiler.Type, error) {
 	if len(types) == 0 {
 		return nil, galaerr.NewSemanticError("match expression has no case branches")
 	}
 
-	// Find the first non-nil, non-type-parameter type as reference
+	// Check if all branches are void (side-effect only, like fmt.Printf calls)
+	allVoid := true
+	for _, typ := range types {
+		if _, isVoid := typ.(transpiler.VoidType); !isVoid {
+			allVoid = false
+			break
+		}
+	}
+	if allVoid {
+		return transpiler.VoidType{}, nil
+	}
+
+	// Find the first non-nil, non-type-parameter, non-void type as reference
 	var refType transpiler.Type
 	var refPattern string
 	for i, typ := range types {
@@ -227,6 +304,10 @@ func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patt
 			// Skip type parameters (like A, B, T, U) - they're not concrete types
 			typeName := typ.String()
 			if t.isTypeParameter(typeName) {
+				continue
+			}
+			// Skip void types when looking for reference
+			if _, isVoid := typ.(transpiler.VoidType); isVoid {
 				continue
 			}
 			refType = typ
@@ -245,6 +326,10 @@ func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patt
 	for i, typ := range types {
 		if typ == nil {
 			return nil, galaerr.NewSemanticError(fmt.Sprintf("cannot infer result type for '%s'. Please add explicit type annotation", patterns[i]))
+		}
+		// VoidType is compatible with any type (for mixed match where some branches are void)
+		if _, isVoid := typ.(transpiler.VoidType); isVoid {
+			continue
 		}
 		// Note: NilType (from nil literal) is allowed and checked in typesCompatible
 		if !t.typesCompatible(refType, typ) {
@@ -1830,6 +1915,56 @@ func (t *galaASTTransformer) fixupReturnStatement(stmt ast.Stmt, resultType tran
 		}
 	case *ast.BlockStmt:
 		t.fixupReturnStatements(s.List, resultType)
+	}
+}
+
+// stripReturnStatements converts return statements to expression statements + empty returns for void match.
+// This is used when a match is used purely for side effects (like fmt.Printf calls).
+// We keep empty returns to ensure early exit after each case branch.
+func (t *galaASTTransformer) stripReturnStatements(stmts []ast.Stmt) []ast.Stmt {
+	result := make([]ast.Stmt, 0, len(stmts))
+	for _, stmt := range stmts {
+		result = append(result, t.stripReturnStatement(stmt))
+	}
+	return result
+}
+
+func (t *galaASTTransformer) stripReturnStatement(stmt ast.Stmt) ast.Stmt {
+	switch s := stmt.(type) {
+	case *ast.ReturnStmt:
+		// Convert "return expr" to "expr; return" (execute the expression, then return with no value)
+		if len(s.Results) > 0 {
+			// Create a block with the expression statement followed by an empty return
+			return &ast.BlockStmt{
+				List: []ast.Stmt{
+					&ast.ExprStmt{X: s.Results[0]},
+					&ast.ReturnStmt{}, // Empty return for early exit
+				},
+			}
+		}
+		// Keep empty returns as-is
+		return s
+	case *ast.IfStmt:
+		// Recursively process if body and else clause
+		newStmt := &ast.IfStmt{
+			Init: s.Init,
+			Cond: s.Cond,
+		}
+		if s.Body != nil {
+			newStmt.Body = &ast.BlockStmt{List: t.stripReturnStatements(s.Body.List)}
+		}
+		if s.Else != nil {
+			if block, ok := s.Else.(*ast.BlockStmt); ok {
+				newStmt.Else = &ast.BlockStmt{List: t.stripReturnStatements(block.List)}
+			} else {
+				newStmt.Else = t.stripReturnStatement(s.Else)
+			}
+		}
+		return newStmt
+	case *ast.BlockStmt:
+		return &ast.BlockStmt{List: t.stripReturnStatements(s.List)}
+	default:
+		return stmt
 	}
 }
 

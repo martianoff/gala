@@ -274,9 +274,9 @@ gala_test(
     expected = "try_basic.out",
 )
 
-# Temporarily disabled - pattern matching with custom struct types needs more work
-# gala_test(
-#     name = "try_recovery",
-#     src = "try_recovery.gala",
-#     expected = "try_recovery.out",
-# )
+# Temporarily enabled for debugging
+gala_test(
+    name = "try_recovery",
+    src = "try_recovery.gala",
+    expected = "try_recovery.out",
+)

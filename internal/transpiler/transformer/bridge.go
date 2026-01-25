@@ -48,11 +48,19 @@ func (t *galaASTTransformer) toInferType(typ transpiler.Type) infer.Type {
 		return &infer.TypeApp{Name: "map", Args: []infer.Type{t.toInferType(v.Key), t.toInferType(v.Elem)}}
 	case transpiler.FuncType:
 		// Curried function type: (a, b) -> r  becomes  a -> (b -> r)
-		res := t.toInferType(v.Results[0]) // Assume at least one result for now
+		var res infer.Type
+		if len(v.Results) > 0 {
+			res = t.toInferType(v.Results[0])
+		} else {
+			// Void function returns unit
+			res = &infer.TypeConst{Name: "unit"}
+		}
 		for i := len(v.Params) - 1; i >= 0; i-- {
 			res = &infer.TypeApp{Name: "->", Args: []infer.Type{t.toInferType(v.Params[i]), res}}
 		}
 		return res
+	case transpiler.VoidType:
+		return &infer.TypeConst{Name: "unit"}
 	}
 
 	return &infer.TypeConst{Name: typ.String()}

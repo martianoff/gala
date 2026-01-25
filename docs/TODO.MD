@@ -16,7 +16,8 @@
 - [x] Test framework
 - [x] JetBrains language plugin
 - [ ] Pointers to immutable vars
-- [ ] TreeSet
+- [x] TreeSet
 - [ ] Hash() function should be dynamically generated?
 - [ ] Futures
-- 
+- [ ] Remove native make/slices from GALA but make them available through STD package
+- [ ] Refactor documentation removing all explicit type where they are not required i.e. `var s = HashSetOf[int](1, 2, 3, 4, 5)` should be `var s = HashSetOf(1, 2, 3, 4, 5)`

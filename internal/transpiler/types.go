@@ -122,6 +122,16 @@ func (t NilType) IsNil() bool        { return true }
 func (t NilType) BaseName() string   { return "" }
 func (t NilType) GetPackage() string { return "" }
 
+// VoidType represents expressions used purely for side effects (no return value).
+// Used for match branches that call functions like fmt.Printf that return multiple values
+// or when the return value is not meaningful.
+type VoidType struct{}
+
+func (t VoidType) String() string     { return "void" }
+func (t VoidType) IsNil() bool        { return false }
+func (t VoidType) BaseName() string   { return "void" }
+func (t VoidType) GetPackage() string { return "" }
+
 // IsPrimitiveType checks if a type name is a Go primitive/builtin type.
 // Primitive types should never be package-qualified.
 func IsPrimitiveType(name string) bool {

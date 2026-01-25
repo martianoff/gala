@@ -1,0 +1,149 @@
+package main
+
+import "fmt"
+
+// DEBUG: force rebuild
+
+// User represents a user in the system.
+struct User(id int, name string, email string)
+
+// ValidationError represents a validation error.
+type ValidationError struct {
+	Field   string
+	Message string
+}
+
+func (e ValidationError) Error() string = fmt.Sprintf("%s: %s", e.Field, e.Message)
+
+// fetchUser simulates fetching a user from a database.
+func fetchUser(id int) Try[User] {
+	if id <= 0 {
+		return Failure[User](ValidationError(Field = "id", Message = "must be positive"))
+	}
+	if id == 999 {
+		return Failure[User](NoSuchElementError(Message = "user not found"))
+	}
+	return Success[User](User(id = id, name = "Alice", email = "alice@example.com"))
+}
+
+// validateUser validates user data.
+func validateUser(u User) Try[User] {
+	if u.name == "" {
+		return Failure[User](ValidationError(Field = "name", Message = "cannot be empty"))
+	}
+	if u.email == "" {
+		return Failure[User](ValidationError(Field = "email", Message = "cannot be empty"))
+	}
+	return Success[User](u)
+}
+
+// enrichUser adds additional data to the user.
+func enrichUser(u User) Try[User] = Success[User](u.Copy(name = u.name + " (verified)"))
+
+func main() {
+	fmt.Println("=== Railway-Oriented Programming with Try ===")
+	fmt.Println()
+
+	// Successful pipeline
+	fmt.Println("1. Processing user id=1:")
+	val result1 = fetchUser(1)
+		.FlatMap((u User) => validateUser(u))
+		.FlatMap((u User) => enrichUser(u))
+
+	result1 match {
+		case Success(u) => fmt.Printf("   Success: %s <%s>\n", u.name, u.email)
+		case Failure(e) => fmt.Printf("   Failure: %s\n", e.Error())
+		case _ => fmt.Println("   Unknown")
+	}
+
+	// Failed at first step
+	fmt.Println("\n2. Processing user id=-1 (invalid):")
+	val result2 = fetchUser(-1)
+		.FlatMap((u User) => validateUser(u))
+		.FlatMap((u User) => enrichUser(u))
+
+	result2 match {
+		case Success(u) => fmt.Printf("   Success: %s\n", u.name)
+		case Failure(e) => fmt.Printf("   Failure: %s\n", e.Error())
+		case _ => fmt.Println("   Unknown")
+	}
+
+	// Failed at middle step (user not found)
+	fmt.Println("\n3. Processing user id=999 (not found):")
+	val result3 = fetchUser(999)
+		.FlatMap((u User) => validateUser(u))
+		.FlatMap((u User) => enrichUser(u))
+
+	result3 match {
+		case Success(u) => fmt.Printf("   Success: %s\n", u.name)
+		case Failure(e) => fmt.Printf("   Failure: %s\n", e.Error())
+		case _ => fmt.Println("   Unknown")
+	}
+
+	fmt.Println("\n=== Recovery Patterns ===")
+	fmt.Println()
+
+	// Recover with a default value
+	fmt.Println("4. Recover with default user:")
+	val defaultUser = User(id = 0, name = "Guest", email = "guest@example.com")
+	val recovered1 = fetchUser(-1).Recover((e error) => defaultUser)
+	fmt.Printf("   Result: %s <%s>\n", recovered1.Get().name, recovered1.Get().email)
+
+	// RecoverWith - try alternative action
+	fmt.Println("\n5. RecoverWith - try fetching backup user:")
+	val recovered2 = fetchUser(999).RecoverWith((e error) => fetchUser(1))
+	recovered2 match {
+		case Success(u) => fmt.Printf("   Recovered: %s\n", u.name)
+		case Failure(e) => fmt.Printf("   Still failed: %s\n", e.Error())
+		case _ => fmt.Println("   Unknown")
+	}
+
+	fmt.Println("\n=== Chaining with Map ===")
+	fmt.Println()
+
+	// Map to extract specific field
+	fmt.Println("6. Extract user name with Map:")
+	val userName = fetchUser(1).Map((u User) => u.name)
+	fmt.Printf("   Name: %s\n", userName.GetOrElse("Unknown"))
+
+	// Chain multiple Maps
+	fmt.Println("\n7. Chain Maps to get email length:")
+	val emailLen = fetchUser(1)
+		.Map((u User) => u.email)
+		.Map((email string) => len(email))
+	fmt.Printf("   Email length: %d\n", emailLen.GetOrElse(0))
+
+	fmt.Println("\n=== ForEach Side Effects ===")
+	fmt.Println()
+
+	// ForEach only executes on Success
+	fmt.Println("8. ForEach on Success:")
+	fetchUser(1).ForEach((u User) => {
+		fmt.Printf("   Processing user: %s\n", u.name)
+	})
+
+	fmt.Println("\n9. ForEach on Failure (no output expected):")
+	fetchUser(-1).ForEach((u User) => {
+		fmt.Printf("   This should NOT print\n")
+	})
+	fmt.Println("   (ForEach skipped for Failure)")
+
+	fmt.Println("\n=== Conversion Examples ===")
+	fmt.Println()
+
+	// Convert Try to Option
+	fmt.Println("10. Try to Option:")
+	val optSuccess = fetchUser(1).ToOption()
+	val optFailure = fetchUser(-1).ToOption()
+	fmt.Printf("   Success -> Option.IsDefined(): %t\n", optSuccess.IsDefined())
+	fmt.Printf("   Failure -> Option.IsEmpty(): %t\n", optFailure.IsEmpty())
+
+	// Convert Try to Either
+	fmt.Println("\n11. Try to Either:")
+	val eitherSuccess = fetchUser(1).ToEither()
+	val eitherFailure = fetchUser(-1).ToEither()
+	fmt.Printf("   Success -> Either.IsRight(): %t\n", eitherSuccess.IsRight())
+	fmt.Printf("   Failure -> Either.IsLeft(): %t\n", eitherFailure.IsLeft())
+
+	fmt.Println("\n=== Done ===")
+}

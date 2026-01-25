@@ -1,0 +1,46 @@
+=== Railway-Oriented Programming with Try ===
+
+1. Processing user id=1:
+   Success: Alice (verified) <alice@example.com>
+
+2. Processing user id=-1 (invalid):
+   Failure: id: must be positive
+
+3. Processing user id=999 (not found):
+   Failure: user not found
+
+=== Recovery Patterns ===
+
+4. Recover with default user:
+   Result: Guest <guest@example.com>
+
+5. RecoverWith - try fetching backup user:
+   Recovered: Alice
+
+=== Chaining with Map ===
+
+6. Extract user name with Map:
+   Name: Alice
+
+7. Chain Maps to get email length:
+   Email length: 17
+
+=== ForEach Side Effects ===
+
+8. ForEach on Success:
+   Processing user: Alice
+
+9. ForEach on Failure (no output expected):
+   (ForEach skipped for Failure)
+
+=== Conversion Examples ===
+
+10. Try to Option:
+   Success -> Option.IsDefined(): true
+   Failure -> Option.IsEmpty(): true
+
+11. Try to Either:
+   Success -> Either.IsRight(): true
+   Failure -> Either.IsLeft(): true
+
+=== Done ===

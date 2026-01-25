@@ -1722,10 +1722,23 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	}
 	stmts = append(stmts, defaultBody...)
 
+	// Check if result type is void (for side-effect only match statements)
+	_, isVoid := resultType.(transpiler.VoidType)
+	if isVoid {
+		// Strip return statements for void match - convert returns to expression statements
+		stmts = t.stripReturnStatements(stmts)
+	}
+
+	// Build IIFE with or without return type depending on void
+	var resultsField *ast.FieldList
+	if !isVoid {
+		resultsField = &ast.FieldList{List: []*ast.Field{{Type: t.typeToExpr(resultType)}}}
+	}
+
 	funcLit := &ast.FuncLit{
 		Type: &ast.FuncType{
 			Params:  &ast.FieldList{List: []*ast.Field{{Names: []*ast.Ident{ast.NewIdent(paramName)}, Type: t.typeToExpr(matchedType)}}},
-			Results: &ast.FieldList{List: []*ast.Field{{Type: t.typeToExpr(resultType)}}},
+			Results: resultsField,
 		},
 		Body: &ast.BlockStmt{List: stmts},
 	}
