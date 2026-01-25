@@ -3,6 +3,7 @@ package collection_mutable
 import (
     "fmt"
     . "martianoff/gala/std"
+    "martianoff/gala/go_interop"
 )
 
 // HashMap is a mutable map with effectively constant time operations.
@@ -42,7 +43,7 @@ type HashMap[K comparable, V any] struct {
 
 // EmptyHashMap returns a new empty HashMap.
 func EmptyHashMap[K comparable, V any]() *HashMap[K, V] {
-    var buckets = SliceWithSize[*hashMapEntry[K, V]](hashMapInitialBuckets)
+    var buckets = go_interop.SliceWithSize[*hashMapEntry[K, V]](hashMapInitialBuckets)
     return &HashMap[K, V](buckets = buckets, size = 0, bucketMask = uint32(hashMapInitialBuckets - 1))
 }
 
@@ -124,7 +125,7 @@ func (m *HashMap[K, V]) Put(key K, value V) bool {
 // resize doubles the bucket array and rehashes all entries.
 func (m *HashMap[K, V]) resize() {
     var newSize = len(m.buckets) * 2
-    var newBuckets = SliceWithSize[*hashMapEntry[K, V]](newSize)
+    var newBuckets = go_interop.SliceWithSize[*hashMapEntry[K, V]](newSize)
     var newMask = uint32(newSize - 1)
 
     // Rehash all entries
@@ -215,7 +216,7 @@ func (m *HashMap[K, V]) RemoveAllKeys(keys *Array[K]) {
 
 // Clear removes all entries. O(n) to clear buckets.
 func (m *HashMap[K, V]) Clear() {
-    m.buckets = SliceWithSize[*hashMapEntry[K, V]](hashMapInitialBuckets)
+    m.buckets = go_interop.SliceWithSize[*hashMapEntry[K, V]](hashMapInitialBuckets)
     m.size = 0
     m.bucketMask = uint32(hashMapInitialBuckets - 1)
 }
@@ -488,9 +489,9 @@ func (m *HashMap[K, V]) ValueArray() *Array[V] {
 
 // ToGoMap converts the map to a Go map.
 func (m *HashMap[K, V]) ToGoMap() map[K]V {
-    var result = MapEmpty[K, V]()
+    var result = go_interop.MapEmpty[K, V]()
     m.ForEachKV((k K, v V) => {
-        MapPut[K, V](result, k, v)
+        go_interop.MapPut[K, V](result, k, v)
         return nil
     })
     return result

@@ -4,6 +4,7 @@ import (
     . "martianoff/gala/test"
     . "martianoff/gala/collection_mutable"
     . "martianoff/gala/std"
+    "martianoff/gala/go_interop"
 )
 
 // === HashSet Creation Tests ===
@@ -26,7 +27,7 @@ func TestHashSetOfDuplicates(t T) T {
 }
 
 func TestHashSetFromSlice(t T) T {
-    var slice = SliceOf(10, 20, 30)
+    var slice = go_interop.SliceOf(10, 20, 30)
     var s = HashSetFromSlice(slice)
     var t1 = Eq[int](t, s.Size(), 3)
     var t2 = IsTrue(t1, s.Contains(10))

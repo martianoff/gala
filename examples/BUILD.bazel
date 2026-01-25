@@ -259,6 +259,7 @@ gala_test(
     name = "custom_seq_pattern",
     src = "custom_seq_pattern.gala",
     expected = "custom_seq_pattern.out",
+    deps = ["//go_interop"],
 )
 
 gala_test(

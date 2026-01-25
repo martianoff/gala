@@ -5,6 +5,7 @@ import (
     . "martianoff/gala/test"
     . "martianoff/gala/collection_immutable"
     . "martianoff/gala/std"
+    "martianoff/gala/go_interop"
 )
 
 // Basic operations tests
@@ -400,7 +401,7 @@ func TestTreeSetReverseInsertion(t T) T {
 
 // Random-like insertion test
 func TestTreeSetRandomInsertion(t T) T {
-    val values = SliceOf(50, 25, 75, 12, 37, 62, 87, 6, 18, 31, 43, 56, 68, 81, 93)
+    val values = go_interop.SliceOf(50, 25, 75, 12, 37, 62, 87, 6, 18, 31, 43, 56, 68, 81, 93)
     var s = EmptyTreeSet[int]()
     for i := 0; i < len(values); i++ {
         s = s.Add(values[i])

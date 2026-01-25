@@ -1,6 +1,9 @@
 package collection_mutable
 
-import "fmt"
+import (
+    "fmt"
+    "martianoff/gala/go_interop"
+)
 
 // Array is a mutable indexed sequence backed by a Go slice.
 // Optimized for O(1) amortized append and O(1) random access.
@@ -32,7 +35,7 @@ func EmptyArray[T any]() *Array[T] {
 // ArrayOf creates an Array from variadic arguments.
 // Pre-allocates capacity for efficiency.
 func ArrayOf[T any](elements ...T) *Array[T] {
-    var elems = std.SliceWithCapacity[T](len(elements))
+    var elems = go_interop.SliceWithCapacity[T](len(elements))
     for i := 0; i < len(elements); i++ {
         elems = append(elems, elements[i])
     }
@@ -42,7 +45,7 @@ func ArrayOf[T any](elements ...T) *Array[T] {
 // ArrayFromSlice creates an Array from a slice (copies the slice).
 // Pre-allocates capacity for efficiency.
 func ArrayFromSlice[T any](elements []T) *Array[T] {
-    var elems = std.SliceWithCapacity[T](len(elements))
+    var elems = go_interop.SliceWithCapacity[T](len(elements))
     for i := 0; i < len(elements); i++ {
         elems = append(elems, elements[i])
     }
@@ -52,7 +55,7 @@ func ArrayFromSlice[T any](elements []T) *Array[T] {
 // ArrayWithCapacity creates an empty Array with pre-allocated capacity.
 // Use this when you know the approximate size upfront for better performance.
 func ArrayWithCapacity[T any](capacity int) *Array[T] {
-    var elems = std.SliceWithCapacity[T](capacity)
+    var elems = go_interop.SliceWithCapacity[T](capacity)
     return &Array[T](elements = elems)
 }
 
@@ -144,24 +147,24 @@ func (a *Array[T]) Append(value T) {
 
 // AppendAll appends all elements from a slice. O(m) where m = len(values).
 func (a *Array[T]) AppendAll(values []T) {
-    a.elements = std.SliceAppendAll(a.elements, values)
+    a.elements = go_interop.SliceAppendAll(a.elements, values)
 }
 
 // AppendFrom appends all elements from another Array. O(m) where m = other.Length().
 func (a *Array[T]) AppendFrom(other *Array[T]) {
-    a.elements = std.SliceAppendAll(a.elements, other.elements)
+    a.elements = go_interop.SliceAppendAll(a.elements, other.elements)
 }
 
 // Prepend adds an element to the front. O(n).
 // Uses single allocation with append+copy for efficiency.
 func (a *Array[T]) Prepend(value T) {
-    a.elements = std.SlicePrepend(a.elements, value)
+    a.elements = go_interop.SlicePrepend(a.elements, value)
 }
 
 // PrependAll prepends all elements from a slice. O(n+m).
 // Uses single allocation for efficiency.
 func (a *Array[T]) PrependAll(values []T) {
-    a.elements = std.SlicePrependAll(a.elements, values)
+    a.elements = go_interop.SlicePrependAll(a.elements, values)
 }
 
 // Insert inserts an element at the given index. O(n).
@@ -170,7 +173,7 @@ func (a *Array[T]) Insert(index int, value T) {
     if (index < 0) || (index > len(a.elements)) {
         panic(fmt.Sprintf("Array.Insert: index %d out of bounds [0, %d]", index, len(a.elements)))
     }
-    a.elements = std.SliceInsert(a.elements, index, value)
+    a.elements = go_interop.SliceInsert(a.elements, index, value)
 }
 
 // RemoveAt removes the element at the given index. O(n).
@@ -179,7 +182,7 @@ func (a *Array[T]) RemoveAt(index int) {
     if (index < 0) || (index >= len(a.elements)) {
         panic(fmt.Sprintf("Array.RemoveAt: index %d out of bounds [0, %d)", index, len(a.elements)))
     }
-    a.elements = std.SliceRemoveAt(a.elements, index)
+    a.elements = go_interop.SliceRemoveAt(a.elements, index)
 }
 
 // RemoveFirst removes and returns the first element. O(1).
@@ -190,7 +193,7 @@ func (a *Array[T]) RemoveFirst() T {
         panic("Array.RemoveFirst on empty array")
     }
     var removed = a.elements[0]
-    a.elements = std.SliceDrop(a.elements, 1)
+    a.elements = go_interop.SliceDrop(a.elements, 1)
     return removed
 }
 
@@ -203,7 +206,7 @@ func (a *Array[T]) RemoveLast() T {
     }
     var lastIdx = len(a.elements) - 1
     var removed = a.elements[lastIdx]
-    a.elements = std.SliceTake(a.elements, lastIdx)
+    a.elements = go_interop.SliceTake(a.elements, lastIdx)
     return removed
 }
 
@@ -270,7 +273,7 @@ func (a *Array[T]) Take(n int) *Array[T] {
     if n >= len(a.elements) {
         return a.Clone()
     }
-    var elems = std.SliceWithCapacity[T](n)
+    var elems = go_interop.SliceWithCapacity[T](n)
     for i := 0; i < n; i++ {
         elems = append(elems, a.elements[i])
     }
@@ -286,7 +289,7 @@ func (a *Array[T]) Drop(n int) *Array[T] {
         return EmptyArray[T]()
     }
     var size = len(a.elements) - n
-    var elems = std.SliceWithCapacity[T](size)
+    var elems = go_interop.SliceWithCapacity[T](size)
     for i := n; i < len(a.elements); i++ {
         elems = append(elems, a.elements[i])
     }
@@ -305,7 +308,7 @@ func (a *Array[T]) Slice(start int, end int) *Array[T] {
         return EmptyArray[T]()
     }
     var size = end - start
-    var elems = std.SliceWithCapacity[T](size)
+    var elems = go_interop.SliceWithCapacity[T](size)
     for i := start; i < end; i++ {
         elems = append(elems, a.elements[i])
     }
@@ -314,7 +317,7 @@ func (a *Array[T]) Slice(start int, end int) *Array[T] {
 
 // Clone creates a shallow copy of the array.
 func (a *Array[T]) Clone() *Array[T] {
-    var elems = std.SliceWithCapacity[T](len(a.elements))
+    var elems = go_interop.SliceWithCapacity[T](len(a.elements))
     for i := 0; i < len(a.elements); i++ {
         elems = append(elems, a.elements[i])
     }
@@ -348,7 +351,7 @@ func (a *Array[T]) Reversed() *Array[T] {
 
 // Map applies a function to each element and returns a new Array.
 func (a *Array[T]) Map[U any](f func(T) U) *Array[U] {
-    var elems = std.SliceWithCapacity[U](len(a.elements))
+    var elems = go_interop.SliceWithCapacity[U](len(a.elements))
     for i := 0; i < len(a.elements); i++ {
         elems = append(elems, f(a.elements[i]))
     }
@@ -593,7 +596,7 @@ func (a *Array[T]) Sliding(size int) *Array[*Array[T]] {
 
 // GroupBy partitions this array into a map of arrays according to a discriminator function.
 func (a *Array[T]) GroupBy[K comparable](f func(T) K) map[K]*Array[T] {
-    var result = MapEmpty[K, *Array[T]]()
+    var result = go_interop.MapEmpty[K, *Array[T]]()
     for i := 0; i < len(a.elements); i++ {
         var elem = a.elements[i]
         var key = f(elem)

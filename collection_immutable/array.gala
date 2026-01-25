@@ -1,6 +1,9 @@
 package collection_immutable
 
-import "fmt"
+import (
+    "fmt"
+    "martianoff/gala/go_interop"
+)
 
 // Array is an immutable indexed sequence with effectively constant time operations.
 // It uses a 32-way branching trie structure (similar to Scala's Vector).
@@ -887,7 +890,7 @@ func (a Array[T]) PartitionMap[A any, B any](f func(T) Either[A, B]) Tuple[Array
 
 // GroupBy partitions this array into a map of arrays according to a discriminator function.
 func (a Array[T]) GroupBy[K comparable](f func(T) K) map[K]Array[T] {
-    var result = MapEmpty[K, Array[T]]()
+    var result = go_interop.MapEmpty[K, Array[T]]()
     for i := 0; i < a.length; i++ {
         val elem = a.Get(i)
         val key = f(elem)
@@ -899,7 +902,7 @@ func (a Array[T]) GroupBy[K comparable](f func(T) K) map[K]Array[T] {
 
 // GroupMap partitions elements and maps values according to discriminator and value functions.
 func (a Array[T]) GroupMap[K comparable, V any](key func(T) K, value func(T) V) map[K]Array[V] {
-    var result = MapEmpty[K, Array[V]]()
+    var result = go_interop.MapEmpty[K, Array[V]]()
     for i := 0; i < a.length; i++ {
         val elem = a.Get(i)
         val k = key(elem)
@@ -912,8 +915,8 @@ func (a Array[T]) GroupMap[K comparable, V any](key func(T) K, value func(T) V) 
 
 // GroupMapReduce partitions elements, maps values, and reduces them with a combining function.
 func (a Array[T]) GroupMapReduce[K comparable, V any](key func(T) K, value func(T) V, reduce func(V, V) V) map[K]V {
-    var result = MapEmpty[K, V]()
-    var seen = MapEmpty[K, bool]()
+    var result = go_interop.MapEmpty[K, V]()
+    var seen = go_interop.MapEmpty[K, bool]()
     for i := 0; i < a.length; i++ {
         val elem = a.Get(i)
         val k = key(elem)

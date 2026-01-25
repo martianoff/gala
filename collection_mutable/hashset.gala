@@ -3,6 +3,7 @@ package collection_mutable
 import (
     "fmt"
     . "martianoff/gala/std"
+    "martianoff/gala/go_interop"
 )
 
 // HashSet is a mutable set with effectively constant time operations.
@@ -40,7 +41,7 @@ type HashSet[T comparable] struct {
 
 // EmptyHashSet returns a new empty HashSet.
 func EmptyHashSet[T comparable]() *HashSet[T] {
-    var buckets = SliceWithSize[*hashSetEntry[T]](hashSetInitialBuckets)
+    var buckets = go_interop.SliceWithSize[*hashSetEntry[T]](hashSetInitialBuckets)
     return &HashSet[T](buckets = buckets, size = 0, bucketMask = uint32(hashSetInitialBuckets - 1))
 }
 
@@ -141,7 +142,7 @@ func (s *HashSet[T]) Add(elem T) bool {
 // resize doubles the bucket array and rehashes all entries.
 func (s *HashSet[T]) resize() {
     var newSize = len(s.buckets) * 2
-    var newBuckets = SliceWithSize[*hashSetEntry[T]](newSize)
+    var newBuckets = go_interop.SliceWithSize[*hashSetEntry[T]](newSize)
     var newMask = uint32(newSize - 1)
 
     // Rehash all entries
@@ -216,7 +217,7 @@ func (s *HashSet[T]) RemoveFrom(other *HashSet[T]) {
 
 // Clear removes all elements. O(n) to clear buckets.
 func (s *HashSet[T]) Clear() {
-    s.buckets = SliceWithSize[*hashSetEntry[T]](hashSetInitialBuckets)
+    s.buckets = go_interop.SliceWithSize[*hashSetEntry[T]](hashSetInitialBuckets)
     s.size = 0
     s.bucketMask = uint32(hashSetInitialBuckets - 1)
 }

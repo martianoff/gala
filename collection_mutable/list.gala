@@ -1,6 +1,9 @@
 package collection_mutable
 
-import "fmt"
+import (
+    "fmt"
+    "martianoff/gala/go_interop"
+)
 
 // List is a mutable doubly-linked list with O(1) operations at both ends.
 //
@@ -701,7 +704,7 @@ func (l *List[T]) SplitAt(n int) Tuple[*List[T], *List[T]] {
 
 // GroupBy partitions this list into a map of lists according to a discriminator function.
 func (l *List[T]) GroupBy[K comparable](f func(T) K) map[K]*List[T] {
-    var result = MapEmpty[K, *List[T]]()
+    var result = go_interop.MapEmpty[K, *List[T]]()
     var current = l.head
     for current != nil {
         var key = f(current.value)

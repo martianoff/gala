@@ -28,13 +28,6 @@ func StdPackageInfo() PackageInfo {
 			"Some", "None", "Left", "Right", "Success", "Failure",
 			// Try conversion functions
 			"FromOption", "FromEitherError",
-			// Slice helper functions
-			"SliceOf", "SliceEmpty", "SliceWithCapacity", "SliceWithSize", "SliceWithSizeAndCapacity",
-			"SliceCopy", "SliceAppendAll", "SlicePrepend", "SlicePrependAll", "SliceInsert",
-			"SliceRemoveAt", "SliceDrop", "SliceTake",
-			// Map helper functions
-			"MapEmpty", "MapWithCapacity", "MapPut", "MapDelete", "MapGet",
-			"MapContains", "MapLen", "MapForEach", "MapKeys", "MapValues", "MapCopy",
 		},
 		Companions: []string{
 			"Some", "None", "Left", "Right", "Success", "Failure",

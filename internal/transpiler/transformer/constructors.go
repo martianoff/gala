@@ -78,14 +78,14 @@ func (t *galaASTTransformer) transformCompositeLiteral(ctx *grammar.CompositeLit
 		return nil, err
 	}
 
-	// Reject slice literals - users should use collection_immutable.Array, collection_mutable.Array, or std.SliceOf() or std.SliceEmpty() for Go interop
+	// Reject slice literals - users should use collection_immutable.Array, collection_mutable.Array, or go_interop.SliceOf() or go_interop.SliceEmpty() for Go interop
 	if _, isArray := typeExpr.(*ast.ArrayType); isArray {
-		return nil, fmt.Errorf("slice literals are not supported in GALA; use collection_immutable.Array or collection_mutable.Array for type-safe maps, or std.SliceOf() or std.SliceEmpty() for Go interoperability")
+		return nil, fmt.Errorf("slice literals are not supported in GALA; use collection_immutable.Array or collection_mutable.Array for type-safe collections, or go_interop.SliceOf() or go_interop.SliceEmpty() for Go interoperability")
 	}
 
-	// Reject map literals - users should use collection_immutable.HashMap, collection_mutable.HashMap or std.MapEmpty() for Go interop
+	// Reject map literals - users should use collection_immutable.HashMap, collection_mutable.HashMap or go_interop.MapEmpty() for Go interop
 	if _, isMap := typeExpr.(*ast.MapType); isMap {
-		return nil, fmt.Errorf("map literals are not supported in GALA; use collection_immutable.HashMap or collection_mutable.HashMap for type-safe maps, or std.MapEmpty()/std.MapPut() for Go interoperability")
+		return nil, fmt.Errorf("map literals are not supported in GALA; use collection_immutable.HashMap or collection_mutable.HashMap for type-safe maps, or go_interop.MapEmpty()/go_interop.MapPut() for Go interoperability")
 	}
 
 	// Transform the elements

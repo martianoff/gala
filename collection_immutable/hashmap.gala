@@ -3,6 +3,7 @@ package collection_immutable
 import (
     "fmt"
     . "martianoff/gala/std"
+    "martianoff/gala/go_interop"
 )
 
 // HashMap is an immutable map with effectively constant time operations.
@@ -627,9 +628,9 @@ func (m HashMap[K, V]) Merge(other HashMap[K, V], f func(V, V) V) HashMap[K, V] 
 
 // ToGoMap converts the map to a Go map.
 func (m HashMap[K, V]) ToGoMap() map[K]V {
-    var result = MapEmpty[K, V]()
+    var result = go_interop.MapEmpty[K, V]()
     m.ForEachKV((k K, v V) => {
-        MapPut[K, V](result, k, v)
+        go_interop.MapPut[K, V](result, k, v)
         return nil
     })
     return result

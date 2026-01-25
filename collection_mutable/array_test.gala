@@ -3,7 +3,7 @@ package main
 import (
     . "martianoff/gala/test"
     . "martianoff/gala/collection_mutable"
-    . "martianoff/gala/std"
+    "martianoff/gala/go_interop"
 )
 
 // === Array Creation Tests ===
@@ -21,7 +21,7 @@ func TestArrayOf(t T) T {
 }
 
 func TestArrayFromSlice(t T) T {
-    var slice = SliceOf(10, 20, 30)
+    var slice = go_interop.SliceOf(10, 20, 30)
     var arr = ArrayFromSlice(slice)
     var t1 = Eq[int](t, arr.Length(), 3)
     return Eq[int](t1, arr.Get(0), 10)

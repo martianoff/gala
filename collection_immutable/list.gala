@@ -1,6 +1,9 @@
 package collection_immutable
 
-import "fmt"
+import (
+    "fmt"
+    "martianoff/gala/go_interop"
+)
 
 // List is an immutable linked list with the following performance characteristics:
 // - Head:    O(1)
@@ -525,7 +528,7 @@ func (l List[T]) PartitionMap[A any, B any](f func(T) Either[A, B]) Tuple[List[A
 
 // GroupBy partitions this list into a map of lists according to a discriminator function.
 func (l List[T]) GroupBy[K comparable](f func(T) K) map[K]List[T] {
-    var result = MapEmpty[K, List[T]]()
+    var result = go_interop.MapEmpty[K, List[T]]()
     var current = l
     for !current.isEmpty {
         val elem = current.head
@@ -539,7 +542,7 @@ func (l List[T]) GroupBy[K comparable](f func(T) K) map[K]List[T] {
 
 // GroupMap partitions elements and maps values according to discriminator and value functions.
 func (l List[T]) GroupMap[K comparable, V any](key func(T) K, value func(T) V) map[K]List[V] {
-    var result = MapEmpty[K, List[V]]()
+    var result = go_interop.MapEmpty[K, List[V]]()
     var current = l
     for !current.isEmpty {
         val elem = current.head
@@ -554,8 +557,8 @@ func (l List[T]) GroupMap[K comparable, V any](key func(T) K, value func(T) V) m
 
 // GroupMapReduce partitions elements, maps values, and reduces them with a combining function.
 func (l List[T]) GroupMapReduce[K comparable, V any](key func(T) K, value func(T) V, reduce func(V, V) V) map[K]V {
-    var result = MapEmpty[K, V]()
-    var seen = MapEmpty[K, bool]()
+    var result = go_interop.MapEmpty[K, V]()
+    var seen = go_interop.MapEmpty[K, bool]()
     var current = l
     for !current.isEmpty {
         val elem = current.head

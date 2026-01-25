@@ -5,6 +5,7 @@ import (
     . "martianoff/gala/test"
     . "martianoff/gala/collection_immutable"
     . "martianoff/gala/std"
+    "martianoff/gala/go_interop"
 )
 
 // === Basic Operations Tests ===
@@ -269,7 +270,7 @@ func TestHashMapToList(t T) T {
 }
 
 func TestHashMapFromSlice(t T) T {
-    val entries = SliceOf[Tuple[string, int]](
+    val entries = go_interop.SliceOf[Tuple[string, int]](
         Tuple[string, int](V1 = "a", V2 = 1),
         Tuple[string, int](V1 = "b", V2 = 2),
         Tuple[string, int](V1 = "c", V2 = 3)

@@ -59,7 +59,10 @@ go_library(
     ],
     importpath = "martianoff/gala/collection_immutable",
     visibility = ["//visibility:public"],
-    deps = ["//std"],
+    deps = [
+        "//std",
+        "//go_interop",
+    ],
 )
 
 gala_go_test(
@@ -95,13 +98,13 @@ gala_go_test(
 gala_go_test(
     name = "treeset_test",
     srcs = ["treeset_test.gala"],
-    deps = [":collection_immutable"],
+    deps = [":collection_immutable", "//go_interop"],
 )
 
 gala_go_test(
     name = "hashmap_test",
     srcs = ["hashmap_test.gala"],
-    deps = [":collection_immutable"],
+    deps = [":collection_immutable", "//go_interop"],
 )
 
 # Performance benchmarks
@@ -117,3 +120,4 @@ go_binary(
     name = "perf_go",
     srcs = ["go_native_perf_test.go"],
 )
+
