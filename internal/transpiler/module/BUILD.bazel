@@ -1,0 +1,18 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "module",
+    srcs = ["resolver.go"],
+    importpath = "martianoff/gala/internal/transpiler/module",
+    visibility = ["//:__subpackages__"],
+)
+
+go_test(
+    name = "module_test",
+    srcs = ["resolver_test.go"],
+    embed = [":module"],
+    deps = [
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
+)

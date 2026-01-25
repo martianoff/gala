@@ -6,6 +6,7 @@ import (
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
+	"martianoff/gala/internal/transpiler/registry"
 	"strings"
 )
 
@@ -31,19 +32,12 @@ func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, 
 			if !resolvedType.IsNil() {
 				if pkg := resolvedType.GetPackage(); pkg != "" && pkg != t.packageName {
 					// Type belongs to an imported package, use package-qualified identifier
-					if pkg == transpiler.StdPackage {
+					if pkg == registry.StdPackageName {
 						ident = t.stdIdent(typeName)
 					} else {
 						// Check if this is a dot import - if so, don't qualify
-						isDotImport := false
-						for _, dotPkg := range t.dotImports {
-							if dotPkg == pkg {
-								isDotImport = true
-								break
-							}
-						}
-						if !isDotImport {
-							if alias, ok := t.reverseImportAliases[pkg]; ok {
+						if !t.importManager.IsDotImported(pkg) {
+							if alias, ok := t.importManager.GetAlias(pkg); ok {
 								ident = &ast.SelectorExpr{X: ast.NewIdent(alias), Sel: ast.NewIdent(typeName)}
 							}
 						}
@@ -149,26 +143,7 @@ func isPrimitiveType(name string) bool {
 // isKnownStdType checks if a type name is a known standard library type
 // that should always be prefixed with std.
 func (t *galaASTTransformer) isKnownStdType(name string) bool {
-	knownStdTypes := map[string]bool{
-		"Tuple":     true,
-		"Tuple2":    true,
-		"Tuple3":    true,
-		"Tuple4":    true,
-		"Tuple5":    true,
-		"Tuple6":    true,
-		"Tuple7":    true,
-		"Tuple8":    true,
-		"Tuple9":    true,
-		"Tuple10":   true,
-		"Option":    true,
-		"Either":    true,
-		"Some":      true,
-		"None":      true,
-		"Left":      true,
-		"Right":     true,
-		"Immutable": true,
-	}
-	return knownStdTypes[name]
+	return registry.IsStdType(name)
 }
 
 func (t *galaASTTransformer) typeToExpr(typ transpiler.Type) ast.Expr {
@@ -190,14 +165,12 @@ func (t *galaASTTransformer) typeToExpr(typ transpiler.Type) ast.Expr {
 			if isPrimitiveType(v.Name) {
 				return ast.NewIdent(v.Name)
 			}
-			if v.Package == transpiler.StdPackage {
+			if v.Package == registry.StdPackageName {
 				return t.stdIdent(v.Name)
 			}
 			// Check if this is a dot import - if so, use just the type name
-			for _, dotPkg := range t.dotImports {
-				if dotPkg == v.Package {
-					return ast.NewIdent(v.Name)
-				}
+			if t.importManager.IsDotImported(v.Package) {
+				return ast.NewIdent(v.Name)
 			}
 			return &ast.SelectorExpr{
 				X:   ast.NewIdent(v.Package),
@@ -550,9 +523,9 @@ func (t *galaASTTransformer) getBaseTypeName(expr ast.Expr) string {
 		return t.getBaseTypeName(e.X)
 	case *ast.SelectorExpr:
 		if x, ok := e.X.(*ast.Ident); ok {
-			if _, isPkg := t.imports[x.Name]; isPkg {
+			if t.importManager.IsPackage(x.Name) {
 				pkgName := x.Name
-				if actual, ok := t.importAliases[pkgName]; ok {
+				if actual, ok := t.importManager.ResolveAlias(pkgName); ok {
 					pkgName = actual
 				}
 				return pkgName + "." + e.Sel.Name
@@ -734,9 +707,9 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 		}
 		// It might be a package-qualified name
 		if x, ok := e.X.(*ast.Ident); ok {
-			if _, isPkg := t.imports[x.Name]; isPkg {
+			if t.importManager.IsPackage(x.Name) {
 				pkgName := x.Name
-				if actual, ok := t.importAliases[pkgName]; ok {
+				if actual, ok := t.importManager.ResolveAlias(pkgName); ok {
 					pkgName = actual
 				}
 				return transpiler.NamedType{Package: pkgName, Name: e.Sel.Name}
@@ -846,7 +819,7 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 						panic(galaerr.NewSemanticError("recursive Immutable wrapping is not allowed"))
 					}
 					return transpiler.GenericType{
-						Base:   transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeImmutable},
+						Base:   transpiler.NamedType{Package: registry.StdPackageName, Name: transpiler.TypeImmutable},
 						Params: []transpiler.Type{innerType},
 					}
 				}
@@ -859,7 +832,7 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 					strings.HasPrefix(sel.Sel.Name, transpiler.FuncLeft+"_") || strings.HasPrefix(sel.Sel.Name, transpiler.FuncRight+"_") ||
 					strings.HasPrefix(sel.Sel.Name, transpiler.TypeEither+"_") {
 					return transpiler.GenericType{
-						Base:   transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeEither},
+						Base:   transpiler.NamedType{Package: registry.StdPackageName, Name: transpiler.TypeEither},
 						Params: typeArgs,
 					}
 				}
@@ -867,23 +840,23 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 					strings.HasPrefix(sel.Sel.Name, transpiler.FuncSome+"_") || strings.HasPrefix(sel.Sel.Name, transpiler.FuncNone+"_") ||
 					strings.HasPrefix(sel.Sel.Name, transpiler.TypeOption+"_") {
 					return transpiler.GenericType{
-						Base:   transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeOption},
+						Base:   transpiler.NamedType{Package: registry.StdPackageName, Name: transpiler.TypeOption},
 						Params: typeArgs,
 					}
 				}
 				if t.isTupleTypeName(sel.Sel.Name) || t.hasTupleTypePrefix(sel.Sel.Name) {
 					tupleType := t.getTupleTypeFromName(sel.Sel.Name)
 					return transpiler.GenericType{
-						Base:   transpiler.NamedType{Package: transpiler.StdPackage, Name: tupleType},
+						Base:   transpiler.NamedType{Package: registry.StdPackageName, Name: tupleType},
 						Params: typeArgs,
 					}
 				}
 			}
 
 			if id, ok := sel.X.(*ast.Ident); ok {
-				if _, isPkg := t.imports[id.Name]; isPkg {
+				if t.importManager.IsPackage(id.Name) {
 					pkgName := id.Name
-					if actual, ok := t.importAliases[pkgName]; ok {
+					if actual, ok := t.importManager.ResolveAlias(pkgName); ok {
 						pkgName = actual
 					}
 					fullName := pkgName + "." + sel.Sel.Name
@@ -914,7 +887,7 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 							argType := t.getExprTypeNameManual(e.Args[1])
 							if !argType.IsNil() && argType.String() != "any" {
 								return transpiler.GenericType{
-									Base:   transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeOption},
+									Base:   transpiler.NamedType{Package: registry.StdPackageName, Name: transpiler.TypeOption},
 									Params: []transpiler.Type{argType},
 								}
 							}
@@ -1002,7 +975,7 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 			}
 
 			if sel.Sel.Name == transpiler.FuncLeft || sel.Sel.Name == transpiler.FuncRight {
-				baseType := transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeEither}
+				baseType := transpiler.NamedType{Package: registry.StdPackageName, Name: transpiler.TypeEither}
 				if len(typeArgs) > 0 {
 					return transpiler.GenericType{Base: baseType, Params: typeArgs}
 				}
@@ -1010,14 +983,14 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 			}
 			if t.isTupleTypeName(sel.Sel.Name) {
 				tupleType := t.getTupleTypeFromName(sel.Sel.Name)
-				baseType := transpiler.NamedType{Package: transpiler.StdPackage, Name: tupleType}
+				baseType := transpiler.NamedType{Package: registry.StdPackageName, Name: tupleType}
 				if len(typeArgs) > 0 {
 					return transpiler.GenericType{Base: baseType, Params: typeArgs}
 				}
 				return baseType
 			}
 			if strings.HasPrefix(sel.Sel.Name, transpiler.TypeEither+"_") || strings.HasPrefix(sel.Sel.Name, transpiler.FuncLeft+"_") || strings.HasPrefix(sel.Sel.Name, transpiler.FuncRight+"_") {
-				baseType := transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeEither}
+				baseType := transpiler.NamedType{Package: registry.StdPackageName, Name: transpiler.TypeEither}
 				if len(typeArgs) > 0 {
 					return transpiler.GenericType{Base: baseType, Params: typeArgs}
 				}
@@ -1038,16 +1011,16 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 					argType := t.getExprTypeNameManual(e.Args[1])
 					if !argType.IsNil() && argType.String() != "any" {
 						return transpiler.GenericType{
-							Base:   transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeOption},
+							Base:   transpiler.NamedType{Package: registry.StdPackageName, Name: transpiler.TypeOption},
 							Params: []transpiler.Type{argType},
 						}
 					}
 				}
-				return transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeOption}
+				return transpiler.NamedType{Package: registry.StdPackageName, Name: transpiler.TypeOption}
 			}
 			if t.hasTupleTypePrefix(sel.Sel.Name) {
 				tupleType := t.getTupleTypeFromName(sel.Sel.Name)
-				baseType := transpiler.NamedType{Package: transpiler.StdPackage, Name: tupleType}
+				baseType := transpiler.NamedType{Package: registry.StdPackageName, Name: tupleType}
 				if len(typeArgs) > 0 {
 					return transpiler.GenericType{Base: baseType, Params: typeArgs}
 				}
@@ -1065,13 +1038,13 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 						panic(galaerr.NewSemanticError("recursive Immutable wrapping is not allowed"))
 					}
 					return transpiler.GenericType{
-						Base:   transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeImmutable},
+						Base:   transpiler.NamedType{Package: registry.StdPackageName, Name: transpiler.TypeImmutable},
 						Params: []transpiler.Type{innerType},
 					}
 				}
 			}
 			if id.Name == transpiler.FuncLeft || id.Name == transpiler.FuncRight {
-				baseType := transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeEither}
+				baseType := transpiler.NamedType{Package: registry.StdPackageName, Name: transpiler.TypeEither}
 				if len(typeArgs) > 0 {
 					return transpiler.GenericType{Base: baseType, Params: typeArgs}
 				}
@@ -1079,21 +1052,21 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 			}
 			if t.isTupleTypeName(id.Name) {
 				tupleType := t.getTupleTypeFromName(id.Name)
-				baseType := transpiler.NamedType{Package: transpiler.StdPackage, Name: tupleType}
+				baseType := transpiler.NamedType{Package: registry.StdPackageName, Name: tupleType}
 				if len(typeArgs) > 0 {
 					return transpiler.GenericType{Base: baseType, Params: typeArgs}
 				}
 				return baseType
 			}
 			if strings.HasPrefix(id.Name, transpiler.TypeEither+"_") || strings.HasPrefix(id.Name, transpiler.FuncLeft+"_") || strings.HasPrefix(id.Name, transpiler.FuncRight+"_") {
-				baseType := transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeEither}
+				baseType := transpiler.NamedType{Package: registry.StdPackageName, Name: transpiler.TypeEither}
 				if len(typeArgs) > 0 {
 					return transpiler.GenericType{Base: baseType, Params: typeArgs}
 				}
 				return baseType
 			}
 			if strings.HasPrefix(id.Name, transpiler.TypeOption+"_") || strings.HasPrefix(id.Name, transpiler.FuncSome+"_") || strings.HasPrefix(id.Name, transpiler.FuncNone+"_") {
-				baseType := transpiler.NamedType{Package: transpiler.StdPackage, Name: transpiler.TypeOption}
+				baseType := transpiler.NamedType{Package: registry.StdPackageName, Name: transpiler.TypeOption}
 				if len(typeArgs) > 0 {
 					return transpiler.GenericType{Base: baseType, Params: typeArgs}
 				}
@@ -1101,7 +1074,7 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 			}
 			if t.hasTupleTypePrefix(id.Name) {
 				tupleType := t.getTupleTypeFromName(id.Name)
-				baseType := transpiler.NamedType{Package: transpiler.StdPackage, Name: tupleType}
+				baseType := transpiler.NamedType{Package: registry.StdPackageName, Name: tupleType}
 				if len(typeArgs) > 0 {
 					return transpiler.GenericType{Base: baseType, Params: typeArgs}
 				}
@@ -1665,4 +1638,3 @@ func getKnownGoStdlibReturnType(fullName string) transpiler.Type {
 	}
 	return nil
 }
-

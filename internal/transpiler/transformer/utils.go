@@ -3,7 +3,7 @@ package transformer
 import (
 	"fmt"
 	"go/ast"
-	"martianoff/gala/internal/transpiler"
+	"martianoff/gala/internal/transpiler/registry"
 	"strings"
 )
 
@@ -30,19 +30,17 @@ func (t *galaASTTransformer) isNoneCall(expr ast.Expr) bool {
 
 func (t *galaASTTransformer) stdIdent(name string) ast.Expr {
 	// If we're in the std package, no prefix needed
-	if t.packageName == transpiler.StdPackage {
+	if t.packageName == registry.StdPackageName {
 		return ast.NewIdent(name)
 	}
 	// If std is dot-imported, no prefix needed
-	for _, di := range t.dotImports {
-		if di == transpiler.StdPackage {
-			return ast.NewIdent(name)
-		}
+	if t.importManager.IsDotImported(registry.StdPackageName) {
+		return ast.NewIdent(name)
 	}
 	// Otherwise, need the std. prefix and import
 	t.needsStdImport = true
 	return &ast.SelectorExpr{
-		X:   ast.NewIdent(transpiler.StdPackage),
+		X:   ast.NewIdent(registry.StdPackageName),
 		Sel: ast.NewIdent(name),
 	}
 }
@@ -55,13 +53,11 @@ func (t *galaASTTransformer) ident(name string) ast.Expr {
 			return ast.NewIdent(base)
 		}
 		// Check if it's dot-imported
-		for _, di := range t.dotImports {
-			if di == pkg {
-				return ast.NewIdent(base)
-			}
+		if t.importManager.IsDotImported(pkg) {
+			return ast.NewIdent(base)
 		}
 		// Check if we have an alias for this actual package name
-		if alias, ok := t.reverseImportAliases[pkg]; ok {
+		if alias, ok := t.importManager.GetAlias(pkg); ok {
 			pkg = alias
 		}
 		return &ast.SelectorExpr{

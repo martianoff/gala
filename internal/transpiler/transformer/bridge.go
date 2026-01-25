@@ -160,7 +160,7 @@ func (t *galaASTTransformer) toInferExpr(expr ast.Expr) infer.Expr {
 	case *ast.SelectorExpr:
 		// For now, treat selector as a single variable name if it's pkg.Name
 		if id, ok := e.X.(*ast.Ident); ok {
-			if _, ok := t.imports[id.Name]; ok {
+			if t.importManager.IsPackage(id.Name) {
 				return &infer.Var{Name: id.Name + "." + e.Sel.Name}
 			}
 		}

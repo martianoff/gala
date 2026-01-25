@@ -24,3 +24,4 @@
 - [x] Mutable and immutable Maps
 - [x] Add Collect API to all collections
 - [x] Partial functions
+- [ ] Restrict the GO map type declaration directly in GALA. Create GO map functions inside std. Rewrite internal collections using std Maps. Leave ToGoMap functions for compatibility with GO apps

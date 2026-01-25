@@ -5,7 +5,8 @@ import (
 	"io/ioutil"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
-	"os"
+	"martianoff/gala/internal/transpiler/module"
+	"martianoff/gala/internal/transpiler/registry"
 	"path/filepath"
 	"strings"
 
@@ -15,33 +16,15 @@ import (
 // GetBaseMetadata loads standard library metadata for use in tests and backward compatibility.
 // In normal compilation flow, std is loaded via implicit import in Analyze().
 func GetBaseMetadata(p transpiler.GalaParser, searchPaths []string) *transpiler.RichAST {
-	// Try to find module root from current working directory
-	cwd, _ := os.Getwd()
-	moduleRoot, moduleName := findModuleRoot(cwd)
-
-	// If not found from cwd, try from search paths
-	if moduleRoot == "" {
-		for _, sp := range searchPaths {
-			absPath, err := filepath.Abs(sp)
-			if err == nil {
-				moduleRoot, moduleName = findModuleRoot(absPath)
-				if moduleRoot != "" {
-					break
-				}
-			}
-		}
-	}
-
 	a := &galaAnalyzer{
 		parser:       p,
 		searchPaths:  searchPaths,
 		analyzedPkgs: make(map[string]*transpiler.RichAST),
 		checkedDirs:  make(map[string]bool),
-		moduleRoot:   moduleRoot,
-		moduleName:   moduleName,
+		resolver:     module.NewResolver(searchPaths),
 	}
 
-	stdAST, err := a.analyzePackage(transpiler.StdPackage)
+	stdAST, err := a.analyzePackage(registry.StdPackageName)
 	if err != nil {
 		// Return empty RichAST if std can't be loaded
 		return &transpiler.RichAST{
@@ -56,21 +39,11 @@ func GetBaseMetadata(p transpiler.GalaParser, searchPaths []string) *transpiler.
 
 // CheckStdConflict returns an error if the given name conflicts with std library exports.
 // This prevents user code from shadowing std types and functions.
+//
+// This function delegates to the registry package which is the source of truth
+// for prelude package exports.
 func CheckStdConflict(name, pkgName string) error {
-	if pkgName == transpiler.StdPackage {
-		return nil // std itself can define these
-	}
-	for _, stdType := range transpiler.StdExportedTypes {
-		if name == stdType {
-			return fmt.Errorf("type '%s' conflicts with std library export; choose a different name", name)
-		}
-	}
-	for _, stdFunc := range transpiler.StdExportedFunctions {
-		if name == stdFunc {
-			return fmt.Errorf("function '%s' conflicts with std library export; choose a different name", name)
-		}
-	}
-	return nil
+	return registry.CheckStdConflict(name, pkgName)
 }
 
 type galaAnalyzer struct {
@@ -79,101 +52,30 @@ type galaAnalyzer struct {
 	searchPaths  []string
 	analyzedPkgs map[string]*transpiler.RichAST // Cache of analyzed packages
 	checkedDirs  map[string]bool
-	moduleRoot   string // Path to the module root (where go.mod is located)
-	moduleName   string // Module name from go.mod (e.g., "martianoff/gala")
-}
-
-// findModuleRoot walks up from startPath looking for go.mod to determine the module root.
-// Returns the module root path and module name, or empty strings if not found.
-func findModuleRoot(startPath string) (string, string) {
-	// Start from the given path
-	dir := startPath
-	if info, err := os.Stat(dir); err == nil && !info.IsDir() {
-		dir = filepath.Dir(dir)
-	}
-
-	// Walk up looking for go.mod
-	for {
-		modPath := filepath.Join(dir, "go.mod")
-		if content, err := ioutil.ReadFile(modPath); err == nil {
-			// Parse module name from go.mod
-			lines := strings.Split(string(content), "\n")
-			for _, line := range lines {
-				line = strings.TrimSpace(line)
-				if strings.HasPrefix(line, "module ") {
-					moduleName := strings.TrimSpace(strings.TrimPrefix(line, "module "))
-					return dir, moduleName
-				}
-			}
-		}
-
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			// Reached root, no go.mod found
-			break
-		}
-		dir = parent
-	}
-	return "", ""
+	resolver     *module.Resolver // Handles module root discovery and package path resolution
 }
 
 // NewGalaAnalyzer creates a new transpiler.Analyzer implementation.
 // It automatically finds the module root by looking for go.mod from the current working directory.
 func NewGalaAnalyzer(p transpiler.GalaParser, searchPaths []string) transpiler.Analyzer {
-	// Try to find module root from current working directory
-	cwd, _ := os.Getwd()
-	moduleRoot, moduleName := findModuleRoot(cwd)
-
-	// If not found from cwd, try from search paths
-	if moduleRoot == "" {
-		for _, sp := range searchPaths {
-			absPath, err := filepath.Abs(sp)
-			if err == nil {
-				moduleRoot, moduleName = findModuleRoot(absPath)
-				if moduleRoot != "" {
-					break
-				}
-			}
-		}
-	}
-
 	return &galaAnalyzer{
 		parser:       p,
 		searchPaths:  searchPaths,
 		analyzedPkgs: make(map[string]*transpiler.RichAST),
 		checkedDirs:  make(map[string]bool),
-		moduleRoot:   moduleRoot,
-		moduleName:   moduleName,
+		resolver:     module.NewResolver(searchPaths),
 	}
 }
 
 // NewGalaAnalyzerWithBase creates a new transpiler.Analyzer with base metadata.
 func NewGalaAnalyzerWithBase(base *transpiler.RichAST, p transpiler.GalaParser, searchPaths []string) transpiler.Analyzer {
-	// Try to find module root from current working directory
-	cwd, _ := os.Getwd()
-	moduleRoot, moduleName := findModuleRoot(cwd)
-
-	// If not found from cwd, try from search paths
-	if moduleRoot == "" {
-		for _, sp := range searchPaths {
-			absPath, err := filepath.Abs(sp)
-			if err == nil {
-				moduleRoot, moduleName = findModuleRoot(absPath)
-				if moduleRoot != "" {
-					break
-				}
-			}
-		}
-	}
-
 	return &galaAnalyzer{
 		baseMetadata: base,
 		parser:       p,
 		searchPaths:  searchPaths,
 		analyzedPkgs: make(map[string]*transpiler.RichAST),
 		checkedDirs:  make(map[string]bool),
-		moduleRoot:   moduleRoot,
-		moduleName:   moduleName,
+		resolver:     module.NewResolver(searchPaths),
 	}
 }
 
@@ -240,21 +142,21 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 	// 0.25 Load std package metadata
 	// For non-std packages: add as implicit import
 	// For std package: still load for intra-package type resolution, but don't add to Packages
-	if cachedStd, ok := a.analyzedPkgs[transpiler.StdImportPath]; ok && cachedStd != nil {
+	if cachedStd, ok := a.analyzedPkgs[registry.StdImportPath]; ok && cachedStd != nil {
 		// Use cached std metadata
 		richAST.Merge(cachedStd)
-		if pkgName != transpiler.StdPackage {
-			richAST.Packages[transpiler.StdImportPath] = transpiler.StdPackage
+		if pkgName != registry.StdPackageName {
+			richAST.Packages[registry.StdImportPath] = registry.StdPackageName
 		}
-	} else if _, inProgress := a.analyzedPkgs[transpiler.StdImportPath]; !inProgress {
+	} else if _, inProgress := a.analyzedPkgs[registry.StdImportPath]; !inProgress {
 		// First time analyzing std - set placeholder to prevent infinite recursion
-		a.analyzedPkgs[transpiler.StdImportPath] = nil
-		stdAST, err := a.analyzePackage(transpiler.StdPackage)
+		a.analyzedPkgs[registry.StdImportPath] = nil
+		stdAST, err := a.analyzePackage(registry.StdPackageName)
 		if err == nil {
-			a.analyzedPkgs[transpiler.StdImportPath] = stdAST
+			a.analyzedPkgs[registry.StdImportPath] = stdAST
 			richAST.Merge(stdAST)
-			if pkgName != transpiler.StdPackage {
-				richAST.Packages[transpiler.StdImportPath] = transpiler.StdPackage
+			if pkgName != registry.StdPackageName {
+				richAST.Packages[registry.StdImportPath] = registry.StdPackageName
 			}
 		}
 	}
@@ -770,7 +672,7 @@ func (a *galaAnalyzer) resolveTypeWithParams(typeName string, pkgName string, ty
 		baseTypeName = typeName[:idx]
 	}
 	if a.isStdType(baseTypeName) {
-		return transpiler.ParseType(transpiler.StdPackage + "." + typeName)
+		return transpiler.ParseType(registry.StdPackageName + "." + typeName)
 	}
 
 	if pkgName != "" && pkgName != "main" && pkgName != "test" {
@@ -869,49 +771,13 @@ func (a *galaAnalyzer) splitTypeList(s string) []string {
 
 // isStdType checks if a type name is a known std library type
 func (a *galaAnalyzer) isStdType(name string) bool {
-	for _, stdType := range transpiler.StdExportedTypes {
-		if name == stdType {
-			return true
-		}
-	}
-	return false
+	return registry.IsStdType(name)
 }
 
 func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, error) {
-	var dirPath string
-	found := false
-
-	// First, try module-based resolution if we have a module root
-	if a.moduleRoot != "" && a.moduleName != "" {
-		// Check if relPath starts with module name (e.g., "martianoff/gala/std")
-		if strings.HasPrefix(relPath, a.moduleName+"/") {
-			// Strip module prefix and resolve from module root
-			localPath := strings.TrimPrefix(relPath, a.moduleName+"/")
-			dirPath = filepath.Join(a.moduleRoot, localPath)
-			if info, err := os.Stat(dirPath); err == nil && info.IsDir() {
-				found = true
-			}
-		} else if !strings.Contains(relPath, "/") {
-			// Simple package name like "std" - resolve from module root
-			dirPath = filepath.Join(a.moduleRoot, relPath)
-			if info, err := os.Stat(dirPath); err == nil && info.IsDir() {
-				found = true
-			}
-		}
-	}
-
-	// Fall back to search paths if module resolution failed
-	if !found {
-		for _, p := range a.searchPaths {
-			dirPath = filepath.Join(p, relPath)
-			if info, err := os.Stat(dirPath); err == nil && info.IsDir() {
-				found = true
-				break
-			}
-		}
-	}
-
-	if !found {
+	// Use the resolver to find the package directory
+	dirPath, err := a.resolver.ResolvePackagePath(relPath)
+	if err != nil {
 		return nil, fmt.Errorf("package not found: %s", relPath)
 	}
 

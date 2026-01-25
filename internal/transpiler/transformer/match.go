@@ -244,7 +244,7 @@ func (t *galaASTTransformer) inferResultType(expr ast.Expr) transpiler.Type {
 func (t *galaASTTransformer) isKnownMultiReturnFunction(pkgName, funcName string) bool {
 	// Resolve package alias
 	resolvedPkg := pkgName
-	if actual, ok := t.importAliases[pkgName]; ok {
+	if actual, ok := t.importManager.ResolveAlias(pkgName); ok {
 		resolvedPkg = actual
 	}
 

@@ -6,6 +6,7 @@ go_library(
         "bridge.go",
         "declarations.go",
         "expressions.go",
+        "imports.go",
         "match.go",
         "methods.go",
         "scope.go",
@@ -21,6 +22,7 @@ go_library(
         "//internal/parser/grammar",
         "//internal/transpiler",
         "//internal/transpiler/infer",
+        "//internal/transpiler/registry",
         "@com_github_antlr4_go_antlr_v4//:antlr",
     ],
 )
@@ -41,6 +43,7 @@ go_test(
         "immutable_test.go",
         "immutable_unwrapping_test.go",
         "import_test.go",
+        "imports_test.go",
         "match_return_type_test.go",
         "match_test.go",
         "methods_test.go",

@@ -8,6 +8,8 @@ go_library(
     deps = [
         "//internal/parser/grammar",
         "//internal/transpiler",
+        "//internal/transpiler/module",
+        "//internal/transpiler/registry",
         "@com_github_antlr4_go_antlr_v4//:antlr",
     ],
 )

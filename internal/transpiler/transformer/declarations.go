@@ -7,6 +7,7 @@ import (
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
+	"martianoff/gala/internal/transpiler/registry"
 	"strings"
 
 	"github.com/antlr4-go/antlr/v4"
@@ -664,22 +665,18 @@ func (t *galaASTTransformer) transformImportDeclaration(ctx *grammar.ImportDecla
 		if s.Identifier() != nil {
 			alias := s.Identifier().GetText()
 			importSpec.Name = ast.NewIdent(alias)
-			t.imports[alias] = path
+			t.importManager.Add(path, alias, false, "")
 		} else if s.GetChildCount() > 1 {
 			// Check for '.'
 			if dot := s.GetChild(0); dot != nil {
 				if terminal, ok := dot.(antlr.TerminalNode); ok && terminal.GetText() == "." {
 					importSpec.Name = ast.NewIdent(".")
-					parts := strings.Split(path, "/")
-					pkgName := parts[len(parts)-1]
-					t.dotImports = append(t.dotImports, pkgName)
+					t.importManager.Add(path, "", true, "")
 				}
 			}
 		} else {
 			// No alias, use the last part of path as package name
-			parts := strings.Split(path, "/")
-			pkgName := parts[len(parts)-1]
-			t.imports[pkgName] = path
+			t.importManager.Add(path, "", false, "")
 		}
 		specs = append(specs, importSpec)
 	}
@@ -842,9 +839,9 @@ func (t *galaASTTransformer) transformFuncTypeSignature(ctx *grammar.SignatureCo
 				resolvedType := t.getType(typeName)
 				if !resolvedType.IsNil() {
 					if pkg := resolvedType.GetPackage(); pkg != "" && pkg != t.packageName {
-						if pkg == transpiler.StdPackage {
+						if pkg == registry.StdPackageName {
 							field.Type = t.stdIdent(typeName)
-						} else if alias, ok := t.reverseImportAliases[pkg]; ok {
+						} else if alias, ok := t.importManager.GetAlias(pkg); ok {
 							field.Type = &ast.SelectorExpr{X: ast.NewIdent(alias), Sel: ast.NewIdent(typeName)}
 						} else {
 							field.Type = ast.NewIdent(typeName)

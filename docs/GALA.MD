@@ -667,7 +667,7 @@ Partial functions are especially useful with collection operations that expect o
 ```gala
 // Filter and transform in one operation
 val numbers = ArrayOf(1, 2, 3, 4, 5)
-val evenDoubled = numbers.Collect { case n if n % 2 == 0 => n * 2 }
+val evenDoubled = numbers.Collect({ case n if n % 2 == 0 => n * 2 })
 // Result: [4, 8]
 ```
 
@@ -677,7 +677,7 @@ When using extractors like `Some(n)`, the parameter type needs to be inferrable 
 ```gala
 // Type inferred from collection element type
 val options = ArrayOf(Some(1), None[int](), Some(2))
-val values = options.Collect { case Some(n) => n * 2 }
+val values = options.Collect({ case Some(n) => n * 2 })
 // Result: [2, 4]
 ```
 

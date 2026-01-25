@@ -8,48 +8,43 @@ import (
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/infer"
+	"martianoff/gala/internal/transpiler/registry"
 	"strings"
 )
 
 type galaASTTransformer struct {
-	currentScope         *scope
-	packageName          string
-	immutFields          map[string]bool
-	structImmutFields    map[string][]bool
-	needsStdImport       bool
-	needsFmtImport       bool
-	activeTypeParams     map[string]bool
-	structFields         map[string][]string
-	structFieldTypes     map[string]map[string]transpiler.Type // structName -> fieldName -> typeName
-	genericMethods       map[string]map[string]bool            // receiverType -> methodName -> isGeneric
-	functions            map[string]*transpiler.FunctionMetadata
-	typeMetas            map[string]*transpiler.TypeMetadata
-	companionObjects     map[string]*transpiler.CompanionObjectMetadata // companion name -> metadata
-	imports              map[string]string                              // alias or pkgName -> package path
-	importAliases        map[string]string                              // alias -> actual pkgName
-	reverseImportAliases map[string]string                              // actual pkgName -> alias
-	dotImports           []string                                       // package names
-	tempVarCount         int
-	inferer              *infer.Inferer
+	currentScope      *scope
+	packageName       string
+	immutFields       map[string]bool
+	structImmutFields map[string][]bool
+	needsStdImport    bool
+	needsFmtImport    bool
+	activeTypeParams  map[string]bool
+	structFields      map[string][]string
+	structFieldTypes  map[string]map[string]transpiler.Type // structName -> fieldName -> typeName
+	genericMethods    map[string]map[string]bool            // receiverType -> methodName -> isGeneric
+	functions         map[string]*transpiler.FunctionMetadata
+	typeMetas         map[string]*transpiler.TypeMetadata
+	companionObjects  map[string]*transpiler.CompanionObjectMetadata // companion name -> metadata
+	importManager     *ImportManager                                 // unified import tracking
+	tempVarCount      int
+	inferer           *infer.Inferer
 }
 
 // NewGalaASTTransformer creates a new instance of ASTTransformer for GALA.
 func NewGalaASTTransformer() transpiler.ASTTransformer {
 	return &galaASTTransformer{
-		immutFields:          make(map[string]bool),
-		structImmutFields:    make(map[string][]bool),
-		activeTypeParams:     make(map[string]bool),
-		structFields:         make(map[string][]string),
-		structFieldTypes:     make(map[string]map[string]transpiler.Type),
-		genericMethods:       make(map[string]map[string]bool),
-		functions:            make(map[string]*transpiler.FunctionMetadata),
-		typeMetas:            make(map[string]*transpiler.TypeMetadata),
-		companionObjects:     make(map[string]*transpiler.CompanionObjectMetadata),
-		imports:              make(map[string]string),
-		importAliases:        make(map[string]string),
-		reverseImportAliases: make(map[string]string),
-		dotImports:           make([]string, 0),
-		inferer:              infer.NewInferer(),
+		immutFields:       make(map[string]bool),
+		structImmutFields: make(map[string][]bool),
+		activeTypeParams:  make(map[string]bool),
+		structFields:      make(map[string][]string),
+		structFieldTypes:  make(map[string]map[string]transpiler.Type),
+		genericMethods:    make(map[string]map[string]bool),
+		functions:         make(map[string]*transpiler.FunctionMetadata),
+		typeMetas:         make(map[string]*transpiler.TypeMetadata),
+		companionObjects:  make(map[string]*transpiler.CompanionObjectMetadata),
+		importManager:     NewImportManager(),
+		inferer:           infer.NewInferer(),
 	}
 }
 
@@ -79,18 +74,11 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 	if t.companionObjects == nil {
 		t.companionObjects = make(map[string]*transpiler.CompanionObjectMetadata)
 	}
-	t.imports = make(map[string]string)
-	t.importAliases = make(map[string]string)
-	t.reverseImportAliases = make(map[string]string)
-	t.dotImports = make([]string, 0)
+	t.importManager = NewImportManager()
 	t.tempVarCount = 0
 
 	// Populate imports from richAST.Packages (includes implicit std import from analyzer)
-	for path, pkgName := range richAST.Packages {
-		t.imports[pkgName] = path
-		t.importAliases[pkgName] = pkgName
-		t.reverseImportAliases[pkgName] = pkgName
-	}
+	t.importManager.AddFromPackages(richAST.Packages)
 
 	// Populate metadata from RichAST
 	for typeName, meta := range richAST.Types {
@@ -131,28 +119,9 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 		file.Decls = append(file.Decls, decl)
 	}
 
-	for alias, path := range t.imports {
-		if actualPkgName, ok := richAST.Packages[path]; ok {
-			t.importAliases[alias] = actualPkgName
-			// Only update reverseImportAliases if alias is different from actualPkgName
-			// This ensures explicit import aliases (like libalias "pkg/lib") take precedence
-			// over implicit aliases set from richAST.Packages
-			if alias != actualPkgName {
-				t.reverseImportAliases[actualPkgName] = alias
-			} else if _, exists := t.reverseImportAliases[actualPkgName]; !exists {
-				// Only set if no explicit alias exists
-				t.reverseImportAliases[actualPkgName] = alias
-			}
-		} else {
-			parts := strings.Split(path, "/")
-			pkg := parts[len(parts)-1]
-			t.importAliases[alias] = pkg
-			if alias != pkg {
-				t.reverseImportAliases[pkg] = alias
-			} else if _, exists := t.reverseImportAliases[pkg]; !exists {
-				t.reverseImportAliases[pkg] = alias
-			}
-		}
+	// Update actual package names from richAST.Packages for better type resolution
+	for path, actualPkgName := range richAST.Packages {
+		t.importManager.UpdateActualPackageName(path, actualPkgName)
 	}
 
 	for _, topDeclCtx := range sourceFile.AllTopLevelDeclaration() {
@@ -165,15 +134,9 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 		}
 	}
 
-	if t.needsStdImport && t.packageName != transpiler.StdPackage {
+	if t.needsStdImport && t.packageName != registry.StdPackageName {
 		// Check if std is already imported (e.g., as a dot import)
-		stdAlreadyImported := false
-		for _, dotPkg := range t.dotImports {
-			if dotPkg == transpiler.StdPackage {
-				stdAlreadyImported = true
-				break
-			}
-		}
+		stdAlreadyImported := t.importManager.IsDotImported(registry.StdPackageName)
 		if !stdAlreadyImported {
 			// Add import at the beginning
 			importDecl := &ast.GenDecl{
@@ -182,7 +145,7 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 					&ast.ImportSpec{
 						Path: &ast.BasicLit{
 							Kind:  token.STRING,
-							Value: fmt.Sprintf("\"%s\"", transpiler.StdImportPath),
+							Value: fmt.Sprintf("\"%s\"", registry.StdImportPath),
 						},
 					},
 				},
@@ -192,13 +155,7 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 	}
 
 	if t.needsFmtImport {
-		hasFmt := false
-		for _, path := range t.imports {
-			if path == "fmt" {
-				hasFmt = true
-				break
-			}
-		}
+		_, hasFmt := t.importManager.GetByPath("fmt")
 
 		if !hasFmt {
 			importDecl := &ast.GenDecl{
@@ -222,39 +179,48 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 
 var _ transpiler.ASTTransformer = (*galaASTTransformer)(nil)
 
-// resolveStructTypeName tries to resolve a type name to the key used in structFields/structImmutFields maps.
-// The maps are keyed by fully qualified names (e.g., "collection_immutable.List", "std.Tuple"),
-// but we may receive unqualified names (e.g., "List", "Tuple").
-func (t *galaASTTransformer) resolveStructTypeName(typeName string) string {
+// resolveTypeName is a unified type resolution function that searches for a type name
+// using a consistent resolution order. It takes a check function to determine if a
+// candidate name exists in the target data structure.
+//
+// Resolution Order (documented and consistent):
+//  1. Exact match
+//  2. If name has package prefix: try replacing prefix with std/current/imported packages
+//  3. Try current package prefix
+//  4. Try std package prefix
+//  5. Try all explicitly imported packages (non-dot)
+//  6. Try dot-imported packages
+//
+// Returns the resolved name and whether resolution succeeded.
+func (t *galaASTTransformer) resolveTypeName(typeName string, exists func(string) bool) (string, bool) {
 	// 1. Try exact match first
-	if _, ok := t.structFields[typeName]; ok {
-		return typeName
+	if exists(typeName) {
+		return typeName, true
 	}
 
 	// 2. If typeName has a package prefix, extract the simple name and try other packages
 	if idx := strings.LastIndex(typeName, "."); idx != -1 {
 		simpleName := typeName[idx+1:]
 		// Try std package for standard library types like Tuple, Option, etc.
-		stdName := transpiler.StdPackage + "." + simpleName
-		if _, ok := t.structFields[stdName]; ok {
-			return stdName
+		stdName := registry.StdPackageName + "." + simpleName
+		if exists(stdName) {
+			return stdName, true
 		}
 		// Try current package
 		if t.packageName != "" {
 			fullName := t.packageName + "." + simpleName
-			if _, ok := t.structFields[fullName]; ok {
-				return fullName
+			if exists(fullName) {
+				return fullName, true
 			}
 		}
 		// Try imported packages
-		for alias := range t.imports {
-			actualPkg := alias
-			if actual, ok := t.importAliases[alias]; ok {
-				actualPkg = actual
+		for _, entry := range t.importManager.All() {
+			if entry.IsDot {
+				continue
 			}
-			fullName := actualPkg + "." + simpleName
-			if _, ok := t.structFields[fullName]; ok {
-				return fullName
+			fullName := entry.PkgName + "." + simpleName
+			if exists(fullName) {
+				return fullName, true
 			}
 		}
 	}
@@ -262,103 +228,61 @@ func (t *galaASTTransformer) resolveStructTypeName(typeName string) string {
 	// 3. Try current package prefix (including "main")
 	if t.packageName != "" {
 		fullName := t.packageName + "." + typeName
-		if _, ok := t.structFields[fullName]; ok {
-			return fullName
+		if exists(fullName) {
+			return fullName, true
 		}
 	}
 
 	// 4. Try std package prefix
-	stdName := transpiler.StdPackage + "." + typeName
-	if _, ok := t.structFields[stdName]; ok {
-		return stdName
+	stdName := registry.StdPackageName + "." + typeName
+	if exists(stdName) {
+		return stdName, true
 	}
 
-	// 5. Try all imported packages
-	for alias := range t.imports {
-		actualPkg := alias
-		if actual, ok := t.importAliases[alias]; ok {
-			actualPkg = actual
+	// 5. Try all imported packages (non-dot)
+	for _, entry := range t.importManager.All() {
+		if entry.IsDot {
+			continue
 		}
-		fullName := actualPkg + "." + typeName
-		if _, ok := t.structFields[fullName]; ok {
-			return fullName
-		}
-	}
-
-	// Return original if not found
-	return typeName
-}
-
-// resolveTypeMetaName tries to resolve a type name to the key used in typeMetas map.
-// Similar to resolveStructTypeName but for typeMetas.
-func (t *galaASTTransformer) resolveTypeMetaName(typeName string) string {
-	// 1. Try exact match first
-	if _, ok := t.typeMetas[typeName]; ok {
-		return typeName
-	}
-
-	// 2. If typeName has a package prefix, extract the simple name and try other packages
-	if idx := strings.LastIndex(typeName, "."); idx != -1 {
-		simpleName := typeName[idx+1:]
-		// Try std package for standard library types like Tuple, Option, etc.
-		stdName := transpiler.StdPackage + "." + simpleName
-		if _, ok := t.typeMetas[stdName]; ok {
-			return stdName
-		}
-		// Try current package
-		if t.packageName != "" {
-			fullName := t.packageName + "." + simpleName
-			if _, ok := t.typeMetas[fullName]; ok {
-				return fullName
-			}
-		}
-		// Try imported packages
-		for alias := range t.imports {
-			actualPkg := alias
-			if actual, ok := t.importAliases[alias]; ok {
-				actualPkg = actual
-			}
-			fullName := actualPkg + "." + simpleName
-			if _, ok := t.typeMetas[fullName]; ok {
-				return fullName
-			}
-		}
-	}
-
-	// 3. Try current package prefix (including "main")
-	if t.packageName != "" {
-		fullName := t.packageName + "." + typeName
-		if _, ok := t.typeMetas[fullName]; ok {
-			return fullName
-		}
-	}
-
-	// 4. Try std package prefix
-	stdName := transpiler.StdPackage + "." + typeName
-	if _, ok := t.typeMetas[stdName]; ok {
-		return stdName
-	}
-
-	// 5. Try all imported packages
-	for alias := range t.imports {
-		actualPkg := alias
-		if actual, ok := t.importAliases[alias]; ok {
-			actualPkg = actual
-		}
-		fullName := actualPkg + "." + typeName
-		if _, ok := t.typeMetas[fullName]; ok {
-			return fullName
+		fullName := entry.PkgName + "." + typeName
+		if exists(fullName) {
+			return fullName, true
 		}
 	}
 
 	// 6. Try dot imports
-	for _, dotPkg := range t.dotImports {
-		fullName := dotPkg + "." + typeName
-		if _, ok := t.typeMetas[fullName]; ok {
-			return fullName
+	for _, entry := range t.importManager.All() {
+		if !entry.IsDot {
+			continue
+		}
+		fullName := entry.PkgName + "." + typeName
+		if exists(fullName) {
+			return fullName, true
 		}
 	}
 
-	// Return empty string if not found
-	return ""
+	return "", false
+}
+
+// resolveStructTypeName resolves a type name to the key used in structFields/structImmutFields maps.
+// Returns the original typeName if not found (for backward compatibility).
+func (t *galaASTTransformer) resolveStructTypeName(typeName string) string {
+	resolved, found := t.resolveTypeName(typeName, func(name string) bool {
+		_, ok := t.structFields[name]
+		return ok
+	})
+	if found {
+		return resolved
+	}
+	return typeName
+}
+
+// resolveTypeMetaName resolves a type name to the key used in typeMetas map.
+// Returns empty string if not found.
+func (t *galaASTTransformer) resolveTypeMetaName(typeName string) string {
+	resolved, _ := t.resolveTypeName(typeName, func(name string) bool {
+		_, ok := t.typeMetas[name]
+		return ok
+	})
+	return resolved
 }

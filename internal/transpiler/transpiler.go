@@ -7,10 +7,10 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 )
 
+// Type and function name constants for the std library.
+// These provide semantic names for commonly used std types and functions.
+// For std package metadata (exports, conflict detection), use the registry package.
 const (
-	StdPackage    = "std"
-	StdImportPath = "martianoff/gala/std"
-
 	TypeOption      = "Option"
 	TypeImmutable   = "Immutable"
 	TypeTuple       = "Tuple"
@@ -37,23 +37,6 @@ const (
 	FuncCopy         = "Copy"
 	MethodGet        = "Get"
 )
-
-// StdExportedTypes lists all types exported by the std package.
-// Used for conflict detection to prevent user code from shadowing std types.
-var StdExportedTypes = []string{
-	TypeOption, TypeImmutable, TypeEither, TypeTry, TypeTuple,
-	TypeTuple3, TypeTuple4, TypeTuple5, TypeTuple6, TypeTuple7, TypeTuple8, TypeTuple9, TypeTuple10,
-	TypeTraversable, TypeIterable,
-	FuncSome, FuncNone, FuncLeft, FuncRight, FuncSuccess, FuncFailure, // Companion objects (also act as types)
-}
-
-// StdExportedFunctions lists all functions exported by the std package.
-// Used for conflict detection to prevent user code from shadowing std functions.
-var StdExportedFunctions = []string{
-	FuncNewImmutable, FuncCopy, "Equal",
-	FuncSome, FuncNone, FuncLeft, FuncRight, FuncSuccess, FuncFailure, // Companion constructors
-	"FromOption", "FromEitherError", // Try conversion functions
-}
 
 // RichAST provides metadata about a Gala source file.
 type RichAST struct {

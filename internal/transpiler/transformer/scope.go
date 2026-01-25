@@ -40,11 +40,11 @@ func (t *galaASTTransformer) addVar(name string, typeName transpiler.Type) {
 }
 
 func (t *galaASTTransformer) getType(name string) transpiler.Type {
-	// 1. If name already has a dot, it might be pkg.Type
+	// 1. If name already has a dot, it might be pkg.Type - resolve alias and check directly
 	if strings.Contains(name, ".") {
 		resolvedName := name
 		parts := strings.Split(name, ".")
-		if actual, ok := t.importAliases[parts[0]]; ok {
+		if actual, ok := t.importManager.ResolveAlias(parts[0]); ok {
 			resolvedName = actual + "." + parts[1]
 		}
 		if _, ok := t.typeMetas[resolvedName]; ok {
@@ -54,7 +54,7 @@ func (t *galaASTTransformer) getType(name string) transpiler.Type {
 		return transpiler.NilType{}
 	}
 
-	// 2. Search in current scope
+	// 2. Search in current scope (local variables have highest priority)
 	s := t.currentScope
 	for s != nil {
 		if typeName, ok := s.valTypes[name]; ok {
@@ -63,35 +63,10 @@ func (t *galaASTTransformer) getType(name string) transpiler.Type {
 		s = s.parent
 	}
 
-	// 3. Search in current package symbols (no prefix in GALA, but might be prefixed in RichAST)
-	if _, ok := t.typeMetas[name]; ok {
-		return transpiler.ParseType(name)
-	}
-	if t.packageName != "" && t.packageName != "main" {
-		fullName := t.packageName + "." + name
-		if _, ok := t.typeMetas[fullName]; ok {
-			return transpiler.ParseType(fullName)
-		}
-	}
-
-	// 4. Search in dot-imported packages
-	for _, pkg := range t.dotImports {
-		fullName := pkg + "." + name
-		if _, ok := t.typeMetas[fullName]; ok {
-			return transpiler.ParseType(fullName)
-		}
-	}
-
-	// 5. Search in all imported packages (including implicit std import)
-	for alias := range t.imports {
-		actualPkg := alias
-		if actual, ok := t.importAliases[alias]; ok {
-			actualPkg = actual
-		}
-		fullName := actualPkg + "." + name
-		if _, ok := t.typeMetas[fullName]; ok {
-			return transpiler.ParseType(fullName)
-		}
+	// 3. Use unified type resolution for type metadata lookup
+	resolved := t.resolveTypeMetaName(name)
+	if resolved != "" {
+		return transpiler.ParseType(resolved)
 	}
 
 	return transpiler.NilType{}
@@ -120,31 +95,13 @@ func (t *galaASTTransformer) isVar(name string) bool {
 }
 
 func (t *galaASTTransformer) getFunction(name string) *transpiler.FunctionMetadata {
-	if fMeta, ok := t.functions[name]; ok {
-		return fMeta
-	}
-	if t.packageName != "" && t.packageName != "main" {
-		fullName := t.packageName + "." + name
-		if fMeta, ok := t.functions[fullName]; ok {
-			return fMeta
-		}
-	}
-	for _, pkg := range t.dotImports {
-		fullName := pkg + "." + name
-		if fMeta, ok := t.functions[fullName]; ok {
-			return fMeta
-		}
-	}
-	// Search in all imported packages (including implicit std import)
-	for alias := range t.imports {
-		actualPkg := alias
-		if actual, ok := t.importAliases[alias]; ok {
-			actualPkg = actual
-		}
-		fullName := actualPkg + "." + name
-		if fMeta, ok := t.functions[fullName]; ok {
-			return fMeta
-		}
+	// Use unified resolution to find the function
+	resolved, found := t.resolveTypeName(name, func(n string) bool {
+		_, ok := t.functions[n]
+		return ok
+	})
+	if found {
+		return t.functions[resolved]
 	}
 	return nil
 }
