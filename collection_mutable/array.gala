@@ -511,13 +511,12 @@ func (a *Array[T]) FindLast(p func(T) bool) Option[T] {
 
 // Count returns the number of elements satisfying the predicate.
 func (a *Array[T]) Count(p func(T) bool) int {
-    var count = 0
-    for i := 0; i < len(a.elements); i++ {
-        if p(a.elements[i]) {
-            count++
+    return a.FoldLeft[int](0, (acc int, elem T) => {
+        if p(elem) {
+            return acc + 1
         }
-    }
-    return count
+        return acc
+    })
 }
 
 // === Utility Operations ===

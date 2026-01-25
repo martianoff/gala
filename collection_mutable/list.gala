@@ -645,15 +645,12 @@ func (l *List[T]) FindLast(p func(T) bool) Option[T] {
 
 // Count returns the number of elements satisfying the predicate.
 func (l *List[T]) Count(p func(T) bool) int {
-    var count = 0
-    var current = l.head
-    for current != nil {
-        if p(current.value) {
-            count++
+    return l.FoldLeft[int](0, (acc int, elem T) => {
+        if p(elem) {
+            return acc + 1
         }
-        current = current.next
-    }
-    return count
+        return acc
+    })
 }
 
 // === Utility Operations ===
