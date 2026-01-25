@@ -59,7 +59,7 @@ go_library(
     ],
     importpath = "martianoff/gala/collection_immutable",
     visibility = ["//visibility:public"],
-    deps = ["//std:std"],
+    deps = ["//std"],
 )
 
 gala_go_test(
@@ -111,10 +111,9 @@ gala_binary(
     deps = [":collection_immutable"],
 )
 
+# Note: go_native_perf_test.go is a standalone benchmark file (package main)
+# Run with: bazel run //collection_immutable:perf_go
 go_binary(
     name = "perf_go",
     srcs = ["go_native_perf_test.go"],
 )
-
-# Note: go_native_perf_test.go is a standalone benchmark file (package main)
-# Run with: go run go_native_perf_test.go

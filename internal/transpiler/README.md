@@ -58,14 +58,22 @@ The largest component. Transforms the enriched GALA AST into a Go AST.
 
 **Key files:**
 - `transformer.go` - Entry point and orchestration
-- `expressions.go` - Expression transformation (largest file)
-- `types.go` - Type transformation and inference
-- `match.go` - Pattern matching compilation
+- `expressions.go` - Core expression dispatch, binary/unary operators
+- `calls.go` - Function calls, method calls, Apply transformation
+- `constructors.go` - Struct construction, composite literals
+- `lambdas.go` - Lambda expressions, closures, partial functions
+- `postfix.go` - Postfix operations, field access, tuple literals
+- `types.go` - Core type transformation
+- `type_inference.go` - Manual type inference, type resolution
+- `match.go` - Main match expression dispatch
+- `patterns.go` - Pattern transformation and extractors
 - `declarations.go` - Top-level declarations
 - `statements.go` - Statement transformation
 - `methods.go` - Method handling
 - `scope.go` - Variable scope management
+- `imports.go` - Import management
 - `bridge.go` - Hindley-Milner ↔ transpiler.Type conversion
+- `utils.go` - Utility functions
 
 **Key responsibilities:**
 - Type inference (dual-layer: manual + Hindley-Milner fallback)
@@ -207,9 +215,45 @@ bazel run //:gazelle
 - Import manager (`transformer/imports.go`) - Unified import tracking
 - Type resolution helpers (`getTypeMeta`, `getFunction`) - Unified metadata access
 - Type inference documentation (`docs/TYPE_INFERENCE.md`)
+- File splits (Phase 6) - Large files split for maintainability
 
 **Remaining:**
 - Type alias support (not implemented - see `declarations.go:649`)
-- Large file splits (expressions.go, match.go, types.go)
 - Update remaining direct `typeMetas[...]` accesses to use `getTypeMeta()`
 
+## Transformer File Structure
+
+The transformer package has been split into focused files for maintainability:
+
+### Expression Processing
+| File | Lines | Contents |
+|------|-------|----------|
+| `expressions.go` | ~520 | Core dispatch, binary/unary operators |
+| `calls.go` | ~985 | Function calls, method calls, Apply |
+| `constructors.go` | ~140 | Struct construction, composite literals |
+| `lambdas.go` | ~690 | Lambda expressions, closures, partial functions |
+| `postfix.go` | ~390 | Postfix operations, field access, tuple literals |
+
+### Pattern Matching
+| File | Lines | Contents |
+|------|-------|----------|
+| `match.go` | ~540 | Main match expression dispatch, type inference helpers |
+| `patterns.go` | ~1690 | Pattern transformation, extractors, struct matching |
+
+### Type System
+| File | Lines | Contents |
+|------|-------|----------|
+| `types.go` | ~630 | Core type transformation, type-to-expr conversion |
+| `type_inference.go` | ~1030 | Manual type inference, type resolution, substitution |
+
+### Other Components
+| File | Lines | Contents |
+|------|-------|----------|
+| `transformer.go` | ~310 | Entry point, orchestration |
+| `declarations.go` | ~915 | Top-level declarations (structs, functions, etc.) |
+| `statements.go` | ~390 | Statement transformation |
+| `methods.go` | ~430 | Method handling, generic method extraction |
+| `scope.go` | ~110 | Variable scope management |
+| `imports.go` | ~260 | Import management |
+| `bridge.go` | ~320 | Hindley-Milner ↔ transpiler.Type conversion |
+| `utils.go` | ~80 | Utility functions |

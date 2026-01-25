@@ -59,7 +59,7 @@ go_library(
     ],
     importpath = "martianoff/gala/collection_mutable",
     visibility = ["//visibility:public"],
-    deps = ["//std:std"],
+    deps = ["//std"],
 )
 
 gala_go_test(
@@ -100,6 +100,7 @@ gala_binary(
 )
 
 # Performance benchmarks - Go native collections
+# Run with: bazel run //collection_mutable:perf_go
 go_binary(
     name = "perf_go",
     srcs = ["go_native_perf_test.go"],
