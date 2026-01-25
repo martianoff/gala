@@ -960,8 +960,8 @@ func (a Array[T]) Sliding(size int) Array[Array[T]] {
     return result
 }
 
-// ToSlice converts the array to a Go slice.
-func (a Array[T]) ToSlice() []T {
+// ToGoSlice converts the array to a Go slice.
+func (a Array[T]) ToGoSlice() []T {
     var result []T
     for i := 0; i < a.length; i++ {
         result = append(result, a.Get(i))

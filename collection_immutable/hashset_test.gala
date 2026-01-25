@@ -163,9 +163,9 @@ func TestHashSetFind(t T) T {
 }
 
 // Conversion tests
-func TestHashSetToSlice(t T) T {
+func TestHashSetToGoSlice(t T) T {
     val s = HashSetOf[int](1, 2, 3)
-    val slice = s.ToSlice()
+    val slice = s.ToGoSlice()
     return Eq[int](t, len(slice), 3)
 }
 

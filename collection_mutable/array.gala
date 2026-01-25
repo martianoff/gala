@@ -609,8 +609,8 @@ func (a *Array[T]) GroupBy[K comparable](f func(T) K) map[K]*Array[T] {
 
 // === Conversion ===
 
-// ToSlice returns a copy of the underlying slice.
-func (a *Array[T]) ToSlice() []T {
+// ToGoSlice returns a copy of the underlying slice.
+func (a *Array[T]) ToGoSlice() []T {
     var result []T
     for i := 0; i < len(a.elements); i++ {
         result = append(result, a.elements[i])

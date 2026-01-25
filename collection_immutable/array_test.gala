@@ -19,9 +19,9 @@ func TestArrayOf(t T) T {
     return Eq[int](t1, arr.Length(), 3)
 }
 
-func TestArrayToSlice(t T) T {
+func TestArrayToGoSlice(t T) T {
     var arr = ArrayOf[int](10, 20, 30)
-    var slice = arr.ToSlice()
+    var slice = arr.ToGoSlice()
     var t1 = Eq[int](t, len(slice), 3)
     return Eq[int](t1, slice[0], 10)
 }

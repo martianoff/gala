@@ -70,7 +70,7 @@ func TestTreeSetRemoveNonExistent(t T) T {
 // Sorted order tests (TreeSet-specific)
 func TestTreeSetSortedOrder(t T) T {
     val s = TreeSetOf(5, 3, 1, 4, 2)
-    val slice = s.ToSlice()
+    val slice = s.ToGoSlice()
 
     var t1 = Eq[int](t, len(slice), 5)
     var t2 = Eq[int](t1, slice[0], 1)
@@ -241,9 +241,9 @@ func TestTreeSetFind(t T) T {
 }
 
 // Conversion tests
-func TestTreeSetToSlice(t T) T {
+func TestTreeSetToGoSlice(t T) T {
     val s = TreeSetOf(3, 1, 2)
-    val slice = s.ToSlice()
+    val slice = s.ToGoSlice()
     var t1 = Eq[int](t, len(slice), 3)
     // Should be in sorted order
     var t2 = Eq[int](t1, slice[0], 1)

@@ -143,7 +143,7 @@ func TestTreeSetLast(t T) T {
 
 func TestTreeSetSortedOrder(t T) T {
     var s = TreeSetOf[int](5, 3, 1, 4, 2)
-    var slice = s.ToSlice()
+    var slice = s.ToGoSlice()
     var t1 = Eq[int](t, slice[0], 1)
     var t2 = Eq[int](t1, slice[1], 2)
     var t3 = Eq[int](t2, slice[2], 3)
@@ -153,7 +153,7 @@ func TestTreeSetSortedOrder(t T) T {
 
 func TestTreeSetStringSorted(t T) T {
     var s = TreeSetOf[string]("cherry", "apple", "banana")
-    var slice = s.ToSlice()
+    var slice = s.ToGoSlice()
     var t1 = Eq[string](t, slice[0], "apple")
     var t2 = Eq[string](t1, slice[1], "banana")
     return Eq[string](t2, slice[2], "cherry")
@@ -343,9 +343,9 @@ func TestTreeSetCount(t T) T {
 
 // === TreeSet Conversion Tests ===
 
-func TestTreeSetToSlice(t T) T {
+func TestTreeSetToGoSlice(t T) T {
     var s = TreeSetOf[int](3, 1, 2)
-    var slice = s.ToSlice()
+    var slice = s.ToGoSlice()
     var t1 = Eq[int](t, len(slice), 3)
     var t2 = Eq[int](t1, slice[0], 1) // Sorted
     return Eq[int](t2, slice[2], 3)

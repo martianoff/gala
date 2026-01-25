@@ -718,8 +718,8 @@ func (l *List[T]) GroupBy[K comparable](f func(T) K) map[K]*List[T] {
 
 // === Conversion ===
 
-// ToSlice converts the list to a Go slice.
-func (l *List[T]) ToSlice() []T {
+// ToGoSlice converts the list to a Go slice.
+func (l *List[T]) ToGoSlice() []T {
     var result []T
     var current = l.head
     for current != nil {

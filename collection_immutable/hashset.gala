@@ -550,8 +550,8 @@ func (s HashSet[T]) HeadOption() Option[T] {
     return Some[T](s.Head())
 }
 
-// ToSlice converts the set to a Go slice.
-func (s HashSet[T]) ToSlice() []T {
+// ToGoSlice converts the set to a Go slice.
+func (s HashSet[T]) ToGoSlice() []T {
     var result []T
     s.ForEach((elem T) => {
         result = append(result, elem)

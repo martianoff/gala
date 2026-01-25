@@ -274,9 +274,9 @@ func TestHashSetHeadOptionEmpty(t T) T {
 
 // === HashSet Conversion Tests ===
 
-func TestHashSetToSlice(t T) T {
+func TestHashSetToGoSlice(t T) T {
     var s = HashSetOf[int](1, 2, 3)
-    var slice = s.ToSlice()
+    var slice = s.ToGoSlice()
     return Eq[int](t, len(slice), 3)
 }
 

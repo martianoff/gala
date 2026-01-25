@@ -19,9 +19,9 @@ func TestListOf(t T) T {
     return Eq[int](t1, list.Length(), 3)
 }
 
-func TestListToSlice(t T) T {
+func TestListToGoSlice(t T) T {
     var list = ListOf[int](10, 20, 30)
-    var slice = list.ToSlice()
+    var slice = list.ToGoSlice()
     var t1 = Eq[int](t, len(slice), 3)
     return Eq[int](t1, slice[0], 10)
 }

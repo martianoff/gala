@@ -580,8 +580,8 @@ func Flatten[T any](ll List[List[T]]) List[T] {
     return ll.head.AppendAll(Flatten[T](*ll.tail))
 }
 
-// ToSlice converts the list to a Go slice.
-func (l List[T]) ToSlice() []T {
+// ToGoSlice converts the list to a Go slice.
+func (l List[T]) ToGoSlice() []T {
     var result []T
     var current = l
     for !current.isEmpty {

@@ -716,8 +716,8 @@ func rangeToTree[T comparable](node *treeNode[T], to T, f func(T) any) {
     }
 }
 
-// ToSlice converts the set to a Go slice in sorted order.
-func (s TreeSet[T]) ToSlice() []T {
+// ToGoSlice converts the set to a Go slice in sorted order.
+func (s TreeSet[T]) ToGoSlice() []T {
     var result []T
     s.ForEach((elem T) => {
         result = append(result, elem)
