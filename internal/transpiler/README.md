@@ -108,6 +108,27 @@ Two-layer system:
 
 See `docs/TYPE_INFERENCE.md` for detailed rules.
 
+## Type and Function Resolution
+
+The transformer uses unified resolution with documented precedence:
+
+**Resolution Order:**
+1. Exact match
+2. std package prefix (for standard library types)
+3. Current package prefix
+4. Explicitly imported packages (non-dot)
+5. Dot-imported packages
+
+**Key Methods:**
+- `resolveTypeName(name, exists)` - Core resolution with callback
+- `resolveTypeMetaName(name)` - Resolve to typeMetas key
+- `resolveStructTypeName(name)` - Resolve to structFields key
+- `getTypeMeta(name)` - Resolve and return TypeMetadata (preferred)
+- `getFunction(name)` - Resolve and return FunctionMetadata
+- `getType(name)` - Resolve type for scope lookup
+
+**Best Practice:** Use `getTypeMeta(name)` instead of direct `typeMetas[name]` access to ensure proper resolution across packages.
+
 ## Key Data Structures
 
 ### RichAST
@@ -178,12 +199,17 @@ bazel run //:gazelle
 - Integration tests via examples in `examples/`
 - Each example has expected `.out` file for verification
 
-## Known Areas for Improvement
+## Refactoring Status
 
-See the refactoring plan in `C:\Users\maxmr\.claude\plans\drifting-weaving-book.md` for detailed improvement areas including:
+**Completed:**
+- Module resolution (`module/`) - Unified module root finding
+- Package registry (`registry/`) - Generic prelude system (replaces hardcoded std)
+- Import manager (`transformer/imports.go`) - Unified import tracking
+- Type resolution helpers (`getTypeMeta`, `getFunction`) - Unified metadata access
+- Type inference documentation (`docs/TYPE_INFERENCE.md`)
 
-1. Module resolution consolidation
-2. Package registry system (replacing hardcoded std)
-3. Import manager unification
-4. Type resolver consolidation
-5. Large file splits
+**Remaining:**
+- Type alias support (not implemented - see `declarations.go:649`)
+- Large file splits (expressions.go, match.go, types.go)
+- Update remaining direct `typeMetas[...]` accesses to use `getTypeMeta()`
+

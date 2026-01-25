@@ -25,7 +25,7 @@ func (t *galaASTTransformer) isNoneCall(expr ast.Expr) bool {
 	if !ok {
 		return false
 	}
-	return x.Name == "std" && sel.Sel.Name == "None"
+	return registry.Global.IsPreludePackage(x.Name) && sel.Sel.Name == "None"
 }
 
 func (t *galaASTTransformer) stdIdent(name string) ast.Expr {

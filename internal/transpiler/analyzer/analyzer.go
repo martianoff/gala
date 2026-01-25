@@ -188,7 +188,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 						} else {
 							// Fallback if PackageName is not set properly
 							for _, typeMeta := range importedAST.Types {
-								if typeMeta.Package != "" && typeMeta.Package != "main" && typeMeta.Package != "test" && typeMeta.Package != "std" {
+								if typeMeta.Package != "" && typeMeta.Package != "main" && typeMeta.Package != "test" && !registry.Global.IsPreludePackage(typeMeta.Package) {
 									richAST.Packages[path] = typeMeta.Package
 									break
 								}

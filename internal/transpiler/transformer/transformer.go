@@ -286,3 +286,23 @@ func (t *galaASTTransformer) resolveTypeMetaName(typeName string) string {
 	})
 	return resolved
 }
+
+// getTypeMeta resolves a type name and returns the corresponding TypeMetadata.
+// This is the preferred method for accessing type metadata - it handles all
+// resolution scenarios including package prefixes, std library fallback, and imports.
+//
+// Resolution precedence:
+//  1. Exact match
+//  2. std package prefix (for standard library types)
+//  3. Current package prefix
+//  4. Explicitly imported packages
+//  5. Dot-imported packages
+//
+// Returns nil if the type is not found.
+func (t *galaASTTransformer) getTypeMeta(typeName string) *transpiler.TypeMetadata {
+	resolved := t.resolveTypeMetaName(typeName)
+	if resolved == "" {
+		return nil
+	}
+	return t.typeMetas[resolved]
+}

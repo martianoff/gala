@@ -327,15 +327,11 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 		// Empty argument list - check for zero-argument Apply method
 		typeName := t.getBaseTypeName(base)
 		if typeName != "" {
-			// Try to find type metadata - check both raw name and std-prefixed name
-			typeMeta, ok := t.typeMetas[typeName]
-			if !ok && !strings.HasPrefix(typeName, "std.") {
-				typeMeta, ok = t.typeMetas["std."+typeName]
-				if ok {
-					typeName = "std." + typeName
-				}
-			}
-			if ok {
+			// Use unified resolution to find type metadata
+			resolvedTypeName := t.resolveTypeMetaName(typeName)
+			typeMeta := t.typeMetas[resolvedTypeName]
+			if typeMeta != nil {
+				typeName = resolvedTypeName
 				if methodMeta, hasApply := typeMeta.Methods["Apply"]; hasApply {
 					// Check if Apply takes zero arguments (zero-arg Apply method like None[T]())
 					if len(methodMeta.ParamTypes) == 0 {
@@ -791,15 +787,11 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	// This handles companion object calls like Some[A](value) -> Some[A]{}.Apply(value)
 	typeName := t.getBaseTypeName(fun)
 	if typeName != "" {
-		// Try to find type metadata - check both raw name and std-prefixed name
-		typeMeta, ok := t.typeMetas[typeName]
-		if !ok && !strings.HasPrefix(typeName, "std.") {
-			typeMeta, ok = t.typeMetas["std."+typeName]
-			if ok {
-				typeName = "std." + typeName
-			}
-		}
-		if ok {
+		// Use unified resolution to find type metadata
+		resolvedTypeName := t.resolveTypeMetaName(typeName)
+		typeMeta := t.typeMetas[resolvedTypeName]
+		if typeMeta != nil {
+			typeName = resolvedTypeName
 			// First check if this looks like positional struct construction
 			// (args match struct field count) - prefer struct construction over Apply
 			resolvedTypeName := t.resolveStructTypeName(typeName)
@@ -1843,7 +1835,7 @@ func (t *galaASTTransformer) isNewImmutableCall(call *ast.CallExpr) bool {
 	if selExpr, ok := call.Fun.(*ast.SelectorExpr); ok {
 		if selExpr.Sel.Name == "NewImmutable" {
 			if ident, ok := selExpr.X.(*ast.Ident); ok {
-				return ident.Name == "std"
+				return registry.Global.IsPreludePackage(ident.Name)
 			}
 		}
 	}

@@ -743,15 +743,11 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 				if compLit, ok := sel.X.(*ast.CompositeLit); ok {
 					typeName := t.getBaseTypeName(compLit.Type)
 					if typeName != "" {
-						// Try to get type metadata
-						typeMeta, found := t.typeMetas[typeName]
-						if !found && !strings.HasPrefix(typeName, "std.") {
-							typeMeta, found = t.typeMetas["std."+typeName]
-							if found {
-								typeName = "std." + typeName
-							}
-						}
-						if found {
+						// Use unified resolution to find type metadata
+						resolvedTypeName := t.resolveTypeMetaName(typeName)
+						typeMeta := t.typeMetas[resolvedTypeName]
+						if typeMeta != nil {
+							typeName = resolvedTypeName
 							if methodMeta, hasApply := typeMeta.Methods["Apply"]; hasApply {
 								// Get type args from the composite literal type
 								var litTypeArgs []transpiler.Type
