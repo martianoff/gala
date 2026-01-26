@@ -1,0 +1,101 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/concurrent"
+)
+
+// Simple wrapper type with a pointer
+type Wrapper[T any] struct {
+    var value T
+}
+
+func NewWrapper[T any](v T) *Wrapper[T] {
+    return &Wrapper[T](value = v)
+}
+
+// Extractor for Wrapper - takes pointer type
+type Unwrap[T any] struct {}
+
+func (u Unwrap[T]) Unapply(w *Wrapper[T]) Option[T] {
+    if w == nil {
+        return None[T]()
+    }
+    return Some[T](w.value)
+}
+
+func main() {
+    fmt.Println("=== Custom Wrapper Extractor ===")
+
+    val w = NewWrapper[int](42)
+
+    // Test 1: Explicit type parameter
+    val msg1 = w match {
+        case Unwrap[int](v) => fmt.Sprintf("Explicit: Got %d", v)
+        case _ => "No match"
+    }
+    fmt.Println(msg1)
+
+    // Test 2: Inferred type parameter - T inferred from w's type *Wrapper[int]
+    val msg2 = w match {
+        case Unwrap(v) => fmt.Sprintf("Inferred: Got %d", v)
+        case _ => "No match"
+    }
+    fmt.Println(msg2)
+
+    // Test with string type
+    val ws = NewWrapper[string]("hello")
+
+    // Test 3: Inferred string type
+    val msg3 = ws match {
+        case Unwrap(s) => fmt.Sprintf("Inferred string: %s", s)
+        case _ => "No match"
+    }
+    fmt.Println(msg3)
+
+    fmt.Println("\n=== Future Extractors ===")
+
+    // Test 4: Future with explicit type parameter
+    val f1 = FutureOf[int](100)
+    val msg4 = f1 match {
+        case Succeeded[int](v) => fmt.Sprintf("Explicit Succeeded: %d", v)
+        case Failed[int](e) => fmt.Sprintf("Failed: %s", e.Error())
+        case _ => "Unknown"
+    }
+    fmt.Println(msg4)
+
+    // Test 5: Future with inferred type parameter - T inferred from f2's type *Future[int]
+    val f2 = FutureOf[int](200)
+    val msg5 = f2 match {
+        case Succeeded(v) => fmt.Sprintf("Inferred Succeeded: %d", v)
+        case Failed(e) => fmt.Sprintf("Failed: %s", e.Error())
+        case _ => "Unknown"
+    }
+    fmt.Println(msg5)
+
+    // Test 6: Failed future with inferred type
+    val f3 = FutureFailed[int](FutureError(Message = "test error"))
+    val msg6 = f3 match {
+        case Succeeded(v) => fmt.Sprintf("Succeeded: %d", v)
+        case Failed(e) => fmt.Sprintf("Inferred Failed: %s", e.Error())
+        case _ => "Unknown"
+    }
+    fmt.Println(msg6)
+
+    // Test 7: Future[string] with inferred type
+    val f4 = FutureOf[string]("world")
+    val msg7 = f4 match {
+        case Succeeded(s) => fmt.Sprintf("Inferred string Future: %s", s)
+        case _ => "Unknown"
+    }
+    fmt.Println(msg7)
+
+    // Test 8: Completed extractor with inferred type
+    val f5 = FutureOf[int](300)
+    val msg8 = f5 match {
+        case Completed(Success(v)) => fmt.Sprintf("Inferred Completed Success: %d", v)
+        case Completed(Failure(e)) => fmt.Sprintf("Completed Failure: %s", e.Error())
+        case _ => "Unknown"
+    }
+    fmt.Println(msg8)
+}

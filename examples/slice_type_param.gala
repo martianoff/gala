@@ -1,0 +1,33 @@
+package main
+
+import "fmt"
+
+// Test case for slice as generic type parameter
+
+type Box[T any] struct {
+    Value T
+}
+
+func BoxOf[T any](value T) Box[T] {
+    return Box[T](Value = value)
+}
+
+// Function that takes slice type parameter
+func WrapSlice[T any](items []T) Box[[]T] {
+    return Box[[]T](Value = items)
+}
+
+// Function returning Box of slice
+func CreateSliceBox[T any]() Box[[]T] {
+    return BoxOf[[]T](SliceEmpty[T]())
+}
+
+func main() {
+    // Create box with slice
+    val wrapped = WrapSlice[int](SliceOf(1, 2, 3))
+    fmt.Println("Wrapped slice length:", len(wrapped.Value))
+
+    // Create empty slice box
+    val emptyBox = CreateSliceBox[string]()
+    fmt.Println("Empty box length:", len(emptyBox.Value))
+}

@@ -1,0 +1,39 @@
+package main
+
+import "fmt"
+
+// This example tests callbacks that accept generic type parameters.
+// The grammar should allow func(Option[T]) as a callback parameter type.
+
+type Box[T any] struct {
+    Value T
+}
+
+// OnValue takes a callback that accepts Option[T] - a generic type parameter
+func (b Box[T]) OnValue(callback func(Option[T])) {
+    callback(Some[T](b.Value))
+}
+
+// OnValueWithResult takes a callback that returns a generic type
+func (b Box[T]) Transform[U any](callback func(T) Option[U]) Option[U] {
+    return callback(b.Value)
+}
+
+func main() {
+    val intBox = Box[int](Value = 42)
+
+    // Test callback with generic parameter type
+    intBox.OnValue((opt Option[int]) => {
+        fmt.Println("Got value:", opt.Get())
+    })
+
+    // Test callback that returns generic type
+    val result = intBox.Transform[string]((v int) => Some[string](fmt.Sprintf("Value is %d", v)))
+    fmt.Println("Transformed:", result.Get())
+
+    // Test with string type
+    val strBox = Box[string](Value = "hello")
+    strBox.OnValue((opt Option[string]) => {
+        fmt.Println("Got string:", opt.Get())
+    })
+}

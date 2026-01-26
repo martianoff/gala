@@ -1,0 +1,292 @@
+package main
+
+import (
+    "time"
+    . "martianoff/gala/test"
+    . "martianoff/gala/std"
+    . "martianoff/gala/concurrent"
+    . "martianoff/gala/collection_immutable"
+    . "martianoff/gala/go_interop"
+)
+
+func TestFutureOf(t T) T {
+    val f = FutureOf[int](42)
+    val result = f.Await()
+    var t1 = IsTrue(t, result.IsSuccess())
+    return Eq[int](t1, result.Get(), 42)
+}
+
+func TestFutureFailed(t T) T {
+    val f = FutureFailed[int](FutureError(Message = "test error"))
+    val result = f.Await()
+    var t1 = IsTrue(t, result.IsFailure())
+    return Eq[string](t1, result.Err.Error(), "test error")
+}
+
+func TestFutureApply(t T) T {
+    val f = FutureApply[int](() => 1 + 1)
+    val result = f.Await()
+    var t1 = IsTrue(t, result.IsSuccess())
+    return Eq[int](t1, result.Get(), 2)
+}
+
+func TestFutureMap(t T) T {
+    val f = FutureOf[int](10)
+    val mapped = f.Map[int]((x int) => x * 2)
+    val result = mapped.Await()
+    var t1 = IsTrue(t, result.IsSuccess())
+    return Eq[int](t1, result.Get(), 20)
+}
+
+func TestFutureMapFailure(t T) T {
+    val f = FutureFailed[int](FutureError(Message = "error"))
+    val mapped = f.Map[int]((x int) => x * 2)
+    val result = mapped.Await()
+    return IsTrue(t, result.IsFailure())
+}
+
+func TestFutureFlatMap(t T) T {
+    val f = FutureOf[int](5)
+    val chained = f.FlatMap[int]((x int) => FutureOf[int](x * 3))
+    val result = chained.Await()
+    var t1 = IsTrue(t, result.IsSuccess())
+    return Eq[int](t1, result.Get(), 15)
+}
+
+func TestFutureFlatMapChain(t T) T {
+    val f = FutureOf[int](2)
+        .FlatMap[int]((x int) => FutureOf[int](x + 3))
+        .FlatMap[int]((x int) => FutureOf[int](x * 2))
+    val result = f.Await()
+    var t1 = IsTrue(t, result.IsSuccess())
+    return Eq[int](t1, result.Get(), 10)
+}
+
+func TestFutureFilter(t T) T {
+    val f = FutureOf[int](10)
+    val filtered = f.Filter((x int) => x > 5)
+    val result = filtered.Await()
+    var t1 = IsTrue(t, result.IsSuccess())
+    return Eq[int](t1, result.Get(), 10)
+}
+
+func TestFutureFilterFails(t T) T {
+    val f = FutureOf[int](3)
+    val filtered = f.Filter((x int) => x > 5)
+    val result = filtered.Await()
+    return IsTrue(t, result.IsFailure())
+}
+
+func TestFutureRecover(t T) T {
+    val f = FutureFailed[int](FutureError(Message = "error"))
+    val recovered = f.Recover((e error) => 100)
+    val result = recovered.Await()
+    var t1 = IsTrue(t, result.IsSuccess())
+    return Eq[int](t1, result.Get(), 100)
+}
+
+func TestFutureRecoverWith(t T) T {
+    val f = FutureFailed[int](FutureError(Message = "error"))
+    val recovered = f.RecoverWith((e error) => FutureOf[int](200))
+    val result = recovered.Await()
+    var t1 = IsTrue(t, result.IsSuccess())
+    return Eq[int](t1, result.Get(), 200)
+}
+
+func TestFutureZip(t T) T {
+    val f1 = FutureOf[int](1)
+    val f2 = FutureOf[string]("hello")
+    val zipped = f1.Zip[string](f2)
+    val result = zipped.Await()
+    var t1 = IsTrue(t, result.IsSuccess())
+    val tuple = result.Get()
+    var t2 = Eq[int](t1, tuple.V1, 1)
+    return Eq[string](t2, tuple.V2, "hello")
+}
+
+func TestFutureZipWith(t T) T {
+    val f1 = FutureOf[int](10)
+    val f2 = FutureOf[int](20)
+    val combined = f1.ZipWith[int, int](f2, (a int, b int) => a + b)
+    val result = combined.Await()
+    var t1 = IsTrue(t, result.IsSuccess())
+    return Eq[int](t1, result.Get(), 30)
+}
+
+func TestFutureFallback(t T) T {
+    val f1 = FutureFailed[int](FutureError(Message = "first failed"))
+    val f2 = FutureOf[int](42)
+    val result = f1.Fallback(f2).Await()
+    var t1 = IsTrue(t, result.IsSuccess())
+    return Eq[int](t1, result.Get(), 42)
+}
+
+func TestSequence(t T) T {
+    val futures = ArrayOf[*Future[int]](
+        FutureOf[int](1),
+        FutureOf[int](2),
+        FutureOf[int](3)
+    )
+    val sequenced = Sequence[int](futures)
+    val result = sequenced.Await()
+    var t1 = IsTrue(t, result.IsSuccess())
+    val values = result.Get()
+    var t2 = Eq[int](t1, values.Size(), 3)
+    var t3 = Eq[int](t2, values.Get(0), 1)
+    var t4 = Eq[int](t3, values.Get(1), 2)
+    return Eq[int](t4, values.Get(2), 3)
+}
+
+func TestSequenceWithFailure(t T) T {
+    val futures = ArrayOf[*Future[int]](
+        FutureOf[int](1),
+        FutureFailed[int](FutureError(Message = "error")),
+        FutureOf[int](3)
+    )
+    val sequenced = Sequence[int](futures)
+    val result = sequenced.Await()
+    return IsTrue(t, result.IsFailure())
+}
+
+func TestTraverse(t T) T {
+    val items = ArrayOf[int](1, 2, 3)
+    val traversed = Traverse[int, int](items, (x int) => FutureOf[int](x * 2))
+    val result = traversed.Await()
+    var t1 = IsTrue(t, result.IsSuccess())
+    val values = result.Get()
+    var t2 = Eq[int](t1, values.Get(0), 2)
+    var t3 = Eq[int](t2, values.Get(1), 4)
+    return Eq[int](t3, values.Get(2), 6)
+}
+
+func TestFold(t T) T {
+    val futures = ArrayOf[*Future[int]](
+        FutureOf[int](1),
+        FutureOf[int](2),
+        FutureOf[int](3)
+    )
+    val folded = Fold[int, int](futures, 0, (acc int, x int) => acc + x)
+    val result = folded.Await()
+    var t1 = IsTrue(t, result.IsSuccess())
+    return Eq[int](t1, result.Get(), 6)
+}
+
+func TestReduceLeft(t T) T {
+    val futures = ArrayOf[*Future[int]](
+        FutureOf[int](1),
+        FutureOf[int](2),
+        FutureOf[int](3)
+    )
+    val reduced = ReduceLeft[int](futures, (a int, b int) => a + b)
+    val result = reduced.Await()
+    var t1 = IsTrue(t, result.IsSuccess())
+    return Eq[int](t1, result.Get(), 6)
+}
+
+func TestPromiseSuccess(t T) T {
+    val p = NewPromise[int]()
+    val f = p.Future()
+
+    Go(() => {
+        Sleep(10 * time.Millisecond)
+        p.Success(42)
+    })
+
+    val result = f.Await()
+    var t1 = IsTrue(t, result.IsSuccess())
+    return Eq[int](t1, result.Get(), 42)
+}
+
+func TestPromiseFailure(t T) T {
+    val p = NewPromise[int]()
+    val f = p.Future()
+
+    Go(() => {
+        Sleep(10 * time.Millisecond)
+        p.Failure(FutureError(Message = "async error"))
+    })
+
+    val result = f.Await()
+    var t1 = IsTrue(t, result.IsFailure())
+    return Eq[string](t1, result.Err.Error(), "async error")
+}
+
+func TestPromiseCompleteOnce(t T) T {
+    val p = NewPromise[int]()
+    val first = p.Success(1)
+    val second = p.Success(2)
+    var t1 = IsTrue(t, first)
+    var t2 = IsFalse(t1, second)
+    return Eq[int](t2, p.Future().Await().Get(), 1)
+}
+
+func TestAwaitFor(t T) T {
+    val f = FutureOf[int](42)
+    val result = f.AwaitFor(100 * time.Millisecond)
+    var t1 = IsTrue(t, result.IsDefined())
+    return Eq[int](t1, result.Get().Get(), 42)
+}
+
+func TestTransform(t T) T {
+    val f = FutureOf[int](5)
+    val transformed = f.Transform[string](
+        (v int) => Success[string]("success"),
+        (e error) => Success[string]("recovered")
+    )
+    val result = transformed.Await()
+    var t1 = IsTrue(t, result.IsSuccess())
+    return Eq[string](t1, result.Get(), "success")
+}
+
+func TestTransformFailure(t T) T {
+    val f = FutureFailed[int](FutureError(Message = "err"))
+    val transformed = f.Transform[string](
+        (v int) => Success[string]("success"),
+        (e error) => Success[string]("recovered")
+    )
+    val result = transformed.Await()
+    var t1 = IsTrue(t, result.IsSuccess())
+    return Eq[string](t1, result.Get(), "recovered")
+}
+
+func TestGetOrElse(t T) T {
+    val f = FutureFailed[int](FutureError(Message = "err"))
+    val result = f.GetOrElse(99)
+    return Eq[int](t, result, 99)
+}
+
+func TestToOption(t T) T {
+    val f1 = FutureOf[int](42)
+    val opt1 = f1.ToOption()
+    var t1 = IsTrue(t, opt1.IsDefined())
+    var t2 = Eq[int](t1, opt1.Get(), 42)
+
+    val f2 = FutureFailed[int](FutureError(Message = "err"))
+    val opt2 = f2.ToOption()
+    return IsFalse(t2, opt2.IsDefined())
+}
+
+func TestToEither(t T) T {
+    val f1 = FutureOf[int](42)
+    val either1 = f1.ToEither()
+    var t1 = IsTrue(t, either1.IsRight())
+    var t2 = Eq[int](t1, either1.GetRight(), 42)
+
+    val f2 = FutureFailed[int](FutureError(Message = "err"))
+    val either2 = f2.ToEither()
+    return IsTrue(t2, either2.IsLeft())
+}
+
+func TestAndThen(t T) T {
+    var sideEffect = 0
+    val f = FutureOf[int](10).AndThen((r Try[int]) => {
+        if r.IsSuccess() {
+            sideEffect = r.Get()
+        }
+    })
+    val result = f.Await()
+    var t1 = IsTrue(t, result.IsSuccess())
+    var t2 = Eq[int](t1, result.Get(), 10)
+    Sleep(10 * time.Millisecond)
+    return Eq[int](t2, sideEffect, 10)
+}

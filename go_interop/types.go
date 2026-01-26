@@ -9,6 +9,11 @@
 // For type-safe collections, prefer collection_immutable or collection_mutable packages.
 package go_interop
 
+import (
+	"sync"
+	"time"
+)
+
 // === Slice Helper Functions for efficient operations ===
 
 // SliceAppendAll appends all elements from src to dst. O(m) where m = len(src).
@@ -188,4 +193,193 @@ func MapCopy[K comparable, V any](m map[K]V) map[K]V {
 		result[k] = v
 	}
 	return result
+}
+
+// === Concurrency Primitives ===
+
+// Signal is an empty channel used for signaling completion.
+type Signal = chan struct{}
+
+// NewSignal creates a new signal channel.
+func NewSignal() Signal {
+	return make(chan struct{})
+}
+
+// CloseSignal closes a signal channel to broadcast completion.
+func CloseSignal(s Signal) {
+	close(s)
+}
+
+// WaitSignal blocks until the signal is closed.
+func WaitSignal(s Signal) {
+	<-s
+}
+
+// WaitSignalTimeout waits for a signal with timeout.
+// Returns true if signal was received, false if timeout occurred.
+func WaitSignalTimeout(s Signal, timeout time.Duration) bool {
+	select {
+	case <-s:
+		return true
+	case <-time.After(timeout):
+		return false
+	}
+}
+
+// Mutex wraps sync.Mutex for GALA compatibility.
+type Mutex struct {
+	mu sync.Mutex
+}
+
+// NewMutex creates a new Mutex.
+func NewMutex() *Mutex {
+	return &Mutex{}
+}
+
+// Lock acquires the mutex.
+func (m *Mutex) Lock() {
+	m.mu.Lock()
+}
+
+// Unlock releases the mutex.
+func (m *Mutex) Unlock() {
+	m.mu.Unlock()
+}
+
+// RWMutex wraps sync.RWMutex for GALA compatibility.
+type RWMutex struct {
+	mu sync.RWMutex
+}
+
+// NewRWMutex creates a new RWMutex.
+func NewRWMutex() *RWMutex {
+	return &RWMutex{}
+}
+
+// Lock acquires the write lock.
+func (m *RWMutex) Lock() {
+	m.mu.Lock()
+}
+
+// Unlock releases the write lock.
+func (m *RWMutex) Unlock() {
+	m.mu.Unlock()
+}
+
+// RLock acquires the read lock.
+func (m *RWMutex) RLock() {
+	m.mu.RLock()
+}
+
+// RUnlock releases the read lock.
+func (m *RWMutex) RUnlock() {
+	m.mu.RUnlock()
+}
+
+// Once wraps sync.Once for GALA compatibility.
+type Once struct {
+	once sync.Once
+	done bool
+}
+
+// NewOnce creates a new Once.
+func NewOnce() *Once {
+	return &Once{}
+}
+
+// Do executes the function only once. Returns true if this call executed the function.
+// Accepts func() any to be compatible with GALA's lambda generation.
+func (o *Once) Do(f func() any) bool {
+	executed := false
+	o.once.Do(func() {
+		f()
+		executed = true
+		o.done = true
+	})
+	return executed
+}
+
+// IsDone returns true if Do has been called.
+func (o *Once) IsDone() bool {
+	return o.done
+}
+
+// WaitGroup wraps sync.WaitGroup for GALA compatibility.
+type WaitGroup struct {
+	wg sync.WaitGroup
+}
+
+// NewWaitGroup creates a new WaitGroup.
+func NewWaitGroup() *WaitGroup {
+	return &WaitGroup{}
+}
+
+// Add adds delta to the WaitGroup counter.
+func (w *WaitGroup) Add(delta int) {
+	w.wg.Add(delta)
+}
+
+// Done decrements the WaitGroup counter by one.
+func (w *WaitGroup) Done() {
+	w.wg.Done()
+}
+
+// Wait blocks until the WaitGroup counter is zero.
+func (w *WaitGroup) Wait() {
+	w.wg.Wait()
+}
+
+// Go launches a goroutine. This is a helper to work around GALA's go statement limitations.
+// Accepts func() any to be compatible with GALA's lambda generation.
+func Go(f func() any) {
+	go func() { f() }()
+}
+
+// GoWithRecover launches a goroutine with panic recovery.
+// If the function panics, the recovery function is called with the panic value.
+// Accepts func() any and func(any) any to be compatible with GALA's lambda generation.
+func GoWithRecover(f func() any, onPanic func(any) any) {
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				onPanic(r)
+			}
+		}()
+		f()
+	}()
+}
+
+// Sleep pauses the current goroutine for the specified duration.
+func Sleep(d time.Duration) {
+	time.Sleep(d)
+}
+
+// After returns a channel that receives the current time after the duration.
+func After(d time.Duration) <-chan time.Time {
+	return time.After(d)
+}
+
+// === Error Handling ===
+
+// PanicError wraps a panic value as an error.
+type PanicError struct {
+	Message string
+}
+
+func (e PanicError) Error() string {
+	return e.Message
+}
+
+// PanicToError converts a panic value to an error.
+// If the value is already an error, it returns it directly.
+// If it's a string, it wraps it in a PanicError.
+// Otherwise, it creates a PanicError with "unknown panic".
+func PanicToError(r any) error {
+	if e, ok := r.(error); ok {
+		return e
+	}
+	if s, ok := r.(string); ok {
+		return PanicError{Message: s}
+	}
+	return PanicError{Message: "unknown panic"}
 }

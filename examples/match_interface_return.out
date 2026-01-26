@@ -1,0 +1,4 @@
+err1: original error
+err2: string message
+err3: error code: 42
+err4: unknown

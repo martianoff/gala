@@ -1,0 +1,11 @@
+=== Custom Wrapper Extractor ===
+Explicit: Got 42
+Inferred: Got 42
+Inferred string: hello
+
+=== Future Extractors ===
+Explicit Succeeded: 100
+Inferred Succeeded: 200
+Inferred Failed: test error
+Inferred string Future: world
+Inferred Completed Success: 300

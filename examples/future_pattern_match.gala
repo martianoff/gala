@@ -1,0 +1,172 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+    . "martianoff/gala/concurrent"
+    . "martianoff/gala/collection_immutable"
+)
+
+// simulateComputation simulates an async computation that may fail
+func simulateComputation(value int, shouldFail bool) *Future[int] {
+    if shouldFail {
+        return FutureFailed[int](FutureError(Message = fmt.Sprintf("computation failed for %d", value)))
+    }
+    return FutureOf[int](value * 2)
+}
+
+func main() {
+    fmt.Println("=== Pattern Matching on Single Future ===")
+
+    // Create successful and failed futures
+    val successFuture = FutureOf[int](42)
+    val failedFuture = FutureFailed[int](FutureError(Message = "something went wrong"))
+
+    // Pattern match using Succeeded/Failed extractors with explicit type
+    val msg1 = successFuture match {
+        case Succeeded[int](v) => fmt.Sprintf("Success: got value %d", v)
+        case Failed[int](e) => fmt.Sprintf("Failed: %s", e.Error())
+        case _ => "Unknown state"
+    }
+    fmt.Println(msg1)
+
+    val msg2 = failedFuture match {
+        case Succeeded[int](v) => fmt.Sprintf("Success: got value %d", v)
+        case Failed[int](e) => fmt.Sprintf("Failed: %s", e.Error())
+        case _ => "Unknown state"
+    }
+    fmt.Println(msg2)
+
+    // Pattern match using Completed extractor (access to full Try)
+    fmt.Println("\n=== Pattern Matching with Completed (Try access) ===")
+
+    val msg3 = successFuture match {
+        case Completed[int](Success(v)) => fmt.Sprintf("Completed with success: %d", v)
+        case Completed[int](Failure(e)) => fmt.Sprintf("Completed with failure: %s", e.Error())
+        case _ => "Unknown"
+    }
+    fmt.Println(msg3)
+
+    val msg4 = failedFuture match {
+        case Completed[int](Success(v)) => fmt.Sprintf("Completed with success: %d", v)
+        case Completed[int](Failure(e)) => fmt.Sprintf("Completed with failure: %s", e.Error())
+        case _ => "Unknown"
+    }
+    fmt.Println(msg4)
+
+    // Pattern match with guards
+    fmt.Println("\n=== Pattern Matching with Guards ===")
+
+    val bigValueFuture = FutureOf[int](100)
+    val smallValueFuture = FutureOf[int](5)
+
+    val classify = (f *Future[int]) => f match {
+        case Succeeded[int](v) if v >= 50 => fmt.Sprintf("Large value: %d", v)
+        case Succeeded[int](v) if v >= 10 => fmt.Sprintf("Medium value: %d", v)
+        case Succeeded[int](v) => fmt.Sprintf("Small value: %d", v)
+        case Failed[int](e) => fmt.Sprintf("Error: %s", e.Error())
+        case _ => "Unknown"
+    }
+
+    fmt.Println(classify(bigValueFuture))
+    fmt.Println(classify(smallValueFuture))
+
+    // Pattern matching on async computation results
+    fmt.Println("\n=== Pattern Matching on FutureApply ===")
+
+    val computeFuture = FutureApply[int](() => 21 * 2)
+
+    val computeResult = computeFuture match {
+        case Succeeded[int](v) => fmt.Sprintf("Computation result: %d", v)
+        case Failed[int](e) => fmt.Sprintf("Computation failed: %s", e.Error())
+        case _ => "Unknown"
+    }
+    fmt.Println(computeResult)
+
+    // === Sequence Pattern Matching ===
+    fmt.Println("\n=== Pattern Matching on Sequence of Futures ===")
+
+    // All successful futures
+    val allSuccess = ArrayOf[*Future[int]](
+        FutureOf[int](1),
+        FutureOf[int](2),
+        FutureOf[int](3)
+    )
+
+    val seqMsg1 = allSuccess match {
+        case AllSucceeded[int](values) => fmt.Sprintf("All succeeded with values: [%d, %d, %d]", values.Get(0), values.Get(1), values.Get(2))
+        case AnyFailed[int](e) => fmt.Sprintf("One or more failed: %s", e.Error())
+        case _ => "Unknown"
+    }
+    fmt.Println(seqMsg1)
+
+    // One failing future in the sequence
+    val withFailure = ArrayOf[*Future[int]](
+        FutureOf[int](1),
+        FutureFailed[int](FutureError(Message = "second computation failed")),
+        FutureOf[int](3)
+    )
+
+    val seqMsg2 = withFailure match {
+        case AllSucceeded[int](values) => fmt.Sprintf("All succeeded with %d values", values.Size())
+        case AnyFailed[int](e) => fmt.Sprintf("One or more failed: %s", e.Error())
+        case _ => "Unknown"
+    }
+    fmt.Println(seqMsg2)
+
+    // Using pattern matching in a function
+    fmt.Println("\n=== Pattern Matching in Function ===")
+
+    val processFutures = (futures Array[*Future[int]]) => futures match {
+        case AllSucceeded[int](values) => {
+            val sum = values.FoldLeft[int](0, (acc int, v int) => acc + v)
+            fmt.Sprintf("Sum of all values: %d", sum)
+        }
+        case AnyFailed[int](e) => fmt.Sprintf("Cannot compute sum, error: %s", e.Error())
+        case _ => "Empty or unknown"
+    }
+
+    fmt.Println(processFutures(allSuccess))
+    fmt.Println(processFutures(withFailure))
+
+    // Combining with transformed Futures
+    fmt.Println("\n=== Pattern Matching on Transformed Futures ===")
+
+    val transformedFuture = FutureOf[int](10)
+        .Map[int]((x int) => x * 2)
+        .Map[string]((x int) => fmt.Sprintf("Value is %d", x))
+
+    val transformedMsg = transformedFuture match {
+        case Succeeded[string](s) => fmt.Sprintf("Transformed: %s", s)
+        case Failed[string](e) => fmt.Sprintf("Transform failed: %s", e.Error())
+        case _ => "Unknown"
+    }
+    fmt.Println(transformedMsg)
+
+    // Pattern matching on chained Futures
+    fmt.Println("\n=== Pattern Matching on Chained Futures ===")
+
+    val chainedFuture = FutureOf[int](5)
+        .FlatMap[int]((x int) => simulateComputation(x, false))
+        .FlatMap[int]((x int) => simulateComputation(x, false))
+
+    val chainedMsg = chainedFuture match {
+        case Succeeded[int](v) => fmt.Sprintf("Chain completed: %d", v)
+        case Failed[int](e) => fmt.Sprintf("Chain failed: %s", e.Error())
+        case _ => "Unknown"
+    }
+    fmt.Println(chainedMsg)
+
+    // Chain with failure in the middle
+    val failingChain = FutureOf[int](5)
+        .FlatMap[int]((x int) => simulateComputation(x, false))
+        .FlatMap[int]((x int) => simulateComputation(x, true))
+        .FlatMap[int]((x int) => simulateComputation(x, false))
+
+    val failingChainMsg = failingChain match {
+        case Succeeded[int](v) => fmt.Sprintf("Chain completed: %d", v)
+        case Failed[int](e) => fmt.Sprintf("Chain failed: %s", e.Error())
+        case _ => "Unknown"
+    }
+    fmt.Println(failingChainMsg)
+}

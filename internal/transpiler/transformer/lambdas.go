@@ -22,6 +22,9 @@ func (t *galaASTTransformer) transformLambda(ctx *grammar.LambdaExpressionContex
 	return t.transformLambdaWithExpectedType(ctx, nil)
 }
 
+// ExpectedVoid is a sentinel value indicating the lambda should have no return type
+var ExpectedVoid ast.Expr = &ast.Ident{Name: "__void__"}
+
 func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.LambdaExpressionContext, expectedRetType ast.Expr) (ast.Expr, error) {
 	t.pushScope()
 	defer t.popScope()
@@ -39,10 +42,11 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 
 	var body *ast.BlockStmt
 	var retType ast.Expr = ast.NewIdent("any")
+	isVoidExpected := expectedRetType == ExpectedVoid
 
 	// Check if expected type is a concrete type (not "any" or containing "any")
 	// We only use the expected type if it's more specific than "any"
-	isConcreteExpectedType := expectedRetType != nil && !containsAny(expectedRetType)
+	isConcreteExpectedType := expectedRetType != nil && expectedRetType != ExpectedVoid && !containsAny(expectedRetType)
 
 	// Use expected return type if provided and concrete
 	if isConcreteExpectedType {
@@ -55,7 +59,7 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 			return nil, err
 		}
 		// Try to infer return type from the block's return statements
-		if !isConcreteExpectedType {
+		if !isConcreteExpectedType && !isVoidExpected {
 			if inferredType := t.inferBlockReturnType(b); inferredType != nil {
 				retType = inferredType
 			} else {
@@ -70,25 +74,41 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 			return nil, err
 		}
 		// Use expected type if concrete, otherwise infer from expression
-		if !isConcreteExpectedType {
+		if !isConcreteExpectedType && !isVoidExpected {
 			retType = t.getExprType(expr)
 		}
-		body = &ast.BlockStmt{
-			List: []ast.Stmt{
-				&ast.ReturnStmt{Results: []ast.Expr{expr}},
+		if isVoidExpected {
+			// For void functions, the expression is just a statement, not a return
+			body = &ast.BlockStmt{
+				List: []ast.Stmt{
+					&ast.ExprStmt{X: expr},
+				},
+			}
+		} else {
+			body = &ast.BlockStmt{
+				List: []ast.Stmt{
+					&ast.ReturnStmt{Results: []ast.Expr{expr}},
+				},
+			}
+		}
+	}
+
+	// Build the function literal
+	funcType := &ast.FuncType{
+		Params: fieldList,
+	}
+
+	// Only add Results if not void
+	if !isVoidExpected {
+		funcType.Results = &ast.FieldList{
+			List: []*ast.Field{
+				{Type: retType},
 			},
 		}
 	}
 
 	return &ast.FuncLit{
-		Type: &ast.FuncType{
-			Params: fieldList,
-			Results: &ast.FieldList{
-				List: []*ast.Field{
-					{Type: retType},
-				},
-			},
-		},
+		Type: funcType,
 		Body: body,
 	}, nil
 }

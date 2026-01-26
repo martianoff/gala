@@ -507,10 +507,17 @@ func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClause
 			return nil, nil, err
 		}
 		body = b.List
-		// Infer type from last statement if it's a return
-		if len(b.List) > 0 {
-			if ret, ok := b.List[len(b.List)-1].(*ast.ReturnStmt); ok && len(ret.Results) > 0 {
-				resultType = t.inferResultType(ret.Results[0])
+		// In GALA, a block used as an expression returns its last expression.
+		// Convert the last expression statement to a return statement.
+		if len(body) > 0 {
+			lastStmt := body[len(body)-1]
+			if lastStmt != nil {
+				if exprStmt, ok := lastStmt.(*ast.ExprStmt); ok {
+					body[len(body)-1] = &ast.ReturnStmt{Results: []ast.Expr{exprStmt.X}}
+					resultType = t.inferResultType(exprStmt.X)
+				} else if ret, ok := lastStmt.(*ast.ReturnStmt); ok && len(ret.Results) > 0 {
+					resultType = t.inferResultType(ret.Results[0])
+				}
 			}
 		}
 	} else if ctx.GetBody() != nil {

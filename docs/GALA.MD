@@ -475,6 +475,29 @@ val res = w match {
 
 The transpiler infers the type parameter `T` from the matched type, so `Wrapper` in the pattern becomes `Wrapper[int]`.
 
+**Pointer types** are also supported for extractor type inference:
+
+```gala
+// Extractor for pointer to generic container
+type Unwrap[T any] struct {}
+func (u Unwrap[T]) Unapply(w *Container[T]) Option[T] = Some[T](w.value)
+
+val c = &Container[int](value = 42)
+val res = c match {
+    case Unwrap(v) => v  // T inferred as int from *Container[int]
+    case _ => 0
+}
+```
+
+**Explicit type parameters** can also be provided when needed:
+
+```gala
+val res = c match {
+    case Unwrap[int](v) => v  // Explicit type parameter
+    case _ => 0
+}
+```
+
 ##### Using Extractors
 
 Extractors can be nested: `case Some(Even(n)) => ...`. You can use the underscore `_` to skip variable bindings in any extractor: `case Some(_) => "Got something"`.
@@ -809,6 +832,133 @@ func processOrder(id int) Try[Receipt] =
 | `Fold[U](onFailure, onSuccess)` | Reduce to a single value |
 | `ToOption()` | Convert to Option |
 | `ToEither()` | Convert to Either[error, T] |
+
+### Future Monad
+
+`Future[T]` represents an asynchronous computation that will eventually produce a value of type T or fail with an error. It provides a functional approach to concurrent programming, similar to Scala's Future monad.
+
+```gala
+import . "martianoff/gala/concurrent"
+
+// Create Futures
+val immediate = FutureOf[int](42)                    // Already completed with value
+val failed = FutureFailed[int](SomeError("oops"))    // Already failed
+val async = FutureApply[int](() => expensiveComputation())  // Runs asynchronously
+
+// Blocking operations
+val result = async.Await()           // Returns Try[int]
+val value = async.Get()              // Returns int, panics on failure
+val safe = async.GetOrElse(0)        // Returns int, default on failure
+
+// Non-blocking with callbacks
+async.OnSuccess((v int) => fmt.Println("Got:", v))
+async.OnFailure((e error) => fmt.Println("Error:", e))
+async.OnComplete((r Try[int]) => fmt.Println("Result:", r))
+
+// Monadic operations
+val doubled = async.Map[int]((v int) => v * 2)
+val chained = async.FlatMap[string]((v int) => fetchName(v))
+
+// Error recovery
+val recovered = failed.Recover((e error) => 0)
+val recoveredWith = failed.RecoverWith((e error) => FutureOf[int](0))
+
+// Combining Futures
+val zipped = f1.Zip[string](f2)      // Future[Tuple[int, string]]
+val first = f1.Fallback(f2)          // First success or last failure
+```
+
+#### Pattern Matching on Futures
+
+Futures support pattern matching using extractors. Type parameters can be inferred from the matched Future type:
+
+```gala
+val f = FutureOf[int](42)
+
+// With inferred type parameters (preferred)
+val msg = f match {
+    case Succeeded(v) => fmt.Sprintf("Got: %d", v)
+    case Failed(e) => fmt.Sprintf("Error: %s", e.Error())
+    case _ => "Unknown"
+}
+
+// With explicit type parameters (when needed)
+val msg2 = f match {
+    case Succeeded[int](v) => fmt.Sprintf("Got: %d", v)
+    case Failed[int](e) => fmt.Sprintf("Error: %s", e.Error())
+    case _ => "Unknown"
+}
+
+// Using Completed extractor with nested Try matching
+val msg3 = f match {
+    case Completed(Success(v)) => fmt.Sprintf("Success: %d", v)
+    case Completed(Failure(e)) => fmt.Sprintf("Failure: %s", e.Error())
+    case _ => "Unknown"
+}
+```
+
+#### Sequence Operations
+
+```gala
+val futures = ArrayOf(FutureOf(1), FutureOf(2), FutureOf(3))
+
+// Sequence: Array[Future[T]] -> Future[Array[T]]
+val all = Sequence[int](futures)     // Future[Array[int]]
+
+// Pattern matching on sequences
+val msg = futures match {
+    case AllSucceeded(values) => fmt.Sprintf("All: %v", values)
+    case AnyFailed(e) => fmt.Sprintf("Failed: %s", e.Error())
+    case _ => "Unknown"
+}
+
+// First completed
+val first = FirstCompletedOf[int](futures)
+
+// Traverse: apply async function to each element
+val results = Traverse[int, string](items, (i int) => fetchAsync(i))
+
+// Fold: reduce collection of Futures
+val sum = Fold[int, int](futures, 0, (acc int, v int) => acc + v)
+```
+
+#### Promise
+
+`Promise[T]` is a writable, single-assignment container that completes a Future. Use it when you need to complete a Future from external code:
+
+```gala
+val promise = NewPromise[int]()
+val future = promise.Future()
+
+// Complete the promise (can only be done once)
+promise.Success(42)           // or
+promise.Failure(someError)    // or
+promise.Complete(tryResult)
+
+// Check if completed
+val done = promise.IsCompleted()
+```
+
+#### Key Methods
+
+| Method | Description |
+|--------|-------------|
+| `IsCompleted()` | Check if the Future has completed |
+| `Value()` | Get current result as Option[Try[T]] |
+| `Await()` | Block until completion, returns Try[T] |
+| `AwaitFor(duration)` | Block with timeout, returns Option[Try[T]] |
+| `Get()` | Block and get value, panics on failure |
+| `GetOrElse(default)` | Block and get value or default |
+| `Map[U](f)` | Transform successful value |
+| `FlatMap[U](f)` | Chain with function returning Future |
+| `Filter(predicate)` | Keep value if predicate holds |
+| `Recover(f)` | Recover from failure with value |
+| `RecoverWith(f)` | Recover from failure with new Future |
+| `Zip[U](other)` | Combine two Futures into tuple |
+| `ZipWith[U,V](other, f)` | Combine with function |
+| `Fallback(other)` | Use other Future if this fails |
+| `AndThen(callback)` | Execute callback, return same result |
+| `ToTry()` / `ToOption()` / `ToEither()` | Convert result |
 
 ### Slices
 

@@ -812,8 +812,13 @@ func (t *galaASTTransformer) transformArgumentWithExpectedType(exprCtx grammar.I
 	if lambdaCtx := t.findLambdaInExpression(exprCtx); lambdaCtx != nil {
 		// Extract the expected return type from the function type
 		var expectedRetType ast.Expr
-		if funcType, ok := expectedType.(transpiler.FuncType); ok && len(funcType.Results) > 0 {
-			expectedRetType = t.typeToExpr(funcType.Results[0])
+		if funcType, ok := expectedType.(transpiler.FuncType); ok {
+			if len(funcType.Results) > 0 {
+				expectedRetType = t.typeToExpr(funcType.Results[0])
+			} else {
+				// Void function - use sentinel value
+				expectedRetType = ExpectedVoid
+			}
 		}
 		return t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType)
 	}

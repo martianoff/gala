@@ -1,0 +1,29 @@
+=== Pattern Matching on Single Future ===
+Success: got value 42
+Failed: something went wrong
+
+=== Pattern Matching with Completed (Try access) ===
+Completed with success: 42
+Completed with failure: something went wrong
+
+=== Pattern Matching with Guards ===
+Large value: 100
+Small value: 5
+
+=== Pattern Matching on FutureApply ===
+Computation result: 42
+
+=== Pattern Matching on Sequence of Futures ===
+All succeeded with values: [1, 2, 3]
+One or more failed: second computation failed
+
+=== Pattern Matching in Function ===
+Sum of all values: 6
+Cannot compute sum, error: second computation failed
+
+=== Pattern Matching on Transformed Futures ===
+Transformed: Value is 20
+
+=== Pattern Matching on Chained Futures ===
+Chain completed: 20
+Chain failed: computation failed for 10

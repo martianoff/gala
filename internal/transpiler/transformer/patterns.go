@@ -61,7 +61,8 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 	// Extractor - check for call patterns like Left(n), Some(x), IntStack(first, second, _...) etc.
 	// This check must come BEFORE the simple binding check because a pattern like `Foo(x)`
 	// has a primary with identifier `Foo`, but it's not a simple binding.
-	if primaryExprCtx, argList := t.getCallPatternFromExpression(patExprCtx); primaryExprCtx != nil {
+	// Also handles generic patterns with explicit type arguments like Unwrap[int](v).
+	if primaryExprCtx, argList, explicitTypeArgs := t.getCallPatternWithTypeArgsFromExpression(patExprCtx); primaryExprCtx != nil {
 		patternExpr, err := t.transformPrimaryExpr(primaryExprCtx)
 		if err != nil {
 			return nil, nil, err
@@ -79,10 +80,27 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 			if unapplyMeta, hasUnapply := meta.Methods["Unapply"]; hasUnapply {
 				var inferredTypes []transpiler.Type
 				if len(meta.TypeParams) > 0 {
-					inferredTypes = t.inferExtractorTypeParams(meta, matchedType)
-					if len(inferredTypes) != len(meta.TypeParams) {
-						return nil, nil, galaerr.NewSemanticError(
-							fmt.Sprintf("cannot infer type parameters for extractor '%s'. Ensure the Unapply method's parameter type matches the matched type", rawName))
+					// Check if explicit type arguments were provided (e.g., Unwrap[int](v))
+					if explicitTypeArgs != nil && len(explicitTypeArgs.AllExpression()) > 0 {
+						// Use explicit type arguments instead of inferring
+						for _, typeExpr := range explicitTypeArgs.AllExpression() {
+							typeAst, err := t.transformExpression(typeExpr)
+							if err != nil {
+								return nil, nil, err
+							}
+							inferredTypes = append(inferredTypes, t.resolveType(t.getBaseTypeName(typeAst)))
+						}
+						if len(inferredTypes) != len(meta.TypeParams) {
+							return nil, nil, galaerr.NewSemanticError(
+								fmt.Sprintf("extractor '%s' expects %d type parameters, got %d", rawName, len(meta.TypeParams), len(inferredTypes)))
+						}
+					} else {
+						// Infer type parameters from the matched type
+						inferredTypes = t.inferExtractorTypeParams(meta, matchedType)
+						if len(inferredTypes) != len(meta.TypeParams) {
+							return nil, nil, galaerr.NewSemanticError(
+								fmt.Sprintf("cannot infer type parameters for extractor '%s'. Ensure the Unapply method's parameter type matches the matched type", rawName))
+						}
 					}
 				}
 				// Check if return type is supported (bool or Option[T])
@@ -309,13 +327,25 @@ func (t *galaASTTransformer) transformCaseClause(ctx *grammar.CaseClauseContext,
 	}
 
 	var body []ast.Stmt
-	if ctx.GetBodyBlock() != nil {
-		b, err := t.transformBlock(ctx.GetBodyBlock().(*grammar.BlockContext))
+	bodyBlockCtx := ctx.GetBodyBlock()
+	bodyCtx := ctx.GetBody()
+	if bodyBlockCtx != nil {
+		b, err := t.transformBlock(bodyBlockCtx.(*grammar.BlockContext))
 		if err != nil {
 			return nil, err
 		}
 		body = b.List
-	} else if ctx.GetBody() != nil {
+		// In GALA, a block used as an expression returns its last expression.
+		// Convert the last expression statement to a return statement.
+		if len(body) > 0 {
+			lastStmt := body[len(body)-1]
+			if lastStmt != nil {
+				if exprStmt, ok := lastStmt.(*ast.ExprStmt); ok {
+					body[len(body)-1] = &ast.ReturnStmt{Results: []ast.Expr{exprStmt.X}}
+				}
+			}
+		}
+	} else if bodyCtx != nil {
 		expr, err := t.transformExpression(ctx.GetBody())
 		if err != nil {
 			return nil, err
@@ -1280,6 +1310,17 @@ func (t *galaASTTransformer) unifyTypes(pattern, concrete transpiler.Type, typeP
 			substitution[tp] = concrete
 			return true
 		}
+	}
+
+	// Check if both are pointer types - unify the element types
+	patternPtr, patternIsPtr := pattern.(transpiler.PointerType)
+	concretePtr, concreteIsPtr := concrete.(transpiler.PointerType)
+	if patternIsPtr && concreteIsPtr {
+		return t.unifyTypes(patternPtr.Elem, concretePtr.Elem, typeParams, substitution)
+	}
+	// One is pointer and one is not - no match
+	if patternIsPtr != concreteIsPtr {
+		return false
 	}
 
 	// Check if both are generic types

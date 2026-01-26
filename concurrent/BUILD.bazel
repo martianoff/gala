@@ -1,0 +1,45 @@
+load("@rules_go//go:def.bzl", "go_library")
+load("//:gala.bzl", "gala_go_test", "gala_transpile")
+
+exports_files([
+    "future.gala",
+])
+
+filegroup(
+    name = "gala_sources",
+    srcs = glob(
+        ["*.gala"],
+        exclude = ["*_test.gala"],
+    ),
+    visibility = ["//visibility:public"],
+)
+
+gala_transpile(
+    name = "future_go",
+    src = "future.gala",
+    out = "future.go",
+)
+
+go_library(
+    name = "concurrent",
+    srcs = [
+        "future.go",
+    ],
+    importpath = "martianoff/gala/concurrent",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//collection_immutable",
+        "//go_interop",
+        "//std",
+    ],
+)
+
+gala_go_test(
+    name = "future_test",
+    srcs = ["future_test.gala"],
+    deps = [
+        ":concurrent",
+        "//collection_immutable",
+        "//go_interop",
+    ],
+)

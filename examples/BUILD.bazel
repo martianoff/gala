@@ -321,3 +321,33 @@ gala_test(
         "//collection_immutable",
     ],
 )
+
+gala_test(
+    name = "callback_generic_param",
+    src = "callback_generic_param.gala",
+    expected = "callback_generic_param.out",
+)
+
+# TODO: Fix match expression interface return type compatibility
+# gala_test(
+#     name = "match_interface_return",
+#     src = "match_interface_return.gala",
+#     expected = "match_interface_return.out",
+# )
+
+gala_test(
+    name = "future_pattern_match",
+    src = "future_pattern_match.gala",
+    expected = "future_pattern_match.out",
+    deps = [
+        "//concurrent",
+        "//collection_immutable",
+    ],
+)
+
+gala_test(
+    name = "extractor_type_inference",
+    src = "extractor_type_inference.gala",
+    expected = "extractor_type_inference.out",
+    deps = ["//concurrent"],
+)

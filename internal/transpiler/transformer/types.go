@@ -185,6 +185,10 @@ func (t *galaASTTransformer) typeToExpr(typ transpiler.Type) ast.Expr {
 			if t.importManager.IsDotImported(v.Package) {
 				return ast.NewIdent(v.Name)
 			}
+			// Check if this is the current package - if so, don't qualify with package name
+			if v.Package == t.packageName {
+				return ast.NewIdent(v.Name)
+			}
 			return &ast.SelectorExpr{
 				X:   ast.NewIdent(v.Package),
 				Sel: ast.NewIdent(v.Name),

@@ -1,0 +1,39 @@
+package main
+
+import "fmt"
+
+// Test case: match expression returning interface type (error)
+// All branches return types that implement the same interface,
+// so the result type should be the interface type.
+
+struct CustomError(Message string)
+
+func (e CustomError) Error() string = e.Message
+
+struct AnotherError(Code int)
+
+func (e AnotherError) Error() string = fmt.Sprintf("error code: %d", e.Code)
+
+// This function should work - all branches return error interface
+func toError(value any) error {
+    return value match {
+        case e: error => e
+        case s: string => CustomError(Message = s)
+        case i: int => AnotherError(Code = i)
+        case _ => CustomError(Message = "unknown")
+    }
+}
+
+func main() {
+    val err1 = toError(CustomError(Message = "original error"))
+    fmt.Println("err1:", err1.Error())
+
+    val err2 = toError("string message")
+    fmt.Println("err2:", err2.Error())
+
+    val err3 = toError(42)
+    fmt.Println("err3:", err3.Error())
+
+    val err4 = toError(true)
+    fmt.Println("err4:", err4.Error())
+}

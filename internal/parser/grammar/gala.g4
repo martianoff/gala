@@ -51,7 +51,11 @@ signature: parameters (type)?;
 
 parameters: '(' parameterList? ')';
 parameterList: parameter (',' parameter)*;
-parameter: (VAL | VAR)? identifier ELLIPSIS? (type)?;
+// Parameters can be:
+// - Named with type: "x int", "val x int", "x ...int"
+// - Named without type: "x" (type inferred)
+// - Type only (for function types): "int", "Option[T]", "...int"
+parameter: (VAL | VAR)? (identifier ELLIPSIS? type? | ELLIPSIS? type);
 
 ELLIPSIS: '...';
 
