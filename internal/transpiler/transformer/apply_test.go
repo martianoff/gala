@@ -163,6 +163,14 @@ func (s Identity[T]) Copy() Identity[T] {
 func (s Identity[T]) Equal(other Identity[T]) bool {
 	return true
 }
+
+type IdentityInstance interface {
+	IsIdentity() bool
+}
+
+func (_ Identity[T]) IsIdentity() bool {
+	return true
+}
 func (s Identity[T]) Unapply(v any) bool {
 	if _, ok := v.(Identity[T]); ok {
 		return true

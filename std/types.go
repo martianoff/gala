@@ -1,35 +1,15 @@
 package std
 
 import "reflect"
-import "strings"
-import "unsafe"
+
+// ImmutableUnwrapper is implemented by Immutable[T] to allow interface-based unwrapping.
+type ImmutableUnwrapper interface {
+	GetAny() any
+}
 
 func unwrapImmutable(obj any) any {
-	if obj == nil {
-		return nil
-	}
-	v := reflect.ValueOf(obj)
-	if v.Kind() == reflect.Struct {
-		// Only unwrap if it's actually an Immutable struct.
-		// Check type name because it might be generic (e.g. Immutable[int])
-		typeName := v.Type().Name()
-		if typeName == "" {
-			// Might be a generic instantiation, check the string representation
-			s := v.Type().String()
-			if !strings.Contains(s, "Immutable") {
-				return obj
-			}
-		} else if !strings.Contains(typeName, "Immutable") {
-			return obj
-		}
-
-		meth := v.MethodByName("Get")
-		if meth.IsValid() {
-			res := meth.Call(nil)
-			if len(res) > 0 {
-				return res[0].Interface()
-			}
-		}
+	if u, ok := obj.(ImmutableUnwrapper); ok {
+		return u.GetAny()
 	}
 	return obj
 }
@@ -106,92 +86,17 @@ func Equal[T any](v1, v2 T) bool {
 }
 
 func As[T any](obj any) (T, bool) {
-	res, ok := asInternal(obj, reflect.TypeOf((*T)(nil)).Elem())
-	if !ok {
-		return *new(T), false
-	}
-	return res.(T), true
-}
-
-func asInternal(obj any, targetType reflect.Type) (any, bool) {
-	if obj == nil {
-		return nil, false
+	// Direct type assertion
+	if v, ok := obj.(T); ok {
+		return v, true
 	}
 
-	v := reflect.ValueOf(obj)
-	if v.Type().AssignableTo(targetType) {
-		return obj, true
+	// Try to unwrap if source is Immutable
+	if u, ok := obj.(ImmutableUnwrapper); ok {
+		unwrapped := u.GetAny()
+		return As[T](unwrapped)
 	}
 
-	// Try to unwrap if target is not Immutable but source is
-	if !strings.Contains(targetType.String(), "Immutable") && strings.Contains(v.Type().String(), "Immutable") {
-		unwrapped := unwrapImmutable(obj)
-		return asInternal(unwrapped, targetType)
-	}
-
-	if v.Kind() != reflect.Struct || targetType.Kind() != reflect.Struct {
-		return nil, false
-	}
-
-	// Make addressable copy to access unexported fields
-	vAddr := v
-	if !v.CanAddr() {
-		vAddr = reflect.New(v.Type()).Elem()
-		vAddr.Set(v)
-	}
-
-	// Handle Immutable specifically
-	if strings.Contains(v.Type().String(), "Immutable") && strings.Contains(targetType.String(), "Immutable") {
-		meth := v.MethodByName("Get")
-		if meth.IsValid() {
-			innerVal := meth.Call(nil)[0].Interface()
-			newImm := reflect.New(targetType).Elem()
-			targetInnerType := targetType.Field(0).Type
-			convertedInner, ok := asInternal(innerVal, targetInnerType)
-			if !ok {
-				return nil, false
-			}
-			setUnexportedField(newImm.Field(0), reflect.ValueOf(convertedInner))
-			return newImm.Interface(), true
-		}
-	}
-
-	if targetType.NumField() != v.NumField() {
-		return nil, false
-	}
-
-	for i := 0; i < targetType.NumField(); i++ {
-		if targetType.Field(i).Name != v.Type().Field(i).Name {
-			return nil, false
-		}
-	}
-
-	newTarget := reflect.New(targetType).Elem()
-	for i := 0; i < targetType.NumField(); i++ {
-		srcField := vAddr.Field(i)
-		targetField := newTarget.Field(i)
-
-		srcFieldVal := srcField
-		if !srcFieldVal.CanInterface() {
-			srcFieldVal = reflect.NewAt(srcField.Type(), unsafe.Pointer(srcField.UnsafeAddr())).Elem()
-		}
-
-		converted, ok := asInternal(srcFieldVal.Interface(), targetField.Type())
-		if !ok {
-			return nil, false
-		}
-
-		valToSet := reflect.ValueOf(converted)
-		if targetField.CanSet() {
-			targetField.Set(valToSet)
-		} else {
-			setUnexportedField(targetField, valToSet)
-		}
-	}
-
-	return newTarget.Interface(), true
-}
-
-func setUnexportedField(field reflect.Value, value reflect.Value) {
-	reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).Elem().Set(value)
+	var zero T
+	return zero, false
 }

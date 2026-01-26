@@ -150,6 +150,14 @@ func (s Container[T]) Copy() Container[T] {
 func (s Container[T]) Equal(other Container[T]) bool {
 	return std.Equal(s.value, other.value) && std.Equal(s.isEmpty, other.isEmpty)
 }
+
+type ContainerInstance interface {
+	IsContainer() bool
+}
+
+func (_ Container[T]) IsContainer() bool {
+	return true
+}
 func testEmpty[T any](c Container[T]) bool {
 	var local = c
 	return local.isEmpty.Get()

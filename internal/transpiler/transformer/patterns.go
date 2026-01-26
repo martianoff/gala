@@ -167,6 +167,17 @@ func (t *galaASTTransformer) transformTypedPattern(ctx *grammar.TypedPatternCont
 		return nil, nil, err
 	}
 
+	// Check if this is a wildcard generic pattern (e.g., Wrap[_] -> Wrap[any])
+	// Only use interface-based matching when objExpr has a concrete generic type,
+	// not when it's 'any' (because we need field access which requires concrete type)
+	if baseName, isWildcard := t.isWildcardGenericType(typeExpr); isWildcard {
+		objType := t.getExprTypeName(objExpr)
+		// Only use interface check if the object has a concrete generic type (not any/interface)
+		if !objType.IsNil() && objType.String() != "any" {
+			return t.transformWildcardTypedPattern(name, baseName, objExpr)
+		}
+	}
+
 	typeName := t.resolveType(t.getBaseTypeName(typeExpr))
 	if qName := t.getType(typeName.String()); !qName.IsNil() {
 		typeName = qName
@@ -191,6 +202,88 @@ func (t *galaASTTransformer) transformTypedPattern(ctx *grammar.TypedPatternCont
 	}
 
 	return ast.NewIdent(okName), []ast.Stmt{assign}, nil
+}
+
+// isWildcardGenericType checks if typeExpr is a generic type with wildcard (any) type parameters.
+// Returns the base type name and true if it's a wildcard generic pattern.
+func (t *galaASTTransformer) isWildcardGenericType(typeExpr ast.Expr) (string, bool) {
+	// Check for IndexExpr: Wrap[any]
+	if idx, ok := typeExpr.(*ast.IndexExpr); ok {
+		if ident, ok := idx.Index.(*ast.Ident); ok && ident.Name == "any" {
+			if baseIdent, ok := idx.X.(*ast.Ident); ok {
+				return baseIdent.Name, true
+			}
+			if sel, ok := idx.X.(*ast.SelectorExpr); ok {
+				return sel.Sel.Name, true
+			}
+		}
+	}
+	// Check for IndexListExpr: Wrap[any, any]
+	if idx, ok := typeExpr.(*ast.IndexListExpr); ok {
+		hasAny := false
+		for _, index := range idx.Indices {
+			if ident, ok := index.(*ast.Ident); ok && ident.Name == "any" {
+				hasAny = true
+				break
+			}
+		}
+		if hasAny {
+			if baseIdent, ok := idx.X.(*ast.Ident); ok {
+				return baseIdent.Name, true
+			}
+			if sel, ok := idx.X.(*ast.SelectorExpr); ok {
+				return sel.Sel.Name, true
+			}
+		}
+	}
+	return "", false
+}
+
+// transformWildcardTypedPattern generates code for wildcard generic patterns like w: Wrap[_].
+// Instead of using As[Wrap[any]], it uses the marker interface check.
+func (t *galaASTTransformer) transformWildcardTypedPattern(name, baseName string, objExpr ast.Expr) (ast.Expr, []ast.Stmt, error) {
+	interfaceName := baseName + "Instance"
+	methodName := "Is" + baseName
+
+	// The variable keeps its original type from objExpr
+	// We just need to verify it's an instance of the generic type
+	t.addVar(name, t.getExprTypeName(objExpr))
+
+	okName := t.nextTempVar()
+	instName := t.nextTempVar()
+
+	// inst, ok := any(obj).(WrapInstance)
+	typeAssert := &ast.TypeAssertExpr{
+		X:    &ast.CallExpr{Fun: ast.NewIdent("any"), Args: []ast.Expr{objExpr}},
+		Type: ast.NewIdent(interfaceName),
+	}
+
+	assign1 := &ast.AssignStmt{
+		Lhs: []ast.Expr{ast.NewIdent(instName), ast.NewIdent(okName)},
+		Tok: token.DEFINE,
+		Rhs: []ast.Expr{typeAssert},
+	}
+
+	// name := obj (keep original concrete type)
+	assign2 := &ast.AssignStmt{
+		Lhs: []ast.Expr{ast.NewIdent(name)},
+		Tok: token.DEFINE,
+		Rhs: []ast.Expr{objExpr},
+	}
+
+	// Condition: ok && inst.IsWrap()
+	cond := &ast.BinaryExpr{
+		X:  ast.NewIdent(okName),
+		Op: token.LAND,
+		Y: &ast.CallExpr{
+			Fun: &ast.SelectorExpr{
+				X:   ast.NewIdent(instName),
+				Sel: ast.NewIdent(methodName),
+			},
+		},
+	}
+
+	return cond, []ast.Stmt{assign1, assign2}, nil
 }
 
 func (t *galaASTTransformer) transformCaseClause(ctx *grammar.CaseClauseContext, paramName string) (ast.Stmt, error) {

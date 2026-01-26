@@ -603,6 +603,12 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 		}
 		decls = append(decls, equalMethod)
 
+		// For generic structs, generate marker interface for wildcard pattern matching
+		if tParams != nil {
+			interfaceDecl, markerMethod := t.generateInstanceMarker(name, tParams)
+			decls = append(decls, interfaceDecl, markerMethod)
+		}
+
 		// Check if Unapply already exists
 		hasUnapply := false
 		if meta := t.getTypeMeta(name); meta != nil {

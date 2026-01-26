@@ -426,3 +426,76 @@ func (t *galaASTTransformer) generateUnapplyMethod(name string, fields *ast.Fiel
 		Body: &ast.BlockStmt{List: body},
 	}, nil
 }
+
+// generateInstanceMarker generates a marker interface and method for generic struct wildcard pattern matching.
+// For a generic struct Wrap[T], it generates:
+//   - Interface: type WrapInstance interface { IsWrap() bool }
+//   - Method: func (w Wrap[T]) IsWrap() bool { return true }
+func (t *galaASTTransformer) generateInstanceMarker(name string, tParams *ast.FieldList) (ast.Decl, ast.Decl) {
+	interfaceName := name + "Instance"
+	methodName := "Is" + name
+
+	// Generate interface: type WrapInstance interface { IsWrap() bool }
+	interfaceDecl := &ast.GenDecl{
+		Tok: token.TYPE,
+		Specs: []ast.Spec{
+			&ast.TypeSpec{
+				Name: ast.NewIdent(interfaceName),
+				Type: &ast.InterfaceType{
+					Methods: &ast.FieldList{
+						List: []*ast.Field{
+							{
+								Names: []*ast.Ident{ast.NewIdent(methodName)},
+								Type: &ast.FuncType{
+									Params:  &ast.FieldList{},
+									Results: &ast.FieldList{List: []*ast.Field{{Type: ast.NewIdent("bool")}}},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// Build receiver type with type params: Wrap[T] or Wrap[T, U]
+	var recvType ast.Expr = ast.NewIdent(name)
+	if tParams != nil && len(tParams.List) > 0 {
+		var indices []ast.Expr
+		for _, p := range tParams.List {
+			for _, n := range p.Names {
+				indices = append(indices, ast.NewIdent(n.Name))
+			}
+		}
+		if len(indices) == 1 {
+			recvType = &ast.IndexExpr{X: ast.NewIdent(name), Index: indices[0]}
+		} else {
+			recvType = &ast.IndexListExpr{X: ast.NewIdent(name), Indices: indices}
+		}
+	}
+
+	// Generate method: func (w Wrap[T]) IsWrap() bool { return true }
+	// Note: Methods get type params from receiver, not from method signature
+	methodDecl := &ast.FuncDecl{
+		Recv: &ast.FieldList{
+			List: []*ast.Field{
+				{
+					Names: []*ast.Ident{ast.NewIdent("_")},
+					Type:  recvType,
+				},
+			},
+		},
+		Name: ast.NewIdent(methodName),
+		Type: &ast.FuncType{
+			Params:  &ast.FieldList{},
+			Results: &ast.FieldList{List: []*ast.Field{{Type: ast.NewIdent("bool")}}},
+		},
+		Body: &ast.BlockStmt{
+			List: []ast.Stmt{
+				&ast.ReturnStmt{Results: []ast.Expr{ast.NewIdent("true")}},
+			},
+		},
+	}
+
+	return interfaceDecl, methodDecl
+}

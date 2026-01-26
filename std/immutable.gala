@@ -8,5 +8,8 @@ type Immutable[T any] struct {
 // Get returns the underlying value.
 func (i Immutable[T]) Get() T = i.value
 
+// GetAny returns the underlying value as any (for interface-based unwrapping).
+func (i Immutable[T]) GetAny() any = i.value
+
 // NewImmutable creates a new Immutable wrapper.
 func NewImmutable[T any](v T) Immutable[T] = Immutable[T](value = v)

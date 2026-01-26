@@ -76,6 +76,14 @@ func (s Box[T]) Copy() Box[T] {
 func (s Box[T]) Equal(other Box[T]) bool {
 	return std.Equal(s.Value, other.Value)
 }
+
+type BoxInstance interface {
+	IsBox() bool
+}
+
+func (_ Box[T]) IsBox() bool {
+	return true
+}
 func (s Box[T]) Unapply(v any) (std.Immutable[T], bool) {
 	if p, ok := v.(Box[T]); ok {
 		return p.Value, true
