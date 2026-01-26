@@ -948,9 +948,9 @@ bazel run //collection_immutable:perf_go
 
 | Operation | GALA List | GALA Array | Go Slice (immutable) |
 |-----------|----------:|-----------:|---------------------:|
-| Creation | 136,000 |  3,453,000 | 34,890,000 |
-| Prepend | 1 |          0 | 5,229 |
-| Append | - |        460 | 7,443 |
+| Creation | 129,766 |  3,670,004 | 34,890,000 |
+| Prepend | 0 |          0 | 5,229 |
+| Append | - |        445 | 7,443 |
 | Head | 1 |          5 | 1 |
 | Get(5000) | 4,088 |          5 | 0 |
 | Update(5000) | - |        544 | 7,337 |
@@ -964,9 +964,9 @@ bazel run //collection_immutable:perf_go
 
 | Operation | HashSet | TreeSet |
 |-----------|--------:|--------:|
-| Creation | 8,608,872 | 24,472,566 |
-| Add | 1,872 | 2,560 |
-| Contains (hit) | 66 | 707 |
+| Creation | 6,860,911 | 11,040,081 |
+| Add | 1,078 | 1,218 |
+| Contains (hit) | 25 | 707 |
 | Contains (miss) | 44 | 952 |
 | Remove | 1,430 | 1,932 |
 | Min | O(n) | 17 |
@@ -985,15 +985,15 @@ bazel run //collection_immutable:perf_go
 
 | Operation | 100 elements | 10,000 elements | 100,000 elements |
 |-----------|-------------:|----------------:|-----------------:|
-| List.Creation | 2,067 ns | 136,000 ns | 1,239,000 ns |
-| Array.Creation | 17,011 ns | 3,453,000 ns | 52,193,000 ns |
+| List.Creation | 2,067 ns | 129,766 ns | 1,239,000 ns |
+| Array.Creation | 17,011 ns | 3,670,004 ns | 52,193,000 ns |
 
 ### Scaling Results - Sets
 
 | Operation | 100 elements | 10,000 elements | 100,000 elements |
 |-----------|-------------:|----------------:|-----------------:|
-| HashSet.Creation | 34,120 ns | 8,608,872 ns | 174,706,970 ns |
-| TreeSet.Creation | 81,696 ns | 24,472,566 ns | 345,415,150 ns |
+| HashSet.Creation | 34,120 ns | 6,860,911 ns | 174,706,970 ns |
+| TreeSet.Creation | 81,696 ns | 11,040,081 ns | 345,415,150 ns |
 
 **Notes:**
 - GALA List uses Prepend (O(1)), GALA Array uses Append (O(eC)), GALA HashSet uses Add (O(eC))
@@ -1016,8 +1016,8 @@ bazel run //collection_immutable:perf_go
 - **O(eC) Update** (544 ns): 14x faster than immutable slice copy
 
 **HashSet Strengths:**
-- **O(eC) Contains** (66 ns): Fast membership testing regardless of set size
-- **O(eC) Add** (1,872 ns): Efficient element insertion
+- **O(eC) Contains** (25 ns): Fast membership testing regardless of set size
+- **O(eC) Add** (1,078 ns): Efficient element insertion
 - **O(eC) Remove** (1,430 ns): Efficient element removal
 - **Set operations**: Union, intersection, difference in O(m) time (m = smaller set)
 
@@ -1041,10 +1041,10 @@ bazel run //collection_immutable:perf_go
 
 | Operation | GALA Array | Go Slice (copy) | GALA Advantage |
 |-----------|----------:|----------------:|----------------|
-| Creation(10k) | 3.6ms | 34.9ms | **10x faster** |
+| Creation(10k) | 3.7ms | 34.9ms | **9x faster** |
 | Prepend | 0 ns | 5,229 ns | **∞ faster** (O(1) vs O(n)) |
-| Append | 464 ns | 7,443 ns | **16x faster** |
-| Update | 497 ns | 7,337 ns | **15x faster** |
+| Append | 445 ns | 7,443 ns | **17x faster** |
+| Update | 544 ns | 7,337 ns | **13x faster** |
 | Get | 5 ns | 0 ns | ~same |
 
 **When to Use Each:**

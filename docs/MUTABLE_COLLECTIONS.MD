@@ -937,17 +937,17 @@ bazel run //collection_mutable:perf_go
 
 | Operation | GALA Array | Go Slice | Notes |
 |-----------|----------:|----------:|-------|
-| Creation | 34,577 | 29,551 | ~same |
-| CreationWithCap | 11,407 | 8,274 | ~same |
-| Append | 2 | 1 | Both O(1) amortized |
-| Prepend | 1,021 | 6,218 | **GALA 6x faster** |
+| Creation | 36,910 | 29,562 | ~same |
+| CreationWithCap | 10,967 | 7,724 | ~same |
+| Append | 1 | 1 | Both O(1) amortized |
+| Prepend | 1,028 | 6,701 | **GALA 6.5x faster** |
 | Get(5000) | 1 | 0 | Both O(1) |
-| Set(5000) | 1 | 0 | Both O(1) |
-| Filter | 15,958 | 14,363 | ~same |
-| Map | 9,505 | 8,109 | ~same |
-| FoldLeft | 851 | 907 | ~same |
-| Clone | 9,185 | 6,188 | ~same |
-| Reverse | 2,907 | 1,929 | ~same |
+| Set(5000) | 1 | 1 | Both O(1) |
+| Filter | 20,611 | 14,536 | ~same |
+| Map | 8,734 | 7,500 | ~same |
+| FoldLeft | 951 | 972 | ~same |
+| Clone | 9,001 | 7,198 | ~same |
+| Reverse | 2,816 | 2,067 | ~same |
 
 ### List vs Go container/list (ns/op) - 10,000 Elements
 
