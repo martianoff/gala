@@ -188,8 +188,8 @@ GALA includes a standard library with common functional types:
 
 ## Documentation
 
-- [Language Specification](docs/GALA.md)
-- [Examples](docs/examples.md)
+- [Language Specification](docs/GALA.MD)
+- [Examples](docs/examples.MD)
 - [Type Inference Rules](docs/TYPE_INFERENCE.md)
 
 ## IDE Support
