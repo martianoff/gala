@@ -2,6 +2,41 @@
 
 GALA (Go Alternative LAnguage) is a modern programming language that transpiles to Go. It combines Go's efficiency and simplicity with features inspired by Scala and other functional languages, such as immutability by default, pattern matching, and concise expression syntax.
 
+---
+
+## Table of Contents
+
+1. [Project Structure](#1-project-structure)
+2. [Variable Declarations](#2-variable-declarations)
+3. [Functions](#3-functions)
+4. [Types and Structs](#4-types-and-structs)
+5. [Interfaces](#5-interfaces)
+6. [Control Flow](#6-control-flow)
+   - [If Statement and Expression](#if-statement-and-expression)
+   - [Match Expression](#match-expression)
+   - [For Statement](#for-statement)
+7. [Functional Features](#7-functional-features)
+   - [Lambda Expressions](#lambda-expressions)
+   - [Partial Function Literals](#partial-function-literals)
+8. [Generics](#8-generics)
+9. [Standard Library Types](#9-standard-library-types)
+   - [Option Monad](#option-monad)
+   - [Tuple](#tuple)
+   - [Either](#either)
+   - [Try Monad](#try-monad)
+   - [Future Monad](#future-monad)
+   - [Slices](#slices)
+   - [Maps](#maps)
+   - [HashMap](#hashmap)
+10. [Immutability Under the Hood](#10-immutability-under-the-hood)
+11. [GALA Packages](#11-gala-packages)
+12. [Testing](#12-testing)
+13. [Best Practices](#13-best-practices)
+14. [Further Reading](#14-further-reading)
+15. [IDE Support](#15-ide-support)
+
+---
+
 ## 1. Project Structure
 
 GALA files use the `.gala` extension. Every file must start with a package declaration, followed by an empty line. All GALA files in the same directory must belong to the same package.
@@ -1471,7 +1506,7 @@ val doubled = list.Map((x int) => x * 2)
 
 ## 14. Further Reading
 
-- [Examples](examples.md) - More examples of GALA code.
+- [Examples](EXAMPLES.MD) - More examples of GALA code.
 
 ## 15. IDE Support
 

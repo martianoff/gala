@@ -2,6 +2,45 @@
 
 This document describes the immutable collection data structures available in GALA's `collection_immutable` package.
 
+---
+
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Performance Characteristics](#performance-characteristics)
+3. [List[T]](#listt)
+   - [Construction](#construction)
+   - [Basic Operations](#basic-operations)
+   - [Head/Tail Operations](#headtail-operations)
+   - [Element Access](#element-access)
+   - [Adding Elements](#adding-elements)
+   - [Slicing Operations](#slicing-operations)
+   - [Searching](#searching)
+   - [Transformations](#transformations)
+   - [Folding and Reduction](#folding-and-reduction)
+   - [Pattern Matching](#pattern-matching)
+4. [Array[T]](#arrayt)
+   - [Construction](#construction-1)
+   - [Element Access - O(eC)](#element-access---oec)
+   - [Adding Elements](#adding-elements-1)
+   - [Slicing Operations](#slicing-operations-1)
+   - [Grouping](#grouping)
+5. [HashSet[T]](#hashsett)
+   - [Hashable Interface](#hashable-interface)
+   - [Construction](#construction-2)
+   - [Element Operations - O(eC)](#element-operations---oec)
+   - [Set Operations](#set-operations)
+6. [TreeSet[T]](#treesett)
+   - [Ordered Interface](#ordered-interface)
+   - [Min/Max Operations - O(log n)](#minmax-operations---olog-n)
+   - [Range Operations](#range-operations---treeset-specific)
+7. [Choosing Between List, Array, HashSet, and TreeSet](#choosing-between-list-array-hashset-and-treeset)
+8. [Implementation Details](#implementation-details)
+9. [Performance Benchmarks](#performance-benchmarks)
+10. [Examples](#example-building-a-collection)
+
+---
+
 ## Overview
 
 The `collection_immutable` package provides persistent (immutable) data structures with performance characteristics matching [Scala's immutable collections](https://docs.scala-lang.org/overviews/collections/performance-characteristics.html).

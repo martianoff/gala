@@ -2,6 +2,33 @@
 
 GALA implements a custom type inference and unwrapping system to handle its unique immutability model while transpiling to Go.
 
+---
+
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Two-Layer Type Inference Architecture](#two-layer-type-inference-architecture)
+   - [Layer 1: Manual Inference](#layer-1-manual-inference-getexprtypenamemanuall)
+   - [Layer 2: Hindley-Milner Inference](#layer-2-hindley-milner-inference-inferexprtype)
+   - [Main Entry Point: `getExprTypeName`](#main-entry-point-getexprtypename)
+3. [Type System Bridge](#type-system-bridge)
+   - [Type Conversion](#type-conversion)
+   - [Expression Conversion](#expression-conversion)
+   - [Environment Building](#environment-building)
+4. [When to Use Each Method](#when-to-use-each-method)
+5. [Variable Declarations](#variable-declarations)
+   - [`val` Declarations](#val-declarations)
+   - [`var` Declarations](#var-declarations)
+6. [Automatic Unwrapping](#automatic-unwrapping)
+   - [Identifier Transformation](#1-identifier-transformation)
+   - [Expression Unwrapping](#2-expression-unwrapping)
+7. [Type Resolution](#type-resolution)
+8. [Supported Expressions](#supported-expressions)
+9. [Limitations and Edge Cases](#limitations-and-edge-cases)
+10. [Key Files](#key-files)
+
+---
+
 ## Overview
 
 GALA distinguishes between immutable variables (`val`) and mutable variables (`var`). In the generated Go code:

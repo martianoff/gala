@@ -355,10 +355,8 @@ func Sequence[T any](futures Array[*Future[T]]) *Future[Array[T]] {
                     if remaining == 0 {
                         // Build the result array in order
                         var result = EmptyArray[T]()
-                        var i = 0
-                        for ; i < size ; {
+                        for i := 0; i < size; i++ {
                             result = result.Append(resultMap.GetOrElse(i, r.Value))
-                            i = i + 1
                         }
                         p.Success(result)
                     }

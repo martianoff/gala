@@ -2,6 +2,43 @@
 
 This document describes the mutable collection data structures available in GALA's `collection_mutable` package.
 
+---
+
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Performance Characteristics](#performance-characteristics)
+3. [Array[T]](#arrayt)
+   - [Construction](#construction)
+   - [Basic Operations](#basic-operations)
+   - [Element Access - O(1)](#element-access---o1)
+   - [Mutation Operations](#mutation-operations)
+   - [Bulk Operations](#bulk-operations)
+   - [Structural Operations](#structural-operations-return-new-arrays)
+   - [Functional Operations](#functional-operations)
+4. [List[T]](#listt)
+   - [Construction](#construction-1)
+   - [Element Access](#element-access)
+   - [Mutation Operations - O(1) at ends](#mutation-operations---o1-at-ends)
+5. [HashSet[T]](#hashsett)
+   - [Type Requirements](#type-requirements)
+   - [Construction](#construction-2)
+   - [Membership and Modification - O(1)](#membership-and-modification---o1)
+   - [Set Operations (return new HashSet)](#set-operations-return-new-hashset)
+   - [Set Operations (in-place modification)](#set-operations-in-place-modification)
+6. [TreeSet[T]](#treesett)
+   - [Type Requirements](#type-requirements-1)
+   - [Membership and Modification - O(log n)](#membership-and-modification---olog-n)
+   - [Min/Max Operations - O(log n)](#minmax-operations---olog-n)
+   - [Range Queries (unique to TreeSet)](#range-queries-unique-to-treeset)
+7. [Choosing Between HashSet and TreeSet](#choosing-between-hashset-and-treeset)
+8. [Pattern Matching with Mutable Collections](#pattern-matching-with-mutable-collections)
+9. [Choosing Between Array and List](#choosing-between-array-and-list)
+10. [Performance Benchmarks](#performance-benchmarks)
+11. [Examples](#example-building-a-collection)
+
+---
+
 ## Overview
 
 The `collection_mutable` package provides mutable data structures optimized for in-place modifications. These collections are ideal when you need to build up data incrementally or when immutability overhead is unacceptable.

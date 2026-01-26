@@ -114,7 +114,7 @@ Two-layer system:
 1. **Manual inference** (`getExprTypeNameManual`) - Fast pattern-based inference for common cases
 2. **Hindley-Milner fallback** (`inferExprType`) - Complex inference using unification
 
-See `docs/TYPE_INFERENCE.md` for detailed rules.
+See `docs/TYPE_INFERENCE.MD` for detailed rules.
 
 ## Type and Function Resolution
 
