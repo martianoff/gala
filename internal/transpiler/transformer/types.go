@@ -561,6 +561,16 @@ func (t *galaASTTransformer) isImmutableType(typ transpiler.Type) bool {
 	return isImm
 }
 
+func (t *galaASTTransformer) isConstPtrType(typ transpiler.Type) bool {
+	if typ == nil || typ.IsNil() {
+		return false
+	}
+	baseName := typ.BaseName()
+	// Check if base name is ConstPtr (with or without package prefix)
+	return baseName == transpiler.TypeConstPtr ||
+		strings.HasSuffix(baseName, "."+transpiler.TypeConstPtr)
+}
+
 func (t *galaASTTransformer) getExprTypeName(expr ast.Expr) transpiler.Type {
 	if expr == nil {
 		return transpiler.NilType{}

@@ -178,22 +178,71 @@ func (t *galaASTTransformer) transformMultiplicativeExpr(ctx *grammar.Multiplica
 func (t *galaASTTransformer) transformUnaryExpr(ctx *grammar.UnaryExprContext) (ast.Expr, error) {
 	// Check for unary operator
 	if unaryOp := ctx.UnaryOp(); unaryOp != nil {
+		opText := unaryOp.GetText()
+
+		// For address-of operator, check if operand is a val before transforming
+		// This is needed because transforming a val normally results in name.Get()
+		// which is not addressable. We need to call name.Ptr() instead.
+		// We wrap the result in ConstPtr to prevent write-through.
+		if opText == "&" {
+			if valName := t.getSimpleValIdentifier(ctx.UnaryExpr().(*grammar.UnaryExprContext)); valName != "" {
+				// Generate: std.NewConstPtr(valName.Ptr())
+				return &ast.CallExpr{
+					Fun: t.stdIdent(transpiler.FuncNewConstPtr),
+					Args: []ast.Expr{
+						&ast.CallExpr{
+							Fun: &ast.SelectorExpr{
+								X:   ast.NewIdent(valName),
+								Sel: ast.NewIdent(transpiler.MethodPtr),
+							},
+						},
+					},
+				}, nil
+			}
+		}
+
 		innerUnary := ctx.UnaryExpr()
 		expr, err := t.transformUnaryExpr(innerUnary.(*grammar.UnaryExprContext))
 		if err != nil {
 			return nil, err
 		}
-		opText := unaryOp.GetText()
 		if opText == "*" {
+			// Check if we're dereferencing a ConstPtr - if so, call Deref() instead
+			typeObj := t.getExprTypeName(expr)
+			if t.isConstPtrType(typeObj) {
+				return &ast.CallExpr{
+					Fun: &ast.SelectorExpr{
+						X:   expr,
+						Sel: ast.NewIdent(transpiler.MethodDeref),
+					},
+				}, nil
+			}
 			return &ast.StarExpr{X: expr}, nil
 		}
 		if opText == "!" {
 			expr = t.wrapWithAssertion(expr, ast.NewIdent("bool"))
 		}
-		// Automatic unwrapping for unary operands
-		if opText != "&" {
-			expr = t.unwrapImmutable(expr)
+		// For address-of operator on immutable values, call Ptr() and wrap in ConstPtr
+		if opText == "&" {
+			typeObj := t.getExprTypeName(expr)
+			if t.isImmutableType(typeObj) {
+				// Generate: std.NewConstPtr(expr.Ptr())
+				return &ast.CallExpr{
+					Fun: t.stdIdent(transpiler.FuncNewConstPtr),
+					Args: []ast.Expr{
+						&ast.CallExpr{
+							Fun: &ast.SelectorExpr{
+								X:   expr,
+								Sel: ast.NewIdent(transpiler.MethodPtr),
+							},
+						},
+					},
+				}, nil
+			}
+			return &ast.UnaryExpr{Op: token.AND, X: expr}, nil
 		}
+		// Automatic unwrapping for other unary operands
+		expr = t.unwrapImmutable(expr)
 		return &ast.UnaryExpr{Op: t.getUnaryToken(opText), X: expr}, nil
 	}
 
@@ -203,6 +252,42 @@ func (t *galaASTTransformer) transformUnaryExpr(ctx *grammar.UnaryExprContext) (
 	}
 
 	return nil, galaerr.NewSemanticError("unaryExpr must have unaryOp or postfixExpr")
+}
+
+// getSimpleValIdentifier extracts the identifier name if this unary expression
+// is a simple identifier reference to a val variable (no suffixes).
+// Returns empty string if not a simple val identifier.
+func (t *galaASTTransformer) getSimpleValIdentifier(ctx *grammar.UnaryExprContext) string {
+	// Must not have a unary operator
+	if ctx.UnaryOp() != nil {
+		return ""
+	}
+	postfix := ctx.PostfixExpr()
+	if postfix == nil {
+		return ""
+	}
+	postfixCtx := postfix.(*grammar.PostfixExprContext)
+	// Must not have any suffixes (calls, member access, etc.)
+	if len(postfixCtx.AllPostfixSuffix()) > 0 {
+		return ""
+	}
+	primaryExpr := postfixCtx.PrimaryExpr()
+	if primaryExpr == nil {
+		return ""
+	}
+	primary := primaryExpr.(*grammar.PrimaryExprContext).Primary()
+	if primary == nil {
+		return ""
+	}
+	primaryCtx := primary.(*grammar.PrimaryContext)
+	if primaryCtx.Identifier() == nil {
+		return ""
+	}
+	name := primaryCtx.Identifier().GetText()
+	if t.isVal(name) {
+		return name
+	}
+	return ""
 }
 
 // Postfix-related functions moved to postfix.go
@@ -546,6 +631,24 @@ func (t *galaASTTransformer) unwrapImmutable(expr ast.Expr) ast.Expr {
 			Fun: &ast.SelectorExpr{
 				X:   expr,
 				Sel: ast.NewIdent(transpiler.MethodGet),
+			},
+		}
+	}
+	return expr
+}
+
+// unwrapConstPtr dereferences a ConstPtr to access its underlying value.
+// This is used when accessing fields on a ConstPtr[T] - we need to call Deref() to get T.
+func (t *galaASTTransformer) unwrapConstPtr(expr ast.Expr) ast.Expr {
+	if expr == nil {
+		return nil
+	}
+	typeObj := t.getExprTypeName(expr)
+	if t.isConstPtrType(typeObj) {
+		return &ast.CallExpr{
+			Fun: &ast.SelectorExpr{
+				X:   expr,
+				Sel: ast.NewIdent(transpiler.MethodDeref),
 			},
 		}
 	}

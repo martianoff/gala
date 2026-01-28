@@ -62,6 +62,13 @@ func (t *galaASTTransformer) applyPostfixSuffix(base ast.Expr, suffix *grammar.P
 			base = t.unwrapImmutable(base)
 		}
 
+		// Also unwrap ConstPtr to access fields (but not ConstPtr's own methods)
+		xType = t.getExprTypeName(base)
+		isConstPtr := t.isConstPtrType(xType)
+		if isConstPtr && selName != "Deref" && selName != "IsNil" && selName != "ptr" {
+			base = t.unwrapConstPtr(base)
+		}
+
 		selExpr := &ast.SelectorExpr{
 			X:   base,
 			Sel: ast.NewIdent(selName),

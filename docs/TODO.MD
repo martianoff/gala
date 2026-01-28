@@ -15,7 +15,7 @@
 - [ ] Dependency management
 - [x] Test framework
 - [x] JetBrains language plugin
-- [ ] Pointers to immutable vars
+- [x] Pointers to immutable vars
 - [x] TreeSet
 - [ ] Hash() function should be dynamically generated?
 - [ ] Futures

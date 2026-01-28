@@ -29,6 +29,7 @@ GALA (Go Alternative LAnguage) is a modern programming language that transpiles 
    - [Maps](#maps)
    - [HashMap](#hashmap)
 10. [Immutability Under the Hood](#10-immutability-under-the-hood)
+    - [ConstPtr - Read-Only Pointers](#constptr---read-only-pointers)
 11. [GALA Packages](#11-gala-packages)
 12. [Testing](#12-testing)
 13. [Best Practices](#13-best-practices)
@@ -1304,6 +1305,258 @@ Choose mutable when you need:
 ## 10. Immutability Under the Hood
 
 When GALA transpiles to Go, immutable values are wrapped in a `std.Immutable[T]` container to ensure safety and provide consistent semantics, especially for struct fields and global variables.
+
+### Pointer Types and Immutability
+
+GALA distinguishes between **pointer binding immutability** (whether the pointer itself can be reassigned) and **pointed-to data mutability** (whether the target data can be modified through the pointer).
+
+#### val vs var Pointer Bindings
+
+```gala
+var data = 42
+
+// Immutable pointer binding - pointer cannot be reassigned
+val ptr1 = &data
+*ptr1 = 100      // OK: can modify data through pointer
+// ptr1 = &other // ERROR: cannot reassign immutable pointer
+
+// Mutable pointer binding - pointer can be reassigned
+var ptr2 = &data
+*ptr2 = 200      // OK: can modify data
+ptr2 = &other    // OK: can reassign pointer
+```
+
+#### Pointer Fields in Structs
+
+For pointer fields in structs, you must consider whether the pointer needs to be reassigned after construction:
+
+```gala
+// WRONG: Immutable pointer field (default)
+type BrokenNode struct {
+    value int
+    next *Node    // immutable pointer - cannot be reassigned!
+}
+
+// CORRECT: Mutable pointer field for linked structures
+type Node struct {
+    value int
+    var next *Node  // mutable pointer - can traverse and modify
+}
+```
+
+**Compile-time error:** GALA prevents assigning `nil` to an immutable pointer field, since it would be useless (forever nil):
+
+```gala
+type BadNode struct {
+    next *Node  // immutable pointer
+}
+
+// ERROR: cannot assign nil to immutable pointer field 'next' - use 'var next' to make it mutable
+val node = BadNode(next = nil)
+```
+
+#### Use Cases for Pointer Mutability
+
+| Use Case | Pattern | Example |
+|----------|---------|---------|
+| Linked list/tree | `var next *Node` | Navigation requires reassigning pointers |
+| Shared reference | `val ref *Data` | Multiple owners, pointer never changes |
+| Optional data | `var data *T` | May be nil initially, assigned later |
+| Cache/memo | `var cached *Result` | Lazily populated pointer |
+
+#### Building Linked Structures with val Nodes
+
+You can build linked structures using `val` node bindings:
+
+```gala
+// Node with immutable value but mutable pointer for navigation
+type Node struct {
+    value int
+    var next *Node
+}
+
+// Build a linked list with immutable nodes
+val node3 = Node(value = 30, next = nil)
+val node2 = Node(value = 20, next = &node3)
+val node1 = Node(value = 10, next = &node2)
+
+// Traverse the list
+var current *Node = &node1
+for current != nil {
+    fmt.Println(current.value)
+    current = current.next
+}
+```
+
+### ConstPtr - Read-Only Pointers
+
+GALA provides `ConstPtr[T]` for read-only pointer semantics, similar to C++'s `const T*`. When you take the address of a `val` variable, you get a `ConstPtr[T]` instead of a raw `*T`. This prevents accidental modification of immutable data through pointers.
+
+#### Basic Usage
+
+```gala
+val data = 42
+val ptr = &data  // ptr is ConstPtr[int], not *int
+
+// Read through ConstPtr using *ptr syntax
+val value = *ptr  // Returns 42
+
+// Compile error: cannot write through ConstPtr
+// *ptr = 100  // ERROR: cannot assign through ConstPtr
+```
+
+#### Auto-Deref Field Access (Preferred Style)
+
+When accessing fields through `ConstPtr`, use direct field access syntax. The transpiler automatically inserts `Deref()` calls:
+
+```gala
+val alice = Person(name = "Alice", age = 30)
+val team = Team(leader = &alice, memberCount = 5)
+
+// PREFERRED: Direct field access (auto-deref)
+fmt.Println(team.leader.name)  // "Alice"
+fmt.Println(team.leader.age)   // 30
+
+// VERBOSE: Explicit Deref() - works but not recommended
+fmt.Println(team.leader.Deref().name)  // "Alice"
+```
+
+This works with nested ConstPtr access too:
+
+```gala
+val node2 = ImmutableNode(value = 20, next = NewConstPtr[ImmutableNode](nil))
+val node1 = ImmutableNode(value = 10, next = &node2)
+
+// PREFERRED: Chain field access naturally
+fmt.Println(node1.next.value)  // 20
+
+// VERBOSE: Explicit Deref()
+fmt.Println(node1.next.Deref().value)  // 20
+```
+
+#### Reading with *ptr Syntax (Preferred)
+
+The `*` operator on `ConstPtr` works for reading, just like regular pointers:
+
+```gala
+val data = 42
+val ptr = &data  // ConstPtr[int]
+
+// PREFERRED: Use *ptr for primitives
+val value = *ptr  // 42
+
+val node = MutableNode(value = 100, next = nil)
+val nodePtr = &node  // ConstPtr[MutableNode]
+
+// PREFERRED styles for reading:
+val v1 = *nodePtr            // Dereference to get the struct
+val v2 = nodePtr.value       // Auto-deref field access
+val v3 = (*nodePtr).value    // Explicit dereference then field
+
+// VERBOSE (not recommended):
+val v4 = nodePtr.Deref().value  // Explicit Deref() call
+
+// Writing is blocked at compile time:
+// *ptr = 100  // ERROR: cannot assign through ConstPtr
+```
+
+#### ConstPtr in Struct Fields
+
+Use `ConstPtr[T]` for pointer fields when you want read-only access to pointed data:
+
+```gala
+type Person struct {
+    name string
+    var age int
+}
+
+type Team struct {
+    leader ConstPtr[Person]  // Read-only pointer to leader
+    var memberCount int
+}
+
+val alice = Person(name = "Alice", age = 30)
+val team = Team(leader = &alice, memberCount = 5)
+
+// Can read through ConstPtr using auto-deref
+fmt.Println(team.leader.name)  // "Alice"
+```
+
+#### Passing ConstPtr to Functions
+
+Functions can accept `ConstPtr[T]` parameters to guarantee they won't modify the pointed-to data:
+
+```gala
+// Function accepts read-only pointer - use auto-deref for field access
+func getPersonName(p ConstPtr[Person]) string = p.name
+
+// Function that explicitly requires mutable access
+func incrementAge(p *Person) {
+    p.age = p.age + 1
+}
+
+val alice = Person(name = "Alice", age = 30)
+val name = getPersonName(&alice)  // OK: &val returns ConstPtr
+
+// incrementAge(&alice)  // Would need explicit conversion or var binding
+```
+
+#### Building Immutable Data Structures
+
+Use `ConstPtr` for truly immutable linked structures:
+
+```gala
+type ImmutableNode struct {
+    value int
+    var next ConstPtr[ImmutableNode]  // Read-only link to next
+}
+
+val node3 = ImmutableNode(value = 30, next = NewConstPtr[ImmutableNode](nil))
+val node2 = ImmutableNode(value = 20, next = &node3)
+val node1 = ImmutableNode(value = 10, next = &node2)
+
+// Traverse using auto-deref field access
+fmt.Println(node1.next.value)       // 20
+fmt.Println(node1.next.next.value)  // 30
+```
+
+#### ConstPtr Methods
+
+| Method | Description |
+|--------|-------------|
+| `Deref() T` | Read the pointed-to value (prefer `*ptr` syntax) |
+| `IsNil() bool` | Check if pointer is nil |
+| `NewConstPtr[T](p *T)` | Create ConstPtr from raw pointer |
+
+#### Preferred Syntax Summary
+
+| Operation | Preferred | Verbose (avoid) |
+|-----------|-----------|-----------------|
+| Dereference primitive | `*ptr` | `ptr.Deref()` |
+| Access field | `ptr.field` | `ptr.Deref().field` |
+| Explicit dereference | `(*ptr).field` | `ptr.Deref().field` |
+| Nil check | `ptr.IsNil()` | - |
+
+#### Nil Checking
+
+```gala
+val nilPtr = NewConstPtr[int](nil)
+val validPtr = &someValue
+
+fmt.Println(nilPtr.IsNil())    // true
+fmt.Println(validPtr.IsNil())  // false
+```
+
+#### Comparison with C++
+
+| C++ Concept | C++ Syntax | GALA Equivalent |
+|-------------|------------|-----------------|
+| Mutable pointer to mutable data | `T*` | `var ptr *T` |
+| Const pointer to mutable data | `T* const` | `val ptr *T` (where target is `var`) |
+| Mutable pointer to const data | `const T*` | `var ptr ConstPtr[T]` |
+| Const pointer to const data | `const T* const` | `val ptr ConstPtr[T]` |
+
+**Note:** Taking the address of a `val` variable (`&val`) automatically returns `ConstPtr[T]`, while taking the address of a `var` variable (`&var`) returns `*T`. This ensures that pointers to immutable data cannot be accidentally used to modify that data.
 
 ## 11. GALA Packages
 

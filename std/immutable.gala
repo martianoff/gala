@@ -8,6 +8,10 @@ type Immutable[T any] struct {
 // Get returns the underlying value.
 func (i Immutable[T]) Get() T = i.value
 
+// Ptr returns a pointer to the underlying value.
+// This allows taking the address of immutable values.
+func (i *Immutable[T]) Ptr() *T = &i.value
+
 // GetAny returns the underlying value as any (for interface-based unwrapping).
 func (i Immutable[T]) GetAny() any = i.value
 

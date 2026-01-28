@@ -1,0 +1,301 @@
+package main
+
+import "fmt"
+
+// Node with mutable fields for full mutability
+type MutableNode struct {
+    var value int
+    var next *MutableNode
+}
+
+// Node with immutable value but mutable pointer (common pattern)
+type Node struct {
+    value int          // immutable value
+    var next *Node     // mutable pointer - can traverse linked structures
+}
+
+// Test: Mutable pointer field traversal with immutable values
+func testImmutableValuesWithMutablePointers() {
+    var node3 = Node(value = 30, next = nil)
+    var node2 = Node(value = 20, next = &node3)
+    var node1 = Node(value = 10, next = &node2)
+
+    fmt.Println("Linked list (immutable values, mutable pointers):")
+    var current *Node = &node1
+    var i = 0
+    for current != nil {
+        fmt.Printf("  Node %d: value = %d\n", i, current.value)
+        current = current.next
+        i = i + 1
+    }
+}
+
+// Test: Fully mutable node - can modify value through pointer
+func testFullyMutableNodes() {
+    var node2 = MutableNode(value = 20, next = nil)
+    var node1 = MutableNode(value = 10, next = &node2)
+
+    fmt.Printf("Before mutation: node1.next.value = %d\n", node1.next.value)
+    node1.next.value = 999
+    fmt.Printf("After mutation: node1.next.value = %d\n", node1.next.value)
+}
+
+// Test: val binding with pointer to mutable data (primitive)
+func testValPointerToMutablePrimitive() {
+    var data = 42
+    val ptr = &data  // ptr binding is immutable, but data is mutable
+
+    // Can modify through the pointer
+    *ptr = 100
+    fmt.Printf("Val pointer to mutable: *ptr = %d, data = %d\n", *ptr, data)
+}
+
+// Test: var binding with pointer - can reassign pointer
+func testVarPointerReassign() {
+    var data1 = 10
+    var data2 = 20
+    var ptr = &data1
+
+    fmt.Printf("Before reassign: *ptr = %d\n", *ptr)
+    ptr = &data2
+    fmt.Printf("After reassign: *ptr = %d\n", *ptr)
+}
+
+// Test: Shared mutable node through pointers
+func testSharedMutableNode() {
+    var shared = MutableNode(value = 100, next = nil)
+    var holder1 = MutableNode(value = 1, next = &shared)
+    var holder2 = MutableNode(value = 2, next = &shared)
+
+    fmt.Printf("Before: holder1.next.value=%d, holder2.next.value=%d\n",
+        holder1.next.value, holder2.next.value)
+
+    // Modify shared node through holder1's pointer
+    holder1.next.value = 999
+
+    fmt.Printf("After: holder1.next.value=%d, holder2.next.value=%d\n",
+        holder1.next.value, holder2.next.value)
+}
+
+// Test: Pointer equality
+func testPointerEquality() {
+    var node = MutableNode(value = 42, next = nil)
+    var ptr1 = &node
+    var ptr2 = &node
+    var otherNode = MutableNode(value = 42, next = nil)
+    var ptr3 = &otherNode
+
+    fmt.Printf("Same object pointers equal: %v\n", ptr1 == ptr2)
+    fmt.Printf("Different object pointers equal: %v\n", ptr1 == ptr3)
+}
+
+// Test: Copy with nil pointer field (regression test for std.Copy panic)
+func testCopyWithNilPointer() {
+    var node = MutableNode(value = 42, next = nil)
+    val copied = node.Copy()  // Should not panic
+
+    fmt.Printf("Original: value=%d, next=%v\n", node.value, node.next)
+    fmt.Printf("Copied: value=%d, next=%v\n", copied.value, copied.next)
+}
+
+// Test: Copy linked list (shallow copy)
+func testCopyLinkedList() {
+    var node2 = MutableNode(value = 20, next = nil)
+    var node1 = MutableNode(value = 10, next = &node2)
+
+    val copied = node1.Copy()
+
+    fmt.Printf("Original node1.next.value: %d\n", node1.next.value)
+    fmt.Printf("Copied node1.next.value: %d\n", copied.next.value)
+    fmt.Printf("Same next pointer (shallow copy): %v\n", node1.next == copied.next)
+}
+
+// Test: Address of val variable (uses Ptr() method)
+func testAddressOfValVariable() {
+    val node = MutableNode(value = 42, next = nil)
+    val ptr = &node  // Takes address of immutable value via Ptr()
+
+    fmt.Printf("Address of val: node.value=%d, ptr.value=%d\n", node.value, ptr.value)
+    fmt.Printf("Same value: %v\n", node.value == ptr.value)
+}
+
+// Test: Linked list with val nodes using ConstPtr
+// When building immutable data structures, use ConstPtr for pointer fields.
+// This prevents write-through modification of pointed-to values.
+type ImmutableNode struct {
+    value int
+    var next ConstPtr[ImmutableNode]  // ConstPtr for read-only pointer
+}
+
+func testLinkedListWithValNodes() {
+    val node3 = ImmutableNode(value = 30, next = NewConstPtr[ImmutableNode](nil))
+    val node2 = ImmutableNode(value = 20, next = &node3)
+    val node1 = ImmutableNode(value = 10, next = &node2)
+
+    fmt.Println("Linked list built with val nodes (using ConstPtr):")
+    fmt.Printf("  Node 1: value = %d\n", node1.value)
+    fmt.Printf("  Node 2: value = %d\n", node1.next.value)
+    fmt.Printf("  Node 3: value = %d\n", node1.next.next.value)
+}
+
+// Test: Passing ConstPtr to functions
+// Functions can accept ConstPtr parameters for read-only access
+func readNodeValue(ptr ConstPtr[MutableNode]) int = ptr.value
+
+func printNodeInfo(ptr ConstPtr[MutableNode]) {
+    fmt.Printf("  Node value via ConstPtr: %d\n", ptr.value)
+}
+
+func testConstPtrFunctionParams() {
+    val node = MutableNode(value = 42, next = nil)
+    val ptr = &node  // ConstPtr[MutableNode]
+
+    fmt.Println("ConstPtr function parameters:")
+
+    // Pass ConstPtr to function
+    val value = readNodeValue(ptr)
+    fmt.Printf("  Value from function: %d\n", value)
+
+    // Pass &val directly to function
+    printNodeInfo(&node)
+
+    // Pass ConstPtr from struct field
+    val node2 = ImmutableNode(value = 99, next = NewConstPtr[ImmutableNode](nil))
+    val node1 = ImmutableNode(value = 100, next = &node2)
+    fmt.Printf("  Nested node value: %d\n", node1.next.value)
+}
+
+// Test: ConstPtr with complex structs
+type Person struct {
+    name string
+    var age int
+}
+
+type Team struct {
+    leader ConstPtr[Person]  // Read-only pointer to leader
+    var memberCount int
+}
+
+func getLeaderName(team ConstPtr[Team]) string = team.leader.name
+
+func testConstPtrWithComplexStructs() {
+    val alice = Person(name = "Alice", age = 30)
+    val team = Team(leader = &alice, memberCount = 5)
+
+    fmt.Println("ConstPtr with complex structs:")
+    fmt.Printf("  Team leader: %s\n", team.leader.name)
+    fmt.Printf("  Leader name via function: %s\n", getLeaderName(&team))
+    fmt.Printf("  Member count: %d\n", team.memberCount)
+}
+
+// Test: ConstPtr nil checking
+func testConstPtrNilCheck() {
+    val nilPtr = NewConstPtr[MutableNode](nil)
+    val node = MutableNode(value = 42, next = nil)
+    val validPtr = &node
+
+    fmt.Println("ConstPtr nil checking:")
+    fmt.Printf("  Nil ConstPtr IsNil: %v\n", nilPtr.IsNil())
+    fmt.Printf("  Valid ConstPtr IsNil: %v\n", validPtr.IsNil())
+}
+
+// Test: Reading ConstPtr with *ptr syntax
+// The * operator on ConstPtr automatically calls Deref()
+func testConstPtrDerefSyntax() {
+    val data = 42
+    val ptr = &data  // ConstPtr[int]
+
+    // Read using *ptr syntax (transpiles to ptr.Deref())
+    val value1 = *ptr
+    fmt.Println("ConstPtr dereference with *ptr syntax:")
+    fmt.Printf("  *ptr = %d\n", value1)
+
+    // Also works with structs
+    val node = MutableNode(value = 100, next = nil)
+    val nodePtr = &node  // ConstPtr[MutableNode]
+
+    // Access struct field through dereferenced pointer
+    val nodeValue = (*nodePtr).value
+    fmt.Printf("  (*nodePtr).value = %d\n", nodeValue)
+
+    // Direct field access also works (auto-deref)
+    fmt.Printf("  nodePtr.value = %d\n", nodePtr.value)
+}
+
+// Test: Auto-deref syntax for ConstPtr field access (preferred style)
+// Use ptr.field instead of ptr.Deref().field for cleaner code
+func testConstPtrAutoDeref() {
+    val alice = Person(name = "Alice", age = 30)
+    val team = Team(leader = &alice, memberCount = 5)
+
+    fmt.Println("ConstPtr auto-deref (preferred style):")
+
+    // PREFERRED: Direct field access through ConstPtr (auto-deref)
+    fmt.Printf("  team.leader.name = %s\n", team.leader.name)
+    fmt.Printf("  team.leader.age = %d\n", team.leader.age)
+
+    // EXPLICIT: Using Deref() - works but verbose
+    fmt.Printf("  team.leader.Deref().name = %s\n", team.leader.Deref().name)
+
+    // Nested ConstPtr access
+    val node2 = ImmutableNode(value = 20, next = NewConstPtr[ImmutableNode](nil))
+    val node1 = ImmutableNode(value = 10, next = &node2)
+
+    // PREFERRED: Chain field access through ConstPtr
+    fmt.Printf("  node1.next.value = %d\n", node1.next.value)
+
+    // EXPLICIT: Using Deref() - works but verbose
+    fmt.Printf("  node1.next.Deref().value = %d\n", node1.next.Deref().value)
+}
+
+func main() {
+    fmt.Println("=== GALA Pointer Semantics Test ===")
+    fmt.Println()
+
+    testImmutableValuesWithMutablePointers()
+    fmt.Println()
+
+    testFullyMutableNodes()
+    fmt.Println()
+
+    testValPointerToMutablePrimitive()
+    fmt.Println()
+
+    testVarPointerReassign()
+    fmt.Println()
+
+    testSharedMutableNode()
+    fmt.Println()
+
+    testPointerEquality()
+    fmt.Println()
+
+    testCopyWithNilPointer()
+    fmt.Println()
+
+    testCopyLinkedList()
+    fmt.Println()
+
+    testAddressOfValVariable()
+    fmt.Println()
+
+    testLinkedListWithValNodes()
+    fmt.Println()
+
+    testConstPtrFunctionParams()
+    fmt.Println()
+
+    testConstPtrWithComplexStructs()
+    fmt.Println()
+
+    testConstPtrNilCheck()
+    fmt.Println()
+
+    testConstPtrDerefSyntax()
+    fmt.Println()
+
+    testConstPtrAutoDeref()
+
+    fmt.Println()
+    fmt.Println("=== All tests completed ===")
+}

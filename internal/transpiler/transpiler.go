@@ -36,6 +36,12 @@ const (
 	FuncNewImmutable = "NewImmutable"
 	FuncCopy         = "Copy"
 	MethodGet        = "Get"
+	MethodPtr        = "Ptr"
+
+	// ConstPtr - read-only pointer wrapper for pointers to immutable values
+	TypeConstPtr    = "ConstPtr"
+	FuncNewConstPtr = "NewConstPtr"
+	MethodDeref     = "Deref"
 )
 
 // RichAST provides metadata about a Gala source file.

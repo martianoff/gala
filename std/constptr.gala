@@ -1,0 +1,17 @@
+package std
+
+// ConstPtr[T] is a read-only pointer wrapper.
+// It allows reading the pointed-to value but not writing.
+// Used for pointers obtained from taking address of immutable values.
+type ConstPtr[T any] struct {
+    var ptr *T
+}
+
+// NewConstPtr creates a new read-only pointer wrapper.
+func NewConstPtr[T any](p *T) ConstPtr[T] = ConstPtr[T](ptr = p)
+
+// Deref returns the value being pointed to (read-only access).
+func (c ConstPtr[T]) Deref() T = *c.ptr
+
+// IsNil returns true if the underlying pointer is nil.
+func (c ConstPtr[T]) IsNil() bool = c.ptr == nil

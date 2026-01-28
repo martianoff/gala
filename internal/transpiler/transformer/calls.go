@@ -781,6 +781,19 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 
 		for i, fieldName := range fields {
 			if val, ok := namedArgs[fieldName]; ok {
+				// Check for nil assignment to immutable pointer field
+				if immutFlags != nil && i < len(immutFlags) && immutFlags[i] {
+					if fieldType, hasType := fieldTypes[fieldName]; hasType {
+						if _, isPtr := fieldType.(transpiler.PointerType); isPtr {
+							if ident, isIdent := val.(*ast.Ident); isIdent && ident.Name == "nil" {
+								return nil, galaerr.NewSemanticError(fmt.Sprintf(
+									"cannot assign nil to immutable pointer field '%s' - use 'var %s' to make it mutable",
+									fieldName, fieldName))
+							}
+						}
+					}
+				}
+
 				var valExpr ast.Expr
 				if immutFlags != nil && i < len(immutFlags) && immutFlags[i] {
 					valExpr = &ast.CallExpr{

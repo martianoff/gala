@@ -15,11 +15,22 @@ func unwrapImmutable(obj any) any {
 }
 
 func Copy[T any](v T) T {
+	val := reflect.ValueOf(v)
+
+	// Handle nil pointers early - return nil as-is
+	if val.Kind() == reflect.Ptr && val.IsNil() {
+		return v
+	}
+
+	// Handle nil interfaces
+	if !val.IsValid() {
+		return v
+	}
+
 	if c, ok := any(v).(Copyable[T]); ok {
 		return c.Copy()
 	}
 
-	val := reflect.ValueOf(v)
 	// Fallback to check Copy method via reflection if T is any or interface mismatch
 	if val.IsValid() {
 		copyMeth := val.MethodByName("Copy")
@@ -31,6 +42,7 @@ func Copy[T any](v T) T {
 		}
 	}
 
+	// For non-struct types (primitives, slices, etc.), return as-is (shallow copy)
 	if val.Kind() != reflect.Struct {
 		return v
 	}

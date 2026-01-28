@@ -1,0 +1,63 @@
+=== GALA Pointer Semantics Test ===
+
+Linked list (immutable values, mutable pointers):
+  Node 0: value = 10
+  Node 1: value = 20
+  Node 2: value = 30
+
+Before mutation: node1.next.value = 20
+After mutation: node1.next.value = 999
+
+Val pointer to mutable: *ptr = 100, data = 100
+
+Before reassign: *ptr = 10
+After reassign: *ptr = 20
+
+Before: holder1.next.value=100, holder2.next.value=100
+After: holder1.next.value=999, holder2.next.value=999
+
+Same object pointers equal: true
+Different object pointers equal: false
+
+Original: value=42, next=<nil>
+Copied: value=42, next=<nil>
+
+Original node1.next.value: 20
+Copied node1.next.value: 20
+Same next pointer (shallow copy): true
+
+Address of val: node.value=42, ptr.value=42
+Same value: true
+
+Linked list built with val nodes (using ConstPtr):
+  Node 1: value = 10
+  Node 2: value = 20
+  Node 3: value = 30
+
+ConstPtr function parameters:
+  Value from function: 42
+  Node value via ConstPtr: 42
+  Nested node value: 99
+
+ConstPtr with complex structs:
+  Team leader: Alice
+  Leader name via function: Alice
+  Member count: 5
+
+ConstPtr nil checking:
+  Nil ConstPtr IsNil: true
+  Valid ConstPtr IsNil: false
+
+ConstPtr dereference with *ptr syntax:
+  *ptr = 42
+  (*nodePtr).value = 100
+  nodePtr.value = 100
+
+ConstPtr auto-deref (preferred style):
+  team.leader.name = Alice
+  team.leader.age = 30
+  team.leader.Deref().name = Alice
+  node1.next.value = 20
+  node1.next.Deref().value = 20
+
+=== All tests completed ===

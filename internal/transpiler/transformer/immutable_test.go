@@ -212,3 +212,24 @@ func test(n Node) bool {
 		})
 	}
 }
+
+func TestPointerToValModification(t *testing.T) {
+	p := transpiler.NewAntlrGalaParser()
+	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
+	tr := transformer.NewGalaASTTransformer()
+	g := generator.NewGoCodeGenerator()
+	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+
+	// Test: Modifying through pointer to val should be an error
+	// since it would break immutability guarantees
+	input := `package main
+
+func main() {
+    val data = 42
+    val ptr = &data
+    *ptr = 100
+}`
+	_, err := trans.Transpile(input, "")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot assign")
+}

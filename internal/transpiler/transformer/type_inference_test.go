@@ -93,8 +93,8 @@ func main() {
     var z = *y
 }`,
 			expected: []string{
-				"var y = &x",
-				"var z = *y",
+				"var y = std.NewConstPtr(x.Ptr())", // Taking address of val returns ConstPtr
+				"var z = y.Deref()",                // Deref ConstPtr uses Deref() method
 			},
 		},
 		{

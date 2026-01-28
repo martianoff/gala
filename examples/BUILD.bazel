@@ -367,3 +367,9 @@ gala_test(
     src = "block_lambda_return.gala",
     expected = "block_lambda_return.out",
 )
+
+gala_test(
+    name = "pointer_semantics",
+    src = "pointer_semantics.gala",
+    expected = "pointer_semantics.out",
+)
