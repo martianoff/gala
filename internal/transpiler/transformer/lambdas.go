@@ -168,17 +168,9 @@ func (t *galaASTTransformer) inferBlockReturnType(block *ast.BlockStmt) ast.Expr
 		if retStmt, ok := stmt.(*ast.ReturnStmt); ok {
 			if len(retStmt.Results) > 0 {
 				result := retStmt.Results[0]
-				// Handle the case of .Get() call on an Immutable (val)
-				if callExpr, ok := result.(*ast.CallExpr); ok {
-					if selExpr, ok := callExpr.Fun.(*ast.SelectorExpr); ok && selExpr.Sel.Name == "Get" {
-						// This is a .Get() call, check if the receiver is an identifier
-						if ident, ok := selExpr.X.(*ast.Ident); ok {
-							// Look up the type from declarations we found earlier
-							if typ, ok := valTypes[ident.Name]; ok {
-								return typ
-							}
-						}
-					}
+				// Try to infer type using valTypes for .Get() calls anywhere in the expression
+				if typ := t.inferExprTypeWithValTypes(result, valTypes); typ != nil {
+					return typ
 				}
 				// Fallback to direct type inference
 				inferredType := t.getExprType(result)
@@ -193,6 +185,52 @@ func (t *galaASTTransformer) inferBlockReturnType(block *ast.BlockStmt) ast.Expr
 				}
 			}
 		}
+	}
+	return nil
+}
+
+// inferExprTypeWithValTypes tries to infer the type of an expression,
+// using valTypes to resolve .Get() calls on local val variables.
+// This handles expressions like `x.Get() + 2` where x is a val declared in the block.
+// It recursively searches for .Get() calls and uses valTypes for lookup,
+// delegating other type inference to the existing getExprType.
+func (t *galaASTTransformer) inferExprTypeWithValTypes(expr ast.Expr, valTypes map[string]ast.Expr) ast.Expr {
+	// Try to find a .Get() call on a val variable anywhere in the expression
+	if typ := t.findValGetType(expr, valTypes); typ != nil {
+		return typ
+	}
+	return nil
+}
+
+// findValGetType recursively searches for .Get() calls on val variables in the expression.
+// Returns the type from valTypes if found, nil otherwise.
+func (t *galaASTTransformer) findValGetType(expr ast.Expr, valTypes map[string]ast.Expr) ast.Expr {
+	switch e := expr.(type) {
+	case *ast.BinaryExpr:
+		// Check left operand first, then right
+		if typ := t.findValGetType(e.X, valTypes); typ != nil {
+			return typ
+		}
+		return t.findValGetType(e.Y, valTypes)
+	case *ast.CallExpr:
+		// Check for .Get() call on a val variable
+		if selExpr, ok := e.Fun.(*ast.SelectorExpr); ok && selExpr.Sel.Name == "Get" {
+			if ident, ok := selExpr.X.(*ast.Ident); ok {
+				if typ, ok := valTypes[ident.Name]; ok {
+					return typ
+				}
+			}
+		}
+		// Check arguments
+		for _, arg := range e.Args {
+			if typ := t.findValGetType(arg, valTypes); typ != nil {
+				return typ
+			}
+		}
+	case *ast.ParenExpr:
+		return t.findValGetType(e.X, valTypes)
+	case *ast.UnaryExpr:
+		return t.findValGetType(e.X, valTypes)
 	}
 	return nil
 }

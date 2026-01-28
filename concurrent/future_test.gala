@@ -6,7 +6,6 @@ import (
     . "martianoff/gala/std"
     . "martianoff/gala/concurrent"
     . "martianoff/gala/collection_immutable"
-    . "martianoff/gala/go_interop"
 )
 
 func TestFutureOf(t T) T {
@@ -187,7 +186,7 @@ func TestPromiseSuccess(t T) T {
     val p = NewPromise[int]()
     val f = p.Future()
 
-    Go(() => {
+    Spawn(() => {
         Sleep(10 * time.Millisecond)
         p.Success(42)
     })
@@ -201,7 +200,7 @@ func TestPromiseFailure(t T) T {
     val p = NewPromise[int]()
     val f = p.Future()
 
-    Go(() => {
+    Spawn(() => {
         Sleep(10 * time.Millisecond)
         p.Failure(FutureError(Message = "async error"))
     })
@@ -289,4 +288,146 @@ func TestAndThen(t T) T {
     var t2 = Eq[int](t1, result.Get(), 10)
     Sleep(10 * time.Millisecond)
     return Eq[int](t2, sideEffect, 10)
+}
+
+// === ExecutionContext Tests ===
+
+func TestFutureApplyWithCustomEC(t T) T {
+    val pool = NewFixedPoolEC(2)
+    val f = FutureApplyWith[int](() => 1 + 1, pool)
+    val result = f.Await()
+    pool.Shutdown()
+    var t1 = IsTrue(t, result.IsSuccess())
+    return Eq[int](t1, result.Get(), 2)
+}
+
+func TestFutureOfWithCustomEC(t T) T {
+    val pool = NewFixedPoolEC(2)
+    val f = FutureOfWith[int](42, pool)
+    val result = f.Await()
+    pool.Shutdown()
+    var t1 = IsTrue(t, result.IsSuccess())
+    return Eq[int](t1, result.Get(), 42)
+}
+
+func TestFutureFailedWithCustomEC(t T) T {
+    val pool = NewFixedPoolEC(2)
+    val f = FutureFailedWith[int](FutureError(Message = "test error"), pool)
+    val result = f.Await()
+    pool.Shutdown()
+    return IsTrue(t, result.IsFailure())
+}
+
+func TestPromiseWithCustomEC(t T) T {
+    val pool = NewFixedPoolEC(2)
+    val p = NewPromiseWith[int](pool)
+    val f = p.Future()
+    p.Success(42)
+    val result = f.Await()
+    pool.Shutdown()
+    var t1 = IsTrue(t, result.IsSuccess())
+    return Eq[int](t1, result.Get(), 42)
+}
+
+func TestECInheritanceThroughMap(t T) T {
+    val pool = NewFixedPoolEC(2)
+    val f = FutureOfWith[int](10, pool)
+    val mapped = f.Map[int]((x int) => x * 2)
+    val result = mapped.Await()
+    pool.Shutdown()
+    var t1 = IsTrue(t, result.IsSuccess())
+    return Eq[int](t1, result.Get(), 20)
+}
+
+func TestECInheritanceThroughFlatMap(t T) T {
+    val pool = NewFixedPoolEC(2)
+    val f = FutureOfWith[int](5, pool)
+    val chained = f.FlatMap[int]((x int) => FutureOf[int](x * 3))
+    val result = chained.Await()
+    pool.Shutdown()
+    var t1 = IsTrue(t, result.IsSuccess())
+    return Eq[int](t1, result.Get(), 15)
+}
+
+func TestECInheritanceChain(t T) T {
+    val pool = NewFixedPoolEC(2)
+    val f = FutureOfWith[int](2, pool)
+        .Map[int]((x int) => x + 3)
+        .Map[int]((x int) => x * 2)
+        .Filter((x int) => x > 5)
+    val result = f.Await()
+    pool.Shutdown()
+    var t1 = IsTrue(t, result.IsSuccess())
+    return Eq[int](t1, result.Get(), 10)
+}
+
+func TestSingleThreadEC(t T) T {
+    val ec = NewSingleThreadEC()
+
+    val f1 = FutureApplyWith[int](() => 1 + 1, ec)
+    val f2 = FutureApplyWith[int](() => 2 + 2, ec)
+
+    val r1 = f1.Await()
+    val r2 = f2.Await()
+    ec.Shutdown()
+
+    var t1 = IsTrue(t, r1.IsSuccess())
+    var t2 = IsTrue(t1, r2.IsSuccess())
+    var t3 = Eq[int](t2, r1.Get(), 2)
+    return Eq[int](t3, r2.Get(), 4)
+}
+
+func TestECInheritanceWithRecover(t T) T {
+    val pool = NewFixedPoolEC(2)
+    val f = FutureFailedWith[int](FutureError(Message = "error"), pool)
+    val recovered = f.Recover((e error) => 100)
+    val result = recovered.Await()
+    pool.Shutdown()
+    var t1 = IsTrue(t, result.IsSuccess())
+    return Eq[int](t1, result.Get(), 100)
+}
+
+func TestECInheritanceWithTransform(t T) T {
+    val pool = NewFixedPoolEC(2)
+    val f = FutureOfWith[int](5, pool)
+    val transformed = f.Transform[string](
+        (v int) => Success[string]("success"),
+        (e error) => Success[string]("recovered")
+    )
+    val result = transformed.Await()
+    pool.Shutdown()
+    var t1 = IsTrue(t, result.IsSuccess())
+    return Eq[string](t1, result.Get(), "success")
+}
+
+func TestECInheritanceWithZip(t T) T {
+    val pool = NewFixedPoolEC(2)
+    val f1 = FutureOfWith[int](1, pool)
+    val f2 = FutureOf[string]("hello")
+    val zipped = f1.Zip[string](f2)
+    val result = zipped.Await()
+    pool.Shutdown()
+    var t1 = IsTrue(t, result.IsSuccess())
+    val tuple = result.Get()
+    var t2 = Eq[int](t1, tuple.V1, 1)
+    return Eq[string](t2, tuple.V2, "hello")
+}
+
+func TestPoolShutdownGraceful(t T) T {
+    val pool = NewFixedPoolEC(4)
+
+    val f1 = FutureApplyWith[int](() => 10 * 1, pool)
+    val f2 = FutureApplyWith[int](() => 10 * 2, pool)
+    val f3 = FutureApplyWith[int](() => 10 * 3, pool)
+
+    val r1 = f1.Await()
+    val r2 = f2.Await()
+    val r3 = f3.Await()
+
+    pool.Shutdown()
+
+    var t1 = IsTrue(t, r1.IsSuccess())
+    var t2 = Eq[int](t1, r1.Get(), 10)
+    var t3 = Eq[int](t2, r2.Get(), 20)
+    return Eq[int](t3, r3.Get(), 30)
 }

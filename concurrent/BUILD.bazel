@@ -23,6 +23,7 @@ gala_transpile(
 go_library(
     name = "concurrent",
     srcs = [
+        "execution_context.go",
         "future.go",
     ],
     importpath = "martianoff/gala/concurrent",

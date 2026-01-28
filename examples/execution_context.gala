@@ -1,0 +1,82 @@
+package main
+
+import (
+    "fmt"
+    "time"
+    . "martianoff/gala/std"
+    . "martianoff/gala/concurrent"
+    . "martianoff/gala/collection_immutable"
+)
+
+func main() {
+    fmt.Println("=== ExecutionContext Examples ===")
+
+    // Example 1: Default EC (uses GlobalEC, which is UnboundedExecutionContext)
+    fmt.Println("\n--- Default ExecutionContext ---")
+    val f1 = FutureApply[int](() => 42)
+    fmt.Println("Default EC result:", f1.Await().Get())
+
+    // Example 2: Custom FixedPoolExecutionContext
+    fmt.Println("\n--- FixedPool ExecutionContext ---")
+    val pool = NewFixedPoolEC(4)
+
+    val f2 = FutureApplyWith[int](() => 50 * 2, pool)
+    fmt.Println("Pool EC result:", f2.Await().Get())
+
+    // Example 3: EC inheritance through Map/FlatMap chain
+    fmt.Println("\n--- EC Inheritance Through Chain ---")
+    val f3 = FutureOfWith[int](10, pool)
+        .Map[int]((x int) => x * 2)
+        .Map[int]((x int) => x + 5)
+        .Filter((x int) => x > 10)
+    fmt.Println("Chain result:", f3.Await().Get())
+
+    // Example 4: Multiple concurrent computations on pool
+    fmt.Println("\n--- Concurrent Computations on Pool ---")
+    val futures = ArrayOf[*Future[int]](
+        FutureApplyWith[int](() => 0 * 0, pool),
+        FutureApplyWith[int](() => 1 * 1, pool),
+        FutureApplyWith[int](() => 2 * 2, pool),
+        FutureApplyWith[int](() => 3 * 3, pool),
+        FutureApplyWith[int](() => 4 * 4, pool)
+    )
+    val results = Sequence[int](futures).Await().Get()
+    fmt.Println("Concurrent results count:", results.Size())
+
+    // Example 5: SingleThreadExecutionContext for sequential execution
+    fmt.Println("\n--- SingleThread ExecutionContext ---")
+    val singleEC = NewSingleThreadEC()
+
+    val seqFutures = ArrayOf[*Future[int]](
+        FutureApplyWith[int](() => 0, singleEC),
+        FutureApplyWith[int](() => 1, singleEC),
+        FutureApplyWith[int](() => 2, singleEC)
+    )
+    val order = Sequence[int](seqFutures).Await().Get()
+    fmt.Println("Sequential order:", order.ToGoSlice())
+
+    // Example 6: Error handling with custom EC
+    fmt.Println("\n--- Error Handling with Custom EC ---")
+    val f4 = FutureFailedWith[int](FutureError(Message = "computation error"), pool)
+    val recovered = f4.Recover((e error) => -1)
+    fmt.Println("Recovered result:", recovered.Await().Get())
+
+    // Example 7: Promise with custom EC
+    fmt.Println("\n--- Promise with Custom EC ---")
+    val promise = NewPromiseWith[string](pool)
+    val future = promise.Future()
+
+    // Complete promise asynchronously
+    Spawn(() => {
+        Sleep(10 * time.Millisecond)
+        promise.Success("completed via promise")
+    })
+
+    fmt.Println("Promise result:", future.Await().Get())
+
+    // Cleanup: shutdown pools
+    fmt.Println("\n--- Cleanup ---")
+    pool.Shutdown()
+    singleEC.Shutdown()
+    fmt.Println("Pools shut down gracefully")
+}

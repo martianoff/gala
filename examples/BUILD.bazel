@@ -340,8 +340,8 @@ gala_test(
     src = "future_pattern_match.gala",
     expected = "future_pattern_match.out",
     deps = [
-        "//concurrent",
         "//collection_immutable",
+        "//concurrent",
     ],
 )
 
@@ -350,4 +350,20 @@ gala_test(
     src = "extractor_type_inference.gala",
     expected = "extractor_type_inference.out",
     deps = ["//concurrent"],
+)
+
+gala_test(
+    name = "execution_context",
+    src = "execution_context.gala",
+    expected = "execution_context.out",
+    deps = [
+        "//collection_immutable",
+        "//concurrent",
+    ],
+)
+
+gala_test(
+    name = "block_lambda_return",
+    src = "block_lambda_return.gala",
+    expected = "block_lambda_return.out",
 )

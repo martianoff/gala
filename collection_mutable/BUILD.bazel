@@ -60,39 +60,54 @@ go_library(
     importpath = "martianoff/gala/collection_mutable",
     visibility = ["//visibility:public"],
     deps = [
-        "//std",
         "//go_interop",
+        "//std",
     ],
 )
 
 gala_go_test(
     name = "array_test",
     srcs = ["array_test.gala"],
-    deps = [":collection_mutable", "//go_interop"],
+    deps = [
+        ":collection_mutable",
+        "//go_interop",
+    ],
 )
 
 gala_go_test(
     name = "list_test",
     srcs = ["list_test.gala"],
-    deps = [":collection_mutable", "//go_interop"],
+    deps = [
+        ":collection_mutable",
+        "//go_interop",
+    ],
 )
 
 gala_go_test(
     name = "hashset_test",
     srcs = ["hashset_test.gala"],
-    deps = [":collection_mutable", "//go_interop"],
+    deps = [
+        ":collection_mutable",
+        "//go_interop",
+    ],
 )
 
 gala_go_test(
     name = "treeset_test",
     srcs = ["treeset_test.gala"],
-    deps = [":collection_mutable", "//go_interop"],
+    deps = [
+        ":collection_mutable",
+        "//go_interop",
+    ],
 )
 
 gala_go_test(
     name = "hashmap_test",
     srcs = ["hashmap_test.gala"],
-    deps = [":collection_mutable", "//go_interop"],
+    deps = [
+        ":collection_mutable",
+        "//go_interop",
+    ],
 )
 
 # Performance benchmarks - GALA mutable collections
@@ -108,4 +123,3 @@ go_binary(
     name = "perf_go",
     srcs = ["go_native_perf_test.go"],
 )
-

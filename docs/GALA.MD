@@ -972,6 +972,69 @@ promise.Complete(tryResult)
 val done = promise.IsCompleted()
 ```
 
+#### ExecutionContext
+
+Each Future has an associated `ExecutionContext` that determines where callbacks and derived futures execute. By default, futures use `GlobalEC()` which spawns a new goroutine per task.
+
+All ExecutionContext types and functions are re-exported from the `concurrent` package, so you don't need to import `go_interop` separately:
+
+```gala
+import . "martianoff/gala/concurrent"
+
+// Default: uses GlobalEC (UnboundedExecutionContext)
+val f1 = FutureApply[int](() => compute())
+
+// With custom ExecutionContext
+val pool = NewFixedPoolEC(4)  // Worker pool with 4 goroutines
+val f2 = FutureApplyWith[int](() => compute(), pool)
+
+// Derived futures inherit EC from parent
+val f3 = f2.Map[string]((n int) => fmt.Sprintf("%d", n))  // uses pool
+val f4 = f3.FlatMap[int]((s string) => anotherFuture(s))  // uses pool
+
+// Async utilities are also available from concurrent
+Spawn(() => {
+    Sleep(100 * time.Millisecond)
+    // do something async
+})
+
+// Cleanup
+pool.Shutdown()
+```
+
+**Available ExecutionContext implementations:**
+
+| Type | Description |
+|------|-------------|
+| `UnboundedExecutionContext` | Default - spawns new goroutine per task |
+| `FixedPoolExecutionContext` | Worker pool with N goroutines |
+| `SingleThreadExecutionContext` | Sequential execution (useful for testing) |
+
+**Factory functions:**
+
+| Function | Description |
+|----------|-------------|
+| `GlobalEC()` | Returns the global default EC |
+| `SetGlobalEC(ec)` | Sets the global default EC |
+| `NewFixedPoolEC(n)` | Creates a pool with n workers |
+| `NewSingleThreadEC()` | Creates a single-thread executor |
+
+**Async utilities (also available from concurrent):**
+
+| Function | Description |
+|----------|-------------|
+| `Spawn(f)` | Start a new goroutine executing function f |
+| `Sleep(duration)` | Pause the current goroutine for the given duration |
+
+**Constructor variants with custom EC:**
+
+| Default | With EC |
+|---------|---------|
+| `FutureApply[T](f)` | `FutureApplyWith[T](f, ec)` |
+| `FutureOf[T](v)` | `FutureOfWith[T](v, ec)` |
+| `FutureFailed[T](e)` | `FutureFailedWith[T](e, ec)` |
+| `NewPromise[T]()` | `NewPromiseWith[T](ec)` |
+
 #### Key Methods
 
 | Method | Description |
@@ -982,15 +1045,16 @@ val done = promise.IsCompleted()
 | `AwaitFor(duration)` | Block with timeout, returns Option[Try[T]] |
 | `Get()` | Block and get value, panics on failure |
 | `GetOrElse(default)` | Block and get value or default |
-| `Map[U](f)` | Transform successful value |
-| `FlatMap[U](f)` | Chain with function returning Future |
-| `Filter(predicate)` | Keep value if predicate holds |
-| `Recover(f)` | Recover from failure with value |
-| `RecoverWith(f)` | Recover from failure with new Future |
-| `Zip[U](other)` | Combine two Futures into tuple |
-| `ZipWith[U,V](other, f)` | Combine with function |
-| `Fallback(other)` | Use other Future if this fails |
-| `AndThen(callback)` | Execute callback, return same result |
+| `ExecutionContext()` | Get the associated ExecutionContext |
+| `Map[U](f)` | Transform successful value (inherits EC) |
+| `FlatMap[U](f)` | Chain with function returning Future (inherits EC) |
+| `Filter(predicate)` | Keep value if predicate holds (inherits EC) |
+| `Recover(f)` | Recover from failure with value (inherits EC) |
+| `RecoverWith(f)` | Recover from failure with new Future (inherits EC) |
+| `Zip[U](other)` | Combine two Futures into tuple (inherits EC) |
+| `ZipWith[U,V](other, f)` | Combine with function (inherits EC) |
+| `Fallback(other)` | Use other Future if this fails (inherits EC) |
+| `AndThen(callback)` | Execute callback, return same result (inherits EC) |
 | `ToTry()` / `ToOption()` / `ToEither()` | Convert result |
 
 ### Slices

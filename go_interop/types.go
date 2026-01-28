@@ -329,16 +329,16 @@ func (w *WaitGroup) Wait() {
 	w.wg.Wait()
 }
 
-// Go launches a goroutine. This is a helper to work around GALA's go statement limitations.
+// Spawn launches a goroutine. This is a helper to work around GALA's go statement limitations.
 // Accepts func() any to be compatible with GALA's lambda generation.
-func Go(f func() any) {
+func Spawn(f func() any) {
 	go func() { f() }()
 }
 
-// GoWithRecover launches a goroutine with panic recovery.
+// SpawnWithRecover launches a goroutine with panic recovery.
 // If the function panics, the recovery function is called with the panic value.
 // Accepts func() any and func(any) any to be compatible with GALA's lambda generation.
-func GoWithRecover(f func() any, onPanic func(any) any) {
+func SpawnWithRecover(f func() any, onPanic func(any) any) {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -382,4 +382,251 @@ func PanicToError(r any) error {
 		return PanicError{Message: s}
 	}
 	return PanicError{Message: "unknown panic"}
+}
+
+// === Execution Context ===
+
+// ExecutionContext abstracts where/how async tasks execute.
+// Similar to Scala's ExecutionContext, it decouples task execution
+// from the Future implementation.
+type ExecutionContext interface {
+	// Execute runs a task asynchronously.
+	Execute(task func() any)
+	// ExecuteWithRecover runs a task with panic recovery.
+	ExecuteWithRecover(task func() any, onPanic func(any) any)
+	// ReportFailure reports an error that couldn't be handled.
+	ReportFailure(err error)
+}
+
+// globalEC is the default execution context used when none is specified.
+var globalEC ExecutionContext = &UnboundedExecutionContext{}
+
+// GlobalEC returns the global default ExecutionContext.
+func GlobalEC() ExecutionContext {
+	return globalEC
+}
+
+// SetGlobalEC sets the global default ExecutionContext.
+func SetGlobalEC(ec ExecutionContext) {
+	globalEC = ec
+}
+
+// UnboundedExecutionContext spawns a new goroutine for each task.
+// This is the default ExecutionContext.
+type UnboundedExecutionContext struct{}
+
+// Compile-time interface check
+var _ ExecutionContext = (*UnboundedExecutionContext)(nil)
+
+// Execute runs a task in a new goroutine.
+func (e *UnboundedExecutionContext) Execute(task func() any) {
+	go func() { task() }()
+}
+
+// ExecuteWithRecover runs a task in a new goroutine with panic recovery.
+func (e *UnboundedExecutionContext) ExecuteWithRecover(task func() any, onPanic func(any) any) {
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				onPanic(r)
+			}
+		}()
+		task()
+	}()
+}
+
+// ReportFailure logs the error (default implementation does nothing).
+func (e *UnboundedExecutionContext) ReportFailure(err error) {
+	// Default: silently ignore unhandled errors
+}
+
+// FixedPoolExecutionContext executes tasks using a fixed-size worker pool.
+type FixedPoolExecutionContext struct {
+	tasks    chan func()
+	shutdown chan struct{}
+	wg       sync.WaitGroup
+	once     sync.Once
+	closed   bool
+	mu       sync.Mutex
+}
+
+// Compile-time interface check
+var _ ExecutionContext = (*FixedPoolExecutionContext)(nil)
+
+// NewFixedPoolEC creates a new FixedPoolExecutionContext with n workers.
+func NewFixedPoolEC(n int) *FixedPoolExecutionContext {
+	if n <= 0 {
+		n = 1
+	}
+	ec := &FixedPoolExecutionContext{
+		tasks:    make(chan func(), n*10), // Buffered channel
+		shutdown: make(chan struct{}),
+	}
+	ec.wg.Add(n)
+	for i := 0; i < n; i++ {
+		go ec.worker()
+	}
+	return ec
+}
+
+func (e *FixedPoolExecutionContext) worker() {
+	defer e.wg.Done()
+	for {
+		select {
+		case task, ok := <-e.tasks:
+			if !ok {
+				return
+			}
+			task()
+		case <-e.shutdown:
+			return
+		}
+	}
+}
+
+// Execute submits a task to the worker pool.
+func (e *FixedPoolExecutionContext) Execute(task func() any) {
+	e.mu.Lock()
+	closed := e.closed
+	e.mu.Unlock()
+	if closed {
+		return
+	}
+	select {
+	case e.tasks <- func() { task() }:
+	case <-e.shutdown:
+	}
+}
+
+// ExecuteWithRecover submits a task with panic recovery to the worker pool.
+func (e *FixedPoolExecutionContext) ExecuteWithRecover(task func() any, onPanic func(any) any) {
+	e.mu.Lock()
+	closed := e.closed
+	e.mu.Unlock()
+	if closed {
+		return
+	}
+	wrappedTask := func() {
+		defer func() {
+			if r := recover(); r != nil {
+				onPanic(r)
+			}
+		}()
+		task()
+	}
+	select {
+	case e.tasks <- wrappedTask:
+	case <-e.shutdown:
+	}
+}
+
+// ReportFailure logs the error (default implementation does nothing).
+func (e *FixedPoolExecutionContext) ReportFailure(err error) {
+	// Default: silently ignore unhandled errors
+}
+
+// Shutdown gracefully shuts down the worker pool.
+// It waits for all pending tasks to complete.
+func (e *FixedPoolExecutionContext) Shutdown() {
+	e.once.Do(func() {
+		e.mu.Lock()
+		e.closed = true
+		e.mu.Unlock()
+		close(e.shutdown)
+		e.wg.Wait()
+		close(e.tasks)
+	})
+}
+
+// SingleThreadExecutionContext executes tasks sequentially in a single goroutine.
+// Useful for testing and scenarios requiring deterministic execution order.
+type SingleThreadExecutionContext struct {
+	tasks    chan func()
+	shutdown chan struct{}
+	wg       sync.WaitGroup
+	once     sync.Once
+	closed   bool
+	mu       sync.Mutex
+}
+
+// Compile-time interface check
+var _ ExecutionContext = (*SingleThreadExecutionContext)(nil)
+
+// NewSingleThreadEC creates a new SingleThreadExecutionContext.
+func NewSingleThreadEC() *SingleThreadExecutionContext {
+	ec := &SingleThreadExecutionContext{
+		tasks:    make(chan func(), 100), // Buffered channel
+		shutdown: make(chan struct{}),
+	}
+	ec.wg.Add(1)
+	go ec.worker()
+	return ec
+}
+
+func (e *SingleThreadExecutionContext) worker() {
+	defer e.wg.Done()
+	for {
+		select {
+		case task, ok := <-e.tasks:
+			if !ok {
+				return
+			}
+			task()
+		case <-e.shutdown:
+			return
+		}
+	}
+}
+
+// Execute submits a task to the single worker.
+func (e *SingleThreadExecutionContext) Execute(task func() any) {
+	e.mu.Lock()
+	closed := e.closed
+	e.mu.Unlock()
+	if closed {
+		return
+	}
+	select {
+	case e.tasks <- func() { task() }:
+	case <-e.shutdown:
+	}
+}
+
+// ExecuteWithRecover submits a task with panic recovery to the single worker.
+func (e *SingleThreadExecutionContext) ExecuteWithRecover(task func() any, onPanic func(any) any) {
+	e.mu.Lock()
+	closed := e.closed
+	e.mu.Unlock()
+	if closed {
+		return
+	}
+	wrappedTask := func() {
+		defer func() {
+			if r := recover(); r != nil {
+				onPanic(r)
+			}
+		}()
+		task()
+	}
+	select {
+	case e.tasks <- wrappedTask:
+	case <-e.shutdown:
+	}
+}
+
+// ReportFailure logs the error (default implementation does nothing).
+func (e *SingleThreadExecutionContext) ReportFailure(err error) {
+	// Default: silently ignore unhandled errors
+}
+
+// Shutdown gracefully shuts down the single-thread executor.
+func (e *SingleThreadExecutionContext) Shutdown() {
+	e.once.Do(func() {
+		e.mu.Lock()
+		e.closed = true
+		e.mu.Unlock()
+		close(e.shutdown)
+		e.wg.Wait()
+		close(e.tasks)
+	})
 }

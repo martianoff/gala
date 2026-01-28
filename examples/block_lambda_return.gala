@@ -1,0 +1,29 @@
+package main
+
+import "fmt"
+
+// Function that accepts func() int
+func acceptIntFunc(f func() int) int = f()
+
+// Function that accepts func() string
+func acceptStringFunc(f func() string) string = f()
+
+func main() {
+    // Expression lambda - works fine
+    val r1 = acceptIntFunc(() => 42)
+    fmt.Println("Expression lambda:", r1)
+
+    // Block lambda with return - should also work
+    val r2 = acceptIntFunc(() => {
+        val x = 40
+        return x + 2
+    })
+    fmt.Println("Block lambda:", r2)
+
+    // Block lambda with string return
+    val r3 = acceptStringFunc(() => {
+        val prefix = "hello"
+        return prefix + " world"
+    })
+    fmt.Println("Block lambda string:", r3)
+}

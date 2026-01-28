@@ -1,0 +1,25 @@
+=== ExecutionContext Examples ===
+
+--- Default ExecutionContext ---
+Default EC result: 42
+
+--- FixedPool ExecutionContext ---
+Pool EC result: 100
+
+--- EC Inheritance Through Chain ---
+Chain result: 25
+
+--- Concurrent Computations on Pool ---
+Concurrent results count: 5
+
+--- SingleThread ExecutionContext ---
+Sequential order: [0 1 2]
+
+--- Error Handling with Custom EC ---
+Recovered result: -1
+
+--- Promise with Custom EC ---
+Promise result: completed via promise
+
+--- Cleanup ---
+Pools shut down gracefully
