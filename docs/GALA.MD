@@ -806,8 +806,6 @@ val length = e.Map((s string) => len(s))
 `Try[T]` represents a computation that may either succeed with a value of type T or fail with an error. It provides a functional approach to error handling, similar to Scala's Try monad.
 
 ```gala
-import . "std"
-
 // Create Try values
 val success Try[int] = Success(42)
 val failure Try[int] = Failure(NoSuchElementError(Message = "not found"))
@@ -1000,8 +998,6 @@ val done = promise.IsCompleted()
 GALA provides type-safe functions for creating slices through the `std` package. Native Go slice literals (`[]int{1,2,3}`) and `make()` are not supported in GALA.
 
 ```gala
-import . "martianoff/gala/std"
-
 // Create a slice from values
 val nums = SliceOf(1, 2, 3, 4, 5)
 
@@ -1064,8 +1060,6 @@ m3.Put("a", 1)  // Modifies in place
 When you need Go-native `map[K]V` for interoperability with Go libraries:
 
 ```gala
-import . "martianoff/gala/std"
-
 // Create and populate
 var goMap = MapEmpty[string, int]()
 goMap = MapPut(goMap, "key", 42)
@@ -1208,8 +1202,6 @@ fmt.Println(snapshot.Size())  // Still has data
 For custom types as keys, implement the `Hashable` interface:
 
 ```gala
-import . "martianoff/gala/std"
-
 type Person struct {
     Name string
     Age  int
@@ -1330,7 +1322,6 @@ package main
 
 import (
     . "martianoff/gala/test"
-    . "martianoff/gala/std"  // Import the package being tested
 )
 
 func TestAddition(t T) T {
