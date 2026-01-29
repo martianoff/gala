@@ -1,0 +1,53 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+# Generate embedded stdlib Go file from transpiled sources.
+# This uses gala_bootstrap (not gala) to avoid circular dependency.
+genrule(
+    name = "generate_embedded",
+    srcs = [
+        # std package
+        "//std:option_go",
+        "//std:immutable_go",
+        "//std:tuple_go",
+        "//std:either_go",
+        "//std:iterable_go",
+        "//std:seq_go",
+        "//std:hashable_go",
+        "//std:ordered_go",
+        "//std:try_go",
+        "//std:errors_go",
+        "//std:constptr_go",
+        "//std:types.go",
+        "//std:interfaces.go",
+        # go_interop package
+        "//go_interop:types.go",
+        # collection_immutable package
+        "//collection_immutable:array_go",
+        "//collection_immutable:list_go",
+        "//collection_immutable:hashmap_go",
+        "//collection_immutable:hashset_go",
+        # collection_mutable package
+        "//collection_mutable:array_go",
+        "//collection_mutable:list_go",
+        "//collection_mutable:hashmap_go",
+        "//collection_mutable:hashset_go",
+        "//collection_mutable:treeset_go",
+        # concurrent package
+        "//concurrent:future_go",
+        "//concurrent:execution_context.go",
+    ],
+    outs = ["embedded_gen.go"],
+    cmd = "$(location //cmd/stdlib_gen) -output $@ $(SRCS)",
+    tools = ["//cmd/stdlib_gen"],
+    visibility = ["//visibility:private"],
+)
+
+go_library(
+    name = "stdlib",
+    srcs = [
+        "stdlib.go",
+        ":generate_embedded",
+    ],
+    importpath = "martianoff/gala/internal/stdlib",
+    visibility = ["//visibility:public"],
+)

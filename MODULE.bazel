@@ -5,6 +5,11 @@
 # For more details, please check https://github.com/bazelbuild/bazel/issues/18958
 ###############################################################################
 
+module(
+    name = "gala",
+    version = "1.0.0",
+)
+
 bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")
 bazel_dep(name = "gazelle", version = "0.47.0")

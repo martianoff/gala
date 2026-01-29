@@ -1,5 +1,5 @@
 load("@rules_go//go:def.bzl", "go_library", "go_test")
-load("//:gala.bzl", "gala_go_test", "gala_transpile")
+load("//:gala.bzl", "gala_bootstrap_transpile", "gala_go_test")
 
 exports_files([
     "option.gala",
@@ -10,6 +10,9 @@ exports_files([
     "try.gala",
     "errors.gala",
     "constptr.gala",
+    # Go source files for stdlib embedding
+    "types.go",
+    "interfaces.go",
 ])
 
 # Filegroup for all GALA source files in std - used by tests
@@ -22,87 +25,87 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
-gala_transpile(
+gala_bootstrap_transpile(
     name = "option_go",
     src = "option.gala",
-    out = "option.go",
+    out = "option.gen.go",
 )
 
-gala_transpile(
+gala_bootstrap_transpile(
     name = "immutable_go",
     src = "immutable.gala",
-    out = "immutable.go",
+    out = "immutable.gen.go",
 )
 
-gala_transpile(
+gala_bootstrap_transpile(
     name = "tuple_go",
     src = "tuple.gala",
-    out = "tuple.go",
+    out = "tuple.gen.go",
 )
 
-gala_transpile(
+gala_bootstrap_transpile(
     name = "either_go",
     src = "either.gala",
-    out = "either.go",
+    out = "either.gen.go",
 )
 
-gala_transpile(
+gala_bootstrap_transpile(
     name = "iterable_go",
     src = "iterable.gala",
-    out = "iterable.go",
+    out = "iterable.gen.go",
 )
 
-gala_transpile(
+gala_bootstrap_transpile(
     name = "seq_go",
     src = "seq.gala",
-    out = "seq.go",
+    out = "seq.gen.go",
 )
 
-gala_transpile(
+gala_bootstrap_transpile(
     name = "hashable_go",
     src = "hashable.gala",
-    out = "hashable.go",
+    out = "hashable.gen.go",
 )
 
-gala_transpile(
+gala_bootstrap_transpile(
     name = "ordered_go",
     src = "ordered.gala",
-    out = "ordered.go",
+    out = "ordered.gen.go",
 )
 
-gala_transpile(
+gala_bootstrap_transpile(
     name = "try_go",
     src = "try.gala",
-    out = "try.go",
+    out = "try.gen.go",
 )
 
-gala_transpile(
+gala_bootstrap_transpile(
     name = "errors_go",
     src = "errors.gala",
-    out = "errors.go",
+    out = "errors.gen.go",
 )
 
-gala_transpile(
+gala_bootstrap_transpile(
     name = "constptr_go",
     src = "constptr.gala",
-    out = "constptr.go",
+    out = "constptr.gen.go",
 )
 
 go_library(
     name = "std",
     srcs = [
-        "constptr.go",
-        "either.go",
-        "errors.go",
-        "hashable.go",
-        "immutable.go",
+        "constptr.gen.go",
+        "either.gen.go",
+        "errors.gen.go",
+        "hashable.gen.go",
+        "immutable.gen.go",
         "interfaces.go",
-        "iterable.go",
-        "option.go",
-        "ordered.go",
-        "seq.go",
-        "try.go",
-        "tuple.go",
+        "iterable.gen.go",
+        "option.gen.go",
+        "ordered.gen.go",
+        "seq.gen.go",
+        "try.gen.go",
+        "tuple.gen.go",
         "types.go",
     ],
     importpath = "martianoff/gala/std",

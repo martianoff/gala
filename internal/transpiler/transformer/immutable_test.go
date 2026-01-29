@@ -208,7 +208,7 @@ func test(n Node) bool {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := trans.Transpile(tt.input, "")
 			assert.NoError(t, err)
-			assert.Equal(t, strings.TrimSpace(tt.expected), strings.TrimSpace(got))
+			assert.Equal(t, strings.TrimSpace(tt.expected), strings.TrimSpace(stripGeneratedHeader(got)))
 		})
 	}
 }

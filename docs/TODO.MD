@@ -12,13 +12,13 @@
 - [x] Remove special casing for Tuples
 - [x] Extend Tuples class to Tuple3, Tuple4 ... Tuple10. Make (A, B) a synonym of Tuple(A,B), (A, B, C) a synonym of Tuple(A,B,C) and so on. Synonyms should work for construction and pattern matching
 - [x] Imported packages in GALA are analyzed with analyzers so they can support GALA features like generic methods
-- [ ] Dependency management
+- [x] Dependency management
 - [x] Test framework
 - [x] JetBrains language plugin
 - [x] Pointers to immutable vars
 - [x] TreeSet
 - [ ] Hash() function should be dynamically generated?
-- [ ] Futures
+- [x] Futures
 - [x] Remove native make/slices from GALA but make them available through STD package
 - [x] Refactor documentation removing all explicit type where they are not required i.e. `var s = HashSetOf[int](1, 2, 3, 4, 5)` should be `var s = HashSetOf(1, 2, 3, 4, 5)`
 - [x] Mutable and immutable Maps
@@ -27,3 +27,4 @@
 - [x] Restrict the GO map type declaration directly in GALA. Create required GO map functions inside std. Rewrite collections packages using std Maps. Leave ToGoMap functions for compatibility with GO apps
 - [x] Go pkg for go native primitives (maps, slices, channels etc)
 - [ ] Drop reflection usage for immutable vars for better performance
+- [ ] Official bazel module

@@ -159,7 +159,7 @@ func main() {
 			if err != nil {
 				t.Fatalf("Transpile failed: %v", err)
 			}
-			assert.Equal(t, strings.TrimSpace(tt.expected), strings.TrimSpace(got))
+			assert.Equal(t, strings.TrimSpace(tt.expected), strings.TrimSpace(stripGeneratedHeader(got)))
 		})
 	}
 }

@@ -23,6 +23,7 @@ go_library(
         "//internal/depman/mod",
         "//internal/depman/sum",
         "//internal/depman/version",
+        "//internal/stdlib",
         "//internal/transpiler",
         "//internal/transpiler/analyzer",
         "//internal/transpiler/generator",

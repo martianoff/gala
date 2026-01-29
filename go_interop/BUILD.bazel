@@ -1,5 +1,7 @@
 load("@rules_go//go:def.bzl", "go_library")
 
+exports_files(["types.go"])
+
 go_library(
     name = "go_interop",
     srcs = ["types.go"],

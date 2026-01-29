@@ -124,7 +124,7 @@ func update() {
 				return
 			}
 			assert.NoError(t, err)
-			assert.Equal(t, strings.TrimSpace(tt.expected), strings.TrimSpace(got))
+			assert.Equal(t, strings.TrimSpace(tt.expected), strings.TrimSpace(stripGeneratedHeader(got)))
 		})
 	}
 }

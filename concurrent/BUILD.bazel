@@ -1,8 +1,9 @@
 load("@rules_go//go:def.bzl", "go_library")
-load("//:gala.bzl", "gala_go_test", "gala_transpile")
+load("//:gala.bzl", "gala_bootstrap_transpile", "gala_go_test")
 
 exports_files([
     "future.gala",
+    "execution_context.go",
 ])
 
 filegroup(
@@ -14,17 +15,17 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
-gala_transpile(
+gala_bootstrap_transpile(
     name = "future_go",
     src = "future.gala",
-    out = "future.go",
+    out = "future.gen.go",
 )
 
 go_library(
     name = "concurrent",
     srcs = [
         "execution_context.go",
-        "future.go",
+        "future.gen.go",
     ],
     importpath = "martianoff/gala/concurrent",
     visibility = ["//visibility:public"],

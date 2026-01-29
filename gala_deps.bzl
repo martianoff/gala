@@ -22,6 +22,67 @@ Then reference dependencies in BUILD files:
 
 load("@rules_go//go:def.bzl", "go_library")
 
+def _parse_go_mod_requires(content):
+    """Parse go.mod content and extract required module paths."""
+    requires = []
+    in_require_block = False
+
+    for line in content.split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+
+        # Remove comments
+        if "//" in line:
+            line = line[:line.index("//")].strip()
+
+        if line == "require (" or line.startswith("require("):
+            in_require_block = True
+            continue
+
+        if line == ")":
+            in_require_block = False
+            continue
+
+        # Single-line require
+        if line.startswith("require ") and "(" not in line:
+            parts = line[8:].split(" ")
+            parts = [p for p in parts if p]  # Filter empty
+            if len(parts) >= 1:
+                requires.append(parts[0])
+            continue
+
+        # Inside require block
+        if in_require_block:
+            parts = line.split(" ")
+            parts = [p for p in parts if p]  # Filter empty
+            if len(parts) >= 1:
+                requires.append(parts[0])
+
+    return requires
+
+def _go_module_to_bazel_label(module_path):
+    """Convert a Go module path to a Bazel repository label.
+
+    Uses the canonical gazelle repository name format for Bzlmod compatibility.
+    Example: github.com/google/uuid -> @@gazelle++go_deps+com_github_google_uuid//:uuid
+    """
+    # Convert module path to repository name (gazelle format)
+    # Replace special characters and reverse domain
+    name = module_path.replace(".", "_").replace("/", "_").replace("-", "_")
+    parts = name.split("_")
+
+    # Handle common patterns like github_com_user_repo -> com_github_user_repo
+    if len(parts) >= 2 and parts[0] in ["github", "gitlab", "bitbucket"]:
+        parts = [parts[1], parts[0]] + parts[2:]
+    repo_name = "_".join(parts)
+
+    # The target name is typically the last part of the module path
+    target_name = module_path.split("/")[-1]
+
+    # Use canonical gazelle repo name for Bzlmod compatibility
+    return "@@gazelle++go_deps+" + repo_name + "//:" + target_name
+
 def _gala_module_impl(repository_ctx):
     """Implementation of the gala_module repository rule.
 
@@ -54,20 +115,26 @@ GALA module not found in cache: %s@%s
 Run 'gala mod add %s@%s' to fetch it first, then re-run bazel.
 """ % (module_path, version, module_path, version))
 
-    # Copy files from cache to repository via symlink
-    repository_ctx.symlink(cache_path, "src")
-
-    # Find all .go files (already transpiled) and determine package name
+    # Copy files from cache to repository (not symlink to avoid subpackage issues)
+    # We need to copy each file individually, excluding any existing BUILD files
     go_files = []
     package_name = ""
+    go_deps = []
 
-    src_path = repository_ctx.path("src")
-    for f in src_path.readdir():
+    for f in cache_dir.readdir():
         name = f.basename
-        if name.endswith("_gen.go"):
-            go_files.append("src/" + name)
+
+        # Skip BUILD files - we generate our own
+        if name == "BUILD.bazel" or name == "BUILD":
+            continue
+
+        if name.endswith(".gen.go") or (name.endswith("_gen.go") and not name.endswith(".gen.go")):
+            # Copy Go file to repo root (support both .gen.go and _gen.go naming)
+            repository_ctx.symlink(f, name)
+            go_files.append(name)
         elif name.endswith(".gala") and not name.endswith("_test.gala"):
-            # Read first line to get package name
+            # Copy GALA file and extract package name
+            repository_ctx.symlink(f, name)
             if not package_name:
                 content = repository_ctx.read(f)
                 for line in content.split("\n"):
@@ -75,13 +142,33 @@ Run 'gala mod add %s@%s' to fetch it first, then re-run bazel.
                     if line.startswith("package "):
                         package_name = line[8:].strip()
                         break
+        elif name == "go.mod":
+            # Parse go.mod to extract Go dependencies
+            repository_ctx.symlink(f, name)
+            content = repository_ctx.read(f)
+            go_deps = _parse_go_mod_requires(content)
+        elif name == "gala.mod":
+            # Copy gala.mod file
+            repository_ctx.symlink(f, name)
 
     if not package_name:
         package_name = module_path.split("/")[-1]
 
     # Generate BUILD.bazel
     srcs_str = "[" + ", ".join(['"%s"' % f for f in go_files]) + "]" if go_files else "[]"
-    deps_str = "[" + ", ".join(['"%s"' % d for d in repository_ctx.attr.deps]) + "]" if repository_ctx.attr.deps else "[]"
+
+    # All GALA packages depend on @gala//std
+    # Also include Go dependencies from go.mod (using canonical gazelle repo names)
+    all_deps = ["@gala//std"] + list(repository_ctx.attr.deps)
+    for go_dep in go_deps:
+        # Skip GALA stdlib packages - they are already provided by @gala//std
+        if go_dep.startswith("martianoff/gala/"):
+            continue
+        # Convert go module path to Bazel label using canonical gazelle names
+        bazel_label = _go_module_to_bazel_label(go_dep)
+        if bazel_label:
+            all_deps.append(bazel_label)
+    deps_str = "[" + ", ".join(['"%s"' % d for d in all_deps]) + "]"
 
     build_content = '''
 load("@rules_go//go:def.bzl", "go_library")

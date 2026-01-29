@@ -1,5 +1,5 @@
 load("@rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
-load("//:gala.bzl", "gala_binary", "gala_go_test", "gala_library", "gala_transpile")
+load("//:gala.bzl", "gala_binary", "gala_bootstrap_transpile", "gala_go_test", "gala_library")
 
 exports_files([
     "list.gala",
@@ -18,44 +18,44 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
-gala_transpile(
+gala_bootstrap_transpile(
     name = "list_go",
     src = "list.gala",
-    out = "list.go",
+    out = "list.gen.go",
 )
 
-gala_transpile(
+gala_bootstrap_transpile(
     name = "array_go",
     src = "array.gala",
-    out = "array.go",
+    out = "array.gen.go",
 )
 
-gala_transpile(
+gala_bootstrap_transpile(
     name = "hashset_go",
     src = "hashset.gala",
-    out = "hashset.go",
+    out = "hashset.gen.go",
 )
 
-gala_transpile(
+gala_bootstrap_transpile(
     name = "treeset_go",
     src = "treeset.gala",
-    out = "treeset.go",
+    out = "treeset.gen.go",
 )
 
-gala_transpile(
+gala_bootstrap_transpile(
     name = "hashmap_go",
     src = "hashmap.gala",
-    out = "hashmap.go",
+    out = "hashmap.gen.go",
 )
 
 go_library(
     name = "collection_mutable",
     srcs = [
-        "array.go",
-        "hashmap.go",
-        "hashset.go",
-        "list.go",
-        "treeset.go",
+        "array.gen.go",
+        "hashmap.gen.go",
+        "hashset.gen.go",
+        "list.gen.go",
+        "treeset.gen.go",
     ],
     importpath = "martianoff/gala/collection_mutable",
     visibility = ["//visibility:public"],

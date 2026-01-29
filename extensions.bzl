@@ -69,6 +69,14 @@ def _gala_extension_impl(module_ctx):
         root_module_direct_dev_deps = root_direct_dev_deps,
     )
 
+def _split_whitespace(s):
+    """Split string by whitespace, filtering out empty parts (Starlark requires explicit sep)."""
+    result = []
+    for part in s.split(" "):
+        if part:
+            result.append(part)
+    return result
+
 def _parse_gala_mod_content(content):
     """Parse gala.mod content and return list of (path, version, is_go) tuples."""
     requires = []
@@ -99,7 +107,7 @@ def _parse_gala_mod_content(content):
 
         # Single-line require
         if line.startswith("require ") and "(" not in line:
-            parts = line[8:].split()
+            parts = _split_whitespace(line[8:])
             if len(parts) >= 2:
                 path = parts[0]
                 version = parts[1]
@@ -108,7 +116,7 @@ def _parse_gala_mod_content(content):
 
         # Inside require block
         if in_require_block:
-            parts = line.split()
+            parts = _split_whitespace(line)
             if len(parts) >= 2:
                 path = parts[0]
                 version = parts[1]

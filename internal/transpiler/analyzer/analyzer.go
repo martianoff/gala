@@ -930,7 +930,7 @@ func (a *galaAnalyzer) ensureTranspiled(importPath string) error {
 		}
 
 		// Write the Go file
-		goFileName := strings.TrimSuffix(galaFile, ".gala") + "_gen.go"
+		goFileName := strings.TrimSuffix(galaFile, ".gala") + ".gen.go"
 		goPath := filepath.Join(dirPath, goFileName)
 		if err := os.WriteFile(goPath, []byte(goCode), 0644); err != nil {
 			return fmt.Errorf("failed to write %s: %w", goPath, err)

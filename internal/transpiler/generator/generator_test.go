@@ -24,7 +24,7 @@ func main() {
 	println("hello")
 }
 `,
-			expected: `package main
+			expected: generatedHeader + `package main
 
 func main() {
 	println("hello")
@@ -40,7 +40,7 @@ type Point struct {
 }
 func (p Point) Sum() int { return p.X + p.Y }
 `,
-			expected: `package test
+			expected: generatedHeader + `package test
 
 type Point struct {
 	X, Y int

@@ -46,7 +46,7 @@ gala_exec_test = rule(
         ),
         "is_windows": attr.bool(default = False),
         "_runner": attr.label(
-            default = "//cmd/gala_test_runner",
+            default = Label("//cmd/gala_test_runner"),
             executable = True,
             cfg = "target",
         ),
@@ -54,15 +54,43 @@ gala_exec_test = rule(
 )
 
 def gala_transpile(name, src, out = None):
+    """Transpile a GALA source file to Go using the full gala binary."""
     if not out:
         out = name + ".go"
 
+    # Use go.mod location to find the repository root for search path
     native.genrule(
         name = name,
-        srcs = [src, "//:all_gala_sources"],
+        srcs = [src, Label("//:all_gala_sources"), Label("//:go.mod")],
         outs = [out],
-        cmd = "$(location //cmd/gala) --input $(location %s) --output $@ --search ." % src,
-        tools = ["//cmd/gala"],
+        cmd = "$(location {tool}) --input $(location {src}) --output $@ --search $$(dirname $(location {gomod}))".format(
+            tool = Label("//cmd/gala"),
+            src = src,
+            gomod = Label("//:go.mod"),
+        ),
+        tools = [Label("//cmd/gala")],
+        visibility = ["//visibility:public"],
+    )
+
+def gala_bootstrap_transpile(name, src, out = None):
+    """Transpile a GALA source file using the bootstrap transpiler.
+
+    Used only for stdlib packages to avoid circular dependency.
+    """
+    if not out:
+        out = name + ".go"
+
+    # Use go.mod location to find the repository root for search path
+    native.genrule(
+        name = name,
+        srcs = [src, Label("//:all_gala_sources"), Label("//:go.mod")],
+        outs = [out],
+        cmd = "$(location {tool}) --input $(location {src}) --output $@ --search $$(dirname $(location {gomod}))".format(
+            tool = Label("//cmd/gala_bootstrap"),
+            src = src,
+            gomod = Label("//:go.mod"),
+        ),
+        tools = [Label("//cmd/gala_bootstrap")],
         visibility = ["//visibility:public"],
     )
 
@@ -81,15 +109,15 @@ def gala_library(name, src, importpath, deps = [], **kwargs):
     or gala.from_file() in MODULE.bazel, then referenced in deps as
     "@com_github_example_utils//:utils".
     """
-    go_src = name + "_gen.go"
+    go_src = name + ".gen.go"
     gala_transpile(
         name = name + "_transpile",
         src = src,
         out = go_src,
     )
 
-    # Combine deps with std
-    all_deps = list(deps) + ["//std"]
+    # Combine deps with std (using Label to ensure it resolves to @gala//std)
+    all_deps = list(deps) + [Label("//std")]
 
     go_library(
         name = name,
@@ -113,15 +141,15 @@ def gala_binary(name, src, deps = [], **kwargs):
     or gala.from_file() in MODULE.bazel, then referenced in deps as
     "@com_github_example_utils//:utils".
     """
-    go_src = name + "_gen.go"
+    go_src = name + ".gen.go"
     gala_transpile(
         name = name + "_transpile",
         src = src,
         out = go_src,
     )
 
-    # Combine deps with std
-    all_deps = list(deps) + ["//std"]
+    # Combine deps with std (using Label to ensure it resolves to @gala//std)
+    all_deps = list(deps) + [Label("//std")]
 
     go_binary(
         name = name,
