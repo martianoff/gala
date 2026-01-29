@@ -5,7 +5,11 @@ go_library(
     srcs = [
         "mod.go",
         "mod_add.go",
+        "mod_graph.go",
         "mod_init.go",
+        "mod_remove.go",
+        "mod_tidy.go",
+        "mod_update.go",
         "mod_verify.go",
         "root.go",
         "transpile.go",
@@ -15,8 +19,10 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//internal/depman/fetch",
+        "//internal/depman/graph",
         "//internal/depman/mod",
         "//internal/depman/sum",
+        "//internal/depman/version",
         "//internal/transpiler",
         "//internal/transpiler/analyzer",
         "//internal/transpiler/generator",

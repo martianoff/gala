@@ -41,16 +41,33 @@ func parseLines(lines []string) (*File, error) {
 
 	var inBlock string // "require", "replace", "exclude", or ""
 	var blockIndirect bool
+	var blockGo bool
 
 	for lineNum, line := range lines {
 		lineNum++ // 1-indexed for error messages
 
-		// Remove comments
+		// Track comment markers for current line
+		lineIndirect := false
+		lineGo := false
+
+		// Remove comments but check for markers first
 		if idx := strings.Index(line, "//"); idx >= 0 {
-			// Check for // indirect marker before removing
 			comment := strings.TrimSpace(line[idx+2:])
-			if comment == "indirect" && inBlock == "require" {
-				blockIndirect = true
+			// Parse comment markers (can be "indirect", "go", or "indirect, go")
+			for _, marker := range strings.Split(comment, ",") {
+				marker = strings.TrimSpace(marker)
+				if marker == "indirect" {
+					if inBlock == "require" {
+						blockIndirect = true
+					}
+					lineIndirect = true
+				}
+				if marker == "go" {
+					if inBlock == "require" {
+						blockGo = true
+					}
+					lineGo = true
+				}
 			}
 			line = line[:idx]
 		}
@@ -64,6 +81,7 @@ func parseLines(lines []string) (*File, error) {
 		if line == ")" {
 			inBlock = ""
 			blockIndirect = false
+			blockGo = false
 			continue
 		}
 
@@ -95,7 +113,7 @@ func parseLines(lines []string) (*File, error) {
 		if inBlock != "" {
 			switch inBlock {
 			case "require":
-				req, err := parseRequireLine(parts, blockIndirect)
+				req, err := parseRequireLine(parts, blockIndirect || lineIndirect, blockGo || lineGo)
 				if err != nil {
 					return nil, &ParseError{Line: lineNum, Message: err.Error()}
 				}
@@ -132,7 +150,7 @@ func parseLines(lines []string) (*File, error) {
 
 		case "require":
 			// Single-line require
-			req, err := parseRequireLine(parts[1:], false)
+			req, err := parseRequireLine(parts[1:], lineIndirect, lineGo)
 			if err != nil {
 				return nil, &ParseError{Line: lineNum, Message: err.Error()}
 			}
@@ -162,20 +180,17 @@ func parseLines(lines []string) (*File, error) {
 	return f, nil
 }
 
-// parseRequireLine parses a require entry: "path version [// indirect]"
-func parseRequireLine(parts []string, blockIndirect bool) (Require, error) {
+// parseRequireLine parses a require entry: "path version [// indirect] [// go]"
+func parseRequireLine(parts []string, indirect bool, isGo bool) (Require, error) {
 	if len(parts) < 2 {
 		return Require{}, fmt.Errorf("require needs path and version")
 	}
-
-	indirect := blockIndirect
-	// Check for inline // indirect comment (already stripped, but we can check original)
-	// The indirect flag from blockIndirect covers block-level indirect
 
 	return Require{
 		Path:     parts[0],
 		Version:  parts[1],
 		Indirect: indirect,
+		Go:       isGo,
 	}, nil
 }
 

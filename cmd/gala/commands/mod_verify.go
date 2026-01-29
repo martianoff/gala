@@ -24,10 +24,6 @@ Examples:
 	Run: runModVerify,
 }
 
-func init() {
-	modCmd.AddCommand(modVerifyCmd)
-}
-
 func runModVerify(cmd *cobra.Command, args []string) {
 	// Check if gala.mod exists
 	galaMod, err := mod.ParseFile("gala.mod")

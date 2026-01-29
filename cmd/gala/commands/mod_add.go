@@ -12,6 +12,8 @@ import (
 	"martianoff/gala/internal/depman/sum"
 )
 
+var modAddIsGo bool
+
 var modAddCmd = &cobra.Command{
 	Use:   "add <module>[@version]",
 	Short: "Add a dependency to gala.mod",
@@ -23,16 +25,19 @@ The module path can optionally include a version specifier:
   - module@latest    Latest available version
   - module           Same as @latest
 
+Use --go flag to mark a dependency as a Go package (not GALA).
+Go dependencies are tracked in gala.mod but not transpiled.
+
 Examples:
-  gala mod add github.com/example/utils
-  gala mod add github.com/example/utils@v1.2.3
-  gala mod add github.com/example/utils@^1.0.0`,
+  gala mod add github.com/example/gala-utils
+  gala mod add github.com/example/gala-utils@v1.2.3
+  gala mod add github.com/example/go-lib@v2.0.0 --go`,
 	Args: cobra.ExactArgs(1),
 	Run:  runModAdd,
 }
 
 func init() {
-	modCmd.AddCommand(modAddCmd)
+	modAddCmd.Flags().BoolVar(&modAddIsGo, "go", false, "Mark as a Go (not GALA) dependency")
 }
 
 func runModAdd(cmd *cobra.Command, args []string) {
@@ -83,8 +88,20 @@ func runModAdd(cmd *cobra.Command, args []string) {
 		hash = h
 	}
 
+	// Auto-detect if this is a Go package (no .gala files or gala.mod in cache)
+	isGoPackage := modAddIsGo
+	if !isGoPackage {
+		isGoPackage = !hasGalaFiles(cachePath)
+	}
+
 	// Update gala.mod
 	galaMod.AddRequire(modulePath, version, false)
+	// Mark as Go package if detected
+	if isGoPackage {
+		if req := galaMod.GetRequire(modulePath); req != nil {
+			req.Go = true
+		}
+	}
 	if err := mod.WriteFile(galaMod, "gala.mod"); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: failed to write gala.mod: %v\n", err)
 		os.Exit(1)
@@ -114,8 +131,32 @@ func runModAdd(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	fmt.Printf("Added %s@%s\n", modulePath, version)
+	if isGoPackage {
+		fmt.Printf("Added %s@%s (Go dependency)\n", modulePath, version)
+	} else {
+		fmt.Printf("Added %s@%s\n", modulePath, version)
+	}
 	fmt.Printf("  -> %s\n", cachePath)
+}
+
+// hasGalaFiles checks if a directory contains .gala files or gala.mod.
+func hasGalaFiles(dir string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if name == "gala.mod" || strings.HasSuffix(name, ".gala") {
+			return true
+		}
+	}
+
+	return false
 }
 
 // parseModuleArg parses a module argument like "github.com/example/utils@v1.2.3"

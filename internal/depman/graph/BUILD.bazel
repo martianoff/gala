@@ -1,0 +1,29 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "graph",
+    srcs = [
+        "builder.go",
+        "cycle.go",
+        "mvs.go",
+        "types.go",
+    ],
+    importpath = "martianoff/gala/internal/depman/graph",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//internal/depman/fetch",
+        "//internal/depman/mod",
+        "//internal/depman/version",
+    ],
+)
+
+go_test(
+    name = "graph_test",
+    srcs = ["graph_test.go"],
+    embed = [":graph"],
+    deps = [
+        "//internal/depman/version",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
+)

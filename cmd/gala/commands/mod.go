@@ -24,4 +24,10 @@ Commands:
 
 func init() {
 	modCmd.AddCommand(modInitCmd)
+	modCmd.AddCommand(modAddCmd)
+	modCmd.AddCommand(modRemoveCmd)
+	modCmd.AddCommand(modUpdateCmd)
+	modCmd.AddCommand(modTidyCmd)
+	modCmd.AddCommand(modVerifyCmd)
+	modCmd.AddCommand(modGraphCmd)
 }

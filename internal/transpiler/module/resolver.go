@@ -191,7 +191,7 @@ func (r *Resolver) resolveFromCache(importPath string) (string, error) {
 }
 
 // IsGalaPackage checks if the import path refers to a GALA package
-// (i.e., it's in gala.mod require list or has a gala.mod in the cache).
+// (i.e., it's in gala.mod require list and has .gala files in the cache).
 func (r *Resolver) IsGalaPackage(importPath string) bool {
 	// Check if it's the current module
 	if r.moduleName != "" && strings.HasPrefix(importPath, r.moduleName+"/") {
@@ -202,8 +202,69 @@ func (r *Resolver) IsGalaPackage(importPath string) bool {
 	if r.galaMod != nil {
 		for _, req := range r.galaMod.Require {
 			if req.Path == importPath || strings.HasPrefix(importPath, req.Path+"/") {
+				// If explicitly marked as Go in gala.mod, it's not a GALA package
+				if req.Go {
+					return false
+				}
+				// Found in require list, now check if it's actually a GALA package
+				// by looking for .gala files or gala.mod in the cache
+				return r.isGalaPackageInCache(req.Path, req.Version)
+			}
+		}
+	}
+
+	return false
+}
+
+// isGalaPackageInCache checks if a cached module is a GALA package
+// (has .gala files or gala.mod).
+func (r *Resolver) isGalaPackageInCache(modulePath, version string) bool {
+	if r.cache == nil {
+		return false
+	}
+
+	// Check if module is cached
+	modPath, err := r.cache.ResolveVersion(modulePath, version)
+	if err != nil {
+		return false
+	}
+
+	// Check for gala.mod
+	galaModPath := filepath.Join(modPath, "gala.mod")
+	if _, err := os.Stat(galaModPath); err == nil {
+		return true
+	}
+
+	// Check for .gala files
+	entries, err := os.ReadDir(modPath)
+	if err != nil {
+		return false
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".gala") {
+			return true
+		}
+	}
+
+	return false
+}
+
+// IsGoPackage checks if an import path refers to a Go package
+// (in require list but not a GALA package).
+func (r *Resolver) IsGoPackage(importPath string) bool {
+	if r.galaMod == nil {
+		return false
+	}
+
+	for _, req := range r.galaMod.Require {
+		if req.Path == importPath || strings.HasPrefix(importPath, req.Path+"/") {
+			// If explicitly marked as Go in gala.mod, trust that
+			if req.Go {
 				return true
 			}
+			// Otherwise check if it's NOT a GALA package by scanning files
+			return !r.isGalaPackageInCache(req.Path, req.Version)
 		}
 	}
 

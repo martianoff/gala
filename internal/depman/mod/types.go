@@ -20,6 +20,7 @@ type Require struct {
 	Path     string // Module path (e.g., "github.com/example/utils")
 	Version  string // Version constraint (e.g., "v1.2.3", "^1.0.0")
 	Indirect bool   // True if this is a transitive dependency
+	Go       bool   // True if this is a Go (not GALA) dependency
 }
 
 // Replace represents a path substitution in gala.mod.
@@ -140,4 +141,26 @@ func (f *File) IndirectRequires() []Require {
 		}
 	}
 	return indirect
+}
+
+// GalaRequires returns only the GALA dependencies (not Go packages).
+func (f *File) GalaRequires() []Require {
+	galaReqs := make([]Require, 0)
+	for _, r := range f.Require {
+		if !r.Go {
+			galaReqs = append(galaReqs, r)
+		}
+	}
+	return galaReqs
+}
+
+// GoRequires returns only the Go dependencies.
+func (f *File) GoRequires() []Require {
+	goReqs := make([]Require, 0)
+	for _, r := range f.Require {
+		if r.Go {
+			goReqs = append(goReqs, r)
+		}
+	}
+	return goReqs
 }

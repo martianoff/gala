@@ -20,30 +20,14 @@ func Format(f *File) string {
 		sb.WriteString("\n")
 	}
 
-	// Direct requires
-	direct := f.DirectRequires()
-	if len(direct) > 0 {
-		if len(direct) == 1 {
-			sb.WriteString(fmt.Sprintf("require %s %s\n", direct[0].Path, direct[0].Version))
+	// Requires (all together, with appropriate comments)
+	if len(f.Require) > 0 {
+		if len(f.Require) == 1 {
+			sb.WriteString(fmt.Sprintf("require %s\n", formatRequireEntry(f.Require[0])))
 		} else {
 			sb.WriteString("require (\n")
-			for _, r := range direct {
-				sb.WriteString(fmt.Sprintf("\t%s %s\n", r.Path, r.Version))
-			}
-			sb.WriteString(")\n")
-		}
-		sb.WriteString("\n")
-	}
-
-	// Indirect requires
-	indirect := f.IndirectRequires()
-	if len(indirect) > 0 {
-		if len(indirect) == 1 {
-			sb.WriteString(fmt.Sprintf("require %s %s // indirect\n", indirect[0].Path, indirect[0].Version))
-		} else {
-			sb.WriteString("require (\n")
-			for _, r := range indirect {
-				sb.WriteString(fmt.Sprintf("\t%s %s // indirect\n", r.Path, r.Version))
+			for _, r := range f.Require {
+				sb.WriteString(fmt.Sprintf("\t%s\n", formatRequireEntry(r)))
 			}
 			sb.WriteString(")\n")
 		}
@@ -80,6 +64,29 @@ func Format(f *File) string {
 	}
 
 	return strings.TrimRight(sb.String(), "\n") + "\n"
+}
+
+// formatRequireEntry formats a require entry with appropriate comments.
+func formatRequireEntry(r Require) string {
+	var sb strings.Builder
+	sb.WriteString(r.Path)
+	sb.WriteString(" ")
+	sb.WriteString(r.Version)
+
+	// Add comment markers
+	var markers []string
+	if r.Indirect {
+		markers = append(markers, "indirect")
+	}
+	if r.Go {
+		markers = append(markers, "go")
+	}
+	if len(markers) > 0 {
+		sb.WriteString(" // ")
+		sb.WriteString(strings.Join(markers, ", "))
+	}
+
+	return sb.String()
 }
 
 // formatReplaceLine formats a single replace directive.

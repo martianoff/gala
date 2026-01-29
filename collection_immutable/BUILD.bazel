@@ -126,3 +126,4 @@ go_binary(
     name = "perf_go",
     srcs = ["go_native_perf_test.go"],
 )
+

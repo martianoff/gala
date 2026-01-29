@@ -287,3 +287,145 @@ func TestModuleVersion_IsLocal(t *testing.T) {
 		assert.Equal(t, tt.expected, mv.IsLocal(), "path=%q version=%q", tt.path, tt.version)
 	}
 }
+
+func TestParse_WithGoRequires(t *testing.T) {
+	content := `module github.com/user/project
+
+require (
+	github.com/example/gala-pkg v1.0.0
+	github.com/example/go-lib v2.0.0 // go
+)
+`
+	f, err := Parse(content)
+	require.NoError(t, err)
+	assert.Len(t, f.Require, 2)
+
+	// First is GALA package
+	assert.Equal(t, "github.com/example/gala-pkg", f.Require[0].Path)
+	assert.False(t, f.Require[0].Go)
+
+	// Second is Go package
+	assert.Equal(t, "github.com/example/go-lib", f.Require[1].Path)
+	assert.True(t, f.Require[1].Go)
+}
+
+func TestParse_WithGoAndIndirectRequires(t *testing.T) {
+	content := `module github.com/user/project
+
+require (
+	github.com/example/gala-pkg v1.0.0
+	github.com/example/go-lib v2.0.0 // go
+	github.com/example/indirect-go v1.0.0 // indirect, go
+)
+`
+	f, err := Parse(content)
+	require.NoError(t, err)
+	assert.Len(t, f.Require, 3)
+
+	// GALA package
+	assert.Equal(t, "github.com/example/gala-pkg", f.Require[0].Path)
+	assert.False(t, f.Require[0].Go)
+	assert.False(t, f.Require[0].Indirect)
+
+	// Go package (direct)
+	assert.Equal(t, "github.com/example/go-lib", f.Require[1].Path)
+	assert.True(t, f.Require[1].Go)
+	assert.False(t, f.Require[1].Indirect)
+
+	// Go package (indirect)
+	assert.Equal(t, "github.com/example/indirect-go", f.Require[2].Path)
+	assert.True(t, f.Require[2].Go)
+	assert.True(t, f.Require[2].Indirect)
+}
+
+func TestFormat_WithGoRequires(t *testing.T) {
+	f := NewFile("github.com/user/project")
+	f.AddRequire("github.com/example/gala-pkg", "v1.0.0", false)
+
+	// Add Go dependency by modifying the require entry
+	f.AddRequire("github.com/example/go-lib", "v2.0.0", false)
+	if req := f.GetRequire("github.com/example/go-lib"); req != nil {
+		req.Go = true
+	}
+
+	output := Format(f)
+	assert.Contains(t, output, "github.com/example/gala-pkg v1.0.0")
+	assert.Contains(t, output, "github.com/example/go-lib v2.0.0 // go")
+}
+
+func TestFormat_WithGoAndIndirectRequires(t *testing.T) {
+	f := NewFile("github.com/user/project")
+
+	// Add indirect Go dependency
+	f.AddRequire("github.com/example/indirect-go", "v1.0.0", true)
+	if req := f.GetRequire("github.com/example/indirect-go"); req != nil {
+		req.Go = true
+	}
+
+	output := Format(f)
+	assert.Contains(t, output, "github.com/example/indirect-go v1.0.0 // indirect, go")
+}
+
+func TestFile_GalaRequires(t *testing.T) {
+	f := NewFile("github.com/user/project")
+	f.AddRequire("github.com/example/gala-pkg", "v1.0.0", false)
+	f.AddRequire("github.com/example/go-lib", "v2.0.0", false)
+	if req := f.GetRequire("github.com/example/go-lib"); req != nil {
+		req.Go = true
+	}
+
+	galaReqs := f.GalaRequires()
+	assert.Len(t, galaReqs, 1)
+	assert.Equal(t, "github.com/example/gala-pkg", galaReqs[0].Path)
+}
+
+func TestFile_GoRequires(t *testing.T) {
+	f := NewFile("github.com/user/project")
+	f.AddRequire("github.com/example/gala-pkg", "v1.0.0", false)
+	f.AddRequire("github.com/example/go-lib", "v2.0.0", false)
+	if req := f.GetRequire("github.com/example/go-lib"); req != nil {
+		req.Go = true
+	}
+
+	goReqs := f.GoRequires()
+	assert.Len(t, goReqs, 1)
+	assert.Equal(t, "github.com/example/go-lib", goReqs[0].Path)
+}
+
+func TestRoundTrip_WithGoRequires(t *testing.T) {
+	original := NewFile("github.com/user/project")
+	original.Gala = "1.0"
+	original.AddRequire("github.com/example/gala-pkg", "v1.0.0", false)
+	original.AddRequire("github.com/example/go-lib", "v2.0.0", false)
+	if req := original.GetRequire("github.com/example/go-lib"); req != nil {
+		req.Go = true
+	}
+	original.AddRequire("github.com/example/indirect-go", "v1.0.0", true)
+	if req := original.GetRequire("github.com/example/indirect-go"); req != nil {
+		req.Go = true
+	}
+
+	formatted := Format(original)
+	parsed, err := Parse(formatted)
+	require.NoError(t, err)
+
+	assert.Len(t, parsed.Require, 3)
+
+	// Check GALA package
+	galaReq := parsed.GetRequire("github.com/example/gala-pkg")
+	require.NotNil(t, galaReq)
+	assert.False(t, galaReq.Go)
+	assert.False(t, galaReq.Indirect)
+
+	// Check direct Go package
+	goReq := parsed.GetRequire("github.com/example/go-lib")
+	require.NotNil(t, goReq)
+	assert.True(t, goReq.Go)
+	assert.False(t, goReq.Indirect)
+
+	// Check indirect Go package
+	indirectGoReq := parsed.GetRequire("github.com/example/indirect-go")
+	require.NotNil(t, indirectGoReq)
+	assert.True(t, indirectGoReq.Go)
+	assert.True(t, indirectGoReq.Indirect)
+}
