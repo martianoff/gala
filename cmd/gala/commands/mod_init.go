@@ -63,7 +63,7 @@ func runModInit(cmd *cobra.Command, args []string) {
 
 	// Create gala.mod file
 	f := mod.NewFile(modulePath)
-	f.Gala = "1.0" // Default GALA version
+	f.Gala = Version // Use current GALA version
 
 	err := mod.WriteFile(f, "gala.mod")
 	if err != nil {

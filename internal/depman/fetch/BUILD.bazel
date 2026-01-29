@@ -1,0 +1,31 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "fetch",
+    srcs = [
+        "cache.go",
+        "config.go",
+        "git.go",
+    ],
+    importpath = "martianoff/gala/internal/depman/fetch",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//internal/depman/mod",
+        "//internal/depman/sum",
+        "//internal/depman/version",
+        "@com_github_go_git_go_git_v5//:go-git",
+        "@com_github_go_git_go_git_v5//config",
+        "@com_github_go_git_go_git_v5//plumbing",
+        "@com_github_go_git_go_git_v5//storage/memory",
+    ],
+)
+
+go_test(
+    name = "fetch_test",
+    srcs = ["fetch_test.go"],
+    embed = [":fetch"],
+    deps = [
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
+)

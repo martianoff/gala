@@ -3,14 +3,18 @@ package analyzer
 import (
 	"fmt"
 	"io/ioutil"
-	"martianoff/gala/internal/parser/grammar"
-	"martianoff/gala/internal/transpiler"
-	"martianoff/gala/internal/transpiler/module"
-	"martianoff/gala/internal/transpiler/registry"
+	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/antlr4-go/antlr/v4"
+
+	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/transpiler"
+	"martianoff/gala/internal/transpiler/generator"
+	"martianoff/gala/internal/transpiler/module"
+	"martianoff/gala/internal/transpiler/registry"
+	"martianoff/gala/internal/transpiler/transformer"
 )
 
 // GetBaseMetadata loads standard library metadata for use in tests and backward compatibility.
@@ -167,8 +171,20 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 		for _, spec := range ctx.AllImportSpec() {
 			s := spec.(*grammar.ImportSpecContext)
 			path := strings.Trim(s.STRING().GetText(), "\"")
-			if strings.HasPrefix(path, "martianoff/gala/") {
-				relPath := strings.TrimPrefix(path, "martianoff/gala/")
+
+			// Check if this is a GALA package (internal or external)
+			isInternalGala := strings.HasPrefix(path, "martianoff/gala/")
+			isExternalGala := a.resolver.IsGalaPackage(path)
+
+			if isInternalGala || isExternalGala {
+				// Determine how to resolve the package
+				var relPath string
+				if isInternalGala {
+					relPath = strings.TrimPrefix(path, "martianoff/gala/")
+				} else {
+					relPath = path // External packages use full path
+				}
+
 				if cached, ok := a.analyzedPkgs[path]; ok && cached != nil {
 					// Use cached metadata
 					richAST.Merge(cached)
@@ -178,6 +194,15 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 				} else if _, inProgress := a.analyzedPkgs[path]; !inProgress {
 					// First time analyzing this package - set placeholder to prevent infinite recursion
 					a.analyzedPkgs[path] = nil
+
+					// For external GALA packages, ensure they're transpiled
+					if isExternalGala && !isInternalGala {
+						if err := a.ensureTranspiled(path); err != nil {
+							// Log error but continue - we'll still try to analyze
+							fmt.Fprintf(os.Stderr, "Warning: failed to transpile dependency %s: %v\n", path, err)
+						}
+					}
+
 					importedAST, err := a.analyzePackage(relPath)
 					if err == nil {
 						a.analyzedPkgs[path] = importedAST
@@ -821,6 +846,98 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 		}
 	}
 	return pkgAST, nil
+}
+
+// ensureTranspiled checks if an external GALA package has been transpiled
+// and transpiles it if necessary. The transpiled .go files are written
+// to the same cache directory as the .gala source files.
+func (a *galaAnalyzer) ensureTranspiled(importPath string) error {
+	// Find the package directory in the cache
+	dirPath, err := a.resolver.ResolvePackagePath(importPath)
+	if err != nil {
+		return err
+	}
+
+	// Check if any .go files already exist (indicating transpilation was done)
+	files, err := ioutil.ReadDir(dirPath)
+	if err != nil {
+		return err
+	}
+
+	hasGoFiles := false
+	var galaFiles []string
+	for _, f := range files {
+		if f.IsDir() {
+			continue
+		}
+		ext := filepath.Ext(f.Name())
+		if ext == ".go" && !strings.HasSuffix(f.Name(), "_test.go") {
+			hasGoFiles = true
+			break
+		}
+		if ext == ".gala" && !strings.HasSuffix(f.Name(), "_test.gala") {
+			galaFiles = append(galaFiles, f.Name())
+		}
+	}
+
+	// If already transpiled, nothing to do
+	if hasGoFiles {
+		return nil
+	}
+
+	// Transpile each .gala file
+	tr := transformer.NewGalaASTTransformer()
+	g := generator.NewGoCodeGenerator()
+
+	for _, galaFile := range galaFiles {
+		srcPath := filepath.Join(dirPath, galaFile)
+		content, err := ioutil.ReadFile(srcPath)
+		if err != nil {
+			return fmt.Errorf("failed to read %s: %w", srcPath, err)
+		}
+
+		// Parse the file
+		tree, err := a.parser.Parse(string(content))
+		if err != nil {
+			return fmt.Errorf("failed to parse %s: %w", srcPath, err)
+		}
+
+		// Analyze without recursion by using a separate analyzer
+		// This avoids circular dependency issues
+		tempAnalyzer := &galaAnalyzer{
+			parser:       a.parser,
+			searchPaths:  a.searchPaths,
+			analyzedPkgs: make(map[string]*transpiler.RichAST),
+			checkedDirs:  make(map[string]bool),
+			resolver:     a.resolver,
+		}
+
+		richAST, err := tempAnalyzer.Analyze(tree, srcPath)
+		if err != nil {
+			return fmt.Errorf("failed to analyze %s: %w", srcPath, err)
+		}
+
+		// Transform to Go AST
+		fset, goAST, err := tr.Transform(richAST)
+		if err != nil {
+			return fmt.Errorf("failed to transform %s: %w", srcPath, err)
+		}
+
+		// Generate Go code
+		goCode, err := g.Generate(fset, goAST)
+		if err != nil {
+			return fmt.Errorf("failed to generate Go code for %s: %w", srcPath, err)
+		}
+
+		// Write the Go file
+		goFileName := strings.TrimSuffix(galaFile, ".gala") + "_gen.go"
+		goPath := filepath.Join(dirPath, goFileName)
+		if err := os.WriteFile(goPath, []byte(goCode), 0644); err != nil {
+			return fmt.Errorf("failed to write %s: %w", goPath, err)
+		}
+	}
+
+	return nil
 }
 
 func getBaseTypeName(ctx grammar.ITypeContext) string {

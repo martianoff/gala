@@ -4,7 +4,9 @@ go_library(
     name = "commands",
     srcs = [
         "mod.go",
+        "mod_add.go",
         "mod_init.go",
+        "mod_verify.go",
         "root.go",
         "transpile.go",
         "version.go",
@@ -12,7 +14,9 @@ go_library(
     importpath = "martianoff/gala/cmd/gala/commands",
     visibility = ["//visibility:public"],
     deps = [
+        "//internal/depman/fetch",
         "//internal/depman/mod",
+        "//internal/depman/sum",
         "//internal/transpiler",
         "//internal/transpiler/analyzer",
         "//internal/transpiler/generator",

@@ -152,8 +152,6 @@ val updated = scores.Put("charlie", 90)  // Original unchanged
 ### Error Handling with Try
 
 ```gala
-import . "martianoff/gala/std"
-
 func divide(a int, b int) Try[int] =
     if (b == 0) Failure[int](DivisionByZeroError())
     else Success(a / b)

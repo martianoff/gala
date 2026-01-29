@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"martianoff/gala/internal/depman/fetch"
 	"martianoff/gala/internal/depman/mod"
 )
 
@@ -18,32 +19,47 @@ import (
 //	resolver := NewResolver(searchPaths)
 //	fsPath, err := resolver.ResolvePackagePath("martianoff/gala/std")
 type Resolver struct {
-	moduleRoot  string    // Filesystem path to module root (where go.mod is located)
-	moduleName  string    // Module name from go.mod (e.g., "martianoff/gala")
-	searchPaths []string  // Fallback search paths when module resolution fails
-	galaMod     *mod.File // Parsed gala.mod file (if present)
-	galaModPath string    // Path to gala.mod file
+	moduleRoot  string       // Filesystem path to module root (where go.mod is located)
+	moduleName  string       // Module name from go.mod (e.g., "martianoff/gala")
+	searchPaths []string     // Fallback search paths when module resolution fails
+	galaMod     *mod.File    // Parsed gala.mod file (if present)
+	galaModPath string       // Path to gala.mod file
+	cache       *fetch.Cache // GALA dependency cache
 }
 
 // NewResolver creates a Resolver by searching for go.mod and gala.mod.
 // It first tries the current working directory, then falls back to searchPaths.
 //
 // The resolver will:
-// 1. Walk up from cwd looking for go.mod
+// 1. Walk up from cwd looking for go.mod or gala.mod
 // 2. If not found, try each search path
-// 3. Extract module name from go.mod when found
-// 4. Load gala.mod if present (for replace directives)
+// 3. Extract module name from go.mod or gala.mod when found
+// 4. Load gala.mod if present (for replace directives and dependencies)
+// 5. Initialize the GALA dependency cache
 func NewResolver(searchPaths []string) *Resolver {
 	moduleRoot, moduleName := findModuleRootFromCwdOrPaths(searchPaths)
+
 	r := &Resolver{
 		moduleRoot:  moduleRoot,
 		moduleName:  moduleName,
 		searchPaths: searchPaths,
+		cache:       fetch.NewCache(fetch.DefaultConfig()),
 	}
 
 	// Try to load gala.mod if module root was found
 	if moduleRoot != "" {
 		r.loadGalaMod(moduleRoot)
+	} else {
+		// If no go.mod found, try to find gala.mod directly
+		galaModRoot := findGalaModRoot(searchPaths)
+		if galaModRoot != "" {
+			r.moduleRoot = galaModRoot
+			r.loadGalaMod(galaModRoot)
+			// If gala.mod was loaded, use its module name
+			if r.galaMod != nil {
+				r.moduleName = r.galaMod.Module.Path
+			}
+		}
 	}
 
 	return r
@@ -87,11 +103,13 @@ func (r *Resolver) ModuleName() string {
 // 0. Check replace directives in gala.mod
 // 1. If import path starts with module name, resolve relative to module root
 // 2. If import path is a simple name (no slashes), try as subdir of module root
-// 3. Fall back to search paths
+// 3. Check gala.mod require directives and resolve from cache
+// 4. Fall back to search paths
 //
 // Examples:
 //   - "martianoff/gala/std" with moduleName "martianoff/gala" -> "{moduleRoot}/std"
 //   - "std" with moduleRoot set -> "{moduleRoot}/std"
+//   - "github.com/user/pkg" in require -> cache path
 //   - "external/pkg" -> tries each search path
 func (r *Resolver) ResolvePackagePath(importPath string) (string, error) {
 	// Strategy 0: Check replace directives in gala.mod
@@ -123,7 +141,14 @@ func (r *Resolver) ResolvePackagePath(importPath string) (string, error) {
 		}
 	}
 
-	// Strategy 3: Search paths fallback
+	// Strategy 3: Check gala.mod require directives and resolve from cache
+	if r.galaMod != nil && r.cache != nil {
+		if cachePath, err := r.resolveFromCache(importPath); err == nil {
+			return cachePath, nil
+		}
+	}
+
+	// Strategy 4: Search paths fallback
 	for _, sp := range r.searchPaths {
 		dirPath := filepath.Join(sp, importPath)
 		if isValidPackageDir(dirPath) {
@@ -132,6 +157,75 @@ func (r *Resolver) ResolvePackagePath(importPath string) (string, error) {
 	}
 
 	return "", &PackageNotFoundError{ImportPath: importPath}
+}
+
+// resolveFromCache checks if the import path is in gala.mod require list
+// and resolves it from the dependency cache.
+func (r *Resolver) resolveFromCache(importPath string) (string, error) {
+	if r.galaMod == nil || r.cache == nil {
+		return "", &PackageNotFoundError{ImportPath: importPath}
+	}
+
+	// Check if this import path matches any require directive
+	for _, req := range r.galaMod.Require {
+		if req.Path == importPath {
+			// Found in require list, resolve from cache
+			return r.cache.ResolveVersion(req.Path, req.Version)
+		}
+		// Also check if it's a subpackage of a required module
+		if strings.HasPrefix(importPath, req.Path+"/") {
+			// It's a subpackage like "github.com/user/mod/subpkg"
+			basePath, err := r.cache.ResolveVersion(req.Path, req.Version)
+			if err != nil {
+				continue
+			}
+			subPath := strings.TrimPrefix(importPath, req.Path+"/")
+			fullPath := filepath.Join(basePath, subPath)
+			if isValidPackageDir(fullPath) {
+				return fullPath, nil
+			}
+		}
+	}
+
+	return "", &PackageNotFoundError{ImportPath: importPath}
+}
+
+// IsGalaPackage checks if the import path refers to a GALA package
+// (i.e., it's in gala.mod require list or has a gala.mod in the cache).
+func (r *Resolver) IsGalaPackage(importPath string) bool {
+	// Check if it's the current module
+	if r.moduleName != "" && strings.HasPrefix(importPath, r.moduleName+"/") {
+		return true
+	}
+
+	// Check gala.mod require list
+	if r.galaMod != nil {
+		for _, req := range r.galaMod.Require {
+			if req.Path == importPath || strings.HasPrefix(importPath, req.Path+"/") {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// GetRequiredVersion returns the version of a required dependency, or empty if not found.
+func (r *Resolver) GetRequiredVersion(modulePath string) string {
+	if r.galaMod == nil {
+		return ""
+	}
+	for _, req := range r.galaMod.Require {
+		if req.Path == modulePath {
+			return req.Version
+		}
+	}
+	return ""
+}
+
+// Cache returns the dependency cache.
+func (r *Resolver) Cache() *fetch.Cache {
+	return r.cache
 }
 
 // applyReplace checks if the import path matches any replace directive
@@ -174,6 +268,56 @@ type PackageNotFoundError struct {
 
 func (e *PackageNotFoundError) Error() string {
 	return "package not found: " + e.ImportPath
+}
+
+// findGalaModRoot searches for gala.mod starting from cwd, then falling back to search paths.
+// Returns the directory containing gala.mod, or empty string if not found.
+func findGalaModRoot(searchPaths []string) string {
+	// Try current working directory first
+	cwd, _ := os.Getwd()
+	if root := findGalaModFromDir(cwd); root != "" {
+		return root
+	}
+
+	// Fall back to search paths
+	for _, sp := range searchPaths {
+		absPath, err := filepath.Abs(sp)
+		if err != nil {
+			continue
+		}
+		if root := findGalaModFromDir(absPath); root != "" {
+			return root
+		}
+	}
+
+	return ""
+}
+
+// findGalaModFromDir walks up from startPath looking for gala.mod.
+func findGalaModFromDir(startPath string) string {
+	dir := startPath
+
+	// If startPath is a file, use its directory
+	if info, err := os.Stat(dir); err == nil && !info.IsDir() {
+		dir = filepath.Dir(dir)
+	}
+
+	// Walk up looking for gala.mod
+	for {
+		galaModPath := filepath.Join(dir, "gala.mod")
+		if _, err := os.Stat(galaModPath); err == nil {
+			return dir
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			// Reached filesystem root
+			break
+		}
+		dir = parent
+	}
+
+	return ""
 }
 
 // findModuleRootFromCwdOrPaths searches for go.mod starting from cwd,
