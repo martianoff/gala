@@ -1,0 +1,22 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "mod",
+    srcs = [
+        "parser.go",
+        "types.go",
+        "writer.go",
+    ],
+    importpath = "martianoff/gala/internal/depman/mod",
+    visibility = ["//:__subpackages__"],
+)
+
+go_test(
+    name = "mod_test",
+    srcs = ["mod_test.go"],
+    embed = [":mod"],
+    deps = [
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
+)

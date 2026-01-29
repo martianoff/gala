@@ -1,0 +1,23 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "sum",
+    srcs = [
+        "hash.go",
+        "parser.go",
+        "types.go",
+        "writer.go",
+    ],
+    importpath = "martianoff/gala/internal/depman/sum",
+    visibility = ["//:__subpackages__"],
+)
+
+go_test(
+    name = "sum_test",
+    srcs = ["sum_test.go"],
+    embed = [":sum"],
+    deps = [
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
+)
