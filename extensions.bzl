@@ -1,0 +1,171 @@
+"""
+Bzlmod extension for GALA dependency management.
+
+This extension allows loading GALA dependencies in MODULE.bazel files.
+
+Example usage in MODULE.bazel:
+
+    bazel_dep(name = "gala", version = "1.0.0")
+
+    gala = use_extension("@gala//:extensions.bzl", "gala")
+    gala.from_file(gala_mod = "//:gala.mod")
+    # Or specify dependencies directly:
+    gala.dependency(path = "github.com/example/utils", version = "v1.2.3")
+    use_repo(gala, "com_github_example_utils")
+"""
+
+load(":gala_deps.bzl", "gala_module", "module_path_to_repo_name")
+
+def _gala_extension_impl(module_ctx):
+    """Implementation of the gala Bzlmod extension."""
+    root_direct_deps = []
+    root_direct_dev_deps = []
+
+    for mod in module_ctx.modules:
+        for from_file in mod.tags.from_file:
+            # Read and parse gala.mod file
+            gala_mod_content = module_ctx.read(from_file.gala_mod)
+            deps = _parse_gala_mod_content(gala_mod_content)
+
+            for path, version, is_go in deps:
+                if is_go:
+                    # Skip Go dependencies - they should be handled by go_deps
+                    continue
+
+                repo_name = module_path_to_repo_name(path)
+
+                # Create repository rule for this dependency
+                gala_module(
+                    name = repo_name,
+                    module_path = path,
+                    version = version,
+                )
+
+                if mod.is_root:
+                    root_direct_deps.append(repo_name)
+
+        for dep in mod.tags.dependency:
+            if dep.go:
+                # Skip Go dependencies
+                continue
+
+            repo_name = module_path_to_repo_name(dep.path)
+
+            gala_module(
+                name = repo_name,
+                module_path = dep.path,
+                version = dep.version,
+                sum = dep.sum if hasattr(dep, "sum") else None,
+            )
+
+            if mod.is_root:
+                if dep.dev:
+                    root_direct_dev_deps.append(repo_name)
+                else:
+                    root_direct_deps.append(repo_name)
+
+    return module_ctx.extension_metadata(
+        root_module_direct_deps = root_direct_deps,
+        root_module_direct_dev_deps = root_direct_dev_deps,
+    )
+
+def _parse_gala_mod_content(content):
+    """Parse gala.mod content and return list of (path, version, is_go) tuples."""
+    requires = []
+    in_require_block = False
+
+    for line in content.split("\n"):
+        line = line.strip()
+
+        # Skip empty lines
+        if not line:
+            continue
+
+        # Remove inline comments but check for markers first
+        is_go = "// go" in line
+        is_indirect = "// indirect" in line
+
+        if "//" in line:
+            line = line[:line.index("//")].strip()
+
+        # Handle require block
+        if line == "require (" or line.startswith("require("):
+            in_require_block = True
+            continue
+
+        if line == ")":
+            in_require_block = False
+            continue
+
+        # Single-line require
+        if line.startswith("require ") and "(" not in line:
+            parts = line[8:].split()
+            if len(parts) >= 2:
+                path = parts[0]
+                version = parts[1]
+                requires.append((path, version, is_go))
+            continue
+
+        # Inside require block
+        if in_require_block:
+            parts = line.split()
+            if len(parts) >= 2:
+                path = parts[0]
+                version = parts[1]
+                requires.append((path, version, is_go))
+
+    return requires
+
+_from_file = tag_class(
+    attrs = {
+        "gala_mod": attr.label(
+            mandatory = True,
+            doc = "Label to the gala.mod file",
+        ),
+    },
+    doc = "Load GALA dependencies from a gala.mod file",
+)
+
+_dependency = tag_class(
+    attrs = {
+        "path": attr.string(
+            mandatory = True,
+            doc = "Module path (e.g., github.com/example/utils)",
+        ),
+        "version": attr.string(
+            mandatory = True,
+            doc = "Version (e.g., v1.2.3)",
+        ),
+        "sum": attr.string(
+            doc = "Expected hash from gala.sum",
+        ),
+        "go": attr.bool(
+            default = False,
+            doc = "If true, this is a Go dependency (not GALA)",
+        ),
+        "dev": attr.bool(
+            default = False,
+            doc = "If true, this is a dev-only dependency",
+        ),
+    },
+    doc = "Declare a single GALA dependency",
+)
+
+gala = module_extension(
+    implementation = _gala_extension_impl,
+    tag_classes = {
+        "from_file": _from_file,
+        "dependency": _dependency,
+    },
+    doc = """
+GALA dependency management extension.
+
+Load dependencies from gala.mod:
+    gala = use_extension("@gala//:extensions.bzl", "gala")
+    gala.from_file(gala_mod = "//:gala.mod")
+    use_repo(gala, "com_github_example_utils")
+
+Or declare dependencies directly:
+    gala.dependency(path = "github.com/example/utils", version = "v1.2.3")
+""",
+)

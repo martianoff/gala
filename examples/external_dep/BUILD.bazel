@@ -1,0 +1,25 @@
+load("//:gala.bzl", "gala_binary")
+
+# Example: Using external GALA dependencies
+#
+# 1. Add dependencies to gala.mod:
+#    gala mod add github.com/example/utils@v1.2.3
+#
+# 2. Load dependencies in WORKSPACE:
+#    load("@gala//:gala_deps.bzl", "gala_dependencies")
+#    gala_dependencies()
+#
+# 3. Or with Bzlmod in MODULE.bazel:
+#    gala = use_extension("@gala//:extensions.bzl", "gala")
+#    gala.from_file(gala_mod = "//:gala.mod")
+#    use_repo(gala, "com_github_example_utils")
+#
+# 4. Reference dependencies in BUILD files:
+#    deps = ["@com_github_example_utils//:utils"]
+
+gala_binary(
+    name = "external_dep",
+    src = "main.gala",
+    # Example of using external GALA dependencies:
+    # deps = ["@com_github_example_utils//:utils"],
+)

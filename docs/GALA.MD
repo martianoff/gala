@@ -33,8 +33,9 @@ GALA (Go Alternative LAnguage) is a modern programming language that transpiles 
 11. [GALA Packages](#11-gala-packages)
 12. [Testing](#12-testing)
 13. [Best Practices](#13-best-practices)
-14. [Further Reading](#14-further-reading)
-15. [IDE Support](#15-ide-support)
+14. [Dependency Management](#14-dependency-management)
+15. [Further Reading](#15-further-reading)
+16. [IDE Support](#16-ide-support)
 
 ---
 
@@ -1812,11 +1813,81 @@ val doubled = list.Map((x int) => x * 2)
 - **Prefer `List` for prepend-heavy** workloads (O(1) vs O(n))
 - **Use `arrayBuilder`** when building arrays incrementally
 
-## 14. Further Reading
+## 14. Dependency Management
+
+GALA provides a module system similar to Go modules for managing external dependencies.
+
+### Quick Start
+
+```bash
+# Initialize a new module
+gala mod init github.com/user/project
+
+# Add a GALA dependency
+gala mod add github.com/example/utils@v1.2.3
+
+# Add a Go dependency
+gala mod add github.com/google/uuid@v1.6.0 --go
+```
+
+### gala.mod File
+
+The `gala.mod` file declares your module's dependencies:
+
+```
+module github.com/user/project
+
+gala 1.0
+
+require (
+    github.com/example/utils v1.2.3
+    github.com/google/uuid   v1.6.0 // go
+)
+
+replace github.com/example/utils => ../local-utils
+```
+
+### CLI Commands
+
+| Command | Description |
+|---------|-------------|
+| `gala mod init` | Initialize a new gala.mod file |
+| `gala mod add` | Add a dependency |
+| `gala mod remove` | Remove a dependency |
+| `gala mod update` | Update dependencies |
+| `gala mod tidy` | Sync gala.mod with imports |
+| `gala mod graph` | Print dependency tree |
+| `gala mod verify` | Verify gala.sum hashes |
+
+### Bazel Integration
+
+Load dependencies from `gala.mod` in your WORKSPACE:
+
+```python
+load("@gala//:gala_deps.bzl", "gala_dependencies")
+gala_dependencies()
+```
+
+Then reference them in BUILD files:
+
+```python
+gala_library(
+    name = "mylib",
+    src = "mylib.gala",
+    importpath = "github.com/user/project/mylib",
+    deps = ["@com_github_example_utils//:utils"],
+)
+```
+
+For comprehensive documentation, see [DEPENDENCY_MANAGEMENT.MD](DEPENDENCY_MANAGEMENT.MD).
+
+---
+
+## 15. Further Reading
 
 - [Examples](EXAMPLES.MD) - More examples of GALA code.
 
-## 15. IDE Support
+## 16. IDE Support
 
 ### IntelliJ IDEA
 A basic IntelliJ IDEA plugin is available in `ide/intellij`.

@@ -67,31 +67,66 @@ def gala_transpile(name, src, out = None):
     )
 
 def gala_library(name, src, importpath, deps = [], **kwargs):
+    """
+    Build a GALA library.
+
+    Args:
+        name: Target name
+        src: Source .gala file
+        importpath: Go import path for the library
+        deps: Go/Bazel dependencies (labels), including external GALA modules
+        **kwargs: Additional arguments passed to go_library
+
+    External GALA dependencies are loaded via gala_dependencies() in WORKSPACE
+    or gala.from_file() in MODULE.bazel, then referenced in deps as
+    "@com_github_example_utils//:utils".
+    """
     go_src = name + "_gen.go"
     gala_transpile(
         name = name + "_transpile",
         src = src,
         out = go_src,
     )
+
+    # Combine deps with std
+    all_deps = list(deps) + ["//std"]
+
     go_library(
         name = name,
         srcs = [go_src],
         importpath = importpath,
-        deps = deps + ["//std"],
+        deps = all_deps,
         **kwargs
     )
 
 def gala_binary(name, src, deps = [], **kwargs):
+    """
+    Build a GALA binary.
+
+    Args:
+        name: Target name
+        src: Source .gala file
+        deps: Go/Bazel dependencies (labels), including external GALA modules
+        **kwargs: Additional arguments passed to go_binary
+
+    External GALA dependencies are loaded via gala_dependencies() in WORKSPACE
+    or gala.from_file() in MODULE.bazel, then referenced in deps as
+    "@com_github_example_utils//:utils".
+    """
     go_src = name + "_gen.go"
     gala_transpile(
         name = name + "_transpile",
         src = src,
         out = go_src,
     )
+
+    # Combine deps with std
+    all_deps = list(deps) + ["//std"]
+
     go_binary(
         name = name,
         srcs = [go_src],
-        deps = deps + ["//std"],
+        deps = all_deps,
         **kwargs
     )
 

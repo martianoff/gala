@@ -1,0 +1,19 @@
+package main
+
+// Example: Using external GALA dependencies with Bazel
+//
+// This example demonstrates how to use external GALA modules
+// that are fetched via gala_module repository rule.
+//
+// To use external dependencies:
+// 1. Add gala_module to your WORKSPACE or MODULE.bazel
+// 2. Reference the dependency in your BUILD file with gala_deps
+
+import "fmt"
+
+func main() {
+    // This example would use an external GALA library
+    // when gala_module is properly configured
+    fmt.Println("External GALA dependency example")
+    fmt.Println("See BUILD.bazel for configuration")
+}
