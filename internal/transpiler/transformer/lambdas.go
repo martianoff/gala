@@ -63,8 +63,10 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 			if inferredType := t.inferBlockReturnType(b); inferredType != nil {
 				retType = inferredType
 			} else {
-				// Only add return nil if we couldn't infer a type
-				b.List = append(b.List, &ast.ReturnStmt{Results: []ast.Expr{ast.NewIdent("nil")}})
+				// Only add return nil if we couldn't infer a type AND block doesn't already end with return
+				if !blockEndsWithReturn(b) {
+					b.List = append(b.List, &ast.ReturnStmt{Results: []ast.Expr{ast.NewIdent("nil")}})
+				}
 			}
 		}
 		body = b
@@ -745,6 +747,16 @@ func (t *galaASTTransformer) wrapBlockReturnsInSome(stmts []ast.Stmt) []ast.Stmt
 	}
 
 	return result
+}
+
+// blockEndsWithReturn checks if a block's last statement is a return statement.
+// This is used to avoid adding duplicate return statements.
+func blockEndsWithReturn(block *ast.BlockStmt) bool {
+	if block == nil || len(block.List) == 0 {
+		return false
+	}
+	_, ok := block.List[len(block.List)-1].(*ast.ReturnStmt)
+	return ok
 }
 
 // isGenericMethodName checks if a method is marked as generic for a given type name

@@ -24,6 +24,32 @@ func TestFunctions(t *testing.T) {
 		expected string
 	}{
 		{
+			name: "Lambda with explicit return nil should not duplicate return",
+			input: `package main
+
+import . "martianoff/gala/std"
+
+func test() {
+    var arr = EmptyArray[int]()
+    arr.ForEach((x int) => {
+        println(x)
+        return nil
+    })
+}`,
+			expected: `package main
+
+import . "martianoff/gala/std"
+
+func test() {
+	var arr = EmptyArray[int]()
+	arr.ForEach(func(x int) any {
+		println(x)
+		return nil
+	})
+}
+`,
+		},
+		{
 			name: "Standard Go-style function",
 			input: `package main
 
