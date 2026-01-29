@@ -423,3 +423,12 @@ If migrating from a Go project:
 3. **Use tidy regularly**: Run `gala mod tidy` after changing imports
 4. **Pin versions**: Use exact versions in production, constraints in libraries
 5. **Separate Go deps**: Mark Go dependencies with `// go` for clarity
+
+---
+
+## Example Projects
+
+For complete working examples of GALA dependency management, see:
+
+- **[gala_demo_pkg_import_bazel](https://github.com/martianoff/gala_demo_pkg_import_bazel)** - Example project demonstrating GALA dependency management with Bazel integration
+- **[gala_demo_pkg_import](https://github.com/martianoff/gala_demo_pkg_import)** - Example project demonstrating GALA dependency management without Bazel
