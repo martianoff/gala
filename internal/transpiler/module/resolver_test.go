@@ -101,3 +101,79 @@ func TestPackageNotFoundError(t *testing.T) {
 	err := &PackageNotFoundError{ImportPath: "some/path"}
 	assert.Equal(t, "package not found: some/path", err.Error())
 }
+
+func TestResolver_HasGalaMod(t *testing.T) {
+	// Create a temp directory with gala.mod
+	tempDir, err := os.MkdirTemp("", "resolver_galamod_test")
+	require.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	// Create go.mod
+	goModContent := "module test/project\n\ngo 1.21\n"
+	err = os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte(goModContent), 0644)
+	require.NoError(t, err)
+
+	// Create gala.mod
+	galaModContent := "module test/project\n\ngala 1.0\n"
+	err = os.WriteFile(filepath.Join(tempDir, "gala.mod"), []byte(galaModContent), 0644)
+	require.NoError(t, err)
+
+	// Change to temp directory for the test
+	originalWd, err := os.Getwd()
+	require.NoError(t, err)
+	defer os.Chdir(originalWd)
+	err = os.Chdir(tempDir)
+	require.NoError(t, err)
+
+	resolver := NewResolver(nil)
+	assert.True(t, resolver.HasGalaMod())
+	assert.NotNil(t, resolver.GalaMod())
+	assert.Equal(t, "test/project", resolver.GalaMod().Module.Path)
+}
+
+func TestResolver_ReplaceDirective_LocalPath(t *testing.T) {
+	// Create a temp directory structure
+	tempDir, err := os.MkdirTemp("", "resolver_replace_test")
+	require.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	// Create project directory
+	projectDir := filepath.Join(tempDir, "project")
+	err = os.MkdirAll(projectDir, 0755)
+	require.NoError(t, err)
+
+	// Create local replacement package
+	localPkgDir := filepath.Join(tempDir, "local-utils")
+	err = os.MkdirAll(localPkgDir, 0755)
+	require.NoError(t, err)
+
+	// Create go.mod in project
+	goModContent := "module test/project\n\ngo 1.21\n"
+	err = os.WriteFile(filepath.Join(projectDir, "go.mod"), []byte(goModContent), 0644)
+	require.NoError(t, err)
+
+	// Create gala.mod with replace directive
+	galaModContent := `module test/project
+
+gala 1.0
+
+replace github.com/example/utils => ../local-utils
+`
+	err = os.WriteFile(filepath.Join(projectDir, "gala.mod"), []byte(galaModContent), 0644)
+	require.NoError(t, err)
+
+	// Change to project directory
+	originalWd, err := os.Getwd()
+	require.NoError(t, err)
+	defer os.Chdir(originalWd)
+	err = os.Chdir(projectDir)
+	require.NoError(t, err)
+
+	resolver := NewResolver(nil)
+	require.True(t, resolver.HasGalaMod())
+
+	// Should resolve to local path
+	path, err := resolver.ResolvePackagePath("github.com/example/utils")
+	require.NoError(t, err)
+	assert.Equal(t, localPkgDir, filepath.Clean(path))
+}

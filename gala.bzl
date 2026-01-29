@@ -61,7 +61,7 @@ def gala_transpile(name, src, out = None):
         name = name,
         srcs = [src, "//:all_gala_sources"],
         outs = [out],
-        cmd = "$(location //cmd/gala) -input $(location %s) -output $@ -search ." % src,
+        cmd = "$(location //cmd/gala) --input $(location %s) --output $@ --search ." % src,
         tools = ["//cmd/gala"],
         visibility = ["//visibility:public"],
     )

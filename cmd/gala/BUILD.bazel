@@ -5,12 +5,7 @@ go_library(
     srcs = ["main.go"],
     importpath = "martianoff/gala/cmd/gala",
     visibility = ["//visibility:private"],
-    deps = [
-        "//internal/transpiler",
-        "//internal/transpiler/analyzer",
-        "//internal/transpiler/generator",
-        "//internal/transpiler/transformer",
-    ],
+    deps = ["//cmd/gala/commands"],
 )
 
 go_binary(

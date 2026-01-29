@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"martianoff/gala/internal/depman/mod"
 )
 
 // Resolver handles module root discovery and package path resolution.
@@ -16,25 +18,55 @@ import (
 //	resolver := NewResolver(searchPaths)
 //	fsPath, err := resolver.ResolvePackagePath("martianoff/gala/std")
 type Resolver struct {
-	moduleRoot  string   // Filesystem path to module root (where go.mod is located)
-	moduleName  string   // Module name from go.mod (e.g., "martianoff/gala")
-	searchPaths []string // Fallback search paths when module resolution fails
+	moduleRoot  string    // Filesystem path to module root (where go.mod is located)
+	moduleName  string    // Module name from go.mod (e.g., "martianoff/gala")
+	searchPaths []string  // Fallback search paths when module resolution fails
+	galaMod     *mod.File // Parsed gala.mod file (if present)
+	galaModPath string    // Path to gala.mod file
 }
 
-// NewResolver creates a Resolver by searching for go.mod.
+// NewResolver creates a Resolver by searching for go.mod and gala.mod.
 // It first tries the current working directory, then falls back to searchPaths.
 //
 // The resolver will:
 // 1. Walk up from cwd looking for go.mod
 // 2. If not found, try each search path
 // 3. Extract module name from go.mod when found
+// 4. Load gala.mod if present (for replace directives)
 func NewResolver(searchPaths []string) *Resolver {
 	moduleRoot, moduleName := findModuleRootFromCwdOrPaths(searchPaths)
-	return &Resolver{
+	r := &Resolver{
 		moduleRoot:  moduleRoot,
 		moduleName:  moduleName,
 		searchPaths: searchPaths,
 	}
+
+	// Try to load gala.mod if module root was found
+	if moduleRoot != "" {
+		r.loadGalaMod(moduleRoot)
+	}
+
+	return r
+}
+
+// loadGalaMod attempts to load gala.mod from the given directory.
+func (r *Resolver) loadGalaMod(dir string) {
+	galaModPath := filepath.Join(dir, "gala.mod")
+	galaMod, err := mod.ParseFile(galaModPath)
+	if err == nil {
+		r.galaMod = galaMod
+		r.galaModPath = galaModPath
+	}
+}
+
+// GalaMod returns the parsed gala.mod file, or nil if not present.
+func (r *Resolver) GalaMod() *mod.File {
+	return r.galaMod
+}
+
+// HasGalaMod returns true if a gala.mod file was found.
+func (r *Resolver) HasGalaMod() bool {
+	return r.galaMod != nil
 }
 
 // ModuleRoot returns the filesystem path to the module root directory.
@@ -52,6 +84,7 @@ func (r *Resolver) ModuleName() string {
 // ResolvePackagePath converts an import path to a filesystem path.
 //
 // Resolution strategy:
+// 0. Check replace directives in gala.mod
 // 1. If import path starts with module name, resolve relative to module root
 // 2. If import path is a simple name (no slashes), try as subdir of module root
 // 3. Fall back to search paths
@@ -61,6 +94,15 @@ func (r *Resolver) ModuleName() string {
 //   - "std" with moduleRoot set -> "{moduleRoot}/std"
 //   - "external/pkg" -> tries each search path
 func (r *Resolver) ResolvePackagePath(importPath string) (string, error) {
+	// Strategy 0: Check replace directives in gala.mod
+	if r.galaMod != nil {
+		if replaced := r.applyReplace(importPath); replaced != "" {
+			if isValidPackageDir(replaced) {
+				return replaced, nil
+			}
+		}
+	}
+
 	// Strategy 1: Module-relative resolution
 	if r.moduleRoot != "" && r.moduleName != "" {
 		if strings.HasPrefix(importPath, r.moduleName+"/") {
@@ -90,6 +132,39 @@ func (r *Resolver) ResolvePackagePath(importPath string) (string, error) {
 	}
 
 	return "", &PackageNotFoundError{ImportPath: importPath}
+}
+
+// applyReplace checks if the import path matches any replace directive
+// and returns the replacement path. Returns empty string if no match.
+func (r *Resolver) applyReplace(importPath string) string {
+	if r.galaMod == nil {
+		return ""
+	}
+
+	for _, rep := range r.galaMod.Replace {
+		// Check for exact match or prefix match
+		if rep.Old.Path == importPath ||
+			(rep.Old.Version == "" && strings.HasPrefix(importPath, rep.Old.Path+"/")) {
+
+			newPath := rep.New.Path
+
+			// Handle prefix replacement
+			if strings.HasPrefix(importPath, rep.Old.Path+"/") {
+				suffix := strings.TrimPrefix(importPath, rep.Old.Path)
+				newPath = rep.New.Path + suffix
+			}
+
+			// Handle local paths (relative to gala.mod location)
+			if rep.New.IsLocal() {
+				galaModDir := filepath.Dir(r.galaModPath)
+				newPath = filepath.Join(galaModDir, newPath)
+			}
+
+			return newPath
+		}
+	}
+
+	return ""
 }
 
 // PackageNotFoundError is returned when a package cannot be resolved.

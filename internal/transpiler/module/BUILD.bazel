@@ -5,6 +5,7 @@ go_library(
     srcs = ["resolver.go"],
     importpath = "martianoff/gala/internal/transpiler/module",
     visibility = ["//:__subpackages__"],
+    deps = ["//internal/depman/mod"],
 )
 
 go_test(

@@ -1,0 +1,22 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "commands",
+    srcs = [
+        "mod.go",
+        "mod_init.go",
+        "root.go",
+        "transpile.go",
+        "version.go",
+    ],
+    importpath = "martianoff/gala/cmd/gala/commands",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//internal/depman/mod",
+        "//internal/transpiler",
+        "//internal/transpiler/analyzer",
+        "//internal/transpiler/generator",
+        "//internal/transpiler/transformer",
+        "@com_github_spf13_cobra//:cobra",
+    ],
+)
