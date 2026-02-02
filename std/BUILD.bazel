@@ -2,14 +2,17 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 load("//:gala.bzl", "gala_bootstrap_transpile", "gala_go_test")
 
 exports_files([
-    "option.gala",
-    "immutable.gala",
-    "tuple.gala",
-    "either.gala",
-    "iterable.gala",
-    "try.gala",
-    "errors.gala",
     "constptr.gala",
+    "either.gala",
+    "errors.gala",
+    "hashable.gala",
+    "immutable.gala",
+    "iterable.gala",
+    "option.gala",
+    "ordered.gala",
+    "seq.gala",
+    "try.gala",
+    "tuple.gala",
     # Go source files for stdlib embedding
     "types.go",
     "interfaces.go",
