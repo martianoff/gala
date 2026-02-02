@@ -44,6 +44,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Needed for git describe
 
       - name: Setup Bazel
         uses: bazel-contrib/setup-bazel@0.14.0
@@ -52,8 +54,40 @@ jobs:
           disk-cache: ${{ github.workflow }}
           repository-cache: true
 
-      - name: Build binary
-        run: bazel build //cmd/gala:gala --platforms=${{ matrix.platform }}
+      - name: Make workspace status script executable (Unix)
+        if: matrix.os != 'windows'
+        run: chmod +x tools/workspace_status.sh
+
+      - name: Build binary (Unix)
+        if: matrix.os != 'windows'
+        env:
+          GALA_VERSION: ${{ github.event.release.tag_name }}
+        run: |
+          bazel build //cmd/gala:gala \
+            --platforms=${{ matrix.platform }} \
+            --stamp \
+            --workspace_status_command=tools/workspace_status.sh
+
+      - name: Build binary (Windows)
+        if: matrix.os == 'windows'
+        env:
+          GALA_VERSION: ${{ github.event.release.tag_name }}
+        shell: pwsh
+        run: |
+          # Create a PowerShell workspace status script
+          $version = $env:GALA_VERSION
+          if (-not $version) { $version = "dev" }
+          $commit = git rev-parse HEAD
+          $date = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+
+          $statusScript = @"
+          echo STABLE_GALA_VERSION $version
+          echo STABLE_GIT_COMMIT $commit
+          echo STABLE_BUILD_DATE $date
+          "@
+          Set-Content -Path "tools/workspace_status.cmd" -Value "@echo off`necho STABLE_GALA_VERSION $version`necho STABLE_GIT_COMMIT $commit`necho STABLE_BUILD_DATE $date"
+
+          bazel build //cmd/gala:gala --platforms=${{ matrix.platform }} --stamp --workspace_status_command=tools/workspace_status.cmd
 
       - name: Prepare binary (Unix)
         if: matrix.os != 'windows'

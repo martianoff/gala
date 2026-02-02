@@ -12,4 +12,9 @@ go_binary(
     name = "gala",
     embed = [":gala_lib"],
     visibility = ["//visibility:public"],
+    x_defs = {
+        "martianoff/gala/cmd/gala/commands.Version": "{STABLE_GALA_VERSION}",
+        "martianoff/gala/cmd/gala/commands.GitCommit": "{STABLE_GIT_COMMIT}",
+        "martianoff/gala/cmd/gala/commands.BuildDate": "{STABLE_BUILD_DATE}",
+    },
 )
