@@ -32,3 +32,25 @@ http_jar(
     sha256 = "bc13a9c57a8dd7d5196888211e5ede657cb64a3ce968608697e4f668251a8487",
     urls = ["https://www.antlr.org/download/antlr-4.13.1-complete.jar"],
 )
+
+# Gradle distribution for IntelliJ plugin build
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "gradle_bin",
+    build_file_content = """
+filegroup(
+    name = "bin",
+    srcs = ["bin/gradle", "bin/gradle.bat"],
+    visibility = ["//visibility:public"],
+)
+filegroup(
+    name = "all_files",
+    srcs = glob(["**"]),
+    visibility = ["//visibility:public"],
+)
+""",
+    sha256 = "9d926787066a081739e8200858338b4a69e837c3a821a33aca9db09dd4a41026",
+    strip_prefix = "gradle-8.5",
+    urls = ["https://services.gradle.org/distributions/gradle-8.5-bin.zip"],
+)

@@ -1,5 +1,11 @@
 # This tells Bazel how to interact with the version control system
 common --enable_bzlmod
-common --enable_workspace
+common --noenable_workspace
 build --java_runtime_version=remotejdk_17 --enable_runfiles
+
+# Platform-specific workspace status command for version stamping
+build:windows --workspace_status_command=tools/workspace_status.cmd
+build:linux --workspace_status_command=tools/workspace_status.sh
+build:macos --workspace_status_command=tools/workspace_status.sh
+
 #startup --windows_enable_symlinks

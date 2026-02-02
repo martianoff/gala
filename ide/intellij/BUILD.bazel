@@ -10,10 +10,13 @@ genrule(
     outs = ["gala-intellij-plugin.zip"],
     cmd = """
         export JAVA_HOME=$$(pwd)/$$(echo $(JAVA) | sed 's|/bin/java.exe$$||')
-        export GRADLE_HOME=$$(pwd)/external/gradle_bin
+
+        # Find gradle_bin location from the input files (bzlmod compatible)
+        GRADLE_BIN=$$(dirname $$(dirname $$(echo '$(locations @gradle_bin//:all_files)' | tr ' ' '\\n' | grep 'bin/gradle$$' | head -1)))
+        export GRADLE_HOME=$$(pwd)/$$GRADLE_BIN
 
         # Run gradle from the external repository
-        ./external/gradle_bin/bin/gradle -p ide/intellij buildPlugin --no-daemon
+        $$GRADLE_HOME/bin/gradle -p ide/intellij buildPlugin --no-daemon
 
         cp ide/intellij/build/distributions/*.zip $@
     """,
