@@ -64,10 +64,10 @@ def _parse_go_mod_requires(content):
 def _go_module_to_bazel_label(module_path):
     """Convert a Go module path to a Bazel repository label.
 
-    Uses the canonical gazelle repository name format for Bzlmod compatibility.
+    Uses the canonical Gazelle go_deps repository name format for Bzlmod.
     Example: github.com/google/uuid -> @@gazelle++go_deps+com_github_google_uuid//:uuid
     """
-    # Convert module path to repository name (gazelle format)
+    # Convert module path to repository name
     # Replace special characters and reverse domain
     name = module_path.replace(".", "_").replace("/", "_").replace("-", "_")
     parts = name.split("_")
@@ -80,7 +80,7 @@ def _go_module_to_bazel_label(module_path):
     # The target name is typically the last part of the module path
     target_name = module_path.split("/")[-1]
 
-    # Use canonical gazelle repo name for Bzlmod compatibility
+    # Use canonical Gazelle go_deps repo name for Bzlmod compatibility
     return "@@gazelle++go_deps+" + repo_name + "//:" + target_name
 
 def _gala_module_impl(repository_ctx):

@@ -100,6 +100,7 @@ std/option.go
 .gradle
 **/build/
 !src/**/build/
+!internal/build/
 
 # Ignore Gradle GUI config
 gradle-app.setting

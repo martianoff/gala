@@ -45,8 +45,8 @@ genrule(
 go_library(
     name = "stdlib",
     srcs = [
+        "embedded_gen.go",
         "stdlib.go",
-        ":generate_embedded",
     ],
     importpath = "martianoff/gala/internal/stdlib",
     visibility = ["//visibility:public"],

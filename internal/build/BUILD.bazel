@@ -1,0 +1,21 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "build",
+    srcs = [
+        "builder.go",
+        "config.go",
+        "gomod.go",
+        "workspace.go",
+    ],
+    importpath = "martianoff/gala/internal/build",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//internal/depman/mod",
+        "//internal/stdlib",
+        "//internal/transpiler",
+        "//internal/transpiler/analyzer",
+        "//internal/transpiler/generator",
+        "//internal/transpiler/transformer",
+    ],
+)

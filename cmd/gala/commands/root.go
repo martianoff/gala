@@ -15,16 +15,22 @@ var rootCmd = &cobra.Command{
 	Long: `GALA is a functional programming language that transpiles to Go.
 
 This tool provides:
+  - Build and run capabilities (no go.mod needed in project)
   - Transpilation of GALA source files to Go
   - Dependency management (gala mod)
-  - Build and run capabilities
 
 Usage:
-  gala [file.gala]              Transpile a GALA file (shorthand)
-  gala -i file.gala -o out.go   Transpile with explicit input/output
-  gala transpile [file.gala]    Transpile explicitly
+  gala build                    Build project to binary
+  gala run                      Build and run project
+  gala build -o myapp           Build with custom output name
   gala mod init                 Initialize gala.mod
-  gala version                  Print version`,
+  gala mod add <pkg>@<version>  Add a dependency
+  gala mod tidy                 Tidy dependencies
+  gala clean                    Clean build workspace
+  gala version                  Print version
+
+Legacy transpilation (creates files in project directory):
+  gala transpile --local main.gala    Transpile to local directory`,
 	// Accept any arguments - we'll handle .gala files
 	Args: cobra.ArbitraryArgs,
 	// Disable unknown command errors for backwards compatibility
@@ -67,6 +73,9 @@ func init() {
 	rootCmd.AddCommand(transpileCmd)
 	rootCmd.AddCommand(modCmd)
 	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(buildCmd)
+	rootCmd.AddCommand(runCmd)
+	rootCmd.AddCommand(cleanCmd)
 
 	// Add global flags that mirror transpile flags for backward compatibility
 	rootCmd.Flags().StringVarP(&transpileInput, "input", "i", "", "Path to the input .gala file")

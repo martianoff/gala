@@ -1,6 +1,9 @@
 load("@gazelle//:def.bzl", "gazelle")
 
-exports_files(["go.mod"], visibility = ["//visibility:public"])
+exports_files(
+    ["go.mod"],
+    visibility = ["//visibility:public"],
+)
 
 # gazelle:prefix martianoff/gala
 gazelle(
