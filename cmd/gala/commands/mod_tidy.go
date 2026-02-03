@@ -39,6 +39,9 @@ func runModTidy(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
+	// Update GALA version to current version
+	galaMod.Gala = Version
+
 	// Scan source files for imports
 	imports, err := scanImports(".")
 	if err != nil {
