@@ -1,0 +1,46 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+)
+
+// Issue: Lambda return type inference fails when:
+// 1. Lambda return type should be a struct defined in the same file
+// 2. The struct is generic with the same type parameter as the containing function
+// This mimics the stream.Suspend -> lazyStream pattern
+
+// Best practice: Use Option[T] instead of nil for optional values in immutable fields
+type Node[T any] struct {
+    value T
+    next func() Option[Node[T]]  // immutable, returns None at end of list
+}
+
+func (n Node[T]) GetValue() Option[T] = Some[T](n.value)
+func (n Node[T]) GetNext() Option[Node[T]] = n.next()
+
+// Takes thunks returning Node[T] - similar to lazyStream taking func() Stream[T]
+func createNode[T any](headThunk func() Option[T], tailThunk func() Option[Node[T]]) Node[T] {
+    return Node[T](
+        value = headThunk().GetOrElse(*new(T)),
+        next = tailThunk,
+    )
+}
+
+// This mimics Suspend: lambda return types should be Option[T] and Node[T]
+func wrapNode[T any](thunk func() Node[T]) Node[T] {
+    return createNode[T](
+        () => thunk().GetValue(),  // Should be func() Option[T], not func() any
+        () => thunk().GetNext(),   // Should be func() Option[Node[T]]
+    )
+}
+
+func main() {
+    // Build list: 42 -> 0 -> 0 -> None
+    val end = Node[int](value = 0, next = () => None[Node[int]]())
+    val middle = Node[int](value = 0, next = () => Some(end))
+    val baseNode = Node[int](value = 42, next = () => Some(middle))
+
+    val wrapped = wrapNode[int](() => baseNode)
+    fmt.Printf("result: %d\n", wrapped.value)
+}

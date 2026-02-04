@@ -38,6 +38,7 @@ filegroup(
         "//std:seq.gala",
         "//std:try.gala",
         "//std:tuple.gala",
+        "//stream:stream.gala",
     ],
     visibility = ["//visibility:public"],
 )

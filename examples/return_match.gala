@@ -1,0 +1,49 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+)
+
+// Test return with match expression (simple variable)
+func describe(opt Option[int]) string {
+    return opt match {
+        case Some(n) => fmt.Sprintf("got %d", n)
+        case _ => "nothing"
+    }
+}
+
+// Container struct for testing field access match (concrete type)
+type IntContainer struct {
+    value Option[int]
+}
+
+// Test val assignment with match on field access
+func (c IntContainer) describeValue() string {
+    val result = c.value match {
+        case Some(v) => fmt.Sprintf("has value: %d", v)
+        case _ => "empty"
+    }
+    return result
+}
+
+// Test return with match on field access
+func (c IntContainer) describeValueDirect() string {
+    return c.value match {
+        case Some(v) => fmt.Sprintf("has value: %d", v)
+        case _ => "empty"
+    }
+}
+
+func main() {
+    fmt.Println(describe(Some(42)))
+    fmt.Println(describe(None[int]()))
+
+    val c1 = IntContainer(value = Some(100))
+    val c2 = IntContainer(value = None[int]())
+
+    fmt.Println(c1.describeValue())
+    fmt.Println(c2.describeValue())
+    fmt.Println(c1.describeValueDirect())
+    fmt.Println(c2.describeValueDirect())
+}

@@ -129,8 +129,7 @@ unaryExpr
     ;
 
 postfixExpr
-    : primaryExpr postfixSuffix*
-    | primaryExpr 'match' '{' caseClause+ '}'
+    : primaryExpr postfixSuffix* ('match' '{' caseClause+ '}')?
     ;
 
 postfixSuffix
@@ -140,14 +139,14 @@ postfixSuffix
     ;
 
 primaryExpr
-    : primary
-    | lambdaExpression
+    : lambdaExpression     // Must come before 'primary' to handle () => ... vs ()
+    | primary
     | ifExpression
     | partialFunctionLiteral
     ;
 
 partialFunctionLiteral: '{' caseClause+ '}';
-argumentList: argument (',' argument)*;
+argumentList: argument (',' argument)* ','?;  // Allow trailing comma for multiline formatting
 argument: (identifier '=')? pattern;
 
 primary

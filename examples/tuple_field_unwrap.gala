@@ -1,0 +1,35 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+)
+
+// Issue: Tuple field auto-unwrapping fails when:
+// 1. Inside a generic function with type parameters T and S
+// 2. Tuple type is Tuple[T, S] with the SAME type parameters
+// 3. Accessing pair.V1 should return T, not Immutable[T]
+
+// This mimics the stream.Unfold pattern
+func unfoldOnce[T any, S any](seed S, f func(S) Option[Tuple[T, S]]) Option[T] {
+    val result = f(seed)
+    if result.IsDefined() {
+        val pair = result.Get()
+        // pair.V1 should be T, not Immutable[T]
+        return Some[T](pair.V1)
+    }
+    return None[T]()
+}
+
+func main() {
+    // f returns Some(Tuple(42, "next")) for seed "start"
+    val f = (s string) => {
+        if s == "start" {
+            return Some[Tuple[int, string]](Tuple[int, string](V1 = 42, V2 = "next"))
+        }
+        return None[Tuple[int, string]]()
+    }
+
+    val result = unfoldOnce[int, string]("start", f)
+    fmt.Printf("result: %d\n", result.GetOrElse(0))
+}

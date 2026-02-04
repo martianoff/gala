@@ -373,3 +373,34 @@ gala_test(
     src = "pointer_semantics.gala",
     expected = "pointer_semantics.out",
 )
+
+gala_test(
+    name = "func_struct_field",
+    src = "func_struct_field.gala",
+    expected = "func_struct_field.out",
+)
+
+gala_test(
+    name = "match_generic_inference",
+    src = "match_generic_inference.gala",
+    expected = "match_generic_inference.out",
+)
+
+# Transpiler issue repro tests
+gala_test(
+    name = "tuple_field_unwrap",
+    src = "tuple_field_unwrap.gala",
+    expected = "tuple_field_unwrap.out",
+)
+
+gala_test(
+    name = "lambda_return_generic",
+    src = "lambda_return_generic.gala",
+    expected = "lambda_return_generic.out",
+)
+
+gala_test(
+    name = "return_match",
+    src = "return_match.gala",
+    expected = "return_match.out",
+)

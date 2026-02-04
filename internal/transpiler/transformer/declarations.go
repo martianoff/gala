@@ -272,15 +272,24 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		receiverType := t.resolveType(t.getBaseTypeName(recvTypeExpr))
 		receiverBaseName := receiverType.BaseName()
 
+		// For non-pointer receivers, try to preserve type parameters for lambda type inference
+		// Pointer receivers keep using the simple type to avoid field lookup issues
+		typeForScope := receiverType
+		if _, isPointer := recvTypeExpr.(*ast.StarExpr); !isPointer {
+			if fullType := t.exprToType(recvTypeExpr); !fullType.IsNil() {
+				typeForScope = fullType
+			}
+		}
+
 		isVal := recvCtx.VAL() != nil
 		if isVal {
-			t.addVal(recvName, receiverType)
+			t.addVal(recvName, typeForScope)
 			recvTypeExpr = &ast.IndexExpr{
 				X:     t.stdIdent(transpiler.TypeImmutable),
 				Index: recvTypeExpr,
 			}
 		} else {
-			t.addVar(recvName, receiverType)
+			t.addVar(recvName, typeForScope)
 		}
 
 		receiver = &ast.FieldList{
@@ -317,6 +326,29 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 	funcType, err := t.transformSignature(ctx.Signature().(*grammar.SignatureContext), typeParams)
 	if err != nil {
 		return nil, err
+	}
+
+	// Register function parameters in scope for type inference
+	// This is necessary so that type inference works correctly when using parameters.
+	sigCtx := ctx.Signature().(*grammar.SignatureContext)
+	paramsCtx := sigCtx.Parameters().(*grammar.ParametersContext)
+	if paramsCtx.ParameterList() != nil {
+		for _, pCtx := range paramsCtx.ParameterList().(*grammar.ParameterListContext).AllParameter() {
+			param := pCtx.(*grammar.ParameterContext)
+			paramName := param.Identifier().GetText()
+			var paramType transpiler.Type = transpiler.NilType{}
+			if param.Type_() != nil {
+				typeExpr, _ := t.transformType(param.Type_())
+				paramType = t.exprToType(typeExpr)
+			}
+			// Check if parameter has 'val' modifier - if so, it needs .Get() unwrapping
+			// Otherwise, treat as var (no .Get() unwrapping needed)
+			if param.VAL() != nil {
+				t.addVal(paramName, paramType)
+			} else {
+				t.addVar(paramName, paramType)
+			}
+		}
 	}
 
 	// Check if method return type would cause Go instantiation cycle

@@ -506,6 +506,36 @@ func (t *galaASTTransformer) exprToType(expr ast.Expr) transpiler.Type {
 		return transpiler.PointerType{Elem: t.exprToType(e.X)}
 	case *ast.ArrayType:
 		return transpiler.ArrayType{Elem: t.exprToType(e.Elt)}
+	case *ast.FuncType:
+		// Handle function types like func(S) Option[Tuple[T, S]]
+		var params []transpiler.Type
+		var results []transpiler.Type
+		if e.Params != nil {
+			for _, field := range e.Params.List {
+				paramType := t.exprToType(field.Type)
+				// If there are multiple names, repeat the type for each
+				if len(field.Names) > 0 {
+					for range field.Names {
+						params = append(params, paramType)
+					}
+				} else {
+					params = append(params, paramType)
+				}
+			}
+		}
+		if e.Results != nil {
+			for _, field := range e.Results.List {
+				resultType := t.exprToType(field.Type)
+				if len(field.Names) > 0 {
+					for range field.Names {
+						results = append(results, resultType)
+					}
+				} else {
+					results = append(results, resultType)
+				}
+			}
+		}
+		return transpiler.FuncType{Params: params, Results: results}
 	}
 	return transpiler.NilType{}
 }

@@ -42,11 +42,11 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 		return nil, galaerr.NewSemanticError("cannot infer type of matched expression. Please add explicit type annotation to the variable being matched")
 	}
 
-	// If the matched type contains unresolved type parameters (like T, U),
-	// fall back to 'any' to avoid generating invalid Go code
-	if t.typeHasUnresolvedParams(matchedType) {
-		matchedType = transpiler.BasicType{Name: "any"}
-	}
+	// Note: We intentionally do NOT replace types with unresolved type parameters (like Box[T])
+	// with 'any'. Keeping the original parametric type allows:
+	// 1. Correct extractor type inference (e.g., Full[T].Unapply(Box[T]) can unify with Box[T])
+	// 2. Valid Go code generation when inside a generic function where T is in scope
+	// The generated IIFE will use the parametric type, which is valid Go.
 
 	t.pushScope()
 	defer t.popScope()
@@ -121,11 +121,8 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 		return nil, err
 	}
 
-	// If the result type contains unresolved type parameters (like T, U),
-	// fall back to 'any' to avoid generating invalid Go code
-	if t.typeHasUnresolvedParams(resultType) {
-		resultType = transpiler.BasicType{Name: "any"}
-	}
+	// Note: We keep result types with unresolved type parameters (like Box[U])
+	// because they are valid Go when inside a generic function where U is in scope.
 
 	t.needsStdImport = true
 	// Transpile to IIFE: func(obj T) R { ... }(expr)

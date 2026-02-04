@@ -162,12 +162,40 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 				// Get the type of x in x.Get()
 				var xType transpiler.Type
 				var isVal bool
+				var isImmutableFieldAccess bool
 				if id, ok := sel.X.(*ast.Ident); ok {
 					if t.isVal(id.Name) {
 						isVal = true
 						// For vals, the stored type is already the inner type (e.g., Array[int] not Immutable[Array[int]])
 						// So x.Get() returns the stored type directly
 						xType = t.getType(id.Name)
+					}
+				}
+				// Check if sel.X is an immutable struct field access (e.g., c.value where value is an immutable field)
+				// In this case, the .Get() is unwrapping the implicit Immutable wrapper,
+				// and xType from getExprTypeNameManual will be the declared field type (e.g., Option[int])
+				// which is what we should return (not the result of calling Option.Get() which would be int)
+				if innerSel, ok := sel.X.(*ast.SelectorExpr); ok {
+					// Get the type of the receiver (e.g., for c.value, get type of c)
+					recvType := t.getExprTypeNameManual(innerSel.X)
+					if !recvType.IsNil() {
+						baseRecvTypeName := recvType.String()
+						if idx := strings.Index(baseRecvTypeName, "["); idx != -1 {
+							baseRecvTypeName = baseRecvTypeName[:idx]
+						}
+						baseRecvTypeName = strings.TrimPrefix(baseRecvTypeName, "*")
+						resolvedTypeName := t.resolveStructTypeName(baseRecvTypeName)
+						// Check if this field is immutable
+						if fields, ok := t.structFields[resolvedTypeName]; ok {
+							for i, f := range fields {
+								if f == innerSel.Sel.Name {
+									if i < len(t.structImmutFields[resolvedTypeName]) && t.structImmutFields[resolvedTypeName][i] {
+										isImmutableFieldAccess = true
+									}
+									break
+								}
+							}
+						}
 					}
 				}
 				if xType == nil || xType.IsNil() {
@@ -177,10 +205,14 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 				if isVal && xType != nil && !xType.IsNil() {
 					return xType
 				}
+				// For immutable field access, the .Get() unwraps the implicit Immutable wrapper
+				// Return the field's declared type directly
+				if isImmutableFieldAccess && xType != nil && !xType.IsNil() {
+					return xType
+				}
 				xBaseName := xType.BaseName()
-				// For Immutable[T].Get() and Option[T].Get(), return the inner type T
-				if xBaseName == transpiler.TypeImmutable || xBaseName == "std."+transpiler.TypeImmutable ||
-					xBaseName == transpiler.TypeOption || xBaseName == "std."+transpiler.TypeOption {
+				// For Immutable[T].Get(), return the inner type T
+				if xBaseName == transpiler.TypeImmutable || xBaseName == "std."+transpiler.TypeImmutable {
 					if gen, ok := xType.(transpiler.GenericType); ok && len(gen.Params) > 0 {
 						return gen.Params[0]
 					}
@@ -490,6 +522,14 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 					}
 				}
 				return fMeta.ReturnType
+			}
+
+			// Handle calling a variable of function type (e.g., thunk() where thunk is func() Stream[T])
+			varType := t.getType(id.Name)
+			if !varType.IsNil() {
+				if funcType, ok := varType.(transpiler.FuncType); ok && len(funcType.Results) > 0 {
+					return funcType.Results[0]
+				}
 			}
 
 			// Handle generic methods transformed to standalone functions: Receiver_Method

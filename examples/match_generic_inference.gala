@@ -1,0 +1,20 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+)
+
+// Minimal repro: using std Option extractor inside a generic function
+func mapOption[T any, U any](o Option[T], f func(T) U) Option[U] {
+    return o match {
+        case Some(v) => Some[U](f(v))
+        case _ => None[U]()
+    }
+}
+
+func main() {
+    val o1 = Some[int](10)
+    val o2 = mapOption[int, string](o1, (x int) => fmt.Sprintf("num=%d", x))
+    fmt.Printf("mapOption: %s\n", o2.Get())
+}

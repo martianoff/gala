@@ -9,6 +9,7 @@ import (
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
+	"martianoff/gala/internal/transpiler/registry"
 )
 
 // This file contains postfix operation and field access transformation logic extracted from expressions.go
@@ -54,19 +55,23 @@ func (t *galaASTTransformer) applyPostfixSuffix(base ast.Expr, suffix *grammar.P
 		// Member access: . identifier
 		selName := suffix.Identifier().GetText()
 
-		// Don't unwrap if we're accessing Immutable's own fields/methods
+		// Get the type of the base expression BEFORE any unwrapping.
+		// This type is preserved through unwrapping (unwrapping just makes the value accessible,
+		// but doesn't change its logical type in the GALA type system).
 		xType := t.getExprTypeName(base)
 		isImmutable := t.isImmutableType(xType)
 
+		// Don't unwrap if we're accessing Immutable's own fields/methods
 		if !isImmutable || (selName != "Get" && selName != "value") {
 			base = t.unwrapImmutable(base)
 		}
 
 		// Also unwrap ConstPtr to access fields (but not ConstPtr's own methods)
-		xType = t.getExprTypeName(base)
 		isConstPtr := t.isConstPtrType(xType)
 		if isConstPtr && selName != "Deref" && selName != "IsNil" && selName != "ptr" {
 			base = t.unwrapConstPtr(base)
+			// After ConstPtr unwrap, re-evaluate type since we're accessing the underlying type
+			xType = t.getExprTypeName(base)
 		}
 
 		selExpr := &ast.SelectorExpr{
@@ -74,8 +79,9 @@ func (t *galaASTTransformer) applyPostfixSuffix(base ast.Expr, suffix *grammar.P
 			Sel: ast.NewIdent(selName),
 		}
 
-		// Re-evaluate type after potential unwrap
-		xType = t.getExprTypeName(base)
+		// Use the preserved type for field access checks.
+		// After unwrapping Immutable, the type remains the same (the inner type).
+		// We only re-evaluate if we unwrapped ConstPtr (which changes the type).
 		xTypeName := xType.String()
 		baseTypeName := xTypeName
 		if idx := strings.Index(xTypeName, "["); idx != -1 {
@@ -83,6 +89,8 @@ func (t *galaASTTransformer) applyPostfixSuffix(base ast.Expr, suffix *grammar.P
 		}
 		baseTypeName = strings.TrimPrefix(baseTypeName, "*")
 
+		// Check if the field is immutable and should be auto-unwrapped
+		// First try structFields (populated for current package types)
 		resolvedTypeName := t.resolveStructTypeName(baseTypeName)
 		if fields, ok := t.structFields[resolvedTypeName]; ok {
 			for i, f := range fields {
@@ -97,6 +105,63 @@ func (t *galaASTTransformer) applyPostfixSuffix(base ast.Expr, suffix *grammar.P
 					}
 					break
 				}
+			}
+		}
+
+		// Fallback: check typeMetas for struct field info (handles cross-package types like std.Tuple)
+		// This is the primary lookup for imported types
+		// Try multiple name variations to handle package prefix differences
+		var typeMeta *transpiler.TypeMetadata
+		typeMeta = t.getTypeMeta(baseTypeName)
+		if typeMeta == nil {
+			// Try with std prefix if not already prefixed
+			if !strings.HasPrefix(baseTypeName, registry.StdPackageName+".") {
+				typeMeta = t.getTypeMeta(registry.StdPackageName + "." + baseTypeName)
+			}
+		}
+		if typeMeta != nil {
+			for i, f := range typeMeta.FieldNames {
+				if f == selName {
+					if i < len(typeMeta.ImmutFlags) && typeMeta.ImmutFlags[i] {
+						return &ast.CallExpr{
+							Fun: &ast.SelectorExpr{
+								X:   selExpr,
+								Sel: ast.NewIdent("Get"),
+							},
+						}, nil
+					}
+					break
+				}
+			}
+		}
+
+		// Also check structFieldTypes for immutable field types
+		// The field might have been registered without ImmutFlags but with Immutable wrapper in type
+		if fieldTypes, ok := t.structFieldTypes[resolvedTypeName]; ok {
+			if fieldType, ok := fieldTypes[selName]; ok && t.isImmutableType(fieldType) {
+				return &ast.CallExpr{
+					Fun: &ast.SelectorExpr{
+						X:   selExpr,
+						Sel: ast.NewIdent("Get"),
+					},
+				}, nil
+			}
+		}
+
+		// Final fallback: if this is a known std struct type, check if fields should be immutable by default
+		// All GALA struct fields are immutable by default unless marked with 'var'
+		// For std library types like Tuple, Option, etc., all fields are immutable
+		if registry.IsStdType(baseTypeName) || registry.IsStdType(strings.TrimPrefix(baseTypeName, registry.StdPackageName+".")) {
+			// For std types, check if the resulting field type is Immutable
+			// The generated Go struct has Immutable-wrapped fields
+			fieldType := t.getExprTypeName(selExpr)
+			if t.isImmutableType(fieldType) {
+				return &ast.CallExpr{
+					Fun: &ast.SelectorExpr{
+						X:   selExpr,
+						Sel: ast.NewIdent("Get"),
+					},
+				}, nil
 			}
 		}
 
@@ -198,9 +263,9 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		return nil, galaerr.NewSemanticError("cannot infer type of matched expression")
 	}
 
-	if t.typeHasUnresolvedParams(matchedType) {
-		matchedType = transpiler.BasicType{Name: "any"}
-	}
+	// Note: We intentionally do NOT replace types with unresolved type parameters (like Box[T])
+	// with 'any'. Keeping the original parametric type allows correct extractor type inference
+	// and valid Go code generation when inside a generic function where type parameters are in scope.
 
 	t.pushScope()
 	defer t.popScope()
@@ -266,9 +331,8 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		return nil, err
 	}
 
-	if t.typeHasUnresolvedParams(resultType) {
-		resultType = transpiler.BasicType{Name: "any"}
-	}
+	// Note: We keep result types with unresolved type parameters because they are valid Go
+	// when inside a generic function where the type parameters are in scope.
 
 	if len(clauses) == 0 && len(defaultBody) == 0 {
 		return nil, galaerr.NewSemanticError("match expression must have at least one case")

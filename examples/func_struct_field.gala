@@ -1,0 +1,59 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+)
+
+// Test: Function types as struct fields with trailing commas
+// This tests the grammar fix for trailing commas in argument lists
+
+type Thunk[T any] struct {
+    compute func() T
+    name string
+}
+
+type LazyOption[T any] struct {
+    thunk func() Option[T]
+    evaluated bool
+    cached Option[T]
+}
+
+// Single field with lambda
+func simpleThunk() Thunk[int] {
+    return Thunk[int](compute = () => 42, name = "simple")
+}
+
+// Multiple fields with trailing comma (multiline style)
+func lazyNone[T any]() LazyOption[T] {
+    return LazyOption[T](
+        thunk = () => None[T](),
+        evaluated = false,
+        cached = None[T](),
+    )
+}
+
+// Lambda returning generic function call
+func lazySome[T any](v T) LazyOption[T] {
+    return LazyOption[T](
+        thunk = () => Some[T](v),
+        evaluated = false,
+        cached = None[T](),
+    )
+}
+
+func main() {
+    // Test simple thunk
+    val t = simpleThunk()
+    fmt.Printf("thunk result: %d\n", t.compute())
+    fmt.Printf("thunk name: %s\n", t.name)
+
+    // Test lazy none
+    val ln = lazyNone[int]()
+    fmt.Printf("lazy none evaluated: %v\n", ln.evaluated)
+    fmt.Printf("lazy none thunk(): %v\n", ln.thunk())
+
+    // Test lazy some
+    val ls = lazySome[string]("hello")
+    fmt.Printf("lazy some thunk(): %v\n", ls.thunk())
+}

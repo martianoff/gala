@@ -1753,6 +1753,39 @@ bazel test //mypackage:mycode_test
 - **Prefer `val` over `var`** - Use mutable variables only when necessary (accumulators, loop counters)
 - **Use `Copy()` for updates** - Instead of mutating, create modified copies: `person.Copy(age = 31)`
 
+### Optional Values in Immutable Fields
+Use `Option[T]` instead of nil for fields that may have no value. This follows the Scala idiom where null is avoided entirely.
+
+```gala
+// BAD: Using nil with mutable field
+type Node[T any] struct {
+    value T
+    var next func() Node[T]  // mutable just to allow nil
+}
+val end = Node[int](value = 0, next = nil)
+
+// GOOD: Using Option with immutable field
+type Node[T any] struct {
+    value T
+    next func() Option[Node[T]]  // immutable, returns None at end
+}
+val end = Node[int](value = 0, next = () => None[Node[T]]())
+```
+
+**Why this matters:**
+- `val` (immutable) means "this value never changes" - it says nothing about whether the value can represent "nothing"
+- `Option[T]` explicitly models "may or may not have a value" in the type system
+- Avoids the billion-dollar mistake of null pointer errors
+- Enables pattern matching: `case Some(node) =>` vs `case None =>`
+
+**Common patterns:**
+| Use Case | Pattern |
+|----------|---------|
+| Optional field | `val data Option[T]` |
+| Lazy computation that may fail | `val compute func() Option[T]` |
+| Optional callback | `val callback Option[func(T)]` |
+| Linked list termination | `next func() Option[Node[T]]` |
+
 ### Functional Patterns
 - **Use FoldLeft for accumulation** - Replace `var acc; for { acc = f(acc, x) }` with `FoldLeft[T](init, f)`
 - **Keep loops for short-circuit ops** - `Exists`, `ForAll`, `Find`, `Contains` benefit from early exit
@@ -1886,6 +1919,9 @@ For comprehensive documentation, see [DEPENDENCY_MANAGEMENT.MD](DEPENDENCY_MANAG
 ## 15. Further Reading
 
 - [Examples](EXAMPLES.MD) - More examples of GALA code.
+- [Stream](STREAM.MD) - Lazy, potentially infinite sequences.
+- [Immutable Collections](IMMUTABLE_COLLECTIONS.MD) - Array, List, HashMap, HashSet, TreeSet.
+- [Mutable Collections](MUTABLE_COLLECTIONS.MD) - Mutable collection types.
 
 ## 16. IDE Support
 

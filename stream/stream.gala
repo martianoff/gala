@@ -1,0 +1,586 @@
+package stream
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+    . "martianoff/gala/collection_immutable"
+)
+
+// Stream is a lazy, potentially infinite sequence.
+// Elements are computed on demand using thunks (functions).
+// All transformation operations (Map, Filter, Take, etc.) are lazy.
+// Terminal operations (ToArray, ForEach, Fold, etc.) force evaluation.
+type Stream[T any] struct {
+    headThunk func() Option[T]
+    tailThunk func() Stream[T]
+    evaluated bool
+    cachedHead Option[T]
+    var cachedTail *Stream[T]
+}
+
+// empty returns an empty stream.
+func empty[T any]() Stream[T] {
+    var nilTail *Stream[T] = nil
+    return Stream[T](
+        headThunk = () => None[T](),
+        tailThunk = () => empty[T](),
+        evaluated = true,
+        cachedHead = None[T](),
+        cachedTail = nilTail,
+    )
+}
+
+// cons creates a stream with head and lazy tail.
+func cons[T any](head T, tail func() Stream[T]) Stream[T] {
+    var nilTail *Stream[T] = nil
+    return Stream[T](
+        headThunk = () => Some[T](head),
+        tailThunk = tail,
+        evaluated = false,
+        cachedHead = Some[T](head),
+        cachedTail = nilTail,
+    )
+}
+
+// lazyStream creates a fully lazy stream where even the head is not computed until accessed.
+func lazyStream[T any](headThunk func() Option[T], tailThunk func() Stream[T]) Stream[T] {
+    var nilTail *Stream[T] = nil
+    return Stream[T](
+        headThunk = headThunk,
+        tailThunk = tailThunk,
+        evaluated = false,
+        cachedHead = None[T](),
+        cachedTail = nilTail,
+    )
+}
+
+// Empty returns an empty Stream.
+func Empty[T any]() Stream[T] = empty[T]()
+
+// Of creates a Stream from variadic arguments.
+func Of[T any](elements ...T) Stream[T] {
+    if len(elements) == 0 {
+        return empty[T]()
+    }
+    return fromSliceIndex[T](elements, 0)
+}
+
+// fromSliceIndex creates a stream starting at index i.
+func fromSliceIndex[T any](elements []T, i int) Stream[T] {
+    if i >= len(elements) {
+        return empty[T]()
+    }
+    val head = elements[i]
+    val nextIndex = i + 1
+    return cons[T](head, () => fromSliceIndex[T](elements, nextIndex))
+}
+
+// NewCons creates a stream with a head element and a lazy tail.
+// Note: Named NewCons to avoid conflict with collection_immutable.Cons dot import
+// and the StreamCons pattern matching extractor type.
+func NewCons[T any](head T, tail func() Stream[T]) Stream[T] = cons[T](head, tail)
+
+// FromArray creates a Stream from an Array.
+func FromArray[T any](arr Array[T]) Stream[T] {
+    if arr.IsEmpty() {
+        return empty[T]()
+    }
+    return fromArrayIndex[T](arr, 0)
+}
+
+func fromArrayIndex[T any](arr Array[T], i int) Stream[T] {
+    if i >= arr.Length() {
+        return empty[T]()
+    }
+    val head = arr.Get(i)
+    val nextIndex = i + 1
+    return cons[T](head, () => fromArrayIndex[T](arr, nextIndex))
+}
+
+// FromList creates a Stream from a List.
+func FromList[T any](list List[T]) Stream[T] {
+    if list.IsEmpty() {
+        return empty[T]()
+    }
+    return cons[T](list.Head(), () => FromList[T](list.Tail()))
+}
+
+// Continually creates an infinite stream by repeatedly evaluating a function.
+func Continually[T any](elem func() T) Stream[T] = cons[T](elem(), () => Continually[T](elem))
+
+// Iterate creates an infinite stream by iterating a function from a seed.
+// Stream: seed, f(seed), f(f(seed)), ...
+func Iterate[T any](seed T, f func(T) T) Stream[T] = cons[T](seed, () => Iterate[T](f(seed), f))
+
+// Unfold creates a stream by repeatedly applying a function.
+// The function returns None to terminate or Some((value, nextState)) to continue.
+func Unfold[T any, S any](seed S, f func(S) Option[Tuple[T, S]]) Stream[T] {
+    return f(seed) match {
+        case Some(pair) => cons[T](pair.V1, () => Unfold[T, S](pair.V2, f))
+        case _ => empty[T]()
+    }
+}
+
+// Range creates a finite stream of integers from start (inclusive) to end (exclusive).
+func Range(start int, end int) Stream[int] {
+    if start >= end {
+        return empty[int]()
+    }
+    return cons[int](start, () => Range(start + 1, end))
+}
+
+// RangeStep creates a stream from start to end with given step.
+func RangeStep(start int, end int, step int) Stream[int] {
+    if step > 0 && start >= end {
+        return empty[int]()
+    }
+    if step < 0 && start <= end {
+        return empty[int]()
+    }
+    if step == 0 {
+        return empty[int]()
+    }
+    return cons[int](start, () => RangeStep(start + step, end, step))
+}
+
+// From creates an infinite stream of integers starting from n.
+func From(n int) Stream[int] = cons[int](n, () => From(n + 1))
+
+// Repeat creates an infinite stream that repeats the given element.
+func Repeat[T any](elem T) Stream[T] = cons[T](elem, () => Repeat[T](elem))
+
+// Head returns the first element of the stream wrapped in Option.
+func (s Stream[T]) Head() Option[T] {
+    if s.cachedHead.IsDefined() {
+        return s.cachedHead
+    }
+    return s.headThunk()
+}
+
+// HeadOrElse returns the first element or a default value.
+func (s Stream[T]) HeadOrElse(defaultVal T) T = s.Head().GetOrElse(defaultVal)
+
+// Tail returns the tail of the stream.
+func (s Stream[T]) Tail() Stream[T] {
+    if s.cachedTail != nil {
+        return *s.cachedTail
+    }
+    // Using var because we need a mutable reference for the pointer assignment
+    var tail = s.tailThunk()
+    s.cachedTail = &tail
+    return tail
+}
+
+// IsEmpty returns true if the stream is empty.
+func (s Stream[T]) IsEmpty() bool = s.Head().IsEmpty()
+
+// NonEmpty returns true if the stream is not empty.
+func (s Stream[T]) NonEmpty() bool = s.Head().IsDefined()
+
+// Map transforms each element using a function (lazy).
+func (s Stream[T]) Map[U any](f func(T) U) Stream[U] {
+    val head = s.Head()
+    if head.IsDefined() {
+        return cons[U](f(head.Get()), () => s.Tail().Map[U](f))
+    }
+    return empty[U]()
+}
+
+// FlatMap applies a function returning a stream to each element and flattens (lazy).
+func (s Stream[T]) FlatMap[U any](f func(T) Stream[U]) Stream[U] {
+    val head = s.Head()
+    if head.IsDefined() {
+        return f(head.Get()).Concat(Suspend[U](() => s.Tail().FlatMap[U](f)))
+    }
+    return empty[U]()
+}
+
+// Suspend creates a stream that is entirely lazy - even existence of elements is deferred.
+func Suspend[T any](thunk func() Stream[T]) Stream[T] {
+    return lazyStream[T](
+        () => thunk().Head(),
+        () => thunk().Tail(),
+    )
+}
+
+// Filter keeps only elements satisfying the predicate (lazy).
+func (s Stream[T]) Filter(p func(T) bool) Stream[T] {
+    val head = s.Head()
+    if head.IsDefined() {
+        val h = head.Get()
+        if p(h) {
+            return cons[T](h, () => s.Tail().Filter(p))
+        }
+        return s.Tail().Filter(p)
+    }
+    return empty[T]()
+}
+
+// FilterNot keeps only elements not satisfying the predicate (lazy).
+func (s Stream[T]) FilterNot(p func(T) bool) Stream[T] = s.Filter((x T) => !p(x))
+
+// Take returns a stream of the first n elements (lazy).
+func (s Stream[T]) Take(n int) Stream[T] {
+    if n <= 0 {
+        return empty[T]()
+    }
+    val head = s.Head()
+    if head.IsDefined() {
+        return cons[T](head.Get(), () => s.Tail().Take(n - 1))
+    }
+    return empty[T]()
+}
+
+// TakeWhile returns elements while predicate holds (lazy).
+func (s Stream[T]) TakeWhile(p func(T) bool) Stream[T] {
+    val head = s.Head()
+    if head.IsDefined() {
+        val h = head.Get()
+        if p(h) {
+            return cons[T](h, () => s.Tail().TakeWhile(p))
+        }
+        return empty[T]()
+    }
+    return empty[T]()
+}
+
+// Drop skips the first n elements (lazy).
+func (s Stream[T]) Drop(n int) Stream[T] {
+    if n <= 0 {
+        return s
+    }
+    val head = s.Head()
+    if head.IsDefined() {
+        return s.Tail().Drop(n - 1)
+    }
+    return empty[T]()
+}
+
+// DropWhile skips elements while predicate holds (lazy).
+func (s Stream[T]) DropWhile(p func(T) bool) Stream[T] {
+    val head = s.Head()
+    if head.IsDefined() {
+        if p(head.Get()) {
+            return s.Tail().DropWhile(p)
+        }
+        return s
+    }
+    return empty[T]()
+}
+
+// Zip combines two streams into a stream of tuples (lazy).
+func (s Stream[T]) Zip[U any](other Stream[U]) Stream[Tuple[T, U]] {
+    val h1 = s.Head()
+    val h2 = other.Head()
+    if h1.IsDefined() && h2.IsDefined() {
+        return cons[Tuple[T, U]]((h1.Get(), h2.Get()), () => s.Tail().Zip[U](other.Tail()))
+    }
+    return empty[Tuple[T, U]]()
+}
+
+// ZipWithIndex pairs each element with its index (lazy).
+func (s Stream[T]) ZipWithIndex() Stream[Tuple[T, int]] = zipWithIndexFrom[T](s, 0)
+
+func zipWithIndexFrom[T any](s Stream[T], idx int) Stream[Tuple[T, int]] {
+    val head = s.Head()
+    if head.IsDefined() {
+        return cons[Tuple[T, int]]((head.Get(), idx), () => zipWithIndexFrom[T](s.Tail(), idx + 1))
+    }
+    return empty[Tuple[T, int]]()
+}
+
+// Concat appends another stream (lazy).
+func (s Stream[T]) Concat(other Stream[T]) Stream[T] {
+    val head = s.Head()
+    if head.IsDefined() {
+        return cons[T](head.Get(), () => s.Tail().Concat(other))
+    }
+    return other
+}
+
+// Append adds an element at the end (lazy, but must traverse to end).
+func (s Stream[T]) Append(elem T) Stream[T] = s.Concat(Of[T](elem))
+
+// Prepend adds an element at the beginning (lazy, O(1)).
+func (s Stream[T]) Prepend(elem T) Stream[T] = cons[T](elem, () => s)
+
+// Intersperse inserts a separator between elements (lazy).
+func (s Stream[T]) Intersperse(sep T) Stream[T] {
+    val head = s.Head()
+    if head.IsDefined() {
+        val h = head.Get()
+        val tail = s.Tail()
+        if tail.IsEmpty() {
+            return cons[T](h, () => empty[T]())
+        }
+        return cons[T](h, () => cons[T](sep, () => tail.Intersperse(sep)))
+    }
+    return empty[T]()
+}
+
+// Distinct removes duplicates (lazy, uses O(n) memory for seen elements).
+func (s Stream[T]) Distinct() Stream[T] = distinctHelper[T](s, EmptyHashSet[any]())
+
+func distinctHelper[T any](s Stream[T], seen HashSet[any]) Stream[T] {
+    val head = s.Head()
+    if head.IsDefined() {
+        val h = head.Get()
+        val key any = h
+        if seen.Contains(key) {
+            return distinctHelper[T](s.Tail(), seen)
+        }
+        return cons[T](h, () => distinctHelper[T](s.Tail(), seen.Add(key)))
+    }
+    return empty[T]()
+}
+
+// ToArray forces evaluation and collects elements into an Array.
+// WARNING: Will not terminate for infinite streams!
+func (s Stream[T]) ToArray() Array[T] {
+    var result = EmptyArray[T]()
+    var current = s
+    for current.NonEmpty() {
+        result = result.Append(current.Head().Get())
+        current = current.Tail()
+    }
+    return result
+}
+
+// ToList forces evaluation and collects elements into a List.
+// WARNING: Will not terminate for infinite streams!
+func (s Stream[T]) ToList() List[T] {
+    var result = EmptyList[T]()
+    var current = s
+    for current.NonEmpty() {
+        result = result.Append(current.Head().Get())
+        current = current.Tail()
+    }
+    return result
+}
+
+// ForEach applies a function to each element for side effects.
+// WARNING: Will not terminate for infinite streams!
+func (s Stream[T]) ForEach(f func(T)) {
+    var current = s
+    for current.NonEmpty() {
+        f(current.Head().Get())
+        current = current.Tail()
+    }
+}
+
+// Fold reduces the stream from left using initial value and binary function.
+// WARNING: Will not terminate for infinite streams!
+func (s Stream[T]) Fold[U any](zero U, f func(U, T) U) U {
+    var acc = zero
+    var current = s
+    for current.NonEmpty() {
+        acc = f(acc, current.Head().Get())
+        current = current.Tail()
+    }
+    return acc
+}
+
+// Reduce reduces the stream using a binary function, starting with first element.
+// Returns None for empty stream.
+// WARNING: Will not terminate for infinite streams!
+func (s Stream[T]) Reduce(f func(T, T) T) Option[T] {
+    val head = s.Head()
+    if head.IsDefined() {
+        return Some[T](s.Tail().Fold[T](head.Get(), f))
+    }
+    return None[T]()
+}
+
+// Find returns the first element satisfying the predicate.
+func (s Stream[T]) Find(p func(T) bool) Option[T] {
+    var current = s
+    for current.NonEmpty() {
+        val h = current.Head().Get()
+        if p(h) {
+            return Some[T](h)
+        }
+        current = current.Tail()
+    }
+    return None[T]()
+}
+
+// Exists returns true if any element satisfies the predicate.
+func (s Stream[T]) Exists(p func(T) bool) bool = s.Find(p).IsDefined()
+
+// ForAll returns true if all elements satisfy the predicate.
+// WARNING: Will not terminate for infinite streams if all elements match!
+func (s Stream[T]) ForAll(p func(T) bool) bool {
+    var current = s
+    for current.NonEmpty() {
+        if !p(current.Head().Get()) {
+            return false
+        }
+        current = current.Tail()
+    }
+    return true
+}
+
+// Count returns the number of elements.
+// WARNING: Will not terminate for infinite streams!
+func (s Stream[T]) Count() int {
+    var count = 0
+    var current = s
+    for current.NonEmpty() {
+        count = count + 1
+        current = current.Tail()
+    }
+    return count
+}
+
+// Length is an alias for Count.
+func (s Stream[T]) Length() int = s.Count()
+
+// Size is an alias for Count.
+func (s Stream[T]) Size() int = s.Count()
+
+// MkString joins elements into a string with separator.
+// WARNING: Will not terminate for infinite streams!
+func (s Stream[T]) MkString(sep string) string {
+    var result = ""
+    var first = true
+    var current = s
+    for current.NonEmpty() {
+        if !first {
+            result = result + sep
+        }
+        result = result + fmt.Sprintf("%v", current.Head().Get())
+        first = false
+        current = current.Tail()
+    }
+    return result
+}
+
+// String returns a string representation.
+// Only shows first few elements to avoid infinite output.
+func (s Stream[T]) String() string {
+    val preview = s.Take(10).ToArray()
+    var result = "Stream("
+    for i := 0; i < preview.Length(); i++ {
+        if i > 0 {
+            result = result + ", "
+        }
+        result = result + fmt.Sprintf("%v", preview.Get(i))
+    }
+    if s.Drop(10).NonEmpty() {
+        result = result + ", ..."
+    }
+    return result + ")"
+}
+
+// Get returns the element at index n.
+func (s Stream[T]) Get(n int) Option[T] {
+    if n < 0 {
+        return None[T]()
+    }
+    return s.Drop(n).Head()
+}
+
+// Slice returns elements from start (inclusive) to end (exclusive).
+func (s Stream[T]) Slice(start int, end int) Stream[T] = s.Drop(start).Take(end - start)
+
+// Collect applies a partial function and keeps defined results (lazy).
+func (s Stream[T]) Collect[U any](pf func(T) Option[U]) Stream[U] {
+    val head = s.Head()
+    if head.IsDefined() {
+        val result = pf(head.Get())
+        if result.IsDefined() {
+            return cons[U](result.Get(), () => s.Tail().Collect[U](pf))
+        }
+        return s.Tail().Collect[U](pf)
+    }
+    return empty[U]()
+}
+
+// Scan produces a stream of cumulative results (lazy).
+func (s Stream[T]) Scan[U any](zero U, f func(U, T) U) Stream[U] {
+    return cons[U](zero, () => scanHelper[T, U](s, zero, f))
+}
+
+func scanHelper[T any, U any](s Stream[T], acc U, f func(U, T) U) Stream[U] {
+    val head = s.Head()
+    if head.IsDefined() {
+        val newAcc = f(acc, head.Get())
+        return cons[U](newAcc, () => scanHelper[T, U](s.Tail(), newAcc, f))
+    }
+    return empty[U]()
+}
+
+// SplitAt splits the stream at position n.
+// Returns (first n elements, rest).
+func (s Stream[T]) SplitAt(n int) Tuple[Stream[T], Stream[T]] = (s.Take(n), s.Drop(n))
+
+// Span splits at first element not satisfying predicate.
+func (s Stream[T]) Span(p func(T) bool) Tuple[Stream[T], Stream[T]] = (s.TakeWhile(p), s.DropWhile(p))
+
+// Partition splits into elements satisfying and not satisfying predicate.
+func (s Stream[T]) Partition(p func(T) bool) Tuple[Stream[T], Stream[T]] = (s.Filter(p), s.FilterNot(p))
+
+// Contains checks if element is in the stream.
+// WARNING: May not terminate for infinite streams if element is not found!
+func (s Stream[T]) Contains(elem T) bool {
+    var current = s
+    for current.NonEmpty() {
+        if Equal(current.Head().Get(), elem) {
+            return true
+        }
+        current = current.Tail()
+    }
+    return false
+}
+
+// IndexOf returns the index of the first occurrence of elem, or -1 if not found.
+// WARNING: May not terminate for infinite streams if element is not found!
+func (s Stream[T]) IndexOf(elem T) int {
+    var idx = 0
+    var current = s
+    for current.NonEmpty() {
+        if Equal(current.Head().Get(), elem) {
+            return idx
+        }
+        idx = idx + 1
+        current = current.Tail()
+    }
+    return -1
+}
+
+// IndexWhere returns the index of the first element satisfying predicate.
+// WARNING: May not terminate for infinite streams if no element matches!
+func (s Stream[T]) IndexWhere(p func(T) bool) int {
+    var idx = 0
+    var current = s
+    for current.NonEmpty() {
+        if p(current.Head().Get()) {
+            return idx
+        }
+        idx = idx + 1
+        current = current.Tail()
+    }
+    return -1
+}
+
+// Pattern matching extractors
+
+// StreamCons extracts head and tail from a non-empty stream.
+type StreamCons[T any] struct {}
+
+func (c StreamCons[T]) Unapply(s Stream[T]) Option[Tuple[T, Stream[T]]] {
+    return s.Head() match {
+        case Some(h) => Some[Tuple[T, Stream[T]]]((h, s.Tail()))
+        case _ => None[Tuple[T, Stream[T]]]()
+    }
+}
+
+// StreamNil matches empty streams.
+type StreamNil[T any] struct {}
+
+func (n StreamNil[T]) Unapply(s Stream[T]) Option[bool] {
+    if s.IsEmpty() {
+        return Some[bool](true)
+    }
+    return None[bool]()
+}

@@ -1,0 +1,402 @@
+package main
+
+import (
+    . "martianoff/gala/test"
+    . "martianoff/gala/std"
+    . "martianoff/gala/stream"
+    . "martianoff/gala/collection_immutable"
+)
+
+// Test empty stream
+func TestEmpty(t T) T {
+    val s = Empty[int]()
+    var t1 = IsTrue(t, s.IsEmpty())
+    var t2 = IsFalse(t1, s.NonEmpty())
+    var t3 = Eq[int](t2, s.Count(), 0)
+    return Eq[Option[int]](t3, s.Head(), None[int]())
+}
+
+// Test Of constructor
+func TestOf(t T) T {
+    val s = Of(1, 2, 3)
+    var t1 = IsFalse(t, s.IsEmpty())
+    var t2 = Eq[int](t1, s.Head().GetOrElse(0), 1)
+    var t3 = Eq[int](t2, s.Tail().Head().GetOrElse(0), 2)
+    return Eq[int](t3, s.Tail().Tail().Head().GetOrElse(0), 3)
+}
+
+// Test Cons constructor
+func TestCons(t T) T {
+    val s = NewCons[int](1, () => NewCons[int](2, () => Empty[int]()))
+    var t1 = Eq[int](t, s.Head().GetOrElse(0), 1)
+    return Eq[int](t1, s.Tail().Head().GetOrElse(0), 2)
+}
+
+// Test Range
+func TestRange(t T) T {
+    val s = Range(1, 5)
+    val arr = s.ToArray()
+    var t1 = Eq[int](t, arr.Length(), 4)
+    var t2 = Eq[int](t1, arr.Get(0), 1)
+    var t3 = Eq[int](t2, arr.Get(1), 2)
+    var t4 = Eq[int](t3, arr.Get(2), 3)
+    return Eq[int](t4, arr.Get(3), 4)
+}
+
+// Test RangeStep
+func TestRangeStep(t T) T {
+    val s = RangeStep(0, 10, 2)
+    val arr = s.ToArray()
+    var t1 = Eq[int](t, arr.Length(), 5)
+    var t2 = Eq[int](t1, arr.Get(0), 0)
+    var t3 = Eq[int](t2, arr.Get(1), 2)
+    var t4 = Eq[int](t3, arr.Get(2), 4)
+    return Eq[int](t4, arr.Get(4), 8)
+}
+
+// Test From (infinite stream)
+func TestFrom(t T) T {
+    val s = From(10)
+    val first5 = s.Take(5).ToArray()
+    var t1 = Eq[int](t, first5.Length(), 5)
+    var t2 = Eq[int](t1, first5.Get(0), 10)
+    var t3 = Eq[int](t2, first5.Get(1), 11)
+    return Eq[int](t3, first5.Get(4), 14)
+}
+
+// Test Repeat (infinite stream)
+func TestRepeat(t T) T {
+    val s = Repeat("x")
+    val first3 = s.Take(3).ToArray()
+    var t1 = Eq[int](t, first3.Length(), 3)
+    var t2 = Eq[string](t1, first3.Get(0), "x")
+    return Eq[string](t2, first3.Get(2), "x")
+}
+
+// Test Iterate
+func TestIterate(t T) T {
+    val powers = Iterate[int](1, (x int) => x * 2)
+    val first5 = powers.Take(5).ToArray()
+    var t1 = Eq[int](t, first5.Get(0), 1)
+    var t2 = Eq[int](t1, first5.Get(1), 2)
+    var t3 = Eq[int](t2, first5.Get(2), 4)
+    var t4 = Eq[int](t3, first5.Get(3), 8)
+    return Eq[int](t4, first5.Get(4), 16)
+}
+
+// Test Map
+func TestMap(t T) T {
+    val s = Of(1, 2, 3).Map[int]((x int) => x * 2)
+    val arr = s.ToArray()
+    var t1 = Eq[int](t, arr.Get(0), 2)
+    var t2 = Eq[int](t1, arr.Get(1), 4)
+    return Eq[int](t2, arr.Get(2), 6)
+}
+
+// Test Filter
+func TestFilter(t T) T {
+    val s = Of(1, 2, 3, 4, 5).Filter((x int) => x % 2 == 0)
+    val arr = s.ToArray()
+    var t1 = Eq[int](t, arr.Length(), 2)
+    var t2 = Eq[int](t1, arr.Get(0), 2)
+    return Eq[int](t2, arr.Get(1), 4)
+}
+
+// Test Take
+func TestTake(t T) T {
+    val s = Of(1, 2, 3, 4, 5).Take(3)
+    val arr = s.ToArray()
+    var t1 = Eq[int](t, arr.Length(), 3)
+    var t2 = Eq[int](t1, arr.Get(0), 1)
+    return Eq[int](t2, arr.Get(2), 3)
+}
+
+// Test Drop
+func TestDrop(t T) T {
+    val s = Of(1, 2, 3, 4, 5).Drop(2)
+    val arr = s.ToArray()
+    var t1 = Eq[int](t, arr.Length(), 3)
+    var t2 = Eq[int](t1, arr.Get(0), 3)
+    return Eq[int](t2, arr.Get(2), 5)
+}
+
+// Test TakeWhile
+func TestTakeWhile(t T) T {
+    val s = Of(1, 2, 3, 4, 5).TakeWhile((x int) => x < 4)
+    val arr = s.ToArray()
+    var t1 = Eq[int](t, arr.Length(), 3)
+    return Eq[int](t1, arr.Get(2), 3)
+}
+
+// Test DropWhile
+func TestDropWhile(t T) T {
+    val s = Of(1, 2, 3, 4, 5).DropWhile((x int) => x < 3)
+    val arr = s.ToArray()
+    var t1 = Eq[int](t, arr.Length(), 3)
+    return Eq[int](t1, arr.Get(0), 3)
+}
+
+// Test Zip - just verify basic operation
+func TestZip(t T) T {
+    val s1 = Of(1, 2, 3)
+    val s2 = Of("a", "b", "c")
+    val zipped = s1.Zip[string](s2).ToArray()
+    return Eq[int](t, zipped.Length(), 3)
+}
+
+// Test ZipWithIndex - just verify basic operation
+func TestZipWithIndex(t T) T {
+    val arr = Of("a", "b", "c").ZipWithIndex().ToArray()
+    return Eq[int](t, arr.Length(), 3)
+}
+
+// Test Concat
+func TestConcat(t T) T {
+    val s = Of(1, 2).Concat(Of(3, 4))
+    val arr = s.ToArray()
+    var t1 = Eq[int](t, arr.Length(), 4)
+    var t2 = Eq[int](t1, arr.Get(0), 1)
+    return Eq[int](t2, arr.Get(3), 4)
+}
+
+// Test Fold
+func TestFold(t T) T {
+    val sum = Of(1, 2, 3, 4, 5).Fold[int](0, (acc int, x int) => acc + x)
+    return Eq[int](t, sum, 15)
+}
+
+// Test Reduce
+func TestReduce(t T) T {
+    val product = Of(1, 2, 3, 4).Reduce((a int, b int) => a * b)
+    return Eq[int](t, product.GetOrElse(0), 24)
+}
+
+// Test Find
+func TestFind(t T) T {
+    val found = Of(1, 2, 3, 4, 5).Find((x int) => x > 3)
+    var t1 = IsTrue(t, found.IsDefined())
+    return Eq[int](t1, found.GetOrElse(0), 4)
+}
+
+// Test Exists
+func TestExists(t T) T {
+    var t1 = IsTrue(t, Of(1, 2, 3).Exists((x int) => x == 2))
+    return IsFalse(t1, Of(1, 2, 3).Exists((x int) => x == 5))
+}
+
+// Test ForAll
+func TestForAll(t T) T {
+    var t1 = IsTrue(t, Of(2, 4, 6).ForAll((x int) => x % 2 == 0))
+    return IsFalse(t1, Of(2, 3, 6).ForAll((x int) => x % 2 == 0))
+}
+
+// Test Get
+func TestGet(t T) T {
+    val s = Of(10, 20, 30)
+    var t1 = Eq[int](t, s.Get(0).GetOrElse(0), 10)
+    var t2 = Eq[int](t1, s.Get(2).GetOrElse(0), 30)
+    return IsFalse(t2, s.Get(5).IsDefined())
+}
+
+// Test Slice
+func TestSlice(t T) T {
+    val s = Of(0, 1, 2, 3, 4, 5).Slice(1, 4)
+    val arr = s.ToArray()
+    var t1 = Eq[int](t, arr.Length(), 3)
+    var t2 = Eq[int](t1, arr.Get(0), 1)
+    return Eq[int](t2, arr.Get(2), 3)
+}
+
+// Test Unfold (Fibonacci)
+func TestUnfold(t T) T {
+    val fibs = Unfold[int, Tuple[int, int]](
+        Tuple[int, int](V1 = 0, V2 = 1),
+        (state Tuple[int, int]) => Some(Tuple[int, Tuple[int, int]](
+            V1 = state.V1,
+            V2 = Tuple[int, int](V1 = state.V2, V2 = state.V1 + state.V2),
+        )),
+    )
+    val first8 = fibs.Take(8).ToArray()
+    var t1 = Eq[int](t, first8.Get(0), 0)
+    var t2 = Eq[int](t1, first8.Get(1), 1)
+    var t3 = Eq[int](t2, first8.Get(2), 1)
+    var t4 = Eq[int](t3, first8.Get(3), 2)
+    var t5 = Eq[int](t4, first8.Get(4), 3)
+    var t6 = Eq[int](t5, first8.Get(5), 5)
+    var t7 = Eq[int](t6, first8.Get(6), 8)
+    return Eq[int](t7, first8.Get(7), 13)
+}
+
+// Test Intersperse
+func TestIntersperse(t T) T {
+    val s = Of(1, 2, 3).Intersperse(0)
+    val arr = s.ToArray()
+    var t1 = Eq[int](t, arr.Length(), 5)
+    var t2 = Eq[int](t1, arr.Get(0), 1)
+    var t3 = Eq[int](t2, arr.Get(1), 0)
+    var t4 = Eq[int](t3, arr.Get(2), 2)
+    return Eq[int](t4, arr.Get(3), 0)
+}
+
+// Test Distinct
+func TestDistinct(t T) T {
+    val s = Of(1, 2, 1, 3, 2, 4).Distinct()
+    val arr = s.ToArray()
+    var t1 = Eq[int](t, arr.Length(), 4)
+    var t2 = Eq[int](t1, arr.Get(0), 1)
+    var t3 = Eq[int](t2, arr.Get(1), 2)
+    var t4 = Eq[int](t3, arr.Get(2), 3)
+    return Eq[int](t4, arr.Get(3), 4)
+}
+
+// Test Scan
+func TestScan(t T) T {
+    val s = Of(1, 2, 3).Scan[int](0, (acc int, x int) => acc + x)
+    val arr = s.ToArray()
+    var t1 = Eq[int](t, arr.Length(), 4)
+    var t2 = Eq[int](t1, arr.Get(0), 0)
+    var t3 = Eq[int](t2, arr.Get(1), 1)
+    var t4 = Eq[int](t3, arr.Get(2), 3)
+    return Eq[int](t4, arr.Get(3), 6)
+}
+
+// Test MkString
+func TestMkString(t T) T {
+    val s = Of(1, 2, 3).MkString(", ")
+    return Eq[string](t, s, "1, 2, 3")
+}
+
+// Test Contains
+func TestContains(t T) T {
+    val s = Of(1, 2, 3)
+    var t1 = IsTrue(t, s.Contains(2))
+    return IsFalse(t1, s.Contains(5))
+}
+
+// Test IndexOf
+func TestIndexOf(t T) T {
+    val s = Of(10, 20, 30, 20)
+    var t1 = Eq[int](t, s.IndexOf(20), 1)
+    return Eq[int](t1, s.IndexOf(50), -1)
+}
+
+// Test FromArray
+func TestFromArray(t T) T {
+    val arr = ArrayOf(1, 2, 3)
+    val s = FromArray(arr)
+    val result = s.ToArray()
+    var t1 = Eq[int](t, result.Length(), 3)
+    var t2 = Eq[int](t1, result.Get(0), 1)
+    return Eq[int](t2, result.Get(2), 3)
+}
+
+// Test FromList
+func TestFromList(t T) T {
+    val list = ListOf(1, 2, 3)
+    val s = FromList(list)
+    val result = s.ToArray()
+    var t1 = Eq[int](t, result.Length(), 3)
+    var t2 = Eq[int](t1, result.Get(0), 1)
+    return Eq[int](t2, result.Get(2), 3)
+}
+
+// Test laziness - Map should not be evaluated until forced
+func TestLazinessMap(t T) T {
+    var evaluated = false
+    val s = Of(1, 2, 3).Map[int]((x int) => {
+        evaluated = true
+        return x * 2
+    })
+    // s is created but not evaluated yet
+    // When we access head, only first element is evaluated
+    val first = s.Head()
+    var t1 = IsTrue(t, evaluated)
+    return Eq[int](t1, first.GetOrElse(0), 2)
+}
+
+// Test laziness - infinite stream with Take should work
+func TestLazinessInfinite(t T) T {
+    val naturals = From(1)
+    val firstTen = naturals.Take(10).ToArray()
+    return Eq[int](t, firstTen.Length(), 10)
+}
+
+// Test Prepend
+func TestPrepend(t T) T {
+    val s = Of(2, 3).Prepend(1)
+    val arr = s.ToArray()
+    var t1 = Eq[int](t, arr.Length(), 3)
+    var t2 = Eq[int](t1, arr.Get(0), 1)
+    return Eq[int](t2, arr.Get(2), 3)
+}
+
+// Test pattern matching with StreamCons
+func TestPatternMatchingCons(t T) T {
+    val s = Of(1, 2, 3)
+    val result = s match {
+        case StreamCons(h, tail) => h + tail.Head().GetOrElse(0)
+        case _ => 0
+    }
+    return Eq[int](t, result, 3)
+}
+
+// Test pattern matching with StreamNil
+func TestPatternMatchingNil(t T) T {
+    val s = Empty[int]()
+    val result = s match {
+        case StreamNil() => "empty"
+        case StreamCons(head, tail) => {
+            // Use both head and tail to avoid unused variable errors
+            var _ = head + tail.Count()
+            return "non-empty"
+        }
+        case _ => "unknown"
+    }
+    return Eq[string](t, result, "empty")
+}
+
+// Test SplitAt
+func TestSplitAt(t T) T {
+    val s = Of(1, 2, 3, 4, 5)
+    val parts = s.SplitAt(2)
+    val first = parts.V1.ToArray()
+    val second = parts.V2.ToArray()
+    var t1 = Eq[int](t, first.Length(), 2)
+    var t2 = Eq[int](t1, second.Length(), 3)
+    var t3 = Eq[int](t2, first.Get(1), 2)
+    return Eq[int](t3, second.Get(0), 3)
+}
+
+// Test Span
+func TestSpan(t T) T {
+    val s = Of(1, 2, 3, 4, 5)
+    val parts = s.Span((x int) => x < 3)
+    val first = parts.V1.ToArray()
+    val second = parts.V2.ToArray()
+    var t1 = Eq[int](t, first.Length(), 2)
+    return Eq[int](t1, second.Get(0), 3)
+}
+
+// Test Partition
+func TestPartition(t T) T {
+    val s = Of(1, 2, 3, 4, 5)
+    val parts = s.Partition((x int) => x % 2 == 0)
+    val evens = parts.V1.ToArray()
+    val odds = parts.V2.ToArray()
+    var t1 = Eq[int](t, evens.Length(), 2)
+    var t2 = Eq[int](t1, odds.Length(), 3)
+    var t3 = Eq[int](t2, evens.Get(0), 2)
+    return Eq[int](t3, odds.Get(0), 1)
+}
+
+// Test complex composition
+func TestComplexComposition(t T) T {
+    // Sum of squares of even numbers from 1 to 10
+    val result = From(1)
+        .Take(10)
+        .Filter((x int) => x % 2 == 0)
+        .Map[int]((x int) => x * x)
+        .Fold[int](0, (acc int, x int) => acc + x)
+    // 2^2 + 4^2 + 6^2 + 8^2 + 10^2 = 4 + 16 + 36 + 64 + 100 = 220
+    return Eq[int](t, result, 220)
+}

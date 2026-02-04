@@ -1,0 +1,33 @@
+load("//:gala.bzl", "gala_go_test", "gala_library")
+
+exports_files([
+    "stream.gala",
+])
+
+filegroup(
+    name = "gala_sources",
+    srcs = glob(
+        ["*.gala"],
+        exclude = ["*_test.gala"],
+    ),
+    visibility = ["//visibility:public"],
+)
+
+gala_library(
+    name = "stream",
+    src = "stream.gala",
+    importpath = "martianoff/gala/stream",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//collection_immutable",
+    ],
+)
+
+gala_go_test(
+    name = "stream_test",
+    srcs = ["stream_test.gala"],
+    deps = [
+        ":stream",
+        "//collection_immutable",
+    ],
+)
