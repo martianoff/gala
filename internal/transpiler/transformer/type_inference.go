@@ -879,8 +879,14 @@ func (t *galaASTTransformer) substituteInType(typ transpiler.Type, paramMap map[
 }
 
 // isTupleTypeName checks if a name is exactly a TupleN type name
+// Handles both prefixed (std.Tuple3) and unprefixed (Tuple3) names
 func (t *galaASTTransformer) isTupleTypeName(name string) bool {
-	switch name {
+	// Strip std. prefix if present
+	normalizedName := name
+	if strings.HasPrefix(name, "std.") {
+		normalizedName = name[4:]
+	}
+	switch normalizedName {
 	case transpiler.TypeTuple, transpiler.TypeTuple3, transpiler.TypeTuple4,
 		transpiler.TypeTuple5, transpiler.TypeTuple6, transpiler.TypeTuple7,
 		transpiler.TypeTuple8, transpiler.TypeTuple9, transpiler.TypeTuple10:

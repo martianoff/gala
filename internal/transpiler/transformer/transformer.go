@@ -186,6 +186,7 @@ var _ transpiler.ASTTransformer = (*galaASTTransformer)(nil)
 // Resolution Order (documented and consistent):
 //  1. Exact match
 //  2. If name has package prefix: try replacing prefix with std/current/imported packages
+//     (but NOT for external Go packages like "time", "fmt", etc.)
 //  3. Try current package prefix
 //  4. Try std package prefix
 //  5. Try all explicitly imported packages (non-dot)
@@ -199,10 +200,41 @@ func (t *galaASTTransformer) resolveTypeName(typeName string, exists func(string
 	}
 
 	// 2. If typeName has a package prefix, extract the simple name and try other packages
+	// BUT only if the package prefix is NOT from an external (non-GALA) import
 	if idx := strings.LastIndex(typeName, "."); idx != -1 {
+		pkgPrefix := typeName[:idx]
 		simpleName := typeName[idx+1:]
-		if resolved, found := t.tryResolveSimpleName(simpleName, exists); found {
-			return resolved, true
+
+		// Check if this is an external package (imported Go package like "time", "fmt", etc.)
+		// If so, don't try to resolve the simple name to GALA types - external types
+		// like time.Duration should not be confused with GALA's Duration type
+		isExternalPackage := false
+		for _, entry := range t.importManager.All() {
+			// Get the alias used in code (e.g., "time" for import "time")
+			alias := entry.Alias
+			if alias == "" {
+				// Extract last component from import path (e.g., "time" from "time")
+				if lastSlash := strings.LastIndex(entry.Path, "/"); lastSlash != -1 {
+					alias = entry.Path[lastSlash+1:]
+				} else {
+					alias = entry.Path
+				}
+			}
+			if alias == pkgPrefix && !entry.IsDot {
+				// Check if it's a GALA package by looking at the import path
+				// GALA packages typically have paths containing "/gala/"
+				if !strings.Contains(entry.Path, "/gala/") {
+					isExternalPackage = true
+					break
+				}
+			}
+		}
+
+		// Only try to resolve the simple name if it's not from an external package
+		if !isExternalPackage {
+			if resolved, found := t.tryResolveSimpleName(simpleName, exists); found {
+				return resolved, true
+			}
 		}
 	}
 

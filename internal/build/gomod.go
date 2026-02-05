@@ -29,6 +29,7 @@ var StdlibPackages = []string{
 	"concurrent",
 	"stream",
 	"string_utils",
+	"time_utils",
 }
 
 // StdlibImportPaths maps package names to their import paths.
@@ -40,6 +41,7 @@ var StdlibImportPaths = map[string]string{
 	"concurrent":           "martianoff/gala/concurrent",
 	"stream":               "martianoff/gala/stream",
 	"string_utils":         "martianoff/gala/string_utils",
+	"time_utils":           "martianoff/gala/time_utils",
 }
 
 // GenerateGoMod generates a go.mod file content for the workspace.

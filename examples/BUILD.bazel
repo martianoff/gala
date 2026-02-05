@@ -430,3 +430,10 @@ gala_test(
     src = "std_type_in_lambda.gala",
     expected = "std_type_in_lambda.out",
 )
+
+# Regression test for Tuple pattern match type inference
+gala_test(
+    name = "tuple6_pattern_match",
+    src = "tuple6_pattern_match.gala",
+    expected = "tuple6_pattern_match.out",
+)

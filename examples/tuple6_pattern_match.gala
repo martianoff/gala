@@ -1,0 +1,32 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+)
+
+// Simple struct to test pattern matching
+type Data struct {
+    a int
+    b int
+    c int
+}
+
+// Extractor that returns Tuple3
+type DataExtractor struct {}
+
+func (e DataExtractor) Unapply(d Data) Option[Tuple3[int, int, int]] {
+    return Some((d.a, d.b, d.c))
+}
+
+func main() {
+    val d = Data(a = 1, b = 2, c = 3)
+
+    // Test pattern matching with Tuple3 extractor
+    val result = d match {
+        case DataExtractor(x, y, z) => x + y + z
+        case _ => 0
+    }
+
+    fmt.Println("Result:", result)
+}

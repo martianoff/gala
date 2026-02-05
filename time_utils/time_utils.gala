@@ -1,0 +1,359 @@
+package time_utils
+
+import (
+    "time"
+    . "martianoff/gala/std"
+)
+
+// Duration represents a length of time stored as nanoseconds.
+// All operations return new Duration values (immutable).
+type Duration struct {
+    nanos int64
+}
+
+// Instant represents an instant in time stored as nanoseconds since Unix epoch.
+// All operations return new Instant values (immutable).
+type Instant struct {
+    nanos int64
+}
+
+// Duration constructors
+
+// Nanoseconds creates a Duration from nanoseconds.
+func Nanoseconds(n int64) Duration = Duration(nanos = n)
+
+// Microseconds creates a Duration from microseconds.
+func Microseconds(n int64) Duration = Duration(nanos = n * 1000)
+
+// Milliseconds creates a Duration from milliseconds.
+func Milliseconds(n int64) Duration = Duration(nanos = n * 1000000)
+
+// Seconds creates a Duration from seconds.
+func Seconds(n int64) Duration = Duration(nanos = n * 1000000000)
+
+// Minutes creates a Duration from minutes.
+func Minutes(n int64) Duration = Duration(nanos = n * 60 * 1000000000)
+
+// Hours creates a Duration from hours.
+func Hours(n int64) Duration = Duration(nanos = n * 3600 * 1000000000)
+
+// Days creates a Duration from days.
+func Days(n int64) Duration = Duration(nanos = n * 86400 * 1000000000)
+
+// ZeroDuration returns a zero-length duration.
+func ZeroDuration() Duration = Duration(nanos = int64(0))
+
+// Between calculates the Duration between two Instants.
+func Between(start Instant, end Instant) Duration = Duration(nanos = end.nanos - start.nanos)
+
+// FromGoDuration converts a Go time.Duration to Duration.
+func FromGoDuration(d time.Duration) Duration = Duration(nanos = int64(d))
+
+// Duration operations
+
+// Plus adds two durations.
+func (d Duration) Plus(other Duration) Duration = Duration(nanos = d.nanos + other.nanos)
+
+// Minus subtracts a duration.
+func (d Duration) Minus(other Duration) Duration = Duration(nanos = d.nanos - other.nanos)
+
+// Multiply multiplies by a factor.
+func (d Duration) Multiply(factor int64) Duration = Duration(nanos = d.nanos * factor)
+
+// Divide divides by a divisor.
+func (d Duration) Divide(divisor int64) Duration {
+    if divisor == 0 {
+        return d
+    }
+    return Duration(nanos = d.nanos / divisor)
+}
+
+// Abs returns the absolute value.
+func (d Duration) Abs() Duration {
+    if d.nanos < 0 {
+        return Duration(nanos = -d.nanos)
+    }
+    return d
+}
+
+// Negate returns the negated duration.
+func (d Duration) Negate() Duration = Duration(nanos = -d.nanos)
+
+// IsZero returns true if the duration is zero.
+func (d Duration) IsZero() bool = d.nanos == 0
+
+// IsNegative returns true if the duration is negative.
+func (d Duration) IsNegative() bool = d.nanos < 0
+
+// IsPositive returns true if the duration is positive.
+func (d Duration) IsPositive() bool = d.nanos > 0
+
+// Duration accessors
+
+// ToNanos returns the duration in nanoseconds.
+func (d Duration) ToNanos() int64 = d.nanos
+
+// ToMicros returns the duration in microseconds.
+func (d Duration) ToMicros() int64 = d.nanos / 1000
+
+// ToMillis returns the duration in milliseconds.
+func (d Duration) ToMillis() int64 = d.nanos / 1000000
+
+// ToSeconds returns the duration in seconds.
+func (d Duration) ToSeconds() int64 = d.nanos / 1000000000
+
+// ToMinutes returns the duration in minutes.
+func (d Duration) ToMinutes() int64 = d.nanos / (60 * 1000000000)
+
+// ToHours returns the duration in hours.
+func (d Duration) ToHours() int64 = d.nanos / (3600 * 1000000000)
+
+// ToDays returns the duration in days.
+func (d Duration) ToDays() int64 = d.nanos / (86400 * 1000000000)
+
+// ToGoDuration converts to Go time.Duration.
+func (d Duration) ToGoDuration() time.Duration = time.Duration(d.nanos)
+
+// Compare compares two durations.
+// Returns -1 if d < other, 0 if d == other, 1 if d > other.
+func (d Duration) Compare(other Duration) int {
+    if d.nanos < other.nanos {
+        return -1
+    }
+    if d.nanos > other.nanos {
+        return 1
+    }
+    return 0
+}
+
+// Equals returns true if two durations are equal.
+func (d Duration) Equals(other Duration) bool = d.nanos == other.nanos
+
+// String returns a human-readable string representation.
+func (d Duration) String() string = d.ToGoDuration().String()
+
+// Instant constructors
+
+// Now returns the current instant.
+func Now() Instant = Instant(nanos = time.Now().UnixNano())
+
+// FromUnixSeconds creates an Instant from Unix seconds.
+func FromUnixSeconds(secs int64) Instant = Instant(nanos = secs * 1000000000)
+
+// FromUnixMillis creates an Instant from Unix milliseconds.
+func FromUnixMillis(millis int64) Instant = Instant(nanos = millis * 1000000)
+
+// FromUnixNanos creates an Instant from Unix nanoseconds.
+func FromUnixNanos(nanos int64) Instant = Instant(nanos = nanos)
+
+// FromGoTime creates an Instant from Go time.Time.
+func FromGoTime(t time.Time) Instant = Instant(nanos = t.UnixNano())
+
+// UnixEpoch returns the Unix epoch (January 1, 1970 UTC).
+func UnixEpoch() Instant = Instant(nanos = int64(0))
+
+// Parse parses a time string with the given layout.
+func Parse(layout string, value string) Option[Instant] {
+    var result time.Time
+    var err error
+    result, err = time.Parse(layout, value)
+    if err != nil {
+        return None[Instant]()
+    }
+    return Some(FromGoTime(result))
+}
+
+// ParseISO parses an ISO 8601 time string.
+func ParseISO(value string) Option[Instant] = Parse(time.RFC3339, value)
+
+// ParseRFC3339 parses an RFC 3339 time string.
+func ParseRFC3339(value string) Option[Instant] = Parse(time.RFC3339, value)
+
+// ParseRFC3339Nano parses an RFC 3339 time string with nanosecond precision.
+func ParseRFC3339Nano(value string) Option[Instant] = Parse(time.RFC3339Nano, value)
+
+// Instant operations
+
+// Plus adds a Duration to the Instant.
+func (i Instant) Plus(d Duration) Instant = Instant(nanos = i.nanos + d.nanos)
+
+// Minus subtracts a Duration from the Instant.
+func (i Instant) Minus(d Duration) Instant = Instant(nanos = i.nanos - d.nanos)
+
+// Until calculates the Duration from this Instant to another.
+func (i Instant) Until(other Instant) Duration = Duration(nanos = other.nanos - i.nanos)
+
+// Since calculates the Duration from another Instant to this one.
+func (i Instant) Since(other Instant) Duration = Duration(nanos = i.nanos - other.nanos)
+
+// IsBefore returns true if this Instant is before another.
+func (i Instant) IsBefore(other Instant) bool = i.nanos < other.nanos
+
+// IsAfter returns true if this Instant is after another.
+func (i Instant) IsAfter(other Instant) bool = i.nanos > other.nanos
+
+// Equals returns true if two Instants represent the same moment.
+func (i Instant) Equals(other Instant) bool = i.nanos == other.nanos
+
+// Compare compares two instants.
+// Returns -1 if i < other, 0 if i == other, 1 if i > other.
+func (i Instant) Compare(other Instant) int {
+    if i.nanos < other.nanos {
+        return -1
+    }
+    if i.nanos > other.nanos {
+        return 1
+    }
+    return 0
+}
+
+// Min returns the earlier of two instants.
+func (i Instant) Min(other Instant) Instant {
+    if i.nanos < other.nanos {
+        return i
+    }
+    return other
+}
+
+// Max returns the later of two instants.
+func (i Instant) Max(other Instant) Instant {
+    if i.nanos > other.nanos {
+        return i
+    }
+    return other
+}
+
+// Instant accessors
+
+// UnixSeconds returns the Unix timestamp in seconds.
+func (i Instant) UnixSeconds() int64 = i.nanos / 1000000000
+
+// UnixMillis returns the Unix timestamp in milliseconds.
+func (i Instant) UnixMillis() int64 = i.nanos / 1000000
+
+// UnixNanos returns the Unix timestamp in nanoseconds.
+func (i Instant) UnixNanos() int64 = i.nanos
+
+// ToGoTime converts to Go time.Time in UTC.
+func (i Instant) ToGoTime() time.Time = time.Unix(0, i.nanos).UTC()
+
+// Format formats the Instant using the given layout.
+func (i Instant) Format(layout string) string = i.ToGoTime().Format(layout)
+
+// FormatISO formats the Instant in ISO 8601 format.
+func (i Instant) FormatISO() string = i.Format(time.RFC3339)
+
+// FormatRFC3339 formats the Instant in RFC 3339 format.
+func (i Instant) FormatRFC3339() string = i.Format(time.RFC3339)
+
+// FormatRFC3339Nano formats the Instant in RFC 3339 format with nanosecond precision.
+func (i Instant) FormatRFC3339Nano() string = i.Format(time.RFC3339Nano)
+
+// String returns the ISO 8601 representation.
+func (i Instant) String() string = i.FormatISO()
+
+// Date component accessors (in UTC)
+
+// Year returns the year.
+func (i Instant) Year() int = i.ToGoTime().Year()
+
+// Month returns the month (1-12).
+func (i Instant) Month() int = int(i.ToGoTime().Month())
+
+// Day returns the day of the month (1-31).
+func (i Instant) Day() int = i.ToGoTime().Day()
+
+// Hour returns the hour (0-23).
+func (i Instant) Hour() int = i.ToGoTime().Hour()
+
+// Minute returns the minute (0-59).
+func (i Instant) Minute() int = i.ToGoTime().Minute()
+
+// Second returns the second (0-59).
+func (i Instant) Second() int = i.ToGoTime().Second()
+
+// Nanosecond returns the nanosecond (0-999999999).
+func (i Instant) Nanosecond() int = i.ToGoTime().Nanosecond()
+
+// Weekday returns the day of the week (0=Sunday, 6=Saturday).
+func (i Instant) Weekday() int = int(i.ToGoTime().Weekday())
+
+// YearDay returns the day of the year (1-366).
+func (i Instant) YearDay() int = i.ToGoTime().YearDay()
+
+// InTimezone returns the Instant formatted in a specific timezone.
+func (i Instant) InTimezone(tz string) Option[time.Time] {
+    var loc *time.Location
+    var err error
+    loc, err = time.LoadLocation(tz)
+    if err != nil {
+        return None[time.Time]()
+    }
+    return Some[time.Time](i.ToGoTime().In(loc))
+}
+
+// Truncation operations
+
+// TruncateToSecond truncates to the start of the current second.
+func (i Instant) TruncateToSecond() Instant {
+    val t = i.ToGoTime().Truncate(time.Second)
+    return FromGoTime(t)
+}
+
+// TruncateToMinute truncates to the start of the current minute.
+func (i Instant) TruncateToMinute() Instant {
+    val t = i.ToGoTime().Truncate(time.Minute)
+    return FromGoTime(t)
+}
+
+// TruncateToHour truncates to the start of the current hour.
+func (i Instant) TruncateToHour() Instant {
+    val t = i.ToGoTime().Truncate(time.Hour)
+    return FromGoTime(t)
+}
+
+// TruncateToDay truncates to the start of the current day (UTC).
+func (i Instant) TruncateToDay() Instant {
+    val t = i.ToGoTime()
+    val truncated = time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+    return FromGoTime(truncated)
+}
+
+// Timer utilities
+
+// Sleep pauses execution for the given duration.
+func Sleep(d Duration) {
+    time.Sleep(d.ToGoDuration())
+}
+
+// After returns the instant after the given duration from now.
+func After(d Duration) Instant = Now().Plus(d)
+
+// SinceNow calculates how long ago an instant was.
+func (i Instant) SinceNow() Duration = Now().Since(i)
+
+// UntilNow calculates how long until an instant (negative if in the past).
+func (i Instant) UntilNow() Duration = i.Until(Now())
+
+// Pattern matching extractors
+
+// InstantComponents extracts year, month, day, hour, minute, second.
+type InstantComponents struct {}
+
+func (c InstantComponents) Unapply(i Instant) Option[Tuple6[int, int, int, int, int, int]] {
+    return Some((i.Year(), i.Month(), i.Day(), i.Hour(), i.Minute(), i.Second()))
+}
+
+// DateOnly extracts just year, month, day.
+type DateOnly struct {}
+
+func (d DateOnly) Unapply(i Instant) Option[Tuple3[int, int, int]] {
+    return Some((i.Year(), i.Month(), i.Day()))
+}
+
+// TimeOnly extracts just hour, minute, second.
+type TimeOnly struct {}
+
+func (t TimeOnly) Unapply(i Instant) Option[Tuple3[int, int, int]] {
+    return Some((i.Hour(), i.Minute(), i.Second()))
+}

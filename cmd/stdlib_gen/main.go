@@ -25,6 +25,7 @@ func packageFromPath(path string) string {
 		"concurrent",
 		"stream",
 		"string_utils",
+		"time_utils",
 		"std",
 	}
 
@@ -133,6 +134,7 @@ var PackageImportPaths = map[string]string{
 	"concurrent":           "martianoff/gala/concurrent",
 	"stream":               "martianoff/gala/stream",
 	"string_utils":         "martianoff/gala/string_utils",
+	"time_utils":           "martianoff/gala/time_utils",
 }
 `)
 

@@ -1760,6 +1760,7 @@ For comprehensive documentation, see [DEPENDENCY_MANAGEMENT.MD](DEPENDENCY_MANAG
 - [Concurrent](CONCURRENT.MD) - Future, Promise, and ExecutionContext for async programming.
 - [Stream](STREAM.MD) - Lazy, potentially infinite sequences.
 - [String Utils](STRING_UTILS.MD) - Rich, immutable string operations with functional programming support.
+- [Time Utils](TIME_UTILS.MD) - Duration and Instant types for immutable time handling.
 - [Immutable Collections](IMMUTABLE_COLLECTIONS.MD) - Array, List, HashMap, HashSet, TreeSet.
 - [Mutable Collections](MUTABLE_COLLECTIONS.MD) - Mutable collection types.
 

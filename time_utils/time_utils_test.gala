@@ -1,0 +1,415 @@
+package main
+
+import (
+    . "martianoff/gala/test"
+    . "martianoff/gala/time_utils"
+)
+
+// Duration constructor tests
+
+func TestNanoseconds(t T) T {
+    val d = Nanoseconds(1000)
+    return Eq[int64](t, d.ToNanos(), 1000)
+}
+
+func TestMicroseconds(t T) T {
+    val d = Microseconds(1000)
+    return Eq[int64](t, d.ToNanos(), 1000000)
+}
+
+func TestMilliseconds(t T) T {
+    val d = Milliseconds(1000)
+    return Eq[int64](t, d.ToNanos(), 1000000000)
+}
+
+func TestSeconds(t T) T {
+    val d = Seconds(60)
+    return Eq[int64](t, d.ToNanos(), 60000000000)
+}
+
+func TestMinutes(t T) T {
+    val d = Minutes(2)
+    return Eq[int64](t, d.ToSeconds(), 120)
+}
+
+func TestHours(t T) T {
+    val d = Hours(2)
+    return Eq[int64](t, d.ToMinutes(), 120)
+}
+
+func TestDays(t T) T {
+    val d = Days(1)
+    return Eq[int64](t, d.ToHours(), 24)
+}
+
+// Duration operations tests
+
+func TestDurationPlus(t T) T {
+    val d1 = Seconds(30)
+    val d2 = Seconds(15)
+    val result = d1.Plus(d2)
+    return Eq[int64](t, result.ToSeconds(), 45)
+}
+
+func TestDurationMinus(t T) T {
+    val d1 = Seconds(30)
+    val d2 = Seconds(15)
+    val result = d1.Minus(d2)
+    return Eq[int64](t, result.ToSeconds(), 15)
+}
+
+func TestDurationMultiply(t T) T {
+    val d = Seconds(10)
+    val result = d.Multiply(3)
+    return Eq[int64](t, result.ToSeconds(), 30)
+}
+
+func TestDurationDivide(t T) T {
+    val d = Seconds(30)
+    val result = d.Divide(3)
+    return Eq[int64](t, result.ToSeconds(), 10)
+}
+
+func TestDurationDivideByZero(t T) T {
+    val d = Seconds(30)
+    val result = d.Divide(0)
+    return Eq[int64](t, result.ToSeconds(), 30)
+}
+
+func TestDurationAbs(t T) T {
+    val d = Seconds(-30)
+    val result = d.Abs()
+    return Eq[int64](t, result.ToSeconds(), 30)
+}
+
+func TestDurationAbsPositive(t T) T {
+    val d = Seconds(30)
+    val result = d.Abs()
+    return Eq[int64](t, result.ToSeconds(), 30)
+}
+
+func TestDurationNegate(t T) T {
+    val d = Seconds(30)
+    val result = d.Negate()
+    return Eq[int64](t, result.ToSeconds(), -30)
+}
+
+func TestDurationIsZero(t T) T {
+    val t1 =IsTrue(t, ZeroDuration().IsZero())
+    return IsFalse(t1, Seconds(1).IsZero())
+}
+
+func TestDurationIsNegative(t T) T {
+    val t1 =IsTrue(t, Seconds(-1).IsNegative())
+    return IsFalse(t1, Seconds(1).IsNegative())
+}
+
+func TestDurationIsPositive(t T) T {
+    val t1 =IsTrue(t, Seconds(1).IsPositive())
+    return IsFalse(t1, Seconds(-1).IsPositive())
+}
+
+func TestDurationCompare(t T) T {
+    val d1 = Seconds(10)
+    val d2 = Seconds(20)
+    val d3 = Seconds(10)
+    val t1 =Eq[int](t, d1.Compare(d2), -1)
+    val t2 =Eq[int](t1, d2.Compare(d1), 1)
+    return Eq[int](t2, d1.Compare(d3), 0)
+}
+
+func TestDurationEquals(t T) T {
+    val d1 = Seconds(10)
+    val d2 = Seconds(10)
+    val d3 = Seconds(20)
+    val t1 =IsTrue(t, d1.Equals(d2))
+    return IsFalse(t1, d1.Equals(d3))
+}
+
+// Duration conversion tests
+
+func TestDurationToMicros(t T) T {
+    val d = Milliseconds(1)
+    return Eq[int64](t, d.ToMicros(), 1000)
+}
+
+func TestDurationToMillis(t T) T {
+    val d = Seconds(1)
+    return Eq[int64](t, d.ToMillis(), 1000)
+}
+
+func TestDurationToMinutes(t T) T {
+    val d = Hours(1)
+    return Eq[int64](t, d.ToMinutes(), 60)
+}
+
+func TestDurationToHours(t T) T {
+    val d = Days(1)
+    return Eq[int64](t, d.ToHours(), 24)
+}
+
+func TestDurationToDays(t T) T {
+    val d = Hours(48)
+    return Eq[int64](t, d.ToDays(), 2)
+}
+
+func TestDurationString(t T) T {
+    val d = Hours(1).Plus(Minutes(30)).Plus(Seconds(45))
+    val s = d.String()
+    return Eq[string](t, s, "1h30m45s")
+}
+
+// Instant constructor tests
+
+func TestFromUnixSeconds(t T) T {
+    val i = FromUnixSeconds(1000)
+    return Eq[int64](t, i.UnixSeconds(), 1000)
+}
+
+func TestFromUnixMillis(t T) T {
+    val i = FromUnixMillis(1000)
+    return Eq[int64](t, i.UnixMillis(), 1000)
+}
+
+func TestFromUnixNanos(t T) T {
+    val i = FromUnixNanos(1000000000)
+    return Eq[int64](t, i.UnixSeconds(), 1)
+}
+
+func TestUnixEpoch(t T) T {
+    val epoch = UnixEpoch()
+    return Eq[int64](t, epoch.UnixNanos(), 0)
+}
+
+// Instant parsing tests
+
+func TestParseISO(t T) T {
+    val result = ParseISO("2024-01-15T10:30:00Z")
+    return IsTrue(t, result.IsDefined())
+}
+
+func TestParseISOInvalid(t T) T {
+    val result = ParseISO("not a date")
+    return IsTrue(t, result.IsEmpty())
+}
+
+func TestParseISOComponents(t T) T {
+    val result = ParseISO("2024-06-15T10:30:45Z")
+    val instant = result.Get()
+    val t1 =Eq[int](t, instant.Year(), 2024)
+    val t2 =Eq[int](t1, instant.Month(), 6)
+    val t3 =Eq[int](t2, instant.Day(), 15)
+    val t4 =Eq[int](t3, instant.Hour(), 10)
+    val t5 =Eq[int](t4, instant.Minute(), 30)
+    return Eq[int](t5, instant.Second(), 45)
+}
+
+// Instant operations tests
+
+func TestInstantPlus(t T) T {
+    val i = FromUnixSeconds(1000)
+    val result = i.Plus(Seconds(500))
+    return Eq[int64](t, result.UnixSeconds(), 1500)
+}
+
+func TestInstantMinus(t T) T {
+    val i = FromUnixSeconds(1000)
+    val result = i.Minus(Seconds(500))
+    return Eq[int64](t, result.UnixSeconds(), 500)
+}
+
+func TestInstantUntil(t T) T {
+    val i1 = FromUnixSeconds(1000)
+    val i2 = FromUnixSeconds(1500)
+    val d = i1.Until(i2)
+    return Eq[int64](t, d.ToSeconds(), 500)
+}
+
+func TestInstantSince(t T) T {
+    val i1 = FromUnixSeconds(1500)
+    val i2 = FromUnixSeconds(1000)
+    val d = i1.Since(i2)
+    return Eq[int64](t, d.ToSeconds(), 500)
+}
+
+func TestInstantIsBefore(t T) T {
+    val i1 = FromUnixSeconds(1000)
+    val i2 = FromUnixSeconds(2000)
+    val t1 =IsTrue(t, i1.IsBefore(i2))
+    return IsFalse(t1, i2.IsBefore(i1))
+}
+
+func TestInstantIsAfter(t T) T {
+    val i1 = FromUnixSeconds(2000)
+    val i2 = FromUnixSeconds(1000)
+    val t1 =IsTrue(t, i1.IsAfter(i2))
+    return IsFalse(t1, i2.IsAfter(i1))
+}
+
+func TestInstantEquals(t T) T {
+    val i1 = FromUnixSeconds(1000)
+    val i2 = FromUnixSeconds(1000)
+    val i3 = FromUnixSeconds(2000)
+    val t1 =IsTrue(t, i1.Equals(i2))
+    return IsFalse(t1, i1.Equals(i3))
+}
+
+func TestInstantCompare(t T) T {
+    val i1 = FromUnixSeconds(1000)
+    val i2 = FromUnixSeconds(2000)
+    val i3 = FromUnixSeconds(1000)
+    val t1 =Eq[int](t, i1.Compare(i2), -1)
+    val t2 =Eq[int](t1, i2.Compare(i1), 1)
+    return Eq[int](t2, i1.Compare(i3), 0)
+}
+
+func TestInstantMin(t T) T {
+    val i1 = FromUnixSeconds(1000)
+    val i2 = FromUnixSeconds(2000)
+    return Eq[int64](t, i1.Min(i2).UnixSeconds(), 1000)
+}
+
+func TestInstantMax(t T) T {
+    val i1 = FromUnixSeconds(1000)
+    val i2 = FromUnixSeconds(2000)
+    return Eq[int64](t, i1.Max(i2).UnixSeconds(), 2000)
+}
+
+// Between tests
+
+func TestBetween(t T) T {
+    val start = FromUnixSeconds(1000)
+    val end = FromUnixSeconds(1500)
+    val d = Between(start, end)
+    return Eq[int64](t, d.ToSeconds(), 500)
+}
+
+// Formatting tests
+
+func TestFormatISO(t T) T {
+    val i = ParseISO("2024-01-15T10:30:00Z").Get()
+    return Eq[string](t, i.FormatISO(), "2024-01-15T10:30:00Z")
+}
+
+func TestString(t T) T {
+    val i = ParseISO("2024-01-15T10:30:00Z").Get()
+    return Eq[string](t, i.String(), "2024-01-15T10:30:00Z")
+}
+
+// Date component tests
+
+func TestYear(t T) T {
+    val i = ParseISO("2024-06-15T10:30:00Z").Get()
+    return Eq[int](t, i.Year(), 2024)
+}
+
+func TestMonth(t T) T {
+    val i = ParseISO("2024-06-15T10:30:00Z").Get()
+    return Eq[int](t, i.Month(), 6)
+}
+
+func TestDay(t T) T {
+    val i = ParseISO("2024-06-15T10:30:00Z").Get()
+    return Eq[int](t, i.Day(), 15)
+}
+
+func TestHour(t T) T {
+    val i = ParseISO("2024-06-15T10:30:00Z").Get()
+    return Eq[int](t, i.Hour(), 10)
+}
+
+func TestMinute(t T) T {
+    val i = ParseISO("2024-06-15T10:30:00Z").Get()
+    return Eq[int](t, i.Minute(), 30)
+}
+
+func TestSecond(t T) T {
+    val i = ParseISO("2024-06-15T10:30:45Z").Get()
+    return Eq[int](t, i.Second(), 45)
+}
+
+func TestWeekday(t T) T {
+    val i = ParseISO("2024-06-15T10:30:00Z").Get()
+    return Eq[int](t, i.Weekday(), 6)
+}
+
+func TestYearDay(t T) T {
+    val i = ParseISO("2024-01-15T10:30:00Z").Get()
+    return Eq[int](t, i.YearDay(), 15)
+}
+
+// Truncation tests
+
+func TestTruncateToSecond(t T) T {
+    val i = ParseRFC3339Nano("2024-06-15T10:30:45.123456789Z").Get()
+    val truncated = i.TruncateToSecond()
+    return Eq[int](t, truncated.Nanosecond(), 0)
+}
+
+func TestTruncateToMinute(t T) T {
+    val i = ParseISO("2024-06-15T10:30:45Z").Get()
+    val truncated = i.TruncateToMinute()
+    return Eq[int](t, truncated.Second(), 0)
+}
+
+func TestTruncateToHour(t T) T {
+    val i = ParseISO("2024-06-15T10:30:45Z").Get()
+    val truncated = i.TruncateToHour()
+    val t1 =Eq[int](t, truncated.Minute(), 0)
+    return Eq[int](t1, truncated.Second(), 0)
+}
+
+func TestTruncateToDay(t T) T {
+    val i = ParseISO("2024-06-15T10:30:45Z").Get()
+    val truncated = i.TruncateToDay()
+    val t1 =Eq[int](t, truncated.Hour(), 0)
+    val t2 =Eq[int](t1, truncated.Minute(), 0)
+    return Eq[int](t2, truncated.Second(), 0)
+}
+
+// Now() test - just verify it returns something reasonable
+func TestNow(t T) T {
+    val now = Now()
+    return IsTrue(t, now.UnixSeconds() > 1700000000)
+}
+
+// After() test
+func TestAfter(t T) T {
+    val now = Now()
+    val future = After(Seconds(10))
+    return IsTrue(t, future.IsAfter(now))
+}
+
+// Pattern matching tests
+// Note: Tuple-based extractors have limited support, so we test the extractors
+// by calling Unapply directly using explicit struct literal syntax
+
+func TestInstantComponentsExtractor(t T) T {
+    val i = ParseISO("2024-06-15T10:30:45Z").Get()
+    val extractor InstantComponents = InstantComponents{}
+    val components = extractor.Unapply(i).Get()
+    val t1 =Eq[int](t, components.V1, 2024)
+    val t2 =Eq[int](t1, components.V2, 6)
+    val t3 =Eq[int](t2, components.V3, 15)
+    val t4 =Eq[int](t3, components.V4, 10)
+    val t5 =Eq[int](t4, components.V5, 30)
+    return Eq[int](t5, components.V6, 45)
+}
+
+func TestDateOnlyExtractor(t T) T {
+    val i = ParseISO("2024-06-15T10:30:45Z").Get()
+    val extractor DateOnly = DateOnly{}
+    val date = extractor.Unapply(i).Get()
+    val t1 =Eq[int](t, date.V1, 2024)
+    val t2 =Eq[int](t1, date.V2, 6)
+    return Eq[int](t2, date.V3, 15)
+}
+
+func TestTimeOnlyExtractor(t T) T {
+    val i = ParseISO("2024-06-15T10:30:45Z").Get()
+    val extractor TimeOnly = TimeOnly{}
+    val tm = extractor.Unapply(i).Get()
+    val t1 =Eq[int](t, tm.V1, 10)
+    val t2 =Eq[int](t1, tm.V2, 30)
+    return Eq[int](t2, tm.V3, 45)
+}
