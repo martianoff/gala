@@ -565,9 +565,9 @@ func (s TreeSet[T]) Collect[U any](pf func(T) Option[U]) Array[U] {
 
 // Partition splits the set into two sets based on a predicate.
 func (s TreeSet[T]) Partition(p func(T) bool) Tuple[TreeSet[T], TreeSet[T]] {
-    var left = s.Filter(p)
-    var right = s.FilterNot(p)
-    return Tuple[TreeSet[T], TreeSet[T]](V1 = left, V2 = right)
+    val left = s.Filter(p)
+    val right = s.FilterNot(p)
+    return (left, right)
 }
 
 // FoldLeft applies a binary operator from left to right (in sorted order).

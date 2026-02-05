@@ -123,3 +123,5 @@ go_binary(
     name = "perf_go",
     srcs = ["go_native_perf_test.go"],
 )
+
+# Note: Perf test is run manually via go_binary above

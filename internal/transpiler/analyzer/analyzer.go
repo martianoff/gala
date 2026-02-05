@@ -673,6 +673,18 @@ func (a *galaAnalyzer) resolveTypeWithParams(typeName string, pkgName string, ty
 		return a.resolveFuncType(typeName, pkgName, typeParams)
 	}
 
+	// Handle array/slice types: []T - recursively resolve element type
+	if strings.HasPrefix(typeName, "[]") {
+		elemType := a.resolveTypeWithParams(typeName[2:], pkgName, typeParams)
+		return transpiler.ArrayType{Elem: elemType}
+	}
+
+	// Handle pointer types: *T - recursively resolve element type
+	if strings.HasPrefix(typeName, "*") {
+		elemType := a.resolveTypeWithParams(typeName[1:], pkgName, typeParams)
+		return transpiler.PointerType{Elem: elemType}
+	}
+
 	// If it's already package-qualified, just parse it
 	if strings.Contains(typeName, ".") {
 		return transpiler.ParseType(typeName)
@@ -681,7 +693,7 @@ func (a *galaAnalyzer) resolveTypeWithParams(typeName string, pkgName string, ty
 	// Check if it's a type parameter - these should not be prefixed
 	for _, tp := range typeParams {
 		if typeName == tp {
-			return transpiler.ParseType(typeName)
+			return transpiler.BasicType{Name: typeName}
 		}
 	}
 
@@ -690,20 +702,45 @@ func (a *galaAnalyzer) resolveTypeWithParams(typeName string, pkgName string, ty
 		return transpiler.ParseType(typeName)
 	}
 
-	// Check if it's a known std type (including generic types like Tuple[int, string])
-	// Extract base type name for generic types
-	baseTypeName := typeName
+	// Handle generic types: Option[T], Tuple[A, B] - recursively resolve type args
 	if idx := strings.Index(typeName, "["); idx != -1 {
-		baseTypeName = typeName[:idx]
+		baseTypeName := typeName[:idx]
+		argsStr := typeName[idx+1 : len(typeName)-1]
+
+		// Resolve base type (may need std prefix)
+		var baseType transpiler.Type
+		if a.isStdType(baseTypeName) {
+			baseType = transpiler.NamedType{Package: registry.StdPackageName, Name: baseTypeName}
+		} else if pkgName != "" && pkgName != "main" && pkgName != "test" {
+			baseType = transpiler.NamedType{Package: pkgName, Name: baseTypeName}
+		} else {
+			baseType = transpiler.BasicType{Name: baseTypeName}
+		}
+
+		// Parse and recursively resolve type arguments
+		_, argStrs := extractBaseAndArgs(typeName)
+		var params []transpiler.Type
+		for _, argStr := range argStrs {
+			params = append(params, a.resolveTypeWithParams(strings.TrimSpace(argStr), pkgName, typeParams))
+		}
+
+		// Only wrap in GenericType if there are params
+		if len(params) > 0 {
+			return transpiler.GenericType{Base: baseType, Params: params}
+		}
+		// Fall through to handle base type without params (shouldn't happen)
+		_ = argsStr // silence unused variable warning
 	}
-	if a.isStdType(baseTypeName) {
-		return transpiler.ParseType(registry.StdPackageName + "." + typeName)
+
+	// Check if it's a known std type (non-generic)
+	if a.isStdType(typeName) {
+		return transpiler.NamedType{Package: registry.StdPackageName, Name: typeName}
 	}
 
 	if pkgName != "" && pkgName != "main" && pkgName != "test" {
-		return transpiler.ParseType(pkgName + "." + typeName)
+		return transpiler.NamedType{Package: pkgName, Name: typeName}
 	}
-	return transpiler.ParseType(typeName)
+	return transpiler.BasicType{Name: typeName}
 }
 
 // resolveFuncType resolves a function type string like "func(T) Option[U]"

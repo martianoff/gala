@@ -1,0 +1,12 @@
+package tuple_lib_repro
+
+// Minimal repro for tuple shorthand bug with array index in non-main packages
+
+type Box[T any] struct {
+    var items []T
+}
+
+// This should produce Tuple[T, U] but produces Tuple[a.items[any], b.items[any]]
+func Zip[T any, U any](a *Box[T], b *Box[U]) Tuple[T, U] {
+    return (a.items[0], b.items[0])
+}

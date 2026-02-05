@@ -638,7 +638,7 @@ func (m HashMap[K, V]) ToGoMap() map[K]V {
 
 // ToList converts the map to a List of tuples.
 func (m HashMap[K, V]) ToList() List[Tuple[K, V]] {
-    return m.FoldLeftKV[List[Tuple[K, V]]](emptyList[Tuple[K, V]](), (acc List[Tuple[K, V]], k K, v V) => consList[Tuple[K, V]](Tuple[K, V](V1 = k, V2 = v), acc))
+    return m.FoldLeftKV[List[Tuple[K, V]]](emptyList[Tuple[K, V]](), (acc List[Tuple[K, V]], k K, v V) => consList[Tuple[K, V]]((k, v), acc))
 }
 
 // String returns a string representation of the map.
@@ -668,7 +668,7 @@ func (m HashMap[K, V]) KeySet() HashSet[K] = m.Keys()
 func (m HashMap[K, V]) Find(p func(K, V) bool) Option[Tuple[K, V]] {
     return m.FoldLeftKV[Option[Tuple[K, V]]](None[Tuple[K, V]](), (acc Option[Tuple[K, V]], k K, v V) => {
         if acc.IsEmpty() && p(k, v) {
-            return Some[Tuple[K, V]](Tuple[K, V](V1 = k, V2 = v))
+            return Some[Tuple[K, V]]((k, v))
         }
         return acc
     })
@@ -690,7 +690,7 @@ func (m HashMap[K, V]) HeadOption() Option[Tuple[K, V]] {
     }
     return m.FoldLeftKV[Option[Tuple[K, V]]](None[Tuple[K, V]](), (acc Option[Tuple[K, V]], k K, v V) => {
         if acc.IsEmpty() {
-            return Some[Tuple[K, V]](Tuple[K, V](V1 = k, V2 = v))
+            return Some[Tuple[K, V]]((k, v))
         }
         return acc
     })
@@ -698,17 +698,17 @@ func (m HashMap[K, V]) HeadOption() Option[Tuple[K, V]] {
 
 // ToArray returns an immutable Array of key-value tuples.
 func (m HashMap[K, V]) ToArray() Array[Tuple[K, V]] {
-    return m.FoldLeftKV[Array[Tuple[K, V]]](EmptyArray[Tuple[K, V]](), (acc Array[Tuple[K, V]], k K, v V) => acc.Append(Tuple[K, V](V1 = k, V2 = v)))
+    return m.FoldLeftKV[Array[Tuple[K, V]]](EmptyArray[Tuple[K, V]](), (acc Array[Tuple[K, V]], k K, v V) => acc.Append((k, v)))
 }
 
 // Partition partitions the map into two maps based on predicate.
 func (m HashMap[K, V]) Partition(p func(K, V) bool) Tuple[HashMap[K, V], HashMap[K, V]] {
-    val initial = Tuple[HashMap[K, V], HashMap[K, V]](V1 = EmptyHashMap[K, V](), V2 = EmptyHashMap[K, V]())
+    val initial = (EmptyHashMap[K, V](), EmptyHashMap[K, V]())
     return m.FoldLeftKV[Tuple[HashMap[K, V], HashMap[K, V]]](initial, (acc Tuple[HashMap[K, V], HashMap[K, V]], k K, v V) => {
         if p(k, v) {
-            return Tuple[HashMap[K, V], HashMap[K, V]](V1 = acc.V1.Put(k, v), V2 = acc.V2)
+            return (acc.V1.Put(k, v), acc.V2)
         }
-        return Tuple[HashMap[K, V], HashMap[K, V]](V1 = acc.V1, V2 = acc.V2.Put(k, v))
+        return (acc.V1, acc.V2.Put(k, v))
     })
 }
 

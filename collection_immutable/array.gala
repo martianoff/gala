@@ -725,9 +725,9 @@ func (a Array[T]) FilterNot(p func(T) bool) Array[T] = a.Filter((elem T) => !p(e
 
 // Partition splits the array into two arrays based on a predicate.
 func (a Array[T]) Partition(p func(T) bool) Tuple[Array[T], Array[T]] {
-    var left = a.Filter(p)
-    var right = a.FilterNot(p)
-    return Tuple[Array[T], Array[T]](V1 = left, V2 = right)
+    val left = a.Filter(p)
+    val right = a.FilterNot(p)
+    return (left, right)
 }
 
 // FoldLeft applies a binary operator from left to right.
@@ -834,7 +834,7 @@ func (a Array[T]) Zip[U any](other Array[U]) Array[Tuple[T, U]] {
     }
     var result = EmptyArray[Tuple[T, U]]()
     for i := 0; i < minLen; i++ {
-        result = result.Append(Tuple[T, U](V1 = a.Get(i), V2 = other.Get(i)))
+        result = result.Append((a.Get(i), other.Get(i)))
     }
     return result
 }
@@ -843,7 +843,7 @@ func (a Array[T]) Zip[U any](other Array[U]) Array[Tuple[T, U]] {
 func (a Array[T]) ZipWithIndex() Array[Tuple[T, int]] {
     var result = EmptyArray[Tuple[T, int]]()
     for i := 0; i < a.length; i++ {
-        result = result.Append(Tuple[T, int](V1 = a.Get(i), V2 = i))
+        result = result.Append((a.Get(i), i))
     }
     return result
 }
@@ -861,16 +861,16 @@ func (a Array[T]) Distinct() Array[T] {
 }
 
 // SplitAt splits the array at the given index.
-func (a Array[T]) SplitAt(n int) Tuple[Array[T], Array[T]] = Tuple[Array[T], Array[T]](V1 = a.Take(n), V2 = a.Drop(n))
+func (a Array[T]) SplitAt(n int) Tuple[Array[T], Array[T]] = (a.Take(n), a.Drop(n))
 
 // Span splits the array into a prefix/suffix pair according to a predicate.
 // The first element contains the longest prefix of elements that satisfy p.
 func (a Array[T]) Span(p func(T) bool) Tuple[Array[T], Array[T]] {
-    var i = 0
-    for i < a.length && p(a.Get(i)) {
-        i++
+    var idx = 0
+    for idx < a.length && p(a.Get(idx)) {
+        idx++
     }
-    return a.SplitAt(i)
+    return a.SplitAt(idx)
 }
 
 // PartitionMap applies a function to each element and partitions results into Left and Right.
@@ -885,7 +885,7 @@ func (a Array[T]) PartitionMap[A any, B any](f func(T) Either[A, B]) Tuple[Array
             rights = rights.Append(either.GetRight())
         }
     }
-    return Tuple[Array[A], Array[B]](V1 = lefts, V2 = rights)
+    return (lefts, rights)
 }
 
 // GroupBy partitions this array into a map of arrays according to a discriminator function.

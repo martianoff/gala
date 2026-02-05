@@ -372,7 +372,7 @@ func (a *Array[T]) FlatMap[U any](f func(T) *Array[U]) *Array[U] {
 func (a *Array[T]) Collect[U any](pf func(T) Option[U]) *Array[U] {
     var result = EmptyArray[U]()
     for i := 0; i < len(a.elements); i++ {
-        var opt = pf(a.elements[i])
+        val opt = pf(a.elements[i])
         if opt.IsDefined() {
             result.Append(opt.Get())
         }
@@ -396,9 +396,9 @@ func (a *Array[T]) FilterNot(p func(T) bool) *Array[T] = a.Filter((elem T) => !p
 
 // Partition splits the array into two based on a predicate.
 func (a *Array[T]) Partition(p func(T) bool) Tuple[*Array[T], *Array[T]] {
-    var left = a.Filter(p)
-    var right = a.FilterNot(p)
-    return Tuple[*Array[T], *Array[T]](V1 = left, V2 = right)
+    val left = a.Filter(p)
+    val right = a.FilterNot(p)
+    return (left, right)
 }
 
 // TakeWhile returns the longest prefix of elements that satisfy the predicate.
@@ -532,6 +532,7 @@ func (a *Array[T]) Zip[U any](other *Array[U]) *Array[Tuple[T, U]] {
     }
     var result = EmptyArray[Tuple[T, U]]()
     for i := 0; i < minLen; i++ {
+        // TODO: Use tuple shorthand after fixing transpiler bug for array index in non-main packages
         result.Append(Tuple[T, U](V1 = a.elements[i], V2 = other.elements[i]))
     }
     return result
@@ -541,6 +542,7 @@ func (a *Array[T]) Zip[U any](other *Array[U]) *Array[Tuple[T, U]] {
 func (a *Array[T]) ZipWithIndex() *Array[Tuple[T, int]] {
     var result = EmptyArray[Tuple[T, int]]()
     for i := 0; i < len(a.elements); i++ {
+        // TODO: Use tuple shorthand after fixing transpiler bug for array index in non-main packages
         result.Append(Tuple[T, int](V1 = a.elements[i], V2 = i))
     }
     return result
@@ -559,7 +561,7 @@ func (a *Array[T]) Distinct() *Array[T] {
 
 // SplitAt splits the array at the given index.
 func (a *Array[T]) SplitAt(n int) Tuple[*Array[T], *Array[T]] {
-    return Tuple[*Array[T], *Array[T]](V1 = a.Take(n), V2 = a.Drop(n))
+    return (a.Take(n), a.Drop(n))
 }
 
 // Grouped splits the array into groups of size n.

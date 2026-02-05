@@ -42,7 +42,7 @@ func (c Cons[T]) Unapply(l List[T]) Option[Tuple[T, List[T]]] {
     if l.IsEmpty() {
         return None[Tuple[T, List[T]]]()
     }
-    return Some[Tuple[T, List[T]]](Tuple[T, List[T]](V1 = l.Head(), V2 = l.Tail()))
+    return Some[Tuple[T, List[T]]]((l.Head(), l.Tail()))
 }
 
 // Nil extractor for pattern matching on empty lists.
@@ -321,8 +321,8 @@ func (l List[T]) Collect[U any](pf func(T) Option[U]) List[U] {
     if l.isEmpty {
         return emptyList[U]()
     }
+    val tail = *l.tail
     val opt = pf(l.head)
-    var tail = *l.tail
     if opt.IsDefined() {
         return consList[U](opt.Get(), tail.Collect[U](pf))
     }
@@ -357,9 +357,9 @@ func (l List[T]) FilterNot(p func(T) bool) List[T] = l.Filter((elem T) => !p(ele
 
 // Partition splits the list into two lists based on a predicate.
 func (l List[T]) Partition(p func(T) bool) Tuple[List[T], List[T]] {
-    var left = l.Filter(p)
-    var right = l.FilterNot(p)
-    return Tuple[List[T], List[T]](V1 = left, V2 = right)
+    val left = l.Filter(p)
+    val right = l.FilterNot(p)
+    return (left, right)
 }
 
 // FoldLeft applies a binary operator from left to right.
@@ -460,9 +460,9 @@ func (l List[T]) Zip[U any](other List[U]) List[Tuple[T, U]] {
     if l.isEmpty || other.isEmpty {
         return emptyList[Tuple[T, U]]()
     }
-    val pair = Tuple[T, U](V1 = l.head, V2 = other.head)
-    var lTail = *l.tail
-    var otherTail = *other.tail
+    val pair = (l.head, other.head)
+    val lTail = *l.tail
+    val otherTail = *other.tail
     return consList[Tuple[T, U]](pair, lTail.Zip[U](otherTail))
 }
 
@@ -471,7 +471,7 @@ func (l List[T]) ZipWithIndex() List[Tuple[T, int]] {
     var result = emptyList[Tuple[T, int]]()
     var current = l
     for i := 0; !current.isEmpty; i++ {
-        result = consList[Tuple[T, int]](Tuple[T, int](V1 = current.head, V2 = i), result)
+        result = consList[Tuple[T, int]]((current.head, i), result)
         current = *current.tail
     }
     return result.Reverse()
@@ -490,7 +490,7 @@ func (l List[T]) Distinct() List[T] {
 }
 
 // SplitAt splits the list at the given index.
-func (l List[T]) SplitAt(n int) Tuple[List[T], List[T]] = Tuple[List[T], List[T]](V1 = l.Take(n), V2 = l.Drop(n))
+func (l List[T]) SplitAt(n int) Tuple[List[T], List[T]] = (l.Take(n), l.Drop(n))
 
 // Slice returns elements from index start (inclusive) to end (exclusive).
 func (l List[T]) Slice(start int, end int) List[T] = l.Drop(start).Take(end - start)
@@ -506,7 +506,7 @@ func (l List[T]) Span(p func(T) bool) Tuple[List[T], List[T]] {
         current = *current.tail
     }
     // current is now the suffix (first element that doesn't satisfy p)
-    return Tuple[List[T], List[T]](V1 = prefix, V2 = current)
+    return (prefix, current)
 }
 
 // PartitionMap applies a function to each element and partitions results into Left and Right.
@@ -523,7 +523,7 @@ func (l List[T]) PartitionMap[A any, B any](f func(T) Either[A, B]) Tuple[List[A
         }
         current = *current.tail
     }
-    return Tuple[List[A], List[B]](V1 = lefts, V2 = rights)
+    return (lefts, rights)
 }
 
 // GroupBy partitions this list into a map of lists according to a discriminator function.

@@ -346,7 +346,7 @@ func (m *HashMap[K, V]) FilterValues(p func(V) bool) *HashMap[K, V] {
 func (m *HashMap[K, V]) Collect[U any](pf func(K, V) Option[U]) *Array[U] {
     var result = EmptyArray[U]()
     m.ForEachKV((k K, v V) => {
-        var opt = pf(k, v)
+        val opt = pf(k, v)
         if opt.IsDefined() {
             result.Append(opt.Get())
         }
@@ -500,7 +500,7 @@ func (m *HashMap[K, V]) ToGoMap() map[K]V {
 // ToArray converts the map to a mutable Array of tuples.
 func (m *HashMap[K, V]) ToArray() *Array[Tuple[K, V]] {
     return m.FoldLeftKV[*Array[Tuple[K, V]]](ArrayWithCapacity[Tuple[K, V]](m.Size()), (acc *Array[Tuple[K, V]], k K, v V) => {
-        acc.Append(Tuple[K, V](V1 = k, V2 = v))
+        acc.Append((k, v))
         return acc
     })
 }
@@ -508,7 +508,7 @@ func (m *HashMap[K, V]) ToArray() *Array[Tuple[K, V]] {
 // ToList converts the map to a mutable List of tuples.
 func (m *HashMap[K, V]) ToList() *List[Tuple[K, V]] {
     return m.FoldLeftKV[*List[Tuple[K, V]]](EmptyList[Tuple[K, V]](), (acc *List[Tuple[K, V]], k K, v V) => {
-        acc.Append(Tuple[K, V](V1 = k, V2 = v))
+        acc.Append((k, v))
         return acc
     })
 }
@@ -579,7 +579,7 @@ func (m *HashMap[K, V]) PutAllEntries(entries *Array[Tuple[K, V]]) {
 func (m *HashMap[K, V]) Find(p func(K, V) bool) Option[Tuple[K, V]] {
     return m.FoldLeftKV[Option[Tuple[K, V]]](None[Tuple[K, V]](), (acc Option[Tuple[K, V]], k K, v V) => {
         if acc.IsEmpty() && p(k, v) {
-            return Some[Tuple[K, V]](Tuple[K, V](V1 = k, V2 = v))
+            return Some((k, v))
         }
         return acc
     })
@@ -601,7 +601,7 @@ func (m *HashMap[K, V]) HeadOption() Option[Tuple[K, V]] {
     }
     return m.FoldLeftKV[Option[Tuple[K, V]]](None[Tuple[K, V]](), (acc Option[Tuple[K, V]], k K, v V) => {
         if acc.IsEmpty() {
-            return Some[Tuple[K, V]](Tuple[K, V](V1 = k, V2 = v))
+            return Some((k, v))
         }
         return acc
     })
@@ -609,7 +609,7 @@ func (m *HashMap[K, V]) HeadOption() Option[Tuple[K, V]] {
 
 // Partition partitions the map into two new maps based on predicate.
 func (m *HashMap[K, V]) Partition(p func(K, V) bool) Tuple[*HashMap[K, V], *HashMap[K, V]] {
-    val initial = Tuple[*HashMap[K, V], *HashMap[K, V]](V1 = EmptyHashMap[K, V](), V2 = EmptyHashMap[K, V]())
+    val initial = (EmptyHashMap[K, V](), EmptyHashMap[K, V]())
     return m.FoldLeftKV[Tuple[*HashMap[K, V], *HashMap[K, V]]](initial, (acc Tuple[*HashMap[K, V], *HashMap[K, V]], k K, v V) => {
         if p(k, v) {
             acc.V1.Put(k, v)

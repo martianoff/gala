@@ -244,14 +244,13 @@ func (t *galaASTTransformer) transformBlock(ctx *grammar.BlockContext) (*ast.Blo
 }
 
 func (t *galaASTTransformer) transformForStatement(ctx *grammar.ForStatementContext) (ast.Stmt, error) {
-	body, err := t.transformBlock(ctx.Block().(*grammar.BlockContext))
-	if err != nil {
-		return nil, err
-	}
-
 	// Handle condition-only for loop: for condition { ... }
 	if condCtx := ctx.ForCondition(); condCtx != nil {
 		cond, err := t.transformExpression(condCtx.(*grammar.ForConditionContext).Expression())
+		if err != nil {
+			return nil, err
+		}
+		body, err := t.transformBlock(ctx.Block().(*grammar.BlockContext))
 		if err != nil {
 			return nil, err
 		}
@@ -265,11 +264,18 @@ func (t *galaASTTransformer) transformForStatement(ctx *grammar.ForStatementCont
 	if rangeCtx := ctx.RangeClause(); rangeCtx != nil {
 		rangeClause := rangeCtx.(*grammar.RangeClauseContext)
 
+		// Push scope for range variables - they should be visible in the body
+		t.pushScope()
+		defer t.popScope()
+
 		// Transform the range expression
 		rangeExpr, err := t.transformExpression(rangeClause.Expression())
 		if err != nil {
 			return nil, err
 		}
+
+		// Infer key/value types from range expression
+		keyType, valueType := t.inferRangeTypes(rangeExpr)
 
 		// Set up key and value identifiers
 		var key, value ast.Expr
@@ -277,12 +283,12 @@ func (t *galaASTTransformer) transformForStatement(ctx *grammar.ForStatementCont
 			ids := idListCtx.(*grammar.IdentifierListContext).AllIdentifier()
 			if len(ids) >= 1 {
 				keyName := ids[0].GetText()
-				t.addVar(keyName, nil)
+				t.addVar(keyName, keyType)
 				key = ast.NewIdent(keyName)
 			}
 			if len(ids) >= 2 {
 				valueName := ids[1].GetText()
-				t.addVar(valueName, nil)
+				t.addVar(valueName, valueType)
 				value = ast.NewIdent(valueName)
 			}
 		}
@@ -300,6 +306,12 @@ func (t *galaASTTransformer) transformForStatement(ctx *grammar.ForStatementCont
 			}
 		}
 
+		// Transform body AFTER range variables are in scope
+		body, err := t.transformBlock(ctx.Block().(*grammar.BlockContext))
+		if err != nil {
+			return nil, err
+		}
+
 		return &ast.RangeStmt{
 			Key:   key,
 			Value: value,
@@ -313,11 +325,16 @@ func (t *galaASTTransformer) transformForStatement(ctx *grammar.ForStatementCont
 	if forClauseCtx := ctx.ForClause(); forClauseCtx != nil {
 		forClause := forClauseCtx.(*grammar.ForClauseContext)
 
+		// Push scope for init variables - they should be visible in condition, post, and body
+		t.pushScope()
+		defer t.popScope()
+
 		var init ast.Stmt
 		var cond ast.Expr
 		var post ast.Stmt
+		var err error
 
-		// Process init and post statements
+		// Process init FIRST so variables are in scope for condition and body
 		// Note: init uses transformForLoopInitStatement to make := declarations mutable
 		simpleStmts := forClause.AllSimpleStatement()
 		if len(simpleStmts) >= 1 && simpleStmts[0] != nil {
@@ -326,6 +343,16 @@ func (t *galaASTTransformer) transformForStatement(ctx *grammar.ForStatementCont
 				return nil, err
 			}
 		}
+
+		// Process condition (can use init variables)
+		if forClause.Expression() != nil {
+			cond, err = t.transformExpression(forClause.Expression())
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		// Process post (can use init variables)
 		if len(simpleStmts) >= 2 && simpleStmts[1] != nil {
 			post, err = t.transformSimpleStatement(simpleStmts[1].(*grammar.SimpleStatementContext))
 			if err != nil {
@@ -333,12 +360,10 @@ func (t *galaASTTransformer) transformForStatement(ctx *grammar.ForStatementCont
 			}
 		}
 
-		// Process condition
-		if forClause.Expression() != nil {
-			cond, err = t.transformExpression(forClause.Expression())
-			if err != nil {
-				return nil, err
-			}
+		// Transform body LAST - after init variables are in scope
+		body, err := t.transformBlock(ctx.Block().(*grammar.BlockContext))
+		if err != nil {
+			return nil, err
 		}
 
 		return &ast.ForStmt{
@@ -350,6 +375,10 @@ func (t *galaASTTransformer) transformForStatement(ctx *grammar.ForStatementCont
 	}
 
 	// Infinite loop: for { ... }
+	body, err := t.transformBlock(ctx.Block().(*grammar.BlockContext))
+	if err != nil {
+		return nil, err
+	}
 	return &ast.ForStmt{
 		Body: body,
 	}, nil

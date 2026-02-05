@@ -404,3 +404,22 @@ gala_test(
     src = "return_match.gala",
     expected = "return_match.out",
 )
+
+gala_test(
+    name = "tuple_shorthand_generic",
+    src = "tuple_shorthand_generic.gala",
+    expected = "tuple_shorthand_generic.out",
+)
+
+gala_test(
+    name = "tuple_shorthand_mutable",
+    src = "tuple_shorthand_mutable.gala",
+    expected = "tuple_shorthand_mutable.out",
+)
+
+gala_test(
+    name = "tuple_shorthand_array_index",
+    src = "tuple_shorthand_array_index.gala",
+    expected = "tuple_shorthand_array_index.out",
+    deps = ["//go_interop"],
+)

@@ -1,0 +1,25 @@
+package main
+
+import (
+    "fmt"
+    "martianoff/gala/go_interop"
+)
+
+// Repro for tuple shorthand with array index access from different generic types
+
+type Container[T any] struct {
+    var elements []T
+}
+
+// This should generate Tuple[T, U]
+func Zip[T any, U any](a *Container[T], b *Container[U]) Tuple[T, U] {
+    return (a.elements[0], b.elements[0])
+}
+
+func main() {
+    var c1 = &Container[int](elements = go_interop.SliceOf(42))
+    var c2 = &Container[string](elements = go_interop.SliceOf("hello"))
+
+    val result = Zip[int, string](c1, c2)
+    fmt.Printf("Result: (%d, %s)\n", result.V1, result.V2)
+}

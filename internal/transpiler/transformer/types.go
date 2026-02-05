@@ -665,4 +665,29 @@ func (t *galaASTTransformer) hasTypeParams(typ transpiler.Type) bool {
 	return false
 }
 
+// inferRangeTypes returns the key and value types for a range expression.
+// For slices/arrays: key is int, value is element type
+// For maps: key is map key type, value is map value type
+// For strings: key is int, value is rune
+func (t *galaASTTransformer) inferRangeTypes(rangeExpr ast.Expr) (keyType transpiler.Type, valueType transpiler.Type) {
+	exprType := t.getExprTypeName(rangeExpr)
+	if exprType.IsNil() {
+		return transpiler.NilType{}, transpiler.NilType{}
+	}
+
+	switch v := exprType.(type) {
+	case transpiler.ArrayType:
+		return transpiler.BasicType{Name: "int"}, v.Elem
+	case transpiler.MapType:
+		return v.Key, v.Elem
+	case transpiler.BasicType:
+		if v.Name == "string" {
+			return transpiler.BasicType{Name: "int"}, transpiler.BasicType{Name: "rune"}
+		}
+	}
+
+	// Default: int key, unknown value
+	return transpiler.BasicType{Name: "int"}, transpiler.NilType{}
+}
+
 // Type inference functions moved to type_inference.go

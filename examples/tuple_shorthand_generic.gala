@@ -1,0 +1,85 @@
+package main
+
+import "fmt"
+
+// Test: Tuple shorthand as argument to generic method with type parameter
+// The issue is that (a.Get(i), other.Get(i)) doesn't infer types from Tuple[T, U]
+// when T and U are generic type parameters
+
+// A simplified Array type to reproduce the issue
+type SimpleArray[T any] struct {
+    var items []T
+}
+
+func EmptySimpleArray[T any]() SimpleArray[T] {
+    var empty []T
+    return SimpleArray[T](items = empty)
+}
+
+func (a SimpleArray[T]) Append(item T) SimpleArray[T] {
+    var newItems []T
+    for i := 0; i < len(a.items); i++ {
+        newItems = append(newItems, a.items[i])
+    }
+    newItems = append(newItems, item)
+    return SimpleArray[T](items = newItems)
+}
+
+func (a SimpleArray[T]) Get(index int) T {
+    return a.items[index]
+}
+
+func (a SimpleArray[T]) Length() int {
+    return len(a.items)
+}
+
+// Test 1: Tuple shorthand with concrete types - should work
+func TestConcreteTypes() {
+    var result = EmptySimpleArray[Tuple[int, string]]()
+    result = result.Append((42, "hello"))
+    fmt.Println("Test 1 passed: concrete types")
+}
+
+// Test 2: Tuple shorthand in generic function - the failing case
+func Zip[T any, U any](a SimpleArray[T], b SimpleArray[U]) SimpleArray[Tuple[T, U]] {
+    var result = EmptySimpleArray[Tuple[T, U]]()
+    var minLen = a.Length()
+    if b.Length() < minLen {
+        minLen = b.Length()
+    }
+    for i := 0; i < minLen; i++ {
+        // This should work: tuple shorthand with types from T and U parameters
+        result = result.Append((a.Get(i), b.Get(i)))
+    }
+    return result
+}
+
+// Test 3: Tuple shorthand in generic method with int (partially concrete)
+func ZipWithIndex[T any](a SimpleArray[T]) SimpleArray[Tuple[T, int]] {
+    var result = EmptySimpleArray[Tuple[T, int]]()
+    for i := 0; i < a.Length(); i++ {
+        // This should work: T is generic, int is concrete
+        result = result.Append((a.Get(i), i))
+    }
+    return result
+}
+
+func main() {
+    TestConcreteTypes()
+
+    // Test 2
+    var arr1 = EmptySimpleArray[int]()
+    arr1 = arr1.Append(1)
+    arr1 = arr1.Append(2)
+
+    var arr2 = EmptySimpleArray[string]()
+    arr2 = arr2.Append("a")
+    arr2 = arr2.Append("b")
+
+    val zipped = Zip[int, string](arr1, arr2)
+    fmt.Println("Test 2: Zip length =", zipped.Length())
+
+    // Test 3
+    val indexed = ZipWithIndex[int](arr1)
+    fmt.Println("Test 3: ZipWithIndex length =", indexed.Length())
+}

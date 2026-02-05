@@ -380,7 +380,7 @@ func (s *HashSet[T]) FilterNot(p func(T) bool) *HashSet[T] = s.Filter((elem T) =
 func (s *HashSet[T]) Collect[U any](pf func(T) Option[U]) *Array[U] {
     var result = EmptyArray[U]()
     s.ForEach((elem T) => {
-        var opt = pf(elem)
+        val opt = pf(elem)
         if opt.IsDefined() {
             result.Append(opt.Get())
         }
@@ -391,9 +391,9 @@ func (s *HashSet[T]) Collect[U any](pf func(T) Option[U]) *Array[U] {
 
 // Partition splits the set into two sets based on a predicate.
 func (s *HashSet[T]) Partition(p func(T) bool) Tuple[*HashSet[T], *HashSet[T]] {
-    var left = s.Filter(p)
-    var right = s.FilterNot(p)
-    return Tuple[*HashSet[T], *HashSet[T]](V1 = left, V2 = right)
+    val left = s.Filter(p)
+    val right = s.FilterNot(p)
+    return (left, right)
 }
 
 // Map applies a function to each element and returns a new set.

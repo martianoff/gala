@@ -201,6 +201,12 @@ func (t *galaASTTransformer) resolveTypeName(typeName string, exists func(string
 	// 2. If typeName has a package prefix, extract the simple name and try other packages
 	if idx := strings.LastIndex(typeName, "."); idx != -1 {
 		simpleName := typeName[idx+1:]
+		// Try simple name without any package prefix first
+		// This handles cases where struct fields are registered with simple name
+		// but the type was resolved to a qualified name
+		if exists(simpleName) {
+			return simpleName, true
+		}
 		// Try std package for standard library types like Tuple, Option, etc.
 		stdName := registry.StdPackageName + "." + simpleName
 		if exists(stdName) {

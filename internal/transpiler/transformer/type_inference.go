@@ -94,6 +94,19 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 		resolvedTypeName := t.resolveStructTypeName(baseTypeName)
 		if !xType.IsNil() && t.structFieldTypes[resolvedTypeName] != nil {
 			if fType, ok := t.structFieldTypes[resolvedTypeName][e.Sel.Name]; ok && !fType.IsNil() {
+				// If xType is a generic type, substitute type parameters in the field type
+				// e.g., for acc.V1 where acc is Tuple[HashMap[K,V], HashMap[K,V]],
+				// the field V1 has declared type Immutable[A], substitute A -> HashMap[K,V]
+				// Unwrap pointer type if needed (e.g., for *Container[T].value)
+				underlyingType := xType
+				if ptr, ok := xType.(transpiler.PointerType); ok {
+					underlyingType = ptr.Elem
+				}
+				if genType, ok := underlyingType.(transpiler.GenericType); ok {
+					if typeMeta := t.getTypeMeta(resolvedTypeName); typeMeta != nil && len(typeMeta.TypeParams) > 0 {
+						return t.substituteConcreteTypes(fType, typeMeta.TypeParams, genType.Params)
+					}
+				}
 				return fType
 			}
 		}

@@ -483,7 +483,7 @@ func (l *List[T]) Collect[U any](pf func(T) Option[U]) *List[U] {
     var result = EmptyList[U]()
     var current = l.head
     for current != nil {
-        var opt = pf(current.value)
+        val opt = pf(current.value)
         if opt.IsDefined() {
             result.Append(opt.Get())
         }
@@ -510,9 +510,9 @@ func (l *List[T]) FilterNot(p func(T) bool) *List[T] = l.Filter((elem T) => !p(e
 
 // Partition splits the list into two based on a predicate.
 func (l *List[T]) Partition(p func(T) bool) Tuple[*List[T], *List[T]] {
-    var left = l.Filter(p)
-    var right = l.FilterNot(p)
-    return Tuple[*List[T], *List[T]](V1 = left, V2 = right)
+    val left = l.Filter(p)
+    val right = l.FilterNot(p)
+    return (left, right)
 }
 
 // TakeWhile returns the longest prefix of elements that satisfy the predicate.
@@ -664,6 +664,7 @@ func (l *List[T]) Zip[U any](other *List[U]) *List[Tuple[T, U]] {
     var currentL = l.head
     var currentO = other.head
     for currentL != nil && currentO != nil {
+        // TODO: Use tuple shorthand after fixing transpiler bug for field access in non-main packages
         result.Append(Tuple[T, U](V1 = currentL.value, V2 = currentO.value))
         currentL = currentL.next
         currentO = currentO.next
@@ -677,6 +678,7 @@ func (l *List[T]) ZipWithIndex() *List[Tuple[T, int]] {
     var current = l.head
     var index = 0
     for current != nil {
+        // TODO: Use tuple shorthand after fixing transpiler bug for field access in non-main packages
         result.Append(Tuple[T, int](V1 = current.value, V2 = index))
         current = current.next
         index++
@@ -699,7 +701,7 @@ func (l *List[T]) Distinct() *List[T] {
 
 // SplitAt splits the list at the given index.
 func (l *List[T]) SplitAt(n int) Tuple[*List[T], *List[T]] {
-    return Tuple[*List[T], *List[T]](V1 = l.Take(n), V2 = l.Drop(n))
+    return (l.Take(n), l.Drop(n))
 }
 
 // GroupBy partitions this list into a map of lists according to a discriminator function.

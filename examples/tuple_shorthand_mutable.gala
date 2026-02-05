@@ -1,0 +1,35 @@
+package main
+
+import "fmt"
+
+// Minimal repro for tuple shorthand with different generic type parameters
+// in mutable struct context
+
+type Container[T any] struct {
+    var value T
+}
+
+// This should generate Tuple[T, U] but incorrectly generates Tuple[T, T]
+func Zip[T any, U any](a *Container[T], b *Container[U]) Tuple[T, U] {
+    return (a.value, b.value)
+}
+
+// Workaround using intermediate val bindings
+func ZipWorkaround[T any, U any](a *Container[T], b *Container[U]) Tuple[T, U] {
+    val first = a.value
+    val second = b.value
+    return (first, second)
+}
+
+func main() {
+    var c1 = &Container[int](value = 42)
+    var c2 = &Container[string](value = "hello")
+
+    // Test the workaround version
+    val result = ZipWorkaround[int, string](c1, c2)
+    fmt.Printf("Result: (%d, %s)\n", result.V1, result.V2)
+
+    // Test direct version (currently broken)
+    val result2 = Zip[int, string](c1, c2)
+    fmt.Printf("Result2: (%d, %s)\n", result2.V1, result2.V2)
+}

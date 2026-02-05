@@ -466,9 +466,9 @@ func (s HashSet[T]) Collect[U any](pf func(T) Option[U]) Array[U] {
 
 // Partition splits the set into two sets based on a predicate.
 func (s HashSet[T]) Partition(p func(T) bool) Tuple[HashSet[T], HashSet[T]] {
-    var left = s.Filter(p)
-    var right = s.FilterNot(p)
-    return Tuple[HashSet[T], HashSet[T]](V1 = left, V2 = right)
+    val left = s.Filter(p)
+    val right = s.FilterNot(p)
+    return (left, right)
 }
 
 // FoldLeft applies a binary operator from left to right.
