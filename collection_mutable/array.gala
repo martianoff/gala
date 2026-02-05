@@ -532,8 +532,7 @@ func (a *Array[T]) Zip[U any](other *Array[U]) *Array[Tuple[T, U]] {
     }
     var result = EmptyArray[Tuple[T, U]]()
     for i := 0; i < minLen; i++ {
-        // TODO: Use tuple shorthand after fixing transpiler bug for array index in non-main packages
-        result.Append(Tuple[T, U](V1 = a.elements[i], V2 = other.elements[i]))
+        result.Append((a.elements[i], other.elements[i]))
     }
     return result
 }
@@ -542,8 +541,7 @@ func (a *Array[T]) Zip[U any](other *Array[U]) *Array[Tuple[T, U]] {
 func (a *Array[T]) ZipWithIndex() *Array[Tuple[T, int]] {
     var result = EmptyArray[Tuple[T, int]]()
     for i := 0; i < len(a.elements); i++ {
-        // TODO: Use tuple shorthand after fixing transpiler bug for array index in non-main packages
-        result.Append(Tuple[T, int](V1 = a.elements[i], V2 = i))
+        result.Append((a.elements[i], i))
     }
     return result
 }

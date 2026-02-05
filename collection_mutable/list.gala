@@ -664,8 +664,7 @@ func (l *List[T]) Zip[U any](other *List[U]) *List[Tuple[T, U]] {
     var currentL = l.head
     var currentO = other.head
     for currentL != nil && currentO != nil {
-        // TODO: Use tuple shorthand after fixing transpiler bug for field access in non-main packages
-        result.Append(Tuple[T, U](V1 = currentL.value, V2 = currentO.value))
+        result.Append((currentL.value, currentO.value))
         currentL = currentL.next
         currentO = currentO.next
     }
@@ -678,8 +677,7 @@ func (l *List[T]) ZipWithIndex() *List[Tuple[T, int]] {
     var current = l.head
     var index = 0
     for current != nil {
-        // TODO: Use tuple shorthand after fixing transpiler bug for field access in non-main packages
-        result.Append(Tuple[T, int](V1 = current.value, V2 = index))
+        result.Append((current.value, index))
         current = current.next
         index++
     }
