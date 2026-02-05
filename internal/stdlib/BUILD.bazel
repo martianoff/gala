@@ -35,6 +35,10 @@ genrule(
         # concurrent package
         "//concurrent:future_go",
         "//concurrent:execution_context.go",
+        # stream package
+        "//stream:stream_go",
+        # string_utils package
+        "//string_utils:string_utils_go",
     ],
     outs = ["embedded_gen.go"],
     cmd = "$(location //cmd/stdlib_gen) -output $@ $(SRCS)",

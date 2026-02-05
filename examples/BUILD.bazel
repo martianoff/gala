@@ -423,3 +423,10 @@ gala_test(
     expected = "tuple_shorthand_array_index.out",
     deps = ["//go_interop"],
 )
+
+# Regression test for std type qualification in lambda parameters
+gala_test(
+    name = "std_type_in_lambda",
+    src = "std_type_in_lambda.gala",
+    expected = "std_type_in_lambda.out",
+)

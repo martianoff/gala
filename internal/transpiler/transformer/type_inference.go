@@ -214,13 +214,11 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 				if xType == nil || xType.IsNil() {
 					xType = t.getExprTypeNameManual(sel.X)
 				}
-				// For vals, the stored type is already unwrapped, so .Get() returns it directly
-				if isVal && xType != nil && !xType.IsNil() {
-					return xType
-				}
-				// For immutable field access, the .Get() unwraps the implicit Immutable wrapper
-				// Return the field's declared type directly
-				if isImmutableFieldAccess && xType != nil && !xType.IsNil() {
+				// For vals and immutable field access, .Get() unwraps the implicit Immutable wrapper
+				// and returns the stored type directly - BUT only when there are no arguments.
+				// If there are arguments (like runes.Get(i)), this is a method call on the stored type,
+				// not an Immutable unwrap - fall through to generic method lookup below.
+				if (isVal || isImmutableFieldAccess) && xType != nil && !xType.IsNil() && len(e.Args) == 0 {
 					return xType
 				}
 				xBaseName := xType.BaseName()

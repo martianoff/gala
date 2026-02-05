@@ -1,0 +1,424 @@
+package string_utils
+
+import (
+    "strings"
+    "unicode"
+    . "martianoff/gala/std"
+    . "martianoff/gala/collection_immutable"
+)
+
+// Str is an immutable string wrapper storing runes for efficient character operations.
+type Str struct {
+    runes Array[rune]
+}
+
+// S creates a Str from a native Go string.
+func S(s string) Str = Str(runes = stringToRunes(s))
+
+// stringToRunes converts a string to an Array of runes.
+func stringToRunes(s string) Array[rune] {
+    var result = EmptyArray[rune]()
+    for _, r := range s {
+        result = result.Append(r)
+    }
+    return result
+}
+
+// runesToString converts an Array of runes to a string.
+func runesToString(runes Array[rune]) string =
+    runes.FoldLeft("", (acc string, r rune) => acc + string(r))
+
+// arrayFill creates an array of n copies of value.
+func arrayFill[T any](n int, value T) Array[T] {
+    var result = EmptyArray[T]()
+    for i := 0; i < n; i++ {
+        result = result.Append(value)
+    }
+    return result
+}
+
+// Length returns the number of runes. O(1).
+func (s Str) Length() int = s.runes.Length()
+
+// IsEmpty returns true if the string has zero length.
+func (s Str) IsEmpty() bool = s.runes.IsEmpty()
+
+// NonEmpty returns true if the string has at least one character.
+func (s Str) NonEmpty() bool = s.runes.NonEmpty()
+
+// ToString returns the underlying Go string.
+func (s Str) ToString() string = runesToString(s.runes)
+
+// ToUpper returns uppercase.
+func (s Str) ToUpper() Str = S(strings.ToUpper(s.ToString()))
+
+// ToLower returns lowercase.
+func (s Str) ToLower() Str = S(strings.ToLower(s.ToString()))
+
+// Trim returns trimmed string.
+func (s Str) Trim() Str = S(strings.TrimSpace(s.ToString()))
+
+// TrimLeft returns left-trimmed string.
+func (s Str) TrimLeft() Str = S(strings.TrimLeftFunc(s.ToString(), unicode.IsSpace))
+
+// TrimRight returns right-trimmed string.
+func (s Str) TrimRight() Str = S(strings.TrimRightFunc(s.ToString(), unicode.IsSpace))
+
+// TrimPrefix removes prefix.
+func (s Str) TrimPrefix(prefix string) Str = S(strings.TrimPrefix(s.ToString(), prefix))
+
+// TrimSuffix removes suffix.
+func (s Str) TrimSuffix(suffix string) Str = S(strings.TrimSuffix(s.ToString(), suffix))
+
+// Replace replaces first occurrence.
+func (s Str) Replace(old string, new string) Str = S(strings.Replace(s.ToString(), old, new, 1))
+
+// ReplaceAll replaces all occurrences.
+func (s Str) ReplaceAll(old string, new string) Str = S(strings.ReplaceAll(s.ToString(), old, new))
+
+// Contains returns true if the string contains the substring.
+func (s Str) Contains(substr string) bool = strings.Contains(s.ToString(), substr)
+
+// ContainsAny returns true if contains any chars.
+func (s Str) ContainsAny(chars string) bool = strings.ContainsAny(s.ToString(), chars)
+
+// StartsWith checks prefix.
+func (s Str) StartsWith(prefix string) bool = strings.HasPrefix(s.ToString(), prefix)
+
+// EndsWith checks suffix.
+func (s Str) EndsWith(suffix string) bool = strings.HasSuffix(s.ToString(), suffix)
+
+// Count counts occurrences.
+func (s Str) Count(substr string) int = strings.Count(s.ToString(), substr)
+
+// CharAt returns the rune at the given index.
+func (s Str) CharAt(index int) Option[rune] {
+    if index < 0 || index >= s.runes.Length() {
+        return None[rune]()
+    }
+    return Some(s.runes.Get(index))
+}
+
+// Substring returns a new Str from start (inclusive) to end (exclusive).
+func (s Str) Substring(start int, end int) Str {
+    val length = s.runes.Length()
+    val actualStart = max(0, min(start, length))
+    val actualEnd = max(actualStart, min(end, length))
+    return Str(runes = s.runes.Slice(actualStart, actualEnd))
+}
+
+// Take returns the first n characters.
+func (s Str) Take(n int) Str {
+    if n <= 0 {
+        return Str(runes = EmptyArray[rune]())
+    }
+    return Str(runes = s.runes.Take(n))
+}
+
+// TakeRight returns last n characters.
+func (s Str) TakeRight(n int) Str {
+    if n <= 0 {
+        return Str(runes = EmptyArray[rune]())
+    }
+    val length = s.runes.Length()
+    if n >= length {
+        return s
+    }
+    return Str(runes = s.runes.Drop(length - n))
+}
+
+// Drop returns with first n characters removed.
+func (s Str) Drop(n int) Str {
+    if n <= 0 {
+        return s
+    }
+    return Str(runes = s.runes.Drop(n))
+}
+
+// DropRight returns with last n characters removed.
+func (s Str) DropRight(n int) Str {
+    if n <= 0 {
+        return s
+    }
+    val length = s.runes.Length()
+    if n >= length {
+        return Str(runes = EmptyArray[rune]())
+    }
+    return Str(runes = s.runes.Take(length - n))
+}
+
+// Reverse returns reversed string.
+func (s Str) Reverse() Str = Str(runes = s.runes.Reverse())
+
+// Repeat returns repeated string.
+func (s Str) Repeat(n int) Str {
+    if n <= 0 {
+        return Str(runes = EmptyArray[rune]())
+    }
+    return S(strings.Repeat(s.ToString(), n))
+}
+
+// PadLeft pads on the left.
+func (s Str) PadLeft(length int, pad rune) Str {
+    if s.Length() >= length {
+        return s
+    }
+    val padCount = length - s.Length()
+    return Str(runes = arrayFill(padCount, pad).AppendAll(s.runes))
+}
+
+// PadRight pads on the right.
+func (s Str) PadRight(length int, pad rune) Str {
+    if s.Length() >= length {
+        return s
+    }
+    val padCount = length - s.Length()
+    return Str(runes = s.runes.AppendAll(arrayFill(padCount, pad)))
+}
+
+// Center pads on both sides.
+func (s Str) Center(length int, pad rune) Str {
+    if s.Length() >= length {
+        return s
+    }
+    val totalPad = length - s.Length()
+    val leftPad = totalPad / 2
+    val rightPad = totalPad - leftPad
+    return Str(runes = arrayFill(leftPad, pad).AppendAll(s.runes).AppendAll(arrayFill(rightPad, pad)))
+}
+
+// Capitalize capitalizes first character.
+func (s Str) Capitalize() Str {
+    if s.IsEmpty() {
+        return s
+    }
+    val first = unicode.ToUpper(s.runes.Head())
+    return Str(runes = EmptyArray[rune]().Append(first).AppendAll(s.runes.Tail()))
+}
+
+// Uncapitalize uncapitalizes first character.
+func (s Str) Uncapitalize() Str {
+    if s.IsEmpty() {
+        return s
+    }
+    val first = unicode.ToLower(s.runes.Head())
+    return Str(runes = EmptyArray[rune]().Append(first).AppendAll(s.runes.Tail()))
+}
+
+// Split splits the string by separator.
+func (s Str) Split(sep string) Array[Str] {
+    val parts = strings.Split(s.ToString(), sep)
+    var result = EmptyArray[Str]()
+    for i := 0; i < len(parts); i++ {
+        result = result.Append(S(parts[i]))
+    }
+    return result
+}
+
+// SplitAt splits at index.
+func (s Str) SplitAt(index int) Tuple[Str, Str] {
+    val actualIndex = max(0, min(index, s.Length()))
+    return (Str(runes = s.runes.Take(actualIndex)), Str(runes = s.runes.Drop(actualIndex)))
+}
+
+// Lines splits into lines.
+func (s Str) Lines() Array[Str] {
+    val normalized = strings.ReplaceAll(s.ToString(), "\r\n", "\n")
+    val parts = strings.Split(normalized, "\n")
+    var result = EmptyArray[Str]()
+    for i := 0; i < len(parts); i++ {
+        result = result.Append(S(parts[i]))
+    }
+    return result
+}
+
+// Words splits into words.
+func (s Str) Words() Array[Str] {
+    val parts = strings.Fields(s.ToString())
+    var result = EmptyArray[Str]()
+    for i := 0; i < len(parts); i++ {
+        result = result.Append(S(parts[i]))
+    }
+    return result
+}
+
+// Join joins strings with separator.
+func Join(strs Array[Str], sep string) Str {
+    if strs.IsEmpty() {
+        return Str(runes = EmptyArray[rune]())
+    }
+    return strs.Tail().FoldLeft(strs.Head(), (acc Str, s Str) => S(acc.ToString() + sep + s.ToString()))
+}
+
+// Concat concatenates strings.
+func (s Str) Concat(other Str) Str = Str(runes = s.runes.AppendAll(other.runes))
+
+// Plus is an alias for Concat.
+func (s Str) Plus(other Str) Str = s.Concat(other)
+
+// Equals compares for equality.
+func (s Str) Equals(other Str) bool {
+    if s.Length() != other.Length() {
+        return false
+    }
+    for i := 0; i < s.Length(); i++ {
+        if s.runes.Get(i) != other.runes.Get(i) {
+            return false
+        }
+    }
+    return true
+}
+
+// EqualsIgnoreCase compares ignoring case.
+func (s Str) EqualsIgnoreCase(other Str) bool = strings.EqualFold(s.ToString(), other.ToString())
+
+// Compare compares lexicographically.
+func (s Str) Compare(other Str) int = strings.Compare(s.ToString(), other.ToString())
+
+// ToChars returns characters as Array.
+func (s Str) ToChars() Array[rune] = s.runes
+
+// IsAlpha checks if all alphabetic.
+func (s Str) IsAlpha() bool = s.NonEmpty() && s.runes.ForAll(unicode.IsLetter)
+
+// IsNumeric checks if all numeric.
+func (s Str) IsNumeric() bool = s.NonEmpty() && s.runes.ForAll(unicode.IsDigit)
+
+// IsAlphanumeric checks if all alphanumeric.
+func (s Str) IsAlphanumeric() bool =
+    s.NonEmpty() && s.runes.ForAll((r rune) => unicode.IsLetter(r) || unicode.IsDigit(r))
+
+// IsWhitespace checks if all whitespace.
+func (s Str) IsWhitespace() bool = s.NonEmpty() && s.runes.ForAll(unicode.IsSpace)
+
+// IsUpper checks if all cased characters are uppercase.
+func (s Str) IsUpper() bool {
+    if s.IsEmpty() {
+        return false
+    }
+    val letters = s.runes.Filter(unicode.IsLetter)
+    return letters.NonEmpty() && letters.ForAll(unicode.IsUpper)
+}
+
+// IsLower checks if all cased characters are lowercase.
+func (s Str) IsLower() bool {
+    if s.IsEmpty() {
+        return false
+    }
+    val letters = s.runes.Filter(unicode.IsLetter)
+    return letters.NonEmpty() && letters.ForAll(unicode.IsLower)
+}
+
+// IndexOf returns index of first occurrence of substring.
+func (s Str) IndexOf(substr string) Option[int] {
+    val str = s.ToString()
+    val idx = strings.Index(str, substr)
+    if idx < 0 {
+        return None[int]()
+    }
+    return Some(byteIndexToRuneIndex(str, idx))
+}
+
+// LastIndexOf returns index of last occurrence of substring.
+func (s Str) LastIndexOf(substr string) Option[int] {
+    val str = s.ToString()
+    val idx = strings.LastIndex(str, substr)
+    if idx < 0 {
+        return None[int]()
+    }
+    return Some(byteIndexToRuneIndex(str, idx))
+}
+
+// byteIndexToRuneIndex converts a byte index to a rune index.
+func byteIndexToRuneIndex(str string, byteIdx int) int {
+    var runeIdx = 0
+    var bytePos = 0
+    for _, r := range str {
+        if bytePos >= byteIdx {
+            return runeIdx
+        }
+        bytePos = bytePos + len(string(r))
+        runeIdx = runeIdx + 1
+    }
+    return runeIdx
+}
+
+// IndexOfChar returns index of rune.
+func (s Str) IndexOfChar(target rune) Option[int] {
+    for i := 0; i < s.runes.Length(); i++ {
+        if s.runes.Get(i) == target {
+            return Some(i)
+        }
+    }
+    return None[int]()
+}
+
+// Map applies function to each character.
+func (s Str) Map(f func(rune) rune) Str = Str(runes = s.runes.Map(f))
+
+// Filter keeps matching characters.
+func (s Str) Filter(p func(rune) bool) Str = Str(runes = s.runes.Filter(p))
+
+// FilterNot keeps non-matching characters.
+func (s Str) FilterNot(p func(rune) bool) Str = Str(runes = s.runes.FilterNot(p))
+
+// ForEach applies function to each character.
+func (s Str) ForEach(f func(rune)) {
+    s.runes.ForEach((r rune) => {
+        f(r)
+        return nil
+    })
+}
+
+// Fold reduces the string.
+func (s Str) Fold[U any](zero U, f func(U, rune) U) U = s.runes.FoldLeft(zero, f)
+
+// Exists checks if any character matches.
+func (s Str) Exists(p func(rune) bool) bool = s.runes.Exists(p)
+
+// ForAll checks if all characters match.
+func (s Str) ForAll(p func(rune) bool) bool = s.runes.ForAll(p)
+
+// Find returns first matching character.
+func (s Str) Find(p func(rune) bool) Option[rune] = s.runes.Find(p)
+
+// ZipWithIndex pairs characters with indices.
+func (s Str) ZipWithIndex() Array[Tuple[rune, int]] = s.runes.ZipWithIndex()
+
+// Pattern matching extractors
+
+// NonEmptyStr extracts head and tail.
+type NonEmptyStr struct {}
+
+func (n NonEmptyStr) Unapply(s Str) Option[Tuple[rune, Str]] {
+    if s.IsEmpty() {
+        return None[Tuple[rune, Str]]()
+    }
+    return Some((s.runes.Head(), Str(runes = s.runes.Tail())))
+}
+
+// EmptyStr matches empty strings.
+type EmptyStr struct {}
+
+func (e EmptyStr) Unapply(s Str) Option[bool] {
+    if s.IsEmpty() {
+        return Some(true)
+    }
+    return None[bool]()
+}
+
+// Helper functions
+
+func min(a int, b int) int {
+    if a < b {
+        return a
+    }
+    return b
+}
+
+func max(a int, b int) int {
+    if a > b {
+        return a
+    }
+    return b
+}

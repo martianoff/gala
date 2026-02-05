@@ -27,6 +27,8 @@ var StdlibPackages = []string{
 	"collection_immutable",
 	"collection_mutable",
 	"concurrent",
+	"stream",
+	"string_utils",
 }
 
 // StdlibImportPaths maps package names to their import paths.
@@ -36,6 +38,8 @@ var StdlibImportPaths = map[string]string{
 	"collection_immutable": "martianoff/gala/collection_immutable",
 	"collection_mutable":   "martianoff/gala/collection_mutable",
 	"concurrent":           "martianoff/gala/concurrent",
+	"stream":               "martianoff/gala/stream",
+	"string_utils":         "martianoff/gala/string_utils",
 }
 
 // GenerateGoMod generates a go.mod file content for the workspace.

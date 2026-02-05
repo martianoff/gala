@@ -1,0 +1,68 @@
+// Regression test: std types like Tuple and Option should be auto-qualified
+// with std. prefix when used in lambda parameter types.
+package main
+
+import (
+    "fmt"
+)
+
+// Uses Tuple in a function parameter type - should be qualified with std.
+func processTuple(t Tuple[int, string]) string {
+    val res = t match {
+        case (a, b) => fmt.Sprintf("(%d, %s)", a, b)
+        case _ => "Unknown"
+    }
+    return res
+}
+
+// Uses Option in a function parameter type - should be qualified with std.
+func processOption(opt Option[int]) string {
+    val res = opt match {
+        case Some(v) => fmt.Sprintf("Some(%d)", v)
+        case _ => "None"
+    }
+    return res
+}
+
+// Uses std types in generic container callback
+type Container[T any] struct {
+    Value T
+}
+
+func (c Container[T]) MapToString(f func(T) string) string {
+    return f(c.Value)
+}
+
+func main() {
+    // Test Tuple in function parameter
+    val t = (42, "answer")
+    fmt.Println(processTuple(t))
+
+    // Test Option in function parameter
+    val opt = Some(100)
+    fmt.Println(processOption(opt))
+
+    // Test Tuple in a lambda parameter - the main regression case
+    val tupleContainer = Container[Tuple[int, int]](Value = (1, 2))
+    val result = tupleContainer.MapToString((tup Tuple[int, int]) => {
+        val res = tup match {
+            case (a, b) => fmt.Sprintf("sum=%d", a + b)
+            case _ => "Unknown"
+        }
+        return res
+    })
+    fmt.Println(result)
+
+    // Test Option in a lambda parameter
+    val optContainer = Container[Option[string]](Value = Some("hello"))
+    val result2 = optContainer.MapToString((o Option[string]) => {
+        val res = o match {
+            case Some(s) => s
+            case _ => "empty"
+        }
+        return res
+    })
+    fmt.Println(result2)
+
+    fmt.Println("Done")
+}

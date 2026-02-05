@@ -43,6 +43,10 @@ func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, 
 						}
 					}
 				}
+			} else if registry.IsStdType(typeName) {
+				// Fallback: if type resolution failed but this is a known std type,
+				// qualify it with std. prefix (e.g., Tuple, Option, Either, etc.)
+				ident = t.stdIdent(typeName)
 			}
 		} else {
 			// Qualified type name (e.g., std.Option)

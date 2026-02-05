@@ -17,6 +17,11 @@ import (
 //            isGenericMethodName, isGenericMethodWithImports, isMethodGenericViaTypeMeta
 
 func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.PostfixSuffixContext) (ast.Expr, error) {
+	// When making a function call with type arguments (e.g., Unfold[int, Tuple[int, int]](...)),
+	// the type arguments need to be qualified with std. prefix if they are std types.
+	// This is because at parse time we don't know if T[A, B] is a type instantiation or array access.
+	base = t.qualifyTypeArgsInExpr(base)
+
 	argList := suffix.ArgumentList()
 	if argList == nil {
 		// Empty argument list - check for zero-argument Apply method
@@ -160,7 +165,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 			} else {
 				receiver = sel.X
 				method = sel.Sel.Name
-				typeArgs = []ast.Expr{idx.Index}
+				typeArgs = []ast.Expr{t.qualifyTypeExpr(idx.Index)}
 			}
 		}
 	} else if idxList, ok := fun.(*ast.IndexListExpr); ok {
@@ -170,7 +175,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 			} else {
 				receiver = sel.X
 				method = sel.Sel.Name
-				typeArgs = idxList.Indices
+				typeArgs = t.qualifyTypeExprs(idxList.Indices)
 			}
 		}
 	}
@@ -475,11 +480,11 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 				if idx, ok := fun.(*ast.IndexExpr); ok {
 					baseExpr = idx.X
 					hasTypeArgs = true
-					typeArgs = []ast.Expr{idx.Index}
+					typeArgs = []ast.Expr{t.qualifyTypeExpr(idx.Index)}
 				} else if idxList, ok := fun.(*ast.IndexListExpr); ok {
 					baseExpr = idxList.X
 					hasTypeArgs = true
-					typeArgs = idxList.Indices
+					typeArgs = t.qualifyTypeExprs(idxList.Indices)
 				}
 
 				if id, ok := baseExpr.(*ast.Ident); ok {

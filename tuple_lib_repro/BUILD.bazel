@@ -1,4 +1,4 @@
-load("@rules_go//go:def.bzl", "go_library", "go_test")
+load("@rules_go//go:def.bzl", "go_library")
 load("//:gala.bzl", "gala_bootstrap_transpile")
 
 gala_bootstrap_transpile(
@@ -9,24 +9,20 @@ gala_bootstrap_transpile(
 
 go_library(
     name = "tuple_lib_repro",
-    srcs = ["lib.gen.go"],
+    srcs = [
+        "lib.gen.go",
+        "lib_test.gen.go",
+    ],
     importpath = "martianoff/gala/tuple_lib_repro",
     visibility = ["//visibility:public"],
-    deps = ["//std"],
+    deps = [
+        "//std",
+        "//go_interop",
+    ],
 )
 
 gala_bootstrap_transpile(
     name = "lib_test_go",
     src = "lib_test.gala",
     out = "lib_test.gen.go",
-)
-
-go_test(
-    name = "tuple_lib_repro_test",
-    srcs = ["lib_test.gen.go"],
-    embed = [":tuple_lib_repro"],
-    deps = [
-        "//go_interop",
-        "//std",
-    ],
 )

@@ -68,6 +68,119 @@ func (t *galaASTTransformer) ident(name string) ast.Expr {
 	return ast.NewIdent(name)
 }
 
+// qualifyTypeExpr recursively transforms a type expression to ensure std types
+// are properly qualified with the std. prefix. This is needed for type arguments
+// in generic function calls like Unfold[int, Tuple[int, int]].
+func (t *galaASTTransformer) qualifyTypeExpr(expr ast.Expr) ast.Expr {
+	switch e := expr.(type) {
+	case *ast.Ident:
+		// Check if this is a std type
+		if registry.IsStdType(e.Name) {
+			return t.stdIdent(e.Name)
+		}
+		return e
+	case *ast.IndexExpr:
+		// Generic type with single param: T[A]
+		return &ast.IndexExpr{
+			X:     t.qualifyTypeExpr(e.X),
+			Index: t.qualifyTypeExpr(e.Index),
+		}
+	case *ast.IndexListExpr:
+		// Generic type with multiple params: T[A, B]
+		indices := make([]ast.Expr, len(e.Indices))
+		for i, idx := range e.Indices {
+			indices[i] = t.qualifyTypeExpr(idx)
+		}
+		return &ast.IndexListExpr{
+			X:       t.qualifyTypeExpr(e.X),
+			Indices: indices,
+		}
+	case *ast.StarExpr:
+		// Pointer type: *T
+		return &ast.StarExpr{X: t.qualifyTypeExpr(e.X)}
+	case *ast.ArrayType:
+		// Array/slice type: []T
+		return &ast.ArrayType{
+			Len: e.Len,
+			Elt: t.qualifyTypeExpr(e.Elt),
+		}
+	case *ast.MapType:
+		// Map type: map[K]V
+		return &ast.MapType{
+			Key:   t.qualifyTypeExpr(e.Key),
+			Value: t.qualifyTypeExpr(e.Value),
+		}
+	case *ast.SelectorExpr:
+		// Already qualified: pkg.Type
+		return e
+	case *ast.FuncType:
+		// Function type: func(A) B
+		return t.qualifyFuncType(e)
+	default:
+		return e
+	}
+}
+
+// qualifyTypeExprs transforms a slice of type expressions
+func (t *galaASTTransformer) qualifyTypeExprs(exprs []ast.Expr) []ast.Expr {
+	result := make([]ast.Expr, len(exprs))
+	for i, expr := range exprs {
+		result[i] = t.qualifyTypeExpr(expr)
+	}
+	return result
+}
+
+// qualifyTypeArgsInExpr qualifies type arguments in an expression if it's an IndexExpr
+// or IndexListExpr (e.g., Unfold[int, Tuple[int, int]] -> Unfold[int, std.Tuple[int, int]])
+func (t *galaASTTransformer) qualifyTypeArgsInExpr(expr ast.Expr) ast.Expr {
+	switch e := expr.(type) {
+	case *ast.IndexExpr:
+		return &ast.IndexExpr{
+			X:     t.qualifyTypeArgsInExpr(e.X),
+			Index: t.qualifyTypeExpr(e.Index),
+		}
+	case *ast.IndexListExpr:
+		return &ast.IndexListExpr{
+			X:       t.qualifyTypeArgsInExpr(e.X),
+			Indices: t.qualifyTypeExprs(e.Indices),
+		}
+	case *ast.SelectorExpr:
+		// For selector expressions like stream.Of, don't qualify the base
+		return e
+	default:
+		return expr
+	}
+}
+
+// qualifyFuncType transforms function type to ensure std types are qualified
+func (t *galaASTTransformer) qualifyFuncType(ft *ast.FuncType) *ast.FuncType {
+	var params, results *ast.FieldList
+	if ft.Params != nil {
+		fields := make([]*ast.Field, len(ft.Params.List))
+		for i, f := range ft.Params.List {
+			fields[i] = &ast.Field{
+				Names: f.Names,
+				Type:  t.qualifyTypeExpr(f.Type),
+			}
+		}
+		params = &ast.FieldList{List: fields}
+	}
+	if ft.Results != nil {
+		fields := make([]*ast.Field, len(ft.Results.List))
+		for i, f := range ft.Results.List {
+			fields[i] = &ast.Field{
+				Names: f.Names,
+				Type:  t.qualifyTypeExpr(f.Type),
+			}
+		}
+		results = &ast.FieldList{List: fields}
+	}
+	return &ast.FuncType{
+		Params:  params,
+		Results: results,
+	}
+}
+
 func findLeafIf(stmt ast.Stmt) *ast.IfStmt {
 	switch s := stmt.(type) {
 	case *ast.IfStmt:

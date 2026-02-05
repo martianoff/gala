@@ -23,6 +23,8 @@ func packageFromPath(path string) string {
 		"collection_mutable",
 		"go_interop",
 		"concurrent",
+		"stream",
+		"string_utils",
 		"std",
 	}
 
@@ -129,6 +131,8 @@ var PackageImportPaths = map[string]string{
 	"collection_immutable": "martianoff/gala/collection_immutable",
 	"collection_mutable":   "martianoff/gala/collection_mutable",
 	"concurrent":           "martianoff/gala/concurrent",
+	"stream":               "martianoff/gala/stream",
+	"string_utils":         "martianoff/gala/string_utils",
 }
 `)
 

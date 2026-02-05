@@ -2,7 +2,7 @@ load("@rules_go//go:def.bzl", "go_library")
 load("//:gala.bzl", "gala_bootstrap_transpile", "gala_go_test", "gala_library")
 
 exports_files([
-    "stream.gala",
+    "strings.gala",
 ])
 
 filegroup(
@@ -14,29 +14,28 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+# Bootstrap transpile for stdlib embedding
 gala_bootstrap_transpile(
-    name = "stream_go",
-    src = "stream.gala",
-    out = "stream.gen.go",
+    name = "string_utils_go",
+    src = "strings.gala",
+    out = "strings.gen.go",
 )
 
-go_library(
-    name = "stream",
-    srcs = ["stream.gen.go"],
-    importpath = "martianoff/gala/stream",
+gala_library(
+    name = "string_utils",
+    src = "strings.gala",
+    importpath = "martianoff/gala/string_utils",
     visibility = ["//visibility:public"],
     deps = [
-        "//std",
-        "//go_interop",
         "//collection_immutable",
     ],
 )
 
 gala_go_test(
-    name = "stream_test",
-    srcs = ["stream_test.gala"],
+    name = "string_utils_test",
+    srcs = ["strings_test.gala"],
     deps = [
-        ":stream",
+        ":string_utils",
         "//collection_immutable",
     ],
 )

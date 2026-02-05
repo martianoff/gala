@@ -201,68 +201,54 @@ func (t *galaASTTransformer) resolveTypeName(typeName string, exists func(string
 	// 2. If typeName has a package prefix, extract the simple name and try other packages
 	if idx := strings.LastIndex(typeName, "."); idx != -1 {
 		simpleName := typeName[idx+1:]
-		// Try simple name without any package prefix first
-		// This handles cases where struct fields are registered with simple name
-		// but the type was resolved to a qualified name
-		if exists(simpleName) {
-			return simpleName, true
-		}
-		// Try std package for standard library types like Tuple, Option, etc.
-		stdName := registry.StdPackageName + "." + simpleName
-		if exists(stdName) {
-			return stdName, true
-		}
-		// Try current package
-		if t.packageName != "" {
-			fullName := t.packageName + "." + simpleName
-			if exists(fullName) {
-				return fullName, true
-			}
-		}
-		// Try imported packages
-		for _, entry := range t.importManager.All() {
-			if entry.IsDot {
-				continue
-			}
-			fullName := entry.PkgName + "." + simpleName
-			if exists(fullName) {
-				return fullName, true
-			}
+		if resolved, found := t.tryResolveSimpleName(simpleName, exists); found {
+			return resolved, true
 		}
 	}
 
-	// 3. Try current package prefix (including "main")
+	// 3. Try resolving the original typeName through all package prefixes
+	if resolved, found := t.tryResolveSimpleName(typeName, exists); found {
+		return resolved, true
+	}
+
+	return "", false
+}
+
+// tryResolveSimpleName attempts to resolve a simple (unqualified) type name
+// by trying various package prefixes in order of precedence.
+func (t *galaASTTransformer) tryResolveSimpleName(name string, exists func(string) bool) (string, bool) {
+	// Try simple name without any package prefix first
+	if exists(name) {
+		return name, true
+	}
+
+	// Try std package for standard library types like Tuple, Option, etc.
+	if stdName := registry.StdPackageName + "." + name; exists(stdName) {
+		return stdName, true
+	}
+
+	// Try current package
 	if t.packageName != "" {
-		fullName := t.packageName + "." + typeName
-		if exists(fullName) {
+		if fullName := t.packageName + "." + name; exists(fullName) {
 			return fullName, true
 		}
 	}
 
-	// 4. Try std package prefix
-	stdName := registry.StdPackageName + "." + typeName
-	if exists(stdName) {
-		return stdName, true
-	}
-
-	// 5. Try all imported packages (non-dot)
+	// Try imported packages (non-dot first, then dot imports)
 	for _, entry := range t.importManager.All() {
 		if entry.IsDot {
 			continue
 		}
-		fullName := entry.PkgName + "." + typeName
-		if exists(fullName) {
+		if fullName := entry.PkgName + "." + name; exists(fullName) {
 			return fullName, true
 		}
 	}
 
-	// 6. Try dot imports
 	for _, entry := range t.importManager.All() {
 		if !entry.IsDot {
 			continue
 		}
-		fullName := entry.PkgName + "." + typeName
-		if exists(fullName) {
+		if fullName := entry.PkgName + "." + name; exists(fullName) {
 			return fullName, true
 		}
 	}
