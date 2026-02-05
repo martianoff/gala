@@ -326,7 +326,7 @@ func (f *Future[T]) TransformWith[U any](s func(T) *Future[U], fn func(error) *F
 // The resulting Future inherits this Future's ExecutionContext.
 func (f *Future[T]) Zip[U any](other *Future[U]) *Future[Tuple[T, U]] {
     return f.FlatMap[Tuple[T, U]]((t T) => {
-        return other.Map[Tuple[T, U]]((u U) => Tuple[T, U](V1 = t, V2 = u))
+        return other.Map[Tuple[T, U]]((u U) => (t, u))
     })
 }
 
