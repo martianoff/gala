@@ -1,0 +1,98 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+)
+
+// Test examples from GALA.MD - Variable Declarations, Functions, Structs
+
+// Test: Variable declarations (line 66-68)
+func testVariableDeclarations() {
+    val x = 10
+    val a, b = 1, 2
+    fmt.Printf("x=%d, a=%d, b=%d\n", x, a, b)
+}
+
+// Test: Mutable variables (line 75-77)
+func testMutableVariables() {
+    var y = 20
+    y = 30
+    fmt.Printf("y=%d\n", y)
+}
+
+// Test: Short variable declaration (line 84-87)
+func testShortDeclaration() {
+    z := 40
+    fmt.Printf("z=%d\n", z)
+}
+
+// Test: Expression function (line 105)
+func square(x int) int = x * x
+
+// Test: Function with parameters (line 112-115)
+func process(data string, var count int) {
+    count = count + 1
+    fmt.Printf("data=%s, count=%d\n", data, count)
+}
+
+// Test: Higher-order function (line 125-130)
+func apply(x int, f func(int) int) int = f(x)
+
+// Test: Function returning function (line 148-155)
+func multiplier(factor int) func(int) int {
+    return (x int) => x * factor
+}
+
+// Test: Shorthand struct (line 257)
+struct Person(name string, age int, var score int)
+
+// Test: Generic struct (line 174)
+type Box[T any] struct { Value T }
+
+func (b Box[T]) Transform[U any](f func(T) U) Box[U] = Box[U](Value = f(b.Value))
+
+// Test: Interface (line 333-345)
+type Shaper interface {
+    Area() float64
+}
+
+struct Rect(width float64, height float64)
+
+func (r Rect) Area() float64 = r.width * r.height
+
+func main() {
+    testVariableDeclarations()
+    testMutableVariables()
+    testShortDeclaration()
+
+    // Test square function
+    fmt.Printf("square(5)=%d\n", square(5))
+
+    // Test process
+    process("test", 0)
+
+    // Test higher-order function
+    val double = (x int) => x * 2
+    val result = apply(5, double)
+    fmt.Printf("apply(5, double)=%d\n", result)
+
+    // Test multiplier
+    val triple = multiplier(3)
+    fmt.Printf("triple(10)=%d\n", triple(10))
+
+    // Test struct construction
+    val p1 = Person("Alice", 30, 100)
+    val p2 = p1.Copy(age = 31)
+    fmt.Printf("p1=%s, age=%d; p2 age=%d\n", p1.name, p1.age, p2.age)
+
+    // Test generic struct
+    val intBox = Box[int](Value = 42)
+    val strBox = intBox.Transform((x int) => fmt.Sprintf("Value: %d", x))
+    fmt.Printf("strBox.Value=%s\n", strBox.Value)
+
+    // Test interface
+    val r = Rect(10.0, 5.0)
+    val s Shaper = r
+    fmt.Printf("Area=%f\n", s.Area())
+}

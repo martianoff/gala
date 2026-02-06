@@ -1,0 +1,120 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+)
+
+// Test pattern matching examples from GALA.MD
+
+// Test: Basic match expression (line 385-390)
+func testBasicMatch() {
+    val x = 2
+    val result = x match {
+        case 1 => "one"
+        case 2 => "two"
+        case n => "Value is " + fmt.Sprintf("%d", n)
+        case _ => "other"
+    }
+    fmt.Printf("Basic match: %s\n", result)
+}
+
+// Test: Type-based pattern matching (line 397-402)
+func testTypeMatch() {
+    val x any = "hello"
+    val res = x match {
+        case s: string => "Found string: " + s
+        case i: int    => "Found int: " + fmt.Sprintf("%d", i)
+        case _         => "Unknown type"
+    }
+    fmt.Printf("Type match: %s\n", res)
+}
+
+// Test: Generic type pattern matching (line 408-416)
+type Wrap[T any] struct { Value T }
+
+func testGenericMatch() {
+    val w = Wrap[int](Value = 42)
+    val res = w match {
+        case _: Wrap[int]    => "Wrapped int"
+        case _: Wrap[string] => "Wrapped string"
+        case _               => "Other"
+    }
+    fmt.Printf("Generic match: %s\n", res)
+}
+
+// Test: Option pattern matching (line 421-427)
+func testOptionMatch() {
+    val opt = Some(42)
+    opt match {
+        case Some(i: int) => fmt.Printf("Integer: %d\n", i)
+        case Some(_: string) => fmt.Println("String")
+        case _ => fmt.Println("Other")
+    }
+}
+
+// Test: Extractor pattern matching (line 459-467)
+struct TestPerson(Name string, Age int)
+
+func testExtractorMatch() {
+    val p = TestPerson("Alice", 30)
+    val msg = p match {
+        case TestPerson(_, 30) => "Alice is 30"
+        case TestPerson(_, age) => "Someone else is " + fmt.Sprintf("%d", age)
+        case _                  => "Unknown"
+    }
+    fmt.Printf("Extractor match: %s\n", msg)
+}
+
+// Test: Custom extractor (line 476-477)
+type Even struct {}
+func (e Even) Unapply(i int) Option[int] = if (i % 2 == 0) Some(i) else None[int]()
+
+func testCustomExtractor() {
+    val n = 10
+    val res = n match {
+        case Even(e) => fmt.Sprintf("%d is even", e)
+        case _ => "odd"
+    }
+    fmt.Printf("Custom extractor: %s\n", res)
+}
+
+// Test: Pattern with filter (line 546-551)
+func testPatternWithFilter() {
+    val x = 150
+    val res = x match {
+        case i: int if i > 100 => "Large integer"
+        case i: int if i > 0   => "Positive integer"
+        case _ => "Other"
+    }
+    fmt.Printf("Filter match: %s\n", res)
+}
+
+// Test: Tuple pattern matching (line 782-786)
+func testTupleMatch() {
+    val t = (1, "hello")
+    val msg = t match {
+        case (a, b) => fmt.Sprintf("Got %d and %s", a, b)
+        case _      => "Unknown"
+    }
+    fmt.Printf("Tuple match: %s\n", msg)
+}
+
+// Test: Tuple destructuring (line 788-789)
+func testTupleDestruct() {
+    val t = (1, "hello")
+    val (a, b) = t
+    fmt.Printf("Destructured: a=%d, b=%s\n", a, b)
+}
+
+func main() {
+    testBasicMatch()
+    testTypeMatch()
+    testGenericMatch()
+    testOptionMatch()
+    testExtractorMatch()
+    testCustomExtractor()
+    testPatternWithFilter()
+    testTupleMatch()
+    testTupleDestruct()
+}

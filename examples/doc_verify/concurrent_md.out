@@ -1,0 +1,13 @@
+Immediate value=42
+Failed isCompleted=true
+Await={{100} {<nil>} {true}}
+Get=100
+GetOrElse=100
+Map=20
+Recover=0
+RecoverWith=99
+Pattern match: Got: 42
+Zip=({10}, {hello})
+Before complete: isCompleted=false
+After complete: isCompleted=true
+Future value=42

@@ -1,0 +1,31 @@
+Nanoseconds(1000).ToNanos()=1000
+Microseconds(500).ToMicros()=500
+Milliseconds(100).ToMillis()=100
+Seconds(30).ToSeconds()=30
+Minutes(5).ToMinutes()=5
+Hours(2).ToHours()=2
+Plus=45 seconds
+Minus=15 seconds
+Multiply(2)=60 seconds
+Divide(2)=15 seconds
+Negate=-30 seconds
+IsZero=false
+IsPositive=true
+ToSeconds=9000
+ToMinutes=150
+ToHours=2
+String=2h30m0s
+UnixEpoch.UnixSeconds=0
+FromUnixSeconds(1704067200).Year=2024
+Plus(1h).UnixSeconds=4600
+Until=1000 seconds
+IsBefore=true
+IsAfter=false
+Min.UnixSeconds=1000
+Max.UnixSeconds=2000
+Year=2024
+Month=6
+Day=15
+InstantComponents: 2024-06-15 09:40:45
+DateOnly: 2024-06-15
+TimeOnly: 09:40:45

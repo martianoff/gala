@@ -494,12 +494,14 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 				}
 				return baseType
 			}
+			// Handle Option_* methods - don't return early, let the Receiver_Method handling below infer type params
+			// This only handles cases where we have explicit type args
 			if strings.HasPrefix(id.Name, transpiler.TypeOption+"_") || strings.HasPrefix(id.Name, transpiler.FuncSome+"_") || strings.HasPrefix(id.Name, transpiler.FuncNone+"_") {
 				baseType := transpiler.NamedType{Package: registry.StdPackageName, Name: transpiler.TypeOption}
 				if len(typeArgs) > 0 {
 					return transpiler.GenericType{Base: baseType, Params: typeArgs}
 				}
-				return baseType
+				// Don't return early - fall through to Receiver_Method handling to infer type params
 			}
 			if t.hasTupleTypePrefix(id.Name) {
 				tupleType := t.getTupleTypeFromName(id.Name)
@@ -511,6 +513,14 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 			}
 			if id.Name == "len" {
 				return transpiler.BasicType{Name: "int"}
+			}
+			// Handle go_interop.SliceOf[T](elements ...T) []T
+			// SliceOf is commonly used with dot imports, infer element type from arguments
+			if id.Name == "SliceOf" && len(e.Args) > 0 {
+				elemType := t.getExprTypeNameManual(e.Args[0])
+				if !elemType.IsNil() {
+					return transpiler.ArrayType{Elem: elemType}
+				}
 			}
 			// Handle type conversions like uint32(x), int64(y), string(z)
 			// When a primitive type name is used as a function call, it's a type conversion
@@ -561,9 +571,11 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 						// Substitute receiver's type params from first argument
 						// e.g., Array_Zip[string](nums.Get(), ...) where nums.Get() is Array[int]
 						// needs to substitute T -> int from the first arg's generic type
+						var receiverTypeParams []transpiler.Type
 						if len(e.Args) > 0 {
 							firstArgType := t.getExprTypeNameManual(e.Args[0])
 							if genType, ok := firstArgType.(transpiler.GenericType); ok && len(meta.TypeParams) > 0 {
+								receiverTypeParams = genType.Params
 								result = t.substituteConcreteTypes(result, meta.TypeParams, genType.Params)
 							}
 						}
@@ -571,6 +583,14 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 						// e.g., Array_Zip[string] needs to substitute U -> string
 						if len(typeArgs) > 0 && len(mMeta.TypeParams) > 0 {
 							result = t.substituteConcreteTypes(result, mMeta.TypeParams, typeArgs)
+						} else if len(mMeta.TypeParams) > 0 && len(e.Args) > 1 {
+							// Try to infer method-level type params from function arguments
+							// e.g., for Option_Map(opt, func(v int) int {...}), infer U=int from lambda return type
+							methodArgs := e.Args[1:] // Arguments after the receiver
+							inferredTypeArgs := t.inferMethodTypeParamsFromArgs(mMeta, methodArgs, meta.TypeParams, receiverTypeParams)
+							if len(inferredTypeArgs) > 0 {
+								result = t.substituteConcreteTypes(result, mMeta.TypeParams, inferredTypeArgs)
+							}
 						}
 						return result
 					}

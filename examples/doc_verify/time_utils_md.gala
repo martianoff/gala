@@ -1,0 +1,131 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+    . "martianoff/gala/time_utils"
+)
+
+// Test examples from TIME_UTILS.MD
+
+// Creating Durations (line 18-28)
+func testCreatingDurations() {
+    val ns = Nanoseconds(1000)
+    val us = Microseconds(500)
+    val ms = Milliseconds(100)
+    val sec = Seconds(30)
+    val min = Minutes(5)
+    val hr = Hours(2)
+
+    fmt.Printf("Nanoseconds(1000).ToNanos()=%d\n", ns.ToNanos())
+    fmt.Printf("Microseconds(500).ToMicros()=%d\n", us.ToMicros())
+    fmt.Printf("Milliseconds(100).ToMillis()=%d\n", ms.ToMillis())
+    fmt.Printf("Seconds(30).ToSeconds()=%d\n", sec.ToSeconds())
+    fmt.Printf("Minutes(5).ToMinutes()=%d\n", min.ToMinutes())
+    fmt.Printf("Hours(2).ToHours()=%d\n", hr.ToHours())
+}
+
+// Duration Operations (line 40-60)
+func testDurationOperations() {
+    val d1 = Seconds(30)
+    val d2 = Seconds(15)
+
+    val sum = d1.Plus(d2)
+    fmt.Printf("Plus=%d seconds\n", sum.ToSeconds())
+
+    val diff = d1.Minus(d2)
+    fmt.Printf("Minus=%d seconds\n", diff.ToSeconds())
+
+    val doubled = d1.Multiply(2)
+    fmt.Printf("Multiply(2)=%d seconds\n", doubled.ToSeconds())
+
+    val halved = d1.Divide(2)
+    fmt.Printf("Divide(2)=%d seconds\n", halved.ToSeconds())
+
+    val neg = d1.Negate()
+    fmt.Printf("Negate=%d seconds\n", neg.ToSeconds())
+
+    fmt.Printf("IsZero=%v\n", d1.IsZero())
+    fmt.Printf("IsPositive=%v\n", d1.IsPositive())
+}
+
+// Duration Conversions (line 66-78)
+func testDurationConversions() {
+    val d = Hours(2).Plus(Minutes(30))
+
+    fmt.Printf("ToSeconds=%d\n", d.ToSeconds())
+    fmt.Printf("ToMinutes=%d\n", d.ToMinutes())
+    fmt.Printf("ToHours=%d\n", d.ToHours())
+    fmt.Printf("String=%s\n", d.String())
+}
+
+// Creating Instants (line 88-99)
+func testCreatingInstants() {
+    val epoch = UnixEpoch()
+    fmt.Printf("UnixEpoch.UnixSeconds=%d\n", epoch.UnixSeconds())
+
+    val fromSecs = FromUnixSeconds(1704067200)
+    fmt.Printf("FromUnixSeconds(1704067200).Year=%d\n", fromSecs.Year())
+}
+
+// Instant Operations (line 111-135)
+func testInstantOperations() {
+    val i1 = FromUnixSeconds(1000)
+    val i2 = FromUnixSeconds(2000)
+
+    val later = i1.Plus(Hours(1))
+    fmt.Printf("Plus(1h).UnixSeconds=%d\n", later.UnixSeconds())
+
+    val until = i1.Until(i2)
+    fmt.Printf("Until=%d seconds\n", until.ToSeconds())
+
+    fmt.Printf("IsBefore=%v\n", i1.IsBefore(i2))
+    fmt.Printf("IsAfter=%v\n", i1.IsAfter(i2))
+
+    val minInst = i1.Min(i2)
+    fmt.Printf("Min.UnixSeconds=%d\n", minInst.UnixSeconds())
+
+    val maxInst = i1.Max(i2)
+    fmt.Printf("Max.UnixSeconds=%d\n", maxInst.UnixSeconds())
+}
+
+// Instant Accessors (line 140-160)
+func testInstantAccessors() {
+    val i = FromUnixSeconds(1718444445) // 2024-06-15 10:00:45 UTC approx
+    fmt.Printf("Year=%d\n", i.Year())
+    fmt.Printf("Month=%d\n", i.Month())
+    fmt.Printf("Day=%d\n", i.Day())
+}
+
+// Pattern Matching (line 216-226)
+func testPatternMatch() {
+    val i = FromUnixSeconds(1718444445)
+
+    i match {
+        case InstantComponents(year, month, day, hour, minute, second) =>
+            fmt.Printf("InstantComponents: %d-%02d-%02d %02d:%02d:%02d\n", year, month, day, hour, minute, second)
+        case _ => fmt.Println("Unknown")
+    }
+
+    i match {
+        case DateOnly(year, month, day) =>
+            fmt.Printf("DateOnly: %d-%02d-%02d\n", year, month, day)
+        case _ => fmt.Println("Unknown")
+    }
+
+    i match {
+        case TimeOnly(hour, minute, second) =>
+            fmt.Printf("TimeOnly: %02d:%02d:%02d\n", hour, minute, second)
+        case _ => fmt.Println("Unknown")
+    }
+}
+
+func main() {
+    testCreatingDurations()
+    testDurationOperations()
+    testDurationConversions()
+    testCreatingInstants()
+    testInstantOperations()
+    testInstantAccessors()
+    testPatternMatch()
+}

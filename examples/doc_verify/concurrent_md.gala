@@ -1,0 +1,96 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+    . "martianoff/gala/concurrent"
+)
+
+// Test examples from CONCURRENT.MD
+
+// Creating Futures (line 19-27)
+func testCreatingFutures() {
+    val immediate = FutureOf[int](42)
+    fmt.Printf("Immediate value=%d\n", immediate.Get())
+
+    val failed = FutureFailed[int](NoSuchElementError(Message = "oops"))
+    fmt.Printf("Failed isCompleted=%v\n", failed.IsCompleted())
+}
+
+// Blocking Operations (line 32-36)
+func testBlockingOps() {
+    val f = FutureOf[int](100)
+
+    val result = f.Await()
+    fmt.Printf("Await=%v\n", result)
+
+    val value = f.Get()
+    fmt.Printf("Get=%d\n", value)
+
+    val safe = f.GetOrElse(0)
+    fmt.Printf("GetOrElse=%d\n", safe)
+}
+
+// Monadic Operations (line 49-51)
+func testMonadicOps() {
+    val f = FutureOf[int](10)
+
+    val doubled = f.Map[int]((v int) => v * 2)
+    fmt.Printf("Map=%d\n", doubled.Get())
+}
+
+// Error Recovery (line 55-57)
+func testErrorRecovery() {
+    val failed = FutureFailed[int](NoSuchElementError(Message = "error"))
+
+    val recovered = failed.Recover((e error) => 0)
+    fmt.Printf("Recover=%d\n", recovered.Get())
+
+    val recoveredWith = failed.RecoverWith((e error) => FutureOf[int](99))
+    fmt.Printf("RecoverWith=%d\n", recoveredWith.Get())
+}
+
+// Pattern Matching (line 75-88)
+func testPatternMatch() {
+    val f = FutureOf[int](42)
+
+    val msg = f match {
+        case Succeeded(v) => fmt.Sprintf("Got: %d", v)
+        case Failed(e) => fmt.Sprintf("Error: %s", e.Error())
+        case _ => "Unknown"
+    }
+    fmt.Printf("Pattern match: %s\n", msg)
+}
+
+// Combining Futures (line 62-64)
+func testCombiningFutures() {
+    val f1 = FutureOf[int](10)
+    val f2 = FutureOf[string]("hello")
+
+    val zipped = f1.Zip[string](f2)
+    val result = zipped.Get()
+    fmt.Printf("Zip=(%d, %s)\n", result.V1, result.V2)
+}
+
+// Promise (line 132-142)
+func testPromise() {
+    val promise = NewPromise[int]()
+    val future = promise.Future()
+
+    fmt.Printf("Before complete: isCompleted=%v\n", promise.IsCompleted())
+
+    promise.Success(42)
+
+    fmt.Printf("After complete: isCompleted=%v\n", promise.IsCompleted())
+    fmt.Printf("Future value=%d\n", future.Get())
+}
+
+func main() {
+    testCreatingFutures()
+    testBlockingOps()
+    testMonadicOps()
+    testErrorRecovery()
+    testPatternMatch()
+    testCombiningFutures()
+    testPromise()
+}

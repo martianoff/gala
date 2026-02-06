@@ -1,0 +1,12 @@
+Of: Array(1, 2, 3, 4, 5)
+Range: Array(1, 2, 3, 4, 5, 6, 7, 8, 9)
+Iterate: Array(1, 2, 4, 8, 16)
+Fibonacci: Array(0, 1, 1, 2, 3, 5, 8, 13, 21, 34)
+Countdown: Array(10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0)
+Map: Array(2, 4, 6)
+Filter: Array(2, 4)
+Take: Array(1, 2, 3)
+Fold: 15
+ZipWithIndex: (a, 0)
+ZipWithIndex: (b, 1)
+ZipWithIndex: (c, 2)

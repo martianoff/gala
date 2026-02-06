@@ -1,0 +1,137 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+    . "martianoff/gala/collection_immutable"
+)
+
+// Test examples from IMMUTABLE_COLLECTIONS.MD
+
+// List Construction (line 96-108)
+func testListConstruction() {
+    val empty = EmptyList[int]()
+    val list = ListOf(1, 2, 3, 4, 5)
+    val list2 = EmptyList[int]().Prepend(3).Prepend(2).Prepend(1)
+
+    fmt.Printf("empty.IsEmpty=%v\n", empty.IsEmpty())
+    fmt.Printf("list.Length=%d\n", list.Length())
+    fmt.Printf("list2=%s\n", list2.String())
+}
+
+// List Head/Tail Operations (line 124-140)
+func testListHeadTail() {
+    val list = ListOf(1, 2, 3)
+
+    fmt.Printf("Head=%d\n", list.Head())
+    fmt.Printf("HeadOption=%v\n", list.HeadOption())
+    fmt.Printf("Tail=%s\n", list.Tail().String())
+    fmt.Printf("Last=%d\n", list.Last())
+}
+
+// List Transformations (line 199-222)
+func testListTransformations() {
+    val list = ListOf(1, 2, 3)
+
+    val mapped = list.Map[int]((x int) => x * 2)
+    fmt.Printf("Map=%s\n", mapped.String())
+
+    val filtered = list.Filter((x int) => x % 2 == 1)
+    fmt.Printf("Filter=%s\n", filtered.String())
+
+    val reversed = list.Reverse()
+    fmt.Printf("Reverse=%s\n", reversed.String())
+}
+
+// List Folding (line 227-240)
+func testListFolding() {
+    val list = ListOf(1, 2, 3, 4)
+
+    val sum = list.FoldLeft[int](0, (acc int, x int) => acc + x)
+    fmt.Printf("FoldLeft sum=%d\n", sum)
+
+    val reduced = list.Reduce((a int, b int) => a + b)
+    fmt.Printf("Reduce=%d\n", reduced)
+}
+
+// List Pattern Matching (line 287-294)
+func testListPatternMatch() {
+    val list = ListOf(1, 2, 3)
+
+    val result = list match {
+        case Cons(head, tail) => fmt.Sprintf("head=%d, tail.Length=%d", head, tail.Length())
+        case Nil() => "empty"
+        case _ => "other"
+    }
+    fmt.Printf("Pattern match: %s\n", result)
+}
+
+// Array Construction (line 313-322)
+func testArrayConstruction() {
+    val empty = EmptyArray[int]()
+    val arr = ArrayOf(1, 2, 3, 4, 5)
+
+    fmt.Printf("empty.Length=%d\n", empty.Length())
+    fmt.Printf("arr.Length=%d\n", arr.Length())
+    fmt.Printf("arr.Get(2)=%d\n", arr.Get(2))
+}
+
+// Array Operations (line 369-382)
+func testArrayOperations() {
+    val arr = ArrayOf(2, 3, 4)
+
+    val appended = arr.Append(5)
+    fmt.Printf("Append=%s\n", appended.String())
+
+    val prepended = arr.Prepend(1)
+    fmt.Printf("Prepend=%s\n", prepended.String())
+}
+
+// HashSet Operations (line 572-583)
+func testHashSetOperations() {
+    val set = HashSetOf(1, 2, 3)
+
+    val added = set.Add(4)
+    fmt.Printf("Add=%d\n", added.Size())
+
+    val contains = set.Contains(2)
+    fmt.Printf("Contains(2)=%v\n", contains)
+}
+
+// HashSet Set Operations (line 587-602)
+func testHashSetSetOps() {
+    val a = HashSetOf(1, 2, 3, 4)
+    val b = HashSetOf(3, 4, 5, 6)
+
+    val union = a.Union(b)
+    fmt.Printf("Union size=%d\n", union.Size())
+
+    val inter = a.Intersect(b)
+    fmt.Printf("Intersect size=%d\n", inter.Size())
+
+    val diff = a.Diff(b)
+    fmt.Printf("Diff size=%d\n", diff.Size())
+}
+
+// TreeSet Min/Max (line 764-777)
+func testTreeSetMinMax() {
+    val set = TreeSetOf(5, 3, 1, 4, 2)
+
+    fmt.Printf("Min=%d\n", set.Min())
+    fmt.Printf("Max=%d\n", set.Max())
+    fmt.Printf("Head=%d\n", set.Head())
+    fmt.Printf("Last=%d\n", set.Last())
+}
+
+func main() {
+    testListConstruction()
+    testListHeadTail()
+    testListTransformations()
+    testListFolding()
+    testListPatternMatch()
+    testArrayConstruction()
+    testArrayOperations()
+    testHashSetOperations()
+    testHashSetSetOps()
+    testTreeSetMinMax()
+}

@@ -1,0 +1,27 @@
+empty.IsEmpty=true
+list.Length=5
+list2=List(1, 2, 3)
+Head=1
+HeadOption={{1} {true}}
+Tail=List(2, 3)
+Last=3
+Map=List(2, 4, 6)
+Filter=List(1, 3)
+Reverse=List(3, 2, 1)
+FoldLeft sum=10
+Reduce=10
+Pattern match: head=1, tail.Length=2
+empty.Length=0
+arr.Length=5
+arr.Get(2)=3
+Append=Array(2, 3, 4, 5)
+Prepend=Array(1, 2, 3, 4)
+Add=4
+Contains(2)=true
+Union size=6
+Intersect size=2
+Diff size=2
+Min=1
+Max=5
+Head=1
+Last=5

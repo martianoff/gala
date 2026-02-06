@@ -1,0 +1,126 @@
+package main
+
+import (
+    "fmt"
+    "unicode"
+    . "martianoff/gala/std"
+    . "martianoff/gala/string_utils"
+)
+
+// Test examples from STRING_UTILS.MD
+
+// Quick Start (line 24-30)
+func testQuickStart() {
+    val s = S("Hello, World!")
+    fmt.Printf("Original: %s\n", s.ToString())
+
+    val result = s.Trim().ToLower().ReplaceAll(",", "").ReplaceAll("!", "")
+    fmt.Printf("Cleaned: %s\n", result.ToString())
+}
+
+// Basic Operations (line 55-59)
+func testBasicOps() {
+    val s = S("Hello")
+    fmt.Printf("Length=%d\n", s.Length())
+    fmt.Printf("IsEmpty=%v\n", s.IsEmpty())
+    fmt.Printf("NonEmpty=%v\n", s.NonEmpty())
+}
+
+// Slicing (line 65-69)
+func testSlicing() {
+    val s = S("Hello, World!")
+    fmt.Printf("Take(5)=%s\n", s.Take(5).ToString())
+    fmt.Printf("Drop(7)=%s\n", s.Drop(7).ToString())
+    fmt.Printf("TakeRight(6)=%s\n", s.TakeRight(6).ToString())
+}
+
+// Case Transformations (line 75-78)
+func testCaseTransform() {
+    val s = S("hello world")
+    fmt.Printf("ToUpper=%s\n", s.ToUpper().ToString())
+    fmt.Printf("Capitalize=%s\n", s.Capitalize().ToString())
+}
+
+// Trimming (line 84-88)
+func testTrimming() {
+    val s = S("  hello  ")
+    fmt.Printf("Trim='%s'\n", s.Trim().ToString())
+    fmt.Printf("TrimLeft='%s'\n", s.TrimLeft().ToString())
+    fmt.Printf("TrimRight='%s'\n", s.TrimRight().ToString())
+}
+
+// Replacement (line 94-95)
+func testReplacement() {
+    val s = S("hello world world")
+    fmt.Printf("Replace=%s\n", s.Replace("world", "GALA").ToString())
+    fmt.Printf("ReplaceAll=%s\n", s.ReplaceAll("world", "GALA").ToString())
+}
+
+// Functional Operations (line 161-169)
+func testFunctionalOps() {
+    // Map
+    val shifted = S("abc").Map((r rune) => r + 1)
+    fmt.Printf("Map shift=%s\n", shifted.ToString())
+
+    // Filter - keep only lowercase letters (using unicode.IsLower returns bool)
+    val isLower func(rune) bool = unicode.IsLower
+    val filtered = S("Hello123").Filter(isLower)
+    fmt.Printf("Filter=%s\n", filtered.ToString())
+
+    // Fold
+    val count = S("hello").Fold[int](0, (acc int, r rune) => acc + 1)
+    fmt.Printf("Fold count=%d\n", count)
+}
+
+// Predicates (line 225-231)
+func testPredicates() {
+    fmt.Printf("IsAlpha=%v\n", S("hello").IsAlpha())
+    fmt.Printf("IsNumeric=%v\n", S("12345").IsNumeric())
+    fmt.Printf("IsAlphanumeric=%v\n", S("hello123").IsAlphanumeric())
+}
+
+// Search (line 143-146)
+func testSearch() {
+    val s = S("hello world")
+    fmt.Printf("Contains=%v\n", s.Contains("world"))
+    fmt.Printf("StartsWith=%v\n", s.StartsWith("hello"))
+    fmt.Printf("EndsWith=%v\n", s.EndsWith("world"))
+}
+
+// Comparison (line 151-153)
+func testComparison() {
+    val s1 = S("hello")
+    val s2 = S("HELLO")
+    fmt.Printf("Equals=%v\n", s1.Equals(s2))
+    fmt.Printf("EqualsIgnoreCase=%v\n", s1.EqualsIgnoreCase(s2))
+}
+
+// Pattern Matching (line 237-249)
+func testPatternMatch() {
+    val s = S("hello")
+    val result = s match {
+        case EmptyStr() => "empty"
+        case NonEmptyStr(head, tail) => {
+            if (tail.IsEmpty()) {
+                return "single character"
+            }
+            return fmt.Sprintf("starts with %c, rest: %s", head, tail.ToString())
+        }
+        case _ => "other"
+    }
+    fmt.Printf("Pattern match: %s\n", result)
+}
+
+func main() {
+    testQuickStart()
+    testBasicOps()
+    testSlicing()
+    testCaseTransform()
+    testTrimming()
+    testReplacement()
+    testFunctionalOps()
+    testPredicates()
+    testSearch()
+    testComparison()
+    testPatternMatch()
+}

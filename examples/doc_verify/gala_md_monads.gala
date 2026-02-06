@@ -1,0 +1,118 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+    . "martianoff/gala/go_interop"
+)
+
+// Test monadic types from GALA.MD
+
+// Test: If expression (line 378)
+func testIfExpr() {
+    val score = 60
+    val status = if (score > 50) "pass" else "fail"
+    fmt.Printf("If expr: %s\n", status)
+}
+
+// Test: Option monad (line 764-768)
+func testOption() {
+    val x Option[int] = Some(10)
+    val y Option[int] = None[int]()
+
+    val result = x.Map((i int) => i * 2)
+    fmt.Printf("Option mapped: %v\n", result.Get())
+
+    val fallback = y.GetOrElse(42)
+    fmt.Printf("Option fallback: %d\n", fallback)
+}
+
+// Test: Either monad (line 800-809)
+func testEither() {
+    val e Either[int, string] = Right[int, string]("success")
+    val msg = e match {
+        case Left(code) => fmt.Sprintf("Error code: %d", code)
+        case Right(s)   => "Result: " + s
+        case _          => "Unknown"
+    }
+    fmt.Printf("Either match: %s\n", msg)
+
+    val length = e.Map((s string) => len(s))
+    fmt.Printf("Either mapped: %v\n", length)
+}
+
+// Test: Try monad (line 815-841)
+func testTry() {
+    val success Try[int] = Success(42)
+    val failure Try[int] = Failure[int](NoSuchElementError(Message = "not found"))
+
+    val msg = success match {
+        case Success(n) => fmt.Sprintf("Got: %d", n)
+        case Failure(e) => fmt.Sprintf("Error: %s", e.Error())
+        case _          => "Unknown"
+    }
+    fmt.Printf("Try match: %s\n", msg)
+
+    val doubled = success.Map[int]((n int) => n * 2)
+    fmt.Printf("Try mapped: %d\n", doubled.Get())
+
+    val recovered = failure.Recover((e error) => 0)
+    fmt.Printf("Try recovered: %d\n", recovered.Get())
+
+    val value = failure.GetOrElse(100)
+    fmt.Printf("Try fallback: %d\n", value)
+}
+
+// Test: Tuple short syntax (line 773-794)
+func testTuple() {
+    val t = (1, "hello")
+    val triple = (1, "hello", true)
+
+    fmt.Printf("Tuple: (%d, %s)\n", t.V1, t.V2)
+    fmt.Printf("Triple: (%d, %s, %v)\n", triple.V1, triple.V2, triple.V3)
+
+    val (a, b) = t
+    fmt.Printf("Destructured: a=%d, b=%s\n", a, b)
+}
+
+// Test: Lambdas (line 679-685)
+func testLambdas() {
+    val f = (x int) => x * x
+    val g = (a int, b int) => {
+        val sum = a + b
+        return sum * sum
+    }
+
+    fmt.Printf("Lambda f(5)=%d\n", f(5))
+    fmt.Printf("Lambda g(2,3)=%d\n", g(2, 3))
+}
+
+// Test: For loop (line 618-622)
+func testForLoop() {
+    fmt.Print("For loop:")
+    for i := 0; i < 5; i++ {
+        fmt.Printf(" %d", i)
+    }
+    fmt.Println()
+}
+
+// Test: Range loop (line 652-656)
+func testRangeLoop() {
+    val items = SliceOf(10, 20, 30)
+    fmt.Print("Range loop: ")
+    for i, v := range items {
+        fmt.Printf("(%d:%d) ", i, v)
+    }
+    fmt.Println()
+}
+
+func main() {
+    testIfExpr()
+    testOption()
+    testEither()
+    testTry()
+    testTuple()
+    testLambdas()
+    testForLoop()
+    testRangeLoop()
+}

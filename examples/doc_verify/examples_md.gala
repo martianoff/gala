@@ -1,0 +1,140 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+    . "martianoff/gala/go_interop"
+)
+
+// Test examples from EXAMPLES.MD
+
+// Complete Example (line 9-24)
+struct Point(X int, Y int)
+
+func moveX(p Point, delta int) Point = p.Copy(X = p.X + delta)
+
+func testCompleteExample() {
+    val p1 = Point(10, 20)
+    val p2 = moveX(p1, 5)
+
+    val msg = if (p2.X > 10) "moved" else "static"
+    fmt.Println(msg, p2)
+}
+
+// Option Monad Example (line 29-46)
+func testOptionMonad() {
+    val x = Some(10)
+    val y = x.Map((v int) => v * 2)
+    val z = None[int]().GetOrElse(42)
+
+    val res = y match {
+        case Some(v) => v
+        case _       => 0
+    }
+
+    fmt.Println(res, z)
+}
+
+// Generic Methods Example (line 51-64)
+type Box[T any] struct { Value T }
+
+func (b Box[T]) Transform[U any](f func(T) U) Box[U] = Box[U](Value = f(b.Value))
+
+func testGenericMethods() {
+    val b = Box[int](Value = 10)
+    val s = b.Transform((i int) => "Value is " + fmt.Sprintf("%d", i))
+    fmt.Println(s.Value)
+}
+
+// Pattern Matching with Filters Example (line 68-92)
+struct Person(Name string, Age int)
+
+func testPatternFilters() {
+    val people = SliceOf(
+        Person("Alice", 25),
+        Person("Bob", 15),
+        Person("Charlie", 70),
+    )
+
+    for _, p := range people {
+        val status = p match {
+            case Person(name, age) if age < 18 => name + " is a minor"
+            case Person(name, age) if age > 65 => name + " is a senior"
+            case Person(name, _)               => name + " is an adult"
+            case _                             => "Unknown"
+        }
+        fmt.Println(status)
+    }
+}
+
+// Custom Extractor Example (line 96-123)
+type Even struct {}
+func (e Even) Unapply(i int) Option[int] = if (i % 2 == 0) Some(i) else None[int]()
+
+func testCustomExtractor() {
+    val number = 42
+
+    val description = number match {
+        case Even(n) => fmt.Sprintf("%d is an even number", n)
+        case _       => fmt.Sprintf("%d is odd", number)
+    }
+
+    fmt.Println(description)
+
+    // Nested patterns - tested separately in match_extractors.gala
+    // Here we verify basic Option pattern matching
+    val opt = Some(10)
+    opt match {
+        case Some(n) => fmt.Println("Found some number", n)
+        case None()  => fmt.Println("Nothing found")
+        case _       => fmt.Println("Other")
+    }
+}
+
+// Interface Example (line 216-241)
+type Shaper interface {
+    Area() float64
+}
+
+struct Rect(width float64, height float64)
+func (r Rect) Area() float64 = r.width * r.height
+
+struct Circle(radius float64)
+func (c Circle) Area() float64 = 3.14159 * c.radius * c.radius
+
+func testInterface() {
+    val r = Rect(10.0, 5.0)
+    val c = Circle(10.0)
+
+    val s1 Shaper = r
+    val s2 Shaper = c
+
+    fmt.Println("Area 1:", s1.Area())
+    fmt.Println("Area 2:", s2.Area())
+}
+
+// Apply Method Example (line 245-264)
+type Adder struct { Delta int }
+func (a Adder) Apply(x int) int = x + a.Delta
+
+type Multiply struct {}
+func (m Multiply) Apply(x int, y int) int = x * y
+
+func testApplyMethod() {
+    val add5 = Adder(Delta = 5)
+    val res1 = add5(10)
+
+    val res2 = Multiply(3, 4)
+
+    fmt.Println(res1, res2)
+}
+
+func main() {
+    testCompleteExample()
+    testOptionMonad()
+    testGenericMethods()
+    testPatternFilters()
+    testCustomExtractor()
+    testInterface()
+    testApplyMethod()
+}

@@ -97,14 +97,13 @@ An immutable singly-linked list. Best for stack-like operations (prepend, head, 
 
 ```gala
 // Empty list
-val empty List[int] = Nil[int]()
-val empty2 = EmptyList[int]()
+val empty = EmptyList[int]()
 
 // From elements
 val list = ListOf(1, 2, 3, 4, 5)
 
-// Using Cons (prepend constructor)
-val list2 = Cons[int](1, Cons[int](2, Nil[int]()))
+// Using Prepend (creates new list with element at front)
+val list2 = EmptyList[int]().Prepend(3).Prepend(2).Prepend(1)  // List(1, 2, 3)
 ```
 
 ### Basic Operations

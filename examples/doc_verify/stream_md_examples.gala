@@ -1,0 +1,96 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+    . "martianoff/gala/stream"
+)
+
+// Test Stream examples from STREAM.MD
+
+// Test: Fibonacci sequence (line 85-88)
+func testFibonacci() {
+    val fibs = Unfold[int, Tuple[int, int]](
+        (0, 1),
+        (state Tuple[int, int]) => Some((state.V1, (state.V2, state.V1 + state.V2))),
+    )
+    val first10 = fibs.Take(10).ToArray()
+    fmt.Printf("Fibonacci: %v\n", first10)
+}
+
+// Test: Countdown (line 92-101)
+func testCountdown() {
+    val countdown = Unfold[int, int](
+        10,
+        (n int) => {
+            if (n >= 0) {
+                return Some((n, n - 1))
+            }
+            return None[Tuple[int, int]]()
+        },
+    )
+    fmt.Printf("Countdown: %v\n", countdown.ToArray())
+}
+
+// Test: Of constructor (line 31)
+func testOf() {
+    val s1 = Of(1, 2, 3, 4, 5)
+    fmt.Printf("Of: %v\n", s1.ToArray())
+}
+
+// Test: Range (line 56-60)
+func testRange() {
+    val s1 = Range(1, 10)
+    fmt.Printf("Range: %v\n", s1.ToArray())
+}
+
+// Test: Iterate (line 73)
+func testIterate() {
+    val powers = Iterate[int](1, (x int) => x * 2)
+    fmt.Printf("Iterate: %v\n", powers.Take(5).ToArray())
+}
+
+// Test: Map (line 123-124)
+func testMap() {
+    val doubled = Of(1, 2, 3).Map[int]((x int) => x * 2)
+    fmt.Printf("Map: %v\n", doubled.ToArray())
+}
+
+// Test: Filter (line 141-142)
+func testFilter() {
+    val evens = Of(1, 2, 3, 4, 5).Filter((x int) => x % 2 == 0)
+    fmt.Printf("Filter: %v\n", evens.ToArray())
+}
+
+// Test: Take (line 153)
+func testTake() {
+    val first3 = Of(1, 2, 3, 4, 5).Take(3)
+    fmt.Printf("Take: %v\n", first3.ToArray())
+}
+
+// Test: Fold (line 278-279)
+func testFold() {
+    val sum = Of(1, 2, 3, 4, 5).Fold[int](0, (acc int, x int) => acc + x)
+    fmt.Printf("Fold: %d\n", sum)
+}
+
+// Test: ZipWithIndex (line 182-183)
+func testZipWithIndex() {
+    val indexed = Of("a", "b", "c").ZipWithIndex()
+    indexed.ForEach((t Tuple[string, int]) => {
+        fmt.Printf("ZipWithIndex: (%s, %d)\n", t.V1, t.V2)
+    })
+}
+
+func main() {
+    testOf()
+    testRange()
+    testIterate()
+    testFibonacci()
+    testCountdown()
+    testMap()
+    testFilter()
+    testTake()
+    testFold()
+    testZipWithIndex()
+}

@@ -1,0 +1,16 @@
+If expr: pass
+Option mapped: 20
+Option fallback: 42
+Either match: Result: success
+Either mapped: {{0} {7} {false}}
+Try match: Got: 42
+Try mapped: 84
+Try recovered: 0
+Try fallback: 100
+Tuple: (1, hello)
+Triple: (1, hello, true)
+Destructured: a=1, b=hello
+Lambda f(5)=25
+Lambda g(2,3)=25
+For loop: 0 1 2 3 4
+Range loop: (0:10) (1:20) (2:30)

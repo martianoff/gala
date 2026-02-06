@@ -61,8 +61,8 @@ go_library(
     importpath = "martianoff/gala/collection_mutable",
     visibility = ["//visibility:public"],
     deps = [
-        "//std",
         "//go_interop",
+        "//std",
     ],
 )
 

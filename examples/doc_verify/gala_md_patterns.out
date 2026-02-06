@@ -1,0 +1,9 @@
+Basic match: two
+Type match: Found string: hello
+Generic match: Wrapped int
+Integer: 42
+Extractor match: Alice is 30
+Custom extractor: 10 is even
+Filter match: Large integer
+Tuple match: Got 1 and hello
+Destructured: a=1, b=hello

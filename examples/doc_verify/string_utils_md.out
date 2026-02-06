@@ -1,0 +1,27 @@
+Original: Hello, World!
+Cleaned: hello world
+Length=5
+IsEmpty=false
+NonEmpty=true
+Take(5)=Hello
+Drop(7)=World!
+TakeRight(6)=World!
+ToUpper=HELLO WORLD
+Capitalize=Hello world
+Trim='hello'
+TrimLeft='hello  '
+TrimRight='  hello'
+Replace=hello GALA world
+ReplaceAll=hello GALA GALA
+Map shift=bcd
+Filter=ello
+Fold count=5
+IsAlpha=true
+IsNumeric=true
+IsAlphanumeric=true
+Contains=true
+StartsWith=true
+EndsWith=true
+Equals=false
+EqualsIgnoreCase=true
+Pattern match: starts with h, rest: ello

@@ -466,7 +466,69 @@ gala_test(
     src = "tuple_as_argument.gala",
     expected = "tuple_as_argument.out",
     deps = [
-        "//stream",
         "//collection_immutable",
+        "//stream",
     ],
+)
+
+# Documentation verification tests (GALA.MD)
+gala_test(
+    name = "doc_verify_gala_md_basics",
+    src = "doc_verify/gala_md_basics.gala",
+    expected = "doc_verify/gala_md_basics.out",
+)
+
+gala_test(
+    name = "doc_verify_gala_md_patterns",
+    src = "doc_verify/gala_md_patterns.gala",
+    expected = "doc_verify/gala_md_patterns.out",
+)
+
+gala_test(
+    name = "doc_verify_gala_md_monads",
+    src = "doc_verify/gala_md_monads.gala",
+    expected = "doc_verify/gala_md_monads.out",
+    deps = ["//go_interop"],
+)
+
+gala_test(
+    name = "doc_verify_stream_md_examples",
+    src = "doc_verify/stream_md_examples.gala",
+    expected = "doc_verify/stream_md_examples.out",
+    deps = ["//stream"],
+)
+
+gala_test(
+    name = "doc_verify_examples_md",
+    src = "doc_verify/examples_md.gala",
+    expected = "doc_verify/examples_md.out",
+    deps = ["//go_interop"],
+)
+
+gala_test(
+    name = "doc_verify_immutable_collections_md",
+    src = "doc_verify/immutable_collections_md.gala",
+    expected = "doc_verify/immutable_collections_md.out",
+    deps = ["//collection_immutable"],
+)
+
+gala_test(
+    name = "doc_verify_concurrent_md",
+    src = "doc_verify/concurrent_md.gala",
+    expected = "doc_verify/concurrent_md.out",
+    deps = ["//concurrent"],
+)
+
+gala_test(
+    name = "doc_verify_string_utils_md",
+    src = "doc_verify/string_utils_md.gala",
+    expected = "doc_verify/string_utils_md.out",
+    deps = ["//string_utils"],
+)
+
+gala_test(
+    name = "doc_verify_time_utils_md",
+    src = "doc_verify/time_utils_md.gala",
+    expected = "doc_verify/time_utils_md.out",
+    deps = ["//time_utils"],
 )
