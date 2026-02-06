@@ -41,10 +41,10 @@ func (f Failure[T]) Unapply(t Try[T]) Option[error] {
     return None[error]()
 }
 
-// Internal accessor methods for pattern matching
-func (t Try[T]) getIsSuccess() bool = t.isSuccess
-func (t Try[T]) getValue() any = t.Value
-func (t Try[T]) getErr() any = t.Err
+// Apply executes f and catches any panic, converting it to a Failure.
+// This is the safe way to create a Try from a potentially panicking operation.
+// Usage: Try[int](() => riskyDivide(10, 0))
+func (t Try[T]) Apply(f func() T) Try[T] = tryRecover[T](f)
 
 // IsSuccess returns true if this is a Success, false otherwise.
 func (t Try[T]) IsSuccess() bool = t.isSuccess

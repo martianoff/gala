@@ -1,6 +1,9 @@
 package std
 
-import "reflect"
+import (
+	"fmt"
+	"reflect"
+)
 
 // ImmutableUnwrapper is implemented by Immutable[T] to allow interface-based unwrapping.
 type ImmutableUnwrapper interface {
@@ -95,6 +98,29 @@ func Equal[T any](v1, v2 T) bool {
 		}
 	}
 	return true
+}
+
+// tryRecover executes f with panic recovery, returning a Try.
+// Used by TryApply (defined in try.gala) as the underlying implementation
+// since GALA cannot express Go's defer/recover with named return values.
+func tryRecover[T any](f func() T) (result Try[T]) {
+	defer func() {
+		if r := recover(); r != nil {
+			var err error
+			switch e := r.(type) {
+			case error:
+				err = e
+			case string:
+				err = fmt.Errorf("%s", e)
+			default:
+				err = fmt.Errorf("panic: %v", r)
+			}
+			result = Try[T]{Err: NewImmutable(err), isSuccess: NewImmutable(false)}
+		}
+	}()
+	v := f()
+	result = Try[T]{Value: NewImmutable(v), isSuccess: NewImmutable(true)}
+	return
 }
 
 func As[T any](obj any) (T, bool) {

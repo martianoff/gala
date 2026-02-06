@@ -816,6 +816,10 @@ val length = e.Map((s string) => len(s))
 val success Try[int] = Success(42)
 val failure Try[int] = Failure(NoSuchElementError(Message = "not found"))
 
+// Try: safely execute code that may panic
+val result = Try[int](() => riskyDivide(10, 0))  // Failure (catches panic)
+val safe = Try[int](() => riskyDivide(10, 2))    // Success(5)
+
 // Pattern matching
 val msg = success match {
     case Success(n) => fmt.Sprintf("Got: %d", n)
@@ -858,6 +862,7 @@ func processOrder(id int) Try[Receipt] =
 #### Key Methods
 | Method | Description |
 |--------|-------------|
+| `Try[T](f)` | Execute f, catch panics as Failure |
 | `IsSuccess()` / `IsFailure()` | Check the state |
 | `Get()` | Get value or panic |
 | `GetOrElse(default)` | Get value or return default |

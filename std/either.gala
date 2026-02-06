@@ -26,9 +26,6 @@ func (r Right[A, B]) Unapply(e Either[A, B]) Option[B] {
     return None[B]()
 }
 
-func (e Either[A, B]) getIsLeft() bool = e.isLeft
-func (e Either[A, B]) getLeftValue() any = e.LeftValue
-func (e Either[A, B]) getRightValue() any = e.RightValue
 
 // isLeft returns true if this is a Left, false otherwise.
 func isLeft(e any) bool = e match {
@@ -54,13 +51,10 @@ func getRightValue(e any) any = e match {
     case _ => nil
 }
 
-// isRight returns true if this is a Right, false otherwise.
-func (e Either[A, B]) isRight() bool = !e.isLeft
-
-// IsLeft returns true if this is a Left, false otherwise. (exported)
+// IsLeft returns true if this is a Left, false otherwise.
 func (e Either[A, B]) IsLeft() bool = e.isLeft
 
-// IsRight returns true if this is a Right, false otherwise. (exported)
+// IsRight returns true if this is a Right, false otherwise.
 func (e Either[A, B]) IsRight() bool = !e.isLeft
 
 // GetLeft returns the left value if this is a Left, otherwise it panics.

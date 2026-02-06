@@ -490,6 +490,12 @@ gala_test(
     expected = "inc_dec.out",
 )
 
+gala_test(
+    name = "try_panic_recovery",
+    src = "try_panic_recovery.gala",
+    expected = "try_panic_recovery.out",
+)
+
 # Documentation verification tests (GALA.MD)
 gala_test(
     name = "doc_verify_gala_md_basics",

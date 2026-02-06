@@ -1,0 +1,43 @@
+package main
+
+import "fmt"
+
+func riskyDivide(a int, b int) int {
+    if b == 0 {
+        panic("division by zero")
+    }
+    return a / b
+}
+
+func main() {
+    // Try catches panics and wraps in Failure
+    val result = Try[int](() => riskyDivide(10, 0))
+    fmt.Println(result.IsFailure())
+    fmt.Println(result.GetError().Error())
+
+    // Try with successful computation
+    val success = Try[int](() => riskyDivide(10, 2))
+    fmt.Println(success.IsSuccess())
+    fmt.Println(success.Get())
+
+    // Chain with recovery
+    val recovered = Try[int](() => riskyDivide(10, 0)).Recover((e error) => -1)
+    fmt.Println(recovered.IsSuccess())
+    fmt.Println(recovered.Get())
+
+    // Pattern match on recovered panic
+    val message = Try[int](() => riskyDivide(10, 0)) match {
+        case Success(n) => fmt.Sprintf("Got: %d", n)
+        case Failure(e) => fmt.Sprintf("Error: %s", e.Error())
+        case _ => "Unknown"
+    }
+    fmt.Println(message)
+
+    // Try catching error-type panic
+    val errResult = Try[int](() => {
+        panic(NoSuchElementError(Message = "not found"))
+        return 0
+    })
+    fmt.Println(errResult.IsFailure())
+    fmt.Println(errResult.GetError().Error())
+}

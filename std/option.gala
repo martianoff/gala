@@ -40,14 +40,8 @@ func (n None[T]) Unapply(o Option[T]) Option[bool] {
     return None[bool]()
 }
 
-// isDefined returns true if the option is an instance of Some, false otherwise.
-func (o Option[T]) isDefined() bool = o.defined
-
-// IsDefined returns true if the option is an instance of Some, false otherwise. (exported)
+// IsDefined returns true if the option is an instance of Some, false otherwise.
 func (o Option[T]) IsDefined() bool = o.defined
-
-// getValue returns the option's value as any.
-func (o Option[T]) getValue() any = o.Value
 
 // IsEmpty returns true if the option is None, false otherwise.
 func (o Option[T]) IsEmpty() bool = !o.defined
