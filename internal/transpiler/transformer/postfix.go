@@ -109,16 +109,8 @@ func (t *galaASTTransformer) applyPostfixSuffix(base ast.Expr, suffix *grammar.P
 		}
 
 		// Fallback: check typeMetas for struct field info (handles cross-package types like std.Tuple)
-		// This is the primary lookup for imported types
-		// Try multiple name variations to handle package prefix differences
-		var typeMeta *transpiler.TypeMetadata
-		typeMeta = t.getTypeMeta(baseTypeName)
-		if typeMeta == nil {
-			// Try with std prefix if not already prefixed
-			if !strings.HasPrefix(baseTypeName, registry.StdPackageName+".") {
-				typeMeta = t.getTypeMeta(registry.StdPackageName + "." + baseTypeName)
-			}
-		}
+		// getTypeMeta handles all resolution including std prefix fallback
+		typeMeta := t.getTypeMeta(baseTypeName)
 		if typeMeta != nil {
 			for i, f := range typeMeta.FieldNames {
 				if f == selName {
@@ -405,7 +397,7 @@ func (t *galaASTTransformer) transformTupleLiteral(exprs []ast.Expr) (ast.Expr, 
 	var typeParams []ast.Expr
 	for _, expr := range exprs {
 		exprType := t.getExprTypeName(expr)
-		if exprType.IsNil() || exprType.String() == "any" {
+		if exprType.IsNil() || exprType.IsAny() {
 			typeParams = append(typeParams, ast.NewIdent("any"))
 		} else {
 			typeParams = append(typeParams, t.typeToExpr(exprType))

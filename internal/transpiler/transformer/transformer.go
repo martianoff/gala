@@ -330,3 +330,13 @@ func (t *galaASTTransformer) getTypeMeta(typeName string) *transpiler.TypeMetada
 	}
 	return t.typeMetas[resolved]
 }
+
+// getTypeMetaResolved returns the type metadata and the resolved (canonical) type name.
+// Use this when you need both the metadata and the resolved name to avoid double resolution.
+func (t *galaASTTransformer) getTypeMetaResolved(typeName string) (*transpiler.TypeMetadata, string) {
+	resolved := t.resolveTypeMetaName(typeName)
+	if resolved == "" {
+		return nil, ""
+	}
+	return t.typeMetas[resolved], resolved
+}

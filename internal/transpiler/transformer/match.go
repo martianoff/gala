@@ -162,7 +162,7 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 	} else {
 		// Fix up return statements that return 'any' values when result type is concrete
 		// This handles cases where pattern-bound variables have unknown types
-		if resultType != nil && !resultType.IsNil() && resultType.String() != "any" {
+		if resultType != nil && !resultType.IsNil() && !resultType.IsAny() {
 			t.fixupReturnStatements(body, resultType)
 		}
 	}

@@ -126,7 +126,7 @@ func (t *galaASTTransformer) toInferExpr(expr ast.Expr) infer.Expr {
 
 	// Try manual inference first as a shortcut for non-generic types
 	manualType := t.getExprTypeNameManual(expr)
-	if !manualType.IsNil() && !t.hasTypeParams(manualType) && manualType.String() != "any" {
+	if !manualType.IsNil() && !t.hasTypeParams(manualType) && !manualType.IsAny() {
 		return &infer.Lit{Value: "manual", Type: t.toInferType(manualType)}
 	}
 

@@ -689,7 +689,7 @@ func (t *galaASTTransformer) wrapInSome(expr ast.Expr) ast.Expr {
 	}
 
 	var someTypeExpr ast.Expr
-	if exprType != nil && !exprType.IsNil() && exprType.String() != "any" {
+	if exprType != nil && !exprType.IsNil() && !exprType.IsAny() {
 		someTypeExpr = &ast.IndexExpr{
 			X:     t.stdIdent("Some"),
 			Index: t.typeToExpr(exprType),
@@ -714,7 +714,7 @@ func (t *galaASTTransformer) wrapInSome(expr ast.Expr) ast.Expr {
 // generateNoneReturn generates: return None[T]{}.Apply()
 func (t *galaASTTransformer) generateNoneReturn(innerType transpiler.Type) ast.Stmt {
 	var noneTypeExpr ast.Expr
-	if innerType != nil && !innerType.IsNil() && innerType.String() != "any" {
+	if innerType != nil && !innerType.IsNil() && !innerType.IsAny() {
 		noneTypeExpr = &ast.IndexExpr{
 			X:     t.stdIdent("None"),
 			Index: t.typeToExpr(innerType),

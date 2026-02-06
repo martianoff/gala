@@ -209,14 +209,12 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 		if !isPkg {
 			// Transform generic method call to standalone function call
 			// Get method metadata for parameter types using unified resolution
-			typeMeta := t.getTypeMeta(lookupBaseName)
+			typeMeta, resolvedName := t.getTypeMetaResolved(lookupBaseName)
 			var methodMeta *transpiler.MethodMetadata
 			if typeMeta != nil {
 				methodMeta = typeMeta.Methods[method]
 				// Update lookupBaseName to the resolved name for later use
-				if resolved := t.resolveTypeMetaName(lookupBaseName); resolved != "" {
-					lookupBaseName = resolved
-				}
+				lookupBaseName = resolvedName
 			}
 
 			// Build type argument substitution map
@@ -439,12 +437,10 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	typeName := t.getBaseTypeName(fun)
 	if typeName != "" {
 		// Use unified resolution to find type metadata
-		typeMeta := t.getTypeMeta(typeName)
+		typeMeta, resolvedTypeMeta := t.getTypeMetaResolved(typeName)
 		if typeMeta != nil {
 			// Update typeName to resolved name for subsequent lookups
-			if resolved := t.resolveTypeMetaName(typeName); resolved != "" {
-				typeName = resolved
-			}
+			typeName = resolvedTypeMeta
 			// First check if this looks like positional struct construction
 			// (args match struct field count) - prefer struct construction over Apply
 			resolvedTypeName := t.resolveStructTypeName(typeName)

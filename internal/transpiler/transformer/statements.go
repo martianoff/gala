@@ -56,9 +56,10 @@ func (t *galaASTTransformer) transformIncDecStmt(ctx *grammar.IncDecStmtContext)
 	// Determine the token (++ or --)
 	tok := token.INC
 	if ctx.GetChildCount() >= 2 {
-		opText := ctx.GetChild(1).(antlr.TerminalNode).GetText()
-		if opText == "--" {
-			tok = token.DEC
+		if termNode, ok := ctx.GetChild(1).(antlr.TerminalNode); ok {
+			if termNode.GetText() == "--" {
+				tok = token.DEC
+			}
 		}
 	}
 

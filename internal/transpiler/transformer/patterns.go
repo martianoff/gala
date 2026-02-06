@@ -191,7 +191,7 @@ func (t *galaASTTransformer) transformTypedPattern(ctx *grammar.TypedPatternCont
 	if baseName, isWildcard := t.isWildcardGenericType(typeExpr); isWildcard {
 		objType := t.getExprTypeName(objExpr)
 		// Only use interface check if the object has a concrete generic type (not any/interface)
-		if !objType.IsNil() && objType.String() != "any" {
+		if !objType.IsNil() && !objType.IsAny() {
 			return t.transformWildcardTypedPattern(name, baseName, objExpr)
 		}
 	}
@@ -1490,7 +1490,7 @@ func (t *galaASTTransformer) fixupReturnStatement(stmt ast.Stmt, resultType tran
 				// Check if the result expression is a simple identifier with type 'any'
 				if ident, ok := result.(*ast.Ident); ok {
 					varType := t.getType(ident.Name)
-					if varType != nil && varType.String() == "any" {
+					if varType != nil && varType.IsAny() {
 						// Wrap with type assertion to the expected result type
 						s.Results[i] = &ast.TypeAssertExpr{
 							X:    result,

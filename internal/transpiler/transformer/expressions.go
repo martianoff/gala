@@ -87,7 +87,10 @@ func (t *galaASTTransformer) transformEqualityExpr(ctx *grammar.EqualityExprCont
 	// Get the operators between expressions
 	for i := 1; i < len(relExprs); i++ {
 		// The operator is at position (i*2 - 1) in children
-		opText := ctx.GetChild(i*2 - 1).(antlr.ParseTree).GetText()
+		opText, err := getChildOperatorText(ctx, i*2-1)
+		if err != nil {
+			return nil, err
+		}
 		right, err := t.transformRelationalExpr(relExprs[i].(*grammar.RelationalExprContext))
 		if err != nil {
 			return nil, err
@@ -112,7 +115,10 @@ func (t *galaASTTransformer) transformRelationalExpr(ctx *grammar.RelationalExpr
 	}
 
 	for i := 1; i < len(addExprs); i++ {
-		opText := ctx.GetChild(i*2 - 1).(antlr.ParseTree).GetText()
+		opText, err := getChildOperatorText(ctx, i*2-1)
+		if err != nil {
+			return nil, err
+		}
 		right, err := t.transformAdditiveExpr(addExprs[i].(*grammar.AdditiveExprContext))
 		if err != nil {
 			return nil, err
@@ -137,7 +143,10 @@ func (t *galaASTTransformer) transformAdditiveExpr(ctx *grammar.AdditiveExprCont
 	}
 
 	for i := 1; i < len(mulExprs); i++ {
-		opText := ctx.GetChild(i*2 - 1).(antlr.ParseTree).GetText()
+		opText, err := getChildOperatorText(ctx, i*2-1)
+		if err != nil {
+			return nil, err
+		}
 		right, err := t.transformMultiplicativeExpr(mulExprs[i].(*grammar.MultiplicativeExprContext))
 		if err != nil {
 			return nil, err
@@ -162,7 +171,10 @@ func (t *galaASTTransformer) transformMultiplicativeExpr(ctx *grammar.Multiplica
 	}
 
 	for i := 1; i < len(unaryExprs); i++ {
-		opText := ctx.GetChild(i*2 - 1).(antlr.ParseTree).GetText()
+		opText, err := getChildOperatorText(ctx, i*2-1)
+		if err != nil {
+			return nil, err
+		}
 		right, err := t.transformUnaryExpr(unaryExprs[i].(*grammar.UnaryExprContext))
 		if err != nil {
 			return nil, err
@@ -275,11 +287,18 @@ func (t *galaASTTransformer) getSimpleValIdentifier(ctx *grammar.UnaryExprContex
 	if primaryExpr == nil {
 		return ""
 	}
-	primary := primaryExpr.(*grammar.PrimaryExprContext).Primary()
+	primaryExprCtx, ok := primaryExpr.(*grammar.PrimaryExprContext)
+	if !ok {
+		return ""
+	}
+	primary := primaryExprCtx.Primary()
 	if primary == nil {
 		return ""
 	}
-	primaryCtx := primary.(*grammar.PrimaryContext)
+	primaryCtx, ok := primary.(*grammar.PrimaryContext)
+	if !ok {
+		return ""
+	}
 	if primaryCtx.Identifier() == nil {
 		return ""
 	}
@@ -288,6 +307,19 @@ func (t *galaASTTransformer) getSimpleValIdentifier(ctx *grammar.UnaryExprContex
 		return name
 	}
 	return ""
+}
+
+// getChildOperatorText safely extracts the operator text from a parse tree child node.
+func getChildOperatorText(ctx antlr.ParserRuleContext, index int) (string, error) {
+	child := ctx.GetChild(index)
+	if child == nil {
+		return "", galaerr.NewSemanticError("missing operator in expression")
+	}
+	tree, ok := child.(antlr.ParseTree)
+	if !ok {
+		return "", galaerr.NewSemanticError("unexpected operator node in expression")
+	}
+	return tree.GetText(), nil
 }
 
 // Postfix-related functions moved to postfix.go

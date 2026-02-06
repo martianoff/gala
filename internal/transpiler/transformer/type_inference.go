@@ -314,7 +314,7 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 						// Special handling for Some_Apply to infer type parameter from argument
 						if sel.Sel.Name == transpiler.FuncSome+"_Apply" && len(e.Args) >= 2 {
 							argType := t.getExprTypeNameManual(e.Args[1])
-							if !argType.IsNil() && argType.String() != "any" {
+							if !argType.IsNil() && !argType.IsAny() {
 								return transpiler.GenericType{
 									Base:   transpiler.NamedType{Package: registry.StdPackageName, Name: transpiler.TypeOption},
 									Params: []transpiler.Type{argType},
@@ -438,7 +438,7 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 				// Some_Apply(std.Some{}, value) -> Option[typeof(value)]
 				if sel.Sel.Name == transpiler.FuncSome+"_Apply" && len(e.Args) >= 2 {
 					argType := t.getExprTypeNameManual(e.Args[1])
-					if !argType.IsNil() && argType.String() != "any" {
+					if !argType.IsNil() && !argType.IsAny() {
 						return transpiler.GenericType{
 							Base:   transpiler.NamedType{Package: registry.StdPackageName, Name: transpiler.TypeOption},
 							Params: []transpiler.Type{argType},
