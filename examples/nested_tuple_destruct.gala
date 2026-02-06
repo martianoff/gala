@@ -1,0 +1,40 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+)
+
+func main() {
+    // Test 1: Basic nested tuple destructuring
+    val nested = ((1, 2), (3, 4))
+    val (left, right) = nested
+    fmt.Printf("left=(%d, %d), right=(%d, %d)\n", left.V1, left.V2, right.V1, right.V2)
+
+    // Test 2: Deeply nested tuple
+    val deep = (((10, 20), (30, 40)), ((50, 60), (70, 80)))
+    val (topLeft, topRight) = deep
+    val (a, b) = topLeft
+    val (c, d) = topRight
+    fmt.Printf("a=(%d, %d), b=(%d, %d)\n", a.V1, a.V2, b.V1, b.V2)
+    fmt.Printf("c=(%d, %d), d=(%d, %d)\n", c.V1, c.V2, d.V1, d.V2)
+
+    // Test 3: Mixed tuple types
+    val mixed = ((1, "hello"), (2, "world"))
+    val (first, second) = mixed
+    fmt.Printf("first=(%d, %s), second=(%d, %s)\n", first.V1, first.V2, second.V1, second.V2)
+
+    // Test 4: Tuple with Option
+    val withOption = (Some(42), None[int]())
+    val (someVal, noneVal) = withOption
+    fmt.Printf("someVal=%d, noneVal=%v\n", someVal.Get(), noneVal.IsEmpty())
+
+    // Test 5: Function returning nested tuple
+    val result = makeNestedTuple()
+    val (p1, p2) = result
+    fmt.Printf("p1=(%d, %d), p2=(%d, %d)\n", p1.V1, p1.V2, p2.V1, p2.V2)
+}
+
+func makeNestedTuple() Tuple[Tuple[int, int], Tuple[int, int]] {
+    return ((100, 200), (300, 400))
+}

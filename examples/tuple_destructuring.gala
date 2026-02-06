@@ -7,18 +7,19 @@ import (
 
 func main() {
     // Basic tuple destructuring
+    // Vals auto-unwrap when accessed, no explicit .Get() needed
     val t = Tuple[int, string](V1 = 42, V2 = "hello")
     val (a, b) = t
-    fmt.Printf("a = %d, b = %s\n", a.Get(), b.Get())
+    fmt.Printf("a = %d, b = %s\n", a, b)
 
     // Destructuring from function result
     val (x, y) = getPair()
-    fmt.Printf("x = %d, y = %d\n", x.Get(), y.Get())
+    fmt.Printf("x = %d, y = %d\n", x, y)
 
     // Nested tuple access with destructuring
     val pair = makePair(10, 20)
     val (first, second) = pair
-    fmt.Printf("first = %d, second = %d\n", first.Get(), second.Get())
+    fmt.Printf("first = %d, second = %d\n", first, second)
 }
 
 func getPair() Tuple[int, int] = Tuple[int, int](V1 = 1, V2 = 2)

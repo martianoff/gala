@@ -238,20 +238,15 @@ func (t *galaASTTransformer) transformValTuplePattern(ctx *grammar.ValDeclaratio
 		t.addVal(name, componentType)
 
 		// Access tuple field: __tuple_N.V1, __tuple_N.V2, etc.
+		// Tuple fields are already Immutable[T], so no additional wrapping needed
 		fieldAccess := &ast.SelectorExpr{
 			X:   ast.NewIdent(tempName),
 			Sel: ast.NewIdent(fmt.Sprintf("V%d", i+1)),
 		}
 
-		// Wrap with NewImmutable
-		wrappedValue := &ast.CallExpr{
-			Fun:  t.stdIdent("NewImmutable"),
-			Args: []ast.Expr{fieldAccess},
-		}
-
 		spec := &ast.ValueSpec{
 			Names:  []*ast.Ident{ast.NewIdent(name)},
-			Values: []ast.Expr{wrappedValue},
+			Values: []ast.Expr{fieldAccess},
 		}
 
 		specs = append(specs, spec)

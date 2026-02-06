@@ -81,13 +81,10 @@ val randoms = Continually(() => rand.Int())     // random, random, ...
 `Unfold` creates a stream by repeatedly applying a function that returns `Option[(value, nextState)]`:
 
 ```gala
-// Fibonacci sequence
+// Fibonacci sequence using short tuple syntax
 val fibs = Unfold[int, Tuple[int, int]](
-    Tuple[int, int](V1 = 0, V2 = 1),
-    (state Tuple[int, int]) => Some(Tuple[int, Tuple[int, int]](
-        V1 = state.V1,                                                     // emit current
-        V2 = Tuple[int, int](V1 = state.V2, V2 = state.V1 + state.V2),     // next state
-    )),
+    (0, 1),
+    (state Tuple[int, int]) => Some((state.V1, (state.V2, state.V1 + state.V2))),
 )
 // Result: 0, 1, 1, 2, 3, 5, 8, 13, ...
 
@@ -96,7 +93,7 @@ val countdown = Unfold[int, int](
     10,
     (n int) => {
         if (n >= 0) {
-            return Some(Tuple[int, int](V1 = n, V2 = n - 1))
+            return Some((n, n - 1))
         }
         return None[Tuple[int, int]]()
     },
@@ -460,11 +457,8 @@ val first10Primes = primes.Take(10).ToArray()
 
 ```gala
 val fibs = Unfold[int, Tuple[int, int]](
-    Tuple[int, int](V1 = 0, V2 = 1),
-    (state Tuple[int, int]) => Some(Tuple[int, Tuple[int, int]](
-        V1 = state.V1,
-        V2 = Tuple[int, int](V1 = state.V2, V2 = state.V1 + state.V2),
-    )),
+    (0, 1),
+    (state Tuple[int, int]) => Some((state.V1, (state.V2, state.V1 + state.V2))),
 )
 val first10 = fibs.Take(10).ToArray()
 // 0, 1, 1, 2, 3, 5, 8, 13, 21, 34

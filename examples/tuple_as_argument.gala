@@ -1,0 +1,59 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+    . "martianoff/gala/stream"
+    . "martianoff/gala/collection_immutable"
+)
+
+func main() {
+    // Test 1: Short tuple syntax as argument to generic function
+    val fibs = Unfold[int, Tuple[int, int]](
+        (0, 1),  // Short tuple syntax as first argument
+        (state Tuple[int, int]) => Some((state.V1, (state.V2, state.V1 + state.V2))),
+    )
+    fmt.Printf("Fibonacci: %v\n", fibs.Take(10).ToArray())
+
+    // Test 2: Multiple short tuples as variadic arguments
+    val points = ArrayOf((1, 2), (3, 4), (5, 6))
+    fmt.Printf("Points count: %d\n", points.Size())
+    fmt.Printf("First point: (%d, %d)\n", points.Get(0).V1, points.Get(0).V2)
+
+    // Test 3: Short tuple in function call chain
+    val result = processPoint((10, 20))
+    fmt.Printf("Processed: %s\n", result)
+
+    // Test 4: Nested short tuples as argument
+    val nested = processNested(((1, 2), (3, 4)))
+    fmt.Printf("Nested sum: %d\n", nested)
+
+    // Test 5: Short tuple with mixed types
+    val mixed = formatPair((42, "hello"))
+    fmt.Printf("Formatted: %s\n", mixed)
+
+    // Test 6: Short tuple in lambda argument
+    val mapper = (t Tuple[int, int]) => t.V1 + t.V2
+    val sum = mapper((100, 200))
+    fmt.Printf("Lambda sum: %d\n", sum)
+
+    // Test 7: Short tuple passed to method
+    val box = Box[Tuple[int, string]](Value = (999, "test"))
+    fmt.Printf("Box: (%d, %s)\n", box.Value.V1, box.Value.V2)
+}
+
+func processPoint(p Tuple[int, int]) string {
+    return fmt.Sprintf("Point(%d, %d)", p.V1, p.V2)
+}
+
+func processNested(n Tuple[Tuple[int, int], Tuple[int, int]]) int {
+    return n.V1.V1 + n.V1.V2 + n.V2.V1 + n.V2.V2
+}
+
+func formatPair(p Tuple[int, string]) string {
+    return fmt.Sprintf("%d: %s", p.V1, p.V2)
+}
+
+type Box[T any] struct {
+    Value T
+}

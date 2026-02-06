@@ -452,3 +452,21 @@ gala_test(
     src = "tuple_destructuring.gala",
     expected = "tuple_destructuring.out",
 )
+
+# Nested tuple destructuring: val (left, right) = ((1, 2), (3, 4))
+gala_test(
+    name = "nested_tuple_destruct",
+    src = "nested_tuple_destruct.gala",
+    expected = "nested_tuple_destruct.out",
+)
+
+# Short tuple syntax as function arguments
+gala_test(
+    name = "tuple_as_argument",
+    src = "tuple_as_argument.gala",
+    expected = "tuple_as_argument.out",
+    deps = [
+        "//stream",
+        "//collection_immutable",
+    ],
+)
