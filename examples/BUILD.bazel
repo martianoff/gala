@@ -513,6 +513,16 @@ gala_test(
 )
 
 gala_test(
+    name = "doc_verify_mutable_collections_md",
+    src = "doc_verify/mutable_collections_md.gala",
+    expected = "doc_verify/mutable_collections_md.out",
+    deps = [
+        "//collection_mutable",
+        "//go_interop",
+    ],
+)
+
+gala_test(
     name = "doc_verify_concurrent_md",
     src = "doc_verify/concurrent_md.gala",
     expected = "doc_verify/concurrent_md.out",

@@ -1,0 +1,350 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/collection_mutable"
+    . "martianoff/gala/go_interop"
+)
+
+// Test examples from MUTABLE_COLLECTIONS.MD
+
+// Array Construction (line 97-110)
+func testArrayConstruction() {
+    var arr1 = EmptyArray[int]()
+    var arr2 = ArrayOf(1, 2, 3, 4, 5)
+    var slice = SliceOf(1, 2, 3)
+    var arr3 = ArrayFromSlice(slice)
+    var arr4 = ArrayWithCapacity[int](1000)
+
+    fmt.Printf("empty.Length=%d\n", arr1.Length())
+    fmt.Printf("arr2.Length=%d\n", arr2.Length())
+    fmt.Printf("arr3.Length=%d\n", arr3.Length())
+    fmt.Printf("arr4.Capacity>=%d: %v\n", 1000, arr4.Capacity() >= 1000)
+}
+
+// Array Basic Operations (line 114-122)
+func testArrayBasicOps() {
+    var arr = ArrayOf(1, 2, 3, 4, 5)
+
+    fmt.Printf("IsEmpty=%v\n", arr.IsEmpty())
+    fmt.Printf("NonEmpty=%v\n", arr.NonEmpty())
+    fmt.Printf("Length=%d\n", arr.Length())
+    fmt.Printf("Size=%d\n", arr.Size())
+}
+
+// Array Element Access (line 126-140)
+func testArrayElementAccess() {
+    var arr = ArrayOf(10, 20, 30)
+
+    fmt.Printf("Get(0)=%d\n", arr.Get(0))
+    fmt.Printf("Get(1)=%d\n", arr.Get(1))
+    fmt.Printf("GetOption(1).IsDefined=%v\n", arr.GetOption(1).IsDefined())
+    fmt.Printf("GetOption(10).IsDefined=%v\n", arr.GetOption(10).IsDefined())
+    fmt.Printf("Head=%d\n", arr.Head())
+    fmt.Printf("Last=%d\n", arr.Last())
+}
+
+// Array Mutation Operations (line 144-171)
+func testArrayMutation() {
+    var arr = ArrayOf(1, 2, 3)
+
+    arr.Set(1, 99)
+    fmt.Printf("After Set(1,99): %s\n", arr.String())
+
+    arr.Append(4)
+    fmt.Printf("After Append(4): %s\n", arr.String())
+
+    arr.Prepend(0)
+    fmt.Printf("After Prepend(0): %s\n", arr.String())
+
+    arr.Insert(2, 50)
+    fmt.Printf("After Insert(2,50): %s\n", arr.String())
+
+    arr.RemoveAt(2)
+    fmt.Printf("After RemoveAt(2): %s\n", arr.String())
+
+    var first = arr.RemoveFirst()
+    fmt.Printf("RemoveFirst returned: %d\n", first)
+
+    var last = arr.RemoveLast()
+    fmt.Printf("RemoveLast returned: %d\n", last)
+}
+
+// Array Structural Operations (line 192-215)
+func testArrayStructural() {
+    var arr = ArrayOf(1, 2, 3, 4, 5)
+
+    fmt.Printf("Take(3)=%s\n", arr.Take(3).String())
+    fmt.Printf("Drop(2)=%s\n", arr.Drop(2).String())
+    fmt.Printf("Slice(1,4)=%s\n", arr.Slice(1, 4).String())
+    fmt.Printf("Tail=%s\n", arr.Tail().String())
+    fmt.Printf("Init=%s\n", arr.Init().String())
+    fmt.Printf("Reversed=%s\n", arr.Reversed().String())
+}
+
+// Array Functional Operations (line 219-235)
+func testArrayFunctional() {
+    var arr = ArrayOf(1, 2, 3, 4, 5)
+
+    var doubled = arr.Map[int]((x int) => x * 2)
+    fmt.Printf("Map doubled=%s\n", doubled.String())
+
+    var evens = arr.Filter((x int) => x % 2 == 0)
+    fmt.Printf("Filter evens=%s\n", evens.String())
+
+    var sum = arr.FoldLeft[int](0, (acc int, x int) => acc + x)
+    fmt.Printf("FoldLeft sum=%d\n", sum)
+}
+
+// Array Searching (line 239-249)
+func testArraySearching() {
+    var arr = ArrayOf(1, 2, 3, 2, 1)
+
+    fmt.Printf("Contains(3)=%v\n", arr.Contains(3))
+    fmt.Printf("IndexOf(2)=%d\n", arr.IndexOf(2))
+    fmt.Printf("LastIndexOf(2)=%d\n", arr.LastIndexOf(2))
+    fmt.Printf("Find(>2).IsDefined=%v\n", arr.Find((x int) => x > 2).IsDefined())
+    fmt.Printf("Exists(>4)=%v\n", arr.Exists((x int) => x > 4))
+    fmt.Printf("ForAll(>0)=%v\n", arr.ForAll((x int) => x > 0))
+    fmt.Printf("Count(==2)=%d\n", arr.Count((x int) => x == 2))
+}
+
+// Array Distinct (line 270-273)
+func testArrayDistinct() {
+    var arr = ArrayOf(1, 2, 2, 3, 3, 3)
+    fmt.Printf("Distinct=%s\n", arr.Distinct().String())
+}
+
+// List Construction (line 300-310)
+func testListConstruction() {
+    var list1 = EmptyList[int]()
+    var list2 = ListOf(1, 2, 3, 4, 5)
+    var slice = SliceOf(1, 2, 3)
+    var list3 = ListFromSlice(slice)
+
+    fmt.Printf("empty.Length=%d\n", list1.Length())
+    fmt.Printf("list2.Length=%d\n", list2.Length())
+    fmt.Printf("list3.Length=%d\n", list3.Length())
+}
+
+// List Basic Operations (line 314-321)
+func testListBasicOps() {
+    var list = ListOf(1, 2, 3, 4, 5)
+
+    fmt.Printf("List.IsEmpty=%v\n", list.IsEmpty())
+    fmt.Printf("List.NonEmpty=%v\n", list.NonEmpty())
+    fmt.Printf("List.Length=%d\n", list.Length())
+    fmt.Printf("List.Size=%d\n", list.Size())
+}
+
+// List Element Access (line 325-337)
+func testListElementAccess() {
+    var list = ListOf(10, 20, 30)
+
+    fmt.Printf("List.Head=%d\n", list.Head())
+    fmt.Printf("List.Last=%d\n", list.Last())
+    fmt.Printf("List.Get(1)=%d\n", list.Get(1))
+    fmt.Printf("List.GetOption(1).IsDefined=%v\n", list.GetOption(1).IsDefined())
+}
+
+// List Mutation Operations (line 341-361)
+func testListMutation() {
+    var list = ListOf(2, 3, 4)
+
+    list.Prepend(1)
+    fmt.Printf("After Prepend(1): %s\n", list.String())
+
+    list.Append(5)
+    fmt.Printf("After Append(5): %s\n", list.String())
+
+    var first = list.RemoveFirst()
+    fmt.Printf("RemoveFirst returned: %d\n", first)
+
+    var last = list.RemoveLast()
+    fmt.Printf("RemoveLast returned: %d\n", last)
+}
+
+// List Searching (line 395-405)
+func testListSearching() {
+    var list = ListOf(1, 2, 3, 2, 1)
+
+    fmt.Printf("List.Contains(3)=%v\n", list.Contains(3))
+    fmt.Printf("List.IndexOf(2)=%d\n", list.IndexOf(2))
+    fmt.Printf("List.LastIndexOf(2)=%d\n", list.LastIndexOf(2))
+    fmt.Printf("List.Exists(>4)=%v\n", list.Exists((x int) => x > 4))
+    fmt.Printf("List.ForAll(>0)=%v\n", list.ForAll((x int) => x > 0))
+    fmt.Printf("List.Count(==2)=%d\n", list.Count((x int) => x == 2))
+}
+
+// HashSet Construction (line 444-454)
+func testHashSetConstruction() {
+    var s1 = EmptyHashSet[int]()
+    var s2 = HashSetOf(1, 2, 3, 4, 5)
+    var slice = SliceOf(1, 2, 3)
+    var s3 = HashSetFromSlice(slice)
+
+    fmt.Printf("HashSet.empty.Size=%d\n", s1.Size())
+    fmt.Printf("HashSet.s2.Size=%d\n", s2.Size())
+    fmt.Printf("HashSet.s3.Size=%d\n", s3.Size())
+}
+
+// HashSet Basic Operations (line 458-465)
+func testHashSetBasicOps() {
+    var s = HashSetOf(1, 2, 3, 4, 5)
+
+    fmt.Printf("HashSet.IsEmpty=%v\n", s.IsEmpty())
+    fmt.Printf("HashSet.NonEmpty=%v\n", s.NonEmpty())
+    fmt.Printf("HashSet.Size=%d\n", s.Size())
+}
+
+// HashSet Membership and Modification (line 469-486)
+func testHashSetMembership() {
+    var s = HashSetOf(1, 2, 3)
+
+    fmt.Printf("HashSet.Contains(2)=%v\n", s.Contains(2))
+    fmt.Printf("HashSet.Contains(5)=%v\n", s.Contains(5))
+
+    var added4 = s.Add(4)
+    fmt.Printf("HashSet.Add(4) returned %v, size now=%d\n", added4, s.Size())
+
+    var added2 = s.Add(2)
+    fmt.Printf("HashSet.Add(2) returned %v (already present)\n", added2)
+
+    var removed = s.Remove(2)
+    fmt.Printf("HashSet.Remove(2) returned %v, size now=%d\n", removed, s.Size())
+}
+
+// HashSet Set Operations (line 490-505)
+func testHashSetOperations() {
+    var s1 = HashSetOf(1, 2, 3)
+    var s2 = HashSetOf(2, 3, 4)
+
+    var union = s1.Union(s2)
+    fmt.Printf("HashSet.Union size=%d\n", union.Size())
+
+    var inter = s1.Intersect(s2)
+    fmt.Printf("HashSet.Intersect size=%d\n", inter.Size())
+
+    var diff = s1.Diff(s2)
+    fmt.Printf("HashSet.Diff size=%d\n", diff.Size())
+}
+
+// HashSet Relationships (line 525-534)
+func testHashSetRelationships() {
+    var s1 = HashSetOf(1, 2)
+    var s2 = HashSetOf(1, 2, 3, 4)
+    var s3 = HashSetOf(5, 6)
+
+    fmt.Printf("HashSet.SubsetOf=%v\n", s1.SubsetOf(s2))
+    fmt.Printf("HashSet.SupersetOf=%v\n", s2.SupersetOf(s1))
+    fmt.Printf("HashSet.Disjoint=%v\n", s1.Disjoint(s3))
+}
+
+// HashSet Predicates (line 558-565)
+func testHashSetPredicates() {
+    var s = HashSetOf(1, 2, 3, 4, 5)
+
+    fmt.Printf("HashSet.Exists(>4)=%v\n", s.Exists((x int) => x > 4))
+    fmt.Printf("HashSet.ForAll(>0)=%v\n", s.ForAll((x int) => x > 0))
+    fmt.Printf("HashSet.Count(even)=%d\n", s.Count((x int) => x % 2 == 0))
+}
+
+// TreeSet Construction (line 618-628)
+func testTreeSetConstruction() {
+    var s1 = EmptyTreeSet[int]()
+    var s2 = TreeSetOf(3, 1, 4, 1, 5)
+    var slice = SliceOf(3, 1, 2)
+    var s3 = TreeSetFromSlice(slice)
+
+    fmt.Printf("TreeSet.empty.Size=%d\n", s1.Size())
+    fmt.Printf("TreeSet.s2.Size=%d\n", s2.Size())
+    fmt.Printf("TreeSet.s3=%s\n", s3.String())
+}
+
+// TreeSet Basic Operations (line 632-639)
+func testTreeSetBasicOps() {
+    var s = TreeSetOf(5, 3, 7, 1, 9)
+
+    fmt.Printf("TreeSet.IsEmpty=%v\n", s.IsEmpty())
+    fmt.Printf("TreeSet.NonEmpty=%v\n", s.NonEmpty())
+    fmt.Printf("TreeSet.Size=%d\n", s.Size())
+}
+
+// TreeSet Min/Max Operations (line 663-679)
+func testTreeSetMinMax() {
+    var s = TreeSetOf(5, 3, 7, 1, 9)
+
+    fmt.Printf("TreeSet.Min=%d\n", s.Min())
+    fmt.Printf("TreeSet.Max=%d\n", s.Max())
+    fmt.Printf("TreeSet.MinOption.IsDefined=%v\n", s.MinOption().IsDefined())
+    fmt.Printf("TreeSet.MaxOption.IsDefined=%v\n", s.MaxOption().IsDefined())
+    fmt.Printf("TreeSet.Head=%d\n", s.Head())
+    fmt.Printf("TreeSet.Last=%d\n", s.Last())
+}
+
+// TreeSet Range Queries (line 683-694)
+func testTreeSetRange() {
+    var s = TreeSetOf(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
+
+    var range1 = s.Range(3, 7)
+    fmt.Printf("TreeSet.Range(3,7)=%s\n", range1.String())
+
+    var range2 = s.RangeFrom(7)
+    fmt.Printf("TreeSet.RangeFrom(7)=%s\n", range2.String())
+
+    var range3 = s.RangeTo(4)
+    fmt.Printf("TreeSet.RangeTo(4)=%s\n", range3.String())
+}
+
+// TreeSet Set Operations (line 698-710)
+func testTreeSetOperations() {
+    var s1 = TreeSetOf(1, 2, 3)
+    var s2 = TreeSetOf(2, 3, 4)
+
+    var union = s1.Union(s2)
+    fmt.Printf("TreeSet.Union=%s\n", union.String())
+
+    var inter = s1.Intersect(s2)
+    fmt.Printf("TreeSet.Intersect=%s\n", inter.String())
+
+    var diff = s1.Diff(s2)
+    fmt.Printf("TreeSet.Diff=%s\n", diff.String())
+}
+
+// TreeSet Predicates (line 775-782)
+func testTreeSetPredicates() {
+    var s = TreeSetOf(1, 2, 3, 4, 5)
+
+    fmt.Printf("TreeSet.Exists(>4)=%v\n", s.Exists((x int) => x > 4))
+    fmt.Printf("TreeSet.ForAll(>0)=%v\n", s.ForAll((x int) => x > 0))
+    fmt.Printf("TreeSet.Count(even)=%d\n", s.Count((x int) => x % 2 == 0))
+    fmt.Printf("TreeSet.Find(>3).IsDefined=%v\n", s.Find((x int) => x > 3).IsDefined())
+}
+
+func main() {
+    testArrayConstruction()
+    testArrayBasicOps()
+    testArrayElementAccess()
+    testArrayMutation()
+    testArrayStructural()
+    testArrayFunctional()
+    testArraySearching()
+    testArrayDistinct()
+    testListConstruction()
+    testListBasicOps()
+    testListElementAccess()
+    testListMutation()
+    testListSearching()
+    testHashSetConstruction()
+    testHashSetBasicOps()
+    testHashSetMembership()
+    testHashSetOperations()
+    testHashSetRelationships()
+    testHashSetPredicates()
+    testTreeSetConstruction()
+    testTreeSetBasicOps()
+    testTreeSetMinMax()
+    testTreeSetRange()
+    testTreeSetOperations()
+    testTreeSetPredicates()
+}

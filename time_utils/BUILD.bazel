@@ -25,7 +25,9 @@ go_library(
     srcs = ["time_utils.gen.go"],
     importpath = "martianoff/gala/time_utils",
     visibility = ["//visibility:public"],
-    deps = ["//std"],
+    deps = [
+        "//std",
+    ],
 )
 
 gala_go_test(

@@ -1,0 +1,101 @@
+empty.Length=0
+arr2.Length=5
+arr3.Length=3
+arr4.Capacity>=1000: true
+IsEmpty=false
+NonEmpty=true
+Length=5
+Size=5
+Get(0)=10
+Get(1)=20
+GetOption(1).IsDefined=true
+GetOption(10).IsDefined=false
+Head=10
+Last=30
+After Set(1,99): Array(1, 99, 3)
+After Append(4): Array(1, 99, 3, 4)
+After Prepend(0): Array(0, 1, 99, 3, 4)
+After Insert(2,50): Array(0, 1, 50, 99, 3, 4)
+After RemoveAt(2): Array(0, 1, 99, 3, 4)
+RemoveFirst returned: 0
+RemoveLast returned: 4
+Take(3)=Array(1, 2, 3)
+Drop(2)=Array(3, 4, 5)
+Slice(1,4)=Array(2, 3, 4)
+Tail=Array(2, 3, 4, 5)
+Init=Array(1, 2, 3, 4)
+Reversed=Array(5, 4, 3, 2, 1)
+Map doubled=Array(2, 4, 6, 8, 10)
+Filter evens=Array(2, 4)
+FoldLeft sum=15
+Contains(3)=true
+IndexOf(2)=1
+LastIndexOf(2)=3
+Find(>2).IsDefined=true
+Exists(>4)=false
+ForAll(>0)=true
+Count(==2)=2
+Distinct=Array(1, 2, 3)
+empty.Length=0
+list2.Length=5
+list3.Length=3
+List.IsEmpty=false
+List.NonEmpty=true
+List.Length=5
+List.Size=5
+List.Head=10
+List.Last=30
+List.Get(1)=20
+List.GetOption(1).IsDefined=true
+After Prepend(1): List(1, 2, 3, 4)
+After Append(5): List(1, 2, 3, 4, 5)
+RemoveFirst returned: 1
+RemoveLast returned: 5
+List.Contains(3)=true
+List.IndexOf(2)=1
+List.LastIndexOf(2)=3
+List.Exists(>4)=false
+List.ForAll(>0)=true
+List.Count(==2)=2
+HashSet.empty.Size=0
+HashSet.s2.Size=5
+HashSet.s3.Size=3
+HashSet.IsEmpty=false
+HashSet.NonEmpty=true
+HashSet.Size=5
+HashSet.Contains(2)=true
+HashSet.Contains(5)=false
+HashSet.Add(4) returned true, size now=4
+HashSet.Add(2) returned false (already present)
+HashSet.Remove(2) returned true, size now=3
+HashSet.Union size=4
+HashSet.Intersect size=2
+HashSet.Diff size=1
+HashSet.SubsetOf=true
+HashSet.SupersetOf=true
+HashSet.Disjoint=true
+HashSet.Exists(>4)=true
+HashSet.ForAll(>0)=true
+HashSet.Count(even)=2
+TreeSet.empty.Size=0
+TreeSet.s2.Size=4
+TreeSet.s3=TreeSet(1, 2, 3)
+TreeSet.IsEmpty=false
+TreeSet.NonEmpty=true
+TreeSet.Size=5
+TreeSet.Min=1
+TreeSet.Max=9
+TreeSet.MinOption.IsDefined=true
+TreeSet.MaxOption.IsDefined=true
+TreeSet.Head=1
+TreeSet.Last=9
+TreeSet.Range(3,7)=TreeSet(3, 4, 5, 6, 7)
+TreeSet.RangeFrom(7)=TreeSet(7, 8, 9, 10)
+TreeSet.RangeTo(4)=TreeSet(1, 2, 3, 4)
+TreeSet.Union=TreeSet(1, 2, 3, 4)
+TreeSet.Intersect=TreeSet(2, 3)
+TreeSet.Diff=TreeSet(1)
+TreeSet.Exists(>4)=true
+TreeSet.ForAll(>0)=true
+TreeSet.Count(even)=2
+TreeSet.Find(>3).IsDefined=true
