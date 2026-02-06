@@ -1,4 +1,3 @@
-load("@rules_go//go:def.bzl", "go_library")
 load("//:gala.bzl", "gala_bootstrap_transpile", "gala_go_test", "gala_library")
 
 exports_files([

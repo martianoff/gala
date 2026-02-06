@@ -1,11 +1,12 @@
 load("@rules_go//go:def.bzl", "go_library")
 
-# Generate embedded stdlib Go file from transpiled sources.
+# Generate embedded stdlib Go file from transpiled sources and GALA source files.
 # This uses gala_bootstrap (not gala) to avoid circular dependency.
+# GALA source files are included so the analyzer can extract type metadata.
 genrule(
     name = "generate_embedded",
     srcs = [
-        # std package
+        # std package - transpiled Go
         "//std:option_go",
         "//std:immutable_go",
         "//std:tuple_go",
@@ -19,28 +20,59 @@ genrule(
         "//std:constptr_go",
         "//std:types.go",
         "//std:interfaces.go",
+        # std package - GALA source (for analyzer)
+        "//std:option.gala",
+        "//std:immutable.gala",
+        "//std:tuple.gala",
+        "//std:either.gala",
+        "//std:iterable.gala",
+        "//std:seq.gala",
+        "//std:hashable.gala",
+        "//std:ordered.gala",
+        "//std:try.gala",
+        "//std:errors.gala",
+        "//std:constptr.gala",
         # go_interop package
         "//go_interop:types.go",
-        # collection_immutable package
+        # collection_immutable package - transpiled Go
         "//collection_immutable:array_go",
         "//collection_immutable:list_go",
         "//collection_immutable:hashmap_go",
         "//collection_immutable:hashset_go",
-        # collection_mutable package
+        # collection_immutable package - GALA source
+        "//collection_immutable:array.gala",
+        "//collection_immutable:list.gala",
+        "//collection_immutable:hashmap.gala",
+        "//collection_immutable:hashset.gala",
+        # collection_mutable package - transpiled Go
         "//collection_mutable:array_go",
         "//collection_mutable:list_go",
         "//collection_mutable:hashmap_go",
         "//collection_mutable:hashset_go",
         "//collection_mutable:treeset_go",
-        # concurrent package
+        # collection_mutable package - GALA source
+        "//collection_mutable:array.gala",
+        "//collection_mutable:list.gala",
+        "//collection_mutable:hashmap.gala",
+        "//collection_mutable:hashset.gala",
+        "//collection_mutable:treeset.gala",
+        # concurrent package - transpiled Go
         "//concurrent:future_go",
         "//concurrent:execution_context.go",
-        # stream package
+        # concurrent package - GALA source
+        "//concurrent:future.gala",
+        # stream package - transpiled Go
         "//stream:stream_go",
-        # string_utils package
+        # stream package - GALA source
+        "//stream:stream.gala",
+        # string_utils package - transpiled Go
         "//string_utils:string_utils_go",
-        # time_utils package
+        # string_utils package - GALA source
+        "//string_utils:strings.gala",
+        # time_utils package - transpiled Go
         "//time_utils:time_utils_go",
+        # time_utils package - GALA source
+        "//time_utils:time_utils.gala",
     ],
     outs = ["embedded_gen.go"],
     cmd = "$(location //cmd/stdlib_gen) -output $@ $(SRCS)",

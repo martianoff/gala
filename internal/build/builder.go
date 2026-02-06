@@ -143,7 +143,9 @@ func (b *Builder) transpile() error {
 	}
 
 	// Create transpiler pipeline
-	searchPaths := []string{b.workspace.ProjectDir}
+	// Include stdlib directory in search paths so analyzer can find std package types
+	stdlibDir := b.config.StdlibVersionDir(b.stdlibVersion)
+	searchPaths := []string{b.workspace.ProjectDir, stdlibDir}
 	p := transpiler.NewAntlrGalaParser()
 	a := analyzer.NewGalaAnalyzer(p, searchPaths)
 	tr := transformer.NewGalaASTTransformer()

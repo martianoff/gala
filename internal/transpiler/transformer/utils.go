@@ -12,6 +12,11 @@ func (t *galaASTTransformer) nextTempVar() string {
 	return fmt.Sprintf("_tmp_%d", t.tempVarCount)
 }
 
+func (t *galaASTTransformer) nextTupleID() int {
+	t.tempVarCount++
+	return t.tempVarCount
+}
+
 func (t *galaASTTransformer) isNoneCall(expr ast.Expr) bool {
 	call, ok := expr.(*ast.CallExpr)
 	if !ok {

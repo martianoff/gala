@@ -40,8 +40,11 @@ structField: (VAL | VAR)? identifier type (STRING)?;
 interfaceType: 'interface' '{' methodSpec* '}';
 methodSpec: identifier (typeParameters)? signature;
 
-valDeclaration: 'val' identifierList (type)? '=' expressionList;
-varDeclaration: 'var' identifierList (type)? ('=' expressionList)?;
+valDeclaration: 'val' (tuplePattern | identifierList) (type)? '=' expressionList;
+varDeclaration: 'var' (tuplePattern | identifierList) (type)? ('=' expressionList)?;
+
+// Tuple pattern for destructuring: val (a, b) = tuple
+tuplePattern: '(' identifierList ')';
 
 functionDeclaration: 'func' (receiver)? identifier (typeParameters)? signature (block | '=' expression);
 

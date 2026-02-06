@@ -27,7 +27,6 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//std",
-        "//go_interop",
         "//collection_immutable",
     ],
 )

@@ -784,7 +784,11 @@ val msg = t match {
     case _      => "Unknown"
 }
 
-// Accessing fields
+// Tuple destructuring in val declarations
+val (a, b) = t         // a = 1, b = "hello"
+val (x, y, z) = triple // x = 1, y = "hello", z = true
+
+// Accessing fields directly
 val first = t.V1   // 1
 val second = t.V2  // "hello"
 ```

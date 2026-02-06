@@ -4,6 +4,7 @@ load("//:gala.bzl", "gala_binary", "gala_bootstrap_transpile", "gala_go_test", "
 exports_files([
     "list.gala",
     "array.gala",
+    "hashmap.gala",
     "hashset.gala",
     "treeset.gala",
 ])

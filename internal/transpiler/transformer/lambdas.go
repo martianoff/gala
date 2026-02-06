@@ -69,6 +69,14 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 				}
 			}
 		}
+		// Convert trailing expression statement to return statement for non-void lambdas.
+		// This handles cases like: (x int) => { if (cond) Some(x) else None() }
+		// where the if-else expression is the last statement but not wrapped in return.
+		if !isVoidExpected && len(b.List) > 0 {
+			if exprStmt, ok := b.List[len(b.List)-1].(*ast.ExprStmt); ok {
+				b.List[len(b.List)-1] = &ast.ReturnStmt{Results: []ast.Expr{exprStmt.X}}
+			}
+		}
 		body = b
 	} else if ctx.Expression() != nil {
 		expr, err := t.transformExpression(ctx.Expression())

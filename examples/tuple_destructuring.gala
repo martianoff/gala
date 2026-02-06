@@ -1,0 +1,26 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+)
+
+func main() {
+    // Basic tuple destructuring
+    val t = Tuple[int, string](V1 = 42, V2 = "hello")
+    val (a, b) = t
+    fmt.Printf("a = %d, b = %s\n", a.Get(), b.Get())
+
+    // Destructuring from function result
+    val (x, y) = getPair()
+    fmt.Printf("x = %d, y = %d\n", x.Get(), y.Get())
+
+    // Nested tuple access with destructuring
+    val pair = makePair(10, 20)
+    val (first, second) = pair
+    fmt.Printf("first = %d, second = %d\n", first.Get(), second.Get())
+}
+
+func getPair() Tuple[int, int] = Tuple[int, int](V1 = 1, V2 = 2)
+
+func makePair(a int, b int) Tuple[int, int] = Tuple[int, int](V1 = a, V2 = b)

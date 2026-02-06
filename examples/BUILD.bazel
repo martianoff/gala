@@ -437,3 +437,18 @@ gala_test(
     src = "tuple6_pattern_match.gala",
     expected = "tuple6_pattern_match.out",
 )
+
+# Regression test for implicit return of if-else expression in block lambda
+gala_test(
+    name = "if_else_implicit_return",
+    src = "if_else_implicit_return.gala",
+    expected = "if_else_implicit_return.out",
+    deps = ["//stream"],
+)
+
+# Tuple destructuring: val (a, b) = tuple
+gala_test(
+    name = "tuple_destructuring",
+    src = "tuple_destructuring.gala",
+    expected = "tuple_destructuring.out",
+)

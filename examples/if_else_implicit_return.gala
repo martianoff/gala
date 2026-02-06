@@ -1,0 +1,15 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+    . "martianoff/gala/stream"
+)
+
+func main() {
+    // This is what the docs originally had - if-else as last expression in block
+    val s = Of(1, 2, 3, 4).Collect[int]((x int) => {
+        if (x % 2 == 0) Some(x * 10) else None[int]()
+    })
+    fmt.Printf("s: %v\n", s.ToArray())
+}

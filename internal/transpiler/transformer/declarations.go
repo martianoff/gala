@@ -87,6 +87,11 @@ func (t *galaASTTransformer) transformDeclaration(ctx grammar.IDeclarationContex
 }
 
 func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclarationContext) (ast.Decl, error) {
+	// Handle tuple pattern: val (a, b) = tuple
+	if ctx.TuplePattern() != nil {
+		return t.transformValTuplePattern(ctx)
+	}
+
 	namesCtx := ctx.IdentifierList().(*grammar.IdentifierListContext).AllIdentifier()
 	rhsExprs, err := t.transformExpressionList(ctx.ExpressionList().(*grammar.ExpressionListContext))
 	if err != nil {
@@ -176,6 +181,85 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 	return &ast.GenDecl{
 		Tok:   token.VAR,
 		Specs: []ast.Spec{spec},
+	}, nil
+}
+
+// transformValTuplePattern handles val declarations with tuple destructuring: val (a, b) = tuple
+// It generates:
+//
+//	var (
+//	    __tuple_N = tuple
+//	    a = NewImmutable(__tuple_N.V1)
+//	    b = NewImmutable(__tuple_N.V2)
+//	)
+func (t *galaASTTransformer) transformValTuplePattern(ctx *grammar.ValDeclarationContext) (ast.Decl, error) {
+	tupleCtx := ctx.TuplePattern().(*grammar.TuplePatternContext)
+	namesCtx := tupleCtx.IdentifierList().(*grammar.IdentifierListContext).AllIdentifier()
+
+	rhsExprs, err := t.transformExpressionList(ctx.ExpressionList().(*grammar.ExpressionListContext))
+	if err != nil {
+		return nil, err
+	}
+
+	if len(rhsExprs) != 1 {
+		return nil, galaerr.NewSemanticError("tuple destructuring requires exactly one expression on the right side")
+	}
+
+	// Get the type of the tuple for type inference
+	tupleType := t.getExprTypeName(rhsExprs[0])
+	tupleGenericType, isGeneric := tupleType.(transpiler.GenericType)
+
+	// Generate unique temp variable name
+	tempName := fmt.Sprintf("__tuple_%d", t.nextTupleID())
+
+	// First spec: temp variable holding the tuple
+	tempSpec := &ast.ValueSpec{
+		Names:  []*ast.Ident{ast.NewIdent(tempName)},
+		Values: []ast.Expr{t.unwrapImmutable(rhsExprs[0])},
+	}
+
+	specs := []ast.Spec{tempSpec}
+
+	// Create specs for each destructured variable
+	for i, idCtx := range namesCtx {
+		name := idCtx.GetText()
+
+		// Determine the type of this component
+		var componentType transpiler.Type = transpiler.NilType{}
+		if isGeneric && i < len(tupleGenericType.Params) {
+			componentType = tupleGenericType.Params[i]
+			if t.isImmutableType(componentType) {
+				if gen, ok := componentType.(transpiler.GenericType); ok && len(gen.Params) > 0 {
+					componentType = gen.Params[0]
+				}
+			}
+		}
+
+		t.addVal(name, componentType)
+
+		// Access tuple field: __tuple_N.V1, __tuple_N.V2, etc.
+		fieldAccess := &ast.SelectorExpr{
+			X:   ast.NewIdent(tempName),
+			Sel: ast.NewIdent(fmt.Sprintf("V%d", i+1)),
+		}
+
+		// Wrap with NewImmutable
+		wrappedValue := &ast.CallExpr{
+			Fun:  t.stdIdent("NewImmutable"),
+			Args: []ast.Expr{fieldAccess},
+		}
+
+		spec := &ast.ValueSpec{
+			Names:  []*ast.Ident{ast.NewIdent(name)},
+			Values: []ast.Expr{wrappedValue},
+		}
+
+		specs = append(specs, spec)
+	}
+
+	return &ast.GenDecl{
+		Tok:   token.VAR,
+		Specs: specs,
 	}, nil
 }
 
