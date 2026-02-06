@@ -471,6 +471,25 @@ gala_test(
     ],
 )
 
+gala_test(
+    name = "for_loops",
+    src = "for_loops.gala",
+    expected = "for_loops.out",
+    deps = ["//go_interop"],
+)
+
+gala_test(
+    name = "variadic_functions",
+    src = "variadic_functions.gala",
+    expected = "variadic_functions.out",
+)
+
+gala_test(
+    name = "inc_dec",
+    src = "inc_dec.gala",
+    expected = "inc_dec.out",
+)
+
 # Documentation verification tests (GALA.MD)
 gala_test(
     name = "doc_verify_gala_md_basics",

@@ -1,0 +1,42 @@
+package main
+
+import "fmt"
+
+func main() {
+    // Basic increment
+    var x = 0
+    x++
+    fmt.Println("After x++:", x)
+
+    // Basic decrement
+    x--
+    fmt.Println("After x--:", x)
+
+    // Multiple increments
+    var count = 0
+    count++
+    count++
+    count++
+    fmt.Println("After 3x count++:", count)
+
+    // In for loop context
+    fmt.Print("Loop:")
+    for i := 0; i < 5; i++ {
+        fmt.Printf(" %d", i)
+    }
+    fmt.Println()
+
+    // Decrement in loop
+    fmt.Print("Down:")
+    for i := 3; i > 0; i-- {
+        fmt.Printf(" %d", i)
+    }
+    fmt.Println()
+
+    // Increment in while-style loop
+    var n = 0
+    for n < 4 {
+        n++
+    }
+    fmt.Println("While result:", n)
+}

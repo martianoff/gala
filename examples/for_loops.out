@@ -1,0 +1,8 @@
+Classic: 0 1 2 3 4
+While: 0 1 2
+Range: (0:10) (1:20) (2:30)
+Values: 10 20 30
+Nested: 00 01 10 11 20 21
+Break: 0 1 2
+Continue: 1 3 5
+Decrement: 4 3 2 1 0

@@ -10,12 +10,32 @@ import (
 )
 
 func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionContext) (ast.Expr, error) {
-	// expression 'match' '{' caseClause+ '}'
-	// Use children because it's not a distinct context type
+	expr, paramName, matchedType, err := t.parseMatchSubject(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	t.pushScope()
+	defer t.popScope()
+	t.addVar(paramName, matchedType)
+
+	clauses, defaultBody, resultType, err := t.transformMatchClauses(ctx, paramName, matchedType)
+	if err != nil {
+		return nil, err
+	}
+
+	t.needsStdImport = true
+	body := t.buildMatchBody(clauses, defaultBody, resultType)
+
+	return t.generateMatchIIFE(expr, paramName, matchedType, body, resultType)
+}
+
+// parseMatchSubject extracts and type-checks the expression being matched.
+func (t *galaASTTransformer) parseMatchSubject(ctx grammar.IExpressionContext) (ast.Expr, string, transpiler.Type, error) {
 	exprCtx := ctx.GetChild(0).(grammar.IExpressionContext)
 	expr, err := t.transformExpression(exprCtx)
 	if err != nil {
-		return nil, err
+		return nil, "", nil, err
 	}
 
 	paramName := "obj"
@@ -25,65 +45,46 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 		}
 	}
 
-	// Get the type of the matched expression
-	// Try multiple approaches to get the concrete instantiated type
-	var matchedType transpiler.Type
-
-	// First try manual type extraction which handles .Get() calls specially
-	matchedType = t.getExprTypeNameManual(expr)
-
-	// If that didn't work, try HM inference
+	// Infer matched expression type (manual first, then HM fallback)
+	matchedType := t.getExprTypeNameManual(expr)
 	if matchedType == nil || matchedType.IsNil() {
 		matchedType, _ = t.inferExprType(expr)
 	}
-
-	// Check if type inference failed - require explicit type annotation
 	if matchedType == nil || matchedType.IsNil() {
-		return nil, galaerr.NewSemanticError("cannot infer type of matched expression. Please add explicit type annotation to the variable being matched")
+		return nil, "", nil, galaerr.NewSemanticError("cannot infer type of matched expression. Please add explicit type annotation to the variable being matched")
 	}
 
-	// Note: We intentionally do NOT replace types with unresolved type parameters (like Box[T])
-	// with 'any'. Keeping the original parametric type allows:
-	// 1. Correct extractor type inference (e.g., Full[T].Unapply(Box[T]) can unify with Box[T])
-	// 2. Valid Go code generation when inside a generic function where T is in scope
-	// The generated IIFE will use the parametric type, which is valid Go.
+	return expr, paramName, matchedType, nil
+}
 
-	t.pushScope()
-	defer t.popScope()
-	t.addVar(paramName, matchedType)
-
+// transformMatchClauses processes all case clauses and infers the common result type.
+func (t *galaASTTransformer) transformMatchClauses(ctx grammar.IExpressionContext, paramName string, matchedType transpiler.Type) ([]ast.Stmt, []ast.Stmt, transpiler.Type, error) {
 	var clauses []ast.Stmt
 	var defaultBody []ast.Stmt
 	foundDefault := false
-
-	// Collect result types from all case branches for type inference
 	var resultTypes []transpiler.Type
-	var casePatterns []string // For error messages
+	var casePatterns []string
 
-	// case clauses start from child 3 (0: expr, 1: match, 2: {, 3: case...)
 	for i := 3; i < ctx.GetChildCount()-1; i++ {
 		ccCtx, ok := ctx.GetChild(i).(*grammar.CaseClauseContext)
 		if !ok {
 			continue
 		}
 
-		// Check if it's a default case
 		patCtx := ccCtx.Pattern()
 		patternText := patCtx.GetText()
 		if patternText == "_" {
 			if foundDefault {
-				return nil, galaerr.NewSemanticError("multiple default cases in match expression")
+				return nil, nil, nil, galaerr.NewSemanticError("multiple default cases in match expression")
 			}
 			foundDefault = true
 
-			// Transform the body of default case and infer its type
 			if ccCtx.GetBodyBlock() != nil {
 				b, err := t.transformBlock(ccCtx.GetBodyBlock().(*grammar.BlockContext))
 				if err != nil {
-					return nil, err
+					return nil, nil, nil, err
 				}
 				defaultBody = b.List
-				// Infer type from last statement in block if it's a return
 				if len(b.List) > 0 {
 					if ret, ok := b.List[len(b.List)-1].(*ast.ReturnStmt); ok && len(ret.Results) > 0 {
 						resultTypes = append(resultTypes, t.inferResultType(ret.Results[0]))
@@ -93,7 +94,7 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 			} else if ccCtx.GetBody() != nil {
 				bodyExpr, err := t.transformExpression(ccCtx.GetBody())
 				if err != nil {
-					return nil, err
+					return nil, nil, nil, err
 				}
 				defaultBody = []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{bodyExpr}}}
 				resultTypes = append(resultTypes, t.inferResultType(bodyExpr))
@@ -104,7 +105,7 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 
 		clause, resultType, err := t.transformCaseClauseWithType(ccCtx, paramName, matchedType)
 		if err != nil {
-			return nil, err
+			return nil, nil, nil, err
 		}
 		clauses = append(clauses, clause)
 		resultTypes = append(resultTypes, resultType)
@@ -112,22 +113,20 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 	}
 
 	if !foundDefault {
-		return nil, galaerr.NewSemanticError("match expression must have a default case (case _ => ...)")
+		return nil, nil, nil, galaerr.NewSemanticError("match expression must have a default case (case _ => ...)")
 	}
 
-	// Infer common result type from all branches
 	resultType, err := t.inferCommonResultType(resultTypes, casePatterns)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 
-	// Note: We keep result types with unresolved type parameters (like Box[U])
-	// because they are valid Go when inside a generic function where U is in scope.
+	return clauses, defaultBody, resultType, nil
+}
 
-	t.needsStdImport = true
-	// Transpile to IIFE: func(obj T) R { ... }(expr)
-	var body []ast.Stmt
-	// Add clauses as if-else chain
+// buildMatchBody chains case clauses into an if-else chain with default body,
+// and applies void stripping or return fixup based on result type.
+func (t *galaASTTransformer) buildMatchBody(clauses []ast.Stmt, defaultBody []ast.Stmt, resultType transpiler.Type) []ast.Stmt {
 	var rootIf ast.Stmt
 	var currentIf *ast.IfStmt
 
@@ -143,39 +142,35 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 		}
 	}
 
+	var body []ast.Stmt
 	if rootIf != nil {
-		if len(defaultBody) > 0 {
-			if currentIf != nil {
-				currentIf.Else = &ast.BlockStmt{List: defaultBody}
-			}
+		if len(defaultBody) > 0 && currentIf != nil {
+			currentIf.Else = &ast.BlockStmt{List: defaultBody}
 		}
 		body = []ast.Stmt{rootIf}
 	} else {
 		body = defaultBody
 	}
 
-	// Check if result type is void (for side-effect only match statements)
 	_, isVoid := resultType.(transpiler.VoidType)
 	if isVoid {
-		// Strip return statements for void match - convert returns to expression statements
 		body = t.stripReturnStatements(body)
-	} else {
-		// Fix up return statements that return 'any' values when result type is concrete
-		// This handles cases where pattern-bound variables have unknown types
-		if resultType != nil && !resultType.IsNil() && !resultType.IsAny() {
-			t.fixupReturnStatements(body, resultType)
-		}
+	} else if resultType != nil && !resultType.IsNil() && !resultType.IsAny() {
+		t.fixupReturnStatements(body, resultType)
 	}
 
-	// Use concrete matched type for IIFE parameter
+	return body
+}
+
+// generateMatchIIFE wraps the match body in an immediately-invoked function expression.
+func (t *galaASTTransformer) generateMatchIIFE(expr ast.Expr, paramName string, matchedType transpiler.Type, body []ast.Stmt, resultType transpiler.Type) (ast.Expr, error) {
 	paramType := t.typeToExpr(matchedType)
 	if paramType == nil {
 		return nil, galaerr.NewSemanticError("cannot infer type of matched expression. Please add explicit type annotation")
 	}
 
-	// Build IIFE with or without return type depending on void
 	var resultsField *ast.FieldList
-	if !isVoid {
+	if _, isVoid := resultType.(transpiler.VoidType); !isVoid {
 		resultTypeExpr := t.typeToExpr(resultType)
 		if resultTypeExpr == nil {
 			return nil, galaerr.NewSemanticError("cannot infer result type of match expression. Please ensure all branches return the same type")
@@ -198,9 +193,7 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 				},
 				Results: resultsField,
 			},
-			Body: &ast.BlockStmt{
-				List: body,
-			},
+			Body: &ast.BlockStmt{List: body},
 		},
 		Args: []ast.Expr{expr},
 	}, nil
@@ -314,8 +307,25 @@ func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patt
 	}
 
 	if refType == nil {
-		// If we can't infer any concrete type, fall back to 'any' to allow the code to compile
-		// This is a permissive approach - the Go compiler will catch actual type errors
+		// Check if all non-void types are NilType (complete inference failure) vs type parameters
+		hasTypeParam := false
+		allNilOrVoid := true
+		for _, typ := range types {
+			if typ != nil && !typ.IsNil() {
+				if _, isVoid := typ.(transpiler.VoidType); !isVoid {
+					allNilOrVoid = false
+					if t.isTypeParameter(typ.String()) {
+						hasTypeParam = true
+					}
+				}
+			}
+		}
+
+		if allNilOrVoid && !hasTypeParam {
+			// Complete inference failure — no branch could be typed
+			return nil, galaerr.NewSemanticError("cannot infer result type of match expression: no branch returns a concrete type. Please add explicit type annotation")
+		}
+		// Type parameters or mixed type-param/nil: use 'any' as the Go type erasure
 		return transpiler.BasicType{Name: "any"}, nil
 	}
 
@@ -349,20 +359,18 @@ func (t *galaASTTransformer) typesCompatible(t1, t2 transpiler.Type) bool {
 		return true
 	}
 
-	s1, s2 := t1.String(), t2.String()
-
 	// Types are compatible if they have the same string representation
-	if s1 == s2 {
+	if t1.String() == t2.String() {
 		return true
 	}
 
 	// any is compatible with everything
-	if s1 == "any" || s2 == "any" {
+	if t1.IsAny() || t2.IsAny() {
 		return true
 	}
 
 	// Type parameters (like T, U, std.T, std.U) are compatible with any
-	if t.isTypeParameter(s1) || t.isTypeParameter(s2) {
+	if t.isTypeParameter(t1.String()) || t.isTypeParameter(t2.String()) {
 		return true
 	}
 

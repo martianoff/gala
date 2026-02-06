@@ -50,145 +50,113 @@ func (t *galaASTTransformer) transformPostfixExpr(ctx *grammar.PostfixExprContex
 }
 
 func (t *galaASTTransformer) applyPostfixSuffix(base ast.Expr, suffix *grammar.PostfixSuffixContext) (ast.Expr, error) {
-	// Check what type of suffix this is
 	if suffix.Identifier() != nil {
-		// Member access: . identifier
-		selName := suffix.Identifier().GetText()
-
-		// Get the type of the base expression BEFORE any unwrapping.
-		// This type is preserved through unwrapping (unwrapping just makes the value accessible,
-		// but doesn't change its logical type in the GALA type system).
-		xType := t.getExprTypeName(base)
-		isImmutable := t.isImmutableType(xType)
-
-		// Don't unwrap if we're accessing Immutable's own fields/methods
-		if !isImmutable || (selName != "Get" && selName != "value") {
-			base = t.unwrapImmutable(base)
-		}
-
-		// Also unwrap ConstPtr to access fields (but not ConstPtr's own methods)
-		isConstPtr := t.isConstPtrType(xType)
-		if isConstPtr && selName != "Deref" && selName != "IsNil" && selName != "ptr" {
-			base = t.unwrapConstPtr(base)
-			// After ConstPtr unwrap, re-evaluate type since we're accessing the underlying type
-			xType = t.getExprTypeName(base)
-		}
-
-		selExpr := &ast.SelectorExpr{
-			X:   base,
-			Sel: ast.NewIdent(selName),
-		}
-
-		// Use the preserved type for field access checks.
-		// After unwrapping Immutable, the type remains the same (the inner type).
-		// We only re-evaluate if we unwrapped ConstPtr (which changes the type).
-		xTypeName := xType.String()
-		baseTypeName := xTypeName
-		if idx := strings.Index(xTypeName, "["); idx != -1 {
-			baseTypeName = xTypeName[:idx]
-		}
-		baseTypeName = strings.TrimPrefix(baseTypeName, "*")
-
-		// Check if the field is immutable and should be auto-unwrapped
-		// First try structFields (populated for current package types)
-		resolvedTypeName := t.resolveStructTypeName(baseTypeName)
-		if fields, ok := t.structFields[resolvedTypeName]; ok {
-			for i, f := range fields {
-				if f == selName {
-					if t.structImmutFields[resolvedTypeName][i] {
-						return &ast.CallExpr{
-							Fun: &ast.SelectorExpr{
-								X:   selExpr,
-								Sel: ast.NewIdent("Get"),
-							},
-						}, nil
-					}
-					break
-				}
-			}
-		}
-
-		// Fallback: check typeMetas for struct field info (handles cross-package types like std.Tuple)
-		// getTypeMeta handles all resolution including std prefix fallback
-		typeMeta := t.getTypeMeta(baseTypeName)
-		if typeMeta != nil {
-			for i, f := range typeMeta.FieldNames {
-				if f == selName {
-					if i < len(typeMeta.ImmutFlags) && typeMeta.ImmutFlags[i] {
-						return &ast.CallExpr{
-							Fun: &ast.SelectorExpr{
-								X:   selExpr,
-								Sel: ast.NewIdent("Get"),
-							},
-						}, nil
-					}
-					break
-				}
-			}
-		}
-
-		// Also check structFieldTypes for immutable field types
-		// The field might have been registered without ImmutFlags but with Immutable wrapper in type
-		if fieldTypes, ok := t.structFieldTypes[resolvedTypeName]; ok {
-			if fieldType, ok := fieldTypes[selName]; ok && t.isImmutableType(fieldType) {
-				return &ast.CallExpr{
-					Fun: &ast.SelectorExpr{
-						X:   selExpr,
-						Sel: ast.NewIdent("Get"),
-					},
-				}, nil
-			}
-		}
-
-		// Final fallback: if this is a known std struct type, check if fields should be immutable by default
-		// All GALA struct fields are immutable by default unless marked with 'var'
-		// For std library types like Tuple, Option, etc., all fields are immutable
-		if registry.IsStdType(baseTypeName) || registry.IsStdType(strings.TrimPrefix(baseTypeName, registry.StdPackageName+".")) {
-			// For std types, check if the resulting field type is Immutable
-			// The generated Go struct has Immutable-wrapped fields
-			fieldType := t.getExprTypeName(selExpr)
-			if t.isImmutableType(fieldType) {
-				return &ast.CallExpr{
-					Fun: &ast.SelectorExpr{
-						X:   selExpr,
-						Sel: ast.NewIdent("Get"),
-					},
-				}, nil
-			}
-		}
-
-		return selExpr, nil
+		return t.resolveFieldAccess(base, suffix.Identifier().GetText())
 	}
 
-	// Check for function call or index
 	childCount := suffix.GetChildCount()
 	if childCount >= 2 {
 		firstChild := suffix.GetChild(0).(antlr.ParseTree).GetText()
-
 		if firstChild == "(" {
-			// Function call
 			return t.applyCallSuffix(base, suffix)
 		}
-
 		if firstChild == "[" {
-			// Index expression
-			exprList := suffix.ExpressionList()
-			if exprList == nil {
-				return nil, galaerr.NewSemanticError("index expression requires expression list")
-			}
-			base = t.unwrapImmutable(base)
-			indices, err := t.transformExpressionList(exprList.(*grammar.ExpressionListContext))
-			if err != nil {
-				return nil, err
-			}
-			if len(indices) == 1 {
-				return &ast.IndexExpr{X: base, Index: indices[0]}, nil
-			}
-			return &ast.IndexListExpr{X: base, Indices: indices}, nil
+			return t.resolveIndexAccess(base, suffix)
 		}
 	}
 
 	return nil, galaerr.NewSemanticError("unknown postfix suffix type")
+}
+
+// resolveFieldAccess handles member access with automatic Immutable/ConstPtr unwrapping.
+func (t *galaASTTransformer) resolveFieldAccess(base ast.Expr, selName string) (ast.Expr, error) {
+	xType := t.getExprTypeName(base)
+	isImmutable := t.isImmutableType(xType)
+
+	// Don't unwrap if we're accessing Immutable's own fields/methods
+	if !isImmutable || (selName != "Get" && selName != "value") {
+		base = t.unwrapImmutable(base)
+	}
+
+	// Also unwrap ConstPtr to access fields (but not ConstPtr's own methods)
+	isConstPtr := t.isConstPtrType(xType)
+	if isConstPtr && selName != "Deref" && selName != "IsNil" && selName != "ptr" {
+		base = t.unwrapConstPtr(base)
+		xType = t.getExprTypeName(base)
+	}
+
+	selExpr := &ast.SelectorExpr{X: base, Sel: ast.NewIdent(selName)}
+
+	if t.isImmutableField(xType, selExpr, selName) {
+		return &ast.CallExpr{
+			Fun: &ast.SelectorExpr{X: selExpr, Sel: ast.NewIdent("Get")},
+		}, nil
+	}
+
+	return selExpr, nil
+}
+
+// isImmutableField checks if a field access should be auto-unwrapped via .Get().
+func (t *galaASTTransformer) isImmutableField(xType transpiler.Type, selExpr *ast.SelectorExpr, selName string) bool {
+	xTypeName := xType.String()
+	baseTypeName := xTypeName
+	if idx := strings.Index(xTypeName, "["); idx != -1 {
+		baseTypeName = xTypeName[:idx]
+	}
+	baseTypeName = strings.TrimPrefix(baseTypeName, "*")
+
+	// Check structFields (current package types)
+	resolvedTypeName := t.resolveStructTypeName(baseTypeName)
+	if fields, ok := t.structFields[resolvedTypeName]; ok {
+		for i, f := range fields {
+			if f == selName {
+				return t.structImmutFields[resolvedTypeName][i]
+			}
+		}
+	}
+
+	// Check typeMetas (cross-package types)
+	if typeMeta := t.getTypeMeta(baseTypeName); typeMeta != nil {
+		for i, f := range typeMeta.FieldNames {
+			if f == selName {
+				return i < len(typeMeta.ImmutFlags) && typeMeta.ImmutFlags[i]
+			}
+		}
+	}
+
+	// Check structFieldTypes (Immutable wrapper in field type)
+	if fieldTypes, ok := t.structFieldTypes[resolvedTypeName]; ok {
+		if fieldType, ok := fieldTypes[selName]; ok && t.isImmutableType(fieldType) {
+			return true
+		}
+	}
+
+	// Std library types: check generated field type
+	if registry.IsStdType(baseTypeName) || registry.IsStdType(strings.TrimPrefix(baseTypeName, registry.StdPackageName+".")) {
+		fieldType := t.getExprTypeName(selExpr)
+		if t.isImmutableType(fieldType) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// resolveIndexAccess handles index/subscript expressions with Immutable unwrapping.
+func (t *galaASTTransformer) resolveIndexAccess(base ast.Expr, suffix *grammar.PostfixSuffixContext) (ast.Expr, error) {
+	exprList := suffix.ExpressionList()
+	if exprList == nil {
+		return nil, galaerr.NewSemanticError("index expression requires expression list")
+	}
+	base = t.unwrapImmutable(base)
+	indices, err := t.transformExpressionList(exprList.(*grammar.ExpressionListContext))
+	if err != nil {
+		return nil, err
+	}
+	if len(indices) == 1 {
+		return &ast.IndexExpr{X: base, Index: indices[0]}, nil
+	}
+	return &ast.IndexListExpr{X: base, Indices: indices}, nil
 }
 
 // applyCallSuffix moved to calls.go

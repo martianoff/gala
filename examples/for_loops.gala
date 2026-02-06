@@ -1,0 +1,73 @@
+package main
+
+import "fmt"
+import . "martianoff/gala/go_interop"
+
+func main() {
+    // Classic for loop
+    fmt.Print("Classic:")
+    for i := 0; i < 5; i++ {
+        fmt.Printf(" %d", i)
+    }
+    fmt.Println()
+
+    // Condition-only (while-style) loop
+    fmt.Print("While:")
+    var count = 0
+    for count < 3 {
+        fmt.Printf(" %d", count)
+        count++
+    }
+    fmt.Println()
+
+    // Range loop over slice
+    val items = SliceOf(10, 20, 30)
+    fmt.Print("Range:")
+    for i, v := range items {
+        fmt.Printf(" (%d:%d)", i, v)
+    }
+    fmt.Println()
+
+    // Range loop value only
+    fmt.Print("Values:")
+    for _, v := range items {
+        fmt.Printf(" %d", v)
+    }
+    fmt.Println()
+
+    // Nested for loops
+    fmt.Print("Nested:")
+    for i := 0; i < 3; i++ {
+        for j := 0; j < 2; j++ {
+            fmt.Printf(" %d%d", i, j)
+        }
+    }
+    fmt.Println()
+
+    // For loop with break
+    fmt.Print("Break:")
+    for i := 0; i < 10; i++ {
+        if i >= 3 {
+            break
+        }
+        fmt.Printf(" %d", i)
+    }
+    fmt.Println()
+
+    // For loop with continue
+    fmt.Print("Continue:")
+    for i := 0; i < 6; i++ {
+        if i % 2 == 0 {
+            continue
+        }
+        fmt.Printf(" %d", i)
+    }
+    fmt.Println()
+
+    // Decrement loop
+    fmt.Print("Decrement:")
+    for i := 4; i >= 0; i-- {
+        fmt.Printf(" %d", i)
+    }
+    fmt.Println()
+}

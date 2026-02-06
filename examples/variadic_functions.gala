@@ -1,0 +1,37 @@
+package main
+
+import "fmt"
+
+// Simple variadic function
+func sum(numbers ...int) int {
+    var total = 0
+    for _, n := range numbers {
+        total = total + n
+    }
+    return total
+}
+
+// Variadic with regular params
+func formatList(prefix string, items ...string) string {
+    var result = prefix
+    for i, item := range items {
+        if i > 0 {
+            result = result + ", "
+        }
+        result = result + item
+    }
+    return result
+}
+
+func main() {
+    // Basic variadic calls
+    fmt.Println(sum(1, 2, 3))
+    fmt.Println(sum(10, 20, 30, 40))
+    fmt.Println(sum())
+
+    // Mixed params + variadic
+    fmt.Println(formatList("Items: ", "a", "b", "c"))
+
+    // Single argument
+    fmt.Println(sum(42))
+}

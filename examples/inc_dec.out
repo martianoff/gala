@@ -1,0 +1,6 @@
+After x++: 1
+After x--: 0
+After 3x count++: 3
+Loop: 0 1 2 3 4
+Down: 3 2 1
+While result: 4
