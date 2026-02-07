@@ -223,7 +223,7 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 				}
 				xBaseName := xType.BaseName()
 				// For Immutable[T].Get(), return the inner type T
-				if xBaseName == transpiler.TypeImmutable || xBaseName == "std."+transpiler.TypeImmutable {
+				if xBaseName == transpiler.TypeImmutable || xBaseName == withStdPrefix(transpiler.TypeImmutable) {
 					if gen, ok := xType.(transpiler.GenericType); ok && len(gen.Params) > 0 {
 						return gen.Params[0]
 					}
@@ -254,9 +254,15 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 				}
 			}
 
+			// Check if sel.X is actually the std package before matching std-specific selector names
+			isStdQualified := false
+			if stdId, ok := sel.X.(*ast.Ident); ok && stdId.Name == registry.StdPackageName {
+				isStdQualified = true
+			}
+
 			// IMPORTANT: Check for explicit type args BEFORE looking up metadata return types
 			// This ensures Left_Apply[int, string] uses [int, string] instead of [A, B] from metadata
-			if len(typeArgs) > 0 {
+			if isStdQualified && len(typeArgs) > 0 {
 				if sel.Sel.Name == transpiler.FuncLeft || sel.Sel.Name == transpiler.FuncRight ||
 					strings.HasPrefix(sel.Sel.Name, transpiler.FuncLeft+"_") || strings.HasPrefix(sel.Sel.Name, transpiler.FuncRight+"_") ||
 					strings.HasPrefix(sel.Sel.Name, transpiler.TypeEither+"_") {
@@ -308,19 +314,20 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 						return retType
 					}
 					// Handle Receiver_Method (e.g., std.Some_Apply, std.Try_FlatMap)
-					if idx := strings.Index(sel.Sel.Name, "_"); idx != -1 {
-						receiverType := pkgName + "." + sel.Sel.Name[:idx]
-						methodName := sel.Sel.Name[idx+1:]
-						// Special handling for Some_Apply to infer type parameter from argument
-						if sel.Sel.Name == transpiler.FuncSome+"_Apply" && len(e.Args) >= 2 {
-							argType := t.getExprTypeNameManual(e.Args[1])
-							if !argType.IsNil() && !argType.IsAny() {
-								return transpiler.GenericType{
-									Base:   transpiler.NamedType{Package: registry.StdPackageName, Name: transpiler.TypeOption},
-									Params: []transpiler.Type{argType},
-								}
+					// Special handling for Some_Apply to infer type parameter from argument
+					if sel.Sel.Name == transpiler.FuncSome+"_Apply" && len(e.Args) >= 2 {
+						argType := t.getExprTypeNameManual(e.Args[1])
+						if !argType.IsNil() && !argType.IsAny() {
+							return transpiler.GenericType{
+								Base:   transpiler.NamedType{Package: registry.StdPackageName, Name: transpiler.TypeOption},
+								Params: []transpiler.Type{argType},
 							}
 						}
+					}
+					// Try all possible underscore split points to find valid type + method
+					for offset := strings.Index(sel.Sel.Name, "_"); offset != -1; {
+						receiverType := pkgName + "." + sel.Sel.Name[:offset]
+						methodName := sel.Sel.Name[offset+1:]
 						if typeMeta := t.getTypeMeta(receiverType); typeMeta != nil {
 							if methodMeta, ok := typeMeta.Methods[methodName]; ok {
 								// For Receiver_Method calls, the first arg is the receiver
@@ -348,6 +355,12 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 								return result
 							}
 						}
+						// Try next underscore position
+						next := strings.Index(sel.Sel.Name[offset+1:], "_")
+						if next == -1 {
+							break
+						}
+						offset = offset + 1 + next
 					}
 					if _, ok := t.structFields[fullName]; ok {
 						return transpiler.NamedType{Package: pkgName, Name: sel.Sel.Name}
@@ -403,57 +416,59 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 				}
 			}
 
-			if sel.Sel.Name == transpiler.FuncLeft || sel.Sel.Name == transpiler.FuncRight {
-				baseType := transpiler.NamedType{Package: registry.StdPackageName, Name: transpiler.TypeEither}
-				if len(typeArgs) > 0 {
-					return transpiler.GenericType{Base: baseType, Params: typeArgs}
-				}
-				return baseType
-			}
-			if t.isTupleTypeName(sel.Sel.Name) {
-				tupleType := t.getTupleTypeFromName(sel.Sel.Name)
-				baseType := transpiler.NamedType{Package: registry.StdPackageName, Name: tupleType}
-				if len(typeArgs) > 0 {
-					return transpiler.GenericType{Base: baseType, Params: typeArgs}
-				}
-				return baseType
-			}
-			if strings.HasPrefix(sel.Sel.Name, transpiler.TypeEither+"_") || strings.HasPrefix(sel.Sel.Name, transpiler.FuncLeft+"_") || strings.HasPrefix(sel.Sel.Name, transpiler.FuncRight+"_") {
-				baseType := transpiler.NamedType{Package: registry.StdPackageName, Name: transpiler.TypeEither}
-				if len(typeArgs) > 0 {
-					return transpiler.GenericType{Base: baseType, Params: typeArgs}
-				}
-				// For Left_Apply/Right_Apply, infer type parameters from the first argument (the type hint)
-				// Left_Apply(std.Left[int, string]{}, value) -> Either[int, string]
-				if (sel.Sel.Name == transpiler.FuncLeft+"_Apply" || sel.Sel.Name == transpiler.FuncRight+"_Apply") && len(e.Args) >= 1 {
-					firstArgType := t.getExprTypeNameManual(e.Args[0])
-					if genType, ok := firstArgType.(transpiler.GenericType); ok && len(genType.Params) > 0 {
-						return transpiler.GenericType{Base: baseType, Params: genType.Params}
+			if isStdQualified {
+				if sel.Sel.Name == transpiler.FuncLeft || sel.Sel.Name == transpiler.FuncRight {
+					baseType := transpiler.NamedType{Package: registry.StdPackageName, Name: transpiler.TypeEither}
+					if len(typeArgs) > 0 {
+						return transpiler.GenericType{Base: baseType, Params: typeArgs}
 					}
+					return baseType
 				}
-				return baseType
-			}
-			if strings.HasPrefix(sel.Sel.Name, transpiler.TypeOption+"_") || strings.HasPrefix(sel.Sel.Name, transpiler.FuncSome+"_") || strings.HasPrefix(sel.Sel.Name, transpiler.FuncNone+"_") {
-				// For Some_Apply, infer the type parameter from the second argument (the value)
-				// Some_Apply(std.Some{}, value) -> Option[typeof(value)]
-				if sel.Sel.Name == transpiler.FuncSome+"_Apply" && len(e.Args) >= 2 {
-					argType := t.getExprTypeNameManual(e.Args[1])
-					if !argType.IsNil() && !argType.IsAny() {
-						return transpiler.GenericType{
-							Base:   transpiler.NamedType{Package: registry.StdPackageName, Name: transpiler.TypeOption},
-							Params: []transpiler.Type{argType},
+				if t.isTupleTypeName(sel.Sel.Name) {
+					tupleType := t.getTupleTypeFromName(sel.Sel.Name)
+					baseType := transpiler.NamedType{Package: registry.StdPackageName, Name: tupleType}
+					if len(typeArgs) > 0 {
+						return transpiler.GenericType{Base: baseType, Params: typeArgs}
+					}
+					return baseType
+				}
+				if strings.HasPrefix(sel.Sel.Name, transpiler.TypeEither+"_") || strings.HasPrefix(sel.Sel.Name, transpiler.FuncLeft+"_") || strings.HasPrefix(sel.Sel.Name, transpiler.FuncRight+"_") {
+					baseType := transpiler.NamedType{Package: registry.StdPackageName, Name: transpiler.TypeEither}
+					if len(typeArgs) > 0 {
+						return transpiler.GenericType{Base: baseType, Params: typeArgs}
+					}
+					// For Left_Apply/Right_Apply, infer type parameters from the first argument (the type hint)
+					// Left_Apply(std.Left[int, string]{}, value) -> Either[int, string]
+					if (sel.Sel.Name == transpiler.FuncLeft+"_Apply" || sel.Sel.Name == transpiler.FuncRight+"_Apply") && len(e.Args) >= 1 {
+						firstArgType := t.getExprTypeNameManual(e.Args[0])
+						if genType, ok := firstArgType.(transpiler.GenericType); ok && len(genType.Params) > 0 {
+							return transpiler.GenericType{Base: baseType, Params: genType.Params}
 						}
 					}
+					return baseType
 				}
-				return transpiler.NamedType{Package: registry.StdPackageName, Name: transpiler.TypeOption}
-			}
-			if t.hasTupleTypePrefix(sel.Sel.Name) {
-				tupleType := t.getTupleTypeFromName(sel.Sel.Name)
-				baseType := transpiler.NamedType{Package: registry.StdPackageName, Name: tupleType}
-				if len(typeArgs) > 0 {
-					return transpiler.GenericType{Base: baseType, Params: typeArgs}
+				if strings.HasPrefix(sel.Sel.Name, transpiler.TypeOption+"_") || strings.HasPrefix(sel.Sel.Name, transpiler.FuncSome+"_") || strings.HasPrefix(sel.Sel.Name, transpiler.FuncNone+"_") {
+					// For Some_Apply, infer the type parameter from the second argument (the value)
+					// Some_Apply(std.Some{}, value) -> Option[typeof(value)]
+					if sel.Sel.Name == transpiler.FuncSome+"_Apply" && len(e.Args) >= 2 {
+						argType := t.getExprTypeNameManual(e.Args[1])
+						if !argType.IsNil() && !argType.IsAny() {
+							return transpiler.GenericType{
+								Base:   transpiler.NamedType{Package: registry.StdPackageName, Name: transpiler.TypeOption},
+								Params: []transpiler.Type{argType},
+							}
+						}
+					}
+					return transpiler.NamedType{Package: registry.StdPackageName, Name: transpiler.TypeOption}
 				}
-				return baseType
+				if t.hasTupleTypePrefix(sel.Sel.Name) {
+					tupleType := t.getTupleTypeFromName(sel.Sel.Name)
+					baseType := transpiler.NamedType{Package: registry.StdPackageName, Name: tupleType}
+					if len(typeArgs) > 0 {
+						return transpiler.GenericType{Base: baseType, Params: typeArgs}
+					}
+					return baseType
+				}
 			}
 			if _, ok := t.structFields[sel.Sel.Name]; ok {
 				return transpiler.BasicType{Name: sel.Sel.Name}
@@ -557,9 +572,10 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 			// e.g., Array_Zip[string](nums.Get(), strs.Get())
 			// The first argument is the receiver (nums.Get() -> Array[int])
 			// typeArgs are the method's explicit type arguments ([string])
-			if idx := strings.Index(id.Name, "_"); idx != -1 {
-				receiverType := id.Name[:idx]
-				methodName := id.Name[idx+1:]
+			// Try all possible underscore split points to find valid type + method
+			for offset := strings.Index(id.Name, "_"); offset != -1; {
+				receiverType := id.Name[:offset]
+				methodName := id.Name[offset+1:]
 				resolvedRecvType := t.getType(receiverType)
 				resolvedRecvTypeName := resolvedRecvType.String()
 				if resolvedRecvType.IsNil() {
@@ -595,6 +611,12 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 						return result
 					}
 				}
+				// Try next underscore position
+				next := strings.Index(id.Name[offset+1:], "_")
+				if next == -1 {
+					break
+				}
+				offset = offset + 1 + next
 			}
 		}
 	case *ast.FuncLit:
@@ -903,8 +925,8 @@ func (t *galaASTTransformer) substituteInType(typ transpiler.Type, paramMap map[
 func (t *galaASTTransformer) isTupleTypeName(name string) bool {
 	// Strip std. prefix if present
 	normalizedName := name
-	if strings.HasPrefix(name, "std.") {
-		normalizedName = name[4:]
+	if hasStdPrefix(name) {
+		normalizedName = stripStdPrefix(name)
 	}
 	switch normalizedName {
 	case transpiler.TypeTuple, transpiler.TypeTuple3, transpiler.TypeTuple4,

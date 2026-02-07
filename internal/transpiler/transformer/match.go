@@ -74,12 +74,13 @@ func extractVariantName(patternText string) string {
 }
 
 // isSealedExhaustive checks if a set of case patterns exhaustively covers all variants
-// of a sealed type. Returns (isExhaustive, missingVariants).
-func (t *galaASTTransformer) isSealedExhaustive(matchedType transpiler.Type, patternTexts []string) (bool, []string) {
+// of a sealed type. Returns (isSealed, isExhaustive, missingVariants).
+// isSealed is false when the matched type is not a sealed type at all.
+func (t *galaASTTransformer) isSealedExhaustive(matchedType transpiler.Type, patternTexts []string) (bool, bool, []string) {
 	baseName := matchedType.BaseName()
 	meta := t.getTypeMeta(baseName)
 	if meta == nil || !meta.IsSealed || len(meta.SealedVariants) == 0 {
-		return false, nil
+		return false, false, nil
 	}
 
 	covered := make(map[string]bool)
@@ -96,7 +97,7 @@ func (t *galaASTTransformer) isSealedExhaustive(matchedType transpiler.Type, pat
 		}
 	}
 
-	return len(missing) == 0, missing
+	return true, len(missing) == 0, missing
 }
 
 // transformMatchClauses processes all case clauses and infers the common result type.
@@ -115,7 +116,7 @@ func (t *galaASTTransformer) transformMatchClauses(ctx grammar.IExpressionContex
 
 		patCtx := ccCtx.Pattern()
 		patternText := patCtx.GetText()
-		if patternText == "_" {
+		if isWildcard(patternText) {
 			if foundDefault {
 				return nil, nil, nil, galaerr.NewSemanticError("multiple default cases in match expression")
 			}
@@ -154,36 +155,38 @@ func (t *galaASTTransformer) transformMatchClauses(ctx grammar.IExpressionContex
 		casePatterns = append(casePatterns, fmt.Sprintf("case %s", patternText))
 	}
 
-	if !foundDefault {
-		// Collect variant names from non-default patterns for exhaustiveness check
-		var variantPatterns []string
-		for i := 3; i < ctx.GetChildCount()-1; i++ {
-			ccCtx, ok := ctx.GetChild(i).(*grammar.CaseClauseContext)
-			if !ok {
-				continue
-			}
-			pat := ccCtx.Pattern().GetText()
-			if pat != "_" {
-				variantPatterns = append(variantPatterns, pat)
-			}
+	// Always collect variant patterns for exhaustiveness check
+	var variantPatterns []string
+	for i := 3; i < ctx.GetChildCount()-1; i++ {
+		ccCtx, ok := ctx.GetChild(i).(*grammar.CaseClauseContext)
+		if !ok {
+			continue
 		}
-
-		isExhaustive, missing := t.isSealedExhaustive(matchedType, variantPatterns)
-		if !isExhaustive {
-			if len(missing) > 0 {
-				return nil, nil, nil, galaerr.NewSemanticError(
-					fmt.Sprintf("non-exhaustive match on sealed type: missing variants: %s", strings.Join(missing, ", ")))
-			}
-			return nil, nil, nil, galaerr.NewSemanticError("match expression must have a default case (case _ => ...)")
-		}
-		// Exhaustive sealed match — generate synthetic panic("unreachable") default
-		defaultBody = []ast.Stmt{
-			&ast.ExprStmt{X: &ast.CallExpr{
-				Fun:  ast.NewIdent("panic"),
-				Args: []ast.Expr{&ast.BasicLit{Kind: token.STRING, Value: `"unreachable"`}},
-			}},
+		pat := ccCtx.Pattern().GetText()
+		if !isWildcard(pat) {
+			variantPatterns = append(variantPatterns, pat)
 		}
 	}
+
+	isSealed, isExhaustive, missing := t.isSealedExhaustive(matchedType, variantPatterns)
+
+	if !foundDefault {
+		if isSealed && !isExhaustive {
+			return nil, nil, nil, galaerr.NewSemanticError(
+				fmt.Sprintf("non-exhaustive match on sealed type: missing variants: %s", strings.Join(missing, ", ")))
+		} else if isSealed && isExhaustive {
+			// Exhaustive sealed match — generate synthetic panic("unreachable") default
+			defaultBody = []ast.Stmt{
+				&ast.ExprStmt{X: &ast.CallExpr{
+					Fun:  ast.NewIdent("panic"),
+					Args: []ast.Expr{&ast.BasicLit{Kind: token.STRING, Value: `"unreachable"`}},
+				}},
+			}
+		} else if !isSealed {
+			return nil, nil, nil, galaerr.NewSemanticError("match expression must have a default case (case _ => ...)")
+		}
+	}
+	// When foundDefault && isSealed && isExhaustive: unreachable default is harmless, allow it
 
 	resultType, err := t.inferCommonResultType(resultTypes, casePatterns)
 	if err != nil {
@@ -469,10 +472,7 @@ func (t *galaASTTransformer) typesCompatible(t1, t2 transpiler.Type) bool {
 // isTypeParameter checks if a type name represents a type parameter (like T, U, std.T)
 func (t *galaASTTransformer) isTypeParameter(typeName string) bool {
 	// Remove std. prefix if present
-	name := typeName
-	if len(name) > 4 && name[:4] == "std." {
-		name = name[4:]
-	}
+	name := stripStdPrefix(typeName)
 
 	// Type parameters are typically single uppercase letters
 	if len(name) == 1 && name[0] >= 'A' && name[0] <= 'Z' {

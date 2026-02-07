@@ -7,6 +7,26 @@ import (
 	"strings"
 )
 
+// stripStdPrefix removes the "std." prefix from a type/package name if present.
+func stripStdPrefix(name string) string {
+	return strings.TrimPrefix(name, registry.StdPackageName+".")
+}
+
+// hasStdPrefix checks whether a type/package name starts with "std.".
+func hasStdPrefix(name string) bool {
+	return strings.HasPrefix(name, registry.StdPackageName+".")
+}
+
+// withStdPrefix prepends "std." to a name.
+func withStdPrefix(name string) string {
+	return registry.StdPackageName + "." + name
+}
+
+// isWildcard checks if a pattern text is the wildcard pattern "_".
+func isWildcard(text string) bool {
+	return text == "_"
+}
+
 func (t *galaASTTransformer) nextTempVar() string {
 	t.tempVarCount++
 	return fmt.Sprintf("_tmp_%d", t.tempVarCount)

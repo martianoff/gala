@@ -243,7 +243,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 
 		patCtx := ccCtx.Pattern()
 		patternText := patCtx.GetText()
-		if patternText == "_" {
+		if isWildcard(patternText) {
 			if foundDefault {
 				return nil, galaerr.NewSemanticError("multiple default cases in match expression")
 			}
@@ -299,31 +299,36 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		return nil, galaerr.NewSemanticError("match expression must have at least one case")
 	}
 
-	if len(defaultBody) == 0 {
-		// Collect pattern texts for exhaustiveness check
+	// Always collect variant patterns for exhaustiveness check
+	{
 		var variantPatterns []string
 		for _, cc := range caseClauses {
 			pat := cc.(*grammar.CaseClauseContext).Pattern().GetText()
-			if pat != "_" {
+			if !isWildcard(pat) {
 				variantPatterns = append(variantPatterns, pat)
 			}
 		}
 
-		isExhaustive, missing := t.isSealedExhaustive(matchedType, variantPatterns)
-		if !isExhaustive {
-			if len(missing) > 0 {
+		isSealed, isExhaustive, missing := t.isSealedExhaustive(matchedType, variantPatterns)
+
+		if !foundDefault {
+			if isSealed && !isExhaustive {
 				return nil, galaerr.NewSemanticError(
 					fmt.Sprintf("non-exhaustive match on sealed type: missing variants: %s", strings.Join(missing, ", ")))
+			} else if isSealed && isExhaustive {
+				// Exhaustive sealed match — generate synthetic panic("unreachable") default
+				defaultBody = []ast.Stmt{
+					&ast.ExprStmt{X: &ast.CallExpr{
+						Fun:  ast.NewIdent("panic"),
+						Args: []ast.Expr{&ast.BasicLit{Kind: token.STRING, Value: `"unreachable"`}},
+					}},
+				}
+			} else if !isSealed {
+				return nil, galaerr.NewSemanticError("match expression must have a default case (case _ => ...)")
 			}
-			return nil, galaerr.NewSemanticError("match expression must have a default case (case _ => ...)")
 		}
-		// Exhaustive sealed match — generate synthetic panic("unreachable") default
-		defaultBody = []ast.Stmt{
-			&ast.ExprStmt{X: &ast.CallExpr{
-				Fun:  ast.NewIdent("panic"),
-				Args: []ast.Expr{&ast.BasicLit{Kind: token.STRING, Value: `"unreachable"`}},
-			}},
-		}
+		// When foundDefault && isSealed && isExhaustive: unreachable default is harmless, allow it
+		_ = isSealed
 	}
 
 	var stmts []ast.Stmt

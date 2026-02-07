@@ -212,6 +212,171 @@ val res = x match {
 }`,
 			wantErr: true,
 		},
+		{
+			name: "Sealed exhaustive match without default generates panic",
+			input: `package main
+
+sealed type Light {
+	case On()
+	case Off()
+}
+
+func describe(l Light) string = l match {
+	case On() => "on"
+	case Off() => "off"
+}`,
+			expected: `package main
+
+import "martianoff/gala/std"
+
+type Light struct {
+	_variant uint8
+}
+
+const (
+	_Light_On uint8 = iota
+	_Light_Off
+)
+
+type On struct {
+}
+
+func (_ On) Apply() Light {
+	return Light{_variant: _Light_On}
+}
+func (_ On) Unapply(v Light) bool {
+	return v._variant == _Light_On
+}
+
+type Off struct {
+}
+
+func (_ Off) Apply() Light {
+	return Light{_variant: _Light_Off}
+}
+func (_ Off) Unapply(v Light) bool {
+	return v._variant == _Light_Off
+}
+func (s Light) isOn() bool {
+	return s._variant == _Light_On
+}
+func (s Light) isOff() bool {
+	return s._variant == _Light_Off
+}
+func (s Light) Copy() Light {
+	return Light{_variant: std.Copy(s._variant)}
+}
+func (s Light) Equal(other Light) bool {
+	return std.Equal(s._variant, other._variant)
+}
+func describe(l Light) string {
+	return func(obj Light) string {
+		{
+			_tmp_1 := On{}.Unapply(obj)
+			if _tmp_1 {
+				return "on"
+			}
+		}
+		{
+			_tmp_2 := Off{}.Unapply(obj)
+			if _tmp_2 {
+				return "off"
+			}
+		}
+		panic("unreachable")
+	}(l)
+}`,
+		},
+		{
+			name: "Sealed exhaustive match with unreachable default is allowed",
+			input: `package main
+
+sealed type Light {
+	case On()
+	case Off()
+}
+
+func describe(l Light) string = l match {
+	case On() => "on"
+	case Off() => "off"
+	case _ => "unknown"
+}`,
+			expected: `package main
+
+import "martianoff/gala/std"
+
+type Light struct {
+	_variant uint8
+}
+
+const (
+	_Light_On uint8 = iota
+	_Light_Off
+)
+
+type On struct {
+}
+
+func (_ On) Apply() Light {
+	return Light{_variant: _Light_On}
+}
+func (_ On) Unapply(v Light) bool {
+	return v._variant == _Light_On
+}
+
+type Off struct {
+}
+
+func (_ Off) Apply() Light {
+	return Light{_variant: _Light_Off}
+}
+func (_ Off) Unapply(v Light) bool {
+	return v._variant == _Light_Off
+}
+func (s Light) isOn() bool {
+	return s._variant == _Light_On
+}
+func (s Light) isOff() bool {
+	return s._variant == _Light_Off
+}
+func (s Light) Copy() Light {
+	return Light{_variant: std.Copy(s._variant)}
+}
+func (s Light) Equal(other Light) bool {
+	return std.Equal(s._variant, other._variant)
+}
+func describe(l Light) string {
+	return func(obj Light) string {
+		{
+			_tmp_1 := On{}.Unapply(obj)
+			if _tmp_1 {
+				return "on"
+			}
+		}
+		{
+			_tmp_2 := Off{}.Unapply(obj)
+			if _tmp_2 {
+				return "off"
+			}
+		}
+		return "unknown"
+	}(l)
+}`,
+		},
+		{
+			name: "Sealed non-exhaustive match without default is error",
+			input: `package main
+
+sealed type Light {
+	case On()
+	case Off()
+}
+
+func describe(l Light) string = l match {
+	case On() => "on"
+}`,
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {

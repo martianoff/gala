@@ -18,7 +18,7 @@ func (t *galaASTTransformer) transformPattern(patCtx grammar.IPatternContext, ob
 }
 
 func (t *galaASTTransformer) transformPatternWithType(patCtx grammar.IPatternContext, objExpr ast.Expr, matchedType transpiler.Type) (ast.Expr, []ast.Stmt, error) {
-	if patCtx.GetText() == "_" {
+	if isWildcard(patCtx.GetText()) {
 		return ast.NewIdent("true"), nil, nil
 	}
 
@@ -41,7 +41,7 @@ func (t *galaASTTransformer) transformExpressionPattern(patExprCtx grammar.IExpr
 }
 
 func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx grammar.IExpressionContext, objExpr ast.Expr, matchedType transpiler.Type) (ast.Expr, []ast.Stmt, error) {
-	if patExprCtx.GetText() == "_" {
+	if isWildcard(patExprCtx.GetText()) {
 		return ast.NewIdent("true"), nil, nil
 	}
 
@@ -395,10 +395,7 @@ func (t *galaASTTransformer) getExtractedTypeAtIndexWithArgs(extractorName strin
 	var extractedType transpiler.Type
 
 	// Normalize extractor name by removing package prefix for lookup
-	normalizedName := extractorName
-	if len(normalizedName) > 4 && normalizedName[:4] == "std." {
-		normalizedName = normalizedName[4:]
-	}
+	normalizedName := stripStdPrefix(extractorName)
 
 	// Check if this is a direct struct match (extractor type equals container type)
 	// This handles cases like Tuple(a, b) matching against Tuple[A, B]
@@ -418,8 +415,8 @@ func (t *galaASTTransformer) getExtractedTypeAtIndexWithArgs(extractorName strin
 			if companionMeta != nil {
 				// Verify the companion works with this container type
 				if companionMeta.TargetType == baseName ||
-					companionMeta.TargetType == "std."+baseName ||
-					"std."+companionMeta.TargetType == baseName {
+					companionMeta.TargetType == withStdPrefix(baseName) ||
+					withStdPrefix(companionMeta.TargetType) == baseName {
 					// Find which container type param index to extract
 					if index < len(companionMeta.ExtractIndices) {
 						paramIndex := companionMeta.ExtractIndices[index]
@@ -474,15 +471,9 @@ func (t *galaASTTransformer) isDirectStructMatch(patternTypeName string, matched
 	containerBaseName := genType.Base.BaseName()
 
 	// Normalize names by removing package prefixes
-	normalizedPattern := patternTypeName
-	if len(normalizedPattern) > 4 && normalizedPattern[:4] == "std." {
-		normalizedPattern = normalizedPattern[4:]
-	}
+	normalizedPattern := stripStdPrefix(patternTypeName)
 
-	normalizedContainer := containerBaseName
-	if len(normalizedContainer) > 4 && normalizedContainer[:4] == "std." {
-		normalizedContainer = normalizedContainer[4:]
-	}
+	normalizedContainer := stripStdPrefix(containerBaseName)
 
 	// Check for exact match
 	if normalizedPattern == normalizedContainer {
@@ -541,7 +532,7 @@ func (t *galaASTTransformer) generateDirectTupleStructMatch(objExpr ast.Expr, ar
 		arg := argCtx.(*grammar.ArgumentContext)
 		patternText := arg.Pattern().GetText()
 
-		if patternText == "_" {
+		if isWildcard(patternText) {
 			continue
 		}
 
@@ -641,7 +632,7 @@ func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, ar
 		arg := argCtx.(*grammar.ArgumentContext)
 		patternText := arg.Pattern().GetText()
 
-		if patternText == "_" {
+		if isWildcard(patternText) {
 			continue
 		}
 
@@ -850,7 +841,7 @@ func (t *galaASTTransformer) generateSeqPatternMatch(objExpr ast.Expr, argList *
 			restPatternIndex = i
 			// Get the identifier before ...
 			exprText := restPat.Expression().GetText()
-			if exprText != "_" {
+			if !isWildcard(exprText) {
 				restPatternName = exprText
 			}
 		} else {
@@ -908,7 +899,7 @@ func (t *galaASTTransformer) generateSeqPatternMatch(objExpr ast.Expr, argList *
 		}
 
 		patternText := patCtx.GetText()
-		if patternText == "_" {
+		if isWildcard(patternText) {
 			argIndex++
 			continue
 		}
@@ -1139,7 +1130,7 @@ func (t *galaASTTransformer) transformTuplePattern(patternExprs []grammar.IExpre
 	// Generate bindings for each pattern element using direct field access
 	for i, patExpr := range patternExprs {
 		patText := patExpr.GetText()
-		if patText == "_" {
+		if isWildcard(patText) {
 			continue
 		}
 
@@ -1212,13 +1203,13 @@ func (t *galaASTTransformer) getCompanionObjectMetadata(name string) *transpiler
 	}
 
 	// Try with std prefix
-	if meta, ok := t.companionObjects["std."+name]; ok {
+	if meta, ok := t.companionObjects[withStdPrefix(name)]; ok {
 		return meta
 	}
 
 	// Try without std prefix
-	if len(name) > 4 && name[:4] == "std." {
-		if meta, ok := t.companionObjects[name[4:]]; ok {
+	if hasStdPrefix(name) {
+		if meta, ok := t.companionObjects[stripStdPrefix(name)]; ok {
 			return meta
 		}
 	}
@@ -1733,7 +1724,7 @@ func (t *galaASTTransformer) generateDirectUnapplyPattern(
 			arg := argCtx.(*grammar.ArgumentContext)
 			patternText := arg.Pattern().GetText()
 
-			if patternText == "_" {
+			if isWildcard(patternText) {
 				continue
 			}
 

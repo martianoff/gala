@@ -108,8 +108,8 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 					var funExpr ast.Expr
 					if !recvType.IsNil() {
 						recvPkg := recvType.GetPackage()
-						if recvPkg == registry.StdPackageName || strings.HasPrefix(lookupBaseName, "std.") {
-							baseName := strings.TrimPrefix(lookupBaseName, "std.")
+						if recvPkg == registry.StdPackageName || hasStdPrefix(lookupBaseName) {
+							baseName := stripStdPrefix(lookupBaseName)
 							funExpr = t.stdIdent(baseName + "_" + method)
 						} else {
 							funExpr = t.ident(lookupBaseName + "_" + method)
@@ -152,16 +152,16 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	var typeArgs []ast.Expr
 
 	if sel, ok := fun.(*ast.SelectorExpr); ok {
-		if id, ok := sel.X.(*ast.Ident); ok && id.Name == registry.StdPackageName {
-			// Not a method call
+		if id, ok := sel.X.(*ast.Ident); ok && (t.importManager.IsPackage(id.Name) || id.Name == registry.StdPackageName) {
+			// Not a method call - it's a package-qualified function call
 		} else {
 			receiver = sel.X
 			method = sel.Sel.Name
 		}
 	} else if idx, ok := fun.(*ast.IndexExpr); ok {
 		if sel, ok := idx.X.(*ast.SelectorExpr); ok {
-			if id, ok := sel.X.(*ast.Ident); ok && id.Name == registry.StdPackageName {
-				// Not a method call
+			if id, ok := sel.X.(*ast.Ident); ok && (t.importManager.IsPackage(id.Name) || id.Name == registry.StdPackageName) {
+				// Not a method call - it's a package-qualified function call
 			} else {
 				receiver = sel.X
 				method = sel.Sel.Name
@@ -170,8 +170,8 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 		}
 	} else if idxList, ok := fun.(*ast.IndexListExpr); ok {
 		if sel, ok := idxList.X.(*ast.SelectorExpr); ok {
-			if id, ok := sel.X.(*ast.Ident); ok && id.Name == registry.StdPackageName {
-				// Not a method call
+			if id, ok := sel.X.(*ast.Ident); ok && (t.importManager.IsPackage(id.Name) || id.Name == registry.StdPackageName) {
+				// Not a method call - it's a package-qualified function call
 			} else {
 				receiver = sel.X
 				method = sel.Sel.Name
@@ -264,8 +264,8 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 			var funExpr ast.Expr
 			if !recvType.IsNil() {
 				recvPkg := recvType.GetPackage()
-				if recvPkg == registry.StdPackageName || strings.HasPrefix(lookupBaseName, "std.") {
-					baseName := strings.TrimPrefix(lookupBaseName, "std.")
+				if recvPkg == registry.StdPackageName || hasStdPrefix(lookupBaseName) {
+					baseName := stripStdPrefix(lookupBaseName)
 					funExpr = t.stdIdent(baseName + "_" + method)
 				} else {
 					funExpr = t.ident(lookupBaseName + "_" + method)
@@ -540,13 +540,13 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 						// Generic Apply method: use standalone function
 						fullName := typeName + "_Apply"
 						var funExpr ast.Expr
-						isStdType := strings.HasPrefix(typeName, "std.")
+						isStdType := hasStdPrefix(typeName)
 						if !isStdType {
 							resolvedType := t.getType(typeName)
 							isStdType = !resolvedType.IsNil() && resolvedType.GetPackage() == registry.StdPackageName
 						}
 						if isStdType {
-							funExpr = t.stdIdent(strings.TrimPrefix(fullName, "std."))
+							funExpr = t.stdIdent(stripStdPrefix(fullName))
 						} else {
 							funExpr = t.ident(fullName)
 						}
