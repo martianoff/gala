@@ -507,14 +507,14 @@ func (s TreeSet[T]) SubsetOf(other TreeSet[T]) bool {
 }
 
 // ForEach applies a function to each element in sorted order.
-func (s TreeSet[T]) ForEach(f func(T) any) {
+func (s TreeSet[T]) ForEach(f func(T)) {
     if s.root != nil {
         forEachTree[T](s.root, f)
     }
 }
 
 // forEachTree traverses the tree in-order and applies f.
-func forEachTree[T comparable](node *treeNode[T], f func(T) any) {
+func forEachTree[T comparable](node *treeNode[T], f func(T)) {
     if node == nil {
         return
     }
@@ -558,7 +558,6 @@ func (s TreeSet[T]) Collect[U any](pf func(T) Option[U]) Array[U] {
         if opt.IsDefined() {
             builder.Add(opt.Get())
         }
-        return nil
     })
     return builder.Result()
 }
@@ -575,7 +574,6 @@ func (s TreeSet[T]) FoldLeft[U any](initial U, f func(U, T) U) U {
     var acc = initial
     s.ForEach((elem T) => {
         acc = f(acc, elem)
-        return nil
     })
     return acc
 }
@@ -595,7 +593,6 @@ func (s TreeSet[T]) Reduce(f func(T, T) T) T {
         } else {
             acc = f(acc, elem)
         }
-        return nil
     })
     return acc
 }
@@ -657,13 +654,12 @@ func (s TreeSet[T]) Range(from T, to T) TreeSet[T] {
     var result = EmptyTreeSet[T]()
     rangeTree[T](s.root, from, to, (elem T) => {
         result = result.Add(elem)
-        return nil
     })
     return result
 }
 
 // rangeTree traverses only nodes within the range.
-func rangeTree[T comparable](node *treeNode[T], from T, to T, f func(T) any) {
+func rangeTree[T comparable](node *treeNode[T], from T, to T, f func(T)) {
     if node == nil {
         return
     }
@@ -686,13 +682,12 @@ func (s TreeSet[T]) RangeFrom(from T) TreeSet[T] {
     var result = EmptyTreeSet[T]()
     rangeFromTree[T](s.root, from, (elem T) => {
         result = result.Add(elem)
-        return nil
     })
     return result
 }
 
 // rangeFromTree traverses only nodes >= from.
-func rangeFromTree[T comparable](node *treeNode[T], from T, f func(T) any) {
+func rangeFromTree[T comparable](node *treeNode[T], from T, f func(T)) {
     if node == nil {
         return
     }
@@ -711,13 +706,12 @@ func (s TreeSet[T]) RangeTo(to T) TreeSet[T] {
     var result = EmptyTreeSet[T]()
     rangeToTree[T](s.root, to, (elem T) => {
         result = result.Add(elem)
-        return nil
     })
     return result
 }
 
 // rangeToTree traverses only nodes <= to.
-func rangeToTree[T comparable](node *treeNode[T], to T, f func(T) any) {
+func rangeToTree[T comparable](node *treeNode[T], to T, f func(T)) {
     if node == nil {
         return
     }
@@ -736,7 +730,6 @@ func (s TreeSet[T]) ToGoSlice() []T {
     var result []T
     s.ForEach((elem T) => {
         result = append(result, elem)
-        return nil
     })
     return result
 }
@@ -747,13 +740,12 @@ func (s TreeSet[T]) ToList() List[T] {
     var result = emptyList[T]()
     forEachTreeReverse[T](s.root, (elem T) => {
         result = consList[T](elem, result)
-        return nil
     })
     return result
 }
 
 // forEachTreeReverse traverses the tree in reverse order.
-func forEachTreeReverse[T comparable](node *treeNode[T], f func(T) any) {
+func forEachTreeReverse[T comparable](node *treeNode[T], f func(T)) {
     if node == nil {
         return
     }
@@ -785,7 +777,6 @@ func (s TreeSet[T]) String() string {
         }
         result = result + fmt.Sprintf("%v", elem)
         first = false
-        return nil
     })
     return result + ")"
 }

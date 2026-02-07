@@ -73,6 +73,35 @@ func extractVariantName(patternText string) string {
 	return name
 }
 
+// isExhaustiveMatch checks if a set of case patterns exhaustively covers all possible
+// values of the matched type. Supports booleans (true/false) and sealed types.
+// Returns (isExhaustive type, isExhaustive, missingCases).
+// First return is false when the matched type is not an exhaustive type at all.
+func (t *galaASTTransformer) isExhaustiveMatch(matchedType transpiler.Type, patternTexts []string) (bool, bool, []string) {
+	// Check boolean exhaustiveness first
+	if bt, ok := matchedType.(transpiler.BasicType); ok && bt.Name == "bool" {
+		hasTrue, hasFalse := false, false
+		for _, pat := range patternTexts {
+			if pat == "true" {
+				hasTrue = true
+			}
+			if pat == "false" {
+				hasFalse = true
+			}
+		}
+		var missing []string
+		if !hasTrue {
+			missing = append(missing, "true")
+		}
+		if !hasFalse {
+			missing = append(missing, "false")
+		}
+		return true, len(missing) == 0, missing
+	}
+	// Fall through to sealed type check
+	return t.isSealedExhaustive(matchedType, patternTexts)
+}
+
 // isSealedExhaustive checks if a set of case patterns exhaustively covers all variants
 // of a sealed type. Returns (isSealed, isExhaustive, missingVariants).
 // isSealed is false when the matched type is not a sealed type at all.
@@ -168,12 +197,12 @@ func (t *galaASTTransformer) transformMatchClauses(ctx grammar.IExpressionContex
 		}
 	}
 
-	isSealed, isExhaustive, missing := t.isSealedExhaustive(matchedType, variantPatterns)
+	isSealed, isExhaustive, missing := t.isExhaustiveMatch(matchedType, variantPatterns)
 
 	if !foundDefault {
 		if isSealed && !isExhaustive {
 			return nil, nil, nil, galaerr.NewSemanticError(
-				fmt.Sprintf("non-exhaustive match on sealed type: missing variants: %s", strings.Join(missing, ", ")))
+				fmt.Sprintf("non-exhaustive match: missing cases: %s", strings.Join(missing, ", ")))
 		} else if isSealed && isExhaustive {
 			// Exhaustive sealed match — generate synthetic panic("unreachable") default
 			defaultBody = []ast.Stmt{

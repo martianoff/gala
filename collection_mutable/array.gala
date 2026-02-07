@@ -466,7 +466,7 @@ func (a *Array[T]) ReduceOption(f func(T, T) T) Option[T] {
 // === Predicate Operations ===
 
 // ForEach applies a function to each element for side effects.
-func (a *Array[T]) ForEach(f func(T) any) {
+func (a *Array[T]) ForEach(f func(T)) {
     for i := 0; i < len(a.elements); i++ {
         f(a.elements[i])
     }

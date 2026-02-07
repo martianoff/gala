@@ -19,22 +19,42 @@ import (
 //            wrapBlockReturnsInSome
 
 func (t *galaASTTransformer) transformLambda(ctx *grammar.LambdaExpressionContext) (ast.Expr, error) {
-	return t.transformLambdaWithExpectedType(ctx, nil)
+	return t.transformLambdaWithExpectedType(ctx, nil, nil)
 }
 
 // ExpectedVoid is a sentinel value indicating the lambda should have no return type
 var ExpectedVoid ast.Expr = &ast.Ident{Name: "__void__"}
 
-func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.LambdaExpressionContext, expectedRetType ast.Expr) (ast.Expr, error) {
+func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.LambdaExpressionContext, expectedRetType ast.Expr, expectedParamTypes []transpiler.Type) (ast.Expr, error) {
 	t.pushScope()
 	defer t.popScope()
 	paramsCtx := ctx.Parameters().(*grammar.ParametersContext)
 	fieldList := &ast.FieldList{}
 	if paramsCtx.ParameterList() != nil {
-		for _, pCtx := range paramsCtx.ParameterList().(*grammar.ParameterListContext).AllParameter() {
-			field, err := t.transformParameter(pCtx.(*grammar.ParameterContext))
+		for i, pCtx := range paramsCtx.ParameterList().(*grammar.ParameterListContext).AllParameter() {
+			paramCtx := pCtx.(*grammar.ParameterContext)
+			field, err := t.transformParameter(paramCtx)
 			if err != nil {
 				return nil, err
+			}
+			// If param has no type annotation and we have an expected type, use it
+			if paramCtx.Type_() == nil && expectedParamTypes != nil && i < len(expectedParamTypes) {
+				expType := expectedParamTypes[i]
+				if expType != nil && !expType.IsNil() {
+					expTypeName := expType.String()
+					if expTypeName != "any" && expTypeName != "" {
+						typeExpr := t.typeToExpr(expType)
+						name := paramCtx.Identifier().GetText()
+						isVal := paramCtx.VAL() != nil
+						if isVal {
+							field.Type = &ast.IndexExpr{X: t.stdIdent("Immutable"), Index: typeExpr}
+							t.addVal(name, expType)
+						} else {
+							field.Type = typeExpr
+							t.addVar(name, expType)
+						}
+					}
+				}
 			}
 			fieldList.List = append(fieldList.List, field)
 		}
@@ -66,6 +86,14 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 				// Only add return nil if we couldn't infer a type AND block doesn't already end with return
 				if !blockEndsWithReturn(b) {
 					b.List = append(b.List, &ast.ReturnStmt{Results: []ast.Expr{ast.NewIdent("nil")}})
+				}
+			}
+		}
+		// When void is expected, strip any trailing "return nil" (legacy pattern)
+		if isVoidExpected && len(b.List) > 0 {
+			if ret, ok := b.List[len(b.List)-1].(*ast.ReturnStmt); ok && len(ret.Results) == 1 {
+				if ident, ok := ret.Results[0].(*ast.Ident); ok && ident.Name == "nil" {
+					b.List = b.List[:len(b.List)-1]
 				}
 			}
 		}

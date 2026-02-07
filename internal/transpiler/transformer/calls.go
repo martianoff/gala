@@ -338,19 +338,25 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 				}
 			}
 
-			// If receiver has unresolved type params, skip expected type inference
-			// and let Go infer the lambda types from the body
+			// If receiver has unresolved type params, skip full expected type inference
+			// but still detect void function parameters for lambda return type stripping
 			if hasUnresolvedTypeParams {
-				// Transform arguments without expected types
 				var mArgs []ast.Expr
-				for _, argCtx := range argListCtx.AllArgument() {
+				for i, argCtx := range argListCtx.AllArgument() {
 					arg := argCtx.(*grammar.ArgumentContext)
 					pat := arg.Pattern()
 					ep, ok := pat.(*grammar.ExpressionPatternContext)
 					if !ok {
 						return nil, galaerr.NewSemanticError("only expressions allowed as function arguments")
 					}
-					expr, err := t.transformExpression(ep.Expression())
+					// Only pass void function types (avoids unresolved type params in return types)
+					var expectedType transpiler.Type = transpiler.NilType{}
+					if i < len(methodMeta.ParamTypes) {
+						if ft, ok := methodMeta.ParamTypes[i].(transpiler.FuncType); ok && len(ft.Results) == 0 {
+							expectedType = ft
+						}
+					}
+					expr, err := t.transformArgumentWithExpectedType(ep.Expression(), expectedType)
 					if err != nil {
 						return nil, err
 					}
@@ -393,9 +399,16 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	}
 
 	// Regular function call - transform arguments
+	// Look up function metadata for expected parameter types (enables void lambda detection)
+	var funcMeta *transpiler.FunctionMetadata
+	if funcName := t.extractFuncName(fun); funcName != "" {
+		funcMeta = t.getFunction(funcName)
+	}
+
 	var args []ast.Expr
 	namedArgs := make(map[string]ast.Expr)
 
+	argIdx := 0
 	for _, argCtx := range argListCtx.AllArgument() {
 		arg := argCtx.(*grammar.ArgumentContext)
 		pat := arg.Pattern()
@@ -414,16 +427,24 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 			}
 			namedArgs[argName] = expr
 		} else {
-			// Positional argument
+			// Positional argument - use expected type if available
 			ep, ok := pat.(*grammar.ExpressionPatternContext)
 			if !ok {
 				return nil, galaerr.NewSemanticError("only expressions allowed as function arguments")
 			}
-			expr, err := t.transformExpression(ep.Expression())
+			// Only pass void function types from metadata (avoids unresolved type params)
+			var expectedType transpiler.Type = transpiler.NilType{}
+			if funcMeta != nil && argIdx < len(funcMeta.ParamTypes) {
+				if ft, ok := funcMeta.ParamTypes[argIdx].(transpiler.FuncType); ok && len(ft.Results) == 0 {
+					expectedType = ft
+				}
+			}
+			expr, err := t.transformArgumentWithExpectedType(ep.Expression(), expectedType)
 			if err != nil {
 				return nil, err
 			}
 			args = append(args, expr)
+			argIdx++
 		}
 	}
 
@@ -824,8 +845,9 @@ func (t *galaASTTransformer) transformArgumentWithExpectedType(exprCtx grammar.I
 
 	// Try to find a lambda in this expression
 	if lambdaCtx := t.findLambdaInExpression(exprCtx); lambdaCtx != nil {
-		// Extract the expected return type from the function type
+		// Extract the expected return type and parameter types from the function type
 		var expectedRetType ast.Expr
+		var expectedParamTypes []transpiler.Type
 		if funcType, ok := expectedType.(transpiler.FuncType); ok {
 			if len(funcType.Results) > 0 {
 				expectedRetType = t.typeToExpr(funcType.Results[0])
@@ -833,8 +855,9 @@ func (t *galaASTTransformer) transformArgumentWithExpectedType(exprCtx grammar.I
 				// Void function - use sentinel value
 				expectedRetType = ExpectedVoid
 			}
+			expectedParamTypes = funcType.Params
 		}
-		return t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType)
+		return t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedParamTypes)
 	}
 	// Not a lambda or partial function, transform normally
 	return t.transformExpression(exprCtx)
@@ -946,4 +969,22 @@ func (t *galaASTTransformer) isMethodGenericViaTypeMeta(typeName, methodName str
 		}
 	}
 	return false
+}
+
+// extractFuncName extracts the base function name from a call expression's Fun node.
+// Handles: Ident (f), IndexExpr (f[T]), IndexListExpr (f[T, U]).
+func (t *galaASTTransformer) extractFuncName(fun ast.Expr) string {
+	switch f := fun.(type) {
+	case *ast.Ident:
+		return f.Name
+	case *ast.IndexExpr:
+		if id, ok := f.X.(*ast.Ident); ok {
+			return id.Name
+		}
+	case *ast.IndexListExpr:
+		if id, ok := f.X.(*ast.Ident); ok {
+			return id.Name
+		}
+	}
+	return ""
 }

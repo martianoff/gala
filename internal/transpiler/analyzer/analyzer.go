@@ -92,6 +92,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 
 	pkgName := sourceFile.PackageClause().(*grammar.PackageClauseContext).Identifier().GetText()
 
+	var siblingTrees []*grammar.SourceFileContext
 	if filePath != "" {
 		dirPath := filepath.Dir(filePath)
 		absDirPath, err := filepath.Abs(dirPath)
@@ -122,6 +123,9 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 						isTestFile := strings.HasSuffix(f.Name(), "_test.gala") || strings.HasSuffix(filePath, "_test.gala")
 						if otherPkgName != pkgName && !isTestFile {
 							return nil, fmt.Errorf("multiple package names in directory %s: %s and %s", dirPath, pkgName, otherPkgName)
+						}
+						if otherPkgName == pkgName && !isTestFile {
+							siblingTrees = append(siblingTrees, otherSF)
 						}
 					}
 				}
@@ -287,6 +291,48 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 					meta.ImmutFlags = append(meta.ImmutFlags, fctx.VAR() == nil)
 				}
 			}
+
+			// Extract interface method signatures as type methods
+			if ctx.InterfaceType() != nil {
+				ifaceType := ctx.InterfaceType().(*grammar.InterfaceTypeContext)
+				for _, ms := range ifaceType.AllMethodSpec() {
+					msCtx := ms.(*grammar.MethodSpecContext)
+					methodName := msCtx.Identifier().GetText()
+					methodMeta := &transpiler.MethodMetadata{
+						Name:    methodName,
+						Package: pkgName,
+					}
+					if msCtx.TypeParameters() != nil {
+						tpCtx := msCtx.TypeParameters().(*grammar.TypeParametersContext)
+						if tpList := tpCtx.TypeParameterList(); tpList != nil {
+							for _, tp := range tpList.(*grammar.TypeParameterListContext).AllTypeParameter() {
+								tpId := tp.(*grammar.TypeParameterContext).Identifier(0)
+								methodMeta.TypeParams = append(methodMeta.TypeParams, tpId.GetText())
+							}
+						}
+					}
+					var allTypeParams []string
+					allTypeParams = append(allTypeParams, meta.TypeParams...)
+					allTypeParams = append(allTypeParams, methodMeta.TypeParams...)
+					if msCtx.Signature().Type_() != nil {
+						methodMeta.ReturnType = a.resolveTypeWithParams(msCtx.Signature().Type_().GetText(), pkgName, allTypeParams)
+					}
+					if msCtx.Signature().Parameters() != nil {
+						pCtx := msCtx.Signature().Parameters().(*grammar.ParametersContext)
+						if pList := pCtx.ParameterList(); pList != nil {
+							for _, p := range pList.(*grammar.ParameterListContext).AllParameter() {
+								paramCtx := p.(*grammar.ParameterContext)
+								if paramCtx.Type_() != nil {
+									methodMeta.ParamTypes = append(methodMeta.ParamTypes, a.resolveTypeWithParams(paramCtx.Type_().GetText(), pkgName, allTypeParams))
+								} else {
+									methodMeta.ParamTypes = append(methodMeta.ParamTypes, transpiler.NilType{})
+								}
+							}
+						}
+					}
+					meta.Methods[methodName] = methodMeta
+				}
+			}
 		}
 
 		if shorthandCtx := topDecl.StructShorthandDeclaration(); shorthandCtx != nil {
@@ -444,23 +490,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 					Name:    funcName,
 					Package: pkgName,
 				}
-				richAST.Functions[fullFuncName] = funcMeta
-				if ctx.Signature().Type_() != nil {
-					funcMeta.ReturnType = a.resolveType(ctx.Signature().Type_().GetText(), pkgName)
-				}
-				if ctx.Signature().Parameters() != nil {
-					pCtx := ctx.Signature().Parameters().(*grammar.ParametersContext)
-					if pList := pCtx.ParameterList(); pList != nil {
-						for _, p := range pList.(*grammar.ParameterListContext).AllParameter() {
-							paramCtx := p.(*grammar.ParameterContext)
-							if paramCtx.Type_() != nil {
-								funcMeta.ParamTypes = append(funcMeta.ParamTypes, a.resolveType(paramCtx.Type_().GetText(), pkgName))
-							} else {
-								funcMeta.ParamTypes = append(funcMeta.ParamTypes, transpiler.NilType{})
-							}
-						}
-					}
-				}
+				// Collect type parameters first so we can resolve param types correctly
 				if ctx.TypeParameters() != nil {
 					tpCtx := ctx.TypeParameters().(*grammar.TypeParametersContext)
 					if tpList := tpCtx.TypeParameterList(); tpList != nil {
@@ -470,8 +500,35 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 						}
 					}
 				}
-				richAST.Functions[funcName] = funcMeta
+				if ctx.Signature().Type_() != nil {
+					funcMeta.ReturnType = a.resolveTypeWithParams(ctx.Signature().Type_().GetText(), pkgName, funcMeta.TypeParams)
+				}
+				if ctx.Signature().Parameters() != nil {
+					pCtx := ctx.Signature().Parameters().(*grammar.ParametersContext)
+					if pList := pCtx.ParameterList(); pList != nil {
+						for _, p := range pList.(*grammar.ParameterListContext).AllParameter() {
+							paramCtx := p.(*grammar.ParameterContext)
+							if paramCtx.Type_() != nil {
+								funcMeta.ParamTypes = append(funcMeta.ParamTypes, a.resolveTypeWithParams(paramCtx.Type_().GetText(), pkgName, funcMeta.TypeParams))
+							} else {
+								funcMeta.ParamTypes = append(funcMeta.ParamTypes, transpiler.NilType{})
+							}
+						}
+					}
+				}
+				richAST.Functions[fullFuncName] = funcMeta
 			}
+		}
+	}
+
+	// 2.5 Extract method signatures from sibling files (same package, different .gala files).
+	// This enables cross-file type resolution for method calls (e.g., void lambda detection).
+	// IMPORTANT: Only extract method/function signatures, NOT field information,
+	// to avoid interfering with isImmutableField and .Get() auto-unwrapping.
+	// Only run for non-main packages (main packages in examples/ have too many unrelated siblings)
+	if pkgName != "main" && pkgName != "test" {
+		for _, sibTree := range siblingTrees {
+			a.extractSiblingMethodSignatures(sibTree, pkgName, richAST)
 		}
 	}
 
@@ -1179,6 +1236,147 @@ func getBaseTypeName(ctx grammar.ITypeContext) string {
 		return getBaseTypeName(ctx.Type_(0))
 	}
 	return ""
+}
+
+// extractSiblingMethodSignatures extracts method and function signatures from a sibling .gala file.
+// It only populates method metadata (name, params, return type) and function metadata.
+// It does NOT populate field information (FieldNames, ImmutFlags, Fields) to avoid
+// interfering with isImmutableField and .Get() auto-unwrapping.
+func (a *galaAnalyzer) extractSiblingMethodSignatures(sibTree *grammar.SourceFileContext, pkgName string, richAST *transpiler.RichAST) {
+	// First pass: collect type declarations (for type parameter info)
+	for _, topDecl := range sibTree.AllTopLevelDeclaration() {
+		if typeDecl := topDecl.TypeDeclaration(); typeDecl != nil {
+			ctx := typeDecl.(*grammar.TypeDeclarationContext)
+			typeName := ctx.Identifier().GetText()
+			fullTypeName := typeName
+			if pkgName != "" && pkgName != "main" && pkgName != "test" {
+				fullTypeName = pkgName + "." + typeName
+			}
+			// Only create type entry if not already present (from imports or current file)
+			if _, ok := richAST.Types[fullTypeName]; !ok {
+				meta := &transpiler.TypeMetadata{
+					Name:    typeName,
+					Package: pkgName,
+					Methods: make(map[string]*transpiler.MethodMetadata),
+					Fields:  make(map[string]transpiler.Type),
+				}
+				if ctx.TypeParameters() != nil {
+					tpCtx := ctx.TypeParameters().(*grammar.TypeParametersContext)
+					if tpList := tpCtx.TypeParameterList(); tpList != nil {
+						for _, tp := range tpList.(*grammar.TypeParameterListContext).AllTypeParameter() {
+							tpId := tp.(*grammar.TypeParameterContext).Identifier(0)
+							meta.TypeParams = append(meta.TypeParams, tpId.GetText())
+						}
+					}
+				}
+				richAST.Types[fullTypeName] = meta
+			}
+		}
+	}
+
+	// Second pass: collect method and function signatures
+	for _, topDecl := range sibTree.AllTopLevelDeclaration() {
+		if funcDeclCtx := topDecl.FunctionDeclaration(); funcDeclCtx != nil {
+			ctx := funcDeclCtx.(*grammar.FunctionDeclarationContext)
+			if ctx.Receiver() != nil {
+				// Method declaration
+				recvCtx := ctx.Receiver().(*grammar.ReceiverContext)
+				baseType := getBaseTypeName(recvCtx.Type_())
+				if baseType == "" {
+					continue
+				}
+				methodName := ctx.Identifier().GetText()
+				fullBaseType := baseType
+				if pkgName != "" && pkgName != "main" && pkgName != "test" && !strings.Contains(baseType, ".") {
+					fullBaseType = pkgName + "." + baseType
+				}
+
+				methodMeta := &transpiler.MethodMetadata{
+					Name:    methodName,
+					Package: pkgName,
+				}
+				if ctx.TypeParameters() != nil {
+					tpCtx := ctx.TypeParameters().(*grammar.TypeParametersContext)
+					if tpList := tpCtx.TypeParameterList(); tpList != nil {
+						for _, tp := range tpList.(*grammar.TypeParameterListContext).AllTypeParameter() {
+							tpId := tp.(*grammar.TypeParameterContext).Identifier(0)
+							methodMeta.TypeParams = append(methodMeta.TypeParams, tpId.GetText())
+						}
+					}
+				}
+
+				var allTypeParams []string
+				if typeMeta, ok := richAST.Types[fullBaseType]; ok {
+					allTypeParams = append(allTypeParams, typeMeta.TypeParams...)
+				}
+				allTypeParams = append(allTypeParams, methodMeta.TypeParams...)
+
+				if ctx.Signature().Type_() != nil {
+					methodMeta.ReturnType = a.resolveTypeWithParams(ctx.Signature().Type_().GetText(), pkgName, allTypeParams)
+				}
+				if ctx.Signature().Parameters() != nil {
+					pCtx := ctx.Signature().Parameters().(*grammar.ParametersContext)
+					if pList := pCtx.ParameterList(); pList != nil {
+						for _, p := range pList.(*grammar.ParameterListContext).AllParameter() {
+							paramCtx := p.(*grammar.ParameterContext)
+							if paramCtx.Type_() != nil {
+								methodMeta.ParamTypes = append(methodMeta.ParamTypes, a.resolveTypeWithParams(paramCtx.Type_().GetText(), pkgName, allTypeParams))
+							} else {
+								methodMeta.ParamTypes = append(methodMeta.ParamTypes, transpiler.NilType{})
+							}
+						}
+					}
+				}
+
+				if typeMeta, ok := richAST.Types[fullBaseType]; ok {
+					// Only add if not already present (don't override current file's methods)
+					if _, exists := typeMeta.Methods[methodName]; !exists {
+						typeMeta.Methods[methodName] = methodMeta
+					}
+				}
+			} else {
+				// Top-level function
+				funcName := ctx.Identifier().GetText()
+				fullFuncName := funcName
+				if pkgName != "" && pkgName != "main" && pkgName != "test" {
+					fullFuncName = pkgName + "." + funcName
+				}
+				// Only add if not already present
+				if _, ok := richAST.Functions[fullFuncName]; !ok {
+					funcMeta := &transpiler.FunctionMetadata{
+						Name:    funcName,
+						Package: pkgName,
+					}
+					if ctx.TypeParameters() != nil {
+						tpCtx := ctx.TypeParameters().(*grammar.TypeParametersContext)
+						if tpList := tpCtx.TypeParameterList(); tpList != nil {
+							for _, tp := range tpList.(*grammar.TypeParameterListContext).AllTypeParameter() {
+								tpId := tp.(*grammar.TypeParameterContext).Identifier(0)
+								funcMeta.TypeParams = append(funcMeta.TypeParams, tpId.GetText())
+							}
+						}
+					}
+					if ctx.Signature().Type_() != nil {
+						funcMeta.ReturnType = a.resolveTypeWithParams(ctx.Signature().Type_().GetText(), pkgName, funcMeta.TypeParams)
+					}
+					if ctx.Signature().Parameters() != nil {
+						pCtx := ctx.Signature().Parameters().(*grammar.ParametersContext)
+						if pList := pCtx.ParameterList(); pList != nil {
+							for _, p := range pList.(*grammar.ParameterListContext).AllParameter() {
+								paramCtx := p.(*grammar.ParameterContext)
+								if paramCtx.Type_() != nil {
+									funcMeta.ParamTypes = append(funcMeta.ParamTypes, a.resolveTypeWithParams(paramCtx.Type_().GetText(), pkgName, funcMeta.TypeParams))
+								} else {
+									funcMeta.ParamTypes = append(funcMeta.ParamTypes, transpiler.NilType{})
+								}
+							}
+						}
+					}
+					richAST.Functions[fullFuncName] = funcMeta
+				}
+			}
+		}
+	}
 }
 
 var _ transpiler.Analyzer = (*galaAnalyzer)(nil)

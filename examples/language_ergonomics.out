@@ -1,0 +1,7 @@
+L5 - doubled: {{84} 0}
+L5 - filtered: {{42} 0}
+L5 - string length: {{5} 0}
+L2 - forEach: 1 2 3
+L2 - option forEach: 42
+L4 - bool match: yes
+L4 - bool match 2: FALSE

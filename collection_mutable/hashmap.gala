@@ -210,7 +210,6 @@ func (m *HashMap[K, V]) Remove(key K) bool {
 func (m *HashMap[K, V]) RemoveAllKeys(keys *Array[K]) {
     keys.ForEach((k K) => {
         m.Remove(k)
-        return nil
     })
 }
 
@@ -274,7 +273,6 @@ func (m *HashMap[K, V]) ContainsAllKeys(keys *Array[K]) bool {
         if !m.Contains(k) {
             result = false
         }
-        return nil
     })
     return result
 }
@@ -282,7 +280,7 @@ func (m *HashMap[K, V]) ContainsAllKeys(keys *Array[K]) bool {
 // === Iteration ===
 
 // ForEachKV applies a function to each key-value pair for side effects.
-func (m *HashMap[K, V]) ForEachKV(f func(K, V) any) {
+func (m *HashMap[K, V]) ForEachKV(f func(K, V)) {
     for i := 0; i < len(m.buckets); i++ {
         var entry = m.buckets[i]
         for entry != nil {
@@ -293,18 +291,16 @@ func (m *HashMap[K, V]) ForEachKV(f func(K, V) any) {
 }
 
 // ForEachKey applies a function to each key for side effects.
-func (m *HashMap[K, V]) ForEachKey(f func(K) any) {
+func (m *HashMap[K, V]) ForEachKey(f func(K)) {
     m.ForEachKV((k K, v V) => {
         f(k)
-        return nil
     })
 }
 
 // ForEachValue applies a function to each value for side effects.
-func (m *HashMap[K, V]) ForEachValue(f func(V) any) {
+func (m *HashMap[K, V]) ForEachValue(f func(V)) {
     m.ForEachKV((k K, v V) => {
         f(v)
-        return nil
     })
 }
 
@@ -350,7 +346,6 @@ func (m *HashMap[K, V]) Collect[U any](pf func(K, V) Option[U]) *Array[U] {
         if opt.IsDefined() {
             result.Append(opt.Get())
         }
-        return nil
     })
     return result
 }
@@ -404,7 +399,6 @@ func (m *HashMap[K, V]) FoldLeftKV[U any](initial U, f func(U, K, V) U) U {
     var acc = initial
     m.ForEachKV((k K, v V) => {
         acc = f(acc, k, v)
-        return nil
     })
     return acc
 }
@@ -492,7 +486,6 @@ func (m *HashMap[K, V]) ToGoMap() map[K]V {
     var result = go_interop.MapEmpty[K, V]()
     m.ForEachKV((k K, v V) => {
         go_interop.MapPut[K, V](result, k, v)
-        return nil
     })
     return result
 }
@@ -534,7 +527,6 @@ func (m *HashMap[K, V]) String() string {
         }
         result = result + fmt.Sprintf("%v -> %v", k, v)
         first = false
-        return nil
     })
     return result + ")"
 }
@@ -548,7 +540,6 @@ func (m *HashMap[K, V]) KeySet() *HashSet[K] = m.Keys()
 func (m *HashMap[K, V]) PutFrom(other *HashMap[K, V]) {
     other.ForEachKV((k K, v V) => {
         m.Put(k, v)
-        return nil
     })
 }
 
@@ -561,7 +552,6 @@ func (m *HashMap[K, V]) Merge(other *HashMap[K, V], f func(V, V) V) {
         } else {
             m.Put(k, v)
         }
-        return nil
     })
 }
 
@@ -569,7 +559,6 @@ func (m *HashMap[K, V]) Merge(other *HashMap[K, V], f func(V, V) V) {
 func (m *HashMap[K, V]) PutAllEntries(entries *Array[Tuple[K, V]]) {
     entries.ForEach((entry Tuple[K, V]) => {
         m.Put(entry.V1, entry.V2)
-        return nil
     })
 }
 

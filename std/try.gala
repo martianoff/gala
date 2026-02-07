@@ -56,7 +56,7 @@ func (t Try[T]) OrElse(alternative Try[T]) Try[T] {
 }
 
 // ForEach applies the given procedure f to the value if this is a Success.
-func (t Try[T]) ForEach(f func(T) any) {
+func (t Try[T]) ForEach(f func(T)) {
     if t.isSuccess() {
         f(t.Value)
     }

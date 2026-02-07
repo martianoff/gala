@@ -336,7 +336,6 @@ func (l List[T]) Concat(other Iterable[T]) List[T] {
     var otherList = emptyList[T]()
     other.ForEach((elem T) => {
         otherList = otherList.Append(elem)
-        return nil
     })
     return l.AppendAll(otherList)
 }
@@ -401,7 +400,7 @@ func (l List[T]) ReduceOption(f func(T, T) T) Option[T] {
 }
 
 // ForEach applies a function to each element for side effects.
-func (l List[T]) ForEach(f func(T) any) {
+func (l List[T]) ForEach(f func(T)) {
     var current = l
     for !current.isEmpty {
         f(current.head)

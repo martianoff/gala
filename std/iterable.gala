@@ -5,7 +5,7 @@ package std
 // Any collection that can be traversed element by element should implement this interface.
 type Traversable[T any] interface {
     // ForEach applies a function to each element for side effects.
-    ForEach(f func(T) any)
+    ForEach(f func(T))
     // Size returns the number of elements in this collection.
     Size() int
     // IsEmpty returns true if the collection contains no elements.
@@ -23,7 +23,7 @@ type Traversable[T any] interface {
 // because Go interfaces do not support methods with additional type parameters.
 type Iterable[T any] interface {
     // Traversable methods
-    ForEach(f func(T) any)
+    ForEach(f func(T))
     Size() int
     IsEmpty() bool
     NonEmpty() bool

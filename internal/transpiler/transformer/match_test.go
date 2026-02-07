@@ -377,6 +377,69 @@ func describe(l Light) string = l match {
 }`,
 			wantErr: true,
 		},
+		{
+			name: "Bool exhaustive match (true+false) generates panic unreachable",
+			input: `package main
+
+func describe(b bool) string = b match {
+	case true => "yes"
+	case false => "no"
+}`,
+			expected: `package main
+
+func describe(b bool) string {
+	return func(obj bool) string {
+		if obj == true {
+			return "yes"
+		}
+		if obj == false {
+			return "no"
+		}
+		panic("unreachable")
+	}(b)
+}`,
+		},
+		{
+			name: "Bool missing false is error",
+			input: `package main
+
+func describe(b bool) string = b match {
+	case true => "yes"
+}`,
+			wantErr: true,
+		},
+		{
+			name: "Bool missing true is error",
+			input: `package main
+
+func describe(b bool) string = b match {
+	case false => "no"
+}`,
+			wantErr: true,
+		},
+		{
+			name: "Bool with redundant default is allowed",
+			input: `package main
+
+func describe(b bool) string = b match {
+	case true => "yes"
+	case false => "no"
+	case _ => "unknown"
+}`,
+			expected: `package main
+
+func describe(b bool) string {
+	return func(obj bool) string {
+		if obj == true {
+			return "yes"
+		}
+		if obj == false {
+			return "no"
+		}
+		return "unknown"
+	}(b)
+}`,
+		},
 	}
 
 	for _, tt := range tests {

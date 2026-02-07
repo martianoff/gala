@@ -408,14 +408,14 @@ func (m HashMap[K, V]) Updated(key K, value V) HashMap[K, V] = m.Put(key, value)
 // === Iteration ===
 
 // ForEachKV applies a function to each key-value pair for side effects.
-func (m HashMap[K, V]) ForEachKV(f func(K, V) any) {
+func (m HashMap[K, V]) ForEachKV(f func(K, V)) {
     if m.root != nil {
         forEachInNodeMapKV[K, V](m.root, f)
     }
 }
 
 // forEachInNodeMapKV traverses a node and applies f to each entry.
-func forEachInNodeMapKV[K comparable, V any](node *hashMapNode[K, V], f func(K, V) any) {
+func forEachInNodeMapKV[K comparable, V any](node *hashMapNode[K, V], f func(K, V)) {
     if node.isLeaf {
         for i := 0; i < len(node.keys); i++ {
             f(node.keys[i], node.values[i])
@@ -429,18 +429,16 @@ func forEachInNodeMapKV[K comparable, V any](node *hashMapNode[K, V], f func(K, 
 }
 
 // ForEachKey applies a function to each key for side effects.
-func (m HashMap[K, V]) ForEachKey(f func(K) any) {
+func (m HashMap[K, V]) ForEachKey(f func(K)) {
     m.ForEachKV((k K, v V) => {
         f(k)
-        return nil
     })
 }
 
 // ForEachValue applies a function to each value for side effects.
-func (m HashMap[K, V]) ForEachValue(f func(V) any) {
+func (m HashMap[K, V]) ForEachValue(f func(V)) {
     m.ForEachKV((k K, v V) => {
         f(v)
-        return nil
     })
 }
 
@@ -491,7 +489,6 @@ func (m HashMap[K, V]) Collect[U any](pf func(K, V) Option[U]) Array[U] {
         if opt.IsDefined() {
             builder.Add(opt.Get())
         }
-        return nil
     })
     return builder.Result()
 }
@@ -513,7 +510,6 @@ func (m HashMap[K, V]) FoldLeftKV[U any](initial U, f func(U, K, V) U) U {
     var acc = initial
     m.ForEachKV((k K, v V) => {
         acc = f(acc, k, v)
-        return nil
     })
     return acc
 }
@@ -631,7 +627,6 @@ func (m HashMap[K, V]) ToGoMap() map[K]V {
     var result = go_interop.MapEmpty[K, V]()
     m.ForEachKV((k K, v V) => {
         go_interop.MapPut[K, V](result, k, v)
-        return nil
     })
     return result
 }
@@ -654,7 +649,6 @@ func (m HashMap[K, V]) String() string {
         }
         result = result + fmt.Sprintf("%v -> %v", k, v)
         first = false
-        return nil
     })
     return result + ")"
 }

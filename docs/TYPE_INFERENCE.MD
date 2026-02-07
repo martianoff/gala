@@ -333,6 +333,20 @@ Additional capabilities beyond manual:
 | Complex compositions | Unification-based resolution |
 | Polymorphic functions | Scheme instantiation |
 
+### Lambda Parameter Type Inference
+
+When a lambda is passed as an argument to a method with known parameter types, the lambda's parameter types can be inferred from the method's signature. This allows omitting explicit parameter type annotations. Combined with Go's type parameter inference, method type parameters can also be omitted:
+
+```gala
+// Before: all types explicit
+val doubled = opt.Map[int]((x int) => x * 2)
+
+// After: both lambda param and method type param inferred
+val doubled = opt.Map((x) => x * 2)  // x inferred as int, Map's U inferred as int
+```
+
+The inference works by extracting expected parameter types from `FuncType` metadata in the analyzer and passing them to `transformLambdaWithExpectedType`. When a parameter has no type annotation and an expected type is available, the expected type is used instead of defaulting to `any`. Method type parameters (like `U` in `Map[U]`) are inferred by Go from the concrete lambda return type.
+
 ---
 
 ## Limitations and Edge Cases

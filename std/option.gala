@@ -47,7 +47,7 @@ func (o Option[T]) GetOrElse(defaultValue T) T {
 
 // ForEach applies the given procedure f to the option's value, if it is nonempty.
 // f: the procedure to apply.
-func (o Option[T]) ForEach(f func(T) any) {
+func (o Option[T]) ForEach(f func(T)) {
     if o.isSome() {
         f(o.Value)
     }

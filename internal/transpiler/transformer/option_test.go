@@ -71,7 +71,7 @@ var z = std.NewImmutable(std.Option_FlatMap(y.Get(), func(v int) std.Option[int]
 `,
 		},
 		{
-			name: "Option ForEach",
+			name: "Option ForEach with void expected type",
 			input: `package main
 
 val x = Some(10)
@@ -87,9 +87,8 @@ import "martianoff/gala/std"
 var x = std.NewImmutable(std.Some[int]{}.Apply(10))
 
 func test() {
-	x.Get().ForEach(func(v int) any {
+	x.Get().ForEach(func(v int) {
 		var y = std.NewImmutable(v * 2)
-		return nil
 	})
 }
 `,

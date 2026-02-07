@@ -404,14 +404,14 @@ func (s HashSet[T]) SubsetOf(other HashSet[T]) bool {
 }
 
 // ForEach applies a function to each element for side effects.
-func (s HashSet[T]) ForEach(f func(T) any) {
+func (s HashSet[T]) ForEach(f func(T)) {
     if s.root != nil {
         forEachInNode[T](s.root, f)
     }
 }
 
 // forEachInNode traverses a node and applies f to each element.
-func forEachInNode[T comparable](node *hashSetNode[T], f func(T) any) {
+func forEachInNode[T comparable](node *hashSetNode[T], f func(T)) {
     if node.isLeaf {
         for i := 0; i < len(node.entries); i++ {
             f(node.entries[i])
@@ -459,7 +459,6 @@ func (s HashSet[T]) Collect[U any](pf func(T) Option[U]) Array[U] {
         if opt.IsDefined() {
             builder.Add(opt.Get())
         }
-        return nil
     })
     return builder.Result()
 }
@@ -476,7 +475,6 @@ func (s HashSet[T]) FoldLeft[U any](initial U, f func(U, T) U) U {
     var acc = initial
     s.ForEach((elem T) => {
         acc = f(acc, elem)
-        return nil
     })
     return acc
 }
@@ -496,7 +494,6 @@ func (s HashSet[T]) Reduce(f func(T, T) T) T {
         } else {
             acc = f(acc, elem)
         }
-        return nil
     })
     return acc
 }
@@ -552,7 +549,6 @@ func (s HashSet[T]) Head() T {
             result = elem
             found = true
         }
-        return nil
     })
     return result
 }
@@ -570,7 +566,6 @@ func (s HashSet[T]) ToGoSlice() []T {
     var result []T
     s.ForEach((elem T) => {
         result = append(result, elem)
-        return nil
     })
     return result
 }
@@ -598,7 +593,6 @@ func (s HashSet[T]) String() string {
         }
         result = result + fmt.Sprintf("%v", elem)
         first = false
-        return nil
     })
     return result + ")"
 }

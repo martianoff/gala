@@ -25,8 +25,9 @@ gazelle(
 filegroup(
     name = "all_gala_sources",
     srcs = [
-        "//collection_immutable:array.gala",
-        "//collection_immutable:list.gala",
+        "//collection_immutable:gala_sources",
+        "//collection_mutable:gala_sources",
+        "//concurrent:gala_sources",
         "//std:constptr.gala",
         "//std:either.gala",
         "//std:errors.gala",

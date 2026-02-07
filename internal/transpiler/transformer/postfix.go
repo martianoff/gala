@@ -309,12 +309,12 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 			}
 		}
 
-		isSealed, isExhaustive, missing := t.isSealedExhaustive(matchedType, variantPatterns)
+		isSealed, isExhaustive, missing := t.isExhaustiveMatch(matchedType, variantPatterns)
 
 		if !foundDefault {
 			if isSealed && !isExhaustive {
 				return nil, galaerr.NewSemanticError(
-					fmt.Sprintf("non-exhaustive match on sealed type: missing variants: %s", strings.Join(missing, ", ")))
+					fmt.Sprintf("non-exhaustive match: missing cases: %s", strings.Join(missing, ", ")))
 			} else if isSealed && isExhaustive {
 				// Exhaustive sealed match — generate synthetic panic("unreachable") default
 				defaultBody = []ast.Stmt{

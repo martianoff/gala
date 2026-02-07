@@ -172,7 +172,6 @@ func (s *HashSet[T]) AddAll(elements []T) {
 func (s *HashSet[T]) AddFrom(other *HashSet[T]) {
     other.ForEach((elem T) => {
         s.Add(elem)
-        return nil
     })
 }
 
@@ -211,7 +210,6 @@ func (s *HashSet[T]) RemoveAll(elements []T) {
 func (s *HashSet[T]) RemoveFrom(other *HashSet[T]) {
     other.ForEach((elem T) => {
         s.Remove(elem)
-        return nil
     })
 }
 
@@ -336,7 +334,6 @@ func (s *HashSet[T]) IntersectInPlace(other *HashSet[T]) {
         if !other.Contains(elem) {
             toRemove = append(toRemove, elem)
         }
-        return nil
     })
     s.RemoveAll(toRemove)
 }
@@ -349,7 +346,7 @@ func (s *HashSet[T]) DiffInPlace(other *HashSet[T]) {
 // === Iteration ===
 
 // ForEach applies a function to each element for side effects.
-func (s *HashSet[T]) ForEach(f func(T) any) {
+func (s *HashSet[T]) ForEach(f func(T)) {
     for i := 0; i < len(s.buckets); i++ {
         var entry = s.buckets[i]
         for entry != nil {
@@ -384,7 +381,6 @@ func (s *HashSet[T]) Collect[U any](pf func(T) Option[U]) *Array[U] {
         if opt.IsDefined() {
             result.Append(opt.Get())
         }
-        return nil
     })
     return result
 }
@@ -419,7 +415,6 @@ func (s *HashSet[T]) FoldLeft[U any](initial U, f func(U, T) U) U {
     var acc = initial
     s.ForEach((elem T) => {
         acc = f(acc, elem)
-        return nil
     })
     return acc
 }
@@ -439,7 +434,6 @@ func (s *HashSet[T]) Reduce(f func(T, T) T) T {
         } else {
             acc = f(acc, elem)
         }
-        return nil
     })
     return acc
 }
@@ -499,7 +493,6 @@ func (s *HashSet[T]) Head() T {
             result = elem
             found = true
         }
-        return nil
     })
     return result
 }
@@ -519,7 +512,6 @@ func (s *HashSet[T]) ToGoSlice() []T {
     var result []T
     s.ForEach((elem T) => {
         result = append(result, elem)
-        return nil
     })
     return result
 }
@@ -529,7 +521,6 @@ func (s *HashSet[T]) ToArray() *Array[T] {
     var result = ArrayWithCapacity[T](s.Size())
     s.ForEach((elem T) => {
         result.Append(elem)
-        return nil
     })
     return result
 }
@@ -539,7 +530,6 @@ func (s *HashSet[T]) ToList() *List[T] {
     var result = EmptyList[T]()
     s.ForEach((elem T) => {
         result.Append(elem)
-        return nil
     })
     return result
 }
@@ -549,7 +539,6 @@ func (s *HashSet[T]) Clone() *HashSet[T] {
     var result = EmptyHashSet[T]()
     s.ForEach((elem T) => {
         result.Add(elem)
-        return nil
     })
     return result
 }
@@ -567,7 +556,6 @@ func (s *HashSet[T]) String() string {
         }
         result = result + fmt.Sprintf("%v", elem)
         first = false
-        return nil
     })
     return result + ")"
 }

@@ -289,6 +289,13 @@ gala_test(
 )
 
 gala_test(
+    name = "language_ergonomics",
+    src = "language_ergonomics.gala",
+    expected = "language_ergonomics.out",
+    deps = ["//collection_immutable"],
+)
+
+gala_test(
     name = "expr_body_multiline_lambda",
     src = "expr_body_multiline_lambda.gala",
     expected = "expr_body_multiline_lambda.out",

@@ -432,7 +432,7 @@ val status = if (score > 50) "pass" else "fail"
 ```
 
 ### Match Expression
-The `match` expression provides powerful pattern matching, supporting literals, variable bindings, and extractors. GALA follows Scala semantics for pattern matching, where the pattern (or an extractor) is responsible for matching against the object. A default case (`_`) is required unless matching on a sealed type with all variants covered (exhaustive match).
+The `match` expression provides powerful pattern matching, supporting literals, variable bindings, and extractors. GALA follows Scala semantics for pattern matching, where the pattern (or an extractor) is responsible for matching against the object. A default case (`_`) is required unless matching on a sealed type with all variants covered (exhaustive match) or matching on boolean values with both `true` and `false` cases.
 
 ```gala
 val result = x match {
@@ -440,6 +440,12 @@ val result = x match {
     case 2 => "two"
     case n => "Value is " + fmt.Sprintf("%d", n) // Binding: n is bound to x
     case _ => "other"
+}
+
+// Boolean exhaustive match — no default case needed
+val desc = flag match {
+    case true  => "enabled"
+    case false => "disabled"
 }
 ```
 
@@ -727,14 +733,25 @@ for i := 0; i < 10; i++ {
 ## 7. Functional Features
 
 ### Lambda Expressions
-Lambdas use the `=>` syntax.
+Lambdas use the `=>` syntax. Parameter types can be omitted when inferrable from context (e.g., as arguments to typed methods).
 
 ```gala
+// Explicit parameter types
 val f = (x int) => x * x
 val g = (a int, b int) => {
     val sum = a + b
     return sum * sum
 }
+
+// Inferred parameter types (when passed to typed methods)
+val opt = Some(42)
+val doubled = opt.Map((x) => x * 2)             // x inferred as int
+val filtered = opt.Filter((x) => x > 10)        // x inferred as int
+
+// Void closures (no return value)
+opt.ForEach((x) => {
+    fmt.Println(x)
+})
 ```
 
 ### Partial Function Literals
@@ -1760,13 +1777,21 @@ val desc = shape match {
 - **Add guards for conditions** - `case n: int if n > 0 =>` not nested if inside case
 
 ### Type Inference
-- **Omit type parameters when inferrable** - `Some(42)` not `Some[int](42)`
+- **Omit type parameters when inferrable** - `Some(42)` not `Some[int](42)`, `ListOf(1, 2, 3)` not `ListOf[int](1, 2, 3)`
+- **Omit lambda parameter types when inferrable** - `(x) => x * 2` not `(x int) => x * 2` when the context provides the type
 - **Omit variable types** - `val x = 42` not `val x int = 42`
-- **Explicit types only when needed** - ambiguous cases, complex generics, or documentation
+- **Omit method type params** - `list.Map((x) => x * 2)` not `list.Map[int]((x int) => x * 2)`
+- **Explicit types only when needed** - `None[int]()`, `Left[string, int]()`, empty collections, or ambiguous contexts
 ```gala
-// Good - types inferred
+// Good - types inferred everywhere
 val list = ListOf(1, 2, 3)
-val doubled = list.Map((x int) => x * 2)
+val doubled = list.Map((x) => x * 2)
+val opt = Some("hello")
+val length = opt.Map((s) => len(s))
+
+// Explicit types needed - no value to infer from
+val empty = None[int]()
+val fallback = Left[string, int]("error")
 ```
 
 ### Tuple Syntax

@@ -1,0 +1,55 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+    "martianoff/gala/collection_immutable"
+)
+
+func main() {
+    // === L5: Lambda parameter type inference ===
+    // Type of x is inferred from Option[int].Map's parameter type
+    val opt = Some(42)
+    val doubled = opt.Map((x) => x * 2)
+    fmt.Println("L5 - doubled:", doubled)
+
+    // Filter with inferred param type
+    val filtered = opt.Filter((x) => x > 10)
+    fmt.Println("L5 - filtered:", filtered)
+
+    // Option.Map with string
+    val name = Some("hello")
+    val length = name.Map((s) => len(s))
+    fmt.Println("L5 - string length:", length)
+
+    // === L2: Void ForEach ===
+    // ForEach takes func(T) — no return value needed
+    fmt.Print("L2 - forEach:")
+    val arr = collection_immutable.ArrayOf(1, 2, 3)
+    arr.ForEach((x int) => {
+        fmt.Print(" ", x)
+    })
+    fmt.Println()
+
+    // Option ForEach is also void
+    fmt.Print("L2 - option forEach:")
+    opt.ForEach((x) => {
+        fmt.Print(" ", x)
+    })
+    fmt.Println()
+
+    // === L4: Boolean exhaustive match ===
+    val flag = true
+    val desc = flag match {
+        case true => "yes"
+        case false => "no"
+    }
+    fmt.Println("L4 - bool match:", desc)
+
+    val flag2 = false
+    val desc2 = flag2 match {
+        case true => "TRUE"
+        case false => "FALSE"
+    }
+    fmt.Println("L4 - bool match 2:", desc2)
+}

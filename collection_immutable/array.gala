@@ -702,7 +702,6 @@ func (a Array[T]) Concat(other Iterable[T]) Array[T] {
     }
     other.ForEach((elem T) => {
         builder.Add(elem)
-        return nil
     })
     return builder.Result()
 }
@@ -768,7 +767,7 @@ func (a Array[T]) ReduceOption(f func(T, T) T) Option[T] {
 }
 
 // ForEach applies a function to each element for side effects.
-func (a Array[T]) ForEach(f func(T) any) {
+func (a Array[T]) ForEach(f func(T)) {
     for i := 0; i < a.length; i++ {
         f(a.Get(i))
     }

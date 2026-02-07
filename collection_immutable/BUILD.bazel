@@ -143,3 +143,9 @@ go_binary(
 #     srcs = ["go_native_perf_test.go"],
 #     embed = [":collection_immutable_lib"],
 # )
+
+# go_test(
+#     name = "collection_immutable_test",
+#     srcs = ["go_native_perf_test.go"],
+#     embed = [":collection_immutable_lib"],
+# )

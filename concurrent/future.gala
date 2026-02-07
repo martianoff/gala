@@ -188,8 +188,7 @@ func (f *Future[T]) ExecutionContext() go_interop.ExecutionContext = f.ec
 
 // OnComplete registers a callback to be executed when the Future completes.
 // The callback is executed asynchronously using this Future's ExecutionContext.
-// Note: callback returns any for GALA lambda compatibility.
-func (f *Future[T]) OnComplete(callback func(Try[T]) any) {
+func (f *Future[T]) OnComplete(callback func(Try[T])) {
     f.ec.Execute(() => {
         go_interop.WaitSignal(f.done)
         f.mu.RLock()
@@ -201,8 +200,7 @@ func (f *Future[T]) OnComplete(callback func(Try[T]) any) {
 
 // OnSuccess registers a callback to be executed if the Future completes successfully.
 // The callback is executed asynchronously.
-// Note: callback returns any for GALA lambda compatibility.
-func (f *Future[T]) OnSuccess(callback func(T) any) {
+func (f *Future[T]) OnSuccess(callback func(T)) {
     f.OnComplete((r Try[T]) => {
         if r.IsSuccess() {
             callback(r.Value)
@@ -212,8 +210,7 @@ func (f *Future[T]) OnSuccess(callback func(T) any) {
 
 // OnFailure registers a callback to be executed if the Future completes with a failure.
 // The callback is executed asynchronously.
-// Note: callback returns any for GALA lambda compatibility.
-func (f *Future[T]) OnFailure(callback func(error) any) {
+func (f *Future[T]) OnFailure(callback func(error)) {
     f.OnComplete((r Try[T]) => {
         if r.IsFailure() {
             callback(r.Err)
@@ -347,8 +344,7 @@ func (f *Future[T]) Fallback(that *Future[T]) *Future[T] {
 // AndThen registers a callback and returns a new Future that completes
 // with the same result after the callback executes.
 // The resulting Future inherits this Future's ExecutionContext.
-// Note: callback returns any for GALA lambda compatibility.
-func (f *Future[T]) AndThen(callback func(Try[T]) any) *Future[T] {
+func (f *Future[T]) AndThen(callback func(Try[T])) *Future[T] {
     val p = NewPromiseWith[T](f.ec)
     f.OnComplete((r Try[T]) => {
         callback(r)

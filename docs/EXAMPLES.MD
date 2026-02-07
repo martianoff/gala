@@ -33,7 +33,7 @@ import "fmt"
 
 func main() {
     val x = Some(10)
-    val y = x.Map((v int) => v * 2)
+    val y = x.Map((v) => v * 2)         // parameter type inferred as int
     val z = None().GetOrElse(42)
 
     val res = y match {
@@ -317,6 +317,37 @@ func main() {
     var x = identity(getImm(42)) 
     fmt.Printf("x: %d\n", x)
 }
+```
+
+## Boolean Exhaustive Match
+
+Boolean pattern matching is exhaustive when both `true` and `false` cases are covered:
+
+```gala
+val desc = flag match {
+    case true  => "enabled"
+    case false => "disabled"
+    // No case _ needed — true/false is exhaustive
+}
+```
+
+## Void Closures and Lambda Parameter Inference
+
+Functions can accept void closures (no return value), and lambda parameter types can be inferred from context:
+
+```gala
+val opt = Some(42)
+
+// ForEach takes func(T) — void, no return needed
+opt.ForEach((x) => {
+    fmt.Println(x)
+})
+
+// Parameter type inferred from Option[int].Filter's signature
+val positive = opt.Filter((x) => x > 0)
+
+// Method type param and lambda param both inferred
+val doubled = opt.Map((x) => x * 2)
 ```
 
 ## More Examples

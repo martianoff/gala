@@ -63,7 +63,7 @@ go mod tidy && bazel run //:gazelle && bazel run //:gazelle-update-repos && baze
 
 - Prefer: functional style, pattern matching, immutable variables
 - Prefer: generics, type-safe programming
-- Prefer: implicit `var`/`val` declarations (omit types when inferrable)
+- Prefer: implicit typing everywhere — omit generic params (`Some(42)` not `Some[int](42)`), lambda param types (`(x) => x * 2` not `(x int) => x * 2`), variable types (`val x = 42` not `val x int = 42`), and method type params (`list.Map((x) => x * 2)` not `list.Map[int]((x) => x * 2)`)
 - Prefer: table-driven tests
 
 ---
