@@ -94,6 +94,15 @@ type TypeMetadata struct {
 	TypeParams           []string
 	TypeParamConstraints map[string]string // TypeParam name -> constraint (e.g., "T" -> "comparable")
 	ImmutFlags           []bool
+	IsSealed             bool            // True if this type was generated from a sealed type declaration
+	SealedVariants       []SealedVariant // Variant info for sealed types (empty for non-sealed)
+}
+
+// SealedVariant holds metadata about a single case in a sealed type declaration.
+type SealedVariant struct {
+	Name       string
+	FieldNames []string
+	FieldTypes []Type
 }
 
 type MethodMetadata struct {

@@ -1,0 +1,44 @@
+package main
+
+import "fmt"
+
+sealed type Color {
+    case Red()
+    case Green()
+    case Blue()
+}
+
+sealed type Shape {
+    case Circle(Radius float64)
+    case Rectangle(Width float64, Height float64)
+    case Point()
+}
+
+func describe(s Shape) string = s match {
+    case Circle(r) => fmt.Sprintf("Circle with radius %.1f", r)
+    case Rectangle(w, h) => fmt.Sprintf("Rectangle %0.fx%0.f", w, h)
+    case Point() => "A point"
+}
+
+func main() {
+    // Constructor calls via companion Apply
+    val c = Circle(3.14)
+    val r = Rectangle(10.0, 20.0)
+    val p = Point()
+
+    // IsXxx() methods
+    fmt.Println(c.IsCircle())
+    fmt.Println(c.IsRectangle())
+    fmt.Println(r.IsRectangle())
+    fmt.Println(p.IsPoint())
+
+    // Pattern matching
+    fmt.Println(describe(c))
+    fmt.Println(describe(r))
+    fmt.Println(describe(p))
+
+    // Color (0-field variants)
+    val red = Red()
+    fmt.Println(red.IsRed())
+    fmt.Println(red.IsGreen())
+}

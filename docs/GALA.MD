@@ -10,6 +10,7 @@ GALA (Go Alternative LAnguage) is a modern programming language that transpiles 
 2. [Variable Declarations](#2-variable-declarations)
 3. [Functions](#3-functions)
 4. [Types and Structs](#4-types-and-structs)
+   - [Sealed Types (ADTs)](#sealed-types-algebraic-data-types)
 5. [Interfaces](#5-interfaces)
 6. [Control Flow](#6-control-flow)
    - [If Statement and Expression](#if-statement-and-expression)
@@ -323,6 +324,55 @@ type Implode struct {}
 func (i Implode) Apply(params []string) string = strings.Join(params, "")
 
 val res = Implode(SliceOf("a", "b")) // expanded to Implode{}.Apply(SliceOf("a", "b"))
+```
+
+### Sealed Types (Algebraic Data Types)
+
+Sealed types define algebraic data types (ADTs) concisely. The transpiler auto-generates the parent struct, companion objects, `Apply`/`Unapply` methods, `IsXxx()` discriminators, `Copy`, and `Equal`.
+
+#### Basic Sealed Type
+```gala
+sealed type Shape {
+    case Circle(Radius float64)
+    case Rectangle(Width float64, Height float64)
+    case Point()
+}
+```
+
+This generates:
+- Parent struct `Shape` with all variant fields merged + `_variant` discriminator
+- Empty companion structs `Circle{}`, `Rectangle{}`, `Point{}`
+- `Apply` methods on each companion for construction
+- `Unapply` methods for pattern matching
+- `IsCircle()`, `IsRectangle()`, `IsPoint()` methods on `Shape`
+
+#### Construction and Pattern Matching
+```gala
+val c = Circle(3.14)
+val r = Rectangle(10.0, 20.0)
+
+// IsXxx() checks
+fmt.Println(c.IsCircle())     // true
+fmt.Println(c.IsRectangle())  // false
+
+// Pattern matching
+val desc = c match {
+    case Circle(radius) => fmt.Sprintf("radius=%.2f", radius)
+    case Rectangle(w, h) => fmt.Sprintf("%fx%f", w, h)
+    case Point() => "point"
+}
+```
+
+#### Generic Sealed Types
+Sealed types support type parameters:
+```gala
+sealed type Result[T any] {
+    case Ok(Value T)
+    case Err(Error error)
+}
+
+val success = Ok[int](42)
+val failure = Err[int](fmt.Errorf("oops"))
 ```
 
 ## 5. Interfaces

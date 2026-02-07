@@ -3,6 +3,7 @@ package transformer
 import (
 	"fmt"
 	"go/ast"
+	"go/token"
 	"strings"
 
 	"github.com/antlr4-go/antlr/v4"
@@ -299,7 +300,30 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	}
 
 	if len(defaultBody) == 0 {
-		return nil, galaerr.NewSemanticError("match expression must have a default case (case _ => ...)")
+		// Collect pattern texts for exhaustiveness check
+		var variantPatterns []string
+		for _, cc := range caseClauses {
+			pat := cc.(*grammar.CaseClauseContext).Pattern().GetText()
+			if pat != "_" {
+				variantPatterns = append(variantPatterns, pat)
+			}
+		}
+
+		isExhaustive, missing := t.isSealedExhaustive(matchedType, variantPatterns)
+		if !isExhaustive {
+			if len(missing) > 0 {
+				return nil, galaerr.NewSemanticError(
+					fmt.Sprintf("non-exhaustive match on sealed type: missing variants: %s", strings.Join(missing, ", ")))
+			}
+			return nil, galaerr.NewSemanticError("match expression must have a default case (case _ => ...)")
+		}
+		// Exhaustive sealed match — generate synthetic panic("unreachable") default
+		defaultBody = []ast.Stmt{
+			&ast.ExprStmt{X: &ast.CallExpr{
+				Fun:  ast.NewIdent("panic"),
+				Args: []ast.Expr{&ast.BasicLit{Kind: token.STRING, Value: `"unreachable"`}},
+			}},
+		}
 	}
 
 	var stmts []ast.Stmt

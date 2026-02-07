@@ -61,8 +61,8 @@ go_library(
     importpath = "martianoff/gala/collection_mutable",
     visibility = ["//visibility:public"],
     deps = [
-        "//go_interop",
         "//std",
+        "//go_interop",
     ],
 )
 
@@ -128,6 +128,12 @@ go_binary(
 # Note: Perf test is run manually via go_binary above
 
 # Note: go_native_perf_test.go is package main so cannot be used as embed
+# go_test(
+#     name = "collection_mutable_test",
+#     srcs = ["go_native_perf_test.go"],
+#     embed = [":collection_mutable_lib"],
+# )
+
 # go_test(
 #     name = "collection_mutable_test",
 #     srcs = ["go_native_perf_test.go"],

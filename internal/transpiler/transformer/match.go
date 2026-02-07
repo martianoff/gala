@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"strings"
+
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
@@ -55,6 +57,46 @@ func (t *galaASTTransformer) parseMatchSubject(ctx grammar.IExpressionContext) (
 	}
 
 	return expr, paramName, matchedType, nil
+}
+
+// extractVariantName extracts the variant/constructor name from a case pattern text.
+// E.g. "Circle(r)" → "Circle", "Point()" → "Point"
+func extractVariantName(patternText string) string {
+	idx := strings.Index(patternText, "(")
+	if idx <= 0 {
+		return ""
+	}
+	name := patternText[:idx]
+	if len(name) == 0 || name[0] < 'A' || name[0] > 'Z' {
+		return ""
+	}
+	return name
+}
+
+// isSealedExhaustive checks if a set of case patterns exhaustively covers all variants
+// of a sealed type. Returns (isExhaustive, missingVariants).
+func (t *galaASTTransformer) isSealedExhaustive(matchedType transpiler.Type, patternTexts []string) (bool, []string) {
+	baseName := matchedType.BaseName()
+	meta := t.getTypeMeta(baseName)
+	if meta == nil || !meta.IsSealed || len(meta.SealedVariants) == 0 {
+		return false, nil
+	}
+
+	covered := make(map[string]bool)
+	for _, pat := range patternTexts {
+		if name := extractVariantName(pat); name != "" {
+			covered[name] = true
+		}
+	}
+
+	var missing []string
+	for _, v := range meta.SealedVariants {
+		if !covered[v.Name] {
+			missing = append(missing, v.Name)
+		}
+	}
+
+	return len(missing) == 0, missing
 }
 
 // transformMatchClauses processes all case clauses and infers the common result type.
@@ -113,7 +155,34 @@ func (t *galaASTTransformer) transformMatchClauses(ctx grammar.IExpressionContex
 	}
 
 	if !foundDefault {
-		return nil, nil, nil, galaerr.NewSemanticError("match expression must have a default case (case _ => ...)")
+		// Collect variant names from non-default patterns for exhaustiveness check
+		var variantPatterns []string
+		for i := 3; i < ctx.GetChildCount()-1; i++ {
+			ccCtx, ok := ctx.GetChild(i).(*grammar.CaseClauseContext)
+			if !ok {
+				continue
+			}
+			pat := ccCtx.Pattern().GetText()
+			if pat != "_" {
+				variantPatterns = append(variantPatterns, pat)
+			}
+		}
+
+		isExhaustive, missing := t.isSealedExhaustive(matchedType, variantPatterns)
+		if !isExhaustive {
+			if len(missing) > 0 {
+				return nil, nil, nil, galaerr.NewSemanticError(
+					fmt.Sprintf("non-exhaustive match on sealed type: missing variants: %s", strings.Join(missing, ", ")))
+			}
+			return nil, nil, nil, galaerr.NewSemanticError("match expression must have a default case (case _ => ...)")
+		}
+		// Exhaustive sealed match — generate synthetic panic("unreachable") default
+		defaultBody = []ast.Stmt{
+			&ast.ExprStmt{X: &ast.CallExpr{
+				Fun:  ast.NewIdent("panic"),
+				Args: []ast.Expr{&ast.BasicLit{Kind: token.STRING, Value: `"unreachable"`}},
+			}},
+		}
 	}
 
 	resultType, err := t.inferCommonResultType(resultTypes, casePatterns)

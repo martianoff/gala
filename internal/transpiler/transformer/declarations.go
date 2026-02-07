@@ -41,6 +41,9 @@ func (t *galaASTTransformer) transformTopLevelDeclaration(ctx grammar.ITopLevelD
 	if structShorthandCtx := ctx.StructShorthandDeclaration(); structShorthandCtx != nil {
 		return t.transformStructShorthandDeclaration(structShorthandCtx.(*grammar.StructShorthandDeclarationContext))
 	}
+	if sealedCtx := ctx.SealedTypeDeclaration(); sealedCtx != nil {
+		return t.transformSealedTypeDeclaration(sealedCtx.(*grammar.SealedTypeDeclarationContext))
+	}
 	return nil, nil
 }
 

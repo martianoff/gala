@@ -15,6 +15,7 @@ go_library(
         "patterns.go",
         "postfix.go",
         "scope.go",
+        "sealed.go",
         "statements.go",
         "transformer.go",
         "type_inference.go",

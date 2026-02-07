@@ -339,6 +339,13 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 		}
 	}
 
+	// 1.5 Collect sealed types
+	for _, topDecl := range sourceFile.AllTopLevelDeclaration() {
+		if sealedCtx := topDecl.SealedTypeDeclaration(); sealedCtx != nil {
+			a.analyzeSealedType(sealedCtx.(*grammar.SealedTypeDeclarationContext), pkgName, richAST)
+		}
+	}
+
 	// 2. Collect methods and functions
 	for _, topDecl := range sourceFile.AllTopLevelDeclaration() {
 		if funcDeclCtx := topDecl.FunctionDeclaration(); funcDeclCtx != nil {
@@ -472,6 +479,185 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 	a.discoverCompanionObjects(richAST)
 
 	return richAST, nil
+}
+
+// analyzeSealedType registers metadata for a sealed type declaration.
+// It creates the parent type (with all variant fields merged + _variant),
+// companion types for each case, and Apply/Unapply/IsXxx methods.
+func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationContext, pkgName string, richAST *transpiler.RichAST) {
+	typeName := ctx.Identifier().GetText()
+
+	fullTypeName := typeName
+	if pkgName != "" && pkgName != "main" && pkgName != "test" {
+		fullTypeName = pkgName + "." + typeName
+	}
+
+	// Collect type parameters from the sealed type
+	var typeParams []string
+	if ctx.TypeParameters() != nil {
+		tpCtx := ctx.TypeParameters().(*grammar.TypeParametersContext)
+		if tpList := tpCtx.TypeParameterList(); tpList != nil {
+			for _, tp := range tpList.(*grammar.TypeParameterListContext).AllTypeParameter() {
+				tpId := tp.(*grammar.TypeParameterContext).Identifier(0)
+				typeParams = append(typeParams, tpId.GetText())
+			}
+		}
+	}
+
+	// Create parent type metadata with all variant fields merged + _variant
+	parentMeta := &transpiler.TypeMetadata{
+		Name:       typeName,
+		Package:    pkgName,
+		Methods:    make(map[string]*transpiler.MethodMetadata),
+		Fields:     make(map[string]transpiler.Type),
+		IsSealed:   true,
+		TypeParams: typeParams,
+	}
+
+	// Process each case to collect fields
+	type variantInfo struct {
+		name   string
+		fields []struct {
+			name     string
+			typeName string
+		}
+	}
+	var variants []variantInfo
+
+	for _, caseCtx := range ctx.AllSealedCase() {
+		sc := caseCtx.(*grammar.SealedCaseContext)
+		variantName := sc.Identifier().GetText()
+		vi := variantInfo{name: variantName}
+
+		if sc.SealedCaseFieldList() != nil {
+			fieldList := sc.SealedCaseFieldList().(*grammar.SealedCaseFieldListContext)
+			for _, fieldCtx := range fieldList.AllSealedCaseField() {
+				fc := fieldCtx.(*grammar.SealedCaseFieldContext)
+				fieldName := fc.Identifier().GetText()
+				fieldTypeStr := fc.Type_().GetText()
+				vi.fields = append(vi.fields, struct {
+					name     string
+					typeName string
+				}{fieldName, fieldTypeStr})
+
+				// Add to parent type fields
+				parentMeta.Fields[fieldName] = a.resolveTypeWithParams(fieldTypeStr, pkgName, typeParams)
+				parentMeta.FieldNames = append(parentMeta.FieldNames, fieldName)
+				parentMeta.ImmutFlags = append(parentMeta.ImmutFlags, true) // sealed type fields are always val
+			}
+		}
+
+		variants = append(variants, vi)
+	}
+
+	// Add _variant field
+	parentMeta.Fields["_variant"] = transpiler.BasicType{Name: "uint8"}
+	parentMeta.FieldNames = append(parentMeta.FieldNames, "_variant")
+	parentMeta.ImmutFlags = append(parentMeta.ImmutFlags, true)
+
+	// Store variant metadata on parent
+	for _, vi := range variants {
+		sv := transpiler.SealedVariant{Name: vi.name}
+		for _, f := range vi.fields {
+			sv.FieldNames = append(sv.FieldNames, f.name)
+			sv.FieldTypes = append(sv.FieldTypes, a.resolveTypeWithParams(f.typeName, pkgName, typeParams))
+		}
+		parentMeta.SealedVariants = append(parentMeta.SealedVariants, sv)
+	}
+
+	richAST.Types[fullTypeName] = parentMeta
+
+	// For each variant, create companion type and register methods
+	for _, vi := range variants {
+		companionName := vi.name
+		fullCompanionName := companionName
+		if pkgName != "" && pkgName != "main" && pkgName != "test" {
+			fullCompanionName = pkgName + "." + companionName
+		}
+
+		companionMeta := &transpiler.TypeMetadata{
+			Name:       companionName,
+			Package:    pkgName,
+			Methods:    make(map[string]*transpiler.MethodMetadata),
+			Fields:     make(map[string]transpiler.Type),
+			TypeParams: typeParams,
+		}
+
+		// Apply method: takes the variant's fields, returns parent type
+		applyMeta := &transpiler.MethodMetadata{
+			Name:    "Apply",
+			Package: pkgName,
+		}
+		for _, f := range vi.fields {
+			applyMeta.ParamTypes = append(applyMeta.ParamTypes, a.resolveTypeWithParams(f.typeName, pkgName, typeParams))
+		}
+		// Return type is the parent sealed type
+		if len(typeParams) > 0 {
+			baseType := transpiler.NamedType{Package: pkgName, Name: typeName}
+			var params []transpiler.Type
+			for _, tp := range typeParams {
+				params = append(params, transpiler.BasicType{Name: tp})
+			}
+			applyMeta.ReturnType = transpiler.GenericType{Base: baseType, Params: params}
+		} else {
+			if pkgName != "" && pkgName != "main" && pkgName != "test" {
+				applyMeta.ReturnType = transpiler.NamedType{Package: pkgName, Name: typeName}
+			} else {
+				applyMeta.ReturnType = transpiler.BasicType{Name: typeName}
+			}
+		}
+		companionMeta.Methods["Apply"] = applyMeta
+
+		// Unapply method
+		unapplyMeta := &transpiler.MethodMetadata{
+			Name:    "Unapply",
+			Package: pkgName,
+		}
+		// Param: the parent type
+		unapplyMeta.ParamTypes = append(unapplyMeta.ParamTypes, applyMeta.ReturnType)
+		// Return type depends on number of fields
+		switch len(vi.fields) {
+		case 0:
+			unapplyMeta.ReturnType = transpiler.BasicType{Name: "bool"}
+		case 1:
+			fieldType := a.resolveTypeWithParams(vi.fields[0].typeName, pkgName, typeParams)
+			unapplyMeta.ReturnType = transpiler.GenericType{
+				Base:   transpiler.NamedType{Package: registry.StdPackageName, Name: "Option"},
+				Params: []transpiler.Type{fieldType},
+			}
+		default:
+			// Option[Tuple[...]]
+			var tupleParams []transpiler.Type
+			for _, f := range vi.fields {
+				tupleParams = append(tupleParams, a.resolveTypeWithParams(f.typeName, pkgName, typeParams))
+			}
+			tupleName := fmt.Sprintf("Tuple%d", len(vi.fields))
+			if len(vi.fields) == 2 {
+				tupleName = "Tuple"
+			}
+			tupleType := transpiler.GenericType{
+				Base:   transpiler.NamedType{Package: registry.StdPackageName, Name: tupleName},
+				Params: tupleParams,
+			}
+			unapplyMeta.ReturnType = transpiler.GenericType{
+				Base:   transpiler.NamedType{Package: registry.StdPackageName, Name: "Option"},
+				Params: []transpiler.Type{tupleType},
+			}
+		}
+		companionMeta.Methods["Unapply"] = unapplyMeta
+
+		richAST.Types[fullCompanionName] = companionMeta
+	}
+
+	// Register IsXxx() methods on parent type
+	for _, vi := range variants {
+		isMethodName := "Is" + vi.name
+		parentMeta.Methods[isMethodName] = &transpiler.MethodMetadata{
+			Name:       isMethodName,
+			Package:    pkgName,
+			ReturnType: transpiler.BasicType{Name: "bool"},
+		}
+	}
 }
 
 // discoverCompanionObjects identifies types that can be used as pattern extractors.

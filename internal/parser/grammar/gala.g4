@@ -11,9 +11,15 @@ topLevelDeclaration
     | functionDeclaration
     | typeDeclaration
     | structShorthandDeclaration
+    | sealedTypeDeclaration
     ;
 
 structShorthandDeclaration: 'struct' identifier parameters;
+
+sealedTypeDeclaration: SEALED 'type' identifier (typeParameters)? '{' sealedCase+ '}';
+sealedCase: CASE identifier '(' sealedCaseFieldList? ')';
+sealedCaseFieldList: sealedCaseField (',' sealedCaseField)*;
+sealedCaseField: identifier type;
 
 declaration
     : valDeclaration
@@ -214,6 +220,7 @@ RANGE: 'range';
 RETURN: 'return';
 IMPORT: 'import';
 PACKAGE: 'package';
+SEALED: 'sealed';
 COLON: ':';
 
 binaryOp: '||' | '&&' | '==' | '!=' | '<' | '<=' | '>' | '>=' | '+' | '-' | '|' | '^' | '*' | '/' | '%' | '<<' | '>>' | '&' | '&^';
