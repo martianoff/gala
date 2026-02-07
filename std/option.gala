@@ -5,7 +5,7 @@ package std
 // nil as false, and all other types as true.
 func isDefined(opt any) bool = if (opt == nil) false else opt match {
     case b: bool => b
-    case oi: Option[_] => oi.defined
+    case oi: Option[_] => oi.isSome()
     case _ => true
 }
 
@@ -17,38 +17,20 @@ func getSomeValue(opt any) any = opt match {
 
 // Option represents an optional value: every instance of Option is either an instance
 // of Some containing a value, or None representing an empty value.
-type Option[T any] struct {
-    Value T
-    defined bool
-}
-
-type Some[T any] struct {}
-func (s Some[T]) Apply(v T) Option[T] = Option[T](Value = v, defined = true)
-func (s Some[T]) Unapply(o Option[T]) Option[T] {
-    if o.IsDefined() {
-        return Some[T](o.Get())
-    }
-    return None[T]()
-}
-
-type None[T any] struct {}
-func (n None[T]) Apply() Option[T] = Option[T](defined = false)
-func (n None[T]) Unapply(o Option[T]) Option[bool] {
-    if !o.IsDefined() {
-        return Some[bool](true)
-    }
-    return None[bool]()
+sealed type Option[T any] {
+    case Some(Value T)
+    case None()
 }
 
 // IsDefined returns true if the option is an instance of Some, false otherwise.
-func (o Option[T]) IsDefined() bool = o.defined
+func (o Option[T]) IsDefined() bool = o.isSome()
 
 // IsEmpty returns true if the option is None, false otherwise.
-func (o Option[T]) IsEmpty() bool = !o.defined
+func (o Option[T]) IsEmpty() bool = o.isNone()
 
 // Get returns the option's value if the option is Some, otherwise it panics.
 func (o Option[T]) Get() T {
-    if !o.defined {
+    if o.isNone() {
         panic("Option.Get on None")
     }
     return o.Value
@@ -57,7 +39,7 @@ func (o Option[T]) Get() T {
 // GetOrElse returns the option's value if the option is Some, otherwise returns the result of evaluating defaultValue.
 // defaultValue: the default value to return if the option is empty.
 func (o Option[T]) GetOrElse(defaultValue T) T {
-    if o.defined {
+    if o.isSome() {
         return o.Value
     }
     return defaultValue
@@ -66,7 +48,7 @@ func (o Option[T]) GetOrElse(defaultValue T) T {
 // ForEach applies the given procedure f to the option's value, if it is nonempty.
 // f: the procedure to apply.
 func (o Option[T]) ForEach(f func(T) any) {
-    if o.defined {
+    if o.isSome() {
         f(o.Value)
     }
 }
@@ -75,7 +57,7 @@ func (o Option[T]) ForEach(f func(T) any) {
 // f: the function to apply.
 // Returns a new Option containing the result of applying f to this option's value if it is nonempty.
 func (o Option[T]) Map[U any](f func(T) U) Option[U] {
-    if o.defined {
+    if o.isSome() {
         return Some[U](f(o.Value))
     }
     return None[U]()
@@ -85,7 +67,7 @@ func (o Option[T]) Map[U any](f func(T) U) Option[U] {
 // Returns None if this option is empty.
 // f: the function to apply.
 func (o Option[T]) FlatMap[U any](f func(T) Option[U]) Option[U] {
-    if o.defined {
+    if o.isSome() {
         return f(o.Value)
     }
     return None[U]()
@@ -94,7 +76,7 @@ func (o Option[T]) FlatMap[U any](f func(T) Option[U]) Option[U] {
 // Filter returns this option if it is nonempty and applying the predicate p to this option's value returns true.
 // p: the predicate used for testing.
 func (o Option[T]) Filter(p func(T) bool) Option[T] {
-    if o.defined && p(o.Value) {
+    if o.isSome() && p(o.Value) {
         return o
     }
     return None[T]()

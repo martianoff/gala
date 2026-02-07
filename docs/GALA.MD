@@ -375,6 +375,9 @@ val success = Ok[int](42)
 val failure = Err[int](fmt.Errorf("oops"))
 ```
 
+#### Standard Library Sealed Types
+The `std` package defines `Option[T]`, `Either[A, B]`, and `Try[T]` as sealed types. See [Standard Library Types](#9-standard-library-types) for details.
+
 ## 5. Interfaces
 
 GALA supports interfaces with semantics similar to Go. Interfaces define a set of method signatures that a type must implement to satisfy the interface.
@@ -808,12 +811,25 @@ type Box[T any] struct {
 GALA provides several built-in types in the `std` package for common patterns.
 
 ### Option Monad
-`Option[T]` is used for handling optional values safely.
+`Option[T]` is a sealed type for handling optional values safely.
 
 ```gala
-val x Option[int] = Some(10)
-val y Option[int] = None()
+// Defined as a sealed type in std:
+sealed type Option[T any] {
+    case Some(Value T)
+    case None()
+}
 
+val x = Some(10)
+val y = None[int]()
+
+// Pattern matching (exhaustive - no case _ needed)
+val msg = x match {
+    case Some(v) => fmt.Sprintf("Got: %d", v)
+    case None()  => "Empty"
+}
+
+// Monadic operations
 val result = x.Map((i int) => i * 2)
 ```
 
@@ -844,14 +860,19 @@ val second = t.V2  // "hello"
 ```
 
 ### Either
-`Either[A, B]` represents a value that can be one of two types. It is often used for error handling where `Left` is the error and `Right` is the success value.
+`Either[A, B]` is a sealed type representing a value that can be one of two types. It is often used for error handling where `Left` is the error and `Right` is the success value.
 
 ```gala
-val e: Either[int, string] = Right("success")
+// Defined as a sealed type in std:
+sealed type Either[A any, B any] {
+    case Left(LeftValue A)
+    case Right(RightValue B)
+}
+
+val e = Right[int, string]("success")
 val msg = e match {
     case Left(code) => fmt.Sprintf("Error code: %d", code)
     case Right(s)   => "Result: " + s
-    case _          => "Unknown"
 }
 
 // Monadic operations are biased towards Right
@@ -859,22 +880,27 @@ val length = e.Map((s string) => len(s))
 ```
 
 ### Try Monad
-`Try[T]` represents a computation that may either succeed with a value of type T or fail with an error. It provides a functional approach to error handling, similar to Scala's Try monad.
+`Try[T]` is a sealed type representing a computation that may either succeed with a value of type T or fail with an error. It provides a functional approach to error handling, similar to Scala's Try monad.
 
 ```gala
+// Defined as a sealed type in std:
+sealed type Try[T any] {
+    case Success(Value T)
+    case Failure(Err error)
+}
+
 // Create Try values
-val success Try[int] = Success(42)
-val failure Try[int] = Failure(NoSuchElementError(Message = "not found"))
+val success = Success(42)
+val failure = Failure[int](NoSuchElementError(Message = "not found"))
 
 // Try: safely execute code that may panic
 val result = Try[int](() => riskyDivide(10, 0))  // Failure (catches panic)
 val safe = Try[int](() => riskyDivide(10, 2))    // Success(5)
 
-// Pattern matching
+// Pattern matching (exhaustive - no case _ needed)
 val msg = success match {
     case Success(n) => fmt.Sprintf("Got: %d", n)
     case Failure(e) => fmt.Sprintf("Error: %s", e.Error())
-    case _          => "Unknown"
 }
 
 // Monadic operations
@@ -1701,7 +1727,7 @@ val end = Node[int](value = 0, next = () => None[Node[T]]())
 ```
 
 ### Sealed Types
-- **Prefer `sealed type` for fixed variant sets** - When a type has a known, closed set of variants, use sealed types instead of interfaces or manual discriminator fields
+- **Prefer `sealed type` for fixed variant sets** - When a type has a known, closed set of variants, use sealed types instead of interfaces or manual discriminator fields. The standard library uses sealed types for `Option[T]`, `Either[A, B]`, and `Try[T]`
 - **Exhaustive matching** - Match expressions covering all variants of a sealed type don't need `case _ =>`. The transpiler verifies exhaustiveness and reports missing variants
 - **Use sealed types instead of iota enums** - `sealed type Color { case Red() case Green() case Blue() }` instead of `const ( Red = iota; Green; Blue )`
 

@@ -588,8 +588,8 @@ func (t *galaASTTransformer) buildNoneType(elemType ast.Expr) ast.Expr {
 	}
 }
 
-// generateSealedIsMethod generates an IsXxx() method on the parent sealed type.
-// e.g., func (s Shape) IsCircle() bool { return s._variant == _Shape_Circle }
+// generateSealedIsMethod generates a private isXxx() method on the parent sealed type.
+// e.g., func (s Shape) isCircle() bool { return s._variant == _Shape_Circle }
 func (t *galaASTTransformer) generateSealedIsMethod(parentName string, vi sealedVariantInfo, tParams *ast.FieldList) *ast.FuncDecl {
 	parentType := t.buildGenericTypeExpr(parentName, tParams)
 
@@ -602,7 +602,7 @@ func (t *galaASTTransformer) generateSealedIsMethod(parentName string, vi sealed
 				},
 			},
 		},
-		Name: ast.NewIdent("Is" + vi.name),
+		Name: ast.NewIdent("is" + vi.name),
 		Type: &ast.FuncType{
 			Params: &ast.FieldList{},
 			Results: &ast.FieldList{

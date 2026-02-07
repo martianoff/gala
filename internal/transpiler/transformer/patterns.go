@@ -1804,6 +1804,9 @@ func (t *galaASTTransformer) generateDirectUnapplyPattern(
 	}
 
 	// Build final condition by ANDing all conditions
+	if len(conds) == 0 {
+		return ast.NewIdent("true"), allBindings, nil
+	}
 	var finalCond ast.Expr = conds[0]
 	for i := 1; i < len(conds); i++ {
 		finalCond = &ast.BinaryExpr{

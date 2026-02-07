@@ -2,64 +2,44 @@ package std
 
 // Either represents a value of one of two possible types (a disjoint union).
 // An instance of Either is an instance of either Left or Right.
-type Either[A any, B any] struct {
-    LeftValue A
-    RightValue B
-    isLeft bool
+sealed type Either[A any, B any] {
+    case Left(LeftValue A)
+    case Right(RightValue B)
 }
 
-type Left[A any, B any] struct {}
-func (l Left[A, B]) Apply(v A) Either[A, B] = Either[A, B](LeftValue = v, isLeft = true)
-func (l Left[A, B]) Unapply(e Either[A, B]) Option[A] {
-    if e.IsLeft() {
-        return Some[A](e.GetLeft())
-    }
-    return None[A]()
-}
+// IsLeft returns true if this is a Left, false otherwise.
+func (e Either[A, B]) IsLeft() bool = e.isLeft()
 
-type Right[A any, B any] struct {}
-func (r Right[A, B]) Apply(v B) Either[A, B] = Either[A, B](RightValue = v, isLeft = false)
-func (r Right[A, B]) Unapply(e Either[A, B]) Option[B] {
-    if e.IsRight() {
-        return Some[B](e.GetRight())
-    }
-    return None[B]()
-}
-
+// IsRight returns true if this is a Right, false otherwise.
+func (e Either[A, B]) IsRight() bool = e.isRight()
 
 // isLeft returns true if this is a Left, false otherwise.
 func isLeft(e any) bool = e match {
-    case ei: Either[_, _] => ei.isLeft
+    case ei: Either[_, _] => ei.isLeft()
     case _ => false
 }
 
 // isRight returns true if this is a Right, false otherwise.
 func isRight(e any) bool = e match {
-    case ei: Either[_, _] => !ei.isLeft
+    case ei: Either[_, _] => ei.isRight()
     case _ => false
 }
 
 // getLeftValue returns the left value if this is a Left, otherwise it returns nil.
 func getLeftValue(e any) any = e match {
-    case ei: Either[_, _] if ei.isLeft => ei.LeftValue
+    case ei: Either[_, _] if ei.isLeft() => ei.LeftValue
     case _ => nil
 }
 
 // getRightValue returns the right value if this is a Right, otherwise it returns nil.
 func getRightValue(e any) any = e match {
-    case ei: Either[_, _] if !ei.isLeft => ei.RightValue
+    case ei: Either[_, _] if ei.isRight() => ei.RightValue
     case _ => nil
 }
 
-// IsLeft returns true if this is a Left, false otherwise.
-func (e Either[A, B]) IsLeft() bool = e.isLeft
-
-// IsRight returns true if this is a Right, false otherwise.
-func (e Either[A, B]) IsRight() bool = !e.isLeft
-
 // GetLeft returns the left value if this is a Left, otherwise it panics.
 func (e Either[A, B]) GetLeft() A {
-    if !e.isLeft {
+    if e.isRight() {
         panic("Either.GetLeft on Right")
     }
     return e.LeftValue
@@ -67,7 +47,7 @@ func (e Either[A, B]) GetLeft() A {
 
 // GetRight returns the right value if this is a Right, otherwise it panics.
 func (e Either[A, B]) GetRight() B {
-    if e.isLeft {
+    if e.isLeft() {
         panic("Either.GetRight on Left")
     }
     return e.RightValue
@@ -75,7 +55,7 @@ func (e Either[A, B]) GetRight() B {
 
 // Swap returns the left as right and vice versa.
 func (e Either[A, B]) Swap() Either[B, A] {
-    if e.isLeft {
+    if e.isLeft() {
         return Right[B, A](e.LeftValue)
     }
     return Left[B, A](e.RightValue)
@@ -83,7 +63,7 @@ func (e Either[A, B]) Swap() Either[B, A] {
 
 // Fold applies f1 to the left value or f2 to the right value.
 func (e Either[A, B]) Fold[C any](f1 func(A) C, f2 func(B) C) C {
-    if e.isLeft {
+    if e.isLeft() {
         return f1(e.LeftValue)
     }
     return f2(e.RightValue)
@@ -91,7 +71,7 @@ func (e Either[A, B]) Fold[C any](f1 func(A) C, f2 func(B) C) C {
 
 // Map applies a function to the right value if this is a Right.
 func (e Either[A, B]) Map[C any](f func(B) C) Either[A, C] {
-    if e.isLeft {
+    if e.isLeft() {
         return Left[A, C](e.LeftValue)
     }
     return Right[A, C](f(e.RightValue))
@@ -99,7 +79,7 @@ func (e Either[A, B]) Map[C any](f func(B) C) Either[A, C] {
 
 // FlatMap applies a function to the right value if this is a Right.
 func (e Either[A, B]) FlatMap[C any](f func(B) Either[A, C]) Either[A, C] {
-    if e.isLeft {
+    if e.isLeft() {
         return Left[A, C](e.LeftValue)
     }
     return f(e.RightValue)

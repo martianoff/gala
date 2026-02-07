@@ -115,11 +115,11 @@ func tryRecover[T any](f func() T) (result Try[T]) {
 			default:
 				err = fmt.Errorf("panic: %v", r)
 			}
-			result = Try[T]{Err: NewImmutable(err), isSuccess: NewImmutable(false)}
+			result = Try[T]{Err: NewImmutable(err), _variant: _Try_Failure}
 		}
 	}()
 	v := f()
-	result = Try[T]{Value: NewImmutable(v), isSuccess: NewImmutable(true)}
+	result = Try[T]{Value: NewImmutable(v), _variant: _Try_Success}
 	return
 }
 

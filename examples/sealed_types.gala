@@ -26,11 +26,11 @@ func main() {
     val r = Rectangle(10.0, 20.0)
     val p = Point()
 
-    // IsXxx() methods
-    fmt.Println(c.IsCircle())
-    fmt.Println(c.IsRectangle())
-    fmt.Println(r.IsRectangle())
-    fmt.Println(p.IsPoint())
+    // isXxx() methods (private)
+    fmt.Println(c.isCircle())
+    fmt.Println(c.isRectangle())
+    fmt.Println(r.isRectangle())
+    fmt.Println(p.isPoint())
 
     // Pattern matching
     fmt.Println(describe(c))
@@ -39,6 +39,6 @@ func main() {
 
     // Color (0-field variants)
     val red = Red()
-    fmt.Println(red.IsRed())
-    fmt.Println(red.IsGreen())
+    fmt.Println(red.isRed())
+    fmt.Println(red.isGreen())
 }

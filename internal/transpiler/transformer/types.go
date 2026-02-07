@@ -297,10 +297,29 @@ func (t *galaASTTransformer) wrapWithAssertion(expr ast.Expr, targetType ast.Exp
 
 // typeExprsEqual checks if two type expressions represent the same type
 func (t *galaASTTransformer) typeExprsEqual(a, b ast.Expr) bool {
-	aIdent, aOk := a.(*ast.Ident)
-	bIdent, bOk := b.(*ast.Ident)
-	if aOk && bOk {
-		return aIdent.Name == bIdent.Name
+	switch aTyped := a.(type) {
+	case *ast.Ident:
+		if bTyped, ok := b.(*ast.Ident); ok {
+			return aTyped.Name == bTyped.Name
+		}
+	case *ast.SelectorExpr:
+		if bTyped, ok := b.(*ast.SelectorExpr); ok {
+			return t.typeExprsEqual(aTyped.X, bTyped.X) && aTyped.Sel.Name == bTyped.Sel.Name
+		}
+	case *ast.IndexExpr:
+		if bTyped, ok := b.(*ast.IndexExpr); ok {
+			return t.typeExprsEqual(aTyped.X, bTyped.X) && t.typeExprsEqual(aTyped.Index, bTyped.Index)
+		}
+	case *ast.StarExpr:
+		if bTyped, ok := b.(*ast.StarExpr); ok {
+			return t.typeExprsEqual(aTyped.X, bTyped.X)
+		}
+	case *ast.ArrayType:
+		if bTyped, ok := b.(*ast.ArrayType); ok {
+			if aTyped.Len == nil && bTyped.Len == nil {
+				return t.typeExprsEqual(aTyped.Elt, bTyped.Elt)
+			}
+		}
 	}
 	return false
 }

@@ -649,9 +649,9 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 		richAST.Types[fullCompanionName] = companionMeta
 	}
 
-	// Register IsXxx() methods on parent type
+	// Register isXxx() methods on parent type (private)
 	for _, vi := range variants {
-		isMethodName := "Is" + vi.name
+		isMethodName := "is" + vi.name
 		parentMeta.Methods[isMethodName] = &transpiler.MethodMetadata{
 			Name:       isMethodName,
 			Package:    pkgName,

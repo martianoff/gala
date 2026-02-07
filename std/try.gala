@@ -7,54 +7,25 @@ package std
 // Every instance of Try is either:
 // - Success[T]: contains a successful value of type T
 // - Failure[T]: contains an error
-type Try[T any] struct {
-    Value     T
-    Err       error
-    isSuccess bool
+sealed type Try[T any] {
+    case Success(Value T)
+    case Failure(Err error)
 }
 
-// Success is a companion object for creating successful Try instances.
-type Success[T any] struct {}
+// IsSuccess returns true if this is a Success, false otherwise.
+func (t Try[T]) IsSuccess() bool = t.isSuccess()
 
-// Apply creates a Success Try with the given value.
-func (s Success[T]) Apply(v T) Try[T] = Try[T](Value = v, isSuccess = true)
-
-// Unapply extracts the value from a Success for pattern matching.
-func (s Success[T]) Unapply(t Try[T]) Option[T] {
-    if t.IsSuccess() {
-        return Some[T](t.Value)
-    }
-    return None[T]()
-}
-
-// Failure is a companion object for creating failed Try instances.
-type Failure[T any] struct {}
-
-// Apply creates a Failure Try with the given error.
-func (f Failure[T]) Apply(err error) Try[T] = Try[T](Err = err, isSuccess = false)
-
-// Unapply extracts the error from a Failure for pattern matching.
-func (f Failure[T]) Unapply(t Try[T]) Option[error] {
-    if t.IsFailure() {
-        return Some[error](t.Err)
-    }
-    return None[error]()
-}
+// IsFailure returns true if this is a Failure, false otherwise.
+func (t Try[T]) IsFailure() bool = t.isFailure()
 
 // Apply executes f and catches any panic, converting it to a Failure.
 // This is the safe way to create a Try from a potentially panicking operation.
 // Usage: Try[int](() => riskyDivide(10, 0))
 func (t Try[T]) Apply(f func() T) Try[T] = tryRecover[T](f)
 
-// IsSuccess returns true if this is a Success, false otherwise.
-func (t Try[T]) IsSuccess() bool = t.isSuccess
-
-// IsFailure returns true if this is a Failure, false otherwise.
-func (t Try[T]) IsFailure() bool = !t.isSuccess
-
 // Get returns the value if this is a Success, otherwise panics.
 func (t Try[T]) Get() T {
-    if !t.isSuccess {
+    if t.isFailure() {
         panic("Try.Get on Failure: " + t.Err.Error())
     }
     return t.Value
@@ -62,7 +33,7 @@ func (t Try[T]) Get() T {
 
 // GetError returns the error if this is a Failure, otherwise panics.
 func (t Try[T]) GetError() error {
-    if t.isSuccess {
+    if t.isSuccess() {
         panic("Try.GetError on Success")
     }
     return t.Err
@@ -70,7 +41,7 @@ func (t Try[T]) GetError() error {
 
 // GetOrElse returns the value if this is a Success, otherwise returns defaultValue.
 func (t Try[T]) GetOrElse(defaultValue T) T {
-    if t.isSuccess {
+    if t.isSuccess() {
         return t.Value
     }
     return defaultValue
@@ -78,7 +49,7 @@ func (t Try[T]) GetOrElse(defaultValue T) T {
 
 // OrElse returns this Try if it is a Success, otherwise returns alternative.
 func (t Try[T]) OrElse(alternative Try[T]) Try[T] {
-    if t.isSuccess {
+    if t.isSuccess() {
         return t
     }
     return alternative
@@ -86,7 +57,7 @@ func (t Try[T]) OrElse(alternative Try[T]) Try[T] {
 
 // ForEach applies the given procedure f to the value if this is a Success.
 func (t Try[T]) ForEach(f func(T) any) {
-    if t.isSuccess {
+    if t.isSuccess() {
         f(t.Value)
     }
 }
@@ -94,7 +65,7 @@ func (t Try[T]) ForEach(f func(T) any) {
 // Map applies the function f to the value if this is a Success.
 // Returns a new Try containing the result. If f panics, the result is a Failure.
 func (t Try[T]) Map[U any](f func(T) U) Try[U] {
-    if !t.isSuccess {
+    if t.isFailure() {
         return Failure[U](t.Err)
     }
     return Success[U](f(t.Value))
@@ -103,7 +74,7 @@ func (t Try[T]) Map[U any](f func(T) U) Try[U] {
 // FlatMap applies the function f to the value if this is a Success.
 // Returns the Try returned by f. If this is a Failure, returns the Failure.
 func (t Try[T]) FlatMap[U any](f func(T) Try[U]) Try[U] {
-    if !t.isSuccess {
+    if t.isFailure() {
         return Failure[U](t.Err)
     }
     return f(t.Value)
@@ -112,7 +83,7 @@ func (t Try[T]) FlatMap[U any](f func(T) Try[U]) Try[U] {
 // Filter returns this Try if this is a Success and the predicate p returns true.
 // Returns a Failure with NoSuchElementError if predicate returns false.
 func (t Try[T]) Filter(p func(T) bool) Try[T] {
-    if !t.isSuccess {
+    if t.isFailure() {
         return t
     }
     if p(t.Value) {
@@ -124,7 +95,7 @@ func (t Try[T]) Filter(p func(T) bool) Try[T] {
 // Recover applies the recovery function pf to the error if this is a Failure.
 // Returns a Success with the recovered value. If pf panics, the result is still a Failure.
 func (t Try[T]) Recover(pf func(error) T) Try[T] {
-    if t.isSuccess {
+    if t.isSuccess() {
         return t
     }
     return Success[T](pf(t.Err))
@@ -133,7 +104,7 @@ func (t Try[T]) Recover(pf func(error) T) Try[T] {
 // RecoverWith applies the recovery function pf to the error if this is a Failure.
 // Returns the Try returned by pf. If this is a Success, returns this Try.
 func (t Try[T]) RecoverWith(pf func(error) Try[T]) Try[T] {
-    if t.isSuccess {
+    if t.isSuccess() {
         return t
     }
     return pf(t.Err)
@@ -142,7 +113,7 @@ func (t Try[T]) RecoverWith(pf func(error) Try[T]) Try[T] {
 // Transform applies s if this is a Success, f if this is a Failure.
 // Both functions return a new Try.
 func (t Try[T]) Transform[U any](s func(T) Try[U], f func(error) Try[U]) Try[U] {
-    if t.isSuccess {
+    if t.isSuccess() {
         return s(t.Value)
     }
     return f(t.Err)
@@ -150,7 +121,7 @@ func (t Try[T]) Transform[U any](s func(T) Try[U], f func(error) Try[U]) Try[U] 
 
 // Fold applies fa if this is a Failure, fs if this is a Success.
 func (t Try[T]) Fold[U any](fa func(error) U, fs func(T) U) U {
-    if t.isSuccess {
+    if t.isSuccess() {
         return fs(t.Value)
     }
     return fa(t.Err)
@@ -158,7 +129,7 @@ func (t Try[T]) Fold[U any](fa func(error) U, fs func(T) U) U {
 
 // ToOption returns Some(value) if this is a Success, None if this is a Failure.
 func (t Try[T]) ToOption() Option[T] {
-    if t.isSuccess {
+    if t.isSuccess() {
         return Some[T](t.Value)
     }
     return None[T]()
@@ -166,7 +137,7 @@ func (t Try[T]) ToOption() Option[T] {
 
 // ToEither returns Right(value) if this is a Success, Left(error) if this is a Failure.
 func (t Try[T]) ToEither() Either[error, T] {
-    if t.isSuccess {
+    if t.isSuccess() {
         return Right[error, T](t.Value)
     }
     return Left[error, T](t.Err)

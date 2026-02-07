@@ -6,8 +6,7 @@ package std
 // Some[T] implements Unapply[Option[T], T] - extracts value from Option
 var _ Unapply[Option[any], any] = Some[any]{}
 
-// None[T] implements Unapply[Option[T], bool] - returns true if value is None/nil
-var _ Unapply[Option[any], bool] = None[any]{}
+// None[T] is a sealed type 0-field variant - its Unapply returns bool directly (not Option[bool])
 
 // Left[A, B] implements Unapply[Either[A, B], A] - extracts left value from Either
 var _ Unapply[Either[any, any], any] = Left[any, any]{}
