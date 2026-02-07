@@ -429,7 +429,7 @@ val status = if (score > 50) "pass" else "fail"
 ```
 
 ### Match Expression
-The `match` expression provides powerful pattern matching, supporting literals, variable bindings, and extractors. GALA follows Scala semantics for pattern matching, where the pattern (or an extractor) is responsible for matching against the object. It currently requires a default case (`_`).
+The `match` expression provides powerful pattern matching, supporting literals, variable bindings, and extractors. GALA follows Scala semantics for pattern matching, where the pattern (or an extractor) is responsible for matching against the object. A default case (`_`) is required unless matching on a sealed type with all variants covered (exhaustive match).
 
 ```gala
 val result = x match {
@@ -1697,6 +1697,34 @@ val end = Node[int](value = 0, next = () => None[Node[T]]())
 (x int, y int) => {
     val sum = x + y
     return sum * sum
+}
+```
+
+### Sealed Types
+- **Prefer `sealed type` for fixed variant sets** - When a type has a known, closed set of variants, use sealed types instead of interfaces or manual discriminator fields
+- **Exhaustive matching** - Match expressions covering all variants of a sealed type don't need `case _ =>`. The transpiler verifies exhaustiveness and reports missing variants
+- **Use sealed types instead of iota enums** - `sealed type Color { case Red() case Green() case Blue() }` instead of `const ( Red = iota; Green; Blue )`
+
+```gala
+// BAD: Manual discriminator with iota
+type Shape struct {
+    kind int
+    var radius float64
+    var width float64
+    var height float64
+}
+
+// GOOD: Sealed type with exhaustive matching
+sealed type Shape {
+    case Circle(Radius float64)
+    case Rectangle(Width float64, Height float64)
+    case Point()
+}
+
+val desc = shape match {
+    case Circle(r) => fmt.Sprintf("radius=%.2f", r)
+    case Rectangle(w, h) => fmt.Sprintf("%fx%f", w, h)
+    case Point() => "point"
 }
 ```
 
