@@ -1220,6 +1220,9 @@ fmt.Println(m5.Contains("banana"))  // false
 | `Keys()` | Get HashSet of keys |
 | `Values()` | Get List of values |
 | `ToGoMap()` | Convert to Go map |
+| `Sorted()` | Sort entries by natural key order, returns `Array[Tuple[K, V]]` |
+| `SortWith(less)` | Sort entries with custom comparator |
+| `SortBy(f)` | Sort entries by key function |
 | `MkString(sep)` | Join entries as `"key -> value"` with separator |
 
 #### Mutable HashMap (collection_mutable)
@@ -1269,6 +1272,9 @@ fmt.Println(snapshot.Size())  // Still has data
 | `UpdateAll(f)` | Update all values in place |
 | `Clone()` | Create a copy |
 | `Merge(other, f)` | Merge another map |
+| `Sorted()` | Sort entries by natural key order, returns `*Array[Tuple[K, V]]` |
+| `SortWith(less)` | Sort entries with custom comparator |
+| `SortBy(f)` | Sort entries by key function |
 | `MkString(sep)` | Join entries as `"key -> value"` with separator |
 
 #### Custom Key Types

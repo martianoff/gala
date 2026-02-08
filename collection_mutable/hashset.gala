@@ -576,3 +576,14 @@ func (s *HashSet[T]) MkString(sep string) string {
     })
     return result
 }
+
+// === Sorting ===
+
+// Sorted returns a mutable Array of elements sorted in natural order.
+func (s *HashSet[T]) Sorted() *Array[T] = s.ToArray().Sorted()
+
+// SortWith returns a mutable Array of elements sorted using the given comparison function.
+func (s *HashSet[T]) SortWith(less func(T, T) bool) *Array[T] = s.ToArray().SortWith(less)
+
+// SortBy returns a mutable Array of elements sorted by a key extracted from each element.
+func (s *HashSet[T]) SortBy[K comparable](f func(T) K) *Array[T] = s.ToArray().SortBy(f)

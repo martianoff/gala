@@ -261,12 +261,23 @@ nums.ZipWithIndex()
 // List(Tuple(1, 0), Tuple(2, 1), Tuple(3, 2))
 ```
 
+### Sorting
+
+```gala
+val list = ListOf("banana", "apple", "cherry")
+
+list.Sorted()                              // List("apple", "banana", "cherry")
+list.SortWith((a, b) => a > b)             // List("cherry", "banana", "apple")
+list.SortBy((s) => len(s))                 // List("apple", "banana", "cherry")
+```
+
 ### Conversion
 
 ```gala
 val list = ListOf(1, 2, 3)
 
 list.ToSlice()    // []int{1, 2, 3}
+list.ToArray()    // Array(1, 2, 3)
 list.String()     // "List(1, 2, 3)"
 list.MkString(", ")  // "1, 2, 3"
 ```
@@ -479,6 +490,22 @@ arr.Sliding(3)
 // Array(Array(1, 2, 3), Array(2, 3, 4), Array(3, 4, 5))
 ```
 
+### Sorting
+
+```gala
+val arr = ArrayOf(3, 1, 4, 1, 5, 9)
+
+// Natural ordering
+arr.Sorted()                                // Array(1, 1, 3, 4, 5, 9)
+
+// Custom comparator (descending)
+arr.SortWith((a, b) => a > b)               // Array(9, 5, 4, 3, 1, 1)
+
+// Sort by key function
+val arr2 = ArrayOf(1, 9, 3, 7, 5)
+arr2.SortBy((x) => x)                       // Array(1, 3, 5, 7, 9)
+```
+
 ### Conversion
 
 ```gala
@@ -643,6 +670,18 @@ set.Exists((x int) => x > 5)           // true
 set.ForAll((x int) => x % 2 == 0)      // true
 set.Count((x int) => x > 4)            // 2
 set.Find((x int) => x > 5)             // Some(6) or Some(8)
+```
+
+### Sorting
+
+Returns `Array[T]` since sets have no inherent order.
+
+```gala
+val set = HashSetOf(5, 3, 1)
+
+set.Sorted()                                // Array(1, 3, 5)
+set.SortWith((a, b) => a > b)               // Array(5, 3, 1)
+set.SortBy((x) => x)                        // Array(1, 3, 5)
 ```
 
 ### Conversion
@@ -853,6 +892,18 @@ set.Exists((x int) => x > 5)           // true
 set.ForAll((x int) => x % 2 == 0)      // true
 set.Count((x int) => x > 4)            // 2
 set.Find((x int) => x > 5)             // Some(6) - first in sorted order
+```
+
+### Sorting
+
+Returns `Array[T]`. `Sorted()` returns elements in natural order (already sorted by tree structure).
+
+```gala
+val set = TreeSetOf(30, 10, 20)
+
+set.Sorted()                                // Array(10, 20, 30)
+set.SortWith((a, b) => a > b)               // Array(30, 20, 10)
+set.SortBy((x) => x)                        // Array(10, 20, 30)
 ```
 
 ### Conversion

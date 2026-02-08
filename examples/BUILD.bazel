@@ -664,6 +664,33 @@ gala_test(
     ],
 )
 
+# Sorted API on collections
+gala_test(
+    name = "sorted",
+    src = "sorted.gala",
+    expected = "sorted.out",
+    deps = [
+        "//collection_immutable",
+    ],
+)
+
+# Sorted API on mutable collections
+gala_test(
+    name = "sorted_mutable",
+    src = "sorted_mutable.gala",
+    expected = "sorted_mutable.out",
+    deps = [
+        "//collection_mutable",
+    ],
+)
+
+# Tuple String() methods
+gala_test(
+    name = "tuple_string",
+    src = "tuple_string.gala",
+    expected = "tuple_string.out",
+)
+
 # Multi-file binary test (FIX-004 verification)
 gala_test(
     name = "multi_file",

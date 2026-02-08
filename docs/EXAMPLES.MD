@@ -371,6 +371,45 @@ func main() {
 }
 ```
 
+## Sorted API - Sorting Collections
+
+All collection types support `Sorted()`, `SortWith()`, and `SortBy()` for flexible sorting:
+
+```gala
+package main
+
+import "fmt"
+import . "martianoff/gala/collection_immutable"
+
+func main() {
+    // Array.Sorted - natural ordering
+    val arr = ArrayOf(3, 1, 4, 1, 5, 9)
+    fmt.Println(arr.Sorted())                    // Array(1, 1, 3, 4, 5, 9)
+
+    // Array.SortWith - custom comparator (descending)
+    fmt.Println(arr.SortWith((a, b) => a > b))   // Array(9, 5, 4, 3, 1, 1)
+
+    // Array.SortBy - sort by key function
+    val arr2 = ArrayOf(1, 9, 3, 7, 5)
+    fmt.Println(arr2.SortBy((x) => x))           // Array(1, 3, 5, 7, 9)
+
+    // List.Sorted
+    val list = ListOf("banana", "apple", "cherry")
+    fmt.Println(list.Sorted())                   // List(apple, banana, cherry)
+
+    // TreeSet.Sorted (already sorted)
+    val tree = TreeSetOf(30, 10, 20)
+    fmt.Println(tree.Sorted())                   // Array(10, 20, 30)
+
+    // HashSet.Sorted
+    val set = HashSetOf(5, 3, 1)
+    fmt.Println(set.Sorted())                    // Array(1, 3, 5)
+
+    // Empty collection
+    fmt.Println(EmptyArray[int]().Sorted())      // Array()
+}
+```
+
 ## More Examples
 
 You can find more examples in the `examples/` directory of the project:
@@ -385,3 +424,4 @@ You can find more examples in the `examples/` directory of the project:
 - `either_map_flatmap.gala`: Demonstrates `Either.Map` and `Either.FlatMap` chaining.
 - `unary_minus.gala`: Demonstrates unary operators (`-`, `!`).
 - `sealed_wildcard.gala`: Demonstrates wildcard `case _ =>` catch-all in sealed type matching.
+- `sorted.gala`: Demonstrates `Sorted()`, `SortWith()`, and `SortBy()` on collections.

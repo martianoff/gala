@@ -1,0 +1,32 @@
+package main
+
+import "fmt"
+import . "martianoff/gala/collection_immutable"
+
+func main() {
+    // Array.Sorted
+    val arr = ArrayOf(3, 1, 4, 1, 5, 9)
+    fmt.Println(arr.Sorted())
+
+    // Array.SortWith (descending)
+    fmt.Println(arr.SortWith((a, b) => a > b))
+
+    // Array.SortBy (by absolute distance from 5)
+    val arr2 = ArrayOf(1, 9, 3, 7, 5)
+    fmt.Println(arr2.SortBy((x) => x))
+
+    // List.Sorted
+    val list = ListOf("banana", "apple", "cherry")
+    fmt.Println(list.Sorted())
+
+    // TreeSet.Sorted (already sorted)
+    val tree = TreeSetOf(30, 10, 20)
+    fmt.Println(tree.Sorted())
+
+    // HashSet.Sorted
+    val set = HashSetOf(5, 3, 1)
+    fmt.Println(set.Sorted())
+
+    // Empty
+    fmt.Println(EmptyArray[int]().Sorted())
+}

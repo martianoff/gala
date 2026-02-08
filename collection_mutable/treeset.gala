@@ -1018,3 +1018,14 @@ func (s *TreeSet[T]) MkString(sep string) string {
     })
     return result
 }
+
+// === Sorting ===
+
+// Sorted returns a mutable Array of elements in natural sorted order (already sorted).
+func (s *TreeSet[T]) Sorted() *Array[T] = s.ToArray()
+
+// SortWith returns a mutable Array of elements sorted using the given comparison function.
+func (s *TreeSet[T]) SortWith(less func(T, T) bool) *Array[T] = s.ToArray().SortWith(less)
+
+// SortBy returns a mutable Array of elements sorted by a key extracted from each element.
+func (s *TreeSet[T]) SortBy[K comparable](f func(T) K) *Array[T] = s.ToArray().SortBy(f)

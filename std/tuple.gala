@@ -1,10 +1,15 @@
 package std
 
+import "fmt"
+
 // Tuple represents a pair of values.
 type Tuple[A any, B any] struct {
     V1 A
     V2 B
 }
+
+func (t Tuple[A, B]) String() string =
+    fmt.Sprintf("(%v, %v)", t.V1, t.V2)
 
 // Tuple3 represents a triple of values.
 type Tuple3[A any, B any, C any] struct {
@@ -13,6 +18,9 @@ type Tuple3[A any, B any, C any] struct {
     V3 C
 }
 
+func (t Tuple3[A, B, C]) String() string =
+    fmt.Sprintf("(%v, %v, %v)", t.V1, t.V2, t.V3)
+
 // Tuple4 represents a quadruple of values.
 type Tuple4[A any, B any, C any, D any] struct {
     V1 A
@@ -20,6 +28,9 @@ type Tuple4[A any, B any, C any, D any] struct {
     V3 C
     V4 D
 }
+
+func (t Tuple4[A, B, C, D]) String() string =
+    fmt.Sprintf("(%v, %v, %v, %v)", t.V1, t.V2, t.V3, t.V4)
 
 // Tuple5 represents a quintuple of values.
 type Tuple5[A any, B any, C any, D any, E any] struct {
@@ -30,6 +41,9 @@ type Tuple5[A any, B any, C any, D any, E any] struct {
     V5 E
 }
 
+func (t Tuple5[A, B, C, D, E]) String() string =
+    fmt.Sprintf("(%v, %v, %v, %v, %v)", t.V1, t.V2, t.V3, t.V4, t.V5)
+
 // Tuple6 represents a sextuple of values.
 type Tuple6[A any, B any, C any, D any, E any, F any] struct {
     V1 A
@@ -39,6 +53,9 @@ type Tuple6[A any, B any, C any, D any, E any, F any] struct {
     V5 E
     V6 F
 }
+
+func (t Tuple6[A, B, C, D, E, F]) String() string =
+    fmt.Sprintf("(%v, %v, %v, %v, %v, %v)", t.V1, t.V2, t.V3, t.V4, t.V5, t.V6)
 
 // Tuple7 represents a septuple of values.
 type Tuple7[A any, B any, C any, D any, E any, F any, G any] struct {
@@ -51,6 +68,9 @@ type Tuple7[A any, B any, C any, D any, E any, F any, G any] struct {
     V7 G
 }
 
+func (t Tuple7[A, B, C, D, E, F, G]) String() string =
+    fmt.Sprintf("(%v, %v, %v, %v, %v, %v, %v)", t.V1, t.V2, t.V3, t.V4, t.V5, t.V6, t.V7)
+
 // Tuple8 represents an octuple of values.
 type Tuple8[A any, B any, C any, D any, E any, F any, G any, H any] struct {
     V1 A
@@ -62,6 +82,9 @@ type Tuple8[A any, B any, C any, D any, E any, F any, G any, H any] struct {
     V7 G
     V8 H
 }
+
+func (t Tuple8[A, B, C, D, E, F, G, H]) String() string =
+    fmt.Sprintf("(%v, %v, %v, %v, %v, %v, %v, %v)", t.V1, t.V2, t.V3, t.V4, t.V5, t.V6, t.V7, t.V8)
 
 // Tuple9 represents a nonuple of values.
 type Tuple9[A any, B any, C any, D any, E any, F any, G any, H any, I any] struct {
@@ -76,6 +99,9 @@ type Tuple9[A any, B any, C any, D any, E any, F any, G any, H any, I any] struc
     V9 I
 }
 
+func (t Tuple9[A, B, C, D, E, F, G, H, I]) String() string =
+    fmt.Sprintf("(%v, %v, %v, %v, %v, %v, %v, %v, %v)", t.V1, t.V2, t.V3, t.V4, t.V5, t.V6, t.V7, t.V8, t.V9)
+
 // Tuple10 represents a decuple of values.
 type Tuple10[A any, B any, C any, D any, E any, F any, G any, H any, I any, J any] struct {
     V1 A
@@ -89,3 +115,6 @@ type Tuple10[A any, B any, C any, D any, E any, F any, G any, H any, I any, J an
     V9 I
     V10 J
 }
+
+func (t Tuple10[A, B, C, D, E, F, G, H, I, J]) String() string =
+    fmt.Sprintf("(%v, %v, %v, %v, %v, %v, %v, %v, %v, %v)", t.V1, t.V2, t.V3, t.V4, t.V5, t.V6, t.V7, t.V8, t.V9, t.V10)

@@ -272,12 +272,30 @@ var arr = ArrayOf(1, 2, 2, 3, 3, 3)
 arr.Distinct()  // Array(1, 2, 3)
 ```
 
+### Sorting
+
+Sorting returns a new `*Array[T]`, leaving the original unchanged.
+
+```gala
+var arr = ArrayOf(3, 1, 4, 1, 5, 9)
+
+// Natural ordering
+arr.Sorted()                                // Array(1, 1, 3, 4, 5, 9)
+
+// Custom comparator (descending)
+arr.SortWith((a, b) => a > b)               // Array(9, 5, 4, 3, 1, 1)
+
+// Sort by key function
+arr.SortBy((x) => x)                        // Array(1, 1, 3, 4, 5, 9)
+```
+
 ### Conversion
 
 ```gala
 var arr = ArrayOf(1, 2, 3)
 
 arr.ToSlice()       // []int{1, 2, 3}
+arr.ToList()        // List(1, 2, 3)
 arr.String()        // "Array(1, 2, 3)"
 arr.MkString(", ")  // "1, 2, 3"
 ```
@@ -405,12 +423,25 @@ list.ForAll((x int) => x > 0) // true
 list.Count((x int) => x == 2) // 2
 ```
 
+### Sorting
+
+Sorting returns a new `*List[T]`.
+
+```gala
+var list = ListOf("banana", "apple", "cherry")
+
+list.Sorted()                              // List("apple", "banana", "cherry")
+list.SortWith((a, b) => a > b)             // List("cherry", "banana", "apple")
+list.SortBy((s) => len(s))                 // List("apple", "banana", "cherry")
+```
+
 ### Conversion
 
 ```gala
 var list = ListOf(1, 2, 3)
 
 list.ToSlice()       // []int{1, 2, 3}
+list.ToArray()       // Array(1, 2, 3)
 list.String()        // "List(1, 2, 3)"
 list.MkString(", ")  // "1, 2, 3"
 ```
@@ -573,6 +604,18 @@ var s = HashSetOf(1, 2, 3)
 
 s.Head()                  // any element (order not guaranteed)
 s.HeadOption()            // Some(element) or None for empty set
+```
+
+### Sorting
+
+Returns `*Array[T]` since sets have no inherent order.
+
+```gala
+var s = HashSetOf(5, 3, 1)
+
+s.Sorted()                                // Array(1, 3, 5)
+s.SortWith((a, b) => a > b)               // Array(5, 3, 1)
+s.SortBy((x) => x)                        // Array(1, 3, 5)
 ```
 
 ### Conversion
@@ -782,6 +825,18 @@ s.Exists((x int) => x > 4)    // true
 s.ForAll((x int) => x > 0)    // true
 s.Count((x int) => x % 2 == 0) // 2
 s.Find((x int) => x > 3)      // Some(4) - first in sorted order
+```
+
+### Sorting
+
+Returns `*Array[T]`. `Sorted()` returns elements in natural order (already sorted by tree structure).
+
+```gala
+var s = TreeSetOf(30, 10, 20)
+
+s.Sorted()                                // Array(10, 20, 30)
+s.SortWith((a, b) => a > b)               // Array(30, 20, 10)
+s.SortBy((x) => x)                        // Array(10, 20, 30)
 ```
 
 ### Conversion

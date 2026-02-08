@@ -1,5 +1,7 @@
 package std
 
+import "fmt"
+
 // Ordered is an interface that types can implement to provide custom ordering.
 // Used by TreeSet and TreeMap for sorted collections.
 //
@@ -67,4 +69,124 @@ func CompareString(a string, b string) int {
         return 1
     }
     return 0
+}
+
+// CompareValues compares two values of the same type for natural ordering.
+// Handles all primitive types automatically. Custom types must implement Ordered[T].
+// Panics if the type does not support ordering.
+func CompareValues[T any](a T, b T) int {
+    val va any = a
+    val vb any = b
+    return va match {
+        case ai: int => compareValuesInts(ai, vb)
+        case as: string => compareValuesStrings(as, vb)
+        case ai64: int64 => compareValuesInt64s(ai64, vb)
+        case ai32: int32 => compareValuesInt32s(ai32, vb)
+        case af64: float64 => compareValuesFloat64s(af64, vb)
+        case af32: float32 => compareValuesFloat32s(af32, vb)
+        case au: uint => compareValuesUints(au, vb)
+        case au64: uint64 => compareValuesUint64s(au64, vb)
+        case au32: uint32 => compareValuesUint32s(au32, vb)
+        case ai16: int16 => compareValuesInt16s(ai16, vb)
+        case ai8: int8 => compareValuesInt8s(ai8, vb)
+        case au16: uint16 => compareValuesUint16s(au16, vb)
+        case au8: uint8 => compareValuesUint8s(au8, vb)
+        case ao: Ordered[T] => ao.Compare(b)
+        case _ => panicNotOrderable(va)
+    }
+}
+
+func compareValuesInts(a int, vb any) int {
+    val b = vb match { case bi: int => bi case _ => 0 }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func compareValuesStrings(a string, vb any) int {
+    val b = vb match { case bs: string => bs case _ => "" }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func compareValuesInt64s(a int64, vb any) int {
+    val b = vb match { case bi: int64 => bi case _ => int64(0) }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func compareValuesInt32s(a int32, vb any) int {
+    val b = vb match { case bi: int32 => bi case _ => int32(0) }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func compareValuesInt16s(a int16, vb any) int {
+    val b = vb match { case bi: int16 => bi case _ => int16(0) }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func compareValuesInt8s(a int8, vb any) int {
+    val b = vb match { case bi: int8 => bi case _ => int8(0) }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func compareValuesFloat64s(a float64, vb any) int {
+    val b = vb match { case bf: float64 => bf case _ => float64(0) }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func compareValuesFloat32s(a float32, vb any) int {
+    val b = vb match { case bf: float32 => bf case _ => float32(0) }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func compareValuesUints(a uint, vb any) int {
+    val b = vb match { case bu: uint => bu case _ => uint(0) }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func compareValuesUint64s(a uint64, vb any) int {
+    val b = vb match { case bu: uint64 => bu case _ => uint64(0) }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func compareValuesUint32s(a uint32, vb any) int {
+    val b = vb match { case bu: uint32 => bu case _ => uint32(0) }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func compareValuesUint16s(a uint16, vb any) int {
+    val b = vb match { case bu: uint16 => bu case _ => uint16(0) }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func compareValuesUint8s(a uint8, vb any) int {
+    val b = vb match { case bu: uint8 => bu case _ => uint8(0) }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func panicNotOrderable(v any) int {
+    panic(fmt.Sprintf("CompareValues: type %T does not support ordering", v))
 }

@@ -1,0 +1,45 @@
+package main
+
+import "fmt"
+import . "martianoff/gala/collection_mutable"
+
+func main() {
+    // Array.Sorted
+    var arr = ArrayOf(3, 1, 4, 1, 5, 9)
+    fmt.Println(arr.Sorted())
+
+    // Array.SortWith (descending)
+    fmt.Println(arr.SortWith((a, b) => a > b))
+
+    // Array.SortBy
+    var arr2 = ArrayOf(1, 9, 3, 7, 5)
+    fmt.Println(arr2.SortBy((x) => x))
+
+    // List.Sorted
+    var list = ListOf("banana", "apple", "cherry")
+    fmt.Println(list.Sorted())
+
+    // List.SortWith (descending)
+    fmt.Println(list.SortWith((a, b) => a > b))
+
+    // TreeSet.Sorted (already sorted)
+    var tree = TreeSetOf(30, 10, 20)
+    fmt.Println(tree.Sorted())
+
+    // HashSet.Sorted
+    var set = HashSetOf(5, 3, 1)
+    fmt.Println(set.Sorted())
+
+    // HashMap.SortBy (by key)
+    var m = EmptyHashMap[int, string]()
+    m.Put(3, "three")
+    m.Put(1, "one")
+    m.Put(2, "two")
+    fmt.Println(m.SortBy((t) => t.V1))
+
+    // Empty
+    fmt.Println(EmptyArray[int]().Sorted())
+
+    // Original unchanged after sorting
+    fmt.Println(arr)
+}

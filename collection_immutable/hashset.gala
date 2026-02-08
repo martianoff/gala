@@ -614,6 +614,17 @@ func (s HashSet[T]) MkString(sep string) string {
     return result
 }
 
+// === Sorting ===
+
+// Sorted returns an array of elements sorted in natural order.
+func (s HashSet[T]) Sorted() Array[T] = s.ToArray().Sorted()
+
+// SortWith returns an array of elements sorted using the given comparison function.
+func (s HashSet[T]) SortWith(less func(T, T) bool) Array[T] = s.ToArray().SortWith(less)
+
+// SortBy returns an array of elements sorted by a key extracted from each element.
+func (s HashSet[T]) SortBy[K comparable](f func(T) K) Array[T] = s.ToArray().SortBy(f)
+
 // HashSetEmpty extractor for pattern matching on empty sets.
 type HashSetEmpty struct {}
 func (hse HashSetEmpty) Unapply(s any) Option[bool] = s match {

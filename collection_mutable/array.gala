@@ -2,6 +2,8 @@ package collection_mutable
 
 import (
     "fmt"
+    "sort"
+    . "martianoff/gala/std"
     "martianoff/gala/go_interop"
 )
 
@@ -649,6 +651,41 @@ func (a *Array[T]) MkString(sep string) string {
         result = result + fmt.Sprintf("%v", a.elements[i])
     }
     return result
+}
+
+// ToList converts the array to a mutable List.
+func (a *Array[T]) ToList() *List[T] {
+    var result = EmptyList[T]()
+    for i := 0; i < len(a.elements); i++ {
+        result.Append(a.elements[i])
+    }
+    return result
+}
+
+// === Sorting ===
+
+// Sorted returns a new Array with elements sorted in natural order.
+// Elements must be primitive types or implement std.Ordered[T].
+func (a *Array[T]) Sorted() *Array[T] {
+    var sorted = ArrayFromSlice(a.ToGoSlice())
+    sort.Slice(sorted.elements, (i int, j int) => CompareValues(sorted.elements[i], sorted.elements[j]) < 0)
+    return sorted
+}
+
+// SortWith returns a new Array sorted using the given comparison function.
+// The function should return true if x should come before y.
+func (a *Array[T]) SortWith(less func(T, T) bool) *Array[T] {
+    var sorted = ArrayFromSlice(a.ToGoSlice())
+    sort.Slice(sorted.elements, (i int, j int) => less(sorted.elements[i], sorted.elements[j]))
+    return sorted
+}
+
+// SortBy returns a new Array sorted by a key extracted from each element.
+// Keys must be primitive types or implement std.Ordered.
+func (a *Array[T]) SortBy[K comparable](f func(T) K) *Array[T] {
+    var sorted = ArrayFromSlice(a.ToGoSlice())
+    sort.Slice(sorted.elements, (i int, j int) => CompareValues(f(sorted.elements[i]), f(sorted.elements[j])) < 0)
+    return sorted
 }
 
 // SeqDrop implements the Seq interface for sequence pattern matching.

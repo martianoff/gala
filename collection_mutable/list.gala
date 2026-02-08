@@ -2,6 +2,7 @@ package collection_mutable
 
 import (
     "fmt"
+    . "martianoff/gala/std"
     "martianoff/gala/go_interop"
 )
 
@@ -780,6 +781,17 @@ func (l *List[T]) MkString(sep string) string {
     }
     return result
 }
+
+// === Sorting ===
+
+// Sorted returns a new List with elements sorted in natural order.
+func (l *List[T]) Sorted() *List[T] = l.ToArray().Sorted().ToList()
+
+// SortWith returns a new List sorted using the given comparison function.
+func (l *List[T]) SortWith(less func(T, T) bool) *List[T] = l.ToArray().SortWith(less).ToList()
+
+// SortBy returns a new List sorted by a key extracted from each element.
+func (l *List[T]) SortBy[K comparable](f func(T) K) *List[T] = l.ToArray().SortBy(f).ToList()
 
 // SeqDrop implements the Seq interface for sequence pattern matching.
 func (l *List[T]) SeqDrop(n int) any = l.Drop(n)

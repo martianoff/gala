@@ -2,6 +2,7 @@ package collection_immutable
 
 import (
     "fmt"
+    . "martianoff/gala/std"
     "martianoff/gala/go_interop"
 )
 
@@ -1009,6 +1010,59 @@ func (a Array[T]) MkString(sep string) string {
     }
     return result
 }
+
+// === Sorting ===
+
+// arrayMergeSort sorts an array using merge sort with the given comparison function.
+func arrayMergeSort[T any](arr Array[T], less func(T, T) bool) Array[T] {
+    if arr.Size() <= 1 {
+        return arr
+    }
+    val mid = arr.Size() / 2
+    val left = arrayMergeSort(arr.Take(mid), less)
+    val right = arrayMergeSort(arr.Drop(mid), less)
+    return arrayMerge(left, right, less)
+}
+
+// arrayMerge merges two sorted arrays into one sorted array.
+func arrayMerge[T any](left Array[T], right Array[T], less func(T, T) bool) Array[T] {
+    var builder = newArrayBuilder[T]()
+    var i = 0
+    var j = 0
+    for i < left.Size() && j < right.Size() {
+        if less(left.Get(i), right.Get(j)) {
+            builder.Add(left.Get(i))
+            i = i + 1
+        } else {
+            builder.Add(right.Get(j))
+            j = j + 1
+        }
+    }
+    for i < left.Size() {
+        builder.Add(left.Get(i))
+        i = i + 1
+    }
+    for j < right.Size() {
+        builder.Add(right.Get(j))
+        j = j + 1
+    }
+    return builder.Result()
+}
+
+// Sorted returns a new array with elements sorted in natural order.
+// Elements must be primitive types or implement std.Ordered[T].
+func (a Array[T]) Sorted() Array[T] =
+    arrayMergeSort(a, (x T, y T) => CompareValues(x, y) < 0)
+
+// SortWith returns a new array sorted using the given comparison function.
+// The function should return true if x should come before y.
+func (a Array[T]) SortWith(less func(T, T) bool) Array[T] =
+    arrayMergeSort(a, less)
+
+// SortBy returns a new array sorted by a key extracted from each element.
+// Keys must be primitive types or implement std.Ordered.
+func (a Array[T]) SortBy[K comparable](f func(T) K) Array[T] =
+    arrayMergeSort(a, (x T, y T) => CompareValues(f(x), f(y)) < 0)
 
 // SeqDrop implements the Seq interface for sequence pattern matching.
 // Returns the array with the first n elements removed.

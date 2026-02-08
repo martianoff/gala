@@ -1,0 +1,25 @@
+package main
+
+import "fmt"
+
+func main() {
+    // Tuple (2 elements)
+    val t2 = (1, "one")
+    fmt.Println(t2)
+
+    // Tuple3
+    val t3 = (1, "two", 3.0)
+    fmt.Println(t3)
+
+    // Tuple4
+    val t4 = (1, 2, 3, 4)
+    fmt.Println(t4)
+
+    // Tuple5
+    val t5 = ("a", "b", "c", "d", "e")
+    fmt.Println(t5)
+
+    // Nested tuple
+    val nested = ((1, 2), (3, 4))
+    fmt.Println(nested)
+}
