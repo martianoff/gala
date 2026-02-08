@@ -1,0 +1,33 @@
+package main
+
+import "fmt"
+
+// Sealed type where variants share field names with different types.
+// "Value" appears in IntVal (int) and StrVal (string) - requires prefixing.
+// "Label" appears only in Labeled - no conflict, no prefixing.
+sealed type Token {
+    case IntVal(Value int)
+    case StrVal(Value string)
+    case Labeled(Label string, Value float64)
+}
+
+func describe(t Token) string = t match {
+    case IntVal(v) => fmt.Sprintf("int:%d", v)
+    case StrVal(v) => fmt.Sprintf("str:%s", v)
+    case Labeled(lbl, v) => fmt.Sprintf("labeled:%s=%.1f", lbl, v)
+}
+
+func main() {
+    fmt.Println(describe(IntVal(42)))
+    fmt.Println(describe(StrVal("hello")))
+    fmt.Println(describe(Labeled("pi", 3.14)))
+
+    // Verify isXxx discriminators
+    val a = IntVal(1)
+    val b = StrVal("x")
+    val c = Labeled("y", 2.0)
+    fmt.Println(a.isIntVal())
+    fmt.Println(a.isStrVal())
+    fmt.Println(b.isStrVal())
+    fmt.Println(c.isLabeled())
+}

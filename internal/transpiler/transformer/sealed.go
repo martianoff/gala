@@ -18,9 +18,10 @@ type sealedVariantInfo struct {
 }
 
 type sealedFieldInfo struct {
-	name        string
-	typeCtx     grammar.ITypeContext
-	isRecursive bool // true if field type references the parent sealed type (requires pointer indirection)
+	name            string
+	structFieldName string // Go struct field name (may be prefixed with variant name to avoid collisions)
+	typeCtx         grammar.ITypeContext
+	isRecursive     bool // true if field type references the parent sealed type (requires pointer indirection)
 }
 
 func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedTypeDeclarationContext) ([]ast.Decl, error) {
@@ -50,9 +51,9 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 		}()
 	}
 
-	// Parse all variants
+	// Parse all variants (two passes: first collect, then resolve field name conflicts)
 	var variants []sealedVariantInfo
-	allFieldTypes := make(map[string]string) // field name -> type text (for shared field detection)
+	allFieldTypes := make(map[string]map[string]bool) // field name -> set of type texts (for conflict detection)
 	for i, caseCtx := range ctx.AllSealedCase() {
 		sc := caseCtx.(*grammar.SealedCaseContext)
 		vi := sealedVariantInfo{
@@ -67,14 +68,10 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 				fc := fieldCtx.(*grammar.SealedCaseFieldContext)
 				fieldName := fc.Identifier().GetText()
 				fieldTypeText := fc.Type_().GetText()
-				if existingType, exists := allFieldTypes[fieldName]; exists {
-					if existingType != fieldTypeText {
-						return nil, fmt.Errorf("sealed type %s: duplicate field name %q across variants with different types (%s vs %s)", name, fieldName, existingType, fieldTypeText)
-					}
-					// Same name and type: shared field, still add to variant's fields for Apply/Unapply
-				} else {
-					allFieldTypes[fieldName] = fieldTypeText
+				if allFieldTypes[fieldName] == nil {
+					allFieldTypes[fieldName] = make(map[string]bool)
 				}
+				allFieldTypes[fieldName][fieldTypeText] = true
 				vi.fields = append(vi.fields, sealedFieldInfo{
 					name:        fieldName,
 					typeCtx:     fc.Type_(),
@@ -83,6 +80,27 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 			}
 		}
 		variants = append(variants, vi)
+	}
+
+	// Detect field name conflicts: a field name has a conflict when it appears across
+	// variants with different types. In that case, prefix all instances with the variant name.
+	conflictingFields := make(map[string]bool) // field names that need variant-name prefixing
+	for fieldName, typeSet := range allFieldTypes {
+		if len(typeSet) > 1 {
+			conflictingFields[fieldName] = true
+		}
+	}
+
+	// Second pass: compute structFieldName for each field in each variant
+	for vi := range variants {
+		for fi := range variants[vi].fields {
+			f := &variants[vi].fields[fi]
+			if conflictingFields[f.name] {
+				f.structFieldName = variants[vi].name + f.name // e.g., "AddLeft", "SubLeft"
+			} else {
+				f.structFieldName = f.name // no conflict, use original name
+			}
+		}
 	}
 
 	var decls []ast.Decl
@@ -96,14 +114,14 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 		t.structFieldTypes[name] = make(map[string]transpiler.Type)
 	}
 
-	addedFields := make(map[string]bool)    // track fields already added to parent struct
-	recursiveFields := make(map[string]bool) // track which fields are self-referential
+	addedFields := make(map[string]bool)    // track struct field names already added to parent struct
+	recursiveFields := make(map[string]bool) // track which struct field names are self-referential
 	for _, vi := range variants {
 		for _, f := range vi.fields {
-			if addedFields[f.name] {
+			if addedFields[f.structFieldName] {
 				continue // shared field already added by a previous variant
 			}
-			addedFields[f.name] = true
+			addedFields[f.structFieldName] = true
 
 			typ, err := t.transformType(f.typeCtx)
 			if err != nil {
@@ -117,7 +135,7 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 				// In Go, Immutable[Expr] where Expr contains Immutable[Expr] is illegal
 				// because it creates an infinitely-sized value type.
 				// Instead, store as *Expr (pointer to parent type).
-				recursiveFields[f.name] = true
+				recursiveFields[f.structFieldName] = true
 				fieldType = &ast.StarExpr{X: typ}
 			} else {
 				// Normal field: wrap in Immutable[T]
@@ -128,18 +146,18 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 			}
 
 			parentFields.List = append(parentFields.List, &ast.Field{
-				Names: []*ast.Ident{ast.NewIdent(f.name)},
+				Names: []*ast.Ident{ast.NewIdent(f.structFieldName)},
 				Type:  fieldType,
 			})
 
-			fieldNames = append(fieldNames, f.name)
+			fieldNames = append(fieldNames, f.structFieldName)
 			if f.isRecursive {
 				immutFlags = append(immutFlags, false) // pointer field, not Immutable-wrapped
 			} else {
 				immutFlags = append(immutFlags, true)
-				t.immutFields[f.name] = true
+				t.immutFields[f.structFieldName] = true
 			}
-			t.structFieldTypes[name][f.name] = fType
+			t.structFieldTypes[name][f.structFieldName] = fType
 		}
 	}
 
@@ -302,24 +320,25 @@ func (t *galaASTTransformer) generateSealedApply(parentName string, vi sealedVar
 	}
 
 	// Body: construct parent struct
+	// Note: struct keys use structFieldName (may be prefixed), but parameter names use the original name
 	var elts []ast.Expr
 	for _, f := range vi.fields {
 		var valueExpr ast.Expr
-		if recursiveFields[f.name] {
+		if recursiveFields[f.structFieldName] {
 			// Recursive field: store as pointer &value
 			valueExpr = &ast.UnaryExpr{
 				Op: token.AND,
-				X:  ast.NewIdent(f.name),
+				X:  ast.NewIdent(f.name), // param name is the original (user-facing) name
 			}
 		} else {
 			// Normal field: wrap in NewImmutable
 			valueExpr = &ast.CallExpr{
 				Fun:  t.stdIdent("NewImmutable"),
-				Args: []ast.Expr{ast.NewIdent(f.name)},
+				Args: []ast.Expr{ast.NewIdent(f.name)}, // param name is the original name
 			}
 		}
 		elts = append(elts, &ast.KeyValueExpr{
-			Key:   ast.NewIdent(f.name),
+			Key:   ast.NewIdent(f.structFieldName), // struct field may be prefixed
 			Value: valueExpr,
 		})
 	}
@@ -441,7 +460,7 @@ func (t *galaASTTransformer) generateSealedUnapply(parentName string, vi sealedV
 			Index: fieldType,
 		}
 
-		fieldAccess := sealedFieldAccessExpr(paramName, f.name, recursiveFields[f.name])
+		fieldAccess := sealedFieldAccessExpr(paramName, f.structFieldName, recursiveFields[f.structFieldName])
 
 		return &ast.FuncDecl{
 			Recv: &ast.FieldList{
@@ -541,7 +560,7 @@ func (t *galaASTTransformer) generateSealedUnapply(parentName string, vi sealedV
 		// Build tuple constructor args: v.Field.Get() or *v.Field for recursive fields
 		var tupleArgs []ast.Expr
 		for _, f := range vi.fields {
-			tupleArgs = append(tupleArgs, sealedFieldAccessExpr(paramName, f.name, recursiveFields[f.name]))
+			tupleArgs = append(tupleArgs, sealedFieldAccessExpr(paramName, f.structFieldName, recursiveFields[f.structFieldName]))
 		}
 
 		// Some[TupleN[...]](TupleN[...]{V1: ..., V2: ...})
@@ -706,7 +725,7 @@ func (t *galaASTTransformer) generateSealedStringMethod(parentName string, varia
 			var args []ast.Expr
 			for _, f := range vi.fields {
 				formatParts = append(formatParts, "%v")
-				args = append(args, sealedFieldAccessExpr("s", f.name, recursiveFields[f.name]))
+				args = append(args, sealedFieldAccessExpr("s", f.structFieldName, recursiveFields[f.structFieldName]))
 			}
 			formatStr := fmt.Sprintf(`"%s(%s)"`, vi.name, strings.Join(formatParts, ", "))
 			allArgs := append([]ast.Expr{

@@ -536,6 +536,12 @@ gala_test(
     expected = "sealed_recursive.out",
 )
 
+gala_test(
+    name = "sealed_field_clash",
+    src = "sealed_field_clash.gala",
+    expected = "sealed_field_clash.out",
+)
+
 # Documentation verification tests (GALA.MD)
 gala_test(
     name = "doc_verify_gala_md_basics",
