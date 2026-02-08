@@ -27,6 +27,9 @@ type Workspace struct {
 	// GenDir is where generated .go files are placed.
 	GenDir string
 
+	// DepsDir is where transpiled GALA dependency .go files are placed.
+	DepsDir string
+
 	// GoModPath is the path to the generated go.mod file.
 	GoModPath string
 
@@ -53,6 +56,7 @@ func NewWorkspace(config *Config, projectDir string) (*Workspace, error) {
 		Hash:       hash,
 		Dir:        workspaceDir,
 		GenDir:     filepath.Join(workspaceDir, "gen"),
+		DepsDir:    filepath.Join(workspaceDir, "deps"),
 		GoModPath:  filepath.Join(workspaceDir, "go.mod"),
 		GoSumPath:  filepath.Join(workspaceDir, "go.sum"),
 	}, nil
@@ -75,6 +79,7 @@ func (w *Workspace) Ensure() error {
 	dirs := []string{
 		w.Dir,
 		w.GenDir,
+		w.DepsDir,
 	}
 
 	for _, dir := range dirs {
@@ -133,6 +138,19 @@ func (w *Workspace) GenFiles() ([]string, error) {
 	return files, nil
 }
 
+// CleanDeps removes all files from the deps directory.
+func (w *Workspace) CleanDeps() error {
+	if err := os.RemoveAll(w.DepsDir); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return os.MkdirAll(w.DepsDir, 0755)
+}
+
+// DepModuleDir returns the directory for a transpiled dependency module.
+func (w *Workspace) DepModuleDir(modulePath, version string) string {
+	return filepath.Join(w.DepsDir, modulePath+"@"+version)
+}
+
 // CleanGen removes all files from the gen directory.
 func (w *Workspace) CleanGen() error {
 	entries, err := os.ReadDir(w.GenDir)
@@ -172,6 +190,7 @@ func FindWorkspaceByProject(config *Config, projectDir string) (*Workspace, erro
 		Hash:       hash,
 		Dir:        workspaceDir,
 		GenDir:     filepath.Join(workspaceDir, "gen"),
+		DepsDir:    filepath.Join(workspaceDir, "deps"),
 		GoModPath:  filepath.Join(workspaceDir, "go.mod"),
 		GoSumPath:  filepath.Join(workspaceDir, "go.sum"),
 	}, nil

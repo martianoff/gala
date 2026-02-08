@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "builder.go",
         "config.go",
+        "deptranspiler.go",
         "gomod.go",
         "workspace.go",
     ],

@@ -26,10 +26,11 @@ GALA provides a dependency management system similar to Go modules, using `gala.
    - [With Bazel](#with-bazel)
 5. [Cache Structure](#5-cache-structure)
 6. [Go Dependencies](#6-go-dependencies)
-7. [Bazel Integration](#7-bazel-integration)
+7. [GALA Library Dependencies](#7-gala-library-dependencies)
+8. [Bazel Integration](#8-bazel-integration)
    - [MODULE.bazel (Bzlmod)](#modulebazel-bzlmod)
    - [BUILD Files](#build-files)
-8. [Version Constraints](#8-version-constraints)
+9. [Version Constraints](#9-version-constraints)
 
 ---
 
@@ -325,14 +326,16 @@ When you run `gala build`, GALA:
 
 1. **Creates a build workspace** at `~/.gala/build/<hash>/` (hash is derived from your project path)
 2. **Extracts the stdlib** to `~/.gala/stdlib/v<version>/`
-3. **Transpiles** your `.gala` files to `.gen.go` files in the workspace
-4. **Generates** a `go.mod` in the workspace with absolute paths to dependencies
-5. **Downloads** Go dependencies to `~/.gala/go/pkg/mod/`
-6. **Runs** `go build` to create the binary
+3. **Transpiles GALA dependencies** — any GALA library in `gala.mod` (not marked `// go`) is transpiled from `.gala` source in the module cache to `.gen.go` files in `~/.gala/build/<hash>/deps/`
+4. **Transpiles** your `.gala` files to `.gen.go` files in `~/.gala/build/<hash>/gen/`
+5. **Generates** a `go.mod` in the workspace with absolute paths to dependencies
+6. **Downloads** Go dependencies to `~/.gala/go/pkg/mod/`
+7. **Runs** `go build` to create the binary
 
 **Key benefits:**
 - Your project folder stays clean (no go.mod, no _gala folder, no .gen.go files)
 - Dependencies are cached globally
+- GALA library dependencies are automatically transpiled — no pre-compiled `.go` files needed in the module cache
 - No symlinks used (works on all platforms including Windows)
 
 ### With Bazel
@@ -353,7 +356,11 @@ All GALA caches are stored in `~/.gala/`:
 ~/.gala/
   build/                              # Build workspaces (per-project)
     <hash>/                           # Workspace for a specific project
-      gen/                            # Generated .gen.go files
+      gen/                            # Transpiled .gen.go files from your project
+      deps/                           # Transpiled GALA library dependencies
+        github.com/user/lib@v1.0.0/   # Each dep gets its own directory
+          math.gen.go                 # Transpiled Go output
+          go.mod                      # Generated go.mod for the dep
       go.mod                          # Generated go.mod with absolute paths
       go.sum                          # Generated go.sum
 
@@ -365,8 +372,8 @@ All GALA caches are stored in `~/.gala/`:
       collection_mutable/
       concurrent/
 
-  pkg/mod/                            # GALA package cache
-    github.com/example/utils@v1.2.3/  # Cached GALA modules
+  pkg/mod/                            # GALA package cache (source)
+    github.com/example/utils@v1.2.3/  # Cached GALA modules (.gala source)
 
   go/pkg/mod/                         # Go package cache (GOMODCACHE)
     github.com/google/uuid@v1.6.0/    # Cached Go modules
@@ -374,9 +381,10 @@ All GALA caches are stored in `~/.gala/`:
 
 | Directory | Purpose |
 |-----------|---------|
-| `build/<hash>/` | Per-project build workspace |
+| `build/<hash>/gen/` | Transpiled `.gen.go` files from your project |
+| `build/<hash>/deps/` | Transpiled GALA library dependencies |
 | `stdlib/v<version>/` | GALA standard library |
-| `pkg/mod/` | GALA module cache |
+| `pkg/mod/` | GALA module cache (`.gala` source files) |
 | `go/pkg/mod/` | Go module cache |
 
 ---
@@ -415,7 +423,63 @@ func GenerateID() string = uuid.New().String()
 
 ---
 
-## 7. Bazel Integration
+## 7. GALA Library Dependencies
+
+GALA projects can depend on other GALA libraries — packages written in GALA and published as `.gala` source files.
+
+### How It Works
+
+When you add a GALA dependency (without the `--go` flag), the source `.gala` files are fetched to `~/.gala/pkg/mod/`. At build time, `gala build` automatically transpiles these dependencies to Go before compiling:
+
+1. The builder scans `gala.mod` for GALA dependencies (entries without `// go`)
+2. For each dep that contains `.gala` files, the transpiler pipeline runs (parse → analyze → transform → generate)
+3. Transpiled `.gen.go` files and a `go.mod` are written to `~/.gala/build/<hash>/deps/<module>@<version>/`
+4. The project's `go.mod` uses `replace` directives pointing to the transpiled output
+5. Transitive GALA dependencies are collected recursively and transpiled as well
+
+### Multi-File Packages
+
+GALA library packages with multiple `.gala` files are fully supported. The transpiler uses `NewGalaAnalyzerWithPackageFiles` to enable cross-file type resolution within the dependency.
+
+### Transitive Dependencies
+
+Dependencies of dependencies are handled automatically:
+
+```
+your-project
+├── github.com/user/lib-a@v1.0.0       (GALA — transpiled)
+│   └── github.com/user/lib-b@v2.0.0   (GALA — transpiled)
+│       └── github.com/google/uuid      (Go — downloaded by go mod tidy)
+└── github.com/other/lib@v1.0.0        (Go — downloaded by go mod tidy)
+```
+
+- GALA deps at any depth are transpiled and their `go.mod` files are generated with correct `replace` directives
+- Go deps at any depth are collected and added to the project's `go.mod`
+- Pure Go packages in `gala.mod` (no `.gala` files in cache) are skipped — they don't need transpilation
+
+### Example
+
+```bash
+# Add a GALA library dependency
+gala mod add github.com/martianoff/gala_demo_pkg@v0.2.3
+
+# Build — the dep is transpiled automatically
+gala build -v
+```
+
+Verbose output:
+```
+Found 1 GALA dependencies to transpile
+  Transpiling dependency: github.com/martianoff/gala_demo_pkg@v0.2.3 (2 files)
+    math.gala -> math.gen.go
+    utils.gala -> utils.gen.go
+Transpiling GALA files...
+  main.gala -> main.gen.go
+```
+
+---
+
+## 8. Bazel Integration
 
 GALA provides Bazel rules for dependency management. Dependencies are declared in `gala.mod` and automatically loaded into Bazel.
 
@@ -479,7 +543,7 @@ Module paths are converted to Bazel repository names:
 
 ---
 
-## 8. Version Constraints
+## 9. Version Constraints
 
 GALA supports several version constraint syntaxes:
 

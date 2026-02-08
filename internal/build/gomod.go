@@ -46,7 +46,8 @@ var StdlibImportPaths = map[string]string{
 
 // GenerateGoMod generates a go.mod file content for the workspace.
 // It uses absolute paths to the global caches, avoiding symlinks.
-func (g *GoModGenerator) GenerateGoMod(galaMod *mod.File, stdlibVersion string) string {
+// transpiledDeps maps modulePath -> transpiled directory for GALA deps.
+func (g *GoModGenerator) GenerateGoMod(galaMod *mod.File, stdlibVersion string, transpiledDeps map[string]string) string {
 	var sb strings.Builder
 
 	// Header
@@ -76,8 +77,8 @@ func (g *GoModGenerator) GenerateGoMod(galaMod *mod.File, stdlibVersion string) 
 		}
 	}
 
-	// Collect transitive Go dependencies from GALA packages
-	transitiveGoDeps := g.collectTransitiveGoDeps(galaReqs)
+	// Collect transitive dependencies from GALA packages
+	transitiveGoDeps, transitiveGalaDeps := g.collectTransitiveDeps(galaReqs)
 	for path, version := range transitiveGoDeps {
 		// Don't duplicate if already in goReqs
 		found := false
@@ -89,6 +90,19 @@ func (g *GoModGenerator) GenerateGoMod(galaMod *mod.File, stdlibVersion string) 
 		}
 		if !found {
 			goReqs = append(goReqs, mod.Require{Path: path, Version: version})
+		}
+	}
+	// Add transitive GALA deps
+	for _, req := range transitiveGalaDeps {
+		found := false
+		for _, existing := range galaReqs {
+			if existing.Path == req.Path {
+				found = true
+				break
+			}
+		}
+		if !found {
+			galaReqs = append(galaReqs, req)
 		}
 	}
 
@@ -129,8 +143,16 @@ func (g *GoModGenerator) GenerateGoMod(galaMod *mod.File, stdlibVersion string) 
 
 	// GALA package replaces
 	for _, req := range galaReqs {
+		if transpiledDeps != nil {
+			if dir, ok := transpiledDeps[req.Path]; ok {
+				// Use transpiled directory in workspace
+				absPath := filepath.ToSlash(dir)
+				sb.WriteString(fmt.Sprintf("replace %s => %s\n", req.Path, absPath))
+				continue
+			}
+		}
+		// Fallback to source cache (pure Go package or no transpilation needed)
 		absPath := g.config.GalaModulePath(req.Path, req.Version)
-		// Convert to forward slashes for go.mod compatibility
 		absPath = filepath.ToSlash(absPath)
 		sb.WriteString(fmt.Sprintf("replace %s => %s\n", req.Path, absPath))
 	}
@@ -140,40 +162,56 @@ func (g *GoModGenerator) GenerateGoMod(galaMod *mod.File, stdlibVersion string) 
 	return sb.String()
 }
 
-// collectTransitiveGoDeps scans GALA packages for their Go dependencies.
-func (g *GoModGenerator) collectTransitiveGoDeps(galaReqs []mod.Require) map[string]string {
-	deps := make(map[string]string)
+// collectTransitiveDeps scans GALA packages for their Go and GALA dependencies.
+// Returns (goDeps, galaDeps).
+func (g *GoModGenerator) collectTransitiveDeps(galaReqs []mod.Require) (map[string]string, []mod.Require) {
+	goDeps := make(map[string]string)
+	var galaDeps []mod.Require
+	seen := make(map[string]bool)
 
 	for _, req := range galaReqs {
-		// Read the GALA package's go.mod or gala.mod
-		pkgDir := g.config.GalaModulePath(req.Path, req.Version)
+		g.collectTransitiveDepsRecursive(req, goDeps, &galaDeps, seen)
+	}
 
-		// Try gala.mod first
-		galaModPath := filepath.Join(pkgDir, "gala.mod")
-		if galaMod, err := mod.ParseFile(galaModPath); err == nil {
-			for _, r := range galaMod.Require {
-				if r.Go {
-					deps[r.Path] = r.Version
-				}
-			}
-		}
+	return goDeps, galaDeps
+}
 
-		// Also try go.mod for Go dependencies
-		goModPath := filepath.Join(pkgDir, "go.mod")
-		if content, err := os.ReadFile(goModPath); err == nil {
-			// Parse go.mod for require statements
-			goDeps := parseGoModRequires(string(content))
-			for path, version := range goDeps {
-				// Skip GALA stdlib
-				if strings.HasPrefix(path, "martianoff/gala/") {
-					continue
-				}
-				deps[path] = version
+// collectTransitiveDepsRecursive recursively collects transitive deps from a GALA package.
+func (g *GoModGenerator) collectTransitiveDepsRecursive(req mod.Require, goDeps map[string]string, galaDeps *[]mod.Require, seen map[string]bool) {
+	key := req.Path + "@" + req.Version
+	if seen[key] {
+		return
+	}
+	seen[key] = true
+
+	pkgDir := g.config.GalaModulePath(req.Path, req.Version)
+
+	// Try gala.mod first
+	galaModPath := filepath.Join(pkgDir, "gala.mod")
+	if galaMod, err := mod.ParseFile(galaModPath); err == nil {
+		for _, r := range galaMod.Require {
+			if r.Go {
+				goDeps[r.Path] = r.Version
+			} else {
+				*galaDeps = append(*galaDeps, r)
+				// Recurse for transitive GALA deps
+				g.collectTransitiveDepsRecursive(r, goDeps, galaDeps, seen)
 			}
 		}
 	}
 
-	return deps
+	// Also try go.mod for Go dependencies
+	goModPath := filepath.Join(pkgDir, "go.mod")
+	if content, err := os.ReadFile(goModPath); err == nil {
+		parsedDeps := parseGoModRequires(string(content))
+		for path, version := range parsedDeps {
+			// Skip GALA stdlib
+			if strings.HasPrefix(path, "martianoff/gala/") {
+				continue
+			}
+			goDeps[path] = version
+		}
+	}
 }
 
 // parseGoModRequires extracts require statements from go.mod content.
@@ -220,8 +258,8 @@ func parseGoModRequires(content string) map[string]string {
 }
 
 // WriteGoMod writes the go.mod file to the workspace.
-func (g *GoModGenerator) WriteGoMod(workspace *Workspace, galaMod *mod.File, stdlibVersion string) error {
-	content := g.GenerateGoMod(galaMod, stdlibVersion)
+func (g *GoModGenerator) WriteGoMod(workspace *Workspace, galaMod *mod.File, stdlibVersion string, transpiledDeps map[string]string) error {
+	content := g.GenerateGoMod(galaMod, stdlibVersion, transpiledDeps)
 	return os.WriteFile(workspace.GoModPath, []byte(content), 0644)
 }
 

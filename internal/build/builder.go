@@ -17,11 +17,12 @@ import (
 
 // Builder orchestrates the build process for GALA projects.
 type Builder struct {
-	config        *Config
-	workspace     *Workspace
-	galaMod       *mod.File
-	stdlibVersion string
-	verbose       bool
+	config         *Config
+	workspace      *Workspace
+	galaMod        *mod.File
+	stdlibVersion  string
+	verbose        bool
+	transpiledDeps map[string]string // modulePath -> transpiled directory
 }
 
 // NewBuilder creates a new builder for the given project directory.
@@ -70,6 +71,11 @@ func (b *Builder) Build(outputPath string) (string, error) {
 	// Step 2: Ensure stdlib is extracted to versioned cache
 	if err := b.ensureStdlib(); err != nil {
 		return "", fmt.Errorf("ensuring stdlib: %w", err)
+	}
+
+	// Step 2.5: Transpile GALA dependencies
+	if err := b.transpileDeps(); err != nil {
+		return "", fmt.Errorf("transpiling dependencies: %w", err)
 	}
 
 	// Step 3: Transpile .gala files to workspace
@@ -146,6 +152,11 @@ func (b *Builder) transpile() error {
 	// Include stdlib directory in search paths so analyzer can find std package types
 	stdlibDir := b.config.StdlibVersionDir(b.stdlibVersion)
 	searchPaths := []string{b.workspace.ProjectDir, stdlibDir}
+
+	// Add GALA dependency source dirs so the analyzer can resolve types from deps
+	for _, req := range b.galaMod.GalaRequires() {
+		searchPaths = append(searchPaths, b.config.GalaModulePath(req.Path, req.Version))
+	}
 	p := transpiler.NewAntlrGalaParser()
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
@@ -205,7 +216,7 @@ func (b *Builder) generateGoMod() error {
 	}
 
 	gen := NewGoModGenerator(b.config)
-	if err := gen.WriteGoMod(b.workspace, b.galaMod, b.stdlibVersion); err != nil {
+	if err := gen.WriteGoMod(b.workspace, b.galaMod, b.stdlibVersion, b.transpiledDeps); err != nil {
 		return err
 	}
 
@@ -287,6 +298,23 @@ func (b *Builder) Workspace() *Workspace {
 // Config returns the builder's config.
 func (b *Builder) Config() *Config {
 	return b.config
+}
+
+// transpileDeps transpiles all GALA library dependencies.
+func (b *Builder) transpileDeps() error {
+	// Clean deps dir before transpiling
+	if err := b.workspace.CleanDeps(); err != nil {
+		return fmt.Errorf("cleaning deps dir: %w", err)
+	}
+
+	dt := NewDepTranspiler(b.config, b.workspace, b.galaMod, b.stdlibVersion, b.verbose)
+	transpiledDeps, err := dt.TranspileDeps()
+	if err != nil {
+		return err
+	}
+
+	b.transpiledDeps = transpiledDeps
+	return nil
 }
 
 // findGalaFiles finds all .gala files in the given directory (non-recursive for now).
