@@ -10,14 +10,23 @@ import (
 )
 
 func TestFindModuleRoot(t *testing.T) {
-	// Get the actual module root (this test runs from within the module)
-	cwd, err := os.Getwd()
+	// Create a temp directory with go.mod
+	tempDir, err := os.MkdirTemp("", "find_module_root_test")
+	require.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	goModContent := "module martianoff/gala\n\ngo 1.21\n"
+	err = os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte(goModContent), 0644)
 	require.NoError(t, err)
 
-	moduleRoot, moduleName := FindModuleRoot(cwd)
+	// Create a subdirectory to search from
+	subDir := filepath.Join(tempDir, "internal", "pkg")
+	err = os.MkdirAll(subDir, 0755)
+	require.NoError(t, err)
 
-	// Should find the gala module
-	assert.NotEmpty(t, moduleRoot, "should find module root")
+	moduleRoot, moduleName := FindModuleRoot(subDir)
+
+	assert.Equal(t, tempDir, moduleRoot, "should find module root")
 	assert.Equal(t, "martianoff/gala", moduleName, "should find correct module name")
 
 	// Module root should contain go.mod
@@ -34,14 +43,50 @@ func TestFindModuleRoot_NonExistentPath(t *testing.T) {
 }
 
 func TestNewResolver(t *testing.T) {
+	// Create a temp directory with go.mod
+	tempDir, err := os.MkdirTemp("", "new_resolver_test")
+	require.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	goModContent := "module martianoff/gala\n\ngo 1.21\n"
+	err = os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte(goModContent), 0644)
+	require.NoError(t, err)
+
+	// Change to temp directory
+	originalWd, err := os.Getwd()
+	require.NoError(t, err)
+	defer os.Chdir(originalWd)
+	err = os.Chdir(tempDir)
+	require.NoError(t, err)
+
 	resolver := NewResolver(nil)
 
-	// Should find the module from cwd
 	assert.NotEmpty(t, resolver.ModuleRoot())
 	assert.Equal(t, "martianoff/gala", resolver.ModuleName())
 }
 
 func TestResolver_ResolvePackagePath_ModuleRelative(t *testing.T) {
+	// Create a temp directory with go.mod and a package dir
+	tempDir, err := os.MkdirTemp("", "resolve_module_relative_test")
+	require.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	goModContent := "module martianoff/gala\n\ngo 1.21\n"
+	err = os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte(goModContent), 0644)
+	require.NoError(t, err)
+
+	// Create a "std" package directory
+	stdDir := filepath.Join(tempDir, "std")
+	err = os.MkdirAll(stdDir, 0755)
+	require.NoError(t, err)
+
+	// Change to temp directory
+	originalWd, err := os.Getwd()
+	require.NoError(t, err)
+	defer os.Chdir(originalWd)
+	err = os.Chdir(tempDir)
+	require.NoError(t, err)
+
 	resolver := NewResolver(nil)
 	require.NotEmpty(t, resolver.ModuleRoot(), "test requires module root to be found")
 
@@ -57,6 +102,26 @@ func TestResolver_ResolvePackagePath_ModuleRelative(t *testing.T) {
 }
 
 func TestResolver_ResolvePackagePath_SimpleName(t *testing.T) {
+	// Create a temp directory with go.mod and a package dir
+	tempDir, err := os.MkdirTemp("", "resolve_simple_name_test")
+	require.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	goModContent := "module martianoff/gala\n\ngo 1.21\n"
+	err = os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte(goModContent), 0644)
+	require.NoError(t, err)
+
+	// Create a "std" package directory
+	err = os.MkdirAll(filepath.Join(tempDir, "std"), 0755)
+	require.NoError(t, err)
+
+	// Change to temp directory
+	originalWd, err := os.Getwd()
+	require.NoError(t, err)
+	defer os.Chdir(originalWd)
+	err = os.Chdir(tempDir)
+	require.NoError(t, err)
+
 	resolver := NewResolver(nil)
 	require.NotEmpty(t, resolver.ModuleRoot(), "test requires module root to be found")
 
