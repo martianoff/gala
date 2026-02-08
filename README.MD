@@ -2,44 +2,68 @@
 
 [![Release](https://github.com/martianoff/gala/actions/workflows/release.yml/badge.svg)](https://github.com/martianoff/gala/releases)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go&logoColor=white)](https://go.dev)
 
-**GALA** (Go Alternative LAnguage) is a modern programming language that transpiles to Go. It combines Go's efficiency and simplicity with features inspired by Scala and other functional languages.
+**GALA** (Go Alternative LAnguage) is a modern programming language that transpiles to Go. It brings functional programming, pattern matching, and immutability-first design to the Go ecosystem - without sacrificing Go's performance, tooling, or library compatibility.
+
+```gala
+package main
+
+import "fmt"
+
+sealed type Shape {
+    case Circle(Radius float64)
+    case Rectangle(Width float64, Height float64)
+}
+
+func area(s Shape) string = s match {
+    case Circle(r)      => fmt.Sprintf("circle area: %.2f", 3.14159 * r * r)
+    case Rectangle(w, h) => fmt.Sprintf("rect area: %.2f", w * h)
+}
+
+func main() {
+    val shapes = SliceOf(Circle(5.0), Rectangle(3.0, 4.0))
+    for _, s := range shapes {
+        fmt.Println(area(s))
+    }
+}
+```
 
 **Code is mostly AI-Generated**
 
 ---
 
-## Table of Contents
+## Why GALA?
 
-- [Features](#features)
-- [Quick Start](#quick-start)
-- [Feature Showcase](#feature-showcase)
-- [Installation](#installation)
-- [Standard Library](#standard-library)
-- [Documentation](#documentation)
-- [IDE Support](#ide-support)
-- [Project Structure](#project-structure)
-- [Contributing](#contributing)
+GALA gives you the features you miss when writing Go - without leaving the Go ecosystem:
 
----
-
-## Features
-
-| Feature | Description |
-|---------|-------------|
-| **Immutability by default** | Variables declared with `val` or `:=` are immutable |
-| **Pattern matching** | Powerful `match` expressions with extractors, guards, and sequence patterns |
-| **Expression-oriented** | `if` and `match` can be used as expressions |
-| **Concise syntax** | Expression functions, shorthand structs, lambdas |
-| **Type inference** | Less boilerplate while maintaining type safety |
-| **Generics** | Full support for generic types and methods |
-| **Functional collections** | Immutable and mutable collections with rich APIs |
-| **Monads** | `Option`, `Either`, `Try`, `Future` for safe programming |
-| **Go interoperability** | Seamlessly use Go libraries and tools |
+| What you get | How it works |
+|---|---|
+| **Sealed types (ADTs)** | Define closed type hierarchies with exhaustive pattern matching |
+| **Immutability by default** | `val` and `:=` are immutable; mutation is opt-in with `var` |
+| **Pattern matching** | Extractors, guards, sequence patterns, nested matching |
+| **Expression functions** | `func square(x int) int = x * x` |
+| **Lambda type inference** | `list.Map((x) => x * 2)` - parameter types inferred from context |
+| **Monads** | `Option[T]`, `Either[A,B]`, `Try[T]`, `Future[T]` with full APIs |
+| **Functional collections** | Immutable `List`, `Array`, `HashMap`, `HashSet`, `TreeSet` |
+| **Tuples** | `val pair = (1, "hello")` with destructuring and pattern matching |
+| **Read-only pointers** | `ConstPtr[T]` prevents accidental mutation through pointers |
+| **Full Go interop** | Use any Go library. Output is clean, readable Go code |
 
 ---
 
 ## Quick Start
+
+### Install
+
+Download a pre-built binary from [Releases](https://github.com/martianoff/gala/releases), or build from source:
+
+```bash
+git clone https://github.com/martianoff/gala.git && cd gala
+bazel build //cmd/gala:gala
+```
+
+### Write
 
 ```gala
 package main
@@ -49,9 +73,9 @@ import "fmt"
 struct Person(Name string, Age int)
 
 func greet(p Person) string = p match {
-    case Person(name, age) if age < 18 => "Hello, young " + name
-    case Person(name, _) => "Hello, " + name
-    case _ => "Hello"
+    case Person(name, age) if age < 18 => "Hey, " + name + "!"
+    case Person(name, _)               => "Hello, " + name
+    case _                             => "Hello"
 }
 
 func main() {
@@ -60,113 +84,126 @@ func main() {
 }
 ```
 
+### Run
+
+```bash
+gala run main.gala
+
+# Or use Bazel (recommended)
+bazel run //myapp:myapp
+```
+
 ---
 
 ## Feature Showcase
 
-### Immutable by Default
+### Sealed Types (Algebraic Data Types)
+
+Define closed type hierarchies. The compiler enforces exhaustive matching - miss a variant and you get an error.
 
 ```gala
-val x = 10           // Immutable - cannot be reassigned
-var y = 20           // Mutable - can be reassigned
-z := 30              // Short declaration - immutable
+sealed type Result[T any] {
+    case Ok(Value T)
+    case Err(Message string)
+}
 
-val person = Person("Alice", 30)
-val older = person.Copy(Age = 31)  // Creates new instance, original unchanged
+val r = Ok[int](42)
+val msg = r match {
+    case Ok(v)    => fmt.Sprintf("got %d", v)
+    case Err(msg) => "error: " + msg
+    // No case _ needed - all variants covered
+}
+```
+
+The standard library uses sealed types for `Option[T]`, `Either[A,B]`, and `Try[T]`.
+
+### Pattern Matching
+
+GALA's match expressions support extractors, guards, type patterns, sequence patterns, and boolean exhaustiveness.
+
+```gala
+// Extractor patterns
+val opt = Some(42)
+val result = opt match {
+    case Some(x) if x > 0 => "positive"
+    case Some(_)           => "non-positive"
+    case None()            => "empty"
+}
+
+// Sequence patterns
+val list = ListOf(1, 2, 3, 4, 5)
+val head = list match {
+    case List(first, second, rest...) => fmt.Sprintf("%d, %d + %d more", first, second, rest.Size())
+    case List(only)                   => fmt.Sprintf("just %d", only)
+    case List()                       => "empty"
+}
+
+// Boolean exhaustive match
+val label = enabled match {
+    case true  => "on"
+    case false => "off"
+}
+```
+
+### Immutability by Default
+
+Variables and struct fields are immutable unless explicitly marked `var`. Structs auto-generate `Copy()` and `Equal()` methods.
+
+```gala
+val x = 10             // immutable
+var y = 20             // mutable
+z := 30                // immutable (short form)
+
+struct Person(Name string, Age int, var Score int)
+
+val p = Person("Alice", 30, 100)
+val older = p.Copy(Age = 31)     // new instance, original unchanged
+p.Score = 200                     // OK - Score is var
+// p.Name = "Bob"                 // compile error - Name is val
 ```
 
 ### Expression Functions
 
+Single-expression functions skip the braces and `return`:
+
 ```gala
-// Single-expression functions with = syntax
 func square(x int) int = x * x
 func max(a int, b int) int = if (a > b) a else b
 func greet(name string) string = "Hello, " + name
 ```
 
-### Pattern Matching with Extractors
+### Type Inference for Lambdas
+
+Lambda parameter types and method type parameters are inferred from context:
 
 ```gala
-// Option handling
-val result = maybeValue match {
-    case Some(x) if x > 0 => "positive: " + fmt.Sprint(x)
-    case Some(x)          => "non-positive: " + fmt.Sprint(x)
-    case None()           => "no value"
-    case _                => "unknown"
-}
+val opt = Some(42)
+val doubled = opt.Map((x) => x * 2)         // x inferred as int
+val positive = opt.Filter((x) => x > 0)     // x inferred as int
+opt.ForEach((x) => { fmt.Println(x) })       // void closure
 
-// Struct deconstruction
-val msg = person match {
-    case Person(name, age) if age >= 18 => name + " is an adult"
-    case Person(name, _)                => name + " is a minor"
-    case _                              => "unknown"
-}
-
-// Custom extractors
-type Even struct {}
-func (e Even) Unapply(i int) Option[int] = if (i % 2 == 0) Some(i) else None[int]()
-
-val description = number match {
-    case Even(n) => fmt.Sprintf("%d is even", n)
-    case _       => "odd"
-}
-```
-
-### Sequence Pattern Matching
-
-```gala
-import . "martianoff/gala/collection_immutable"
-
-val list = ListOf(1, 2, 3, 4, 5)
-
-val result = list match {
-    case List(first, second, rest...) => fmt.Sprintf("First: %d, Second: %d, Rest: %d items", first, second, rest.Size())
-    case List(only)                   => fmt.Sprintf("Single element: %d", only)
-    case List()                       => "Empty list"
-    case _                            => "Unknown"
-}
-```
-
-### Functional Collections
-
-```gala
-import . "martianoff/gala/collection_immutable"
-
-// Immutable list operations
-val numbers = ListOf(1, 2, 3, 4, 5)
-val doubled = numbers.Map[int]((x int) => x * 2)           // List(2, 4, 6, 8, 10)
-val evens = numbers.Filter((x int) => x % 2 == 0)          // List(2, 4)
-val sum = numbers.FoldLeft[int](0, (acc int, x int) => acc + x)  // 15
-
-// Chained operations
-val result = ListOf(1, 2, 3, 4, 5)
-    .Filter((x int) => x % 2 == 1)
-    .Map[int]((x int) => x * x)
-    .FoldLeft[int](0, (acc int, x int) => acc + x)  // 1 + 9 + 25 = 35
-
-// Immutable HashMap
-val scores = HashMapOf[string, int](("alice", 100), ("bob", 85))
-val updated = scores.Put("charlie", 90)  // Original unchanged
+val list = ListOf(1, 2, 3)
+val squares = list.Map((x) => x * x)        // no type annotations needed
 ```
 
 ### Error Handling with Try
 
+`Try[T]` captures panics and enables railway-oriented programming:
+
 ```gala
-func divide(a int, b int) Try[int] =
-    if (b == 0) Failure[int](DivisionByZeroError())
-    else Success(a / b)
+// Try.Apply catches panics
+val result = Try[int](() => riskyDivide(10, 0))  // Failure
 
-// Railway-oriented programming
-val result = divide(10, 2)
-    .Map[int]((x int) => x * 2)
-    .FlatMap[int]((x int) => divide(x, 2))
-    .GetOrElse(0)
+// Railway-oriented chaining
+val output = divide(10, 2)
+    .Map((x) => x * 2)
+    .FlatMap((x) => divide(x, 3))
+    .Recover((e) => 0)
 
-// Pattern matching on Try
-val msg = divide(10, 0) match {
-    case Success(v) => fmt.Sprintf("Result: %d", v)
-    case Failure(e) => fmt.Sprintf("Error: %s", e.Error())
-    case _          => "Unknown"
+// Exhaustive pattern matching
+val msg = result match {
+    case Success(v) => fmt.Sprintf("got %d", v)
+    case Failure(e) => "error: " + e.Error()
 }
 ```
 
@@ -175,39 +212,72 @@ val msg = divide(10, 0) match {
 ```gala
 import . "martianoff/gala/concurrent"
 
-// Create async computations
 val f1 = FutureApply[int](() => expensiveComputation())
 val f2 = FutureApply[string](() => fetchData())
 
-// Chain operations
 val result = f1
-    .Map[int]((v int) => v * 2)
-    .FlatMap[string]((v int) => fetchName(v))
+    .Map((v) => v * 2)
+    .FlatMap((v) => fetchName(v))
 
-// Combine futures
-val combined = f1.Zip[string](f2)  // Future[Tuple[int, string]]
-
-// Pattern matching on completed futures
-val msg = future match {
-    case Succeeded(v) => fmt.Sprintf("Got: %v", v)
-    case Failed(e)    => fmt.Sprintf("Error: %s", e.Error())
-    case _            => "Unknown"
-}
+val combined = f1.Zip(f2)  // Future[Tuple[int, string]]
 ```
 
-### Tuple Syntax
+### Tuples
+
+Concise syntax with destructuring and pattern matching (up to Tuple5):
 
 ```gala
-// Concise tuple creation
 val pair = (1, "hello")
-val triple = (1, "hello", true)
+val (x, y) = pair              // destructuring
 
-// Pattern matching
-val (x, y) = pair
-val msg = triple match {
-    case (n, s, true)  => fmt.Sprintf("%d: %s (active)", n, s)
-    case (n, s, false) => fmt.Sprintf("%d: %s (inactive)", n, s)
-    case _             => "unknown"
+val msg = pair match {
+    case (n, s) => fmt.Sprintf("%d: %s", n, s)
+    case _      => "unknown"
+}
+
+// Useful for map entries
+val scores = HashMapOf[string, int](("alice", 100), ("bob", 85))
+```
+
+### Read-Only Pointers (ConstPtr)
+
+`ConstPtr[T]` provides C++-style `const T*` semantics. Taking the address of a `val` returns a `ConstPtr`:
+
+```gala
+val data = 42
+val ptr = &data      // ConstPtr[int], not *int
+
+val value = *ptr     // OK: read
+// *ptr = 100        // compile error: cannot write through ConstPtr
+
+// Auto-deref field access
+val alice = Person("Alice", 30)
+val ref = &alice
+fmt.Println(ref.Name)  // auto-derefs to alice.Name
+```
+
+### Partial Functions
+
+```gala
+// Returns Option automatically
+val describe = { case 1 => "one" case 2 => "two" }
+describe(1)  // Some("one")
+describe(5)  // None[string]
+
+// Filter + transform in one pass
+val evens = ArrayOf(1, 2, 3, 4, 5).Collect({ case n if n % 2 == 0 => n * 2 })
+// [4, 8]
+```
+
+### Custom Extractors
+
+```gala
+type Even struct {}
+func (e Even) Unapply(i int) Option[int] = if (i % 2 == 0) Some(i) else None[int]()
+
+val desc = number match {
+    case Even(n) => fmt.Sprintf("%d is even", n)
+    case _       => "odd"
 }
 ```
 
@@ -220,22 +290,166 @@ func (b Box[T]) Map[U any](f func(T) U) Box[U] = Box[U](Value = f(b.Value))
 func (b Box[T]) FlatMap[U any](f func(T) Box[U]) Box[U] = f(b.Value)
 
 val intBox = Box[int](Value = 42)
-val strBox = intBox.Map[string]((x int) => fmt.Sprintf("Value: %d", x))
+val strBox = intBox.Map((x) => fmt.Sprintf("Value: %d", x))
 ```
 
-### Partial Functions
+---
+
+## GALA vs Go
+
+### Pattern Matching vs Switch
+
+<table>
+<tr><th>GALA</th><th>Go</th></tr>
+<tr>
+<td>
 
 ```gala
-// Partial function syntax - returns Option automatically
-val describe = { case 1 => "one" case 2 => "two" }
-
-describe(1)  // Some("one")
-describe(5)  // None[string]
-
-// Use with Collect for filter+map in one operation
-val numbers = ArrayOf(1, 2, 3, 4, 5)
-val result = numbers.Collect({ case n if n % 2 == 0 => n * 2 })  // Array(4, 8)
+val msg = shape match {
+    case Circle(r)      => fmt.Sprintf("r=%.1f", r)
+    case Rectangle(w,h) => fmt.Sprintf("%fx%f", w, h)
+    case Point()        => "point"
+}
 ```
+
+</td>
+<td>
+
+```go
+var msg string
+switch shape._variant {
+case Shape_Circle:
+    msg = fmt.Sprintf("r=%.1f", shape.Radius.Get())
+case Shape_Rectangle:
+    msg = fmt.Sprintf("%fx%f", shape.Width.Get(), shape.Height.Get())
+case Shape_Point:
+    msg = "point"
+}
+```
+
+</td>
+</tr>
+</table>
+
+### Option Handling vs nil Checks
+
+<table>
+<tr><th>GALA</th><th>Go</th></tr>
+<tr>
+<td>
+
+```gala
+val name = user.Name
+    .Map((n) => strings.ToUpper(n))
+    .GetOrElse("ANONYMOUS")
+```
+
+</td>
+<td>
+
+```go
+name := "ANONYMOUS"
+if user.Name != nil {
+    name = strings.ToUpper(*user.Name)
+}
+```
+
+</td>
+</tr>
+</table>
+
+### Immutable Structs vs Manual Copying
+
+<table>
+<tr><th>GALA</th><th>Go</th></tr>
+<tr>
+<td>
+
+```gala
+struct Config(Host string, Port int)
+val updated = config.Copy(Port = 8080)
+```
+
+</td>
+<td>
+
+```go
+type Config struct {
+    Host string
+    Port int
+}
+updated := Config{Host: config.Host, Port: 8080}
+```
+
+</td>
+</tr>
+</table>
+
+---
+
+## Standard Library
+
+| Type | Description |
+|------|-------------|
+| `Option[T]` | Optional values - `Some(value)` / `None()` |
+| `Either[A, B]` | Disjoint union - `Left(a)` / `Right(b)` |
+| `Try[T]` | Failable computation - `Success(value)` / `Failure(err)` |
+| `Future[T]` | Async computation with `Map`, `FlatMap`, `Zip`, `Await` |
+| `Tuple[A, B]` | Pairs and triples with `(a, b)` syntax |
+| `ConstPtr[T]` | Read-only pointer with auto-deref field access |
+
+### Collections
+
+| Type | Kind | Access | Best for |
+|------|------|--------|----------|
+| `List[T]` | Immutable | O(1) prepend, O(n) index | Recursive processing, prepend-heavy workloads |
+| `Array[T]` | Immutable | O(1) random access | General-purpose indexed sequences |
+| `HashMap[K,V]` | Immutable | O(1) lookup | Functional key-value storage |
+| `HashSet[T]` | Immutable | O(1) membership | Unique element collections |
+| `TreeSet[T]` | Immutable | O(log n) sorted | Ordered unique elements |
+
+All collections support `Map`, `Filter`, `FoldLeft`, `ForEach`, `Exists`, `Find`, `Collect`, and more.
+
+Mutable variants are available in `collection_mutable` for performance-sensitive code.
+
+---
+
+## Dependency Management
+
+```bash
+gala mod init github.com/user/project    # Initialize
+gala mod add github.com/example/utils@v1.2.3   # Add GALA dep
+gala mod add github.com/google/uuid@v1.6.0 --go  # Add Go dep
+gala mod tidy                              # Sync imports
+```
+
+---
+
+## Documentation
+
+- [Language Specification](docs/GALA.MD) - Complete language reference
+- [Examples](docs/EXAMPLES.MD) - Code examples for all features
+- [Type Inference](docs/TYPE_INFERENCE.MD) - How type inference works
+- [Concurrent](docs/CONCURRENT.MD) - Future, Promise, and ExecutionContext
+- [Stream](docs/STREAM.MD) - Lazy, potentially infinite sequences
+- [Immutable Collections](docs/IMMUTABLE_COLLECTIONS.MD) - List, Array, HashMap, HashSet, TreeSet
+- [Mutable Collections](docs/MUTABLE_COLLECTIONS.MD) - Mutable variants for performance
+- [String Utils](docs/STRING_UTILS.MD) - Rich string operations
+- [Time Utils](docs/TIME_UTILS.MD) - Duration and Instant types
+- [Dependency Management](docs/DEPENDENCY_MANAGEMENT.MD) - Module system
+
+---
+
+## IDE Support
+
+### IntelliJ IDEA
+
+```bash
+bazel build //ide/intellij:plugin
+# Install bazel-bin/ide/intellij/gala-intellij-plugin.zip via Settings > Plugins
+```
+
+Features: Syntax highlighting, code completion, brace matching, code folding.
 
 ---
 
@@ -261,16 +475,6 @@ cd gala
 bazel build //cmd/gala:gala
 ```
 
-### Usage
-
-```bash
-# Transpile GALA to Go
-gala -input main.gala -output main.go
-
-# Compile with Go
-go build -o myapp main.go
-```
-
 ### Using Bazel (Recommended)
 
 ```python
@@ -281,46 +485,6 @@ gala_binary(
     src = "main.gala",
 )
 ```
-
----
-
-## Standard Library
-
-| Type | Description |
-|------|-------------|
-| `Option[T]` | Safe handling of optional values (`Some`, `None`) |
-| `Either[A, B]` | Represents one of two possible values (`Left`, `Right`) |
-| `Try[T]` | Computation that may succeed or fail (`Success`, `Failure`) |
-| `Future[T]` | Asynchronous computation with callbacks and combinators |
-| `Tuple[A, B]` | Pair of values with pattern matching support |
-| `List[T]` | Immutable linked list with O(1) prepend |
-| `Array[T]` | Immutable indexed sequence with O(1) random access |
-| `HashMap[K, V]` | Immutable hash map with O(1) operations |
-| `HashSet[T]` | Immutable hash set with O(1) operations |
-| `TreeSet[T]` | Immutable sorted set with O(log n) operations |
-
----
-
-## Documentation
-
-- [Language Specification](docs/GALA.MD) - Complete language reference
-- [Examples](docs/EXAMPLES.MD) - Code examples for all features
-- [Type Inference](docs/TYPE_INFERENCE.MD) - How type inference works
-- [Immutable Collections](docs/IMMUTABLE_COLLECTIONS.MD) - List, Array, HashMap, HashSet, TreeSet
-- [Mutable Collections](docs/MUTABLE_COLLECTIONS.MD) - Mutable variants for performance
-
----
-
-## IDE Support
-
-### IntelliJ IDEA
-
-```bash
-bazel build //ide/intellij:plugin
-# Install bazel-bin/ide/intellij/gala-intellij-plugin.zip via Settings > Plugins
-```
-
-Features: Syntax highlighting, code completion, brace matching, code folding.
 
 ---
 
@@ -335,7 +499,10 @@ gala/
 ├── std/                   # Standard library (GALA)
 ├── collection_immutable/  # Immutable collections
 ├── collection_mutable/    # Mutable collections
-├── concurrent/            # Future and Promise
+├── concurrent/            # Future, Promise, ExecutionContext
+├── stream/                # Lazy sequences
+├── string_utils/          # Rich string operations
+├── time_utils/            # Duration and Instant
 ├── test/                  # Test framework
 ├── examples/              # Example programs
 └── docs/                  # Documentation
