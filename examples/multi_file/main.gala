@@ -1,0 +1,10 @@
+package main
+
+import "fmt"
+
+func main() {
+    greet("World")
+    greet("GALA")
+    val result = add(3, 4)
+    fmt.Println("3 + 4 =", result)
+}

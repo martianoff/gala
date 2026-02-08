@@ -5,6 +5,8 @@ filegroup(
     srcs = [
         "lib/generic.gala",
         "mathlib/math.gala",
+        "multi_file/greeter.gala",
+        "multi_file/main.gala",
     ],
     visibility = ["//visibility:public"],
 )
@@ -616,4 +618,14 @@ gala_test(
         "//collection_immutable",
         "//time_utils",
     ],
+)
+
+# Multi-file binary test (FIX-004 verification)
+gala_test(
+    name = "multi_file",
+    srcs = [
+        "multi_file/greeter.gala",
+        "multi_file/main.gala",
+    ],
+    expected = "multi_file/multi_file.out",
 )
