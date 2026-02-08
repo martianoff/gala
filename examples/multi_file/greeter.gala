@@ -1,0 +1,9 @@
+package main
+
+import "fmt"
+
+func greet(name string) {
+    fmt.Println("Hello, " + name + "!")
+}
+
+func add(a int, b int) int = a + b

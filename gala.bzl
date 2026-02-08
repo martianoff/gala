@@ -94,13 +94,14 @@ def gala_bootstrap_transpile(name, src, out = None):
         visibility = ["//visibility:public"],
     )
 
-def gala_library(name, src, importpath, deps = [], **kwargs):
+def gala_library(name, src = None, srcs = None, importpath = "", deps = [], **kwargs):
     """
     Build a GALA library.
 
     Args:
         name: Target name
-        src: Source .gala file
+        src: Single source .gala file (deprecated, use srcs)
+        srcs: List of source .gala files
         importpath: Go import path for the library
         deps: Go/Bazel dependencies (labels), including external GALA modules
         **kwargs: Additional arguments passed to go_library
@@ -109,31 +110,42 @@ def gala_library(name, src, importpath, deps = [], **kwargs):
     or gala.from_file() in MODULE.bazel, then referenced in deps as
     "@com_github_example_utils//:utils".
     """
-    go_src = name + ".gen.go"
-    gala_transpile(
-        name = name + "_transpile",
-        src = src,
-        out = go_src,
-    )
+    if src and srcs:
+        fail("Specify either 'src' or 'srcs', not both")
+    if src:
+        srcs = [src]
+    if not srcs:
+        fail("Either 'src' or 'srcs' must be specified")
+
+    go_srcs = []
+    for i, s in enumerate(srcs):
+        go_src = name + "_" + str(i) + ".gen.go"
+        gala_transpile(
+            name = name + "_transpile_" + str(i),
+            src = s,
+            out = go_src,
+        )
+        go_srcs.append(go_src)
 
     # Combine deps with std (using Label to ensure it resolves to @gala//std)
     all_deps = list(deps) + [Label("//std")]
 
     go_library(
         name = name,
-        srcs = [go_src],
+        srcs = go_srcs,
         importpath = importpath,
         deps = all_deps,
         **kwargs
     )
 
-def gala_binary(name, src, deps = [], **kwargs):
+def gala_binary(name, src = None, srcs = None, deps = [], **kwargs):
     """
     Build a GALA binary.
 
     Args:
         name: Target name
-        src: Source .gala file
+        src: Single source .gala file (deprecated, use srcs)
+        srcs: List of source .gala files
         deps: Go/Bazel dependencies (labels), including external GALA modules
         **kwargs: Additional arguments passed to go_binary
 
@@ -141,19 +153,29 @@ def gala_binary(name, src, deps = [], **kwargs):
     or gala.from_file() in MODULE.bazel, then referenced in deps as
     "@com_github_example_utils//:utils".
     """
-    go_src = name + ".gen.go"
-    gala_transpile(
-        name = name + "_transpile",
-        src = src,
-        out = go_src,
-    )
+    if src and srcs:
+        fail("Specify either 'src' or 'srcs', not both")
+    if src:
+        srcs = [src]
+    if not srcs:
+        fail("Either 'src' or 'srcs' must be specified")
+
+    go_srcs = []
+    for i, s in enumerate(srcs):
+        go_src = name + "_" + str(i) + ".gen.go"
+        gala_transpile(
+            name = name + "_transpile_" + str(i),
+            src = s,
+            out = go_src,
+        )
+        go_srcs.append(go_src)
 
     # Combine deps with std (using Label to ensure it resolves to @gala//std)
     all_deps = list(deps) + [Label("//std")]
 
     go_binary(
         name = name,
-        srcs = [go_src],
+        srcs = go_srcs,
         deps = all_deps,
         **kwargs
     )
@@ -196,11 +218,12 @@ gala_internal_unit_test = rule(
     },
 )
 
-def gala_unit_test(name, src, deps = [], **kwargs):
+def gala_unit_test(name, src = None, srcs = None, deps = [], **kwargs):
     binary_name = name + "_bin"
     gala_binary(
         name = binary_name,
         src = src,
+        srcs = srcs,
         deps = deps,
         **kwargs
     )
@@ -213,11 +236,12 @@ def gala_unit_test(name, src, deps = [], **kwargs):
         }),
     )
 
-def gala_test(name, src, expected, deps = [], **kwargs):
+def gala_test(name, src = None, srcs = None, expected = "", deps = [], **kwargs):
     binary_name = name + "_bin"
     gala_binary(
         name = binary_name,
         src = src,
+        srcs = srcs,
         deps = deps,
         **kwargs
     )
