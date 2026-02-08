@@ -1,0 +1,34 @@
+package main
+
+import "fmt"
+
+func main() {
+    // Map on Right applies the function
+    val r1 = Right[string, int](10)
+    val mapped1 = r1.Map((x int) => x * 2)
+    fmt.Println(mapped1.GetRight())
+
+    // Map on Left passes through
+    val l1 = Left[string, int]("error")
+    val mapped2 = l1.Map((x int) => x * 2)
+    fmt.Println(mapped2.GetLeft())
+
+    // FlatMap on Right applies the function
+    val r2 = Right[string, int](5)
+    val flatMapped1 = r2.FlatMap((x int) => Right[string, int](x + 100))
+    fmt.Println(flatMapped1.GetRight())
+
+    // FlatMap on Right returning Left
+    val r3 = Right[string, int](0)
+    val flatMapped2 = r3.FlatMap((x int) => Left[string, int]("was zero"))
+    fmt.Println(flatMapped2.GetLeft())
+
+    // FlatMap on Left passes through
+    val l2 = Left[string, int]("original error")
+    val flatMapped3 = l2.FlatMap((x int) => Right[string, int](x + 100))
+    fmt.Println(flatMapped3.GetLeft())
+
+    // Chaining Map and FlatMap
+    val result = Right[string, int](3).Map((x int) => x * 10).FlatMap((x int) => Right[string, int](x + 1))
+    fmt.Println(result.GetRight())
+}

@@ -1,0 +1,39 @@
+package main
+
+import "fmt"
+
+sealed type Animal {
+    case Dog(Name string)
+    case Cat(Name string)
+    case Bird(Name string)
+    case Fish(Name string)
+}
+
+// Match only specific cases, catch rest with wildcard
+func greet(a Animal) string = a match {
+    case Dog(name) => "Woof! I'm " + name
+    case Cat(name) => "Meow! I'm " + name
+    case _ => "I'm some other animal"
+}
+
+// Match a single case, wildcard for rest
+func isDog(a Animal) bool = a match {
+    case Dog(_) => true
+    case _ => false
+}
+
+func main() {
+    val dog = Dog("Rex")
+    val cat = Cat("Whiskers")
+    val bird = Bird("Tweety")
+    val fish = Fish("Nemo")
+
+    fmt.Println(greet(dog))
+    fmt.Println(greet(cat))
+    fmt.Println(greet(bird))
+    fmt.Println(greet(fish))
+
+    fmt.Println(isDog(dog))
+    fmt.Println(isDog(cat))
+    fmt.Println(isDog(bird))
+}

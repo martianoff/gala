@@ -375,6 +375,23 @@ val success = Ok[int](42)
 val failure = Err[int](fmt.Errorf("oops"))
 ```
 
+#### Wildcard Catch-All in Sealed Match
+When you only care about a subset of variants, use `case _ =>` as a catch-all instead of listing every variant. This is valid for exhaustive matching:
+
+```gala
+sealed type Animal {
+    case Dog(Name string)
+    case Cat(Name string)
+    case Bird(Name string)
+}
+
+// Only match specific variants, catch rest with wildcard
+val msg = animal match {
+    case Dog(name) => "Woof! I'm " + name
+    case _ => "I'm not a dog"
+}
+```
+
 #### Standard Library Sealed Types
 The `std` package defines `Option[T]`, `Either[A, B]`, and `Try[T]` as sealed types. See [Standard Library Types](#9-standard-library-types) for details.
 
@@ -746,6 +763,22 @@ for i := 0; i < 10; i++ {
 
 **Note:** The `++` and `--` operators can only be used on **mutable** variables (declared with `var` or `:=` in for loop init).
 
+#### Unary Operators
+GALA supports unary prefix operators:
+
+```gala
+val x = 10
+val negated = -x        // -10
+val negLit = -42         // negative literal
+val negFloat = -3.14     // negative float
+val notTrue = !true      // false
+
+func negate(x int) int = -x
+fmt.Println(negate(-5))  // 5
+```
+
+Supported unary operators: `+`, `-`, `!`, `^`, `*` (dereference), `&` (address-of), `<-` (channel receive).
+
 ## 7. Functional Features
 
 ### Lambda Expressions
@@ -910,6 +943,12 @@ val msg = e match {
 
 // Monadic operations are biased towards Right
 val length = e.Map((s string) => len(s))
+
+// FlatMap chains computations that return Either
+val result = Right[string, int](5).FlatMap((x int) => Right[string, int](x + 100))
+
+// Chaining Map and FlatMap
+val chained = Right[string, int](3).Map((x int) => x * 10).FlatMap((x int) => Right[string, int](x + 1))
 ```
 
 ### Try Monad

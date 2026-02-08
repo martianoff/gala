@@ -361,3 +361,6 @@ You can find more examples in the `examples/` directory of the project:
 - `use_lib.gala`: Demonstrates importing another GALA package (`mathlib`).
 - `tuple.gala`: Demonstrates using `Tuple[A, B]` with pattern matching.
 - `either.gala`: Demonstrates using `Either[A, B]` with monadic operations and pattern matching.
+- `either_map_flatmap.gala`: Demonstrates `Either.Map` and `Either.FlatMap` chaining.
+- `unary_minus.gala`: Demonstrates unary operators (`-`, `!`).
+- `sealed_wildcard.gala`: Demonstrates wildcard `case _ =>` catch-all in sealed type matching.

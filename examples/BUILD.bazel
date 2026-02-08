@@ -633,6 +633,27 @@ gala_test(
     ],
 )
 
+# Unary minus operator
+gala_test(
+    name = "unary_minus",
+    src = "unary_minus.gala",
+    expected = "unary_minus.out",
+)
+
+# Either Map/FlatMap
+gala_test(
+    name = "either_map_flatmap",
+    src = "either_map_flatmap.gala",
+    expected = "either_map_flatmap.out",
+)
+
+# Sealed type wildcard catch-all
+gala_test(
+    name = "sealed_wildcard",
+    src = "sealed_wildcard.gala",
+    expected = "sealed_wildcard.out",
+)
+
 # Multi-file binary test (FIX-004 verification)
 gala_test(
     name = "multi_file",
