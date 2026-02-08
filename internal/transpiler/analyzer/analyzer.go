@@ -572,16 +572,19 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 		TypeParams: typeParams,
 	}
 
-	// Process each case to collect fields
+	// Process each case to collect fields (two passes: collect, then resolve conflicts)
+	type variantFieldInfo struct {
+		name     string
+		typeName string
+	}
 	type variantInfo struct {
 		name   string
-		fields []struct {
-			name     string
-			typeName string
-		}
+		fields []variantFieldInfo
 	}
 	var variants []variantInfo
 
+	// First pass: collect all variant fields
+	allFieldTypes := make(map[string]map[string]bool) // field name -> set of type texts
 	for _, caseCtx := range ctx.AllSealedCase() {
 		sc := caseCtx.(*grammar.SealedCaseContext)
 		variantName := sc.Identifier().GetText()
@@ -593,21 +596,45 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 				fc := fieldCtx.(*grammar.SealedCaseFieldContext)
 				fieldName := fc.Identifier().GetText()
 				fieldTypeStr := fc.Type_().GetText()
-				vi.fields = append(vi.fields, struct {
-					name     string
-					typeName string
-				}{fieldName, fieldTypeStr})
-
-				// Add to parent type fields
-				parentMeta.Fields[fieldName] = a.resolveTypeWithParams(fieldTypeStr, pkgName, typeParams)
-				parentMeta.FieldNames = append(parentMeta.FieldNames, fieldName)
-				// Self-referential fields use pointer indirection (not Immutable-wrapped)
-				isRecursive := fieldTypeStr == typeName || strings.HasPrefix(fieldTypeStr, typeName+"[")
-				parentMeta.ImmutFlags = append(parentMeta.ImmutFlags, !isRecursive)
+				vi.fields = append(vi.fields, variantFieldInfo{fieldName, fieldTypeStr})
+				if allFieldTypes[fieldName] == nil {
+					allFieldTypes[fieldName] = make(map[string]bool)
+				}
+				allFieldTypes[fieldName][fieldTypeStr] = true
 			}
 		}
 
 		variants = append(variants, vi)
+	}
+
+	// Detect field name conflicts: same name with different types requires prefixing
+	conflictingFields := make(map[string]bool)
+	for fieldName, typeSet := range allFieldTypes {
+		if len(typeSet) > 1 {
+			conflictingFields[fieldName] = true
+		}
+	}
+
+	// Second pass: register fields with correct struct field names (prefixed if conflicting)
+	addedFields := make(map[string]bool)
+	for _, vi := range variants {
+		for _, f := range vi.fields {
+			structFieldName := f.name
+			if conflictingFields[f.name] {
+				structFieldName = vi.name + f.name // e.g., "AddLeft", "SubLeft"
+			}
+
+			if addedFields[structFieldName] {
+				continue // shared field already added
+			}
+			addedFields[structFieldName] = true
+
+			parentMeta.Fields[structFieldName] = a.resolveTypeWithParams(f.typeName, pkgName, typeParams)
+			parentMeta.FieldNames = append(parentMeta.FieldNames, structFieldName)
+			// Self-referential fields use pointer indirection (not Immutable-wrapped)
+			isRecursive := f.typeName == typeName || strings.HasPrefix(f.typeName, typeName+"[")
+			parentMeta.ImmutFlags = append(parentMeta.ImmutFlags, !isRecursive)
+		}
 	}
 
 	// Add _variant field
