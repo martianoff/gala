@@ -9,6 +9,8 @@ import (
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/infer"
 	"martianoff/gala/internal/transpiler/registry"
+	"os"
+	"sort"
 	"strings"
 )
 
@@ -124,6 +126,9 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 		t.importManager.UpdateActualPackageName(path, actualPkgName)
 	}
 
+	// Warn about symbol clashes between dot-imported packages
+	t.checkDotImportClashes(richAST)
+
 	for _, topDeclCtx := range sourceFile.AllTopLevelDeclaration() {
 		decls, err := t.transformTopLevelDeclaration(topDeclCtx)
 		if err != nil {
@@ -175,6 +180,76 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 	}
 
 	return fset, file, nil
+}
+
+// checkDotImportClashes detects when multiple dot-imported packages export symbols with the
+// same name, which would cause Go compilation errors ("redeclared in this block").
+func (t *galaASTTransformer) checkDotImportClashes(richAST *transpiler.RichAST) {
+	dotPkgs := t.importManager.GetDotImports()
+	if len(dotPkgs) < 2 {
+		return // need at least 2 dot imports for a clash
+	}
+
+	dotPkgSet := make(map[string]bool, len(dotPkgs))
+	for _, pkg := range dotPkgs {
+		dotPkgSet[pkg] = true
+	}
+
+	// Collect symbol -> set of source packages
+	symbolSources := make(map[string]map[string]bool) // symbol name -> {pkg1, pkg2, ...}
+
+	// Check GALA-analyzed metadata (Types, Functions, CompanionObjects)
+	for _, meta := range richAST.Types {
+		if meta.Package != "" && dotPkgSet[meta.Package] {
+			if symbolSources[meta.Name] == nil {
+				symbolSources[meta.Name] = make(map[string]bool)
+			}
+			symbolSources[meta.Name][meta.Package] = true
+		}
+	}
+
+	for _, meta := range richAST.Functions {
+		if meta.Package != "" && dotPkgSet[meta.Package] {
+			if symbolSources[meta.Name] == nil {
+				symbolSources[meta.Name] = make(map[string]bool)
+			}
+			symbolSources[meta.Name][meta.Package] = true
+		}
+	}
+
+	for _, meta := range richAST.CompanionObjects {
+		if meta.Package != "" && dotPkgSet[meta.Package] {
+			if symbolSources[meta.Name] == nil {
+				symbolSources[meta.Name] = make(map[string]bool)
+			}
+			symbolSources[meta.Name][meta.Package] = true
+		}
+	}
+
+	// Check Go-only package exports (from GoExports field)
+	for pkg, symbols := range richAST.GoExports {
+		if !dotPkgSet[pkg] {
+			continue
+		}
+		for _, sym := range symbols {
+			if symbolSources[sym] == nil {
+				symbolSources[sym] = make(map[string]bool)
+			}
+			symbolSources[sym][pkg] = true
+		}
+	}
+
+	// Report clashes
+	for symbol, sources := range symbolSources {
+		if len(sources) > 1 {
+			pkgs := make([]string, 0, len(sources))
+			for pkg := range sources {
+				pkgs = append(pkgs, pkg)
+			}
+			sort.Strings(pkgs)
+			fmt.Fprintf(os.Stderr, "Warning: symbol %q is exported by multiple dot-imported packages: %s. This will cause a Go compilation error. Use an aliased import for one of the packages.\n", symbol, strings.Join(pkgs, ", "))
+		}
+	}
 }
 
 var _ transpiler.ASTTransformer = (*galaASTTransformer)(nil)
