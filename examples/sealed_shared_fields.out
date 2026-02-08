@@ -1,0 +1,6 @@
+[OK] stored
+[NOT FOUND] key=missing
+[EXPIRED] key=old
+ok.isOk=true ok.isNotFound=false ok.isExpired=false
+nf.isOk=false nf.isNotFound=true nf.isExpired=false
+exp.isOk=false exp.isNotFound=false exp.isExpired=true

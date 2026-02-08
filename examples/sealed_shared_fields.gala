@@ -1,0 +1,33 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+)
+
+// Sealed type with shared field names across variants (same type allowed)
+sealed type KVResult {
+    case Ok(Message string)
+    case NotFound(Key string)
+    case Expired(Key string)
+}
+
+func formatResult(r KVResult) string = r match {
+    case Ok(msg) => fmt.Sprintf("[OK] %s", msg)
+    case NotFound(key) => fmt.Sprintf("[NOT FOUND] key=%s", key)
+    case Expired(key) => fmt.Sprintf("[EXPIRED] key=%s", key)
+}
+
+func main() {
+    fmt.Println(formatResult(Ok("stored")))
+    fmt.Println(formatResult(NotFound("missing")))
+    fmt.Println(formatResult(Expired("old")))
+
+    // Verify isXxx discriminators work
+    val ok = Ok("done")
+    val nf = NotFound("k1")
+    val exp = Expired("k2")
+    fmt.Printf("ok.isOk=%v ok.isNotFound=%v ok.isExpired=%v\n", ok.isOk(), ok.isNotFound(), ok.isExpired())
+    fmt.Printf("nf.isOk=%v nf.isNotFound=%v nf.isExpired=%v\n", nf.isOk(), nf.isNotFound(), nf.isExpired())
+    fmt.Printf("exp.isOk=%v exp.isNotFound=%v exp.isExpired=%v\n", exp.isOk(), exp.isNotFound(), exp.isExpired())
+}

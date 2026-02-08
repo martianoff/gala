@@ -51,7 +51,7 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 
 	// Parse all variants
 	var variants []sealedVariantInfo
-	allFieldNames := make(map[string]bool)
+	allFieldTypes := make(map[string]string) // field name -> type text (for shared field detection)
 	for i, caseCtx := range ctx.AllSealedCase() {
 		sc := caseCtx.(*grammar.SealedCaseContext)
 		vi := sealedVariantInfo{
@@ -65,10 +65,15 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 			for _, fieldCtx := range fieldList.AllSealedCaseField() {
 				fc := fieldCtx.(*grammar.SealedCaseFieldContext)
 				fieldName := fc.Identifier().GetText()
-				if allFieldNames[fieldName] {
-					return nil, fmt.Errorf("sealed type %s: duplicate field name %q across variants", name, fieldName)
+				fieldTypeText := fc.Type_().GetText()
+				if existingType, exists := allFieldTypes[fieldName]; exists {
+					if existingType != fieldTypeText {
+						return nil, fmt.Errorf("sealed type %s: duplicate field name %q across variants with different types (%s vs %s)", name, fieldName, existingType, fieldTypeText)
+					}
+					// Same name and type: shared field, still add to variant's fields for Apply/Unapply
+				} else {
+					allFieldTypes[fieldName] = fieldTypeText
 				}
-				allFieldNames[fieldName] = true
 				vi.fields = append(vi.fields, sealedFieldInfo{
 					name:    fieldName,
 					typeCtx: fc.Type_(),
@@ -89,8 +94,14 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 		t.structFieldTypes[name] = make(map[string]transpiler.Type)
 	}
 
+	addedFields := make(map[string]bool) // track fields already added to parent struct
 	for _, vi := range variants {
 		for _, f := range vi.fields {
+			if addedFields[f.name] {
+				continue // shared field already added by a previous variant
+			}
+			addedFields[f.name] = true
+
 			typ, err := t.transformType(f.typeCtx)
 			if err != nil {
 				return nil, err
