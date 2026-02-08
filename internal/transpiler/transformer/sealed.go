@@ -18,8 +18,9 @@ type sealedVariantInfo struct {
 }
 
 type sealedFieldInfo struct {
-	name    string
-	typeCtx grammar.ITypeContext
+	name        string
+	typeCtx     grammar.ITypeContext
+	isRecursive bool // true if field type references the parent sealed type (requires pointer indirection)
 }
 
 func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedTypeDeclarationContext) ([]ast.Decl, error) {
@@ -75,8 +76,9 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 					allFieldTypes[fieldName] = fieldTypeText
 				}
 				vi.fields = append(vi.fields, sealedFieldInfo{
-					name:    fieldName,
-					typeCtx: fc.Type_(),
+					name:        fieldName,
+					typeCtx:     fc.Type_(),
+					isRecursive: isSelfReferentialSealedField(fieldTypeText, name),
 				})
 			}
 		}
@@ -94,7 +96,8 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 		t.structFieldTypes[name] = make(map[string]transpiler.Type)
 	}
 
-	addedFields := make(map[string]bool) // track fields already added to parent struct
+	addedFields := make(map[string]bool)    // track fields already added to parent struct
+	recursiveFields := make(map[string]bool) // track which fields are self-referential
 	for _, vi := range variants {
 		for _, f := range vi.fields {
 			if addedFields[f.name] {
@@ -108,20 +111,34 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 			}
 			fType := t.exprToType(typ)
 
-			// All sealed type fields are val (immutable)
-			wrappedType := &ast.IndexExpr{
-				X:     t.stdIdent("Immutable"),
-				Index: typ,
+			var fieldType ast.Expr
+			if f.isRecursive {
+				// Self-referential field: use pointer to break recursive value type.
+				// In Go, Immutable[Expr] where Expr contains Immutable[Expr] is illegal
+				// because it creates an infinitely-sized value type.
+				// Instead, store as *Expr (pointer to parent type).
+				recursiveFields[f.name] = true
+				fieldType = &ast.StarExpr{X: typ}
+			} else {
+				// Normal field: wrap in Immutable[T]
+				fieldType = &ast.IndexExpr{
+					X:     t.stdIdent("Immutable"),
+					Index: typ,
+				}
 			}
 
 			parentFields.List = append(parentFields.List, &ast.Field{
 				Names: []*ast.Ident{ast.NewIdent(f.name)},
-				Type:  wrappedType,
+				Type:  fieldType,
 			})
 
 			fieldNames = append(fieldNames, f.name)
-			immutFlags = append(immutFlags, true)
-			t.immutFields[f.name] = true
+			if f.isRecursive {
+				immutFlags = append(immutFlags, false) // pointer field, not Immutable-wrapped
+			} else {
+				immutFlags = append(immutFlags, true)
+				t.immutFields[f.name] = true
+			}
 			t.structFieldTypes[name][f.name] = fType
 		}
 	}
@@ -169,7 +186,7 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 
 	// 3. Generate companion structs and methods for each variant
 	for _, vi := range variants {
-		companionDecls, err := t.generateSealedCompanion(name, vi, tParams)
+		companionDecls, err := t.generateSealedCompanion(name, vi, tParams, recursiveFields)
 		if err != nil {
 			return nil, err
 		}
@@ -196,7 +213,7 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 	decls = append(decls, equalMethod)
 
 	// 6. Generate String() method on parent
-	stringMethod := t.generateSealedStringMethod(name, variants, tParams)
+	stringMethod := t.generateSealedStringMethod(name, variants, tParams, recursiveFields)
 	decls = append(decls, stringMethod)
 
 	// 7. For generic sealed types, generate InstanceMarker
@@ -209,7 +226,7 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 }
 
 // generateSealedCompanion generates companion struct + Apply + Unapply for a single variant.
-func (t *galaASTTransformer) generateSealedCompanion(parentName string, vi sealedVariantInfo, tParams *ast.FieldList) ([]ast.Decl, error) {
+func (t *galaASTTransformer) generateSealedCompanion(parentName string, vi sealedVariantInfo, tParams *ast.FieldList, recursiveFields map[string]bool) ([]ast.Decl, error) {
 	var decls []ast.Decl
 
 	// Empty companion struct (with same type parameters as parent)
@@ -235,14 +252,14 @@ func (t *galaASTTransformer) generateSealedCompanion(parentName string, vi seale
 	parentType := t.buildGenericTypeExpr(parentName, tParams)
 
 	// Apply method
-	applyMethod, err := t.generateSealedApply(parentName, vi, companionRecvType, parentType, tParams)
+	applyMethod, err := t.generateSealedApply(parentName, vi, companionRecvType, parentType, tParams, recursiveFields)
 	if err != nil {
 		return nil, err
 	}
 	decls = append(decls, applyMethod)
 
 	// Unapply method
-	unapplyMethod, err := t.generateSealedUnapply(parentName, vi, companionRecvType, parentType, tParams)
+	unapplyMethod, err := t.generateSealedUnapply(parentName, vi, companionRecvType, parentType, tParams, recursiveFields)
 	if err != nil {
 		return nil, err
 	}
@@ -269,8 +286,8 @@ func (t *galaASTTransformer) buildGenericTypeExpr(name string, tParams *ast.Fiel
 }
 
 // generateSealedApply generates the Apply method for a sealed type companion.
-// e.g., func (c Circle) Apply(Radius float64) Shape { return Shape{Radius: NewImmutable(Radius), _variant: _Shape_Circle} }
-func (t *galaASTTransformer) generateSealedApply(parentName string, vi sealedVariantInfo, companionType, parentType ast.Expr, tParams *ast.FieldList) (*ast.FuncDecl, error) {
+// For recursive fields (self-referential), it uses pointer: Field: &value instead of NewImmutable(value).
+func (t *galaASTTransformer) generateSealedApply(parentName string, vi sealedVariantInfo, companionType, parentType ast.Expr, tParams *ast.FieldList, recursiveFields map[string]bool) (*ast.FuncDecl, error) {
 	// Parameters: the variant's fields
 	params := &ast.FieldList{}
 	for _, f := range vi.fields {
@@ -287,12 +304,23 @@ func (t *galaASTTransformer) generateSealedApply(parentName string, vi sealedVar
 	// Body: construct parent struct
 	var elts []ast.Expr
 	for _, f := range vi.fields {
-		elts = append(elts, &ast.KeyValueExpr{
-			Key: ast.NewIdent(f.name),
-			Value: &ast.CallExpr{
+		var valueExpr ast.Expr
+		if recursiveFields[f.name] {
+			// Recursive field: store as pointer &value
+			valueExpr = &ast.UnaryExpr{
+				Op: token.AND,
+				X:  ast.NewIdent(f.name),
+			}
+		} else {
+			// Normal field: wrap in NewImmutable
+			valueExpr = &ast.CallExpr{
 				Fun:  t.stdIdent("NewImmutable"),
 				Args: []ast.Expr{ast.NewIdent(f.name)},
-			},
+			}
+		}
+		elts = append(elts, &ast.KeyValueExpr{
+			Key:   ast.NewIdent(f.name),
+			Value: valueExpr,
 		})
 	}
 	elts = append(elts, &ast.KeyValueExpr{
@@ -331,11 +359,36 @@ func (t *galaASTTransformer) generateSealedApply(parentName string, vi sealedVar
 	}, nil
 }
 
+// sealedFieldAccessExpr generates the expression to read a sealed type field value.
+// For recursive (pointer) fields: *v.Field (dereference the pointer)
+// For normal (Immutable) fields: v.Field.Get() (unwrap the Immutable)
+func sealedFieldAccessExpr(paramName string, fieldName string, isRecursive bool) ast.Expr {
+	if isRecursive {
+		// Dereference pointer: *v.Field
+		return &ast.StarExpr{
+			X: &ast.SelectorExpr{
+				X:   ast.NewIdent(paramName),
+				Sel: ast.NewIdent(fieldName),
+			},
+		}
+	}
+	// Normal Immutable field: v.Field.Get()
+	return &ast.CallExpr{
+		Fun: &ast.SelectorExpr{
+			X: &ast.SelectorExpr{
+				X:   ast.NewIdent(paramName),
+				Sel: ast.NewIdent(fieldName),
+			},
+			Sel: ast.NewIdent("Get"),
+		},
+	}
+}
+
 // generateSealedUnapply generates the Unapply method for a sealed type companion.
 // 0-field variant: returns bool
 // 1-field variant: returns Option[FieldType]
 // 2+-field variant: returns Option[Tuple[...]]
-func (t *galaASTTransformer) generateSealedUnapply(parentName string, vi sealedVariantInfo, companionType, parentType ast.Expr, tParams *ast.FieldList) (*ast.FuncDecl, error) {
+func (t *galaASTTransformer) generateSealedUnapply(parentName string, vi sealedVariantInfo, companionType, parentType ast.Expr, tParams *ast.FieldList, recursiveFields map[string]bool) (*ast.FuncDecl, error) {
 	paramName := "v"
 
 	switch len(vi.fields) {
@@ -377,7 +430,7 @@ func (t *galaASTTransformer) generateSealedUnapply(parentName string, vi sealedV
 		}, nil
 
 	case 1:
-		// Returns Option[FieldType]: if matches, Some(v.Field), else None
+		// Returns Option[FieldType]: if matches, Some(v.Field.Get()) or Some(*v.Field), else None
 		f := vi.fields[0]
 		fieldType, err := t.transformType(f.typeCtx)
 		if err != nil {
@@ -387,6 +440,8 @@ func (t *galaASTTransformer) generateSealedUnapply(parentName string, vi sealedV
 			X:     t.stdIdent("Option"),
 			Index: fieldType,
 		}
+
+		fieldAccess := sealedFieldAccessExpr(paramName, f.name, recursiveFields[f.name])
 
 		return &ast.FuncDecl{
 			Recv: &ast.FieldList{
@@ -427,17 +482,7 @@ func (t *galaASTTransformer) generateSealedUnapply(parentName string, vi sealedV
 												},
 												Sel: ast.NewIdent("Apply"),
 											},
-											Args: []ast.Expr{
-												&ast.CallExpr{
-													Fun: &ast.SelectorExpr{
-														X: &ast.SelectorExpr{
-															X:   ast.NewIdent(paramName),
-															Sel: ast.NewIdent(f.name),
-														},
-														Sel: ast.NewIdent("Get"),
-													},
-												},
-											},
+											Args: []ast.Expr{fieldAccess},
 										},
 									},
 								},
@@ -493,18 +538,10 @@ func (t *galaASTTransformer) generateSealedUnapply(parentName string, vi sealedV
 			Index: tupleType,
 		}
 
-		// Build tuple constructor args: v.Field1.Get(), v.Field2.Get(), ...
+		// Build tuple constructor args: v.Field.Get() or *v.Field for recursive fields
 		var tupleArgs []ast.Expr
 		for _, f := range vi.fields {
-			tupleArgs = append(tupleArgs, &ast.CallExpr{
-				Fun: &ast.SelectorExpr{
-					X: &ast.SelectorExpr{
-						X:   ast.NewIdent(paramName),
-						Sel: ast.NewIdent(f.name),
-					},
-					Sel: ast.NewIdent("Get"),
-				},
-			})
+			tupleArgs = append(tupleArgs, sealedFieldAccessExpr(paramName, f.name, recursiveFields[f.name]))
 		}
 
 		// Some[TupleN[...]](TupleN[...]{V1: ..., V2: ...})
@@ -646,7 +683,7 @@ func (t *galaASTTransformer) generateSealedIsMethod(parentName string, vi sealed
 
 // generateSealedStringMethod generates a String() method on the parent sealed type.
 // Each variant case returns "VariantName(field1, field2, ...)" or "VariantName()" for 0-field variants.
-func (t *galaASTTransformer) generateSealedStringMethod(parentName string, variants []sealedVariantInfo, tParams *ast.FieldList) *ast.FuncDecl {
+func (t *galaASTTransformer) generateSealedStringMethod(parentName string, variants []sealedVariantInfo, tParams *ast.FieldList, recursiveFields map[string]bool) *ast.FuncDecl {
 	parentType := t.buildGenericTypeExpr(parentName, tParams)
 
 	var cases []ast.Stmt
@@ -664,19 +701,12 @@ func (t *galaASTTransformer) generateSealedStringMethod(parentName string, varia
 		} else {
 			needsFmt = true
 			// Return fmt.Sprintf("VariantName(%v, %v)", s.Field1.Get(), s.Field2.Get())
+			// For recursive fields: *s.Field instead of s.Field.Get()
 			var formatParts []string
 			var args []ast.Expr
 			for _, f := range vi.fields {
 				formatParts = append(formatParts, "%v")
-				args = append(args, &ast.CallExpr{
-					Fun: &ast.SelectorExpr{
-						X: &ast.SelectorExpr{
-							X:   ast.NewIdent("s"),
-							Sel: ast.NewIdent(f.name),
-						},
-						Sel: ast.NewIdent("Get"),
-					},
-				})
+				args = append(args, sealedFieldAccessExpr("s", f.name, recursiveFields[f.name]))
 			}
 			formatStr := fmt.Sprintf(`"%s(%s)"`, vi.name, strings.Join(formatParts, ", "))
 			allArgs := append([]ast.Expr{
@@ -747,4 +777,20 @@ func (t *galaASTTransformer) generateSealedStringMethod(parentName string, varia
 			},
 		},
 	}
+}
+
+// isSelfReferentialSealedField checks if a field type text references the parent sealed type.
+// This handles direct references like "Expr" and generic references like "Tree[T]".
+// When a sealed type field references the parent type, it must use pointer indirection
+// to avoid illegal recursive value types in Go.
+func isSelfReferentialSealedField(fieldTypeText, parentName string) bool {
+	// Direct match: field type is exactly the parent name (e.g., "Expr")
+	if fieldTypeText == parentName {
+		return true
+	}
+	// Generic match: field type starts with "ParentName[" (e.g., "Tree[T]")
+	if strings.HasPrefix(fieldTypeText, parentName+"[") {
+		return true
+	}
+	return false
 }

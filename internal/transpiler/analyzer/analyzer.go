@@ -601,7 +601,9 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 				// Add to parent type fields
 				parentMeta.Fields[fieldName] = a.resolveTypeWithParams(fieldTypeStr, pkgName, typeParams)
 				parentMeta.FieldNames = append(parentMeta.FieldNames, fieldName)
-				parentMeta.ImmutFlags = append(parentMeta.ImmutFlags, true) // sealed type fields are always val
+				// Self-referential fields use pointer indirection (not Immutable-wrapped)
+				isRecursive := fieldTypeStr == typeName || strings.HasPrefix(fieldTypeStr, typeName+"[")
+				parentMeta.ImmutFlags = append(parentMeta.ImmutFlags, !isRecursive)
 			}
 		}
 
