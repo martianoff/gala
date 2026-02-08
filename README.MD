@@ -393,15 +393,15 @@ GALA borrows many ideas from Scala - pattern matching, sealed types, `Option`/`E
 
 ### Why GALA if you already know Scala?
 
-| | Scala | GALA |
+| | GALA | Scala |
 |---|---|---|
-| **Runtime** | JVM (startup overhead, GC tuning) | Native binary, fast startup, small footprint |
-| **Deployment** | JAR/fat JAR, requires JVM | Single static binary, cross-compiles to any OS |
-| **Concurrency** | Akka, ZIO, Cats Effect | Goroutines + `Future[T]` (built on Go's lightweight threads) |
-| **Interop** | Java ecosystem | Go ecosystem |
-| **Learning curve** | Steep (implicits, macros, higher-kinded types) | Moderate (no implicits, no macros, no HKT) |
-| **Build** | sbt (slow), Mill, Gradle | Bazel or `gala run` (fast) |
-| **Type inference** | Global (Hindley-Milner + local) | Local + targeted HM for generics |
+| **Runtime** | Native binary, fast startup, small footprint | JVM (startup overhead, GC tuning) |
+| **Deployment** | Single static binary, cross-compiles to any OS | JAR/fat JAR, requires JVM |
+| **Concurrency** | Goroutines + `Future[T]` (built on Go's lightweight threads) | Akka, ZIO, Cats Effect |
+| **Interop** | Go ecosystem | Java ecosystem |
+| **Learning curve** | Moderate (no implicits, no macros, no HKT) | Steep (implicits, macros, higher-kinded types) |
+| **Build** | Bazel or `gala run` (fast) | sbt (slow), Mill, Gradle |
+| **Type inference** | Local + targeted HM for generics | Global (Hindley-Milner + local) |
 
 ### Sealed Types
 
@@ -477,16 +477,16 @@ Scala has placeholder syntax (`_`) for terse lambdas. GALA requires explicit par
 
 These Scala features are intentionally omitted to keep GALA simple and its output readable:
 
-| Scala feature | GALA approach |
+| GALA approach | Scala feature |
 |---|---|
-| Implicits / `given` / `using` | Explicit parameter passing |
-| Higher-kinded types (`F[_]`) | Concrete generics only |
-| Macros | No compile-time metaprogramming |
-| Traits with implementations | Interfaces (Go-style, no default methods) |
-| For-comprehensions | Method chaining (`.Map`, `.FlatMap`) |
-| Companion objects | Auto-generated companions for sealed types + `Apply`/`Unapply` |
-| Variance (`+T`, `-T`) | Invariant generics only |
-| Lazy vals | Not supported |
+| Explicit parameter passing | Implicits / `given` / `using` |
+| Concrete generics only | Higher-kinded types (`F[_]`) |
+| No compile-time metaprogramming | Macros |
+| Interfaces (Go-style, no default methods) | Traits with implementations |
+| Method chaining (`.Map`, `.FlatMap`) | For-comprehensions |
+| Auto-generated companions for sealed types + `Apply`/`Unapply` | Companion objects |
+| Invariant generics only | Variance (`+T`, `-T`) |
+| Not supported | Lazy vals |
 
 ### Native binaries vs JVM in containers
 
