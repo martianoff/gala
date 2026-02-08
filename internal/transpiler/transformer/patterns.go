@@ -13,6 +13,21 @@ import (
 // This file contains pattern transformation logic extracted from match.go
 // Functions related to pattern matching, extractors, and type extraction
 
+// suppressUnused appends `_ = varName` to suppress Go's "declared and not used" error.
+// Pattern match bindings are generated BEFORE the if-body, so variables that are unused
+// in the match body would otherwise cause compile errors.
+// Skips blank identifier `_` since it cannot be used as a value in Go.
+func (t *galaASTTransformer) suppressUnused(stmts []ast.Stmt, varName string) []ast.Stmt {
+	if varName == "_" {
+		return stmts
+	}
+	return append(stmts, &ast.AssignStmt{
+		Lhs: []ast.Expr{ast.NewIdent("_")},
+		Tok: token.ASSIGN,
+		Rhs: []ast.Expr{ast.NewIdent(varName)},
+	})
+}
+
 func (t *galaASTTransformer) transformPattern(patCtx grammar.IPatternContext, objExpr ast.Expr) (ast.Expr, []ast.Stmt, error) {
 	return t.transformPatternWithType(patCtx, objExpr, nil)
 }
@@ -162,7 +177,7 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 			Tok: token.DEFINE,
 			Rhs: []ast.Expr{objExpr},
 		}
-		return ast.NewIdent("true"), []ast.Stmt{assign}, nil
+		return ast.NewIdent("true"), t.suppressUnused([]ast.Stmt{assign}, name), nil
 	}
 
 	// Literal or other - use direct equality comparison
@@ -219,7 +234,7 @@ func (t *galaASTTransformer) transformTypedPattern(ctx *grammar.TypedPatternCont
 		Rhs: []ast.Expr{asCall},
 	}
 
-	return ast.NewIdent(okName), []ast.Stmt{assign}, nil
+	return ast.NewIdent(okName), t.suppressUnused([]ast.Stmt{assign}, name), nil
 }
 
 // isWildcardGenericType checks if typeExpr is a generic type with wildcard (any) type parameters.
@@ -301,7 +316,7 @@ func (t *galaASTTransformer) transformWildcardTypedPattern(name, baseName string
 		},
 	}
 
-	return cond, []ast.Stmt{assign1, assign2}, nil
+	return cond, t.suppressUnused([]ast.Stmt{assign1, assign2}, name), nil
 }
 
 func (t *galaASTTransformer) transformCaseClause(ctx *grammar.CaseClauseContext, paramName string) (ast.Stmt, error) {
@@ -569,7 +584,7 @@ func (t *galaASTTransformer) generateDirectTupleStructMatch(objExpr ast.Expr, ar
 					Tok: token.DEFINE,
 					Rhs: []ast.Expr{elemExpr},
 				}
-				stmts = append(stmts, assign)
+				stmts = t.suppressUnused(append(stmts, assign), name)
 				continue
 			}
 
@@ -671,7 +686,7 @@ func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, ar
 					Tok: token.DEFINE,
 					Rhs: []ast.Expr{elemExpr},
 				}
-				stmts = append(stmts, assign)
+				stmts = t.suppressUnused(append(stmts, assign), name)
 				continue
 			}
 
@@ -1093,6 +1108,14 @@ func (t *galaASTTransformer) generateSeqPatternMatch(objExpr ast.Expr, argList *
 		stmts = append(stmts, guardedBlock)
 	}
 
+	// Add blank assigns for all bound variables to suppress "declared and not used" errors
+	for _, bName := range bindingNames {
+		stmts = t.suppressUnused(stmts, bName)
+	}
+	if restPatternName != "" {
+		stmts = t.suppressUnused(stmts, restPatternName)
+	}
+
 	t.needsStdImport = true
 
 	// Combine all conditions
@@ -1166,7 +1189,7 @@ func (t *galaASTTransformer) transformTuplePattern(patternExprs []grammar.IExpre
 				Tok: token.DEFINE,
 				Rhs: []ast.Expr{elemExpr},
 			}
-			stmts = append(stmts, assign)
+			stmts = t.suppressUnused(append(stmts, assign), name)
 			continue
 		}
 
@@ -1718,6 +1741,8 @@ func (t *galaASTTransformer) generateDirectUnapplyPattern(
 			},
 		}
 		allBindings = append(allBindings, guardedGet)
+		// Suppress "declared and not used" for inner temp var in case all pattern args are wildcards
+		allBindings = t.suppressUnused(allBindings, innerName)
 
 		// For each argument pattern, generate direct field access
 		for i, argCtx := range argList.AllArgument() {
@@ -1775,7 +1800,7 @@ func (t *galaASTTransformer) generateDirectUnapplyPattern(
 					Tok: token.DEFINE,
 					Rhs: []ast.Expr{elemExpr},
 				}
-				allBindings = append(allBindings, varAssign)
+				allBindings = t.suppressUnused(append(allBindings, varAssign), varName)
 			} else {
 				// Handle nested patterns recursively
 				subCond, subBindings, err := t.transformPatternWithType(arg.Pattern(), elemExpr, elemType)

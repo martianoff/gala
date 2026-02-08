@@ -111,6 +111,7 @@ var x = std.NewImmutable(42)
 var res = std.NewImmutable(func(obj int) int {
 	{
 		y := obj
+		_ = y
 		if true {
 			return y + 1
 		}
@@ -141,7 +142,9 @@ var res = std.NewImmutable(func(obj std.Option[int]) int {
 		if _tmp_2 {
 			_tmp_3 = _tmp_1.Get()
 		}
+		_ = _tmp_3
 		y := _tmp_3
+		_ = y
 		if _tmp_2 {
 			return y
 		}
@@ -172,7 +175,9 @@ var res = std.NewImmutable(func(obj std.Option[any]) string {
 		if _tmp_2 {
 			_tmp_3 = _tmp_1.Get()
 		}
+		_ = _tmp_3
 		s, _tmp_4 := std.As[string](_tmp_3)
+		_ = s
 		if _tmp_2 && _tmp_4 {
 			return s
 		}

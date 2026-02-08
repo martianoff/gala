@@ -1,0 +1,71 @@
+package main
+
+import "fmt"
+
+// FIX-002 verification: unused extracted variables in match branches must not cause Go compile errors.
+// The transpiler generates variable bindings BEFORE the if-body, so without `_ = varName`
+// suppression, Go would reject any binding that is not referenced in the match body.
+
+sealed type Animal {
+    case Dog(Name string, Age int)
+    case Cat(Name string, Lives int)
+    case Fish()
+}
+
+// Case 1: Sealed type match - extract fields but only use some
+func animalCategory(a Animal) string = a match {
+    case Dog(_, age) => if (age > 5) "old dog" else "young dog"
+    case Cat(_, _) => "cat"
+    case Fish() => "fish"
+}
+
+// Case 2: Option match - extract value but ignore it
+func hasValue(opt Option[int]) string = opt match {
+    case Some(v) => "yes"
+    case _ => "no"
+}
+
+// Case 3: Typed pattern match - extract but don't use
+func typeLabel(x any) string = x match {
+    case s: string => "string"
+    case i: int => "int"
+    case _ => "other"
+}
+
+// Case 4: Tuple pattern match - extract but only use some
+func tupleTest() string {
+    val t = (1, "hello")
+    return t match {
+        case (n, s) => fmt.Sprintf("n=%d", n)
+        case _ => "unknown"
+    }
+}
+
+// Case 5: Variable binding - extract but ignore
+func alwaysForty(x int) int = x match {
+    case y => 40
+    case _ => 0
+}
+
+func main() {
+    // Sealed type with unused extracted fields
+    fmt.Println(animalCategory(Dog("Rex", 3)))
+    fmt.Println(animalCategory(Dog("Buddy", 8)))
+    fmt.Println(animalCategory(Cat("Whiskers", 9)))
+    fmt.Println(animalCategory(Fish()))
+
+    // Option with unused extracted value
+    fmt.Println(hasValue(Some(42)))
+    fmt.Println(hasValue(None[int]()))
+
+    // Typed pattern with unused extracted value
+    fmt.Println(typeLabel("hello"))
+    fmt.Println(typeLabel(42))
+    fmt.Println(typeLabel(3.14))
+
+    // Tuple with partially-used extracted fields
+    fmt.Println(tupleTest())
+
+    // Variable binding, value ignored
+    fmt.Println(alwaysForty(99))
+}

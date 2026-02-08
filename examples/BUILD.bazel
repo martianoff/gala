@@ -602,6 +602,13 @@ gala_test(
     deps = ["//time_utils"],
 )
 
+# Regression test for FIX-002: unused extracted variables in match branches
+gala_test(
+    name = "unused_match_vars",
+    src = "unused_match_vars.gala",
+    expected = "unused_match_vars.out",
+)
+
 gala_test(
     name = "kvstore",
     src = "kvstore.gala",
