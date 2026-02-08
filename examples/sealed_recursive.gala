@@ -1,0 +1,37 @@
+package main
+
+import "fmt"
+
+// Recursive sealed type: Expr contains fields of type Expr
+sealed type Expr {
+    case Num(Value float64)
+    case Add(Left Expr, Right Expr)
+    case Mul(Left Expr, Right Expr)
+}
+
+// Evaluate an expression tree recursively
+func eval(e Expr) float64 = e match {
+    case Num(v) => v
+    case Add(l, r) => eval(l) + eval(r)
+    case Mul(l, r) => eval(l) * eval(r)
+}
+
+func main() {
+    // Simple number
+    val n = Num(42.0)
+    fmt.Println(eval(n))
+
+    // 1 + 2
+    val sum = Add(Num(1.0), Num(2.0))
+    fmt.Println(eval(sum))
+
+    // (3 + 4) * 2
+    val expr = Mul(Add(Num(3.0), Num(4.0)), Num(2.0))
+    fmt.Println(eval(expr))
+
+    // Verify isXxx discriminators
+    fmt.Println(n.isNum())
+    fmt.Println(n.isAdd())
+    fmt.Println(sum.isAdd())
+    fmt.Println(expr.isMul())
+}
