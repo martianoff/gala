@@ -1,5 +1,5 @@
 thunk result: 42
 thunk name: simple
 lazy none evaluated: false
-lazy none thunk(): {{0} 1}
-lazy some thunk(): {{hello} 0}
+lazy none thunk(): None()
+lazy some thunk(): Some(hello)

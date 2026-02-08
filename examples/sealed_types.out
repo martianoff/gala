@@ -7,3 +7,7 @@ Rectangle 10x20
 A point
 true
 false
+Circle(3.14)
+Rectangle(10, 20)
+Point()
+Red()

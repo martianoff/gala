@@ -269,6 +269,16 @@ func (s Light) Copy() Light {
 func (s Light) Equal(other Light) bool {
 	return std.Equal(s._variant, other._variant)
 }
+func (s Light) String() string {
+	switch s._variant {
+	case _Light_On:
+		return "On()"
+	case _Light_Off:
+		return "Off()"
+	default:
+		return "Light(<unknown>)"
+	}
+}
 func describe(l Light) string {
 	return func(obj Light) string {
 		{
@@ -344,6 +354,16 @@ func (s Light) Copy() Light {
 }
 func (s Light) Equal(other Light) bool {
 	return std.Equal(s._variant, other._variant)
+}
+func (s Light) String() string {
+	switch s._variant {
+	case _Light_On:
+		return "On()"
+	case _Light_Off:
+		return "Off()"
+	default:
+		return "Light(<unknown>)"
+	}
 }
 func describe(l Light) string {
 	return func(obj Light) string {

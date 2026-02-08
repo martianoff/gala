@@ -41,4 +41,10 @@ func main() {
     val red = Red()
     fmt.Println(red.isRed())
     fmt.Println(red.isGreen())
+
+    // String() method
+    fmt.Println(c)
+    fmt.Println(r)
+    fmt.Println(p)
+    fmt.Println(red)
 }

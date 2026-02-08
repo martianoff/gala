@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"strings"
 
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
@@ -183,7 +184,11 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 	}
 	decls = append(decls, equalMethod)
 
-	// 6. For generic sealed types, generate InstanceMarker
+	// 6. Generate String() method on parent
+	stringMethod := t.generateSealedStringMethod(name, variants, tParams)
+	decls = append(decls, stringMethod)
+
+	// 7. For generic sealed types, generate InstanceMarker
 	if tParams != nil {
 		interfaceDecl, markerMethod := t.generateInstanceMarker(name, tParams)
 		decls = append(decls, interfaceDecl, markerMethod)
@@ -622,6 +627,111 @@ func (t *galaASTTransformer) generateSealedIsMethod(parentName string, vi sealed
 							Y:  ast.NewIdent(vi.tagConst),
 						},
 					},
+				},
+			},
+		},
+	}
+}
+
+// generateSealedStringMethod generates a String() method on the parent sealed type.
+// Each variant case returns "VariantName(field1, field2, ...)" or "VariantName()" for 0-field variants.
+func (t *galaASTTransformer) generateSealedStringMethod(parentName string, variants []sealedVariantInfo, tParams *ast.FieldList) *ast.FuncDecl {
+	parentType := t.buildGenericTypeExpr(parentName, tParams)
+
+	var cases []ast.Stmt
+	needsFmt := false
+
+	for _, vi := range variants {
+		var retExpr ast.Expr
+
+		if len(vi.fields) == 0 {
+			// Return "VariantName()"
+			retExpr = &ast.BasicLit{
+				Kind:  token.STRING,
+				Value: fmt.Sprintf(`"%s()"`, vi.name),
+			}
+		} else {
+			needsFmt = true
+			// Return fmt.Sprintf("VariantName(%v, %v)", s.Field1.Get(), s.Field2.Get())
+			var formatParts []string
+			var args []ast.Expr
+			for _, f := range vi.fields {
+				formatParts = append(formatParts, "%v")
+				args = append(args, &ast.CallExpr{
+					Fun: &ast.SelectorExpr{
+						X: &ast.SelectorExpr{
+							X:   ast.NewIdent("s"),
+							Sel: ast.NewIdent(f.name),
+						},
+						Sel: ast.NewIdent("Get"),
+					},
+				})
+			}
+			formatStr := fmt.Sprintf(`"%s(%s)"`, vi.name, strings.Join(formatParts, ", "))
+			allArgs := append([]ast.Expr{
+				&ast.BasicLit{Kind: token.STRING, Value: formatStr},
+			}, args...)
+
+			retExpr = &ast.CallExpr{
+				Fun: &ast.SelectorExpr{
+					X:   ast.NewIdent("fmt"),
+					Sel: ast.NewIdent("Sprintf"),
+				},
+				Args: allArgs,
+			}
+		}
+
+		cases = append(cases, &ast.CaseClause{
+			List: []ast.Expr{ast.NewIdent(vi.tagConst)},
+			Body: []ast.Stmt{
+				&ast.ReturnStmt{Results: []ast.Expr{retExpr}},
+			},
+		})
+	}
+
+	// Default case
+	cases = append(cases, &ast.CaseClause{
+		List: nil, // nil = default
+		Body: []ast.Stmt{
+			&ast.ReturnStmt{
+				Results: []ast.Expr{
+					&ast.BasicLit{
+						Kind:  token.STRING,
+						Value: fmt.Sprintf(`"%s(<unknown>)"`, parentName),
+					},
+				},
+			},
+		},
+	})
+
+	if needsFmt {
+		t.needsFmtImport = true
+	}
+
+	return &ast.FuncDecl{
+		Recv: &ast.FieldList{
+			List: []*ast.Field{
+				{
+					Names: []*ast.Ident{ast.NewIdent("s")},
+					Type:  parentType,
+				},
+			},
+		},
+		Name: ast.NewIdent("String"),
+		Type: &ast.FuncType{
+			Params: &ast.FieldList{},
+			Results: &ast.FieldList{
+				List: []*ast.Field{{Type: ast.NewIdent("string")}},
+			},
+		},
+		Body: &ast.BlockStmt{
+			List: []ast.Stmt{
+				&ast.SwitchStmt{
+					Tag: &ast.SelectorExpr{
+						X:   ast.NewIdent("s"),
+						Sel: ast.NewIdent("_variant"),
+					},
+					Body: &ast.BlockStmt{List: cases},
 				},
 			},
 		},

@@ -1,6 +1,6 @@
 Immediate value=42
 Failed isCompleted=true
-Await={{100} {<nil>} 0}
+Await=Success(100)
 Get=100
 GetOrElse=100
 Map=20

@@ -2,7 +2,7 @@ If expr: pass
 Option mapped: 20
 Option fallback: 42
 Either match: Result: success
-Either mapped: {{0} {7} 1}
+Either mapped: Right(7)
 Try match: Got: 42
 Try mapped: 84
 Try recovered: 0
