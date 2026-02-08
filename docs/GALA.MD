@@ -999,33 +999,44 @@ val msg = async match {
 
 For comprehensive documentation including Promise, ExecutionContext, sequence operations, and all methods, see [Concurrent](CONCURRENT.MD).
 
-### Slices
+### Slices (Go Interop)
 
-GALA provides type-safe functions for creating slices through the `std` package. Native Go slice literals (`[]int{1,2,3}`) and `make()` are not supported in GALA.
+**Prefer GALA collections** (`Array`, `List`) over Go slices for most use cases. GALA collections provide rich functional APIs (Map, Filter, FoldLeft, ForEach, etc.) and are immutable by default. See [Immutable Collections](IMMUTABLE_COLLECTIONS.MD) for details.
+
+Use Go slices only when interfacing with Go libraries or when you specifically need Go's `[]T` semantics. Native Go slice literals (`[]int{1,2,3}`) and `make()` are not supported in GALA.
 
 ```gala
-// Create a slice from values
-val nums = SliceOf(1, 2, 3, 4, 5)
+// PREFERRED: Use GALA collections
+import . "martianoff/gala/collection_immutable"
 
-// Create an empty slice
-val empty = SliceEmpty[int]()
+val nums = ArrayOf(1, 2, 3, 4, 5)       // Immutable Array with functional API
+val names = ListOf("Alice", "Bob")       // Immutable List
+val doubled = nums.Map((x) => x * 2)    // Functional operations
+val sum = nums.FoldLeft(0, (acc, x) => acc + x)
 
-// Pre-allocate capacity for performance
-val buffer = SliceWithCapacity[string](100)
+// GO INTEROP: Use go_interop slice functions when you need []T
+import . "martianoff/gala/go_interop"
 
-// Create a slice with specific size (zero-initialized)
-val sized = SliceWithSize[int](10)
-
-// Copy an existing slice
-val copy = SliceCopy(original)
+val goSlice = SliceOf(1, 2, 3, 4, 5)    // Creates Go []int
+val empty = SliceEmpty[int]()            // Creates Go []int{}
 ```
 
-**Available Slice Functions:**
+**When to use Go slices vs GALA collections:**
+
+| Use Case | Recommendation |
+|----------|---------------|
+| General programming | `Array` or `List` from `collection_immutable` |
+| Need Map/Filter/FoldLeft | `Array` or `List` (have full functional API) |
+| Passing data to Go libraries | `SliceOf` from `go_interop`, or `.ToGoSlice()` on GALA collections |
+| Variadic function arguments | Go slices (`[]T`) with `SliceOf` |
+| Performance-critical Go interop | `SliceOf` / `SliceWithCapacity` from `go_interop` |
+
+**Available Slice Functions** (from `go_interop` package):
 
 | Function | Description |
 |----------|-------------|
-| `SliceOf(elements...)` | Create slice from values |
-| `SliceEmpty[T]()` | Create empty slice |
+| `SliceOf(elements...)` | Create Go slice from values |
+| `SliceEmpty[T]()` | Create empty Go slice |
 | `SliceWithCapacity[T](cap)` | Empty slice with capacity |
 | `SliceWithSize[T](size)` | Zero-initialized slice |
 | `SliceWithSizeAndCapacity[T](size, cap)` | Slice with length and capacity |
@@ -1800,11 +1811,33 @@ val fallback = Left[string, int]("error")
 - **Unpack with pattern matching** - `case (a, b) =>` or `val (x, y) = tuple`
 
 ### Collections
-| Operation | Immutable | Mutable |
-|-----------|-----------|---------|
-| Create | `ListOf(1,2,3)` | `EmptyList[int]()` then `Append` |
-| Transform | `list.Map(f)` | `list.Map(f)` (returns new) |
-| Accumulate | `FoldLeft[U](init, f)` | `FoldLeft[U](init, f)` |
+- **Prefer GALA collections over Go slices** - Use `Array` or `List` from `collection_immutable` instead of Go `[]T` slices. GALA collections provide Map, Filter, FoldLeft, ForEach, ZipWithIndex, and other functional operations that Go slices lack
+- **Use `go_interop` slices only for Go interop** - `SliceOf`, `SliceEmpty`, etc. live in the `go_interop` package and create Go `[]T` slices. Use them only when passing data to Go libraries or as variadic arguments
+- **Convert between types** - Use `.ToGoSlice()` to convert GALA collections to Go slices, and `ArrayFromSlice()`/`ListFromSlice()` to go the other direction
+
+| Operation | GALA Collections (preferred) | Go Slices (interop only) |
+|-----------|------------------------------|--------------------------|
+| Create | `ArrayOf(1,2,3)` / `ListOf(1,2,3)` | `SliceOf(1,2,3)` (from `go_interop`) |
+| Empty | `EmptyArray[int]()` / `EmptyList[int]()` | `SliceEmpty[int]()` (from `go_interop`) |
+| Transform | `arr.Map(f)`, `arr.Filter(p)` | Not available on `[]T` |
+| Accumulate | `arr.FoldLeft(init, f)` | Manual `for` loop |
+| Iterate | `arr.ForEach(f)` | `for _, x := range slice` |
+| Size | `arr.Size()` | `len(slice)` |
+| Access | `arr.Get(i)` / `arr.GetOption(i)` | `slice[i]` (may panic) |
+
+```gala
+// GOOD: GALA collections with functional API
+import . "martianoff/gala/collection_immutable"
+
+val nums = ArrayOf(1, 2, 3, 4, 5)
+val evens = nums.Filter((x) => x % 2 == 0)
+val sum = nums.FoldLeft(0, (acc, x) => acc + x)
+
+// AVOID: Go slices without functional API
+import . "martianoff/gala/go_interop"
+
+val nums = SliceOf(1, 2, 3, 4, 5)  // No .Map(), .Filter(), etc.
+```
 
 ### Error Handling
 - **Use `Option[T]`** for nullable values

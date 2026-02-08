@@ -580,3 +580,13 @@ gala_test(
     expected = "doc_verify/time_utils_md.out",
     deps = ["//time_utils"],
 )
+
+gala_test(
+    name = "kvstore",
+    src = "kvstore.gala",
+    expected = "kvstore.out",
+    deps = [
+        "//collection_immutable",
+        "//time_utils",
+    ],
+)

@@ -193,8 +193,13 @@ func (t *galaASTTransformer) typeToExpr(typ transpiler.Type) ast.Expr {
 			if v.Package == t.packageName {
 				return ast.NewIdent(v.Name)
 			}
+			// Use the import alias if one exists (e.g., im for collection_immutable)
+			pkgName := v.Package
+			if alias, ok := t.importManager.GetAlias(v.Package); ok {
+				pkgName = alias
+			}
 			return &ast.SelectorExpr{
-				X:   ast.NewIdent(v.Package),
+				X:   ast.NewIdent(pkgName),
 				Sel: ast.NewIdent(v.Name),
 			}
 		}

@@ -1,0 +1,291 @@
+package main
+
+import (
+    "fmt"
+    im "martianoff/gala/collection_immutable"
+    . "martianoff/gala/std"
+    . "martianoff/gala/time_utils"
+)
+
+// === Data Model ===
+
+// KVResult: sealed type representing operation results
+sealed type KVResult {
+    case Ok(Message string)
+    case NotFound(MissingKey string)
+    case Expired(ExpiredKey string)
+}
+
+// Entry: holds a value and an optional expiry time
+type Entry struct {
+    Value     string
+    ExpiresAt Option[Instant]
+}
+
+// Store: wraps an immutable HashMap
+type Store struct {
+    Data im.HashMap[string, Entry]
+}
+
+// === Store Creation ===
+
+func emptyStore() Store = Store(Data = im.EmptyHashMap[string, Entry]())
+
+// === Core Operations ===
+
+// put adds a key-value pair with no expiry
+func put(s Store, key string, value string) Store {
+    val entry = Entry(Value = value, ExpiresAt = None[Instant]())
+    return Store(Data = s.Data.Put(key, entry))
+}
+
+// putWithTTL adds a key-value pair with a TTL duration
+func putWithTTL(s Store, key string, value string, ttl Duration) Store {
+    val expiresAt = Now().Plus(ttl)
+    val entry = Entry(Value = value, ExpiresAt = Some(expiresAt))
+    return Store(Data = s.Data.Put(key, entry))
+}
+
+// isExpired checks if an entry is expired
+func isExpired(entry Entry) bool {
+    val now = Now()
+    return entry.ExpiresAt match {
+        case Some(expiresAt) => now.IsAfter(expiresAt)
+        case None() => false
+    }
+}
+
+// hasExpiry checks if an entry has an expiry set
+func hasExpiry(entry Entry) bool = entry.ExpiresAt.IsDefined()
+
+// get retrieves a value, returning Either[KVResult, string]
+// Left = error (NotFound or Expired), Right = the value
+func get(s Store, key string) Either[KVResult, string] {
+    val entryOpt = s.Data.Get(key)
+    return entryOpt match {
+        case Some(entry) => {
+            if isExpired(entry) {
+                return Left[KVResult, string](Expired(key))
+            }
+            return Right[KVResult, string](entry.Value)
+        }
+        case None() => Left[KVResult, string](NotFound(key))
+    }
+}
+
+// delete removes a key
+func delete(s Store, key string) Store = Store(Data = s.Data.Remove(key))
+
+// exists checks if a non-expired key exists
+func exists(s Store, key string) bool {
+    val entryOpt = s.Data.Get(key)
+    return entryOpt match {
+        case Some(entry) => !isExpired(entry)
+        case None() => false
+    }
+}
+
+// size returns the number of entries
+func size(s Store) int = s.Data.Size()
+
+// === Query Operations ===
+
+// getOrDefault returns the value or a default if not found/expired
+func getOrDefault(s Store, key string, defaultVal string) string {
+    val result = get(s, key)
+    return result match {
+        case Right(v) => v
+        case _ => defaultVal
+    }
+}
+
+// getMultiple retrieves multiple keys and returns results
+func getMultiple(s Store, keys im.Array[string]) im.Array[Either[KVResult, string]] {
+    return keys.FoldLeft(im.EmptyArray[Either[KVResult, string]](), (acc im.Array[Either[KVResult, string]], key string) => acc.Append(get(s, key)))
+}
+
+// === Expiry Logic ===
+
+// cleanup removes all expired entries
+func cleanup(s Store) Store {
+    val cleaned = s.Data.Filter((k string, v Entry) => !isExpired(v))
+    return Store(Data = cleaned)
+}
+
+// === Display ===
+
+// formatResult formats a KVResult for display using exhaustive match
+func formatResult(r KVResult) string = r match {
+    case Ok(msg) => fmt.Sprintf("[OK] %s", msg)
+    case NotFound(key) => fmt.Sprintf("[NOT FOUND] key=%s", key)
+    case Expired(expKey) => fmt.Sprintf("[EXPIRED] key=%s", expKey)
+}
+
+// formatGetResult formats an Either[KVResult, string] for display
+func formatGetResult(r Either[KVResult, string]) string = r match {
+    case Right(v) => fmt.Sprintf("[OK] value=%s", v)
+    case Left(err) => formatResult(err)
+    case _ => "unknown"
+}
+
+// === Main Program ===
+
+func main() {
+    fmt.Println("=== GALA KV Store Demo ===")
+    fmt.Println()
+
+    // --- Create store and add entries ---
+    fmt.Println("--- Basic Operations ---")
+    val s0 = emptyStore()
+    val s1 = put(s0, "name", "Alice")
+    val s2 = put(s1, "city", "New York")
+    val s3 = put(s2, "language", "GALA")
+    fmt.Printf("Store size: %d\n", size(s3))
+
+    // --- Get values ---
+    val nameResult = get(s3, "name")
+    fmt.Println("Get name:", formatGetResult(nameResult))
+
+    val missingResult = get(s3, "missing")
+    fmt.Println("Get missing:", formatGetResult(missingResult))
+
+    // --- Either pattern matching on get results ---
+    val langResult = get(s3, "language")
+    val langMsg = langResult match {
+        case Right(v) => "Language is: " + v
+        case Left(err) => "Error: " + formatResult(err)
+        case _ => "unknown"
+    }
+    fmt.Println(langMsg)
+
+    // --- Delete ---
+    val s4 = delete(s3, "city")
+    fmt.Printf("After delete city, size: %d\n", size(s4))
+    fmt.Println("City exists:", exists(s4, "city"))
+    fmt.Println("Name exists:", exists(s4, "name"))
+
+    // --- GetOrDefault ---
+    fmt.Println("GetOrDefault name:", getOrDefault(s4, "name", "N/A"))
+    fmt.Println("GetOrDefault city:", getOrDefault(s4, "city", "N/A"))
+
+    fmt.Println()
+
+    // --- TTL Operations ---
+    fmt.Println("--- TTL Operations ---")
+
+    // Add entries with TTL
+    val s5 = putWithTTL(s4, "session", "abc123", Minutes(30))
+    val s5b = putWithTTL(s5, "token", "xyz789", Hours(1))
+    fmt.Println("Get session:", formatGetResult(get(s5b, "session")))
+    fmt.Println("Get token:", formatGetResult(get(s5b, "token")))
+    fmt.Printf("Session exists: %v\n", exists(s5b, "session"))
+
+    // Show expiry info using helper function
+    val sessionOpt = s5b.Data.Get("session")
+    if sessionOpt.IsDefined() {
+        fmt.Printf("Session has expiry: %v\n", hasExpiry(sessionOpt.Get()))
+    }
+
+    val langOpt = s5b.Data.Get("language")
+    if langOpt.IsDefined() {
+        fmt.Printf("Language has expiry: %v\n", hasExpiry(langOpt.Get()))
+    }
+
+    fmt.Println()
+
+    // --- Query Operations ---
+    fmt.Println("--- Query Operations ---")
+
+    // Filter entries with no expiry (permanent entries)
+    val permanentEntries = s5b.Data.Filter((k string, v Entry) => v.ExpiresAt.IsEmpty())
+    fmt.Printf("Permanent entries: %d\n", permanentEntries.Size())
+
+    // Count expirable entries using FoldLeftKV
+    val expirableCount = s5b.Data.FoldLeftKV[int](0, (acc int, k string, v Entry) => {
+        if v.ExpiresAt.IsDefined() {
+            return acc + 1
+        }
+        return acc
+    })
+    fmt.Printf("Expirable entries: %d\n", expirableCount)
+
+    // MapValues: extract just the value strings from all entries
+    val valueMap = s5b.Data.MapValues[string]((entry Entry) => entry.Value)
+    fmt.Printf("Value map size: %d\n", valueMap.Size())
+    fmt.Println("Name from value map:", valueMap.GetOrElse("name", "N/A"))
+    fmt.Println("Session from value map:", valueMap.GetOrElse("session", "N/A"))
+
+    // ForAll: check if all entries have non-empty values
+    val allNonEmpty = s5b.Data.ForAll((k string, v Entry) => len(v.Value) > 0)
+    fmt.Printf("All values non-empty: %v\n", allNonEmpty)
+
+    // Exists: check if any entry has TTL
+    val hasTTLEntries = s5b.Data.Exists((k string, v Entry) => v.ExpiresAt.IsDefined())
+    fmt.Printf("Has TTL entries: %v\n", hasTTLEntries)
+
+    // getMultiple: batch retrieve
+    val multiResults = getMultiple(s5b, im.ArrayOf("name", "missing", "language"))
+    fmt.Printf("Multi-get results: %d\n", multiResults.Length())
+    multiResults.ForEach((r Either[KVResult, string]) => {
+        fmt.Println("  " + formatGetResult(r))
+    })
+
+    fmt.Println()
+
+    // --- Sealed Type Pattern Matching ---
+    fmt.Println("--- Result Formatting ---")
+    fmt.Println(formatResult(Ok("Value stored successfully")))
+    fmt.Println(formatResult(NotFound("missing_key")))
+    fmt.Println(formatResult(Expired("old_session")))
+
+    // isXxx() discriminator methods on sealed type
+    val okResult = Ok("done")
+    val notFoundResult = NotFound("key1")
+    fmt.Printf("okResult.isOk: %v\n", okResult.isOk())
+    fmt.Printf("okResult.isNotFound: %v\n", okResult.isNotFound())
+    fmt.Printf("notFoundResult.isNotFound: %v\n", notFoundResult.isNotFound())
+
+    fmt.Println()
+
+    // --- Cleanup demonstration ---
+    fmt.Println("--- Cleanup ---")
+    // Add an entry that expired in the past (simulate by using a very old instant)
+    val pastInstant = FromUnixSeconds(1000)
+    val expiredEntry = Entry(Value = "old_value", ExpiresAt = Some(pastInstant))
+    val s6 = Store(Data = s5b.Data.Put("expired_key", expiredEntry))
+    fmt.Printf("Before cleanup: %d entries\n", size(s6))
+    fmt.Println("Expired key exists:", exists(s6, "expired_key"))
+
+    // Get on expired key returns Expired result
+    val expiredResult = get(s6, "expired_key")
+    fmt.Println("Get expired key:", formatGetResult(expiredResult))
+
+    val s7 = cleanup(s6)
+    fmt.Printf("After cleanup: %d entries\n", size(s7))
+
+    // --- Time utilities demonstration ---
+    fmt.Println()
+    fmt.Println("--- Time Utilities ---")
+    val epoch = UnixEpoch()
+    fmt.Println("Unix epoch:", epoch.FormatISO())
+
+    val knownTime = FromUnixSeconds(1704067200)
+    fmt.Println("Known time:", knownTime.FormatISO())
+    fmt.Printf("Year: %d, Month: %d, Day: %d\n", knownTime.Year(), knownTime.Month(), knownTime.Day())
+
+    // Duration arithmetic
+    val d1 = Minutes(5)
+    val d2 = Seconds(30)
+    val total = d1.Plus(d2)
+    fmt.Printf("5min + 30sec = %s\n", total.String())
+    fmt.Printf("Total seconds: %d\n", total.ToSeconds())
+
+    // Instant comparison
+    val earlier = FromUnixSeconds(1000)
+    val later = FromUnixSeconds(2000)
+    fmt.Printf("Earlier before later: %v\n", earlier.IsBefore(later))
+    fmt.Printf("Duration between: %d seconds\n", earlier.Until(later).ToSeconds())
+
+    fmt.Println()
+    fmt.Println("=== Demo Complete ===")
+}
