@@ -1,0 +1,43 @@
+package main
+
+import "fmt"
+
+// Test nested void match expressions.
+// When a void match (all branches are side-effects) is nested inside another match,
+// the transpiler must correctly detect the void IIFE and not wrap it in a return statement.
+
+func main() {
+    // Nested void match with Option
+    val outer = Some(Some("hello"))
+    outer match {
+        case Some(inner) => inner match {
+            case Some(v) => fmt.Println("nested value:", v)
+            case None() => fmt.Println("inner is none")
+        }
+        case None() => fmt.Println("outer is none")
+    }
+
+    // Nested void match with boolean
+    val flag = true
+    val check = Some(42)
+    flag match {
+        case true => check match {
+            case Some(n) => fmt.Println("flag=true, value:", n)
+            case None() => fmt.Println("flag=true, no value")
+        }
+        case false => fmt.Println("flag is false")
+    }
+
+    // Three-level nesting
+    val a = Some(Some(Some("deep")))
+    a match {
+        case Some(b) => b match {
+            case Some(c) => c match {
+                case Some(v) => fmt.Println("deep value:", v)
+                case None() => fmt.Println("c is none")
+            }
+            case None() => fmt.Println("b is none")
+        }
+        case None() => fmt.Println("a is none")
+    }
+}

@@ -509,6 +509,12 @@ gala_test(
     expected = "sealed_types.out",
 )
 
+gala_test(
+    name = "nested_match",
+    src = "nested_match.gala",
+    expected = "nested_match.out",
+)
+
 # Documentation verification tests (GALA.MD)
 gala_test(
     name = "doc_verify_gala_md_basics",

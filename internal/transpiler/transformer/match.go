@@ -302,6 +302,16 @@ func (t *galaASTTransformer) generateMatchIIFE(expr ast.Expr, paramName string, 
 
 // inferResultType infers the type of an expression used as a case clause result
 func (t *galaASTTransformer) inferResultType(expr ast.Expr) transpiler.Type {
+	// Check for void IIFE (from nested void match expressions)
+	// A void IIFE is a CallExpr where Fun is a FuncLit with no return type
+	if call, ok := expr.(*ast.CallExpr); ok {
+		if funcLit, ok := call.Fun.(*ast.FuncLit); ok {
+			if funcLit.Type.Results == nil {
+				return transpiler.VoidType{}
+			}
+		}
+	}
+
 	// Check if this is a call to a known multi-return function (like fmt.Printf, fmt.Println)
 	// These should be treated as void for match statement purposes
 	if call, ok := expr.(*ast.CallExpr); ok {
@@ -628,8 +638,8 @@ func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClause
 		if err != nil {
 			return nil, nil, err
 		}
-		body = []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{expr}}}
 		resultType = t.inferResultType(expr)
+		body = []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{expr}}}
 	}
 
 	bodyBlock := &ast.BlockStmt{List: body}
