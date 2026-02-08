@@ -350,6 +350,27 @@ val positive = opt.Filter((x) => x > 0)
 val doubled = opt.Map((x) => x * 2)
 ```
 
+## MkString - Joining Collection Elements
+
+```gala
+package main
+
+import "fmt"
+import . "martianoff/gala/collection_immutable"
+
+func main() {
+    val nums = ArrayOf(1, 2, 3, 4, 5)
+    fmt.Println(nums.MkString(", "))     // "1, 2, 3, 4, 5"
+    fmt.Println(nums.MkString(" | "))    // "1 | 2 | 3 | 4 | 5"
+
+    val words = ListOf("hello", "world")
+    fmt.Println(words.MkString(" "))     // "hello world"
+
+    val empty = EmptyArray[int]()
+    fmt.Println(empty.MkString(", "))    // ""
+}
+```
+
 ## More Examples
 
 You can find more examples in the `examples/` directory of the project:

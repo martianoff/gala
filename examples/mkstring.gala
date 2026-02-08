@@ -1,0 +1,22 @@
+package main
+
+import "fmt"
+import . "martianoff/gala/collection_immutable"
+
+func main() {
+    // List
+    val list = ListOf(1, 2, 3)
+    fmt.Println(list.MkString(", "))
+    fmt.Println(list.MkString(" | "))
+    fmt.Println(EmptyList[int]().MkString(", "))
+
+    // Array
+    val arr = ArrayOf("a", "b", "c")
+    fmt.Println(arr.MkString("-"))
+    fmt.Println(EmptyArray[string]().MkString("-"))
+
+    // TreeSet (sorted, deterministic)
+    val tree = TreeSetOf(3, 1, 2)
+    fmt.Println(tree.MkString(", "))
+    fmt.Println(EmptyTreeSet[int]().MkString(", "))
+}

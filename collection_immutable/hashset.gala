@@ -597,6 +597,23 @@ func (s HashSet[T]) String() string {
     return result + ")"
 }
 
+// MkString joins elements into a string with separator.
+func (s HashSet[T]) MkString(sep string) string {
+    if s.size == 0 {
+        return ""
+    }
+    var result = ""
+    var first = true
+    s.ForEach((elem T) => {
+        if !first {
+            result = result + sep
+        }
+        result = result + fmt.Sprintf("%v", elem)
+        first = false
+    })
+    return result
+}
+
 // HashSetEmpty extractor for pattern matching on empty sets.
 type HashSetEmpty struct {}
 func (hse HashSetEmpty) Unapply(s any) Option[bool] = s match {

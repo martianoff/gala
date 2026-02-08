@@ -12,6 +12,8 @@ type Traversable[T any] interface {
     IsEmpty() bool
     // NonEmpty returns true if the collection contains at least one element.
     NonEmpty() bool
+    // MkString joins elements into a string with separator.
+    MkString(sep string) string
 }
 
 // Iterable is a trait for collections that can produce an Iterator.
@@ -64,4 +66,5 @@ type Iterable[T any] interface {
 
     // String representation
     String() string
+    MkString(sep string) string
 }

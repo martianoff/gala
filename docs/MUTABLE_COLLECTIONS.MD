@@ -277,8 +277,9 @@ arr.Distinct()  // Array(1, 2, 3)
 ```gala
 var arr = ArrayOf(1, 2, 3)
 
-arr.ToSlice()    // []int{1, 2, 3}
-arr.String()     // "Array(1, 2, 3)"
+arr.ToSlice()       // []int{1, 2, 3}
+arr.String()        // "Array(1, 2, 3)"
+arr.MkString(", ")  // "1, 2, 3"
 ```
 
 ### ForEach
@@ -409,8 +410,9 @@ list.Count((x int) => x == 2) // 2
 ```gala
 var list = ListOf(1, 2, 3)
 
-list.ToSlice()    // []int{1, 2, 3}
-list.String()     // "List(1, 2, 3)"
+list.ToSlice()       // []int{1, 2, 3}
+list.String()        // "List(1, 2, 3)"
+list.MkString(", ")  // "1, 2, 3"
 ```
 
 ---
@@ -583,6 +585,7 @@ s.ToArray()               // mutable Array
 s.ToList()                // mutable List
 s.Clone()                 // new HashSet with same elements
 s.String()                // "HashSet(1, 2, 3)" (order may vary)
+s.MkString(", ")          // "1, 2, 3" (order may vary)
 ```
 
 ---
@@ -792,6 +795,7 @@ s.ToList()                // mutable List (sorted)
 s.ToHashSet()             // HashSet (unordered, O(1) operations)
 s.Clone()                 // new TreeSet with same elements
 s.String()                // "TreeSet(1, 2, 3)"
+s.MkString(", ")          // "1, 2, 3" (sorted)
 ```
 
 ---

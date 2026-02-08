@@ -995,6 +995,21 @@ func (a Array[T]) String() string {
     return result + ")"
 }
 
+// MkString joins elements into a string with separator.
+func (a Array[T]) MkString(sep string) string {
+    if a.length == 0 {
+        return ""
+    }
+    var result = ""
+    for i := 0; i < a.length; i++ {
+        if i > 0 {
+            result = result + sep
+        }
+        result = result + fmt.Sprintf("%v", a.Get(i))
+    }
+    return result
+}
+
 // SeqDrop implements the Seq interface for sequence pattern matching.
 // Returns the array with the first n elements removed.
 func (a Array[T]) SeqDrop(n int) any = a.Drop(n)

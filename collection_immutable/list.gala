@@ -612,6 +612,25 @@ func (l List[T]) String() string {
     return result + ")"
 }
 
+// MkString joins elements into a string with separator.
+func (l List[T]) MkString(sep string) string {
+    if l.isEmpty {
+        return ""
+    }
+    var result = ""
+    var current = l
+    var first = true
+    for !current.isEmpty {
+        if !first {
+            result = result + sep
+        }
+        result = result + fmt.Sprintf("%v", current.head)
+        current = *current.tail
+        first = false
+    }
+    return result
+}
+
 // SeqDrop implements the Seq interface for sequence pattern matching.
 // Returns the list with the first n elements removed.
 func (l List[T]) SeqDrop(n int) any = l.Drop(n)

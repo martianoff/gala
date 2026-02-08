@@ -654,6 +654,16 @@ gala_test(
     expected = "sealed_wildcard.out",
 )
 
+# MkString on collections
+gala_test(
+    name = "mkstring",
+    src = "mkstring.gala",
+    expected = "mkstring.out",
+    deps = [
+        "//collection_immutable",
+    ],
+)
+
 # Multi-file binary test (FIX-004 verification)
 gala_test(
     name = "multi_file",

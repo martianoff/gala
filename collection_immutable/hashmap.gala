@@ -653,6 +653,23 @@ func (m HashMap[K, V]) String() string {
     return result + ")"
 }
 
+// MkString joins entries into a string with separator.
+func (m HashMap[K, V]) MkString(sep string) string {
+    if m.size == 0 {
+        return ""
+    }
+    var result = ""
+    var first = true
+    m.ForEachKV((k K, v V) => {
+        if !first {
+            result = result + sep
+        }
+        result = result + fmt.Sprintf("%v -> %v", k, v)
+        first = false
+    })
+    return result
+}
+
 // KeySet returns a HashSet of all keys.
 func (m HashMap[K, V]) KeySet() HashSet[K] = m.Keys()
 

@@ -266,8 +266,9 @@ nums.ZipWithIndex()
 ```gala
 val list = ListOf(1, 2, 3)
 
-list.ToSlice()  // []int{1, 2, 3}
-list.String()   // "List(1, 2, 3)"
+list.ToSlice()    // []int{1, 2, 3}
+list.String()     // "List(1, 2, 3)"
+list.MkString(", ")  // "1, 2, 3"
 ```
 
 ### Flattening Nested Lists
@@ -483,9 +484,10 @@ arr.Sliding(3)
 ```gala
 val arr = ArrayOf(1, 2, 3)
 
-arr.ToSlice()   // []int{1, 2, 3}
-arr.ToList()    // List(1, 2, 3)
-arr.String()    // "Array(1, 2, 3)"
+arr.ToSlice()       // []int{1, 2, 3}
+arr.ToList()        // List(1, 2, 3)
+arr.String()        // "Array(1, 2, 3)"
+arr.MkString(", ")  // "1, 2, 3"
 ```
 
 ### ForEach (Side Effects)
@@ -648,10 +650,11 @@ set.Find((x int) => x > 5)             // Some(6) or Some(8)
 ```gala
 val set = HashSetOf(1, 2, 3)
 
-set.ToSlice()   // []int{1, 2, 3} (order not guaranteed)
-set.ToList()    // List(1, 2, 3) (order not guaranteed)
-set.ToArray()   // Array(1, 2, 3) (order not guaranteed)
-set.String()    // "HashSet(1, 2, 3)"
+set.ToSlice()       // []int{1, 2, 3} (order not guaranteed)
+set.ToList()        // List(1, 2, 3) (order not guaranteed)
+set.ToArray()       // Array(1, 2, 3) (order not guaranteed)
+set.String()        // "HashSet(1, 2, 3)"
+set.MkString(", ")  // "1, 2, 3" (order not guaranteed)
 ```
 
 ### ForEach (Side Effects)
@@ -857,11 +860,12 @@ set.Find((x int) => x > 5)             // Some(6) - first in sorted order
 ```gala
 val set = TreeSetOf(3, 1, 2)
 
-set.ToSlice()     // []int{1, 2, 3} - sorted order
-set.ToList()      // List(1, 2, 3) - sorted order
-set.ToArray()     // Array(1, 2, 3) - sorted order
-set.ToHashSet()   // HashSet(1, 2, 3) - loses order, gains O(eC) lookup
-set.String()      // "TreeSet(1, 2, 3)"
+set.ToSlice()       // []int{1, 2, 3} - sorted order
+set.ToList()        // List(1, 2, 3) - sorted order
+set.ToArray()       // Array(1, 2, 3) - sorted order
+set.ToHashSet()     // HashSet(1, 2, 3) - loses order, gains O(eC) lookup
+set.String()        // "TreeSet(1, 2, 3)"
+set.MkString(", ")  // "1, 2, 3" - sorted order
 ```
 
 ### ForEach (Side Effects) - Sorted Order

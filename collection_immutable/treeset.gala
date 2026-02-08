@@ -781,6 +781,23 @@ func (s TreeSet[T]) String() string {
     return result + ")"
 }
 
+// MkString joins elements into a string with separator.
+func (s TreeSet[T]) MkString(sep string) string {
+    if s.size == 0 {
+        return ""
+    }
+    var result = ""
+    var first = true
+    s.ForEach((elem T) => {
+        if !first {
+            result = result + sep
+        }
+        result = result + fmt.Sprintf("%v", elem)
+        first = false
+    })
+    return result
+}
+
 // TreeSetEmpty extractor for pattern matching on empty sets.
 type TreeSetEmpty struct {}
 func (tse TreeSetEmpty) Unapply(s any) Option[bool] = s match {
