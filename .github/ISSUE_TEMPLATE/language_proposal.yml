@@ -1,0 +1,100 @@
+name: Language Proposal
+description: Propose a new language feature or syntax change for GALA
+title: "[Proposal]: "
+labels: ["proposal", "language-design"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Language proposals suggest changes to GALA's syntax, semantics, or type system.
+        Please provide thorough detail so the proposal can be evaluated.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One-paragraph summary of the proposed language change.
+    validations:
+      required: true
+
+  - type: textarea
+    id: syntax
+    attributes:
+      label: Proposed Syntax
+      description: |
+        Show what the new syntax looks like in GALA code. Provide before/after
+        examples if this modifies existing behavior.
+      placeholder: |
+        ```gala
+        // Proposed GALA syntax
+        ```
+      render: gala
+    validations:
+      required: true
+
+  - type: textarea
+    id: generated-go
+    attributes:
+      label: Expected Generated Go Code
+      description: |
+        Show what Go code the transpiler should produce for the proposed syntax.
+      placeholder: |
+        ```go
+        // Expected Go output
+        ```
+      render: go
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation and Use Cases
+      description: |
+        Why is this feature needed? What real-world problems does it solve?
+        Reference other languages (Scala, Kotlin, Rust, etc.) if the feature
+        is inspired by them.
+    validations:
+      required: true
+
+  - type: textarea
+    id: grammar-impact
+    attributes:
+      label: Grammar Impact
+      description: |
+        Describe changes needed to `gala.g4`. Are new parser rules required?
+        Does this conflict with existing syntax?
+    validations:
+      required: true
+
+  - type: textarea
+    id: type-system
+    attributes:
+      label: Type System Impact
+      description: |
+        How does this interact with GALA's type inference? Does it require
+        new inference rules? Does it affect sealed types, generics, or
+        pattern matching?
+    validations:
+      required: false
+
+  - type: textarea
+    id: breaking
+    attributes:
+      label: Breaking Changes
+      description: |
+        Does this proposal break existing GALA code? If so, what is the
+        migration path?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: complexity
+    attributes:
+      label: Estimated Implementation Complexity
+      options:
+        - Small (grammar + transformer only)
+        - Medium (grammar + analyzer + transformer + type inference)
+        - Large (cross-cutting, affects multiple subsystems)
+    validations:
+      required: true

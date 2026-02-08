@@ -1,0 +1,88 @@
+name: Bug Report
+description: Report a bug in the GALA transpiler, standard library, or tooling
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a bug. Please provide enough detail to reproduce the issue.
+
+  - type: textarea
+    id: gala-code
+    attributes:
+      label: GALA Source Code
+      description: Minimal GALA program that reproduces the bug.
+      placeholder: |
+        package main
+
+        import "fmt"
+
+        func main() {
+            // your code here
+        }
+      render: gala
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What you expected to happen.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened. Include error messages or incorrect output.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which part of GALA is affected?
+      options:
+        - Transpiler (code generation)
+        - Type inference
+        - Pattern matching
+        - Standard library (Option, Either, Try, Future)
+        - Collections (immutable or mutable)
+        - CLI tooling
+        - Bazel integration
+        - IDE plugin
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: GALA Version
+      description: Output of `gala version`
+      placeholder: "v0.1.0"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating System
+      placeholder: "Ubuntu 24.04 / macOS 15.x / Windows 11"
+    validations:
+      required: true
+
+  - type: textarea
+    id: generated-go
+    attributes:
+      label: Generated Go Code (if applicable)
+      description: |
+        If the transpiler produces incorrect Go code, paste the generated output.
+        Run `gala transpile <file>.gala` to get the Go output.
+      render: go
+    validations:
+      required: false

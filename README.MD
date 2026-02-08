@@ -1,8 +1,12 @@
 # GALA
 
+[![Build](https://github.com/martianoff/gala/actions/workflows/test.yml/badge.svg)](https://github.com/martianoff/gala/actions/workflows/test.yml)
 [![Release](https://github.com/martianoff/gala/actions/workflows/release.yml/badge.svg)](https://github.com/martianoff/gala/releases)
+[![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/martianoff/gala?sort=semver)](https://github.com/martianoff/gala/releases/latest)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go&logoColor=white)](https://go.dev)
+[![Bazel](https://img.shields.io/badge/Built%20with-Bazel-43A047)](https://bazel.build)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 **GALA** (Go Alternative LAnguage) is a modern programming language that transpiles to Go. It brings sealed types, pattern matching, immutability by default, and functional collections to the Go ecosystem -- without sacrificing Go's performance, tooling, or library compatibility.
 

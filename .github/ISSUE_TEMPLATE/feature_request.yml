@@ -1,0 +1,54 @@
+name: Feature Request
+description: Suggest an improvement to GALA
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the feature you would like to see in GALA.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or Motivation
+      description: What problem does this feature solve? What is the current pain point?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed Solution
+      description: |
+        Describe how you would like this to work. Include proposed GALA syntax if applicable.
+      placeholder: |
+        ```gala
+        // Example of proposed syntax
+        ```
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: What other approaches did you consider? Why are they insufficient?
+    validations:
+      required: false
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - Language syntax / grammar
+        - Standard library
+        - Type inference
+        - Collections
+        - Tooling / CLI
+        - Bazel build rules
+        - IDE support
+        - Documentation
+    validations:
+      required: true
