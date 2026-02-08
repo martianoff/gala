@@ -449,6 +449,22 @@ val desc = flag match {
 }
 ```
 
+**Unused variable rule:** All variables extracted in match patterns must be referenced in the branch body or guard expression. Unused variables cause a compiler error. Use `_` to explicitly discard values you don't need:
+
+```gala
+// ERROR: unused variable 'y' in match branch
+case Some(y) => "has value"
+
+// OK: use '_' to discard
+case Some(_) => "has value"
+
+// OK: variable is used in body
+case Some(y) => fmt.Sprintf("got %d", y)
+
+// OK: variable is used in guard
+case Some(y) if y > 0 => "positive"
+```
+
 #### Type-Based Pattern Matching
 GALA supports matching based on the type of an object. This is useful when working with `any` or interface types.
 

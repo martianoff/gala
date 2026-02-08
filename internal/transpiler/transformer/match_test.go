@@ -141,6 +141,7 @@ var res = std.NewImmutable(func(obj std.Option[int]) int {
 		if _tmp_2 {
 			_tmp_3 = _tmp_1.Get()
 		}
+		_ = _tmp_3
 		y := _tmp_3
 		if _tmp_2 {
 			return y
@@ -172,6 +173,7 @@ var res = std.NewImmutable(func(obj std.Option[any]) string {
 		if _tmp_2 {
 			_tmp_3 = _tmp_1.Get()
 		}
+		_ = _tmp_3
 		s, _tmp_4 := std.As[string](_tmp_3)
 		if _tmp_2 && _tmp_4 {
 			return s
@@ -436,6 +438,42 @@ func describe(b bool) string = b match {
 	case false => "no"
 }`,
 			wantErr: true,
+		},
+		{
+			name: "Unused match variable is a compiler error",
+			input: `package main
+
+val x = 42
+val res = x match {
+	case y => 0
+	case _ => 0
+}`,
+			wantErr: true,
+		},
+		{
+			name: "Unused match variable with guard referencing it is allowed",
+			input: `package main
+
+val x = 42
+val res = x match {
+	case y if y > 10 => 1
+	case _ => 0
+}`,
+			expected: `package main
+
+import "martianoff/gala/std"
+
+var x = std.NewImmutable(42)
+var res = std.NewImmutable(func(obj int) int {
+	{
+		y := obj
+		if true && y > 10 {
+			return 1
+		}
+	}
+	return 0
+}(x.Get()))
+`,
 		},
 		{
 			name: "Bool with redundant default is allowed",

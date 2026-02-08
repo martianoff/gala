@@ -27,11 +27,13 @@ func TestTupleEither(t *testing.T) {
 			name: "Tuple extraction",
 			input: `package main
 
+import "fmt"
+
 func main() {
     val t = Tuple[int, string](V1 = 1, V2 = "hello")
     val res = t match {
-        case Tuple(a, b) => a
-        case _ => 0
+        case Tuple(a, b) => fmt.Sprintf("%d %s", a, b)
+        case _ => ""
     }
 }`,
 			expected: []string{
@@ -179,11 +181,13 @@ func main() {
 			name: "Tuple3 pattern matching",
 			input: `package main
 
+import "fmt"
+
 func main() {
     val t = (42, "hello", true)
     val res = t match {
-        case Tuple3(a, b, c) => a
-        case _ => 0
+        case Tuple3(a, b, c) => fmt.Sprintf("%d %s %v", a, b, c)
+        case _ => ""
     }
 }`,
 			expected: []string{
@@ -194,14 +198,16 @@ func main() {
 			},
 		},
 		{
-			name: "Tuple pattern matching with pair",
+			name: "Tuple pattern matching with pair - all vars used",
 			input: `package main
+
+import "fmt"
 
 func main() {
     val pair = (1, "world")
     val res = pair match {
-        case Tuple(x, y) => x
-        case _ => 0
+        case Tuple(x, y) => fmt.Sprintf("%d %s", x, y)
+        case _ => ""
     }
 }`,
 			expected: []string{
@@ -211,14 +217,32 @@ func main() {
 			},
 		},
 		{
-			name: "Tuple pattern matching with parentheses syntax",
+			name: "Tuple pattern matching with pair - unused var uses wildcard",
 			input: `package main
 
 func main() {
     val pair = (1, "world")
     val res = pair match {
-        case (x, y) => x
+        case Tuple(x, _) => x
         case _ => 0
+    }
+}`,
+			expected: []string{
+				"std.Tuple[int, string]",
+				"obj.V1.Get()",
+			},
+		},
+		{
+			name: "Tuple pattern matching with parentheses syntax",
+			input: `package main
+
+import "fmt"
+
+func main() {
+    val pair = (1, "world")
+    val res = pair match {
+        case (x, y) => fmt.Sprintf("%d %s", x, y)
+        case _ => ""
     }
 }`,
 			expected: []string{
@@ -231,11 +255,13 @@ func main() {
 			name: "Tuple3 pattern matching with parentheses syntax",
 			input: `package main
 
+import "fmt"
+
 func main() {
     val triple = (1, "hello", true)
     val res = triple match {
-        case (a, b, c) => a
-        case _ => 0
+        case (a, b, c) => fmt.Sprintf("%d %s %v", a, b, c)
+        case _ => ""
     }
 }`,
 			expected: []string{

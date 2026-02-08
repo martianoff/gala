@@ -13,6 +13,17 @@ import (
 // This file contains pattern transformation logic extracted from match.go
 // Functions related to pattern matching, extractors, and type extraction
 
+// blankAssignTempVar appends `_ = varName` to suppress Go's "declared and not used" error
+// for internal temporary variables (_tmp_*). User-facing pattern variables are checked
+// for usage by transformCaseClauseWithType and produce a GALA compiler error if unused.
+func blankAssignTempVar(stmts []ast.Stmt, varName string) []ast.Stmt {
+	return append(stmts, &ast.AssignStmt{
+		Lhs: []ast.Expr{ast.NewIdent("_")},
+		Tok: token.ASSIGN,
+		Rhs: []ast.Expr{ast.NewIdent(varName)},
+	})
+}
+
 func (t *galaASTTransformer) transformPattern(patCtx grammar.IPatternContext, objExpr ast.Expr) (ast.Expr, []ast.Stmt, error) {
 	return t.transformPatternWithType(patCtx, objExpr, nil)
 }
@@ -1718,6 +1729,8 @@ func (t *galaASTTransformer) generateDirectUnapplyPattern(
 			},
 		}
 		allBindings = append(allBindings, guardedGet)
+		// Suppress "declared and not used" for inner temp var in case all pattern args are wildcards
+		allBindings = blankAssignTempVar(allBindings, innerName)
 
 		// For each argument pattern, generate direct field access
 		for i, argCtx := range argList.AllArgument() {
