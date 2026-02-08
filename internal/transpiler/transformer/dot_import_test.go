@@ -7,6 +7,7 @@ import (
 	"martianoff/gala/internal/transpiler/generator"
 	"martianoff/gala/internal/transpiler/transformer"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -62,6 +63,36 @@ func test() int {
 }
 
 func TestDotImportClashWarning(t *testing.T) {
+	// Create two temp packages with clashing symbol names
+	tempDir, err := os.MkdirTemp("", "dot_import_clash_test")
+	assert.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	// Create go.mod
+	err = os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte("module testmod\n\ngo 1.21\n"), 0644)
+	assert.NoError(t, err)
+
+	// Create pkg_a with Greet function
+	pkgADir := filepath.Join(tempDir, "pkg_a")
+	err = os.MkdirAll(pkgADir, 0755)
+	assert.NoError(t, err)
+	err = os.WriteFile(filepath.Join(pkgADir, "a.gala"), []byte("package pkg_a\n\nfunc Greet() string = \"hello from a\"\n"), 0644)
+	assert.NoError(t, err)
+
+	// Create pkg_b with Greet function (clashes with pkg_a)
+	pkgBDir := filepath.Join(tempDir, "pkg_b")
+	err = os.MkdirAll(pkgBDir, 0755)
+	assert.NoError(t, err)
+	err = os.WriteFile(filepath.Join(pkgBDir, "b.gala"), []byte("package pkg_b\n\nfunc Greet() string = \"hello from b\"\n"), 0644)
+	assert.NoError(t, err)
+
+	// Change to temp directory so the resolver finds the temp go.mod
+	originalWd, err := os.Getwd()
+	assert.NoError(t, err)
+	defer os.Chdir(originalWd)
+	err = os.Chdir(tempDir)
+	assert.NoError(t, err)
+
 	// Capture stderr to detect the warning
 	oldStderr := os.Stderr
 	r, w, err := os.Pipe()
@@ -69,17 +100,16 @@ func TestDotImportClashWarning(t *testing.T) {
 	os.Stderr = w
 
 	p := transpiler.NewAntlrGalaParser()
-	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
+	a := analyzer.NewGalaAnalyzer(p, nil)
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
 	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
 
-	// Both go_interop and time_utils export Sleep and After
 	input := `package testpkg
 
 import (
-    . "martianoff/gala/go_interop"
-    . "martianoff/gala/time_utils"
+    . "testmod/pkg_a"
+    . "testmod/pkg_b"
 )
 
 func test() int {
@@ -98,10 +128,9 @@ func test() int {
 
 	// Should have warnings about clashing symbols
 	assert.Contains(t, stderrOutput, "Warning: symbol")
-	assert.Contains(t, stderrOutput, "Sleep")
-	assert.Contains(t, stderrOutput, "After")
-	assert.Contains(t, stderrOutput, "go_interop")
-	assert.Contains(t, stderrOutput, "time_utils")
+	assert.Contains(t, stderrOutput, "Greet")
+	assert.Contains(t, stderrOutput, "pkg_a")
+	assert.Contains(t, stderrOutput, "pkg_b")
 }
 
 func TestDotImportNoClashWarning(t *testing.T) {
