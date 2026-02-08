@@ -147,17 +147,31 @@ func (b *Builder) transpile() error {
 	stdlibDir := b.config.StdlibVersionDir(b.stdlibVersion)
 	searchPaths := []string{b.workspace.ProjectDir, stdlibDir}
 	p := transpiler.NewAntlrGalaParser()
-	a := analyzer.NewGalaAnalyzer(p, searchPaths)
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	t := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
 
-	// Transpile each file
+	// Transpile each file, passing sibling files for cross-file type resolution
 	for _, galaFile := range galaFiles {
 		content, err := os.ReadFile(galaFile)
 		if err != nil {
 			return fmt.Errorf("reading %s: %w", galaFile, err)
 		}
+
+		// Compute sibling files (all other .gala files in the same package)
+		var siblings []string
+		for _, other := range galaFiles {
+			if other != galaFile {
+				siblings = append(siblings, other)
+			}
+		}
+
+		var a transpiler.Analyzer
+		if len(siblings) > 0 {
+			a = analyzer.NewGalaAnalyzerWithPackageFiles(p, searchPaths, siblings)
+		} else {
+			a = analyzer.NewGalaAnalyzer(p, searchPaths)
+		}
+		t := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
 
 		goCode, err := t.Transpile(string(content), galaFile)
 		if err != nil {
