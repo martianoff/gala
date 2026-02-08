@@ -38,5 +38,5 @@ var Spawn = go_interop.Spawn
 // Sleep pauses the current goroutine for the given duration.
 // Re-exported from go_interop for convenience with async operations.
 func Sleep(d time.Duration) {
-	go_interop.Sleep(d)
+	go_interop.GoSleep(d)
 }

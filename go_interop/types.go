@@ -349,13 +349,15 @@ func SpawnWithRecover(f func() any, onPanic func(any) any) {
 	}()
 }
 
-// Sleep pauses the current goroutine for the specified duration.
-func Sleep(d time.Duration) {
+// GoSleep pauses the current goroutine for the specified duration.
+// Named GoSleep to avoid conflict with time_utils.Sleep when both packages are dot-imported.
+func GoSleep(d time.Duration) {
 	time.Sleep(d)
 }
 
-// After returns a channel that receives the current time after the duration.
-func After(d time.Duration) <-chan time.Time {
+// GoAfter returns a channel that receives the current time after the duration.
+// Named GoAfter to avoid conflict with time_utils.After when both packages are dot-imported.
+func GoAfter(d time.Duration) <-chan time.Time {
 	return time.After(d)
 }
 

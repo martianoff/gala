@@ -524,6 +524,12 @@ gala_test(
     expected = "nested_match.out",
 )
 
+gala_test(
+    name = "sealed_shared_fields",
+    src = "sealed_shared_fields.gala",
+    expected = "sealed_shared_fields.out",
+)
+
 # Documentation verification tests (GALA.MD)
 gala_test(
     name = "doc_verify_gala_md_basics",
