@@ -387,6 +387,135 @@ updated := Config{Host: config.Host, Port: 8080}
 
 ---
 
+## GALA vs Scala
+
+GALA borrows many ideas from Scala - pattern matching, sealed types, `Option`/`Either`/`Try` monads, expression functions. But GALA targets the Go ecosystem, which means different trade-offs.
+
+### Why GALA if you already know Scala?
+
+| | Scala | GALA |
+|---|---|---|
+| **Runtime** | JVM (startup overhead, GC tuning) | Native binary, fast startup, small footprint |
+| **Deployment** | JAR/fat JAR, requires JVM | Single static binary, cross-compiles to any OS |
+| **Concurrency** | Akka, ZIO, Cats Effect | Goroutines + `Future[T]` (built on Go's lightweight threads) |
+| **Interop** | Java ecosystem | Go ecosystem |
+| **Learning curve** | Steep (implicits, macros, higher-kinded types) | Moderate (no implicits, no macros, no HKT) |
+| **Build** | sbt (slow), Mill, Gradle | Bazel or `gala run` (fast) |
+| **Type inference** | Global (Hindley-Milner + local) | Local + targeted HM for generics |
+
+### Sealed Types
+
+<table>
+<tr><th>GALA</th><th>Scala 3</th></tr>
+<tr>
+<td>
+
+```gala
+sealed type Shape {
+    case Circle(Radius float64)
+    case Rectangle(Width float64, Height float64)
+    case Point()
+}
+
+val desc = shape match {
+    case Circle(r)      => fmt.Sprintf("r=%.1f", r)
+    case Rectangle(w,h) => fmt.Sprintf("%fx%f", w, h)
+    case Point()        => "point"
+}
+```
+
+</td>
+<td>
+
+```scala
+enum Shape:
+  case Circle(radius: Double)
+  case Rectangle(width: Double, height: Double)
+  case Point()
+
+val desc = shape match
+  case Circle(r)         => f"r=$r%.1f"
+  case Rectangle(w, h)   => f"${w}x$h"
+  case Point()           => "point"
+```
+
+</td>
+</tr>
+</table>
+
+Nearly identical expressiveness. The key difference is what happens *after* compilation: GALA produces a native binary, Scala produces JVM bytecode.
+
+### Option Handling
+
+<table>
+<tr><th>GALA</th><th>Scala</th></tr>
+<tr>
+<td>
+
+```gala
+val name = user.Name
+    .Map((n) => strings.ToUpper(n))
+    .GetOrElse("ANONYMOUS")
+```
+
+</td>
+<td>
+
+```scala
+val name = user.name
+    .map(_.toUpperCase)
+    .getOrElse("ANONYMOUS")
+```
+
+</td>
+</tr>
+</table>
+
+Scala has placeholder syntax (`_`) for terse lambdas. GALA requires explicit parameter names but infers their types from context.
+
+### What GALA doesn't have (by design)
+
+These Scala features are intentionally omitted to keep GALA simple and its output readable:
+
+| Scala feature | GALA approach |
+|---|---|
+| Implicits / `given` / `using` | Explicit parameter passing |
+| Higher-kinded types (`F[_]`) | Concrete generics only |
+| Macros | No compile-time metaprogramming |
+| Traits with implementations | Interfaces (Go-style, no default methods) |
+| For-comprehensions | Method chaining (`.Map`, `.FlatMap`) |
+| Companion objects | Auto-generated companions for sealed types + `Apply`/`Unapply` |
+| Variance (`+T`, `-T`) | Invariant generics only |
+| Lazy vals | Not supported |
+
+### Native binaries vs JVM in containers
+
+| | GALA (native) | Scala (JVM) |
+|---|---|---|
+| **Container image size** | ~10-20 MB (scratch/distroless) | ~200-400 MB (JRE + fat JAR) |
+| **Cold start** | Milliseconds | Seconds (class loading, JIT warmup) |
+| **Memory at idle** | ~5-10 MB | ~100-200 MB (JVM heap overhead) |
+| **Scaling to zero** | Practical (fast restarts) | Painful (cold start penalty on every scale-up) |
+| **Dockerfile** | `COPY binary /app` + `ENTRYPOINT` | JRE base image + JAR layering + JVM flags tuning |
+
+In Kubernetes and serverless environments, these differences compound: faster autoscaling, lower resource requests, cheaper node packing, and simpler container pipelines.
+
+### When to choose GALA over Scala
+
+- You're building **microservices** where cold start, memory footprint, and container density matter
+- You want **scale-to-zero** without paying seconds of JVM startup on every request
+- You want **Scala-like expressiveness** without Scala's complexity budget
+- You prefer **simple container pipelines** - one static binary, no JVM flags, no GC tuning
+
+### When to choose Scala over GALA
+
+- You need the **JVM ecosystem** (Spark, Kafka client, Akka, Play Framework)
+- Your problem requires **higher-kinded types** or advanced type-level programming
+- You need **mature IDE support** (IntelliJ Scala plugin is world-class)
+- Your services are **long-running** and benefit from JIT optimization over time
+
+---
+
 ## Standard Library
 
 | Type | Description |
