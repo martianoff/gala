@@ -2,10 +2,10 @@ young dog
 old dog
 cat
 fish
-yes
+value=42
 no
 string
 int
 other
-n=1
-40
+n=1 s=hello
+100

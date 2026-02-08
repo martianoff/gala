@@ -588,6 +588,60 @@ func (t *galaASTTransformer) isSimpleIdentifier(s string) bool {
 	return true
 }
 
+// extractUserPatternVarNames walks pattern bindings AST and collects user-defined variable names.
+// It skips internal temp vars (_tmp_* prefix) and blank identifiers (_).
+func extractUserPatternVarNames(bindings []ast.Stmt) []string {
+	var names []string
+	for _, stmt := range bindings {
+		extractUserVarsFromStmt(stmt, &names)
+	}
+	return names
+}
+
+func extractUserVarsFromStmt(stmt ast.Stmt, names *[]string) {
+	switch s := stmt.(type) {
+	case *ast.AssignStmt:
+		if s.Tok == token.DEFINE {
+			for _, lhs := range s.Lhs {
+				if ident, ok := lhs.(*ast.Ident); ok {
+					name := ident.Name
+					if name != "_" && !strings.HasPrefix(name, "_tmp_") {
+						*names = append(*names, name)
+					}
+				}
+			}
+		}
+	case *ast.BlockStmt:
+		for _, inner := range s.List {
+			extractUserVarsFromStmt(inner, names)
+		}
+	case *ast.IfStmt:
+		// Walk the body (guarded assignments may define vars inside if blocks)
+		if s.Body != nil {
+			for _, inner := range s.Body.List {
+				extractUserVarsFromStmt(inner, names)
+			}
+		}
+	}
+}
+
+// collectReferencedIdents walks Go AST nodes and collects all referenced identifier names.
+func collectReferencedIdents(nodes []ast.Node) map[string]bool {
+	refs := make(map[string]bool)
+	for _, node := range nodes {
+		if node == nil {
+			continue
+		}
+		ast.Inspect(node, func(n ast.Node) bool {
+			if ident, ok := n.(*ast.Ident); ok {
+				refs[ident.Name] = true
+			}
+			return true
+		})
+	}
+	return refs
+}
+
 // transformCaseClauseWithType transforms a case clause and returns its result type
 func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClauseContext, paramName string, matchedType transpiler.Type) (ast.Stmt, transpiler.Type, error) {
 	t.pushScope()
@@ -599,15 +653,17 @@ func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClause
 		return nil, nil, err
 	}
 
+	// Transform guard expression separately so we can check variable references in it
+	var guardExpr ast.Expr
 	if ctx.GetGuard() != nil {
-		guard, err := t.transformExpression(ctx.GetGuard())
+		guardExpr, err = t.transformExpression(ctx.GetGuard())
 		if err != nil {
 			return nil, nil, err
 		}
 		cond = &ast.BinaryExpr{
 			X:  cond,
 			Op: token.LAND,
-			Y:  guard,
+			Y:  guardExpr,
 		}
 	}
 
@@ -640,6 +696,28 @@ func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClause
 		}
 		resultType = t.inferResultType(expr)
 		body = []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{expr}}}
+	}
+
+	// Check for unused pattern variables: user vars that appear in bindings but
+	// are not referenced in the body or guard expression.
+	userVars := extractUserPatternVarNames(bindings)
+	if len(userVars) > 0 {
+		// Collect identifiers referenced in body and guard
+		var nodesToCheck []ast.Node
+		for _, s := range body {
+			nodesToCheck = append(nodesToCheck, s)
+		}
+		if guardExpr != nil {
+			nodesToCheck = append(nodesToCheck, guardExpr)
+		}
+		refs := collectReferencedIdents(nodesToCheck)
+
+		for _, varName := range userVars {
+			if !refs[varName] {
+				return nil, nil, galaerr.NewSemanticError(
+					fmt.Sprintf("unused variable '%s' in match branch — use '_' to discard this value", varName))
+			}
+		}
 	}
 
 	bodyBlock := &ast.BlockStmt{List: body}

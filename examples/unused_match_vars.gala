@@ -2,9 +2,9 @@ package main
 
 import "fmt"
 
-// FIX-002 verification: unused extracted variables in match branches must not cause Go compile errors.
-// The transpiler generates variable bindings BEFORE the if-body, so without `_ = varName`
-// suppression, Go would reject any binding that is not referenced in the match body.
+// FIX-002 verification: GALA enforces that all extracted variables in match branches
+// must be used in the branch body or guard. Unused variables cause a compiler error.
+// Use '_' to explicitly discard values you don't need.
 
 sealed type Animal {
     case Dog(Name string, Age int)
@@ -12,60 +12,60 @@ sealed type Animal {
     case Fish()
 }
 
-// Case 1: Sealed type match - extract fields but only use some
+// Correct: use '_' to discard fields you don't need
 func animalCategory(a Animal) string = a match {
     case Dog(_, age) => if (age > 5) "old dog" else "young dog"
     case Cat(_, _) => "cat"
     case Fish() => "fish"
 }
 
-// Case 2: Option match - extract value but ignore it
+// Correct: use extracted value
 func hasValue(opt Option[int]) string = opt match {
-    case Some(v) => "yes"
+    case Some(v) => fmt.Sprintf("value=%d", v)
     case _ => "no"
 }
 
-// Case 3: Typed pattern match - extract but don't use
+// Correct: use '_' for typed patterns when you only need the type check
 func typeLabel(x any) string = x match {
-    case s: string => "string"
-    case i: int => "int"
+    case _: string => "string"
+    case _: int => "int"
     case _ => "other"
 }
 
-// Case 4: Tuple pattern match - extract but only use some
+// Correct: use all extracted tuple fields
 func tupleTest() string {
     val t = (1, "hello")
     return t match {
-        case (n, s) => fmt.Sprintf("n=%d", n)
+        case (n, s) => fmt.Sprintf("n=%d s=%s", n, s)
         case _ => "unknown"
     }
 }
 
-// Case 5: Variable binding - extract but ignore
-func alwaysForty(x int) int = x match {
-    case y => 40
+// Correct: use the bound variable
+func addOne(x int) int = x match {
+    case y => y + 1
     case _ => 0
 }
 
 func main() {
-    // Sealed type with unused extracted fields
+    // Sealed type: unused fields discarded with _
     fmt.Println(animalCategory(Dog("Rex", 3)))
     fmt.Println(animalCategory(Dog("Buddy", 8)))
     fmt.Println(animalCategory(Cat("Whiskers", 9)))
     fmt.Println(animalCategory(Fish()))
 
-    // Option with unused extracted value
+    // Option: extracted value is used
     fmt.Println(hasValue(Some(42)))
     fmt.Println(hasValue(None[int]()))
 
-    // Typed pattern with unused extracted value
+    // Typed pattern: discard value with _, keep type check
     fmt.Println(typeLabel("hello"))
     fmt.Println(typeLabel(42))
     fmt.Println(typeLabel(3.14))
 
-    // Tuple with partially-used extracted fields
+    // Tuple: all fields used
     fmt.Println(tupleTest())
 
-    // Variable binding, value ignored
-    fmt.Println(alwaysForty(99))
+    // Variable binding used in body
+    fmt.Println(addOne(99))
 }
