@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/antlr4-go/antlr/v4"
@@ -1125,7 +1126,84 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 			}
 		}
 	}
+
+	// For Go-only packages (no .gala files), scan .go files for exported symbols.
+	// This enables the transpiler to warn when two dot-imported packages export the same symbol.
+	hasGalaFiles := false
+	for _, f := range files {
+		if !f.IsDir() && filepath.Ext(f.Name()) == ".gala" {
+			hasGalaFiles = true
+			break
+		}
+	}
+	if !hasGalaFiles {
+		a.extractGoFileExports(files, dirPath, relPath, pkgAST)
+	}
+
 	return pkgAST, nil
+}
+
+// goExportedFuncRe matches exported (capitalized) standalone function declarations in Go files.
+// Only matches top-level functions, not methods (which have a receiver before the name).
+var goExportedFuncRe = regexp.MustCompile(`(?m)^func\s+([A-Z]\w*)\s*[\[(]`)
+
+// goExportedTypeRe matches exported type declarations in Go files.
+var goExportedTypeRe = regexp.MustCompile(`(?m)^type\s+([A-Z]\w*)\s+`)
+
+// goPkgNameRe matches the package declaration in Go files.
+var goPkgNameRe = regexp.MustCompile(`(?m)^package\s+(\w+)`)
+
+// extractGoFileExports scans .go files in a directory for exported symbol names.
+// These are stored in pkgAST.GoExports (separate from Types/Functions to avoid
+// interfering with type resolution). Used for dot-import clash detection.
+func (a *galaAnalyzer) extractGoFileExports(files []os.FileInfo, dirPath, relPath string, pkgAST *transpiler.RichAST) {
+	var symbols []string
+	seen := make(map[string]bool)
+
+	for _, f := range files {
+		if f.IsDir() || filepath.Ext(f.Name()) != ".go" || strings.HasSuffix(f.Name(), "_test.go") {
+			continue
+		}
+		content, err := ioutil.ReadFile(filepath.Join(dirPath, f.Name()))
+		if err != nil {
+			continue
+		}
+		src := string(content)
+
+		// Extract package name if not already set
+		if pkgAST.PackageName == "" {
+			if m := goPkgNameRe.FindStringSubmatch(src); len(m) > 1 {
+				pkgAST.PackageName = m[1]
+			}
+		}
+
+		// Extract exported function names
+		for _, m := range goExportedFuncRe.FindAllStringSubmatch(src, -1) {
+			if !seen[m[1]] {
+				seen[m[1]] = true
+				symbols = append(symbols, m[1])
+			}
+		}
+
+		// Extract exported type names
+		for _, m := range goExportedTypeRe.FindAllStringSubmatch(src, -1) {
+			if !seen[m[1]] {
+				seen[m[1]] = true
+				symbols = append(symbols, m[1])
+			}
+		}
+	}
+
+	if len(symbols) > 0 {
+		pkg := pkgAST.PackageName
+		if pkg == "" {
+			pkg = relPath // fallback
+		}
+		if pkgAST.GoExports == nil {
+			pkgAST.GoExports = make(map[string][]string)
+		}
+		pkgAST.GoExports[pkg] = symbols
+	}
 }
 
 // ensureTranspiled checks if an external GALA package has been transpiled
