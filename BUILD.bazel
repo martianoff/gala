@@ -40,6 +40,8 @@ filegroup(
         "//std:try.gala",
         "//std:tuple.gala",
         "//stream:stream.gala",
+        "//string_utils:gala_sources",
+        "//time_utils:gala_sources",
     ],
     visibility = ["//visibility:public"],
 )
