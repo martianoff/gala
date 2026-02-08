@@ -52,6 +52,7 @@ type RichAST struct {
 	Functions        map[string]*FunctionMetadata
 	Packages         map[string]string                   // path -> pkgName
 	CompanionObjects map[string]*CompanionObjectMetadata // companion name -> metadata
+	GoExports        map[string][]string                 // pkgName -> exported symbol names (from Go-only packages)
 }
 
 // Merge combines metadata from another RichAST into this one.
@@ -82,6 +83,14 @@ func (r *RichAST) Merge(other *RichAST) {
 	}
 	for k, v := range other.CompanionObjects {
 		r.CompanionObjects[k] = v
+	}
+	if len(other.GoExports) > 0 {
+		if r.GoExports == nil {
+			r.GoExports = make(map[string][]string)
+		}
+		for pkg, symbols := range other.GoExports {
+			r.GoExports[pkg] = append(r.GoExports[pkg], symbols...)
+		}
 	}
 }
 
