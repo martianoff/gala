@@ -1,5 +1,14 @@
 load("//:gala.bzl", "gala_binary", "gala_library", "gala_test")
 
+filegroup(
+    name = "gala_sources",
+    srcs = [
+        "lib/generic.gala",
+        "mathlib/math.gala",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 gala_library(
     name = "mathlib",
     src = "mathlib/math.gala",
