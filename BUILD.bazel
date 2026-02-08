@@ -42,6 +42,7 @@ filegroup(
         "//stream:stream.gala",
         "//string_utils:gala_sources",
         "//time_utils:gala_sources",
+        "//examples:gala_sources",
     ],
     visibility = ["//visibility:public"],
 )
