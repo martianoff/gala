@@ -1,0 +1,158 @@
+package main
+
+import (
+    "fmt"
+    im "martianoff/gala/collection_immutable"
+    mu "martianoff/gala/collection_mutable"
+    . "martianoff/gala/std"
+)
+
+// This example demonstrates both immutable and mutable TreeMap usage in GALA.
+
+func main() {
+    fmt.Println("=== GALA TreeMap Examples ===\n")
+
+    demonstrateImmutableTreeMap()
+    demonstrateMutableTreeMap()
+    demonstrateSortedAPI()
+    demonstrateRangeQueries()
+    demonstrateFunctionalOperations()
+}
+
+func demonstrateImmutableTreeMap() {
+    fmt.Println("--- Immutable TreeMap ---")
+
+    // Creating an immutable TreeMap
+    val m1 = im.EmptyTreeMap[string, int]()
+    val m2 = m1.Put("cherry", 3)
+    val m3 = m2.Put("apple", 1)
+    val m4 = m3.Put("banana", 2)
+
+    fmt.Printf("Original map size: %d\n", m1.Size())
+    fmt.Printf("After adding 3 items: %d\n", m4.Size())
+
+    // Entries are in sorted key order
+    fmt.Printf("String: %s\n", m4.String())
+
+    // Immutability demonstration
+    val m5 = m4.Put("apple", 10)
+    fmt.Printf("m4 apple value: %d\n", m4.GetOrElse("apple", 0))
+    fmt.Printf("m5 apple value: %d\n", m5.GetOrElse("apple", 0))
+
+    // Min/Max
+    fmt.Printf("Min key: %s\n", m4.MinKey())
+    fmt.Printf("Max key: %s\n", m4.MaxKey())
+
+    // Get
+    fmt.Printf("Get banana: %v\n", m4.Get("banana"))
+    fmt.Printf("Get grape: %v\n", m4.Get("grape"))
+
+    // Remove
+    val m6 = m4.Remove("banana")
+    fmt.Printf("After remove banana: %s\n", m6.String())
+    fmt.Println()
+}
+
+func demonstrateMutableTreeMap() {
+    fmt.Println("--- Mutable TreeMap ---")
+
+    // Creating a mutable TreeMap
+    val m = mu.EmptyTreeMap[string, int]()
+    m.Put("cherry", 3)
+    m.Put("apple", 1)
+    m.Put("banana", 2)
+    fmt.Printf("Size: %d\n", m.Size())
+    fmt.Printf("String: %s\n", m.String())
+
+    // Update existing key
+    m.Put("apple", 10)
+    fmt.Printf("After update apple: %d\n", m.GetOrElse("apple", 0))
+
+    // PutIfAbsent
+    m.PutIfAbsent("apple", 99)
+    fmt.Printf("After PutIfAbsent apple: %d\n", m.GetOrElse("apple", 0))
+    m.PutIfAbsent("date", 4)
+    fmt.Printf("After PutIfAbsent date: %d\n", m.GetOrElse("date", 0))
+
+    // PopMinEntry
+    val min = m.PopMinEntry()
+    fmt.Printf("Popped min: %v -> %v\n", min.V1, min.V2)
+    fmt.Printf("Size after pop: %d\n", m.Size())
+
+    // Clear
+    m.Clear()
+    fmt.Printf("After clear: %s\n", m.String())
+    fmt.Println()
+}
+
+func demonstrateSortedAPI() {
+    fmt.Println("--- Sorted API ---")
+
+    // Immutable TreeMap - Sorted (no-op, already sorted by key)
+    val im1 = im.EmptyTreeMap[string, int]().Put("c", 30).Put("a", 10).Put("b", 20)
+    val sorted = im1.Sorted()
+    fmt.Printf("Sorted by key: %s\n", sorted.MkString(", "))
+
+    // SortWith - custom ordering (sort by value)
+    val sortedByValue = im1.SortWith((a Tuple[string, int], b Tuple[string, int]) => a.V2 < b.V2)
+    fmt.Printf("Sorted by value: %s\n", sortedByValue.MkString(", "))
+
+    // SortBy - sort by extracted key
+    val sortedByValueDesc = im1.SortBy[int]((entry Tuple[string, int]) => -entry.V2)
+    fmt.Printf("Sorted by value desc: %s\n", sortedByValueDesc.MkString(", "))
+    fmt.Println()
+}
+
+func demonstrateRangeQueries() {
+    fmt.Println("--- Range Queries ---")
+
+    var m = im.EmptyTreeMap[int, string]()
+    for i := 1; i <= 10; i++ {
+        m = m.Put(i, fmt.Sprintf("val%d", i))
+    }
+
+    // Range [3, 7]
+    val range1 = m.Range(3, 7)
+    fmt.Printf("Range [3,7]: %s\n", range1.String())
+
+    // RangeFrom >= 8
+    val range2 = m.RangeFrom(8)
+    fmt.Printf("RangeFrom 8: %s\n", range2.String())
+
+    // RangeTo <= 3
+    val range3 = m.RangeTo(3)
+    fmt.Printf("RangeTo 3: %s\n", range3.String())
+    fmt.Println()
+}
+
+func demonstrateFunctionalOperations() {
+    fmt.Println("--- Functional Operations ---")
+
+    val m = im.EmptyTreeMap[string, int]().Put("a", 1).Put("b", 2).Put("c", 3).Put("d", 4).Put("e", 5)
+
+    // Filter
+    val even = m.Filter((k string, v int) => v % 2 == 0)
+    fmt.Printf("Even values: %s\n", even.String())
+
+    // MapValues
+    val doubled = m.MapValues[int]((v int) => v * 2)
+    fmt.Printf("Doubled values: %s\n", doubled.String())
+
+    // FoldLeftKV
+    val sum = m.FoldLeftKV[int](0, (acc int, k string, v int) => acc + v)
+    fmt.Printf("Sum of values: %d\n", sum)
+
+    // Merge
+    val m2 = im.EmptyTreeMap[string, int]().Put("c", 30).Put("f", 6)
+    val merged = m.Merge(m2, (v1 int, v2 int) => v1 + v2)
+    fmt.Printf("Merged: %s\n", merged.String())
+
+    // Convert to HashMap
+    val hm = m.ToHashMap()
+    fmt.Printf("HashMap size: %d\n", hm.Size())
+
+    // Convert to GoMap
+    val gm = m.ToGoMap()
+    fmt.Printf("Go map[a]: %d\n", gm["a"])
+    fmt.Println()
+}

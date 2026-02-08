@@ -876,6 +876,202 @@ func benchHashMapStringKeys() {
     printResult("HashMap.Get string key (size=10000)", ns)
 }
 
+// ============ MUTABLE TREEMAP BENCHMARKS ============
+
+// TreeMap creation benchmark - small
+func benchTreeMapCreation100() {
+    var ns = measureNs(10000, () => {
+        var m = EmptyTreeMap[int, int]()
+        for i := 0; i < 100; i++ {
+            m.Put(i, i)
+        }
+    })
+    printResult("TreeMap.Creation(100)", ns)
+}
+
+// TreeMap creation benchmark - medium
+func benchTreeMapCreation10000() {
+    var ns = measureNs(1000, () => {
+        var m = EmptyTreeMap[int, int]()
+        for i := 0; i < 10000; i++ {
+            m.Put(i, i)
+        }
+    })
+    printResult("TreeMap.Creation(10000)", ns)
+}
+
+// TreeMap creation benchmark - large
+func benchTreeMapCreation100000() {
+    var ns = measureNs(100, () => {
+        var m = EmptyTreeMap[int, int]()
+        for i := 0; i < 100000; i++ {
+            m.Put(i, i)
+        }
+    })
+    printResult("TreeMap.Creation(100000)", ns)
+}
+
+// TreeMap put benchmark
+func benchTreeMapPut() {
+    var m = EmptyTreeMap[int, int]()
+    for i := 0; i < 10000; i++ {
+        m.Put(i, i)
+    }
+    var ns = measureNs(100000, () => {
+        m.Put(99999, 99999)
+        m.Remove(99999)
+    })
+    printResult("TreeMap.Put (size=10000)", ns)
+}
+
+// TreeMap get benchmark - hit
+func benchTreeMapGetHit() {
+    var m = EmptyTreeMap[int, int]()
+    for i := 0; i < 10000; i++ {
+        m.Put(i, i)
+    }
+    var ns = measureNs(1000000, () => {
+        var _ = m.Get(5000)
+    })
+    printResult("TreeMap.Get hit (size=10000)", ns)
+}
+
+// TreeMap get benchmark - miss
+func benchTreeMapGetMiss() {
+    var m = EmptyTreeMap[int, int]()
+    for i := 0; i < 10000; i++ {
+        m.Put(i, i)
+    }
+    var ns = measureNs(1000000, () => {
+        var _ = m.Get(99999)
+    })
+    printResult("TreeMap.Get miss (size=10000)", ns)
+}
+
+// TreeMap contains benchmark - hit
+func benchTreeMapContainsHit() {
+    var m = EmptyTreeMap[int, int]()
+    for i := 0; i < 10000; i++ {
+        m.Put(i, i)
+    }
+    var ns = measureNs(1000000, () => {
+        var _ = m.Contains(5000)
+    })
+    printResult("TreeMap.Contains hit (size=10000)", ns)
+}
+
+// TreeMap contains benchmark - miss
+func benchTreeMapContainsMiss() {
+    var m = EmptyTreeMap[int, int]()
+    for i := 0; i < 10000; i++ {
+        m.Put(i, i)
+    }
+    var ns = measureNs(1000000, () => {
+        var _ = m.Contains(99999)
+    })
+    printResult("TreeMap.Contains miss (size=10000)", ns)
+}
+
+// TreeMap remove benchmark
+func benchTreeMapRemove() {
+    var m = EmptyTreeMap[int, int]()
+    for i := 0; i < 10000; i++ {
+        m.Put(i, i)
+    }
+    var ns = measureNs(100000, () => {
+        m.Put(99999, 99999)
+        m.Remove(99999)
+    })
+    printResult("TreeMap.Remove (size=10000)", ns)
+}
+
+// TreeMap minKey benchmark
+func benchTreeMapMinKey() {
+    var m = EmptyTreeMap[int, int]()
+    for i := 0; i < 10000; i++ {
+        m.Put(i, i)
+    }
+    var ns = measureNs(10000000, () => {
+        var _ = m.MinKey()
+    })
+    printResult("TreeMap.MinKey (size=10000)", ns)
+}
+
+// TreeMap maxKey benchmark
+func benchTreeMapMaxKey() {
+    var m = EmptyTreeMap[int, int]()
+    for i := 0; i < 10000; i++ {
+        m.Put(i, i)
+    }
+    var ns = measureNs(10000000, () => {
+        var _ = m.MaxKey()
+    })
+    printResult("TreeMap.MaxKey (size=10000)", ns)
+}
+
+// TreeMap range benchmark
+func benchTreeMapRange() {
+    var m = EmptyTreeMap[int, int]()
+    for i := 0; i < 10000; i++ {
+        m.Put(i, i)
+    }
+    var ns = measureNs(1000, () => {
+        var _ = m.Range(2500, 7500)
+    })
+    printResult("TreeMap.Range (size=10000)", ns)
+}
+
+// TreeMap filter benchmark
+func benchTreeMapFilter() {
+    var m = EmptyTreeMap[int, int]()
+    for i := 0; i < 10000; i++ {
+        m.Put(i, i)
+    }
+    var ns = measureNs(1000, () => {
+        var _ = m.Filter((k int, v int) => v % 2 == 0)
+    })
+    printResult("TreeMap.Filter (size=10000)", ns)
+}
+
+// TreeMap mapValues benchmark
+func benchTreeMapMapValues() {
+    var m = EmptyTreeMap[int, int]()
+    for i := 0; i < 10000; i++ {
+        m.Put(i, i)
+    }
+    var ns = measureNs(1000, () => {
+        var _ = m.MapValues[int]((v int) => v * 2)
+    })
+    printResult("TreeMap.MapValues (size=10000)", ns)
+}
+
+// TreeMap putFrom benchmark
+func benchTreeMapPutFrom() {
+    var m1 = EmptyTreeMap[int, int]()
+    var m2 = EmptyTreeMap[int, int]()
+    for i := 0; i < 1000; i++ {
+        m1.Put(i, i)
+        m2.Put(i + 500, i + 500)
+    }
+    var ns = measureNs(100, () => {
+        var clone = m1.Clone()
+        clone.PutFrom(m2)
+    })
+    printResult("TreeMap.PutFrom (2x1000)", ns)
+}
+
+// TreeMap clone benchmark
+func benchTreeMapClone() {
+    var m = EmptyTreeMap[int, int]()
+    for i := 0; i < 10000; i++ {
+        m.Put(i, i)
+    }
+    var ns = measureNs(1000, () => {
+        var _ = m.Clone()
+    })
+    printResult("TreeMap.Clone (size=10000)", ns)
+}
+
 func main() {
     fmt.Println("=== GALA Mutable Collections Performance ===")
     fmt.Println("Testing with 100 - 100,000 elements")
@@ -964,4 +1160,23 @@ func main() {
     benchHashMapMapValues()
     benchHashMapClone()
     benchHashMapStringKeys()
+
+    fmt.Println("")
+    fmt.Println("--- TreeMap Operations (Red-Black Tree) ---")
+    benchTreeMapCreation100()
+    benchTreeMapCreation10000()
+    benchTreeMapCreation100000()
+    benchTreeMapPut()
+    benchTreeMapGetHit()
+    benchTreeMapGetMiss()
+    benchTreeMapContainsHit()
+    benchTreeMapContainsMiss()
+    benchTreeMapRemove()
+    benchTreeMapMinKey()
+    benchTreeMapMaxKey()
+    benchTreeMapRange()
+    benchTreeMapFilter()
+    benchTreeMapMapValues()
+    benchTreeMapPutFrom()
+    benchTreeMapClone()
 }

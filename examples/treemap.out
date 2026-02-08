@@ -1,0 +1,41 @@
+=== GALA TreeMap Examples ===
+
+--- Immutable TreeMap ---
+Original map size: 0
+After adding 3 items: 3
+String: TreeMap(apple -> 1, banana -> 2, cherry -> 3)
+m4 apple value: 1
+m5 apple value: 10
+Min key: apple
+Max key: cherry
+Get banana: Some(2)
+Get grape: None()
+After remove banana: TreeMap(apple -> 1, cherry -> 3)
+
+--- Mutable TreeMap ---
+Size: 3
+String: TreeMap(apple -> 1, banana -> 2, cherry -> 3)
+After update apple: 10
+After PutIfAbsent apple: 10
+After PutIfAbsent date: 4
+Popped min: apple -> 10
+Size after pop: 3
+After clear: TreeMap()
+
+--- Sorted API ---
+Sorted by key: (a, 10), (b, 20), (c, 30)
+Sorted by value: (a, 10), (b, 20), (c, 30)
+Sorted by value desc: (c, 30), (b, 20), (a, 10)
+
+--- Range Queries ---
+Range [3,7]: TreeMap(3 -> val3, 4 -> val4, 5 -> val5, 6 -> val6, 7 -> val7)
+RangeFrom 8: TreeMap(8 -> val8, 9 -> val9, 10 -> val10)
+RangeTo 3: TreeMap(1 -> val1, 2 -> val2, 3 -> val3)
+
+--- Functional Operations ---
+Even values: TreeMap(b -> 2, d -> 4)
+Doubled values: TreeMap(a -> 2, b -> 4, c -> 6, d -> 8, e -> 10)
+Sum of values: 15
+Merged: TreeMap(a -> 1, b -> 2, c -> 33, d -> 4, e -> 5, f -> 6)
+HashMap size: 5
+Go map[a]: 1

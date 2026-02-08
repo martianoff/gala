@@ -1,0 +1,874 @@
+package collection_immutable
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+    "martianoff/gala/go_interop"
+)
+
+// TreeMap is an immutable sorted map implemented as a Red-Black tree.
+// It maintains entries in sorted key order and provides O(log n) operations.
+//
+// Keys must be either:
+// - Primitive types (int, string, float64, etc.) - compared automatically
+// - Types implementing the Ordered[T] interface
+//
+// Performance characteristics:
+// - Put:      O(log n)
+// - Get:      O(log n)
+// - Remove:   O(log n)
+// - Contains: O(log n)
+// - Min/Max:  O(log n)
+// - Size:     O(1) - cached
+//
+// Unlike HashMap, TreeMap maintains sorted key order and supports range queries.
+
+// Tree node colors for Red-Black tree
+val treeMapRed int = 0
+val treeMapBlack int = 1
+
+// treeMapNode represents a node in the Red-Black tree.
+type treeMapNode[K comparable, V any] struct {
+    key   K
+    value V
+    left  *treeMapNode[K, V]
+    right *treeMapNode[K, V]
+    color int
+}
+
+// TreeMap represents an immutable sorted map.
+type TreeMap[K comparable, V any] struct {
+    root *treeMapNode[K, V]
+    size int
+}
+
+// EmptyTreeMap returns an empty TreeMap.
+func EmptyTreeMap[K comparable, V any]() TreeMap[K, V] {
+    var nilRoot *treeMapNode[K, V] = nil
+    return TreeMap[K, V](root = nilRoot, size = 0)
+}
+
+// TreeMapOf creates a TreeMap from key-value tuples.
+// Example: TreeMapOf(("a", 1), ("b", 2)) creates TreeMap(a -> 1, b -> 2)
+func TreeMapOf[K comparable, V any](entries ...Tuple[K, V]) TreeMap[K, V] {
+    var result = EmptyTreeMap[K, V]()
+    for i := 0; i < len(entries); i++ {
+        result = result.Put(entries[i].V1, entries[i].V2)
+    }
+    return result
+}
+
+// TreeMapFromSlice creates a TreeMap from a slice of tuples.
+func TreeMapFromSlice[K comparable, V any](entries []Tuple[K, V]) TreeMap[K, V] {
+    var result = EmptyTreeMap[K, V]()
+    for i := 0; i < len(entries); i++ {
+        result = result.Put(entries[i].V1, entries[i].V2)
+    }
+    return result
+}
+
+// TreeMapFromGoMap creates a TreeMap from a Go map.
+func TreeMapFromGoMap[K comparable, V any](m map[K]V) TreeMap[K, V] {
+    var result = EmptyTreeMap[K, V]()
+    for k, v := range m {
+        result = result.Put(k, v)
+    }
+    return result
+}
+
+// === Basic Operations ===
+
+// IsEmpty returns true if the map is empty.
+func (m TreeMap[K, V]) IsEmpty() bool = m.size == 0
+
+// NonEmpty returns true if the map is not empty.
+func (m TreeMap[K, V]) NonEmpty() bool = m.size > 0
+
+// Size returns the number of entries. O(1) - cached.
+func (m TreeMap[K, V]) Size() int = m.size
+
+// Length is an alias for Size.
+func (m TreeMap[K, V]) Length() int = m.size
+
+// === Comparison ===
+
+// treeMapCompare compares two keys and returns -1, 0, or 1.
+func treeMapCompare[K comparable](a K, b K) int {
+    val va any = a
+    val vb any = b
+
+    val result = va match {
+        case ai: int => treeMapCompareIntsAny(ai, vb)
+        case as: string => treeMapCompareStringsAny(as, vb)
+        case ai64: int64 => treeMapCompareInt64sAny(ai64, vb)
+        case ai32: int32 => treeMapCompareInt32sAny(ai32, vb)
+        case af64: float64 => treeMapCompareFloat64sAny(af64, vb)
+        case af32: float32 => treeMapCompareFloat32sAny(af32, vb)
+        case au: uint => treeMapCompareUintsAny(au, vb)
+        case au64: uint64 => treeMapCompareUint64sAny(au64, vb)
+        case au32: uint32 => treeMapCompareUint32sAny(au32, vb)
+        case ai16: int16 => treeMapCompareInt16sAny(ai16, vb)
+        case ai8: int8 => treeMapCompareInt8sAny(ai8, vb)
+        case au16: uint16 => treeMapCompareUint16sAny(au16, vb)
+        case au8: uint8 => treeMapCompareUint8sAny(au8, vb)
+        case ao: Ordered[K] => ao.Compare(b)
+        case _ => treeMapPanicNotOrdered(va)
+    }
+    return result
+}
+
+// Type-specific comparison helpers
+func treeMapCompareIntsAny(a int, vb any) int {
+    val b = vb match { case bi: int => bi case _ => 0 }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func treeMapCompareStringsAny(a string, vb any) int {
+    val b = vb match { case bs: string => bs case _ => "" }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func treeMapCompareInt64sAny(a int64, vb any) int {
+    val b = vb match { case bi: int64 => bi case _ => int64(0) }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func treeMapCompareInt32sAny(a int32, vb any) int {
+    val b = vb match { case bi: int32 => bi case _ => int32(0) }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func treeMapCompareInt16sAny(a int16, vb any) int {
+    val b = vb match { case bi: int16 => bi case _ => int16(0) }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func treeMapCompareInt8sAny(a int8, vb any) int {
+    val b = vb match { case bi: int8 => bi case _ => int8(0) }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func treeMapCompareFloat64sAny(a float64, vb any) int {
+    val b = vb match { case bf: float64 => bf case _ => float64(0) }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func treeMapCompareFloat32sAny(a float32, vb any) int {
+    val b = vb match { case bf: float32 => bf case _ => float32(0) }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func treeMapCompareUintsAny(a uint, vb any) int {
+    val b = vb match { case bu: uint => bu case _ => uint(0) }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func treeMapCompareUint64sAny(a uint64, vb any) int {
+    val b = vb match { case bu: uint64 => bu case _ => uint64(0) }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func treeMapCompareUint32sAny(a uint32, vb any) int {
+    val b = vb match { case bu: uint32 => bu case _ => uint32(0) }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func treeMapCompareUint16sAny(a uint16, vb any) int {
+    val b = vb match { case bu: uint16 => bu case _ => uint16(0) }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func treeMapCompareUint8sAny(a uint8, vb any) int {
+    val b = vb match { case bu: uint8 => bu case _ => uint8(0) }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func treeMapPanicNotOrdered(v any) int {
+    panic(fmt.Sprintf("TreeMap: type %T must implement std.Ordered interface", v))
+}
+
+// isRedTreeMapNode checks if a node is red (nil nodes are black).
+func isRedTreeMapNode[K comparable, V any](node *treeMapNode[K, V]) bool {
+    if node == nil {
+        return false
+    }
+    return node.color == treeMapRed
+}
+
+// === Query Operations ===
+
+// Contains checks if the map contains the given key. O(log n).
+func (m TreeMap[K, V]) Contains(key K) bool {
+    return treeMapContainsKey[K, V](m.root, key)
+}
+
+// treeMapContainsKey searches for a key in the tree.
+func treeMapContainsKey[K comparable, V any](node *treeMapNode[K, V], key K) bool {
+    if node == nil {
+        return false
+    }
+    val cmp = treeMapCompare[K](key, node.key)
+    if cmp < 0 {
+        return treeMapContainsKey[K, V](node.left, key)
+    }
+    if cmp > 0 {
+        return treeMapContainsKey[K, V](node.right, key)
+    }
+    return true
+}
+
+// Get returns the value for a key wrapped in Option. O(log n).
+func (m TreeMap[K, V]) Get(key K) Option[V] {
+    return treeMapGetValue[K, V](m.root, key)
+}
+
+// treeMapGetValue searches for a key and returns its value.
+func treeMapGetValue[K comparable, V any](node *treeMapNode[K, V], key K) Option[V] {
+    if node == nil {
+        return None[V]()
+    }
+    val cmp = treeMapCompare[K](key, node.key)
+    if cmp < 0 {
+        return treeMapGetValue[K, V](node.left, key)
+    }
+    if cmp > 0 {
+        return treeMapGetValue[K, V](node.right, key)
+    }
+    return Some[V](node.value)
+}
+
+// GetOrElse returns the value for a key, or the default if not found. O(log n).
+func (m TreeMap[K, V]) GetOrElse(key K, defaultValue V) V {
+    return m.Get(key).GetOrElse(defaultValue)
+}
+
+// Apply returns the value for a key. Panics if key not found. O(log n).
+func (m TreeMap[K, V]) Apply(key K) V {
+    val opt = m.Get(key)
+    if opt.IsEmpty() {
+        panic(fmt.Sprintf("TreeMap: key not found: %v", key))
+    }
+    return opt.Get()
+}
+
+// === Mutating Operations (return new TreeMap) ===
+
+// Put adds or updates a key-value pair. Returns a new map. O(log n).
+func (m TreeMap[K, V]) Put(key K, value V) TreeMap[K, V] {
+    val existed = treeMapContainsKey[K, V](m.root, key)
+    val newRoot = treeMapInsert[K, V](m.root, key, value)
+    // Root is always black
+    val blackRoot = &treeMapNode[K, V](key = newRoot.key, value = newRoot.value, left = newRoot.left, right = newRoot.right, color = treeMapBlack)
+    if existed {
+        return TreeMap[K, V](root = blackRoot, size = m.size)
+    }
+    return TreeMap[K, V](root = blackRoot, size = m.size + 1)
+}
+
+// treeMapInsert inserts or updates a key-value pair and rebalances.
+func treeMapInsert[K comparable, V any](node *treeMapNode[K, V], key K, value V) *treeMapNode[K, V] {
+    if node == nil {
+        return &treeMapNode[K, V](key = key, value = value, color = treeMapRed)
+    }
+
+    val cmp = treeMapCompare[K](key, node.key)
+    var newNode *treeMapNode[K, V]
+    if cmp < 0 {
+        val newLeft = treeMapInsert[K, V](node.left, key, value)
+        newNode = &treeMapNode[K, V](key = node.key, value = node.value, left = newLeft, right = node.right, color = node.color)
+    } else if cmp > 0 {
+        val newRight = treeMapInsert[K, V](node.right, key, value)
+        newNode = &treeMapNode[K, V](key = node.key, value = node.value, left = node.left, right = newRight, color = node.color)
+    } else {
+        // Key exists, update value
+        return &treeMapNode[K, V](key = node.key, value = value, left = node.left, right = node.right, color = node.color)
+    }
+
+    return treeMapBalance[K, V](newNode)
+}
+
+// treeMapBalance rebalances the tree after insertion (Okasaki's balance function).
+func treeMapBalance[K comparable, V any](node *treeMapNode[K, V]) *treeMapNode[K, V] {
+    // Case 1: Left child is red and has red left child
+    if isRedTreeMapNode[K, V](node.left) && isRedTreeMapNode[K, V](node.left.left) {
+        val newLeft = &treeMapNode[K, V](key = node.left.left.key, value = node.left.left.value, left = node.left.left.left, right = node.left.left.right, color = treeMapBlack)
+        val newRight = &treeMapNode[K, V](key = node.key, value = node.value, left = node.left.right, right = node.right, color = treeMapBlack)
+        return &treeMapNode[K, V](key = node.left.key, value = node.left.value, left = newLeft, right = newRight, color = treeMapRed)
+    }
+    // Case 2: Left child is red and has red right child
+    if isRedTreeMapNode[K, V](node.left) && isRedTreeMapNode[K, V](node.left.right) {
+        val newLeft = &treeMapNode[K, V](key = node.left.key, value = node.left.value, left = node.left.left, right = node.left.right.left, color = treeMapBlack)
+        val newRight = &treeMapNode[K, V](key = node.key, value = node.value, left = node.left.right.right, right = node.right, color = treeMapBlack)
+        return &treeMapNode[K, V](key = node.left.right.key, value = node.left.right.value, left = newLeft, right = newRight, color = treeMapRed)
+    }
+    // Case 3: Right child is red and has red left child
+    if isRedTreeMapNode[K, V](node.right) && isRedTreeMapNode[K, V](node.right.left) {
+        val newLeft = &treeMapNode[K, V](key = node.key, value = node.value, left = node.left, right = node.right.left.left, color = treeMapBlack)
+        val newRight = &treeMapNode[K, V](key = node.right.key, value = node.right.value, left = node.right.left.right, right = node.right.right, color = treeMapBlack)
+        return &treeMapNode[K, V](key = node.right.left.key, value = node.right.left.value, left = newLeft, right = newRight, color = treeMapRed)
+    }
+    // Case 4: Right child is red and has red right child
+    if isRedTreeMapNode[K, V](node.right) && isRedTreeMapNode[K, V](node.right.right) {
+        val newLeft = &treeMapNode[K, V](key = node.key, value = node.value, left = node.left, right = node.right.left, color = treeMapBlack)
+        val newRight = &treeMapNode[K, V](key = node.right.right.key, value = node.right.right.value, left = node.right.right.left, right = node.right.right.right, color = treeMapBlack)
+        return &treeMapNode[K, V](key = node.right.key, value = node.right.value, left = newLeft, right = newRight, color = treeMapRed)
+    }
+    return node
+}
+
+// Updated is an alias for Put.
+func (m TreeMap[K, V]) Updated(key K, value V) TreeMap[K, V] = m.Put(key, value)
+
+// Remove removes a key from the map. Returns a new map. O(log n).
+func (m TreeMap[K, V]) Remove(key K) TreeMap[K, V] {
+    if !m.Contains(key) {
+        return m
+    }
+    if m.size == 1 {
+        return EmptyTreeMap[K, V]()
+    }
+    val newRoot = treeMapRemove[K, V](m.root, key)
+    if newRoot == nil {
+        return EmptyTreeMap[K, V]()
+    }
+    // Root is always black
+    val blackRoot = &treeMapNode[K, V](key = newRoot.key, value = newRoot.value, left = newRoot.left, right = newRoot.right, color = treeMapBlack)
+    return TreeMap[K, V](root = blackRoot, size = m.size - 1)
+}
+
+// treeMapRemove removes a key from the tree.
+func treeMapRemove[K comparable, V any](node *treeMapNode[K, V], key K) *treeMapNode[K, V] {
+    if node == nil {
+        return nil
+    }
+
+    val cmp = treeMapCompare[K](key, node.key)
+    if cmp < 0 {
+        val newLeft = treeMapRemove[K, V](node.left, key)
+        return treeMapBalanceRemove[K, V](&treeMapNode[K, V](key = node.key, value = node.value, left = newLeft, right = node.right, color = node.color))
+    }
+    if cmp > 0 {
+        val newRight = treeMapRemove[K, V](node.right, key)
+        return treeMapBalanceRemove[K, V](&treeMapNode[K, V](key = node.key, value = node.value, left = node.left, right = newRight, color = node.color))
+    }
+
+    // Found the key to remove
+    if node.left == nil {
+        return node.right
+    }
+    if node.right == nil {
+        return node.left
+    }
+
+    // Node has two children, find successor (min of right subtree)
+    val succKey = treeMapFindMinKey[K, V](node.right)
+    val succValue = treeMapGetValue[K, V](node.right, succKey).Get()
+    val newRight = treeMapRemoveMin[K, V](node.right)
+    return treeMapBalanceRemove[K, V](&treeMapNode[K, V](key = succKey, value = succValue, left = node.left, right = newRight, color = node.color))
+}
+
+// treeMapFindMinKey finds the minimum key in a subtree.
+func treeMapFindMinKey[K comparable, V any](node *treeMapNode[K, V]) K {
+    if node.left == nil {
+        return node.key
+    }
+    return treeMapFindMinKey[K, V](node.left)
+}
+
+// treeMapFindMaxKey finds the maximum key in a subtree.
+func treeMapFindMaxKey[K comparable, V any](node *treeMapNode[K, V]) K {
+    if node.right == nil {
+        return node.key
+    }
+    return treeMapFindMaxKey[K, V](node.right)
+}
+
+// treeMapRemoveMin removes the minimum key from a subtree.
+func treeMapRemoveMin[K comparable, V any](node *treeMapNode[K, V]) *treeMapNode[K, V] {
+    if node.left == nil {
+        return node.right
+    }
+    return treeMapBalanceRemove[K, V](&treeMapNode[K, V](key = node.key, value = node.value, left = treeMapRemoveMin[K, V](node.left), right = node.right, color = node.color))
+}
+
+// treeMapBalanceRemove rebalances after removal.
+func treeMapBalanceRemove[K comparable, V any](node *treeMapNode[K, V]) *treeMapNode[K, V] {
+    if node == nil {
+        return nil
+    }
+    return treeMapBalance[K, V](node)
+}
+
+// === Min/Max Operations ===
+
+// MinKey returns the minimum key in the map. O(log n).
+// Panics if the map is empty.
+func (m TreeMap[K, V]) MinKey() K {
+    if m.size == 0 {
+        panic("TreeMap.MinKey on empty map")
+    }
+    return treeMapFindMinKey[K, V](m.root)
+}
+
+// MinKeyOption returns the minimum key wrapped in Option. O(log n).
+func (m TreeMap[K, V]) MinKeyOption() Option[K] {
+    if m.size == 0 {
+        return None[K]()
+    }
+    return Some[K](m.MinKey())
+}
+
+// MaxKey returns the maximum key in the map. O(log n).
+// Panics if the map is empty.
+func (m TreeMap[K, V]) MaxKey() K {
+    if m.size == 0 {
+        panic("TreeMap.MaxKey on empty map")
+    }
+    return treeMapFindMaxKey[K, V](m.root)
+}
+
+// MaxKeyOption returns the maximum key wrapped in Option. O(log n).
+func (m TreeMap[K, V]) MaxKeyOption() Option[K] {
+    if m.size == 0 {
+        return None[K]()
+    }
+    return Some[K](m.MaxKey())
+}
+
+// MinEntry returns the entry with the minimum key. O(log n).
+// Panics if the map is empty.
+func (m TreeMap[K, V]) MinEntry() Tuple[K, V] {
+    if m.size == 0 {
+        panic("TreeMap.MinEntry on empty map")
+    }
+    val key = treeMapFindMinKey[K, V](m.root)
+    return (key, m.Apply(key))
+}
+
+// MinEntryOption returns the entry with the minimum key wrapped in Option. O(log n).
+func (m TreeMap[K, V]) MinEntryOption() Option[Tuple[K, V]] {
+    if m.size == 0 {
+        return None[Tuple[K, V]]()
+    }
+    return Some[Tuple[K, V]](m.MinEntry())
+}
+
+// MaxEntry returns the entry with the maximum key. O(log n).
+// Panics if the map is empty.
+func (m TreeMap[K, V]) MaxEntry() Tuple[K, V] {
+    if m.size == 0 {
+        panic("TreeMap.MaxEntry on empty map")
+    }
+    val key = treeMapFindMaxKey[K, V](m.root)
+    return (key, m.Apply(key))
+}
+
+// MaxEntryOption returns the entry with the maximum key wrapped in Option. O(log n).
+func (m TreeMap[K, V]) MaxEntryOption() Option[Tuple[K, V]] {
+    if m.size == 0 {
+        return None[Tuple[K, V]]()
+    }
+    return Some[Tuple[K, V]](m.MaxEntry())
+}
+
+// === Range Operations ===
+
+// Range returns entries with keys in [from, to] inclusive as a new TreeMap.
+func (m TreeMap[K, V]) Range(from K, to K) TreeMap[K, V] {
+    var result = EmptyTreeMap[K, V]()
+    treeMapRangeInOrder[K, V](m.root, from, to, (k K, v V) => {
+        result = result.Put(k, v)
+    })
+    return result
+}
+
+// treeMapRangeInOrder traverses nodes with keys in [from, to].
+func treeMapRangeInOrder[K comparable, V any](node *treeMapNode[K, V], from K, to K, f func(K, V)) {
+    if node == nil {
+        return
+    }
+    val cmpFrom = treeMapCompare[K](node.key, from)
+    val cmpTo = treeMapCompare[K](node.key, to)
+
+    if cmpFrom > 0 {
+        treeMapRangeInOrder[K, V](node.left, from, to, f)
+    }
+    if cmpFrom >= 0 && cmpTo <= 0 {
+        f(node.key, node.value)
+    }
+    if cmpTo < 0 {
+        treeMapRangeInOrder[K, V](node.right, from, to, f)
+    }
+}
+
+// RangeFrom returns all entries with keys >= from.
+func (m TreeMap[K, V]) RangeFrom(from K) TreeMap[K, V] {
+    var result = EmptyTreeMap[K, V]()
+    treeMapRangeFromInOrder[K, V](m.root, from, (k K, v V) => {
+        result = result.Put(k, v)
+    })
+    return result
+}
+
+// treeMapRangeFromInOrder traverses nodes with keys >= from.
+func treeMapRangeFromInOrder[K comparable, V any](node *treeMapNode[K, V], from K, f func(K, V)) {
+    if node == nil {
+        return
+    }
+    val cmp = treeMapCompare[K](node.key, from)
+    if cmp > 0 {
+        treeMapRangeFromInOrder[K, V](node.left, from, f)
+    }
+    if cmp >= 0 {
+        f(node.key, node.value)
+    }
+    treeMapRangeFromInOrder[K, V](node.right, from, f)
+}
+
+// RangeTo returns all entries with keys <= to.
+func (m TreeMap[K, V]) RangeTo(to K) TreeMap[K, V] {
+    var result = EmptyTreeMap[K, V]()
+    treeMapRangeToInOrder[K, V](m.root, to, (k K, v V) => {
+        result = result.Put(k, v)
+    })
+    return result
+}
+
+// treeMapRangeToInOrder traverses nodes with keys <= to.
+func treeMapRangeToInOrder[K comparable, V any](node *treeMapNode[K, V], to K, f func(K, V)) {
+    if node == nil {
+        return
+    }
+    val cmp = treeMapCompare[K](node.key, to)
+    treeMapRangeToInOrder[K, V](node.left, to, f)
+    if cmp <= 0 {
+        f(node.key, node.value)
+    }
+    if cmp < 0 {
+        treeMapRangeToInOrder[K, V](node.right, to, f)
+    }
+}
+
+// === Iteration ===
+
+// ForEachKV applies a function to each key-value pair in sorted key order.
+func (m TreeMap[K, V]) ForEachKV(f func(K, V)) {
+    if m.root != nil {
+        treeMapForEachKV[K, V](m.root, f)
+    }
+}
+
+// treeMapForEachKV traverses the tree in-order and applies f.
+func treeMapForEachKV[K comparable, V any](node *treeMapNode[K, V], f func(K, V)) {
+    if node == nil {
+        return
+    }
+    treeMapForEachKV[K, V](node.left, f)
+    f(node.key, node.value)
+    treeMapForEachKV[K, V](node.right, f)
+}
+
+// ForEachKey applies a function to each key in sorted order.
+func (m TreeMap[K, V]) ForEachKey(f func(K)) {
+    m.ForEachKV((k K, v V) => {
+        f(k)
+    })
+}
+
+// ForEachValue applies a function to each value in key-sorted order.
+func (m TreeMap[K, V]) ForEachValue(f func(V)) {
+    m.ForEachKV((k K, v V) => {
+        f(v)
+    })
+}
+
+// === Transformation ===
+
+// MapValues applies a function to each value and returns a new map.
+func (m TreeMap[K, V]) MapValues[U any](f func(V) U) TreeMap[K, U] {
+    return m.FoldLeftKV[TreeMap[K, U]](EmptyTreeMap[K, U](), (acc TreeMap[K, U], k K, v V) => acc.Put(k, f(v)))
+}
+
+// Filter returns a new map with only entries that satisfy the predicate.
+func (m TreeMap[K, V]) Filter(p func(K, V) bool) TreeMap[K, V] {
+    return m.FoldLeftKV[TreeMap[K, V]](EmptyTreeMap[K, V](), (acc TreeMap[K, V], k K, v V) => {
+        if p(k, v) {
+            return acc.Put(k, v)
+        }
+        return acc
+    })
+}
+
+// FilterKeys returns a new map with only entries whose keys satisfy the predicate.
+func (m TreeMap[K, V]) FilterKeys(p func(K) bool) TreeMap[K, V] {
+    return m.FoldLeftKV[TreeMap[K, V]](EmptyTreeMap[K, V](), (acc TreeMap[K, V], k K, v V) => {
+        if p(k) {
+            return acc.Put(k, v)
+        }
+        return acc
+    })
+}
+
+// FilterValues returns a new map with only entries whose values satisfy the predicate.
+func (m TreeMap[K, V]) FilterValues(p func(V) bool) TreeMap[K, V] {
+    return m.FoldLeftKV[TreeMap[K, V]](EmptyTreeMap[K, V](), (acc TreeMap[K, V], k K, v V) => {
+        if p(v) {
+            return acc.Put(k, v)
+        }
+        return acc
+    })
+}
+
+// FilterNot returns a new map with entries that do not satisfy the predicate.
+func (m TreeMap[K, V]) FilterNot(p func(K, V) bool) TreeMap[K, V] {
+    return m.FoldLeftKV[TreeMap[K, V]](EmptyTreeMap[K, V](), (acc TreeMap[K, V], k K, v V) => {
+        if !p(k, v) {
+            return acc.Put(k, v)
+        }
+        return acc
+    })
+}
+
+// Collect applies a partial function to each key-value pair and collects the results.
+// Entries for which the function returns None are filtered out.
+// Returns an Array since the result type may not be suitable for a TreeMap.
+func (m TreeMap[K, V]) Collect[U any](pf func(K, V) Option[U]) Array[U] {
+    var builder = newArrayBuilder[U]()
+    m.ForEachKV((k K, v V) => {
+        val opt = pf(k, v)
+        if opt.IsDefined() {
+            builder.Add(opt.Get())
+        }
+    })
+    return builder.Result()
+}
+
+// === Reduction ===
+
+// FoldLeftKV applies a binary operator from left to right with key-value pairs (in sorted key order).
+func (m TreeMap[K, V]) FoldLeftKV[U any](initial U, f func(U, K, V) U) U {
+    var acc = initial
+    m.ForEachKV((k K, v V) => {
+        acc = f(acc, k, v)
+    })
+    return acc
+}
+
+// === Predicate Operations ===
+
+// Exists returns true if any entry satisfies the predicate.
+func (m TreeMap[K, V]) Exists(p func(K, V) bool) bool {
+    return m.FoldLeftKV[bool](false, (acc bool, k K, v V) => acc || p(k, v))
+}
+
+// ForAll returns true if all entries satisfy the predicate.
+func (m TreeMap[K, V]) ForAll(p func(K, V) bool) bool {
+    return m.FoldLeftKV[bool](true, (acc bool, k K, v V) => acc && p(k, v))
+}
+
+// Count returns the number of entries satisfying the predicate.
+func (m TreeMap[K, V]) Count(p func(K, V) bool) int {
+    return m.FoldLeftKV[int](0, (acc int, k K, v V) => {
+        if p(k, v) {
+            return acc + 1
+        }
+        return acc
+    })
+}
+
+// Find returns the first entry (in sorted key order) satisfying the predicate.
+func (m TreeMap[K, V]) Find(p func(K, V) bool) Option[Tuple[K, V]] {
+    return m.FoldLeftKV[Option[Tuple[K, V]]](None[Tuple[K, V]](), (acc Option[Tuple[K, V]], k K, v V) => {
+        if acc.IsEmpty() && p(k, v) {
+            return Some[Tuple[K, V]]((k, v))
+        }
+        return acc
+    })
+}
+
+// === Key/Value Access ===
+
+// Keys returns a TreeSet of all keys (maintains sorted order).
+func (m TreeMap[K, V]) Keys() TreeSet[K] {
+    return m.FoldLeftKV[TreeSet[K]](EmptyTreeSet[K](), (acc TreeSet[K], k K, v V) => acc.Add(k))
+}
+
+// KeySet returns a TreeSet of all keys.
+func (m TreeMap[K, V]) KeySet() TreeSet[K] = m.Keys()
+
+// Values returns a List of all values in key-sorted order.
+func (m TreeMap[K, V]) Values() List[V] {
+    // Traverse in reverse order so prepending gives sorted order
+    var result = emptyList[V]()
+    treeMapForEachKVReverse[K, V](m.root, (k K, v V) => {
+        result = consList[V](v, result)
+    })
+    return result
+}
+
+// treeMapForEachKVReverse traverses the tree in reverse order.
+func treeMapForEachKVReverse[K comparable, V any](node *treeMapNode[K, V], f func(K, V)) {
+    if node == nil {
+        return
+    }
+    treeMapForEachKVReverse[K, V](node.right, f)
+    f(node.key, node.value)
+    treeMapForEachKVReverse[K, V](node.left, f)
+}
+
+// KeyArray returns an Array of all keys in sorted order.
+func (m TreeMap[K, V]) KeyArray() Array[K] {
+    return m.FoldLeftKV[Array[K]](EmptyArray[K](), (acc Array[K], k K, v V) => acc.Append(k))
+}
+
+// ValueArray returns an Array of all values in key-sorted order.
+func (m TreeMap[K, V]) ValueArray() Array[V] {
+    return m.FoldLeftKV[Array[V]](EmptyArray[V](), (acc Array[V], k K, v V) => acc.Append(v))
+}
+
+// === Merge Operations ===
+
+// PutAll adds all entries from another TreeMap. Returns a new map.
+func (m TreeMap[K, V]) PutAll(other TreeMap[K, V]) TreeMap[K, V] {
+    return other.FoldLeftKV[TreeMap[K, V]](m, (acc TreeMap[K, V], k K, v V) => acc.Put(k, v))
+}
+
+// Merge merges another map with a combining function for duplicate keys.
+func (m TreeMap[K, V]) Merge(other TreeMap[K, V], f func(V, V) V) TreeMap[K, V] {
+    return other.FoldLeftKV[TreeMap[K, V]](m, (acc TreeMap[K, V], k K, v V) => {
+        val existing = acc.Get(k)
+        if existing.IsDefined() {
+            return acc.Put(k, f(existing.Get(), v))
+        }
+        return acc.Put(k, v)
+    })
+}
+
+// === Conversion ===
+
+// ToGoMap converts the map to a Go map.
+func (m TreeMap[K, V]) ToGoMap() map[K]V {
+    var result = go_interop.MapEmpty[K, V]()
+    m.ForEachKV((k K, v V) => {
+        go_interop.MapPut[K, V](result, k, v)
+    })
+    return result
+}
+
+// ToArray returns an immutable Array of key-value tuples in sorted key order.
+func (m TreeMap[K, V]) ToArray() Array[Tuple[K, V]] {
+    return m.FoldLeftKV[Array[Tuple[K, V]]](EmptyArray[Tuple[K, V]](), (acc Array[Tuple[K, V]], k K, v V) => acc.Append((k, v)))
+}
+
+// ToList converts the map to a List of tuples in sorted key order.
+func (m TreeMap[K, V]) ToList() List[Tuple[K, V]] {
+    // Traverse in reverse order so prepending gives sorted order
+    var result = emptyList[Tuple[K, V]]()
+    treeMapForEachKVReverse[K, V](m.root, (k K, v V) => {
+        result = consList[Tuple[K, V]]((k, v), result)
+    })
+    return result
+}
+
+// ToHashMap converts the map to a HashMap (loses ordering but gains O(eC) lookup).
+func (m TreeMap[K, V]) ToHashMap() HashMap[K, V] {
+    return m.FoldLeftKV[HashMap[K, V]](EmptyHashMap[K, V](), (acc HashMap[K, V], k K, v V) => acc.Put(k, v))
+}
+
+// === String ===
+
+// String returns a string representation of the map in sorted key order.
+func (m TreeMap[K, V]) String() string {
+    if m.size == 0 {
+        return "TreeMap()"
+    }
+    var result = "TreeMap("
+    var first = true
+    m.ForEachKV((k K, v V) => {
+        if !first {
+            result = result + ", "
+        }
+        result = result + fmt.Sprintf("%v -> %v", k, v)
+        first = false
+    })
+    return result + ")"
+}
+
+// MkString joins entries into a string with separator.
+func (m TreeMap[K, V]) MkString(sep string) string {
+    if m.size == 0 {
+        return ""
+    }
+    var result = ""
+    var first = true
+    m.ForEachKV((k K, v V) => {
+        if !first {
+            result = result + sep
+        }
+        result = result + fmt.Sprintf("%v -> %v", k, v)
+        first = false
+    })
+    return result
+}
+
+// === Element Access ===
+
+// Head returns the entry with the minimum key. Panics if empty.
+func (m TreeMap[K, V]) Head() Tuple[K, V] = m.MinEntry()
+
+// HeadOption returns the entry with the minimum key wrapped in Option.
+func (m TreeMap[K, V]) HeadOption() Option[Tuple[K, V]] = m.MinEntryOption()
+
+// Last returns the entry with the maximum key. Panics if empty.
+func (m TreeMap[K, V]) Last() Tuple[K, V] = m.MaxEntry()
+
+// LastOption returns the entry with the maximum key wrapped in Option.
+func (m TreeMap[K, V]) LastOption() Option[Tuple[K, V]] = m.MaxEntryOption()
+
+// Partition partitions the map into two maps based on predicate.
+func (m TreeMap[K, V]) Partition(p func(K, V) bool) Tuple[TreeMap[K, V], TreeMap[K, V]] {
+    val initial = (EmptyTreeMap[K, V](), EmptyTreeMap[K, V]())
+    return m.FoldLeftKV[Tuple[TreeMap[K, V], TreeMap[K, V]]](initial, (acc Tuple[TreeMap[K, V], TreeMap[K, V]], k K, v V) => {
+        if p(k, v) {
+            return (acc.V1.Put(k, v), acc.V2)
+        }
+        return (acc.V1, acc.V2.Put(k, v))
+    })
+}
+
+// === Sorting ===
+
+// Sorted returns an array of key-value tuples in natural sorted key order (already sorted).
+func (m TreeMap[K, V]) Sorted() Array[Tuple[K, V]] = m.ToArray()
+
+// SortWith returns an array of key-value tuples sorted using the given comparison function.
+func (m TreeMap[K, V]) SortWith(less func(Tuple[K, V], Tuple[K, V]) bool) Array[Tuple[K, V]] = m.ToArray().SortWith(less)
+
+// SortBy returns an array of key-value tuples sorted by a key extracted from each entry.
+func (m TreeMap[K, V]) SortBy[S comparable](f func(Tuple[K, V]) S) Array[Tuple[K, V]] = m.ToArray().SortBy(f)

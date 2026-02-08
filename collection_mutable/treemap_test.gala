@@ -1,0 +1,539 @@
+package main
+
+import (
+    . "martianoff/gala/test"
+    . "martianoff/gala/collection_mutable"
+    . "martianoff/gala/std"
+)
+
+// === Basic Operations Tests ===
+
+func TestMutableTreeMapEmpty(t T) T {
+    val m = EmptyTreeMap[string, int]()
+    var t1 = IsTrue(t, m.IsEmpty())
+    var t2 = IsFalse(t1, m.NonEmpty())
+    return Eq[int](t2, m.Size(), 0)
+}
+
+func TestMutableTreeMapPut(t T) T {
+    val m = EmptyTreeMap[string, int]()
+    m.Put("c", 3)
+    m.Put("a", 1)
+    m.Put("b", 2)
+    return Eq[int](t, m.Size(), 3)
+}
+
+func TestMutableTreeMapPutUpdate(t T) T {
+    val m = EmptyTreeMap[string, int]()
+    val isNew = m.Put("a", 1)
+    val isUpdate = m.Put("a", 2)
+
+    var t1 = IsTrue(t, isNew)
+    var t2 = IsFalse(t1, isUpdate)
+    var t3 = Eq[int](t2, m.Size(), 1)
+    return Eq[int](t3, m.GetOrElse("a", 0), 2)
+}
+
+func TestMutableTreeMapOf(t T) T {
+    val m = TreeMapOf[string, int](
+        Tuple[string, int](V1 = "a", V2 = 1),
+        Tuple[string, int](V1 = "b", V2 = 2),
+        Tuple[string, int](V1 = "c", V2 = 3)
+    )
+    var t1 = Eq[int](t, m.Size(), 3)
+    var t2 = IsTrue(t1, m.Contains("a"))
+    var t3 = IsTrue(t2, m.Contains("b"))
+    return IsTrue(t3, m.Contains("c"))
+}
+
+func TestMutableTreeMapContains(t T) T {
+    val m = EmptyTreeMap[string, int]()
+    m.Put("a", 1)
+    m.Put("b", 2)
+    var t1 = IsTrue(t, m.Contains("a"))
+    var t2 = IsTrue(t1, m.Contains("b"))
+    return IsFalse(t2, m.Contains("c"))
+}
+
+func TestMutableTreeMapGet(t T) T {
+    val m = EmptyTreeMap[string, int]()
+    m.Put("a", 1)
+    m.Put("b", 2)
+    var t1 = IsTrue(t, m.Get("a").IsDefined())
+    var t2 = Eq[int](t1, m.Get("a").Get(), 1)
+    var t3 = Eq[int](t2, m.Get("b").Get(), 2)
+    return IsTrue(t3, m.Get("c").IsEmpty())
+}
+
+func TestMutableTreeMapGetOrElse(t T) T {
+    val m = EmptyTreeMap[string, int]()
+    m.Put("a", 1)
+    var t1 = Eq[int](t, m.GetOrElse("a", 0), 1)
+    return Eq[int](t1, m.GetOrElse("b", 42), 42)
+}
+
+func TestMutableTreeMapRemove(t T) T {
+    val m = EmptyTreeMap[string, int]()
+    m.Put("a", 1)
+    m.Put("b", 2)
+    m.Put("c", 3)
+    val removed = m.Remove("b")
+
+    var t1 = IsTrue(t, removed)
+    var t2 = Eq[int](t1, m.Size(), 2)
+    var t3 = IsTrue(t2, m.Contains("a"))
+    var t4 = IsFalse(t3, m.Contains("b"))
+    return IsTrue(t4, m.Contains("c"))
+}
+
+func TestMutableTreeMapRemoveNonExistent(t T) T {
+    val m = EmptyTreeMap[string, int]()
+    m.Put("a", 1)
+    val removed = m.Remove("b")
+    var t1 = IsFalse(t, removed)
+    return Eq[int](t1, m.Size(), 1)
+}
+
+// === Sorted Order Test ===
+
+func TestMutableTreeMapSortedOrder(t T) T {
+    val m = EmptyTreeMap[int, string]()
+    m.Put(5, "e")
+    m.Put(3, "c")
+    m.Put(1, "a")
+    m.Put(4, "d")
+    m.Put(2, "b")
+
+    var keys []int
+    m.ForEachKV((k int, v string) => {
+        keys = append(keys, k)
+    })
+
+    var t1 = Eq[int](t, len(keys), 5)
+    var t2 = Eq[int](t1, keys[0], 1)
+    var t3 = Eq[int](t2, keys[1], 2)
+    var t4 = Eq[int](t3, keys[2], 3)
+    var t5 = Eq[int](t4, keys[3], 4)
+    return Eq[int](t5, keys[4], 5)
+}
+
+// === Min/Max Tests ===
+
+func TestMutableTreeMapMinKey(t T) T {
+    val m = EmptyTreeMap[int, string]()
+    m.Put(5, "e")
+    m.Put(3, "c")
+    m.Put(1, "a")
+    return Eq[int](t, m.MinKey(), 1)
+}
+
+func TestMutableTreeMapMaxKey(t T) T {
+    val m = EmptyTreeMap[int, string]()
+    m.Put(5, "e")
+    m.Put(3, "c")
+    m.Put(1, "a")
+    return Eq[int](t, m.MaxKey(), 5)
+}
+
+func TestMutableTreeMapMinEntry(t T) T {
+    val m = EmptyTreeMap[int, string]()
+    m.Put(5, "e")
+    m.Put(3, "c")
+    m.Put(1, "a")
+    val entry = m.MinEntry()
+    var t1 = Eq[int](t, entry.V1, 1)
+    return Eq[string](t1, entry.V2, "a")
+}
+
+func TestMutableTreeMapMaxEntry(t T) T {
+    val m = EmptyTreeMap[int, string]()
+    m.Put(5, "e")
+    m.Put(3, "c")
+    m.Put(1, "a")
+    val entry = m.MaxEntry()
+    var t1 = Eq[int](t, entry.V1, 5)
+    return Eq[string](t1, entry.V2, "e")
+}
+
+// === Mutable-Specific Tests ===
+
+func TestMutableTreeMapPutIfAbsent(t T) T {
+    val m = EmptyTreeMap[string, int]()
+    m.Put("a", 1)
+    val added = m.PutIfAbsent("b", 2)
+    val notAdded = m.PutIfAbsent("a", 99)
+
+    var t1 = IsTrue(t, added)
+    var t2 = IsFalse(t1, notAdded)
+    var t3 = Eq[int](t2, m.Size(), 2)
+    // Original value should be preserved
+    return Eq[int](t3, m.GetOrElse("a", 0), 1)
+}
+
+func TestMutableTreeMapUpdate(t T) T {
+    val m = EmptyTreeMap[string, int]()
+    m.Put("a", 1)
+    m.Put("b", 2)
+    val updated = m.Update("a", (v int) => v * 10)
+    val notUpdated = m.Update("c", (v int) => v * 10)
+
+    var t1 = IsTrue(t, updated)
+    var t2 = IsFalse(t1, notUpdated)
+    return Eq[int](t2, m.GetOrElse("a", 0), 10)
+}
+
+func TestMutableTreeMapPopMinEntry(t T) T {
+    val m = EmptyTreeMap[int, string]()
+    m.Put(3, "c")
+    m.Put(1, "a")
+    m.Put(2, "b")
+
+    val min = m.PopMinEntry()
+    var t1 = Eq[int](t, min.V1, 1)
+    var t2 = Eq[string](t1, min.V2, "a")
+    var t3 = Eq[int](t2, m.Size(), 2)
+    return IsFalse(t3, m.Contains(1))
+}
+
+func TestMutableTreeMapPopMaxEntry(t T) T {
+    val m = EmptyTreeMap[int, string]()
+    m.Put(3, "c")
+    m.Put(1, "a")
+    m.Put(2, "b")
+
+    val max = m.PopMaxEntry()
+    var t1 = Eq[int](t, max.V1, 3)
+    var t2 = Eq[string](t1, max.V2, "c")
+    var t3 = Eq[int](t2, m.Size(), 2)
+    return IsFalse(t3, m.Contains(3))
+}
+
+func TestMutableTreeMapClear(t T) T {
+    val m = EmptyTreeMap[string, int]()
+    m.Put("a", 1)
+    m.Put("b", 2)
+    m.Put("c", 3)
+    m.Clear()
+    var t1 = IsTrue(t, m.IsEmpty())
+    return Eq[int](t1, m.Size(), 0)
+}
+
+func TestMutableTreeMapFilterInPlace(t T) T {
+    val m = EmptyTreeMap[string, int]()
+    m.Put("a", 1)
+    m.Put("b", 2)
+    m.Put("c", 3)
+    m.Put("d", 4)
+    m.FilterInPlace((k string, v int) => v > 2)
+
+    var t1 = Eq[int](t, m.Size(), 2)
+    var t2 = IsFalse(t1, m.Contains("a"))
+    return IsTrue(t2, m.Contains("c"))
+}
+
+func TestMutableTreeMapUpdateAll(t T) T {
+    val m = EmptyTreeMap[string, int]()
+    m.Put("a", 1)
+    m.Put("b", 2)
+    m.Put("c", 3)
+    m.UpdateAll((k string, v int) => v * 10)
+
+    var t1 = Eq[int](t, m.GetOrElse("a", 0), 10)
+    var t2 = Eq[int](t1, m.GetOrElse("b", 0), 20)
+    return Eq[int](t2, m.GetOrElse("c", 0), 30)
+}
+
+func TestMutableTreeMapClone(t T) T {
+    val m = EmptyTreeMap[string, int]()
+    m.Put("a", 1)
+    m.Put("b", 2)
+
+    val clone = m.Clone()
+    clone.Put("c", 3)
+
+    // Original should not be affected
+    var t1 = Eq[int](t, m.Size(), 2)
+    return Eq[int](t1, clone.Size(), 3)
+}
+
+// === Range Tests ===
+
+func TestMutableTreeMapRange(t T) T {
+    val m = EmptyTreeMap[int, int]()
+    for i := 1; i <= 10; i++ {
+        m.Put(i, i * 10)
+    }
+    val rangeMap = m.Range(3, 7)
+
+    var t1 = Eq[int](t, rangeMap.Size(), 5)
+    var t2 = IsTrue(t1, rangeMap.Contains(3))
+    var t3 = IsTrue(t2, rangeMap.Contains(7))
+    var t4 = IsFalse(t3, rangeMap.Contains(2))
+    return IsFalse(t4, rangeMap.Contains(8))
+}
+
+func TestMutableTreeMapRangeFrom(t T) T {
+    val m = EmptyTreeMap[int, int]()
+    for i := 1; i <= 5; i++ {
+        m.Put(i, i * 10)
+    }
+    val rangeMap = m.RangeFrom(3)
+
+    var t1 = Eq[int](t, rangeMap.Size(), 3)
+    var t2 = IsTrue(t1, rangeMap.Contains(3))
+    return IsFalse(t2, rangeMap.Contains(2))
+}
+
+func TestMutableTreeMapRangeTo(t T) T {
+    val m = EmptyTreeMap[int, int]()
+    for i := 1; i <= 5; i++ {
+        m.Put(i, i * 10)
+    }
+    val rangeMap = m.RangeTo(3)
+
+    var t1 = Eq[int](t, rangeMap.Size(), 3)
+    var t2 = IsTrue(t1, rangeMap.Contains(3))
+    return IsFalse(t2, rangeMap.Contains(4))
+}
+
+// === Transformation Tests ===
+
+func TestMutableTreeMapFilter(t T) T {
+    val m = EmptyTreeMap[string, int]()
+    m.Put("a", 1)
+    m.Put("b", 2)
+    m.Put("c", 3)
+    m.Put("d", 4)
+    val filtered = m.Filter((k string, v int) => v > 2)
+
+    var t1 = Eq[int](t, filtered.Size(), 2)
+    var t2 = IsFalse(t1, filtered.Contains("a"))
+    return IsTrue(t2, filtered.Contains("c"))
+}
+
+func TestMutableTreeMapMapValues(t T) T {
+    val m = EmptyTreeMap[string, int]()
+    m.Put("a", 1)
+    m.Put("b", 2)
+    m.Put("c", 3)
+    val doubled = m.MapValues[int]((v int) => v * 2)
+
+    var t1 = Eq[int](t, doubled.GetOrElse("a", 0), 2)
+    var t2 = Eq[int](t1, doubled.GetOrElse("b", 0), 4)
+    return Eq[int](t2, doubled.GetOrElse("c", 0), 6)
+}
+
+func TestMutableTreeMapPartition(t T) T {
+    val m = EmptyTreeMap[string, int]()
+    m.Put("a", 1)
+    m.Put("b", 2)
+    m.Put("c", 3)
+    m.Put("d", 4)
+    val result = m.Partition((k string, v int) => v % 2 == 0)
+    val even = result.V1
+    val odd = result.V2
+
+    var t1 = Eq[int](t, even.Size(), 2)
+    return Eq[int](t1, odd.Size(), 2)
+}
+
+// === Reduction Tests ===
+
+func TestMutableTreeMapFoldLeftKV(t T) T {
+    val m = EmptyTreeMap[string, int]()
+    m.Put("a", 1)
+    m.Put("b", 2)
+    m.Put("c", 3)
+    val sum = m.FoldLeftKV[int](0, (acc int, k string, v int) => acc + v)
+    return Eq[int](t, sum, 6)
+}
+
+func TestMutableTreeMapExists(t T) T {
+    val m = EmptyTreeMap[string, int]()
+    m.Put("a", 1)
+    m.Put("b", 2)
+    m.Put("c", 3)
+    var t1 = IsTrue(t, m.Exists((k string, v int) => v > 2))
+    return IsFalse(t1, m.Exists((k string, v int) => v > 10))
+}
+
+func TestMutableTreeMapForAll(t T) T {
+    val m = EmptyTreeMap[string, int]()
+    m.Put("a", 2)
+    m.Put("b", 4)
+    m.Put("c", 6)
+    var t1 = IsTrue(t, m.ForAll((k string, v int) => v % 2 == 0))
+    return IsFalse(t1, m.ForAll((k string, v int) => v < 5))
+}
+
+func TestMutableTreeMapFind(t T) T {
+    val m = EmptyTreeMap[string, int]()
+    m.Put("a", 1)
+    m.Put("b", 2)
+    m.Put("c", 3)
+    val found = m.Find((k string, v int) => v == 2)
+    var t1 = IsTrue(t, found.IsDefined())
+    return Eq[string](t1, found.Get().V1, "b")
+}
+
+func TestMutableTreeMapCount(t T) T {
+    val m = EmptyTreeMap[string, int]()
+    m.Put("a", 1)
+    m.Put("b", 2)
+    m.Put("c", 3)
+    m.Put("d", 4)
+    return Eq[int](t, m.Count((k string, v int) => v > 2), 2)
+}
+
+// === Merge Tests ===
+
+func TestMutableTreeMapPutFrom(t T) T {
+    val m1 = EmptyTreeMap[string, int]()
+    m1.Put("a", 1)
+    m1.Put("b", 2)
+    val m2 = EmptyTreeMap[string, int]()
+    m2.Put("c", 3)
+    m2.Put("d", 4)
+    m1.PutFrom(m2)
+
+    var t1 = Eq[int](t, m1.Size(), 4)
+    var t2 = IsTrue(t1, m1.Contains("c"))
+    return IsTrue(t2, m1.Contains("d"))
+}
+
+func TestMutableTreeMapMerge(t T) T {
+    val m1 = EmptyTreeMap[string, int]()
+    m1.Put("a", 1)
+    m1.Put("b", 2)
+    val m2 = EmptyTreeMap[string, int]()
+    m2.Put("b", 3)
+    m2.Put("c", 4)
+    m1.Merge(m2, (v1 int, v2 int) => v1 + v2)
+
+    var t1 = Eq[int](t, m1.Size(), 3)
+    var t2 = Eq[int](t1, m1.GetOrElse("a", 0), 1)
+    var t3 = Eq[int](t2, m1.GetOrElse("b", 0), 5)
+    return Eq[int](t3, m1.GetOrElse("c", 0), 4)
+}
+
+// === Conversion Tests ===
+
+func TestMutableTreeMapToArray(t T) T {
+    val m = EmptyTreeMap[int, string]()
+    m.Put(3, "c")
+    m.Put(1, "a")
+    m.Put(2, "b")
+    val arr = m.ToArray()
+    var t1 = Eq[int](t, arr.Size(), 3)
+    // Verify via ToGoSlice to avoid Immutable wrapping issues
+    val goSlice = arr.ToGoSlice()
+    var t2 = Eq[int](t1, goSlice[0].V1, 1)
+    return Eq[int](t2, goSlice[2].V1, 3)
+}
+
+func TestMutableTreeMapToGoMap(t T) T {
+    val m = EmptyTreeMap[string, int]()
+    m.Put("a", 1)
+    m.Put("b", 2)
+    val goMap = m.ToGoMap()
+    var t1 = Eq[int](t, len(goMap), 2)
+    return Eq[int](t1, goMap["a"], 1)
+}
+
+func TestMutableTreeMapToHashMap(t T) T {
+    val m = EmptyTreeMap[string, int]()
+    m.Put("a", 1)
+    m.Put("b", 2)
+    m.Put("c", 3)
+    val hm = m.ToHashMap()
+    var t1 = Eq[int](t, hm.Size(), 3)
+    var t2 = Eq[int](t1, hm.GetOrElse("a", 0), 1)
+    return Eq[int](t2, hm.GetOrElse("c", 0), 3)
+}
+
+// === String Tests ===
+
+func TestMutableTreeMapString(t T) T {
+    val empty = EmptyTreeMap[string, int]()
+    var t1 = Eq[string](t, empty.String(), "TreeMap()")
+
+    val m = EmptyTreeMap[int, string]()
+    m.Put(2, "b")
+    m.Put(1, "a")
+    m.Put(3, "c")
+    return Eq[string](t1, m.String(), "TreeMap(1 -> a, 2 -> b, 3 -> c)")
+}
+
+func TestMutableTreeMapMkString(t T) T {
+    val m = EmptyTreeMap[int, string]()
+    m.Put(1, "a")
+    m.Put(2, "b")
+    m.Put(3, "c")
+    return Eq[string](t, m.MkString("; "), "1 -> a; 2 -> b; 3 -> c")
+}
+
+// === Large Map Test ===
+
+func TestMutableTreeMapLarge(t T) T {
+    val m = EmptyTreeMap[int, int]()
+    for i := 0; i < 1000; i++ {
+        m.Put(i, i * 2)
+    }
+    var t1 = Eq[int](t, m.Size(), 1000)
+    var t2 = Eq[int](t1, m.GetOrElse(0, -1), 0)
+    var t3 = Eq[int](t2, m.GetOrElse(500, -1), 1000)
+    var t4 = Eq[int](t3, m.GetOrElse(999, -1), 1998)
+    var t5 = Eq[int](t4, m.MinKey(), 0)
+    return Eq[int](t5, m.MaxKey(), 999)
+}
+
+// === Sorted API Tests ===
+
+func TestMutableTreeMapSorted(t T) T {
+    val m = EmptyTreeMap[int, string]()
+    m.Put(3, "c")
+    m.Put(1, "a")
+    m.Put(2, "b")
+    val sorted = m.Sorted()
+    var t1 = Eq[int](t, sorted.Size(), 3)
+    val goSlice = sorted.ToGoSlice()
+    var t2 = Eq[int](t1, goSlice[0].V1, 1)
+    return Eq[int](t2, goSlice[2].V1, 3)
+}
+
+func TestMutableTreeMapSortWith(t T) T {
+    val m = EmptyTreeMap[string, int]()
+    m.Put("a", 3)
+    m.Put("b", 1)
+    m.Put("c", 2)
+    val sorted = m.SortWith((a Tuple[string, int], b Tuple[string, int]) => a.V2 < b.V2)
+    var t1 = Eq[int](t, sorted.Size(), 3)
+    val goSlice = sorted.ToGoSlice()
+    var t2 = Eq[string](t1, goSlice[0].V1, "b")
+    return Eq[string](t2, goSlice[2].V1, "a")
+}
+
+func TestMutableTreeMapSortBy(t T) T {
+    val m = EmptyTreeMap[string, int]()
+    m.Put("a", 30)
+    m.Put("b", 10)
+    m.Put("c", 20)
+    val sorted = m.SortBy[int]((entry Tuple[string, int]) => entry.V2)
+    var t1 = Eq[int](t, sorted.Size(), 3)
+    val goSlice = sorted.ToGoSlice()
+    var t2 = Eq[string](t1, goSlice[0].V1, "b")
+    return Eq[string](t2, goSlice[2].V1, "a")
+}
+
+// === GetOrElseUpdate Test ===
+
+func TestMutableTreeMapGetOrElseUpdate(t T) T {
+    val m = EmptyTreeMap[string, int]()
+    m.Put("a", 1)
+    val existing = m.GetOrElseUpdate("a", () => 99)
+    val computed = m.GetOrElseUpdate("b", () => 42)
+
+    var t1 = Eq[int](t, existing, 1)
+    var t2 = Eq[int](t1, computed, 42)
+    return Eq[int](t2, m.GetOrElse("b", 0), 42)
+}

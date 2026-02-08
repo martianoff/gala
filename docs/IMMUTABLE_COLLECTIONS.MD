@@ -34,10 +34,21 @@ This document describes the immutable collection data structures available in GA
    - [Ordered Interface](#ordered-interface)
    - [Min/Max Operations - O(log n)](#minmax-operations---olog-n)
    - [Range Operations](#range-operations---treeset-specific)
-7. [Choosing Between List, Array, HashSet, and TreeSet](#choosing-between-list-array-hashset-and-treeset)
-8. [Implementation Details](#implementation-details)
-9. [Performance Benchmarks](#performance-benchmarks)
-10. [Examples](#example-building-a-collection)
+7. [HashMap[K,V]](#hashmapkv)
+   - [Construction](#construction-3)
+   - [Core Operations - O(eC)](#core-operations---oec)
+   - [Functional Operations](#functional-operations)
+8. [TreeMap[K,V]](#treemapkv)
+   - [Construction](#construction-4)
+   - [Core Operations - O(log n)](#core-operations---olog-n)
+   - [Min/Max Operations](#minmax-operations)
+   - [Range Queries](#range-queries)
+   - [Functional Operations](#functional-operations-1)
+   - [Conversion](#conversion)
+9. [Choosing the Right Collection](#choosing-the-right-collection)
+10. [Implementation Details](#implementation-details)
+11. [Performance Benchmarks](#performance-benchmarks)
+12. [Examples](#example-building-a-collection)
 
 ---
 
@@ -78,6 +89,18 @@ import . "martianoff/gala/collection_immutable"
 | Union | O(m) | O(m log n) |
 | Intersect | O(m) | O(m log n) |
 | Diff | O(n) | O(n log m) |
+| Size | O(1) | O(1) |
+
+### Map Collections (HashMap, TreeMap)
+
+| Operation | HashMap | TreeMap |
+|-----------|---------|---------|
+| Put | O(eC) | O(log n) |
+| Get | O(eC) | O(log n) |
+| Remove | O(eC) | O(log n) |
+| Contains | O(eC) | O(log n) |
+| Min/Max Key | O(n) | O(log n) |
+| Range | O(n) | O(log n + k) |
 | Size | O(1) | O(1) |
 
 **Legend:**
@@ -942,7 +965,179 @@ val result = set match {
 
 ---
 
-## Choosing Between List, Array, HashSet, and TreeSet
+## HashMap[K,V]
+
+An immutable hash-based map with effectively constant time operations. See `collection_immutable/hashmap.gala` for the full API.
+
+### Construction
+
+```gala
+val empty = EmptyHashMap[string, int]()
+val m = HashMapOf(("a", 1), ("b", 2), ("c", 3))
+```
+
+### Core Operations - O(eC)
+
+```gala
+val m = HashMapOf(("a", 1), ("b", 2))
+
+m.Put("c", 3)           // new map with added entry
+m.Get("a")              // Some(1)
+m.GetOrElse("z", 0)     // 0
+m.Contains("a")         // true
+m.Remove("b")           // new map without "b"
+m.Size()                // 2
+```
+
+### Functional Operations
+
+```gala
+val m = HashMapOf(("a", 1), ("b", 2), ("c", 3))
+
+m.Filter((k, v) => v > 1)                    // HashMap(b -> 2, c -> 3)
+m.MapValues[int]((v) => v * 2)               // HashMap(a -> 2, b -> 4, c -> 6)
+m.FoldLeftKV[int](0, (acc, k, v) => acc + v) // 6
+m.Sorted()                                    // Array((a,1), (b,2), (c,3))
+```
+
+---
+
+## TreeMap[K,V]
+
+An immutable sorted map implemented as a Red-Black tree. Maintains entries in sorted key order and provides O(log n) operations with range queries.
+
+**Type Requirements:** Keys must be `comparable` and either:
+- A **primitive type** (int, string, float64, etc.) - compared automatically
+- A **custom type** implementing the `Ordered[T]` interface
+
+### Construction
+
+```gala
+// Empty map
+val empty = EmptyTreeMap[string, int]()
+
+// From entries
+val m = TreeMapOf(("cherry", 3), ("apple", 1), ("banana", 2))
+// TreeMap(apple -> 1, banana -> 2, cherry -> 3)  -- sorted by key
+
+// From slice of tuples
+val m2 = TreeMapFromSlice(SliceOf(("a", 1), ("b", 2)))
+
+// From Go map
+var goMap = map[string]int{"x": 10, "y": 20}
+val m3 = TreeMapFromGoMap(goMap)
+```
+
+### Core Operations - O(log n)
+
+```gala
+val m = TreeMapOf(("a", 1), ("b", 2), ("c", 3))
+
+// Put (returns new map)
+val m2 = m.Put("d", 4)
+
+// Get
+m.Get("b")              // Some(2)
+m.Get("z")              // None
+m.GetOrElse("z", 0)     // 0
+m.Apply("a")            // 1 (panics if missing)
+
+// Contains
+m.Contains("a")         // true
+
+// Remove (returns new map)
+val m3 = m.Remove("b")  // TreeMap(a -> 1, c -> 3)
+
+// Size
+m.Size()                // 3
+```
+
+### Min/Max Operations
+
+```gala
+val m = TreeMapOf(("a", 1), ("b", 2), ("c", 3))
+
+m.MinKey()              // "a"
+m.MaxKey()              // "c"
+m.MinEntry()            // Tuple("a", 1)
+m.MaxEntry()            // Tuple("c", 3)
+m.MinKeyOption()        // Some("a")
+m.MaxKeyOption()        // Some("c")
+```
+
+### Range Queries
+
+```gala
+val m = TreeMapOf(("a", 1), ("b", 2), ("c", 3), ("d", 4), ("e", 5))
+
+// Range [from, to] inclusive
+m.Range("b", "d")       // TreeMap(b -> 2, c -> 3, d -> 4)
+
+// RangeFrom (>= key)
+m.RangeFrom("c")        // TreeMap(c -> 3, d -> 4, e -> 5)
+
+// RangeTo (<= key)
+m.RangeTo("c")          // TreeMap(a -> 1, b -> 2, c -> 3)
+```
+
+### Functional Operations
+
+```gala
+val m = TreeMapOf(("a", 1), ("b", 2), ("c", 3), ("d", 4))
+
+// Filter
+m.Filter((k, v) => v % 2 == 0)     // TreeMap(b -> 2, d -> 4)
+m.FilterKeys((k) => k > "b")       // TreeMap(c -> 3, d -> 4)
+m.FilterValues((v) => v > 2)       // TreeMap(c -> 3, d -> 4)
+
+// MapValues
+m.MapValues[int]((v) => v * 10)    // TreeMap(a -> 10, b -> 20, c -> 30, d -> 40)
+
+// FoldLeftKV
+m.FoldLeftKV[int](0, (acc, k, v) => acc + v)  // 10
+
+// Merge with combiner
+val m2 = TreeMapOf(("c", 30), ("e", 5))
+m.Merge(m2, (v1, v2) => v1 + v2)
+// TreeMap(a -> 1, b -> 2, c -> 33, d -> 4, e -> 5)
+
+// Iteration (sorted key order)
+m.ForEachKV((k, v) => { fmt.Printf("%s=%d ", k, v) })
+// a=1 b=2 c=3 d=4
+```
+
+### Sorted API
+
+```gala
+val m = TreeMapOf(("c", 30), ("a", 10), ("b", 20))
+
+// Sorted by key (no-op, already sorted)
+m.Sorted()                              // Array((a,10), (b,20), (c,30))
+
+// Custom ordering (sort by value)
+m.SortWith((a, b) => a.V2 < b.V2)      // Array((a,10), (b,20), (c,30))
+
+// Sort by extracted key (descending by value)
+m.SortBy[int]((e) => -e.V2)            // Array((c,30), (b,20), (a,10))
+```
+
+### Conversion
+
+```gala
+val m = TreeMapOf(("a", 1), ("b", 2), ("c", 3))
+
+m.Keys()                // TreeSet("a", "b", "c")
+m.Values()              // [1, 2, 3] (sorted key order)
+m.ToArray()             // Array(("a",1), ("b",2), ("c",3))
+m.ToGoMap()             // map[string]int{"a":1, "b":2, "c":3}
+m.ToHashMap()           // HashMap(a -> 1, b -> 2, c -> 3)
+m.String()              // "TreeMap(a -> 1, b -> 2, c -> 3)"
+m.MkString(", ")        // "(a, 1), (b, 2), (c, 3)"
+```
+
+---
+
+## Choosing the Right Collection
 
 | Use Case | Recommended |
 |----------|-------------|
@@ -955,11 +1150,26 @@ val result = set match {
 | Fast membership testing | HashSet |
 | Set operations (union, intersection) | HashSet or TreeSet |
 | Unique elements collection | HashSet or TreeSet |
-| Sorted iteration needed | TreeSet |
+| Sorted iteration needed | TreeSet or TreeMap |
 | Need min/max of set | TreeSet |
-| Range queries (elements between X and Y) | TreeSet |
+| Range queries (elements between X and Y) | TreeSet or TreeMap |
+| Key-value lookup (unordered) | HashMap |
+| Key-value lookup (sorted keys) | TreeMap |
+| Sorted key-value iteration | TreeMap |
+| Min/max key access | TreeMap |
+| Range queries on keys | TreeMap |
 
 **Note:** With the prefix buffer optimization, Array now has O(1) amortized prepend, making it competitive with List for prepend-heavy workloads. Choose List when you need true O(1) without amortization, or Array when you also need random access.
+
+### Choosing Between HashMap and TreeMap
+
+| Need | Choose |
+|------|--------|
+| Fastest put/get/remove | HashMap (O(eC) vs O(log n)) |
+| Entries in sorted key order | TreeMap |
+| Min/Max key access | TreeMap (O(log n) vs O(n)) |
+| Range queries on keys | TreeMap |
+| Key order doesn't matter | HashMap |
 
 ### List Advantages
 - O(1) prepend (cons)
@@ -1020,6 +1230,19 @@ TreeSet is implemented as a persistent Red-Black tree, similar to Scala's TreeSe
 - Path copying for updates, sharing unaffected subtrees
 - O(log n) operations with in-order traversal for sorted iteration
 - Supports range queries by exploiting tree structure
+
+### HashMap
+HashMap is implemented as a Hash Array Mapped Trie (HAMT), similar to Scala's HashMap:
+- Same HAMT structure as HashSet but stores key-value pairs
+- Effectively constant time operations (O(log32 n))
+- Path copying for updates
+
+### TreeMap
+TreeMap is implemented as a persistent Red-Black tree, similar to Scala's TreeMap:
+- Same Okasaki-style functional Red-Black tree as TreeSet but stores key-value pairs
+- O(log n) operations with in-order traversal for sorted key iteration
+- Range queries by exploiting tree structure (Range, RangeFrom, RangeTo)
+- Keys() returns a TreeSet for efficient sorted key access
 
 ---
 
@@ -1088,12 +1311,36 @@ bazel run //collection_immutable:perf_go
 | HashSet.Creation | 34,120 ns | 6,860,911 ns | 174,706,970 ns |
 | TreeSet.Creation | 81,696 ns | 11,040,081 ns | 345,415,150 ns |
 
+### Map Results (ns/op) - 10,000 Elements
+
+| Operation | HashMap | TreeMap |
+|-----------|--------:|--------:|
+| Creation | 8,224,307 | 12,037,826 |
+| Put | 1,170 | 1,767 |
+| Get (hit) | 25 | 368 |
+| Get (miss) | 27 | 470 |
+| Contains (hit) | 35 | 368 |
+| Contains (miss) | 22 | 480 |
+| Remove | 816 | 1,215 |
+| MinKey | O(n) | 15 |
+| MaxKey | O(n) | 19 |
+| Filter | 3,678,677 | 7,988,481 |
+| MapValues | 7,174,073 | 17,429,089 |
+| PutAll (2x1000) | 754,050 | 1,092,953 |
+
+### Scaling Results - Maps
+
+| Operation | 100 elements | 10,000 elements | 100,000 elements |
+|-----------|-------------:|----------------:|-----------------:|
+| HashMap.Creation | 35,016 ns | 8,224,307 ns | 112,375,790 ns |
+| TreeMap.Creation | 30,668 ns | 12,037,826 ns | 202,606,830 ns |
+
 **Notes:**
 - GALA List uses Prepend (O(1)), GALA Array uses Append (O(eC)), GALA HashSet uses Add (O(eC))
 - Go Slice (immutable): copy-on-write style, full copy on each modification
 - `-` indicates operation not measured or not the primary use case
 - Array uses optimized bulk building for Filter, Map, Take, Drop operations
-- HashSet Contains is O(eC) regardless of set size
+- HashSet/HashMap Contains is O(eC) regardless of collection size
 
 ### Key Performance Insights
 
@@ -1119,6 +1366,28 @@ bazel run //collection_immutable:perf_go
 - **O(log n) Min/Max** (17-27 ns): Instant access to smallest/largest elements
 - **Range queries**: Efficient retrieval of elements in a range
 - **Sorted iteration**: ForEach, ToSlice, etc. all produce sorted output
+
+**HashMap Strengths:**
+- **O(eC) Get** (25 ns): Fast key-value lookup regardless of map size
+- **O(eC) Put** (1,170 ns): Efficient insertion
+- **O(eC) Remove** (816 ns): Efficient removal
+- **Fastest map operations**: ~15x faster Get than TreeMap
+
+**TreeMap Strengths:**
+- **Sorted key order**: Entries maintained in sorted key order
+- **O(log n) MinKey/MaxKey** (15-19 ns): Instant access to smallest/largest keys
+- **Range queries**: Efficient retrieval of entries in a key range
+- **Sorted iteration**: ForEachKV, ToArray, etc. all produce sorted output
+
+**When to Choose HashMap vs TreeMap:**
+
+| Need | Choose |
+|------|--------|
+| Fastest get/put/remove | HashMap (O(eC) vs O(log n)) |
+| Entries in sorted key order | TreeMap |
+| Min/Max key access | TreeMap (O(log n) vs O(n)) |
+| Range queries on keys | TreeMap |
+| Key order doesn't matter | HashMap |
 
 **When to Choose HashSet vs TreeSet:**
 
@@ -1155,7 +1424,10 @@ bazel run //collection_immutable:perf_go
 | Unique elements only | HashSet or TreeSet |
 | Need sorted set | TreeSet |
 | Need min/max of set | TreeSet |
-| Need range queries | TreeSet |
+| Need range queries | TreeSet or TreeMap |
+| Fast key-value lookup | HashMap |
+| Sorted key-value map | TreeMap |
+| Min/max key of map | TreeMap |
 | Simple iteration only | Go slice |
 
 ---

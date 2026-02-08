@@ -678,6 +678,17 @@ gala_test(
     ],
 )
 
+# TreeMap examples (immutable + mutable)
+gala_test(
+    name = "treemap",
+    src = "treemap.gala",
+    expected = "treemap.out",
+    deps = [
+        "//collection_immutable",
+        "//collection_mutable",
+    ],
+)
+
 # Sorted API on mutable collections
 gala_test(
     name = "sorted_mutable",

@@ -1,0 +1,1134 @@
+package collection_mutable
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+    "martianoff/gala/go_interop"
+)
+
+// TreeMap is a mutable sorted map implemented as a Red-Black tree.
+// It maintains entries in sorted key order and provides O(log n) operations.
+//
+// Keys must be either:
+// - Primitive types (int, string, float64, etc.) - compared automatically
+// - Types implementing the Ordered[T] interface
+//
+// Performance characteristics:
+// - Put:      O(log n)
+// - Get:      O(log n)
+// - Remove:   O(log n)
+// - Contains: O(log n)
+// - Min/Max:  O(log n)
+// - Size:     O(1) - cached
+//
+// Unlike HashMap, TreeMap maintains sorted key order and supports range queries.
+
+// Tree node colors for Red-Black tree
+val mutableTreeMapRed int = 0
+val mutableTreeMapBlack int = 1
+
+// treeMapNode represents a node in the Red-Black tree.
+type treeMapNode[K comparable, V any] struct {
+    var key    K
+    var value  V
+    var left   *treeMapNode[K, V]
+    var right  *treeMapNode[K, V]
+    var parent *treeMapNode[K, V]
+    var color  int
+}
+
+// TreeMap represents a mutable sorted map.
+type TreeMap[K comparable, V any] struct {
+    var root *treeMapNode[K, V]
+    var size int
+}
+
+// EmptyTreeMap returns a new empty TreeMap.
+func EmptyTreeMap[K comparable, V any]() *TreeMap[K, V] {
+    var nilRoot *treeMapNode[K, V] = nil
+    return &TreeMap[K, V](root = nilRoot, size = 0)
+}
+
+// TreeMapOf creates a TreeMap from key-value tuples.
+// Example: TreeMapOf(("a", 1), ("b", 2)) creates TreeMap(a -> 1, b -> 2)
+func TreeMapOf[K comparable, V any](entries ...Tuple[K, V]) *TreeMap[K, V] {
+    var result = EmptyTreeMap[K, V]()
+    for i := 0; i < len(entries); i++ {
+        result.Put(entries[i].V1, entries[i].V2)
+    }
+    return result
+}
+
+// TreeMapFromSlice creates a TreeMap from a slice of tuples.
+func TreeMapFromSlice[K comparable, V any](entries []Tuple[K, V]) *TreeMap[K, V] {
+    var result = EmptyTreeMap[K, V]()
+    for i := 0; i < len(entries); i++ {
+        result.Put(entries[i].V1, entries[i].V2)
+    }
+    return result
+}
+
+// TreeMapFromGoMap creates a TreeMap from a Go map.
+func TreeMapFromGoMap[K comparable, V any](m map[K]V) *TreeMap[K, V] {
+    var result = EmptyTreeMap[K, V]()
+    for k, v := range m {
+        result.Put(k, v)
+    }
+    return result
+}
+
+// === Basic Operations ===
+
+// IsEmpty returns true if the map is empty.
+func (m *TreeMap[K, V]) IsEmpty() bool = m.size == 0
+
+// NonEmpty returns true if the map is not empty.
+func (m *TreeMap[K, V]) NonEmpty() bool = m.size > 0
+
+// Size returns the number of entries. O(1) - cached.
+func (m *TreeMap[K, V]) Size() int = m.size
+
+// Length is an alias for Size.
+func (m *TreeMap[K, V]) Length() int = m.size
+
+// === Comparison ===
+
+// mutableTreeMapCompare compares two keys and returns -1, 0, or 1.
+func mutableTreeMapCompare[K comparable](a K, b K) int {
+    val va any = a
+    val vb any = b
+
+    val result = va match {
+        case ai: int => mutableTreeMapCompareIntsAny(ai, vb)
+        case as: string => mutableTreeMapCompareStringsAny(as, vb)
+        case ai64: int64 => mutableTreeMapCompareInt64sAny(ai64, vb)
+        case ai32: int32 => mutableTreeMapCompareInt32sAny(ai32, vb)
+        case af64: float64 => mutableTreeMapCompareFloat64sAny(af64, vb)
+        case af32: float32 => mutableTreeMapCompareFloat32sAny(af32, vb)
+        case au: uint => mutableTreeMapCompareUintsAny(au, vb)
+        case au64: uint64 => mutableTreeMapCompareUint64sAny(au64, vb)
+        case au32: uint32 => mutableTreeMapCompareUint32sAny(au32, vb)
+        case ai16: int16 => mutableTreeMapCompareInt16sAny(ai16, vb)
+        case ai8: int8 => mutableTreeMapCompareInt8sAny(ai8, vb)
+        case au16: uint16 => mutableTreeMapCompareUint16sAny(au16, vb)
+        case au8: uint8 => mutableTreeMapCompareUint8sAny(au8, vb)
+        case ao: Ordered[K] => ao.Compare(b)
+        case _ => mutableTreeMapPanicNotOrdered(va)
+    }
+    return result
+}
+
+// Type-specific comparison helpers
+func mutableTreeMapCompareIntsAny(a int, vb any) int {
+    val b = vb match { case bi: int => bi case _ => 0 }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func mutableTreeMapCompareStringsAny(a string, vb any) int {
+    val b = vb match { case bs: string => bs case _ => "" }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func mutableTreeMapCompareInt64sAny(a int64, vb any) int {
+    val b = vb match { case bi: int64 => bi case _ => int64(0) }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func mutableTreeMapCompareInt32sAny(a int32, vb any) int {
+    val b = vb match { case bi: int32 => bi case _ => int32(0) }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func mutableTreeMapCompareInt16sAny(a int16, vb any) int {
+    val b = vb match { case bi: int16 => bi case _ => int16(0) }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func mutableTreeMapCompareInt8sAny(a int8, vb any) int {
+    val b = vb match { case bi: int8 => bi case _ => int8(0) }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func mutableTreeMapCompareFloat64sAny(a float64, vb any) int {
+    val b = vb match { case bf: float64 => bf case _ => float64(0) }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func mutableTreeMapCompareFloat32sAny(a float32, vb any) int {
+    val b = vb match { case bf: float32 => bf case _ => float32(0) }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func mutableTreeMapCompareUintsAny(a uint, vb any) int {
+    val b = vb match { case bu: uint => bu case _ => uint(0) }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func mutableTreeMapCompareUint64sAny(a uint64, vb any) int {
+    val b = vb match { case bu: uint64 => bu case _ => uint64(0) }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func mutableTreeMapCompareUint32sAny(a uint32, vb any) int {
+    val b = vb match { case bu: uint32 => bu case _ => uint32(0) }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func mutableTreeMapCompareUint16sAny(a uint16, vb any) int {
+    val b = vb match { case bu: uint16 => bu case _ => uint16(0) }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func mutableTreeMapCompareUint8sAny(a uint8, vb any) int {
+    val b = vb match { case bu: uint8 => bu case _ => uint8(0) }
+    if a < b { return -1 }
+    if a > b { return 1 }
+    return 0
+}
+
+func mutableTreeMapPanicNotOrdered(v any) int {
+    panic(fmt.Sprintf("TreeMap: type %T must implement std.Ordered interface", v))
+}
+
+// isRedTreeMapNode checks if a node is red (nil nodes are black).
+func isRedTreeMapNode[K comparable, V any](node *treeMapNode[K, V]) bool {
+    if node == nil {
+        return false
+    }
+    return node.color == mutableTreeMapRed
+}
+
+// === Query Operations ===
+
+// Contains checks if the map contains the given key. O(log n).
+func (m *TreeMap[K, V]) Contains(key K) bool {
+    var node = m.root
+    for node != nil {
+        val cmp = mutableTreeMapCompare[K](key, node.key)
+        if cmp < 0 {
+            node = node.left
+        } else if cmp > 0 {
+            node = node.right
+        } else {
+            return true
+        }
+    }
+    return false
+}
+
+// Get returns the value for a key wrapped in Option. O(log n).
+func (m *TreeMap[K, V]) Get(key K) Option[V] {
+    var node = m.root
+    for node != nil {
+        val cmp = mutableTreeMapCompare[K](key, node.key)
+        if cmp < 0 {
+            node = node.left
+        } else if cmp > 0 {
+            node = node.right
+        } else {
+            return Some[V](node.value)
+        }
+    }
+    return None[V]()
+}
+
+// GetOrElse returns the value for a key, or the default if not found.
+func (m *TreeMap[K, V]) GetOrElse(key K, defaultValue V) V {
+    return m.Get(key).GetOrElse(defaultValue)
+}
+
+// Apply returns the value for a key. Panics if key not found.
+func (m *TreeMap[K, V]) Apply(key K) V {
+    val opt = m.Get(key)
+    if opt.IsEmpty() {
+        panic(fmt.Sprintf("TreeMap: key not found: %v", key))
+    }
+    return opt.Get()
+}
+
+// === Mutating Operations ===
+
+// Put adds or updates a key-value pair. O(log n).
+// Returns true if this is a new key, false if updating existing.
+func (m *TreeMap[K, V]) Put(key K, value V) bool {
+    if m.root == nil {
+        m.root = &treeMapNode[K, V](key = key, value = value, color = mutableTreeMapBlack)
+        m.size = 1
+        return true
+    }
+
+    // Find insertion point
+    var parent *treeMapNode[K, V] = nil
+    var node = m.root
+    var cmp = 0
+    for node != nil {
+        parent = node
+        cmp = mutableTreeMapCompare[K](key, node.key)
+        if cmp < 0 {
+            node = node.left
+        } else if cmp > 0 {
+            node = node.right
+        } else {
+            // Key exists, update value
+            node.value = value
+            return false
+        }
+    }
+
+    // Insert new node
+    var newNode = &treeMapNode[K, V](key = key, value = value, parent = parent, color = mutableTreeMapRed)
+    if cmp < 0 {
+        parent.left = newNode
+    } else {
+        parent.right = newNode
+    }
+    m.size++
+
+    // Rebalance
+    m.fixAfterInsert(newNode)
+    return true
+}
+
+// fixAfterInsert rebalances the tree after insertion.
+func (m *TreeMap[K, V]) fixAfterInsert(node *treeMapNode[K, V]) {
+    for node != m.root && node.parent.color == mutableTreeMapRed {
+        if node.parent == node.parent.parent.left {
+            var uncle = node.parent.parent.right
+            if isRedTreeMapNode[K, V](uncle) {
+                // Case 1: Uncle is red
+                node.parent.color = mutableTreeMapBlack
+                uncle.color = mutableTreeMapBlack
+                node.parent.parent.color = mutableTreeMapRed
+                node = node.parent.parent
+            } else {
+                if node == node.parent.right {
+                    // Case 2: Node is right child
+                    node = node.parent
+                    m.rotateLeft(node)
+                }
+                // Case 3: Node is left child
+                node.parent.color = mutableTreeMapBlack
+                node.parent.parent.color = mutableTreeMapRed
+                m.rotateRight(node.parent.parent)
+            }
+        } else {
+            var uncle = node.parent.parent.left
+            if isRedTreeMapNode[K, V](uncle) {
+                // Case 1: Uncle is red
+                node.parent.color = mutableTreeMapBlack
+                uncle.color = mutableTreeMapBlack
+                node.parent.parent.color = mutableTreeMapRed
+                node = node.parent.parent
+            } else {
+                if node == node.parent.left {
+                    // Case 2: Node is left child
+                    node = node.parent
+                    m.rotateRight(node)
+                }
+                // Case 3: Node is right child
+                node.parent.color = mutableTreeMapBlack
+                node.parent.parent.color = mutableTreeMapRed
+                m.rotateLeft(node.parent.parent)
+            }
+        }
+    }
+    m.root.color = mutableTreeMapBlack
+}
+
+// rotateLeft performs a left rotation.
+func (m *TreeMap[K, V]) rotateLeft(x *treeMapNode[K, V]) {
+    var y = x.right
+    x.right = y.left
+    if y.left != nil {
+        y.left.parent = x
+    }
+    y.parent = x.parent
+    if x.parent == nil {
+        m.root = y
+    } else if x == x.parent.left {
+        x.parent.left = y
+    } else {
+        x.parent.right = y
+    }
+    y.left = x
+    x.parent = y
+}
+
+// rotateRight performs a right rotation.
+func (m *TreeMap[K, V]) rotateRight(x *treeMapNode[K, V]) {
+    var y = x.left
+    x.left = y.right
+    if y.right != nil {
+        y.right.parent = x
+    }
+    y.parent = x.parent
+    if x.parent == nil {
+        m.root = y
+    } else if x == x.parent.right {
+        x.parent.right = y
+    } else {
+        x.parent.left = y
+    }
+    y.right = x
+    x.parent = y
+}
+
+// PutIfAbsent adds a key-value pair only if key is not present.
+// Returns true if the entry was added.
+func (m *TreeMap[K, V]) PutIfAbsent(key K, value V) bool {
+    if m.Contains(key) {
+        return false
+    }
+    m.Put(key, value)
+    return true
+}
+
+// GetOrElseUpdate returns the value for a key, or computes and stores it if absent.
+func (m *TreeMap[K, V]) GetOrElseUpdate(key K, f func() V) V {
+    val existing = m.Get(key)
+    if existing.IsDefined() {
+        return existing.Get()
+    }
+    val value = f()
+    m.Put(key, value)
+    return value
+}
+
+// Update updates the value for a key using a function.
+// Returns true if the key existed and was updated.
+func (m *TreeMap[K, V]) Update(key K, f func(V) V) bool {
+    var node = m.findNode(key)
+    if node == nil {
+        return false
+    }
+    node.value = f(node.value)
+    return true
+}
+
+// findNode finds the node containing the key.
+func (m *TreeMap[K, V]) findNode(key K) *treeMapNode[K, V] {
+    var node = m.root
+    for node != nil {
+        val cmp = mutableTreeMapCompare[K](key, node.key)
+        if cmp < 0 {
+            node = node.left
+        } else if cmp > 0 {
+            node = node.right
+        } else {
+            return node
+        }
+    }
+    return nil
+}
+
+// Remove removes a key from the map. O(log n).
+// Returns true if the key was removed (was present).
+func (m *TreeMap[K, V]) Remove(key K) bool {
+    var node = m.findNode(key)
+    if node == nil {
+        return false
+    }
+    m.deleteNode(node)
+    m.size--
+    return true
+}
+
+// deleteNode removes a node from the tree.
+func (m *TreeMap[K, V]) deleteNode(node *treeMapNode[K, V]) {
+    // If node has two children, replace with successor
+    if node.left != nil && node.right != nil {
+        var successor = m.minNode(node.right)
+        node.key = successor.key
+        node.value = successor.value
+        node = successor
+    }
+
+    // Node has at most one child
+    var child *treeMapNode[K, V]
+    if node.left != nil {
+        child = node.left
+    } else {
+        child = node.right
+    }
+
+    if child != nil {
+        child.parent = node.parent
+        if node.parent == nil {
+            m.root = child
+        } else if node == node.parent.left {
+            node.parent.left = child
+        } else {
+            node.parent.right = child
+        }
+
+        if node.color == mutableTreeMapBlack {
+            m.fixAfterDelete(child)
+        }
+    } else if node.parent == nil {
+        m.root = nil
+    } else {
+        if node.color == mutableTreeMapBlack {
+            m.fixAfterDelete(node)
+        }
+
+        if node.parent != nil {
+            if node == node.parent.left {
+                node.parent.left = nil
+            } else {
+                node.parent.right = nil
+            }
+        }
+    }
+}
+
+// fixAfterDelete rebalances the tree after deletion.
+func (m *TreeMap[K, V]) fixAfterDelete(node *treeMapNode[K, V]) {
+    for node != m.root && (node == nil || node.color == mutableTreeMapBlack) {
+        if node == nil {
+            return
+        }
+        if node.parent == nil {
+            return
+        }
+        if node == node.parent.left {
+            var sibling = node.parent.right
+            if sibling != nil && sibling.color == mutableTreeMapRed {
+                sibling.color = mutableTreeMapBlack
+                node.parent.color = mutableTreeMapRed
+                m.rotateLeft(node.parent)
+                sibling = node.parent.right
+            }
+
+            if sibling == nil {
+                node = node.parent
+            } else if (!isRedTreeMapNode[K, V](sibling.left)) && (!isRedTreeMapNode[K, V](sibling.right)) {
+                sibling.color = mutableTreeMapRed
+                node = node.parent
+            } else {
+                if !isRedTreeMapNode[K, V](sibling.right) {
+                    if sibling.left != nil {
+                        sibling.left.color = mutableTreeMapBlack
+                    }
+                    sibling.color = mutableTreeMapRed
+                    m.rotateRight(sibling)
+                    sibling = node.parent.right
+                }
+                if sibling != nil {
+                    sibling.color = node.parent.color
+                }
+                node.parent.color = mutableTreeMapBlack
+                if sibling != nil && sibling.right != nil {
+                    sibling.right.color = mutableTreeMapBlack
+                }
+                m.rotateLeft(node.parent)
+                node = m.root
+            }
+        } else {
+            var sibling = node.parent.left
+            if sibling != nil && sibling.color == mutableTreeMapRed {
+                sibling.color = mutableTreeMapBlack
+                node.parent.color = mutableTreeMapRed
+                m.rotateRight(node.parent)
+                sibling = node.parent.left
+            }
+
+            if sibling == nil {
+                node = node.parent
+            } else if (!isRedTreeMapNode[K, V](sibling.right)) && (!isRedTreeMapNode[K, V](sibling.left)) {
+                sibling.color = mutableTreeMapRed
+                node = node.parent
+            } else {
+                if !isRedTreeMapNode[K, V](sibling.left) {
+                    if sibling.right != nil {
+                        sibling.right.color = mutableTreeMapBlack
+                    }
+                    sibling.color = mutableTreeMapRed
+                    m.rotateLeft(sibling)
+                    sibling = node.parent.left
+                }
+                if sibling != nil {
+                    sibling.color = node.parent.color
+                }
+                node.parent.color = mutableTreeMapBlack
+                if sibling != nil && sibling.left != nil {
+                    sibling.left.color = mutableTreeMapBlack
+                }
+                m.rotateRight(node.parent)
+                node = m.root
+            }
+        }
+    }
+    if node != nil {
+        node.color = mutableTreeMapBlack
+    }
+}
+
+// Clear removes all entries. O(1).
+func (m *TreeMap[K, V]) Clear() {
+    m.root = nil
+    m.size = 0
+}
+
+// === Min/Max Operations ===
+
+// MinKey returns the minimum key in the map. O(log n).
+// Panics if the map is empty.
+func (m *TreeMap[K, V]) MinKey() K {
+    if m.size == 0 {
+        panic("TreeMap.MinKey on empty map")
+    }
+    return m.minNode(m.root).key
+}
+
+// minNode finds the node with minimum key in subtree.
+func (m *TreeMap[K, V]) minNode(node *treeMapNode[K, V]) *treeMapNode[K, V] {
+    for node.left != nil {
+        node = node.left
+    }
+    return node
+}
+
+// MinKeyOption returns the minimum key wrapped in Option. O(log n).
+func (m *TreeMap[K, V]) MinKeyOption() Option[K] {
+    if m.size == 0 {
+        return None[K]()
+    }
+    return Some[K](m.MinKey())
+}
+
+// MaxKey returns the maximum key in the map. O(log n).
+// Panics if the map is empty.
+func (m *TreeMap[K, V]) MaxKey() K {
+    if m.size == 0 {
+        panic("TreeMap.MaxKey on empty map")
+    }
+    return m.maxNode(m.root).key
+}
+
+// maxNode finds the node with maximum key in subtree.
+func (m *TreeMap[K, V]) maxNode(node *treeMapNode[K, V]) *treeMapNode[K, V] {
+    for node.right != nil {
+        node = node.right
+    }
+    return node
+}
+
+// MaxKeyOption returns the maximum key wrapped in Option. O(log n).
+func (m *TreeMap[K, V]) MaxKeyOption() Option[K] {
+    if m.size == 0 {
+        return None[K]()
+    }
+    return Some[K](m.MaxKey())
+}
+
+// MinEntry returns the entry with the minimum key. O(log n).
+// Panics if the map is empty.
+func (m *TreeMap[K, V]) MinEntry() Tuple[K, V] {
+    if m.size == 0 {
+        panic("TreeMap.MinEntry on empty map")
+    }
+    val node = m.minNode(m.root)
+    return (node.key, node.value)
+}
+
+// MinEntryOption returns the entry with the minimum key wrapped in Option. O(log n).
+func (m *TreeMap[K, V]) MinEntryOption() Option[Tuple[K, V]] {
+    if m.size == 0 {
+        return None[Tuple[K, V]]()
+    }
+    return Some[Tuple[K, V]](m.MinEntry())
+}
+
+// MaxEntry returns the entry with the maximum key. O(log n).
+// Panics if the map is empty.
+func (m *TreeMap[K, V]) MaxEntry() Tuple[K, V] {
+    if m.size == 0 {
+        panic("TreeMap.MaxEntry on empty map")
+    }
+    val node = m.maxNode(m.root)
+    return (node.key, node.value)
+}
+
+// MaxEntryOption returns the entry with the maximum key wrapped in Option. O(log n).
+func (m *TreeMap[K, V]) MaxEntryOption() Option[Tuple[K, V]] {
+    if m.size == 0 {
+        return None[Tuple[K, V]]()
+    }
+    return Some[Tuple[K, V]](m.MaxEntry())
+}
+
+// PopMinEntry removes and returns the entry with the minimum key. O(log n).
+// Panics if the map is empty.
+func (m *TreeMap[K, V]) PopMinEntry() Tuple[K, V] {
+    if m.size == 0 {
+        panic("TreeMap.PopMinEntry on empty map")
+    }
+    val entry = m.MinEntry()
+    m.Remove(entry.V1)
+    return entry
+}
+
+// PopMaxEntry removes and returns the entry with the maximum key. O(log n).
+// Panics if the map is empty.
+func (m *TreeMap[K, V]) PopMaxEntry() Tuple[K, V] {
+    if m.size == 0 {
+        panic("TreeMap.PopMaxEntry on empty map")
+    }
+    val entry = m.MaxEntry()
+    m.Remove(entry.V1)
+    return entry
+}
+
+// === Range Operations ===
+
+// Range returns entries with keys in [from, to] inclusive as a new TreeMap.
+func (m *TreeMap[K, V]) Range(from K, to K) *TreeMap[K, V] {
+    var result = EmptyTreeMap[K, V]()
+    m.rangeInOrder(m.root, from, to, (k K, v V) => {
+        result.Put(k, v)
+    })
+    return result
+}
+
+// rangeInOrder traverses nodes with keys in [from, to] in order.
+func (m *TreeMap[K, V]) rangeInOrder(node *treeMapNode[K, V], from K, to K, f func(K, V)) {
+    if node == nil {
+        return
+    }
+    val cmpFrom = mutableTreeMapCompare[K](node.key, from)
+    val cmpTo = mutableTreeMapCompare[K](node.key, to)
+
+    if cmpFrom > 0 {
+        m.rangeInOrder(node.left, from, to, f)
+    }
+    if cmpFrom >= 0 && cmpTo <= 0 {
+        f(node.key, node.value)
+    }
+    if cmpTo < 0 {
+        m.rangeInOrder(node.right, from, to, f)
+    }
+}
+
+// RangeFrom returns all entries with keys >= from.
+func (m *TreeMap[K, V]) RangeFrom(from K) *TreeMap[K, V] {
+    var result = EmptyTreeMap[K, V]()
+    m.rangeFromInOrder(m.root, from, (k K, v V) => {
+        result.Put(k, v)
+    })
+    return result
+}
+
+// rangeFromInOrder traverses nodes with keys >= from in order.
+func (m *TreeMap[K, V]) rangeFromInOrder(node *treeMapNode[K, V], from K, f func(K, V)) {
+    if node == nil {
+        return
+    }
+    val cmp = mutableTreeMapCompare[K](node.key, from)
+    if cmp > 0 {
+        m.rangeFromInOrder(node.left, from, f)
+    }
+    if cmp >= 0 {
+        f(node.key, node.value)
+    }
+    m.rangeFromInOrder(node.right, from, f)
+}
+
+// RangeTo returns all entries with keys <= to.
+func (m *TreeMap[K, V]) RangeTo(to K) *TreeMap[K, V] {
+    var result = EmptyTreeMap[K, V]()
+    m.rangeToInOrder(m.root, to, (k K, v V) => {
+        result.Put(k, v)
+    })
+    return result
+}
+
+// rangeToInOrder traverses nodes with keys <= to in order.
+func (m *TreeMap[K, V]) rangeToInOrder(node *treeMapNode[K, V], to K, f func(K, V)) {
+    if node == nil {
+        return
+    }
+    val cmp = mutableTreeMapCompare[K](node.key, to)
+    m.rangeToInOrder(node.left, to, f)
+    if cmp <= 0 {
+        f(node.key, node.value)
+    }
+    if cmp < 0 {
+        m.rangeToInOrder(node.right, to, f)
+    }
+}
+
+// === Iteration ===
+
+// ForEachKV applies a function to each key-value pair in sorted key order.
+func (m *TreeMap[K, V]) ForEachKV(f func(K, V)) {
+    m.inOrder(m.root, f)
+}
+
+// inOrder traverses the tree in sorted order.
+func (m *TreeMap[K, V]) inOrder(node *treeMapNode[K, V], f func(K, V)) {
+    if node == nil {
+        return
+    }
+    m.inOrder(node.left, f)
+    f(node.key, node.value)
+    m.inOrder(node.right, f)
+}
+
+// ForEachKey applies a function to each key in sorted order.
+func (m *TreeMap[K, V]) ForEachKey(f func(K)) {
+    m.ForEachKV((k K, v V) => {
+        f(k)
+    })
+}
+
+// ForEachValue applies a function to each value in key-sorted order.
+func (m *TreeMap[K, V]) ForEachValue(f func(V)) {
+    m.ForEachKV((k K, v V) => {
+        f(v)
+    })
+}
+
+// === Transformation (return new maps) ===
+
+// Filter returns a new TreeMap with only entries that satisfy the predicate.
+func (m *TreeMap[K, V]) Filter(p func(K, V) bool) *TreeMap[K, V] {
+    return m.FoldLeftKV[*TreeMap[K, V]](EmptyTreeMap[K, V](), (acc *TreeMap[K, V], k K, v V) => {
+        if p(k, v) {
+            acc.Put(k, v)
+        }
+        return acc
+    })
+}
+
+// FilterKeys returns a new TreeMap with only entries whose keys satisfy the predicate.
+func (m *TreeMap[K, V]) FilterKeys(p func(K) bool) *TreeMap[K, V] {
+    return m.FoldLeftKV[*TreeMap[K, V]](EmptyTreeMap[K, V](), (acc *TreeMap[K, V], k K, v V) => {
+        if p(k) {
+            acc.Put(k, v)
+        }
+        return acc
+    })
+}
+
+// FilterValues returns a new TreeMap with only entries whose values satisfy the predicate.
+func (m *TreeMap[K, V]) FilterValues(p func(V) bool) *TreeMap[K, V] {
+    return m.FoldLeftKV[*TreeMap[K, V]](EmptyTreeMap[K, V](), (acc *TreeMap[K, V], k K, v V) => {
+        if p(v) {
+            acc.Put(k, v)
+        }
+        return acc
+    })
+}
+
+// FilterNot returns a new TreeMap with entries that do not satisfy the predicate.
+func (m *TreeMap[K, V]) FilterNot(p func(K, V) bool) *TreeMap[K, V] {
+    return m.FoldLeftKV[*TreeMap[K, V]](EmptyTreeMap[K, V](), (acc *TreeMap[K, V], k K, v V) => {
+        if !p(k, v) {
+            acc.Put(k, v)
+        }
+        return acc
+    })
+}
+
+// MapValues applies a function to each value and returns a new map.
+func (m *TreeMap[K, V]) MapValues[U any](f func(V) U) *TreeMap[K, U] {
+    return m.FoldLeftKV[*TreeMap[K, U]](EmptyTreeMap[K, U](), (acc *TreeMap[K, U], k K, v V) => {
+        acc.Put(k, f(v))
+        return acc
+    })
+}
+
+// Collect applies a partial function to each key-value pair and collects the results.
+// Entries for which the function returns None are filtered out.
+// Returns a mutable Array since the result type may not be suitable for a TreeMap.
+func (m *TreeMap[K, V]) Collect[U any](pf func(K, V) Option[U]) *Array[U] {
+    var result = EmptyArray[U]()
+    m.ForEachKV((k K, v V) => {
+        val opt = pf(k, v)
+        if opt.IsDefined() {
+            result.Append(opt.Get())
+        }
+    })
+    return result
+}
+
+// === In-place Transformations ===
+
+// FilterInPlace removes entries that do not satisfy the predicate.
+func (m *TreeMap[K, V]) FilterInPlace(p func(K, V) bool) {
+    var toRemove []K
+    m.ForEachKV((k K, v V) => {
+        if !p(k, v) {
+            toRemove = append(toRemove, k)
+        }
+    })
+    for i := 0; i < len(toRemove); i++ {
+        m.Remove(toRemove[i])
+    }
+}
+
+// UpdateAll updates all values using a function.
+func (m *TreeMap[K, V]) UpdateAll(f func(K, V) V) {
+    m.updateAllNodes(m.root, f)
+}
+
+// updateAllNodes updates values in-place via in-order traversal.
+func (m *TreeMap[K, V]) updateAllNodes(node *treeMapNode[K, V], f func(K, V) V) {
+    if node == nil {
+        return
+    }
+    m.updateAllNodes(node.left, f)
+    node.value = f(node.key, node.value)
+    m.updateAllNodes(node.right, f)
+}
+
+// === Reduction Operations ===
+
+// FoldLeftKV applies a binary operator from left to right with key-value pairs (in sorted key order).
+func (m *TreeMap[K, V]) FoldLeftKV[U any](initial U, f func(U, K, V) U) U {
+    var acc = initial
+    m.ForEachKV((k K, v V) => {
+        acc = f(acc, k, v)
+    })
+    return acc
+}
+
+// === Predicate Operations ===
+
+// Exists returns true if any entry satisfies the predicate.
+func (m *TreeMap[K, V]) Exists(p func(K, V) bool) bool {
+    return m.FoldLeftKV[bool](false, (acc bool, k K, v V) => acc || p(k, v))
+}
+
+// ForAll returns true if all entries satisfy the predicate.
+func (m *TreeMap[K, V]) ForAll(p func(K, V) bool) bool {
+    return m.FoldLeftKV[bool](true, (acc bool, k K, v V) => acc && p(k, v))
+}
+
+// Count returns the number of entries satisfying the predicate.
+func (m *TreeMap[K, V]) Count(p func(K, V) bool) int {
+    return m.FoldLeftKV[int](0, (acc int, k K, v V) => {
+        if p(k, v) {
+            return acc + 1
+        }
+        return acc
+    })
+}
+
+// Find returns the first entry (in sorted key order) satisfying the predicate.
+func (m *TreeMap[K, V]) Find(p func(K, V) bool) Option[Tuple[K, V]] {
+    return m.FoldLeftKV[Option[Tuple[K, V]]](None[Tuple[K, V]](), (acc Option[Tuple[K, V]], k K, v V) => {
+        if acc.IsEmpty() && p(k, v) {
+            return Some((k, v))
+        }
+        return acc
+    })
+}
+
+// === Key/Value Access ===
+
+// Keys returns a mutable TreeSet of all keys (maintains sorted order).
+func (m *TreeMap[K, V]) Keys() *TreeSet[K] {
+    return m.FoldLeftKV[*TreeSet[K]](EmptyTreeSet[K](), (acc *TreeSet[K], k K, v V) => {
+        acc.Add(k)
+        return acc
+    })
+}
+
+// KeySet returns a mutable TreeSet of all keys.
+func (m *TreeMap[K, V]) KeySet() *TreeSet[K] = m.Keys()
+
+// Values returns a mutable List of all values in key-sorted order.
+func (m *TreeMap[K, V]) Values() *List[V] {
+    var result = EmptyList[V]()
+    m.ForEachKV((k K, v V) => {
+        result.Append(v)
+    })
+    return result
+}
+
+// KeyArray returns a mutable Array of all keys in sorted order.
+func (m *TreeMap[K, V]) KeyArray() *Array[K] {
+    return m.FoldLeftKV[*Array[K]](EmptyArray[K](), (acc *Array[K], k K, v V) => {
+        acc.Append(k)
+        return acc
+    })
+}
+
+// ValueArray returns a mutable Array of all values in key-sorted order.
+func (m *TreeMap[K, V]) ValueArray() *Array[V] {
+    return m.FoldLeftKV[*Array[V]](EmptyArray[V](), (acc *Array[V], k K, v V) => {
+        acc.Append(v)
+        return acc
+    })
+}
+
+// === Merge Operations ===
+
+// PutFrom adds all entries from another TreeMap.
+func (m *TreeMap[K, V]) PutFrom(other *TreeMap[K, V]) {
+    other.ForEachKV((k K, v V) => {
+        m.Put(k, v)
+    })
+}
+
+// Merge merges another map, using a function for duplicate keys.
+func (m *TreeMap[K, V]) Merge(other *TreeMap[K, V], f func(V, V) V) {
+    other.ForEachKV((k K, v V) => {
+        val existing = m.Get(k)
+        if existing.IsDefined() {
+            m.Put(k, f(existing.Get(), v))
+        } else {
+            m.Put(k, v)
+        }
+    })
+}
+
+// PutAllEntries adds all entries from an Array of tuples.
+func (m *TreeMap[K, V]) PutAllEntries(entries *Array[Tuple[K, V]]) {
+    entries.ForEach((entry Tuple[K, V]) => {
+        m.Put(entry.V1, entry.V2)
+    })
+}
+
+// === Conversion ===
+
+// ToGoMap converts the map to a Go map.
+func (m *TreeMap[K, V]) ToGoMap() map[K]V {
+    var result = go_interop.MapEmpty[K, V]()
+    m.ForEachKV((k K, v V) => {
+        go_interop.MapPut[K, V](result, k, v)
+    })
+    return result
+}
+
+// ToArray converts the map to a mutable Array of tuples in sorted key order.
+func (m *TreeMap[K, V]) ToArray() *Array[Tuple[K, V]] {
+    return m.FoldLeftKV[*Array[Tuple[K, V]]](ArrayWithCapacity[Tuple[K, V]](m.Size()), (acc *Array[Tuple[K, V]], k K, v V) => {
+        acc.Append((k, v))
+        return acc
+    })
+}
+
+// ToList converts the map to a mutable List of tuples in sorted key order.
+func (m *TreeMap[K, V]) ToList() *List[Tuple[K, V]] {
+    return m.FoldLeftKV[*List[Tuple[K, V]]](EmptyList[Tuple[K, V]](), (acc *List[Tuple[K, V]], k K, v V) => {
+        acc.Append((k, v))
+        return acc
+    })
+}
+
+// ToHashMap converts the map to a mutable HashMap (loses ordering but gains O(1) lookup).
+func (m *TreeMap[K, V]) ToHashMap() *HashMap[K, V] {
+    return m.FoldLeftKV[*HashMap[K, V]](EmptyHashMap[K, V](), (acc *HashMap[K, V], k K, v V) => {
+        acc.Put(k, v)
+        return acc
+    })
+}
+
+// Clone creates a shallow copy of the map.
+func (m *TreeMap[K, V]) Clone() *TreeMap[K, V] {
+    var result = EmptyTreeMap[K, V]()
+    m.ForEachKV((k K, v V) => {
+        result.Put(k, v)
+    })
+    return result
+}
+
+// === String ===
+
+// String returns a string representation of the map in sorted key order.
+func (m *TreeMap[K, V]) String() string {
+    if m.size == 0 {
+        return "TreeMap()"
+    }
+    var result = "TreeMap("
+    var first = true
+    m.ForEachKV((k K, v V) => {
+        if !first {
+            result = result + ", "
+        }
+        result = result + fmt.Sprintf("%v -> %v", k, v)
+        first = false
+    })
+    return result + ")"
+}
+
+// MkString joins entries into a string with separator.
+func (m *TreeMap[K, V]) MkString(sep string) string {
+    if m.size == 0 {
+        return ""
+    }
+    var result = ""
+    var first = true
+    m.ForEachKV((k K, v V) => {
+        if !first {
+            result = result + sep
+        }
+        result = result + fmt.Sprintf("%v -> %v", k, v)
+        first = false
+    })
+    return result
+}
+
+// === Element Access ===
+
+// Head returns the entry with the minimum key. Panics if empty.
+func (m *TreeMap[K, V]) Head() Tuple[K, V] = m.MinEntry()
+
+// HeadOption returns the entry with the minimum key wrapped in Option.
+func (m *TreeMap[K, V]) HeadOption() Option[Tuple[K, V]] = m.MinEntryOption()
+
+// Last returns the entry with the maximum key. Panics if empty.
+func (m *TreeMap[K, V]) Last() Tuple[K, V] = m.MaxEntry()
+
+// LastOption returns the entry with the maximum key wrapped in Option.
+func (m *TreeMap[K, V]) LastOption() Option[Tuple[K, V]] = m.MaxEntryOption()
+
+// Partition partitions the map into two new maps based on predicate.
+func (m *TreeMap[K, V]) Partition(p func(K, V) bool) Tuple[*TreeMap[K, V], *TreeMap[K, V]] {
+    val initial = (EmptyTreeMap[K, V](), EmptyTreeMap[K, V]())
+    return m.FoldLeftKV[Tuple[*TreeMap[K, V], *TreeMap[K, V]]](initial, (acc Tuple[*TreeMap[K, V], *TreeMap[K, V]], k K, v V) => {
+        if p(k, v) {
+            acc.V1.Put(k, v)
+        } else {
+            acc.V2.Put(k, v)
+        }
+        return acc
+    })
+}
+
+// === Sorting ===
+
+// Sorted returns a mutable Array of key-value tuples in natural sorted key order (already sorted).
+func (m *TreeMap[K, V]) Sorted() *Array[Tuple[K, V]] = m.ToArray()
+
+// SortWith returns a mutable Array of key-value tuples sorted using the given comparison function.
+func (m *TreeMap[K, V]) SortWith(less func(Tuple[K, V], Tuple[K, V]) bool) *Array[Tuple[K, V]] = m.ToArray().SortWith(less)
+
+// SortBy returns a mutable Array of key-value tuples sorted by a key extracted from each entry.
+func (m *TreeMap[K, V]) SortBy[S comparable](f func(Tuple[K, V]) S) *Array[Tuple[K, V]] = m.ToArray().SortBy(f)

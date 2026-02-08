@@ -7,6 +7,7 @@ exports_files([
     "hashmap.gala",
     "hashset.gala",
     "treeset.gala",
+    "treemap.gala",
 ])
 
 # Filegroup for all GALA source files in collection_mutable
@@ -49,6 +50,12 @@ gala_bootstrap_transpile(
     out = "hashmap.gen.go",
 )
 
+gala_bootstrap_transpile(
+    name = "treemap_go",
+    src = "treemap.gala",
+    out = "treemap.gen.go",
+)
+
 go_library(
     name = "collection_mutable",
     srcs = [
@@ -56,6 +63,7 @@ go_library(
         "hashmap.gen.go",
         "hashset.gen.go",
         "list.gen.go",
+        "treemap.gen.go",
         "treeset.gen.go",
     ],
     importpath = "martianoff/gala/collection_mutable",
@@ -105,6 +113,15 @@ gala_go_test(
 gala_go_test(
     name = "hashmap_test",
     srcs = ["hashmap_test.gala"],
+    deps = [
+        ":collection_mutable",
+        "//go_interop",
+    ],
+)
+
+gala_go_test(
+    name = "treemap_test",
+    srcs = ["treemap_test.gala"],
     deps = [
         ":collection_mutable",
         "//go_interop",

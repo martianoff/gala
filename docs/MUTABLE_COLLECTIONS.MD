@@ -31,11 +31,23 @@ This document describes the mutable collection data structures available in GALA
    - [Membership and Modification - O(log n)](#membership-and-modification---olog-n)
    - [Min/Max Operations - O(log n)](#minmax-operations---olog-n)
    - [Range Queries (unique to TreeSet)](#range-queries-unique-to-treeset)
-7. [Choosing Between HashSet and TreeSet](#choosing-between-hashset-and-treeset)
-8. [Pattern Matching with Mutable Collections](#pattern-matching-with-mutable-collections)
-9. [Choosing Between Array and List](#choosing-between-array-and-list)
-10. [Performance Benchmarks](#performance-benchmarks)
-11. [Examples](#example-building-a-collection)
+7. [HashMap[K,V]](#hashmapkv)
+   - [Construction](#construction-3)
+   - [Core Operations - O(1)](#core-operations---o1)
+8. [TreeMap[K,V]](#treemapkv)
+   - [Construction](#construction-4)
+   - [Core Operations - O(log n)](#core-operations---olog-n)
+   - [Min/Max Operations](#minmax-operations)
+   - [Range Queries](#range-queries)
+   - [Mutable-Specific Operations](#mutable-specific-operations)
+   - [Functional Operations](#functional-operations-1)
+   - [Conversion](#conversion)
+9. [Choosing Between HashSet and TreeSet](#choosing-between-hashset-and-treeset)
+10. [Choosing Between HashMap and TreeMap](#choosing-between-hashmap-and-treemap)
+11. [Pattern Matching with Mutable Collections](#pattern-matching-with-mutable-collections)
+12. [Choosing Between Array and List](#choosing-between-array-and-list)
+13. [Performance Benchmarks](#performance-benchmarks)
+14. [Examples](#example-building-a-collection)
 
 ---
 
@@ -78,6 +90,18 @@ import . "martianoff/gala/collection_mutable"
 | Size | O(1) | O(1) | Cached |
 | Union | O(m) | O(m log n) | m = size of other set |
 | Intersect | O(min(n,m)) | O(min(n,m) log n) | |
+
+### Maps
+
+| Operation | HashMap | TreeMap | Notes |
+|-----------|---------|---------|-------|
+| Put | O(1)* | O(log n) | HashMap: amortized; TreeMap: balanced |
+| Get | O(1) | O(log n) | |
+| Remove | O(1) | O(log n) | |
+| Contains | O(1) | O(log n) | |
+| Min/Max Key | O(n) | O(log n) | TreeMap maintains sorted key order |
+| Range | O(n) | O(log n + k) | k = result size |
+| Size | O(1) | O(1) | Cached |
 
 **Legend:**
 - O(1) - Constant time
@@ -855,6 +879,188 @@ s.MkString(", ")          // "1, 2, 3" (sorted)
 
 ---
 
+## HashMap[K,V]
+
+A mutable hash-based map providing O(1) average-case operations. See `collection_mutable/hashmap.gala` for the full API.
+
+### Construction
+
+```gala
+var m = EmptyHashMap[string, int]()
+var m = HashMapOf(("a", 1), ("b", 2), ("c", 3))
+```
+
+### Core Operations - O(1)
+
+```gala
+var m = HashMapOf(("a", 1), ("b", 2))
+
+m.Put("c", 3)            // adds entry in-place
+m.Get("a")               // Some(1)
+m.GetOrElse("z", 0)      // 0
+m.Contains("a")          // true
+m.Remove("b")            // removes in-place
+m.Size()                 // 2
+m.Clear()                // removes all entries
+
+// Functional operations
+m.Filter((k, v) => v > 1)
+m.MapValues[int]((v) => v * 2)
+m.Sorted()               // Array of entries sorted by key
+```
+
+---
+
+## TreeMap[K,V]
+
+A mutable sorted map implemented as a Red-Black tree. Maintains entries in sorted key order and provides O(log n) operations with range queries.
+
+**Type Requirements:** Keys must be `comparable` and either:
+- A **primitive type** (int, string, float64, etc.) - compared automatically
+- A **custom type** implementing the `Ordered[T]` interface
+
+### Construction
+
+```gala
+// Empty map
+var m = EmptyTreeMap[string, int]()
+
+// From entries
+var m = TreeMapOf(("cherry", 3), ("apple", 1), ("banana", 2))
+// TreeMap(apple -> 1, banana -> 2, cherry -> 3)
+
+// From Go map
+var goMap = map[string]int{"x": 10, "y": 20}
+var m2 = TreeMapFromGoMap(goMap)
+```
+
+### Core Operations - O(log n)
+
+```gala
+var m = EmptyTreeMap[string, int]()
+
+// Put (in-place, returns true if new key)
+m.Put("a", 1)            // true
+m.Put("a", 10)           // false (updated existing)
+
+// Get
+m.Get("a")               // Some(10)
+m.GetOrElse("z", 0)      // 0
+m.Contains("a")          // true
+
+// Remove (in-place)
+m.Remove("a")
+
+// Size
+m.Size()                 // 0
+```
+
+### Min/Max Operations
+
+```gala
+var m = TreeMapOf(("a", 1), ("b", 2), ("c", 3))
+
+m.MinKey()               // "a"
+m.MaxKey()               // "c"
+m.MinEntry()             // Tuple("a", 1)
+m.MaxEntry()             // Tuple("c", 3)
+```
+
+### Range Queries
+
+```gala
+var m = TreeMapOf(("a", 1), ("b", 2), ("c", 3), ("d", 4), ("e", 5))
+
+m.Range("b", "d")        // TreeMap(b -> 2, c -> 3, d -> 4)
+m.RangeFrom("c")         // TreeMap(c -> 3, d -> 4, e -> 5)
+m.RangeTo("c")           // TreeMap(a -> 1, b -> 2, c -> 3)
+```
+
+### Mutable-Specific Operations
+
+```gala
+var m = TreeMapOf(("a", 1), ("b", 2))
+
+// PutIfAbsent - only inserts if key doesn't exist
+m.PutIfAbsent("a", 99)   // no change, "a" already exists
+m.PutIfAbsent("c", 3)    // inserts "c" -> 3
+
+// PopMinEntry / PopMaxEntry
+val min = m.PopMinEntry() // removes and returns smallest entry
+val max = m.PopMaxEntry() // removes and returns largest entry
+
+// Clear
+m.Clear()
+
+// Clone
+var m2 = m.Clone()       // independent copy
+
+// PutFrom - merge from another TreeMap
+m.PutFrom(otherTreeMap)
+
+// Merge with combiner
+m.Merge(other, (v1, v2) => v1 + v2)
+```
+
+### Functional Operations
+
+```gala
+var m = TreeMapOf(("a", 1), ("b", 2), ("c", 3), ("d", 4))
+
+// Filter (returns new TreeMap)
+m.Filter((k, v) => v % 2 == 0)      // TreeMap(b -> 2, d -> 4)
+
+// MapValues (returns new TreeMap)
+m.MapValues[int]((v) => v * 10)     // TreeMap(a -> 10, b -> 20, ...)
+
+// FoldLeftKV
+m.FoldLeftKV[int](0, (acc, k, v) => acc + v)  // 10
+
+// FilterInPlace (modifies in-place)
+m.FilterInPlace((k, v) => v > 2)
+
+// Iteration (sorted key order)
+m.ForEachKV((k, v) => { fmt.Printf("%s=%d ", k, v) })
+```
+
+### Sorted API
+
+```gala
+var m = TreeMapOf(("c", 30), ("a", 10), ("b", 20))
+
+m.Sorted()                              // Array((a,10), (b,20), (c,30))
+m.SortWith((a, b) => a.V2 < b.V2)      // Array((a,10), (b,20), (c,30))
+m.SortBy[int]((e) => -e.V2)            // Array((c,30), (b,20), (a,10))
+```
+
+### Conversion
+
+```gala
+var m = TreeMapOf(("a", 1), ("b", 2), ("c", 3))
+
+m.Keys()                 // TreeSet("a", "b", "c")
+m.Values()               // [1, 2, 3]
+m.ToArray()              // Array of Tuple entries
+m.ToGoMap()              // map[string]int
+m.ToHashMap()            // mutable HashMap
+m.String()               // "TreeMap(a -> 1, b -> 2, c -> 3)"
+m.MkString(", ")         // "(a, 1), (b, 2), (c, 3)"
+```
+
+---
+
+## Choosing Between HashMap and TreeMap
+
+| Use Case | Recommended | Reason |
+|----------|-------------|--------|
+| Fastest put/get/remove | HashMap | O(1) vs O(log n) |
+| Sorted key iteration | TreeMap | Maintains order |
+| Min/Max key queries | TreeMap | O(log n) vs O(n) |
+| Range queries on keys | TreeMap | Only TreeMap supports |
+| Key order doesn't matter | HashMap | Faster on average |
+
+---
+
 ## Choosing Between HashSet and TreeSet
 
 | Use Case | Recommended | Reason |
@@ -1101,36 +1307,22 @@ bazel run //collection_mutable:perf_go
 
 *Array's O(n) InsertAt/RemoveAt uses efficient memory copy; List requires O(n) traversal first.
 
-### HashSet Performance (ns/op) - 10,000 Elements
+### Set Results (ns/op) - 10,000 Elements
 
-| Operation | GALA HashSet | Notes |
-|-----------|-------------:|-------|
-| Creation | 474,645 | Building set with 10k elements |
-| Add | 52 | O(1) amortized |
-| Contains (hit) | 17 | O(1) average |
-| Contains (miss) | 18 | O(1) average |
-| Remove | 51 | O(1) average |
-| Filter | 311,500 | Iterates all elements |
-| Union (5k+5k) | 600,776 | Combines two sets |
-| Intersect (5k+5k) | 273,991 | |
-| Clone | 559,014 | Full copy |
-
-### TreeSet Performance (ns/op) - 10,000 Elements
-
-| Operation | GALA TreeSet | Notes |
-|-----------|-------------:|-------|
-| Creation | 6,652,263 | Building sorted set with 10k elements |
-| Add | 1,478 | O(log n) with rebalancing |
-| Contains (hit) | 442 | O(log n) |
-| Contains (miss) | 711 | O(log n) |
-| Remove | 1,449 | O(log n) with rebalancing |
-| Min | 5 | O(log n), traverses left |
-| Max | 8 | O(log n), traverses right |
-| Filter | 3,207,835 | Creates new tree |
-| Union (5k+5k) | 6,120,501 | |
-| Intersect (5k+5k) | 3,330,017 | |
-| Range | 3,467,559 | Extract range [2500, 7500] |
-| Clone | 7,057,953 | Full tree copy |
+| Operation | HashSet | TreeSet |
+|-----------|--------:|--------:|
+| Creation | 474,645 | 6,652,263 |
+| Add | 52 | 1,478 |
+| Contains (hit) | 17 | 442 |
+| Contains (miss) | 18 | 711 |
+| Remove | 51 | 1,449 |
+| Min | O(n) | 5 |
+| Max | O(n) | 8 |
+| Filter | 311,500 | 3,207,835 |
+| Union (5k+5k) | 600,776 | 6,120,501 |
+| Intersect (5k+5k) | 273,991 | 3,330,017 |
+| Range | - | 3,467,559 |
+| Clone | 559,014 | 7,057,953 |
 
 ### Set Scaling Results
 
@@ -1138,6 +1330,42 @@ bazel run //collection_mutable:perf_go
 |-----------|-------------:|----------------:|-----------------:|
 | HashSet.Creation | 3,165 ns | 474,645 ns | 6,934,149 ns |
 | TreeSet.Creation | 18,644 ns | 6,652,263 ns | 91,282,413 ns |
+
+### Map Results (ns/op) - 10,000 Elements
+
+| Operation | HashMap | TreeMap |
+|-----------|--------:|--------:|
+| Creation | 585,567 | 5,824,254 |
+| Put | 59 | 956 |
+| Get (hit) | 16 | 296 |
+| Get (miss) | 18 | 462 |
+| Contains (hit) | 17 | 294 |
+| Contains (miss) | 16 | 463 |
+| Remove | 63 | 990 |
+| MinKey | O(n) | 5 |
+| MaxKey | O(n) | 8 |
+| Filter | 411,615 | 2,264,105 |
+| MapValues | 808,557 | 4,949,690 |
+| Range | - | 2,425,290 |
+| Clone | 789,238 | 4,880,913 |
+
+### Map Scaling Results
+
+| Operation | 100 elements | 10,000 elements | 100,000 elements |
+|-----------|-------------:|----------------:|-----------------:|
+| HashMap.Creation | 4,996 ns | 585,567 ns | 9,712,457 ns |
+| TreeMap.Creation | 11,441 ns | 5,824,254 ns | 74,893,150 ns |
+
+### When to Use Each Map Type
+
+| Scenario | Recommendation | Reason |
+|----------|----------------|--------|
+| Fast key-value lookup | HashMap | 16 ns vs 296 ns |
+| Sorted key iteration | TreeMap | Only TreeMap maintains key order |
+| Min/Max key queries | TreeMap | 5 ns vs O(n) scan |
+| Range queries on keys | TreeMap | Only TreeMap supports |
+| Bulk operations | HashMap | 2-6x faster for filter/map |
+| Consistent performance | TreeMap | No hash collision risk |
 
 ### When to Use Each Set Type
 
