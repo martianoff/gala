@@ -29,4 +29,4 @@
 - [ ] Drop reflection usage for immutable vars for better performance
 - [ ] Official bazel module
 - [ ] Support expression syntax with match without return
-- [ ] TreeMap
+- [x] TreeMap
