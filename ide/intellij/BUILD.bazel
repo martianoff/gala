@@ -9,7 +9,7 @@ genrule(
     ]) + ["@gradle_bin//:all_files"],
     outs = ["gala-intellij-plugin.zip"],
     cmd = """
-        export JAVA_HOME=$$(pwd)/$$(echo $(JAVA) | sed 's|/bin/java\.exe$$||; s|/bin/java$$||')
+        export JAVA_HOME=$$(pwd)/$$(echo $(JAVA) | sed 's|/bin/java\\.exe$$||; s|/bin/java$$||')
 
         # Find gradle_bin location from the input files (bzlmod compatible)
         GRADLE_BIN=$$(dirname $$(dirname $$(echo '$(locations @gradle_bin//:all_files)' | tr ' ' '\\n' | grep 'bin/gradle$$' | head -1)))
