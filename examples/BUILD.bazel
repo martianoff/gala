@@ -7,6 +7,10 @@ filegroup(
         "mathlib/math.gala",
         "multi_file/greeter.gala",
         "multi_file/main.gala",
+        "multi_file_lib/ops.gala",
+        "multi_file_lib/types.gala",
+        "multi_file_types/main.gala",
+        "multi_file_types/model.gala",
     ],
     visibility = ["//visibility:public"],
 )
@@ -699,4 +703,33 @@ gala_test(
         "multi_file/main.gala",
     ],
     expected = "multi_file/multi_file.out",
+)
+
+# Multi-file with cross-file types: structs, sealed types, pattern matching
+gala_test(
+    name = "multi_file_types",
+    srcs = [
+        "multi_file_types/model.gala",
+        "multi_file_types/main.gala",
+    ],
+    expected = "multi_file_types/multi_file_types.out",
+)
+
+# Multi-file library (non-main package with cross-file types)
+gala_library(
+    name = "multi_file_lib",
+    srcs = [
+        "multi_file_lib/types.gala",
+        "multi_file_lib/ops.gala",
+    ],
+    importpath = "martianoff/gala/examples/multi_file_lib",
+    visibility = ["//visibility:public"],
+)
+
+# Consumer of multi-file library
+gala_test(
+    name = "use_multi_file_lib",
+    src = "use_multi_file_lib.gala",
+    expected = "use_multi_file_lib.out",
+    deps = [":multi_file_lib"],
 )

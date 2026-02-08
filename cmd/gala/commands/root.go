@@ -82,4 +82,5 @@ func init() {
 	rootCmd.Flags().StringVarP(&transpileOutput, "output", "o", "", "Path to the output .go file")
 	rootCmd.Flags().BoolVarP(&transpileRun, "run", "r", false, "Execute the generated Go code")
 	rootCmd.Flags().StringVarP(&transpileSearch, "search", "s", ".", "Comma-separated search paths")
+	rootCmd.Flags().StringVar(&transpilePackageFiles, "package-files", "", "Comma-separated list of sibling .gala files in the same package")
 }

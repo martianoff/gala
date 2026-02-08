@@ -1,0 +1,23 @@
+package main
+
+import "fmt"
+
+func main() {
+    // Use struct from sibling file
+    val alice = Person("Alice", 30)
+    fmt.Println(alice.Greet())
+
+    // Use sealed type from sibling file
+    val c = Circle(3.14)
+    val r = Rectangle(10.0, 20.0)
+    fmt.Println(describe(c))
+    fmt.Println(describe(r))
+
+    // Pattern match on sealed type from sibling file
+    val shape Shape = Circle(2.5)
+    val result = shape match {
+        case Circle(radius) => fmt.Sprintf("Matched circle: %.1f", radius)
+        case Rectangle(w, h) => fmt.Sprintf("Matched rect: %.0fx%.0f", w, h)
+    }
+    fmt.Println(result)
+}

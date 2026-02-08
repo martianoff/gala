@@ -16,10 +16,11 @@ import (
 )
 
 var (
-	transpileInput  string
-	transpileOutput string
-	transpileRun    bool
-	transpileSearch string
+	transpileInput        string
+	transpileOutput       string
+	transpileRun          bool
+	transpileSearch       string
+	transpilePackageFiles string
 )
 
 var transpileCmd = &cobra.Command{
@@ -43,6 +44,7 @@ func init() {
 	transpileCmd.Flags().StringVarP(&transpileOutput, "output", "o", "", "Path to the output .go file")
 	transpileCmd.Flags().BoolVarP(&transpileRun, "run", "r", false, "Execute the generated Go code")
 	transpileCmd.Flags().StringVarP(&transpileSearch, "search", "s", ".", "Comma-separated search paths")
+	transpileCmd.Flags().StringVar(&transpilePackageFiles, "package-files", "", "Comma-separated list of sibling .gala files in the same package")
 }
 
 func runTranspile(cmd *cobra.Command, args []string) {
@@ -68,7 +70,13 @@ func runTranspile(cmd *cobra.Command, args []string) {
 	// Create transpiler pipeline
 	p := transpiler.NewAntlrGalaParser()
 	paths := strings.Split(transpileSearch, ",")
-	a := analyzer.NewGalaAnalyzer(p, paths)
+	var a transpiler.Analyzer
+	if transpilePackageFiles != "" {
+		pkgFiles := strings.Split(transpilePackageFiles, ",")
+		a = analyzer.NewGalaAnalyzerWithPackageFiles(p, paths, pkgFiles)
+	} else {
+		a = analyzer.NewGalaAnalyzer(p, paths)
+	}
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
 	t := transpiler.NewGalaToGoTranspiler(p, a, tr, g)

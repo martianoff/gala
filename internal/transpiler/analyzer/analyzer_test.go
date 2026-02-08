@@ -1,9 +1,12 @@
 package analyzer_test
 
 import (
+	"os"
+	"path/filepath"
+	"testing"
+
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
-	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -176,4 +179,111 @@ func TestCompanionObjectDiscovery(t *testing.T) {
 		assert.Contains(t, rightMeta.TargetType, "Either")
 		assert.Equal(t, []int{1}, rightMeta.ExtractIndices)
 	})
+}
+
+func TestPackageFilesFullMetadata(t *testing.T) {
+	p := transpiler.NewAntlrGalaParser()
+	searchPaths := getStdSearchPath()
+
+	// Create temp directory with two sibling .gala files
+	tmpDir := t.TempDir()
+
+	// types.gala: defines struct + sealed type
+	typesContent := `package shapes
+
+struct Point(X int, Y int)
+
+sealed type Shape {
+    case Circle(Radius float64)
+    case Rect(Width float64, Height float64)
+}
+`
+	typesPath := filepath.Join(tmpDir, "types.gala")
+	require.NoError(t, os.WriteFile(typesPath, []byte(typesContent), 0644))
+
+	// ops.gala: defines methods on types from sibling
+	opsContent := `package shapes
+
+import "fmt"
+
+func (p Point) String() string = fmt.Sprintf("(%d, %d)", p.X, p.Y)
+
+func Describe(s Shape) string = s match {
+    case Circle(r) => "circle"
+    case Rect(w, h) => "rect"
+}
+`
+	opsPath := filepath.Join(tmpDir, "ops.gala")
+	require.NoError(t, os.WriteFile(opsPath, []byte(opsContent), 0644))
+
+	t.Run("sibling shorthand struct has full field metadata", func(t *testing.T) {
+		// Analyze ops.gala with types.gala as package file
+		a := analyzer.NewGalaAnalyzerWithPackageFiles(p, searchPaths, []string{typesPath})
+		tree, err := p.Parse(opsContent)
+		require.NoError(t, err)
+		richAST, err := a.Analyze(tree, opsPath)
+		require.NoError(t, err)
+
+		// Point should be registered with full field info
+		pointMeta, ok := richAST.Types["shapes.Point"]
+		require.True(t, ok, "shapes.Point should exist in Types, got: %v", keysOf(richAST.Types))
+		assert.Equal(t, []string{"X", "Y"}, pointMeta.FieldNames)
+		assert.Equal(t, []bool{true, true}, pointMeta.ImmutFlags)
+		assert.Equal(t, "int", pointMeta.Fields["X"].String())
+	})
+
+	t.Run("sibling sealed type has full metadata", func(t *testing.T) {
+		a := analyzer.NewGalaAnalyzerWithPackageFiles(p, searchPaths, []string{typesPath})
+		tree, err := p.Parse(opsContent)
+		require.NoError(t, err)
+		richAST, err := a.Analyze(tree, opsPath)
+		require.NoError(t, err)
+
+		// Shape should be registered as sealed
+		shapeMeta, ok := richAST.Types["shapes.Shape"]
+		require.True(t, ok, "shapes.Shape should exist")
+		assert.True(t, shapeMeta.IsSealed)
+		assert.Len(t, shapeMeta.SealedVariants, 2)
+
+		// Circle companion should exist
+		_, ok = richAST.Types["shapes.Circle"]
+		assert.True(t, ok, "shapes.Circle companion should exist")
+	})
+
+	t.Run("main package sibling has full field metadata", func(t *testing.T) {
+		// Test with main package (which was previously blocked for directory scanning)
+		mainTypesContent := `package main
+
+struct Person(Name string, Age int)
+`
+		mainOpsContent := `package main
+
+import "fmt"
+
+func (p Person) Greet() string = fmt.Sprintf("Hi %s", p.Name)
+`
+		mainTypesPath := filepath.Join(tmpDir, "main_types.gala")
+		mainOpsPath := filepath.Join(tmpDir, "main_ops.gala")
+		require.NoError(t, os.WriteFile(mainTypesPath, []byte(mainTypesContent), 0644))
+		require.NoError(t, os.WriteFile(mainOpsPath, []byte(mainOpsContent), 0644))
+
+		a := analyzer.NewGalaAnalyzerWithPackageFiles(p, searchPaths, []string{mainTypesPath})
+		tree, err := p.Parse(mainOpsContent)
+		require.NoError(t, err)
+		richAST, err := a.Analyze(tree, mainOpsPath)
+		require.NoError(t, err)
+
+		personMeta, ok := richAST.Types["Person"]
+		require.True(t, ok, "Person should exist in Types")
+		assert.Equal(t, []string{"Name", "Age"}, personMeta.FieldNames)
+		assert.Equal(t, []bool{true, true}, personMeta.ImmutFlags)
+	})
+}
+
+func keysOf(m map[string]*transpiler.TypeMetadata) []string {
+	var keys []string
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
 }

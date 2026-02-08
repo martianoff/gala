@@ -1,0 +1,10 @@
+package shapes
+
+import "fmt"
+
+func (p Point) String() string = fmt.Sprintf("(%d, %d)", p.X, p.Y)
+
+func Describe(s Shape) string = s match {
+    case Circle(r) => fmt.Sprintf("Circle(%.1f)", r)
+    case Rect(w, h) => fmt.Sprintf("Rect(%.0fx%.0f)", w, h)
+}

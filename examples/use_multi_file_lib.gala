@@ -1,0 +1,16 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/examples/multi_file_lib"
+)
+
+func main() {
+    val p = Point(3, 4)
+    fmt.Println(p.String())
+
+    val c = Circle(2.5)
+    val r = Rect(10.0, 20.0)
+    fmt.Println(Describe(c))
+    fmt.Println(Describe(r))
+}

@@ -56,6 +56,33 @@ import (
 )
 ```
 
+### Multi-File Packages
+
+A GALA package can span multiple `.gala` files. Types, sealed types, and functions defined in one file are available in all other files of the same package. Each file must declare the same package name.
+
+```
+shapes/
+  types.gala      # struct Point, sealed type Shape
+  ops.gala        # func (p Point) String(), func Describe(s Shape)
+```
+
+In Bazel, list all source files in `srcs`:
+
+```python
+gala_library(
+    name = "shapes",
+    srcs = ["shapes/types.gala", "shapes/ops.gala"],
+    importpath = "myapp/shapes",
+)
+
+gala_binary(
+    name = "app",
+    srcs = ["main.gala", "helpers.gala"],
+)
+```
+
+The transpiler automatically passes sibling file information so that each file can resolve types, sealed types, and methods defined in other files of the same package.
+
 ## 2. Variable Declarations
 
 GALA distinguishes between immutable and mutable variables.
@@ -1576,6 +1603,48 @@ fmt.Println(validPtr.IsNil())  // false
 ## 11. GALA Packages
 
 GALA supports importing other GALA packages. Since GALA transpiles to Go, a GALA package is essentially a Go package after transpilation. To import a GALA package, you use its Go import path.
+
+### Multi-File Packages
+
+A GALA package can consist of multiple `.gala` files. All files must declare the same package name. Types (structs, sealed types, interfaces) and functions defined in any file are visible to all other files in the package:
+
+```gala
+// types.gala
+package shapes
+
+struct Point(X int, Y int)
+
+sealed type Shape {
+    case Circle(Radius float64)
+    case Rect(Width float64, Height float64)
+}
+```
+
+```gala
+// ops.gala
+package shapes
+
+import "fmt"
+
+func (p Point) String() string = fmt.Sprintf("(%d, %d)", p.X, p.Y)
+
+func Describe(s Shape) string = s match {
+    case Circle(r) => fmt.Sprintf("Circle(%.1f)", r)
+    case Rect(w, h) => fmt.Sprintf("Rect(%.0fx%.0f)", w, h)
+}
+```
+
+In Bazel, specify all source files with `srcs`:
+
+```python
+gala_library(
+    name = "shapes",
+    srcs = ["shapes/types.gala", "shapes/ops.gala"],
+    importpath = "myapp/shapes",
+)
+```
+
+Cross-file resolution supports: structs (with immutability flags), sealed types (with pattern matching), shorthand struct declarations, generic types, methods, and functions.
 
 ### Import Syntax
 

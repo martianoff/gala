@@ -19,6 +19,7 @@ func main() {
 	input := flag.String("input", "", "Input .gala file")
 	output := flag.String("output", "", "Output .go file")
 	search := flag.String("search", ".", "Comma-separated search paths")
+	packageFiles := flag.String("package-files", "", "Comma-separated list of sibling .gala files in the same package")
 	flag.Parse()
 
 	if *input == "" {
@@ -34,7 +35,13 @@ func main() {
 
 	paths := strings.Split(*search, ",")
 	p := transpiler.NewAntlrGalaParser()
-	a := analyzer.NewGalaAnalyzer(p, paths)
+	var a transpiler.Analyzer
+	if *packageFiles != "" {
+		pkgFiles := strings.Split(*packageFiles, ",")
+		a = analyzer.NewGalaAnalyzerWithPackageFiles(p, paths, pkgFiles)
+	} else {
+		a = analyzer.NewGalaAnalyzer(p, paths)
+	}
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
 	t := transpiler.NewGalaToGoTranspiler(p, a, tr, g)

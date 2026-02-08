@@ -1,0 +1,8 @@
+package shapes
+
+struct Point(X int, Y int)
+
+sealed type Shape {
+    case Circle(Radius float64)
+    case Rect(Width float64, Height float64)
+}

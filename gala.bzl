@@ -53,26 +53,39 @@ gala_exec_test = rule(
     },
 )
 
-def gala_transpile(name, src, out = None):
-    """Transpile a GALA source file to Go using the full gala binary."""
+def gala_transpile(name, src, out = None, package_files = []):
+    """Transpile a GALA source file to Go using the full gala binary.
+
+    Args:
+        name: Target name
+        src: The .gala source file to transpile
+        out: Output .go file name (optional)
+        package_files: List of sibling .gala files in the same package for cross-file type resolution
+    """
     if not out:
         out = name + ".go"
+
+    pf_flag = ""
+    if package_files:
+        locs = ",".join(["$(location %s)" % f for f in package_files])
+        pf_flag = " --package-files " + locs
 
     # Use go.mod location to find the repository root for search path
     native.genrule(
         name = name,
-        srcs = [src, Label("//:all_gala_sources"), Label("//:go.mod")],
+        srcs = [src] + package_files + [Label("//:all_gala_sources"), Label("//:go.mod")],
         outs = [out],
-        cmd = "$(location {tool}) --input $(location {src}) --output $@ --search $$(dirname $(location {gomod}))".format(
+        cmd = "$(location {tool}) --input $(location {src}) --output $@ --search $$(dirname $(location {gomod})){pf}".format(
             tool = Label("//cmd/gala"),
             src = src,
             gomod = Label("//:go.mod"),
+            pf = pf_flag,
         ),
         tools = [Label("//cmd/gala")],
         visibility = ["//visibility:public"],
     )
 
-def gala_bootstrap_transpile(name, src, out = None):
+def gala_bootstrap_transpile(name, src, out = None, package_files = []):
     """Transpile a GALA source file using the bootstrap transpiler.
 
     Used only for stdlib packages to avoid circular dependency.
@@ -80,15 +93,21 @@ def gala_bootstrap_transpile(name, src, out = None):
     if not out:
         out = name + ".go"
 
+    pf_flag = ""
+    if package_files:
+        locs = ",".join(["$(location %s)" % f for f in package_files])
+        pf_flag = " --package-files " + locs
+
     # Use go.mod location to find the repository root for search path
     native.genrule(
         name = name,
-        srcs = [src, Label("//:all_gala_sources"), Label("//:go.mod")],
+        srcs = [src] + package_files + [Label("//:all_gala_sources"), Label("//:go.mod")],
         outs = [out],
-        cmd = "$(location {tool}) --input $(location {src}) --output $@ --search $$(dirname $(location {gomod}))".format(
+        cmd = "$(location {tool}) --input $(location {src}) --output $@ --search $$(dirname $(location {gomod})){pf}".format(
             tool = Label("//cmd/gala_bootstrap"),
             src = src,
             gomod = Label("//:go.mod"),
+            pf = pf_flag,
         ),
         tools = [Label("//cmd/gala_bootstrap")],
         visibility = ["//visibility:public"],
@@ -120,10 +139,12 @@ def gala_library(name, src = None, srcs = None, importpath = "", deps = [], **kw
     go_srcs = []
     for i, s in enumerate(srcs):
         go_src = name + "_" + str(i) + ".gen.go"
+        siblings = [other for j, other in enumerate(srcs) if j != i]
         gala_transpile(
             name = name + "_transpile_" + str(i),
             src = s,
             out = go_src,
+            package_files = siblings,
         )
         go_srcs.append(go_src)
 
@@ -163,10 +184,12 @@ def gala_binary(name, src = None, srcs = None, deps = [], **kwargs):
     go_srcs = []
     for i, s in enumerate(srcs):
         go_src = name + "_" + str(i) + ".gen.go"
+        siblings = [other for j, other in enumerate(srcs) if j != i]
         gala_transpile(
             name = name + "_transpile_" + str(i),
             src = s,
             out = go_src,
+            package_files = siblings,
         )
         go_srcs.append(go_src)
 
@@ -334,10 +357,12 @@ def gala_go_test(name, srcs, deps = [], pkg = "main", embed = [], **kwargs):
     for i, src in enumerate(srcs):
         transpile_name = name + "_transpile_" + str(i)
         go_src = name + "_test_" + str(i) + ".go"
+        siblings = [other for j, other in enumerate(srcs) if j != i]
         gala_transpile(
             name = transpile_name,
             src = src,
             out = go_src,
+            package_files = siblings,
         )
         transpiled_srcs.append(go_src)
 

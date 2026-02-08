@@ -1,0 +1,17 @@
+package main
+
+import "fmt"
+
+struct Person(Name string, Age int)
+
+sealed type Shape {
+    case Circle(Radius float64)
+    case Rectangle(Width float64, Height float64)
+}
+
+func describe(s Shape) string = s match {
+    case Circle(r) => fmt.Sprintf("Circle with radius %.1f", r)
+    case Rectangle(w, h) => fmt.Sprintf("Rectangle %.0fx%.0f", w, h)
+}
+
+func (p Person) Greet() string = fmt.Sprintf("Hi, I'm %s, age %d", p.Name, p.Age)
