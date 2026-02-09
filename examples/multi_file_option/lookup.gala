@@ -1,6 +1,8 @@
 package main
 
-func findValue(s string) Option[string] {
-    if s == "hello" { return Some("found") }
-    return None[string]()
+struct Item(Name string, Price int)
+
+func findItem(name string) Option[Item] {
+    if name == "apple" { return Some(Item(name, 100)) }
+    return None[Item]()
 }
