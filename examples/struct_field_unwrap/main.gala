@@ -1,0 +1,16 @@
+package main
+
+import "fmt"
+
+func printPair(key string, value int) {
+    fmt.Println(key, value)
+}
+
+func describe(p Pair) string = fmt.Sprintf("%s=%d", p.Key, p.Value)
+
+func main() {
+    val p = Pair("hello", 42)
+    printPair(p.Key, p.Value)
+    fmt.Println(p.Key, p.Value)
+    fmt.Println(describe(p))
+}
