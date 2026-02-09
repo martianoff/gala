@@ -11,6 +11,8 @@ filegroup(
         "multi_file_lib/types.gala",
         "multi_file_types/main.gala",
         "multi_file_types/model.gala",
+        "multi_file_option/lookup.gala",
+        "multi_file_option/main.gala",
     ],
     visibility = ["//visibility:public"],
 )
@@ -743,4 +745,14 @@ gala_test(
     src = "use_multi_file_lib.gala",
     expected = "use_multi_file_lib.out",
     deps = [":multi_file_lib"],
+)
+
+# Multi-file Option test (FIX-001 verification: Some/None in multi-file mode)
+gala_test(
+    name = "multi_file_option",
+    srcs = [
+        "multi_file_option/lookup.gala",
+        "multi_file_option/main.gala",
+    ],
+    expected = "multi_file_option/multi_file_option.out",
 )

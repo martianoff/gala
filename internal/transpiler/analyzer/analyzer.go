@@ -1158,6 +1158,13 @@ func (a *galaAnalyzer) isStdType(name string) bool {
 }
 
 func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, error) {
+	// Save and clear packageFiles to prevent them from interfering with recursive
+	// Analyze calls. packageFiles are specific to the current compilation unit's package
+	// and must not be applied when analyzing other packages (e.g., std).
+	savedPackageFiles := a.packageFiles
+	a.packageFiles = nil
+	defer func() { a.packageFiles = savedPackageFiles }()
+
 	// Use the resolver to find the package directory
 	dirPath, err := a.resolver.ResolvePackagePath(relPath)
 	if err != nil {

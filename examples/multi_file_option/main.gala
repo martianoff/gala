@@ -1,0 +1,12 @@
+package main
+
+import "fmt"
+
+func main() {
+    val r = findValue("hello")
+    fmt.Println(r.IsDefined())
+    fmt.Println(r.Get())
+
+    val r2 = findValue("bye")
+    fmt.Println(r2.IsDefined())
+}
