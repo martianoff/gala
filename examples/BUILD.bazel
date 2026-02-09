@@ -13,6 +13,8 @@ filegroup(
         "multi_file_types/model.gala",
         "multi_file_option/lookup.gala",
         "multi_file_option/main.gala",
+        "struct_field_unwrap/main.gala",
+        "struct_field_unwrap/types.gala",
     ],
     visibility = ["//visibility:public"],
 )
@@ -755,4 +757,14 @@ gala_test(
         "multi_file_option/main.gala",
     ],
     expected = "multi_file_option/multi_file_option.out",
+)
+
+# Struct field auto-unwrapping when passed to functions (FIX-005 verification)
+gala_test(
+    name = "struct_field_unwrap",
+    srcs = [
+        "struct_field_unwrap/types.gala",
+        "struct_field_unwrap/main.gala",
+    ],
+    expected = "struct_field_unwrap/struct_field_unwrap.out",
 )
