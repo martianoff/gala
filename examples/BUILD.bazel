@@ -711,6 +711,13 @@ gala_test(
     expected = "tuple_string.out",
 )
 
+# FIX-007 verification: tuple return type should not widen to any
+gala_test(
+    name = "tuple_return_type",
+    src = "tuple_return_type.gala",
+    expected = "tuple_return_type.out",
+)
+
 # Multi-file binary test (FIX-004 verification)
 gala_test(
     name = "multi_file",

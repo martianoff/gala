@@ -62,12 +62,19 @@ go_test(
         "structs_test.go",
         "test_helper.go",
         "tuple_either_test.go",
+        "tuple_field_unwrap_repro_test.go",
         "type_inference_test.go",
         "variables_test.go",
         "fix001_debug_test.go",
     ],
+    # Gala source files needed by the analyzer for type resolution in tests.
+    # Linux CI uses a sandbox so only declared data deps are accessible.
+    # If a test references types from another package (e.g. HashMap from
+    # collection_immutable), add its gala_sources here or the type will
+    # widen to "any" on CI while passing locally on Windows (no sandbox).
     data = [
         "//std:gala_sources",
+        "//collection_immutable:gala_sources",
     ],
     deps = [
         ":transformer",

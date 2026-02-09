@@ -1,0 +1,26 @@
+package main
+
+import "fmt"
+
+// Verification: tuple return type should NOT be widened to any when
+// the function has a declared return type (BUG-014 / FIX-007)
+
+func makePair(name string, age int) Tuple[string, int] {
+    val n = name
+    val a = age
+    return (n, a)
+}
+
+func parseUrl(url string) Tuple[string, string] {
+    val path = "/test"
+    val query = "q=1"
+    return (path, query)
+}
+
+func main() {
+    val pair = makePair("Alice", 30)
+    fmt.Printf("name=%s, age=%d\n", pair.V1, pair.V2)
+
+    val parsed = parseUrl("/test?q=1")
+    fmt.Printf("path=%s, query=%s\n", parsed.V1, parsed.V2)
+}

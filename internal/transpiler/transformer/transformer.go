@@ -15,22 +15,23 @@ import (
 )
 
 type galaASTTransformer struct {
-	currentScope      *scope
-	packageName       string
-	immutFields       map[string]bool
-	structImmutFields map[string][]bool
-	needsStdImport    bool
-	needsFmtImport    bool
-	activeTypeParams  map[string]bool
-	structFields      map[string][]string
-	structFieldTypes  map[string]map[string]transpiler.Type // structName -> fieldName -> typeName
-	genericMethods    map[string]map[string]bool            // receiverType -> methodName -> isGeneric
-	functions         map[string]*transpiler.FunctionMetadata
-	typeMetas         map[string]*transpiler.TypeMetadata
-	companionObjects  map[string]*transpiler.CompanionObjectMetadata // companion name -> metadata
-	importManager     *ImportManager                                 // unified import tracking
-	tempVarCount      int
-	inferer           *infer.Inferer
+	currentScope          *scope
+	packageName           string
+	immutFields           map[string]bool
+	structImmutFields     map[string][]bool
+	needsStdImport        bool
+	needsFmtImport        bool
+	activeTypeParams      map[string]bool
+	structFields          map[string][]string
+	structFieldTypes      map[string]map[string]transpiler.Type // structName -> fieldName -> typeName
+	genericMethods        map[string]map[string]bool            // receiverType -> methodName -> isGeneric
+	functions             map[string]*transpiler.FunctionMetadata
+	typeMetas             map[string]*transpiler.TypeMetadata
+	companionObjects      map[string]*transpiler.CompanionObjectMetadata // companion name -> metadata
+	importManager         *ImportManager                                 // unified import tracking
+	tempVarCount          int
+	inferer               *infer.Inferer
+	currentFuncReturnType transpiler.Type // return type of the function currently being transformed
 }
 
 // NewGalaASTTransformer creates a new instance of ASTTransformer for GALA.

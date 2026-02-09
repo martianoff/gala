@@ -390,12 +390,24 @@ func (t *galaASTTransformer) transformTupleLiteral(exprs []ast.Expr) (ast.Expr, 
 		typeName = transpiler.TypeTuple10
 	}
 
-	// Infer type parameters from expression types
+	// Infer type parameters from expression types.
+	// When inference fails for an element, fall back to the enclosing function's
+	// return type if it is a Tuple with matching arity (fixes BUG-014: type widening to any).
+	var fallbackTypes []transpiler.Type
+	if retType, ok := t.currentFuncReturnType.(transpiler.GenericType); ok &&
+		t.isTupleTypeName(retType.Base.String()) && len(retType.Params) == n {
+		fallbackTypes = retType.Params
+	}
+
 	var typeParams []ast.Expr
-	for _, expr := range exprs {
+	for i, expr := range exprs {
 		exprType := t.getExprTypeName(expr)
 		if exprType.IsNil() || exprType.IsAny() {
-			typeParams = append(typeParams, ast.NewIdent("any"))
+			if fallbackTypes != nil && !fallbackTypes[i].IsNil() && !fallbackTypes[i].IsAny() {
+				typeParams = append(typeParams, t.typeToExpr(fallbackTypes[i]))
+			} else {
+				typeParams = append(typeParams, ast.NewIdent("any"))
+			}
 		} else {
 			typeParams = append(typeParams, t.typeToExpr(exprType))
 		}
