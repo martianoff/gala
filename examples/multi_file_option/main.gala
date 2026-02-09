@@ -2,11 +2,19 @@ package main
 
 import "fmt"
 
-func main() {
-    val r = findValue("hello")
-    fmt.Println(r.IsDefined())
-    fmt.Println(r.Get())
+func describeItem(opt Option[Item]) string {
+    return opt match {
+        case Some(item) => fmt.Sprintf("Found: %s ($%d)", item.Name, item.Price)
+        case None() => "Not found"
+    }
+}
 
-    val r2 = findValue("bye")
+func main() {
+    val r = findItem("apple")
+    fmt.Println(r.IsDefined())
+    fmt.Println(describeItem(r))
+
+    val r2 = findItem("banana")
     fmt.Println(r2.IsDefined())
+    fmt.Println(describeItem(r2))
 }
