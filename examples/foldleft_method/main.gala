@@ -1,0 +1,16 @@
+package main
+
+import "fmt"
+import . "martianoff/gala/collection_immutable"
+
+func main() {
+    val list = ArrayOf(1, 2, 3, 4, 5)
+
+    // With explicit types (always works)
+    val sum1 = list.FoldLeft[int](0, (acc int, x int) => acc + x)
+    fmt.Println(sum1)
+
+    // With implicit return type but explicit param types
+    val sum2 = list.FoldLeft(0, (acc int, x int) => acc + x)
+    fmt.Println(sum2)
+}
