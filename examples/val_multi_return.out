@@ -1,0 +1,2 @@
+num: 42 err: <nil>
+num2: 0 err2: strconv.Atoi: parsing "not_a_number": invalid syntax

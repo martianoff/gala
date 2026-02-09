@@ -101,12 +101,97 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 		return nil, err
 	}
 
+	isMultiReturnFromSingleExpr := len(rhsExprs) == 1 && len(namesCtx) > 1
 	if len(rhsExprs) != len(namesCtx) {
-		if len(rhsExprs) == 1 && len(namesCtx) > 1 {
+		if isMultiReturnFromSingleExpr {
 			// multi-value from a single expression (e.g. function call)
 		} else {
 			return nil, galaerr.NewSemanticError("assignment mismatch")
 		}
+	}
+
+	// Handle multi-return from a single expression: val data, err = io.ReadAll(r.Body)
+	// We must capture all return values with a single call, then wrap each in NewImmutable.
+	// Generated code:
+	//   var (
+	//       __val_0, __val_1 = io.ReadAll(r.Body)
+	//       data = NewImmutable(__val_0)
+	//       err  = NewImmutable(__val_1)
+	//   )
+	if isMultiReturnFromSingleExpr {
+		// Generate temp variable names for each return value
+		tempNames := make([]string, len(namesCtx))
+		tempIdents := make([]*ast.Ident, len(namesCtx))
+		for i := range namesCtx {
+			tempNames[i] = t.nextTempVar()
+			tempIdents[i] = ast.NewIdent(tempNames[i])
+		}
+
+		// First spec: capture all return values in temp variables
+		tempSpec := &ast.ValueSpec{
+			Names:  tempIdents,
+			Values: []ast.Expr{t.unwrapImmutable(rhsExprs[0])},
+		}
+		specs := []ast.Spec{tempSpec}
+
+		// Create specs for each named variable, wrapping the temp in NewImmutable
+		for i, idCtx := range namesCtx {
+			name := idCtx.GetText()
+			var typeName transpiler.Type = transpiler.NilType{}
+			if ctx.Type_() != nil {
+				typeExpr, _ := t.transformType(ctx.Type_())
+				typeName = t.exprToType(typeExpr)
+				if t.isImmutableType(typeName) {
+					panic(galaerr.NewSemanticError("recursive Immutable wrapping is not allowed"))
+				}
+			}
+
+			if qName := t.getType(typeName.String()); !qName.IsNil() {
+				typeName = qName
+			}
+
+			t.addVal(name, typeName)
+
+			var fun ast.Expr = t.stdIdent("NewImmutable")
+			if ctx.Type_() != nil {
+				typeExpr, err := t.transformType(ctx.Type_())
+				if err != nil {
+					return nil, err
+				}
+				fun = &ast.IndexExpr{
+					X:     fun,
+					Index: typeExpr,
+				}
+			}
+
+			valSpec := &ast.ValueSpec{
+				Names: []*ast.Ident{ast.NewIdent(name)},
+				Values: []ast.Expr{
+					&ast.CallExpr{
+						Fun:  fun,
+						Args: []ast.Expr{ast.NewIdent(tempNames[i])},
+					},
+				},
+			}
+
+			if ctx.Type_() != nil {
+				typeExpr, err := t.transformType(ctx.Type_())
+				if err != nil {
+					return nil, err
+				}
+				valSpec.Type = &ast.IndexExpr{
+					X:     t.stdIdent("Immutable"),
+					Index: typeExpr,
+				}
+			}
+
+			specs = append(specs, valSpec)
+		}
+
+		return &ast.GenDecl{
+			Tok:   token.VAR,
+			Specs: specs,
+		}, nil
 	}
 
 	var idents []*ast.Ident

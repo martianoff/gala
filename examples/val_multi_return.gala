@@ -1,0 +1,15 @@
+package main
+
+import "fmt"
+import "strconv"
+
+func main() {
+    // FIX-004 verification: val with Go multi-return function
+    // strconv.Atoi returns (int, error) - should be called exactly once
+    val num, err = strconv.Atoi("42")
+    fmt.Println("num:", num, "err:", err)
+
+    // Verify with an error case too
+    val num2, err2 = strconv.Atoi("not_a_number")
+    fmt.Println("num2:", num2, "err2:", err2)
+}
