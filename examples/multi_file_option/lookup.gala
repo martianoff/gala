@@ -1,0 +1,6 @@
+package main
+
+func findValue(s string) Option[string] {
+    if s == "hello" { return Some("found") }
+    return None[string]()
+}
