@@ -89,6 +89,41 @@ func main() {
 	}
 }
 
+func TestValMultiReturnFromSingleExpression(t *testing.T) {
+	p := transpiler.NewAntlrGalaParser()
+	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
+	tr := transformer.NewGalaASTTransformer()
+	g := generator.NewGoCodeGenerator()
+	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+
+	// Use strconv.Atoi which returns (int, error) - a Go multi-return function.
+	// val num, err = strconv.Atoi("42") should call Atoi exactly once.
+	input := `package main
+
+import "strconv"
+import "fmt"
+
+func main() {
+    val num, err = strconv.Atoi("42")
+    fmt.Println(num, err)
+}`
+
+	got, err := trans.Transpile(input, "")
+	assert.NoError(t, err)
+
+	output := stripGeneratedHeader(got)
+
+	// The key assertion: strconv.Atoi should appear exactly ONCE in the output.
+	// Before the fix, it appeared twice (once per val being wrapped).
+	count := strings.Count(output, "strconv.Atoi(")
+	assert.Equal(t, 1, count, "strconv.Atoi() should be called exactly once, but found %d occurrences in:\n%s", count, output)
+
+	// Should use temp variables that capture the multi-return
+	assert.Contains(t, output, "_tmp_")
+	// Each val should be wrapped in NewImmutable
+	assert.Contains(t, output, "std.NewImmutable(")
+}
+
 func TestImmutableAssignmentError(t *testing.T) {
 	p := transpiler.NewAntlrGalaParser()
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
