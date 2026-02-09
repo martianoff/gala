@@ -15,6 +15,7 @@ filegroup(
         "multi_file_option/main.gala",
         "struct_field_unwrap/main.gala",
         "struct_field_unwrap/types.gala",
+        "foldleft_method/main.gala",
     ],
     visibility = ["//visibility:public"],
 )
@@ -774,4 +775,12 @@ gala_test(
     name = "val_multi_return",
     src = "val_multi_return.gala",
     expected = "val_multi_return.out",
+)
+
+# FoldLeft method call (FIX-006 verification: method not transpiled as free function)
+gala_test(
+    name = "foldleft_method",
+    src = "foldleft_method/main.gala",
+    expected = "foldleft_method/foldleft_method.out",
+    deps = ["//collection_immutable"],
 )
