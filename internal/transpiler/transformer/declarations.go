@@ -574,6 +574,16 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		receiver = nil
 	}
 
+	// Track the current function's return type so tuple literals in return statements
+	// can use it as a fallback when element type inference fails (BUG-014 fix).
+	prevFuncReturnType := t.currentFuncReturnType
+	if funcType.Results != nil && len(funcType.Results.List) > 0 {
+		t.currentFuncReturnType = t.exprToType(funcType.Results.List[0].Type)
+	} else {
+		t.currentFuncReturnType = nil
+	}
+	defer func() { t.currentFuncReturnType = prevFuncReturnType }()
+
 	var body *ast.BlockStmt
 	if ctx.Block() != nil {
 		b, err := t.transformBlock(ctx.Block().(*grammar.BlockContext))

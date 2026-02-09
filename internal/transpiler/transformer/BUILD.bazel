@@ -62,6 +62,7 @@ go_test(
         "structs_test.go",
         "test_helper.go",
         "tuple_either_test.go",
+        "tuple_field_unwrap_repro_test.go",
         "type_inference_test.go",
         "variables_test.go",
         "fix001_debug_test.go",
