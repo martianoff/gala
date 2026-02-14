@@ -199,6 +199,8 @@ literal
     : INT_LIT
     | FLOAT_LIT
     | STRING
+    | CHAR_LIT
+    | RAW_STRING
     | 'true'
     | 'false'
     | 'nil'
@@ -230,6 +232,8 @@ IDENTIFIER: [a-zA-Z_] [a-zA-Z0-9_]*;
 INT_LIT: [0-9]+;
 FLOAT_LIT: [0-9]+ '.' [0-9]* | '.' [0-9]+;
 STRING: '"' (~["\r\n\\] | '\\' .)* '"';
+CHAR_LIT: '\'' (~['\r\n\\] | '\\' .) '\'';
+RAW_STRING: '`' ~[`]* '`';
 WS: [ \t\r\n]+ -> skip;
 COMMENT: '//' ~[\r\n]* -> skip;
 MULTILINE_COMMENT: '/*' .*? '*/' -> skip;

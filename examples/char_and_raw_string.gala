@@ -1,0 +1,26 @@
+package main
+
+import "fmt"
+
+func main() {
+    // Character literals
+    val a = 'a'
+    val star = '*'
+    val newline = '\n'
+    fmt.Println(a)
+    fmt.Println(star)
+    fmt.Println(newline == rune(10))
+
+    // Raw strings
+    val raw = `hello\nworld`
+    fmt.Println(raw)
+
+    val multiLine = `line one
+line two
+line three`
+    fmt.Println(multiLine)
+
+    // Char in comparison
+    val ch = 'x'
+    fmt.Println(ch == rune(120))
+}

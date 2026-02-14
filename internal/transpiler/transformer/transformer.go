@@ -380,9 +380,10 @@ func (t *galaASTTransformer) tryResolveSimpleName(name string, exists func(strin
 		}
 	}
 
-	// Try imported packages (non-dot first, then dot imports)
+	// Try imported packages (dot imports first — they bring names into the current scope,
+	// so they take precedence over non-dot imports for unqualified name resolution)
 	for _, entry := range t.importManager.All() {
-		if entry.IsDot {
+		if !entry.IsDot {
 			continue
 		}
 		if fullName := entry.PkgName + "." + name; exists(fullName) {
@@ -391,7 +392,7 @@ func (t *galaASTTransformer) tryResolveSimpleName(name string, exists func(strin
 	}
 
 	for _, entry := range t.importManager.All() {
-		if !entry.IsDot {
+		if entry.IsDot {
 			continue
 		}
 		if fullName := entry.PkgName + "." + name; exists(fullName) {

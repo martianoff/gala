@@ -12,11 +12,12 @@ import (
 
 ## Overview
 
-The `Str` type wraps strings as `Array[rune]` internally, providing:
+The `Str` type uses **lazy dual storage** — a `Lazy[Array[rune]]` and a cached Go `string` — providing:
 
-- **O(1) length** - No UTF-8 counting on each call
-- **Efficient chaining** - Operations work directly on runes without repeated conversions
-- **Functional methods** - Map, Filter, Fold, etc. delegate to `Array[T]` methods
+- **O(1) creation** - Rune array construction is deferred until first functional operation
+- **O(1) ToString, Equals, Contains** - Direct access to cached Go string
+- **Efficient chaining** - String-based operations (ToUpper, Trim, etc.) use cached string directly without triggering rune conversion
+- **Functional methods** - Map, Filter, Fold, etc. evaluate the lazy rune array on first use and cache the result
 - **Pattern matching** - `NonEmptyStr` and `EmptyStr` extractors
 
 ## Quick Start
@@ -52,11 +53,11 @@ S("hello") match {
 
 | Method | Description | Complexity |
 |--------|-------------|------------|
-| `Length() int` | Number of runes | O(1) |
+| `Length() int` | Number of runes | O(1) after first rune access |
 | `IsEmpty() bool` | True if zero length | O(1) |
 | `NonEmpty() bool` | True if has characters | O(1) |
-| `CharAt(index int) Option[rune]` | Rune at index | O(1) |
-| `ToString() string` | Convert to Go string | O(n) |
+| `CharAt(index int) Option[rune]` | Rune at index | O(eC) |
+| `ToString() string` | Convert to Go string | O(1) |
 
 ### Slicing
 
@@ -281,17 +282,152 @@ S("hi").PadRight(5, rune(45))  // "hi---" (pad with '-')
 S("a").Center(5, rune(45))     // "--a--"
 ```
 
+## StringBuilder
+
+`StringBuilder` is a mutable string builder for efficient string concatenation, following the same mutable pattern as `collection_mutable`.
+
+### Construction
+
+```gala
+val sb = NewStringBuilder()                    // empty
+val sb2 = NewStringBuilderFrom(S("hello"))     // from Str
+val sb3 = NewStringBuilderFromString("hello")  // from Go string
+```
+
+### Appending (Chainable)
+
+All append methods return `*StringBuilder` for chaining:
+
+```gala
+// Str-based (primary API)
+sb.Append(S("hello"))             // append Str
+sb.AppendLine(S("hello"))         // append Str + newline
+sb.AppendRune('*')                // append single rune
+
+// Go string-based (secondary API)
+sb.AppendString("hello")          // append Go string
+sb.AppendStringLine("hello")      // append Go string + newline
+
+// Chaining
+val result = NewStringBuilder()
+    .AppendString("hello")
+    .AppendString(" ")
+    .AppendString("world")
+    .ToString()  // "hello world"
+```
+
+### Output
+
+```gala
+sb.ToStr()     // returns Str (primary)
+sb.ToString()  // returns Go string
+sb.String()    // Go Stringer interface
+```
+
+### State
+
+```gala
+sb.Length()     // byte length
+sb.RuneCount() // character count
+sb.IsEmpty()   // true if no content
+sb.NonEmpty()  // true if has content
+sb.Reset()     // clears content
+```
+
+## Performance Benchmarks
+
+Benchmark results comparing GALA `Str` to Go native string operations on a 1,000-character ASCII string.
+
+### Running the Benchmarks
+
+```shell
+# GALA Str benchmark
+bazel run //string_utils:perf_gala
+
+# Go native benchmark
+bazel run //string_utils:perf_go
+```
+
+### Str vs Go String (ns/op) - 1,000 Characters
+
+| Operation | GALA Str | Go Native | Ratio | Notes |
+|-----------|----------:|----------:|------:|-------|
+| Creation (1K) | 220 | 807 | **3.7x faster** | Lazy: defers rune conversion |
+| Creation (100K) | 8,291 | 63,458 | **7.7x faster** | Lazy: no upfront allocation |
+| Length | 2 | 0 | ~same | O(1) after first rune access |
+| ToUpper | 1,323 | 1,205 | 1.1x | Direct `strings.ToUpper` on cached `str` |
+| ToLower | 599 | 551 | 1.1x | Direct `strings.ToLower` on cached `str` |
+| Trim | 57 | 10 | 5.7x | Direct `strings.TrimSpace` on cached `str` |
+| ReplaceAll | 1,615 | 1,455 | 1.1x | Direct `strings.ReplaceAll` on cached `str` |
+| Contains | 6 | 6 | **1.0x** | Direct `strings.Contains` on cached `str` |
+| IndexOf | 19 | 7 | 2.7x | Direct `strings.Index` on cached `str` |
+| Split (10 words) | 771 | 60 | 13x | `ArrayTabulate` + `Str` wrapping |
+| Split (1K words) | 64,801 | 6,544 | 10x | `ArrayTabulate` + `Str` wrapping |
+| Reverse | 13,365 | 2,912 | 4.6x | Evaluates lazy runes, delegates to `Array.Reverse` |
+| Equals | 11 | 10 | **1.1x** | Direct `==` on cached `str` |
+| Concat | 171 | 140 | **1.2x** | Lazy rune concat + string concat |
+
+### Functional Operations (ns/op) - 1,000 Characters
+
+| Operation | GALA Str | Go Native | Ratio | Notes |
+|-----------|----------:|----------:|------:|-------|
+| Map (ToUpper) | 14,388 | 3,576 | 4.0x | Evaluates lazy runes, delegates to `Array.Map` |
+| Filter (IsLetter) | 15,019 | 3,307 | 4.5x | Evaluates lazy runes, delegates to `Array.Filter` |
+| ForEach+Count | 3,589 | 180 | 20x | `Array[rune]` iteration with function call overhead |
+| IsAlpha (ForAll) | 3,474 | 401 | 8.7x | Delegates to `Array[rune].ForAll` |
+| Substring | 12,598 | 876 | 14x | Evaluates lazy runes, slices array + rebuilds string |
+
+### StringBuilder vs strings.Builder (ns/op)
+
+| Operation | GALA StringBuilder | Go Builder | Ratio | Notes |
+|-----------|-------------------:|-----------:|------:|-------|
+| Append 100x"hello" | 1,671 | 256 | 6.5x | Stores raw strings, `strings.Join` on ToString |
+| Append 10000x"hello" | 212,014 | 29,671 | 7.1x | O(n) assembly via `strings.Join` |
+| AppendRune 10000x'x' | 294,326 | 18,009 | 16x | `string(r)` conversion + mutable array append |
+
+### Key Performance Insights
+
+**Near Go-native (1.0-1.2x):**
+- `Contains()`, `Equals()`, `Concat()` — Direct operations on cached Go string
+- `ToUpper()`, `ToLower()`, `ReplaceAll()` — Delegates to `strings` package, lazy runes not triggered
+- `Creation` — **Faster than Go native** thanks to lazy rune conversion
+
+**Moderate overhead (4-14x):**
+- `Map`, `Filter`, `Reverse` — Immutable `Array[rune]` trie overhead (first call evaluates lazy)
+- `Split` — `ArrayTabulate` builds `Array[Str]` efficiently via `arrayBuilder`
+- `StringBuilder` — Raw string storage with `strings.Join` assembly
+
+**Higher overhead (16-20x):**
+- `ForEach+Count` — Per-element function call overhead on `Array[rune]`
+- `AppendRune` — `string(r)` conversion per rune + mutable array growth
+
 ## Design Notes
 
-### Why Store `Array[rune]`?
+### Lazy Dual Storage Architecture
 
-Most string operations in GALA are character-based (Map, Filter, Reverse, etc.). Storing `Array[rune]` enables:
+`Str` stores a `Lazy[Array[rune]]` and a cached Go `string`:
 
-1. **O(1) Length** - `s.runes.Length()` vs O(n) UTF-8 counting
-2. **Direct delegation** - `Map`, `Filter`, `Fold` call array methods directly
-3. **No conversion overhead** - Chained operations stay in rune representation
-4. **Simpler implementation** - Predicate methods become one-liners
+```gala
+type Str struct {
+    runes *lazy.Lazy[Array[rune]]   // deferred until first functional op
+    str string                       // always available
+}
+```
 
-### Trade-off
+- **Cached string** enables O(1) `ToString()`, `Equals()`, `Contains()`, `IndexOf()`, and near-native `ToUpper()`, `ToLower()`, `ReplaceAll()`
+- **Lazy rune array** is only evaluated when functional operations (`Map`, `Filter`, `CharAt`, etc.) are called. Once evaluated, the result is cached for subsequent calls.
 
-`ToString()` is O(n) instead of O(1), but this is called infrequently (usually at output boundaries), while character operations are common throughout string processing pipelines.
+**18 str-only methods** (Contains, StartsWith, ToUpper, Split, etc.) never trigger rune conversion. Only **28 rune-accessing methods** (Map, Filter, CharAt, Reverse, etc.) evaluate the lazy on first use.
+
+Construction strategies:
+- `strFromString(s)` — defers rune conversion via `lazy.New`
+- `strFromRunes(runes)` — already-evaluated via `lazy.Of`
+- String-based ops (ToUpper, Trim, etc.) — return new `Str` with deferred runes
+- `Concat` — defers rune concatenation, immediately concatenates strings
+
+### StringBuilder Optimization
+
+`StringBuilder` stores raw `string` parts instead of `Str` values:
+- `Append`/`AppendString` store Go strings directly (no rune conversion)
+- `ToString()` assembles via `strings.Join` — O(n) instead of O(n^2)
+- `ToStr()` converts the final string to `Str` once

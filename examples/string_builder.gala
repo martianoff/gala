@@ -1,0 +1,50 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/string_utils"
+)
+
+func main() {
+    // Basic construction and appending
+    val sb = NewStringBuilder()
+    sb.AppendString("Hello")
+    sb.AppendString(", ")
+    sb.AppendString("World!")
+    fmt.Println(sb.ToString())
+
+    // Chaining
+    val result = NewStringBuilder()
+        .AppendString("a")
+        .AppendString("b")
+        .AppendString("c")
+        .ToString()
+    fmt.Println(result)
+
+    // From Str
+    val sb2 = NewStringBuilderFrom(S("start"))
+    sb2.AppendString("-end")
+    fmt.Println(sb2.ToString())
+
+    // AppendLine
+    val sb3 = NewStringBuilder()
+    sb3.AppendStringLine("line1")
+    sb3.AppendStringLine("line2")
+    fmt.Print(sb3.ToString())
+
+    // Reset
+    val sb4 = NewStringBuilderFromString("data")
+    fmt.Println(sb4.NonEmpty())
+    sb4.Reset()
+    fmt.Println(sb4.IsEmpty())
+
+    // RuneCount and Length
+    val sb5 = NewStringBuilderFromString("hello")
+    fmt.Println(sb5.Length())
+    fmt.Println(sb5.RuneCount())
+
+    // ToStr
+    val sb6 = NewStringBuilderFromString("gala")
+    val s = sb6.ToStr()
+    fmt.Println(s.ToString())
+}

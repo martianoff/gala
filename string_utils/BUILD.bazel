@@ -1,4 +1,5 @@
-load("//:gala.bzl", "gala_bootstrap_transpile", "gala_go_test", "gala_library")
+load("//:gala.bzl", "gala_binary", "gala_bootstrap_transpile", "gala_go_test", "gala_library")
+load("@rules_go//go:def.bzl", "go_binary")
 
 exports_files([
     "strings.gala",
@@ -27,6 +28,8 @@ gala_library(
     visibility = ["//visibility:public"],
     deps = [
         "//collection_immutable",
+        "//collection_mutable",
+        "//lazy",
     ],
 )
 
@@ -37,4 +40,15 @@ gala_go_test(
         ":string_utils",
         "//collection_immutable",
     ],
+)
+
+gala_binary(
+    name = "perf_gala",
+    src = "perf_test.gala",
+    deps = [":string_utils"],
+)
+
+go_binary(
+    name = "perf_go",
+    srcs = ["go_native_perf_test.go"],
 )

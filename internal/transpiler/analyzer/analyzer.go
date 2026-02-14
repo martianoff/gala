@@ -251,6 +251,10 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 					}
 
 					importedAST, err := a.analyzePackage(relPath)
+					if err != nil {
+						line := s.GetStart().GetLine()
+						fmt.Fprintf(os.Stderr, "Warning: failed to analyze package %s (imported at line %d): %v\n", relPath, line, err)
+					}
 					if err == nil {
 						a.analyzedPkgs[path] = importedAST
 						richAST.Merge(importedAST)
@@ -1006,8 +1010,23 @@ func (a *galaAnalyzer) resolveTypeWithParams(typeName string, pkgName string, ty
 		return transpiler.PointerType{Elem: elemType}
 	}
 
-	// If it's already package-qualified, just parse it
+	// If it's already package-qualified, handle it
 	if strings.Contains(typeName, ".") {
+		// For qualified generic types like lazy.Lazy[Array[rune]],
+		// recursively resolve type arguments so inner types get proper prefixes
+		if idx := strings.Index(typeName, "["); idx != -1 {
+			baseQualified := typeName[:idx]
+			baseType := transpiler.ParseType(baseQualified)
+
+			_, argStrs := extractBaseAndArgs(typeName)
+			var params []transpiler.Type
+			for _, argStr := range argStrs {
+				params = append(params, a.resolveTypeWithParams(strings.TrimSpace(argStr), pkgName, typeParams))
+			}
+			if len(params) > 0 {
+				return transpiler.GenericType{Base: baseType, Params: params}
+			}
+		}
 		return transpiler.ParseType(typeName)
 	}
 
@@ -1184,7 +1203,9 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 	}
 
 	for _, f := range files {
-		if !f.IsDir() && filepath.Ext(f.Name()) == ".gala" {
+		// Skip test files — they are not part of the package's public API and may have
+		// different package names (e.g., package main for benchmark binaries).
+		if !f.IsDir() && filepath.Ext(f.Name()) == ".gala" && !strings.HasSuffix(f.Name(), "_test.gala") {
 			filePath := filepath.Join(dirPath, f.Name())
 			content, err := ioutil.ReadFile(filePath)
 			if err != nil {
@@ -1199,11 +1220,6 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 				if pkgAST.PackageName == "" {
 					pkgAST.PackageName = res.PackageName
 				} else if pkgAST.PackageName != res.PackageName {
-					// Allow _test.gala files to have different package names (like Go's _test.go convention)
-					// Skip merging them into package AST since they're external tests
-					if strings.HasSuffix(f.Name(), "_test.gala") {
-						continue
-					}
 					return nil, fmt.Errorf("multiple package names in directory %s: %s and %s", dirPath, pkgAST.PackageName, res.PackageName)
 				}
 				pkgAST.Merge(res)

@@ -131,6 +131,14 @@ var arr = ArrayFromSlice(slice)
 
 // With pre-allocated capacity (for known sizes)
 var arr = ArrayWithCapacity[int](1000)
+
+// Tabulate: compute each element from index (pre-allocates capacity)
+var squares = ArrayTabulate(5, (i int) => i * i)
+// squares == Array(0, 1, 4, 9, 16)
+
+// Fill: repeat the same value (pre-allocates capacity)
+var zeros = ArrayFill(3, 0)
+// zeros == Array(0, 0, 0)
 ```
 
 ### Basic Operations

@@ -61,6 +61,27 @@ func ArrayWithCapacity[T any](capacity int) *Array[T] {
     return &Array[T](elements = elems)
 }
 
+// ArrayTabulate creates an Array of size n where each element is computed by f(index).
+// Pre-allocates capacity for O(n) construction.
+// Example: ArrayTabulate(5, (i) => i * 2) creates Array(0, 2, 4, 6, 8)
+func ArrayTabulate[T any](n int, f func(int) T) *Array[T] {
+    var elems = go_interop.SliceWithCapacity[T](n)
+    for i := 0; i < n; i++ {
+        elems = append(elems, f(i))
+    }
+    return &Array[T](elements = elems)
+}
+
+// ArrayFill creates an Array of size n where every element is the same value.
+// Example: ArrayFill(3, "x") creates Array("x", "x", "x")
+func ArrayFill[T any](n int, value T) *Array[T] {
+    var elems = go_interop.SliceWithCapacity[T](n)
+    for i := 0; i < n; i++ {
+        elems = append(elems, value)
+    }
+    return &Array[T](elements = elems)
+}
+
 // === Basic Operations ===
 
 // IsEmpty returns true if the array is empty.

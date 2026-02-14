@@ -3,17 +3,30 @@ package string_utils
 import (
     "strings"
     "unicode"
+    "unicode/utf8"
     . "martianoff/gala/std"
     . "martianoff/gala/collection_immutable"
+    cm "martianoff/gala/collection_mutable"
+    "martianoff/gala/lazy"
 )
 
-// Str is an immutable string wrapper storing runes for efficient character operations.
+// Str is an immutable string wrapper storing runes lazily and a cached Go string.
 type Str struct {
-    runes Array[rune]
+    runes *lazy.Lazy[Array[rune]]
+    str string
 }
 
 // S creates a Str from a native Go string.
-func S(s string) Str = Str(runes = stringToRunes(s))
+func S(s string) Str = strFromString(s)
+
+// strFromString creates a Str from a Go string, deferring rune conversion.
+func strFromString(s string) Str = Str(runes = lazy.New[Array[rune]](() => stringToRunes(s)), str = s)
+
+// strFromRunes creates a Str from an Array of runes.
+func strFromRunes(runes Array[rune]) Str = Str(runes = lazy.Of(runes), str = string(runes.ToGoSlice()))
+
+// emptyStr creates an empty Str.
+func emptyStr() Str = Str(runes = lazy.Of(EmptyArray[rune]()), str = "")
 
 // stringToRunes converts a string to an Array of runes.
 func stringToRunes(s string) Array[rune] {
@@ -25,8 +38,7 @@ func stringToRunes(s string) Array[rune] {
 }
 
 // runesToString converts an Array of runes to a string.
-func runesToString(runes Array[rune]) string =
-    runes.FoldLeft("", (acc string, r rune) => acc + string(r))
+func runesToString(runes Array[rune]) string = string(runes.ToGoSlice())
 
 // arrayFill creates an array of n copies of value.
 func arrayFill[T any](n int, value T) Array[T] {
@@ -38,93 +50,93 @@ func arrayFill[T any](n int, value T) Array[T] {
 }
 
 // Length returns the number of runes. O(1).
-func (s Str) Length() int = s.runes.Length()
+func (s Str) Length() int = s.runes.Get().Length()
 
 // IsEmpty returns true if the string has zero length.
-func (s Str) IsEmpty() bool = s.runes.IsEmpty()
+func (s Str) IsEmpty() bool = s.str == ""
 
 // NonEmpty returns true if the string has at least one character.
-func (s Str) NonEmpty() bool = s.runes.NonEmpty()
+func (s Str) NonEmpty() bool = s.str != ""
 
-// ToString returns the underlying Go string.
-func (s Str) ToString() string = runesToString(s.runes)
+// ToString returns the underlying Go string. O(1) cached.
+func (s Str) ToString() string = s.str
 
 // ToUpper returns uppercase.
-func (s Str) ToUpper() Str = S(strings.ToUpper(s.ToString()))
+func (s Str) ToUpper() Str = strFromString(strings.ToUpper(s.str))
 
 // ToLower returns lowercase.
-func (s Str) ToLower() Str = S(strings.ToLower(s.ToString()))
+func (s Str) ToLower() Str = strFromString(strings.ToLower(s.str))
 
 // Trim returns trimmed string.
-func (s Str) Trim() Str = S(strings.TrimSpace(s.ToString()))
+func (s Str) Trim() Str = strFromString(strings.TrimSpace(s.str))
 
 // TrimLeft returns left-trimmed string.
-func (s Str) TrimLeft() Str = S(strings.TrimLeftFunc(s.ToString(), unicode.IsSpace))
+func (s Str) TrimLeft() Str = strFromString(strings.TrimLeftFunc(s.str, unicode.IsSpace))
 
 // TrimRight returns right-trimmed string.
-func (s Str) TrimRight() Str = S(strings.TrimRightFunc(s.ToString(), unicode.IsSpace))
+func (s Str) TrimRight() Str = strFromString(strings.TrimRightFunc(s.str, unicode.IsSpace))
 
 // TrimPrefix removes prefix.
-func (s Str) TrimPrefix(prefix string) Str = S(strings.TrimPrefix(s.ToString(), prefix))
+func (s Str) TrimPrefix(prefix string) Str = strFromString(strings.TrimPrefix(s.str, prefix))
 
 // TrimSuffix removes suffix.
-func (s Str) TrimSuffix(suffix string) Str = S(strings.TrimSuffix(s.ToString(), suffix))
+func (s Str) TrimSuffix(suffix string) Str = strFromString(strings.TrimSuffix(s.str, suffix))
 
 // Replace replaces first occurrence.
-func (s Str) Replace(old string, new string) Str = S(strings.Replace(s.ToString(), old, new, 1))
+func (s Str) Replace(old string, new string) Str = strFromString(strings.Replace(s.str, old, new, 1))
 
 // ReplaceAll replaces all occurrences.
-func (s Str) ReplaceAll(old string, new string) Str = S(strings.ReplaceAll(s.ToString(), old, new))
+func (s Str) ReplaceAll(old string, new string) Str = strFromString(strings.ReplaceAll(s.str, old, new))
 
 // Contains returns true if the string contains the substring.
-func (s Str) Contains(substr string) bool = strings.Contains(s.ToString(), substr)
+func (s Str) Contains(substr string) bool = strings.Contains(s.str, substr)
 
 // ContainsAny returns true if contains any chars.
-func (s Str) ContainsAny(chars string) bool = strings.ContainsAny(s.ToString(), chars)
+func (s Str) ContainsAny(chars string) bool = strings.ContainsAny(s.str, chars)
 
 // StartsWith checks prefix.
-func (s Str) StartsWith(prefix string) bool = strings.HasPrefix(s.ToString(), prefix)
+func (s Str) StartsWith(prefix string) bool = strings.HasPrefix(s.str, prefix)
 
 // EndsWith checks suffix.
-func (s Str) EndsWith(suffix string) bool = strings.HasSuffix(s.ToString(), suffix)
+func (s Str) EndsWith(suffix string) bool = strings.HasSuffix(s.str, suffix)
 
 // Count counts occurrences.
-func (s Str) Count(substr string) int = strings.Count(s.ToString(), substr)
+func (s Str) Count(substr string) int = strings.Count(s.str, substr)
 
 // CharAt returns the rune at the given index.
 func (s Str) CharAt(index int) Option[rune] {
-    if index < 0 || index >= s.runes.Length() {
+    if index < 0 || index >= s.runes.Get().Length() {
         return None[rune]()
     }
-    return Some(s.runes.Get(index))
+    return Some(s.runes.Get().Get(index))
 }
 
 // Substring returns a new Str from start (inclusive) to end (exclusive).
 func (s Str) Substring(start int, end int) Str {
-    val length = s.runes.Length()
+    val length = s.runes.Get().Length()
     val actualStart = max(0, min(start, length))
     val actualEnd = max(actualStart, min(end, length))
-    return Str(runes = s.runes.Slice(actualStart, actualEnd))
+    return strFromRunes(s.runes.Get().Slice(actualStart, actualEnd))
 }
 
 // Take returns the first n characters.
 func (s Str) Take(n int) Str {
     if n <= 0 {
-        return Str(runes = EmptyArray[rune]())
+        return emptyStr()
     }
-    return Str(runes = s.runes.Take(n))
+    return strFromRunes(s.runes.Get().Take(n))
 }
 
 // TakeRight returns last n characters.
 func (s Str) TakeRight(n int) Str {
     if n <= 0 {
-        return Str(runes = EmptyArray[rune]())
+        return emptyStr()
     }
-    val length = s.runes.Length()
+    val length = s.runes.Get().Length()
     if n >= length {
         return s
     }
-    return Str(runes = s.runes.Drop(length - n))
+    return strFromRunes(s.runes.Get().Drop(length - n))
 }
 
 // Drop returns with first n characters removed.
@@ -132,7 +144,7 @@ func (s Str) Drop(n int) Str {
     if n <= 0 {
         return s
     }
-    return Str(runes = s.runes.Drop(n))
+    return strFromRunes(s.runes.Get().Drop(n))
 }
 
 // DropRight returns with last n characters removed.
@@ -140,22 +152,22 @@ func (s Str) DropRight(n int) Str {
     if n <= 0 {
         return s
     }
-    val length = s.runes.Length()
+    val length = s.runes.Get().Length()
     if n >= length {
-        return Str(runes = EmptyArray[rune]())
+        return emptyStr()
     }
-    return Str(runes = s.runes.Take(length - n))
+    return strFromRunes(s.runes.Get().Take(length - n))
 }
 
 // Reverse returns reversed string.
-func (s Str) Reverse() Str = Str(runes = s.runes.Reverse())
+func (s Str) Reverse() Str = strFromRunes(s.runes.Get().Reverse())
 
 // Repeat returns repeated string.
 func (s Str) Repeat(n int) Str {
     if n <= 0 {
-        return Str(runes = EmptyArray[rune]())
+        return emptyStr()
     }
-    return S(strings.Repeat(s.ToString(), n))
+    return strFromString(strings.Repeat(s.str, n))
 }
 
 // PadLeft pads on the left.
@@ -164,7 +176,7 @@ func (s Str) PadLeft(length int, pad rune) Str {
         return s
     }
     val padCount = length - s.Length()
-    return Str(runes = arrayFill(padCount, pad).AppendAll(s.runes))
+    return strFromRunes(arrayFill(padCount, pad).AppendAll(s.runes.Get()))
 }
 
 // PadRight pads on the right.
@@ -173,7 +185,7 @@ func (s Str) PadRight(length int, pad rune) Str {
         return s
     }
     val padCount = length - s.Length()
-    return Str(runes = s.runes.AppendAll(arrayFill(padCount, pad)))
+    return strFromRunes(s.runes.Get().AppendAll(arrayFill(padCount, pad)))
 }
 
 // Center pads on both sides.
@@ -184,7 +196,7 @@ func (s Str) Center(length int, pad rune) Str {
     val totalPad = length - s.Length()
     val leftPad = totalPad / 2
     val rightPad = totalPad - leftPad
-    return Str(runes = arrayFill(leftPad, pad).AppendAll(s.runes).AppendAll(arrayFill(rightPad, pad)))
+    return strFromRunes(arrayFill(leftPad, pad).AppendAll(s.runes.Get()).AppendAll(arrayFill(rightPad, pad)))
 }
 
 // Capitalize capitalizes first character.
@@ -192,8 +204,8 @@ func (s Str) Capitalize() Str {
     if s.IsEmpty() {
         return s
     }
-    val first = unicode.ToUpper(s.runes.Head())
-    return Str(runes = EmptyArray[rune]().Append(first).AppendAll(s.runes.Tail()))
+    val first = unicode.ToUpper(s.runes.Get().Head())
+    return strFromRunes(EmptyArray[rune]().Append(first).AppendAll(s.runes.Get().Tail()))
 }
 
 // Uncapitalize uncapitalizes first character.
@@ -201,102 +213,87 @@ func (s Str) Uncapitalize() Str {
     if s.IsEmpty() {
         return s
     }
-    val first = unicode.ToLower(s.runes.Head())
-    return Str(runes = EmptyArray[rune]().Append(first).AppendAll(s.runes.Tail()))
+    val first = unicode.ToLower(s.runes.Get().Head())
+    return strFromRunes(EmptyArray[rune]().Append(first).AppendAll(s.runes.Get().Tail()))
 }
 
 // Split splits the string by separator.
 func (s Str) Split(sep string) Array[Str] {
-    val parts = strings.Split(s.ToString(), sep)
-    var result = EmptyArray[Str]()
-    for i := 0; i < len(parts); i++ {
-        result = result.Append(S(parts[i]))
-    }
-    return result
+    val parts = strings.Split(s.str, sep)
+    return ArrayTabulate(len(parts), (i int) => strFromString(parts[i]))
 }
 
 // SplitAt splits at index.
 func (s Str) SplitAt(index int) Tuple[Str, Str] {
     val actualIndex = max(0, min(index, s.Length()))
-    return (Str(runes = s.runes.Take(actualIndex)), Str(runes = s.runes.Drop(actualIndex)))
+    return (strFromRunes(s.runes.Get().Take(actualIndex)), strFromRunes(s.runes.Get().Drop(actualIndex)))
 }
 
 // Lines splits into lines.
 func (s Str) Lines() Array[Str] {
-    val normalized = strings.ReplaceAll(s.ToString(), "\r\n", "\n")
+    val normalized = strings.ReplaceAll(s.str, "\r\n", "\n")
     val parts = strings.Split(normalized, "\n")
-    var result = EmptyArray[Str]()
-    for i := 0; i < len(parts); i++ {
-        result = result.Append(S(parts[i]))
-    }
-    return result
+    return ArrayTabulate(len(parts), (i int) => strFromString(parts[i]))
 }
 
 // Words splits into words.
 func (s Str) Words() Array[Str] {
-    val parts = strings.Fields(s.ToString())
-    var result = EmptyArray[Str]()
-    for i := 0; i < len(parts); i++ {
-        result = result.Append(S(parts[i]))
-    }
-    return result
+    val parts = strings.Fields(s.str)
+    return ArrayTabulate(len(parts), (i int) => strFromString(parts[i]))
 }
 
 // Join joins strings with separator.
 func Join(strs Array[Str], sep string) Str {
     if strs.IsEmpty() {
-        return Str(runes = EmptyArray[rune]())
+        return emptyStr()
     }
-    return strs.Tail().FoldLeft(strs.Head(), (acc Str, s Str) => S(acc.ToString() + sep + s.ToString()))
+    var goStrs []string
+    for i := 0; i < strs.Length(); i++ {
+        goStrs = append(goStrs, strs.Get(i).str)
+    }
+    return strFromString(strings.Join(goStrs, sep))
 }
 
 // Concat concatenates strings.
-func (s Str) Concat(other Str) Str = Str(runes = s.runes.AppendAll(other.runes))
+func (s Str) Concat(other Str) Str {
+    val newRunes = lazy.New[Array[rune]](() => s.runes.Get().AppendAll(other.runes.Get()))
+    return Str(runes = newRunes, str = s.str + other.str)
+}
 
 // Plus is an alias for Concat.
 func (s Str) Plus(other Str) Str = s.Concat(other)
 
 // Equals compares for equality.
-func (s Str) Equals(other Str) bool {
-    if s.Length() != other.Length() {
-        return false
-    }
-    for i := 0; i < s.Length(); i++ {
-        if s.runes.Get(i) != other.runes.Get(i) {
-            return false
-        }
-    }
-    return true
-}
+func (s Str) Equals(other Str) bool = s.str == other.str
 
 // EqualsIgnoreCase compares ignoring case.
-func (s Str) EqualsIgnoreCase(other Str) bool = strings.EqualFold(s.ToString(), other.ToString())
+func (s Str) EqualsIgnoreCase(other Str) bool = strings.EqualFold(s.str, other.str)
 
 // Compare compares lexicographically.
-func (s Str) Compare(other Str) int = strings.Compare(s.ToString(), other.ToString())
+func (s Str) Compare(other Str) int = strings.Compare(s.str, other.str)
 
 // ToChars returns characters as Array.
-func (s Str) ToChars() Array[rune] = s.runes
+func (s Str) ToChars() Array[rune] = s.runes.Get()
 
 // IsAlpha checks if all alphabetic.
-func (s Str) IsAlpha() bool = s.NonEmpty() && s.runes.ForAll(unicode.IsLetter)
+func (s Str) IsAlpha() bool = s.NonEmpty() && s.runes.Get().ForAll(unicode.IsLetter)
 
 // IsNumeric checks if all numeric.
-func (s Str) IsNumeric() bool = s.NonEmpty() && s.runes.ForAll(unicode.IsDigit)
+func (s Str) IsNumeric() bool = s.NonEmpty() && s.runes.Get().ForAll(unicode.IsDigit)
 
 // IsAlphanumeric checks if all alphanumeric.
 func (s Str) IsAlphanumeric() bool =
-    s.NonEmpty() && s.runes.ForAll((r rune) => unicode.IsLetter(r) || unicode.IsDigit(r))
+    s.NonEmpty() && s.runes.Get().ForAll((r) => unicode.IsLetter(r) || unicode.IsDigit(r))
 
 // IsWhitespace checks if all whitespace.
-func (s Str) IsWhitespace() bool = s.NonEmpty() && s.runes.ForAll(unicode.IsSpace)
+func (s Str) IsWhitespace() bool = s.NonEmpty() && s.runes.Get().ForAll(unicode.IsSpace)
 
 // IsUpper checks if all cased characters are uppercase.
 func (s Str) IsUpper() bool {
     if s.IsEmpty() {
         return false
     }
-    val letters = s.runes.Filter(unicode.IsLetter)
+    val letters = s.runes.Get().Filter(unicode.IsLetter)
     return letters.NonEmpty() && letters.ForAll(unicode.IsUpper)
 }
 
@@ -305,28 +302,26 @@ func (s Str) IsLower() bool {
     if s.IsEmpty() {
         return false
     }
-    val letters = s.runes.Filter(unicode.IsLetter)
+    val letters = s.runes.Get().Filter(unicode.IsLetter)
     return letters.NonEmpty() && letters.ForAll(unicode.IsLower)
 }
 
 // IndexOf returns index of first occurrence of substring.
 func (s Str) IndexOf(substr string) Option[int] {
-    val str = s.ToString()
-    val idx = strings.Index(str, substr)
+    val idx = strings.Index(s.str, substr)
     if idx < 0 {
         return None[int]()
     }
-    return Some(byteIndexToRuneIndex(str, idx))
+    return Some(byteIndexToRuneIndex(s.str, idx))
 }
 
 // LastIndexOf returns index of last occurrence of substring.
 func (s Str) LastIndexOf(substr string) Option[int] {
-    val str = s.ToString()
-    val idx = strings.LastIndex(str, substr)
+    val idx = strings.LastIndex(s.str, substr)
     if idx < 0 {
         return None[int]()
     }
-    return Some(byteIndexToRuneIndex(str, idx))
+    return Some(byteIndexToRuneIndex(s.str, idx))
 }
 
 // byteIndexToRuneIndex converts a byte index to a rune index.
@@ -345,8 +340,8 @@ func byteIndexToRuneIndex(str string, byteIdx int) int {
 
 // IndexOfChar returns index of rune.
 func (s Str) IndexOfChar(target rune) Option[int] {
-    for i := 0; i < s.runes.Length(); i++ {
-        if s.runes.Get(i) == target {
+    for i := 0; i < s.runes.Get().Length(); i++ {
+        if s.runes.Get().Get(i) == target {
             return Some(i)
         }
     }
@@ -354,36 +349,33 @@ func (s Str) IndexOfChar(target rune) Option[int] {
 }
 
 // Map applies function to each character.
-func (s Str) Map(f func(rune) rune) Str = Str(runes = s.runes.Map(f))
+func (s Str) Map(f func(rune) rune) Str = strFromRunes(s.runes.Get().Map(f))
 
 // Filter keeps matching characters.
-func (s Str) Filter(p func(rune) bool) Str = Str(runes = s.runes.Filter(p))
+func (s Str) Filter(p func(rune) bool) Str = strFromRunes(s.runes.Get().Filter(p))
 
 // FilterNot keeps non-matching characters.
-func (s Str) FilterNot(p func(rune) bool) Str = Str(runes = s.runes.FilterNot(p))
+func (s Str) FilterNot(p func(rune) bool) Str = strFromRunes(s.runes.Get().FilterNot(p))
 
 // ForEach applies function to each character.
 func (s Str) ForEach(f func(rune)) {
-    s.runes.ForEach((r rune) => {
-        f(r)
-        return nil
-    })
+    s.runes.Get().ForEach(f)
 }
 
 // Fold reduces the string.
-func (s Str) Fold[U any](zero U, f func(U, rune) U) U = s.runes.FoldLeft(zero, f)
+func (s Str) Fold[U any](zero U, f func(U, rune) U) U = s.runes.Get().FoldLeft(zero, f)
 
 // Exists checks if any character matches.
-func (s Str) Exists(p func(rune) bool) bool = s.runes.Exists(p)
+func (s Str) Exists(p func(rune) bool) bool = s.runes.Get().Exists(p)
 
 // ForAll checks if all characters match.
-func (s Str) ForAll(p func(rune) bool) bool = s.runes.ForAll(p)
+func (s Str) ForAll(p func(rune) bool) bool = s.runes.Get().ForAll(p)
 
 // Find returns first matching character.
-func (s Str) Find(p func(rune) bool) Option[rune] = s.runes.Find(p)
+func (s Str) Find(p func(rune) bool) Option[rune] = s.runes.Get().Find(p)
 
 // ZipWithIndex pairs characters with indices.
-func (s Str) ZipWithIndex() Array[Tuple[rune, int]] = s.runes.ZipWithIndex()
+func (s Str) ZipWithIndex() Array[Tuple[rune, int]] = s.runes.Get().ZipWithIndex()
 
 // Pattern matching extractors
 
@@ -394,7 +386,7 @@ func (n NonEmptyStr) Unapply(s Str) Option[Tuple[rune, Str]] {
     if s.IsEmpty() {
         return None[Tuple[rune, Str]]()
     }
-    return Some((s.runes.Head(), Str(runes = s.runes.Tail())))
+    return Some((s.runes.Get().Head(), strFromRunes(s.runes.Get().Tail())))
 }
 
 // EmptyStr matches empty strings.
@@ -421,4 +413,102 @@ func max(a int, b int) int {
         return a
     }
     return b
+}
+
+// StringBuilder is a mutable string builder for efficient string concatenation.
+// Backed by a mutable Array[string] for O(1) amortized append.
+type StringBuilder struct {
+    var parts *cm.Array[string]
+}
+
+// NewStringBuilder creates an empty StringBuilder.
+func NewStringBuilder() *StringBuilder = &StringBuilder{parts: cm.EmptyArray[string]()}
+
+// NewStringBuilderFrom creates a StringBuilder initialized from a Str.
+func NewStringBuilderFrom(s Str) *StringBuilder {
+    var parts = cm.EmptyArray[string]()
+    parts.Append(s.str)
+    return &StringBuilder{parts: parts}
+}
+
+// NewStringBuilderFromString creates a StringBuilder initialized from a Go string.
+func NewStringBuilderFromString(s string) *StringBuilder {
+    var parts = cm.EmptyArray[string]()
+    parts.Append(s)
+    return &StringBuilder{parts: parts}
+}
+
+// Append appends a Str and returns the builder for chaining.
+func (sb *StringBuilder) Append(s Str) *StringBuilder {
+    sb.parts.Append(s.str)
+    return sb
+}
+
+// AppendRune appends a rune and returns the builder for chaining.
+func (sb *StringBuilder) AppendRune(r rune) *StringBuilder {
+    sb.parts.Append(string(r))
+    return sb
+}
+
+// AppendLine appends a Str followed by a newline and returns the builder for chaining.
+func (sb *StringBuilder) AppendLine(s Str) *StringBuilder {
+    sb.parts.Append(s.str)
+    sb.parts.Append("\n")
+    return sb
+}
+
+// AppendString appends a Go string and returns the builder for chaining.
+func (sb *StringBuilder) AppendString(s string) *StringBuilder {
+    sb.parts.Append(s)
+    return sb
+}
+
+// AppendStringLine appends a Go string followed by a newline and returns the builder for chaining.
+func (sb *StringBuilder) AppendStringLine(s string) *StringBuilder {
+    sb.parts.Append(s)
+    sb.parts.Append("\n")
+    return sb
+}
+
+// ToStr returns the built string as a Str by merging all chunks.
+func (sb *StringBuilder) ToStr() Str = strFromString(sb.ToString())
+
+// ToString returns the built string as a Go string.
+func (sb *StringBuilder) ToString() string {
+    if sb.parts.Length() == 0 {
+        return ""
+    }
+    return strings.Join(sb.parts.ToGoSlice(), "")
+}
+
+// String implements the Go Stringer interface.
+func (sb *StringBuilder) String() string = sb.ToString()
+
+// Length returns the total byte length of the built string.
+func (sb *StringBuilder) Length() int {
+    var total = 0
+    for i := 0; i < sb.parts.Length(); i++ {
+        total = total + len(sb.parts.Get(i))
+    }
+    return total
+}
+
+// RuneCount returns the total number of runes in the built string.
+func (sb *StringBuilder) RuneCount() int {
+    var total = 0
+    for i := 0; i < sb.parts.Length(); i++ {
+        total = total + utf8.RuneCountInString(sb.parts.Get(i))
+    }
+    return total
+}
+
+// IsEmpty returns true if the builder has no content.
+func (sb *StringBuilder) IsEmpty() bool = sb.parts.Length() == 0
+
+// NonEmpty returns true if the builder has content.
+func (sb *StringBuilder) NonEmpty() bool = sb.parts.Length() > 0
+
+// Reset clears the builder content.
+func (sb *StringBuilder) Reset() {
+    sb.parts = cm.EmptyArray[string]()
 }

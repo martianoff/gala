@@ -1400,24 +1400,24 @@ line three`
 **Raw strings** (backtick-delimited) can span multiple lines and do not process escape sequences. They are useful for regular expressions, file paths, and multi-line text.
 
 ### Rune Literals
-GALA does not currently support Go-style character literals (`'a'`). Use the `rune()` type conversion to create rune values from integer codes:
+GALA supports Go-style character literals using single quotes:
+
+```gala
+val asterisk = '*'
+val space = ' '
+val newline = '\n'
+val letterA = 'a'
+val zero = '0'
+```
+
+Character literals produce `rune` values. Standard escape sequences are supported: `'\n'`, `'\t'`, `'\\'`, `'\''`.
+
+Alternatively, you can use the `rune()` type conversion for integer codes:
 
 ```gala
 val asterisk = rune(42)     // '*'
-val space = rune(32)        // ' '
-val newline = rune(10)      // '\n'
 val letterA = rune(97)      // 'a'
-val zero = rune(48)         // '0'
 ```
-
-**Common rune values:**
-| Rune | Character | Rune | Character |
-|------|-----------|------|-----------|
-| `rune(32)` | space | `rune(48)`–`rune(57)` | `'0'`–`'9'` |
-| `rune(10)` | newline | `rune(65)`–`rune(90)` | `'A'`–`'Z'` |
-| `rune(9)` | tab | `rune(97)`–`rune(122)` | `'a'`–`'z'` |
-| `rune(42)` | `*` | `rune(91)` / `rune(93)` | `[` / `]` |
-| `rune(96)` | `` ` `` | `rune(40)` / `rune(41)` | `(` / `)` |
 
 ### Type Conversions
 GALA supports Go-style type conversions using function call syntax:
@@ -2094,6 +2094,8 @@ val fallback = Left[string, int]("error")
 | Operation | GALA Collections (preferred) | Go Slices (interop only) |
 |-----------|------------------------------|--------------------------|
 | Create | `ArrayOf(1,2,3)` / `ListOf(1,2,3)` | `SliceOf(1,2,3)` (from `go_interop`) |
+| Tabulate | `ArrayTabulate(n, (i int) => f(i))` | Manual `for` loop |
+| Fill | `ArrayFill(n, value)` | Manual `for` loop |
 | Empty | `EmptyArray[int]()` / `EmptyList[int]()` | `SliceEmpty[int]()` (from `go_interop`) |
 | Transform | `arr.Map(f)`, `arr.Filter(p)` | Not available on `[]T` |
 | Accumulate | `arr.FoldLeft(init, f)` | Manual `for` loop |

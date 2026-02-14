@@ -353,6 +353,14 @@ val arr = ArrayOf(1, 2, 3, 4, 5)
 // From slice
 val slice = SliceOf(1, 2, 3)
 val arr2 = ArrayFrom(slice)
+
+// Tabulate: compute each element from index (O(n) via arrayBuilder)
+val squares = ArrayTabulate(5, (i int) => i * i)
+// squares == Array(0, 1, 4, 9, 16)
+
+// Fill: repeat the same value (O(n) via arrayBuilder)
+val zeros = ArrayFill(3, 0)
+// zeros == Array(0, 0, 0)
 ```
 
 ### Basic Operations

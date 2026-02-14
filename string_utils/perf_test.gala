@@ -1,0 +1,314 @@
+package main
+
+import (
+    "fmt"
+    "strings"
+    "unicode"
+    "time"
+    . "martianoff/gala/string_utils"
+)
+
+// Helper functions to work around lambda return type inference limitation
+// (see docs/BUG_LAMBDA_TYPE_INFERENCE.MD)
+func toUpperRune(r rune) rune = unicode.ToUpper(r)
+func isLetterRune(r rune) bool = unicode.IsLetter(r)
+
+var globalCount = 0
+func countIfLetter(r rune) {
+    if unicode.IsLetter(r) {
+        globalCount = globalCount + 1
+    }
+}
+
+// Performance test utilities
+func measureNs(iterations int, f func() any) int64 {
+    var start = time.Now()
+    for i := 0; i < iterations; i++ {
+        f()
+    }
+    var elapsed = time.Since(start)
+    return elapsed.Nanoseconds() / int64(iterations)
+}
+
+func printResult(name string, nsPerOp int64) {
+    fmt.Printf("%-55s %12d ns/op\n", name, nsPerOp)
+}
+
+// ============ TEST DATA ============
+
+var shortStr = S("Hello, World!")
+var mediumStr = S(strings.Repeat("abcdefghij", 100))
+var longStr = S(strings.Repeat("abcdefghij", 10000))
+var wordsStr = S("hello world foo bar baz qux quux corge grault garply")
+
+// ============ CREATION ============
+
+func benchCreation() {
+    var ns = measureNs(100000, () => {
+        var _ = S(strings.Repeat("abcdefghij", 100))
+    })
+    printResult("Str.S(1000)", ns)
+}
+
+func benchCreationLong() {
+    var ns = measureNs(1000, () => {
+        var _ = S(strings.Repeat("abcdefghij", 10000))
+    })
+    printResult("Str.S(100000)", ns)
+}
+
+// ============ LENGTH ============
+
+func benchLength() {
+    var ns = measureNs(10000000, () => {
+        var _ = mediumStr.Length()
+    })
+    printResult("Str.Length(1000)", ns)
+}
+
+// ============ CASE TRANSFORMATIONS ============
+
+func benchToUpper() {
+    var ns = measureNs(10000, () => {
+        var _ = mediumStr.ToUpper()
+    })
+    printResult("Str.ToUpper(1000)", ns)
+}
+
+func benchToLower() {
+    var ns = measureNs(10000, () => {
+        var _ = mediumStr.ToLower()
+    })
+    printResult("Str.ToLower(1000)", ns)
+}
+
+// ============ TRIMMING ============
+
+func benchTrim() {
+    var padded = S("   " + strings.Repeat("abcdefghij", 100) + "   ")
+    var ns = measureNs(100000, () => {
+        var _ = padded.Trim()
+    })
+    printResult("Str.Trim(1000)", ns)
+}
+
+// ============ REPLACE ============
+
+func benchReplaceAll() {
+    var ns = measureNs(10000, () => {
+        var _ = mediumStr.ReplaceAll("abc", "xyz")
+    })
+    printResult("Str.ReplaceAll(1000)", ns)
+}
+
+// ============ CONTAINS / SEARCH ============
+
+func benchContains() {
+    var ns = measureNs(1000000, () => {
+        var _ = mediumStr.Contains("fghij")
+    })
+    printResult("Str.Contains(1000)", ns)
+}
+
+func benchIndex() {
+    var ns = measureNs(1000000, () => {
+        var _ = mediumStr.IndexOf("fghij")
+    })
+    printResult("Str.IndexOf(1000)", ns)
+}
+
+// ============ SPLIT ============
+
+func benchSplit() {
+    var ns = measureNs(100000, () => {
+        var _ = wordsStr.Split(" ")
+    })
+    printResult("Str.Split(10 words)", ns)
+}
+
+func benchSplitLong() {
+    var longWords = S(strings.Repeat("word ", 1000))
+    var ns = measureNs(1000, () => {
+        var _ = longWords.Split(" ")
+    })
+    printResult("Str.Split(1000 words)", ns)
+}
+
+// ============ REVERSE ============
+
+func benchReverse() {
+    var ns = measureNs(10000, () => {
+        var _ = mediumStr.Reverse()
+    })
+    printResult("Str.Reverse(1000)", ns)
+}
+
+// ============ FUNCTIONAL OPS ============
+
+func benchMap() {
+    var ns = measureNs(10000, () => {
+        var _ = mediumStr.Map(toUpperRune)
+    })
+    printResult("Str.Map(1000)", ns)
+}
+
+func benchFilter() {
+    var ns = measureNs(10000, () => {
+        var _ = mediumStr.Filter(isLetterRune)
+    })
+    printResult("Str.Filter(1000)", ns)
+}
+
+func benchForEachCount() {
+    var ns = measureNs(100000, () => {
+        globalCount = 0
+        mediumStr.ForEach(countIfLetter)
+        var _ = globalCount
+    })
+    printResult("Str.ForEach+Count(1000)", ns)
+}
+
+// ============ COMPARISON ============
+
+func benchEquals() {
+    var other = S(strings.Repeat("abcdefghij", 100))
+    var ns = measureNs(1000000, () => {
+        var _ = mediumStr.Equals(other)
+    })
+    printResult("Str.Equals(1000)", ns)
+}
+
+// ============ CONCAT ============
+
+func benchConcat() {
+    var a = mediumStr.Take(500)
+    var b = mediumStr.Drop(500)
+    var ns = measureNs(100000, () => {
+        var _ = a.Concat(b)
+    })
+    printResult("Str.Concat(500+500)", ns)
+}
+
+// ============ PREDICATES ============
+
+func benchIsAlpha() {
+    var alpha = S(strings.Repeat("abcdefghij", 100))
+    var ns = measureNs(10000, () => {
+        var _ = alpha.IsAlpha()
+    })
+    printResult("Str.IsAlpha(1000)", ns)
+}
+
+// ============ SUBSTRING ============
+
+func benchSubstring() {
+    var ns = measureNs(100000, () => {
+        var _ = mediumStr.Substring(100, 500)
+    })
+    printResult("Str.Substring(100,500)", ns)
+}
+
+// ============ STRINGBUILDER ============
+
+func benchBuilderAppend100() {
+    var ns = measureNs(100000, () => {
+        var sb = NewStringBuilder()
+        for i := 0; i < 100; i++ {
+            sb.AppendString("hello")
+        }
+        var _ = sb.ToString()
+    })
+    printResult("StringBuilder.Append(100x\"hello\")", ns)
+}
+
+func benchBuilderAppend10000() {
+    var ns = measureNs(1000, () => {
+        var sb = NewStringBuilder()
+        for i := 0; i < 10000; i++ {
+            sb.AppendString("hello")
+        }
+        var _ = sb.ToString()
+    })
+    printResult("StringBuilder.Append(10000x\"hello\")", ns)
+}
+
+func benchBuilderAppendRune() {
+    var ns = measureNs(1000, () => {
+        var sb = NewStringBuilder()
+        for i := 0; i < 10000; i++ {
+            sb.AppendRune(rune(120))
+        }
+        var _ = sb.ToString()
+    })
+    printResult("StringBuilder.AppendRune(10000x'x')", ns)
+}
+
+// ============ MAIN ============
+
+func main() {
+    fmt.Println("=== GALA Str Performance ===")
+    fmt.Println("")
+
+    fmt.Println("--- Creation / Conversion ---")
+    benchCreation()
+    benchCreationLong()
+    fmt.Println("")
+
+    fmt.Println("--- Length ---")
+    benchLength()
+    fmt.Println("")
+
+    fmt.Println("--- Case Transformations ---")
+    benchToUpper()
+    benchToLower()
+    fmt.Println("")
+
+    fmt.Println("--- Trimming ---")
+    benchTrim()
+    fmt.Println("")
+
+    fmt.Println("--- Replace ---")
+    benchReplaceAll()
+    fmt.Println("")
+
+    fmt.Println("--- Contains / Search ---")
+    benchContains()
+    benchIndex()
+    fmt.Println("")
+
+    fmt.Println("--- Split ---")
+    benchSplit()
+    benchSplitLong()
+    fmt.Println("")
+
+    fmt.Println("--- Reverse ---")
+    benchReverse()
+    fmt.Println("")
+
+    fmt.Println("--- Functional Operations ---")
+    benchMap()
+    benchFilter()
+    benchForEachCount()
+    fmt.Println("")
+
+    fmt.Println("--- Comparison ---")
+    benchEquals()
+    fmt.Println("")
+
+    fmt.Println("--- Concat ---")
+    benchConcat()
+    fmt.Println("")
+
+    fmt.Println("--- Predicates ---")
+    benchIsAlpha()
+    fmt.Println("")
+
+    fmt.Println("--- Substring ---")
+    benchSubstring()
+    fmt.Println("")
+
+    fmt.Println("--- StringBuilder ---")
+    benchBuilderAppend100()
+    benchBuilderAppend10000()
+    benchBuilderAppendRune()
+}

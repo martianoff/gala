@@ -52,12 +52,28 @@ func EmptyArray[T any]() Array[T] {
 
 // ArrayOf creates an Array from variadic arguments.
 // Example: ArrayOf[int](1, 2, 3) creates Array(1, 2, 3)
-func ArrayOf[T any](elements ...T) Array[T] {
-    var result = EmptyArray[T]()
-    for i := 0; i < len(elements); i++ {
-        result = result.Append(elements[i])
+func ArrayOf[T any](elements ...T) Array[T] = ArrayFromSlice(elements)
+
+// ArrayTabulate creates an Array of size n where each element is computed by f(index).
+// Uses arrayBuilder internally for O(n) construction.
+// Example: ArrayTabulate(5, (i) => i * 2) creates Array(0, 2, 4, 6, 8)
+func ArrayTabulate[T any](n int, f func(int) T) Array[T] {
+    var builder = newArrayBuilder[T]()
+    for i := 0; i < n; i++ {
+        builder.Add(f(i))
     }
-    return result
+    return builder.Result()
+}
+
+// ArrayFill creates an Array of size n where every element is the same value.
+// Uses arrayBuilder internally for O(n) construction.
+// Example: ArrayFill(3, "x") creates Array("x", "x", "x")
+func ArrayFill[T any](n int, value T) Array[T] {
+    var builder = newArrayBuilder[T]()
+    for i := 0; i < n; i++ {
+        builder.Add(value)
+    }
+    return builder.Result()
 }
 
 // ArrayFromSlice creates an Array from a slice.
@@ -479,11 +495,14 @@ func (a Array[T]) Append(value T) Array[T] {
 
 // AppendAll appends all elements from another array.
 func (a Array[T]) AppendAll(other Array[T]) Array[T] {
-    var result = a
-    for i := 0; i < other.length; i++ {
-        result = result.Append(other.Get(i))
+    var builder = newArrayBuilder[T]()
+    for i := 0; i < a.length; i++ {
+        builder.Add(a.Get(i))
     }
-    return result
+    for i := 0; i < other.length; i++ {
+        builder.Add(other.Get(i))
+    }
+    return builder.Result()
 }
 
 // Prepend adds an element to the front. O(1) amortized - uses prefix buffer.
@@ -832,32 +851,34 @@ func (a Array[T]) Zip[U any](other Array[U]) Array[Tuple[T, U]] {
     if other.length < minLen {
         minLen = other.length
     }
-    var result = EmptyArray[Tuple[T, U]]()
+    var builder = newArrayBuilder[Tuple[T, U]]()
     for i := 0; i < minLen; i++ {
-        result = result.Append((a.Get(i), other.Get(i)))
+        builder.Add((a.Get(i), other.Get(i)))
     }
-    return result
+    return builder.Result()
 }
 
 // ZipWithIndex pairs each element with its index.
 func (a Array[T]) ZipWithIndex() Array[Tuple[T, int]] {
-    var result = EmptyArray[Tuple[T, int]]()
+    var builder = newArrayBuilder[Tuple[T, int]]()
     for i := 0; i < a.length; i++ {
-        result = result.Append((a.Get(i), i))
+        builder.Add((a.Get(i), i))
     }
-    return result
+    return builder.Result()
 }
 
 // Distinct returns a new array with duplicate elements removed.
 func (a Array[T]) Distinct() Array[T] {
-    var result = EmptyArray[T]()
+    var builder = newArrayBuilder[T]()
+    var seen = EmptyArray[T]()
     for i := 0; i < a.length; i++ {
         var elem = a.Get(i)
-        if !result.Contains(elem) {
-            result = result.Append(elem)
+        if !seen.Contains(elem) {
+            builder.Add(elem)
+            seen = seen.Append(elem)
         }
     }
-    return result
+    return builder.Result()
 }
 
 // SplitAt splits the array at the given index.
@@ -875,17 +896,17 @@ func (a Array[T]) Span(p func(T) bool) Tuple[Array[T], Array[T]] {
 
 // PartitionMap applies a function to each element and partitions results into Left and Right.
 func (a Array[T]) PartitionMap[A any, B any](f func(T) Either[A, B]) Tuple[Array[A], Array[B]] {
-    var lefts = EmptyArray[A]()
-    var rights = EmptyArray[B]()
+    var leftBuilder = newArrayBuilder[A]()
+    var rightBuilder = newArrayBuilder[B]()
     for i := 0; i < a.length; i++ {
         val either = f(a.Get(i))
         if either.IsLeft() {
-            lefts = lefts.Append(either.GetLeft())
+            leftBuilder.Add(either.GetLeft())
         } else {
-            rights = rights.Append(either.GetRight())
+            rightBuilder.Add(either.GetRight())
         }
     }
-    return (lefts, rights)
+    return (leftBuilder.Result(), rightBuilder.Result())
 }
 
 // GroupBy partitions this array into a map of arrays according to a discriminator function.
@@ -936,15 +957,15 @@ func (a Array[T]) Grouped(n int) Array[Array[T]] {
     if n <= 0 {
         panic("Array.Grouped: group size must be positive")
     }
-    var result = EmptyArray[Array[T]]()
+    var builder = newArrayBuilder[Array[T]]()
     for i := 0; i < a.length; i += n {
         var end = i + n
         if end > a.length {
             end = a.length
         }
-        result = result.Append(a.Slice(i, end))
+        builder.Add(a.Slice(i, end))
     }
-    return result
+    return builder.Result()
 }
 
 // Sliding returns a sliding window over the array.
@@ -955,19 +976,19 @@ func (a Array[T]) Sliding(size int) Array[Array[T]] {
     if a.length < size {
         return EmptyArray[Array[T]]()
     }
-    var result = EmptyArray[Array[T]]()
+    var builder = newArrayBuilder[Array[T]]()
     var limit = a.length - size
     for i := 0; i <= limit; i++ {
-        result = result.Append(a.Slice(i, i + size))
+        builder.Add(a.Slice(i, i + size))
     }
-    return result
+    return builder.Result()
 }
 
 // ToGoSlice converts the array to a Go slice.
 func (a Array[T]) ToGoSlice() []T {
-    var result []T
+    var result = go_interop.SliceWithSize[T](a.length)
     for i := 0; i < a.length; i++ {
-        result = append(result, a.Get(i))
+        result[i] = a.Get(i)
     }
     return result
 }
