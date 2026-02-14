@@ -675,8 +675,8 @@ func (m HashMap[K, V]) KeySet() HashSet[K] = m.Keys()
 
 // === Sorting ===
 
-// Sorted returns an array of key-value tuples sorted in natural order.
-func (m HashMap[K, V]) Sorted() Array[Tuple[K, V]] = m.ToArray().Sorted()
+// Sorted returns an array of key-value tuples sorted by key in natural order.
+func (m HashMap[K, V]) Sorted() Array[Tuple[K, V]] = m.ToArray().SortBy((entry Tuple[K, V]) => entry.V1)
 
 // SortWith returns an array of key-value tuples sorted using the given comparison function.
 func (m HashMap[K, V]) SortWith(less func(Tuple[K, V], Tuple[K, V]) bool) Array[Tuple[K, V]] = m.ToArray().SortWith(less)
