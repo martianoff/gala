@@ -106,7 +106,7 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 		if isMultiReturnFromSingleExpr {
 			// multi-value from a single expression (e.g. function call)
 		} else {
-			return nil, galaerr.NewSemanticError("assignment mismatch")
+			return nil, t.semanticErrorAt(ctx, "assignment mismatch")
 		}
 	}
 
@@ -229,7 +229,7 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 		}
 
 		if t.isNoneCall(val) && ctx.Type_() == nil {
-			return nil, galaerr.NewSemanticError("variable assigned to None() must have an explicit type")
+			return nil, t.semanticErrorAt(ctx, "variable assigned to None() must have an explicit type")
 		}
 
 		var fun ast.Expr = t.stdIdent("NewImmutable")

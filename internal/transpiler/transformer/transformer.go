@@ -4,14 +4,16 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"sort"
+	"strings"
+
+	"github.com/antlr4-go/antlr/v4"
+
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/infer"
 	"martianoff/gala/internal/transpiler/registry"
-	"os"
-	"sort"
-	"strings"
 )
 
 type galaASTTransformer struct {
@@ -32,6 +34,8 @@ type galaASTTransformer struct {
 	tempVarCount          int
 	inferer               *infer.Inferer
 	currentFuncReturnType transpiler.Type // return type of the function currently being transformed
+	filePath              string           // source file path (for error reporting)
+	sourceLines           []string         // source lines (for error snippets)
 }
 
 // NewGalaASTTransformer creates a new instance of ASTTransformer for GALA.
@@ -79,6 +83,12 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 	}
 	t.importManager = NewImportManager()
 	t.tempVarCount = 0
+	t.filePath = richAST.FilePath
+	if richAST.SourceContent != "" {
+		t.sourceLines = strings.Split(richAST.SourceContent, "\n")
+	} else {
+		t.sourceLines = nil
+	}
 
 	// Populate imports from richAST.Packages (includes implicit std import from analyzer)
 	t.importManager.AddFromPackages(richAST.Packages)
@@ -127,8 +137,10 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 		t.importManager.UpdateActualPackageName(path, actualPkgName)
 	}
 
-	// Warn about symbol clashes between dot-imported packages
-	t.checkDotImportClashes(richAST)
+	// Error on symbol clashes between dot-imported packages
+	if err := t.checkDotImportClashes(richAST); err != nil {
+		return nil, nil, err
+	}
 
 	for _, topDeclCtx := range sourceFile.AllTopLevelDeclaration() {
 		decls, err := t.transformTopLevelDeclaration(topDeclCtx)
@@ -185,10 +197,11 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 
 // checkDotImportClashes detects when multiple dot-imported packages export symbols with the
 // same name, which would cause Go compilation errors ("redeclared in this block").
-func (t *galaASTTransformer) checkDotImportClashes(richAST *transpiler.RichAST) {
+// Returns a SemanticError listing all clashing symbols.
+func (t *galaASTTransformer) checkDotImportClashes(richAST *transpiler.RichAST) error {
 	dotPkgs := t.importManager.GetDotImports()
 	if len(dotPkgs) < 2 {
-		return // need at least 2 dot imports for a clash
+		return nil // need at least 2 dot imports for a clash
 	}
 
 	dotPkgSet := make(map[string]bool, len(dotPkgs))
@@ -240,17 +253,42 @@ func (t *galaASTTransformer) checkDotImportClashes(richAST *transpiler.RichAST) 
 		}
 	}
 
-	// Report clashes
-	for symbol, sources := range symbolSources {
+	// Collect clashes
+	var clashes []string
+	// Sort symbol names for deterministic output
+	symbolNames := make([]string, 0, len(symbolSources))
+	for symbol := range symbolSources {
+		symbolNames = append(symbolNames, symbol)
+	}
+	sort.Strings(symbolNames)
+
+	for _, symbol := range symbolNames {
+		sources := symbolSources[symbol]
 		if len(sources) > 1 {
 			pkgs := make([]string, 0, len(sources))
 			for pkg := range sources {
 				pkgs = append(pkgs, pkg)
 			}
 			sort.Strings(pkgs)
-			fmt.Fprintf(os.Stderr, "Warning: symbol %q is exported by multiple dot-imported packages: %s. This will cause a Go compilation error. Use an aliased import for one of the packages.\n", symbol, strings.Join(pkgs, ", "))
+			clashes = append(clashes, fmt.Sprintf("  - symbol %q is exported by multiple dot-imported packages: %s", symbol, strings.Join(pkgs, ", ")))
 		}
 	}
+
+	if len(clashes) > 0 {
+		msg := "dot-import symbol collision(s) detected:\n" + strings.Join(clashes, "\n") + "\nUse an aliased import for one of the packages to resolve the conflict."
+		return galaerr.NewSemanticError(msg)
+	}
+	return nil
+}
+
+// semanticErrorAt creates a SemanticError with position info from an ANTLR context.
+func (t *galaASTTransformer) semanticErrorAt(ctx antlr.ParserRuleContext, msg string) *galaerr.SemanticError {
+	if ctx != nil && ctx.GetStart() != nil {
+		line := ctx.GetStart().GetLine()
+		col := ctx.GetStart().GetColumn()
+		return galaerr.NewSemanticErrorInFile(t.filePath, line, col, msg)
+	}
+	return galaerr.NewSemanticError(msg)
 }
 
 var _ transpiler.ASTTransformer = (*galaASTTransformer)(nil)
