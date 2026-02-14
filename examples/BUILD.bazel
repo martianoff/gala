@@ -792,6 +792,16 @@ gala_test(
     deps = ["//collection_immutable"],
 )
 
+# FIX-015 verification: sealed type named-arg construction in multi-file mode
+gala_test(
+    name = "named_arg_sealed",
+    srcs = [
+        "named_arg_sealed_model.gala",
+        "named_arg_sealed.gala",
+    ],
+    expected = "named_arg_sealed.out",
+)
+
 # FIX-017 verification: *Future[Array[int]].Get() resolves to Array[int]
 gala_test(
     name = "future_get_type_chain",

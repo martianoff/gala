@@ -1,0 +1,23 @@
+package main
+
+import "fmt"
+
+// Constructs sealed type variants using named arguments from a DIFFERENT file.
+// Previously, this would silently drop all field values (BUG-DP-4).
+func makeSuccess() MyResult {
+    return MySuccess(SuccessValue = 42, SuccessMsg = "hello")
+}
+
+func makeFailure() MyResult {
+    return MyFailure(FailureCode = 500, FailureMsg = "error")
+}
+
+func describe(r MyResult) string = r match {
+    case MySuccess(v, msg) => fmt.Sprintf("Success: %d %s", v, msg)
+    case MyFailure(code, msg) => fmt.Sprintf("Failure: %d %s", code, msg)
+}
+
+func main() {
+    fmt.Println(describe(makeSuccess()))
+    fmt.Println(describe(makeFailure()))
+}
