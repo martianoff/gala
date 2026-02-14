@@ -238,6 +238,18 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 						}
 					}
 				}
+				// Handle pointer-wrapped generic types (e.g., *Future[Array[int]].Get())
+				// Only when all type params are concrete (not unresolved like *List[T])
+				if ptrType, ok := xType.(transpiler.PointerType); ok {
+					if genType, ok := ptrType.Elem.(transpiler.GenericType); ok && !t.hasTypeParams(genType) {
+						baseTypeName := genType.Base.String()
+						if typeMeta := t.getTypeMeta(baseTypeName); typeMeta != nil {
+							if methodMeta, ok := typeMeta.Methods[sel.Sel.Name]; ok {
+								return t.substituteConcreteTypes(methodMeta.ReturnType, typeMeta.TypeParams, genType.Params)
+							}
+						}
+					}
+				}
 				return xType
 			}
 

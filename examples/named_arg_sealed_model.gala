@@ -1,0 +1,10 @@
+package main
+
+// Defines a sealed type with multi-field variants in a separate file
+// from where it's constructed. Verifies named-arg construction works
+// across file boundaries (FIX-015 / BUG-DP-4).
+
+sealed type MyResult {
+    case MySuccess(SuccessValue int, SuccessMsg string)
+    case MyFailure(FailureCode int, FailureMsg string)
+}

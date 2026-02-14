@@ -332,6 +332,15 @@ gala_test(
 )
 
 gala_test(
+    name = "hashmap_sorted_nonorderable",
+    src = "hashmap_sorted_nonorderable.gala",
+    expected = "hashmap_sorted_nonorderable.out",
+    deps = [
+        "//collection_immutable",
+    ],
+)
+
+gala_test(
     name = "partial_function",
     src = "partial_function.gala",
     expected = "partial_function.out",
@@ -792,6 +801,16 @@ gala_test(
     deps = ["//collection_immutable"],
 )
 
+# FIX-015 verification: sealed type named-arg construction in multi-file mode
+gala_test(
+    name = "named_arg_sealed",
+    srcs = [
+        "named_arg_sealed_model.gala",
+        "named_arg_sealed.gala",
+    ],
+    expected = "named_arg_sealed.out",
+)
+
 # FIX-016 verification: match with assignment-only branches (void match)
 gala_test(
     name = "void_match",
@@ -800,5 +819,16 @@ gala_test(
     deps = [
         "//collection_immutable",
         "//go_interop",
+    ],
+)
+
+# FIX-017 verification: *Future[Array[int]].Get() resolves to Array[int]
+gala_test(
+    name = "future_get_type_chain",
+    src = "future_get_type_chain.gala",
+    expected = "future_get_type_chain.out",
+    deps = [
+        "//concurrent",
+        "//collection_immutable",
     ],
 )
