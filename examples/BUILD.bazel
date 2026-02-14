@@ -811,6 +811,17 @@ gala_test(
     expected = "named_arg_sealed.out",
 )
 
+# FIX-016 verification: match with assignment-only branches (void match)
+gala_test(
+    name = "void_match",
+    src = "void_match.gala",
+    expected = "void_match.out",
+    deps = [
+        "//collection_immutable",
+        "//go_interop",
+    ],
+)
+
 # FIX-017 verification: *Future[Array[int]].Get() resolves to Array[int]
 gala_test(
     name = "future_get_type_chain",

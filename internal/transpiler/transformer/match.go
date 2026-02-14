@@ -475,6 +475,26 @@ func (t *galaASTTransformer) typesCompatible(t1, t2 transpiler.Type) bool {
 		return true
 	}
 
+	// Check dot-import equivalence: "Duration" should match "time_utils.Duration"
+	// when time_utils is dot-imported
+	s1, s2 := t1.String(), t2.String()
+	if strings.Contains(s2, ".") && !strings.Contains(s1, ".") {
+		// s2 is qualified (pkg.Type), s1 is bare (Type)
+		if pkg := s2[:strings.Index(s2, ".")]; t.importManager.IsDotImported(pkg) {
+			if s2[strings.Index(s2, ".")+1:] == s1 {
+				return true
+			}
+		}
+	}
+	if strings.Contains(s1, ".") && !strings.Contains(s2, ".") {
+		// s1 is qualified (pkg.Type), s2 is bare (Type)
+		if pkg := s1[:strings.Index(s1, ".")]; t.importManager.IsDotImported(pkg) {
+			if s1[strings.Index(s1, ".")+1:] == s2 {
+				return true
+			}
+		}
+	}
+
 	// any is compatible with everything
 	if t1.IsAny() || t2.IsAny() {
 		return true
@@ -688,6 +708,11 @@ func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClause
 					resultType = t.inferResultType(ret.Results[0])
 				}
 			}
+		}
+		// If resultType is still nil but body is non-empty, this is a void (side-effect) branch
+		// (e.g., last statement is an assignment like `items = items.Append(v)`)
+		if resultType == nil && len(body) > 0 {
+			resultType = transpiler.VoidType{}
 		}
 	} else if ctx.GetBody() != nil {
 		expr, err := t.transformExpression(ctx.GetBody())

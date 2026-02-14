@@ -42,11 +42,11 @@ var x std.Immutable[int] = std.NewImmutable[int](5)
 var res = std.NewImmutable(func(obj int) string {
 	if obj == 1 {
 		return "one"
-	}
-	if obj == 2 {
+	} else if obj == 2 {
 		return "two"
+	} else {
+		return "many"
 	}
-	return "many"
 }(x.Get()))
 `,
 		},
@@ -67,8 +67,9 @@ var x = std.NewImmutable(10)
 var res = std.NewImmutable(func(obj int) int {
 	if obj == 10 {
 		return 1
+	} else {
+		return 0
 	}
-	return 0
 }(x.Get()))
 `,
 		},
@@ -89,8 +90,9 @@ var x = std.NewImmutable("hello")
 var res = std.NewImmutable(func(obj string) string {
 	if obj == "hello" {
 		return "world"
+	} else {
+		return "fail"
 	}
-	return "fail"
 }(x.Get()))
 `,
 		},
@@ -113,9 +115,10 @@ var res = std.NewImmutable(func(obj int) int {
 		y := obj
 		if true {
 			return y + 1
+		} else {
+			return 0
 		}
 	}
-	return 0
 }(x.Get()))
 `,
 		},
@@ -145,9 +148,10 @@ var res = std.NewImmutable(func(obj std.Option[int]) int {
 		y := _tmp_3
 		if _tmp_2 {
 			return y
+		} else {
+			return 0
 		}
 	}
-	return 0
 }(x.Get()))
 `,
 		},
@@ -177,9 +181,10 @@ var res = std.NewImmutable(func(obj std.Option[any]) string {
 		s, _tmp_4 := std.As[string](_tmp_3)
 		if _tmp_2 && _tmp_4 {
 			return s
+		} else {
+			return "unknown"
 		}
 	}
-	return "unknown"
 }(x.Get()))
 `,
 		},
@@ -287,15 +292,15 @@ func describe(l Light) string {
 			_tmp_1 := On{}.Unapply(obj)
 			if _tmp_1 {
 				return "on"
+			} else {
+				_tmp_2 := Off{}.Unapply(obj)
+				if _tmp_2 {
+					return "off"
+				} else {
+					panic("unreachable")
+				}
 			}
 		}
-		{
-			_tmp_2 := Off{}.Unapply(obj)
-			if _tmp_2 {
-				return "off"
-			}
-		}
-		panic("unreachable")
 	}(l)
 }`,
 		},
@@ -373,15 +378,15 @@ func describe(l Light) string {
 			_tmp_1 := On{}.Unapply(obj)
 			if _tmp_1 {
 				return "on"
+			} else {
+				_tmp_2 := Off{}.Unapply(obj)
+				if _tmp_2 {
+					return "off"
+				} else {
+					return "unknown"
+				}
 			}
 		}
-		{
-			_tmp_2 := Off{}.Unapply(obj)
-			if _tmp_2 {
-				return "off"
-			}
-		}
-		return "unknown"
 	}(l)
 }`,
 		},
@@ -413,11 +418,11 @@ func describe(b bool) string {
 	return func(obj bool) string {
 		if obj == true {
 			return "yes"
-		}
-		if obj == false {
+		} else if obj == false {
 			return "no"
+		} else {
+			panic("unreachable")
 		}
-		panic("unreachable")
 	}(b)
 }`,
 		},
@@ -469,9 +474,10 @@ var res = std.NewImmutable(func(obj int) int {
 		y := obj
 		if true && y > 10 {
 			return 1
+		} else {
+			return 0
 		}
 	}
-	return 0
 }(x.Get()))
 `,
 		},
@@ -490,11 +496,11 @@ func describe(b bool) string {
 	return func(obj bool) string {
 		if obj == true {
 			return "yes"
-		}
-		if obj == false {
+		} else if obj == false {
 			return "no"
+		} else {
+			return "unknown"
 		}
-		return "unknown"
 	}(b)
 }`,
 		},
