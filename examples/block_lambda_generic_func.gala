@@ -1,0 +1,46 @@
+package main
+
+import "fmt"
+
+// Generic container that wraps a thunk
+type Box[T any] struct {
+    var thunk func() T
+    var value T
+    var done  bool
+}
+
+// Construct a Box with a deferred computation
+func Wrap[T any](thunk func() T) *Box[T] {
+    return &Box[T](thunk = thunk, done = false)
+}
+
+// Get the value, evaluating the thunk if needed
+func (b *Box[T]) Get() T {
+    if !b.done {
+        b.value = b.thunk()
+        b.done = true
+    }
+    return b.value
+}
+
+// Method with extra type param — expression lambda (works)
+func (b *Box[T]) Map[U any](f func(T) U) *Box[U] = Wrap[U](() => f(b.Get()))
+
+// Method with extra type param — block lambda (BUG: generates func() any)
+func (b *Box[T]) FlatMap[U any](f func(T) *Box[U]) *Box[U] {
+    return Wrap[U](() => {
+        var inner = f(b.Get())
+        return inner.Get()
+    })
+}
+
+func main() {
+    val box = Wrap[int](() => 10)
+    fmt.Println(box.Get())
+
+    val mapped = box.Map[int]((x int) => x * 2)
+    fmt.Println(mapped.Get())
+
+    val chained = box.FlatMap[int]((x int) => Wrap[int](() => x + 5))
+    fmt.Println(chained.Get())
+}

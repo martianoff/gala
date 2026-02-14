@@ -1,0 +1,45 @@
+package lazy
+
+import (
+    "martianoff/gala/go_interop"
+)
+
+// Lazy[T] defers a computation and caches the result on first access.
+// Thread-safe via go_interop.Once. Pointer-based (*Lazy[T]).
+type Lazy[T any] struct {
+    var thunk func() T         // nil after evaluation for GC
+    var value T                // set on first Get()
+    var once  *go_interop.Once // thread-safe single execution
+    var done  bool             // tracks evaluation state
+}
+
+// New creates a Lazy that will evaluate thunk on first Get().
+func New[T any](thunk func() T) *Lazy[T] {
+    return &Lazy[T](thunk = thunk, once = go_interop.NewOnce(), done = false)
+}
+
+// Of creates an already-evaluated Lazy holding value.
+func Of[T any](value T) *Lazy[T] {
+    val l = &Lazy[T](once = go_interop.NewOnce(), value = value, done = true)
+    l.once.Do(() => nil)
+    return l
+}
+
+// Get returns the computed value, evaluating the thunk on first call.
+func (l *Lazy[T]) Get() T {
+    l.once.Do(() => {
+        l.value = l.thunk()
+        l.thunk = nil
+        l.done = true
+    })
+    return l.value
+}
+
+// IsEvaluated returns true if the thunk has been evaluated.
+func (l *Lazy[T]) IsEvaluated() bool = l.done
+
+// Map returns a new Lazy that lazily applies f to this value.
+func (l *Lazy[T]) Map[U any](f func(T) U) *Lazy[U] = New[U](() => f(l.Get()))
+
+// FlatMap returns a new Lazy that lazily applies f and flattens.
+func (l *Lazy[T]) FlatMap[U any](f func(T) *Lazy[U]) *Lazy[U] = New[U](() => f(l.Get()).Get())

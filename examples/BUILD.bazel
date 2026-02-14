@@ -832,3 +832,25 @@ gala_test(
         "//collection_immutable",
     ],
 )
+
+# Character literals and raw strings
+gala_test(
+    name = "char_and_raw_string",
+    src = "char_and_raw_string.gala",
+    expected = "char_and_raw_string.out",
+)
+
+# StringBuilder
+gala_test(
+    name = "string_builder",
+    src = "string_builder.gala",
+    expected = "string_builder.out",
+    deps = ["//string_utils"],
+)
+
+# FIX-022 verification: block lambda return type in generic function calls
+gala_test(
+    name = "block_lambda_generic_func",
+    src = "block_lambda_generic_func.gala",
+    expected = "block_lambda_generic_func.out",
+)

@@ -432,11 +432,31 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 			if !ok {
 				return nil, galaerr.NewSemanticError("only expressions allowed as function arguments")
 			}
-			// Only pass void function types from metadata (avoids unresolved type params)
+			// Pass function types from metadata for lambda return type inference.
+			// For void function types, pass as-is.
+			// For non-void function types in generic functions, substitute explicit type args.
 			var expectedType transpiler.Type = transpiler.NilType{}
 			if funcMeta != nil && argIdx < len(funcMeta.ParamTypes) {
-				if ft, ok := funcMeta.ParamTypes[argIdx].(transpiler.FuncType); ok && len(ft.Results) == 0 {
-					expectedType = ft
+				if ft, ok := funcMeta.ParamTypes[argIdx].(transpiler.FuncType); ok {
+					if len(ft.Results) == 0 {
+						// Void function type - pass as-is
+						expectedType = ft
+					} else if len(funcMeta.TypeParams) > 0 {
+						// Non-void function type in a generic function - substitute explicit type args
+						funcTypeArgs := t.extractFuncCallTypeArgs(fun)
+						if len(funcTypeArgs) > 0 {
+							typeSubst := make(map[string]string)
+							for i, tp := range funcMeta.TypeParams {
+								if i < len(funcTypeArgs) {
+									typeSubst[tp] = funcTypeArgs[i]
+								}
+							}
+							expectedType = t.substituteTranspilerTypeParams(funcMeta.ParamTypes[argIdx], typeSubst)
+						}
+					} else {
+						// Non-generic function with concrete function param types - pass as-is
+						expectedType = ft
+					}
 				}
 			}
 			expr, err := t.transformArgumentWithExpectedType(ep.Expression(), expectedType)
@@ -1026,4 +1046,20 @@ func (t *galaASTTransformer) extractFuncName(fun ast.Expr) string {
 		}
 	}
 	return ""
+}
+
+// extractFuncCallTypeArgs extracts explicit type argument strings from a generic
+// function call expression. For New[U] returns ["U"], for Func[A, B] returns ["A", "B"].
+func (t *galaASTTransformer) extractFuncCallTypeArgs(fun ast.Expr) []string {
+	switch f := fun.(type) {
+	case *ast.IndexExpr:
+		return []string{t.exprToTypeString(f.Index)}
+	case *ast.IndexListExpr:
+		var args []string
+		for _, idx := range f.Indices {
+			args = append(args, t.exprToTypeString(idx))
+		}
+		return args
+	}
+	return nil
 }

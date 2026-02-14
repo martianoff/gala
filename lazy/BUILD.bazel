@@ -1,0 +1,20 @@
+load("//:gala.bzl", "gala_library", "gala_go_test")
+
+exports_files(["lazy.gala"])
+
+gala_library(
+    name = "lazy",
+    src = "lazy.gala",
+    importpath = "martianoff/gala/lazy",
+    visibility = ["//visibility:public"],
+    deps = ["//go_interop"],
+)
+
+gala_go_test(
+    name = "lazy_test",
+    srcs = ["lazy_test.gala"],
+    deps = [
+        ":lazy",
+        "//go_interop",
+    ],
+)
