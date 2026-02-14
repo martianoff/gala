@@ -1,5 +1,7 @@
 # GALA Project - Claude Code Instructions
 
+**Environment:** If `~/.claude/CLAUDE.md` (global instructions) exists, follow its Environment, Shell, and File Path conventions. Those global settings override any defaults in this file.
+
 GALA is a programming language that transpiles to Go. Build system: Bazel.
 
 ---
