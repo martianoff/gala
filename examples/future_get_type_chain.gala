@@ -1,0 +1,15 @@
+package main
+
+import "fmt"
+import . "martianoff/gala/concurrent"
+import . "martianoff/gala/collection_immutable"
+
+// Verifies that calling FoldLeft on a Future.Get() result uses the correct
+// type namespace (Array_FoldLeft, not Future_FoldLeft).
+// This tests that *Future[Array[int]].Get() resolves to Array[int].
+func main() {
+    val f = FutureApply[Array[int]](() => ArrayOf(1, 2, 3, 4, 5))
+    val result = f.Get()
+    val sum = result.FoldLeft[int](0, (acc int, v int) => acc + v)
+    fmt.Println(sum)
+}

@@ -801,3 +801,14 @@ gala_test(
     ],
     expected = "named_arg_sealed.out",
 )
+
+# FIX-017 verification: *Future[Array[int]].Get() resolves to Array[int]
+gala_test(
+    name = "future_get_type_chain",
+    src = "future_get_type_chain.gala",
+    expected = "future_get_type_chain.out",
+    deps = [
+        "//concurrent",
+        "//collection_immutable",
+    ],
+)
