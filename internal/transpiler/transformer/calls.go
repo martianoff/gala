@@ -734,6 +734,30 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 	// Check if this is a known struct type
 	resolvedTypeName := t.resolveStructTypeName(typeName)
 	if fields, ok := t.structFields[resolvedTypeName]; ok {
+		// Check if this is a sealed variant companion (empty struct with Apply method)
+		// Sealed variants are registered with nil fields because the companion struct is empty.
+		// The actual field info lives in the parent sealed type's SealedVariants metadata.
+		if len(fields) == 0 && len(namedArgs) > 0 {
+			if variantFieldNames := t.findSealedVariantFields(typeName); variantFieldNames != nil {
+				// Reorder named args to match the Apply method's parameter order
+				orderedArgs := make([]ast.Expr, 0, len(variantFieldNames))
+				for _, fieldName := range variantFieldNames {
+					if val, ok := namedArgs[fieldName]; ok {
+						orderedArgs = append(orderedArgs, val)
+					}
+				}
+				// Generate: VariantName{}.Apply(args...)
+				receiver := &ast.CompositeLit{Type: fun}
+				return &ast.CallExpr{
+					Fun: &ast.SelectorExpr{
+						X:   receiver,
+						Sel: ast.NewIdent("Apply"),
+					},
+					Args: orderedArgs,
+				}, nil
+			}
+		}
+
 		// It's struct construction with named arguments
 		var elts []ast.Expr
 		immutFlags := t.structImmutFields[resolvedTypeName]
@@ -835,6 +859,21 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 	}
 
 	return nil, galaerr.NewSemanticError(fmt.Sprintf("named arguments only supported for Copy method or struct construction (type: %s)", typeName))
+}
+
+// findSealedVariantFields looks up the field names for a sealed variant by searching
+// parent sealed types in typeMetas. Returns nil if the variant is not found.
+func (t *galaASTTransformer) findSealedVariantFields(variantName string) []string {
+	for _, meta := range t.typeMetas {
+		if meta.IsSealed {
+			for _, sv := range meta.SealedVariants {
+				if sv.Name == variantName {
+					return sv.FieldNames
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func (t *galaASTTransformer) transformArgumentWithExpectedType(exprCtx grammar.IExpressionContext, expectedType transpiler.Type) (ast.Expr, error) {
