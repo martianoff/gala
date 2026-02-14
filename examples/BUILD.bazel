@@ -332,6 +332,15 @@ gala_test(
 )
 
 gala_test(
+    name = "hashmap_sorted_nonorderable",
+    src = "hashmap_sorted_nonorderable.gala",
+    expected = "hashmap_sorted_nonorderable.out",
+    deps = [
+        "//collection_immutable",
+    ],
+)
+
+gala_test(
     name = "partial_function",
     src = "partial_function.gala",
     expected = "partial_function.out",

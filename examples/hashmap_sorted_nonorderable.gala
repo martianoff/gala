@@ -1,0 +1,25 @@
+package main
+
+import (
+    . "martianoff/gala/collection_immutable"
+    "fmt"
+)
+
+struct Item(Name string, Value int)
+
+func main() {
+    // Test: HashMap.Sorted() should sort by key even when values are not orderable
+    var m = EmptyHashMap[string, Array[Item]]()
+    m = m.Put("cherry", ArrayOf(Item("c1", 3)))
+    m = m.Put("apple", ArrayOf(Item("a1", 1), Item("a2", 2)))
+    m = m.Put("banana", ArrayOf(Item("b1", 4)))
+
+    // This used to panic with "CompareValues: type Tuple[string,Array[Item]] does not support ordering"
+    // Now sorts by key only
+    val sorted = m.Sorted()
+
+    for i := 0; i < sorted.Size(); i++ {
+        val entry = sorted.Get(i)
+        fmt.Printf("%s: %d items\n", entry.V1, entry.V2.Size())
+    }
+}
