@@ -347,6 +347,19 @@ val doubled = opt.Map((x) => x * 2)  // x inferred as int, Map's U inferred as i
 
 The inference works by extracting expected parameter types from `FuncType` metadata in the analyzer and passing them to `transformLambdaWithExpectedType`. When a parameter has no type annotation and an expected type is available, the expected type is used instead of defaulting to `any`. Method type parameters (like `U` in `Map[U]`) are inferred by Go from the concrete lambda return type.
 
+Lambda parameter inference works for:
+
+1. **Generic receiver types** — Methods on generic types like `Array[T]`, `Option[T]`, where receiver type params are resolved and substituted into method parameter types.
+
+2. **Non-generic wrapper types** — Methods on concrete types like `Str` that take function parameters (e.g., `Str.Map(func(rune) rune)`, `Str.Filter(func(rune) bool)`). The expected function type is extracted from method metadata and passed to the lambda.
+
+3. **FoldLeft/FoldRight accumulator** — The accumulator type parameter `U` in `FoldLeft[U](zero U, f func(U, T) U)` is inferred from the zero value argument's type, without requiring explicit type annotation:
+
+```gala
+val sum = list.FoldLeft(0, (acc, x) => acc + x)        // acc inferred as int from 0
+val joined = list.FoldLeft("", (acc, x) => acc + x)     // acc inferred as string from ""
+```
+
 ---
 
 ## Limitations and Edge Cases

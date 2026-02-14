@@ -13,4 +13,12 @@ func main() {
     // With implicit return type but explicit param types
     val sum2 = list.FoldLeft(0, (acc int, x int) => acc + x)
     fmt.Println(sum2)
+
+    // FIX-025: Fully implicit — accumulator type inferred from zero value
+    val sum3 = list.FoldLeft(0, (acc, x) => acc + x)
+    fmt.Println(sum3)
+
+    // FIX-025: String accumulator inferred from zero value
+    val joined = list.FoldLeft("", (acc, x) => acc + fmt.Sprint(x))
+    fmt.Println(joined)
 }

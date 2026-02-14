@@ -1,0 +1,17 @@
+package main
+
+import "fmt"
+import . "martianoff/gala/string_utils"
+
+func main() {
+    val s = S("hello")
+
+    // FIX-024: Lambda param type inferred from non-generic Str.Exists(func(rune) bool)
+    // Without FIX-024, (r) would generate as func(r any) any — compile error
+    val hasE = s.Exists((r) => r == 'e')
+    fmt.Println(hasE)
+
+    // FIX-024: Lambda param type inferred from non-generic Str.ForAll(func(rune) bool)
+    val allLower = s.ForAll((r) => r >= 'a' && r <= 'z')
+    fmt.Println(allLower)
+}
