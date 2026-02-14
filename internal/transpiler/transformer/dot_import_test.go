@@ -1,7 +1,6 @@
 package transformer_test
 
 import (
-	"bytes"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
 	"martianoff/gala/internal/transpiler/generator"
@@ -62,7 +61,7 @@ func test() int {
 		"Should not have separate regular std import, got:\n%s", got)
 }
 
-func TestDotImportClashWarning(t *testing.T) {
+func TestDotImportClashError(t *testing.T) {
 	// Create two temp packages with clashing symbol names
 	tempDir, err := os.MkdirTemp("", "dot_import_clash_test")
 	assert.NoError(t, err)
@@ -93,12 +92,6 @@ func TestDotImportClashWarning(t *testing.T) {
 	err = os.Chdir(tempDir)
 	assert.NoError(t, err)
 
-	// Capture stderr to detect the warning
-	oldStderr := os.Stderr
-	r, w, err := os.Pipe()
-	assert.NoError(t, err)
-	os.Stderr = w
-
 	p := transpiler.NewAntlrGalaParser()
 	a := analyzer.NewGalaAnalyzer(p, nil)
 	tr := transformer.NewGalaASTTransformer()
@@ -117,29 +110,17 @@ func test() int {
 }
 `
 
-	_, _ = trans.Transpile(input, "")
+	_, transpileErr := trans.Transpile(input, "")
 
-	// Read captured stderr
-	w.Close()
-	var buf bytes.Buffer
-	buf.ReadFrom(r)
-	os.Stderr = oldStderr
-	stderrOutput := buf.String()
-
-	// Should have warnings about clashing symbols
-	assert.Contains(t, stderrOutput, "Warning: symbol")
-	assert.Contains(t, stderrOutput, "Greet")
-	assert.Contains(t, stderrOutput, "pkg_a")
-	assert.Contains(t, stderrOutput, "pkg_b")
+	// Should return a hard error about clashing symbols
+	assert.Error(t, transpileErr)
+	assert.Contains(t, transpileErr.Error(), "dot-import symbol collision")
+	assert.Contains(t, transpileErr.Error(), "Greet")
+	assert.Contains(t, transpileErr.Error(), "pkg_a")
+	assert.Contains(t, transpileErr.Error(), "pkg_b")
 }
 
-func TestDotImportNoClashWarning(t *testing.T) {
-	// Capture stderr — should be empty when no clash
-	oldStderr := os.Stderr
-	r, w, err := os.Pipe()
-	assert.NoError(t, err)
-	os.Stderr = w
-
+func TestDotImportNoClashNoError(t *testing.T) {
 	p := transpiler.NewAntlrGalaParser()
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 	tr := transformer.NewGalaASTTransformer()
@@ -159,14 +140,6 @@ func test() int {
 }
 `
 
-	_, _ = trans.Transpile(input, "")
-
-	w.Close()
-	var buf bytes.Buffer
-	buf.ReadFrom(r)
-	os.Stderr = oldStderr
-	stderrOutput := buf.String()
-
-	// Should NOT have any symbol clash warnings
-	assert.NotContains(t, stderrOutput, "Warning: symbol")
+	_, err := trans.Transpile(input, "")
+	assert.NoError(t, err)
 }

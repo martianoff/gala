@@ -49,7 +49,7 @@ func (t *galaASTTransformer) transformIncDecStmt(ctx *grammar.IncDecStmtContext)
 	// Check for mutability - get the name if it's an identifier
 	if ident, ok := expr.(*ast.Ident); ok {
 		if t.isVal(ident.Name) {
-			return nil, galaerr.NewSemanticError(fmt.Sprintf("cannot increment/decrement immutable variable %s", ident.Name))
+			return nil, t.semanticErrorAt(ctx, fmt.Sprintf("cannot increment/decrement immutable variable %s", ident.Name))
 		}
 	}
 
@@ -104,7 +104,7 @@ func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext)
 			if pc.Identifier() != nil {
 				name := pc.Identifier().GetText()
 				if t.isVal(name) {
-					return nil, galaerr.NewSemanticError(fmt.Sprintf("cannot assign to immutable variable %s", name))
+					return nil, t.semanticErrorAt(ctx, fmt.Sprintf("cannot assign to immutable variable %s", name))
 				}
 			}
 		}

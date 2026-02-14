@@ -53,6 +53,8 @@ type RichAST struct {
 	Packages         map[string]string                   // path -> pkgName
 	CompanionObjects map[string]*CompanionObjectMetadata // companion name -> metadata
 	GoExports        map[string][]string                 // pkgName -> exported symbol names (from Go-only packages)
+	FilePath         string                              // source file path (for error reporting)
+	SourceContent    string                              // raw source text (for error snippets)
 }
 
 // Merge combines metadata from another RichAST into this one.
@@ -199,6 +201,8 @@ func (t *GalaToGoTranspiler) Transpile(input string, filePath string) (string, e
 	if err != nil {
 		return "", err
 	}
+	richAST.FilePath = filePath
+	richAST.SourceContent = input
 
 	fset, file, err := t.transformer.Transform(richAST)
 	if err != nil {

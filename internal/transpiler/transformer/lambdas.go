@@ -565,7 +565,7 @@ func (t *galaASTTransformer) transformPartialFunctionLiteral(ctx *grammar.Partia
 	}
 
 	// Infer common inner result type T from all branches
-	innerResultType, err := t.inferCommonResultType(resultTypes, casePatterns)
+	innerResultType, err := t.inferCommonResultType(resultTypes, casePatterns, nil)
 	if err != nil {
 		return nil, err
 	}
