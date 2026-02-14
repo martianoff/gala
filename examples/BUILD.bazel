@@ -791,3 +791,13 @@ gala_test(
     expected = "foldleft_method/foldleft_method.out",
     deps = ["//collection_immutable"],
 )
+
+# FIX-015 verification: sealed type named-arg construction in multi-file mode
+gala_test(
+    name = "named_arg_sealed",
+    srcs = [
+        "named_arg_sealed_model.gala",
+        "named_arg_sealed.gala",
+    ],
+    expected = "named_arg_sealed.out",
+)
