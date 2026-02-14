@@ -1,0 +1,35 @@
+package main
+
+import "fmt"
+import . "martianoff/gala/collection_immutable"
+import "martianoff/gala/go_interop"
+
+sealed type Classify {
+    case Even()
+    case Odd()
+}
+
+func classify(n int) Classify = if (n % 2 == 0) Even() else Odd()
+
+// Verifies that match expressions with assignment-only branches work correctly.
+// Previously, the transpiler would error when the last statement in a case body
+// was an assignment (not an expression).
+func main() {
+    var evens = ArrayOf[int]()
+    var odds = ArrayOf[int]()
+
+    val numbers = go_interop.SliceOf(1, 2, 3, 4, 5)
+    for _, n := range numbers {
+        classify(n) match {
+            case Even() => {
+                evens = evens.Append(n)
+            }
+            case Odd() => {
+                odds = odds.Append(n)
+            }
+        }
+    }
+
+    fmt.Println(evens)
+    fmt.Println(odds)
+}

@@ -331,18 +331,11 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		_ = isSealed
 	}
 
-	var stmts []ast.Stmt
-	for _, c := range clauses {
-		stmts = append(stmts, c)
-	}
-	stmts = append(stmts, defaultBody...)
+	// Build the match body: chain clauses into if-else, attach default, handle void stripping
+	stmts := t.buildMatchBody(clauses, defaultBody, resultType)
 
 	// Check if result type is void (for side-effect only match statements)
 	_, isVoid := resultType.(transpiler.VoidType)
-	if isVoid {
-		// Strip return statements for void match - convert returns to expression statements
-		stmts = t.stripReturnStatements(stmts)
-	}
 
 	// Build IIFE with or without return type depending on void
 	var resultsField *ast.FieldList

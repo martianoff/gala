@@ -791,3 +791,14 @@ gala_test(
     expected = "foldleft_method/foldleft_method.out",
     deps = ["//collection_immutable"],
 )
+
+# FIX-016 verification: match with assignment-only branches (void match)
+gala_test(
+    name = "void_match",
+    src = "void_match.gala",
+    expected = "void_match.out",
+    deps = [
+        "//collection_immutable",
+        "//go_interop",
+    ],
+)
