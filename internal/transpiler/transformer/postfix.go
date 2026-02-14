@@ -287,7 +287,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	}
 
 	// Infer common result type from all branches
-	resultType, err := t.inferCommonResultType(resultTypes, casePatterns)
+	resultType, err := t.inferCommonResultType(resultTypes, casePatterns, nil)
 	if err != nil {
 		return nil, err
 	}

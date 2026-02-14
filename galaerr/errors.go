@@ -47,6 +47,19 @@ func (e *SyntaxError) Error() string {
 // SemanticError represents an error during the transformation/transpilation phase.
 type SemanticError struct {
 	BaseError
+	Line     int
+	Column   int
+	FilePath string
+}
+
+func (e *SemanticError) Error() string {
+	if e.Line > 0 {
+		if e.FilePath != "" {
+			return fmt.Sprintf("[%s] %s:%d:%d %s", e.ErrType, e.FilePath, e.Line, e.Column, e.Msg)
+		}
+		return fmt.Sprintf("[%s] line %d:%d %s", e.ErrType, e.Line, e.Column, e.Msg)
+	}
+	return fmt.Sprintf("[%s] %s", e.ErrType, e.Msg)
 }
 
 // MultiError collects multiple GALA errors.
@@ -91,5 +104,30 @@ func NewSemanticError(msg string) *SemanticError {
 			Msg:     msg,
 			ErrType: TypeSemantic,
 		},
+	}
+}
+
+// NewSemanticErrorAt creates a SemanticError with line and column position.
+func NewSemanticErrorAt(line, column int, msg string) *SemanticError {
+	return &SemanticError{
+		BaseError: BaseError{
+			Msg:     msg,
+			ErrType: TypeSemantic,
+		},
+		Line:   line,
+		Column: column,
+	}
+}
+
+// NewSemanticErrorInFile creates a SemanticError with file path, line, and column position.
+func NewSemanticErrorInFile(filePath string, line, column int, msg string) *SemanticError {
+	return &SemanticError{
+		BaseError: BaseError{
+			Msg:     msg,
+			ErrType: TypeSemantic,
+		},
+		Line:     line,
+		Column:   column,
+		FilePath: filePath,
 	}
 }

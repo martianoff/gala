@@ -6,6 +6,8 @@ import (
 	"go/token"
 	"strings"
 
+	"github.com/antlr4-go/antlr/v4"
+
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
@@ -53,6 +55,9 @@ func (t *galaASTTransformer) parseMatchSubject(ctx grammar.IExpressionContext) (
 		matchedType, _ = t.inferExprType(expr)
 	}
 	if matchedType == nil || matchedType.IsNil() {
+		if parserCtx, ok := ctx.(antlr.ParserRuleContext); ok {
+			return nil, "", nil, t.semanticErrorAt(parserCtx, "cannot infer type of matched expression. Please add explicit type annotation to the variable being matched")
+		}
 		return nil, "", nil, galaerr.NewSemanticError("cannot infer type of matched expression. Please add explicit type annotation to the variable being matched")
 	}
 
@@ -217,7 +222,11 @@ func (t *galaASTTransformer) transformMatchClauses(ctx grammar.IExpressionContex
 	}
 	// When foundDefault && isSealed && isExhaustive: unreachable default is harmless, allow it
 
-	resultType, err := t.inferCommonResultType(resultTypes, casePatterns)
+	var matchCtx antlr.ParserRuleContext
+	if pc, ok := ctx.(antlr.ParserRuleContext); ok {
+		matchCtx = pc
+	}
+	resultType, err := t.inferCommonResultType(resultTypes, casePatterns, matchCtx)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -379,8 +388,9 @@ func (t *galaASTTransformer) isKnownMultiReturnFunction(pkgName, funcName string
 	return false
 }
 
-// inferCommonResultType checks that all result types are compatible and returns the common type
-func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patterns []string) (transpiler.Type, error) {
+// inferCommonResultType checks that all result types are compatible and returns the common type.
+// ctx is optional and used for position info in error messages.
+func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patterns []string, ctx antlr.ParserRuleContext) (transpiler.Type, error) {
 	if len(types) == 0 {
 		return nil, galaerr.NewSemanticError("match expression has no case branches")
 	}
@@ -451,8 +461,12 @@ func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patt
 		}
 		// Note: NilType (from nil literal) is allowed and checked in typesCompatible
 		if !t.typesCompatible(refType, typ) {
-			return nil, galaerr.NewSemanticError(fmt.Sprintf("type mismatch in match expression: '%s' returns '%s' but '%s' returns '%s'. All branches must return the same type",
-				refPattern, refType.String(), patterns[i], typ.String()))
+			msg := fmt.Sprintf("type mismatch in match expression: '%s' returns '%s' but '%s' returns '%s'. All branches must return the same type",
+				refPattern, refType.String(), patterns[i], typ.String())
+			if ctx != nil {
+				return nil, t.semanticErrorAt(ctx, msg)
+			}
+			return nil, galaerr.NewSemanticError(msg)
 		}
 	}
 

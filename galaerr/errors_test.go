@@ -22,6 +22,30 @@ func TestSemanticError(t *testing.T) {
 	assert.Contains(t, err.Error(), "[SemanticError] undefined variable x")
 }
 
+func TestSemanticErrorAt(t *testing.T) {
+	err := galaerr.NewSemanticErrorAt(10, 5, "cannot assign to immutable variable x")
+	assert.Equal(t, galaerr.TypeSemantic, err.Type())
+	assert.Equal(t, 10, err.Line)
+	assert.Equal(t, 5, err.Column)
+	assert.Equal(t, "[SemanticError] line 10:5 cannot assign to immutable variable x", err.Error())
+}
+
+func TestSemanticErrorInFile(t *testing.T) {
+	err := galaerr.NewSemanticErrorInFile("main.gala", 10, 5, "undefined variable x")
+	assert.Equal(t, galaerr.TypeSemantic, err.Type())
+	assert.Equal(t, 10, err.Line)
+	assert.Equal(t, 5, err.Column)
+	assert.Equal(t, "main.gala", err.FilePath)
+	assert.Equal(t, "[SemanticError] main.gala:10:5 undefined variable x", err.Error())
+}
+
+func TestSemanticErrorNoPosition(t *testing.T) {
+	err := galaerr.NewSemanticError("undefined variable x")
+	assert.Equal(t, galaerr.TypeSemantic, err.Type())
+	assert.Equal(t, 0, err.Line)
+	assert.Equal(t, "[SemanticError] undefined variable x", err.Error())
+}
+
 func TestMultiError(t *testing.T) {
 	e1 := galaerr.NewSyntaxError(1, 1, "error 1")
 	e2 := galaerr.NewSyntaxError(2, 2, "error 2")
