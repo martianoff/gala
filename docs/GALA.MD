@@ -29,14 +29,16 @@ GALA (Go Alternative LAnguage) is a modern programming language that transpiles 
    - [Slices](#slices)
    - [Maps](#maps)
    - [HashMap](#hashmap)
-10. [Immutability Under the Hood](#10-immutability-under-the-hood)
+10. [Literals and Type Conversions](#10-literals-and-type-conversions)
+11. [Go Built-in Functions](#11-go-built-in-functions)
+12. [Immutability Under the Hood](#12-immutability-under-the-hood)
     - [ConstPtr - Read-Only Pointers](#constptr---read-only-pointers)
-11. [GALA Packages](#11-gala-packages)
-12. [Testing](#12-testing)
-13. [Best Practices](#13-best-practices)
-14. [Dependency Management](#14-dependency-management)
-15. [Further Reading](#15-further-reading)
-16. [IDE Support](#16-ide-support)
+13. [GALA Packages](#13-gala-packages)
+14. [Testing](#14-testing)
+15. [Best Practices](#15-best-practices)
+16. [Dependency Management](#16-dependency-management)
+17. [Further Reading](#17-further-reading)
+18. [IDE Support](#18-ide-support)
 
 ---
 
@@ -774,6 +776,30 @@ for i, v := range items {
 }
 ```
 
+#### Break and Continue
+GALA supports `break` and `continue` statements inside for loops, with the same semantics as Go.
+
+- `break` exits the innermost enclosing loop immediately
+- `continue` skips the rest of the current iteration and advances to the next
+
+```gala
+// Break: exit loop early
+for i := 0; i < 10; i++ {
+    if i >= 3 {
+        break
+    }
+    fmt.Println(i) // Prints 0, 1, 2
+}
+
+// Continue: skip even numbers
+for i := 0; i < 6; i++ {
+    if i % 2 == 0 {
+        continue
+    }
+    fmt.Println(i) // Prints 1, 3, 5
+}
+```
+
 #### Increment and Decrement Operators
 GALA supports `++` and `--` operators for incrementing and decrementing mutable variables:
 
@@ -1344,7 +1370,125 @@ Choose mutable when you need:
 - Frequent updates in a single thread
 - Memory efficiency
 
-## 10. Immutability Under the Hood
+## 10. Literals and Type Conversions
+
+### String Literals
+GALA supports Go-style string literals:
+
+```gala
+// Double-quoted strings with escape sequences
+val greeting = "Hello, World!\n"
+val tab = "col1\tcol2"
+val quote = "She said \"hello\""
+
+// Raw strings with backticks (no escape processing)
+val raw = `C:\Users\path\to\file`
+val multiLine = `line one
+line two
+line three`
+```
+
+**Escape sequences** in double-quoted strings:
+| Escape | Character |
+|--------|-----------|
+| `\n` | Newline |
+| `\t` | Tab |
+| `\"` | Double quote |
+| `\\` | Backslash |
+| `\r` | Carriage return |
+
+**Raw strings** (backtick-delimited) can span multiple lines and do not process escape sequences. They are useful for regular expressions, file paths, and multi-line text.
+
+### Rune Literals
+GALA does not currently support Go-style character literals (`'a'`). Use the `rune()` type conversion to create rune values from integer codes:
+
+```gala
+val asterisk = rune(42)     // '*'
+val space = rune(32)        // ' '
+val newline = rune(10)      // '\n'
+val letterA = rune(97)      // 'a'
+val zero = rune(48)         // '0'
+```
+
+**Common rune values:**
+| Rune | Character | Rune | Character |
+|------|-----------|------|-----------|
+| `rune(32)` | space | `rune(48)`–`rune(57)` | `'0'`–`'9'` |
+| `rune(10)` | newline | `rune(65)`–`rune(90)` | `'A'`–`'Z'` |
+| `rune(9)` | tab | `rune(97)`–`rune(122)` | `'a'`–`'z'` |
+| `rune(42)` | `*` | `rune(91)` / `rune(93)` | `[` / `]` |
+| `rune(96)` | `` ` `` | `rune(40)` / `rune(41)` | `(` / `)` |
+
+### Type Conversions
+GALA supports Go-style type conversions using function call syntax:
+
+```gala
+// Numeric conversions
+val n = int64(42)
+val f = float64(10)
+val i = int(3.14)           // truncates to 3
+
+// Rune/string conversions
+val r = rune(65)            // int to rune: 'A'
+val s = string(r)           // rune to string: "A"
+val code = int(r)           // rune to int: 65
+
+// String/byte conversions
+val bytes = []byte("hello") // string to byte slice
+val str = string(bytes)     // byte slice to string
+```
+
+**Note:** Type conversions are explicit in GALA — there is no implicit numeric widening or narrowing.
+
+## 11. Go Built-in Functions
+
+Since GALA transpiles to Go, Go's built-in functions are available. The following are commonly used:
+
+### Available Built-in Functions
+
+| Function | Description | Example |
+|----------|-------------|---------|
+| `len(x)` | Length of string, slice, array, or map | `len("hello")` → `5` |
+| `cap(x)` | Capacity of slice | `cap(mySlice)` |
+| `make(T, ...)` | Create slice, map, or channel | `make(map[string]int)` |
+| `new(T)` | Allocate zeroed value, return pointer | `new(int)` |
+| `append(s, v...)` | Append to slice | `append(items, 4)` |
+| `delete(m, k)` | Delete map entry | `delete(myMap, "key")` |
+| `close(ch)` | Close a channel | `close(done)` |
+| `panic(v)` | Trigger a panic | `panic("error")` |
+| `recover()` | Recover from panic (in defer) | `recover()` |
+
+### GALA vs Go Built-ins
+
+For most use cases, prefer GALA's collection types and their methods over Go built-ins:
+
+| Operation | GALA (preferred) | Go built-in |
+|-----------|-----------------|-------------|
+| Collection length | `arr.Size()` / `list.Length()` | `len(slice)` |
+| Add to collection | `arr.Append(x)` | `append(slice, x)` |
+| Optional access | `arr.GetOption(i)` | `slice[i]` (may panic) |
+| Map lookup | `map.Get(k)` → `Option[V]` | `v, ok := m[k]` |
+| Create empty | `EmptyArray[int]()` | `make([]int, 0)` |
+
+Use Go built-ins when:
+- Working with Go slices (`[]T`) from interop
+- Using `len()` on Go strings for byte length
+- Using channels or other Go-specific features
+
+```gala
+import . "martianoff/gala/collection_immutable"
+
+// PREFERRED: GALA collections
+val nums = ArrayOf(1, 2, 3)
+val size = nums.Size()         // 3
+val first = nums.GetOption(0)  // Some(1)
+
+// GO INTEROP: when you need Go built-ins
+val goSlice = nums.ToSlice()
+val byteLen = len("hello")     // 5 (byte length, not rune count)
+```
+
+## 12. Immutability Under the Hood
 
 When GALA transpiles to Go, immutable values are wrapped in a `std.Immutable[T]` container to ensure safety and provide consistent semantics, especially for struct fields and global variables.
 
@@ -1600,7 +1744,7 @@ fmt.Println(validPtr.IsNil())  // false
 
 **Note:** Taking the address of a `val` variable (`&val`) automatically returns `ConstPtr[T]`, while taking the address of a `var` variable (`&var`) returns `*T`. This ensures that pointers to immutable data cannot be accidentally used to modify that data.
 
-## 11. GALA Packages
+## 13. GALA Packages
 
 GALA supports importing other GALA packages. Since GALA transpiles to Go, a GALA package is essentially a Go package after transpilation. To import a GALA package, you use its Go import path.
 
@@ -1695,7 +1839,7 @@ func main() {
 }
 ```
 
-## 12. Testing
+## 14. Testing
 
 GALA provides a test framework following Go conventions. Tests are collocated with source code and use familiar patterns.
 
@@ -1830,7 +1974,7 @@ Run specific tests:
 bazel test //mypackage:mycode_test
 ```
 
-## 13. Best Practices
+## 15. Best Practices
 
 ### Immutability
 - **Prefer `val` over `var`** - Use mutable variables only when necessary (accumulators, loop counters)
@@ -1988,7 +2132,7 @@ val nums = SliceOf(1, 2, 3, 4, 5)  // No .Map(), .Filter(), etc.
 - **Prefer `List` for prepend-heavy** workloads (O(1) vs O(n))
 - **Use `arrayBuilder`** when building arrays incrementally
 
-## 14. Dependency Management
+## 16. Dependency Management
 
 GALA provides a module system similar to Go modules for managing external dependencies.
 
@@ -2058,7 +2202,7 @@ For comprehensive documentation, see [DEPENDENCY_MANAGEMENT.MD](DEPENDENCY_MANAG
 
 ---
 
-## 15. Further Reading
+## 17. Further Reading
 
 - [Examples](EXAMPLES.MD) - More examples of GALA code.
 - [Concurrent](CONCURRENT.MD) - Future, Promise, and ExecutionContext for async programming.
@@ -2068,7 +2212,7 @@ For comprehensive documentation, see [DEPENDENCY_MANAGEMENT.MD](DEPENDENCY_MANAG
 - [Immutable Collections](IMMUTABLE_COLLECTIONS.MD) - Array, List, HashMap, HashSet, TreeSet.
 - [Mutable Collections](MUTABLE_COLLECTIONS.MD) - Mutable collection types.
 
-## 16. IDE Support
+## 18. IDE Support
 
 ### IntelliJ IDEA
 A basic IntelliJ IDEA plugin is available in `ide/intellij`.

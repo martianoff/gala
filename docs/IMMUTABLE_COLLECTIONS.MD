@@ -989,6 +989,18 @@ m.Remove("b")           // new map without "b"
 m.Size()                // 2
 ```
 
+### Conversion Operations
+
+```gala
+val m = HashMapOf(("a", 1), ("b", 2), ("c", 3))
+
+m.Keys()                                      // HashSet("a", "b", "c")
+m.Keys().Sorted()                             // Array("a", "b", "c") — sorted keys
+m.Keys().ToArray()                            // Array (unordered)
+```
+
+> **Note:** `HashMap.Sorted()` requires both `K` and `V` to be orderable types. If `V` is not orderable (e.g., a struct or sealed type), use `m.Keys().Sorted()` instead to get sorted keys, then look up values individually.
+
 ### Functional Operations
 
 ```gala
@@ -997,6 +1009,7 @@ val m = HashMapOf(("a", 1), ("b", 2), ("c", 3))
 m.Filter((k, v) => v > 1)                    // HashMap(b -> 2, c -> 3)
 m.MapValues[int]((v) => v * 2)               // HashMap(a -> 2, b -> 4, c -> 6)
 m.FoldLeftKV[int](0, (acc, k, v) => acc + v) // 6
+m.FoldLeft[int](0, (acc int, entry Tuple[string, int]) => acc + entry.V2) // 6 — iterates as Tuple entries
 m.Sorted()                                    // Array((a,1), (b,2), (c,3))
 ```
 
