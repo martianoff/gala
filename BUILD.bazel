@@ -28,6 +28,7 @@ filegroup(
         "//collection_immutable:gala_sources",
         "//collection_mutable:gala_sources",
         "//concurrent:gala_sources",
+        "//lazy:lazy.gala",
         "//std:constptr.gala",
         "//std:either.gala",
         "//std:errors.gala",
