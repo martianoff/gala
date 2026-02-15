@@ -59,10 +59,10 @@ func TestHashMapContains(t T) T {
 
 func TestHashMapGet(t T) T {
     val m = EmptyHashMap[string, int]().Put("a", 1).Put("b", 2)
-    var t1 = IsTrue(t, m.Get("a").IsDefined())
+    var t1 = IsSome(t, m.Get("a"))
     var t2 = Eq[int](t1, m.Get("a").Get(), 1)
     var t3 = Eq[int](t2, m.Get("b").Get(), 2)
-    return IsTrue(t3, m.Get("c").IsEmpty())
+    return IsNone(t3, m.Get("c"))
 }
 
 func TestHashMapGetOrElse(t T) T {
@@ -195,7 +195,7 @@ func TestHashMapForAll(t T) T {
 func TestHashMapFind(t T) T {
     val m = EmptyHashMap[string, int]().Put("a", 1).Put("b", 2).Put("c", 3)
     val found = m.Find((k string, v int) => v == 2)
-    var t1 = IsTrue(t, found.IsDefined())
+    var t1 = IsSome(t, found)
     return Eq[string](t1, found.Get().V1, "b")
 }
 
@@ -244,8 +244,8 @@ func TestHashMapHeadOption(t T) T {
     val m = EmptyHashMap[string, int]().Put("a", 1)
     val empty = EmptyHashMap[string, int]()
 
-    var t1 = IsTrue(t, m.HeadOption().IsDefined())
-    return IsTrue(t1, empty.HeadOption().IsEmpty())
+    var t1 = IsSome(t, m.HeadOption())
+    return IsNone(t1, empty.HeadOption())
 }
 
 // === Conversion Tests ===

@@ -23,11 +23,14 @@ func TestHashSetOf(t T) T {
 
 func TestHashSetContains(t T) T {
     val s = HashSetOf[int](1, 2, 3, 4, 5)
-    var t1 = IsTrue(t, s.Contains(1))
-    var t2 = IsTrue(t1, s.Contains(3))
-    var t3 = IsTrue(t2, s.Contains(5))
-    var t4 = IsFalse(t3, s.Contains(0))
-    return IsFalse(t4, s.Contains(6))
+    return RunCases[int, bool](t,
+        (sub T, input int, expected bool) => Eq(sub, s.Contains(input), expected),
+        Case[int, bool](Name = "contains 1", Input = 1, Expected = true),
+        Case[int, bool](Name = "contains 3", Input = 3, Expected = true),
+        Case[int, bool](Name = "contains 5", Input = 5, Expected = true),
+        Case[int, bool](Name = "not contains 0", Input = 0, Expected = false),
+        Case[int, bool](Name = "not contains 6", Input = 6, Expected = false),
+    )
 }
 
 func TestHashSetAdd(t T) T {
@@ -159,7 +162,7 @@ func TestHashSetCount(t T) T {
 func TestHashSetFind(t T) T {
     val s = HashSetOf[int](1, 2, 3, 4, 5)
     val found = s.Find((x int) => x > 3)
-    return IsTrue(t, found.IsDefined())
+    return IsSome(t, found)
 }
 
 // Conversion tests
@@ -226,8 +229,8 @@ func TestHashSetHeadOption(t T) T {
     val s = HashSetOf[int](1, 2, 3)
     val empty = EmptyHashSet[int]()
 
-    var t1 = IsTrue(t, s.HeadOption().IsDefined())
-    return IsTrue(t1, empty.HeadOption().IsEmpty())
+    var t1 = IsSome(t, s.HeadOption())
+    return IsNone(t1, empty.HeadOption())
 }
 
 // Partition test
@@ -252,8 +255,8 @@ func TestHashSetReduceOption(t T) T {
     val s = HashSetOf[int](1, 2, 3)
     val empty = EmptyHashSet[int]()
 
-    var t1 = IsTrue(t, s.ReduceOption((a int, b int) => a + b).IsDefined())
-    return IsTrue(t1, empty.ReduceOption((a int, b int) => a + b).IsEmpty())
+    var t1 = IsSome(t, s.ReduceOption((a int, b int) => a + b))
+    return IsNone(t1, empty.ReduceOption((a int, b int) => a + b))
 }
 
 // ============ Hashable Interface Tests ============

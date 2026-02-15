@@ -185,12 +185,12 @@ func TestUnixEpoch(t T) T {
 
 func TestParseISO(t T) T {
     val result = ParseISO("2024-01-15T10:30:00Z")
-    return IsTrue(t, result.IsDefined())
+    return IsSome(t, result)
 }
 
 func TestParseISOInvalid(t T) T {
     val result = ParseISO("not a date")
-    return IsTrue(t, result.IsEmpty())
+    return IsNone(t, result)
 }
 
 func TestParseISOComponents(t T) T {

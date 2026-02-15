@@ -25,11 +25,14 @@ func TestTreeSetOf(t T) T {
 
 func TestTreeSetContains(t T) T {
     val s = TreeSetOf(1, 2, 3, 4, 5)
-    var t1 = IsTrue(t, s.Contains(1))
-    var t2 = IsTrue(t1, s.Contains(3))
-    var t3 = IsTrue(t2, s.Contains(5))
-    var t4 = IsFalse(t3, s.Contains(0))
-    return IsFalse(t4, s.Contains(6))
+    return RunCases[int, bool](t,
+        (sub T, input int, expected bool) => Eq(sub, s.Contains(input), expected),
+        Case[int, bool](Name = "contains 1", Input = 1, Expected = true),
+        Case[int, bool](Name = "contains 3", Input = 3, Expected = true),
+        Case[int, bool](Name = "contains 5", Input = 5, Expected = true),
+        Case[int, bool](Name = "not contains 0", Input = 0, Expected = false),
+        Case[int, bool](Name = "not contains 6", Input = 6, Expected = false),
+    )
 }
 
 func TestTreeSetAdd(t T) T {
@@ -96,18 +99,18 @@ func TestTreeSetMinOption(t T) T {
     val s = TreeSetOf(5, 3, 1)
     val empty = EmptyTreeSet[int]()
 
-    var t1 = IsTrue(t, s.MinOption().IsDefined())
+    var t1 = IsSome(t, s.MinOption())
     var t2 = Eq[int](t1, s.MinOption().GetOrElse(0), 1)
-    return IsTrue(t2, empty.MinOption().IsEmpty())
+    return IsNone(t2, empty.MinOption())
 }
 
 func TestTreeSetMaxOption(t T) T {
     val s = TreeSetOf(5, 3, 1)
     val empty = EmptyTreeSet[int]()
 
-    var t1 = IsTrue(t, s.MaxOption().IsDefined())
+    var t1 = IsSome(t, s.MaxOption())
     var t2 = Eq[int](t1, s.MaxOption().GetOrElse(0), 5)
-    return IsTrue(t2, empty.MaxOption().IsEmpty())
+    return IsNone(t2, empty.MaxOption())
 }
 
 // Range tests (TreeSet-specific)
@@ -237,7 +240,7 @@ func TestTreeSetCount(t T) T {
 func TestTreeSetFind(t T) T {
     val s = TreeSetOf(1, 2, 3, 4, 5)
     val found = s.Find((x int) => x > 3)
-    var t1 = IsTrue(t, found.IsDefined())
+    var t1 = IsSome(t, found)
     // Find returns first in sorted order, so should be 4
     return Eq[int](t1, found.GetOrElse(0), 4)
 }
@@ -335,16 +338,16 @@ func TestTreeSetHeadOption(t T) T {
     val s = TreeSetOf(5, 3, 1)
     val empty = EmptyTreeSet[int]()
 
-    var t1 = IsTrue(t, s.HeadOption().IsDefined())
-    return IsTrue(t1, empty.HeadOption().IsEmpty())
+    var t1 = IsSome(t, s.HeadOption())
+    return IsNone(t1, empty.HeadOption())
 }
 
 func TestTreeSetLastOption(t T) T {
     val s = TreeSetOf(5, 3, 1)
     val empty = EmptyTreeSet[int]()
 
-    var t1 = IsTrue(t, s.LastOption().IsDefined())
-    return IsTrue(t1, empty.LastOption().IsEmpty())
+    var t1 = IsSome(t, s.LastOption())
+    return IsNone(t1, empty.LastOption())
 }
 
 // Partition test
@@ -369,8 +372,8 @@ func TestTreeSetReduceOption(t T) T {
     val s = TreeSetOf(1, 2, 3)
     val empty = EmptyTreeSet[int]()
 
-    var t1 = IsTrue(t, s.ReduceOption((a int, b int) => a + b).IsDefined())
-    return IsTrue(t1, empty.ReduceOption((a int, b int) => a + b).IsEmpty())
+    var t1 = IsSome(t, s.ReduceOption((a int, b int) => a + b))
+    return IsNone(t1, empty.ReduceOption((a int, b int) => a + b))
 }
 
 // Balance test - ensure tree stays balanced after many insertions

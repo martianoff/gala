@@ -174,7 +174,7 @@ func TestReduce(t T) T {
 // Test Find
 func TestFind(t T) T {
     val found = Of(1, 2, 3, 4, 5).Find((x int) => x > 3)
-    var t1 = IsTrue(t, found.IsDefined())
+    var t1 = IsSome(t, found)
     return Eq[int](t1, found.GetOrElse(0), 4)
 }
 
@@ -195,7 +195,7 @@ func TestGet(t T) T {
     val s = Of(10, 20, 30)
     var t1 = Eq[int](t, s.Get(0).GetOrElse(0), 10)
     var t2 = Eq[int](t1, s.Get(2).GetOrElse(0), 30)
-    return IsFalse(t2, s.Get(5).IsDefined())
+    return IsNone(t2, s.Get(5))
 }
 
 // Test Slice

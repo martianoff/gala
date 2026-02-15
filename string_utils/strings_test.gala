@@ -14,11 +14,12 @@ func TestConstructor(t T) T {
 }
 
 // Test Length
-func TestLength(t T) T {
-    val t1 = Eq(t, S("hello").Length(), 5)
-    val t2 = Eq(t1, S("").Length(), 0)
-    return Eq(t2, S("abc").Length(), 3)
-}
+func TestLength(t T) T = RunCases[string, int](t,
+    (sub T, input string, expected int) => Eq(sub, S(input).Length(), expected),
+    Case[string, int](Name = "hello", Input = "hello", Expected = 5),
+    Case[string, int](Name = "empty", Input = "", Expected = 0),
+    Case[string, int](Name = "abc", Input = "abc", Expected = 3),
+)
 
 // Test IsEmpty and NonEmpty
 func TestIsEmptyNonEmpty(t T) T {
@@ -33,8 +34,8 @@ func TestCharAt(t T) T {
     val s = S("hello")
     val t1 = Eq(t, s.CharAt(0).GetOrElse('?'), 'h')
     val t2 = Eq(t1, s.CharAt(4).GetOrElse('?'), 'o')
-    val t3 = IsFalse(t2, s.CharAt(5).IsDefined())
-    return IsFalse(t3, s.CharAt(-1).IsDefined())
+    val t3 = IsNone(t2, s.CharAt(5))
+    return IsNone(t3, s.CharAt(-1))
 }
 
 // Test Substring
@@ -49,34 +50,46 @@ func TestSubstring(t T) T {
 // Test Take
 func TestTake(t T) T {
     val s = S("hello")
-    val t1 = Eq(t, s.Take(3).ToString(), "hel")
-    val t2 = Eq(t1, s.Take(0).ToString(), "")
-    val t3 = Eq(t2, s.Take(10).ToString(), "hello")
-    return Eq(t3, s.Take(-1).ToString(), "")
+    return RunCases[int, string](t,
+        (sub T, n int, expected string) => Eq(sub, s.Take(n).ToString(), expected),
+        Case[int, string](Name = "take 3", Input = 3, Expected = "hel"),
+        Case[int, string](Name = "take 0", Input = 0, Expected = ""),
+        Case[int, string](Name = "take 10", Input = 10, Expected = "hello"),
+        Case[int, string](Name = "take -1", Input = -1, Expected = ""),
+    )
 }
 
 // Test TakeRight
 func TestTakeRight(t T) T {
     val s = S("hello")
-    val t1 = Eq(t, s.TakeRight(3).ToString(), "llo")
-    val t2 = Eq(t1, s.TakeRight(0).ToString(), "")
-    return Eq(t2, s.TakeRight(10).ToString(), "hello")
+    return RunCases[int, string](t,
+        (sub T, n int, expected string) => Eq(sub, s.TakeRight(n).ToString(), expected),
+        Case[int, string](Name = "take right 3", Input = 3, Expected = "llo"),
+        Case[int, string](Name = "take right 0", Input = 0, Expected = ""),
+        Case[int, string](Name = "take right 10", Input = 10, Expected = "hello"),
+    )
 }
 
 // Test Drop
 func TestDrop(t T) T {
     val s = S("hello")
-    val t1 = Eq(t, s.Drop(2).ToString(), "llo")
-    val t2 = Eq(t1, s.Drop(0).ToString(), "hello")
-    return Eq(t2, s.Drop(10).ToString(), "")
+    return RunCases[int, string](t,
+        (sub T, n int, expected string) => Eq(sub, s.Drop(n).ToString(), expected),
+        Case[int, string](Name = "drop 2", Input = 2, Expected = "llo"),
+        Case[int, string](Name = "drop 0", Input = 0, Expected = "hello"),
+        Case[int, string](Name = "drop 10", Input = 10, Expected = ""),
+    )
 }
 
 // Test DropRight
 func TestDropRight(t T) T {
     val s = S("hello")
-    val t1 = Eq(t, s.DropRight(2).ToString(), "hel")
-    val t2 = Eq(t1, s.DropRight(0).ToString(), "hello")
-    return Eq(t2, s.DropRight(10).ToString(), "")
+    return RunCases[int, string](t,
+        (sub T, n int, expected string) => Eq(sub, s.DropRight(n).ToString(), expected),
+        Case[int, string](Name = "drop right 2", Input = 2, Expected = "hel"),
+        Case[int, string](Name = "drop right 0", Input = 0, Expected = "hello"),
+        Case[int, string](Name = "drop right 10", Input = 10, Expected = ""),
+    )
 }
 
 // Test ToUpper and ToLower
@@ -109,17 +122,22 @@ func TestReplace(t T) T {
 }
 
 // Test Reverse
-func TestReverse(t T) T {
-    val t1 = Eq(t, S("hello").Reverse().ToString(), "olleh")
-    val t2 = Eq(t1, S("").Reverse().ToString(), "")
-    return Eq(t2, S("a").Reverse().ToString(), "a")
-}
+func TestReverse(t T) T = RunCases[string, string](t,
+    (sub T, input string, expected string) => Eq(sub, S(input).Reverse().ToString(), expected),
+    Case[string, string](Name = "hello", Input = "hello", Expected = "olleh"),
+    Case[string, string](Name = "empty", Input = "", Expected = ""),
+    Case[string, string](Name = "single", Input = "a", Expected = "a"),
+)
 
 // Test Repeat
 func TestRepeat(t T) T {
-    val t1 = Eq(t, S("ab").Repeat(3).ToString(), "ababab")
-    val t2 = Eq(t1, S("ab").Repeat(0).ToString(), "")
-    return Eq(t2, S("ab").Repeat(1).ToString(), "ab")
+    val s = S("ab")
+    return RunCases[int, string](t,
+        (sub T, n int, expected string) => Eq(sub, s.Repeat(n).ToString(), expected),
+        Case[int, string](Name = "repeat 3", Input = 3, Expected = "ababab"),
+        Case[int, string](Name = "repeat 0", Input = 0, Expected = ""),
+        Case[int, string](Name = "repeat 1", Input = 1, Expected = "ab"),
+    )
 }
 
 // Test PadLeft and PadRight
@@ -221,7 +239,7 @@ func TestCasePredicates(t T) T {
 func TestIndexOf(t T) T {
     val s = S("hello world")
     val t1 = Eq(t, s.IndexOf("world").GetOrElse(-1), 6)
-    val t2 = IsFalse(t1, s.IndexOf("xyz").IsDefined())
+    val t2 = IsNone(t1, s.IndexOf("xyz"))
     return Eq(t2, s.LastIndexOf("o").GetOrElse(-1), 7)
 }
 
@@ -280,7 +298,7 @@ func TestExistsForAll(t T) T {
 func TestFind(t T) T {
     val s = S("hello")
     val t1 = Eq(t, s.Find((r rune) => r == 'l').GetOrElse('?'), 'l')
-    return IsFalse(t1, s.Find((r rune) => r == 'x').IsDefined())
+    return IsNone(t1, s.Find((r rune) => r == 'x'))
 }
 
 // Test ZipWithIndex

@@ -50,20 +50,20 @@ func TestListLast(t T) T {
 func TestListHeadOption(t T) T {
     var list = ListOf[int](42)
     var opt = list.HeadOption()
-    var t1 = IsFalse(t, opt.IsEmpty())
+    var t1 = IsSome(t, opt)
     return Eq[int](t1, opt.Get(), 42)
 }
 
 func TestListHeadOptionEmpty(t T) T {
     var list = EmptyList[int]()
     var opt = list.HeadOption()
-    return IsTrue(t, opt.IsEmpty())
+    return IsNone(t, opt)
 }
 
 func TestListLastOption(t T) T {
     var list = ListOf[int](1, 2, 3)
     var opt = list.LastOption()
-    var t1 = IsFalse(t, opt.IsEmpty())
+    var t1 = IsSome(t, opt)
     return Eq[int](t1, opt.Get(), 3)
 }
 
@@ -220,14 +220,14 @@ func isGreaterThanTenList(x int) bool = x > 10
 func TestListFind(t T) T {
     var list = ListOf[int](5, 15, 25)
     var found = list.Find(isGreaterThanTenList)
-    var t1 = IsFalse(t, found.IsEmpty())
+    var t1 = IsSome(t, found)
     return Eq[int](t1, found.Get(), 15)
 }
 
 func TestListFindLast(t T) T {
     var list = ListOf[int](5, 15, 25)
     var found = list.FindLast(isGreaterThanTenList)
-    var t1 = IsFalse(t, found.IsEmpty())
+    var t1 = IsSome(t, found)
     return Eq[int](t1, found.Get(), 25)
 }
 

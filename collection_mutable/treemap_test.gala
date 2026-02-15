@@ -59,10 +59,10 @@ func TestMutableTreeMapGet(t T) T {
     val m = EmptyTreeMap[string, int]()
     m.Put("a", 1)
     m.Put("b", 2)
-    var t1 = IsTrue(t, m.Get("a").IsDefined())
+    var t1 = IsSome(t, m.Get("a"))
     var t2 = Eq[int](t1, m.Get("a").Get(), 1)
     var t3 = Eq[int](t2, m.Get("b").Get(), 2)
-    return IsTrue(t3, m.Get("c").IsEmpty())
+    return IsNone(t3, m.Get("c"))
 }
 
 func TestMutableTreeMapGetOrElse(t T) T {
@@ -372,7 +372,7 @@ func TestMutableTreeMapFind(t T) T {
     m.Put("b", 2)
     m.Put("c", 3)
     val found = m.Find((k string, v int) => v == 2)
-    var t1 = IsTrue(t, found.IsDefined())
+    var t1 = IsSome(t, found)
     return Eq[string](t1, found.Get().V1, "b")
 }
 

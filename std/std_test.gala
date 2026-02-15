@@ -8,12 +8,12 @@ import (
 
 func TestSomeNotEmpty(t T) T {
     var opt = std.Some[int](42)
-    return IsFalse(t, opt.IsEmpty())
+    return IsSome(t, opt)
 }
 
 func TestNoneIsEmpty(t T) T {
     var opt = std.None[int]()
-    return IsTrue(t, opt.IsEmpty())
+    return IsNone(t, opt)
 }
 
 func TestSomeGet(t T) T {
@@ -41,14 +41,14 @@ func mapIntToString(x int) string {
 func TestSomeMap(t T) T {
     var opt = std.Some[int](42)
     var mapped = opt.Map[string](mapIntToString)
-    var t1 = IsFalse(t, mapped.IsEmpty())
+    var t1 = IsSome(t, mapped)
     return Eq[string](t1, mapped.Get(), "forty-two")
 }
 
 func TestNoneMap(t T) T {
     var opt = std.None[int]()
     var mapped = opt.Map[string](mapIntToString)
-    return IsTrue(t, mapped.IsEmpty())
+    return IsNone(t, mapped)
 }
 
 func isPositive(x int) bool {
@@ -58,20 +58,20 @@ func isPositive(x int) bool {
 func TestSomeFilterPass(t T) T {
     var opt = std.Some[int](42)
     var filtered = opt.Filter(isPositive)
-    var t1 = IsFalse(t, filtered.IsEmpty())
+    var t1 = IsSome(t, filtered)
     return Eq[int](t1, filtered.Get(), 42)
 }
 
 func TestSomeFilterFail(t T) T {
     var opt = std.Some[int](-5)
     var filtered = opt.Filter(isPositive)
-    return IsTrue(t, filtered.IsEmpty())
+    return IsNone(t, filtered)
 }
 
 func TestNoneFilter(t T) T {
     var opt = std.None[int]()
     var filtered = opt.Filter(isPositive)
-    return IsTrue(t, filtered.IsEmpty())
+    return IsNone(t, filtered)
 }
 
 // === Either Tests ===

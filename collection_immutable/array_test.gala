@@ -48,14 +48,14 @@ func TestArrayLast(t T) T {
 func TestArrayHeadOption(t T) T {
     var arr = ArrayOf[int](42)
     var opt = arr.HeadOption()
-    var t1 = IsFalse(t, opt.IsEmpty())
+    var t1 = IsSome(t, opt)
     return Eq[int](t1, opt.Get(), 42)
 }
 
 func TestArrayHeadOptionEmpty(t T) T {
     var arr = EmptyArray[int]()
     var opt = arr.HeadOption()
-    return IsTrue(t, opt.IsEmpty())
+    return IsNone(t, opt)
 }
 
 // === Array Modification Tests ===
@@ -194,14 +194,14 @@ func isGreaterThanTen(x int) bool {
 func TestArrayFind(t T) T {
     var arr = ArrayOf[int](5, 15, 25)
     var found = arr.Find(isGreaterThanTen)
-    var t1 = IsFalse(t, found.IsEmpty())
+    var t1 = IsSome(t, found)
     return Eq[int](t1, found.Get(), 15)
 }
 
 func TestArrayFindNone(t T) T {
     var arr = ArrayOf[int](1, 2, 3)
     var found = arr.Find(isGreaterThanTen)
-    return IsTrue(t, found.IsEmpty())
+    return IsNone(t, found)
 }
 
 func TestArrayCount(t T) T {
@@ -280,9 +280,9 @@ func TestArrayFindPattern(t T) T {
     var arr = ArrayOf[int](1, 5, 10, 15)
     var found = arr.Find(isGreaterThanTen)
     var notFound = arr.Find((x int) => x > 100)
-    var t1 = IsFalse(t, found.IsEmpty())
+    var t1 = IsSome(t, found)
     var t2 = Eq[int](t1, found.GetOrElse(0), 15)
-    return IsTrue(t2, notFound.IsEmpty())
+    return IsNone(t2, notFound)
 }
 
 // === Immutability Tests ===

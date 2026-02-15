@@ -59,10 +59,10 @@ func TestTreeMapContains(t T) T {
 
 func TestTreeMapGet(t T) T {
     val m = EmptyTreeMap[string, int]().Put("a", 1).Put("b", 2)
-    var t1 = IsTrue(t, m.Get("a").IsDefined())
+    var t1 = IsSome(t, m.Get("a"))
     var t2 = Eq[int](t1, m.Get("a").Get(), 1)
     var t3 = Eq[int](t2, m.Get("b").Get(), 2)
-    return IsTrue(t3, m.Get("c").IsEmpty())
+    return IsNone(t3, m.Get("c"))
 }
 
 func TestTreeMapGetOrElse(t T) T {
@@ -120,18 +120,18 @@ func TestTreeMapMinKeyOption(t T) T {
     val m = EmptyTreeMap[int, string]().Put(5, "e").Put(3, "c")
     val empty = EmptyTreeMap[int, string]()
 
-    var t1 = IsTrue(t, m.MinKeyOption().IsDefined())
+    var t1 = IsSome(t, m.MinKeyOption())
     var t2 = Eq[int](t1, m.MinKeyOption().GetOrElse(0), 3)
-    return IsTrue(t2, empty.MinKeyOption().IsEmpty())
+    return IsNone(t2, empty.MinKeyOption())
 }
 
 func TestTreeMapMaxKeyOption(t T) T {
     val m = EmptyTreeMap[int, string]().Put(5, "e").Put(3, "c")
     val empty = EmptyTreeMap[int, string]()
 
-    var t1 = IsTrue(t, m.MaxKeyOption().IsDefined())
+    var t1 = IsSome(t, m.MaxKeyOption())
     var t2 = Eq[int](t1, m.MaxKeyOption().GetOrElse(0), 5)
-    return IsTrue(t2, empty.MaxKeyOption().IsEmpty())
+    return IsNone(t2, empty.MaxKeyOption())
 }
 
 func TestTreeMapMinEntry(t T) T {
@@ -267,7 +267,7 @@ func TestTreeMapForAll(t T) T {
 func TestTreeMapFind(t T) T {
     val m = EmptyTreeMap[string, int]().Put("a", 1).Put("b", 2).Put("c", 3)
     val found = m.Find((k string, v int) => v == 2)
-    var t1 = IsTrue(t, found.IsDefined())
+    var t1 = IsSome(t, found)
     return Eq[string](t1, found.Get().V1, "b")
 }
 
@@ -339,8 +339,8 @@ func TestTreeMapHeadOption(t T) T {
     val m = EmptyTreeMap[string, int]().Put("a", 1)
     val empty = EmptyTreeMap[string, int]()
 
-    var t1 = IsTrue(t, m.HeadOption().IsDefined())
-    return IsTrue(t1, empty.HeadOption().IsEmpty())
+    var t1 = IsSome(t, m.HeadOption())
+    return IsNone(t1, empty.HeadOption())
 }
 
 func TestTreeMapLast(t T) T {
@@ -354,8 +354,8 @@ func TestTreeMapLastOption(t T) T {
     val m = EmptyTreeMap[string, int]().Put("a", 1)
     val empty = EmptyTreeMap[string, int]()
 
-    var t1 = IsTrue(t, m.LastOption().IsDefined())
-    return IsTrue(t1, empty.LastOption().IsEmpty())
+    var t1 = IsSome(t, m.LastOption())
+    return IsNone(t1, empty.LastOption())
 }
 
 // === Conversion Tests ===

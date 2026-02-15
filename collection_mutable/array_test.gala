@@ -55,14 +55,14 @@ func TestArrayLast(t T) T {
 func TestArrayHeadOption(t T) T {
     var arr = ArrayOf[int](42)
     var opt = arr.HeadOption()
-    var t1 = IsFalse(t, opt.IsEmpty())
+    var t1 = IsSome(t, opt)
     return Eq[int](t1, opt.Get(), 42)
 }
 
 func TestArrayHeadOptionEmpty(t T) T {
     var arr = EmptyArray[int]()
     var opt = arr.HeadOption()
-    return IsTrue(t, opt.IsEmpty())
+    return IsNone(t, opt)
 }
 
 // === Array Mutation Tests ===
@@ -199,7 +199,7 @@ func isGreaterThanTen(x int) bool = x > 10
 func TestArrayFind(t T) T {
     var arr = ArrayOf[int](5, 15, 25)
     var found = arr.Find(isGreaterThanTen)
-    var t1 = IsFalse(t, found.IsEmpty())
+    var t1 = IsSome(t, found)
     return Eq[int](t1, found.Get(), 15)
 }
 
