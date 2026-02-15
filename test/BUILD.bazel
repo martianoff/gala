@@ -2,7 +2,12 @@ load("//:gala.bzl", "gala_go_test", "gala_library")
 
 gala_library(
     name = "test",
-    src = "framework.gala",
+    srcs = [
+        "framework.gala",
+        "assertions.gala",
+        "table.gala",
+        "bench.gala",
+    ],
     importpath = "martianoff/gala/test",
     visibility = ["//visibility:public"],
 )

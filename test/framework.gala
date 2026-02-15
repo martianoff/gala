@@ -3,6 +3,7 @@ package test
 import (
     "fmt"
     "os"
+    "time"
 )
 
 // T is the test context, similar to Go's *testing.T.
@@ -56,27 +57,35 @@ func (t T) Fatal(msg string) {
 
 // Run runs a subtest with the given name and function.
 // This enables table-driven testing patterns.
+// Panics in subtests are recovered and reported as failures.
 func (t T) Run(name string, f func(T) T) T {
     var subT = newT(t.name + "/" + name)
     fmt.Printf("=== RUN   %s\n", subT.name)
 
+    var start = time.Now()
     var result = runTest(subT, f)
+    var elapsed = time.Since(start)
 
     if result.failed {
-        fmt.Printf("--- FAIL: %s\n", subT.name)
+        fmt.Printf("--- FAIL: %s (%.3fs)\n", subT.name, elapsed.Seconds())
         return T(name = t.name, failed = true, skipped = t.skipped)
     } else if result.skipped {
-        fmt.Printf("--- SKIP: %s\n", subT.name)
+        fmt.Printf("--- SKIP: %s (%.3fs)\n", subT.name, elapsed.Seconds())
         return t
     } else {
-        fmt.Printf("--- PASS: %s\n", subT.name)
+        fmt.Printf("--- PASS: %s (%.3fs)\n", subT.name, elapsed.Seconds())
         return t
     }
 }
 
-// runTest runs a test function.
+// runTest runs a test function with panic recovery.
+// If the function panics, the panic is caught and reported as a test failure.
 func runTest(t T, f func(T) T) T {
-    return f(t)
+    val result = Try[T](() => f(t))
+    if result.IsSuccess() {
+        return result.Get()
+    }
+    return t.Error(fmt.Sprintf("PANIC: %v", result.GetError()))
 }
 
 // ============================================================================
@@ -89,24 +98,24 @@ type TestFunc struct {
     F    func(T) T
 }
 
-// Run executes the test function.
-func (tf TestFunc) Run() bool {
+// Run executes the test function and returns the result.
+func (tf TestFunc) Run() T {
     var t = newT(tf.Name)
     fmt.Printf("=== RUN   %s\n", t.name)
 
+    var start = time.Now()
     var result = runTest(t, tf.F)
+    var elapsed = time.Since(start)
 
     // Print result
     if result.failed {
-        fmt.Printf("--- FAIL: %s\n", t.name)
-        return false
+        fmt.Printf("--- FAIL: %s (%.3fs)\n", t.name, elapsed.Seconds())
     } else if result.skipped {
-        fmt.Printf("--- SKIP: %s\n", t.name)
-        return true
+        fmt.Printf("--- SKIP: %s (%.3fs)\n", t.name, elapsed.Seconds())
     } else {
-        fmt.Printf("--- PASS: %s\n", t.name)
-        return true
+        fmt.Printf("--- PASS: %s (%.3fs)\n", t.name, elapsed.Seconds())
     }
+    return result
 }
 
 // RunTests runs all provided test functions and exits with appropriate code.
@@ -114,71 +123,28 @@ func (tf TestFunc) Run() bool {
 func RunTests(tests ...TestFunc) {
     var passed = 0
     var failed = 0
+    var skipped = 0
 
     fmt.Println("=== STARTING TESTS ===")
     for i := 0; i < len(tests); i++ {
         var test = tests[i]
-        if test.Run() {
-            passed++
-        } else {
+        var result = test.Run()
+        if result.failed {
             failed++
+        } else if result.skipped {
+            skipped++
+        } else {
+            passed++
         }
     }
 
     fmt.Println()
     fmt.Println("=== RESULTS ===")
-    fmt.Printf("Passed: %d, Failed: %d\n", passed, failed)
+    fmt.Printf("Passed: %d, Failed: %d, Skipped: %d\n", passed, failed, skipped)
 
     if failed > 0 {
         fmt.Println("FAIL")
         os.Exit(1)
     }
     fmt.Println("PASS")
-}
-
-// ============================================================================
-// Table-Driven Test Support
-// ============================================================================
-
-// Case represents a single test case for table-driven tests.
-type Case[In any, Out any] struct {
-    Name     string
-    Input    In
-    Expected Out
-}
-
-// ============================================================================
-// Assertions
-// ============================================================================
-
-// Eq asserts that actual equals expected.
-func Eq[V any](t T, actual V, expected V) T {
-    if !std.Equal(actual, expected) {
-        return t.Error(fmt.Sprintf("expected %v, got %v", expected, actual))
-    }
-    return t
-}
-
-// NotEq asserts that actual does not equal expected.
-func NotEq[V any](t T, actual V, expected V) T {
-    if std.Equal(actual, expected) {
-        return t.Error(fmt.Sprintf("expected value different from %v", expected))
-    }
-    return t
-}
-
-// IsTrue asserts that condition is true.
-func IsTrue(t T, condition bool) T {
-    if !condition {
-        return t.Error("expected true, got false")
-    }
-    return t
-}
-
-// IsFalse asserts that condition is false.
-func IsFalse(t T, condition bool) T {
-    if condition {
-        return t.Error("expected false, got true")
-    }
-    return t
 }

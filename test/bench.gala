@@ -1,0 +1,56 @@
+package test
+
+import (
+    "fmt"
+    "time"
+)
+
+// ============================================================================
+// Benchmarking Support
+// ============================================================================
+
+// B is the benchmark context, similar to Go's *testing.B.
+// The benchmark function should loop b.N times.
+type B struct {
+    N    int
+    name string
+}
+
+// BenchFunc represents a benchmark function.
+type BenchFunc struct {
+    Name string
+    Func func(B)
+}
+
+// RunBenchmarks runs all provided benchmark functions with auto-calibration.
+// Each benchmark is calibrated by doubling N until the elapsed time >= 1 second,
+// then the final measurement is reported in ns/op format.
+func RunBenchmarks(benchmarks ...BenchFunc) {
+    fmt.Println("=== STARTING BENCHMARKS ===")
+    for i := 0; i < len(benchmarks); i++ {
+        var bench = benchmarks[i]
+        runBenchmark(bench)
+    }
+    fmt.Println("=== BENCHMARKS DONE ===")
+}
+
+func runBenchmark(bench BenchFunc) {
+    var n = 1
+    var nsTotal int64 = 0
+
+    // Auto-calibrate: double N until elapsed >= 1s
+    for {
+        var b = B(N = n, name = bench.Name)
+        var start = time.Now()
+        bench.Func(b)
+        var elapsed = time.Since(start)
+        nsTotal = elapsed.Nanoseconds()
+        if nsTotal >= 1000000000 {
+            break
+        }
+        n = n * 2
+    }
+
+    var nsPerOp = nsTotal / int64(n)
+    fmt.Printf("%-40s %10d %15d ns/op\n", bench.Name, n, nsPerOp)
+}

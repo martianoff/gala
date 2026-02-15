@@ -1841,7 +1841,7 @@ func main() {
 
 ## 14. Testing
 
-GALA provides a test framework following Go conventions. Tests are collocated with source code and use familiar patterns.
+GALA provides a comprehensive test framework with 22 assertions, panic recovery, timing, table-driven test support, and benchmarking. Tests are collocated with source code and use familiar patterns.
 
 ### Test File Convention
 
@@ -1871,32 +1871,131 @@ import (
 
 func TestAddition(t T) T {
     val x = 1 + 1
-    return Eq[int](t, x, 2)
+    return Eq(t, x, 2)
 }
 
 func TestMultiplication(t T) T {
     val x = 2 * 3
-    return Eq[int](t, x, 6)
+    return Eq(t, x, 6)
 }
+```
+
+### Panic Recovery
+
+The test runner automatically recovers from panics in test functions and subtests. A panicking test is reported as failed with the panic message, but the runner continues executing remaining tests:
+
+```
+=== RUN   TestPanicking
+    ERROR: PANIC: something went wrong
+--- FAIL: TestPanicking (0.000s)
+=== RUN   TestNextTest
+--- PASS: TestNextTest (0.000s)
+```
+
+### Timing
+
+Test output includes elapsed time for each test:
+```
+--- PASS: TestFast (0.001s)
+--- FAIL: TestSlow (1.234s)
 ```
 
 ### Assertions
 
-The following assertions are available in the `test` package. Each assertion returns the modified test context `T`:
-- `Eq[V](t, actual, expected) T` - Assert values are equal
-- `NotEq[V](t, actual, expected) T` - Assert values are not equal
-- `IsTrue(t, condition) T` - Assert condition is true
-- `IsFalse(t, condition) T` - Assert condition is false
-
-Chain assertions by passing the result of one to the next:
+All assertions are free functions that return `T` for functional composition. Chain assertions by passing the result of one to the next:
 
 ```gala
 func TestChained(t T) T {
-    var t1 = Eq[int](t, 1 + 1, 2)
+    var t1 = Eq(t, 1 + 1, 2)
     var t2 = IsTrue(t1, true)
-    return IsFalse(t2, false)
+    return Contains(t2, "hello world", "hello")
 }
 ```
+
+#### Equality (5)
+
+| Assertion | Description |
+|-----------|-------------|
+| `Eq(t, actual, expected)` | Deep equality via `std.Equal` |
+| `NotEq(t, actual, expected)` | Not equal |
+| `EqMsg(t, actual, expected, msg)` | Eq with custom message |
+| `IsNil(t, value)` | Checks `value == nil` |
+| `NotNil(t, value)` | Checks `value != nil` |
+
+#### Boolean (2)
+
+| Assertion | Description |
+|-----------|-------------|
+| `IsTrue(t, condition)` | Asserts true |
+| `IsFalse(t, condition)` | Asserts false |
+
+#### Comparison (4)
+
+| Assertion | Description |
+|-----------|-------------|
+| `Greater(t, a, b)` | `a > b` via `std.CompareValues` |
+| `GreaterOrEq(t, a, b)` | `a >= b` |
+| `Less(t, a, b)` | `a < b` |
+| `LessOrEq(t, a, b)` | `a <= b` |
+
+```gala
+func TestComparisons(t T) T {
+    var t1 = Greater(t, 10, 5)
+    var t2 = LessOrEq(t1, 5, 5)
+    return Less(t2, "a", "b")
+}
+```
+
+#### String (4)
+
+| Assertion | Description |
+|-----------|-------------|
+| `Contains(t, haystack, needle)` | String contains substring |
+| `NotContains(t, haystack, needle)` | String does not contain substring |
+| `HasPrefix(t, s, prefix)` | String starts with prefix |
+| `HasSuffix(t, s, suffix)` | String ends with suffix |
+
+```gala
+func TestStrings(t T) T {
+    var t1 = Contains(t, "hello world", "world")
+    return HasPrefix(t1, "hello world", "hello")
+}
+```
+
+#### Option/Try (4)
+
+| Assertion | Description |
+|-----------|-------------|
+| `IsSome(t, opt)` | Asserts Option is Some |
+| `IsNone(t, opt)` | Asserts Option is None |
+| `IsSuccess(t, try)` | Asserts Try is Success |
+| `IsFailure(t, try)` | Asserts Try is Failure |
+
+```gala
+func TestOption(t T) T {
+    var t1 = IsSome(t, Some(42))
+    return IsNone(t1, None[int]())
+}
+```
+
+#### Panic (2)
+
+| Assertion | Description |
+|-----------|-------------|
+| `Panics(t, f)` | Asserts `f()` panics |
+| `NotPanics(t, f)` | Asserts `f()` does not panic |
+
+```gala
+func doPanic() { panic("boom") }
+
+func TestPanics(t T) T = Panics(t, doPanic)
+```
+
+#### Utility (1)
+
+| Assertion | Description |
+|-----------|-------------|
+| `Fail(t, msg)` | Unconditional fail with message |
 
 ### Subtests
 
@@ -1904,27 +2003,71 @@ Use `t.Run()` to create subtests for better organization:
 
 ```gala
 func TestMath(t T) T {
-    var t1 = t.Run("addition", (t T) => Eq[int](t, 1 + 1, 2))
-    return t1.Run("multiplication", (t T) => Eq[int](t, 2 * 3, 6))
+    var t1 = t.Run("addition", (sub T) => Eq(sub, 1 + 1, 2))
+    return t1.Run("multiplication", (sub T) => Eq(sub, 2 * 3, 6))
 }
 ```
 
 ### Table-Driven Tests
 
-GALA supports table-driven tests using subtests:
+Use `Case[In, Out]` and `RunCases` for structured table-driven tests. Each case runs as a subtest with its own pass/fail reporting:
 
 ```gala
 func TestDouble(t T) T {
-    var t1 = t.Run("zero", (t T) => Eq[int](t, 0 * 2, 0))
-    var t2 = t1.Run("positive", (t T) => Eq[int](t, 5 * 2, 10))
-    return t2.Run("negative", (t T) => Eq[int](t, -3 * 2, -6))
+    return RunCases[int, int](t,
+        (sub T, input int, expected int) => Eq(sub, input * 2, expected),
+        Case[int, int](Name = "zero", Input = 0, Expected = 0),
+        Case[int, int](Name = "positive", Input = 5, Expected = 10),
+        Case[int, int](Name = "negative", Input = -3, Expected = -6),
+    )
 }
+```
+
+Output:
+```
+=== RUN   TestDouble/zero
+--- PASS: TestDouble/zero (0.000s)
+=== RUN   TestDouble/positive
+--- PASS: TestDouble/positive (0.000s)
+=== RUN   TestDouble/negative
+--- PASS: TestDouble/negative (0.000s)
+--- PASS: TestDouble (0.000s)
+```
+
+### Benchmarking
+
+GALA provides auto-calibrating benchmarks similar to Go's `testing.B`:
+
+```gala
+package main
+
+import (
+    . "martianoff/gala/test"
+)
+
+func main() {
+    RunBenchmarks(
+        BenchFunc(Name = "BenchmarkAdd", Func = (b B) => {
+            for i := 0; i < b.N; i++ {
+                val x = 1 + 1
+            }
+        }),
+    )
+}
+```
+
+The benchmark runner auto-calibrates by doubling `N` until the elapsed time reaches 1 second, then reports ns/op:
+
+```
+=== STARTING BENCHMARKS ===
+BenchmarkAdd                               1073741824              1 ns/op
+=== BENCHMARKS DONE ===
 ```
 
 ### Test Context Methods
 
 The `T` test context provides methods:
-- `t.Run(name, func(T) T) T` - Run a subtest
+- `t.Run(name, func(T) T) T` - Run a subtest (with panic recovery)
 - `t.Log(msg)` - Log a message
 - `t.Error(msg) T` - Log error and mark test as failed
 - `t.Fatal(msg)` - Log error and stop test execution (panics)

@@ -1,0 +1,217 @@
+package test
+
+import (
+    "fmt"
+    "strings"
+)
+
+// ============================================================================
+// Equality Assertions
+// ============================================================================
+
+// Eq asserts that actual equals expected.
+func Eq[V any](t T, actual V, expected V) T {
+    if !std.Equal(actual, expected) {
+        return t.Error(fmt.Sprintf("expected %v, got %v", expected, actual))
+    }
+    return t
+}
+
+// NotEq asserts that actual does not equal expected.
+func NotEq[V any](t T, actual V, expected V) T {
+    if std.Equal(actual, expected) {
+        return t.Error(fmt.Sprintf("expected value different from %v", expected))
+    }
+    return t
+}
+
+// EqMsg asserts that actual equals expected with a custom message.
+func EqMsg[V any](t T, actual V, expected V, msg string) T {
+    if !std.Equal(actual, expected) {
+        return t.Error(fmt.Sprintf("%s: expected %v, got %v", msg, expected, actual))
+    }
+    return t
+}
+
+// IsNil asserts that the value is nil.
+func IsNil(t T, value any) T {
+    if value != nil {
+        return t.Error(fmt.Sprintf("expected nil, got %v", value))
+    }
+    return t
+}
+
+// NotNil asserts that the value is not nil.
+func NotNil(t T, value any) T {
+    if value == nil {
+        return t.Error("expected non-nil, got nil")
+    }
+    return t
+}
+
+// ============================================================================
+// Boolean Assertions
+// ============================================================================
+
+// IsTrue asserts that condition is true.
+func IsTrue(t T, condition bool) T {
+    if !condition {
+        return t.Error("expected true, got false")
+    }
+    return t
+}
+
+// IsFalse asserts that condition is false.
+func IsFalse(t T, condition bool) T {
+    if condition {
+        return t.Error("expected false, got true")
+    }
+    return t
+}
+
+// ============================================================================
+// Comparison Assertions
+// ============================================================================
+
+// Greater asserts that a > b.
+func Greater[V any](t T, a V, b V) T {
+    if std.CompareValues(a, b) <= 0 {
+        return t.Error(fmt.Sprintf("expected %v > %v", a, b))
+    }
+    return t
+}
+
+// GreaterOrEq asserts that a >= b.
+func GreaterOrEq[V any](t T, a V, b V) T {
+    if std.CompareValues(a, b) < 0 {
+        return t.Error(fmt.Sprintf("expected %v >= %v", a, b))
+    }
+    return t
+}
+
+// Less asserts that a < b.
+func Less[V any](t T, a V, b V) T {
+    if std.CompareValues(a, b) >= 0 {
+        return t.Error(fmt.Sprintf("expected %v < %v", a, b))
+    }
+    return t
+}
+
+// LessOrEq asserts that a <= b.
+func LessOrEq[V any](t T, a V, b V) T {
+    if std.CompareValues(a, b) > 0 {
+        return t.Error(fmt.Sprintf("expected %v <= %v", a, b))
+    }
+    return t
+}
+
+// ============================================================================
+// String Assertions
+// ============================================================================
+
+// Contains asserts that haystack contains needle.
+func Contains(t T, haystack string, needle string) T {
+    if !strings.Contains(haystack, needle) {
+        return t.Error(fmt.Sprintf("expected %q to contain %q", haystack, needle))
+    }
+    return t
+}
+
+// NotContains asserts that haystack does not contain needle.
+func NotContains(t T, haystack string, needle string) T {
+    if strings.Contains(haystack, needle) {
+        return t.Error(fmt.Sprintf("expected %q to not contain %q", haystack, needle))
+    }
+    return t
+}
+
+// HasPrefix asserts that s starts with prefix.
+func HasPrefix(t T, s string, prefix string) T {
+    if !strings.HasPrefix(s, prefix) {
+        return t.Error(fmt.Sprintf("expected %q to have prefix %q", s, prefix))
+    }
+    return t
+}
+
+// HasSuffix asserts that s ends with suffix.
+func HasSuffix(t T, s string, suffix string) T {
+    if !strings.HasSuffix(s, suffix) {
+        return t.Error(fmt.Sprintf("expected %q to have suffix %q", s, suffix))
+    }
+    return t
+}
+
+// ============================================================================
+// Option Assertions
+// ============================================================================
+
+// IsSome asserts that the Option is Some (defined).
+func IsSome[V any](t T, opt Option[V]) T {
+    if opt.IsEmpty() {
+        return t.Error("expected Some, got None")
+    }
+    return t
+}
+
+// IsNone asserts that the Option is None (empty).
+func IsNone[V any](t T, opt Option[V]) T {
+    if opt.IsDefined() {
+        return t.Error(fmt.Sprintf("expected None, got Some(%v)", opt.Get()))
+    }
+    return t
+}
+
+// ============================================================================
+// Try Assertions
+// ============================================================================
+
+// IsSuccess asserts that the Try is Success.
+func IsSuccess[V any](t T, tr Try[V]) T {
+    if tr.IsFailure() {
+        return t.Error(fmt.Sprintf("expected Success, got Failure(%v)", tr.GetError()))
+    }
+    return t
+}
+
+// IsFailure asserts that the Try is Failure.
+func IsFailure[V any](t T, tr Try[V]) T {
+    if tr.IsSuccess() {
+        return t.Error(fmt.Sprintf("expected Failure, got Success(%v)", tr.Get()))
+    }
+    return t
+}
+
+// ============================================================================
+// Panic Assertions
+// ============================================================================
+
+// Panics asserts that the function panics.
+func Panics(t T, f func()) T {
+    val result = Try[bool](() => {
+        f()
+        return true
+    })
+    if result.IsSuccess() {
+        return t.Error("expected panic but none occurred")
+    }
+    return t
+}
+
+// NotPanics asserts that the function does not panic.
+func NotPanics(t T, f func()) T {
+    val result = Try[bool](() => {
+        f()
+        return true
+    })
+    if result.IsFailure() {
+        return t.Error(fmt.Sprintf("expected no panic but got: %v", result.GetError()))
+    }
+    return t
+}
+
+// ============================================================================
+// Utility Assertions
+// ============================================================================
+
+// Fail unconditionally fails the test with the given message.
+func Fail(t T, msg string) T = t.Error(msg)

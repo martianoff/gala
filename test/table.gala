@@ -1,0 +1,22 @@
+package test
+
+// ============================================================================
+// Table-Driven Test Support
+// ============================================================================
+
+// Case represents a single test case for table-driven tests.
+type Case[In any, Out any] struct {
+    var Name     string
+    var Input    In
+    var Expected Out
+}
+
+// RunCases runs a series of test cases as subtests.
+// Each case is executed via t.Run with the case's Name for proper subtest formatting.
+func RunCases[In any, Out any](t T, f func(T, In, Out) T, cases ...Case[In, Out]) T {
+    var result = t
+    for _, c := range cases {
+        result = result.Run(c.Name, (sub T) => f(sub, c.Input, c.Expected))
+    }
+    return result
+}
