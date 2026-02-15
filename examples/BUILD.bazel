@@ -16,6 +16,7 @@ filegroup(
         "struct_field_unwrap/main.gala",
         "struct_field_unwrap/types.gala",
         "foldleft_method/main.gala",
+        "wrapper_method_lambda/main.gala",
     ],
     visibility = ["//visibility:public"],
 )
@@ -853,4 +854,12 @@ gala_test(
     name = "block_lambda_generic_func",
     src = "block_lambda_generic_func.gala",
     expected = "block_lambda_generic_func.out",
+)
+
+# FIX-024 verification: lambda param type inferred for non-generic wrapper methods
+gala_test(
+    name = "wrapper_method_lambda",
+    src = "wrapper_method_lambda/main.gala",
+    expected = "wrapper_method_lambda/wrapper_method_lambda.out",
+    deps = ["//string_utils"],
 )

@@ -219,21 +219,69 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 
 			// Build type argument substitution map
 			typeSubst := make(map[string]string)
+			var recvTypeArgStrings []string
 			if methodMeta != nil && typeMeta != nil {
 				// Add receiver's type args (e.g., T -> int)
-				recvTypeArgs := t.getReceiverTypeArgStrings(recvType)
+				recvTypeArgStrings = t.getReceiverTypeArgStrings(recvType)
 				for i, tp := range typeMeta.TypeParams {
-					if i < len(recvTypeArgs) {
-						typeSubst[tp] = recvTypeArgs[i]
+					if i < len(recvTypeArgStrings) {
+						typeSubst[tp] = recvTypeArgStrings[i]
 					}
 				}
 				// Add method's explicit type args (e.g., U -> string)
-				// If no explicit type args provided, default to "any"
 				for i, tp := range methodMeta.TypeParams {
 					if i < len(typeArgs) {
 						typeSubst[tp] = t.exprToTypeString(typeArgs[i])
-					} else {
-						// No explicit type arg provided, default to "any"
+					}
+					// Don't default to "any" — will try to infer from non-lambda args below
+				}
+			}
+
+			// Try to infer unresolved method type params from non-lambda arguments.
+			// This enables FoldLeft(0, (acc, x) => acc + x) to infer U=int from the zero value 0.
+			preTransformed := make(map[int]ast.Expr)
+			if methodMeta != nil && typeMeta != nil && len(methodMeta.TypeParams) > 0 && len(typeArgs) < len(methodMeta.TypeParams) {
+				recvTypeArgTypes := make([]transpiler.Type, 0, len(recvTypeArgStrings))
+				for _, a := range recvTypeArgStrings {
+					recvTypeArgTypes = append(recvTypeArgTypes, transpiler.ParseType(a))
+				}
+				for i, argCtx := range argListCtx.AllArgument() {
+					if i >= len(methodMeta.ParamTypes) {
+						break
+					}
+					arg := argCtx.(*grammar.ArgumentContext)
+					pat := arg.Pattern()
+					ep, ok := pat.(*grammar.ExpressionPatternContext)
+					if !ok {
+						continue
+					}
+					// Skip lambda and partial function arguments — can't infer types from them
+					if t.findLambdaInExpression(ep.Expression()) != nil || t.findPartialFunctionInExpression(ep.Expression()) != nil {
+						continue
+					}
+					expr, err := t.transformExpression(ep.Expression())
+					if err != nil {
+						continue
+					}
+					preTransformed[i] = expr
+					argType := t.getExprTypeName(expr)
+					if argType == nil || argType.IsNil() || argType.IsAny() {
+						continue
+					}
+					substitutedParamType := t.substituteConcreteTypes(methodMeta.ParamTypes[i], typeMeta.TypeParams, recvTypeArgTypes)
+					inferredMap := make(map[string]transpiler.Type)
+					t.unifyForInference(substitutedParamType, argType, methodMeta.TypeParams, inferredMap)
+					for tp, inferred := range inferredMap {
+						if _, alreadySet := typeSubst[tp]; !alreadySet {
+							typeSubst[tp] = inferred.String()
+						}
+					}
+				}
+			}
+			// Default remaining unresolved method type params to "any"
+			if methodMeta != nil {
+				for _, tp := range methodMeta.TypeParams {
+					if _, ok := typeSubst[tp]; !ok {
 						typeSubst[tp] = "any"
 					}
 				}
@@ -246,6 +294,12 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 				ep, ok := pat.(*grammar.ExpressionPatternContext)
 				if !ok {
 					return nil, galaerr.NewSemanticError("only expressions allowed as function arguments")
+				}
+
+				// Reuse pre-transformed expression if available (already processed during type inference)
+				if expr, ok := preTransformed[i]; ok {
+					mArgs = append(mArgs, expr)
+					continue
 				}
 
 				// Get expected parameter type if available, with type substitution
@@ -316,8 +370,10 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	if receiver != nil && !isGenericMethod && method != "" {
 		var methodMeta *transpiler.MethodMetadata
 		// Use unified resolution to find type metadata
+		// Look up method metadata for ALL types (not just generic ones) so that
+		// non-generic wrapper types like Str can pass expected function types to lambda arguments.
 		typeMeta := t.getTypeMeta(lookupBaseName)
-		if typeMeta != nil && len(typeMeta.TypeParams) > 0 {
+		if typeMeta != nil {
 			methodMeta = typeMeta.Methods[method]
 		}
 
