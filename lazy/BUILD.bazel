@@ -1,6 +1,13 @@
-load("//:gala.bzl", "gala_library", "gala_go_test")
+load("//:gala.bzl", "gala_bootstrap_transpile", "gala_library", "gala_go_test")
 
 exports_files(["lazy.gala"])
+
+# Bootstrap transpile for stdlib embedding
+gala_bootstrap_transpile(
+    name = "lazy_go",
+    src = "lazy.gala",
+    out = "lazy.gen.go",
+)
 
 gala_library(
     name = "lazy",

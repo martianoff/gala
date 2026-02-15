@@ -65,6 +65,10 @@ genrule(
         "//stream:stream_go",
         # stream package - GALA source
         "//stream:stream.gala",
+        # lazy package - transpiled Go
+        "//lazy:lazy_go",
+        # lazy package - GALA source
+        "//lazy:lazy.gala",
         # string_utils package - transpiled Go
         "//string_utils:string_utils_go",
         # string_utils package - GALA source
