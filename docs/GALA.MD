@@ -2014,20 +2014,26 @@ val end = Node[int](value = 0, next = () => None[Node[T]]())
 | Linked list termination | `next func() Option[Node[T]]` |
 
 ### Functional Patterns
-- **Use FoldLeft for accumulation** - Replace `var acc; for { acc = f(acc, x) }` with `FoldLeft[T](init, f)`
+- **Use FoldLeft for accumulation** - Replace `var acc; for { acc = f(acc, x) }` with `FoldLeft(init, f)`. The accumulator type is inferred from the initial value
 - **Keep loops for short-circuit ops** - `Exists`, `ForAll`, `Find`, `Contains` benefit from early exit
-- **Chain operations** - `list.Filter(p).Map(f)` is clearer than nested loops
+- **Chain operations** - `list.Filter((x) => x > 0).Map((x) => x * 2)` is clearer than nested loops
 
 ### Lambda Syntax
 ```gala
-// Single expression - use expression body
-(x int) => x * 2
+// Prefer implicit parameter types — the compiler infers them from context
+list.Map((x) => x * 2)
+list.Filter((x) => x > 0)
+list.FoldLeft(0, (acc, x) => acc + x)
+str.Exists((r) => r == 'a')
 
 // Multiple statements - use block body with explicit return
-(x int, y int) => {
-    val sum = x + y
-    return sum * sum
-}
+list.Map((x) => {
+    val doubled = x * 2
+    return doubled + 1
+})
+
+// Explicit types only when inference is unavailable
+val f = (x int) => x * 2
 ```
 
 ### Sealed Types
@@ -2065,20 +2071,26 @@ val desc = shape match {
 
 ### Type Inference
 - **Omit type parameters when inferrable** - `Some(42)` not `Some[int](42)`, `ListOf(1, 2, 3)` not `ListOf[int](1, 2, 3)`
-- **Omit lambda parameter types when inferrable** - `(x) => x * 2` not `(x int) => x * 2` when the context provides the type
+- **Omit lambda parameter types when inferrable** - `(x) => x * 2` not `(x int) => x * 2` when passed to a method with known parameter types
 - **Omit variable types** - `val x = 42` not `val x int = 42`
 - **Omit method type params** - `list.Map((x) => x * 2)` not `list.Map[int]((x int) => x * 2)`
-- **Explicit types only when needed** - `None[int]()`, `Left[string, int]()`, empty collections, or ambiguous contexts
+- **FoldLeft/FoldRight — omit accumulator type** - `list.FoldLeft(0, (acc, x) => acc + x)` not `list.FoldLeft[int](0, (acc int, x int) => acc + x)`. The accumulator type is inferred from the zero value
+- **Non-generic wrapper methods — omit types too** - `str.Filter((r) => r == 'a')` not `str.Filter((r rune) => r == 'a')`. Lambda params are inferred from concrete method signatures
+- **Explicit types only when needed** - `None[int]()`, `Left[string, int]()`, empty collections, standalone lambdas not passed to a typed method, or ambiguous contexts
 ```gala
 // Good - types inferred everywhere
 val list = ListOf(1, 2, 3)
 val doubled = list.Map((x) => x * 2)
+val sum = list.FoldLeft(0, (acc, x) => acc + x)
 val opt = Some("hello")
 val length = opt.Map((s) => len(s))
+val s = S("hello")
+val upper = s.Exists((r) => r >= 'A' && r <= 'Z')
 
 // Explicit types needed - no value to infer from
 val empty = None[int]()
 val fallback = Left[string, int]("error")
+val f = (x int) => x * 2  // standalone lambda, no method context
 ```
 
 ### Tuple Syntax
@@ -2094,7 +2106,7 @@ val fallback = Left[string, int]("error")
 | Operation | GALA Collections (preferred) | Go Slices (interop only) |
 |-----------|------------------------------|--------------------------|
 | Create | `ArrayOf(1,2,3)` / `ListOf(1,2,3)` | `SliceOf(1,2,3)` (from `go_interop`) |
-| Tabulate | `ArrayTabulate(n, (i int) => f(i))` | Manual `for` loop |
+| Tabulate | `ArrayTabulate(n, (i) => f(i))` | Manual `for` loop |
 | Fill | `ArrayFill(n, value)` | Manual `for` loop |
 | Empty | `EmptyArray[int]()` / `EmptyList[int]()` | `SliceEmpty[int]()` (from `go_interop`) |
 | Transform | `arr.Map(f)`, `arr.Filter(p)` | Not available on `[]T` |
@@ -2127,7 +2139,7 @@ val nums = SliceOf(1, 2, 3, 4, 5)  // No .Map(), .Filter(), etc.
 ### Naming
 - **PascalCase** for types, exported functions/fields
 - **camelCase** for local variables, unexported fields
-- **Descriptive lambda params** - `(elem T)` not `(x T)` in collection ops
+- **Short lambda params** - `(x) => x * 2` in simple lambdas, descriptive names for complex ones
 
 ### Performance
 - **Prefer `Array` over `List`** for random access (O(log32 n) vs O(n))

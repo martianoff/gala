@@ -333,7 +333,7 @@ val desc = flag match {
 
 ## Void Closures and Lambda Parameter Inference
 
-Functions can accept void closures (no return value), and lambda parameter types can be inferred from context:
+Functions can accept void closures (no return value), and lambda parameter types can be inferred from context. Prefer omitting parameter types in lambdas — the compiler infers them from the method signature:
 
 ```gala
 val opt = Some(42)
@@ -348,6 +348,14 @@ val positive = opt.Filter((x) => x > 0)
 
 // Method type param and lambda param both inferred
 val doubled = opt.Map((x) => x * 2)
+
+// FoldLeft accumulator type inferred from zero value
+val list = ArrayOf(1, 2, 3)
+val sum = list.FoldLeft(0, (acc, x) => acc + x)
+
+// Non-generic wrapper methods also infer lambda param types
+val s = S("hello")
+val hasVowel = s.Exists((r) => r == 'a' || r == 'e' || r == 'i' || r == 'o' || r == 'u')
 ```
 
 ## MkString - Joining Collection Elements
