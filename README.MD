@@ -26,7 +26,7 @@ func area(s Shape) string = s match {
 
 ## What is GALA?
 
-GALA transpiles to clean, readable Go code. You get Scala-like expressiveness -- sealed types, exhaustive pattern matching, `Option[T]`/`Either[A,B]`/`Try[T]` monads, immutable collections -- and it compiles to a single native binary. Every Go library works out of the box.
+GALA gives you Scala-like expressiveness -- sealed types, exhaustive pattern matching, `Option[T]`/`Either[A,B]`/`Try[T]` monads, immutable collections -- in a concise, readable syntax that compiles to a single native binary. GALA is fully Go-compatible: every Go library works out of the box.
 
 ---
 

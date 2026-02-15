@@ -12,7 +12,7 @@ This is not about replacing Go. It is about writing Go-targeted code with fewer 
 
 GALA sits at a specific intersection: you want the expressiveness of a language like Scala, but you need the operational characteristics of Go -- fast startup, small binaries, simple deployment, no JVM. You want to write `list.Map((x) => x * 2)` instead of manually iterating with index variables. You want the compiler to tell you when you forgot to handle a case in your sum type. You want `val` to mean immutable, not "I promise I won't reassign this."
 
-GALA delivers these things by transpiling to clean, readable Go code. The output is not obfuscated -- it is Go you could have written yourself, just with more discipline enforced at the source level.
+GALA delivers these things with a concise, readable syntax that is fully Go-compatible. You write expressive GALA code, and it compiles to native Go binaries with full access to Go's tooling and ecosystem.
 
 ---
 
