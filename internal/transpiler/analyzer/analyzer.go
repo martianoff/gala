@@ -657,6 +657,14 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 		}
 
 		variants = append(variants, vi)
+
+		// Warn if variant name collides with a std auto-imported companion name.
+		// The variant creates a companion type that could shadow std companions
+		// (e.g., Success, Failure, Some, None, Left, Right).
+		if err := registry.CheckStdConflict(variantName, pkgName); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: sealed variant '%s' in type '%s' shadows %s; this may cause ambiguous symbols in generated Go code\n",
+				variantName, typeName, err.Error())
+		}
 	}
 
 	// Detect field name conflicts: same name with different types requires prefixing
