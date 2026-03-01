@@ -1082,10 +1082,24 @@ func processOrder(id int) Try[Receipt] =
 
 `Future[T]` represents an asynchronous computation that will eventually produce a value of type T or fail with an error. It provides a functional approach to concurrent programming, similar to Scala's Future monad.
 
+**Pointer type:** All Future factory functions return `*Future[T]` (a pointer), not `Future[T]`. This is because `Future` contains mutable shared state (mutex, channel, completion flag) that must be shared by reference — copying a Future would break its synchronization. Use `*Future[T]` in explicit type annotations (function signatures, struct fields):
+
+```gala
+// Function returning a Future — use *Future[T]
+func fetchUser(id int) *Future[User] = FutureApply[User](() => loadFromDB(id))
+
+// Struct with a Future field — use *Future[T]
+type AsyncResult struct {
+    future *Future[string]
+}
+```
+
+With `val` and type inference, the pointer type is inferred automatically:
+
 ```gala
 import . "martianoff/gala/concurrent"
 
-// Create Futures
+// Create Futures — type is inferred as *Future[T]
 val immediate = FutureOf[int](42)                    // Already completed with value
 val async = FutureApply[int](() => expensiveComputation())  // Runs asynchronously
 
@@ -1198,6 +1212,19 @@ val size = MapLen(goMap)
 MapForEach(goMap, (k string, v int) => {
     fmt.Println(k, v)
 })
+
+// Iterate Go maps with complex value types (e.g., map[string][]string)
+// V can be any type including slices — MapForEach[K comparable, V any] handles it
+var headers = MapEmpty[string, []string]()
+headers = MapPut(headers, "Accept", SliceOf("text/html", "application/json"))
+MapForEach(headers, (k string, v []string) => {
+    fmt.Printf("%s: %v\n", k, v)
+})
+
+// You can also use for-range directly on Go maps
+for k, v := range headers {
+    fmt.Printf("%s: %v\n", k, v)
+}
 
 // Convert between HashMap and Go map
 val hashMap = collection_immutable.HashMapFromGoMap(goMap)
@@ -1743,6 +1770,43 @@ fmt.Println(validPtr.IsNil())  // false
 | Const pointer to const data | `const T* const` | `val ptr ConstPtr[T]` |
 
 **Note:** Taking the address of a `val` variable (`&val`) automatically returns `ConstPtr[T]`, while taking the address of a `var` variable (`&var`) returns `*T`. This ensures that pointers to immutable data cannot be accidentally used to modify that data.
+
+### val vs var with Go Functions
+
+When calling Go functions that return values, `val` wraps the result in `std.Immutable[T]`. This is fine for values used only within GALA, but causes type mismatches when passing Go values back to other Go functions.
+
+**Use `var` for Go multi-return values** when you need to pass the results back to Go APIs:
+
+```gala
+import "net/http"
+import "io"
+
+// CORRECT: Use var for Go multi-return values
+var goReq, reqErr = http.NewRequest("GET", url, nil)
+if reqErr != nil {
+    return Left[ApiError, HttpResponse](NetworkError(Message = reqErr.Error()))
+}
+goReq.Header.Set("Content-Type", "application/json")  // goReq is raw *http.Request
+
+var resp, doErr = http.DefaultClient.Do(goReq)  // Works: goReq is not wrapped
+if doErr != nil {
+    return Left[ApiError, HttpResponse](NetworkError(Message = doErr.Error()))
+}
+var bodyBytes, readErr = io.ReadAll(resp.Body)
+
+// WRONG: val wraps in Immutable, breaking Go API calls
+// val goReq, reqErr = http.NewRequest("GET", url, nil)
+// http.DefaultClient.Do(goReq)  // ERROR: goReq is Immutable[*http.Request], not *http.Request
+```
+
+**When to use `val` vs `var` with Go functions:**
+
+| Scenario | Use | Why |
+|----------|-----|-----|
+| Go value used only in GALA | `val` | Immutability safety, `.Get()` auto-unwrapped |
+| Go value passed back to Go APIs | `var` | Avoids `Immutable[T]` wrapping, stays as raw Go type |
+| Go `(value, error)` return | `var` | Both values stay as raw Go types |
+| Go struct fields to mutate | `var` | Allows `goStruct.Field = newValue` |
 
 ## 13. GALA Packages
 
