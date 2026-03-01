@@ -2,7 +2,6 @@ package concurrent
 
 import (
 	"martianoff/gala/go_interop"
-	"time"
 )
 
 // ExecutionContext abstracts where/how async tasks execute.
@@ -34,9 +33,3 @@ var NewSingleThreadEC = go_interop.NewSingleThreadEC
 // Spawn starts a new goroutine executing the given function.
 // Re-exported from go_interop for convenience with async operations.
 var Spawn = go_interop.Spawn
-
-// Sleep pauses the current goroutine for the given duration.
-// Re-exported from go_interop for convenience with async operations.
-func Sleep(d time.Duration) {
-	go_interop.GoSleep(d)
-}

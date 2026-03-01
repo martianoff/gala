@@ -187,7 +187,8 @@ pool.Shutdown()
 | Function | Description |
 |----------|-------------|
 | `Spawn(f)` | Start a new goroutine executing function f |
-| `Sleep(duration)` | Pause the current goroutine for the given duration |
+
+> **Note:** For sleeping, use `time_utils.Sleep(Duration)` (GALA-idiomatic) or `time.Sleep(time.Duration)` (Go native).
 
 ### Constructor Variants with Custom EC
 

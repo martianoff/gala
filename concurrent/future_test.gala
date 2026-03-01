@@ -187,7 +187,7 @@ func TestPromiseSuccess(t T) T {
     val f = p.Future()
 
     Spawn(() => {
-        Sleep(10 * time.Millisecond)
+        time.Sleep(10 * time.Millisecond)
         p.Success(42)
     })
 
@@ -201,7 +201,7 @@ func TestPromiseFailure(t T) T {
     val f = p.Future()
 
     Spawn(() => {
-        Sleep(10 * time.Millisecond)
+        time.Sleep(10 * time.Millisecond)
         p.Failure(FutureError(Message = "async error"))
     })
 
@@ -286,7 +286,7 @@ func TestAndThen(t T) T {
     val result = f.Await()
     var t1 = IsSuccess(t, result)
     var t2 = Eq[int](t1, result.Get(), 10)
-    Sleep(10 * time.Millisecond)
+    time.Sleep(10 * time.Millisecond)
     return Eq[int](t2, sideEffect, 10)
 }
 

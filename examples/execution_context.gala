@@ -68,7 +68,7 @@ func main() {
 
     // Complete promise asynchronously
     Spawn(() => {
-        Sleep(10 * time.Millisecond)
+        time.Sleep(10 * time.Millisecond)
         promise.Success("completed via promise")
     })
 
