@@ -1697,9 +1697,9 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 }
 
 // extractSiblingMethodSignatures extracts method and function signatures from a sibling .gala file.
-// It only populates method metadata (name, params, return type) and function metadata.
-// It does NOT populate field information (FieldNames, ImmutFlags, Fields) to avoid
-// interfering with isImmutableField and .Get() auto-unwrapping.
+// It populates method metadata (name, params, return type), function metadata, and sealed type
+// metadata (including variant fields). Regular struct field info (FieldNames, ImmutFlags) is NOT
+// populated to avoid interfering with isImmutableField and .Get() auto-unwrapping.
 func (a *galaAnalyzer) extractSiblingMethodSignatures(sibTree *grammar.SourceFileContext, pkgName string, richAST *transpiler.RichAST) {
 	// First pass: collect type declarations (for type parameter info)
 	for _, topDecl := range sibTree.AllTopLevelDeclaration() {
@@ -1729,6 +1729,26 @@ func (a *galaAnalyzer) extractSiblingMethodSignatures(sibTree *grammar.SourceFil
 				}
 				richAST.Types[fullTypeName] = meta
 			}
+		}
+	}
+
+	// Pass 1.5: collect sealed type declarations (needed for cross-file named-arg construction).
+	// Sealed types require full metadata (IsSealed, SealedVariants, FieldNames, ImmutFlags)
+	// because their companion structs have empty fields and the transformer relies on
+	// parent sealed type metadata to reorder named arguments into Apply calls.
+	for _, topDecl := range sibTree.AllTopLevelDeclaration() {
+		if sealedCtx := topDecl.SealedTypeDeclaration(); sealedCtx != nil {
+			ctx := sealedCtx.(*grammar.SealedTypeDeclarationContext)
+			typeName := ctx.Identifier().GetText()
+			fullTypeName := typeName
+			if pkgName != "" && pkgName != "main" && pkgName != "test" {
+				fullTypeName = pkgName + "." + typeName
+			}
+			// Skip if already has sealed variant info (main file takes precedence)
+			if existing, ok := richAST.Types[fullTypeName]; ok && existing.IsSealed {
+				continue
+			}
+			a.analyzeSealedType(ctx, pkgName, richAST)
 		}
 	}
 
