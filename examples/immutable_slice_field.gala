@@ -1,0 +1,32 @@
+package main
+
+import "fmt"
+
+type Container struct {
+    items []int
+    label string
+    var count int
+}
+
+func main() {
+    // Test 1: Go-style struct construction with immutable slice field
+    var x []int = nil
+    x = append(x, 1)
+    x = append(x, 2)
+    val c1 = Container{items: x, label: "test", count: 2}
+    fmt.Println("items:", c1.items)
+    fmt.Println("label:", c1.label)
+    fmt.Println("count:", c1.count)
+
+    // Test 2: Functional-style struct construction with named args
+    val c2 = Container(items = x, label = "named", count = 3)
+    fmt.Println("items:", c2.items)
+    fmt.Println("label:", c2.label)
+    fmt.Println("count:", c2.count)
+
+    // Test 3: Positional construction
+    val c3 = Container(x, "positional", 4)
+    fmt.Println("items:", c3.items)
+    fmt.Println("label:", c3.label)
+    fmt.Println("count:", c3.count)
+}
