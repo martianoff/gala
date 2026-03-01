@@ -1,0 +1,51 @@
+package main
+
+import "fmt"
+
+type Value struct {
+    var data float64
+    var grad float64
+}
+
+// Test 1: val binding with pointer to struct with var fields
+func testValPointerFieldMutation() {
+    var v1 = Value(data = 1.0, grad = 0.0)
+    val ptr = &v1
+
+    fmt.Printf("Before: data=%.1f, grad=%.1f\n", ptr.data, ptr.grad)
+    ptr.data = 5.0
+    ptr.grad = 2.5
+    fmt.Printf("After: data=%.1f, grad=%.1f\n", ptr.data, ptr.grad)
+}
+
+// Test 2: val binding with slice of pointers (MicroGPT pattern)
+func testValFromSlice(values []*Value) {
+    val v = values[0]
+    v.data = 42.0
+    v.grad = 3.14
+    fmt.Printf("Slice element: data=%.1f, grad=%.2f\n", v.data, v.grad)
+}
+
+// Test 3: compound assignment operators through val pointer binding
+func testCompoundAssignment() {
+    var v = Value(data = 10.0, grad = 1.0)
+    val ptr = &v
+
+    ptr.data += 5.0
+    ptr.grad -= 0.5
+    fmt.Printf("Compound: data=%.1f, grad=%.1f\n", ptr.data, ptr.grad)
+}
+
+func main() {
+    fmt.Println("=== FIX-027: val pointer field mutation ===")
+
+    testValPointerFieldMutation()
+
+    var vals []*Value = nil
+    vals = append(vals, &Value{data: 1.0, grad: 0.0})
+    testValFromSlice(vals)
+
+    testCompoundAssignment()
+
+    fmt.Println("=== All tests passed ===")
+}

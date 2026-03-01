@@ -1,0 +1,6 @@
+=== FIX-027: val pointer field mutation ===
+Before: data=1.0, grad=0.0
+After: data=5.0, grad=2.5
+Slice element: data=42.0, grad=3.14
+Compound: data=15.0, grad=0.5
+=== All tests passed ===
