@@ -69,8 +69,8 @@ go_library(
     importpath = "martianoff/gala/collection_immutable",
     visibility = ["//visibility:public"],
     deps = [
-        "//std",
         "//go_interop",
+        "//std",
     ],
 )
 
@@ -166,3 +166,9 @@ go_binary(
 #     srcs = ["go_native_perf_test.go"],
 #     embed = [":collection_immutable_lib"],
 # )
+
+go_test(
+    name = "collection_immutable_test",
+    srcs = ["go_native_perf_test.go"],
+    embed = [":collection_immutable_lib"],
+)

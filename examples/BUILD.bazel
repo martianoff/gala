@@ -3,19 +3,19 @@ load("//:gala.bzl", "gala_binary", "gala_library", "gala_test")
 filegroup(
     name = "gala_sources",
     srcs = [
+        "foldleft_method/main.gala",
         "lib/generic.gala",
         "mathlib/math.gala",
         "multi_file/greeter.gala",
         "multi_file/main.gala",
         "multi_file_lib/ops.gala",
         "multi_file_lib/types.gala",
-        "multi_file_types/main.gala",
-        "multi_file_types/model.gala",
         "multi_file_option/lookup.gala",
         "multi_file_option/main.gala",
+        "multi_file_types/main.gala",
+        "multi_file_types/model.gala",
         "struct_field_unwrap/main.gala",
         "struct_field_unwrap/types.gala",
-        "foldleft_method/main.gala",
         "wrapper_method_lambda/main.gala",
     ],
     visibility = ["//visibility:public"],
@@ -666,6 +666,14 @@ gala_test(
     expected = "either_map_flatmap.out",
 )
 
+# Either match inside lambda (BUG-WP-1 repro)
+gala_test(
+    name = "either_match_in_lambda",
+    src = "either_match_in_lambda.gala",
+    expected = "either_match_in_lambda.out",
+    deps = ["//concurrent"],
+)
+
 # Sealed type wildcard catch-all
 gala_test(
     name = "sealed_wildcard",
@@ -742,8 +750,8 @@ gala_test(
 gala_test(
     name = "multi_file_types",
     srcs = [
-        "multi_file_types/model.gala",
         "multi_file_types/main.gala",
+        "multi_file_types/model.gala",
     ],
     expected = "multi_file_types/multi_file_types.out",
 )
@@ -752,8 +760,8 @@ gala_test(
 gala_library(
     name = "multi_file_lib",
     srcs = [
-        "multi_file_lib/types.gala",
         "multi_file_lib/ops.gala",
+        "multi_file_lib/types.gala",
     ],
     importpath = "martianoff/gala/examples/multi_file_lib",
     visibility = ["//visibility:public"],
@@ -781,8 +789,8 @@ gala_test(
 gala_test(
     name = "struct_field_unwrap",
     srcs = [
-        "struct_field_unwrap/types.gala",
         "struct_field_unwrap/main.gala",
+        "struct_field_unwrap/types.gala",
     ],
     expected = "struct_field_unwrap/struct_field_unwrap.out",
 )
@@ -806,8 +814,8 @@ gala_test(
 gala_test(
     name = "named_arg_sealed",
     srcs = [
-        "named_arg_sealed_model.gala",
         "named_arg_sealed.gala",
+        "named_arg_sealed_model.gala",
     ],
     expected = "named_arg_sealed.out",
 )
@@ -829,8 +837,8 @@ gala_test(
     src = "future_get_type_chain.gala",
     expected = "future_get_type_chain.out",
     deps = [
-        "//concurrent",
         "//collection_immutable",
+        "//concurrent",
     ],
 )
 

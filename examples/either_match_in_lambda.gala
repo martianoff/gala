@@ -1,0 +1,26 @@
+package main
+
+import "fmt"
+import . "martianoff/gala/concurrent"
+
+func main() {
+    // Either match works in regular function (known working)
+    val e1 = Right[string, string]("hello")
+    val r1 = e1 match {
+        case Right(s) => s
+        case Left(err) => err
+        case _ => "unknown"
+    }
+    fmt.Println(r1)
+
+    // Either match inside FutureApply lambda (BUG-WP-1)
+    val future = FutureApply[string](() => {
+        val result Either[string, string] = Right[string, string]("ok")
+        return result match {
+            case Right(output) => output
+            case Left(err) => err
+            case _ => "unknown"
+        }
+    })
+    fmt.Println(future.Get())
+}
