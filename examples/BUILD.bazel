@@ -877,3 +877,10 @@ gala_test(
     src = "immutable_slice_field.gala",
     expected = "immutable_slice_field.out",
 )
+
+# FIX-030 verification: scientific notation literals
+gala_test(
+    name = "scientific_notation",
+    src = "scientific_notation.gala",
+    expected = "scientific_notation.out",
+)
