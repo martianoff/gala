@@ -87,6 +87,18 @@ func (t *galaASTTransformer) transformCompositeLiteral(ctx *grammar.CompositeLit
 		return nil, fmt.Errorf("map literals are not supported in GALA; use collection_immutable.HashMap or collection_mutable.HashMap for type-safe maps, or go_interop.MapEmpty()/go_interop.MapPut() for Go interoperability")
 	}
 
+	// Look up struct field immutability flags so we can wrap immutable field values
+	// with NewImmutable() during Go-style struct construction (e.g., Foo{items: x}).
+	typeName := t.getBaseTypeName(typeExpr)
+	resolvedTypeName := t.resolveStructTypeName(typeName)
+	immutFlags := t.structImmutFields[resolvedTypeName]
+	fields := t.structFields[resolvedTypeName]
+	// Build a map from field name to its index for quick lookup
+	fieldIndex := make(map[string]int, len(fields))
+	for i, f := range fields {
+		fieldIndex[f] = i
+	}
+
 	// Transform the elements
 	var elts []ast.Expr
 	if ctx.ElementList() != nil {
@@ -103,6 +115,17 @@ func (t *galaASTTransformer) transformCompositeLiteral(ctx *grammar.CompositeLit
 				value, err := t.transformExpression(exprs[1].(*grammar.ExpressionContext))
 				if err != nil {
 					return nil, err
+				}
+				// Wrap value with NewImmutable() if the field is immutable (val, not var)
+				if keyIdent, ok := key.(*ast.Ident); ok {
+					if idx, found := fieldIndex[keyIdent.Name]; found {
+						if immutFlags != nil && idx < len(immutFlags) && immutFlags[idx] {
+							value = &ast.CallExpr{
+								Fun:  t.stdIdent("NewImmutable"),
+								Args: []ast.Expr{value},
+							}
+						}
+					}
 				}
 				elts = append(elts, &ast.KeyValueExpr{Key: key, Value: value})
 			} else if len(exprs) == 1 {

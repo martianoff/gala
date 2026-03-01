@@ -863,3 +863,10 @@ gala_test(
     expected = "wrapper_method_lambda/wrapper_method_lambda.out",
     deps = ["//string_utils"],
 )
+
+# FIX-026 verification: immutable struct fields with Go slice types
+gala_test(
+    name = "immutable_slice_field",
+    src = "immutable_slice_field.gala",
+    expected = "immutable_slice_field.out",
+)
