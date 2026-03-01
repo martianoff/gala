@@ -1,0 +1,9 @@
+eps: 1e-05
+large: 1e+10
+negative: -2500
+pi_approx: 3.14
+small: 1.23e-08
+upper: 5000
+simple: 20000
+sum: 3e-05
+eps > threshold: true

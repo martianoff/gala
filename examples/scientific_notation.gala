@@ -1,0 +1,36 @@
+package main
+
+import "fmt"
+
+func main() {
+    // Basic scientific notation
+    val eps = 1e-5
+    val large = 1e10
+    val negative = -2.5e3
+
+    // With decimal point
+    val pi_approx = 3.14e0
+    val small = 1.23e-8
+
+    // Uppercase E
+    val upper = 5E+3
+
+    // No decimal point
+    val simple = 2e4
+
+    fmt.Println("eps:", eps)
+    fmt.Println("large:", large)
+    fmt.Println("negative:", negative)
+    fmt.Println("pi_approx:", pi_approx)
+    fmt.Println("small:", small)
+    fmt.Println("upper:", upper)
+    fmt.Println("simple:", simple)
+
+    // Arithmetic with scientific notation
+    val result = 1e-5 + 2e-5
+    fmt.Println("sum:", result)
+
+    // Comparison
+    val threshold = 1e-8
+    fmt.Println("eps > threshold:", eps > threshold)
+}
