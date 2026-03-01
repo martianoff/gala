@@ -892,3 +892,10 @@ gala_test(
     src = "scientific_notation.gala",
     expected = "scientific_notation.out",
 )
+
+# FIX-042 verification: tuple literal return type should not widen first element to any
+gala_test(
+    name = "tuple_return_widen",
+    src = "tuple_return_widen.gala",
+    expected = "tuple_return_widen.out",
+)

@@ -1,0 +1,48 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+)
+
+func getName() string {
+    return "world"
+}
+
+// FIX-042 verification: tuple literal return type should not widen element to any.
+// Case 1: val variable as first element in tuple literal with return type
+func case1() Tuple[string, int] {
+    val name = "hello"
+    return (name, 42)
+}
+
+// Case 2: function call in first position
+func case2() Tuple[string, int] {
+    return (getName(), 42)
+}
+
+// Case 3: string concatenation expression in first position
+func case3() Tuple[string, int] {
+    val prefix = "val"
+    return (prefix + "=10", 10)
+}
+
+// Case 4: local variable tuple (no return type fallback)
+func case4() {
+    val s = "local"
+    var pair = (s, 99)
+    fmt.Println(pair.V1, pair.V2)
+}
+
+func main() {
+    var r1 = case1()
+    fmt.Println(r1.V1, r1.V2)
+
+    var r2 = case2()
+    fmt.Println(r2.V1, r2.V2)
+
+    var r3 = case3()
+    fmt.Println(r3.V1, r3.V2)
+
+    case4()
+}
