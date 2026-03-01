@@ -25,6 +25,10 @@ go_library(
     srcs = ["stream.gen.go"],
     importpath = "martianoff/gala/stream",
     visibility = ["//visibility:public"],
+    deps = [
+        "//collection_immutable",
+        "//std",
+    ],
 )
 
 gala_go_test(
