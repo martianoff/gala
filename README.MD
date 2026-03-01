@@ -303,6 +303,14 @@ Mutable variants of all collection types are available in `collection_mutable` f
 
 ---
 
+## Showcase
+
+| Project | Description |
+|---------|-------------|
+| [State Machine Example](https://github.com/martianoff/gala-state-machine-example) | State machines with sealed types + pattern matching -- order FSM, traffic light, vending machine (with Go comparison) |
+
+---
+
 ## Dependency Management
 
 ```bash
