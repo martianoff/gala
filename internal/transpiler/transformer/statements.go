@@ -103,7 +103,11 @@ func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext)
 		if pc := t.getPrimaryFromExpression(exprCtx); pc != nil {
 			if pc.Identifier() != nil {
 				name := pc.Identifier().GetText()
-				if t.isVal(name) {
+				// Only block direct variable reassignment (e.g., v = ...), not field/index
+				// access through a val binding (e.g., v.data = ..., v[i] = ...).
+				// Field access assignments are checked by the field immutability check below.
+				// For value types (non-pointer), Go compiler itself catches invalid mutations.
+				if t.isVal(name) && t.isDirectVariableExpression(exprCtx) {
 					return nil, t.semanticErrorAt(ctx, fmt.Sprintf("cannot assign to immutable variable %s", name))
 				}
 			}
@@ -435,6 +439,50 @@ func (t *galaASTTransformer) isConstPtrDerefAssignment(ctx grammar.IExpressionCo
 		}
 	}
 	return false
+}
+
+// isDirectVariableExpression checks whether the expression is a bare identifier
+// with no postfix operations (field access, indexing, or method calls).
+// Returns true for `v`, false for `v.data`, `v[i]`, `v.Method()`, etc.
+func (t *galaASTTransformer) isDirectVariableExpression(ctx grammar.IExpressionContext) bool {
+	if ctx == nil {
+		return false
+	}
+	orExpr := ctx.OrExpr()
+	if orExpr == nil {
+		return false
+	}
+	andExprs := orExpr.(*grammar.OrExprContext).AllAndExpr()
+	if len(andExprs) != 1 {
+		return false
+	}
+	eqExprs := andExprs[0].(*grammar.AndExprContext).AllEqualityExpr()
+	if len(eqExprs) != 1 {
+		return false
+	}
+	relExprs := eqExprs[0].(*grammar.EqualityExprContext).AllRelationalExpr()
+	if len(relExprs) != 1 {
+		return false
+	}
+	addExprs := relExprs[0].(*grammar.RelationalExprContext).AllAdditiveExpr()
+	if len(addExprs) != 1 {
+		return false
+	}
+	mulExprs := addExprs[0].(*grammar.AdditiveExprContext).AllMultiplicativeExpr()
+	if len(mulExprs) != 1 {
+		return false
+	}
+	unaryExprs := mulExprs[0].(*grammar.MultiplicativeExprContext).AllUnaryExpr()
+	if len(unaryExprs) != 1 {
+		return false
+	}
+	unaryCtx := unaryExprs[0].(*grammar.UnaryExprContext)
+	postfixExpr := unaryCtx.PostfixExpr()
+	if postfixExpr == nil {
+		return false
+	}
+	// A direct variable expression has no postfix suffixes (no .field, [index], or (args))
+	return len(postfixExpr.(*grammar.PostfixExprContext).AllPostfixSuffix()) == 0
 }
 
 func (t *galaASTTransformer) transformIfStatement(ctx *grammar.IfStatementContext) (ast.Stmt, error) {

@@ -856,6 +856,13 @@ gala_test(
     expected = "block_lambda_generic_func.out",
 )
 
+# FIX-027 verification: val pointer bindings can mutate var fields of pointed-to struct
+gala_test(
+    name = "val_pointer_field_mutation",
+    src = "val_pointer_field_mutation.gala",
+    expected = "val_pointer_field_mutation.out",
+)
+
 # FIX-024 verification: lambda param type inferred for non-generic wrapper methods
 gala_test(
     name = "wrapper_method_lambda",
