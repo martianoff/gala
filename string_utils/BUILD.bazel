@@ -53,9 +53,9 @@ go_binary(
     srcs = ["go_native_perf_test.go"],
 )
 
-go_library(
-    name = "string_utils_lib",
-    srcs = ["strings.gen.go"],
-    importpath = "martianoff/gala/string_utils",
-    visibility = ["//visibility:public"],
-)
+# go_library(
+#     name = "string_utils_lib",
+#     srcs = ["strings.gen.go"],
+#     importpath = "martianoff/gala/string_utils",
+#     visibility = ["//visibility:public"],
+# )
