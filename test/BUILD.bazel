@@ -1,5 +1,14 @@
 load("//:gala.bzl", "gala_go_test", "gala_library")
 
+filegroup(
+    name = "gala_sources",
+    srcs = glob(
+        ["*.gala"],
+        exclude = ["*_test.gala"],
+    ),
+    visibility = ["//visibility:public"],
+)
+
 gala_library(
     name = "test",
     srcs = [

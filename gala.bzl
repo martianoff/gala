@@ -53,7 +53,7 @@ gala_exec_test = rule(
     },
 )
 
-def gala_transpile(name, src, out = None, package_files = []):
+def gala_transpile(name, src, out = None, package_files = [], extra_srcs = []):
     """Transpile a GALA source file to Go using the full gala binary.
 
     Args:
@@ -61,6 +61,7 @@ def gala_transpile(name, src, out = None, package_files = []):
         src: The .gala source file to transpile
         out: Output .go file name (optional)
         package_files: List of sibling .gala files in the same package for cross-file type resolution
+        extra_srcs: Additional GALA source files/filegroups to make available during transpilation
     """
     if not out:
         out = name + ".go"
@@ -73,7 +74,7 @@ def gala_transpile(name, src, out = None, package_files = []):
     # Use go.mod location to find the repository root for search path
     native.genrule(
         name = name,
-        srcs = [src] + package_files + [Label("//:all_gala_sources"), Label("//:go.mod")],
+        srcs = [src] + package_files + extra_srcs + [Label("//:all_gala_sources"), Label("//:go.mod")],
         outs = [out],
         cmd = "$(location {tool}) --input $(location {src}) --output $@ --search $$(dirname $(location {gomod})){pf}".format(
             tool = Label("//cmd/gala"),
@@ -352,6 +353,9 @@ def gala_go_test(name, srcs, deps = [], pkg = "main", embed = [], **kwargs):
         pkg = pkg,
     )
 
+    # Make test framework sources available during transpilation (for type resolution)
+    test_extra_srcs = [Label("//test:gala_sources")] if pkg != "test" else []
+
     # Transpile each test source file
     transpiled_srcs = []
     for i, src in enumerate(srcs):
@@ -363,6 +367,7 @@ def gala_go_test(name, srcs, deps = [], pkg = "main", embed = [], **kwargs):
             src = src,
             out = go_src,
             package_files = siblings,
+            extra_srcs = test_extra_srcs,
         )
         transpiled_srcs.append(go_src)
 
