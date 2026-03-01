@@ -899,3 +899,14 @@ gala_test(
     src = "tuple_return_widen.gala",
     expected = "tuple_return_widen.out",
 )
+
+# FIX-038 verification: FoldLeft on Sequence.Get() result uses Array_FoldLeft
+gala_test(
+    name = "foldleft_on_sequence_get",
+    src = "foldleft_on_sequence_get.gala",
+    expected = "foldleft_on_sequence_get.out",
+    deps = [
+        "//concurrent",
+        "//collection_immutable",
+    ],
+)
