@@ -56,7 +56,14 @@ func SliceRemoveAt[T any](s []T, index int) []T {
 	return s[:len(s)-1]
 }
 
+// Slice returns a sub-slice from index 'from' (inclusive) to 'to' (exclusive).
+// Equivalent to Go's s[from:to]. O(1).
+func Slice[T any](s []T, from int, to int) []T {
+	return s[from:to]
+}
+
 // SliceDrop returns a slice with the first n elements removed. O(1).
+// Equivalent to Go's s[n:].
 func SliceDrop[T any](s []T, n int) []T {
 	if n >= len(s) {
 		return nil
@@ -65,11 +72,24 @@ func SliceDrop[T any](s []T, n int) []T {
 }
 
 // SliceTake returns a slice with only the first n elements. O(1).
+// Equivalent to Go's s[:n].
 func SliceTake[T any](s []T, n int) []T {
 	if n >= len(s) {
 		return s
 	}
 	return s[:n]
+}
+
+// SliceFrom returns a sub-slice from index 'from' to the end. O(1).
+// Equivalent to Go's s[from:]. Same as SliceDrop but with a clearer name.
+func SliceFrom[T any](s []T, from int) []T {
+	return s[from:]
+}
+
+// SliceTo returns a sub-slice from the beginning to index 'to' (exclusive). O(1).
+// Equivalent to Go's s[:to]. Same as SliceTake but with a clearer name.
+func SliceTo[T any](s []T, to int) []T {
+	return s[:to]
 }
 
 // === Slice Creation Functions ===
