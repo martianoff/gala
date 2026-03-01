@@ -418,6 +418,9 @@ type ExecutionContext interface {
 	ExecuteWithRecover(task func() any, onPanic func(any) any)
 	// ReportFailure reports an error that couldn't be handled.
 	ReportFailure(err error)
+	// Shutdown gracefully shuts down the execution context.
+	// For unbounded contexts, this is a no-op.
+	Shutdown()
 }
 
 // globalEC is the default execution context used when none is specified.
@@ -460,6 +463,11 @@ func (e *UnboundedExecutionContext) ExecuteWithRecover(task func() any, onPanic 
 // ReportFailure logs the error (default implementation does nothing).
 func (e *UnboundedExecutionContext) ReportFailure(err error) {
 	// Default: silently ignore unhandled errors
+}
+
+// Shutdown is a no-op for unbounded execution context.
+func (e *UnboundedExecutionContext) Shutdown() {
+	// No-op: unbounded context has no resources to release
 }
 
 // FixedPoolExecutionContext executes tasks using a fixed-size worker pool.
