@@ -8,7 +8,7 @@ import (
 )
 
 // simulateComputation simulates an async computation that may fail
-func simulateComputation(value int, shouldFail bool) *Future[int] {
+func simulateComputation(value int, shouldFail bool) Future[int] {
     if shouldFail {
         return FutureFailed[int](FutureError(Message = fmt.Sprintf("computation failed for %d", value)))
     }
@@ -60,7 +60,7 @@ func main() {
     val bigValueFuture = FutureOf[int](100)
     val smallValueFuture = FutureOf[int](5)
 
-    val classify = (f *Future[int]) => f match {
+    val classify = (f Future[int]) => f match {
         case Succeeded[int](v) if v >= 50 => fmt.Sprintf("Large value: %d", v)
         case Succeeded[int](v) if v >= 10 => fmt.Sprintf("Medium value: %d", v)
         case Succeeded[int](v) => fmt.Sprintf("Small value: %d", v)
@@ -87,7 +87,7 @@ func main() {
     fmt.Println("\n=== Pattern Matching on Sequence of Futures ===")
 
     // All successful futures
-    val allSuccess = ArrayOf[*Future[int]](
+    val allSuccess = ArrayOf[Future[int]](
         FutureOf[int](1),
         FutureOf[int](2),
         FutureOf[int](3)
@@ -101,7 +101,7 @@ func main() {
     fmt.Println(seqMsg1)
 
     // One failing future in the sequence
-    val withFailure = ArrayOf[*Future[int]](
+    val withFailure = ArrayOf[Future[int]](
         FutureOf[int](1),
         FutureFailed[int](FutureError(Message = "second computation failed")),
         FutureOf[int](3)
@@ -117,7 +117,7 @@ func main() {
     // Using pattern matching in a function
     fmt.Println("\n=== Pattern Matching in Function ===")
 
-    val processFutures = (futures Array[*Future[int]]) => futures match {
+    val processFutures = (futures Array[Future[int]]) => futures match {
         case AllSucceeded[int](values) => {
             val sum = values.FoldLeft[int](0, (acc int, v int) => acc + v)
             fmt.Sprintf("Sum of all values: %d", sum)

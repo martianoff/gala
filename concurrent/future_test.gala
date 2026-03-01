@@ -121,7 +121,7 @@ func TestFutureFallback(t T) T {
 }
 
 func TestSequence(t T) T {
-    val futures = ArrayOf[*Future[int]](
+    val futures = ArrayOf[Future[int]](
         FutureOf[int](1),
         FutureOf[int](2),
         FutureOf[int](3)
@@ -137,7 +137,7 @@ func TestSequence(t T) T {
 }
 
 func TestSequenceWithFailure(t T) T {
-    val futures = ArrayOf[*Future[int]](
+    val futures = ArrayOf[Future[int]](
         FutureOf[int](1),
         FutureFailed[int](FutureError(Message = "error")),
         FutureOf[int](3)
@@ -159,7 +159,7 @@ func TestTraverse(t T) T {
 }
 
 func TestFold(t T) T {
-    val futures = ArrayOf[*Future[int]](
+    val futures = ArrayOf[Future[int]](
         FutureOf[int](1),
         FutureOf[int](2),
         FutureOf[int](3)
@@ -171,7 +171,7 @@ func TestFold(t T) T {
 }
 
 func TestReduceLeft(t T) T {
-    val futures = ArrayOf[*Future[int]](
+    val futures = ArrayOf[Future[int]](
         FutureOf[int](1),
         FutureOf[int](2),
         FutureOf[int](3)

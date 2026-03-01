@@ -33,7 +33,7 @@ func main() {
 
     // Example 4: Multiple concurrent computations on pool
     fmt.Println("\n--- Concurrent Computations on Pool ---")
-    val futures = ArrayOf[*Future[int]](
+    val futures = ArrayOf[Future[int]](
         FutureApplyWith[int](() => 0 * 0, pool),
         FutureApplyWith[int](() => 1 * 1, pool),
         FutureApplyWith[int](() => 2 * 2, pool),
@@ -47,7 +47,7 @@ func main() {
     fmt.Println("\n--- SingleThread ExecutionContext ---")
     val singleEC = NewSingleThreadEC()
 
-    val seqFutures = ArrayOf[*Future[int]](
+    val seqFutures = ArrayOf[Future[int]](
         FutureApplyWith[int](() => 0, singleEC),
         FutureApplyWith[int](() => 1, singleEC),
         FutureApplyWith[int](() => 2, singleEC)
