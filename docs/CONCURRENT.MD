@@ -14,6 +14,18 @@ import . "martianoff/gala/concurrent"
 
 `Future[T]` represents an asynchronous computation that will eventually produce a value of type T or fail with an error. It provides a functional approach to concurrent programming.
 
+**Important:** All Future factory functions return `*Future[T]` (a pointer). Future contains mutable shared state (mutex, channel, completion flag) that must be shared by reference. Use `*Future[T]` in explicit type annotations:
+
+```gala
+func fetchUser(id int) *Future[User] = FutureApply[User](() => loadFromDB(id))
+```
+
+With `val`, the pointer type is inferred automatically — no need to write `*Future[T]`:
+
+```gala
+val f = FutureApply[int](() => compute())  // Inferred as *Future[int]
+```
+
 ### Creating Futures
 
 ```gala
