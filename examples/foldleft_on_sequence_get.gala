@@ -1,0 +1,19 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+    . "martianoff/gala/concurrent"
+    . "martianoff/gala/collection_immutable"
+)
+
+// FIX-038 verification: FoldLeft on Future.Get() result uses correct namespace.
+// When calling .FoldLeft() on a value from Sequence[int](...).Get(),
+// the transpiler should generate Array_FoldLeft, not Future_FoldLeft.
+func main() {
+    val futures = ArrayOf[Future[int]](FutureOf[int](1), FutureOf[int](2), FutureOf[int](3))
+    val allResults = Sequence[int](futures)
+    val values = allResults.Get()
+    val sum = values.FoldLeft[int](0, (acc int, v int) => acc + v)
+    fmt.Println(sum)
+}
