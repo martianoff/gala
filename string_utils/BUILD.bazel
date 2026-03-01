@@ -1,5 +1,5 @@
+load("@rules_go//go:def.bzl", "go_binary", "go_library")
 load("//:gala.bzl", "gala_binary", "gala_bootstrap_transpile", "gala_go_test", "gala_library")
-load("@rules_go//go:def.bzl", "go_binary")
 
 exports_files([
     "strings.gala",
@@ -51,4 +51,11 @@ gala_binary(
 go_binary(
     name = "perf_go",
     srcs = ["go_native_perf_test.go"],
+)
+
+go_library(
+    name = "string_utils_lib",
+    srcs = ["strings.gen.go"],
+    importpath = "martianoff/gala/string_utils",
+    visibility = ["//visibility:public"],
 )

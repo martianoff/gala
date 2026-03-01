@@ -28,6 +28,7 @@ filegroup(
         "//collection_immutable:gala_sources",
         "//collection_mutable:gala_sources",
         "//concurrent:gala_sources",
+        "//examples:gala_sources",
         "//lazy:lazy.gala",
         "//std:constptr.gala",
         "//std:either.gala",
@@ -43,7 +44,6 @@ filegroup(
         "//stream:stream.gala",
         "//string_utils:gala_sources",
         "//time_utils:gala_sources",
-        "//examples:gala_sources",
     ],
     visibility = ["//visibility:public"],
 )

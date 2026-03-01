@@ -1,4 +1,4 @@
-load("//:gala.bzl", "gala_bootstrap_transpile", "gala_library", "gala_go_test")
+load("//:gala.bzl", "gala_bootstrap_transpile", "gala_go_test", "gala_library")
 
 exports_files(["lazy.gala"])
 

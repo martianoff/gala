@@ -68,10 +68,6 @@ go_library(
     ],
     importpath = "martianoff/gala/collection_mutable",
     visibility = ["//visibility:public"],
-    deps = [
-        "//std",
-        "//go_interop",
-    ],
 )
 
 gala_go_test(
@@ -162,3 +158,9 @@ go_binary(
 #     srcs = ["go_native_perf_test.go"],
 #     embed = [":collection_mutable_lib"],
 # )
+
+go_test(
+    name = "collection_mutable_test",
+    srcs = ["go_native_perf_test.go"],
+    embed = [":collection_mutable_lib"],
+)

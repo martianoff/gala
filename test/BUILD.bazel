@@ -12,10 +12,10 @@ filegroup(
 gala_library(
     name = "test",
     srcs = [
-        "framework.gala",
         "assertions.gala",
-        "table.gala",
         "bench.gala",
+        "framework.gala",
+        "table.gala",
     ],
     importpath = "martianoff/gala/test",
     visibility = ["//visibility:public"],
