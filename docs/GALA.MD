@@ -1460,10 +1460,15 @@ val r = rune(65)            // int to rune: 'A'
 val s = string(r)           // rune to string: "A"
 val code = int(r)           // rune to int: 65
 
-// String/byte conversions
-val bytes = []byte("hello") // string to byte slice
-val str = string(bytes)     // byte slice to string
+// String/byte conversions (use go_interop helpers — import . "martianoff/gala/go_interop")
+val bytes = ToBytes("hello")  // string to byte slice
+val str = ToString(bytes)     // byte slice to string
+val runes = ToRunes("hello")  // string to rune slice
 ```
+
+> **Important:** The Go syntax `[]byte(expr)` and `[]rune(expr)` are **not supported** by GALA's parser.
+> Use `ToBytes()`, `ToString()`, and `ToRunes()` from the `go_interop` package instead.
+> The reverse direction `string(bytes)` works natively since it looks like a function call.
 
 **Note:** Type conversions are explicit in GALA — there is no implicit numeric widening or narrowing.
 
@@ -2420,6 +2425,31 @@ gala_library(
 ```
 
 For comprehensive documentation, see [DEPENDENCY_MANAGEMENT.MD](DEPENDENCY_MANAGEMENT.MD).
+
+### Third-Party Go Dependencies
+
+To add a third-party Go library (e.g., `github.com/google/uuid`):
+
+```bash
+# Add the dependency via gala CLI (handles gala.mod + go.mod + go.sum)
+gala mod add github.com/google/uuid@v1.6.0 --go
+
+# Sync all dependency files
+gala mod tidy
+```
+
+Then in your Bazel config:
+- `MODULE.bazel`: Add `use_repo(go_deps, "com_github_google_uuid")`
+- `BUILD.bazel`: Add `@com_github_google_uuid//:uuid` to `deps`
+
+Import in `.gala` files as you would in Go:
+```gala
+import "github.com/google/uuid"
+```
+
+> **Warning:** Always use `gala mod tidy` instead of `go mod tidy`. The Go tool removes
+> dependencies that are only referenced by `.gala` files (not direct `.go` source),
+> which will break your build.
 
 ---
 
