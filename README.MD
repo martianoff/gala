@@ -308,6 +308,7 @@ Mutable variants of all collection types are available in `collection_mutable` f
 | Project | Description |
 |---------|-------------|
 | [State Machine Example](https://github.com/martianoff/gala-state-machine-example) | State machines with sealed types + pattern matching -- order FSM, traffic light, vending machine (with Go comparison) |
+| [Log Analyzer](https://github.com/martianoff/gala-log-analyzer) | Structured log parsing with Go stdlib interop (strings, strconv, fmt) + functional pipelines (FoldLeft, Filter, AppendAll) (with Go comparison) |
 
 ---
 
