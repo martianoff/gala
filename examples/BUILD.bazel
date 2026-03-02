@@ -918,3 +918,13 @@ gala_test(
         "//collection_immutable",
     ],
 )
+
+# FIX-042 verification: ForEach void lambda should generate func(T) not func(T) any
+gala_test(
+    name = "foreach_void_lambda",
+    src = "foreach_void_lambda.gala",
+    expected = "foreach_void_lambda.out",
+    deps = [
+        "//collection_immutable",
+    ],
+)
