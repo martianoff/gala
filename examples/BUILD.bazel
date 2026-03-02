@@ -900,6 +900,14 @@ gala_test(
     expected = "tuple_return_widen.out",
 )
 
+# FIX-041 verification: ToBytes/ToString/ToRunes byte conversion helpers
+gala_test(
+    name = "byte_conversion",
+    src = "byte_conversion.gala",
+    expected = "byte_conversion.out",
+    deps = ["//go_interop"],
+)
+
 # FIX-038 verification: FoldLeft on Sequence.Get() result uses Array_FoldLeft
 gala_test(
     name = "foldleft_on_sequence_get",

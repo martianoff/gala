@@ -1,0 +1,28 @@
+package main
+
+import . "martianoff/gala/go_interop"
+import "crypto/sha256"
+import "encoding/hex"
+import "fmt"
+import "io"
+
+func main() {
+    // FIX-041: Use ToBytes() instead of []byte() which is not supported by GALA parser
+    val input = "hello world"
+
+    // SHA-256 hash using hash.Hash interface + io.WriteString
+    var h = sha256.New()
+    io.WriteString(h, input)
+    val hashBytes = h.Sum(nil)
+    val hashHex = hex.EncodeToString(hashBytes)
+    fmt.Println(hashHex)
+
+    // ToBytes: string -> []byte
+    val bytes = ToBytes("test string")
+    val backToString = ToString(bytes)
+    fmt.Println(backToString)
+
+    // ToRunes: string -> []rune
+    val runes = ToRunes("hello")
+    fmt.Println(len(runes))
+}

@@ -14,6 +14,26 @@ import (
 	"time"
 )
 
+// === Type Conversion Functions ===
+
+// ToBytes converts a string to a byte slice.
+// Use this instead of []byte(s) which is not supported in GALA's parser.
+func ToBytes(s string) []byte {
+	return []byte(s)
+}
+
+// ToString converts a byte slice to a string.
+// The reverse direction string(bytes) works in GALA, but this provides symmetry.
+func ToString(b []byte) string {
+	return string(b)
+}
+
+// ToRunes converts a string to a rune slice.
+// Use this instead of []rune(s) which is not supported in GALA's parser.
+func ToRunes(s string) []rune {
+	return []rune(s)
+}
+
 // === Slice Helper Functions for efficient operations ===
 
 // SliceAppendAll appends all elements from src to dst. O(m) where m = len(src).
