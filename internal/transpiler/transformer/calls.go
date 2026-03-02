@@ -452,6 +452,28 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 				Args: mArgs,
 			}, nil
 		}
+
+		// FIX-042: When method metadata is not found (receiver type unresolvable),
+		// still generate the method call directly instead of falling through to the
+		// regular function call handler which would lose the receiver.method structure.
+		var mArgs []ast.Expr
+		for _, argCtx := range argListCtx.AllArgument() {
+			arg := argCtx.(*grammar.ArgumentContext)
+			pat := arg.Pattern()
+			ep, ok := pat.(*grammar.ExpressionPatternContext)
+			if !ok {
+				return nil, galaerr.NewSemanticError("only expressions allowed as function arguments")
+			}
+			expr, err := t.transformArgumentWithExpectedType(ep.Expression(), transpiler.NilType{})
+			if err != nil {
+				return nil, err
+			}
+			mArgs = append(mArgs, expr)
+		}
+		return &ast.CallExpr{
+			Fun:  &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)},
+			Args: mArgs,
+		}, nil
 	}
 
 	// Regular function call - transform arguments

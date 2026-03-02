@@ -1,0 +1,22 @@
+package main
+
+import "fmt"
+import . "martianoff/gala/collection_immutable"
+
+func main() {
+    // Block lambda with explicit type annotation
+    val arr = ArrayOf("a", "b", "c")
+    arr.ForEach((s string) => {
+        fmt.Println(s)
+    })
+
+    // Expression lambda with explicit type annotation
+    val nums = ArrayOf(1, 2, 3)
+    nums.ForEach((n int) => fmt.Println(n))
+
+    // ForEach on List
+    val list = ListOf("x", "y", "z")
+    list.ForEach((s string) => {
+        fmt.Println(s)
+    })
+}
