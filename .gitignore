@@ -121,4 +121,6 @@ gradle-app.setting
 .classpath
 
 # AI
-.claude
+.claude/commands
+.claude/worktrees
+.claude/settings.local.json
