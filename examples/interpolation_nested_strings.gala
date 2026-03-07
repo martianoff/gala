@@ -1,0 +1,34 @@
+package main
+
+import (
+    "strings"
+    . "martianoff/gala/collection_immutable"
+)
+
+func classify(n int) string = n match {
+    case 0            => "zero"
+    case n if n < 0   => "negative"
+    case _            => "positive"
+}
+
+func main() {
+    // String literal inside ${...}
+    Println(s"result: ${strings.Repeat("ab", 3)}")
+
+    // Nested function call with string literal
+    Println(s"classify: ${classify(0)}")
+
+    // MkString with separator containing quotes
+    val nums = ArrayOf(1, 2, 3)
+    Println(s"nums: ${nums.MkString(", ")}")
+
+    // Dollar escape still works
+    val price = 42
+    Println(s"Price: $$$price")
+
+    // f-string with string inside ${...}
+    Println(f"repeat: ${strings.Repeat("*", 5)}%s done")
+
+    // Multiple string args in nested call
+    Println(s"replaced: ${strings.Replace("hello world", "world", "gala", 1)}")
+}

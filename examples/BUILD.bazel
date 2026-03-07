@@ -935,3 +935,11 @@ gala_test(
     src = "string_interpolation.gala",
     expected = "string_interpolation.out",
 )
+
+# String interpolation with nested string literals inside ${...}
+gala_test(
+    name = "interpolation_nested_strings",
+    src = "interpolation_nested_strings.gala",
+    expected = "interpolation_nested_strings.out",
+    deps = ["//collection_immutable"],
+)
