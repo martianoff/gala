@@ -10,7 +10,7 @@
 
 **GALA** (Go Alternative LAnguage) is a modern programming language that transpiles to Go. It brings sealed types, pattern matching, immutability by default, and functional collections to the Go ecosystem -- without sacrificing Go's performance, tooling, or library compatibility.
 
-**[Try GALA in your browser &r-arr;](https://gala-playground.fly.dev)**
+**[Try GALA in your browser!](https://gala-playground.fly.dev)**
 
 ```gala
 sealed type Shape {
