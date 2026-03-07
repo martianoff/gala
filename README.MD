@@ -10,6 +10,8 @@
 
 **GALA** (Go Alternative LAnguage) is a modern programming language that transpiles to Go. It brings sealed types, pattern matching, immutability by default, and functional collections to the Go ecosystem -- without sacrificing Go's performance, tooling, or library compatibility.
 
+**[Try GALA in your browser &r-arr;](https://gala-playground.fly.dev)**
+
 ```gala
 sealed type Shape {
     case Circle(Radius float64)
@@ -307,7 +309,7 @@ Mutable variants of all collection types are available in `collection_mutable` f
 
 | Project | Description |
 |---------|-------------|
-| [GALA Playground](https://github.com/martianoff/gala-playground) | Web-based playground (like go.dev/play) -- write and run GALA code in the browser with 9 built-in examples |
+| [GALA Playground](https://github.com/martianoff/gala-playground) | Web-based playground ([try it live](https://gala-playground.fly.dev)) -- write and run GALA code in the browser with 9 built-in examples |
 | [State Machine Example](https://github.com/martianoff/gala-state-machine-example) | State machines with sealed types + pattern matching -- order FSM, traffic light, vending machine (with Go comparison) |
 | [Log Analyzer](https://github.com/martianoff/gala-log-analyzer) | Structured log parsing with Go stdlib interop (strings, strconv, fmt) + functional pipelines (FoldLeft, Filter, AppendAll) (with Go comparison) |
 
