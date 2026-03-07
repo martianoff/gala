@@ -1474,6 +1474,25 @@ Println(f"${count * 100}%010d")             // 0000000700
 
 If no `%spec` is given after a variable in an `f"..."` string, the format verb is auto-inferred (same as `s"..."`).
 
+#### Nested Strings in `${...}`
+
+String literals can be used freely inside `${...}` expressions — the lexer correctly tracks brace nesting and embedded quotes:
+
+```gala
+import "strings"
+import . "martianoff/gala/collection_immutable"
+
+// Function call with string argument
+Println(s"result: ${strings.Repeat("ab", 3)}")         // result: ababab
+
+// Multiple string arguments
+Println(s"${strings.Replace("hello world", "world", "gala", 1)}")  // hello gala
+
+// Collection methods with string separators
+val nums = ArrayOf(1, 2, 3)
+Println(s"nums: ${nums.MkString(", ")}")                // nums: 1, 2, 3
+```
+
 #### `Println` / `Print`
 
 `Println` and `Print` are available without any import. They map directly to `fmt.Println` and `fmt.Print`:
