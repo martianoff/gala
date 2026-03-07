@@ -166,8 +166,8 @@ bazel run //myapp:myapp
 
 ```gala
 val msg = shape match {
-    case Circle(r)      => f"r=$r%.1f" // same as fmt.Sprintf("r=%.1f", r)
-    case Rectangle(w,h) => f"$w%.0fx$h%.0f" // same as fmt.Sprintf("%fx%f", w, h)
+    case Circle(r)      => f"r=$r%.1f"
+    case Rectangle(w,h) => f"$w%.0fx$h%.0f"
     case Point()        => "point"
 }
 ```
