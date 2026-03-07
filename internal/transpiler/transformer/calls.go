@@ -17,6 +17,9 @@ import (
 //            isGenericMethodName, isGenericMethodWithImports, isMethodGenericViaTypeMeta
 
 func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.PostfixSuffixContext) (ast.Expr, error) {
+	// Rewrite Println/Print to fmt.Println/fmt.Print (auto-imported)
+	base = t.rewriteBuiltinPrintFuncs(base)
+
 	// When making a function call with type arguments (e.g., Unfold[int, Tuple[int, int]](...)),
 	// the type arguments need to be qualified with std. prefix if they are std types.
 	// This is because at parse time we don't know if T[A, B] is a type instantiation or array access.

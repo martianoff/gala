@@ -9,6 +9,7 @@ go_library(
         "declarations.go",
         "expressions.go",
         "imports.go",
+        "interpolation.go",
         "lambdas.go",
         "match.go",
         "methods.go",

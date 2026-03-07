@@ -928,3 +928,10 @@ gala_test(
         "//collection_immutable",
     ],
 )
+
+# String interpolation: s"..." and f"..." with auto-inferred format verbs
+gala_test(
+    name = "string_interpolation",
+    src = "string_interpolation.gala",
+    expected = "string_interpolation.out",
+)

@@ -30,6 +30,7 @@ GALA (Go Alternative LAnguage) is a modern programming language that transpiles 
    - [Maps](#maps)
    - [HashMap](#hashmap)
 10. [Literals and Type Conversions](#10-literals-and-type-conversions)
+   - [String Interpolation](#string-interpolation)
 11. [Go Built-in Functions](#11-go-built-in-functions)
 12. [Immutability Under the Hood](#12-immutability-under-the-hood)
     - [ConstPtr - Read-Only Pointers](#constptr---read-only-pointers)
@@ -1426,6 +1427,64 @@ line three`
 
 **Raw strings** (backtick-delimited) can span multiple lines and do not process escape sequences. They are useful for regular expressions, file paths, and multi-line text.
 
+### String Interpolation
+
+GALA supports string interpolation with two prefixes: `s` for auto-inferred formatting and `f` for explicit format control. No `import "fmt"` is needed — the transpiler auto-imports it.
+
+#### `s"..."` — Auto-Inferred Format Verbs
+
+Use `$variable` for simple references and `${expression}` for arbitrary expressions:
+
+```gala
+val name = "Alice"
+val age = 30
+val pi = 3.14159
+
+Println(s"Hello $name!")                    // Hello Alice!
+Println(s"$name is $age years old")         // Alice is 30 years old
+Println(s"Pi ≈ $pi")                        // Pi ≈ 3.14159
+Println(s"Next year: ${age + 1}")           // Next year: 31
+Println(s"Price: $$99")                     // Price: $99 (use $$ for literal $)
+```
+
+Format verbs are chosen from the expression type:
+
+| Type | Format verb |
+|------|-------------|
+| `string` | `%s` |
+| `int`, `int64`, etc. | `%d` |
+| `float64`, `float32` | `%g` |
+| `bool` | `%t` |
+| `rune` | `%c` |
+| everything else | `%v` |
+
+#### `f"..."` — Explicit Format Specs
+
+Add a Go printf format specifier after `$variable` or `${expression}`:
+
+```gala
+val count = 7
+val price = 19.99
+
+Println(f"$count%04d items")                // 0007 items
+Println(f"Total: $$$price%.2f")             // Total: $19.99
+Println(f"Hex: $count%x")                   // Hex: 7
+Println(f"${count * 100}%010d")             // 0000000700
+```
+
+If no `%spec` is given after a variable in an `f"..."` string, the format verb is auto-inferred (same as `s"..."`).
+
+#### `Println` / `Print`
+
+`Println` and `Print` are available without any import. They map directly to `fmt.Println` and `fmt.Print`:
+
+```gala
+// No import needed
+Println("Hello, World!")
+Println(s"Result: $x")
+Print("no newline")
+```
+
 ### Rune Literals
 GALA supports Go-style character literals using single quotes:
 
@@ -2269,9 +2328,10 @@ sealed type Shape {
     case Point()
 }
 
+
 val desc = shape match {
-    case Circle(r) => fmt.Sprintf("radius=%.2f", r)
-    case Rectangle(w, h) => fmt.Sprintf("%fx%f", w, h)
+    case Circle(r) => f"radius=$r%.2f"
+    case Rectangle(w, h) => s"${w}x${h}"
     case Point() => "point"
 }
 ```
@@ -2286,6 +2346,12 @@ val desc = shape match {
 - **Omit lambda parameter types when inferrable** - `(x) => x * 2` not `(x int) => x * 2` when passed to a method with known parameter types
 - **Omit variable types** - `val x = 42` not `val x int = 42`
 - **Omit method type params** - `list.Map((x) => x * 2)` not `list.Map[int]((x int) => x * 2)`
+
+### String Formatting
+- **Prefer `s"..."` over `fmt.Sprintf`** - `s"Hello $name"` not `fmt.Sprintf("Hello %s", name)`. Format verbs are auto-inferred from types
+- **Use `f"..."` for explicit format control** - `f"$price%.2f"` when you need specific formatting like padding or precision
+- **Use `Println`/`Print`** - No `import "fmt"` needed for `Println(...)` and `Print(...)`
+- **Only import `fmt` for specialized functions** - `fmt.Errorf`, `fmt.Fprintf`, `fmt.Stringer` still require the import
 - **FoldLeft/FoldRight — omit accumulator type** - `list.FoldLeft(0, (acc, x) => acc + x)` not `list.FoldLeft[int](0, (acc int, x int) => acc + x)`. The accumulator type is inferred from the zero value
 - **Non-generic wrapper methods — omit types too** - `str.Filter((r) => r == 'a')` not `str.Filter((r rune) => r == 'a')`. Lambda params are inferred from concrete method signatures
 - **Explicit types only when needed** - `None[int]()`, `Left[string, int]()`, empty collections, standalone lambdas not passed to a typed method, or ambiguous contexts

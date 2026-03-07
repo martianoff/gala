@@ -78,8 +78,8 @@ sealed type Shape {
 
 // No case _ needed - all variants covered
 func describe(s Shape) string = s match {
-    case Circle(r) => fmt.Sprintf("radius=%.2f", r)
-    case Rectangle(w, h) => fmt.Sprintf("%fx%f", w, h)
+    case Circle(r) => f"radius=$r%.2f"
+    case Rectangle(w, h) => s"${w}x${h}"
     case Point() => "point"
 }
 ```
@@ -140,7 +140,26 @@ for _, x := range nums {
 }
 ```
 
-### 5. Type Inference (MEDIUM priority)
+### 5. String Interpolation (HIGH priority)
+
+| Issue | Pattern to Flag | Recommended Fix |
+|-------|-----------------|-----------------|
+| `fmt.Sprintf` for simple formatting | `fmt.Sprintf("Hello %s", name)` | `s"Hello $name"` |
+| `fmt.Sprintf` with expressions | `fmt.Sprintf("sum=%d", a + b)` | `s"sum=${a + b}"` |
+| `fmt.Println` | `fmt.Println("result:", x)` | `Println("result:", x)` |
+| `fmt.Print` | `fmt.Print("hello")` | `Print("hello")` |
+| `fmt.Sprintf` with explicit format | `fmt.Sprintf("%.2f", price)` | `f"$price%.2f"` |
+| Unnecessary `import "fmt"` | `import "fmt"` used only for Println/Sprintf | Remove import, use `s"..."` / `Println` |
+| String concatenation for formatting | `"Hello " + name + ", age " + fmt.Sprintf("%d", age)` | `s"Hello $name, age $age"` |
+
+**Check**: Search for `fmt.Sprintf`, `fmt.Println`, `fmt.Print`, `fmt.Printf`, and `import "fmt"`. For each:
+- `fmt.Sprintf` → replace with `s"..."` (auto-inferred verbs) or `f"..."` (explicit format specs)
+- `fmt.Println` / `fmt.Print` → replace with `Println` / `Print`
+- `import "fmt"` → remove if only used for Sprintf/Println/Print (keep for `fmt.Errorf`, `fmt.Fprintf`, etc.)
+
+**Acceptable `fmt` uses**: `fmt.Errorf`, `fmt.Fprintf`, `fmt.Fscan*`, `fmt.Stringer` interface implementation, and any `fmt` function not covered by interpolation.
+
+### 6. Type Inference (MEDIUM priority)
 
 | Issue | Pattern to Flag | Recommended Fix |
 |-------|-----------------|-----------------|
@@ -154,7 +173,7 @@ for _, x := range nums {
 
 **Exception**: Explicit types are required for `None[T]()`, `Left[L, R]()`, `Right[L, R]()`, empty collections, and standalone lambdas not passed to a typed method (e.g., `val f = (x int) => x * 2`).
 
-### 6. Functional Patterns (HIGH priority)
+### 7. Functional Patterns (HIGH priority)
 
 | Issue | Pattern to Flag | Recommended Fix |
 |-------|-----------------|-----------------|
@@ -171,7 +190,7 @@ for _, x := range nums {
 | Manual ZipWithIndex | `for i := 0; ...; result.Append((elem, i))` | `collection.ZipWithIndex()` |
 | Manual IndexOf | `for i := 0; ...; if elem == target { return i }` | `collection.IndexOfFirst(x => x == target)` |
 
-### 7. Expression-Bodied Functions (MEDIUM priority)
+### 8. Expression-Bodied Functions (MEDIUM priority)
 
 | Issue | Pattern to Flag | Recommended Fix |
 |-------|-----------------|----------------|
@@ -180,7 +199,7 @@ for _, x := range nums {
 | Missing return in block | `(x) => { val y = x * 2; y }` | Add explicit `return y` |
 | Multi-line when one-liner works | `if cond { return a } else { return b }` | Use ternary or match |
 
-### 8. Unnecessary Variables (MEDIUM priority)
+### 9. Unnecessary Variables (MEDIUM priority)
 
 | Issue | Pattern to Flag | Recommended Fix |
 |-------|-----------------|-----------------|
@@ -195,7 +214,7 @@ for _, x := range nums {
 - Complex expressions that benefit from naming for readability
 - Debugging breakpoints
 
-### 9. Collection Wrapper Types (HIGH priority)
+### 10. Collection Wrapper Types (HIGH priority)
 
 When creating wrapper types around collections (like `Str` wrapping `string` as `Array[rune]`), delegate to the underlying collection's methods instead of reimplementing.
 
@@ -226,7 +245,7 @@ func (s Str) ForAll(p func(rune) bool) bool =
 func (s Str) IsAlpha() bool = s.NonEmpty() && toRunes(s.value).ForAll(unicode.IsLetter)
 ```
 
-### 10. Error Handling (MEDIUM priority)
+### 11. Error Handling (MEDIUM priority)
 
 | Issue | Pattern to Flag | Recommended Fix |
 |-------|-----------------|-----------------|
@@ -234,7 +253,7 @@ func (s Str) IsAlpha() bool = s.NonEmpty() && toRunes(s.value).ForAll(unicode.Is
 | Panic for errors | `panic("error message")` | Return `Try[T]` or `Either[E, T]` |
 | Ignored error | `result, _ := fallibleOp()` | Handle with `Try` or check error |
 
-### 11. Naming Conventions (LOW priority)
+### 12. Naming Conventions (LOW priority)
 
 | Issue | Pattern to Flag | Recommended Fix |
 |-------|-----------------|-----------------|
@@ -242,7 +261,7 @@ func (s Str) IsAlpha() bool = s.NonEmpty() && toRunes(s.value).ForAll(unicode.Is
 | Non-PascalCase export | `func myPublicFunc()` | `func MyPublicFunc()` |
 | Verbose lambda params | `(element int) =>` in simple collection ops | `(x) =>` -- prefer short names with implicit types |
 
-### 12. Import Style (LOW priority)
+### 13. Import Style (LOW priority)
 
 | Issue | Pattern to Flag | Recommended Fix |
 |-------|-----------------|-----------------|

@@ -161,6 +161,12 @@ func (t *galaASTTransformer) transformLiteral(ctx *grammar.LiteralContext) (ast.
 	if ctx.RAW_STRING() != nil {
 		return &ast.BasicLit{Kind: token.STRING, Value: ctx.RAW_STRING().GetText()}, nil
 	}
+	if ctx.INTERPOLATED_STRING() != nil {
+		return t.transformInterpolatedString(ctx.INTERPOLATED_STRING().GetText())
+	}
+	if ctx.FORMAT_STRING() != nil {
+		return t.transformFormatString(ctx.FORMAT_STRING().GetText())
+	}
 	if ctx.GetText() == "true" || ctx.GetText() == "false" {
 		return ast.NewIdent(ctx.GetText()), nil
 	}

@@ -1,0 +1,34 @@
+package main
+
+func main() {
+    val name = "Alice"
+    val age = 30
+    val pi = 3.14159
+    val flag = true
+
+    // s-string: auto-inferred format verbs
+    Println(s"Hello $name!")
+    Println(s"$name is $age years old")
+    Println(s"Pi is approximately $pi")
+    Println(s"Flag is $flag")
+
+    // Expression interpolation
+    Println(s"Next year: ${age + 1}")
+    Println(s"Name length: ${len(name)}")
+
+    // Literal dollar sign
+    Println(s"Price: $$99")
+
+    // f-string: explicit format specs
+    Println(f"Padded: $age%05d")
+    Println(f"Fixed point: $pi%.2f")
+    Println(f"Hex: $age%x")
+
+    // No interpolation — plain string
+    Println(s"No interpolation here")
+
+    // Mixed
+    val x = 42
+    val y = 3.7
+    Println(s"x=$x, y=$y, sum=${x + int(y)}")
+}

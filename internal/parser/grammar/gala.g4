@@ -201,6 +201,8 @@ literal
     | STRING
     | CHAR_LIT
     | RAW_STRING
+    | INTERPOLATED_STRING
+    | FORMAT_STRING
     | 'true'
     | 'false'
     | 'nil'
@@ -227,6 +229,9 @@ COLON: ':';
 
 binaryOp: '||' | '&&' | '==' | '!=' | '<' | '<=' | '>' | '>=' | '+' | '-' | '|' | '^' | '*' | '/' | '%' | '<<' | '>>' | '&' | '&^';
 unaryOp: '+' | '-' | '!' | '^' | '*' | '&' | '<-';
+
+INTERPOLATED_STRING: 's"' (~["\r\n\\] | '\\' .)* '"';
+FORMAT_STRING: 'f"' (~["\r\n\\] | '\\' .)* '"';
 
 IDENTIFIER: [a-zA-Z_] [a-zA-Z0-9_]*;
 INT_LIT: [0-9]+;
