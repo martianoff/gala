@@ -19,8 +19,8 @@ sealed type Shape {
 }
 
 func area(s Shape) string = s match {
-    case Circle(r)       => fmt.Sprintf("circle area: %.2f", 3.14159 * r * r)
-    case Rectangle(w, h) => fmt.Sprintf("rect area: %.2f", w * h)
+    case Circle(r)       => f"circle area: ${3.14159 * r * r}%.2f"
+    case Rectangle(w, h) => f"rect area: ${w * h}%.2f"
 }
 ```
 
@@ -43,8 +43,8 @@ sealed type Result[T any] {
 }
 
 val msg = result match {
-    case Ok(v)    => fmt.Sprintf("got %d", v)
-    case Err(msg) => "error: " + msg
+    case Ok(v)    => s"got $v"
+    case Err(msg) => s"error: $msg"
 }
 ```
 
@@ -102,6 +102,16 @@ val value = *ptr      // OK: read
 // *ptr = 100         // compile error: cannot write through ConstPtr
 ```
 
+**String interpolation** -- `s"..."` with auto-inferred format verbs and `f"..."` with explicit format specs. No imports needed.
+
+```gala
+val name = "Alice"
+val age = 30
+Println(s"$name is $age years old")       // Alice is 30 years old
+Println(f"Pi = ${3.14159}%.2f")           // Pi = 3.14
+Println(s"${nums.MkString(", ")}")        // 1, 2, 3
+```
+
 **Full Go interop** -- Use any Go library.
 
 ---
@@ -122,17 +132,15 @@ bazel build //cmd/gala:gala
 ```gala
 package main
 
-import "fmt"
-
 struct Person(Name string, Age int)
 
 func greet(p Person) string = p match {
-    case Person(name, age) if age < 18 => "Hey, " + name + "!"
-    case Person(name, _)               => "Hello, " + name
+    case Person(name, age) if age < 18 => s"Hey, $name!"
+    case Person(name, _)               => s"Hello, $name"
 }
 
 func main() {
-    fmt.Println(greet(Person("Alice", 25)))
+    Println(greet(Person("Alice", 25)))
 }
 ```
 
@@ -158,8 +166,8 @@ bazel run //myapp:myapp
 
 ```gala
 val msg = shape match {
-    case Circle(r)      => fmt.Sprintf("r=%.1f", r)
-    case Rectangle(w,h) => fmt.Sprintf("%fx%f", w, h)
+    case Circle(r)      => f"r=$r%.1f"
+    case Rectangle(w,h) => f"$w%.0fx$h%.0f"
     case Point()        => "point"
 }
 ```
