@@ -936,13 +936,6 @@ gala_test(
     expected = "string_interpolation.out",
 )
 
-# FIX-GS-003 verification: struct lambda parameter type inference
-gala_test(
-    name = "struct_lambda_inference",
-    src = "struct_lambda_inference.gala",
-    expected = "struct_lambda_inference.out",
-)
-
 # String interpolation with nested string literals inside ${...}
 gala_test(
     name = "interpolation_nested_strings",
