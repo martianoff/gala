@@ -177,6 +177,23 @@ func (r *Resolver) ResolvePackagePath(importPath string) (string, error) {
 		}
 	}
 
+	// Strategy 6: Recursive directory search — when the import path's directory name
+	// doesn't match the filesystem layout (e.g., importpath "martianoff/gala/crossfile"
+	// maps to "crossfile" but the actual directory is "examples/.../crossfile/").
+	// Search the module root and search paths for a directory whose name matches
+	// the last segment of the import path and contains .gala files.
+	pkgName := filepath.Base(importPath)
+	searchRoots := make([]string, 0, 1+len(r.searchPaths))
+	if r.moduleRoot != "" {
+		searchRoots = append(searchRoots, r.moduleRoot)
+	}
+	searchRoots = append(searchRoots, r.searchPaths...)
+	for _, root := range searchRoots {
+		if found := findPackageDirByName(root, pkgName); found != "" {
+			return found, nil
+		}
+	}
+
 	return "", &PackageNotFoundError{ImportPath: importPath}
 }
 
@@ -486,4 +503,71 @@ func FindModuleRoot(startPath string) (moduleRoot, moduleName string) {
 func isValidPackageDir(dirPath string) bool {
 	info, err := os.Stat(dirPath)
 	return err == nil && info.IsDir()
+}
+
+// findPackageDirByName recursively searches under root for a directory whose base name
+// matches pkgName and that contains at least one .gala file. Returns the first match
+// found, or empty string if none found.
+func findPackageDirByName(root, pkgName string) string {
+	// skipDirs are directories that should not be traversed during the recursive search.
+	skipDirs := map[string]bool{
+		"bazel-out": true, "bazel-bin": true, "bazel-testlogs": true,
+		".git": true, ".idea": true, ".ijwb": true, ".bazelbsp": true,
+		"node_modules": true, "external": true,
+	}
+
+	// Custom recursive walk that follows symlinks (filepath.Walk/WalkDir do NOT
+	// follow symlinks, which breaks in Bazel's execroot where source directories
+	// are symlinked to the actual workspace).
+	var walk func(dir string) string
+	walk = func(dir string) string {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return ""
+		}
+		for _, e := range entries {
+			path := filepath.Join(dir, e.Name())
+
+			// Resolve symlinks/junctions to determine if this is a directory.
+			// On Windows, os.ReadDir may not detect symlinks or junctions via
+			// ModeSymlink, so always fall back to os.Stat when IsDir is false.
+			isDir := e.IsDir()
+			if !isDir {
+				if info, err := os.Stat(path); err == nil {
+					isDir = info.IsDir()
+				}
+			}
+
+			if !isDir {
+				continue
+			}
+			if skipDirs[e.Name()] {
+				continue
+			}
+			if e.Name() == pkgName && hasGalaFiles(path) {
+				return path
+			}
+			// Recurse into subdirectories
+			if found := walk(path); found != "" {
+				return found
+			}
+		}
+		return ""
+	}
+
+	return walk(root)
+}
+
+// hasGalaFiles checks if a directory contains at least one .gala file.
+func hasGalaFiles(dirPath string) bool {
+	entries, err := os.ReadDir(dirPath)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".gala") {
+			return true
+		}
+	}
+	return false
 }
