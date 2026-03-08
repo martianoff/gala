@@ -148,11 +148,32 @@ func (r *Resolver) ResolvePackagePath(importPath string) (string, error) {
 		}
 	}
 
-	// Strategy 4: Search paths fallback
+	// Strategy 4: Search paths fallback — try as subdirectory of each search path
 	for _, sp := range r.searchPaths {
 		dirPath := filepath.Join(sp, importPath)
 		if isValidPackageDir(dirPath) {
 			return dirPath, nil
+		}
+	}
+
+	// Strategy 5: Check if any search path is itself a module root whose module name
+	// matches the import path. This handles cross-module resolution when multiple
+	// GALA modules are provided via --search (e.g., gala + gala-server).
+	for _, sp := range r.searchPaths {
+		spModRoot, spModName := FindModuleRoot(sp)
+		if spModName == "" || spModRoot == r.moduleRoot {
+			continue // skip primary module (already handled in Strategy 1)
+		}
+		if importPath == spModName {
+			if isValidPackageDir(spModRoot) {
+				return spModRoot, nil
+			}
+		} else if strings.HasPrefix(importPath, spModName+"/") {
+			relPath := strings.TrimPrefix(importPath, spModName+"/")
+			dirPath := filepath.Join(spModRoot, relPath)
+			if isValidPackageDir(dirPath) {
+				return dirPath, nil
+			}
 		}
 	}
 
@@ -193,8 +214,8 @@ func (r *Resolver) resolveFromCache(importPath string) (string, error) {
 // IsGalaPackage checks if the import path refers to a GALA package
 // (i.e., it's in gala.mod require list and has .gala files in the cache).
 func (r *Resolver) IsGalaPackage(importPath string) bool {
-	// Check if it's the current module
-	if r.moduleName != "" && strings.HasPrefix(importPath, r.moduleName+"/") {
+	// Check if it's the current module (root package or subpackage)
+	if r.moduleName != "" && (importPath == r.moduleName || strings.HasPrefix(importPath, r.moduleName+"/")) {
 		return true
 	}
 
@@ -210,6 +231,21 @@ func (r *Resolver) IsGalaPackage(importPath string) bool {
 				// by looking for .gala files or gala.mod in the cache
 				return r.isGalaPackageInCache(req.Path, req.Version)
 			}
+		}
+	}
+
+	// Check if any search path is a module root whose name matches
+	for _, sp := range r.searchPaths {
+		spModRoot, spModName := FindModuleRoot(sp)
+		if spModName == "" || spModName == r.moduleName {
+			continue
+		}
+		if importPath == spModName {
+			return isValidPackageDir(spModRoot)
+		}
+		if strings.HasPrefix(importPath, spModName+"/") {
+			relPath := strings.TrimPrefix(importPath, spModName+"/")
+			return isValidPackageDir(filepath.Join(spModRoot, relPath))
 		}
 	}
 

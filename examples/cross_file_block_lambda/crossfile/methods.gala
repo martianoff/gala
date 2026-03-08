@@ -1,0 +1,5 @@
+package crossfile
+
+// Methods defined in a separate file from the struct
+func (b Builder) Apply(f func(int) string) Builder =
+    Builder(Value = b.Value + len(f(b.Value)))

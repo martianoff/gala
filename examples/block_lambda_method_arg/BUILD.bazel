@@ -1,0 +1,7 @@
+load("//:gala.bzl", "gala_test")
+
+gala_test(
+    name = "block_lambda_method_arg",
+    src = "main.gala",
+    expected = "main.out",
+)

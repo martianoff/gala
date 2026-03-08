@@ -1,0 +1,31 @@
+package main
+
+// Minimal repro: block-body lambda in method argument should infer return type
+
+struct Builder(Value int)
+
+func NewBuilder() Builder = Builder(Value = 0)
+
+func (b Builder) Apply(f func(int) string) Builder =
+    Builder(Value = b.Value + len(f(b.Value)))
+
+func main() {
+    // Expression lambda - should work (infers return type from method signature)
+    val b1 = NewBuilder().Apply((x int) => "hello")
+
+    // Block lambda - should also work but may generate func(int) any
+    val b2 = NewBuilder().Apply((x int) => {
+        val result = "world"
+        return result
+    })
+
+    // Chained with block lambda
+    val b3 = NewBuilder().
+        Apply((x int) => "first").
+        Apply((x int) => {
+            val result = "second"
+            return result
+        })
+
+    Println(s"b1=${b1.Value} b2=${b2.Value} b3=${b3.Value}")
+}
