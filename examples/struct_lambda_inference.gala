@@ -1,0 +1,25 @@
+package main
+
+import "fmt"
+
+type Handler struct {
+    val Name string
+    val Fn func(string) string
+}
+
+type Processor struct {
+    val Transform func(int) int
+    val Combine func(int, int) int
+}
+
+func main() {
+    // Lambda (s) should infer type from Fn field: func(string) string
+    val h = Handler("greet", (s) => s"Hello, $s!")
+    fmt.Println(h.Name)
+    fmt.Println(h.Fn("World"))
+
+    // Multiple function fields with different signatures
+    val p = Processor((x) => x * 2, (a, b) => a + b)
+    fmt.Println(p.Transform(5))
+    fmt.Println(p.Combine(3, 7))
+}

@@ -486,6 +486,27 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 		funcMeta = t.getFunction(funcName)
 	}
 
+	// Check if this call is struct construction — if so, use struct field types as expected types
+	// for lambda arguments. This must happen BEFORE argument transformation so that lambdas
+	// can infer parameter types from the struct field definitions.
+	var structFieldExpectedTypes []transpiler.Type
+	if funcName := t.extractFuncName(fun); funcName != "" {
+		typeMeta, resolvedTypeName := t.getTypeMetaResolved(funcName)
+		if typeMeta != nil {
+			resolved := t.resolveStructTypeName(resolvedTypeName)
+			if fields, ok := t.structFields[resolved]; ok {
+				if fieldTypes, ok := t.structFieldTypes[resolved]; ok {
+					structFieldExpectedTypes = make([]transpiler.Type, len(fields))
+					for i, fieldName := range fields {
+						if ft, ok := fieldTypes[fieldName]; ok {
+							structFieldExpectedTypes[i] = ft
+						}
+					}
+				}
+			}
+		}
+	}
+
 	var args []ast.Expr
 	namedArgs := make(map[string]ast.Expr)
 
@@ -538,6 +559,12 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 						// Non-generic function with concrete function param types - pass as-is
 						expectedType = ft
 					}
+				}
+			}
+			// If this is struct construction and we have field type info, use it as fallback
+			if expectedType.IsNil() && structFieldExpectedTypes != nil && argIdx < len(structFieldExpectedTypes) {
+				if ft, ok := structFieldExpectedTypes[argIdx].(transpiler.FuncType); ok {
+					expectedType = ft
 				}
 			}
 			expr, err := t.transformArgumentWithExpectedType(ep.Expression(), expectedType)
