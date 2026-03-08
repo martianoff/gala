@@ -31,6 +31,7 @@ type galaASTTransformer struct {
 	typeMetas             map[string]*transpiler.TypeMetadata
 	companionObjects      map[string]*transpiler.CompanionObjectMetadata // companion name -> metadata
 	importManager         *ImportManager                                 // unified import tracking
+	additionalImports     map[string]string                              // path -> alias for transitive imports needed by type inference
 	tempVarCount          int
 	inferer               *infer.Inferer
 	currentFuncReturnType transpiler.Type // return type of the function currently being transformed
@@ -82,6 +83,7 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 		t.companionObjects = make(map[string]*transpiler.CompanionObjectMetadata)
 	}
 	t.importManager = NewImportManager()
+	t.additionalImports = make(map[string]string)
 	t.tempVarCount = 0
 	t.filePath = richAST.FilePath
 	if richAST.SourceContent != "" {
@@ -188,6 +190,52 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 				},
 			}
 			// If std was added, it's at index 0. We want fmt to be there too.
+			file.Decls = append([]ast.Decl{importDecl}, file.Decls...)
+		}
+	}
+
+	// Add transitive imports needed by type inference (e.g., when lambda parameter
+	// types are inferred from a dependency's method signature and reference packages
+	// not explicitly imported in the current file).
+	for path, alias := range t.additionalImports {
+		// Skip if already imported explicitly
+		alreadyImported := false
+		for _, decl := range file.Decls {
+			genDecl, ok := decl.(*ast.GenDecl)
+			if !ok || genDecl.Tok != token.IMPORT {
+				continue
+			}
+			for _, spec := range genDecl.Specs {
+				importSpec, ok := spec.(*ast.ImportSpec)
+				if !ok {
+					continue
+				}
+				importPath := strings.Trim(importSpec.Path.Value, "\"")
+				if importPath == path {
+					alreadyImported = true
+					break
+				}
+				// Also check by alias — if the package is imported under a different path
+				if importSpec.Name != nil && importSpec.Name.Name == alias {
+					alreadyImported = true
+					break
+				}
+			}
+			if alreadyImported {
+				break
+			}
+		}
+		if !alreadyImported {
+			spec := &ast.ImportSpec{
+				Path: &ast.BasicLit{
+					Kind:  token.STRING,
+					Value: fmt.Sprintf("\"%s\"", path),
+				},
+			}
+			importDecl := &ast.GenDecl{
+				Tok:   token.IMPORT,
+				Specs: []ast.Spec{spec},
+			}
 			file.Decls = append([]ast.Decl{importDecl}, file.Decls...)
 		}
 	}

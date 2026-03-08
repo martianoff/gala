@@ -368,7 +368,7 @@ gala_go_test_gen = rule(
     },
 )
 
-def gala_go_test(name, srcs, deps = [], pkg = "main", embed = [], **kwargs):
+def gala_go_test(name, srcs, deps = [], gala_deps = [], pkg = "main", embed = [], **kwargs):
     """
     Creates a GALA test using Go-style conventions.
 
@@ -390,6 +390,8 @@ def gala_go_test(name, srcs, deps = [], pkg = "main", embed = [], **kwargs):
         name: The name of the test target.
         srcs: List of test source files (e.g., ["foo_test.gala"]).
         deps: Dependencies for the test.
+        gala_deps: GALA library dependency labels for cross-package type resolution.
+            Their source files are automatically included during transpilation.
         pkg: Package name for tests (default "main" for external tests).
         embed: Go source files to embed (for internal tests in same package).
         **kwargs: Additional arguments passed to the underlying rules.
@@ -417,6 +419,7 @@ def gala_go_test(name, srcs, deps = [], pkg = "main", embed = [], **kwargs):
             out = go_src,
             package_files = siblings,
             extra_srcs = test_extra_srcs,
+            gala_deps = gala_deps,
         )
         transpiled_srcs.append(go_src)
 
@@ -429,11 +432,11 @@ def gala_go_test(name, srcs, deps = [], pkg = "main", embed = [], **kwargs):
     all_srcs = transpiled_srcs + [main_go_src] + embed
 
     # Determine deps - skip //test and //std if testing those packages
-    final_deps = list(deps)
+    final_deps = list(deps) + list(gala_deps)
     if pkg != "test":
-        final_deps.append("//test")
+        final_deps.append(Label("//test"))
     if pkg != "std":
-        final_deps.append("//std")
+        final_deps.append(Label("//std"))
 
     go_binary(
         name = binary_name,

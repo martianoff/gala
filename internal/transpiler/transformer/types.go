@@ -198,6 +198,12 @@ func (t *galaASTTransformer) typeToExpr(typ transpiler.Type) ast.Expr {
 			if alias, ok := t.importManager.GetAlias(v.Package); ok {
 				pkgName = alias
 			}
+			// Track transitive import: if this package-qualified type is used but
+			// not explicitly imported in the source file, record the needed import
+			// so it can be added to the output file.
+			if path, ok := t.importManager.GetPath(v.Package); ok {
+				t.additionalImports[path] = pkgName
+			}
 			return &ast.SelectorExpr{
 				X:   ast.NewIdent(pkgName),
 				Sel: ast.NewIdent(v.Name),
