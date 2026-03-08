@@ -853,8 +853,45 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 			Specs: []ast.Spec{typeSpec},
 		})
 	} else if ctx.TypeAlias() != nil {
-		// TODO: implement
-		return nil, galaerr.NewSemanticError("type alias not implemented yet")
+		aliasCtx := ctx.TypeAlias().(*grammar.TypeAliasContext)
+		var targetType ast.Expr
+		if aliasCtx.Type_() != nil {
+			var err error
+			targetType, err = t.transformType(aliasCtx.Type_())
+			if err != nil {
+				return nil, err
+			}
+		} else if aliasCtx.Identifier() != nil {
+			identName := aliasCtx.Identifier().GetText()
+			targetType = ast.NewIdent(identName)
+			// Resolve the identifier to a potentially qualified type
+			resolvedType := t.getType(identName)
+			if !resolvedType.IsNil() {
+				if pkg := resolvedType.GetPackage(); pkg != "" && pkg != t.packageName {
+					if pkg == registry.StdPackageName {
+						targetType = t.stdIdent(identName)
+					} else if !t.importManager.IsDotImported(pkg) {
+						if alias, ok := t.importManager.GetAlias(pkg); ok {
+							targetType = &ast.SelectorExpr{X: ast.NewIdent(alias), Sel: ast.NewIdent(identName)}
+						}
+					}
+				}
+			} else if registry.IsStdType(identName) {
+				targetType = t.stdIdent(identName)
+			}
+		}
+
+		typeSpec := &ast.TypeSpec{
+			Name:       ast.NewIdent(name),
+			Assign:     1,
+			TypeParams: tParams,
+			Type:       targetType,
+		}
+
+		decls = append(decls, &ast.GenDecl{
+			Tok:   token.TYPE,
+			Specs: []ast.Spec{typeSpec},
+		})
 	}
 
 	return decls, nil

@@ -914,8 +914,8 @@ gala_test(
     src = "foldleft_on_sequence_get.gala",
     expected = "foldleft_on_sequence_get.out",
     deps = [
-        "//concurrent",
         "//collection_immutable",
+        "//concurrent",
     ],
 )
 
@@ -936,10 +936,23 @@ gala_test(
     expected = "string_interpolation.out",
 )
 
+# FIX-GS-003 verification: struct lambda parameter type inference
+gala_test(
+    name = "struct_lambda_inference",
+    src = "struct_lambda_inference.gala",
+    expected = "struct_lambda_inference.out",
+)
+
 # String interpolation with nested string literals inside ${...}
 gala_test(
     name = "interpolation_nested_strings",
     src = "interpolation_nested_strings.gala",
     expected = "interpolation_nested_strings.out",
     deps = ["//collection_immutable"],
+)
+
+gala_test(
+    name = "type_alias",
+    src = "type_alias.gala",
+    expected = "type_alias.out",
 )
