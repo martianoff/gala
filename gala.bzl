@@ -272,9 +272,10 @@ def _gala_unit_test_impl(ctx):
             is_executable = True,
         )
 
+    binary_runfiles = ctx.attr.binary[DefaultInfo].default_runfiles
     return [DefaultInfo(
         executable = executable,
-        runfiles = ctx.runfiles(files = [binary]),
+        runfiles = ctx.runfiles(files = [binary]).merge(binary_runfiles),
     )]
 
 gala_internal_unit_test = rule(
