@@ -61,6 +61,23 @@ def _gala_sources_label(dep):
     name = dep.split("/")[-1]
     return dep + ":" + name + "_gala_sources"
 
+def _dep_parent_dir(dep):
+    """Extract the parent directory from a dependency label for --search.
+
+    For //examples/cross_file_block_lambda/crossfile, returns
+    examples/cross_file_block_lambda so the resolver can find crossfile/
+    as a subdirectory.
+    """
+    if ":" in dep:
+        pkg = dep.split(":")[0]
+    else:
+        pkg = dep
+    pkg = pkg.lstrip("/")
+    parts = pkg.rsplit("/", 1)
+    if len(parts) > 1:
+        return parts[0]
+    return "."
+
 def gala_transpile(name, src, out = None, package_files = [], extra_srcs = [], gala_deps = []):
     """Transpile a GALA source file to Go using the full gala binary.
 
@@ -84,15 +101,22 @@ def gala_transpile(name, src, out = None, package_files = [], extra_srcs = [], g
     # Auto-include GALA source files from dependencies for cross-package type resolution
     dep_srcs = [_gala_sources_label(dep) for dep in gala_deps]
 
+    # Build search path: repo root + parent dirs of dependencies
+    dep_search = ""
+    if gala_deps:
+        parents = [_dep_parent_dir(dep) for dep in gala_deps]
+        dep_search = "," + ",".join(parents)
+
     # Use go.mod location to find the repository root for search path
     native.genrule(
         name = name,
         srcs = [src] + package_files + extra_srcs + dep_srcs + [Label("//:all_gala_sources"), Label("//:go.mod")],
         outs = [out],
-        cmd = "$(location {tool}) --input $(location {src}) --output $@ --search $$(dirname $(location {gomod})){pf}".format(
+        cmd = "$(location {tool}) --input $(location {src}) --output $@ --search $$(dirname $(location {gomod})){dep_search}{pf}".format(
             tool = Label("//cmd/gala"),
             src = src,
             gomod = Label("//:go.mod"),
+            dep_search = dep_search,
             pf = pf_flag,
         ),
         tools = [Label("//cmd/gala")],
