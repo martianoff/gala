@@ -280,6 +280,198 @@ func (p Person) Greet() string = fmt.Sprintf("Hi %s", p.Name)
 	})
 }
 
+func TestTypeRedefinitionError(t *testing.T) {
+	p := transpiler.NewAntlrGalaParser()
+	searchPaths := getStdSearchPath()
+
+	t.Run("struct redefined in sibling file", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		// file1.gala: defines struct Person
+		file1 := `package mylib
+
+struct Person(Name string, Age int)
+`
+		// file2.gala: also defines struct Person — should be an error
+		file2 := `package mylib
+
+struct Person(Email string)
+`
+		file1Path := filepath.Join(tmpDir, "file1.gala")
+		file2Path := filepath.Join(tmpDir, "file2.gala")
+		require.NoError(t, os.WriteFile(file1Path, []byte(file1), 0644))
+		require.NoError(t, os.WriteFile(file2Path, []byte(file2), 0644))
+
+		// Analyze file2 with file1 as package-file sibling
+		a := analyzer.NewGalaAnalyzerWithPackageFiles(p, searchPaths, []string{file1Path})
+		tree, err := p.Parse(file2)
+		require.NoError(t, err)
+		_, err = a.Analyze(tree, file2Path)
+		require.Error(t, err, "should error on type redefinition")
+		assert.Contains(t, err.Error(), "redefined")
+		assert.Contains(t, err.Error(), "Person")
+	})
+
+	t.Run("shorthand struct redefined in sibling file", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		file1 := `package mylib
+
+struct Point(X int, Y int)
+`
+		file2 := `package mylib
+
+struct Point(A float64, B float64)
+`
+		file1Path := filepath.Join(tmpDir, "file1.gala")
+		file2Path := filepath.Join(tmpDir, "file2.gala")
+		require.NoError(t, os.WriteFile(file1Path, []byte(file1), 0644))
+		require.NoError(t, os.WriteFile(file2Path, []byte(file2), 0644))
+
+		a := analyzer.NewGalaAnalyzerWithPackageFiles(p, searchPaths, []string{file1Path})
+		tree, err := p.Parse(file2)
+		require.NoError(t, err)
+		_, err = a.Analyze(tree, file2Path)
+		require.Error(t, err, "should error on shorthand struct redefinition")
+		assert.Contains(t, err.Error(), "redefined")
+		assert.Contains(t, err.Error(), "Point")
+	})
+
+	t.Run("sealed type redefined in sibling file", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		file1 := `package mylib
+
+sealed type Color {
+    case Red()
+    case Blue()
+}
+`
+		file2 := `package mylib
+
+sealed type Color {
+    case Green()
+    case Yellow()
+}
+`
+		file1Path := filepath.Join(tmpDir, "file1.gala")
+		file2Path := filepath.Join(tmpDir, "file2.gala")
+		require.NoError(t, os.WriteFile(file1Path, []byte(file1), 0644))
+		require.NoError(t, os.WriteFile(file2Path, []byte(file2), 0644))
+
+		a := analyzer.NewGalaAnalyzerWithPackageFiles(p, searchPaths, []string{file1Path})
+		tree, err := p.Parse(file2)
+		require.NoError(t, err)
+		_, err = a.Analyze(tree, file2Path)
+		require.Error(t, err, "should error on sealed type redefinition")
+		assert.Contains(t, err.Error(), "redefined")
+		assert.Contains(t, err.Error(), "Color")
+	})
+
+	t.Run("struct redefined in same file", func(t *testing.T) {
+		src := `package mylib
+
+type Person struct {
+    Name string
+    Age int
+}
+
+type Person struct {
+    Email string
+}
+`
+		a := analyzer.NewGalaAnalyzer(p, searchPaths)
+		tree, err := p.Parse(src)
+		require.NoError(t, err)
+		_, err = a.Analyze(tree, "test.gala")
+		require.Error(t, err, "should error on same-file struct redefinition")
+		assert.Contains(t, err.Error(), "redefined")
+		assert.Contains(t, err.Error(), "Person")
+	})
+
+	t.Run("shorthand struct redefined in same file", func(t *testing.T) {
+		src := `package mylib
+
+struct Point(X int, Y int)
+
+struct Point(A float64)
+`
+		a := analyzer.NewGalaAnalyzer(p, searchPaths)
+		tree, err := p.Parse(src)
+		require.NoError(t, err)
+		_, err = a.Analyze(tree, "test.gala")
+		require.Error(t, err, "should error on same-file shorthand struct redefinition")
+		assert.Contains(t, err.Error(), "redefined")
+		assert.Contains(t, err.Error(), "Point")
+	})
+
+	t.Run("sealed type redefined in same file", func(t *testing.T) {
+		src := `package mylib
+
+sealed type Color {
+    case Red()
+    case Blue()
+}
+
+sealed type Color {
+    case Green()
+}
+`
+		a := analyzer.NewGalaAnalyzer(p, searchPaths)
+		tree, err := p.Parse(src)
+		require.NoError(t, err)
+		_, err = a.Analyze(tree, "test.gala")
+		require.Error(t, err, "should error on same-file sealed type redefinition")
+		assert.Contains(t, err.Error(), "redefined")
+		assert.Contains(t, err.Error(), "Color")
+	})
+
+	t.Run("method redefined in same file", func(t *testing.T) {
+		src := `package mylib
+
+struct Person(Name string)
+
+func (p Person) Greet() string = "hello"
+
+func (p Person) Greet() string = "hi"
+`
+		a := analyzer.NewGalaAnalyzer(p, searchPaths)
+		tree, err := p.Parse(src)
+		require.NoError(t, err)
+		_, err = a.Analyze(tree, "test.gala")
+		require.Error(t, err, "should error on same-file method redefinition")
+		assert.Contains(t, err.Error(), "redefined")
+		assert.Contains(t, err.Error(), "Greet")
+	})
+
+	t.Run("methods on sibling type should NOT error", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		// file1: defines struct
+		file1 := `package mylib
+
+struct Person(Name string, Age int)
+`
+		// file2: adds methods — should be fine
+		file2 := `package mylib
+
+import "fmt"
+
+func (p Person) Greet() string = fmt.Sprintf("Hello %s", p.Name)
+`
+		file1Path := filepath.Join(tmpDir, "file1.gala")
+		file2Path := filepath.Join(tmpDir, "file2.gala")
+		require.NoError(t, os.WriteFile(file1Path, []byte(file1), 0644))
+		require.NoError(t, os.WriteFile(file2Path, []byte(file2), 0644))
+
+		a := analyzer.NewGalaAnalyzerWithPackageFiles(p, searchPaths, []string{file1Path})
+		tree, err := p.Parse(file2)
+		require.NoError(t, err)
+		_, err = a.Analyze(tree, file2Path)
+		assert.NoError(t, err, "methods on sibling types should not trigger redefinition error")
+	})
+}
+
 func keysOf(m map[string]*transpiler.TypeMetadata) []string {
 	var keys []string
 	for k := range m {

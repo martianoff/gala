@@ -132,6 +132,7 @@ type TypeMetadata struct {
 	ImmutFlags           []bool
 	IsSealed             bool            // True if this type was generated from a sealed type declaration
 	SealedVariants       []SealedVariant // Variant info for sealed types (empty for non-sealed)
+	DefinedIn            string          // Source file where the type definition (fields/variants) was first seen
 }
 
 // SealedVariant holds metadata about a single case in a sealed type declaration.
@@ -147,7 +148,8 @@ type MethodMetadata struct {
 	ParamTypes []Type
 	ReturnType Type
 	TypeParams []string
-	IsGeneric  bool // Force transformation to standalone function
+	IsGeneric  bool   // Force transformation to standalone function
+	DefinedIn  string // Source file where this method was defined (for redefinition detection)
 }
 
 type FunctionMetadata struct {
