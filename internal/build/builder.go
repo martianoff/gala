@@ -1,10 +1,13 @@
 package build
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"martianoff/gala/internal/depman/mod"
@@ -127,15 +130,27 @@ func (b *Builder) ensureStdlib() error {
 	return nil
 }
 
+// computeSourceHash computes a SHA256 hash of all .gala source files for cache invalidation.
+func computeSourceHash(files []string) string {
+	h := sha256.New()
+	sorted := make([]string, len(files))
+	copy(sorted, files)
+	sort.Strings(sorted)
+	for _, f := range sorted {
+		content, err := os.ReadFile(f)
+		if err != nil {
+			return "" // force re-transpile on error
+		}
+		h.Write([]byte(f))
+		h.Write(content)
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
 // transpile transpiles all .gala files in the project to the workspace.
 func (b *Builder) transpile() error {
 	if b.verbose {
 		fmt.Println("Transpiling GALA files...")
-	}
-
-	// Clean gen directory
-	if err := b.workspace.CleanGen(); err != nil {
-		return fmt.Errorf("cleaning gen dir: %w", err)
 	}
 
 	// Find all .gala files in the project
@@ -148,12 +163,29 @@ func (b *Builder) transpile() error {
 		return fmt.Errorf("no .gala files found in %s", b.workspace.ProjectDir)
 	}
 
+	// Check if sources have changed since last transpilation
+	hashFile := filepath.Join(b.workspace.Dir, ".gala-source-hash")
+	currentHash := computeSourceHash(galaFiles)
+	if currentHash != "" {
+		if oldHash, err := os.ReadFile(hashFile); err == nil && string(oldHash) == currentHash {
+			if genFiles, err := b.workspace.GenFiles(); err == nil && len(genFiles) > 0 {
+				if b.verbose {
+					fmt.Println("  Sources unchanged, skipping transpilation")
+				}
+				return nil
+			}
+		}
+	}
+
+	// Clean gen directory
+	if err := b.workspace.CleanGen(); err != nil {
+		return fmt.Errorf("cleaning gen dir: %w", err)
+	}
+
 	// Create transpiler pipeline
-	// Include stdlib directory in search paths so analyzer can find std package types
 	stdlibDir := b.config.StdlibVersionDir(b.stdlibVersion)
 	searchPaths := []string{b.workspace.ProjectDir, stdlibDir}
 
-	// Add GALA dependency source dirs so the analyzer can resolve types from deps
 	for _, req := range b.galaMod.GalaRequires() {
 		searchPaths = append(searchPaths, b.config.GalaModulePath(req.Path, req.Version))
 	}
@@ -161,14 +193,12 @@ func (b *Builder) transpile() error {
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
 
-	// Transpile each file, passing sibling files for cross-file type resolution
 	for _, galaFile := range galaFiles {
 		content, err := os.ReadFile(galaFile)
 		if err != nil {
 			return fmt.Errorf("reading %s: %w", galaFile, err)
 		}
 
-		// Compute sibling files (all other .gala files in the same package)
 		var siblings []string
 		for _, other := range galaFiles {
 			if other != galaFile {
@@ -189,7 +219,6 @@ func (b *Builder) transpile() error {
 			return fmt.Errorf("transpiling %s: %w", galaFile, err)
 		}
 
-		// Generate output filename
 		relPath, err := filepath.Rel(b.workspace.ProjectDir, galaFile)
 		if err != nil {
 			relPath = filepath.Base(galaFile)
@@ -206,6 +235,11 @@ func (b *Builder) transpile() error {
 		}
 	}
 
+	// Save source hash for next build
+	if currentHash != "" {
+		os.WriteFile(hashFile, []byte(currentHash), 0644)
+	}
+
 	return nil
 }
 
@@ -216,28 +250,41 @@ func (b *Builder) generateGoMod() error {
 	}
 
 	gen := NewGoModGenerator(b.config)
-	if err := gen.WriteGoMod(b.workspace, b.galaMod, b.stdlibVersion, b.transpiledDeps); err != nil {
-		return err
+	newContent := gen.GenerateGoMod(b.galaMod, b.stdlibVersion, b.transpiledDeps)
+
+	// Check if go.mod content has changed
+	goModChanged := true
+	if existing, err := os.ReadFile(b.workspace.GoModPath); err == nil {
+		if string(existing) == newContent {
+			goModChanged = false
+		}
 	}
 
-	// Run go mod tidy to download dependencies and create proper go.sum
-	if b.verbose {
-		fmt.Println("Downloading Go dependencies...")
-	}
+	if goModChanged {
+		if err := os.WriteFile(b.workspace.GoModPath, []byte(newContent), 0644); err != nil {
+			return err
+		}
 
-	cmd := exec.Command("go", "mod", "tidy")
-	cmd.Dir = b.workspace.Dir
-	cmd.Env = append(os.Environ(), "GOMODCACHE="+b.config.GoPkgDir)
+		if b.verbose {
+			fmt.Println("Downloading Go dependencies...")
+		}
 
-	if b.verbose {
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-	} else {
-		cmd.Stderr = os.Stderr
-	}
+		cmd := exec.Command("go", "mod", "tidy")
+		cmd.Dir = b.workspace.Dir
+		cmd.Env = append(os.Environ(), "GOMODCACHE="+b.config.GoPkgDir)
 
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("running go mod tidy: %w", err)
+		if b.verbose {
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+		} else {
+			cmd.Stderr = os.Stderr
+		}
+
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("running go mod tidy: %w", err)
+		}
+	} else if b.verbose {
+		fmt.Println("  go.mod unchanged, skipping go mod tidy")
 	}
 
 	return nil
@@ -302,6 +349,40 @@ func (b *Builder) Config() *Config {
 
 // transpileDeps transpiles all GALA library dependencies.
 func (b *Builder) transpileDeps() error {
+	galaReqs := b.galaMod.GalaRequires()
+
+	if len(galaReqs) == 0 {
+		b.transpiledDeps = nil
+		return nil
+	}
+
+	// Check if deps have changed by hashing gala.mod requirements
+	depsHashFile := filepath.Join(b.workspace.Dir, ".gala-deps-hash")
+	h := sha256.New()
+	for _, req := range galaReqs {
+		h.Write([]byte(req.Path + "@" + req.Version + "\n"))
+	}
+	currentHash := hex.EncodeToString(h.Sum(nil))
+
+	if oldHash, err := os.ReadFile(depsHashFile); err == nil && string(oldHash) == currentHash {
+		allExist := true
+		b.transpiledDeps = make(map[string]string)
+		for _, req := range galaReqs {
+			dir := b.workspace.DepModuleDir(req.Path, req.Version)
+			if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+				allExist = false
+				break
+			}
+			b.transpiledDeps[req.Path] = dir
+		}
+		if allExist {
+			if b.verbose {
+				fmt.Println("  Dependencies unchanged, skipping dep transpilation")
+			}
+			return nil
+		}
+	}
+
 	// Clean deps dir before transpiling
 	if err := b.workspace.CleanDeps(); err != nil {
 		return fmt.Errorf("cleaning deps dir: %w", err)
@@ -314,6 +395,9 @@ func (b *Builder) transpileDeps() error {
 	}
 
 	b.transpiledDeps = transpiledDeps
+
+	os.WriteFile(depsHashFile, []byte(currentHash), 0644)
+
 	return nil
 }
 

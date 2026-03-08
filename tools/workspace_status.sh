@@ -16,4 +16,4 @@ COMMIT=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
 echo "STABLE_GIT_COMMIT ${COMMIT}"
 
 # Build timestamp
-echo "STABLE_BUILD_DATE $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+echo "BUILD_DATE $(date -u +%Y-%m-%dT%H:%M:%SZ)"
