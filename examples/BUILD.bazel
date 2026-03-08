@@ -914,8 +914,8 @@ gala_test(
     src = "foldleft_on_sequence_get.gala",
     expected = "foldleft_on_sequence_get.out",
     deps = [
-        "//concurrent",
         "//collection_immutable",
+        "//concurrent",
     ],
 )
 
@@ -949,4 +949,10 @@ gala_test(
     src = "interpolation_nested_strings.gala",
     expected = "interpolation_nested_strings.out",
     deps = ["//collection_immutable"],
+)
+
+gala_test(
+    name = "type_alias",
+    src = "type_alias.gala",
+    expected = "type_alias.out",
 )

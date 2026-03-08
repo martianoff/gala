@@ -418,6 +418,28 @@ func main() {
 }
 ```
 
+## Type Aliases
+
+Type aliases create alternative names for existing types, useful for re-exporting or shortening names:
+
+```gala
+package main
+
+import "fmt"
+
+type MyString string
+
+func main() {
+    val s MyString = "hello"
+    fmt.Println(s)
+}
+```
+
+Output:
+```
+hello
+```
+
 ## More Examples
 
 You can find more examples in the `examples/` directory of the project:
