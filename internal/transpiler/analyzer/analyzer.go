@@ -107,11 +107,12 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 	}
 
 	pkgName := sourceFile.PackageClause().(*grammar.PackageClauseContext).Identifier().GetText()
+	absFilePath, _ := filepath.Abs(filePath)
 
 	var siblingTrees []*grammar.SourceFileContext
+	var siblingPaths []string // parallel slice: file path for each siblingTree
 	if len(a.packageFiles) > 0 {
 		// Explicit package files: parse each one, validate package name, add to siblings
-		absFilePath, _ := filepath.Abs(filePath)
 		for _, pf := range a.packageFiles {
 			absPf, _ := filepath.Abs(pf)
 			if absPf == absFilePath {
@@ -134,6 +135,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 				return nil, fmt.Errorf("package file %s has package %s, expected %s", pf, otherPkgName, pkgName)
 			}
 			siblingTrees = append(siblingTrees, otherSF)
+			siblingPaths = append(siblingPaths, pf)
 		}
 	} else if filePath != "" {
 		// Directory-discovered siblings (existing behavior)
@@ -169,6 +171,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 						}
 						if otherPkgName == pkgName && !isTestFile {
 							siblingTrees = append(siblingTrees, otherSF)
+							siblingPaths = append(siblingPaths, otherPath)
 						}
 					}
 				}
@@ -294,6 +297,12 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 
 			var meta *transpiler.TypeMetadata
 			if existing, ok := richAST.Types[fullTypeName]; ok && existing.Package == pkgName {
+				// Error if type is being redefined (has fields or sealed variants)
+				if hasTypeDefinition(existing) && !(existing.DefinedIn != filePath && isSameFile(existing.DefinedIn, absFilePath)) {
+					line := ctx.GetStart().GetLine()
+					return nil, fmt.Errorf("%s:%d: type %q in package %q redefined (first defined in %s)",
+						filePath, line, typeName, pkgName, existing.DefinedIn)
+				}
 				meta = existing
 				// Clear fields to avoid duplicates if re-analyzing
 				meta.Fields = make(map[string]transpiler.Type)
@@ -337,6 +346,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 					meta.FieldNames = append(meta.FieldNames, fieldName)
 					meta.ImmutFlags = append(meta.ImmutFlags, fctx.VAR() == nil)
 				}
+				meta.DefinedIn = filePath
 			}
 
 			// Extract interface method signatures as type methods
@@ -398,6 +408,11 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 
 			var meta *transpiler.TypeMetadata
 			if existing, ok := richAST.Types[fullTypeName]; ok && existing.Package == pkgName {
+				if hasTypeDefinition(existing) && !(existing.DefinedIn != filePath && isSameFile(existing.DefinedIn, absFilePath)) {
+					line := ctx.GetStart().GetLine()
+					return nil, fmt.Errorf("%s:%d: type %q in package %q redefined (first defined in %s)",
+						filePath, line, typeName, pkgName, existing.DefinedIn)
+				}
 				meta = existing
 				// Clear fields to avoid duplicates if re-analyzing
 				meta.Fields = make(map[string]transpiler.Type)
@@ -428,6 +443,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 						meta.ImmutFlags = append(meta.ImmutFlags, pctx.VAR() == nil)
 					}
 				}
+				meta.DefinedIn = filePath
 			}
 		}
 	}
@@ -435,7 +451,22 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 	// 1.5 Collect sealed types
 	for _, topDecl := range sourceFile.AllTopLevelDeclaration() {
 		if sealedCtx := topDecl.SealedTypeDeclaration(); sealedCtx != nil {
-			a.analyzeSealedType(sealedCtx.(*grammar.SealedTypeDeclarationContext), pkgName, richAST)
+			ctx := sealedCtx.(*grammar.SealedTypeDeclarationContext)
+			sealedName := ctx.Identifier().GetText()
+			fullSealedName := sealedName
+			if pkgName != "" && pkgName != "main" && pkgName != "test" {
+				fullSealedName = pkgName + "." + sealedName
+			}
+			// Check for redefinition
+			if existing, ok := richAST.Types[fullSealedName]; ok && hasTypeDefinition(existing) && !(existing.DefinedIn != filePath && isSameFile(existing.DefinedIn, absFilePath)) {
+				line := ctx.GetStart().GetLine()
+				return nil, fmt.Errorf("%s:%d: type %q in package %q redefined (first defined in %s)",
+					filePath, line, sealedName, pkgName, existing.DefinedIn)
+			}
+			a.analyzeSealedType(ctx, pkgName, richAST)
+			if meta, ok := richAST.Types[fullSealedName]; ok {
+				meta.DefinedIn = filePath
+			}
 		}
 	}
 
@@ -504,9 +535,16 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 
 					if typeMeta, ok := richAST.Types[fullBaseType]; ok {
 						if existing, exists := typeMeta.Methods[methodName]; exists {
+							// Error if method already has a user-defined implementation
+							if existing.DefinedIn != "" && !(existing.DefinedIn != filePath && isSameFile(existing.DefinedIn, absFilePath)) {
+								line := ctx.GetStart().GetLine()
+								return nil, fmt.Errorf("%s:%d: method %q on type %q in package %q redefined (first defined in %s)",
+									filePath, line, methodName, baseType, pkgName, existing.DefinedIn)
+							}
 							// Preserve IsGeneric if it was pre-populated
 							methodMeta.IsGeneric = existing.IsGeneric
 						}
+						methodMeta.DefinedIn = filePath
 						typeMeta.Methods[methodName] = methodMeta
 					} else {
 						// Even if type is not in this file, we might want to collect it?
@@ -575,8 +613,14 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 	// to avoid interfering with isImmutableField and .Get() auto-unwrapping.
 	if len(a.packageFiles) > 0 {
 		// Explicit package files: full metadata extraction for ALL packages including main/test
-		for _, sibTree := range siblingTrees {
-			a.extractSiblingFullMetadata(sibTree, pkgName, richAST)
+		for i, sibTree := range siblingTrees {
+			sibPath := ""
+			if i < len(siblingPaths) {
+				sibPath = siblingPaths[i]
+			}
+			if err := a.extractSiblingFullMetadata(sibTree, pkgName, richAST, sibPath); err != nil {
+				return nil, err
+			}
 		}
 	} else if pkgName != "main" && pkgName != "test" {
 		// Directory-discovered siblings: lightweight extraction only (existing behavior)
@@ -1230,6 +1274,22 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 				} else if pkgAST.PackageName != res.PackageName {
 					return nil, fmt.Errorf("multiple package names in directory %s: %s and %s", dirPath, pkgAST.PackageName, res.PackageName)
 				}
+				// Check for type redefinition: if a type with fields/variants already
+				// exists in pkgAST and the incoming res also defines it with fields/variants,
+				// that's a compile-time error. Methods on existing types are fine.
+				// Only check types actually defined in this file (DefinedIn == filePath),
+				// not types pulled in via sibling scanning.
+				for typeName, newMeta := range res.Types {
+					if newMeta.DefinedIn != filePath {
+						continue
+					}
+					if existingMeta, ok := pkgAST.Types[typeName]; ok {
+						if hasTypeDefinition(existingMeta) && existingMeta.DefinedIn != "" && existingMeta.DefinedIn != filePath {
+							return nil, fmt.Errorf("type %q in package %q redefined (first defined in %s)",
+								newMeta.Name, res.PackageName, existingMeta.DefinedIn)
+						}
+					}
+				}
 				pkgAST.Merge(res)
 			}
 		}
@@ -1249,6 +1309,26 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 	}
 
 	return pkgAST, nil
+}
+
+// hasTypeDefinition returns true if the TypeMetadata represents a full type definition
+// (struct with fields or sealed type with variants), as opposed to a type entry that
+// only has methods added from another file.
+func hasTypeDefinition(meta *transpiler.TypeMetadata) bool {
+	return len(meta.FieldNames) > 0 || (meta.IsSealed && len(meta.SealedVariants) > 0)
+}
+
+// isSameFile checks whether definedIn refers to the same file as absPath.
+// definedIn may be relative or absolute; absPath must be absolute.
+func isSameFile(definedIn, absPath string) bool {
+	if definedIn == "" || absPath == "" {
+		return false
+	}
+	absDefinedIn, err := filepath.Abs(definedIn)
+	if err != nil {
+		return definedIn == absPath
+	}
+	return absDefinedIn == absPath
 }
 
 // goExportedFuncRe matches exported (capitalized) standalone function declarations in Go files.
@@ -1428,7 +1508,8 @@ func getBaseTypeName(ctx grammar.ITypeContext) string {
 // Unlike extractSiblingMethodSignatures, this includes struct fields, sealed types,
 // shorthand structs, and all method/function signatures. Used when --package-files
 // is provided to enable full cross-file type resolution.
-func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileContext, pkgName string, richAST *transpiler.RichAST) {
+func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileContext, pkgName string, richAST *transpiler.RichAST, sibFilePath string) error {
+	absSibPath, _ := filepath.Abs(sibFilePath)
 	// 1. Collect struct types with full field info
 	for _, topDecl := range sibTree.AllTopLevelDeclaration() {
 		if typeDecl := topDecl.TypeDeclaration(); typeDecl != nil {
@@ -1438,10 +1519,12 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 			if pkgName != "" && pkgName != "main" && pkgName != "test" {
 				fullTypeName = pkgName + "." + typeName
 			}
-			// Skip if type already has field info (main file takes precedence).
-			// But allow overriding placeholder entries (created by method collection
-			// when a method references a type from a sibling file).
+			// Error if type already has field info from a different file — redefinition.
+			// Skip if existing type was loaded from this same sibling file (via auto-import).
 			if existing, ok := richAST.Types[fullTypeName]; ok && len(existing.FieldNames) > 0 {
+				if !isSameFile(existing.DefinedIn, absSibPath) {
+					return fmt.Errorf("type %q in package %q redefined (first defined in %s)", typeName, pkgName, existing.DefinedIn)
+				}
 				continue
 			}
 			// Preserve existing methods from placeholder entry (e.g., methods from current file)
@@ -1536,6 +1619,9 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 				fullTypeName = pkgName + "." + typeName
 			}
 			if existing, ok := richAST.Types[fullTypeName]; ok && len(existing.FieldNames) > 0 {
+				if !isSameFile(existing.DefinedIn, absSibPath) {
+					return fmt.Errorf("type %q in package %q redefined (first defined in %s)", typeName, pkgName, existing.DefinedIn)
+				}
 				continue
 			}
 			existingMethods := make(map[string]*transpiler.MethodMetadata)
@@ -1579,9 +1665,12 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 			if pkgName != "" && pkgName != "main" && pkgName != "test" {
 				fullTypeName = pkgName + "." + typeName
 			}
-			// Skip if already has sealed variant info (main file takes precedence).
-			// Allow overriding placeholders from method collection.
+			// Error if sealed type already defined in a different file — redefinition.
+			// Skip if loaded from this same sibling file (via auto-import).
 			if existing, ok := richAST.Types[fullTypeName]; ok && existing.IsSealed {
+				if !isSameFile(existing.DefinedIn, absSibPath) {
+					return fmt.Errorf("type %q in package %q redefined (first defined in %s)", typeName, pkgName, existing.DefinedIn)
+				}
 				continue
 			}
 			a.analyzeSealedType(ctx, pkgName, richAST)
@@ -1694,6 +1783,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 			}
 		}
 	}
+	return nil
 }
 
 // extractSiblingMethodSignatures extracts method and function signatures from a sibling .gala file.
