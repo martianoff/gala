@@ -356,6 +356,32 @@ func (i Implode) Apply(params []string) string = strings.Join(params, "")
 val res = Implode(SliceOf("a", "b")) // expanded to Implode{}.Apply(SliceOf("a", "b"))
 ```
 
+### Type Aliases
+
+Type aliases create an alternative name for an existing type. The alias is identical to the original type — they can be used interchangeably. This is useful for re-exporting types from dependencies or creating shorter names.
+
+```gala
+// Simple alias
+type MyString string
+
+// Qualified alias (re-exporting from a dependency)
+import "myapp/httpcore"
+type Request httpcore.Request
+type Response httpcore.Response
+```
+
+Type aliases generate Go type aliases (`type X = Y`), so methods defined on the original type are available on the alias.
+
+```gala
+package server
+
+import "myapp/httpcore"
+
+// Re-export types for a clean public API
+type Request httpcore.Request
+type Handler httpcore.Handler
+```
+
 ### Sealed Types (Algebraic Data Types)
 
 Sealed types define algebraic data types (ADTs) concisely. The transpiler auto-generates the parent struct, companion objects, `Apply`/`Unapply` methods, `IsXxx()` discriminators, `Copy`, and `Equal`.
