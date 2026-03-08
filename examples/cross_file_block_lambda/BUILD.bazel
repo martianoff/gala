@@ -4,5 +4,5 @@ gala_test(
     name = "cross_file_block_lambda",
     src = "main.gala",
     expected = "main.out",
-    deps = ["//examples/cross_file_block_lambda/crossfile"],
+    gala_deps = ["//examples/cross_file_block_lambda/crossfile"],
 )
