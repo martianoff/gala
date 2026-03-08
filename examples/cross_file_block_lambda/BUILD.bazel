@@ -1,0 +1,8 @@
+load("//:gala.bzl", "gala_test")
+
+gala_test(
+    name = "cross_file_block_lambda",
+    src = "main.gala",
+    expected = "main.out",
+    deps = ["//examples/cross_file_block_lambda/crossfile"],
+)

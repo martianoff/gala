@@ -75,7 +75,32 @@ func (r *RichAST) Merge(other *RichAST) {
 		r.CompanionObjects = make(map[string]*CompanionObjectMetadata)
 	}
 	for k, v := range other.Types {
-		r.Types[k] = v
+		if existing, ok := r.Types[k]; ok {
+			// Merge methods so methods defined across multiple files
+			// in the same package are all preserved.
+			if existing.Methods == nil {
+				existing.Methods = make(map[string]*MethodMetadata)
+			}
+			for methodName, methodMeta := range v.Methods {
+				existing.Methods[methodName] = methodMeta
+			}
+			// Update fields if incoming has them and existing doesn't
+			if len(v.FieldNames) > 0 && len(existing.FieldNames) == 0 {
+				existing.Fields = v.Fields
+				existing.FieldNames = v.FieldNames
+				existing.ImmutFlags = v.ImmutFlags
+			}
+			if len(v.TypeParams) > 0 && len(existing.TypeParams) == 0 {
+				existing.TypeParams = v.TypeParams
+				existing.TypeParamConstraints = v.TypeParamConstraints
+			}
+			if v.IsSealed {
+				existing.IsSealed = v.IsSealed
+				existing.SealedVariants = v.SealedVariants
+			}
+		} else {
+			r.Types[k] = v
+		}
 	}
 	for k, v := range other.Functions {
 		r.Functions[k] = v

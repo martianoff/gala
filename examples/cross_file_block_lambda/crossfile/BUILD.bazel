@@ -1,0 +1,11 @@
+load("//:gala.bzl", "gala_library")
+
+gala_library(
+    name = "crossfile",
+    srcs = [
+        "methods.gala",
+        "types.gala",
+    ],
+    importpath = "martianoff/gala/crossfile",
+    visibility = ["//visibility:public"],
+)

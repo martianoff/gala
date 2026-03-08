@@ -1,0 +1,6 @@
+package crossfile
+
+// Struct defined in one file, methods in another
+struct Builder(Value int)
+
+func NewBuilder() Builder = Builder(Value = 0)
