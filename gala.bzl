@@ -53,7 +53,15 @@ gala_exec_test = rule(
     },
 )
 
-def gala_transpile(name, src, out = None, package_files = [], extra_srcs = []):
+def _gala_sources_label(dep):
+    """Convert a dependency label to its _gala_sources filegroup target."""
+    if ":" in dep:
+        return dep + "_gala_sources"
+    # Shorthand //pkg/path means //pkg/path:path — extract target name from last component
+    name = dep.split("/")[-1]
+    return dep + ":" + name + "_gala_sources"
+
+def gala_transpile(name, src, out = None, package_files = [], extra_srcs = [], gala_deps = []):
     """Transpile a GALA source file to Go using the full gala binary.
 
     Args:
@@ -62,6 +70,8 @@ def gala_transpile(name, src, out = None, package_files = [], extra_srcs = []):
         out: Output .go file name (optional)
         package_files: List of sibling .gala files in the same package for cross-file type resolution
         extra_srcs: Additional GALA source files/filegroups to make available during transpilation
+        gala_deps: GALA library dependency labels. Their _gala_sources filegroups are
+            automatically included for cross-package type resolution.
     """
     if not out:
         out = name + ".go"
@@ -71,10 +81,13 @@ def gala_transpile(name, src, out = None, package_files = [], extra_srcs = []):
         locs = ",".join(["$(location %s)" % f for f in package_files])
         pf_flag = " --package-files " + locs
 
+    # Auto-include GALA source files from dependencies for cross-package type resolution
+    dep_srcs = [_gala_sources_label(dep) for dep in gala_deps]
+
     # Use go.mod location to find the repository root for search path
     native.genrule(
         name = name,
-        srcs = [src] + package_files + extra_srcs + [Label("//:all_gala_sources"), Label("//:go.mod")],
+        srcs = [src] + package_files + extra_srcs + dep_srcs + [Label("//:all_gala_sources"), Label("//:go.mod")],
         outs = [out],
         cmd = "$(location {tool}) --input $(location {src}) --output $@ --search $$(dirname $(location {gomod})){pf}".format(
             tool = Label("//cmd/gala"),
@@ -160,7 +173,15 @@ def gala_library(name, src = None, srcs = None, importpath = "", deps = [], **kw
         **kwargs
     )
 
-def gala_binary(name, src = None, srcs = None, deps = [], **kwargs):
+    # Auto-create gala_sources filegroup so dependents can access GALA source files
+    # for cross-package type resolution during transpilation.
+    native.filegroup(
+        name = name + "_gala_sources",
+        srcs = srcs,
+        visibility = ["//visibility:public"],
+    )
+
+def gala_binary(name, src = None, srcs = None, deps = [], gala_deps = [], **kwargs):
     """
     Build a GALA binary.
 
@@ -169,6 +190,8 @@ def gala_binary(name, src = None, srcs = None, deps = [], **kwargs):
         src: Single source .gala file (deprecated, use srcs)
         srcs: List of source .gala files
         deps: Go/Bazel dependencies (labels), including external GALA modules
+        gala_deps: GALA library dependency labels for cross-package type resolution.
+            Their source files are automatically included during transpilation.
         **kwargs: Additional arguments passed to go_binary
 
     External GALA dependencies are loaded via gala_dependencies() in WORKSPACE
@@ -191,11 +214,12 @@ def gala_binary(name, src = None, srcs = None, deps = [], **kwargs):
             src = s,
             out = go_src,
             package_files = siblings,
+            gala_deps = gala_deps,
         )
         go_srcs.append(go_src)
 
     # Combine deps with std (using Label to ensure it resolves to @gala//std)
-    all_deps = list(deps) + [Label("//std")]
+    all_deps = list(deps) + list(gala_deps) + [Label("//std")]
 
     go_binary(
         name = name,
@@ -260,13 +284,14 @@ def gala_unit_test(name, src = None, srcs = None, deps = [], **kwargs):
         }),
     )
 
-def gala_test(name, src = None, srcs = None, expected = "", deps = [], **kwargs):
+def gala_test(name, src = None, srcs = None, expected = "", deps = [], gala_deps = [], **kwargs):
     binary_name = name + "_bin"
     gala_binary(
         name = binary_name,
         src = src,
         srcs = srcs,
         deps = deps,
+        gala_deps = gala_deps,
         **kwargs
     )
     gala_exec_test(
