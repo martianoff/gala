@@ -21,4 +21,4 @@ echo STABLE_GIT_COMMIT %COMMIT%
 REM Build timestamp (UTC)
 for /f "tokens=*" %%i in ('powershell -Command "[DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')"') do set BUILD_DATE=%%i
 if not defined BUILD_DATE set BUILD_DATE=unknown
-echo STABLE_BUILD_DATE %BUILD_DATE%
+echo BUILD_DATE %BUILD_DATE%
