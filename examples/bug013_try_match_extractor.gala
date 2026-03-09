@@ -1,0 +1,33 @@
+package main
+
+import (
+    . "martianoff/gala/std"
+    . "martianoff/gala/concurrent"
+)
+
+struct Response(Code int, Body string)
+
+func doWork() Future[Response] = FutureOf(Response(Code = 200, Body = "OK"))
+
+// Test 1: match on Try[Response] from Future.Await()
+func handleFuture(f Future[Response]) string {
+    val result = f.Await()
+    return result match {
+        case Success(resp) => s"Code: ${resp.Code}, Body: ${resp.Body}"
+        case Failure(err) => s"Error: $err"
+    }
+}
+
+// Test 2: match on Try[Response] directly
+func handleTry(result Try[Response]) string {
+    return result match {
+        case Success(resp) => resp.Body
+        case Failure(err) => s"Error: $err"
+    }
+}
+
+func main() {
+    val f = doWork()
+    Println(handleFuture(f))
+    Println(handleTry(Success(Response(Code = 404, Body = "Not Found"))))
+}

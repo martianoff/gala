@@ -1,0 +1,8 @@
+package mylib
+
+import . "martianoff/gala/std"
+
+struct Config(Host string, Port int, Name string)
+
+func (c Config) WithPort(port int) Config = c.Copy(Port = port)
+func (c Config) WithName(name string) Config = c.Copy(Name = name)

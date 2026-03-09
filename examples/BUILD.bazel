@@ -1092,3 +1092,17 @@ gala_test(
     src = "block_lambda_match.gala",
     expected = "block_lambda_match.out",
 )
+
+# BUG-013 repro: Try match extractor values typed as any
+gala_test(
+    name = "bug013_try_match_extractor",
+    src = "bug013_try_match_extractor.gala",
+    expected = "bug013_try_match_extractor.out",
+    deps = ["//concurrent"],
+)
+
+# BUG-017 repro: .Copy() generates self-qualified struct literal
+gala_library(
+    name = "bug017_copy_self_qualify",
+    srcs = ["bug017_copy/lib.gala"],
+)
