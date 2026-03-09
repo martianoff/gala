@@ -128,7 +128,7 @@ gala_test(
     name = "match_lib_test",
     src = "match_lib_test.gala",
     expected = "match_lib_test.out",
-    deps = [":match_lib"],
+    gala_deps = [":match_lib"],
 )
 
 gala_test(
