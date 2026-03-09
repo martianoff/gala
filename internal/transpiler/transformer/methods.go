@@ -124,7 +124,7 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 	}
 
 	return &ast.CompositeLit{
-		Type: ast.NewIdent(typeName),
+		Type: t.ident(typeName),
 		Elts: elts,
 	}, nil
 }
