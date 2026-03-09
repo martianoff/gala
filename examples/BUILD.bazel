@@ -1077,3 +1077,11 @@ gala_test(
     src = "some_type_inference.gala",
     expected = "some_type_inference.out",
 )
+
+# FIX-038 verification: Try match from function call (type inference + no double prefix)
+gala_test(
+    name = "try_match_from_func",
+    src = "try_match_from_func.gala",
+    expected = "try_match_from_func.out",
+    deps = ["//concurrent"],
+)

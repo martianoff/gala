@@ -161,15 +161,23 @@ func (t *galaASTTransformer) inferMatchedTypeFromCases(caseClauses []grammar.ICa
 			continue
 		}
 
-		// Resolve the parent sealed type from companion metadata
-		targetTypeName := companion.TargetType
-		if companion.Package != "" {
-			targetTypeName = companion.Package + "." + targetTypeName
+		// Resolve the parent sealed type from companion metadata.
+		// companion.TargetType may already include the package prefix (e.g., "std.Try"
+		// from NamedType.BaseName()), so we must NOT blindly prepend companion.Package.
+		meta := t.getTypeMeta(companion.TargetType)
+		if meta == nil && companion.Package != "" {
+			// Only add package prefix if TargetType doesn't already contain one
+			if !strings.Contains(companion.TargetType, ".") {
+				meta = t.getTypeMeta(companion.Package + "." + companion.TargetType)
+			}
 		}
-		meta := t.getTypeMeta(targetTypeName)
 		if meta == nil {
-			// Try without package prefix (e.g., for dot-imported types)
-			meta = t.getTypeMeta(companion.TargetType)
+			// Last resort: strip any package prefix and try bare name
+			base := companion.TargetType
+			if idx := strings.LastIndex(base, "."); idx >= 0 {
+				base = base[idx+1:]
+			}
+			meta = t.getTypeMeta(base)
 		}
 		if meta == nil || !meta.IsSealed {
 			continue
@@ -180,7 +188,13 @@ func (t *galaASTTransformer) inferMatchedTypeFromCases(caseClauses []grammar.ICa
 		// from the case patterns alone.
 		var baseType transpiler.Type
 		if companion.Package != "" {
-			baseType = transpiler.NamedType{Package: companion.Package, Name: companion.TargetType}
+			// Strip package prefix from TargetType if it already contains one
+			// (e.g., "std.Try" -> "Try") to avoid double prefix "std.std.Try"
+			typeName := companion.TargetType
+			if strings.HasPrefix(typeName, companion.Package+".") {
+				typeName = typeName[len(companion.Package)+1:]
+			}
+			baseType = transpiler.NamedType{Package: companion.Package, Name: typeName}
 		} else {
 			baseType = transpiler.BasicType{Name: companion.TargetType}
 		}

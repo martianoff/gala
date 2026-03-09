@@ -887,6 +887,14 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 			}
 		}
 
+		// Store the underlying type for type alias resolution
+		// (e.g., Handler -> func(string) Future[string])
+		if targetType != nil {
+			if underlyingType := t.exprToType(targetType); !underlyingType.IsNil() {
+				t.typeAliases[name] = underlyingType
+			}
+		}
+
 		typeSpec := &ast.TypeSpec{
 			Name:       ast.NewIdent(name),
 			Assign:     1,

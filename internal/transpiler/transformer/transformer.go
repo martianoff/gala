@@ -34,9 +34,10 @@ type galaASTTransformer struct {
 	additionalImports     map[string]string                              // path -> alias for transitive imports needed by type inference
 	tempVarCount          int
 	inferer               *infer.Inferer
-	currentFuncReturnType transpiler.Type // return type of the function currently being transformed
-	filePath              string           // source file path (for error reporting)
-	sourceLines           []string         // source lines (for error snippets)
+	currentFuncReturnType transpiler.Type            // return type of the function currently being transformed
+	typeAliases           map[string]transpiler.Type // type alias name -> underlying type (e.g., "Handler" -> func(string) Future[string])
+	filePath              string                     // source file path (for error reporting)
+	sourceLines           []string                   // source lines (for error snippets)
 }
 
 // NewGalaASTTransformer creates a new instance of ASTTransformer for GALA.
@@ -53,6 +54,7 @@ func NewGalaASTTransformer() transpiler.ASTTransformer {
 		companionObjects:  make(map[string]*transpiler.CompanionObjectMetadata),
 		importManager:     NewImportManager(),
 		inferer:           infer.NewInferer(),
+		typeAliases:       make(map[string]transpiler.Type),
 	}
 }
 
@@ -84,6 +86,7 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 	}
 	t.importManager = NewImportManager()
 	t.additionalImports = make(map[string]string)
+	t.typeAliases = make(map[string]transpiler.Type)
 	t.tempVarCount = 0
 	t.filePath = richAST.FilePath
 	if richAST.SourceContent != "" {
