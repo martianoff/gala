@@ -1085,3 +1085,10 @@ gala_test(
     expected = "try_match_from_func.out",
     deps = ["//concurrent"],
 )
+
+# FIX-039 verification: match expression inside block lambda
+gala_test(
+    name = "block_lambda_match",
+    src = "block_lambda_match.gala",
+    expected = "block_lambda_match.out",
+)
