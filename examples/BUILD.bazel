@@ -985,3 +985,11 @@ gala_test(
     expected = "slice_unwrap/slice_unwrap.out",
     deps = ["//go_interop"],
 )
+
+# FIX-GS-010 verification: generic methods with extra type params callable cross-package
+gala_test(
+    name = "generic_method_cross_pkg",
+    src = "generic_method_cross_pkg.gala",
+    expected = "generic_method_cross_pkg.out",
+    deps = ["//concurrent"],
+)

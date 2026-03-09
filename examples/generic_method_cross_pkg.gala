@@ -1,0 +1,64 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+    . "martianoff/gala/concurrent"
+)
+
+type Response struct {
+    val status int
+    val body   string
+}
+
+func (r Response) WithHeader(key string, value string) Response {
+    return Response(status = r.status, body = s"${r.body} [${key}: ${value}]")
+}
+
+func main() {
+    val fut = FutureOf[Response](Response(status = 200, body = "OK"))
+
+    // Test 1: Map with explicit lambda param type
+    val mapped = fut.Map((r Response) => r.WithHeader("X", "Y"))
+    val result = mapped.Await()
+    if result.IsSuccess() {
+        Println(result.Value.body)
+    }
+
+    // Test 2: Map with inferred lambda param type
+    val mapped2 = fut.Map((r) => r.WithHeader("A", "B"))
+    val result2 = mapped2.Await()
+    if result2.IsSuccess() {
+        Println(result2.Value.body)
+    }
+
+    // Test 3: Map with explicit type arg
+    val mapped3 = fut.Map[Response]((r) => r.WithHeader("C", "D"))
+    val result3 = mapped3.Await()
+    if result3.IsSuccess() {
+        Println(result3.Value.body)
+    }
+
+    // Test 4: FlatMap cross-package
+    val flatMapped = fut.FlatMap((r Response) => FutureOf[Response](r.WithHeader("E", "F")))
+    val result4 = flatMapped.Await()
+    if result4.IsSuccess() {
+        Println(result4.Value.body)
+    }
+
+    // Test 5: Map to a different type (int)
+    val mapped5 = fut.Map((r Response) => r.status)
+    val result5 = mapped5.Await()
+    if result5.IsSuccess() {
+        Println(fmt.Sprintf("status: %d", result5.Value))
+    }
+
+    // Test 6: Chained Map calls
+    val chained = fut.Map((r Response) => r.status).Map((s int) => fmt.Sprintf("code=%d", s))
+    val result6 = chained.Await()
+    if result6.IsSuccess() {
+        Println(result6.Value)
+    }
+
+    Println("done")
+}
