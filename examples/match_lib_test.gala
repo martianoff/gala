@@ -1,0 +1,18 @@
+package main
+
+import "fmt"
+import . "martianoff/gala/examples/match_lib"
+
+// Match on method return where receiver type comes from imported library
+func findInStore(store Store, key string) string {
+    return store.Lookup(key) match {
+        case Some(v) => s"Got: $v"
+        case None() => "Not found"
+    }
+}
+
+func main() {
+    val store = Store("MyStore")
+    fmt.Println(findInStore(store, "found"))
+    fmt.Println(findInStore(store, "missing"))
+}

@@ -1,0 +1,10 @@
+package match_lib
+
+struct Store(val Name string)
+
+func (s Store) Lookup(key string) Option[string] {
+    if key == "found" {
+        return Some(s.Name + ": " + key)
+    }
+    return None[string]()
+}

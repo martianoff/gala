@@ -504,6 +504,28 @@ func describe(b bool) string {
 	}(b)
 }`,
 		},
+		{
+			name: "Match on method return value returning Option",
+			input: `package main
+
+struct Config(val token string)
+
+func (c Config) GetToken() Option[string] {
+    if c.token != "" {
+        return Some(c.token)
+    }
+    return None[string]()
+}
+
+func main() {
+    val config = Config("secret")
+    val result = config.GetToken() match {
+        case Some(v) => v
+        case None() => "empty"
+    }
+}`,
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -514,7 +536,11 @@ func describe(b bool) string {
 				return
 			}
 			assert.NoError(t, err)
-			assert.Equal(t, strings.TrimSpace(tt.expected), strings.TrimSpace(stripGeneratedHeader(got)))
+			if tt.expected != "" {
+				assert.Equal(t, strings.TrimSpace(tt.expected), strings.TrimSpace(stripGeneratedHeader(got)))
+			} else {
+				assert.NotEmpty(t, got)
+			}
 		})
 	}
 }

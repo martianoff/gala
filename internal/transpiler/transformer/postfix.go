@@ -221,6 +221,11 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		matchedType, _ = t.inferExprType(subject)
 	}
 	if matchedType == nil || matchedType.IsNil() {
+		// Fallback: try to infer the sealed parent type from the case patterns.
+		// If cases are Some/None, the subject must be Option; Success/Failure → Try; etc.
+		matchedType = t.inferMatchedTypeFromCases(caseClauses)
+	}
+	if matchedType == nil || matchedType.IsNil() {
 		return nil, galaerr.NewSemanticError("cannot infer type of matched expression")
 	}
 

@@ -1,0 +1,28 @@
+package main
+
+import "fmt"
+
+func checkAuth(req Request) string {
+    return req.Header("Authorization") match {
+        case Some(token) => s"Authenticated: $token"
+        case None() => "Unauthorized"
+    }
+}
+
+func processCall(svc Service, input string) string {
+    return svc.Call(input) match {
+        case Success(result) => s"OK: $result"
+        case Failure(err) => s"Error: $err"
+    }
+}
+
+func main() {
+    val req1 = Request("/api/data", "Bearer abc123")
+    val req2 = Request("/api/data", "")
+    fmt.Println(checkAuth(req1))
+    fmt.Println(checkAuth(req2))
+
+    val svc = Service("TestService")
+    fmt.Println(processCall(svc, "hello"))
+    fmt.Println(processCall(svc, ""))
+}

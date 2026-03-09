@@ -1,0 +1,26 @@
+package main
+
+import "fmt"
+
+struct Db(val data string)
+
+func (d Db) Query(key string) Option[string] {
+    if key == d.data {
+        return Some(key)
+    }
+    return None[string]()
+}
+
+// Match on method return where receiver is a function parameter
+func lookup(db Db, key string) string {
+    return db.Query(key) match {
+        case Some(v) => s"Found: $v"
+        case None() => "Not found"
+    }
+}
+
+func main() {
+    val db = Db("test")
+    fmt.Println(lookup(db, "test"))
+    fmt.Println(lookup(db, "missing"))
+}
