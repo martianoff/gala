@@ -508,12 +508,18 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 				typeExpr, _ := t.transformType(param.Type_())
 				paramType = t.exprToType(typeExpr)
 			}
+			// Variadic parameters are Go slices at runtime (e.g., ...Route becomes []Route).
+			// Store as ArrayType so index expressions correctly extract the element type.
+			scopeType := paramType
+			if param.ELLIPSIS() != nil && !paramType.IsNil() {
+				scopeType = transpiler.ArrayType{Elem: paramType}
+			}
 			// Check if parameter has 'val' modifier - if so, it needs .Get() unwrapping
 			// Otherwise, treat as var (no .Get() unwrapping needed)
 			if param.VAL() != nil {
-				t.addVal(paramName, paramType)
+				t.addVal(paramName, scopeType)
 			} else {
-				t.addVar(paramName, paramType)
+				t.addVar(paramName, scopeType)
 			}
 		}
 	}
@@ -946,10 +952,17 @@ func (t *galaASTTransformer) transformParameter(ctx *grammar.ParameterContext) (
 	if qName := t.getType(typeName.String()); !qName.IsNil() {
 		typeName = qName
 	}
+	// Variadic parameters are Go slices at runtime (e.g., ...Route becomes []Route).
+	// Store as ArrayType so that index expressions like routes[0] correctly extract
+	// the element type (Route) instead of falling through to generic type parsing.
+	scopeType := typeName
+	if isVariadic && !typeName.IsNil() {
+		scopeType = transpiler.ArrayType{Elem: typeName}
+	}
 	if isVal {
-		t.addVal(name, typeName)
+		t.addVal(name, scopeType)
 	} else {
-		t.addVar(name, typeName)
+		t.addVar(name, scopeType)
 	}
 
 	if ctx.Type_() != nil {
