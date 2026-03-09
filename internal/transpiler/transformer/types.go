@@ -643,15 +643,18 @@ func (t *galaASTTransformer) getExprTypeName(expr ast.Expr) transpiler.Type {
 	// Try manual inference first for speed and simple cases
 	res := t.getExprTypeNameManual(expr)
 	if !res.IsNil() && !t.hasTypeParams(res) && !res.IsAny() {
+		t.traceType(expr, res, "manual")
 		return res
 	}
 
 	// Fallback to Hindley-Milner for more complex cases
 	hmRes, err := t.inferExprType(expr)
 	if err == nil && !hmRes.IsNil() && !hmRes.IsAny() {
+		t.traceType(expr, hmRes, "hindley-milner")
 		return hmRes
 	}
 
+	t.traceType(expr, res, "manual-fallback")
 	return res
 }
 
