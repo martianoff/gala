@@ -58,7 +58,9 @@ type galaAnalyzer struct {
 	packageFiles []string                       // Explicit sibling files belonging to the same package
 	analyzedPkgs map[string]*transpiler.RichAST // Cache of analyzed packages
 	checkedDirs  map[string]bool
-	resolver     *module.Resolver // Handles module root discovery and package path resolution
+	resolver            *module.Resolver               // Handles module root discovery and package path resolution
+	currentRichAST      *transpiler.RichAST            // Set during Analyze() for cross-reference in resolveTypeWithParams
+	currentDotImportPkgs map[string]bool                // Package names that are dot-imported in the current file
 }
 
 // NewGalaAnalyzer creates a new transpiler.Analyzer implementation.
@@ -278,6 +280,52 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 			}
 		}
 	}
+
+	// 0.75 Also scan sibling imports to ensure all GALA packages used by siblings
+	// are loaded into richAST.Types. Without this, resolveTypeWithParams for sibling
+	// struct fields can't find types from packages that only siblings import.
+	for _, sibTree := range siblingTrees {
+		a.scanImports(sibTree, richAST)
+	}
+
+	// Build set of dot-imported package names for type resolution.
+	// Collect from main file AND all sibling files so that when resolving types in
+	// sibling struct fields, we correctly qualify types from their dot imports too.
+	dotImportPkgs := make(map[string]bool)
+	allSourceFiles := []*grammar.SourceFileContext{sourceFile}
+	for _, sib := range siblingTrees {
+		allSourceFiles = append(allSourceFiles, sib)
+	}
+	for _, sf := range allSourceFiles {
+		for _, impDecl := range sf.AllImportDeclaration() {
+			ctx := impDecl.(*grammar.ImportDeclarationContext)
+			for _, spec := range ctx.AllImportSpec() {
+				s := spec.(*grammar.ImportSpecContext)
+				// Dot import: importSpec has no identifier but has more than just the STRING
+				// (the extra child is the '.' terminal)
+				isDotImport := s.Identifier() == nil && s.GetChildCount() > 1
+				if isDotImport {
+					path := strings.Trim(s.STRING().GetText(), "\"")
+					if pkgAlias, ok := richAST.Packages[path]; ok {
+						dotImportPkgs[pkgAlias] = true
+					}
+				}
+			}
+		}
+	}
+	// std is always implicitly dot-imported
+	dotImportPkgs[registry.StdPackageName] = true
+
+	// Set currentRichAST and dot-import tracking so resolveTypeWithParams can check
+	// already-known types (from dot-imported packages) before blindly qualifying with
+	// the current package name. This prevents e.g. Array from collection_immutable
+	// being misqualified as server.Array.
+	a.currentRichAST = richAST
+	a.currentDotImportPkgs = dotImportPkgs
+	defer func() {
+		a.currentRichAST = nil
+		a.currentDotImportPkgs = nil
+	}()
 
 	// 1. Collect all types
 	for _, topDecl := range sourceFile.AllTopLevelDeclaration() {
@@ -1099,10 +1147,12 @@ func (a *galaAnalyzer) resolveTypeWithParams(typeName string, pkgName string, ty
 		baseTypeName := typeName[:idx]
 		argsStr := typeName[idx+1 : len(typeName)-1]
 
-		// Resolve base type (may need std prefix)
+		// Resolve base type (may need std prefix or other known package)
 		var baseType transpiler.Type
 		if a.isStdType(baseTypeName) {
 			baseType = transpiler.NamedType{Package: registry.StdPackageName, Name: baseTypeName}
+		} else if knownPkg := a.findKnownTypePackage(baseTypeName, pkgName); knownPkg != "" {
+			baseType = transpiler.NamedType{Package: knownPkg, Name: baseTypeName}
 		} else if pkgName != "" && pkgName != "main" && pkgName != "test" {
 			baseType = transpiler.NamedType{Package: pkgName, Name: baseTypeName}
 		} else {
@@ -1129,10 +1179,101 @@ func (a *galaAnalyzer) resolveTypeWithParams(typeName string, pkgName string, ty
 		return transpiler.NamedType{Package: registry.StdPackageName, Name: typeName}
 	}
 
+	// Check if type is from a known imported package before defaulting to current package
+	if knownPkg := a.findKnownTypePackage(typeName, pkgName); knownPkg != "" {
+		return transpiler.NamedType{Package: knownPkg, Name: typeName}
+	}
+
 	if pkgName != "" && pkgName != "main" && pkgName != "test" {
 		return transpiler.NamedType{Package: pkgName, Name: typeName}
 	}
 	return transpiler.BasicType{Name: typeName}
+}
+
+// scanImports processes GALA imports from a source file and loads their metadata
+// into richAST. This is used to ensure sibling files' dependencies are available
+// for type resolution during extractSiblingFullMetadata.
+func (a *galaAnalyzer) scanImports(sf *grammar.SourceFileContext, richAST *transpiler.RichAST) {
+	for _, impDecl := range sf.AllImportDeclaration() {
+		ctx := impDecl.(*grammar.ImportDeclarationContext)
+		for _, spec := range ctx.AllImportSpec() {
+			s := spec.(*grammar.ImportSpecContext)
+			path := strings.Trim(s.STRING().GetText(), "\"")
+
+			isInternalGala := strings.HasPrefix(path, "martianoff/gala/")
+			isExternalGala := a.resolver.IsGalaPackage(path)
+
+			if isInternalGala || isExternalGala {
+				var relPath string
+				if isInternalGala {
+					relPath = strings.TrimPrefix(path, "martianoff/gala/")
+				} else {
+					relPath = path
+				}
+
+				if cached, ok := a.analyzedPkgs[path]; ok && cached != nil {
+					richAST.Merge(cached)
+					if cached.PackageName != "" && cached.PackageName != "main" && cached.PackageName != "test" {
+						richAST.Packages[path] = cached.PackageName
+					}
+				} else if _, inProgress := a.analyzedPkgs[path]; !inProgress {
+					a.analyzedPkgs[path] = nil
+					if isExternalGala && !isInternalGala {
+						if err := a.ensureTranspiled(path); err != nil {
+							fmt.Fprintf(os.Stderr, "Warning: failed to transpile dependency %s: %v\n", path, err)
+						}
+					}
+					importedAST, err := a.analyzePackage(relPath)
+					if err == nil {
+						a.analyzedPkgs[path] = importedAST
+						richAST.Merge(importedAST)
+						if importedAST.PackageName != "" && importedAST.PackageName != "main" && importedAST.PackageName != "test" {
+							richAST.Packages[path] = importedAST.PackageName
+						} else {
+							for _, typeMeta := range importedAST.Types {
+								if typeMeta.Package != "" && typeMeta.Package != "main" && typeMeta.Package != "test" && !registry.Global.IsPreludePackage(typeMeta.Package) {
+									richAST.Packages[path] = typeMeta.Package
+									break
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+// findKnownTypePackage checks if a type name is already known in richAST.Types
+// under a different package. This prevents incorrectly qualifying types from
+// imported packages (e.g., Array from collection_immutable) with the current
+// package name (e.g., server.Array).
+//
+// Returns the correct package name if found, or empty string if not.
+func (a *galaAnalyzer) findKnownTypePackage(typeName string, currentPkg string) string {
+	if a.currentRichAST == nil || len(a.currentDotImportPkgs) == 0 {
+		return ""
+	}
+	// First check if the type is already defined in the current package.
+	// If so, the current package qualification is correct - do not override.
+	currentKey := currentPkg + "." + typeName
+	if _, ok := a.currentRichAST.Types[currentKey]; ok {
+		return ""
+	}
+	// Also check without package prefix (for main/test packages)
+	if _, ok := a.currentRichAST.Types[typeName]; ok {
+		return ""
+	}
+	// Check if the type exists in a dot-imported package.
+	// Only dot-imported packages bring names into scope unqualified,
+	// so only those should be considered for unqualified type resolution.
+	for dotPkg := range a.currentDotImportPkgs {
+		key := dotPkg + "." + typeName
+		if _, ok := a.currentRichAST.Types[key]; ok {
+			return dotPkg
+		}
+	}
+	return ""
 }
 
 // resolveFuncType resolves a function type string like "func(T) Option[U]"

@@ -1,0 +1,19 @@
+package cross_file_unwrap_lib
+
+import "fmt"
+import . "martianoff/gala/collection_immutable"
+
+type Server struct {
+    Routes Array[Route]
+    Filters Array[string]
+}
+
+func NewServer(routes Array[Route], filters Array[string]) Server = Server(Routes = routes, Filters = filters)
+
+func ProcessServer(server Server) string {
+    val routes = server.Routes
+    val filters = server.Filters
+    val route = routes.Get(0)
+    val handler = ApplyFilters(route.Handler, filters)
+    return fmt.Sprintf("%s %s -> %s", route.Method, route.Pattern, handler.Name)
+}

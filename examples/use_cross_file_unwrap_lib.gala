@@ -1,0 +1,11 @@
+package main
+
+import . "martianoff/gala/examples/cross_file_unwrap_lib"
+import . "martianoff/gala/collection_immutable"
+
+func main() {
+    val routes = ArrayOf(Route("GET", "/api/users", Handler("myHandler")))
+    val filters = ArrayOf("auth", "log")
+    val server = NewServer(routes, filters)
+    Println(ProcessServer(server))
+}
