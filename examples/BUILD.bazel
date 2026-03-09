@@ -991,7 +991,6 @@ gala_test(
     deps = ["//go_interop"],
 )
 
-<<<<<<< HEAD
 # FIX-GS-011 verification: cross-file struct field auto-unwrap (multi-file binary)
 gala_test(
     name = "cross_file_unwrap",
