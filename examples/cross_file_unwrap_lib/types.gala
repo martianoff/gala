@@ -1,0 +1,20 @@
+package cross_file_unwrap_lib
+
+import . "martianoff/gala/collection_immutable"
+
+struct Handler(Name string)
+
+struct Route(Method string, Pattern string, Handler Handler)
+
+func ApplyFilter(h Handler, filter string) Handler = Handler(filter + ":" + h.Name)
+
+func ApplyFilters(handler Handler, filters Array[string]) Handler {
+    if filters.IsEmpty() {
+        return handler
+    }
+    var result Handler = handler
+    for i := 0; i < filters.Size(); i++ {
+        result = ApplyFilter(result, filters.Get(i))
+    }
+    return result
+}

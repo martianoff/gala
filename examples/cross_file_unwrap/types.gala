@@ -1,0 +1,7 @@
+package main
+
+struct Handler(val Name string)
+
+struct Route(val Method string, val Pattern string, val Handler Handler)
+
+func applyFilter(h Handler, filter string) Handler = Handler(filter + ":" + h.Name)

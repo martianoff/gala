@@ -3,6 +3,10 @@ load("//:gala.bzl", "gala_binary", "gala_library", "gala_test")
 filegroup(
     name = "gala_sources",
     srcs = [
+        "cross_file_unwrap/main.gala",
+        "cross_file_unwrap/types.gala",
+        "cross_file_unwrap_lib/ops.gala",
+        "cross_file_unwrap_lib/types.gala",
         "foldleft_method/main.gala",
         "lib/generic.gala",
         "mathlib/math.gala",
@@ -16,6 +20,7 @@ filegroup(
         "multi_file_types/model.gala",
         "struct_field_unwrap/main.gala",
         "struct_field_unwrap/types.gala",
+        "use_cross_file_unwrap_lib.gala",
         "wrapper_method_lambda/main.gala",
         "slice_unwrap/main.gala",
         "slice_unwrap/model.gala",
@@ -984,4 +989,38 @@ gala_test(
     ],
     expected = "slice_unwrap/slice_unwrap.out",
     deps = ["//go_interop"],
+)
+
+# FIX-GS-011 verification: cross-file struct field auto-unwrap (multi-file binary)
+gala_test(
+    name = "cross_file_unwrap",
+    srcs = [
+        "cross_file_unwrap/main.gala",
+        "cross_file_unwrap/types.gala",
+    ],
+    expected = "cross_file_unwrap/cross_file_unwrap.out",
+    deps = ["//go_interop"],
+)
+
+# FIX-GS-011 verification: cross-file struct field auto-unwrap (library package)
+gala_library(
+    name = "cross_file_unwrap_lib",
+    srcs = [
+        "cross_file_unwrap_lib/ops.gala",
+        "cross_file_unwrap_lib/types.gala",
+    ],
+    importpath = "martianoff/gala/examples/cross_file_unwrap_lib",
+    visibility = ["//visibility:public"],
+    deps = ["//collection_immutable"],
+)
+
+# Consumer of cross_file_unwrap_lib
+gala_test(
+    name = "use_cross_file_unwrap_lib",
+    src = "use_cross_file_unwrap_lib.gala",
+    expected = "use_cross_file_unwrap_lib.out",
+    deps = [
+        ":cross_file_unwrap_lib",
+        "//collection_immutable",
+    ],
 )
