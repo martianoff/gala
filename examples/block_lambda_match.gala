@@ -1,0 +1,19 @@
+package main
+
+import "fmt"
+import . "martianoff/gala/std"
+
+func main() {
+    val opt Option[int] = Some(42)
+
+    // Match inside a block lambda — should infer result type from branches
+    val result = opt.Map((x) => {
+        val doubled = x * 2
+        doubled match {
+            case 84 => "eighty-four"
+            case _ => "other"
+        }
+    })
+
+    fmt.Println(result)
+}

@@ -78,17 +78,6 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 		if err != nil {
 			return nil, err
 		}
-		// Try to infer return type from the block's return statements
-		if !isConcreteExpectedType && !isVoidExpected {
-			if inferredType := t.inferBlockReturnType(b); inferredType != nil {
-				retType = inferredType
-			} else {
-				// Only add return nil if we couldn't infer a type AND block doesn't already end with return
-				if !blockEndsWithReturn(b) {
-					b.List = append(b.List, &ast.ReturnStmt{Results: []ast.Expr{ast.NewIdent("nil")}})
-				}
-			}
-		}
 		// When void is expected, strip any trailing "return nil" (legacy pattern)
 		if isVoidExpected && len(b.List) > 0 {
 			if ret, ok := b.List[len(b.List)-1].(*ast.ReturnStmt); ok && len(ret.Results) == 1 {
@@ -98,11 +87,24 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 			}
 		}
 		// Convert trailing expression statement to return statement for non-void lambdas.
-		// This handles cases like: (x int) => { if (cond) Some(x) else None() }
-		// where the if-else expression is the last statement but not wrapped in return.
+		// This handles cases like match expressions (compiled to IIFEs), if-else expressions,
+		// etc. that end up as ExprStmt but should be returned from the block lambda.
+		// IMPORTANT: This must happen BEFORE inferBlockReturnType and the "return nil" fallback,
+		// otherwise the match IIFE result is discarded and "return nil" is appended instead.
 		if !isVoidExpected && len(b.List) > 0 {
 			if exprStmt, ok := b.List[len(b.List)-1].(*ast.ExprStmt); ok {
 				b.List[len(b.List)-1] = &ast.ReturnStmt{Results: []ast.Expr{exprStmt.X}}
+			}
+		}
+		// Try to infer return type from the block's return statements
+		if !isConcreteExpectedType && !isVoidExpected {
+			if inferredType := t.inferBlockReturnType(b); inferredType != nil {
+				retType = inferredType
+			} else {
+				// Only add return nil if we couldn't infer a type AND block doesn't already end with return
+				if !blockEndsWithReturn(b) {
+					b.List = append(b.List, &ast.ReturnStmt{Results: []ast.Expr{ast.NewIdent("nil")}})
+				}
 			}
 		}
 		body = b
