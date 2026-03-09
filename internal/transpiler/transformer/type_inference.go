@@ -45,10 +45,10 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 			return arr.Elem
 		}
 		// Handle generic type expression like Option[int]
-		return t.exprToType(e)
+		return t.astTypeToTranspilerType(e)
 	case *ast.IndexListExpr:
 		// Handle generic type expression like Tuple[int, string]
-		return t.exprToType(e)
+		return t.astTypeToTranspilerType(e)
 	case *ast.ParenExpr:
 		return t.getExprTypeNameManual(e.X)
 	case *ast.StarExpr:
@@ -124,7 +124,7 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 		// Handle IIFE (used by if/match expressions)
 		if fl, ok := e.Fun.(*ast.FuncLit); ok {
 			if fl.Type != nil && fl.Type.Results != nil && len(fl.Type.Results.List) > 0 {
-				return t.exprToType(fl.Type.Results.List[0].Type)
+				return t.astTypeToTranspilerType(fl.Type.Results.List[0].Type)
 			}
 		}
 
@@ -134,11 +134,11 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 		var typeArgs []transpiler.Type
 		if idx, ok := fun.(*ast.IndexExpr); ok {
 			fun = idx.X
-			typeArgs = []transpiler.Type{t.exprToType(idx.Index)}
+			typeArgs = []transpiler.Type{t.astTypeToTranspilerType(idx.Index)}
 		} else if idxList, ok := fun.(*ast.IndexListExpr); ok {
 			fun = idxList.X
 			for _, idx := range idxList.Indices {
-				typeArgs = append(typeArgs, t.exprToType(idx))
+				typeArgs = append(typeArgs, t.astTypeToTranspilerType(idx))
 			}
 		}
 
@@ -155,10 +155,10 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 								// Get type args from the composite literal type
 								var litTypeArgs []transpiler.Type
 								if idx, ok := compLit.Type.(*ast.IndexExpr); ok {
-									litTypeArgs = []transpiler.Type{t.exprToType(idx.Index)}
+									litTypeArgs = []transpiler.Type{t.astTypeToTranspilerType(idx.Index)}
 								} else if idxList, ok := compLit.Type.(*ast.IndexListExpr); ok {
 									for _, idxExpr := range idxList.Indices {
-										litTypeArgs = append(litTypeArgs, t.exprToType(idxExpr))
+										litTypeArgs = append(litTypeArgs, t.astTypeToTranspilerType(idxExpr))
 									}
 								}
 								// Substitute type parameters in return type
@@ -275,26 +275,9 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 			// IMPORTANT: Check for explicit type args BEFORE looking up metadata return types
 			// This ensures Left_Apply[int, string] uses [int, string] instead of [A, B] from metadata
 			if isStdQualified && len(typeArgs) > 0 {
-				if sel.Sel.Name == transpiler.FuncLeft || sel.Sel.Name == transpiler.FuncRight ||
-					strings.HasPrefix(sel.Sel.Name, transpiler.FuncLeft+"_") || strings.HasPrefix(sel.Sel.Name, transpiler.FuncRight+"_") ||
-					strings.HasPrefix(sel.Sel.Name, transpiler.TypeEither+"_") {
+				if parentType := t.resolveStdConstructorParentType(sel.Sel.Name, true); parentType != "" {
 					return transpiler.GenericType{
-						Base:   transpiler.NamedType{Package: registry.StdPackageName, Name: transpiler.TypeEither},
-						Params: typeArgs,
-					}
-				}
-				if sel.Sel.Name == transpiler.FuncSome || sel.Sel.Name == transpiler.FuncNone ||
-					strings.HasPrefix(sel.Sel.Name, transpiler.FuncSome+"_") || strings.HasPrefix(sel.Sel.Name, transpiler.FuncNone+"_") ||
-					strings.HasPrefix(sel.Sel.Name, transpiler.TypeOption+"_") {
-					return transpiler.GenericType{
-						Base:   transpiler.NamedType{Package: registry.StdPackageName, Name: transpiler.TypeOption},
-						Params: typeArgs,
-					}
-				}
-				if t.isTupleTypeName(sel.Sel.Name) || t.hasTupleTypePrefix(sel.Sel.Name) {
-					tupleType := t.getTupleTypeFromName(sel.Sel.Name)
-					return transpiler.GenericType{
-						Base:   transpiler.NamedType{Package: registry.StdPackageName, Name: tupleType},
+						Base:   transpiler.NamedType{Package: registry.StdPackageName, Name: parentType},
 						Params: typeArgs,
 					}
 				}
@@ -340,32 +323,8 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 					for offset := strings.Index(sel.Sel.Name, "_"); offset != -1; {
 						receiverType := pkgName + "." + sel.Sel.Name[:offset]
 						methodName := sel.Sel.Name[offset+1:]
-						if typeMeta := t.getTypeMeta(receiverType); typeMeta != nil {
-							if methodMeta, ok := typeMeta.Methods[methodName]; ok {
-								// For Receiver_Method calls, the first arg is the receiver
-								// Get the receiver's type to substitute struct-level type params
-								result := methodMeta.ReturnType
-								if len(e.Args) > 0 {
-									receiverArgType := t.getExprTypeNameManual(e.Args[0])
-									if genRecv, ok := receiverArgType.(transpiler.GenericType); ok {
-										// Substitute struct-level type params (e.g., T -> User for Try[User])
-										result = t.substituteConcreteTypes(result, typeMeta.TypeParams, genRecv.Params)
-										// For methods with their own type params (e.g., FlatMap[U])
-										// Try to infer them from the other arguments
-										if len(methodMeta.TypeParams) > 0 && len(typeArgs) == 0 {
-											// Arguments after the receiver are the method's regular params
-											methodArgs := e.Args[1:]
-											inferredTypeArgs := t.inferMethodTypeParamsFromArgs(methodMeta, methodArgs, typeMeta.TypeParams, genRecv.Params)
-											if len(inferredTypeArgs) > 0 {
-												result = t.substituteConcreteTypes(result, methodMeta.TypeParams, inferredTypeArgs)
-											}
-										} else if len(typeArgs) > 0 {
-											result = t.substituteConcreteTypes(result, methodMeta.TypeParams, typeArgs)
-										}
-									}
-								}
-								return result
-							}
+						if result := t.resolveMethodCallType(receiverType, methodName, typeArgs, e.Args, 0); !result.IsNil() {
+							return result
 						}
 						// Try next underscore position
 						next := strings.Index(sel.Sel.Name[offset+1:], "_")
@@ -389,10 +348,9 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 			xType := t.getExprTypeNameManual(sel.X)
 			xTypeName := xType.String()
 			if !xType.IsNil() {
-				if typeMeta := t.getTypeMeta(xTypeName); typeMeta != nil {
-					if methodMeta, ok := typeMeta.Methods[sel.Sel.Name]; ok {
-						return methodMeta.ReturnType
-					}
+				// Try exact type name first (non-generic types)
+				if result := t.resolveMethodCallType(xTypeName, sel.Sel.Name, typeArgs, e.Args, -1); !result.IsNil() {
+					return result
 				}
 				// Unwrap pointer types to get to the underlying type for method lookup
 				// e.g., for *Array[int].Find(), unwrap to Array[int]
@@ -404,48 +362,15 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 				// e.g., for Pair[int, string].Swap(), try looking up Pair
 				if genType, ok := underlyingType.(transpiler.GenericType); ok {
 					baseTypeName := genType.Base.String()
-					if typeMeta := t.getTypeMeta(baseTypeName); typeMeta != nil {
-						if methodMeta, ok := typeMeta.Methods[sel.Sel.Name]; ok {
-							// Substitute type parameters in return type
-							// First, substitute struct-level type params (e.g., T -> int for Array[int])
-							result := t.substituteConcreteTypes(methodMeta.ReturnType, typeMeta.TypeParams, genType.Params)
-							// Then, substitute method-level type params (e.g., U -> string for Zip[string])
-							if len(methodMeta.TypeParams) > 0 {
-								if len(typeArgs) > 0 {
-									result = t.substituteConcreteTypes(result, methodMeta.TypeParams, typeArgs)
-								} else {
-									// Try to infer method-level type params from function arguments
-									// e.g., for FlatMap[U](f func(T) Try[U]), infer U from the lambda's return type
-									inferredTypeArgs := t.inferMethodTypeParamsFromArgs(methodMeta, e.Args, typeMeta.TypeParams, genType.Params)
-									if len(inferredTypeArgs) > 0 {
-										result = t.substituteConcreteTypes(result, methodMeta.TypeParams, inferredTypeArgs)
-									}
-								}
-							}
-							return result
-						}
+					if result := t.resolveMethodCallTypeWithParams(baseTypeName, sel.Sel.Name, typeArgs, e.Args, -1, genType.Params); !result.IsNil() {
+						return result
 					}
 				}
 			}
 
 			if isStdQualified {
-				if sel.Sel.Name == transpiler.FuncLeft || sel.Sel.Name == transpiler.FuncRight {
-					baseType := transpiler.NamedType{Package: registry.StdPackageName, Name: transpiler.TypeEither}
-					if len(typeArgs) > 0 {
-						return transpiler.GenericType{Base: baseType, Params: typeArgs}
-					}
-					return baseType
-				}
-				if t.isTupleTypeName(sel.Sel.Name) {
-					tupleType := t.getTupleTypeFromName(sel.Sel.Name)
-					baseType := transpiler.NamedType{Package: registry.StdPackageName, Name: tupleType}
-					if len(typeArgs) > 0 {
-						return transpiler.GenericType{Base: baseType, Params: typeArgs}
-					}
-					return baseType
-				}
-				if strings.HasPrefix(sel.Sel.Name, transpiler.TypeEither+"_") || strings.HasPrefix(sel.Sel.Name, transpiler.FuncLeft+"_") || strings.HasPrefix(sel.Sel.Name, transpiler.FuncRight+"_") {
-					baseType := transpiler.NamedType{Package: registry.StdPackageName, Name: transpiler.TypeEither}
+				if parentType := t.resolveStdConstructorParentType(sel.Sel.Name, false); parentType != "" {
+					baseType := transpiler.NamedType{Package: registry.StdPackageName, Name: parentType}
 					if len(typeArgs) > 0 {
 						return transpiler.GenericType{Base: baseType, Params: typeArgs}
 					}
@@ -457,27 +382,13 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 							return transpiler.GenericType{Base: baseType, Params: genType.Params}
 						}
 					}
-					return baseType
-				}
-				if strings.HasPrefix(sel.Sel.Name, transpiler.TypeOption+"_") || strings.HasPrefix(sel.Sel.Name, transpiler.FuncSome+"_") || strings.HasPrefix(sel.Sel.Name, transpiler.FuncNone+"_") {
 					// For Some_Apply, infer the type parameter from the second argument (the value)
 					// Some_Apply(std.Some{}, value) -> Option[typeof(value)]
 					if sel.Sel.Name == transpiler.FuncSome+"_Apply" && len(e.Args) >= 2 {
 						argType := t.getExprTypeNameManual(e.Args[1])
 						if !argType.IsNil() && !argType.IsAny() {
-							return transpiler.GenericType{
-								Base:   transpiler.NamedType{Package: registry.StdPackageName, Name: transpiler.TypeOption},
-								Params: []transpiler.Type{argType},
-							}
+							return transpiler.GenericType{Base: baseType, Params: []transpiler.Type{argType}}
 						}
-					}
-					return transpiler.NamedType{Package: registry.StdPackageName, Name: transpiler.TypeOption}
-				}
-				if t.hasTupleTypePrefix(sel.Sel.Name) {
-					tupleType := t.getTupleTypeFromName(sel.Sel.Name)
-					baseType := transpiler.NamedType{Package: registry.StdPackageName, Name: tupleType}
-					if len(typeArgs) > 0 {
-						return transpiler.GenericType{Base: baseType, Params: typeArgs}
 					}
 					return baseType
 				}
@@ -499,44 +410,17 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 					}
 				}
 			}
-			if id.Name == transpiler.FuncLeft || id.Name == transpiler.FuncRight {
-				baseType := transpiler.NamedType{Package: registry.StdPackageName, Name: transpiler.TypeEither}
+			if parentType := t.resolveStdConstructorParentType(id.Name, false); parentType != "" {
+				baseType := transpiler.NamedType{Package: registry.StdPackageName, Name: parentType}
 				if len(typeArgs) > 0 {
 					return transpiler.GenericType{Base: baseType, Params: typeArgs}
 				}
-				return baseType
-			}
-			if t.isTupleTypeName(id.Name) {
-				tupleType := t.getTupleTypeFromName(id.Name)
-				baseType := transpiler.NamedType{Package: registry.StdPackageName, Name: tupleType}
-				if len(typeArgs) > 0 {
-					return transpiler.GenericType{Base: baseType, Params: typeArgs}
+				// For Option_* methods without explicit type args, don't return early.
+				// Fall through to Receiver_Method handling below to infer type params.
+				// For all other std constructors/prefixes, return the base type directly.
+				if parentType != transpiler.TypeOption {
+					return baseType
 				}
-				return baseType
-			}
-			if strings.HasPrefix(id.Name, transpiler.TypeEither+"_") || strings.HasPrefix(id.Name, transpiler.FuncLeft+"_") || strings.HasPrefix(id.Name, transpiler.FuncRight+"_") {
-				baseType := transpiler.NamedType{Package: registry.StdPackageName, Name: transpiler.TypeEither}
-				if len(typeArgs) > 0 {
-					return transpiler.GenericType{Base: baseType, Params: typeArgs}
-				}
-				return baseType
-			}
-			// Handle Option_* methods - don't return early, let the Receiver_Method handling below infer type params
-			// This only handles cases where we have explicit type args
-			if strings.HasPrefix(id.Name, transpiler.TypeOption+"_") || strings.HasPrefix(id.Name, transpiler.FuncSome+"_") || strings.HasPrefix(id.Name, transpiler.FuncNone+"_") {
-				baseType := transpiler.NamedType{Package: registry.StdPackageName, Name: transpiler.TypeOption}
-				if len(typeArgs) > 0 {
-					return transpiler.GenericType{Base: baseType, Params: typeArgs}
-				}
-				// Don't return early - fall through to Receiver_Method handling to infer type params
-			}
-			if t.hasTupleTypePrefix(id.Name) {
-				tupleType := t.getTupleTypeFromName(id.Name)
-				baseType := transpiler.NamedType{Package: registry.StdPackageName, Name: tupleType}
-				if len(typeArgs) > 0 {
-					return transpiler.GenericType{Base: baseType, Params: typeArgs}
-				}
-				return baseType
 			}
 			if id.Name == "len" {
 				return transpiler.BasicType{Name: "int"}
@@ -601,35 +485,8 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 				if resolvedRecvType.IsNil() {
 					resolvedRecvTypeName = receiverType
 				}
-				if meta := t.getTypeMeta(resolvedRecvTypeName); meta != nil {
-					if mMeta, ok := meta.Methods[methodName]; ok {
-						result := mMeta.ReturnType
-						// Substitute receiver's type params from first argument
-						// e.g., Array_Zip[string](nums.Get(), ...) where nums.Get() is Array[int]
-						// needs to substitute T -> int from the first arg's generic type
-						var receiverTypeParams []transpiler.Type
-						if len(e.Args) > 0 {
-							firstArgType := t.getExprTypeNameManual(e.Args[0])
-							if genType, ok := firstArgType.(transpiler.GenericType); ok && len(meta.TypeParams) > 0 {
-								receiverTypeParams = genType.Params
-								result = t.substituteConcreteTypes(result, meta.TypeParams, genType.Params)
-							}
-						}
-						// Substitute method's type params from explicit type args
-						// e.g., Array_Zip[string] needs to substitute U -> string
-						if len(typeArgs) > 0 && len(mMeta.TypeParams) > 0 {
-							result = t.substituteConcreteTypes(result, mMeta.TypeParams, typeArgs)
-						} else if len(mMeta.TypeParams) > 0 && len(e.Args) > 1 {
-							// Try to infer method-level type params from function arguments
-							// e.g., for Option_Map(opt, func(v int) int {...}), infer U=int from lambda return type
-							methodArgs := e.Args[1:] // Arguments after the receiver
-							inferredTypeArgs := t.inferMethodTypeParamsFromArgs(mMeta, methodArgs, meta.TypeParams, receiverTypeParams)
-							if len(inferredTypeArgs) > 0 {
-								result = t.substituteConcreteTypes(result, mMeta.TypeParams, inferredTypeArgs)
-							}
-						}
-						return result
-					}
+				if result := t.resolveMethodCallType(resolvedRecvTypeName, methodName, typeArgs, e.Args, 0); !result.IsNil() {
+					return result
 				}
 				// Try next underscore position
 				next := strings.Index(id.Name[offset+1:], "_")
@@ -646,7 +503,7 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 			var results []transpiler.Type
 			if e.Type.Params != nil {
 				for _, field := range e.Type.Params.List {
-					paramType := t.exprToType(field.Type)
+					paramType := t.astTypeToTranspilerType(field.Type)
 					// If there are multiple names, repeat the type for each
 					if len(field.Names) > 0 {
 						for range field.Names {
@@ -659,7 +516,7 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 			}
 			if e.Type.Results != nil {
 				for _, field := range e.Type.Results.List {
-					resultType := t.exprToType(field.Type)
+					resultType := t.astTypeToTranspilerType(field.Type)
 					if len(field.Names) > 0 {
 						for range field.Names {
 							results = append(results, resultType)
@@ -672,8 +529,8 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 			return transpiler.FuncType{Params: params, Results: results}
 		}
 	case *ast.CompositeLit:
-		// Use exprToType to preserve generic type parameters
-		typ := t.exprToType(e.Type)
+		// Use astTypeToTranspilerType to preserve generic type parameters
+		typ := t.astTypeToTranspilerType(e.Type)
 		if !typ.IsNil() {
 			return typ
 		}
@@ -681,6 +538,121 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 		return t.resolveType(typeName)
 	}
 	return transpiler.NilType{}
+}
+
+// resolveMethodCallType resolves the return type of a method call in Receiver_Method form.
+// It handles type meta lookup, struct-level type param substitution from receiver,
+// method-level type param substitution from explicit type args, and
+// method-level type param inference from arguments.
+//
+// Parameters:
+//   - receiverTypeName: the fully qualified or bare type name of the receiver (e.g., "Array", "std.Try")
+//   - methodName: the method being called (e.g., "Zip", "FlatMap")
+//   - typeArgs: explicit type arguments on the call (e.g., [string] for Zip[string])
+//   - args: all arguments to the call expression
+//   - receiverArgIndex: which arg is the receiver (-1 if the receiver is not among the args,
+//     e.g., for receiver.Method() calls where receiver is sel.X not an arg)
+func (t *galaASTTransformer) resolveMethodCallType(
+	receiverTypeName string,
+	methodName string,
+	typeArgs []transpiler.Type,
+	args []ast.Expr,
+	receiverArgIndex int,
+) transpiler.Type {
+	return t.resolveMethodCallTypeWithParams(receiverTypeName, methodName, typeArgs, args, receiverArgIndex, nil)
+}
+
+// resolveMethodCallTypeWithParams is like resolveMethodCallType but accepts pre-resolved
+// receiver generic type params. This is used when the receiver type is already known
+// (e.g., from evaluating sel.X) rather than being derived from an argument.
+func (t *galaASTTransformer) resolveMethodCallTypeWithParams(
+	receiverTypeName string,
+	methodName string,
+	typeArgs []transpiler.Type,
+	args []ast.Expr,
+	receiverArgIndex int,
+	preResolvedGenericParams []transpiler.Type,
+) transpiler.Type {
+	typeMeta := t.getTypeMeta(receiverTypeName)
+	if typeMeta == nil {
+		return transpiler.NilType{}
+	}
+	methodMeta, ok := typeMeta.Methods[methodName]
+	if !ok {
+		return transpiler.NilType{}
+	}
+
+	result := methodMeta.ReturnType
+
+	// Determine the receiver's concrete generic type params for substitution.
+	// Use pre-resolved params if provided, otherwise extract from the receiver argument.
+	receiverGenericParams := preResolvedGenericParams
+	if len(receiverGenericParams) == 0 && receiverArgIndex >= 0 && receiverArgIndex < len(args) {
+		receiverArgType := t.getExprTypeNameManual(args[receiverArgIndex])
+		if genType, ok := receiverArgType.(transpiler.GenericType); ok {
+			receiverGenericParams = genType.Params
+		}
+	}
+
+	// Substitute struct-level type params (e.g., T -> int for Array[int])
+	if len(receiverGenericParams) > 0 && len(typeMeta.TypeParams) > 0 {
+		result = t.substituteConcreteTypes(result, typeMeta.TypeParams, receiverGenericParams)
+	}
+
+	// Substitute method-level type params
+	if len(methodMeta.TypeParams) > 0 {
+		if len(typeArgs) > 0 {
+			// Use explicit type args (e.g., Zip[string])
+			result = t.substituteConcreteTypes(result, methodMeta.TypeParams, typeArgs)
+		} else {
+			// Try to infer method-level type params from arguments
+			// For Receiver_Method calls, the method's regular params start after the receiver
+			methodArgs := args
+			if receiverArgIndex >= 0 && receiverArgIndex < len(args) {
+				methodArgs = args[receiverArgIndex+1:]
+			}
+			inferredTypeArgs := t.inferMethodTypeParamsFromArgs(methodMeta, methodArgs, typeMeta.TypeParams, receiverGenericParams)
+			if len(inferredTypeArgs) > 0 {
+				result = t.substituteConcreteTypes(result, methodMeta.TypeParams, inferredTypeArgs)
+			}
+		}
+	}
+
+	return result
+}
+
+// resolveStdConstructorParentType checks if the given name is a std constructor or has a
+// std type/constructor prefix, and returns the parent type name (e.g., "Option", "Either", "Try").
+// Returns empty string if the name doesn't match any known std constructor pattern.
+//
+// When includeDirectConstructors is true, all known direct constructor names (Some, None, Left,
+// Right, Success, Failure) are matched. When false, only Left and Right are matched as direct
+// names — the others are handled by function metadata lookup (getFunction) for more accurate
+// type parameter inference from arguments.
+//
+// In both modes, prefixed patterns (Option_*, Some_*, Either_*, Left_*, etc.) and
+// tuple types/prefixes are always matched.
+func (t *galaASTTransformer) resolveStdConstructorParentType(name string, includeDirectConstructors bool) string {
+	// Check direct constructor names
+	if includeDirectConstructors {
+		if rule, ok := registry.StdConstructorRule(name); ok {
+			return rule.ParentType
+		}
+	} else {
+		// Only match Left and Right as direct names
+		if name == transpiler.FuncLeft || name == transpiler.FuncRight {
+			return transpiler.TypeEither
+		}
+	}
+	// Check prefixed patterns (Option_*, Some_*, Either_*, Left_*, etc.)
+	if parentType, ok := registry.StdParentTypeForPrefix(name); ok {
+		return parentType
+	}
+	// Check tuple types and tuple prefixes
+	if t.isTupleTypeName(name) || t.hasTupleTypePrefix(name) {
+		return t.getTupleTypeFromName(name)
+	}
+	return ""
 }
 
 func (t *galaASTTransformer) resolveType(name string) transpiler.Type {

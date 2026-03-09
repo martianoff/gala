@@ -127,7 +127,7 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 			if err != nil {
 				return nil, err
 			}
-			fType := t.exprToType(typ)
+			fType := t.astTypeToTranspilerType(typ)
 
 			var fieldType ast.Expr
 			if f.isRecursive {

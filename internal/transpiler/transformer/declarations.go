@@ -140,7 +140,7 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 			var typeName transpiler.Type = transpiler.NilType{}
 			if ctx.Type_() != nil {
 				typeExpr, _ := t.transformType(ctx.Type_())
-				typeName = t.exprToType(typeExpr)
+				typeName = t.astTypeToTranspilerType(typeExpr)
 				if t.isImmutableType(typeName) {
 					panic(galaerr.NewSemanticError("recursive Immutable wrapping is not allowed"))
 				}
@@ -201,7 +201,7 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 		var typeName transpiler.Type = transpiler.NilType{}
 		if ctx.Type_() != nil {
 			typeExpr, _ := t.transformType(ctx.Type_())
-			typeName = t.exprToType(typeExpr)
+			typeName = t.astTypeToTranspilerType(typeExpr)
 			if t.isImmutableType(typeName) {
 				panic(galaerr.NewSemanticError("recursive Immutable wrapping is not allowed"))
 			}
@@ -364,7 +364,7 @@ func (t *galaASTTransformer) transformVarDeclaration(ctx *grammar.VarDeclaration
 		if ctx.Type_() != nil {
 			// Try to get type name from transformed type
 			typeExpr, _ := t.transformType(ctx.Type_())
-			typeName = t.exprToType(typeExpr)
+			typeName = t.astTypeToTranspilerType(typeExpr)
 			t.isImmutableType(typeName) // This will panic if recursive
 		} else if len(rhsExprs) == len(namesCtx) {
 			typeName = t.getExprTypeName(rhsExprs[i])
@@ -443,7 +443,7 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		// Pointer receivers keep using the simple type to avoid field lookup issues
 		typeForScope := receiverType
 		if _, isPointer := recvTypeExpr.(*ast.StarExpr); !isPointer {
-			if fullType := t.exprToType(recvTypeExpr); !fullType.IsNil() {
+			if fullType := t.astTypeToTranspilerType(recvTypeExpr); !fullType.IsNil() {
 				typeForScope = fullType
 			}
 		}
@@ -506,7 +506,7 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 			var paramType transpiler.Type = transpiler.NilType{}
 			if param.Type_() != nil {
 				typeExpr, _ := t.transformType(param.Type_())
-				paramType = t.exprToType(typeExpr)
+				paramType = t.astTypeToTranspilerType(typeExpr)
 			}
 			// Variadic parameters are Go slices at runtime (e.g., ...Route becomes []Route).
 			// Store as ArrayType so index expressions correctly extract the element type.
@@ -584,7 +584,7 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 	// can use it as a fallback when element type inference fails (BUG-014 fix).
 	prevFuncReturnType := t.currentFuncReturnType
 	if funcType.Results != nil && len(funcType.Results.List) > 0 {
-		t.currentFuncReturnType = t.exprToType(funcType.Results.List[0].Type)
+		t.currentFuncReturnType = t.astTypeToTranspilerType(funcType.Results.List[0].Type)
 	} else {
 		t.currentFuncReturnType = nil
 	}
@@ -684,7 +684,7 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 			var pType transpiler.Type = transpiler.NilType{}
 			if param.Type_() != nil {
 				typeExpr, _ := t.transformType(param.Type_())
-				pType = t.exprToType(typeExpr)
+				pType = t.astTypeToTranspilerType(typeExpr)
 			}
 			t.structFieldTypes[name][pName] = pType
 		}
@@ -786,7 +786,7 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 				var fType transpiler.Type = transpiler.NilType{}
 				if fCtx.(*grammar.StructFieldContext).Type_() != nil {
 					typeExpr, _ := t.transformType(fCtx.(*grammar.StructFieldContext).Type_())
-					fType = t.exprToType(typeExpr)
+					fType = t.astTypeToTranspilerType(typeExpr)
 				}
 				t.structFieldTypes[name][n.Name] = fType
 			}
@@ -890,7 +890,7 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 		// Store the underlying type for type alias resolution
 		// (e.g., Handler -> func(string) Future[string])
 		if targetType != nil {
-			if underlyingType := t.exprToType(targetType); !underlyingType.IsNil() {
+			if underlyingType := t.astTypeToTranspilerType(targetType); !underlyingType.IsNil() {
 				t.typeAliases[name] = underlyingType
 			}
 		}
@@ -953,7 +953,7 @@ func (t *galaASTTransformer) transformParameter(ctx *grammar.ParameterContext) (
 	var typeName transpiler.Type = transpiler.NilType{}
 	if ctx.Type_() != nil {
 		typeExpr, _ := t.transformType(ctx.Type_())
-		typeName = t.exprToType(typeExpr)
+		typeName = t.astTypeToTranspilerType(typeExpr)
 	}
 	isVal := ctx.VAL() != nil
 	isVariadic := ctx.ELLIPSIS() != nil
@@ -978,7 +978,7 @@ func (t *galaASTTransformer) transformParameter(ctx *grammar.ParameterContext) (
 		if err != nil {
 			return nil, err
 		}
-		typeName = t.exprToType(typ)
+		typeName = t.astTypeToTranspilerType(typ)
 		t.isImmutableType(typeName)
 		if isVariadic {
 			// Variadic parameter: ...T becomes ...T in Go
@@ -1008,7 +1008,7 @@ func (t *galaASTTransformer) transformStructField(ctx *grammar.StructFieldContex
 	if err != nil {
 		return nil, err
 	}
-	t.isImmutableType(t.exprToType(typ))
+	t.isImmutableType(t.astTypeToTranspilerType(typ))
 
 	isVal := ctx.VAR() == nil
 
@@ -1064,7 +1064,7 @@ func (t *galaASTTransformer) transformSignature(ctx *grammar.SignatureContext, t
 		if err != nil {
 			return nil, err
 		}
-		t.isImmutableType(t.exprToType(retType))
+		t.isImmutableType(t.astTypeToTranspilerType(retType))
 		results = &ast.FieldList{
 			List: []*ast.Field{
 				{Type: retType},

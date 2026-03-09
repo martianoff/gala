@@ -85,3 +85,56 @@ func IsStdCompanion(name string) bool {
 func CheckStdConflict(name, currentPkg string) error {
 	return Global.CheckConflict(name, currentPkg)
 }
+
+// ConstructorInferenceRule describes how to infer the parent generic type from a constructor call.
+// For example, calling Some(x) produces Option[typeof(x)].
+type ConstructorInferenceRule struct {
+	ParentType   string // The parent sealed/generic type (e.g., "Option", "Either")
+	InferFromArg int    // Which argument index to infer type param from (-1 = none)
+}
+
+// stdConstructorRules maps constructor function names to their inference rules.
+// This covers both direct constructors (e.g., "Some") and _Apply variants (e.g., "Some_Apply").
+var stdConstructorRules = map[string]ConstructorInferenceRule{
+	// Option constructors
+	"Some": {ParentType: "Option", InferFromArg: 0},
+	"None": {ParentType: "Option", InferFromArg: -1},
+
+	// Either constructors
+	"Left":  {ParentType: "Either", InferFromArg: -1},
+	"Right": {ParentType: "Either", InferFromArg: -1},
+
+	// Try constructors
+	"Success": {ParentType: "Try", InferFromArg: 0},
+	"Failure": {ParentType: "Try", InferFromArg: -1},
+}
+
+// StdConstructorRule returns the inference rule for a std constructor function name, if any.
+func StdConstructorRule(name string) (ConstructorInferenceRule, bool) {
+	rule, ok := stdConstructorRules[name]
+	return rule, ok
+}
+
+// StdParentTypeForPrefix checks if the given name starts with a known std type or constructor
+// prefix followed by "_". Returns the parent type name and true if found.
+// This handles patterns like "Option_Map", "Some_Apply", "Left_FlatMap" etc.
+func StdParentTypeForPrefix(name string) (string, bool) {
+	// Direct constructors and their parent types
+	prefixes := map[string]string{
+		"Option_":  "Option",
+		"Some_":    "Option",
+		"None_":    "Option",
+		"Either_":  "Either",
+		"Left_":    "Either",
+		"Right_":   "Either",
+		"Try_":     "Try",
+		"Success_": "Try",
+		"Failure_": "Try",
+	}
+	for prefix, parentType := range prefixes {
+		if len(name) > len(prefix) && name[:len(prefix)] == prefix {
+			return parentType, true
+		}
+	}
+	return "", false
+}
