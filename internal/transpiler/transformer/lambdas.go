@@ -622,7 +622,7 @@ func (t *galaASTTransformer) inferPartialFunctionParamType(caseClauses []grammar
 		if tp, ok := patCtx.(*grammar.TypedPatternContext); ok {
 			typeExpr, err := t.transformType(tp.Type_())
 			if err == nil {
-				return t.exprToType(typeExpr)
+				return t.astTypeToTranspilerType(typeExpr)
 			}
 		}
 

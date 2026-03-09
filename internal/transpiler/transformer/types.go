@@ -507,7 +507,7 @@ func (t *galaASTTransformer) typeArgToString(arg ast.Expr) string {
 	return ""
 }
 
-func (t *galaASTTransformer) exprToType(expr ast.Expr) transpiler.Type {
+func (t *galaASTTransformer) astTypeToTranspilerType(expr ast.Expr) transpiler.Type {
 	if expr == nil {
 		return transpiler.NilType{}
 	}
@@ -526,27 +526,27 @@ func (t *galaASTTransformer) exprToType(expr ast.Expr) transpiler.Type {
 		}
 		return transpiler.NamedType{Package: x.Name, Name: e.Sel.Name}
 	case *ast.IndexExpr:
-		base := t.exprToType(e.X)
-		param := t.exprToType(e.Index)
+		base := t.astTypeToTranspilerType(e.X)
+		param := t.astTypeToTranspilerType(e.Index)
 		return transpiler.GenericType{Base: base, Params: []transpiler.Type{param}}
 	case *ast.IndexListExpr:
-		base := t.exprToType(e.X)
+		base := t.astTypeToTranspilerType(e.X)
 		params := make([]transpiler.Type, len(e.Indices))
 		for i, idx := range e.Indices {
-			params[i] = t.exprToType(idx)
+			params[i] = t.astTypeToTranspilerType(idx)
 		}
 		return transpiler.GenericType{Base: base, Params: params}
 	case *ast.StarExpr:
-		return transpiler.PointerType{Elem: t.exprToType(e.X)}
+		return transpiler.PointerType{Elem: t.astTypeToTranspilerType(e.X)}
 	case *ast.ArrayType:
-		return transpiler.ArrayType{Elem: t.exprToType(e.Elt)}
+		return transpiler.ArrayType{Elem: t.astTypeToTranspilerType(e.Elt)}
 	case *ast.FuncType:
 		// Handle function types like func(S) Option[Tuple[T, S]]
 		var params []transpiler.Type
 		var results []transpiler.Type
 		if e.Params != nil {
 			for _, field := range e.Params.List {
-				paramType := t.exprToType(field.Type)
+				paramType := t.astTypeToTranspilerType(field.Type)
 				// If there are multiple names, repeat the type for each
 				if len(field.Names) > 0 {
 					for range field.Names {
@@ -559,7 +559,7 @@ func (t *galaASTTransformer) exprToType(expr ast.Expr) transpiler.Type {
 		}
 		if e.Results != nil {
 			for _, field := range e.Results.List {
-				resultType := t.exprToType(field.Type)
+				resultType := t.astTypeToTranspilerType(field.Type)
 				if len(field.Names) > 0 {
 					for range field.Names {
 						results = append(results, resultType)
