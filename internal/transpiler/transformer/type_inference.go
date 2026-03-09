@@ -578,6 +578,14 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 				if funcType, ok := varType.(transpiler.FuncType); ok && len(funcType.Results) > 0 {
 					return funcType.Results[0]
 				}
+				// If the variable has a named type (e.g., Handler), check if it's a type alias
+				// for a function type and use the underlying function type's return type.
+				typeName := varType.BaseName()
+				if underlyingType, ok := t.typeAliases[typeName]; ok {
+					if funcType, ok := underlyingType.(transpiler.FuncType); ok && len(funcType.Results) > 0 {
+						return funcType.Results[0]
+					}
+				}
 			}
 
 			// Handle generic methods transformed to standalone functions: Receiver_Method

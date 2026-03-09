@@ -1,0 +1,20 @@
+package main
+
+import "fmt"
+import . "martianoff/gala/concurrent"
+
+type Handler func(string) Future[string]
+
+// Tests matching on Try[T] returned from a type-alias function variable
+func process(req string, next Handler) string {
+    val result = next(req).Await()
+    return result match {
+        case Success(s) => fmt.Sprintf("Got: %s", s)
+        case Failure(e) => fmt.Sprintf("Error: %s", e.Error())
+    }
+}
+
+func main() {
+    val handler Handler = (req string) => FutureOf[string](fmt.Sprintf("Hello %s", req))
+    fmt.Println(process("World", handler))
+}
