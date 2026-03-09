@@ -1,0 +1,30 @@
+package main
+
+import "fmt"
+import . "martianoff/gala/go_interop"
+
+struct Route(val Method string, val Path string)
+
+func workingVariadic(routes ...Route) {
+    val r = routes[0]
+    fmt.Println(r.Method)
+    fmt.Println(r.Path)
+}
+
+func brokenSlice(routes []Route) {
+    val r = routes[0]
+    fmt.Println(r.Method)
+    fmt.Println(r.Path)
+}
+
+func directIndex(routes []Route) {
+    fmt.Println(routes[0].Method)
+    fmt.Println(routes[0].Path)
+}
+
+func main() {
+    val routes = SliceOf(Route("GET", "/api/users"), Route("POST", "/api/users"))
+    workingVariadic(Route("GET", "/api/users"), Route("POST", "/api/users"))
+    brokenSlice(routes)
+    directIndex(routes)
+}

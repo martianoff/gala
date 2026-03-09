@@ -1,0 +1,3 @@
+package main
+
+struct Route(val Method string, val Path string)

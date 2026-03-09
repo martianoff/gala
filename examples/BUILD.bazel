@@ -17,6 +17,8 @@ filegroup(
         "struct_field_unwrap/main.gala",
         "struct_field_unwrap/types.gala",
         "wrapper_method_lambda/main.gala",
+        "slice_unwrap/main.gala",
+        "slice_unwrap/model.gala",
     ],
     visibility = ["//visibility:public"],
 )
@@ -962,5 +964,24 @@ gala_test(
     name = "spread_operator",
     src = "spread_operator.gala",
     expected = "spread_operator.out",
+    deps = ["//go_interop"],
+)
+
+# FIX-GS-008 verification: slice element access auto-unwraps Immutable fields (single file)
+gala_test(
+    name = "slice_element_unwrap",
+    src = "slice_element_unwrap.gala",
+    expected = "slice_element_unwrap.out",
+    deps = ["//go_interop"],
+)
+
+# FIX-GS-008 verification: slice element access auto-unwraps Immutable fields (multi-file)
+gala_test(
+    name = "slice_unwrap",
+    srcs = [
+        "slice_unwrap/main.gala",
+        "slice_unwrap/model.gala",
+    ],
+    expected = "slice_unwrap/slice_unwrap.out",
     deps = ["//go_interop"],
 )
