@@ -678,36 +678,65 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 					isGeneric := methodMeta.IsGeneric || len(methodMeta.TypeParams) > 0
 
 					// If no explicit type args but type has type parameters, infer them from argument types
-					if !hasTypeArgs && len(typeMeta.TypeParams) > 0 && len(args) > 0 {
-						var inferredTypeArgs []ast.Expr
-						// Match Apply method parameter types with argument types
-						for i, arg := range args {
-							if i < len(methodMeta.ParamTypes) {
-								paramTypeStr := methodMeta.ParamTypes[i].String()
-								// Check if param type is one of the type parameters
-								for _, tp := range typeMeta.TypeParams {
-									if paramTypeStr == tp {
-										// Infer type from argument expression
-										argType := t.getExprTypeName(arg)
-										if argType != nil && !argType.IsNil() {
-											inferredTypeArgs = append(inferredTypeArgs, t.typeToExpr(argType))
-										} else {
-											inferredTypeArgs = append(inferredTypeArgs, ast.NewIdent("any"))
+					// and/or from the enclosing function's return type context (FIX-040).
+					if !hasTypeArgs && len(typeMeta.TypeParams) > 0 {
+						// Build a map from type param name to inferred concrete type
+						inferredMap := make(map[string]transpiler.Type)
+
+						// Step 1: Try to infer from Apply method arguments
+						if len(args) > 0 {
+							for i, arg := range args {
+								if i < len(methodMeta.ParamTypes) {
+									paramTypeStr := methodMeta.ParamTypes[i].String()
+									for _, tp := range typeMeta.TypeParams {
+										if paramTypeStr == tp {
+											argType := t.getExprTypeName(arg)
+											if argType != nil && !argType.IsNil() && !argType.IsAny() {
+												inferredMap[tp] = argType
+											}
+											break
 										}
-										break
 									}
 								}
 							}
 						}
-						// If we inferred all type args, use them
-						if len(inferredTypeArgs) == len(typeMeta.TypeParams) {
-							typeArgs = inferredTypeArgs
-							hasTypeArgs = true
-							// Update fun to include the type arguments
-							if len(typeArgs) == 1 {
-								fun = &ast.IndexExpr{X: baseExpr, Index: typeArgs[0]}
-							} else if len(typeArgs) > 1 {
-								fun = &ast.IndexListExpr{X: baseExpr, Indices: typeArgs}
+
+						// Step 2 (FIX-040): For any type params still unresolved, try to infer
+						// from the enclosing function's return type. For example, if we're in
+						// a function returning Option[string] and calling Some(v), unify the
+						// Apply method's return type (Option[T]) with Option[string] to get T=string.
+						if len(inferredMap) < len(typeMeta.TypeParams) && t.currentFuncReturnType != nil && !t.currentFuncReturnType.IsNil() {
+							if methodMeta.ReturnType != nil && !methodMeta.ReturnType.IsNil() {
+								returnInferred := make(map[string]transpiler.Type)
+								t.unifyForInference(methodMeta.ReturnType, t.currentFuncReturnType, typeMeta.TypeParams, returnInferred)
+								for tp, inferred := range returnInferred {
+									if _, alreadySet := inferredMap[tp]; !alreadySet {
+										inferredMap[tp] = inferred
+									}
+								}
+							}
+						}
+
+						// Build the inferred type args list
+						if len(inferredMap) == len(typeMeta.TypeParams) {
+							inferredTypeArgs := make([]ast.Expr, len(typeMeta.TypeParams))
+							allResolved := true
+							for i, tp := range typeMeta.TypeParams {
+								if inferred, ok := inferredMap[tp]; ok {
+									inferredTypeArgs[i] = t.typeToExpr(inferred)
+								} else {
+									allResolved = false
+									break
+								}
+							}
+							if allResolved {
+								typeArgs = inferredTypeArgs
+								hasTypeArgs = true
+								if len(typeArgs) == 1 {
+									fun = &ast.IndexExpr{X: baseExpr, Index: typeArgs[0]}
+								} else if len(typeArgs) > 1 {
+									fun = &ast.IndexListExpr{X: baseExpr, Indices: typeArgs}
+								}
 							}
 						}
 					}

@@ -1,0 +1,41 @@
+package main
+
+import "fmt"
+
+// externalCall simulates an external Go function whose return type
+// the GALA transpiler cannot statically infer.
+func externalCall(key string) string {
+    return fmt.Sprintf("value_%s", key)
+}
+
+// FIX-040: Some(v) should infer Option[string] from the function return type
+// when the argument type cannot be determined from the expression.
+func findValue(name string) Option[string] {
+    val v = externalCall(name)
+    if v == "" {
+        return None[string]()
+    }
+    return Some(v)
+}
+
+// Also test with Either sealed type
+func classify(n int) Either[string, int] {
+    if n < 0 {
+        return Left(externalCall("negative"))
+    }
+    return Right(n)
+}
+
+func main() {
+    val result = findValue("test")
+    result match {
+        case Some(v) => Println(s"Found: $v")
+        case None() => Println("Not found")
+    }
+
+    val classified = classify(42)
+    classified match {
+        case Left(msg) => Println(s"Left: $msg")
+        case Right(n) => Println(s"Right: $n")
+    }
+}

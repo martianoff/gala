@@ -1070,3 +1070,10 @@ gala_test(
     expected = "collection_lambda_inference.out",
     deps = ["//collection_immutable"],
 )
+
+# FIX-040 verification: Some(v) infers Option[string] not Option[any]
+gala_test(
+    name = "some_type_inference",
+    src = "some_type_inference.gala",
+    expected = "some_type_inference.out",
+)
