@@ -11,6 +11,7 @@ go_library(
         "//internal/transpiler/generator",
         "//internal/transpiler/module",
         "//internal/transpiler/registry",
+        "//internal/transpiler/resolver",
         "//internal/transpiler/transformer",
         "@com_github_antlr4_go_antlr_v4//:antlr",
     ],

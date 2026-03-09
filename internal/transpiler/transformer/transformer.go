@@ -14,6 +14,7 @@ import (
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/infer"
 	"martianoff/gala/internal/transpiler/registry"
+	"martianoff/gala/internal/transpiler/resolver"
 )
 
 type galaASTTransformer struct {
@@ -413,45 +414,24 @@ func (t *galaASTTransformer) resolveTypeName(typeName string, exists func(string
 
 // tryResolveSimpleName attempts to resolve a simple (unqualified) type name
 // by trying various package prefixes in order of precedence.
+// Delegates to the shared resolver.TypeResolver for consistent resolution logic.
 func (t *galaASTTransformer) tryResolveSimpleName(name string, exists func(string) bool) (string, bool) {
-	// Try simple name without any package prefix first
-	if exists(name) {
-		return name, true
-	}
+	return t.buildTypeResolver().Resolve(name, exists)
+}
 
-	// Try std package for standard library types like Tuple, Option, etc.
-	if stdName := registry.StdPackageName + "." + name; exists(stdName) {
-		return stdName, true
-	}
-
-	// Try current package
-	if t.packageName != "" {
-		if fullName := t.packageName + "." + name; exists(fullName) {
-			return fullName, true
-		}
-	}
-
-	// Try imported packages (dot imports first — they bring names into the current scope,
-	// so they take precedence over non-dot imports for unqualified name resolution)
+// buildTypeResolver creates a resolver.TypeResolver from the transformer's current state.
+func (t *galaASTTransformer) buildTypeResolver() *resolver.TypeResolver {
+	var imports []resolver.PackageInfo
 	for _, entry := range t.importManager.All() {
-		if !entry.IsDot {
-			continue
-		}
-		if fullName := entry.PkgName + "." + name; exists(fullName) {
-			return fullName, true
-		}
+		imports = append(imports, resolver.PackageInfo{
+			PkgName: entry.PkgName,
+			IsDot:   entry.IsDot,
+		})
 	}
-
-	for _, entry := range t.importManager.All() {
-		if entry.IsDot {
-			continue
-		}
-		if fullName := entry.PkgName + "." + name; exists(fullName) {
-			return fullName, true
-		}
+	return &resolver.TypeResolver{
+		PackageName: t.packageName,
+		Imports:     imports,
 	}
-
-	return "", false
 }
 
 // resolveStructTypeName resolves a type name to the key used in structFields/structImmutFields maps.

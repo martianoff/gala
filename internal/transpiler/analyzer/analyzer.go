@@ -15,6 +15,7 @@ import (
 	"martianoff/gala/internal/transpiler/generator"
 	"martianoff/gala/internal/transpiler/module"
 	"martianoff/gala/internal/transpiler/registry"
+	"martianoff/gala/internal/transpiler/resolver"
 	"martianoff/gala/internal/transpiler/transformer"
 )
 
@@ -1150,17 +1151,8 @@ func (a *galaAnalyzer) resolveTypeWithParams(typeName string, pkgName string, ty
 		baseTypeName := typeName[:idx]
 		argsStr := typeName[idx+1 : len(typeName)-1]
 
-		// Resolve base type (may need std prefix or other known package)
-		var baseType transpiler.Type
-		if a.isStdType(baseTypeName) {
-			baseType = transpiler.NamedType{Package: registry.StdPackageName, Name: baseTypeName}
-		} else if knownPkg := a.findKnownTypePackage(baseTypeName, pkgName); knownPkg != "" {
-			baseType = transpiler.NamedType{Package: knownPkg, Name: baseTypeName}
-		} else if pkgName != "" && pkgName != "main" && pkgName != "test" {
-			baseType = transpiler.NamedType{Package: pkgName, Name: baseTypeName}
-		} else {
-			baseType = transpiler.BasicType{Name: baseTypeName}
-		}
+		// Resolve base type using shared resolver
+		baseType := a.resolveBaseName(baseTypeName, pkgName)
 
 		// Parse and recursively resolve type arguments
 		_, argStrs := extractBaseAndArgs(typeName)
@@ -1177,20 +1169,8 @@ func (a *galaAnalyzer) resolveTypeWithParams(typeName string, pkgName string, ty
 		_ = argsStr // silence unused variable warning
 	}
 
-	// Check if it's a known std type (non-generic)
-	if a.isStdType(typeName) {
-		return transpiler.NamedType{Package: registry.StdPackageName, Name: typeName}
-	}
-
-	// Check if type is from a known imported package before defaulting to current package
-	if knownPkg := a.findKnownTypePackage(typeName, pkgName); knownPkg != "" {
-		return transpiler.NamedType{Package: knownPkg, Name: typeName}
-	}
-
-	if pkgName != "" && pkgName != "main" && pkgName != "test" {
-		return transpiler.NamedType{Package: pkgName, Name: typeName}
-	}
-	return transpiler.BasicType{Name: typeName}
+	// Resolve non-generic base name using shared resolver
+	return a.resolveBaseName(typeName, pkgName)
 }
 
 // scanImports processes GALA imports from a source file and loads their metadata
@@ -1277,6 +1257,59 @@ func (a *galaAnalyzer) findKnownTypePackage(typeName string, currentPkg string) 
 		}
 	}
 	return ""
+}
+
+// resolveBaseName resolves a simple (unqualified, non-generic) type name to a transpiler.Type
+// using the shared resolver.TypeResolver for consistent precedence with the transformer.
+func (a *galaAnalyzer) resolveBaseName(typeName string, pkgName string) transpiler.Type {
+	tr := a.buildTypeResolver(pkgName)
+	exists := func(name string) bool {
+		if a.currentRichAST == nil {
+			return false
+		}
+		_, ok := a.currentRichAST.Types[name]
+		return ok
+	}
+
+	if resolved, ok := tr.Resolve(typeName, exists); ok {
+		// Parse the resolved name to extract package and type
+		if dotIdx := strings.LastIndex(resolved, "."); dotIdx != -1 {
+			return transpiler.NamedType{
+				Package: resolved[:dotIdx],
+				Name:    resolved[dotIdx+1:],
+			}
+		}
+		return transpiler.BasicType{Name: resolved}
+	}
+
+	// Fallback: check std via registry (covers cases where type is known
+	// to std but not yet in currentRichAST.Types, e.g., during initial analysis)
+	if a.isStdType(typeName) {
+		return transpiler.NamedType{Package: registry.StdPackageName, Name: typeName}
+	}
+
+	// Default to current package qualification for library packages
+	if pkgName != "" && pkgName != "main" && pkgName != "test" {
+		return transpiler.NamedType{Package: pkgName, Name: typeName}
+	}
+	return transpiler.BasicType{Name: typeName}
+}
+
+// buildTypeResolver creates a resolver.TypeResolver from the analyzer's current state.
+func (a *galaAnalyzer) buildTypeResolver(pkgName string) *resolver.TypeResolver {
+	var imports []resolver.PackageInfo
+	if a.currentDotImportPkgs != nil {
+		for dotPkg := range a.currentDotImportPkgs {
+			imports = append(imports, resolver.PackageInfo{
+				PkgName: dotPkg,
+				IsDot:   true,
+			})
+		}
+	}
+	return &resolver.TypeResolver{
+		PackageName: pkgName,
+		Imports:     imports,
+	}
 }
 
 // resolveFuncType resolves a function type string like "func(T) Option[U]"

@@ -32,6 +32,7 @@ go_library(
         "//internal/transpiler",
         "//internal/transpiler/infer",
         "//internal/transpiler/registry",
+        "//internal/transpiler/resolver",
         "@com_github_antlr4_go_antlr_v4//:antlr",
     ],
 )
