@@ -86,14 +86,19 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 				}
 			}
 		}
-		// Convert trailing expression statement to return statement for non-void lambdas.
-		// This handles cases like match expressions (compiled to IIFEs), if-else expressions,
-		// etc. that end up as ExprStmt but should be returned from the block lambda.
-		// IMPORTANT: This must happen BEFORE inferBlockReturnType and the "return nil" fallback,
+		// Convert trailing IIFE expression statement to return statement for non-void lambdas.
+		// This handles match expressions (compiled to IIFEs) and if-else expressions that
+		// end up as ExprStmt but should be returned from the block lambda.
+		// IMPORTANT: Only convert IIFEs (CallExpr wrapping FuncLit), NOT arbitrary call expressions.
+		// Arbitrary calls like `callback(x)` may be void — converting them to `return callback(x)`
+		// breaks when isVoidExpected is incorrectly false (e.g., missing sibling metadata in sandbox).
+		// This must happen BEFORE inferBlockReturnType and the "return nil" fallback,
 		// otherwise the match IIFE result is discarded and "return nil" is appended instead.
 		if !isVoidExpected && len(b.List) > 0 {
 			if exprStmt, ok := b.List[len(b.List)-1].(*ast.ExprStmt); ok {
-				b.List[len(b.List)-1] = &ast.ReturnStmt{Results: []ast.Expr{exprStmt.X}}
+				if isIIFE(exprStmt.X) {
+					b.List[len(b.List)-1] = &ast.ReturnStmt{Results: []ast.Expr{exprStmt.X}}
+				}
 			}
 		}
 		// Try to infer return type from the block's return statements
@@ -785,6 +790,26 @@ func (t *galaASTTransformer) wrapBlockReturnsInSome(stmts []ast.Stmt) []ast.Stmt
 	}
 
 	return result
+}
+
+// isIIFE checks if an expression is an immediately-invoked function expression
+// (a CallExpr whose Fun is a FuncLit). Match expressions and if-else expressions
+// are compiled to IIFEs by the transpiler.
+func isIIFE(expr ast.Expr) bool {
+	call, ok := expr.(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	// Check if Fun is a FuncLit (plain IIFE) or an IndexExpr/IndexListExpr wrapping a FuncLit
+	// (generic IIFE, though rare)
+	switch fun := call.Fun.(type) {
+	case *ast.FuncLit:
+		return true
+	case *ast.IndexExpr:
+		_, ok := fun.X.(*ast.FuncLit)
+		return ok
+	}
+	return false
 }
 
 // blockEndsWithReturn checks if a block's last statement is a return statement.
