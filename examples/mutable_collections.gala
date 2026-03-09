@@ -185,10 +185,7 @@ func main() {
     var evens = squares.Filter((x int) => x % 2 == 0)
     fmt.Println("Even squares:", evens.String())  // Array(4, 16)
 
-    var doubled = ArrayOf[int]()
-    for i := 0; i < squares.Length(); i++ {
-        doubled.Append(squares.Get(i) * 2)
-    }
+    var doubled = squares.Map[int]((x int) => x * 2)
     fmt.Println("Doubled:", doubled.String())  // Array(2, 8, 18, 32, 50)
     fmt.Println()
 
