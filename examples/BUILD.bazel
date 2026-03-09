@@ -1062,3 +1062,11 @@ gala_test(
         "//collection_immutable",
     ],
 )
+
+# BUG-014 verification: cross-package collection lambda type inference
+gala_test(
+    name = "collection_lambda_inference",
+    src = "collection_lambda_inference.gala",
+    expected = "collection_lambda_inference.out",
+    deps = ["//collection_immutable"],
+)

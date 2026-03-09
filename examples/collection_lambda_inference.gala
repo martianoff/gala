@@ -1,0 +1,35 @@
+package main
+
+import "fmt"
+import . "martianoff/gala/collection_immutable"
+
+struct Person(val name string, val age int)
+
+struct Server(val routes Array[Person])
+
+func main() {
+    val people = ArrayOf(Person("Alice", 30), Person("Bob", 25))
+
+    // ForEach with inferred lambda param type
+    people.ForEach((p) => {
+        fmt.Println(p.name)
+    })
+
+    // Map with inferred lambda param type
+    val names = people.Map((p) => p.name)
+    fmt.Println(names)
+
+    // FoldLeft with inferred lambda param types
+    val totalAge = people.FoldLeft(0, (acc, p) => acc + p.age)
+    fmt.Println(totalAge)
+
+    // Cross-package via struct field access
+    val server = Server(routes = people)
+    server.routes.ForEach((p) => {
+        fmt.Println(p.name)
+    })
+
+    // Filter with inferred lambda param type
+    val seniors = people.Filter((p) => p.age >= 30)
+    fmt.Println(seniors)
+}

@@ -684,7 +684,7 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 			var pType transpiler.Type = transpiler.NilType{}
 			if param.Type_() != nil {
 				typeExpr, _ := t.transformType(param.Type_())
-				pType = t.resolveType(t.getBaseTypeName(typeExpr))
+				pType = t.exprToType(typeExpr)
 			}
 			t.structFieldTypes[name][pName] = pType
 		}
