@@ -956,3 +956,11 @@ gala_test(
     src = "type_alias.gala",
     expected = "type_alias.out",
 )
+
+# FIX-GS-007 verification: spread operator (...) in function call arguments
+gala_test(
+    name = "spread_operator",
+    src = "spread_operator.gala",
+    expected = "spread_operator.out",
+    deps = ["//go_interop"],
+)

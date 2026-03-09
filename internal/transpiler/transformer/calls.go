@@ -254,15 +254,15 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 					}
 					arg := argCtx.(*grammar.ArgumentContext)
 					pat := arg.Pattern()
-					ep, ok := pat.(*grammar.ExpressionPatternContext)
-					if !ok {
+					exprCtx, _, extractErr := extractArgExpression(pat)
+					if extractErr != nil {
 						continue
 					}
 					// Skip lambda and partial function arguments — can't infer types from them
-					if t.findLambdaInExpression(ep.Expression()) != nil || t.findPartialFunctionInExpression(ep.Expression()) != nil {
+					if t.findLambdaInExpression(exprCtx) != nil || t.findPartialFunctionInExpression(exprCtx) != nil {
 						continue
 					}
-					expr, err := t.transformExpression(ep.Expression())
+					expr, err := t.transformExpression(exprCtx)
 					if err != nil {
 						continue
 					}
@@ -291,12 +291,16 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 			}
 
 			var mArgs []ast.Expr
+			hasSpread := false
 			for i, argCtx := range argListCtx.AllArgument() {
 				arg := argCtx.(*grammar.ArgumentContext)
 				pat := arg.Pattern()
-				ep, ok := pat.(*grammar.ExpressionPatternContext)
-				if !ok {
-					return nil, galaerr.NewSemanticError("only expressions allowed as function arguments")
+				exprCtx, isSpread, extractErr := extractArgExpression(pat)
+				if extractErr != nil {
+					return nil, extractErr
+				}
+				if isSpread {
+					hasSpread = true
 				}
 
 				// Reuse pre-transformed expression if available (already processed during type inference)
@@ -311,7 +315,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 					expectedType = t.substituteTranspilerTypeParams(methodMeta.ParamTypes[i], typeSubst)
 				}
 
-				expr, err := t.transformArgumentWithExpectedType(ep.Expression(), expectedType)
+				expr, err := t.transformArgumentWithExpectedType(exprCtx, expectedType)
 				if err != nil {
 					return nil, err
 				}
@@ -362,8 +366,9 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 			}
 
 			return &ast.CallExpr{
-				Fun:  funExpr,
-				Args: append([]ast.Expr{receiver}, mArgs...),
+				Fun:      funExpr,
+				Args:     append([]ast.Expr{receiver}, mArgs...),
+				Ellipsis: ellipsisPos(hasSpread),
 			}, nil
 		}
 	}
@@ -401,12 +406,16 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 			// but still detect void function parameters for lambda return type stripping
 			if hasUnresolvedTypeParams {
 				var mArgs []ast.Expr
+				hasSpread := false
 				for i, argCtx := range argListCtx.AllArgument() {
 					arg := argCtx.(*grammar.ArgumentContext)
 					pat := arg.Pattern()
-					ep, ok := pat.(*grammar.ExpressionPatternContext)
-					if !ok {
-						return nil, galaerr.NewSemanticError("only expressions allowed as function arguments")
+					exprCtx, isSpread, extractErr := extractArgExpression(pat)
+					if extractErr != nil {
+						return nil, extractErr
+					}
+					if isSpread {
+						hasSpread = true
 					}
 					// Only pass void function types (avoids unresolved type params in return types)
 					var expectedType transpiler.Type = transpiler.NilType{}
@@ -415,26 +424,31 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 							expectedType = ft
 						}
 					}
-					expr, err := t.transformArgumentWithExpectedType(ep.Expression(), expectedType)
+					expr, err := t.transformArgumentWithExpectedType(exprCtx, expectedType)
 					if err != nil {
 						return nil, err
 					}
 					mArgs = append(mArgs, expr)
 				}
 				return &ast.CallExpr{
-					Fun:  &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)},
-					Args: mArgs,
+					Fun:      &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)},
+					Args:     mArgs,
+					Ellipsis: ellipsisPos(hasSpread),
 				}, nil
 			}
 
 			// Transform arguments with expected types
 			var mArgs []ast.Expr
+			hasSpread := false
 			for i, argCtx := range argListCtx.AllArgument() {
 				arg := argCtx.(*grammar.ArgumentContext)
 				pat := arg.Pattern()
-				ep, ok := pat.(*grammar.ExpressionPatternContext)
-				if !ok {
-					return nil, galaerr.NewSemanticError("only expressions allowed as function arguments")
+				exprCtx, isSpread, extractErr := extractArgExpression(pat)
+				if extractErr != nil {
+					return nil, extractErr
+				}
+				if isSpread {
+					hasSpread = true
 				}
 
 				var expectedType transpiler.Type = transpiler.NilType{}
@@ -442,7 +456,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 					expectedType = t.substituteTranspilerTypeParams(methodMeta.ParamTypes[i], typeSubst)
 				}
 
-				expr, err := t.transformArgumentWithExpectedType(ep.Expression(), expectedType)
+				expr, err := t.transformArgumentWithExpectedType(exprCtx, expectedType)
 				if err != nil {
 					return nil, err
 				}
@@ -451,8 +465,9 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 
 			// Keep as method call: receiver.method(args)
 			return &ast.CallExpr{
-				Fun:  &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)},
-				Args: mArgs,
+				Fun:      &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)},
+				Args:     mArgs,
+				Ellipsis: ellipsisPos(hasSpread),
 			}, nil
 		}
 
@@ -460,22 +475,27 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 		// still generate the method call directly instead of falling through to the
 		// regular function call handler which would lose the receiver.method structure.
 		var mArgs []ast.Expr
+		hasSpread := false
 		for _, argCtx := range argListCtx.AllArgument() {
 			arg := argCtx.(*grammar.ArgumentContext)
 			pat := arg.Pattern()
-			ep, ok := pat.(*grammar.ExpressionPatternContext)
-			if !ok {
-				return nil, galaerr.NewSemanticError("only expressions allowed as function arguments")
+			exprCtx, isSpread, extractErr := extractArgExpression(pat)
+			if extractErr != nil {
+				return nil, extractErr
 			}
-			expr, err := t.transformArgumentWithExpectedType(ep.Expression(), transpiler.NilType{})
+			if isSpread {
+				hasSpread = true
+			}
+			expr, err := t.transformArgumentWithExpectedType(exprCtx, transpiler.NilType{})
 			if err != nil {
 				return nil, err
 			}
 			mArgs = append(mArgs, expr)
 		}
 		return &ast.CallExpr{
-			Fun:  &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)},
-			Args: mArgs,
+			Fun:      &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)},
+			Args:     mArgs,
+			Ellipsis: ellipsisPos(hasSpread),
 		}, nil
 	}
 
@@ -509,6 +529,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 
 	var args []ast.Expr
 	namedArgs := make(map[string]ast.Expr)
+	hasSpread := false
 
 	argIdx := 0
 	for _, argCtx := range argListCtx.AllArgument() {
@@ -519,20 +540,26 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 		if arg.Identifier() != nil {
 			// This is a named argument
 			argName := arg.Identifier().GetText()
-			ep, ok := pat.(*grammar.ExpressionPatternContext)
-			if !ok {
-				return nil, galaerr.NewSemanticError("only expressions allowed as function arguments")
+			exprCtx, isSpread, extractErr := extractArgExpression(pat)
+			if extractErr != nil {
+				return nil, extractErr
 			}
-			expr, err := t.transformExpression(ep.Expression())
+			if isSpread {
+				hasSpread = true
+			}
+			expr, err := t.transformExpression(exprCtx)
 			if err != nil {
 				return nil, err
 			}
 			namedArgs[argName] = expr
 		} else {
 			// Positional argument - use expected type if available
-			ep, ok := pat.(*grammar.ExpressionPatternContext)
-			if !ok {
-				return nil, galaerr.NewSemanticError("only expressions allowed as function arguments")
+			exprCtx, isSpread, extractErr := extractArgExpression(pat)
+			if extractErr != nil {
+				return nil, extractErr
+			}
+			if isSpread {
+				hasSpread = true
 			}
 			// Pass function types from metadata for lambda return type inference.
 			// For void function types, pass as-is.
@@ -567,7 +594,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 					expectedType = ft
 				}
 			}
-			expr, err := t.transformArgumentWithExpectedType(ep.Expression(), expectedType)
+			expr, err := t.transformArgumentWithExpectedType(exprCtx, expectedType)
 			if err != nil {
 				return nil, err
 			}
@@ -834,7 +861,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 		}
 	}
 
-	return &ast.CallExpr{Fun: fun, Args: args}, nil
+	return &ast.CallExpr{Fun: fun, Args: args, Ellipsis: ellipsisPos(hasSpread)}, nil
 }
 
 func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, namedArgs map[string]ast.Expr) (ast.Expr, error) {

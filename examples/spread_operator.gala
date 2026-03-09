@@ -1,0 +1,20 @@
+package main
+
+import "fmt"
+import . "martianoff/gala/go_interop"
+
+func printAll(items ...string) {
+    for _, item := range items {
+        fmt.Println(item)
+    }
+}
+
+func wrap(items ...string) {
+    printAll(items...)
+}
+
+func main() {
+    val args = SliceOf("hello", "world", "spread")
+    printAll(args...)
+    wrap("a", "b", "c")
+}
