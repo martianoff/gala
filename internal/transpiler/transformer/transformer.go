@@ -3,7 +3,10 @@ package transformer
 import (
 	"fmt"
 	"go/ast"
+	"go/printer"
 	"go/token"
+	"io"
+	"os"
 	"sort"
 	"strings"
 
@@ -15,6 +18,15 @@ import (
 	"martianoff/gala/internal/transpiler/infer"
 	"martianoff/gala/internal/transpiler/registry"
 )
+
+// TypeTraceEntry records a single type resolution event for diagnostics.
+type TypeTraceEntry struct {
+	ExprStr string          // formatted expression
+	Result  transpiler.Type // resolved type
+	Method  string          // which resolution method was used
+	File    string          // current file being transpiled
+	Line    int             // line in source
+}
 
 type galaASTTransformer struct {
 	currentScope          *scope
@@ -38,6 +50,9 @@ type galaASTTransformer struct {
 	typeAliases           map[string]transpiler.Type // type alias name -> underlying type (e.g., "Handler" -> func(string) Future[string])
 	filePath              string                     // source file path (for error reporting)
 	sourceLines           []string                   // source lines (for error snippets)
+	richAST               *transpiler.RichAST        // reference to the primary RichAST for live metadata access
+	traceTypeResolution   bool                       // when true, type resolution events are recorded
+	typeTraces            []TypeTraceEntry            // recorded type resolution events (only when tracing is enabled)
 }
 
 // NewGalaASTTransformer creates a new instance of ASTTransformer for GALA.
@@ -88,6 +103,9 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 	t.additionalImports = make(map[string]string)
 	t.typeAliases = make(map[string]transpiler.Type)
 	t.tempVarCount = 0
+	t.richAST = richAST
+	t.traceTypeResolution = os.Getenv("GALA_TRACE_TYPES") == "1"
+	t.typeTraces = nil
 	t.filePath = richAST.FilePath
 	if richAST.SourceContent != "" {
 		t.sourceLines = strings.Split(richAST.SourceContent, "\n")
@@ -241,6 +259,13 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 			}
 			file.Decls = append([]ast.Decl{importDecl}, file.Decls...)
 		}
+	}
+
+	// Dump type resolution traces to stderr when tracing is enabled.
+	if t.traceTypeResolution && len(t.typeTraces) > 0 {
+		fmt.Fprintf(os.Stderr, "=== Type Resolution Trace (%s) ===\n", t.filePath)
+		t.DumpTypeTrace(os.Stderr)
+		fmt.Fprintf(os.Stderr, "=== End Trace (%d entries) ===\n", len(t.typeTraces))
 	}
 
 	return fset, file, nil
@@ -492,6 +517,17 @@ func (t *galaASTTransformer) resolveTypeMetaName(typeName string) string {
 func (t *galaASTTransformer) getTypeMeta(typeName string) *transpiler.TypeMetadata {
 	resolved := t.resolveTypeMetaName(typeName)
 	if resolved == "" {
+		// Fallback: check the primary RichAST directly in case metadata was added
+		// after the initial copy (e.g., by sibling scanning or late analysis).
+		if t.richAST != nil {
+			resolved2, found := t.resolveTypeName(typeName, func(name string) bool {
+				_, ok := t.richAST.Types[name]
+				return ok
+			})
+			if found {
+				return t.richAST.Types[resolved2]
+			}
+		}
 		return nil
 	}
 	return t.typeMetas[resolved]
@@ -502,7 +538,71 @@ func (t *galaASTTransformer) getTypeMeta(typeName string) *transpiler.TypeMetada
 func (t *galaASTTransformer) getTypeMetaResolved(typeName string) (*transpiler.TypeMetadata, string) {
 	resolved := t.resolveTypeMetaName(typeName)
 	if resolved == "" {
+		// Fallback: check the primary RichAST directly for late-added metadata.
+		if t.richAST != nil {
+			resolved2, found := t.resolveTypeName(typeName, func(name string) bool {
+				_, ok := t.richAST.Types[name]
+				return ok
+			})
+			if found {
+				return t.richAST.Types[resolved2], resolved2
+			}
+		}
 		return nil, ""
 	}
 	return t.typeMetas[resolved], resolved
+}
+
+// traceType records a type resolution event when tracing is enabled.
+// This is a no-op when traceTypeResolution is false, so it is safe to
+// call on every resolution path without measurable overhead.
+func (t *galaASTTransformer) traceType(expr ast.Expr, result transpiler.Type, method string) {
+	if !t.traceTypeResolution {
+		return
+	}
+	line := 0
+	// We don't have a Go token.FileSet for position mapping (the GALA source
+	// positions come from ANTLR, not from Go AST nodes), so line stays 0 for
+	// Go AST expressions. The file path is still useful for multi-file builds.
+	t.typeTraces = append(t.typeTraces, TypeTraceEntry{
+		ExprStr: formatExprForTrace(expr),
+		Result:  result,
+		Method:  method,
+		File:    t.filePath,
+		Line:    line,
+	})
+}
+
+// DumpTypeTrace writes all recorded type resolution events to w.
+// Each line has the format: [file:line] exprStr -> result (via method)
+func (t *galaASTTransformer) DumpTypeTrace(w io.Writer) {
+	for _, entry := range t.typeTraces {
+		resultStr := "<nil>"
+		if entry.Result != nil {
+			resultStr = entry.Result.String()
+			if resultStr == "" {
+				resultStr = "<NilType>"
+			}
+		}
+		fmt.Fprintf(w, "[%s:%d] %s -> %s (via %s)\n", entry.File, entry.Line, entry.ExprStr, resultStr, entry.Method)
+	}
+}
+
+// formatExprForTrace produces a short human-readable representation of a Go AST expression.
+func formatExprForTrace(expr ast.Expr) string {
+	if expr == nil {
+		return "<nil>"
+	}
+	// Use go/printer for a compact representation, falling back to type name.
+	var buf strings.Builder
+	fset := token.NewFileSet()
+	if err := printer.Fprint(&buf, fset, expr); err != nil {
+		return fmt.Sprintf("<%T>", expr)
+	}
+	s := buf.String()
+	// Truncate very long expressions for readability.
+	if len(s) > 80 {
+		s = s[:77] + "..."
+	}
+	return s
 }

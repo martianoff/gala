@@ -48,9 +48,12 @@ func (t *galaASTTransformer) getType(name string) transpiler.Type {
 			resolvedName = actual + "." + parts[1]
 		}
 		if _, ok := t.typeMetas[resolvedName]; ok {
-			return transpiler.ParseType(resolvedName)
+			result := transpiler.ParseType(resolvedName)
+			t.traceType(nil, result, "scope:qualified:"+name)
+			return result
 		}
 		// If it has a dot but not found in metas, don't fall through to other searches
+		t.traceType(nil, transpiler.NilType{}, "scope:qualified-miss:"+name)
 		return transpiler.NilType{}
 	}
 
@@ -58,6 +61,7 @@ func (t *galaASTTransformer) getType(name string) transpiler.Type {
 	s := t.currentScope
 	for s != nil {
 		if typeName, ok := s.valTypes[name]; ok {
+			t.traceType(nil, typeName, "scope:local:"+name)
 			return typeName
 		}
 		s = s.parent
@@ -66,9 +70,12 @@ func (t *galaASTTransformer) getType(name string) transpiler.Type {
 	// 3. Use unified type resolution for type metadata lookup
 	resolved := t.resolveTypeMetaName(name)
 	if resolved != "" {
-		return transpiler.ParseType(resolved)
+		result := transpiler.ParseType(resolved)
+		t.traceType(nil, result, "scope:type-meta:"+name)
+		return result
 	}
 
+	t.traceType(nil, transpiler.NilType{}, "scope:miss:"+name)
 	return transpiler.NilType{}
 }
 
