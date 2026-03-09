@@ -9,6 +9,8 @@ filegroup(
         "cross_file_unwrap_lib/types.gala",
         "foldleft_method/main.gala",
         "lib/generic.gala",
+        "match_method_chain/main.gala",
+        "match_method_chain/types.gala",
         "mathlib/math.gala",
         "multi_file/greeter.gala",
         "multi_file/main.gala",
@@ -39,6 +41,13 @@ gala_library(
     name = "lib",
     src = "lib/generic.gala",
     importpath = "martianoff/gala/examples/lib",
+    visibility = ["//visibility:public"],
+)
+
+gala_library(
+    name = "match_lib",
+    src = "match_lib/store.gala",
+    importpath = "martianoff/gala/examples/match_lib",
     visibility = ["//visibility:public"],
 )
 
@@ -101,6 +110,25 @@ gala_test(
     name = "option_complex",
     src = "option_complex.gala",
     expected = "option_complex.out",
+)
+
+gala_test(
+    name = "match_method_return",
+    src = "match_method_return.gala",
+    expected = "match_method_return.out",
+)
+
+gala_test(
+    name = "match_method_return_generic",
+    src = "match_method_return_generic.gala",
+    expected = "match_method_return_generic.out",
+)
+
+gala_test(
+    name = "match_lib_test",
+    src = "match_lib_test.gala",
+    expected = "match_lib_test.out",
+    deps = [":match_lib"],
 )
 
 gala_test(
@@ -792,6 +820,16 @@ gala_test(
     expected = "multi_file_option/multi_file_option.out",
 )
 
+# BUG-013 verification: match on method return values (multi-file)
+gala_test(
+    name = "match_method_chain",
+    srcs = [
+        "match_method_chain/main.gala",
+        "match_method_chain/types.gala",
+    ],
+    expected = "match_method_chain/match_method_chain.out",
+)
+
 # Struct field auto-unwrapping when passed to functions (FIX-005 verification)
 gala_test(
     name = "struct_field_unwrap",
@@ -1023,4 +1061,12 @@ gala_test(
         ":cross_file_unwrap_lib",
         "//collection_immutable",
     ],
+)
+
+# BUG-014 verification: cross-package collection lambda type inference
+gala_test(
+    name = "collection_lambda_inference",
+    src = "collection_lambda_inference.gala",
+    expected = "collection_lambda_inference.out",
+    deps = ["//collection_immutable"],
 )
