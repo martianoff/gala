@@ -11,6 +11,7 @@ import (
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
+	"martianoff/gala/internal/transpiler/registry"
 )
 
 func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionContext) (ast.Expr, error) {
@@ -132,6 +133,92 @@ func (t *galaASTTransformer) isSealedExhaustive(matchedType transpiler.Type, pat
 	}
 
 	return true, len(missing) == 0, missing
+}
+
+// inferMatchedTypeFromCases attempts to infer the sealed parent type from case pattern names.
+// When the match subject type cannot be inferred from the expression itself, we look at the
+// case patterns (e.g., Some/None → Option, Success/Failure → Try, Left/Right → Either)
+// and resolve the parent sealed type from companion object metadata.
+func (t *galaASTTransformer) inferMatchedTypeFromCases(caseClauses []grammar.ICaseClauseContext) transpiler.Type {
+	for _, cc := range caseClauses {
+		ccCtx := cc.(*grammar.CaseClauseContext)
+		patCtx := ccCtx.Pattern()
+		if patCtx == nil {
+			continue
+		}
+		patternText := patCtx.GetText()
+		if isWildcard(patternText) {
+			continue
+		}
+		variantName := extractVariantName(patternText)
+		if variantName == "" {
+			continue
+		}
+
+		// Look up the variant in companion objects to find the parent sealed type
+		companion := t.lookupCompanion(variantName)
+		if companion == nil {
+			continue
+		}
+
+		// Resolve the parent sealed type from companion metadata
+		targetTypeName := companion.TargetType
+		if companion.Package != "" {
+			targetTypeName = companion.Package + "." + targetTypeName
+		}
+		meta := t.getTypeMeta(targetTypeName)
+		if meta == nil {
+			// Try without package prefix (e.g., for dot-imported types)
+			meta = t.getTypeMeta(companion.TargetType)
+		}
+		if meta == nil || !meta.IsSealed {
+			continue
+		}
+
+		// Build the type. For generic sealed types (Option[T], Try[T], Either[A,B]),
+		// we use 'any' as the type parameter since we can't infer the concrete type
+		// from the case patterns alone.
+		var baseType transpiler.Type
+		if companion.Package != "" {
+			baseType = transpiler.NamedType{Package: companion.Package, Name: companion.TargetType}
+		} else {
+			baseType = transpiler.BasicType{Name: companion.TargetType}
+		}
+
+		if len(meta.TypeParams) > 0 {
+			params := make([]transpiler.Type, len(meta.TypeParams))
+			for i := range meta.TypeParams {
+				params[i] = transpiler.BasicType{Name: "any"}
+			}
+			return transpiler.GenericType{Base: baseType, Params: params}
+		}
+		return baseType
+	}
+	return nil
+}
+
+// lookupCompanion searches for a companion object by name, checking both
+// fully-qualified and unqualified names across all registered companions.
+func (t *galaASTTransformer) lookupCompanion(name string) *transpiler.CompanionObjectMetadata {
+	// Try exact match first
+	if c, ok := t.companionObjects[name]; ok {
+		return c
+	}
+	// Try with std prefix
+	stdName := registry.StdPackageName + "." + name
+	if c, ok := t.companionObjects[stdName]; ok {
+		return c
+	}
+	// Search all companion objects for a matching base name
+	for key, c := range t.companionObjects {
+		// Check if key ends with ".Name" (e.g., "std.Some" matches "Some")
+		if idx := strings.LastIndex(key, "."); idx >= 0 {
+			if key[idx+1:] == name {
+				return c
+			}
+		}
+	}
+	return nil
 }
 
 // transformMatchClauses processes all case clauses and infers the common result type.

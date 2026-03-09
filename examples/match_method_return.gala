@@ -1,0 +1,21 @@
+package main
+
+import "fmt"
+
+struct Config(val token string)
+
+func (c Config) GetToken() Option[string] {
+    if c.token != "" {
+        return Some(c.token)
+    }
+    return None[string]()
+}
+
+func main() {
+    val config = Config("secret123")
+    val result = config.GetToken() match {
+        case Some(v) => s"Found: $v"
+        case None() => "Not found"
+    }
+    fmt.Println(result)
+}

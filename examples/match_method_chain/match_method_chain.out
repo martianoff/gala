@@ -1,0 +1,4 @@
+Authenticated: Bearer abc123
+Unauthorized
+OK: TestService: hello
+Error: empty input

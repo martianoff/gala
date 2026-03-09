@@ -1,0 +1,21 @@
+package main
+
+import "fmt"
+
+struct Request(val path string, val authToken string)
+
+func (r Request) Header(key string) Option[string] {
+    if key == "Authorization" && r.authToken != "" {
+        return Some(r.authToken)
+    }
+    return None[string]()
+}
+
+struct Service(val name string)
+
+func (s Service) Call(input string) Try[string] {
+    if input == "" {
+        return Failure[string](fmt.Errorf("empty input"))
+    }
+    return Success(s.name + ": " + input)
+}
