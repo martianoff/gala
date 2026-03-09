@@ -49,11 +49,12 @@ type galaASTTransformer struct {
 	inferer               *infer.Inferer
 	currentFuncReturnType transpiler.Type            // return type of the function currently being transformed
 	typeAliases           map[string]transpiler.Type // type alias name -> underlying type (e.g., "Handler" -> func(string) Future[string])
-	filePath              string                     // source file path (for error reporting)
-	sourceLines           []string                   // source lines (for error snippets)
-	richAST               *transpiler.RichAST        // reference to the primary RichAST for live metadata access
-	traceTypeResolution   bool                       // when true, type resolution events are recorded
-	typeTraces            []TypeTraceEntry            // recorded type resolution events (only when tracing is enabled)
+	filePath              string                      // source file path (for error reporting)
+	sourceLines           []string                    // source lines (for error snippets)
+	richAST               *transpiler.RichAST         // reference to the primary RichAST for live metadata access
+	traceTypeResolution   bool                        // when true, type resolution events are recorded
+	typeTraces            []TypeTraceEntry             // recorded type resolution events (only when tracing is enabled)
+	exprTypeCache         map[ast.Expr]transpiler.Type // cache for getExprTypeNameManual results
 }
 
 // NewGalaASTTransformer creates a new instance of ASTTransformer for GALA.
@@ -71,6 +72,7 @@ func NewGalaASTTransformer() transpiler.ASTTransformer {
 		importManager:     NewImportManager(),
 		inferer:           infer.NewInferer(),
 		typeAliases:       make(map[string]transpiler.Type),
+		exprTypeCache:     make(map[ast.Expr]transpiler.Type),
 	}
 }
 

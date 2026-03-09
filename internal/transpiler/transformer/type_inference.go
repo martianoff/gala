@@ -20,6 +20,19 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 	if expr == nil {
 		return transpiler.NilType{}
 	}
+	// Check cache first — AST node pointers are unique, so this is safe across scopes.
+	if cached, ok := t.exprTypeCache[expr]; ok {
+		return cached
+	}
+	result := t.getExprTypeNameManualUncached(expr)
+	// Only cache non-nil results; failed lookups may succeed later as more scope info becomes available.
+	if !result.IsNil() {
+		t.exprTypeCache[expr] = result
+	}
+	return result
+}
+
+func (t *galaASTTransformer) getExprTypeNameManualUncached(expr ast.Expr) transpiler.Type {
 	switch e := expr.(type) {
 	case *ast.BasicLit:
 		switch e.Kind {
