@@ -139,8 +139,11 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 			siblingTrees = append(siblingTrees, otherSF)
 			siblingPaths = append(siblingPaths, pf)
 		}
-	} else if filePath != "" {
-		// Directory-discovered siblings (existing behavior)
+	} else if filePath != "" && pkgName != "main" && pkgName != "test" {
+		// Directory-discovered siblings (only for library packages, not main/test).
+		// For main/test packages, directory-discovered siblings are independent programs
+		// that happen to share a directory (e.g., examples/). Scanning their imports
+		// would pollute the current file's type resolution with unrelated packages.
 		dirPath := filepath.Dir(filePath)
 		absDirPath, err := filepath.Abs(dirPath)
 		if err == nil && !a.checkedDirs[absDirPath] {
