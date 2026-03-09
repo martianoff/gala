@@ -11,6 +11,7 @@ GALA (Go Alternative LAnguage) is a modern programming language that transpiles 
 3. [Functions](#3-functions)
 4. [Types and Structs](#4-types-and-structs)
    - [Sealed Types (ADTs)](#sealed-types-algebraic-data-types)
+   - [Type Aliases](#type-aliases)
 5. [Interfaces](#5-interfaces)
 6. [Control Flow](#6-control-flow)
    - [If Statement and Expression](#if-statement-and-expression)
@@ -358,29 +359,16 @@ val res = Implode(SliceOf("a", "b")) // expanded to Implode{}.Apply(SliceOf("a",
 
 ### Type Aliases
 
-Type aliases create an alternative name for an existing type. The alias is identical to the original type — they can be used interchangeably. This is useful for re-exporting types from dependencies or creating shorter names.
+Type aliases create an alternative name for an existing type. The alias is identical to the original type — they can be used interchangeably.
 
 ```gala
-// Simple alias
 type MyString string
-
-// Qualified alias (re-exporting from a dependency)
-import "myapp/httpcore"
-type Request httpcore.Request
-type Response httpcore.Response
+type Handler func(Request) Response
 ```
 
-Type aliases generate Go type aliases (`type X = Y`), so methods defined on the original type are available on the alias.
+Type aliases transpile to Go type aliases (`type X = Y`), so methods defined on the original type are available on the alias.
 
-```gala
-package server
-
-import "myapp/httpcore"
-
-// Re-export types for a clean public API
-type Request httpcore.Request
-type Handler httpcore.Handler
-```
+> **Note:** Type aliases are generally not recommended. Prefer using the original type directly — it keeps code clearer and avoids indirection. Type aliases are mainly useful for Go interop scenarios where you need to bridge between GALA and existing Go type names, or when mixing `.gala` and `.go` files in the same package (where GALA type aliases avoid dot-import conflicts with Go type alias declarations).
 
 ### Sealed Types (Algebraic Data Types)
 
@@ -1989,6 +1977,8 @@ func main() {
 }
 ```
 
+> **Note:** If your package mixes `.gala` and `.go` files, dot imports may conflict with type aliases declared in `.go` files. Prefer GALA [type aliases](#type-aliases) over Go type aliases to avoid this. See the [Type Aliases](#type-aliases) section for details.
+
 ### Using Symbols from Other Packages
 
 Types and functions from other packages are accessed using the package name (or alias) followed by a dot.
@@ -2009,6 +1999,61 @@ func main() {
     val w = lib.Wrapper[int](V = 10)
     val w2 = w.Map((x int) => x + 1)
     fmt.Println(w2.V)
+}
+```
+
+### Creating GALA Libraries
+
+A GALA library is a reusable package that other GALA (or Go) projects can depend on.
+
+#### Directory Structure
+
+```
+mylib/
+  math_utils.gala     # package mathutils
+  string_utils.gala   # package mathutils (same package)
+  BUILD.bazel
+```
+
+Each `.gala` file must declare the same package name. The package name does not need to match the directory name, but it is conventional.
+
+#### Bazel Setup
+
+Use the `gala_library` rule in your `BUILD.bazel`:
+
+```python
+gala_library(
+    name = "mathutils",
+    srcs = ["math_utils.gala", "string_utils.gala"],
+    importpath = "github.com/user/project/mathutils",
+    visibility = ["//visibility:public"],
+)
+```
+
+- `importpath` — the Go import path consumers will use
+- `visibility` — set to `["//visibility:public"]` to allow use from other packages
+
+#### Consuming a Library
+
+In the consumer's `BUILD.bazel`, add the library to `deps`:
+
+```python
+gala_binary(
+    name = "app",
+    srcs = ["main.gala"],
+    deps = ["//mathutils"],
+)
+```
+
+Then import it in GALA:
+
+```gala
+package main
+
+import "github.com/user/project/mathutils"
+
+func main() {
+    Println(mathutils.Add(1, 2))
 }
 ```
 
@@ -2416,6 +2461,31 @@ val fallback = Left[string, int]("error")
 val f = (x int) => x * 2  // standalone lambda, no method context
 ```
 
+### Library API Design
+
+When designing library APIs, use concrete function types so that callers benefit from lambda parameter type inference:
+
+```gala
+// GOOD: Concrete param types — callers can write (req) => ...
+type Handler func(Request) Response
+
+func GET(path string, handler Handler) { ... }
+
+// Usage — param type inferred from Handler
+GET("/", (req) => Ok("hello"))
+GET("/users", (req) => JsonResponse(getUsers()))
+```
+
+```gala
+// BAD: 'any' params — callers must annotate lambda types
+func GET(path string, handler func(any) any) { ... }
+
+// Usage — explicit types required
+GET("/", (req Request) => Ok("hello"))
+```
+
+Prefer function types with concrete types (not `any`) so that callers can omit type annotations on lambda parameters.
+
 ### Tuple Syntax
 - **Prefer parenthesis syntax** - `(1, "hello")` not `Tuple[int, string](V1 = 1, V2 = "hello")`
 - **Use for map entries** - `HashMapOf[K, V](("a", 1), ("b", 2))`
@@ -2472,6 +2542,22 @@ val nums = SliceOf(1, 2, 3, 4, 5)  // No .Map(), .Filter(), etc.
 ## 16. Dependency Management
 
 GALA provides a module system similar to Go modules for managing external dependencies.
+
+### gala.mod vs go.mod
+
+GALA projects use `gala.mod` instead of `go.mod` directly:
+
+| Aspect | `gala.mod` | `go.mod` |
+|--------|-----------|----------|
+| Purpose | Declare GALA and Go dependencies together | Go-only dependency management |
+| When to use | All GALA projects (recommended) | Pure Go projects or advanced overrides |
+| Generates | `go.mod`, `go.sum`, `gala.sum` automatically | N/A |
+
+**Always prefer `gala.mod`** for GALA projects. It tracks which dependencies are GALA libraries vs plain Go libraries, generates the corresponding `go.mod` automatically, and ensures `gala mod tidy` keeps everything in sync.
+
+The workflow is: edit `gala.mod` (or use `gala mod add`) -> run `gala mod tidy` -> Bazel picks up changes via `gala_dependencies()`.
+
+> **Warning:** Do not run `go mod tidy` directly — it will remove dependencies that are only referenced by `.gala` files. Always use `gala mod tidy` instead.
 
 ### Quick Start
 
