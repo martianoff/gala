@@ -359,26 +359,16 @@ val res = Implode(SliceOf("a", "b")) // expanded to Implode{}.Apply(SliceOf("a",
 
 ### Type Aliases
 
-Type aliases create an alternative name for an existing type. The alias is identical to the original type — they can be used interchangeably. This is useful for re-exporting types from dependencies or creating shorter names.
+Type aliases create an alternative name for an existing type. The alias is identical to the original type — they can be used interchangeably.
 
 ```gala
-// Simple alias
 type MyString string
-
-// Qualified alias (re-exporting from a dependency)
-import "github.com/user/httpcore"
-type Request httpcore.Request
-type Response httpcore.Response
 type Handler func(Request) Response
 ```
 
-Type aliases transpile to Go type aliases (`type X = Y`), so methods defined on the original type are available on the alias and the types are fully interchangeable.
+Type aliases transpile to Go type aliases (`type X = Y`), so methods defined on the original type are available on the alias.
 
-> **Warning: Dot-import conflicts with `.go` files**
->
-> If you have both `.gala` and `.go` files in the same package, dot-imports in GALA may conflict with type alias declarations in `.go` files. The transpiler generates `import . "pkg"` for dot imports, which brings all exported names into scope — this can clash with identically-named type aliases in companion `.go` files.
->
-> **Recommended:** Use GALA type aliases (`type Request httpcore.Request`) instead of Go type aliases in `.go` files. This keeps everything in GALA and avoids the conflict entirely.
+> **Note:** Type aliases are generally not recommended. Prefer using the original type directly — it keeps code clearer and avoids indirection. Type aliases are mainly useful for Go interop scenarios where you need to bridge between GALA and existing Go type names, or when mixing `.gala` and `.go` files in the same package (where GALA type aliases avoid dot-import conflicts with Go type alias declarations).
 
 ### Sealed Types (Algebraic Data Types)
 
@@ -2065,21 +2055,6 @@ import "github.com/user/project/mathutils"
 func main() {
     Println(mathutils.Add(1, 2))
 }
-```
-
-#### Re-exporting Types with Type Aliases
-
-Libraries often wrap types from their dependencies and re-export them so consumers don't need to import the underlying package directly:
-
-```gala
-package server
-
-import "github.com/user/httpcore"
-
-// Re-export types so consumers only import "server"
-type Request httpcore.Request
-type Response httpcore.Response
-type Handler func(Request) Response
 ```
 
 ## 14. Testing
