@@ -1,0 +1,26 @@
+package main
+
+import (
+    . "martianoff/gala/std"
+    . "martianoff/gala/concurrent"
+    "martianoff/gala/examples/bug013_cross_pkg/corelib"
+)
+
+func doWork() Future[corelib.Response] = FutureOf(corelib.NewResponse(200, "OK"))
+
+// BUG-013 repro: match on Try with cross-package return type
+// This matches the gala-server pattern: handler(req).Await() match { ... }
+func makeBridgeHandler() func() corelib.BridgeResponse {
+    return () => {
+        return doWork().Await() match {
+            case Success(resp) => resp.ToBridge()
+            case Failure(err) => corelib.NewBridgeResponse(500, s"Error: $err")
+        }
+    }
+}
+
+func main() {
+    val handler = makeBridgeHandler()
+    val result = handler()
+    Println(s"${result.Code}: ${result.Body}")
+}

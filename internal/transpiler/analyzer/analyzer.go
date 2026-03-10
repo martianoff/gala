@@ -1792,6 +1792,19 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 					meta.Methods[methodName] = methodMeta
 				}
 			}
+			// Extract type aliases (e.g., type Handler func(Request) Future[Response])
+			if ctx.TypeAlias() != nil {
+				aliasCtx := ctx.TypeAlias().(*grammar.TypeAliasContext)
+				if aliasCtx.Type_() != nil {
+					underlyingType := a.resolveTypeWithParams(aliasCtx.Type_().GetText(), pkgName, meta.TypeParams)
+					if !underlyingType.IsNil() {
+						if richAST.TypeAliases == nil {
+							richAST.TypeAliases = make(map[string]transpiler.Type)
+						}
+						richAST.TypeAliases[typeName] = underlyingType
+					}
+				}
+			}
 			richAST.Types[fullTypeName] = meta
 		}
 

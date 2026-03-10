@@ -26,6 +26,11 @@ filegroup(
         "wrapper_method_lambda/main.gala",
         "slice_unwrap/main.gala",
         "slice_unwrap/model.gala",
+        "bug013_cross_pkg/corelib/corelib.gala",
+        "bug013_cross_pkg/main.gala",
+        "bug013_type_alias_lib/types.gala",
+        "bug013_type_alias_lib/processor.gala",
+        "bug013_type_alias_lib_test.gala",
     ],
     visibility = ["//visibility:public"],
 )
@@ -1098,6 +1103,43 @@ gala_test(
     name = "bug013_try_match_extractor",
     src = "bug013_try_match_extractor.gala",
     expected = "bug013_try_match_extractor.out",
+    deps = ["//concurrent"],
+)
+
+# BUG-013 repro: cross-package match result type inference + chained function calls
+gala_library(
+    name = "bug013_cross_pkg_corelib",
+    srcs = ["bug013_cross_pkg/corelib/corelib.gala"],
+    importpath = "martianoff/gala/examples/bug013_cross_pkg/corelib",
+    visibility = ["//visibility:public"],
+)
+
+gala_test(
+    name = "bug013_cross_pkg",
+    src = "bug013_cross_pkg/main.gala",
+    expected = "bug013_cross_pkg/main.out",
+    deps = ["//concurrent", ":bug013_cross_pkg_corelib"],
+)
+
+# BUG-013 repro: type alias for func type in library package + match through alias
+# Exercises: sibling type alias extraction, NamedType.BaseName() package qualification,
+# chained function call inference, match result type in lambda context
+gala_library(
+    name = "bug013_type_alias_lib",
+    srcs = [
+        "bug013_type_alias_lib/types.gala",
+        "bug013_type_alias_lib/processor.gala",
+    ],
+    importpath = "martianoff/gala/examples/bug013_type_alias_lib",
+    visibility = ["//visibility:public"],
+    deps = ["//concurrent"],
+)
+
+gala_test(
+    name = "bug013_type_alias_lib_test",
+    src = "bug013_type_alias_lib_test.gala",
+    expected = "bug013_type_alias_lib_test.out",
+    gala_deps = [":bug013_type_alias_lib"],
     deps = ["//concurrent"],
 )
 

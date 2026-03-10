@@ -544,7 +544,15 @@ func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patt
 		}
 
 		if allNilOrVoid && !hasTypeParam {
-			// Complete inference failure — no branch could be typed
+			// Complete inference failure — no branch could be typed.
+			// Fall back to the enclosing function/lambda's declared return type.
+			// This handles cases where branches call methods from pure Go packages
+			// whose return types aren't in the GALA type metadata.
+			// Safety: if the fallback type is wrong, the Go compiler will catch it.
+			if t.currentFuncReturnType != nil && !t.currentFuncReturnType.IsNil() {
+				t.traceType(nil, t.currentFuncReturnType, "match-result-fallback-to-enclosing-return")
+				return t.currentFuncReturnType, nil
+			}
 			return nil, galaerr.NewSemanticError("cannot infer result type of match expression: no branch returns a concrete type. Please add explicit type annotation")
 		}
 		// Type parameters or mixed type-param/nil: use 'any' as the Go type erasure

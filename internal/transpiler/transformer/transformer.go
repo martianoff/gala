@@ -105,6 +105,10 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 	t.importManager = NewImportManager()
 	t.additionalImports = make(map[string]string)
 	t.typeAliases = make(map[string]transpiler.Type)
+	// Load type aliases from sibling files (extracted by analyzer)
+	for name, underlyingType := range richAST.TypeAliases {
+		t.typeAliases[name] = underlyingType
+	}
 	t.tempVarCount = 0
 	t.richAST = richAST
 	t.traceTypeResolution = os.Getenv("GALA_TRACE_TYPES") == "1"

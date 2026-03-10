@@ -923,18 +923,32 @@ func (t *galaASTTransformer) transformImportDeclaration(ctx *grammar.ImportDecla
 		if s.Identifier() != nil {
 			alias := s.Identifier().GetText()
 			importSpec.Name = ast.NewIdent(alias)
-			t.importManager.Add(path, alias, false, "")
+			actualPkgName := ""
+			if t.richAST != nil {
+				actualPkgName = t.richAST.Packages[path]
+			}
+			t.importManager.Add(path, alias, false, actualPkgName)
 		} else if s.GetChildCount() > 1 {
 			// Check for '.'
 			if dot := s.GetChild(0); dot != nil {
 				if terminal, ok := dot.(antlr.TerminalNode); ok && terminal.GetText() == "." {
 					importSpec.Name = ast.NewIdent(".")
-					t.importManager.Add(path, "", true, "")
+					actualPkgName := ""
+					if t.richAST != nil {
+						actualPkgName = t.richAST.Packages[path]
+					}
+					t.importManager.Add(path, "", true, actualPkgName)
 				}
 			}
 		} else {
-			// No alias, use the last part of path as package name
-			t.importManager.Add(path, "", false, "")
+			// No alias — use the actual package name from analyzed metadata if available.
+			// The directory name may differ from the Go package name (e.g., directory
+			// "bug013_type_alias_lib" but package declaration is "typealiaslib").
+			actualPkgName := ""
+			if t.richAST != nil {
+				actualPkgName = t.richAST.Packages[path]
+			}
+			t.importManager.Add(path, "", false, actualPkgName)
 		}
 		specs = append(specs, importSpec)
 	}

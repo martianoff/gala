@@ -1,0 +1,23 @@
+package typealiaslib
+
+import . "martianoff/gala/std"
+import . "martianoff/gala/concurrent"
+
+// BridgeResult is a simple output type (mirrors httpcore.BridgeResponse)
+struct BridgeResult(Code int, Body string)
+
+func NewBridgeResult(code int, body string) BridgeResult = BridgeResult(Code = code, Body = body)
+
+// Response is the high-level response (mirrors server.Response)
+struct Response(Status int, Message string)
+
+func NewResponse(status int, message string) Response = Response(Status = status, Message = message)
+
+func (r Response) ToBridge() BridgeResult = NewBridgeResult(r.Status, r.Message)
+
+// Handler is a type alias for a function type (mirrors server.Handler)
+// This is the critical pattern: type alias defined in one file, used in a sibling file
+type Handler func(Request) Future[Response]
+
+// Request is a simple input type
+struct Request(Path string)
