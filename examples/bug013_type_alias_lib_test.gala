@@ -1,0 +1,16 @@
+package main
+
+import . "martianoff/gala/std"
+import . "martianoff/gala/concurrent"
+import "martianoff/gala/examples/bug013_type_alias_lib"
+
+// Handler function with explicit return type
+func makeHandler(req typealiaslib.Request) Future[typealiaslib.Response] {
+    return FutureOf(typealiaslib.NewResponse(200, s"OK from ${req.Path}"))
+}
+
+func main() {
+    val bridge = typealiaslib.MakeBridgeHandler(makeHandler)
+    val result = bridge()
+    Println(s"${result.Code}: ${result.Body}")
+}

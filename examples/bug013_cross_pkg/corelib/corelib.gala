@@ -1,0 +1,18 @@
+package corelib
+
+import . "martianoff/gala/std"
+
+// BridgeResponse is a simple response type (like httpcore.BridgeResponse in gala-server)
+struct BridgeResponse(Code int, Body string)
+
+// NewBridgeResponse creates a BridgeResponse (like httpcore.NewBridgeResponse)
+func NewBridgeResponse(code int, body string) BridgeResponse = BridgeResponse(Code = code, Body = body)
+
+// Response is a higher-level response that can be converted to BridgeResponse
+struct Response(Status int, Message string)
+
+// NewResponse creates a Response
+func NewResponse(status int, message string) Response = Response(Status = status, Message = message)
+
+// ToBridge converts Response to BridgeResponse (like resp.ToBridge() in gala-server)
+func (r Response) ToBridge() BridgeResponse = NewBridgeResponse(r.Status, r.Message)

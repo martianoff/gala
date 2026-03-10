@@ -1,0 +1,24 @@
+package typealiaslib
+
+import . "martianoff/gala/std"
+
+// MakeBridgeHandler mirrors gala-server's makeBridgeHandler exactly:
+// - Takes a Handler (type alias for func(Request) Future[Response])
+// - Returns a function that calls through the alias and matches on .Await()
+// - The match branches return BridgeResult
+//
+// This exercises:
+// 1. Type alias resolution from sibling file (Handler -> func(Request) Future[Response])
+// 2. NamedType.BaseName() package-qualification ("typealiaslib.Handler" vs "Handler")
+// 3. Chained function call type inference (handler(req).Await())
+// 4. Match result type inference inside a lambda
+// 5. currentFuncReturnType fallback in lambda context
+func MakeBridgeHandler(handler Handler) func() BridgeResult {
+    return () => {
+        val req = Request(Path = "/test")
+        return handler(req).Await() match {
+            case Success(resp) => resp.ToBridge()
+            case Failure(err) => NewBridgeResult(500, s"Error: $err")
+        }
+    }
+}

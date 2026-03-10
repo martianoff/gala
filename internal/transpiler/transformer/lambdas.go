@@ -73,6 +73,15 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 		retType = expectedRetType
 	}
 
+	// Track the current function's return type for nested match expression fallback.
+	// When a match expression inside a lambda can't infer branch types (e.g., branches
+	// call methods from pure Go packages), it falls back to the enclosing return type.
+	prevFuncReturnType := t.currentFuncReturnType
+	if isConcreteExpectedType {
+		t.currentFuncReturnType = t.astTypeToTranspilerType(expectedRetType)
+	}
+	defer func() { t.currentFuncReturnType = prevFuncReturnType }()
+
 	if ctx.Block() != nil {
 		b, err := t.transformBlock(ctx.Block().(*grammar.BlockContext))
 		if err != nil {

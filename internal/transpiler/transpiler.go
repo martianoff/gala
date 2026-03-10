@@ -53,6 +53,7 @@ type RichAST struct {
 	Packages         map[string]string                   // path -> pkgName
 	CompanionObjects map[string]*CompanionObjectMetadata // companion name -> metadata
 	GoExports        map[string][]string                 // pkgName -> exported symbol names (from Go-only packages)
+	TypeAliases      map[string]Type                     // type alias name -> underlying type (e.g., "Handler" -> func(Request) Future[Response])
 	FilePath         string                              // source file path (for error reporting)
 	SourceContent    string                              // raw source text (for error snippets)
 }
@@ -117,6 +118,14 @@ func (r *RichAST) Merge(other *RichAST) {
 		}
 		for pkg, symbols := range other.GoExports {
 			r.GoExports[pkg] = append(r.GoExports[pkg], symbols...)
+		}
+	}
+	if len(other.TypeAliases) > 0 {
+		if r.TypeAliases == nil {
+			r.TypeAliases = make(map[string]Type)
+		}
+		for k, v := range other.TypeAliases {
+			r.TypeAliases[k] = v
 		}
 	}
 }
