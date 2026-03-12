@@ -483,6 +483,18 @@ gala_test(
 )
 
 gala_test(
+    name = "match_type_inference",
+    src = "match_type_inference.gala",
+    expected = "match_type_inference.out",
+)
+
+gala_test(
+    name = "match_block_branch",
+    src = "match_block_branch.gala",
+    expected = "match_block_branch.out",
+)
+
+gala_test(
     name = "tuple_shorthand_generic",
     src = "tuple_shorthand_generic.gala",
     expected = "tuple_shorthand_generic.out",

@@ -261,8 +261,14 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 				}
 				defaultBody = b.List
 				if len(b.List) > 0 {
-					if ret, ok := b.List[len(b.List)-1].(*ast.ReturnStmt); ok && len(ret.Results) > 0 {
+					lastStmt := b.List[len(b.List)-1]
+					if ret, ok := lastStmt.(*ast.ReturnStmt); ok && len(ret.Results) > 0 {
 						resultTypes = append(resultTypes, t.inferResultType(ret.Results[0]))
+						casePatterns = append(casePatterns, "case _")
+					} else if exprStmt, ok := lastStmt.(*ast.ExprStmt); ok {
+						// Block's last expression statement becomes the return value
+						defaultBody[len(defaultBody)-1] = &ast.ReturnStmt{Results: []ast.Expr{exprStmt.X}}
+						resultTypes = append(resultTypes, t.inferResultType(exprStmt.X))
 						casePatterns = append(casePatterns, "case _")
 					}
 				}
