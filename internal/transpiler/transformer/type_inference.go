@@ -1139,6 +1139,33 @@ var knownGoStdlibReturnTypes = map[string]transpiler.Type{
 	"math.Ceil":  transpiler.BasicType{Name: "float64"},
 	"math.Round": transpiler.BasicType{Name: "float64"},
 	"math.Sqrt":  transpiler.BasicType{Name: "float64"},
+	// os package
+	"os.Getenv":     transpiler.BasicType{Name: "string"},
+	"os.Hostname":   transpiler.BasicType{Name: "string"},
+	"os.Getwd":      transpiler.BasicType{Name: "string"},
+	"os.TempDir":    transpiler.BasicType{Name: "string"},
+	"os.UserHomeDir": transpiler.BasicType{Name: "string"},
+	"os.Executable": transpiler.BasicType{Name: "string"},
+	// os/exec package
+	"exec.Command":        transpiler.PointerType{Elem: transpiler.NamedType{Package: "exec", Name: "Cmd"}},
+	"exec.CommandContext":  transpiler.PointerType{Elem: transpiler.NamedType{Package: "exec", Name: "Cmd"}},
+	"exec.LookPath":       transpiler.BasicType{Name: "string"},
+	// runtime package
+	"runtime.GOOS":   transpiler.BasicType{Name: "string"},
+	"runtime.GOARCH": transpiler.BasicType{Name: "string"},
+	// filepath package
+	"filepath.Join":    transpiler.BasicType{Name: "string"},
+	"filepath.Dir":     transpiler.BasicType{Name: "string"},
+	"filepath.Base":    transpiler.BasicType{Name: "string"},
+	"filepath.Ext":     transpiler.BasicType{Name: "string"},
+	"filepath.Abs":     transpiler.BasicType{Name: "string"},
+	"filepath.Clean":   transpiler.BasicType{Name: "string"},
+	// path package
+	"path.Join":  transpiler.BasicType{Name: "string"},
+	"path.Dir":   transpiler.BasicType{Name: "string"},
+	"path.Base":  transpiler.BasicType{Name: "string"},
+	"path.Ext":   transpiler.BasicType{Name: "string"},
+	"path.Clean": transpiler.BasicType{Name: "string"},
 	// len is a builtin, but handle it if needed
 }
 

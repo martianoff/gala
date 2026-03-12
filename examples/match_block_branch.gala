@@ -1,0 +1,34 @@
+package main
+
+import . "martianoff/gala/std"
+
+// Test match with block branch that computes a value
+func process(opt Option[int]) string {
+    return opt match {
+        case Some(n) => {
+            val doubled = n * 2
+            return s"doubled: $doubled"
+        }
+        case None() => "nothing"
+    }
+}
+
+// Test match with block branch in default/wildcard case
+func classify(n int) string {
+    return n match {
+        case 0 => "zero"
+        case 1 => "one"
+        case _ => {
+            val label = s"other: $n"
+            return label
+        }
+    }
+}
+
+func main() {
+    Println(process(Some(21)))
+    Println(process(None[int]()))
+    Println(classify(0))
+    Println(classify(1))
+    Println(classify(42))
+}

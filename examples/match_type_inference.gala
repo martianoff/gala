@@ -1,0 +1,28 @@
+package main
+
+import "os"
+
+// Case 4: Match on string for val assignment with string literal and identifier branches
+func getPort() string {
+    val envPort = os.Getenv("PORT")
+    val port = envPort match {
+        case "" => "3000"
+        case _ => envPort
+    }
+    return port
+}
+
+// Case: Match with all branches returning string literals
+func describeEnv(key string) string {
+    return key match {
+        case "HOME" => "home directory"
+        case "PATH" => "executable search path"
+        case _ => "unknown"
+    }
+}
+
+func main() {
+    Println(getPort())
+    Println(describeEnv("HOME"))
+    Println(describeEnv("OTHER"))
+}
