@@ -24,6 +24,8 @@ Read `docs/GALA.MD` to ensure you use correct GALA syntax and idioms. Pay specia
 
 Also read the test framework: `test/framework.gala`, `test/assertions.gala`, `test/table.gala` for test patterns.
 
+If the code you are generating needs to **import a package** or **produce a new package**, also read `docs/DEPENDENCY_MANAGEMENT.MD` for correct dependency declaration, Bazel `deps`, and import path conventions.
+
 ### Step 1: Design the GALA Code
 
 Design the implementation following GALA best practices:
