@@ -151,7 +151,7 @@ def gala_bootstrap_transpile(name, src, out = None, package_files = []):
         visibility = ["//visibility:public"],
     )
 
-def gala_library(name, src = None, srcs = None, importpath = "", deps = [], **kwargs):
+def gala_library(name, src = None, srcs = None, importpath = "", deps = [], embedsrcs = [], **kwargs):
     """
     Build a GALA library.
 
@@ -161,6 +161,7 @@ def gala_library(name, src = None, srcs = None, importpath = "", deps = [], **kw
         srcs: List of source .gala files
         importpath: Go import path for the library
         deps: Go/Bazel dependencies (labels), including external GALA modules
+        embedsrcs: Files to embed via //go:embed directives in GALA source.
         **kwargs: Additional arguments passed to go_library
 
     External GALA dependencies are loaded via gala_dependencies() in WORKSPACE
@@ -194,6 +195,7 @@ def gala_library(name, src = None, srcs = None, importpath = "", deps = [], **kw
         srcs = go_srcs,
         importpath = importpath,
         deps = all_deps,
+        embedsrcs = embedsrcs,
         **kwargs
     )
 
@@ -205,7 +207,7 @@ def gala_library(name, src = None, srcs = None, importpath = "", deps = [], **kw
         visibility = ["//visibility:public"],
     )
 
-def gala_binary(name, src = None, srcs = None, deps = [], gala_deps = [], **kwargs):
+def gala_binary(name, src = None, srcs = None, deps = [], gala_deps = [], embedsrcs = [], **kwargs):
     """
     Build a GALA binary.
 
@@ -216,6 +218,7 @@ def gala_binary(name, src = None, srcs = None, deps = [], gala_deps = [], **kwar
         deps: Go/Bazel dependencies (labels), including external GALA modules
         gala_deps: GALA library dependency labels for cross-package type resolution.
             Their source files are automatically included during transpilation.
+        embedsrcs: Files to embed via //go:embed directives in GALA source.
         **kwargs: Additional arguments passed to go_binary
 
     External GALA dependencies are loaded via gala_dependencies() in WORKSPACE
@@ -249,6 +252,7 @@ def gala_binary(name, src = None, srcs = None, deps = [], gala_deps = [], **kwar
         name = name,
         srcs = go_srcs,
         deps = all_deps,
+        embedsrcs = embedsrcs,
         **kwargs
     )
 

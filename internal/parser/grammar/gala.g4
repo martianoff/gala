@@ -6,13 +6,17 @@ sourceFile: packageClause importDeclaration* topLevelDeclaration* EOF;
 packageClause: PACKAGE identifier;
 
 topLevelDeclaration
-    : valDeclaration
+    : embedDeclaration
+    | valDeclaration
     | varDeclaration
     | functionDeclaration
     | typeDeclaration
     | structShorthandDeclaration
     | sealedTypeDeclaration
     ;
+
+embedDeclaration: EMBED VAL identifier type? '=' embedPatterns;
+embedPatterns: STRING (',' STRING)*;
 
 structShorthandDeclaration: 'struct' identifier parameters;
 
@@ -225,6 +229,7 @@ RETURN: 'return';
 IMPORT: 'import';
 PACKAGE: 'package';
 SEALED: 'sealed';
+EMBED: 'embed';
 COLON: ':';
 
 binaryOp: '||' | '&&' | '==' | '!=' | '<' | '<=' | '>' | '>=' | '+' | '-' | '|' | '^' | '*' | '/' | '%' | '<<' | '>>' | '&' | '&^';

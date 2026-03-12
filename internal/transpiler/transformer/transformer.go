@@ -55,6 +55,7 @@ type galaASTTransformer struct {
 	traceTypeResolution   bool                        // when true, type resolution events are recorded
 	typeTraces            []TypeTraceEntry             // recorded type resolution events (only when tracing is enabled)
 	exprTypeCache         map[ast.Expr]transpiler.Type // cache for getExprTypeNameManual results
+	needsEmbedImport      bool                        // true when embed val declarations require import "embed"
 }
 
 // NewGalaASTTransformer creates a new instance of ASTTransformer for GALA.
@@ -137,6 +138,10 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 			}
 		}
 	}
+
+	// Register EmbeddedFS method metadata (Go-defined type, not available from GALA analysis).
+	// This enables type inference for ReadString/ReadBytes calls on embedded filesystems.
+	t.registerEmbeddedFSMetadata()
 
 	t.pushScope() // Global scope
 	defer t.popScope()
@@ -259,6 +264,58 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 					Kind:  token.STRING,
 					Value: fmt.Sprintf("\"%s\"", path),
 				},
+			}
+			importDecl := &ast.GenDecl{
+				Tok:   token.IMPORT,
+				Specs: []ast.Spec{spec},
+			}
+			file.Decls = append([]ast.Decl{importDecl}, file.Decls...)
+		}
+	}
+
+	// Add import "embed" when embed val declarations with EmbeddedFS type are present.
+	// For string embeds, Go requires import _ "embed" (blank import).
+	if t.needsEmbedImport {
+		hasEmbedImport := false
+		for _, decl := range file.Decls {
+			genDecl, ok := decl.(*ast.GenDecl)
+			if !ok || genDecl.Tok != token.IMPORT {
+				continue
+			}
+			for _, spec := range genDecl.Specs {
+				importSpec, ok := spec.(*ast.ImportSpec)
+				if !ok {
+					continue
+				}
+				if strings.Trim(importSpec.Path.Value, "\"") == "embed" {
+					hasEmbedImport = true
+					break
+				}
+			}
+			if hasEmbedImport {
+				break
+			}
+		}
+		if !hasEmbedImport {
+			// Determine if we need a blank import or a named import.
+			// EmbeddedFS uses embed.FS directly, so we need the named import.
+			// string/[]byte embeds only need _ "embed".
+			hasEmbeddedFS := false
+			for _, ed := range richAST.EmbedDirectives {
+				if ed.TypeName == transpiler.TypeEmbeddedFS || ed.TypeName == "std.EmbeddedFS" {
+					hasEmbeddedFS = true
+					break
+				}
+			}
+			spec := &ast.ImportSpec{
+				Path: &ast.BasicLit{
+					Kind:  token.STRING,
+					Value: "\"embed\"",
+				},
+			}
+			if !hasEmbeddedFS {
+				// Blank import for string/[]byte embeds
+				spec.Name = ast.NewIdent("_")
 			}
 			importDecl := &ast.GenDecl{
 				Tok:   token.IMPORT,
@@ -557,6 +614,39 @@ func (t *galaASTTransformer) traceType(expr ast.Expr, result transpiler.Type, me
 		File:    t.filePath,
 		Line:    line,
 	})
+}
+
+// registerEmbeddedFSMetadata adds type metadata for std.EmbeddedFS.
+// EmbeddedFS is defined in Go (std/embedded_fs.go), so it's not discovered
+// by the GALA analyzer. We register its method signatures manually so that
+// type inference works for ReadString/ReadBytes calls.
+func (t *galaASTTransformer) registerEmbeddedFSMetadata() {
+	fullName := "std." + transpiler.TypeEmbeddedFS
+	if _, exists := t.typeMetas[fullName]; exists {
+		return // Already registered (e.g., from sibling analysis)
+	}
+	meta := &transpiler.TypeMetadata{
+		Name:    transpiler.TypeEmbeddedFS,
+		Package: "std",
+		Methods: map[string]*transpiler.MethodMetadata{
+			"ReadString": {
+				Name:       "ReadString",
+				Package:    "std",
+				ParamTypes: []transpiler.Type{transpiler.BasicType{Name: "string"}},
+				ReturnType: transpiler.GenericType{
+					Base:   transpiler.NamedType{Package: "std", Name: "Try"},
+					Params: []transpiler.Type{transpiler.BasicType{Name: "string"}},
+				},
+			},
+		},
+		Fields:     make(map[string]transpiler.Type),
+		FieldNames: nil,
+	}
+	t.typeMetas[fullName] = meta
+	// Also register without package prefix for dot-imported std
+	if _, exists := t.typeMetas[transpiler.TypeEmbeddedFS]; !exists {
+		t.typeMetas[transpiler.TypeEmbeddedFS] = meta
+	}
 }
 
 // DumpTypeTrace writes all recorded type resolution events to w.

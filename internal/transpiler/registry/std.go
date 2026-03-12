@@ -12,6 +12,7 @@ func StdPackageInfo() PackageInfo {
 			"Immutable",
 			"Either",
 			"Try",
+			"EmbeddedFS",
 			// Tuple types (Tuple is the 2-tuple, Tuple3+ are higher arities)
 			"Tuple", "Tuple3", "Tuple4", "Tuple5", "Tuple6", "Tuple7", "Tuple8", "Tuple9", "Tuple10",
 			// Collection traits
@@ -22,6 +23,7 @@ func StdPackageInfo() PackageInfo {
 		},
 		Functions: []string{
 			"NewImmutable",
+			"NewEmbeddedFS",
 			"Copy",
 			"Equal",
 			// Companion constructors

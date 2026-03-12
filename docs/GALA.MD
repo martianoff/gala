@@ -36,11 +36,12 @@ GALA (Go Alternative LAnguage) is a modern programming language that transpiles 
 12. [Immutability Under the Hood](#12-immutability-under-the-hood)
     - [ConstPtr - Read-Only Pointers](#constptr---read-only-pointers)
 13. [GALA Packages](#13-gala-packages)
-14. [Testing](#14-testing)
-15. [Best Practices](#15-best-practices)
-16. [Dependency Management](#16-dependency-management)
-17. [Further Reading](#17-further-reading)
-18. [IDE Support](#18-ide-support)
+14. [Embedding Files](#14-embedding-files)
+15. [Testing](#15-testing)
+16. [Best Practices](#16-best-practices)
+17. [Dependency Management](#17-dependency-management)
+18. [Further Reading](#18-further-reading)
+19. [IDE Support](#19-ide-support)
 
 ---
 
@@ -2057,7 +2058,84 @@ func main() {
 }
 ```
 
-## 14. Testing
+## 14. Embedding Files
+
+GALA provides a native `embed val` declaration for embedding files into the compiled binary at compile time. This is GALA's alternative to Go's `//go:embed` directive, offering a type-safe, keyword-driven syntax.
+
+### String Embed
+
+Embed a single file as a `string`:
+
+```gala
+embed val readme = "README.md"
+embed val config string = "config.json"
+```
+
+### EmbeddedFS
+
+For directories, globs, or multiple patterns, use `EmbeddedFS` — a GALA wrapper around Go's `embed.FS` with a functional API:
+
+```gala
+embed val static EmbeddedFS = "static/*"
+embed val assets EmbeddedFS = "templates/*.html", "static/*.css"
+```
+
+`EmbeddedFS` is defined in `std` and available without explicit import. Methods:
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `ReadString` | `(path string) Try[string]` | Read file as string, returns `Try` |
+| `ReadBytes` | `(path string) ([]byte, error)` | Read file as raw bytes (Go interop) |
+
+Example usage:
+
+```gala
+embed val templates EmbeddedFS = "templates/*"
+
+func loadTemplate(name string) string {
+    val result = templates.ReadString(s"templates/$name")
+    return result match {
+        case Success(content) => content
+        case Failure(err) => s"Error: $err"
+    }
+}
+```
+
+### Type Inference
+
+| Pattern | Inferred Type |
+|---------|---------------|
+| Single file path (no glob) | `string` |
+| Glob pattern (`*`, `?`) | `EmbeddedFS` |
+| Multiple patterns | `EmbeddedFS` |
+
+```gala
+embed val readme = "README.md"          // string (single file)
+embed val static = "static/*"           // EmbeddedFS (glob)
+embed val all = "a/*", "b/*"            // EmbeddedFS (multiple patterns)
+embed val icon EmbeddedFS = "icon.png"  // EmbeddedFS (explicit)
+```
+
+### Bazel Integration
+
+In `BUILD.bazel`, pass embedded files via `embedsrcs`:
+
+```bzl
+gala_binary(
+    name = "server",
+    srcs = ["main.gala"],
+    embedsrcs = glob(["templates/**", "static/**"]),
+)
+```
+
+### Rules
+
+- `embed val` is **top-level only** — cannot be used inside functions
+- Embedded variables are **immutable** — cannot be reassigned
+- The `embed` import is auto-injected by the transpiler (no explicit `import "embed"` needed)
+- `EmbeddedFS` is in `std` — available everywhere without import
+
+## 15. Testing
 
 GALA provides a comprehensive test framework with 22 assertions, panic recovery, timing, table-driven test support, and benchmarking. Tests are collocated with source code and use familiar patterns.
 
@@ -2335,7 +2413,7 @@ Run specific tests:
 bazel test //mypackage:mycode_test
 ```
 
-## 15. Best Practices
+## 16. Best Practices
 
 ### Immutability
 - **Prefer `val` over `var`** - Use mutable variables only when necessary (accumulators, loop counters)
@@ -2539,7 +2617,7 @@ val nums = SliceOf(1, 2, 3, 4, 5)  // No .Map(), .Filter(), etc.
 - **Prefer `List` for prepend-heavy** workloads (O(1) vs O(n))
 - **Use `arrayBuilder`** when building arrays incrementally
 
-## 16. Dependency Management
+## 17. Dependency Management
 
 GALA provides a module system similar to Go modules for managing external dependencies.
 
@@ -2650,7 +2728,7 @@ import "github.com/google/uuid"
 
 ---
 
-## 17. Further Reading
+## 18. Further Reading
 
 - [Examples](EXAMPLES.MD) - More examples of GALA code.
 - [Concurrent](CONCURRENT.MD) - Future, Promise, and ExecutionContext for async programming.
@@ -2660,7 +2738,7 @@ import "github.com/google/uuid"
 - [Immutable Collections](IMMUTABLE_COLLECTIONS.MD) - Array, List, HashMap, HashSet, TreeSet.
 - [Mutable Collections](MUTABLE_COLLECTIONS.MD) - Mutable collection types.
 
-## 18. IDE Support
+## 19. IDE Support
 
 ### IntelliJ IDEA
 A basic IntelliJ IDEA plugin is available in `ide/intellij`.

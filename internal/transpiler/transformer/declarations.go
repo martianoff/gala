@@ -14,6 +14,9 @@ import (
 )
 
 func (t *galaASTTransformer) transformTopLevelDeclaration(ctx grammar.ITopLevelDeclarationContext) ([]ast.Decl, error) {
+	if embedCtx := ctx.EmbedDeclaration(); embedCtx != nil {
+		return t.transformEmbedDeclaration(embedCtx.(*grammar.EmbedDeclarationContext))
+	}
 	if valCtx := ctx.ValDeclaration(); valCtx != nil {
 		decl, err := t.transformValDeclaration(valCtx.(*grammar.ValDeclarationContext))
 		if err != nil {
@@ -87,6 +90,101 @@ func (t *galaASTTransformer) transformDeclaration(ctx grammar.IDeclarationContex
 		return nil, stmt, err
 	}
 	return nil, nil, nil
+}
+
+// transformEmbedDeclaration handles `embed val name Type = "pattern"` declarations.
+// For string embeds, generates: var name string (with //go:embed via post-processing)
+// For EmbeddedFS embeds, generates: var _embed_name embed.FS; var name = std.NewEmbeddedFS(_embed_name)
+func (t *galaASTTransformer) transformEmbedDeclaration(ctx *grammar.EmbedDeclarationContext) ([]ast.Decl, error) {
+	varName := ctx.Identifier().GetText()
+
+	// Determine type
+	typeName := ""
+	if ctx.Type_() != nil {
+		typeName = ctx.Type_().GetText()
+	}
+
+	// Extract patterns for type inference (same logic as analyzer)
+	patternsCtx := ctx.EmbedPatterns().(*grammar.EmbedPatternsContext)
+	if typeName == "" {
+		hasGlob := false
+		for _, s := range patternsCtx.AllSTRING() {
+			p := strings.Trim(s.GetText(), "\"")
+			if strings.ContainsAny(p, "*?") || len(patternsCtx.AllSTRING()) > 1 {
+				hasGlob = true
+				break
+			}
+			_ = p
+		}
+		if hasGlob {
+			typeName = transpiler.TypeEmbeddedFS
+		} else {
+			typeName = "string"
+		}
+	}
+
+	t.needsEmbedImport = true
+
+	var decls []ast.Decl
+
+	switch typeName {
+	case transpiler.TypeEmbeddedFS, "std.EmbeddedFS":
+		// Generate: var _embed_<name> embed.FS
+		embedGoVar := "_embed_" + varName
+		embedVarDecl := &ast.GenDecl{
+			Tok: token.VAR,
+			Specs: []ast.Spec{
+				&ast.ValueSpec{
+					Names: []*ast.Ident{ast.NewIdent(embedGoVar)},
+					Type: &ast.SelectorExpr{
+						X:   ast.NewIdent("embed"),
+						Sel: ast.NewIdent("FS"),
+					},
+				},
+			},
+		}
+		decls = append(decls, embedVarDecl)
+
+		// Generate: var <name> = std.NewEmbeddedFS(_embed_<name>)
+		t.needsStdImport = true
+		wrapperDecl := &ast.GenDecl{
+			Tok: token.VAR,
+			Specs: []ast.Spec{
+				&ast.ValueSpec{
+					Names: []*ast.Ident{ast.NewIdent(varName)},
+					Values: []ast.Expr{
+						&ast.CallExpr{
+							Fun:  t.stdIdent(transpiler.FuncNewEmbeddedFS),
+							Args: []ast.Expr{ast.NewIdent(embedGoVar)},
+						},
+					},
+				},
+			},
+		}
+		decls = append(decls, wrapperDecl)
+
+		// Register as var (no Immutable wrapping — EmbeddedFS is inherently immutable)
+		t.addVar(varName, transpiler.NamedType{Package: "std", Name: transpiler.TypeEmbeddedFS})
+
+	default:
+		// string or other simple type — generate: var <name> <type>
+		typeExpr := ast.NewIdent(typeName)
+		varDecl := &ast.GenDecl{
+			Tok: token.VAR,
+			Specs: []ast.Spec{
+				&ast.ValueSpec{
+					Names: []*ast.Ident{ast.NewIdent(varName)},
+					Type:  typeExpr,
+				},
+			},
+		}
+		decls = append(decls, varDecl)
+
+		// Register as var (no Immutable wrapping — //go:embed populates this directly)
+		t.addVar(varName, transpiler.BasicType{Name: typeName})
+	}
+
+	return decls, nil
 }
 
 func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclarationContext) (ast.Decl, error) {
