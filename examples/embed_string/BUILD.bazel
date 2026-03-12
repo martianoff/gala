@@ -1,0 +1,8 @@
+load("//:gala.bzl", "gala_test")
+
+gala_test(
+    name = "embed_string",
+    src = "main.gala",
+    expected = "main.out",
+    embedsrcs = ["greeting.txt"],
+)

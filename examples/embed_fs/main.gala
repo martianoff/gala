@@ -1,0 +1,23 @@
+package main
+
+embed val data EmbeddedFS = "data/*"
+
+func main() {
+    val hello = data.ReadString("data/hello.txt")
+    Println(hello match {
+        case Success(content) => content
+        case Failure(err) => s"Error: $err"
+    })
+
+    val info = data.ReadString("data/info.txt")
+    Println(info match {
+        case Success(content) => content
+        case Failure(err) => s"Error: $err"
+    })
+
+    val missing = data.ReadString("data/missing.txt")
+    Println(missing match {
+        case Success(content) => content
+        case Failure(_) => "File not found (expected)"
+    })
+}

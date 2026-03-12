@@ -689,6 +689,55 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 		}
 	}
 
+	// 2.75 Collect embed declarations
+	for _, topDecl := range sourceFile.AllTopLevelDeclaration() {
+		if embedCtx := topDecl.EmbedDeclaration(); embedCtx != nil {
+			ctx := embedCtx.(*grammar.EmbedDeclarationContext)
+			varName := ctx.Identifier().GetText()
+
+			// Extract type name if specified
+			typeName := ""
+			if ctx.Type_() != nil {
+				typeName = ctx.Type_().GetText()
+			}
+
+			// Extract embed patterns from embedPatterns rule
+			patternsCtx := ctx.EmbedPatterns().(*grammar.EmbedPatternsContext)
+			var patterns []string
+			for _, s := range patternsCtx.AllSTRING() {
+				patterns = append(patterns, strings.Trim(s.GetText(), "\""))
+			}
+
+			// Determine Go variable name
+			goVar := varName
+			if typeName == transpiler.TypeEmbeddedFS || typeName == "std.EmbeddedFS" {
+				goVar = "_embed_" + varName
+			} else if typeName == "" {
+				// Infer type: glob patterns → EmbeddedFS, single file → string
+				hasGlob := false
+				for _, p := range patterns {
+					if strings.ContainsAny(p, "*?") || len(patterns) > 1 {
+						hasGlob = true
+						break
+					}
+				}
+				if hasGlob {
+					typeName = transpiler.TypeEmbeddedFS
+					goVar = "_embed_" + varName
+				} else {
+					typeName = "string"
+				}
+			}
+
+			richAST.EmbedDirectives = append(richAST.EmbedDirectives, transpiler.EmbedDirective{
+				VarName:  varName,
+				GoVar:    goVar,
+				Patterns: patterns,
+				TypeName: typeName,
+			})
+		}
+	}
+
 	// 3. Discover companion objects - types with Unapply methods that can be used for pattern matching
 	a.discoverCompanionObjects(richAST)
 

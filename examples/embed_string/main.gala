@@ -1,0 +1,7 @@
+package main
+
+embed val greeting = "greeting.txt"
+
+func main() {
+    Println(greeting)
+}

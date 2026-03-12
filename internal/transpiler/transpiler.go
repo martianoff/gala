@@ -3,6 +3,7 @@ package transpiler
 import (
 	"go/ast"
 	"go/token"
+	"strings"
 
 	"github.com/antlr4-go/antlr/v4"
 )
@@ -26,6 +27,7 @@ const (
 	TypeTry         = "Try"
 	TypeTraversable = "Traversable"
 	TypeIterable    = "Iterable"
+	TypeEmbeddedFS  = "EmbeddedFS"
 
 	FuncSome         = "Some"
 	FuncNone         = "None"
@@ -33,8 +35,9 @@ const (
 	FuncRight        = "Right"
 	FuncSuccess      = "Success"
 	FuncFailure      = "Failure"
-	FuncNewImmutable = "NewImmutable"
-	FuncCopy         = "Copy"
+	FuncNewImmutable  = "NewImmutable"
+	FuncNewEmbeddedFS = "NewEmbeddedFS"
+	FuncCopy          = "Copy"
 	MethodGet        = "Get"
 	MethodPtr        = "Ptr"
 
@@ -43,6 +46,14 @@ const (
 	FuncNewConstPtr = "NewConstPtr"
 	MethodDeref     = "Deref"
 )
+
+// EmbedDirective represents a single `embed val` declaration parsed from GALA source.
+type EmbedDirective struct {
+	VarName  string   // GALA variable name (e.g., "static")
+	GoVar    string   // Go variable name for //go:embed target (e.g., "_embed_static" for EmbeddedFS, or same as VarName for string)
+	Patterns []string // Embed patterns (e.g., ["static/*", "templates/*.html"])
+	TypeName string   // Declared type: "string", "EmbeddedFS", or "" (infer)
+}
 
 // RichAST provides metadata about a Gala source file.
 type RichAST struct {
@@ -54,6 +65,7 @@ type RichAST struct {
 	CompanionObjects map[string]*CompanionObjectMetadata // companion name -> metadata
 	GoExports        map[string][]string                 // pkgName -> exported symbol names (from Go-only packages)
 	TypeAliases      map[string]Type                     // type alias name -> underlying type (e.g., "Handler" -> func(Request) Future[Response])
+	EmbedDirectives  []EmbedDirective                    // embed val declarations
 	FilePath         string                              // source file path (for error reporting)
 	SourceContent    string                              // raw source text (for error snippets)
 }
@@ -245,5 +257,53 @@ func (t *GalaToGoTranspiler) Transpile(input string, filePath string) (string, e
 		return "", err
 	}
 
-	return t.generator.Generate(fset, file)
+	code, err := t.generator.Generate(fset, file)
+	if err != nil {
+		return "", err
+	}
+
+	// Post-process: insert //go:embed directives before the matching var declarations.
+	// The Go AST doesn't support attaching pragmas to synthetic nodes (position 0),
+	// so we insert them as a string transformation on the formatted output.
+	if len(richAST.EmbedDirectives) > 0 {
+		code = insertEmbedDirectives(code, richAST.EmbedDirectives)
+	}
+
+	return code, nil
+}
+
+// insertEmbedDirectives inserts //go:embed comments before matching var declarations
+// in the generated Go source code.
+func insertEmbedDirectives(code string, directives []EmbedDirective) string {
+	lines := strings.Split(code, "\n")
+	var result []string
+
+	// Build lookup: Go var name → embed directive
+	lookup := make(map[string]*EmbedDirective)
+	for i := range directives {
+		lookup[directives[i].GoVar] = &directives[i]
+	}
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Match "var <name> " or "var <name>\t" patterns
+		for goVar, ed := range lookup {
+			// Check for: "var _embed_x embed.FS" or "var readme string"
+			prefix := "var " + goVar + " "
+			prefixTab := "var " + goVar + "\t"
+			if strings.HasPrefix(trimmed, prefix) || strings.HasPrefix(trimmed, prefixTab) {
+				// Insert //go:embed directives (one per pattern)
+				for _, pattern := range ed.Patterns {
+					result = append(result, "//go:embed "+pattern)
+				}
+				delete(lookup, goVar)
+				break
+			}
+		}
+
+		result = append(result, line)
+	}
+
+	return strings.Join(result, "\n")
 }

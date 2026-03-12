@@ -16,6 +16,7 @@ exports_files([
     # Go source files for stdlib embedding
     "types.go",
     "interfaces.go",
+    "embedded_fs.go",
 ])
 
 # Filegroup for all GALA source files in std - used by tests
@@ -99,6 +100,7 @@ go_library(
     srcs = [
         "constptr.gen.go",
         "either.gen.go",
+        "embedded_fs.go",
         "errors.gen.go",
         "hashable.gen.go",
         "immutable.gen.go",

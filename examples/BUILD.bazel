@@ -1148,3 +1148,4 @@ gala_library(
     name = "bug017_copy_self_qualify",
     srcs = ["bug017_copy/lib.gala"],
 )
+
