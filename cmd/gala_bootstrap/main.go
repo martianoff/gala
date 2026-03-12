@@ -20,7 +20,13 @@ func main() {
 	output := flag.String("output", "", "Output .go file")
 	search := flag.String("search", ".", "Comma-separated search paths")
 	packageFiles := flag.String("package-files", "", "Comma-separated list of sibling .gala files in the same package")
+	goroot := flag.String("goroot", "", "Path to Go SDK root (for Go type inference)")
 	flag.Parse()
+
+	// Set GOROOT for Go type inference if provided
+	if *goroot != "" {
+		os.Setenv("GOROOT", *goroot)
+	}
 
 	if *input == "" {
 		fmt.Fprintln(os.Stderr, "Error: -input is required")

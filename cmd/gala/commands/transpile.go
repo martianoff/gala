@@ -21,6 +21,7 @@ var (
 	transpileRun          bool
 	transpileSearch       string
 	transpilePackageFiles string
+	transpileGoroot       string
 )
 
 var transpileCmd = &cobra.Command{
@@ -45,6 +46,7 @@ func init() {
 	transpileCmd.Flags().BoolVarP(&transpileRun, "run", "r", false, "Execute the generated Go code")
 	transpileCmd.Flags().StringVarP(&transpileSearch, "search", "s", ".", "Comma-separated search paths")
 	transpileCmd.Flags().StringVar(&transpilePackageFiles, "package-files", "", "Comma-separated list of sibling .gala files in the same package")
+	transpileCmd.Flags().StringVar(&transpileGoroot, "goroot", "", "Path to Go SDK root (for Go type inference)")
 }
 
 func runTranspile(cmd *cobra.Command, args []string) {
@@ -65,6 +67,11 @@ func runTranspile(cmd *cobra.Command, args []string) {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: failed to read input file: %v\n", err)
 		os.Exit(1)
+	}
+
+	// Set GOROOT for Go type inference if provided via flag
+	if transpileGoroot != "" {
+		os.Setenv("GOROOT", transpileGoroot)
 	}
 
 	// Create transpiler pipeline

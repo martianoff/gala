@@ -1,0 +1,22 @@
+package main
+
+import "fmt"
+
+// Main file uses functions defined in helpers.gala which rely on
+// Go type inference for strings.Split, strconv.Itoa, etc.
+func main() {
+    // parseCSV uses strings.Split (inferred return: []string)
+    val items = parseCSV("alpha, beta , gamma")
+    val cleaned = trimAll(items)
+
+    for _, item := range cleaned {
+        fmt.Println(item)
+    }
+
+    // formatNumber uses strconv.Itoa (inferred return: string)
+    val numStr = formatNumber(99)
+    fmt.Println(numStr)
+
+    // summarize uses strings.Join + strings.ToUpper (inferred: string)
+    summarize(cleaned)
+}

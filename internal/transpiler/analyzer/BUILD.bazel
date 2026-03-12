@@ -2,7 +2,10 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "analyzer",
-    srcs = ["analyzer.go"],
+    srcs = [
+        "analyzer.go",
+        "go_types.go",
+    ],
     importpath = "martianoff/gala/internal/transpiler/analyzer",
     visibility = ["//:__subpackages__"],
     deps = [
@@ -21,6 +24,8 @@ go_test(
     name = "analyzer_test",
     srcs = [
         "analyzer_test.go",
+        "go_types_debug_test.go",
+        "go_types_test.go",
         "test_helper.go",
     ],
     data = [

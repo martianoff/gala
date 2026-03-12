@@ -123,6 +123,12 @@ func (t *galaASTTransformer) getExprTypeNameManualUncached(expr ast.Expr) transp
 				return fType
 			}
 		}
+		// Try Go type info for struct field access and method calls on Go types
+		if !xType.IsNil() {
+			if fType := t.getGoFieldType(xTypeName, e.Sel.Name); fType != nil {
+				return fType
+			}
+		}
 		// It might be a package-qualified name
 		if x, ok := e.X.(*ast.Ident); ok {
 			if t.importManager.IsPackage(x.Name) {
@@ -317,8 +323,8 @@ func (t *galaASTTransformer) getExprTypeNameManualUncached(expr ast.Expr) transp
 						}
 						return fMeta.ReturnType
 					}
-					// Check for known Go stdlib functions (e.g., fmt.Sprintf -> string)
-					if retType := getKnownGoStdlibReturnType(fullName); retType != nil {
+					// Check Go type info (stdlib, local Go files, third-party)
+					if retType := t.getGoFuncReturnType(fullName); retType != nil {
 						return retType
 					}
 					// Handle Receiver_Method (e.g., std.Some_Apply, std.Try_FlatMap)
@@ -350,9 +356,9 @@ func (t *galaASTTransformer) getExprTypeNameManualUncached(expr ast.Expr) transp
 						return transpiler.NamedType{Package: pkgName, Name: sel.Sel.Name}
 					}
 				} else {
-					// For external Go packages not in t.imports, still check known stdlib functions
+					// For external Go packages not in t.imports, check Go type info
 					fullName := id.Name + "." + sel.Sel.Name
-					if retType := getKnownGoStdlibReturnType(fullName); retType != nil {
+					if retType := t.getGoFuncReturnType(fullName); retType != nil {
 						return retType
 					}
 				}
@@ -378,6 +384,11 @@ func (t *galaASTTransformer) getExprTypeNameManualUncached(expr ast.Expr) transp
 					if result := t.resolveMethodCallTypeWithParams(baseTypeName, sel.Sel.Name, typeArgs, e.Args, -1, genType.Params); !result.IsNil() {
 						return result
 					}
+				}
+				// Fallback: try Go type info for method calls on Go types
+				// e.g., scanner.Text() -> string, req.Header.Set() -> void
+				if retType := t.getGoMethodReturnType(xTypeName, sel.Sel.Name); retType != nil {
+					return retType
 				}
 			}
 
@@ -1105,74 +1116,62 @@ func (t *galaASTTransformer) substituteTranspilerTypeParams(typ transpiler.Type,
 	return typ
 }
 
-// knownGoStdlibReturnTypes maps common Go stdlib functions to their return types.
-// This helps type inference for calls like fmt.Sprintf, strings.Join, etc.
-var knownGoStdlibReturnTypes = map[string]transpiler.Type{
-	// fmt package
-	"fmt.Sprintf":  transpiler.BasicType{Name: "string"},
-	"fmt.Sprint":   transpiler.BasicType{Name: "string"},
-	"fmt.Sprintln": transpiler.BasicType{Name: "string"},
-	// strings package
-	"strings.Join":       transpiler.BasicType{Name: "string"},
-	"strings.Replace":    transpiler.BasicType{Name: "string"},
-	"strings.ReplaceAll": transpiler.BasicType{Name: "string"},
-	"strings.ToLower":    transpiler.BasicType{Name: "string"},
-	"strings.ToUpper":    transpiler.BasicType{Name: "string"},
-	"strings.TrimSpace":  transpiler.BasicType{Name: "string"},
-	"strings.Trim":       transpiler.BasicType{Name: "string"},
-	"strings.TrimPrefix": transpiler.BasicType{Name: "string"},
-	"strings.TrimSuffix": transpiler.BasicType{Name: "string"},
-	"strings.Contains":   transpiler.BasicType{Name: "bool"},
-	"strings.HasPrefix":  transpiler.BasicType{Name: "bool"},
-	"strings.HasSuffix":  transpiler.BasicType{Name: "bool"},
-	"strings.Index":      transpiler.BasicType{Name: "int"},
-	"strings.Count":      transpiler.BasicType{Name: "int"},
-	// strconv package
-	"strconv.Itoa":       transpiler.BasicType{Name: "string"},
-	"strconv.FormatInt":  transpiler.BasicType{Name: "string"},
-	"strconv.FormatBool": transpiler.BasicType{Name: "string"},
-	// math package
-	"math.Abs":   transpiler.BasicType{Name: "float64"},
-	"math.Max":   transpiler.BasicType{Name: "float64"},
-	"math.Min":   transpiler.BasicType{Name: "float64"},
-	"math.Floor": transpiler.BasicType{Name: "float64"},
-	"math.Ceil":  transpiler.BasicType{Name: "float64"},
-	"math.Round": transpiler.BasicType{Name: "float64"},
-	"math.Sqrt":  transpiler.BasicType{Name: "float64"},
-	// os package
-	"os.Getenv":     transpiler.BasicType{Name: "string"},
-	"os.Hostname":   transpiler.BasicType{Name: "string"},
-	"os.Getwd":      transpiler.BasicType{Name: "string"},
-	"os.TempDir":    transpiler.BasicType{Name: "string"},
-	"os.UserHomeDir": transpiler.BasicType{Name: "string"},
-	"os.Executable": transpiler.BasicType{Name: "string"},
-	// os/exec package
-	"exec.Command":        transpiler.PointerType{Elem: transpiler.NamedType{Package: "exec", Name: "Cmd"}},
-	"exec.CommandContext":  transpiler.PointerType{Elem: transpiler.NamedType{Package: "exec", Name: "Cmd"}},
-	"exec.LookPath":       transpiler.BasicType{Name: "string"},
-	// runtime package
-	"runtime.GOOS":   transpiler.BasicType{Name: "string"},
-	"runtime.GOARCH": transpiler.BasicType{Name: "string"},
-	// filepath package
-	"filepath.Join":    transpiler.BasicType{Name: "string"},
-	"filepath.Dir":     transpiler.BasicType{Name: "string"},
-	"filepath.Base":    transpiler.BasicType{Name: "string"},
-	"filepath.Ext":     transpiler.BasicType{Name: "string"},
-	"filepath.Abs":     transpiler.BasicType{Name: "string"},
-	"filepath.Clean":   transpiler.BasicType{Name: "string"},
-	// path package
-	"path.Join":  transpiler.BasicType{Name: "string"},
-	"path.Dir":   transpiler.BasicType{Name: "string"},
-	"path.Base":  transpiler.BasicType{Name: "string"},
-	"path.Ext":   transpiler.BasicType{Name: "string"},
-	"path.Clean": transpiler.BasicType{Name: "string"},
-	// len is a builtin, but handle it if needed
+// getGoFuncReturnType returns the first return type of a Go function using GoTypeInfo.
+// Handles package-qualified function calls like fmt.Sprintf, strings.Split, etc.
+func (t *galaASTTransformer) getGoFuncReturnType(qualifiedName string) transpiler.Type {
+	if t.goTypeInfo == nil {
+		return nil
+	}
+	return t.goTypeInfo.GetFuncReturnType(qualifiedName)
 }
 
-// getKnownGoStdlibReturnType returns the return type for a known Go stdlib function.
-func getKnownGoStdlibReturnType(fullName string) transpiler.Type {
-	if retType, ok := knownGoStdlibReturnTypes[fullName]; ok {
+// getGoMethodReturnType returns the first return type of a method on a Go type.
+// Handles calls like scanner.Text(), req.Header.Set(), etc.
+// The typeName may be package-qualified (e.g., "bufio.Scanner") or a pointer type.
+func (t *galaASTTransformer) getGoMethodReturnType(typeName, methodName string) transpiler.Type {
+	if t.goTypeInfo == nil {
+		return nil
+	}
+	// Strip pointer prefix
+	cleanType := strings.TrimPrefix(typeName, "*")
+
+	// Try direct lookup
+	if retType := t.goTypeInfo.GetMethodReturnType(cleanType, methodName); retType != nil {
 		return retType
 	}
+
+	// If the type is a Go type alias, resolve and try the underlying type's methods
+	if aliasedType := t.goTypeInfo.ResolveTypeAlias(cleanType); aliasedType != nil {
+		aliasedName := aliasedType.String()
+		if retType := t.goTypeInfo.GetMethodReturnType(aliasedName, methodName); retType != nil {
+			return retType
+		}
+	}
+
+	return nil
+}
+
+// getGoFieldType returns the type of a field on a Go struct type.
+// Handles field access like req.Header, resp.StatusCode, etc.
+func (t *galaASTTransformer) getGoFieldType(typeName, fieldName string) transpiler.Type {
+	if t.goTypeInfo == nil {
+		return nil
+	}
+	// Strip pointer prefix
+	cleanType := strings.TrimPrefix(typeName, "*")
+
+	// Try direct lookup
+	if fType := t.goTypeInfo.GetFieldType(cleanType, fieldName); fType != nil {
+		return fType
+	}
+
+	// If the type is a Go type alias, resolve and try the underlying type's fields
+	if aliasedType := t.goTypeInfo.ResolveTypeAlias(cleanType); aliasedType != nil {
+		aliasedName := aliasedType.String()
+		if fType := t.goTypeInfo.GetFieldType(aliasedName, fieldName); fType != nil {
+			return fType
+		}
+	}
+
 	return nil
 }

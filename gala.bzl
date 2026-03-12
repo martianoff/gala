@@ -107,12 +107,14 @@ def gala_transpile(name, src, out = None, package_files = [], extra_srcs = [], g
         parents = [_dep_parent_dir(dep) for dep in gala_deps]
         dep_search = "," + ",".join(parents)
 
-    # Use go.mod location to find the repository root for search path
+    # Use go.mod location to find the repository root for search path.
+    # Pass GOROOT via --goroot flag so the transpiler can use go/importer
+    # for Go type inference (function return types, struct fields, etc.).
     native.genrule(
         name = name,
         srcs = [src] + package_files + extra_srcs + dep_srcs + [Label("//:all_gala_sources"), Label("//:go.mod")],
         outs = [out],
-        cmd = "$(location {tool}) --input $(location {src}) --output $@ --search $$(dirname $(location {gomod})){dep_search}{pf}".format(
+        cmd = "$(location {tool}) --input $(location {src}) --output $@ --search $$(dirname $(location {gomod})){dep_search}{pf} --goroot=$${{GOROOT:-}}".format(
             tool = Label("//cmd/gala"),
             src = src,
             gomod = Label("//:go.mod"),
@@ -136,12 +138,13 @@ def gala_bootstrap_transpile(name, src, out = None, package_files = []):
         locs = ",".join(["$(location %s)" % f for f in package_files])
         pf_flag = " --package-files " + locs
 
-    # Use go.mod location to find the repository root for search path
+    # Use go.mod location to find the repository root for search path.
+    # Pass GOROOT for Go type inference support.
     native.genrule(
         name = name,
         srcs = [src] + package_files + [Label("//:all_gala_sources"), Label("//:go.mod")],
         outs = [out],
-        cmd = "$(location {tool}) --input $(location {src}) --output $@ --search $$(dirname $(location {gomod})){pf}".format(
+        cmd = "$(location {tool}) --input $(location {src}) --output $@ --search $$(dirname $(location {gomod})){pf} --goroot=$${{GOROOT:-}}".format(
             tool = Label("//cmd/gala_bootstrap"),
             src = src,
             gomod = Label("//:go.mod"),

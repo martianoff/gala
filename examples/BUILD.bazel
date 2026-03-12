@@ -31,6 +31,9 @@ filegroup(
         "bug013_type_alias_lib/types.gala",
         "bug013_type_alias_lib/processor.gala",
         "bug013_type_alias_lib_test.gala",
+        "go_type_inference_lib/textutil.gala",
+        "go_type_inference_multifile/helpers.gala",
+        "go_type_inference_multifile/main.gala",
     ],
     visibility = ["//visibility:public"],
 )
@@ -1159,5 +1162,38 @@ gala_test(
 gala_library(
     name = "bug017_copy_self_qualify",
     srcs = ["bug017_copy/lib.gala"],
+)
+
+# Go type inference: library that wraps Go stdlib functions
+gala_library(
+    name = "go_type_inference_lib",
+    src = "go_type_inference_lib/textutil.gala",
+    importpath = "martianoff/gala/examples/go_type_inference_lib",
+    visibility = ["//visibility:public"],
+)
+
+# Go type inference: single-file test using Go stdlib return types
+gala_test(
+    name = "go_type_inference_basic",
+    src = "go_type_inference_basic.gala",
+    expected = "go_type_inference_basic.out",
+)
+
+# Go type inference: multi-file test with cross-file Go type inference
+gala_test(
+    name = "go_type_inference_multifile",
+    srcs = [
+        "go_type_inference_multifile/helpers.gala",
+        "go_type_inference_multifile/main.gala",
+    ],
+    expected = "go_type_inference_multifile/go_type_inference_multifile.out",
+)
+
+# Go type inference: cross-package test using a GALA library that wraps Go stdlib
+gala_test(
+    name = "go_type_inference_cross_pkg",
+    src = "go_type_inference_cross_pkg.gala",
+    expected = "go_type_inference_cross_pkg.out",
+    deps = [":go_type_inference_lib"],
 )
 

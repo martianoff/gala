@@ -1,0 +1,52 @@
+package main
+
+import (
+    "fmt"
+    "strings"
+    "strconv"
+    "os"
+)
+
+// Tests Go stdlib return type inference:
+// - strings.Split returns []string
+// - strings.Join returns string
+// - strconv.Itoa returns string
+// - strconv.Atoi returns (int, error)
+// - os.Getenv returns string
+func main() {
+    // strings.Split should return []string — inferred from Go type info
+    val parts = strings.Split("hello,world,gala", ",")
+    fmt.Println(len(parts))
+
+    // strings.Join should return string
+    val joined = strings.Join(parts, " + ")
+    fmt.Println(joined)
+
+    // strconv.Itoa should return string
+    val numStr = strconv.Itoa(42)
+    fmt.Println(numStr)
+
+    // strconv.Atoi returns (int, error) — val gets int
+    var n, err = strconv.Atoi("123")
+    if err != nil {
+        fmt.Println("error")
+    } else {
+        fmt.Println(n)
+    }
+
+    // strings.Contains returns bool
+    val hasFoo = strings.Contains("foobar", "foo")
+    fmt.Println(hasFoo)
+
+    // strings.ToUpper returns string
+    val upper = strings.ToUpper("gala")
+    fmt.Println(upper)
+
+    // strings.Replace returns string
+    val replaced = strings.Replace("hello world", "world", "gala", 1)
+    fmt.Println(replaced)
+
+    // os.Getenv returns string
+    val path = os.Getenv("PATH")
+    fmt.Println(len(path) > 0)
+}

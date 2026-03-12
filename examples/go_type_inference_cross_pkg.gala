@@ -1,0 +1,26 @@
+package main
+
+import (
+    "fmt"
+    "strings"
+    . "martianoff/gala/examples/go_type_inference_lib"
+)
+
+// Tests Go type inference in cross-package usage:
+// The library uses Go stdlib functions (strings.Fields, strings.HasPrefix, etc.)
+// and this main program calls the library functions.
+func main() {
+    val count = WordCount("hello world from gala")
+    fmt.Println(count)
+
+    val rev = Reverse("gala")
+    fmt.Println(rev)
+
+    val has = HasPrefix("golang", "go")
+    fmt.Println(has)
+
+    // strings.Split return type inferred from Go type info
+    val items = strings.Split("one,two,three", ",")
+    val joined = JoinWith(items, " + ")
+    fmt.Println(joined)
+}

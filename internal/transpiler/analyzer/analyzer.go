@@ -285,6 +285,32 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 		}
 	}
 
+	// 0.6 Analyze Go packages for type information.
+	// For non-GALA imports (Go stdlib and third-party Go packages), use go/importer
+	// to extract function signatures, type definitions, and type aliases.
+	for _, impDecl := range sourceFile.AllImportDeclaration() {
+		ctx := impDecl.(*grammar.ImportDeclarationContext)
+		for _, spec := range ctx.AllImportSpec() {
+			s := spec.(*grammar.ImportSpecContext)
+			path := strings.Trim(s.STRING().GetText(), "\"")
+
+			isInternalGala := strings.HasPrefix(path, "martianoff/gala/")
+			isExternalGala := a.resolver.IsGalaPackage(path)
+			if isInternalGala || isExternalGala {
+				continue // Already handled above
+			}
+
+			// This is a Go package — analyze it for type info
+			goInfo := AnalyzeGoPackage(path)
+			if len(goInfo.Functions) > 0 || len(goInfo.Types) > 0 || len(goInfo.Variables) > 0 || len(goInfo.TypeAliases) > 0 {
+				if richAST.GoTypeInfo == nil {
+					richAST.GoTypeInfo = transpiler.NewGoTypeInfo()
+				}
+				richAST.GoTypeInfo.Merge(goInfo)
+			}
+		}
+	}
+
 	// 0.75 Also scan sibling imports to ensure all GALA packages used by siblings
 	// are loaded into richAST.Types. Without this, resolveTypeWithParams for sibling
 	// struct fields can't find types from packages that only siblings import.
@@ -1540,6 +1566,14 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 	}
 	if !hasGalaFiles {
 		a.extractGoFileExports(files, dirPath, relPath, pkgAST)
+		// Also extract full type information from local Go files
+		goInfo := AnalyzeGoFiles(dirPath)
+		if len(goInfo.Functions) > 0 || len(goInfo.Types) > 0 || len(goInfo.Variables) > 0 || len(goInfo.TypeAliases) > 0 {
+			if pkgAST.GoTypeInfo == nil {
+				pkgAST.GoTypeInfo = transpiler.NewGoTypeInfo()
+			}
+			pkgAST.GoTypeInfo.Merge(goInfo)
+		}
 	}
 
 	return pkgAST, nil
