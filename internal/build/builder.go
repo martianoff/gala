@@ -193,6 +193,8 @@ func (b *Builder) transpile() error {
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
 
+	var allEmbedPatterns []string
+
 	for _, galaFile := range galaFiles {
 		content, err := os.ReadFile(galaFile)
 		if err != nil {
@@ -219,6 +221,9 @@ func (b *Builder) transpile() error {
 			return fmt.Errorf("transpiling %s: %w", galaFile, err)
 		}
 
+		// Collect embed patterns from generated Go code
+		allEmbedPatterns = append(allEmbedPatterns, extractEmbedPatterns(goCode)...)
+
 		relPath, err := filepath.Rel(b.workspace.ProjectDir, galaFile)
 		if err != nil {
 			relPath = filepath.Base(galaFile)
@@ -235,9 +240,90 @@ func (b *Builder) transpile() error {
 		}
 	}
 
+	// Copy embed source files to the gen directory
+	if len(allEmbedPatterns) > 0 {
+		if err := b.copyEmbedFiles(allEmbedPatterns); err != nil {
+			return fmt.Errorf("copying embed files: %w", err)
+		}
+	}
+
 	// Save source hash for next build
 	if currentHash != "" {
 		os.WriteFile(hashFile, []byte(currentHash), 0644)
+	}
+
+	return nil
+}
+
+// extractEmbedPatterns parses //go:embed directives from generated Go code
+// and returns the embed patterns.
+func extractEmbedPatterns(goCode string) []string {
+	var patterns []string
+	for _, line := range strings.Split(goCode, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "//go:embed ") {
+			pattern := strings.TrimPrefix(trimmed, "//go:embed ")
+			pattern = strings.TrimSpace(pattern)
+			if pattern != "" {
+				patterns = append(patterns, pattern)
+			}
+		}
+	}
+	return patterns
+}
+
+// copyEmbedFiles copies files matching embed patterns from the project directory
+// to the workspace gen directory, preserving relative paths.
+func (b *Builder) copyEmbedFiles(patterns []string) error {
+	if b.verbose {
+		fmt.Println("Copying embed source files...")
+	}
+
+	for _, pattern := range patterns {
+		// Resolve the glob pattern relative to the project directory
+		absPattern := filepath.Join(b.workspace.ProjectDir, pattern)
+		matches, err := filepath.Glob(absPattern)
+		if err != nil {
+			return fmt.Errorf("expanding embed pattern %q: %w", pattern, err)
+		}
+
+		if len(matches) == 0 {
+			// If no glob match, the pattern might refer to a single file;
+			// still try to copy it (Go compiler will report the error if missing)
+			srcPath := filepath.Join(b.workspace.ProjectDir, pattern)
+			if info, statErr := os.Stat(srcPath); statErr == nil && !info.IsDir() {
+				matches = []string{srcPath}
+			}
+		}
+
+		for _, srcPath := range matches {
+			relPath, err := filepath.Rel(b.workspace.ProjectDir, srcPath)
+			if err != nil {
+				return fmt.Errorf("computing relative path for %s: %w", srcPath, err)
+			}
+
+			dstPath := filepath.Join(b.workspace.GenDir, relPath)
+
+			// Create destination directory
+			dstDir := filepath.Dir(dstPath)
+			if err := os.MkdirAll(dstDir, 0755); err != nil {
+				return fmt.Errorf("creating directory %s: %w", dstDir, err)
+			}
+
+			// Copy the file
+			data, err := os.ReadFile(srcPath)
+			if err != nil {
+				return fmt.Errorf("reading embed file %s: %w", srcPath, err)
+			}
+
+			if err := os.WriteFile(dstPath, data, 0644); err != nil {
+				return fmt.Errorf("writing embed file %s: %w", dstPath, err)
+			}
+
+			if b.verbose {
+				fmt.Printf("  embed: %s\n", relPath)
+			}
+		}
 	}
 
 	return nil
