@@ -373,7 +373,9 @@ func (b *Builder) transpileDeps() error {
 				allExist = false
 				break
 			}
-			b.transpiledDeps[req.Path] = dir
+			// Key by internal module path (from dep's gala.mod), matching TranspileDeps() behavior
+			modPath := resolveDepInternalModulePath(b.config, req)
+			b.transpiledDeps[modPath] = dir
 		}
 		if allExist {
 			if b.verbose {
@@ -399,6 +401,19 @@ func (b *Builder) transpileDeps() error {
 	os.WriteFile(depsHashFile, []byte(currentHash), 0644)
 
 	return nil
+}
+
+// resolveDepInternalModulePath reads a dependency's gala.mod to get its declared
+// module path. Falls back to dep.Path if not found.
+func resolveDepInternalModulePath(config *Config, dep mod.Require) string {
+	cachedDir := config.GalaModulePath(dep.Path, dep.Version)
+	galaModPath := filepath.Join(cachedDir, "gala.mod")
+	if depMod, err := mod.ParseFile(galaModPath); err == nil {
+		if depMod.Module.Path != "" {
+			return depMod.Module.Path
+		}
+	}
+	return dep.Path
 }
 
 // findGalaFiles finds all .gala files in the given directory (non-recursive for now).
