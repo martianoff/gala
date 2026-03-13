@@ -27,7 +27,7 @@ jobs:
           repository-cache: true
 
       - name: Build
-        run: bazel build //... --action_env=GOROOT=$GOROOT
+        run: bazel build //... --action_env=GOROOT --action_env=PATH
 
       - name: Test
-        run: bazel test //... --test_output=errors --verbose_failures --action_env=GOROOT=$GOROOT
+        run: bazel test //... --test_output=errors --verbose_failures --action_env=GOROOT --action_env=PATH
