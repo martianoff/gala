@@ -111,10 +111,11 @@ func (c *Cache) Store(modulePath, ver, sourceDir string) error {
 			return nil
 		}
 
-		// Only copy .gala files, gala.mod, and BUILD.bazel
+		// Copy .gala files, .go files, gala.mod, go.sum, and BUILD.bazel
+		// .go files are needed for pure Go subpackages within GALA modules
 		ext := filepath.Ext(path)
 		name := info.Name()
-		if ext != ".gala" && name != "gala.mod" && name != "BUILD.bazel" {
+		if ext != ".gala" && ext != ".go" && name != "gala.mod" && name != "go.sum" && name != "BUILD.bazel" {
 			return nil
 		}
 

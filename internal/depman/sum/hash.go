@@ -32,10 +32,10 @@ func HashDir(dir string) (string, error) {
 			return nil
 		}
 
-		// Include .gala files and gala.mod
+		// Include .gala files, .go files, gala.mod, go.sum, and BUILD.bazel
 		ext := filepath.Ext(path)
 		name := info.Name()
-		if ext == ".gala" || name == "gala.mod" || name == "BUILD.bazel" {
+		if ext == ".gala" || ext == ".go" || name == "gala.mod" || name == "go.sum" || name == "BUILD.bazel" {
 			relPath, err := filepath.Rel(dir, path)
 			if err != nil {
 				return err
