@@ -3,11 +3,19 @@ load("//:gala.bzl", "gala_binary", "gala_library", "gala_test")
 filegroup(
     name = "gala_sources",
     srcs = [
+        "bug013_cross_pkg/corelib/corelib.gala",
+        "bug013_cross_pkg/main.gala",
+        "bug013_type_alias_lib/processor.gala",
+        "bug013_type_alias_lib/types.gala",
+        "bug013_type_alias_lib_test.gala",
         "cross_file_unwrap/main.gala",
         "cross_file_unwrap/types.gala",
         "cross_file_unwrap_lib/ops.gala",
         "cross_file_unwrap_lib/types.gala",
         "foldleft_method/main.gala",
+        "go_type_inference_lib/textutil.gala",
+        "go_type_inference_multifile/helpers.gala",
+        "go_type_inference_multifile/main.gala",
         "lib/generic.gala",
         "match_method_chain/main.gala",
         "match_method_chain/types.gala",
@@ -20,20 +28,12 @@ filegroup(
         "multi_file_option/main.gala",
         "multi_file_types/main.gala",
         "multi_file_types/model.gala",
+        "slice_unwrap/main.gala",
+        "slice_unwrap/model.gala",
         "struct_field_unwrap/main.gala",
         "struct_field_unwrap/types.gala",
         "use_cross_file_unwrap_lib.gala",
         "wrapper_method_lambda/main.gala",
-        "slice_unwrap/main.gala",
-        "slice_unwrap/model.gala",
-        "bug013_cross_pkg/corelib/corelib.gala",
-        "bug013_cross_pkg/main.gala",
-        "bug013_type_alias_lib/types.gala",
-        "bug013_type_alias_lib/processor.gala",
-        "bug013_type_alias_lib_test.gala",
-        "go_type_inference_lib/textutil.gala",
-        "go_type_inference_multifile/helpers.gala",
-        "go_type_inference_multifile/main.gala",
     ],
     visibility = ["//visibility:public"],
 )
@@ -489,6 +489,12 @@ gala_test(
     name = "match_type_inference",
     src = "match_type_inference.gala",
     expected = "match_type_inference.out",
+)
+
+gala_test(
+    name = "match_go_constant",
+    src = "match_go_constant.gala",
+    expected = "match_go_constant.out",
 )
 
 gala_test(
@@ -1133,7 +1139,10 @@ gala_test(
     name = "bug013_cross_pkg",
     src = "bug013_cross_pkg/main.gala",
     expected = "bug013_cross_pkg/main.out",
-    deps = ["//concurrent", ":bug013_cross_pkg_corelib"],
+    deps = [
+        ":bug013_cross_pkg_corelib",
+        "//concurrent",
+    ],
 )
 
 # BUG-013 repro: type alias for func type in library package + match through alias
@@ -1142,8 +1151,8 @@ gala_test(
 gala_library(
     name = "bug013_type_alias_lib",
     srcs = [
-        "bug013_type_alias_lib/types.gala",
         "bug013_type_alias_lib/processor.gala",
+        "bug013_type_alias_lib/types.gala",
     ],
     importpath = "martianoff/gala/examples/bug013_type_alias_lib",
     visibility = ["//visibility:public"],
@@ -1196,4 +1205,3 @@ gala_test(
     expected = "go_type_inference_cross_pkg.out",
     deps = [":go_type_inference_lib"],
 )
-
