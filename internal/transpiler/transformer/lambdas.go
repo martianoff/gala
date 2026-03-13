@@ -260,12 +260,16 @@ func (t *galaASTTransformer) tryWrapGoMultiReturnWithErrorPanic(expr ast.Expr) (
 			tupleType = &ast.IndexListExpr{X: tupleBase, Indices: typeArgs}
 		}
 
-		// Build field key-value pairs: V1: _v0, V2: _v1, ...
+		// Build field key-value pairs: V1: NewImmutable(_v0), V2: NewImmutable(_v1), ...
+		// Tuple fields are Immutable[T] (val fields)
 		var elts []ast.Expr
 		for i := 0; i < valueCount; i++ {
 			elts = append(elts, &ast.KeyValueExpr{
-				Key:   ast.NewIdent(fmt.Sprintf("V%d", i+1)),
-				Value: ast.NewIdent(fmt.Sprintf("_v%d", i)),
+				Key: ast.NewIdent(fmt.Sprintf("V%d", i+1)),
+				Value: &ast.CallExpr{
+					Fun:  t.stdIdent("NewImmutable"),
+					Args: []ast.Expr{ast.NewIdent(fmt.Sprintf("_v%d", i))},
+				},
 			})
 		}
 
