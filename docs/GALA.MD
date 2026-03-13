@@ -1046,8 +1046,12 @@ val success = Success(42)
 val failure = Failure[int](NoSuchElementError(Message = "not found"))
 
 // Try: safely execute code that may panic
-val result = Try[int](() => riskyDivide(10, 0))  // Failure (catches panic)
-val safe = Try[int](() => riskyDivide(10, 2))    // Success(5)
+val result = Try(() => riskyDivide(10, 0))  // Failure (catches panic)
+val safe = Try(() => riskyDivide(10, 2))    // Success(5)
+
+// Function reference sugar: pass a zero-arg function directly (no lambda needed)
+val dir = Try(os.TempDir)               // same as Try(() => os.TempDir())
+val answer = Try(getAnswer)             // works with GALA functions too
 
 // Pattern matching (exhaustive - no case _ needed)
 val msg = success match {
@@ -1097,6 +1101,7 @@ func processOrder(id int) Try[Receipt] =
 | Method | Description |
 |--------|-------------|
 | `Try[T](f)` | Execute f, catch panics as Failure |
+| `Try(funcRef)` | Pass a zero-arg function reference directly (sugar) |
 | `IsSuccess()` / `IsFailure()` | Check the state |
 | `Get()` | Get value or panic |
 | `GetOrElse(default)` | Get value or return default |

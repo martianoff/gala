@@ -55,8 +55,9 @@ Present findings in the output format specified at the end.
 | Get(0) after length check | `if x.Length() > 0 { x.Get(0) }` | `x.HeadOption()` or pattern match |
 | Unnecessary default on sealed | `case _ =>` when all sealed variants are covered | Remove `case _ =>`; exhaustive match is verified by the transpiler |
 | IsXxx() chains on sealed type | `if s.IsCircle() { ... } else if s.IsRectangle() { ... }` | `s match { case Circle(r) => ... case Rectangle(w, h) => ... }` |
-| If-err-nil on Go error return | `val x, err = f(); if err == nil { ... }` | Wrap with `Try(() => f())` then use `.Map`, `.GetOrElse`, or `match` |
-| Sequential if-err-nil fallback | Multiple `val x, err = f(); if err == nil { return x }` in sequence | `Try(() => f1()).OrElse(Try(() => f2()))` chain |
+| If-err-nil on Go error return | `val x, err = f(); if err == nil { ... }` | Wrap with `Try(f)` (if f takes no args) or `Try(() => f(args))` then use `.Map`, `.GetOrElse`, or `match` |
+| Sequential if-err-nil fallback | Multiple `val x, err = f(); if err == nil { return x }` in sequence | `Try(f1).OrElse(Try(f2))` chain (or `Try(() => f1(args)).OrElse(Try(() => f2(args)))` if args needed) |
+| Lambda wrapper for zero-arg func | `Try(() => f())` where f takes no arguments | `Try(f)` — pass function reference directly |
 
 ### 3. Sealed Types (HIGH priority)
 
@@ -190,6 +191,7 @@ for _, x := range nums {
 | Redundant collection types | `ListOf[int](1, 2, 3)` | `ListOf(1, 2, 3)` |
 | Redundant single-param struct constructor | `Box[int](Value = 42)` | `Box(Value = 42)` (type inferred from named field value) |
 | Redundant generic function call type params | `Try[int](() => { return 1 })` | `Try(() => { return 1 })` (type inferred from lambda return) |
+| Unnecessary lambda for zero-arg func | `Try(() => os.TempDir())` | `Try(os.TempDir)` — pass function reference directly when func takes no args |
 | Redundant generic function call type params | `NewCons[int](head, tail)` | `NewCons(head, tail)` (type inferred from arguments) |
 | Redundant lambda param type | `list.Map((x int) => x * 2)` | `list.Map((x) => x * 2)` (type inferred from method signature) |
 | Redundant method type param | `list.Map[int]((x) => x * 2)` | `list.Map((x) => x * 2)` (Go infers from lambda) |
@@ -319,6 +321,13 @@ func findBinary() Option[string] =
     Try(() => exec.LookPath("gala"))
         .OrElse(Try(() => exec.LookPath("gala.exe")))
         .ToOption()
+```
+
+**Best pattern** — function reference when zero-arg:
+```gala
+// BEST: pass zero-arg function references directly (no lambda wrapper)
+val dir = Try(os.TempDir)                // same as Try(() => os.TempDir())
+val answer = Try(getAnswer)              // works with GALA functions too
 ```
 
 **When to use FlatMap vs OrElse**:

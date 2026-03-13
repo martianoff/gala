@@ -56,7 +56,20 @@ func (t *galaASTTransformer) getExprTypeNameManualUncached(expr ast.Expr) transp
 		if e.Name == "true" || e.Name == "false" {
 			return transpiler.BasicType{Name: "bool"}
 		}
-		return t.getType(e.Name)
+		if typ := t.getType(e.Name); !typ.IsNil() {
+			return typ
+		}
+		// Check if this is a reference to a known GALA function (e.g., passing getAnswer as func() int).
+		if fm, ok := t.functions[e.Name]; ok && len(fm.TypeParams) == 0 {
+			var params []transpiler.Type
+			params = append(params, fm.ParamTypes...)
+			var results []transpiler.Type
+			if fm.ReturnType != nil && !fm.ReturnType.IsNil() {
+				results = append(results, fm.ReturnType)
+			}
+			return transpiler.FuncType{Params: params, Results: results}
+		}
+		return transpiler.NilType{}
 	case *ast.IndexExpr:
 		xType := t.getExprTypeNameManual(e.X)
 		if arr, ok := xType.(transpiler.ArrayType); ok {
@@ -150,6 +163,15 @@ func (t *galaASTTransformer) getExprTypeNameManualUncached(expr ast.Expr) transp
 					}
 					if varType, ok := t.goTypeInfo.Variables[qualName]; ok && varType != nil {
 						return varType
+					}
+					// Check if this is a Go function reference (e.g., os.TempDir without parens).
+					// Return a FuncType so it can unify with expected func() T parameters.
+					if sig := t.goTypeInfo.GetFuncSignature(qualName); sig != nil {
+						var params []transpiler.Type
+						for _, p := range sig.Params {
+							params = append(params, p.Type)
+						}
+						return transpiler.FuncType{Params: params, Results: sig.Returns}
 					}
 				}
 				return transpiler.NamedType{Package: pkgName, Name: e.Sel.Name}

@@ -1,0 +1,25 @@
+package main
+
+import "os"
+
+func getAnswer() int = 42
+
+// Test: Try with function reference (no lambda wrapper needed)
+// Try(os.TempDir) should work the same as Try(() => os.TempDir())
+func main() {
+    // Go function reference
+    val result1 = Try(os.TempDir)
+    Println(result1.IsSuccess())
+
+    // Lambda syntax (existing)
+    val result2 = Try(() => os.TempDir())
+    Println(result2.IsSuccess())
+
+    // Both should produce the same result
+    Println(result1.Get() == result2.Get())
+
+    // GALA function reference (type inferred from function signature)
+    val result3 = Try(getAnswer)
+    Println(result3.IsSuccess())
+    Println(result3.Get())
+}

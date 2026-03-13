@@ -682,19 +682,17 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 						// Build a map from type param name to inferred concrete type
 						inferredMap := make(map[string]transpiler.Type)
 
-						// Step 1: Try to infer from Apply method arguments
+						// Step 1: Try to infer from Apply method arguments using unification.
+						// This handles both simple cases (param is T, arg is string -> T=string)
+						// and complex cases (param is func() T, arg is func() string -> T=string).
+						// FIX-044: Use unifyForInference instead of direct string comparison
+						// so that FuncType params like func() T can be matched against lambda arg types.
 						if len(args) > 0 {
 							for i, arg := range args {
 								if i < len(methodMeta.ParamTypes) {
-									paramTypeStr := methodMeta.ParamTypes[i].String()
-									for _, tp := range typeMeta.TypeParams {
-										if paramTypeStr == tp {
-											argType := t.getExprTypeName(arg)
-											if argType != nil && !argType.IsNil() && !argType.IsAny() {
-												inferredMap[tp] = argType
-											}
-											break
-										}
+									argType := t.getExprTypeName(arg)
+									if argType != nil && !argType.IsNil() && !argType.IsAny() {
+										t.unifyForInference(methodMeta.ParamTypes[i], argType, typeMeta.TypeParams, inferredMap)
 									}
 								}
 							}
