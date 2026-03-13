@@ -1,5 +1,6 @@
 package main
 
+import "net"
 import "os"
 import "strconv"
 
@@ -36,4 +37,18 @@ func main() {
         case Failure(_) => "failed"
     }
     Println(tmpResult)
+
+    // FIX-045 Tuple: Go function returning (string, string, error) -> Tuple[string, string]
+    val hostPort = Try(() => net.SplitHostPort("localhost:8080")) match {
+        case Success(hp) => s"host=${hp.V1} port=${hp.V2}"
+        case Failure(err) => s"Error: ${err.Error()}"
+    }
+    Println(hostPort)
+
+    // FIX-045 Tuple: error case
+    val badHostPort = Try(() => net.SplitHostPort("invalid")) match {
+        case Success(hp) => s"host=${hp.V1} port=${hp.V2}"
+        case Failure(_) => "split error caught"
+    }
+    Println(badHostPort)
 }

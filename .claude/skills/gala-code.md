@@ -42,7 +42,7 @@ Design the implementation following GALA best practices:
 10. **Copy for updates** - Use `.Copy(field = newValue)` instead of mutation
 11. **String interpolation** - Use `s"Hello $name"` instead of `fmt.Sprintf("Hello %s", name)`. Use `f"$x%.2f"` for explicit format control. No `import "fmt"` needed.
 12. **Println/Print** - Use `Println(...)` and `Print(...)` instead of `fmt.Println(...)` / `fmt.Print(...)`. No import needed.
-13. **Try for Go errors** - Wrap Go functions that return `(T, error)` with `Try(() => f())`. Use `.OrElse` for independent fallbacks, `.FlatMap` for dependent chains. Never use sequential `if err == nil` blocks.
+13. **Try for Go errors** - Wrap Go functions that return `(T, error)` with `Try(f)` when f takes no args, or `Try(() => f(args))` when args are needed. Use `.OrElse` for independent fallbacks, `.FlatMap` for dependent chains. Never use sequential `if err == nil` blocks.
 14. **Option over sentinels** - Return `Option[T]` instead of sentinel values (`""`, `0`, `-1`, `nil`) to signal absence. Use `.GetOrElse`, `.Map`, or `match` on the caller side.
 
 ### Step 2: Write the Source Code
@@ -198,7 +198,7 @@ Before finishing, verify:
 - [ ] String interpolation (`s"..."` / `f"..."`) used instead of `fmt.Sprintf`
 - [ ] `Println`/`Print` used instead of `fmt.Println`/`fmt.Print`
 - [ ] No `import "fmt"` unless using functions beyond Println/Print/Sprintf (e.g., `fmt.Errorf`)
-- [ ] Go error returns wrapped with `Try(() => f())`, not `if err == nil` blocks
+- [ ] Go error returns wrapped with `Try(f)` (zero-arg) or `Try(() => f(args))`, not `if err == nil` blocks
 - [ ] Fallback patterns use `Try.OrElse`, not sequential if-err-nil
 - [ ] No sentinel return values (`""`, `0`, `-1`) — use `Option[T]` instead
 - [ ] Tests cover happy path, edge cases, and error cases

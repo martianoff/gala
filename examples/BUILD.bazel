@@ -601,6 +601,12 @@ gala_test(
 )
 
 gala_test(
+    name = "try_func_ref",
+    src = "try_func_ref.gala",
+    expected = "try_func_ref.out",
+)
+
+gala_test(
     name = "sealed_types",
     src = "sealed_types.gala",
     expected = "sealed_types.out",

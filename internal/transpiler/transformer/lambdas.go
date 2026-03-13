@@ -138,10 +138,13 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 					&ast.ExprStmt{X: expr},
 				},
 			}
-		} else if multiRetBody := t.tryWrapGoMultiReturnWithErrorPanic(expr); multiRetBody != nil {
-			// FIX-045: Go function returning (T, error) in expression lambda.
-			// Generate: _v, _err := expr; if _err != nil { panic(_err) }; return _v
+		} else if multiRetBody, multiRetType := t.tryWrapGoMultiReturnWithErrorPanic(expr); multiRetBody != nil {
+			// FIX-045: Go function returning (T, error) or (A, B, error) in expression lambda.
+			// Generate error-panic wrapper and update return type to match.
 			body = multiRetBody
+			if multiRetType != nil && !isConcreteExpectedType {
+				retType = multiRetType
+			}
 		} else {
 			body = &ast.BlockStmt{
 				List: []ast.Stmt{
@@ -172,18 +175,25 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 }
 
 // tryWrapGoMultiReturnWithErrorPanic checks if expr is a call to a Go function
-// returning (T, error). If so, generates a block that captures both returns,
-// panics on error, and returns the value. Returns nil if not applicable.
+// whose last return value is error. If so, generates a block that captures all
+// returns, panics on error, and returns the non-error values.
+//
+// Supported patterns:
+//   - (T, error)       -> returns T
+//   - (A, B, error)    -> returns Tuple[A, B]
+//   - (A, B, C, error) -> returns Tuple3[A, B, C]
+//   - etc. up to Tuple10
+//
 // This enables patterns like Try(() => os.MkdirTemp("", "prefix-*")) where
 // os.MkdirTemp returns (string, error) -- the error is converted to a panic
 // which Try catches as Failure.
-func (t *galaASTTransformer) tryWrapGoMultiReturnWithErrorPanic(expr ast.Expr) *ast.BlockStmt {
+func (t *galaASTTransformer) tryWrapGoMultiReturnWithErrorPanic(expr ast.Expr) (*ast.BlockStmt, ast.Expr) {
 	if t.goTypeInfo == nil {
-		return nil
+		return nil, nil
 	}
 	callExpr, ok := expr.(*ast.CallExpr)
 	if !ok {
-		return nil
+		return nil, nil
 	}
 
 	// Extract the qualified function name from the call
@@ -195,26 +205,83 @@ func (t *galaASTTransformer) tryWrapGoMultiReturnWithErrorPanic(expr ast.Expr) *
 		}
 	}
 	if qualifiedName == "" {
-		return nil
+		return nil, nil
 	}
 
 	sig := t.goTypeInfo.GetFuncSignature(qualifiedName)
-	if sig == nil || len(sig.Returns) != 2 {
-		return nil
+	if sig == nil || len(sig.Returns) < 2 {
+		return nil, nil
 	}
 
-	// Check that the second return is error
-	secondRet := sig.Returns[1]
-	if secondRet == nil || secondRet.String() != "error" {
-		return nil
+	// Check that the LAST return is error
+	lastRet := sig.Returns[len(sig.Returns)-1]
+	if lastRet == nil || lastRet.String() != "error" {
+		return nil, nil
 	}
 
-	// Generate: _v, _err := expr; if _err != nil { panic(_err) }; return _v
+	// Number of non-error return values
+	valueCount := len(sig.Returns) - 1
+
+	// Build LHS variable names: _v0, _v1, ... _vN, _err
+	var lhsExprs []ast.Expr
+	for i := 0; i < valueCount; i++ {
+		lhsExprs = append(lhsExprs, ast.NewIdent(fmt.Sprintf("_v%d", i)))
+	}
+	lhsExprs = append(lhsExprs, ast.NewIdent("_err"))
+
+	// Build the return expression and type
+	var returnExpr ast.Expr
+	var returnTypeExpr ast.Expr
+	if valueCount == 1 {
+		// (T, error) -> return _v0, type is T
+		returnExpr = ast.NewIdent("_v0")
+		returnTypeExpr = t.typeToExpr(sig.Returns[0])
+	} else {
+		// (A, B, error) -> return std.Tuple[A, B]{V1: _v0, V2: _v1}
+		// (A, B, C, error) -> return std.Tuple3[A, B, C]{V1: _v0, V2: _v1, V3: _v2}
+		// etc.
+		tupleName := "Tuple"
+		if valueCount > 2 {
+			tupleName = fmt.Sprintf("Tuple%d", valueCount)
+		}
+
+		// Build type args from the non-error return types
+		var typeArgs []ast.Expr
+		for i := 0; i < valueCount; i++ {
+			typeArgs = append(typeArgs, t.typeToExpr(sig.Returns[i]))
+		}
+
+		// Build tuple type expression: std.Tuple[A, B] or std.Tuple3[A, B, C]
+		var tupleType ast.Expr
+		tupleBase := t.stdIdent(tupleName)
+		if len(typeArgs) == 1 {
+			tupleType = &ast.IndexExpr{X: tupleBase, Index: typeArgs[0]}
+		} else {
+			tupleType = &ast.IndexListExpr{X: tupleBase, Indices: typeArgs}
+		}
+
+		// Build field key-value pairs: V1: _v0, V2: _v1, ...
+		var elts []ast.Expr
+		for i := 0; i < valueCount; i++ {
+			elts = append(elts, &ast.KeyValueExpr{
+				Key:   ast.NewIdent(fmt.Sprintf("V%d", i+1)),
+				Value: ast.NewIdent(fmt.Sprintf("_v%d", i)),
+			})
+		}
+
+		returnExpr = &ast.CompositeLit{
+			Type: tupleType,
+			Elts: elts,
+		}
+		returnTypeExpr = tupleType
+		t.needsStdImport = true
+	}
+
 	return &ast.BlockStmt{
 		List: []ast.Stmt{
-			// _v, _err := goFunc(args...)
+			// _v0, _v1, ..., _err := goFunc(args...)
 			&ast.AssignStmt{
-				Lhs: []ast.Expr{ast.NewIdent("_v"), ast.NewIdent("_err")},
+				Lhs: lhsExprs,
 				Tok: token.DEFINE,
 				Rhs: []ast.Expr{callExpr},
 			},
@@ -234,10 +301,10 @@ func (t *galaASTTransformer) tryWrapGoMultiReturnWithErrorPanic(expr ast.Expr) *
 					},
 				},
 			},
-			// return _v
-			&ast.ReturnStmt{Results: []ast.Expr{ast.NewIdent("_v")}},
+			// return _v0  (or std.Tuple[A,B]{V1: _v0, V2: _v1})
+			&ast.ReturnStmt{Results: []ast.Expr{returnExpr}},
 		},
-	}
+	}, returnTypeExpr
 }
 
 // inferBlockReturnType tries to infer the return type from a block's return statements.
