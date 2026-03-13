@@ -966,6 +966,11 @@ val msg = x match {
 
 // Monadic operations
 val result = x.Map((i int) => i * 2)
+
+// Side-effect methods (return original value for chaining)
+x.OnSome((v) => { Println(s"Found: $v") })
+ .OnNone(() => { Println("Not found") })
+ .Map((i) => i * 2)
 ```
 
 ### Tuple
@@ -1018,6 +1023,12 @@ val result = Right[string, int](5).FlatMap((x int) => Right[string, int](x + 100
 
 // Chaining Map and FlatMap
 val chained = Right[string, int](3).Map((x int) => x * 10).FlatMap((x int) => Right[string, int](x + 1))
+
+// Side-effect methods (return original value for chaining)
+val logged = Right[string, int](42)
+    .OnRight((v) => { Println(s"Success: $v") })
+    .OnLeft((e) => { Println(s"Error: $e") })
+    .Map((x) => x * 2)
 ```
 
 ### Try Monad
@@ -1052,6 +1063,12 @@ val result = success.FlatMap[int]((n int) => divide(n, 2))
 val recovered = failure.Recover((e error) => 0)
 val recoveredWith = failure.RecoverWith((e error) => Success(0))
 
+// Side-effect methods (return original value for chaining)
+val logged = success
+    .OnSuccess((n) => { Println(s"Got: $n") })
+    .OnFailure((e) => { Println(s"Error: ${e.Error()}") })
+    .Map((x) => x * 2)
+
 // Safe value extraction
 val value = failure.GetOrElse(0)
 val alternative = failure.OrElse(Success(100))
@@ -1084,6 +1101,8 @@ func processOrder(id int) Try[Receipt] =
 | `Get()` | Get value or panic |
 | `GetOrElse(default)` | Get value or return default |
 | `OrElse(alternative)` | Return this if Success, otherwise alternative |
+| `OnSuccess(f)` | Execute side-effect if Success, return original Try |
+| `OnFailure(f)` | Execute side-effect if Failure, return original Try |
 | `Map[U](f)` | Transform value if Success |
 | `FlatMap[U](f)` | Chain operations returning Try |
 | `Filter(predicate)` | Keep Success if predicate holds |

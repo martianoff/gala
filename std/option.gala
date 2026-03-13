@@ -45,6 +45,24 @@ func (o Option[T]) GetOrElse(defaultValue T) T {
     return defaultValue
 }
 
+// OnSome executes a callback with the value if this is Some,
+// returns the original Option unchanged (for chaining).
+func (o Option[T]) OnSome(f func(T)) Option[T] {
+    if o.isSome() {
+        f(o.Value)
+    }
+    return o
+}
+
+// OnNone executes a callback if this is None,
+// returns the original Option unchanged (for chaining).
+func (o Option[T]) OnNone(f func()) Option[T] {
+    if o.isNone() {
+        f()
+    }
+    return o
+}
+
 // ForEach applies the given procedure f to the option's value, if it is nonempty.
 // f: the procedure to apply.
 func (o Option[T]) ForEach(f func(T)) {

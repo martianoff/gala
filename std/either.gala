@@ -61,6 +61,24 @@ func (e Either[A, B]) Swap() Either[B, A] {
     return Left[B, A](e.RightValue)
 }
 
+// OnRight executes a callback with the right value if this is a Right,
+// returns the original Either unchanged (for chaining).
+func (e Either[A, B]) OnRight(f func(B)) Either[A, B] {
+    if e.isRight() {
+        f(e.RightValue)
+    }
+    return e
+}
+
+// OnLeft executes a callback with the left value if this is a Left,
+// returns the original Either unchanged (for chaining).
+func (e Either[A, B]) OnLeft(f func(A)) Either[A, B] {
+    if e.isLeft() {
+        f(e.LeftValue)
+    }
+    return e
+}
+
 // Fold applies f1 to the left value or f2 to the right value.
 func (e Either[A, B]) Fold[C any](f1 func(A) C, f2 func(B) C) C {
     if e.isLeft() {
