@@ -20,6 +20,7 @@ genrule(
         "//std:constptr_go",
         "//std:types.go",
         "//std:interfaces.go",
+        "//std:embedded_fs.go",
         # std package - GALA source (for analyzer)
         "//std:option.gala",
         "//std:immutable.gala",
