@@ -138,6 +138,10 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 					&ast.ExprStmt{X: expr},
 				},
 			}
+		} else if multiRetBody := t.tryWrapGoMultiReturnWithErrorPanic(expr); multiRetBody != nil {
+			// FIX-045: Go function returning (T, error) in expression lambda.
+			// Generate: _v, _err := expr; if _err != nil { panic(_err) }; return _v
+			body = multiRetBody
 		} else {
 			body = &ast.BlockStmt{
 				List: []ast.Stmt{
@@ -165,6 +169,75 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 		Type: funcType,
 		Body: body,
 	}, nil
+}
+
+// tryWrapGoMultiReturnWithErrorPanic checks if expr is a call to a Go function
+// returning (T, error). If so, generates a block that captures both returns,
+// panics on error, and returns the value. Returns nil if not applicable.
+// This enables patterns like Try(() => os.MkdirTemp("", "prefix-*")) where
+// os.MkdirTemp returns (string, error) -- the error is converted to a panic
+// which Try catches as Failure.
+func (t *galaASTTransformer) tryWrapGoMultiReturnWithErrorPanic(expr ast.Expr) *ast.BlockStmt {
+	if t.goTypeInfo == nil {
+		return nil
+	}
+	callExpr, ok := expr.(*ast.CallExpr)
+	if !ok {
+		return nil
+	}
+
+	// Extract the qualified function name from the call
+	qualifiedName := ""
+	switch fun := callExpr.Fun.(type) {
+	case *ast.SelectorExpr:
+		if id, ok := fun.X.(*ast.Ident); ok {
+			qualifiedName = id.Name + "." + fun.Sel.Name
+		}
+	}
+	if qualifiedName == "" {
+		return nil
+	}
+
+	sig := t.goTypeInfo.GetFuncSignature(qualifiedName)
+	if sig == nil || len(sig.Returns) != 2 {
+		return nil
+	}
+
+	// Check that the second return is error
+	secondRet := sig.Returns[1]
+	if secondRet == nil || secondRet.String() != "error" {
+		return nil
+	}
+
+	// Generate: _v, _err := expr; if _err != nil { panic(_err) }; return _v
+	return &ast.BlockStmt{
+		List: []ast.Stmt{
+			// _v, _err := goFunc(args...)
+			&ast.AssignStmt{
+				Lhs: []ast.Expr{ast.NewIdent("_v"), ast.NewIdent("_err")},
+				Tok: token.DEFINE,
+				Rhs: []ast.Expr{callExpr},
+			},
+			// if _err != nil { panic(_err) }
+			&ast.IfStmt{
+				Cond: &ast.BinaryExpr{
+					X:  ast.NewIdent("_err"),
+					Op: token.NEQ,
+					Y:  ast.NewIdent("nil"),
+				},
+				Body: &ast.BlockStmt{
+					List: []ast.Stmt{
+						&ast.ExprStmt{X: &ast.CallExpr{
+							Fun:  ast.NewIdent("panic"),
+							Args: []ast.Expr{ast.NewIdent("_err")},
+						}},
+					},
+				},
+			},
+			// return _v
+			&ast.ReturnStmt{Results: []ast.Expr{ast.NewIdent("_v")}},
+		},
+	}
 }
 
 // inferBlockReturnType tries to infer the return type from a block's return statements.
