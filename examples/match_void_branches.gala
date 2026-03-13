@@ -1,0 +1,19 @@
+package main
+
+func greet(name string) {
+    Println(s"Hello, $name!")
+}
+
+func farewell(name string) {
+    Println(s"Goodbye, $name!")
+}
+
+func main() {
+    val result = Some("World")
+    result match {
+        case Some(name) => greet(name)
+        case None() => farewell("nobody")
+    }
+
+    Println("Done")
+}
