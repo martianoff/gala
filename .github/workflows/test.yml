@@ -13,6 +13,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: false
+
       - name: Setup Bazel
         uses: bazel-contrib/setup-bazel@0.14.0
         with:
@@ -21,7 +27,7 @@ jobs:
           repository-cache: true
 
       - name: Build
-        run: bazel build //...
+        run: bazel build //... --action_env=GOROOT=$GOROOT
 
       - name: Test
-        run: bazel test //... --test_output=errors --verbose_failures
+        run: bazel test //... --test_output=errors --verbose_failures --action_env=GOROOT=$GOROOT
