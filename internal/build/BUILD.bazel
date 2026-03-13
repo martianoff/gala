@@ -1,4 +1,4 @@
-load("@rules_go//go:def.bzl", "go_library")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "build",
@@ -18,5 +18,15 @@ go_library(
         "//internal/transpiler/analyzer",
         "//internal/transpiler/generator",
         "//internal/transpiler/transformer",
+    ],
+)
+
+go_test(
+    name = "build_test",
+    srcs = ["deptranspiler_test.go"],
+    embed = [":build"],
+    deps = [
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
     ],
 )

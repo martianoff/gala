@@ -198,6 +198,11 @@ func (dt *DepTranspiler) transpileSingleDep(dep mod.Require, transpiledDirs map[
 		}
 	}
 
+	// Copy non-.gala files (especially .go subpackages) from source to output
+	if err := copyNonGalaFiles(srcDir, outDir, dt.verbose); err != nil {
+		return "", fmt.Errorf("copying non-gala files for %s: %w", dep.Path, err)
+	}
+
 	// Generate go.mod for the dependency
 	if err := dt.generateDepGoMod(dep, outDir, transpiledDirs); err != nil {
 		return "", fmt.Errorf("generating go.mod for %s: %w", dep.Path, err)
@@ -320,4 +325,73 @@ func (dt *DepTranspiler) generateDepGoMod(dep mod.Require, outDir string, transp
 
 	goModPath := filepath.Join(outDir, "go.mod")
 	return os.WriteFile(goModPath, []byte(sb.String()), 0644)
+}
+
+// copyNonGalaFiles copies non-.gala files and subdirectories from srcDir to dstDir.
+// This ensures that pure Go subpackages within a GALA module are available in the
+// transpiled output directory alongside the generated .gen.go files.
+func copyNonGalaFiles(srcDir, dstDir string, verbose bool) error {
+	return filepath.Walk(srcDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Skip the root directory itself
+		if path == srcDir {
+			return nil
+		}
+
+		relPath, err := filepath.Rel(srcDir, path)
+		if err != nil {
+			return err
+		}
+
+		// Skip hidden directories, vendor, testdata, bazel dirs
+		if info.IsDir() {
+			name := info.Name()
+			if strings.HasPrefix(name, ".") || name == "vendor" ||
+				name == "testdata" || strings.HasPrefix(name, "bazel-") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		// Skip .gala files (already transpiled) and gala.mod
+		if strings.HasSuffix(info.Name(), ".gala") || info.Name() == "gala.mod" {
+			return nil
+		}
+
+		// Skip go.mod and go.sum from source (we generate our own)
+		if info.Name() == "go.mod" || info.Name() == "go.sum" {
+			return nil
+		}
+
+		dstPath := filepath.Join(dstDir, relPath)
+
+		// Ensure destination directory exists
+		if err := os.MkdirAll(filepath.Dir(dstPath), 0755); err != nil {
+			return fmt.Errorf("creating directory for %s: %w", relPath, err)
+		}
+
+		// Skip if destination already exists (don't overwrite .gen.go files)
+		if _, err := os.Stat(dstPath); err == nil {
+			return nil
+		}
+
+		// Copy the file
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("reading %s: %w", path, err)
+		}
+
+		if err := os.WriteFile(dstPath, data, 0644); err != nil {
+			return fmt.Errorf("writing %s: %w", dstPath, err)
+		}
+
+		if verbose {
+			fmt.Printf("    copy: %s\n", relPath)
+		}
+
+		return nil
+	})
 }
