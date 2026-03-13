@@ -55,6 +55,24 @@ func (t Try[T]) OrElse(alternative Try[T]) Try[T] {
     return alternative
 }
 
+// OnSuccess executes a callback with the value if this is a Success,
+// returns the original Try unchanged (for chaining).
+func (t Try[T]) OnSuccess(f func(T)) Try[T] {
+    if t.isSuccess() {
+        f(t.Value)
+    }
+    return t
+}
+
+// OnFailure executes a callback with the error if this is a Failure,
+// returns the original Try unchanged (for chaining).
+func (t Try[T]) OnFailure(f func(error)) Try[T] {
+    if t.isFailure() {
+        f(t.Err)
+    }
+    return t
+}
+
 // ForEach applies the given procedure f to the value if this is a Success.
 func (t Try[T]) ForEach(f func(T)) {
     if t.isSuccess() {
