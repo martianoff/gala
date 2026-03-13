@@ -9,3 +9,9 @@ build:linux --workspace_status_command=tools/workspace_status.sh
 build:macos --workspace_status_command=tools/workspace_status.sh
 
 #startup --windows_enable_symlinks
+
+# Go type inference: pass GOROOT and PATH to genrules so the transpiler
+# can use go/importer to resolve Go package types (function signatures,
+# struct fields, method sets, etc.).
+build --action_env=GOROOT
+build --action_env=PATH

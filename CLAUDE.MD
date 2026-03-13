@@ -41,12 +41,30 @@ GALA is a programming language that transpiles to Go. Build system: Bazel.
 |------|---------|
 | Build | `bazel build //...` |
 | Test | `bazel test //...` |
+| Test (verbose) | `bazel test //... --test_output=errors --verbose_failures` |
+| Test single target | `bazel test //examples:match_type_inference` |
 | Generate BUILD files | `bazel run //:gazelle` |
 
 **Update Go dependencies (run in order):**
 ```shell
 go mod tidy && bazel run //:gazelle && bazel run //:gazelle-update-repos && bazel run //:gazelle && bazel mod tidy
 ```
+
+### Prerequisites
+
+- **Bazel** (via Bazelisk): install from https://github.com/bazelbuild/bazelisk
+- **Go SDK**: required for Go type inference. Ensure `go` is on PATH or set `GOROOT`.
+
+### How Bazel finds the Go SDK
+
+The `.bazelrc` file includes `--action_env=GOROOT` and `--action_env=PATH` so that
+transpilation genrules can access the Go SDK for type inference (resolving function
+return types, struct fields, method signatures from Go packages). The genrules also
+use `tags = ["no-sandbox"]` in `gala.bzl` to allow filesystem access to the SDK.
+
+If the Go SDK is not found, transpilation still succeeds but Go type inference is
+disabled (a warning is printed to stderr). This only affects type resolution for
+Go stdlib/third-party packages — GALA's own type system works without it.
 
 ---
 

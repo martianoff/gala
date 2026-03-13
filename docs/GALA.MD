@@ -2403,15 +2403,50 @@ gala_test(
 
 ### Running Tests
 
+#### Prerequisites
+
+- **Bazel** (via [Bazelisk](https://github.com/bazelbuild/bazelisk)): manages Bazel versions automatically
+- **Go SDK**: required for Go type inference (resolving function return types, struct fields, and method signatures from Go packages). Ensure `go` is on PATH or set the `GOROOT` environment variable.
+
+#### Commands
+
+Build the entire project:
+```bash
+bazel build //...
+```
+
 Run all tests:
 ```bash
 bazel test //...
 ```
 
-Run specific tests:
+Run with verbose output (shows error details on failure):
+```bash
+bazel test //... --test_output=errors --verbose_failures
+```
+
+Run a specific test:
 ```bash
 bazel test //mypackage:mycode_test
 ```
+
+Run a specific example:
+```bash
+bazel test //examples:match_type_inference
+```
+
+#### Bazel Configuration
+
+The project's `.bazelrc` includes settings required for both Linux and Windows:
+
+```
+build --action_env=GOROOT    # Pass Go SDK root to transpiler genrules
+build --action_env=PATH      # Allow genrules to find the Go binary
+```
+
+Transpilation genrules in `gala.bzl` use `tags = ["no-sandbox"]` to allow the transpiler filesystem access to the Go SDK for type inference via `go/importer`.
+
+If the Go SDK is not found, transpilation still succeeds but Go type inference is disabled — a warning is printed to stderr. This only affects type resolution for Go stdlib and third-party packages; GALA's own type system works without it.
 
 ## 16. Best Practices
 
