@@ -32,9 +32,9 @@ sealed type Shape {
 }
 
 func describe(s Shape) string = s match {
-    case Circle(r)      => fmt.Sprintf("circle with radius %.2f", r)
-    case Rectangle(w, h) => fmt.Sprintf("rectangle %0.fx%.0f", w, h)
-    case Point()        => "a point"
+    case Circle(r)       => f"circle with radius=$r%.2f"
+    case Rectangle(w, h) => s"rectangle ${w}x${h}"
+    case Point()         => "a point"
 }
 ```
 
@@ -92,8 +92,8 @@ func (e Even) Unapply(i int) Option[int] = if (i % 2 == 0) Some(i) else None[int
 
 val opt = Some(42)
 val result = opt match {
-    case Some(Even(n)) => fmt.Sprintf("%d is even", n)
-    case Some(n)       => fmt.Sprintf("%d is odd", n)
+    case Some(Even(n)) => s"$n is even"
+    case Some(n)       => s"$n is odd"
     case None()        => "nothing"
 }
 ```
@@ -103,7 +103,7 @@ Extractors compose. Guards add conditions. Sequence patterns destructure lists. 
 ```gala
 val list = ListOf(1, 2, 3, 4, 5)
 val msg = list match {
-    case List(head, tail...) => fmt.Sprintf("head=%d, rest has %d items", head, tail.Size())
+    case List(head, tail...) => s"head=$head, rest has ${tail.Size()} items"
     case List()              => "empty"
 }
 ```
@@ -181,16 +181,25 @@ Go's `if err != nil` pattern is explicit and clear. It is also repetitive. When 
 ### GALA
 
 ```gala
+import "os"
+import "strconv"
+
 // Option: safe absence handling
 val name = user.FindName()
     .Map((n) => strings.ToUpper(n))
     .GetOrElse("ANONYMOUS")
 
 // Try: railway-oriented error handling
-val result = Try[int](() => riskyComputation())
-    .Map((v) => v * 2)
-    .FlatMap((v) => anotherRiskyOp(v))
-    .Recover((e) => 0)
+// Pass zero-arg functions directly -- no lambda wrapper needed
+val dir = Try(os.TempDir)
+    .OnSuccess((d) => { Println(s"Using temp dir: $d") })
+    .Map((d) => d + "/myapp")
+    .GetOrElse("/tmp/myapp")
+
+// Try with arguments uses a lambda
+val num = Try(() => strconv.Atoi(input))
+    .OnFailure((e) => { Println(s"Parse failed: ${e.Error()}") })
+    .GetOrElse(0)
 
 // Either: typed errors
 val output = parseInput(raw) match {
@@ -201,6 +210,17 @@ val output = parseInput(raw) match {
 
 `Option[T]`, `Try[T]`, and `Either[A, B]` are all sealed types with `Map`, `FlatMap`, `Filter`, and other combinators. They compose: a `Try` converts to an `Option` or `Either`. A failed `FlatMap` short-circuits the chain. Pattern matching on the result is exhaustive.
 
+Side-effect methods (`OnSuccess`/`OnFailure`, `OnSome`/`OnNone`, `OnRight`/`OnLeft`) let you insert logging, metrics, or debugging into a pipeline without breaking the chain:
+
+```gala
+func findBinary() Option[string] =
+    Try(() => exec.LookPath("gala"))
+        .OrElse(Try(() => exec.LookPath("gala.exe")))
+        .OnSuccess((p) => { Println(s"Found binary: $p") })
+        .OnFailure((e) => { Println("Binary not found") })
+        .ToOption()
+```
+
 ### Equivalent Go
 
 ```go
@@ -210,21 +230,21 @@ if err == nil {
     name = strings.ToUpper(n)
 }
 
-result, err := riskyComputation()
+dir := os.TempDir()
+fmt.Println("Using temp dir: " + dir)
+dir = dir + "/myapp"
+// No error possible here, but the pattern doesn't compose
+
+num, err := strconv.Atoi(input)
 if err != nil {
-    result = 0
-} else {
-    result = result * 2
-    result, err = anotherRiskyOp(result)
-    if err != nil {
-        result = 0
-    }
+    fmt.Println("Parse failed: " + err.Error())
+    num = 0
 }
 ```
 
 ### Why this matters
 
-Monadic error handling is not about avoiding `if err != nil`. It is about making the happy path readable. When you chain `.Map` and `.FlatMap`, the business logic reads top to bottom as a pipeline. Error handling is not interleaved -- it is declared once at the end with `.Recover` or `.GetOrElse`. The compiler ensures you handle both cases when you pattern match.
+Monadic error handling is not about avoiding `if err != nil`. It is about making the happy path readable. When you chain `.Map` and `.FlatMap`, the business logic reads top to bottom as a pipeline. Error handling is not interleaved -- it is declared once at the end with `.Recover` or `.GetOrElse`. Side-effect methods let you observe the pipeline without disrupting it. The compiler ensures you handle both cases when you pattern match.
 
 ---
 
@@ -286,6 +306,76 @@ Functional collection operations are not syntactic sugar -- they are semantic co
 
 ---
 
+## Feature 6: Seamless Go Interop
+
+### The problem
+
+A transpiled language is only as useful as its ability to call existing code. If interop with the host ecosystem requires wrappers, adapters, or code generation, the friction often outweighs the expressiveness gains.
+
+### GALA
+
+GALA transpiles directly to Go. Every Go package is importable, every Go type is usable, and every Go function is callable:
+
+```gala
+import "os"
+import "net/http"
+import "encoding/json"
+
+// Call Go functions directly
+val dir = Try(os.TempDir)
+
+// Go multi-return functions are handled automatically
+val result = Try(() => json.Marshal(data))
+    .Map((bytes) => string(bytes))
+    .GetOrElse("{}")
+
+// Use Go types in GALA structs
+struct Server(Handler http.Handler, Addr string)
+```
+
+GALA's type inference understands Go function signatures. When you pass `os.TempDir` (a `func() string`) to `Try`, the transpiler infers `T=string` automatically -- no type annotation needed. Go functions returning `(T, error)` are automatically unwrapped inside `Try` lambdas, converting the error to a `Failure`.
+
+### Why this matters
+
+There is no FFI boundary. GALA code *is* Go code after transpilation. You can call any Go library, implement any Go interface, and deploy with the same tools. The Go ecosystem -- from `net/http` to database drivers to cloud SDKs -- is fully available without wrappers.
+
+---
+
+## Feature 7: Type Inference That Gets Out of Your Way
+
+### The problem
+
+Go requires explicit types in many places where the compiler has enough information to figure it out. Generic instantiation often requires spelling out type parameters that are obvious from context. This adds visual noise without adding safety.
+
+### GALA
+
+```gala
+// Types inferred from values
+val x = 42                    // int
+val name = "Alice"            // string
+val people = ArrayOf(         // Array[Person]
+    Person("Alice", 30),
+    Person("Bob", 25)
+)
+
+// Generic type params inferred from arguments
+val opt = Some(42)            // Option[int], not Some[int](42)
+val result = Try(os.TempDir)  // Try[string], not Try[string](os.TempDir)
+
+// Lambda param types inferred from method signatures
+val names = people.Map((p) => p.Name)         // not (p Person) =>
+val total = people.FoldLeft(0, (acc, p) => acc + p.Age)  // not (acc int, p Person) =>
+
+// String interpolation -- no format verbs, no import
+Println(s"Found ${names.Size()} people: ${names.MkString(", ")}")
+```
+
+### Why this matters
+
+Type inference reduces ceremony without reducing safety. The types are still checked -- you just do not have to write them when context makes them obvious. This is especially impactful with generics: `Some(42)` is clearer than `Some[int](42)`, and `people.Map((p) => p.Name)` is clearer than `people.Map[string]((p Person) => p.Name)`.
+
+---
+
 ## When to Use GALA
 
 GALA is a good fit when:
@@ -324,18 +414,16 @@ Write your first program:
 ```gala
 package main
 
-import "fmt"
-
 struct Person(Name string, Age int)
 
 func greet(p Person) string = p match {
-    case Person(name, age) if age < 18 => "Hey, " + name + "!"
-    case Person(name, _)               => "Hello, " + name
+    case Person(name, age) if age < 18 => s"Hey, $name!"
+    case Person(name, _)               => s"Hello, $name"
 }
 
 func main() {
     val alice = Person("Alice", 25)
-    fmt.Println(greet(alice))
+    Println(greet(alice))
 }
 ```
 
