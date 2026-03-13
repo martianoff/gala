@@ -203,6 +203,10 @@ func (t *galaASTTransformer) typeToExpr(typ transpiler.Type) ast.Expr {
 			// so it can be added to the output file.
 			if path, ok := t.importManager.GetPath(v.Package); ok {
 				t.additionalImports[path] = pkgName
+			} else if v.ImportPath != "" {
+				// Fallback: use the import path from Go type analysis
+				// (e.g., os.Stat returns fs.FileInfo — "io/fs" not in GALA imports)
+				t.additionalImports[v.ImportPath] = pkgName
 			}
 			return &ast.SelectorExpr{
 				X:   ast.NewIdent(pkgName),
