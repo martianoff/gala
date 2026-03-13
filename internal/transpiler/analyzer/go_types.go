@@ -384,7 +384,26 @@ func goTypeToTranspilerType(t types.Type) transpiler.Type {
 
 	switch t := t.(type) {
 	case *types.Basic:
-		return transpiler.BasicType{Name: t.Name()}
+		name := t.Name()
+		// Untyped constants (e.g., "untyped string", "untyped int") should
+		// resolve to their concrete Go type for code generation purposes.
+		if t.Info()&types.IsUntyped != 0 {
+			switch t.Kind() {
+			case types.UntypedBool:
+				name = "bool"
+			case types.UntypedInt:
+				name = "int"
+			case types.UntypedRune:
+				name = "rune"
+			case types.UntypedFloat:
+				name = "float64"
+			case types.UntypedComplex:
+				name = "complex128"
+			case types.UntypedString:
+				name = "string"
+			}
+		}
+		return transpiler.BasicType{Name: name}
 
 	case *types.Named:
 		obj := t.Obj()

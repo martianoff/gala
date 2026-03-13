@@ -136,6 +136,17 @@ func (t *galaASTTransformer) getExprTypeNameManualUncached(expr ast.Expr) transp
 				if actual, ok := t.importManager.ResolveAlias(pkgName); ok {
 					pkgName = actual
 				}
+				// Check if this is a Go constant or variable (not a type)
+				// e.g., runtime.GOOS is a string constant, not a type
+				qualName := pkgName + "." + e.Sel.Name
+				if t.goTypeInfo != nil {
+					if constType, ok := t.goTypeInfo.Constants[qualName]; ok {
+						return constType
+					}
+					if varType, ok := t.goTypeInfo.Variables[qualName]; ok {
+						return varType
+					}
+				}
 				return transpiler.NamedType{Package: pkgName, Name: e.Sel.Name}
 			}
 		}

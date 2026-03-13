@@ -1,0 +1,13 @@
+package main
+
+import "runtime"
+
+func main() {
+    val compiler = runtime.Compiler
+    val label = compiler match {
+        case "gc" => "standard"
+        case "gccgo" => "gcc-based"
+        case _ => "other"
+    }
+    Println(label)
+}
