@@ -3,6 +3,7 @@ load("@rules_go//go:def.bzl", "go_library")
 go_library(
     name = "transpiler",
     srcs = [
+        "go_type_info.go",
         "parser.go",
         "transpiler.go",
         "types.go",

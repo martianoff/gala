@@ -49,6 +49,7 @@ type galaASTTransformer struct {
 	inferer               *infer.Inferer
 	currentFuncReturnType transpiler.Type            // return type of the function currently being transformed
 	typeAliases           map[string]transpiler.Type // type alias name -> underlying type (e.g., "Handler" -> func(string) Future[string])
+	goTypeInfo            *transpiler.GoTypeInfo     // type info from Go packages (stdlib, local Go files, third-party)
 	filePath              string                      // source file path (for error reporting)
 	sourceLines           []string                    // source lines (for error snippets)
 	richAST               *transpiler.RichAST         // reference to the primary RichAST for live metadata access
@@ -110,6 +111,7 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 	for name, underlyingType := range richAST.TypeAliases {
 		t.typeAliases[name] = underlyingType
 	}
+	t.goTypeInfo = richAST.GoTypeInfo
 	t.tempVarCount = 0
 	t.richAST = richAST
 	t.traceTypeResolution = os.Getenv("GALA_TRACE_TYPES") == "1"

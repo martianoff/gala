@@ -1,0 +1,32 @@
+package go_type_inference_lib
+
+import "strings"
+
+// WordCount splits text and returns the word count.
+// Uses strings.Fields (Go type inference: returns []string).
+func WordCount(text string) int {
+    val words = strings.Fields(text)
+    return len(words)
+}
+
+// HasPrefix checks if text starts with prefix.
+// Uses strings.HasPrefix (Go type inference: returns bool).
+func HasPrefix(text string, prefix string) bool {
+    return strings.HasPrefix(text, prefix)
+}
+
+// Reverse reverses a string.
+// Uses strings.Builder internally (Go type inference for method calls).
+func Reverse(s string) string {
+    var result = ""
+    for i := len(s) - 1; i >= 0; i-- {
+        result = result + string(s[i])
+    }
+    return result
+}
+
+// JoinWith joins items with a separator.
+// Uses strings.Join (Go type inference: returns string).
+func JoinWith(items []string, sep string) string {
+    return strings.Join(items, sep)
+}

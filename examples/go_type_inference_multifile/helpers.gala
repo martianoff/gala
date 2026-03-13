@@ -1,0 +1,36 @@
+package main
+
+import (
+    "strings"
+    "strconv"
+    "fmt"
+)
+
+// Functions that use Go stdlib and return values whose types
+// must be inferred from Go type info.
+
+func parseCSV(line string) []string {
+    return strings.Split(line, ",")
+}
+
+func formatNumber(n int) string {
+    return strconv.Itoa(n)
+}
+
+func trimAll(items []string) []string {
+    var result []string
+    for _, item := range items {
+        // strings.TrimSpace returns string (Go type inference)
+        val trimmed = strings.TrimSpace(item)
+        result = append(result, trimmed)
+    }
+    return result
+}
+
+func summarize(items []string) {
+    val count = len(items)
+    val joined = strings.Join(items, " | ")
+    val upper = strings.ToUpper(joined)
+    fmt.Println(s"Count: $count")
+    fmt.Println(s"Items: $upper")
+}
