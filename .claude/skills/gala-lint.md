@@ -55,6 +55,8 @@ Present findings in the output format specified at the end.
 | Get(0) after length check | `if x.Length() > 0 { x.Get(0) }` | `x.HeadOption()` or pattern match |
 | Unnecessary default on sealed | `case _ =>` when all sealed variants are covered | Remove `case _ =>`; exhaustive match is verified by the transpiler |
 | IsXxx() chains on sealed type | `if s.IsCircle() { ... } else if s.IsRectangle() { ... }` | `s match { case Circle(r) => ... case Rectangle(w, h) => ... }` |
+| If-err-nil on Go error return | `val x, err = f(); if err == nil { ... }` | Wrap with `Try(() => f())` then use `.Map`, `.GetOrElse`, or `match` |
+| Sequential if-err-nil fallback | Multiple `val x, err = f(); if err == nil { return x }` in sequence | `Try(() => f1()).OrElse(Try(() => f2()))` chain |
 
 ### 3. Sealed Types (HIGH priority)
 
@@ -108,14 +110,34 @@ val rectKind = 1
 | append on slice | `result = append(result, item)` in accumulation loop | Use `Array.Append()` or `List.Prepend()`, or `FoldLeft` |
 | SliceOf import confusion | `import . "martianoff/gala/std"` expecting SliceOf | `SliceOf` is in `go_interop`, but prefer `ArrayOf`/`ListOf` from `collection_immutable` |
 | Missing functional ops | Using `[]T` then writing manual Map/Filter loops | Switch to `Array[T]` or `List[T]` which have `.Map()`, `.Filter()`, `.FoldLeft()` |
+| Manual loop on variadic args | `for i := 0; i < len(args); i++` on variadic `[]T` | Convert with `ArrayOf(args...)` then use functional methods |
+| Variadic accumulation loop | `var acc; for { acc = f(acc, args[i]) }` on variadic | `ArrayOf(args...).FoldLeft(init, f)` or `.FoldRight(init, f)` |
 
-**Check**: Search for `SliceOf`, `SliceEmpty`, `SliceWithCapacity`, `[]T` declarations, and `append(` calls. For each, determine if the slice is passed to a Go API or used internally. Internal use should prefer GALA collections.
+**Check**: Search for `SliceOf`, `SliceEmpty`, `SliceWithCapacity`, `[]T` declarations, `append(` calls, and manual loops over variadic parameters. For each, determine if the slice is passed to a Go API or used internally. Internal use should prefer GALA collections.
 
 **Acceptable Go slice uses**:
 - Passing to Go standard library functions (`strings.Join`, `sort.Slice`, etc.)
-- Variadic function arguments (`func f(args ...T)`)
+- Simple pass-through variadic forwarding (`other(args...)`)
 - Interop with Go libraries that expect `[]T`
 - Converting at boundaries: `collection.ToGoSlice()` when needed
+
+**Variadic args pattern** — convert to Array for functional processing:
+```gala
+// BAD: manual loop over variadic Go slice
+func applyAll(handler Handler, filters ...Filter) Handler {
+    var h = handler
+    for i := len(filters) - 1; i >= 0; i-- {
+        val f = filters[i]
+        val inner = h
+        h = (req) => f(req, inner)
+    }
+    return h
+}
+
+// GOOD: convert variadic to Array, use FoldRight
+func applyAll(handler Handler, filters ...Filter) Handler =
+    ArrayOf(filters...).FoldRight(handler, (f, inner) => (req) => f(req, inner))
+```
 
 **Good pattern** - GALA collections:
 ```gala
@@ -164,14 +186,29 @@ for _, x := range nums {
 | Issue | Pattern to Flag | Recommended Fix |
 |-------|-----------------|-----------------|
 | Redundant variable type | `val x int = 42` | `val x = 42` |
-| Redundant generic params | `Some[int](42)` | `Some(42)` |
+| Redundant generic params on helpers | `Some[int](42)` | `Some(42)` |
 | Redundant collection types | `ListOf[int](1, 2, 3)` | `ListOf(1, 2, 3)` |
+| Redundant single-param struct constructor | `Box[int](Value = 42)` | `Box(Value = 42)` (type inferred from named field value) |
+| Redundant generic function call type params | `Try[int](() => { return 1 })` | `Try(() => { return 1 })` (type inferred from lambda return) |
+| Redundant generic function call type params | `NewCons[int](head, tail)` | `NewCons(head, tail)` (type inferred from arguments) |
 | Redundant lambda param type | `list.Map((x int) => x * 2)` | `list.Map((x) => x * 2)` (type inferred from method signature) |
 | Redundant method type param | `list.Map[int]((x) => x * 2)` | `list.Map((x) => x * 2)` (Go infers from lambda) |
 | Redundant FoldLeft type param | `list.FoldLeft[int](0, (acc int, x int) => acc + x)` | `list.FoldLeft(0, (acc, x) => acc + x)` (accumulator type inferred from zero value) |
 | Redundant wrapper method lambda types | `str.Filter((r rune) => r == 'a')` | `str.Filter((r) => r == 'a')` (type inferred from non-generic method signature) |
 
-**Exception**: Explicit types are required for `None[T]()`, `Left[L, R]()`, `Right[L, R]()`, empty collections, and standalone lambdas not passed to a typed method (e.g., `val f = (x int) => x * 2`).
+**Check**: Search for the pattern `Name[ConcreteTypes](args)` — any call where `[...]` contains concrete types (not type parameter declarations like `[T any]`) and the arguments already provide enough information for Go to infer the type parameters. This includes:
+- **Single-type-param generic struct constructors**: `Box[int](Value = 42)` → `Box(Value = 42)` — Go infers the single type param from the named field value
+- **Single-type-param generic function calls**: `Try[int](f)`, `NewCons[int](head, tail)` — argument types determine the type param
+- **Helper constructors**: `Some[int](42)`, `ListOf[int](1, 2, 3)` — element values determine type params
+
+**Exception**: Explicit types ARE required for:
+- `None[T]()`, `Left[L, R]()`, `Right[L, R]()` — no value arguments to infer from
+- Empty collections: `EmptyArray[T]()`, `EmptyList[T]()`, `EmptyHashMap[K, V]()`, `Empty[T]()` — no elements to infer from
+- **Multi-type-param generic struct constructors**: `Pair[string, int]("a", 1)` — Go cannot infer when there are 2+ type params on struct instantiation
+- **Generic struct constructors inside generic method bodies**: `Pair[C, B](First = ...)` — abstract type params from enclosing method must be explicit
+- **Multi-type-param generic functions** like `Unfold[A, S](seed, f)` — Go often cannot infer all params when multiple are involved
+- Standalone lambdas not passed to a typed method (e.g., `val f = (x int) => x * 2`)
+- Ambiguous cases where removing the type param would cause a compile error
 
 ### 7. Functional Patterns (HIGH priority)
 
@@ -245,13 +282,53 @@ func (s Str) ForAll(p func(rune) bool) bool =
 func (s Str) IsAlpha() bool = s.NonEmpty() && toRunes(s.value).ForAll(unicode.IsLetter)
 ```
 
-### 11. Error Handling (MEDIUM priority)
+### 11. Error Handling (HIGH priority)
 
 | Issue | Pattern to Flag | Recommended Fix |
 |-------|-----------------|-----------------|
 | Nullable without Option | `func f() *T` returning nil | `func f() Option[T]` |
 | Panic for errors | `panic("error message")` | Return `Try[T]` or `Either[E, T]` |
 | Ignored error | `result, _ := fallibleOp()` | Handle with `Try` or check error |
+| Sentinel return value | Returning `""`, `0`, `-1`, or `nil` to signal "not found" / failure | Return `Option[T]` or `Try[T]` instead |
+| Go-style if-err-nil | `val x, err = f(); if err == nil { use(x) }` | `Try(() => f())` then `.Map`, `.GetOrElse`, or `match` |
+| Sequential if-err-nil fallback | Multiple `val x, err = f(); if err == nil { return x }` blocks trying alternatives | `Try(() => f1()).OrElse(Try(() => f2()))` chain |
+| FlatMap vs OrElse confusion | Using `FlatMap` when fallback calls are independent | `OrElse` for independent fallbacks; `FlatMap` only when second call depends on first result |
+
+**Check**: Search for patterns like `val x, err = ...; if err == nil` or `if err != nil`. Multiple such blocks in sequence (trying alternatives and returning the first success) should use `Try` + `OrElse`. Single error checks should use `Try` + `Map`/`GetOrElse`/`match`.
+
+**Bad pattern** — Go-style sequential error fallback:
+```gala
+// BAD: imperative if-err-nil chain with sentinel return
+func findBinary() string {
+    val p, err = exec.LookPath("gala")
+    if err == nil {
+        return p
+    }
+    val p2, err2 = exec.LookPath("gala.exe")
+    if err2 == nil {
+        return p2
+    }
+    return ""
+}
+```
+
+**Good pattern** — Try + OrElse with Option return:
+```gala
+// GOOD: functional fallback chain, no sentinel value
+func findBinary() Option[string] =
+    Try(() => exec.LookPath("gala"))
+        .OrElse(Try(() => exec.LookPath("gala.exe")))
+        .ToOption()
+```
+
+**When to use FlatMap vs OrElse**:
+```gala
+// OrElse: independent fallbacks (second doesn't need first's result)
+Try(() => lookupInCache(key)).OrElse(Try(() => lookupInDB(key)))
+
+// FlatMap: dependent chain (second uses first's result)
+Try(() => findConfig()).FlatMap((path) => Try(() => readFile(path)))
+```
 
 ### 12. Naming Conventions (LOW priority)
 
@@ -279,7 +356,7 @@ func (s Str) IsAlpha() bool = s.NonEmpty() && toRunes(s.value).ForAll(unicode.Is
 
 ## Severity Levels
 
-- **HIGH**: Violations of core GALA principles (immutability, pattern matching, functional patterns, sealed types, collection delegation)
+- **HIGH**: Violations of core GALA principles (immutability, pattern matching, functional patterns, sealed types, collection delegation, error handling with Try/Option)
 - **MEDIUM**: Missed opportunities for type inference, unnecessary variables, expression-bodied functions
 - **LOW**: Style and naming conventions
 
