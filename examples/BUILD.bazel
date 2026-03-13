@@ -19,7 +19,11 @@ filegroup(
         "lib/generic.gala",
         "match_method_chain/main.gala",
         "match_method_chain/types.gala",
+<<<<<<< HEAD
         "match_void_branches.gala",
+=======
+        "try_go_transitive_import.gala",
+>>>>>>> 8ced2cb (fix: add ImportPath to NamedType for transitive Go import resolution)
         "mathlib/math.gala",
         "multi_file/greeter.gala",
         "multi_file/main.gala",
@@ -1224,4 +1228,11 @@ gala_test(
     name = "match_void_branches",
     src = "match_void_branches.gala",
     expected = "match_void_branches.out",
+)
+
+# FIX-045 verification: transitive Go import for return types (e.g., io/fs from os.Stat)
+gala_test(
+    name = "try_go_transitive_import",
+    src = "try_go_transitive_import.gala",
+    expected = "try_go_transitive_import.out",
 )

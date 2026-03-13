@@ -1,0 +1,11 @@
+package main
+
+import "os"
+
+func main() {
+    val result = Try(() => os.Stat("."))
+    result match {
+        case Success(_) => Println("Current directory exists")
+        case Failure(err) => Println(s"Error: $err")
+    }
+}

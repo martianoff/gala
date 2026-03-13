@@ -417,8 +417,9 @@ func goTypeToTranspilerType(t types.Type) transpiler.Type {
 			return goTypeToTranspilerType(types.Unalias(t))
 		}
 		return transpiler.NamedType{
-			Package: pkg.Name(),
-			Name:    obj.Name(),
+			Package:    pkg.Name(),
+			Name:       obj.Name(),
+			ImportPath: pkg.Path(),
 		}
 
 	case *types.Alias:

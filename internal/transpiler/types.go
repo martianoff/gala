@@ -26,8 +26,9 @@ func (t BasicType) GetPackage() string { return "" }
 
 // NamedType represents a named type, potentially package-qualified.
 type NamedType struct {
-	Package string
-	Name    string
+	Package    string
+	Name       string
+	ImportPath string // Full Go import path (e.g., "io/fs"), used for transitive imports from Go type analysis
 }
 
 func (t NamedType) String() string {
