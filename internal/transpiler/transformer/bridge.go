@@ -75,6 +75,9 @@ func (t *galaASTTransformer) fromInferType(typ infer.Type) transpiler.Type {
 
 	switch v := typ.(type) {
 	case *infer.TypeConst:
+		if v.Name == "unit" {
+			return transpiler.VoidType{}
+		}
 		return transpiler.ParseType(v.Name)
 	case *infer.TypeVariable:
 		// Unresolved type variable - return NilType to signal inference failure

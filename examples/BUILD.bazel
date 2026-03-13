@@ -19,6 +19,7 @@ filegroup(
         "lib/generic.gala",
         "match_method_chain/main.gala",
         "match_method_chain/types.gala",
+        "match_void_branches.gala",
         "mathlib/math.gala",
         "multi_file/greeter.gala",
         "multi_file/main.gala",
@@ -1216,4 +1217,11 @@ gala_test(
     src = "go_type_inference_cross_pkg.gala",
     expected = "go_type_inference_cross_pkg.out",
     deps = [":go_type_inference_lib"],
+)
+
+# FIX-046 verification: match with void function branches should not generate 'unit' type
+gala_test(
+    name = "match_void_branches",
+    src = "match_void_branches.gala",
+    expected = "match_void_branches.out",
 )
