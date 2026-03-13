@@ -212,6 +212,9 @@ func (t *galaASTTransformer) transformShortVarDeclWithMutability(ctx *grammar.Sh
 			val = &ast.IndexExpr{X: t.unwrapImmutable(rhsExprs[0]), Index: &ast.BasicLit{Kind: token.INT, Value: fmt.Sprintf("%d", i)}}
 		}
 
+		// Auto-destructure Go functions returning (T, error)
+		val = t.wrapGoMultiReturnAsIIFE(val)
+
 		if t.isNoneCall(val) {
 			return nil, galaerr.NewSemanticError("variable assigned to None() must have an explicit type")
 		}

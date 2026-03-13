@@ -326,6 +326,10 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 			val = &ast.IndexExpr{X: t.unwrapImmutable(rhsExprs[0]), Index: &ast.BasicLit{Kind: token.INT, Value: fmt.Sprintf("%d", i)}}
 		}
 
+		// Auto-destructure Go functions returning (T, error): wrap in IIFE that
+		// panics on error and returns only the non-error value.
+		val = t.wrapGoMultiReturnAsIIFE(val)
+
 		if t.isNoneCall(val) && ctx.Type_() == nil {
 			return nil, t.semanticErrorAt(ctx, "variable assigned to None() must have an explicit type")
 		}

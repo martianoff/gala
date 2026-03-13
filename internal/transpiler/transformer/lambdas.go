@@ -311,6 +311,31 @@ func (t *galaASTTransformer) tryWrapGoMultiReturnWithErrorPanic(expr ast.Expr) (
 	}, returnTypeExpr
 }
 
+// wrapGoMultiReturnAsIIFE wraps a Go function call returning (T, error) in an IIFE
+// that destructures the return, panics on error, and returns the non-error value.
+// If the expression is not a multi-return Go call, returns the original expression unchanged.
+//
+// Example: os.Create(path) which returns (*os.File, error) becomes:
+//
+//	func() *os.File { _v0, _err := os.Create(path); if _err != nil { panic(_err) }; return _v0 }()
+func (t *galaASTTransformer) wrapGoMultiReturnAsIIFE(expr ast.Expr) ast.Expr {
+	block, returnTypeExpr := t.tryWrapGoMultiReturnWithErrorPanic(expr)
+	if block == nil {
+		return expr
+	}
+	// Wrap in IIFE: func() T { ... }()
+	return &ast.CallExpr{
+		Fun: &ast.FuncLit{
+			Type: &ast.FuncType{
+				Results: &ast.FieldList{
+					List: []*ast.Field{{Type: returnTypeExpr}},
+				},
+			},
+			Body: block,
+		},
+	}
+}
+
 // inferBlockReturnType tries to infer the return type from a block's return statements.
 // Returns nil if no concrete type can be inferred.
 func (t *galaASTTransformer) inferBlockReturnType(block *ast.BlockStmt) ast.Expr {
