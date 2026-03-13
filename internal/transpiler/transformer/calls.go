@@ -384,7 +384,6 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 		if typeMeta != nil {
 			methodMeta = typeMeta.Methods[method]
 		}
-
 		if methodMeta != nil {
 			// Build type substitution map from receiver's type arguments
 			typeSubst := make(map[string]string)

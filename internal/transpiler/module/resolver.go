@@ -161,6 +161,10 @@ func (r *Resolver) ResolvePackagePath(importPath string) (string, error) {
 	// GALA modules are provided via --search (e.g., gala + gala-server).
 	for _, sp := range r.searchPaths {
 		spModRoot, spModName := FindModuleRoot(sp)
+		// Also try gala.mod if go.mod wasn't found (pure GALA packages may not have go.mod)
+		if spModName == "" {
+			spModRoot, spModName = findGalaModuleRoot(sp)
+		}
 		if spModName == "" || spModRoot == r.moduleRoot {
 			continue // skip primary module (already handled in Strategy 1)
 		}
@@ -254,6 +258,10 @@ func (r *Resolver) IsGalaPackage(importPath string) bool {
 	// Check if any search path is a module root whose name matches
 	for _, sp := range r.searchPaths {
 		spModRoot, spModName := FindModuleRoot(sp)
+		// Also try gala.mod if go.mod wasn't found (pure GALA packages may not have go.mod)
+		if spModName == "" {
+			spModRoot, spModName = findGalaModuleRoot(sp)
+		}
 		if spModName == "" || spModName == r.moduleName {
 			continue
 		}
@@ -494,6 +502,33 @@ func FindModuleRoot(startPath string) (moduleRoot, moduleName string) {
 			break
 		}
 		dir = parent
+	}
+
+	return "", ""
+}
+
+// findGalaModuleRoot looks for gala.mod in the given directory (not walking up)
+// and extracts the module name from it. Used as fallback when go.mod is not found
+// (pure GALA packages that don't have a go.mod).
+func findGalaModuleRoot(startPath string) (moduleRoot, moduleName string) {
+	dir := startPath
+	if info, err := os.Stat(dir); err == nil && !info.IsDir() {
+		dir = filepath.Dir(dir)
+	}
+
+	modPath := filepath.Join(dir, "gala.mod")
+	content, err := os.ReadFile(modPath)
+	if err != nil {
+		return "", ""
+	}
+
+	lines := strings.Split(string(content), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "module ") {
+			moduleName = strings.TrimSpace(strings.TrimPrefix(line, "module "))
+			return dir, moduleName
+		}
 	}
 
 	return "", ""

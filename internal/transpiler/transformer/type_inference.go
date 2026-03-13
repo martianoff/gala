@@ -25,6 +25,11 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 		return cached
 	}
 	result := t.getExprTypeNameManualUncached(expr)
+	// Guard against nil interface value (not NilType{}) which can happen when
+	// called functions return nil instead of NilType{}.
+	if result == nil {
+		return transpiler.NilType{}
+	}
 	// Only cache non-nil results; failed lookups may succeed later as more scope info becomes available.
 	if !result.IsNil() {
 		t.exprTypeCache[expr] = result
@@ -140,10 +145,10 @@ func (t *galaASTTransformer) getExprTypeNameManualUncached(expr ast.Expr) transp
 				// e.g., runtime.GOOS is a string constant, not a type
 				qualName := pkgName + "." + e.Sel.Name
 				if t.goTypeInfo != nil {
-					if constType, ok := t.goTypeInfo.Constants[qualName]; ok {
+					if constType, ok := t.goTypeInfo.Constants[qualName]; ok && constType != nil {
 						return constType
 					}
-					if varType, ok := t.goTypeInfo.Variables[qualName]; ok {
+					if varType, ok := t.goTypeInfo.Variables[qualName]; ok && varType != nil {
 						return varType
 					}
 				}
