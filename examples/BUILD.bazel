@@ -1233,3 +1233,10 @@ gala_test(
     src = "try_go_transitive_import.gala",
     expected = "try_go_transitive_import.out",
 )
+
+# FIX-044 verification: auto-destructure (T, error) Go returns in val declarations
+gala_test(
+    name = "try_val_destructure",
+    src = "try_val_destructure.gala",
+    expected = "try_val_destructure.out",
+)

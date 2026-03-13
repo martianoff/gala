@@ -1,0 +1,19 @@
+package main
+
+import (
+    "os"
+    "path/filepath"
+)
+
+func main() {
+    val tmpDir = os.MkdirTemp("", "gala-test-*")
+    val path = filepath.Join(tmpDir, "test.txt")
+    val f = os.Create(path)
+    f.WriteString("hello from gala")
+    f.Close()
+
+    val data = os.ReadFile(path)
+    Println(string(data))
+
+    os.RemoveAll(tmpDir)
+}
