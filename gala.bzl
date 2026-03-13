@@ -123,6 +123,8 @@ def gala_transpile(name, src, out = None, package_files = [], extra_srcs = [], g
         ),
         tools = [Label("//cmd/gala")],
         visibility = ["//visibility:public"],
+        # Allow access to Go SDK filesystem for type inference (go/importer)
+        tags = ["no-sandbox"],
     )
 
 def gala_bootstrap_transpile(name, src, out = None, package_files = []):
@@ -152,6 +154,8 @@ def gala_bootstrap_transpile(name, src, out = None, package_files = []):
         ),
         tools = [Label("//cmd/gala_bootstrap")],
         visibility = ["//visibility:public"],
+        # Allow access to Go SDK filesystem for type inference (go/importer)
+        tags = ["no-sandbox"],
     )
 
 def gala_library(name, src = None, srcs = None, importpath = "", deps = [], embedsrcs = [], **kwargs):
