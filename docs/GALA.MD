@@ -967,11 +967,29 @@ val msg = x match {
 // Monadic operations
 val result = x.Map((i int) => i * 2)
 
+// Safe value extraction
+val value = x.GetOrElse(0)
+val alternative = x.OrElse(Some(99))
+
 // Side-effect methods (return original value for chaining)
 x.OnSome((v) => { Println(s"Found: $v") })
  .OnNone(() => { Println("Not found") })
  .Map((i) => i * 2)
 ```
+
+#### Key Methods
+| Method | Description |
+|--------|-------------|
+| `IsDefined()` / `IsEmpty()` | Check the state |
+| `Get()` | Get value or panic |
+| `GetOrElse(default)` | Get value or return default |
+| `OrElse(alternative)` | Return this if Some, otherwise alternative |
+| `OnSome(f)` | Execute side-effect if Some, return original Option |
+| `OnNone(f)` | Execute side-effect if None, return original Option |
+| `ForEach(f)` | Apply procedure if nonempty |
+| `Map[U](f)` | Transform value if Some |
+| `FlatMap[U](f)` | Chain operations returning Option |
+| `Filter(predicate)` | Keep Some if predicate holds |
 
 ### Tuple
 `Tuple[A, B]` represents a pair of values. GALA supports concise parenthesis syntax for tuples (up to Tuple5).

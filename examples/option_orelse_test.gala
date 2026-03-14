@@ -1,0 +1,25 @@
+package main
+
+import "fmt"
+
+func main() {
+    // Test 1: Some.OrElse(other) returns the original Some
+    val some1 = Some(42)
+    val some2 = Some(99)
+    val result1 = some1.OrElse(some2)
+    fmt.Println("Some.OrElse(Some):", result1.Get())
+
+    // Test 2: None.OrElse(Some) returns the alternative Some
+    val none1 = None[int]()
+    val result2 = none1.OrElse(some1)
+    fmt.Println("None.OrElse(Some):", result2.Get())
+
+    // Test 3: None.OrElse(None) returns None
+    val none2 = None[int]()
+    val result3 = none1.OrElse(none2)
+    fmt.Println("None.OrElse(None) isEmpty:", result3.IsEmpty())
+
+    // Test 4: Chaining multiple OrElse calls
+    val result4 = None[string]().OrElse(None[string]()).OrElse(Some("found")).OrElse(Some("other"))
+    fmt.Println("Chained OrElse:", result4.Get())
+}
