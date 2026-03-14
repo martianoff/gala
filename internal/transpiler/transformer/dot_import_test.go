@@ -68,7 +68,7 @@ func TestDotImportClashError(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	// Create go.mod
-	err = os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte("module testmod\n\ngo 1.21\n"), 0644)
+	err = os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte("module testmod\n\ngo 1.22\n"), 0644)
 	assert.NoError(t, err)
 
 	// Create pkg_a with Greet function

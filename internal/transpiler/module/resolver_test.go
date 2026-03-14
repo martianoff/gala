@@ -15,7 +15,7 @@ func TestFindModuleRoot(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(tempDir)
 
-	goModContent := "module martianoff/gala\n\ngo 1.21\n"
+	goModContent := "module martianoff/gala\n\ngo 1.22\n"
 	err = os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte(goModContent), 0644)
 	require.NoError(t, err)
 
@@ -48,7 +48,7 @@ func TestNewResolver(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(tempDir)
 
-	goModContent := "module martianoff/gala\n\ngo 1.21\n"
+	goModContent := "module martianoff/gala\n\ngo 1.22\n"
 	err = os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte(goModContent), 0644)
 	require.NoError(t, err)
 
@@ -71,7 +71,7 @@ func TestResolver_ResolvePackagePath_ModuleRelative(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(tempDir)
 
-	goModContent := "module martianoff/gala\n\ngo 1.21\n"
+	goModContent := "module martianoff/gala\n\ngo 1.22\n"
 	err = os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte(goModContent), 0644)
 	require.NoError(t, err)
 
@@ -107,7 +107,7 @@ func TestResolver_ResolvePackagePath_SimpleName(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(tempDir)
 
-	goModContent := "module martianoff/gala\n\ngo 1.21\n"
+	goModContent := "module martianoff/gala\n\ngo 1.22\n"
 	err = os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte(goModContent), 0644)
 	require.NoError(t, err)
 
@@ -174,7 +174,7 @@ func TestResolver_HasGalaMod(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	// Create go.mod
-	goModContent := "module test/project\n\ngo 1.21\n"
+	goModContent := "module test/project\n\ngo 1.22\n"
 	err = os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte(goModContent), 0644)
 	require.NoError(t, err)
 
@@ -213,7 +213,7 @@ func TestResolver_ReplaceDirective_LocalPath(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create go.mod in project
-	goModContent := "module test/project\n\ngo 1.21\n"
+	goModContent := "module test/project\n\ngo 1.22\n"
 	err = os.WriteFile(filepath.Join(projectDir, "go.mod"), []byte(goModContent), 0644)
 	require.NoError(t, err)
 
