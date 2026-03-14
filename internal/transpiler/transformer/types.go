@@ -662,21 +662,30 @@ func (t *galaASTTransformer) getExprTypeName(expr ast.Expr) transpiler.Type {
 	return res
 }
 
+// isActiveTypeParam checks if a name is a type parameter in the current generic context.
+// Uses activeTypeParams when available, falls back to single-uppercase-letter heuristic.
+func (t *galaASTTransformer) isActiveTypeParam(name string) bool {
+	// Strip package prefix (e.g., "std.T" -> "T")
+	name = stripPackagePrefix(name)
+	if t.activeTypeParams[name] {
+		return true
+	}
+	// Fallback heuristic when no active type params are set
+	if len(t.activeTypeParams) == 0 && len(name) == 1 && name[0] >= 'A' && name[0] <= 'Z' {
+		return true
+	}
+	return false
+}
+
 func (t *galaASTTransformer) hasTypeParams(typ transpiler.Type) bool {
 	if typ == nil || typ.IsNil() {
 		return false
 	}
 	switch v := typ.(type) {
 	case transpiler.BasicType:
-		// Check if it's a known type parameter in current scope
-		// OR if it's a single uppercase letter (common convention for type params)
-		if t.activeTypeParams[v.Name] {
-			return true
-		}
-		if len(v.Name) == 1 && v.Name[0] >= 'A' && v.Name[0] <= 'Z' {
-			return true
-		}
-		return false
+		return t.isActiveTypeParam(v.Name)
+	case transpiler.NamedType:
+		return t.isActiveTypeParam(v.Name)
 	case transpiler.GenericType:
 		for _, p := range v.Params {
 			if t.hasTypeParams(p) {

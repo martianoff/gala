@@ -904,12 +904,40 @@ func (t *galaASTTransformer) unifyForInference(pattern, concrete transpiler.Type
 		}
 	}
 
+	// Check if both are array types
+	patternArr, patternIsArr := pattern.(transpiler.ArrayType)
+	concreteArr, concreteIsArr := concrete.(transpiler.ArrayType)
+	if patternIsArr && concreteIsArr {
+		return t.unifyForInference(patternArr.Elem, concreteArr.Elem, typeParams, inferredMap)
+	}
+
+	// Check if both are pointer types
+	patternPtr, patternIsPtr := pattern.(transpiler.PointerType)
+	concretePtr, concreteIsPtr := concrete.(transpiler.PointerType)
+	if patternIsPtr && concreteIsPtr {
+		return t.unifyForInference(patternPtr.Elem, concretePtr.Elem, typeParams, inferredMap)
+	}
+
+	// Check if both are map types
+	patternMap, patternIsMap := pattern.(transpiler.MapType)
+	concreteMap, concreteIsMap := concrete.(transpiler.MapType)
+	if patternIsMap && concreteIsMap {
+		t.unifyForInference(patternMap.Key, concreteMap.Key, typeParams, inferredMap)
+		t.unifyForInference(patternMap.Elem, concreteMap.Elem, typeParams, inferredMap)
+		return true
+	}
+
 	// Check if both are function types
 	patternFunc, patternIsFunc := pattern.(transpiler.FuncType)
 	concreteFunc, concreteIsFunc := concrete.(transpiler.FuncType)
 	if patternIsFunc && concreteIsFunc {
-		// Try to unify result types
-		// This handles cases like func(T) Try[U] with func(User) Try[User]
+		// Unify parameter types
+		for i, pParam := range patternFunc.Params {
+			if i < len(concreteFunc.Params) {
+				t.unifyForInference(pParam, concreteFunc.Params[i], typeParams, inferredMap)
+			}
+		}
+		// Unify result types
 		for i, pResult := range patternFunc.Results {
 			if i < len(concreteFunc.Results) {
 				t.unifyForInference(pResult, concreteFunc.Results[i], typeParams, inferredMap)
@@ -932,6 +960,11 @@ func (t *galaASTTransformer) unifyForInference(pattern, concrete transpiler.Type
 				t.unifyForInference(patternGen.Params[i], concreteGen.Params[i], typeParams, inferredMap)
 			}
 		}
+		return true
+	}
+
+	// Check if named types match (handling package prefixes)
+	if stripPackagePrefix(pattern.BaseName()) == stripPackagePrefix(concrete.BaseName()) {
 		return true
 	}
 
@@ -1109,49 +1142,16 @@ func (t *galaASTTransformer) exprToTypeString(expr ast.Expr) string {
 }
 
 // substituteTranspilerTypeParams substitutes type parameters in a type with their concrete values.
+// Delegates to substituteInType after converting the string-keyed map to a Type-keyed map.
 func (t *galaASTTransformer) substituteTranspilerTypeParams(typ transpiler.Type, subst map[string]string) transpiler.Type {
 	if typ == nil || typ.IsNil() || len(subst) == 0 {
 		return typ
 	}
-	switch ty := typ.(type) {
-	case transpiler.BasicType:
-		if replacement, ok := subst[ty.Name]; ok {
-			return transpiler.ParseType(replacement)
-		}
-		return ty
-	case transpiler.NamedType:
-		// Check if the full name or just the Name needs substitution
-		if replacement, ok := subst[ty.Name]; ok {
-			return transpiler.ParseType(replacement)
-		}
-		return ty
-	case transpiler.PointerType:
-		return transpiler.PointerType{Elem: t.substituteTranspilerTypeParams(ty.Elem, subst)}
-	case transpiler.ArrayType:
-		return transpiler.ArrayType{Elem: t.substituteTranspilerTypeParams(ty.Elem, subst)}
-	case transpiler.GenericType:
-		newParams := make([]transpiler.Type, len(ty.Params))
-		for i, p := range ty.Params {
-			newParams[i] = t.substituteTranspilerTypeParams(p, subst)
-		}
-		return transpiler.GenericType{Base: t.substituteTranspilerTypeParams(ty.Base, subst), Params: newParams}
-	case transpiler.FuncType:
-		newParams := make([]transpiler.Type, len(ty.Params))
-		for i, p := range ty.Params {
-			newParams[i] = t.substituteTranspilerTypeParams(p, subst)
-		}
-		newResults := make([]transpiler.Type, len(ty.Results))
-		for i, r := range ty.Results {
-			newResults[i] = t.substituteTranspilerTypeParams(r, subst)
-		}
-		return transpiler.FuncType{Params: newParams, Results: newResults}
-	case transpiler.MapType:
-		return transpiler.MapType{
-			Key:  t.substituteTranspilerTypeParams(ty.Key, subst),
-			Elem: t.substituteTranspilerTypeParams(ty.Elem, subst),
-		}
+	paramMap := make(map[string]transpiler.Type, len(subst))
+	for k, v := range subst {
+		paramMap[k] = transpiler.ParseType(v)
 	}
-	return typ
+	return t.substituteInType(typ, paramMap)
 }
 
 // getGoFuncReturnType returns the first return type of a Go function using GoTypeInfo.
