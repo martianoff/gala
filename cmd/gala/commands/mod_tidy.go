@@ -139,10 +139,10 @@ func runModTidy(cmd *cobra.Command, args []string) {
 			mvs.AddRequirements(g)
 			selected := mvs.Resolve()
 
-			// Update versions in gala.mod
+			// Update versions in gala.mod (strip v prefix — GALA uses bare semver)
 			for i, req := range galaMod.Require {
 				if ver, ok := selected[req.Path]; ok {
-					galaMod.Require[i].Version = ver.String()
+					galaMod.Require[i].Version = strings.TrimPrefix(ver.String(), "v")
 				}
 			}
 

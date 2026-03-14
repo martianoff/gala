@@ -144,18 +144,20 @@ func (f *GitFetcher) checkoutVersion(repo *git.Repository, repoDir, ver string) 
 		return err
 	}
 
-	// Try tag first
-	tagRef := plumbing.NewTagReferenceName(ver)
-	hash, err := repo.ResolveRevision(plumbing.Revision(tagRef))
-	if err == nil {
-		return worktree.Checkout(&git.CheckoutOptions{
-			Hash: *hash,
-		})
+	// Try tag first (with and without v prefix)
+	for _, tagName := range []string{ver, strings.TrimPrefix(ver, "v")} {
+		tagRef := plumbing.NewTagReferenceName(tagName)
+		hash, err := repo.ResolveRevision(plumbing.Revision(tagRef))
+		if err == nil {
+			return worktree.Checkout(&git.CheckoutOptions{
+				Hash: *hash,
+			})
+		}
 	}
 
 	// Try branch
 	branchRef := plumbing.NewBranchReferenceName(ver)
-	hash, err = repo.ResolveRevision(plumbing.Revision(branchRef))
+	hash, err := repo.ResolveRevision(plumbing.Revision(branchRef))
 	if err == nil {
 		return worktree.Checkout(&git.CheckoutOptions{
 			Hash: *hash,
