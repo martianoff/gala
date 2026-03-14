@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"martianoff/gala/internal/depman/fetch"
 	"martianoff/gala/internal/depman/mod"
 	"martianoff/gala/internal/stdlib"
 	"martianoff/gala/internal/transpiler"
@@ -76,7 +77,12 @@ func (b *Builder) Build(outputPath string) (string, error) {
 		return "", fmt.Errorf("ensuring stdlib: %w", err)
 	}
 
-	// Step 2.5: Transpile GALA dependencies
+	// Step 2.5: Fetch missing GALA dependencies
+	if err := b.ensureDeps(); err != nil {
+		return "", fmt.Errorf("fetching dependencies: %w", err)
+	}
+
+	// Step 2.6: Transpile GALA dependencies
 	if err := b.transpileDeps(); err != nil {
 		return "", fmt.Errorf("transpiling dependencies: %w", err)
 	}
@@ -98,6 +104,32 @@ func (b *Builder) Build(outputPath string) (string, error) {
 	}
 
 	return finalPath, nil
+}
+
+// ensureDeps fetches any GALA dependencies that are not yet cached locally.
+func (b *Builder) ensureDeps() error {
+	galaReqs := b.galaMod.GalaRequires()
+	if len(galaReqs) == 0 {
+		return nil
+	}
+
+	config := fetch.DefaultConfig()
+	cache := fetch.NewCache(config)
+	fetcher := fetch.NewGitFetcher(cache)
+
+	for _, req := range galaReqs {
+		modDir := b.config.GalaModulePath(req.Path, req.Version)
+		if _, err := os.Stat(modDir); err == nil {
+			continue // Already cached
+		}
+		if b.verbose {
+			fmt.Printf("Fetching %s@%s...\n", req.Path, req.Version)
+		}
+		if _, _, err := fetcher.Fetch(req.Path, req.Version); err != nil {
+			return fmt.Errorf("fetching %s@%s: %w", req.Path, req.Version, err)
+		}
+	}
+	return nil
 }
 
 // ensureStdlib extracts the stdlib to the versioned cache if not present.

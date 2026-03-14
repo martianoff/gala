@@ -12,6 +12,7 @@ go_library(
     importpath = "martianoff/gala/internal/build",
     visibility = ["//:__subpackages__"],
     deps = [
+        "//internal/depman/fetch",
         "//internal/depman/mod",
         "//internal/stdlib",
         "//internal/transpiler",
