@@ -122,6 +122,13 @@ gala_test(
     expected = "option_complex.out",
 )
 
+# Option.OrElse method verification
+gala_test(
+    name = "option_orelse_test",
+    src = "option_orelse_test.gala",
+    expected = "option_orelse_test.out",
+)
+
 gala_test(
     name = "match_method_return",
     src = "match_method_return.gala",

@@ -45,6 +45,14 @@ func (o Option[T]) GetOrElse(defaultValue T) T {
     return defaultValue
 }
 
+// OrElse returns this Option if it is Some, otherwise returns alternative.
+func (o Option[T]) OrElse(alternative Option[T]) Option[T] {
+    if o.isSome() {
+        return o
+    }
+    return alternative
+}
+
 // OnSome executes a callback with the value if this is Some,
 // returns the original Option unchanged (for chaining).
 func (o Option[T]) OnSome(f func(T)) Option[T] {

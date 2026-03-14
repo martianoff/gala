@@ -1,0 +1,4 @@
+Some.OrElse(Some): 42
+None.OrElse(Some): 42
+None.OrElse(None) isEmpty: true
+Chained OrElse: found
