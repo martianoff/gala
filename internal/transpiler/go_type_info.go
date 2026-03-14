@@ -111,6 +111,21 @@ func (g *GoTypeInfo) GetFieldType(typeName, fieldName string) Type {
 	return td.Fields[fieldName]
 }
 
+// GetMethodSignature returns the full method signature, or nil if unknown.
+func (g *GoTypeInfo) GetMethodSignature(typeName, methodName string) *GoFuncSignature {
+	if g == nil {
+		return nil
+	}
+	td := g.Types[typeName]
+	if td == nil {
+		return nil
+	}
+	if sig, ok := td.Methods[methodName]; ok {
+		return sig
+	}
+	return nil
+}
+
 // GetMethodReturnType returns the first return type of a method, or nil if unknown.
 func (g *GoTypeInfo) GetMethodReturnType(typeName, methodName string) Type {
 	if g == nil {

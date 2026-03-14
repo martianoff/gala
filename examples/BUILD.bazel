@@ -609,6 +609,12 @@ gala_test(
 )
 
 gala_test(
+    name = "try_chained_method",
+    src = "try_chained_method.gala",
+    expected = "try_chained_method.out",
+)
+
+gala_test(
     name = "sealed_types",
     src = "sealed_types.gala",
     expected = "sealed_types.out",

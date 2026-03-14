@@ -237,7 +237,7 @@ func syncGoModForBazel(galaMod *mod.File) error {
 	// Clean up
 	existingContent = strings.TrimSpace(existingContent)
 	if existingContent == "" {
-		existingContent = fmt.Sprintf("module %s\n\ngo 1.21", galaMod.Module.Path)
+		existingContent = fmt.Sprintf("module %s\n\ngo 1.22", galaMod.Module.Path)
 	}
 
 	// Build new content

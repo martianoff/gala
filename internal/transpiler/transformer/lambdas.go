@@ -196,19 +196,26 @@ func (t *galaASTTransformer) tryWrapGoMultiReturnWithErrorPanic(expr ast.Expr) (
 		return nil, nil
 	}
 
-	// Extract the qualified function name from the call
-	qualifiedName := ""
+	// Extract the function signature from the call.
+	// Case 1: simple pkg.Func() call — look up by qualified name.
+	// Case 2: chained call like expr.Method() — resolve receiver type, then look up method.
+	var sig *transpiler.GoFuncSignature
 	switch fun := callExpr.Fun.(type) {
 	case *ast.SelectorExpr:
 		if id, ok := fun.X.(*ast.Ident); ok {
-			qualifiedName = id.Name + "." + fun.Sel.Name
+			// Simple case: pkg.Func() or receiver.Method() where receiver is an ident
+			qualifiedName := id.Name + "." + fun.Sel.Name
+			sig = t.goTypeInfo.GetFuncSignature(qualifiedName)
+			if sig == nil {
+				// Could be a method call on a variable — resolve its type
+				sig = t.resolveMethodSignatureOnExpr(fun.X, fun.Sel.Name)
+			}
+		} else {
+			// Chained call: e.g., exec.Command(...).Output()
+			// Resolve the type of fun.X (the receiver expression) and look up the method
+			sig = t.resolveMethodSignatureOnExpr(fun.X, fun.Sel.Name)
 		}
 	}
-	if qualifiedName == "" {
-		return nil, nil
-	}
-
-	sig := t.goTypeInfo.GetFuncSignature(qualifiedName)
 	if sig == nil || len(sig.Returns) < 2 {
 		return nil, nil
 	}
@@ -309,6 +316,36 @@ func (t *galaASTTransformer) tryWrapGoMultiReturnWithErrorPanic(expr ast.Expr) (
 			&ast.ReturnStmt{Results: []ast.Expr{returnExpr}},
 		},
 	}, returnTypeExpr
+}
+
+// resolveMethodSignatureOnExpr resolves the type of an arbitrary expression, then looks up
+// the method signature on that type. This handles chained calls like exec.Command(...).Output()
+// where the receiver is a CallExpr rather than a simple Ident.
+func (t *galaASTTransformer) resolveMethodSignatureOnExpr(receiver ast.Expr, methodName string) *transpiler.GoFuncSignature {
+	if t.goTypeInfo == nil {
+		return nil
+	}
+	receiverType := t.getExprTypeNameManual(receiver)
+	if receiverType == nil || receiverType.IsNil() {
+		return nil
+	}
+	typeName := receiverType.String()
+	// Strip pointer prefix for method lookup
+	cleanType := strings.TrimPrefix(typeName, "*")
+
+	// Try direct lookup
+	if sig := t.goTypeInfo.GetMethodSignature(cleanType, methodName); sig != nil {
+		return sig
+	}
+
+	// If the type is a Go type alias, resolve and try the underlying type's methods
+	if aliasedType := t.goTypeInfo.ResolveTypeAlias(cleanType); aliasedType != nil {
+		if sig := t.goTypeInfo.GetMethodSignature(aliasedType.String(), methodName); sig != nil {
+			return sig
+		}
+	}
+
+	return nil
 }
 
 // wrapGoMultiReturnAsIIFE wraps a Go function call returning (T, error) in an IIFE
