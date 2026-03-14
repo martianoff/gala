@@ -151,23 +151,12 @@ func (w *Workspace) DepModuleDir(modulePath, version string) string {
 	return filepath.Join(w.DepsDir, modulePath+"@"+version)
 }
 
-// CleanGen removes all files from the gen directory.
+// CleanGen removes all files and subdirectories from the gen directory.
 func (w *Workspace) CleanGen() error {
-	entries, err := os.ReadDir(w.GenDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
+	if err := os.RemoveAll(w.GenDir); err != nil {
 		return err
 	}
-
-	for _, entry := range entries {
-		if err := os.Remove(filepath.Join(w.GenDir, entry.Name())); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return os.MkdirAll(w.GenDir, 0755)
 }
 
 // FindWorkspaceByProject finds an existing workspace for a project path.

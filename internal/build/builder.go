@@ -162,9 +162,12 @@ func (b *Builder) ensureStdlib() error {
 	return nil
 }
 
-// computeSourceHash computes a SHA256 hash of all .gala source files for cache invalidation.
-func computeSourceHash(files []string) string {
+// computeSourceHash computes a SHA256 hash of all inputs for cache invalidation.
+// Includes .gala source files, gala.mod, and the gala version so that any
+// change to sources, dependencies, or the transpiler itself triggers a rebuild.
+func computeSourceHash(files []string, galaVersion string) string {
 	h := sha256.New()
+	h.Write([]byte("gala:" + galaVersion + "\n"))
 	sorted := make([]string, len(files))
 	copy(sorted, files)
 	sort.Strings(sorted)
@@ -196,8 +199,10 @@ func (b *Builder) transpile() error {
 	}
 
 	// Check if sources have changed since last transpilation
+	// Include gala.mod in hash so dep changes also invalidate the cache
 	hashFile := filepath.Join(b.workspace.Dir, ".gala-source-hash")
-	currentHash := computeSourceHash(galaFiles)
+	galaModFile := filepath.Join(b.workspace.ProjectDir, "gala.mod")
+	currentHash := computeSourceHash(append(galaFiles, galaModFile), b.stdlibVersion)
 	if currentHash != "" {
 		if oldHash, err := os.ReadFile(hashFile); err == nil && string(oldHash) == currentHash {
 			if genFiles, err := b.workspace.GenFiles(); err == nil && len(genFiles) > 0 {
