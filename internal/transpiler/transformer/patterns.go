@@ -1284,72 +1284,10 @@ func stripPackagePrefix(name string) string {
 	return name
 }
 
-// typeNamesEqual compares two type names, ignoring package prefixes.
-// This handles cases like "Option" vs "std.Option" or "User" vs "main.User".
-func typeNamesEqual(name1, name2 string) bool {
-	return stripPackagePrefix(name1) == stripPackagePrefix(name2)
-}
-
 // unifyTypes attempts to unify two types and extract type parameter substitutions.
-// pattern is a type that may contain type parameters (e.g., List[T])
-// concrete is a concrete type (e.g., List[int])
-// typeParams is the list of type parameter names to match
-// substitution is populated with the inferred mappings (e.g., T -> int)
+// Delegates to unifyForInference for consistent unification logic across the codebase.
 func (t *galaASTTransformer) unifyTypes(pattern, concrete transpiler.Type, typeParams []string, substitution map[string]transpiler.Type) bool {
-	if pattern == nil || concrete == nil || pattern.IsNil() || concrete.IsNil() {
-		return false
-	}
-
-	// Check if pattern is a type parameter
-	patternStr := pattern.String()
-	for _, tp := range typeParams {
-		if patternStr == tp {
-			// This is a type parameter - record the substitution
-			if existing, ok := substitution[tp]; ok {
-				// Already have a substitution - check consistency
-				return existing.String() == concrete.String()
-			}
-			substitution[tp] = concrete
-			return true
-		}
-	}
-
-	// Check if both are pointer types - unify the element types
-	patternPtr, patternIsPtr := pattern.(transpiler.PointerType)
-	concretePtr, concreteIsPtr := concrete.(transpiler.PointerType)
-	if patternIsPtr && concreteIsPtr {
-		return t.unifyTypes(patternPtr.Elem, concretePtr.Elem, typeParams, substitution)
-	}
-	// One is pointer and one is not - no match
-	if patternIsPtr != concreteIsPtr {
-		return false
-	}
-
-	// Check if both are generic types
-	patternGen, patternIsGen := pattern.(transpiler.GenericType)
-	concreteGen, concreteIsGen := concrete.(transpiler.GenericType)
-
-	if patternIsGen && concreteIsGen {
-		// Both are generic - check base types match and unify parameters
-		// Use typeNamesEqual to handle package prefixes (e.g., "Option" vs "std.Option")
-		patternBase := patternGen.Base.BaseName()
-		concreteBase := concreteGen.Base.BaseName()
-		if !typeNamesEqual(patternBase, concreteBase) {
-			return false
-		}
-		if len(patternGen.Params) != len(concreteGen.Params) {
-			return false
-		}
-		for i := range patternGen.Params {
-			if !t.unifyTypes(patternGen.Params[i], concreteGen.Params[i], typeParams, substitution) {
-				return false
-			}
-		}
-		return true
-	}
-
-	// For non-generic types, check for match using normalized names to handle package prefixes
-	return typeNamesEqual(pattern.BaseName(), concrete.BaseName())
+	return t.unifyForInference(pattern, concrete, typeParams, substitution)
 }
 
 // getGenericExtractorResultTypeWithArgs determines the extracted type for a generic extractor.

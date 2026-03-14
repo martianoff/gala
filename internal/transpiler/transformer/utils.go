@@ -206,6 +206,13 @@ func (t *galaASTTransformer) qualifyFuncType(ft *ast.FuncType) *ast.FuncType {
 	}
 }
 
+// warnInference records a type inference warning (only when GALA_WARN_TYPES=1).
+func (t *galaASTTransformer) warnInference(format string, args ...interface{}) {
+	if t.warnTypeInference {
+		t.inferenceWarnings = append(t.inferenceWarnings, fmt.Sprintf(format, args...))
+	}
+}
+
 func findLeafIf(stmt ast.Stmt) *ast.IfStmt {
 	switch s := stmt.(type) {
 	case *ast.IfStmt:

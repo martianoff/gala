@@ -21,6 +21,7 @@ go_library(
         "statements.go",
         "transformer.go",
         "type_inference.go",
+        "type_inference_calls.go",
         "types.go",
         "utils.go",
     ],

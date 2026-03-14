@@ -562,6 +562,7 @@ func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patt
 			return nil, galaerr.NewSemanticError("cannot infer result type of match expression: no branch returns a concrete type. Please add explicit type annotation")
 		}
 		// Type parameters or mixed type-param/nil: use 'any' as the Go type erasure
+		t.warnInference("match expression defaulting to 'any' return type (all branches are type parameters)")
 		return transpiler.BasicType{Name: "any"}, nil
 	}
 
@@ -663,58 +664,16 @@ func (t *galaASTTransformer) typesCompatible(t1, t2 transpiler.Type) bool {
 	return false
 }
 
-// isTypeParameter checks if a type name represents a type parameter (like T, U, std.T)
+// isTypeParameter checks if a type name represents a type parameter (like T, U, std.T).
+// Delegates to isActiveTypeParam for consistent type parameter detection.
 func (t *galaASTTransformer) isTypeParameter(typeName string) bool {
-	// Remove std. prefix if present
-	name := stripStdPrefix(typeName)
-
-	// Type parameters are typically single uppercase letters
-	if len(name) == 1 && name[0] >= 'A' && name[0] <= 'Z' {
-		return true
-	}
-
-	return false
+	return t.isActiveTypeParam(typeName)
 }
 
-// typeHasUnresolvedParams checks if a type contains unresolved type parameters (like T, U, A, B)
+// typeHasUnresolvedParams checks if a type contains unresolved type parameters (like T, U, A, B).
+// Delegates to hasTypeParams for consistent type parameter detection.
 func (t *galaASTTransformer) typeHasUnresolvedParams(typ transpiler.Type) bool {
-	if typ == nil || typ.IsNil() {
-		return false
-	}
-
-	switch ty := typ.(type) {
-	case transpiler.BasicType:
-		return t.isTypeParameter(ty.Name)
-	case transpiler.NamedType:
-		return t.isTypeParameter(ty.Name)
-	case transpiler.GenericType:
-		// Check if base type is a type parameter
-		if t.typeHasUnresolvedParams(ty.Base) {
-			return true
-		}
-		// Check all type parameters
-		for _, param := range ty.Params {
-			if t.typeHasUnresolvedParams(param) {
-				return true
-			}
-		}
-		return false
-	case transpiler.FuncType:
-		// Check parameter and return types
-		for _, param := range ty.Params {
-			if t.typeHasUnresolvedParams(param) {
-				return true
-			}
-		}
-		for _, result := range ty.Results {
-			if t.typeHasUnresolvedParams(result) {
-				return true
-			}
-		}
-		return false
-	default:
-		return false
-	}
+	return t.hasTypeParams(typ)
 }
 
 // isSimpleIdentifier checks if a string is a simple identifier (not underscore, not complex)

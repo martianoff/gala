@@ -754,6 +754,7 @@ func (t *galaASTTransformer) transformPartialFunctionLiteral(ctx *grammar.Partia
 
 	// Fall back to 'any' if we still can't infer
 	if paramType == nil || paramType.IsNil() {
+		t.warnInference("partial function param type defaulting to 'any' — could not infer from context")
 		paramType = transpiler.BasicType{Name: "any"}
 	}
 

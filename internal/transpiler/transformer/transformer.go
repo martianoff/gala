@@ -57,6 +57,8 @@ type galaASTTransformer struct {
 	typeTraces            []TypeTraceEntry             // recorded type resolution events (only when tracing is enabled)
 	exprTypeCache         map[ast.Expr]transpiler.Type // cache for getExprTypeNameManual results
 	needsEmbedImport      bool                        // true when embed val declarations require import "embed"
+	warnTypeInference     bool                        // when true, log warnings about type inference fallbacks
+	inferenceWarnings     []string                    // collected type inference warnings
 }
 
 // NewGalaASTTransformer creates a new instance of ASTTransformer for GALA.
@@ -115,7 +117,9 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 	t.tempVarCount = 0
 	t.richAST = richAST
 	t.traceTypeResolution = os.Getenv("GALA_TRACE_TYPES") == "1"
+	t.warnTypeInference = os.Getenv("GALA_WARN_TYPES") == "1"
 	t.typeTraces = nil
+	t.inferenceWarnings = nil
 	t.filePath = richAST.FilePath
 	if richAST.SourceContent != "" {
 		t.sourceLines = strings.Split(richAST.SourceContent, "\n")
@@ -332,6 +336,15 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 		fmt.Fprintf(os.Stderr, "=== Type Resolution Trace (%s) ===\n", t.filePath)
 		t.DumpTypeTrace(os.Stderr)
 		fmt.Fprintf(os.Stderr, "=== End Trace (%d entries) ===\n", len(t.typeTraces))
+	}
+
+	// Dump type inference warnings if enabled
+	if t.warnTypeInference && len(t.inferenceWarnings) > 0 {
+		fmt.Fprintf(os.Stderr, "=== Type Inference Warnings (%s) ===\n", t.filePath)
+		for _, w := range t.inferenceWarnings {
+			fmt.Fprintf(os.Stderr, "  WARN: %s\n", w)
+		}
+		fmt.Fprintf(os.Stderr, "=== End Warnings (%d) ===\n", len(t.inferenceWarnings))
 	}
 
 	return fset, file, nil
