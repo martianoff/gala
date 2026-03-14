@@ -50,7 +50,7 @@ func runModTidy(cmd *cobra.Command, args []string) {
 	}
 
 	// Determine which imports are external dependencies
-	externalImports := filterExternalImports(imports, galaMod.Module.Path)
+	externalImports := filterExternalImports(imports, galaMod.Module.Path, galaMod.Require)
 
 	// Build sets for comparison
 	requiredPaths := make(map[string]bool)
@@ -323,6 +323,8 @@ func generateGoSum(goSumPath string, goDeps []mod.Require) error {
 }
 
 // scanImports scans all .gala files in the directory tree for import statements.
+// Handles both single-line imports (import "pkg") and multi-line import blocks
+// (import (\n    "pkg"\n)), including dot imports (. "pkg") and aliased imports (alias "pkg").
 func scanImports(dir string) (map[string]bool, error) {
 	imports := make(map[string]bool)
 
@@ -352,16 +354,34 @@ func scanImports(dir string) (map[string]bool, error) {
 			return nil // Skip files we can't read
 		}
 
-		// Simple import extraction (look for import "..." statements)
 		lines := strings.Split(string(content), "\n")
+		inImportBlock := false
 		for _, line := range lines {
 			line = strings.TrimSpace(line)
-			if strings.HasPrefix(line, "import ") {
-				// Extract import path
-				start := strings.Index(line, "\"")
-				end := strings.LastIndex(line, "\"")
-				if start >= 0 && end > start {
-					importPath := line[start+1 : end]
+
+			// Single-line import: import "pkg" or import . "pkg"
+			if strings.HasPrefix(line, "import ") && !strings.HasPrefix(line, "import (") {
+				if importPath := extractImportPath(line); importPath != "" {
+					imports[importPath] = true
+				}
+				continue
+			}
+
+			// Start of multi-line import block
+			if strings.HasPrefix(line, "import (") {
+				inImportBlock = true
+				continue
+			}
+
+			// End of multi-line import block
+			if inImportBlock && line == ")" {
+				inImportBlock = false
+				continue
+			}
+
+			// Line inside import block: "pkg", . "pkg", alias "pkg"
+			if inImportBlock {
+				if importPath := extractImportPath(line); importPath != "" {
 					imports[importPath] = true
 				}
 			}
@@ -373,15 +393,31 @@ func scanImports(dir string) (map[string]bool, error) {
 	return imports, err
 }
 
+// extractImportPath extracts a quoted import path from a line.
+// Handles: "pkg", . "pkg", alias "pkg"
+func extractImportPath(line string) string {
+	start := strings.Index(line, "\"")
+	end := strings.LastIndex(line, "\"")
+	if start >= 0 && end > start {
+		return line[start+1 : end]
+	}
+	return ""
+}
+
 // filterExternalImports filters out standard library and local module imports.
-func filterExternalImports(imports map[string]bool, modulePath string) map[string]bool {
+// It recognizes external dependencies by:
+//   - Domain-based paths (containing a dot, e.g., "github.com/foo/bar") — Go convention
+//   - Paths matching existing gala.mod require entries — GALA convention (e.g., "martianoff/gala-server")
+func filterExternalImports(imports map[string]bool, modulePath string, requires []mod.Require) map[string]bool {
+	// Build a set of known dependency root paths for matching
+	knownDeps := make(map[string]bool, len(requires))
+	for _, req := range requires {
+		knownDeps[req.Path] = true
+	}
+
 	external := make(map[string]bool)
 
 	for imp := range imports {
-		// Skip standard library (no dots in path)
-		if !strings.Contains(imp, ".") {
-			continue
-		}
 		// Skip current module imports
 		if strings.HasPrefix(imp, modulePath+"/") || imp == modulePath {
 			continue
@@ -390,8 +426,24 @@ func filterExternalImports(imports map[string]bool, modulePath string) map[strin
 		if strings.HasPrefix(imp, "martianoff/gala/") {
 			continue
 		}
-		// This is an external dependency
-		external[imp] = true
+		// Check if this import matches a known dependency from gala.mod
+		isKnownDep := false
+		for depPath := range knownDeps {
+			if imp == depPath || strings.HasPrefix(imp, depPath+"/") {
+				isKnownDep = true
+				break
+			}
+		}
+		if isKnownDep {
+			external[imp] = true
+			continue
+		}
+		// Domain-based paths (containing a dot) are external Go deps
+		if strings.Contains(imp, ".") {
+			external[imp] = true
+			continue
+		}
+		// Everything else (no dot, not a known dep) is assumed to be stdlib/local
 	}
 
 	return external
