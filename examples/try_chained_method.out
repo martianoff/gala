@@ -1,0 +1,3 @@
+standalone: 123
+chained: hello
+chained error caught

@@ -1,0 +1,31 @@
+package main
+
+import "bytes"
+import "strconv"
+import "strings"
+
+// Test FIX-048: (T, error) destructuring for chained method calls in Try lambda
+func main() {
+    // Standalone call — already works (baseline)
+    val result1 = Try(() => strconv.Atoi("123")) match {
+        case Success(n) => s"standalone: $n"
+        case Failure(err) => s"Error: ${err.Error()}"
+    }
+    Println(result1)
+
+    // Chained method call — FIX-048
+    // bytes.NewBufferString("hello world") returns *bytes.Buffer
+    // .ReadString(' ') on *bytes.Buffer returns (string, error)
+    val result2 = Try(() => bytes.NewBufferString("hello world").ReadString(' ')) match {
+        case Success(s) => s"chained: ${strings.TrimSpace(s)}"
+        case Failure(err) => s"Error: ${err.Error()}"
+    }
+    Println(result2)
+
+    // Chained method call — error case
+    val result3 = Try(() => bytes.NewBufferString("").ReadString('\n')) match {
+        case Success(s) => s"got: $s"
+        case Failure(_) => "chained error caught"
+    }
+    Println(result3)
+}
