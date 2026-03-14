@@ -72,6 +72,24 @@ func (b *Builder) Build(outputPath string) (string, error) {
 		return "", fmt.Errorf("ensuring workspace: %w", err)
 	}
 
+	// Step 1.5: Invalidate workspace if gala version changed
+	versionFile := filepath.Join(b.workspace.Dir, ".gala-version")
+	if oldVer, err := os.ReadFile(versionFile); err != nil || string(oldVer) != b.stdlibVersion {
+		if b.verbose && err == nil {
+			fmt.Printf("GALA version changed (%s -> %s), invalidating workspace\n", string(oldVer), b.stdlibVersion)
+		}
+		os.RemoveAll(b.workspace.GenDir)
+		os.MkdirAll(b.workspace.GenDir, 0755)
+		os.RemoveAll(b.workspace.DepsDir)
+		os.MkdirAll(b.workspace.DepsDir, 0755)
+		// Remove stale hash files
+		os.Remove(filepath.Join(b.workspace.Dir, ".gala-source-hash"))
+		os.Remove(filepath.Join(b.workspace.Dir, ".gala-deps-hash"))
+		os.Remove(filepath.Join(b.workspace.Dir, "go.mod"))
+		os.Remove(filepath.Join(b.workspace.Dir, "go.sum"))
+		os.WriteFile(versionFile, []byte(b.stdlibVersion), 0644)
+	}
+
 	// Step 2: Ensure stdlib is extracted to versioned cache
 	if err := b.ensureStdlib(); err != nil {
 		return "", fmt.Errorf("ensuring stdlib: %w", err)
