@@ -115,6 +115,11 @@ func (b *Builder) Build(outputPath string) (string, error) {
 		return "", fmt.Errorf("generating go.mod: %w", err)
 	}
 
+	// Step 4.5: Check that the project is an executable (package main)
+	if err := b.checkIsExecutable(); err != nil {
+		return "", err
+	}
+
 	// Step 5: Run go build
 	finalPath, err := b.goBuild(outputPath)
 	if err != nil {
@@ -426,6 +431,42 @@ func (b *Builder) generateGoMod() error {
 		}
 	} else if b.verbose {
 		fmt.Println("  go.mod unchanged, skipping go mod tidy")
+	}
+
+	return nil
+}
+
+// checkIsExecutable verifies that the generated code contains package main.
+// Library packages (non-main) cannot be built into executables.
+func (b *Builder) checkIsExecutable() error {
+	genFiles, err := b.workspace.GenFiles()
+	if err != nil {
+		return fmt.Errorf("listing generated files: %w", err)
+	}
+
+	// Read the first generated file to determine the package name
+	var pkgName string
+	for _, f := range genFiles {
+		content, err := os.ReadFile(f)
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(content), "\n") {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "package ") {
+				pkgName = strings.TrimPrefix(line, "package ")
+				break
+			}
+		}
+		if pkgName != "" {
+			break
+		}
+	}
+
+	if pkgName != "" && pkgName != "main" {
+		return fmt.Errorf("cannot build executable: package %q is a library, not an executable\n"+
+			"Only 'package main' projects can be built with 'gala build' or 'gala run'.\n"+
+			"To use this package as a library, import it from a 'package main' project.", pkgName)
 	}
 
 	return nil
