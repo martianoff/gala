@@ -9,7 +9,6 @@ The following example demonstrates many of GALA's features, including structs, i
 ```gala
 package main
 
-import "fmt"
 
 struct Point(X, Y int)
 
@@ -20,7 +19,7 @@ func main() {
     val p2 = moveX(p1, 5)
     
     val msg = if (p2.X > 10) "moved" else "static"
-    fmt.Println(msg, p2)
+    Println(msg, p2)
 }
 ```
 
@@ -29,7 +28,6 @@ func main() {
 ```gala
 package main
 
-import "fmt"
 
 func main() {
     val x = Some(10)
@@ -41,7 +39,7 @@ func main() {
         case _       => 0
     }
     
-    fmt.Println(res, z)
+    Println(res, z)
 }
 ```
 
@@ -50,7 +48,6 @@ func main() {
 ```gala
 package main
 
-import "fmt"
 
 type Box[T any] struct { Value T }
 
@@ -58,8 +55,8 @@ func (b Box[T]) Transform[U any](f func(T) U) Box[U] = Box[U](Value = f(b.Value)
 
 func main() {
     val b = Box[int](Value = 10)
-    val s = b.Transform((i int) => "Value is " + fmt.Sprintf("%d", i))
-    fmt.Println(s.Value)
+    val s = b.Transform((i int) => s"Value is $i")
+    Println(s.Value)
 }
 ```
 
@@ -68,16 +65,15 @@ func main() {
 ```gala
 package main
 
-import "fmt"
 
 struct Person(Name string, Age int)
 
 func main() {
-    val people = []Person{
+    val people = SliceOf(
         Person("Alice", 25),
         Person("Bob", 15),
         Person("Charlie", 70),
-    }
+    )
 
     for _, p := range people {
         val status = p match {
@@ -86,7 +82,7 @@ func main() {
             case Person(name, _)               => name + " is an adult"
             case _                             => "Unknown"
         }
-        fmt.Println(status)
+        Println(status)
     }
 }
 ```
@@ -96,7 +92,6 @@ func main() {
 ```gala
 package main
 
-import "fmt"
 
 type Even struct {}
 func (e Even) Unapply(i int) Option[int] = if (i % 2 == 0) Some(i) else None[int]()
@@ -105,19 +100,19 @@ func main() {
     val number = 42
     
     val description = number match {
-        case Even(n) => fmt.Sprintf("%d is an even number", n)
-        case _       => fmt.Sprintf("%d is odd", number)
+        case Even(n) => s"$n is an even number"
+        case _       => s"$number is odd"
     }
     
-    fmt.Println(description)
+    Println(description)
     
     // Nested patterns
     val opt = Some(10)
     opt match {
-        case Some(Even(n)) => fmt.Println("Found some even number", n)
-        case Some(n)       => fmt.Println("Found some odd number", n)
-        case None()        => fmt.Println("Nothing found")
-        case _             => fmt.Println("Other")
+        case Some(Even(n)) => Println("Found some even number", n)
+        case Some(n)       => Println("Found some odd number", n)
+        case None()        => Println("Nothing found")
+        case _             => Println("Other")
     }
 }
 ```
@@ -127,18 +122,17 @@ func main() {
 ```gala
 package main
 
-import "fmt"
 
 func main() {
     val x any = "hello"
     
     val res = x match {
-        case s: string => "string: " + s
-        case i: int    => fmt.Sprintf("int: %d", i)
+        case s: string => s"string: $s"
+        case i: int    => s"int: $i"
         case _         => "unknown"
     }
     
-    fmt.Println(res)
+    Println(res)
 }
 ```
 
@@ -147,7 +141,6 @@ func main() {
 ```gala
 package main
 
-import "fmt"
 
 type Wrap[T any] struct { Value T }
 func (w Wrap[T]) GetValue() any = w.Value
@@ -155,10 +148,10 @@ func (w Wrap[T]) GetValue() any = w.Value
 func main() {
     val w = Wrap[string](Value = "hello")
     val res = w match {
-        case w1: Wrap[_] => fmt.Sprintf("Matched Wrap[_]: %v", w1.GetValue())
+        case w1: Wrap[_] => s"Matched Wrap[_]: ${w1.GetValue()}"
         case _ => "Other"
     }
-    fmt.Println(res)
+    Println(res)
 }
 ```
 
@@ -167,7 +160,6 @@ func main() {
 ```gala
 package main
 
-import "fmt"
 
 // Define a generic type
 type Wrap[T any] struct {
@@ -186,28 +178,28 @@ func main() {
     // 1. Matching specific generic type
     val w1 = Wrap[int](Value = 42)
     val res1 = w1 match {
-        case w: Wrap[int] => fmt.Sprintf("Matched Wrap[int]: %d", w.Value)
+        case w: Wrap[int] => s"Matched Wrap[int]: ${w.Value}"
         case w: Wrap[string] => "Matched Wrap[string]: " + w.Value
         case _ => "Other"
     }
-    fmt.Println(res1)
+    Println(res1)
 
     // 2. Matching wildcard generic type
     val w2 = Wrap[string](Value = "hello")
     val res2 = w2 match {
-        case w: Wrap[_] => "Matched Wrap[_]: " + fmt.Sprintf("%v", w.Value)
+        case w: Wrap[_] => s"Matched Wrap[_]: ${w.Value}"
         case _          => "Other"
     }
-    fmt.Println(res2)
+    Println(res2)
 
     // 3. Using the generic extractor
     val w3 = Wrapper("GALA")
     val res3 = w3 match {
         case Wrapper(s: string) => "Extracted string: " + s
-        case Wrapper(i: int) => fmt.Sprintf("Extracted int: %d", i)
+        case Wrapper(i: int) => s"Extracted int: $i"
         case _ => "Other"
     }
-    fmt.Println(res3)
+    Println(res3)
 }
 ```
 
@@ -216,7 +208,6 @@ func main() {
 ```gala
 package main
 
-import "fmt"
 
 type Shaper interface {
     Area() float64
@@ -235,8 +226,8 @@ func main() {
     val s1 Shaper = r
     val s2 Shaper = c
     
-    fmt.Println("Area 1:", s1.Area())
-    fmt.Println("Area 2:", s2.Area())
+    Println("Area 1:", s1.Area())
+    Println("Area 2:", s2.Area())
 }
 ```
 
@@ -245,7 +236,6 @@ func main() {
 ```gala
 package main
 
-import "fmt"
 
 type Adder struct { Delta int }
 func (a Adder) Apply(x int) int = x + a.Delta
@@ -259,7 +249,7 @@ func main() {
     
     val res2 = Multiply(3, 4) // 12
     
-    fmt.Println(res1, res2)
+    Println(res1, res2)
 }
 ```
 
@@ -278,14 +268,11 @@ func Add(a int, b int) int = a + b
 ```gala
 package main
 
-import (
-    "fmt"
-    "martianoff/gala/examples/mathlib"
-)
+import "martianoff/gala/examples/mathlib"
 
 func main() {
     val sum = mathlib.Add(10, 20)
-    fmt.Println("Sum is", sum)
+    Println("Sum is", sum)
 }
 ```
 
@@ -296,7 +283,7 @@ import . "martianoff/gala/examples/mathlib"
 
 func main() {
     val sum = Add(10, 20)
-    fmt.Println("Sum is", sum)
+    Println("Sum is", sum)
 }
 ```
 
@@ -307,7 +294,6 @@ GALA uses the Hindley-Milner algorithm to infer types in complex scenarios, such
 ```gala
 package main
 
-import "fmt"
 
 func identity[T any](x T) T = x
 func getImm[T any](x T) Immutable[T] = NewImmutable(x)
@@ -315,7 +301,7 @@ func getImm[T any](x T) Immutable[T] = NewImmutable(x)
 func main() {
     // HM infers Immutable[int], which GALA then automatically unwraps to int
     var x = identity(getImm(42)) 
-    fmt.Printf("x: %d\n", x)
+    Println(s"x: $x")
 }
 ```
 
@@ -340,7 +326,7 @@ val opt = Some(42)
 
 // ForEach takes func(T) — void, no return needed
 opt.ForEach((x) => {
-    fmt.Println(x)
+    Println(x)
 })
 
 // Parameter type inferred from Option[int].Filter's signature
@@ -358,24 +344,84 @@ val s = S("hello")
 val hasVowel = s.Exists((r) => r == 'a' || r == 'e' || r == 'i' || r == 'o' || r == 'u')
 ```
 
+## Collect - Filter and Transform in One Pass
+
+`Collect` combines `Filter` and `Map` into a single operation using partial functions:
+
+```gala
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+func main() {
+    val nums = ArrayOf(1, 2, 3, 4, 5, 6)
+
+    // Collect: filter and transform in one pass
+    val evenDoubled = nums.Collect({ case n if n % 2 == 0 => n * 2 })
+    Println(evenDoubled)  // Array(4, 8, 12)
+
+    // With sealed type extractors
+    val options = ArrayOf(Some(1), None[int](), Some(2), None[int](), Some(3))
+    val values = options.Collect({ case Some(v) => v * 10 })
+    Println(values)  // Array(10, 20, 30)
+}
+```
+
+## Option.OrElse - Fallback Options
+
+```gala
+package main
+
+func main() {
+    val primary = None[string]()
+    val fallback = Some("default")
+
+    val result = primary.OrElse(fallback)   // Some("default")
+    Println(result.Get())                    // "default"
+
+    val present = Some("actual")
+    val result2 = present.OrElse(fallback)  // Some("actual")
+    Println(result2.Get())                   // "actual"
+}
+```
+
+## Try with Function References
+
+When wrapping a zero-argument function, pass the function reference directly instead of wrapping in a lambda:
+
+```gala
+package main
+
+import "os"
+
+func main() {
+    // Function reference (preferred for zero-arg functions)
+    val dir = Try(os.TempDir)
+
+    // Lambda form (use when args needed)
+    val result = Try(() => os.MkdirAll("/tmp/test", 0755))
+
+    dir.OnSuccess((d) => Println(s"Temp dir: $d"))
+}
+```
+
 ## MkString - Joining Collection Elements
 
 ```gala
 package main
 
-import "fmt"
 import . "martianoff/gala/collection_immutable"
 
 func main() {
     val nums = ArrayOf(1, 2, 3, 4, 5)
-    fmt.Println(nums.MkString(", "))     // "1, 2, 3, 4, 5"
-    fmt.Println(nums.MkString(" | "))    // "1 | 2 | 3 | 4 | 5"
+    Println(nums.MkString(", "))     // "1, 2, 3, 4, 5"
+    Println(nums.MkString(" | "))    // "1 | 2 | 3 | 4 | 5"
 
     val words = ListOf("hello", "world")
-    fmt.Println(words.MkString(" "))     // "hello world"
+    Println(words.MkString(" "))     // "hello world"
 
     val empty = EmptyArray[int]()
-    fmt.Println(empty.MkString(", "))    // ""
+    Println(empty.MkString(", "))    // ""
 }
 ```
 
@@ -386,35 +432,34 @@ All collection types support `Sorted()`, `SortWith()`, and `SortBy()` for flexib
 ```gala
 package main
 
-import "fmt"
 import . "martianoff/gala/collection_immutable"
 
 func main() {
     // Array.Sorted - natural ordering
     val arr = ArrayOf(3, 1, 4, 1, 5, 9)
-    fmt.Println(arr.Sorted())                    // Array(1, 1, 3, 4, 5, 9)
+    Println(arr.Sorted())                    // Array(1, 1, 3, 4, 5, 9)
 
     // Array.SortWith - custom comparator (descending)
-    fmt.Println(arr.SortWith((a, b) => a > b))   // Array(9, 5, 4, 3, 1, 1)
+    Println(arr.SortWith((a, b) => a > b))   // Array(9, 5, 4, 3, 1, 1)
 
     // Array.SortBy - sort by key function
     val arr2 = ArrayOf(1, 9, 3, 7, 5)
-    fmt.Println(arr2.SortBy((x) => x))           // Array(1, 3, 5, 7, 9)
+    Println(arr2.SortBy((x) => x))           // Array(1, 3, 5, 7, 9)
 
     // List.Sorted
     val list = ListOf("banana", "apple", "cherry")
-    fmt.Println(list.Sorted())                   // List(apple, banana, cherry)
+    Println(list.Sorted())                   // List(apple, banana, cherry)
 
     // TreeSet.Sorted (already sorted)
     val tree = TreeSetOf(30, 10, 20)
-    fmt.Println(tree.Sorted())                   // Array(10, 20, 30)
+    Println(tree.Sorted())                   // Array(10, 20, 30)
 
     // HashSet.Sorted
     val set = HashSetOf(5, 3, 1)
-    fmt.Println(set.Sorted())                    // Array(1, 3, 5)
+    Println(set.Sorted())                    // Array(1, 3, 5)
 
     // Empty collection
-    fmt.Println(EmptyArray[int]().Sorted())      // Array()
+    Println(EmptyArray[int]().Sorted())      // Array()
 }
 ```
 
@@ -425,13 +470,12 @@ Type aliases create alternative names for existing types, useful for re-exportin
 ```gala
 package main
 
-import "fmt"
 
 type MyString string
 
 func main() {
     val s MyString = "hello"
-    fmt.Println(s)
+    Println(s)
 }
 ```
 

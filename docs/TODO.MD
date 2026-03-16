@@ -26,8 +26,9 @@
 - [x] Partial functions
 - [x] Restrict the GO map type declaration directly in GALA. Create required GO map functions inside std. Rewrite collections packages using std Maps. Leave ToGoMap functions for compatibility with GO apps
 - [x] Go pkg for go native primitives (maps, slices, channels etc)
-- [ ] Drop reflection usage for immutable vars for better performance
+- [x] Drop reflection usage for immutable vars for better performance
 - [ ] Official bazel module
 - [x] TreeMap
 - [x] Support expression syntax with match without return
 - [x] Compiler should provide better error messages, for example, "Type mismatch errors could be clearer about what the actual vs expected types are". Compiler must include line number and column number in error messages and may be code block highlighting for better readability
+- [ ] Level up Jetbrains plugin to support better syntax highlighting and code completion

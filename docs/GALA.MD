@@ -919,6 +919,8 @@ val evenDoubled = numbers.Collect({ case n if n % 2 == 0 => n * 2 })
 // Result: [4, 8]
 ```
 
+**Tip**: `Collect` is preferred over chaining `.Filter(p).Map(f)` as it combines both operations in a single pass.
+
 #### Extractors in Partial Functions
 When using extractors like `Some(n)`, the parameter type needs to be inferrable from context:
 
@@ -960,12 +962,12 @@ val y = None[int]()
 
 // Pattern matching (exhaustive - no case _ needed)
 val msg = x match {
-    case Some(v) => fmt.Sprintf("Got: %d", v)
+    case Some(v) => s"Got: $v"
     case None()  => "Empty"
 }
 
 // Monadic operations
-val result = x.Map((i int) => i * 2)
+val result = x.Map((i) => i * 2)
 
 // Safe value extraction
 val value = x.GetOrElse(0)
@@ -1004,7 +1006,7 @@ val t2 = Tuple[int, string](V1 = 1, V2 = "hello")
 
 // Pattern matching works with both
 val msg = t match {
-    case (a, b) => fmt.Sprintf("Got %d and %s", a, b)
+    case (a, b) => s"Got $a and $b"
     case _      => "Unknown"
 }
 
@@ -1029,18 +1031,18 @@ sealed type Either[A any, B any] {
 
 val e = Right[int, string]("success")
 val msg = e match {
-    case Left(code) => fmt.Sprintf("Error code: %d", code)
+    case Left(code) => s"Error code: $code"
     case Right(s)   => "Result: " + s
 }
 
 // Monadic operations are biased towards Right
-val length = e.Map((s string) => len(s))
+val length = e.Map((s) => len(s))
 
 // FlatMap chains computations that return Either
-val result = Right[string, int](5).FlatMap((x int) => Right[string, int](x + 100))
+val result = Right[string, int](5).FlatMap((x) => Right[string, int](x + 100))
 
 // Chaining Map and FlatMap
-val chained = Right[string, int](3).Map((x int) => x * 10).FlatMap((x int) => Right[string, int](x + 1))
+val chained = Right[string, int](3).Map((x) => x * 10).FlatMap((x) => Right[string, int](x + 1))
 
 // Side-effect methods (return original value for chaining)
 val logged = Right[string, int](42)
@@ -1073,17 +1075,17 @@ val answer = Try(getAnswer)             // works with GALA functions too
 
 // Pattern matching (exhaustive - no case _ needed)
 val msg = success match {
-    case Success(n) => fmt.Sprintf("Got: %d", n)
-    case Failure(e) => fmt.Sprintf("Error: %s", e.Error())
+    case Success(n) => s"Got: $n"
+    case Failure(e) => s"Error: ${e.Error()}"
 }
 
 // Monadic operations
-val doubled = success.Map[int]((n int) => n * 2)
-val result = success.FlatMap[int]((n int) => divide(n, 2))
+val doubled = success.Map((n) => n * 2)
+val result = success.FlatMap((n) => divide(n, 2))
 
 // Recovery
-val recovered = failure.Recover((e error) => 0)
-val recoveredWith = failure.RecoverWith((e error) => Success(0))
+val recovered = failure.Recover((e) => 0)
+val recoveredWith = failure.RecoverWith((e) => Success(0))
 
 // Side-effect methods (return original value for chaining)
 val logged = success
@@ -1166,13 +1168,13 @@ val result = async.Await()           // Returns Try[int]
 val value = async.GetOrElse(0)       // Returns int, default on failure
 
 // Monadic operations
-val doubled = async.Map[int]((v int) => v * 2)
-val chained = async.FlatMap[string]((v int) => fetchName(v))
+val doubled = async.Map((v) => v * 2)
+val chained = async.FlatMap((v) => fetchName(v))
 
 // Pattern matching
 val msg = async match {
-    case Succeeded(v) => fmt.Sprintf("Got: %d", v)
-    case Failed(e) => fmt.Sprintf("Error: %s", e.Error())
+    case Succeeded(v) => s"Got: $v"
+    case Failed(e) => s"Error: ${e.Error()}"
     case _ => "Unknown"
 }
 ```

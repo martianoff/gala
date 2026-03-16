@@ -40,29 +40,29 @@ val safe = async.GetOrElse(0)        // Returns int, default on failure
 ### Non-Blocking Callbacks
 
 ```gala
-async.OnSuccess((v int) => fmt.Println("Got:", v))
-async.OnFailure((e error) => fmt.Println("Error:", e))
-async.OnComplete((r Try[int]) => fmt.Println("Result:", r))
+async.OnSuccess((v) => Println(s"Got: $v"))
+async.OnFailure((e) => Println(s"Error: $e"))
+async.OnComplete((r) => Println(s"Result: $r"))
 ```
 
 ### Monadic Operations
 
 ```gala
-val doubled = async.Map[int]((v int) => v * 2)
-val chained = async.FlatMap[string]((v int) => fetchName(v))
+val doubled = async.Map((v) => v * 2)
+val chained = async.FlatMap((v) => fetchName(v))
 ```
 
 ### Error Recovery
 
 ```gala
-val recovered = failed.Recover((e error) => 0)
-val recoveredWith = failed.RecoverWith((e error) => FutureOf[int](0))
+val recovered = failed.Recover((e) => 0)
+val recoveredWith = failed.RecoverWith((e) => FutureOf[int](0))
 ```
 
 ### Combining Futures
 
 ```gala
-val zipped = f1.Zip[string](f2)      // Future[Tuple[int, string]]
+val zipped = f1.Zip(f2)               // Future[Tuple[int, string]]
 val first = f1.Fallback(f2)          // First success or last failure
 ```
 
@@ -77,22 +77,22 @@ val f = FutureOf[int](42)
 
 // With inferred type parameters (preferred)
 val msg = f match {
-    case Succeeded(v) => fmt.Sprintf("Got: %d", v)
-    case Failed(e) => fmt.Sprintf("Error: %s", e.Error())
+    case Succeeded(v) => s"Got: $v"
+    case Failed(e) => s"Error: ${e.Error()}"
     case _ => "Unknown"
 }
 
 // With explicit type parameters (when needed)
 val msg2 = f match {
-    case Succeeded[int](v) => fmt.Sprintf("Got: %d", v)
-    case Failed[int](e) => fmt.Sprintf("Error: %s", e.Error())
+    case Succeeded[int](v) => s"Got: $v"
+    case Failed[int](e) => s"Error: ${e.Error()}"
     case _ => "Unknown"
 }
 
 // Using Completed extractor with nested Try matching
 val msg3 = f match {
-    case Completed(Success(v)) => fmt.Sprintf("Success: %d", v)
-    case Completed(Failure(e)) => fmt.Sprintf("Failure: %s", e.Error())
+    case Completed(Success(v)) => s"Success: $v"
+    case Completed(Failure(e)) => s"Failure: ${e.Error()}"
     case _ => "Unknown"
 }
 ```
@@ -109,8 +109,8 @@ val all = Sequence[int](futures)     // Future[Array[int]]
 
 // Pattern matching on sequences
 val msg = futures match {
-    case AllSucceeded(values) => fmt.Sprintf("All: %v", values)
-    case AnyFailed(e) => fmt.Sprintf("Failed: %s", e.Error())
+    case AllSucceeded(values) => s"All: $values"
+    case AnyFailed(e) => s"Failed: ${e.Error()}"
     case _ => "Unknown"
 }
 
@@ -118,10 +118,10 @@ val msg = futures match {
 val first = FirstCompletedOf[int](futures)
 
 // Traverse: apply async function to each element
-val results = Traverse[int, string](items, (i int) => fetchAsync(i))
+val results = Traverse[int, string](items, (i) => fetchAsync(i))
 
 // Fold: reduce collection of Futures
-val sum = Fold[int, int](futures, 0, (acc int, v int) => acc + v)
+val sum = Fold[int, int](futures, 0, (acc, v) => acc + v)
 ```
 
 ---
@@ -158,8 +158,8 @@ val pool = NewFixedPoolEC(4)  // Worker pool with 4 goroutines
 val f2 = FutureApplyWith[int](() => compute(), pool)
 
 // Derived futures inherit EC from parent
-val f3 = f2.Map[string]((n int) => fmt.Sprintf("%d", n))  // uses pool
-val f4 = f3.FlatMap[int]((s string) => anotherFuture(s))  // uses pool
+val f3 = f2.Map((n) => s"$n")                             // uses pool
+val f4 = f3.FlatMap((s) => anotherFuture(s))              // uses pool
 
 // Cleanup
 pool.Shutdown()

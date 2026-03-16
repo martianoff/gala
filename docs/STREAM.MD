@@ -70,7 +70,7 @@ val naturals = From(1)              // 1, 2, 3, 4, ...
 val ones = Repeat(1)                // 1, 1, 1, 1, ...
 
 // Infinite iteration
-val powers = Iterate[int](1, (x int) => x * 2)  // 1, 2, 4, 8, 16, ...
+val powers = Iterate[int](1, (x) => x * 2)  // 1, 2, 4, 8, 16, ...
 
 // Infinite evaluation
 val randoms = Continually(() => rand.Int())     // random, random, ...
@@ -120,7 +120,7 @@ All transformation operations return new streams without forcing evaluation.
 Transform each element:
 
 ```gala
-val doubled = Of(1, 2, 3).Map[int]((x int) => x * 2)
+val doubled = Of(1, 2, 3).Map((x) => x * 2)
 // Result: 2, 4, 6
 ```
 
@@ -129,7 +129,7 @@ val doubled = Of(1, 2, 3).Map[int]((x int) => x * 2)
 Apply function returning stream, then flatten:
 
 ```gala
-val s = Of(1, 2, 3).FlatMap[int]((x int) => Of(x, x * 10))
+val s = Of(1, 2, 3).FlatMap((x) => Of(x, x * 10))
 // Result: 1, 10, 2, 20, 3, 30
 ```
 
@@ -138,10 +138,10 @@ val s = Of(1, 2, 3).FlatMap[int]((x int) => Of(x, x * 10))
 Keep elements matching (or not matching) predicate:
 
 ```gala
-val evens = Of(1, 2, 3, 4, 5).Filter((x int) => x % 2 == 0)
+val evens = Of(1, 2, 3, 4, 5).Filter((x) => x % 2 == 0)
 // Result: 2, 4
 
-val odds = Of(1, 2, 3, 4, 5).FilterNot((x int) => x % 2 == 0)
+val odds = Of(1, 2, 3, 4, 5).FilterNot((x) => x % 2 == 0)
 // Result: 1, 3, 5
 ```
 
@@ -153,7 +153,7 @@ Limit stream length:
 val first3 = Of(1, 2, 3, 4, 5).Take(3)
 // Result: 1, 2, 3
 
-val lessThan4 = Of(1, 2, 3, 4, 5).TakeWhile((x int) => x < 4)
+val lessThan4 = Of(1, 2, 3, 4, 5).TakeWhile((x) => x < 4)
 // Result: 1, 2, 3
 ```
 
@@ -165,7 +165,7 @@ Skip elements:
 val after2 = Of(1, 2, 3, 4, 5).Drop(2)
 // Result: 3, 4, 5
 
-val from3 = Of(1, 2, 3, 4, 5).DropWhile((x int) => x < 3)
+val from3 = Of(1, 2, 3, 4, 5).DropWhile((x) => x < 3)
 // Result: 3, 4, 5
 ```
 
@@ -176,7 +176,7 @@ Combine streams:
 ```gala
 val s1 = Of(1, 2, 3)
 val s2 = Of("a", "b", "c")
-val zipped = s1.Zip[string](s2)
+val zipped = s1.Zip(s2)
 // Result: (1, "a"), (2, "b"), (3, "c")
 
 val indexed = Of("a", "b", "c").ZipWithIndex()
@@ -225,7 +225,7 @@ val s = Of(0, 1, 2, 3, 4, 5).Slice(1, 4)
 Cumulative results:
 
 ```gala
-val s = Of(1, 2, 3).Scan[int](0, (acc int, x int) => acc + x)
+val s = Of(1, 2, 3).Scan(0, (acc, x) => acc + x)
 // Result: 0, 1, 3, 6
 ```
 
@@ -234,9 +234,7 @@ val s = Of(1, 2, 3).Scan[int](0, (acc int, x int) => acc + x)
 Apply partial function, keeping defined results:
 
 ```gala
-val s = Of(1, 2, 3, 4).Collect[int]((x int) => {
-    if (x % 2 == 0) Some(x * 10) else None[int]()
-})
+val s = Of(1, 2, 3, 4).Collect({ case x if x % 2 == 0 => x * 10 })
 // Result: 20, 40
 ```
 
@@ -249,10 +247,10 @@ val s = Of(1, 2, 3, 4, 5)
 val (first, rest) = s.SplitAt(2)  // (1, 2), (3, 4, 5)
 
 // Span: split at first non-matching
-val (matching, rest) = s.Span((x int) => x < 3)  // (1, 2), (3, 4, 5)
+val (matching, rest) = s.Span((x) => x < 3)  // (1, 2), (3, 4, 5)
 
 // Partition: split by predicate
-val (evens, odds) = s.Partition((x int) => x % 2 == 0)  // (2, 4), (1, 3, 5)
+val (evens, odds) = s.Partition((x) => x % 2 == 0)  // (2, 4), (1, 3, 5)
 ```
 
 ---
@@ -275,10 +273,10 @@ val list = Of(1, 2, 3).ToList()   // List[int]
 Aggregate values:
 
 ```gala
-val sum = Of(1, 2, 3, 4, 5).Fold[int](0, (acc int, x int) => acc + x)
+val sum = Of(1, 2, 3, 4, 5).Fold(0, (acc, x) => acc + x)
 // Result: 15
 
-val product = Of(1, 2, 3, 4).Reduce((a int, b int) => a * b)
+val product = Of(1, 2, 3, 4).Reduce((a, b) => a * b)
 // Result: Some(24)
 ```
 
@@ -287,7 +285,7 @@ val product = Of(1, 2, 3, 4).Reduce((a int, b int) => a * b)
 Apply side-effecting function:
 
 ```gala
-Of(1, 2, 3).ForEach((x int) => fmt.Println(x))
+Of(1, 2, 3).ForEach((x) => Println(x))
 ```
 
 ### Count / Length / Size
@@ -303,11 +301,11 @@ val n = Of(1, 2, 3).Count()  // 3
 Search and test:
 
 ```gala
-val found = Of(1, 2, 3, 4).Find((x int) => x > 2)  // Some(3)
+val found = Of(1, 2, 3, 4).Find((x) => x > 2)  // Some(3)
 
-val hasEven = Of(1, 2, 3).Exists((x int) => x % 2 == 0)  // true
+val hasEven = Of(1, 2, 3).Exists((x) => x % 2 == 0)  // true
 
-val allPositive = Of(1, 2, 3).ForAll((x int) => x > 0)   // true
+val allPositive = Of(1, 2, 3).ForAll((x) => x > 0)   // true
 ```
 
 ### Contains / IndexOf / IndexWhere
@@ -317,7 +315,7 @@ Search for elements:
 ```gala
 val hasTwo = Of(1, 2, 3).Contains(2)          // true
 val idx = Of(10, 20, 30).IndexOf(20)          // 1
-val idx2 = Of(1, 2, 3).IndexWhere((x int) => x > 1)  // 1
+val idx2 = Of(1, 2, 3).IndexWhere((x) => x > 1)  // 1
 ```
 
 ### MkString
@@ -364,11 +362,11 @@ Use `StreamCons` and `StreamNil` extractors for type-based matching:
 val result = myStream match {
     case StreamCons(head, tail) => {
         // head is T, tail is Stream[T]
-        fmt.Printf("Head: %v, Tail length: %d\n", head, tail.Count())
+        Println(s"Head: $head, Tail length: ${tail.Count()}")
         return head
     }
     case StreamNil() => {
-        fmt.Println("Empty stream")
+        Println("Empty stream")
         return defaultValue
     }
     case _ => defaultValue
@@ -385,7 +383,7 @@ val s = Of(1, 2, 3, 4, 5)
 val result = s match {
     // Match first two elements, rest goes into 'tail'
     case Stream(first, second, tail...) => {
-        fmt.Printf("First: %d, Second: %d, Rest size: %d\n", first, second, tail.Size())
+        Println(s"First: $first, Second: $second, Rest size: ${tail.Size()}")
         return first + second
     }
     // Match single element
@@ -430,9 +428,9 @@ val result = From(1).Take(10) match {
 ```gala
 val result = From(1)
     .Take(10)
-    .Filter((x int) => x % 2 == 0)
-    .Map[int]((x int) => x * x)
-    .Fold[int](0, (acc int, x int) => acc + x)
+    .Filter((x) => x % 2 == 0)
+    .Map((x) => x * x)
+    .Fold(0, (acc, x) => acc + x)
 // 2² + 4² + 6² + 8² + 10² = 220
 ```
 
@@ -443,7 +441,7 @@ func sieve(s Stream[int]) Stream[int] {
     val head = s.Head()
     if head.IsDefined() {
         val p = head.Get()
-        return NewCons[int](p, () => sieve(s.Tail().Filter((x int) => x % p != 0)))
+        return NewCons[int](p, () => sieve(s.Tail().Filter((x) => x % p != 0)))
     }
     return Empty[int]()
 }

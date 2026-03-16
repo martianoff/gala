@@ -1,14 +1,12 @@
 package main
 
-import (
-    "fmt"
-    . "martianoff/gala/std"
-    . "martianoff/gala/go_interop"
-)
+import . "martianoff/gala/collection_immutable"
+import . "martianoff/gala/go_interop"
+import "os"
 
 // Test examples from EXAMPLES.MD
 
-// Complete Example (line 9-24)
+// Complete Example
 struct Point(X int, Y int)
 
 func moveX(p Point, delta int) Point = p.Copy(X = p.X + delta)
@@ -18,13 +16,13 @@ func testCompleteExample() {
     val p2 = moveX(p1, 5)
 
     val msg = if (p2.X > 10) "moved" else "static"
-    fmt.Println(msg, p2)
+    Println(msg, p2)
 }
 
-// Option Monad Example (line 29-46)
+// Option Monad Example
 func testOptionMonad() {
     val x = Some(10)
-    val y = x.Map((v int) => v * 2)
+    val y = x.Map((v) => v * 2)
     val z = None[int]().GetOrElse(42)
 
     val res = y match {
@@ -32,21 +30,21 @@ func testOptionMonad() {
         case _       => 0
     }
 
-    fmt.Println(res, z)
+    Println(res, z)
 }
 
-// Generic Methods Example (line 51-64)
+// Generic Methods Example
 type Box[T any] struct { Value T }
 
 func (b Box[T]) Transform[U any](f func(T) U) Box[U] = Box[U](Value = f(b.Value))
 
 func testGenericMethods() {
     val b = Box[int](Value = 10)
-    val s = b.Transform((i int) => "Value is " + fmt.Sprintf("%d", i))
-    fmt.Println(s.Value)
+    val s = b.Transform((i int) => s"Value is $i")
+    Println(s.Value)
 }
 
-// Pattern Matching with Filters Example (line 68-92)
+// Pattern Matching with Filters Example
 struct Person(Name string, Age int)
 
 func testPatternFilters() {
@@ -63,11 +61,11 @@ func testPatternFilters() {
             case Person(name, _)               => name + " is an adult"
             case _                             => "Unknown"
         }
-        fmt.Println(status)
+        Println(status)
     }
 }
 
-// Custom Extractor Example (line 96-123)
+// Custom Extractor Example
 type Even struct {}
 func (e Even) Unapply(i int) Option[int] = if (i % 2 == 0) Some(i) else None[int]()
 
@@ -75,23 +73,36 @@ func testCustomExtractor() {
     val number = 42
 
     val description = number match {
-        case Even(n) => fmt.Sprintf("%d is an even number", n)
-        case _       => fmt.Sprintf("%d is odd", number)
+        case Even(n) => s"$n is an even number"
+        case _       => s"$number is odd"
     }
 
-    fmt.Println(description)
+    Println(description)
 
-    // Nested patterns - tested separately in match_extractors.gala
-    // Here we verify basic Option pattern matching
+    // Nested patterns
     val opt = Some(10)
     opt match {
-        case Some(n) => fmt.Println("Found some number", n)
-        case None()  => fmt.Println("Nothing found")
-        case _       => fmt.Println("Other")
+        case Some(Even(n)) => Println("Found some even number", n)
+        case Some(n)       => Println("Found some odd number", n)
+        case None()        => Println("Nothing found")
+        case _             => Println("Other")
     }
 }
 
-// Interface Example (line 216-241)
+// Type-Based Pattern Matching Example
+func testTypeMatch() {
+    val x any = "hello"
+
+    val res = x match {
+        case s: string => s"string: $s"
+        case i: int    => s"int: $i"
+        case _         => "unknown"
+    }
+
+    Println(res)
+}
+
+// Interface Example
 type Shaper interface {
     Area() float64
 }
@@ -109,11 +120,11 @@ func testInterface() {
     val s1 Shaper = r
     val s2 Shaper = c
 
-    fmt.Println("Area 1:", s1.Area())
-    fmt.Println("Area 2:", s2.Area())
+    Println("Area 1:", s1.Area())
+    Println("Area 2:", s2.Area())
 }
 
-// Apply Method Example (line 245-264)
+// Apply Method Example
 type Adder struct { Delta int }
 func (a Adder) Apply(x int) int = x + a.Delta
 
@@ -126,7 +137,80 @@ func testApplyMethod() {
 
     val res2 = Multiply(3, 4)
 
-    fmt.Println(res1, res2)
+    Println(res1, res2)
+}
+
+// Type Aliases Example
+type MyString string
+
+func testTypeAlias() {
+    val s MyString = "hello"
+    Println(s)
+}
+
+// Option.OrElse Example
+func testOrElse() {
+    val primary = None[string]()
+    val fallback = Some("default")
+
+    val result = primary.OrElse(fallback)
+    Println(result.Get())
+
+    val present = Some("actual")
+    val result2 = present.OrElse(fallback)
+    Println(result2.Get())
+}
+
+// Try with Function References Example
+func testTryFuncRef() {
+    val dir = Try(os.TempDir)
+    dir.OnSuccess((d) => Println(s"Temp dir success: ${d != ""}"))
+}
+
+// Collect Example
+func testCollect() {
+    val nums = ArrayOf(1, 2, 3, 4, 5, 6)
+
+    val evenDoubled = nums.Collect({ case n if n % 2 == 0 => n * 2 })
+    Println(evenDoubled)
+
+    val options = ArrayOf(Some(1), None[int](), Some(2), None[int](), Some(3))
+    val values = options.Collect({ case Some(v) => v * 10 })
+    Println(values)
+}
+
+// MkString Example
+func testMkString() {
+    val nums = ArrayOf(1, 2, 3, 4, 5)
+    Println(nums.MkString(", "))
+    Println(nums.MkString(" | "))
+
+    val words = ListOf("hello", "world")
+    Println(words.MkString(" "))
+
+    val empty = EmptyArray[int]()
+    Println(empty.MkString(", "))
+}
+
+// Sorted API Example
+func testSorted() {
+    val arr = ArrayOf(3, 1, 4, 1, 5, 9)
+    Println(arr.Sorted())
+    Println(arr.SortWith((a, b) => a > b))
+
+    val arr2 = ArrayOf(1, 9, 3, 7, 5)
+    Println(arr2.SortBy((x) => x))
+
+    val list = ListOf("banana", "apple", "cherry")
+    Println(list.Sorted())
+
+    val tree = TreeSetOf(30, 10, 20)
+    Println(tree.Sorted())
+
+    val set = HashSetOf(5, 3, 1)
+    Println(set.Sorted())
+
+    Println(EmptyArray[int]().Sorted())
 }
 
 func main() {
@@ -135,6 +219,13 @@ func main() {
     testGenericMethods()
     testPatternFilters()
     testCustomExtractor()
+    testTypeMatch()
     testInterface()
     testApplyMethod()
+    testTypeAlias()
+    testOrElse()
+    testTryFuncRef()
+    testCollect()
+    testMkString()
+    testSorted()
 }
