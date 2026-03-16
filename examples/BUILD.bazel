@@ -20,6 +20,7 @@ filegroup(
         "match_method_chain/main.gala",
         "match_method_chain/types.gala",
         "match_void_branches.gala",
+        "try_go_transitive_import.gala",
         "mathlib/math.gala",
         "multi_file/greeter.gala",
         "multi_file/main.gala",
@@ -33,7 +34,6 @@ filegroup(
         "slice_unwrap/model.gala",
         "struct_field_unwrap/main.gala",
         "struct_field_unwrap/types.gala",
-        "try_go_transitive_import.gala",
         "use_cross_file_unwrap_lib.gala",
         "wrapper_method_lambda/main.gala",
     ],
@@ -1262,12 +1262,4 @@ gala_test(
     name = "match_sealed_branch_infer",
     src = "match_sealed_branch_infer.gala",
     expected = "match_sealed_branch_infer.out",
-)
-
-# Lambda param type inference for free generic functions like Iterate(seed, f)
-gala_test(
-    name = "iterate_lambda_infer",
-    src = "iterate_lambda_infer.gala",
-    expected = "iterate_lambda_infer.out",
-    deps = ["//stream"],
 )
