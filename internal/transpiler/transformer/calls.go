@@ -61,8 +61,17 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 						}
 
 						if isType {
-							// Non-generic zero-argument Apply method: TypeName[T]{}.Apply()
-							receiver := &ast.CompositeLit{Type: base}
+							// Zero-argument Apply method: TypeName[T]{}.Apply()
+							receiverType := base
+							// If the type is generic but no explicit type args were provided,
+							// try to infer them from the match subject type via companion relationship.
+							// e.g., None() inside `Option[int] match { ... }` → None[int]{}.Apply()
+							if len(typeMeta.TypeParams) > 0 && baseExpr == base {
+								if inferredBase := t.inferZeroArgTypeParams(typeName, typeMeta); inferredBase != nil {
+									receiverType = inferredBase
+								}
+							}
+							receiver := &ast.CompositeLit{Type: receiverType}
 							return &ast.CallExpr{
 								Fun: &ast.SelectorExpr{
 									X:   receiver,
@@ -1222,5 +1231,57 @@ func (t *galaASTTransformer) extractFuncCallTypeArgs(fun ast.Expr) []string {
 		}
 		return args
 	}
+	return nil
+}
+
+// inferZeroArgTypeParams infers type parameters for a zero-argument sealed variant
+// constructor (e.g., None()) when inside a match expression. It checks if the
+// constructor is a companion of the match subject's sealed type and extracts the
+// type parameters from the match subject type.
+// Returns a typed AST expression (e.g., None[int]) or nil if inference fails.
+func (t *galaASTTransformer) inferZeroArgTypeParams(typeName string, typeMeta *transpiler.TypeMetadata) ast.Expr {
+	if t.currentMatchSubjectType == nil || t.currentMatchSubjectType.IsNil() {
+		return nil
+	}
+
+	// Look up companion relationship for this type
+	companion := t.lookupCompanion(typeName)
+	if companion == nil {
+		return nil
+	}
+
+	// Check if the companion's target type matches the match subject's base type
+	subjectBaseName := stripPackagePrefix(t.currentMatchSubjectType.BaseName())
+	targetBaseName := stripPackagePrefix(companion.TargetType)
+	if subjectBaseName != targetBaseName {
+		return nil
+	}
+
+	// Extract type params from the match subject type
+	var subjectTypeParams []transpiler.Type
+	if gen, ok := t.currentMatchSubjectType.(transpiler.GenericType); ok {
+		subjectTypeParams = gen.Params
+	} else {
+		return nil
+	}
+
+	// Build the typed expression: e.g., None[int]
+	baseExpr := t.typeToExpr(transpiler.BasicType{Name: typeName})
+	if len(subjectTypeParams) == 1 {
+		return &ast.IndexExpr{
+			X:     baseExpr,
+			Index: t.typeToExpr(subjectTypeParams[0]),
+		}
+	} else if len(subjectTypeParams) > 1 {
+		indices := make([]ast.Expr, len(subjectTypeParams))
+		for i, p := range subjectTypeParams {
+			indices[i] = t.typeToExpr(p)
+		}
+		return &ast.IndexListExpr{
+			X:       baseExpr,
+			Indices: indices,
+		}
+	}
+
 	return nil
 }

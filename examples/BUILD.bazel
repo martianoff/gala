@@ -682,7 +682,10 @@ gala_test(
     name = "doc_verify_examples_md",
     src = "doc_verify/examples_md.gala",
     expected = "doc_verify/examples_md.out",
-    deps = ["//go_interop"],
+    deps = [
+        "//collection_immutable",
+        "//go_interop",
+    ],
 )
 
 gala_test(
@@ -1252,4 +1255,11 @@ gala_test(
     name = "try_val_destructure",
     src = "try_val_destructure.gala",
     expected = "try_val_destructure.out",
+)
+
+# Match branch sealed type inference: None() infers type params from match subject
+gala_test(
+    name = "match_sealed_branch_infer",
+    src = "match_sealed_branch_infer.gala",
+    expected = "match_sealed_branch_infer.out",
 )

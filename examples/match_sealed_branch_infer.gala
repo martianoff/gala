@@ -1,0 +1,22 @@
+package main
+
+func main() {
+    val x = Some(42)
+
+    // When match subject is Option[int], and a branch returns None(),
+    // the None() should infer as None[int]() → Option[int]
+    val result = x match {
+        case Some(v) => Some(v * 2)
+        case None() => None()
+    }
+
+    Println(result)
+
+    // Verify None() branch works correctly when None is matched
+    val y = result match {
+        case Some(_) => None()
+        case None() => Some(0)
+    }
+
+    Println(y)
+}

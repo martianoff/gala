@@ -47,7 +47,8 @@ type galaASTTransformer struct {
 	additionalImports     map[string]string                              // path -> alias for transitive imports needed by type inference
 	tempVarCount          int
 	inferer               *infer.Inferer
-	currentFuncReturnType transpiler.Type            // return type of the function currently being transformed
+	currentFuncReturnType    transpiler.Type            // return type of the function currently being transformed
+	currentMatchSubjectType transpiler.Type            // type of the match expression's subject (for branch type inference)
 	typeAliases           map[string]transpiler.Type // type alias name -> underlying type (e.g., "Handler" -> func(string) Future[string])
 	goTypeInfo            *transpiler.GoTypeInfo     // type info from Go packages (stdlib, local Go files, third-party)
 	filePath              string                      // source file path (for error reporting)
