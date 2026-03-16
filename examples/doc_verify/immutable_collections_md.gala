@@ -33,10 +33,10 @@ func testListHeadTail() {
 func testListTransformations() {
     val list = ListOf(1, 2, 3)
 
-    val mapped = list.Map[int]((x int) => x * 2)
+    val mapped = list.Map((x) => x * 2)
     fmt.Printf("Map=%s\n", mapped.String())
 
-    val filtered = list.Filter((x int) => x % 2 == 1)
+    val filtered = list.Filter((x) => x % 2 == 1)
     fmt.Printf("Filter=%s\n", filtered.String())
 
     val reversed = list.Reverse()
@@ -47,10 +47,10 @@ func testListTransformations() {
 func testListFolding() {
     val list = ListOf(1, 2, 3, 4)
 
-    val sum = list.FoldLeft[int](0, (acc int, x int) => acc + x)
+    val sum = list.FoldLeft(0, (acc, x) => acc + x)
     fmt.Printf("FoldLeft sum=%d\n", sum)
 
-    val reduced = list.Reduce((a int, b int) => a + b)
+    val reduced = list.Reduce((a, b) => a + b)
     fmt.Printf("Reduce=%d\n", reduced)
 }
 
@@ -59,7 +59,7 @@ func testListPatternMatch() {
     val list = ListOf(1, 2, 3)
 
     val result = list match {
-        case Cons(head, tail) => fmt.Sprintf("head=%d, tail.Length=%d", head, tail.Length())
+        case Cons(head, tail) => s"head=$head, tail.Length=${tail.Length()}"
         case Nil() => "empty"
         case _ => "other"
     }

@@ -252,17 +252,20 @@ arr.Reversed()           // new Array(5, 4, 3, 2, 1)
 var arr = ArrayOf(1, 2, 3, 4, 5)
 
 // Map - returns new Array
-var doubled = arr.Map[int]((x int) => x * 2)  // Array(2, 4, 6, 8, 10)
+var doubled = arr.Map((x) => x * 2)  // Array(2, 4, 6, 8, 10)
 
 // Filter - returns new Array
-var evens = arr.Filter((x int) => x % 2 == 0)  // Array(2, 4)
+var evens = arr.Filter((x) => x % 2 == 0)  // Array(2, 4)
+
+// Collect - combines Filter and Map in a single pass
+arr.Collect({ case x if x % 2 == 0 => x * 10 })
 
 // FoldLeft
-var sum = arr.FoldLeft[int](0, (acc int, x int) => acc + x)  // 15
+var sum = arr.FoldLeft(0, (acc, x) => acc + x)  // 15
 
 // FoldRight
-var result = arr.FoldRight[string]("", (x int, acc string) => {
-    return fmt.Sprintf("%d%s", x, acc)
+var result = arr.FoldRight("", (x, acc) => {
+    return s"${x}${acc}"
 })  // "12345"
 ```
 
@@ -274,10 +277,10 @@ var arr = ArrayOf(1, 2, 3, 2, 1)
 arr.Contains(3)              // true
 arr.IndexOf(2)               // 1
 arr.LastIndexOf(2)           // 3
-arr.Find((x int) => x > 2)   // Some(3)
-arr.Exists((x int) => x > 4) // true
-arr.ForAll((x int) => x > 0) // true
-arr.Count((x int) => x == 2) // 2
+arr.Find((x) => x > 2)      // Some(3)
+arr.Exists((x) => x > 4)    // true
+arr.ForAll((x) => x > 0)    // true
+arr.Count((x) => x == 2)    // 2
 ```
 
 ### Grouping
@@ -290,7 +293,7 @@ arr.Grouped(2)
 // Array(Array(1, 2), Array(3, 4), Array(5))
 
 // Group by key function
-arr.GroupBy[string]((x int) => {
+arr.GroupBy[string]((x) => {
     if x % 2 == 0 { return "even" }
     return "odd"
 })
@@ -335,8 +338,8 @@ arr.MkString(", ")  // "1, 2, 3"
 ### ForEach
 
 ```gala
-arr.ForEach((x int) => {
-    fmt.Println(x)
+arr.ForEach((x) => {
+    Println(x)
 })
 ```
 
@@ -429,16 +432,16 @@ list.AppendAll(ListOf(4, 5))    // [-1, 0, 1, 2, 3, 4, 5]
 var list = ListOf(1, 2, 3, 4, 5)
 
 // Map
-var doubled = list.Map[int]((x int) => x * 2)
+var doubled = list.Map((x) => x * 2)
 
 // Filter
-var evens = list.Filter((x int) => x % 2 == 0)
+var evens = list.Filter((x) => x % 2 == 0)
 
 // FoldLeft
-var sum = list.FoldLeft[int](0, (acc int, x int) => acc + x)
+var sum = list.FoldLeft(0, (acc, x) => acc + x)
 
 // FoldRight
-var result = list.FoldRight[string]("", foldHelper)
+var result = list.FoldRight("", foldHelper)
 ```
 
 ### Searching
@@ -449,10 +452,10 @@ var list = ListOf(1, 2, 3, 2, 1)
 list.Contains(3)              // true
 list.IndexOf(2)               // 1
 list.LastIndexOf(2)           // 3
-list.Find((x int) => x > 2)   // Some(3)
-list.Exists((x int) => x > 4) // true
-list.ForAll((x int) => x > 0) // true
-list.Count((x int) => x == 2) // 2
+list.Find((x) => x > 2)      // Some(3)
+list.Exists((x) => x > 4)    // true
+list.ForAll((x) => x > 0)    // true
+list.Count((x) => x == 2)    // 2
 ```
 
 ### Sorting
@@ -604,18 +607,18 @@ s1.Disjoint(s3)          // true: no common elements
 var s = HashSetOf(1, 2, 3, 4, 5, 6)
 
 // Filter - returns new HashSet
-var evens = s.Filter((x int) => x % 2 == 0)       // HashSet(2, 4, 6)
-var odds = s.FilterNot((x int) => x % 2 == 0)     // HashSet(1, 3, 5)
+var evens = s.Filter((x) => x % 2 == 0)       // HashSet(2, 4, 6)
+var odds = s.FilterNot((x) => x % 2 == 0)     // HashSet(1, 3, 5)
 
 // Partition - returns tuple of (matching, non-matching)
-var parts = s.Partition((x int) => x % 2 == 0)
+var parts = s.Partition((x) => x % 2 == 0)
 // parts.V1 = HashSet(2, 4, 6), parts.V2 = HashSet(1, 3, 5)
 
 // Map - returns new HashSet
-var doubled = s.Map[int]((x int) => x * 2)
+var doubled = s.Map((x) => x * 2)
 
 // FoldLeft
-var sum = s.FoldLeft[int](0, (acc int, x int) => acc + x)
+var sum = s.FoldLeft(0, (acc, x) => acc + x)
 ```
 
 ### Predicates
@@ -623,10 +626,10 @@ var sum = s.FoldLeft[int](0, (acc int, x int) => acc + x)
 ```gala
 var s = HashSetOf(1, 2, 3, 4, 5)
 
-s.Exists((x int) => x > 4)    // true: at least one > 4
-s.ForAll((x int) => x > 0)    // true: all are positive
-s.Count((x int) => x % 2 == 0) // 2: count of even numbers
-s.Find((x int) => x > 3)      // Some(4 or 5): first match (order not guaranteed)
+s.Exists((x) => x > 4)    // true: at least one > 4
+s.ForAll((x) => x > 0)    // true: all are positive
+s.Count((x) => x % 2 == 0) // 2: count of even numbers
+s.Find((x) => x > 3)      // Some(4 or 5): first match (order not guaranteed)
 ```
 
 ### Element Access
@@ -814,14 +817,14 @@ s2.SupersetOf(s1)        // true
 var s = TreeSetOf(3, 1, 4, 1, 5)
 
 // Iterate in sorted order
-s.ForEach((x int) => {
-    fmt.Println(x)       // prints 1, 3, 4, 5
+s.ForEach((x) => {
+    Println(x)           // prints 1, 3, 4, 5
     return nil
 })
 
 // Iterate in reverse order
-s.ForEachReverse((x int) => {
-    fmt.Println(x)       // prints 5, 4, 3, 1
+s.ForEachReverse((x) => {
+    Println(x)           // prints 5, 4, 3, 1
     return nil
 })
 ```
@@ -832,20 +835,20 @@ s.ForEachReverse((x int) => {
 var s = TreeSetOf(1, 2, 3, 4, 5, 6)
 
 // Filter
-var evens = s.Filter((x int) => x % 2 == 0)     // TreeSet(2, 4, 6)
+var evens = s.Filter((x) => x % 2 == 0)     // TreeSet(2, 4, 6)
 
 // Partition
-var parts = s.Partition((x int) => x % 2 == 0)
+var parts = s.Partition((x) => x % 2 == 0)
 // parts.V1 = TreeSet(2, 4, 6), parts.V2 = TreeSet(1, 3, 5)
 
 // Map - returns new TreeSet
-var doubled = s.Map[int]((x int) => x * 2)
+var doubled = s.Map((x) => x * 2)
 
 // FoldLeft (iterates in sorted order)
-var sum = s.FoldLeft[int](0, (acc int, x int) => acc + x)
+var sum = s.FoldLeft(0, (acc, x) => acc + x)
 
 // Reduce (uses sorted order)
-var sum2 = s.Reduce((a int, b int) => a + b)
+var sum2 = s.Reduce((a, b) => a + b)
 ```
 
 ### Predicates
@@ -853,10 +856,10 @@ var sum2 = s.Reduce((a int, b int) => a + b)
 ```gala
 var s = TreeSetOf(1, 2, 3, 4, 5)
 
-s.Exists((x int) => x > 4)    // true
-s.ForAll((x int) => x > 0)    // true
-s.Count((x int) => x % 2 == 0) // 2
-s.Find((x int) => x > 3)      // Some(4) - first in sorted order
+s.Exists((x) => x > 4)    // true
+s.ForAll((x) => x > 0)    // true
+s.Count((x) => x % 2 == 0) // 2
+s.Find((x) => x > 3)      // Some(4) - first in sorted order
 ```
 
 ### Sorting
@@ -913,7 +916,7 @@ m.Clear()                // removes all entries
 
 // Functional operations
 m.Filter((k, v) => v > 1)
-m.MapValues[int]((v) => v * 2)
+m.MapValues((v) => v * 2)
 m.Sorted()               // Array of entries sorted by key
 ```
 
@@ -1019,16 +1022,16 @@ var m = TreeMapOf(("a", 1), ("b", 2), ("c", 3), ("d", 4))
 m.Filter((k, v) => v % 2 == 0)      // TreeMap(b -> 2, d -> 4)
 
 // MapValues (returns new TreeMap)
-m.MapValues[int]((v) => v * 10)     // TreeMap(a -> 10, b -> 20, ...)
+m.MapValues((v) => v * 10)          // TreeMap(a -> 10, b -> 20, ...)
 
 // FoldLeftKV
-m.FoldLeftKV[int](0, (acc, k, v) => acc + v)  // 10
+m.FoldLeftKV(0, (acc, k, v) => acc + v)  // 10
 
 // FilterInPlace (modifies in-place)
 m.FilterInPlace((k, v) => v > 2)
 
 // Iteration (sorted key order)
-m.ForEachKV((k, v) => { fmt.Printf("%s=%d ", k, v) })
+m.ForEachKV((k, v) => { Println(s"$k=$v") })
 ```
 
 ### Sorted API
@@ -1038,7 +1041,7 @@ var m = TreeMapOf(("c", 30), ("a", 10), ("b", 20))
 
 m.Sorted()                              // Array((a,10), (b,20), (c,30))
 m.SortWith((a, b) => a.V2 < b.V2)      // Array((a,10), (b,20), (c,30))
-m.SortBy[int]((e) => -e.V2)            // Array((c,30), (b,20), (a,10))
+m.SortBy((e) => -e.V2)                  // Array((c,30), (b,20), (a,10))
 ```
 
 ### Conversion
@@ -1103,15 +1106,14 @@ GALA supports pattern matching on mutable collections. Since Array and List are 
 package main
 
 import (
-    "fmt"
     . "martianoff/gala/collection_mutable"
 )
 
 func describeArray[T any](arr *Array[T]) string {
     return arr match {
         case a: *Array[_] if a.IsEmpty() => "empty array"
-        case a: *Array[_] if a.Length() == 1 => fmt.Sprintf("single element: %v", a.Head())
-        case a: *Array[_] => fmt.Sprintf("array with %d elements", a.Length())
+        case a: *Array[_] if a.Length() == 1 => s"single element: ${a.Head()}"
+        case a: *Array[_] => s"array with ${a.Length()} elements"
         case _ => "unknown"
     }
 }
@@ -1121,9 +1123,9 @@ func main() {
     var single = ArrayOf(42)
     var multi = ArrayOf(1, 2, 3)
 
-    fmt.Println(describeArray[int](empty))   // "empty array"
-    fmt.Println(describeArray[int](single))  // "single element: 42"
-    fmt.Println(describeArray[int](multi))   // "array with 3 elements"
+    Println(describeArray[int](empty))   // "empty array"
+    Println(describeArray[int](single))  // "single element: 42"
+    Println(describeArray[int](multi))   // "array with 3 elements"
 }
 ```
 
@@ -1133,9 +1135,9 @@ func main() {
 func processNumbers(arr *Array[int]) string {
     return arr match {
         case a: *Array[int] if a.IsEmpty() => "no numbers"
-        case a: *Array[int] if a.ForAll((x int) => x > 0) => "all positive"
-        case a: *Array[int] if a.ForAll((x int) => x < 0) => "all negative"
-        case a: *Array[int] if a.Exists((x int) => x == 0) => "contains zero"
+        case a: *Array[int] if a.ForAll((x) => x > 0) => "all positive"
+        case a: *Array[int] if a.ForAll((x) => x < 0) => "all negative"
+        case a: *Array[int] if a.Exists((x) => x == 0) => "contains zero"
         case _ => "mixed numbers"
     }
 }
@@ -1145,9 +1147,9 @@ func processNumbers(arr *Array[int]) string {
 
 ```gala
 func findFirstEven(arr *Array[int]) string {
-    var found = arr.Find((x int) => x % 2 == 0)
+    var found = arr.Find((x) => x % 2 == 0)
     return found match {
-        case Some(value) => fmt.Sprintf("found even: %d", value)
+        case Some(value) => s"found even: $value"
         case None() => "no even numbers"
     }
 }
@@ -1159,7 +1161,7 @@ func getMiddleElement[T any](arr *Array[T]) string {
     var mid = arr.Length() / 2
     var opt = arr.GetOption(mid)
     return opt match {
-        case Some(v) => fmt.Sprintf("middle: %v", v)
+        case Some(v) => s"middle: $v"
         case None() => "no middle"
     }
 }
@@ -1179,7 +1181,7 @@ func describeList[T any](list *List[T]) string {
     return list match {
         case l: *List[_] if l.IsEmpty() => "empty list"
         case l: *List[_] if l.Length() == 1 => "singleton"
-        case l: *List[_] => fmt.Sprintf("list[%d]", l.Length())
+        case l: *List[_] => s"list[${l.Length()}]"
     }
 }
 ```
@@ -1193,7 +1195,7 @@ func analyzeArrays(a1 *Array[int], a2 *Array[int]) string {
         case (0, 0) => "both empty"
         case (0, _) => "first empty"
         case (_, 0) => "second empty"
-        case (n1, n2) if n1 == n2 => fmt.Sprintf("same size: %d", n1)
+        case (n1, n2) if n1 == n2 => s"same size: $n1"
         case (n1, n2) if n1 > n2 => "first is larger"
         case _ => "second is larger"
     }
@@ -1394,7 +1396,6 @@ bazel run //collection_mutable:perf_go
 package main
 
 import (
-    "fmt"
     . "martianoff/gala/collection_mutable"
 )
 
@@ -1408,13 +1409,13 @@ func main() {
     }
 
     // Transform: keep only values divisible by 4
-    var filtered = arr.Filter((x int) => x % 4 == 0)
+    var filtered = arr.Filter((x) => x % 4 == 0)
 
     // Sum all values
-    var sum = filtered.FoldLeft[int](0, (acc int, x int) => acc + x)
+    var sum = filtered.FoldLeft(0, (acc, x) => acc + x)
 
-    fmt.Printf("Sum of squares divisible by 4: %d\n", sum)
-    fmt.Printf("Count: %d\n", filtered.Length())
+    Println(s"Sum of squares divisible by 4: $sum")
+    Println(s"Count: ${filtered.Length()}")
 }
 ```
 
@@ -1424,7 +1425,6 @@ func main() {
 package main
 
 import (
-    "fmt"
     . "martianoff/gala/collection_mutable"
 )
 
@@ -1440,7 +1440,7 @@ func main() {
     // Dequeue (remove from front)
     for queue.NonEmpty() {
         var item = queue.RemoveFirst()
-        fmt.Printf("Processing: %s\n", item)
+        Println(s"Processing: $item")
     }
 }
 ```
@@ -1451,7 +1451,6 @@ func main() {
 package main
 
 import (
-    "fmt"
     . "martianoff/gala/collection_mutable"
     . "martianoff/gala/std"
 )
@@ -1473,7 +1472,7 @@ func main() {
 
     // Print each group
     for category, arr := range groups {
-        fmt.Printf("%s: %s\n", category, arr.String())
+        Println(s"$category: ${arr.String()}")
     }
 }
 ```
@@ -1484,7 +1483,6 @@ func main() {
 package main
 
 import (
-    "fmt"
     . "martianoff/gala/collection_mutable"
 )
 
@@ -1498,14 +1496,14 @@ func main() {
 
     // Find intersection (O(min(n,m)) average)
     var common = set1.Intersect(set2)
-    fmt.Printf("Common elements: %s\n", common.String())  // HashSet(5, 6, 7, 8)
+    Println(s"Common elements: ${common.String()}")  // HashSet(5, 6, 7, 8)
 
     // Find elements only in first dataset
     var onlyInFirst = set1.Diff(set2)
-    fmt.Printf("Only in first: %s\n", onlyInFirst.String())  // HashSet(1, 2, 3, 4)
+    Println(s"Only in first: ${onlyInFirst.String()}")  // HashSet(1, 2, 3, 4)
 
     // Check membership (O(1) average)
-    fmt.Printf("Contains 5: %t\n", set1.Contains(5))  // true
+    Println(s"Contains 5: ${set1.Contains(5)}")  // true
 }
 ```
 
@@ -1515,7 +1513,6 @@ func main() {
 package main
 
 import (
-    "fmt"
     . "martianoff/gala/collection_mutable"
 )
 
@@ -1532,7 +1529,7 @@ func main() {
     // Process in priority order
     for tasks.NonEmpty() {
         var priority = tasks.PopMin()  // O(log n)
-        fmt.Printf("Processing task with priority %d\n", priority)
+        Println(s"Processing task with priority $priority")
     }
     // Output: 1, 2, 3, 5
 }
@@ -1544,7 +1541,6 @@ func main() {
 package main
 
 import (
-    "fmt"
     . "martianoff/gala/collection_mutable"
 )
 
@@ -1554,14 +1550,14 @@ func main() {
 
     // Find passing grades (60+)
     var passing = grades.RangeFrom(60)
-    fmt.Printf("Passing: %s\n", passing.String())  // TreeSet(65, 72, 78, 85, 92, 98)
+    Println(s"Passing: ${passing.String()}")  // TreeSet(65, 72, 78, 85, 92, 98)
 
     // Find B grades (80-89)
     var bGrades = grades.Range(80, 89)
-    fmt.Printf("B grades: %s\n", bGrades.String())  // TreeSet(85)
+    Println(s"B grades: ${bGrades.String()}")  // TreeSet(85)
 
     // Find failing grades (<60)
     var failing = grades.RangeTo(59)
-    fmt.Printf("Failing: %s\n", failing.String())  // TreeSet(45, 55)
+    Println(s"Failing: ${failing.String()}")  // TreeSet(45, 55)
 }
 ```

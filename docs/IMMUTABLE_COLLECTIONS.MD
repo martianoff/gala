@@ -200,8 +200,8 @@ val list = ListOf(1, 2, 3, 4, 5)
 
 list.Take(3)                 // List(1, 2, 3)
 list.Drop(2)                 // List(3, 4, 5)
-list.TakeWhile((x int) => x < 4)  // List(1, 2, 3)
-list.DropWhile((x int) => x < 3)  // List(3, 4, 5)
+list.TakeWhile((x) => x < 4)  // List(1, 2, 3)
+list.DropWhile((x) => x < 3)  // List(3, 4, 5)
 list.SplitAt(2)              // Tuple(List(1, 2), List(3, 4, 5))
 ```
 
@@ -213,7 +213,7 @@ val list = ListOf(1, 2, 3, 4, 5)
 list.Contains(3)             // true
 list.IndexOf(3)              // 2
 list.IndexOf(10)             // -1
-list.Find((x int) => x > 3)  // Some(4)
+list.Find((x) => x > 3)  // Some(4)
 ```
 
 ### Transformations
@@ -222,18 +222,22 @@ list.Find((x int) => x > 3)  // Some(4)
 val list = ListOf(1, 2, 3)
 
 // Map
-list.Map[int]((x int) => x * 2)  // List(2, 4, 6)
+list.Map((x) => x * 2)  // List(2, 4, 6)
 
 // FlatMap
-list.FlatMap[int]((x int) => ListOf(x, x * 10))
+list.FlatMap((x) => ListOf(x, x * 10))
 // List(1, 10, 2, 20, 3, 30)
 
 // Filter
-list.Filter((x int) => x % 2 == 1)  // List(1, 3)
-list.FilterNot((x int) => x % 2 == 1)  // List(2)
+list.Filter((x) => x % 2 == 1)  // List(1, 3)
+list.FilterNot((x) => x % 2 == 1)  // List(2)
+
+// Collect - combines Filter and Map in a single pass using partial functions
+list.Collect({ case x if x % 2 == 1 => x * 10 })
+// List(10, 30)
 
 // Partition
-list.Partition((x int) => x > 2)
+list.Partition((x) => x > 2)
 // Tuple(List(3), List(1, 2))
 
 // Reverse
@@ -249,16 +253,16 @@ ListOf(1, 2, 2, 3, 1).Distinct()  // List(1, 2, 3)
 val list = ListOf(1, 2, 3, 4)
 
 // FoldLeft
-list.FoldLeft[int](0, (acc int, x int) => acc + x)  // 10
+list.FoldLeft(0, (acc, x) => acc + x)  // 10
 
 // FoldRight
-list.FoldRight[int](0, (x int, acc int) => x + acc)  // 10
+list.FoldRight(0, (x, acc) => x + acc)  // 10
 
 // Reduce
-list.Reduce((a int, b int) => a + b)  // 10
+list.Reduce((a, b) => a + b)  // 10
 
 // ReduceOption (safe for empty lists)
-list.ReduceOption((a int, b int) => a + b)  // Some(10)
+list.ReduceOption((a, b) => a + b)  // Some(10)
 ```
 
 ### Predicates
@@ -266,9 +270,9 @@ list.ReduceOption((a int, b int) => a + b)  // Some(10)
 ```gala
 val list = ListOf(2, 4, 6, 8)
 
-list.Exists((x int) => x == 4)  // true
-list.ForAll((x int) => x % 2 == 0)  // true
-list.Count((x int) => x > 4)  // 2
+list.Exists((x) => x == 4)  // true
+list.ForAll((x) => x % 2 == 0)  // true
+list.Count((x) => x > 4)  // 2
 ```
 
 ### Zipping
@@ -277,7 +281,7 @@ list.Count((x int) => x > 4)  // 2
 val nums = ListOf(1, 2, 3)
 val strs = ListOf("a", "b", "c")
 
-nums.Zip[string](strs)
+nums.Zip(strs)
 // List(Tuple(1, "a"), Tuple(2, "b"), Tuple(3, "c"))
 
 nums.ZipWithIndex()
@@ -330,8 +334,8 @@ val result = list match {
 ### ForEach (Side Effects)
 
 ```gala
-list.ForEach((x int) => {
-    fmt.Println(x)
+list.ForEach((x) => {
+    Println(x)
 })
 ```
 
@@ -355,7 +359,7 @@ val slice = SliceOf(1, 2, 3)
 val arr2 = ArrayFrom(slice)
 
 // Tabulate: compute each element from index (O(n) via arrayBuilder)
-val squares = ArrayTabulate(5, (i int) => i * i)
+val squares = ArrayTabulate(5, (i) => i * i)
 // squares == Array(0, 1, 4, 9, 16)
 
 // Fill: repeat the same value (O(n) via arrayBuilder)
@@ -429,8 +433,8 @@ val arr = ArrayOf(1, 2, 3, 4, 5)
 arr.Take(3)                  // Array(1, 2, 3)
 arr.Drop(2)                  // Array(3, 4, 5)
 arr.Slice(1, 4)              // Array(2, 3, 4)
-arr.TakeWhile((x int) => x < 4)   // Array(1, 2, 3)
-arr.DropWhile((x int) => x < 3)   // Array(3, 4, 5)
+arr.TakeWhile((x) => x < 4)   // Array(1, 2, 3)
+arr.DropWhile((x) => x < 3)   // Array(3, 4, 5)
 arr.SplitAt(2)               // Tuple(Array(1, 2), Array(3, 4, 5))
 ```
 
@@ -442,8 +446,8 @@ val arr = ArrayOf(1, 2, 3, 2, 1)
 arr.Contains(3)              // true
 arr.IndexOf(2)               // 1
 arr.LastIndexOf(2)           // 3
-arr.Find((x int) => x > 2)   // Some(3)
-arr.FindLast((x int) => x < 3)  // Some(1)
+arr.Find((x) => x > 2)   // Some(3)
+arr.FindLast((x) => x < 3)  // Some(1)
 ```
 
 ### Transformations
@@ -452,18 +456,22 @@ arr.FindLast((x int) => x < 3)  // Some(1)
 val arr = ArrayOf(1, 2, 3)
 
 // Map
-arr.Map[int]((x int) => x * 2)  // Array(2, 4, 6)
+arr.Map((x) => x * 2)  // Array(2, 4, 6)
 
 // FlatMap
-arr.FlatMap[int]((x int) => ArrayOf(x, x * 10))
+arr.FlatMap((x) => ArrayOf(x, x * 10))
 // Array(1, 10, 2, 20, 3, 30)
 
 // Filter
-arr.Filter((x int) => x % 2 == 1)  // Array(1, 3)
-arr.FilterNot((x int) => x % 2 == 1)  // Array(2)
+arr.Filter((x) => x % 2 == 1)  // Array(1, 3)
+arr.FilterNot((x) => x % 2 == 1)  // Array(2)
+
+// Collect - combines Filter and Map in a single pass using partial functions
+arr.Collect({ case x if x % 2 == 0 => x * 10 })
+// Array(20)
 
 // Partition
-arr.Partition((x int) => x > 2)
+arr.Partition((x) => x > 2)
 // Tuple(Array(3), Array(1, 2))
 
 // Reverse
@@ -478,10 +486,10 @@ ArrayOf(1, 2, 2, 3, 1).Distinct()  // Array(1, 2, 3)
 ```gala
 val arr = ArrayOf(1, 2, 3, 4)
 
-arr.FoldLeft[int](0, (acc int, x int) => acc + x)  // 10
-arr.FoldRight[int](0, (x int, acc int) => x + acc)  // 10
-arr.Reduce((a int, b int) => a + b)  // 10
-arr.ReduceOption((a int, b int) => a + b)  // Some(10)
+arr.FoldLeft(0, (acc, x) => acc + x)  // 10
+arr.FoldRight(0, (x, acc) => x + acc)  // 10
+arr.Reduce((a, b) => a + b)  // 10
+arr.ReduceOption((a, b) => a + b)  // Some(10)
 ```
 
 ### Predicates
@@ -489,9 +497,9 @@ arr.ReduceOption((a int, b int) => a + b)  // Some(10)
 ```gala
 val arr = ArrayOf(2, 4, 6, 8)
 
-arr.Exists((x int) => x == 4)  // true
-arr.ForAll((x int) => x % 2 == 0)  // true
-arr.Count((x int) => x > 4)  // 2
+arr.Exists((x) => x == 4)  // true
+arr.ForAll((x) => x % 2 == 0)  // true
+arr.Count((x) => x > 4)  // 2
 ```
 
 ### Zipping
@@ -500,7 +508,7 @@ arr.Count((x int) => x > 4)  // 2
 val nums = ArrayOf(1, 2, 3)
 val strs = ArrayOf("a", "b", "c")
 
-nums.Zip[string](strs)
+nums.Zip(strs)
 // Array(Tuple(1, "a"), Tuple(2, "b"), Tuple(3, "c"))
 
 nums.ZipWithIndex()
@@ -551,8 +559,8 @@ arr.MkString(", ")  // "1, 2, 3"
 ### ForEach (Side Effects)
 
 ```gala
-arr.ForEach((x int) => {
-    fmt.Println(x)
+arr.ForEach((x) => {
+    Println(x)
 })
 ```
 
@@ -666,15 +674,19 @@ HashSetOf(1, 2).SubsetOf(a)  // true
 val set = HashSetOf(1, 2, 3, 4, 5)
 
 // Filter
-set.Filter((x int) => x % 2 == 0)     // HashSet(2, 4)
-set.FilterNot((x int) => x % 2 == 0)  // HashSet(1, 3, 5)
+set.Filter((x) => x % 2 == 0)     // HashSet(2, 4)
+set.FilterNot((x) => x % 2 == 0)  // HashSet(1, 3, 5)
+
+// Collect - combines Filter and Map in a single pass using partial functions
+set.Collect({ case x if x % 2 == 0 => x * 10 })
+// HashSet(20, 40)
 
 // Partition
-set.Partition((x int) => x > 3)
+set.Partition((x) => x > 3)
 // Tuple(HashSet(4, 5), HashSet(1, 2, 3))
 
 // Map (use standalone function)
-MapHashSet[int, int](set, (x int) => x * 2)  // HashSet(2, 4, 6, 8, 10)
+MapHashSet[int, int](set, (x) => x * 2)  // HashSet(2, 4, 6, 8, 10)
 ```
 
 ### Folding and Reduction
@@ -683,13 +695,13 @@ MapHashSet[int, int](set, (x int) => x * 2)  // HashSet(2, 4, 6, 8, 10)
 val set = HashSetOf(1, 2, 3, 4, 5)
 
 // FoldLeft
-set.FoldLeft[int](0, (acc int, x int) => acc + x)  // 15
+set.FoldLeft(0, (acc, x) => acc + x)  // 15
 
 // Reduce
-set.Reduce((a int, b int) => a + b)  // 15
+set.Reduce((a, b) => a + b)  // 15
 
 // ReduceOption (safe for empty sets)
-set.ReduceOption((a int, b int) => a + b)  // Some(15)
+set.ReduceOption((a, b) => a + b)  // Some(15)
 ```
 
 ### Predicates
@@ -697,10 +709,10 @@ set.ReduceOption((a int, b int) => a + b)  // Some(15)
 ```gala
 val set = HashSetOf(2, 4, 6, 8)
 
-set.Exists((x int) => x > 5)           // true
-set.ForAll((x int) => x % 2 == 0)      // true
-set.Count((x int) => x > 4)            // 2
-set.Find((x int) => x > 5)             // Some(6) or Some(8)
+set.Exists((x) => x > 5)           // true
+set.ForAll((x) => x % 2 == 0)      // true
+set.Count((x) => x > 4)            // 2
+set.Find((x) => x > 5)             // Some(6) or Some(8)
 ```
 
 ### Sorting
@@ -730,8 +742,8 @@ set.MkString(", ")  // "1, 2, 3" (order not guaranteed)
 ### ForEach (Side Effects)
 
 ```gala
-set.ForEach((x int) => {
-    fmt.Println(x)
+set.ForEach((x) => {
+    Println(x)
 })
 ```
 
@@ -742,7 +754,7 @@ val set = HashSetOf(1, 2, 3)
 
 val result = set match {
     case s: HashSet[_] if s.IsEmpty() => "empty"
-    case s: HashSet[_] => fmt.Sprintf("has %d elements", s.Size())
+    case s: HashSet[_] => s"has ${s.Size()} elements"
     case _ => "unknown"
 }
 ```
@@ -888,15 +900,15 @@ TreeSetOf(1, 2).SubsetOf(a)  // true
 val set = TreeSetOf(1, 2, 3, 4, 5)
 
 // Filter
-set.Filter((x int) => x % 2 == 0)     // TreeSet(2, 4)
-set.FilterNot((x int) => x % 2 == 0)  // TreeSet(1, 3, 5)
+set.Filter((x) => x % 2 == 0)     // TreeSet(2, 4)
+set.FilterNot((x) => x % 2 == 0)  // TreeSet(1, 3, 5)
 
 // Partition
-set.Partition((x int) => x > 3)
+set.Partition((x) => x > 3)
 // Tuple(TreeSet(4, 5), TreeSet(1, 2, 3))
 
 // Map (use standalone function)
-MapTreeSet(set, (x int) => x * 2)  // TreeSet(2, 4, 6, 8, 10)
+MapTreeSet(set, (x) => x * 2)  // TreeSet(2, 4, 6, 8, 10)
 ```
 
 ### Folding and Reduction
@@ -905,13 +917,13 @@ MapTreeSet(set, (x int) => x * 2)  // TreeSet(2, 4, 6, 8, 10)
 val set = TreeSetOf(1, 2, 3, 4, 5)
 
 // FoldLeft - processes elements in sorted order!
-set.FoldLeft[int](0, (acc int, x int) => acc + x)  // 15
+set.FoldLeft(0, (acc, x) => acc + x)  // 15
 
 // Reduce
-set.Reduce((a int, b int) => a + b)  // 15
+set.Reduce((a, b) => a + b)  // 15
 
 // ReduceOption (safe for empty sets)
-set.ReduceOption((a int, b int) => a + b)  // Some(15)
+set.ReduceOption((a, b) => a + b)  // Some(15)
 ```
 
 ### Predicates
@@ -919,10 +931,10 @@ set.ReduceOption((a int, b int) => a + b)  // Some(15)
 ```gala
 val set = TreeSetOf(2, 4, 6, 8)
 
-set.Exists((x int) => x > 5)           // true
-set.ForAll((x int) => x % 2 == 0)      // true
-set.Count((x int) => x > 4)            // 2
-set.Find((x int) => x > 5)             // Some(6) - first in sorted order
+set.Exists((x) => x > 5)           // true
+set.ForAll((x) => x % 2 == 0)      // true
+set.Count((x) => x > 4)            // 2
+set.Find((x) => x > 5)             // Some(6) - first in sorted order
 ```
 
 ### Sorting
@@ -954,8 +966,8 @@ set.MkString(", ")  // "1, 2, 3" - sorted order
 
 ```gala
 // Elements processed in sorted order
-set.ForEach((x int) => {
-    fmt.Println(x)  // Prints: 1, 2, 3 (in order)
+set.ForEach((x) => {
+    Println(x)  // Prints: 1, 2, 3 (in order)
 })
 ```
 
@@ -966,7 +978,7 @@ val set = TreeSetOf(1, 2, 3)
 
 val result = set match {
     case s: TreeSet[_] if s.IsEmpty() => "empty"
-    case s: TreeSet[_] => fmt.Sprintf("has %d elements, min=%v", s.Size(), s.Min())
+    case s: TreeSet[_] => s"has ${s.Size()} elements, min=${s.Min()}"
     case _ => "unknown"
 }
 ```
@@ -1015,10 +1027,34 @@ m.Keys().ToArray()                            // Array (unordered)
 val m = HashMapOf(("a", 1), ("b", 2), ("c", 3))
 
 m.Filter((k, v) => v > 1)                    // HashMap(b -> 2, c -> 3)
-m.MapValues[int]((v) => v * 2)               // HashMap(a -> 2, b -> 4, c -> 6)
-m.FoldLeftKV[int](0, (acc, k, v) => acc + v) // 6
-m.FoldLeft[int](0, (acc int, entry Tuple[string, int]) => acc + entry.V2) // 6 — iterates as Tuple entries
+m.MapValues((v) => v * 2)                    // HashMap(a -> 2, b -> 4, c -> 6)
+m.FoldLeftKV(0, (acc, k, v) => acc + v)      // 6
+m.FoldLeft(0, (acc, entry) => acc + entry.V2) // 6 — iterates as Tuple entries
 m.Sorted()                                    // Array((a,1), (b,2), (c,3))
+
+// Collect - applies a partial function to each entry, returns Array[U]
+m.Collect({ case (k, v) if v > 1 => k })
+// Array("b", "c")
+
+// Filter by keys only
+m.FilterKeys((k) => k > "b")
+
+// Filter by values only
+m.FilterValues((v) => v > 1)
+```
+
+### ForEach (Side Effects)
+
+```gala
+m.ForEachKV((k, v) => {
+    Println(s"$k -> $v")
+})
+
+// Iterate keys only
+m.ForEachKey((k) => Println(k))
+
+// Iterate values only
+m.ForEachValue((v) => Println(v))
 ```
 
 ---
@@ -1112,10 +1148,10 @@ m.FilterKeys((k) => k > "b")       // TreeMap(c -> 3, d -> 4)
 m.FilterValues((v) => v > 2)       // TreeMap(c -> 3, d -> 4)
 
 // MapValues
-m.MapValues[int]((v) => v * 10)    // TreeMap(a -> 10, b -> 20, c -> 30, d -> 40)
+m.MapValues((v) => v * 10)    // TreeMap(a -> 10, b -> 20, c -> 30, d -> 40)
 
 // FoldLeftKV
-m.FoldLeftKV[int](0, (acc, k, v) => acc + v)  // 10
+m.FoldLeftKV(0, (acc, k, v) => acc + v)  // 10
 
 // Merge with combiner
 val m2 = TreeMapOf(("c", 30), ("e", 5))
@@ -1123,7 +1159,7 @@ m.Merge(m2, (v1, v2) => v1 + v2)
 // TreeMap(a -> 1, b -> 2, c -> 33, d -> 4, e -> 5)
 
 // Iteration (sorted key order)
-m.ForEachKV((k, v) => { fmt.Printf("%s=%d ", k, v) })
+m.ForEachKV((k, v) => { Println(s"$k=$v") })
 // a=1 b=2 c=3 d=4
 ```
 
@@ -1139,7 +1175,7 @@ m.Sorted()                              // Array((a,10), (b,20), (c,30))
 m.SortWith((a, b) => a.V2 < b.V2)      // Array((a,10), (b,20), (c,30))
 
 // Sort by extracted key (descending by value)
-m.SortBy[int]((e) => -e.V2)            // Array((c,30), (b,20), (a,10))
+m.SortBy((e) => -e.V2)            // Array((c,30), (b,20), (a,10))
 ```
 
 ### Conversion
@@ -1458,28 +1494,25 @@ bazel run //collection_immutable:perf_go
 ```gala
 package main
 
-import (
-    "fmt"
-    . "martianoff/gala/collection_immutable"
-)
+import . "martianoff/gala/collection_immutable"
 
 func main() {
     // Build a list of numbers
     val numbers = ListOf(1, 2, 3, 4, 5)
 
     // Transform: double each number
-    val doubled = numbers.Map[int]((x int) => x * 2)
+    val doubled = numbers.Map((x) => x * 2)
 
     // Filter: keep only values > 5
-    val filtered = doubled.Filter((x int) => x > 5)
+    val filtered = doubled.Filter((x) => x > 5)
 
     // Reduce: sum all values
-    val sum = filtered.Reduce((a int, b int) => a + b)
+    val sum = filtered.Reduce((a, b) => a + b)
 
-    fmt.Printf("Sum: %d\n", sum)  // Sum: 24 (6 + 8 + 10)
+    Println(s"Sum: $sum")  // Sum: 24 (6 + 8 + 10)
 
     // Original list is unchanged
-    fmt.Println("Original:", numbers.String())  // List(1, 2, 3, 4, 5)
+    Println(s"Original: ${numbers.String()}")  // List(1, 2, 3, 4, 5)
 }
 ```
 
@@ -1488,10 +1521,7 @@ func main() {
 ```gala
 package main
 
-import (
-    "fmt"
-    . "martianoff/gala/collection_immutable"
-)
+import . "martianoff/gala/collection_immutable"
 
 func main() {
     // Build array of 1000 elements
@@ -1501,13 +1531,13 @@ func main() {
     }
 
     // Random access - O(eC)
-    fmt.Printf("Element at 500: %d\n", arr.Get(500))
+    Println(s"Element at 500: ${arr.Get(500)}")
 
     // Update - O(eC)
     val updated = arr.Updated(500, 999999)
-    fmt.Printf("Updated element at 500: %d\n", updated.Get(500))
+    Println(s"Updated element at 500: ${updated.Get(500)}")
 
     // Original unchanged
-    fmt.Printf("Original element at 500: %d\n", arr.Get(500))
+    Println(s"Original element at 500: ${arr.Get(500)}")
 }
 ```

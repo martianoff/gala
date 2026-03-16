@@ -20,7 +20,7 @@ func testOption() {
     val x Option[int] = Some(10)
     val y Option[int] = None[int]()
 
-    val result = x.Map((i int) => i * 2)
+    val result = x.Map((i) => i * 2)
     fmt.Printf("Option mapped: %v\n", result.Get())
 
     val fallback = y.GetOrElse(42)
@@ -31,13 +31,13 @@ func testOption() {
 func testEither() {
     val e Either[int, string] = Right[int, string]("success")
     val msg = e match {
-        case Left(code) => fmt.Sprintf("Error code: %d", code)
+        case Left(code) => s"Error code: $code"
         case Right(s)   => "Result: " + s
         case _          => "Unknown"
     }
     fmt.Printf("Either match: %s\n", msg)
 
-    val length = e.Map((s string) => len(s))
+    val length = e.Map((s) => len(s))
     fmt.Printf("Either mapped: %v\n", length)
 }
 
@@ -47,16 +47,16 @@ func testTry() {
     val failure Try[int] = Failure[int](NoSuchElementError(Message = "not found"))
 
     val msg = success match {
-        case Success(n) => fmt.Sprintf("Got: %d", n)
-        case Failure(e) => fmt.Sprintf("Error: %s", e.Error())
+        case Success(n) => s"Got: $n"
+        case Failure(e) => s"Error: ${e.Error()}"
         case _          => "Unknown"
     }
     fmt.Printf("Try match: %s\n", msg)
 
-    val doubled = success.Map[int]((n int) => n * 2)
+    val doubled = success.Map((n) => n * 2)
     fmt.Printf("Try mapped: %d\n", doubled.Get())
 
-    val recovered = failure.Recover((e error) => 0)
+    val recovered = failure.Recover((e) => 0)
     fmt.Printf("Try recovered: %d\n", recovered.Get())
 
     val value = failure.GetOrElse(100)

@@ -24,8 +24,9 @@ GALA implements a custom type inference and unwrapping system to handle its uniq
    - [Expression Unwrapping](#2-expression-unwrapping)
 7. [Type Resolution](#type-resolution)
 8. [Supported Expressions](#supported-expressions)
-9. [Limitations and Edge Cases](#limitations-and-edge-cases)
-10. [Key Files](#key-files)
+9. [Go Type Inference](#go-type-inference)
+10. [Limitations and Edge Cases](#limitations-and-edge-cases)
+11. [Key Files](#key-files)
 
 ---
 
@@ -297,6 +298,8 @@ Type resolution follows a 5-level precedence order (defined in `scope.go`):
 
 The `getType(name)` method in scope.go implements this resolution order.
 
+**Note**: Dot imports take precedence over aliased imports for unqualified name resolution. If both `. "collection_immutable"` and `cm "collection_mutable"` are imported, bare `Array` resolves to `collection_immutable.Array`.
+
 ---
 
 ## Supported Expressions
@@ -359,6 +362,20 @@ Lambda parameter inference works for:
 val sum = list.FoldLeft(0, (acc, x) => acc + x)        // acc inferred as int from 0
 val joined = list.FoldLeft("", (acc, x) => acc + x)     // acc inferred as string from ""
 ```
+
+---
+
+## Go Type Inference
+
+When the Go SDK is available (via `GOROOT` or `PATH`), the transpiler can infer types from Go standard library and third-party packages:
+
+- **Function return types**: `os.TempDir()` → inferred as `string`
+- **Method return types**: `strings.NewReader("hello").Read(buf)` → inferred from Go method signature
+- **Struct field types**: `req.URL.Host` → inferred as `string`
+
+This enables seamless interop without explicit type annotations when calling Go functions.
+
+Go type inference is optional — if the Go SDK is not found, transpilation still succeeds but Go type resolution is disabled (a warning is printed to stderr).
 
 ---
 

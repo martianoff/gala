@@ -183,6 +183,8 @@ gala build -v
 2. Downloads Go dependencies to `~/.gala/go/pkg/mod/`
 3. Runs `go build` to produce the binary in your project directory
 
+**Auto-fetch**: `gala build` automatically downloads GALA dependencies listed in `gala.mod` that are not yet cached locally. No manual `gala mod download` step is needed.
+
 ### gala run
 
 Build and run a GALA project.
@@ -289,6 +291,8 @@ This command:
 - Removes unused dependencies
 - Marks indirect dependencies appropriately
 - **For Bazel projects**: Generates `go.mod` and `go.sum` with Go dependencies
+
+`gala mod tidy` handles both single-line and multi-line import blocks, and recognizes known GALA dependencies (like `std`, `collection_immutable`, etc.) automatically.
 
 ### gala mod graph
 

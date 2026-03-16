@@ -682,7 +682,10 @@ gala_test(
     name = "doc_verify_examples_md",
     src = "doc_verify/examples_md.gala",
     expected = "doc_verify/examples_md.out",
-    deps = ["//go_interop"],
+    deps = [
+        "//collection_immutable",
+        "//go_interop",
+    ],
 )
 
 gala_test(

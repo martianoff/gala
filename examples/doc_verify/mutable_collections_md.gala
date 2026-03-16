@@ -86,13 +86,13 @@ func testArrayStructural() {
 func testArrayFunctional() {
     var arr = ArrayOf(1, 2, 3, 4, 5)
 
-    var doubled = arr.Map[int]((x int) => x * 2)
+    var doubled = arr.Map((x) => x * 2)
     fmt.Printf("Map doubled=%s\n", doubled.String())
 
-    var evens = arr.Filter((x int) => x % 2 == 0)
+    var evens = arr.Filter((x) => x % 2 == 0)
     fmt.Printf("Filter evens=%s\n", evens.String())
 
-    var sum = arr.FoldLeft[int](0, (acc int, x int) => acc + x)
+    var sum = arr.FoldLeft(0, (acc, x) => acc + x)
     fmt.Printf("FoldLeft sum=%d\n", sum)
 }
 
@@ -103,10 +103,10 @@ func testArraySearching() {
     fmt.Printf("Contains(3)=%v\n", arr.Contains(3))
     fmt.Printf("IndexOf(2)=%d\n", arr.IndexOf(2))
     fmt.Printf("LastIndexOf(2)=%d\n", arr.LastIndexOf(2))
-    fmt.Printf("Find(>2).IsDefined=%v\n", arr.Find((x int) => x > 2).IsDefined())
-    fmt.Printf("Exists(>4)=%v\n", arr.Exists((x int) => x > 4))
-    fmt.Printf("ForAll(>0)=%v\n", arr.ForAll((x int) => x > 0))
-    fmt.Printf("Count(==2)=%d\n", arr.Count((x int) => x == 2))
+    fmt.Printf("Find(>2).IsDefined=%v\n", arr.Find((x) => x > 2).IsDefined())
+    fmt.Printf("Exists(>4)=%v\n", arr.Exists((x) => x > 4))
+    fmt.Printf("ForAll(>0)=%v\n", arr.ForAll((x) => x > 0))
+    fmt.Printf("Count(==2)=%d\n", arr.Count((x) => x == 2))
 }
 
 // Array Distinct (line 270-273)
@@ -171,9 +171,9 @@ func testListSearching() {
     fmt.Printf("List.Contains(3)=%v\n", list.Contains(3))
     fmt.Printf("List.IndexOf(2)=%d\n", list.IndexOf(2))
     fmt.Printf("List.LastIndexOf(2)=%d\n", list.LastIndexOf(2))
-    fmt.Printf("List.Exists(>4)=%v\n", list.Exists((x int) => x > 4))
-    fmt.Printf("List.ForAll(>0)=%v\n", list.ForAll((x int) => x > 0))
-    fmt.Printf("List.Count(==2)=%d\n", list.Count((x int) => x == 2))
+    fmt.Printf("List.Exists(>4)=%v\n", list.Exists((x) => x > 4))
+    fmt.Printf("List.ForAll(>0)=%v\n", list.ForAll((x) => x > 0))
+    fmt.Printf("List.Count(==2)=%d\n", list.Count((x) => x == 2))
 }
 
 // HashSet Construction (line 444-454)
@@ -244,9 +244,9 @@ func testHashSetRelationships() {
 func testHashSetPredicates() {
     var s = HashSetOf(1, 2, 3, 4, 5)
 
-    fmt.Printf("HashSet.Exists(>4)=%v\n", s.Exists((x int) => x > 4))
-    fmt.Printf("HashSet.ForAll(>0)=%v\n", s.ForAll((x int) => x > 0))
-    fmt.Printf("HashSet.Count(even)=%d\n", s.Count((x int) => x % 2 == 0))
+    fmt.Printf("HashSet.Exists(>4)=%v\n", s.Exists((x) => x > 4))
+    fmt.Printf("HashSet.ForAll(>0)=%v\n", s.ForAll((x) => x > 0))
+    fmt.Printf("HashSet.Count(even)=%d\n", s.Count((x) => x % 2 == 0))
 }
 
 // TreeSet Construction (line 618-628)
@@ -315,10 +315,10 @@ func testTreeSetOperations() {
 func testTreeSetPredicates() {
     var s = TreeSetOf(1, 2, 3, 4, 5)
 
-    fmt.Printf("TreeSet.Exists(>4)=%v\n", s.Exists((x int) => x > 4))
-    fmt.Printf("TreeSet.ForAll(>0)=%v\n", s.ForAll((x int) => x > 0))
-    fmt.Printf("TreeSet.Count(even)=%d\n", s.Count((x int) => x % 2 == 0))
-    fmt.Printf("TreeSet.Find(>3).IsDefined=%v\n", s.Find((x int) => x > 3).IsDefined())
+    fmt.Printf("TreeSet.Exists(>4)=%v\n", s.Exists((x) => x > 4))
+    fmt.Printf("TreeSet.ForAll(>0)=%v\n", s.ForAll((x) => x > 0))
+    fmt.Printf("TreeSet.Count(even)=%d\n", s.Count((x) => x % 2 == 0))
+    fmt.Printf("TreeSet.Find(>3).IsDefined=%v\n", s.Find((x) => x > 3).IsDefined())
 }
 
 func main() {

@@ -145,8 +145,7 @@ func applyAll(handler Handler, filters ...Filter) Handler =
 import . "martianoff/gala/collection_immutable"
 
 val nums = ArrayOf(1, 2, 3, 4, 5)
-val evens = nums.Filter((x) => x % 2 == 0)
-val doubled = evens.Map((x) => x * 2)
+val evenDoubled = nums.Collect({ case n if n % 2 == 0 => n * 2 })
 val sum = nums.FoldLeft(0, (acc, x) => acc + x)
 ```
 
@@ -219,6 +218,9 @@ for _, x := range nums {
 | Manual accumulation | `var acc; for { acc = f(acc, x) }` | `list.FoldLeft(init, (acc, x) => f(acc, x))` |
 | Manual filter | `for { if cond { append } }` | `list.Filter(predicate)` |
 | Manual map | `for { result = append(result, f(x)) }` | `list.Map(f)` |
+| Filter then Map | `list.Filter(p).Map(f)` | `list.Collect({ case x if p(x) => f(x) })` |
+| Map then Filter (flatMap pattern) | `list.Map(f).Filter(p)` when f returns Option-like | `list.Collect({ case x if p(x) => f(x) })` |
+| FlatMap + Option for filter+transform | `list.FlatMap((x) => if p(x) { Some(f(x)) } else { None })` | `list.Collect({ case x if p(x) => f(x) })` |
 | Index-based iteration | `for i := 0; i < x.Length(); i++` | `x.ForEach(f)` or `for _, elem := range x` |
 | Option side effects | `if opt.IsDefined() { f(opt.Get()) }` | `opt.ForEach(f)` |
 | Reimplementing collection methods | Defining `Map`, `Filter`, `Fold` etc. with manual loops when wrapping a collection | Delegate to underlying collection's method |
@@ -228,6 +230,36 @@ for _, x := range nums {
 | Manual Reverse | `for i := len-1; i >= 0; i-- { append }` | `collection.Reverse()` |
 | Manual ZipWithIndex | `for i := 0; ...; result.Append((elem, i))` | `collection.ZipWithIndex()` |
 | Manual IndexOf | `for i := 0; ...; if elem == target { return i }` | `collection.IndexOfFirst(x => x == target)` |
+
+**Check**: Also search for `.Filter(` followed by `.Map(` on the same collection (chained or via intermediate val). These should use `.Collect` with a partial function instead.
+
+**Bad pattern** — Filter + Map chain:
+```gala
+// BAD: Two passes over the collection
+val evenDoubled = numbers.Filter((x) => x % 2 == 0).Map((x) => x * 2)
+
+// BAD: Filter + Map with intermediate val
+val adults = people.Filter((p) => p.Age >= 18)
+val names = adults.Map((p) => p.Name)
+
+// BAD: FlatMap with Option for conditional transform
+val results = items.FlatMap((x) => if x.IsValid() { Some(x.Transform()) } else { None[Output]() })
+```
+
+**Good pattern** — Collect with partial function:
+```gala
+// GOOD: Single pass, filter and transform together
+val evenDoubled = numbers.Collect({ case n if n % 2 == 0 => n * 2 })
+
+// GOOD: Collect with extractor
+val names = people.Collect({ case p if p.Age >= 18 => p.Name })
+
+// GOOD: Collect replaces FlatMap + Option
+val results = items.Collect({ case x if x.IsValid() => x.Transform() })
+
+// GOOD: Collect with sealed type extractor
+val values = options.Collect({ case Some(v) => v * 2 })
+```
 
 ### 8. Expression-Bodied Functions (MEDIUM priority)
 

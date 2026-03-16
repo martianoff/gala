@@ -94,7 +94,7 @@ func testPatternWithFilter() {
 func testTupleMatch() {
     val t = (1, "hello")
     val msg = t match {
-        case (a, b) => fmt.Sprintf("Got %d and %s", a, b)
+        case (a, b) => s"Got $a and $b"
         case _      => "Unknown"
     }
     fmt.Printf("Tuple match: %s\n", msg)

@@ -293,6 +293,19 @@ func (l List[T]) IndexOf(elem T) int {
     return -1
 }
 
+// LastIndexOf returns the index of the last occurrence of elem, or -1 if not found. O(n).
+func (l List[T]) LastIndexOf(elem T) int {
+    var result = -1
+    var current = l
+    for i := 0; !current.isEmpty; i++ {
+        if Equal(current.head, elem) {
+            result = i
+        }
+        current = *current.tail
+    }
+    return result
+}
+
 // Reverse returns a new list with elements in reverse order. O(n).
 func (l List[T]) Reverse() List[T] {
     return l.FoldLeft[List[T]](emptyList[T](), (acc List[T], elem T) => consList[T](elem, acc))
