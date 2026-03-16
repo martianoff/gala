@@ -237,6 +237,12 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	defer t.popScope()
 	t.addVar(paramName, matchedType)
 
+	// Track match subject type so branch bodies can infer type params
+	// for sealed variant constructors (e.g., None() infers None[int] from Option[int])
+	prevMatchSubjectType := t.currentMatchSubjectType
+	t.currentMatchSubjectType = matchedType
+	defer func() { t.currentMatchSubjectType = prevMatchSubjectType }()
+
 	var clauses []ast.Stmt
 	var defaultBody []ast.Stmt
 	foundDefault := false
