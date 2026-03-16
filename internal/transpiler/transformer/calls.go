@@ -535,6 +535,25 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 		}
 	}
 
+	// For generic functions without explicit type args (e.g., Iterate(1, (x) => x * 2)),
+	// pre-scan non-lambda arguments to infer type params so that lambda params get concrete types.
+	var inferredTypeSubst map[string]string
+	if funcMeta != nil && len(funcMeta.TypeParams) > 0 {
+		funcTypeArgs := t.extractFuncCallTypeArgs(fun)
+		if len(funcTypeArgs) > 0 {
+			// Explicit type args provided — use directly
+			inferredTypeSubst = make(map[string]string)
+			for i, tp := range funcMeta.TypeParams {
+				if i < len(funcTypeArgs) {
+					inferredTypeSubst[tp] = funcTypeArgs[i]
+				}
+			}
+		} else {
+			// No explicit type args — infer from non-lambda arguments
+			inferredTypeSubst = t.inferFuncTypeSubstFromArgs(funcMeta, argListCtx)
+		}
+	}
+
 	var args []ast.Expr
 	namedArgs := make(map[string]ast.Expr)
 	hasSpread := false
@@ -571,26 +590,17 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 			}
 			// Pass function types from metadata for lambda return type inference.
 			// For void function types, pass as-is.
-			// For non-void function types in generic functions, substitute explicit type args.
+			// For non-void function types in generic functions, substitute inferred/explicit type args.
 			var expectedType transpiler.Type = transpiler.NilType{}
 			if funcMeta != nil && argIdx < len(funcMeta.ParamTypes) {
 				if ft, ok := funcMeta.ParamTypes[argIdx].(transpiler.FuncType); ok {
 					if len(ft.Results) == 0 {
 						// Void function type - pass as-is
 						expectedType = ft
-					} else if len(funcMeta.TypeParams) > 0 {
-						// Non-void function type in a generic function - substitute explicit type args
-						funcTypeArgs := t.extractFuncCallTypeArgs(fun)
-						if len(funcTypeArgs) > 0 {
-							typeSubst := make(map[string]string)
-							for i, tp := range funcMeta.TypeParams {
-								if i < len(funcTypeArgs) {
-									typeSubst[tp] = funcTypeArgs[i]
-								}
-							}
-							expectedType = t.substituteTranspilerTypeParams(funcMeta.ParamTypes[argIdx], typeSubst)
-						}
-					} else {
+					} else if len(inferredTypeSubst) > 0 {
+						// Substitute inferred or explicit type args
+						expectedType = t.substituteTranspilerTypeParams(funcMeta.ParamTypes[argIdx], inferredTypeSubst)
+					} else if len(funcMeta.TypeParams) == 0 {
 						// Non-generic function with concrete function param types - pass as-is
 						expectedType = ft
 					}
@@ -1284,4 +1294,76 @@ func (t *galaASTTransformer) inferZeroArgTypeParams(typeName string, typeMeta *t
 	}
 
 	return nil
+}
+
+// inferFuncTypeSubstFromArgs pre-scans non-lambda arguments of a generic function call
+// to infer type parameter substitutions. For example, in Iterate(1, (x) => x * 2),
+// it infers T = int from the first argument (1), enabling the lambda param x to be typed as int.
+func (t *galaASTTransformer) inferFuncTypeSubstFromArgs(funcMeta *transpiler.FunctionMetadata, argListCtx grammar.IArgumentListContext) map[string]string {
+	inferredMap := make(map[string]transpiler.Type)
+
+	argIdx := 0
+	for _, argCtx := range argListCtx.AllArgument() {
+		arg := argCtx.(*grammar.ArgumentContext)
+		if arg.Identifier() != nil {
+			continue // skip named args
+		}
+		pat := arg.Pattern()
+		exprCtx, _, extractErr := extractArgExpression(pat)
+		if extractErr != nil {
+			argIdx++
+			continue
+		}
+
+		// Skip lambda arguments — we're inferring type params FOR them
+		if t.findLambdaInExpression(exprCtx) != nil {
+			argIdx++
+			continue
+		}
+
+		if argIdx >= len(funcMeta.ParamTypes) {
+			argIdx++
+			continue
+		}
+
+		// Transform the expression to get its Go AST, then infer its type
+		expr, err := t.transformExpression(exprCtx)
+		if err != nil {
+			argIdx++
+			continue
+		}
+
+		argType := t.getExprTypeNameManual(expr)
+		if argType == nil || argType.IsNil() {
+			argType, _ = t.inferExprType(expr)
+		}
+		if argType == nil || argType.IsNil() {
+			argIdx++
+			continue
+		}
+
+		paramType := funcMeta.ParamTypes[argIdx]
+		t.unifyForInference(paramType, argType, funcMeta.TypeParams, inferredMap)
+		argIdx++
+	}
+
+	if len(inferredMap) == 0 {
+		return nil
+	}
+
+	// Only return substitutions when ALL type params are resolved.
+	// Partial inference (e.g., T resolved but U not) would leave U as a literal
+	// type name in generated Go code, which is undefined.
+	for _, tp := range funcMeta.TypeParams {
+		if _, ok := inferredMap[tp]; !ok {
+			return nil
+		}
+	}
+
+	// Convert transpiler.Type map to string map for substituteTranspilerTypeParams
+	result := make(map[string]string, len(inferredMap))
+	for k, v := range inferredMap {
+		result[k] = v.String()
+	}
+	return result
 }

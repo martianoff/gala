@@ -1263,3 +1263,11 @@ gala_test(
     src = "match_sealed_branch_infer.gala",
     expected = "match_sealed_branch_infer.out",
 )
+
+# Lambda param type inference for generic free functions like Iterate(seed, f)
+gala_test(
+    name = "iterate_lambda_infer",
+    src = "iterate_lambda_infer.gala",
+    expected = "iterate_lambda_infer.out",
+    deps = ["//stream"],
+)
