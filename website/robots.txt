@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://martianoff.github.io/gala/sitemap.xml
+Sitemap: https://gala.fyi/sitemap.xml

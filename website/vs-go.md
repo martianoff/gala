@@ -24,28 +24,22 @@ GALA sealed types define closed hierarchies. The compiler enforces exhaustive ma
 
 <div class="comparison">
 <div>
-<p>GALA</p>
-
-```gala
-sealed type Shape {
+<p><strong>GALA</strong></p>
+<pre><code>sealed type Shape {
     case Circle(Radius float64)
     case Rectangle(Width float64, Height float64)
     case Point()
 }
 
 val msg = shape match {
-    case Circle(r)       => f"r=$r%.1f"
-    case Rectangle(w, h) => f"$w%.0fx$h%.0f"
-    case Point()         => "point"
-}
-```
-
+    case Circle(r)       =&gt; f"r=$r%.1f"
+    case Rectangle(w, h) =&gt; f"$w%.0fx$h%.0f"
+    case Point()         =&gt; "point"
+}</code></pre>
 </div>
 <div>
-<p>Go</p>
-
-```go
-var msg string
+<p><strong>Go</strong></p>
+<pre><code>var msg string
 switch shape._variant {
 case Shape_Circle:
     msg = fmt.Sprintf("r=%.1f",
@@ -56,9 +50,7 @@ case Shape_Rectangle:
         shape.Height.Get())
 case Shape_Point:
     msg = "point"
-}
-```
-
+}</code></pre>
 </div>
 </div>
 
@@ -72,25 +64,17 @@ GALA's `Option[T]` type makes the presence or absence of a value explicit. You c
 
 <div class="comparison">
 <div>
-<p>GALA</p>
-
-```gala
-val name = user.Name
-    .Map((n) => strings.ToUpper(n))
-    .GetOrElse("ANONYMOUS")
-```
-
+<p><strong>GALA</strong></p>
+<pre><code>val name = user.Name
+    .Map((n) =&gt; strings.ToUpper(n))
+    .GetOrElse("ANONYMOUS")</code></pre>
 </div>
 <div>
-<p>Go</p>
-
-```go
-name := "ANONYMOUS"
+<p><strong>Go</strong></p>
+<pre><code>name := "ANONYMOUS"
 if user.Name != nil {
     name = strings.ToUpper(*user.Name)
-}
-```
-
+}</code></pre>
 </div>
 </div>
 
@@ -111,28 +95,20 @@ GALA structs are immutable by default. Fields cannot be reassigned after constru
 
 <div class="comparison">
 <div>
-<p>GALA</p>
-
-```gala
-struct Config(Host string, Port int)
-val updated = config.Copy(Port = 8080)
-```
-
+<p><strong>GALA</strong></p>
+<pre><code>struct Config(Host string, Port int)
+val updated = config.Copy(Port = 8080)</code></pre>
 </div>
 <div>
-<p>Go</p>
-
-```go
-type Config struct {
+<p><strong>Go</strong></p>
+<pre><code>type Config struct {
     Host string
     Port int
 }
 updated := Config{
     Host: config.Host,
     Port: 8080,
-}
-```
-
+}</code></pre>
 </div>
 </div>
 
@@ -146,21 +122,15 @@ GALA's `Try[T]` type wraps computations that can fail. Instead of checking `if e
 
 <div class="comparison">
 <div>
-<p>GALA</p>
-
-```gala
-val result = divide(10, 2)
-    .Map((x) => x * 2)
-    .FlatMap((x) => divide(x, 3))
-    .Recover((e) => 0)
-```
-
+<p><strong>GALA</strong></p>
+<pre><code>val result = divide(10, 2)
+    .Map((x) =&gt; x * 2)
+    .FlatMap((x) =&gt; divide(x, 3))
+    .Recover((e) =&gt; 0)</code></pre>
 </div>
 <div>
-<p>Go</p>
-
-```go
-result, err := divide(10, 2)
+<p><strong>Go</strong></p>
+<pre><code>result, err := divide(10, 2)
 if err != nil {
     result = 0
 } else {
@@ -169,9 +139,7 @@ if err != nil {
     if err != nil {
         result = 0
     }
-}
-```
-
+}</code></pre>
 </div>
 </div>
 
@@ -194,29 +162,21 @@ GALA provides immutable functional collections with `Map`, `Filter`, `FoldLeft`,
 
 <div class="comparison">
 <div>
-<p>GALA</p>
-
-```gala
-val nums = ArrayOf(1, 2, 3, 4, 5)
+<p><strong>GALA</strong></p>
+<pre><code>val nums = ArrayOf(1, 2, 3, 4, 5)
 val result = nums
-    .Filter((x) => x % 2 == 0)
-    .Map((x) => x * 2)
-```
-
+    .Filter((x) =&gt; x % 2 == 0)
+    .Map((x) =&gt; x * 2)</code></pre>
 </div>
 <div>
-<p>Go</p>
-
-```go
-nums := []int{1, 2, 3, 4, 5}
+<p><strong>Go</strong></p>
+<pre><code>nums := []int{1, 2, 3, 4, 5}
 var result []int
 for _, x := range nums {
     if x%2 == 0 {
         result = append(result, x*2)
     }
-}
-```
-
+}</code></pre>
 </div>
 </div>
 
@@ -242,26 +202,18 @@ GALA has built-in string interpolation with `s"..."` for auto-inferred format ve
 
 <div class="comparison">
 <div>
-<p>GALA</p>
-
-```gala
-val name = "Alice"
+<p><strong>GALA</strong></p>
+<pre><code>val name = "Alice"
 val age = 30
 Println(s"$name is $age years old")
-Println(f"Pi = ${3.14159}%.2f")
-```
-
+Println(f"Pi = ${3.14159}%.2f")</code></pre>
 </div>
 <div>
-<p>Go</p>
-
-```go
-name := "Alice"
+<p><strong>Go</strong></p>
+<pre><code>name := "Alice"
 age := 30
 fmt.Printf("%s is %d years old\n", name, age)
-fmt.Printf("Pi = %.2f\n", 3.14159)
-```
-
+fmt.Printf("Pi = %.2f\n", 3.14159)</code></pre>
 </div>
 </div>
 

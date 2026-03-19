@@ -29,82 +29,58 @@ GALA's transpiler performs type inference, exhaustive match checking, and immuta
 <div class="feature-card">
 <h3>Sealed Types</h3>
 <p>Define closed type hierarchies. The compiler rejects incomplete matches — no forgotten cases at runtime.</p>
-
-```gala
-sealed type Shape {
+<pre><code>sealed type Shape {
     case Circle(Radius float64)
     case Rectangle(Width float64, Height float64)
-}
-```
-
+}</code></pre>
 <p><a href="{{ '/features/sealed-types/' | relative_url }}">Learn about sealed types</a></p>
 </div>
 
 <div class="feature-card">
 <h3>Pattern Matching</h3>
 <p>Exhaustive <strong>pattern matching</strong> with destructuring, guards, and expression results — far beyond Go's <code>switch</code>.</p>
-
-```gala
-val msg = shape match {
-    case Circle(r)       => f"r=$r%.1f"
-    case Rectangle(w, h) => f"${w * h}%.2f"
-}
-```
-
+<pre><code>val msg = shape match {
+    case Circle(r)       =&gt; f"r=$r%.1f"
+    case Rectangle(w, h) =&gt; f"${w * h}%.2f"
+}</code></pre>
 <p><a href="{{ '/features/pattern-matching/' | relative_url }}">Learn about pattern matching</a></p>
 </div>
 
 <div class="feature-card">
 <h3>Immutability by Default</h3>
 <p><code>val</code> bindings are immutable. Struct fields are immutable. Auto-generated <code>Copy()</code> for safe updates.</p>
-
-```gala
-struct Config(Host string, Port int)
-val updated = config.Copy(Port = 8080)
-```
-
+<pre><code>struct Config(Host string, Port int)
+val updated = config.Copy(Port = 8080)</code></pre>
 <p><a href="{{ '/features/immutability/' | relative_url }}">Learn about immutability</a></p>
 </div>
 
 <div class="feature-card">
 <h3>Monadic Error Handling</h3>
 <p><code>Option[T]</code>, <code>Either[A,B]</code>, and <code>Try[T]</code> replace nil checks and <code>if err != nil</code> with composable pipelines.</p>
-
-```gala
-val result = divide(10, 2)
-    .Map((x) => x * 2)
-    .FlatMap((x) => divide(x, 3))
-    .Recover((e) => 0)
-```
-
+<pre><code>val result = divide(10, 2)
+    .Map((x) =&gt; x * 2)
+    .FlatMap((x) =&gt; divide(x, 3))
+    .Recover((e) =&gt; 0)</code></pre>
 <p><a href="{{ '/features/error-handling/' | relative_url }}">Learn about error handling</a></p>
 </div>
 
 <div class="feature-card">
 <h3>Functional Collections</h3>
 <p>Immutable <code>List</code>, <code>Array</code>, <code>HashMap</code>, <code>HashSet</code>, <code>TreeSet</code>, <code>TreeMap</code> with <code>Map</code>, <code>Filter</code>, <code>FoldLeft</code>, <code>Collect</code>, and more.</p>
-
-```gala
-val nums = ArrayOf(1, 2, 3, 4, 5)
-val evens = nums.Filter((x) => x % 2 == 0)
-val sum = nums.FoldLeft(0, (acc, x) => acc + x)
-```
-
+<pre><code>val nums = ArrayOf(1, 2, 3, 4, 5)
+val evens = nums.Filter((x) =&gt; x % 2 == 0)
+val sum = nums.FoldLeft(0, (acc, x) =&gt; acc + x)</code></pre>
 <p><a href="{{ '/features/collections/' | relative_url }}">Learn about collections</a></p>
 </div>
 
 <div class="feature-card">
 <h3>Full Go Interop</h3>
 <p>Use any Go library. Go imports, Go types, and Go functions work directly in GALA code. One ecosystem, zero friction.</p>
-
-```gala
-import "strings"
+<pre><code>import "strings"
 
 val name = user.Name
-    .Map((n) => strings.ToUpper(n))
-    .GetOrElse("ANONYMOUS")
-```
-
+    .Map((n) =&gt; strings.ToUpper(n))
+    .GetOrElse("ANONYMOUS")</code></pre>
 <p><a href="{{ '/features/go-interop/' | relative_url }}">Learn about Go interop</a></p>
 </div>
 
@@ -116,22 +92,16 @@ Pattern matching is one of the most visible differences between GALA and Go. Whe
 
 <div class="comparison">
 <div>
-<p>GALA</p>
-
-```gala
-val msg = shape match {
-    case Circle(r)       => f"r=$r%.1f"
-    case Rectangle(w, h) => f"$w%.0fx$h%.0f"
-    case Point()         => "point"
-}
-```
-
+<p><strong>GALA</strong></p>
+<pre><code>val msg = shape match {
+    case Circle(r)       =&gt; f"r=$r%.1f"
+    case Rectangle(w, h) =&gt; f"$w%.0fx$h%.0f"
+    case Point()         =&gt; "point"
+}</code></pre>
 </div>
 <div>
-<p>Go</p>
-
-```go
-var msg string
+<p><strong>Go</strong></p>
+<pre><code>var msg string
 switch shape._variant {
 case Shape_Circle:
     msg = fmt.Sprintf("r=%.1f",
@@ -142,9 +112,7 @@ case Shape_Rectangle:
         shape.Height.Get())
 case Shape_Point:
     msg = "point"
-}
-```
-
+}</code></pre>
 </div>
 </div>
 
