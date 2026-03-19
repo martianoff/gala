@@ -1,0 +1,20 @@
+package main
+
+func describe(name string, age int, role string) string =
+    s"$name ($role, age $age)"
+
+func divide(dividend int, divisor int) int = dividend / divisor
+
+func main() {
+    // Positional
+    Println(describe("Alice", 30, "engineer"))
+
+    // Named, any order
+    Println(describe(role = "designer", name = "Bob", age = 25))
+
+    // Named reordering
+    Println(divide(divisor = 4, dividend = 20))
+
+    // All named, same order
+    Println(divide(dividend = 100, divisor = 10))
+}

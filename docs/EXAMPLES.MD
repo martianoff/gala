@@ -23,6 +23,67 @@ func main() {
 }
 ```
 
+## Named Arguments
+
+Function calls support named arguments in any order. The compiler reorders them to match the function signature.
+
+```gala
+package main
+
+func describe(name string, age int, role string) string =
+    s"$name ($role, age $age)"
+
+func main() {
+    Println(describe("Alice", 30, "engineer"))                   // positional
+    Println(describe(role = "designer", name = "Bob", age = 25)) // named, any order
+}
+```
+
+## Default Parameter Values
+
+Functions can have default parameter values. Callers can omit trailing defaults or use named arguments to skip specific parameters.
+
+```gala
+package main
+
+func greet(name string, greeting string = "Hello", punctuation string = "!") string =
+    s"$greeting, $name$punctuation"
+
+func add(a int, b int = 10) int = a + b
+
+func main() {
+    Println(greet("World"))                     // Hello, World!
+    Println(greet("World", "Hi"))               // Hi, World!
+    Println(greet("World", "Hey", "..."))       // Hey, World...
+    Println(greet("World", punctuation = "?"))  // Hello, World?
+    Println(greet(name = "World", greeting = "Yo")) // Yo, World!
+    Println(add(5))                             // 15
+    Println(add(5, 20))                         // 25
+}
+```
+
+Default expressions are evaluated at each call site:
+
+```gala
+package main
+
+var counter = 0
+
+func nextId() int {
+    counter = counter + 1
+    return counter
+}
+
+func createItem(name string, id int = nextId()) string =
+    s"$name#$id"
+
+func main() {
+    Println(createItem("A"))      // A#1
+    Println(createItem("B"))      // B#2
+    Println(createItem("C", 99))  // C#99
+}
+```
+
 ## Option Monad Example
 
 ```gala

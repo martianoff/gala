@@ -20,7 +20,6 @@ filegroup(
         "match_method_chain/main.gala",
         "match_method_chain/types.gala",
         "match_void_branches.gala",
-        "try_go_transitive_import.gala",
         "mathlib/math.gala",
         "multi_file/greeter.gala",
         "multi_file/main.gala",
@@ -34,6 +33,7 @@ filegroup(
         "slice_unwrap/model.gala",
         "struct_field_unwrap/main.gala",
         "struct_field_unwrap/types.gala",
+        "try_go_transitive_import.gala",
         "use_cross_file_unwrap_lib.gala",
         "wrapper_method_lambda/main.gala",
     ],
@@ -1270,4 +1270,25 @@ gala_test(
     src = "iterate_lambda_infer.gala",
     expected = "iterate_lambda_infer.out",
     deps = ["//stream"],
+)
+
+# Named arguments for function calls — reorder to match parameter order
+gala_test(
+    name = "named_args",
+    src = "named_args.gala",
+    expected = "named_args.out",
+)
+
+# Default parameter values with positional and named argument call-site injection
+gala_test(
+    name = "default_params",
+    src = "default_params.gala",
+    expected = "default_params.out",
+)
+
+# Default parameter values with expression defaults (evaluated at call time)
+gala_test(
+    name = "default_params_expr",
+    src = "default_params_expr.gala",
+    expected = "default_params_expr.out",
 )

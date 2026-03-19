@@ -9,6 +9,8 @@ GALA (Go Alternative LAnguage) is a modern programming language that transpiles 
 1. [Project Structure](#1-project-structure)
 2. [Variable Declarations](#2-variable-declarations)
 3. [Functions](#3-functions)
+   - [Named Arguments](#named-arguments)
+   - [Default Parameter Values](#default-parameter-values)
 4. [Types and Structs](#4-types-and-structs)
    - [Sealed Types (ADTs)](#sealed-types-algebraic-data-types)
    - [Type Aliases](#type-aliases)
@@ -147,6 +149,58 @@ func process(val data string, var count int) {
     count = count + 1 // OK
 }
 ```
+
+### Named Arguments
+
+Function calls support named arguments. Named arguments can appear in any order — the compiler reorders them to match the function signature.
+
+```gala
+func divide(dividend int, divisor int) int = dividend / divisor
+
+divide(divisor = 4, dividend = 20)  // 5 — reordered to divide(20, 4)
+divide(20, 4)                        // 5 — positional works too
+```
+
+Named arguments work with struct construction, `Copy()` method overrides, and regular function calls.
+
+### Default Parameter Values
+
+Parameters can have default values. When a function is called without providing a defaulted argument, the default expression is injected at the call site. Default parameters must come after required parameters.
+
+```gala
+func connect(host string, port int = 8080, tls bool = true) Connection {
+    // ...
+}
+
+// Positional: omit trailing defaults
+connect("localhost")                    // port=8080, tls=true
+connect("localhost", 3000)              // tls=true
+connect("localhost", 3000, false)       // all explicit
+
+// Named arguments + defaults: skip any defaulted parameter
+connect("localhost", tls = false)       // port=8080
+connect(host = "localhost", port = 443) // tls=true
+```
+
+Default expressions are evaluated at each call site (not once at definition time):
+
+```gala
+func log(msg string, timestamp time.Time = time.Now()) {
+    Println(s"[$timestamp] $msg")
+}
+log("starting")  // timestamp = current time at each call
+```
+
+Expression functions also support defaults:
+
+```gala
+func greet(name string, greeting string = "Hello") string = s"$greeting, $name!"
+```
+
+The compiler validates defaults at compile time:
+- Default expression type must match the parameter type (e.g., `x int = "hello"` is a compile error)
+- Parameters with defaults must be contiguous at the end of the parameter list
+- Missing required arguments produce a clear error pointing to the GALA source line
 
 ### Function Type Parameters (Higher-Order Functions)
 GALA supports functions as first-class values. You can pass functions as parameters and return them from other functions.

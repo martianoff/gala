@@ -5,6 +5,8 @@ import (
 	"go/ast"
 	"strings"
 
+	"github.com/antlr4-go/antlr/v4"
+
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
@@ -146,6 +148,16 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 			}
 		}
 
+		// Zero-argument call — check if function has default params that need injection
+		if funcName := t.extractFuncName(base); funcName != "" {
+			if funcMeta := t.getFunction(funcName); funcMeta != nil && len(funcMeta.DefaultExprs) > 0 && len(funcMeta.ParamTypes) > 0 {
+				filled, err := t.fillDefaultArgs(nil, funcMeta)
+				if err != nil {
+					return nil, err
+				}
+				return &ast.CallExpr{Fun: base, Args: filled}, nil
+			}
+		}
 		return &ast.CallExpr{Fun: base, Args: nil}, nil
 	}
 
@@ -621,9 +633,21 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 		}
 	}
 
-	// If we have named args, this might be struct construction
+	// If we have named args, try function call with named args + defaults first
 	if len(namedArgs) > 0 {
+		if funcMeta != nil && len(funcMeta.ParamNames) > 0 {
+			return t.handleNamedArgsFuncCall(fun, args, namedArgs, funcMeta)
+		}
 		return t.handleNamedArgsCall(fun, args, namedArgs)
+	}
+
+	// If fewer positional args than expected and function has defaults, inject default values
+	if funcMeta != nil && len(funcMeta.DefaultExprs) > 0 && len(args) < len(funcMeta.ParamTypes) {
+		filled, err := t.fillDefaultArgs(args, funcMeta)
+		if err != nil {
+			return nil, err
+		}
+		args = filled
 	}
 
 	// Check if the function being called is a type with an Apply method
@@ -1074,6 +1098,119 @@ func (t *galaASTTransformer) findSealedVariantFields(variantName string) []strin
 		}
 	}
 	return nil
+}
+
+// parseDefaultExpr parses a GALA expression string (from a default parameter value)
+// into an ANTLR expression context that can be transformed by the normal pipeline.
+func (t *galaASTTransformer) parseDefaultExpr(exprText string) (grammar.IExpressionContext, error) {
+	input := antlr.NewInputStream(exprText)
+	lexer := grammar.NewgalaLexer(input)
+	stream := antlr.NewCommonTokenStream(lexer, antlr.TokenDefaultChannel)
+	p := grammar.NewgalaParser(stream)
+	p.RemoveErrorListeners()
+	return p.Expression(), nil
+}
+
+// transformDefaultExpr parses and transforms a default expression string into a Go AST expression.
+func (t *galaASTTransformer) transformDefaultExpr(exprText string) (ast.Expr, error) {
+	exprCtx, err := t.parseDefaultExpr(exprText)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse default expression %q: %w", exprText, err)
+	}
+	return t.transformExpression(exprCtx)
+}
+
+// fillDefaultArgs fills missing positional arguments with default values from function metadata.
+// Called when a function has defaults and fewer args were provided than parameters.
+func (t *galaASTTransformer) fillDefaultArgs(args []ast.Expr, funcMeta *transpiler.FunctionMetadata) ([]ast.Expr, error) {
+	totalParams := len(funcMeta.ParamTypes)
+	result := make([]ast.Expr, totalParams)
+
+	// Copy provided positional args
+	copy(result, args)
+
+	// Fill missing positions with defaults
+	for i := len(args); i < totalParams; i++ {
+		defaultExprText, hasDefault := funcMeta.DefaultExprs[i]
+		if !hasDefault {
+			return nil, galaerr.NewSemanticError(fmt.Sprintf(
+				"missing required argument %q (parameter %d) in call to %s",
+				funcMeta.ParamNames[i], i+1, funcMeta.Name))
+		}
+		expr, err := t.transformDefaultExpr(defaultExprText)
+		if err != nil {
+			return nil, err
+		}
+		result[i] = expr
+	}
+
+	return result, nil
+}
+
+// handleNamedArgsFuncCall handles function calls with named arguments and default parameter values.
+// Reorders named args to match parameter order and fills gaps with defaults.
+func (t *galaASTTransformer) handleNamedArgsFuncCall(
+	fun ast.Expr,
+	positionalArgs []ast.Expr,
+	namedArgs map[string]ast.Expr,
+	funcMeta *transpiler.FunctionMetadata,
+) (ast.Expr, error) {
+	totalParams := len(funcMeta.ParamTypes)
+	result := make([]ast.Expr, totalParams)
+
+	// Place positional args first
+	for i, arg := range positionalArgs {
+		if i >= totalParams {
+			return nil, galaerr.NewSemanticError(fmt.Sprintf(
+				"too many arguments in call to %s: expected %d, got %d positional + %d named",
+				funcMeta.Name, totalParams, len(positionalArgs), len(namedArgs)))
+		}
+		result[i] = arg
+	}
+
+	// Place named args at their correct positions
+	for name, expr := range namedArgs {
+		idx := -1
+		for i, pName := range funcMeta.ParamNames {
+			if pName == name {
+				idx = i
+				break
+			}
+		}
+		if idx < 0 {
+			return nil, galaerr.NewSemanticError(fmt.Sprintf(
+				"unknown parameter %q in call to %s", name, funcMeta.Name))
+		}
+		if result[idx] != nil {
+			return nil, galaerr.NewSemanticError(fmt.Sprintf(
+				"parameter %q specified both positionally and by name in call to %s",
+				name, funcMeta.Name))
+		}
+		result[idx] = expr
+	}
+
+	// Fill remaining gaps with defaults
+	for i, slot := range result {
+		if slot == nil {
+			defaultExprText, hasDefault := funcMeta.DefaultExprs[i]
+			if !hasDefault {
+				paramName := ""
+				if i < len(funcMeta.ParamNames) {
+					paramName = funcMeta.ParamNames[i]
+				}
+				return nil, galaerr.NewSemanticError(fmt.Sprintf(
+					"missing required argument %q (parameter %d) in call to %s",
+					paramName, i+1, funcMeta.Name))
+			}
+			expr, err := t.transformDefaultExpr(defaultExprText)
+			if err != nil {
+				return nil, err
+			}
+			result[i] = expr
+		}
+	}
+
+	return &ast.CallExpr{Fun: fun, Args: result}, nil
 }
 
 func (t *galaASTTransformer) transformArgumentWithExpectedType(exprCtx grammar.IExpressionContext, expectedType transpiler.Type) (ast.Expr, error) {
