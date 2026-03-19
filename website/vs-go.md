@@ -221,6 +221,46 @@ GALA also provides `Println` and `Print` as built-in functions -- no `fmt` impor
 
 ---
 
+## 7. Default Parameter Values
+
+Go has no default parameters. The common workaround is the "functional options" pattern, which requires a struct, variadic functions, and option types. GALA adds defaults directly to the function signature.
+
+<div class="comparison">
+<div>
+<p><strong>GALA</strong></p>
+<pre><code>func connect(
+    host string,
+    port int = 8080,
+    tls bool = true,
+) Connection {
+    // ...
+}
+
+connect("localhost")
+connect("db", tls = false)</code></pre>
+</div>
+<div>
+<p><strong>Go</strong></p>
+<pre><code>type ConnectOption func(*connectOpts)
+type connectOpts struct {
+    port int; tls bool
+}
+func WithPort(p int) ConnectOption { ... }
+func WithTLS(t bool) ConnectOption { ... }
+
+func Connect(host string,
+    opts ...ConnectOption,
+) Connection { ... }
+
+Connect("localhost")
+Connect("db", WithTLS(false))</code></pre>
+</div>
+</div>
+
+Named arguments let callers skip parameters with defaults. The compiler validates default types at compile time and gives clear errors for mismatches.
+
+---
+
 ## When to Choose GALA
 
 GALA is a strong fit when you want:
@@ -229,6 +269,7 @@ GALA is a strong fit when you want:
 - **Monadic error handling** -- `Option[T]`, `Either[A,B]`, `Try[T]` instead of `if err != nil`
 - **Immutability by default** -- `val` bindings and auto-generated `Copy()` / `Equal()`
 - **Functional collection pipelines** -- `Map`, `Filter`, `FoldLeft`, `Collect` on immutable data structures
+- **Default parameter values** -- named arguments, call-site defaults, no "functional options" boilerplate
 - **Concise syntax** -- expression functions, lambda type inference, string interpolation
 - **Full Go compatibility** -- every Go library works, no wrappers needed
 

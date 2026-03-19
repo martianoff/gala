@@ -174,6 +174,7 @@ type MethodMetadata struct {
 	Name       string
 	Package    string
 	ParamTypes []Type
+	ParamNames []string // Parameter names (for named argument matching)
 	ReturnType Type
 	TypeParams []string
 	IsGeneric  bool   // Force transformation to standalone function
@@ -181,11 +182,13 @@ type MethodMetadata struct {
 }
 
 type FunctionMetadata struct {
-	Name       string
-	Package    string
-	ParamTypes []Type
-	ReturnType Type
-	TypeParams []string
+	Name          string
+	Package       string
+	ParamTypes    []Type
+	ParamNames    []string         // Parameter names (for named argument matching and default injection)
+	ReturnType    Type
+	TypeParams    []string
+	DefaultExprs  map[int]string   // Param index -> default expression source text (nil = required)
 }
 
 // CompanionObjectMetadata stores information about companion objects that can be used

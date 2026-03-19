@@ -142,6 +142,55 @@ func process(val data string, var count int) {
 }
 ```
 
+### Named Arguments
+
+Function calls support named arguments. Named arguments can appear in any order — the compiler reorders them to match the function signature.
+
+```gala
+func divide(dividend int, divisor int) int = dividend / divisor
+
+divide(divisor = 4, dividend = 20)  // 5 — reordered to divide(20, 4)
+divide(20, 4)                        // 5 — positional works too
+```
+
+Named arguments work with struct construction, `Copy()` method overrides, and regular function calls.
+
+### Default Parameter Values
+
+Parameters can have default values. When a function is called without providing a defaulted argument, the default expression is injected at the call site. Default parameters must come after required parameters.
+
+```gala
+func connect(host string, port int = 8080, tls bool = true) {
+    Println(s"Connecting to $host:$port (tls=$tls)")
+}
+
+connect("localhost")                    // port=8080, tls=true
+connect("localhost", 3000)              // tls=true
+connect("localhost", 3000, false)       // all explicit
+
+// Named arguments + defaults: skip any defaulted parameter
+connect("localhost", tls = false)       // port=8080
+connect(host = "localhost", port = 443) // tls=true
+```
+
+Default expressions are evaluated at each call site (not once at definition time):
+
+```gala
+func log(msg string, ts time.Time = time.Now()) {
+    Println(s"[$ts] $msg")
+}
+```
+
+Expression functions also support defaults:
+
+```gala
+func greet(name string, greeting string = "Hello") string = s"$greeting, $name!"
+```
+
+The compiler validates defaults at compile time:
+- Default expression type must match the parameter type
+- Parameters with defaults must be contiguous at the end of the parameter list
+
 ### Higher-Order Functions
 Functions are first-class values:
 

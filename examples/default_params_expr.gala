@@ -1,0 +1,25 @@
+package main
+
+var counter = 0
+
+func nextId() int {
+    counter = counter + 1
+    return counter
+}
+
+func createItem(name string, id int = nextId()) string =
+    s"$name#$id"
+
+func withFlag(label string, enabled bool = true) string =
+    if (enabled) s"$label: ON" else s"$label: OFF"
+
+func main() {
+    // Expression defaults: nextId() is called each time
+    Println(createItem("A"))
+    Println(createItem("B"))
+    Println(createItem("C", 99))
+
+    // Boolean defaults
+    Println(withFlag("feature"))
+    Println(withFlag("debug", false))
+}

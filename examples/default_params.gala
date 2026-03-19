@@ -1,0 +1,21 @@
+package main
+
+func greet(name string, greeting string = "Hello", punctuation string = "!") string =
+    s"$greeting, $name$punctuation"
+
+func add(a int, b int = 10) int = a + b
+
+func main() {
+    // Positional args - skip defaults
+    Println(greet("World"))
+    Println(greet("World", "Hi"))
+    Println(greet("World", "Hey", "..."))
+
+    // Named args with defaults
+    Println(greet("World", punctuation = "?"))
+    Println(greet(name = "World", greeting = "Yo"))
+
+    // Simple default
+    Println(add(5))
+    Println(add(5, 20))
+}

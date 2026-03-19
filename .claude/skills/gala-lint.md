@@ -181,7 +181,22 @@ for _, x := range nums {
 
 **Acceptable `fmt` uses**: `fmt.Errorf`, `fmt.Fprintf`, `fmt.Fscan*`, `fmt.Stringer` interface implementation, and any `fmt` function not covered by interpolation.
 
-### 6. Type Inference (MEDIUM priority)
+### 6. Default Parameters and Named Arguments (MEDIUM priority)
+
+| Issue | Pattern to Flag | Recommended Fix |
+|-------|-----------------|-----------------|
+| Options pattern instead of defaults | Struct with `WithPort`, `WithTimeout` option functions | Use default parameter values: `func connect(host string, port int = 8080)` |
+| Multiple wrapper functions | `func NewFoo()`, `func NewFooWithBar()`, `func NewFooWithBarAndBaz()` | Single function with defaults: `func NewFoo(bar int = 0, baz string = "")` |
+| Boolean flag parameter without name | `connect("localhost", 8080, true)` where `true` is ambiguous | Use named arg: `connect("localhost", tls = true)` |
+| Positional args reducing readability | `createUser("Alice", 30, "admin", true, false)` | Use named args for clarity: `createUser(name = "Alice", age = 30, role = "admin")` |
+| Default after required without default | `func f(a int = 1, b int, c string = "x")` | Defaults must be contiguous at end: `func f(b int, a int = 1, c string = "x")` |
+
+**Check**: Search for the functional options pattern (structs named `*Option` or `*Config` with `With*` functions), multiple function overloads with incremental parameters, and call sites with 3+ positional boolean/int literal arguments where named args would clarify intent.
+
+**Acceptable patterns**: Go interop functions that must match Go signatures cannot use defaults.
+
+### 7. Type Inference (MEDIUM priority)
+<!-- Note: sections below renumbered after inserting rule 6 -->
 
 | Issue | Pattern to Flag | Recommended Fix |
 |-------|-----------------|-----------------|

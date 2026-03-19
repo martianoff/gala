@@ -68,7 +68,9 @@ parameterList: parameter (',' parameter)*;
 // - Named with type: "x int", "val x int", "x ...int"
 // - Named without type: "x" (type inferred)
 // - Type only (for function types): "int", "Option[T]", "...int"
-parameter: (VAL | VAR)? (identifier ELLIPSIS? type? | ELLIPSIS? type);
+// - With default value: "x int = 42", "host string = \"localhost\""
+parameter: (VAL | VAR)? (identifier ELLIPSIS? type? paramDefault? | ELLIPSIS? type);
+paramDefault: '=' expression;
 
 ELLIPSIS: '...';
 

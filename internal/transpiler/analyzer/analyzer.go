@@ -607,6 +607,11 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 								} else {
 									methodMeta.ParamTypes = append(methodMeta.ParamTypes, transpiler.NilType{})
 								}
+								if paramCtx.Identifier() != nil {
+									methodMeta.ParamNames = append(methodMeta.ParamNames, paramCtx.Identifier().GetText())
+								} else {
+									methodMeta.ParamNames = append(methodMeta.ParamNames, "")
+								}
 							}
 						}
 					}
@@ -669,15 +674,33 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 				if ctx.Signature().Parameters() != nil {
 					pCtx := ctx.Signature().Parameters().(*grammar.ParametersContext)
 					if pList := pCtx.ParameterList(); pList != nil {
-						for _, p := range pList.(*grammar.ParameterListContext).AllParameter() {
+						for i, p := range pList.(*grammar.ParameterListContext).AllParameter() {
 							paramCtx := p.(*grammar.ParameterContext)
 							if paramCtx.Type_() != nil {
 								funcMeta.ParamTypes = append(funcMeta.ParamTypes, a.resolveTypeWithParams(paramCtx.Type_().GetText(), pkgName, funcMeta.TypeParams))
 							} else {
 								funcMeta.ParamTypes = append(funcMeta.ParamTypes, transpiler.NilType{})
 							}
+							// Extract parameter name
+							if paramCtx.Identifier() != nil {
+								funcMeta.ParamNames = append(funcMeta.ParamNames, paramCtx.Identifier().GetText())
+							} else {
+								funcMeta.ParamNames = append(funcMeta.ParamNames, "")
+							}
+							// Extract default expression source text
+							if paramCtx.ParamDefault() != nil {
+								if funcMeta.DefaultExprs == nil {
+									funcMeta.DefaultExprs = make(map[int]string)
+								}
+								defaultCtx := paramCtx.ParamDefault().(*grammar.ParamDefaultContext)
+								funcMeta.DefaultExprs[i] = defaultCtx.Expression().GetText()
+							}
 						}
 					}
+				}
+				// Validate default parameter rules
+				if err := validateDefaultParams(funcMeta, ctx.GetStart().GetLine(), filePath); err != nil {
+					return nil, err
 				}
 				richAST.Functions[fullFuncName] = funcMeta
 			}
@@ -2049,12 +2072,24 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 					if ctx.Signature().Parameters() != nil {
 						pCtx := ctx.Signature().Parameters().(*grammar.ParametersContext)
 						if pList := pCtx.ParameterList(); pList != nil {
-							for _, p := range pList.(*grammar.ParameterListContext).AllParameter() {
+							for i, p := range pList.(*grammar.ParameterListContext).AllParameter() {
 								paramCtx := p.(*grammar.ParameterContext)
 								if paramCtx.Type_() != nil {
 									funcMeta.ParamTypes = append(funcMeta.ParamTypes, a.resolveTypeWithParams(paramCtx.Type_().GetText(), pkgName, funcMeta.TypeParams))
 								} else {
 									funcMeta.ParamTypes = append(funcMeta.ParamTypes, transpiler.NilType{})
+								}
+								if paramCtx.Identifier() != nil {
+									funcMeta.ParamNames = append(funcMeta.ParamNames, paramCtx.Identifier().GetText())
+								} else {
+									funcMeta.ParamNames = append(funcMeta.ParamNames, "")
+								}
+								if paramCtx.ParamDefault() != nil {
+									if funcMeta.DefaultExprs == nil {
+										funcMeta.DefaultExprs = make(map[int]string)
+									}
+									defaultCtx := paramCtx.ParamDefault().(*grammar.ParamDefaultContext)
+									funcMeta.DefaultExprs[i] = defaultCtx.Expression().GetText()
 								}
 							}
 						}
@@ -2067,5 +2102,136 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 	return nil
 }
 
+
+// validateDefaultParams checks that default parameter values follow the rules:
+// 1. Parameters with defaults must come after all required parameters
+// 2. Variadic parameters cannot have defaults
+// 3. Default expression types must be compatible with parameter types (for literals)
+func validateDefaultParams(funcMeta *transpiler.FunctionMetadata, line int, filePath string) error {
+	if len(funcMeta.DefaultExprs) == 0 {
+		return nil
+	}
+
+	// Check ordering: once a default is seen, all subsequent params must have defaults (or be variadic)
+	seenDefault := false
+	for i := range funcMeta.ParamTypes {
+		_, hasDefault := funcMeta.DefaultExprs[i]
+		if hasDefault {
+			seenDefault = true
+		} else if seenDefault {
+			paramName := ""
+			if i < len(funcMeta.ParamNames) {
+				paramName = funcMeta.ParamNames[i]
+			}
+			return fmt.Errorf("%s:%d: parameter %q has no default value but follows parameter with default in function %s (parameters with defaults must be contiguous at end of parameter list)",
+				filePath, line, paramName, funcMeta.Name)
+		}
+	}
+
+	// Check literal type compatibility
+	for i, defaultText := range funcMeta.DefaultExprs {
+		if i >= len(funcMeta.ParamTypes) {
+			continue
+		}
+		paramType := funcMeta.ParamTypes[i].String()
+		if paramType == "" || paramType == "<nil>" {
+			continue
+		}
+		literalType := inferLiteralType(defaultText)
+		if literalType == "" {
+			continue // non-literal expression, can't validate statically
+		}
+		if !typesCompatibleForDefault(paramType, literalType) {
+			paramName := ""
+			if i < len(funcMeta.ParamNames) {
+				paramName = funcMeta.ParamNames[i]
+			}
+			return fmt.Errorf("%s:%d: default value for parameter %q has type %s, but parameter type is %s",
+				filePath, line, paramName, literalType, paramType)
+		}
+	}
+
+	return nil
+}
+
+// inferLiteralType returns the type of a literal expression, or "" if not a literal.
+func inferLiteralType(expr string) string {
+	if expr == "true" || expr == "false" {
+		return "bool"
+	}
+	if expr == "nil" {
+		return "" // nil is compatible with many types
+	}
+	if len(expr) >= 2 && expr[0] == '"' && expr[len(expr)-1] == '"' {
+		return "string"
+	}
+	if len(expr) >= 2 && expr[0] == '\'' && expr[len(expr)-1] == '\'' {
+		return "rune"
+	}
+	// Check for float (contains . or e/E)
+	if isNumericLiteral(expr) {
+		for _, c := range expr {
+			if c == '.' || c == 'e' || c == 'E' {
+				return "float64"
+			}
+		}
+		return "int"
+	}
+	return ""
+}
+
+// isNumericLiteral checks if a string looks like a numeric literal.
+func isNumericLiteral(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+	start := 0
+	if s[0] == '-' || s[0] == '+' {
+		start = 1
+	}
+	if start >= len(s) {
+		return false
+	}
+	hasDigit := false
+	for i := start; i < len(s); i++ {
+		c := s[i]
+		if c >= '0' && c <= '9' {
+			hasDigit = true
+		} else if c == '.' || c == 'e' || c == 'E' || c == '+' || c == '-' {
+			// valid in float literals
+		} else {
+			return false
+		}
+	}
+	return hasDigit
+}
+
+// typesCompatibleForDefault checks if a literal type is compatible with a parameter type.
+func typesCompatibleForDefault(paramType, literalType string) bool {
+	if paramType == literalType {
+		return true
+	}
+	// Numeric widening: int literal can be used for int, int8, int16, int32, int64, uint*, float*
+	if literalType == "int" {
+		switch paramType {
+		case "int", "int8", "int16", "int32", "int64",
+			"uint", "uint8", "uint16", "uint32", "uint64",
+			"float32", "float64", "byte", "rune":
+			return true
+		}
+	}
+	// Float literal can be used for float32, float64
+	if literalType == "float64" {
+		switch paramType {
+		case "float32", "float64":
+			return true
+		}
+	}
+	// any accepts everything
+	if paramType == "any" || paramType == "interface{}" {
+		return true
+	}
+	return false
+}
 
 var _ transpiler.Analyzer = (*galaAnalyzer)(nil)
