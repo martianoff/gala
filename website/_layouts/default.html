@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ page.title }} | GALA Language</title>
+  <meta name="description" content="{{ page.description | default: site.description }}">
+  <meta name="keywords" content="{{ page.keywords | default: 'gala, golang sum types, golang pattern matching, golang option type, transpile to go, go algebraic data types' }}">
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="{{ page.title }}">
+  <meta property="og:description" content="{{ page.description | default: site.description }}">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="{{ page.url | absolute_url }}">
+  <meta property="og:site_name" content="GALA Language">
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{{ page.title }}">
+  <meta name="twitter:description" content="{{ page.description | default: site.description }}">
+
+  <!-- Canonical -->
+  <link rel="canonical" href="{{ page.url | absolute_url }}">
+
+  <!-- JSON-LD structured data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "{% if page.schema_type %}{{ page.schema_type }}{% else %}WebPage{% endif %}",
+    "name": "{{ page.title }}",
+    "description": "{{ page.description | default: site.description }}",
+    "url": "{{ page.url | absolute_url }}",
+    "publisher": {
+      "@type": "Organization",
+      "name": "GALA Language"
+    }
+  }
+  </script>
+
+  {% seo %}
+
+  <style>
+    :root {
+      --bg: #ffffff;
+      --text: #1a1a2e;
+      --accent: #00ADD8;
+      --accent-dark: #007d9c;
+      --code-bg: #f6f8fa;
+      --border: #e1e4e8;
+      --nav-bg: #1a1a2e;
+      --nav-text: #ffffff;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      color: var(--text);
+      line-height: 1.7;
+      background: var(--bg);
+    }
+    nav {
+      background: var(--nav-bg);
+      padding: 1rem 2rem;
+      display: flex;
+      align-items: center;
+      gap: 2rem;
+      flex-wrap: wrap;
+    }
+    nav a {
+      color: var(--nav-text);
+      text-decoration: none;
+      font-size: 0.95rem;
+      opacity: 0.85;
+      transition: opacity 0.2s;
+    }
+    nav a:hover { opacity: 1; }
+    nav .logo {
+      font-weight: 700;
+      font-size: 1.3rem;
+      opacity: 1;
+      color: var(--accent);
+      margin-right: auto;
+    }
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem 4rem;
+    }
+    h1 { font-size: 2.2rem; margin-bottom: 0.5rem; line-height: 1.2; }
+    h2 { font-size: 1.6rem; margin-top: 2.5rem; margin-bottom: 0.75rem; border-bottom: 2px solid var(--border); padding-bottom: 0.3rem; }
+    h3 { font-size: 1.2rem; margin-top: 1.8rem; margin-bottom: 0.5rem; }
+    p { margin-bottom: 1rem; }
+    a { color: var(--accent-dark); }
+    code {
+      background: var(--code-bg);
+      padding: 0.15em 0.4em;
+      border-radius: 3px;
+      font-size: 0.9em;
+    }
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 1rem;
+      overflow-x: auto;
+      margin-bottom: 1.5rem;
+    }
+    pre code { background: none; padding: 0; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 1.5rem;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 0.6rem 1rem;
+      text-align: left;
+    }
+    th { background: var(--code-bg); font-weight: 600; }
+    ul, ol { margin-bottom: 1rem; padding-left: 1.5rem; }
+    li { margin-bottom: 0.3rem; }
+    .hero {
+      text-align: center;
+      padding: 3rem 0;
+    }
+    .hero h1 { font-size: 2.8rem; }
+    .hero .tagline {
+      font-size: 1.25rem;
+      color: #555;
+      margin-bottom: 1.5rem;
+    }
+    .cta {
+      display: inline-block;
+      background: var(--accent);
+      color: white;
+      padding: 0.75rem 2rem;
+      border-radius: 6px;
+      text-decoration: none;
+      font-weight: 600;
+      margin: 0.5rem;
+      transition: background 0.2s;
+    }
+    .cta:hover { background: var(--accent-dark); color: white; }
+    .cta-secondary {
+      background: transparent;
+      border: 2px solid var(--accent);
+      color: var(--accent-dark);
+    }
+    .cta-secondary:hover { background: var(--accent); color: white; }
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5rem;
+      margin: 2rem 0;
+    }
+    .feature-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.5rem;
+    }
+    .feature-card h3 { margin-top: 0; }
+    .comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.5rem 0; }
+    .comparison > div > p:first-child { font-weight: 600; margin-bottom: 0.5rem; }
+    @media (max-width: 640px) {
+      .comparison { grid-template-columns: 1fr; }
+      nav { padding: 0.75rem 1rem; gap: 1rem; }
+    }
+    .breadcrumb {
+      font-size: 0.85rem;
+      color: #666;
+      margin-bottom: 1.5rem;
+    }
+    .breadcrumb a { color: var(--accent-dark); }
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 2rem;
+      text-align: center;
+      font-size: 0.85rem;
+      color: #666;
+    }
+  </style>
+</head>
+<body>
+  <nav>
+    <a href="{{ '/' | relative_url }}" class="logo">GALA</a>
+    <a href="{{ '/features/sealed-types/' | relative_url }}">Features</a>
+    <a href="{{ '/vs-go/' | relative_url }}">GALA vs Go</a>
+    <a href="{{ '/getting-started/' | relative_url }}">Get Started</a>
+    <a href="{{ '/playground/' | relative_url }}">Playground</a>
+    <a href="https://github.com/martianoff/gala">GitHub</a>
+  </nav>
+  <div class="container">
+    {{ content }}
+  </div>
+  <footer>
+    GALA Language &mdash; Apache 2.0 License &mdash; <a href="https://github.com/martianoff/gala">GitHub</a>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,29 @@
+title: "GALA — Sum Types, Pattern Matching, and Option Types for Go"
+description: "GALA adds the features Go developers want most — sum types, exhaustive pattern matching, Option/Either/Try, and immutable collections. Transpiles to native Go binaries with full library compatibility."
+url: "https://martianoff.github.io"
+baseurl: "/gala"
+theme: null
+remote_theme: pages-themes/minimal@v0.2.0
+
+plugins:
+  - jekyll-seo-tag
+  - jekyll-sitemap
+  - jekyll-remote-theme
+
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: "default"
+
+google_analytics: ""
+
+social:
+  name: GALA Language
+  links:
+    - https://github.com/martianoff/gala
+
+collections:
+  features:
+    output: true
+    permalink: /features/:name/
