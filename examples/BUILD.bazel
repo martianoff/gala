@@ -1292,3 +1292,44 @@ gala_test(
     src = "default_params_expr.gala",
     expected = "default_params_expr.out",
 )
+
+# IO effect type: lazy, composable side-effecting computations
+gala_test(
+    name = "io_effect",
+    src = "io_effect.gala",
+    expected = "io_effect.out",
+    deps = ["//io"],
+)
+
+# Json[T] type-safe serialization/deserialization
+gala_test(
+    name = "json_serialization",
+    src = "json_serialization.gala",
+    expected = "json_serialization.out",
+)
+
+# Regex pattern matching usage
+gala_test(
+    name = "regex_usage",
+    src = "regex_usage.gala",
+    expected = "regex_usage.out",
+    deps = [
+        "//collection_immutable",
+        "//regex",
+    ],
+)
+
+# Repro: block lambda return type inference from struct field type
+gala_test(
+    name = "block_lambda_field_type",
+    src = "block_lambda_field_type.gala",
+    expected = "block_lambda_field_type.out",
+)
+
+# Repro: lambda param type inference for package-qualified function calls
+gala_test(
+    name = "qualified_lambda_infer",
+    src = "qualified_lambda_infer.gala",
+    expected = "qualified_lambda_infer.out",
+    deps = ["//io"],
+)

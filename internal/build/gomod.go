@@ -31,6 +31,8 @@ var StdlibPackages = []string{
 	"stream",
 	"string_utils",
 	"time_utils",
+	"regex",
+	"io",
 }
 
 // StdlibImportPaths maps package names to their import paths.
@@ -44,6 +46,8 @@ var StdlibImportPaths = map[string]string{
 	"stream":               "martianoff/gala/stream",
 	"string_utils":         "martianoff/gala/string_utils",
 	"time_utils":           "martianoff/gala/time_utils",
+	"regex":                "martianoff/gala/regex",
+	"io":                   "martianoff/gala/io",
 }
 
 // GenerateGoMod generates a go.mod file content for the workspace.

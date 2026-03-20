@@ -586,7 +586,47 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 			if isSpread {
 				hasSpread = true
 			}
-			expr, err := t.transformExpression(exprCtx)
+			// Look up expected type from struct field types for lambda inference
+			var namedExpectedType transpiler.Type = transpiler.NilType{}
+			if structFieldExpectedTypes != nil {
+				if funcName := t.extractFuncName(fun); funcName != "" {
+					typeMeta, resolvedTypeName := t.getTypeMetaResolved(funcName)
+					if resolvedTypeName != "" {
+						resolved := t.resolveStructTypeName(resolvedTypeName)
+						if fieldTypes, ok := t.structFieldTypes[resolved]; ok {
+							if ft, ok := fieldTypes[argName].(transpiler.FuncType); ok {
+								namedExpectedType = ft
+								// Apply generic type substitution if this is a generic struct construction
+								// e.g., Wrapper[U](compute = ...) maps T -> U
+								if typeMeta != nil && len(typeMeta.TypeParams) > 0 {
+									typeArgs := t.extractFuncCallTypeArgs(fun)
+									if len(typeArgs) > 0 {
+										typeSubst := make(map[string]string)
+										for i, tp := range typeMeta.TypeParams {
+											if i < len(typeArgs) {
+												typeSubst[tp] = typeArgs[i]
+											}
+										}
+										namedExpectedType = t.substituteTranspilerTypeParams(namedExpectedType, typeSubst)
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+			// Also check function metadata for named args in function calls
+			if namedExpectedType.IsNil() && funcMeta != nil && len(funcMeta.ParamNames) > 0 {
+				for i, paramName := range funcMeta.ParamNames {
+					if paramName == argName && i < len(funcMeta.ParamTypes) {
+						if ft, ok := funcMeta.ParamTypes[i].(transpiler.FuncType); ok {
+							namedExpectedType = ft
+						}
+						break
+					}
+				}
+			}
+			expr, err := t.transformArgumentWithExpectedType(exprCtx, namedExpectedType)
 			if err != nil {
 				return nil, err
 			}
@@ -606,14 +646,11 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 			var expectedType transpiler.Type = transpiler.NilType{}
 			if funcMeta != nil && argIdx < len(funcMeta.ParamTypes) {
 				if ft, ok := funcMeta.ParamTypes[argIdx].(transpiler.FuncType); ok {
-					if len(ft.Results) == 0 {
-						// Void function type - pass as-is
-						expectedType = ft
-					} else if len(inferredTypeSubst) > 0 {
-						// Substitute inferred or explicit type args
+					if len(inferredTypeSubst) > 0 {
+						// Substitute inferred or explicit type args (both void and non-void)
 						expectedType = t.substituteTranspilerTypeParams(funcMeta.ParamTypes[argIdx], inferredTypeSubst)
-					} else if len(funcMeta.TypeParams) == 0 {
-						// Non-generic function with concrete function param types - pass as-is
+					} else if len(ft.Results) == 0 || len(funcMeta.TypeParams) == 0 {
+						// Void function type or non-generic function — pass as-is
 						expectedType = ft
 					}
 				}
@@ -1348,18 +1385,36 @@ func (t *galaASTTransformer) isMethodGenericViaTypeMeta(typeName, methodName str
 }
 
 // extractFuncName extracts the base function name from a call expression's Fun node.
-// Handles: Ident (f), IndexExpr (f[T]), IndexListExpr (f[T, U]).
+// Handles: Ident (f), SelectorExpr (pkg.f), IndexExpr (f[T] or pkg.f[T]),
+// IndexListExpr (f[T, U] or pkg.f[T, U]).
 func (t *galaASTTransformer) extractFuncName(fun ast.Expr) string {
 	switch f := fun.(type) {
 	case *ast.Ident:
 		return f.Name
+	case *ast.SelectorExpr:
+		// Package-qualified function call: pkg.Func
+		if id, ok := f.X.(*ast.Ident); ok {
+			return id.Name + "." + f.Sel.Name
+		}
 	case *ast.IndexExpr:
 		if id, ok := f.X.(*ast.Ident); ok {
 			return id.Name
 		}
+		// Package-qualified generic function call: pkg.Func[T]
+		if sel, ok := f.X.(*ast.SelectorExpr); ok {
+			if id, ok := sel.X.(*ast.Ident); ok {
+				return id.Name + "." + sel.Sel.Name
+			}
+		}
 	case *ast.IndexListExpr:
 		if id, ok := f.X.(*ast.Ident); ok {
 			return id.Name
+		}
+		// Package-qualified generic function call: pkg.Func[T, U]
+		if sel, ok := f.X.(*ast.SelectorExpr); ok {
+			if id, ok := sel.X.(*ast.Ident); ok {
+				return id.Name + "." + sel.Sel.Name
+			}
 		}
 	}
 	return ""

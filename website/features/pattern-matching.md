@@ -270,6 +270,53 @@ type Positive struct {}
 func (p Positive) Unapply(i int) bool = i > 0
 ```
 
+### Instance Extractors (Variable-Based)
+
+In addition to type-based extractors (`Even{}.Unapply(x)`), GALA supports **instance extractors** — variables whose type defines `Unapply`. This is how `Regex` enables pattern matching:
+
+```gala
+import "martianoff/gala/regex"
+import . "martianoff/gala/collection_immutable"
+
+val dateRegex = regex.MustCompile("(\\d{4})-(\\d{2})-(\\d{2})")
+
+val result = "2024-01-15" match {
+    case dateRegex(Array(year, month, day)) => s"$year-$month-$day"
+    case _ => "not a date"
+}
+```
+
+Here `dateRegex` is a `val` holding a `Regex` value. The transpiler detects that `Regex` has an `Unapply(string) Option[Array[string]]` method and generates `dateRegex.Unapply(input)`. The nested `Array(year, month, day)` pattern then destructures the capture groups using sequence matching.
+
+Instance extractors work with any type that defines `Unapply` returning `Option[T]` or `bool`:
+
+```gala
+val emailRegex = regex.MustCompile("([\\w.]+)@([\\w.]+)")
+
+val parts = "user@example.com" match {
+    case emailRegex(Array(user, domain)) => s"User: $user, Domain: $domain"
+    case _ => "not an email"
+}
+```
+
+#### JSON Pattern Matching
+
+The `Json[T]` extractor in `std` works the same way — it attempts to parse a JSON string into the target type:
+
+```gala
+import . "martianoff/gala/std"
+
+type Person struct {
+    var Name string
+    var Age  int
+}
+
+val result = jsonStr match {
+    case Json[Person](p) => s"Found: ${p.Name}"
+    case _ => "invalid JSON"
+}
+```
+
 ---
 
 ## Boolean Exhaustive Match
@@ -327,6 +374,7 @@ case Shape_Point:
 | Guard clauses | Yes (`if` after pattern) | No (separate `if` inside case) |
 | Nested patterns | Yes | No |
 | Custom extractors | Yes (Unapply) | No |
+| Instance extractors | Yes (variable Unapply) | No |
 | Sequence patterns | Yes (head, tail...) | No |
 | Type matching | Yes (`case x: Type`) | Yes (`case Type:`) |
 

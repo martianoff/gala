@@ -1,0 +1,24 @@
+package main
+
+import (
+    "martianoff/gala/io"
+    "errors"
+)
+
+// Repro: lambda param types should be inferred for package-qualified function calls.
+// io.Recover takes func(error) T — the lambda param type `error` should be inferred.
+// io.ForEach takes func(T) — the lambda param type should be inferred from IO's type param.
+
+func main() {
+    // Single-type-param function: Recover[T](IO[T], func(error) T)
+    // Lambda param `err` should infer as `error`
+    val failing = io.Fail[int](errors.New("oops"))
+    val recovered = io.Recover(failing, (err) => -1)
+    Println(s"Recovered: ${recovered.Run().Get()}")
+
+    // Single-type-param function: ForEach[T](IO[T], func(T))
+    // Lambda param `v` should infer as `int`
+    var seen = 0
+    io.ForEach(io.Of(42), (v) => { seen = v }).Run()
+    Println(s"Seen: $seen")
+}

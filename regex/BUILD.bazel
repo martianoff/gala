@@ -1,0 +1,38 @@
+load("//:gala.bzl", "gala_bootstrap_transpile", "gala_go_test", "gala_library")
+
+exports_files(["regex.gala"])
+
+gala_bootstrap_transpile(
+    name = "regex_go",
+    src = "regex.gala",
+    out = "regex.gen.go",
+)
+
+filegroup(
+    name = "gala_sources",
+    srcs = glob(
+        ["*.gala"],
+        exclude = ["*_test.gala"],
+    ),
+    visibility = ["//visibility:public"],
+)
+
+gala_library(
+    name = "regex",
+    src = "regex.gala",
+    importpath = "martianoff/gala/regex",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//collection_immutable",
+        "//go_interop",
+    ],
+)
+
+gala_go_test(
+    name = "regex_test",
+    srcs = ["regex_test.gala"],
+    deps = [
+        ":regex",
+        "//collection_immutable",
+    ],
+)

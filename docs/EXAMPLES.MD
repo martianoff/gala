@@ -545,6 +545,94 @@ Output:
 hello
 ```
 
+## JSON Serialization and Pattern Matching
+
+```gala
+package main
+
+import . "martianoff/gala/std"
+
+type Person struct {
+    var Name string
+    var Age  int
+}
+
+func main() {
+    val person = Person{Name: "Alice", Age: 30}
+    val jsonStr = JsonStringify(person).Get()
+    Println(jsonStr)
+
+    // Pattern matching with Json extractor
+    val result = jsonStr match {
+        case Json[Person](p) => s"Matched: ${p.Name}, age ${p.Age}"
+        case _ => "no match"
+    }
+    Println(result)
+}
+```
+
+Output:
+```
+{"Name":"Alice","Age":30}
+Matched: Alice, age 30
+```
+
+## Regex Pattern Matching
+
+```gala
+package main
+
+import (
+    . "martianoff/gala/std"
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/regex"
+)
+
+func main() {
+    val dateRegex = regex.MustCompile("(\\d{4})-(\\d{2})-(\\d{2})")
+    val result = "2024-01-15" match {
+        case dateRegex(Array(year, month, day)) => s"Year: $year, Month: $month, Day: $day"
+        case _ => "not a date"
+    }
+    Println(result)
+}
+```
+
+Output:
+```
+Year: 2024, Month: 01, Day: 15
+```
+
+## IO Effect
+
+```gala
+package main
+
+import (
+    "errors"
+    "martianoff/gala/io"
+)
+
+func main() {
+    val pure = io.Of(42)
+    Println(s"Pure: ${pure.Run().Get()}")
+
+    val failing = io.Fail[int](errors.New("oops"))
+    val recovered = io.Recover(failing, (err) => -1)
+    Println(s"Recovered: ${recovered.Run().Get()}")
+
+    val effect = io.Effect(() => { Println("Side effect!") })
+    effect.Run()
+}
+```
+
+Output:
+```
+Pure: 42
+Recovered: -1
+Side effect!
+```
+
 ## More Examples
 
 You can find more examples in the `examples/` directory of the project:

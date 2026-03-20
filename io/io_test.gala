@@ -1,0 +1,97 @@
+package main
+
+import (
+    . "martianoff/gala/test"
+    "martianoff/gala/io"
+    "errors"
+)
+
+func TestOf(t T) T {
+    val result = io.Of(42).Run()
+    return Eq[int](t, result.Get(), 42)
+}
+
+func TestSuspend(t T) T {
+    val result = io.Suspend(() => 21 * 2).Run()
+    return Eq[int](t, result.Get(), 42)
+}
+
+func TestFail(t T) T {
+    val result = io.Fail[int](errors.New("boom")).Run()
+    var t1 = IsTrue(t, result.IsFailure())
+    return Eq[string](t1, result.GetError().Error(), "boom")
+}
+
+func TestMap(t T) T {
+    val result = io.Map[int, int](io.Of(10), (x int) => x * 5).Run()
+    return Eq[int](t, result.Get(), 50)
+}
+
+func TestFlatMap(t T) T {
+    val result = io.FlatMap[int, int](io.Of(10), (x int) => io.Of(x + 32)).Run()
+    return Eq[int](t, result.Get(), 42)
+}
+
+func TestRecover(t T) T {
+    val failing = io.Fail[int](errors.New("oops"))
+    val recovered = io.Recover(failing, (err) => -1)
+    return Eq[int](t, recovered.Run().Get(), -1)
+}
+
+func TestRecoverWith(t T) T {
+    val failing = io.Fail[int](errors.New("oops"))
+    val recovered = io.RecoverWith(failing, (err) => io.Of(99))
+    return Eq[int](t, recovered.Run().Get(), 99)
+}
+
+func TestAndThen(t T) T {
+    val first = io.Of(1)
+    val second = io.Of(42)
+    val result = io.AndThen[int, int](first, second).Run()
+    return Eq[int](t, result.Get(), 42)
+}
+
+func TestEffect(t T) T {
+    var counter = 0
+    val eff = io.Effect(() => { counter = counter + 1 })
+    val result = eff.Run()
+    var t1 = IsTrue(t, result.IsSuccess())
+    return Eq[int](t1, counter, 1)
+}
+
+func TestUnit(t T) T {
+    val result = io.Unit().Run()
+    return IsTrue(t, result.IsSuccess())
+}
+
+func TestForEach(t T) T {
+    var seen = 0
+    val result = io.ForEach(io.Of(42), (v) => { seen = v }).Run()
+    var t1 = IsTrue(t, result.IsSuccess())
+    return Eq[int](t1, seen, 42)
+}
+
+func TestFailurePropagation(t T) T {
+    val failing = io.Fail[int](errors.New("initial"))
+    val chained = io.FlatMap[int, int](failing, (x int) => io.Of(x * 2))
+    return IsTrue(t, chained.Run().IsFailure())
+}
+
+func TestSuspendCatchesPanic(t T) T {
+    val panicking = io.Suspend[int](() => {
+        panic("boom")
+        return 0
+    })
+    val result = panicking.Run()
+    return IsTrue(t, result.IsFailure())
+}
+
+func TestUnsafeRun(t T) T {
+    val result = io.Of(42).UnsafeRun()
+    return Eq[int](t, result, 42)
+}
+
+func TestFromTry(t T) T {
+    val result = io.FromTry(Success[int](42)).Run()
+    return Eq[int](t, result.Get(), 42)
+}

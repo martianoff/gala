@@ -29,6 +29,9 @@ GALA (Go Alternative LAnguage) is a modern programming language that transpiles 
    - [Either](#either)
    - [Try Monad](#try-monad)
    - [Future Monad](#future-monad)
+   - [Json](#json)
+   - [Regex](#regex)
+   - [IO Effect](#io-effect)
    - [Slices](#slices)
    - [Maps](#maps)
    - [HashMap](#hashmap)
@@ -1234,6 +1237,162 @@ val msg = async match {
 ```
 
 For comprehensive documentation including Promise, ExecutionContext, sequence operations, and all methods, see [Concurrent](CONCURRENT.MD).
+
+### Json
+
+`Json` provides type-safe JSON serialization and deserialization with pattern matching support. Located in `std`.
+
+#### Serialization and Deserialization
+
+```gala
+import . "martianoff/gala/std"
+
+type Person struct {
+    var Name string
+    var Age  int
+}
+
+// Serialize to JSON string
+val jsonStr = JsonStringify(Person{Name: "Alice", Age: 30}).Get()
+// => {"Name":"Alice","Age":30}
+
+// Deserialize from JSON string
+val person = JsonParse[Person](jsonStr)
+person.ForEach((p) => Println(s"Name: ${p.Name}"))
+
+// Pretty-print
+val pretty = JsonStringifyPretty(Person{Name: "Alice", Age: 30}).Get()
+```
+
+All operations return `Try[T]` for safe error handling:
+
+```gala
+val bad = JsonParse[Person]("invalid")
+Println(bad.IsFailure())  // true
+```
+
+#### Json Pattern Matching
+
+The `Json[T]` extractor enables pattern matching on JSON strings:
+
+```gala
+val result = jsonStr match {
+    case Json[Person](p) => s"Found: ${p.Name}, age ${p.Age}"
+    case _ => "invalid JSON"
+}
+```
+
+### Regex
+
+`Regex` provides regular expression support with pattern matching extractors. Located in the `regex` package.
+
+```gala
+import "martianoff/gala/regex"
+import . "martianoff/gala/collection_immutable"
+```
+
+#### Compilation
+
+```gala
+// Safe compilation (returns Try[Regex])
+val r = regex.Compile("\\d+")
+
+// Panicking compilation (for known-good patterns)
+val digits = regex.MustCompile("\\d+")
+```
+
+#### Matching and Searching
+
+```gala
+digits.Matches("abc123")          // true
+digits.FindFirst("abc 123 def")   // Some("123")
+digits.FindAll("a1 b2 c3")       // Array("1", "2", "3")
+digits.ReplaceAll("a1b2", "X")   // "aXbX"
+digits.Split("a1b2c3")           // Array("a", "b", "c")
+```
+
+#### Regex Pattern Matching with Array Destructuring
+
+The `Unapply` method enables regex extractors in `match` expressions. Combined with `Array` sequence patterns, capture groups destructure into individual variables:
+
+```gala
+val dateRegex = regex.MustCompile("(\\d{4})-(\\d{2})-(\\d{2})")
+
+val result = "2024-01-15" match {
+    case dateRegex(Array(year, month, day)) => s"$year-$month-$day"
+    case _ => "not a date"
+}
+
+val emailRegex = regex.MustCompile("([\\w.]+)@([\\w.]+)")
+val parts = "user@example.com" match {
+    case emailRegex(Array(user, domain)) => s"User: $user, Domain: $domain"
+    case _ => "not an email"
+}
+```
+
+### IO Effect
+
+`IO[T]` is a lazy, composable effect type for separating pure and impure code. Located in the `io` package. Unlike `Lazy[T]` (which caches results), `IO[T]` re-executes on every `.Run()`.
+
+```gala
+import "martianoff/gala/io"
+```
+
+#### Creating IO Values
+
+```gala
+// Pure value (no side effects)
+val pure = io.Of(42)
+
+// Lazy thunk (panics caught as Failure)
+val suspended = io.Suspend(() => expensiveComputation())
+
+// Failing IO
+val failing = io.Fail[int](errors.New("boom"))
+
+// Side-effecting void operation
+val logging = io.Effect(() => { Println("log message") })
+
+// From existing Try
+val fromTry = io.FromTry(Success(42))
+```
+
+#### Running IO
+
+```gala
+val result = pure.Run()        // Try[int] — Success(42)
+val value = pure.UnsafeRun()   // int — 42 (panics on failure)
+```
+
+#### Composing IO
+
+```gala
+// Map: transform success value
+val doubled = io.Map(io.Of(21), (x) => x * 2)
+
+// FlatMap: chain dependent computations
+val chained = io.FlatMap(io.Of(10), (x) => io.Of(x + 32))
+
+// AndThen: sequence, discard first result
+val program = io.AndThen(
+    io.Effect(() => { Println("setup") }),
+    io.Of("done"),
+)
+
+// Recover: handle errors
+val safe = io.Recover(failing, (err) => -1)
+
+// ForEach: side effect on success
+io.ForEach(io.Of(42), (v) => { Println(v) }).Run()
+```
+
+#### IO vs Lazy
+
+| | `Lazy[T]` | `IO[T]` |
+|---|---|---|
+| Re-execution | Cached — `.Get()` returns same result | Fresh — every `.Run()` re-executes |
+| Thread safety | Yes (via `sync.Once`) | No memoization |
+| Use case | Expensive pure computations | Side effects (HTTP, file I/O, logging) |
 
 ### Slices (Go Interop)
 

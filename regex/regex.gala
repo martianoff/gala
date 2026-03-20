@@ -1,0 +1,90 @@
+package regex
+
+import (
+    "regexp"
+    . "martianoff/gala/std"
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/go_interop"
+)
+
+// Regex wraps a compiled regular expression with pattern matching support.
+type Regex struct {
+    Pattern string
+    var Re  *regexp.Regexp
+}
+
+// Compile compiles a regular expression pattern.
+// Returns Try[Regex] - Success if valid, Failure if invalid.
+func Compile(pattern string) Try[Regex] {
+    val re, err = regexp.Compile(pattern)
+    if err != nil {
+        return Failure[Regex](err)
+    }
+    return Success[Regex](Regex(Pattern = pattern, Re = re))
+}
+
+// MustCompile compiles a pattern, panicking on error.
+func MustCompile(pattern string) Regex {
+    val re = regexp.MustCompile(pattern)
+    return Regex(Pattern = pattern, Re = re)
+}
+
+// Matches returns true if the string matches the regex.
+func (r Regex) Matches(s string) bool = r.Re.MatchString(s)
+
+// FindFirst returns the first match as Option[string].
+func (r Regex) FindFirst(s string) Option[string] {
+    val result = r.Re.FindString(s)
+    if result == "" {
+        return None[string]()
+    }
+    return Some(result)
+}
+
+// FindAll returns all non-overlapping matches as an Array.
+func (r Regex) FindAll(s string) Array[string] {
+    val matches = r.Re.FindAllString(s, -1)
+    return ArrayFromSlice(matches)
+}
+
+// FindGroups returns the first match with capture groups as Option[Array[string]].
+func (r Regex) FindGroups(s string) Option[Array[string]] {
+    val result = r.Re.FindStringSubmatch(s)
+    if result == nil {
+        return None[Array[string]]()
+    }
+    return Some[Array[string]](ArrayFromSlice(result))
+}
+
+// ReplaceAll replaces all matches with the replacement string.
+func (r Regex) ReplaceAll(s string, replacement string) string = r.Re.ReplaceAllString(s, replacement)
+
+// Split splits the string by the regex pattern.
+func (r Regex) Split(s string) Array[string] {
+    val parts = r.Re.Split(s, -1)
+    return ArrayFromSlice(parts)
+}
+
+// Unapply extracts capture groups from a string for pattern matching.
+// Returns Some with the captured groups (excluding full match) if the pattern matches,
+// None otherwise.
+//
+// Usage in pattern matching:
+//   val dateRegex = regex.MustCompile("(\\d{4})-(\\d{2})-(\\d{2})")
+//   val result = input match {
+//       case dateRegex(groups) => s"Year: ${groups.Get(0)}, Month: ${groups.Get(1)}"
+//       case _ => "no match"
+//   }
+func (r Regex) Unapply(s string) Option[Array[string]] {
+    val result = r.Re.FindStringSubmatch(s)
+    if result == nil {
+        return None[Array[string]]()
+    }
+    if len(result) < 2 {
+        return None[Array[string]]()
+    }
+    return Some[Array[string]](ArrayFromSlice(go_interop.SliceFrom(result, 1)))
+}
+
+// String returns a human-readable representation.
+func (r Regex) String() string = s"Regex(${r.Pattern})"
