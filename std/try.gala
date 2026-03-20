@@ -178,3 +178,8 @@ func FromEitherError[T any](e Either[error, T]) Try[T] {
     }
     return Failure[T](e.GetLeft())
 }
+
+// TryApply executes f and catches any panic, converting it to a Failure.
+// Returns Success[T] with the result if f completes normally.
+// Returns Failure[T] with the panic value as error if f panics.
+func TryApply[T any](f func() T) Try[T] = tryRecover[T](f)

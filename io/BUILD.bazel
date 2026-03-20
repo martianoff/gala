@@ -1,0 +1,25 @@
+load("//:gala.bzl", "gala_go_test", "gala_library")
+
+exports_files(["io.gala"])
+
+filegroup(
+    name = "gala_sources",
+    srcs = glob(
+        ["*.gala"],
+        exclude = ["*_test.gala"],
+    ),
+    visibility = ["//visibility:public"],
+)
+
+gala_library(
+    name = "io",
+    src = "io.gala",
+    importpath = "martianoff/gala/io",
+    visibility = ["//visibility:public"],
+)
+
+gala_go_test(
+    name = "io_test",
+    srcs = ["io_test.gala"],
+    deps = [":io"],
+)

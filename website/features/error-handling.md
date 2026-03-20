@@ -296,6 +296,55 @@ func processOrder(id int) Try[Receipt] =
 
 ---
 
+## Json: Type-Safe JSON with Try
+
+GALA's `Json` module integrates with `Try[T]` for safe JSON handling. All operations return `Try` — no unchecked errors.
+
+### Serialization
+
+```gala
+import . "martianoff/gala/std"
+
+type Config struct {
+    var Host string
+    var Port int
+}
+
+val config = Config{Host: "localhost", Port: 8080}
+val jsonStr = JsonStringify(config).Get()
+// => {"Host":"localhost","Port":8080}
+
+val pretty = JsonStringifyPretty(config).Get()
+// => {
+//   "Host": "localhost",
+//   "Port": 8080
+// }
+```
+
+### Deserialization
+
+```gala
+val parsed = JsonParse[Config](jsonStr)
+// parsed: Try[Config]
+
+val host = parsed.Map((c) => c.Host).GetOrElse("unknown")
+```
+
+### Json Pattern Matching
+
+The `Json[T]` extractor parses JSON inside `match` expressions:
+
+```gala
+val result = inputStr match {
+    case Json[Config](c) => s"Host: ${c.Host}, Port: ${c.Port}"
+    case _ => "invalid config"
+}
+```
+
+This combines `Try`-based safety with pattern matching — the `Json[T]` extractor returns `None` on parse failure, so the `case _` branch handles malformed input.
+
+---
+
 ## Chaining: Composing Operations into Pipelines
 
 The real power of monadic error handling is composition. Instead of checking errors at every step, you build a pipeline and handle errors at the end:

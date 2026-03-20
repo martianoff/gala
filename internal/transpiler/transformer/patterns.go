@@ -79,8 +79,19 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 			return nil, nil, err
 		}
 
-		// If it's a type name, determine how to match it
+		// If it's a type name, determine how to match it.
+		// First try to get the name from the transformed AST.
 		rawName := t.getBaseTypeName(patternExpr)
+
+		// If rawName is empty, the identifier may have been wrapped in .Get() (val variable).
+		// Fall back to extracting the identifier directly from the grammar context.
+		if rawName == "" {
+			if p := primaryExprCtx.Primary(); p != nil {
+				if pc, ok := p.(*grammar.PrimaryContext); ok && pc.Identifier() != nil {
+					rawName = pc.Identifier().GetText()
+				}
+			}
+		}
 
 		// Check if we can use direct Unapply call (no reflection)
 		// This applies to any extractor with an Unapply method - both generic and non-generic
@@ -126,12 +137,14 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 			}
 		}
 
-		// Check if this is a sequence pattern with rest arguments (e.g., Array(first, second, rest...))
-		// This handles Seq types like Array and List with variable-length extraction
+		// Check if this is a sequence pattern (e.g., Array(first, second, rest...) or Array(a, b, c))
+		// This handles Seq types like Array and List with element extraction.
+		// Must be checked BEFORE struct field match, since Array/List are also structs
+		// but their pattern arguments represent elements, not struct fields.
+		if t.isSeqType(matchedType) {
+			return t.generateSeqPatternMatch(objExpr, argList, matchedType)
+		}
 		if t.hasRestPattern(argList) {
-			if t.isSeqType(matchedType) {
-				return t.generateSeqPatternMatch(objExpr, argList, matchedType)
-			}
 			return nil, nil, galaerr.NewSemanticError(
 				fmt.Sprintf("rest pattern (...) requires a sequence type (Array, List, or type implementing Seq). Got '%s'", matchedType.String()))
 		}
@@ -147,6 +160,25 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 		resolvedStructName := t.resolveStructTypeName(rawName)
 		if fields, ok := t.structFields[resolvedStructName]; ok && len(fields) > 0 {
 			return t.generateDirectStructFieldMatch(objExpr, argList, fields, resolvedStructName)
+		}
+
+		// Check if rawName is a variable whose type has an Unapply method (instance extractor).
+		// This enables patterns like: val r = regex.MustCompile("..."); x match { case r(groups) => ... }
+		// where `r` is a variable of a type that defines Unapply.
+		if varType := t.getType(rawName); varType != nil && !varType.IsNil() {
+			varTypeName := varType.BaseName()
+			if varMeta := t.getTypeMeta(varTypeName); varMeta != nil {
+				if unapplyMeta, hasUnapply := varMeta.Methods["Unapply"]; hasUnapply {
+					// Variable's type has Unapply - use the variable itself as the extractor
+					returnType := unapplyMeta.ReturnType
+					if !t.isDirectUnapplyReturnType(returnType) {
+						return nil, nil, galaerr.NewSemanticError(
+							fmt.Sprintf("extractor variable '%s' (type '%s') must have Unapply returning bool or Option[T], got '%s'",
+								rawName, varTypeName, returnType.String()))
+					}
+					return t.generateVariableUnapplyPattern(rawName, varMeta, unapplyMeta, objExpr, argList, matchedType)
+				}
+			}
 		}
 
 		// Extractor not found or doesn't have Unapply method
@@ -1737,6 +1769,231 @@ func (t *galaASTTransformer) generateDirectUnapplyPattern(
 				// Add sub-condition to the list of conditions to check
 				if subCond != nil {
 					// Check if subCond is just "true" - if so, skip it
+					if ident, ok := subCond.(*ast.Ident); !ok || ident.Name != "true" {
+						conds = append(conds, subCond)
+					}
+				}
+			}
+		}
+	}
+
+	// Build final condition by ANDing all conditions
+	if len(conds) == 0 {
+		return ast.NewIdent("true"), allBindings, nil
+	}
+	var finalCond ast.Expr = conds[0]
+	for i := 1; i < len(conds); i++ {
+		finalCond = &ast.BinaryExpr{
+			X:  finalCond,
+			Op: token.LAND,
+			Y:  conds[i],
+		}
+	}
+
+	return finalCond, allBindings, nil
+}
+
+// generateVariableUnapplyPattern generates a pattern match using a variable's Unapply method.
+// Instead of Type{}.Unapply(obj), it generates variableName.Unapply(obj).
+// This enables instance extractors like:
+//
+//	val dateRegex = regex.MustCompile("(\\d{4})-(\\d{2})-(\\d{2})")
+//	input match { case dateRegex(groups) => ... }
+//
+// which generates: _tmp := dateRegex.Unapply(input)
+func (t *galaASTTransformer) generateVariableUnapplyPattern(
+	variableName string,
+	varTypeMeta *transpiler.TypeMetadata,
+	unapplyMeta *transpiler.MethodMetadata,
+	objExpr ast.Expr,
+	argList *grammar.ArgumentListContext,
+	matchedType transpiler.Type,
+) (ast.Expr, []ast.Stmt, error) {
+
+	var allBindings []ast.Stmt
+	var conds []ast.Expr
+
+	// Get the return type of Unapply (no type param substitution needed for concrete types)
+	returnType := unapplyMeta.ReturnType
+
+	// Check if Unapply returns bool (guard pattern) or Option[T] (extractor pattern)
+	isBoolReturn := false
+	if basic, ok := returnType.(transpiler.BasicType); ok && basic.Name == "bool" {
+		isBoolReturn = true
+	}
+
+	// Build the receiver expression for the variable.
+	// If the variable is a val (immutable), it's wrapped in Immutable[T],
+	// so we need to call .Get() first to unwrap it before calling .Unapply().
+	var receiverExpr ast.Expr = ast.NewIdent(variableName)
+	if t.isVal(variableName) {
+		receiverExpr = &ast.CallExpr{
+			Fun: &ast.SelectorExpr{
+				X:   ast.NewIdent(variableName),
+				Sel: ast.NewIdent("Get"),
+			},
+		}
+	}
+
+	// Generate: _tmp_result := variableName[.Get()].Unapply(obj)
+	resultName := t.nextTempVar()
+	unapplyCall := &ast.AssignStmt{
+		Lhs: []ast.Expr{ast.NewIdent(resultName)},
+		Tok: token.DEFINE,
+		Rhs: []ast.Expr{
+			&ast.CallExpr{
+				Fun: &ast.SelectorExpr{
+					X:   receiverExpr,
+					Sel: ast.NewIdent("Unapply"),
+				},
+				Args: []ast.Expr{objExpr},
+			},
+		},
+	}
+	allBindings = append(allBindings, unapplyCall)
+
+	var okName string
+	var innerType transpiler.Type
+
+	if isBoolReturn {
+		okName = resultName
+		conds = append(conds, ast.NewIdent(okName))
+		innerType = transpiler.NilType{}
+	} else {
+		// For Option-returning extractors, check IsDefined and extract inner value
+		okName = t.nextTempVar()
+		isDefinedAssign := &ast.AssignStmt{
+			Lhs: []ast.Expr{ast.NewIdent(okName)},
+			Tok: token.DEFINE,
+			Rhs: []ast.Expr{
+				&ast.CallExpr{
+					Fun: &ast.SelectorExpr{
+						X:   ast.NewIdent(resultName),
+						Sel: ast.NewIdent("IsDefined"),
+					},
+				},
+			},
+		}
+		allBindings = append(allBindings, isDefinedAssign)
+		conds = append(conds, ast.NewIdent(okName))
+
+		// Unwrap Option to get the inner type
+		innerType = t.unwrapOptionType(returnType)
+	}
+
+	// Handle the pattern arguments
+	if argList != nil && len(argList.AllArgument()) > 0 && !isBoolReturn {
+		numArgs := len(argList.AllArgument())
+
+		// Check if the inner type is a Tuple that needs expansion
+		isTupleResult := false
+		var tupleParamTypes []transpiler.Type
+		if genType, ok := innerType.(transpiler.GenericType); ok {
+			baseName := genType.Base.BaseName()
+			if t.isTupleTypeName(baseName) || baseName == "Tuple" || baseName == "std.Tuple" {
+				isTupleResult = true
+				tupleParamTypes = genType.Params
+			}
+		}
+
+		// Generate a guarded .Get() call
+		innerName := t.nextTempVar()
+
+		innerTypeExpr := t.typeToExpr(innerType)
+		if innerTypeExpr == nil {
+			innerTypeExpr = ast.NewIdent("any")
+		}
+
+		varDecl := &ast.DeclStmt{
+			Decl: &ast.GenDecl{
+				Tok: token.VAR,
+				Specs: []ast.Spec{
+					&ast.ValueSpec{
+						Names: []*ast.Ident{ast.NewIdent(innerName)},
+						Type:  innerTypeExpr,
+					},
+				},
+			},
+		}
+		allBindings = append(allBindings, varDecl)
+
+		guardedGet := &ast.IfStmt{
+			Cond: ast.NewIdent(okName),
+			Body: &ast.BlockStmt{
+				List: []ast.Stmt{
+					&ast.AssignStmt{
+						Lhs: []ast.Expr{ast.NewIdent(innerName)},
+						Tok: token.ASSIGN,
+						Rhs: []ast.Expr{
+							&ast.CallExpr{
+								Fun: &ast.SelectorExpr{
+									X:   ast.NewIdent(resultName),
+									Sel: ast.NewIdent("Get"),
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+		allBindings = append(allBindings, guardedGet)
+		allBindings = blankAssignTempVar(allBindings, innerName)
+
+		for i, argCtx := range argList.AllArgument() {
+			arg := argCtx.(*grammar.ArgumentContext)
+			patternText := arg.Pattern().GetText()
+
+			if isWildcard(patternText) {
+				continue
+			}
+
+			var elemType transpiler.Type
+			var elemExpr ast.Expr
+
+			if isTupleResult && numArgs > 1 && numArgs == len(tupleParamTypes) {
+				if i < len(tupleParamTypes) {
+					elemType = tupleParamTypes[i]
+				}
+				fieldName := fmt.Sprintf("V%d", i+1)
+				elemExpr = &ast.CallExpr{
+					Fun: &ast.SelectorExpr{
+						X: &ast.SelectorExpr{
+							X:   ast.NewIdent(innerName),
+							Sel: ast.NewIdent(fieldName),
+						},
+						Sel: ast.NewIdent("Get"),
+					},
+				}
+			} else if isTupleResult && numArgs == 1 {
+				elemType = innerType
+				elemExpr = ast.NewIdent(innerName)
+			} else {
+				elemType = innerType
+				elemExpr = ast.NewIdent(innerName)
+			}
+
+			if t.isSimpleIdentifier(patternText) {
+				varName := patternText
+				t.currentScope.vals[varName] = false
+				if elemType != nil && !elemType.IsNil() {
+					t.currentScope.valTypes[varName] = elemType
+				} else {
+					t.currentScope.valTypes[varName] = transpiler.BasicType{Name: "any"}
+				}
+
+				varAssign := &ast.AssignStmt{
+					Lhs: []ast.Expr{ast.NewIdent(varName)},
+					Tok: token.DEFINE,
+					Rhs: []ast.Expr{elemExpr},
+				}
+				allBindings = append(allBindings, varAssign)
+			} else {
+				subCond, subBindings, err := t.transformPatternWithType(arg.Pattern(), elemExpr, elemType)
+				if err != nil {
+					return nil, nil, err
+				}
+				allBindings = append(allBindings, subBindings...)
+				if subCond != nil {
 					if ident, ok := subCond.(*ast.Ident); !ok || ident.Name != "true" {
 						conds = append(conds, subCond)
 					}

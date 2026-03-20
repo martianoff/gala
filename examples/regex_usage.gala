@@ -1,0 +1,46 @@
+package main
+
+import (
+    . "martianoff/gala/std"
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/regex"
+)
+
+func main() {
+    // Pattern matching with regex extractors + Array destructuring
+    val dateRegex = regex.MustCompile("(\\d{4})-(\\d{2})-(\\d{2})")
+
+    val input = "2024-01-15"
+    val result = input match {
+        case dateRegex(Array(year, month, day)) => s"Year: $year, Month: $month, Day: $day"
+        case _ => "not a date"
+    }
+    Println(result)
+
+    // Non-matching case
+    val result2 = "not-a-date" match {
+        case dateRegex(Array(year, _, _)) => s"Date: $year"
+        case _ => "no match"
+    }
+    Println(result2)
+
+    // Email extraction with destructuring
+    val emailRegex = regex.MustCompile("([\\w.]+)@([\\w.]+)")
+    val email = "user@example.com"
+    val parts = email match {
+        case emailRegex(Array(user, domain)) => s"User: $user, Domain: $domain"
+        case _ => "not an email"
+    }
+    Println(parts)
+
+    // Basic operations
+    val digits = regex.MustCompile("\\d+")
+    Println(digits.Matches("abc123"))
+    Println(digits.Matches("no digits"))
+    Println(digits.FindFirst("abc 123").Get())
+    Println(digits.ReplaceAll("Call 555-1234", "***"))
+
+    // Safe compilation
+    val bad = regex.Compile("[invalid")
+    Println(s"Bad regex is failure: ${bad.IsFailure()}")
+}

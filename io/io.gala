@@ -1,0 +1,106 @@
+package io
+
+import . "martianoff/gala/std"
+
+// IO represents a lazy, composable side-effecting computation.
+// An IO[T] value describes a computation that, when executed, produces a value of type T
+// or fails with an error. IO values are referentially transparent — they can be
+// passed around, composed, and reasoned about without executing any effects.
+type IO[T any] struct {
+    var exec func() Try[T]
+}
+
+// Run executes the IO computation and returns a Try[T].
+func (io IO[T]) Run() Try[T] = io.exec()
+
+// UnsafeRun executes the IO and returns the value, panicking on error.
+func (io IO[T]) UnsafeRun() T = io.exec().Get()
+
+// Of creates an IO that succeeds with the given pure value.
+func Of[T any](value T) IO[T] = IO[T](exec = () => Success[T](value))
+
+// Fail creates an IO that fails with the given error.
+func Fail[T any](err error) IO[T] = IO[T](exec = () => Failure[T](err))
+
+// Suspend creates an IO from a thunk. Panics are caught as Failure.
+func Suspend[T any](f func() T) IO[T] = IO[T](exec = () => TryApply(f))
+
+// FromTry creates an IO from an existing Try value.
+func FromTry[T any](t Try[T]) IO[T] = IO[T](exec = () => t)
+
+// Map transforms the success value of an IO while preserving type safety.
+func Map[T any, U any](io IO[T], f func(T) U) IO[U] {
+    return IO[U](exec = () => {
+        val result = io.exec()
+        if result.IsFailure() {
+            return Failure[U](result.GetError())
+        }
+        return Success[U](f(result.Get()))
+    })
+}
+
+// FlatMap chains IO computations sequentially.
+func FlatMap[T any, U any](io IO[T], f func(T) IO[U]) IO[U] {
+    return IO[U](exec = () => {
+        val result = io.exec()
+        if result.IsFailure() {
+            return Failure[U](result.GetError())
+        }
+        return f(result.Get()).Run()
+    })
+}
+
+// AndThen sequences two IO computations, discarding the first result.
+func AndThen[T any, U any](first IO[T], second IO[U]) IO[U] {
+    return IO[U](exec = () => {
+        val result = first.exec()
+        if result.IsFailure() {
+            return Failure[U](result.GetError())
+        }
+        return second.exec()
+    })
+}
+
+// Recover handles errors by providing a fallback value.
+func Recover[T any](io IO[T], f func(error) T) IO[T] {
+    return IO[T](exec = () => {
+        val result = io.exec()
+        if result.IsSuccess() {
+            return result
+        }
+        return Success[T](f(result.GetError()))
+    })
+}
+
+// RecoverWith handles errors by providing a fallback IO computation.
+func RecoverWith[T any](io IO[T], f func(error) IO[T]) IO[T] {
+    return IO[T](exec = () => {
+        val result = io.exec()
+        if result.IsSuccess() {
+            return result
+        }
+        return f(result.GetError()).Run()
+    })
+}
+
+// ForEach executes a side-effecting function on the success value.
+func ForEach[T any](io IO[T], f func(T)) IO[T] {
+    return IO[T](exec = () => {
+        val result = io.exec()
+        if result.IsSuccess() {
+            f(result.Get())
+        }
+        return result
+    })
+}
+
+// Effect creates an IO from a void side-effecting function.
+func Effect(f func()) IO[bool] {
+    return IO[bool](exec = () => {
+        f()
+        return Success[bool](true)
+    })
+}
+
+// Unit creates an IO that succeeds with no meaningful value.
+func Unit() IO[bool] = Of[bool](true)

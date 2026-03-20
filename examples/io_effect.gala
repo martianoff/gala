@@ -1,0 +1,58 @@
+package main
+
+import (
+    "errors"
+    "martianoff/gala/io"
+)
+
+func main() {
+    // Pure value
+    val pure = io.Of(42)
+    val result = pure.Run()
+    Println(s"Pure: ${result.Get()}")
+
+    // Suspended computation
+    val suspended = io.Suspend(() => 21 * 2)
+    Println(s"Suspended: ${suspended.Run().Get()}")
+
+    // Map and FlatMap
+    val mapped = io.Map[int, int](io.Of(10), (x int) => x * 5)
+    Println(s"Mapped: ${mapped.Run().Get()}")
+
+    val chained = io.FlatMap[int, int](io.Of(10), (x int) => io.Of(x + 32))
+    Println(s"Chained: ${chained.Run().Get()}")
+
+    // Error handling
+    val failing = io.Fail[int](errors.New("something went wrong"))
+    val recovered = io.Recover(failing, (err) => -1)
+    Println(s"Recovered: ${recovered.Run().Get()}")
+
+    // Side effects
+    val effect = io.Effect(() => {
+        Println("Side effect executed!")
+    })
+    effect.Run()
+
+    // AndThen - sequence effects
+    val program = io.AndThen[bool, string](
+        io.Effect(() => { Println("Step 1") }),
+        io.Of("done"),
+    )
+    Println(s"Program: ${program.Run().Get()}")
+
+    // Failure propagation
+    val failChain = io.FlatMap[int, int](
+        io.Fail[int](errors.New("initial error")),
+        (x int) => io.Of(x * 2),
+    )
+    Println(s"Fail chain is failure: ${failChain.Run().IsFailure()}")
+
+    // Laziness demonstration
+    Println("Before IO creation")
+    val lazy = io.Suspend(() => {
+        Println("Computing...")
+        return 99
+    })
+    Println("IO created but not run")
+    Println(s"Now running: ${lazy.Run().Get()}")
+}

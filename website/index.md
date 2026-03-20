@@ -176,6 +176,9 @@ GALA ships with a standard library of type-safe data structures and monads, all 
 | `Future[T]` | Async computation with `Map`, `FlatMap`, `Zip`, `Await` | [Concurrency]({{ '/features/concurrency/' | relative_url }}) |
 | `Tuple[A, B]` | Pairs and triples with `(a, b)` syntax | [Language spec]({{ '/features/pattern-matching/' | relative_url }}) |
 | `ConstPtr[T]` | Read-only pointer with compile-time enforcement | [Immutability]({{ '/features/immutability/' | relative_url }}) |
+| `Json[T]` | JSON extractor — pattern match on JSON strings | [Monadic types]({{ '/features/error-handling/' | relative_url }}) |
+| `Regex` | Regular expressions with `Unapply` for pattern matching | [Pattern matching]({{ '/features/pattern-matching/' | relative_url }}) |
+| `IO[T]` | Lazy composable effects — `Of`, `Suspend`, `Map`, `FlatMap` | [Language spec]({{ '/docs/language-reference/' | relative_url }}) |
 
 ### Collections
 

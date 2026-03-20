@@ -8,6 +8,7 @@ exports_files([
     "hashable.gala",
     "immutable.gala",
     "iterable.gala",
+    "json.gala",
     "option.gala",
     "ordered.gala",
     "seq.gala",
@@ -90,6 +91,12 @@ gala_bootstrap_transpile(
 )
 
 gala_bootstrap_transpile(
+    name = "json_go",
+    src = "json.gala",
+    out = "json.gen.go",
+)
+
+gala_bootstrap_transpile(
     name = "constptr_go",
     src = "constptr.gala",
     out = "constptr.gen.go",
@@ -106,6 +113,7 @@ go_library(
         "immutable.gen.go",
         "interfaces.go",
         "iterable.gen.go",
+        "json.gen.go",
         "option.gen.go",
         "ordered.gen.go",
         "seq.gen.go",

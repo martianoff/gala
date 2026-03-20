@@ -1,0 +1,28 @@
+package main
+
+import . "martianoff/gala/std"
+
+// Repro: block lambda return type should be inferred from struct field type
+// Bug: when a block lambda is assigned to a struct field with a known function type,
+// the transpiler should infer the return type from the field type.
+// Instead, it falls back to `any` when the last return is a method call on a parameter.
+
+type Wrapper[T any] struct {
+    var compute func() T
+}
+
+func make1[T any](value T) Wrapper[T] = Wrapper[T](compute = () => value)
+
+func combine[T any, U any](first Wrapper[T], second Wrapper[U]) Wrapper[U] {
+    return Wrapper[U](compute = () => {
+        first.compute()
+        return second.compute()
+    })
+}
+
+func main() {
+    val a = make1(42)
+    val b = make1("hello")
+    val c = combine[int, string](a, b)
+    Println(c.compute())
+}

@@ -1,0 +1,13 @@
+Pure: 42
+Suspended: 42
+Mapped: 50
+Chained: 42
+Recovered: -1
+Side effect executed!
+Step 1
+Program: done
+Fail chain is failure: true
+Before IO creation
+IO created but not run
+Computing...
+Now running: 99
