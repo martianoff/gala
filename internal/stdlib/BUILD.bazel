@@ -33,6 +33,8 @@ genrule(
         "//std:try.gala",
         "//std:errors.gala",
         "//std:constptr.gala",
+        "//std:json_go",
+        "//std:json.gala",
         # go_interop package
         "//go_interop:types.go",
         # collection_immutable package - transpiled Go
@@ -78,6 +80,14 @@ genrule(
         "//time_utils:time_utils_go",
         # time_utils package - GALA source
         "//time_utils:time_utils.gala",
+        # regex package - transpiled Go
+        "//regex:regex_go",
+        # regex package - GALA source
+        "//regex:regex.gala",
+        # io package - transpiled Go
+        "//io:io_go",
+        # io package - GALA source
+        "//io:io.gala",
     ],
     outs = ["embedded_gen.go"],
     cmd = "$(location //cmd/stdlib_gen) -output $@ $(SRCS)",

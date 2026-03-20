@@ -1,6 +1,12 @@
-load("//:gala.bzl", "gala_go_test", "gala_library")
+load("//:gala.bzl", "gala_bootstrap_transpile", "gala_go_test", "gala_library")
 
 exports_files(["io.gala"])
+
+gala_bootstrap_transpile(
+    name = "io_go",
+    src = "io.gala",
+    out = "io.gen.go",
+)
 
 filegroup(
     name = "gala_sources",

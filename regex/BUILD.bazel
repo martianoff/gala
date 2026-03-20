@@ -1,6 +1,12 @@
-load("//:gala.bzl", "gala_go_test", "gala_library")
+load("//:gala.bzl", "gala_bootstrap_transpile", "gala_go_test", "gala_library")
 
 exports_files(["regex.gala"])
+
+gala_bootstrap_transpile(
+    name = "regex_go",
+    src = "regex.gala",
+    out = "regex.gen.go",
+)
 
 filegroup(
     name = "gala_sources",
