@@ -33,6 +33,7 @@ var StdlibPackages = []string{
 	"time_utils",
 	"regex",
 	"io",
+	"json",
 }
 
 // StdlibImportPaths maps package names to their import paths.
@@ -48,6 +49,7 @@ var StdlibImportPaths = map[string]string{
 	"time_utils":           "martianoff/gala/time_utils",
 	"regex":                "martianoff/gala/regex",
 	"io":                   "martianoff/gala/io",
+	"json":                 "martianoff/gala/json",
 }
 
 // GenerateGoMod generates a go.mod file content for the workspace.

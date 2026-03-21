@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "bridge.go",
         "calls.go",
+        "codec.go",
         "constructors.go",
         "declarations.go",
         "expressions.go",

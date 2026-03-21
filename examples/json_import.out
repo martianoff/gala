@@ -1,0 +1,6 @@
+{"name":"Widget","price":42}
+Decode success: true
+{
+  "name": "Widget",
+  "price": 42
+}

@@ -29,6 +29,7 @@ func packageFromPath(path string) string {
 		"time_utils",
 		"regex",
 		"io",
+		"json",
 		"std",
 	}
 
@@ -141,6 +142,7 @@ var PackageImportPaths = map[string]string{
 	"time_utils":           "martianoff/gala/time_utils",
 	"regex":                "martianoff/gala/regex",
 	"io":                   "martianoff/gala/io",
+	"json":                 "martianoff/gala/json",
 }
 `)
 

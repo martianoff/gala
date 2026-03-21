@@ -2,43 +2,35 @@ package main
 
 import (
     . "martianoff/gala/std"
+    . "martianoff/gala/json"
 )
 
-type Person struct {
-    var Name string
-    var Age  int
-}
+struct Person(Name string, Age int)
 
 func main() {
-    // Serialize
-    val person = Person{Name: "Alice", Age: 30}
-    val jsonStr = JsonStringify(person).Get()
+    val codec = Codec[Person](AsIs())
+
+    // Encode
+    val person = Person("Alice", 30)
+    val jsonStr = codec.Encode(person).Get()
     Println(jsonStr)
 
-    // Deserialize
-    val parsed = JsonParse[Person](jsonStr)
-    parsed.ForEach((p Person) => {
-        Println(s"Parsed: ${p.Name}, age ${p.Age}")
+    // Decode — returns Try[Person]
+    val decoded = codec.Decode(jsonStr)
+    decoded.ForEach((p Person) => {
+        Println(s"Decoded: ${p.Name}, age ${p.Age}")
     })
 
-    // Pretty print
-    val pretty = JsonStringifyPretty(person).Get()
-    Println(pretty)
-
-    // Error handling
-    val bad = JsonParse[Person]("invalid json")
-    Println(s"Bad parse is failure: ${bad.IsFailure()}")
-
-    // Pattern matching with Json extractor
+    // Pattern matching via Unapply
     val result = jsonStr match {
-        case Json[Person](p) => s"Matched: ${p.Name}, age ${p.Age}"
+        case codec(p) => s"Matched: ${p.Name}, age ${p.Age}"
         case _ => "no match"
     }
     Println(result)
 
-    // Pattern matching with invalid JSON
-    val result2 = "not json" match {
-        case Json[Person](p) => s"Matched: ${p.Name}"
+    // Invalid JSON pattern matching
+    val result2 = "invalid json" match {
+        case codec(p) => s"Matched: ${p.Name}"
         case _ => "no match"
     }
     Println(result2)

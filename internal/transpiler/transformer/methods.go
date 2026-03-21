@@ -433,6 +433,17 @@ func (t *galaASTTransformer) generateUnapplyMethod(name string, fields *ast.Fiel
 //   - Method: func (w Wrap[T]) IsWrap() bool { return true }
 func (t *galaASTTransformer) generateInstanceMarker(name string, tParams *ast.FieldList) (ast.Decl, ast.Decl) {
 	interfaceName := name + "Instance"
+	// Avoid collision: if a type with the same name as the generated interface
+	// already exists (e.g., type Codec[T] generates "CodecInstance" which collides
+	// with a user-defined type JsonEncoder), use an underscore prefix.
+	if t.getTypeMeta(interfaceName) != nil {
+		interfaceName = "_" + interfaceName
+	}
+	// Store the actual interface name so pattern matching can look it up
+	if t.instanceInterfaceNames == nil {
+		t.instanceInterfaceNames = make(map[string]string)
+	}
+	t.instanceInterfaceNames[name] = interfaceName
 	methodName := "Is" + name
 
 	// Generate interface: type WrapInstance interface { IsWrap() bool }

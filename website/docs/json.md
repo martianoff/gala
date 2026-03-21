@@ -1,42 +1,79 @@
 ---
 layout: default
-title: "Json in GALA — Type-Safe JSON Serialization and Pattern Matching"
-description: "GALA's Json module provides type-safe JSON serialization and deserialization with Try-based error handling and pattern matching extractors. Safer than Go's encoding/json."
-keywords: "gala json, golang json alternative, go type safe json, gala json parse, gala json pattern matching, go json serialization"
+title: "Json in GALA — Zero-Reflection JSON Codec with Builder Pattern"
+description: "GALA's json package provides zero-reflection, compile-time JSON serialization with builder pattern configuration, naming strategies, and pattern matching support."
+keywords: "gala json, golang json alternative, go type safe json, gala json codec, gala json pattern matching, go json serialization, zero reflection json"
 permalink: /docs/json/
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / Json</p>
 
-# Json — Type-Safe JSON with Try
+# Json — Zero-Reflection JSON Codec
 
-GALA's `Json` module wraps Go's `encoding/json` with type safety. All operations return `Try[T]` — no unchecked errors, no forgotten `if err != nil`. Combined with pattern matching, you get a clean, composable JSON pipeline.
+GALA's `json` package provides compile-time JSON serialization powered by `StructMeta[T]`. No reflection, no struct tags, fully typed. All operations return `Try[T]` — no unchecked errors. Combined with builder pattern configuration and pattern matching, you get a clean, composable JSON pipeline.
 
 ```gala
-import . "martianoff/gala/std"
+import . "martianoff/gala/json"
 ```
+
+---
+
+## Quick Start
+
+```gala
+struct Person(FirstName string, LastName string, Age int)
+
+val codec = Codec[Person](SnakeCase())
+
+val person = Person("Alice", "Smith", 30)
+val jsonStr = codec.Encode(person).Get()
+// => {"first_name":"Alice","last_name":"Smith","age":30}
+
+val decoded = codec.Decode(jsonStr)
+// decoded: Try[Person] — fully typed!
+```
+
+---
+
+## Codec Builder Pattern
+
+Create a codec with `Codec[T](naming)` and configure it with fluent builder methods:
+
+```gala
+val codec = Codec[Person](SnakeCase())
+    .Omit("Password")
+    .Rename("Email", "email_address")
+    .OmitEmpty("Bio")
+```
+
+Each builder method returns a new immutable codec instance — safe to share across goroutines.
+
+### Naming Strategies
+
+| Strategy | Input | Output |
+|----------|-------|--------|
+| `AsIs()` | `FirstName` | `FirstName` |
+| `CamelCase()` | `FirstName` | `firstName` |
+| `SnakeCase()` | `FirstName` | `first_name` |
+| `KebabCase()` | `FirstName` | `first-name` |
 
 ---
 
 ## Serialization
 
 ```gala
-type Person struct {
-    var Name string
-    var Age  int
-}
-
-val person = Person{Name: "Alice", Age: 30}
+val person = Person("Alice", "Smith", 30)
 
 // Compact JSON
-val jsonStr = JsonStringify(person).Get()
-// => {"Name":"Alice","Age":30}
+val jsonStr = codec.Encode(person).Get()
+// => {"first_name":"Alice","last_name":"Smith","age":30}
 
 // Pretty-printed JSON
-val pretty = JsonStringifyPretty(person).Get()
+val pretty = codec.EncodePretty(person).Get()
 // => {
-//   "Name": "Alice",
-//   "Age": 30
+//   "first_name": "Alice",
+//   "last_name": "Smith",
+//   "age": 30
 // }
 ```
 
@@ -45,34 +82,27 @@ val pretty = JsonStringifyPretty(person).Get()
 ## Deserialization
 
 ```gala
-val parsed = JsonParse[Person](jsonStr)
-// parsed: Try[Person]
+val decoded = codec.Decode(jsonStr)
+// decoded: Try[Person]
 
 // Safe access via Map
-val name = parsed.Map((p) => p.Name).GetOrElse("unknown")
+val name = decoded.Map((p) => p.FirstName).GetOrElse("unknown")
 
 // Side effect on success
-parsed.ForEach((p) => {
-    Println(s"Parsed: ${p.Name}, age ${p.Age}")
+decoded.ForEach((p) => {
+    Println(s"Decoded: ${p.FirstName}, age ${p.Age}")
 })
-```
-
-Invalid JSON returns `Failure` instead of panicking:
-
-```gala
-val bad = JsonParse[Person]("invalid json")
-Println(bad.IsFailure())  // true
 ```
 
 ---
 
-## Pattern Matching with Json[T]
+## Pattern Matching
 
-The `Json[T]` extractor parses JSON strings directly inside `match` expressions. If parsing fails, the case does not match — no exception, no panic:
+Codec instances work as pattern matching extractors via `Unapply`. If decoding fails, the case does not match — no exception, no panic:
 
 ```gala
 val result = jsonStr match {
-    case Json[Person](p) => s"Found: ${p.Name}, age ${p.Age}"
+    case codec(p) => s"Found: ${p.FirstName}, age ${p.Age}"
     case _ => "invalid JSON"
 }
 ```
@@ -80,45 +110,61 @@ val result = jsonStr match {
 This is especially useful when handling input from external sources:
 
 ```gala
+val commandCodec = Codec[Command](SnakeCase())
+val eventCodec = Codec[Event](SnakeCase())
+
 func handleMessage(raw string) string = raw match {
-    case Json[Command](cmd) => processCommand(cmd)
-    case Json[Event](evt)   => processEvent(evt)
-    case _                  => "unknown message format"
+    case commandCodec(cmd) => processCommand(cmd)
+    case eventCodec(evt)   => processEvent(evt)
+    case _                 => "unknown message format"
 }
 ```
 
-The `Json[T]` extractor calls `Unapply` under the hood, returning `Some[T]` on success and `None` on failure — the same pattern used by [sealed types](/features/sealed-types/) and [regex extractors](/docs/regex/).
+---
+
+## Qualified Import
+
+For projects that prefer explicit package prefixes:
+
+```gala
+import "martianoff/gala/json"
+
+val codec = json.Codec[Person](json.SnakeCase())
+codec.Encode(person)
+```
 
 ---
 
-## Chaining with Try
+## How It Works
 
-Because `JsonParse` returns `Try[T]`, you can chain operations without intermediate error checks:
-
-```gala
-val greeting = JsonParse[Person](input)
-    .Map((p) => p.Name)
-    .Map((name) => s"Hello, $name!")
-    .GetOrElse("Hello, stranger!")
-```
-
-Convert to other monadic types:
+`Codec[T]` is powered by `StructMeta[T]` — a compiler intrinsic that generates type-safe field access at compile time. When you write:
 
 ```gala
-val opt = JsonParse[Person](input).ToOption()     // Option[Person]
-val either = JsonParse[Person](input).ToEither()  // Either[error, Person]
+val codec = Codec[Person](SnakeCase())
 ```
+
+The transpiler:
+1. Detects that `Codec[T].Apply` expects `StructMetaOps` as first parameter
+2. Auto-generates `_StructMeta_Person` with typed `WriteTo`/`ReadFrom` methods
+3. Injects it as the first argument: `Codec[Person]{}.Apply(_StructMeta_Person{}, SnakeCase())`
+
+No reflection at runtime. Field names, types, and access patterns are all resolved at compile time.
 
 ---
 
 ## API Reference
 
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| <code>JsonParse[T](data)</code> | <code>string → Try[T]</code> | Deserialize JSON string to T |
-| <code>JsonStringify[T](value)</code> | <code>T → Try[string]</code> | Serialize value to JSON string |
-| <code>JsonStringifyPretty[T](value)</code> | <code>T → Try[string]</code> | Serialize to pretty-printed JSON |
-| <code>Json[T].Unapply(s)</code> | <code>string → Option[T]</code> | Pattern matching extractor |
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `Codec[T](naming)` | `Naming → JsonEncoder[T]` | Create codec (StructMeta auto-injected) |
+| `.Naming(n)` | `Naming → JsonEncoder[T]` | Set naming strategy |
+| `.Omit(field)` | `string → JsonEncoder[T]` | Exclude field from serialization |
+| `.Rename(field, key)` | `string, string → JsonEncoder[T]` | Map field to custom JSON key |
+| `.OmitEmpty(field)` | `string → JsonEncoder[T]` | Skip field when value is zero |
+| `.Encode(v)` | `T → Try[string]` | Serialize to compact JSON |
+| `.EncodePretty(v)` | `T → Try[string]` | Serialize to pretty-printed JSON |
+| `.Decode(s)` | `string → Try[T]` | Deserialize from JSON string |
+| `.Unapply(s)` | `string → Option[T]` | Pattern matching extractor |
 
 ---
 

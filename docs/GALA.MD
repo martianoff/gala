@@ -1240,47 +1240,135 @@ For comprehensive documentation including Promise, ExecutionContext, sequence op
 
 ### Json
 
-`Json` provides type-safe JSON serialization and deserialization with pattern matching support. Located in `std`.
-
-#### Serialization and Deserialization
+The `json` package provides zero-reflection, compile-time JSON serialization with builder pattern configuration. Located in the `json` package.
 
 ```gala
-import . "martianoff/gala/std"
-
-type Person struct {
-    var Name string
-    var Age  int
-}
-
-// Serialize to JSON string
-val jsonStr = JsonStringify(Person{Name: "Alice", Age: 30}).Get()
-// => {"Name":"Alice","Age":30}
-
-// Deserialize from JSON string
-val person = JsonParse[Person](jsonStr)
-person.ForEach((p) => Println(s"Name: ${p.Name}"))
-
-// Pretty-print
-val pretty = JsonStringifyPretty(Person{Name: "Alice", Age: 30}).Get()
+import . "martianoff/gala/json"
 ```
+
+#### Codec — Builder Pattern API
+
+```gala
+struct Person(FirstName string, LastName string, Age int)
+
+// Create codec with naming strategy
+val codec = Codec[Person](SnakeCase())
+
+// Builder methods for field configuration
+val codec = Codec[Person](SnakeCase())
+    .Omit("Password")
+    .Rename("Email", "email_address")
+    .OmitEmpty("Bio")
+```
+
+#### Encode and Decode
 
 All operations return `Try[T]` for safe error handling:
 
 ```gala
-val bad = JsonParse[Person]("invalid")
-Println(bad.IsFailure())  // true
+val person = Person("Alice", "Smith", 30)
+
+// Encode to JSON string
+val jsonStr = codec.Encode(person).Get()
+// => {"first_name":"Alice","last_name":"Smith","age":30}
+
+// Pretty-printed JSON
+val pretty = codec.EncodePretty(person).Get()
+
+// Decode from JSON — returns Try[Person], fully typed
+val decoded = codec.Decode(jsonStr)
+decoded.ForEach((p) => Println(s"Name: ${p.FirstName}"))
 ```
 
-#### Json Pattern Matching
+#### Pattern Matching
 
-The `Json[T]` extractor enables pattern matching on JSON strings:
+Codec instances work as pattern matching extractors via `Unapply`:
 
 ```gala
 val result = jsonStr match {
-    case Json[Person](p) => s"Found: ${p.Name}, age ${p.Age}"
+    case codec(p) => s"Found: ${p.FirstName}, age ${p.Age}"
     case _ => "invalid JSON"
 }
 ```
+
+#### Naming Strategies
+
+| Strategy | Example | Result |
+|----------|---------|--------|
+| `AsIs()` | `FirstName` | `FirstName` |
+| `CamelCase()` | `FirstName` | `firstName` |
+| `SnakeCase()` | `FirstName` | `first_name` |
+| `KebabCase()` | `FirstName` | `first-name` |
+
+#### Qualified Import
+
+```gala
+import "martianoff/gala/json"
+
+val codec = json.Codec[Person](json.SnakeCase())
+```
+
+#### API Reference
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `Codec[T](naming)` | `Naming → JsonEncoder[T]` | Create codec (StructMeta auto-injected) |
+| `.Naming(n)` | `Naming → JsonEncoder[T]` | Set naming strategy |
+| `.Omit(field)` | `string → JsonEncoder[T]` | Exclude field |
+| `.Rename(field, key)` | `string, string → JsonEncoder[T]` | Custom key |
+| `.OmitEmpty(field)` | `string → JsonEncoder[T]` | Skip zero-value field |
+| `.Encode(v)` | `T → Try[string]` | Serialize to JSON |
+| `.EncodePretty(v)` | `T → Try[string]` | Pretty-printed JSON |
+| `.Decode(s)` | `string → Try[T]` | Deserialize from JSON |
+| `.Unapply(s)` | `string → Option[T]` | Pattern matching extractor |
+
+### StructMeta — Compile-Time Struct Introspection
+
+`StructMeta[T]` is a compiler intrinsic that provides zero-reflection, type-safe access to struct fields. It is the foundation for building codecs and any code that needs to inspect struct layout at compile time.
+
+```gala
+struct Person(FirstName string, LastName string, Age int)
+
+val meta = StructMeta[Person]()
+meta.NumFields()     // 3
+meta.FieldName(0)    // "FirstName"
+meta.FieldType(0)    // "string"
+```
+
+The transpiler generates a specialized struct (`_StructMeta_Person`) with concrete, typed methods. No `any`, no reflection.
+
+#### Auto-Injection
+
+When a generic type's `Apply` method has `StructMetaOps` as its first parameter, the transpiler auto-generates and injects `StructMeta[T]`. This is how `Codec[Person](SnakeCase())` works — the user never needs to write `StructMeta[Person]()` explicitly.
+
+#### Building Custom Codecs
+
+`StructMeta` is format-agnostic. To support a new format (YAML, TOML, etc.), implement `FieldWriter` and `FieldReader` interfaces from `std`:
+
+```gala
+type FieldWriter interface {
+    BeginObject()
+    EndObject()
+    WriteKey(key string)
+    WriteString(v string)
+    WriteInt(v int)
+    WriteFloat64(v float64)
+    WriteBool(v bool)
+    WriteNull()
+}
+```
+
+Then create a codec type with an `Apply(meta StructMetaOps, ...)` method — the transpiler will auto-inject StructMeta for your format too.
+
+#### StructMeta API
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `NumFields` | `() int` | Number of fields in the struct |
+| `FieldName` | `(i int) string` | Name of field at index i |
+| `FieldType` | `(i int) string` | Type name of field at index i |
+| `WriteTo` | `(v T, w FieldWriter, keys Array[string])` | Serialize fields |
+| `ReadFrom` | `(r FieldReader, reverseKeys HashMap[string, string]) T` | Deserialize fields |
 
 ### Regex
 
