@@ -1,0 +1,7 @@
+GALA
+    filter rm_comments_in_strings " /* */
+    filter rm_comments_in_strings " //
+    filter call_regexp_common C++
+    filter remove_inline //.*$
+    extension gala
+    3rd_gen_scale 2.50
