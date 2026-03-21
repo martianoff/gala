@@ -73,6 +73,37 @@
       transition: opacity 0.2s;
     }
     nav a:hover { opacity: 1; }
+    .nav-dropdown {
+      position: relative;
+    }
+    .nav-dropdown > a::after {
+      content: ' ▾';
+      font-size: 0.7em;
+    }
+    .nav-dropdown-menu {
+      display: none;
+      position: absolute;
+      top: 100%;
+      left: 0;
+      background: var(--nav-bg);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 6px;
+      padding: 0.5rem 0;
+      min-width: 200px;
+      z-index: 100;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    .nav-dropdown:hover .nav-dropdown-menu {
+      display: block;
+    }
+    .nav-dropdown-menu a {
+      display: block;
+      padding: 0.4rem 1.2rem;
+      white-space: nowrap;
+    }
+    .nav-dropdown-menu a:hover {
+      background: rgba(255,255,255,0.1);
+    }
     nav .logo {
       font-weight: 700;
       font-size: 1.3rem;
@@ -182,7 +213,35 @@
 <body>
   <nav>
     <a href="{{ '/' | relative_url }}" class="logo">GALA</a>
-    <a href="{{ '/features/sealed-types/' | relative_url }}">Features</a>
+    <div class="nav-dropdown">
+      <a href="{{ '/features/sealed-types/' | relative_url }}">Features</a>
+      <div class="nav-dropdown-menu">
+        <a href="{{ '/features/sealed-types/' | relative_url }}">Sealed Types</a>
+        <a href="{{ '/features/pattern-matching/' | relative_url }}">Pattern Matching</a>
+        <a href="{{ '/features/error-handling/' | relative_url }}">Error Handling</a>
+        <a href="{{ '/features/immutability/' | relative_url }}">Immutability</a>
+        <a href="{{ '/features/collections/' | relative_url }}">Collections</a>
+        <a href="{{ '/features/type-inference/' | relative_url }}">Type Inference</a>
+        <a href="{{ '/features/string-interpolation/' | relative_url }}">String Interpolation</a>
+        <a href="{{ '/features/concurrency/' | relative_url }}">Concurrency</a>
+        <a href="{{ '/features/go-interop/' | relative_url }}">Go Interop</a>
+      </div>
+    </div>
+    <div class="nav-dropdown">
+      <a href="{{ '/docs/' | relative_url }}">Docs</a>
+      <div class="nav-dropdown-menu">
+        <a href="{{ '/docs/json/' | relative_url }}">Json</a>
+        <a href="{{ '/docs/regex/' | relative_url }}">Regex</a>
+        <a href="{{ '/docs/io/' | relative_url }}">IO Effect</a>
+        <a href="{{ '/docs/streams/' | relative_url }}">Streams</a>
+        <a href="{{ '/docs/string-utils/' | relative_url }}">String Utils</a>
+        <a href="{{ '/docs/time-utils/' | relative_url }}">Time Utils</a>
+        <a href="{{ '/docs/immutable-collections/' | relative_url }}">Immutable Collections</a>
+        <a href="{{ '/docs/mutable-collections/' | relative_url }}">Mutable Collections</a>
+        <a href="{{ '/docs/dependency-management/' | relative_url }}">Dependency Management</a>
+        <a href="{{ '/docs/language-reference/' | relative_url }}">Language Reference</a>
+      </div>
+    </div>
     <a href="{{ '/vs-go/' | relative_url }}">GALA vs Go</a>
     <a href="{{ '/getting-started/' | relative_url }}">Get Started</a>
     <a href="{{ '/playground/' | relative_url }}">Playground</a>

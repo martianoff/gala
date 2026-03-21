@@ -339,19 +339,16 @@ val desc = flag match {
 <tr>
 <td>
 
-```gala
-val msg = shape match {
+<pre><code class="language-gala">val msg = shape match {
     case Circle(r)      => f"r=$r%.1f"
     case Rectangle(w,h) => f"$w%.0fx$h%.0f"
     case Point()        => "point"
-}
-```
+}</code></pre>
 
 </td>
 <td>
 
-```go
-var msg string
+<pre><code class="language-go">var msg string
 switch shape._variant {
 case Shape_Circle:
     msg = fmt.Sprintf("r=%.1f", shape.Radius.Get())
@@ -359,8 +356,7 @@ case Shape_Rectangle:
     msg = fmt.Sprintf("%fx%f", shape.Width.Get(), shape.Height.Get())
 case Shape_Point:
     msg = "point"
-}
-```
+}</code></pre>
 
 </td>
 </tr>

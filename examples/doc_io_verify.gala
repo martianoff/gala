@@ -1,0 +1,58 @@
+package main
+
+import (
+    "errors"
+    "martianoff/gala/io"
+    . "martianoff/gala/std"
+)
+
+func fetchData() int = 42
+func process(n int) int = n * 2
+func save(n int) bool {
+    Println(s"Saving $n")
+    return true
+}
+
+func main() {
+    // Verify io.Suspend with function reference (not lambda wrapper)
+    val program = io.FlatMap[int, bool](
+        io.Suspend(fetchData),
+        (data int) => io.FlatMap[int, bool](
+            io.Of(process(data)),
+            (result int) => io.Suspend(() => save(result)),
+        ),
+    )
+    program.Run()
+
+    // Verify Map
+    val doubled = io.Map[int, int](io.Of(21), (x int) => x * 2)
+    Println(s"Doubled: ${doubled.Run().Get()}")
+
+    // Verify FlatMap
+    val chained = io.FlatMap[int, int](io.Of(10), (x int) => io.Of(x + 32))
+    Println(s"Chained: ${chained.Run().Get()}")
+
+    // Verify AndThen
+    val seq = io.AndThen[bool, string](
+        io.Effect(() => { Println("Step 1") }),
+        io.Of("done"),
+    )
+    Println(s"Seq: ${seq.Run().Get()}")
+
+    // Verify Recover
+    val safe = io.Recover(
+        io.Fail[int](errors.New("oops")),
+        (err) => -1,
+    )
+    Println(s"Recovered: ${safe.Run().Get()}")
+
+    // Verify ForEach
+    io.ForEach(io.Of(42), (v) => { Println(s"ForEach: $v") }).Run()
+
+    // Verify failure propagation
+    val failChain = io.FlatMap[int, int](
+        io.Fail[int](errors.New("initial error")),
+        (x int) => io.Of(x * 2),
+    )
+    Println(s"Fail chain is failure: ${failChain.Run().IsFailure()}")
+}

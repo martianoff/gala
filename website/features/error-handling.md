@@ -362,18 +362,15 @@ Compare this to the Go equivalent:
 <tr>
 <td>
 
-```gala
-val result = divide(10, 2)
+<pre><code class="language-gala">val result = divide(10, 2)
     .Map((x) => x * 2)
     .FlatMap((x) => divide(x, 3))
-    .Recover((e) => 0)
-```
+    .Recover((e) => 0)</code></pre>
 
 </td>
 <td>
 
-```go
-result, err := divide(10, 2)
+<pre><code class="language-go">result, err := divide(10, 2)
 if err != nil {
     result = 0
 } else {
@@ -382,8 +379,7 @@ if err != nil {
     if err != nil {
         result = 0
     }
-}
-```
+}</code></pre>
 
 </td>
 </tr>

@@ -112,21 +112,17 @@ This replaces the tedious Go pattern of manually copying every field:
 <tr>
 <td>
 
-```gala
-struct Config(Host string, Port int)
-val updated = config.Copy(Port = 8080)
-```
+<pre><code class="language-gala">struct Config(Host string, Port int)
+val updated = config.Copy(Port = 8080)</code></pre>
 
 </td>
 <td>
 
-```go
-type Config struct {
+<pre><code class="language-go">type Config struct {
     Host string
     Port int
 }
-updated := Config{Host: config.Host, Port: 8080}
-```
+updated := Config{Host: config.Host, Port: 8080}</code></pre>
 
 </td>
 </tr>

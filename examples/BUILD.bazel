@@ -1319,6 +1319,14 @@ gala_test(
     ],
 )
 
+# Doc verification: IO effect patterns from website/docs/io.md
+gala_test(
+    name = "doc_io_verify",
+    src = "doc_io_verify.gala",
+    expected = "doc_io_verify.out",
+    deps = ["//io"],
+)
+
 # Repro: block lambda return type inference from struct field type
 gala_test(
     name = "block_lambda_field_type",
