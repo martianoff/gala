@@ -1,8 +1,8 @@
 ---
 layout: default
-title: "GALA vs Go — Sum Types, Pattern Matching, and Option Types Compared"
-description: "Side-by-side comparison of GALA and Go. See how sum types replace type switches, pattern matching replaces switch, Option replaces nil checks, and functional collections replace manual loops — same Go binary."
-keywords: "gala vs go, golang sum types comparison, go pattern matching vs switch, golang option vs nil, go error handling comparison, transpile to go, golang functional vs imperative, golang missing features"
+title: "GALA vs Go — Sum Types, Pattern Matching, JSON Codec, and Default Parameters Compared"
+description: "Side-by-side comparison of GALA and Go. See how sum types replace type switches, pattern matching replaces switch, Option replaces nil checks, zero-reflection JSON replaces struct tags, default parameters replace functional options — same Go binary."
+keywords: "gala vs go, golang sum types comparison, go pattern matching vs switch, golang option vs nil, go error handling comparison, transpile to go, golang functional vs imperative, golang missing features, golang json without reflection, go json alternative, golang default parameters, golang named arguments, go functional options alternative"
 permalink: /vs-go/
 ---
 
@@ -218,6 +218,59 @@ fmt.Printf("Pi = %.2f\n", 3.14159)</code></pre>
 </div>
 
 GALA also provides `Println` and `Print` as built-in functions -- no `fmt` import required.
+
+---
+
+## JSON Serialization: Codec vs Struct Tags
+
+GALA's `Codec[T]` uses the compiler-generated `StructMeta[T]` intrinsic for fully typed JSON serialization — no reflection, no struct tags, and pattern matching support out of the box.
+
+<div class="comparison">
+<div>
+<p><strong>GALA</strong></p>
+<pre><code>struct Person(
+    FirstName string,
+    LastName string,
+    Age int,
+)
+
+val codec = Codec[Person](SnakeCase())
+val jsonStr = codec.Encode(person).Get()
+// {"first_name":"Alice",...}
+
+val decoded = codec.Decode(jsonStr)
+// Try[Person] — fully typed
+
+// Builder: rename, omit
+val custom = codec
+    .Rename("FirstName", "given_name")
+    .Omit("Age")</code></pre>
+</div>
+<div>
+<p><strong>Go</strong></p>
+<pre><code>type Person struct {
+    FirstName string `json:"first_name"`
+    LastName  string `json:"last_name"`
+    Age       int    `json:"age"`
+}
+
+data, err := json.Marshal(person)
+if err != nil {
+    // handle error
+}
+
+var decoded Person
+err = json.Unmarshal(data, &amp;decoded)
+if err != nil {
+    // handle error
+}
+
+// Rename or omit? New struct +
+// custom MarshalJSON method</code></pre>
+</div>
+</div>
+
+GALA's codec is resolved entirely at compile time — zero reflection overhead at runtime. The builder pattern lets you rename or omit fields without defining a new struct or writing custom marshal methods. You can even pattern match on JSON strings directly using `codec(p)` as an extractor.
 
 ---
 

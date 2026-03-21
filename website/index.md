@@ -1,22 +1,22 @@
 ---
 layout: default
-title: "GALA - Sum Types, Pattern Matching, and Option Types for Go"
-description: "GALA adds the features Go developers want most — sum types (sealed types), exhaustive pattern matching, Option/Either/Try monads, and immutable collections. Transpiles to native Go binaries with full library compatibility."
-keywords: "golang sum types, golang pattern matching, golang option type, go algebraic data types, go sealed types, transpile to go, golang error handling alternative, golang immutable collections, gala language"
+title: "GALA - Sum Types, Pattern Matching, Default Parameters, and Zero-Reflection JSON for Go"
+description: "GALA adds the features Go developers want most — sum types, exhaustive pattern matching, default parameters with named arguments, zero-reflection JSON codec, Option/Either/Try monads, and immutable collections. Transpiles to native Go binaries with full library compatibility."
+keywords: "golang sum types, golang pattern matching, golang option type, go algebraic data types, go sealed types, transpile to go, golang error handling alternative, golang immutable collections, gala language, golang default parameters, golang named arguments, go json without reflection, golang json codec, golang regex pattern matching, go functional programming"
 schema_type: "SoftwareApplication"
 permalink: /
 ---
 
 <div class="hero">
   <h1>GALA</h1>
-  <p class="tagline">Sum types, pattern matching, and Option types that Go is missing — compiled to native Go binaries</p>
+  <p class="tagline">Sum types, pattern matching, default parameters, and zero-reflection JSON that Go is missing — compiled to native Go binaries</p>
   <a href="https://gala-playground.fly.dev" class="cta">Try in Playground</a>
   <a href="https://github.com/martianoff/gala" class="cta cta-secondary">View on GitHub</a>
 </div>
 
 ## Sum Types and Pattern Matching for Go — Without Leaving the Ecosystem
 
-**GALA** (Go Alternative LAnguage) is a modern programming language that transpiles to Go. The [2024 Go Developer Survey](https://go.dev/blog/survey2024-h1-results) confirmed that **sum types and enums are the #1 most-requested missing feature** in Go. As of Go 1.25, they still don't exist. GALA delivers them today — along with exhaustive pattern matching, `Option[T]`/`Either[A,B]`/`Try[T]` monads, and immutable collections — all compiling to a single native binary through the standard Go toolchain.
+**GALA** (Go Alternative LAnguage) is a modern programming language that transpiles to Go. The [2024 Go Developer Survey](https://go.dev/blog/survey2024-h1-results) confirmed that **sum types and enums are the #1 most-requested missing feature** in Go. As of Go 1.25, they still don't exist. GALA delivers them today — along with exhaustive pattern matching, `Option[T]`/`Either[A,B]`/`Try[T]` monads, default parameters with named arguments, a zero-reflection JSON codec, regex pattern matching extractors, and immutable collections — all compiling to a single native binary through the standard Go toolchain.
 
 Unlike libraries like samber/lo or IBM/fp-go that bolt functional patterns onto Go's syntax, GALA adds these features **at the language level** with clean, concise syntax. Every Go library works out of the box. Your existing Go modules, third-party packages, and tooling remain fully compatible. GALA extends Go with the type-safety features it deliberately omits, while preserving Go's performance, deployment simplicity, and ecosystem.
 
@@ -71,6 +71,39 @@ val updated = config.Copy(Port = 8080)</code></pre>
 val evens = nums.Filter((x) =&gt; x % 2 == 0)
 val sum = nums.FoldLeft(0, (acc, x) =&gt; acc + x)</code></pre>
 <p><a href="{{ '/features/collections/' | relative_url }}">Learn about collections</a></p>
+</div>
+
+<div class="feature-card">
+<h3>Default Parameters &amp; Named Arguments</h3>
+<p>No more functional options pattern or config structs. <strong>Default parameter values</strong> and <strong>named arguments</strong> work directly in function signatures.</p>
+<pre><code>func connect(host string,
+    port int = 8080, tls bool = true,
+) Connection
+
+connect("localhost", tls = false)</code></pre>
+<p><a href="{{ '/docs/language-reference/' | relative_url }}">Learn about default parameters</a></p>
+</div>
+
+<div class="feature-card">
+<h3>Zero-Reflection JSON Codec</h3>
+<p>Compile-time <code>StructMeta[T]</code> generates typed serialization with no reflection, no struct tags. Builder pattern for <code>Rename</code>, <code>Omit</code>, and naming strategies.</p>
+<pre><code>val codec = Codec[Person](SnakeCase())
+val jsonStr = codec.Encode(person).Get()
+val decoded = codec.Decode(jsonStr)</code></pre>
+<p><a href="{{ '/docs/json/' | relative_url }}">Learn about JSON codec</a></p>
+</div>
+
+<div class="feature-card">
+<h3>Regex Pattern Matching</h3>
+<p>Compile-safe regex with extractors that destructure capture groups directly in <code>match</code> expressions. No manual group indexing.</p>
+<pre><code>val date = regex.MustCompile(
+    "(\\d{4})-(\\d{2})-(\\d{2})")
+
+input match {
+    case date(Array(y, m, d)) =&gt;
+        s"$y/$m/$d"
+}</code></pre>
+<p><a href="{{ '/docs/regex/' | relative_url }}">Learn about regex</a></p>
 </div>
 
 <div class="feature-card">
@@ -176,9 +209,9 @@ GALA ships with a standard library of type-safe data structures and monads, all 
 | `Future[T]` | Async computation with `Map`, `FlatMap`, `Zip`, `Await` | [Concurrency]({{ '/features/concurrency/' | relative_url }}) |
 | `Tuple[A, B]` | Pairs and triples with `(a, b)` syntax | [Language spec]({{ '/features/pattern-matching/' | relative_url }}) |
 | `ConstPtr[T]` | Read-only pointer with compile-time enforcement | [Immutability]({{ '/features/immutability/' | relative_url }}) |
-| `Json[T]` | JSON extractor — pattern match on JSON strings | [Monadic types]({{ '/features/error-handling/' | relative_url }}) |
-| `Regex` | Regular expressions with `Unapply` for pattern matching | [Pattern matching]({{ '/features/pattern-matching/' | relative_url }}) |
-| `IO[T]` | Lazy composable effects — `Of`, `Suspend`, `Map`, `FlatMap` | [Language spec]({{ '/docs/language-reference/' | relative_url }}) |
+| `Codec[T]` | Zero-reflection JSON codec — `Encode`, `Decode`, `Rename`, `Omit`, pattern matching | [JSON codec]({{ '/docs/json/' | relative_url }}) |
+| `Regex` | Regular expressions with `Unapply` for pattern matching | [Regex]({{ '/docs/regex/' | relative_url }}) |
+| `IO[T]` | Lazy composable effects — `Of`, `Suspend`, `Map`, `FlatMap` | [IO effect]({{ '/docs/io/' | relative_url }}) |
 
 ### Collections
 
@@ -206,6 +239,9 @@ All collections support `Map`, `Filter`, `FoldLeft`, `ForEach`, `Exists`, `Find`
 | [Error Handling]({{ '/features/error-handling/' | relative_url }}) | `Option[T]`, `Either[A,B]`, `Try[T]` monads |
 | [Collections]({{ '/features/collections/' | relative_url }}) | Immutable and mutable functional collections |
 | [Concurrency]({{ '/features/concurrency/' | relative_url }}) | `Future[T]`, `Promise[T]`, and `ExecutionContext` |
+| [JSON Codec]({{ '/docs/json/' | relative_url }}) | Zero-reflection JSON serialization with `Codec[T]` |
+| [Regex]({{ '/docs/regex/' | relative_url }}) | Pattern matching with regex extractors |
+| [IO Effect]({{ '/docs/io/' | relative_url }}) | Lazy, composable side effects |
 | [Go Interop]({{ '/features/go-interop/' | relative_url }}) | Using Go libraries and types from GALA |
 | [Playground]({{ '/playground/' | relative_url }}) | Try GALA in your browser — no install needed |
 
