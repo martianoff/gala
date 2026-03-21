@@ -123,15 +123,15 @@ func StdConstructorRule(name string) (ConstructorInferenceRule, bool) {
 func StdParentTypeForPrefix(name string) (string, bool) {
 	// Direct constructors and their parent types
 	prefixes := map[string]string{
-		"Option_":  "Option",
-		"Some_":    "Option",
-		"None_":    "Option",
-		"Either_":  "Either",
-		"Left_":    "Either",
-		"Right_":   "Either",
-		"Try_":     "Try",
-		"Success_": "Try",
-		"Failure_": "Try",
+		"Option_":    "Option",
+		"Some_":      "Option",
+		"None_":      "Option",
+		"Either_":    "Either",
+		"Left_":      "Either",
+		"Right_":     "Either",
+		"Try_":       "Try",
+		"Success_":   "Try",
+		"Failure_":   "Try",
 	}
 	for prefix, parentType := range prefixes {
 		if len(name) > len(prefix) && name[:len(prefix)] == prefix {

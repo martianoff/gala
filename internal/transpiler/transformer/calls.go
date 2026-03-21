@@ -29,6 +29,10 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 
 	argList := suffix.ArgumentList()
 	if argList == nil {
+		// Check for compiler intrinsic: StructMeta[T]()
+		if t.getBaseTypeName(base) == "StructMeta" {
+			return t.transformStructMetaConstruction(base)
+		}
 		// Empty argument list - check for zero-argument Apply method
 		typeName := t.getBaseTypeName(base)
 		if typeName != "" {
@@ -687,9 +691,14 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 		args = filled
 	}
 
+	// Check for compiler intrinsic: StructMeta[T]()
+	typeName := t.getBaseTypeName(fun)
+	if typeName == "StructMeta" {
+		return t.transformStructMetaConstruction(fun)
+	}
+
 	// Check if the function being called is a type with an Apply method
 	// This handles companion object calls like Some[A](value) -> Some[A]{}.Apply(value)
-	typeName := t.getBaseTypeName(fun)
 	if typeName != "" {
 		// Use unified resolution to find type metadata
 		typeMeta, resolvedTypeMeta := t.getTypeMetaResolved(typeName)
@@ -815,6 +824,15 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 									fun = &ast.IndexListExpr{X: baseExpr, Indices: typeArgs}
 								}
 							}
+						}
+					}
+
+					// Auto-inject StructMeta[T] when first param is StructMetaOps.
+					// Codec[Person](SnakeCase()) → prepend _StructMeta_Person{} before SnakeCase()
+					if hasTypeArgs && len(methodMeta.ParamTypes) > 0 {
+						firstParamType := methodMeta.ParamTypes[0].BaseName()
+						if firstParamType == "StructMetaOps" || firstParamType == "json.StructMetaOps" {
+							args = t.autoInjectStructMeta(args, methodMeta, typeArgs)
 						}
 					}
 

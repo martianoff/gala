@@ -1,0 +1,87 @@
+package json
+
+// Naming represents a field naming strategy for serialization.
+// Used with BuildKeys to control how GALA field names are converted to serialized key names.
+//
+// Usage:
+//   val keys = BuildKeys(meta, SnakeCase)
+sealed type Naming {
+    // CamelCase converts PascalCase to camelCase (e.g., "FirstName" -> "firstName")
+    case CamelCase()
+    // SnakeCase converts PascalCase to snake_case (e.g., "FirstName" -> "first_name")
+    case SnakeCase()
+    // KebabCase converts PascalCase to kebab-case (e.g., "FirstName" -> "first-name")
+    case KebabCase()
+    // AsIs keeps the original PascalCase field names unchanged
+    case AsIs()
+}
+
+// ApplyNaming converts a single PascalCase field name using the given naming strategy.
+func ApplyNaming(fieldName string, naming Naming) string = naming match {
+    case CamelCase() => toCamelCase(fieldName)
+    case SnakeCase() => toSnakeCase(fieldName)
+    case KebabCase() => toKebabCase(fieldName)
+    case AsIs() => fieldName
+}
+
+// --- naming conversion helpers ---
+
+func toCamelCase(s string) string {
+    if s == "" { return s }
+    var i = 0
+    var upper = 0
+    val runes = toRunes(s)
+    for i < len(runes) && runes[i] >= 'A' && runes[i] <= 'Z' {
+        upper = upper + 1
+        i = i + 1
+    }
+    if upper == 0 { return s }
+    if upper == 1 {
+        runes[0] = runes[0] + 32
+        return runesToString(runes)
+    }
+    if upper < len(runes) {
+        var j = 0
+        for j < upper - 1 {
+            runes[j] = runes[j] + 32
+            j = j + 1
+        }
+    } else {
+        var j = 0
+        for j < len(runes) {
+            if runes[j] >= 'A' && runes[j] <= 'Z' {
+                runes[j] = runes[j] + 32
+            }
+            j = j + 1
+        }
+    }
+    return runesToString(runes)
+}
+
+func toSnakeCase(s string) string = toDelimited(s, '_')
+func toKebabCase(s string) string = toDelimited(s, '-')
+
+func toDelimited(s string, delim rune) string {
+    if s == "" { return s }
+    val runes = toRunes(s)
+    var result []rune
+    var i = 0
+    for i < len(runes) {
+        val r = runes[i]
+        if r >= 'A' && r <= 'Z' {
+            if i > 0 {
+                val prev = runes[i - 1]
+                if prev >= 'a' && prev <= 'z' {
+                    result = append(result, delim)
+                } else if i + 1 < len(runes) && runes[i + 1] >= 'a' && runes[i + 1] <= 'z' && prev >= 'A' && prev <= 'Z' {
+                    result = append(result, delim)
+                }
+            }
+            result = append(result, r + 32)
+        } else {
+            result = append(result, r)
+        }
+        i = i + 1
+    }
+    return runesToString(result)
+}

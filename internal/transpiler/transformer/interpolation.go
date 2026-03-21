@@ -96,12 +96,24 @@ func (t *galaASTTransformer) buildSprintfCall(parts []interpolationPart, isForma
 			return nil, err
 		}
 
-		// Determine format verb
+		// Determine format verb, unwrapping Immutable[T] if needed
 		var verb string
+		typ := t.getExprTypeNameManual(goExpr)
+
+		// If the expression type is Immutable[T], auto-unwrap with .Get()
+		if t.isImmutableType(typ) {
+			goExpr = &ast.CallExpr{
+				Fun: &ast.SelectorExpr{X: goExpr, Sel: ast.NewIdent("Get")},
+			}
+			// Use the inner type for format verb selection
+			if gt, ok := typ.(transpiler.GenericType); ok && len(gt.Params) > 0 {
+				typ = gt.Params[0]
+			}
+		}
+
 		if isFormatString && p.formatSpec != "" {
 			verb = p.formatSpec
 		} else {
-			typ := t.getExprTypeNameManual(goExpr)
 			verb = formatVerbForType(typ)
 		}
 

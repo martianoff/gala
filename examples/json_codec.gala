@@ -1,0 +1,45 @@
+package main
+
+import (
+    . "martianoff/gala/std"
+    . "martianoff/gala/json"
+)
+
+struct Person(FirstName string, LastName string, Age int, Bio string)
+
+func main() {
+    // Clean API — StructMeta auto-injected by transpiler!
+    val codec = Codec[Person](SnakeCase())
+
+    // Encode
+    val person = Person("Alice", "Smith", 30, "")
+    val jsonStr = codec.Encode(person).Get()
+    Println(jsonStr)
+
+    // Pretty print
+    Println(codec.EncodePretty(person).Get())
+
+    // Decode — returns Try[Person], fully typed
+    val decoded = codec.Decode(jsonStr)
+    decoded.ForEach((p Person) => {
+        Println(s"Decoded: ${p.FirstName} ${p.LastName}, age ${p.Age}")
+    })
+
+    // Pattern matching via Unapply
+    val result = jsonStr match {
+        case codec(p) => s"Matched: ${p.FirstName} ${p.LastName}"
+        case _ => "no match"
+    }
+    Println(result)
+
+    // Builder: Rename
+    val renamedCodec = Codec[Person](SnakeCase())
+        .Rename("FirstName", "given_name")
+    Println(renamedCodec.Encode(person).Get())
+
+    // Builder: Omit
+    val omitCodec = Codec[Person](CamelCase())
+        .Omit("LastName")
+        .Omit("Bio")
+    Println(omitCodec.Encode(person).Get())
+}

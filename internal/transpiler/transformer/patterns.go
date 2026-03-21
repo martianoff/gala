@@ -304,6 +304,12 @@ func (t *galaASTTransformer) isWildcardGenericType(typeExpr ast.Expr) (string, b
 // Instead of using As[Wrap[any]], it uses the marker interface check.
 func (t *galaASTTransformer) transformWildcardTypedPattern(name, baseName string, objExpr ast.Expr) (ast.Expr, []ast.Stmt, error) {
 	interfaceName := baseName + "Instance"
+	// Use the actual generated interface name if it was renamed to avoid collision
+	if t.instanceInterfaceNames != nil {
+		if actual, ok := t.instanceInterfaceNames[baseName]; ok {
+			interfaceName = actual
+		}
+	}
 	methodName := "Is" + baseName
 
 	// The variable keeps its original type from objExpr
@@ -1813,8 +1819,24 @@ func (t *galaASTTransformer) generateVariableUnapplyPattern(
 	var allBindings []ast.Stmt
 	var conds []ast.Expr
 
-	// Get the return type of Unapply (no type param substitution needed for concrete types)
+	// Get the return type of Unapply, substituting type params from the variable's concrete type.
+	// e.g., if variable is JsonEncoder[Person] and Unapply returns Option[T], resolve T=Person → Option[Person]
 	returnType := unapplyMeta.ReturnType
+	if varType := t.getType(variableName); varType != nil {
+		// Unwrap Immutable[X] to get X (vals are wrapped)
+		unwrapped := unwrapGalaType(varType)
+		if genType, ok := unwrapped.(transpiler.GenericType); ok && len(varTypeMeta.TypeParams) > 0 {
+			typeSubst := make(map[string]string)
+			for i, tp := range varTypeMeta.TypeParams {
+				if i < len(genType.Params) {
+					typeSubst[tp] = genType.Params[i].String()
+				}
+			}
+			if len(typeSubst) > 0 {
+				returnType = t.substituteTranspilerTypeParams(returnType, typeSubst)
+			}
+		}
+	}
 
 	// Check if Unapply returns bool (guard pattern) or Option[T] (extractor pattern)
 	isBoolReturn := false

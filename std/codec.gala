@@ -1,0 +1,37 @@
+package std
+
+// FieldWriter is the format-agnostic interface for serializing structured data.
+// Format-specific writers (JsonFieldWriter, YamlFieldWriter, etc.) implement
+// this interface. StructMeta-generated code calls these methods for each field.
+type FieldWriter interface {
+    BeginObject()
+    EndObject()
+    BeginArray()
+    EndArray()
+    WriteKey(key string)
+    WriteString(v string)
+    WriteInt(v int)
+    WriteFloat64(v float64)
+    WriteBool(v bool)
+    WriteNull()
+}
+
+// FieldReader is the format-agnostic interface for deserializing structured data.
+// Format-specific readers (JsonFieldReader, YamlFieldReader, etc.) implement
+// this interface. Uses Try[T] for error handling — idiomatic GALA.
+type FieldReader interface {
+    BeginObject() Try[bool]
+    EndObject() Try[bool]
+    BeginArray() Try[bool]
+    EndArray() Try[bool]
+    HasNextField() bool
+    NextKey() Try[string]
+    HasNextElement() bool
+    ReadString() Try[string]
+    ReadInt() Try[int]
+    ReadFloat64() Try[float64]
+    ReadBool() Try[bool]
+    IsNull() bool
+    ReadNull() Try[bool]
+    SkipValue() Try[bool]
+}

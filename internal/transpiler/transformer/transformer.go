@@ -60,6 +60,8 @@ type galaASTTransformer struct {
 	needsEmbedImport      bool                        // true when embed val declarations require import "embed"
 	warnTypeInference     bool                        // when true, log warnings about type inference fallbacks
 	inferenceWarnings     []string                    // collected type inference warnings
+	structMetas           map[string]*structMetaConfig  // generated StructMeta structs (keyed by generated name)
+	instanceInterfaceNames map[string]string            // type name -> actual generated interface name (for collision avoidance)
 }
 
 // NewGalaASTTransformer creates a new instance of ASTTransformer for GALA.
@@ -78,6 +80,7 @@ func NewGalaASTTransformer() transpiler.ASTTransformer {
 		inferer:           infer.NewInferer(),
 		typeAliases:       make(map[string]transpiler.Type),
 		exprTypeCache:     make(map[ast.Expr]transpiler.Type),
+		structMetas:       make(map[string]*structMetaConfig),
 	}
 }
 
@@ -116,6 +119,7 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 	}
 	t.goTypeInfo = richAST.GoTypeInfo
 	t.tempVarCount = 0
+	t.structMetas = make(map[string]*structMetaConfig)
 	t.richAST = richAST
 	t.traceTypeResolution = os.Getenv("GALA_TRACE_TYPES") == "1"
 	t.warnTypeInference = os.Getenv("GALA_WARN_TYPES") == "1"
@@ -193,6 +197,9 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 			file.Decls = append(file.Decls, decls...)
 		}
 	}
+
+	// Finalize codec/StructMeta declarations (generate Go AST for all collected intrinsics)
+	t.finalizeCodecs(file)
 
 	if t.needsStdImport && t.packageName != registry.StdPackageName {
 		// Check if std is already imported (e.g., as a dot import)

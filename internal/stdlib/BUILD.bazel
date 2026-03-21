@@ -33,8 +33,18 @@ genrule(
         "//std:try.gala",
         "//std:errors.gala",
         "//std:constptr.gala",
-        "//std:json_go",
-        "//std:json.gala",
+        "//std:codec_go",
+        "//std:codec.gala",
+        # json package
+        "//json:json_go",
+        "//json:codec_rw_go",
+        "//json:naming_go",
+        "//json:json.gala",
+        "//json:codec_rw.gala",
+        "//json:helpers_go",
+        "//json:helpers.gala",
+        "//json:naming.gala",
+        "//json:byte_utils.go",
         # go_interop package
         "//go_interop:types.go",
         # collection_immutable package - transpiled Go

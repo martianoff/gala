@@ -1301,11 +1301,37 @@ gala_test(
     deps = ["//io"],
 )
 
-# Json[T] type-safe serialization/deserialization
+# Regression: verify json package works with qualified import (json.Codec)
+gala_test(
+    name = "json_import",
+    src = "json_import.gala",
+    expected = "json_import.out",
+    deps = [
+        "//collection_immutable",
+        "//json",
+    ],
+)
+
+# json.Codec — zero-reflection JSON serialization
 gala_test(
     name = "json_serialization",
     src = "json_serialization.gala",
     expected = "json_serialization.out",
+    deps = [
+        "//collection_immutable",
+        "//json",
+    ],
+)
+
+# StructMeta[T] compile-time struct introspection + JSON codec
+gala_test(
+    name = "json_codec",
+    src = "json_codec.gala",
+    expected = "json_codec.out",
+    deps = [
+        "//collection_immutable",
+        "//json",
+    ],
 )
 
 # Regex pattern matching usage

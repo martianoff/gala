@@ -1,9 +1,4 @@
 {"Name":"Alice","Age":30}
-Parsed: Alice, age 30
-{
-  "Name": "Alice",
-  "Age": 30
-}
-Bad parse is failure: true
+Decoded: Alice, age 30
 Matched: Alice, age 30
 no match

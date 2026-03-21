@@ -1,0 +1,60 @@
+load("@rules_go//go:def.bzl", "go_library")
+load("//:gala.bzl", "gala_bootstrap_transpile")
+
+exports_files([
+    "json.gala",
+    "codec_rw.gala",
+    "helpers.gala",
+    "naming.gala",
+    "byte_utils.go",
+])
+
+filegroup(
+    name = "gala_sources",
+    srcs = glob(
+        ["*.gala"],
+        exclude = ["*_test.gala"],
+    ),
+    visibility = ["//visibility:public"],
+)
+
+gala_bootstrap_transpile(
+    name = "json_go",
+    src = "json.gala",
+    out = "json.gen.go",
+)
+
+gala_bootstrap_transpile(
+    name = "codec_rw_go",
+    src = "codec_rw.gala",
+    out = "codec_rw.gen.go",
+)
+
+gala_bootstrap_transpile(
+    name = "naming_go",
+    src = "naming.gala",
+    out = "naming.gen.go",
+)
+
+gala_bootstrap_transpile(
+    name = "helpers_go",
+    src = "helpers.gala",
+    out = "helpers.gen.go",
+)
+
+go_library(
+    name = "json",
+    srcs = [
+        "byte_utils.go",
+        "codec_rw.gen.go",
+        "helpers.gen.go",
+        "json.gen.go",
+        "naming.gen.go",
+    ],
+    importpath = "martianoff/gala/json",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//collection_immutable",
+        "//std",
+    ],
+)

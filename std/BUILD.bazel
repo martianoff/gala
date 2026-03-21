@@ -2,13 +2,13 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 load("//:gala.bzl", "gala_bootstrap_transpile", "gala_go_test")
 
 exports_files([
+    "codec.gala",
     "constptr.gala",
     "either.gala",
     "errors.gala",
     "hashable.gala",
     "immutable.gala",
     "iterable.gala",
-    "json.gala",
     "option.gala",
     "ordered.gala",
     "seq.gala",
@@ -91,20 +91,21 @@ gala_bootstrap_transpile(
 )
 
 gala_bootstrap_transpile(
-    name = "json_go",
-    src = "json.gala",
-    out = "json.gen.go",
-)
-
-gala_bootstrap_transpile(
     name = "constptr_go",
     src = "constptr.gala",
     out = "constptr.gen.go",
 )
 
+gala_bootstrap_transpile(
+    name = "codec_go",
+    src = "codec.gala",
+    out = "codec.gen.go",
+)
+
 go_library(
     name = "std",
     srcs = [
+        "codec.gen.go",
         "constptr.gen.go",
         "either.gen.go",
         "embedded_fs.go",
@@ -113,7 +114,6 @@ go_library(
         "immutable.gen.go",
         "interfaces.go",
         "iterable.gen.go",
-        "json.gen.go",
         "option.gen.go",
         "ordered.gen.go",
         "seq.gen.go",

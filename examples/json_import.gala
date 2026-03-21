@@ -1,0 +1,25 @@
+package main
+
+import (
+    . "martianoff/gala/std"
+    "martianoff/gala/json"
+)
+
+struct Item(Name string, Price int)
+
+func main() {
+    // Qualified import + builder pattern
+    val codec = json.Codec[Item](json.SnakeCase())
+
+    val item = Item("Widget", 42)
+
+    // Encode
+    Println(codec.Encode(item).Get())
+
+    // Decode — returns Try[Item]
+    val decoded = codec.Decode(codec.Encode(item).Get())
+    Println(s"Decode success: ${decoded.IsSuccess()}")
+
+    // Pretty
+    Println(codec.EncodePretty(item).Get())
+}
