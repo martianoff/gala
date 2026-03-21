@@ -62,6 +62,16 @@ func square(x int) int = x * x
 func max(a int, b int) int = if (a > b) a else b
 ```
 
+**Default parameters and named arguments** -- Skip boilerplate. Defaults are evaluated at each call site; named arguments can appear in any order.
+
+```gala
+func connect(host string, port int = 8080, tls bool = true) Connection
+
+connect("localhost")                  // port=8080, tls=true
+connect("localhost", tls = false)     // port=8080, tls=false
+connect(host = "db", port = 5432)     // tls=true
+```
+
 **Lambda type inference** -- Parameter types and method type parameters are inferred from context.
 
 ```gala
@@ -112,7 +122,34 @@ Println(f"Pi = ${3.14159}%.2f")           // Pi = 3.14
 Println(s"${nums.MkString(", ")}")        // 1, 2, 3
 ```
 
-**Full Go interop** -- Use any Go library.
+**Zero-reflection JSON codec** -- `Codec[T]` uses the compiler-generated `StructMeta[T]` intrinsic for fully typed serialization with no reflection, no struct tags, and pattern matching support.
+
+```gala
+struct Person(FirstName string, LastName string, Age int)
+
+val codec = Codec[Person](SnakeCase())
+val jsonStr = codec.Encode(Person("Alice", "Smith", 30)).Get()
+// {"first_name":"Alice","last_name":"Smith","age":30}
+
+val decoded = codec.Decode(jsonStr)       // Try[Person]
+val name = jsonStr match {
+    case codec(p) => p.FirstName          // pattern matching!
+    case _        => "unknown"
+}
+```
+
+**Regex with pattern matching** -- Compile-safe regex with extractors that destructure capture groups directly in `match`.
+
+```gala
+val dateRegex = regex.MustCompile("(\\d{4})-(\\d{2})-(\\d{2})")
+
+"2024-01-15" match {
+    case dateRegex(Array(year, month, day)) => s"$year/$month/$day"
+    case _ => "not a date"
+}
+```
+
+**Full Go interop** -- Use any Go library. Go function return types are automatically inferred from the Go SDK, and multi-return `(T, error)` patterns are wrapped into `Try[T]`.
 
 ---
 
@@ -245,6 +282,47 @@ updated := Config{Host: config.Host, Port: 8080}
 </tr>
 </table>
 
+### Default Parameters vs Option Structs
+
+<table>
+<tr><th>GALA</th><th>Go</th></tr>
+<tr>
+<td>
+
+```gala
+func connect(
+    host string,
+    port int = 8080,
+    tls bool = true,
+) Connection
+
+connect("localhost", tls = false)
+```
+
+</td>
+<td>
+
+```go
+type ConnectOptions struct {
+    Host string
+    Port int
+    TLS  *bool
+}
+
+func Connect(opts ConnectOptions) Connection {
+    if opts.Port == 0 { opts.Port = 8080 }
+    if opts.TLS == nil {
+        t := true; opts.TLS = &t
+    }
+    // ...
+}
+Connect(ConnectOptions{Host: "localhost", TLS: ptrBool(false)})
+```
+
+</td>
+</tr>
+</table>
+
 ### Error Handling: Try vs if-err
 
 <table>
@@ -293,6 +371,15 @@ if err != nil {
 | `Future[T]` | Async computation with `Map`, `FlatMap`, `Zip`, `Await` |
 | `Tuple[A, B]` | Pairs and triples with `(a, b)` syntax |
 | `ConstPtr[T]` | Read-only pointer with auto-deref field access |
+| `IO[T]` | Lazy, composable effect type -- `Suspend`, `Map`, `FlatMap`, `Recover` |
+
+### JSON, Regex, IO
+
+| Type | Description |
+|------|-------------|
+| `Codec[T]` | Zero-reflection JSON codec with `Encode`, `Decode`, `Rename`, `Omit`, pattern matching |
+| `Regex` | Compiled regex with `Matches`, `FindFirst`, `FindAll`, `ReplaceAll`, pattern matching |
+| `IO[T]` | Lazy effect -- separates description from execution, re-runs on every `.Run()` |
 
 ### Collections
 
@@ -389,6 +476,10 @@ gala_binary(
 - [Why GALA?](docs/WHY_GALA.MD) -- Feature deep-dive and honest trade-offs
 - [Examples](docs/EXAMPLES.MD) -- Code examples for all features
 - [Type Inference](docs/TYPE_INFERENCE.MD) -- How type inference works
+- [JSON Codec](https://martianoff.github.io/gala/json/) -- Zero-reflection JSON serialization
+- [Regex](https://martianoff.github.io/gala/regex/) -- Pattern matching with regex extractors
+- [IO Effect](https://martianoff.github.io/gala/io/) -- Lazy, composable side effects
+- [Go Interop](https://martianoff.github.io/gala/go-interop/) -- Seamless Go library integration
 - [Concurrent](docs/CONCURRENT.MD) -- Future, Promise, and ExecutionContext
 - [Stream](docs/STREAM.MD) -- Lazy, potentially infinite sequences
 - [Immutable Collections](docs/IMMUTABLE_COLLECTIONS.MD) -- List, Array, HashMap, HashSet, TreeSet, TreeMap
