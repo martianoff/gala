@@ -59,17 +59,10 @@ func runRun(cmd *cobra.Command, args []string) {
 		projectDir = args[0]
 	}
 
-	// Resolve to absolute path
-	absProjectDir, err := filepath.Abs(projectDir)
+	// Resolve to project root — walk up to find gala.mod
+	absProjectDir, err := findProjectRoot(projectDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Check gala.mod exists
-	galaModPath := filepath.Join(absProjectDir, "gala.mod")
-	if _, err := os.Stat(galaModPath); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: gala.mod not found in %s\n", absProjectDir)
 		fmt.Fprintln(os.Stderr, "Run 'gala mod init' to create one.")
 		os.Exit(1)
 	}

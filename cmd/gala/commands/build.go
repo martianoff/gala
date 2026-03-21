@@ -3,7 +3,6 @@ package commands
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -43,23 +42,15 @@ func init() {
 }
 
 func runBuild(cmd *cobra.Command, args []string) {
-	// Determine project directory
+	// Determine project directory — walk up to find gala.mod
 	projectDir := "."
 	if len(args) > 0 {
 		projectDir = args[0]
 	}
 
-	// Resolve to absolute path
-	absProjectDir, err := filepath.Abs(projectDir)
+	absProjectDir, err := findProjectRoot(projectDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Check gala.mod exists
-	galaModPath := filepath.Join(absProjectDir, "gala.mod")
-	if _, err := os.Stat(galaModPath); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: gala.mod not found in %s\n", absProjectDir)
 		fmt.Fprintln(os.Stderr, "Run 'gala mod init' to create one.")
 		os.Exit(1)
 	}

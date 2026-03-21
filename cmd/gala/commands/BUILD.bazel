@@ -13,6 +13,7 @@ go_library(
         "mod_tidy.go",
         "mod_update.go",
         "mod_verify.go",
+        "project.go",
         "root.go",
         "run.go",
         "transpile.go",
