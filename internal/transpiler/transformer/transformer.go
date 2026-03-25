@@ -150,6 +150,20 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 		}
 	}
 
+	// Fail hard if GALA package analysis had unresolved imports.
+	// Without resolved package metadata, type inference degrades to `any` and
+	// the generated Go code will not compile.
+	if len(richAST.AnalysisWarnings) > 0 {
+		var msgs []string
+		for _, w := range richAST.AnalysisWarnings {
+			msgs = append(msgs, "  - "+w)
+		}
+		return nil, nil, galaerr.NewSemanticError(
+			fmt.Sprintf("cannot transpile: %d imported package(s) could not be resolved:\n%s\n"+
+				"Hint: ensure all GALA dependencies are available via --search paths or gala.mod",
+				len(richAST.AnalysisWarnings), strings.Join(msgs, "\n")))
+	}
+
 	// Register EmbeddedFS method metadata (Go-defined type, not available from GALA analysis).
 	// This enables type inference for ReadString/ReadBytes calls on embedded filesystems.
 	t.registerEmbeddedFSMetadata()
