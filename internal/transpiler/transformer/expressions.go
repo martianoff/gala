@@ -581,16 +581,19 @@ func (t *galaASTTransformer) getUnaryToken(op string) token.Token {
 // Lambda-related functions moved to lambdas.go
 // findLambdaInExpression moved to lambdas.go
 func (t *galaASTTransformer) transformIfExpression(ctx *grammar.IfExpressionContext) (ast.Expr, error) {
-	// 'if' '(' cond ')' thenExpr 'else' elseExpr
-	cond, err := t.transformExpression(ctx.Expression(0))
+	// 'if' '(' cond ')' thenBranch 'else' elseBranch
+	// Branches can be either expressions or blocks.
+	cond, err := t.transformExpression(ctx.Expression())
 	if err != nil {
 		return nil, err
 	}
-	thenExpr, err := t.transformExpression(ctx.Expression(1))
+
+	branches := ctx.AllIfExprBranch()
+	thenStmts, thenExpr, err := t.transformIfExprBranch(branches[0].(*grammar.IfExprBranchContext))
 	if err != nil {
 		return nil, err
 	}
-	elseExpr, err := t.transformExpression(ctx.Expression(2))
+	elseStmts, elseExpr, err := t.transformIfExprBranch(branches[1].(*grammar.IfExprBranchContext))
 	if err != nil {
 		return nil, err
 	}
@@ -602,7 +605,13 @@ func (t *galaASTTransformer) transformIfExpression(ctx *grammar.IfExpressionCont
 
 	retTypeExpr := t.typeToExpr(retType)
 
-	// Transpile to IIFE: func() T { if cond { return thenExpr }; return elseExpr }()
+	// Build the then-block: preceding statements + return lastExpr
+	thenBody := append(thenStmts, &ast.ReturnStmt{Results: []ast.Expr{thenExpr}})
+
+	// Build the else-block: preceding statements + return lastExpr
+	elseBody := append(elseStmts, &ast.ReturnStmt{Results: []ast.Expr{elseExpr}})
+
+	// Transpile to IIFE: func() T { if cond { ...thenBody } else { ...elseBody } }()
 	return &ast.CallExpr{
 		Fun: &ast.FuncLit{
 			Type: &ast.FuncType{
@@ -615,17 +624,68 @@ func (t *galaASTTransformer) transformIfExpression(ctx *grammar.IfExpressionCont
 				List: []ast.Stmt{
 					&ast.IfStmt{
 						Cond: cond,
-						Body: &ast.BlockStmt{
-							List: []ast.Stmt{
-								&ast.ReturnStmt{Results: []ast.Expr{thenExpr}},
-							},
-						},
+						Body: &ast.BlockStmt{List: thenBody},
+						Else: &ast.BlockStmt{List: elseBody},
 					},
-					&ast.ReturnStmt{Results: []ast.Expr{elseExpr}},
 				},
 			},
 		},
 	}, nil
+}
+
+// transformIfExprBranch transforms an if-expression branch, which can be
+// either a single expression or a block. For blocks, the last statement
+// must be an expression statement — it becomes the branch's return value,
+// and preceding statements are executed before it.
+func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchContext) ([]ast.Stmt, ast.Expr, error) {
+	if exprCtx := ctx.Expression(); exprCtx != nil {
+		expr, err := t.transformExpression(exprCtx)
+		if err != nil {
+			return nil, nil, err
+		}
+		return nil, expr, nil
+	}
+
+	// Block branch: transform all statements, use last as the result expression.
+	// Path: statement → declaration → simpleStatement → expression
+	blockCtx := ctx.Block().(*grammar.BlockContext)
+	stmts := blockCtx.AllStatement()
+	if len(stmts) == 0 {
+		return nil, ast.NewIdent("nil"), nil
+	}
+
+	var preceding []ast.Stmt
+	for _, stmtCtx := range stmts[:len(stmts)-1] {
+		stmt, err := t.transformStatement(stmtCtx.(*grammar.StatementContext))
+		if err != nil {
+			return nil, nil, err
+		}
+		preceding = append(preceding, stmt)
+	}
+
+	// Try to extract expression from the last statement:
+	// statement → declaration → simpleStatement → expression
+	lastStmtCtx := stmts[len(stmts)-1].(*grammar.StatementContext)
+	if declCtx := lastStmtCtx.Declaration(); declCtx != nil {
+		if simpleCtx := declCtx.SimpleStatement(); simpleCtx != nil {
+			if exprCtx := simpleCtx.Expression(); exprCtx != nil {
+				expr, err := t.transformExpression(exprCtx)
+				if err != nil {
+					return nil, nil, err
+				}
+				return preceding, expr, nil
+			}
+		}
+	}
+
+	// If the last statement isn't a bare expression, transform it normally
+	// and return nil as the expression (void block)
+	lastStmt, err := t.transformStatement(lastStmtCtx)
+	if err != nil {
+		return nil, nil, err
+	}
+	preceding = append(preceding, lastStmt)
+	return preceding, ast.NewIdent("nil"), nil
 }
 
 func (t *galaASTTransformer) unwrapImmutable(expr ast.Expr) ast.Expr {

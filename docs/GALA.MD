@@ -558,16 +558,30 @@ if x > 100 {
 }
 ```
 
-#### If Expression (without blocks)
-Use the expression form to produce a value. The syntax is `if (condition) expr1 else expr2` -- parentheses around the condition and **no braces** around the branch expressions. Both branches are required.
+#### If Expression
+Use the expression form to produce a value. Parentheses around the condition are required, and both branches must be present. Branches can be either simple expressions or blocks.
 
 ```gala
+// Simple expressions
 val status = if (score > 50) "pass" else "fail"
 val abs = if (x >= 0) x else -x
-val label = if (count == 1) "item" else "items"
+
+// Block branches — last expression in the block is the result
+val url = if (query != "") {
+    val encoded = encode(query)
+    s"$base?$encoded"
+} else {
+    base
+}
+
+// Mixed: one block, one expression
+val label = if (count > 1) {
+    val suffix = "s"
+    s"$count item$suffix"
+} else "1 item"
 ```
 
-> **Important:** `if`-expressions used as value initializers must use the expression form (no braces). Writing `val x = if (cond) { expr1 } else { expr2 }` is a syntax error because the grammar expects expressions, not blocks, as branches in this form.
+Both forms compile to a Go IIFE (immediately invoked function expression), so they can be used anywhere an expression is expected: `val` initializers, function arguments, return values, etc.
 
 ### Match Expression
 The `match` expression provides powerful pattern matching, supporting literals, variable bindings, and extractors. GALA follows Scala semantics for pattern matching, where the pattern (or an extractor) is responsible for matching against the object. A default case (`_`) is required unless matching on a sealed type with all variants covered (exhaustive match) or matching on boolean values with both `true` and `false` cases.

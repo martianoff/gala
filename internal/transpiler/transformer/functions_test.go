@@ -99,8 +99,9 @@ import "martianoff/gala/std"
 var res = std.NewImmutable(func() any {
 	if c {
 		return 1
+	} else {
+		return 2
 	}
-	return 2
 }())
 `,
 		},

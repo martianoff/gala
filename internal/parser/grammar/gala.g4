@@ -185,7 +185,8 @@ pattern
     | identifier ':' type   # typedPattern
     ;
 
-ifExpression: 'if' '(' expression ')' expression 'else' expression;
+ifExpression: 'if' '(' expression ')' ifExprBranch 'else' ifExprBranch;
+ifExprBranch: block | expression;
 
 type
     : qualifiedIdentifier (typeArguments)?
