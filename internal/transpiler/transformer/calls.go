@@ -1136,32 +1136,19 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 
 		for i, fieldName := range fields {
 			if val, ok := namedArgs[fieldName]; ok {
-				// Check for nil assignment to immutable pointer field
+				// Reject nil assignment to immutable (val) fields — use Option[T] instead
 				if immutFlags != nil && i < len(immutFlags) && immutFlags[i] {
-					if fieldType, hasType := fieldTypes[fieldName]; hasType {
-						if _, isPtr := fieldType.(transpiler.PointerType); isPtr {
-							if ident, isIdent := val.(*ast.Ident); isIdent && ident.Name == "nil" {
-								return nil, galaerr.NewSemanticError(fmt.Sprintf(
-									"cannot assign nil to immutable pointer field '%s' - use 'var %s' to make it mutable",
-									fieldName, fieldName))
-							}
-						}
+					if ident, isIdent := val.(*ast.Ident); isIdent && ident.Name == "nil" {
+						return nil, galaerr.NewSemanticError(fmt.Sprintf(
+							"cannot assign nil to immutable field '%s' — use Option[T] with None() for optional values, or 'var %s' to make it mutable",
+							fieldName, fieldName))
 					}
 				}
 
 				var valExpr ast.Expr
 				if immutFlags != nil && i < len(immutFlags) && immutFlags[i] {
-					fun := t.stdIdent("NewImmutable")
-					// When value is nil, Go cannot infer T - add explicit type param
-					if ident, isIdent := val.(*ast.Ident); isIdent && ident.Name == "nil" {
-						if fieldTypes != nil {
-							if fType, ok := fieldTypes[fieldName]; ok && !fType.IsNil() {
-								fun = &ast.IndexExpr{X: t.stdIdent("NewImmutable"), Index: t.typeToExpr(fType)}
-							}
-						}
-					}
 					valExpr = &ast.CallExpr{
-						Fun:  fun,
+						Fun:  t.stdIdent("NewImmutable"),
 						Args: []ast.Expr{val},
 					}
 				} else {
