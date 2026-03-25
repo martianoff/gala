@@ -460,6 +460,12 @@ gala_test(
 )
 
 gala_test(
+    name = "lambda_multi_return_type",
+    src = "lambda_multi_return_type.gala",
+    expected = "lambda_multi_return_type.out",
+)
+
+gala_test(
     name = "pointer_semantics",
     src = "pointer_semantics.gala",
     expected = "pointer_semantics.out",

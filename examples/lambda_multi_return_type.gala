@@ -1,0 +1,53 @@
+package main
+
+import "fmt"
+import . "martianoff/gala/std"
+
+// FIX-061: Lambda with multiple return paths should infer the most specific type.
+// Previously, inferBlockReturnType picked the first return's type, which could be
+// wrong when the first return had incomplete generic type info.
+
+type Response struct {
+    val status int
+    val body string
+}
+
+// Helper: wrap response in Option
+func okResponse(status int, body string) Option[Response] =
+    Some(Response(status, body))
+
+// Function that accepts a block lambda with multiple return paths
+func processRequest(req string, handler func(string) Option[Response]) Option[Response] =
+    handler(req)
+
+func main() {
+    // Block lambda with multiple return paths:
+    // - early return: Some(Response(...))  — type is Option[Response]
+    // - normal return: okResponse(...)     — type is also Option[Response]
+    // Before FIX-061, inferBlockReturnType would only check the first return
+    // and might not correctly resolve the type for all paths.
+    val result1 = processRequest("hello", (req string) => {
+        if req == "unauthorized" {
+            return Some(Response(403, "Forbidden"))
+        }
+        return okResponse(200, s"OK: $req")
+    })
+
+    result1 match {
+        case Some(r) => fmt.Println(s"Result1: ${r.status} ${r.body}")
+        case None() => fmt.Println("Result1: None")
+    }
+
+    // Second test: early return is less specific (inferred from nested expression)
+    val result2 = processRequest("test", (req string) => {
+        if req == "" {
+            return None[Response]()
+        }
+        return Some(Response(200, s"Hello $req"))
+    })
+
+    result2 match {
+        case Some(r) => fmt.Println(s"Result2: ${r.status} ${r.body}")
+        case None() => fmt.Println("Result2: None")
+    }
+}

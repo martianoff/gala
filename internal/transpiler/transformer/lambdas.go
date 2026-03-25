@@ -424,29 +424,118 @@ func (t *galaASTTransformer) inferBlockReturnType(block *ast.BlockStmt) ast.Expr
 		}
 	}
 
-	for _, stmt := range block.List {
-		if retStmt, ok := stmt.(*ast.ReturnStmt); ok {
-			if len(retStmt.Results) > 0 {
-				result := retStmt.Results[0]
-				// Try to infer type using valTypes for .Get() calls anywhere in the expression
-				if typ := t.inferExprTypeWithValTypes(result, valTypes); typ != nil {
-					return typ
+	// FIX-061: Collect types from ALL return statements (including nested if/else),
+	// then pick the most specific type. Previously, we returned the type from the first
+	// return statement, which could be wrong when it had incomplete generic type info
+	// (e.g., FutureOf(Unauthorized("...")) infers Future[string] instead of Future[Response]).
+	var candidates []ast.Expr
+	returnStmts := collectReturnStmts(block)
+	for _, retStmt := range returnStmts {
+		if len(retStmt.Results) > 0 {
+			result := retStmt.Results[0]
+			// Try to infer type using valTypes for .Get() calls anywhere in the expression
+			if typ := t.inferExprTypeWithValTypes(result, valTypes); typ != nil {
+				candidates = append(candidates, typ)
+				continue
+			}
+			// Fallback to direct type inference
+			inferredType := t.getExprType(result)
+			if inferredType != nil {
+				if ident, ok := inferredType.(*ast.Ident); ok && ident.Name == "any" {
+					continue // skip "any" types entirely
 				}
-				// Fallback to direct type inference
-				inferredType := t.getExprType(result)
-				if inferredType != nil {
-					if ident, ok := inferredType.(*ast.Ident); ok && ident.Name != "any" {
-						return inferredType
-					}
-					// For non-ident types (like generic types), also return them
-					if _, ok := inferredType.(*ast.Ident); !ok {
-						return inferredType
-					}
-				}
+				candidates = append(candidates, inferredType)
 			}
 		}
 	}
-	return nil
+	return pickMostSpecificType(candidates)
+}
+
+// collectReturnStmts collects all return statements from a block, including those
+// nested inside if/else blocks (which represent early returns in multi-return lambdas).
+func collectReturnStmts(block *ast.BlockStmt) []*ast.ReturnStmt {
+	var result []*ast.ReturnStmt
+	for _, stmt := range block.List {
+		switch s := stmt.(type) {
+		case *ast.ReturnStmt:
+			result = append(result, s)
+		case *ast.IfStmt:
+			result = append(result, collectReturnStmtsFromIf(s)...)
+		}
+	}
+	return result
+}
+
+// collectReturnStmtsFromIf collects return statements from if/else chains.
+func collectReturnStmtsFromIf(ifStmt *ast.IfStmt) []*ast.ReturnStmt {
+	var result []*ast.ReturnStmt
+	if ifStmt.Body != nil {
+		result = append(result, collectReturnStmts(ifStmt.Body)...)
+	}
+	if ifStmt.Else != nil {
+		switch e := ifStmt.Else.(type) {
+		case *ast.BlockStmt:
+			result = append(result, collectReturnStmts(e)...)
+		case *ast.IfStmt:
+			result = append(result, collectReturnStmtsFromIf(e)...)
+		}
+	}
+	return result
+}
+
+// pickMostSpecificType selects the most specific type from a list of candidates.
+// It prefers types that don't contain "any" in their generic type parameters.
+// Among equally specific types, it prefers later candidates (which tend to be the
+// "normal" return path rather than early-return error/guard paths).
+func pickMostSpecificType(candidates []ast.Expr) ast.Expr {
+	if len(candidates) == 0 {
+		return nil
+	}
+	if len(candidates) == 1 {
+		return candidates[0]
+	}
+	// Find the candidate with the highest specificity score
+	var bestIdx int
+	bestScore := -1
+	for i, c := range candidates {
+		score := typeSpecificityScore(c)
+		if score > bestScore {
+			bestScore = score
+			bestIdx = i
+		}
+	}
+	return candidates[bestIdx]
+}
+
+// typeSpecificityScore returns a score indicating how specific a type expression is.
+// Higher score = more specific. Types containing "any" score lower.
+func typeSpecificityScore(expr ast.Expr) int {
+	if expr == nil {
+		return 0
+	}
+	if containsAny(expr) {
+		return 1 // has "any" somewhere — least specific
+	}
+	// Count nesting depth as a proxy for specificity
+	switch e := expr.(type) {
+	case *ast.Ident:
+		return 2 // simple concrete type
+	case *ast.IndexExpr:
+		// Generic type like Future[Response] — more specific
+		return 3 + typeSpecificityScore(e.Index)
+	case *ast.IndexListExpr:
+		score := 3
+		for _, idx := range e.Indices {
+			score += typeSpecificityScore(idx)
+		}
+		return score
+	case *ast.SelectorExpr:
+		return 3 // qualified type like std.Option
+	case *ast.StarExpr:
+		return 2 + typeSpecificityScore(e.X)
+	default:
+		return 2
+	}
 }
 
 // inferExprTypeWithValTypes tries to infer the type of an expression,
