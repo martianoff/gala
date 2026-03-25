@@ -1,0 +1,25 @@
+package main
+
+import . "martianoff/gala/std"
+
+func minMax(a int, b int) Tuple[int, int] {
+    if (a < b) {
+        return (a, b)
+    }
+    return (b, a)
+}
+
+func divmod(a int, b int) Tuple3[int, int, string] {
+    if (b == 0) {
+        return (0, 0, "division by zero")
+    }
+    return (a / b, a % b, "ok")
+}
+
+func main() {
+    val (lo, hi) = minMax(7, 3)
+    Println(s"min=$lo max=$hi")
+
+    val (q, r, status) = divmod(17, 5)
+    Println(s"$q remainder $r ($status)")
+}

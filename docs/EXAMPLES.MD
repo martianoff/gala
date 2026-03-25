@@ -633,6 +633,47 @@ Recovered: -1
 Side effect!
 ```
 
+## Multiple Return Values (Using Tuples)
+
+GALA uses Tuple types instead of Go-style multi-value returns. Tuple destructuring provides clean syntax at the call site.
+
+```gala
+package main
+
+import . "martianoff/gala/std"
+
+// Return two values using Tuple
+func minMax(a int, b int) Tuple[int, int] {
+    if (a < b) {
+        return (a, b)
+    }
+    return (b, a)
+}
+
+// Return three values using Tuple3
+func divmod(a int, b int) Tuple3[int, int, string] {
+    if (b == 0) {
+        return (0, 0, "division by zero")
+    }
+    return (a / b, a % b, "ok")
+}
+
+func main() {
+    // Tuple destructuring (note parens around variable names)
+    val (lo, hi) = minMax(7, 3)
+    Println(s"min=$lo max=$hi")
+
+    val (q, r, status) = divmod(17, 5)
+    Println(s"$q remainder $r ($status)")
+}
+```
+
+Output:
+```
+min=3 max=7
+3 remainder 2 (ok)
+```
+
 ## More Examples
 
 You can find more examples in the `examples/` directory of the project:

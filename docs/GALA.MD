@@ -1130,6 +1130,48 @@ val first = t.V1   // 1
 val second = t.V2  // "hello"
 ```
 
+#### Multiple Return Values
+
+GALA does not support Go-style multi-value returns `(A, B, error)`. Instead, use **Tuple types** to return multiple values from a function, and **tuple destructuring** at the call site.
+
+```gala
+// Return two values using Tuple[A, B]
+func swap(a int, b int) Tuple[int, int] = (b, a)
+
+// Return three values using Tuple3[A, B, C]
+func divmod(a int, b int) Tuple3[int, int, string] {
+    if (b == 0) {
+        return (0, 0, "division by zero")
+    }
+    return (a / b, a % b, "ok")
+}
+
+// Destructure at call site (note parentheses around variable names)
+val (x, y) = swap(3, 7)            // x = 7, y = 3
+val (q, r, status) = divmod(17, 5) // q = 3, r = 2, status = "ok"
+
+// Or use pattern matching
+val result = divmod(10, 3) match {
+    case (q, r, "ok") => s"$q remainder $r"
+    case (_, _, err)   => s"Error: $err"
+}
+```
+
+**Tuple type reference:**
+| Arity | Type | Construction |
+|-------|------|-------------|
+| 2 | `Tuple[A, B]` | `(a, b)` |
+| 3 | `Tuple3[A, B, C]` | `(a, b, c)` |
+| 4 | `Tuple4[A, B, C, D]` | `(a, b, c, d)` |
+| 5+ | `Tuple5[...]` ... `Tuple10[...]` | `(a, b, c, d, e, ...)` |
+
+**For Go interop** with functions that return `(T, error)`, use `var` to get raw Go values:
+```gala
+var data, err = goFunction()  // var avoids Immutable wrapping
+```
+
+See [Either](#either) for typed error handling, and [Try](#try-monad) for exception-safe error handling.
+
 ### Either
 `Either[A, B]` is a sealed type representing a value that can be one of two types. It is often used for error handling where `Left` is the error and `Right` is the success value.
 
