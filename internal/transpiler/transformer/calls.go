@@ -1151,8 +1151,17 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 
 				var valExpr ast.Expr
 				if immutFlags != nil && i < len(immutFlags) && immutFlags[i] {
+					fun := t.stdIdent("NewImmutable")
+					// When value is nil, Go cannot infer T - add explicit type param
+					if ident, isIdent := val.(*ast.Ident); isIdent && ident.Name == "nil" {
+						if fieldTypes != nil {
+							if fType, ok := fieldTypes[fieldName]; ok && !fType.IsNil() {
+								fun = &ast.IndexExpr{X: t.stdIdent("NewImmutable"), Index: t.typeToExpr(fType)}
+							}
+						}
+					}
 					valExpr = &ast.CallExpr{
-						Fun:  t.stdIdent("NewImmutable"),
+						Fun:  fun,
 						Args: []ast.Expr{val},
 					}
 				} else {

@@ -21,6 +21,7 @@ filegroup(
         "match_method_chain/types.gala",
         "match_return_iife.gala",
         "match_void_branches.gala",
+        "newimmutable_nil.gala",
         "mathlib/math.gala",
         "multi_file/greeter.gala",
         "multi_file/main.gala",
@@ -506,6 +507,13 @@ gala_test(
     name = "match_return_iife",
     src = "match_return_iife.gala",
     expected = "match_return_iife.out",
+)
+
+# FIX-053: NewImmutable[T](nil) explicit type param
+gala_test(
+    name = "newimmutable_nil",
+    src = "newimmutable_nil.gala",
+    expected = "newimmutable_nil.out",
 )
 
 gala_test(

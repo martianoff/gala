@@ -120,8 +120,17 @@ func (t *galaASTTransformer) transformCompositeLiteral(ctx *grammar.CompositeLit
 				if keyIdent, ok := key.(*ast.Ident); ok {
 					if idx, found := fieldIndex[keyIdent.Name]; found {
 						if immutFlags != nil && idx < len(immutFlags) && immutFlags[idx] {
+							fun := t.stdIdent("NewImmutable")
+							// When value is nil, Go cannot infer T - add explicit type param
+							if ident, isIdent := value.(*ast.Ident); isIdent && ident.Name == "nil" {
+								if fieldTypes := t.structFieldTypes[resolvedTypeName]; fieldTypes != nil {
+									if fType, ok := fieldTypes[keyIdent.Name]; ok && !fType.IsNil() {
+										fun = &ast.IndexExpr{X: t.stdIdent("NewImmutable"), Index: t.typeToExpr(fType)}
+									}
+								}
+							}
 							value = &ast.CallExpr{
-								Fun:  t.stdIdent("NewImmutable"),
+								Fun:  fun,
 								Args: []ast.Expr{value},
 							}
 						}

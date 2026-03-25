@@ -1,0 +1,21 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+)
+
+type Renderer interface {
+    Render() string
+}
+
+type Widget struct {
+    val name string
+    val renderer Renderer
+}
+
+func main() {
+    val w = Widget{name: "test", renderer: nil}
+    fmt.Println(w.name)
+    fmt.Println(w.renderer == nil)
+}
