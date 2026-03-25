@@ -17,12 +17,15 @@ var (
 var buildCmd = &cobra.Command{
 	Use:   "build [directory]",
 	Short: "Build a GALA project",
-	Long: `Build compiles GALA source files into an executable binary.
+	Long: `Build compiles GALA source files.
+
+For executable projects (package main), produces a binary.
+For library packages, performs a compile check without producing a binary.
 
 This command:
   1. Reads dependencies from gala.mod
   2. Transpiles .gala files to Go code (in a build workspace)
-  3. Runs go build to produce a binary
+  3. Runs go build to produce a binary (or compile-check for libraries)
 
 The binary is placed in the current directory by default.
 No go.mod or generated files are created in your project directory.
@@ -30,7 +33,7 @@ No go.mod or generated files are created in your project directory.
 Examples:
   gala build                    # Build current directory
   gala build ./myproject        # Build specific directory
-  gala build -o myapp           # Custom output name
+  gala build -o myapp           # Custom output name (executables only)
   gala build -v                 # Verbose output`,
 	Args: cobra.MaximumNArgs(1),
 	Run:  runBuild,
@@ -69,5 +72,10 @@ func runBuild(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	fmt.Printf("Built: %s\n", outputPath)
+	if outputPath == "" {
+		// Library package — compile check succeeded, no binary produced
+		fmt.Println("ok (library compiled successfully)")
+	} else {
+		fmt.Printf("Built: %s\n", outputPath)
+	}
 }

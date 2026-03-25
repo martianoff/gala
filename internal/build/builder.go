@@ -63,6 +63,7 @@ func NewBuilder(projectDir string, stdlibVersion string, verbose bool) (*Builder
 // Build executes the full build process and returns the path to the output binary.
 // If outputPath is empty, uses the module name. If it's an absolute path, uses it directly.
 // Otherwise, treats it as relative to the project directory.
+// For library packages (non-main), Build performs a compile check and returns "" with no error.
 func (b *Builder) Build(outputPath string) (string, error) {
 	// Step 1: Ensure workspace exists
 	if b.verbose {
@@ -115,12 +116,19 @@ func (b *Builder) Build(outputPath string) (string, error) {
 		return "", fmt.Errorf("generating go.mod: %w", err)
 	}
 
-	// Step 4.5: Check that the project is an executable (package main)
-	if err := b.checkIsExecutable(); err != nil {
-		return "", err
+	// Step 4.5: Check if library package — if so, compile-check only
+	isLib, pkgName := b.isLibraryPackage()
+	if isLib {
+		if b.verbose {
+			fmt.Printf("Package %q is a library, running compile check...\n", pkgName)
+		}
+		if err := b.goCompileCheck(); err != nil {
+			return "", fmt.Errorf("go build (compile check): %w", err)
+		}
+		return "", nil
 	}
 
-	// Step 5: Run go build
+	// Step 5: Run go build (executable)
 	finalPath, err := b.goBuild(outputPath)
 	if err != nil {
 		return "", fmt.Errorf("go build: %w", err)
@@ -436,12 +444,12 @@ func (b *Builder) generateGoMod() error {
 	return nil
 }
 
-// checkIsExecutable verifies that the generated code contains package main.
-// Library packages (non-main) cannot be built into executables.
-func (b *Builder) checkIsExecutable() error {
+// isLibraryPackage checks whether the generated code is a library (non-main) package.
+// Returns (true, packageName) for libraries, (false, "") for executables.
+func (b *Builder) isLibraryPackage() (bool, string) {
 	genFiles, err := b.workspace.GenFiles()
 	if err != nil {
-		return fmt.Errorf("listing generated files: %w", err)
+		return false, ""
 	}
 
 	// Read the first generated file to determine the package name
@@ -464,12 +472,33 @@ func (b *Builder) checkIsExecutable() error {
 	}
 
 	if pkgName != "" && pkgName != "main" {
-		return fmt.Errorf("cannot build executable: package %q is a library, not an executable\n"+
-			"Only 'package main' projects can be built with 'gala build' or 'gala run'.\n"+
-			"To use this package as a library, import it from a 'package main' project.", pkgName)
+		return true, pkgName
 	}
 
-	return nil
+	return false, ""
+}
+
+// goCompileCheck runs `go build ./...` in the workspace without producing a binary.
+// This verifies that library packages compile correctly.
+func (b *Builder) goCompileCheck() error {
+	if b.verbose {
+		fmt.Println("Running go build (compile check)...")
+	}
+
+	cmd := exec.Command("go", "build", "./gen/...")
+	cmd.Dir = b.workspace.Dir
+	cmd.Env = append(os.Environ(),
+		"GOMODCACHE="+b.config.GoPkgDir,
+	)
+
+	if b.verbose {
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+	} else {
+		cmd.Stderr = os.Stderr
+	}
+
+	return cmd.Run()
 }
 
 // goBuild runs `go build` in the workspace and returns the output path.
