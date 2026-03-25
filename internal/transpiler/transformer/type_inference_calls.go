@@ -347,11 +347,22 @@ func (t *galaASTTransformer) inferCallIdentType(e *ast.CallExpr, id *ast.Ident, 
 		return transpiler.BasicType{Name: "int"}
 	}
 	// Handle go_interop.SliceOf[T](elements ...T) []T
-	// SliceOf is commonly used with dot imports, infer element type from arguments
-	if id.Name == "SliceOf" && len(e.Args) > 0 {
-		elemType := t.getExprTypeNameManual(e.Args[0])
-		if !elemType.IsNil() {
-			return transpiler.ArrayType{Elem: elemType}
+	// SliceOf is commonly used with dot imports, infer element type from arguments.
+	// FIX-060: When explicit type args are provided (e.g., SliceOf[byte](...)),
+	// use them instead of inferring from argument types. Without this fix,
+	// SliceOf[byte](72, 101) would infer []int (from the int literal 72)
+	// instead of []byte, causing downstream type errors like Array[int] instead of Array[byte].
+	if id.Name == "SliceOf" {
+		// Use explicit type argument if provided (e.g., SliceOf[byte](...))
+		if len(typeArgs) > 0 {
+			return transpiler.ArrayType{Elem: typeArgs[0]}
+		}
+		// Fall back to inferring from first argument
+		if len(e.Args) > 0 {
+			elemType := t.getExprTypeNameManual(e.Args[0])
+			if !elemType.IsNil() {
+				return transpiler.ArrayType{Elem: elemType}
+			}
 		}
 	}
 	// Handle type conversions like uint32(x), int64(y), string(z)

@@ -1,0 +1,23 @@
+package main
+
+import (
+    . "martianoff/gala/std"
+    . "martianoff/gala/collection_immutable"
+    . "martianoff/gala/go_interop"
+)
+
+func main() {
+    // FIX-060: Test that SliceOf[byte] correctly infers []byte (not []int)
+    // and that the type flows correctly through ArrayFromSlice and Some
+    val goSlice = SliceOf[byte](72, 101, 108, 108, 111)
+    val arr = ArrayFromSlice(goSlice)
+
+    // Should infer Option[Array[byte]], not Option[Array[int]] or Option[Array[[]byte]]
+    val opt = Some(arr)
+
+    val result = opt match {
+        case Some(bytes) => s"Got ${bytes.Size()} bytes"
+        case None() => "No bytes"
+    }
+    Println(result)
+}
