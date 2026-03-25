@@ -1,0 +1,23 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+)
+
+// Demonstrates that val fields use Option[T] for optional values (not nil).
+
+struct Config(
+    name string,
+    port Option[int],
+)
+
+func main() {
+    val c1 = Config(name = "dev", port = None[int]())
+    fmt.Println(c1.name)
+    fmt.Println(c1.port)
+
+    val c2 = Config(name = "prod", port = Some(8080))
+    fmt.Println(c2.name)
+    fmt.Println(c2.port)
+}

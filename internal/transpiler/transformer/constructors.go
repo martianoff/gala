@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/token"
 
+	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
@@ -120,6 +121,12 @@ func (t *galaASTTransformer) transformCompositeLiteral(ctx *grammar.CompositeLit
 				if keyIdent, ok := key.(*ast.Ident); ok {
 					if idx, found := fieldIndex[keyIdent.Name]; found {
 						if immutFlags != nil && idx < len(immutFlags) && immutFlags[idx] {
+							// Reject nil assignment to immutable (val) fields — use Option[T] instead
+							if ident, isIdent := value.(*ast.Ident); isIdent && ident.Name == "nil" {
+								return nil, galaerr.NewSemanticError(fmt.Sprintf(
+									"cannot assign nil to immutable field '%s' — use Option[T] with None() for optional values, or 'var %s' to make it mutable",
+									keyIdent.Name, keyIdent.Name))
+							}
 							value = &ast.CallExpr{
 								Fun:  t.stdIdent("NewImmutable"),
 								Args: []ast.Expr{value},
