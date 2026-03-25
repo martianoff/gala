@@ -1232,6 +1232,9 @@ func (t *galaASTTransformer) transformFuncTypeSignature(ctx *grammar.SignatureCo
 					if pkg := resolvedType.GetPackage(); pkg != "" && pkg != t.packageName {
 						if pkg == registry.StdPackageName {
 							field.Type = t.stdIdent(typeName)
+						} else if t.importManager.IsDotImported(pkg) {
+							// Dot-imported package: use unqualified name
+							field.Type = ast.NewIdent(typeName)
 						} else if alias, ok := t.importManager.GetAlias(pkg); ok {
 							field.Type = &ast.SelectorExpr{X: ast.NewIdent(alias), Sel: ast.NewIdent(typeName)}
 						} else {

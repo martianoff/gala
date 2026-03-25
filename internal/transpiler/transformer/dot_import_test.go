@@ -120,6 +120,36 @@ func test() int {
 	assert.Contains(t, transpileErr.Error(), "pkg_b")
 }
 
+func TestDotImportNoQualifiedReferences(t *testing.T) {
+	p := transpiler.NewAntlrGalaParser()
+	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
+	tr := transformer.NewGalaASTTransformer()
+	g := generator.NewGoCodeGenerator()
+	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+
+	input := `package testpkg
+
+import . "martianoff/gala/std"
+
+func test() Option[int] {
+    val x = Some(42)
+    return x
+}
+`
+
+	got, err := trans.Transpile(input, "")
+	assert.NoError(t, err)
+
+	assert.NotContains(t, got, "std.Option",
+		"Dot-imported package should not produce qualified references, got:\n%s", got)
+	assert.NotContains(t, got, "std.Some",
+		"Dot-imported package should not produce qualified references, got:\n%s", got)
+	assert.NotContains(t, got, "std.Immutable",
+		"Dot-imported package should not produce qualified references, got:\n%s", got)
+	assert.Contains(t, got, "Option[int]",
+		"Should use unqualified type references with dot import, got:\n%s", got)
+}
+
 func TestDotImportNoClashNoError(t *testing.T) {
 	p := transpiler.NewAntlrGalaParser()
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
