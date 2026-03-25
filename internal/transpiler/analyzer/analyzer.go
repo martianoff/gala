@@ -263,8 +263,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 					if err != nil {
 						line := s.GetStart().GetLine()
 						warnMsg := fmt.Sprintf("failed to analyze package %s (imported at line %d): %v", relPath, line, err)
-						fmt.Fprintf(os.Stderr, "Warning: %s
-", warnMsg)
+						fmt.Fprintf(os.Stderr, "Warning: %s\n", warnMsg)
 						richAST.AnalysisWarnings = append(richAST.AnalysisWarnings, warnMsg)
 					}
 					if err == nil {
