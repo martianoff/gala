@@ -19,6 +19,7 @@ filegroup(
         "lib/generic.gala",
         "match_method_chain/main.gala",
         "match_method_chain/types.gala",
+        "match_return_iife.gala",
         "match_void_branches.gala",
         "mathlib/math.gala",
         "multi_file/greeter.gala",
@@ -498,6 +499,13 @@ gala_test(
     name = "match_type_inference",
     src = "match_type_inference.gala",
     expected = "match_type_inference.out",
+)
+
+# FIX-051: match as last expression in function block body auto-returns
+gala_test(
+    name = "match_return_iife",
+    src = "match_return_iife.gala",
+    expected = "match_return_iife.out",
 )
 
 gala_test(

@@ -698,6 +698,16 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		if err != nil {
 			return nil, err
 		}
+		// Convert trailing IIFE expression statement to return statement for functions
+		// with a return type. This handles match expressions (compiled to IIFEs) that
+		// are the last expression in a function block body - same logic as lambdas.go.
+		if funcType.Results != nil && len(funcType.Results.List) > 0 && len(b.List) > 0 {
+			if exprStmt, ok := b.List[len(b.List)-1].(*ast.ExprStmt); ok {
+				if isIIFE(exprStmt.X) {
+					b.List[len(b.List)-1] = &ast.ReturnStmt{Results: []ast.Expr{exprStmt.X}}
+				}
+			}
+		}
 		body = b
 	} else if ctx.Expression() != nil {
 		expr, err := t.transformExpression(ctx.Expression())
