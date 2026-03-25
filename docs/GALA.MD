@@ -2543,13 +2543,12 @@ GALA provides a comprehensive test framework with 22 assertions, panic recovery,
 
 ### Test File Convention
 
-Test files should be named with the `_test.gala` suffix or placed in a `tests/` subdirectory:
+Test files use the `_test.gala` suffix and are placed alongside source files:
 
 ```
 mypackage/
   mycode.gala
-  tests/
-    main.gala    # Test file with package main
+  mycode_test.gala    # Test file with package main
 ```
 
 ### Writing Tests
@@ -2805,12 +2804,30 @@ gala_test(
 
 ### Running Tests
 
-#### Prerequisites
+#### Using `gala test` (recommended)
+
+The `gala test` command automatically discovers `_test.gala` files, transpiles them, discovers `TestXxx` functions, generates a test runner, and executes tests — no manual wrappers or Bazel configuration needed.
+
+```bash
+gala test                     # Test current directory
+gala test ./myproject         # Test specific directory
+gala test -v                  # Verbose output
+```
+
+`gala test` handles both project types:
+- **`package main` projects**: source and test files are compiled together
+- **Library packages**: test files are compiled as `package main` and import the library under test
+
+#### Using Bazel
+
+For Bazel-based projects, use the `gala_go_test` and `gala_test` macros (see [BUILD.bazel Configuration](#buildbazel-configuration) above).
+
+##### Prerequisites
 
 - **Bazel** (via [Bazelisk](https://github.com/bazelbuild/bazelisk)): manages Bazel versions automatically
 - **Go SDK**: required for Go type inference (resolving function return types, struct fields, and method signatures from Go packages). Ensure `go` is on PATH or set the `GOROOT` environment variable.
 
-#### Commands
+##### Commands
 
 Build the entire project:
 ```bash

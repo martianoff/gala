@@ -16,6 +16,7 @@ go_library(
         "project.go",
         "root.go",
         "run.go",
+        "test.go",
         "transpile.go",
         "version.go",
     ],

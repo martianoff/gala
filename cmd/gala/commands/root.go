@@ -22,6 +22,7 @@ This tool provides:
 Usage:
   gala build                    Build project to binary
   gala run                      Build and run project
+  gala test                     Run tests in project
   gala build -o myapp           Build with custom output name
   gala mod init                 Initialize gala.mod
   gala mod add <pkg>@<version>  Add a dependency
@@ -76,6 +77,7 @@ func init() {
 	rootCmd.AddCommand(buildCmd)
 	rootCmd.AddCommand(runCmd)
 	rootCmd.AddCommand(cleanCmd)
+	rootCmd.AddCommand(testCmd)
 
 	// Add global flags that mirror transpile flags for backward compatibility
 	rootCmd.Flags().StringVarP(&transpileInput, "input", "i", "", "Path to the input .gala file")
