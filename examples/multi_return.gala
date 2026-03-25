@@ -1,0 +1,28 @@
+package main
+
+import "fmt"
+
+// Function with multi-value return type
+func divide(a int, b int) (int, int, error) {
+    if b == 0 {
+        return (0, 0, fmt.Errorf("division by zero"))
+    }
+    return (a / b, a % b, nil)
+}
+
+func swap(a int, b int) (int, int) {
+    return (b, a)
+}
+
+func main() {
+    val quotient, remainder, err = divide(17, 5)
+    if err != nil {
+        fmt.Println(err)
+    }
+    fmt.Println(quotient)
+    fmt.Println(remainder)
+
+    val x, y = swap(3, 7)
+    fmt.Println(x)
+    fmt.Println(y)
+}

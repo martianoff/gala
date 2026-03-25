@@ -1409,3 +1409,10 @@ gala_test(
     src = "method_default_params.gala",
     expected = "method_default_params.out",
 )
+
+# FIX-055: Multi-value return types in function signatures
+gala_test(
+    name = "multi_return",
+    src = "multi_return.gala",
+    expected = "multi_return.out",
+)

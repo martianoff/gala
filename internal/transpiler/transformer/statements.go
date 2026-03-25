@@ -86,15 +86,99 @@ func (t *galaASTTransformer) transformStatement(ctx *grammar.StatementContext) (
 	if retCtx := ctx.ReturnStatement(); retCtx != nil {
 		var results []ast.Expr
 		if retCtx.Expression() != nil {
-			expr, err := t.transformExpression(retCtx.Expression())
-			if err != nil {
-				return nil, err
+			// Check if the return expression is a parenthesized expression list
+			// for multi-value returns: return (a, b, c)
+			if multiResults := t.tryExpandMultiReturn(retCtx.Expression()); multiResults != nil {
+				results = multiResults
+			} else {
+				expr, err := t.transformExpression(retCtx.Expression())
+				if err != nil {
+					return nil, err
+				}
+				results = append(results, t.unwrapImmutable(expr))
 			}
-			results = append(results, t.unwrapImmutable(expr))
 		}
 		return &ast.ReturnStmt{Results: results}, nil
 	}
 	return nil, nil
+}
+
+// tryExpandMultiReturn checks if a return expression is a parenthesized expression list
+// like "return (a, b, c)" and the current function has multi-value return types.
+// If so, it transforms each expression separately for proper Go multi-value returns.
+func (t *galaASTTransformer) tryExpandMultiReturn(exprCtx grammar.IExpressionContext) []ast.Expr {
+	// Only expand if current function has multiple return types
+	if t.currentFuncResultCount <= 1 {
+		return nil
+	}
+
+	// Navigate expression -> orExpr -> andExpr -> ... -> postfixExpr -> primaryExpr -> primary
+	// to check if it's a parenthesized expression list: '(' expressionList ')'
+	orExpr := exprCtx.(*grammar.ExpressionContext).OrExpr()
+	if orExpr == nil {
+		return nil
+	}
+	andExprs := orExpr.(*grammar.OrExprContext).AllAndExpr()
+	if len(andExprs) != 1 {
+		return nil
+	}
+	eqExprs := andExprs[0].(*grammar.AndExprContext).AllEqualityExpr()
+	if len(eqExprs) != 1 {
+		return nil
+	}
+	relExprs := eqExprs[0].(*grammar.EqualityExprContext).AllRelationalExpr()
+	if len(relExprs) != 1 {
+		return nil
+	}
+	addExprs := relExprs[0].(*grammar.RelationalExprContext).AllAdditiveExpr()
+	if len(addExprs) != 1 {
+		return nil
+	}
+	mulExprs := addExprs[0].(*grammar.AdditiveExprContext).AllMultiplicativeExpr()
+	if len(mulExprs) != 1 {
+		return nil
+	}
+	unaryExpr := mulExprs[0].(*grammar.MultiplicativeExprContext).AllUnaryExpr()
+	if len(unaryExpr) != 1 {
+		return nil
+	}
+	postfixExpr := unaryExpr[0].(*grammar.UnaryExprContext).PostfixExpr()
+	if postfixExpr == nil {
+		return nil
+	}
+	pfe := postfixExpr.(*grammar.PostfixExprContext)
+	if len(pfe.AllPostfixSuffix()) > 0 {
+		return nil
+	}
+	primaryExpr := pfe.PrimaryExpr()
+	if primaryExpr == nil {
+		return nil
+	}
+	primary := primaryExpr.(*grammar.PrimaryExprContext).Primary()
+	if primary == nil {
+		return nil
+	}
+	pc := primary.(*grammar.PrimaryContext)
+	// Check for '(' expressionList ')' pattern
+	if pc.ExpressionList() == nil {
+		return nil
+	}
+	exprList := pc.ExpressionList().(*grammar.ExpressionListContext)
+	allExprs := exprList.AllExpression()
+	if len(allExprs) <= 1 {
+		return nil
+	}
+
+	// Transform each expression individually
+	var results []ast.Expr
+	for _, e := range allExprs {
+		expr, err := t.transformExpression(e)
+		if err != nil {
+			return nil // Fall back to single-expression handling
+		}
+		results = append(results, t.unwrapImmutable(expr))
+	}
+	return results
 }
 
 func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext) (ast.Stmt, error) {
