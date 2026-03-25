@@ -213,6 +213,54 @@ func (t *galaASTTransformer) warnInference(format string, args ...interface{}) {
 	}
 }
 
+// parenthesizeCompositeLits wraps any ast.CompositeLit found in an expression
+// tree with ast.ParenExpr. This is needed because Go's parser treats '{' in
+// if/for/switch conditions as the start of the block body, making composite
+// literals like OPTIONS{}.Apply() ambiguous. Wrapping in parens resolves this.
+func parenthesizeCompositeLits(expr ast.Expr) ast.Expr {
+	if expr == nil {
+		return nil
+	}
+	switch e := expr.(type) {
+	case *ast.CompositeLit:
+		return &ast.ParenExpr{X: e}
+	case *ast.CallExpr:
+		e.Fun = parenthesizeCompositeLits(e.Fun)
+		for i, arg := range e.Args {
+			e.Args[i] = parenthesizeCompositeLits(arg)
+		}
+		return e
+	case *ast.SelectorExpr:
+		e.X = parenthesizeCompositeLits(e.X)
+		return e
+	case *ast.BinaryExpr:
+		e.X = parenthesizeCompositeLits(e.X)
+		e.Y = parenthesizeCompositeLits(e.Y)
+		return e
+	case *ast.UnaryExpr:
+		e.X = parenthesizeCompositeLits(e.X)
+		return e
+	case *ast.ParenExpr:
+		e.X = parenthesizeCompositeLits(e.X)
+		return e
+	case *ast.IndexExpr:
+		e.X = parenthesizeCompositeLits(e.X)
+		e.Index = parenthesizeCompositeLits(e.Index)
+		return e
+	case *ast.StarExpr:
+		e.X = parenthesizeCompositeLits(e.X)
+		return e
+	case *ast.TypeAssertExpr:
+		e.X = parenthesizeCompositeLits(e.X)
+		return e
+	case *ast.KeyValueExpr:
+		e.Value = parenthesizeCompositeLits(e.Value)
+		return e
+	default:
+		return expr
+	}
+}
+
 func findLeafIf(stmt ast.Stmt) *ast.IfStmt {
 	switch s := stmt.(type) {
 	case *ast.IfStmt:

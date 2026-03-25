@@ -258,6 +258,8 @@ func (t *galaASTTransformer) transformForStatement(ctx *grammar.ForStatementCont
 		if err != nil {
 			return nil, err
 		}
+		// FIX-034: Parenthesize composite literals in for conditions.
+		cond = parenthesizeCompositeLits(cond)
 		body, err := t.transformBlock(ctx.Block().(*grammar.BlockContext))
 		if err != nil {
 			return nil, err
@@ -358,6 +360,8 @@ func (t *galaASTTransformer) transformForStatement(ctx *grammar.ForStatementCont
 			if err != nil {
 				return nil, err
 			}
+			// FIX-034: Parenthesize composite literals in for conditions.
+			cond = parenthesizeCompositeLits(cond)
 		}
 
 		// Process post (can use init variables)
@@ -493,6 +497,9 @@ func (t *galaASTTransformer) transformIfStatement(ctx *grammar.IfStatementContex
 	if err != nil {
 		return nil, err
 	}
+	// FIX-034: Parenthesize composite literals in if conditions to avoid
+	// Go parser ambiguity where '{' is treated as the start of the if body.
+	cond = parenthesizeCompositeLits(cond)
 	body, err := t.transformBlock(ctx.Block(0).(*grammar.BlockContext))
 	if err != nil {
 		return nil, err
