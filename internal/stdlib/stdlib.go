@@ -134,6 +134,8 @@ func generatePackageGoMod(pkgName, importPath string) string {
 		content += "\tmartianoff/gala/std v0.0.0\n"
 		content += ")\n"
 		content += "\nreplace martianoff/gala/std => ../std\n"
+	case "test":
+		// test framework has no GALA stdlib dependencies (only Go stdlib: fmt, os, time)
 	case "json":
 		content += "\nrequire (\n"
 		content += "\tmartianoff/gala/std v0.0.0\n"
