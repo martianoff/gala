@@ -153,6 +153,27 @@ func process(val data string, var count int) {
 }
 ```
 
+#### Multi-Line Parameters and Trailing Commas
+Parameter lists support trailing commas, enabling clean multi-line formatting:
+
+```gala
+func createServer(
+    host string,
+    port int = 8080,
+    tls bool = true,
+    maxConnections int = 100,
+) Server = ...
+
+struct Cookie(
+    Name string,
+    Value string,
+    Path string,
+    MaxAge int,
+)
+```
+
+Trailing commas are optional — single-line parameter lists work with or without them. This also applies to sealed type case fields.
+
 ### Named Arguments
 
 Function calls support named arguments. Named arguments can appear in any order — the compiler reorders them to match the function signature.
@@ -1884,6 +1905,9 @@ Println(s"${strings.Replace("hello world", "world", "gala", 1)}")  // hello gala
 // Collection methods with string separators
 val nums = ArrayOf(1, 2, 3)
 Println(s"nums: ${nums.MkString(", ")}")                // nums: 1, 2, 3
+
+// Escaped quotes inside ${...} expressions
+val sub = s"${r.CtxGet(\"jwt-sub\").GetOrElse(\"none\")}"
 ```
 
 #### `Println` / `Print`
@@ -2928,11 +2952,25 @@ val desc = shape match {
 - **Omit variable types** - `val x = 42` not `val x int = 42`
 - **Omit method type params** - `list.Map((x) => x * 2)` not `list.Map[int]((x int) => x * 2)`
 
+### If-Expressions
+- **Prefer if-expressions over var+mutation** - `val x = if (cond) a else b` instead of `var x = a; if (cond) { x = b }`
+- **Block branches for complex logic** - `val url = if (q != "") { val e = encode(q); s"$base?$e" } else { base }` — last expression in each block is the result
+- **Simple form for one-liners** - `val status = if (score > 50) "pass" else "fail"` — no braces needed
+
+### Multi-Line Formatting
+- **Use trailing commas** for multi-line parameter lists — `func f(\n    a string,\n    b int,\n) T`
+- **Break long lines** (>100 chars) into multi-line with trailing commas for readability
+- **Applies to functions, structs, and sealed type case fields**
+
 ### String Formatting
 - **Prefer `s"..."` over `fmt.Sprintf`** - `s"Hello $name"` not `fmt.Sprintf("Hello %s", name)`. Format verbs are auto-inferred from types
 - **Use `f"..."` for explicit format control** - `f"$price%.2f"` when you need specific formatting like padding or precision
+- **Escaped quotes in `${...}`** - `s"${r.CtxGet(\"key\").GetOrElse(\"default\")}"` works — the interpolation parser handles escaped quotes inside expression blocks
 - **Use `Println`/`Print`** - No `import "fmt"` needed for `Println(...)` and `Print(...)`
 - **Only import `fmt` for specialized functions** - `fmt.Errorf`, `fmt.Fprintf`, `fmt.Stringer` still require the import
+
+### Type Conversions
+- **Use `go_interop` for byte/rune conversion** - `ToBytes("str")`, `ToString(bytes)`, `ToRunes("str")` instead of Go's `[]byte("str")` which is not supported in GALA syntax
 - **FoldLeft/FoldRight — omit accumulator type** - `list.FoldLeft(0, (acc, x) => acc + x)` not `list.FoldLeft[int](0, (acc int, x int) => acc + x)`. The accumulator type is inferred from the zero value
 - **Non-generic wrapper methods — omit types too** - `str.Filter((r) => r == 'a')` not `str.Filter((r rune) => r == 'a')`. Lambda params are inferred from concrete method signatures
 - **Explicit types only when needed** - `None[int]()`, `Left[string, int]()`, empty collections, standalone lambdas not passed to a typed method, or ambiguous contexts

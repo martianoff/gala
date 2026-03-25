@@ -46,6 +46,9 @@ Design the implementation following GALA best practices:
 14. **Println/Print** - Use `Println(...)` and `Print(...)` instead of `fmt.Println(...)` / `fmt.Print(...)`. No import needed.
 15. **Try for Go errors** - Wrap Go functions that return `(T, error)` with `Try(f)` when f takes no args, or `Try(() => f(args))` when args are needed. Use `.OrElse` for independent fallbacks, `.FlatMap` for dependent chains. Never use sequential `if err == nil` blocks.
 16. **Option over sentinels** - Return `Option[T]` instead of sentinel values (`""`, `0`, `-1`, `nil`) to signal absence. Use `.GetOrElse`, `.Map`, or `match` on the caller side.
+17. **If-expressions** - Use `val x = if (cond) expr else expr` instead of `var x; if { x = a } else { x = b }`. Block branches are supported: `val x = if (cond) { stmts; result } else { stmts; result }`
+18. **Multi-line params** - Use trailing commas for readable multi-line parameter lists: `func f(\n    a string,\n    b int = 0,\n) T`. Works for functions, structs, and sealed type case fields.
+19. **ToBytes for byte conversion** - Use `go_interop.ToBytes("str")` instead of Go's `[]byte("str")` which is not supported in GALA syntax.
 
 ### Step 2: Write the Source Code
 

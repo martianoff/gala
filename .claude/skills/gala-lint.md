@@ -181,6 +181,38 @@ for _, x := range nums {
 
 **Acceptable `fmt` uses**: `fmt.Errorf`, `fmt.Fprintf`, `fmt.Fscan*`, `fmt.Stringer` interface implementation, and any `fmt` function not covered by interpolation.
 
+### 5b. Multi-Line Formatting (MEDIUM priority)
+
+| Issue | Pattern to Flag | Recommended Fix |
+|-------|-----------------|-----------------|
+| Long parameter list on single line | `func f(a string, b string, c string, d string) T` (>100 chars) | Use multi-line with trailing commas |
+| Long struct declaration on single line | `struct Foo(a string, b string, c string, d string)` (>100 chars) | Use multi-line with trailing commas |
+| Missing trailing comma in multi-line | Multi-line params without trailing comma | Add trailing comma for consistency |
+
+**Check**: Search for `func` declarations and `struct` shorthand declarations with lines exceeding ~100 characters. These benefit from multi-line formatting with trailing commas.
+
+**Good pattern** — multi-line with trailing commas:
+```gala
+func createServer(
+    host string,
+    port int = 8080,
+    tls bool = true,
+    maxConnections int = 100,
+) Server = ...
+
+struct Cookie(
+    Name string,
+    Value string,
+    Path string,
+    MaxAge int,
+)
+```
+
+**Bad pattern** — long single line:
+```gala
+func createServer(host string, port int = 8080, tls bool = true, maxConnections int = 100) Server = ...
+```
+
 ### 6. Default Parameters and Named Arguments (MEDIUM priority)
 
 | Issue | Pattern to Flag | Recommended Fix |
@@ -283,7 +315,38 @@ val values = options.Collect({ case Some(v) => v * 2 })
 | Block body for single expr | `func f() T { return expr }` | `func f() T = expr` |
 | Lambda block for single expr | `(x) => { return x * 2 }` | `(x) => x * 2` |
 | Missing return in block | `(x) => { val y = x * 2; y }` | Add explicit `return y` |
-| Multi-line when one-liner works | `if cond { return a } else { return b }` | Use ternary or match |
+| Multi-line when one-liner works | `if cond { return a } else { return b }` | Use if-expression: `if (cond) a else b` |
+
+### 8b. If-Expressions (MEDIUM priority)
+
+| Issue | Pattern to Flag | Recommended Fix |
+|-------|-----------------|----------------|
+| Mutable var + if-statement for val | `var x = a; if (cond) { x = b }` | `val x = if (cond) b else a` |
+| If-statement with return in both branches | `if cond { return a } else { return b }` | `return if (cond) a else b` |
+| Ternary workaround with var | `var result; if c { result = x } else { result = y }; use(result)` | `val result = if (c) x else y` |
+| Block if-expression when one-liner works | `val x = if (c) { a } else { b }` where a, b are simple | `val x = if (c) a else b` |
+
+**Check**: Search for `var` declarations immediately followed by `if/else` that assign different values. These should use if-expressions.
+
+**Good patterns**:
+```gala
+// Simple if-expression
+val status = if (score > 50) "pass" else "fail"
+
+// Block branches for complex logic
+val url = if (query != "") {
+    val encoded = encode(query)
+    s"$base?$encoded"
+} else {
+    base
+}
+
+// Mixed: one block, one expression
+val label = if (count > 1) {
+    val suffix = "s"
+    s"$count item$suffix"
+} else "1 item"
+```
 
 ### 9. Unnecessary Variables (MEDIUM priority)
 
