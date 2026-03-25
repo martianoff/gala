@@ -424,29 +424,166 @@ func (t *galaASTTransformer) inferBlockReturnType(block *ast.BlockStmt) ast.Expr
 		}
 	}
 
+	// Collect return types from ALL return paths (including nested if/else blocks).
+	var returnTypes []ast.Expr
+	t.collectReturnTypes(block, valTypes, &returnTypes)
+
+	if len(returnTypes) == 0 {
+		return nil
+	}
+	if len(returnTypes) == 1 {
+		return returnTypes[0]
+	}
+
+	// Unify all collected return types.
+	return t.unifyBlockReturnTypes(returnTypes)
+}
+
+// collectReturnTypes recursively walks a block statement collecting inferred return
+// types from every return statement, including those nested inside if/else blocks.
+func (t *galaASTTransformer) collectReturnTypes(block *ast.BlockStmt, valTypes map[string]ast.Expr, out *[]ast.Expr) {
+	if block == nil {
+		return
+	}
 	for _, stmt := range block.List {
-		if retStmt, ok := stmt.(*ast.ReturnStmt); ok {
-			if len(retStmt.Results) > 0 {
-				result := retStmt.Results[0]
-				// Try to infer type using valTypes for .Get() calls anywhere in the expression
-				if typ := t.inferExprTypeWithValTypes(result, valTypes); typ != nil {
-					return typ
-				}
-				// Fallback to direct type inference
-				inferredType := t.getExprType(result)
-				if inferredType != nil {
-					if ident, ok := inferredType.(*ast.Ident); ok && ident.Name != "any" {
-						return inferredType
-					}
-					// For non-ident types (like generic types), also return them
-					if _, ok := inferredType.(*ast.Ident); !ok {
-						return inferredType
-					}
+		switch s := stmt.(type) {
+		case *ast.ReturnStmt:
+			if len(s.Results) > 0 {
+				if typ := t.inferReturnExprType(s.Results[0], valTypes); typ != nil {
+					*out = append(*out, typ)
 				}
 			}
+		case *ast.IfStmt:
+			// Recurse into if body and else branch
+			t.collectReturnTypes(s.Body, valTypes, out)
+			if s.Else != nil {
+				switch els := s.Else.(type) {
+				case *ast.BlockStmt:
+					t.collectReturnTypes(els, valTypes, out)
+				case *ast.IfStmt:
+					// else-if chain: wrap in a synthetic block for recursion
+					t.collectReturnTypes(&ast.BlockStmt{List: []ast.Stmt{els}}, valTypes, out)
+				}
+			}
+		case *ast.BlockStmt:
+			t.collectReturnTypes(s, valTypes, out)
 		}
 	}
-	return nil
+}
+
+// inferReturnExprType infers the type of a single return expression, trying
+// valTypes-based inference first, then falling back to getExprType.
+func (t *galaASTTransformer) inferReturnExprType(expr ast.Expr, valTypes map[string]ast.Expr) ast.Expr {
+	// Try to infer type using valTypes for .Get() calls anywhere in the expression
+	if typ := t.inferExprTypeWithValTypes(expr, valTypes); typ != nil {
+		return typ
+	}
+	// Fallback to direct type inference
+	inferredType := t.getExprType(expr)
+	if inferredType == nil {
+		return nil
+	}
+	if ident, ok := inferredType.(*ast.Ident); ok && ident.Name == "any" {
+		return nil
+	}
+	return inferredType
+}
+
+// unifyBlockReturnTypes takes a list of inferred return type expressions and attempts
+// to find a single unified type. If all types are identical, that type is returned.
+// If they differ only in generic type parameters, the most specific (non-primitive
+// inner parameter) type is preferred. Returns nil if unification is not possible.
+func (t *galaASTTransformer) unifyBlockReturnTypes(types []ast.Expr) ast.Expr {
+	if len(types) == 0 {
+		return nil
+	}
+
+	// Convert to transpiler types for structural comparison.
+	tTypes := make([]transpiler.Type, len(types))
+	for i, te := range types {
+		tTypes[i] = t.astTypeToTranspilerType(te)
+	}
+
+	// Start with the first type as candidate.
+	best := tTypes[0]
+	bestExpr := types[0]
+
+	for i := 1; i < len(tTypes); i++ {
+		cur := tTypes[i]
+		if best.String() == cur.String() {
+			continue // identical
+		}
+
+		// Try to pick the more specific type.
+		unified := t.pickMoreSpecificType(best, cur)
+		if unified != nil {
+			best = unified
+			bestExpr = t.typeToExpr(unified)
+			continue
+		}
+
+		// Types are incompatible — return the first non-primitive/non-simple type
+		// as a best-effort (matches the old behaviour of picking the first return).
+		// A future enhancement could emit a SemanticError here when we have access
+		// to the ANTLR context for position info.
+		return bestExpr
+	}
+
+	return bestExpr
+}
+
+// pickMoreSpecificType compares two types and returns the more specific one.
+// For generic types with the same base (e.g., Future[string] vs Future[Response]),
+// it picks the one whose inner type parameter is a non-primitive named type.
+// Returns nil if neither is clearly more specific or the types are incompatible.
+func (t *galaASTTransformer) pickMoreSpecificType(a, b transpiler.Type) transpiler.Type {
+	genA, aIsGen := a.(transpiler.GenericType)
+	genB, bIsGen := b.(transpiler.GenericType)
+
+	if aIsGen && bIsGen {
+		baseA := stripPackagePrefix(genA.Base.BaseName())
+		baseB := stripPackagePrefix(genB.Base.BaseName())
+		if baseA == baseB && len(genA.Params) == len(genB.Params) {
+			// Same generic base — compare each type parameter.
+			// Prefer the one with more specific (non-primitive) parameters.
+			aScore := 0
+			bScore := 0
+			for i := range genA.Params {
+				pa := genA.Params[i]
+				pb := genB.Params[i]
+				if pa.String() == pb.String() {
+					continue
+				}
+				if isSimpleOrPrimitive(pa) && !isSimpleOrPrimitive(pb) {
+					bScore++
+				} else if !isSimpleOrPrimitive(pa) && isSimpleOrPrimitive(pb) {
+					aScore++
+				}
+			}
+			if aScore >= bScore {
+				return a
+			}
+			return b
+		}
+	}
+
+	// If one is generic and the other is a basic/named type with the same base name,
+	// prefer the generic (more informative).
+	if aIsGen && !bIsGen && stripPackagePrefix(genA.Base.BaseName()) == stripPackagePrefix(b.BaseName()) {
+		return a
+	}
+	if bIsGen && !aIsGen && stripPackagePrefix(genB.Base.BaseName()) == stripPackagePrefix(a.BaseName()) {
+		return b
+	}
+
+	return nil // incompatible
+}
+
+// isSimpleOrPrimitive returns true for primitive types (int, string, bool, float64, etc.)
+// or types named "any".
+func isSimpleOrPrimitive(typ transpiler.Type) bool {
+	name := typ.BaseName()
+	return transpiler.IsPrimitiveType(name) || name == "any"
 }
 
 // inferExprTypeWithValTypes tries to infer the type of an expression,
