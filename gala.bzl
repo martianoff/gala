@@ -380,7 +380,7 @@ gala_go_test_gen = rule(
     },
 )
 
-def gala_go_test(name, srcs, deps = [], gala_deps = [], pkg = "main", embed = [], **kwargs):
+def gala_go_test(name, srcs, deps = [], gala_deps = [], pkg = "main", embed = [], lib_srcs = [], **kwargs):
     """
     Creates a GALA test using Go-style conventions.
 
@@ -393,7 +393,8 @@ def gala_go_test(name, srcs, deps = [], gala_deps = [], pkg = "main", embed = []
 
     For internal tests (pkg=same as library):
     - Use the same package as the library
-    - Specify embed parameter with library Go sources
+    - Specify lib_srcs with GALA library source files to compile together
+      with the test, OR embed with pre-transpiled Go source labels
 
     The macro automatically generates a main function that discovers and runs
     all Test* functions.
@@ -405,7 +406,11 @@ def gala_go_test(name, srcs, deps = [], gala_deps = [], pkg = "main", embed = []
         gala_deps: GALA library dependency labels for cross-package type resolution.
             Their source files are automatically included during transpilation.
         pkg: Package name for tests (default "main" for external tests).
-        embed: Go source files to embed (for internal tests in same package).
+        embed: Go source file labels to include (for internal tests in same package).
+        lib_srcs: GALA library source files to transpile and bundle into the test
+            binary. Use this for internal tests instead of creating a separate
+            go_library target. Each file is transpiled and compiled together with
+            the test sources.
         **kwargs: Additional arguments passed to the underlying rules.
     """
     # Generate the main.gala file
@@ -419,12 +424,29 @@ def gala_go_test(name, srcs, deps = [], gala_deps = [], pkg = "main", embed = []
     # Make test framework sources available during transpilation (for type resolution)
     test_extra_srcs = [Label("//test:gala_sources")] if pkg != "test" else []
 
-    # Transpile each test source file
+    # Transpile library source files (lib_srcs) so they can be compiled with the test
+    transpiled_lib_srcs = []
+    for i, lib_src in enumerate(lib_srcs):
+        lib_transpile_name = name + "_lib_transpile_" + str(i)
+        lib_go_src = name + "_lib_" + str(i) + ".gen.go"
+        lib_siblings = [other for j, other in enumerate(lib_srcs) if j != i]
+        gala_transpile(
+            name = lib_transpile_name,
+            src = lib_src,
+            out = lib_go_src,
+            package_files = lib_siblings,
+            extra_srcs = test_extra_srcs,
+            gala_deps = gala_deps,
+        )
+        transpiled_lib_srcs.append(lib_go_src)
+
+    # Transpile each test source file, including lib_srcs as siblings for type resolution
     transpiled_srcs = []
+    all_package_files = list(srcs) + list(lib_srcs)
     for i, src in enumerate(srcs):
         transpile_name = name + "_transpile_" + str(i)
         go_src = name + "_test_" + str(i) + ".go"
-        siblings = [other for j, other in enumerate(srcs) if j != i]
+        siblings = [f for f in all_package_files if f != src]
         gala_transpile(
             name = transpile_name,
             src = src,
@@ -441,7 +463,7 @@ def gala_go_test(name, srcs, deps = [], gala_deps = [], pkg = "main", embed = []
 
     # Build the test binary
     binary_name = name + "_bin"
-    all_srcs = transpiled_srcs + [main_go_src] + embed
+    all_srcs = transpiled_lib_srcs + transpiled_srcs + [main_go_src] + embed
 
     # Determine deps - skip //test and //std if testing those packages
     final_deps = list(deps) + list(gala_deps)
