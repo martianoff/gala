@@ -69,6 +69,7 @@ type RichAST struct {
 	EmbedDirectives  []EmbedDirective                    // embed val declarations
 	FilePath         string                              // source file path (for error reporting)
 	SourceContent    string                              // raw source text (for error snippets)
+	AnalysisWarnings []string                            // warnings from package analysis (e.g., unresolved GALA imports)
 }
 
 // Merge combines metadata from another RichAST into this one.
