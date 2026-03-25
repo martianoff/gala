@@ -1367,3 +1367,10 @@ gala_test(
     expected = "qualified_lambda_infer.out",
     deps = ["//io"],
 )
+
+# FIX-033: trailing commas in multi-line function/struct parameter lists
+gala_test(
+    name = "trailing_comma_params",
+    src = "trailing_comma_params.gala",
+    expected = "trailing_comma_params.out",
+)

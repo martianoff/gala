@@ -22,7 +22,7 @@ structShorthandDeclaration: 'struct' identifier parameters;
 
 sealedTypeDeclaration: SEALED 'type' identifier (typeParameters)? '{' sealedCase+ '}';
 sealedCase: CASE identifier '(' sealedCaseFieldList? ')';
-sealedCaseFieldList: sealedCaseField (',' sealedCaseField)*;
+sealedCaseFieldList: sealedCaseField (',' sealedCaseField)* ','?;
 sealedCaseField: identifier type;
 
 declaration
@@ -63,7 +63,7 @@ receiver: '(' (VAL | VAR)? identifier type ')';
 signature: parameters (type)?;
 
 parameters: '(' parameterList? ')';
-parameterList: parameter (',' parameter)*;
+parameterList: parameter (',' parameter)* ','?;
 // Parameters can be:
 // - Named with type: "x int", "val x int", "x ...int"
 // - Named without type: "x" (type inferred)

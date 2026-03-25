@@ -1,0 +1,28 @@
+package main
+
+// Multi-line function with trailing comma
+func greetMultiline(
+    name string,
+    greeting string = "Hello",
+    punctuation string = "!",
+) string =
+    s"$greeting, $name$punctuation"
+
+// Multi-line struct with trailing comma
+struct Config(
+    Host string,
+    Port int,
+    Debug bool,
+)
+
+func NewConfig() Config = Config("localhost", 8080, true)
+
+func main() {
+    Println(greetMultiline("World"))
+    Println(greetMultiline("World", "Hi", "?"))
+
+    val cfg = NewConfig()
+    Println(cfg.Host)
+    Println(cfg.Port)
+    Println(cfg.Debug)
+}
