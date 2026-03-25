@@ -617,21 +617,28 @@ func (t *galaASTTransformer) typesCompatible(t1, t2 transpiler.Type) bool {
 		return true
 	}
 
-	// Check dot-import equivalence: "Duration" should match "time_utils.Duration"
-	// when time_utils is dot-imported
+	// Check qualified vs unqualified equivalence: "Response" should match "server.Response"
+	// when server is dot-imported, is the current package, or is a known imported package.
+	// Type alias resolution can produce qualified names from any of these sources (FIX-035).
 	s1, s2 := t1.String(), t2.String()
 	if strings.Contains(s2, ".") && !strings.Contains(s1, ".") {
 		// s2 is qualified (pkg.Type), s1 is bare (Type)
-		if pkg := s2[:strings.Index(s2, ".")]; t.importManager.IsDotImported(pkg) {
-			if s2[strings.Index(s2, ".")+1:] == s1 {
+		dotIdx := strings.Index(s2, ".")
+		pkg := s2[:dotIdx]
+		bareName := s2[dotIdx+1:]
+		if bareName == s1 {
+			if t.importManager.IsDotImported(pkg) || pkg == t.packageName || t.importManager.IsPackage(pkg) {
 				return true
 			}
 		}
 	}
 	if strings.Contains(s1, ".") && !strings.Contains(s2, ".") {
 		// s1 is qualified (pkg.Type), s2 is bare (Type)
-		if pkg := s1[:strings.Index(s1, ".")]; t.importManager.IsDotImported(pkg) {
-			if s1[strings.Index(s1, ".")+1:] == s2 {
+		dotIdx := strings.Index(s1, ".")
+		pkg := s1[:dotIdx]
+		bareName := s1[dotIdx+1:]
+		if bareName == s2 {
+			if t.importManager.IsDotImported(pkg) || pkg == t.packageName || t.importManager.IsPackage(pkg) {
 				return true
 			}
 		}
@@ -652,8 +659,9 @@ func (t *galaASTTransformer) typesCompatible(t1, t2 transpiler.Type) bool {
 	gen1, ok1 := t1.(transpiler.GenericType)
 	gen2, ok2 := t2.(transpiler.GenericType)
 	if ok1 && ok2 {
-		// Same base type?
-		if gen1.Base.String() == gen2.Base.String() && len(gen1.Params) == len(gen2.Params) {
+		// Same base type? Use typesCompatible for base to handle qualified vs unqualified names (FIX-035).
+		basesMatch := gen1.Base.String() == gen2.Base.String() || t.typesCompatible(gen1.Base, gen2.Base)
+		if basesMatch && len(gen1.Params) == len(gen2.Params) {
 			allParamsCompatible := true
 			for i := range gen1.Params {
 				if !t.typesCompatible(gen1.Params[i], gen2.Params[i]) {
