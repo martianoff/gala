@@ -1,0 +1,4 @@
+Authorized: code=200 body=success
+Unauthorized: code=401 body=not authorized
+10/2 = 5
+10/0 = -1

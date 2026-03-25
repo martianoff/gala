@@ -1417,3 +1417,17 @@ gala_test(
     src = "method_default_params.gala",
     expected = "method_default_params.out",
 )
+
+# Multiple return values using Tuples (documentation example)
+gala_test(
+    name = "tuple_multi_return",
+    src = "tuple_multi_return.gala",
+    expected = "tuple_multi_return.out",
+)
+
+# Lambda multi-return type unification (FIX-058)
+gala_test(
+    name = "lambda_multi_return_unify",
+    src = "lambda_multi_return_unify.gala",
+    expected = "lambda_multi_return_unify.out",
+)

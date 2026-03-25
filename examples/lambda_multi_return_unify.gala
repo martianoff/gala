@@ -1,0 +1,54 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+)
+
+// Verify that block lambdas with multiple return paths
+// unify their return types correctly (BUG-047 / FIX-058).
+
+type Response struct {
+    code int
+    body string
+}
+
+func Unauthorized(msg string) Response = Response(code = 401, body = msg)
+func Ok(msg string) Response = Response(code = 200, body = msg)
+
+// Block lambda with multiple return paths returning the same concrete type.
+// Previously the transpiler only looked at the first return and missed nested returns.
+func processRequest(authorized bool) Response {
+    val handler = (flag bool) => {
+        if (flag) {
+            return Ok("success")
+        }
+        return Unauthorized("not authorized")
+    }
+    return handler(authorized)
+}
+
+// Block lambda returning Option — both paths return Option[int].
+func safeDivide(a int, b int) Option[int] {
+    val divider = (x int, y int) => {
+        if (y == 0) {
+            return None[int]()
+        }
+        return Some(x / y)
+    }
+    return divider(a, b)
+}
+
+func main() {
+    val r1 = processRequest(true)
+    fmt.Println(s"Authorized: code=${r1.code} body=${r1.body}")
+
+    val r2 = processRequest(false)
+    fmt.Println(s"Unauthorized: code=${r2.code} body=${r2.body}")
+
+    val d1 = safeDivide(10, 2)
+    fmt.Println(s"10/2 = ${d1.GetOrElse(0)}")
+
+    val d2 = safeDivide(10, 0)
+    fmt.Println(s"10/0 = ${d2.GetOrElse(-1)}")
+}
