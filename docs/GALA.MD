@@ -536,19 +536,38 @@ func main() {
 ## 6. Control Flow
 
 ### If Statement and Expression
-GALA supports `if` both as a statement and as an expression.
+GALA supports `if` in two forms: as a **statement** (with blocks) and as an **expression** (without blocks). These two forms have different syntax and cannot be mixed.
+
+#### If Statement (with blocks)
+Use blocks `{ ... }` for side effects. The `else` branch is optional. Braces are required.
 
 ```gala
-// If statement
-if (x > 10) {
+if x > 10 {
     fmt.Println("large")
 } else {
     fmt.Println("small")
 }
 
-// If expression
-val status = if (score > 50) "pass" else "fail"
+// else-if chain
+if x > 100 {
+    fmt.Println("huge")
+} else if x > 10 {
+    fmt.Println("large")
+} else {
+    fmt.Println("small")
+}
 ```
+
+#### If Expression (without blocks)
+Use the expression form to produce a value. The syntax is `if (condition) expr1 else expr2` -- parentheses around the condition and **no braces** around the branch expressions. Both branches are required.
+
+```gala
+val status = if (score > 50) "pass" else "fail"
+val abs = if (x >= 0) x else -x
+val label = if (count == 1) "item" else "items"
+```
+
+> **Important:** `if`-expressions used as value initializers must use the expression form (no braces). Writing `val x = if (cond) { expr1 } else { expr2 }` is a syntax error because the grammar expects expressions, not blocks, as branches in this form.
 
 ### Match Expression
 The `match` expression provides powerful pattern matching, supporting literals, variable bindings, and extractors. GALA follows Scala semantics for pattern matching, where the pattern (or an extractor) is responsible for matching against the object. A default case (`_`) is required unless matching on a sealed type with all variants covered (exhaustive match) or matching on boolean values with both `true` and `false` cases.
