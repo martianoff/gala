@@ -1,4 +1,11 @@
-load("//:gala.bzl", "gala_go_test", "gala_library")
+load("//:gala.bzl", "gala_go_test", "gala_library", "gala_bootstrap_transpile")
+
+exports_files([
+    "assertions.gala",
+    "bench.gala",
+    "framework.gala",
+    "table.gala",
+])
 
 filegroup(
     name = "gala_sources",
@@ -24,4 +31,33 @@ gala_library(
 gala_go_test(
     name = "framework_test",
     srcs = ["framework_test.gala"],
+)
+
+# Individual transpile rules for stdlib embedding (uses bootstrap to avoid circular dep)
+gala_bootstrap_transpile(
+    name = "assertions_go",
+    src = "assertions.gala",
+    out = "assertions.gen.go",
+    package_files = ["bench.gala", "framework.gala", "table.gala"],
+)
+
+gala_bootstrap_transpile(
+    name = "bench_go",
+    src = "bench.gala",
+    out = "bench.gen.go",
+    package_files = ["assertions.gala", "framework.gala", "table.gala"],
+)
+
+gala_bootstrap_transpile(
+    name = "framework_go",
+    src = "framework.gala",
+    out = "framework.gen.go",
+    package_files = ["assertions.gala", "bench.gala", "table.gala"],
+)
+
+gala_bootstrap_transpile(
+    name = "table_go",
+    src = "table.gala",
+    out = "table.gen.go",
+    package_files = ["assertions.gala", "bench.gala", "framework.gala"],
 )

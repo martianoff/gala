@@ -98,6 +98,16 @@ genrule(
         "//io:io_go",
         # io package - GALA source
         "//io:io.gala",
+        # test package - transpiled Go
+        "//test:assertions_go",
+        "//test:bench_go",
+        "//test:framework_go",
+        "//test:table_go",
+        # test package - GALA source
+        "//test:assertions.gala",
+        "//test:bench.gala",
+        "//test:framework.gala",
+        "//test:table.gala",
     ],
     outs = ["embedded_gen.go"],
     cmd = "$(location //cmd/stdlib_gen) -output $@ $(SRCS)",
