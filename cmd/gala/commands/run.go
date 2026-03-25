@@ -84,6 +84,12 @@ func runRun(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
+	if outputPath == "" {
+		fmt.Fprintln(os.Stderr, "Error: cannot run a library package. Only 'package main' projects can be run.")
+		fmt.Fprintln(os.Stderr, "Use 'gala build' to compile-check library packages.")
+		os.Exit(1)
+	}
+
 	// Execute the built binary
 	execCmd := exec.Command(outputPath, programArgs...)
 	execCmd.Stdin = os.Stdin
