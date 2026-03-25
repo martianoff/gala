@@ -1,0 +1,25 @@
+package main
+
+sealed type HttpMethod {
+    case GET()
+    case POST()
+    case OPTIONS()
+}
+
+func checkMethod(m HttpMethod) string {
+    // FIX-034: Composite literal in if condition must be parenthesized.
+    // OPTIONS{}.Apply() should not confuse Go parser's { detection.
+    if m == OPTIONS() {
+        return "options"
+    } else if m == GET() {
+        return "get"
+    } else {
+        return "other"
+    }
+}
+
+func main() {
+    Println(checkMethod(OPTIONS()))
+    Println(checkMethod(GET()))
+    Println(checkMethod(POST()))
+}
