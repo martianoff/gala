@@ -370,14 +370,17 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 	}
 
 	// Remove unused imports from the generated AST.
-	removeUnusedImports(file)
+	removeUnusedImports(file, t.importManager)
 
 	return fset, file, nil
 }
 
 // removeUnusedImports walks the AST file and removes any import that is not
 // referenced by a SelectorExpr (qualified reference) or a dot/blank import.
-func removeUnusedImports(file *ast.File) {
+// It uses the ImportManager to resolve actual package names when they differ
+// from the last component of the import path (e.g., package "typealiaslib"
+// imported via path "martianoff/gala/examples/bug013_type_alias_lib").
+func removeUnusedImports(file *ast.File, importMgr *ImportManager) {
 	usedPkgs := make(map[string]bool)
 	ast.Inspect(file, func(n ast.Node) bool {
 		sel, ok := n.(*ast.SelectorExpr)
@@ -410,13 +413,22 @@ func removeUnusedImports(file *ast.File) {
 				kept = append(kept, spec)
 				continue
 			}
+			// Determine the local name used in code for this import
 			localName := ""
 			if importSpec.Name != nil {
 				localName = importSpec.Name.Name
 			} else {
 				path := strings.Trim(importSpec.Path.Value, "\"")
-				parts := strings.Split(path, "/")
-				localName = parts[len(parts)-1]
+				// Check ImportManager for the actual package name (may differ from path)
+				if importMgr != nil {
+					if entry, ok := importMgr.GetByPath(path); ok && entry != nil {
+						localName = entry.PkgName
+					}
+				}
+				if localName == "" {
+					parts := strings.Split(path, "/")
+					localName = parts[len(parts)-1]
+				}
 			}
 			if usedPkgs[localName] {
 				kept = append(kept, spec)
