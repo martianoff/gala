@@ -1,0 +1,10 @@
+package crossdotlib
+
+import . "martianoff/gala/collection_immutable"
+
+// File A: dot-imports collection_immutable and uses Array[T]
+struct Registry(Items Array[string])
+
+func NewRegistry(items Array[string]) Registry = Registry(Items = items)
+
+func (r Registry) Count() int = r.Items.Size()

@@ -36,9 +36,12 @@ func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, 
 						ident = t.stdIdent(typeName)
 					} else {
 						// Check if this is a dot import - if so, don't qualify
-						if !t.importManager.IsDotImported(pkg) {
-							if alias, ok := t.importManager.GetAlias(pkg); ok {
-								ident = &ast.SelectorExpr{X: ast.NewIdent(alias), Sel: ast.NewIdent(typeName)}
+						if t.importManager.IsDotImported(pkg) {
+							t.markDotImportUsed(pkg)
+						} else if alias, ok := t.importManager.GetAlias(pkg); ok {
+							ident = &ast.SelectorExpr{X: ast.NewIdent(alias), Sel: ast.NewIdent(typeName)}
+							if path, ok := t.importManager.GetPath(pkg); ok {
+								t.additionalImports[path] = alias
 							}
 						}
 					}
@@ -163,6 +166,13 @@ func (t *galaASTTransformer) isKnownStdType(name string) bool {
 	return registry.IsStdType(name)
 }
 
+// markDotImportUsed records that a dot-imported package is actually referenced.
+func (t *galaASTTransformer) markDotImportUsed(pkgName string) {
+	if path, ok := t.importManager.GetPath(pkgName); ok {
+		t.usedSiblingDotImports[path] = true
+	}
+}
+
 func (t *galaASTTransformer) typeToExpr(typ transpiler.Type) ast.Expr {
 	if typ.IsNil() {
 		return ast.NewIdent("any")
@@ -187,6 +197,7 @@ func (t *galaASTTransformer) typeToExpr(typ transpiler.Type) ast.Expr {
 			}
 			// Check if this is a dot import - if so, use just the type name
 			if t.importManager.IsDotImported(v.Package) {
+				t.markDotImportUsed(v.Package)
 				return ast.NewIdent(v.Name)
 			}
 			// Check if this is the current package - if so, don't qualify with package name

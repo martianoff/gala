@@ -45,6 +45,7 @@ type galaASTTransformer struct {
 	companionObjects      map[string]*transpiler.CompanionObjectMetadata // companion name -> metadata
 	importManager         *ImportManager                                 // unified import tracking
 	additionalImports     map[string]string                              // path -> alias for transitive imports needed by type inference
+	usedSiblingDotImports map[string]bool                                // paths of sibling dot imports actually referenced during transformation
 	tempVarCount          int
 	inferer               *infer.Inferer
 	currentFuncReturnType    transpiler.Type            // return type of the function currently being transformed
@@ -112,6 +113,7 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 	}
 	t.importManager = NewImportManager()
 	t.additionalImports = make(map[string]string)
+	t.usedSiblingDotImports = make(map[string]bool)
 	t.typeAliases = make(map[string]transpiler.Type)
 	// Load type aliases from sibling files (extracted by analyzer)
 	for name, underlyingType := range richAST.TypeAliases {
@@ -134,6 +136,17 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 
 	// Populate imports from richAST.Packages (includes implicit std import from analyzer)
 	t.importManager.AddFromPackages(richAST.Packages)
+
+	// Propagate dot imports from sibling files in the same package.
+	for path, pkgName := range richAST.SiblingDotImports {
+		if entry, exists := t.importManager.GetByPath(path); exists {
+			if !entry.IsDot {
+				t.importManager.Add(path, "", true, pkgName)
+			}
+		} else {
+			t.importManager.Add(path, "", true, pkgName)
+		}
+	}
 
 	// Populate metadata from RichAST
 	for typeName, meta := range richAST.Types {
@@ -301,6 +314,51 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 		}
 	}
 
+	// Add dot imports from sibling files that are actually needed.
+	for path, pkgName := range richAST.SiblingDotImports {
+		needed := t.usedSiblingDotImports[path]
+		if !needed {
+			needed = t.astUsesDotImportedSymbols(file, pkgName, richAST)
+		}
+		if !needed {
+			continue
+		}
+		alreadyImported := false
+		for _, decl := range file.Decls {
+			genDecl, ok := decl.(*ast.GenDecl)
+			if !ok || genDecl.Tok != token.IMPORT {
+				continue
+			}
+			for _, spec := range genDecl.Specs {
+				importSpec, ok := spec.(*ast.ImportSpec)
+				if !ok {
+					continue
+				}
+				if strings.Trim(importSpec.Path.Value, "\"") == path {
+					alreadyImported = true
+					break
+				}
+			}
+			if alreadyImported {
+				break
+			}
+		}
+		if !alreadyImported {
+			spec := &ast.ImportSpec{
+				Name: ast.NewIdent("."),
+				Path: &ast.BasicLit{
+					Kind:  token.STRING,
+					Value: fmt.Sprintf("\"%s\"", path),
+				},
+			}
+			importDecl := &ast.GenDecl{
+				Tok:   token.IMPORT,
+				Specs: []ast.Spec{spec},
+			}
+			file.Decls = append([]ast.Decl{importDecl}, file.Decls...)
+		}
+	}
+
 	// Add import "embed" when embed val declarations with EmbeddedFS type are present.
 	// For string embeds, Go requires import _ "embed" (blank import).
 	if t.needsEmbedImport {
@@ -380,6 +438,47 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 // It uses the ImportManager to resolve actual package names when they differ
 // from the last component of the import path (e.g., package "typealiaslib"
 // imported via path "martianoff/gala/examples/bug013_type_alias_lib").
+// astUsesDotImportedSymbols checks if the generated AST contains unqualified
+// identifiers that match exported symbols from a dot-imported package.
+func (t *galaASTTransformer) astUsesDotImportedSymbols(file *ast.File, pkgName string, richAST *transpiler.RichAST) bool {
+	exports := make(map[string]bool)
+	for _, meta := range richAST.Types {
+		if meta.Package == pkgName {
+			exports[meta.Name] = true
+		}
+	}
+	for _, meta := range richAST.Functions {
+		if meta.Package == pkgName {
+			exports[meta.Name] = true
+		}
+	}
+	for _, meta := range richAST.CompanionObjects {
+		if meta.Package == pkgName {
+			exports[meta.Name] = true
+		}
+	}
+	if goExports, ok := richAST.GoExports[pkgName]; ok {
+		for _, sym := range goExports {
+			exports[sym] = true
+		}
+	}
+	if len(exports) == 0 {
+		return false
+	}
+	found := false
+	ast.Inspect(file, func(n ast.Node) bool {
+		if found {
+			return false
+		}
+		if ident, ok := n.(*ast.Ident); ok && exports[ident.Name] {
+			found = true
+			return false
+		}
+		return true
+	})
+	return found
+}
+
 func removeUnusedImports(file *ast.File, importMgr *ImportManager) {
 	usedPkgs := make(map[string]bool)
 	ast.Inspect(file, func(n ast.Node) bool {
