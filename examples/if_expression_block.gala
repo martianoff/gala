@@ -1,0 +1,35 @@
+package main
+
+func main() {
+    val x = 5
+
+    // If-expression with bare expressions (existing syntax)
+    val a = if (x > 3) "big" else "small"
+    Println(a)
+
+    // If-expression with block branches (new syntax)
+    val b = if (x > 3) {
+        val prefix = "very"
+        s"$prefix big"
+    } else {
+        "small"
+    }
+    Println(b)
+
+    // Mixed: one block, one expression
+    val c = if (x > 10) {
+        val doubled = x * 2
+        s"doubled: $doubled"
+    } else "not doubled"
+    Println(c)
+
+    // Block with multiple statements
+    val d = if (x > 0) {
+        val step1 = x + 1
+        val step2 = step1 * 2
+        step2
+    } else {
+        0
+    }
+    Println(d)
+}
