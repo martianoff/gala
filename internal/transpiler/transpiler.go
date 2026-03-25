@@ -172,14 +172,16 @@ type SealedVariant struct {
 }
 
 type MethodMetadata struct {
-	Name       string
-	Package    string
-	ParamTypes []Type
-	ParamNames []string // Parameter names (for named argument matching)
-	ReturnType Type
-	TypeParams []string
-	IsGeneric  bool   // Force transformation to standalone function
-	DefinedIn  string // Source file where this method was defined (for redefinition detection)
+	Name         string
+	Package      string
+	ParamTypes   []Type
+	ParamNames   []string         // Parameter names (for named argument matching)
+	ReturnType   Type
+	TypeParams   []string
+	DefaultExprs map[int]string   // Param index -> default expression source text (nil = required)
+	ReceiverName string           // Receiver parameter name (e.g., "s" in "func (s Server)") for default expr substitution
+	IsGeneric    bool             // Force transformation to standalone function
+	DefinedIn    string           // Source file where this method was defined (for redefinition detection)
 }
 
 type FunctionMetadata struct {

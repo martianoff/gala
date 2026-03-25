@@ -1,0 +1,6 @@
+localhost:8080 debug=false
+localhost:9090 debug=false
+example.com:8080 debug=false
+localhost:8080 debug=true
+prod.com:8080 debug=true
+staging.com:8080 debug=false
