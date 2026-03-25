@@ -10,14 +10,22 @@ genrule(
         "gala_parser.go",
     ],
     cmd = """
-        set -e && \
-        ANTLR_OUT=antlr_tmp_$$$$ && \
-        mkdir -p $$ANTLR_OUT && \
-        "$(JAVA)" -jar $(location @antlr4_tool//jar) -Dlanguage=Go -package grammar -o $$ANTLR_OUT $(location gala.g4) && \
-        find $$ANTLR_OUT -name '*.go' -type f | while read f; do \
-            sed 's|github.com/antlr/antlr4/runtime/Go/antlr|github.com/antlr4-go/antlr/v4|g' "$$f" > "$(@D)/$$(basename $$f)"; \
-        done && \
-        rm -rf $$ANTLR_OUT
+        set -e
+        if "$(JAVA)" -version >/dev/null 2>&1; then
+            ANTLR_OUT=antlr_tmp_$$$$
+            mkdir -p $$ANTLR_OUT
+            "$(JAVA)" -jar $(location @antlr4_tool//jar) -Dlanguage=Go -package grammar -o $$ANTLR_OUT $(location gala.g4)
+            for f in $$ANTLR_OUT/*.go; do
+                sed 's|github.com/antlr/antlr4/runtime/Go/antlr|github.com/antlr4-go/antlr/v4|g' "$$f" > "$(@D)/$$(basename $$f)"
+            done
+            rm -rf $$ANTLR_OUT
+        else
+            echo "WARNING: Java not found, using pre-generated grammar files" >&2
+            GDIR=$$(dirname $(location gala.g4))
+            for base in gala_base_listener.go gala_lexer.go gala_listener.go gala_parser.go; do
+                cp "$$GDIR/$$base" "$(@D)/$$base"
+            done
+        fi
     """,
     toolchains = ["@bazel_tools//tools/jdk:current_host_java_runtime"],
     tools = ["@antlr4_tool//jar"],

@@ -461,38 +461,67 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 				}, nil
 			}
 
-			// Transform arguments with expected types
+			// Transform arguments with expected types, handling named args and defaults
 			var mArgs []ast.Expr
+			mNamedArgs := make(map[string]ast.Expr)
 			hasSpread := false
-			for i, argCtx := range argListCtx.AllArgument() {
+			argIdx := 0
+			for _, argCtx := range argListCtx.AllArgument() {
 				arg := argCtx.(*grammar.ArgumentContext)
 				pat := arg.Pattern()
-				exprCtx, isSpread, extractErr := extractArgExpression(pat)
-				if extractErr != nil {
-					return nil, extractErr
+				if arg.Identifier() != nil {
+					argName := arg.Identifier().GetText()
+					exprCtx, isSpread, extractErr := extractArgExpression(pat)
+					if extractErr != nil {
+						return nil, extractErr
+					}
+					if isSpread {
+						hasSpread = true
+					}
+					var expectedType transpiler.Type = transpiler.NilType{}
+					for pi, pName := range methodMeta.ParamNames {
+						if pName == argName && pi < len(methodMeta.ParamTypes) {
+							expectedType = t.substituteTranspilerTypeParams(methodMeta.ParamTypes[pi], typeSubst)
+							break
+						}
+					}
+					expr, err := t.transformArgumentWithExpectedType(exprCtx, expectedType)
+					if err != nil {
+						return nil, err
+					}
+					mNamedArgs[argName] = expr
+				} else {
+					exprCtx, isSpread, extractErr := extractArgExpression(pat)
+					if extractErr != nil {
+						return nil, extractErr
+					}
+					if isSpread {
+						hasSpread = true
+					}
+					var expectedType transpiler.Type = transpiler.NilType{}
+					if argIdx < len(methodMeta.ParamTypes) {
+						expectedType = t.substituteTranspilerTypeParams(methodMeta.ParamTypes[argIdx], typeSubst)
+					}
+					expr, err := t.transformArgumentWithExpectedType(exprCtx, expectedType)
+					if err != nil {
+						return nil, err
+					}
+					mArgs = append(mArgs, expr)
+					argIdx++
 				}
-				if isSpread {
-					hasSpread = true
-				}
-
-				var expectedType transpiler.Type = transpiler.NilType{}
-				if i < len(methodMeta.ParamTypes) {
-					expectedType = t.substituteTranspilerTypeParams(methodMeta.ParamTypes[i], typeSubst)
-				}
-
-				expr, err := t.transformArgumentWithExpectedType(exprCtx, expectedType)
+			}
+			methodFun := &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)}
+			if len(mNamedArgs) > 0 && len(methodMeta.ParamNames) > 0 {
+				return t.handleNamedArgsMethodCall(methodFun, mArgs, mNamedArgs, methodMeta)
+			}
+			if len(methodMeta.DefaultExprs) > 0 && len(mArgs) < len(methodMeta.ParamTypes) {
+				filled, err := t.fillDefaultArgsMethod(mArgs, methodMeta)
 				if err != nil {
 					return nil, err
 				}
-				mArgs = append(mArgs, expr)
+				return &ast.CallExpr{Fun: methodFun, Args: filled, Ellipsis: ellipsisPos(hasSpread)}, nil
 			}
-
-			// Keep as method call: receiver.method(args)
-			return &ast.CallExpr{
-				Fun:      &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)},
-				Args:     mArgs,
-				Ellipsis: ellipsisPos(hasSpread),
-			}, nil
+			return &ast.CallExpr{Fun: methodFun, Args: mArgs, Ellipsis: ellipsisPos(hasSpread)}, nil
 		}
 
 		// FIX-042: When method metadata is not found (receiver type unresolvable),
@@ -1266,6 +1295,76 @@ func (t *galaASTTransformer) handleNamedArgsFuncCall(
 	}
 
 	return &ast.CallExpr{Fun: fun, Args: result}, nil
+}
+
+// handleNamedArgsMethodCall handles method calls with named arguments and default parameter values.
+func (t *galaASTTransformer) handleNamedArgsMethodCall(
+	fun ast.Expr,
+	positionalArgs []ast.Expr,
+	namedArgs map[string]ast.Expr,
+	methodMeta *transpiler.MethodMetadata,
+) (ast.Expr, error) {
+	totalParams := len(methodMeta.ParamTypes)
+	result := make([]ast.Expr, totalParams)
+	for i, arg := range positionalArgs {
+		if i >= totalParams {
+			return nil, galaerr.NewSemanticError(fmt.Sprintf("too many arguments in call to %s", methodMeta.Name))
+		}
+		result[i] = arg
+	}
+	for name, expr := range namedArgs {
+		idx := -1
+		for i, pName := range methodMeta.ParamNames {
+			if pName == name {
+				idx = i
+				break
+			}
+		}
+		if idx < 0 {
+			return nil, galaerr.NewSemanticError(fmt.Sprintf("unknown parameter %q in call to %s", name, methodMeta.Name))
+		}
+		if result[idx] != nil {
+			return nil, galaerr.NewSemanticError(fmt.Sprintf("parameter %q specified both positionally and by name in call to %s", name, methodMeta.Name))
+		}
+		result[idx] = expr
+	}
+	for i, slot := range result {
+		if slot == nil {
+			defaultExprText, hasDefault := methodMeta.DefaultExprs[i]
+			if !hasDefault {
+				paramName := ""
+				if i < len(methodMeta.ParamNames) {
+					paramName = methodMeta.ParamNames[i]
+				}
+				return nil, galaerr.NewSemanticError(fmt.Sprintf("missing required argument %q (parameter %d) in call to %s", paramName, i+1, methodMeta.Name))
+			}
+			expr, err := t.transformDefaultExpr(defaultExprText)
+			if err != nil {
+				return nil, err
+			}
+			result[i] = expr
+		}
+	}
+	return &ast.CallExpr{Fun: fun, Args: result}, nil
+}
+
+// fillDefaultArgsMethod fills missing positional arguments with default values from method metadata.
+func (t *galaASTTransformer) fillDefaultArgsMethod(args []ast.Expr, methodMeta *transpiler.MethodMetadata) ([]ast.Expr, error) {
+	totalParams := len(methodMeta.ParamTypes)
+	result := make([]ast.Expr, totalParams)
+	copy(result, args)
+	for i := len(args); i < totalParams; i++ {
+		defaultExprText, hasDefault := methodMeta.DefaultExprs[i]
+		if !hasDefault {
+			return nil, galaerr.NewSemanticError(fmt.Sprintf("missing required argument %q (parameter %d) in call to %s", methodMeta.ParamNames[i], i+1, methodMeta.Name))
+		}
+		expr, err := t.transformDefaultExpr(defaultExprText)
+		if err != nil {
+			return nil, err
+		}
+		result[i] = expr
+	}
+	return result, nil
 }
 
 func (t *galaASTTransformer) transformArgumentWithExpectedType(exprCtx grammar.IExpressionContext, expectedType transpiler.Type) (ast.Expr, error) {

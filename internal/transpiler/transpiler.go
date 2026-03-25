@@ -178,8 +178,9 @@ type MethodMetadata struct {
 	ParamNames []string // Parameter names (for named argument matching)
 	ReturnType Type
 	TypeParams []string
-	IsGeneric  bool   // Force transformation to standalone function
-	DefinedIn  string // Source file where this method was defined (for redefinition detection)
+	DefaultExprs map[int]string // Param index -> default expression source text (nil = required)
+	IsGeneric    bool           // Force transformation to standalone function
+	DefinedIn    string         // Source file where this method was defined (for redefinition detection)
 }
 
 type FunctionMetadata struct {

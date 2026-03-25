@@ -602,7 +602,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 					if ctx.Signature().Parameters() != nil {
 						pCtx := ctx.Signature().Parameters().(*grammar.ParametersContext)
 						if pList := pCtx.ParameterList(); pList != nil {
-							for _, p := range pList.(*grammar.ParameterListContext).AllParameter() {
+							for i, p := range pList.(*grammar.ParameterListContext).AllParameter() {
 								paramCtx := p.(*grammar.ParameterContext)
 								if paramCtx.Type_() != nil {
 									methodMeta.ParamTypes = append(methodMeta.ParamTypes, a.resolveTypeWithParams(paramCtx.Type_().GetText(), pkgName, allTypeParams))
@@ -613,6 +613,14 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 									methodMeta.ParamNames = append(methodMeta.ParamNames, paramCtx.Identifier().GetText())
 								} else {
 									methodMeta.ParamNames = append(methodMeta.ParamNames, "")
+								}
+								// Extract default expression source text
+								if paramCtx.ParamDefault() != nil {
+									if methodMeta.DefaultExprs == nil {
+										methodMeta.DefaultExprs = make(map[int]string)
+									}
+									defaultCtx := paramCtx.ParamDefault().(*grammar.ParamDefaultContext)
+									methodMeta.DefaultExprs[i] = defaultCtx.Expression().GetText()
 								}
 							}
 						}
@@ -2025,12 +2033,25 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 				if ctx.Signature().Parameters() != nil {
 					pCtx := ctx.Signature().Parameters().(*grammar.ParametersContext)
 					if pList := pCtx.ParameterList(); pList != nil {
-						for _, p := range pList.(*grammar.ParameterListContext).AllParameter() {
+						for i, p := range pList.(*grammar.ParameterListContext).AllParameter() {
 							paramCtx := p.(*grammar.ParameterContext)
 							if paramCtx.Type_() != nil {
 								methodMeta.ParamTypes = append(methodMeta.ParamTypes, a.resolveTypeWithParams(paramCtx.Type_().GetText(), pkgName, allTypeParams))
 							} else {
 								methodMeta.ParamTypes = append(methodMeta.ParamTypes, transpiler.NilType{})
+							}
+							if paramCtx.Identifier() != nil {
+								methodMeta.ParamNames = append(methodMeta.ParamNames, paramCtx.Identifier().GetText())
+							} else {
+								methodMeta.ParamNames = append(methodMeta.ParamNames, "")
+							}
+							// Extract default expression source text
+							if paramCtx.ParamDefault() != nil {
+								if methodMeta.DefaultExprs == nil {
+									methodMeta.DefaultExprs = make(map[int]string)
+								}
+								defaultCtx := paramCtx.ParamDefault().(*grammar.ParamDefaultContext)
+								methodMeta.DefaultExprs[i] = defaultCtx.Expression().GetText()
 							}
 						}
 					}

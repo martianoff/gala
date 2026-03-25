@@ -1,0 +1,36 @@
+package main
+
+type Config struct {
+    host string
+    port int
+    debug bool
+}
+
+func (c Config) copy(host string = c.host, port int = c.port, debug bool = c.debug) Config =
+    Config(host, port, debug)
+
+func (c Config) WithHost(host string) Config = c.copy(host = host)
+func (c Config) WithPort(port int) Config = c.copy(port = port)
+func (c Config) WithDebug(debug bool) Config = c.copy(debug = debug)
+
+func main() {
+    val config = Config("localhost", 8080, false)
+    Println(s"${config.host}:${config.port} debug=${config.debug}")
+
+    val c2 = config.WithPort(9090)
+    Println(s"${c2.host}:${c2.port} debug=${c2.debug}")
+
+    val c3 = config.WithHost("example.com")
+    Println(s"${c3.host}:${c3.port} debug=${c3.debug}")
+
+    val c4 = config.WithDebug(true)
+    Println(s"${c4.host}:${c4.port} debug=${c4.debug}")
+
+    // Named args with multiple overrides
+    val c5 = config.copy(host = "prod.com", debug = true)
+    Println(s"${c5.host}:${c5.port} debug=${c5.debug}")
+
+    // Positional defaults (fewer args than params)
+    val c6 = config.copy("staging.com")
+    Println(s"${c6.host}:${c6.port} debug=${c6.debug}")
+}
