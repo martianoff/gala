@@ -1,0 +1,22 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+)
+
+func classify(opt Option[int]) string {
+    val x = opt.GetOrElse(0)
+    x match {
+        case 0 => "zero"
+        case 1 => "one"
+        case _ => "other"
+    }
+}
+
+func main() {
+    fmt.Println(classify(Some(0)))
+    fmt.Println(classify(Some(1)))
+    fmt.Println(classify(Some(42)))
+    fmt.Println(classify(None[int]()))
+}
