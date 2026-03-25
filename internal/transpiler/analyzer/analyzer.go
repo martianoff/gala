@@ -565,8 +565,9 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 					}
 
 					methodMeta := &transpiler.MethodMetadata{
-						Name:    methodName,
-						Package: pkgName,
+						Name:         methodName,
+						Package:      pkgName,
+						ReceiverName: recvCtx.Identifier().GetText(),
 					}
 					if ctx.TypeParameters() != nil {
 						tpCtx := ctx.TypeParameters().(*grammar.TypeParametersContext)
@@ -2008,8 +2009,9 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 				}
 
 				methodMeta := &transpiler.MethodMetadata{
-					Name:    methodName,
-					Package: pkgName,
+					Name:         methodName,
+					Package:      pkgName,
+					ReceiverName: recvCtx.Identifier().GetText(),
 				}
 				if ctx.TypeParameters() != nil {
 					tpCtx := ctx.TypeParameters().(*grammar.TypeParametersContext)
