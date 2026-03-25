@@ -217,7 +217,7 @@ func parseInterpolationParts(content string) []interpolationPart {
 				}
 			}
 
-			exprText := content[i+2 : j]
+			exprText := unescapeInterpolationExpr(content[i+2 : j])
 			j++ // skip closing }
 
 			// Check for format spec
@@ -268,6 +268,12 @@ func parseInterpolationParts(content string) []interpolationPart {
 	}
 
 	return parts
+}
+
+// unescapeInterpolationExpr converts escaped quotes inside ${} expression blocks
+// back to regular quotes so the expression can be re-parsed by the GALA parser.
+func unescapeInterpolationExpr(expr string) string {
+	return strings.ReplaceAll(expr, `\"`, `"`)
 }
 
 // extractFormatSpec extracts a Go printf format specifier starting at position i (which points to %).

@@ -1058,6 +1058,13 @@ gala_test(
     deps = ["//collection_immutable"],
 )
 
+# FIX-039: String interpolation with escaped quotes inside ${...}
+gala_test(
+    name = "interpolation_escaped_quotes",
+    src = "interpolation_escaped_quotes.gala",
+    expected = "interpolation_escaped_quotes.out",
+)
+
 gala_test(
     name = "type_alias",
     src = "type_alias.gala",

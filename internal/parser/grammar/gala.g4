@@ -243,8 +243,8 @@ FORMAT_STRING: 'f"' INTERP_BODY '"';
 
 fragment INTERP_BODY: (INTERP_CHAR | '\\' . | '${' BRACE_CONTENT '}')*;
 fragment INTERP_CHAR: ~["\r\n\\$] | '$' ~["{\r\n\\];
-fragment BRACE_CONTENT: (BRACE_CHAR | '"' (~["\r\n\\] | '\\' .)* '"' | '{' BRACE_CONTENT '}')*;
-fragment BRACE_CHAR: ~[{}"\r\n];
+fragment BRACE_CONTENT: (BRACE_CHAR | '\\' . | '"' (~["\r\n\\] | '\\' .)* '"' | '{' BRACE_CONTENT '}')*;
+fragment BRACE_CHAR: ~[{}"\r\n\\];
 
 IDENTIFIER: [a-zA-Z_] [a-zA-Z0-9_]*;
 INT_LIT: [0-9]+;
