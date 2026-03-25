@@ -79,6 +79,8 @@ go_test(
     # widen to "any" on CI while passing locally on Windows (no sandbox).
     data = [
         "//collection_immutable:gala_sources",
+        "//collection_mutable:gala_sources",
+        "//time_utils:gala_sources",
         "//std:gala_sources",
     ],
     deps = [
