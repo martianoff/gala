@@ -628,6 +628,12 @@ gala_test(
 )
 
 gala_test(
+    name = "composite_lit_if_cond",
+    src = "composite_lit_if_cond.gala",
+    expected = "composite_lit_if_cond.out",
+)
+
+gala_test(
     name = "nested_match",
     src = "nested_match.gala",
     expected = "nested_match.out",
