@@ -2,7 +2,13 @@ load("@rules_go//go:def.bzl", "go_library")
 
 genrule(
     name = "gala_grammar_go",
-    srcs = ["gala.g4"],
+    srcs = [
+        "gala.g4",
+        "gala_base_listener.go.src",
+        "gala_lexer.go.src",
+        "gala_listener.go.src",
+        "gala_parser.go.src",
+    ],
     outs = [
         "gala_base_listener.go",
         "gala_lexer.go",
@@ -10,17 +16,11 @@ genrule(
         "gala_parser.go",
     ],
     cmd = """
-        set -e && \
-        ANTLR_OUT=antlr_tmp_$$$$ && \
-        mkdir -p $$ANTLR_OUT && \
-        "$(JAVA)" -jar $(location @antlr4_tool//jar) -Dlanguage=Go -package grammar -o $$ANTLR_OUT $(location gala.g4) && \
-        find $$ANTLR_OUT -name '*.go' -type f | while read f; do \
-            sed 's|github.com/antlr/antlr4/runtime/Go/antlr|github.com/antlr4-go/antlr/v4|g' "$$f" > "$(@D)/$$(basename $$f)"; \
-        done && \
-        rm -rf $$ANTLR_OUT
+        cp "$(location gala_base_listener.go.src)" "$(location gala_base_listener.go)"
+        cp "$(location gala_lexer.go.src)" "$(location gala_lexer.go)"
+        cp "$(location gala_listener.go.src)" "$(location gala_listener.go)"
+        cp "$(location gala_parser.go.src)" "$(location gala_parser.go)"
     """,
-    toolchains = ["@bazel_tools//tools/jdk:current_host_java_runtime"],
-    tools = ["@antlr4_tool//jar"],
 )
 
 go_library(

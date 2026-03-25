@@ -1,0 +1,501 @@
+// Code generated from internal/parser/grammar/gala.g4 by ANTLR 4.13.1. DO NOT EDIT.
+
+package grammar // gala
+import "github.com/antlr4-go/antlr/v4"
+
+// BasegalaListener is a complete listener for a parse tree produced by galaParser.
+type BasegalaListener struct{}
+
+var _ galaListener = &BasegalaListener{}
+
+// VisitTerminal is called when a terminal node is visited.
+func (s *BasegalaListener) VisitTerminal(node antlr.TerminalNode) {}
+
+// VisitErrorNode is called when an error node is visited.
+func (s *BasegalaListener) VisitErrorNode(node antlr.ErrorNode) {}
+
+// EnterEveryRule is called when any rule is entered.
+func (s *BasegalaListener) EnterEveryRule(ctx antlr.ParserRuleContext) {}
+
+// ExitEveryRule is called when any rule is exited.
+func (s *BasegalaListener) ExitEveryRule(ctx antlr.ParserRuleContext) {}
+
+// EnterSourceFile is called when production sourceFile is entered.
+func (s *BasegalaListener) EnterSourceFile(ctx *SourceFileContext) {}
+
+// ExitSourceFile is called when production sourceFile is exited.
+func (s *BasegalaListener) ExitSourceFile(ctx *SourceFileContext) {}
+
+// EnterPackageClause is called when production packageClause is entered.
+func (s *BasegalaListener) EnterPackageClause(ctx *PackageClauseContext) {}
+
+// ExitPackageClause is called when production packageClause is exited.
+func (s *BasegalaListener) ExitPackageClause(ctx *PackageClauseContext) {}
+
+// EnterTopLevelDeclaration is called when production topLevelDeclaration is entered.
+func (s *BasegalaListener) EnterTopLevelDeclaration(ctx *TopLevelDeclarationContext) {}
+
+// ExitTopLevelDeclaration is called when production topLevelDeclaration is exited.
+func (s *BasegalaListener) ExitTopLevelDeclaration(ctx *TopLevelDeclarationContext) {}
+
+// EnterEmbedDeclaration is called when production embedDeclaration is entered.
+func (s *BasegalaListener) EnterEmbedDeclaration(ctx *EmbedDeclarationContext) {}
+
+// ExitEmbedDeclaration is called when production embedDeclaration is exited.
+func (s *BasegalaListener) ExitEmbedDeclaration(ctx *EmbedDeclarationContext) {}
+
+// EnterEmbedPatterns is called when production embedPatterns is entered.
+func (s *BasegalaListener) EnterEmbedPatterns(ctx *EmbedPatternsContext) {}
+
+// ExitEmbedPatterns is called when production embedPatterns is exited.
+func (s *BasegalaListener) ExitEmbedPatterns(ctx *EmbedPatternsContext) {}
+
+// EnterStructShorthandDeclaration is called when production structShorthandDeclaration is entered.
+func (s *BasegalaListener) EnterStructShorthandDeclaration(ctx *StructShorthandDeclarationContext) {}
+
+// ExitStructShorthandDeclaration is called when production structShorthandDeclaration is exited.
+func (s *BasegalaListener) ExitStructShorthandDeclaration(ctx *StructShorthandDeclarationContext) {}
+
+// EnterSealedTypeDeclaration is called when production sealedTypeDeclaration is entered.
+func (s *BasegalaListener) EnterSealedTypeDeclaration(ctx *SealedTypeDeclarationContext) {}
+
+// ExitSealedTypeDeclaration is called when production sealedTypeDeclaration is exited.
+func (s *BasegalaListener) ExitSealedTypeDeclaration(ctx *SealedTypeDeclarationContext) {}
+
+// EnterSealedCase is called when production sealedCase is entered.
+func (s *BasegalaListener) EnterSealedCase(ctx *SealedCaseContext) {}
+
+// ExitSealedCase is called when production sealedCase is exited.
+func (s *BasegalaListener) ExitSealedCase(ctx *SealedCaseContext) {}
+
+// EnterSealedCaseFieldList is called when production sealedCaseFieldList is entered.
+func (s *BasegalaListener) EnterSealedCaseFieldList(ctx *SealedCaseFieldListContext) {}
+
+// ExitSealedCaseFieldList is called when production sealedCaseFieldList is exited.
+func (s *BasegalaListener) ExitSealedCaseFieldList(ctx *SealedCaseFieldListContext) {}
+
+// EnterSealedCaseField is called when production sealedCaseField is entered.
+func (s *BasegalaListener) EnterSealedCaseField(ctx *SealedCaseFieldContext) {}
+
+// ExitSealedCaseField is called when production sealedCaseField is exited.
+func (s *BasegalaListener) ExitSealedCaseField(ctx *SealedCaseFieldContext) {}
+
+// EnterDeclaration is called when production declaration is entered.
+func (s *BasegalaListener) EnterDeclaration(ctx *DeclarationContext) {}
+
+// ExitDeclaration is called when production declaration is exited.
+func (s *BasegalaListener) ExitDeclaration(ctx *DeclarationContext) {}
+
+// EnterImportDeclaration is called when production importDeclaration is entered.
+func (s *BasegalaListener) EnterImportDeclaration(ctx *ImportDeclarationContext) {}
+
+// ExitImportDeclaration is called when production importDeclaration is exited.
+func (s *BasegalaListener) ExitImportDeclaration(ctx *ImportDeclarationContext) {}
+
+// EnterImportSpec is called when production importSpec is entered.
+func (s *BasegalaListener) EnterImportSpec(ctx *ImportSpecContext) {}
+
+// ExitImportSpec is called when production importSpec is exited.
+func (s *BasegalaListener) ExitImportSpec(ctx *ImportSpecContext) {}
+
+// EnterTypeDeclaration is called when production typeDeclaration is entered.
+func (s *BasegalaListener) EnterTypeDeclaration(ctx *TypeDeclarationContext) {}
+
+// ExitTypeDeclaration is called when production typeDeclaration is exited.
+func (s *BasegalaListener) ExitTypeDeclaration(ctx *TypeDeclarationContext) {}
+
+// EnterTypeAlias is called when production typeAlias is entered.
+func (s *BasegalaListener) EnterTypeAlias(ctx *TypeAliasContext) {}
+
+// ExitTypeAlias is called when production typeAlias is exited.
+func (s *BasegalaListener) ExitTypeAlias(ctx *TypeAliasContext) {}
+
+// EnterStructType is called when production structType is entered.
+func (s *BasegalaListener) EnterStructType(ctx *StructTypeContext) {}
+
+// ExitStructType is called when production structType is exited.
+func (s *BasegalaListener) ExitStructType(ctx *StructTypeContext) {}
+
+// EnterStructField is called when production structField is entered.
+func (s *BasegalaListener) EnterStructField(ctx *StructFieldContext) {}
+
+// ExitStructField is called when production structField is exited.
+func (s *BasegalaListener) ExitStructField(ctx *StructFieldContext) {}
+
+// EnterInterfaceType is called when production interfaceType is entered.
+func (s *BasegalaListener) EnterInterfaceType(ctx *InterfaceTypeContext) {}
+
+// ExitInterfaceType is called when production interfaceType is exited.
+func (s *BasegalaListener) ExitInterfaceType(ctx *InterfaceTypeContext) {}
+
+// EnterMethodSpec is called when production methodSpec is entered.
+func (s *BasegalaListener) EnterMethodSpec(ctx *MethodSpecContext) {}
+
+// ExitMethodSpec is called when production methodSpec is exited.
+func (s *BasegalaListener) ExitMethodSpec(ctx *MethodSpecContext) {}
+
+// EnterValDeclaration is called when production valDeclaration is entered.
+func (s *BasegalaListener) EnterValDeclaration(ctx *ValDeclarationContext) {}
+
+// ExitValDeclaration is called when production valDeclaration is exited.
+func (s *BasegalaListener) ExitValDeclaration(ctx *ValDeclarationContext) {}
+
+// EnterVarDeclaration is called when production varDeclaration is entered.
+func (s *BasegalaListener) EnterVarDeclaration(ctx *VarDeclarationContext) {}
+
+// ExitVarDeclaration is called when production varDeclaration is exited.
+func (s *BasegalaListener) ExitVarDeclaration(ctx *VarDeclarationContext) {}
+
+// EnterTuplePattern is called when production tuplePattern is entered.
+func (s *BasegalaListener) EnterTuplePattern(ctx *TuplePatternContext) {}
+
+// ExitTuplePattern is called when production tuplePattern is exited.
+func (s *BasegalaListener) ExitTuplePattern(ctx *TuplePatternContext) {}
+
+// EnterFunctionDeclaration is called when production functionDeclaration is entered.
+func (s *BasegalaListener) EnterFunctionDeclaration(ctx *FunctionDeclarationContext) {}
+
+// ExitFunctionDeclaration is called when production functionDeclaration is exited.
+func (s *BasegalaListener) ExitFunctionDeclaration(ctx *FunctionDeclarationContext) {}
+
+// EnterReceiver is called when production receiver is entered.
+func (s *BasegalaListener) EnterReceiver(ctx *ReceiverContext) {}
+
+// ExitReceiver is called when production receiver is exited.
+func (s *BasegalaListener) ExitReceiver(ctx *ReceiverContext) {}
+
+// EnterSignature is called when production signature is entered.
+func (s *BasegalaListener) EnterSignature(ctx *SignatureContext) {}
+
+// ExitSignature is called when production signature is exited.
+func (s *BasegalaListener) ExitSignature(ctx *SignatureContext) {}
+
+// EnterMultiReturnType is called when production multiReturnType is entered.
+func (s *BasegalaListener) EnterMultiReturnType(ctx *MultiReturnTypeContext) {}
+
+// ExitMultiReturnType is called when production multiReturnType is exited.
+func (s *BasegalaListener) ExitMultiReturnType(ctx *MultiReturnTypeContext) {}
+
+// EnterParameters is called when production parameters is entered.
+func (s *BasegalaListener) EnterParameters(ctx *ParametersContext) {}
+
+// ExitParameters is called when production parameters is exited.
+func (s *BasegalaListener) ExitParameters(ctx *ParametersContext) {}
+
+// EnterParameterList is called when production parameterList is entered.
+func (s *BasegalaListener) EnterParameterList(ctx *ParameterListContext) {}
+
+// ExitParameterList is called when production parameterList is exited.
+func (s *BasegalaListener) ExitParameterList(ctx *ParameterListContext) {}
+
+// EnterParameter is called when production parameter is entered.
+func (s *BasegalaListener) EnterParameter(ctx *ParameterContext) {}
+
+// ExitParameter is called when production parameter is exited.
+func (s *BasegalaListener) ExitParameter(ctx *ParameterContext) {}
+
+// EnterParamDefault is called when production paramDefault is entered.
+func (s *BasegalaListener) EnterParamDefault(ctx *ParamDefaultContext) {}
+
+// ExitParamDefault is called when production paramDefault is exited.
+func (s *BasegalaListener) ExitParamDefault(ctx *ParamDefaultContext) {}
+
+// EnterTypeParameters is called when production typeParameters is entered.
+func (s *BasegalaListener) EnterTypeParameters(ctx *TypeParametersContext) {}
+
+// ExitTypeParameters is called when production typeParameters is exited.
+func (s *BasegalaListener) ExitTypeParameters(ctx *TypeParametersContext) {}
+
+// EnterTypeParameterList is called when production typeParameterList is entered.
+func (s *BasegalaListener) EnterTypeParameterList(ctx *TypeParameterListContext) {}
+
+// ExitTypeParameterList is called when production typeParameterList is exited.
+func (s *BasegalaListener) ExitTypeParameterList(ctx *TypeParameterListContext) {}
+
+// EnterTypeParameter is called when production typeParameter is entered.
+func (s *BasegalaListener) EnterTypeParameter(ctx *TypeParameterContext) {}
+
+// ExitTypeParameter is called when production typeParameter is exited.
+func (s *BasegalaListener) ExitTypeParameter(ctx *TypeParameterContext) {}
+
+// EnterBlock is called when production block is entered.
+func (s *BasegalaListener) EnterBlock(ctx *BlockContext) {}
+
+// ExitBlock is called when production block is exited.
+func (s *BasegalaListener) ExitBlock(ctx *BlockContext) {}
+
+// EnterStatement is called when production statement is entered.
+func (s *BasegalaListener) EnterStatement(ctx *StatementContext) {}
+
+// ExitStatement is called when production statement is exited.
+func (s *BasegalaListener) ExitStatement(ctx *StatementContext) {}
+
+// EnterReturnStatement is called when production returnStatement is entered.
+func (s *BasegalaListener) EnterReturnStatement(ctx *ReturnStatementContext) {}
+
+// ExitReturnStatement is called when production returnStatement is exited.
+func (s *BasegalaListener) ExitReturnStatement(ctx *ReturnStatementContext) {}
+
+// EnterIfStatement is called when production ifStatement is entered.
+func (s *BasegalaListener) EnterIfStatement(ctx *IfStatementContext) {}
+
+// ExitIfStatement is called when production ifStatement is exited.
+func (s *BasegalaListener) ExitIfStatement(ctx *IfStatementContext) {}
+
+// EnterForStatement is called when production forStatement is entered.
+func (s *BasegalaListener) EnterForStatement(ctx *ForStatementContext) {}
+
+// ExitForStatement is called when production forStatement is exited.
+func (s *BasegalaListener) ExitForStatement(ctx *ForStatementContext) {}
+
+// EnterForClause is called when production forClause is entered.
+func (s *BasegalaListener) EnterForClause(ctx *ForClauseContext) {}
+
+// ExitForClause is called when production forClause is exited.
+func (s *BasegalaListener) ExitForClause(ctx *ForClauseContext) {}
+
+// EnterForCondition is called when production forCondition is entered.
+func (s *BasegalaListener) EnterForCondition(ctx *ForConditionContext) {}
+
+// ExitForCondition is called when production forCondition is exited.
+func (s *BasegalaListener) ExitForCondition(ctx *ForConditionContext) {}
+
+// EnterRangeClause is called when production rangeClause is entered.
+func (s *BasegalaListener) EnterRangeClause(ctx *RangeClauseContext) {}
+
+// ExitRangeClause is called when production rangeClause is exited.
+func (s *BasegalaListener) ExitRangeClause(ctx *RangeClauseContext) {}
+
+// EnterSimpleStatement is called when production simpleStatement is entered.
+func (s *BasegalaListener) EnterSimpleStatement(ctx *SimpleStatementContext) {}
+
+// ExitSimpleStatement is called when production simpleStatement is exited.
+func (s *BasegalaListener) ExitSimpleStatement(ctx *SimpleStatementContext) {}
+
+// EnterIncDecStmt is called when production incDecStmt is entered.
+func (s *BasegalaListener) EnterIncDecStmt(ctx *IncDecStmtContext) {}
+
+// ExitIncDecStmt is called when production incDecStmt is exited.
+func (s *BasegalaListener) ExitIncDecStmt(ctx *IncDecStmtContext) {}
+
+// EnterIdentifierList is called when production identifierList is entered.
+func (s *BasegalaListener) EnterIdentifierList(ctx *IdentifierListContext) {}
+
+// ExitIdentifierList is called when production identifierList is exited.
+func (s *BasegalaListener) ExitIdentifierList(ctx *IdentifierListContext) {}
+
+// EnterAssignment is called when production assignment is entered.
+func (s *BasegalaListener) EnterAssignment(ctx *AssignmentContext) {}
+
+// ExitAssignment is called when production assignment is exited.
+func (s *BasegalaListener) ExitAssignment(ctx *AssignmentContext) {}
+
+// EnterShortVarDecl is called when production shortVarDecl is entered.
+func (s *BasegalaListener) EnterShortVarDecl(ctx *ShortVarDeclContext) {}
+
+// ExitShortVarDecl is called when production shortVarDecl is exited.
+func (s *BasegalaListener) ExitShortVarDecl(ctx *ShortVarDeclContext) {}
+
+// EnterExpressionList is called when production expressionList is entered.
+func (s *BasegalaListener) EnterExpressionList(ctx *ExpressionListContext) {}
+
+// ExitExpressionList is called when production expressionList is exited.
+func (s *BasegalaListener) ExitExpressionList(ctx *ExpressionListContext) {}
+
+// EnterExpression is called when production expression is entered.
+func (s *BasegalaListener) EnterExpression(ctx *ExpressionContext) {}
+
+// ExitExpression is called when production expression is exited.
+func (s *BasegalaListener) ExitExpression(ctx *ExpressionContext) {}
+
+// EnterOrExpr is called when production orExpr is entered.
+func (s *BasegalaListener) EnterOrExpr(ctx *OrExprContext) {}
+
+// ExitOrExpr is called when production orExpr is exited.
+func (s *BasegalaListener) ExitOrExpr(ctx *OrExprContext) {}
+
+// EnterAndExpr is called when production andExpr is entered.
+func (s *BasegalaListener) EnterAndExpr(ctx *AndExprContext) {}
+
+// ExitAndExpr is called when production andExpr is exited.
+func (s *BasegalaListener) ExitAndExpr(ctx *AndExprContext) {}
+
+// EnterEqualityExpr is called when production equalityExpr is entered.
+func (s *BasegalaListener) EnterEqualityExpr(ctx *EqualityExprContext) {}
+
+// ExitEqualityExpr is called when production equalityExpr is exited.
+func (s *BasegalaListener) ExitEqualityExpr(ctx *EqualityExprContext) {}
+
+// EnterRelationalExpr is called when production relationalExpr is entered.
+func (s *BasegalaListener) EnterRelationalExpr(ctx *RelationalExprContext) {}
+
+// ExitRelationalExpr is called when production relationalExpr is exited.
+func (s *BasegalaListener) ExitRelationalExpr(ctx *RelationalExprContext) {}
+
+// EnterAdditiveExpr is called when production additiveExpr is entered.
+func (s *BasegalaListener) EnterAdditiveExpr(ctx *AdditiveExprContext) {}
+
+// ExitAdditiveExpr is called when production additiveExpr is exited.
+func (s *BasegalaListener) ExitAdditiveExpr(ctx *AdditiveExprContext) {}
+
+// EnterMultiplicativeExpr is called when production multiplicativeExpr is entered.
+func (s *BasegalaListener) EnterMultiplicativeExpr(ctx *MultiplicativeExprContext) {}
+
+// ExitMultiplicativeExpr is called when production multiplicativeExpr is exited.
+func (s *BasegalaListener) ExitMultiplicativeExpr(ctx *MultiplicativeExprContext) {}
+
+// EnterUnaryExpr is called when production unaryExpr is entered.
+func (s *BasegalaListener) EnterUnaryExpr(ctx *UnaryExprContext) {}
+
+// ExitUnaryExpr is called when production unaryExpr is exited.
+func (s *BasegalaListener) ExitUnaryExpr(ctx *UnaryExprContext) {}
+
+// EnterPostfixExpr is called when production postfixExpr is entered.
+func (s *BasegalaListener) EnterPostfixExpr(ctx *PostfixExprContext) {}
+
+// ExitPostfixExpr is called when production postfixExpr is exited.
+func (s *BasegalaListener) ExitPostfixExpr(ctx *PostfixExprContext) {}
+
+// EnterPostfixSuffix is called when production postfixSuffix is entered.
+func (s *BasegalaListener) EnterPostfixSuffix(ctx *PostfixSuffixContext) {}
+
+// ExitPostfixSuffix is called when production postfixSuffix is exited.
+func (s *BasegalaListener) ExitPostfixSuffix(ctx *PostfixSuffixContext) {}
+
+// EnterPrimaryExpr is called when production primaryExpr is entered.
+func (s *BasegalaListener) EnterPrimaryExpr(ctx *PrimaryExprContext) {}
+
+// ExitPrimaryExpr is called when production primaryExpr is exited.
+func (s *BasegalaListener) ExitPrimaryExpr(ctx *PrimaryExprContext) {}
+
+// EnterPartialFunctionLiteral is called when production partialFunctionLiteral is entered.
+func (s *BasegalaListener) EnterPartialFunctionLiteral(ctx *PartialFunctionLiteralContext) {}
+
+// ExitPartialFunctionLiteral is called when production partialFunctionLiteral is exited.
+func (s *BasegalaListener) ExitPartialFunctionLiteral(ctx *PartialFunctionLiteralContext) {}
+
+// EnterArgumentList is called when production argumentList is entered.
+func (s *BasegalaListener) EnterArgumentList(ctx *ArgumentListContext) {}
+
+// ExitArgumentList is called when production argumentList is exited.
+func (s *BasegalaListener) ExitArgumentList(ctx *ArgumentListContext) {}
+
+// EnterArgument is called when production argument is entered.
+func (s *BasegalaListener) EnterArgument(ctx *ArgumentContext) {}
+
+// ExitArgument is called when production argument is exited.
+func (s *BasegalaListener) ExitArgument(ctx *ArgumentContext) {}
+
+// EnterPrimary is called when production primary is entered.
+func (s *BasegalaListener) EnterPrimary(ctx *PrimaryContext) {}
+
+// ExitPrimary is called when production primary is exited.
+func (s *BasegalaListener) ExitPrimary(ctx *PrimaryContext) {}
+
+// EnterCompositeLiteral is called when production compositeLiteral is entered.
+func (s *BasegalaListener) EnterCompositeLiteral(ctx *CompositeLiteralContext) {}
+
+// ExitCompositeLiteral is called when production compositeLiteral is exited.
+func (s *BasegalaListener) ExitCompositeLiteral(ctx *CompositeLiteralContext) {}
+
+// EnterElementList is called when production elementList is entered.
+func (s *BasegalaListener) EnterElementList(ctx *ElementListContext) {}
+
+// ExitElementList is called when production elementList is exited.
+func (s *BasegalaListener) ExitElementList(ctx *ElementListContext) {}
+
+// EnterKeyedElement is called when production keyedElement is entered.
+func (s *BasegalaListener) EnterKeyedElement(ctx *KeyedElementContext) {}
+
+// ExitKeyedElement is called when production keyedElement is exited.
+func (s *BasegalaListener) ExitKeyedElement(ctx *KeyedElementContext) {}
+
+// EnterLambdaExpression is called when production lambdaExpression is entered.
+func (s *BasegalaListener) EnterLambdaExpression(ctx *LambdaExpressionContext) {}
+
+// ExitLambdaExpression is called when production lambdaExpression is exited.
+func (s *BasegalaListener) ExitLambdaExpression(ctx *LambdaExpressionContext) {}
+
+// EnterCaseClause is called when production caseClause is entered.
+func (s *BasegalaListener) EnterCaseClause(ctx *CaseClauseContext) {}
+
+// ExitCaseClause is called when production caseClause is exited.
+func (s *BasegalaListener) ExitCaseClause(ctx *CaseClauseContext) {}
+
+// EnterRestPattern is called when production restPattern is entered.
+func (s *BasegalaListener) EnterRestPattern(ctx *RestPatternContext) {}
+
+// ExitRestPattern is called when production restPattern is exited.
+func (s *BasegalaListener) ExitRestPattern(ctx *RestPatternContext) {}
+
+// EnterExpressionPattern is called when production expressionPattern is entered.
+func (s *BasegalaListener) EnterExpressionPattern(ctx *ExpressionPatternContext) {}
+
+// ExitExpressionPattern is called when production expressionPattern is exited.
+func (s *BasegalaListener) ExitExpressionPattern(ctx *ExpressionPatternContext) {}
+
+// EnterTypedPattern is called when production typedPattern is entered.
+func (s *BasegalaListener) EnterTypedPattern(ctx *TypedPatternContext) {}
+
+// ExitTypedPattern is called when production typedPattern is exited.
+func (s *BasegalaListener) ExitTypedPattern(ctx *TypedPatternContext) {}
+
+// EnterIfExpression is called when production ifExpression is entered.
+func (s *BasegalaListener) EnterIfExpression(ctx *IfExpressionContext) {}
+
+// ExitIfExpression is called when production ifExpression is exited.
+func (s *BasegalaListener) ExitIfExpression(ctx *IfExpressionContext) {}
+
+// EnterIfExprBranch is called when production ifExprBranch is entered.
+func (s *BasegalaListener) EnterIfExprBranch(ctx *IfExprBranchContext) {}
+
+// ExitIfExprBranch is called when production ifExprBranch is exited.
+func (s *BasegalaListener) ExitIfExprBranch(ctx *IfExprBranchContext) {}
+
+// EnterType is called when production type is entered.
+func (s *BasegalaListener) EnterType(ctx *TypeContext) {}
+
+// ExitType is called when production type is exited.
+func (s *BasegalaListener) ExitType(ctx *TypeContext) {}
+
+// EnterTypeArguments is called when production typeArguments is entered.
+func (s *BasegalaListener) EnterTypeArguments(ctx *TypeArgumentsContext) {}
+
+// ExitTypeArguments is called when production typeArguments is exited.
+func (s *BasegalaListener) ExitTypeArguments(ctx *TypeArgumentsContext) {}
+
+// EnterTypeList is called when production typeList is entered.
+func (s *BasegalaListener) EnterTypeList(ctx *TypeListContext) {}
+
+// ExitTypeList is called when production typeList is exited.
+func (s *BasegalaListener) ExitTypeList(ctx *TypeListContext) {}
+
+// EnterQualifiedIdentifier is called when production qualifiedIdentifier is entered.
+func (s *BasegalaListener) EnterQualifiedIdentifier(ctx *QualifiedIdentifierContext) {}
+
+// ExitQualifiedIdentifier is called when production qualifiedIdentifier is exited.
+func (s *BasegalaListener) ExitQualifiedIdentifier(ctx *QualifiedIdentifierContext) {}
+
+// EnterIdentifier is called when production identifier is entered.
+func (s *BasegalaListener) EnterIdentifier(ctx *IdentifierContext) {}
+
+// ExitIdentifier is called when production identifier is exited.
+func (s *BasegalaListener) ExitIdentifier(ctx *IdentifierContext) {}
+
+// EnterLiteral is called when production literal is entered.
+func (s *BasegalaListener) EnterLiteral(ctx *LiteralContext) {}
+
+// ExitLiteral is called when production literal is exited.
+func (s *BasegalaListener) ExitLiteral(ctx *LiteralContext) {}
+
+// EnterBinaryOp is called when production binaryOp is entered.
+func (s *BasegalaListener) EnterBinaryOp(ctx *BinaryOpContext) {}
+
+// ExitBinaryOp is called when production binaryOp is exited.
+func (s *BasegalaListener) ExitBinaryOp(ctx *BinaryOpContext) {}
+
+// EnterUnaryOp is called when production unaryOp is entered.
+func (s *BasegalaListener) EnterUnaryOp(ctx *UnaryOpContext) {}
+
+// ExitUnaryOp is called when production unaryOp is exited.
+func (s *BasegalaListener) ExitUnaryOp(ctx *UnaryOpContext) {}

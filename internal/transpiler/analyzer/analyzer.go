@@ -451,8 +451,8 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 					var allTypeParams []string
 					allTypeParams = append(allTypeParams, meta.TypeParams...)
 					allTypeParams = append(allTypeParams, methodMeta.TypeParams...)
-					if msCtx.Signature().Type_() != nil {
-						methodMeta.ReturnType = a.resolveTypeWithParams(msCtx.Signature().Type_().GetText(), pkgName, allTypeParams)
+					if rt := a.resolveSignatureReturnType(msCtx.Signature(), pkgName, allTypeParams); rt != nil {
+						methodMeta.ReturnType = rt
 					}
 					if msCtx.Signature().Parameters() != nil {
 						pCtx := msCtx.Signature().Parameters().(*grammar.ParametersContext)
@@ -587,16 +587,18 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 					}
 					allTypeParams = append(allTypeParams, methodMeta.TypeParams...)
 
-					if ctx.Signature().Type_() != nil {
-						methodMeta.ReturnType = a.resolveTypeWithParams(ctx.Signature().Type_().GetText(), pkgName, allTypeParams)
+					if rt := a.resolveSignatureReturnType(ctx.Signature(), pkgName, allTypeParams); rt != nil {
+						methodMeta.ReturnType = rt
 
 						// Detect Go generics instantiation cycle:
 						// If receiver is Container[T] and return is Container[SomeType[T, ...]]
 						// Go would detect infinite type instantiation
-						recvTypeStr := recvCtx.Type_().GetText()
-						retTypeStr := ctx.Signature().Type_().GetText()
-						if a.causesInstantiationCycle(recvTypeStr, retTypeStr) {
-							methodMeta.IsGeneric = true
+						if ctx.Signature().Type_() != nil {
+							recvTypeStr := recvCtx.Type_().GetText()
+							retTypeStr := ctx.Signature().Type_().GetText()
+							if a.causesInstantiationCycle(recvTypeStr, retTypeStr) {
+								methodMeta.IsGeneric = true
+							}
 						}
 					}
 
@@ -679,8 +681,8 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 						}
 					}
 				}
-				if ctx.Signature().Type_() != nil {
-					funcMeta.ReturnType = a.resolveTypeWithParams(ctx.Signature().Type_().GetText(), pkgName, funcMeta.TypeParams)
+				if rt := a.resolveSignatureReturnType(ctx.Signature(), pkgName, funcMeta.TypeParams); rt != nil {
+					funcMeta.ReturnType = rt
 				}
 				if ctx.Signature().Parameters() != nil {
 					pCtx := ctx.Signature().Parameters().(*grammar.ParametersContext)
@@ -1119,6 +1121,23 @@ func normalizeTypeName(name string) string {
 		return name[4:]
 	}
 	return name
+}
+
+// resolveSignatureReturnType extracts the return type from a signature context.
+// For single return types, resolves the type directly.
+// For multi-return types like ([]byte, string, error), resolves the first type.
+func (a *galaAnalyzer) resolveSignatureReturnType(sig grammar.ISignatureContext, pkgName string, typeParams []string) transpiler.Type {
+	if sig.Type_() != nil {
+		return a.resolveTypeWithParams(sig.Type_().GetText(), pkgName, typeParams)
+	}
+	if sig.MultiReturnType() != nil {
+		multiCtx := sig.MultiReturnType().(*grammar.MultiReturnTypeContext)
+		types := multiCtx.AllType_()
+		if len(types) > 0 {
+			return a.resolveTypeWithParams(types[0].GetText(), pkgName, typeParams)
+		}
+	}
+	return nil
 }
 
 // causesInstantiationCycle checks if a method return type would cause a Go generics
@@ -1890,8 +1909,8 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 					var allTypeParams []string
 					allTypeParams = append(allTypeParams, meta.TypeParams...)
 					allTypeParams = append(allTypeParams, methodMeta.TypeParams...)
-					if msCtx.Signature().Type_() != nil {
-						methodMeta.ReturnType = a.resolveTypeWithParams(msCtx.Signature().Type_().GetText(), pkgName, allTypeParams)
+					if rt := a.resolveSignatureReturnType(msCtx.Signature(), pkgName, allTypeParams); rt != nil {
+						methodMeta.ReturnType = rt
 					}
 					if msCtx.Signature().Parameters() != nil {
 						pCtx := msCtx.Signature().Parameters().(*grammar.ParametersContext)
@@ -2029,8 +2048,8 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 				}
 				allTypeParams = append(allTypeParams, methodMeta.TypeParams...)
 
-				if ctx.Signature().Type_() != nil {
-					methodMeta.ReturnType = a.resolveTypeWithParams(ctx.Signature().Type_().GetText(), pkgName, allTypeParams)
+				if rt := a.resolveSignatureReturnType(ctx.Signature(), pkgName, allTypeParams); rt != nil {
+					methodMeta.ReturnType = rt
 				}
 				if ctx.Signature().Parameters() != nil {
 					pCtx := ctx.Signature().Parameters().(*grammar.ParametersContext)
@@ -2091,8 +2110,8 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 							}
 						}
 					}
-					if ctx.Signature().Type_() != nil {
-						funcMeta.ReturnType = a.resolveTypeWithParams(ctx.Signature().Type_().GetText(), pkgName, funcMeta.TypeParams)
+					if rt := a.resolveSignatureReturnType(ctx.Signature(), pkgName, funcMeta.TypeParams); rt != nil {
+						funcMeta.ReturnType = rt
 					}
 					if ctx.Signature().Parameters() != nil {
 						pCtx := ctx.Signature().Parameters().(*grammar.ParametersContext)

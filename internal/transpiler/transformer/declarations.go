@@ -1196,6 +1196,16 @@ func (t *galaASTTransformer) transformSignature(ctx *grammar.SignatureContext, t
 				{Type: retType},
 			},
 		}
+	} else if ctx.MultiReturnType() != nil {
+		multiCtx := ctx.MultiReturnType().(*grammar.MultiReturnTypeContext)
+		results = &ast.FieldList{}
+		for _, typeCtx := range multiCtx.AllType_() {
+			retType, err := t.transformType(typeCtx)
+			if err != nil {
+				return nil, err
+			}
+			results.List = append(results.List, &ast.Field{Type: retType})
+		}
 	}
 
 	return &ast.FuncType{
@@ -1263,6 +1273,16 @@ func (t *galaASTTransformer) transformFuncTypeSignature(ctx *grammar.SignatureCo
 			List: []*ast.Field{
 				{Type: retType},
 			},
+		}
+	} else if ctx.MultiReturnType() != nil {
+		multiCtx := ctx.MultiReturnType().(*grammar.MultiReturnTypeContext)
+		results = &ast.FieldList{}
+		for _, typeCtx := range multiCtx.AllType_() {
+			retType, err := t.transformType(typeCtx)
+			if err != nil {
+				return nil, err
+			}
+			results.List = append(results.List, &ast.Field{Type: retType})
 		}
 	}
 

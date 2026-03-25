@@ -60,7 +60,9 @@ functionDeclaration: 'func' (receiver)? identifier (typeParameters)? signature (
 
 receiver: '(' (VAL | VAR)? identifier type ')';
 
-signature: parameters (type)?;
+signature: parameters (type | multiReturnType)?;
+
+multiReturnType: '(' type (',' type)+ ')';
 
 parameters: '(' parameterList? ')';
 parameterList: parameter (',' parameter)* ','?;
