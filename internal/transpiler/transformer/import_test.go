@@ -45,11 +45,7 @@ import (
 )`,
 			expected: `package main
 
-import (
-	"fmt"
-	m "math"
-	. "net/http"
-)
+import . "net/http"
 `,
 		},
 	}
