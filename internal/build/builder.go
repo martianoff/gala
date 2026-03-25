@@ -678,6 +678,308 @@ func findGalaFilesRecursive(dir string) ([]string, error) {
 	return files, err
 }
 
+// Test runs the test flow: transpile source + test files, discover test functions,
+// generate a test main, build, and execute the test binary.
+// If verbose is true, passes -v-style output. Returns the exit code from the test run.
+func (b *Builder) Test(verbose bool) error {
+	// Step 1: Ensure workspace exists
+	if b.verbose {
+		fmt.Printf("Using workspace: %s\n", b.workspace.Dir)
+	}
+	if err := b.workspace.Ensure(); err != nil {
+		return fmt.Errorf("ensuring workspace: %w", err)
+	}
+
+	// Step 1.5: Invalidate workspace if gala version changed
+	versionFile := filepath.Join(b.workspace.Dir, ".gala-version")
+	if oldVer, err := os.ReadFile(versionFile); err != nil || string(oldVer) != b.stdlibVersion {
+		if b.verbose && err == nil {
+			fmt.Printf("GALA version changed (%s -> %s), invalidating workspace\n", string(oldVer), b.stdlibVersion)
+		}
+		os.RemoveAll(b.workspace.GenDir)
+		os.MkdirAll(b.workspace.GenDir, 0755)
+		os.RemoveAll(b.workspace.DepsDir)
+		os.MkdirAll(b.workspace.DepsDir, 0755)
+		os.Remove(filepath.Join(b.workspace.Dir, ".gala-source-hash"))
+		os.Remove(filepath.Join(b.workspace.Dir, ".gala-deps-hash"))
+		os.Remove(filepath.Join(b.workspace.Dir, "go.mod"))
+		os.Remove(filepath.Join(b.workspace.Dir, "go.sum"))
+		os.WriteFile(versionFile, []byte(b.stdlibVersion), 0644)
+	}
+
+	// Step 2: Ensure stdlib is extracted
+	if err := b.ensureStdlib(); err != nil {
+		return fmt.Errorf("ensuring stdlib: %w", err)
+	}
+
+	// Step 2.5: Fetch missing GALA dependencies
+	if err := b.ensureDeps(); err != nil {
+		return fmt.Errorf("fetching dependencies: %w", err)
+	}
+
+	// Step 2.6: Transpile GALA dependencies
+	if err := b.transpileDeps(); err != nil {
+		return fmt.Errorf("transpiling dependencies: %w", err)
+	}
+
+	// Step 3: Find source and test files
+	sourceFiles, err := findGalaFiles(b.workspace.ProjectDir)
+	if err != nil {
+		return fmt.Errorf("finding source files: %w", err)
+	}
+
+	testFiles, err := findGalaTestFiles(b.workspace.ProjectDir)
+	if err != nil {
+		return fmt.Errorf("finding test files: %w", err)
+	}
+
+	if len(testFiles) == 0 {
+		return fmt.Errorf("no _test.gala files found in %s", b.workspace.ProjectDir)
+	}
+
+	// Step 4: Determine package layout
+	// Test files in GALA are always package main and import the library under test.
+	// Source files can be package main (executable) or a library package.
+	// For package main projects: transpile source + test files together.
+	// For library projects: transpile source files as library, test files separately as main.
+	isLib := false
+	if len(sourceFiles) > 0 {
+		pkgName := detectPackageName(sourceFiles[0])
+		isLib = pkgName != "" && pkgName != "main"
+	}
+
+	// Always force-retranspile for tests (test files change independently)
+	if err := b.workspace.CleanGen(); err != nil {
+		return fmt.Errorf("cleaning gen dir: %w", err)
+	}
+
+	// Step 5: Transpile files
+	if isLib {
+		if err := b.transpileTestLibrary(sourceFiles, testFiles); err != nil {
+			return fmt.Errorf("transpiling: %w", err)
+		}
+	} else {
+		if err := b.transpileTestMain(sourceFiles, testFiles); err != nil {
+			return fmt.Errorf("transpiling: %w", err)
+		}
+	}
+
+	// Step 6: Generate go.mod
+	if err := b.generateGoMod(); err != nil {
+		return fmt.Errorf("generating go.mod: %w", err)
+	}
+
+	// Step 7: Discover test functions from .gala test files
+	var allTestFuncs []string
+	for _, tf := range testFiles {
+		funcs, err := FindTestFunctions(tf)
+		if err != nil {
+			return fmt.Errorf("scanning %s for test functions: %w", tf, err)
+		}
+		allTestFuncs = append(allTestFuncs, funcs...)
+	}
+
+	if len(allTestFuncs) == 0 {
+		return fmt.Errorf("no TestXxx functions found in test files")
+	}
+
+	if b.verbose {
+		fmt.Printf("Found %d test function(s): %s\n", len(allTestFuncs), strings.Join(allTestFuncs, ", "))
+	}
+
+	// Step 8: Generate test_main.go
+	testMainCode := GenerateTestMain(allTestFuncs)
+	if err := b.workspace.WriteGenFile("test_main.gen.go", []byte(testMainCode)); err != nil {
+		return fmt.Errorf("writing test_main.gen.go: %w", err)
+	}
+
+	if b.verbose {
+		fmt.Println("Generated test_main.gen.go")
+	}
+
+	// Step 9: Build the test binary
+	testBinary := filepath.Join(b.workspace.Dir, "test-binary")
+	if isWindows() {
+		testBinary += ".exe"
+	}
+
+	args := []string{"build", "-o", testBinary, "./gen/..."}
+	cmd := exec.Command("go", args...)
+	cmd.Dir = b.workspace.Dir
+	cmd.Env = append(os.Environ(), "GOMODCACHE="+b.config.GoPkgDir)
+
+	if b.verbose {
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		fmt.Printf("Running: go %s\n", strings.Join(args, " "))
+	} else {
+		cmd.Stderr = os.Stderr
+	}
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("go build (test): %w", err)
+	}
+
+	// Step 10: Execute the test binary
+	if b.verbose {
+		fmt.Println("Running tests...")
+		fmt.Println()
+	}
+
+	execCmd := exec.Command(testBinary)
+	execCmd.Stdin = os.Stdin
+	execCmd.Stdout = os.Stdout
+	execCmd.Stderr = os.Stderr
+	execCmd.Dir = b.workspace.ProjectDir
+
+	if err := execCmd.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return fmt.Errorf("tests failed (exit code %d)", exitErr.ExitCode())
+		}
+		return fmt.Errorf("running test binary: %w", err)
+	}
+
+	return nil
+}
+
+// transpileTestMain transpiles source + test files together for package main projects.
+// All files are transpiled into gen/ as package main.
+func (b *Builder) transpileTestMain(sourceFiles, testFiles []string) error {
+	allFiles := append(sourceFiles, testFiles...)
+	return b.transpileFiles(allFiles, allFiles)
+}
+
+// transpileTestLibrary transpiles source files as a library and test files as package main.
+// Source files go into gen/lib/ as the library package.
+// Test files go into gen/ as package main (they import the library).
+func (b *Builder) transpileTestLibrary(sourceFiles, testFiles []string) error {
+	// For library packages, test files are standalone package main files.
+	// They import the library via dot-import. We only need to transpile the test files
+	// into gen/ as package main. The library is already available as a dependency
+	// (either via stdlib, deps, or we transpile it into a subdirectory).
+
+	// Create lib subdirectory in gen
+	libDir := filepath.Join(b.workspace.GenDir, "lib")
+	if err := os.MkdirAll(libDir, 0755); err != nil {
+		return fmt.Errorf("creating lib dir: %w", err)
+	}
+
+	// Transpile source files into gen/lib/
+	if err := b.transpileFilesToDir(sourceFiles, sourceFiles, libDir); err != nil {
+		return fmt.Errorf("transpiling source files: %w", err)
+	}
+
+	// Transpile test files into gen/ (they are package main)
+	// Test files see source files as siblings for type resolution
+	allFiles := append(sourceFiles, testFiles...)
+	if err := b.transpileFilesToDir(testFiles, allFiles, b.workspace.GenDir); err != nil {
+		return fmt.Errorf("transpiling test files: %w", err)
+	}
+
+	return nil
+}
+
+// transpileFiles transpiles the given files into the workspace gen directory.
+// allSiblings is the full list of files for sibling-based type resolution.
+func (b *Builder) transpileFiles(files []string, allSiblings []string) error {
+	return b.transpileFilesToDir(files, allSiblings, b.workspace.GenDir)
+}
+
+// transpileFilesToDir transpiles the given files into the specified output directory.
+func (b *Builder) transpileFilesToDir(files []string, allSiblings []string, outDir string) error {
+	stdlibDir := b.config.StdlibVersionDir(b.stdlibVersion)
+	searchPaths := []string{b.workspace.ProjectDir, stdlibDir}
+
+	for _, req := range b.galaMod.GalaRequires() {
+		searchPaths = append(searchPaths, b.config.GalaModulePath(req.Path, req.Version))
+	}
+
+	p := transpiler.NewAntlrGalaParser()
+	tr := transformer.NewGalaASTTransformer()
+	g := generator.NewGoCodeGenerator()
+
+	for _, galaFile := range files {
+		content, err := os.ReadFile(galaFile)
+		if err != nil {
+			return fmt.Errorf("reading %s: %w", galaFile, err)
+		}
+
+		var siblings []string
+		for _, other := range allSiblings {
+			if other != galaFile {
+				siblings = append(siblings, other)
+			}
+		}
+
+		var a transpiler.Analyzer
+		if len(siblings) > 0 {
+			a = analyzer.NewGalaAnalyzerWithPackageFiles(p, searchPaths, siblings)
+		} else {
+			a = analyzer.NewGalaAnalyzer(p, searchPaths)
+		}
+		t := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+
+		goCode, err := t.Transpile(string(content), galaFile)
+		if err != nil {
+			return fmt.Errorf("transpiling %s: %w", galaFile, err)
+		}
+
+		relPath, err := filepath.Rel(b.workspace.ProjectDir, galaFile)
+		if err != nil {
+			relPath = filepath.Base(galaFile)
+		}
+		outName := strings.TrimSuffix(relPath, ".gala") + ".gen.go"
+		outName = strings.ReplaceAll(outName, string(filepath.Separator), "_")
+
+		outPath := filepath.Join(outDir, outName)
+		if err := os.WriteFile(outPath, []byte(goCode), 0644); err != nil {
+			return fmt.Errorf("writing %s: %w", outPath, err)
+		}
+
+		if b.verbose {
+			fmt.Printf("  %s -> %s\n", relPath, outName)
+		}
+	}
+
+	return nil
+}
+
+// detectPackageName reads the first line matching "package <name>" from a .gala file.
+func detectPackageName(galaFile string) string {
+	content, err := os.ReadFile(galaFile)
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(content), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "package ") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "package "))
+		}
+	}
+	return ""
+}
+
+// findGalaTestFiles finds all _test.gala files in the given directory (non-recursive).
+func findGalaTestFiles(dir string) ([]string, error) {
+	var files []string
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		if strings.HasSuffix(entry.Name(), "_test.gala") {
+			files = append(files, filepath.Join(dir, entry.Name()))
+		}
+	}
+
+	return files, nil
+}
+
 // isWindows returns true if running on Windows.
 func isWindows() bool {
 	return os.PathSeparator == '\\'
