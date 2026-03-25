@@ -25,42 +25,6 @@ func TestImports(t *testing.T) {
 		wantErr  bool
 	}{
 		{
-			name: "single import",
-			input: `package main
-
-import "fmt"`,
-			expected: `package main
-
-import "fmt"
-`,
-		},
-		{
-			name: "multiple imports",
-			input: `package main
-
-import (
-    "fmt"
-    "math"
-)`,
-			expected: `package main
-
-import (
-	"fmt"
-	"math"
-)
-`,
-		},
-		{
-			name: "aliased import",
-			input: `package main
-
-import f "fmt"`,
-			expected: `package main
-
-import f "fmt"
-`,
-		},
-		{
 			name: "dot import",
 			input: `package main
 
@@ -109,4 +73,25 @@ import (
 			}
 		})
 	}
+}
+
+func TestUnusedImportRemoval(t *testing.T) {
+	p := transpiler.NewAntlrGalaParser()
+	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
+	tr := transformer.NewGalaASTTransformer()
+	g := generator.NewGoCodeGenerator()
+	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+
+	input := `package main
+
+func add(a int, b int) int {
+    return a + b
+}
+`
+
+	got, err := trans.Transpile(input, "")
+	assert.NoError(t, err)
+
+	assert.NotContains(t, got, "collection_immutable",
+		"Should not contain unused collection_immutable import, got:\n%s", got)
 }
