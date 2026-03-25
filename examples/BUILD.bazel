@@ -1409,3 +1409,10 @@ gala_test(
     src = "method_default_params.gala",
     expected = "method_default_params.out",
 )
+
+# Method default parameters with named args (FIX-050)
+gala_test(
+    name = "method_default_params",
+    src = "method_default_params.gala",
+    expected = "method_default_params.out",
+)
