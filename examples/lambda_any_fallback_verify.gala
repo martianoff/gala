@@ -1,0 +1,31 @@
+package main
+
+import . "martianoff/gala/std"
+import . "martianoff/gala/collection_immutable"
+
+// FIX-056 verification: Lambda type inference must produce concrete types, never "any"
+// Tests Map, Filter, FoldLeft, and chained operations with implicit lambda param types
+
+func main() {
+    val nums = ArrayOf(1, 2, 3, 4, 5)
+
+    // Map: lambda param should be int, return should be int
+    val doubled = nums.Map((x) => x * 2)
+    Println(doubled.Get(0))
+
+    // Filter: lambda param should be int, return should be bool
+    val evens = nums.Filter((x) => x % 2 == 0)
+    Println(evens.Length())
+
+    // FoldLeft: acc=int (inferred from 0), elem=int (from receiver)
+    val sum = nums.FoldLeft(0, (acc, x) => acc + x)
+    Println(sum)
+
+    // Map with string return: lambda param=int, return=string
+    val strs = nums.Map((x) => s"num=$x")
+    Println(strs.Get(0))
+
+    // Chained: Map then Filter
+    val result = nums.Map((x) => x * 3).Filter((x) => x > 6)
+    Println(result.Length())
+}

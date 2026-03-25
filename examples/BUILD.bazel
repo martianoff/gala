@@ -1394,3 +1394,11 @@ gala_test(
     src = "if_expression_block.gala",
     expected = "if_expression_block.out",
 )
+
+# FIX-056 verification: lambda type inference produces concrete types, not any
+gala_test(
+    name = "lambda_any_fallback_verify",
+    src = "lambda_any_fallback_verify.gala",
+    expected = "lambda_any_fallback_verify.out",
+    deps = ["//collection_immutable"],
+)
