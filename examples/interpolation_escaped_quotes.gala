@@ -1,0 +1,17 @@
+package main
+
+import (
+    "strings"
+)
+
+func main() {
+    // Escaped quotes inside ${} interpolation block
+    Println(s"result: ${strings.TrimSpace(\"  hello  \")}")
+
+    // Multiple escaped quotes in one expression
+    Println(s"replaced: ${strings.Replace(\"hello world\", \"world\", \"gala\", 1)}")
+
+    // Mixed: variable + escaped quotes in expression
+    val name = "GALA"
+    Println(s"$name says: ${strings.ToUpper(\"welcome\")}")
+}
