@@ -369,7 +369,71 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 		fmt.Fprintf(os.Stderr, "=== End Warnings (%d) ===\n", len(t.inferenceWarnings))
 	}
 
+	// Remove unused imports from the generated AST.
+	removeUnusedImports(file)
+
 	return fset, file, nil
+}
+
+// removeUnusedImports walks the AST file and removes any import that is not
+// referenced by a SelectorExpr (qualified reference) or a dot/blank import.
+func removeUnusedImports(file *ast.File) {
+	usedPkgs := make(map[string]bool)
+	ast.Inspect(file, func(n ast.Node) bool {
+		sel, ok := n.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		if ident, ok := sel.X.(*ast.Ident); ok {
+			usedPkgs[ident.Name] = true
+		}
+		return true
+	})
+
+	for _, decl := range file.Decls {
+		genDecl, ok := decl.(*ast.GenDecl)
+		if !ok || genDecl.Tok != token.IMPORT {
+			continue
+		}
+		var kept []ast.Spec
+		for _, spec := range genDecl.Specs {
+			importSpec, ok := spec.(*ast.ImportSpec)
+			if !ok {
+				kept = append(kept, spec)
+				continue
+			}
+			if importSpec.Name != nil && importSpec.Name.Name == "_" {
+				kept = append(kept, spec)
+				continue
+			}
+			if importSpec.Name != nil && importSpec.Name.Name == "." {
+				kept = append(kept, spec)
+				continue
+			}
+			localName := ""
+			if importSpec.Name != nil {
+				localName = importSpec.Name.Name
+			} else {
+				path := strings.Trim(importSpec.Path.Value, "\"")
+				parts := strings.Split(path, "/")
+				localName = parts[len(parts)-1]
+			}
+			if usedPkgs[localName] {
+				kept = append(kept, spec)
+			}
+		}
+		genDecl.Specs = kept
+	}
+
+	var keptDecls []ast.Decl
+	for _, decl := range file.Decls {
+		genDecl, ok := decl.(*ast.GenDecl)
+		if ok && genDecl.Tok == token.IMPORT && len(genDecl.Specs) == 0 {
+			continue
+		}
+		keptDecls = append(keptDecls, decl)
+	}
+	file.Decls = keptDecls
 }
 
 // checkDotImportClashes detects when multiple dot-imported packages export symbols with the
