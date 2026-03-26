@@ -82,10 +82,10 @@ func TestCopyNonGalaFiles(t *testing.T) {
 	assert.Equal(t, "GENERATED", string(data))
 }
 
-func TestCopyNonGalaFiles_SkipsUnreadableEntries(t *testing.T) {
-	// Simulate entries that can't be stat'd (e.g., Bazel junctions on Windows).
-	// We create a source dir with a valid file and a broken symlink.
-	// copyNonGalaFiles should skip the broken entry and still copy the valid file.
+func TestCopyNonGalaFiles_SkipsSymlinks(t *testing.T) {
+	// Bazel creates symlinks (Linux) or junctions (Windows) that may point to
+	// nonexistent targets. copyNonGalaFiles should skip all symlinks and still
+	// copy regular files.
 	srcDir := t.TempDir()
 	dstDir := t.TempDir()
 
@@ -94,12 +94,17 @@ func TestCopyNonGalaFiles_SkipsUnreadableEntries(t *testing.T) {
 	require.NoError(t, os.MkdirAll(sub, 0755))
 	require.NoError(t, os.WriteFile(filepath.Join(sub, "pkg.go"), []byte("package pkg"), 0644))
 
-	// Create a broken symlink that filepath.Walk can't stat
+	// Create a broken symlink (simulates bazel-bin junction)
 	brokenLink := filepath.Join(srcDir, "bazel-broken")
 	_ = os.Symlink(filepath.Join(srcDir, "nonexistent-target"), brokenLink)
 
+	// Create a symlink to a valid file (should also be skipped — we only copy regular files)
+	validTarget := filepath.Join(srcDir, "pkg", "pkg.go")
+	validLink := filepath.Join(srcDir, "link-to-file")
+	_ = os.Symlink(validTarget, validLink)
+
 	err := copyNonGalaFiles(srcDir, dstDir, false)
-	require.NoError(t, err, "copyNonGalaFiles should not fail on unreadable entries")
+	require.NoError(t, err, "copyNonGalaFiles should not fail on symlinks")
 
 	// Valid file should still be copied
 	data, err := os.ReadFile(filepath.Join(dstDir, "pkg", "pkg.go"))

@@ -350,6 +350,13 @@ func copyNonGalaFiles(srcDir, dstDir string, verbose bool) error {
 			return err
 		}
 
+		// Skip symlinks entirely — Bazel creates symlinks (Linux) or junctions
+		// (Windows) that may point to nonexistent targets. filepath.Walk uses
+		// os.Lstat so it sees symlinks as entries but os.ReadFile would fail.
+		if info.Mode()&os.ModeSymlink != 0 {
+			return nil
+		}
+
 		// Skip hidden directories, vendor, testdata, bazel dirs
 		if info.IsDir() {
 			name := info.Name()
