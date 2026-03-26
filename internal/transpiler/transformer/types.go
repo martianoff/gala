@@ -35,10 +35,15 @@ func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, 
 					if pkg == registry.StdPackageName {
 						ident = t.stdIdent(typeName)
 					} else {
-						// Check if this is a dot import - if so, don't qualify
+						// Check if this is a dot import in the CURRENT file — don't qualify
 						if !t.importManager.IsDotImported(pkg) {
 							if alias, ok := t.importManager.GetAlias(pkg); ok {
 								ident = &ast.SelectorExpr{X: ast.NewIdent(alias), Sel: ast.NewIdent(typeName)}
+								// Track transitive import: the type may come from a sibling
+								// file's import — record so the import gets added to this file.
+								if path, ok := t.importManager.GetPath(pkg); ok {
+									t.additionalImports[path] = alias
+								}
 							}
 						}
 					}
