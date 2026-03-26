@@ -1,0 +1,5 @@
+package cross_file_import_lib
+
+func (p People) Count() int = p.Names.Length()
+
+func (p People) GetNames() Array[string] = p.Names

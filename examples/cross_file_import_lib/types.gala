@@ -1,0 +1,5 @@
+package cross_file_import_lib
+
+import . "martianoff/gala/collection_immutable"
+
+struct People(Names Array[string])

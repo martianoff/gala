@@ -1442,3 +1442,24 @@ gala_test(
         "//go_interop",
     ],
 )
+
+# Cross-file import test: file A dot-imports, file B uses types without importing
+gala_library(
+    name = "cross_file_import_lib",
+    srcs = [
+        "cross_file_import_lib/types.gala",
+        "cross_file_import_lib/ops.gala",
+    ],
+    importpath = "martianoff/gala/examples/cross_file_import_lib",
+    deps = ["//collection_immutable"],
+)
+
+gala_test(
+    name = "use_cross_file_import",
+    src = "use_cross_file_import.gala",
+    expected = "use_cross_file_import.out",
+    deps = [
+        "//collection_immutable",
+        "//examples:cross_file_import_lib",
+    ],
+)

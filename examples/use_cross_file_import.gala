@@ -1,0 +1,10 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+import . "martianoff/gala/examples/cross_file_import_lib"
+
+func main() {
+    val names = ArrayOf("Alice", "Bob", "Charlie")
+    val people = People(Names = names)
+    Println(people.Count())
+}
