@@ -124,6 +124,24 @@ func (t *galaASTTransformer) inferCallExprType(e *ast.CallExpr) transpiler.Type 
 			if funcType, ok := funType.(transpiler.FuncType); ok && len(funcType.Results) > 0 {
 				return funcType.Results[0]
 			}
+			// If the result is a named type (e.g., Filter, Handler), resolve through
+			// type aliases to check if it's a function type alias.
+			// This handles chained calls like Logger()(req, handler) where Logger()
+			// returns Filter which is func(Request, Handler) Future[Response].
+			if !funType.IsNil() {
+				aliasKey := funType.BaseName()
+				if _, ok := t.typeAliases[aliasKey]; !ok {
+					if dotIdx := strings.LastIndex(aliasKey, "."); dotIdx != -1 {
+						aliasKey = aliasKey[dotIdx+1:]
+					}
+				}
+				if underlyingType, ok := t.typeAliases[aliasKey]; ok {
+					if funcType, ok := underlyingType.(transpiler.FuncType); ok && len(funcType.Results) > 0 {
+						t.traceType(e, funcType.Results[0], "chained-call-type-alias")
+						return funcType.Results[0]
+					}
+				}
+			}
 		}
 	}
 	return transpiler.NilType{}

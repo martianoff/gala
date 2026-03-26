@@ -474,19 +474,28 @@ func (t *galaASTTransformer) collectReturnTypes(block *ast.BlockStmt, valTypes m
 // inferReturnExprType infers the type of a single return expression, trying
 // valTypes-based inference first, then falling back to getExprType.
 func (t *galaASTTransformer) inferReturnExprType(expr ast.Expr, valTypes map[string]ast.Expr) ast.Expr {
-	// Try to infer type using valTypes for .Get() calls anywhere in the expression
-	if typ := t.inferExprTypeWithValTypes(expr, valTypes); typ != nil {
-		return typ
-	}
-	// Fallback to direct type inference
+	// First try direct type inference (getExprTypeName) — this is the most reliable
+	// as it uses the full type inference pipeline.
 	inferredType := t.getExprType(expr)
-	if inferredType == nil {
-		return nil
+	if inferredType != nil {
+		if ident, ok := inferredType.(*ast.Ident); !ok || ident.Name != "any" {
+			return inferredType
+		}
 	}
-	if ident, ok := inferredType.(*ast.Ident); ok && ident.Name == "any" {
-		return nil
+	// Fallback: try to infer type using valTypes for .Get() calls on val variables.
+	// Only use this for top-level .Get() expressions (e.g., return result.Get()),
+	// NOT for nested .Get() calls inside other expressions — otherwise we'd return
+	// the inner val type instead of the outer expression type.
+	if callExpr, ok := expr.(*ast.CallExpr); ok && len(callExpr.Args) == 0 {
+		if selExpr, ok := callExpr.Fun.(*ast.SelectorExpr); ok && selExpr.Sel.Name == "Get" {
+			if ident, ok := selExpr.X.(*ast.Ident); ok {
+				if typ, ok := valTypes[ident.Name]; ok {
+					return typ
+				}
+			}
+		}
 	}
-	return inferredType
+	return nil
 }
 
 // unifyBlockReturnTypes takes a list of inferred return type expressions and attempts
