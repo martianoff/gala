@@ -315,6 +315,12 @@ func (b *Builder) transpile() error {
 		}
 	}
 
+	// Copy local Go subpackages (e.g., httpcore/) to the gen directory
+	// so they are available alongside generated .gen.go files
+	if err := copyNonGalaFiles(b.workspace.ProjectDir, b.workspace.GenDir, b.verbose); err != nil {
+		return fmt.Errorf("copying local Go subpackages: %w", err)
+	}
+
 	// Save source hash for next build
 	if currentHash != "" {
 		os.WriteFile(hashFile, []byte(currentHash), 0644)
@@ -752,6 +758,8 @@ func (b *Builder) Test(verbose bool) error {
 	if err := b.workspace.CleanGen(); err != nil {
 		return fmt.Errorf("cleaning gen dir: %w", err)
 	}
+	// Also clean testgen/ for library test runs
+	os.RemoveAll(filepath.Join(b.workspace.Dir, "testgen"))
 
 	// Step 5: Transpile files
 	if isLib {
@@ -788,8 +796,18 @@ func (b *Builder) Test(verbose bool) error {
 	}
 
 	// Step 8: Generate test_main.go
+	// For library packages, test files are in testgen/ (separate from gen/).
+	// For main packages, everything is in gen/.
+	testMainDir := b.workspace.GenDir
+	buildTarget := "./gen/..."
+	if isLib {
+		testMainDir = filepath.Join(b.workspace.Dir, "testgen")
+		buildTarget = "./testgen/..."
+	}
+
 	testMainCode := GenerateTestMain(allTestFuncs)
-	if err := b.workspace.WriteGenFile("test_main.gen.go", []byte(testMainCode)); err != nil {
+	testMainPath := filepath.Join(testMainDir, "test_main.gen.go")
+	if err := os.WriteFile(testMainPath, []byte(testMainCode), 0644); err != nil {
 		return fmt.Errorf("writing test_main.gen.go: %w", err)
 	}
 
@@ -803,7 +821,7 @@ func (b *Builder) Test(verbose bool) error {
 		testBinary += ".exe"
 	}
 
-	args := []string{"build", "-o", testBinary, "./gen/..."}
+	args := []string{"build", "-o", testBinary, buildTarget}
 	cmd := exec.Command("go", args...)
 	cmd.Dir = b.workspace.Dir
 	cmd.Env = append(os.Environ(), "GOMODCACHE="+b.config.GoPkgDir)
@@ -850,33 +868,139 @@ func (b *Builder) transpileTestMain(sourceFiles, testFiles []string) error {
 }
 
 // transpileTestLibrary transpiles source files as a library and test files as package main.
-// Source files go into gen/lib/ as the library package.
-// Test files go into gen/ as package main (they import the library).
+// Source files go into gen/ as their original library package.
+// Test files go into testgen/ and are rewritten to package main with a dot-import
+// of the library package, avoiding Go's "multiple packages in directory" conflict.
 func (b *Builder) transpileTestLibrary(sourceFiles, testFiles []string) error {
-	// For library packages, test files are standalone package main files.
-	// They import the library via dot-import. We only need to transpile the test files
-	// into gen/ as package main. The library is already available as a dependency
-	// (either via stdlib, deps, or we transpile it into a subdirectory).
-
-	// Create lib subdirectory in gen
-	libDir := filepath.Join(b.workspace.GenDir, "lib")
-	if err := os.MkdirAll(libDir, 0755); err != nil {
-		return fmt.Errorf("creating lib dir: %w", err)
-	}
-
-	// Transpile source files into gen/lib/
-	if err := b.transpileFilesToDir(sourceFiles, sourceFiles, libDir); err != nil {
+	// Transpile source files into gen/ as the library package
+	if err := b.transpileFilesToDir(sourceFiles, sourceFiles, b.workspace.GenDir); err != nil {
 		return fmt.Errorf("transpiling source files: %w", err)
 	}
 
-	// Transpile test files into gen/ (they are package main)
+	// Copy local Go subpackages to gen/ so the library compiles
+	if err := copyNonGalaFiles(b.workspace.ProjectDir, b.workspace.GenDir, b.verbose); err != nil {
+		return fmt.Errorf("copying local Go subpackages: %w", err)
+	}
+
+	// Create testgen/ directory for test files (separate from library in gen/)
+	testGenDir := filepath.Join(b.workspace.Dir, "testgen")
+	if err := os.MkdirAll(testGenDir, 0755); err != nil {
+		return fmt.Errorf("creating testgen dir: %w", err)
+	}
+
+	// Transpile test files into testgen/
 	// Test files see source files as siblings for type resolution
 	allFiles := append(sourceFiles, testFiles...)
-	if err := b.transpileFilesToDir(testFiles, allFiles, b.workspace.GenDir); err != nil {
+	if err := b.transpileFilesToDir(testFiles, allFiles, testGenDir); err != nil {
 		return fmt.Errorf("transpiling test files: %w", err)
 	}
 
+	// Rewrite generated test files: change package to "main" and add dot-import
+	// of the library package from gen/
+	if err := rewriteTestFilesAsMain(testGenDir); err != nil {
+		return fmt.Errorf("rewriting test files as package main: %w", err)
+	}
+
 	return nil
+}
+
+// rewriteTestFilesAsMain rewrites all .gen.go files in the given directory:
+// changes "package <name>" to "package main" and adds a dot-import of the
+// library from gala-build-workspace/gen.
+func rewriteTestFilesAsMain(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".gen.go") {
+			continue
+		}
+
+		filePath := filepath.Join(dir, entry.Name())
+		content, err := os.ReadFile(filePath)
+		if err != nil {
+			return fmt.Errorf("reading %s: %w", entry.Name(), err)
+		}
+
+		rewritten := rewritePackageToMain(string(content))
+		if err := os.WriteFile(filePath, []byte(rewritten), 0644); err != nil {
+			return fmt.Errorf("writing %s: %w", entry.Name(), err)
+		}
+	}
+
+	return nil
+}
+
+// rewritePackageToMain changes the package declaration to "main" and injects
+// a dot-import of the library package (gala-build-workspace/gen).
+func rewritePackageToMain(code string) string {
+	lines := strings.Split(code, "\n")
+	var result []string
+	packageReplaced := false
+	importAdded := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Replace package declaration
+		if !packageReplaced && strings.HasPrefix(trimmed, "package ") {
+			result = append(result, "package main")
+			packageReplaced = true
+			continue
+		}
+
+		// After seeing import block, inject dot-import as first entry
+		if !importAdded && packageReplaced {
+			if trimmed == "import (" {
+				result = append(result, line)
+				result = append(result, "\t. \"gala-build-workspace/gen\"")
+				importAdded = true
+				continue
+			}
+			// Single import statement — convert to block with our dot-import
+			if strings.HasPrefix(trimmed, "import ") && strings.Contains(trimmed, "\"") {
+				start := strings.Index(trimmed, "\"")
+				end := strings.LastIndex(trimmed, "\"")
+				if start >= 0 && end > start {
+					impPath := trimmed[start+1 : end]
+					result = append(result, "import (")
+					result = append(result, "\t. \"gala-build-workspace/gen\"")
+					if strings.Contains(trimmed[:start], ".") {
+						result = append(result, fmt.Sprintf("\t. \"%s\"", impPath))
+					} else {
+						alias := strings.TrimSpace(trimmed[len("import "):start])
+						if alias != "" {
+							result = append(result, fmt.Sprintf("\t%s \"%s\"", alias, impPath))
+						} else {
+							result = append(result, fmt.Sprintf("\t\"%s\"", impPath))
+						}
+					}
+					result = append(result, ")")
+					importAdded = true
+					continue
+				}
+			}
+		}
+
+		result = append(result, line)
+	}
+
+	// If no import was found at all, add one after the package line
+	if !importAdded {
+		var final []string
+		for _, line := range result {
+			final = append(final, line)
+			if strings.TrimSpace(line) == "package main" {
+				final = append(final, "")
+				final = append(final, "import . \"gala-build-workspace/gen\"")
+			}
+		}
+		result = final
+	}
+
+	return strings.Join(result, "\n")
 }
 
 // transpileFiles transpiles the given files into the workspace gen directory.
