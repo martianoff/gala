@@ -194,3 +194,214 @@ func TestSomething() {
 	require.NoError(t, err)
 	assert.Equal(t, "package server", string(data))
 }
+
+func TestRewriteImportsInSource(t *testing.T) {
+	tests := []struct {
+		name      string
+		source    string
+		oldModule string
+		newModule string
+		expected  string
+	}{
+		{
+			name: "import block with subpackage",
+			source: `package server
+
+import (
+	"fmt"
+	. "github.com/user/project/httpcore"
+	"martianoff/gala/std"
+)
+
+func main() {}`,
+			oldModule: "github.com/user/project",
+			newModule: "gala-build-workspace/gen",
+			expected: `package server
+
+import (
+	"fmt"
+	. "gala-build-workspace/gen/httpcore"
+	"martianoff/gala/std"
+)
+
+func main() {}`,
+		},
+		{
+			name: "single import with subpackage",
+			source: `package server
+
+import "github.com/user/project/httpcore"
+
+func main() {}`,
+			oldModule: "github.com/user/project",
+			newModule: "gala-build-workspace/gen",
+			expected: `package server
+
+import "gala-build-workspace/gen/httpcore"
+
+func main() {}`,
+		},
+		{
+			name: "import of root module",
+			source: `package httpcore
+
+import "github.com/user/project"
+
+func main() {}`,
+			oldModule: "github.com/user/project",
+			newModule: "gala-build-workspace/gen",
+			expected: `package httpcore
+
+import "gala-build-workspace/gen"
+
+func main() {}`,
+		},
+		{
+			name: "aliased import",
+			source: `package server
+
+import (
+	h "github.com/user/project/httpcore"
+)
+
+func main() {}`,
+			oldModule: "github.com/user/project",
+			newModule: "gala-build-workspace/gen",
+			expected: `package server
+
+import (
+	h "gala-build-workspace/gen/httpcore"
+)
+
+func main() {}`,
+		},
+		{
+			name: "no matching imports unchanged",
+			source: `package server
+
+import (
+	"fmt"
+	"github.com/other/module"
+)
+
+func main() {}`,
+			oldModule: "github.com/user/project",
+			newModule: "gala-build-workspace/gen",
+			expected: `package server
+
+import (
+	"fmt"
+	"github.com/other/module"
+)
+
+func main() {}`,
+		},
+		{
+			name: "multiple subpackages",
+			source: `package server
+
+import (
+	"github.com/user/project/httpcore"
+	"github.com/user/project/middleware"
+)
+
+func main() {}`,
+			oldModule: "github.com/user/project",
+			newModule: "gala-build-workspace/gen",
+			expected: `package server
+
+import (
+	"gala-build-workspace/gen/httpcore"
+	"gala-build-workspace/gen/middleware"
+)
+
+func main() {}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := rewriteImportsInSource(tt.source, tt.oldModule, tt.newModule)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestRewriteImportsInDir(t *testing.T) {
+	dir := t.TempDir()
+
+	// Write a .gen.go file with project module imports
+	genCode := `package server
+
+import (
+	"fmt"
+	. "github.com/user/project/httpcore"
+)
+
+func main() { fmt.Println("hello") }
+`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "server.gen.go"), []byte(genCode), 0644))
+
+	// Write a Go subpackage file that references the project module
+	sub := filepath.Join(dir, "httpcore")
+	require.NoError(t, os.MkdirAll(sub, 0755))
+	subCode := `package httpcore
+
+import "github.com/user/project/httpcore/internal"
+
+func Handler() { internal.Do() }
+`
+	require.NoError(t, os.WriteFile(filepath.Join(sub, "httpcore.go"), []byte(subCode), 0644))
+
+	// Write a non-.go file (should be untouched)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "README.md"), []byte("github.com/user/project/httpcore"), 0644))
+
+	err := rewriteImportsInDir(dir, "github.com/user/project", "gala-build-workspace/gen", false)
+	require.NoError(t, err)
+
+	// Verify .gen.go was rewritten
+	data, err := os.ReadFile(filepath.Join(dir, "server.gen.go"))
+	require.NoError(t, err)
+	assert.Contains(t, string(data), `"gala-build-workspace/gen/httpcore"`)
+	assert.NotContains(t, string(data), `"github.com/user/project/httpcore"`)
+
+	// Verify subpackage .go file was rewritten
+	data, err = os.ReadFile(filepath.Join(sub, "httpcore.go"))
+	require.NoError(t, err)
+	assert.Contains(t, string(data), `"gala-build-workspace/gen/httpcore/internal"`)
+
+	// Verify non-.go file was NOT touched
+	data, err = os.ReadFile(filepath.Join(dir, "README.md"))
+	require.NoError(t, err)
+	assert.Equal(t, "github.com/user/project/httpcore", string(data))
+}
+
+func TestParseGoModModulePath(t *testing.T) {
+	tests := []struct {
+		name     string
+		content  string
+		expected string
+	}{
+		{
+			name:     "standard go.mod",
+			content:  "module github.com/user/project\n\ngo 1.22\n",
+			expected: "github.com/user/project",
+		},
+		{
+			name:     "with comment",
+			content:  "// generated\nmodule github.com/user/project\n",
+			expected: "github.com/user/project",
+		},
+		{
+			name:     "empty",
+			content:  "",
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, parseGoModModulePath(tt.content))
+		})
+	}
+}
