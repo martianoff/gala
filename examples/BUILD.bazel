@@ -36,6 +36,7 @@ filegroup(
         "struct_field_unwrap/main.gala",
         "struct_field_unwrap/types.gala",
         "try_go_transitive_import.gala",
+        "use_cross_file_dot_import_lib.gala",
         "use_cross_file_unwrap_lib.gala",
         "wrapper_method_lambda/main.gala",
     ],
@@ -1123,6 +1124,30 @@ gala_test(
     ],
     expected = "cross_file_unwrap/cross_file_unwrap.out",
     deps = ["//go_interop"],
+)
+
+
+# FIX-062 verification: cross-file dot import propagation (library package)
+gala_library(
+    name = "cross_file_dot_import_lib",
+    srcs = [
+        "cross_file_dot_import_lib/ops.gala",
+        "cross_file_dot_import_lib/types.gala",
+    ],
+    importpath = "martianoff/gala/examples/cross_file_dot_import_lib",
+    visibility = ["//visibility:public"],
+    deps = ["//collection_immutable"],
+)
+
+# Consumer of cross_file_dot_import_lib
+gala_test(
+    name = "use_cross_file_dot_import_lib",
+    src = "use_cross_file_dot_import_lib.gala",
+    expected = "use_cross_file_dot_import_lib.out",
+    deps = [
+        ":cross_file_dot_import_lib",
+        "//collection_immutable",
+    ],
 )
 
 # FIX-GS-011 verification: cross-file struct field auto-unwrap (library package)

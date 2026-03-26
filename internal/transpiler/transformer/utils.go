@@ -79,6 +79,7 @@ func (t *galaASTTransformer) ident(name string) ast.Expr {
 		}
 		// Check if it's dot-imported
 		if t.importManager.IsDotImported(pkg) {
+			t.markDotImportUsed(pkg)
 			return ast.NewIdent(base)
 		}
 		// Check if we have an alias for this actual package name

@@ -1,0 +1,9 @@
+package crossdotlib
+
+// File B: does NOT import collection_immutable, but uses Registry
+// which has Array[string] fields from the sibling's dot import.
+// The generated Go for this file must include the collection_immutable import.
+
+func RegistrySize(r Registry) int = r.Count()
+
+func MakeRegistry(items ...string) Registry = NewRegistry(ArrayOf(items...))
