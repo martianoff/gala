@@ -3,6 +3,7 @@ package build
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -79,4 +80,87 @@ func TestCopyNonGalaFiles(t *testing.T) {
 	data, err = os.ReadFile(filepath.Join(dstDir, "helpers.go"))
 	require.NoError(t, err)
 	assert.Equal(t, "GENERATED", string(data))
+}
+
+func TestRewritePackageToMain_ImportBlock(t *testing.T) {
+	input := `package server
+
+import (
+	"fmt"
+	"martianoff/gala/std"
+)
+
+func TestFoo() {
+	fmt.Println("hello")
+}`
+	result := rewritePackageToMain(input)
+	assert.True(t, strings.HasPrefix(result, "package main\n"))
+	assert.Contains(t, result, `. "gala-build-workspace/gen"`)
+	assert.Contains(t, result, `"fmt"`)
+	assert.Contains(t, result, `"martianoff/gala/std"`)
+}
+
+func TestRewritePackageToMain_SingleImport(t *testing.T) {
+	input := `package server
+
+import "fmt"
+
+func main() {}`
+	result := rewritePackageToMain(input)
+	assert.True(t, strings.HasPrefix(result, "package main\n"))
+	assert.Contains(t, result, `. "gala-build-workspace/gen"`)
+	assert.Contains(t, result, `"fmt"`)
+}
+
+func TestRewritePackageToMain_NoImport(t *testing.T) {
+	input := `package server
+
+func main() {}`
+	result := rewritePackageToMain(input)
+	assert.True(t, strings.HasPrefix(result, "package main\n"))
+	assert.Contains(t, result, `import . "gala-build-workspace/gen"`)
+}
+
+func TestRewritePackageToMain_DotImport(t *testing.T) {
+	input := `package server
+
+import . "martianoff/gala/std"
+
+func main() {}`
+	result := rewritePackageToMain(input)
+	assert.True(t, strings.HasPrefix(result, "package main\n"))
+	assert.Contains(t, result, `. "gala-build-workspace/gen"`)
+	assert.Contains(t, result, `. "martianoff/gala/std"`)
+}
+
+func TestRewriteTestFilesAsMain(t *testing.T) {
+	dir := t.TempDir()
+
+	// Write a test .gen.go file
+	testCode := `package server
+
+import "martianoff/gala/std"
+
+func TestSomething() {
+	_ = std.NewImmutable(42)
+}
+`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "server_test.gen.go"), []byte(testCode), 0644))
+
+	// Write a non-.gen.go file (should not be touched)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "helper.go"), []byte("package server"), 0644))
+
+	err := rewriteTestFilesAsMain(dir)
+	require.NoError(t, err)
+
+	// Verify test file was rewritten
+	data, err := os.ReadFile(filepath.Join(dir, "server_test.gen.go"))
+	require.NoError(t, err)
+	assert.True(t, strings.HasPrefix(string(data), "package main\n"))
+	assert.Contains(t, string(data), `. "gala-build-workspace/gen"`)
+
+	// Verify non-.gen.go was NOT touched
+	data, err = os.ReadFile(filepath.Join(dir, "helper.go"))
+	require.NoError(t, err)
+	assert.Equal(t, "package server", string(data))
 }
