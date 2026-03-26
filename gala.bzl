@@ -1,4 +1,4 @@
-load("@rules_go//go:def.bzl", "go_binary", "go_library")
+load("@rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 
 def _gala_test_impl(ctx):
     binary = ctx.executable.binary
@@ -461,10 +461,6 @@ def gala_go_test(name, srcs, deps = [], gala_deps = [], pkg = "main", embed = []
     # Use the output from gala_go_test_gen directly
     main_go_src = ":" + gen_name
 
-    # Build the test binary
-    binary_name = name + "_bin"
-    all_srcs = transpiled_lib_srcs + transpiled_srcs + [main_go_src] + embed
-
     # Determine deps - skip //test and //std if testing those packages
     final_deps = list(deps) + list(gala_deps)
     if pkg != "test":
@@ -472,19 +468,47 @@ def gala_go_test(name, srcs, deps = [], gala_deps = [], pkg = "main", embed = []
     if pkg != "std":
         final_deps.append(Label("//std"))
 
-    go_binary(
-        name = binary_name,
-        srcs = all_srcs,
-        deps = final_deps,
-        **kwargs
-    )
+    if pkg == "main":
+        # External tests: use go_binary (all sources are package main)
+        binary_name = name + "_bin"
+        all_srcs = transpiled_lib_srcs + transpiled_srcs + [main_go_src] + embed
 
-    # Create the test rule
-    gala_internal_unit_test(
-        name = name,
-        binary = ":" + binary_name,
-        is_windows = select({
-            "@platforms//os:windows": True,
-            "//conditions:default": False,
-        }),
-    )
+        go_binary(
+            name = binary_name,
+            srcs = all_srcs,
+            deps = final_deps,
+            **kwargs
+        )
+
+        # Create the test rule
+        gala_internal_unit_test(
+            name = name,
+            binary = ":" + binary_name,
+            is_windows = select({
+                "@platforms//os:windows": True,
+                "//conditions:default": False,
+            }),
+        )
+    else:
+        # Internal tests: use go_library + go_test with embed.
+        # This avoids the go_binary package-main requirement that conflicts
+        # with internal test packages (USABILITY-010).
+        lib_name = name + "_lib"
+        if transpiled_lib_srcs or embed:
+            go_library(
+                name = lib_name,
+                srcs = transpiled_lib_srcs + embed,
+                deps = final_deps,
+                importpath = pkg,
+            )
+            test_embed = [":" + lib_name]
+        else:
+            test_embed = []
+
+        go_test(
+            name = name,
+            srcs = transpiled_srcs + [main_go_src],
+            embed = test_embed,
+            deps = final_deps,
+            **kwargs
+        )
