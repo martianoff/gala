@@ -358,7 +358,7 @@ func (t *galaASTTransformer) inferMethodTypeParamsFromArgs(methodMeta *transpile
 // inferFuncTypeParamsFromArgs attempts to infer type parameters for standalone function calls.
 // For example, for ArrayOf[T any](elements ...T) Array[T] where the arguments are [1, 2, 3],
 // this function infers T = int.
-func (t *galaASTTransformer) inferFuncTypeParamsFromArgs(fMeta *transpiler.FunctionMetadata, args []ast.Expr) []transpiler.Type {
+func (t *galaASTTransformer) inferFuncTypeParamsFromArgs(fMeta *transpiler.FunctionMetadata, args []ast.Expr, hasEllipsis bool) []transpiler.Type {
 	if len(fMeta.TypeParams) == 0 || len(args) == 0 {
 		return nil
 	}
@@ -392,6 +392,15 @@ func (t *galaASTTransformer) inferFuncTypeParamsFromArgs(fMeta *transpiler.Funct
 		}
 		if argType == nil || argType.IsNil() {
 			continue
+		}
+
+		// When spread operator is used (e.g., ArrayOf(keys...)), the arg type is []T
+		// but the variadic param type has already been unwrapped to T, so we need to
+		// unwrap the arg type as well to get the element type.
+		if hasEllipsis {
+			if arrType, ok := argType.(transpiler.ArrayType); ok {
+				argType = arrType.Elem
+			}
 		}
 
 		// Try to unify paramType with argType to find type param substitutions

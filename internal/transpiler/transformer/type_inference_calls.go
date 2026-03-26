@@ -2,6 +2,7 @@ package transformer
 
 import (
 	"go/ast"
+	"go/token"
 	"strings"
 
 	"martianoff/gala/galaerr"
@@ -207,7 +208,7 @@ func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.Sel
 					retType = t.substituteConcreteTypes(fMeta.ReturnType, fMeta.TypeParams, typeArgs)
 				} else if len(fMeta.TypeParams) > 0 {
 					// Try to infer type parameters from arguments
-					inferredTypeArgs := t.inferFuncTypeParamsFromArgs(fMeta, e.Args)
+					inferredTypeArgs := t.inferFuncTypeParamsFromArgs(fMeta, e.Args, e.Ellipsis != token.NoPos)
 					if len(inferredTypeArgs) > 0 {
 						retType = t.substituteConcreteTypes(fMeta.ReturnType, fMeta.TypeParams, inferredTypeArgs)
 					}
@@ -380,7 +381,7 @@ func (t *galaASTTransformer) inferCallIdentType(e *ast.CallExpr, id *ast.Ident, 
 			retType = t.substituteConcreteTypes(fMeta.ReturnType, fMeta.TypeParams, typeArgs)
 		} else if len(fMeta.TypeParams) > 0 {
 			// Try to infer type parameters from arguments
-			inferredTypeArgs := t.inferFuncTypeParamsFromArgs(fMeta, e.Args)
+			inferredTypeArgs := t.inferFuncTypeParamsFromArgs(fMeta, e.Args, e.Ellipsis != token.NoPos)
 			if len(inferredTypeArgs) > 0 {
 				retType = t.substituteConcreteTypes(fMeta.ReturnType, fMeta.TypeParams, inferredTypeArgs)
 			}

@@ -13,6 +13,7 @@ filegroup(
         "cross_file_unwrap_lib/ops.gala",
         "cross_file_unwrap_lib/types.gala",
         "foldleft_method/main.gala",
+        "foldleft_spread_type.gala",
         "go_type_inference_lib/textutil.gala",
         "go_type_inference_multifile/helpers.gala",
         "go_type_inference_multifile/main.gala",
@@ -931,6 +932,14 @@ gala_test(
     src = "foldleft_method/main.gala",
     expected = "foldleft_method/foldleft_method.out",
     deps = ["//collection_immutable"],
+)
+
+# FIX-065 verification: spread args infer element type, not slice type
+gala_test(
+    name = "foldleft_spread_type",
+    src = "foldleft_spread_type.gala",
+    expected = "foldleft_spread_type.out",
+    deps = ["//collection_immutable", "//go_interop"],
 )
 
 # FIX-015 verification: sealed type named-arg construction in multi-file mode
