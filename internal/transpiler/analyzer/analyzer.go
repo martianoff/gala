@@ -170,12 +170,15 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 							continue
 						}
 						otherPkgName := otherSF.PackageClause().(*grammar.PackageClauseContext).Identifier().GetText()
+						siblingIsTest := strings.HasSuffix(f.Name(), "_test.gala")
+						currentIsTest := strings.HasSuffix(filePath, "_test.gala")
 						// Allow _test.gala files to have different package names (like Go's _test.go convention)
-						isTestFile := strings.HasSuffix(f.Name(), "_test.gala") || strings.HasSuffix(filePath, "_test.gala")
-						if otherPkgName != pkgName && !isTestFile {
+						if otherPkgName != pkgName && !(siblingIsTest || currentIsTest) {
 							return nil, fmt.Errorf("multiple package names in directory %s: %s and %s", dirPath, pkgName, otherPkgName)
 						}
-						if otherPkgName == pkgName && !isTestFile {
+						// Include sibling if packages match AND (sibling is not test OR current is test)
+						// This follows Go semantics: test files see all package siblings during testing
+						if otherPkgName == pkgName && (!siblingIsTest || currentIsTest) {
 							siblingTrees = append(siblingTrees, otherSF)
 							siblingPaths = append(siblingPaths, otherPath)
 						}
