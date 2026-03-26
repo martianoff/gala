@@ -96,6 +96,12 @@ func generateMainFile(pkgName string, testFuncs map[string][]string) string {
 	if pkgName != "test" {
 		sb.WriteString("import . \"martianoff/gala/test\"\n")
 	}
+
+	// For non-main packages (internal tests), generate TestMain for go_test compatibility.
+	// go_test requires TestMain(m *testing.M) as the entry point.
+	if pkgName != "main" {
+		sb.WriteString("import \"testing\"\n")
+	}
 	sb.WriteString("\n")
 
 	// Collect all functions sorted for deterministic output
@@ -105,7 +111,13 @@ func generateMainFile(pkgName string, testFuncs map[string][]string) string {
 	}
 	sort.Strings(allFuncs)
 
-	sb.WriteString("func main() {\n")
+	if pkgName == "main" {
+		// External tests: generate func main() for go_binary
+		sb.WriteString("func main() {\n")
+	} else {
+		// Internal tests: generate TestMain(m *testing.M) for go_test
+		sb.WriteString("func TestMain(m *testing.M) {\n")
+	}
 	sb.WriteString("\tRunTests(")
 
 	for i, funcName := range allFuncs {
