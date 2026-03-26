@@ -31,7 +31,26 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 	paramsCtx := ctx.Parameters().(*grammar.ParametersContext)
 	fieldList := &ast.FieldList{}
 	if paramsCtx.ParameterList() != nil {
-		for i, pCtx := range paramsCtx.ParameterList().(*grammar.ParameterListContext).AllParameter() {
+		allParams := paramsCtx.ParameterList().(*grammar.ParameterListContext).AllParameter()
+		// Validate: reject `_` as a type annotation when other params have explicit types.
+		// `_` means "infer" but has no inference context in a standalone lambda.
+		hasExplicitType := false
+		hasWildcardType := false
+		for _, pCtx := range allParams {
+			paramCtx := pCtx.(*grammar.ParameterContext)
+			if paramCtx.Type_() != nil {
+				typeText := paramCtx.Type_().GetText()
+				if typeText == "_" {
+					hasWildcardType = true
+				} else {
+					hasExplicitType = true
+				}
+			}
+		}
+		if hasExplicitType && hasWildcardType {
+			return nil, galaerr.NewSemanticError("cannot use '_' as a parameter type when other parameters have explicit types — provide the type explicitly or omit all parameter types for inference")
+		}
+		for i, pCtx := range allParams {
 			paramCtx := pCtx.(*grammar.ParameterContext)
 			field, err := t.transformParameter(paramCtx)
 			if err != nil {
