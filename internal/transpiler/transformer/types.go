@@ -36,7 +36,9 @@ func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, 
 						ident = t.stdIdent(typeName)
 					} else {
 						// Check if this is a dot import in the CURRENT file — don't qualify
-						if !t.importManager.IsDotImported(pkg) {
+						if t.importManager.IsDotImported(pkg) {
+							t.markDotImportUsed(pkg)
+						} else {
 							if alias, ok := t.importManager.GetAlias(pkg); ok {
 								ident = &ast.SelectorExpr{X: ast.NewIdent(alias), Sel: ast.NewIdent(typeName)}
 								// Track transitive import: the type may come from a sibling
@@ -192,6 +194,7 @@ func (t *galaASTTransformer) typeToExpr(typ transpiler.Type) ast.Expr {
 			}
 			// Check if this is a dot import - if so, use just the type name
 			if t.importManager.IsDotImported(v.Package) {
+				t.markDotImportUsed(v.Package)
 				return ast.NewIdent(v.Name)
 			}
 			// Check if this is the current package - if so, don't qualify with package name

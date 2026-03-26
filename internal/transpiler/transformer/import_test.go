@@ -25,27 +25,18 @@ func TestImports(t *testing.T) {
 		wantErr  bool
 	}{
 		{
-			name: "dot import",
+			name: "used dot import is kept",
 			input: `package main
-
-import . "math"`,
-			expected: `package main
 
 import . "math"
-`,
-		},
-		{
-			name: "mixed imports in block",
-			input: `package main
 
-import (
-    "fmt"
-    m "math"
-    . "net/http"
-)`,
+val x = Pi`,
 			expected: `package main
 
-import . "net/http"
+import "martianoff/gala/std"
+import . "math"
+
+var x = std.NewImmutable(Pi)
 `,
 		},
 	}

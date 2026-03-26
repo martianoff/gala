@@ -45,6 +45,7 @@ type galaASTTransformer struct {
 	companionObjects      map[string]*transpiler.CompanionObjectMetadata // companion name -> metadata
 	importManager         *ImportManager                                 // unified import tracking
 	additionalImports     map[string]string                              // path -> alias for transitive imports needed by type inference
+	usedDotImports        map[string]bool                                // package names of dot imports actually referenced during transformation
 	tempVarCount          int
 	inferer               *infer.Inferer
 	currentFuncReturnType    transpiler.Type            // return type of the function currently being transformed
@@ -112,6 +113,7 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 	}
 	t.importManager = NewImportManager()
 	t.additionalImports = make(map[string]string)
+	t.usedDotImports = make(map[string]bool)
 	t.typeAliases = make(map[string]transpiler.Type)
 	// Load type aliases from sibling files (extracted by analyzer)
 	for name, underlyingType := range richAST.TypeAliases {
@@ -370,17 +372,25 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 	}
 
 	// Remove unused imports from the generated AST.
-	removeUnusedImports(file, t.importManager)
+	removeUnusedImports(file, t.importManager, t.usedDotImports, richAST)
 
 	return fset, file, nil
 }
 
+// markDotImportUsed records that a symbol from a dot-imported package was referenced.
+func (t *galaASTTransformer) markDotImportUsed(pkgName string) {
+	t.usedDotImports[pkgName] = true
+}
+
 // removeUnusedImports walks the AST file and removes any import that is not
-// referenced by a SelectorExpr (qualified reference) or a dot/blank import.
+// referenced by a SelectorExpr (qualified reference), a used dot import, or a blank import.
+// Dot imports are only kept if their package was actually used during transformation
+// (tracked via usedDotImports) or if the AST contains identifiers matching the package's
+// exported symbols. The std dot import is always kept.
 // It uses the ImportManager to resolve actual package names when they differ
 // from the last component of the import path (e.g., package "typealiaslib"
 // imported via path "martianoff/gala/examples/bug013_type_alias_lib").
-func removeUnusedImports(file *ast.File, importMgr *ImportManager) {
+func removeUnusedImports(file *ast.File, importMgr *ImportManager, usedDotImports map[string]bool, richAST *transpiler.RichAST) {
 	usedPkgs := make(map[string]bool)
 	ast.Inspect(file, func(n ast.Node) bool {
 		sel, ok := n.(*ast.SelectorExpr)
@@ -410,7 +420,22 @@ func removeUnusedImports(file *ast.File, importMgr *ImportManager) {
 				continue
 			}
 			if importSpec.Name != nil && importSpec.Name.Name == "." {
-				kept = append(kept, spec)
+				// Only keep dot imports that are actually used.
+				// Always keep std (implicitly used everywhere).
+				path := strings.Trim(importSpec.Path.Value, "\"")
+				pkgName := ""
+				if importMgr != nil {
+					if entry, ok := importMgr.GetByPath(path); ok && entry != nil {
+						pkgName = entry.PkgName
+					}
+				}
+				if pkgName == "" {
+					parts := strings.Split(path, "/")
+					pkgName = parts[len(parts)-1]
+				}
+				if pkgName == "std" || usedDotImports[pkgName] || dotImportUsedInAST(file, pkgName, richAST) {
+					kept = append(kept, spec)
+				}
 				continue
 			}
 			// Determine the local name used in code for this import
@@ -446,6 +471,53 @@ func removeUnusedImports(file *ast.File, importMgr *ImportManager) {
 		keptDecls = append(keptDecls, decl)
 	}
 	file.Decls = keptDecls
+}
+
+// dotImportUsedInAST checks if the generated AST contains unqualified identifiers
+// matching exported symbols from the given dot-imported package. This catches
+// function calls and other references not tracked by markDotImportUsed.
+func dotImportUsedInAST(file *ast.File, pkgName string, richAST *transpiler.RichAST) bool {
+	if richAST == nil {
+		return true // be conservative if no metadata available
+	}
+	// Collect known exports from this package
+	exports := make(map[string]bool)
+	for _, meta := range richAST.Types {
+		if meta.Package == pkgName {
+			exports[meta.Name] = true
+		}
+	}
+	for _, meta := range richAST.Functions {
+		if meta.Package == pkgName {
+			exports[meta.Name] = true
+		}
+	}
+	for _, meta := range richAST.CompanionObjects {
+		if meta.Package == pkgName {
+			exports[meta.Name] = true
+		}
+	}
+	if goExports, ok := richAST.GoExports[pkgName]; ok {
+		for _, sym := range goExports {
+			exports[sym] = true
+		}
+	}
+	if len(exports) == 0 {
+		return true // conservatively keep — can't determine if symbols are used
+	}
+	// Scan AST for matching unqualified identifiers
+	found := false
+	ast.Inspect(file, func(n ast.Node) bool {
+		if found {
+			return false
+		}
+		ident, ok := n.(*ast.Ident)
+		if ok && exports[ident.Name] {
+			found = true
+		}
+		return !found
+	})
+	return found
 }
 
 // checkDotImportClashes detects when multiple dot-imported packages export symbols with the
