@@ -1,0 +1,32 @@
+package main
+
+import "fmt"
+import . "martianoff/gala/collection_immutable"
+import . "martianoff/gala/go_interop"
+
+func join(items Array[string], sep string) string {
+    return items.FoldLeft("", (acc, k) => {
+        if acc == "" {
+            return k
+        } else {
+            return acc + sep + k
+        }
+    })
+}
+
+func main() {
+    // FIX-065: When using spread operator with ArrayOf, type params should
+    // infer element type (string), not slice type ([]string)
+    val keys = SliceOf("a", "b", "c")
+    val arr = ArrayOf(keys...)
+
+    // FoldLeft should see callback params as (string, string), not ([]string, string)
+    val result = join(arr, ",")
+    fmt.Println(result)
+
+    // Also test with int spread
+    val nums = SliceOf(1, 2, 3, 4, 5)
+    val intArr = ArrayOf(nums...)
+    val sum = intArr.FoldLeft(0, (acc, n) => acc + n)
+    fmt.Println(sum)
+}
