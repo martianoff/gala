@@ -21,7 +21,7 @@ func countIfLetter(r rune) {
 }
 
 // Performance test utilities
-func measureNs(iterations int, f func() any) int64 {
+func measureNs(iterations int, f func()) int64 {
     var start = time.Now()
     for i := 0; i < iterations; i++ {
         f()

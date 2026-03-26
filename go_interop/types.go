@@ -328,8 +328,7 @@ func NewOnce() *Once {
 }
 
 // Do executes the function only once. Returns true if this call executed the function.
-// Accepts func() any to be compatible with GALA's lambda generation.
-func (o *Once) Do(f func() any) bool {
+func (o *Once) Do(f func()) bool {
 	executed := false
 	o.once.Do(func() {
 		f()
@@ -370,15 +369,13 @@ func (w *WaitGroup) Wait() {
 }
 
 // Spawn launches a goroutine. This is a helper to work around GALA's go statement limitations.
-// Accepts func() any to be compatible with GALA's lambda generation.
-func Spawn(f func() any) {
+func Spawn(f func()) {
 	go func() { f() }()
 }
 
 // SpawnWithRecover launches a goroutine with panic recovery.
 // If the function panics, the recovery function is called with the panic value.
-// Accepts func() any and func(any) any to be compatible with GALA's lambda generation.
-func SpawnWithRecover(f func() any, onPanic func(any) any) {
+func SpawnWithRecover(f func(), onPanic func(any)) {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -433,9 +430,9 @@ func PanicToError(r any) error {
 // from the Future implementation.
 type ExecutionContext interface {
 	// Execute runs a task asynchronously.
-	Execute(task func() any)
+	Execute(task func())
 	// ExecuteWithRecover runs a task with panic recovery.
-	ExecuteWithRecover(task func() any, onPanic func(any) any)
+	ExecuteWithRecover(task func(), onPanic func(any))
 	// ReportFailure reports an error that couldn't be handled.
 	ReportFailure(err error)
 	// Shutdown gracefully shuts down the execution context.
@@ -464,12 +461,12 @@ type UnboundedExecutionContext struct{}
 var _ ExecutionContext = (*UnboundedExecutionContext)(nil)
 
 // Execute runs a task in a new goroutine.
-func (e *UnboundedExecutionContext) Execute(task func() any) {
+func (e *UnboundedExecutionContext) Execute(task func()) {
 	go func() { task() }()
 }
 
 // ExecuteWithRecover runs a task in a new goroutine with panic recovery.
-func (e *UnboundedExecutionContext) ExecuteWithRecover(task func() any, onPanic func(any) any) {
+func (e *UnboundedExecutionContext) ExecuteWithRecover(task func(), onPanic func(any)) {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -535,7 +532,7 @@ func (e *FixedPoolExecutionContext) worker() {
 }
 
 // Execute submits a task to the worker pool.
-func (e *FixedPoolExecutionContext) Execute(task func() any) {
+func (e *FixedPoolExecutionContext) Execute(task func()) {
 	e.mu.Lock()
 	closed := e.closed
 	e.mu.Unlock()
@@ -543,13 +540,13 @@ func (e *FixedPoolExecutionContext) Execute(task func() any) {
 		return
 	}
 	select {
-	case e.tasks <- func() { task() }:
+	case e.tasks <- task:
 	case <-e.shutdown:
 	}
 }
 
 // ExecuteWithRecover submits a task with panic recovery to the worker pool.
-func (e *FixedPoolExecutionContext) ExecuteWithRecover(task func() any, onPanic func(any) any) {
+func (e *FixedPoolExecutionContext) ExecuteWithRecover(task func(), onPanic func(any)) {
 	e.mu.Lock()
 	closed := e.closed
 	e.mu.Unlock()
@@ -629,7 +626,7 @@ func (e *SingleThreadExecutionContext) worker() {
 }
 
 // Execute submits a task to the single worker.
-func (e *SingleThreadExecutionContext) Execute(task func() any) {
+func (e *SingleThreadExecutionContext) Execute(task func()) {
 	e.mu.Lock()
 	closed := e.closed
 	e.mu.Unlock()
@@ -637,13 +634,13 @@ func (e *SingleThreadExecutionContext) Execute(task func() any) {
 		return
 	}
 	select {
-	case e.tasks <- func() { task() }:
+	case e.tasks <- task:
 	case <-e.shutdown:
 	}
 }
 
 // ExecuteWithRecover submits a task with panic recovery to the single worker.
-func (e *SingleThreadExecutionContext) ExecuteWithRecover(task func() any, onPanic func(any) any) {
+func (e *SingleThreadExecutionContext) ExecuteWithRecover(task func(), onPanic func(any)) {
 	e.mu.Lock()
 	closed := e.closed
 	e.mu.Unlock()
