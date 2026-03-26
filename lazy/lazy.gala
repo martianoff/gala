@@ -21,7 +21,7 @@ func New[T any](thunk func() T) *Lazy[T] {
 // Of creates an already-evaluated Lazy holding value.
 func Of[T any](value T) *Lazy[T] {
     val l = &Lazy[T](once = go_interop.NewOnce(), value = value, done = true)
-    l.once.Do(() => nil)
+    l.once.Do(() => {})
     return l
 }
 

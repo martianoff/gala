@@ -80,7 +80,7 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 	}
 
 	var body *ast.BlockStmt
-	var retType ast.Expr = ast.NewIdent("any")
+	var retType ast.Expr // nil = void
 	isVoidExpected := expectedRetType == ExpectedVoid
 
 	// Check if expected type is a concrete type (not "any" or containing "any")
@@ -133,10 +133,13 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 		if !isConcreteExpectedType && !isVoidExpected {
 			if inferredType := t.inferBlockReturnType(b); inferredType != nil {
 				retType = inferredType
-			} else {
-				// Only add return nil if we couldn't infer a type AND block doesn't already end with return
-				if !blockEndsWithReturn(b) {
-					b.List = append(b.List, &ast.ReturnStmt{Results: []ast.Expr{ast.NewIdent("nil")}})
+			}
+			// If retType is still nil (void), strip trailing "return nil" from the block
+			if retType == nil && len(b.List) > 0 {
+				if ret, ok := b.List[len(b.List)-1].(*ast.ReturnStmt); ok && len(ret.Results) == 1 {
+					if ident, ok := ret.Results[0].(*ast.Ident); ok && ident.Name == "nil" {
+						b.List = b.List[:len(b.List)-1]
+					}
 				}
 			}
 		}
@@ -148,9 +151,18 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 		}
 		// Use expected type if concrete, otherwise infer from expression
 		if !isConcreteExpectedType && !isVoidExpected {
-			retType = t.getExprType(expr)
+			// Expression lambda `() => nil` is treated as void
+			if ident, ok := expr.(*ast.Ident); ok && ident.Name == "nil" {
+				// retType stays nil (void), generate empty body
+				body = &ast.BlockStmt{}
+			}
+			if body == nil {
+				retType = t.getExprType(expr)
+			}
 		}
-		if isVoidExpected {
+		if body != nil {
+			// Already set (e.g., expression lambda `() => nil` treated as void)
+		} else if isVoidExpected {
 			// For void functions, the expression is just a statement, not a return
 			body = &ast.BlockStmt{
 				List: []ast.Stmt{
@@ -178,8 +190,8 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 		Params: fieldList,
 	}
 
-	// Only add Results if not void
-	if !isVoidExpected {
+	// Only add Results if not void (retType != nil)
+	if retType != nil {
 		funcType.Results = &ast.FieldList{
 			List: []*ast.Field{
 				{Type: retType},

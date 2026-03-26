@@ -42,9 +42,8 @@ import . "martianoff/gala/std"
 
 func test() {
 	var arr = EmptyArray[int]()
-	arr.ForEach(func(x int) any {
+	arr.ForEach(func(x int) {
 		println(x)
-		return nil
 	})
 }
 `,
