@@ -348,25 +348,6 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 	// std is always implicitly dot-imported
 	dotImportPkgs[registry.StdPackageName] = true
 
-	// Collect dot imports from sibling files for the transformer.
-	siblingDotImports := make(map[string]string)
-	for _, sib := range siblingTrees {
-		for _, impDecl := range sib.AllImportDeclaration() {
-			ctx := impDecl.(*grammar.ImportDeclarationContext)
-			for _, spec := range ctx.AllImportSpec() {
-				s := spec.(*grammar.ImportSpecContext)
-				isDotImport := s.Identifier() == nil && s.GetChildCount() > 1
-				if isDotImport {
-					path := strings.Trim(s.STRING().GetText(), "\"")
-					if pkgAlias, ok := richAST.Packages[path]; ok {
-						siblingDotImports[path] = pkgAlias
-					}
-				}
-			}
-		}
-	}
-	richAST.SiblingDotImports = siblingDotImports
-
 	// Set currentRichAST and dot-import tracking so resolveTypeWithParams can check
 	// already-known types (from dot-imported packages) before blindly qualifying with
 	// the current package name. This prevents e.g. Array from collection_immutable

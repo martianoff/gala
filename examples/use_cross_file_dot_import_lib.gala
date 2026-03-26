@@ -1,9 +1,0 @@
-package main
-
-import . "martianoff/gala/examples/cross_file_dot_import_lib"
-
-func main() {
-    val reg = MakeRegistry("a", "b", "c")
-    Println(s"size: ${reg.Count()}")
-    Println(s"via fn: ${RegistrySize(reg)}")
-}

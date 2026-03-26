@@ -66,11 +66,10 @@ type RichAST struct {
 	GoExports        map[string][]string                 // pkgName -> exported symbol names (from Go-only packages)
 	GoTypeInfo       *GoTypeInfo                         // type info extracted from Go source files and packages
 	TypeAliases      map[string]Type                     // type alias name -> underlying type (e.g., "Handler" -> func(Request) Future[Response])
-	EmbedDirectives   []EmbedDirective  // embed val declarations
-	SiblingDotImports map[string]string // path -> pkgName for dot imports from sibling files in same package
-	FilePath          string            // source file path (for error reporting)
-	SourceContent     string            // raw source text (for error snippets)
-	AnalysisWarnings  []string          // warnings from package analysis (e.g., unresolved GALA imports)
+	EmbedDirectives  []EmbedDirective                    // embed val declarations
+	FilePath         string                              // source file path (for error reporting)
+	SourceContent    string                              // raw source text (for error snippets)
+	AnalysisWarnings []string                            // warnings from package analysis (e.g., unresolved GALA imports)
 }
 
 // Merge combines metadata from another RichAST into this one.
