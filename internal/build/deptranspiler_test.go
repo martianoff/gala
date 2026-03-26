@@ -82,6 +82,31 @@ func TestCopyNonGalaFiles(t *testing.T) {
 	assert.Equal(t, "GENERATED", string(data))
 }
 
+func TestCopyNonGalaFiles_SkipsUnreadableEntries(t *testing.T) {
+	// Simulate entries that can't be stat'd (e.g., Bazel junctions on Windows).
+	// We create a source dir with a valid file and a broken symlink.
+	// copyNonGalaFiles should skip the broken entry and still copy the valid file.
+	srcDir := t.TempDir()
+	dstDir := t.TempDir()
+
+	// Valid Go subpackage
+	sub := filepath.Join(srcDir, "pkg")
+	require.NoError(t, os.MkdirAll(sub, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(sub, "pkg.go"), []byte("package pkg"), 0644))
+
+	// Create a broken symlink that filepath.Walk can't stat
+	brokenLink := filepath.Join(srcDir, "bazel-broken")
+	_ = os.Symlink(filepath.Join(srcDir, "nonexistent-target"), brokenLink)
+
+	err := copyNonGalaFiles(srcDir, dstDir, false)
+	require.NoError(t, err, "copyNonGalaFiles should not fail on unreadable entries")
+
+	// Valid file should still be copied
+	data, err := os.ReadFile(filepath.Join(dstDir, "pkg", "pkg.go"))
+	require.NoError(t, err)
+	assert.Equal(t, "package pkg", string(data))
+}
+
 func TestRewritePackageToMain_ImportBlock(t *testing.T) {
 	input := `package server
 

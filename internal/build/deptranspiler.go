@@ -333,7 +333,11 @@ func (dt *DepTranspiler) generateDepGoMod(dep mod.Require, outDir string, transp
 func copyNonGalaFiles(srcDir, dstDir string, verbose bool) error {
 	return filepath.Walk(srcDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			return err
+			// Skip entries that can't be stat'd (e.g., Bazel junctions on Windows
+			// give "Incorrect function" when filepath.Walk tries to read them).
+			// The bazel-* directory name check below would handle these, but
+			// filepath.Walk reports the error before we can check the name.
+			return nil
 		}
 
 		// Skip the root directory itself
