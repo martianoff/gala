@@ -321,6 +321,12 @@ func (b *Builder) transpile() error {
 		return fmt.Errorf("copying local Go subpackages: %w", err)
 	}
 
+	// Rewrite imports that reference the project's Go module path to use the
+	// workspace module path instead, so local subpackages resolve correctly.
+	if err := b.rewriteProjectModuleImports(b.workspace.GenDir); err != nil {
+		return fmt.Errorf("rewriting project module imports: %w", err)
+	}
+
 	// Save source hash for next build
 	if currentHash != "" {
 		os.WriteFile(hashFile, []byte(currentHash), 0644)
@@ -401,6 +407,186 @@ func (b *Builder) copyEmbedFiles(patterns []string) error {
 	}
 
 	return nil
+}
+
+// rewriteProjectModuleImports rewrites import paths in all .go files under dir
+// that reference the project's Go module path, replacing them with the workspace
+// module path. This allows local Go subpackages (e.g., httpcore/) to be resolved
+// from the workspace gen/ directory instead of the remote registry.
+//
+// For example, if the project module is "github.com/user/project":
+//
+//	"github.com/user/project/httpcore" → "gala-build-workspace/gen/httpcore"
+//	"github.com/user/project"          → "gala-build-workspace/gen"
+func (b *Builder) rewriteProjectModuleImports(dir string) error {
+	projectModule := b.projectGoModulePath()
+	if projectModule == "" {
+		return nil // No module path known, nothing to rewrite
+	}
+
+	// Check if there are any local Go subdirectories worth rewriting for
+	hasSubDirs := false
+	entries, err := os.ReadDir(b.workspace.ProjectDir)
+	if err == nil {
+		for _, e := range entries {
+			if e.IsDir() && !strings.HasPrefix(e.Name(), ".") && e.Name() != "vendor" &&
+				!strings.HasPrefix(e.Name(), "bazel-") {
+				subPath := filepath.Join(b.workspace.ProjectDir, e.Name())
+				if hasGoFiles(subPath) {
+					hasSubDirs = true
+					break
+				}
+			}
+		}
+	}
+	if !hasSubDirs {
+		return nil // No local Go subpackages, skip rewriting
+	}
+
+	if b.verbose {
+		fmt.Printf("Rewriting project module imports: %s → gala-build-workspace/gen\n", projectModule)
+	}
+
+	return rewriteImportsInDir(dir, projectModule, "gala-build-workspace/gen", b.verbose)
+}
+
+// projectGoModulePath returns the project's Go module path by reading go.mod
+// or falling back to the gala.mod module declaration.
+func (b *Builder) projectGoModulePath() string {
+	// Try go.mod first (authoritative for Go imports)
+	goModPath := filepath.Join(b.workspace.ProjectDir, "go.mod")
+	if content, err := os.ReadFile(goModPath); err == nil {
+		if mod := parseGoModModulePath(string(content)); mod != "" {
+			return mod
+		}
+	}
+
+	// Fall back to gala.mod module path
+	if b.galaMod != nil && b.galaMod.Module.Path != "" {
+		return b.galaMod.Module.Path
+	}
+
+	return ""
+}
+
+// parseGoModModulePath extracts the module path from go.mod content.
+func parseGoModModulePath(content string) string {
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "module ") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "module "))
+		}
+	}
+	return ""
+}
+
+// hasGoFiles returns true if the directory contains any .go files.
+func hasGoFiles(dir string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".go") {
+			return true
+		}
+	}
+	return false
+}
+
+// rewriteImportsInDir recursively scans all .go files in dir and rewrites
+// import paths that start with oldModule to use newModule instead.
+func rewriteImportsInDir(dir, oldModule, newModule string, verbose bool) error {
+	return filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil // Skip unreadable entries
+		}
+		if info.IsDir() {
+			return nil
+		}
+		if !strings.HasSuffix(info.Name(), ".go") {
+			return nil
+		}
+
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("reading %s: %w", path, err)
+		}
+
+		original := string(content)
+		rewritten := rewriteImportsInSource(original, oldModule, newModule)
+
+		if rewritten != original {
+			if verbose {
+				fmt.Printf("  rewrite imports: %s\n", path)
+			}
+			if err := os.WriteFile(path, []byte(rewritten), 0644); err != nil {
+				return fmt.Errorf("writing %s: %w", path, err)
+			}
+		}
+
+		return nil
+	})
+}
+
+// rewriteImportsInSource rewrites import paths in Go source code.
+// Replaces imports matching oldModule or oldModule/subpkg with newModule equivalents.
+func rewriteImportsInSource(source, oldModule, newModule string) string {
+	lines := strings.Split(source, "\n")
+	var result []string
+	inImportBlock := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		if trimmed == "import (" {
+			inImportBlock = true
+			result = append(result, line)
+			continue
+		}
+		if inImportBlock && trimmed == ")" {
+			inImportBlock = false
+			result = append(result, line)
+			continue
+		}
+
+		if inImportBlock {
+			line = rewriteImportLine(line, oldModule, newModule)
+		} else if strings.HasPrefix(trimmed, "import ") && strings.Contains(trimmed, "\"") {
+			line = rewriteImportLine(line, oldModule, newModule)
+		}
+
+		result = append(result, line)
+	}
+
+	return strings.Join(result, "\n")
+}
+
+// rewriteImportLine rewrites a single import line if it references oldModule.
+func rewriteImportLine(line, oldModule, newModule string) string {
+	// Find the quoted import path
+	start := strings.Index(line, "\"")
+	if start < 0 {
+		return line
+	}
+	end := strings.Index(line[start+1:], "\"")
+	if end < 0 {
+		return line
+	}
+	end += start + 1
+
+	importPath := line[start+1 : end]
+
+	// Check if this import matches the old module
+	if importPath == oldModule {
+		return line[:start+1] + newModule + line[end:]
+	}
+	if strings.HasPrefix(importPath, oldModule+"/") {
+		subPkg := strings.TrimPrefix(importPath, oldModule)
+		return line[:start+1] + newModule + subPkg + line[end:]
+	}
+
+	return line
 }
 
 // generateGoMod generates the go.mod file in the workspace and downloads Go dependencies.
@@ -880,6 +1066,11 @@ func (b *Builder) transpileTestLibrary(sourceFiles, testFiles []string) error {
 	// Copy local Go subpackages to gen/ so the library compiles
 	if err := copyNonGalaFiles(b.workspace.ProjectDir, b.workspace.GenDir, b.verbose); err != nil {
 		return fmt.Errorf("copying local Go subpackages: %w", err)
+	}
+
+	// Rewrite imports that reference the project's Go module path
+	if err := b.rewriteProjectModuleImports(b.workspace.GenDir); err != nil {
+		return fmt.Errorf("rewriting project module imports: %w", err)
 	}
 
 	// Create testgen/ directory for test files (separate from library in gen/)
