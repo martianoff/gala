@@ -357,18 +357,30 @@ func copyNonGalaFiles(srcDir, dstDir string, verbose bool) error {
 			return nil
 		}
 
-		// Skip hidden directories, vendor, testdata, bazel dirs
-		if info.IsDir() {
-			name := info.Name()
-			if strings.HasPrefix(name, ".") || name == "vendor" ||
-				name == "testdata" || strings.HasPrefix(name, "bazel-") {
+		// Skip bazel directories/junctions regardless of how the OS reports them.
+		// On Windows, junctions may not have ModeDir set, so check the name
+		// before the IsDir() gate.
+		name := info.Name()
+		if strings.HasPrefix(name, "bazel-") {
+			if info.IsDir() {
 				return filepath.SkipDir
 			}
 			return nil
 		}
 
-		// Skip .gala files (already transpiled) and gala.mod
-		if strings.HasSuffix(info.Name(), ".gala") || info.Name() == "gala.mod" {
+		// Skip hidden directories, vendor, testdata
+		if info.IsDir() {
+			if strings.HasPrefix(name, ".") || name == "vendor" ||
+				name == "testdata" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		// Skip .gala files (already transpiled), .gen.go files (stale transpiler
+		// output that may exist in the project dir), and gala.mod
+		if strings.HasSuffix(info.Name(), ".gala") || strings.HasSuffix(info.Name(), ".gen.go") ||
+			info.Name() == "gala.mod" {
 			return nil
 		}
 

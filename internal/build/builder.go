@@ -1092,6 +1092,12 @@ func (b *Builder) transpileTestLibrary(sourceFiles, testFiles []string) error {
 		return fmt.Errorf("rewriting test files as package main: %w", err)
 	}
 
+	// Rewrite project module imports in testgen/ too, so go mod tidy doesn't
+	// try to fetch stale remote modules that have been replaced locally.
+	if err := b.rewriteProjectModuleImports(testGenDir); err != nil {
+		return fmt.Errorf("rewriting test project module imports: %w", err)
+	}
+
 	return nil
 }
 

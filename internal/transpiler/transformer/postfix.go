@@ -77,6 +77,13 @@ func (t *galaASTTransformer) resolveFieldAccess(base ast.Expr, selName string) (
 	// Don't unwrap if we're accessing Immutable's own fields/methods
 	if !isImmutable || (selName != "Get" && selName != "value") {
 		base = t.unwrapImmutable(base)
+		// After unwrapping Immutable[T], update xType to T so that
+		// isImmutableField can look up the correct struct metadata.
+		if isImmutable {
+			if gen, ok := xType.(transpiler.GenericType); ok && len(gen.Params) > 0 {
+				xType = gen.Params[0]
+			}
+		}
 	}
 
 	// Also unwrap ConstPtr to access fields (but not ConstPtr's own methods)
@@ -137,6 +144,52 @@ func (t *galaASTTransformer) isImmutableField(xType transpiler.Type, selExpr *as
 		fieldType := t.getExprTypeName(selExpr)
 		if t.isImmutableType(fieldType) {
 			return true
+		}
+	}
+
+	// Fallback: when receiver type is unknown AND the base expression is a
+	// {val}.Get() call (indicating an Immutable-wrapped struct whose type
+	// inference didn't propagate), scan all known struct types for the field.
+	// Only unwrap if every struct that has this field agrees it's immutable.
+	if xTypeName == "" || xType.IsNil() {
+		isValGetCall := false
+		if ce, ok := selExpr.X.(*ast.CallExpr); ok && len(ce.Args) == 0 {
+			if se, ok := ce.Fun.(*ast.SelectorExpr); ok && se.Sel.Name == "Get" {
+				if id, ok := se.X.(*ast.Ident); ok && t.isVal(id.Name) {
+					isValGetCall = true
+				}
+			}
+		}
+		if isValGetCall {
+			foundField := false
+			allImmutable := true
+			// Check structImmutFields (current file types)
+			for tName, fields := range t.structFields {
+				for i, f := range fields {
+					if f == selName {
+						foundField = true
+						if i >= len(t.structImmutFields[tName]) || !t.structImmutFields[tName][i] {
+							allImmutable = false
+						}
+						break
+					}
+				}
+			}
+			// Check typeMetas (cross-package types)
+			for _, meta := range t.typeMetas {
+				for i, f := range meta.FieldNames {
+					if f == selName {
+						foundField = true
+						if i >= len(meta.ImmutFlags) || !meta.ImmutFlags[i] {
+							allImmutable = false
+						}
+						break
+					}
+				}
+			}
+			if foundField && allImmutable {
+				return true
+			}
 		}
 	}
 
