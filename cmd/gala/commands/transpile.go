@@ -9,6 +9,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"martianoff/gala/internal/build"
+	"martianoff/gala/internal/depman/mod"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
 	"martianoff/gala/internal/transpiler/generator"
@@ -49,6 +51,65 @@ func init() {
 	transpileCmd.Flags().StringVar(&transpileGoroot, "goroot", "", "Path to Go SDK root (for Go type inference)")
 }
 
+// autoResolveSearchPaths enhances search paths by auto-discovering the stdlib
+// and GALA dependencies from gala.mod. This allows 'gala transpile' to work
+// without manually specifying '-s /path/to/stdlib'.
+func autoResolveSearchPaths(inputPath string, basePaths []string) []string {
+	config := build.DefaultConfig()
+
+	// Add stdlib path using current CLI version
+	stdlibDir := config.StdlibVersionDir(Version)
+	if info, err := os.Stat(stdlibDir); err == nil && info.IsDir() {
+		basePaths = appendIfNew(basePaths, stdlibDir)
+	}
+
+	// Try to find gala.mod by walking up from the input file's directory
+	startDir := filepath.Dir(inputPath)
+	if abs, err := filepath.Abs(startDir); err == nil {
+		startDir = abs
+	}
+
+	projectRoot := findGalaModDir(startDir)
+	if projectRoot != "" {
+		galaModPath := filepath.Join(projectRoot, "gala.mod")
+		if galaMod, err := mod.ParseFile(galaModPath); err == nil {
+			for _, req := range galaMod.GalaRequires() {
+				depDir := config.GalaModulePath(req.Path, req.Version)
+				if info, err := os.Stat(depDir); err == nil && info.IsDir() {
+					basePaths = appendIfNew(basePaths, depDir)
+				}
+			}
+		}
+	}
+
+	return basePaths
+}
+
+// findGalaModDir walks up from dir looking for gala.mod and returns the
+// directory containing it, or "" if not found.
+func findGalaModDir(dir string) string {
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "gala.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+		dir = parent
+	}
+}
+
+// appendIfNew appends val to slice if not already present.
+func appendIfNew(slice []string, val string) []string {
+	for _, s := range slice {
+		if s == val {
+			return slice
+		}
+	}
+	return append(slice, val)
+}
+
 func runTranspile(cmd *cobra.Command, args []string) {
 	// Determine input file
 	inputPath := transpileInput
@@ -74,9 +135,12 @@ func runTranspile(cmd *cobra.Command, args []string) {
 		os.Setenv("GOROOT", transpileGoroot)
 	}
 
+	// Build search paths: start with user-provided, then auto-resolve stdlib and deps
+	paths := strings.Split(transpileSearch, ",")
+	paths = autoResolveSearchPaths(inputPath, paths)
+
 	// Create transpiler pipeline
 	p := transpiler.NewAntlrGalaParser()
-	paths := strings.Split(transpileSearch, ",")
 	var a transpiler.Analyzer
 	if transpilePackageFiles != "" {
 		pkgFiles := strings.Split(transpilePackageFiles, ",")
