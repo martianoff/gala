@@ -944,8 +944,6 @@ func (b *Builder) Test(verbose bool) error {
 	if err := b.workspace.CleanGen(); err != nil {
 		return fmt.Errorf("cleaning gen dir: %w", err)
 	}
-	// Also clean testgen/ for library test runs
-	os.RemoveAll(filepath.Join(b.workspace.Dir, "testgen"))
 
 	// Step 5: Transpile files
 	if isLib {
@@ -981,66 +979,96 @@ func (b *Builder) Test(verbose bool) error {
 		fmt.Printf("Found %d test function(s): %s\n", len(allTestFuncs), strings.Join(allTestFuncs, ", "))
 	}
 
-	// Step 8: Generate test_main.go
-	// For library packages, test files are in testgen/ (separate from gen/).
-	// For main packages, everything is in gen/.
-	testMainDir := b.workspace.GenDir
-	buildTarget := "./gen/..."
+	// Step 8: Generate test harness
 	if isLib {
-		testMainDir = filepath.Join(b.workspace.Dir, "testgen")
-		buildTarget = "./testgen/..."
-	}
+		// For library packages: generate a _test.go harness that uses Go's testing
+		// framework with TestMain. This enables internal tests (same package) that
+		// can access unexported identifiers. Tests run via `go test`.
+		pkgName := detectPackageName(sourceFiles[0])
+		harnessCode := GenerateGoTestHarness(pkgName, allTestFuncs)
+		harnessPath := filepath.Join(b.workspace.GenDir, "gala_test_harness_test.go")
+		if err := os.WriteFile(harnessPath, []byte(harnessCode), 0644); err != nil {
+			return fmt.Errorf("writing gala_test_harness_test.go: %w", err)
+		}
+		if b.verbose {
+			fmt.Println("Generated gala_test_harness_test.go")
+		}
 
-	testMainCode := GenerateTestMain(allTestFuncs)
-	testMainPath := filepath.Join(testMainDir, "test_main.gen.go")
-	if err := os.WriteFile(testMainPath, []byte(testMainCode), 0644); err != nil {
-		return fmt.Errorf("writing test_main.gen.go: %w", err)
-	}
-
-	if b.verbose {
-		fmt.Println("Generated test_main.gen.go")
-	}
-
-	// Step 9: Build the test binary
-	testBinary := filepath.Join(b.workspace.Dir, "test-binary")
-	if isWindows() {
-		testBinary += ".exe"
-	}
-
-	args := []string{"build", "-o", testBinary, buildTarget}
-	cmd := exec.Command("go", args...)
-	cmd.Dir = b.workspace.Dir
-	cmd.Env = append(os.Environ(), "GOMODCACHE="+b.config.GoPkgDir)
-
-	if b.verbose {
+		// Step 9: Run tests via `go test`
+		args := []string{"test", "-count=1"}
+		if verbose {
+			args = append(args, "-v")
+		}
+		args = append(args, "./gen/...")
+		cmd := exec.Command("go", args...)
+		cmd.Dir = b.workspace.Dir
+		cmd.Env = append(os.Environ(), "GOMODCACHE="+b.config.GoPkgDir)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
-		fmt.Printf("Running: go %s\n", strings.Join(args, " "))
-	} else {
-		cmd.Stderr = os.Stderr
-	}
 
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("go build (test): %w", err)
-	}
-
-	// Step 10: Execute the test binary
-	if b.verbose {
-		fmt.Println("Running tests...")
-		fmt.Println()
-	}
-
-	execCmd := exec.Command(testBinary)
-	execCmd.Stdin = os.Stdin
-	execCmd.Stdout = os.Stdout
-	execCmd.Stderr = os.Stderr
-	execCmd.Dir = b.workspace.ProjectDir
-
-	if err := execCmd.Run(); err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return fmt.Errorf("tests failed (exit code %d)", exitErr.ExitCode())
+		if b.verbose {
+			fmt.Printf("Running: go %s\n", strings.Join(args, " "))
 		}
-		return fmt.Errorf("running test binary: %w", err)
+
+		if err := cmd.Run(); err != nil {
+			if exitErr, ok := err.(*exec.ExitError); ok {
+				return fmt.Errorf("tests failed (exit code %d)", exitErr.ExitCode())
+			}
+			return fmt.Errorf("go test: %w", err)
+		}
+	} else {
+		// For main packages: generate test_main.gen.go with func main() and
+		// build a test binary.
+		testMainCode := GenerateTestMain(allTestFuncs)
+		testMainPath := filepath.Join(b.workspace.GenDir, "test_main.gen.go")
+		if err := os.WriteFile(testMainPath, []byte(testMainCode), 0644); err != nil {
+			return fmt.Errorf("writing test_main.gen.go: %w", err)
+		}
+		if b.verbose {
+			fmt.Println("Generated test_main.gen.go")
+		}
+
+		// Step 9: Build the test binary
+		testBinary := filepath.Join(b.workspace.Dir, "test-binary")
+		if isWindows() {
+			testBinary += ".exe"
+		}
+
+		args := []string{"build", "-o", testBinary, "./gen/..."}
+		cmd := exec.Command("go", args...)
+		cmd.Dir = b.workspace.Dir
+		cmd.Env = append(os.Environ(), "GOMODCACHE="+b.config.GoPkgDir)
+
+		if b.verbose {
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			fmt.Printf("Running: go %s\n", strings.Join(args, " "))
+		} else {
+			cmd.Stderr = os.Stderr
+		}
+
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("go build (test): %w", err)
+		}
+
+		// Step 10: Execute the test binary
+		if b.verbose {
+			fmt.Println("Running tests...")
+			fmt.Println()
+		}
+
+		execCmd := exec.Command(testBinary)
+		execCmd.Stdin = os.Stdin
+		execCmd.Stdout = os.Stdout
+		execCmd.Stderr = os.Stderr
+		execCmd.Dir = b.workspace.ProjectDir
+
+		if err := execCmd.Run(); err != nil {
+			if exitErr, ok := err.(*exec.ExitError); ok {
+				return fmt.Errorf("tests failed (exit code %d)", exitErr.ExitCode())
+			}
+			return fmt.Errorf("running test binary: %w", err)
+		}
 	}
 
 	return nil
@@ -1053,10 +1081,9 @@ func (b *Builder) transpileTestMain(sourceFiles, testFiles []string) error {
 	return b.transpileFiles(allFiles, allFiles)
 }
 
-// transpileTestLibrary transpiles source files as a library and test files as package main.
-// Source files go into gen/ as their original library package.
-// Test files go into testgen/ and are rewritten to package main with a dot-import
-// of the library package, avoiding Go's "multiple packages in directory" conflict.
+// transpileTestLibrary transpiles source files and test files into gen/ as the
+// same package. This enables internal tests that can access unexported identifiers.
+// Test files are transpiled alongside source files in the same directory.
 func (b *Builder) transpileTestLibrary(sourceFiles, testFiles []string) error {
 	// Transpile source files into gen/ as the library package
 	if err := b.transpileFilesToDir(sourceFiles, sourceFiles, b.workspace.GenDir); err != nil {
@@ -1068,34 +1095,17 @@ func (b *Builder) transpileTestLibrary(sourceFiles, testFiles []string) error {
 		return fmt.Errorf("copying local Go subpackages: %w", err)
 	}
 
-	// Rewrite imports that reference the project's Go module path
-	if err := b.rewriteProjectModuleImports(b.workspace.GenDir); err != nil {
-		return fmt.Errorf("rewriting project module imports: %w", err)
-	}
-
-	// Create testgen/ directory for test files (separate from library in gen/)
-	testGenDir := filepath.Join(b.workspace.Dir, "testgen")
-	if err := os.MkdirAll(testGenDir, 0755); err != nil {
-		return fmt.Errorf("creating testgen dir: %w", err)
-	}
-
-	// Transpile test files into testgen/
-	// Test files see source files as siblings for type resolution
+	// Transpile test files into gen/ (same directory, same package as library).
+	// Test files see source files as siblings for type resolution.
 	allFiles := append(sourceFiles, testFiles...)
-	if err := b.transpileFilesToDir(testFiles, allFiles, testGenDir); err != nil {
+	if err := b.transpileFilesToDir(testFiles, allFiles, b.workspace.GenDir); err != nil {
 		return fmt.Errorf("transpiling test files: %w", err)
 	}
 
-	// Rewrite generated test files: change package to "main" and add dot-import
-	// of the library package from gen/
-	if err := rewriteTestFilesAsMain(testGenDir); err != nil {
-		return fmt.Errorf("rewriting test files as package main: %w", err)
-	}
-
-	// Rewrite project module imports in testgen/ too, so go mod tidy doesn't
-	// try to fetch stale remote modules that have been replaced locally.
-	if err := b.rewriteProjectModuleImports(testGenDir); err != nil {
-		return fmt.Errorf("rewriting test project module imports: %w", err)
+	// Rewrite imports that reference the project's Go module path.
+	// This covers both source and test files in gen/ uniformly.
+	if err := b.rewriteProjectModuleImports(b.workspace.GenDir); err != nil {
+		return fmt.Errorf("rewriting project module imports: %w", err)
 	}
 
 	return nil
