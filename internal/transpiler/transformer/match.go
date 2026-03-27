@@ -153,7 +153,7 @@ func (t *galaASTTransformer) inferMatchedTypeFromCases(caseClauses []grammar.ICa
 			continue
 		}
 		patternText := patCtx.GetText()
-		if isWildcard(patternText) {
+		if isWildcard(patternText) || isBindingPattern(patternText) {
 			continue
 		}
 		variantName := extractVariantName(patternText)
@@ -249,6 +249,16 @@ func (t *galaASTTransformer) transformMatchClauses(ctx grammar.IExpressionContex
 	var resultTypes []transpiler.Type
 	var casePatterns []string
 
+	// Pre-scan: check if there's an explicit wildcard `_` case.
+	hasExplicitWildcard := false
+	for i := 3; i < ctx.GetChildCount()-1; i++ {
+		ccCtx, ok := ctx.GetChild(i).(*grammar.CaseClauseContext)
+		if ok && isWildcard(ccCtx.Pattern().GetText()) {
+			hasExplicitWildcard = true
+			break
+		}
+	}
+
 	for i := 3; i < ctx.GetChildCount()-1; i++ {
 		ccCtx, ok := ctx.GetChild(i).(*grammar.CaseClauseContext)
 		if !ok {
@@ -257,25 +267,40 @@ func (t *galaASTTransformer) transformMatchClauses(ctx grammar.IExpressionContex
 
 		patCtx := ccCtx.Pattern()
 		patternText := patCtx.GetText()
-		if isWildcard(patternText) {
+		treatAsDefault := isWildcard(patternText) ||
+			(!hasExplicitWildcard && isBindingPattern(patternText))
+
+		if treatAsDefault {
 			if foundDefault {
 				return nil, nil, nil, galaerr.NewSemanticError("multiple default cases in match expression")
 			}
 			foundDefault = true
+
+			var bindingStmts []ast.Stmt
+			if isBindingPattern(patternText) {
+				t.currentScope.vals[patternText] = false
+				if matchedType != nil && !matchedType.IsNil() {
+					t.currentScope.valTypes[patternText] = matchedType
+				}
+				bindingStmts = append(bindingStmts, &ast.AssignStmt{
+					Lhs: []ast.Expr{ast.NewIdent(patternText)},
+					Tok: token.DEFINE,
+					Rhs: []ast.Expr{ast.NewIdent(paramName)},
+				})
+			}
 
 			if ccCtx.GetBodyBlock() != nil {
 				b, err := t.transformBlock(ccCtx.GetBodyBlock().(*grammar.BlockContext))
 				if err != nil {
 					return nil, nil, nil, err
 				}
-				defaultBody = b.List
+				defaultBody = append(bindingStmts, b.List...)
 				if len(b.List) > 0 {
 					lastStmt := b.List[len(b.List)-1]
 					if ret, ok := lastStmt.(*ast.ReturnStmt); ok && len(ret.Results) > 0 {
 						resultTypes = append(resultTypes, t.inferResultType(ret.Results[0]))
 						casePatterns = append(casePatterns, "case _")
 					} else if exprStmt, ok := lastStmt.(*ast.ExprStmt); ok {
-						// Block's last expression statement becomes the return value
 						defaultBody[len(defaultBody)-1] = &ast.ReturnStmt{Results: []ast.Expr{exprStmt.X}}
 						resultTypes = append(resultTypes, t.inferResultType(exprStmt.X))
 						casePatterns = append(casePatterns, "case _")
@@ -286,7 +311,7 @@ func (t *galaASTTransformer) transformMatchClauses(ctx grammar.IExpressionContex
 				if err != nil {
 					return nil, nil, nil, err
 				}
-				defaultBody = []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{bodyExpr}}}
+				defaultBody = append(bindingStmts, &ast.ReturnStmt{Results: []ast.Expr{bodyExpr}})
 				resultTypes = append(resultTypes, t.inferResultType(bodyExpr))
 				casePatterns = append(casePatterns, "case _")
 			}
@@ -310,14 +335,30 @@ func (t *galaASTTransformer) transformMatchClauses(ctx grammar.IExpressionContex
 			continue
 		}
 		pat := ccCtx.Pattern().GetText()
-		if !isWildcard(pat) {
+		if !isDefaultPattern(pat) {
 			variantPatterns = append(variantPatterns, pat)
 		}
 	}
 
 	isSealed, isExhaustive, missing := t.isExhaustiveMatch(matchedType, variantPatterns)
 
-	if !foundDefault {
+	// A binding pattern (e.g., `case n =>`) is a catch-all even though it's
+	// processed as a regular clause.
+	hasDefault := foundDefault
+	if !hasDefault {
+		for i := 3; i < ctx.GetChildCount()-1; i++ {
+			ccCtx, ok := ctx.GetChild(i).(*grammar.CaseClauseContext)
+			if !ok {
+				continue
+			}
+			if isBindingPattern(ccCtx.Pattern().GetText()) {
+				hasDefault = true
+				break
+			}
+		}
+	}
+
+	if !hasDefault {
 		if isSealed && !isExhaustive {
 			return nil, nil, nil, galaerr.NewSemanticError(
 				fmt.Sprintf("non-exhaustive match: missing cases: %s", strings.Join(missing, ", ")))

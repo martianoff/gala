@@ -67,6 +67,7 @@ type RichAST struct {
 	GoTypeInfo       *GoTypeInfo                         // type info extracted from Go source files and packages
 	TypeAliases      map[string]Type                     // type alias name -> underlying type (e.g., "Handler" -> func(Request) Future[Response])
 	EmbedDirectives  []EmbedDirective                    // embed val declarations
+	ImportPathMap    map[string]string                   // GALA import path -> actual Go module path (when they differ due to VCS host prefix)
 	FilePath         string                              // source file path (for error reporting)
 	SourceContent    string                              // raw source text (for error snippets)
 	AnalysisWarnings []string                            // warnings from package analysis (e.g., unresolved GALA imports)
@@ -146,6 +147,14 @@ func (r *RichAST) Merge(other *RichAST) {
 		}
 		for k, v := range other.TypeAliases {
 			r.TypeAliases[k] = v
+		}
+	}
+	if len(other.ImportPathMap) > 0 {
+		if r.ImportPathMap == nil {
+			r.ImportPathMap = make(map[string]string)
+		}
+		for k, v := range other.ImportPathMap {
+			r.ImportPathMap[k] = v
 		}
 	}
 }
