@@ -44,7 +44,7 @@ func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, 
 								// Track transitive import: the type may come from a sibling
 								// file's import — record so the import gets added to this file.
 								if path, ok := t.importManager.GetPath(pkg); ok {
-									t.additionalImports[path] = alias
+									t.importManager.AddTransitive(path, alias)
 								}
 							}
 						}
@@ -210,11 +210,11 @@ func (t *galaASTTransformer) typeToExpr(typ transpiler.Type) ast.Expr {
 			// not explicitly imported in the source file, record the needed import
 			// so it can be added to the output file.
 			if path, ok := t.importManager.GetPath(v.Package); ok {
-				t.additionalImports[path] = pkgName
+				t.importManager.AddTransitive(path, pkgName)
 			} else if v.ImportPath != "" {
 				// Fallback: use the import path from Go type analysis
 				// (e.g., os.Stat returns fs.FileInfo — "io/fs" not in GALA imports)
-				t.additionalImports[v.ImportPath] = pkgName
+				t.importManager.AddTransitive(v.ImportPath, pkgName)
 			}
 			return &ast.SelectorExpr{
 				X:   ast.NewIdent(pkgName),
