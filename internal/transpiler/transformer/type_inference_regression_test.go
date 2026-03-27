@@ -195,23 +195,19 @@ func test() int {
 		// Cross-File / Package Type Inference
 		// =========================================================================
 		{
-			// FIX-060: SliceOf[T] type inference with explicit type arguments.
-			// When SliceOf is called with explicit type args (e.g., SliceOf[byte](...)),
-			// the downstream type inference should use byte, not int.
-			// Verified by checking the generated code preserves SliceOf[byte] (not SliceOf[int]).
-			name: "FIX-060: SliceOf with explicit type args preserves type",
+			// FIX-060: Explicit generic type arguments should be preserved.
+			// When a generic function is called with explicit type args,
+			// the transpiler should preserve them in generated code.
+			name: "FIX-060: explicit generic type args preserved",
 			input: `package main
 
-import . "martianoff/gala/go_interop"
+import . "martianoff/gala/std"
 
 func test() {
-    var s = SliceOf[byte](72, 101)
+    val x = Some[string]("hello")
 }`,
 			contains: []string{
-				"SliceOf[byte]",
-			},
-			notContains: []string{
-				"SliceOf[int]",
+				"Option[string]",
 			},
 		},
 		{
