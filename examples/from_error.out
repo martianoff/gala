@@ -1,5 +1,5 @@
 true
 true
 true
-expected error: remove /tmp/gala-nonexistent-dir-12345: The system cannot find the file specified.
+error handled
 true

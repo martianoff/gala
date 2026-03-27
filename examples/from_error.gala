@@ -22,9 +22,9 @@ func main() {
     val fail = FromError(os.Remove("/tmp/gala-nonexistent-dir-12345"))
     fmt.Println(fail.IsFailure())
 
-    // Chain with OnFailure
+    // Chain with OnFailure — just check it fires
     FromError(os.Remove("/tmp/gala-nonexistent-dir-12345"))
-        .OnFailure((err) => fmt.Println(s"expected error: $err"))
+        .OnFailure((err) => fmt.Println("error handled"))
 
     // Void type
     val u = Void{}
