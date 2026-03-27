@@ -3184,11 +3184,13 @@ GALA projects use `gala.mod` instead of `go.mod` directly:
 |--------|-----------|----------|
 | Purpose | Declare GALA and Go dependencies together | Go-only dependency management |
 | When to use | All GALA projects (recommended) | Pure Go projects or advanced overrides |
-| Generates | `go.mod`, `go.sum`, `gala.sum` automatically | N/A |
+| Generates | `gala.sum`, and a clean `go.mod` automatically | N/A |
 
-**Always prefer `gala.mod`** for GALA projects. It tracks which dependencies are GALA libraries vs plain Go libraries, generates the corresponding `go.mod` automatically, and ensures `gala mod tidy` keeps everything in sync.
+**Always prefer `gala.mod`** for GALA projects. It tracks which dependencies are GALA libraries vs plain Go libraries, and ensures `gala mod tidy` keeps everything in sync.
 
-The workflow is: edit `gala.mod` (or use `gala mod add`) -> run `gala mod tidy` -> Bazel picks up changes via `gala_dependencies()`.
+The workflow is: edit `gala.mod` (or use `gala mod add`) -> run `gala mod tidy` -> build with `gala build` or `bazel build`.
+
+`gala mod tidy` generates a portable `go.mod` containing only pure Go dependencies. GALA stdlib dependencies (`martianoff/gala/std`, `collection_immutable`, etc.) are resolved automatically by `gala build` or by Bazel's bzlmod extension — they do not appear in `go.mod`.
 
 > **Warning:** Do not run `go mod tidy` directly — it will remove dependencies that are only referenced by `.gala` files. Always use `gala mod tidy` instead.
 
