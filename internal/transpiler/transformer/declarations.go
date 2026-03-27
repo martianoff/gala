@@ -710,9 +710,35 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		}
 		body = b
 	} else if ctx.Expression() != nil {
-		expr, err := t.transformExpression(ctx.Expression())
-		if err != nil {
-			return nil, err
+		var expr ast.Expr
+		var err error
+
+		// If the expression is a lambda and the return type resolves to a function type,
+		// pass expected types to the lambda for better type inference (BUG-047 fix).
+		// This enables lambdas in expression functions like `func Foo() Filter = (req, next) => { ... }`
+		// to receive expected param/return types from the type alias (e.g., Filter = func(Request, Handler) Future[Response]).
+		lambdaCtx := t.findLambdaInExpression(ctx.Expression())
+		if lambdaCtx != nil && funcType.Results != nil && len(funcType.Results.List) > 0 {
+			if expectedFuncType := t.resolveReturnTypeAsFuncType(funcType.Results.List[0].Type); expectedFuncType != nil {
+				var expectedRetType ast.Expr
+				var expectedParamTypes []transpiler.Type
+				if len(expectedFuncType.Results) > 0 {
+					expectedRetType = t.typeToExpr(expectedFuncType.Results[0])
+				} else {
+					expectedRetType = ExpectedVoid
+				}
+				expectedParamTypes = expectedFuncType.Params
+				expr, err = t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedParamTypes)
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
+		if expr == nil {
+			expr, err = t.transformExpression(ctx.Expression())
+			if err != nil {
+				return nil, err
+			}
 		}
 		if funcType.Results != nil && len(funcType.Results.List) > 0 {
 			expr = t.wrapWithAssertion(expr, funcType.Results.List[0].Type)
@@ -730,6 +756,33 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		Type: funcType,
 		Body: body,
 	}, nil
+}
+
+// resolveReturnTypeAsFuncType resolves an AST type expression to a transpiler.FuncType,
+// following type aliases. For example, if the type is "Filter" and Filter is aliased to
+// func(Request, Handler) Future[Response], this returns the FuncType with the resolved
+// param and return types. Returns nil if the type is not a function type.
+func (t *galaASTTransformer) resolveReturnTypeAsFuncType(typeExpr ast.Expr) *transpiler.FuncType {
+	// Convert AST type to transpiler type
+	tp := t.astTypeToTranspilerType(typeExpr)
+	if tp == nil || tp.IsNil() {
+		return nil
+	}
+
+	// Check if it's already a FuncType
+	if ft, ok := tp.(transpiler.FuncType); ok {
+		return &ft
+	}
+
+	// Try resolving via type alias
+	typeName := tp.BaseName()
+	if underlyingType, ok := t.typeAliases[typeName]; ok {
+		if ft, ok := underlyingType.(transpiler.FuncType); ok {
+			return &ft
+		}
+	}
+
+	return nil
 }
 
 func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.StructShorthandDeclarationContext) ([]ast.Decl, error) {

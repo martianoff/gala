@@ -72,3 +72,43 @@ func GenerateTestMain(testFuncs []string) string {
 
 	return sb.String()
 }
+
+// GenerateGoTestHarness generates a _test.go file that bridges GALA tests
+// with Go's testing framework. This enables internal tests (same package)
+// for library packages, allowing access to unexported identifiers.
+//
+// The generated file uses TestMain(m *testing.M) as the entry point,
+// which calls the GALA test framework's RunTests(). This is a _test.go
+// file so it's only compiled by `go test`, not `go build`.
+func GenerateGoTestHarness(pkgName string, testFuncs []string) string {
+	var sb strings.Builder
+
+	sb.WriteString(fmt.Sprintf("package %s\n\n", pkgName))
+
+	sb.WriteString("import (\n")
+	sb.WriteString("\t\"testing\"\n")
+	sb.WriteString("\t\"martianoff/gala/std\"\n")
+	sb.WriteString("\t. \"martianoff/gala/test\"\n")
+	sb.WriteString(")\n\n")
+
+	// Sort for deterministic output
+	sorted := make([]string, len(testFuncs))
+	copy(sorted, testFuncs)
+	sort.Strings(sorted)
+
+	// Generate TestMain that delegates to GALA's RunTests
+	sb.WriteString("func TestMain(m *testing.M) {\n")
+	sb.WriteString("\tRunTests(")
+
+	for i, funcName := range sorted {
+		if i > 0 {
+			sb.WriteString(", ")
+		}
+		sb.WriteString(fmt.Sprintf("TestFunc{Name: std.NewImmutable(\"%s\"), F: std.NewImmutable(%s)}", funcName, funcName))
+	}
+
+	sb.WriteString(")\n")
+	sb.WriteString("}\n")
+
+	return sb.String()
+}

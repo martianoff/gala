@@ -2590,22 +2590,45 @@ Test files use the `_test.gala` suffix and are placed alongside source files:
 ```
 mypackage/
   mycode.gala
-  mycode_test.gala    # Test file with package main
+  mycode_test.gala    # Test file (same package as source)
 ```
 
 ### Writing Tests
 
 Test functions must:
-- Use `package main` and import the modules being tested
+- Use the **same package** as the code being tested (for internal tests) or `package main` (for standalone tests)
 - Start with `Test` prefix (e.g., `TestAddition`)
 - Take a single parameter of type `T` and return `T`
 - Return the modified test context after assertions
+
+#### Internal Tests (Library Packages)
+
+Internal tests use the same package as the library, allowing access to unexported identifiers:
+
+```gala
+package mypackage
+
+import (
+    . "martianoff/gala/test"
+)
+
+func TestInternalLogic(t T) T {
+    // Can access unexported fields, functions, and types
+    val result = internalHelper(42)
+    return Eq(t, result, 84)
+}
+```
+
+#### External Tests (Standalone)
+
+External tests use `package main` and import the modules being tested:
 
 ```gala
 package main
 
 import (
     . "martianoff/gala/test"
+    . "mymodule/mypackage"
 )
 
 func TestAddition(t T) T {
@@ -2818,19 +2841,41 @@ The `T` test context provides methods:
 
 ### BUILD.bazel Configuration
 
-Use the `gala_go_test` macro to define tests:
+#### External Tests (package main)
+
+Use `gala_go_test` for tests that import the library as a dependency:
 
 ```python
 load("//:gala.bzl", "gala_go_test")
 
 gala_go_test(
     name = "mycode_test",
-    srcs = ["main.gala"],
+    srcs = ["main_test.gala"],
     deps = [":mypackage"],
 )
 ```
 
-### Output Comparison Tests
+#### Internal Tests (same package)
+
+For internal tests that need access to unexported identifiers, use `pkg` to match the library package name and `lib_srcs` to include the library source files:
+
+```python
+load("//:gala.bzl", "gala_go_test")
+
+_SRCS = glob(["*.gala"], exclude = ["*_test.gala"])
+
+gala_go_test(
+    name = "mypackage_test",
+    srcs = glob(["*_test.gala"]),
+    pkg = "mypackage",
+    lib_srcs = _SRCS,
+    deps = ["@gala//collection_immutable", "@gala//concurrent"],
+)
+```
+
+The macro uses `go_test` with `embed` for internal tests, properly handling the package compilation that `go_binary` cannot support. Add any GALA stdlib packages your library imports to `deps` — the macro auto-adds `@gala//test` and `@gala//std`.
+
+#### Output Comparison Tests
 
 For tests that compare program output against expected files, use `gala_test`:
 
@@ -2857,8 +2902,8 @@ gala test -v                  # Verbose output
 ```
 
 `gala test` handles both project types:
-- **`package main` projects**: source and test files are compiled together
-- **Library packages**: test files are compiled as `package main` and import the library under test
+- **`package main` projects**: source and test files are compiled together as `package main`
+- **Library packages**: source and test files are compiled together in the **same package**, enabling internal tests that can access unexported identifiers. Under the hood, `gala test` generates a `_test.go` harness with `TestMain` and runs tests via `go test`.
 
 #### Using Bazel
 
