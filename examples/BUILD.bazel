@@ -1,6 +1,12 @@
 load("//:gala.bzl", "gala_binary", "gala_go_test", "gala_library", "gala_test")
 
 filegroup(
+    name = "single_file_gala_sources",
+    srcs = glob(["*.gala"]),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
     name = "gala_sources",
     srcs = [
         "bug013_cross_pkg/corelib/corelib.gala",
