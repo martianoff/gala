@@ -183,3 +183,24 @@ func FromEitherError[T any](e Either[error, T]) Try[T] {
 // Returns Success[T] with the result if f completes normally.
 // Returns Failure[T] with the panic value as error if f panics.
 func TryApply[T any](f func() T) Try[T] = tryRecover[T](f)
+
+// Void represents the absence of a meaningful value, similar to Scala's Void.
+// Used as the type parameter for Try[Void] when converting Go error returns.
+type Void struct {}
+
+// FromError converts a Go error return into a Try[Void].
+// Returns Success[Void] if err is nil, Failure[Void] otherwise.
+//
+// For Go functions returning (T, error), use Try(() => goCall()) instead.
+//
+// Usage:
+//   FromError(conn.Close())                        // Try[Void]
+//   FromError(sb.ListenAndServe(addr))              // Try[Void]
+//   FromError(sb.ListenAndServe(addr)).OnFailure((err) => Println(s"error: $err"))
+func FromError(err error) Try[Void] {
+    if err != nil {
+        return Failure[Void](err)
+    }
+    return Success[Void](Void{})
+}
+

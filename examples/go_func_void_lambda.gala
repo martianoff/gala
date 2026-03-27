@@ -1,0 +1,49 @@
+package main
+
+import (
+    "fmt"
+    "net"
+    "time"
+    . "martianoff/gala/std"
+    "martianoff/gala/go_interop"
+)
+
+// FIX-075: Lambda passed to Go function expecting func() should generate func(),
+// not func() <return-type-of-body>. This verifies that the transpiler correctly
+// detects void function parameters from Go type info.
+
+func main() {
+    // Case 1: go_interop.Spawn with block lambda (already worked via FIX-073)
+    go_interop.Spawn(() => {
+        fmt.Println("block lambda spawn")
+    })
+    time.Sleep(50 * time.Millisecond)
+
+    // Case 2: go_interop.Spawn with expression lambda
+    // Before FIX-075, this generated func() int (from Println return type)
+    go_interop.Spawn(() => fmt.Println("expression lambda spawn"))
+    time.Sleep(50 * time.Millisecond)
+
+    // Case 3: SpawnWithRecover via qualified call
+    // First param func() is void, second param func(any) is also void
+    go_interop.SpawnWithRecover(
+        () => fmt.Println("spawn with recover"),
+        (err any) => fmt.Println(s"recovered: $err"),
+    )
+    time.Sleep(50 * time.Millisecond)
+
+    // Case 4: Spawn with FromError — the idiomatic GALA pattern for
+    // Go functions returning error in void context
+    go_interop.Spawn(() => {
+        // net.Listen returns (net.Listener, error) — Try handles (T, error)
+        // For error-only functions, use FromError
+        val listener = Try(() => net.Listen("tcp", "127.0.0.1:0"))
+        listener.OnSuccess((l net.Listener) => {
+            FromError(l.Close()).OnFailure((err) => fmt.Println(s"close error: $err"))
+            fmt.Println("listener opened and closed")
+        }).OnFailure((err) => fmt.Println(s"listen error: $err"))
+    })
+    time.Sleep(50 * time.Millisecond)
+
+    Println("done")
+}

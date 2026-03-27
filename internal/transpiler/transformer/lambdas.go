@@ -106,6 +106,18 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 		if err != nil {
 			return nil, err
 		}
+		// Reject block lambdas in void context that discard error returns.
+		// Check each expression statement for Go calls returning error.
+		if isVoidExpected {
+			for _, stmt := range b.List {
+				if exprStmt, ok := stmt.(*ast.ExprStmt); ok {
+					if funcName := t.goCallReturnsErrorOnly(exprStmt.X); funcName != "" {
+						return nil, galaerr.NewSemanticError(
+							fmt.Sprintf("cannot discard error return from %s in void lambda — use FromError(%s) to handle the error", funcName, funcName))
+					}
+				}
+			}
+		}
 		// When void is expected, strip any trailing "return nil" (legacy pattern)
 		if isVoidExpected && len(b.List) > 0 {
 			if ret, ok := b.List[len(b.List)-1].(*ast.ReturnStmt); ok && len(ret.Results) == 1 {
@@ -163,6 +175,12 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 		if body != nil {
 			// Already set (e.g., expression lambda `() => nil` treated as void)
 		} else if isVoidExpected {
+			// Reject expression lambdas in void context that discard error returns.
+			// Users must handle errors explicitly, e.g., FromError(goCall()).OnFailure(...)
+			if funcName := t.goCallReturnsErrorOnly(expr); funcName != "" {
+				return nil, galaerr.NewSemanticError(
+					fmt.Sprintf("cannot discard error return from %s in void lambda — use FromError(%s) to handle the error", funcName, funcName))
+			}
 			// For void functions, the expression is just a statement, not a return
 			body = &ast.BlockStmt{
 				List: []ast.Stmt{
@@ -203,6 +221,50 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 		Type: funcType,
 		Body: body,
 	}, nil
+}
+
+// goCallReturnsErrorOnly checks if expr is a call to a Go function whose sole return
+// type is `error`. Returns the function name for the error message, or "" otherwise.
+// This only catches error-only returns (e.g., Close(), ListenAndServe()), NOT multi-return
+// functions like fmt.Println() which return (int, error) — those are handled by
+// tryWrapGoMultiReturnWithErrorPanic in non-void contexts.
+func (t *galaASTTransformer) goCallReturnsErrorOnly(expr ast.Expr) string {
+	if t.goTypeInfo == nil {
+		return ""
+	}
+	callExpr, ok := expr.(*ast.CallExpr)
+	if !ok {
+		return ""
+	}
+
+	var sig *transpiler.GoFuncSignature
+	var funcName string
+	switch fun := callExpr.Fun.(type) {
+	case *ast.SelectorExpr:
+		if id, ok := fun.X.(*ast.Ident); ok {
+			funcName = id.Name + "." + fun.Sel.Name
+			sig = t.goTypeInfo.GetFuncSignature(funcName)
+			if sig == nil {
+				sig = t.resolveMethodSignatureOnExpr(fun.X, fun.Sel.Name)
+			}
+		} else {
+			sig = t.resolveMethodSignatureOnExpr(fun.X, fun.Sel.Name)
+			if sel, ok := fun.X.(*ast.SelectorExpr); ok {
+				funcName = sel.Sel.Name + "." + fun.Sel.Name
+			} else {
+				funcName = fun.Sel.Name
+			}
+		}
+	}
+	if sig == nil {
+		return ""
+	}
+
+	// Only reject when the sole return type is error
+	if len(sig.Returns) == 1 && sig.Returns[0] != nil && sig.Returns[0].String() == "error" {
+		return funcName
+	}
+	return ""
 }
 
 // tryWrapGoMultiReturnWithErrorPanic checks if expr is a call to a Go function
