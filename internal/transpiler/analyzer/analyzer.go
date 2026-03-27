@@ -804,7 +804,33 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 	// 3. Discover companion objects - types with Unapply methods that can be used for pattern matching
 	a.discoverCompanionObjects(richAST)
 
+	// 4. Optional metadata validation (enabled via GALA_VALIDATE_METADATA=1)
+	if os.Getenv("GALA_VALIDATE_METADATA") == "1" {
+		validationWarnings := ValidateRichAST(richAST)
+		for _, w := range validationWarnings {
+			fmt.Fprintln(os.Stderr, w.String())
+		}
+		if HasErrors(validationWarnings) {
+			return nil, fmt.Errorf("metadata validation failed with %d error(s)", countErrors(validationWarnings))
+		}
+		// Append informational warnings to the RichAST for downstream consumers
+		for _, w := range validationWarnings {
+			richAST.AnalysisWarnings = append(richAST.AnalysisWarnings, w.String())
+		}
+	}
+
 	return richAST, nil
+}
+
+// countErrors returns the number of Error-severity warnings in the list.
+func countErrors(warnings []ValidationWarning) int {
+	n := 0
+	for _, w := range warnings {
+		if w.Severity == SeverityError {
+			n++
+		}
+	}
+	return n
 }
 
 // analyzeSealedType registers metadata for a sealed type declaration.
