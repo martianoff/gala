@@ -335,10 +335,8 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 				}
 
 				// Get expected parameter type if available, with type substitution
-				var expectedType transpiler.Type = transpiler.NilType{}
-				if methodMeta != nil && i < len(methodMeta.ParamTypes) {
-					expectedType = t.substituteTranspilerTypeParams(methodMeta.ParamTypes[i], typeSubst)
-				}
+				genMethodCtx := t.buildMethodCallContext(methodMeta, typeSubst, false)
+				expectedType := t.resolveExpectedArgType(genMethodCtx, i)
 
 				expr, err := t.transformArgumentWithExpectedType(exprCtx, expectedType)
 				if err != nil {
@@ -442,12 +440,8 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 						hasSpread = true
 					}
 					// Only pass void function types (avoids unresolved type params in return types)
-					var expectedType transpiler.Type = transpiler.NilType{}
-					if i < len(methodMeta.ParamTypes) {
-						if ft, ok := methodMeta.ParamTypes[i].(transpiler.FuncType); ok && len(ft.Results) == 0 {
-							expectedType = ft
-						}
-					}
+					unresolvedCtx := t.buildMethodCallContext(methodMeta, typeSubst, true)
+					expectedType := t.resolveExpectedArgType(unresolvedCtx, i)
 					expr, err := t.transformArgumentWithExpectedType(exprCtx, expectedType)
 					if err != nil {
 						return nil, err
@@ -478,13 +472,8 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 					if isSpread {
 						hasSpread = true
 					}
-					var expectedType transpiler.Type = transpiler.NilType{}
-					for pi, pName := range methodMeta.ParamNames {
-						if pName == argName && pi < len(methodMeta.ParamTypes) {
-							expectedType = t.substituteTranspilerTypeParams(methodMeta.ParamTypes[pi], typeSubst)
-							break
-						}
-					}
+					resolvedMethodCtx := t.buildMethodCallContext(methodMeta, typeSubst, false)
+					expectedType := t.resolveNamedArgExpectedType(resolvedMethodCtx, argName)
 					expr, err := t.transformArgumentWithExpectedType(exprCtx, expectedType)
 					if err != nil {
 						return nil, err
@@ -498,10 +487,8 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 					if isSpread {
 						hasSpread = true
 					}
-					var expectedType transpiler.Type = transpiler.NilType{}
-					if argIdx < len(methodMeta.ParamTypes) {
-						expectedType = t.substituteTranspilerTypeParams(methodMeta.ParamTypes[argIdx], typeSubst)
-					}
+					resolvedMethodCtx := t.buildMethodCallContext(methodMeta, typeSubst, false)
+					expectedType := t.resolveExpectedArgType(resolvedMethodCtx, argIdx)
 					expr, err := t.transformArgumentWithExpectedType(exprCtx, expectedType)
 					if err != nil {
 						return nil, err
@@ -684,33 +671,9 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 			if isSpread {
 				hasSpread = true
 			}
-			// Pass function types from metadata for lambda return type inference.
-			// For void function types, pass as-is.
-			// For non-void function types in generic functions, substitute inferred/explicit type args.
-			var expectedType transpiler.Type = transpiler.NilType{}
-			if funcMeta != nil && argIdx < len(funcMeta.ParamTypes) {
-				if ft, ok := funcMeta.ParamTypes[argIdx].(transpiler.FuncType); ok {
-					if len(inferredTypeSubst) > 0 {
-						// Substitute inferred or explicit type args (both void and non-void)
-						expectedType = t.substituteTranspilerTypeParams(funcMeta.ParamTypes[argIdx], inferredTypeSubst)
-					} else if len(ft.Results) == 0 || len(funcMeta.TypeParams) == 0 {
-						// Void function type or non-generic function — pass as-is
-						expectedType = ft
-					}
-				}
-			}
-			// FIX-075: Fall back to Go type info for lambda expected types
-			if expectedType.IsNil() && goFuncParamTypes != nil && argIdx < len(goFuncParamTypes) {
-				if ft, ok := goFuncParamTypes[argIdx].(transpiler.FuncType); ok {
-					expectedType = ft
-				}
-			}
-			// If this is struct construction and we have field type info, use it as fallback
-			if expectedType.IsNil() && structFieldExpectedTypes != nil && argIdx < len(structFieldExpectedTypes) {
-				if ft, ok := structFieldExpectedTypes[argIdx].(transpiler.FuncType); ok {
-					expectedType = ft
-				}
-			}
+			// Resolve expected type using unified function call context
+			funcCallCtx := t.buildFuncCallContext(funcMeta, inferredTypeSubst, goFuncParamTypes, structFieldExpectedTypes)
+			expectedType := t.resolveExpectedArgType(funcCallCtx, argIdx)
 			expr, err := t.transformArgumentWithExpectedType(exprCtx, expectedType)
 			if err != nil {
 				return nil, err
