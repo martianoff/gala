@@ -41,6 +41,21 @@ func TestCompilationGate(t *testing.T) {
 		"named_arg_sealed.gala":           "requires named_arg_sealed_model companion file",
 		"slice_type_param.gala":           "uses []T as type param (unsupported grammar)",
 		"match_interface_return.gala":     "known semantic error in match branch type unification",
+
+		// These import GALA library packages not available in test sandbox.
+		"byte_conversion.gala":            "imports go_interop",
+		"doc_io_verify.gala":              "imports io",
+		"either_match_in_lambda.gala":     "imports concurrent",
+		"execution_context.gala":          "imports concurrent",
+		"extractor_type_inference.gala":   "imports concurrent (semantic error without full pkg)",
+		"future_pattern_match.gala":       "imports concurrent",
+		"go_type_inference_cross_pkg.gala": "imports examples/go_type_inference_lib",
+		"if_else_implicit_return.gala":    "imports stream",
+		"json_codec.gala":                 "imports json",
+		"json_serialization.gala":         "imports json (semantic error without full pkg)",
+		"regex_usage.gala":                "imports regex",
+		"string_builder.gala":             "imports string_utils",
+		"type_alias_lambda_inference.gala": "imports test",
 	}
 
 	examplesDir := findExamplesDir(t)
