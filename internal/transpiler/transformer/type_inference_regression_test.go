@@ -207,7 +207,7 @@ func test() {
     val x = Some[string]("hello")
 }`,
 			contains: []string{
-				"Option[string]",
+				"Some[string]",
 			},
 		},
 		{
