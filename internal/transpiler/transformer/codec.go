@@ -71,7 +71,7 @@ func (t *galaASTTransformer) collectionIdent(name string) ast.Expr {
 		t.markDotImportUsed("collection_immutable")
 		return ast.NewIdent(name)
 	}
-	t.additionalImports["martianoff/gala/collection_immutable"] = "collection_immutable"
+	t.importManager.AddTransitive("martianoff/gala/collection_immutable", "collection_immutable")
 	return &ast.SelectorExpr{
 		X:   ast.NewIdent("collection_immutable"),
 		Sel: ast.NewIdent(name),

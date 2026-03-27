@@ -1,7 +1,14 @@
 package transformer
 
 import (
+	"fmt"
+	"go/ast"
+	"go/token"
+	"sort"
 	"strings"
+
+	"martianoff/gala/galaerr"
+	"martianoff/gala/internal/transpiler"
 )
 
 // ImportManager provides a unified API for import tracking.
@@ -18,6 +25,14 @@ type ImportManager struct {
 	byPath     map[string]*ImportEntry // Lookup by full import path
 	byPkgName  map[string]*ImportEntry // Lookup by actual package name
 	dotImports []*ImportEntry          // Dot-imported packages
+
+	// Usage tracking for dot imports (which packages were actually referenced)
+	usedDotImports map[string]bool // package names of dot imports referenced during transformation
+
+	// Transitive import tracking (imports needed by type inference that weren't
+	// explicitly declared in the source file, e.g., when a lambda parameter type
+	// references a package from a dependency's method signature)
+	transitiveImports map[string]string // path -> alias
 }
 
 // ImportEntry represents a single import declaration.
@@ -31,11 +46,13 @@ type ImportEntry struct {
 // NewImportManager creates a new empty ImportManager.
 func NewImportManager() *ImportManager {
 	return &ImportManager{
-		entries:    make([]*ImportEntry, 0),
-		byAlias:    make(map[string]*ImportEntry),
-		byPath:     make(map[string]*ImportEntry),
-		byPkgName:  make(map[string]*ImportEntry),
-		dotImports: make([]*ImportEntry, 0),
+		entries:           make([]*ImportEntry, 0),
+		byAlias:           make(map[string]*ImportEntry),
+		byPath:            make(map[string]*ImportEntry),
+		byPkgName:         make(map[string]*ImportEntry),
+		dotImports:        make([]*ImportEntry, 0),
+		usedDotImports:    make(map[string]bool),
+		transitiveImports: make(map[string]string),
 	}
 }
 
@@ -252,5 +269,288 @@ func (m *ImportManager) ForEachImport(fn func(alias, actualPkgName string)) {
 func (m *ImportManager) ForEachDotImport(fn func(pkgName string)) {
 	for _, entry := range m.dotImports {
 		fn(entry.PkgName)
+	}
+}
+
+// MarkDotImportUsed records that a symbol from a dot-imported package was referenced
+// during transformation. This is used by PruneUnused to decide which dot imports to keep.
+func (m *ImportManager) MarkDotImportUsed(pkgName string) {
+	m.usedDotImports[pkgName] = true
+}
+
+// AddTransitive records a transitive import needed by type inference.
+// These are imports not explicitly declared in the source file but required because
+// generated code references types/packages from dependencies.
+func (m *ImportManager) AddTransitive(path, alias string) {
+	m.transitiveImports[path] = alias
+}
+
+// GetTransitiveImports returns all transitive imports (path -> alias).
+func (m *ImportManager) GetTransitiveImports() map[string]string {
+	return m.transitiveImports
+}
+
+// PruneUnused walks the AST file and removes any import that is not referenced by
+// a SelectorExpr (qualified reference), a used dot import, or a blank import.
+// Dot imports are only kept if their package was marked as used via MarkDotImportUsed
+// or if the AST contains identifiers matching the package's exported symbols.
+// The std dot import is always kept.
+func (m *ImportManager) PruneUnused(file *ast.File, richAST *transpiler.RichAST) {
+	usedPkgs := make(map[string]bool)
+	ast.Inspect(file, func(n ast.Node) bool {
+		sel, ok := n.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		if ident, ok := sel.X.(*ast.Ident); ok {
+			usedPkgs[ident.Name] = true
+		}
+		return true
+	})
+
+	for _, decl := range file.Decls {
+		genDecl, ok := decl.(*ast.GenDecl)
+		if !ok || genDecl.Tok != token.IMPORT {
+			continue
+		}
+		var kept []ast.Spec
+		for _, spec := range genDecl.Specs {
+			importSpec, ok := spec.(*ast.ImportSpec)
+			if !ok {
+				kept = append(kept, spec)
+				continue
+			}
+			if importSpec.Name != nil && importSpec.Name.Name == "_" {
+				kept = append(kept, spec)
+				continue
+			}
+			if importSpec.Name != nil && importSpec.Name.Name == "." {
+				// Only keep dot imports that are actually used.
+				// Always keep std (implicitly used everywhere).
+				path := strings.Trim(importSpec.Path.Value, "\"")
+				pkgName := ""
+				if entry, ok := m.GetByPath(path); ok && entry != nil {
+					pkgName = entry.PkgName
+				}
+				if pkgName == "" {
+					parts := strings.Split(path, "/")
+					pkgName = parts[len(parts)-1]
+				}
+				if pkgName == "std" || m.usedDotImports[pkgName] || m.dotImportUsedInAST(file, pkgName, richAST) {
+					kept = append(kept, spec)
+				}
+				continue
+			}
+			// Determine the local name used in code for this import
+			localName := ""
+			if importSpec.Name != nil {
+				localName = importSpec.Name.Name
+			} else {
+				path := strings.Trim(importSpec.Path.Value, "\"")
+				// Check ImportManager for the actual package name (may differ from path)
+				if entry, ok := m.GetByPath(path); ok && entry != nil {
+					localName = entry.PkgName
+				}
+				if localName == "" {
+					parts := strings.Split(path, "/")
+					localName = parts[len(parts)-1]
+				}
+			}
+			if usedPkgs[localName] {
+				kept = append(kept, spec)
+			}
+		}
+		genDecl.Specs = kept
+	}
+
+	var keptDecls []ast.Decl
+	for _, decl := range file.Decls {
+		genDecl, ok := decl.(*ast.GenDecl)
+		if ok && genDecl.Tok == token.IMPORT && len(genDecl.Specs) == 0 {
+			continue
+		}
+		keptDecls = append(keptDecls, decl)
+	}
+	file.Decls = keptDecls
+}
+
+// dotImportUsedInAST checks if the generated AST contains unqualified identifiers
+// matching exported symbols from the given dot-imported package. This catches
+// function calls and other references not tracked by MarkDotImportUsed.
+func (m *ImportManager) dotImportUsedInAST(file *ast.File, pkgName string, richAST *transpiler.RichAST) bool {
+	if richAST == nil {
+		return true // be conservative if no metadata available
+	}
+	// Collect known exports from this package
+	exports := make(map[string]bool)
+	for _, meta := range richAST.Types {
+		if meta.Package == pkgName {
+			exports[meta.Name] = true
+		}
+	}
+	for _, meta := range richAST.Functions {
+		if meta.Package == pkgName {
+			exports[meta.Name] = true
+		}
+	}
+	for _, meta := range richAST.CompanionObjects {
+		if meta.Package == pkgName {
+			exports[meta.Name] = true
+		}
+	}
+	if goExports, ok := richAST.GoExports[pkgName]; ok {
+		for _, sym := range goExports {
+			exports[sym] = true
+		}
+	}
+	if len(exports) == 0 {
+		return true // conservatively keep — can't determine if symbols are used
+	}
+	// Scan AST for matching unqualified identifiers
+	found := false
+	ast.Inspect(file, func(n ast.Node) bool {
+		if found {
+			return false
+		}
+		ident, ok := n.(*ast.Ident)
+		if ok && exports[ident.Name] {
+			found = true
+		}
+		return !found
+	})
+	return found
+}
+
+// ValidateDotImports detects when multiple dot-imported packages export symbols with the
+// same name, which would cause Go compilation errors ("redeclared in this block").
+// Returns a SemanticError listing all clashing symbols, or nil if no clashes found.
+func (m *ImportManager) ValidateDotImports(richAST *transpiler.RichAST) error {
+	dotPkgs := m.GetDotImports()
+	if len(dotPkgs) < 2 {
+		return nil // need at least 2 dot imports for a clash
+	}
+
+	dotPkgSet := make(map[string]bool, len(dotPkgs))
+	for _, pkg := range dotPkgs {
+		dotPkgSet[pkg] = true
+	}
+
+	// Collect symbol -> set of source packages
+	symbolSources := make(map[string]map[string]bool) // symbol name -> {pkg1, pkg2, ...}
+
+	// Check GALA-analyzed metadata (Types, Functions, CompanionObjects)
+	for _, meta := range richAST.Types {
+		if meta.Package != "" && dotPkgSet[meta.Package] {
+			if symbolSources[meta.Name] == nil {
+				symbolSources[meta.Name] = make(map[string]bool)
+			}
+			symbolSources[meta.Name][meta.Package] = true
+		}
+	}
+
+	for _, meta := range richAST.Functions {
+		if meta.Package != "" && dotPkgSet[meta.Package] {
+			if symbolSources[meta.Name] == nil {
+				symbolSources[meta.Name] = make(map[string]bool)
+			}
+			symbolSources[meta.Name][meta.Package] = true
+		}
+	}
+
+	for _, meta := range richAST.CompanionObjects {
+		if meta.Package != "" && dotPkgSet[meta.Package] {
+			if symbolSources[meta.Name] == nil {
+				symbolSources[meta.Name] = make(map[string]bool)
+			}
+			symbolSources[meta.Name][meta.Package] = true
+		}
+	}
+
+	// Check Go-only package exports (from GoExports field)
+	for pkg, symbols := range richAST.GoExports {
+		if !dotPkgSet[pkg] {
+			continue
+		}
+		for _, sym := range symbols {
+			if symbolSources[sym] == nil {
+				symbolSources[sym] = make(map[string]bool)
+			}
+			symbolSources[sym][pkg] = true
+		}
+	}
+
+	// Collect clashes
+	var clashes []string
+	// Sort symbol names for deterministic output
+	symbolNames := make([]string, 0, len(symbolSources))
+	for symbol := range symbolSources {
+		symbolNames = append(symbolNames, symbol)
+	}
+	sort.Strings(symbolNames)
+
+	for _, symbol := range symbolNames {
+		sources := symbolSources[symbol]
+		if len(sources) > 1 {
+			pkgs := make([]string, 0, len(sources))
+			for pkg := range sources {
+				pkgs = append(pkgs, pkg)
+			}
+			sort.Strings(pkgs)
+			clashes = append(clashes, fmt.Sprintf("  - symbol %q is exported by multiple dot-imported packages: %s", symbol, strings.Join(pkgs, ", ")))
+		}
+	}
+
+	if len(clashes) > 0 {
+		msg := "dot-import symbol collision(s) detected:\n" + strings.Join(clashes, "\n") + "\nUse an aliased import for one of the packages to resolve the conflict."
+		return galaerr.NewSemanticError(msg)
+	}
+	return nil
+}
+
+// AddTransitiveImportsToFile adds all transitive imports to the AST file,
+// skipping any that are already present. This consolidates the logic that was
+// previously inline in transformer.Transform.
+func (m *ImportManager) AddTransitiveImportsToFile(file *ast.File) {
+	for path, alias := range m.transitiveImports {
+		// Skip if already imported explicitly
+		alreadyImported := false
+		for _, decl := range file.Decls {
+			genDecl, ok := decl.(*ast.GenDecl)
+			if !ok || genDecl.Tok != token.IMPORT {
+				continue
+			}
+			for _, spec := range genDecl.Specs {
+				importSpec, ok := spec.(*ast.ImportSpec)
+				if !ok {
+					continue
+				}
+				importPath := strings.Trim(importSpec.Path.Value, "\"")
+				if importPath == path {
+					alreadyImported = true
+					break
+				}
+				// Also check by alias — if the package is imported under a different path
+				if importSpec.Name != nil && importSpec.Name.Name == alias {
+					alreadyImported = true
+					break
+				}
+			}
+			if alreadyImported {
+				break
+			}
+		}
+		if !alreadyImported {
+			spec := &ast.ImportSpec{
+				Path: &ast.BasicLit{
+					Kind:  token.STRING,
+					Value: fmt.Sprintf("\"%s\"", path),
+				},
+			}
+			importDecl := &ast.GenDecl{
+				Tok:   token.IMPORT,
+				Specs: []ast.Spec{spec},
+			}
+			file.Decls = append([]ast.Decl{importDecl}, file.Decls...)
+		}
 	}
 }
