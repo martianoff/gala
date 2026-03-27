@@ -1,0 +1,54 @@
+package main
+
+import (
+    . "martianoff/gala/test"
+)
+
+// Type aliases for function types — used by the lambda inference fix (BUG-047).
+// The transpiler must resolve these to their underlying func types and propagate
+// expected param/return types to lambdas in expression functions.
+
+type Transformer func(int) string
+
+type Processor func(string, Transformer) string
+
+// Expression function returning a type-alias function type.
+// The lambda should infer param types from the Transformer alias.
+func DoubleToString() Transformer = (x) => {
+    if x > 100 {
+        return "big"
+    }
+    return "small"
+}
+
+// Multi-return-path lambda — the type should be inferred as string (from Transformer).
+func ClassifySign() Transformer = (x) => {
+    if x > 0 {
+        return "positive"
+    }
+    if x < 0 {
+        return "negative"
+    }
+    return "zero"
+}
+
+// Nested type alias — Processor takes a Transformer.
+func ApplyAndWrap(prefix string) Processor = (s, tf) => {
+    val result = tf(42)
+    return prefix + ": " + result
+}
+
+func TestTypeAliasLambda(t T) T {
+    val tf = DoubleToString()
+    var t1 = Eq(t, tf(50), "small")
+    var t2 = Eq(t1, tf(200), "big")
+
+    val sign = ClassifySign()
+    var t3 = Eq(t2, sign(5), "positive")
+    var t4 = Eq(t3, sign(-3), "negative")
+    var t5 = Eq(t4, sign(0), "zero")
+
+    val proc = ApplyAndWrap("Result")
+    return Eq(t5, proc("test", sign), "Result: positive")
+}
+

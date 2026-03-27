@@ -1,4 +1,4 @@
-load("//:gala.bzl", "gala_binary", "gala_library", "gala_test")
+load("//:gala.bzl", "gala_binary", "gala_go_test", "gala_library", "gala_test")
 
 filegroup(
     name = "gala_sources",
@@ -1502,4 +1502,10 @@ gala_test(
         "//concurrent",
         "//go_interop",
     ],
+)
+
+# FIX-080 (BUG-047): Lambda return type inference via type alias resolution
+gala_go_test(
+    name = "type_alias_lambda_inference",
+    srcs = ["type_alias_lambda_inference.gala"],
 )
