@@ -1,0 +1,38 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+    . "martianoff/gala/concurrent"
+)
+
+// BUG-047 repro attempt: Lambda return type inference with multiple return paths.
+// Result: The multi-return type inference works correctly for same-package types.
+
+type MyResponse struct {
+    Status int
+    Body string
+}
+
+func Unauthorized(msg string) MyResponse = MyResponse(Status = 401, Body = msg)
+func Ok(body string) MyResponse = MyResponse(Status = 200, Body = body)
+
+func middleware(next func(string) Future[MyResponse]) func(string) Future[MyResponse] =
+    (req string) => {
+        if (req == "bad") {
+            return FutureOf(Unauthorized("unauthorized"))
+        }
+        return next(req)
+    }
+
+func handler(req string) Future[MyResponse] =
+    FutureOf(Ok(s"hello $req"))
+
+func main() {
+    val mw = middleware((req string) => handler(req))
+    val result = mw("good").Await()
+    fmt.Println(result.Get().Body)
+
+    val result2 = mw("bad").Await()
+    fmt.Println(result2.Get().Body)
+}

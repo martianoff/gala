@@ -1,0 +1,32 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+    "os"
+)
+
+// Verify FromError converts Go error returns to Try[Void],
+// and that Void type works correctly.
+
+func main() {
+    // FromError with a successful operation
+    val result = FromError(os.Mkdir("/tmp/gala-test-from-error", 0755))
+    fmt.Println(result.IsSuccess())
+
+    // Clean up — also via FromError
+    val cleanup = FromError(os.Remove("/tmp/gala-test-from-error"))
+    fmt.Println(cleanup.IsSuccess())
+
+    // FromError with an error (remove non-existent dir)
+    val fail = FromError(os.Remove("/tmp/gala-nonexistent-dir-12345"))
+    fmt.Println(fail.IsFailure())
+
+    // Chain with OnFailure — just check it fires
+    FromError(os.Remove("/tmp/gala-nonexistent-dir-12345"))
+        .OnFailure((err) => fmt.Println("error handled"))
+
+    // Void type
+    val u = Void{}
+    fmt.Println(u.Equal(Void{}))
+}

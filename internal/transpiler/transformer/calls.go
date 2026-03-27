@@ -560,6 +560,16 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 		funcMeta = t.getFunction(funcName)
 	}
 
+	// FIX-075: When GALA function metadata is not available, try Go type info.
+	// This handles Go-defined functions and variables with function types (e.g., concurrent.Spawn)
+	// that are called from GALA code via dot imports or qualified references.
+	var goFuncParamTypes []transpiler.Type
+	if funcMeta == nil && t.goTypeInfo != nil {
+		if funcName := t.extractFuncName(fun); funcName != "" {
+			goFuncParamTypes = t.resolveGoFuncParamTypes(funcName)
+		}
+	}
+
 	// Check if this call is struct construction — if so, use struct field types as expected types
 	// for lambda arguments. This must happen BEFORE argument transformation so that lambdas
 	// can infer parameter types from the struct field definitions.
@@ -687,6 +697,12 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 						// Void function type or non-generic function — pass as-is
 						expectedType = ft
 					}
+				}
+			}
+			// FIX-075: Fall back to Go type info for lambda expected types
+			if expectedType.IsNil() && goFuncParamTypes != nil && argIdx < len(goFuncParamTypes) {
+				if ft, ok := goFuncParamTypes[argIdx].(transpiler.FuncType); ok {
+					expectedType = ft
 				}
 			}
 			// If this is struct construction and we have field type info, use it as fallback
@@ -1767,4 +1783,76 @@ func (t *galaASTTransformer) inferFuncTypeSubstFromArgs(funcMeta *transpiler.Fun
 		result[k] = v.String()
 	}
 	return result
+}
+
+// resolveGoFuncParamTypes resolves parameter types for a Go-defined function or
+// function-typed variable using GoTypeInfo. This is used when GALA function metadata
+// is not available (e.g., Go functions/vars in mixed GALA+Go packages like concurrent.Spawn).
+// It checks GoTypeInfo.Functions first, then GoTypeInfo.Variables for function-typed vars.
+// For bare names (from dot imports), it tries each dot-imported package as a qualifier.
+func (t *galaASTTransformer) resolveGoFuncParamTypes(funcName string) []transpiler.Type {
+	if t.goTypeInfo == nil {
+		return nil
+	}
+
+	// Helper: extract param types from a Go function signature
+	sigToParams := func(sig *transpiler.GoFuncSignature) []transpiler.Type {
+		params := make([]transpiler.Type, len(sig.Params))
+		for i, p := range sig.Params {
+			params[i] = p.Type
+		}
+		return params
+	}
+
+	// Try direct lookup (qualified name like pkg.Func)
+	if sig := t.goTypeInfo.GetFuncSignature(funcName); sig != nil {
+		return sigToParams(sig)
+	}
+	// Try as a variable with function type
+	if varType, ok := t.goTypeInfo.Variables[funcName]; ok {
+		if ft, ok := varType.(transpiler.FuncType); ok {
+			return ft.Params
+		}
+	}
+
+	// For bare names, try each dot-imported package as qualifier
+	for _, entry := range t.importManager.dotImports {
+		qualName := entry.PkgName + "." + funcName
+		if sig := t.goTypeInfo.GetFuncSignature(qualName); sig != nil {
+			return sigToParams(sig)
+		}
+		if varType, ok := t.goTypeInfo.Variables[qualName]; ok {
+			if ft, ok := varType.(transpiler.FuncType); ok {
+				return ft.Params
+			}
+		}
+	}
+
+	// For qualified calls (alias.Func), resolve the alias to the actual package name
+	if parts := splitQualifiedName(funcName); len(parts) == 2 {
+		alias, name := parts[0], parts[1]
+		if entry, ok := t.importManager.GetByAlias(alias); ok && entry.PkgName != alias {
+			qualName := entry.PkgName + "." + name
+			if sig := t.goTypeInfo.GetFuncSignature(qualName); sig != nil {
+				return sigToParams(sig)
+			}
+			if varType, ok := t.goTypeInfo.Variables[qualName]; ok {
+				if ft, ok := varType.(transpiler.FuncType); ok {
+					return ft.Params
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// splitQualifiedName splits "pkg.Name" into ["pkg", "Name"], or returns nil for bare names.
+func splitQualifiedName(name string) []string {
+	for i, c := range name {
+		if c == '.' {
+			return []string{name[:i], name[i+1:]}
+		}
+	}
+	return nil
 }

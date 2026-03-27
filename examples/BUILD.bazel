@@ -22,7 +22,6 @@ filegroup(
         "match_method_chain/types.gala",
         "match_return_iife.gala",
         "match_void_branches.gala",
-        "newimmutable_nil.gala",
         "mathlib/math.gala",
         "multi_file/greeter.gala",
         "multi_file/main.gala",
@@ -32,6 +31,7 @@ filegroup(
         "multi_file_option/main.gala",
         "multi_file_types/main.gala",
         "multi_file_types/model.gala",
+        "newimmutable_nil.gala",
         "slice_unwrap/main.gala",
         "slice_unwrap/model.gala",
         "struct_field_unwrap/main.gala",
@@ -939,7 +939,10 @@ gala_test(
     name = "foldleft_spread_type",
     src = "foldleft_spread_type.gala",
     expected = "foldleft_spread_type.out",
-    deps = ["//collection_immutable", "//go_interop"],
+    deps = [
+        "//collection_immutable",
+        "//go_interop",
+    ],
 )
 
 # FIX-015 verification: sealed type named-arg construction in multi-file mode
@@ -1456,8 +1459,8 @@ gala_test(
 gala_library(
     name = "cross_file_import_lib",
     srcs = [
-        "cross_file_import_lib/types.gala",
         "cross_file_import_lib/ops.gala",
+        "cross_file_import_lib/types.gala",
     ],
     importpath = "martianoff/gala/examples/cross_file_import_lib",
     deps = ["//collection_immutable"],
@@ -1470,5 +1473,33 @@ gala_test(
     deps = [
         "//collection_immutable",
         "//examples:cross_file_import_lib",
+    ],
+)
+
+# BUG-047 repro: Lambda return type inference with multiple return paths
+gala_test(
+    name = "lambda_multi_return_type",
+    src = "lambda_multi_return_type.gala",
+    expected = "lambda_multi_return_type.out",
+    deps = [
+        "//concurrent",
+    ],
+)
+
+# FIX-076 verification: FromError and Unit type
+gala_test(
+    name = "from_error",
+    src = "from_error.gala",
+    expected = "from_error.out",
+)
+
+# FIX-075 verification: Lambda passed to Go func expecting func() should be void
+gala_test(
+    name = "go_func_void_lambda",
+    src = "go_func_void_lambda.gala",
+    expected = "go_func_void_lambda.out",
+    deps = [
+        "//concurrent",
+        "//go_interop",
     ],
 )
