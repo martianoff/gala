@@ -158,7 +158,7 @@ def gala_bootstrap_transpile(name, src, out = None, package_files = []):
         tags = ["no-sandbox"],
     )
 
-def gala_library(name, src = None, srcs = None, importpath = "", deps = [], embedsrcs = [], **kwargs):
+def gala_library(name, src = None, srcs = None, importpath = "", deps = [], gala_deps = [], embedsrcs = [], **kwargs):
     """
     Build a GALA library.
 
@@ -168,6 +168,8 @@ def gala_library(name, src = None, srcs = None, importpath = "", deps = [], embe
         srcs: List of source .gala files
         importpath: Go import path for the library
         deps: Go/Bazel dependencies (labels), including external GALA modules
+        gala_deps: GALA library dependency labels for cross-package type resolution.
+            Their source files are automatically included during transpilation.
         embedsrcs: Files to embed via //go:embed directives in GALA source.
         **kwargs: Additional arguments passed to go_library
 
@@ -191,11 +193,12 @@ def gala_library(name, src = None, srcs = None, importpath = "", deps = [], embe
             src = s,
             out = go_src,
             package_files = siblings,
+            gala_deps = gala_deps,
         )
         go_srcs.append(go_src)
 
-    # Combine deps with std (using Label to ensure it resolves to @gala//std)
-    all_deps = list(deps) + [Label("//std")]
+    # Combine deps with std and gala_deps (using Label to ensure it resolves to @gala//std)
+    all_deps = list(deps) + list(gala_deps) + [Label("//std")]
 
     go_library(
         name = name,

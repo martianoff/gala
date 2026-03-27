@@ -234,6 +234,26 @@ func syncGoModForBazel(galaMod *mod.File) error {
 		}
 	}
 
+	// Strip any GALA stdlib replace directives (legacy or manually added).
+	// For Bazel projects, GALA deps are handled by the bzlmod extension,
+	// so go.mod should not have replace directives pointing to local cache paths.
+	lines := strings.Split(existingContent, "\n")
+	var cleanedLines []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "replace martianoff/gala/") {
+			continue // Strip GALA stdlib replace directives
+		}
+		// Also strip require entries for GALA stdlib packages
+		if strings.Contains(trimmed, "martianoff/gala/") &&
+			!strings.HasPrefix(trimmed, "module ") &&
+			!strings.HasPrefix(trimmed, "//") {
+			continue
+		}
+		cleanedLines = append(cleanedLines, line)
+	}
+	existingContent = strings.Join(cleanedLines, "\n")
+
 	// Clean up
 	existingContent = strings.TrimSpace(existingContent)
 	if existingContent == "" {
