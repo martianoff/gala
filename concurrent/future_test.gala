@@ -1,11 +1,11 @@
 package main
 
 import (
-    "time"
     . "martianoff/gala/test"
     . "martianoff/gala/std"
     . "martianoff/gala/concurrent"
     . "martianoff/gala/collection_immutable"
+    . "martianoff/gala/time_utils"
 )
 
 func TestFutureOf(t T) T {
@@ -187,7 +187,7 @@ func TestPromiseSuccess(t T) T {
     val f = p.Future()
 
     Spawn(() => {
-        time.Sleep(10 * time.Millisecond)
+        Sleep(Milliseconds(10))
         p.Success(42)
     })
 
@@ -201,7 +201,7 @@ func TestPromiseFailure(t T) T {
     val f = p.Future()
 
     Spawn(() => {
-        time.Sleep(10 * time.Millisecond)
+        Sleep(Milliseconds(10))
         p.Failure(FutureError(Message = "async error"))
     })
 
@@ -221,7 +221,7 @@ func TestPromiseCompleteOnce(t T) T {
 
 func TestAwaitFor(t T) T {
     val f = FutureOf[int](42)
-    val result = f.AwaitFor(100 * time.Millisecond)
+    val result = f.AwaitFor(Milliseconds(100))
     var t1 = IsSome(t, result)
     return Eq[int](t1, result.Get().Get(), 42)
 }
@@ -286,7 +286,7 @@ func TestAndThen(t T) T {
     val result = f.Await()
     var t1 = IsSuccess(t, result)
     var t2 = Eq[int](t1, result.Get(), 10)
-    time.Sleep(10 * time.Millisecond)
+    Sleep(Milliseconds(10))
     return Eq[int](t2, sideEffect, 10)
 }
 

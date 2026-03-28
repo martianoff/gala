@@ -1559,3 +1559,14 @@ gala_test(
         "//examples/go_struct_bridge",
     ],
 )
+
+# USR-006: Retry combinator with backoff strategies
+gala_test(
+    name = "retry_backoff",
+    src = "retry_backoff.gala",
+    expected = "retry_backoff.out",
+    deps = [
+        "//concurrent",
+        "//time_utils",
+    ],
+)

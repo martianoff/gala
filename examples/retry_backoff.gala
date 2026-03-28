@@ -1,0 +1,44 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+    . "martianoff/gala/concurrent"
+    . "martianoff/gala/time_utils"
+)
+
+func main() {
+    // 1. Retry succeeds on third attempt
+    var count1 = 0
+    val result1 = Retry(5, ConstantBackoff(Milliseconds(1)), (attempt int) => {
+        count1 = count1 + 1
+        if count1 <= 2 {
+            return Failure[string](fmt.Errorf("attempt %d failed", attempt))
+        }
+        return Success("hello")
+    })
+    Println(result1)
+
+    // 2. All attempts fail
+    val result2 = Retry(3, NoBackoff(), (_ int) => {
+        return Failure[int](fmt.Errorf("always fails"))
+    })
+    Println(result2)
+
+    // 3. Succeeds immediately
+    val result3 = Retry(3, NoBackoff(), (_ int) => {
+        return Success(42)
+    })
+    Println(result3)
+
+    // 4. Exponential backoff (succeeds on attempt 2)
+    var count4 = 0
+    val result4 = Retry(5, ExponentialBackoff(Milliseconds(1), Milliseconds(100)), (attempt int) => {
+        count4 = count4 + 1
+        if count4 <= 1 {
+            return Failure[string](fmt.Errorf("attempt %d failed", attempt))
+        }
+        return Success("recovered")
+    })
+    Println(result4)
+}

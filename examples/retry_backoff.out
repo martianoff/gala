@@ -1,0 +1,4 @@
+Success(hello)
+Failure(always fails)
+Success(42)
+Success(recovered)
