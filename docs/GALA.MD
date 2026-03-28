@@ -143,6 +143,31 @@ For simple functions, you can use the `=` syntax.
 func square(x int) int = x * x
 ```
 
+> **Note:** Expression-bodied functions do not support `return` statements. The expression
+> after `=` is implicitly the return value. This includes match arms — use expression arms
+> (the value itself), not `return` statements:
+>
+> ```gala
+> // CORRECT: expression arms — values are implicit returns
+> func classify(x int) string = x match {
+>     case 0 => "zero"
+>     case _ => "other"
+> }
+>
+> // WRONG: return is not an expression — this causes a parse error
+> // func classify(x int) string = x match {
+> //     case 0 => return "zero"
+> // }
+>
+> // If you need return statements, use a block-bodied function:
+> func classify(x int) string {
+>     return x match {
+>         case 0 => "zero"
+>         case _ => "other"
+>     }
+> }
+> ```
+
 ### Parameters
 Function parameters can be explicitly marked as `val` or `var`. By default, they are `val` (immutable).
 
@@ -1290,6 +1315,45 @@ func processOrder(id int) Try[Receipt] =
 | `Fold[U](onFailure, onSuccess)` | Reduce to a single value |
 | `ToOption()` | Convert to Option |
 | `ToEither()` | Convert to Either[error, T] |
+
+#### Try with Go Multi-Return Functions
+
+Go functions that return `(T, error)` work naturally with `Try` — the transpiler automatically
+detects the error return and wraps the call so that a non-nil error becomes `Failure`:
+
+```gala
+import "strconv"
+
+val result = Try(() => strconv.Atoi("42")) match {
+    case Success(n) => s"Parsed: $n"
+    case Failure(err) => s"Error: ${err.Error()}"
+}
+// result: "Parsed: 42"
+```
+
+For Go functions returning more than two values like `(A, B, error)`, `Try` automatically
+wraps the non-error values in a `Tuple`:
+
+```gala
+import "net"
+
+// net.SplitHostPort returns (string, string, error)
+// Try wraps it as Try[Tuple[string, string]]
+val result = Try(() => net.SplitHostPort("localhost:8080")) match {
+    case Success(hp) => s"host=${hp.V1} port=${hp.V2}"
+    case Failure(err) => s"Error: ${err.Error()}"
+}
+// result: "host=localhost port=8080"
+```
+
+The transpiler automatically detects the Go function signature and generates the appropriate
+tuple wrapping. Access tuple fields via `.V1`, `.V2`, etc. Supported patterns:
+
+| Go Return Signature | Try Type |
+|---------------------|----------|
+| `(T, error)` | `Try[T]` |
+| `(A, B, error)` | `Try[Tuple[A, B]]` |
+| `(A, B, C, error)` | `Try[Tuple3[A, B, C]]` |
 
 ### Future Monad
 

@@ -466,6 +466,47 @@ func main() {
 }
 ```
 
+## Try with Go Multi-Return Functions
+
+`Try` handles Go functions returning `(T, error)` and multi-return `(A, B, error)` automatically:
+
+```gala
+package main
+
+import "net"
+import "strconv"
+
+func main() {
+    // (int, error) -> Try[int]
+    val intResult = Try(() => strconv.Atoi("42")) match {
+        case Success(n) => s"Parsed: $n"
+        case Failure(err) => s"Error: ${err.Error()}"
+    }
+    Println(intResult) // Parsed: 42
+
+    // (string, string, error) -> Try[Tuple[string, string]]
+    val hostPort = Try(() => net.SplitHostPort("localhost:8080")) match {
+        case Success(hp) => s"host=${hp.V1} port=${hp.V2}"
+        case Failure(err) => s"Error: ${err.Error()}"
+    }
+    Println(hostPort) // host=localhost port=8080
+
+    // Error case is caught as Failure
+    val bad = Try(() => net.SplitHostPort("invalid")) match {
+        case Success(hp) => s"host=${hp.V1} port=${hp.V2}"
+        case Failure(_) => "split error caught"
+    }
+    Println(bad) // split error caught
+}
+```
+
+Output:
+```
+Parsed: 42
+host=localhost port=8080
+split error caught
+```
+
 ## MkString - Joining Collection Elements
 
 ```gala
