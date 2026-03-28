@@ -24,6 +24,8 @@ filegroup(
         "go_type_inference_multifile/helpers.gala",
         "go_type_inference_multifile/main.gala",
         "lib/generic.gala",
+        "match_lambda_arg/main.gala",
+        "match_lambda_arg/types.gala",
         "match_method_chain/main.gala",
         "match_method_chain/types.gala",
         "match_return_iife.gala",
@@ -913,6 +915,17 @@ gala_test(
         "match_method_chain/types.gala",
     ],
     expected = "match_method_chain/match_method_chain.out",
+)
+
+# FIX-050 verification: match on method call chain with lambda argument
+gala_test(
+    name = "match_lambda_arg",
+    srcs = [
+        "match_lambda_arg/main.gala",
+        "match_lambda_arg/types.gala",
+    ],
+    expected = "match_lambda_arg/match_lambda_arg.out",
+    deps = ["//collection_immutable"],
 )
 
 # Struct field auto-unwrapping when passed to functions (FIX-005 verification)

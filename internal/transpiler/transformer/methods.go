@@ -80,6 +80,9 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 			return nil, galaerr.NewSemanticError(fmt.Sprintf("struct %s has no field %s", typeName, fieldName))
 		}
 		pat := arg.Pattern()
+		if pat == nil {
+			return nil, galaerr.NewSemanticError("Copy overrides must be expressions")
+		}
 		ep, ok := pat.(*grammar.ExpressionPatternContext)
 		if !ok {
 			return nil, galaerr.NewSemanticError("Copy overrides must be expressions")
