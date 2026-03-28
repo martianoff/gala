@@ -29,6 +29,10 @@ func init() {
 	gob.Register(transpiler.VoidType{})
 }
 
+// CacheVersion is incremented when the cache format or analysis semantics change.
+// This ensures stale caches from older compiler versions are automatically invalidated.
+const CacheVersion = "v1"
+
 // CachedRichAST is the serializable subset of RichAST (no antlr.Tree).
 type CachedRichAST struct {
 	PackageName      string
@@ -40,9 +44,10 @@ type CachedRichAST struct {
 	GoTypeInfo       *transpiler.GoTypeInfo
 	TypeAliases      map[string]transpiler.Type
 	ImportPathMap    map[string]string
+	DepsHash         string // hash of transitive dependency content (for invalidation)
 }
 
-func toCachedRichAST(r *transpiler.RichAST) *CachedRichAST {
+func toCachedRichAST(r *transpiler.RichAST, depsHash string) *CachedRichAST {
 	if r == nil {
 		return nil
 	}
@@ -56,6 +61,7 @@ func toCachedRichAST(r *transpiler.RichAST) *CachedRichAST {
 		GoTypeInfo:       r.GoTypeInfo,
 		TypeAliases:      r.TypeAliases,
 		ImportPathMap:    r.ImportPathMap,
+		DepsHash:         depsHash,
 	}
 }
 
@@ -88,7 +94,7 @@ func newAnalysisCache(projectRoot string) *analysisCache {
 	if projectRoot == "" {
 		return &analysisCache{enabled: false}
 	}
-	dir := filepath.Join(projectRoot, ".gala", "cache")
+	dir := filepath.Join(projectRoot, ".gala", "cache", CacheVersion)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return &analysisCache{enabled: false}
 	}
@@ -96,7 +102,8 @@ func newAnalysisCache(projectRoot string) *analysisCache {
 }
 
 // Get retrieves a cached RichAST for the given package path and content hash.
-func (c *analysisCache) Get(pkgPath string, contentHash string) *transpiler.RichAST {
+// depsHash is the hash of transitive dependency content — must match for a valid hit.
+func (c *analysisCache) Get(pkgPath string, contentHash string, depsHash string) *transpiler.RichAST {
 	if !c.enabled {
 		return nil
 	}
@@ -109,20 +116,29 @@ func (c *analysisCache) Get(pkgPath string, contentHash string) *transpiler.Rich
 
 	var cached CachedRichAST
 	if err := gob.NewDecoder(f).Decode(&cached); err != nil {
-		// Corrupted cache file — remove it
 		os.Remove(path)
 		return nil
 	}
+
+	// Validate transitive dependency hash
+	if depsHash != "" && cached.DepsHash != depsHash {
+		os.Remove(path)
+		return nil
+	}
+
 	return fromCachedRichAST(&cached)
 }
 
 // Put stores a RichAST in the cache.
-func (c *analysisCache) Put(pkgPath string, contentHash string, richAST *transpiler.RichAST) {
+// Also removes stale entries for the same package (different content hashes).
+func (c *analysisCache) Put(pkgPath string, contentHash string, depsHash string, richAST *transpiler.RichAST) {
 	if !c.enabled || richAST == nil {
 		return
 	}
+	// Clean up stale entries for this package before writing new one
+	c.evictStale(pkgPath, contentHash)
+
 	path := c.cachePath(pkgPath, contentHash)
-	// Ensure parent directory exists
 	os.MkdirAll(filepath.Dir(path), 0755)
 
 	f, err := os.Create(path)
@@ -131,19 +147,44 @@ func (c *analysisCache) Put(pkgPath string, contentHash string, richAST *transpi
 	}
 	defer f.Close()
 
-	cached := toCachedRichAST(richAST)
+	cached := toCachedRichAST(richAST, depsHash)
 	if err := gob.NewEncoder(f).Encode(cached); err != nil {
-		// Failed to write — remove partial file
 		f.Close()
 		os.Remove(path)
 	}
 }
 
-func (c *analysisCache) cachePath(pkgPath, contentHash string) string {
-	// Sanitize package path for use as directory name
+// evictStale removes old cache entries for the same package with different content hashes.
+func (c *analysisCache) evictStale(pkgPath string, keepHash string) {
+	if !c.enabled {
+		return
+	}
+	prefix := c.cachePrefix(pkgPath)
+	keepPath := c.cachePath(pkgPath, keepHash)
+
+	entries, err := ioutil.ReadDir(c.dir)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		full := filepath.Join(c.dir, entry.Name())
+		if strings.HasPrefix(entry.Name(), prefix) && full != keepPath {
+			os.Remove(full)
+		}
+	}
+}
+
+func (c *analysisCache) cachePrefix(pkgPath string) string {
 	safe := strings.ReplaceAll(pkgPath, "/", "_")
 	safe = strings.ReplaceAll(safe, "\\", "_")
-	return filepath.Join(c.dir, safe+"_"+contentHash[:12]+".gob")
+	return safe + "_"
+}
+
+func (c *analysisCache) cachePath(pkgPath, contentHash string) string {
+	return filepath.Join(c.dir, c.cachePrefix(pkgPath)+contentHash[:12]+".gob")
 }
 
 // hashPackageDir computes a content hash for all .gala and .go files in a directory.
@@ -154,7 +195,6 @@ func hashPackageDir(dirPath string) string {
 	}
 
 	h := sha256.New()
-	// Sort for deterministic ordering
 	var names []string
 	for _, f := range files {
 		if !f.IsDir() && (filepath.Ext(f.Name()) == ".gala" || filepath.Ext(f.Name()) == ".go") {
@@ -172,6 +212,45 @@ func hashPackageDir(dirPath string) string {
 		}
 		h.Write([]byte(name))
 		h.Write(content)
+	}
+
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// hashImportPaths computes a hash of the import paths found in .gala files in a directory.
+// This is used as a "dependency identity" — if imports change, the cache invalidates.
+// Combined with the content hash of each resolved dependency, this ensures transitive
+// invalidation when any dependency's source changes.
+func hashImportPaths(dirPath string) string {
+	files, err := ioutil.ReadDir(dirPath)
+	if err != nil {
+		return ""
+	}
+
+	h := sha256.New()
+	for _, f := range files {
+		if f.IsDir() || filepath.Ext(f.Name()) != ".gala" {
+			continue
+		}
+		if strings.HasSuffix(f.Name(), "_test.gala") {
+			continue
+		}
+		content, err := ioutil.ReadFile(filepath.Join(dirPath, f.Name()))
+		if err != nil {
+			continue
+		}
+		// Quick import extraction: look for lines matching 'import "..."' or '"..."'
+		for _, line := range strings.Split(string(content), "\n") {
+			trimmed := strings.TrimSpace(line)
+			if idx := strings.Index(trimmed, "\""); idx >= 0 {
+				if end := strings.Index(trimmed[idx+1:], "\""); end >= 0 {
+					importPath := trimmed[idx+1 : idx+1+end]
+					if strings.Contains(importPath, "/") {
+						h.Write([]byte(importPath))
+					}
+				}
+			}
+		}
 	}
 
 	return hex.EncodeToString(h.Sum(nil))

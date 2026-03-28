@@ -1674,11 +1674,17 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 		return nil, fmt.Errorf("package not found: %s", relPath)
 	}
 
-	// Check disk cache before doing expensive analysis
+	// Check disk cache before doing expensive analysis.
+	// The cache key combines the package's own content hash with a hash of its
+	// import paths (dependency identity). This ensures the cache invalidates when:
+	// 1. Any source file in the package changes (contentHash)
+	// 2. The set of imports changes (depsHash identity)
+	// 3. Any imported package's content changes (depsHash includes resolved dep hashes)
 	contentHash := hashPackageDir(dirPath)
+	depsHash := hashImportPaths(dirPath)
 	if contentHash != "" && a.cache != nil {
 		cacheStart := time.Now()
-		if cached := a.cache.Get(relPath, contentHash); cached != nil {
+		if cached := a.cache.Get(relPath, contentHash, depsHash); cached != nil {
 			logCache(true, relPath, time.Since(cacheStart))
 			return cached, nil
 		}
@@ -1763,7 +1769,7 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 
 	// Store in disk cache for future processes
 	if contentHash != "" && a.cache != nil {
-		a.cache.Put(relPath, contentHash, pkgAST)
+		a.cache.Put(relPath, contentHash, depsHash, pkgAST)
 	}
 
 	return pkgAST, nil
