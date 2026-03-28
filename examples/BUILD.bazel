@@ -1517,6 +1517,13 @@ gala_test(
     ],
 )
 
+# FIX-052: if-expression with generic return type in expression-bodied function
+gala_test(
+    name = "if_expr_concrete_type",
+    src = "if_expr_concrete_type.gala",
+    expected = "if_expr_concrete_type.out",
+)
+
 # FIX-080 (BUG-047): Lambda return type inference via type alias resolution
 gala_go_test(
     name = "type_alias_lambda_inference",
