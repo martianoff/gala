@@ -75,9 +75,18 @@ func GoImporterAvailable() bool {
 // 3. Walk up from the running binary to find a Go SDK layout (for Bazel)
 // 4. Find 'go' binary on PATH and derive GOROOT from it
 func findGOROOT() string {
+	debug := os.Getenv("GALA_DEBUG_GOROOT") == "1"
+
 	// 1. Check GOROOT env
-	if goroot := os.Getenv("GOROOT"); goroot != "" && goroot != "GOROOT" && isGoRoot(goroot) {
-		return goroot
+	if goroot := os.Getenv("GOROOT"); goroot != "" && goroot != "GOROOT" {
+		if isGoRoot(goroot) {
+			return goroot
+		}
+		if debug {
+			fmt.Fprintf(os.Stderr, "Debug: GOROOT=%q but isGoRoot failed (looking for %s/src/fmt)\n", goroot, goroot)
+		}
+	} else if debug {
+		fmt.Fprintf(os.Stderr, "Debug: GOROOT env is %q\n", os.Getenv("GOROOT"))
 	}
 
 	// 2. Check runtime.GOROOT()
