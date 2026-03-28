@@ -3397,6 +3397,43 @@ gala_transpile_package(
 )
 ```
 
+### Go Type Inference Setup (Linux/CI)
+
+GALA's transpiler uses Go's `go/importer` to resolve types from Go stdlib and third-party packages (function return types, struct fields, method signatures). This requires a working Go SDK.
+
+**Ensure GOROOT is set** so the transpiler can find the Go SDK:
+
+```bash
+# Check if Go type inference is available
+GALA_PROFILE=1 gala transpile myfile.gala 2>&1 | grep "Go SDK"
+# If you see "Go SDK not found", set GOROOT:
+export GOROOT=$(go env GOROOT)
+```
+
+**Bazel on Linux**: `--action_env=GOROOT` in `.bazelrc` only works if GOROOT is set in the shell that invokes `bazel`. Pass it explicitly:
+
+```bash
+bazel build //... --action_env=GOROOT="$GOROOT" --action_env=PATH="$PATH"
+```
+
+**GitHub Actions CI**: `setup-go` may not export GOROOT to subsequent steps. Add an explicit export step:
+
+```yaml
+- name: Setup Go
+  uses: actions/setup-go@v5
+  with:
+    go-version: '1.25'
+    cache: false
+
+- name: Export GOROOT
+  run: echo "GOROOT=$(go env GOROOT)" >> $GITHUB_ENV
+
+- name: Build
+  run: bazel build //... --action_env=GOROOT="$GOROOT" --action_env=PATH="$PATH"
+```
+
+Without Go type inference, GALA code that calls Go functions (e.g., `strconv.Atoi`, `bytes.NewBufferString`) may fail to infer return types. Pure GALA code and GALA stdlib types (`Option`, `Try`, etc.) work without it.
+
 ### Performance Tips
 
 1. **Warm cache**: After the first build, subsequent builds of unchanged dependencies are ~10x faster.

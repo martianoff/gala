@@ -19,6 +19,9 @@ jobs:
           go-version: '1.25'
           cache: false
 
+      - name: Export GOROOT
+        run: echo "GOROOT=$(go env GOROOT)" >> $GITHUB_ENV
+
       - name: Setup Bazel
         uses: bazel-contrib/setup-bazel@0.14.0
         with:
@@ -27,10 +30,7 @@ jobs:
           repository-cache: true
 
       - name: Build
-        run: |
-          echo "GOROOT=$GOROOT"
-          echo "go=$(which go)"
-          bazel build //... --action_env=GOROOT="$GOROOT" --action_env=PATH="$PATH"
+        run: bazel build //... --action_env=GOROOT="$GOROOT" --action_env=PATH="$PATH"
 
       - name: Test
         run: bazel test //... --test_output=errors --verbose_failures --action_env=GOROOT="$GOROOT" --action_env=PATH="$PATH"
