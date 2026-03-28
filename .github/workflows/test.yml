@@ -14,24 +14,27 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Go
+        id: setup-go
         uses: actions/setup-go@v5
         with:
           go-version: '1.25'
           cache: false
 
+      - name: Export GOROOT
+        run: echo "GOROOT=$(go env GOROOT)" >> "$GITHUB_ENV"
+
       - name: Setup Bazel
         uses: bazel-contrib/setup-bazel@0.14.0
         with:
           bazelisk-cache: true
-          disk-cache: ${{ github.workflow }}
+          disk-cache: ${{ github.workflow }}-go${{ steps.setup-go.outputs.go-version }}
           repository-cache: true
 
       - name: Build
         run: |
-          GOROOT_PATH=$(go env GOROOT)
-          bazel build //... --repo_env=GOROOT="$GOROOT_PATH" --action_env=GOROOT="$GOROOT_PATH" --action_env=PATH
+          echo "GOROOT=$GOROOT"
+          bazel build //... --action_env=GOROOT="$GOROOT" --action_env=PATH
 
       - name: Test
         run: |
-          GOROOT_PATH=$(go env GOROOT)
-          bazel test //... --test_output=errors --verbose_failures --repo_env=GOROOT="$GOROOT_PATH" --action_env=GOROOT="$GOROOT_PATH" --action_env=PATH
+          bazel test //... --test_output=errors --verbose_failures --action_env=GOROOT="$GOROOT" --action_env=PATH
