@@ -7,4 +7,5 @@ go_library(
     srcs = ["types.go"],
     importpath = "martianoff/gala/go_interop",
     visibility = ["//visibility:public"],
+    deps = ["//std"],
 )
