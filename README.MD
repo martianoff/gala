@@ -4,7 +4,7 @@
 [![Release](https://github.com/martianoff/gala/actions/workflows/release.yml/badge.svg)](https://github.com/martianoff/gala/releases)
 [![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/martianoff/gala?sort=semver)](https://github.com/martianoff/gala/releases/latest)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go&logoColor=white)](https://go.dev)
+[![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![Bazel](https://img.shields.io/badge/Built%20with-Bazel-43A047)](https://bazel.build)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.MD)
 
@@ -151,6 +151,8 @@ val dateRegex = regex.MustCompile("(\\d{4})-(\\d{2})-(\\d{2})")
 
 **Full Go interop** -- Use any Go library. Go function return types are automatically inferred from the Go SDK, and multi-return `(T, error)` patterns are wrapped into `Try[T]`.
 
+**Fast compilation** -- Analysis caching and batch transpilation make multi-file packages compile up to 16x faster. Profile bottlenecks with `GALA_PROFILE=1`.
+
 ---
 
 ## Quick Start
@@ -184,10 +186,13 @@ func main() {
 ### 3. Run
 
 ```bash
-gala run main.gala
+gala run main.gala                        # Transpile + compile + run
+gala build                                # Build project to binary
+gala test                                 # Run tests
+gala run examples/hello/main.gala         # Run subdirectory executable
 
-# Or with Bazel (recommended for projects)
-bazel run //myapp:myapp
+# Or with Bazel (recommended for larger projects)
+bazel build //... && bazel test //...
 ```
 
 ---

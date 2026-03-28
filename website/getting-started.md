@@ -34,7 +34,7 @@ After downloading, rename the binary to `gala` (or `gala.exe` on Windows) and ad
 
 ### Build from Source
 
-If you prefer to build from source, you need [Git](https://git-scm.com/), [Go 1.22+](https://go.dev/dl/), and [Bazelisk](https://github.com/bazelbuild/bazelisk):
+If you prefer to build from source, you need [Git](https://git-scm.com/), [Go 1.25+](https://go.dev/dl/), and [Bazelisk](https://github.com/bazelbuild/bazelisk):
 
 ```bash
 git clone https://github.com/martianoff/gala.git
@@ -170,11 +170,17 @@ gala build
 # Build and run
 gala run
 
+# Run a subdirectory executable that imports from the parent project
+gala run examples/hello/main.gala
+
 # Build with verbose output
 gala build -v
+
+# Clear analysis cache
+gala clean --cache
 ```
 
-`gala build` creates a clean build workspace under `~/.gala/build/`, transpiles your GALA code to Go, and compiles it. Your project directory stays clean -- no generated files.
+`gala build` creates a clean build workspace under `~/.gala/build/`, transpiles your GALA code to Go, and compiles it. Your project directory stays clean -- no generated files. An analysis cache (`.gala/cache/`) speeds up repeated builds by caching resolved package metadata.
 
 ### With Bazel (Recommended for Larger Projects)
 
