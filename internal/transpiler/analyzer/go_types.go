@@ -160,10 +160,23 @@ func findGoOnPath() (string, error) {
 	return "", os.ErrNotExist
 }
 
+// goPackageCache caches AnalyzeGoPackage results to avoid redundant go/importer calls.
+var goPackageCache = struct {
+	mu    sync.Mutex
+	cache map[string]*transpiler.GoTypeInfo
+}{cache: make(map[string]*transpiler.GoTypeInfo)}
+
 // AnalyzeGoPackage loads type information for a Go package by import path.
 // Uses go/importer to resolve installed packages (stdlib and third-party).
 // Returns empty GoTypeInfo if Go SDK is not available (e.g., Bazel sandbox).
 func AnalyzeGoPackage(importPath string) *transpiler.GoTypeInfo {
+	goPackageCache.mu.Lock()
+	if cached, ok := goPackageCache.cache[importPath]; ok {
+		goPackageCache.mu.Unlock()
+		return cached
+	}
+	goPackageCache.mu.Unlock()
+
 	info := transpiler.NewGoTypeInfo()
 
 	imp := getGoImporter()
@@ -177,6 +190,11 @@ func AnalyzeGoPackage(importPath string) *transpiler.GoTypeInfo {
 	}
 
 	extractPackageInfo(pkg, info)
+
+	goPackageCache.mu.Lock()
+	goPackageCache.cache[importPath] = info
+	goPackageCache.mu.Unlock()
+
 	return info
 }
 

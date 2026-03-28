@@ -72,6 +72,7 @@ func Execute() {
 func init() {
 	// Add subcommands
 	rootCmd.AddCommand(transpileCmd)
+	rootCmd.AddCommand(transpilePackageCmd)
 	rootCmd.AddCommand(modCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(buildCmd)

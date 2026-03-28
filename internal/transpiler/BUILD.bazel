@@ -12,6 +12,7 @@ go_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//internal/parser",
+        "//internal/transpiler/profiler",
         "@com_github_antlr4_go_antlr_v4//:antlr",
     ],
 )
