@@ -1,0 +1,5 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+struct Config(val key string, val value string)

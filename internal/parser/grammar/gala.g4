@@ -162,7 +162,7 @@ primaryExpr
 
 partialFunctionLiteral: '{' caseClause+ '}';
 argumentList: argument (',' argument)* ','?;  // Allow trailing comma for multiline formatting
-argument: (identifier '=')? pattern;
+argument: (identifier '=')? (lambdaExpression | pattern);
 
 primary
     : identifier
