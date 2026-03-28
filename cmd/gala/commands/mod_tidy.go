@@ -139,10 +139,16 @@ func runModTidy(cmd *cobra.Command, args []string) {
 			mvs.AddRequirements(g)
 			selected := mvs.Resolve()
 
-			// Update versions in gala.mod (strip v prefix — GALA uses bare semver)
+			// Update versions in gala.mod, preserving the v prefix if the original had it
 			for i, req := range galaMod.Require {
 				if ver, ok := selected[req.Path]; ok {
-					galaMod.Require[i].Version = strings.TrimPrefix(ver.String(), "v")
+					resolved := ver.String()
+					// Preserve the original prefix convention:
+					// if the user wrote "v1.0.0", keep "v"; if "1.0.0", strip "v"
+					if !strings.HasPrefix(req.Version, "v") {
+						resolved = strings.TrimPrefix(resolved, "v")
+					}
+					galaMod.Require[i].Version = resolved
 				}
 			}
 
