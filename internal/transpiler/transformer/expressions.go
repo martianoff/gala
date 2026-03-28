@@ -604,6 +604,10 @@ func (t *galaASTTransformer) transformIfExpression(ctx *grammar.IfExpressionCont
 	}
 
 	retTypeExpr := t.typeToExpr(retType)
+	// FIX-052: If type inference failed and we have an expected type from the enclosing function, use it
+	if retType.IsNil() && t.expectedIfExprType != nil {
+		retTypeExpr = t.expectedIfExprType
+	}
 
 	// Build the then-block: preceding statements + return lastExpr
 	thenBody := append(thenStmts, &ast.ReturnStmt{Results: []ast.Expr{thenExpr}})
@@ -631,6 +635,62 @@ func (t *galaASTTransformer) transformIfExpression(ctx *grammar.IfExpressionCont
 			},
 		},
 	}, nil
+}
+
+// findIfExpressionInExpression traverses the expression tree to find an if-expression
+// if the expression is simply an if-expression (not part of a larger expression).
+// Follows the same traversal pattern as findLambdaInExpression in lambdas.go.
+func (t *galaASTTransformer) findIfExpressionInExpression(exprCtx grammar.IExpressionContext) *grammar.IfExpressionContext {
+	if exprCtx == nil {
+		return nil
+	}
+	orExpr := exprCtx.OrExpr()
+	if orExpr == nil {
+		return nil
+	}
+	orCtx := orExpr.(*grammar.OrExprContext)
+	if len(orCtx.AllAndExpr()) != 1 {
+		return nil
+	}
+	andCtx := orCtx.AndExpr(0).(*grammar.AndExprContext)
+	if len(andCtx.AllEqualityExpr()) != 1 {
+		return nil
+	}
+	eqCtx := andCtx.EqualityExpr(0).(*grammar.EqualityExprContext)
+	if len(eqCtx.AllRelationalExpr()) != 1 {
+		return nil
+	}
+	relCtx := eqCtx.RelationalExpr(0).(*grammar.RelationalExprContext)
+	if len(relCtx.AllAdditiveExpr()) != 1 {
+		return nil
+	}
+	addCtx := relCtx.AdditiveExpr(0).(*grammar.AdditiveExprContext)
+	if len(addCtx.AllMultiplicativeExpr()) != 1 {
+		return nil
+	}
+	mulCtx := addCtx.MultiplicativeExpr(0).(*grammar.MultiplicativeExprContext)
+	if len(mulCtx.AllUnaryExpr()) != 1 {
+		return nil
+	}
+	unaryCtx := mulCtx.UnaryExpr(0).(*grammar.UnaryExprContext)
+	postfixExpr := unaryCtx.PostfixExpr()
+	if postfixExpr == nil {
+		return nil
+	}
+	postfixCtx := postfixExpr.(*grammar.PostfixExprContext)
+	if len(postfixCtx.AllPostfixSuffix()) > 0 {
+		return nil
+	}
+	primExpr := postfixCtx.PrimaryExpr()
+	if primExpr == nil {
+		return nil
+	}
+	primCtx := primExpr.(*grammar.PrimaryExprContext)
+	ifExpr := primCtx.IfExpression()
+	if ifExpr == nil {
+		return nil
+	}
+	return ifExpr.(*grammar.IfExpressionContext)
 }
 
 // transformIfExprBranch transforms an if-expression branch, which can be

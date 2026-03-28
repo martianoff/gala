@@ -1,0 +1,14 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+)
+
+func getResult(ok bool, value int) Option[int] =
+    if (ok) Some(value) else None[int]()
+
+func main() {
+    fmt.Println(getResult(true, 42))
+    fmt.Println(getResult(false, 0))
+}

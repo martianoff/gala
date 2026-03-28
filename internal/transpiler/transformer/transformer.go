@@ -60,6 +60,7 @@ type galaASTTransformer struct {
 	inferenceWarnings     []string                    // collected type inference warnings
 	structMetas           map[string]*structMetaConfig  // generated StructMeta structs (keyed by generated name)
 	instanceInterfaceNames map[string]string            // type name -> actual generated interface name (for collision avoidance)
+	expectedIfExprType     ast.Expr                     // FIX-052: expected return type for if-expression IIFE (set by expression-bodied function handler)
 }
 
 // NewGalaASTTransformer creates a new instance of ASTTransformer for GALA.

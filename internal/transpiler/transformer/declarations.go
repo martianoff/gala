@@ -734,6 +734,20 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 				}
 			}
 		}
+		// FIX-052: Check for if-expression with expected return type
+		if expr == nil {
+			ifExprCtx := t.findIfExpressionInExpression(ctx.Expression())
+			if ifExprCtx != nil && funcType.Results != nil && len(funcType.Results.List) > 0 {
+				expectedType := funcType.Results.List[0].Type
+				oldExpected := t.expectedIfExprType
+				t.expectedIfExprType = expectedType
+				expr, err = t.transformIfExpression(ifExprCtx)
+				t.expectedIfExprType = oldExpected
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
 		if expr == nil {
 			expr, err = t.transformExpression(ctx.Expression())
 			if err != nil {
