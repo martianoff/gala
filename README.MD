@@ -8,6 +8,8 @@
 [![Bazel](https://img.shields.io/badge/Built%20with-Bazel-43A047)](https://bazel.build)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.MD)
 
+<img alt="GALA Logo" height="384" src="gala_escape.png" width="700"/>
+
 **GALA** (Go Alternative LAnguage) is a modern programming language that transpiles to Go. It brings sealed types, pattern matching, immutability by default, and functional collections to the Go ecosystem -- without sacrificing Go's performance, tooling, or library compatibility.
 
 **[Try GALA in your browser!](https://gala-playground.fly.dev)**
