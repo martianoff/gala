@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/gob"
 	"encoding/hex"
@@ -103,19 +104,19 @@ func newAnalysisCache(projectRoot string) *analysisCache {
 
 // Get retrieves a cached RichAST for the given package path and content hash.
 // depsHash is the hash of transitive dependency content — must match for a valid hit.
+// Returns nil on any error (cache miss, corruption, stale deps).
 func (c *analysisCache) Get(pkgPath string, contentHash string, depsHash string) *transpiler.RichAST {
 	if !c.enabled {
 		return nil
 	}
 	path := c.cachePath(pkgPath, contentHash)
-	f, err := os.Open(path)
+	data, err := ioutil.ReadFile(path)
 	if err != nil {
 		return nil
 	}
-	defer f.Close()
 
 	var cached CachedRichAST
-	if err := gob.NewDecoder(f).Decode(&cached); err != nil {
+	if err := gob.NewDecoder(bytes.NewReader(data)).Decode(&cached); err != nil {
 		os.Remove(path)
 		return nil
 	}
@@ -126,10 +127,17 @@ func (c *analysisCache) Get(pkgPath string, contentHash string, depsHash string)
 		return nil
 	}
 
+	// Validate the cached data has meaningful content
+	if cached.Types == nil && cached.Functions == nil {
+		os.Remove(path)
+		return nil
+	}
+
 	return fromCachedRichAST(&cached)
 }
 
-// Put stores a RichAST in the cache.
+// Put stores a RichAST in the cache using atomic write (temp file + rename).
+// This prevents parallel Bazel genrules from reading partially-written files.
 // Also removes stale entries for the same package (different content hashes).
 func (c *analysisCache) Put(pkgPath string, contentHash string, depsHash string, richAST *transpiler.RichAST) {
 	if !c.enabled || richAST == nil {
@@ -141,16 +149,25 @@ func (c *analysisCache) Put(pkgPath string, contentHash string, depsHash string,
 	path := c.cachePath(pkgPath, contentHash)
 	os.MkdirAll(filepath.Dir(path), 0755)
 
-	f, err := os.Create(path)
+	// Write to a temp file first, then rename atomically.
+	// This prevents concurrent readers from seeing partial writes.
+	tmpFile, err := ioutil.TempFile(c.dir, ".tmp-cache-*")
 	if err != nil {
 		return
 	}
-	defer f.Close()
+	tmpPath := tmpFile.Name()
 
 	cached := toCachedRichAST(richAST, depsHash)
-	if err := gob.NewEncoder(f).Encode(cached); err != nil {
-		f.Close()
-		os.Remove(path)
+	if err := gob.NewEncoder(tmpFile).Encode(cached); err != nil {
+		tmpFile.Close()
+		os.Remove(tmpPath)
+		return
+	}
+	tmpFile.Close()
+
+	// Atomic rename — readers see either the old file or the new complete file
+	if err := os.Rename(tmpPath, path); err != nil {
+		os.Remove(tmpPath)
 	}
 }
 
