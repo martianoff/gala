@@ -86,7 +86,9 @@ func runRun(cmd *cobra.Command, args []string) {
 
 	if outputPath == "" {
 		fmt.Fprintln(os.Stderr, "Error: cannot run a library package. Only 'package main' projects can be run.")
-		fmt.Fprintln(os.Stderr, "Use 'gala build' to compile-check library packages.")
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "  gala build        compile-check library packages")
+		fmt.Fprintln(os.Stderr, "  bazel run //...   run executables in subdirectories (e.g., examples/)")
 		os.Exit(1)
 	}
 

@@ -44,11 +44,20 @@ func NewBuilder(projectDir string, stdlibVersion string, verbose bool) (*Builder
 		return nil, fmt.Errorf("creating workspace: %w", err)
 	}
 
-	// Load gala.mod
+	// Load gala.mod (optional — standalone .gala files can run without one)
 	galaModPath := filepath.Join(projectDir, "gala.mod")
-	galaMod, err := mod.ParseFile(galaModPath)
-	if err != nil {
-		return nil, fmt.Errorf("parsing gala.mod: %w", err)
+	var galaMod *mod.File
+	if _, statErr := os.Stat(galaModPath); statErr == nil {
+		galaMod, err = mod.ParseFile(galaModPath)
+		if err != nil {
+			return nil, fmt.Errorf("parsing gala.mod: %w", err)
+		}
+	} else {
+		// Create a minimal in-memory gala.mod for standalone files
+		galaMod = &mod.File{
+			Module: mod.Module{Path: "gala-standalone"},
+			Gala:   stdlibVersion,
+		}
 	}
 
 	return &Builder{

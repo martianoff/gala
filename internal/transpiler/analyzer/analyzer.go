@@ -1670,7 +1670,23 @@ func isSameFile(definedIn, absPath string) bool {
 	if err != nil {
 		return definedIn == absPath
 	}
-	return absDefinedIn == absPath
+	absOther, err := filepath.Abs(absPath)
+	if err != nil {
+		absOther = absPath
+	}
+	// Fast path: string comparison after Abs
+	if absDefinedIn == absOther {
+		return true
+	}
+	// Resolve symlinks (critical for Bazel local_path_override on Linux where
+	// the same file is reachable via symlinked and real paths)
+	realDefined, err1 := filepath.EvalSymlinks(absDefinedIn)
+	realOther, err2 := filepath.EvalSymlinks(absOther)
+	if err1 == nil && err2 == nil {
+		return realDefined == realOther
+	}
+	// Fallback: compare base filenames as a heuristic
+	return filepath.Base(absDefinedIn) == filepath.Base(absOther)
 }
 
 // goExportedFuncRe matches exported (capitalized) standalone function declarations in Go files.
