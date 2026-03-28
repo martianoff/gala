@@ -1167,7 +1167,56 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 		return &ast.CompositeLit{Type: typeExpr, Elts: elts}, nil
 	}
 
+	// Fallback: if the type is not a known GALA struct, check if it's a Go-imported type.
+	// Go structs from bridge/external packages can use GALA named-arg syntax: Type(Field = value)
+	// which generates a plain Go composite literal: Type{Field: value}.
+	if t.isGoImportedType(fun) {
+		var elts []ast.Expr
+		for fieldName, val := range namedArgs {
+			elts = append(elts, &ast.KeyValueExpr{
+				Key:   ast.NewIdent(fieldName),
+				Value: val,
+			})
+		}
+		// Sort fields alphabetically for deterministic output
+		t.sortKeyValueExprs(elts)
+		return &ast.CompositeLit{Type: fun, Elts: elts}, nil
+	}
+
 	return nil, galaerr.NewSemanticError(fmt.Sprintf("named arguments only supported for Copy method or struct construction (type: %s)", typeName))
+}
+
+// isGoImportedType checks if an expression refers to a Go-imported type (not a GALA struct).
+// This is used to determine if named-arg syntax should generate a plain Go composite literal.
+func (t *galaASTTransformer) isGoImportedType(expr ast.Expr) bool {
+	switch e := expr.(type) {
+	case *ast.SelectorExpr:
+		// pkg.Type — check if 'pkg' is an imported package
+		if id, ok := e.X.(*ast.Ident); ok {
+			return t.importManager.IsPackage(id.Name)
+		}
+	case *ast.IndexExpr:
+		// Type[T] or pkg.Type[T] — recurse into the base
+		return t.isGoImportedType(e.X)
+	case *ast.IndexListExpr:
+		// Type[T1, T2] or pkg.Type[T1, T2] — recurse into the base
+		return t.isGoImportedType(e.X)
+	}
+	return false
+}
+
+// sortKeyValueExprs sorts a slice of ast.Expr (expected to be *ast.KeyValueExpr) by key name
+// for deterministic output ordering.
+func (t *galaASTTransformer) sortKeyValueExprs(elts []ast.Expr) {
+	for i := 1; i < len(elts); i++ {
+		for j := i; j > 0; j-- {
+			a := elts[j-1].(*ast.KeyValueExpr).Key.(*ast.Ident).Name
+			b := elts[j].(*ast.KeyValueExpr).Key.(*ast.Ident).Name
+			if a > b {
+				elts[j-1], elts[j] = elts[j], elts[j-1]
+			}
+		}
+	}
 }
 
 // findSealedVariantFields looks up the field names for a sealed variant by searching
