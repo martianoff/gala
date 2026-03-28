@@ -53,13 +53,11 @@ func (f *GitFetcher) Fetch(modulePath, ver string) (string, string, error) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	// Clone repository
-	repo, err := git.PlainClone(tempDir, false, &git.CloneOptions{
-		URL:      gitURL,
-		Progress: nil, // TODO: Add progress reporting
-		Depth:    1,   // Shallow clone for efficiency
-		Tags:     git.AllTags,
-	})
+	// Clone repository.
+	// Try a fast shallow clone targeting the exact tag first. If the tag name
+	// doesn't match or the server rejects the request, fall back to a full
+	// clone that fetches all history and tags.
+	repo, err := cloneForVersion(tempDir, gitURL, ver)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to clone repository %s: %w", gitURL, err)
 	}
@@ -196,6 +194,36 @@ func modulePathToGitURL(modulePath string) string {
 		// Generic handling
 		return "https://" + modulePath + ".git"
 	}
+}
+
+// cloneForVersion clones a repository so that the given version tag is
+// available locally. It first attempts a shallow clone referencing the tag
+// directly (fast: fetches only one commit). If that fails — because the tag
+// name doesn't match any remote ref, or the server doesn't support the
+// upload-pack request — it falls back to a full clone with all tags.
+func cloneForVersion(dir, gitURL, ver string) (*git.Repository, error) {
+	// Try each candidate tag name (with and without v prefix) as a direct
+	// shallow clone. This is the fast path: depth=1 with a specific ref.
+	for _, tagName := range []string{ver, strings.TrimPrefix(ver, "v")} {
+		repo, err := git.PlainClone(dir, false, &git.CloneOptions{
+			URL:           gitURL,
+			ReferenceName: plumbing.NewTagReferenceName(tagName),
+			Depth:         1,
+			Tags:          git.NoTags,
+		})
+		if err == nil {
+			return repo, nil
+		}
+		// Clean up the failed attempt so the next try starts fresh.
+		os.RemoveAll(dir)
+		os.MkdirAll(dir, 0755)
+	}
+
+	// Fallback: full clone with all tags — always correct.
+	return git.PlainClone(dir, false, &git.CloneOptions{
+		URL:  gitURL,
+		Tags: git.AllTags,
+	})
 }
 
 // FetchResult contains the result of a fetch operation.
