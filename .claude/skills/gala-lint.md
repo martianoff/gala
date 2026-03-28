@@ -100,7 +100,11 @@ val circleKind = 0
 val rectKind = 1
 ```
 
-### 4. Go Slices vs GALA Collections (HIGH priority)
+### 4. Go Native Types vs GALA Standard Types (HIGH priority)
+
+**Principle**: GALA prefers its own standard data structures over Go native types. Go native types should only be used at interop boundaries (calling Go APIs, receiving Go returns). Internal logic should use GALA types for immutability, pattern matching, and functional operations.
+
+#### 4a. Go Slices → GALA Collections
 
 | Issue | Pattern to Flag | Recommended Fix |
 |-------|-----------------|-----------------|
@@ -121,6 +125,68 @@ val rectKind = 1
 - Simple pass-through variadic forwarding (`other(args...)`)
 - Interop with Go libraries that expect `[]T`
 - Converting at boundaries: `collection.ToGoSlice()` when needed
+
+#### 4b. Go Maps → GALA HashMap/TreeMap
+
+| Issue | Pattern to Flag | Recommended Fix |
+|-------|-----------------|-----------------|
+| Go map for general use | `val m = map[string]int{}` or `make(map[K]V)` for internal logic | `EmptyHashMap[string, int]()` from `collection_immutable` |
+| Go map literal | `map[K]V{"a": 1, "b": 2}` for application data | Build with `EmptyHashMap[K,V]().Put("a", 1).Put("b", 2)` |
+| Manual map iteration | `for k, v := range m { ... }` for transform/filter | Use `HashMap.Map()`, `.Filter()`, `.ForEach()`, `.FoldLeft()` |
+| Go map in struct field | `type Cache struct { data map[string]Entry }` | Use `HashMap[string, Entry]` for immutability + functional ops |
+| Manual map lookup with default | `val v, ok = m[key]; if !ok { v = defaultVal }` | `hashMap.GetOrElse(key, defaultVal)` |
+| Manual map existence check | `val _, ok = m[key]; if ok { ... }` | `hashMap.Contains(key)` or `hashMap.Get(key) match { case Some(v) => ... }` |
+| MapForEach from go_interop | `MapForEach(goMap, func)` for internal processing | Convert to HashMap first: `HashMapFromGoMap(goMap).ForEach(...)` |
+| Mutable map accumulation | `var m = map[K]V{}; for { m[k] = v }` | Use `FoldLeft` to build HashMap, or use `collection_mutable.HashMap` |
+
+**Check**: Search for `map[`, `make(map`, `MapEmpty`, `MapForEach`, `MapPut` from go_interop when used for internal logic rather than Go API interop. Also search for range loops over maps that could use HashMap functional methods.
+
+**Acceptable Go map uses**:
+- Passing to Go standard library or third-party functions expecting `map[K]V`
+- Receiving from Go API calls (convert to HashMap at the boundary)
+- Simple key lookups at Go interop boundaries
+- JSON/YAML marshal/unmarshal targets
+
+**Good pattern** — GALA HashMap:
+```gala
+import . "martianoff/gala/collection_immutable"
+
+val config = EmptyHashMap[string, string]()
+    .Put("host", "localhost")
+    .Put("port", "8080")
+
+val upper = config.Map((k, v) => (k, strings.ToUpper(v)))
+val port = config.Get("port").GetOrElse("3000")
+```
+
+**Bad pattern** — Go map for internal logic:
+```gala
+// BAD: Go map with manual iteration
+var config = map[string]string{}
+config["host"] = "localhost"
+config["port"] = "8080"
+for k, v := range config {
+    Println(s"$k=$v")
+}
+```
+
+#### 4c. Go Channels → GALA Future/Promise
+
+| Issue | Pattern to Flag | Recommended Fix |
+|-------|-----------------|-----------------|
+| Channel for single async result | `ch := make(chan T, 1); go func() { ch <- f() }(); <-ch` | `FutureApply(() => f())` then `.Await()` or `.Map()` |
+| Channel for timeout | `select { case r := <-ch: ... case <-time.After(d): ... }` | `future.WithTimeout(d)` or `FirstCompletedOf` |
+| Channel for fan-out | Spawning goroutines writing to shared channel | `Future.Sequence(futures)` or `Future.Traverse(items, f)` |
+| WaitGroup for completion | `sync.WaitGroup` + goroutines | `Future.Sequence(ArrayOf(futures...))` |
+| Mutex for shared state | `sync.Mutex` protecting shared map/counter | Use immutable data + `Future` composition, or `Promise[T]` |
+
+**Check**: Search for `make(chan`, `go func()`, `sync.WaitGroup`, `sync.Mutex`, `select {` in non-interop code. These often indicate Go concurrency patterns that GALA's Future/Promise can express more safely.
+
+**Acceptable Go concurrency uses**:
+- Long-running goroutines (servers, workers) that don't fit the Future model
+- Streaming data (channels as iterators) — consider `Stream[T]` instead
+- Interfacing with Go libraries that use channels
+- Performance-critical code where Future overhead matters
 
 **Variadic args pattern** — convert to Array for functional processing:
 ```gala
@@ -308,7 +374,117 @@ val results = items.Collect({ case x if x.IsValid() => x.Transform() })
 val values = options.Collect({ case Some(v) => v * 2 })
 ```
 
-### 8. Expression-Bodied Functions (MEDIUM priority)
+### 8. Option.When and Conditional Construction (HIGH priority)
+
+| Issue | Pattern to Flag | Recommended Fix |
+|-------|-----------------|-----------------|
+| If-else for conditional Option | `if (cond) Some(v) else None[T]()` | `When(cond, v)` |
+| Negated condition for Option | `if (!cond) Some(v) else None[T]()` | `Unless(cond, v)` |
+| Custom helper for conditional Option | `func optionFromBool[T](cond bool, v T) Option[T]` | Remove custom helper, use `When(cond, v)` from std |
+| Nil map lookup boilerplate | `val v = m[key]; if v == nil { None() } else { Some(v) }` | `OptionFromMap(m, key)` from go_interop |
+| Double nil check on Go map | `if m == nil { return empty }; val v = m[k]; if v == nil { ... }` | `OptionFromMap(m, k)` handles both nil map and missing key |
+| Range over possibly-nil slice | `if s != nil { for _, x := range s }` | `for _, x := range SliceFromNil(s)` from go_interop |
+
+**Check**: Search for `if.*Some.*else.*None` patterns, custom `optionFrom*` helper functions, double nil-check patterns on Go maps, and nil guards before range loops.
+
+**Good patterns**:
+```gala
+import . "martianoff/gala/std"
+import . "martianoff/gala/go_interop"
+
+// Conditional Option creation
+val name = When(s != "", s)
+val deadline = When(ok, t)
+val fallback = Unless(isDisabled, defaultValue)
+
+// Nil-safe Go map lookup
+val params = OptionFromMap(queryMap, "page")
+    .Map((v) => strconv.Atoi(v))
+    .GetOrElse(1)
+
+// Nil-safe Go slice iteration
+for _, item := range SliceFromNil(maybeNilSlice) {
+    process(item)
+}
+```
+
+**Bad patterns**:
+```gala
+// BAD: verbose conditional Option
+val name = if (s != "") Some(s) else None[string]()
+
+// BAD: double nil check
+val qp = r.bridge.AllQueryParams()
+if qp == nil { return EmptyArray[string]() }
+val values = qp[name]
+if values == nil { return EmptyArray[string]() }
+```
+
+### 8b. Go Struct Construction (MEDIUM priority)
+
+| Issue | Pattern to Flag | Recommended Fix |
+|-------|-----------------|-----------------|
+| Go colon syntax for bridge structs | `pkg.GoStruct{Field: value}` | `pkg.GoStruct(Field = value)` — GALA named-arg syntax |
+| Mixed construction styles | GALA structs use `=`, Go structs use `:` in same file | Use `=` syntax consistently for both |
+
+**Check**: Search for composite literal syntax (`Type{Field: value}`) on Go-imported types. If the type comes from a non-GALA import, suggest GALA named-arg syntax.
+
+**Acceptable Go literal uses**: When constructing Go types that require specific field ordering or embedding, or when the composite literal includes non-named elements.
+
+**Good pattern**:
+```gala
+// Consistent GALA syntax for both GALA and Go structs
+val cookie = Cookie(Name = "session", Value = "abc")
+val goCookie = http.Cookie(Name = "session", Value = "abc", Path = "/")
+```
+
+**Bad pattern**:
+```gala
+// Inconsistent: GALA uses =, Go uses :
+val cookie = Cookie(Name = "session", Value = "abc")
+val goCookie = http.Cookie{Name: "session", Value: "abc", Path: "/"}
+```
+
+### 8c. Retry Patterns (HIGH priority)
+
+| Issue | Pattern to Flag | Recommended Fix |
+|-------|-----------------|-----------------|
+| Imperative retry loop | `var attempts = 0; for attempts < max { ... attempts++ }` | `Retry(max, backoff, action)` from concurrent |
+| Manual backoff calculation | `var delay = initial; delay = delay * 2; if delay > max { delay = max }` | `ExponentialBackoff(initial, max)` |
+| Manual constant delay | `time.Sleep(fixedDuration)` inside retry loop | `ConstantBackoff(fixedDuration)` |
+| Retry without backoff | Retry loop with no sleep between attempts | `Retry(max, NoBackoff(), action)` |
+
+**Check**: Search for `var attempts` or `var retries` paired with `for` loops and `time.Sleep`. These are retry patterns that should use the `Retry` combinator.
+
+**Good pattern**:
+```gala
+import . "martianoff/gala/concurrent"
+
+val result = Retry(3, ExponentialBackoff(100 * time.Millisecond, 5 * time.Second), (attempt) => {
+    val resp = callService()
+    if resp.Code() < 500 { return Success(resp) }
+    return Failure[Response](fmt.Errorf("attempt %d: status %d", attempt, resp.Code()))
+})
+```
+
+**Bad pattern**:
+```gala
+// BAD: imperative retry with manual backoff
+var lastResp = InternalError("no attempts")
+var attempts = 0
+var backoff = 100 * time.Millisecond
+for attempts < 3 {
+    val resp = callService()
+    lastResp = resp
+    if resp.Code() < 500 { return resp }
+    time.Sleep(backoff)
+    backoff = backoff * 2
+    attempts = attempts + 1
+}
+return lastResp
+```
+
+### 8d. Expression-Bodied Functions (MEDIUM priority)
 
 | Issue | Pattern to Flag | Recommended Fix |
 |-------|-----------------|----------------|
@@ -317,7 +493,7 @@ val values = options.Collect({ case Some(v) => v * 2 })
 | Missing return in block | `(x) => { val y = x * 2; y }` | Add explicit `return y` |
 | Multi-line when one-liner works | `if cond { return a } else { return b }` | Use if-expression: `if (cond) a else b` |
 
-### 8b. If-Expressions (MEDIUM priority)
+### 8e. If-Expressions (MEDIUM priority)
 
 | Issue | Pattern to Flag | Recommended Fix |
 |-------|-----------------|----------------|
@@ -448,6 +624,26 @@ Try(() => lookupInCache(key)).OrElse(Try(() => lookupInDB(key)))
 // FlatMap: dependent chain (second uses first's result)
 Try(() => findConfig()).FlatMap((path) => Try(() => readFile(path)))
 ```
+
+### 11b. `Array.Grouped` / `Array.Sliding` over Index Loops (HIGH priority)
+
+| Issue | Pattern to Flag | Recommended Fix |
+|-------|-----------------|-----------------|
+| Index-stepping loop by 2 | `var i = 0; for i < len(x) - 1 { use(x[i], x[i+1]); i += 2 }` | `ArrayOf(x...).Grouped(2).FoldLeft(...)` |
+| Sliding window loop | Manual index loop with window | `ArrayOf(x...).Sliding(n)` |
+
+### 11c. Go Struct Named-Arg Construction (HIGH priority)
+
+| Issue | Pattern to Flag | Recommended Fix |
+|-------|-----------------|-----------------|
+| Go struct colon literal | `GoType{Field: value}` | `GoType(Field = value)` — GALA named-arg syntax works for Go structs |
+
+### 11d. `match` as Standalone Statement (MEDIUM priority)
+
+| Issue | Pattern to Flag | Recommended Fix |
+|-------|-----------------|-----------------|
+| Discard match result | `val _ = x match { ... }` | Use `match` directly as statement |
+| ForEach when match fits | `opt.ForEach((v) => ...)` when multiple cases needed | `opt match { case Some(v) => ...; case None() => ... }` |
 
 ### 12. Naming Conventions (LOW priority)
 
