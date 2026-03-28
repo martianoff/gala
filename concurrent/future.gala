@@ -1,10 +1,10 @@
 package concurrent
 
 import (
-    "time"
     . "martianoff/gala/std"
     "martianoff/gala/go_interop"
     . "martianoff/gala/collection_immutable"
+    . "martianoff/gala/time_utils"
 )
 
 // FutureState holds the mutable internal state of a Future.
@@ -175,8 +175,8 @@ func (f Future[T]) Await() Try[T] {
 
 // AwaitFor blocks until the Future is completed or the timeout expires.
 // Returns None if the timeout expires before the Future completes.
-func (f Future[T]) AwaitFor(timeout time.Duration) Option[Try[T]] {
-    val received = go_interop.WaitSignalTimeout(f.state.done, timeout)
+func (f Future[T]) AwaitFor(timeout Duration) Option[Try[T]] {
+    val received = go_interop.WaitSignalTimeout(f.state.done, timeout.ToGoDuration())
     if received {
         f.state.mu.RLock()
         val r = f.state.result

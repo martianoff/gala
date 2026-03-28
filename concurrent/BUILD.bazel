@@ -21,11 +21,18 @@ gala_bootstrap_transpile(
     out = "future.gen.go",
 )
 
+gala_bootstrap_transpile(
+    name = "retry_go",
+    src = "retry.gala",
+    out = "retry.gen.go",
+)
+
 go_library(
     name = "concurrent",
     srcs = [
         "execution_context.go",
         "future.gen.go",
+        "retry.gen.go",
     ],
     importpath = "martianoff/gala/concurrent",
     visibility = ["//visibility:public"],
@@ -33,6 +40,7 @@ go_library(
         "//collection_immutable",
         "//go_interop",
         "//std",
+        "//time_utils",
     ],
 )
 
@@ -43,5 +51,6 @@ gala_go_test(
         ":concurrent",
         "//collection_immutable",
         "//go_interop",
+        "//time_utils",
     ],
 )
