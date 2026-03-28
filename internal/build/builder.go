@@ -1078,7 +1078,23 @@ func (b *Builder) Test(verbose bool) error {
 // All files are transpiled into gen/ as package main.
 func (b *Builder) transpileTestMain(sourceFiles, testFiles []string) error {
 	allFiles := append(sourceFiles, testFiles...)
-	return b.transpileFiles(allFiles, allFiles)
+	if err := b.transpileFiles(allFiles, allFiles); err != nil {
+		return err
+	}
+
+	// Copy local Go subpackages to gen/ so the test binary compiles
+	// when it references types from local Go packages (e.g., httpcore/).
+	if err := copyNonGalaFiles(b.workspace.ProjectDir, b.workspace.GenDir, b.verbose); err != nil {
+		return fmt.Errorf("copying local Go subpackages: %w", err)
+	}
+
+	// Rewrite imports that reference the project's Go module path so that
+	// go mod tidy doesn't try to fetch the project module from the remote registry.
+	if err := b.rewriteProjectModuleImports(b.workspace.GenDir); err != nil {
+		return fmt.Errorf("rewriting project module imports: %w", err)
+	}
+
+	return nil
 }
 
 // transpileTestLibrary transpiles source files and test files into gen/ as the

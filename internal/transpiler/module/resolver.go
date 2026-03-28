@@ -123,12 +123,17 @@ func (r *Resolver) ResolvePackagePath(importPath string) (string, error) {
 
 	// Strategy 1: Module-relative resolution
 	if r.moduleRoot != "" && r.moduleName != "" {
-		if strings.HasPrefix(importPath, r.moduleName+"/") {
+		if relPath, ok := hasModulePrefix(importPath, r.moduleName); ok {
 			// Full module path: "martianoff/gala/std" -> "{moduleRoot}/std"
-			relPath := strings.TrimPrefix(importPath, r.moduleName+"/")
 			dirPath := filepath.Join(r.moduleRoot, relPath)
 			if isValidPackageDir(dirPath) {
 				return dirPath, nil
+			}
+		}
+		// Also check if importPath matches the module root itself (root package)
+		if matchesModuleName(importPath, r.moduleName) {
+			if isValidPackageDir(r.moduleRoot) {
+				return r.moduleRoot, nil
 			}
 		}
 	}
@@ -159,6 +164,8 @@ func (r *Resolver) ResolvePackagePath(importPath string) (string, error) {
 	// Strategy 5: Check if any search path is itself a module root whose module name
 	// matches the import path. This handles cross-module resolution when multiple
 	// GALA modules are provided via --search (e.g., gala + gala-server).
+	// Also handles VCS host prefix mismatches (e.g., import "martianoff/gala-server"
+	// matching module "github.com/martianoff/gala-server").
 	for _, sp := range r.searchPaths {
 		spModRoot, spModName := FindModuleRoot(sp)
 		// Also try gala.mod if go.mod wasn't found (pure GALA packages may not have go.mod)
@@ -168,12 +175,12 @@ func (r *Resolver) ResolvePackagePath(importPath string) (string, error) {
 		if spModName == "" || spModRoot == r.moduleRoot {
 			continue // skip primary module (already handled in Strategy 1)
 		}
-		if importPath == spModName {
+		if matchesModuleName(importPath, spModName) {
 			if isValidPackageDir(spModRoot) {
 				return spModRoot, nil
 			}
-		} else if strings.HasPrefix(importPath, spModName+"/") {
-			relPath := strings.TrimPrefix(importPath, spModName+"/")
+		}
+		if relPath, ok := hasModulePrefix(importPath, spModName); ok {
 			dirPath := filepath.Join(spModRoot, relPath)
 			if isValidPackageDir(dirPath) {
 				return dirPath, nil
@@ -232,18 +239,106 @@ func (r *Resolver) resolveFromCache(importPath string) (string, error) {
 	return "", &PackageNotFoundError{ImportPath: importPath}
 }
 
+// matchesModuleName checks if importPath matches moduleName, accounting for
+// VCS host prefixes. GALA imports use short paths (e.g., "martianoff/gala-server")
+// while go.mod may use full paths (e.g., "github.com/martianoff/gala-server").
+// Returns true if the paths match after stripping a VCS host prefix from either side.
+func matchesModuleName(importPath, moduleName string) bool {
+	if importPath == moduleName {
+		return true
+	}
+	// Try stripping VCS host prefix from moduleName
+	if stripped := stripVCSHost(moduleName); stripped != "" && stripped == importPath {
+		return true
+	}
+	// Try stripping VCS host prefix from importPath
+	if stripped := stripVCSHost(importPath); stripped != "" && stripped == moduleName {
+		return true
+	}
+	return false
+}
+
+// hasModulePrefix checks if importPath starts with moduleName+"/", accounting for
+// VCS host prefix differences. Returns the relative path after the module prefix,
+// or empty string if no match.
+func hasModulePrefix(importPath, moduleName string) (relPath string, ok bool) {
+	if strings.HasPrefix(importPath, moduleName+"/") {
+		return strings.TrimPrefix(importPath, moduleName+"/"), true
+	}
+	// Try stripping VCS host from moduleName
+	if stripped := stripVCSHost(moduleName); stripped != "" {
+		if strings.HasPrefix(importPath, stripped+"/") {
+			return strings.TrimPrefix(importPath, stripped+"/"), true
+		}
+	}
+	// Try stripping VCS host from importPath
+	if stripped := stripVCSHost(importPath); stripped != "" {
+		if strings.HasPrefix(stripped, moduleName+"/") {
+			return strings.TrimPrefix(stripped, moduleName+"/"), true
+		}
+	}
+	return "", false
+}
+
+// ResolveGoImportPath returns the actual Go import path for a GALA import.
+// If the GALA import path differs from the Go module path (e.g., "martianoff/gala-server"
+// vs "github.com/martianoff/gala-server"), this returns the full Go path.
+// Returns empty string if no mapping is needed (paths are the same).
+func (r *Resolver) ResolveGoImportPath(importPath string) string {
+	// Check search paths for module roots with VCS prefix differences
+	for _, sp := range r.searchPaths {
+		spModRoot, spModName := FindModuleRoot(sp)
+		if spModName == "" {
+			spModRoot, spModName = findGalaModuleRoot(sp)
+		}
+		if spModName == "" || spModRoot == r.moduleRoot {
+			continue
+		}
+		_ = spModRoot
+		// If importPath matches after stripping VCS host from moduleName
+		if importPath != spModName && matchesModuleName(importPath, spModName) {
+			return spModName // Return the full Go module path
+		}
+		// Handle subpackage: "martianoff/gala-server/sub" → "github.com/martianoff/gala-server/sub"
+		if relPath, ok := hasModulePrefix(importPath, spModName); ok {
+			if importPath != spModName+"/"+relPath {
+				return spModName + "/" + relPath
+			}
+		}
+	}
+	return ""
+}
+
+// stripVCSHost removes a known VCS host prefix (github.com/, gitlab.com/, etc.)
+// from an import path. Returns empty string if no VCS host prefix is found.
+func stripVCSHost(path string) string {
+	hosts := []string{"github.com/", "gitlab.com/", "bitbucket.org/", "sr.ht/~"}
+	for _, host := range hosts {
+		if strings.HasPrefix(path, host) {
+			return strings.TrimPrefix(path, host)
+		}
+	}
+	return ""
+}
+
 // IsGalaPackage checks if the import path refers to a GALA package
 // (i.e., it's in gala.mod require list and has .gala files in the cache).
 func (r *Resolver) IsGalaPackage(importPath string) bool {
 	// Check if it's the current module (root package or subpackage)
-	if r.moduleName != "" && (importPath == r.moduleName || strings.HasPrefix(importPath, r.moduleName+"/")) {
+	if r.moduleName != "" && (matchesModuleName(importPath, r.moduleName) || func() bool {
+		_, ok := hasModulePrefix(importPath, r.moduleName)
+		return ok
+	}()) {
 		return true
 	}
 
 	// Check gala.mod require list
 	if r.galaMod != nil {
 		for _, req := range r.galaMod.Require {
-			if req.Path == importPath || strings.HasPrefix(importPath, req.Path+"/") {
+			if matchesModuleName(importPath, req.Path) || func() bool {
+				_, ok := hasModulePrefix(importPath, req.Path)
+				return ok
+			}() {
 				// If explicitly marked as Go in gala.mod, it's not a GALA package
 				if req.Go {
 					return false
@@ -265,11 +360,11 @@ func (r *Resolver) IsGalaPackage(importPath string) bool {
 		if spModName == "" || spModName == r.moduleName {
 			continue
 		}
-		if importPath == spModName {
+		if matchesModuleName(importPath, spModName) {
 			return isValidPackageDir(spModRoot)
 		}
-		if strings.HasPrefix(importPath, spModName+"/") {
-			relPath := strings.TrimPrefix(importPath, spModName+"/")
+		if _, ok := hasModulePrefix(importPath, spModName); ok {
+			relPath, _ := hasModulePrefix(importPath, spModName)
 			return isValidPackageDir(filepath.Join(spModRoot, relPath))
 		}
 	}

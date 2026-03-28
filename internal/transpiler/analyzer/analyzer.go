@@ -244,6 +244,15 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 					relPath = path // External packages use full path
 				}
 
+				// Check if the GALA import path differs from the actual Go module path
+				// (e.g., "martianoff/gala-server" vs "github.com/martianoff/gala-server")
+				if goPath := a.resolver.ResolveGoImportPath(path); goPath != "" {
+					if richAST.ImportPathMap == nil {
+						richAST.ImportPathMap = make(map[string]string)
+					}
+					richAST.ImportPathMap[path] = goPath
+				}
+
 				if cached, ok := a.analyzedPkgs[path]; ok && cached != nil {
 					// Use cached metadata
 					richAST.Merge(cached)

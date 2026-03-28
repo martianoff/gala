@@ -1084,8 +1084,16 @@ func (t *galaASTTransformer) transformImportDeclaration(ctx *grammar.ImportDecla
 	for _, specCtx := range ctx.AllImportSpec() {
 		s := specCtx.(*grammar.ImportSpecContext)
 		path := strings.Trim(s.STRING().GetText(), "\"")
+		// Map GALA import path to actual Go module path if they differ
+		// (e.g., "martianoff/gala-server" → "github.com/martianoff/gala-server")
+		goPath := path
+		if t.richAST != nil && t.richAST.ImportPathMap != nil {
+			if mapped, ok := t.richAST.ImportPathMap[path]; ok {
+				goPath = mapped
+			}
+		}
 		importSpec := &ast.ImportSpec{
-			Path: &ast.BasicLit{Kind: token.STRING, Value: s.STRING().GetText()},
+			Path: &ast.BasicLit{Kind: token.STRING, Value: fmt.Sprintf("%q", goPath)},
 		}
 		if s.Identifier() != nil {
 			alias := s.Identifier().GetText()

@@ -290,7 +290,7 @@ This command:
 - Adds missing dependencies found in imports
 - Removes unused dependencies
 - Marks indirect dependencies appropriately
-- **For Bazel projects**: Generates `go.mod` and `go.sum` with Go dependencies
+- **For Bazel projects**: Generates a portable `go.mod` with Go dependencies only (GALA stdlib deps are stripped — they're resolved by `gala build` or Bazel's bzlmod extension)
 
 `gala mod tidy` handles both single-line and multi-line import blocks, and recognizes known GALA dependencies (like `std`, `collection_immutable`, etc.) automatically.
 

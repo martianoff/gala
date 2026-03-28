@@ -27,6 +27,69 @@ func isWildcard(text string) bool {
 	return text == "_"
 }
 
+// isBindingPattern checks if a pattern text represents a variable binding
+// (a simple lowercase identifier that will bind the matched value).
+// This is a catch-all pattern, like `case body => ...` in Scala/GALA.
+// Constructor calls like `Some(x)`, literals like `""` or `42`,
+// and keywords like `true`/`false`/`nil` are NOT bindings.
+func isBindingPattern(text string) bool {
+	if len(text) == 0 || text == "_" {
+		return false
+	}
+	// Must start with a lowercase letter or underscore (uppercase = constructor)
+	if !((text[0] >= 'a' && text[0] <= 'z') || text[0] == '_') {
+		return false
+	}
+	// Must be a simple identifier (no parens, dots, quotes, operators)
+	for _, ch := range text {
+		if !((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_') {
+			return false
+		}
+	}
+	// Exclude keywords and built-in constants
+	switch text {
+	case "true", "false", "nil", "iota":
+		return false
+	}
+	return true
+}
+
+// isDefaultPattern checks if a pattern is a catch-all: either `_` or a variable binding.
+func isDefaultPattern(text string) bool {
+	return isWildcard(text) || isBindingPattern(text)
+}
+
+// isLiteralTrue checks if an expression is the literal `true` identifier.
+func isLiteralTrue(expr ast.Expr) bool {
+	if id, ok := expr.(*ast.Ident); ok {
+		return id.Name == "true"
+	}
+	return false
+}
+
+// extractBindingDefault checks if a match clause is a catch-all binding pattern
+// (generates condition `true`). If so, returns the flattened body statements
+// (bindings + the if-true body) suitable for use as an else branch.
+// Returns nil if the clause is not a catch-all.
+func extractBindingDefault(clause ast.Stmt) []ast.Stmt {
+	// Case 1: direct `if true { ... }`
+	if ifStmt, ok := clause.(*ast.IfStmt); ok && isLiteralTrue(ifStmt.Cond) {
+		return ifStmt.Body.List
+	}
+	// Case 2: BlockStmt containing [bindings..., if true { ... }]
+	if block, ok := clause.(*ast.BlockStmt); ok && len(block.List) > 0 {
+		last := block.List[len(block.List)-1]
+		if ifStmt, ok := last.(*ast.IfStmt); ok && isLiteralTrue(ifStmt.Cond) {
+			// Combine bindings with the if-true body
+			result := make([]ast.Stmt, 0, len(block.List)-1+len(ifStmt.Body.List))
+			result = append(result, block.List[:len(block.List)-1]...) // bindings
+			result = append(result, ifStmt.Body.List...)               // body
+			return result
+		}
+	}
+	return nil
+}
+
 func (t *galaASTTransformer) nextTempVar() string {
 	t.tempVarCount++
 	return fmt.Sprintf("_tmp_%d", t.tempVarCount)

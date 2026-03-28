@@ -302,23 +302,53 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	var resultTypes []transpiler.Type
 	var casePatterns []string
 
+	// Pre-scan: check if there's an explicit wildcard `_` case.
+	// If there is, binding patterns are regular clauses. If not, the last
+	// binding pattern acts as the default (catch-all) case.
+	hasExplicitWildcard := false
+	for _, cc := range caseClauses {
+		if isWildcard(cc.(*grammar.CaseClauseContext).Pattern().GetText()) {
+			hasExplicitWildcard = true
+			break
+		}
+	}
+
 	for _, cc := range caseClauses {
 		ccCtx := cc.(*grammar.CaseClauseContext)
 
 		patCtx := ccCtx.Pattern()
 		patternText := patCtx.GetText()
-		if isWildcard(patternText) {
+		// Treat as default: explicit wildcard `_` always, OR binding pattern when
+		// there's no explicit wildcard elsewhere (binding acts as catch-all).
+		treatAsDefault := isWildcard(patternText) ||
+			(!hasExplicitWildcard && isBindingPattern(patternText))
+
+		if treatAsDefault {
 			if foundDefault {
 				return nil, galaerr.NewSemanticError("multiple default cases in match expression")
 			}
 			foundDefault = true
+
+			// For binding patterns, register the variable and add assignment
+			var bindingStmts []ast.Stmt
+			if isBindingPattern(patternText) {
+				t.currentScope.vals[patternText] = false
+				if matchedType != nil && !matchedType.IsNil() {
+					t.currentScope.valTypes[patternText] = matchedType
+				}
+				bindingStmts = append(bindingStmts, &ast.AssignStmt{
+					Lhs: []ast.Expr{ast.NewIdent(patternText)},
+					Tok: token.DEFINE,
+					Rhs: []ast.Expr{ast.NewIdent(paramName)},
+				})
+			}
 
 			if ccCtx.GetBodyBlock() != nil {
 				b, err := t.transformBlock(ccCtx.GetBodyBlock().(*grammar.BlockContext))
 				if err != nil {
 					return nil, err
 				}
-				defaultBody = b.List
+				defaultBody = append(bindingStmts, b.List...)
 				if len(b.List) > 0 {
 					lastStmt := b.List[len(b.List)-1]
 					if ret, ok := lastStmt.(*ast.ReturnStmt); ok && len(ret.Results) > 0 {
@@ -336,7 +366,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 				if err != nil {
 					return nil, err
 				}
-				defaultBody = []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{bodyExpr}}}
+				defaultBody = append(bindingStmts, &ast.ReturnStmt{Results: []ast.Expr{bodyExpr}})
 				resultTypes = append(resultTypes, t.inferResultType(bodyExpr))
 				casePatterns = append(casePatterns, "case _")
 			}
@@ -374,14 +404,27 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		var variantPatterns []string
 		for _, cc := range caseClauses {
 			pat := cc.(*grammar.CaseClauseContext).Pattern().GetText()
-			if !isWildcard(pat) {
+			if !isDefaultPattern(pat) {
 				variantPatterns = append(variantPatterns, pat)
 			}
 		}
 
 		isSealed, isExhaustive, missing := t.isExhaustiveMatch(matchedType, variantPatterns)
 
-		if !foundDefault {
+		// A binding pattern (e.g., `case n =>`) is a catch-all even though it's
+		// processed as a regular clause. Check for it in the exhaustiveness check.
+		hasDefault := foundDefault
+		if !hasDefault {
+			for _, cc := range caseClauses {
+				pat := cc.(*grammar.CaseClauseContext).Pattern().GetText()
+				if isBindingPattern(pat) {
+					hasDefault = true
+					break
+				}
+			}
+		}
+
+		if !hasDefault {
 			if isSealed && !isExhaustive {
 				return nil, galaerr.NewSemanticError(
 					fmt.Sprintf("non-exhaustive match: missing cases: %s", strings.Join(missing, ", ")))
