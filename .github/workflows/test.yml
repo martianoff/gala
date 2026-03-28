@@ -19,13 +19,6 @@ jobs:
           go-version: '1.25'
           cache: false
 
-      - name: Export GOROOT
-        run: |
-          GOROOT_VAL=$(go env GOROOT)
-          echo "GOROOT=$GOROOT_VAL" >> $GITHUB_ENV
-          echo "Exported GOROOT=$GOROOT_VAL"
-          ls -la "$GOROOT_VAL/src/fmt" || echo "src/fmt not found!"
-
       - name: Setup Bazel
         uses: bazel-contrib/setup-bazel@0.14.0
         with:
@@ -34,9 +27,11 @@ jobs:
           repository-cache: true
 
       - name: Build
-        run: bazel build //... --action_env=GOROOT="$GOROOT" --action_env=PATH="$PATH" --action_env=GALA_DEBUG_GOROOT=1
-        env:
-          GALA_DEBUG_GOROOT: "1"
+        run: |
+          GOROOT_PATH=$(go env GOROOT)
+          bazel build //... --repo_env=GOROOT="$GOROOT_PATH" --action_env=GOROOT="$GOROOT_PATH" --action_env=PATH
 
       - name: Test
-        run: bazel test //... --test_output=errors --verbose_failures --action_env=GOROOT="$GOROOT" --action_env=PATH="$PATH"
+        run: |
+          GOROOT_PATH=$(go env GOROOT)
+          bazel test //... --test_output=errors --verbose_failures --repo_env=GOROOT="$GOROOT_PATH" --action_env=GOROOT="$GOROOT_PATH" --action_env=PATH
