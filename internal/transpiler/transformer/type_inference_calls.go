@@ -413,8 +413,12 @@ func (t *galaASTTransformer) inferCallIdentType(e *ast.CallExpr, id *ast.Ident, 
 	// Handle calling a variable of function type (e.g., thunk() where thunk is func() Stream[T])
 	varType := t.getType(id.Name)
 	if !varType.IsNil() {
-		if funcType, ok := varType.(transpiler.FuncType); ok && len(funcType.Results) > 0 {
-			return funcType.Results[0]
+		if funcType, ok := varType.(transpiler.FuncType); ok {
+			if len(funcType.Results) > 0 {
+				return funcType.Results[0]
+			}
+			// Void function (no return type) — e.g., func()
+			return transpiler.VoidType{}
 		}
 		// If the variable has a named type (e.g., Handler), check if it's a type alias
 		// for a function type and use the underlying function type's return type.
@@ -429,9 +433,13 @@ func (t *galaASTTransformer) inferCallIdentType(e *ast.CallExpr, id *ast.Ident, 
 			}
 		}
 		if underlyingType, ok := t.typeAliases[aliasKey]; ok {
-			if funcType, ok := underlyingType.(transpiler.FuncType); ok && len(funcType.Results) > 0 {
-				t.traceType(e, funcType.Results[0], "type-alias-call")
-				return funcType.Results[0]
+			if funcType, ok := underlyingType.(transpiler.FuncType); ok {
+				if len(funcType.Results) > 0 {
+					t.traceType(e, funcType.Results[0], "type-alias-call")
+					return funcType.Results[0]
+				}
+				// Void function alias (no return type) — e.g., type Callback func()
+				return transpiler.VoidType{}
 			}
 		}
 	}
