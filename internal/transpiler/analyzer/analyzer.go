@@ -179,9 +179,8 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 	if len(a.packageFiles) > 0 {
 		// Explicit package files: parse each one, validate package name, add to siblings
 		for _, pf := range a.packageFiles {
-			absPf, _ := filepath.Abs(pf)
-			if absPf == absFilePath {
-				continue // skip self
+			if isSameFile(pf, filePath) {
+				continue // skip self (resolves symlinks for Bazel on Linux)
 			}
 			content, err := ioutil.ReadFile(pf)
 			if err != nil {
@@ -208,15 +207,15 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 		// that happen to share a directory (e.g., examples/). Scanning their imports
 		// would pollute the current file's type resolution with unrelated packages.
 		dirPath := filepath.Dir(filePath)
-		absDirPath, err := filepath.Abs(dirPath)
-		if err == nil && !a.checkedDirs[absDirPath] {
-			a.checkedDirs[absDirPath] = true
+		canonDir := canonicalPath(dirPath)
+		if !a.checkedDirs[canonDir] {
+			a.checkedDirs[canonDir] = true
 			files, err := ioutil.ReadDir(dirPath)
 			if err == nil {
 				for _, f := range files {
 					if !f.IsDir() && filepath.Ext(f.Name()) == ".gala" {
 						otherPath := filepath.Join(dirPath, f.Name())
-						if otherPath == filePath {
+						if isSameFile(otherPath, filePath) {
 							continue
 						}
 						content, err := ioutil.ReadFile(otherPath)
@@ -1782,33 +1781,52 @@ func hasTypeDefinition(meta *transpiler.TypeMetadata) bool {
 	return len(meta.FieldNames) > 0 || (meta.IsSealed && len(meta.SealedVariants) > 0)
 }
 
-// isSameFile checks whether definedIn refers to the same file as absPath.
-// definedIn may be relative or absolute; absPath must be absolute.
-func isSameFile(definedIn, absPath string) bool {
-	if definedIn == "" || absPath == "" {
+// isSameFile checks whether two paths refer to the same file.
+// Handles relative/absolute paths and Bazel symlinks on Linux.
+func isSameFile(pathA, pathB string) bool {
+	if pathA == "" || pathB == "" {
 		return false
 	}
-	absDefinedIn, err := filepath.Abs(definedIn)
+	absA, err := filepath.Abs(pathA)
 	if err != nil {
-		return definedIn == absPath
+		absA = pathA
 	}
-	absOther, err := filepath.Abs(absPath)
+	absB, err := filepath.Abs(pathB)
 	if err != nil {
-		absOther = absPath
+		absB = pathB
 	}
 	// Fast path: string comparison after Abs
-	if absDefinedIn == absOther {
+	if absA == absB {
 		return true
 	}
 	// Resolve symlinks (critical for Bazel local_path_override on Linux where
 	// the same file is reachable via symlinked and real paths)
-	realDefined, err1 := filepath.EvalSymlinks(absDefinedIn)
-	realOther, err2 := filepath.EvalSymlinks(absOther)
-	if err1 == nil && err2 == nil {
-		return realDefined == realOther
+	realA, errA := filepath.EvalSymlinks(absA)
+	realB, errB := filepath.EvalSymlinks(absB)
+	if errA == nil && errB == nil {
+		return realA == realB
 	}
-	// Fallback: compare base filenames as a heuristic
-	return filepath.Base(absDefinedIn) == filepath.Base(absOther)
+	// Fallback: use os.SameFile which compares inodes (works across symlinks)
+	infoA, errA := os.Stat(absA)
+	infoB, errB := os.Stat(absB)
+	if errA == nil && errB == nil {
+		return os.SameFile(infoA, infoB)
+	}
+	return false
+}
+
+// canonicalPath returns a canonical path by resolving symlinks and making absolute.
+// Falls back to filepath.Abs if symlinks can't be resolved.
+func canonicalPath(path string) string {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return path
+	}
+	real, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return abs
+	}
+	return real
 }
 
 // goExportedFuncRe matches exported (capitalized) standalone function declarations in Go files.
