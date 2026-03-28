@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/antlr4-go/antlr/v4"
 
@@ -14,6 +15,7 @@ import (
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/generator"
 	"martianoff/gala/internal/transpiler/module"
+	"martianoff/gala/internal/transpiler/profiler"
 	"martianoff/gala/internal/transpiler/registry"
 	"martianoff/gala/internal/transpiler/resolver"
 	"martianoff/gala/internal/transpiler/transformer"
@@ -62,22 +64,27 @@ type galaAnalyzer struct {
 	resolver            *module.Resolver               // Handles module root discovery and package path resolution
 	currentRichAST      *transpiler.RichAST            // Set during Analyze() for cross-reference in resolveTypeWithParams
 	currentDotImportPkgs map[string]bool                // Package names that are dot-imported in the current file
+	analyzeDepth int                                    // recursion depth for profiling
+	cache        *analysisCache                         // disk-based package analysis cache
 }
 
 // NewGalaAnalyzer creates a new transpiler.Analyzer implementation.
 // It automatically finds the module root by looking for go.mod from the current working directory.
 func NewGalaAnalyzer(p transpiler.GalaParser, searchPaths []string) transpiler.Analyzer {
+	cwd, _ := os.Getwd()
 	return &galaAnalyzer{
 		parser:       p,
 		searchPaths:  searchPaths,
 		analyzedPkgs: make(map[string]*transpiler.RichAST),
 		checkedDirs:  make(map[string]bool),
 		resolver:     module.NewResolver(searchPaths),
+		cache:        newAnalysisCache(findProjectRoot(cwd)),
 	}
 }
 
 // NewGalaAnalyzerWithBase creates a new transpiler.Analyzer with base metadata.
 func NewGalaAnalyzerWithBase(base *transpiler.RichAST, p transpiler.GalaParser, searchPaths []string) transpiler.Analyzer {
+	cwd, _ := os.Getwd()
 	return &galaAnalyzer{
 		baseMetadata: base,
 		parser:       p,
@@ -85,6 +92,7 @@ func NewGalaAnalyzerWithBase(base *transpiler.RichAST, p transpiler.GalaParser, 
 		analyzedPkgs: make(map[string]*transpiler.RichAST),
 		checkedDirs:  make(map[string]bool),
 		resolver:     module.NewResolver(searchPaths),
+		cache:        newAnalysisCache(findProjectRoot(cwd)),
 	}
 }
 
@@ -92,6 +100,7 @@ func NewGalaAnalyzerWithBase(base *transpiler.RichAST, p transpiler.GalaParser, 
 // for sibling discovery instead of directory scanning. This enables full cross-file type
 // resolution for main/test packages where directory scanning is too broad.
 func NewGalaAnalyzerWithPackageFiles(p transpiler.GalaParser, searchPaths []string, packageFiles []string) transpiler.Analyzer {
+	cwd, _ := os.Getwd()
 	return &galaAnalyzer{
 		parser:       p,
 		searchPaths:  searchPaths,
@@ -99,11 +108,63 @@ func NewGalaAnalyzerWithPackageFiles(p transpiler.GalaParser, searchPaths []stri
 		analyzedPkgs: make(map[string]*transpiler.RichAST),
 		checkedDirs:  make(map[string]bool),
 		resolver:     module.NewResolver(searchPaths),
+		cache:        newAnalysisCache(findProjectRoot(cwd)),
 	}
+}
+
+// BatchAnalyzer allows transpiling multiple files in a single process, sharing
+// the analyzed package cache across files. This avoids redundant re-analysis of
+// imports like std, collection_immutable, etc.
+type BatchAnalyzer struct {
+	inner *galaAnalyzer
+}
+
+// NewBatchAnalyzer creates an analyzer optimized for batch transpilation.
+// Call SetPackageFiles before each Analyze to configure siblings for that file.
+func NewBatchAnalyzer(p transpiler.GalaParser, searchPaths []string) *BatchAnalyzer {
+	cwd, _ := os.Getwd()
+	return &BatchAnalyzer{
+		inner: &galaAnalyzer{
+			parser:       p,
+			searchPaths:  searchPaths,
+			analyzedPkgs: make(map[string]*transpiler.RichAST),
+			checkedDirs:  make(map[string]bool),
+			resolver:     module.NewResolver(searchPaths),
+			cache:        newAnalysisCache(findProjectRoot(cwd)),
+		},
+	}
+}
+
+// SetPackageFiles configures the sibling files for the next Analyze call.
+// Also resets checkedDirs so directory-based sibling discovery works fresh per file.
+func (b *BatchAnalyzer) SetPackageFiles(files []string) {
+	b.inner.packageFiles = files
+	b.inner.checkedDirs = make(map[string]bool)
+}
+
+// Analyze delegates to the inner analyzer, sharing the package cache.
+func (b *BatchAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.RichAST, error) {
+	return b.inner.Analyze(tree, filePath)
 }
 
 // Analyze walk the ANTLR tree and collects metadata for RichAST.
 func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.RichAST, error) {
+	a.analyzeDepth++
+	isTopLevel := a.analyzeDepth == 1
+	defer func() { a.analyzeDepth-- }()
+
+	var analyzeStart time.Time
+	if profiler.Enabled && isTopLevel {
+		analyzeStart = time.Now()
+	}
+	logPhase := func(label string, start time.Time) {
+		if profiler.Enabled && isTopLevel {
+			fmt.Fprintf(os.Stderr, "  [analyze] %-35s %s\n", label, time.Since(start).Round(time.Millisecond))
+		}
+	}
+	_ = analyzeStart
+	_ = logPhase
+
 	sourceFile, ok := tree.(*grammar.SourceFileContext)
 	if !ok {
 		return nil, fmt.Errorf("expected *grammar.SourceFileContext, got %T", tree)
@@ -112,6 +173,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 	pkgName := sourceFile.PackageClause().(*grammar.PackageClauseContext).Identifier().GetText()
 	absFilePath, _ := filepath.Abs(filePath)
 
+	phaseStart := time.Now()
 	var siblingTrees []*grammar.SourceFileContext
 	var siblingPaths []string // parallel slice: file path for each siblingTree
 	if len(a.packageFiles) > 0 {
@@ -188,6 +250,8 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 		}
 	}
 
+	logPhase("sibling-discovery ("+fmt.Sprintf("%d files", len(siblingTrees))+")", phaseStart)
+
 	richAST := &transpiler.RichAST{
 		Tree:             tree,
 		PackageName:      pkgName,
@@ -202,6 +266,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 		richAST.Merge(a.baseMetadata)
 	}
 
+	phaseStart = time.Now()
 	// 0.25 Load std package metadata
 	// For non-std packages: add as implicit import
 	// For std package: still load for intra-package type resolution, but don't add to Packages
@@ -223,6 +288,9 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 			}
 		}
 	}
+
+	logPhase("load-std", phaseStart)
+	phaseStart = time.Now()
 
 	// 0.5 Scan imports
 	for _, impDecl := range sourceFile.AllImportDeclaration() {
@@ -299,6 +367,9 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 		}
 	}
 
+	logPhase("scan-gala-imports", phaseStart)
+	phaseStart = time.Now()
+
 	// 0.6 Analyze Go packages for type information.
 	// For non-GALA imports (Go stdlib and third-party Go packages), use go/importer
 	// to extract function signatures, type definitions, and type aliases.
@@ -325,12 +396,18 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 		}
 	}
 
+	logPhase("analyze-go-packages", phaseStart)
+	phaseStart = time.Now()
+
 	// 0.75 Also scan sibling imports to ensure all GALA packages used by siblings
 	// are loaded into richAST.Types. Without this, resolveTypeWithParams for sibling
 	// struct fields can't find types from packages that only siblings import.
 	for _, sibTree := range siblingTrees {
 		a.scanImports(sibTree, richAST)
 	}
+
+	logPhase("scan-sibling-imports", phaseStart)
+	phaseStart = time.Now()
 
 	// Build set of dot-imported package names for type resolution.
 	// Collect from main file AND all sibling files so that when resolving types in
@@ -389,8 +466,9 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 
 			var meta *transpiler.TypeMetadata
 			if existing, ok := richAST.Types[fullTypeName]; ok && existing.Package == pkgName {
-				// Error if type is being redefined (has fields or sealed variants)
-				if hasTypeDefinition(existing) && !(existing.DefinedIn != filePath && isSameFile(existing.DefinedIn, absFilePath)) {
+				// Error if type is being redefined (has fields or sealed variants).
+				// Skip if DefinedIn is empty — the type came from cache and should be overwritable.
+				if existing.DefinedIn != "" && hasTypeDefinition(existing) && !(existing.DefinedIn != filePath && isSameFile(existing.DefinedIn, absFilePath)) {
 					line := ctx.GetStart().GetLine()
 					return nil, fmt.Errorf("%s:%d: type %q in package %q redefined (first defined in %s)",
 						filePath, line, typeName, pkgName, existing.DefinedIn)
@@ -500,7 +578,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 
 			var meta *transpiler.TypeMetadata
 			if existing, ok := richAST.Types[fullTypeName]; ok && existing.Package == pkgName {
-				if hasTypeDefinition(existing) && !(existing.DefinedIn != filePath && isSameFile(existing.DefinedIn, absFilePath)) {
+				if existing.DefinedIn != "" && hasTypeDefinition(existing) && !(existing.DefinedIn != filePath && isSameFile(existing.DefinedIn, absFilePath)) {
 					line := ctx.GetStart().GetLine()
 					return nil, fmt.Errorf("%s:%d: type %q in package %q redefined (first defined in %s)",
 						filePath, line, typeName, pkgName, existing.DefinedIn)
@@ -540,6 +618,9 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 		}
 	}
 
+	logPhase("collect-types", phaseStart)
+	phaseStart = time.Now()
+
 	// 1.5 Collect sealed types
 	for _, topDecl := range sourceFile.AllTopLevelDeclaration() {
 		if sealedCtx := topDecl.SealedTypeDeclaration(); sealedCtx != nil {
@@ -549,8 +630,8 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 			if pkgName != "" && pkgName != "main" && pkgName != "test" {
 				fullSealedName = pkgName + "." + sealedName
 			}
-			// Check for redefinition
-			if existing, ok := richAST.Types[fullSealedName]; ok && hasTypeDefinition(existing) && !(existing.DefinedIn != filePath && isSameFile(existing.DefinedIn, absFilePath)) {
+			// Check for redefinition (skip if DefinedIn is empty — type came from cache)
+			if existing, ok := richAST.Types[fullSealedName]; ok && existing.DefinedIn != "" && hasTypeDefinition(existing) && !(existing.DefinedIn != filePath && isSameFile(existing.DefinedIn, absFilePath)) {
 				line := ctx.GetStart().GetLine()
 				return nil, fmt.Errorf("%s:%d: type %q in package %q redefined (first defined in %s)",
 					filePath, line, sealedName, pkgName, existing.DefinedIn)
@@ -730,6 +811,9 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 		}
 	}
 
+	logPhase("collect-methods-functions", phaseStart)
+	phaseStart = time.Now()
+
 	// 2.5 Extract sibling file metadata.
 	// Both --package-files mode and directory scanning use full metadata extraction
 	// (structs, sealed types, methods) to enable complete cross-file type resolution.
@@ -760,6 +844,9 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 			}
 		}
 	}
+
+	logPhase("extract-sibling-metadata", phaseStart)
+	phaseStart = time.Now()
 
 	// 2.75 Collect embed declarations
 	for _, topDecl := range sourceFile.AllTopLevelDeclaration() {
@@ -826,6 +913,11 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 		for _, w := range validationWarnings {
 			richAST.AnalysisWarnings = append(richAST.AnalysisWarnings, w.String())
 		}
+	}
+
+	logPhase("finalize", phaseStart)
+	if profiler.Enabled && isTopLevel {
+		fmt.Fprintf(os.Stderr, "  [analyze] %-35s %s\n", "TOTAL", time.Since(analyzeStart).Round(time.Millisecond))
 	}
 
 	return richAST, nil
@@ -1561,6 +1653,14 @@ func (a *galaAnalyzer) isStdType(name string) bool {
 }
 
 func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, error) {
+	var pkgStart time.Time
+	if profiler.Enabled {
+		pkgStart = time.Now()
+		defer func() {
+			fmt.Fprintf(os.Stderr, "    [analyzePackage] %-30s %s\n", relPath, time.Since(pkgStart).Round(time.Millisecond))
+		}()
+	}
+
 	// Save and clear packageFiles to prevent them from interfering with recursive
 	// Analyze calls. packageFiles are specific to the current compilation unit's package
 	// and must not be applied when analyzing other packages (e.g., std).
@@ -1572,6 +1672,23 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 	dirPath, err := a.resolver.ResolvePackagePath(relPath)
 	if err != nil {
 		return nil, fmt.Errorf("package not found: %s", relPath)
+	}
+
+	// Check disk cache before doing expensive analysis.
+	// The cache key combines the package's own content hash with a hash of its
+	// import paths (dependency identity). This ensures the cache invalidates when:
+	// 1. Any source file in the package changes (contentHash)
+	// 2. The set of imports changes (depsHash identity)
+	// 3. Any imported package's content changes (depsHash includes resolved dep hashes)
+	contentHash := hashPackageDir(dirPath)
+	depsHash := hashImportPaths(dirPath)
+	if contentHash != "" && a.cache != nil {
+		cacheStart := time.Now()
+		if cached := a.cache.Get(relPath, contentHash, depsHash); cached != nil {
+			logCache(true, relPath, time.Since(cacheStart))
+			return cached, nil
+		}
+		logCache(false, relPath, time.Since(cacheStart))
 	}
 
 	files, err := ioutil.ReadDir(dirPath)
@@ -1648,6 +1765,11 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 			pkgAST.GoTypeInfo = transpiler.NewGoTypeInfo()
 		}
 		pkgAST.GoTypeInfo.Merge(goInfo)
+	}
+
+	// Store in disk cache for future processes
+	if contentHash != "" && a.cache != nil {
+		a.cache.Put(relPath, contentHash, depsHash, pkgAST)
 	}
 
 	return pkgAST, nil
@@ -1879,11 +2001,14 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 			}
 			// Error if type already has field info from a different file — redefinition.
 			// Skip if existing type was loaded from this same sibling file (via auto-import).
+			// Skip if DefinedIn is empty — the type came from cache and should be overwritable.
 			if existing, ok := richAST.Types[fullTypeName]; ok && len(existing.FieldNames) > 0 {
-				if !isSameFile(existing.DefinedIn, absSibPath) {
+				if existing.DefinedIn != "" && !isSameFile(existing.DefinedIn, absSibPath) {
 					return fmt.Errorf("type %q in package %q redefined (first defined in %s)", typeName, pkgName, existing.DefinedIn)
 				}
-				continue
+				if existing.DefinedIn != "" {
+					continue
+				}
 			}
 			// Preserve existing methods from placeholder entry (e.g., methods from current file)
 			existingMethods := make(map[string]*transpiler.MethodMetadata)
@@ -1990,10 +2115,12 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 				fullTypeName = pkgName + "." + typeName
 			}
 			if existing, ok := richAST.Types[fullTypeName]; ok && len(existing.FieldNames) > 0 {
-				if !isSameFile(existing.DefinedIn, absSibPath) {
+				if existing.DefinedIn != "" && !isSameFile(existing.DefinedIn, absSibPath) {
 					return fmt.Errorf("type %q in package %q redefined (first defined in %s)", typeName, pkgName, existing.DefinedIn)
 				}
-				continue
+				if existing.DefinedIn != "" {
+					continue
+				}
 			}
 			existingMethods := make(map[string]*transpiler.MethodMetadata)
 			if existing, ok := richAST.Types[fullTypeName]; ok {
@@ -2038,11 +2165,14 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 			}
 			// Error if sealed type already defined in a different file — redefinition.
 			// Skip if loaded from this same sibling file (via auto-import).
+			// Skip if DefinedIn is empty — the type came from cache.
 			if existing, ok := richAST.Types[fullTypeName]; ok && existing.IsSealed {
-				if !isSameFile(existing.DefinedIn, absSibPath) {
+				if existing.DefinedIn != "" && !isSameFile(existing.DefinedIn, absSibPath) {
 					return fmt.Errorf("type %q in package %q redefined (first defined in %s)", typeName, pkgName, existing.DefinedIn)
 				}
-				continue
+				if existing.DefinedIn != "" {
+					continue
+				}
 			}
 			a.analyzeSealedType(ctx, pkgName, richAST)
 		}

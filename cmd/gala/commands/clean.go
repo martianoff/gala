@@ -14,6 +14,7 @@ import (
 var (
 	cleanAll   bool
 	cleanStale bool
+	cleanCache bool
 )
 
 var cleanCmd = &cobra.Command{
@@ -26,21 +27,42 @@ By default, only cleans the workspace for the current project.
 Options:
   --all     Remove all build workspaces
   --stale   Remove workspaces older than 7 days
+  --cache   Remove the analysis cache (.gala/cache/)
 
 Examples:
   gala clean              # Clean current project's workspace
   gala clean --all        # Clean all workspaces
-  gala clean --stale      # Clean stale workspaces`,
+  gala clean --stale      # Clean stale workspaces
+  gala clean --cache      # Clear analysis cache`,
 	Run: runClean,
 }
 
 func init() {
 	cleanCmd.Flags().BoolVar(&cleanAll, "all", false, "Clean all workspaces")
 	cleanCmd.Flags().BoolVar(&cleanStale, "stale", false, "Clean workspaces older than 7 days")
+	cleanCmd.Flags().BoolVar(&cleanCache, "cache", false, "Clear analysis cache (.gala/cache/)")
 }
 
 func runClean(cmd *cobra.Command, args []string) {
 	config := build.DefaultConfig()
+
+	if cleanCache {
+		cwd, err := os.Getwd()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		cacheDir := filepath.Join(cwd, ".gala", "cache")
+		if _, err := os.Stat(cacheDir); os.IsNotExist(err) {
+			fmt.Println("No analysis cache found.")
+		} else if err := os.RemoveAll(cacheDir); err != nil {
+			fmt.Fprintf(os.Stderr, "Error cleaning cache: %v\n", err)
+			os.Exit(1)
+		} else {
+			fmt.Println("Analysis cache cleared.")
+		}
+		return
+	}
 
 	if cleanAll {
 		// Clean all workspaces

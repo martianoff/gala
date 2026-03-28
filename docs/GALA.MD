@@ -3316,3 +3316,126 @@ The plugin provides:
 - Syntax highlighting
 - File type recognition (`.gala`)
 - Basic code structure support
+
+## 20. Performance Profiling
+
+### Compilation Profiling
+
+Enable detailed timing output for the transpilation pipeline by setting `GALA_PROFILE=1`:
+
+```bash
+GALA_PROFILE=1 gala transpile main.gala
+```
+
+This prints a per-phase breakdown to stderr:
+
+```
+=== GALA PROFILE: main.gala (total: 1.089s) ===
+  parse          89ms    8.1%  ████
+  analyze       983ms   90.2%  █████████████████████████████████████████████
+  transform      17ms    1.6%
+  generate        1ms    0.1%
+```
+
+The analyzer sub-phases are also shown:
+
+```
+  [analyze] sibling-discovery (6 files)   346ms
+  [analyze] load-std                        3ms
+  [analyze] scan-gala-imports               6ms
+  [analyze] analyze-go-packages           619ms
+  [analyze] scan-sibling-imports            8ms
+  [analyze] collect-types                   0s
+  [analyze] collect-methods-functions       1ms
+  [analyze] extract-sibling-metadata        1ms
+```
+
+Cache hits/misses are reported when the disk cache is active:
+
+```
+    [cache] HIT   std                       1ms
+    [cache] HIT   collection_immutable      2ms
+    [cache] MISS  my_new_package            0s
+```
+
+### Analysis Cache
+
+The transpiler caches analyzed package metadata on disk in `.gala/cache/`. The cache is keyed by a SHA-256 hash of all source files in the package, so it automatically invalidates when any file changes.
+
+The cache stores the `RichAST` metadata (types, functions, companion objects, Go type info) but not the ANTLR parse tree. This avoids redundant re-analysis of imports like `std` and `collection_immutable` across separate transpilation processes.
+
+**Cache location:** `.gala/cache/` in the project root (detected by walking up to `go.mod` or `gala.mod`).
+
+**Clear the cache** if you suspect stale data:
+
+```bash
+rm -rf .gala/cache/
+```
+
+### Batch Transpilation
+
+For packages with multiple source files, use `gala transpile-package` to transpile all files in a single process. This shares the analyzer's in-memory cache across files, avoiding redundant work:
+
+```bash
+gala transpile-package \
+  --inputs types.gala,request.gala,server.gala \
+  --outputs types.gen.go,request.gen.go,server.gen.go \
+  --search /path/to/gala
+```
+
+The `gala_library`, `gala_binary`, and `gala_go_test` Bazel macros automatically use batch transpilation for multi-file packages via the `gala_transpile_package` rule.
+
+#### Bazel Rule
+
+```python
+load("//:gala.bzl", "gala_transpile_package")
+
+gala_transpile_package(
+    name = "my_package_transpile",
+    srcs = ["types.gala", "server.gala", "router.gala"],
+    outs = ["types.gen.go", "server.gen.go", "router.gen.go"],
+)
+```
+
+### Go Type Inference Setup (Linux/CI)
+
+GALA's transpiler uses Go's `go/importer` to resolve types from Go stdlib and third-party packages (function return types, struct fields, method signatures). This requires a working Go SDK.
+
+**Ensure GOROOT is set** so the transpiler can find the Go SDK:
+
+```bash
+# Check if Go type inference is available
+GALA_PROFILE=1 gala transpile myfile.gala 2>&1 | grep "Go SDK"
+# If you see "Go SDK not found", set GOROOT:
+export GOROOT=$(go env GOROOT)
+```
+
+**Bazel on Linux**: `--action_env=GOROOT` in `.bazelrc` requires GOROOT in the invoking shell. Resolve it explicitly via `go env GOROOT`:
+
+```bash
+GOROOT_PATH=$(go env GOROOT)
+bazel build //... --action_env=GOROOT="$GOROOT_PATH" --action_env=PATH
+```
+
+**GitHub Actions CI**: `setup-go` may not export GOROOT to subsequent steps. Resolve it inline:
+
+```yaml
+- name: Setup Go
+  uses: actions/setup-go@v5
+  with:
+    go-version: '1.25'
+
+- name: Build
+  run: |
+    GOROOT_PATH=$(go env GOROOT)
+    bazel build //... --repo_env=GOROOT="$GOROOT_PATH" --action_env=GOROOT="$GOROOT_PATH" --action_env=PATH
+```
+
+Without Go type inference, GALA code that calls Go functions (e.g., `strconv.Atoi`, `bytes.NewBufferString`) may fail to infer return types. Pure GALA code and GALA stdlib types (`Option`, `Try`, etc.) work without it.
+
+### Performance Tips
+
+1. **Warm cache**: After the first build, subsequent builds of unchanged dependencies are ~10x faster.
+2. **Batch transpilation**: Multi-file packages transpile ~7x faster in batch mode vs per-file.
+3. **Minimize Go imports**: Each Go stdlib/third-party import triggers `go/importer` analysis (~100-600ms). Group Go interop in fewer files when possible.
+4. **Profile first**: Always use `GALA_PROFILE=1` to identify the actual bottleneck before optimizing.

@@ -4,6 +4,7 @@ go_library(
     name = "analyzer",
     srcs = [
         "analyzer.go",
+        "cache.go",
         "go_types.go",
         "validation.go",
     ],
@@ -14,6 +15,7 @@ go_library(
         "//internal/transpiler",
         "//internal/transpiler/generator",
         "//internal/transpiler/module",
+        "//internal/transpiler/profiler",
         "//internal/transpiler/registry",
         "//internal/transpiler/resolver",
         "//internal/transpiler/transformer",

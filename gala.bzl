@@ -127,6 +127,53 @@ def gala_transpile(name, src, out = None, package_files = [], extra_srcs = [], g
         tags = ["no-sandbox"],
     )
 
+def gala_transpile_package(name, srcs, outs = None, extra_srcs = [], gala_deps = []):
+    """Transpile all GALA files in a package in ONE process (much faster than per-file).
+
+    This uses 'gala transpile-package' which shares the analyzer cache across files,
+    avoiding redundant re-analysis of imports (std, collection_immutable, etc.).
+
+    Args:
+        name: Target name
+        srcs: List of .gala source files in the package
+        outs: List of output .go file names (same order as srcs). Defaults to *.gen.go.
+        extra_srcs: Additional GALA source files/filegroups to make available during transpilation
+        gala_deps: GALA library dependency labels for cross-package type resolution
+    """
+    if not outs:
+        outs = [s.replace(".gala", ".gen.go") for s in srcs]
+
+    if len(srcs) != len(outs):
+        fail("gala_transpile_package: srcs and outs must have the same length")
+
+    # Auto-include GALA source files from dependencies for cross-package type resolution
+    dep_srcs = [_gala_sources_label(dep) for dep in gala_deps]
+
+    # Build search path: repo root + parent dirs of dependencies
+    dep_search = ""
+    if gala_deps:
+        parents = [_dep_parent_dir(dep) for dep in gala_deps]
+        dep_search = "," + ",".join(parents)
+
+    inputs_flag = ",".join(["$(location %s)" % s for s in srcs])
+    outputs_flag = ",".join(["$(location %s)" % o for o in outs])
+
+    native.genrule(
+        name = name,
+        srcs = srcs + extra_srcs + dep_srcs + [Label("//:all_gala_sources"), Label("//:go.mod")],
+        outs = outs,
+        cmd = "$(location {tool}) transpile-package --inputs {inputs} --outputs {outputs} --search $$(dirname $(location {gomod})){dep_search} --goroot=$${{GOROOT:-}}".format(
+            tool = Label("//cmd/gala"),
+            inputs = inputs_flag,
+            outputs = outputs_flag,
+            gomod = Label("//:go.mod"),
+            dep_search = dep_search,
+        ),
+        tools = [Label("//cmd/gala")],
+        visibility = ["//visibility:public"],
+        tags = ["no-sandbox"],
+    )
+
 def gala_bootstrap_transpile(name, src, out = None, package_files = []):
     """Transpile a GALA source file using the bootstrap transpiler.
 
@@ -184,18 +231,23 @@ def gala_library(name, src = None, srcs = None, importpath = "", deps = [], gala
     if not srcs:
         fail("Either 'src' or 'srcs' must be specified")
 
-    go_srcs = []
-    for i, s in enumerate(srcs):
-        go_src = name + "_" + str(i) + ".gen.go"
-        siblings = [other for j, other in enumerate(srcs) if j != i]
-        gala_transpile(
-            name = name + "_transpile_" + str(i),
-            src = s,
-            out = go_src,
-            package_files = siblings,
+    go_srcs = [name + "_" + str(i) + ".gen.go" for i in range(len(srcs))]
+
+    # Use batch transpilation for packages with multiple files (much faster)
+    if len(srcs) > 1:
+        gala_transpile_package(
+            name = name + "_transpile",
+            srcs = srcs,
+            outs = go_srcs,
             gala_deps = gala_deps,
         )
-        go_srcs.append(go_src)
+    else:
+        gala_transpile(
+            name = name + "_transpile_0",
+            src = srcs[0],
+            out = go_srcs[0],
+            gala_deps = gala_deps,
+        )
 
     # Combine deps with std and gala_deps (using Label to ensure it resolves to @gala//std)
     all_deps = list(deps) + list(gala_deps) + [Label("//std")]
@@ -242,18 +294,22 @@ def gala_binary(name, src = None, srcs = None, deps = [], gala_deps = [], embeds
     if not srcs:
         fail("Either 'src' or 'srcs' must be specified")
 
-    go_srcs = []
-    for i, s in enumerate(srcs):
-        go_src = name + "_" + str(i) + ".gen.go"
-        siblings = [other for j, other in enumerate(srcs) if j != i]
-        gala_transpile(
-            name = name + "_transpile_" + str(i),
-            src = s,
-            out = go_src,
-            package_files = siblings,
+    go_srcs = [name + "_" + str(i) + ".gen.go" for i in range(len(srcs))]
+
+    if len(srcs) > 1:
+        gala_transpile_package(
+            name = name + "_transpile",
+            srcs = srcs,
+            outs = go_srcs,
             gala_deps = gala_deps,
         )
-        go_srcs.append(go_src)
+    else:
+        gala_transpile(
+            name = name + "_transpile_0",
+            src = srcs[0],
+            out = go_srcs[0],
+            gala_deps = gala_deps,
+        )
 
     # Combine deps with std (using Label to ensure it resolves to @gala//std)
     all_deps = list(deps) + list(gala_deps) + [Label("//std")]
@@ -428,37 +484,55 @@ def gala_go_test(name, srcs, deps = [], gala_deps = [], pkg = "main", embed = []
     test_extra_srcs = [Label("//test:gala_sources")] if pkg != "test" else []
 
     # Transpile library source files (lib_srcs) so they can be compiled with the test
-    transpiled_lib_srcs = []
-    for i, lib_src in enumerate(lib_srcs):
-        lib_transpile_name = name + "_lib_transpile_" + str(i)
-        lib_go_src = name + "_lib_" + str(i) + ".gen.go"
-        lib_siblings = [other for j, other in enumerate(lib_srcs) if j != i]
-        gala_transpile(
-            name = lib_transpile_name,
-            src = lib_src,
-            out = lib_go_src,
-            package_files = lib_siblings,
+    transpiled_lib_srcs = [name + "_lib_" + str(i) + ".gen.go" for i in range(len(lib_srcs))]
+    if len(lib_srcs) > 1:
+        gala_transpile_package(
+            name = name + "_lib_transpile",
+            srcs = lib_srcs,
+            outs = transpiled_lib_srcs,
             extra_srcs = test_extra_srcs,
             gala_deps = gala_deps,
         )
-        transpiled_lib_srcs.append(lib_go_src)
-
-    # Transpile each test source file, including lib_srcs as siblings for type resolution
-    transpiled_srcs = []
-    all_package_files = list(srcs) + list(lib_srcs)
-    for i, src in enumerate(srcs):
-        transpile_name = name + "_transpile_" + str(i)
-        go_src = name + "_test_" + str(i) + ".go"
-        siblings = [f for f in all_package_files if f != src]
+    elif len(lib_srcs) == 1:
         gala_transpile(
-            name = transpile_name,
-            src = src,
-            out = go_src,
+            name = name + "_lib_transpile_0",
+            src = lib_srcs[0],
+            out = transpiled_lib_srcs[0],
+            extra_srcs = test_extra_srcs,
+            gala_deps = gala_deps,
+        )
+    else:
+        transpiled_lib_srcs = []
+
+    # Transpile test source files (with lib_srcs as siblings for type resolution)
+    # Tests need all lib_srcs + other test srcs as package files
+    all_package_files = list(srcs) + list(lib_srcs)
+    transpiled_srcs = [name + "_test_" + str(i) + ".go" for i in range(len(srcs))]
+    if len(srcs) > 1:
+        # Batch transpile test files too
+        # Note: test files need lib_srcs as extra package files, but gala_transpile_package
+        # doesn't support mixed package files. Fall back to per-file for tests.
+        for i, src in enumerate(srcs):
+            transpile_name = name + "_transpile_" + str(i)
+            siblings = [f for f in all_package_files if f != src]
+            gala_transpile(
+                name = transpile_name,
+                src = src,
+                out = transpiled_srcs[i],
+                package_files = siblings,
+                extra_srcs = test_extra_srcs,
+                gala_deps = gala_deps,
+            )
+    elif len(srcs) == 1:
+        siblings = [f for f in all_package_files if f != srcs[0]]
+        gala_transpile(
+            name = name + "_transpile_0",
+            src = srcs[0],
+            out = transpiled_srcs[0],
             package_files = siblings,
             extra_srcs = test_extra_srcs,
             gala_deps = gala_deps,
         )
-        transpiled_srcs.append(go_src)
 
     # The generated main is already Go code, no transpiling needed
     # Use the output from gala_go_test_gen directly

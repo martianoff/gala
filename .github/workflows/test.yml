@@ -27,7 +27,11 @@ jobs:
           repository-cache: true
 
       - name: Build
-        run: bazel build //...
+        run: |
+          GOROOT_PATH=$(go env GOROOT)
+          bazel build //... --repo_env=GOROOT="$GOROOT_PATH" --action_env=GOROOT="$GOROOT_PATH" --action_env=PATH
 
       - name: Test
-        run: bazel test //... --test_output=errors --verbose_failures
+        run: |
+          GOROOT_PATH=$(go env GOROOT)
+          bazel test //... --test_output=errors --verbose_failures --repo_env=GOROOT="$GOROOT_PATH" --action_env=GOROOT="$GOROOT_PATH" --action_env=PATH

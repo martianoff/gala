@@ -127,3 +127,4 @@ gradle-app.setting
 
 # Private Docs
 docs/private/*
+.gala/

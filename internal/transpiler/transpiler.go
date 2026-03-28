@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/antlr4-go/antlr/v4"
+
+	"martianoff/gala/internal/transpiler/profiler"
 )
 
 // Type and function name constants for the std library.
@@ -262,24 +264,35 @@ func NewGalaToGoTranspiler(
 
 // Transpile executes the full transpilation pipeline.
 func (t *GalaToGoTranspiler) Transpile(input string, filePath string) (string, error) {
+	prof := profiler.New(filePath)
+	defer prof.Report()
+
+	done := prof.Phase("parse")
 	tree, err := t.parser.Parse(input)
+	done()
 	if err != nil {
 		return "", err
 	}
 
+	done = prof.Phase("analyze")
 	richAST, err := t.analyzer.Analyze(tree, filePath)
+	done()
 	if err != nil {
 		return "", err
 	}
 	richAST.FilePath = filePath
 	richAST.SourceContent = input
 
+	done = prof.Phase("transform")
 	fset, file, err := t.transformer.Transform(richAST)
+	done()
 	if err != nil {
 		return "", err
 	}
 
+	done = prof.Phase("generate")
 	code, err := t.generator.Generate(fset, file)
+	done()
 	if err != nil {
 		return "", err
 	}
