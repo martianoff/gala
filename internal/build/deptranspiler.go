@@ -153,10 +153,11 @@ func (dt *DepTranspiler) transpileSingleDep(dep mod.Require, transpiledDirs map[
 		}
 	}
 
-	// Create transpiler pipeline
+	// Create transpiler pipeline with BatchAnalyzer for shared cache
 	p := transpiler.NewAntlrGalaParser()
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
+	batchAnalyzer := analyzer.NewBatchAnalyzer(p, searchPaths)
 
 	for _, galaFile := range galaFiles {
 		content, err := os.ReadFile(galaFile)
@@ -171,14 +172,9 @@ func (dt *DepTranspiler) transpileSingleDep(dep mod.Require, transpiledDirs map[
 				siblings = append(siblings, other)
 			}
 		}
+		batchAnalyzer.SetPackageFiles(siblings)
 
-		var a transpiler.Analyzer
-		if len(siblings) > 0 {
-			a = analyzer.NewGalaAnalyzerWithPackageFiles(p, searchPaths, siblings)
-		} else {
-			a = analyzer.NewGalaAnalyzer(p, searchPaths)
-		}
-		t := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+		t := transpiler.NewGalaToGoTranspiler(p, batchAnalyzer, tr, g)
 
 		goCode, err := t.Transpile(string(content), galaFile)
 		if err != nil {
