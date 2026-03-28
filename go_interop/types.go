@@ -12,6 +12,8 @@ package go_interop
 import (
 	"sync"
 	"time"
+
+	"martianoff/gala/std"
 )
 
 // === Type Conversion Functions ===
@@ -676,4 +678,28 @@ func (e *SingleThreadExecutionContext) Shutdown() {
 		e.wg.Wait()
 		close(e.tasks)
 	})
+}
+
+// === Nil-Safe Bridge Helpers ===
+
+// OptionFromMap looks up a key in a possibly-nil Go map and returns Option.
+// Returns None if the map is nil or the key is not found.
+func OptionFromMap[K comparable, V any](m map[K]V, key K) std.Option[V] {
+	if m == nil {
+		return std.None[V]{}.Apply()
+	}
+	v, ok := m[key]
+	if !ok {
+		return std.None[V]{}.Apply()
+	}
+	return std.Some[V]{}.Apply(v)
+}
+
+// SliceFromNil converts a possibly-nil Go slice to an empty slice.
+// Useful for range loops that would panic on nil slices.
+func SliceFromNil[T any](slice []T) []T {
+	if slice == nil {
+		return []T{}
+	}
+	return slice
 }

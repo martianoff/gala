@@ -1,0 +1,6 @@
+opt1 defined: true
+opt1 value: Alice
+opt2 defined: false
+opt3 defined: true
+opt3 value: Alice
+opt4 defined: false

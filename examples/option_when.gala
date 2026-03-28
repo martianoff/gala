@@ -1,0 +1,18 @@
+package main
+
+import . "martianoff/gala/std"
+
+func main() {
+    val name = "Alice"
+    val opt1 = When(name != "", name)
+    val opt2 = When(name == "", name)
+    val opt3 = Unless(name == "", name)
+    val opt4 = Unless(name != "", name)
+
+    Println(s"opt1 defined: ${opt1.IsDefined()}")
+    Println(s"opt1 value: ${opt1.Get()}")
+    Println(s"opt2 defined: ${opt2.IsDefined()}")
+    Println(s"opt3 defined: ${opt3.IsDefined()}")
+    Println(s"opt3 value: ${opt3.Get()}")
+    Println(s"opt4 defined: ${opt4.IsDefined()}")
+}
