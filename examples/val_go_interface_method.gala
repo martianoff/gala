@@ -1,0 +1,19 @@
+package main
+
+import (
+    "context"
+)
+
+// Verify that val variables holding Go interface types can call methods
+// without spurious .Get() unwrapping on the return value.
+// Bug: ctx.Err() was generated as ctx.Get().Err.Get()() because the
+// fallback heuristic in isImmutableField matched "Err" from std.Try.Failure.
+func main() {
+    val ctx = context.Background()
+
+    // Method call on Go interface should not have .Get() on return
+    val err = ctx.Err()
+    if err == nil {
+        Println("context ok")
+    }
+}
