@@ -354,6 +354,12 @@ gala_test(
 )
 
 gala_test(
+    name = "bug055_repro",
+    src = "bug055_repro.gala",
+    expected = "bug055_repro.out",
+)
+
+gala_test(
     name = "try_basic",
     src = "try_basic.gala",
     expected = "try_basic.out",

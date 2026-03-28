@@ -1,0 +1,40 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+)
+
+// Simple struct
+type MyData struct {
+    Name string
+    Age  int
+}
+
+type OtherData struct {
+    Value string
+}
+
+// BUG-055: typed pattern matching with pointer type in Option return
+func findData(raw any) Option[*MyData] {
+    return raw match {
+        case sd: *MyData => Some(sd)
+        case _ => None[*MyData]()
+    }
+}
+
+func main() {
+    val d *MyData = &MyData{Name: "Alice", Age: 30}
+    val result = findData(d)
+    result match {
+        case Some(sd) => Println(fmt.Sprintf("found: %s, %d", sd.Name, sd.Age))
+        case _ => Println("not found")
+    }
+
+    val d2 *OtherData = &OtherData{Value: "hello"}
+    val result2 = findData(d2)
+    result2 match {
+        case Some(sd) => Println(fmt.Sprintf("found: %s", sd.Name))
+        case _ => Println("not found (expected)")
+    }
+}
