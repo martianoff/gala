@@ -59,7 +59,9 @@ func runRun(cmd *cobra.Command, args []string) {
 		projectDir = args[0]
 	}
 
-	// Resolve to project root — walk up to find gala.mod
+	// Resolve project root and optional source directory.
+	// If the argument is a .gala file or subdirectory, find gala.mod for deps
+	// but compile from the file's directory (multi-package build).
 	absProjectDir, err := findProjectRoot(projectDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -72,6 +74,16 @@ func runRun(cmd *cobra.Command, args []string) {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
+	}
+
+	// If the argument points to a subdirectory or file, set it as source dir
+	// for multi-package builds (e.g., `gala run examples/hello/main.gala`)
+	absArg, _ := filepath.Abs(projectDir)
+	if info, err := os.Stat(absArg); err == nil && !info.IsDir() {
+		absArg = filepath.Dir(absArg)
+	}
+	if absArg != absProjectDir {
+		builder.SetSourceDir(absArg)
 	}
 
 	// Build to the workspace directory (not project dir)

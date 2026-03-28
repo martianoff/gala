@@ -27,6 +27,15 @@ type Builder struct {
 	stdlibVersion  string
 	verbose        bool
 	transpiledDeps map[string]string // modulePath -> transpiled directory
+	sourceDir      string            // override source directory (for running subdir files)
+}
+
+// SetSourceDir sets an override source directory for compilation.
+// When set, the builder compiles files from this directory (as package main)
+// instead of the project root. The project root's library files are transpiled
+// first and made available as a local dependency.
+func (b *Builder) SetSourceDir(dir string) {
+	b.sourceDir = dir
 }
 
 // NewBuilder creates a new builder for the given project directory.
@@ -126,15 +135,18 @@ func (b *Builder) Build(outputPath string) (string, error) {
 	}
 
 	// Step 4.5: Check if library package — if so, compile-check only
-	isLib, pkgName := b.isLibraryPackage()
-	if isLib {
-		if b.verbose {
-			fmt.Printf("Package %q is a library, running compile check...\n", pkgName)
+	// Skip this check in multi-package mode (sourceDir set) since the consumer is package main
+	if b.sourceDir == "" || b.sourceDir == b.workspace.ProjectDir {
+		isLib, pkgName := b.isLibraryPackage()
+		if isLib {
+			if b.verbose {
+				fmt.Printf("Package %q is a library, running compile check...\n", pkgName)
+			}
+			if err := b.goCompileCheck(); err != nil {
+				return "", fmt.Errorf("go build (compile check): %w", err)
+			}
+			return "", nil
 		}
-		if err := b.goCompileCheck(); err != nil {
-			return "", fmt.Errorf("go build (compile check): %w", err)
-		}
-		return "", nil
 	}
 
 	// Step 5: Run go build (executable)
@@ -226,6 +238,13 @@ func computeSourceHash(files []string, galaVersion string) string {
 func (b *Builder) transpile() error {
 	if b.verbose {
 		fmt.Println("Transpiling GALA files...")
+	}
+
+	// If sourceDir is set and different from project root, do a multi-package build:
+	// 1. Transpile the library (project root) into gen/
+	// 2. Transpile the consumer (sourceDir) into gen/ as package main
+	if b.sourceDir != "" && b.sourceDir != b.workspace.ProjectDir {
+		return b.transpileWithSourceDir()
 	}
 
 	// Find all .gala files in the project
@@ -339,6 +358,166 @@ func (b *Builder) transpile() error {
 	// Save source hash for next build
 	if currentHash != "" {
 		os.WriteFile(hashFile, []byte(currentHash), 0644)
+	}
+
+	return nil
+}
+
+// transpileWithSourceDir handles the multi-package case: when sourceDir is a
+// subdirectory (e.g., examples/hello/), transpile the project library first,
+// then the consumer source files on top of it.
+//
+// Workspace layout after transpilation:
+//
+//	gen/
+//	  filter.gen.go          ← library (package server)
+//	  server.gen.go          ← library
+//	  ...
+//	  httpcore/              ← local Go subpackages
+//	  cmd/
+//	    main/
+//	      main.gen.go        ← consumer (package main)
+//
+// The consumer's imports of the project module are rewritten to point to gen/.
+func (b *Builder) transpileWithSourceDir() error {
+	if b.verbose {
+		fmt.Printf("Multi-package build: library from %s, main from %s\n",
+			b.workspace.ProjectDir, b.sourceDir)
+	}
+
+	// Clean gen directory
+	if err := b.workspace.CleanGen(); err != nil {
+		return fmt.Errorf("cleaning gen dir: %w", err)
+	}
+
+	// Create transpiler pipeline
+	stdlibDir := b.config.StdlibVersionDir(b.stdlibVersion)
+	searchPaths := []string{b.workspace.ProjectDir, stdlibDir}
+	for _, req := range b.galaMod.GalaRequires() {
+		searchPaths = append(searchPaths, b.config.GalaModulePath(req.Path, req.Version))
+	}
+	p := transpiler.NewAntlrGalaParser()
+	tr := transformer.NewGalaASTTransformer()
+	g := generator.NewGoCodeGenerator()
+
+	// Step 1: Transpile library files (project root) into gen/
+	libFiles, err := findGalaFiles(b.workspace.ProjectDir)
+	if err != nil {
+		return fmt.Errorf("finding library files: %w", err)
+	}
+	if b.verbose {
+		fmt.Printf("  Transpiling %d library files...\n", len(libFiles))
+	}
+	for _, galaFile := range libFiles {
+		content, err := os.ReadFile(galaFile)
+		if err != nil {
+			return fmt.Errorf("reading %s: %w", galaFile, err)
+		}
+		var siblings []string
+		for _, other := range libFiles {
+			if other != galaFile {
+				siblings = append(siblings, other)
+			}
+		}
+		var a transpiler.Analyzer
+		if len(siblings) > 0 {
+			a = analyzer.NewGalaAnalyzerWithPackageFiles(p, searchPaths, siblings)
+		} else {
+			a = analyzer.NewGalaAnalyzer(p, searchPaths)
+		}
+		t := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+		goCode, err := t.Transpile(string(content), galaFile)
+		if err != nil {
+			return fmt.Errorf("transpiling %s: %w", galaFile, err)
+		}
+		outName := strings.TrimSuffix(filepath.Base(galaFile), ".gala") + ".gen.go"
+		if err := b.workspace.WriteGenFile(outName, []byte(goCode)); err != nil {
+			return fmt.Errorf("writing %s: %w", outName, err)
+		}
+		if b.verbose {
+			fmt.Printf("    %s -> %s\n", filepath.Base(galaFile), outName)
+		}
+	}
+
+	// Copy local Go subpackages
+	if err := copyNonGalaFiles(b.workspace.ProjectDir, b.workspace.GenDir, b.verbose); err != nil {
+		return fmt.Errorf("copying local Go subpackages: %w", err)
+	}
+
+	// Step 2: Transpile consumer files (sourceDir) into gen/cmd/main/
+	consumerFiles, err := findGalaFiles(b.sourceDir)
+	if err != nil {
+		return fmt.Errorf("finding consumer files: %w", err)
+	}
+	if len(consumerFiles) == 0 {
+		return fmt.Errorf("no .gala files found in %s", b.sourceDir)
+	}
+	if b.verbose {
+		fmt.Printf("  Transpiling %d consumer files...\n", len(consumerFiles))
+	}
+
+	consumerDir := filepath.Join(b.workspace.GenDir, "cmd", "main")
+	if err := os.MkdirAll(consumerDir, 0755); err != nil {
+		return fmt.Errorf("creating consumer dir: %w", err)
+	}
+
+	for _, galaFile := range consumerFiles {
+		content, err := os.ReadFile(galaFile)
+		if err != nil {
+			return fmt.Errorf("reading %s: %w", galaFile, err)
+		}
+		var siblings []string
+		for _, other := range consumerFiles {
+			if other != galaFile {
+				siblings = append(siblings, other)
+			}
+		}
+		var a transpiler.Analyzer
+		if len(siblings) > 0 {
+			a = analyzer.NewGalaAnalyzerWithPackageFiles(p, searchPaths, siblings)
+		} else {
+			a = analyzer.NewGalaAnalyzer(p, searchPaths)
+		}
+		t := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+		goCode, err := t.Transpile(string(content), galaFile)
+		if err != nil {
+			return fmt.Errorf("transpiling %s: %w", galaFile, err)
+		}
+		outName := strings.TrimSuffix(filepath.Base(galaFile), ".gala") + ".gen.go"
+		outPath := filepath.Join(consumerDir, outName)
+		if err := os.WriteFile(outPath, []byte(goCode), 0644); err != nil {
+			return fmt.Errorf("writing %s: %w", outPath, err)
+		}
+		if b.verbose {
+			fmt.Printf("    %s -> cmd/main/%s\n", filepath.Base(galaFile), outName)
+		}
+	}
+
+	// Step 3: Rewrite project module imports in consumer files.
+	// The consumer may import the project using either the Go module path
+	// ("github.com/martianoff/gala-server") or the GALA short path
+	// ("martianoff/gala-server"). Rewrite both to the workspace path.
+	projectModule := b.projectGoModulePath()
+	if projectModule != "" {
+		if err := rewriteImportsInDir(consumerDir, projectModule, "gala-build-workspace/gen", b.verbose); err != nil {
+			return fmt.Errorf("rewriting consumer imports: %w", err)
+		}
+		// Also rewrite the short path (without VCS host prefix like github.com/).
+		// GALA imports use "martianoff/gala-server" while go.mod uses "github.com/martianoff/gala-server".
+		for _, prefix := range []string{"github.com/", "gitlab.com/", "bitbucket.org/"} {
+			if strings.HasPrefix(projectModule, prefix) {
+				shortPath := strings.TrimPrefix(projectModule, prefix)
+				if err := rewriteImportsInDir(consumerDir, shortPath, "gala-build-workspace/gen", b.verbose); err != nil {
+					return fmt.Errorf("rewriting consumer short imports: %w", err)
+				}
+				break
+			}
+		}
+	}
+
+	// Also rewrite library imports that reference the project module (for local subpackages)
+	if err := b.rewriteProjectModuleImports(b.workspace.GenDir); err != nil {
+		return fmt.Errorf("rewriting library imports: %w", err)
 	}
 
 	return nil
@@ -722,8 +901,12 @@ func (b *Builder) goBuild(outputPath string) (string, error) {
 		outputPath += ".exe"
 	}
 
-	// Build command
-	args := []string{"build", "-o", outputPath, "./gen/..."}
+	// Build command — in multi-package mode, build the consumer subpackage
+	buildTarget := "./gen/..."
+	if b.sourceDir != "" && b.sourceDir != b.workspace.ProjectDir {
+		buildTarget = "./gen/cmd/main"
+	}
+	args := []string{"build", "-o", outputPath, buildTarget}
 
 	cmd := exec.Command("go", args...)
 	cmd.Dir = b.workspace.Dir
