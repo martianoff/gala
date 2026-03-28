@@ -1041,6 +1041,13 @@ gala_test(
     expected = "tuple_return_widen.out",
 )
 
+# Val Go interface method calls should not get spurious .Get() unwrapping
+gala_test(
+    name = "val_go_interface_method",
+    src = "val_go_interface_method.gala",
+    expected = "val_go_interface_method.out",
+)
+
 # FIX-041 verification: ToBytes/ToString/ToRunes byte conversion helpers
 gala_test(
     name = "byte_conversion",

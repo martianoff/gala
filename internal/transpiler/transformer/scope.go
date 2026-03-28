@@ -79,6 +79,17 @@ func (t *galaASTTransformer) getType(name string) transpiler.Type {
 	return transpiler.NilType{}
 }
 
+func (t *galaASTTransformer) getValType(name string) transpiler.Type {
+	s := t.currentScope
+	for s != nil {
+		if typeName, ok := s.valTypes[name]; ok {
+			return typeName
+		}
+		s = s.parent
+	}
+	return transpiler.NilType{}
+}
+
 func (t *galaASTTransformer) isVal(name string) bool {
 	s := t.currentScope
 	for s != nil {

@@ -148,47 +148,48 @@ func (t *galaASTTransformer) isImmutableField(xType transpiler.Type, selExpr *as
 	}
 
 	// Fallback: when receiver type is unknown AND the base expression is a
-	// {val}.Get() call (indicating an Immutable-wrapped struct whose type
-	// inference didn't propagate), scan all known struct types for the field.
-	// Only unwrap if every struct that has this field agrees it's immutable.
+	// {val}.Get() call, try to resolve the val's stored type from scope and
+	// check if the field is immutable on that specific type.
+	// We do NOT scan all known types — that's too broad and causes false
+	// positives (e.g., "Err" matching std.Try.Err on a context.Context val).
 	if xTypeName == "" || xType.IsNil() {
-		isValGetCall := false
 		if ce, ok := selExpr.X.(*ast.CallExpr); ok && len(ce.Args) == 0 {
 			if se, ok := ce.Fun.(*ast.SelectorExpr); ok && se.Sel.Name == "Get" {
 				if id, ok := se.X.(*ast.Ident); ok && t.isVal(id.Name) {
-					isValGetCall = true
-				}
-			}
-		}
-		if isValGetCall {
-			foundField := false
-			allImmutable := true
-			// Check structImmutFields (current file types)
-			for tName, fields := range t.structFields {
-				for i, f := range fields {
-					if f == selName {
-						foundField = true
-						if i >= len(t.structImmutFields[tName]) || !t.structImmutFields[tName][i] {
-							allImmutable = false
+					// Resolve the val's actual type from scope
+					valType := t.getValType(id.Name)
+					if !valType.IsNil() {
+						innerType := valType
+						// Unwrap Immutable[T] → T
+						if gen, ok := valType.(transpiler.GenericType); ok && len(gen.Params) > 0 {
+							baseName := gen.Base.String()
+							if baseName == transpiler.TypeImmutable || baseName == "std."+transpiler.TypeImmutable {
+								innerType = gen.Params[0]
+							}
 						}
-						break
+						// Check if the resolved inner type has this field as immutable
+						innerName := innerType.String()
+						if idx := strings.Index(innerName, "["); idx != -1 {
+							innerName = innerName[:idx]
+						}
+						innerName = strings.TrimPrefix(innerName, "*")
+						resolvedInner := t.resolveStructTypeName(innerName)
+						if fields, ok := t.structFields[resolvedInner]; ok {
+							for i, f := range fields {
+								if f == selName {
+									return t.structImmutFields[resolvedInner][i]
+								}
+							}
+						}
+						if typeMeta := t.getTypeMeta(innerName); typeMeta != nil {
+							for i, f := range typeMeta.FieldNames {
+								if f == selName {
+									return i < len(typeMeta.ImmutFlags) && typeMeta.ImmutFlags[i]
+								}
+							}
+						}
 					}
 				}
-			}
-			// Check typeMetas (cross-package types)
-			for _, meta := range t.typeMetas {
-				for i, f := range meta.FieldNames {
-					if f == selName {
-						foundField = true
-						if i >= len(meta.ImmutFlags) || !meta.ImmutFlags[i] {
-							allImmutable = false
-						}
-						break
-					}
-				}
-			}
-			if foundField && allImmutable {
-				return true
 			}
 		}
 	}
