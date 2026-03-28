@@ -1549,3 +1549,13 @@ gala_test(
     src = "option_when.gala",
     expected = "option_when.out",
 )
+
+# USR-004: Go struct construction with GALA named-arg syntax
+gala_test(
+    name = "go_struct_named_args",
+    src = "go_struct_named_args.gala",
+    expected = "go_struct_named_args.out",
+    deps = [
+        "//examples/go_struct_bridge",
+    ],
+)
