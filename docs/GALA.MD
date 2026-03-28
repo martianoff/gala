@@ -2943,14 +2943,16 @@ bazel test //examples:match_type_inference
 
 #### Bazel Configuration
 
-The project's `.bazelrc` includes settings required for both Linux and Windows:
-
-```
-build --action_env=GOROOT    # Pass Go SDK root to transpiler genrules
-build --action_env=PATH      # Allow genrules to find the Go binary
-```
-
 Transpilation genrules in `gala.bzl` use `tags = ["no-sandbox"]` to allow the transpiler filesystem access to the Go SDK for type inference via `go/importer`.
+
+The transpiler needs `GOROOT` to find the Go SDK. Pass it explicitly when invoking Bazel:
+
+```bash
+GOROOT_PATH=$(go env GOROOT)
+bazel build //... --action_env=GOROOT="$GOROOT_PATH" --action_env=PATH
+```
+
+> **Note**: The `.bazelrc` includes `build --action_env=GOROOT` which passes through the shell's GOROOT. This works when GOROOT is already set, but some environments (e.g., GitHub Actions `setup-go`) don't export it. Using `go env GOROOT` inline is always reliable. See [Go Type Inference Setup](#go-type-inference-setup-linuxci) for CI-specific guidance.
 
 If the Go SDK is not found, transpilation still succeeds but Go type inference is disabled — a warning is printed to stderr. This only affects type resolution for Go stdlib and third-party packages; GALA's own type system works without it.
 
@@ -3399,25 +3401,21 @@ gala_transpile_package(
 
 ### Go Type Inference Setup (Linux/CI)
 
-GALA's transpiler uses Go's `go/importer` to resolve types from Go stdlib and third-party packages (function return types, struct fields, method signatures). This requires a working Go SDK.
+GALA's transpiler uses Go's `go/importer` to resolve types from Go stdlib and third-party packages. This requires the Go SDK to be discoverable via `GOROOT` (see [Bazel Configuration](#bazel-configuration)).
 
-**Ensure GOROOT is set** so the transpiler can find the Go SDK:
+**Verify** Go type inference is working:
 
 ```bash
-# Check if Go type inference is available
 GALA_PROFILE=1 gala transpile myfile.gala 2>&1 | grep "Go SDK"
-# If you see "Go SDK not found", set GOROOT:
+```
+
+If you see "Go SDK not found", set GOROOT:
+
+```bash
 export GOROOT=$(go env GOROOT)
 ```
 
-**Bazel on Linux**: `--action_env=GOROOT` in `.bazelrc` requires GOROOT in the invoking shell. Resolve it explicitly via `go env GOROOT`:
-
-```bash
-GOROOT_PATH=$(go env GOROOT)
-bazel build //... --action_env=GOROOT="$GOROOT_PATH" --action_env=PATH
-```
-
-**GitHub Actions CI**: `setup-go` may not export GOROOT to subsequent steps. Resolve it inline:
+**GitHub Actions CI**: `setup-go` does not export GOROOT to subsequent steps. Resolve it inline with `go env GOROOT`:
 
 ```yaml
 - name: Setup Go
