@@ -3410,26 +3410,25 @@ GALA_PROFILE=1 gala transpile myfile.gala 2>&1 | grep "Go SDK"
 export GOROOT=$(go env GOROOT)
 ```
 
-**Bazel on Linux**: `--action_env=GOROOT` in `.bazelrc` only works if GOROOT is set in the shell that invokes `bazel`. Pass it explicitly:
+**Bazel on Linux**: `--action_env=GOROOT` in `.bazelrc` requires GOROOT in the invoking shell. Resolve it explicitly via `go env GOROOT`:
 
 ```bash
-bazel build //... --action_env=GOROOT="$GOROOT" --action_env=PATH="$PATH"
+GOROOT_PATH=$(go env GOROOT)
+bazel build //... --action_env=GOROOT="$GOROOT_PATH" --action_env=PATH
 ```
 
-**GitHub Actions CI**: `setup-go` may not export GOROOT to subsequent steps. Add an explicit export step:
+**GitHub Actions CI**: `setup-go` may not export GOROOT to subsequent steps. Resolve it inline:
 
 ```yaml
 - name: Setup Go
   uses: actions/setup-go@v5
   with:
     go-version: '1.25'
-    cache: false
-
-- name: Export GOROOT
-  run: echo "GOROOT=$(go env GOROOT)" >> $GITHUB_ENV
 
 - name: Build
-  run: bazel build //... --action_env=GOROOT="$GOROOT" --action_env=PATH="$PATH"
+  run: |
+    GOROOT_PATH=$(go env GOROOT)
+    bazel build //... --repo_env=GOROOT="$GOROOT_PATH" --action_env=GOROOT="$GOROOT_PATH" --action_env=PATH
 ```
 
 Without Go type inference, GALA code that calls Go functions (e.g., `strconv.Atoi`, `bytes.NewBufferString`) may fail to infer return types. Pure GALA code and GALA stdlib types (`Option`, `Try`, etc.) work without it.
