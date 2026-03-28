@@ -291,7 +291,7 @@ func (b *Builder) transpile() error {
 
 	// Use BatchAnalyzer to share analyzed package cache across all files.
 	// This avoids redundant re-analysis of imports (std, collection_immutable, etc.).
-	batchAnalyzer := analyzer.NewBatchAnalyzer(p, searchPaths)
+	batchAnalyzer := analyzer.NewBatchAnalyzer(p, searchPaths, b.workspace.ProjectDir)
 
 	var allEmbedPatterns []string
 
@@ -420,9 +420,9 @@ func (b *Builder) transpileWithSourceDir() error {
 		}
 		var a transpiler.Analyzer
 		if len(siblings) > 0 {
-			a = analyzer.NewGalaAnalyzerWithPackageFiles(p, searchPaths, siblings)
+			a = analyzer.NewGalaAnalyzerWithPackageFiles(p, searchPaths, siblings, b.workspace.ProjectDir)
 		} else {
-			a = analyzer.NewGalaAnalyzer(p, searchPaths)
+			a = analyzer.NewGalaAnalyzer(p, searchPaths, b.workspace.ProjectDir)
 		}
 		t := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
 		goCode, err := t.Transpile(string(content), galaFile)
@@ -473,9 +473,9 @@ func (b *Builder) transpileWithSourceDir() error {
 		}
 		var a transpiler.Analyzer
 		if len(siblings) > 0 {
-			a = analyzer.NewGalaAnalyzerWithPackageFiles(p, searchPaths, siblings)
+			a = analyzer.NewGalaAnalyzerWithPackageFiles(p, searchPaths, siblings, b.workspace.ProjectDir)
 		} else {
-			a = analyzer.NewGalaAnalyzer(p, searchPaths)
+			a = analyzer.NewGalaAnalyzer(p, searchPaths, b.workspace.ProjectDir)
 		}
 		t := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
 		goCode, err := t.Transpile(string(content), galaFile)
@@ -1435,7 +1435,7 @@ func (b *Builder) transpileFilesToDir(files []string, allSiblings []string, outD
 	p := transpiler.NewAntlrGalaParser()
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	batchAnalyzer := analyzer.NewBatchAnalyzer(p, searchPaths)
+	batchAnalyzer := analyzer.NewBatchAnalyzer(p, searchPaths, b.workspace.ProjectDir)
 
 	for _, galaFile := range files {
 		content, err := os.ReadFile(galaFile)

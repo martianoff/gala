@@ -157,7 +157,7 @@ func (dt *DepTranspiler) transpileSingleDep(dep mod.Require, transpiledDirs map[
 	p := transpiler.NewAntlrGalaParser()
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	batchAnalyzer := analyzer.NewBatchAnalyzer(p, searchPaths)
+	batchAnalyzer := analyzer.NewBatchAnalyzer(p, searchPaths, srcDir)
 
 	for _, galaFile := range galaFiles {
 		content, err := os.ReadFile(galaFile)

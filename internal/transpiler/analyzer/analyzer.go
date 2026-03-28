@@ -68,23 +68,43 @@ type galaAnalyzer struct {
 	cache        *analysisCache                         // disk-based package analysis cache
 }
 
-// NewGalaAnalyzer creates a new transpiler.Analyzer implementation.
-// It automatically finds the module root by looking for go.mod from the current working directory.
-func NewGalaAnalyzer(p transpiler.GalaParser, searchPaths []string) transpiler.Analyzer {
+// resolveCacheRoot returns the project root for the analysis disk cache.
+// If projectRoot is provided, uses it directly. Otherwise falls back to
+// walking up from cwd to find go.mod or gala.mod.
+func resolveCacheRoot(projectRoot string) string {
+	if projectRoot != "" {
+		return projectRoot
+	}
 	cwd, _ := os.Getwd()
+	return findProjectRoot(cwd)
+}
+
+// NewGalaAnalyzer creates a new transpiler.Analyzer implementation.
+// projectRoot is the directory containing gala.mod — used for the analysis disk cache.
+// Pass "" to auto-detect from the current working directory.
+func NewGalaAnalyzer(p transpiler.GalaParser, searchPaths []string, projectRoot ...string) transpiler.Analyzer {
+	root := ""
+	if len(projectRoot) > 0 {
+		root = projectRoot[0]
+	}
 	return &galaAnalyzer{
 		parser:       p,
 		searchPaths:  searchPaths,
 		analyzedPkgs: make(map[string]*transpiler.RichAST),
 		checkedDirs:  make(map[string]bool),
 		resolver:     module.NewResolver(searchPaths),
-		cache:        newAnalysisCache(findProjectRoot(cwd)),
+		cache:        newAnalysisCache(resolveCacheRoot(root)),
 	}
 }
 
 // NewGalaAnalyzerWithBase creates a new transpiler.Analyzer with base metadata.
-func NewGalaAnalyzerWithBase(base *transpiler.RichAST, p transpiler.GalaParser, searchPaths []string) transpiler.Analyzer {
-	cwd, _ := os.Getwd()
+// projectRoot is the directory containing gala.mod — used for the analysis disk cache.
+// Pass "" to auto-detect from the current working directory.
+func NewGalaAnalyzerWithBase(base *transpiler.RichAST, p transpiler.GalaParser, searchPaths []string, projectRoot ...string) transpiler.Analyzer {
+	root := ""
+	if len(projectRoot) > 0 {
+		root = projectRoot[0]
+	}
 	return &galaAnalyzer{
 		baseMetadata: base,
 		parser:       p,
@@ -92,15 +112,20 @@ func NewGalaAnalyzerWithBase(base *transpiler.RichAST, p transpiler.GalaParser, 
 		analyzedPkgs: make(map[string]*transpiler.RichAST),
 		checkedDirs:  make(map[string]bool),
 		resolver:     module.NewResolver(searchPaths),
-		cache:        newAnalysisCache(findProjectRoot(cwd)),
+		cache:        newAnalysisCache(resolveCacheRoot(root)),
 	}
 }
 
 // NewGalaAnalyzerWithPackageFiles creates an analyzer that uses explicit package file list
 // for sibling discovery instead of directory scanning. This enables full cross-file type
 // resolution for main/test packages where directory scanning is too broad.
-func NewGalaAnalyzerWithPackageFiles(p transpiler.GalaParser, searchPaths []string, packageFiles []string) transpiler.Analyzer {
-	cwd, _ := os.Getwd()
+// projectRoot is the directory containing gala.mod — used for the analysis disk cache.
+// Pass "" to auto-detect from the current working directory.
+func NewGalaAnalyzerWithPackageFiles(p transpiler.GalaParser, searchPaths []string, packageFiles []string, projectRoot ...string) transpiler.Analyzer {
+	root := ""
+	if len(projectRoot) > 0 {
+		root = projectRoot[0]
+	}
 	return &galaAnalyzer{
 		parser:       p,
 		searchPaths:  searchPaths,
@@ -108,7 +133,7 @@ func NewGalaAnalyzerWithPackageFiles(p transpiler.GalaParser, searchPaths []stri
 		analyzedPkgs: make(map[string]*transpiler.RichAST),
 		checkedDirs:  make(map[string]bool),
 		resolver:     module.NewResolver(searchPaths),
-		cache:        newAnalysisCache(findProjectRoot(cwd)),
+		cache:        newAnalysisCache(resolveCacheRoot(root)),
 	}
 }
 
@@ -121,8 +146,13 @@ type BatchAnalyzer struct {
 
 // NewBatchAnalyzer creates an analyzer optimized for batch transpilation.
 // Call SetPackageFiles before each Analyze to configure siblings for that file.
-func NewBatchAnalyzer(p transpiler.GalaParser, searchPaths []string) *BatchAnalyzer {
-	cwd, _ := os.Getwd()
+// projectRoot is the directory containing gala.mod — used for the analysis disk cache.
+// Pass "" to auto-detect from the current working directory.
+func NewBatchAnalyzer(p transpiler.GalaParser, searchPaths []string, projectRoot ...string) *BatchAnalyzer {
+	root := ""
+	if len(projectRoot) > 0 {
+		root = projectRoot[0]
+	}
 	return &BatchAnalyzer{
 		inner: &galaAnalyzer{
 			parser:       p,
@@ -130,7 +160,7 @@ func NewBatchAnalyzer(p transpiler.GalaParser, searchPaths []string) *BatchAnaly
 			analyzedPkgs: make(map[string]*transpiler.RichAST),
 			checkedDirs:  make(map[string]bool),
 			resolver:     module.NewResolver(searchPaths),
-			cache:        newAnalysisCache(findProjectRoot(cwd)),
+			cache:        newAnalysisCache(resolveCacheRoot(root)),
 		},
 	}
 }
