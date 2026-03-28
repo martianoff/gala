@@ -1522,3 +1522,10 @@ gala_go_test(
     name = "type_alias_lambda_inference",
     srcs = ["type_alias_lambda_inference.gala"],
 )
+
+# USR-002: Option.When and Unless factory constructors
+gala_test(
+    name = "option_when",
+    src = "option_when.gala",
+    expected = "option_when.out",
+)
