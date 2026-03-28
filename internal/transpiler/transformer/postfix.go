@@ -362,13 +362,13 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 						casePatterns = append(casePatterns, "case _")
 					}
 				}
-			} else if ccCtx.GetBody() != nil {
-				bodyExpr, err := t.transformExpression(ccCtx.GetBody())
+			} else if ccCtx.GetBodyStmt() != nil {
+				bodyStmts, bodyType, err := t.transformCaseBodyStmt(ccCtx.GetBodyStmt())
 				if err != nil {
 					return nil, err
 				}
-				defaultBody = append(bindingStmts, &ast.ReturnStmt{Results: []ast.Expr{bodyExpr}})
-				resultTypes = append(resultTypes, t.inferResultType(bodyExpr))
+				defaultBody = append(bindingStmts, bodyStmts...)
+				resultTypes = append(resultTypes, bodyType)
 				casePatterns = append(casePatterns, "case _")
 			}
 			continue

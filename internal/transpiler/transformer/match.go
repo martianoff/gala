@@ -306,13 +306,13 @@ func (t *galaASTTransformer) transformMatchClauses(ctx grammar.IExpressionContex
 						casePatterns = append(casePatterns, "case _")
 					}
 				}
-			} else if ccCtx.GetBody() != nil {
-				bodyExpr, err := t.transformExpression(ccCtx.GetBody())
+			} else if ccCtx.GetBodyStmt() != nil {
+				bodyStmts, bodyType, err := t.transformCaseBodyStmt(ccCtx.GetBodyStmt())
 				if err != nil {
 					return nil, nil, nil, err
 				}
-				defaultBody = append(bindingStmts, &ast.ReturnStmt{Results: []ast.Expr{bodyExpr}})
-				resultTypes = append(resultTypes, t.inferResultType(bodyExpr))
+				defaultBody = append(bindingStmts, bodyStmts...)
+				resultTypes = append(resultTypes, bodyType)
 				casePatterns = append(casePatterns, "case _")
 			}
 			continue
@@ -863,13 +863,13 @@ func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClause
 		if resultType == nil {
 			resultType = transpiler.VoidType{}
 		}
-	} else if ctx.GetBody() != nil {
-		expr, err := t.transformExpression(ctx.GetBody())
+	} else if ctx.GetBodyStmt() != nil {
+		bodyStmts, bodyType, err := t.transformCaseBodyStmt(ctx.GetBodyStmt())
 		if err != nil {
 			return nil, nil, err
 		}
-		resultType = t.inferResultType(expr)
-		body = []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{expr}}}
+		body = bodyStmts
+		resultType = bodyType
 	}
 
 	// Check for unused pattern variables: user vars that appear in bindings but
@@ -908,6 +908,27 @@ func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClause
 	}
 
 	return ifStmt, resultType, nil
+}
+
+// transformCaseBodyStmt transforms a simpleStatement case body.
+// Returns (stmts, resultType, error) where stmts are the Go statements for the body,
+// and resultType is the type (VoidType for assignments/incDec, or the expression type).
+func (t *galaASTTransformer) transformCaseBodyStmt(ctx grammar.ISimpleStatementContext) ([]ast.Stmt, transpiler.Type, error) {
+	// If the body is an expression, wrap it in a return (value-returning case)
+	if exprCtx := ctx.Expression(); exprCtx != nil {
+		expr, err := t.transformExpression(exprCtx)
+		if err != nil {
+			return nil, nil, err
+		}
+		resultType := t.inferResultType(expr)
+		return []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{expr}}}, resultType, nil
+	}
+	// Otherwise it's a side-effect statement (assignment, incDec, shortVarDecl)
+	stmt, err := t.transformSimpleStatement(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	return []ast.Stmt{stmt}, transpiler.VoidType{}, nil
 }
 
 // Pattern transformation functions moved to patterns.go

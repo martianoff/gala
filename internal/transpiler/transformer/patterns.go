@@ -377,7 +377,7 @@ func (t *galaASTTransformer) transformCaseClause(ctx *grammar.CaseClauseContext,
 
 	var body []ast.Stmt
 	bodyBlockCtx := ctx.GetBodyBlock()
-	bodyCtx := ctx.GetBody()
+	bodyStmtCtx := ctx.GetBodyStmt()
 	if bodyBlockCtx != nil {
 		b, err := t.transformBlock(bodyBlockCtx.(*grammar.BlockContext))
 		if err != nil {
@@ -394,12 +394,12 @@ func (t *galaASTTransformer) transformCaseClause(ctx *grammar.CaseClauseContext,
 				}
 			}
 		}
-	} else if bodyCtx != nil {
-		expr, err := t.transformExpression(ctx.GetBody())
+	} else if bodyStmtCtx != nil {
+		bodyStmts, _, err := t.transformCaseBodyStmt(bodyStmtCtx)
 		if err != nil {
 			return nil, err
 		}
-		body = []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{expr}}}
+		body = bodyStmts
 	}
 
 	bodyBlock := &ast.BlockStmt{List: body}

@@ -1570,3 +1570,10 @@ gala_test(
         "//time_utils",
     ],
 )
+
+# BUG-054: match as standalone statement (side-effect only, no val assignment)
+gala_test(
+    name = "match_standalone_stmt",
+    src = "match_standalone_stmt.gala",
+    expected = "match_standalone_stmt.out",
+)
