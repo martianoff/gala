@@ -278,13 +278,12 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 						break
 					}
 					arg := argCtx.(*grammar.ArgumentContext)
-					pat := arg.Pattern()
-					exprCtx, _, extractErr := extractArgExpression(pat)
+					exprCtx, lambdaCtx, _, extractErr := extractArgContent(arg)
 					if extractErr != nil {
 						continue
 					}
 					// Skip lambda and partial function arguments — can't infer types from them
-					if t.findLambdaInExpression(exprCtx) != nil || t.findPartialFunctionInExpression(exprCtx) != nil {
+					if lambdaCtx != nil || t.findLambdaInExpression(exprCtx) != nil || t.findPartialFunctionInExpression(exprCtx) != nil {
 						continue
 					}
 					expr, err := t.transformExpression(exprCtx)
@@ -319,8 +318,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 			hasSpread := false
 			for i, argCtx := range argListCtx.AllArgument() {
 				arg := argCtx.(*grammar.ArgumentContext)
-				pat := arg.Pattern()
-				exprCtx, isSpread, extractErr := extractArgExpression(pat)
+				exprCtx, lambdaCtx, isSpread, extractErr := extractArgContent(arg)
 				if extractErr != nil {
 					return nil, extractErr
 				}
@@ -338,11 +336,20 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 				genMethodCtx := t.buildMethodCallContext(methodMeta, typeSubst, false)
 				expectedType := t.resolveExpectedArgType(genMethodCtx, i)
 
-				expr, err := t.transformArgumentWithExpectedType(exprCtx, expectedType)
-				if err != nil {
-					return nil, err
+				if lambdaCtx != nil {
+					// Direct lambda argument (FIX-050)
+					expr, err := t.transformLambdaArgWithExpectedType(lambdaCtx, expectedType)
+					if err != nil {
+						return nil, err
+					}
+					mArgs = append(mArgs, expr)
+				} else {
+					expr, err := t.transformArgumentWithExpectedType(exprCtx, expectedType)
+					if err != nil {
+						return nil, err
+					}
+					mArgs = append(mArgs, expr)
 				}
-				mArgs = append(mArgs, expr)
 			}
 
 			var funExpr ast.Expr
@@ -431,8 +438,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 				hasSpread := false
 				for i, argCtx := range argListCtx.AllArgument() {
 					arg := argCtx.(*grammar.ArgumentContext)
-					pat := arg.Pattern()
-					exprCtx, isSpread, extractErr := extractArgExpression(pat)
+					exprCtx, lambdaCtx, isSpread, extractErr := extractArgContent(arg)
 					if extractErr != nil {
 						return nil, extractErr
 					}
@@ -442,7 +448,13 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 					// Only pass void function types (avoids unresolved type params in return types)
 					unresolvedCtx := t.buildMethodCallContext(methodMeta, typeSubst, true)
 					expectedType := t.resolveExpectedArgType(unresolvedCtx, i)
-					expr, err := t.transformArgumentWithExpectedType(exprCtx, expectedType)
+					var expr ast.Expr
+					var err error
+					if lambdaCtx != nil {
+						expr, err = t.transformLambdaArgWithExpectedType(lambdaCtx, expectedType)
+					} else {
+						expr, err = t.transformArgumentWithExpectedType(exprCtx, expectedType)
+					}
 					if err != nil {
 						return nil, err
 					}
@@ -462,34 +474,38 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 			argIdx := 0
 			for _, argCtx := range argListCtx.AllArgument() {
 				arg := argCtx.(*grammar.ArgumentContext)
-				pat := arg.Pattern()
+				exprCtx, lambdaCtx, isSpreadAll, extractErr := extractArgContent(arg)
+				if extractErr != nil {
+					return nil, extractErr
+				}
+				if isSpreadAll {
+					hasSpread = true
+				}
 				if arg.Identifier() != nil {
 					argName := arg.Identifier().GetText()
-					exprCtx, isSpread, extractErr := extractArgExpression(pat)
-					if extractErr != nil {
-						return nil, extractErr
-					}
-					if isSpread {
-						hasSpread = true
-					}
 					resolvedMethodCtx := t.buildMethodCallContext(methodMeta, typeSubst, false)
 					expectedType := t.resolveNamedArgExpectedType(resolvedMethodCtx, argName)
-					expr, err := t.transformArgumentWithExpectedType(exprCtx, expectedType)
+					var expr ast.Expr
+					var err error
+					if lambdaCtx != nil {
+						expr, err = t.transformLambdaArgWithExpectedType(lambdaCtx, expectedType)
+					} else {
+						expr, err = t.transformArgumentWithExpectedType(exprCtx, expectedType)
+					}
 					if err != nil {
 						return nil, err
 					}
 					mNamedArgs[argName] = expr
 				} else {
-					exprCtx, isSpread, extractErr := extractArgExpression(pat)
-					if extractErr != nil {
-						return nil, extractErr
-					}
-					if isSpread {
-						hasSpread = true
-					}
 					resolvedMethodCtx := t.buildMethodCallContext(methodMeta, typeSubst, false)
 					expectedType := t.resolveExpectedArgType(resolvedMethodCtx, argIdx)
-					expr, err := t.transformArgumentWithExpectedType(exprCtx, expectedType)
+					var expr ast.Expr
+					var err error
+					if lambdaCtx != nil {
+						expr, err = t.transformLambdaArgWithExpectedType(lambdaCtx, expectedType)
+					} else {
+						expr, err = t.transformArgumentWithExpectedType(exprCtx, expectedType)
+					}
 					if err != nil {
 						return nil, err
 					}
@@ -519,15 +535,20 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 		hasSpread := false
 		for _, argCtx := range argListCtx.AllArgument() {
 			arg := argCtx.(*grammar.ArgumentContext)
-			pat := arg.Pattern()
-			exprCtx, isSpread, extractErr := extractArgExpression(pat)
+			exprCtx, lambdaCtx, isSpread, extractErr := extractArgContent(arg)
 			if extractErr != nil {
 				return nil, extractErr
 			}
 			if isSpread {
 				hasSpread = true
 			}
-			expr, err := t.transformArgumentWithExpectedType(exprCtx, transpiler.NilType{})
+			var expr ast.Expr
+			var err error
+			if lambdaCtx != nil {
+				expr, err = t.transformLambdaArgWithExpectedType(lambdaCtx, transpiler.NilType{})
+			} else {
+				expr, err = t.transformArgumentWithExpectedType(exprCtx, transpiler.NilType{})
+			}
 			if err != nil {
 				return nil, err
 			}
@@ -604,19 +625,18 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	argIdx := 0
 	for _, argCtx := range argListCtx.AllArgument() {
 		arg := argCtx.(*grammar.ArgumentContext)
-		pat := arg.Pattern()
+		exprCtx, lambdaCtx, isSpreadAll, extractErr := extractArgContent(arg)
+		if extractErr != nil {
+			return nil, extractErr
+		}
+		if isSpreadAll {
+			hasSpread = true
+		}
 
 		// Check for named argument
 		if arg.Identifier() != nil {
 			// This is a named argument
 			argName := arg.Identifier().GetText()
-			exprCtx, isSpread, extractErr := extractArgExpression(pat)
-			if extractErr != nil {
-				return nil, extractErr
-			}
-			if isSpread {
-				hasSpread = true
-			}
 			// Look up expected type from struct field types for lambda inference
 			var namedExpectedType transpiler.Type = transpiler.NilType{}
 			if structFieldExpectedTypes != nil {
@@ -657,24 +677,29 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 					}
 				}
 			}
-			expr, err := t.transformArgumentWithExpectedType(exprCtx, namedExpectedType)
+			var expr ast.Expr
+			var err error
+			if lambdaCtx != nil {
+				expr, err = t.transformLambdaArgWithExpectedType(lambdaCtx, namedExpectedType)
+			} else {
+				expr, err = t.transformArgumentWithExpectedType(exprCtx, namedExpectedType)
+			}
 			if err != nil {
 				return nil, err
 			}
 			namedArgs[argName] = expr
 		} else {
 			// Positional argument - use expected type if available
-			exprCtx, isSpread, extractErr := extractArgExpression(pat)
-			if extractErr != nil {
-				return nil, extractErr
-			}
-			if isSpread {
-				hasSpread = true
-			}
 			// Resolve expected type using unified function call context
 			funcCallCtx := t.buildFuncCallContext(funcMeta, inferredTypeSubst, goFuncParamTypes, structFieldExpectedTypes)
 			expectedType := t.resolveExpectedArgType(funcCallCtx, argIdx)
-			expr, err := t.transformArgumentWithExpectedType(exprCtx, expectedType)
+			var expr ast.Expr
+			var err error
+			if lambdaCtx != nil {
+				expr, err = t.transformLambdaArgWithExpectedType(lambdaCtx, expectedType)
+			} else {
+				expr, err = t.transformArgumentWithExpectedType(exprCtx, expectedType)
+			}
 			if err != nil {
 				return nil, err
 			}
@@ -1464,6 +1489,23 @@ func (t *galaASTTransformer) transformArgumentWithExpectedType(exprCtx grammar.I
 	return t.transformExpression(exprCtx)
 }
 
+// transformLambdaArgWithExpectedType transforms a direct lambda argument (FIX-050).
+// When the grammar's argument rule matches lambdaExpression directly instead of going through
+// pattern -> expression -> primaryExpr -> lambdaExpression, we get the lambda context directly.
+func (t *galaASTTransformer) transformLambdaArgWithExpectedType(lambdaCtx *grammar.LambdaExpressionContext, expectedType transpiler.Type) (ast.Expr, error) {
+	var expectedRetType ast.Expr
+	var expectedParamTypes []transpiler.Type
+	if funcType, ok := expectedType.(transpiler.FuncType); ok {
+		if len(funcType.Results) > 0 {
+			expectedRetType = t.typeToExpr(funcType.Results[0])
+		} else {
+			expectedRetType = ExpectedVoid
+		}
+		expectedParamTypes = funcType.Params
+	}
+	return t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedParamTypes)
+}
+
 func (t *galaASTTransformer) inferTypeArgsFromApply(
 	typeMeta *transpiler.TypeMetadata,
 	methodMeta *transpiler.MethodMetadata,
@@ -1688,15 +1730,14 @@ func (t *galaASTTransformer) inferFuncTypeSubstFromArgs(funcMeta *transpiler.Fun
 		if arg.Identifier() != nil {
 			continue // skip named args
 		}
-		pat := arg.Pattern()
-		exprCtx, _, extractErr := extractArgExpression(pat)
+		exprCtx, lambdaCtx, _, extractErr := extractArgContent(arg)
 		if extractErr != nil {
 			argIdx++
 			continue
 		}
 
 		// Skip lambda arguments — we're inferring type params FOR them
-		if t.findLambdaInExpression(exprCtx) != nil {
+		if lambdaCtx != nil || t.findLambdaInExpression(exprCtx) != nil {
 			argIdx++
 			continue
 		}

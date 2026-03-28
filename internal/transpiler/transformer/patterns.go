@@ -579,6 +579,9 @@ func (t *galaASTTransformer) generateDirectTupleStructMatch(objExpr ast.Expr, ar
 	// Generate bindings for each pattern argument using direct field access
 	for i, argCtx := range args {
 		arg := argCtx.(*grammar.ArgumentContext)
+		if arg.Pattern() == nil {
+			continue
+		}
 		patternText := arg.Pattern().GetText()
 
 		if isWildcard(patternText) {
@@ -679,6 +682,9 @@ func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, ar
 	// Generate bindings for each pattern argument using direct field access
 	for i, argCtx := range args {
 		arg := argCtx.(*grammar.ArgumentContext)
+		if arg.Pattern() == nil {
+			continue
+		}
 		patternText := arg.Pattern().GetText()
 
 		if isWildcard(patternText) {
@@ -792,8 +798,10 @@ func (t *galaASTTransformer) hasRestPattern(argList *grammar.ArgumentListContext
 	}
 	for _, argCtx := range argList.AllArgument() {
 		arg := argCtx.(*grammar.ArgumentContext)
-		if _, ok := arg.Pattern().(*grammar.RestPatternContext); ok {
-			return true
+		if pat := arg.Pattern(); pat != nil {
+			if _, ok := pat.(*grammar.RestPatternContext); ok {
+				return true
+			}
 		}
 	}
 	return false
@@ -886,7 +894,9 @@ func (t *galaASTTransformer) generateSeqPatternMatch(objExpr ast.Expr, argList *
 
 	for i, argCtx := range args {
 		arg := argCtx.(*grammar.ArgumentContext)
-		if restPat, ok := arg.Pattern().(*grammar.RestPatternContext); ok {
+		if pat := arg.Pattern(); pat == nil {
+			nonRestCount++
+		} else if restPat, ok := pat.(*grammar.RestPatternContext); ok {
 			restPatternIndex = i
 			// Get the identifier before ...
 			exprText := restPat.Expression().GetText()
@@ -941,6 +951,10 @@ func (t *galaASTTransformer) generateSeqPatternMatch(objExpr ast.Expr, argList *
 	for _, argCtx := range args {
 		arg := argCtx.(*grammar.ArgumentContext)
 		patCtx := arg.Pattern()
+		if patCtx == nil {
+			argIndex++
+			continue
+		}
 
 		// Skip rest pattern for now
 		if _, ok := patCtx.(*grammar.RestPatternContext); ok {
@@ -1711,6 +1725,9 @@ func (t *galaASTTransformer) generateDirectUnapplyPattern(
 		// For each argument pattern, generate direct field access
 		for i, argCtx := range argList.AllArgument() {
 			arg := argCtx.(*grammar.ArgumentContext)
+			if arg.Pattern() == nil {
+				continue
+			}
 			patternText := arg.Pattern().GetText()
 
 			if isWildcard(patternText) {
@@ -1963,6 +1980,9 @@ func (t *galaASTTransformer) generateVariableUnapplyPattern(
 
 		for i, argCtx := range argList.AllArgument() {
 			arg := argCtx.(*grammar.ArgumentContext)
+			if arg.Pattern() == nil {
+				continue
+			}
 			patternText := arg.Pattern().GetText()
 
 			if isWildcard(patternText) {

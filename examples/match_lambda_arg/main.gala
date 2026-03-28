@@ -1,0 +1,32 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// FIX-050: match on method call chain with lambda argument
+// This verifies that lambda arguments parse correctly when followed by a match expression.
+
+func findConfig(items Array[Config], key string) string =
+    items.Find((item) => item.key == key) match {
+        case Some(cfg) => cfg.value
+        case None() => "not found"
+    }
+
+func findAndTransform(items Array[Config], key string) string =
+    items.Find((item) => item.key == key) match {
+        case Some(cfg) => s"found: ${cfg.value}"
+        case None() => "missing"
+    }
+
+func main() {
+    val configs = ArrayOf(
+        Config("host", "localhost"),
+        Config("port", "8080"),
+        Config("mode", "debug")
+    )
+
+    Println(findConfig(configs, "host"))
+    Println(findConfig(configs, "port"))
+    Println(findConfig(configs, "unknown"))
+    Println(findAndTransform(configs, "mode"))
+    Println(findAndTransform(configs, "missing"))
+}
