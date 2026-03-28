@@ -1144,15 +1144,23 @@ func (t *galaASTTransformer) transformPartialCaseClause(ctx *grammar.CaseClauseC
 				resultType = t.inferResultType(ret.Results[0])
 			}
 		}
-	} else if ctx.GetBody() != nil {
-		expr, err := t.transformExpression(ctx.GetBody())
-		if err != nil {
-			return nil, nil, err
+	} else if ctx.GetBodyStmt() != nil {
+		if exprCtx := ctx.GetBodyStmt().Expression(); exprCtx != nil {
+			expr, err := t.transformExpression(exprCtx)
+			if err != nil {
+				return nil, nil, err
+			}
+			// Wrap in Some(expr)
+			someCall := t.wrapInSome(expr)
+			body = []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{someCall}}}
+			resultType = t.inferResultType(expr)
+		} else {
+			stmt, err := t.transformSimpleStatement(ctx.GetBodyStmt())
+			if err != nil {
+				return nil, nil, err
+			}
+			body = []ast.Stmt{stmt}
 		}
-		// Wrap in Some(expr)
-		someCall := t.wrapInSome(expr)
-		body = []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{someCall}}}
-		resultType = t.inferResultType(expr)
 	}
 
 	bodyBlock := &ast.BlockStmt{List: body}

@@ -1,0 +1,28 @@
+package main
+
+func main() {
+    var sideEffect = 0
+
+    // Test 1: match as standalone statement with assignment body (no block needed)
+    val x = Some(42)
+    x match {
+        case Some(v) => sideEffect = v
+        case _ => sideEffect = -1
+    }
+    Println(s"test1: $sideEffect")
+
+    // Test 2: match as standalone statement with block bodies
+    val y = Some(100)
+    y match {
+        case Some(v) => { sideEffect = v + 1 }
+        case _ => { sideEffect = -1 }
+    }
+    Println(s"test2: $sideEffect")
+
+    // Test 3: match as standalone statement with function call body
+    val z = Some("hello")
+    z match {
+        case Some(v) => Println(s"value: $v")
+        case _ => Println("none")
+    }
+}

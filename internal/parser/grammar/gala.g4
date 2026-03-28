@@ -177,7 +177,7 @@ keyedElement: (expression ':')? expression;
 
 lambdaExpression: parameters '=>' (expression | block);
 
-caseClause: 'case' pattern (IF guard=expression)? '=>' (body=expression | bodyBlock=block);
+caseClause: 'case' pattern (IF guard=expression)? '=>' (bodyStmt=simpleStatement | bodyBlock=block);
 
 pattern
     : expression ELLIPSIS   # restPattern
