@@ -81,7 +81,7 @@ myproject/
 
 ### Bazel Projects
 
-For Bazel projects, `gala mod tidy` generates the necessary `go.mod` and `go.sum` files:
+For Bazel projects, `gala mod tidy` generates a portable `go.mod` (and `go.sum` when Go dependencies are present):
 
 ```bash
 # Initialize
@@ -91,7 +91,7 @@ gala mod init github.com/user/myproject
 gala mod add github.com/example/gala-utils@v1.2.3
 gala mod add github.com/google/uuid@v1.6.0 --go
 
-# Sync dependencies (generates go.mod and go.sum for Bazel)
+# Sync dependencies (generates portable go.mod for Bazel)
 gala mod tidy
 
 # Build with Bazel
@@ -290,7 +290,7 @@ This command:
 - Adds missing dependencies found in imports
 - Removes unused dependencies
 - Marks indirect dependencies appropriately
-- **For Bazel projects**: Generates a portable `go.mod` with Go dependencies only (GALA stdlib deps are stripped — they're resolved by `gala build` or Bazel's bzlmod extension)
+- **For Bazel projects**: Generates a portable `go.mod` with Go dependencies only (GALA stdlib deps are stripped). Generates `go.sum` only when Go dependencies are present
 
 `gala mod tidy` handles both single-line and multi-line import blocks, and recognizes known GALA dependencies (like `std`, `collection_immutable`, etc.) automatically.
 
@@ -346,7 +346,7 @@ When you run `gala build`, GALA:
 
 For Bazel projects:
 
-1. Run `gala mod tidy` to generate `go.mod` and `go.sum` (Go dependencies only)
+1. Run `gala mod tidy` to generate `go.mod` (and `go.sum` if Go dependencies are present)
 2. GALA dependencies are handled by the bzlmod extension
 3. Build with `bazel build //:target`
 
@@ -507,13 +507,15 @@ go_deps = use_extension("@gazelle//:extensions.bzl", "go_deps")
 go_deps.from_file(go_mod = "//:go.mod")
 use_repo(go_deps, "com_github_google_uuid")
 
-# GALA dependencies
+# GALA dependencies (only needed if gala.mod has external GALA deps)
 gala = use_extension("@gala//:extensions.bzl", "gala")
 gala.from_file(gala_mod = "//:gala.mod")
 use_repo(gala, "com_github_example_utils")
 ```
 
-**Important:** Run `gala mod tidy` to generate `go.mod` and `go.sum` files that Bazel needs for Go dependencies.
+The `gala.from_file()` extension is only needed when your project has external GALA module dependencies listed in `gala.mod`. If your project only uses the GALA stdlib (`std`, `collection_immutable`, etc.) and Go packages, you can omit the `gala` extension block entirely — stdlib packages are provided by the `@gala` module itself.
+
+**Important:** Run `gala mod tidy` to keep `go.mod` in sync. For Bazel projects, `go.mod` only contains Go dependencies — GALA stdlib deps are resolved by Bazel automatically.
 
 ### BUILD Files
 

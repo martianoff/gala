@@ -858,9 +858,9 @@ func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClause
 				}
 			}
 		}
-		// If resultType is still nil but body is non-empty, this is a void (side-effect) branch
-		// (e.g., last statement is an assignment like `items = items.Append(v)`)
-		if resultType == nil && len(body) > 0 {
+		// If resultType is still nil, this is a void (side-effect) branch:
+		// either empty block `{}` or last statement is an assignment/loop
+		if resultType == nil {
 			resultType = transpiler.VoidType{}
 		}
 	} else if ctx.GetBody() != nil {
