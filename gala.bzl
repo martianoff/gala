@@ -114,7 +114,7 @@ def gala_transpile(name, src, out = None, package_files = [], extra_srcs = [], g
         name = name,
         srcs = [src] + package_files + extra_srcs + dep_srcs + [Label("//:all_gala_sources"), Label("//:go.mod")],
         outs = [out],
-        cmd = "$(location {tool}) --input $(location {src}) --output $@ --search $$(dirname $(location {gomod})){dep_search}{pf} --goroot=$${{GOROOT:-}}".format(
+        cmd = "_gomod=$(location {gomod}) ; $(location {tool}) --input $(location {src}) --output $@ --search $${{_gomod%/*}}{dep_search}{pf} --goroot=$${{GOROOT:-}}".format(
             tool = Label("//cmd/gala"),
             src = src,
             gomod = Label("//:go.mod"),
@@ -162,7 +162,7 @@ def gala_transpile_package(name, srcs, outs = None, extra_srcs = [], gala_deps =
         name = name,
         srcs = srcs + extra_srcs + dep_srcs + [Label("//:all_gala_sources"), Label("//:go.mod")],
         outs = outs,
-        cmd = "$(location {tool}) transpile-package --inputs {inputs} --outputs {outputs} --search $$(dirname $(location {gomod})){dep_search} --goroot=$${{GOROOT:-}}".format(
+        cmd = "_gomod=$(location {gomod}) ; $(location {tool}) transpile-package --inputs {inputs} --outputs {outputs} --search $${{_gomod%/*}}{dep_search} --goroot=$${{GOROOT:-}}".format(
             tool = Label("//cmd/gala"),
             inputs = inputs_flag,
             outputs = outputs_flag,
@@ -193,7 +193,7 @@ def gala_bootstrap_transpile(name, src, out = None, package_files = []):
         name = name,
         srcs = [src] + package_files + [Label("//:all_gala_sources"), Label("//:go.mod")],
         outs = [out],
-        cmd = "$(location {tool}) --input $(location {src}) --output $@ --search $$(dirname $(location {gomod})){pf} --goroot=$${{GOROOT:-}}".format(
+        cmd = "_gomod=$(location {gomod}) ; $(location {tool}) --input $(location {src}) --output $@ --search $${{_gomod%/*}}{pf} --goroot=$${{GOROOT:-}}".format(
             tool = Label("//cmd/gala_bootstrap"),
             src = src,
             gomod = Label("//:go.mod"),
