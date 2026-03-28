@@ -91,8 +91,9 @@ type analysisCache struct {
 
 // newAnalysisCache creates a cache rooted at the given project directory.
 // Returns a disabled cache if the directory can't be created.
+// Enable with GALA_CACHE=1 environment variable.
 func newAnalysisCache(projectRoot string) *analysisCache {
-	if projectRoot == "" {
+	if os.Getenv("GALA_CACHE") != "1" || projectRoot == "" {
 		return &analysisCache{enabled: false}
 	}
 	dir := filepath.Join(projectRoot, ".gala", "cache", CacheVersion)
