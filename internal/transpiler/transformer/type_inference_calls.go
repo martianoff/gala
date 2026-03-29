@@ -238,6 +238,29 @@ func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.Sel
 					inferredTypeArgs := t.inferFuncTypeParamsFromArgs(fMeta, e.Args, e.Ellipsis != token.NoPos)
 					if len(inferredTypeArgs) > 0 {
 						retType = t.substituteConcreteTypes(fMeta.ReturnType, fMeta.TypeParams, inferredTypeArgs)
+					} else if t.currentFuncReturnType != nil && !t.currentFuncReturnType.IsNil() && t.hasTypeParams(retType) {
+						// FIX-056: When argument-based inference fails (e.g., in multi-file batch mode
+						// where argument types can't be resolved), try to infer type params by unifying
+						// the function's return type pattern with the enclosing function's return type.
+						// Example: When[T](found, v) returns Option[T], enclosing returns Option[string]
+						//          -> unify Option[T] with Option[string] -> T=string -> Option[string]
+						inferredMap := make(map[string]transpiler.Type)
+						t.unifyForInference(retType, t.currentFuncReturnType, fMeta.TypeParams, inferredMap)
+						if len(inferredMap) > 0 {
+							fallbackArgs := make([]transpiler.Type, len(fMeta.TypeParams))
+							allResolved := true
+							for i, tp := range fMeta.TypeParams {
+								if inferred, ok := inferredMap[tp]; ok {
+									fallbackArgs[i] = inferred
+								} else {
+									allResolved = false
+									break
+								}
+							}
+							if allResolved {
+								retType = t.substituteConcreteTypes(fMeta.ReturnType, fMeta.TypeParams, fallbackArgs)
+							}
+						}
 					}
 				}
 				if retType == nil {
@@ -411,6 +434,25 @@ func (t *galaASTTransformer) inferCallIdentType(e *ast.CallExpr, id *ast.Ident, 
 			inferredTypeArgs := t.inferFuncTypeParamsFromArgs(fMeta, e.Args, e.Ellipsis != token.NoPos)
 			if len(inferredTypeArgs) > 0 {
 				retType = t.substituteConcreteTypes(fMeta.ReturnType, fMeta.TypeParams, inferredTypeArgs)
+			} else if t.currentFuncReturnType != nil && !t.currentFuncReturnType.IsNil() && t.hasTypeParams(retType) {
+				// FIX-056: Fallback — unify return type with enclosing function's return type
+				inferredMap := make(map[string]transpiler.Type)
+				t.unifyForInference(retType, t.currentFuncReturnType, fMeta.TypeParams, inferredMap)
+				if len(inferredMap) > 0 {
+					fallbackArgs := make([]transpiler.Type, len(fMeta.TypeParams))
+					allResolved := true
+					for i, tp := range fMeta.TypeParams {
+						if inferred, ok := inferredMap[tp]; ok {
+							fallbackArgs[i] = inferred
+						} else {
+							allResolved = false
+							break
+						}
+					}
+					if allResolved {
+						retType = t.substituteConcreteTypes(fMeta.ReturnType, fMeta.TypeParams, fallbackArgs)
+					}
+				}
 			}
 		}
 		if retType == nil {
