@@ -1616,3 +1616,31 @@ gala_test(
     src = "match_standalone_stmt.gala",
     expected = "match_standalone_stmt.out",
 )
+
+# Multi-file library regression tests for BUG-052, BUG-056, USR-004.
+# These bugs ONLY manifest in multi-file batch transpilation (gala_library).
+# Single-file tests pass but miss these bugs.
+gala_library(
+    name = "multifile_lib_regress",
+    srcs = [
+        "multifile_lib_regress/types.gala",
+        "multifile_lib_regress/logic.gala",
+        "multifile_lib_regress/go_interop.gala",
+    ],
+    importpath = "martianoff/gala/examples/multifile_lib_regress",
+    deps = [
+        "//examples/go_struct_bridge",
+        "//collection_immutable",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+gala_test(
+    name = "multifile_lib_regress_test",
+    src = "multifile_lib_regress_test.gala",
+    expected = "multifile_lib_regress_test.out",
+    deps = [
+        ":multifile_lib_regress",
+        "//examples/go_struct_bridge",
+    ],
+)

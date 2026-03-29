@@ -1,0 +1,59 @@
+package main
+
+import (
+    "martianoff/gala/examples/multifile_lib_regress"
+    "martianoff/gala/examples/go_struct_bridge"
+)
+
+func main() {
+    // BUG-052: if-expression with time.Time
+    val deadline = multifile_lib_regress.DeadlineFromString("2024-01-15T10:30:00Z")
+    deadline match {
+        case Some(t) => Println(t.Format("2006-01-02"))
+        case _ => Println("no deadline")
+    }
+
+    // BUG-052: if-expression with int
+    val count = multifile_lib_regress.CountIfPositive(42)
+    count match {
+        case Some(n) => Println(n)
+        case _ => Println("no count")
+    }
+
+    val noCount = multifile_lib_regress.CountIfPositive(-1)
+    noCount match {
+        case Some(n) => Println(n)
+        case _ => Println("negative (expected)")
+    }
+
+    // BUG-052: if-expression with Go method multi-return
+    val session = go_struct_bridge.NewSessionData()
+    val value052 = multifile_lib_regress.SessionValueIfExists(session, "user")
+    value052 match {
+        case Some(v) => Println(v)
+        case _ => Println("no value")
+    }
+
+    // BUG-056: When inside FlatMap lambda with Go pointer type
+    val user = multifile_lib_regress.SessionLookup(session, "user")
+    user match {
+        case Some(v) => Println(v)
+        case _ => Println("no user")
+    }
+
+    val missing = multifile_lib_regress.SessionLookup(session, "missing")
+    missing match {
+        case Some(v) => Println(v)
+        case _ => Println("key not found (expected)")
+    }
+
+    // BUG-056: When inside FlatMap lambda with simple types
+    val simple = multifile_lib_regress.LookupSimple("test-key")
+    simple match {
+        case Some(v) => Println(v)
+        case _ => Println("no value")
+    }
+
+    // USR-004: Go struct named-arg construction (same-name GALA struct exists)
+    Println(multifile_lib_regress.GoCookieString("session", "abc123"))
+}

@@ -1,0 +1,15 @@
+package multifile_lib_regress
+
+import "time"
+
+// Second file in package to force multi-file batch transpilation.
+// Several bugs only manifest with --package-files.
+
+type UserInfo struct {
+    Name  string
+    Email string
+}
+
+func NewUser(name string, email string) UserInfo = UserInfo(Name = name, Email = email)
+
+// time.Parse is a Go function returning (time.Time, error)
