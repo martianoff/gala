@@ -33,7 +33,8 @@ func init() {
 // CacheVersion is incremented when the cache format or analysis semantics change.
 // This ensures stale caches from older compiler versions are automatically invalidated.
 const CacheVersion = "v1"
-n// CompilerVersion is set by the CLI to include the compiler version and git commit
+
+// CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path
 // changes automatically, preventing stale entries from causing phantom errors.
 // Format: "version-gitcommit" (e.g., "0.5.0-abc1234").

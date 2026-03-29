@@ -63,7 +63,7 @@ Legacy transpilation (creates files in project directory):
 
 // Execute runs the root command.
 func Execute() {
-t// Set compiler version for cache invalidation (BUG-057)
+	// Set compiler version for cache invalidation (BUG-057)
 	InitCompilerVersion()
 
 	if err := rootCmd.Execute(); err != nil {
