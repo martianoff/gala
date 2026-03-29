@@ -1,0 +1,12 @@
+package bug056_lib
+
+import . "martianoff/gala/std"
+
+func GetSession(key string) Option[string] {
+    val opt = Some("session-data")
+    return opt.FlatMap((session) => {
+        val found = true
+        val v = "value"
+        return When(found, v)
+    })
+}
