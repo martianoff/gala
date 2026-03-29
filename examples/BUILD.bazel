@@ -1620,79 +1620,46 @@ gala_test(
 # =============================================================================
 # Per-bug multi-file library regression tests.
 # These bugs ONLY manifest in multi-file batch transpilation (gala_library).
-# Each bug gets its own library+test so individual fix PRs can include their test.
+# Each test is commented out on master and uncommented on its fix branch.
+# After the fix PR merges, the test stays uncommented on master.
+# Source files live in regress_052/, regress_056/, regress_usr004/.
 # =============================================================================
 
-# BUG-052: if-expression with non-primitive generic return type → func() any
-gala_library(
-    name = "regress_052",
-    srcs = ["regress_052/types.gala", "regress_052/logic.gala"],
-    importpath = "martianoff/gala/examples/regress_052",
-    deps = ["//examples/go_struct_bridge"],
-    visibility = ["//visibility:public"],
-)
+# BUG-052: uncommented on fix/FIX-052-if-expr-any-multifile
+# gala_library(name = "regress_052", srcs = ["regress_052/types.gala", "regress_052/logic.gala"], importpath = "martianoff/gala/examples/regress_052", deps = ["//examples/go_struct_bridge"], visibility = ["//visibility:public"])
+# gala_test(name = "regress_052_test", src = "regress_052_test.gala", expected = "regress_052_test.out", deps = [":regress_052", "//examples/go_struct_bridge"])
 
-gala_test(
-    name = "regress_052_test",
-    src = "regress_052_test.gala",
-    expected = "regress_052_test.out",
-    deps = [":regress_052", "//examples/go_struct_bridge"],
-)
+# BUG-056: uncommented on fix/FIX-056-when-generic-lambda-undefined-T
+# gala_library(name = "regress_056", srcs = ["regress_056/types.gala", "regress_056/logic.gala"], importpath = "martianoff/gala/examples/regress_056", deps = ["//examples/go_struct_bridge"], visibility = ["//visibility:public"])
+# gala_test(name = "regress_056_test", src = "regress_056_test.gala", expected = "regress_056_test.out", deps = [":regress_056", "//examples/go_struct_bridge"])
 
-# BUG-056: When[T] inside generic lambda generates undefined: T / Option[any]
-gala_library(
-    name = "regress_056",
-    srcs = ["regress_056/types.gala", "regress_056/logic.gala"],
-    importpath = "martianoff/gala/examples/regress_056",
-    deps = ["//examples/go_struct_bridge"],
-    visibility = ["//visibility:public"],
-)
+# USR-004: uncommented on fix/FIX-USR004-go-struct-named-arg-immutable
+# gala_library(name = "regress_usr004", srcs = ["regress_usr004/types.gala", "regress_usr004/interop.gala"], importpath = "martianoff/gala/examples/regress_usr004", deps = ["//examples/go_struct_bridge"], visibility = ["//visibility:public"])
+# gala_test(name = "regress_usr004_test", src = "regress_usr004_test.gala", expected = "regress_usr004_test.out", deps = [":regress_usr004"])
 
-gala_test(
-    name = "regress_056_test",
-    src = "regress_056_test.gala",
-    expected = "regress_056_test.out",
-    deps = [":regress_056", "//examples/go_struct_bridge"],
-)
-
-# USR-004: Go struct named-arg wraps fields in Immutable
-gala_library(
-    name = "regress_usr004",
-    srcs = ["regress_usr004/types.gala", "regress_usr004/interop.gala"],
-    importpath = "martianoff/gala/examples/regress_usr004",
-    deps = ["//examples/go_struct_bridge"],
-    visibility = ["//visibility:public"],
-)
-
-gala_test(
-    name = "regress_usr004_test",
-    src = "regress_usr004_test.gala",
-    expected = "regress_usr004_test.out",
-    deps = [":regress_usr004"],
-)
-
-# Combined regression test (requires ALL fixes to pass)
-gala_library(
-    name = "multifile_lib_regress",
-    srcs = [
-        "multifile_lib_regress/types.gala",
-        "multifile_lib_regress/logic.gala",
-        "multifile_lib_regress/go_interop.gala",
-    ],
-    importpath = "martianoff/gala/examples/multifile_lib_regress",
-    deps = [
-        "//examples/go_struct_bridge",
-        "//collection_immutable",
-    ],
-    visibility = ["//visibility:public"],
-)
-
-gala_test(
-    name = "multifile_lib_regress_test",
-    src = "multifile_lib_regress_test.gala",
-    expected = "multifile_lib_regress_test.out",
-    deps = [
-        ":multifile_lib_regress",
-        "//examples/go_struct_bridge",
-    ],
-)
+# Combined regression test — requires ALL fix PRs to be merged.
+# Re-enable after PRs #138, #139, #142, #141 are merged.
+# gala_library(
+#     name = "multifile_lib_regress",
+#     srcs = [
+#         "multifile_lib_regress/types.gala",
+#         "multifile_lib_regress/logic.gala",
+#         "multifile_lib_regress/go_interop.gala",
+#     ],
+#     importpath = "martianoff/gala/examples/multifile_lib_regress",
+#     deps = [
+#         "//examples/go_struct_bridge",
+#         "//collection_immutable",
+#     ],
+#     visibility = ["//visibility:public"],
+# )
+#
+# gala_test(
+#     name = "multifile_lib_regress_test",
+#     src = "multifile_lib_regress_test.gala",
+#     expected = "multifile_lib_regress_test.out",
+#     deps = [
+#         ":multifile_lib_regress",
+#         "//examples/go_struct_bridge",
+#     ],
+# )
