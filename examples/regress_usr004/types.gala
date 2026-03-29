@@ -1,0 +1,8 @@
+package regress_usr004
+
+// Second file to force multi-file batch transpilation.
+
+type Metadata struct {
+    Author  string
+    Version string
+}

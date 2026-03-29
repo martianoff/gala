@@ -1,0 +1,31 @@
+package regress_usr004
+
+import "martianoff/gala/examples/go_struct_bridge"
+
+// USR-004: Go struct named-arg construction wraps fields in Immutable.
+// The bug triggers when a GALA struct has the SAME NAME as a Go struct in another package.
+// The transpiler finds the GALA struct in structFields and applies Immutable wrapping,
+// even though the user wrote `pkg.GoType(Field = val)` for the Go struct.
+//
+// NOTE: This only reproduces with external Go packages (import path NOT containing "/gala/").
+// For in-repo Go packages, the isExternalPackageQualified check correctly skips them only
+// when the import path doesn't contain "/gala/". The regression test here uses an in-repo
+// package but the fix is verified against gala-server (httpcore.SSEEvent).
+
+// GALA struct named Cookie — same name as go_struct_bridge.Cookie
+struct Cookie(Name string, Value string, Path string, Secure bool)
+
+// Construct a GALA Cookie (should wrap in Immutable — correct)
+func MakeGalaCookie(name string, value string) Cookie =
+    Cookie(Name = name, Value = value, Path = "/", Secure = false)
+
+// Construct a Go Cookie using qualified name (should NOT wrap in Immutable)
+// With the /gala/ import path, this exercises the isGoImportedType fallback path
+func MakeGoCookie(name string, value string) go_struct_bridge.Cookie =
+    go_struct_bridge.Cookie(Name = name, Value = value, Path = "/")
+
+func GoCookieString(name string, value string) string =
+    MakeGoCookie(name, value).String()
+
+func GalaCookieName(name string, value string) string =
+    MakeGalaCookie(name, value).Name

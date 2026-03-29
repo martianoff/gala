@@ -1,0 +1,32 @@
+package regress_056
+
+// BUG-056: When[T] inside generic lambda generates undefined: T (or Option[any]).
+// In multi-file batch mode, calling When(cond, val) inside a FlatMap lambda
+// fails to resolve T to the concrete type.
+
+// Test with GALA types (cross-file)
+func LookupWithCrossFileType(key string) Option[string] {
+    val opt = Some(NewUser("alice", "alice@example.com"))
+    return opt.FlatMap((user) => {
+        val found = user.Name != ""
+        return When(found, user.Email)
+    })
+}
+
+// Test with simple types
+func LookupSimple(key string) Option[string] {
+    val opt = Some("data")
+    return opt.FlatMap((data) => {
+        val found = key != ""
+        return When(found, s"value-for-$key")
+    })
+}
+
+// Test with nested When inside Map
+func TransformIfFound(key string) Option[string] {
+    val opt = Some(NewUser("bob", "bob@test.com"))
+    return opt.Map((user) => user.Email).FlatMap((email) => {
+        val found = email != ""
+        return When(found, email)
+    })
+}
