@@ -1,0 +1,28 @@
+package regress_052
+
+import (
+    "time"
+    "martianoff/gala/examples/go_struct_bridge"
+)
+
+// BUG-052: if-expression with non-primitive generic return type.
+// In multi-file batch mode, `return if (ok) Some(t) else None[T]()`
+// generated `func() any { ... }()` instead of `func() Option[T] { ... }()`.
+// This only triggers when the if-expr branches use values from Go method calls.
+
+func DeadlineFromString(s string) Option[time.Time] {
+    var t, err = time.Parse(time.RFC3339, s)
+    val ok = err == nil
+    return if (ok) Some(t) else None[time.Time]()
+}
+
+func CountIfPositive(n int) Option[int] {
+    val ok = n > 0
+    return if (ok) Some(n) else None[int]()
+}
+
+// This is the critical pattern: Go method multi-return feeding into if-expression
+func SessionValueIfExists(session *go_struct_bridge.SessionData, key string) Option[string] {
+    var v, found = session.Get(key)
+    return if (found) Some(v) else None[string]()
+}

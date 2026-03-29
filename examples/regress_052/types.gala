@@ -1,0 +1,9 @@
+package regress_052
+
+// Second file to force multi-file batch transpilation (transpile-package).
+// BUG-052 only manifests in this mode.
+
+type Pair struct {
+    Key   string
+    Value string
+}

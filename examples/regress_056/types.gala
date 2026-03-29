@@ -1,0 +1,10 @@
+package regress_056
+
+// Second file to force multi-file batch transpilation.
+
+type UserInfo struct {
+    Name  string
+    Email string
+}
+
+func NewUser(name string, email string) UserInfo = UserInfo(Name = name, Email = email)

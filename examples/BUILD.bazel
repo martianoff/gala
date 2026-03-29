@@ -1617,9 +1617,61 @@ gala_test(
     expected = "match_standalone_stmt.out",
 )
 
-# Multi-file library regression tests for BUG-052, BUG-056, USR-004.
+# =============================================================================
+# Per-bug multi-file library regression tests.
 # These bugs ONLY manifest in multi-file batch transpilation (gala_library).
-# Single-file tests pass but miss these bugs.
+# Each bug gets its own library+test so individual fix PRs can include their test.
+# =============================================================================
+
+# BUG-052: if-expression with non-primitive generic return type → func() any
+gala_library(
+    name = "regress_052",
+    srcs = ["regress_052/types.gala", "regress_052/logic.gala"],
+    importpath = "martianoff/gala/examples/regress_052",
+    deps = ["//examples/go_struct_bridge"],
+    visibility = ["//visibility:public"],
+)
+
+gala_test(
+    name = "regress_052_test",
+    src = "regress_052_test.gala",
+    expected = "regress_052_test.out",
+    deps = [":regress_052", "//examples/go_struct_bridge"],
+)
+
+# BUG-056: When[T] inside generic lambda generates undefined: T / Option[any]
+gala_library(
+    name = "regress_056",
+    srcs = ["regress_056/types.gala", "regress_056/logic.gala"],
+    importpath = "martianoff/gala/examples/regress_056",
+    deps = ["//examples/go_struct_bridge"],
+    visibility = ["//visibility:public"],
+)
+
+gala_test(
+    name = "regress_056_test",
+    src = "regress_056_test.gala",
+    expected = "regress_056_test.out",
+    deps = [":regress_056", "//examples/go_struct_bridge"],
+)
+
+# USR-004: Go struct named-arg wraps fields in Immutable
+gala_library(
+    name = "regress_usr004",
+    srcs = ["regress_usr004/types.gala", "regress_usr004/interop.gala"],
+    importpath = "martianoff/gala/examples/regress_usr004",
+    deps = ["//examples/go_struct_bridge"],
+    visibility = ["//visibility:public"],
+)
+
+gala_test(
+    name = "regress_usr004_test",
+    src = "regress_usr004_test.gala",
+    expected = "regress_usr004_test.out",
+    deps = [":regress_usr004"],
+)
+
+# Combined regression test (requires ALL fixes to pass)
 gala_library(
     name = "multifile_lib_regress",
     srcs = [

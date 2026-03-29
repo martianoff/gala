@@ -31,3 +31,9 @@ func (s *SessionData) Get(key string) (string, bool) {
 	v, ok := s.data[key]
 	return v, ok
 }
+
+// MakeCookie is a Go helper for constructing Cookie from GALA without
+// GALA struct resolution interference (for USR-004 testing).
+func MakeCookie(name, value, path string) Cookie {
+	return Cookie{Name: name, Value: value, Path: path}
+}
