@@ -1,0 +1,26 @@
+package main
+
+import (
+    "time"
+    . "martianoff/gala/std"
+)
+
+func parseTime(s string) Option[time.Time] {
+    val t, err = time.Parse(time.RFC3339, s)
+    val ok = err == nil
+    return if (ok) Some(t) else None[time.Time]()
+}
+
+func main() {
+    val result = parseTime("2024-01-15T10:30:00Z")
+    result match {
+        case Some(t) => Println(t.Format("2006-01-02"))
+        case _ => Println("invalid")
+    }
+
+    val result2 = parseTime("not-a-date")
+    result2 match {
+        case Some(t) => Println(t.Format("2006-01-02"))
+        case _ => Println("invalid (expected)")
+    }
+}

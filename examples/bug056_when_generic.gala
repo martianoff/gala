@@ -1,0 +1,22 @@
+package main
+
+import (
+    . "martianoff/gala/std"
+)
+
+func getSession(key string) Option[string] {
+    val opt = Some("session-data")
+    return opt.FlatMap((session) => {
+        val found = true
+        val v = "value"
+        return When(found, v)
+    })
+}
+
+func main() {
+    val result = getSession("test")
+    result match {
+        case Some(v) => Println(v)
+        case _ => Println("none")
+    }
+}

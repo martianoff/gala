@@ -1,0 +1,14 @@
+package main
+
+import (
+    . "martianoff/gala/std"
+    "martianoff/gala/examples/bug056_lib"
+)
+
+func main() {
+    val result = bug056_lib.GetSession("test")
+    result match {
+        case Some(v) => Println(v)
+        case _ => Println("none")
+    }
+}

@@ -360,6 +360,39 @@ gala_test(
 )
 
 gala_test(
+    name = "bug052_if_expr_return",
+    src = "bug052_if_expr_return.gala",
+    expected = "bug052_if_expr_return.out",
+)
+
+gala_test(
+    name = "bug056_when_generic",
+    src = "bug056_when_generic.gala",
+    expected = "bug056_when_generic.out",
+)
+
+gala_library(
+    name = "bug056_lib",
+    srcs = ["bug056_lib/session.gala"],
+    importpath = "martianoff/gala/examples/bug056_lib",
+    visibility = ["//visibility:public"],
+)
+
+gala_test(
+    name = "bug056_lib_test",
+    src = "bug056_lib_test.gala",
+    expected = "bug056_lib_test.out",
+    deps = [":bug056_lib"],
+)
+
+gala_test(
+    name = "usr004_go_struct_immutable",
+    src = "usr004_go_struct_immutable.gala",
+    expected = "usr004_go_struct_immutable.out",
+    deps = ["//examples/go_struct_bridge"],
+)
+
+gala_test(
     name = "try_basic",
     src = "try_basic.gala",
     expected = "try_basic.out",

@@ -1183,6 +1183,26 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 		return &ast.CompositeLit{Type: fun, Elts: elts}, nil
 	}
 
+	// FIX-USR004: Fallback for dot-imported Go types.
+	// When a type is not in structFields (not a GALA struct) and isGoImportedType returns false
+	// (because the name is unqualified due to dot import), check if any non-std dot-imported
+	// package exists. If so, generate a plain Go composite literal without Immutable wrapping.
+	if _, isIdent := fun.(*ast.Ident); isIdent {
+		for _, pkg := range t.importManager.GetDotImports() {
+			if pkg != "std" && pkg != t.packageName {
+				var elts []ast.Expr
+				for fieldName, val := range namedArgs {
+					elts = append(elts, &ast.KeyValueExpr{
+						Key:   ast.NewIdent(fieldName),
+						Value: val,
+					})
+				}
+				t.sortKeyValueExprs(elts)
+				return &ast.CompositeLit{Type: fun, Elts: elts}, nil
+			}
+		}
+	}
+
 	return nil, galaerr.NewSemanticError(fmt.Sprintf("named arguments only supported for Copy method or struct construction (type: %s)", typeName))
 }
 
