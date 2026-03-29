@@ -33,6 +33,12 @@ func init() {
 // CacheVersion is incremented when the cache format or analysis semantics change.
 // This ensures stale caches from older compiler versions are automatically invalidated.
 const CacheVersion = "v1"
+n// CompilerVersion is set by the CLI to include the compiler version and git commit
+// in the cache directory path. When the transpiler binary is upgraded, the cache path
+// changes automatically, preventing stale entries from causing phantom errors.
+// Format: "version-gitcommit" (e.g., "0.5.0-abc1234").
+// If empty, only CacheVersion is used (backward compatible).
+var CompilerVersion string
 
 // CachedRichAST is the serializable subset of RichAST (no antlr.Tree).
 type CachedRichAST struct {
@@ -95,7 +101,11 @@ func newAnalysisCache(projectRoot string) *analysisCache {
 	if projectRoot == "" {
 		return &analysisCache{enabled: false}
 	}
-	dir := filepath.Join(projectRoot, ".gala", "cache", CacheVersion)
+	cacheDir := CacheVersion
+	if CompilerVersion != "" {
+		cacheDir = CacheVersion + "-" + CompilerVersion
+	}
+	dir := filepath.Join(projectRoot, ".gala", "cache", cacheDir)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return &analysisCache{enabled: false}
 	}
