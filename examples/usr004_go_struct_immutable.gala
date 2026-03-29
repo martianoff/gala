@@ -1,0 +1,9 @@
+package main
+
+import . "martianoff/gala/examples/go_struct_bridge"
+
+func main() {
+    // USR-004: Dot-imported Go struct with named-arg syntax
+    val c = Cookie(Name = "session", Value = "abc123", Path = "/")
+    Println(c.String())
+}
