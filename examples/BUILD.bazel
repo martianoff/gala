@@ -1634,8 +1634,8 @@ gala_test(name = "regress_052_test", src = "regress_052_test.gala", expected = "
 # gala_test(name = "regress_056_test", src = "regress_056_test.gala", expected = "regress_056_test.out", deps = [":regress_056", "//examples/go_struct_bridge"])
 
 # USR-004: uncommented on fix/FIX-USR004-go-struct-named-arg-immutable
-# gala_library(name = "regress_usr004", srcs = ["regress_usr004/types.gala", "regress_usr004/interop.gala"], importpath = "martianoff/gala/examples/regress_usr004", deps = ["//examples/go_struct_bridge"], visibility = ["//visibility:public"])
-# gala_test(name = "regress_usr004_test", src = "regress_usr004_test.gala", expected = "regress_usr004_test.out", deps = [":regress_usr004"])
+gala_library(name = "regress_usr004", srcs = ["regress_usr004/types.gala", "regress_usr004/interop.gala"], importpath = "martianoff/gala/examples/regress_usr004", deps = ["//examples/go_struct_bridge"], visibility = ["//visibility:public"])
+gala_test(name = "regress_usr004_test", src = "regress_usr004_test.gala", expected = "regress_usr004_test.out", deps = [":regress_usr004"])
 
 # Combined regression test — requires ALL fix PRs to be merged.
 # Re-enable after PRs #138, #139, #142, #141 are merged.
