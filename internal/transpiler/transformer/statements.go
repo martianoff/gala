@@ -86,7 +86,21 @@ func (t *galaASTTransformer) transformStatement(ctx *grammar.StatementContext) (
 	if retCtx := ctx.ReturnStatement(); retCtx != nil {
 		var results []ast.Expr
 		if retCtx.Expression() != nil {
-			expr, err := t.transformExpression(retCtx.Expression())
+			var expr ast.Expr
+			var err error
+			// FIX-052: If the return expression is an if-expression and we know the
+			// enclosing function's return type, set expectedIfExprType so that the
+			// if-expression IIFE gets a concrete return type instead of falling back
+			// to `any` when HM type inference fails in multi-file batch mode.
+			ifExprCtx := t.findIfExpressionInExpression(retCtx.Expression())
+			if ifExprCtx != nil && t.currentFuncReturnType != nil && !t.currentFuncReturnType.IsNil() {
+				oldExpected := t.expectedIfExprType
+				t.expectedIfExprType = t.typeToExpr(t.currentFuncReturnType)
+				expr, err = t.transformIfExpression(ifExprCtx)
+				t.expectedIfExprType = oldExpected
+			} else {
+				expr, err = t.transformExpression(retCtx.Expression())
+			}
 			if err != nil {
 				return nil, err
 			}
