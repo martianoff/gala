@@ -4,6 +4,7 @@ go_library(
     name = "commands",
     srcs = [
         "build.go",
+        "cache.go",
         "clean.go",
         "mod.go",
         "mod_add.go",
@@ -20,6 +21,7 @@ go_library(
         "transpile.go",
         "transpile_package.go",
         "version.go",
+        "version_cache.go",
     ],
     importpath = "martianoff/gala/cmd/gala/commands",
     visibility = ["//visibility:public"],

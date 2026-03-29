@@ -63,6 +63,9 @@ Legacy transpilation (creates files in project directory):
 
 // Execute runs the root command.
 func Execute() {
+	// Set compiler version for cache invalidation (BUG-057)
+	InitCompilerVersion()
+
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)
@@ -79,6 +82,7 @@ func init() {
 	rootCmd.AddCommand(runCmd)
 	rootCmd.AddCommand(cleanCmd)
 	rootCmd.AddCommand(testCmd)
+	rootCmd.AddCommand(cacheCmd)
 
 	// Add global flags that mirror transpile flags for backward compatibility
 	rootCmd.Flags().StringVarP(&transpileInput, "input", "i", "", "Path to the input .gala file")
