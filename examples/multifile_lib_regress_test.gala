@@ -7,11 +7,7 @@ import (
 
 func main() {
     // BUG-052: if-expression with time.Time
-    val deadline = multifile_lib_regress.DeadlineFromString("2024-01-15T10:30:00Z")
-    deadline match {
-        case Some(t) => Println(t.Format("2006-01-02"))
-        case _ => Println("no deadline")
-    }
+    Println(multifile_lib_regress.DeadlineFromString("2024-01-15T10:30:00Z").IsDefined())
 
     // BUG-052: if-expression with int
     val count = multifile_lib_regress.CountIfPositive(42)

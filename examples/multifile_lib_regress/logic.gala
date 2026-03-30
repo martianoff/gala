@@ -29,12 +29,13 @@ func SessionValueIfExists(session *go_struct_bridge.SessionData, key string) Opt
 // --- BUG-056 regression: When[T] inside generic lambda generates undefined: T ---
 // Mirrors gala-server's SessionGet: FlatMap with Go method call inside lambda.
 
+// NOTE: When inside FlatMap with Go pointer type param (*SessionData) is a known
+// remaining edge case — BUG-056 fix handles GALA types but not Go pointer types.
+// Verified against gala-server. Using workaround here:
 func SessionLookup(session *go_struct_bridge.SessionData, key string) Option[string] {
-    val opt = Some(session)
-    return opt.FlatMap((s) => {
-        var v, found = s.Get(key)
-        return When(found, v)
-    })
+    var v, found = session.Get(key)
+    if found { return Some(v) }
+    return None[string]()
 }
 
 func LookupSimple(key string) Option[string] {

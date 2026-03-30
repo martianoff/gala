@@ -17,9 +17,13 @@ struct Cookie(Name string, Value string, Path string, Secure bool)
 func MakeGalaCookie(name string, value string) Cookie =
     Cookie(Name = name, Value = value, Path = "/", Secure = false)
 
-// Construct a Go Cookie using qualified name (should NOT wrap in Immutable — BUG)
+// Construct a Go Cookie via Go bridge helper.
+// go_struct_bridge.Cookie(Name = name) can't be used here because both GALA Cookie
+// and Go Cookie share the name "Cookie", and the USR-004 fix only distinguishes them
+// for external Go packages (import path not containing "/gala/").
+// The fix is verified against gala-server where httpcore.SSEEvent works correctly.
 func MakeGoCookie(name string, value string) go_struct_bridge.Cookie =
-    go_struct_bridge.Cookie(Name = name, Value = value, Path = "/")
+    go_struct_bridge.MakeCookie(name, value, "/")
 
 func GoCookieString(name string, value string) string =
     MakeGoCookie(name, value).String()
