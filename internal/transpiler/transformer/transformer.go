@@ -370,39 +370,26 @@ func (t *galaASTTransformer) resolveTypeName(typeName string, exists func(string
 		return typeName, true
 	}
 
-	// 2. If typeName has a package prefix, extract the simple name and try other packages
-	// BUT only if the package prefix is NOT from an external (non-GALA) import
+	// 2. If typeName has a package prefix (e.g., "pkg.Type"), extract the simple name
+	// and try resolving it — but ONLY if the package is a GALA package (has types
+	// registered from GALA analysis). Go packages (time, fmt, httpcore, go_struct_bridge)
+	// should NOT have their types resolved to same-named GALA types.
 	if idx := strings.LastIndex(typeName, "."); idx != -1 {
 		pkgPrefix := typeName[:idx]
 		simpleName := typeName[idx+1:]
 
-		// Check if this is an external package (imported Go package like "time", "fmt", etc.)
-		// If so, don't try to resolve the simple name to GALA types - external types
-		// like time.Duration should not be confused with GALA's Duration type
-		isExternalPackage := false
-		for _, entry := range t.importManager.All() {
-			// Get the alias used in code (e.g., "time" for import "time")
-			alias := entry.Alias
-			if alias == "" {
-				// Extract last component from import path (e.g., "time" from "time")
-				if lastSlash := strings.LastIndex(entry.Path, "/"); lastSlash != -1 {
-					alias = entry.Path[lastSlash+1:]
-				} else {
-					alias = entry.Path
-				}
-			}
-			if alias == pkgPrefix && !entry.IsDot {
-				// Check if it's a GALA package by looking at the import path
-				// GALA packages typically have paths containing "/gala/"
-				if !strings.Contains(entry.Path, "/gala/") {
-					isExternalPackage = true
-					break
-				}
+		// A package is a GALA package if any of its types exist in typeMetas
+		// (registered during GALA source analysis). Go packages won't have entries.
+		isGalaPackage := false
+		for key := range t.typeMetas {
+			if strings.HasPrefix(key, pkgPrefix+".") {
+				isGalaPackage = true
+				break
 			}
 		}
 
-		// Only try to resolve the simple name if it's not from an external package
-		if !isExternalPackage {
+		// Only resolve the simple name to a GALA type if the qualifier is a GALA package
+		if isGalaPackage {
 			if resolved, found := t.tryResolveSimpleName(simpleName, exists); found {
 				return resolved, true
 			}

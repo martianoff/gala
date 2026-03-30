@@ -3,12 +3,10 @@ package multifile_lib_regress
 import "martianoff/gala/examples/go_struct_bridge"
 
 // --- USR-004 regression: Go struct named-arg wraps fields in Immutable ---
-// The bug triggers when a GALA struct has the SAME NAME as a Go struct in another package.
-// The transpiler extracts just the type name (e.g., "Cookie") from `pkg.Cookie(Field = val)`,
-// finds the GALA struct "Cookie" in structFields, and applies Immutable wrapping — even though
-// the user intended to construct the Go struct `go_struct_bridge.Cookie`.
-//
-// This mirrors gala-server where both `SSEEvent` (GALA) and `httpcore.SSEEvent` (Go) exist.
+// When a GALA struct and a Go struct share the same name (Cookie), the transpiler
+// must use the package qualifier to distinguish them:
+//   Cookie(Name = "x")              → local GALA Cookie → Immutable wrapping
+//   go_struct_bridge.Cookie(Name = "x") → Go Cookie     → plain Go literal
 
 // GALA struct named Cookie — same name as go_struct_bridge.Cookie
 struct Cookie(Name string, Value string, Path string, Secure bool)
@@ -17,13 +15,12 @@ struct Cookie(Name string, Value string, Path string, Secure bool)
 func MakeGalaCookie(name string, value string) Cookie =
     Cookie(Name = name, Value = value, Path = "/", Secure = false)
 
-// Construct a Go Cookie via Go bridge helper.
-// go_struct_bridge.Cookie(Name = name) can't be used here because both GALA Cookie
-// and Go Cookie share the name "Cookie", and the USR-004 fix only distinguishes them
-// for external Go packages (import path not containing "/gala/").
-// The fix is verified against gala-server where httpcore.SSEEvent works correctly.
+// Construct a Go Cookie using qualified name (should NOT wrap in Immutable)
 func MakeGoCookie(name string, value string) go_struct_bridge.Cookie =
-    go_struct_bridge.MakeCookie(name, value, "/")
+    go_struct_bridge.Cookie(Name = name, Value = value, Path = "/")
 
 func GoCookieString(name string, value string) string =
     MakeGoCookie(name, value).String()
+
+func GalaCookieName(name string, value string) string =
+    MakeGalaCookie(name, value).Name

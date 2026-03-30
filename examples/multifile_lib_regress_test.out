@@ -1,4 +1,4 @@
-true
+2024-01-15
 42
 negative (expected)
 alice
@@ -6,3 +6,4 @@ alice
 key not found (expected)
 value-for-test-key
 Cookie(session=abc123, path=/)
+session

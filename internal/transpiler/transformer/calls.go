@@ -1023,34 +1023,54 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 }
 
 func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, namedArgs map[string]ast.Expr) (ast.Expr, error) {
-	// Try to get the type name to check if it's struct construction
+	// Extract the type name for struct field lookup.
+	// typeName is the bare name (e.g., "Cookie") used for code generation.
+	// qualifiedName includes the package qualifier (e.g., "go_struct_bridge.Cookie")
+	// for resolveStructTypeName to distinguish Go types from same-named GALA types.
 	var typeName string
+	var qualifiedName string
 	switch f := fun.(type) {
 	case *ast.Ident:
 		typeName = f.Name
+		qualifiedName = f.Name
 	case *ast.IndexExpr:
 		if id, ok := f.X.(*ast.Ident); ok {
 			typeName = id.Name
+			qualifiedName = id.Name
 		} else if sel, ok := f.X.(*ast.SelectorExpr); ok {
 			typeName = sel.Sel.Name
+			if pkgId, ok := sel.X.(*ast.Ident); ok {
+				qualifiedName = pkgId.Name + "." + sel.Sel.Name
+			} else {
+				qualifiedName = sel.Sel.Name
+			}
 		}
 	case *ast.IndexListExpr:
 		if id, ok := f.X.(*ast.Ident); ok {
 			typeName = id.Name
+			qualifiedName = id.Name
 		} else if sel, ok := f.X.(*ast.SelectorExpr); ok {
 			typeName = sel.Sel.Name
+			if pkgId, ok := sel.X.(*ast.Ident); ok {
+				qualifiedName = pkgId.Name + "." + sel.Sel.Name
+			} else {
+				qualifiedName = sel.Sel.Name
+			}
 		}
 	case *ast.SelectorExpr:
 		typeName = f.Sel.Name
+		if pkgId, ok := f.X.(*ast.Ident); ok {
+			qualifiedName = pkgId.Name + "." + f.Sel.Name
+		} else {
+			qualifiedName = f.Sel.Name
+		}
 	}
 
 	// Check if this is a known struct type.
-	// FIX-USR004: If the call is package-qualified with an external (non-GALA) Go package
-	// (e.g., httpcore.SSEEvent), skip the GALA structFields path even if a
-	// same-named GALA struct exists in the current package. This prevents
-	// Immutable wrapping for Go struct construction via named-arg syntax.
-	resolvedTypeName := t.resolveStructTypeName(typeName)
-	if fields, ok := t.structFields[resolvedTypeName]; ok && !t.isExternalPackageQualified(fun) {
+	// Use qualifiedName so resolveStructTypeName can detect when a Go struct type
+	// (e.g., "go_struct_bridge.Cookie") should NOT resolve to a same-named GALA type.
+	resolvedTypeName := t.resolveStructTypeName(qualifiedName)
+	if fields, ok := t.structFields[resolvedTypeName]; ok {
 		// Check if this is a sealed variant companion (empty struct with Apply method)
 		// Sealed variants are registered with nil fields because the companion struct is empty.
 		// The actual field info lives in the parent sealed type's SealedVariants metadata.
@@ -1210,40 +1230,7 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 	return nil, galaerr.NewSemanticError(fmt.Sprintf("named arguments only supported for Copy method or struct construction (type: %s)", typeName))
 }
 
-// isExternalPackageQualified checks if an expression is qualified with an external (non-GALA)
-// package prefix. This distinguishes Go struct types (e.g., httpcore.SSEEvent) from GALA types
-// that may have the same name. GALA packages (containing "/gala/" in their import path) and the
-// "std" package are NOT considered external, so their types use the GALA struct construction path.
-func (t *galaASTTransformer) isExternalPackageQualified(expr ast.Expr) bool {
-	switch e := expr.(type) {
-	case *ast.SelectorExpr:
-		if id, ok := e.X.(*ast.Ident); ok {
-			if id.Name == "std" {
-				return false
-			}
-			// Check if this package alias corresponds to an external (non-GALA) import
-			for _, entry := range t.importManager.All() {
-				alias := entry.Alias
-				if alias == "" {
-					if lastSlash := strings.LastIndex(entry.Path, "/"); lastSlash != -1 {
-						alias = entry.Path[lastSlash+1:]
-					} else {
-						alias = entry.Path
-					}
-				}
-				if alias == id.Name && !entry.IsDot {
-					// External if the import path does NOT contain "/gala/"
-					return !strings.Contains(entry.Path, "/gala/")
-				}
-			}
-		}
-	case *ast.IndexExpr:
-		return t.isExternalPackageQualified(e.X)
-	case *ast.IndexListExpr:
-		return t.isExternalPackageQualified(e.X)
-	}
-	return false
-}
+
 
 // isGoImportedType checks if an expression refers to a Go-imported type (not a GALA struct).
 // This is used to determine if named-arg syntax should generate a plain Go composite literal.
