@@ -53,6 +53,9 @@ genrule(
         $$GRADLE_HOME/bin/gradle -p ide/intellij test buildPlugin --no-daemon
         cp ide/intellij/build/distributions/*.zip $@
     """,
-    tags = ["no-sandbox"],
+    tags = [
+        "manual",
+        "no-sandbox",
+    ],
     toolchains = ["@bazel_tools//tools/jdk:current_java_runtime"],
 )
