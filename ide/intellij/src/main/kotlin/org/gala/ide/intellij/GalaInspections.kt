@@ -59,35 +59,6 @@ class GalaDuplicateDeclarationInspection : LocalInspectionTool() {
 }
 
 /**
- * Inspection: detects empty match expressions (match with no case clauses).
- */
-class GalaEmptyMatchInspection : LocalInspectionTool() {
-    override fun getGroupDisplayName(): String = "GALA"
-    override fun getDisplayName(): String = "Empty match expression"
-    override fun getShortName(): String = "GalaEmptyMatch"
-
-    override fun buildVisitor(holder: ProblemsHolder, isOnTheFly: Boolean): PsiElementVisitor {
-        return object : PsiElementVisitor() {
-            override fun visitElement(element: PsiElement) {
-                if (element is GalaPsiNode && element.node.elementType == GalaTokenTypes.RULE_MATCH_SUFFIX) {
-                    // Check if the match has any case clauses
-                    val hasCases = element.children.any {
-                        it.node.elementType == GalaTokenTypes.RULE_CASE_CLAUSE
-                    }
-                    if (!hasCases) {
-                        holder.registerProblem(
-                            element,
-                            "Empty match expression — add case clauses",
-                            ProblemHighlightType.WARNING
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-/**
  * Inspection: warns about mutable variables (var) that could be val.
  * Detects var declarations whose value is never reassigned in the same scope.
  */

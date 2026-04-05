@@ -81,11 +81,7 @@
                          displayName="Duplicate declaration"
                          implementationClass="org.gala.ide.intellij.GalaDuplicateDeclarationInspection"
                          enabledByDefault="true" level="ERROR"/>
-        <localInspection language="GALA" groupName="GALA" shortName="GalaEmptyMatch"
-                         displayName="Empty match expression"
-                         implementationClass="org.gala.ide.intellij.GalaEmptyMatchInspection"
-                         enabledByDefault="true" level="WARNING"/>
-        <localInspection language="GALA" groupName="GALA" shortName="GalaVarCouldBeVal"
+<localInspection language="GALA" groupName="GALA" shortName="GalaVarCouldBeVal"
                          displayName="'var' could be 'val'"
                          implementationClass="org.gala.ide.intellij.GalaVarCouldBeValInspection"
                          enabledByDefault="true" level="WEAK WARNING"/>
