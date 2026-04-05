@@ -33,9 +33,7 @@ jobs:
       - name: Build
         run: |
           echo "GOROOT=$GOROOT"
-          bazel build //... \
-            --action_env=GOROOT="$GOROOT" --action_env=PATH \
-            -- -//examples:kvstore_bin -//examples:use_lib_alias_bin
+          bazel build //... --action_env=GOROOT="$GOROOT" --action_env=PATH
 
       - name: Test
         run: |
