@@ -1,4 +1,5 @@
 load("@rules_go//go:def.bzl", "go_library")
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 
 genrule(
     name = "gala_grammar_go",
@@ -37,3 +38,54 @@ go_library(
 )
 
 exports_files(["gala.g4"])
+
+# --- IntelliJ Plugin: Generate Java lexer/parser from patched grammar ---
+# The antlr4-intellij-adaptor requires WS/comments on channel(HIDDEN), not skipped.
+
+genrule(
+    name = "gala_grammar_java",
+    srcs = ["gala.g4"],
+    outs = [
+        "galaBaseListener.java",
+        "galaBaseVisitor.java",
+        "galaLexer.java",
+        "galaListener.java",
+        "galaParser.java",
+        "galaVisitor.java",
+    ],
+    cmd = """
+        set -e && \
+        export PATH="/usr/bin:/bin:$$PATH" && \
+        ANTLR_OUT=antlr_java_out_$$$$ && \
+        mkdir -p $$ANTLR_OUT && \
+        sed 's/-> skip/-> channel(HIDDEN)/g' $(location gala.g4) > $$ANTLR_OUT/gala.g4 && \
+        "$(JAVA)" -jar $(location @antlr4_tool//jar) \
+            -Dlanguage=Java \
+            -package org.gala.ide.intellij.parser \
+            -visitor \
+            -listener \
+            -Xexact-output-dir \
+            -o $$ANTLR_OUT \
+            $$ANTLR_OUT/gala.g4 && \
+        cp $$ANTLR_OUT/*.java "$(@D)/" && \
+        rm -rf $$ANTLR_OUT
+    """,
+    toolchains = ["@bazel_tools//tools/jdk:current_host_java_runtime"],
+    tools = ["@antlr4_tool//jar"],
+    visibility = ["//visibility:public"],
+)
+
+# Copy generated Java sources into the IntelliJ plugin's gen directory.
+# Usage: bazel run //internal/parser/grammar:copy_java_to_ide
+sh_binary(
+    name = "copy_java_to_ide",
+    srcs = ["copy_java_to_ide.sh"],
+    data = [
+        ":galaBaseListener.java",
+        ":galaBaseVisitor.java",
+        ":galaLexer.java",
+        ":galaListener.java",
+        ":galaParser.java",
+        ":galaVisitor.java",
+    ],
+)

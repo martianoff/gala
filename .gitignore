@@ -94,7 +94,11 @@ fabric.properties
 
 # Generated files
 internal/parser/grammar/*.go
+internal/parser/grammar/*.java
 std/option.go
+
+# IntelliJ plugin generated ANTLR sources and build artifacts
+ide/intellij/src/main/gen/
 
 ### Gradle template
 .gradle
@@ -105,11 +109,6 @@ std/option.go
 # Ignore Gradle GUI config
 gradle-app.setting
 
-# Avoid ignoring Gradle wrapper jar file (.jar files are usually ignored)
-!gradle-wrapper.jar
-
-# Avoid ignore Gradle wrappper properties
-!gradle-wrapper.properties
 
 # Cache of project
 .gradletasknamecache

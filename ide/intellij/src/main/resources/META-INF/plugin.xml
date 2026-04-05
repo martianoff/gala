@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>org.gala.ide.intellij</id>
     <name>GALA</name>
-    <version>1.1.0</version>
+    <version>2.0.0</version>
     <vendor email="support@gala.org" url="https://github.com/gala-lang/gala">GALA Team</vendor>
 
     <description><![CDATA[
@@ -30,6 +30,15 @@
     ]]></description>
 
     <change-notes><![CDATA[
+    <b>2.0.0</b>
+    <ul>
+        <li>Full ANTLR-based parser — complete PSI tree for all GALA constructs</li>
+        <li>Structure view now shows all declarations: functions, types, sealed types with cases, vals, vars</li>
+        <li>Improved code folding for blocks, sealed types, and import groups</li>
+        <li>Added Try, Success, Failure, Immutable to standard library type completion</li>
+        <li>Foundation for future navigation, refactoring, and inspection support</li>
+    </ul>
+
     <b>1.1.0</b>
     <ul>
         <li>Added support for multi-line comments (/* */)</li>
@@ -37,7 +46,7 @@
         <li>Added highlighting for built-in types (int, string, bool, etc.)</li>
         <li>Added new keywords: break, continue, defer, go, select, switch, default, map, chan</li>
         <li>Added completion for standard library types (Option, Either, Tuple, List, Array)</li>
-        <li>Improved operator recognition (++, --, +=, ..., <-, etc.)</li>
+        <li>Improved operator recognition (++, --, +=, ..., &lt;-, etc.)</li>
     </ul>
 
     <b>1.0.0</b>
@@ -46,7 +55,7 @@
     </ul>
     ]]></change-notes>
 
-    <idea-version since-build="232" until-build="255.*"/>
+    <idea-version since-build="241" until-build="265.*"/>
 
     <depends>com.intellij.modules.platform</depends>
 

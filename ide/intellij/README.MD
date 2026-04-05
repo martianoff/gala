@@ -1,55 +1,53 @@
 # GALA IntelliJ Plugin
 
-This directory contains the source code for the GALA language support plugin for IntelliJ IDEA.
+IntelliJ IDEA language support plugin for GALA (Go Alternative LAnguage).
 
 ## Features
 
-- **Syntax highlighting** for:
-  - Keywords (`val`, `var`, `func`, `match`, `case`, `if`, `else`, `for`, etc.)
-  - Built-in types (`int`, `string`, `bool`, `float64`, `any`, etc.)
-  - Strings (regular `"..."` and raw backtick strings)
-  - Comments (single-line `//` and multi-line `/* */`)
-  - Numbers (integers and floats)
-  - Operators (`=>`, `:=`, `++`, `--`, `...`, etc.)
-- **Code completion** for keywords, built-in types, and standard library types (`Option`, `Either`, `Tuple`, `List`, `Array`)
+- **Full ANTLR-based parser** — complete PSI tree for all GALA constructs
+- **Syntax highlighting** for keywords, types, strings, comments, numbers, operators
+- **Code completion** for keywords, built-in types, and standard library types
+- **Structure view** showing functions, types, sealed types with cases, vals, vars
 - **Brace matching** for `()`, `{}`, `[]`
-- **Code folding** for blocks
-- **Comment/uncomment** support (Ctrl+/ for line, Ctrl+Shift+/ for block)
-- **Structure view** for navigating code
+- **Code folding** for blocks, sealed type bodies, and import groups
+- **Comment/uncomment** support (`Ctrl+/` for line, `Ctrl+Shift+/` for block)
 - **File type recognition** (`.gala`)
 
 ## How to Build
-
-### Using Bazel (Recommended)
-
-The plugin can be built using Bazel from the project root:
 
 ```bash
 bazel build //ide/intellij:plugin
 ```
 
-The resulting ZIP file will be located at `bazel-bin/ide/intellij/gala-intellij-plugin.zip`.
+The resulting ZIP file will be at `bazel-bin/ide/intellij/gala-intellij-plugin.zip`.
 
-### Using Gradle
-
-To build the plugin directly with Gradle, you need to have JDK 17 installed. Use the provided Gradle wrapper (if available) or your local Gradle installation.
-
-Run the following command in this directory:
-
-```bash
-gradle buildPlugin
-```
-
-This will produce a ZIP file in `build/distributions/gala-intellij-plugin-1.1.0.zip`.
+This single command generates the ANTLR Java lexer/parser from `gala.g4`, copies them into the plugin source tree, and runs Gradle to compile and package the plugin.
 
 ## How to Install
 
-1. Open IntelliJ IDEA.
-2. Go to `Settings` (or `Preferences` on macOS) > `Plugins`.
-3. Click the gear icon (top right) and select `Install Plugin from Disk...`.
-4. Navigate to the `build/distributions/` folder and select the produced ZIP file.
-5. Restart IntelliJ IDEA if prompted.
+1. Open IntelliJ IDEA (2024.1+)
+2. Go to **Settings** > **Plugins**
+3. Click the gear icon and select **Install Plugin from Disk...**
+4. Select `bazel-bin/ide/intellij/gala-intellij-plugin.zip`
+5. Restart IntelliJ IDEA
 
-## Important Note
+## Architecture
 
-Do NOT zip the source code directory itself and try to install it. IntelliJ IDEA requires a specific internal structure (JARs in a `lib` folder) which is automatically created by the `buildPlugin` Gradle task.
+The plugin uses the [antlr4-intellij-adaptor](https://github.com/antlr/antlr4-intellij-adaptor) library to bridge the ANTLR4 grammar (`gala.g4`) directly into IntelliJ's PSI tree:
+
+- **Single source of truth** — the GALA grammar is defined once in `gala.g4`
+- **Bazel generates** Java lexer/parser from the grammar (patching `-> skip` to `-> channel(HIDDEN)`)
+- **Gradle packages** the IntelliJ plugin (invoked by Bazel)
+- Generated files live in `src/main/gen/` (gitignored)
+
+### Key source files
+
+| File | Purpose |
+|------|---------|
+| `psi/GalaTokenTypes.kt` | Bridges ANTLR tokens/rules to IntelliJ `IElementType`s |
+| `psi/GalaPsiNodes.kt` | Custom PSI node types for declarations |
+| `GalaParserDefinition.kt` | Wires ANTLR lexer/parser to IntelliJ |
+| `GalaSyntaxHighlighter.kt` | Token-based syntax highlighting |
+| `GalaStructureViewElement.kt` | Structure view tree |
+| `GalaFoldingBuilder.kt` | Code folding regions |
+| `GalaCompletionContributor.kt` | Keyword and type completion |

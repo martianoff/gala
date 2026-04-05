@@ -1,0 +1,12 @@
+package main
+
+import "fmt"
+import (
+    "strings"
+    "strconv"
+)
+
+func main() {
+    val s = strings.ToUpper("hello")
+    fmt.Println(s)
+}

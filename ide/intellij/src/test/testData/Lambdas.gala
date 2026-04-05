@@ -1,0 +1,11 @@
+package main
+
+func main() {
+    val double = (x int) => x * 2
+    val add = (x int, y int) => x + y
+    val greet = () => "hello"
+
+    val numbers = SliceOf(1, 2, 3, 4, 5)
+    val doubled = numbers.Map((x) => x * 2)
+    val sum = numbers.FoldLeft(0, (acc, x) => acc + x)
+}
