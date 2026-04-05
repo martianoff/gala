@@ -69,6 +69,7 @@ class GalaParserDefinition : ParserDefinition {
             GalaTokenTypes.RULE_IMPORT_DECLARATION -> ImportDeclarationNode(node)
             GalaTokenTypes.RULE_BLOCK -> BlockNode(node)
             GalaTokenTypes.RULE_METHOD_SPEC -> MethodSpecNode(node)
+            GalaTokenTypes.RULE_IDENTIFIER -> IdentifierNode(node)
             else -> GalaPsiNode(node)
         }
     }

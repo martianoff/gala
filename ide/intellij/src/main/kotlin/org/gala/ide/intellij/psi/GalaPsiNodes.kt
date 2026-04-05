@@ -3,12 +3,29 @@ package org.gala.ide.intellij.psi
 import com.intellij.lang.ASTNode
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiNameIdentifierOwner
+import com.intellij.psi.PsiReference
 import org.antlr.intellij.adaptor.psi.ANTLRPsiNode
 
 /**
  * Base PSI node for GALA elements backed by ANTLR parse tree nodes.
  */
 open class GalaPsiNode(node: ASTNode) : ANTLRPsiNode(node)
+
+/**
+ * PSI node for identifier references (usages, not declarations).
+ * Provides a GalaReference for Go to Definition and Find Usages.
+ */
+class IdentifierNode(node: ASTNode) : GalaPsiNode(node) {
+    override fun getReference(): PsiReference? {
+        // Only provide a reference if this identifier is a usage, not a declaration name.
+        // A declaration name is the direct identifier child of a PsiNameIdentifierOwner.
+        val parent = parent ?: return null
+        if (parent is PsiNameIdentifierOwner && parent.nameIdentifier === this) {
+            return null
+        }
+        return GalaReference(this)
+    }
+}
 
 /**
  * PSI node for function declarations.
