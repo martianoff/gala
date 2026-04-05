@@ -42,9 +42,6 @@ func TestCompilationGate(t *testing.T) {
 		"slice_type_param.gala":           "uses []T as type param (unsupported grammar)",
 		"match_interface_return.gala":     "known semantic error in match branch type unification",
 
-		// Known transpiler bugs (tracked separately).
-		"kvstore.gala": "known bug: cannot infer type params for extractor 'Some'",
-
 		// These import GALA library packages not available in test sandbox.
 		"byte_conversion.gala":            "imports go_interop",
 		"doc_io_verify.gala":              "imports io",
