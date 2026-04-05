@@ -1,27 +1,45 @@
 plugins {
     id("java")
-    id("org.jetbrains.kotlin.jvm") version "1.9.21"
+    id("org.jetbrains.kotlin.jvm") version "1.9.25"
     id("org.jetbrains.intellij") version "1.17.4"
 }
 
+val ideaVersion: String by project
+val antlr4Version: String by project
+val antlr4AdaptorVersion: String by project
+val pluginVersion: String by project
+
 group = "org.gala"
-version = "1.0-SNAPSHOT"
+version = pluginVersion
 
 repositories {
     mavenCentral()
 }
 
-// Configure Gradle IntelliJ Plugin
-// Read more: https://github.com/JetBrains/gradle-intellij-plugin
-intellij {
-    version.set("2023.2.5")
-    type.set("IC") // Target IDE Platform
+dependencies {
+    implementation("org.antlr:antlr4-intellij-adaptor:$antlr4AdaptorVersion")
+    implementation("org.antlr:antlr4-runtime:$antlr4Version")
 
-    plugins.set(listOf(/* Plugin Dependencies */))
+    testImplementation("junit:junit:4.13.2")
+}
+
+// Configure Gradle IntelliJ Plugin
+intellij {
+    version.set(ideaVersion)
+    type.set("IC")
+    plugins.set(listOf())
+}
+
+// Include Bazel-generated ANTLR Java sources
+sourceSets {
+    main {
+        java {
+            srcDir("src/main/gen")
+        }
+    }
 }
 
 tasks {
-    // Set the JVM compatibility versions
     withType<JavaCompile> {
         sourceCompatibility = "17"
         targetCompatibility = "17"
@@ -31,8 +49,8 @@ tasks {
     }
 
     patchPluginXml {
-        sinceBuild.set("232")
-        untilBuild.set("255.*")
+        sinceBuild.set("241")
+        untilBuild.set("265.*")
     }
 
     signPlugin {

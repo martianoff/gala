@@ -1,0 +1,15 @@
+package shapes
+
+sealed type Shape {
+    case Circle(radius float64)
+    case Rectangle(width float64, height float64)
+    case Triangle(base float64, height float64)
+}
+
+func area(s Shape) float64 {
+    return s match {
+        case Circle(r) => 3.14159 * r * r
+        case Rectangle(w, h) => w * h
+        case Triangle(b, h) => 0.5 * b * h
+    }
+}

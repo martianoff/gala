@@ -1,24 +1,54 @@
 package(default_visibility = ["//visibility:public"])
 
+# Build the IntelliJ plugin.
+# Single command: bazel build //ide/intellij:plugin
+#
+# This target:
+#   1. Depends on ANTLR-generated Java sources from the grammar
+#   2. Copies them into src/main/gen/ for Gradle to compile
+#   3. Runs Gradle buildPlugin to produce the plugin ZIP
 genrule(
     name = "plugin",
     srcs = glob([
         "src/**",
         "build.gradle.kts",
         "settings.gradle.kts",
-    ]) + ["@gradle_bin//:all_files"],
+        "gradle.properties",
+    ]) + [
+        "//internal/parser/grammar:galaBaseListener.java",
+        "//internal/parser/grammar:galaBaseVisitor.java",
+        "//internal/parser/grammar:galaLexer.java",
+        "//internal/parser/grammar:galaListener.java",
+        "//internal/parser/grammar:galaParser.java",
+        "//internal/parser/grammar:galaVisitor.java",
+        "@gradle_bin//:all_files",
+    ],
     outs = ["gala-intellij-plugin.zip"],
     cmd = """
+        set -e
+        export PATH="/usr/bin:/bin:$$PATH"
         export JAVA_HOME=$$(pwd)/$$(echo $(JAVA) | sed 's|/bin/java\\.exe$$||; s|/bin/java$$||')
 
-        # Find gradle_bin location from the input files (bzlmod compatible)
+        # Copy ANTLR-generated Java sources into the plugin gen directory
+        GEN_DIR=ide/intellij/src/main/gen/org/gala/ide/intellij/parser
+        mkdir -p $$GEN_DIR
+        for f in $(locations //internal/parser/grammar:galaBaseListener.java) \
+                 $(locations //internal/parser/grammar:galaBaseVisitor.java) \
+                 $(locations //internal/parser/grammar:galaLexer.java) \
+                 $(locations //internal/parser/grammar:galaListener.java) \
+                 $(locations //internal/parser/grammar:galaParser.java) \
+                 $(locations //internal/parser/grammar:galaVisitor.java); do
+            cp "$$f" "$$GEN_DIR/"
+        done
+
+        # Find gradle_bin location
         GRADLE_BIN=$$(dirname $$(dirname $$(echo '$(locations @gradle_bin//:all_files)' | tr ' ' '\\n' | grep 'bin/gradle$$' | head -1)))
         export GRADLE_HOME=$$(pwd)/$$GRADLE_BIN
 
-        # Run gradle from the external repository
         $$GRADLE_HOME/bin/gradle -p ide/intellij buildPlugin --no-daemon
 
         cp ide/intellij/build/distributions/*.zip $@
     """,
+    tags = ["no-sandbox"],
     toolchains = ["@bazel_tools//tools/jdk:current_java_runtime"],
 )
