@@ -71,6 +71,8 @@
         <lang.braceMatcher language="GALA" implementationClass="org.gala.ide.intellij.GalaPairedBraceMatcher"/>
         <lang.psiStructureViewFactory language="GALA" implementationClass="org.gala.ide.intellij.GalaStructureViewFactory"/>
         <completion.contributor language="GALA" implementationClass="org.gala.ide.intellij.GalaCompletionContributor"/>
+        <lang.findUsagesProvider language="GALA" implementationClass="org.gala.ide.intellij.GalaFindUsagesProvider"/>
+        <gotoSymbolContributor implementationClass="org.gala.ide.intellij.GalaGoToSymbolContributor"/>
     </extensions>
 
     <actions>
