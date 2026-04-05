@@ -75,6 +75,32 @@
         <gotoSymbolContributor implementationClass="org.gala.ide.intellij.GalaGoToSymbolContributor"/>
         <annotator language="GALA" implementationClass="org.gala.ide.intellij.GalaAnnotator"/>
         <colorSettingsPage implementation="org.gala.ide.intellij.GalaColorSettingsPage"/>
+
+        <!-- Inspections -->
+        <localInspection language="GALA" groupName="GALA" shortName="GalaDuplicateDeclaration"
+                         displayName="Duplicate declaration"
+                         implementationClass="org.gala.ide.intellij.GalaDuplicateDeclarationInspection"
+                         enabledByDefault="true" level="ERROR"/>
+        <localInspection language="GALA" groupName="GALA" shortName="GalaEmptyMatch"
+                         displayName="Empty match expression"
+                         implementationClass="org.gala.ide.intellij.GalaEmptyMatchInspection"
+                         enabledByDefault="true" level="WARNING"/>
+        <localInspection language="GALA" groupName="GALA" shortName="GalaVarCouldBeVal"
+                         displayName="'var' could be 'val'"
+                         implementationClass="org.gala.ide.intellij.GalaVarCouldBeValInspection"
+                         enabledByDefault="true" level="WEAK WARNING"/>
+
+        <!-- Gutter run icons -->
+        <codeInsight.lineMarkerProvider language="GALA"
+                                         implementationClass="org.gala.ide.intellij.GalaLineMarkerProvider"/>
+
+        <!-- Documentation -->
+        <lang.documentationProvider language="GALA"
+                                     implementationClass="org.gala.ide.intellij.GalaDocumentationProvider"/>
+
+        <!-- Live templates -->
+        <defaultLiveTemplates file="/liveTemplates/GALA.xml"/>
+        <liveTemplateContext implementation="org.gala.ide.intellij.GalaLiveTemplateContext"/>
     </extensions>
 
     <actions>
