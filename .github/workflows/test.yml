@@ -42,3 +42,9 @@ jobs:
       - name: IntelliJ Plugin Build & Test
         run: |
           bazel build //ide/intellij:plugin //ide/intellij:plugin_test --action_env=PATH
+
+      - name: Upload IntelliJ Plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: gala-intellij-plugin
+          path: bazel-bin/ide/intellij/gala-intellij-plugin.zip
