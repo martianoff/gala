@@ -380,10 +380,21 @@ func (t *galaASTTransformer) resolveTypeName(typeName string, exists func(string
 
 		// A package is a GALA package if any of its types exist in typeMetas
 		// (registered during GALA source analysis). Go packages won't have entries.
+		// Also resolve the alias to the actual package name (e.g., "libalias" -> "lib")
+		// since types are stored under actual package names, not aliases.
 		isGalaPackage := false
+		prefixesToCheck := []string{pkgPrefix}
+		if actualPkg, ok := t.importManager.ResolveAlias(pkgPrefix); ok && actualPkg != pkgPrefix {
+			prefixesToCheck = append(prefixesToCheck, actualPkg)
+		}
 		for key := range t.typeMetas {
-			if strings.HasPrefix(key, pkgPrefix+".") {
-				isGalaPackage = true
+			for _, prefix := range prefixesToCheck {
+				if strings.HasPrefix(key, prefix+".") {
+					isGalaPackage = true
+					break
+				}
+			}
+			if isGalaPackage {
 				break
 			}
 		}
