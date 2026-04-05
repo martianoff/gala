@@ -378,11 +378,26 @@ func (t *galaASTTransformer) resolveTypeName(typeName string, exists func(string
 		pkgPrefix := typeName[:idx]
 		simpleName := typeName[idx+1:]
 
+		// Resolve import alias to actual package name (e.g., "im" -> "collection_immutable")
+		// so that type metadata registered under the real package name can be found.
+		actualPkg := pkgPrefix
+		if resolved, ok := t.importManager.ResolveAlias(pkgPrefix); ok {
+			actualPkg = resolved
+		}
+
+		// Try exact match with the resolved package name (e.g., "collection_immutable.HashMap")
+		if actualPkg != pkgPrefix {
+			resolvedName := actualPkg + "." + simpleName
+			if exists(resolvedName) {
+				return resolvedName, true
+			}
+		}
+
 		// A package is a GALA package if any of its types exist in typeMetas
 		// (registered during GALA source analysis). Go packages won't have entries.
 		isGalaPackage := false
 		for key := range t.typeMetas {
-			if strings.HasPrefix(key, pkgPrefix+".") {
+			if strings.HasPrefix(key, pkgPrefix+".") || strings.HasPrefix(key, actualPkg+".") {
 				isGalaPackage = true
 				break
 			}
