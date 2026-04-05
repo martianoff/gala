@@ -1,0 +1,79 @@
+<templateSet group="GALA">
+    <template name="func" value="func $NAME$($PARAMS$) $RETURN$ {&#10;    $END$&#10;}" description="Function declaration" toReformat="true" toShortenFQNames="true">
+        <variable name="NAME" expression="" defaultValue="name" alwaysStopAt="true" />
+        <variable name="PARAMS" expression="" defaultValue="" alwaysStopAt="true" />
+        <variable name="RETURN" expression="" defaultValue="" alwaysStopAt="true" />
+        <context><option name="GALA" value="true" /></context>
+    </template>
+
+    <template name="val" value="val $NAME$ = $VALUE$" description="Immutable variable" toReformat="true" toShortenFQNames="true">
+        <variable name="NAME" expression="" defaultValue="name" alwaysStopAt="true" />
+        <variable name="VALUE" expression="" defaultValue="" alwaysStopAt="true" />
+        <context><option name="GALA" value="true" /></context>
+    </template>
+
+    <template name="var" value="var $NAME$ = $VALUE$" description="Mutable variable" toReformat="true" toShortenFQNames="true">
+        <variable name="NAME" expression="" defaultValue="name" alwaysStopAt="true" />
+        <variable name="VALUE" expression="" defaultValue="" alwaysStopAt="true" />
+        <context><option name="GALA" value="true" /></context>
+    </template>
+
+    <template name="match" value="$EXPR$ match {&#10;    case $PATTERN$ =&gt; $BODY$&#10;}" description="Match expression" toReformat="true" toShortenFQNames="true">
+        <variable name="EXPR" expression="" defaultValue="expr" alwaysStopAt="true" />
+        <variable name="PATTERN" expression="" defaultValue="_" alwaysStopAt="true" />
+        <variable name="BODY" expression="" defaultValue="" alwaysStopAt="true" />
+        <context><option name="GALA" value="true" /></context>
+    </template>
+
+    <template name="if" value="if ($COND$) {&#10;    $END$&#10;}" description="If statement" toReformat="true" toShortenFQNames="true">
+        <variable name="COND" expression="" defaultValue="condition" alwaysStopAt="true" />
+        <context><option name="GALA" value="true" /></context>
+    </template>
+
+    <template name="ife" value="if ($COND$) {&#10;    $THEN$&#10;} else {&#10;    $ELSE$&#10;}" description="If-else statement" toReformat="true" toShortenFQNames="true">
+        <variable name="COND" expression="" defaultValue="condition" alwaysStopAt="true" />
+        <variable name="THEN" expression="" defaultValue="" alwaysStopAt="true" />
+        <variable name="ELSE" expression="" defaultValue="" alwaysStopAt="true" />
+        <context><option name="GALA" value="true" /></context>
+    </template>
+
+    <template name="for" value="for $VAR$ range $EXPR$ {&#10;    $END$&#10;}" description="For-range loop" toReformat="true" toShortenFQNames="true">
+        <variable name="VAR" expression="" defaultValue="item" alwaysStopAt="true" />
+        <variable name="EXPR" expression="" defaultValue="collection" alwaysStopAt="true" />
+        <context><option name="GALA" value="true" /></context>
+    </template>
+
+    <template name="sealed" value="sealed type $NAME$ {&#10;    case $CASE$($FIELDS$)&#10;}" description="Sealed type declaration" toReformat="true" toShortenFQNames="true">
+        <variable name="NAME" expression="" defaultValue="MyType" alwaysStopAt="true" />
+        <variable name="CASE" expression="" defaultValue="Variant" alwaysStopAt="true" />
+        <variable name="FIELDS" expression="" defaultValue="value T" alwaysStopAt="true" />
+        <context><option name="GALA" value="true" /></context>
+    </template>
+
+    <template name="struct" value="type $NAME$ struct {&#10;    val $FIELD$ $TYPE$&#10;}" description="Struct type declaration" toReformat="true" toShortenFQNames="true">
+        <variable name="NAME" expression="" defaultValue="MyStruct" alwaysStopAt="true" />
+        <variable name="FIELD" expression="" defaultValue="field" alwaysStopAt="true" />
+        <variable name="TYPE" expression="" defaultValue="string" alwaysStopAt="true" />
+        <context><option name="GALA" value="true" /></context>
+    </template>
+
+    <template name="lambda" value="($PARAMS$) =&gt; $BODY$" description="Lambda expression" toReformat="true" toShortenFQNames="true">
+        <variable name="PARAMS" expression="" defaultValue="x" alwaysStopAt="true" />
+        <variable name="BODY" expression="" defaultValue="" alwaysStopAt="true" />
+        <context><option name="GALA" value="true" /></context>
+    </template>
+
+    <template name="main" value="package main&#10;&#10;func main() {&#10;    $END$&#10;}" description="Main function" toReformat="true" toShortenFQNames="true">
+        <context><option name="GALA" value="true" /></context>
+    </template>
+
+    <template name="println" value="Println($EXPR$)" description="Print line" toReformat="true" toShortenFQNames="true">
+        <variable name="EXPR" expression="" defaultValue="" alwaysStopAt="true" />
+        <context><option name="GALA" value="true" /></context>
+    </template>
+
+    <template name="sinterp" value="s&quot;$TEXT$&quot;" description="String interpolation" toReformat="true" toShortenFQNames="true">
+        <variable name="TEXT" expression="" defaultValue="" alwaysStopAt="true" />
+        <context><option name="GALA" value="true" /></context>
+    </template>
+</templateSet>
