@@ -45,23 +45,16 @@ class GalaCompletionContributor : CompletionContributor() {
             "string"
         )
 
-        // Source: std/*.gala — sealed types, types, and sealed case constructors
-        private val STD_TYPES = listOf(
-            // Sealed types
-            "Option", "Either", "Try",
-            // Sealed case constructors
-            "Some", "None", "Left", "Right", "Success", "Failure",
-            // Struct types
-            "Tuple", "Immutable", "ConstPtr", "Void",
-            // Interface types
-            "Seq", "Traversable", "Iterable", "Hashable", "Ordered",
-            // Error types
-            "NoSuchElementError",
-        )
-
-        // Source: collection_immutable/*.gala, collection_mutable/*.gala
-        private val COLLECTION_TYPES = listOf(
-            "Array", "List", "HashMap", "HashSet", "TreeMap", "TreeSet"
+        // Source: std/*.gala — ONLY auto-imported types (std is implicit)
+        // Other packages (collection_immutable, etc.) require explicit import
+        // and will be suggested by the LSP server in Phase 5.
+        private val STD_AUTO_IMPORTED = listOf(
+            // Sealed types + constructors (always available without import)
+            "Option", "Some", "None",
+            "Either", "Left", "Right",
+            "Try", "Success", "Failure",
+            // Core types (always available without import)
+            "Tuple", "Immutable",
         )
 
         // Source: std/*.gala — public methods on std types
@@ -107,14 +100,9 @@ class GalaCompletionContributor : CompletionContributor() {
                             LookupElementBuilder.create(type).withTypeText("builtin type")
                         )
                     }
-                    for (type in STD_TYPES) {
+                    for (type in STD_AUTO_IMPORTED) {
                         result.addElement(
                             LookupElementBuilder.create(type).withTypeText("std")
-                        )
-                    }
-                    for (type in COLLECTION_TYPES) {
-                        result.addElement(
-                            LookupElementBuilder.create(type).withTypeText("collection")
                         )
                     }
 

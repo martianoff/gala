@@ -31,19 +31,21 @@ grep -oP "'[a-z]+'" internal/parser/grammar/gala.g4 | sort -u
 grep -A20 "func IsPrimitiveType" internal/transpiler/types.go
 ```
 
-### 3. Standard Library Types
+### 3. Standard Library Auto-Imported Types
 
-**Plugin file:** `GalaCompletionContributor.kt` (STD_TYPES)
+**Plugin file:** `GalaCompletionContributor.kt` (STD_AUTO_IMPORTED)
 
-**Source of truth:** `std/*.gala` — all `type` and `sealed type` declarations
+**Source of truth:** `std/*.gala` — ONLY types that are auto-imported (available without explicit `import`). These are the core sealed types, their constructors, and fundamental types like `Tuple` and `Immutable`.
 
-**How to extract:**
+**Important:** Types from other packages (`collection_immutable`, `collection_mutable`, `io`, `stream`, `concurrent`, etc.) require explicit `import` and should NOT be in static completion lists. They will be suggested by the LSP server (Phase 5) when imports are resolved.
+
+**How to extract auto-imported types:**
 ```bash
-# Types
-grep -h "^type \|^sealed type " std/*.gala | sed 's/\[.*//' | awk '{print $NF}'
+# Sealed types + constructors
+grep -h "^sealed type \|^    case " std/*.gala | head -20
 
-# Sealed cases (constructors)
-grep -h "^    case " std/*.gala | awk '{print $2}' | sed 's/(.*//'
+# Core struct types always available
+grep -h "^type " std/tuple.gala std/immutable.gala
 ```
 
 ### 4. Standard Library Methods (postfix completion)
@@ -58,16 +60,19 @@ grep -h "^    case " std/*.gala | awk '{print $2}' | sed 's/(.*//'
 grep -h "^func (" std/*.gala | grep -oP '\) [A-Z]\w+' | sed 's/) //' | sort -u
 ```
 
-### 5. Collection Types (non-std packages)
+### 5. Importable Package Types (NOT in static completion)
 
-**Plugin file:** `GalaCompletionContributor.kt` (STD_TYPES — some are collection types)
+Collection types, IO types, stream types, etc. are NOT in static completion lists.
+They require explicit `import` and will be handled by the LSP server (Phase 5).
 
-**Source of truth:** `collection_immutable/*.gala`, `collection_mutable/*.gala`
-
-**How to extract:**
-```bash
-grep -rh "^type " collection_immutable/*.gala collection_mutable/*.gala | grep "^type [A-Z]" | sed 's/\[.*//' | awk '{print $2}' | sort -u
-```
+Packages with importable types:
+- `collection_immutable` — Array, List, HashMap, HashSet, TreeMap, TreeSet
+- `collection_mutable` — Array, List, HashMap, HashSet, TreeMap, TreeSet
+- `io` — Reader, Writer, etc.
+- `stream` — Stream
+- `concurrent` — Future, ExecutionContext
+- `string_utils` — StringBuilder
+- `regex` — Regex, Match
 
 ### 6. Syntax Highlighter Token Mapping
 

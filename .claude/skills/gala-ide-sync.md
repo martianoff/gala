@@ -26,16 +26,13 @@ Read these source-of-truth files and extract:
 - Find the `IsPrimitiveType()` function and extract the type name list
 - These are Go primitive types available in GALA
 
-**Standard library types** from `std/*.gala`:
-- `type` and `sealed type` declarations (public, capitalized names only)
-- `case` declarations inside sealed types (constructors like `Some`, `None`, `Left`, `Right`, etc.)
+**Standard library auto-imported types** from `std/*.gala`:
+- ONLY types available without explicit `import` — core sealed types (Option, Either, Try), their constructors (Some, None, Left, Right, Success, Failure), and fundamental types (Tuple, Immutable)
+- Types from other packages (collection_immutable, io, stream, etc.) require explicit import and are NOT in static completion — they will be handled by the LSP server
 
 **Standard library methods** from `std/*.gala`:
 - Public methods (capitalized) on std types: `func (receiver) MethodName(...)`
 - Extract with: `grep -h "^func (" std/*.gala | grep -oP '\) [A-Z]\w+' | sed 's/) //' | sort -u`
-
-**Collection types** from `collection_immutable/*.gala` and `collection_mutable/*.gala`:
-- Public type declarations (capitalized names, exclude internal lowercase types)
 
 ### Step 2: Compare against plugin
 
@@ -48,8 +45,8 @@ Read these plugin files and compare:
 | `ide/intellij/.../GalaCompletionContributor.kt` | LITERAL_KEYWORDS | gala.g4 literal rule |
 | `ide/intellij/.../GalaCompletionContributor.kt` | TYPE_KEYWORDS | gala.g4 type rule |
 | `ide/intellij/.../GalaCompletionContributor.kt` | BUILTIN_TYPES | types.go IsPrimitiveType |
-| `ide/intellij/.../GalaCompletionContributor.kt` | STD_TYPES | std/*.gala types + cases |
-| `ide/intellij/.../GalaCompletionContributor.kt` | POSTFIX_TEMPLATES | std/*.gala public methods |
+| `ide/intellij/.../GalaCompletionContributor.kt` | STD_AUTO_IMPORTED | std/*.gala auto-imported types only |
+| `ide/intellij/.../GalaCompletionContributor.kt` | DOT_METHODS | std/*.gala public methods |
 | `ide/intellij/.../GalaAnnotator.kt` | BUILTIN_TYPE_NAMES | types.go IsPrimitiveType |
 | `ide/intellij/.../GalaSyntaxHighlighter.kt` | keyword token list | gala.g4 named lexer tokens |
 
@@ -85,7 +82,7 @@ Print summary of changes made.
 ## Rules
 
 1. **Only add keywords that exist in gala.g4** — if a keyword isn't in the grammar, it's not GALA syntax
-2. **Sealed cases ARE valid completion items** — `Some`, `None`, `Left`, `Right`, `Success`, `Failure` are constructors users type frequently
-3. **Collection types are separate packages**, not std — label them as "collection" not "std" in completion
+2. **Only auto-imported std types in static completion** — `Option`, `Some`, `None`, `Either`, `Left`, `Right`, `Try`, `Success`, `Failure`, `Tuple`, `Immutable` are always available without import
+3. **NEVER add importable package types to static completion** — types from `collection_immutable`, `collection_mutable`, `io`, `stream`, `concurrent`, `regex`, `string_utils` etc. require explicit `import` and will be handled by the LSP server
 4. **Don't remove method templates** that are conceptually correct even if the exact method signature isn't in std (e.g., `match` is a language keyword, not a method)
 5. **Built-in types must be identical** across all 3 files that define them
