@@ -7,8 +7,6 @@ WORKSPACE="${BUILD_WORKSPACE_DIRECTORY:-.}"
 TARGET_DIR="$WORKSPACE/ide/intellij/src/main/gen/org/gala/ide/intellij/parser"
 
 mkdir -p "$TARGET_DIR"
-
-# Remove old read-only files (Bazel outputs are read-only)
 rm -f "$TARGET_DIR"/*.java 2>/dev/null || true
 
 RUNFILES_DIR="${RUNFILES_DIR:-$0.runfiles}"

@@ -1,4 +1,5 @@
 load("@rules_go//go:def.bzl", "go_library")
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 
 genrule(
     name = "gala_grammar_go",
@@ -75,7 +76,7 @@ genrule(
 )
 
 # Copy generated Java sources into the IntelliJ plugin's gen directory.
-# Run: bazel run //internal/parser/grammar:copy_java_to_ide
+# Usage: bazel run //internal/parser/grammar:copy_java_to_ide
 sh_binary(
     name = "copy_java_to_ide",
     srcs = ["copy_java_to_ide.sh"],
