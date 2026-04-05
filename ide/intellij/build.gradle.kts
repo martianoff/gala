@@ -10,7 +10,7 @@ val antlr4AdaptorVersion: String by project
 val pluginVersion: String by project
 
 group = "org.gala"
-version = pluginVersion
+version = System.getenv("GALA_VERSION")?.removePrefix("v") ?: pluginVersion
 
 repositories {
     mavenCentral()

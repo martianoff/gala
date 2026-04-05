@@ -109,9 +109,35 @@ jobs:
           name: gala-${{ matrix.os }}-${{ matrix.arch }}
           path: dist/gala-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}
 
+  intellij-plugin:
+    name: Build IntelliJ Plugin
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bazel
+        uses: bazel-contrib/setup-bazel@0.14.0
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}-intellij
+          repository-cache: true
+
+      - name: Build plugin
+        env:
+          GALA_VERSION: ${{ github.event.release.tag_name }}
+        run: |
+          bazel build //ide/intellij:plugin --action_env=GALA_VERSION="$GALA_VERSION" --action_env=PATH
+
+      - name: Upload plugin artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gala-intellij-plugin
+          path: bazel-bin/ide/intellij/gala-intellij-plugin.zip
+
   upload-release:
     name: Upload Release Assets
-    needs: build
+    needs: [build, intellij-plugin]
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
@@ -123,15 +149,16 @@ jobs:
         run: |
           cd artifacts
           mkdir -p release
-          find . -mindepth 2 -type f -name 'gala-*' -exec mv {} release/ \;
-          rm -rf gala-*/
+          find . -mindepth 2 -type f \( -name 'gala-*' -o -name '*.zip' \) -exec mv {} release/ \;
+          rm -rf gala-*/ gala-intellij-plugin/
           mv release/* .
           rmdir release
-          sha256sum gala-* > checksums-sha256.txt
+          sha256sum gala-* *.zip > checksums-sha256.txt
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             artifacts/gala-*
+            artifacts/*.zip
             artifacts/checksums-sha256.txt
