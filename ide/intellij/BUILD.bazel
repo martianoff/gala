@@ -25,6 +25,7 @@ _GRADLE_SETUP = """
     # Copy ANTLR-generated Java sources into the plugin gen directory
     GEN_DIR=ide/intellij/src/main/gen/org/gala/ide/intellij/parser
     mkdir -p $$GEN_DIR
+    rm -f $$GEN_DIR/*.java 2>/dev/null || true
     for f in $(locations //internal/parser/grammar:galaBaseListener.java) \
              $(locations //internal/parser/grammar:galaBaseVisitor.java) \
              $(locations //internal/parser/grammar:galaLexer.java) \
