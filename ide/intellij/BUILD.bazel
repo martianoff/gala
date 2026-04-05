@@ -40,28 +40,18 @@ _GRADLE_SETUP = """
     export GRADLE_HOME=$$(pwd)/$$GRADLE_BIN
 """
 
-# Build the IntelliJ plugin.
+# Build and test the IntelliJ plugin.
 # Usage: bazel build //ide/intellij:plugin
+#
+# Runs both buildPlugin and test in a single Gradle invocation
+# to avoid parallel Gradle cache conflicts.
 genrule(
     name = "plugin",
     srcs = _PLUGIN_SRCS + _ANTLR_JAVA_SRCS + ["@gradle_bin//:all_files"],
     outs = ["gala-intellij-plugin.zip"],
     cmd = _GRADLE_SETUP + """
-        $$GRADLE_HOME/bin/gradle -p ide/intellij buildPlugin --no-daemon
+        $$GRADLE_HOME/bin/gradle -p ide/intellij test buildPlugin --no-daemon
         cp ide/intellij/build/distributions/*.zip $@
-    """,
-    tags = ["no-sandbox"],
-    toolchains = ["@bazel_tools//tools/jdk:current_java_runtime"],
-)
-
-# Run IntelliJ plugin tests.
-# Usage: bazel build //ide/intellij:plugin_test
-genrule(
-    name = "plugin_test",
-    srcs = _PLUGIN_SRCS + _ANTLR_JAVA_SRCS + ["@gradle_bin//:all_files"],
-    outs = ["test_results.txt"],
-    cmd = _GRADLE_SETUP + """
-        $$GRADLE_HOME/bin/gradle -p ide/intellij test --no-daemon 2>&1 | tee $@
     """,
     tags = ["no-sandbox"],
     toolchains = ["@bazel_tools//tools/jdk:current_java_runtime"],
