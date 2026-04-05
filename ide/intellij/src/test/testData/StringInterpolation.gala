@@ -1,0 +1,8 @@
+package main
+
+func main() {
+    val name = "World"
+    val greeting = s"Hello, $name!"
+    val formatted = f"$3.14159%.2f"
+    val complex = s"Result: ${1 + 2}"
+}

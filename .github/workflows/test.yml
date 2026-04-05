@@ -37,4 +37,10 @@ jobs:
 
       - name: Test
         run: |
-          bazel test //... --test_output=errors --verbose_failures --action_env=GOROOT="$GOROOT" --action_env=PATH
+          bazel test //... \
+            --test_output=errors --verbose_failures \
+            --action_env=GOROOT="$GOROOT" --action_env=PATH
+
+      - name: IntelliJ Plugin Build & Test
+        run: |
+          bazel build //ide/intellij:plugin --action_env=PATH

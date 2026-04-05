@@ -1,0 +1,14 @@
+package types
+
+type Person struct {
+    val name string
+    val age int
+}
+
+type Greeter interface {
+    Greet() string
+}
+
+struct Point(x int, y int)
+
+type StringList []string
