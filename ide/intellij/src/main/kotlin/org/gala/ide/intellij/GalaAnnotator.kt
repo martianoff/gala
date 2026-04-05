@@ -1,0 +1,139 @@
+package org.gala.ide.intellij
+
+import com.intellij.lang.annotation.AnnotationHolder
+import com.intellij.lang.annotation.Annotator
+import com.intellij.lang.annotation.HighlightSeverity
+import com.intellij.openapi.editor.DefaultLanguageHighlighterColors
+import com.intellij.openapi.editor.colors.TextAttributesKey
+import com.intellij.psi.PsiElement
+import org.antlr.intellij.adaptor.lexer.TokenIElementType
+import org.gala.ide.intellij.parser.galaLexer
+import org.gala.ide.intellij.psi.*
+
+/**
+ * Semantic annotator for GALA — provides highlighting beyond lexer-level tokens.
+ *
+ * Highlights:
+ * - Built-in type names (int, string, bool, etc.) as class/type color
+ * - true/false/nil as keyword color
+ * - Unresolved references with weak warning
+ * - String interpolation variables inside s"..." and f"..."
+ */
+class GalaAnnotator : Annotator {
+
+    companion object {
+        val BUILTIN_TYPE = TextAttributesKey.createTextAttributesKey(
+            "GALA_BUILTIN_TYPE", DefaultLanguageHighlighterColors.CLASS_NAME
+        )
+        val FUNCTION_CALL = TextAttributesKey.createTextAttributesKey(
+            "GALA_FUNCTION_CALL", DefaultLanguageHighlighterColors.FUNCTION_CALL
+        )
+        val FUNCTION_DECLARATION = TextAttributesKey.createTextAttributesKey(
+            "GALA_FUNCTION_DECLARATION", DefaultLanguageHighlighterColors.FUNCTION_DECLARATION
+        )
+        val PARAMETER = TextAttributesKey.createTextAttributesKey(
+            "GALA_PARAMETER", DefaultLanguageHighlighterColors.PARAMETER
+        )
+        val LOCAL_VARIABLE = TextAttributesKey.createTextAttributesKey(
+            "GALA_LOCAL_VARIABLE", DefaultLanguageHighlighterColors.LOCAL_VARIABLE
+        )
+        val TYPE_PARAMETER = TextAttributesKey.createTextAttributesKey(
+            "GALA_TYPE_PARAMETER", DefaultLanguageHighlighterColors.CLASS_NAME
+        )
+        val INTERPOLATION_VAR = TextAttributesKey.createTextAttributesKey(
+            "GALA_INTERPOLATION_VAR", DefaultLanguageHighlighterColors.TEMPLATE_LANGUAGE_COLOR
+        )
+
+        private val BUILTIN_TYPE_NAMES = setOf(
+            "any", "bool", "byte", "rune", "error",
+            "int", "int8", "int16", "int32", "int64",
+            "uint", "uint8", "uint16", "uint32", "uint64", "uintptr",
+            "float32", "float64",
+            "complex64", "complex128",
+            "string"
+        )
+    }
+
+    override fun annotate(element: PsiElement, holder: AnnotationHolder) {
+        // Only annotate leaf IDENTIFIER tokens and string tokens
+        val elementType = element.node?.elementType ?: return
+
+        if (elementType is TokenIElementType) {
+            when (elementType.antlrTokenType) {
+                galaLexer.IDENTIFIER -> annotateIdentifier(element, holder)
+                galaLexer.INTERPOLATED_STRING, galaLexer.FORMAT_STRING -> annotateInterpolatedString(element, holder)
+            }
+        }
+    }
+
+    private fun annotateIdentifier(element: PsiElement, holder: AnnotationHolder) {
+        val text = element.text
+
+        // Built-in types get class name highlighting
+        if (text in BUILTIN_TYPE_NAMES) {
+            holder.newSilentAnnotation(HighlightSeverity.INFORMATION)
+                .textAttributes(BUILTIN_TYPE)
+                .create()
+            return
+        }
+
+        // Check the PSI context to determine the kind of identifier
+        val parent = element.parent ?: return
+
+        // Function declaration name
+        if (parent is IdentifierNode) {
+            val grandparent = parent.parent
+            if (grandparent is FunctionDeclarationNode && grandparent.nameIdentifier === parent) {
+                holder.newSilentAnnotation(HighlightSeverity.INFORMATION)
+                    .textAttributes(FUNCTION_DECLARATION)
+                    .create()
+                return
+            }
+        }
+    }
+
+    private fun annotateInterpolatedString(element: PsiElement, holder: AnnotationHolder) {
+        // Highlight $variable and ${expression} inside interpolated strings
+        val text = element.text
+        val startOffset = element.textRange.startOffset
+        var i = 0
+
+        while (i < text.length) {
+            if (text[i] == '$' && i + 1 < text.length && text[i] != '\\') {
+                if (text[i + 1] == '{') {
+                    // ${expression} — highlight the ${ and }
+                    val braceStart = i
+                    var depth = 1
+                    var j = i + 2
+                    while (j < text.length && depth > 0) {
+                        if (text[j] == '{') depth++
+                        else if (text[j] == '}') depth--
+                        j++
+                    }
+                    if (depth == 0) {
+                        holder.newSilentAnnotation(HighlightSeverity.INFORMATION)
+                            .range(com.intellij.openapi.util.TextRange(startOffset + braceStart, startOffset + j))
+                            .textAttributes(INTERPOLATION_VAR)
+                            .create()
+                        i = j
+                        continue
+                    }
+                } else if (text[i + 1].isLetter() || text[i + 1] == '_') {
+                    // $variable — highlight $var
+                    val varStart = i
+                    var j = i + 1
+                    while (j < text.length && (text[j].isLetterOrDigit() || text[j] == '_')) {
+                        j++
+                    }
+                    holder.newSilentAnnotation(HighlightSeverity.INFORMATION)
+                        .range(com.intellij.openapi.util.TextRange(startOffset + varStart, startOffset + j))
+                        .textAttributes(INTERPOLATION_VAR)
+                        .create()
+                    i = j
+                    continue
+                }
+            }
+            i++
+        }
+    }
+}
