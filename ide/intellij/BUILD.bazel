@@ -1,53 +1,66 @@
 package(default_visibility = ["//visibility:public"])
 
+_ANTLR_JAVA_SRCS = [
+    "//internal/parser/grammar:galaBaseListener.java",
+    "//internal/parser/grammar:galaBaseVisitor.java",
+    "//internal/parser/grammar:galaLexer.java",
+    "//internal/parser/grammar:galaListener.java",
+    "//internal/parser/grammar:galaParser.java",
+    "//internal/parser/grammar:galaVisitor.java",
+]
+
+_PLUGIN_SRCS = glob([
+    "src/**",
+    "build.gradle.kts",
+    "settings.gradle.kts",
+    "gradle.properties",
+])
+
+# Shared setup: export PATH, JAVA_HOME, copy ANTLR sources, find Gradle
+_GRADLE_SETUP = """
+    set -e
+    export PATH="/usr/bin:/bin:$$PATH"
+    export JAVA_HOME=$$(pwd)/$$(echo $(JAVA) | sed 's|/bin/java\\.exe$$||; s|/bin/java$$||')
+
+    # Copy ANTLR-generated Java sources into the plugin gen directory
+    GEN_DIR=ide/intellij/src/main/gen/org/gala/ide/intellij/parser
+    mkdir -p $$GEN_DIR
+    for f in $(locations //internal/parser/grammar:galaBaseListener.java) \
+             $(locations //internal/parser/grammar:galaBaseVisitor.java) \
+             $(locations //internal/parser/grammar:galaLexer.java) \
+             $(locations //internal/parser/grammar:galaListener.java) \
+             $(locations //internal/parser/grammar:galaParser.java) \
+             $(locations //internal/parser/grammar:galaVisitor.java); do
+        cp "$$f" "$$GEN_DIR/"
+    done
+
+    # Find gradle_bin location
+    GRADLE_BIN=$$(dirname $$(dirname $$(echo '$(locations @gradle_bin//:all_files)' | tr ' ' '\\n' | grep 'bin/gradle$$' | head -1)))
+    export GRADLE_HOME=$$(pwd)/$$GRADLE_BIN
+"""
+
 # Build the IntelliJ plugin.
-# Single command: bazel build //ide/intellij:plugin
-#
-# This target:
-#   1. Depends on ANTLR-generated Java sources from the grammar
-#   2. Copies them into src/main/gen/ for Gradle to compile
-#   3. Runs Gradle buildPlugin to produce the plugin ZIP
+# Usage: bazel build //ide/intellij:plugin
 genrule(
     name = "plugin",
-    srcs = glob([
-        "src/**",
-        "build.gradle.kts",
-        "settings.gradle.kts",
-        "gradle.properties",
-    ]) + [
-        "//internal/parser/grammar:galaBaseListener.java",
-        "//internal/parser/grammar:galaBaseVisitor.java",
-        "//internal/parser/grammar:galaLexer.java",
-        "//internal/parser/grammar:galaListener.java",
-        "//internal/parser/grammar:galaParser.java",
-        "//internal/parser/grammar:galaVisitor.java",
-        "@gradle_bin//:all_files",
-    ],
+    srcs = _PLUGIN_SRCS + _ANTLR_JAVA_SRCS + ["@gradle_bin//:all_files"],
     outs = ["gala-intellij-plugin.zip"],
-    cmd = """
-        set -e
-        export PATH="/usr/bin:/bin:$$PATH"
-        export JAVA_HOME=$$(pwd)/$$(echo $(JAVA) | sed 's|/bin/java\\.exe$$||; s|/bin/java$$||')
-
-        # Copy ANTLR-generated Java sources into the plugin gen directory
-        GEN_DIR=ide/intellij/src/main/gen/org/gala/ide/intellij/parser
-        mkdir -p $$GEN_DIR
-        for f in $(locations //internal/parser/grammar:galaBaseListener.java) \
-                 $(locations //internal/parser/grammar:galaBaseVisitor.java) \
-                 $(locations //internal/parser/grammar:galaLexer.java) \
-                 $(locations //internal/parser/grammar:galaListener.java) \
-                 $(locations //internal/parser/grammar:galaParser.java) \
-                 $(locations //internal/parser/grammar:galaVisitor.java); do
-            cp "$$f" "$$GEN_DIR/"
-        done
-
-        # Find gradle_bin location
-        GRADLE_BIN=$$(dirname $$(dirname $$(echo '$(locations @gradle_bin//:all_files)' | tr ' ' '\\n' | grep 'bin/gradle$$' | head -1)))
-        export GRADLE_HOME=$$(pwd)/$$GRADLE_BIN
-
+    cmd = _GRADLE_SETUP + """
         $$GRADLE_HOME/bin/gradle -p ide/intellij buildPlugin --no-daemon
-
         cp ide/intellij/build/distributions/*.zip $@
+    """,
+    tags = ["no-sandbox"],
+    toolchains = ["@bazel_tools//tools/jdk:current_java_runtime"],
+)
+
+# Run IntelliJ plugin tests.
+# Usage: bazel build //ide/intellij:plugin_test
+genrule(
+    name = "plugin_test",
+    srcs = _PLUGIN_SRCS + _ANTLR_JAVA_SRCS + ["@gradle_bin//:all_files"],
+    outs = ["test_results.txt"],
+    cmd = _GRADLE_SETUP + """
+        $$GRADLE_HOME/bin/gradle -p ide/intellij test --no-daemon 2>&1 | tee $@
     """,
     tags = ["no-sandbox"],
     toolchains = ["@bazel_tools//tools/jdk:current_java_runtime"],
