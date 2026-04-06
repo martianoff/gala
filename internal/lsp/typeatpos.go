@@ -128,9 +128,10 @@ func splitChain(expr string) []string {
 }
 
 var (
-	valVarDeclRe = regexp.MustCompile(`^\s*(val|var)\s+(\w+)\s+(\w[\w\[\], ]*)?\s*=\s*(.+)$`)
+	valVarDeclRe    = regexp.MustCompile(`^\s*(val|var)\s+(\w+)\s+(\w[\w\[\], ]*)?\s*=\s*(.+)$`)
 	valNotypeDeclRe = regexp.MustCompile(`^\s*(val|var)\s+(\w+)\s*=\s*(.+)$`)
-	paramRe      = regexp.MustCompile(`(\w+)\s+(\w[\w\[\]]*(?:\[[\w, ]+\])?)`)
+	shortDeclRe     = regexp.MustCompile(`^\s*(\w+)\s*:=\s*(.+)$`)
+	paramRe         = regexp.MustCompile(`(\w+)\s+(\w[\w\[\]]*(?:\[[\w, ]+\])?)`)
 )
 
 // resolveBaseType determines the type of the first element in a chain.
@@ -174,6 +175,14 @@ func resolveBaseType(expr, text string, currentLine int, richAST *transpiler.Ric
 				return inferRHSType(rhs, richAST)
 			}
 		}
+
+		// name := Expr (short variable declaration)
+		if m := shortDeclRe.FindStringSubmatch(line); m != nil {
+			if m[1] == name {
+				rhs := strings.TrimSpace(m[2])
+				return inferRHSType(rhs, richAST)
+			}
+		}
 	}
 
 	// 2. Check function parameters
@@ -203,7 +212,34 @@ func resolveBaseType(expr, text string, currentLine int, richAST *transpiler.Ric
 		}
 	}
 
-	// 3. Check for-range loop variables
+	// 3. Check if it's a known function call (not exported but in current package)
+	if fm, ok := richAST.Functions[name]; ok {
+		if fm.ReturnType != nil && !fm.ReturnType.IsNil() {
+			return fm.ReturnType.BaseName()
+		}
+	}
+
+	// 4. Check package-qualified access: pkg.Function(...)
+	if strings.Contains(expr, ".") {
+		parts := strings.SplitN(expr, ".", 2)
+		if len(parts) == 2 {
+			methodPart := parts[1]
+			methodName := methodPart
+			if idx := strings.Index(methodName, "("); idx > 0 {
+				methodName = methodName[:idx]
+			}
+			// Check if it's a package function
+			for _, tm := range richAST.Types {
+				if method, ok := tm.Methods[methodName]; ok {
+					if method.ReturnType != nil && !method.ReturnType.IsNil() {
+						return method.ReturnType.BaseName()
+					}
+				}
+			}
+		}
+	}
+
+	// 5. Check for-range loop variables
 	for i := currentLine; i >= 0; i-- {
 		line := strings.TrimSpace(lines[i])
 		if strings.HasPrefix(line, "for ") && strings.Contains(line, "range") {
@@ -219,11 +255,13 @@ func resolveBaseType(expr, text string, currentLine int, richAST *transpiler.Ric
 	return ""
 }
 
-// findType looks up a type in the RichAST by simple name.
+// findType looks up a type in the RichAST by simple name, handling aliases.
 func findType(richAST *transpiler.RichAST, name string) *transpiler.TypeMetadata {
+	// Direct lookup
 	if tm, ok := richAST.Types[name]; ok {
 		return tm
 	}
+	// Suffix match (package-qualified keys)
 	for key, tm := range richAST.Types {
 		typeName := tm.Name
 		if typeName == "" {
@@ -233,6 +271,15 @@ func findType(richAST *transpiler.RichAST, name string) *transpiler.TypeMetadata
 		}
 		if typeName == name {
 			return tm
+		}
+	}
+	// Check type aliases — resolve alias to underlying type and look up
+	if richAST.TypeAliases != nil {
+		if aliasType, ok := richAST.TypeAliases[name]; ok {
+			underlying := aliasType.BaseName()
+			if underlying != name {
+				return findType(richAST, underlying)
+			}
 		}
 	}
 	return nil
@@ -299,11 +346,34 @@ func inferRHSType(rhs string, richAST *transpiler.RichAST) string {
 		return "int"
 	}
 
-	// Constructor: Name(...) or Name[T](...)
+	// Constructor: Name(...) or Name[T](...) or pkg.Name(...) or alias.Name(...)
 	if idx := strings.IndexAny(rhs, "(["); idx > 0 {
 		name := rhs[:idx]
+		// Handle package-qualified: pkg.TypeName(...) or alias.TypeName(...)
+		if dotIdx := strings.LastIndex(name, "."); dotIdx > 0 {
+			simpleName := name[dotIdx+1:]
+			if isExported(simpleName) {
+				return resolveConstructorReturnType(simpleName, richAST)
+			}
+		}
 		if isExported(name) {
 			return resolveConstructorReturnType(name, richAST)
+		}
+	}
+
+	// Package-qualified method call: pkg.FuncName(...) or alias.FuncName(...)
+	if dotIdx := strings.Index(rhs, "."); dotIdx > 0 {
+		afterDot := rhs[dotIdx+1:]
+		if parenIdx := strings.Index(afterDot, "("); parenIdx > 0 {
+			funcName := afterDot[:parenIdx]
+			if isExported(funcName) {
+				// Check functions in all analyzed packages
+				if fm, ok := richAST.Functions[funcName]; ok {
+					if fm.ReturnType != nil && !fm.ReturnType.IsNil() {
+						return fm.ReturnType.BaseName()
+					}
+				}
+			}
 		}
 	}
 

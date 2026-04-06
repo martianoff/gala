@@ -128,10 +128,19 @@ func methodCompletions(richAST *transpiler.RichAST) []lsp.CompletionItem {
 			}
 			seen[name] = true
 			sig := formatMethodSig(m)
+			var insertText string
+			if len(m.ParamNames) == 0 {
+				insertText = name + "()"
+			} else {
+				insertText = name + "("
+			}
 			items = append(items, lsp.CompletionItem{
-				Label:  name,
-				Kind:   kindPtr(lsp.CompletionItemKindMethod),
-				Detail: sig,
+				Label:      name + sig,
+				Kind:       kindPtr(lsp.CompletionItemKindMethod),
+				Detail:     sig,
+				InsertText: insertText,
+				FilterText: name,
+				SortText:   name,
 			})
 		}
 	}
@@ -332,16 +341,26 @@ func typeSpecificCompletions(richAST *transpiler.RichAST, typeName string) []lsp
 		return items
 	}
 
-	// Methods
+	// Methods — auto-insert () and show full signature
 	for name, m := range tm.Methods {
 		if !isExported(name) {
 			continue
 		}
 		sig := formatMethodSig(m)
+		// Auto-insert parentheses
+		var insertText string
+		if len(m.ParamNames) == 0 {
+			insertText = name + "()"
+		} else {
+			insertText = name + "("
+		}
 		items = append(items, lsp.CompletionItem{
-			Label:  name,
-			Kind:   kindPtr(lsp.CompletionItemKindMethod),
-			Detail: sig,
+			Label:      name + sig,
+			Kind:       kindPtr(lsp.CompletionItemKindMethod),
+			Detail:     sig,
+			InsertText: insertText,
+			FilterText: name,
+			SortText:   name,
 		})
 	}
 

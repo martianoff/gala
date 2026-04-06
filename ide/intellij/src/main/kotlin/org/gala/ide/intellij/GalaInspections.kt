@@ -28,6 +28,10 @@ class GalaDuplicateDeclarationInspection : LocalInspectionTool() {
 
     private fun collectTopLevelNames(element: PsiElement, seen: MutableMap<String, PsiElement>, holder: ProblemsHolder) {
         if (element is PsiNameIdentifierOwner) {
+            // Skip methods (functions with receivers) — same name on different types is valid
+            if (element is FunctionDeclarationNode && isMethodDeclaration(element)) {
+                return
+            }
             val name = element.name
             if (name != null && name.isNotBlank()) {
                 val existing = seen[name]
@@ -55,6 +59,32 @@ class GalaDuplicateDeclarationInspection : LocalInspectionTool() {
                 collectTopLevelNames(child, seen, holder)
             }
         }
+    }
+
+    /** Check if a function declaration has a receiver (making it a method). */
+    private fun isMethodDeclaration(func: FunctionDeclarationNode): Boolean {
+        // A method has a receiver node as a child before the function name
+        // In the PSI tree: func (receiver) name(...) -> has RULE_RECEIVER child
+        for (child in func.children) {
+            if (child.node.elementType == GalaTokenTypes.RULE_RECEIVER) {
+                return true
+            }
+        }
+        // Also check the text — methods start with "func ("
+        val text = func.text.trimStart()
+        if (text.startsWith("func (") || text.startsWith("func(")) {
+            // Could be a function with params, but if there's a second '(' it's a method
+            val firstParen = text.indexOf('(')
+            val closeParen = text.indexOf(')', firstParen + 1)
+            if (closeParen > 0 && closeParen < text.length - 1) {
+                // Check if there's an identifier after the closing paren
+                val afterParen = text.substring(closeParen + 1).trimStart()
+                if (afterParen.isNotEmpty() && (afterParen[0].isLetter() || afterParen[0] == '_')) {
+                    return true
+                }
+            }
+        }
+        return false
     }
 }
 

@@ -49,6 +49,20 @@ func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionPara
 		}
 	}
 
+	// Check import paths — clicking a package name navigates to its directory
+	for path, pkgName := range richAST.Packages {
+		if pkgName == word || word == path {
+			// Try to find the package directory
+			for _, searchPath := range h.getSearchPaths(uriToPath(uri)) {
+				pkgDir := searchPath + "/" + path
+				loc := findFirstGalaFile(pkgDir, word)
+				if loc != nil {
+					return []lsp.Location{*loc}, nil
+				}
+			}
+		}
+	}
+
 	// Local definition search
 	loc := localDefinition(text, word, uri)
 	if loc != nil {
@@ -56,6 +70,23 @@ func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionPara
 	}
 
 	return nil, nil
+}
+
+func findFirstGalaFile(dir, name string) *lsp.Location {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".gala") {
+			absPath := dir + "/" + e.Name()
+			return &lsp.Location{
+				URI:   lsp.DocumentURI(pathToURI(absPath)),
+				Range: zeroRange(),
+			}
+		}
+	}
+	return nil
 }
 
 func (h *GalaHandler) References(ctx context.Context, params *lsp.ReferenceParams) ([]lsp.Location, error) {

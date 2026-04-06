@@ -132,7 +132,12 @@ class GalaAnnotator : Annotator {
         var i = 0
 
         while (i < text.length) {
-            if (text[i] == '$' && i + 1 < text.length && text[i] != '\\') {
+            // Skip escaped dollars ($$)
+            if (text[i] == '$' && i + 1 < text.length && text[i + 1] == '$') {
+                i += 2
+                continue
+            }
+            if (text[i] == '$' && i + 1 < text.length && (i == 0 || text[i - 1] != '\\')) {
                 if (text[i + 1] == '{') {
                     // ${expression} — highlight the ${ and }
                     val braceStart = i
