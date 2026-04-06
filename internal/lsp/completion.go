@@ -141,9 +141,17 @@ func keywordCompletions() []lsp.CompletionItem {
 		"interface", "sealed", "embed", "if", "else", "for", "range",
 		"return", "match", "case", "true", "false", "nil", "map",
 	}
+	builtinFuncs := []string{
+		"Println", "Print", "SliceOf",
+		"len", "cap", "make", "append", "copy", "delete",
+		"close", "panic", "recover",
+	}
 	var items []lsp.CompletionItem
 	for _, kw := range keywords {
 		items = append(items, lsp.CompletionItem{Label: kw, Kind: kindPtr(lsp.CompletionItemKindKeyword)})
+	}
+	for _, fn := range builtinFuncs {
+		items = append(items, lsp.CompletionItem{Label: fn, Kind: kindPtr(lsp.CompletionItemKindFunction), Detail: "builtin"})
 	}
 	return items
 }
