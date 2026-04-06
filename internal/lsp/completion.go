@@ -25,7 +25,14 @@ func (h *GalaHandler) Completion(ctx context.Context, params *lsp.CompletionPara
 	isDot := isDotCompletion(text, line, char)
 
 	if isDot && richAST != nil {
-		items = append(items, methodCompletions(richAST)...)
+		// Resolve the type of the expression before the dot
+		receiverType := typeAtDot(text, line, char, richAST)
+		if receiverType != "" {
+			items = append(items, typeSpecificCompletions(richAST, receiverType)...)
+		} else {
+			// Fallback: suggest all methods
+			items = append(items, methodCompletions(richAST)...)
+		}
 	} else if isNamedArgContext(text, line, char) && richAST != nil {
 		typeName := extractConstructorName(text, line, char)
 		items = append(items, namedArgCompletions(richAST, typeName)...)
@@ -295,6 +302,60 @@ func formatFuncSig(meta *transpiler.FunctionMetadata) string {
 }
 
 func kindPtr(k lsp.CompletionItemKind) *lsp.CompletionItemKind { return &k }
+
+// --- Type-Aware Completion ---
+// Type resolution logic is in typeatpos.go
+
+// typeSpecificCompletions returns methods and fields for a specific type.
+func typeSpecificCompletions(richAST *transpiler.RichAST, typeName string) []lsp.CompletionItem {
+	var items []lsp.CompletionItem
+
+	tm := findType(richAST, typeName)
+	if tm == nil {
+		return items
+	}
+
+	// Methods
+	for name, m := range tm.Methods {
+		if !isExported(name) {
+			continue
+		}
+		sig := formatMethodSig(m)
+		items = append(items, lsp.CompletionItem{
+			Label:  name,
+			Kind:   kindPtr(lsp.CompletionItemKindMethod),
+			Detail: sig,
+		})
+	}
+
+	// Fields
+	for _, fn := range tm.FieldNames {
+		ft := tm.Fields[fn]
+		items = append(items, lsp.CompletionItem{
+			Label:  fn,
+			Kind:   kindPtr(lsp.CompletionItemKindField),
+			Detail: ft.String(),
+		})
+	}
+
+	// Sealed variant IsXxx() methods
+	for _, v := range tm.SealedVariants {
+		items = append(items, lsp.CompletionItem{
+			Label:  "Is" + v.Name,
+			Kind:   kindPtr(lsp.CompletionItemKindMethod),
+			Detail: "() bool",
+		})
+	}
+
+	// Always suggest match
+	items = append(items, lsp.CompletionItem{
+		Label:  "match",
+		Kind:   kindPtr(lsp.CompletionItemKindKeyword),
+		Detail: "pattern match",
+	})
+
+	return items
+}
 
 func formatMethodSig(meta *transpiler.MethodMetadata) string {
 	var b strings.Builder

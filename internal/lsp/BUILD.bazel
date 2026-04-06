@@ -10,6 +10,7 @@ go_library(
         "inlay_hints.go",
         "server.go",
         "symbols.go",
+        "typeatpos.go",
     ],
     importpath = "martianoff/gala/internal/lsp",
     visibility = ["//:__subpackages__"],
