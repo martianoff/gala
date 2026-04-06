@@ -55,11 +55,14 @@
     </ul>
     ]]></change-notes>
 
-    <idea-version since-build="241" until-build="265.*"/>
+    <idea-version since-build="251" until-build="265.*"/>
 
     <depends>com.intellij.modules.platform</depends>
 
     <extensions defaultExtensionNs="com.intellij">
+        <!-- LSP server integration — provides diagnostics, hover, go-to-def, completion from gala-lsp -->
+        <platform.lsp.serverSupportProvider
+                implementation="org.gala.ide.intellij.GalaLspServerSupportProvider"/>
         <fileType name="GALA File" implementationClass="org.gala.ide.intellij.GalaFileType"
                   fieldName="INSTANCE" language="GALA" extensions="gala"/>
         <lang.parserDefinition language="GALA"

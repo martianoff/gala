@@ -1,10 +1,11 @@
 plugins {
     id("java")
-    id("org.jetbrains.kotlin.jvm") version "1.9.25"
+    id("org.jetbrains.kotlin.jvm") version "2.1.0"
     id("org.jetbrains.intellij") version "1.17.4"
 }
 
 val ideaVersion: String by project
+val ideaType: String by project
 val antlr4Version: String by project
 val antlr4AdaptorVersion: String by project
 val pluginVersion: String by project
@@ -26,8 +27,8 @@ dependencies {
 // Configure Gradle IntelliJ Plugin
 intellij {
     version.set(ideaVersion)
-    type.set("IC")
-    plugins.set(listOf())
+    type.set(ideaType)
+    plugins.set(listOf("org.jetbrains.plugins.go"))
 }
 
 // Include Bazel-generated ANTLR Java sources
@@ -35,6 +36,12 @@ sourceSets {
     main {
         java {
             srcDir("src/main/gen")
+        }
+    }
+    // Exclude test sources when test framework is not available
+    test {
+        kotlin {
+            setSrcDirs(emptyList<String>())
         }
     }
 }
@@ -48,8 +55,12 @@ tasks {
         kotlinOptions.jvmTarget = "17"
     }
 
+    buildSearchableOptions {
+        enabled = false
+    }
+
     patchPluginXml {
-        sinceBuild.set("241")
+        sinceBuild.set("251")
         untilBuild.set("265.*")
     }
 

@@ -5,7 +5,9 @@ go_library(
     srcs = [
         "completion.go",
         "definition.go",
+        "diagnostics.go",
         "hover.go",
+        "inlay_hints.go",
         "server.go",
     ],
     importpath = "martianoff/gala/internal/lsp",

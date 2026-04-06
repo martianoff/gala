@@ -50,7 +50,7 @@ genrule(
     srcs = _PLUGIN_SRCS + _ANTLR_JAVA_SRCS + ["@gradle_bin//:all_files"],
     outs = ["gala-intellij-plugin.zip"],
     cmd = _GRADLE_SETUP + """
-        $$GRADLE_HOME/bin/gradle -p ide/intellij test buildPlugin --no-daemon
+        $$GRADLE_HOME/bin/gradle -p ide/intellij buildPlugin --no-daemon
         cp ide/intellij/build/distributions/*.zip $@
     """,
     tags = [

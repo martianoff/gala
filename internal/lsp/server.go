@@ -75,6 +75,7 @@ func (s *GalaServer) Initialize(ctx *glsp.Context, params *protocol.InitializePa
 			CompletionProvider: &protocol.CompletionOptions{
 				TriggerCharacters: completionTriggers,
 			},
+			// Note: InlayHintProvider is LSP 3.17+ — registered via handler, not capabilities
 		},
 		ServerInfo: &protocol.InitializeResultServerInfo{
 			Name:    "gala-lsp",
@@ -201,6 +202,9 @@ func (s *GalaServer) analyzeFile(uri, filePath, text string) []protocol.Diagnost
 		diag := errorToDiagnostic(err)
 		diagnostics = append(diagnostics, diag)
 	}
+
+	// Check match exhaustiveness
+	diagnostics = append(diagnostics, checkMatchExhaustiveness(text, richAST)...)
 
 	// Add analysis warnings as info diagnostics
 	for _, warning := range richAST.AnalysisWarnings {
