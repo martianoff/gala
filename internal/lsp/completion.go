@@ -55,8 +55,11 @@ func isDotCompletion(text string, line, char int) bool {
 		return false
 	}
 	l := lines[line]
+	if char > len(l) {
+		char = len(l)
+	}
 	i := char - 1
-	for i >= 0 && (l[i] == ' ' || isIdentChar(l[i])) {
+	for i >= 0 && i < len(l) && (l[i] == ' ' || isIdentChar(l[i])) {
 		i--
 	}
 	return i >= 0 && l[i] == '.'
@@ -164,6 +167,9 @@ func isNamedArgContext(text string, line, char int) bool {
 		return false
 	}
 	l := lines[line]
+	if char > len(l) {
+		char = len(l)
+	}
 	depth := 0
 	for i := char - 1; i >= 0; i-- {
 		if l[i] == ')' {
@@ -192,6 +198,9 @@ func extractConstructorName(text string, line, char int) string {
 		return ""
 	}
 	l := lines[line]
+	if char > len(l) {
+		char = len(l)
+	}
 	depth := 0
 	for i := char - 1; i >= 0; i-- {
 		if l[i] == ')' {
@@ -246,7 +255,7 @@ func namedArgCompletions(richAST *transpiler.RichAST, typeName string) []lsp.Com
 
 // --- Match Case Completion ---
 
-func isMatchCaseContext(text string, line, char int) bool {
+func isMatchCaseContext(text string, line, _ int) bool {
 	lines := strings.Split(text, "\n")
 	if line >= len(lines) {
 		return false

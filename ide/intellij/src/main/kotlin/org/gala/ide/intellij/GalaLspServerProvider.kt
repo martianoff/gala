@@ -5,14 +5,14 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.platform.lsp.api.LspServerSupportProvider
 import com.intellij.platform.lsp.api.ProjectWideLspServerDescriptor
+import java.io.File
 
 /**
  * LSP server provider for GALA.
- * Starts the gala-lsp server when a .gala file is opened.
+ * Starts `gala lsp` when a .gala file is opened.
  *
- * The server binary is found via:
- * 1. GALA_LSP_PATH environment variable
- * 2. "gala-lsp" on PATH
+ * The gala CLI is expected to be on PATH (installed via `gala install`).
+ * Override with GALA_PATH environment variable.
  */
 class GalaLspServerSupportProvider : LspServerSupportProvider {
     override fun fileOpened(
@@ -32,9 +32,19 @@ private class GalaLspServerDescriptor(project: Project) :
     override fun isSupportedFile(file: VirtualFile): Boolean = file.extension == "gala"
 
     override fun createCommandLine(): GeneralCommandLine {
-        val lspPath = System.getenv("GALA_LSP_PATH") ?: "gala-lsp"
-        return GeneralCommandLine(lspPath, "--stdio").apply {
+        val galaPath = findGalaBinary()
+        return GeneralCommandLine(galaPath, "lsp").apply {
             withWorkDirectory(project.basePath)
         }
+    }
+
+    private fun findGalaBinary(): String {
+        // 1. GALA_PATH env var
+        System.getenv("GALA_PATH")?.let { path ->
+            if (File(path).exists()) return path
+        }
+
+        // 2. Fall back to PATH
+        return "gala"
     }
 }
