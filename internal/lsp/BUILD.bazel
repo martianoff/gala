@@ -9,6 +9,7 @@ go_library(
         "hover.go",
         "inlay_hints.go",
         "server.go",
+        "symbols.go",
     ],
     importpath = "martianoff/gala/internal/lsp",
     visibility = ["//:__subpackages__"],
@@ -17,8 +18,6 @@ go_library(
         "//internal/transpiler/analyzer",
         "//internal/transpiler/generator",
         "//internal/transpiler/transformer",
-        "@com_github_tliron_glsp//:glsp",
-        "@com_github_tliron_glsp//protocol_3_16",
-        "@com_github_tliron_glsp//server",
+        "@com_github_owenrumney_go_lsp//lsp",
     ],
 )
