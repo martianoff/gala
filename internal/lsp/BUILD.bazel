@@ -1,0 +1,22 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "lsp",
+    srcs = [
+        "completion.go",
+        "definition.go",
+        "hover.go",
+        "server.go",
+    ],
+    importpath = "martianoff/gala/internal/lsp",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//internal/transpiler",
+        "//internal/transpiler/analyzer",
+        "//internal/transpiler/generator",
+        "//internal/transpiler/transformer",
+        "@com_github_tliron_glsp//:glsp",
+        "@com_github_tliron_glsp//protocol_3_16",
+        "@com_github_tliron_glsp//server",
+    ],
+)

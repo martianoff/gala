@@ -1,0 +1,21 @@
+load("@rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "gala-lsp_lib",
+    srcs = ["main.go"],
+    importpath = "martianoff/gala/cmd/gala-lsp",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//internal/lsp",
+        "@com_github_tliron_commonlog//:commonlog",
+        "@com_github_tliron_commonlog//simple",
+        "@com_github_tliron_glsp//protocol_3_16",
+        "@com_github_tliron_glsp//server",
+    ],
+)
+
+go_binary(
+    name = "gala-lsp",
+    embed = [":gala-lsp_lib"],
+    visibility = ["//visibility:public"],
+)
