@@ -1,0 +1,113 @@
+// Plugin Feature Test File
+// Open this file in GoLand with the GALA plugin to verify all features.
+// Each section tests a specific plugin capability.
+
+package main
+
+import "fmt"
+
+// === 1. Syntax Highlighting ===
+// Keywords should be bold/colored: val, var, func, type, match, case, if, else, for, return
+
+// === 2. Built-in Type Recognition ===
+// These should be highlighted as types:
+// int, string, bool, float64, error, any, byte, rune
+
+// === 3. Struct Declaration + Named Args ===
+type Person struct {
+    val name string
+    val age int
+}
+
+// Hover over Person → should show fields
+// Type "Person(" → should suggest field names: name =, age =
+
+// === 4. Sealed Type + Pattern Matching ===
+sealed type Shape {
+    case Circle(radius float64)
+    case Rectangle(width float64, height float64)
+}
+
+// === 5. Function Declaration ===
+func area(s Shape) float64 {
+    // Hover over Shape → should show sealed cases
+    return s match {
+        // case completion: type "case " → should suggest Circle, Rectangle, _
+        // Type hints: x should show : float64 in pattern bindings
+        case Circle(r) => 3.14159 * r * r
+        case Rectangle(w, h) => w * h
+    }
+}
+
+// === 6. Type Inference + Inlay Hints ===
+func main() {
+    // These should show inferred type hints:
+    val greeting = "Hello"           // : string
+    val count = 42                   // : int
+    val pi = 3.14                    // : float64
+    val yes = true                   // : bool
+
+    // Constructor type inference:
+    val p = Person(name = "Alice", age = 30)  // : Person
+    val c = Circle(radius = 5.0)              // : Shape
+
+    // === 7. Short Variable Declaration (:=) ===
+    x := 100                         // : int
+
+    // === 8. Built-in Functions ===
+    // Println should be highlighted as built-in and offer completion
+    Println(greeting)
+    Println(area(c))
+    Print(count)
+
+    // Go built-ins should also be recognized:
+    val nums = SliceOf(1, 2, 3)
+    val length = len(nums)
+
+    // === 9. Dot Completion (Type-Aware) ===
+    // Type "p." → should suggest: name, age (fields) + methods
+    fmt.Println(p.name)
+
+    // === 10. Option Type + Method Chain ===
+    val opt = Some(42)
+    // Type "opt." → should suggest Option methods: Get, Map, FlatMap, IsDefined, etc.
+    val doubled = opt.Map((x int) => x * 2)
+    // Type "doubled." → should also suggest Option methods (Map returns Option)
+
+    // === 11. String Interpolation ===
+    val msg = s"Hello ${p.name}, age ${p.age}"    // $var and ${expr} should be highlighted
+    val formatted = f"$pi%.2f"
+
+    // === 12. Lambda Expressions ===
+    val double = (x int) => x * 2
+    val add = (a int, b int) => a + b
+    // Lambda params without types: type hints should show inferred types
+    // val mapped = opt.Map((x) => x + 1)
+
+    // === 13. Match as Expression ===
+    val desc = c match {
+        case Circle(r) => s"Circle with radius $r"
+        case Rectangle(w, h) => s"Rect ${w}x${h}"
+    }
+    Println(desc)
+
+    // === 14. If Expression ===
+    val max = if (count > 10) "big" else "small"
+    Println(max)
+
+    // === 15. For Loop ===
+    for i range nums {
+        Println(i)
+    }
+
+    // === 16. Structure View ===
+    // Open Structure view (Alt+7) → should show: Person, Shape, area, main
+
+    // === 17. Go to Definition ===
+    // Ctrl+Click on "Person" → should jump to type declaration
+    // Ctrl+Click on "area" → should jump to function declaration
+    // Ctrl+Click on "greeting" → should jump to val declaration
+
+    // === 18. Find Usages ===
+    // Right-click on "p" → Find Usages → should show all references
+}
