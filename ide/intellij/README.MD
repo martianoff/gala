@@ -40,6 +40,26 @@ The plugin uses the [antlr4-intellij-adaptor](https://github.com/antlr/antlr4-in
 - **Gradle packages** the IntelliJ plugin (invoked by Bazel)
 - Generated files live in `src/main/gen/` (gitignored)
 
+## Known Limitations
+
+These features require the LSP server to be connected to the plugin (SDK 2025.2+) or dedicated implementation work:
+
+| Feature | Status | Blocker |
+|---------|--------|---------|
+| Cross-file/cross-package navigation | Not supported | Needs LSP or stub indexing |
+| Import-aware completion | Not supported | Needs LSP — plugin doesn't parse imports |
+| Type inference / inlay hints | Not supported | Needs LSP — transpiler has this in RichAST |
+| Type-aware dot completion | Not supported | Needs type info at cursor position |
+| Named argument field completion | Not supported | Needs struct field metadata from analyzer |
+| Pattern match case completion | Not supported | Needs sealed type variant info |
+| Match exhaustiveness checking | Not supported | Needs sealed type + case analysis |
+| Go interop (Go type navigation) | Not supported | Needs Go type info from analyzer |
+| Real error highlighting | LSP server has it | Not connected to plugin yet |
+| Rename refactoring | Stub only | Needs ANTLR node replacement |
+| Auto-import / organize imports | Not supported | Needs package registry |
+| Code formatting | Not supported | Needs formatter implementation |
+| Extract variable/function | Not supported | Needs type-aware refactoring |
+
 ### Key source files
 
 | File | Purpose |
