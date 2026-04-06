@@ -40,6 +40,36 @@ The plugin uses the [antlr4-intellij-adaptor](https://github.com/antlr/antlr4-in
 - **Gradle packages** the IntelliJ plugin (invoked by Bazel)
 - Generated files live in `src/main/gen/` (gitignored)
 
+## Setup
+
+### Install the Plugin
+
+1. Build: `bazel build //ide/intellij:plugin`
+2. Install: GoLand > Settings > Plugins > Install from Disk > select `bazel-bin/ide/intellij/gala-intellij-plugin.zip`
+
+### Install the LSP Server
+
+The plugin connects to `gala-lsp` for advanced features (diagnostics, hover, cross-file navigation, inlay hints).
+
+1. Build: `bazel build //cmd/gala-lsp:gala-lsp`
+2. Copy to PATH: `cp bazel-bin/cmd/gala-lsp/gala-lsp_/gala-lsp ~/.local/bin/` (or set `GALA_LSP_PATH`)
+3. Restart GoLand — the LSP server starts automatically when a `.gala` file is opened
+
+### LSP Server Features (via `gala-lsp`)
+
+| Feature | Description |
+|---------|-------------|
+| Real-time diagnostics | Parse and transpilation errors as you type |
+| Hover (Ctrl+Q) | Type signatures, fields, methods, sealed cases |
+| Go to Definition | Cross-file navigation using analyzer metadata |
+| Find References | All occurrences of a symbol in the current file |
+| Completion | Types, functions, methods, keywords from analyzed packages |
+| Named arg completion | Field names inside `Type(Field = )` constructors |
+| Match case completion | Sealed variants with field destructuring |
+| Inlay hints | Inferred types on `val x = ...` declarations |
+| Document symbols | Outline of types and functions |
+| Match exhaustiveness | Warning when sealed type match is missing cases |
+
 ## Known Limitations
 
 These features require the LSP server to be connected to the plugin (SDK 2025.2+) or dedicated implementation work:

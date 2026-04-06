@@ -1,117 +1,128 @@
 package lsp
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/tliron/glsp"
-	protocol "github.com/tliron/glsp/protocol_3_16"
-
-	"martianoff/gala/internal/transpiler"
+	"github.com/owenrumney/go-lsp/lsp"
 )
 
-// TextDocumentDefinition handles Go to Definition requests.
-// Looks up the symbol at the cursor and returns its definition location.
-func (s *GalaServer) TextDocumentDefinition(ctx *glsp.Context, params *protocol.DefinitionParams) (any, error) {
-	uri := params.TextDocument.URI
-	line := int(params.Position.Line)
-	char := int(params.Position.Character)
+func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionParams) ([]lsp.Location, error) {
+	uri := string(params.TextDocument.URI)
 
-	s.mu.Lock()
-	text, ok := s.documents[uri]
-	richAST := s.richASTs[uri]
-	s.mu.Unlock()
+	h.mu.Lock()
+	text := h.documents[uri]
+	richAST := h.richASTs[uri]
+	h.mu.Unlock()
 
-	if !ok || richAST == nil {
+	if text == "" || richAST == nil {
 		return nil, nil
 	}
 
-	word := wordAtPosition(text, line, char)
+	word := wordAtPosition(text, int(params.Position.Line), int(params.Position.Character))
 	if word == "" {
 		return nil, nil
 	}
 
-	// Try to find definition in type metadata
-	loc := findDefinition(richAST, word, uri)
-	if loc != nil {
-		return loc, nil
+	// Check type metadata for cross-file definitions
+	for key, typeMeta := range richAST.Types {
+		typeName := typeMeta.Name
+		if typeName == "" {
+			if idx := strings.LastIndex(key, "."); idx >= 0 {
+				typeName = key[idx+1:]
+			}
+		}
+		if typeName == word && typeMeta.DefinedIn != "" {
+			loc := fileLocation(typeMeta.DefinedIn, word)
+			if loc != nil {
+				return []lsp.Location{*loc}, nil
+			}
+		}
+		// Check methods
+		if method, ok := typeMeta.Methods[word]; ok && method.DefinedIn != "" {
+			loc := fileLocation(method.DefinedIn, word)
+			if loc != nil {
+				return []lsp.Location{*loc}, nil
+			}
+		}
 	}
 
-	// Try to find definition in the current file (local declarations)
-	localLoc := findLocalDefinition(text, word, uri)
-	if localLoc != nil {
-		return localLoc, nil
+	// Local definition search
+	loc := localDefinition(text, word, uri)
+	if loc != nil {
+		return []lsp.Location{*loc}, nil
 	}
 
 	return nil, nil
 }
 
-// findDefinition looks up a symbol in the RichAST metadata and returns its location.
-func findDefinition(richAST *transpiler.RichAST, name string, currentURI string) *protocol.Location {
-	// Check types — use DefinedIn field for cross-file navigation
-	for key, typeMeta := range richAST.Types {
-		typeName := key
-		if idx := strings.LastIndex(key, "."); idx >= 0 {
-			typeName = key[idx+1:]
-		}
-		if typeName == name && typeMeta.DefinedIn != "" {
-			loc := fileToLocation(typeMeta.DefinedIn, name)
-			if loc != nil {
-				return loc
+func (h *GalaHandler) References(ctx context.Context, params *lsp.ReferenceParams) ([]lsp.Location, error) {
+	uri := string(params.TextDocument.URI)
+
+	h.mu.Lock()
+	text := h.documents[uri]
+	h.mu.Unlock()
+
+	if text == "" {
+		return nil, nil
+	}
+
+	word := wordAtPosition(text, int(params.Position.Line), int(params.Position.Character))
+	if word == "" {
+		return nil, nil
+	}
+
+	// Find all occurrences of the word in the current file
+	var locs []lsp.Location
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		idx := 0
+		for {
+			pos := strings.Index(line[idx:], word)
+			if pos < 0 {
+				break
 			}
-		}
-	}
-
-	// Check functions
-	for _, funcMeta := range richAST.Functions {
-		if funcMeta.Name == name {
-			// Functions in the current file — find the line
-			return findSymbolInFile(currentURI, "func "+name)
-		}
-	}
-
-	// Check methods on types
-	for _, typeMeta := range richAST.Types {
-		if method, ok := typeMeta.Methods[name]; ok {
-			if method.DefinedIn != "" {
-				loc := fileToLocation(method.DefinedIn, name)
-				if loc != nil {
-					return loc
-				}
+			col := idx + pos
+			// Verify it's a whole word
+			before := col > 0 && isIdentChar(line[col-1])
+			after := col+len(word) < len(line) && isIdentChar(line[col+len(word)])
+			if !before && !after {
+				locs = append(locs, lsp.Location{
+					URI: lsp.DocumentURI(uri),
+					Range: lsp.Range{
+						Start: lsp.Position{Line: i, Character: col},
+						End:   lsp.Position{Line: i, Character: col + len(word)},
+					},
+				})
 			}
+			idx = col + len(word)
 		}
 	}
 
-	return nil
+	return locs, nil
 }
 
-// findLocalDefinition scans the current file text for a declaration of the given name.
-func findLocalDefinition(text, name, uri string) *protocol.Location {
+func localDefinition(text, name, uri string) *lsp.Location {
 	lines := strings.Split(text, "\n")
 	patterns := []string{
-		"val " + name,
-		"var " + name,
-		"func " + name,
-		"type " + name,
-		"sealed type " + name,
-		"struct " + name,
-		"case " + name,
+		"val " + name, "var " + name, "func " + name,
+		"type " + name, "sealed type " + name, "struct " + name, "case " + name,
 	}
-
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		for _, pattern := range patterns {
-			if strings.HasPrefix(trimmed, pattern) {
+		for _, p := range patterns {
+			if strings.HasPrefix(trimmed, p) {
 				col := strings.Index(line, name)
 				if col < 0 {
 					col = 0
 				}
-				return &protocol.Location{
-					URI: uri,
-					Range: protocol.Range{
-						Start: protocol.Position{Line: uint32(i), Character: uint32(col)},
-						End:   protocol.Position{Line: uint32(i), Character: uint32(col + len(name))},
+				return &lsp.Location{
+					URI: lsp.DocumentURI(uri),
+					Range: lsp.Range{
+						Start: lsp.Position{Line: i, Character: col},
+						End:   lsp.Position{Line: i, Character: col + len(name)},
 					},
 				}
 			}
@@ -120,54 +131,27 @@ func findLocalDefinition(text, name, uri string) *protocol.Location {
 	return nil
 }
 
-// fileToLocation converts a file path and symbol name to an LSP Location.
-func fileToLocation(filePath, name string) *protocol.Location {
+func fileLocation(filePath, name string) *lsp.Location {
 	absPath, err := filepath.Abs(filePath)
 	if err != nil {
 		return nil
 	}
-
-	// Read the file to find the symbol's line
 	data, err := os.ReadFile(absPath)
 	if err != nil {
 		return nil
 	}
-
-	loc := findSymbolInContent(string(data), name, pathToURI(absPath))
-	return loc
-}
-
-// findSymbolInFile finds a symbol in a file identified by URI.
-func findSymbolInFile(uri, pattern string) *protocol.Location {
-	// For current file, we'd need the text — but we can return line 0 as fallback
-	return &protocol.Location{
-		URI:   uri,
-		Range: zeroRange(),
-	}
-}
-
-// findSymbolInContent scans file content for a declaration of the given name.
-func findSymbolInContent(text, name, uri string) *protocol.Location {
-	lines := strings.Split(text, "\n")
+	lines := strings.Split(string(data), "\n")
 	for i, line := range lines {
 		if strings.Contains(line, name) {
 			col := strings.Index(line, name)
-			return &protocol.Location{
-				URI: uri,
-				Range: protocol.Range{
-					Start: protocol.Position{Line: uint32(i), Character: uint32(col)},
-					End:   protocol.Position{Line: uint32(i), Character: uint32(col + len(name))},
+			return &lsp.Location{
+				URI: lsp.DocumentURI(pathToURI(absPath)),
+				Range: lsp.Range{
+					Start: lsp.Position{Line: i, Character: col},
+					End:   lsp.Position{Line: i, Character: col + len(name)},
 				},
 			}
 		}
 	}
 	return nil
-}
-
-func pathToURI(path string) string {
-	path = filepath.ToSlash(path)
-	if !strings.HasPrefix(path, "/") {
-		path = "/" + path
-	}
-	return "file://" + path
 }

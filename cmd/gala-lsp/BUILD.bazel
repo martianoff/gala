@@ -7,10 +7,7 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//internal/lsp",
-        "@com_github_tliron_commonlog//:commonlog",
-        "@com_github_tliron_commonlog//simple",
-        "@com_github_tliron_glsp//protocol_3_16",
-        "@com_github_tliron_glsp//server",
+        "@com_github_owenrumney_go_lsp//server",
     ],
 )
 
