@@ -55,8 +55,11 @@ func isDotCompletion(text string, line, char int) bool {
 		return false
 	}
 	l := lines[line]
+	if char > len(l) {
+		char = len(l)
+	}
 	i := char - 1
-	for i >= 0 && (l[i] == ' ' || isIdentChar(l[i])) {
+	for i >= 0 && i < len(l) && (l[i] == ' ' || isIdentChar(l[i])) {
 		i--
 	}
 	return i >= 0 && l[i] == '.'
@@ -141,9 +144,17 @@ func keywordCompletions() []lsp.CompletionItem {
 		"interface", "sealed", "embed", "if", "else", "for", "range",
 		"return", "match", "case", "true", "false", "nil", "map",
 	}
+	builtinFuncs := []string{
+		"Println", "Print", "SliceOf",
+		"len", "cap", "make", "append", "copy", "delete",
+		"close", "panic", "recover",
+	}
 	var items []lsp.CompletionItem
 	for _, kw := range keywords {
 		items = append(items, lsp.CompletionItem{Label: kw, Kind: kindPtr(lsp.CompletionItemKindKeyword)})
+	}
+	for _, fn := range builtinFuncs {
+		items = append(items, lsp.CompletionItem{Label: fn, Kind: kindPtr(lsp.CompletionItemKindFunction), Detail: "builtin"})
 	}
 	return items
 }
@@ -156,6 +167,9 @@ func isNamedArgContext(text string, line, char int) bool {
 		return false
 	}
 	l := lines[line]
+	if char > len(l) {
+		char = len(l)
+	}
 	depth := 0
 	for i := char - 1; i >= 0; i-- {
 		if l[i] == ')' {
@@ -184,6 +198,9 @@ func extractConstructorName(text string, line, char int) string {
 		return ""
 	}
 	l := lines[line]
+	if char > len(l) {
+		char = len(l)
+	}
 	depth := 0
 	for i := char - 1; i >= 0; i-- {
 		if l[i] == ')' {
@@ -238,7 +255,7 @@ func namedArgCompletions(richAST *transpiler.RichAST, typeName string) []lsp.Com
 
 // --- Match Case Completion ---
 
-func isMatchCaseContext(text string, line, char int) bool {
+func isMatchCaseContext(text string, line, _ int) bool {
 	lines := strings.Split(text, "\n")
 	if line >= len(lines) {
 		return false

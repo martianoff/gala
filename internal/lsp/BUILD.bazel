@@ -1,4 +1,4 @@
-load("@rules_go//go:def.bzl", "go_library")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "lsp",
@@ -20,5 +20,14 @@ go_library(
         "//internal/transpiler/generator",
         "//internal/transpiler/transformer",
         "@com_github_owenrumney_go_lsp//lsp",
+    ],
+)
+
+go_test(
+    name = "lsp_test",
+    srcs = ["server_test.go"],
+    deps = [
+        ":lsp",
+        "@com_github_owenrumney_go_lsp//servertest",
     ],
 )

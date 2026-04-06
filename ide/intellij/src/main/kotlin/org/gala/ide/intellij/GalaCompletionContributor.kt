@@ -45,6 +45,21 @@ class GalaCompletionContributor : CompletionContributor() {
             "string"
         )
 
+        // Source: internal/transpiler/transformer — built-in functions
+        // These are rewritten by the transpiler and available without import
+        private val BUILTIN_FUNCTIONS = listOf(
+            // Print functions (rewritten to fmt.Println/fmt.Print)
+            "Println", "Print",
+            // Go interop constructors
+            "SliceOf",
+            // Std constructors
+            "Some", "None", "Left", "Right", "Success", "Failure",
+            "NewImmutable", "NewConstPtr",
+            // Go built-in functions available in GALA
+            "len", "cap", "make", "append", "copy", "delete",
+            "close", "panic", "recover",
+        )
+
         // Source: std/*.gala — ONLY auto-imported types (std is implicit)
         // Other packages (collection_immutable, etc.) require explicit import
         // and will be suggested by the LSP server in Phase 5.
@@ -103,6 +118,11 @@ class GalaCompletionContributor : CompletionContributor() {
                     for (type in STD_AUTO_IMPORTED) {
                         result.addElement(
                             LookupElementBuilder.create(type).withTypeText("std")
+                        )
+                    }
+                    for (func in BUILTIN_FUNCTIONS) {
+                        result.addElement(
+                            LookupElementBuilder.create(func).withTypeText("builtin").bold()
                         )
                     }
 

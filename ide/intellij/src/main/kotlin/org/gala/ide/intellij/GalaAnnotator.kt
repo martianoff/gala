@@ -52,6 +52,23 @@ class GalaAnnotator : Annotator {
             "complex64", "complex128",
             "string"
         )
+
+        // Built-in functions available without import
+        private val BUILTIN_FUNCTION_NAMES = setOf(
+            "Println", "Print",
+            "SliceOf",
+            "len", "cap", "make", "append", "copy", "delete",
+            "close", "panic", "recover"
+        )
+
+        // Standard library types (auto-imported)
+        private val STD_TYPE_NAMES = setOf(
+            "Option", "Some", "None",
+            "Either", "Left", "Right",
+            "Try", "Success", "Failure",
+            "Tuple", "Immutable", "ConstPtr", "Void",
+            "Seq", "Traversable", "Iterable"
+        )
     }
 
     override fun annotate(element: PsiElement, holder: AnnotationHolder) {
@@ -73,6 +90,22 @@ class GalaAnnotator : Annotator {
         if (text in BUILTIN_TYPE_NAMES) {
             holder.newSilentAnnotation(HighlightSeverity.INFORMATION)
                 .textAttributes(BUILTIN_TYPE)
+                .create()
+            return
+        }
+
+        // Standard library types get class name highlighting
+        if (text in STD_TYPE_NAMES) {
+            holder.newSilentAnnotation(HighlightSeverity.INFORMATION)
+                .textAttributes(BUILTIN_TYPE)
+                .create()
+            return
+        }
+
+        // Built-in functions get function call highlighting
+        if (text in BUILTIN_FUNCTION_NAMES) {
+            holder.newSilentAnnotation(HighlightSeverity.INFORMATION)
+                .textAttributes(FUNCTION_CALL)
                 .create()
             return
         }
