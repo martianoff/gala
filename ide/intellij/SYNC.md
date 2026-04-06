@@ -98,3 +98,102 @@ Run the Claude skill:
 ```
 
 This reads the sources of truth, compares against the plugin code, and fixes any discrepancies.
+
+## LSP Server Sync Points
+
+The LSP server (`internal/lsp/`) also has hardcoded data that must stay in sync:
+
+### 7. LSP Completion Keywords
+
+**LSP file:** `internal/lsp/completion.go` — `keywordCompletions()`
+
+**Source of truth:** Same as Plugin Sync Point #1 — `gala.g4` keywords.
+
+### 8. LSP Type Inference
+
+**LSP file:** `internal/lsp/inlay_hints.go` — `inferType()`
+
+**Source of truth:** Transpiler's type system (`internal/transpiler/types.go`). The inference is text-based and covers literals, constructors, and function calls. Full type inference comes from the analyzer's `RichAST`.
+
+### 9. LSP Match Exhaustiveness
+
+**LSP file:** `internal/lsp/diagnostics.go` — `checkMatchExhaustiveness()`
+
+**Source of truth:** Sealed type variants from `RichAST.Types[*].SealedVariants`. No hardcoded data — reads from analyzer metadata at runtime.
+
+## IDE Architecture Overview
+
+```
++------------------+     stdio      +------------------+
+|  GoLand/IntelliJ |  <--------->  |    gala-lsp       |
+|  Plugin (Kotlin) |    LSP 3.17   |    (Go binary)    |
++------------------+               +------------------+
+       |                                    |
+       | PSI tree (local)                   | Wraps transpiler
+       | Syntax highlighting                | Parser + Analyzer
+       | Code folding                       | Type metadata
+       | Structure view                     | Cross-file resolution
+       | Live templates                     |
+       +------------------------------------+
+```
+
+**Plugin** handles: syntax highlighting, PSI tree, folding, brace matching, structure view, live templates, color settings.
+
+**LSP server** handles: diagnostics, hover, go-to-definition, completion, inlay hints, document symbols, find references, match exhaustiveness.
+
+## Setup Instructions
+
+### Building
+
+```bash
+# Build everything
+bazel build //ide/intellij:plugin //cmd/gala-lsp:gala-lsp
+```
+
+### Installing the Plugin
+
+1. Go to GoLand > Settings > Plugins > gear icon > Install from Disk
+2. Select `bazel-bin/ide/intellij/gala-intellij-plugin.zip`
+3. Restart GoLand
+
+### Installing the LSP Server
+
+1. Copy the binary to PATH:
+   ```bash
+   # Linux/macOS
+   cp bazel-bin/cmd/gala-lsp/gala-lsp_/gala-lsp ~/.local/bin/
+
+   # Windows
+   copy bazel-bin\cmd\gala-lsp\gala-lsp_\gala-lsp.exe %USERPROFILE%\bin\
+   ```
+2. Or set `GALA_LSP_PATH` environment variable to the binary path
+3. Restart GoLand — the LSP server starts automatically when a `.gala` file is opened
+
+### Using with Other Editors
+
+The LSP server works with any LSP-capable editor:
+
+**VS Code:** Create `.vscode/settings.json`:
+```json
+{
+  "lsp.servers": {
+    "gala": {
+      "command": "gala-lsp",
+      "args": ["--stdio"],
+      "filetypes": ["gala"]
+    }
+  }
+}
+```
+
+**Neovim (lspconfig):**
+```lua
+require('lspconfig.configs').gala = {
+  default_config = {
+    cmd = { 'gala-lsp', '--stdio' },
+    filetypes = { 'gala' },
+    root_dir = require('lspconfig.util').root_pattern('gala.mod', '.git'),
+  },
+}
+require('lspconfig').gala.setup({})
+```
