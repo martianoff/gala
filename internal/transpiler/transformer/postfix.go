@@ -30,7 +30,7 @@ func (t *galaASTTransformer) transformPostfixExpr(ctx *grammar.PostfixExprContex
 	// Get the primary expression
 	primaryExpr := ctx.PrimaryExpr()
 	if primaryExpr == nil {
-		return nil, galaerr.NewSemanticError("postfixExpr must have primaryExpr")
+		return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "postfixExpr must have primaryExpr")
 	}
 
 	result, err := t.transformPrimaryExpr(primaryExpr.(*grammar.PrimaryExprContext))
@@ -66,7 +66,7 @@ func (t *galaASTTransformer) applyPostfixSuffix(base ast.Expr, suffix *grammar.P
 		}
 	}
 
-	return nil, galaerr.NewSemanticError("unknown postfix suffix type")
+	return nil, galaerr.NewSemanticErrorAt(suffix.GetStart().GetLine(), suffix.GetStart().GetColumn(), "unknown postfix suffix type")
 }
 
 // resolveFieldAccess handles member access with automatic Immutable/ConstPtr unwrapping.
@@ -201,7 +201,7 @@ func (t *galaASTTransformer) isImmutableField(xType transpiler.Type, selExpr *as
 func (t *galaASTTransformer) resolveIndexAccess(base ast.Expr, suffix *grammar.PostfixSuffixContext) (ast.Expr, error) {
 	exprList := suffix.ExpressionList()
 	if exprList == nil {
-		return nil, galaerr.NewSemanticError("index expression requires expression list")
+		return nil, galaerr.NewSemanticErrorAt(suffix.GetStart().GetLine(), suffix.GetStart().GetColumn(), "index expression requires expression list")
 	}
 	base = t.unwrapImmutable(base)
 	indices, err := t.transformExpressionList(exprList.(*grammar.ExpressionListContext))
@@ -237,7 +237,7 @@ func (t *galaASTTransformer) transformPrimaryExpr(ctx *grammar.PrimaryExprContex
 		return t.transformPartialFunctionLiteral(pf.(*grammar.PartialFunctionLiteralContext), nil)
 	}
 
-	return nil, galaerr.NewSemanticError("primaryExpr must have primary, lambda, if expression, or partial function")
+	return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "primaryExpr must have primary, lambda, if expression, or partial function")
 }
 
 // transformPostfixMatchExpression handles match expressions with the new grammar
@@ -245,7 +245,7 @@ func (t *galaASTTransformer) transformPostfixMatchExpression(ctx *grammar.Postfi
 	// Get the primary expression being matched
 	primaryExpr := ctx.PrimaryExpr()
 	if primaryExpr == nil {
-		return nil, galaerr.NewSemanticError("match expression must have subject")
+		return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "match expression must have subject")
 	}
 
 	subject, err := t.transformPrimaryExpr(primaryExpr.(*grammar.PrimaryExprContext))
@@ -280,6 +280,10 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		matchedType = t.inferMatchedTypeFromCases(caseClauses)
 	}
 	if matchedType == nil || matchedType.IsNil() {
+		if len(caseClauses) > 0 {
+			cc := caseClauses[0].(*grammar.CaseClauseContext)
+			return nil, galaerr.NewSemanticErrorAt(cc.GetStart().GetLine(), cc.GetStart().GetColumn(), "cannot infer type of matched expression")
+		}
 		return nil, galaerr.NewSemanticError("cannot infer type of matched expression")
 	}
 
@@ -326,7 +330,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 
 		if treatAsDefault {
 			if foundDefault {
-				return nil, galaerr.NewSemanticError("multiple default cases in match expression")
+				return nil, galaerr.NewSemanticErrorAt(ccCtx.GetStart().GetLine(), ccCtx.GetStart().GetColumn(), "multiple default cases in match expression")
 			}
 			foundDefault = true
 
@@ -397,6 +401,10 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	// when inside a generic function where the type parameters are in scope.
 
 	if len(clauses) == 0 && len(defaultBody) == 0 {
+		if len(caseClauses) > 0 {
+			cc := caseClauses[0].(*grammar.CaseClauseContext)
+			return nil, galaerr.NewSemanticErrorAt(cc.GetStart().GetLine(), cc.GetStart().GetColumn(), "match expression must have at least one case")
+		}
 		return nil, galaerr.NewSemanticError("match expression must have at least one case")
 	}
 
@@ -427,6 +435,11 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 
 		if !hasDefault {
 			if isSealed && !isExhaustive {
+				if len(caseClauses) > 0 {
+					cc := caseClauses[0].(*grammar.CaseClauseContext)
+					return nil, galaerr.NewSemanticErrorAt(cc.GetStart().GetLine(), cc.GetStart().GetColumn(),
+						fmt.Sprintf("non-exhaustive match: missing cases: %s", strings.Join(missing, ", ")))
+				}
 				return nil, galaerr.NewSemanticError(
 					fmt.Sprintf("non-exhaustive match: missing cases: %s", strings.Join(missing, ", ")))
 			} else if isSealed && isExhaustive {
@@ -438,6 +451,10 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 					}},
 				}
 			} else if !isSealed {
+				if len(caseClauses) > 0 {
+					cc := caseClauses[0].(*grammar.CaseClauseContext)
+					return nil, galaerr.NewSemanticErrorAt(cc.GetStart().GetLine(), cc.GetStart().GetColumn(), "match expression must have a default case (case _ => ...)")
+				}
 				return nil, galaerr.NewSemanticError("match expression must have a default case (case _ => ...)")
 			}
 		}

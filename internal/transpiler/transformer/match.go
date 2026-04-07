@@ -272,7 +272,7 @@ func (t *galaASTTransformer) transformMatchClauses(ctx grammar.IExpressionContex
 
 		if treatAsDefault {
 			if foundDefault {
-				return nil, nil, nil, galaerr.NewSemanticError("multiple default cases in match expression")
+				return nil, nil, nil, galaerr.NewSemanticErrorAt(ccCtx.GetStart().GetLine(), ccCtx.GetStart().GetColumn(), "multiple default cases in match expression")
 			}
 			foundDefault = true
 
@@ -360,7 +360,7 @@ func (t *galaASTTransformer) transformMatchClauses(ctx grammar.IExpressionContex
 
 	if !hasDefault {
 		if isSealed && !isExhaustive {
-			return nil, nil, nil, galaerr.NewSemanticError(
+			return nil, nil, nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
 				fmt.Sprintf("non-exhaustive match: missing cases: %s", strings.Join(missing, ", ")))
 		} else if isSealed && isExhaustive {
 			// Exhaustive sealed match — generate synthetic panic("unreachable") default
@@ -371,7 +371,7 @@ func (t *galaASTTransformer) transformMatchClauses(ctx grammar.IExpressionContex
 				}},
 			}
 		} else if !isSealed {
-			return nil, nil, nil, galaerr.NewSemanticError("match expression must have a default case (case _ => ...)")
+			return nil, nil, nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "match expression must have a default case (case _ => ...)")
 		}
 	}
 	// When foundDefault && isSealed && isExhaustive: unreachable default is harmless, allow it
@@ -546,6 +546,9 @@ func (t *galaASTTransformer) isKnownMultiReturnFunction(pkgName, funcName string
 // ctx is optional and used for position info in error messages.
 func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patterns []string, ctx antlr.ParserRuleContext) (transpiler.Type, error) {
 	if len(types) == 0 {
+		if ctx != nil && ctx.GetStart() != nil {
+			return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "match expression has no case branches")
+		}
 		return nil, galaerr.NewSemanticError("match expression has no case branches")
 	}
 
@@ -606,6 +609,9 @@ func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patt
 				t.traceType(nil, t.currentFuncReturnType, "match-result-fallback-to-enclosing-return")
 				return t.currentFuncReturnType, nil
 			}
+			if ctx != nil && ctx.GetStart() != nil {
+				return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "cannot infer result type of match expression: no branch returns a concrete type. Please add explicit type annotation")
+			}
 			return nil, galaerr.NewSemanticError("cannot infer result type of match expression: no branch returns a concrete type. Please add explicit type annotation")
 		}
 		// Type parameters or mixed type-param/nil: use 'any' as the Go type erasure
@@ -616,6 +622,9 @@ func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patt
 	// Check all types are compatible with the reference type
 	for i, typ := range types {
 		if typ == nil {
+			if ctx != nil && ctx.GetStart() != nil {
+				return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), fmt.Sprintf("cannot infer result type for '%s'. Please add explicit type annotation", patterns[i]))
+			}
 			return nil, galaerr.NewSemanticError(fmt.Sprintf("cannot infer result type for '%s'. Please add explicit type annotation", patterns[i]))
 		}
 		// VoidType is compatible with any type (for mixed match where some branches are void)
@@ -888,7 +897,9 @@ func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClause
 
 		for _, varName := range userVars {
 			if !refs[varName] {
-				return nil, nil, galaerr.NewSemanticError(
+				line := ctx.GetStart().GetLine()
+				col := ctx.GetStart().GetColumn()
+				return nil, nil, galaerr.NewSemanticErrorAt(line, col,
 					fmt.Sprintf("unused variable '%s' in match branch — use '_' to discard this value", varName))
 			}
 		}

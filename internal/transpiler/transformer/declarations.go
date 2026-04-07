@@ -240,7 +240,7 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 				typeExpr, _ := t.transformType(ctx.Type_())
 				typeName = t.astTypeToTranspilerType(typeExpr)
 				if t.isImmutableType(typeName) {
-					panic(galaerr.NewSemanticError("recursive Immutable wrapping is not allowed"))
+					panic(galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "recursive Immutable wrapping is not allowed"))
 				}
 			}
 
@@ -301,7 +301,7 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 			typeExpr, _ := t.transformType(ctx.Type_())
 			typeName = t.astTypeToTranspilerType(typeExpr)
 			if t.isImmutableType(typeName) {
-				panic(galaerr.NewSemanticError("recursive Immutable wrapping is not allowed"))
+				panic(galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "recursive Immutable wrapping is not allowed"))
 			}
 		} else if len(rhsExprs) == len(namesCtx) {
 			typeName = t.getExprTypeName(rhsExprs[i])
@@ -392,7 +392,7 @@ func (t *galaASTTransformer) transformValTuplePattern(ctx *grammar.ValDeclaratio
 	}
 
 	if len(rhsExprs) != 1 {
-		return nil, galaerr.NewSemanticError("tuple destructuring requires exactly one expression on the right side")
+		return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "tuple destructuring requires exactly one expression on the right side")
 	}
 
 	// Get the type of the tuple for type inference
@@ -494,7 +494,7 @@ func (t *galaASTTransformer) transformVarDeclaration(ctx *grammar.VarDeclaration
 		if ctx.Type_() == nil {
 			for _, r := range rhsExprs {
 				if t.isNoneCall(r) {
-					return nil, galaerr.NewSemanticError("variable assigned to None() must have an explicit type")
+					return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "variable assigned to None() must have an explicit type")
 				}
 			}
 		}

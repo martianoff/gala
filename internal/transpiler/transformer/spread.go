@@ -22,7 +22,7 @@ func extractArgExpression(pat grammar.IPatternContext) (grammar.IExpressionConte
 	if rp, ok := pat.(*grammar.RestPatternContext); ok {
 		return rp.Expression(), true, nil
 	}
-	return nil, false, galaerr.NewSemanticError("only expressions allowed as function arguments")
+	return nil, false, galaerr.NewSemanticErrorAt(pat.GetStart().GetLine(), pat.GetStart().GetColumn(), "only expressions allowed as function arguments")
 }
 
 // extractArgContent extracts the expression or lambda from an ArgumentContext.

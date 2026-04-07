@@ -268,7 +268,7 @@ func testMatch() {
     val desc = shape match {
         case Circle(r) => s"Circle r=$r"
         case Rectangle(w, h) => s"Rect ${w}x${h}"
-        case Triangle(b, x) => s"Tri b=$b"
+        case Triangle(b, _) => s"Tri b=$b"
     }
     // [EXPECT] desc: string
 

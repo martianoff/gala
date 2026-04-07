@@ -3,6 +3,6 @@ load("//:gala.bzl", "gala_test")
 gala_test(
     name = "embed_fs",
     src = "main.gala",
-    expected = "main.out",
     embedsrcs = glob(["data/**"]),
+    expected = "main.out",
 )

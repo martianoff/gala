@@ -22,13 +22,13 @@ func (t *galaASTTransformer) transformExpression(ctx grammar.IExpressionContext)
 		return t.transformOrExpr(orExpr.(*grammar.OrExprContext))
 	}
 
-	return nil, galaerr.NewSemanticError("expression must contain orExpr")
+	return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "expression must contain orExpr")
 }
 
 func (t *galaASTTransformer) transformOrExpr(ctx *grammar.OrExprContext) (ast.Expr, error) {
 	andExprs := ctx.AllAndExpr()
 	if len(andExprs) == 0 {
-		return nil, galaerr.NewSemanticError("orExpr must have at least one andExpr")
+		return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "orExpr must have at least one andExpr")
 	}
 
 	result, err := t.transformAndExpr(andExprs[0].(*grammar.AndExprContext))
@@ -52,7 +52,7 @@ func (t *galaASTTransformer) transformOrExpr(ctx *grammar.OrExprContext) (ast.Ex
 func (t *galaASTTransformer) transformAndExpr(ctx *grammar.AndExprContext) (ast.Expr, error) {
 	eqExprs := ctx.AllEqualityExpr()
 	if len(eqExprs) == 0 {
-		return nil, galaerr.NewSemanticError("andExpr must have at least one equalityExpr")
+		return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "andExpr must have at least one equalityExpr")
 	}
 
 	result, err := t.transformEqualityExpr(eqExprs[0].(*grammar.EqualityExprContext))
@@ -76,7 +76,7 @@ func (t *galaASTTransformer) transformAndExpr(ctx *grammar.AndExprContext) (ast.
 func (t *galaASTTransformer) transformEqualityExpr(ctx *grammar.EqualityExprContext) (ast.Expr, error) {
 	relExprs := ctx.AllRelationalExpr()
 	if len(relExprs) == 0 {
-		return nil, galaerr.NewSemanticError("equalityExpr must have at least one relationalExpr")
+		return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "equalityExpr must have at least one relationalExpr")
 	}
 
 	result, err := t.transformRelationalExpr(relExprs[0].(*grammar.RelationalExprContext))
@@ -106,7 +106,7 @@ func (t *galaASTTransformer) transformEqualityExpr(ctx *grammar.EqualityExprCont
 func (t *galaASTTransformer) transformRelationalExpr(ctx *grammar.RelationalExprContext) (ast.Expr, error) {
 	addExprs := ctx.AllAdditiveExpr()
 	if len(addExprs) == 0 {
-		return nil, galaerr.NewSemanticError("relationalExpr must have at least one additiveExpr")
+		return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "relationalExpr must have at least one additiveExpr")
 	}
 
 	result, err := t.transformAdditiveExpr(addExprs[0].(*grammar.AdditiveExprContext))
@@ -134,7 +134,7 @@ func (t *galaASTTransformer) transformRelationalExpr(ctx *grammar.RelationalExpr
 func (t *galaASTTransformer) transformAdditiveExpr(ctx *grammar.AdditiveExprContext) (ast.Expr, error) {
 	mulExprs := ctx.AllMultiplicativeExpr()
 	if len(mulExprs) == 0 {
-		return nil, galaerr.NewSemanticError("additiveExpr must have at least one multiplicativeExpr")
+		return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "additiveExpr must have at least one multiplicativeExpr")
 	}
 
 	result, err := t.transformMultiplicativeExpr(mulExprs[0].(*grammar.MultiplicativeExprContext))
@@ -162,7 +162,7 @@ func (t *galaASTTransformer) transformAdditiveExpr(ctx *grammar.AdditiveExprCont
 func (t *galaASTTransformer) transformMultiplicativeExpr(ctx *grammar.MultiplicativeExprContext) (ast.Expr, error) {
 	unaryExprs := ctx.AllUnaryExpr()
 	if len(unaryExprs) == 0 {
-		return nil, galaerr.NewSemanticError("multiplicativeExpr must have at least one unaryExpr")
+		return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "multiplicativeExpr must have at least one unaryExpr")
 	}
 
 	result, err := t.transformUnaryExpr(unaryExprs[0].(*grammar.UnaryExprContext))
@@ -263,7 +263,7 @@ func (t *galaASTTransformer) transformUnaryExpr(ctx *grammar.UnaryExprContext) (
 		return t.transformPostfixExpr(postfix.(*grammar.PostfixExprContext))
 	}
 
-	return nil, galaerr.NewSemanticError("unaryExpr must have unaryOp or postfixExpr")
+	return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "unaryExpr must have unaryOp or postfixExpr")
 }
 
 // getSimpleValIdentifier extracts the identifier name if this unary expression
@@ -313,11 +313,11 @@ func (t *galaASTTransformer) getSimpleValIdentifier(ctx *grammar.UnaryExprContex
 func getChildOperatorText(ctx antlr.ParserRuleContext, index int) (string, error) {
 	child := ctx.GetChild(index)
 	if child == nil {
-		return "", galaerr.NewSemanticError("missing operator in expression")
+		return "", galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "missing operator in expression")
 	}
 	tree, ok := child.(antlr.ParseTree)
 	if !ok {
-		return "", galaerr.NewSemanticError("unexpected operator node in expression")
+		return "", galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "unexpected operator node in expression")
 	}
 	return tree.GetText(), nil
 }

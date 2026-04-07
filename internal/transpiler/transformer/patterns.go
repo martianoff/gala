@@ -41,7 +41,7 @@ func (t *galaASTTransformer) transformPatternWithType(patCtx grammar.IPatternCon
 	case *grammar.RestPatternContext:
 		// Rest pattern like "rest..." or "_..." - these should only appear in argument lists
 		// If we get here, it's an error (rest patterns must be part of a sequence pattern)
-		return nil, nil, galaerr.NewSemanticError("rest pattern (...) can only be used as the last argument in a sequence pattern like Array(first, second, rest...)")
+		return nil, nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "rest pattern (...) can only be used as the last argument in a sequence pattern like Array(first, second, rest...)")
 	default:
 		return nil, nil, fmt.Errorf("unknown pattern type: %T", patCtx)
 	}
@@ -113,14 +113,14 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 							inferredTypes = append(inferredTypes, t.resolveType(t.getBaseTypeName(typeAst)))
 						}
 						if len(inferredTypes) != len(meta.TypeParams) {
-							return nil, nil, galaerr.NewSemanticError(
+							return nil, nil, galaerr.NewSemanticErrorAt(patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn(),
 								fmt.Sprintf("extractor '%s' expects %d type parameters, got %d", rawName, len(meta.TypeParams), len(inferredTypes)))
 						}
 					} else {
 						// Infer type parameters from the matched type
 						inferredTypes = t.inferExtractorTypeParams(meta, matchedType)
 						if len(inferredTypes) != len(meta.TypeParams) {
-							return nil, nil, galaerr.NewSemanticError(
+							return nil, nil, galaerr.NewSemanticErrorAt(patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn(),
 								fmt.Sprintf("cannot infer type parameters for extractor '%s'. Ensure the Unapply method's parameter type matches the matched type", rawName))
 						}
 					}
@@ -128,7 +128,7 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 				// Check if return type is supported (bool or Option[T])
 				returnType := t.substituteConcreteTypes(unapplyMeta.ReturnType, meta.TypeParams, inferredTypes)
 				if !t.isDirectUnapplyReturnType(returnType) {
-					return nil, nil, galaerr.NewSemanticError(
+					return nil, nil, galaerr.NewSemanticErrorAt(patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn(),
 						fmt.Sprintf("extractor '%s' must have Unapply returning bool or Option[T], got '%s'. Use Option[T] for extractors or bool for guard patterns. Unapply(any) any is not allowed",
 							rawName, returnType.String()))
 				}
@@ -145,7 +145,7 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 			return t.generateSeqPatternMatch(objExpr, argList, matchedType)
 		}
 		if t.hasRestPattern(argList) {
-			return nil, nil, galaerr.NewSemanticError(
+			return nil, nil, galaerr.NewSemanticErrorAt(patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn(),
 				fmt.Sprintf("rest pattern (...) requires a sequence type (Array, List, or type implementing Seq). Got '%s'", matchedType.String()))
 		}
 
@@ -172,7 +172,7 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 					// Variable's type has Unapply - use the variable itself as the extractor
 					returnType := unapplyMeta.ReturnType
 					if !t.isDirectUnapplyReturnType(returnType) {
-						return nil, nil, galaerr.NewSemanticError(
+						return nil, nil, galaerr.NewSemanticErrorAt(patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn(),
 							fmt.Sprintf("extractor variable '%s' (type '%s') must have Unapply returning bool or Option[T], got '%s'",
 								rawName, varTypeName, returnType.String()))
 					}
@@ -182,7 +182,7 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 		}
 
 		// Extractor not found or doesn't have Unapply method
-		return nil, nil, galaerr.NewSemanticError(
+		return nil, nil, galaerr.NewSemanticErrorAt(patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn(),
 			fmt.Sprintf("extractor '%s' must define an Unapply method. For generic extractors use: func (e Extractor[T]) Unapply(v ContainerType[T]) Option[T]. For guard patterns use: func (e Extractor) Unapply(v ConcreteType) bool",
 				rawName))
 	}
@@ -677,7 +677,7 @@ func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, ar
 	}
 
 	if len(args) > len(fields) {
-		return nil, nil, galaerr.NewSemanticError(fmt.Sprintf("struct '%s' has %d fields but pattern has %d arguments", structName, len(fields), len(args)))
+		return nil, nil, galaerr.NewSemanticErrorAt(argList.GetStart().GetLine(), argList.GetStart().GetColumn(), fmt.Sprintf("struct '%s' has %d fields but pattern has %d arguments", structName, len(fields), len(args)))
 	}
 
 	var stmts []ast.Stmt
@@ -917,7 +917,7 @@ func (t *galaASTTransformer) generateSeqPatternMatch(objExpr ast.Expr, argList *
 
 	// Rest pattern must be the last argument
 	if restPatternIndex >= 0 && restPatternIndex != len(args)-1 {
-		return nil, nil, galaerr.NewSemanticError("rest pattern (...) must be the last argument in a sequence pattern")
+		return nil, nil, galaerr.NewSemanticErrorAt(argList.GetStart().GetLine(), argList.GetStart().GetColumn(), "rest pattern (...) must be the last argument in a sequence pattern")
 	}
 
 	// Generate size check: _tmp_ok := obj.Size() >= minRequired
@@ -1186,6 +1186,9 @@ func (t *galaASTTransformer) generateSeqPatternMatch(objExpr ast.Expr, argList *
 func (t *galaASTTransformer) transformTuplePattern(patternExprs []grammar.IExpressionContext, objExpr ast.Expr, matchedType transpiler.Type) (ast.Expr, []ast.Stmt, error) {
 	n := len(patternExprs)
 	if n < 2 || n > 10 {
+		if n > 0 {
+			return nil, nil, galaerr.NewSemanticErrorAt(patternExprs[0].GetStart().GetLine(), patternExprs[0].GetStart().GetColumn(), fmt.Sprintf("tuple patterns must have 2-10 elements, got %d", n))
+		}
 		return nil, nil, galaerr.NewSemanticError(fmt.Sprintf("tuple patterns must have 2-10 elements, got %d", n))
 	}
 
