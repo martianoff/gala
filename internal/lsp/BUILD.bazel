@@ -21,6 +21,7 @@ go_library(
         "//internal/transpiler/generator",
         "//internal/transpiler/transformer",
         "@com_github_owenrumney_go_lsp//lsp",
+        "@com_github_owenrumney_go_lsp//server",
     ],
 )
 
@@ -33,6 +34,6 @@ go_test(
         ":lsp",
         "@com_github_owenrumney_go_lsp//lsp",
         "@com_github_owenrumney_go_lsp//servertest",
-        "@rules_go//go/tools/bazel:go_default_library",
+        "@rules_go//go/tools/bazel",
     ],
 )

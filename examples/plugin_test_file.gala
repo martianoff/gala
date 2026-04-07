@@ -268,14 +268,14 @@ func testMatch() {
     val desc = shape match {
         case Circle(r) => s"Circle r=$r"
         case Rectangle(w, h) => s"Rect ${w}x${h}"
-        case Triangle(b, h) => s"Tri b=$b"
+        case Triangle(b, _) => s"Tri b=$b"
     }
     // [EXPECT] desc: string
 
     // Match with guards
     val category = shape match {
         case Circle(r) if r > 10.0 => "large circle"
-        case Circle(r) => "small circle"
+        case Circle(_) => "small circle"
         case _ => "other"
     }
 

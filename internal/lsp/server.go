@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/owenrumney/go-lsp/lsp"
+	golsp "github.com/owenrumney/go-lsp/server"
 
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
@@ -24,12 +25,18 @@ type GalaHandler struct {
 	transformer transpiler.ASTTransformer
 	generator   transpiler.CodeGenerator
 
-	extraSearchPaths []string // additional search paths (for testing)
+	extraSearchPaths []string          // additional search paths (for testing)
+	client           *golsp.Client     // LSP client for sending notifications
 
 	mu        sync.Mutex
 	documents map[string]string              // URI -> source text
 	richASTs  map[string]*transpiler.RichAST // URI -> analyzed AST
 	varTypes  map[string]map[string]string   // URI -> (varName -> type) from transpiler
+}
+
+// SetClient implements server.ClientHandler — receives the LSP client for notifications.
+func (h *GalaHandler) SetClient(client *golsp.Client) {
+	h.client = client
 }
 
 // SetSearchPaths adds additional search paths for the analyzer (for testing).
@@ -117,6 +124,13 @@ func (h *GalaHandler) DidClose(ctx context.Context, params *lsp.DidCloseTextDocu
 	delete(h.richASTs, uri)
 	delete(h.varTypes, uri)
 	h.mu.Unlock()
+	// Clear diagnostics
+	if h.client != nil {
+		h.client.PublishDiagnostics(context.Background(), &lsp.PublishDiagnosticsParams{
+			URI:         params.TextDocument.URI,
+			Diagnostics: []lsp.Diagnostic{},
+		})
+	}
 	return nil
 }
 
@@ -136,8 +150,14 @@ func (h *GalaHandler) DidSave(ctx context.Context, params *lsp.DidSaveTextDocume
 func (h *GalaHandler) publishDiagnostics(uri, text string) {
 	filePath := uriToPath(uri)
 	diagnostics := h.analyzeFile(uri, filePath, text)
-	// TODO: send diagnostics via client notification when go-lsp supports it
-	_ = diagnostics
+
+	// Send diagnostics to the client
+	if h.client != nil {
+		h.client.PublishDiagnostics(context.Background(), &lsp.PublishDiagnosticsParams{
+			URI:         lsp.DocumentURI(uri),
+			Diagnostics: diagnostics,
+		})
+	}
 }
 
 func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {

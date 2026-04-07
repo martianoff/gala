@@ -117,7 +117,31 @@ type FuncType struct {
 	Results []Type
 }
 
-func (t FuncType) String() string     { return "func" }
+func (t FuncType) String() string {
+	var b strings.Builder
+	b.WriteString("func(")
+	for i, p := range t.Params {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString(p.String())
+	}
+	b.WriteString(")")
+	if len(t.Results) == 1 {
+		b.WriteString(" ")
+		b.WriteString(t.Results[0].String())
+	} else if len(t.Results) > 1 {
+		b.WriteString(" (")
+		for i, r := range t.Results {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			b.WriteString(r.String())
+		}
+		b.WriteString(")")
+	}
+	return b.String()
+}
 func (t FuncType) IsNil() bool        { return false }
 func (t FuncType) IsAny() bool        { return false }
 func (t FuncType) BaseName() string   { return "func" }
