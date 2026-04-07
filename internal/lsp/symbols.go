@@ -39,30 +39,33 @@ func (h *GalaHandler) DocumentSymbol(ctx context.Context, params *lsp.DocumentSy
 			kind = lsp.SymbolKindEnum
 		}
 
+		rng := findSymbolRange(text, name)
 		sym := lsp.DocumentSymbol{
 			Name:           name,
 			Kind:           kind,
-			Range:          findSymbolRange(text, name),
-			SelectionRange: findSymbolRange(text, name),
+			Range:          rng,
+			SelectionRange: rng,
 		}
 
 		// Add sealed variants as children
 		for _, v := range tm.SealedVariants {
+			vRng := findSymbolRange(text, v.Name)
 			sym.Children = append(sym.Children, lsp.DocumentSymbol{
 				Name:           v.Name,
 				Kind:           lsp.SymbolKindEnumMember,
-				Range:          findSymbolRange(text, v.Name),
-				SelectionRange: findSymbolRange(text, v.Name),
+				Range:          vRng,
+				SelectionRange: vRng,
 			})
 		}
 
 		// Add methods as children
 		for mName := range tm.Methods {
+			mRng := findSymbolRange(text, mName)
 			sym.Children = append(sym.Children, lsp.DocumentSymbol{
 				Name:           mName,
 				Kind:           lsp.SymbolKindMethod,
-				Range:          findSymbolRange(text, mName),
-				SelectionRange: findSymbolRange(text, mName),
+				Range:          mRng,
+				SelectionRange: mRng,
 			})
 		}
 
@@ -74,11 +77,12 @@ func (h *GalaHandler) DocumentSymbol(ctx context.Context, params *lsp.DocumentSy
 		if fm.Package != richAST.PackageName {
 			continue
 		}
+		fRng := findSymbolRange(text, fm.Name)
 		symbols = append(symbols, lsp.DocumentSymbol{
 			Name:           fm.Name,
 			Kind:           lsp.SymbolKindFunction,
-			Range:          findSymbolRange(text, fm.Name),
-			SelectionRange: findSymbolRange(text, fm.Name),
+			Range:          fRng,
+			SelectionRange: fRng,
 		})
 	}
 

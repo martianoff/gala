@@ -108,6 +108,7 @@ func (h *GalaHandler) DidClose(ctx context.Context, params *lsp.DidCloseTextDocu
 	h.mu.Lock()
 	delete(h.documents, uri)
 	delete(h.richASTs, uri)
+	delete(h.varTypes, uri)
 	h.mu.Unlock()
 	return nil
 }

@@ -13,7 +13,6 @@ import (
 
 var (
 	valDeclRegex     = regexp.MustCompile(`^\s*(val|var)\s+(\w+)\s*=`)
-	valTypedRegex    = regexp.MustCompile(`^\s*(val|var)\s+(\w+)\s+\w`)
 	shortDeclRegex   = regexp.MustCompile(`^\s*(\w+)\s*:=\s*`)
 	casePatternRegex = regexp.MustCompile(`^\s*case\s+(\w+)\(([^)]*)\)`)
 )

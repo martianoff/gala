@@ -17,6 +17,7 @@ func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionPara
 	h.mu.Lock()
 	text := h.documents[uri]
 	richAST := h.richASTs[uri]
+	varTypeMap := h.varTypes[uri]
 	h.mu.Unlock()
 
 	if text == "" || richAST == nil {
@@ -36,8 +37,7 @@ func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionPara
 	}
 
 	// Check if it's a dot-accessed method: receiver.Method
-	// Resolve receiver type to find the correct method definition
-	if loc := h.dotMethodDefinition(text, word, uri, line, char, richAST); loc != nil {
+	if loc := dotMethodDefinition(text, word, uri, line, char, richAST, varTypeMap); loc != nil {
 		return []lsp.Location{*loc}, nil
 	}
 
@@ -183,7 +183,7 @@ func patternBindingDefinition(text, word, uri string, curLine, curChar int) *lsp
 }
 
 // dotMethodDefinition resolves receiver.Method to the correct method definition.
-func (h *GalaHandler) dotMethodDefinition(text, word, uri string, curLine, curChar int, richAST *transpiler.RichAST) *lsp.Location {
+func dotMethodDefinition(text, word, uri string, curLine, curChar int, richAST *transpiler.RichAST, varTypes map[string]string) *lsp.Location {
 	if richAST == nil {
 		return nil
 	}
@@ -217,14 +217,10 @@ func (h *GalaHandler) dotMethodDefinition(text, word, uri string, curLine, curCh
 
 	// Resolve receiver type from transpiler's VarTypes
 	var receiverType string
-	if h.varTypes != nil {
-		if vtMap, ok := h.varTypes[uri]; ok {
-			if t, ok := vtMap[receiverName]; ok {
-				receiverType = t
-				if idx := strings.Index(receiverType, "["); idx > 0 {
-					receiverType = receiverType[:idx]
-				}
-			}
+	if t, ok := varTypes[receiverName]; ok {
+		receiverType = t
+		if idx := strings.Index(receiverType, "["); idx > 0 {
+			receiverType = receiverType[:idx]
 		}
 	}
 	if receiverType == "" {
