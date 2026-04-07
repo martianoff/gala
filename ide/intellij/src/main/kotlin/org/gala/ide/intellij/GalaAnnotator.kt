@@ -72,13 +72,25 @@ class GalaAnnotator : Annotator {
     }
 
     override fun annotate(element: PsiElement, holder: AnnotationHolder) {
-        // Only annotate leaf IDENTIFIER tokens and string tokens
         val elementType = element.node?.elementType ?: return
 
+        // Check leaf tokens
         if (elementType is TokenIElementType) {
             when (elementType.antlrTokenType) {
                 galaLexer.IDENTIFIER -> annotateIdentifier(element, holder)
                 galaLexer.INTERPOLATED_STRING, galaLexer.FORMAT_STRING -> annotateInterpolatedString(element, holder)
+            }
+            return
+        }
+
+        // Also check children of composite nodes for interpolated strings
+        // (the annotator may be called on the wrapper node, not the token)
+        for (child in element.children) {
+            val childType = child.node?.elementType
+            if (childType is TokenIElementType) {
+                when (childType.antlrTokenType) {
+                    galaLexer.INTERPOLATED_STRING, galaLexer.FORMAT_STRING -> annotateInterpolatedString(child, holder)
+                }
             }
         }
     }

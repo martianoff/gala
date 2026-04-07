@@ -85,7 +85,19 @@ func formatTypeMeta(meta *transpiler.TypeMetadata) string {
 	if len(meta.SealedVariants) > 0 {
 		b.WriteString("\n**Cases:**\n")
 		for _, v := range meta.SealedVariants {
-			b.WriteString(fmt.Sprintf("- `case %s`\n", v.Name))
+			if len(v.FieldNames) > 0 {
+				var fields []string
+				for j, fn := range v.FieldNames {
+					if j < len(v.FieldTypes) {
+						fields = append(fields, fn+" "+v.FieldTypes[j].String())
+					} else {
+						fields = append(fields, fn)
+					}
+				}
+				b.WriteString(fmt.Sprintf("- `case %s(%s)`\n", v.Name, strings.Join(fields, ", ")))
+			} else {
+				b.WriteString(fmt.Sprintf("- `case %s()`\n", v.Name))
+			}
 		}
 	}
 	if len(meta.Methods) > 0 {
