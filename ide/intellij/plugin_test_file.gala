@@ -96,7 +96,7 @@ func main() {
     Println(max)
 
     // === 15. For Loop ===
-    for i range nums {
+    for i := range nums {
         Println(i)
     }
 
