@@ -4,6 +4,7 @@ package lsp
 import (
 	"context"
 	"fmt"
+	"go/ast"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -27,7 +28,7 @@ type GalaHandler struct {
 	mu        sync.Mutex
 	documents map[string]string              // URI -> source text
 	richASTs  map[string]*transpiler.RichAST // URI -> analyzed AST
-	goCode    map[string]string              // URI -> generated Go code (for type extraction)
+	goASTs    map[string]*ast.File           // URI -> generated Go AST (for type extraction)
 }
 
 // NewGalaHandler creates a new GALA LSP handler.
@@ -35,7 +36,7 @@ func NewGalaHandler() *GalaHandler {
 	return &GalaHandler{
 		documents:   make(map[string]string),
 		richASTs:    make(map[string]*transpiler.RichAST),
-		goCode:      make(map[string]string),
+		goASTs:      make(map[string]*ast.File),
 		parser:      transpiler.NewAntlrGalaParser(),
 		transformer: transformer.NewGalaASTTransformer(),
 		generator:   generator.NewGoCodeGenerator(),
@@ -163,15 +164,13 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 		diagnostics = append(diagnostics, errorToDiagnostic(transformErr))
 	}
 
-	// Generate Go code and cache it for type extraction
+	// Cache the Go AST for type extraction (the transpiler already resolved all types)
 	if goFile != nil {
-		goSrc, genErr := h.generator.Generate(fset, goFile)
-		if genErr == nil {
-			h.mu.Lock()
-			h.goCode[uri] = goSrc
-			h.mu.Unlock()
-		}
+		h.mu.Lock()
+		h.goASTs[uri] = goFile
+		h.mu.Unlock()
 	}
+	_ = fset
 
 	diagnostics = append(diagnostics, checkMatchExhaustiveness(text, richAST)...)
 

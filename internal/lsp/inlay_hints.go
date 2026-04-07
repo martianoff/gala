@@ -25,11 +25,11 @@ func (h *GalaHandler) InlayHint(ctx context.Context, params *lsp.InlayHintParams
 	h.mu.Lock()
 	text := h.documents[uri]
 	richAST := h.richASTs[uri]
-	goSrc := h.goCode[uri]
+	goAST := h.goASTs[uri]
 	h.mu.Unlock()
 
-	// Extract types from generated Go code using go/types (most accurate)
-	goTypes := extractTypesFromGoCode(goSrc)
+	// Extract types from the transpiler's Go AST (already fully resolved)
+	goTypes := extractTypesFromGoAST(goAST)
 
 	if text == "" || richAST == nil {
 		return nil, nil
