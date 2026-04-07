@@ -321,12 +321,11 @@ func resolveConstructorReturnType(name string, richAST *transpiler.RichAST) stri
 	// Check functions
 	if fm, ok := richAST.Functions[name]; ok {
 		if fm.ReturnType != nil && !fm.ReturnType.IsNil() {
-			typeName := cleanTypeName(fm.ReturnType.String())
-			return typeName
+			return cleanTypeName(fm.ReturnType.String())
 		}
 	}
 
-	return name
+	return "" // Not a known constructor or type
 }
 
 // inferRHSType infers the type from the right-hand side of an assignment.
@@ -368,11 +367,15 @@ func inferRHSTypeImpl(rhs, srcText string, srcLine int, richAST *transpiler.Rich
 		if dotIdx := strings.LastIndex(name, "."); dotIdx > 0 {
 			simpleName := name[dotIdx+1:]
 			if isExported(simpleName) {
-				return resolveConstructorReturnType(simpleName, richAST)
+				if t := resolveConstructorReturnType(simpleName, richAST); t != "" {
+					return t
+				}
 			}
 		}
 		if isExported(name) {
-			return resolveConstructorReturnType(name, richAST)
+			if t := resolveConstructorReturnType(name, richAST); t != "" {
+				return t
+			}
 		}
 	}
 
