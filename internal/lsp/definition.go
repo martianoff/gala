@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/owenrumney/go-lsp/lsp"
+
+	"martianoff/gala/internal/transpiler"
 )
 
 func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionParams) ([]lsp.Location, error) {
@@ -29,8 +31,13 @@ func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionPara
 	char := int(params.Position.Character)
 
 	// Check if cursor is on a pattern binding (case Xxx(b, h) =>)
-	// Pattern bindings define themselves — navigate to the binding site
 	if loc := patternBindingDefinition(text, word, uri, line, char); loc != nil {
+		return []lsp.Location{*loc}, nil
+	}
+
+	// Check if it's a dot-accessed method: receiver.Method
+	// Resolve receiver type to find the correct method definition
+	if loc := dotMethodDefinition(text, word, uri, line, char, richAST); loc != nil {
 		return []lsp.Location{*loc}, nil
 	}
 
@@ -172,6 +179,80 @@ func patternBindingDefinition(text, word, uri string, curLine, curChar int) *lsp
 			}
 		}
 	}
+	return nil
+}
+
+// dotMethodDefinition resolves receiver.Method to the correct method definition.
+func dotMethodDefinition(text, word, uri string, curLine, curChar int, richAST *transpiler.RichAST) *lsp.Location {
+	if richAST == nil {
+		return nil
+	}
+	lines := strings.Split(text, "\n")
+	if curLine >= len(lines) {
+		return nil
+	}
+	l := lines[curLine]
+
+	// Check if there's a dot before the word
+	wordStart := curChar
+	for wordStart > 0 && isIdentChar(l[wordStart-1]) {
+		wordStart--
+	}
+	if wordStart <= 0 || l[wordStart-1] != '.' {
+		return nil
+	}
+
+	// Get the receiver name before the dot
+	dotPos := wordStart - 1
+	recvEnd := dotPos
+	recvStart := recvEnd - 1
+	for recvStart >= 0 && isIdentChar(l[recvStart]) {
+		recvStart--
+	}
+	recvStart++
+	if recvStart >= recvEnd {
+		return nil
+	}
+	receiverName := l[recvStart:recvEnd]
+
+	// Resolve receiver type
+	receiverType := resolveBaseType(receiverName, text, curLine, richAST)
+	if receiverType == "" {
+		return nil
+	}
+
+	// Find the method on this type
+	tm := findType(richAST, receiverType)
+	if tm == nil {
+		return nil
+	}
+	method, ok := tm.Methods[word]
+	if !ok {
+		return nil
+	}
+
+	// Navigate to the method's definition
+	if method.DefinedIn != "" {
+		return fileLocation(method.DefinedIn, word)
+	}
+
+	// Search in current file for "func (recv Type) MethodName"
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "func ") && strings.Contains(trimmed, receiverType) && strings.Contains(trimmed, word) {
+			col := strings.Index(line, word)
+			if col >= 0 {
+				return &lsp.Location{
+					URI: lsp.DocumentURI(uri),
+					Range: lsp.Range{
+						Start: lsp.Position{Line: i, Character: col},
+						End:   lsp.Position{Line: i, Character: col + len(word)},
+					},
+				}
+			}
+		}
+	}
+
 	return nil
 }
 

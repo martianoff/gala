@@ -28,6 +28,9 @@ func (h *GalaHandler) InlayHint(ctx context.Context, params *lsp.InlayHintParams
 	goSrc := h.goCode[uri]
 	h.mu.Unlock()
 
+	// Extract types from generated Go code using go/types (most accurate)
+	goTypes := extractTypesFromGoCode(goSrc)
+
 	if text == "" || richAST == nil {
 		return nil, nil
 	}
@@ -41,10 +44,10 @@ func (h *GalaHandler) InlayHint(ctx context.Context, params *lsp.InlayHintParams
 		}
 
 		// 1. val/var declarations without explicit type
-		hints = append(hints, valDeclHints(line, i, text, goSrc, richAST)...)
+		hints = append(hints, valDeclHints(line, i, text, goTypes, richAST)...)
 
 		// 1b. Short declarations: name := expr
-		hints = append(hints, shortDeclHints(line, i, text, richAST)...)
+		hints = append(hints, shortDeclHints(line, i, text, goTypes, richAST)...)
 
 		// 2. Lambda parameters without types: (x) => or (x, y) =>
 		hints = append(hints, lambdaParamHints(line, i, text, richAST)...)
@@ -56,7 +59,7 @@ func (h *GalaHandler) InlayHint(ctx context.Context, params *lsp.InlayHintParams
 	return hints, nil
 }
 
-func valDeclHints(line string, lineNum int, fullText, goSrc string, richAST *transpiler.RichAST) []lsp.InlayHint {
+func valDeclHints(line string, lineNum int, fullText string, goTypes map[string]string, richAST *transpiler.RichAST) []lsp.InlayHint {
 	matches := valDeclRegex.FindStringSubmatchIndex(line)
 	if matches == nil {
 		return nil
@@ -78,8 +81,8 @@ func valDeclHints(line string, lineNum int, fullText, goSrc string, richAST *tra
 	rhs := strings.TrimSpace(line[rhsStart:])
 	varName := line[matches[4]:matches[5]]
 
-	// 1. Try extracting type from generated Go code (most accurate)
-	inferredType := extractTypeFromGoCode(goSrc, varName)
+	// 1. Try go/types result (most accurate — uses Go type checker)
+	inferredType := goTypes[varName]
 
 	// 2. Fall back to chain resolution
 	if inferredType == "" {
@@ -96,14 +99,22 @@ func valDeclHints(line string, lineNum int, fullText, goSrc string, richAST *tra
 	return []lsp.InlayHint{makeTypeHint(lineNum, matches[5], inferredType)}
 }
 
-func shortDeclHints(line string, lineNum int, fullText string, richAST *transpiler.RichAST) []lsp.InlayHint {
+func shortDeclHints(line string, lineNum int, fullText string, goTypes map[string]string, richAST *transpiler.RichAST) []lsp.InlayHint {
 	m := shortDeclRegex.FindStringSubmatchIndex(line)
 	if m == nil {
 		return nil
 	}
 	// m[2]:m[3] is the variable name, m[4]:m[5] is the RHS
+	varName := line[m[2]:m[3]]
 	rhs := strings.TrimSpace(line[m[4]:m[5]])
-	inferredType := inferRHSTypeInContext(rhs, fullText, lineNum, richAST)
+
+	// 1. Try go/types
+	inferredType := goTypes[varName]
+
+	// 2. Fall back
+	if inferredType == "" {
+		inferredType = inferRHSTypeInContext(rhs, fullText, lineNum, richAST)
+	}
 	if inferredType == "" {
 		inferredType = inferType(rhs, richAST)
 	}
