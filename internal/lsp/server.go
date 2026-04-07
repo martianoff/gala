@@ -27,9 +27,7 @@ type GalaHandler struct {
 	mu        sync.Mutex
 	documents map[string]string              // URI -> source text
 	richASTs  map[string]*transpiler.RichAST // URI -> analyzed AST
-
-	// For sending diagnostics back to the client
-	diagCallback func(uri string, diagnostics []lsp.Diagnostic)
+	goCode    map[string]string              // URI -> generated Go code (for type extraction)
 }
 
 // NewGalaHandler creates a new GALA LSP handler.
@@ -37,6 +35,7 @@ func NewGalaHandler() *GalaHandler {
 	return &GalaHandler{
 		documents:   make(map[string]string),
 		richASTs:    make(map[string]*transpiler.RichAST),
+		goCode:      make(map[string]string),
 		parser:      transpiler.NewAntlrGalaParser(),
 		transformer: transformer.NewGalaASTTransformer(),
 		generator:   generator.NewGoCodeGenerator(),
@@ -159,9 +158,19 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 	h.richASTs[uri] = richAST
 	h.mu.Unlock()
 
-	_, _, err = h.transformer.Transform(richAST)
-	if err != nil {
-		diagnostics = append(diagnostics, errorToDiagnostic(err))
+	fset, goFile, transformErr := h.transformer.Transform(richAST)
+	if transformErr != nil {
+		diagnostics = append(diagnostics, errorToDiagnostic(transformErr))
+	}
+
+	// Generate Go code and cache it for type extraction
+	if goFile != nil {
+		goSrc, genErr := h.generator.Generate(fset, goFile)
+		if genErr == nil {
+			h.mu.Lock()
+			h.goCode[uri] = goSrc
+			h.mu.Unlock()
+		}
 	}
 
 	diagnostics = append(diagnostics, checkMatchExhaustiveness(text, richAST)...)

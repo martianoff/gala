@@ -25,6 +25,7 @@ func (h *GalaHandler) InlayHint(ctx context.Context, params *lsp.InlayHintParams
 	h.mu.Lock()
 	text := h.documents[uri]
 	richAST := h.richASTs[uri]
+	goSrc := h.goCode[uri]
 	h.mu.Unlock()
 
 	if text == "" || richAST == nil {
@@ -40,7 +41,7 @@ func (h *GalaHandler) InlayHint(ctx context.Context, params *lsp.InlayHintParams
 		}
 
 		// 1. val/var declarations without explicit type
-		hints = append(hints, valDeclHints(line, i, text, richAST)...)
+		hints = append(hints, valDeclHints(line, i, text, goSrc, richAST)...)
 
 		// 1b. Short declarations: name := expr
 		hints = append(hints, shortDeclHints(line, i, text, richAST)...)
@@ -55,7 +56,7 @@ func (h *GalaHandler) InlayHint(ctx context.Context, params *lsp.InlayHintParams
 	return hints, nil
 }
 
-func valDeclHints(line string, lineNum int, fullText string, richAST *transpiler.RichAST) []lsp.InlayHint {
+func valDeclHints(line string, lineNum int, fullText, goSrc string, richAST *transpiler.RichAST) []lsp.InlayHint {
 	matches := valDeclRegex.FindStringSubmatchIndex(line)
 	if matches == nil {
 		return nil
@@ -75,8 +76,15 @@ func valDeclHints(line string, lineNum int, fullText string, richAST *transpiler
 		return nil
 	}
 	rhs := strings.TrimSpace(line[rhsStart:])
-	// Use inferRHSType for full chain resolution (opt.Map(...) → Option)
-	inferredType := inferRHSTypeInContext(rhs, fullText, lineNum, richAST)
+	varName := line[matches[4]:matches[5]]
+
+	// 1. Try extracting type from generated Go code (most accurate)
+	inferredType := extractTypeFromGoCode(goSrc, varName)
+
+	// 2. Fall back to chain resolution
+	if inferredType == "" {
+		inferredType = inferRHSTypeInContext(rhs, fullText, lineNum, richAST)
+	}
 	if inferredType == "" {
 		// Fallback to simple inference
 		inferredType = inferType(rhs, richAST)
@@ -278,6 +286,74 @@ func inferLambdaParamType(line, paramName, fullText string, lineNum int, richAST
 	return ""
 }
 
+// inferTypeArgsFromArgs infers generic type arguments from constructor arguments.
+// For Some("hello") → [string], Some(42) → [int], Tuple(1, "a") → [int, string]
+func inferTypeArgsFromArgs(argsExpr string, richAST *transpiler.RichAST) string {
+	// Extract the arguments: "(arg1, arg2, ...)"
+	if !strings.HasPrefix(argsExpr, "(") {
+		return ""
+	}
+	// Find matching close paren
+	depth := 0
+	end := -1
+	for i, ch := range argsExpr {
+		if ch == '(' {
+			depth++
+		} else if ch == ')' {
+			depth--
+			if depth == 0 {
+				end = i
+				break
+			}
+		}
+	}
+	if end <= 1 {
+		return ""
+	}
+	inner := argsExpr[1:end]
+	if inner == "" {
+		return ""
+	}
+
+	// Split args (respecting nested parens)
+	args := splitArgs(inner)
+	if len(args) == 0 {
+		return ""
+	}
+
+	// Infer type of each arg
+	var typeArgs []string
+	for _, arg := range args {
+		arg = strings.TrimSpace(arg)
+		t := inferType(arg, richAST)
+		if t == "" {
+			return "" // Can't infer all args
+		}
+		typeArgs = append(typeArgs, t)
+	}
+
+	return "[" + strings.Join(typeArgs, ", ") + "]"
+}
+
+// splitArgs splits "a, b, c" respecting nested parens.
+func splitArgs(s string) []string {
+	var args []string
+	depth := 0
+	start := 0
+	for i, ch := range s {
+		if ch == '(' || ch == '[' || ch == '{' {
+			depth++
+		} else if ch == ')' || ch == ']' || ch == '}' {
+			depth--
+		} else if ch == ',' && depth == 0 {
+			args = append(args, s[start:i])
+			start = i + 1
+		}
+	}
+	args = append(args, s[start:])
+	return args
+}
+
 // cleanTypeName strips package prefixes like "std." for display.
 func cleanTypeName(name string) string {
 	name = strings.ReplaceAll(name, "std.", "")
@@ -358,11 +434,15 @@ func inferType(expr string, richAST *transpiler.RichAST) string {
 		if dotIdx := strings.LastIndex(name, "."); dotIdx > 0 {
 			simpleName := name[dotIdx+1:]
 			if isExported(simpleName) {
-				return resolveConstructorReturnType(simpleName, richAST)
+				if t := resolveConstructorReturnType(simpleName, richAST); t != "" {
+					return t + inferTypeArgsFromArgs(expr[idx:], richAST)
+				}
 			}
 		}
 		if isExported(name) {
-			return resolveConstructorReturnType(name, richAST)
+			if t := resolveConstructorReturnType(name, richAST); t != "" {
+				return t + inferTypeArgsFromArgs(expr[idx:], richAST)
+			}
 		}
 	}
 

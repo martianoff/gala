@@ -6,6 +6,7 @@ go_library(
         "completion.go",
         "definition.go",
         "diagnostics.go",
+        "gotype.go",
         "hover.go",
         "inlay_hints.go",
         "server.go",
