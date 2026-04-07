@@ -330,7 +330,21 @@ func resolveConstructorReturnType(name string, richAST *transpiler.RichAST) stri
 }
 
 // inferRHSType infers the type from the right-hand side of an assignment.
+// inferRHSTypeInContext infers the type from an RHS expression with full source context.
+func inferRHSTypeInContext(rhs, srcText string, srcLine int, richAST *transpiler.RichAST) string {
+	result := inferRHSTypeImpl(rhs, srcText, srcLine, richAST)
+	if result != "" {
+		return result
+	}
+	return ""
+}
+
+// inferRHSType infers the type without source context (for simple expressions only).
 func inferRHSType(rhs string, richAST *transpiler.RichAST) string {
+	return inferRHSTypeImpl(rhs, "", 0, richAST)
+}
+
+func inferRHSTypeImpl(rhs, srcText string, srcLine int, richAST *transpiler.RichAST) string {
 	rhs = strings.TrimSpace(rhs)
 
 	// String literals
@@ -367,7 +381,7 @@ func inferRHSType(rhs string, richAST *transpiler.RichAST) string {
 	if strings.Contains(rhs, ".") {
 		chain := splitChain(rhs)
 		if len(chain) > 1 {
-			baseType := resolveBaseType(chain[0], "", 0, richAST)
+			baseType := resolveBaseType(chain[0], srcText, srcLine, richAST)
 			if baseType != "" {
 				currentType := baseType
 				for i := 1; i < len(chain); i++ {

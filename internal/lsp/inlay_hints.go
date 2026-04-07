@@ -40,10 +40,10 @@ func (h *GalaHandler) InlayHint(ctx context.Context, params *lsp.InlayHintParams
 		}
 
 		// 1. val/var declarations without explicit type
-		hints = append(hints, valDeclHints(line, i, richAST)...)
+		hints = append(hints, valDeclHints(line, i, text, richAST)...)
 
 		// 1b. Short declarations: name := expr
-		hints = append(hints, shortDeclHints(line, i, richAST)...)
+		hints = append(hints, shortDeclHints(line, i, text, richAST)...)
 
 		// 2. Lambda parameters without types: (x) => or (x, y) =>
 		hints = append(hints, lambdaParamHints(line, i, text, richAST)...)
@@ -55,7 +55,7 @@ func (h *GalaHandler) InlayHint(ctx context.Context, params *lsp.InlayHintParams
 	return hints, nil
 }
 
-func valDeclHints(line string, lineNum int, richAST *transpiler.RichAST) []lsp.InlayHint {
+func valDeclHints(line string, lineNum int, fullText string, richAST *transpiler.RichAST) []lsp.InlayHint {
 	matches := valDeclRegex.FindStringSubmatchIndex(line)
 	if matches == nil {
 		return nil
@@ -76,7 +76,7 @@ func valDeclHints(line string, lineNum int, richAST *transpiler.RichAST) []lsp.I
 	}
 	rhs := strings.TrimSpace(line[rhsStart:])
 	// Use inferRHSType for full chain resolution (opt.Map(...) → Option)
-	inferredType := inferRHSType(rhs, richAST)
+	inferredType := inferRHSTypeInContext(rhs, fullText, lineNum, richAST)
 	if inferredType == "" {
 		// Fallback to simple inference
 		inferredType = inferType(rhs, richAST)
@@ -88,14 +88,14 @@ func valDeclHints(line string, lineNum int, richAST *transpiler.RichAST) []lsp.I
 	return []lsp.InlayHint{makeTypeHint(lineNum, matches[5], inferredType)}
 }
 
-func shortDeclHints(line string, lineNum int, richAST *transpiler.RichAST) []lsp.InlayHint {
+func shortDeclHints(line string, lineNum int, fullText string, richAST *transpiler.RichAST) []lsp.InlayHint {
 	m := shortDeclRegex.FindStringSubmatchIndex(line)
 	if m == nil {
 		return nil
 	}
 	// m[2]:m[3] is the variable name, m[4]:m[5] is the RHS
 	rhs := strings.TrimSpace(line[m[4]:m[5]])
-	inferredType := inferRHSType(rhs, richAST)
+	inferredType := inferRHSTypeInContext(rhs, fullText, lineNum, richAST)
 	if inferredType == "" {
 		inferredType = inferType(rhs, richAST)
 	}
@@ -317,28 +317,40 @@ func inferType(expr string, richAST *transpiler.RichAST) string {
 		return "int"
 	}
 
+	// If expression: if (cond) expr else expr
+	if strings.HasPrefix(expr, "if ") || strings.HasPrefix(expr, "if(") {
+		// Try to infer from the "else" branch (simpler expression usually)
+		if elseIdx := strings.LastIndex(expr, "else "); elseIdx > 0 {
+			elseBranch := strings.TrimSpace(expr[elseIdx+5:])
+			if t := inferType(elseBranch, richAST); t != "" {
+				return t
+			}
+		}
+	}
+
+	// Constructor with explicit type args: Left[string, int](...) → Either[string, int]
+	if bracketIdx := strings.Index(expr, "["); bracketIdx > 0 {
+		parenIdx := strings.Index(expr, "(")
+		if parenIdx > bracketIdx {
+			name := expr[:bracketIdx]
+			typeArgs := expr[bracketIdx:parenIdx]
+			if isExported(name) {
+				parentType := resolveConstructorReturnType(name, richAST)
+				return parentType + typeArgs
+			}
+		}
+	}
+
 	if idx := strings.IndexAny(expr, "(["); idx > 0 {
 		name := expr[:idx]
 		// Handle pkg.TypeName(...)
 		if dotIdx := strings.LastIndex(name, "."); dotIdx > 0 {
 			simpleName := name[dotIdx+1:]
 			if isExported(simpleName) {
-				// Preserve explicit type args: Left[string, int](...) → Either[string, int]
-				if bracketIdx := strings.Index(expr, "["); bracketIdx > 0 && bracketIdx < idx {
-					typeArgs := expr[bracketIdx:idx]
-					result := resolveConstructorReturnType(simpleName, richAST)
-					return result + typeArgs
-				}
 				return resolveConstructorReturnType(simpleName, richAST)
 			}
 		}
 		if isExported(name) {
-			// Preserve explicit type args
-			if bracketIdx := strings.Index(expr, "["); bracketIdx > 0 && bracketIdx < idx {
-				typeArgs := expr[bracketIdx:idx]
-				result := resolveConstructorReturnType(name, richAST)
-				return result + typeArgs
-			}
 			return resolveConstructorReturnType(name, richAST)
 		}
 	}
