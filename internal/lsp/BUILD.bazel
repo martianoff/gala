@@ -29,6 +29,7 @@ go_test(
     srcs = ["server_test.go"],
     deps = [
         ":lsp",
+        "@com_github_owenrumney_go_lsp//lsp",
         "@com_github_owenrumney_go_lsp//servertest",
     ],
 )
