@@ -49,6 +49,41 @@ func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionPara
 		}
 	}
 
+	// Check struct/sealed fields — named arg field names like Circle(radius = ...)
+	for _, typeMeta := range richAST.Types {
+		// Check regular struct fields
+		for _, fn := range typeMeta.FieldNames {
+			if fn == word {
+				if typeMeta.DefinedIn != "" {
+					loc := fileLocation(typeMeta.DefinedIn, word)
+					if loc != nil {
+						return []lsp.Location{*loc}, nil
+					}
+				}
+				// Fall back to finding it in current file
+				loc := localDefinition(text, word, uri)
+				if loc != nil {
+					return []lsp.Location{*loc}, nil
+				}
+			}
+		}
+		// Check sealed variant fields
+		for _, v := range typeMeta.SealedVariants {
+			for _, fn := range v.FieldNames {
+				if fn == word {
+					// Navigate to the sealed case declaration
+					loc := localDefinition(text, v.Name, uri)
+					if loc == nil && typeMeta.DefinedIn != "" {
+						loc = fileLocation(typeMeta.DefinedIn, v.Name)
+					}
+					if loc != nil {
+						return []lsp.Location{*loc}, nil
+					}
+				}
+			}
+		}
+	}
+
 	// Check import paths — clicking a package name navigates to its directory
 	for path, pkgName := range richAST.Packages {
 		if pkgName == word || word == path {
