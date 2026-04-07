@@ -61,6 +61,7 @@ type galaASTTransformer struct {
 	structMetas           map[string]*structMetaConfig  // generated StructMeta structs (keyed by generated name)
 	instanceInterfaceNames map[string]string            // type name -> actual generated interface name (for collision avoidance)
 	expectedIfExprType     ast.Expr                     // FIX-052: expected return type for if-expression IIFE (set by expression-bodied function handler)
+	lspVarTypes            map[string]transpiler.Type   // LSP: collects all resolved var types during transformation
 }
 
 // NewGalaASTTransformer creates a new instance of ASTTransformer for GALA.
@@ -83,6 +84,23 @@ func NewGalaASTTransformer() transpiler.ASTTransformer {
 	}
 }
 
+func (t *galaASTTransformer) TransformForLSP(richAST *transpiler.RichAST) (*transpiler.TransformResult, error) {
+	fset, file, err := t.Transform(richAST)
+	if err != nil {
+		return nil, err
+	}
+	// Convert internal Type objects to display strings
+	varTypes := make(map[string]transpiler.Type, len(t.lspVarTypes))
+	for name, typ := range t.lspVarTypes {
+		varTypes[name] = typ
+	}
+	return &transpiler.TransformResult{
+		Fset:     fset,
+		File:     file,
+		VarTypes: varTypes,
+	}, nil
+}
+
 func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token.FileSet, file *ast.File, err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -95,6 +113,7 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 	}()
 	tree := richAST.Tree
 	t.currentScope = nil
+	t.lspVarTypes = make(map[string]transpiler.Type)
 	t.needsStdImport = false
 	t.needsFmtImport = false
 	t.immutFields = make(map[string]bool)

@@ -30,6 +30,10 @@ func (t *galaASTTransformer) addVal(name string, typeName transpiler.Type) {
 		t.currentScope.vals[name] = true
 		t.currentScope.valTypes[name] = typeName
 	}
+	// Collect for LSP
+	if t.lspVarTypes != nil && typeName != nil && !typeName.IsNil() {
+		t.lspVarTypes[name] = typeName
+	}
 }
 
 func (t *galaASTTransformer) addVar(name string, typeName transpiler.Type) {
@@ -37,6 +41,26 @@ func (t *galaASTTransformer) addVar(name string, typeName transpiler.Type) {
 		t.currentScope.vals[name] = false
 		t.currentScope.valTypes[name] = typeName
 	}
+	// Collect for LSP
+	if t.lspVarTypes != nil && typeName != nil && !typeName.IsNil() {
+		t.lspVarTypes[name] = typeName
+	}
+}
+
+// collectAllVarTypes returns all variable types from the current scope stack.
+// Used by LSP to expose the transformer's resolved types.
+func (t *galaASTTransformer) collectAllVarTypes() map[string]transpiler.Type {
+	result := make(map[string]transpiler.Type)
+	s := t.currentScope
+	for s != nil {
+		for name, typ := range s.valTypes {
+			if _, exists := result[name]; !exists {
+				result[name] = typ
+			}
+		}
+		s = s.parent
+	}
+	return result
 }
 
 func (t *galaASTTransformer) getType(name string) transpiler.Type {

@@ -224,9 +224,21 @@ type Analyzer interface {
 	Analyze(tree antlr.Tree, filePath string) (*RichAST, error)
 }
 
+// TransformResult holds the output of a GALA-to-Go AST transformation.
+type TransformResult struct {
+	Fset     *token.FileSet
+	File     *ast.File
+	// VarTypes maps variable names to their resolved GALA types.
+	// Populated from the transformer's scope after transformation.
+	// Used by the LSP server for inlay hints and type-aware completion.
+	VarTypes map[string]Type
+}
+
 // ASTTransformer transforms a Gala RichAST into a Go AST file and its FileSet.
 type ASTTransformer interface {
 	Transform(richAST *RichAST) (*token.FileSet, *ast.File, error)
+	// TransformForLSP is like Transform but also returns resolved variable types.
+	TransformForLSP(richAST *RichAST) (*TransformResult, error)
 }
 
 // CodeGenerator generates Go source code from a Go AST file and its FileSet.

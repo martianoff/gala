@@ -4,8 +4,6 @@ package lsp
 import (
 	"context"
 	"fmt"
-	"go/ast"
-	"go/token"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -29,9 +27,7 @@ type GalaHandler struct {
 	mu        sync.Mutex
 	documents map[string]string              // URI -> source text
 	richASTs  map[string]*transpiler.RichAST // URI -> analyzed AST
-	goASTs    map[string]*ast.File           // URI -> generated Go AST
-	goFsets   map[string]*token.FileSet      // URI -> Go file set
-	goTypes   map[string]map[string]string   // URI -> (varName -> type) from go/types
+	varTypes  map[string]map[string]string   // URI -> (varName -> type) from transpiler
 }
 
 // NewGalaHandler creates a new GALA LSP handler.
@@ -39,9 +35,7 @@ func NewGalaHandler() *GalaHandler {
 	return &GalaHandler{
 		documents:   make(map[string]string),
 		richASTs:    make(map[string]*transpiler.RichAST),
-		goASTs:      make(map[string]*ast.File),
-		goFsets:     make(map[string]*token.FileSet),
-		goTypes:     make(map[string]map[string]string),
+		varTypes:    make(map[string]map[string]string),
 		parser:      transpiler.NewAntlrGalaParser(),
 		transformer: transformer.NewGalaASTTransformer(),
 		generator:   generator.NewGoCodeGenerator(),
@@ -164,18 +158,20 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 	h.richASTs[uri] = richAST
 	h.mu.Unlock()
 
-	fset, goFile, transformErr := h.transformer.Transform(richAST)
+	// Use TransformForLSP to get resolved variable types directly from the transpiler
+	result, transformErr := h.transformer.TransformForLSP(richAST)
 	if transformErr != nil {
 		diagnostics = append(diagnostics, errorToDiagnostic(transformErr))
 	}
 
-	// Cache the Go AST + FileSet + resolved types for type extraction
-	if goFile != nil {
-		typeMap := extractTypesFromGoAST(fset, goFile)
+	// Cache the transpiler's resolved variable types
+	if result != nil && result.VarTypes != nil {
+		typeMap := make(map[string]string, len(result.VarTypes))
+		for name, typ := range result.VarTypes {
+			typeMap[name] = cleanGoTypeForDisplay(typ.String())
+		}
 		h.mu.Lock()
-		h.goASTs[uri] = goFile
-		h.goFsets[uri] = fset
-		h.goTypes[uri] = typeMap
+		h.varTypes[uri] = typeMap
 		h.mu.Unlock()
 	}
 

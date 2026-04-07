@@ -25,15 +25,11 @@ func (h *GalaHandler) InlayHint(ctx context.Context, params *lsp.InlayHintParams
 	h.mu.Lock()
 	text := h.documents[uri]
 	richAST := h.richASTs[uri]
-	goAST := h.goASTs[uri]
-	goFset := h.goFsets[uri]
+	varTypeMap := h.varTypes[uri]
 	h.mu.Unlock()
 
-	// Extract types from the transpiler's Go AST using go/types
-	goTypes := extractTypesFromGoAST(goFset, goAST)
-
-	// Make go/types results available to resolveBaseType for chain resolution
-	resolvedTypes = goTypes
+	// Make transpiler's resolved types available for chain resolution
+	resolvedTypes = varTypeMap
 	defer func() { resolvedTypes = nil }()
 
 	if text == "" || richAST == nil {
@@ -49,10 +45,10 @@ func (h *GalaHandler) InlayHint(ctx context.Context, params *lsp.InlayHintParams
 		}
 
 		// 1. val/var declarations without explicit type
-		hints = append(hints, valDeclHints(line, i, text, goTypes, richAST)...)
+		hints = append(hints, valDeclHints(line, i, text, varTypeMap, richAST)...)
 
 		// 1b. Short declarations: name := expr
-		hints = append(hints, shortDeclHints(line, i, text, goTypes, richAST)...)
+		hints = append(hints, shortDeclHints(line, i, text, varTypeMap, richAST)...)
 
 		// 2. Lambda parameters without types: (x) => or (x, y) =>
 		hints = append(hints, lambdaParamHints(line, i, text, richAST)...)
