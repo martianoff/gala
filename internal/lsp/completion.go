@@ -18,6 +18,7 @@ func (h *GalaHandler) Completion(ctx context.Context, params *lsp.CompletionPara
 	h.mu.Lock()
 	text := h.documents[uri]
 	richAST := h.richASTs[uri]
+	varTypeMap := h.varTypes[uri]
 	h.mu.Unlock()
 
 	var items []lsp.CompletionItem
@@ -26,7 +27,7 @@ func (h *GalaHandler) Completion(ctx context.Context, params *lsp.CompletionPara
 
 	if isDot && richAST != nil {
 		// Resolve the type of the expression before the dot
-		receiverType := typeAtDot(text, line, char, richAST)
+		receiverType := typeAtDot(text, line, char, richAST, varTypeMap)
 		if receiverType != "" {
 			items = append(items, typeSpecificCompletions(richAST, receiverType)...)
 		} else {

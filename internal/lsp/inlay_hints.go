@@ -13,9 +13,8 @@ import (
 
 var (
 	valDeclRegex     = regexp.MustCompile(`^\s*(val|var)\s+(\w+)\s*=`)
-	shortDeclRegex   = regexp.MustCompile(`^\s*(\w+)\s*:=\s*(.+)$`)
-	lambdaParamRegex = regexp.MustCompile(`\(([^)]*)\)\s*=>`)
-	forRangeRegex    = regexp.MustCompile(`^\s*for\s+(\w+(?:\s*,\s*\w+)?)\s+(?::=\s+)?range\s+(\w+)`)
+	valTypedRegex    = regexp.MustCompile(`^\s*(val|var)\s+(\w+)\s+\w`)
+	shortDeclRegex   = regexp.MustCompile(`^\s*(\w+)\s*:=\s*`)
 	casePatternRegex = regexp.MustCompile(`^\s*case\s+(\w+)\(([^)]*)\)`)
 )
 
@@ -28,11 +27,7 @@ func (h *GalaHandler) InlayHint(ctx context.Context, params *lsp.InlayHintParams
 	varTypeMap := h.varTypes[uri]
 	h.mu.Unlock()
 
-	// Make transpiler's resolved types available for chain resolution
-	resolvedTypes = varTypeMap
-	defer func() { resolvedTypes = nil }()
-
-	if text == "" || richAST == nil {
+	if text == "" {
 		return nil, nil
 	}
 
@@ -44,139 +39,48 @@ func (h *GalaHandler) InlayHint(ctx context.Context, params *lsp.InlayHintParams
 			continue
 		}
 
-		// 1. val/var declarations without explicit type
-		hints = append(hints, valDeclHints(line, i, text, varTypeMap, richAST)...)
+		// val/var declarations without explicit type
+		if m := valDeclRegex.FindStringSubmatchIndex(line); m != nil {
+			varName := line[m[4]:m[5]]
+			// Skip if has explicit type annotation
+			eqIdx := strings.Index(line[m[5]:], "=")
+			if eqIdx >= 0 {
+				between := strings.TrimSpace(line[m[5] : m[5]+eqIdx])
+				if between == "" {
+					// No explicit type — show hint from transpiler
+					if typStr, ok := varTypeMap[varName]; ok {
+						hints = append(hints, makeTypeHint(i, m[5], typStr))
+					}
+				}
+			}
+		}
 
-		// 1b. Short declarations: name := expr
-		hints = append(hints, shortDeclHints(line, i, text, varTypeMap, richAST)...)
+		// Short declarations: name := expr
+		if m := shortDeclRegex.FindStringSubmatchIndex(line); m != nil {
+			varName := line[m[2]:m[3]]
+			if typStr, ok := varTypeMap[varName]; ok {
+				hints = append(hints, makeTypeHint(i, m[3], typStr))
+			}
+		}
 
-		// 2. Lambda parameters without types: (x) => or (x, y) =>
-		hints = append(hints, lambdaParamHints(line, i, text, richAST)...)
-
-		// 3. Pattern match bindings: case Some(x) =>
-		hints = append(hints, casePatternHints(line, i, richAST)...)
+		// Pattern match bindings: case Constructor(a, b) =>
+		if richAST != nil {
+			hints = append(hints, casePatternHints(line, i, richAST)...)
+		}
 	}
 
 	return hints, nil
 }
 
-func valDeclHints(line string, lineNum int, fullText string, goTypes map[string]string, richAST *transpiler.RichAST) []lsp.InlayHint {
-	matches := valDeclRegex.FindStringSubmatchIndex(line)
-	if matches == nil {
-		return nil
-	}
-
-	eqIdx := strings.Index(line[matches[5]:], "=")
-	if eqIdx < 0 {
-		return nil
-	}
-	between := strings.TrimSpace(line[matches[5] : matches[5]+eqIdx])
-	if between != "" {
-		return nil // Has explicit type
-	}
-
-	rhsStart := matches[5] + eqIdx + 1
-	if rhsStart >= len(line) {
-		return nil
-	}
-	rhs := strings.TrimSpace(line[rhsStart:])
-	varName := line[matches[4]:matches[5]]
-
-	// 1. Try go/types result (most accurate — uses Go type checker)
-	inferredType := goTypes[varName]
-
-	// 2. Fall back to chain resolution
-	if inferredType == "" {
-		inferredType = inferRHSTypeInContext(rhs, fullText, lineNum, richAST)
-	}
-	if inferredType == "" {
-		// Fallback to simple inference
-		inferredType = inferType(rhs, richAST)
-	}
-	if inferredType == "" {
-		return nil
-	}
-
-	return []lsp.InlayHint{makeTypeHint(lineNum, matches[5], inferredType)}
-}
-
-func shortDeclHints(line string, lineNum int, fullText string, goTypes map[string]string, richAST *transpiler.RichAST) []lsp.InlayHint {
-	m := shortDeclRegex.FindStringSubmatchIndex(line)
-	if m == nil {
-		return nil
-	}
-	// m[2]:m[3] is the variable name, m[4]:m[5] is the RHS
-	varName := line[m[2]:m[3]]
-	rhs := strings.TrimSpace(line[m[4]:m[5]])
-
-	// 1. Try go/types
-	inferredType := goTypes[varName]
-
-	// 2. Fall back
-	if inferredType == "" {
-		inferredType = inferRHSTypeInContext(rhs, fullText, lineNum, richAST)
-	}
-	if inferredType == "" {
-		inferredType = inferType(rhs, richAST)
-	}
-	if inferredType == "" {
-		return nil
-	}
-	return []lsp.InlayHint{makeTypeHint(lineNum, m[3], inferredType)}
-}
-
-func lambdaParamHints(line string, lineNum int, fullText string, richAST *transpiler.RichAST) []lsp.InlayHint {
-	// Find lambda patterns: (x) => or (x, y) =>
-	matches := lambdaParamRegex.FindAllStringSubmatchIndex(line, -1)
-	if matches == nil {
-		return nil
-	}
-
-	var hints []lsp.InlayHint
-	for _, m := range matches {
-		// m[2]:m[3] is the params group
-		paramsStr := line[m[2]:m[3]]
-		params := strings.Split(paramsStr, ",")
-
-		for _, param := range params {
-			param = strings.TrimSpace(param)
-			if param == "" {
-				continue
-			}
-			// Skip if already has a type annotation (contains space after name)
-			parts := strings.Fields(param)
-			if len(parts) > 1 {
-				continue // Has explicit type
-			}
-			paramName := parts[0]
-
-			// Try to infer from context — look for the method being called
-			// e.g., list.Map((x) => ...) — x is the element type of list
-			lambdaType := inferLambdaParamType(line, paramName, fullText, lineNum, richAST)
-			if lambdaType != "" {
-				// Find the param position in the line
-				paramPos := strings.Index(line[m[2]:m[3]], paramName)
-				if paramPos >= 0 {
-					col := m[2] + paramPos + len(paramName)
-					hints = append(hints, makeTypeHint(lineNum, col, lambdaType))
-				}
-			}
-		}
-	}
-	return hints
-}
-
 func casePatternHints(line string, lineNum int, richAST *transpiler.RichAST) []lsp.InlayHint {
-	// Match: case Some(x) => or case Left(val) =>
 	m := casePatternRegex.FindStringSubmatch(line)
 	if m == nil {
 		return nil
 	}
 
-	constructorName := m[1] // e.g., "Some", "Left"
-	bindings := m[2]         // e.g., "x" or "val, key"
+	constructorName := m[1]
+	bindings := m[2]
 
-	// Find the sealed type and variant
 	var variant *transpiler.SealedVariant
 	for _, tm := range richAST.Types {
 		if !tm.IsSealed {
@@ -192,35 +96,28 @@ func casePatternHints(line string, lineNum int, richAST *transpiler.RichAST) []l
 			break
 		}
 	}
-
 	if variant == nil {
 		return nil
 	}
 
-	// Find the position of the bindings within parentheses: case Name(bindings)
 	parenOpen := strings.Index(line, constructorName+"(")
 	if parenOpen < 0 {
 		return nil
 	}
-	bindingsStart := parenOpen + len(constructorName) + 1 // position after '('
+	bindingsStart := parenOpen + len(constructorName) + 1
 
 	var hints []lsp.InlayHint
-	bindingParts := strings.Split(bindings, ",")
-	for i, binding := range bindingParts {
+	parts := strings.Split(bindings, ",")
+	for i, binding := range parts {
 		binding = strings.TrimSpace(binding)
-		if binding == "" || binding == "_" {
-			continue
-		}
-		// Skip if already has type annotation
-		if strings.Contains(binding, " ") {
+		if binding == "" || binding == "_" || strings.Contains(binding, " ") {
 			continue
 		}
 		if i < len(variant.FieldTypes) {
-			typeName := variant.FieldTypes[i].String()
-			// Find position within the parenthesized bindings only
+			typeName := cleanGoTypeForDisplay(variant.FieldTypes[i].String())
 			pos := strings.Index(line[bindingsStart:], binding)
 			if pos >= 0 {
-				pos += bindingsStart // adjust to absolute position
+				pos += bindingsStart
 				hints = append(hints, makeTypeHint(lineNum, pos+len(binding), typeName))
 			}
 		}
@@ -228,153 +125,7 @@ func casePatternHints(line string, lineNum int, richAST *transpiler.RichAST) []l
 	return hints
 }
 
-// inferLambdaParamType tries to infer a lambda parameter's type from the calling context.
-// e.g., in list.Map((x) => ...), if list is Array[Person], x is Person.
-func inferLambdaParamType(line, paramName, fullText string, lineNum int, richAST *transpiler.RichAST) string {
-	// Look for pattern: expr.MethodName((params) => ...)
-	// Find the method name before the lambda
-	lambdaIdx := strings.Index(line, "("+paramName)
-	if lambdaIdx < 0 {
-		lambdaIdx = strings.Index(line, "( "+paramName)
-	}
-	if lambdaIdx <= 0 {
-		return ""
-	}
-
-	// Walk backwards to find .MethodName(
-	i := lambdaIdx - 1
-	if i >= 0 && line[i] == '(' {
-		i--
-	}
-	// Find method name
-	methodEnd := i + 1
-	for i >= 0 && isIdentChar(line[i]) {
-		i--
-	}
-	if i < 0 || line[i] != '.' {
-		return ""
-	}
-	methodName := line[i+1 : methodEnd]
-
-	// Find receiver before the dot
-	dotPos := i
-	i = dotPos - 1
-	for i >= 0 && isIdentChar(line[i]) {
-		i--
-	}
-	receiverName := line[i+1 : dotPos]
-
-	// Resolve the receiver's type
-	receiverType := resolveBaseType(receiverName, fullText, lineNum, richAST)
-	if receiverType == "" {
-		return ""
-	}
-
-	// Find the method's first parameter type
-	tm := findType(richAST, receiverType)
-	if tm == nil {
-		return ""
-	}
-	method, ok := tm.Methods[methodName]
-	if !ok || len(method.ParamTypes) == 0 {
-		return ""
-	}
-
-	// For Map/Filter/ForEach etc., the param type is typically the element type
-	// The method's param is a function type like func(T) U
-	paramType := method.ParamTypes[0]
-	if paramType != nil {
-		typStr := paramType.String()
-		// If it's a func type, extract the param type
-		if strings.HasPrefix(typStr, "func(") {
-			inner := typStr[5:]
-			end := strings.Index(inner, ")")
-			if end > 0 {
-				return inner[:end]
-			}
-		}
-	}
-
-	return ""
-}
-
-// inferTypeArgsFromArgs infers generic type arguments from constructor arguments.
-// For Some("hello") → [string], Some(42) → [int], Tuple(1, "a") → [int, string]
-func inferTypeArgsFromArgs(argsExpr string, richAST *transpiler.RichAST) string {
-	// Extract the arguments: "(arg1, arg2, ...)"
-	if !strings.HasPrefix(argsExpr, "(") {
-		return ""
-	}
-	// Find matching close paren
-	depth := 0
-	end := -1
-	for i, ch := range argsExpr {
-		if ch == '(' {
-			depth++
-		} else if ch == ')' {
-			depth--
-			if depth == 0 {
-				end = i
-				break
-			}
-		}
-	}
-	if end <= 1 {
-		return ""
-	}
-	inner := argsExpr[1:end]
-	if inner == "" {
-		return ""
-	}
-
-	// Split args (respecting nested parens)
-	args := splitArgs(inner)
-	if len(args) == 0 {
-		return ""
-	}
-
-	// Infer type of each arg
-	var typeArgs []string
-	for _, arg := range args {
-		arg = strings.TrimSpace(arg)
-		t := inferType(arg, richAST)
-		if t == "" {
-			return "" // Can't infer all args
-		}
-		typeArgs = append(typeArgs, t)
-	}
-
-	return "[" + strings.Join(typeArgs, ", ") + "]"
-}
-
-// splitArgs splits "a, b, c" respecting nested parens.
-func splitArgs(s string) []string {
-	var args []string
-	depth := 0
-	start := 0
-	for i, ch := range s {
-		if ch == '(' || ch == '[' || ch == '{' {
-			depth++
-		} else if ch == ')' || ch == ']' || ch == '}' {
-			depth--
-		} else if ch == ',' && depth == 0 {
-			args = append(args, s[start:i])
-			start = i + 1
-		}
-	}
-	args = append(args, s[start:])
-	return args
-}
-
-// cleanTypeName strips package prefixes like "std." for display.
-func cleanTypeName(name string) string {
-	name = strings.ReplaceAll(name, "std.", "")
-	// Also clean nested types: Immutable[std.Option[T]] → Immutable[Option[T]]
-	return name
-}
-
 func makeTypeHint(line, col int, typeName string) lsp.InlayHint {
-	typeName = cleanTypeName(typeName)
 	kind := lsp.InlayHintKindType
 	label, _ := json.Marshal(": " + typeName)
 	paddingRight := true
@@ -384,86 +135,4 @@ func makeTypeHint(line, col int, typeName string) lsp.InlayHint {
 		Kind:         &kind,
 		PaddingRight: &paddingRight,
 	}
-}
-
-func inferType(expr string, richAST *transpiler.RichAST) string {
-	expr = strings.TrimSpace(expr)
-
-	if strings.HasPrefix(expr, "\"") || strings.HasPrefix(expr, "s\"") || strings.HasPrefix(expr, "f\"") || strings.HasPrefix(expr, "`") {
-		return "string"
-	}
-	if expr == "true" || expr == "false" {
-		return "bool"
-	}
-	if expr == "nil" {
-		return ""
-	}
-	if len(expr) > 0 && expr[0] >= '0' && expr[0] <= '9' {
-		if strings.Contains(expr, ".") {
-			return "float64"
-		}
-		return "int"
-	}
-
-	// Built-in functions with known return types
-	if idx := strings.Index(expr, "("); idx > 0 {
-		funcName := expr[:idx]
-		switch funcName {
-		case "len", "cap":
-			return "int"
-		case "SliceOf":
-			return "[]" // generic slice
-		}
-	}
-
-	// If expression: if (cond) expr else expr
-	if strings.HasPrefix(expr, "if ") || strings.HasPrefix(expr, "if(") {
-		// Try to infer from the "else" branch (simpler expression usually)
-		if elseIdx := strings.LastIndex(expr, "else "); elseIdx > 0 {
-			elseBranch := strings.TrimSpace(expr[elseIdx+5:])
-			if t := inferType(elseBranch, richAST); t != "" {
-				return t
-			}
-		}
-	}
-
-	// Constructor with explicit type args: Left[string, int](...) → Either[string, int]
-	if bracketIdx := strings.Index(expr, "["); bracketIdx > 0 {
-		parenIdx := strings.Index(expr, "(")
-		if parenIdx > bracketIdx {
-			name := expr[:bracketIdx]
-			typeArgs := expr[bracketIdx:parenIdx]
-			if isExported(name) {
-				parentType := resolveConstructorReturnType(name, richAST)
-				return parentType + typeArgs
-			}
-		}
-	}
-
-	if idx := strings.IndexAny(expr, "(["); idx > 0 {
-		name := expr[:idx]
-		// Handle pkg.TypeName(...)
-		if dotIdx := strings.LastIndex(name, "."); dotIdx > 0 {
-			simpleName := name[dotIdx+1:]
-			if isExported(simpleName) {
-				if t := resolveConstructorReturnType(simpleName, richAST); t != "" {
-					return t + inferTypeArgsFromArgs(expr[idx:], richAST)
-				}
-			}
-		}
-		if isExported(name) {
-			if t := resolveConstructorReturnType(name, richAST); t != "" {
-				return t + inferTypeArgsFromArgs(expr[idx:], richAST)
-			}
-		}
-	}
-
-	if idx := strings.Index(expr, "("); idx > 0 {
-		funcName := expr[:idx]
-		if fm, ok := richAST.Functions[funcName]; ok && fm.ReturnType != nil && !fm.ReturnType.IsNil() {
-			return cleanTypeName(fm.ReturnType.String())
-		}
-	}
-
-	return ""
 }
