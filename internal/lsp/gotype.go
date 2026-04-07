@@ -44,7 +44,9 @@ func extractTypesFromGoAST(fset *token.FileSet, goFile *ast.File) map[string]str
 			continue
 		}
 		typStr := cleanGoTypeForDisplay(v.Type().String())
-		if typStr != "" {
+		// Skip types with unresolved generic params (U, T, A, B etc.)
+		// These happen when go/types can't find the std package
+		if typStr != "" && !hasUnresolvedTypeParams(typStr) {
 			result[ident.Name] = typStr
 		}
 	}
@@ -80,6 +82,37 @@ func cleanGoTypeForDisplay(typeStr string) string {
 	}
 
 	return result
+}
+
+// hasUnresolvedTypeParams checks if a type string contains single-letter
+// unresolved generic params like [U], [T], [A, B] that go/types couldn't resolve.
+func hasUnresolvedTypeParams(t string) bool {
+	// Look for [X] or [X, Y] patterns where X/Y are single uppercase letters
+	inBracket := false
+	for i := 0; i < len(t); i++ {
+		if t[i] == '[' {
+			inBracket = true
+		} else if t[i] == ']' {
+			inBracket = false
+		} else if inBracket {
+			ch := t[i]
+			// Single uppercase letter that's a type param (not a real type name)
+			if ch >= 'A' && ch <= 'Z' {
+				// Check it's a standalone letter (not part of a word like "Order")
+				isStandalone := true
+				if i+1 < len(t) && t[i+1] != ',' && t[i+1] != ']' && t[i+1] != ' ' {
+					isStandalone = false
+				}
+				if i > 0 && t[i-1] != '[' && t[i-1] != ' ' && t[i-1] != ',' {
+					isStandalone = false
+				}
+				if isStandalone {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // goExprString converts a Go AST expression to a string (for debug/display).
