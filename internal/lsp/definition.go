@@ -25,6 +25,14 @@ func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionPara
 	if word == "" {
 		return nil, nil
 	}
+	line := int(params.Position.Line)
+	char := int(params.Position.Character)
+
+	// Check if cursor is on a pattern binding (case Xxx(b, h) =>)
+	// Pattern bindings define themselves — navigate to the binding site
+	if loc := patternBindingDefinition(text, word, uri, line, char); loc != nil {
+		return []lsp.Location{*loc}, nil
+	}
 
 	// Check type metadata for cross-file definitions
 	for key, typeMeta := range richAST.Types {
@@ -105,6 +113,66 @@ func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionPara
 	}
 
 	return nil, nil
+}
+
+// patternBindingDefinition checks if the word at the cursor is a pattern binding
+// variable (inside case Xxx(b, h) =>). If so, returns its own position as the definition.
+// Also searches backwards for the case line if the cursor is in the body after =>.
+func patternBindingDefinition(text, word, uri string, curLine, curChar int) *lsp.Location {
+	lines := strings.Split(text, "\n")
+
+	// Search backwards from cursor to find the nearest case pattern containing this binding
+	for i := curLine; i >= 0; i-- {
+		trimmed := strings.TrimSpace(lines[i])
+		if !strings.HasPrefix(trimmed, "case ") {
+			// Stop if we hit the match opening or a non-case line that's not blank/comment
+			if trimmed == "}" || (trimmed != "" && !strings.HasPrefix(trimmed, "//") && i < curLine) {
+				// Only stop if we've gone past the current line
+				if i < curLine-1 {
+					break
+				}
+			}
+			continue
+		}
+
+		// Found a case line: case Constructor(a, b, c) =>
+		parenOpen := strings.Index(trimmed, "(")
+		parenClose := strings.Index(trimmed, ")")
+		if parenOpen < 0 || parenClose < 0 || parenClose <= parenOpen {
+			continue
+		}
+
+		bindings := trimmed[parenOpen+1 : parenClose]
+		for _, binding := range strings.Split(bindings, ",") {
+			binding = strings.TrimSpace(binding)
+			// Strip type annotation if present: "x int" → "x"
+			parts := strings.Fields(binding)
+			if len(parts) == 0 {
+				continue
+			}
+			varName := parts[0]
+			if varName == word {
+				// Found the binding — return its position on the case line
+				col := strings.Index(lines[i][parenOpen:], word)
+				if col >= 0 {
+					col += parenOpen
+					// Find the absolute position accounting for any offset
+					absCol := strings.Index(lines[i], lines[i][col:col+len(word)])
+					if absCol < 0 {
+						absCol = col
+					}
+					return &lsp.Location{
+						URI: lsp.DocumentURI(uri),
+						Range: lsp.Range{
+							Start: lsp.Position{Line: i, Character: absCol},
+							End:   lsp.Position{Line: i, Character: absCol + len(word)},
+						},
+					}
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func findFirstGalaFile(dir, name string) *lsp.Location {
