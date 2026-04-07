@@ -336,7 +336,106 @@ func testGoToDefinition() {
 }
 
 // ============================================================
-// === 17. Find Usages ===
+// === 17. Type Aliases ===
+// ============================================================
+type Name string
+type Age int
+type Email string
+type PersonInfo Tuple[Name, Age]
+
+// [EXPECT] Hover over PersonInfo → resolves through alias to Tuple[Name, Age]
+// [EXPECT] Ctrl+Click on Name/Age → jumps to alias declaration
+
+func testTypeAliases() {
+    val n Name = "Alice"
+    val a Age = 30
+    val info = Tuple[Name, Age](n, a)
+    // [EXPECT] info: Tuple[Name, Age] or PersonInfo
+
+    Println(n)
+    Println(a)
+    Println(info)
+}
+
+// ============================================================
+// === 18. Deep Method Chaining (A → B → C → D) ===
+// ============================================================
+
+type Order struct {
+    val id int
+    val items int
+    val total float64
+}
+
+func (o Order) Validate() Option[Order] {
+    if o.items > 0 {
+        return Some(o)
+    }
+    return None[Order]()
+}
+
+func (o Order) ApplyDiscount(pct float64) Order {
+    return Order(id = o.id, items = o.items, total = o.total * (1.0 - pct))
+}
+
+func (o Order) ToSummary() string {
+    return s"Order #${o.id}: ${o.items} items, $$${o.total}"
+}
+
+func testDeepChaining() {
+    val order = Order(id = 1, items = 3, total = 99.99)
+    // [EXPECT] order: Order
+
+    // Chain: Order → Option[Order] → Option (via Map) → string (via GetOrElse)
+    val validated = order.Validate()
+    // [EXPECT] validated: Option[Order]
+
+    val discounted = validated.Map((o Order) => o.ApplyDiscount(0.1))
+    // [EXPECT] discounted: Option (from Map return type)
+
+    val summary = discounted.Map((o Order) => o.ToSummary())
+    // [EXPECT] summary: Option (from Map return type)
+
+    val result = summary.GetOrElse("No order")
+    // [EXPECT] result type from GetOrElse
+
+    // Direct deep chain: Order.Validate().Map(...).GetOrElse(...)
+    val oneShot = order.Validate().Map((o Order) => o.ToSummary()).GetOrElse("N/A")
+    // [EXPECT] Each dot in the chain should resolve:
+    //   order.         → Order methods: Validate(), ApplyDiscount(), ToSummary(), id, items, total
+    //   .Validate()    → Option[Order] methods: Map(), FlatMap(), Get(), IsDefined()...
+    //   .Map(...)      → Option methods
+    //   .GetOrElse()   → result type
+
+    Println(result)
+    Println(oneShot)
+
+    // Either chaining: Either[string, int] → Either (Map) → Option (ToOption)
+    val parsed = Right[string, int](42)
+    // [EXPECT] parsed: Either[string, int]
+
+    val doubled = parsed.Map((x int) => x * 2)
+    // [EXPECT] doubled: Either
+
+    val asOption = doubled.Map((x int) => x + 1)
+    // [EXPECT] asOption: Either
+
+    // Try → Option → value
+    val tried = Success(100)
+    // [EXPECT] tried: Try
+    val tryOpt = tried.ToOption()
+    // [EXPECT] tryOpt: Option
+    val tryVal = tryOpt.GetOrElse(0)
+    // [EXPECT] tryVal type from GetOrElse
+
+    Println(doubled)
+    Println(asOption)
+    Println(tryVal)
+}
+
+// ============================================================
+// === 19. Find Usages ===
+// (renumbered from 17)
 // ============================================================
 // [EXPECT] Right-click on "Person" → Find Usages → shows all references:
 //   - Type declaration
@@ -371,6 +470,8 @@ func main() {
     testIfExpression()
     testForLoops()
     testGoToDefinition()
+    testTypeAliases()
+    testDeepChaining()
 
     Println("=== All tests complete ===")
 }
