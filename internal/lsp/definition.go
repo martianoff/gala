@@ -179,18 +179,23 @@ func localDefinition(text, name, uri string) *lsp.Location {
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		for _, p := range patterns {
-			if strings.HasPrefix(trimmed, p) {
-				col := strings.Index(line, name)
-				if col < 0 {
-					col = 0
-				}
-				return &lsp.Location{
-					URI: lsp.DocumentURI(uri),
-					Range: lsp.Range{
-						Start: lsp.Position{Line: i, Character: col},
-						End:   lsp.Position{Line: i, Character: col + len(name)},
-					},
-				}
+			if !strings.HasPrefix(trimmed, p) {
+				continue
+			}
+			// Ensure word boundary: next char after match must not be alphanumeric
+			if len(trimmed) > len(p) && isIdentChar(trimmed[len(p)]) {
+				continue // "func perimeter" should not match pattern "func p"
+			}
+			col := strings.Index(line, name)
+			if col < 0 {
+				col = 0
+			}
+			return &lsp.Location{
+				URI: lsp.DocumentURI(uri),
+				Range: lsp.Range{
+					Start: lsp.Position{Line: i, Character: col},
+					End:   lsp.Position{Line: i, Character: col + len(name)},
+				},
 			}
 		}
 	}

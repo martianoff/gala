@@ -75,7 +75,12 @@ func valDeclHints(line string, lineNum int, richAST *transpiler.RichAST) []lsp.I
 		return nil
 	}
 	rhs := strings.TrimSpace(line[rhsStart:])
-	inferredType := inferType(rhs, richAST)
+	// Use inferRHSType for full chain resolution (opt.Map(...) → Option)
+	inferredType := inferRHSType(rhs, richAST)
+	if inferredType == "" {
+		// Fallback to simple inference
+		inferredType = inferType(rhs, richAST)
+	}
 	if inferredType == "" {
 		return nil
 	}
@@ -90,7 +95,10 @@ func shortDeclHints(line string, lineNum int, richAST *transpiler.RichAST) []lsp
 	}
 	// m[2]:m[3] is the variable name, m[4]:m[5] is the RHS
 	rhs := strings.TrimSpace(line[m[4]:m[5]])
-	inferredType := inferType(rhs, richAST)
+	inferredType := inferRHSType(rhs, richAST)
+	if inferredType == "" {
+		inferredType = inferType(rhs, richAST)
+	}
 	if inferredType == "" {
 		return nil
 	}

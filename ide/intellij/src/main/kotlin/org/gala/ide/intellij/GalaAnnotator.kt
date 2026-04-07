@@ -41,7 +41,7 @@ class GalaAnnotator : Annotator {
             "GALA_TYPE_PARAMETER", DefaultLanguageHighlighterColors.CLASS_NAME
         )
         val INTERPOLATION_VAR = TextAttributesKey.createTextAttributesKey(
-            "GALA_INTERPOLATION_VAR", DefaultLanguageHighlighterColors.TEMPLATE_LANGUAGE_COLOR
+            "GALA_INTERPOLATION_VAR", DefaultLanguageHighlighterColors.VALID_STRING_ESCAPE
         )
 
         private val BUILTIN_TYPE_NAMES = setOf(
