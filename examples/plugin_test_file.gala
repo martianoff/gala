@@ -1,113 +1,376 @@
 // Plugin Feature Test File
 // Open this file in GoLand with the GALA plugin to verify all features.
 // Each section tests a specific plugin capability.
+// Expected behavior is documented in comments with [EXPECT] markers.
 
 package main
 
 import "fmt"
 
+// ============================================================
 // === 1. Syntax Highlighting ===
-// Keywords should be bold/colored: val, var, func, type, match, case, if, else, for, return
+// ============================================================
+// [EXPECT] Keywords bold/colored: val, var, func, type, match, case, if, else, for, return, sealed
+// [EXPECT] Built-in types highlighted: int, string, bool, float64, error, any, byte, rune
 
-// === 2. Built-in Type Recognition ===
-// These should be highlighted as types:
-// int, string, bool, float64, error, any, byte, rune
-
-// === 3. Struct Declaration + Named Args ===
+// ============================================================
+// === 2. Struct Declaration + Named Args ===
+// ============================================================
 type Person struct {
     val name string
     val age int
+    val email string
 }
 
-// Hover over Person → should show fields
-// Type "Person(" → should suggest field names: name =, age =
+// [EXPECT] Hover over Person → shows fields: val name string, val age int, val email string
+// [EXPECT] Type "Person(" → suggests: name =, age =, email =
 
-// === 4. Sealed Type + Pattern Matching ===
+// ============================================================
+// === 3. Sealed Type + Pattern Matching ===
+// ============================================================
 sealed type Shape {
     case Circle(radius float64)
     case Rectangle(width float64, height float64)
+    case Triangle(base float64, height float64)
 }
 
-// === 5. Function Declaration ===
-func area(s Shape) float64 {
-    // Hover over Shape → should show sealed cases
+// [EXPECT] Hover over Shape → shows cases: Circle, Rectangle, Triangle
+
+// ============================================================
+// === 4. Methods with Receivers ===
+// ============================================================
+func (p Person) FullInfo() string {
+    return s"${p.name} (age ${p.age}, ${p.email})"
+}
+
+func (p Person) IsAdult() bool {
+    return p.age >= 18
+}
+
+func (s Shape) Describe() string {
     return s match {
-        // case completion: type "case " → should suggest Circle, Rectangle, _
-        // Type hints: x should show : float64 in pattern bindings
+        case Circle(r) => s"Circle r=$r"
+        case Rectangle(w, h) => s"Rect ${w}x${h}"
+        case Triangle(b, h) => s"Tri base=$b h=$h"
+    }
+}
+
+// [EXPECT] No false "already declared" on FullInfo/IsAdult/Describe (different receivers)
+
+// ============================================================
+// === 5. Function with Return Type ===
+// ============================================================
+func area(s Shape) float64 {
+    return s match {
+        // [EXPECT] Type hints on pattern bindings:
+        //   r: float64, w: float64, h: float64, b: float64
         case Circle(r) => 3.14159 * r * r
         case Rectangle(w, h) => w * h
+        case Triangle(b, h) => 0.5 * b * h
     }
 }
 
-// === 6. Type Inference + Inlay Hints ===
-func main() {
-    // These should show inferred type hints:
-    val greeting = "Hello"           // : string
-    val count = 42                   // : int
-    val pi = 3.14                    // : float64
-    val yes = true                   // : bool
+func perimeter(s Shape) float64 {
+    return s match {
+        case Circle(r) => 2.0 * 3.14159 * r
+        case Rectangle(w, h) => 2.0 * (w + h)
+        case Triangle(b, h) => b + h + b  // simplified
+    }
+}
 
-    // Constructor type inference:
-    val p = Person(name = "Alice", age = 30)  // : Person
-    val c = Circle(radius = 5.0)              // : Shape
+// ============================================================
+// === 6. Option Chaining ===
+// ============================================================
+func findPerson(name string) Option[Person] {
+    if name == "Alice" {
+        return Some(Person(name = "Alice", age = 30, email = "alice@example.com"))
+    }
+    return None[Person]()
+}
 
-    // === 7. Short Variable Declaration (:=) ===
-    x := 100                         // : int
+func testOptionChaining() {
+    val result = findPerson("Alice")
+    // [EXPECT] result type hint: Option[Person] or Option
+    // [EXPECT] Type "result." → suggests Option methods: Get(), Map(), FlatMap(), IsDefined(), etc.
+    // [EXPECT] Methods show signatures: Get() Person, Map(...) Option, IsDefined() bool
 
-    // === 8. Built-in Functions ===
-    // Println should be highlighted as built-in and offer completion
-    Println(greeting)
-    Println(area(c))
-    Print(count)
+    val nameOpt = result.Map((p Person) => p.name)
+    // [EXPECT] nameOpt type hint: Option (from Map return type)
+    // [EXPECT] Type "nameOpt." → suggests Option methods
 
-    // Go built-ins should also be recognized:
-    val nums = SliceOf(1, 2, 3)
-    val length = len(nums)
+    val upper = nameOpt.Map((s string) => s)
+    // [EXPECT] Chained .Map → still Option methods
 
-    // === 9. Dot Completion (Type-Aware) ===
-    // Type "p." → should suggest: name, age (fields) + methods
-    fmt.Println(p.name)
+    val isDefined = result.IsDefined()
+    // [EXPECT] isDefined type hint: bool
 
-    // === 10. Option Type + Method Chain ===
-    val opt = Some(42)
-    // Type "opt." → should suggest Option methods: Get, Map, FlatMap, IsDefined, etc.
-    val doubled = opt.Map((x int) => x * 2)
-    // Type "doubled." → should also suggest Option methods (Map returns Option)
+    val name = result.GetOrElse(Person(name = "Unknown", age = 0, email = ""))
+    // [EXPECT] name type hint: Person
+    // [EXPECT] Type "name." → suggests: name, age, email (fields) + FullInfo(), IsAdult()
+}
 
-    // === 11. String Interpolation ===
-    val msg = s"Hello ${p.name}, age ${p.age}"    // $var and ${expr} should be highlighted
+// ============================================================
+// === 7. Either Type ===
+// ============================================================
+func divide(a int, b int) Either[string, float64] {
+    if b == 0 {
+        return Left[string, float64]("division by zero")
+    }
+    return Right[string, float64](float64(a) / float64(b))
+}
+
+func testEither() {
+    val result = divide(10, 3)
+    // [EXPECT] result type hint: Either
+    // [EXPECT] Type "result." → suggests Either methods: IsLeft(), IsRight(), Map(), Fold(), etc.
+
+    val mapped = result.Map((x float64) => x * 2.0)
+    // [EXPECT] mapped type hint: Either (from Map return type)
+}
+
+// ============================================================
+// === 8. Try Type ===
+// ============================================================
+func safeParse(s string) Try[int] {
+    return Success(42)  // simplified
+}
+
+func testTry() {
+    val result = safeParse("42")
+    // [EXPECT] result type hint: Try
+    // [EXPECT] Type "result." → suggests Try methods: Get(), Map(), IsSuccess(), ToOption(), etc.
+
+    val opt = result.ToOption()
+    // [EXPECT] opt type hint: Option (from ToOption return type)
+    // [EXPECT] Type "opt." → suggests Option methods
+}
+
+// ============================================================
+// === 9. Method Tooltips + Auto-Parentheses ===
+// ============================================================
+func testMethodTooltips() {
+    val opt = Some("hello")
+    // [EXPECT] Type "opt." and select:
+    //   IsDefined() → auto-inserts "IsDefined()" with ()
+    //   Map(        → auto-inserts "Map(" without closing paren (has params)
+    //   Get()       → auto-inserts "Get()" with ()
+    //   GetOrElse(  → auto-inserts "GetOrElse(" (has params)
+    // [EXPECT] Each method shows full signature in completion list:
+    //   IsDefined() bool
+    //   Map(f func(T) U) Option
+    //   Get() T
+
+    val defined = opt.IsDefined()
+    val value = opt.Get()
+    Println(defined)
+    Println(value)
+}
+
+// ============================================================
+// === 10. Type Inference — All Forms ===
+// ============================================================
+func testTypeInference() {
+    // Literal inference
+    val s = "hello"          // [EXPECT] : string
+    val i = 42               // [EXPECT] : int
+    val f = 3.14             // [EXPECT] : float64
+    val b = true             // [EXPECT] : bool
+
+    // Constructor inference
+    val p = Person(name = "Bob", age = 25, email = "bob@test.com")
+    // [EXPECT] : Person
+
+    val circle = Circle(radius = 10.0)
+    // [EXPECT] : Shape
+
+    // Short declaration
+    x := 99                  // [EXPECT] : int
+    name := "test"           // [EXPECT] : string
+
+    // Sealed constructor inference
+    val opt = Some(42)       // [EXPECT] : Option (parent sealed type)
+    val either = Left[string, int]("error")  // [EXPECT] : Either
+
+    // Function call inference
+    val a = area(circle)     // [EXPECT] : float64 (from area return type)
+
+    Println(s)
+    Println(i)
+    Println(f)
+    Println(b)
+    Println(p.name)
+    Println(x)
+    Println(name)
+    Println(opt)
+    Println(either)
+    Println(a)
+}
+
+// ============================================================
+// === 11. String Interpolation ===
+// ============================================================
+func testStringInterpolation() {
+    val name = "World"
+    val age = 30
+
+    // [EXPECT] $name and ${age} highlighted differently from surrounding string
+    val simple = s"Hello $name"
+    val expr = s"Age: ${age + 1}"
+    val multi = s"${name} is ${age} years old"
+
+    // Format strings
+    val pi = 3.14159
     val formatted = f"$pi%.2f"
 
-    // === 12. Lambda Expressions ===
+    // Escaped dollar
+    val escaped = s"Price: $$100"
+    // [EXPECT] $$ not highlighted as interpolation
+
+    Println(simple)
+    Println(expr)
+    Println(multi)
+    Println(formatted)
+    Println(escaped)
+}
+
+// ============================================================
+// === 12. Lambda Expressions ===
+// ============================================================
+func testLambdas() {
     val double = (x int) => x * 2
     val add = (a int, b int) => a + b
-    // Lambda params without types: type hints should show inferred types
-    // val mapped = opt.Map((x) => x + 1)
 
-    // === 13. Match as Expression ===
-    val desc = c match {
-        case Circle(r) => s"Circle with radius $r"
-        case Rectangle(w, h) => s"Rect ${w}x${h}"
+    // Block lambda
+    val process = (x int) => {
+        val result = x * 2
+        return result + 1
     }
+
+    Println(double(5))
+    Println(add(2, 3))
+    Println(process(10))
+
+    // Lambda in method call — param type inferred from context
+    val opt = Some(42)
+    val mapped = opt.Map((x int) => x * 2)
+    // [EXPECT] In future: (x) => should infer x: int from Option.Map signature
+
+    Println(mapped)
+}
+
+// ============================================================
+// === 13. Match Expression Variants ===
+// ============================================================
+func testMatch() {
+    val shape = Circle(radius = 5.0)
+
+    // Match as expression
+    val desc = shape match {
+        case Circle(r) => s"Circle r=$r"
+        case Rectangle(w, h) => s"Rect ${w}x${h}"
+        case Triangle(b, h) => s"Tri b=$b"
+    }
+    // [EXPECT] desc: string
+
+    // Match with guards
+    val category = shape match {
+        case Circle(r) if r > 10.0 => "large circle"
+        case Circle(r) => "small circle"
+        case _ => "other"
+    }
+
+    // [EXPECT] No "non-exhaustive match" warning (has wildcard _)
+
     Println(desc)
+    Println(category)
+}
 
-    // === 14. If Expression ===
-    val max = if (count > 10) "big" else "small"
-    Println(max)
+// ============================================================
+// === 14. If Expression ===
+// ============================================================
+func testIfExpression() {
+    val x = 42
+    val result = if (x > 0) "positive" else "non-positive"
+    // [EXPECT] result: string
 
-    // === 15. For Loop ===
+    val abs = if (x >= 0) x else -x
+    // [EXPECT] abs: int (if both branches are int)
+
+    Println(result)
+    Println(abs)
+}
+
+// ============================================================
+// === 15. For Loops ===
+// ============================================================
+func testForLoops() {
+    val nums = SliceOf(1, 2, 3, 4, 5)
+
+    // Range loop
     for i := range nums {
         Println(i)
     }
 
-    // === 16. Structure View ===
-    // Open Structure view (Alt+7) → should show: Person, Shape, area, main
+    // Classic for loop
+    for i := 0; i < 5; i++ {
+        Println(i)
+    }
+}
 
-    // === 17. Go to Definition ===
-    // Ctrl+Click on "Person" → should jump to type declaration
-    // Ctrl+Click on "area" → should jump to function declaration
-    // Ctrl+Click on "greeting" → should jump to val declaration
+// ============================================================
+// === 16. Go to Definition ===
+// ============================================================
+func testGoToDefinition() {
+    val p = Person(name = "Test", age = 1, email = "t@t.com")
 
-    // === 18. Find Usages ===
-    // Right-click on "p" → Find Usages → should show all references
+    // [EXPECT] Ctrl+Click on:
+    //   "Person"   → jumps to type Person struct declaration (line ~20)
+    //   "area"     → jumps to func area declaration (line ~65)
+    //   "p"        → jumps to val p declaration (above)
+    //   "greeting" → jumps to val declaration in main()
+    //   "Shape"    → jumps to sealed type Shape declaration (line ~32)
+    //   "Some"     → jumps to std library (if cross-file works)
+
+    Println(p.FullInfo())
+    Println(area(Circle(radius = 1.0)))
+}
+
+// ============================================================
+// === 17. Find Usages ===
+// ============================================================
+// [EXPECT] Right-click on "Person" → Find Usages → shows all references:
+//   - Type declaration
+//   - Function parameters (findPerson return type)
+//   - Constructor calls
+//   - Method receivers
+
+// ============================================================
+// === 18. Structure View ===
+// ============================================================
+// [EXPECT] Open Structure view (Alt+7) → shows:
+//   - Person (type, with fields)
+//   - Shape (sealed type, with Circle/Rectangle/Triangle)
+//   - area, perimeter (functions)
+//   - findPerson, testOptionChaining, testEither, testTry, etc.
+//   - main
+
+// ============================================================
+// === MAIN ===
+// ============================================================
+func main() {
+    Println("=== Plugin Test File ===")
+
+    testOptionChaining()
+    testEither()
+    testTry()
+    testMethodTooltips()
+    testTypeInference()
+    testStringInterpolation()
+    testLambdas()
+    testMatch()
+    testIfExpression()
+    testForLoops()
+    testGoToDefinition()
+
+    Println("=== All tests complete ===")
 }
