@@ -38,7 +38,7 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 			}, nil
 		}
 		// If there are overrides, we need the type.
-		return nil, galaerr.NewSemanticError("cannot use Copy overrides: type of receiver unknown")
+		return nil, galaerr.NewSemanticErrorAt(argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn(), "cannot use Copy overrides: type of receiver unknown")
 	}
 
 	fields, ok := t.structFields[typeName]
@@ -48,7 +48,7 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 			for _, argCtx := range argListCtx.AllArgument() {
 				arg := argCtx.(*grammar.ArgumentContext)
 				if arg.Identifier() != nil {
-					return nil, galaerr.NewSemanticError("Copy overrides only supported for struct types")
+					return nil, galaerr.NewSemanticErrorAt(argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn(), "Copy overrides only supported for struct types")
 				}
 			}
 		}
@@ -66,7 +66,7 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 	for _, argCtx := range argListCtx.AllArgument() {
 		arg := argCtx.(*grammar.ArgumentContext)
 		if arg.Identifier() == nil {
-			return nil, galaerr.NewSemanticError("Copy overrides must be named: Copy(field = value)")
+			return nil, galaerr.NewSemanticErrorAt(arg.GetStart().GetLine(), arg.GetStart().GetColumn(), "Copy overrides must be named: Copy(field = value)")
 		}
 		fieldName := arg.Identifier().GetText()
 		found := false
@@ -77,15 +77,15 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 			}
 		}
 		if !found {
-			return nil, galaerr.NewSemanticError(fmt.Sprintf("struct %s has no field %s", typeName, fieldName))
+			return nil, galaerr.NewSemanticErrorAt(arg.GetStart().GetLine(), arg.GetStart().GetColumn(), fmt.Sprintf("struct %s has no field %s", typeName, fieldName))
 		}
 		pat := arg.Pattern()
 		if pat == nil {
-			return nil, galaerr.NewSemanticError("Copy overrides must be expressions")
+			return nil, galaerr.NewSemanticErrorAt(arg.GetStart().GetLine(), arg.GetStart().GetColumn(), "Copy overrides must be expressions")
 		}
 		ep, ok := pat.(*grammar.ExpressionPatternContext)
 		if !ok {
-			return nil, galaerr.NewSemanticError("Copy overrides must be expressions")
+			return nil, galaerr.NewSemanticErrorAt(arg.GetStart().GetLine(), arg.GetStart().GetColumn(), "Copy overrides must be expressions")
 		}
 		val, err := t.transformExpression(ep.Expression())
 		if err != nil {

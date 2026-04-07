@@ -48,7 +48,7 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 			}
 		}
 		if hasExplicitType && hasWildcardType {
-			return nil, galaerr.NewSemanticError("cannot use '_' as a parameter type when other parameters have explicit types — provide the type explicitly or omit all parameter types for inference")
+			return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "cannot use '_' as a parameter type when other parameters have explicit types — provide the type explicitly or omit all parameter types for inference")
 		}
 		for i, pCtx := range allParams {
 			paramCtx := pCtx.(*grammar.ParameterContext)
@@ -112,7 +112,7 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 			for _, stmt := range b.List {
 				if exprStmt, ok := stmt.(*ast.ExprStmt); ok {
 					if funcName := t.goCallReturnsErrorOnly(exprStmt.X); funcName != "" {
-						return nil, galaerr.NewSemanticError(
+						return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
 							fmt.Sprintf("cannot discard error return from %s in void lambda — use FromError(%s) to handle the error", funcName, funcName))
 					}
 				}
@@ -178,7 +178,7 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 			// Reject expression lambdas in void context that discard error returns.
 			// Users must handle errors explicitly, e.g., FromError(goCall()).OnFailure(...)
 			if funcName := t.goCallReturnsErrorOnly(expr); funcName != "" {
-				return nil, galaerr.NewSemanticError(
+				return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
 					fmt.Sprintf("cannot discard error return from %s in void lambda — use FromError(%s) to handle the error", funcName, funcName))
 			}
 			// For void functions, the expression is just a statement, not a return
@@ -975,7 +975,7 @@ func (t *galaASTTransformer) findLambdaInExpression(exprCtx grammar.IExpressionC
 func (t *galaASTTransformer) transformPartialFunctionLiteral(ctx *grammar.PartialFunctionLiteralContext, expectedType transpiler.Type) (ast.Expr, error) {
 	caseClauses := ctx.AllCaseClause()
 	if len(caseClauses) == 0 {
-		return nil, galaerr.NewSemanticError("partial function must have at least one case")
+		return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "partial function must have at least one case")
 	}
 
 	// Try to infer parameter type from expected function type or from patterns

@@ -128,7 +128,7 @@ func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext)
 		}
 		// Check for dereference assignment (*ptr = value) where ptr is ConstPtr
 		if t.isConstPtrDerefAssignment(exprCtx) {
-			return nil, galaerr.NewSemanticError("cannot assign through ConstPtr - read-only pointer to immutable value")
+			return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "cannot assign through ConstPtr - read-only pointer to immutable value")
 		}
 		if exprCtx.GetChildCount() == 3 && exprCtx.GetChild(1).(antlr.ParseTree).GetText() == "." {
 			selName := exprCtx.GetChild(2).(antlr.ParseTree).GetText()
@@ -145,7 +145,7 @@ func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext)
 					for i, f := range fields {
 						if f == selName {
 							if t.structImmutFields[resolvedTypeName][i] {
-								return nil, galaerr.NewSemanticError(fmt.Sprintf("cannot assign to immutable field %s", selName))
+								return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), fmt.Sprintf("cannot assign to immutable field %s", selName))
 							}
 							break
 						}
@@ -183,7 +183,7 @@ func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext)
 	case "/=":
 		tok = token.QUO_ASSIGN
 	default:
-		return nil, galaerr.NewSemanticError(fmt.Sprintf("unknown assignment operator: %s", op))
+		return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), fmt.Sprintf("unknown assignment operator: %s", op))
 	}
 
 	return &ast.AssignStmt{
@@ -230,7 +230,7 @@ func (t *galaASTTransformer) transformShortVarDeclWithMutability(ctx *grammar.Sh
 		val = t.wrapGoMultiReturnAsIIFE(val)
 
 		if t.isNoneCall(val) {
-			return nil, galaerr.NewSemanticError("variable assigned to None() must have an explicit type")
+			return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "variable assigned to None() must have an explicit type")
 		}
 
 		if mutable {
