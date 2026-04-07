@@ -30,10 +30,8 @@ func (h *GalaHandler) Completion(ctx context.Context, params *lsp.CompletionPara
 		receiverType := typeAtDot(text, line, char, richAST, varTypeMap)
 		if receiverType != "" {
 			items = append(items, typeSpecificCompletions(richAST, receiverType)...)
-		} else {
-			// Fallback: suggest all methods
-			items = append(items, methodCompletions(richAST)...)
 		}
+		// No fallback — showing all methods is worse than showing nothing
 	} else if isNamedArgContext(text, line, char) && richAST != nil {
 		typeName := extractConstructorName(text, line, char)
 		items = append(items, namedArgCompletions(richAST, typeName)...)

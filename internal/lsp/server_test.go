@@ -2,9 +2,12 @@ package lsp_test
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/owenrumney/go-lsp/lsp"
 	"github.com/owenrumney/go-lsp/servertest"
 
@@ -13,9 +16,36 @@ import (
 
 const testURI = "file:///test/main.gala"
 
+// findProjectRoot locates the GALA project root for test search paths.
+func findProjectRoot() string {
+	// Try Bazel runfiles first
+	if p, err := bazel.Runfile("std/option.gala"); err == nil {
+		return filepath.Dir(filepath.Dir(p))
+	}
+	// Walk up from cwd
+	cwd, _ := os.Getwd()
+	dir := cwd
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "std", "option.gala")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return ""
+}
+
 func newHarness(t *testing.T) *servertest.Harness {
 	t.Helper()
 	handler := lspserver.NewGalaHandler()
+	// Set search paths so the analyzer can find the std library
+	root := findProjectRoot()
+	if root != "" {
+		handler.SetSearchPaths([]string{root})
+	}
 	return servertest.New(t, handler)
 }
 

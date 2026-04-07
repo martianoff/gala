@@ -24,10 +24,17 @@ type GalaHandler struct {
 	transformer transpiler.ASTTransformer
 	generator   transpiler.CodeGenerator
 
+	extraSearchPaths []string // additional search paths (for testing)
+
 	mu        sync.Mutex
 	documents map[string]string              // URI -> source text
 	richASTs  map[string]*transpiler.RichAST // URI -> analyzed AST
 	varTypes  map[string]map[string]string   // URI -> (varName -> type) from transpiler
+}
+
+// SetSearchPaths adds additional search paths for the analyzer (for testing).
+func (h *GalaHandler) SetSearchPaths(paths []string) {
+	h.extraSearchPaths = paths
 }
 
 // NewGalaHandler creates a new GALA LSP handler.
@@ -199,6 +206,7 @@ func (h *GalaHandler) getSearchPaths(filePath string) []string {
 	if dir != "" && dir != "." {
 		paths = append(paths, dir)
 	}
+	paths = append(paths, h.extraSearchPaths...)
 	return paths
 }
 

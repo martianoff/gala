@@ -81,8 +81,33 @@ func typeAtDot(text string, line, char int, richAST *transpiler.RichAST, varType
 		}
 	}
 
-	// Check if it's a type name (for static method calls like Type.Method)
-	if isExported(receiverName) {
+	// Check if it's a function call: funcName(args).
+	// Look up the function's return type
+	if richAST != nil {
+		if fm, ok := richAST.Functions[receiverName]; ok {
+			if fm.ReturnType != nil && !fm.ReturnType.IsNil() {
+				base := cleanGoTypeForDisplay(fm.ReturnType.String())
+				if idx := strings.Index(base, "["); idx > 0 {
+					base = base[:idx]
+				}
+				return base
+			}
+		}
+	}
+
+	// Check if it's a constructor call: TypeName(args).
+	if isExported(receiverName) && richAST != nil {
+		// Sealed case → parent type
+		for _, tm := range richAST.Types {
+			if !tm.IsSealed {
+				continue
+			}
+			for _, v := range tm.SealedVariants {
+				if v.Name == receiverName {
+					return tm.Name
+				}
+			}
+		}
 		if findType(richAST, receiverName) != nil {
 			return receiverName
 		}
