@@ -129,8 +129,8 @@ class GalaCompletionContributor : CompletionContributor() {
                     // In-scope declarations from the current file
                     addInScopeDeclarations(parameters, result)
 
-                    // Dot-completion methods
-                    addDotMethods(parameters, result)
+                    // Note: dot-completion methods are provided by the LSP server
+                    // (type-aware, not static lists)
                 }
             }
         )

@@ -91,11 +91,17 @@ func typeAtDot(text string, line, char int, richAST *transpiler.RichAST, varType
 	return ""
 }
 
-// findType looks up a type in the RichAST by simple name, handling aliases.
+// findType looks up a type in the RichAST by simple name, handling aliases and prefixes.
 func findType(richAST *transpiler.RichAST, name string) *transpiler.TypeMetadata {
+	// Direct lookup
 	if tm, ok := richAST.Types[name]; ok {
 		return tm
 	}
+	// Try with std. prefix (std types stored as "std.Option", "std.Either" etc.)
+	if tm, ok := richAST.Types["std."+name]; ok {
+		return tm
+	}
+	// Suffix match (any package prefix)
 	for key, tm := range richAST.Types {
 		typeName := tm.Name
 		if typeName == "" {

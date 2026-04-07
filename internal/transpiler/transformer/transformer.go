@@ -85,11 +85,8 @@ func NewGalaASTTransformer() transpiler.ASTTransformer {
 }
 
 func (t *galaASTTransformer) TransformForLSP(richAST *transpiler.RichAST) (*transpiler.TransformResult, error) {
-	fset, file, err := t.Transform(richAST)
-	if err != nil {
-		return nil, err
-	}
-	// Convert internal Type objects to display strings
+	fset, file, transformErr := t.Transform(richAST)
+	// Always return collected var types, even on error (partial results)
 	varTypes := make(map[string]transpiler.Type, len(t.lspVarTypes))
 	for name, typ := range t.lspVarTypes {
 		varTypes[name] = typ
@@ -98,7 +95,7 @@ func (t *galaASTTransformer) TransformForLSP(richAST *transpiler.RichAST) (*tran
 		Fset:     fset,
 		File:     file,
 		VarTypes: varTypes,
-	}, nil
+	}, transformErr
 }
 
 func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token.FileSet, file *ast.File, err error) {
