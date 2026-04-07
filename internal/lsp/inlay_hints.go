@@ -169,6 +169,13 @@ func casePatternHints(line string, lineNum int, richAST *transpiler.RichAST) []l
 		return nil
 	}
 
+	// Find the position of the bindings within parentheses: case Name(bindings)
+	parenOpen := strings.Index(line, constructorName+"(")
+	if parenOpen < 0 {
+		return nil
+	}
+	bindingsStart := parenOpen + len(constructorName) + 1 // position after '('
+
 	var hints []lsp.InlayHint
 	bindingParts := strings.Split(bindings, ",")
 	for i, binding := range bindingParts {
@@ -182,9 +189,10 @@ func casePatternHints(line string, lineNum int, richAST *transpiler.RichAST) []l
 		}
 		if i < len(variant.FieldTypes) {
 			typeName := variant.FieldTypes[i].String()
-			// Find position in line
-			pos := strings.Index(line, binding)
+			// Find position within the parenthesized bindings only
+			pos := strings.Index(line[bindingsStart:], binding)
 			if pos >= 0 {
+				pos += bindingsStart // adjust to absolute position
 				hints = append(hints, makeTypeHint(lineNum, pos+len(binding), typeName))
 			}
 		}
