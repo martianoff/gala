@@ -270,7 +270,15 @@ func inferLambdaParamType(line, paramName, fullText string, lineNum int, richAST
 	return ""
 }
 
+// cleanTypeName strips package prefixes like "std." for display.
+func cleanTypeName(name string) string {
+	name = strings.ReplaceAll(name, "std.", "")
+	// Also clean nested types: Immutable[std.Option[T]] → Immutable[Option[T]]
+	return name
+}
+
 func makeTypeHint(line, col int, typeName string) lsp.InlayHint {
+	typeName = cleanTypeName(typeName)
 	kind := lsp.InlayHintKindType
 	label, _ := json.Marshal(": " + typeName)
 	paddingRight := true
@@ -307,10 +315,22 @@ func inferType(expr string, richAST *transpiler.RichAST) string {
 		if dotIdx := strings.LastIndex(name, "."); dotIdx > 0 {
 			simpleName := name[dotIdx+1:]
 			if isExported(simpleName) {
+				// Preserve explicit type args: Left[string, int](...) → Either[string, int]
+				if bracketIdx := strings.Index(expr, "["); bracketIdx > 0 && bracketIdx < idx {
+					typeArgs := expr[bracketIdx:idx]
+					result := resolveConstructorReturnType(simpleName, richAST)
+					return result + typeArgs
+				}
 				return resolveConstructorReturnType(simpleName, richAST)
 			}
 		}
 		if isExported(name) {
+			// Preserve explicit type args
+			if bracketIdx := strings.Index(expr, "["); bracketIdx > 0 && bracketIdx < idx {
+				typeArgs := expr[bracketIdx:idx]
+				result := resolveConstructorReturnType(name, richAST)
+				return result + typeArgs
+			}
 			return resolveConstructorReturnType(name, richAST)
 		}
 	}
@@ -318,7 +338,7 @@ func inferType(expr string, richAST *transpiler.RichAST) string {
 	if idx := strings.Index(expr, "("); idx > 0 {
 		funcName := expr[:idx]
 		if fm, ok := richAST.Functions[funcName]; ok && fm.ReturnType != nil && !fm.ReturnType.IsNil() {
-			return fm.ReturnType.BaseName()
+			return cleanTypeName(fm.ReturnType.String())
 		}
 	}
 

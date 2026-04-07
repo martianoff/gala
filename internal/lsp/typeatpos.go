@@ -215,7 +215,7 @@ func resolveBaseType(expr, text string, currentLine int, richAST *transpiler.Ric
 	// 3. Check if it's a known function call (not exported but in current package)
 	if fm, ok := richAST.Functions[name]; ok {
 		if fm.ReturnType != nil && !fm.ReturnType.IsNil() {
-			return fm.ReturnType.BaseName()
+			return cleanTypeName(fm.ReturnType.String())
 		}
 	}
 
@@ -232,7 +232,7 @@ func resolveBaseType(expr, text string, currentLine int, richAST *transpiler.Ric
 			for _, tm := range richAST.Types {
 				if method, ok := tm.Methods[methodName]; ok {
 					if method.ReturnType != nil && !method.ReturnType.IsNil() {
-						return method.ReturnType.BaseName()
+						return cleanTypeName(method.ReturnType.String())
 					}
 				}
 			}
@@ -276,7 +276,7 @@ func findType(richAST *transpiler.RichAST, name string) *transpiler.TypeMetadata
 	// Check type aliases — resolve alias to underlying type and look up
 	if richAST.TypeAliases != nil {
 		if aliasType, ok := richAST.TypeAliases[name]; ok {
-			underlying := aliasType.BaseName()
+			underlying := cleanTypeName(aliasType.String())
 			if underlying != name {
 				return findType(richAST, underlying)
 			}
@@ -287,12 +287,8 @@ func findType(richAST *transpiler.RichAST, name string) *transpiler.TypeMetadata
 
 // resolveConstructorReturnType determines the type returned by a constructor.
 func resolveConstructorReturnType(name string, richAST *transpiler.RichAST) string {
-	// Direct type constructor
-	if findType(richAST, name) != nil {
-		return name
-	}
-
-	// Sealed case constructor -> returns parent sealed type
+	// Check sealed case constructors FIRST — Some, Left, Circle etc.
+	// return the parent sealed type (Option, Either, Shape)
 	for _, tm := range richAST.Types {
 		if !tm.IsSealed {
 			continue
@@ -302,6 +298,11 @@ func resolveConstructorReturnType(name string, richAST *transpiler.RichAST) stri
 				return tm.Name
 			}
 		}
+	}
+
+	// Direct type constructor (regular structs)
+	if findType(richAST, name) != nil {
+		return name
 	}
 
 	// Companion object
@@ -320,7 +321,7 @@ func resolveConstructorReturnType(name string, richAST *transpiler.RichAST) stri
 	// Check functions
 	if fm, ok := richAST.Functions[name]; ok {
 		if fm.ReturnType != nil && !fm.ReturnType.IsNil() {
-			typeName := fm.ReturnType.BaseName()
+			typeName := cleanTypeName(fm.ReturnType.String())
 			return typeName
 		}
 	}
@@ -361,23 +362,8 @@ func inferRHSType(rhs string, richAST *transpiler.RichAST) string {
 		}
 	}
 
-	// Package-qualified method call: pkg.FuncName(...) or alias.FuncName(...)
-	if dotIdx := strings.Index(rhs, "."); dotIdx > 0 {
-		afterDot := rhs[dotIdx+1:]
-		if parenIdx := strings.Index(afterDot, "("); parenIdx > 0 {
-			funcName := afterDot[:parenIdx]
-			if isExported(funcName) {
-				// Check functions in all analyzed packages
-				if fm, ok := richAST.Functions[funcName]; ok {
-					if fm.ReturnType != nil && !fm.ReturnType.IsNil() {
-						return fm.ReturnType.BaseName()
-					}
-				}
-			}
-		}
-	}
-
 	// Method chain: expr.Method(...) — resolve the full chain
+	// Must come before package-qualified check so opt.IsDefined() resolves as chain
 	if strings.Contains(rhs, ".") {
 		chain := splitChain(rhs)
 		if len(chain) > 1 {
@@ -418,14 +404,14 @@ func resolveChainSegment(segment, currentType string, richAST *transpiler.RichAS
 	if isCall {
 		if method, ok := tm.Methods[name]; ok {
 			if method.ReturnType != nil && !method.ReturnType.IsNil() {
-				return method.ReturnType.BaseName()
+				return cleanTypeName(method.ReturnType.String())
 			}
 		}
 	}
 
 	// Check fields
 	if ft, ok := tm.Fields[name]; ok {
-		return ft.BaseName()
+		return cleanTypeName(ft.String())
 	}
 
 	return ""
