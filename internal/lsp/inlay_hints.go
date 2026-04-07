@@ -317,6 +317,17 @@ func inferType(expr string, richAST *transpiler.RichAST) string {
 		return "int"
 	}
 
+	// Built-in functions with known return types
+	if idx := strings.Index(expr, "("); idx > 0 {
+		funcName := expr[:idx]
+		switch funcName {
+		case "len", "cap":
+			return "int"
+		case "SliceOf":
+			return "[]" // generic slice
+		}
+	}
+
 	// If expression: if (cond) expr else expr
 	if strings.HasPrefix(expr, "if ") || strings.HasPrefix(expr, "if(") {
 		// Try to infer from the "else" branch (simpler expression usually)

@@ -434,8 +434,128 @@ func testDeepChaining() {
 }
 
 // ============================================================
-// === 19. Find Usages ===
-// (renumbered from 17)
+// === 19. Go Function Calls ===
+// ============================================================
+func testGoFunctions() {
+    // Go built-in functions
+    val nums = SliceOf(1, 2, 3, 4, 5)
+    val size = len(nums)               // [EXPECT] : int
+    // [EXPECT] len highlighted as built-in function
+
+    val s = "Hello, GALA!"
+    val sLen = len(s)                   // [EXPECT] : int
+
+    // fmt package functions
+    fmt.Println("direct fmt call")
+    fmt.Printf("formatted: %d\n", 42)
+
+    // String conversions
+    val str = s"Number: ${size}"
+    // [EXPECT] str: string
+
+    // Slice operations
+    val first = nums[0]
+    // [EXPECT] Ctrl+Click on SliceOf → should recognize as built-in
+
+    Println(size)
+    Println(sLen)
+    Println(str)
+    Println(first)
+}
+
+// ============================================================
+// === 20. Tuple Destructuring ===
+// ============================================================
+func swap(a int, b int) Tuple[int, int] {
+    return Tuple[int, int](b, a)
+}
+
+func testTupleDestructuring() {
+    val pair = Tuple[int, int](10, 20)
+    // [EXPECT] pair: Tuple[int, int]
+
+    // Tuple access
+    val first = pair.First
+    val second = pair.Second
+    // [EXPECT] Type "pair." → suggests: First, Second (fields)
+
+    // Tuple from function
+    val swapped = swap(1, 2)
+    // [EXPECT] swapped: Tuple[int, int]
+
+    // Destructuring with val (a, b) = tuple
+    val (x, y) = swap(3, 4)
+    // [EXPECT] x and y are destructured — type hints may not show here
+
+    Println(first)
+    Println(second)
+    Println(swapped)
+    Println(x)
+    Println(y)
+}
+
+// ============================================================
+// === 21. Type Aliases (Advanced) ===
+// ============================================================
+type UserID int
+type Username string
+type UserMap map[UserID]Username
+
+func createUser(id UserID, name Username) Tuple[UserID, Username] {
+    return Tuple[UserID, Username](id, name)
+}
+
+func testTypeAliasesAdvanced() {
+    val id UserID = 1
+    val name Username = "Alice"
+    // [EXPECT] id: UserID, name: Username (explicit types, no hint needed)
+
+    val user = createUser(id, name)
+    // [EXPECT] user: Tuple[UserID, Username]
+
+    // Alias used as function param type
+    val newId UserID = 42
+    val greeting = s"User #${newId}: ${name}"
+    // [EXPECT] greeting: string
+
+    // Type alias in match
+    val result = if (newId > 0) "valid" else "invalid"
+    // [EXPECT] result: string
+
+    Println(user)
+    Println(greeting)
+    Println(result)
+}
+
+// ============================================================
+// === 22. Interface Implementation ===
+// ============================================================
+type Describable interface {
+    Describe() string
+}
+
+// Person and Shape both implement Describable (Shape already has Describe)
+func (p Person) Describe() string {
+    return p.FullInfo()
+}
+
+func printDescription(d Describable) {
+    Println(d.Describe())
+}
+
+func testInterfaces() {
+    val p = Person(name = "Bob", age = 25, email = "bob@test.com")
+    val s = Circle(radius = 5.0)
+
+    // Both should work as Describable
+    printDescription(p)
+    printDescription(s)
+    // [EXPECT] Ctrl+Click on Describable → jumps to interface declaration
+    // [EXPECT] Hover on Describable → shows: Describe() string
+}
+
+// ============================================================
+// === 23. Find Usages ===
 // ============================================================
 // [EXPECT] Right-click on "Person" → Find Usages → shows all references:
 //   - Type declaration
@@ -472,6 +592,10 @@ func main() {
     testGoToDefinition()
     testTypeAliases()
     testDeepChaining()
+    testGoFunctions()
+    testTupleDestructuring()
+    testTypeAliasesAdvanced()
+    testInterfaces()
 
     Println("=== All tests complete ===")
 }
