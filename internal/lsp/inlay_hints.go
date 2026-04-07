@@ -32,6 +32,10 @@ func (h *GalaHandler) InlayHint(ctx context.Context, params *lsp.InlayHintParams
 	// Extract types from the transpiler's Go AST using go/types
 	goTypes := extractTypesFromGoAST(goFset, goAST)
 
+	// Make go/types results available to resolveBaseType for chain resolution
+	resolvedTypes = goTypes
+	defer func() { resolvedTypes = nil }()
+
 	if text == "" || richAST == nil {
 		return nil, nil
 	}

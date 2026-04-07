@@ -134,8 +134,27 @@ var (
 	paramRe         = regexp.MustCompile(`(\w+)\s+(\w[\w\[\]]*(?:\[[\w, ]+\])?)`)
 )
 
+// resolvedTypes is set per-request to provide go/types results for variable lookup.
+// This avoids threading the map through every function signature.
+var resolvedTypes map[string]string
+
 // resolveBaseType determines the type of the first element in a chain.
 func resolveBaseType(expr, text string, currentLine int, richAST *transpiler.RichAST) string {
+	// Check go/types results first (most accurate for already-resolved vars)
+	if resolvedTypes != nil {
+		baseName := expr
+		if idx := strings.Index(baseName, "("); idx > 0 {
+			baseName = baseName[:idx]
+		}
+		if t, ok := resolvedTypes[baseName]; ok {
+			// Strip generic params for type lookup: "Option[Order]" → "Option"
+			base := t
+			if idx := strings.Index(base, "["); idx > 0 {
+				base = base[:idx]
+			}
+			return base
+		}
+	}
 	// Strip method call if present: "Some(42)" -> resolve as constructor
 	name := expr
 	if idx := strings.Index(expr, "("); idx > 0 {
