@@ -3,6 +3,7 @@ package lsp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/owenrumney/go-lsp/lsp"
 	golsp "github.com/owenrumney/go-lsp/server"
 
+	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
 	"martianoff/gala/internal/transpiler/generator"
@@ -178,7 +180,7 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 	a := analyzer.NewGalaAnalyzer(h.parser, searchPaths)
 	richAST, err := a.Analyze(tree, filePath)
 	if err != nil {
-		diagnostics = append(diagnostics, errorToDiagnostic(err))
+		diagnostics = append(diagnostics, errorsToDiagnostics(err)...)
 		return diagnostics
 	}
 
@@ -189,7 +191,7 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 	// Use TransformForLSP to get resolved variable types directly from the transpiler
 	result, transformErr := h.transformer.TransformForLSP(richAST)
 	if transformErr != nil {
-		diagnostics = append(diagnostics, errorToDiagnostic(transformErr))
+		diagnostics = append(diagnostics, errorsToDiagnostics(transformErr)...)
 	}
 
 	// Cache the transpiler's resolved variable types
@@ -258,17 +260,56 @@ func zeroRange() lsp.Range {
 	}
 }
 
+// errorsToDiagnostics converts an error (possibly MultiError) into diagnostics.
+func errorsToDiagnostics(err error) []lsp.Diagnostic {
+	var multiErr *galaerr.MultiError
+	if errors.As(err, &multiErr) {
+		var diags []lsp.Diagnostic
+		for _, subErr := range multiErr.Errors {
+			diags = append(diags, errorToDiagnostic(subErr))
+		}
+		return diags
+	}
+	return []lsp.Diagnostic{errorToDiagnostic(err)}
+}
+
 func errorToDiagnostic(err error) lsp.Diagnostic {
 	msg := err.Error()
 	line := 0
 	char := 0
 
-	if idx := strings.Index(msg, "[line "); idx >= 0 {
+	// Try to extract line info from typed errors
+	var semErr *galaerr.SemanticError
+	if errors.As(err, &semErr) && semErr.Line > 0 {
+		line = semErr.Line - 1 // LSP is 0-indexed
+		char = semErr.Column
+	} else if idx := strings.Index(msg, "[line "); idx >= 0 {
+		// Fallback: parse from error message text
 		var l, c int
 		fmt.Sscanf(msg[idx:], "[line %d:%d]", &l, &c)
 		if l > 0 {
 			line = l - 1
 			char = c
+		}
+	} else if idx := strings.Index(msg, "line "); idx >= 0 {
+		var l int
+		fmt.Sscanf(msg[idx:], "line %d", &l)
+		if l > 0 {
+			line = l - 1
+		}
+	}
+
+	// Also handle MultiError (multiple errors from parser/analyzer)
+	// by extracting the first line number from any sub-error
+	var multiErr *galaerr.MultiError
+	if errors.As(err, &multiErr) {
+		for _, subErr := range multiErr.Errors {
+			d := errorToDiagnostic(subErr)
+			if d.Range.Start.Line > 0 {
+				line = d.Range.Start.Line
+				char = d.Range.Start.Character
+				break
+			}
 		}
 	}
 
