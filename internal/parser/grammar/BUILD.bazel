@@ -12,6 +12,7 @@ genrule(
     ],
     cmd = """
         set -e && \
+        export PATH="/usr/bin:/bin:$$PATH" && \
         ANTLR_OUT=antlr_tmp_$$$$ && \
         mkdir -p $$ANTLR_OUT && \
         "$(JAVA)" -jar $(location @antlr4_tool//jar) -Dlanguage=Go -package grammar -o $$ANTLR_OUT $(location gala.g4) && \
