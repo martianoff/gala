@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"go/ast"
+	"go/token"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -28,7 +29,8 @@ type GalaHandler struct {
 	mu        sync.Mutex
 	documents map[string]string              // URI -> source text
 	richASTs  map[string]*transpiler.RichAST // URI -> analyzed AST
-	goASTs    map[string]*ast.File           // URI -> generated Go AST (for type extraction)
+	goASTs    map[string]*ast.File           // URI -> generated Go AST
+	goFsets   map[string]*token.FileSet      // URI -> Go file set
 }
 
 // NewGalaHandler creates a new GALA LSP handler.
@@ -37,6 +39,7 @@ func NewGalaHandler() *GalaHandler {
 		documents:   make(map[string]string),
 		richASTs:    make(map[string]*transpiler.RichAST),
 		goASTs:      make(map[string]*ast.File),
+		goFsets:     make(map[string]*token.FileSet),
 		parser:      transpiler.NewAntlrGalaParser(),
 		transformer: transformer.NewGalaASTTransformer(),
 		generator:   generator.NewGoCodeGenerator(),
@@ -164,13 +167,13 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 		diagnostics = append(diagnostics, errorToDiagnostic(transformErr))
 	}
 
-	// Cache the Go AST for type extraction (the transpiler already resolved all types)
+	// Cache the Go AST + FileSet for type extraction
 	if goFile != nil {
 		h.mu.Lock()
 		h.goASTs[uri] = goFile
+		h.goFsets[uri] = fset
 		h.mu.Unlock()
 	}
-	_ = fset
 
 	diagnostics = append(diagnostics, checkMatchExhaustiveness(text, richAST)...)
 

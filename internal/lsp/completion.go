@@ -58,19 +58,25 @@ func isDotCompletion(text string, line, char int) bool {
 	if char > len(l) {
 		char = len(l)
 	}
-	// Walk backwards past any partial identifier being typed
+	if char <= 0 {
+		return false
+	}
+
+	// Direct check: is the char right before cursor a dot?
+	if l[char-1] == '.' {
+		return true
+	}
+
+	// Walk backwards past any partial identifier being typed (user typing after dot)
 	i := char - 1
-	for i >= 0 && i < len(l) && isIdentChar(l[i]) {
+	for i >= 0 && isIdentChar(l[i]) {
 		i--
 	}
 	if i >= 0 && l[i] == '.' {
 		return true
 	}
-	// Also check if the previous non-whitespace char on this line is a dot
-	for i >= 0 && l[i] == ' ' {
-		i--
-	}
-	return i >= 0 && l[i] == '.'
+
+	return false
 }
 
 func typeCompletions(richAST *transpiler.RichAST) []lsp.CompletionItem {
