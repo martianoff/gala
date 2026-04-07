@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/owenrumney/go-lsp/lsp"
 	golsp "github.com/owenrumney/go-lsp/server"
@@ -30,6 +31,8 @@ type GalaHandler struct {
 	extraSearchPaths []string          // additional search paths (for testing)
 	client           *golsp.Client     // LSP client for sending notifications
 
+	debounceTimers map[string]*time.Timer // URI -> debounce timer for DidChange
+
 	mu        sync.Mutex
 	documents map[string]string              // URI -> source text
 	richASTs  map[string]*transpiler.RichAST // URI -> analyzed AST
@@ -51,7 +54,8 @@ func NewGalaHandler() *GalaHandler {
 	return &GalaHandler{
 		documents:   make(map[string]string),
 		richASTs:    make(map[string]*transpiler.RichAST),
-		varTypes:    make(map[string]map[string]string),
+		varTypes:       make(map[string]map[string]string),
+		debounceTimers: make(map[string]*time.Timer),
 		parser:      transpiler.NewAntlrGalaParser(),
 		transformer: transformer.NewGalaASTTransformer(),
 		generator:   generator.NewGoCodeGenerator(),
@@ -114,8 +118,20 @@ func (h *GalaHandler) DidChange(ctx context.Context, params *lsp.DidChangeTextDo
 	text := params.ContentChanges[len(params.ContentChanges)-1].Text
 	h.mu.Lock()
 	h.documents[uri] = text
+	// Cancel any pending debounce timer
+	if timer, ok := h.debounceTimers[uri]; ok {
+		timer.Stop()
+	}
+	// Debounce: wait 500ms after last keystroke before re-analyzing.
+	// This prevents parse errors from showing while typing incomplete expressions
+	// like "Some(42)." — the user will type the method name before the timer fires.
+	h.debounceTimers[uri] = time.AfterFunc(500*time.Millisecond, func() {
+		h.mu.Lock()
+		currentText := h.documents[uri]
+		h.mu.Unlock()
+		h.publishDiagnostics(uri, currentText)
+	})
 	h.mu.Unlock()
-	h.publishDiagnostics(uri, text)
 	return nil
 }
 
