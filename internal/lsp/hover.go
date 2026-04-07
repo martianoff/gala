@@ -55,7 +55,28 @@ func lookupSymbol(richAST *transpiler.RichAST, name string) string {
 	if companion, ok := richAST.CompanionObjects[name]; ok {
 		return fmt.Sprintf("```gala\n%s — sealed case constructor\n```\n", companion.Name)
 	}
+
+	// Built-in functions
+	if info, ok := builtinFuncDocs[name]; ok {
+		return info
+	}
+
 	return ""
+}
+
+var builtinFuncDocs = map[string]string{
+	"Println": "```gala\nPrintln(args ...any)\n```\n\n*Built-in* — prints arguments followed by a newline. Rewritten to `fmt.Println`.\n",
+	"Print":   "```gala\nPrint(args ...any)\n```\n\n*Built-in* — prints arguments. Rewritten to `fmt.Print`.\n",
+	"SliceOf": "```gala\nSliceOf[T](elems ...T) []T\n```\n\n*Built-in* — creates a Go slice from the given elements.\n",
+	"len":     "```gala\nlen(v) int\n```\n\n*Go built-in* — returns the length of a string, slice, array, map, or channel.\n",
+	"cap":     "```gala\ncap(v) int\n```\n\n*Go built-in* — returns the capacity of a slice or channel.\n",
+	"make":    "```gala\nmake(T, size ...int) T\n```\n\n*Go built-in* — allocates and initializes a slice, map, or channel.\n",
+	"append":  "```gala\nappend(slice []T, elems ...T) []T\n```\n\n*Go built-in* — appends elements to a slice.\n",
+	"copy":    "```gala\ncopy(dst []T, src []T) int\n```\n\n*Go built-in* — copies elements from src to dst slice.\n",
+	"delete":  "```gala\ndelete(m map[K]V, key K)\n```\n\n*Go built-in* — deletes a key from a map.\n",
+	"close":   "```gala\nclose(ch chan T)\n```\n\n*Go built-in* — closes a channel.\n",
+	"panic":   "```gala\npanic(v any)\n```\n\n*Go built-in* — stops normal execution and begins panicking.\n",
+	"recover": "```gala\nrecover() any\n```\n\n*Go built-in* — regains control of a panicking goroutine.\n",
 }
 
 func formatTypeMeta(meta *transpiler.TypeMetadata) string {
