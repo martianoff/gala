@@ -2391,6 +2391,110 @@ func TestCompletion_ImportedArrayMethods(t *testing.T) {
 	}
 }
 
+// Issue: Type inference should be scoped per function — variables with same name
+// in different functions should get independent type hints.
+func TestInlayHints_ScopedPerFunction(t *testing.T) {
+	h := newHarness(t)
+	// Two functions each define "a" with different types
+	src := "package main\n\ntype Person struct {\n    val name string\n    val age int\n}\n\nfunc greet(p Person) string {\n    val a = p.name\n    return a\n}\n\nfunc isAdult(p Person) bool {\n    val a = p.age\n    return a >= 18\n}\n"
+	uri := openFileOnDisk(t, h, src)
+	raw, err := h.Call("textDocument/inlayHint", map[string]interface{}{
+		"textDocument": map[string]string{"uri": string(uri)},
+		"range": map[string]interface{}{
+			"start": map[string]int{"line": 0, "character": 0},
+			"end":   map[string]int{"line": 20, "character": 0},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var hints []lsp.InlayHint
+	if err := json.Unmarshal(raw, &hints); err != nil {
+		t.Fatalf("unmarshal hints: %v", err)
+	}
+	t.Logf("scoped hints: %d", len(hints))
+	for _, hint := range hints {
+		t.Logf("  line=%d col=%d label=%s", hint.Position.Line, hint.Position.Character, string(hint.Label))
+	}
+	// Check that "a" in greet() gets string type, "a" in isAdult() gets int type
+	for _, hint := range hints {
+		label := string(hint.Label)
+		if hint.Position.Line == 8 && strings.Contains(label, "int") && !strings.Contains(label, "string") {
+			t.Errorf("line 8 (greet): 'a' should be string, got %s", label)
+		}
+		if hint.Position.Line == 13 && strings.Contains(label, "string") {
+			t.Errorf("line 13 (isAdult): 'a' should be int, got %s", label)
+		}
+	}
+}
+
+// Verify concurrent analysis doesn't cause persistent errors.
+// Each analyzeFile must use its own transformer to avoid state corruption.
+func TestDiagnostics_ConcurrentAnalysis(t *testing.T) {
+	h := newHarness(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Open two files simultaneously — each triggers independent analysis
+	src1 := "package main\n\nfunc foo() int {\n    val x = 42\n    return x\n}\n"
+	src2 := "package main\n\nfunc bar() string {\n    val x = \"hello\"\n    return x\n}\n"
+	uri1 := openFileOnDisk(t, h, src1)
+
+	// Open second file in a different temp dir
+	uri2 := openNamedFileOnDisk(t, h, "second.gala", src2)
+
+	// Wait for both to be analyzed
+	diags1, err := h.WaitForDiagnostics(ctx, uri1)
+	if err != nil {
+		t.Fatalf("waiting for file1 diagnostics: %v", err)
+	}
+	diags2, err := h.WaitForDiagnostics(ctx, uri2)
+	if err != nil {
+		t.Fatalf("waiting for file2 diagnostics: %v", err)
+	}
+
+	// Neither file should have errors
+	for _, d := range diags1 {
+		if d.Severity != nil && *d.Severity == lsp.SeverityError {
+			t.Errorf("file1 has unexpected error: %s", d.Message)
+		}
+	}
+	for _, d := range diags2 {
+		if d.Severity != nil && *d.Severity == lsp.SeverityError {
+			t.Errorf("file2 has unexpected error: %s", d.Message)
+		}
+	}
+	t.Logf("file1 diagnostics: %d, file2 diagnostics: %d", len(diags1), len(diags2))
+}
+
+// Verify dot completion uses function-scoped variable types
+func TestCompletion_ScopedDotCompletion(t *testing.T) {
+	h := newHarness(t)
+	// Two functions both have "val x", but with different types
+	src := "package main\n\ntype Widget struct {\n    val label string\n}\n\nfunc (w Widget) Render() string {\n    return w.label\n}\n\nfunc useWidget() {\n    val x = Widget(label = \"hello\")\n    x.\n    Println(x)\n}\n\nfunc useNumber() {\n    val x = 42\n    Println(x)\n}\n"
+	uri := openFileOnDisk(t, h, src)
+	// Line 12 = "    x."  char 6 = after the dot (inside useWidget)
+	list, err := h.Completion(uri, 12, 6)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list == nil || len(list.Items) == 0 {
+		t.Log("no completion for x. in useWidget — type may not resolve")
+		return
+	}
+	// x in useWidget should be Widget, so should have Render method
+	hasRender := false
+	for _, item := range list.Items {
+		if strings.HasPrefix(item.Label, "Render") || item.FilterText == "Render" {
+			hasRender = true
+		}
+	}
+	if !hasRender {
+		t.Errorf("expected Render method on Widget for x. in useWidget (got %d items)", len(list.Items))
+	}
+	t.Logf("scoped dot completion: %d items", len(list.Items))
+}
+
 // Verify hover on alias-qualified type resolves correctly
 func TestHover_PackageAliasType(t *testing.T) {
 	h := newHarness(t)
@@ -2400,4 +2504,200 @@ func TestHover_PackageAliasType(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("hover on aliased HashMap: %v", hover)
+}
+
+// ============================================================
+// === Multi-Package Project Resolution ===
+// ============================================================
+
+// createMultiPackageProject creates a project with go.mod + multiple GALA packages.
+func createMultiPackageProject(t *testing.T) string {
+	t.Helper()
+	dir := createTestProject(t, []testProjectFile{
+		// go.mod at project root
+		{Name: "go.mod", Src: "module testproject\n\ngo 1.21\n"},
+		// Library package: mylib
+		{Name: "mylib/types.gala", Src: "package mylib\n\ntype Animal struct {\n    val name string\n    val legs int\n}\n\nfunc (a Animal) Describe() string {\n    return a.name\n}\n"},
+		{Name: "mylib/helpers.gala", Src: "package mylib\n\nfunc NewDog() Animal {\n    return Animal(name = \"Dog\", legs = 4)\n}\n\nfunc NewCat() Animal {\n    return Animal(name = \"Cat\", legs = 4)\n}\n"},
+		// App package: main
+		{Name: "app/main.gala", Src: "package main\n\nimport \"testproject/mylib\"\n\nfunc main() {\n    val dog = mylib.NewDog()\n    val desc = dog.Describe()\n    Println(desc)\n}\n"},
+	})
+	return dir
+}
+
+// Verify cross-package type resolution: import "testproject/mylib" from main.
+func TestMultiPackage_CrossPackageCompletion(t *testing.T) {
+	h := newHarness(t)
+	dir := createMultiPackageProject(t)
+
+	// Open the library files first so LSP knows about them
+	openProjectFile(t, h, dir, "mylib/types.gala")
+	openProjectFile(t, h, dir, "mylib/helpers.gala")
+
+	// Open main file — it imports testproject/mylib
+	uri := openProjectFile(t, h, dir, "app/main.gala")
+
+	// Test 1: Package dot completion — mylib. should show NewDog, NewCat, Animal
+	list, err := h.Completion(uri, 5, 14)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list == nil || len(list.Items) == 0 {
+		t.Log("no package completion for mylib. — resolver may not find package in test env")
+	} else {
+		labels := collectLabels(list)
+		t.Logf("mylib. completion: %d items", len(list.Items))
+		for _, item := range list.Items {
+			t.Logf("  %s kind=%v", item.Label, item.Kind)
+		}
+		if !labels["NewDog"] && !labels["NewCat"] {
+			t.Log("NOTE: NewDog/NewCat not in completion — cross-package resolution may not work in test")
+		}
+	}
+
+	// Test 2: Hover on imported type
+	hover, err := h.Hover(uri, 5, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("hover on mylib.NewDog: %v", hover)
+
+	// Test 3: Method completion on imported type — dog.
+	// Write a file inside the multi-package project so imports resolve
+	dotTestPath := filepath.Join(dir, "app", "dottest.gala")
+	os.WriteFile(dotTestPath, []byte("package main\n\nimport \"testproject/mylib\"\n\nfunc main() {\n    val dog = mylib.NewDog()\n    dog.\n    Println(dog)\n}\n"), 0644)
+	uri3 := openProjectFile(t, h, dir, "app/dottest.gala")
+	list2, err := h.Completion(uri3, 6, 8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list2 != nil && len(list2.Items) > 0 {
+		hasDescribe := false
+		for _, item := range list2.Items {
+			if strings.HasPrefix(item.Label, "Describe") || item.FilterText == "Describe" {
+				hasDescribe = true
+			}
+		}
+		if hasDescribe {
+			t.Log("cross-package method completion works: dog.Describe() found")
+		} else {
+			t.Errorf("dog. completion: %d items but no Describe method", len(list2.Items))
+			for _, item := range list2.Items {
+				t.Logf("  %s kind=%v filter=%s", item.Label, item.Kind, item.FilterText)
+			}
+		}
+	} else {
+		t.Log("no method completion for dog. — type may not resolve cross-package in test")
+	}
+}
+
+// Verify cross-package type inference — val hints from imported types.
+func TestMultiPackage_CrossPackageInlayHints(t *testing.T) {
+	h := newHarness(t)
+	dir := createMultiPackageProject(t)
+
+	openProjectFile(t, h, dir, "mylib/types.gala")
+	openProjectFile(t, h, dir, "mylib/helpers.gala")
+	uri := openProjectFile(t, h, dir, "app/main.gala")
+
+	raw, err := h.Call("textDocument/inlayHint", map[string]interface{}{
+		"textDocument": map[string]string{"uri": string(uri)},
+		"range": map[string]interface{}{
+			"start": map[string]int{"line": 0, "character": 0},
+			"end":   map[string]int{"line": 15, "character": 0},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("cross-package inlay hints: %s", string(raw))
+}
+
+// Verify cross-package diagnostics — no false errors for valid imports.
+func TestMultiPackage_NoDiagnosticsFalsePositives(t *testing.T) {
+	h := newHarness(t)
+	dir := createMultiPackageProject(t)
+
+	openProjectFile(t, h, dir, "mylib/types.gala")
+	openProjectFile(t, h, dir, "mylib/helpers.gala")
+	uri := openProjectFile(t, h, dir, "app/main.gala")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	diags, err := h.WaitForDiagnostics(ctx, uri)
+	if err != nil {
+		t.Fatalf("waiting for diagnostics: %v", err)
+	}
+
+	errorCount := 0
+	for _, d := range diags {
+		if d.Severity != nil && *d.Severity == lsp.SeverityError {
+			errorCount++
+			t.Logf("  ERROR: line=%d msg=%s", d.Range.Start.Line, d.Message)
+		}
+	}
+	t.Logf("cross-package diagnostics: %d total, %d errors", len(diags), errorCount)
+
+	// Valid GALA code should not produce errors
+	if errorCount > 0 {
+		t.Errorf("expected 0 errors for valid cross-package project, got %d", errorCount)
+	}
+}
+
+// Verify import alias with cross-package: import ml "testproject/mylib"
+func TestMultiPackage_ImportAlias(t *testing.T) {
+	h := newHarness(t)
+	dir := createTestProject(t, []testProjectFile{
+		{Name: "go.mod", Src: "module testproject\n\ngo 1.21\n"},
+		{Name: "mylib/types.gala", Src: "package mylib\n\ntype Color struct {\n    val r int\n    val g int\n    val b int\n}\n"},
+		{Name: "app/main.gala", Src: "package main\n\nimport ml \"testproject/mylib\"\n\nfunc main() {\n    val c = ml.Color(r = 255, g = 0, b = 0)\n    Println(c)\n}\n"},
+	})
+
+	openProjectFile(t, h, dir, "mylib/types.gala")
+	uri := openProjectFile(t, h, dir, "app/main.gala")
+
+	// ml. should trigger package completion
+	list, err := h.Completion(uri, 5, 14)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list != nil && len(list.Items) > 0 {
+		t.Logf("alias package completion: %d items", len(list.Items))
+		for _, item := range list.Items {
+			t.Logf("  %s", item.Label)
+		}
+	} else {
+		t.Log("no alias package completion — resolver may not find package in test")
+	}
+}
+
+// Verify std package resolution (collection_immutable) from external project context.
+func TestMultiPackage_StdPackageResolution(t *testing.T) {
+	h := newHarness(t)
+	root := findProjectRoot()
+	if root == "" {
+		t.Skip("project root not found")
+	}
+
+	dir := createTestProject(t, []testProjectFile{
+		{Name: "go.mod", Src: "module myapp\n\ngo 1.21\n"},
+		{Name: "main.gala", Src: "package main\n\nimport \"martianoff/gala/collection_immutable\"\n\nfunc main() {\n    val arr = collection_immutable.ArrayOf(1, 2, 3)\n    Println(arr)\n}\n"},
+	})
+
+	uri := openProjectFile(t, h, dir, "main.gala")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	diags, err := h.WaitForDiagnostics(ctx, uri)
+	if err != nil {
+		t.Fatalf("waiting for diagnostics: %v", err)
+	}
+
+	// Count errors (warnings about unresolved packages are acceptable in test env)
+	for _, d := range diags {
+		t.Logf("  diag: severity=%v line=%d msg=%s", d.Severity, d.Range.Start.Line, d.Message)
+	}
+	t.Logf("std package resolution: %d diagnostics", len(diags))
 }

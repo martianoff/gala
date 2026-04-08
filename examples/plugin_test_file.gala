@@ -6,6 +6,8 @@
 package main
 
 import "fmt"
+import "martianoff/gala/collection_immutable"
+import ci "martianoff/gala/collection_immutable"
 
 // ============================================================
 // === 1. Syntax Highlighting ===
@@ -89,6 +91,7 @@ func findPerson(name string) Option[Person] {
 }
 
 func testOptionChaining() {
+
     val result = findPerson("Alice")
     // [EXPECT] result type hint: Option[Person] or Option
     // [EXPECT] Type "result." → suggests Option methods: Get(), Map(), FlatMap(), IsDefined(), etc.
@@ -597,5 +600,63 @@ func main() {
     testTypeAliasesAdvanced()
     testInterfaces()
 
+    testCollectionImmutable()
+    testPackageAlias()
+    testScopedTypeInference()
+
     Println("=== All tests complete ===")
+}
+
+// ============================================================
+// === 20. Collection Immutable (Package Dot Completion) ===
+// ============================================================
+func testCollectionImmutable() {
+    // [EXPECT] "collection_immutable." triggers completion showing: ArrayOf, HashMap, List, etc.
+    val arr = collection_immutable.ArrayOf(1, 2, 3)
+
+    // [EXPECT] arr. triggers completion showing: Map, Filter, ForEach, FoldLeft, Head, Tail, Size, etc.
+    val doubled = arr.Map((x) => x * 2)
+    val evens = arr.Filter((x) => x % 2 == 0)
+    val sum = arr.FoldLeft(0, (acc, x) => acc + x)
+
+    // [EXPECT] Type hints: arr :Array[int], doubled :Array[int], evens :Array[int], sum :int
+    Println(s"arr=$arr doubled=$doubled evens=$evens sum=$sum")
+}
+
+// ============================================================
+// === 21. Package Alias Completion ===
+// ============================================================
+func testPackageAlias() {
+    // [EXPECT] "ci." triggers completion showing same types as collection_immutable.
+    val list = ci.ArrayOf("hello", "world")
+
+    // [EXPECT] list. triggers completion showing: Map, Filter, Size, Head, etc.
+    val upper = list.Map((s) => s)
+    val count = list.Size()
+
+    // [EXPECT] Type hints: list :Array[string], count :int
+    Println(s"list=$list upper=$upper count=$count")
+}
+
+// ============================================================
+// === 22. Scoped Type Inference ===
+// ============================================================
+// [EXPECT] Type hints for "a" should be DIFFERENT in each function
+func greetPerson(p Person) string {
+    // [EXPECT] a :string (from p.name, not int from other function)
+    val a = p.name
+    return a
+}
+
+func isPersonAdult(p Person) bool {
+    // [EXPECT] a :int (from p.age, not string from other function)
+    val a = p.age
+    return a >= 18
+}
+
+func testScopedTypeInference() {
+    val p = Person(name = "Alice", age = 30, email = "alice@example.com")
+    val greeting = greetPerson(p)
+    val adult = isPersonAdult(p)
+    Println(s"greeting=$greeting adult=$adult")
 }

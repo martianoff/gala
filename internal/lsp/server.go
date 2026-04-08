@@ -24,9 +24,8 @@ import (
 type GalaHandler struct {
 	rootPath string
 
-	parser      transpiler.GalaParser
-	transformer transpiler.ASTTransformer
-	generator   transpiler.CodeGenerator
+	parser    transpiler.GalaParser
+	generator transpiler.CodeGenerator
 
 	extraSearchPaths []string          // additional search paths (for testing)
 	client           *golsp.Client     // LSP client for sending notifications
@@ -56,9 +55,8 @@ func NewGalaHandler() *GalaHandler {
 		richASTs:    make(map[string]*transpiler.RichAST),
 		varTypes:       make(map[string]map[string]string),
 		debounceTimers: make(map[string]*time.Timer),
-		parser:      transpiler.NewAntlrGalaParser(),
-		transformer: transformer.NewGalaASTTransformer(),
-		generator:   generator.NewGoCodeGenerator(),
+		parser:    transpiler.NewAntlrGalaParser(),
+		generator: generator.NewGoCodeGenerator(),
 	}
 }
 
@@ -199,8 +197,10 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 	h.richASTs[uri] = richAST
 	h.mu.Unlock()
 
-	// Use TransformForLSP to get resolved variable types directly from the transpiler
-	result, transformErr := h.transformer.TransformForLSP(richAST)
+	// Use a fresh transformer per analysis to avoid race conditions between
+	// concurrent debounce timers (the transformer has mutable internal state).
+	xformer := transformer.NewGalaASTTransformer()
+	result, transformErr := xformer.TransformForLSP(richAST)
 	if transformErr != nil {
 		diagnostics = append(diagnostics, errorsToDiagnostics(transformErr)...)
 	}

@@ -30,9 +30,13 @@ func (t *galaASTTransformer) addVal(name string, typeName transpiler.Type) {
 		t.currentScope.vals[name] = true
 		t.currentScope.valTypes[name] = typeName
 	}
-	// Collect for LSP
+	// Collect for LSP — scope by current function to prevent cross-function collisions
 	if t.lspVarTypes != nil && typeName != nil && !typeName.IsNil() {
-		t.lspVarTypes[name] = typeName
+		key := name
+		if t.lspCurrentFunc != "" {
+			key = t.lspCurrentFunc + "." + name
+		}
+		t.lspVarTypes[key] = typeName
 	}
 }
 
@@ -41,9 +45,13 @@ func (t *galaASTTransformer) addVar(name string, typeName transpiler.Type) {
 		t.currentScope.vals[name] = false
 		t.currentScope.valTypes[name] = typeName
 	}
-	// Collect for LSP
+	// Collect for LSP — scope by current function to prevent cross-function collisions
 	if t.lspVarTypes != nil && typeName != nil && !typeName.IsNil() {
-		t.lspVarTypes[name] = typeName
+		key := name
+		if t.lspCurrentFunc != "" {
+			key = t.lspCurrentFunc + "." + name
+		}
+		t.lspVarTypes[key] = typeName
 	}
 }
 

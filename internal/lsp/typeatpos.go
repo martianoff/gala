@@ -1,10 +1,23 @@
 package lsp
 
 import (
+	"regexp"
 	"strings"
 
 	"martianoff/gala/internal/transpiler"
 )
+
+var funcDeclPattern = regexp.MustCompile(`^\s*func\s+(?:\([^)]*\)\s+)?(\w+)`)
+
+// findEnclosingFunc scans lines backwards from the given line to find the enclosing function name.
+func findEnclosingFunc(lines []string, targetLine int) string {
+	for i := targetLine; i >= 0; i-- {
+		if m := funcDeclPattern.FindStringSubmatch(lines[i]); m != nil {
+			return m[1]
+		}
+	}
+	return ""
+}
 
 // typeAtDot resolves the type of the expression before a dot at the given position.
 // Returns the type name for method/field lookup, or "__package__:name" for package completion.
@@ -17,6 +30,9 @@ func typeAtDot(text string, line, char int, richAST *transpiler.RichAST, varType
 	if line >= len(lines) {
 		return ""
 	}
+
+	// Determine enclosing function for scoped variable lookup
+	enclosingFunc := findEnclosingFunc(lines, line)
 	l := lines[line]
 	if char > len(l) {
 		char = len(l)
@@ -62,12 +78,10 @@ func typeAtDot(text string, line, char int, richAST *transpiler.RichAST, varType
 
 			// Check if there's a dot before this name (chained: receiver.Method().next)
 			if i >= 0 && l[i] == '.' {
-				// Chain call — resolve the method's return type
-				// For now, resolve the base receiver and look up the method
-				return resolveReceiverType(name, richAST, varTypes)
+				return resolveReceiverType(name, enclosingFunc, richAST, varTypes)
 			}
 			// No preceding dot — this IS the expression (Some(42)., funcName().)
-			return resolveReceiverType(name, richAST, varTypes)
+			return resolveReceiverType(name, enclosingFunc, richAST, varTypes)
 		}
 	}
 
@@ -83,20 +97,18 @@ func typeAtDot(text string, line, char int, richAST *transpiler.RichAST, varType
 	}
 	receiverName := l[start:end]
 
-	return resolveReceiverType(receiverName, richAST, varTypes)
+	return resolveReceiverType(receiverName, enclosingFunc, richAST, varTypes)
 }
 
 // resolveReceiverType resolves a name to a type for dot completion.
-func resolveReceiverType(name string, richAST *transpiler.RichAST, varTypes map[string]string) string {
-	// 1. Check transpiler's resolved var types
-	if varTypes != nil {
-		if typStr, ok := varTypes[name]; ok {
-			base := typStr
-			if idx := strings.Index(base, "["); idx > 0 {
-				base = base[:idx]
-			}
-			return base
+func resolveReceiverType(name, funcScope string, richAST *transpiler.RichAST, varTypes map[string]string) string {
+	// 1. Check transpiler's resolved var types (function-scoped)
+	if typStr := lookupVarType(varTypes, funcScope, name); typStr != "" {
+		base := typStr
+		if idx := strings.Index(base, "["); idx > 0 {
+			base = base[:idx]
 		}
+		return base
 	}
 
 	if richAST == nil {
@@ -150,14 +162,26 @@ func resolveReceiverType(name string, richAST *transpiler.RichAST, varTypes map[
 	return ""
 }
 
-// findType looks up a type in the RichAST by simple name, handling aliases and prefixes.
+// findType looks up a type in the RichAST by name.
+// Handles: exact key match, "std." prefix, package-qualified names ("pkg.Type"),
+// simple name suffix match, and type aliases.
 func findType(richAST *transpiler.RichAST, name string) *transpiler.TypeMetadata {
+	// Direct lookup by exact key
 	if tm, ok := richAST.Types[name]; ok {
 		return tm
 	}
+	// Try with std. prefix
 	if tm, ok := richAST.Types["std."+name]; ok {
 		return tm
 	}
+
+	// Extract simple name from qualified name (e.g., "mylib.Animal" → "Animal")
+	simpleName := name
+	if idx := strings.LastIndex(name, "."); idx >= 0 {
+		simpleName = name[idx+1:]
+	}
+
+	// Search all types by matching either the full key, tm.Name, or simple name
 	for key, tm := range richAST.Types {
 		typeName := tm.Name
 		if typeName == "" {
@@ -165,15 +189,28 @@ func findType(richAST *transpiler.RichAST, name string) *transpiler.TypeMetadata
 				typeName = key[idx+1:]
 			}
 		}
-		if typeName == name {
+		// Match by simple type name (handles "mylib.Animal" matching key "mylib.Animal"
+		// or key "Animal" with tm.Name "Animal")
+		if typeName == simpleName {
 			return tm
 		}
 	}
+
+	// Type alias resolution
 	if richAST.TypeAliases != nil {
 		if aliasType, ok := richAST.TypeAliases[name]; ok {
 			underlying := aliasType.BaseName()
 			if underlying != name {
 				return findType(richAST, underlying)
+			}
+		}
+		// Also try alias by simple name
+		if simpleName != name {
+			if aliasType, ok := richAST.TypeAliases[simpleName]; ok {
+				underlying := aliasType.BaseName()
+				if underlying != simpleName {
+					return findType(richAST, underlying)
+				}
 			}
 		}
 	}
