@@ -133,6 +133,13 @@ func resolveReceiverType(name string, richAST *transpiler.RichAST, varTypes map[
 		}
 	}
 
+	// 4b. Check if it's an import alias → resolve to actual package name
+	if richAST.ImportAliases != nil {
+		if pkgName, ok := richAST.ImportAliases[name]; ok {
+			return "__package__:" + pkgName
+		}
+	}
+
 	// 5. Check if it's a type name (for static calls like Type.Method)
 	if isExported(name) {
 		if findType(richAST, name) != nil {

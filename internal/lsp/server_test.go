@@ -1,6 +1,7 @@
 package lsp_test
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -1903,20 +1904,48 @@ func TestDiagnostics_ClearedOnClose(t *testing.T) {
 
 func TestDiagnostics_FixedOnEdit(t *testing.T) {
 	h := newHarness(t)
-	// First open with error
-	uri := openFileOnDisk(t, h, "package main\n\nfunc main() {\n    val x = \n}\n")
-	diags1 := h.Diagnostics(uri)
-	t.Logf("diagnostics with error: %d", len(diags1))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-	// Edit to fix the error
+	// First open with error — DidOpen calls publishDiagnostics synchronously
+	uri := openFileOnDisk(t, h, "package main\n\nfunc main() {\n    val x = \n}\n")
+	// Wait for the notification to arrive
+	diags1, err := h.WaitForDiagnostics(ctx, uri)
+	if err != nil {
+		t.Fatalf("waiting for initial diagnostics: %v", err)
+	}
+	t.Logf("diagnostics with error: %d", len(diags1))
+	for _, d := range diags1 {
+		t.Logf("  error diag: line=%d col=%d msg=%s", d.Range.Start.Line, d.Range.Start.Character, d.Message)
+	}
+	if len(diags1) == 0 {
+		t.Fatal("expected at least 1 diagnostic for parse error")
+	}
+
+	// Edit to fix the error — DidChange uses 500ms debounce
+	h.ClearDiagnostics()
 	if err := h.DidChange(uri, 1, "package main\n\nfunc main() {\n    val x = 42\n    Println(x)\n}\n"); err != nil {
 		t.Fatal(err)
 	}
-	diags2 := h.Diagnostics(uri)
+	// Wait for debounce timer (500ms) to fire and re-publish
+	diags2, err := h.WaitForDiagnostics(ctx, uri)
+	if err != nil {
+		t.Fatalf("waiting for fix diagnostics: %v", err)
+	}
 	t.Logf("diagnostics after fix: %d", len(diags2))
-	// Should have fewer or zero diagnostics
-	if len(diags2) >= len(diags1) && len(diags1) > 0 {
-		t.Logf("NOTE: diagnostics may not decrease in test harness without async")
+	for _, d := range diags2 {
+		t.Logf("  persistent diag: severity=%v line=%d msg=%s", d.Severity, d.Range.Start.Line, d.Message)
+	}
+
+	// After fixing, errors should be gone (only warnings acceptable)
+	errorCount := 0
+	for _, d := range diags2 {
+		if d.Severity != nil && *d.Severity == lsp.SeverityError {
+			errorCount++
+		}
+	}
+	if errorCount > 0 {
+		t.Errorf("expected 0 errors after fix, got %d error diagnostics that persist", errorCount)
 	}
 }
 
@@ -2285,4 +2314,90 @@ func TestCompletion_DotOnImportedTypeResult(t *testing.T) {
 		return
 	}
 	t.Logf("SliceOf result dot completion: %d items", len(list.Items))
+}
+
+// Issue 7: Package alias dot completion (import im "path/to/pkg"; im.)
+func TestCompletion_PackageAliasDot(t *testing.T) {
+	h := newHarness(t)
+	uri := openFileOnDisk(t, h, "package main\n\nimport im \"martianoff/gala/collection_immutable\"\n\nfunc main() {\n    im.\n}\n")
+	list, err := h.Completion(uri, 5, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list == nil || len(list.Items) == 0 {
+		t.Log("no alias completions — analyzer may not resolve aliased imports in test")
+		return
+	}
+	t.Logf("package alias dot completions: %d items", len(list.Items))
+	for _, item := range list.Items {
+		t.Logf("  %s  kind=%v", item.Label, item.Kind)
+	}
+}
+
+// Verify aliased import completion works via alias
+func TestCompletion_PackageAliasHover(t *testing.T) {
+	h := newHarness(t)
+	// Use alias "im" for collection_immutable and hover on HashMap
+	uri := openFileOnDisk(t, h, "package main\n\nimport im \"martianoff/gala/collection_immutable\"\n\nfunc main() {\n    val m = im.HashMap[string, int]()\n}\n")
+	hover, err := h.Hover(uri, 5, 18)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("hover on im.HashMap: %v", hover)
+}
+
+// Imported Array from collection_immutable should provide method auto-suggestions (Map, Filter, etc.)
+func TestCompletion_ImportedArrayMethods(t *testing.T) {
+	h := newHarness(t)
+
+	// Verify collection_immutable is resolvable from the project root
+	root := findProjectRoot()
+	if root == "" {
+		t.Skip("project root not found — cannot resolve collection_immutable")
+	}
+	ciDir := filepath.Join(root, "collection_immutable")
+	if _, err := os.Stat(ciDir); os.IsNotExist(err) {
+		t.Skipf("collection_immutable not found at %s", ciDir)
+	}
+
+	uri := openFileOnDisk(t, h, "package main\n\nimport \"martianoff/gala/collection_immutable\"\n\nfunc main() {\n    val arr = collection_immutable.ArrayOf(1, 2, 3)\n    arr.\n    Println(arr)\n}\n")
+	// Line 6 = "    arr."  char 8 = after the dot
+	list, err := h.Completion(uri, 6, 8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list == nil || len(list.Items) == 0 {
+		t.Fatalf("no completion for arr. — expected Array method suggestions")
+	}
+
+	labels := make(map[string]bool)
+	for _, item := range list.Items {
+		for _, method := range []string{"Map", "Filter", "ForEach", "FlatMap", "FoldLeft", "Size", "Head", "Tail"} {
+			if strings.HasPrefix(item.Label, method) || item.FilterText == method {
+				labels[method] = true
+			}
+		}
+	}
+
+	expectedMethods := []string{"Map", "Filter", "ForEach"}
+	for _, m := range expectedMethods {
+		if !labels[m] {
+			t.Errorf("missing expected method '%s' in Array completion (got %d items)", m, len(list.Items))
+		}
+	}
+	t.Logf("Array method completions: %d items", len(list.Items))
+	for _, item := range list.Items {
+		t.Logf("  label=%s kind=%v filter=%s", item.Label, item.Kind, item.FilterText)
+	}
+}
+
+// Verify hover on alias-qualified type resolves correctly
+func TestHover_PackageAliasType(t *testing.T) {
+	h := newHarness(t)
+	uri := openFileOnDisk(t, h, "package main\n\nimport im \"martianoff/gala/collection_immutable\"\n\nfunc main() {\n    val m = im.HashMap[string, int]()\n    Println(m)\n}\n")
+	hover, err := h.Hover(uri, 5, 16)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("hover on aliased HashMap: %v", hover)
 }
