@@ -396,6 +396,26 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 		}
 	}
 
+	// 0.55 Collect import aliases (e.g., import im "path/to/pkg" → im → actual package name)
+	for _, impDecl := range sourceFile.AllImportDeclaration() {
+		ctx := impDecl.(*grammar.ImportDeclarationContext)
+		for _, spec := range ctx.AllImportSpec() {
+			s := spec.(*grammar.ImportSpecContext)
+			if aliasIdent := s.Identifier(); aliasIdent != nil {
+				alias := aliasIdent.GetText()
+				if alias != "." {
+					path := strings.Trim(s.STRING().GetText(), "\"")
+					if pkgName, ok := richAST.Packages[path]; ok {
+						if richAST.ImportAliases == nil {
+							richAST.ImportAliases = make(map[string]string)
+						}
+						richAST.ImportAliases[alias] = pkgName
+					}
+				}
+			}
+		}
+	}
+
 	logPhase("scan-gala-imports", phaseStart)
 	phaseStart = time.Now()
 

@@ -183,12 +183,7 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 
 	tree, err := h.parser.Parse(text)
 	if err != nil {
-		diagnostics = append(diagnostics, lsp.Diagnostic{
-			Range:    zeroRange(),
-			Severity: sevPtr(lsp.SeverityError),
-			Source:   "gala",
-			Message:  fmt.Sprintf("Parse error: %s", err),
-		})
+		diagnostics = append(diagnostics, errorsToDiagnostics(err)...)
 		return diagnostics
 	}
 
@@ -308,10 +303,14 @@ func errorToDiagnostic(err error) lsp.Diagnostic {
 			char = c
 		}
 	} else if idx := strings.Index(msg, "line "); idx >= 0 {
-		var l int
-		fmt.Sscanf(msg[idx:], "line %d", &l)
-		if l > 0 {
+		var l, c int
+		// Try "line N:N" format (ANTLR syntax errors)
+		n, _ := fmt.Sscanf(msg[idx:], "line %d:%d", &l, &c)
+		if n >= 1 && l > 0 {
 			line = l - 1
+			if n >= 2 {
+				char = c
+			}
 		}
 	}
 

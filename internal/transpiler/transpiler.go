@@ -64,6 +64,7 @@ type RichAST struct {
 	Types            map[string]*TypeMetadata
 	Functions        map[string]*FunctionMetadata
 	Packages         map[string]string                   // path -> pkgName
+	ImportAliases    map[string]string                   // alias -> pkgName (e.g., "im" -> "collection_immutable")
 	CompanionObjects map[string]*CompanionObjectMetadata // companion name -> metadata
 	GoExports        map[string][]string                 // pkgName -> exported symbol names (from Go-only packages)
 	GoTypeInfo       *GoTypeInfo                         // type info extracted from Go source files and packages
@@ -125,6 +126,14 @@ func (r *RichAST) Merge(other *RichAST) {
 	}
 	for k, v := range other.Packages {
 		r.Packages[k] = v
+	}
+	if len(other.ImportAliases) > 0 {
+		if r.ImportAliases == nil {
+			r.ImportAliases = make(map[string]string)
+		}
+		for k, v := range other.ImportAliases {
+			r.ImportAliases[k] = v
+		}
 	}
 	for k, v := range other.CompanionObjects {
 		r.CompanionObjects[k] = v

@@ -28,11 +28,18 @@ go_library(
 
 go_test(
     name = "lsp_test",
-    srcs = ["server_test.go"],
-    data = ["//std:gala_sources"],
+    srcs = [
+        "server_test.go",
+        "typeatpos_test.go",
+    ],
+    data = [
+        "//collection_immutable:gala_sources",
+        "//std:gala_sources",
+    ],
+    embed = [":lsp"],
     tags = ["no-sandbox"],
     deps = [
-        ":lsp",
+        "//internal/transpiler",
         "@com_github_owenrumney_go_lsp//lsp",
         "@com_github_owenrumney_go_lsp//servertest",
         "@rules_go//go/tools/bazel",

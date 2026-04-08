@@ -7,7 +7,7 @@ import (
 )
 
 // typeAtDot resolves the type of the expression before a dot at the given position.
-// Uses the transpiler's resolved VarTypes map for accurate results.
+// Returns the type name for method/field lookup, or "__package__:name" for package completion.
 func typeAtDot(text string, line, char int, richAST *transpiler.RichAST, varTypes map[string]string) string {
 	if richAST == nil {
 		return ""
@@ -17,11 +17,12 @@ func typeAtDot(text string, line, char int, richAST *transpiler.RichAST, varType
 	if line >= len(lines) {
 		return ""
 	}
-
-	// Extract the receiver name before the dot
 	l := lines[line]
 	if char > len(l) {
 		char = len(l)
+	}
+	if char <= 0 {
+		return ""
 	}
 
 	// Walk backwards from cursor to find the dot
@@ -34,9 +35,10 @@ func typeAtDot(text string, line, char int, richAST *transpiler.RichAST, varType
 	}
 	dotPos := i
 
-	// Extract the receiver identifier before the dot
+	// Extract what's before the dot
 	i = dotPos - 1
-	// Skip closing parens for chained calls: expr.Method().
+
+	// Case 1: Closing paren before dot — function/constructor call: Some(42). or expr.Method().
 	if i >= 0 && l[i] == ')' {
 		depth := 1
 		i--
@@ -48,19 +50,31 @@ func typeAtDot(text string, line, char int, richAST *transpiler.RichAST, varType
 			}
 			i--
 		}
-		// Now i points before the method name, skip it
+		// i now points before '(' — extract the name before it
+		nameEnd := i + 1
 		for i >= 0 && isIdentChar(l[i]) {
 			i--
 		}
-		// Skip the dot before the method
-		if i >= 0 && l[i] == '.' {
-			i--
+		nameStart := i + 1
+
+		if nameStart < nameEnd {
+			name := l[nameStart:nameEnd]
+
+			// Check if there's a dot before this name (chained: receiver.Method().next)
+			if i >= 0 && l[i] == '.' {
+				// Chain call — resolve the method's return type
+				// For now, resolve the base receiver and look up the method
+				return resolveReceiverType(name, richAST, varTypes)
+			}
+			// No preceding dot — this IS the expression (Some(42)., funcName().)
+			return resolveReceiverType(name, richAST, varTypes)
 		}
 	}
 
-	// Extract the base identifier
+	// Case 2: Identifier before dot — variable or package name: x. or pkg.
 	end := i + 1
-	for i >= 0 && isIdentChar(l[i]) {
+	// Handle underscore-containing names like collection_immutable
+	for i >= 0 && (isIdentChar(l[i]) || l[i] == '_') {
 		i--
 	}
 	start := i + 1
@@ -69,10 +83,14 @@ func typeAtDot(text string, line, char int, richAST *transpiler.RichAST, varType
 	}
 	receiverName := l[start:end]
 
-	// Look up the receiver's type from the transpiler's resolved types
+	return resolveReceiverType(receiverName, richAST, varTypes)
+}
+
+// resolveReceiverType resolves a name to a type for dot completion.
+func resolveReceiverType(name string, richAST *transpiler.RichAST, varTypes map[string]string) string {
+	// 1. Check transpiler's resolved var types
 	if varTypes != nil {
-		if typStr, ok := varTypes[receiverName]; ok {
-			// Strip generic params for type lookup: "Option[Person]" → "Option"
+		if typStr, ok := varTypes[name]; ok {
 			base := typStr
 			if idx := strings.Index(base, "["); idx > 0 {
 				base = base[:idx]
@@ -81,35 +99,51 @@ func typeAtDot(text string, line, char int, richAST *transpiler.RichAST, varType
 		}
 	}
 
-	// Check if it's a function call: funcName(args).
-	// Look up the function's return type
-	if richAST != nil {
-		if fm, ok := richAST.Functions[receiverName]; ok {
-			if fm.ReturnType != nil && !fm.ReturnType.IsNil() {
-				base := cleanGoTypeForDisplay(fm.ReturnType.String())
-				if idx := strings.Index(base, "["); idx > 0 {
-					base = base[:idx]
-				}
-				return base
+	if richAST == nil {
+		return ""
+	}
+
+	// 2. Check if it's a function call return type
+	if fm, ok := richAST.Functions[name]; ok {
+		if fm.ReturnType != nil && !fm.ReturnType.IsNil() {
+			base := cleanGoTypeForDisplay(fm.ReturnType.String())
+			if idx := strings.Index(base, "["); idx > 0 {
+				base = base[:idx]
+			}
+			return base
+		}
+	}
+
+	// 3. Check if it's a sealed case constructor → parent type
+	for _, tm := range richAST.Types {
+		if !tm.IsSealed {
+			continue
+		}
+		for _, v := range tm.SealedVariants {
+			if v.Name == name {
+				return tm.Name
 			}
 		}
 	}
 
-	// Check if it's a constructor call: TypeName(args).
-	if isExported(receiverName) && richAST != nil {
-		// Sealed case → parent type
-		for _, tm := range richAST.Types {
-			if !tm.IsSealed {
-				continue
-			}
-			for _, v := range tm.SealedVariants {
-				if v.Name == receiverName {
-					return tm.Name
-				}
-			}
+	// 4. Check if it's a package name → return package marker for package completion
+	for _, pkgName := range richAST.Packages {
+		if pkgName == name {
+			return "__package__:" + name
 		}
-		if findType(richAST, receiverName) != nil {
-			return receiverName
+	}
+
+	// 4b. Check if it's an import alias → resolve to actual package name
+	if richAST.ImportAliases != nil {
+		if pkgName, ok := richAST.ImportAliases[name]; ok {
+			return "__package__:" + pkgName
+		}
+	}
+
+	// 5. Check if it's a type name (for static calls like Type.Method)
+	if isExported(name) {
+		if findType(richAST, name) != nil {
+			return name
 		}
 	}
 
@@ -118,15 +152,12 @@ func typeAtDot(text string, line, char int, richAST *transpiler.RichAST, varType
 
 // findType looks up a type in the RichAST by simple name, handling aliases and prefixes.
 func findType(richAST *transpiler.RichAST, name string) *transpiler.TypeMetadata {
-	// Direct lookup
 	if tm, ok := richAST.Types[name]; ok {
 		return tm
 	}
-	// Try with std. prefix (std types stored as "std.Option", "std.Either" etc.)
 	if tm, ok := richAST.Types["std."+name]; ok {
 		return tm
 	}
-	// Suffix match (any package prefix)
 	for key, tm := range richAST.Types {
 		typeName := tm.Name
 		if typeName == "" {
