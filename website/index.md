@@ -119,13 +119,9 @@ val name = user.Name
 
 <div class="feature-card">
 <h3>IDE Support with LSP</h3>
-<p>GoLand/IntelliJ plugin with full ANTLR parser, syntax highlighting, 12 live templates, and semantic annotations. LSP server provides diagnostics, hover, go-to-definition, completion, and inlay hints.</p>
-<pre><code># Install plugin from releases, then:
-gala lsp  # starts the language server
-
-# Works with GoLand, VS Code, Neovim,
-# and any LSP-compatible editor</code></pre>
-<p><a href="{{ '/getting-started/#ide-support' | relative_url }}">Set up your IDE</a></p>
+<p>GoLand/IntelliJ plugin with syntax highlighting, type-aware dot completion, inlay type hints, and structure view. LSP server provides diagnostics, hover, go-to-definition, and more.</p>
+<img src="{{ '/assets/images/ide/dot-completion.png' | relative_url }}" alt="GALA code completion in IntelliJ" style="max-width: 100%; border: 1px solid #e1e4e8; border-radius: 4px; margin: 0.5rem 0;">
+<p><a href="{{ '/features/ide-support/' | relative_url }}">See IDE features</a></p>
 </div>
 
 </div>
