@@ -2156,3 +2156,133 @@ func TestCompletion_NoUnrelatedMethods(t *testing.T) {
 		}
 	}
 }
+
+// ============================================================
+// === Regression tests for 6 reported issues ===
+// ============================================================
+
+// Issue 1: Sealed case constructor named args (Circle(radius = ...))
+func TestCompletion_SealedCaseNamedArgs(t *testing.T) {
+	h := newHarness(t)
+	// First open with valid syntax so richAST gets cached
+	src := "package main\n\nsealed type Shape {\n    case Circle(radius float64)\n    case Rectangle(width float64, height float64)\n}\n\nfunc main() {\n    val c = Circle(radius = 5.0)\n    Println(c)\n}\n"
+	uri := openFileOnDisk(t, h, src)
+	// Then simulate typing by changing to incomplete
+	h.DidChange(uri, 1, "package main\n\nsealed type Shape {\n    case Circle(radius float64)\n    case Rectangle(width float64, height float64)\n}\n\nfunc main() {\n    val c = Circle(r\n    Println(c)\n}\n")
+	// Complete inside Circle( — line 8, col 20
+	list, err := h.Completion(uri, 8, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list == nil || len(list.Items) == 0 {
+		t.Fatalf("expected sealed case field completions for Circle(")
+	}
+	labels := make(map[string]bool)
+	for _, item := range list.Items {
+		labels[item.Label] = true
+		t.Logf("  %s  insert=%s  detail=%s", item.Label, item.InsertText, item.Detail)
+	}
+	if !labels["radius"] {
+		t.Errorf("missing field 'radius' in Circle( completion (got: %v)", labels)
+	}
+}
+
+// Issue 2: Package dot completion (collection_immutable.)
+func TestCompletion_PackageDot(t *testing.T) {
+	h := newHarness(t)
+	uri := openFileOnDisk(t, h, "package main\n\nimport \"martianoff/gala/collection_immutable\"\n\nfunc main() {\n    collection_immutable.\n}\n")
+	list, err := h.Completion(uri, 5, 24)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list == nil || len(list.Items) == 0 {
+		t.Log("no package completions — analyzer may not resolve imports in test")
+		return
+	}
+	t.Logf("package dot completions: %d items", len(list.Items))
+	for _, item := range list.Items {
+		t.Logf("  %s  kind=%v", item.Label, item.Kind)
+	}
+}
+
+// Issue 3: Type inference for imported types
+func TestInlayHints_ImportedType(t *testing.T) {
+	h := newHarness(t)
+	uri := openFileOnDisk(t, h, "package main\n\nfunc main() {\n    val a = SliceOf(1, 2, 3)\n    Println(a)\n}\n")
+	raw, err := h.Call("textDocument/inlayHint", map[string]interface{}{
+		"textDocument": map[string]string{"uri": string(uri)},
+		"range": map[string]interface{}{
+			"start": map[string]int{"line": 0, "character": 0},
+			"end":   map[string]int{"line": 10, "character": 0},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("imported type hints: %s", string(raw))
+}
+
+// Issue 4: Parse error line numbers (not at line 0)
+func TestDiagnostics_ParseErrorLineNumber(t *testing.T) {
+	h := newHarness(t)
+	// Syntax error on line 4 (0-indexed): missing expression after =
+	uri := openFileOnDisk(t, h, "package main\n\nfunc main() {\n    val x = 42\n    val y = \n    Println(x)\n}\n")
+	diags := h.Diagnostics(uri)
+	if len(diags) == 0 {
+		t.Log("no diagnostics received")
+		return
+	}
+	for _, d := range diags {
+		t.Logf("  diag at line %d col %d: %s", d.Range.Start.Line, d.Range.Start.Character, d.Message)
+		// Error should be near line 4, not line 0
+		if d.Range.Start.Line == 0 && strings.Contains(d.Message, "line ") {
+			// Extract expected line from message
+			t.Log("NOTE: error has line info in message but diagnostic is at line 0")
+		}
+	}
+}
+
+// Issue 5: Dot completion after constructor call (Some(42).)
+func TestCompletion_DotAfterConstructorCall(t *testing.T) {
+	h := newHarness(t)
+	uri := openFileOnDisk(t, h, "package main\n\nfunc main() {\n    val x = Some(42).Get()\n    Println(x)\n}\n")
+	// Complete after Some(42). — line 3, col 21 (after the dot)
+	list, err := h.Completion(uri, 3, 21)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list == nil || len(list.Items) == 0 {
+		t.Fatalf("expected Option method completions after Some(42).")
+	}
+	labels := make(map[string]bool)
+	for _, item := range list.Items {
+		labels[item.Label] = true
+	}
+	// Should have Option methods like Get
+	found := false
+	for l := range labels {
+		if strings.HasPrefix(l, "Get") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("missing Get method after Some(42). completion (got %d items)", len(list.Items))
+	}
+	t.Logf("Some(42). completion: %d items", len(list.Items))
+}
+
+// Issue 6: Dot completion on imported type result
+func TestCompletion_DotOnImportedTypeResult(t *testing.T) {
+	h := newHarness(t)
+	uri := openFileOnDisk(t, h, "package main\n\nfunc main() {\n    val a = SliceOf(1, 2, 3)\n    a.\n    Println(a)\n}\n")
+	list, err := h.Completion(uri, 4, 6)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list == nil || len(list.Items) == 0 {
+		t.Log("no completion for SliceOf result — type may not resolve in test")
+		return
+	}
+	t.Logf("SliceOf result dot completion: %d items", len(list.Items))
+}

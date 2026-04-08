@@ -26,12 +26,14 @@ func (h *GalaHandler) Completion(ctx context.Context, params *lsp.CompletionPara
 	isDot := isDotCompletion(text, line, char)
 
 	if isDot && richAST != nil {
-		// Resolve the type of the expression before the dot
 		receiverType := typeAtDot(text, line, char, richAST, varTypeMap)
-		if receiverType != "" {
+		if strings.HasPrefix(receiverType, "__package__:") {
+			// Package dot completion — show types and functions from that package
+			pkgName := receiverType[len("__package__:"):]
+			items = append(items, packageCompletions(richAST, pkgName)...)
+		} else if receiverType != "" {
 			items = append(items, typeSpecificCompletions(richAST, receiverType)...)
 		}
-		// No fallback — showing all methods is worse than showing nothing
 	} else if isNamedArgContext(text, line, char) && richAST != nil {
 		typeName := extractConstructorName(text, line, char)
 		items = append(items, namedArgCompletions(richAST, typeName)...)
@@ -128,6 +130,63 @@ func functionCompletions(richAST *transpiler.RichAST) []lsp.CompletionItem {
 			Detail: sig,
 		})
 	}
+	return items
+}
+
+// packageCompletions returns exported types and functions from a specific package.
+func packageCompletions(richAST *transpiler.RichAST, pkgName string) []lsp.CompletionItem {
+	var items []lsp.CompletionItem
+	seen := make(map[string]bool)
+
+	// Types from this package
+	for key, tm := range richAST.Types {
+		name := tm.Name
+		if name == "" {
+			if idx := strings.LastIndex(key, "."); idx >= 0 {
+				name = key[idx+1:]
+			}
+		}
+		if !isExported(name) || seen[name] {
+			continue
+		}
+		// Check if this type belongs to the package
+		if tm.Package == pkgName || strings.HasPrefix(key, pkgName+".") {
+			seen[name] = true
+			kind := lsp.CompletionItemKindClass
+			items = append(items, lsp.CompletionItem{
+				Label:  name,
+				Kind:   kindPtr(kind),
+				Detail: "type from " + pkgName,
+			})
+		}
+	}
+
+	// Functions from this package
+	for _, fm := range richAST.Functions {
+		if fm.Package == pkgName && isExported(fm.Name) && !seen[fm.Name] {
+			seen[fm.Name] = true
+			sig := formatFuncSig(fm)
+			items = append(items, lsp.CompletionItem{
+				Label:  fm.Name,
+				Kind:   kindPtr(lsp.CompletionItemKindFunction),
+				Detail: sig,
+			})
+		}
+	}
+
+	// GoExports from this package (Go-only packages)
+	if exports, ok := richAST.GoExports[pkgName]; ok {
+		for _, name := range exports {
+			if !seen[name] && isExported(name) {
+				seen[name] = true
+				items = append(items, lsp.CompletionItem{
+					Label: name,
+					Kind:  kindPtr(lsp.CompletionItemKindVariable),
+				})
+			}
+		}
+	}
+
 	return items
 }
 
@@ -250,6 +309,8 @@ func namedArgCompletions(richAST *transpiler.RichAST, typeName string) []lsp.Com
 	if typeName == "" {
 		return items
 	}
+
+	// Check regular struct fields
 	for key, tm := range richAST.Types {
 		name := tm.Name
 		if name == "" {
@@ -270,8 +331,36 @@ func namedArgCompletions(richAST *transpiler.RichAST, typeName string) []lsp.Com
 				InsertText: insertText,
 			})
 		}
-		break
+		if len(items) > 0 {
+			return items
+		}
 	}
+
+	// Check sealed case fields — e.g., Circle(radius = ...)
+	for _, tm := range richAST.Types {
+		if !tm.IsSealed {
+			continue
+		}
+		for _, v := range tm.SealedVariants {
+			if v.Name == typeName {
+				for i, fn := range v.FieldNames {
+					detail := ""
+					if i < len(v.FieldTypes) {
+						detail = v.FieldTypes[i].String()
+					}
+					insertText := fn + " = "
+					items = append(items, lsp.CompletionItem{
+						Label:      fn,
+						Kind:       kindPtr(lsp.CompletionItemKindField),
+						Detail:     cleanGoTypeForDisplay(detail),
+						InsertText: insertText,
+					})
+				}
+				return items
+			}
+		}
+	}
+
 	return items
 }
 
