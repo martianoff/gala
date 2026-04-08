@@ -3363,25 +3363,107 @@ import "github.com/google/uuid"
 
 ## 19. IDE Support
 
-### IntelliJ IDEA
-A basic IntelliJ IDEA plugin is available in `ide/intellij`.
+GALA provides a full-featured GoLand/IntelliJ plugin and a Language Server Protocol (LSP) server for editor-agnostic IDE support. The plugin runs a local ANTLR parser for instant feedback, while the LSP server (`gala lsp`) connects to the transpiler for type-aware features.
 
-#### How to Build and Install
-1. Build the plugin using Bazel from the project root:
-   ```bash
-   bazel build //ide/intellij:plugin
-   ```
-   The resulting ZIP file will be at `bazel-bin/ide/intellij/gala-intellij-plugin.zip`.
-2. Alternatively, build using Gradle in `ide/intellij`:
-   ```bash
-   gradle buildPlugin
-   ```
-3. Install the resulting ZIP file into IntelliJ via `Settings > Plugins > Install Plugin from Disk...`.
+### GoLand / IntelliJ IDEA
 
-The plugin provides:
-- Syntax highlighting
-- File type recognition (`.gala`)
-- Basic code structure support
+#### Installation
+
+1. Install GALA CLI: Download from [releases](https://github.com/martianoff/gala/releases) and add to PATH
+2. Install plugin: GoLand > Settings > Plugins > Install from Disk > select `gala-intellij-plugin.zip` from [releases](https://github.com/martianoff/gala/releases)
+3. Restart GoLand — the LSP server starts automatically when a `.gala` file is opened
+
+Alternatively, build the plugin from source:
+
+```bash
+bazel build //ide/intellij:plugin
+# or: cd ide/intellij && gradle buildPlugin
+```
+
+The resulting ZIP file will be at `bazel-bin/ide/intellij/gala-intellij-plugin.zip`.
+
+#### Plugin Features (local, no LSP needed)
+
+The plugin includes a full ANTLR-based parser that builds a complete PSI tree, providing instant editor features without waiting for the LSP server:
+
+- **Syntax highlighting** — keywords, types, strings, comments, operators, built-in functions, std types
+- **Semantic annotator** — built-in types (`Option`, `Either`, `Try`, etc.), std types, built-in functions (`Println`, `SliceOf`, etc.), string interpolation variables
+- **Code folding** — function/method blocks, sealed type bodies, import groups
+- **Brace matching** — parentheses, brackets, braces
+- **Structure view** — navigate functions, types, sealed types with their cases
+- **Comment/uncomment** — toggle line comments with `Ctrl+/`
+- **Live templates** — 12 templates for common patterns:
+
+| Prefix | Expands to |
+|--------|------------|
+| `func` | Function declaration |
+| `val` | Immutable variable |
+| `var` | Mutable variable |
+| `match` | Match expression |
+| `if` | If expression |
+| `for` | For loop |
+| `sealed` | Sealed type declaration |
+| `struct` | Struct declaration |
+| `lambda` | Lambda expression |
+| `main` | Main function |
+| `println` | Println call |
+| `sinterp` | String interpolation |
+
+- **Color settings page** — customize all token colors via Settings > Editor > Color Scheme > GALA
+
+#### LSP Features (via `gala lsp`)
+
+The LSP server leverages the full transpiler pipeline for deep, type-aware analysis:
+
+- **Real-time diagnostics** — parse errors, transpilation errors, unused variables, match exhaustiveness warnings
+- **Hover** — type signatures with fields, methods, sealed cases, built-in function documentation
+- **Go to Definition** — cross-file navigation via analyzer metadata, local declarations, pattern bindings, named arg fields
+- **Find References** — find all occurrences in the same file
+- **Completion** — type-aware dot completion (fields, methods), named argument fields, sealed case patterns with destructuring, keywords, built-in functions
+- **Inlay hints** — displays inferred types from the transpiler's VarTypes for `val`, `var`, and other declarations
+- **Document symbols** — types, functions, sealed variants in the document outline
+- **Debounced analysis** — 500ms delay to prevent noise while typing; analysis runs on save or after idle
+
+### VS Code
+
+GALA works in VS Code via any LSP client plugin. Add to `.vscode/settings.json`:
+
+```json
+{
+  "lsp.servers": {
+    "gala": {
+      "command": "gala",
+      "args": ["lsp"],
+      "filetypes": ["gala"]
+    }
+  }
+}
+```
+
+This gives you diagnostics, hover, go-to-definition, completion, and inlay hints — all the LSP features listed above.
+
+### Neovim
+
+Using [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig):
+
+```lua
+require('lspconfig.configs').gala = {
+  default_config = {
+    cmd = { 'gala', 'lsp' },
+    filetypes = { 'gala' },
+    root_dir = require('lspconfig.util').root_pattern('gala.mod', '.git'),
+  },
+}
+require('lspconfig').gala.setup({})
+```
+
+### Other Editors
+
+Any editor with LSP support can use the GALA language server. Point your editor's LSP client at:
+
+- **Command:** `gala lsp`
+- **File types:** `gala`
+- **Root markers:** `gala.mod`, `.git`
 
 ## 20. Performance Profiling
 

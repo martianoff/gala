@@ -431,14 +431,65 @@ gala mod tidy
 
 ## IDE Support
 
-### IntelliJ IDEA
+GALA ships with a GoLand/IntelliJ plugin and an LSP server (`gala lsp`) for editor-agnostic support.
 
-```bash
-bazel build //ide/intellij:plugin
-# Install bazel-bin/ide/intellij/gala-intellij-plugin.zip via Settings > Plugins
+### GoLand / IntelliJ IDEA
+
+1. Install GALA CLI: Download from [releases](https://github.com/martianoff/gala/releases) and add to PATH
+2. Install plugin: GoLand > Settings > Plugins > Install from Disk > select `gala-intellij-plugin.zip` from [releases](https://github.com/martianoff/gala/releases)
+3. Restart GoLand — the LSP server starts automatically when a `.gala` file is opened
+
+#### Plugin Features (local, no LSP needed)
+
+- Full ANTLR-based parser with complete PSI tree
+- Syntax highlighting (keywords, types, strings, comments, operators, built-in functions, std types)
+- Semantic annotator (built-in types, std types, built-in functions, string interpolation)
+- Code folding (blocks, sealed types, imports)
+- Brace matching
+- Structure view (functions, types, sealed types with cases)
+- Comment/uncomment
+- 12 live templates (`func`, `val`, `var`, `match`, `if`, `for`, `sealed`, `struct`, `lambda`, `main`, `println`, `sinterp`)
+- Color settings page
+
+#### LSP Features (via `gala lsp`)
+
+- Real-time diagnostics (parse errors, transpilation errors, unused variables, match exhaustiveness)
+- Hover (type signatures with fields, methods, sealed cases, built-in function docs)
+- Go to Definition (cross-file via analyzer metadata, local declarations, pattern bindings, named arg fields)
+- Find References (same-file occurrences)
+- Completion (type-aware dot completion, named arg fields, sealed case patterns with destructuring, keywords, built-ins)
+- Inlay hints (type inference from transpiler's VarTypes for all declarations)
+- Document symbols (types, functions, sealed variants)
+- Debounced analysis (500ms) to prevent noise while typing
+
+### VS Code
+
+Add to `.vscode/settings.json`:
+
+```json
+{
+  "lsp.servers": {
+    "gala": {
+      "command": "gala",
+      "args": ["lsp"],
+      "filetypes": ["gala"]
+    }
+  }
+}
 ```
 
-Features: syntax highlighting, code completion, brace matching, code folding.
+### Neovim
+
+```lua
+require('lspconfig.configs').gala = {
+  default_config = {
+    cmd = { 'gala', 'lsp' },
+    filetypes = { 'gala' },
+    root_dir = require('lspconfig.util').root_pattern('gala.mod', '.git'),
+  },
+}
+require('lspconfig').gala.setup({})
+```
 
 ---
 

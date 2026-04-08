@@ -284,17 +284,62 @@ See the [Dependency Management documentation](https://github.com/martianoff/gala
 
 ## IDE Support
 
-### IntelliJ IDEA
+GALA ships with a GoLand/IntelliJ plugin and an LSP server for editor-agnostic support. The plugin provides instant local features (syntax highlighting, code folding, live templates) while the LSP server (`gala lsp`) adds type-aware features (diagnostics, hover, go-to-definition, completion, inlay hints).
 
-GALA provides an IntelliJ plugin with syntax highlighting, code completion, brace matching, and code folding.
+### GoLand / IntelliJ IDEA
 
-Build and install:
+1. Install GALA CLI: Download from [releases](https://github.com/martianoff/gala/releases) and add to PATH
+2. Install plugin: GoLand > Settings > Plugins > Install from Disk > select `gala-intellij-plugin.zip` from [releases](https://github.com/martianoff/gala/releases)
+3. Restart GoLand — the LSP server starts automatically when a `.gala` file is opened
 
-```bash
-bazel build //ide/intellij:plugin
+**Plugin features (local, no LSP needed):**
+
+- Full ANTLR-based parser with complete PSI tree
+- Syntax highlighting (keywords, types, strings, comments, operators, built-in functions, std types)
+- Semantic annotator (built-in types, std types, built-in functions, string interpolation)
+- Code folding (blocks, sealed types, imports)
+- Brace matching and structure view (functions, types, sealed types with cases)
+- Comment/uncomment and 12 live templates (`func`, `val`, `var`, `match`, `if`, `for`, `sealed`, `struct`, `lambda`, `main`, `println`, `sinterp`)
+- Color settings page
+
+**LSP features (via `gala lsp`):**
+
+- Real-time diagnostics (parse errors, transpilation errors, unused variables, match exhaustiveness)
+- Hover (type signatures with fields, methods, sealed cases, built-in function docs)
+- Go to Definition (cross-file, local declarations, pattern bindings, named arg fields)
+- Find References, completion (type-aware dot completion, named args, sealed case patterns)
+- Inlay hints (inferred types for all declarations) and document symbols
+
+### VS Code
+
+Add to `.vscode/settings.json`:
+
+```json
+{
+  "lsp.servers": {
+    "gala": {
+      "command": "gala",
+      "args": ["lsp"],
+      "filetypes": ["gala"]
+    }
+  }
+}
 ```
 
-Then install `bazel-bin/ide/intellij/gala-intellij-plugin.zip` via **Settings > Plugins > Install Plugin from Disk**.
+### Neovim
+
+```lua
+require('lspconfig.configs').gala = {
+  default_config = {
+    cmd = { 'gala', 'lsp' },
+    filetypes = { 'gala' },
+    root_dir = require('lspconfig.util').root_pattern('gala.mod', '.git'),
+  },
+}
+require('lspconfig').gala.setup({})
+```
+
+Verify the LSP server is working: run `gala lsp` in a terminal. It should start and wait for JSON-RPC messages on stdin/stdout.
 
 ---
 

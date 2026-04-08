@@ -117,6 +117,17 @@ val name = user.Name
 <p><a href="{{ '/features/go-interop/' | relative_url }}">Learn about Go interop</a></p>
 </div>
 
+<div class="feature-card">
+<h3>IDE Support with LSP</h3>
+<p>GoLand/IntelliJ plugin with full ANTLR parser, syntax highlighting, 12 live templates, and semantic annotations. LSP server provides diagnostics, hover, go-to-definition, completion, and inlay hints.</p>
+<pre><code># Install plugin from releases, then:
+gala lsp  # starts the language server
+
+# Works with GoLand, VS Code, Neovim,
+# and any LSP-compatible editor</code></pre>
+<p><a href="{{ '/getting-started/#ide-support' | relative_url }}">Set up your IDE</a></p>
+</div>
+
 </div>
 
 ## GALA vs Go — A Quick Look
