@@ -57,8 +57,7 @@ This document describes the immutable collection data structures available in GA
    - [Conversion](#conversion)
 9. [Choosing the Right Collection](#choosing-the-right-collection)
 10. [Implementation Details](#implementation-details)
-11. [Performance Benchmarks](#performance-benchmarks)
-12. [Examples](#example-building-a-collection)
+11. [Examples](#example-building-a-collection)
 
 ---
 
