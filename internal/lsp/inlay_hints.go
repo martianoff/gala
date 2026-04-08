@@ -33,7 +33,14 @@ func (h *GalaHandler) InlayHint(ctx context.Context, params *lsp.InlayHintParams
 	var hints []lsp.InlayHint
 	lines := strings.Split(text, "\n")
 
+	// Track enclosing function name for scoped variable lookups
+	currentFunc := ""
 	for i, line := range lines {
+		// Detect function declarations to track current scope
+		if fm := funcDeclPattern.FindStringSubmatch(line); fm != nil {
+			currentFunc = fm[1]
+		}
+
 		if i < params.Range.Start.Line || i > params.Range.End.Line {
 			continue
 		}
@@ -46,8 +53,8 @@ func (h *GalaHandler) InlayHint(ctx context.Context, params *lsp.InlayHintParams
 			if eqIdx >= 0 {
 				between := strings.TrimSpace(line[m[5] : m[5]+eqIdx])
 				if between == "" {
-					// No explicit type — show hint from transpiler
-					if typStr, ok := varTypeMap[varName]; ok {
+					// No explicit type — show hint from transpiler (scoped lookup)
+					if typStr := lookupVarType(varTypeMap, currentFunc, varName); typStr != "" {
 						hints = append(hints, makeTypeHint(i, m[5], typStr))
 					}
 				}
@@ -57,7 +64,7 @@ func (h *GalaHandler) InlayHint(ctx context.Context, params *lsp.InlayHintParams
 		// Short declarations: name := expr
 		if m := shortDeclRegex.FindStringSubmatchIndex(line); m != nil {
 			varName := line[m[2]:m[3]]
-			if typStr, ok := varTypeMap[varName]; ok {
+			if typStr := lookupVarType(varTypeMap, currentFunc, varName); typStr != "" {
 				hints = append(hints, makeTypeHint(i, m[3], typStr))
 			}
 		}
@@ -69,6 +76,25 @@ func (h *GalaHandler) InlayHint(ctx context.Context, params *lsp.InlayHintParams
 	}
 
 	return hints, nil
+}
+
+// lookupVarType looks up a variable type from the scoped varTypeMap.
+// Keys are stored as "funcName.varName" for function-local vars, or "varName" for top-level.
+func lookupVarType(varTypeMap map[string]string, funcName, varName string) string {
+	if varTypeMap == nil {
+		return ""
+	}
+	// Try function-scoped lookup first
+	if funcName != "" {
+		if typStr, ok := varTypeMap[funcName+"."+varName]; ok {
+			return typStr
+		}
+	}
+	// Fall back to unscoped lookup
+	if typStr, ok := varTypeMap[varName]; ok {
+		return typStr
+	}
+	return ""
 }
 
 func casePatternHints(line string, lineNum int, richAST *transpiler.RichAST) []lsp.InlayHint {

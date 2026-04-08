@@ -62,6 +62,7 @@ type galaASTTransformer struct {
 	instanceInterfaceNames map[string]string            // type name -> actual generated interface name (for collision avoidance)
 	expectedIfExprType     ast.Expr                     // FIX-052: expected return type for if-expression IIFE (set by expression-bodied function handler)
 	lspVarTypes            map[string]transpiler.Type   // LSP: collects all resolved var types during transformation
+	lspCurrentFunc         string                       // LSP: name of the function currently being transformed (for scoping)
 }
 
 // NewGalaASTTransformer creates a new instance of ASTTransformer for GALA.

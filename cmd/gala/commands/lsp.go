@@ -8,6 +8,7 @@ import (
 	golsp "github.com/owenrumney/go-lsp/server"
 	"github.com/spf13/cobra"
 
+	"martianoff/gala/internal/build"
 	"martianoff/gala/internal/lsp"
 )
 
@@ -33,9 +34,29 @@ func init() {
 
 func runLsp(cmd *cobra.Command, args []string) {
 	handler := lsp.NewGalaHandler()
+
+	// Auto-resolve stdlib and GALA dependency search paths so the LSP can
+	// find standard packages (std, collection_immutable, etc.) from any project.
+	handler.SetSearchPaths(autoResolveLSPSearchPaths())
+
 	srv := golsp.NewServer(handler)
 	if err := srv.Run(context.Background(), golsp.RunStdio()); err != nil {
 		fmt.Fprintf(os.Stderr, "LSP server error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// autoResolveLSPSearchPaths finds the GALA stdlib and dependency cache paths.
+func autoResolveLSPSearchPaths() []string {
+	var paths []string
+
+	config := build.DefaultConfig()
+
+	// Add stdlib path using current CLI version
+	stdlibDir := config.StdlibVersionDir(Version)
+	if info, err := os.Stat(stdlibDir); err == nil && info.IsDir() {
+		paths = append(paths, stdlibDir)
+	}
+
+	return paths
 }

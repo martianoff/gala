@@ -525,6 +525,11 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 	defer t.popScope()
 	name := ctx.Identifier().GetText()
 
+	// Track current function name for LSP variable scoping
+	prevFunc := t.lspCurrentFunc
+	t.lspCurrentFunc = name
+	defer func() { t.lspCurrentFunc = prevFunc }()
+
 	// Receiver
 	var receiver *ast.FieldList
 	var receiverTypeName string
