@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -14,6 +15,8 @@ import (
 	golsp "github.com/owenrumney/go-lsp/server"
 
 	"martianoff/gala/galaerr"
+	"martianoff/gala/internal/build"
+	"martianoff/gala/internal/depman/mod"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
 	"martianoff/gala/internal/transpiler/generator"
@@ -31,6 +34,7 @@ type GalaHandler struct {
 	client           *golsp.Client     // LSP client for sending notifications
 
 	debounceTimers map[string]*time.Timer // URI -> debounce timer for DidChange
+	docVersions    map[string]int64       // URI -> edit generation (incremented on DidChange)
 
 	mu        sync.Mutex
 	documents map[string]string              // URI -> source text
@@ -55,6 +59,7 @@ func NewGalaHandler() *GalaHandler {
 		richASTs:    make(map[string]*transpiler.RichAST),
 		varTypes:       make(map[string]map[string]string),
 		debounceTimers: make(map[string]*time.Timer),
+		docVersions:    make(map[string]int64),
 		parser:    transpiler.NewAntlrGalaParser(),
 		generator: generator.NewGoCodeGenerator(),
 	}
@@ -65,6 +70,11 @@ func NewGalaHandler() *GalaHandler {
 func (h *GalaHandler) Initialize(ctx context.Context, params *lsp.InitializeParams) (*lsp.InitializeResult, error) {
 	if params.RootURI != nil {
 		h.rootPath = uriToPath(string(*params.RootURI))
+	}
+
+	// Auto-resolve gala.mod dependencies from project root
+	if h.rootPath != "" {
+		h.resolveProjectDeps(h.rootPath)
 	}
 
 	openClose := true
@@ -103,6 +113,7 @@ func (h *GalaHandler) DidOpen(ctx context.Context, params *lsp.DidOpenTextDocume
 	uri := string(params.TextDocument.URI)
 	h.mu.Lock()
 	h.documents[uri] = params.TextDocument.Text
+	h.docVersions[uri]++ // invalidate any in-flight debounce
 	h.mu.Unlock()
 	h.publishDiagnostics(uri, params.TextDocument.Text)
 	return nil
@@ -116,18 +127,41 @@ func (h *GalaHandler) DidChange(ctx context.Context, params *lsp.DidChangeTextDo
 	text := params.ContentChanges[len(params.ContentChanges)-1].Text
 	h.mu.Lock()
 	h.documents[uri] = text
+	// Increment document version to detect stale analysis results
+	h.docVersions[uri]++
+	gen := h.docVersions[uri]
 	// Cancel any pending debounce timer
 	if timer, ok := h.debounceTimers[uri]; ok {
 		timer.Stop()
 	}
 	// Debounce: wait 500ms after last keystroke before re-analyzing.
-	// This prevents parse errors from showing while typing incomplete expressions
-	// like "Some(42)." — the user will type the method name before the timer fires.
 	h.debounceTimers[uri] = time.AfterFunc(500*time.Millisecond, func() {
 		h.mu.Lock()
+		// Discard if a newer edit arrived while we were waiting
+		if h.docVersions[uri] != gen {
+			h.mu.Unlock()
+			return
+		}
 		currentText := h.documents[uri]
 		h.mu.Unlock()
-		h.publishDiagnostics(uri, currentText)
+
+		filePath := uriToPath(uri)
+		diagnostics := h.analyzeFile(uri, filePath, currentText)
+
+		// Check generation AGAIN after analysis — discard stale results
+		h.mu.Lock()
+		if h.docVersions[uri] != gen {
+			h.mu.Unlock()
+			return
+		}
+		h.mu.Unlock()
+
+		if h.client != nil {
+			h.client.PublishDiagnostics(context.Background(), &lsp.PublishDiagnosticsParams{
+				URI:         lsp.DocumentURI(uri),
+				Diagnostics: diagnostics,
+			})
+		}
 	})
 	h.mu.Unlock()
 	return nil
@@ -155,6 +189,7 @@ func (h *GalaHandler) DidSave(ctx context.Context, params *lsp.DidSaveTextDocume
 		uri := string(params.TextDocument.URI)
 		h.mu.Lock()
 		h.documents[uri] = *params.Text
+		h.docVersions[uri]++ // invalidate any in-flight debounce
 		h.mu.Unlock()
 		h.publishDiagnostics(uri, *params.Text)
 	}
@@ -241,6 +276,23 @@ func (h *GalaHandler) getSearchPaths(filePath string) []string {
 	}
 	paths = append(paths, h.extraSearchPaths...)
 	return paths
+}
+
+// resolveProjectDeps scans for gala.mod in the project root and adds
+// dependency paths to the search paths so imported packages resolve correctly.
+func (h *GalaHandler) resolveProjectDeps(rootPath string) {
+	galaModPath := filepath.Join(rootPath, "gala.mod")
+	galaMod, err := mod.ParseFile(galaModPath)
+	if err != nil {
+		return
+	}
+	config := build.DefaultConfig()
+	for _, req := range galaMod.GalaRequires() {
+		depDir := config.GalaModulePath(req.Path, req.Version)
+		if info, err := os.Stat(depDir); err == nil && info.IsDir() {
+			h.extraSearchPaths = append(h.extraSearchPaths, depDir)
+		}
+	}
 }
 
 // --- Helpers ---
