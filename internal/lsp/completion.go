@@ -27,9 +27,8 @@ func (h *GalaHandler) Completion(ctx context.Context, params *lsp.CompletionPara
 
 	if isDot && richAST != nil {
 		receiverType := typeAtDot(text, line, char, richAST, varTypeMap)
-		if strings.HasPrefix(receiverType, "__package__:") {
-			// Package dot completion — show types and functions from that package
-			pkgName := receiverType[len("__package__:"):]
+		if strings.HasPrefix(receiverType, packagePrefix) {
+			pkgName := strings.TrimPrefix(receiverType, packagePrefix)
 			items = append(items, packageCompletions(richAST, pkgName)...)
 		} else if receiverType != "" {
 			items = append(items, typeSpecificCompletions(richAST, receiverType)...)

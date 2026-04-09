@@ -151,7 +151,6 @@ func (h *GalaHandler) DidChange(ctx context.Context, params *lsp.DidChangeTextDo
 	// Start analysis after a short debounce to batch rapid keystrokes.
 	// Use a goroutine with sleep instead of AfterFunc for cleaner cancellation.
 	go func() {
-		// Short debounce — batches rapid keystrokes
 		select {
 		case <-time.After(300 * time.Millisecond):
 		case <-analysisCtx.Done():
@@ -197,7 +196,12 @@ func (h *GalaHandler) DidChange(ctx context.Context, params *lsp.DidChangeTextDo
 func (h *GalaHandler) DidClose(ctx context.Context, params *lsp.DidCloseTextDocumentParams) error {
 	uri := string(params.TextDocument.URI)
 	h.mu.Lock()
+	if cancel, ok := h.analysisCancels[uri]; ok {
+		cancel()
+		delete(h.analysisCancels, uri)
+	}
 	delete(h.documents, uri)
+	delete(h.docVersions, uri)
 	delete(h.richASTs, uri)
 	delete(h.varTypes, uri)
 	h.mu.Unlock()
@@ -393,20 +397,6 @@ func errorToDiagnostic(err error) lsp.Diagnostic {
 			line = l - 1
 			if n >= 2 {
 				char = c
-			}
-		}
-	}
-
-	// Also handle MultiError (multiple errors from parser/analyzer)
-	// by extracting the first line number from any sub-error
-	var multiErr *galaerr.MultiError
-	if errors.As(err, &multiErr) {
-		for _, subErr := range multiErr.Errors {
-			d := errorToDiagnostic(subErr)
-			if d.Range.Start.Line > 0 {
-				line = d.Range.Start.Line
-				char = d.Range.Start.Character
-				break
 			}
 		}
 	}
