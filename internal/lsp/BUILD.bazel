@@ -17,6 +17,8 @@ go_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//galaerr",
+        "//internal/build",
+        "//internal/depman/mod",
         "//internal/transpiler",
         "//internal/transpiler/analyzer",
         "//internal/transpiler/generator",

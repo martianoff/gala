@@ -78,6 +78,12 @@ func typeAtDot(text string, line, char int, richAST *transpiler.RichAST, varType
 
 			// Check if there's a dot before this name (chained: receiver.Method().next)
 			if i >= 0 && l[i] == '.' {
+				// Resolve the chain: find the receiver type, then get the method's return type
+				receiverType := resolveChainType(l[:i], enclosingFunc, richAST, varTypes)
+				if receiverType != "" {
+					return resolveMethodReturn(richAST, receiverType, name)
+				}
+				// Fallback: try resolving name directly
 				return resolveReceiverType(name, enclosingFunc, richAST, varTypes)
 			}
 			// No preceding dot — this IS the expression (Some(42)., funcName().)
@@ -159,6 +165,96 @@ func resolveReceiverType(name, funcScope string, richAST *transpiler.RichAST, va
 		}
 	}
 
+	return ""
+}
+
+// resolveChainType resolves the type of a chain expression like "order.Validate()" or "x"
+// by recursively processing the text before the final dot.
+func resolveChainType(text string, funcScope string, richAST *transpiler.RichAST, varTypes map[string]string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+
+	// If ends with ')' — method/function call, resolve its return type
+	if text[len(text)-1] == ')' {
+		depth := 1
+		i := len(text) - 2
+		for i >= 0 && depth > 0 {
+			if text[i] == ')' {
+				depth++
+			} else if text[i] == '(' {
+				depth--
+			}
+			i--
+		}
+		// Extract method name before '('
+		nameEnd := i + 1
+		for i >= 0 && isIdentChar(text[i]) {
+			i--
+		}
+		nameStart := i + 1
+		if nameStart >= nameEnd {
+			return ""
+		}
+		methodName := text[nameStart:nameEnd]
+
+		// Check if there's a dot before the method name (chain)
+		if i >= 0 && text[i] == '.' {
+			receiverType := resolveChainType(text[:i], funcScope, richAST, varTypes)
+			if receiverType != "" {
+				return resolveMethodReturn(richAST, receiverType, methodName)
+			}
+		}
+		// No dot — standalone call or variable
+		return resolveReceiverType(methodName, funcScope, richAST, varTypes)
+	}
+
+	// Plain identifier — variable or type
+	i := len(text) - 1
+	for i >= 0 && (isIdentChar(text[i]) || text[i] == '_') {
+		i--
+	}
+	name := text[i+1:]
+	if name == "" {
+		return ""
+	}
+
+	// Check for dot before identifier (pkg.Type or receiver.field)
+	if i >= 0 && text[i] == '.' {
+		receiverType := resolveChainType(text[:i], funcScope, richAST, varTypes)
+		if receiverType != "" {
+			// Could be a field access — resolve field type
+			return resolveMethodReturn(richAST, receiverType, name)
+		}
+	}
+
+	return resolveReceiverType(name, funcScope, richAST, varTypes)
+}
+
+// resolveMethodReturn finds the return type of a method on a given type.
+func resolveMethodReturn(richAST *transpiler.RichAST, typeName, methodName string) string {
+	tm := findType(richAST, typeName)
+	if tm == nil {
+		return ""
+	}
+	if m, ok := tm.Methods[methodName]; ok {
+		if m.ReturnType != nil && !m.ReturnType.IsNil() {
+			base := cleanGoTypeForDisplay(m.ReturnType.String())
+			if idx := strings.Index(base, "["); idx > 0 {
+				base = base[:idx]
+			}
+			return base
+		}
+	}
+	// Check fields
+	if ft, ok := tm.Fields[methodName]; ok {
+		base := cleanGoTypeForDisplay(ft.String())
+		if idx := strings.Index(base, "["); idx > 0 {
+			base = base[:idx]
+		}
+		return base
+	}
 	return ""
 }
 

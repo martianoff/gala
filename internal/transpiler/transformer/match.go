@@ -38,7 +38,12 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 	t.needsStdImport = true
 	body := t.buildMatchBody(clauses, defaultBody, resultType)
 
-	return t.generateMatchIIFE(expr, paramName, matchedType, body, resultType)
+	matchLine, matchCol := 0, 0
+	if ctx != nil && ctx.GetStart() != nil {
+		matchLine = ctx.GetStart().GetLine()
+		matchCol = ctx.GetStart().GetColumn()
+	}
+	return t.generateMatchIIFE(expr, paramName, matchedType, body, resultType, matchLine, matchCol)
 }
 
 // parseMatchSubject extracts and type-checks the expression being matched.
@@ -427,17 +432,17 @@ func (t *galaASTTransformer) buildMatchBody(clauses []ast.Stmt, defaultBody []as
 }
 
 // generateMatchIIFE wraps the match body in an immediately-invoked function expression.
-func (t *galaASTTransformer) generateMatchIIFE(expr ast.Expr, paramName string, matchedType transpiler.Type, body []ast.Stmt, resultType transpiler.Type) (ast.Expr, error) {
+func (t *galaASTTransformer) generateMatchIIFE(expr ast.Expr, paramName string, matchedType transpiler.Type, body []ast.Stmt, resultType transpiler.Type, matchLine, matchCol int) (ast.Expr, error) {
 	paramType := t.typeToExpr(matchedType)
 	if paramType == nil {
-		return nil, galaerr.NewSemanticError("cannot infer type of matched expression. Please add explicit type annotation")
+		return nil, galaerr.NewSemanticErrorAt(matchLine, matchCol, "cannot infer type of matched expression. Please add explicit type annotation")
 	}
 
 	var resultsField *ast.FieldList
 	if _, isVoid := resultType.(transpiler.VoidType); !isVoid {
 		resultTypeExpr := t.typeToExpr(resultType)
 		if resultTypeExpr == nil {
-			return nil, galaerr.NewSemanticError("cannot infer result type of match expression. Please ensure all branches return the same type")
+			return nil, galaerr.NewSemanticErrorAt(matchLine, matchCol, "cannot infer result type of match expression. Please ensure all branches return the same type")
 		}
 		resultsField = &ast.FieldList{
 			List: []*ast.Field{{Type: resultTypeExpr}},
