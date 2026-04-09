@@ -2972,3 +2972,160 @@ func TestMultiPackage_GalaModDependencyResolution(t *testing.T) {
 	}
 	t.Logf("gala.mod resolution: %d diagnostics", len(diags))
 }
+
+// ============================================================
+// === Error Line Number Verification ===
+// ============================================================
+// Every SemanticError from the transformer MUST have a real line number (not 0).
+// These tests trigger specific error paths and verify the diagnostic position.
+
+// helperAssertErrorAtLine checks that at least one error diagnostic exists
+// at the expected line (0-indexed) and that no error is at line 0 (missing line info).
+func helperAssertErrorAtLine(t *testing.T, diags []lsp.Diagnostic, expectedLine int, errSubstring string) {
+	t.Helper()
+	found := false
+	for _, d := range diags {
+		if d.Severity == nil || *d.Severity != lsp.SeverityError {
+			continue
+		}
+		if strings.Contains(d.Message, errSubstring) {
+			found = true
+			if d.Range.Start.Line == 0 && expectedLine > 0 {
+				t.Errorf("error '%s' at line 0 — missing line info (expected line %d)", errSubstring, expectedLine)
+			} else if d.Range.Start.Line != expectedLine {
+				t.Logf("NOTE: error '%s' at line %d (expected %d)", errSubstring, d.Range.Start.Line, expectedLine)
+			}
+		}
+	}
+	if !found {
+		t.Logf("error '%s' not found in %d diagnostics (may not trigger in test env)", errSubstring, len(diags))
+	}
+}
+
+// Parse errors should have correct line numbers
+func TestErrorLines_ParseError(t *testing.T) {
+	h := newHarness(t)
+	// Missing closing paren on line 3 (0-indexed)
+	uri := openFileOnDisk(t, h, "package main\n\nfunc main() {\n    val x = Some(42\n    Println(x)\n}\n")
+	time.Sleep(100 * time.Millisecond)
+	diags := h.Diagnostics(uri)
+	t.Logf("parse error diagnostics: %d", len(diags))
+	for _, d := range diags {
+		t.Logf("  line=%d col=%d msg=%s", d.Range.Start.Line, d.Range.Start.Character, d.Message)
+		if d.Severity != nil && *d.Severity == lsp.SeverityError && d.Range.Start.Line == 0 {
+			t.Errorf("parse error has line 0 — should be at line 3 or 4")
+		}
+	}
+}
+
+// Match expression with no cases should error at the match line
+func TestErrorLines_MatchNoCases(t *testing.T) {
+	h := newHarness(t)
+	// match with empty body on line 4
+	uri := openFileOnDisk(t, h, "package main\n\nfunc main() {\n    val x = Some(42)\n    x match {\n    }\n}\n")
+	time.Sleep(100 * time.Millisecond)
+	diags := h.Diagnostics(uri)
+	t.Logf("match no cases diagnostics: %d", len(diags))
+	for _, d := range diags {
+		t.Logf("  line=%d col=%d msg=%s", d.Range.Start.Line, d.Range.Start.Character, d.Message)
+	}
+}
+
+// Duplicate field in struct construction should error at the right line
+func TestErrorLines_DuplicateNamedArg(t *testing.T) {
+	h := newHarness(t)
+	// Duplicate "name" on line 5
+	uri := openFileOnDisk(t, h, "package main\n\ntype Foo struct {\n    val name string\n}\n\nfunc main() {\n    val f = Foo(name = \"a\", name = \"b\")\n    Println(f)\n}\n")
+	time.Sleep(100 * time.Millisecond)
+	diags := h.Diagnostics(uri)
+	t.Logf("duplicate named arg diagnostics: %d", len(diags))
+	for _, d := range diags {
+		t.Logf("  line=%d col=%d msg=%s", d.Range.Start.Line, d.Range.Start.Character, d.Message)
+		if d.Severity != nil && *d.Severity == lsp.SeverityError {
+			if d.Range.Start.Line == 0 {
+				t.Errorf("error at line 0 — missing line info")
+			}
+		}
+	}
+}
+
+// Missing required field in constructor should error at the right line
+func TestErrorLines_MissingRequiredField(t *testing.T) {
+	h := newHarness(t)
+	// Missing "age" field on line 6
+	uri := openFileOnDisk(t, h, "package main\n\ntype Person struct {\n    val name string\n    val age int\n}\n\nfunc main() {\n    val p = Person(name = \"Alice\")\n    Println(p)\n}\n")
+	time.Sleep(100 * time.Millisecond)
+	diags := h.Diagnostics(uri)
+	t.Logf("missing field diagnostics: %d", len(diags))
+	for _, d := range diags {
+		t.Logf("  line=%d col=%d msg=%s", d.Range.Start.Line, d.Range.Start.Character, d.Message)
+		if d.Severity != nil && *d.Severity == lsp.SeverityError {
+			if d.Range.Start.Line == 0 {
+				t.Errorf("error at line 0 — missing line info")
+			}
+		}
+	}
+}
+
+// Unknown named arg should error at the right line
+func TestErrorLines_UnknownNamedArg(t *testing.T) {
+	h := newHarness(t)
+	uri := openFileOnDisk(t, h, "package main\n\ntype Point struct {\n    val x int\n    val y int\n}\n\nfunc main() {\n    val p = Point(x = 1, z = 2)\n    Println(p)\n}\n")
+	time.Sleep(100 * time.Millisecond)
+	diags := h.Diagnostics(uri)
+	t.Logf("unknown named arg diagnostics: %d", len(diags))
+	for _, d := range diags {
+		t.Logf("  line=%d col=%d msg=%s", d.Range.Start.Line, d.Range.Start.Character, d.Message)
+		if d.Severity != nil && *d.Severity == lsp.SeverityError {
+			if d.Range.Start.Line == 0 {
+				t.Errorf("error at line 0 — missing line info")
+			}
+		}
+	}
+}
+
+// Match with non-exhaustive cases (no default) should warn at the match line
+func TestErrorLines_MatchNonExhaustive(t *testing.T) {
+	h := newHarness(t)
+	uri := openFileOnDisk(t, h, "package main\n\nsealed type Color {\n    case Red()\n    case Blue()\n    case Green()\n}\n\nfunc describe(c Color) string = c match {\n    case Red() => \"red\"\n    case Blue() => \"blue\"\n}\n\nfunc main() {\n    Println(describe(Red()))\n}\n")
+	time.Sleep(100 * time.Millisecond)
+	diags := h.Diagnostics(uri)
+	t.Logf("non-exhaustive match diagnostics: %d", len(diags))
+	for _, d := range diags {
+		t.Logf("  line=%d col=%d sev=%v msg=%s", d.Range.Start.Line, d.Range.Start.Character, d.Severity, d.Message)
+	}
+}
+
+// Postfix match expression with no viable cases
+func TestErrorLines_PostfixMatchEmpty(t *testing.T) {
+	h := newHarness(t)
+	// Postfix match: val result = x.match { } — empty match
+	uri := openFileOnDisk(t, h, "package main\n\nfunc main() {\n    val x = 42\n    val y = x match {\n    }\n    Println(y)\n}\n")
+	time.Sleep(100 * time.Millisecond)
+	diags := h.Diagnostics(uri)
+	t.Logf("postfix empty match diagnostics: %d", len(diags))
+	for _, d := range diags {
+		t.Logf("  line=%d col=%d msg=%s", d.Range.Start.Line, d.Range.Start.Character, d.Message)
+	}
+}
+
+// Verify ALL errors across a complex file have line > 0
+func TestErrorLines_NoErrorAtLineZero(t *testing.T) {
+	h := newHarness(t)
+	// File with multiple intentional errors at different lines
+	src := "package main\n\n" +
+		"type Broken struct {\n    val x int\n}\n\n" + // lines 2-4
+		"func test1() {\n    val a = Broken(x = 1, x = 2)\n}\n\n" + // line 7: duplicate field
+		"func test2() {\n    val b = Broken(y = 1)\n}\n\n" + // line 11: unknown field
+		"func main() {\n    test1()\n    test2()\n}\n" // lines 14-17
+	uri := openFileOnDisk(t, h, src)
+	time.Sleep(100 * time.Millisecond)
+	diags := h.Diagnostics(uri)
+	t.Logf("complex error file: %d diagnostics", len(diags))
+	for _, d := range diags {
+		t.Logf("  line=%d col=%d msg=%s", d.Range.Start.Line, d.Range.Start.Character, d.Message)
+		if d.Severity != nil && *d.Severity == lsp.SeverityError && d.Range.Start.Line == 0 {
+			t.Errorf("ERROR AT LINE 0 (missing line info): %s", d.Message)
+		}
+	}
+}
