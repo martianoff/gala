@@ -70,7 +70,7 @@ func (t *galaASTTransformer) parseMatchSubject(ctx grammar.IExpressionContext) (
 		if parserCtx, ok := ctx.(antlr.ParserRuleContext); ok {
 			return nil, "", nil, t.semanticErrorAt(parserCtx, "cannot infer type of matched expression. Please add explicit type annotation to the variable being matched")
 		}
-		return nil, "", nil, galaerr.NewSemanticError("cannot infer type of matched expression. Please add explicit type annotation to the variable being matched")
+		return nil, "", nil, galaerr.NewSemanticErrorAt(0, 0, "cannot infer type of matched expression. Please add explicit type annotation to the variable being matched") // TODO: no ANTLR context available
 	}
 
 	return expr, paramName, matchedType, nil
@@ -554,7 +554,7 @@ func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patt
 		if ctx != nil && ctx.GetStart() != nil {
 			return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "match expression has no case branches")
 		}
-		return nil, galaerr.NewSemanticError("match expression has no case branches")
+		return nil, galaerr.NewSemanticErrorAt(0, 0, "match expression has no case branches") // TODO: no ANTLR context available
 	}
 
 	// Check if all branches are void (side-effect only, like fmt.Printf calls)
@@ -617,7 +617,7 @@ func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patt
 			if ctx != nil && ctx.GetStart() != nil {
 				return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "cannot infer result type of match expression: no branch returns a concrete type. Please add explicit type annotation")
 			}
-			return nil, galaerr.NewSemanticError("cannot infer result type of match expression: no branch returns a concrete type. Please add explicit type annotation")
+			return nil, galaerr.NewSemanticErrorAt(0, 0, "cannot infer result type of match expression: no branch returns a concrete type. Please add explicit type annotation") // TODO: no ANTLR context available
 		}
 		// Type parameters or mixed type-param/nil: use 'any' as the Go type erasure
 		t.warnInference("match expression defaulting to 'any' return type (all branches are type parameters)")
@@ -630,7 +630,7 @@ func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patt
 			if ctx != nil && ctx.GetStart() != nil {
 				return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), fmt.Sprintf("cannot infer result type for '%s'. Please add explicit type annotation", patterns[i]))
 			}
-			return nil, galaerr.NewSemanticError(fmt.Sprintf("cannot infer result type for '%s'. Please add explicit type annotation", patterns[i]))
+			return nil, galaerr.NewSemanticErrorAt(0, 0, fmt.Sprintf("cannot infer result type for '%s'. Please add explicit type annotation", patterns[i])) // TODO: no ANTLR context available
 		}
 		// VoidType is compatible with any type (for mixed match where some branches are void)
 		if _, isVoid := typ.(transpiler.VoidType); isVoid {
@@ -649,7 +649,7 @@ func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patt
 			if ctx != nil {
 				return nil, t.semanticErrorAt(ctx, msg)
 			}
-			return nil, galaerr.NewSemanticError(msg)
+			return nil, galaerr.NewSemanticErrorAt(0, 0, msg) // TODO: no ANTLR context available
 		}
 	}
 

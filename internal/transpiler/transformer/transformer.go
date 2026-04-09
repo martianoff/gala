@@ -173,10 +173,10 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 		for _, w := range richAST.AnalysisWarnings {
 			msgs = append(msgs, "  - "+w)
 		}
-		return nil, nil, galaerr.NewSemanticError(
+		return nil, nil, galaerr.NewSemanticErrorAt(0, 0,
 			fmt.Sprintf("cannot transpile: %d imported package(s) could not be resolved:\n%s\n"+
 				"Hint: ensure all GALA dependencies are available via --search paths or gala.mod",
-				len(richAST.AnalysisWarnings), strings.Join(msgs, "\n")))
+				len(richAST.AnalysisWarnings), strings.Join(msgs, "\n"))) // TODO: no ANTLR context available (pre-transform validation)
 	}
 
 	// Register EmbeddedFS method metadata (Go-defined type, not available from GALA analysis).
@@ -189,7 +189,7 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 	fset = token.NewFileSet()
 	sourceFile, ok := any(tree).(*grammar.SourceFileContext)
 	if !ok {
-		return nil, nil, galaerr.NewSemanticError(fmt.Sprintf("expected *grammar.SourceFileContext, got %T", tree))
+		return nil, nil, galaerr.NewSemanticErrorAt(0, 0, fmt.Sprintf("expected *grammar.SourceFileContext, got %T", tree)) // TODO: no ANTLR context available (invalid tree type)
 	}
 
 	pkgName := sourceFile.PackageClause().(*grammar.PackageClauseContext).Identifier().GetText()
@@ -362,7 +362,7 @@ func (t *galaASTTransformer) semanticErrorAt(ctx antlr.ParserRuleContext, msg st
 		col := ctx.GetStart().GetColumn()
 		return galaerr.NewSemanticErrorInFile(t.filePath, line, col, msg)
 	}
-	return galaerr.NewSemanticError(msg)
+	return galaerr.NewSemanticErrorAt(0, 0, msg) // TODO: no ANTLR context available (nil ctx fallback)
 }
 
 var _ transpiler.ASTTransformer = (*galaASTTransformer)(nil)

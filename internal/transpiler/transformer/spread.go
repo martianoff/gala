@@ -14,7 +14,7 @@ import (
 // In that case pat is nil — callers should check arg.LambdaExpression() first.
 func extractArgExpression(pat grammar.IPatternContext) (grammar.IExpressionContext, bool, error) {
 	if pat == nil {
-		return nil, false, galaerr.NewSemanticError("only expressions allowed as function arguments")
+		return nil, false, galaerr.NewSemanticErrorAt(0, 0, "only expressions allowed as function arguments") // TODO: no ANTLR context available (nil pattern)
 	}
 	if ep, ok := pat.(*grammar.ExpressionPatternContext); ok {
 		return ep.Expression(), false, nil

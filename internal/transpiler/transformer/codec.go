@@ -21,18 +21,18 @@ type structMetaConfig struct {
 
 // transformStructMetaConstruction handles StructMeta[T]() calls.
 // This is the ONLY codec-related compiler intrinsic.
-func (t *galaASTTransformer) transformStructMetaConstruction(fun ast.Expr) (ast.Expr, error) {
-	typeName, err := t.extractTypeArgFromIndex(fun)
+func (t *galaASTTransformer) transformStructMetaConstruction(fun ast.Expr, line, col int) (ast.Expr, error) {
+	typeName, err := t.extractTypeArgFromIndex(fun, line, col)
 	if err != nil {
 		return nil, err
 	}
 
 	typeMeta, resolvedName := t.getTypeMetaResolved(typeName)
 	if typeMeta == nil {
-		return nil, galaerr.NewSemanticError(fmt.Sprintf("StructMeta[%s]: type %q not found", typeName, typeName))
+		return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("StructMeta[%s]: type %q not found", typeName, typeName))
 	}
 	if len(typeMeta.FieldNames) == 0 {
-		return nil, galaerr.NewSemanticError(fmt.Sprintf("StructMeta[%s]: type %q has no fields", typeName, typeName))
+		return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("StructMeta[%s]: type %q has no fields", typeName, typeName))
 	}
 
 	genName := "_StructMeta_" + typeName
@@ -458,7 +458,7 @@ func baseTypeName(t transpiler.Type) string {
 
 // ---- helpers ----
 
-func (t *galaASTTransformer) extractTypeArgFromIndex(expr ast.Expr) (string, error) {
+func (t *galaASTTransformer) extractTypeArgFromIndex(expr ast.Expr, line, col int) (string, error) {
 	if e, ok := expr.(*ast.IndexExpr); ok {
 		if id, ok := e.Index.(*ast.Ident); ok {
 			return id.Name, nil
@@ -469,7 +469,7 @@ func (t *galaASTTransformer) extractTypeArgFromIndex(expr ast.Expr) (string, err
 			}
 		}
 	}
-	return "", galaerr.NewSemanticError("expected TypeName[T] with a single type argument")
+	return "", galaerr.NewSemanticErrorAt(line, col, "expected TypeName[T] with a single type argument")
 }
 
 // registerStructMetaTypeMeta registers type metadata for a generated StructMeta struct.

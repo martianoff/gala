@@ -284,7 +284,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 			cc := caseClauses[0].(*grammar.CaseClauseContext)
 			return nil, galaerr.NewSemanticErrorAt(cc.GetStart().GetLine(), cc.GetStart().GetColumn(), "cannot infer type of matched expression")
 		}
-		return nil, galaerr.NewSemanticError("cannot infer type of matched expression")
+		return nil, galaerr.NewSemanticErrorAt(0, 0, "cannot infer type of matched expression") // TODO: no ANTLR context available (no case clauses)
 	}
 
 	// Note: We intentionally do NOT replace types with unresolved type parameters (like Box[T])
@@ -405,7 +405,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 			cc := caseClauses[0].(*grammar.CaseClauseContext)
 			return nil, galaerr.NewSemanticErrorAt(cc.GetStart().GetLine(), cc.GetStart().GetColumn(), "match expression must have at least one case")
 		}
-		return nil, galaerr.NewSemanticError("match expression must have at least one case")
+		return nil, galaerr.NewSemanticErrorAt(0, 0, "match expression must have at least one case") // TODO: no ANTLR context available (no case clauses)
 	}
 
 	// Always collect variant patterns for exhaustiveness check
@@ -440,8 +440,8 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 					return nil, galaerr.NewSemanticErrorAt(cc.GetStart().GetLine(), cc.GetStart().GetColumn(),
 						fmt.Sprintf("non-exhaustive match: missing cases: %s", strings.Join(missing, ", ")))
 				}
-				return nil, galaerr.NewSemanticError(
-					fmt.Sprintf("non-exhaustive match: missing cases: %s", strings.Join(missing, ", ")))
+				return nil, galaerr.NewSemanticErrorAt(0, 0,
+					fmt.Sprintf("non-exhaustive match: missing cases: %s", strings.Join(missing, ", "))) // TODO: no ANTLR context available (no case clauses)
 			} else if isSealed && isExhaustive {
 				// Exhaustive sealed match — generate synthetic panic("unreachable") default
 				defaultBody = []ast.Stmt{
@@ -455,7 +455,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 					cc := caseClauses[0].(*grammar.CaseClauseContext)
 					return nil, galaerr.NewSemanticErrorAt(cc.GetStart().GetLine(), cc.GetStart().GetColumn(), "match expression must have a default case (case _ => ...)")
 				}
-				return nil, galaerr.NewSemanticError("match expression must have a default case (case _ => ...)")
+				return nil, galaerr.NewSemanticErrorAt(0, 0, "match expression must have a default case (case _ => ...)") // TODO: no ANTLR context available (no case clauses)
 			}
 		}
 		// When foundDefault && isSealed && isExhaustive: unreachable default is harmless, allow it
@@ -485,10 +485,14 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	return &ast.CallExpr{Fun: funcLit, Args: []ast.Expr{subject}}, nil
 }
 
-func (t *galaASTTransformer) transformTupleLiteral(exprs []ast.Expr) (ast.Expr, error) {
+func (t *galaASTTransformer) transformTupleLiteral(exprs []ast.Expr, line ...int) (ast.Expr, error) {
 	n := len(exprs)
 	if n < 2 || n > 10 {
-		return nil, galaerr.NewSemanticError(fmt.Sprintf("tuple literals must have 2-10 elements, got %d", n))
+		errLine, errCol := 0, 0 // TODO: no ANTLR context available
+		if len(line) >= 2 {
+			errLine, errCol = line[0], line[1]
+		}
+		return nil, galaerr.NewSemanticErrorAt(errLine, errCol, fmt.Sprintf("tuple literals must have 2-10 elements, got %d", n))
 	}
 
 	// Determine tuple type name based on arity

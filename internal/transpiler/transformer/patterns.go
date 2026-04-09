@@ -1189,7 +1189,7 @@ func (t *galaASTTransformer) transformTuplePattern(patternExprs []grammar.IExpre
 		if n > 0 {
 			return nil, nil, galaerr.NewSemanticErrorAt(patternExprs[0].GetStart().GetLine(), patternExprs[0].GetStart().GetColumn(), fmt.Sprintf("tuple patterns must have 2-10 elements, got %d", n))
 		}
-		return nil, nil, galaerr.NewSemanticError(fmt.Sprintf("tuple patterns must have 2-10 elements, got %d", n))
+		return nil, nil, galaerr.NewSemanticErrorAt(0, 0, fmt.Sprintf("tuple patterns must have 2-10 elements, got %d", n)) // TODO: no ANTLR context available (n == 0)
 	}
 
 	var stmts []ast.Stmt

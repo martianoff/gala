@@ -31,7 +31,7 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 	if argList == nil {
 		// Check for compiler intrinsic: StructMeta[T]()
 		if t.getBaseTypeName(base) == "StructMeta" {
-			return t.transformStructMetaConstruction(base)
+			return t.transformStructMetaConstruction(base, suffix.GetStart().GetLine(), suffix.GetStart().GetColumn())
 		}
 		// Empty argument list - check for zero-argument Apply method
 		typeName := t.getBaseTypeName(base)
@@ -155,7 +155,7 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 		// Zero-argument call — check if function has default params that need injection
 		if funcName := t.extractFuncName(base); funcName != "" {
 			if funcMeta := t.getFunction(funcName); funcMeta != nil && len(funcMeta.DefaultExprs) > 0 && len(funcMeta.ParamTypes) > 0 {
-				filled, err := t.fillDefaultArgs(nil, funcMeta)
+				filled, err := t.fillDefaultArgs(nil, funcMeta, suffix.GetStart().GetLine(), suffix.GetStart().GetColumn())
 				if err != nil {
 					return nil, err
 				}
@@ -516,10 +516,10 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 			methodFun := &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)}
 			recvTypeName := recvType.BaseName()
 			if len(mNamedArgs) > 0 && len(methodMeta.ParamNames) > 0 {
-				return t.handleNamedArgsMethodCall(methodFun, receiver, mArgs, mNamedArgs, methodMeta, recvTypeName)
+				return t.handleNamedArgsMethodCall(methodFun, receiver, mArgs, mNamedArgs, methodMeta, recvTypeName, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
 			}
 			if len(methodMeta.DefaultExprs) > 0 && len(mArgs) < len(methodMeta.ParamTypes) {
-				filled, err := t.fillDefaultArgsMethod(receiver, mArgs, methodMeta, recvTypeName)
+				filled, err := t.fillDefaultArgsMethod(receiver, mArgs, methodMeta, recvTypeName, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
 				if err != nil {
 					return nil, err
 				}
@@ -711,14 +711,14 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	// If we have named args, try function call with named args + defaults first
 	if len(namedArgs) > 0 {
 		if funcMeta != nil && len(funcMeta.ParamNames) > 0 {
-			return t.handleNamedArgsFuncCall(fun, args, namedArgs, funcMeta)
+			return t.handleNamedArgsFuncCall(fun, args, namedArgs, funcMeta, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
 		}
-		return t.handleNamedArgsCall(fun, args, namedArgs)
+		return t.handleNamedArgsCall(fun, args, namedArgs, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
 	}
 
 	// If fewer positional args than expected and function has defaults, inject default values
 	if funcMeta != nil && len(funcMeta.DefaultExprs) > 0 && len(args) < len(funcMeta.ParamTypes) {
-		filled, err := t.fillDefaultArgs(args, funcMeta)
+		filled, err := t.fillDefaultArgs(args, funcMeta, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
 		if err != nil {
 			return nil, err
 		}
@@ -728,7 +728,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	// Check for compiler intrinsic: StructMeta[T]()
 	typeName := t.getBaseTypeName(fun)
 	if typeName == "StructMeta" {
-		return t.transformStructMetaConstruction(fun)
+		return t.transformStructMetaConstruction(fun, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
 	}
 
 	// Check if the function being called is a type with an Apply method
@@ -1022,7 +1022,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	return &ast.CallExpr{Fun: fun, Args: args, Ellipsis: ellipsisPos(hasSpread)}, nil
 }
 
-func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, namedArgs map[string]ast.Expr) (ast.Expr, error) {
+func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, namedArgs map[string]ast.Expr, line, col int) (ast.Expr, error) {
 	// Extract the type name for struct field lookup.
 	// typeName is the bare name (e.g., "Cookie") used for code generation.
 	// qualifiedName includes the package qualifier (e.g., "go_struct_bridge.Cookie")
@@ -1167,7 +1167,7 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 				// Reject nil assignment to immutable (val) fields — use Option[T] instead
 				if immutFlags != nil && i < len(immutFlags) && immutFlags[i] {
 					if ident, isIdent := val.(*ast.Ident); isIdent && ident.Name == "nil" {
-						return nil, galaerr.NewSemanticError(fmt.Sprintf(
+						return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
 							"cannot assign nil to immutable field '%s' — use Option[T] with None() for optional values, or 'var %s' to make it mutable",
 							fieldName, fieldName))
 					}
@@ -1227,7 +1227,7 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 		}
 	}
 
-	return nil, galaerr.NewSemanticError(fmt.Sprintf("named arguments only supported for Copy method or struct construction (type: %s)", typeName))
+	return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("named arguments only supported for Copy method or struct construction (type: %s)", typeName))
 }
 
 
@@ -1302,7 +1302,7 @@ func (t *galaASTTransformer) transformDefaultExpr(exprText string) (ast.Expr, er
 
 // fillDefaultArgs fills missing positional arguments with default values from function metadata.
 // Called when a function has defaults and fewer args were provided than parameters.
-func (t *galaASTTransformer) fillDefaultArgs(args []ast.Expr, funcMeta *transpiler.FunctionMetadata) ([]ast.Expr, error) {
+func (t *galaASTTransformer) fillDefaultArgs(args []ast.Expr, funcMeta *transpiler.FunctionMetadata, line, col int) ([]ast.Expr, error) {
 	totalParams := len(funcMeta.ParamTypes)
 	result := make([]ast.Expr, totalParams)
 
@@ -1313,7 +1313,7 @@ func (t *galaASTTransformer) fillDefaultArgs(args []ast.Expr, funcMeta *transpil
 	for i := len(args); i < totalParams; i++ {
 		defaultExprText, hasDefault := funcMeta.DefaultExprs[i]
 		if !hasDefault {
-			return nil, galaerr.NewSemanticError(fmt.Sprintf(
+			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
 				"missing required argument %q (parameter %d) in call to %s",
 				funcMeta.ParamNames[i], i+1, funcMeta.Name))
 		}
@@ -1334,6 +1334,7 @@ func (t *galaASTTransformer) handleNamedArgsFuncCall(
 	positionalArgs []ast.Expr,
 	namedArgs map[string]ast.Expr,
 	funcMeta *transpiler.FunctionMetadata,
+	line, col int,
 ) (ast.Expr, error) {
 	totalParams := len(funcMeta.ParamTypes)
 	result := make([]ast.Expr, totalParams)
@@ -1341,7 +1342,7 @@ func (t *galaASTTransformer) handleNamedArgsFuncCall(
 	// Place positional args first
 	for i, arg := range positionalArgs {
 		if i >= totalParams {
-			return nil, galaerr.NewSemanticError(fmt.Sprintf(
+			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
 				"too many arguments in call to %s: expected %d, got %d positional + %d named",
 				funcMeta.Name, totalParams, len(positionalArgs), len(namedArgs)))
 		}
@@ -1358,11 +1359,11 @@ func (t *galaASTTransformer) handleNamedArgsFuncCall(
 			}
 		}
 		if idx < 0 {
-			return nil, galaerr.NewSemanticError(fmt.Sprintf(
+			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
 				"unknown parameter %q in call to %s", name, funcMeta.Name))
 		}
 		if result[idx] != nil {
-			return nil, galaerr.NewSemanticError(fmt.Sprintf(
+			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
 				"parameter %q specified both positionally and by name in call to %s",
 				name, funcMeta.Name))
 		}
@@ -1378,7 +1379,7 @@ func (t *galaASTTransformer) handleNamedArgsFuncCall(
 				if i < len(funcMeta.ParamNames) {
 					paramName = funcMeta.ParamNames[i]
 				}
-				return nil, galaerr.NewSemanticError(fmt.Sprintf(
+				return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
 					"missing required argument %q (parameter %d) in call to %s",
 					paramName, i+1, funcMeta.Name))
 			}
@@ -1402,12 +1403,13 @@ func (t *galaASTTransformer) handleNamedArgsMethodCall(
 	namedArgs map[string]ast.Expr,
 	methodMeta *transpiler.MethodMetadata,
 	recvTypeName string,
+	line, col int,
 ) (ast.Expr, error) {
 	totalParams := len(methodMeta.ParamTypes)
 	result := make([]ast.Expr, totalParams)
 	for i, arg := range positionalArgs {
 		if i >= totalParams {
-			return nil, galaerr.NewSemanticError(fmt.Sprintf("too many arguments in call to %s", methodMeta.Name))
+			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("too many arguments in call to %s", methodMeta.Name))
 		}
 		result[i] = arg
 	}
@@ -1420,10 +1422,10 @@ func (t *galaASTTransformer) handleNamedArgsMethodCall(
 			}
 		}
 		if idx < 0 {
-			return nil, galaerr.NewSemanticError(fmt.Sprintf("unknown parameter %q in call to %s", name, methodMeta.Name))
+			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("unknown parameter %q in call to %s", name, methodMeta.Name))
 		}
 		if result[idx] != nil {
-			return nil, galaerr.NewSemanticError(fmt.Sprintf("parameter %q specified both positionally and by name in call to %s", name, methodMeta.Name))
+			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("parameter %q specified both positionally and by name in call to %s", name, methodMeta.Name))
 		}
 		result[idx] = expr
 	}
@@ -1435,7 +1437,7 @@ func (t *galaASTTransformer) handleNamedArgsMethodCall(
 				if i < len(methodMeta.ParamNames) {
 					paramName = methodMeta.ParamNames[i]
 				}
-				return nil, galaerr.NewSemanticError(fmt.Sprintf("missing required argument %q (parameter %d) in call to %s", paramName, i+1, methodMeta.Name))
+				return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("missing required argument %q (parameter %d) in call to %s", paramName, i+1, methodMeta.Name))
 			}
 			expr, err := t.transformDefaultExpr(defaultExprText)
 			if err != nil {
@@ -1456,14 +1458,14 @@ func (t *galaASTTransformer) handleNamedArgsMethodCall(
 
 // fillDefaultArgsMethod fills missing positional arguments with default values from method metadata.
 // callSiteReceiver is the actual receiver expression at the call site.
-func (t *galaASTTransformer) fillDefaultArgsMethod(callSiteReceiver ast.Expr, args []ast.Expr, methodMeta *transpiler.MethodMetadata, recvTypeName string) ([]ast.Expr, error) {
+func (t *galaASTTransformer) fillDefaultArgsMethod(callSiteReceiver ast.Expr, args []ast.Expr, methodMeta *transpiler.MethodMetadata, recvTypeName string, line, col int) ([]ast.Expr, error) {
 	totalParams := len(methodMeta.ParamTypes)
 	result := make([]ast.Expr, totalParams)
 	copy(result, args)
 	for i := len(args); i < totalParams; i++ {
 		defaultExprText, hasDefault := methodMeta.DefaultExprs[i]
 		if !hasDefault {
-			return nil, galaerr.NewSemanticError(fmt.Sprintf("missing required argument %q (parameter %d) in call to %s", methodMeta.ParamNames[i], i+1, methodMeta.Name))
+			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("missing required argument %q (parameter %d) in call to %s", methodMeta.ParamNames[i], i+1, methodMeta.Name))
 		}
 		expr, err := t.transformDefaultExpr(defaultExprText)
 		if err != nil {

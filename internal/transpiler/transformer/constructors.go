@@ -65,7 +65,7 @@ func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.
 				return &ast.ParenExpr{X: exprs[0]}, nil
 			}
 			// Multiple expressions in parentheses -> tuple literal syntax
-			return t.transformTupleLiteral(exprs)
+			return t.transformTupleLiteral(exprs, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
 		}
 	}
 	return nil, nil

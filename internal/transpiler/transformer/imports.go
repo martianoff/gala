@@ -502,7 +502,7 @@ func (m *ImportManager) ValidateDotImports(richAST *transpiler.RichAST) error {
 
 	if len(clashes) > 0 {
 		msg := "dot-import symbol collision(s) detected:\n" + strings.Join(clashes, "\n") + "\nUse an aliased import for one of the packages to resolve the conflict."
-		return galaerr.NewSemanticError(msg)
+		return galaerr.NewSemanticErrorAt(0, 0, msg) // TODO: no ANTLR context available
 	}
 	return nil
 }
