@@ -264,11 +264,12 @@ func (t *galaASTTransformer) transformPostfixMatchExpression(ctx *grammar.Postfi
 
 	// Now handle the match expression
 	caseClauses := ctx.AllCaseClause()
-	return t.buildMatchExpressionFromClauses(subject, "obj", caseClauses)
+	return t.buildMatchExpressionFromClauses(subject, "obj", caseClauses, ctx)
 }
 
-// buildMatchExpressionFromClauses builds a match expression from the subject and case clauses
-func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, paramName string, caseClauses []grammar.ICaseClauseContext) (ast.Expr, error) {
+// buildMatchExpressionFromClauses builds a match expression from the subject and case clauses.
+// ctx is used for error position reporting when case clauses are empty.
+func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, paramName string, caseClauses []grammar.ICaseClauseContext, ctx antlr.ParserRuleContext) (ast.Expr, error) {
 	// Get the type of the matched expression
 	matchedType := t.getExprTypeNameManual(subject)
 	if matchedType == nil || matchedType.IsNil() {
@@ -284,7 +285,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 			cc := caseClauses[0].(*grammar.CaseClauseContext)
 			return nil, galaerr.NewSemanticErrorAt(cc.GetStart().GetLine(), cc.GetStart().GetColumn(), "cannot infer type of matched expression")
 		}
-		return nil, galaerr.NewSemanticErrorAt(0, 0, "cannot infer type of matched expression") // TODO: no ANTLR context available (no case clauses)
+		return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "cannot infer type of matched expression")
 	}
 
 	// Note: We intentionally do NOT replace types with unresolved type parameters (like Box[T])
@@ -392,7 +393,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	}
 
 	// Infer common result type from all branches
-	resultType, err := t.inferCommonResultType(resultTypes, casePatterns, nil)
+	resultType, err := t.inferCommonResultType(resultTypes, casePatterns, ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -405,7 +406,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 			cc := caseClauses[0].(*grammar.CaseClauseContext)
 			return nil, galaerr.NewSemanticErrorAt(cc.GetStart().GetLine(), cc.GetStart().GetColumn(), "match expression must have at least one case")
 		}
-		return nil, galaerr.NewSemanticErrorAt(0, 0, "match expression must have at least one case") // TODO: no ANTLR context available (no case clauses)
+		return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "match expression must have at least one case")
 	}
 
 	// Always collect variant patterns for exhaustiveness check
@@ -440,8 +441,8 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 					return nil, galaerr.NewSemanticErrorAt(cc.GetStart().GetLine(), cc.GetStart().GetColumn(),
 						fmt.Sprintf("non-exhaustive match: missing cases: %s", strings.Join(missing, ", ")))
 				}
-				return nil, galaerr.NewSemanticErrorAt(0, 0,
-					fmt.Sprintf("non-exhaustive match: missing cases: %s", strings.Join(missing, ", "))) // TODO: no ANTLR context available (no case clauses)
+				return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
+					fmt.Sprintf("non-exhaustive match: missing cases: %s", strings.Join(missing, ", ")))
 			} else if isSealed && isExhaustive {
 				// Exhaustive sealed match — generate synthetic panic("unreachable") default
 				defaultBody = []ast.Stmt{
@@ -455,7 +456,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 					cc := caseClauses[0].(*grammar.CaseClauseContext)
 					return nil, galaerr.NewSemanticErrorAt(cc.GetStart().GetLine(), cc.GetStart().GetColumn(), "match expression must have a default case (case _ => ...)")
 				}
-				return nil, galaerr.NewSemanticErrorAt(0, 0, "match expression must have a default case (case _ => ...)") // TODO: no ANTLR context available (no case clauses)
+				return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "match expression must have a default case (case _ => ...)")
 			}
 		}
 		// When foundDefault && isSealed && isExhaustive: unreachable default is harmless, allow it
@@ -488,7 +489,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 func (t *galaASTTransformer) transformTupleLiteral(exprs []ast.Expr, line ...int) (ast.Expr, error) {
 	n := len(exprs)
 	if n < 2 || n > 10 {
-		errLine, errCol := 0, 0 // TODO: no ANTLR context available
+		errLine, errCol := t.lastLine, t.lastCol
 		if len(line) >= 2 {
 			errLine, errCol = line[0], line[1]
 		}

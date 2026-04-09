@@ -628,7 +628,7 @@ func (t *galaASTTransformer) isImmutableType(typ transpiler.Type) bool {
 		if gen, ok := typ.(transpiler.GenericType); ok {
 			for _, p := range gen.Params {
 				if t.isImmutableType(p) {
-					panic(galaerr.NewSemanticErrorAt(0, 0, "recursive Immutable wrapping is not allowed")) // TODO: no ANTLR context available (type checking)
+					panic(galaerr.NewSemanticErrorAt(t.lastLine, t.lastCol, "recursive Immutable wrapping is not allowed"))
 				}
 			}
 		}

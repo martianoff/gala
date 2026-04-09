@@ -63,6 +63,8 @@ type galaASTTransformer struct {
 	expectedIfExprType     ast.Expr                     // FIX-052: expected return type for if-expression IIFE (set by expression-bodied function handler)
 	lspVarTypes            map[string]transpiler.Type   // LSP: collects all resolved var types during transformation
 	lspCurrentFunc         string                       // LSP: name of the function currently being transformed (for scoping)
+	lastLine               int                          // last known ANTLR source line (for error reporting in deeply-nested helpers)
+	lastCol                int                          // last known ANTLR source column (for error reporting in deeply-nested helpers)
 }
 
 // NewGalaASTTransformer creates a new instance of ASTTransformer for GALA.
@@ -173,10 +175,15 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 		for _, w := range richAST.AnalysisWarnings {
 			msgs = append(msgs, "  - "+w)
 		}
-		return nil, nil, galaerr.NewSemanticErrorAt(0, 0,
+		errLine, errCol := 1, 0
+		if rootCtx, ok := any(tree).(antlr.ParserRuleContext); ok && rootCtx.GetStart() != nil {
+			errLine = rootCtx.GetStart().GetLine()
+			errCol = rootCtx.GetStart().GetColumn()
+		}
+		return nil, nil, galaerr.NewSemanticErrorAt(errLine, errCol,
 			fmt.Sprintf("cannot transpile: %d imported package(s) could not be resolved:\n%s\n"+
 				"Hint: ensure all GALA dependencies are available via --search paths or gala.mod",
-				len(richAST.AnalysisWarnings), strings.Join(msgs, "\n"))) // TODO: no ANTLR context available (pre-transform validation)
+				len(richAST.AnalysisWarnings), strings.Join(msgs, "\n")))
 	}
 
 	// Register EmbeddedFS method metadata (Go-defined type, not available from GALA analysis).
@@ -189,7 +196,12 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 	fset = token.NewFileSet()
 	sourceFile, ok := any(tree).(*grammar.SourceFileContext)
 	if !ok {
-		return nil, nil, galaerr.NewSemanticErrorAt(0, 0, fmt.Sprintf("expected *grammar.SourceFileContext, got %T", tree)) // TODO: no ANTLR context available (invalid tree type)
+		errLine, errCol := 1, 0
+		if rootCtx, ok := any(tree).(antlr.ParserRuleContext); ok && rootCtx.GetStart() != nil {
+			errLine = rootCtx.GetStart().GetLine()
+			errCol = rootCtx.GetStart().GetColumn()
+		}
+		return nil, nil, galaerr.NewSemanticErrorAt(errLine, errCol, fmt.Sprintf("expected *grammar.SourceFileContext, got %T", tree))
 	}
 
 	pkgName := sourceFile.PackageClause().(*grammar.PackageClauseContext).Identifier().GetText()
@@ -212,8 +224,14 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 		t.importManager.UpdateActualPackageName(path, actualPkgName)
 	}
 
-	// Error on symbol clashes between dot-imported packages
-	if err := t.importManager.ValidateDotImports(richAST); err != nil {
+	// Error on symbol clashes between dot-imported packages.
+	// Use the first import declaration's position for error reporting.
+	importLine, importCol := 1, 0
+	if imports := sourceFile.AllImportDeclaration(); len(imports) > 0 {
+		importLine = imports[0].GetStart().GetLine()
+		importCol = imports[0].GetStart().GetColumn()
+	}
+	if err := t.importManager.ValidateDotImports(richAST, importLine, importCol); err != nil {
 		return nil, nil, err
 	}
 
@@ -355,6 +373,17 @@ func (t *galaASTTransformer) markDotImportUsed(pkgName string) {
 	t.importManager.MarkDotImportUsed(pkgName)
 }
 
+// trackPosition records the current ANTLR source position for use by deeply-nested
+// helpers (e.g., isImmutableType) that may need to report errors but lack direct
+// access to an ANTLR context. Callers that have a context should call this before
+// invoking such helpers.
+func (t *galaASTTransformer) trackPosition(ctx antlr.ParserRuleContext) {
+	if ctx != nil && ctx.GetStart() != nil {
+		t.lastLine = ctx.GetStart().GetLine()
+		t.lastCol = ctx.GetStart().GetColumn()
+	}
+}
+
 // semanticErrorAt creates a SemanticError with position info from an ANTLR context.
 func (t *galaASTTransformer) semanticErrorAt(ctx antlr.ParserRuleContext, msg string) *galaerr.SemanticError {
 	if ctx != nil && ctx.GetStart() != nil {
@@ -362,7 +391,8 @@ func (t *galaASTTransformer) semanticErrorAt(ctx antlr.ParserRuleContext, msg st
 		col := ctx.GetStart().GetColumn()
 		return galaerr.NewSemanticErrorInFile(t.filePath, line, col, msg)
 	}
-	return galaerr.NewSemanticErrorAt(0, 0, msg) // TODO: no ANTLR context available (nil ctx fallback)
+	// Fall back to last tracked position from enclosing transformation
+	return galaerr.NewSemanticErrorAt(t.lastLine, t.lastCol, msg)
 }
 
 var _ transpiler.ASTTransformer = (*galaASTTransformer)(nil)

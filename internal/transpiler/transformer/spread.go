@@ -12,9 +12,9 @@ import (
 // Returns the expression context, whether it's a spread argument, and an error if the pattern type is unsupported.
 // NOTE: After FIX-050, an argument may be a direct lambdaExpression instead of a pattern.
 // In that case pat is nil — callers should check arg.LambdaExpression() first.
-func extractArgExpression(pat grammar.IPatternContext) (grammar.IExpressionContext, bool, error) {
+func extractArgExpression(pat grammar.IPatternContext, line, col int) (grammar.IExpressionContext, bool, error) {
 	if pat == nil {
-		return nil, false, galaerr.NewSemanticErrorAt(0, 0, "only expressions allowed as function arguments") // TODO: no ANTLR context available (nil pattern)
+		return nil, false, galaerr.NewSemanticErrorAt(line, col, "only expressions allowed as function arguments")
 	}
 	if ep, ok := pat.(*grammar.ExpressionPatternContext); ok {
 		return ep.Expression(), false, nil
@@ -34,7 +34,7 @@ func extractArgContent(arg *grammar.ArgumentContext) (grammar.IExpressionContext
 		return nil, lambdaCtx.(*grammar.LambdaExpressionContext), false, nil
 	}
 	pat := arg.Pattern()
-	exprCtx, isSpread, err := extractArgExpression(pat)
+	exprCtx, isSpread, err := extractArgExpression(pat, arg.GetStart().GetLine(), arg.GetStart().GetColumn())
 	return exprCtx, nil, isSpread, err
 }
 
