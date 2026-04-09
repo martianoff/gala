@@ -2026,6 +2026,93 @@ func TestDiagnostics_ClearedOnEmptyDocument(t *testing.T) {
 	t.Logf("empty document: %d diagnostics", len(diags2))
 }
 
+// Simulate typing a case statement letter by letter with mistakes, then fixing.
+// Verifies no phantom errors remain after the code is valid.
+func TestDiagnostics_TypingCaseStatementWithMistakes(t *testing.T) {
+	h := newHarness(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Start with valid match expression
+	base := "package main\n\nsealed type Shape {\n    case Circle(radius float64)\n    case Rect(w float64, h float64)\n}\n\nfunc area(s Shape) float64 = s match {\n    case Circle(r) => 3.14 * r * r\n    case Rect(w, h) => w * h\n}\n\nfunc main() {\n    Println(area(Circle(radius = 5.0)))\n}\n"
+	uri := openFileOnDisk(t, h, base)
+	diags, _ := h.WaitForDiagnostics(ctx, uri)
+	t.Logf("valid base: %d diagnostics", len(diags))
+
+	// Simulate adding a dot after Some(42) — creates parse error
+	h.ClearDiagnostics()
+	broken := "package main\n\nsealed type Shape {\n    case Circle(radius float64)\n    case Rect(w float64, h float64)\n}\n\nfunc area(s Shape) float64 = s match {\n    case Circle(r) => 3.14 * r * r\n    case Rect(w, h) => w * h\n}\n\nfunc main() {\n    val x = Circle(radius = 5.0).\n    Println(area(x))\n}\n"
+	if err := h.DidChange(uri, 1, broken); err != nil {
+		t.Fatal(err)
+	}
+	diagsBroken, _ := h.WaitForDiagnostics(ctx, uri)
+	t.Logf("with trailing dot: %d diagnostics", len(diagsBroken))
+
+	// Fix by removing the dot — code should be valid again
+	h.ClearDiagnostics()
+	fixed := "package main\n\nsealed type Shape {\n    case Circle(radius float64)\n    case Rect(w float64, h float64)\n}\n\nfunc area(s Shape) float64 = s match {\n    case Circle(r) => 3.14 * r * r\n    case Rect(w, h) => w * h\n}\n\nfunc main() {\n    val x = Circle(radius = 5.0)\n    Println(area(x))\n}\n"
+	if err := h.DidChange(uri, 2, fixed); err != nil {
+		t.Fatal(err)
+	}
+	diagsFixed, err := h.WaitForDiagnostics(ctx, uri)
+	if err != nil {
+		t.Fatalf("waiting for fixed diagnostics: %v", err)
+	}
+
+	errorCount := 0
+	for _, d := range diagsFixed {
+		if d.Severity != nil && *d.Severity == lsp.SeverityError {
+			errorCount++
+			t.Logf("  phantom error: line=%d msg=%s", d.Range.Start.Line, d.Message)
+		}
+	}
+	if errorCount > 0 {
+		t.Errorf("expected 0 errors after fix, got %d phantom errors", errorCount)
+	}
+	t.Logf("after fix: %d diagnostics, %d errors", len(diagsFixed), errorCount)
+}
+
+// Simulate rapid typing: incomplete code → complete code → verify clean.
+func TestDiagnostics_RapidTypingSequence(t *testing.T) {
+	h := newHarness(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	uri := openFileOnDisk(t, h, "package main\n\nfunc main() {\n}\n")
+	h.WaitForDiagnostics(ctx, uri)
+
+	// Type "val x = S" (incomplete)
+	h.ClearDiagnostics()
+	h.DidChange(uri, 1, "package main\n\nfunc main() {\n    val x = S\n}\n")
+	time.Sleep(50 * time.Millisecond) // brief pause
+
+	// Type "val x = Some" (still incomplete)
+	h.ClearDiagnostics()
+	h.DidChange(uri, 2, "package main\n\nfunc main() {\n    val x = Some\n}\n")
+	time.Sleep(50 * time.Millisecond)
+
+	// Type "val x = Some(42)" (complete)
+	h.ClearDiagnostics()
+	h.DidChange(uri, 3, "package main\n\nfunc main() {\n    val x = Some(42)\n    Println(x)\n}\n")
+
+	diags, err := h.WaitForDiagnostics(ctx, uri)
+	if err != nil {
+		t.Fatalf("waiting: %v", err)
+	}
+
+	errorCount := 0
+	for _, d := range diags {
+		if d.Severity != nil && *d.Severity == lsp.SeverityError {
+			errorCount++
+			t.Logf("  error: line=%d msg=%s", d.Range.Start.Line, d.Message)
+		}
+	}
+	if errorCount > 0 {
+		t.Errorf("expected 0 errors after completing expression, got %d", errorCount)
+	}
+	t.Logf("after complete expression: %d diagnostics", len(diags))
+}
+
 // ============================================================
 // === FuncType Display ===
 // ============================================================
