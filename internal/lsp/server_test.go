@@ -2113,6 +2113,60 @@ func TestDiagnostics_RapidTypingSequence(t *testing.T) {
 	t.Logf("after complete expression: %d diagnostics", len(diags))
 }
 
+// Simulate real typing with intentional syntax error, then quick fix.
+// Step 1: valid code
+// Step 2: introduce syntax error (missing closing paren) — verify error appears
+// Step 3: fix the error — verify diagnostics clear
+func TestDiagnostics_IntentionalSyntaxErrorThenFix(t *testing.T) {
+	h := newHarness(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Step 1: Valid code
+	valid := "package main\n\nfunc main() {\n    val x = Some(42)\n    Println(x)\n}\n"
+	uri := openFileOnDisk(t, h, valid)
+	diags0, _ := h.WaitForDiagnostics(ctx, uri)
+	t.Logf("step 1 (valid): %d diagnostics", len(diags0))
+
+	// Step 2: Introduce syntax error — missing closing paren
+	h.ClearDiagnostics()
+	broken := "package main\n\nfunc main() {\n    val x = Some(42\n    Println(x)\n}\n"
+	if err := h.DidChange(uri, 1, broken); err != nil {
+		t.Fatal(err)
+	}
+	diagsBroken, err := h.WaitForDiagnostics(ctx, uri)
+	if err != nil {
+		t.Fatalf("waiting for broken diagnostics: %v", err)
+	}
+	t.Logf("step 2 (broken): %d diagnostics", len(diagsBroken))
+	if len(diagsBroken) == 0 {
+		t.Error("expected at least 1 diagnostic for syntax error")
+	}
+
+	// Step 3: Fix quickly — add back closing paren
+	h.ClearDiagnostics()
+	fixed := "package main\n\nfunc main() {\n    val x = Some(42)\n    Println(x)\n}\n"
+	if err := h.DidChange(uri, 2, fixed); err != nil {
+		t.Fatal(err)
+	}
+	diagsFixed, err := h.WaitForDiagnostics(ctx, uri)
+	if err != nil {
+		t.Fatalf("waiting for fixed diagnostics: %v", err)
+	}
+
+	errorCount := 0
+	for _, d := range diagsFixed {
+		if d.Severity != nil && *d.Severity == lsp.SeverityError {
+			errorCount++
+			t.Logf("  phantom: line=%d msg=%s", d.Range.Start.Line, d.Message)
+		}
+	}
+	if errorCount > 0 {
+		t.Errorf("step 3: expected 0 errors after fix, got %d phantom errors", errorCount)
+	}
+	t.Logf("step 3 (fixed): %d diagnostics, %d errors", len(diagsFixed), errorCount)
+}
+
 // ============================================================
 // === FuncType Display ===
 // ============================================================
