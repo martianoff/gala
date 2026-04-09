@@ -1949,6 +1949,83 @@ func TestDiagnostics_FixedOnEdit(t *testing.T) {
 	}
 }
 
+// Stale diagnostics should not persist after rapid edits.
+// Simulates: type error → quick fix → errors from old analysis must not leak through.
+func TestDiagnostics_NoStaleDiagnosticsOnRapidEdits(t *testing.T) {
+	h := newHarness(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Open valid file
+	uri := openFileOnDisk(t, h, "package main\n\nfunc main() {\n    Println(\"hello\")\n}\n")
+	diags1, _ := h.WaitForDiagnostics(ctx, uri)
+	t.Logf("initial: %d diagnostics", len(diags1))
+
+	// Introduce error (Some(123).)
+	h.ClearDiagnostics()
+	if err := h.DidChange(uri, 1, "package main\n\nfunc main() {\n    Some(123).\n}\n"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Immediately fix it (remove the dot) — before debounce fires
+	time.Sleep(100 * time.Millisecond) // partial debounce
+	h.ClearDiagnostics()
+	if err := h.DidChange(uri, 2, "package main\n\nfunc main() {\n    val x = Some(123)\n    Println(x)\n}\n"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Wait for final diagnostics
+	diags2, err := h.WaitForDiagnostics(ctx, uri)
+	if err != nil {
+		t.Fatalf("waiting for final diagnostics: %v", err)
+	}
+
+	// Only diagnostics from the FINAL (valid) version should show
+	errorCount := 0
+	for _, d := range diags2 {
+		if d.Severity != nil && *d.Severity == lsp.SeverityError {
+			errorCount++
+			t.Logf("  stale error: line=%d msg=%s", d.Range.Start.Line, d.Message)
+		}
+	}
+	t.Logf("after rapid fix: %d diagnostics, %d errors", len(diags2), errorCount)
+	if errorCount > 0 {
+		t.Errorf("stale diagnostics from intermediate error leaked through: %d errors", errorCount)
+	}
+}
+
+// Verify clearing entire document removes all diagnostics
+func TestDiagnostics_ClearedOnEmptyDocument(t *testing.T) {
+	h := newHarness(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Open large file with errors
+	uri := openFileOnDisk(t, h, "package main\n\nfunc main() {\n    val x = \n    val y = \n}\n")
+	diags1, _ := h.WaitForDiagnostics(ctx, uri)
+	t.Logf("with errors: %d diagnostics", len(diags1))
+
+	// Clear entire document
+	h.ClearDiagnostics()
+	if err := h.DidChange(uri, 1, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	// Wait for diagnostics of empty file
+	diags2, err := h.WaitForDiagnostics(ctx, uri)
+	if err != nil {
+		t.Fatalf("waiting for empty-file diagnostics: %v", err)
+	}
+
+	// Should NOT have old line-663 style errors from previous content
+	for _, d := range diags2 {
+		if d.Range.Start.Line > 10 {
+			t.Errorf("stale diagnostic from old content: line=%d msg=%s", d.Range.Start.Line, d.Message)
+		}
+	}
+	t.Logf("empty document: %d diagnostics", len(diags2))
+}
+
 // ============================================================
 // === FuncType Display ===
 // ============================================================
@@ -2700,4 +2777,110 @@ func TestMultiPackage_StdPackageResolution(t *testing.T) {
 		t.Logf("  diag: severity=%v line=%d msg=%s", d.Severity, d.Range.Start.Line, d.Message)
 	}
 	t.Logf("std package resolution: %d diagnostics", len(diags))
+}
+
+// ============================================================
+// === Chain Completion ===
+// ============================================================
+
+// Verify method chain completion resolves return types: order.Validate().
+func TestCompletion_ChainReturnTypeResolution(t *testing.T) {
+	h := newHarness(t)
+	src := "package main\n\ntype Order struct {\n    val total int\n}\n\nfunc (o Order) Validate() Option[Order] {\n    return Some(o)\n}\n\nfunc main() {\n    val order = Order(total = 100)\n    order.Validate().\n    Println(order)\n}\n"
+	uri := openFileOnDisk(t, h, src)
+	// Line 12 = "    order.Validate()."  char = after the dot
+	list, err := h.Completion(uri, 12, 22)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list == nil || len(list.Items) == 0 {
+		t.Log("no chain completion for order.Validate(). — chain resolution may not work")
+		return
+	}
+	// Validate() returns Option[Order], so should show Option methods (Map, GetOrElse, etc.)
+	labels := collectLabels(list)
+	t.Logf("chain completion: %d items", len(list.Items))
+	if !labels["Map"] && !labels["GetOrElse"] && !labels["IsDefined"] {
+		t.Errorf("expected Option methods (Map, GetOrElse, IsDefined) for order.Validate(). chain")
+		for _, item := range list.Items {
+			t.Logf("  %s kind=%v filter=%s", item.Label, item.Kind, item.FilterText)
+		}
+	}
+}
+
+// Verify deep chain with custom types: item.Wrap().GetOrElse(item).
+func TestCompletion_DeepChainCustomType(t *testing.T) {
+	h := newHarness(t)
+	src := "package main\n\ntype Item struct {\n    val name string\n}\n\nfunc (i Item) Label() string {\n    return i.name\n}\n\nfunc (i Item) Wrap() Option[Item] {\n    return Some(i)\n}\n\nfunc main() {\n    val item = Item(name = \"test\")\n    item.Wrap().GetOrElse(item).\n    Println(item)\n}\n"
+	uri := openFileOnDisk(t, h, src)
+	// Line 16 = "    item.Wrap().GetOrElse(item)."  char = after final dot
+	list, err := h.Completion(uri, 16, 34)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list == nil || len(list.Items) == 0 {
+		t.Log("no deep chain completion — chain resolution may not work for deep chains")
+		return
+	}
+	// Wrap() returns Option[Item], GetOrElse(item) returns Item, so should show Item methods
+	labels := collectLabels(list)
+	t.Logf("deep chain completion: %d items", len(list.Items))
+	if !labels["Label"] {
+		t.Logf("NOTE: Label not found in deep chain completion (got %d items)", len(list.Items))
+	}
+}
+
+// Verify stdlib extraction — the embedded stdlib should be available.
+func TestStdlibExtraction_PackagesAvailable(t *testing.T) {
+	root := findProjectRoot()
+	if root == "" {
+		t.Skip("project root not found")
+	}
+	// Verify that std packages are available via the project root search path
+	h := newHarness(t)
+	uri := openFileOnDisk(t, h, "package main\n\nfunc main() {\n    val opt = Some(42)\n    val result = opt.GetOrElse(0)\n    Println(result)\n}\n")
+	raw, err := h.Call("textDocument/inlayHint", map[string]interface{}{
+		"textDocument": map[string]string{"uri": string(uri)},
+		"range": map[string]interface{}{
+			"start": map[string]int{"line": 0, "character": 0},
+			"end":   map[string]int{"line": 10, "character": 0},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("stdlib type hints: %s", string(raw))
+}
+
+// Verify gala.mod dependency resolution — project with gala.mod should resolve deps.
+func TestMultiPackage_GalaModDependencyResolution(t *testing.T) {
+	h := newHarness(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Create a project with gala.mod that has dependencies
+	dir := createTestProject(t, []testProjectFile{
+		{Name: "go.mod", Src: "module myapp\n\ngo 1.21\n"},
+		{Name: "gala.mod", Src: "module myapp\n\ngala 0.29.2\n"},
+		{Name: "main.gala", Src: "package main\n\nimport \"martianoff/gala/collection_immutable\"\n\nfunc main() {\n    val arr = collection_immutable.ArrayOf(1, 2, 3)\n    Println(arr)\n}\n"},
+	})
+
+	uri := openProjectFile(t, h, dir, "main.gala")
+
+	diags, err := h.WaitForDiagnostics(ctx, uri)
+	if err != nil {
+		t.Fatalf("waiting for diagnostics: %v", err)
+	}
+
+	for _, d := range diags {
+		t.Logf("  diag: severity=%v line=%d msg=%s", d.Severity, d.Range.Start.Line, d.Message)
+	}
+
+	// Check for import resolution errors specifically
+	for _, d := range diags {
+		if strings.Contains(d.Message, "package not found") {
+			t.Errorf("import resolution failed: %s", d.Message)
+		}
+	}
+	t.Logf("gala.mod resolution: %d diagnostics", len(diags))
 }

@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	golsp "github.com/owenrumney/go-lsp/server"
 	"github.com/spf13/cobra"
 
 	"martianoff/gala/internal/build"
 	"martianoff/gala/internal/lsp"
+	"martianoff/gala/internal/stdlib"
 )
 
 var lspCmd = &cobra.Command{
@@ -46,17 +48,22 @@ func runLsp(cmd *cobra.Command, args []string) {
 	}
 }
 
-// autoResolveLSPSearchPaths finds the GALA stdlib and dependency cache paths.
+// autoResolveLSPSearchPaths extracts the embedded stdlib and returns search paths.
 func autoResolveLSPSearchPaths() []string {
-	var paths []string
-
 	config := build.DefaultConfig()
-
-	// Add stdlib path using current CLI version
 	stdlibDir := config.StdlibVersionDir(Version)
-	if info, err := os.Stat(stdlibDir); err == nil && info.IsDir() {
-		paths = append(paths, stdlibDir)
+
+	// Ensure stdlib is extracted (same as `gala build` does)
+	markerPath := filepath.Join(stdlibDir, ".stdlib-extracted")
+	if _, err := os.Stat(markerPath); os.IsNotExist(err) {
+		os.MkdirAll(stdlibDir, 0755)
+		if err := stdlib.ExtractTo(stdlibDir); err == nil {
+			os.WriteFile(markerPath, []byte(Version), 0644)
+		}
 	}
 
-	return paths
+	if info, err := os.Stat(stdlibDir); err == nil && info.IsDir() {
+		return []string{stdlibDir}
+	}
+	return nil
 }
