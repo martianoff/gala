@@ -1904,118 +1904,86 @@ func TestDiagnostics_ClearedOnClose(t *testing.T) {
 
 func TestDiagnostics_FixedOnEdit(t *testing.T) {
 	h := newHarness(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 
-	// First open with error — DidOpen calls publishDiagnostics synchronously
+	// Open with error
 	uri := openFileOnDisk(t, h, "package main\n\nfunc main() {\n    val x = \n}\n")
-	// Wait for the notification to arrive
-	diags1, err := h.WaitForDiagnostics(ctx, uri)
-	if err != nil {
-		t.Fatalf("waiting for initial diagnostics: %v", err)
-	}
+	time.Sleep(100 * time.Millisecond)
+	diags1 := h.Diagnostics(uri)
 	t.Logf("diagnostics with error: %d", len(diags1))
-	for _, d := range diags1 {
-		t.Logf("  error diag: line=%d col=%d msg=%s", d.Range.Start.Line, d.Range.Start.Character, d.Message)
-	}
 	if len(diags1) == 0 {
 		t.Fatal("expected at least 1 diagnostic for parse error")
 	}
 
-	// Edit to fix the error — DidChange uses 500ms debounce
-	h.ClearDiagnostics()
+	// Fix the error
 	if err := h.DidChange(uri, 1, "package main\n\nfunc main() {\n    val x = 42\n    Println(x)\n}\n"); err != nil {
 		t.Fatal(err)
 	}
-	// Wait for debounce timer (500ms) to fire and re-publish
-	diags2, err := h.WaitForDiagnostics(ctx, uri)
-	if err != nil {
-		t.Fatalf("waiting for fix diagnostics: %v", err)
-	}
+	// Wait for debounce (300ms) + analysis
+	time.Sleep(600 * time.Millisecond)
+	diags2 := h.Diagnostics(uri)
 	t.Logf("diagnostics after fix: %d", len(diags2))
-	for _, d := range diags2 {
-		t.Logf("  persistent diag: severity=%v line=%d msg=%s", d.Severity, d.Range.Start.Line, d.Message)
-	}
 
-	// After fixing, errors should be gone (only warnings acceptable)
 	errorCount := 0
 	for _, d := range diags2 {
 		if d.Severity != nil && *d.Severity == lsp.SeverityError {
 			errorCount++
+			t.Logf("  persistent: line=%d msg=%s", d.Range.Start.Line, d.Message)
 		}
 	}
 	if errorCount > 0 {
-		t.Errorf("expected 0 errors after fix, got %d error diagnostics that persist", errorCount)
+		t.Errorf("expected 0 errors after fix, got %d", errorCount)
 	}
 }
 
 // Stale diagnostics should not persist after rapid edits.
-// Simulates: type error → quick fix → errors from old analysis must not leak through.
+// Simulates: error → quick fix before debounce fires → only final state's diagnostics show.
 func TestDiagnostics_NoStaleDiagnosticsOnRapidEdits(t *testing.T) {
 	h := newHarness(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 
 	// Open valid file
 	uri := openFileOnDisk(t, h, "package main\n\nfunc main() {\n    Println(\"hello\")\n}\n")
-	diags1, _ := h.WaitForDiagnostics(ctx, uri)
-	t.Logf("initial: %d diagnostics", len(diags1))
+	time.Sleep(100 * time.Millisecond)
 
 	// Introduce error (Some(123).)
-	h.ClearDiagnostics()
-	if err := h.DidChange(uri, 1, "package main\n\nfunc main() {\n    Some(123).\n}\n"); err != nil {
-		t.Fatal(err)
-	}
+	h.DidChange(uri, 1, "package main\n\nfunc main() {\n    Some(123).\n}\n")
 
-	// Immediately fix it (remove the dot) — before debounce fires
-	time.Sleep(100 * time.Millisecond) // partial debounce
-	h.ClearDiagnostics()
-	if err := h.DidChange(uri, 2, "package main\n\nfunc main() {\n    val x = Some(123)\n    Println(x)\n}\n"); err != nil {
-		t.Fatal(err)
-	}
+	// Immediately fix it — before debounce fires (cancel-and-restart should discard the error)
+	time.Sleep(100 * time.Millisecond)
+	h.DidChange(uri, 2, "package main\n\nfunc main() {\n    val x = Some(123)\n    Println(x)\n}\n")
 
-	// Wait for final diagnostics
-	diags2, err := h.WaitForDiagnostics(ctx, uri)
-	if err != nil {
-		t.Fatalf("waiting for final diagnostics: %v", err)
-	}
+	// Wait for final analysis
+	time.Sleep(600 * time.Millisecond)
+	diags := h.Diagnostics(uri)
 
-	// Only diagnostics from the FINAL (valid) version should show
 	errorCount := 0
-	for _, d := range diags2 {
+	for _, d := range diags {
 		if d.Severity != nil && *d.Severity == lsp.SeverityError {
 			errorCount++
 			t.Logf("  stale error: line=%d msg=%s", d.Range.Start.Line, d.Message)
 		}
 	}
-	t.Logf("after rapid fix: %d diagnostics, %d errors", len(diags2), errorCount)
+	t.Logf("after rapid fix: %d diagnostics, %d errors", len(diags), errorCount)
 	if errorCount > 0 {
-		t.Errorf("stale diagnostics from intermediate error leaked through: %d errors", errorCount)
+		t.Errorf("stale diagnostics leaked through: %d errors", errorCount)
 	}
 }
 
-// Verify clearing entire document removes all diagnostics
+// Verify clearing entire document replaces old diagnostics
 func TestDiagnostics_ClearedOnEmptyDocument(t *testing.T) {
 	h := newHarness(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 
-	// Open large file with errors
+	// Open file with errors
 	uri := openFileOnDisk(t, h, "package main\n\nfunc main() {\n    val x = \n    val y = \n}\n")
-	diags1, _ := h.WaitForDiagnostics(ctx, uri)
+	time.Sleep(100 * time.Millisecond)
+	diags1 := h.Diagnostics(uri)
 	t.Logf("with errors: %d diagnostics", len(diags1))
 
 	// Clear entire document
-	h.ClearDiagnostics()
-	if err := h.DidChange(uri, 1, ""); err != nil {
-		t.Fatal(err)
-	}
+	h.DidChange(uri, 1, "")
 
-	// Wait for diagnostics of empty file
-	diags2, err := h.WaitForDiagnostics(ctx, uri)
-	if err != nil {
-		t.Fatalf("waiting for empty-file diagnostics: %v", err)
-	}
+	// Wait for new diagnostics to replace old ones
+	time.Sleep(600 * time.Millisecond)
+	diags2 := h.Diagnostics(uri)
 
 	// Should NOT have old line-663 style errors from previous content
 	for _, d := range diags2 {
@@ -2030,34 +1998,25 @@ func TestDiagnostics_ClearedOnEmptyDocument(t *testing.T) {
 // Verifies no phantom errors remain after the code is valid.
 func TestDiagnostics_TypingCaseStatementWithMistakes(t *testing.T) {
 	h := newHarness(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
 
 	// Start with valid match expression
 	base := "package main\n\nsealed type Shape {\n    case Circle(radius float64)\n    case Rect(w float64, h float64)\n}\n\nfunc area(s Shape) float64 = s match {\n    case Circle(r) => 3.14 * r * r\n    case Rect(w, h) => w * h\n}\n\nfunc main() {\n    Println(area(Circle(radius = 5.0)))\n}\n"
 	uri := openFileOnDisk(t, h, base)
-	diags, _ := h.WaitForDiagnostics(ctx, uri)
-	t.Logf("valid base: %d diagnostics", len(diags))
+	time.Sleep(100 * time.Millisecond)
 
-	// Simulate adding a dot after Some(42) — creates parse error
-	h.ClearDiagnostics()
+	// Add trailing dot — creates parse error
 	broken := "package main\n\nsealed type Shape {\n    case Circle(radius float64)\n    case Rect(w float64, h float64)\n}\n\nfunc area(s Shape) float64 = s match {\n    case Circle(r) => 3.14 * r * r\n    case Rect(w, h) => w * h\n}\n\nfunc main() {\n    val x = Circle(radius = 5.0).\n    Println(area(x))\n}\n"
-	if err := h.DidChange(uri, 1, broken); err != nil {
-		t.Fatal(err)
-	}
-	diagsBroken, _ := h.WaitForDiagnostics(ctx, uri)
-	t.Logf("with trailing dot: %d diagnostics", len(diagsBroken))
+	h.DidChange(uri, 1, broken)
+	time.Sleep(600 * time.Millisecond)
+	t.Logf("with trailing dot: %d diagnostics", len(h.Diagnostics(uri)))
 
 	// Fix by removing the dot — code should be valid again
-	h.ClearDiagnostics()
 	fixed := "package main\n\nsealed type Shape {\n    case Circle(radius float64)\n    case Rect(w float64, h float64)\n}\n\nfunc area(s Shape) float64 = s match {\n    case Circle(r) => 3.14 * r * r\n    case Rect(w, h) => w * h\n}\n\nfunc main() {\n    val x = Circle(radius = 5.0)\n    Println(area(x))\n}\n"
 	if err := h.DidChange(uri, 2, fixed); err != nil {
 		t.Fatal(err)
 	}
-	diagsFixed, err := h.WaitForDiagnostics(ctx, uri)
-	if err != nil {
-		t.Fatalf("waiting for fixed diagnostics: %v", err)
-	}
+	time.Sleep(600 * time.Millisecond)
+	diagsFixed := h.Diagnostics(uri)
 
 	errorCount := 0
 	for _, d := range diagsFixed {
@@ -2073,32 +2032,27 @@ func TestDiagnostics_TypingCaseStatementWithMistakes(t *testing.T) {
 }
 
 // Simulate rapid typing: incomplete code → complete code → verify clean.
+// No ClearDiagnostics — relies on cancel-and-restart to discard intermediate results.
 func TestDiagnostics_RapidTypingSequence(t *testing.T) {
 	h := newHarness(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
 
 	uri := openFileOnDisk(t, h, "package main\n\nfunc main() {\n}\n")
-	h.WaitForDiagnostics(ctx, uri)
+	time.Sleep(100 * time.Millisecond)
 
-	// Type "val x = S" (incomplete)
-	h.ClearDiagnostics()
+	// Type "val x = S" (incomplete) — triggers debounce
 	h.DidChange(uri, 1, "package main\n\nfunc main() {\n    val x = S\n}\n")
-	time.Sleep(50 * time.Millisecond) // brief pause
+	time.Sleep(50 * time.Millisecond)
 
-	// Type "val x = Some" (still incomplete)
-	h.ClearDiagnostics()
+	// Type "val x = Some" — cancels previous, new debounce
 	h.DidChange(uri, 2, "package main\n\nfunc main() {\n    val x = Some\n}\n")
 	time.Sleep(50 * time.Millisecond)
 
-	// Type "val x = Some(42)" (complete)
-	h.ClearDiagnostics()
+	// Type "val x = Some(42)" — final version
 	h.DidChange(uri, 3, "package main\n\nfunc main() {\n    val x = Some(42)\n    Println(x)\n}\n")
 
-	diags, err := h.WaitForDiagnostics(ctx, uri)
-	if err != nil {
-		t.Fatalf("waiting: %v", err)
-	}
+	// Wait for final analysis only
+	time.Sleep(600 * time.Millisecond)
+	diags := h.Diagnostics(uri)
 
 	errorCount := 0
 	for _, d := range diags {
@@ -2114,45 +2068,38 @@ func TestDiagnostics_RapidTypingSequence(t *testing.T) {
 }
 
 // Simulate real typing with intentional syntax error, then quick fix.
-// Step 1: valid code
-// Step 2: introduce syntax error (missing closing paren) — verify error appears
-// Step 3: fix the error — verify diagnostics clear
+// No manual ClearDiagnostics — relies on the LSP's cancel-and-restart
+// to properly replace old diagnostics with new ones.
 func TestDiagnostics_IntentionalSyntaxErrorThenFix(t *testing.T) {
 	h := newHarness(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
 
 	// Step 1: Valid code
 	valid := "package main\n\nfunc main() {\n    val x = Some(42)\n    Println(x)\n}\n"
 	uri := openFileOnDisk(t, h, valid)
-	diags0, _ := h.WaitForDiagnostics(ctx, uri)
-	t.Logf("step 1 (valid): %d diagnostics", len(diags0))
+	// DidOpen publishes synchronously — wait for notification to arrive
+	time.Sleep(100 * time.Millisecond)
 
 	// Step 2: Introduce syntax error — missing closing paren
-	h.ClearDiagnostics()
 	broken := "package main\n\nfunc main() {\n    val x = Some(42\n    Println(x)\n}\n"
 	if err := h.DidChange(uri, 1, broken); err != nil {
 		t.Fatal(err)
 	}
-	diagsBroken, err := h.WaitForDiagnostics(ctx, uri)
-	if err != nil {
-		t.Fatalf("waiting for broken diagnostics: %v", err)
-	}
+	// Wait for debounce (300ms) + analysis
+	time.Sleep(600 * time.Millisecond)
+	diagsBroken := h.Diagnostics(uri)
 	t.Logf("step 2 (broken): %d diagnostics", len(diagsBroken))
 	if len(diagsBroken) == 0 {
 		t.Error("expected at least 1 diagnostic for syntax error")
 	}
 
 	// Step 3: Fix quickly — add back closing paren
-	h.ClearDiagnostics()
 	fixed := "package main\n\nfunc main() {\n    val x = Some(42)\n    Println(x)\n}\n"
 	if err := h.DidChange(uri, 2, fixed); err != nil {
 		t.Fatal(err)
 	}
-	diagsFixed, err := h.WaitForDiagnostics(ctx, uri)
-	if err != nil {
-		t.Fatalf("waiting for fixed diagnostics: %v", err)
-	}
+	// Wait for debounce + analysis to replace diagnostics
+	time.Sleep(600 * time.Millisecond)
+	diagsFixed := h.Diagnostics(uri)
 
 	errorCount := 0
 	for _, d := range diagsFixed {
