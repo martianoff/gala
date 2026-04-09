@@ -24,6 +24,12 @@ import (
 )
 
 // GalaHandler implements all LSP handler interfaces for the GALA language.
+//
+// Diagnostic publishing follows the cancel-and-restart pattern (like gopls):
+// - Each DidChange updates in-memory state and cancels any in-flight analysis
+// - A short debounce (300ms) batches rapid keystrokes before starting analysis
+// - Before publishing, the document version is checked to discard stale results
+// - Old diagnostics remain visible until replaced (no eager clearing)
 type GalaHandler struct {
 	rootPath string
 
@@ -33,13 +39,12 @@ type GalaHandler struct {
 	extraSearchPaths []string          // additional search paths (for testing)
 	client           *golsp.Client     // LSP client for sending notifications
 
-	debounceTimers map[string]*time.Timer // URI -> debounce timer for DidChange
-	docVersions    map[string]int64       // URI -> edit generation (incremented on DidChange)
-
-	mu        sync.Mutex
-	documents map[string]string              // URI -> source text
-	richASTs  map[string]*transpiler.RichAST // URI -> analyzed AST
-	varTypes  map[string]map[string]string   // URI -> (varName -> type) from transpiler
+	mu            sync.Mutex
+	documents     map[string]string              // URI -> source text
+	docVersions   map[string]int64               // URI -> monotonic edit version
+	analysisCancels map[string]context.CancelFunc // URI -> cancel func for in-flight analysis
+	richASTs      map[string]*transpiler.RichAST // URI -> analyzed AST
+	varTypes      map[string]map[string]string   // URI -> (varName -> type) from transpiler
 }
 
 // SetClient implements server.ClientHandler — receives the LSP client for notifications.
@@ -55,13 +60,13 @@ func (h *GalaHandler) SetSearchPaths(paths []string) {
 // NewGalaHandler creates a new GALA LSP handler.
 func NewGalaHandler() *GalaHandler {
 	return &GalaHandler{
-		documents:   make(map[string]string),
-		richASTs:    make(map[string]*transpiler.RichAST),
-		varTypes:       make(map[string]map[string]string),
-		debounceTimers: make(map[string]*time.Timer),
-		docVersions:    make(map[string]int64),
-		parser:    transpiler.NewAntlrGalaParser(),
-		generator: generator.NewGoCodeGenerator(),
+		documents:       make(map[string]string),
+		richASTs:        make(map[string]*transpiler.RichAST),
+		varTypes:        make(map[string]map[string]string),
+		docVersions:     make(map[string]int64),
+		analysisCancels: make(map[string]context.CancelFunc),
+		parser:          transpiler.NewAntlrGalaParser(),
+		generator:       generator.NewGoCodeGenerator(),
 	}
 }
 
@@ -113,7 +118,11 @@ func (h *GalaHandler) DidOpen(ctx context.Context, params *lsp.DidOpenTextDocume
 	uri := string(params.TextDocument.URI)
 	h.mu.Lock()
 	h.documents[uri] = params.TextDocument.Text
-	h.docVersions[uri]++ // invalidate any in-flight debounce
+	h.docVersions[uri]++
+	// Cancel any in-flight analysis from a previous DidChange
+	if cancel, ok := h.analysisCancels[uri]; ok {
+		cancel()
+	}
 	h.mu.Unlock()
 	h.publishDiagnostics(uri, params.TextDocument.Text)
 	return nil
@@ -125,22 +134,35 @@ func (h *GalaHandler) DidChange(ctx context.Context, params *lsp.DidChangeTextDo
 		return nil
 	}
 	text := params.ContentChanges[len(params.ContentChanges)-1].Text
+
 	h.mu.Lock()
 	h.documents[uri] = text
-	// Increment document version to detect stale analysis results
 	h.docVersions[uri]++
-	gen := h.docVersions[uri]
-	// Cancel any pending debounce timer
-	if timer, ok := h.debounceTimers[uri]; ok {
-		timer.Stop()
+	version := h.docVersions[uri]
+
+	// Cancel any in-flight analysis for this URI
+	if cancel, ok := h.analysisCancels[uri]; ok {
+		cancel()
 	}
-	// Debounce: wait 500ms after last keystroke before re-analyzing.
-	h.debounceTimers[uri] = time.AfterFunc(500*time.Millisecond, func() {
+	analysisCtx, cancel := context.WithCancel(context.Background())
+	h.analysisCancels[uri] = cancel
+	h.mu.Unlock()
+
+	// Start analysis after a short debounce to batch rapid keystrokes.
+	// Use a goroutine with sleep instead of AfterFunc for cleaner cancellation.
+	go func() {
+		// Short debounce — batches rapid keystrokes
+		select {
+		case <-time.After(300 * time.Millisecond):
+		case <-analysisCtx.Done():
+			return // cancelled by newer edit
+		}
+
+		// Read current text (might differ from what triggered this if edits came during debounce)
 		h.mu.Lock()
-		// Discard if a newer edit arrived while we were waiting
-		if h.docVersions[uri] != gen {
+		if h.docVersions[uri] != version {
 			h.mu.Unlock()
-			return
+			return // stale — newer edit arrived
 		}
 		currentText := h.documents[uri]
 		h.mu.Unlock()
@@ -148,11 +170,16 @@ func (h *GalaHandler) DidChange(ctx context.Context, params *lsp.DidChangeTextDo
 		filePath := uriToPath(uri)
 		diagnostics := h.analyzeFile(uri, filePath, currentText)
 
-		// Check generation AGAIN after analysis — discard stale results
+		// Check cancellation and version after analysis
+		select {
+		case <-analysisCtx.Done():
+			return // cancelled during analysis
+		default:
+		}
 		h.mu.Lock()
-		if h.docVersions[uri] != gen {
+		if h.docVersions[uri] != version {
 			h.mu.Unlock()
-			return
+			return // stale
 		}
 		h.mu.Unlock()
 
@@ -162,8 +189,8 @@ func (h *GalaHandler) DidChange(ctx context.Context, params *lsp.DidChangeTextDo
 				Diagnostics: diagnostics,
 			})
 		}
-	})
-	h.mu.Unlock()
+	}()
+
 	return nil
 }
 
@@ -189,7 +216,10 @@ func (h *GalaHandler) DidSave(ctx context.Context, params *lsp.DidSaveTextDocume
 		uri := string(params.TextDocument.URI)
 		h.mu.Lock()
 		h.documents[uri] = *params.Text
-		h.docVersions[uri]++ // invalidate any in-flight debounce
+		h.docVersions[uri]++
+		if cancel, ok := h.analysisCancels[uri]; ok {
+			cancel()
+		}
 		h.mu.Unlock()
 		h.publishDiagnostics(uri, *params.Text)
 	}
@@ -234,6 +264,7 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 
 	// Use a fresh transformer per analysis to avoid race conditions between
 	// concurrent debounce timers (the transformer has mutable internal state).
+	// Run transformer for type inference and diagnostic reporting.
 	xformer := transformer.NewGalaASTTransformer()
 	result, transformErr := xformer.TransformForLSP(richAST)
 	if transformErr != nil {
