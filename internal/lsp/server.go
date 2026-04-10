@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/owenrumney/go-lsp/lsp"
 	golsp "github.com/owenrumney/go-lsp/server"
@@ -149,34 +148,19 @@ func (h *GalaHandler) DidChange(ctx context.Context, params *lsp.DidChangeTextDo
 	h.mu.Unlock()
 
 	go func() {
-		select {
-		case <-time.After(300 * time.Millisecond):
-		case <-analysisCtx.Done():
-			return // cancelled by newer edit
-		}
-
-		// Read current text (might differ from what triggered this if edits came during debounce)
-		h.mu.Lock()
-		if h.docVersions[uri] != version {
-			h.mu.Unlock()
-			return // stale — newer edit arrived
-		}
-		currentText := h.documents[uri]
-		h.mu.Unlock()
-
 		filePath := uriToPath(uri)
-		diagnostics := h.analyzeFile(uri, filePath, currentText)
+		diagnostics := h.analyzeFile(uri, filePath, text)
 
-		// Check cancellation and version after analysis
+		// Discard if cancelled or stale
 		select {
 		case <-analysisCtx.Done():
-			return // cancelled during analysis
+			return
 		default:
 		}
 		h.mu.Lock()
 		if h.docVersions[uri] != version {
 			h.mu.Unlock()
-			return // stale
+			return
 		}
 		h.mu.Unlock()
 

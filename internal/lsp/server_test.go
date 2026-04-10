@@ -2114,6 +2114,51 @@ func TestDiagnostics_IntentionalSyntaxErrorThenFix(t *testing.T) {
 	t.Logf("step 3 (fixed): %d diagnostics, %d errors", len(diagsFixed), errorCount)
 }
 
+// Reproduce: add "." after function call ")", wait for error, remove ".", verify clears.
+// This is the exact scenario from the user report.
+func TestDiagnostics_DotAfterParenThenRemove(t *testing.T) {
+	h := newHarness(t)
+
+	// Valid code with function call
+	valid := "package main\n\nfunc divide(a int, b int) int {\n    return a / b\n}\n\nfunc main() {\n    val result = divide(10, 3)\n    Println(result)\n}\n"
+	uri := openFileOnDisk(t, h, valid)
+	time.Sleep(100 * time.Millisecond)
+	diags0 := h.Diagnostics(uri)
+	t.Logf("step 0 (valid): %d diagnostics", len(diags0))
+
+	// Add "." after a function call — creates syntax error
+	withDot := "package main\n\nfunc divide(a int, b int) int {\n    return a / b\n}\n\nfunc main() {\n    val result = divide(10, 3).\n    Println(result)\n}\n"
+	if err := h.DidChange(uri, 1, withDot); err != nil {
+		t.Fatal(err)
+	}
+	// Wait for debounce (300ms) + analysis + RPC notification delivery
+	time.Sleep(1000 * time.Millisecond)
+	diags1 := h.Diagnostics(uri)
+	t.Logf("step 1 (with dot): %d diagnostics", len(diags1))
+	for _, d := range diags1 {
+		t.Logf("  diag: line=%d msg=%s", d.Range.Start.Line, d.Message)
+	}
+
+	// Remove the dot — code is valid again
+	if err := h.DidChange(uri, 2, valid); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(1000 * time.Millisecond)
+	diags2 := h.Diagnostics(uri)
+
+	errorCount := 0
+	for _, d := range diags2 {
+		if d.Severity != nil && *d.Severity == lsp.SeverityError {
+			errorCount++
+			t.Logf("  STALE: line=%d msg=%s", d.Range.Start.Line, d.Message)
+		}
+	}
+	if errorCount > 0 {
+		t.Errorf("step 2: expected 0 errors after removing dot, got %d stale errors", errorCount)
+	}
+	t.Logf("step 2 (dot removed): %d diagnostics, %d errors", len(diags2), errorCount)
+}
+
 // ============================================================
 // === FuncType Display ===
 // ============================================================
