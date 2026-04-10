@@ -9,6 +9,8 @@ import (
 
 var funcDeclPattern = regexp.MustCompile(`^\s*func\s+(?:\([^)]*\)\s+)?(\w+)`)
 
+const packagePrefix = "__package__:"
+
 // findEnclosingFunc scans lines backwards from the given line to find the enclosing function name.
 func findEnclosingFunc(lines []string, targetLine int) string {
 	for i := targetLine; i >= 0; i-- {
@@ -110,11 +112,7 @@ func typeAtDot(text string, line, char int, richAST *transpiler.RichAST, varType
 func resolveReceiverType(name, funcScope string, richAST *transpiler.RichAST, varTypes map[string]string) string {
 	// 1. Check transpiler's resolved var types (function-scoped)
 	if typStr := lookupVarType(varTypes, funcScope, name); typStr != "" {
-		base := typStr
-		if idx := strings.Index(base, "["); idx > 0 {
-			base = base[:idx]
-		}
-		return base
+		return stripTypeParams(typStr)
 	}
 
 	if richAST == nil {
@@ -124,11 +122,7 @@ func resolveReceiverType(name, funcScope string, richAST *transpiler.RichAST, va
 	// 2. Check if it's a function call return type
 	if fm, ok := richAST.Functions[name]; ok {
 		if fm.ReturnType != nil && !fm.ReturnType.IsNil() {
-			base := cleanGoTypeForDisplay(fm.ReturnType.String())
-			if idx := strings.Index(base, "["); idx > 0 {
-				base = base[:idx]
-			}
-			return base
+			return stripTypeParams(cleanGoTypeForDisplay(fm.ReturnType.String()))
 		}
 	}
 
@@ -147,14 +141,14 @@ func resolveReceiverType(name, funcScope string, richAST *transpiler.RichAST, va
 	// 4. Check if it's a package name → return package marker for package completion
 	for _, pkgName := range richAST.Packages {
 		if pkgName == name {
-			return "__package__:" + name
+			return packagePrefix + name
 		}
 	}
 
 	// 4b. Check if it's an import alias → resolve to actual package name
 	if richAST.ImportAliases != nil {
 		if pkgName, ok := richAST.ImportAliases[name]; ok {
-			return "__package__:" + pkgName
+			return packagePrefix + pkgName
 		}
 	}
 
@@ -168,9 +162,18 @@ func resolveReceiverType(name, funcScope string, richAST *transpiler.RichAST, va
 	return ""
 }
 
+const maxChainDepth = 10
+
 // resolveChainType resolves the type of a chain expression like "order.Validate()" or "x"
 // by recursively processing the text before the final dot.
 func resolveChainType(text string, funcScope string, richAST *transpiler.RichAST, varTypes map[string]string) string {
+	return resolveChainTypeN(text, funcScope, richAST, varTypes, 0)
+}
+
+func resolveChainTypeN(text string, funcScope string, richAST *transpiler.RichAST, varTypes map[string]string, depth int) string {
+	if depth > maxChainDepth {
+		return ""
+	}
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return ""
@@ -201,7 +204,7 @@ func resolveChainType(text string, funcScope string, richAST *transpiler.RichAST
 
 		// Check if there's a dot before the method name (chain)
 		if i >= 0 && text[i] == '.' {
-			receiverType := resolveChainType(text[:i], funcScope, richAST, varTypes)
+			receiverType := resolveChainTypeN(text[:i], funcScope, richAST, varTypes, depth+1)
 			if receiverType != "" {
 				return resolveMethodReturn(richAST, receiverType, methodName)
 			}
@@ -222,7 +225,7 @@ func resolveChainType(text string, funcScope string, richAST *transpiler.RichAST
 
 	// Check for dot before identifier (pkg.Type or receiver.field)
 	if i >= 0 && text[i] == '.' {
-		receiverType := resolveChainType(text[:i], funcScope, richAST, varTypes)
+		receiverType := resolveChainTypeN(text[:i], funcScope, richAST, varTypes, depth+1)
 		if receiverType != "" {
 			// Could be a field access — resolve field type
 			return resolveMethodReturn(richAST, receiverType, name)
@@ -240,20 +243,11 @@ func resolveMethodReturn(richAST *transpiler.RichAST, typeName, methodName strin
 	}
 	if m, ok := tm.Methods[methodName]; ok {
 		if m.ReturnType != nil && !m.ReturnType.IsNil() {
-			base := cleanGoTypeForDisplay(m.ReturnType.String())
-			if idx := strings.Index(base, "["); idx > 0 {
-				base = base[:idx]
-			}
-			return base
+			return stripTypeParams(cleanGoTypeForDisplay(m.ReturnType.String()))
 		}
 	}
-	// Check fields
 	if ft, ok := tm.Fields[methodName]; ok {
-		base := cleanGoTypeForDisplay(ft.String())
-		if idx := strings.Index(base, "["); idx > 0 {
-			base = base[:idx]
-		}
-		return base
+		return stripTypeParams(cleanGoTypeForDisplay(ft.String()))
 	}
 	return ""
 }
