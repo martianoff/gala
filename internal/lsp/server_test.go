@@ -2114,36 +2114,38 @@ func TestDiagnostics_IntentionalSyntaxErrorThenFix(t *testing.T) {
 	t.Logf("step 3 (fixed): %d diagnostics, %d errors", len(diagsFixed), errorCount)
 }
 
-// Reproduce: add "." after function call ")", wait for error, remove ".", verify clears.
-// This is the exact scenario from the user report.
+// Reproduce issue 1: add "." after ")" on last statement, wait for error, remove ".", verify clears.
+// Key: "Some(42).\n}" produces real parse errors. "Some(42).\nPrintln()" does NOT (parser chains it).
 func TestDiagnostics_DotAfterParenThenRemove(t *testing.T) {
 	h := newHarness(t)
 
-	// Valid code with function call
-	valid := "package main\n\nfunc divide(a int, b int) int {\n    return a / b\n}\n\nfunc main() {\n    val result = divide(10, 3)\n    Println(result)\n}\n"
+	// Valid code — Some(42) on last line before closing brace
+	valid := "package main\n\nfunc main() {\n    val x = Some(42)\n}\n"
 	uri := openFileOnDisk(t, h, valid)
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
 	diags0 := h.Diagnostics(uri)
 	t.Logf("step 0 (valid): %d diagnostics", len(diags0))
 
-	// Add "." after a function call — creates syntax error
-	withDot := "package main\n\nfunc divide(a int, b int) int {\n    return a / b\n}\n\nfunc main() {\n    val result = divide(10, 3).\n    Println(result)\n}\n"
+	// Add "." — "Some(42).\n}" produces parse errors
+	withDot := "package main\n\nfunc main() {\n    val x = Some(42).\n}\n"
 	if err := h.DidChange(uri, 1, withDot); err != nil {
 		t.Fatal(err)
 	}
-	// Wait for debounce (300ms) + analysis + RPC notification delivery
-	time.Sleep(1000 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond)
 	diags1 := h.Diagnostics(uri)
 	t.Logf("step 1 (with dot): %d diagnostics", len(diags1))
 	for _, d := range diags1 {
 		t.Logf("  diag: line=%d msg=%s", d.Range.Start.Line, d.Message)
+	}
+	if len(diags1) == 0 {
+		t.Fatal("expected at least 1 parse error for trailing dot")
 	}
 
 	// Remove the dot — code is valid again
 	if err := h.DidChange(uri, 2, valid); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(1000 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond)
 	diags2 := h.Diagnostics(uri)
 
 	errorCount := 0
@@ -2157,6 +2159,48 @@ func TestDiagnostics_DotAfterParenThenRemove(t *testing.T) {
 		t.Errorf("step 2: expected 0 errors after removing dot, got %d stale errors", errorCount)
 	}
 	t.Logf("step 2 (dot removed): %d diagnostics, %d errors", len(diags2), errorCount)
+}
+
+// Reproduce issue 2: type match expression letter by letter with intermediate errors.
+// Each intermediate state produces parse errors. Final state must be clean.
+func TestDiagnostics_TypingMatchLetterByLetter(t *testing.T) {
+	h := newHarness(t)
+
+	// Start with valid base
+	base := "package main\n\nfunc main() {\n    val x = Some(42)\n    Println(x)\n}\n"
+	uri := openFileOnDisk(t, h, base)
+	time.Sleep(200 * time.Millisecond)
+
+	// Simulate typing "x match {" — intermediate broken states
+	// Step 1: "x m" — broken
+	h.DidChange(uri, 1, "package main\n\nfunc main() {\n    val x = Some(42)\n    x m\n}\n")
+	time.Sleep(100 * time.Millisecond)
+
+	// Step 2: "x match" — still broken (no braces)
+	h.DidChange(uri, 2, "package main\n\nfunc main() {\n    val x = Some(42)\n    x match\n}\n")
+	time.Sleep(100 * time.Millisecond)
+
+	// Step 3: "x match {" — broken (no cases)
+	h.DidChange(uri, 3, "package main\n\nfunc main() {\n    val x = Some(42)\n    x match {\n}\n}\n")
+	time.Sleep(100 * time.Millisecond)
+
+	// Step 4: complete match expression — valid
+	complete := "package main\n\nfunc main() {\n    val x = Some(42)\n    val y = x match {\n        case Some(v) => v\n        case _ => 0\n    }\n    Println(y)\n}\n"
+	h.DidChange(uri, 4, complete)
+	time.Sleep(500 * time.Millisecond)
+	diags := h.Diagnostics(uri)
+
+	errorCount := 0
+	for _, d := range diags {
+		if d.Severity != nil && *d.Severity == lsp.SeverityError {
+			errorCount++
+			t.Logf("  STALE: line=%d msg=%s", d.Range.Start.Line, d.Message)
+		}
+	}
+	if errorCount > 0 {
+		t.Errorf("expected 0 errors after completing match expression, got %d stale errors", errorCount)
+	}
+	t.Logf("final: %d diagnostics, %d errors", len(diags), errorCount)
 }
 
 // ============================================================
