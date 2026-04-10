@@ -58,8 +58,7 @@ func autoResolveSearchPaths(inputPath string, basePaths []string) []string {
 	config := build.DefaultConfig()
 
 	// Add stdlib path using current CLI version
-	stdlibDir := config.StdlibVersionDir(Version)
-	if info, err := os.Stat(stdlibDir); err == nil && info.IsDir() {
+	if stdlibDir := config.EnsureStdlib(Version); stdlibDir != "" {
 		basePaths = appendIfNew(basePaths, stdlibDir)
 	}
 

@@ -4,6 +4,8 @@ package build
 import (
 	"os"
 	"path/filepath"
+
+	"martianoff/gala/internal/stdlib"
 )
 
 // Config holds configuration for the build system.
@@ -80,6 +82,36 @@ func (c *Config) EnsureDirs() error {
 // Format: StdlibDir/v{version}/
 func (c *Config) StdlibVersionDir(version string) string {
 	return filepath.Join(c.StdlibDir, "v"+version)
+}
+
+// EnsureStdlib extracts the embedded stdlib for the given version and returns
+// the stdlib directory path. This is the canonical stdlib resolution used by
+// both the CLI transpiler and the LSP server.
+// The version string may contain git suffixes (e.g., "0.29.4-1-ga528ffd")
+// which are stripped to find the base version ("0.29.4").
+func (c *Config) EnsureStdlib(version string) string {
+	// Strip git describe suffix: "0.29.4-1-ga528ffd" → "0.29.4"
+	ver := version
+	for i := 0; i < len(ver); i++ {
+		if ver[i] == '-' {
+			// Check if this looks like a git suffix (digit after last dot before dash)
+			ver = ver[:i]
+			break
+		}
+	}
+	stdlibDir := c.StdlibVersionDir(ver)
+
+	markerPath := filepath.Join(stdlibDir, ".stdlib-extracted")
+	if _, err := os.Stat(markerPath); err == nil {
+		return stdlibDir // already extracted
+	}
+
+	os.MkdirAll(stdlibDir, 0755)
+	if err := stdlib.ExtractTo(stdlibDir); err != nil {
+		return "" // extraction failed
+	}
+	os.WriteFile(markerPath, []byte(ver), 0644)
+	return stdlibDir
 }
 
 // GalaModulePath returns the path where a GALA module version is cached.

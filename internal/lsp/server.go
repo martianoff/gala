@@ -294,6 +294,28 @@ func (h *GalaHandler) getSearchPaths(filePath string) []string {
 	return paths
 }
 
+// findSiblingGalaFiles returns all .gala files in the same directory as filePath,
+// excluding the file itself and test files. Used so the analyzer sees the full package.
+func findSiblingGalaFiles(filePath string) []string {
+	dir := filepath.Dir(filePath)
+	base := filepath.Base(filePath)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var siblings []string
+	for _, e := range entries {
+		name := e.Name()
+		if name == base || e.IsDir() {
+			continue
+		}
+		if strings.HasSuffix(name, ".gala") && !strings.HasSuffix(name, "_test.gala") {
+			siblings = append(siblings, filepath.Join(dir, name))
+		}
+	}
+	return siblings
+}
+
 // resolveProjectDeps scans for gala.mod in the project root and adds
 // dependency paths to the search paths so imported packages resolve correctly.
 func (h *GalaHandler) resolveProjectDeps(rootPath string) {
