@@ -93,9 +93,8 @@ func typeAtDot(text string, line, char int, richAST *transpiler.RichAST, varType
 		}
 	}
 
-	// Case 2: Identifier before dot — variable or package name: x. or pkg.
+	// Case 2: Identifier before dot — variable, field, or package name
 	end := i + 1
-	// Handle underscore-containing names like collection_immutable
 	for i >= 0 && (isIdentChar(l[i]) || l[i] == '_') {
 		i--
 	}
@@ -104,6 +103,17 @@ func typeAtDot(text string, line, char int, richAST *transpiler.RichAST, varType
 		return ""
 	}
 	receiverName := l[start:end]
+
+	// Check for chain: x.field. → resolve via chain
+	if i >= 0 && l[i] == '.' {
+		receiverType := resolveChainTypeN(l[:i], enclosingFunc, richAST, varTypes, 0)
+		if receiverType != "" {
+			fieldType := resolveMethodReturn(richAST, receiverType, receiverName)
+			if fieldType != "" {
+				return fieldType
+			}
+		}
+	}
 
 	return resolveReceiverType(receiverName, enclosingFunc, richAST, varTypes)
 }

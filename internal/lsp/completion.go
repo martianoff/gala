@@ -21,7 +21,7 @@ func (h *GalaHandler) Completion(ctx context.Context, params *lsp.CompletionPara
 	varTypeMap := h.varTypes[uri]
 	h.mu.Unlock()
 
-	var items []lsp.CompletionItem
+	items := make([]lsp.CompletionItem, 0)
 
 	isDot := isDotCompletion(text, line, char)
 
@@ -81,7 +81,7 @@ func isDotCompletion(text string, line, char int) bool {
 }
 
 func typeCompletions(richAST *transpiler.RichAST) []lsp.CompletionItem {
-	var items []lsp.CompletionItem
+	items := make([]lsp.CompletionItem, 0)
 	seen := make(map[string]bool)
 	for key, tm := range richAST.Types {
 		name := tm.Name
@@ -118,7 +118,7 @@ func typeCompletions(richAST *transpiler.RichAST) []lsp.CompletionItem {
 }
 
 func functionCompletions(richAST *transpiler.RichAST) []lsp.CompletionItem {
-	var items []lsp.CompletionItem
+	items := make([]lsp.CompletionItem, 0)
 	for _, fm := range richAST.Functions {
 		if !isExported(fm.Name) {
 			continue
@@ -135,7 +135,7 @@ func functionCompletions(richAST *transpiler.RichAST) []lsp.CompletionItem {
 
 // packageCompletions returns exported types and functions from a specific package.
 func packageCompletions(richAST *transpiler.RichAST, pkgName string) []lsp.CompletionItem {
-	var items []lsp.CompletionItem
+	items := make([]lsp.CompletionItem, 0)
 	seen := make(map[string]bool)
 
 	// Types from this package
@@ -191,7 +191,7 @@ func packageCompletions(richAST *transpiler.RichAST, pkgName string) []lsp.Compl
 }
 
 func methodCompletions(richAST *transpiler.RichAST) []lsp.CompletionItem {
-	var items []lsp.CompletionItem
+	items := make([]lsp.CompletionItem, 0)
 	seen := make(map[string]bool)
 	for _, tm := range richAST.Types {
 		for name, m := range tm.Methods {
@@ -230,7 +230,7 @@ func keywordCompletions() []lsp.CompletionItem {
 		"len", "cap", "make", "append", "copy", "delete",
 		"close", "panic", "recover",
 	}
-	var items []lsp.CompletionItem
+	items := make([]lsp.CompletionItem, 0)
 	for _, kw := range keywords {
 		items = append(items, lsp.CompletionItem{Label: kw, Kind: kindPtr(lsp.CompletionItemKindKeyword)})
 	}
@@ -305,7 +305,7 @@ func extractConstructorName(text string, line, char int) string {
 }
 
 func namedArgCompletions(richAST *transpiler.RichAST, typeName string) []lsp.CompletionItem {
-	var items []lsp.CompletionItem
+	items := make([]lsp.CompletionItem, 0)
 	if typeName == "" {
 		return items
 	}
@@ -375,7 +375,7 @@ func isMatchCaseContext(text string, line, _ int) bool {
 }
 
 func matchCaseCompletions(richAST *transpiler.RichAST) []lsp.CompletionItem {
-	var items []lsp.CompletionItem
+	items := make([]lsp.CompletionItem, 0)
 	seen := make(map[string]bool)
 	for _, tm := range richAST.Types {
 		if !tm.IsSealed {
@@ -436,18 +436,15 @@ func kindPtr(k lsp.CompletionItemKind) *lsp.CompletionItemKind { return &k }
 
 // typeSpecificCompletions returns methods and fields for a specific type.
 func typeSpecificCompletions(richAST *transpiler.RichAST, typeName string) []lsp.CompletionItem {
-	var items []lsp.CompletionItem
+	items := make([]lsp.CompletionItem, 0)
 
 	tm := findType(richAST, typeName)
 	if tm == nil {
 		return items
 	}
 
-	// Methods — auto-insert () and show full signature
+	// Methods — show all methods (including unexported for same-package types)
 	for name, m := range tm.Methods {
-		if !isExported(name) {
-			continue
-		}
 		sig := formatMethodSig(m)
 		// Auto-insert parentheses
 		var insertText string

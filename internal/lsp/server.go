@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -75,6 +76,8 @@ func (h *GalaHandler) Initialize(ctx context.Context, params *lsp.InitializePara
 	if params.RootURI != nil {
 		h.rootPath = uriToPath(string(*params.RootURI))
 	}
+
+	fmt.Fprintf(os.Stderr, "[gala-lsp] Initialize rootPath=%s extraSearchPaths=%v\n", h.rootPath, h.extraSearchPaths)
 
 	// Auto-resolve gala.mod dependencies from project root
 	if h.rootPath != "" {
@@ -339,7 +342,10 @@ func uriToPath(uri string) string {
 	path := uri
 	path = strings.TrimPrefix(path, "file:///")
 	path = strings.TrimPrefix(path, "file://")
-	path = strings.ReplaceAll(path, "%20", " ")
+	// Decode percent-encoded characters (e.g., %3A → :, %20 → space)
+	if decoded, err := url.PathUnescape(path); err == nil {
+		path = decoded
+	}
 	return filepath.FromSlash(path)
 }
 
@@ -365,7 +371,7 @@ func zeroRange() lsp.Range {
 func errorsToDiagnostics(err error) []lsp.Diagnostic {
 	var multiErr *galaerr.MultiError
 	if errors.As(err, &multiErr) {
-		var diags []lsp.Diagnostic
+		diags := make([]lsp.Diagnostic, 0)
 		for _, subErr := range multiErr.Errors {
 			diags = append(diags, errorToDiagnostic(subErr))
 		}

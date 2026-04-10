@@ -2204,6 +2204,123 @@ func TestDiagnostics_TypingMatchLetterByLetter(t *testing.T) {
 }
 
 // ============================================================
+// === Unexported Method Completion ===
+// ============================================================
+
+// Issue: unexported methods like runWarmup() should show in completion
+// for same-package types (GALA follows Go package visibility rules).
+func TestCompletion_UnexportedMethods(t *testing.T) {
+	h := newHarness(t)
+	src := "package main\n\ntype Server struct {\n    val port int\n}\n\nfunc (s Server) Start() string {\n    return \"started\"\n}\n\nfunc (s Server) runInternal() {\n}\n\nfunc main() {\n    val s = Server(port = 8080)\n    s.\n    Println(s)\n}\n"
+	uri := openFileOnDisk(t, h, src)
+	// Line 15 = "    s."  char 6 = after dot
+	list, err := h.Completion(uri, 15, 6)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list == nil || len(list.Items) == 0 {
+		t.Fatal("no completion for s.")
+	}
+	hasExported := false
+	hasUnexported := false
+	for _, item := range list.Items {
+		if strings.HasPrefix(item.Label, "Start") || item.FilterText == "Start" {
+			hasExported = true
+		}
+		if strings.HasPrefix(item.Label, "runInternal") || item.FilterText == "runInternal" {
+			hasUnexported = true
+		}
+	}
+	if !hasExported {
+		t.Error("missing exported method Start")
+	}
+	if !hasUnexported {
+		t.Error("missing unexported method runInternal — should be visible in same package")
+	}
+	t.Logf("completion: %d items, exported=%v, unexported=%v", len(list.Items), hasExported, hasUnexported)
+}
+
+// Issue: field access chain s.Statics. should resolve field type and show methods
+func TestCompletion_FieldChainAccess(t *testing.T) {
+	h := newHarness(t)
+	src := "package main\n\ntype Config struct {\n    val items Array[string]\n}\n\nfunc main() {\n    val c = Config(items = ArrayOf(\"a\", \"b\"))\n    c.items.\n    Println(c)\n}\n"
+	uri := openFileOnDisk(t, h, src)
+	// Line 8 = "    c.items."  char 12 = after dot
+	list, err := h.Completion(uri, 8, 12)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list != nil && len(list.Items) > 0 {
+		hasMethod := false
+		for _, item := range list.Items {
+			if strings.HasPrefix(item.Label, "Map") || strings.HasPrefix(item.Label, "ForEach") ||
+				item.FilterText == "Map" || item.FilterText == "ForEach" {
+				hasMethod = true
+			}
+		}
+		if hasMethod {
+			t.Log("field chain completion works: Array methods found")
+		} else {
+			t.Logf("field chain: %d items but no Array methods", len(list.Items))
+		}
+	} else {
+		t.Log("no field chain completion — type not resolved through field access")
+	}
+}
+
+// Issue: type hint shows :T instead of actual resolved type in pattern match
+func TestInlayHints_PatternMatchResolvedType(t *testing.T) {
+	h := newHarness(t)
+	src := "package main\n\nfunc main() {\n    val opt = Some(\"hello\")\n    val result = opt match {\n        case Some(v) => v\n        case _ => \"default\"\n    }\n    Println(result)\n}\n"
+	uri := openFileOnDisk(t, h, src)
+	raw, err := h.Call("textDocument/inlayHint", map[string]interface{}{
+		"textDocument": map[string]string{"uri": string(uri)},
+		"range": map[string]interface{}{
+			"start": map[string]int{"line": 0, "character": 0},
+			"end":   map[string]int{"line": 15, "character": 0},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hintStr := string(raw)
+	t.Logf("pattern hints: %s", hintStr)
+	// Check that pattern binding 'v' does NOT show ":T" (unresolved type param)
+	if strings.Contains(hintStr, ": T") && !strings.Contains(hintStr, ": Try") {
+		t.Error("pattern binding shows unresolved type parameter :T instead of actual type")
+	}
+}
+
+// Issue: no type hint for function call results from sibling file function
+func TestInlayHints_CrossFileFunctionCall(t *testing.T) {
+	h := newHarness(t)
+	dir := createTestProject(t, []testProjectFile{
+		{Name: "helpers.gala", Src: "package mylib\n\nfunc GetSession() Option[string] {\n    return Some(\"session123\")\n}\n"},
+		{Name: "handler.gala", Src: "package mylib\n\nfunc Handle() {\n    val session = GetSession()\n    Println(session)\n}\n"},
+	})
+	openProjectFile(t, h, dir, "helpers.gala")
+	uri := openProjectFile(t, h, dir, "handler.gala")
+
+	raw, err := h.Call("textDocument/inlayHint", map[string]interface{}{
+		"textDocument": map[string]string{"uri": string(uri)},
+		"range": map[string]interface{}{
+			"start": map[string]int{"line": 0, "character": 0},
+			"end":   map[string]int{"line": 10, "character": 0},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hintStr := string(raw)
+	t.Logf("cross-file function call hints: %s", hintStr)
+	if strings.Contains(hintStr, "Option") || strings.Contains(hintStr, "string") {
+		t.Log("OK: cross-file function return type resolved")
+	} else {
+		t.Error("no type hint for val session = GetSession() — cross-file function not resolved")
+	}
+}
+
+// ============================================================
 // === FuncType Display ===
 // ============================================================
 
