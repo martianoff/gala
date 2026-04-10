@@ -227,7 +227,7 @@ func (h *GalaHandler) publishDiagnostics(uri, text string) {
 }
 
 func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
-	var diagnostics []lsp.Diagnostic
+	diagnostics := make([]lsp.Diagnostic, 0) // must be [] not null in JSON
 
 	tree, err := h.parser.Parse(text)
 	if err != nil {
