@@ -2320,6 +2320,42 @@ func TestInlayHints_CrossFileFunctionCall(t *testing.T) {
 	}
 }
 
+// Issue: completion after cross-file function call: sessionFromCtx(r).
+func TestCompletion_CrossFileFunctionCallDot(t *testing.T) {
+	h := newHarness(t)
+	dir := createTestProject(t, []testProjectFile{
+		{Name: "session.gala", Src: "package mylib\n\nfunc getSession() Option[string] {\n    return Some(\"session123\")\n}\n"},
+		{Name: "handler.gala", Src: "package mylib\n\nfunc Handle() {\n    val s = getSession()\n    s.\n    getSession().\n    Println(\"done\")\n}\n"},
+	})
+	openProjectFile(t, h, dir, "session.gala")
+	uri := openProjectFile(t, h, dir, "handler.gala")
+
+	// Line 4 = "    s."  char 6 = after dot
+	list, err := h.Completion(uri, 4, 6)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list != nil && len(list.Items) > 0 {
+		hasOption := false
+		for _, item := range list.Items {
+			if strings.HasPrefix(item.Label, "GetOrElse") || strings.HasPrefix(item.Label, "ForEach") ||
+				item.FilterText == "GetOrElse" || item.FilterText == "ForEach" {
+				hasOption = true
+			}
+		}
+		if hasOption {
+			t.Log("OK: cross-file function call dot completion shows Option methods")
+		} else {
+			t.Errorf("cross-file function call: %d items but no Option methods", len(list.Items))
+			for _, item := range list.Items {
+				t.Logf("  %s filter=%s", item.Label, item.FilterText)
+			}
+		}
+	} else {
+		t.Error("no completion for getSession(). — cross-file function return type not resolved")
+	}
+}
+
 // ============================================================
 // === FuncType Display ===
 // ============================================================
