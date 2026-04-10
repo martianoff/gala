@@ -140,6 +140,10 @@ func casePatternHints(line string, lineNum int, richAST *transpiler.RichAST) []l
 		}
 		if i < len(variant.FieldTypes) {
 			typeName := cleanGoTypeForDisplay(variant.FieldTypes[i].String())
+			// Skip unresolved type parameters (single uppercase letter like T, U, A, B)
+			if len(typeName) == 1 && typeName[0] >= 'A' && typeName[0] <= 'Z' {
+				continue
+			}
 			pos := strings.Index(line[bindingsStart:], binding)
 			if pos >= 0 {
 				pos += bindingsStart

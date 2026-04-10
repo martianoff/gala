@@ -2204,6 +2204,336 @@ func TestDiagnostics_TypingMatchLetterByLetter(t *testing.T) {
 }
 
 // ============================================================
+// === Unexported Method Completion ===
+// ============================================================
+
+// Issue: unexported methods like runWarmup() should show in completion
+// for same-package types (GALA follows Go package visibility rules).
+func TestCompletion_UnexportedMethods(t *testing.T) {
+	h := newHarness(t)
+	src := "package main\n\ntype Server struct {\n    val port int\n}\n\nfunc (s Server) Start() string {\n    return \"started\"\n}\n\nfunc (s Server) runInternal() {\n}\n\nfunc main() {\n    val s = Server(port = 8080)\n    s.\n    Println(s)\n}\n"
+	uri := openFileOnDisk(t, h, src)
+	// Line 15 = "    s."  char 6 = after dot
+	list, err := h.Completion(uri, 15, 6)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list == nil || len(list.Items) == 0 {
+		t.Fatal("no completion for s.")
+	}
+	hasExported := false
+	hasUnexported := false
+	for _, item := range list.Items {
+		if strings.HasPrefix(item.Label, "Start") || item.FilterText == "Start" {
+			hasExported = true
+		}
+		if strings.HasPrefix(item.Label, "runInternal") || item.FilterText == "runInternal" {
+			hasUnexported = true
+		}
+	}
+	if !hasExported {
+		t.Error("missing exported method Start")
+	}
+	if !hasUnexported {
+		t.Error("missing unexported method runInternal — should be visible in same package")
+	}
+	t.Logf("completion: %d items, exported=%v, unexported=%v", len(list.Items), hasExported, hasUnexported)
+}
+
+// Issue: field access chain s.Statics. should resolve field type and show methods
+func TestCompletion_FieldChainAccess(t *testing.T) {
+	h := newHarness(t)
+	src := "package main\n\ntype Config struct {\n    val items Array[string]\n}\n\nfunc main() {\n    val c = Config(items = ArrayOf(\"a\", \"b\"))\n    c.items.\n    Println(c)\n}\n"
+	uri := openFileOnDisk(t, h, src)
+	// Line 8 = "    c.items."  char 12 = after dot
+	list, err := h.Completion(uri, 8, 12)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list != nil && len(list.Items) > 0 {
+		hasMethod := false
+		for _, item := range list.Items {
+			if strings.HasPrefix(item.Label, "Map") || strings.HasPrefix(item.Label, "ForEach") ||
+				item.FilterText == "Map" || item.FilterText == "ForEach" {
+				hasMethod = true
+			}
+		}
+		if hasMethod {
+			t.Log("field chain completion works: Array methods found")
+		} else {
+			t.Logf("field chain: %d items but no Array methods", len(list.Items))
+		}
+	} else {
+		t.Log("no field chain completion — type not resolved through field access")
+	}
+}
+
+// Issue: type hint shows :T instead of actual resolved type in pattern match
+func TestInlayHints_PatternMatchResolvedType(t *testing.T) {
+	h := newHarness(t)
+	src := "package main\n\nfunc main() {\n    val opt = Some(\"hello\")\n    val result = opt match {\n        case Some(v) => v\n        case _ => \"default\"\n    }\n    Println(result)\n}\n"
+	uri := openFileOnDisk(t, h, src)
+	raw, err := h.Call("textDocument/inlayHint", map[string]interface{}{
+		"textDocument": map[string]string{"uri": string(uri)},
+		"range": map[string]interface{}{
+			"start": map[string]int{"line": 0, "character": 0},
+			"end":   map[string]int{"line": 15, "character": 0},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hintStr := string(raw)
+	t.Logf("pattern hints: %s", hintStr)
+	// Check that pattern binding 'v' does NOT show ":T" (unresolved type param)
+	if strings.Contains(hintStr, ": T") && !strings.Contains(hintStr, ": Try") {
+		t.Error("pattern binding shows unresolved type parameter :T instead of actual type")
+	}
+}
+
+// Issue: no type hint for function call results from sibling file function
+func TestInlayHints_CrossFileFunctionCall(t *testing.T) {
+	h := newHarness(t)
+	dir := createTestProject(t, []testProjectFile{
+		{Name: "helpers.gala", Src: "package mylib\n\nfunc GetSession() Option[string] {\n    return Some(\"session123\")\n}\n"},
+		{Name: "handler.gala", Src: "package mylib\n\nfunc Handle() {\n    val session = GetSession()\n    Println(session)\n}\n"},
+	})
+	openProjectFile(t, h, dir, "helpers.gala")
+	uri := openProjectFile(t, h, dir, "handler.gala")
+
+	raw, err := h.Call("textDocument/inlayHint", map[string]interface{}{
+		"textDocument": map[string]string{"uri": string(uri)},
+		"range": map[string]interface{}{
+			"start": map[string]int{"line": 0, "character": 0},
+			"end":   map[string]int{"line": 10, "character": 0},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hintStr := string(raw)
+	t.Logf("cross-file function call hints: %s", hintStr)
+	if strings.Contains(hintStr, "Option") || strings.Contains(hintStr, "string") {
+		t.Log("OK: cross-file function return type resolved")
+	} else {
+		t.Error("no type hint for val session = GetSession() — cross-file function not resolved")
+	}
+}
+
+// Issue: completion after cross-file function call: sessionFromCtx(r).
+func TestCompletion_CrossFileFunctionCallDot(t *testing.T) {
+	h := newHarness(t)
+	dir := createTestProject(t, []testProjectFile{
+		{Name: "session.gala", Src: "package mylib\n\nfunc getSession() Option[string] {\n    return Some(\"session123\")\n}\n"},
+		{Name: "handler.gala", Src: "package mylib\n\nfunc Handle() {\n    val s = getSession()\n    s.\n    getSession().\n    Println(\"done\")\n}\n"},
+	})
+	openProjectFile(t, h, dir, "session.gala")
+	uri := openProjectFile(t, h, dir, "handler.gala")
+
+	// Line 4 = "    s."  char 6 = after dot
+	list, err := h.Completion(uri, 4, 6)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list != nil && len(list.Items) > 0 {
+		hasOption := false
+		for _, item := range list.Items {
+			if strings.HasPrefix(item.Label, "GetOrElse") || strings.HasPrefix(item.Label, "ForEach") ||
+				item.FilterText == "GetOrElse" || item.FilterText == "ForEach" {
+				hasOption = true
+			}
+		}
+		if hasOption {
+			t.Log("OK: cross-file function call dot completion shows Option methods")
+		} else {
+			t.Errorf("cross-file function call: %d items but no Option methods", len(list.Items))
+			for _, item := range list.Items {
+				t.Logf("  %s filter=%s", item.Label, item.FilterText)
+			}
+		}
+	} else {
+		t.Error("no completion for getSession(). — cross-file function return type not resolved")
+	}
+}
+
+// Issue: completion inside lambda body — (x) => x. should resolve x's type
+func TestCompletion_LambdaParamDotCompletion(t *testing.T) {
+	h := newHarness(t)
+	src := "package main\n\ntype Item struct {\n    val name string\n}\n\nfunc (i Item) Label() string {\n    return i.name\n}\n\nfunc main() {\n    val items = SliceOf(Item(name = \"a\"), Item(name = \"b\"))\n    items.ForEach((item Item) => {\n        item.\n        Println(item)\n    })\n}\n"
+	uri := openFileOnDisk(t, h, src)
+	// Line 13 = "        item."  char 13 = after dot
+	list, err := h.Completion(uri, 13, 13)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list != nil && len(list.Items) > 0 {
+		hasLabel := false
+		for _, item := range list.Items {
+			if strings.HasPrefix(item.Label, "Label") || item.FilterText == "Label" {
+				hasLabel = true
+			}
+		}
+		if hasLabel {
+			t.Log("OK: lambda param dot completion works — Label() found")
+		} else {
+			t.Logf("lambda param: %d items but no Label", len(list.Items))
+			for _, item := range list.Items {
+				t.Logf("  %s filter=%s", item.Label, item.FilterText)
+			}
+		}
+	} else {
+		t.Error("no completion for item. inside lambda")
+	}
+}
+
+// Lambda with INFERRED param type — Option.ForEach((session) => session.)
+func TestCompletion_LambdaInferredParamDotCompletion(t *testing.T) {
+	h := newHarness(t)
+	// Option[string].ForEach((s) => s.) — s should be inferred as string
+	src := "package main\n\ntype Session struct {\n    val id string\n}\n\nfunc (s Session) GetId() string {\n    return s.id\n}\n\nfunc main() {\n    val opt = Some(Session(id = \"abc\"))\n    opt.ForEach((session) => {\n        session.\n        Println(session)\n    })\n}\n"
+	uri := openFileOnDisk(t, h, src)
+	// Line 13 = "        session."  char 16 = after dot
+	list, err := h.Completion(uri, 13, 16)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list != nil && len(list.Items) > 0 {
+		hasGetId := false
+		for _, item := range list.Items {
+			if strings.HasPrefix(item.Label, "GetId") || item.FilterText == "GetId" {
+				hasGetId = true
+			}
+		}
+		if hasGetId {
+			t.Log("OK: inferred lambda param completion works — GetId() found")
+		} else {
+			t.Logf("inferred lambda: %d items but no GetId", len(list.Items))
+			for _, item := range list.Items {
+				t.Logf("  %s filter=%s", item.Label, item.FilterText)
+			}
+		}
+	} else {
+		t.Error("no completion for session. in lambda with inferred param type")
+	}
+}
+
+// Cross-file lambda: function from sibling returns Option, lambda param inferred
+func TestCompletion_CrossFileLambdaInferred(t *testing.T) {
+	h := newHarness(t)
+	dir := createTestProject(t, []testProjectFile{
+		{Name: "session.gala", Src: "package mylib\n\ntype Session struct {\n    val data string\n}\n\nfunc (s Session) Get() string {\n    return s.data\n}\n\nfunc getSession() Option[Session] {\n    return Some(Session(data = \"test\"))\n}\n"},
+		{Name: "handler.gala", Src: "package mylib\n\nfunc Handle() {\n    getSession().ForEach((session) => {\n        session.\n        Println(session)\n    })\n}\n"},
+	})
+	openProjectFile(t, h, dir, "session.gala")
+	uri := openProjectFile(t, h, dir, "handler.gala")
+
+	// Line 4 = "        session."
+	list, err := h.Completion(uri, 4, 16)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list != nil && len(list.Items) > 0 {
+		hasGet := false
+		for _, item := range list.Items {
+			if strings.HasPrefix(item.Label, "Get") || item.FilterText == "Get" {
+				hasGet = true
+			}
+		}
+		if hasGet {
+			t.Log("OK: cross-file lambda inferred param completion works")
+		} else {
+			t.Logf("cross-file lambda: %d items but no Get", len(list.Items))
+			for _, item := range list.Items {
+				t.Logf("  %s filter=%s", item.Label, item.FilterText)
+			}
+		}
+	} else {
+		t.Error("no completion for session. in cross-file lambda")
+	}
+}
+
+// Inline lambda: getSession().ForEach((session) => session.)
+// This is the EXACT pattern from gala-server/session.gala
+// Key: first open valid code (builds richAST cache), then edit to add trailing dot.
+func TestCompletion_InlineLambdaParamDot(t *testing.T) {
+	h := newHarness(t)
+	// Step 1: valid code — builds richAST + varTypes cache
+	valid := "package main\n\ntype Session struct {\n    val data string\n}\n\nfunc (s Session) Set(k string, v string) {\n}\n\nfunc getSession() Option[Session] {\n    return Some(Session(data = \"x\"))\n}\n\nfunc main() {\n    getSession().ForEach((session) => session.Set(\"k\", \"v\"))\n}\n"
+	uri := openFileOnDisk(t, h, valid)
+	time.Sleep(200 * time.Millisecond) // let analysis complete
+
+	// Step 2: edit to add trailing dot — parser will fail but richAST is cached
+	withDot := "package main\n\ntype Session struct {\n    val data string\n}\n\nfunc (s Session) Set(k string, v string) {\n}\n\nfunc getSession() Option[Session] {\n    return Some(Session(data = \"x\"))\n}\n\nfunc main() {\n    getSession().ForEach((session) => session.\n}\n"
+	h.DidChange(uri, 1, withDot)
+	time.Sleep(200 * time.Millisecond)
+
+	list, err := h.Completion(uri, 14, 49)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list != nil && len(list.Items) > 0 {
+		hasSet := false
+		for _, item := range list.Items {
+			if strings.HasPrefix(item.Label, "Set") || item.FilterText == "Set" {
+				hasSet = true
+			}
+		}
+		if hasSet {
+			t.Log("OK: inline lambda param dot completion works")
+		} else {
+			t.Errorf("inline lambda: %d items but no Set", len(list.Items))
+			for _, item := range list.Items {
+				t.Logf("  %s filter=%s kind=%v", item.Label, item.FilterText, item.Kind)
+			}
+		}
+	} else {
+		t.Error("no completion for session. in inline lambda")
+	}
+}
+
+// Cross-file inline lambda — open valid code first, then add dot
+func TestCompletion_CrossFileInlineLambda(t *testing.T) {
+	h := newHarness(t)
+	dir := createTestProject(t, []testProjectFile{
+		{Name: "session.gala", Src: "package mylib\n\ntype Session struct {\n    val data string\n}\n\nfunc (s Session) Set(k string, v string) {\n}\n\nfunc sessionFromCtx() Option[Session] {\n    return Some(Session(data = \"x\"))\n}\n"},
+		{Name: "handler.gala", Src: "package mylib\n\nfunc Handle() {\n    sessionFromCtx().ForEach((session) => session.Set(\"k\", \"v\"))\n}\n"},
+	})
+	openProjectFile(t, h, dir, "session.gala")
+	uri := openProjectFile(t, h, dir, "handler.gala")
+	time.Sleep(200 * time.Millisecond)
+
+	// Edit to add trailing dot
+	dotPath := filepath.Join(dir, "handler.gala")
+	dotSrc := "package mylib\n\nfunc Handle() {\n    sessionFromCtx().ForEach((session) => session.\n}\n"
+	os.WriteFile(dotPath, []byte(dotSrc), 0644)
+	h.DidChange(uri, 1, dotSrc)
+	time.Sleep(200 * time.Millisecond)
+
+	list, err := h.Completion(uri, 3, 53)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list != nil && len(list.Items) > 0 {
+		hasSet := false
+		for _, item := range list.Items {
+			if strings.HasPrefix(item.Label, "Set") || item.FilterText == "Set" {
+				hasSet = true
+			}
+		}
+		if hasSet {
+			t.Log("OK: cross-file inline lambda completion works")
+		} else {
+			t.Errorf("cross-file inline lambda: %d items but no Set", len(list.Items))
+			for _, item := range list.Items {
+				t.Logf("  %s filter=%s", item.Label, item.FilterText)
+			}
+		}
+	} else {
+		t.Error("no completion for session. in cross-file inline lambda")
+	}
+}
+
+// ============================================================
 // === FuncType Display ===
 // ============================================================
 

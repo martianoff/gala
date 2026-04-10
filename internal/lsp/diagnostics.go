@@ -11,7 +11,7 @@ import (
 
 // checkMatchExhaustiveness warns if a match on a sealed type is missing cases.
 func checkMatchExhaustiveness(text string, richAST *transpiler.RichAST) []lsp.Diagnostic {
-	var diagnostics []lsp.Diagnostic
+	diagnostics := make([]lsp.Diagnostic, 0)
 	lines := strings.Split(text, "\n")
 
 	for i, line := range lines {

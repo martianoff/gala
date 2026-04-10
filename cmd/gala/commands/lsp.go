@@ -48,6 +48,7 @@ func runLsp(cmd *cobra.Command, args []string) {
 
 func autoResolveLSPSearchPaths() []string {
 	stdlibDir := build.DefaultConfig().EnsureStdlib(Version)
+	fmt.Fprintf(os.Stderr, "[gala-lsp] version=%s stdlib=%s\n", Version, stdlibDir)
 	if stdlibDir != "" {
 		return []string{stdlibDir}
 	}
