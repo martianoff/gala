@@ -30,14 +30,7 @@ func (t *galaASTTransformer) addVal(name string, typeName transpiler.Type) {
 		t.currentScope.vals[name] = true
 		t.currentScope.valTypes[name] = typeName
 	}
-	// Collect for LSP — scope by current function to prevent cross-function collisions
-	if t.lspVarTypes != nil && typeName != nil && !typeName.IsNil() {
-		key := name
-		if t.lspCurrentFunc != "" {
-			key = t.lspCurrentFunc + "." + name
-		}
-		t.lspVarTypes[key] = typeName
-	}
+	t.recordLSPVarType(name, typeName)
 }
 
 func (t *galaASTTransformer) addVar(name string, typeName transpiler.Type) {
@@ -45,30 +38,18 @@ func (t *galaASTTransformer) addVar(name string, typeName transpiler.Type) {
 		t.currentScope.vals[name] = false
 		t.currentScope.valTypes[name] = typeName
 	}
-	// Collect for LSP — scope by current function to prevent cross-function collisions
-	if t.lspVarTypes != nil && typeName != nil && !typeName.IsNil() {
-		key := name
-		if t.lspCurrentFunc != "" {
-			key = t.lspCurrentFunc + "." + name
-		}
-		t.lspVarTypes[key] = typeName
-	}
+	t.recordLSPVarType(name, typeName)
 }
 
-// collectAllVarTypes returns all variable types from the current scope stack.
-// Used by LSP to expose the transformer's resolved types.
-func (t *galaASTTransformer) collectAllVarTypes() map[string]transpiler.Type {
-	result := make(map[string]transpiler.Type)
-	s := t.currentScope
-	for s != nil {
-		for name, typ := range s.valTypes {
-			if _, exists := result[name]; !exists {
-				result[name] = typ
-			}
-		}
-		s = s.parent
+func (t *galaASTTransformer) recordLSPVarType(name string, typeName transpiler.Type) {
+	if t.lspVarTypes == nil || typeName == nil || typeName.IsNil() {
+		return
 	}
-	return result
+	key := name
+	if t.lspCurrentFunc != "" {
+		key = t.lspCurrentFunc + "." + name
+	}
+	t.lspVarTypes[key] = typeName
 }
 
 func (t *galaASTTransformer) getType(name string) transpiler.Type {

@@ -16,6 +16,10 @@ func (t *galaASTTransformer) transformExpression(ctx grammar.IExpressionContext)
 	if ctx == nil {
 		return nil, nil
 	}
+	// Track position for error reporting in deeply-nested helpers
+	if prc, ok := ctx.(antlr.ParserRuleContext); ok {
+		t.trackPosition(prc)
+	}
 
 	// With the new grammar, expression simply wraps orExpr
 	if orExpr := ctx.OrExpr(); orExpr != nil {

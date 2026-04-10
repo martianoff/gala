@@ -38,7 +38,12 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 	t.needsStdImport = true
 	body := t.buildMatchBody(clauses, defaultBody, resultType)
 
-	return t.generateMatchIIFE(expr, paramName, matchedType, body, resultType)
+	matchLine, matchCol := 0, 0
+	if ctx != nil && ctx.GetStart() != nil {
+		matchLine = ctx.GetStart().GetLine()
+		matchCol = ctx.GetStart().GetColumn()
+	}
+	return t.generateMatchIIFE(expr, paramName, matchedType, body, resultType, matchLine, matchCol)
 }
 
 // parseMatchSubject extracts and type-checks the expression being matched.
@@ -65,7 +70,8 @@ func (t *galaASTTransformer) parseMatchSubject(ctx grammar.IExpressionContext) (
 		if parserCtx, ok := ctx.(antlr.ParserRuleContext); ok {
 			return nil, "", nil, t.semanticErrorAt(parserCtx, "cannot infer type of matched expression. Please add explicit type annotation to the variable being matched")
 		}
-		return nil, "", nil, galaerr.NewSemanticError("cannot infer type of matched expression. Please add explicit type annotation to the variable being matched")
+		line, col := ctx.GetStart().GetLine(), ctx.GetStart().GetColumn()
+		return nil, "", nil, galaerr.NewSemanticErrorAt(line, col, "cannot infer type of matched expression. Please add explicit type annotation to the variable being matched")
 	}
 
 	return expr, paramName, matchedType, nil
@@ -427,17 +433,17 @@ func (t *galaASTTransformer) buildMatchBody(clauses []ast.Stmt, defaultBody []as
 }
 
 // generateMatchIIFE wraps the match body in an immediately-invoked function expression.
-func (t *galaASTTransformer) generateMatchIIFE(expr ast.Expr, paramName string, matchedType transpiler.Type, body []ast.Stmt, resultType transpiler.Type) (ast.Expr, error) {
+func (t *galaASTTransformer) generateMatchIIFE(expr ast.Expr, paramName string, matchedType transpiler.Type, body []ast.Stmt, resultType transpiler.Type, matchLine, matchCol int) (ast.Expr, error) {
 	paramType := t.typeToExpr(matchedType)
 	if paramType == nil {
-		return nil, galaerr.NewSemanticError("cannot infer type of matched expression. Please add explicit type annotation")
+		return nil, galaerr.NewSemanticErrorAt(matchLine, matchCol, "cannot infer type of matched expression. Please add explicit type annotation")
 	}
 
 	var resultsField *ast.FieldList
 	if _, isVoid := resultType.(transpiler.VoidType); !isVoid {
 		resultTypeExpr := t.typeToExpr(resultType)
 		if resultTypeExpr == nil {
-			return nil, galaerr.NewSemanticError("cannot infer result type of match expression. Please ensure all branches return the same type")
+			return nil, galaerr.NewSemanticErrorAt(matchLine, matchCol, "cannot infer result type of match expression. Please ensure all branches return the same type")
 		}
 		resultsField = &ast.FieldList{
 			List: []*ast.Field{{Type: resultTypeExpr}},
@@ -546,10 +552,11 @@ func (t *galaASTTransformer) isKnownMultiReturnFunction(pkgName, funcName string
 // ctx is optional and used for position info in error messages.
 func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patterns []string, ctx antlr.ParserRuleContext) (transpiler.Type, error) {
 	if len(types) == 0 {
+		line, col := t.lastLine, t.lastCol
 		if ctx != nil && ctx.GetStart() != nil {
-			return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "match expression has no case branches")
+			line, col = ctx.GetStart().GetLine(), ctx.GetStart().GetColumn()
 		}
-		return nil, galaerr.NewSemanticError("match expression has no case branches")
+		return nil, galaerr.NewSemanticErrorAt(line, col, "match expression has no case branches")
 	}
 
 	// Check if all branches are void (side-effect only, like fmt.Printf calls)
@@ -609,10 +616,11 @@ func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patt
 				t.traceType(nil, t.currentFuncReturnType, "match-result-fallback-to-enclosing-return")
 				return t.currentFuncReturnType, nil
 			}
+			line, col := t.lastLine, t.lastCol
 			if ctx != nil && ctx.GetStart() != nil {
-				return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "cannot infer result type of match expression: no branch returns a concrete type. Please add explicit type annotation")
+				line, col = ctx.GetStart().GetLine(), ctx.GetStart().GetColumn()
 			}
-			return nil, galaerr.NewSemanticError("cannot infer result type of match expression: no branch returns a concrete type. Please add explicit type annotation")
+			return nil, galaerr.NewSemanticErrorAt(line, col, "cannot infer result type of match expression: no branch returns a concrete type. Please add explicit type annotation")
 		}
 		// Type parameters or mixed type-param/nil: use 'any' as the Go type erasure
 		t.warnInference("match expression defaulting to 'any' return type (all branches are type parameters)")
@@ -622,10 +630,11 @@ func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patt
 	// Check all types are compatible with the reference type
 	for i, typ := range types {
 		if typ == nil {
+			line, col := t.lastLine, t.lastCol
 			if ctx != nil && ctx.GetStart() != nil {
-				return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), fmt.Sprintf("cannot infer result type for '%s'. Please add explicit type annotation", patterns[i]))
+				line, col = ctx.GetStart().GetLine(), ctx.GetStart().GetColumn()
 			}
-			return nil, galaerr.NewSemanticError(fmt.Sprintf("cannot infer result type for '%s'. Please add explicit type annotation", patterns[i]))
+			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("cannot infer result type for '%s'. Please add explicit type annotation", patterns[i]))
 		}
 		// VoidType is compatible with any type (for mixed match where some branches are void)
 		if _, isVoid := typ.(transpiler.VoidType); isVoid {
@@ -644,7 +653,7 @@ func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patt
 			if ctx != nil {
 				return nil, t.semanticErrorAt(ctx, msg)
 			}
-			return nil, galaerr.NewSemanticError(msg)
+			return nil, galaerr.NewSemanticErrorAt(t.lastLine, t.lastCol, msg)
 		}
 	}
 

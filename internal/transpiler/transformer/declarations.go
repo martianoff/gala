@@ -14,6 +14,10 @@ import (
 )
 
 func (t *galaASTTransformer) transformTopLevelDeclaration(ctx grammar.ITopLevelDeclarationContext) ([]ast.Decl, error) {
+	// Track position for error reporting in deeply-nested helpers
+	if prc, ok := ctx.(antlr.ParserRuleContext); ok {
+		t.trackPosition(prc)
+	}
 	if embedCtx := ctx.EmbedDeclaration(); embedCtx != nil {
 		return t.transformEmbedDeclaration(embedCtx.(*grammar.EmbedDeclarationContext))
 	}

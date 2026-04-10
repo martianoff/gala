@@ -195,7 +195,7 @@ func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.Sel
 		if len(e.Args) > 0 {
 			innerType := t.getExprTypeNameManual(e.Args[0])
 			if t.isImmutableType(innerType) {
-				panic(galaerr.NewSemanticError("recursive Immutable wrapping is not allowed"))
+				panic(galaerr.NewSemanticErrorAt(t.lastLine, t.lastCol, "recursive Immutable wrapping is not allowed"))
 			}
 			return transpiler.GenericType{
 				Base:   transpiler.NamedType{Package: registry.StdPackageName, Name: transpiler.TypeImmutable},
@@ -374,7 +374,7 @@ func (t *galaASTTransformer) inferCallIdentType(e *ast.CallExpr, id *ast.Ident, 
 		if len(e.Args) > 0 {
 			innerType := t.getExprTypeNameManual(e.Args[0])
 			if t.isImmutableType(innerType) {
-				panic(galaerr.NewSemanticError("recursive Immutable wrapping is not allowed"))
+				panic(galaerr.NewSemanticErrorAt(t.lastLine, t.lastCol, "recursive Immutable wrapping is not allowed"))
 			}
 			return transpiler.GenericType{
 				Base:   transpiler.NamedType{Package: registry.StdPackageName, Name: transpiler.TypeImmutable},

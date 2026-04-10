@@ -423,8 +423,9 @@ func (m *ImportManager) dotImportUsedInAST(file *ast.File, pkgName string, richA
 
 // ValidateDotImports detects when multiple dot-imported packages export symbols with the
 // same name, which would cause Go compilation errors ("redeclared in this block").
+// line and col provide the source position of the import block for error reporting.
 // Returns a SemanticError listing all clashing symbols, or nil if no clashes found.
-func (m *ImportManager) ValidateDotImports(richAST *transpiler.RichAST) error {
+func (m *ImportManager) ValidateDotImports(richAST *transpiler.RichAST, line, col int) error {
 	dotPkgs := m.GetDotImports()
 	if len(dotPkgs) < 2 {
 		return nil // need at least 2 dot imports for a clash
@@ -502,7 +503,7 @@ func (m *ImportManager) ValidateDotImports(richAST *transpiler.RichAST) error {
 
 	if len(clashes) > 0 {
 		msg := "dot-import symbol collision(s) detected:\n" + strings.Join(clashes, "\n") + "\nUse an aliased import for one of the packages to resolve the conflict."
-		return galaerr.NewSemanticError(msg)
+		return galaerr.NewSemanticErrorAt(line, col, msg)
 	}
 	return nil
 }
