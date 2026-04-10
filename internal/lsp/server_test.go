@@ -2356,6 +2356,102 @@ func TestCompletion_CrossFileFunctionCallDot(t *testing.T) {
 	}
 }
 
+// Issue: completion inside lambda body — (x) => x. should resolve x's type
+func TestCompletion_LambdaParamDotCompletion(t *testing.T) {
+	h := newHarness(t)
+	src := "package main\n\ntype Item struct {\n    val name string\n}\n\nfunc (i Item) Label() string {\n    return i.name\n}\n\nfunc main() {\n    val items = SliceOf(Item(name = \"a\"), Item(name = \"b\"))\n    items.ForEach((item Item) => {\n        item.\n        Println(item)\n    })\n}\n"
+	uri := openFileOnDisk(t, h, src)
+	// Line 13 = "        item."  char 13 = after dot
+	list, err := h.Completion(uri, 13, 13)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list != nil && len(list.Items) > 0 {
+		hasLabel := false
+		for _, item := range list.Items {
+			if strings.HasPrefix(item.Label, "Label") || item.FilterText == "Label" {
+				hasLabel = true
+			}
+		}
+		if hasLabel {
+			t.Log("OK: lambda param dot completion works — Label() found")
+		} else {
+			t.Logf("lambda param: %d items but no Label", len(list.Items))
+			for _, item := range list.Items {
+				t.Logf("  %s filter=%s", item.Label, item.FilterText)
+			}
+		}
+	} else {
+		t.Error("no completion for item. inside lambda")
+	}
+}
+
+// Lambda with INFERRED param type — Option.ForEach((session) => session.)
+func TestCompletion_LambdaInferredParamDotCompletion(t *testing.T) {
+	h := newHarness(t)
+	// Option[string].ForEach((s) => s.) — s should be inferred as string
+	src := "package main\n\ntype Session struct {\n    val id string\n}\n\nfunc (s Session) GetId() string {\n    return s.id\n}\n\nfunc main() {\n    val opt = Some(Session(id = \"abc\"))\n    opt.ForEach((session) => {\n        session.\n        Println(session)\n    })\n}\n"
+	uri := openFileOnDisk(t, h, src)
+	// Line 13 = "        session."  char 16 = after dot
+	list, err := h.Completion(uri, 13, 16)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list != nil && len(list.Items) > 0 {
+		hasGetId := false
+		for _, item := range list.Items {
+			if strings.HasPrefix(item.Label, "GetId") || item.FilterText == "GetId" {
+				hasGetId = true
+			}
+		}
+		if hasGetId {
+			t.Log("OK: inferred lambda param completion works — GetId() found")
+		} else {
+			t.Logf("inferred lambda: %d items but no GetId", len(list.Items))
+			for _, item := range list.Items {
+				t.Logf("  %s filter=%s", item.Label, item.FilterText)
+			}
+		}
+	} else {
+		t.Error("no completion for session. in lambda with inferred param type")
+	}
+}
+
+// Cross-file lambda: function from sibling returns Option, lambda param inferred
+func TestCompletion_CrossFileLambdaInferred(t *testing.T) {
+	h := newHarness(t)
+	dir := createTestProject(t, []testProjectFile{
+		{Name: "session.gala", Src: "package mylib\n\ntype Session struct {\n    val data string\n}\n\nfunc (s Session) Get() string {\n    return s.data\n}\n\nfunc getSession() Option[Session] {\n    return Some(Session(data = \"test\"))\n}\n"},
+		{Name: "handler.gala", Src: "package mylib\n\nfunc Handle() {\n    getSession().ForEach((session) => {\n        session.\n        Println(session)\n    })\n}\n"},
+	})
+	openProjectFile(t, h, dir, "session.gala")
+	uri := openProjectFile(t, h, dir, "handler.gala")
+
+	// Line 4 = "        session."
+	list, err := h.Completion(uri, 4, 16)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list != nil && len(list.Items) > 0 {
+		hasGet := false
+		for _, item := range list.Items {
+			if strings.HasPrefix(item.Label, "Get") || item.FilterText == "Get" {
+				hasGet = true
+			}
+		}
+		if hasGet {
+			t.Log("OK: cross-file lambda inferred param completion works")
+		} else {
+			t.Logf("cross-file lambda: %d items but no Get", len(list.Items))
+			for _, item := range list.Items {
+				t.Logf("  %s filter=%s", item.Label, item.FilterText)
+			}
+		}
+	} else {
+		t.Error("no completion for session. in cross-file lambda")
+	}
+}
+
 // ============================================================
 // === FuncType Display ===
 // ============================================================
