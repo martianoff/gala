@@ -2452,6 +2452,87 @@ func TestCompletion_CrossFileLambdaInferred(t *testing.T) {
 	}
 }
 
+// Inline lambda: getSession().ForEach((session) => session.)
+// This is the EXACT pattern from gala-server/session.gala
+// Key: first open valid code (builds richAST cache), then edit to add trailing dot.
+func TestCompletion_InlineLambdaParamDot(t *testing.T) {
+	h := newHarness(t)
+	// Step 1: valid code — builds richAST + varTypes cache
+	valid := "package main\n\ntype Session struct {\n    val data string\n}\n\nfunc (s Session) Set(k string, v string) {\n}\n\nfunc getSession() Option[Session] {\n    return Some(Session(data = \"x\"))\n}\n\nfunc main() {\n    getSession().ForEach((session) => session.Set(\"k\", \"v\"))\n}\n"
+	uri := openFileOnDisk(t, h, valid)
+	time.Sleep(200 * time.Millisecond) // let analysis complete
+
+	// Step 2: edit to add trailing dot — parser will fail but richAST is cached
+	withDot := "package main\n\ntype Session struct {\n    val data string\n}\n\nfunc (s Session) Set(k string, v string) {\n}\n\nfunc getSession() Option[Session] {\n    return Some(Session(data = \"x\"))\n}\n\nfunc main() {\n    getSession().ForEach((session) => session.\n}\n"
+	h.DidChange(uri, 1, withDot)
+	time.Sleep(200 * time.Millisecond)
+
+	list, err := h.Completion(uri, 14, 49)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list != nil && len(list.Items) > 0 {
+		hasSet := false
+		for _, item := range list.Items {
+			if strings.HasPrefix(item.Label, "Set") || item.FilterText == "Set" {
+				hasSet = true
+			}
+		}
+		if hasSet {
+			t.Log("OK: inline lambda param dot completion works")
+		} else {
+			t.Errorf("inline lambda: %d items but no Set", len(list.Items))
+			for _, item := range list.Items {
+				t.Logf("  %s filter=%s kind=%v", item.Label, item.FilterText, item.Kind)
+			}
+		}
+	} else {
+		t.Error("no completion for session. in inline lambda")
+	}
+}
+
+// Cross-file inline lambda — open valid code first, then add dot
+func TestCompletion_CrossFileInlineLambda(t *testing.T) {
+	h := newHarness(t)
+	dir := createTestProject(t, []testProjectFile{
+		{Name: "session.gala", Src: "package mylib\n\ntype Session struct {\n    val data string\n}\n\nfunc (s Session) Set(k string, v string) {\n}\n\nfunc sessionFromCtx() Option[Session] {\n    return Some(Session(data = \"x\"))\n}\n"},
+		{Name: "handler.gala", Src: "package mylib\n\nfunc Handle() {\n    sessionFromCtx().ForEach((session) => session.Set(\"k\", \"v\"))\n}\n"},
+	})
+	openProjectFile(t, h, dir, "session.gala")
+	uri := openProjectFile(t, h, dir, "handler.gala")
+	time.Sleep(200 * time.Millisecond)
+
+	// Edit to add trailing dot
+	dotPath := filepath.Join(dir, "handler.gala")
+	dotSrc := "package mylib\n\nfunc Handle() {\n    sessionFromCtx().ForEach((session) => session.\n}\n"
+	os.WriteFile(dotPath, []byte(dotSrc), 0644)
+	h.DidChange(uri, 1, dotSrc)
+	time.Sleep(200 * time.Millisecond)
+
+	list, err := h.Completion(uri, 3, 53)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list != nil && len(list.Items) > 0 {
+		hasSet := false
+		for _, item := range list.Items {
+			if strings.HasPrefix(item.Label, "Set") || item.FilterText == "Set" {
+				hasSet = true
+			}
+		}
+		if hasSet {
+			t.Log("OK: cross-file inline lambda completion works")
+		} else {
+			t.Errorf("cross-file inline lambda: %d items but no Set", len(list.Items))
+			for _, item := range list.Items {
+				t.Logf("  %s filter=%s", item.Label, item.FilterText)
+			}
+		}
+	} else {
+		t.Error("no completion for session. in cross-file inline lambda")
+	}
+}
+
 // ============================================================
 // === FuncType Display ===
 // ============================================================
