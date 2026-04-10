@@ -17,9 +17,11 @@ func TestSyntaxError(t *testing.T) {
 }
 
 func TestSemanticError(t *testing.T) {
-	err := galaerr.NewSemanticError("undefined variable x")
+	err := galaerr.NewSemanticErrorAt(5, 3, "undefined variable x")
 	assert.Equal(t, galaerr.TypeSemantic, err.Type())
-	assert.Contains(t, err.Error(), "[SemanticError] undefined variable x")
+	assert.Equal(t, 5, err.Line)
+	assert.Equal(t, 3, err.Column)
+	assert.Equal(t, "[SemanticError] line 5:3 undefined variable x", err.Error())
 }
 
 func TestSemanticErrorAt(t *testing.T) {
@@ -39,8 +41,9 @@ func TestSemanticErrorInFile(t *testing.T) {
 	assert.Equal(t, "[SemanticError] main.gala:10:5 undefined variable x", err.Error())
 }
 
-func TestSemanticErrorNoPosition(t *testing.T) {
-	err := galaerr.NewSemanticError("undefined variable x")
+func TestSemanticErrorZeroLine(t *testing.T) {
+	// Line 0 omits position from error message
+	err := galaerr.NewSemanticErrorAt(0, 0, "undefined variable x")
 	assert.Equal(t, galaerr.TypeSemantic, err.Type())
 	assert.Equal(t, 0, err.Line)
 	assert.Equal(t, "[SemanticError] undefined variable x", err.Error())
@@ -59,7 +62,7 @@ func TestMultiError(t *testing.T) {
 }
 
 func TestMultiErrorMixed(t *testing.T) {
-	e1 := galaerr.NewSemanticError("semantic error")
+	e1 := galaerr.NewSemanticErrorAt(5, 3, "semantic error")
 	e2 := galaerr.NewSyntaxError(1, 1, "syntax error")
 	multi := &galaerr.MultiError{Errors: []error{e1, e2}}
 

@@ -97,16 +97,6 @@ func NewSyntaxError(line, column int, msg string) *SyntaxError {
 	}
 }
 
-// NewSemanticError creates a new SemanticError.
-func NewSemanticError(msg string) *SemanticError {
-	return &SemanticError{
-		BaseError: BaseError{
-			Msg:     msg,
-			ErrType: TypeSemantic,
-		},
-	}
-}
-
 // NewSemanticErrorAt creates a SemanticError with line and column position.
 func NewSemanticErrorAt(line, column int, msg string) *SemanticError {
 	return &SemanticError{
