@@ -49,10 +49,27 @@ func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionPara
 				typeName = key[idx+1:]
 			}
 		}
-		if typeName == word && typeMeta.DefinedIn != "" {
-			loc := fileLocation(typeMeta.DefinedIn, word)
-			if loc != nil {
+		if typeName == word {
+			if typeMeta.DefinedIn != "" {
+				loc := fileLocation(typeMeta.DefinedIn, word)
+				if loc != nil {
+					return []lsp.Location{*loc}, nil
+				}
+			}
+			// Fallback: search current file's directory (same-package sibling)
+			currentDir := filepath.Dir(uriToPath(uri))
+			if loc := findDefinitionInDir(currentDir, word); loc != nil {
 				return []lsp.Location{*loc}, nil
+			}
+			// Fallback: search package directory in search paths (std/imported types)
+			if typeMeta.Package != "" {
+				for _, searchPath := range h.getSearchPaths(uriToPath(uri)) {
+					pkgDir := filepath.Join(searchPath, typeMeta.Package)
+					loc := findDefinitionInDir(pkgDir, word)
+					if loc != nil {
+						return []lsp.Location{*loc}, nil
+					}
+				}
 			}
 		}
 		// Check methods
@@ -262,6 +279,25 @@ func dotMethodDefinition(text, word, uri string, curLine, curChar int, richAST *
 	return nil
 }
 
+// findDefinitionInDir searches all .gala files in a directory for a type/func definition.
+func findDefinitionInDir(dir, name string) *lsp.Location {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".gala") {
+			continue
+		}
+		absPath := filepath.Join(dir, e.Name())
+		loc := fileLocation(absPath, name)
+		if loc != nil {
+			return loc
+		}
+	}
+	return nil
+}
+
 func findFirstGalaFile(dir, name string) *lsp.Location {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -366,18 +402,7 @@ func fileLocation(filePath, name string) *lsp.Location {
 	if err != nil {
 		return nil
 	}
-	lines := strings.Split(string(data), "\n")
-	for i, line := range lines {
-		if strings.Contains(line, name) {
-			col := strings.Index(line, name)
-			return &lsp.Location{
-				URI: lsp.DocumentURI(pathToURI(absPath)),
-				Range: lsp.Range{
-					Start: lsp.Position{Line: i, Character: col},
-					End:   lsp.Position{Line: i, Character: col + len(name)},
-				},
-			}
-		}
-	}
-	return nil
+	uri := pathToURI(absPath)
+	return localDefinition(string(data), name, uri)
 }
+

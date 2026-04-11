@@ -515,8 +515,8 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 
 			var meta *transpiler.TypeMetadata
 			if existing, ok := richAST.Types[fullTypeName]; ok && existing.Package == pkgName {
-				// Error if type is being redefined (has fields or sealed variants).
-				// Skip if DefinedIn is empty — the type came from cache and should be overwritable.
+				// Error if type is being redefined from a DIFFERENT file.
+				// Skip if DefinedIn is empty (cache) or same file (re-analysis from analyzePackage).
 				if existing.DefinedIn != "" && hasTypeDefinition(existing) && !(existing.DefinedIn != filePath && isSameFile(existing.DefinedIn, absFilePath)) {
 					line := ctx.GetStart().GetLine()
 					return nil, fmt.Errorf("%s:%d: type %q in package %q redefined (first defined in %s)",
@@ -575,8 +575,9 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 					msCtx := ms.(*grammar.MethodSpecContext)
 					methodName := msCtx.Identifier().GetText()
 					methodMeta := &transpiler.MethodMetadata{
-						Name:    methodName,
-						Package: pkgName,
+						Name:      methodName,
+						Package:   pkgName,
+						DefinedIn: filePath,
 					}
 					if msCtx.TypeParameters() != nil {
 						tpCtx := msCtx.TypeParameters().(*grammar.TypeParametersContext)
@@ -633,7 +634,6 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 						filePath, line, typeName, pkgName, existing.DefinedIn)
 				}
 				meta = existing
-				// Clear fields to avoid duplicates if re-analyzing
 				meta.Fields = make(map[string]transpiler.Type)
 				meta.FieldNames = nil
 				meta.ImmutFlags = nil
@@ -1753,8 +1753,6 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 	}
 
 	for _, f := range files {
-		// Skip test files — they are not part of the package's public API and may have
-		// different package names (e.g., package main for benchmark binaries).
 		if !f.IsDir() && filepath.Ext(f.Name()) == ".gala" && !strings.HasSuffix(f.Name(), "_test.gala") {
 			filePath := filepath.Join(dirPath, f.Name())
 			content, err := ioutil.ReadFile(filePath)
@@ -1772,11 +1770,6 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 				} else if pkgAST.PackageName != res.PackageName {
 					return nil, fmt.Errorf("multiple package names in directory %s: %s and %s", dirPath, pkgAST.PackageName, res.PackageName)
 				}
-				// Check for type redefinition: if a type with fields/variants already
-				// exists in pkgAST and the incoming res also defines it with fields/variants,
-				// that's a compile-time error. Methods on existing types are fine.
-				// Only check types actually defined in this file (DefinedIn == filePath),
-				// not types pulled in via sibling scanning.
 				for typeName, newMeta := range res.Types {
 					if newMeta.DefinedIn != filePath {
 						continue
@@ -2091,6 +2084,10 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 				Methods: existingMethods,
 				Fields:  make(map[string]transpiler.Type),
 			}
+			// Preserve DefinedIn from main analysis if already set
+			if ex, ok := richAST.Types[fullTypeName]; ok && ex.DefinedIn != "" {
+				meta.DefinedIn = ex.DefinedIn
+			}
 			if ctx.TypeParameters() != nil {
 				tpCtx := ctx.TypeParameters().(*grammar.TypeParametersContext)
 				if tpList := tpCtx.TypeParameterList(); tpList != nil {
@@ -2124,8 +2121,9 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 					msCtx := ms.(*grammar.MethodSpecContext)
 					methodName := msCtx.Identifier().GetText()
 					methodMeta := &transpiler.MethodMetadata{
-						Name:    methodName,
-						Package: pkgName,
+						Name:      methodName,
+						Package:   pkgName,
+						DefinedIn: absSibPath,
 					}
 					if msCtx.TypeParameters() != nil {
 						tpCtx := msCtx.TypeParameters().(*grammar.TypeParametersContext)
@@ -2202,6 +2200,10 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 				Methods: existingMethods,
 				Fields:  make(map[string]transpiler.Type),
 			}
+			// Preserve DefinedIn from main analysis if already set
+			if ex, ok := richAST.Types[fullTypeName]; ok && ex.DefinedIn != "" {
+				meta.DefinedIn = ex.DefinedIn
+			}
 			if ctx.Parameters() != nil {
 				paramsCtx := ctx.Parameters().(*grammar.ParametersContext)
 				if paramsCtx.ParameterList() != nil {
@@ -2266,6 +2268,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 					Name:         methodName,
 					Package:      pkgName,
 					ReceiverName: recvCtx.Identifier().GetText(),
+					DefinedIn:    absSibPath,
 				}
 				if ctx.TypeParameters() != nil {
 					tpCtx := ctx.TypeParameters().(*grammar.TypeParametersContext)

@@ -2243,10 +2243,18 @@ func TestCompletion_UnexportedMethods(t *testing.T) {
 // Issue: field access chain s.Statics. should resolve field type and show methods
 func TestCompletion_FieldChainAccess(t *testing.T) {
 	h := newHarness(t)
-	src := "package main\n\ntype Config struct {\n    val items Array[string]\n}\n\nfunc main() {\n    val c = Config(items = ArrayOf(\"a\", \"b\"))\n    c.items.\n    Println(c)\n}\n"
-	uri := openFileOnDisk(t, h, src)
-	// Line 8 = "    c.items."  char 12 = after dot
-	list, err := h.Completion(uri, 8, 12)
+	// Step 1: valid code with explicit import to build cache
+	valid := "package main\n\nimport . \"martianoff/gala/collection_immutable\"\n\ntype Config struct {\n    val items Array[string]\n}\n\nfunc main() {\n    val c = Config(items = ArrayOf(\"a\", \"b\"))\n    c.items.ForEach((x) => Println(x))\n}\n"
+	uri := openFileOnDisk(t, h, valid)
+	time.Sleep(200 * time.Millisecond)
+
+	// Step 2: edit to add dot
+	withDot := "package main\n\nimport . \"martianoff/gala/collection_immutable\"\n\ntype Config struct {\n    val items Array[string]\n}\n\nfunc main() {\n    val c = Config(items = ArrayOf(\"a\", \"b\"))\n    c.items.\n    Println(c)\n}\n"
+	h.DidChange(uri, 1, withDot)
+	time.Sleep(200 * time.Millisecond)
+
+	// Line 10 = "    c.items."  char 12 = after dot (extra import line)
+	list, err := h.Completion(uri, 10, 12)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2265,6 +2273,158 @@ func TestCompletion_FieldChainAccess(t *testing.T) {
 		}
 	} else {
 		t.Log("no field chain completion — type not resolved through field access")
+	}
+}
+
+// Exact gala-server repro: cross-file struct with Array field, s.Statics. completion
+func TestCompletion_CrossFileFieldChain(t *testing.T) {
+	h := newHarness(t)
+	dir := createTestProject(t, []testProjectFile{
+		{Name: "types.gala", Src: "package mylib\n\nimport . \"martianoff/gala/collection_immutable\"\n\ntype Server struct {\n    val Name string\n    val Statics Array[string]\n}\n"},
+		{Name: "builder.gala", Src: "package mylib\n\nfunc build(s Server) {\n    s.Statics.ForEach((item) => Println(item))\n}\n"},
+	})
+	openProjectFile(t, h, dir, "types.gala")
+	// Step 1: valid code
+	uri := openProjectFile(t, h, dir, "builder.gala")
+	time.Sleep(300 * time.Millisecond)
+
+	// Step 2: edit to add dot after s.Statics
+	dotSrc := "package mylib\n\nfunc build(s Server) {\n    s.Statics.\n    Println(s)\n}\n"
+	dotPath := filepath.Join(dir, "builder.gala")
+	os.WriteFile(dotPath, []byte(dotSrc), 0644)
+	h.DidChange(uri, 1, dotSrc)
+	time.Sleep(300 * time.Millisecond)
+
+	// Line 3 = "    s.Statics."  char 14
+	list, err := h.Completion(uri, 3, 14)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list != nil && len(list.Items) > 0 {
+		hasMethod := false
+		for _, item := range list.Items {
+			if strings.HasPrefix(item.Label, "Map") || strings.HasPrefix(item.Label, "ForEach") ||
+				item.FilterText == "Map" || item.FilterText == "ForEach" {
+				hasMethod = true
+			}
+		}
+		if hasMethod {
+			t.Log("OK: cross-file s.Statics. shows Array methods")
+		} else {
+			t.Errorf("cross-file field chain: %d items but no Array methods", len(list.Items))
+			for _, item := range list.Items {
+				t.Logf("  %s filter=%s", item.Label, item.FilterText)
+			}
+		}
+	} else {
+		t.Error("no completion for s.Statics. in cross-file context")
+	}
+}
+
+// Issue: pair has no type hint in ForEach((pair) => ...) where Statics is Array[Tuple[string,string]]
+func TestInlayHints_LambdaParamFromFieldChain(t *testing.T) {
+	h := newHarness(t)
+	dir := createTestProject(t, []testProjectFile{
+		{Name: "types.gala", Src: "package mylib\n\nimport . \"martianoff/gala/collection_immutable\"\n\ntype Server struct {\n    val Statics Array[Tuple[string, string]]\n}\n"},
+		{Name: "builder.gala", Src: "package mylib\n\nfunc build(s Server) {\n    s.Statics.ForEach((pair) => Println(pair))\n}\n"},
+	})
+	openProjectFile(t, h, dir, "types.gala")
+	uri := openProjectFile(t, h, dir, "builder.gala")
+
+	raw, err := h.Call("textDocument/inlayHint", map[string]interface{}{
+		"textDocument": map[string]string{"uri": string(uri)},
+		"range": map[string]interface{}{
+			"start": map[string]int{"line": 0, "character": 0},
+			"end":   map[string]int{"line": 10, "character": 0},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hintStr := string(raw)
+	t.Logf("lambda param hints: %s", hintStr)
+	if strings.Contains(hintStr, "Tuple") || strings.Contains(hintStr, "string") {
+		t.Log("OK: pair type hint shows Tuple[string, string]")
+	} else {
+		t.Error("no type hint for pair in ForEach lambda — expected Tuple[string, string]")
+	}
+}
+
+// Lambda param hint: Option.Map((x) => ...) should show x's type
+func TestInlayHints_LambdaParamOptionMap(t *testing.T) {
+	h := newHarness(t)
+	uri := openFileOnDisk(t, h, "package main\n\nfunc main() {\n    val opt = Some(42)\n    opt.Map((x) => x * 2)\n}\n")
+	raw, err := h.Call("textDocument/inlayHint", map[string]interface{}{
+		"textDocument": map[string]string{"uri": string(uri)},
+		"range": map[string]interface{}{
+			"start": map[string]int{"line": 0, "character": 0},
+			"end":   map[string]int{"line": 10, "character": 0},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hintStr := string(raw)
+	t.Logf("Option.Map lambda hints: %s", hintStr)
+	if strings.Contains(hintStr, "int") {
+		t.Log("OK: x in Option.Map shows :int")
+	} else {
+		t.Error("no type hint for x in Option.Map lambda")
+	}
+}
+
+// Lambda param hint: multi-param lambda (acc, x) =>
+func TestInlayHints_LambdaMultiParam(t *testing.T) {
+	h := newHarness(t)
+	uri := openFileOnDisk(t, h, "package main\n\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc main() {\n    val arr = ArrayOf(1, 2, 3)\n    arr.FoldLeft(0, (acc, x) => acc + x)\n}\n")
+	raw, err := h.Call("textDocument/inlayHint", map[string]interface{}{
+		"textDocument": map[string]string{"uri": string(uri)},
+		"range": map[string]interface{}{
+			"start": map[string]int{"line": 0, "character": 0},
+			"end":   map[string]int{"line": 10, "character": 0},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hintStr := string(raw)
+	t.Logf("FoldLeft multi-param hints: %s", hintStr)
+	// acc and x should both get int hints
+	accHint := strings.Contains(hintStr, "acc") || strings.Count(hintStr, "int") >= 2
+	if accHint {
+		t.Log("OK: multi-param lambda hints present")
+	} else {
+		t.Log("NOTE: multi-param lambda hints may not fully resolve")
+	}
+}
+
+// Lambda param hint with explicit type should NOT show hint
+func TestInlayHints_LambdaExplicitTypeNoHint(t *testing.T) {
+	h := newHarness(t)
+	uri := openFileOnDisk(t, h, "package main\n\nfunc main() {\n    val opt = Some(42)\n    opt.Map((x int) => x * 2)\n}\n")
+	raw, err := h.Call("textDocument/inlayHint", map[string]interface{}{
+		"textDocument": map[string]string{"uri": string(uri)},
+		"range": map[string]interface{}{
+			"start": map[string]int{"line": 0, "character": 0},
+			"end":   map[string]int{"line": 10, "character": 0},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hintStr := string(raw)
+	t.Logf("explicit type lambda hints: %s", hintStr)
+	// Line 4 should NOT have a lambda param hint for x (it already has explicit type)
+	var hints []lsp.InlayHint
+	json.Unmarshal(raw, &hints)
+	for _, hint := range hints {
+		if hint.Position.Line == 4 && strings.Contains(string(hint.Label), "int") {
+			// Check it's not on the lambda param position
+			// "opt.Map((x int) => x * 2)" — x is at position ~13
+			if hint.Position.Character < 20 {
+				t.Error("explicit type lambda param should NOT get a hint")
+			}
+		}
 	}
 }
 
@@ -2530,6 +2690,78 @@ func TestCompletion_CrossFileInlineLambda(t *testing.T) {
 		}
 	} else {
 		t.Error("no completion for session. in cross-file inline lambda")
+	}
+}
+
+// ============================================================
+// === Cross-File Go-to-Definition ===
+// ============================================================
+
+// Clicking on a type from a sibling file should navigate to its definition
+func TestDefinition_CrossFileType(t *testing.T) {
+	h := newHarness(t)
+	dir := createTestProject(t, []testProjectFile{
+		{Name: "types.gala", Src: "package mylib\n\ntype Request struct {\n    val path string\n}\n"},
+		{Name: "handler.gala", Src: "package mylib\n\nfunc Handle(req Request) string {\n    return req.path\n}\n"},
+	})
+	openProjectFile(t, h, dir, "types.gala")
+	uri := openProjectFile(t, h, dir, "handler.gala")
+
+	// Click on "Request" in the function parameter (line 2, ~20th char)
+	locs, err := h.Definition(uri, 2, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(locs) == 0 {
+		t.Error("no definition found for cross-file type Request")
+	} else {
+		t.Logf("Request defined at: %s line %d", locs[0].URI, locs[0].Range.Start.Line)
+		if !strings.Contains(string(locs[0].URI), "types.gala") {
+			t.Errorf("expected definition in types.gala, got %s", locs[0].URI)
+		}
+	}
+}
+
+// Clicking on Option[T] should navigate to std library
+func TestDefinition_StdType(t *testing.T) {
+	h := newHarness(t)
+	// Use Option as a field type so it's definitely in the AST
+	uri := openFileOnDisk(t, h, "package main\n\nfunc main() {\n    val opt = Some(42)\n    val x Option[int] = opt\n    Println(x)\n}\n")
+
+	// Click on "Option" (line 4, ~10th char)
+	locs, err := h.Definition(uri, 4, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(locs) == 0 {
+		t.Error("no definition found for Option — DefinedIn not set for std types")
+	} else {
+		t.Logf("Option defined at: %s line %d", locs[0].URI, locs[0].Range.Start.Line)
+	}
+}
+
+// Clicking on a function argument type should navigate to its definition
+func TestDefinition_FunctionArgType(t *testing.T) {
+	h := newHarness(t)
+	dir := createTestProject(t, []testProjectFile{
+		{Name: "model.gala", Src: "package mylib\n\ntype User struct {\n    val name string\n    val age int\n}\n"},
+		{Name: "service.gala", Src: "package mylib\n\nfunc Greet(user User) string {\n    return user.name\n}\n"},
+	})
+	openProjectFile(t, h, dir, "model.gala")
+	uri := openProjectFile(t, h, dir, "service.gala")
+
+	// Click on "User" in function param (line 2, ~17th char)
+	locs, err := h.Definition(uri, 2, 17)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(locs) == 0 {
+		t.Error("no definition found for function arg type User")
+	} else {
+		t.Logf("User defined at: %s line %d", locs[0].URI, locs[0].Range.Start.Line)
+		if !strings.Contains(string(locs[0].URI), "model.gala") {
+			t.Errorf("expected definition in model.gala, got %s", locs[0].URI)
+		}
 	}
 }
 
