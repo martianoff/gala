@@ -270,7 +270,8 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 		h.mu.Unlock()
 	}
 
-	diagnostics = append(diagnostics, checkMatchExhaustiveness(text, richAST)...)
+	// Match exhaustiveness is handled by the transpiler (SemanticError with line numbers).
+	// No separate text-based check needed.
 
 	for _, warning := range richAST.AnalysisWarnings {
 		diagnostics = append(diagnostics, lsp.Diagnostic{

@@ -2972,6 +2972,25 @@ func TestDefinition_FunctionCallName(t *testing.T) {
 }
 
 // ============================================================
+// === Match Exhaustiveness with Nested Braces ===
+// ============================================================
+
+// Match with multi-line case body containing braces should not falsely warn
+func TestDiagnostics_MatchExhaustivenessNestedBraces(t *testing.T) {
+	h := newHarness(t)
+	src := "package main\n\nfunc main() {\n    val result = Success(42)\n    result match {\n        case Success(v) => {\n            Println(v)\n        }\n        case Failure(e) => Println(e)\n    }\n}\n"
+	uri := openFileOnDisk(t, h, src)
+	time.Sleep(200 * time.Millisecond)
+	diags := h.Diagnostics(uri)
+	for _, d := range diags {
+		if strings.Contains(d.Message, "Non-exhaustive") && strings.Contains(d.Message, "Failure") {
+			t.Errorf("false warning: %s — Failure IS present but scanner stopped at nested }", d.Message)
+		}
+	}
+	t.Logf("diagnostics: %d", len(diags))
+}
+
+// ============================================================
 // === Chain Method Go-to-Definition ===
 // ============================================================
 

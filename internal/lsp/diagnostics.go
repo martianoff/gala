@@ -22,12 +22,15 @@ func checkMatchExhaustiveness(text string, richAST *transpiler.RichAST) []lsp.Di
 
 		var caseNames []string
 		hasWildcard := false
+		depth := 1 // already inside match {
 		for j := i + 1; j < len(lines); j++ {
 			caseLine := strings.TrimSpace(lines[j])
-			if caseLine == "}" {
+			depth += strings.Count(caseLine, "{") - strings.Count(caseLine, "}")
+			if depth <= 0 {
 				break
 			}
-			if strings.HasPrefix(caseLine, "case ") {
+			// Only check case at match level (depth == 1)
+			if depth == 1 && strings.HasPrefix(caseLine, "case ") {
 				rest := caseLine[5:]
 				if strings.HasPrefix(rest, "_") {
 					hasWildcard = true
