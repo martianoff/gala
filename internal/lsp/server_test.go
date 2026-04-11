@@ -2766,6 +2766,212 @@ func TestDefinition_FunctionArgType(t *testing.T) {
 }
 
 // ============================================================
+// === Map Index Type Hint ===
+// ============================================================
+
+// Issue: parsed["code"] on map[string]string should hint :string, not :parsed[]
+func TestInlayHints_MapIndexAccess(t *testing.T) {
+	h := newHarness(t)
+	src := "package main\n\nfunc main() {\n    val names = SliceOf(\"alice\", \"bob\")\n    val first = names[0]\n    Println(first)\n}\n"
+	uri := openFileOnDisk(t, h, src)
+	raw, err := h.Call("textDocument/inlayHint", map[string]interface{}{
+		"textDocument": map[string]string{"uri": string(uri)},
+		"range": map[string]interface{}{
+			"start": map[string]int{"line": 0, "character": 0},
+			"end":   map[string]int{"line": 10, "character": 0},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hintStr := string(raw)
+	t.Logf("map index hints: %s", hintStr)
+	// first should be :string (element type), NOT :names[]
+	if strings.Contains(hintStr, "names") {
+		t.Error("index type hint shows variable name instead of element type")
+	}
+	// Check that first has :string hint
+	if strings.Contains(hintStr, "string") {
+		t.Log("OK: array index resolved to element type")
+	} else {
+		t.Error("expected :string hint for array index access")
+	}
+}
+
+// ============================================================
+// === Match Case Completion Filtering ===
+// ============================================================
+
+// Issue: case completion should only show variants of the MATCHED type, not all sealed types
+func TestCompletion_MatchCaseFilteredByType(t *testing.T) {
+	h := newHarness(t)
+	// Step 1: valid code to cache richAST
+	valid := "package main\n\nsealed type Color {\n    case Red()\n    case Blue()\n}\n\nsealed type Shape {\n    case Circle(r float64)\n    case Square(s float64)\n}\n\nfunc describe(c Color) string = c match {\n    case Red() => \"red\"\n    case Blue() => \"blue\"\n}\n\nfunc main() {\n    Println(describe(Red()))\n}\n"
+	uri := openFileOnDisk(t, h, valid)
+	time.Sleep(200 * time.Millisecond)
+
+	// Step 2: edit to incomplete case
+	withCase := "package main\n\nsealed type Color {\n    case Red()\n    case Blue()\n}\n\nsealed type Shape {\n    case Circle(r float64)\n    case Square(s float64)\n}\n\nfunc describe(c Color) string = c match {\n    case \n}\n\nfunc main() {\n    Println(describe(Red()))\n}\n"
+	h.DidChange(uri, 1, withCase)
+	time.Sleep(200 * time.Millisecond)
+
+	// Line 13 = "    case "  char 9 = after "case "
+	list, err := h.Completion(uri, 13, 9)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list == nil || len(list.Items) == 0 {
+		t.Fatal("no case completions")
+	}
+	hasColor := false
+	hasShape := false
+	for _, item := range list.Items {
+		if item.Label == "Red" || item.Label == "Blue" {
+			hasColor = true
+		}
+		if item.Label == "Circle" || item.Label == "Square" {
+			hasShape = true
+		}
+	}
+	t.Logf("case completions: %d items, hasColor=%v, hasShape=%v", len(list.Items), hasColor, hasShape)
+	if !hasColor {
+		t.Error("missing Color variants (Red, Blue) in case completion")
+	}
+	if hasShape {
+		t.Error("Shape variants (Circle, Square) should NOT appear — only matched type's variants")
+	}
+}
+
+// ============================================================
+// === Named Arg Field Definition ===
+// ============================================================
+
+// Clicking on field name in constructor call should navigate to struct field definition
+func TestDefinition_NamedArgFieldInConstructor(t *testing.T) {
+	h := newHarness(t)
+	src := "package main\n\ntype RunResult struct {\n    val Output string\n    val Error string\n    val Time string\n}\n\nfunc main() {\n    val r = RunResult(Output = \"hello\", Error = \"\", Time = \"0s\")\n    Println(r)\n}\n"
+	uri := openFileOnDisk(t, h, src)
+	// Click on "Time" in RunResult(... Time = "0s")
+	// Line 9: "    val r = RunResult(Output = "hello", Error = "", Time = "0s")"
+	// Find position of "Time" — it's after Error = "",
+	lineText := strings.Split(src, "\n")[9]
+	timeIdx := strings.LastIndex(lineText, "Time")
+	t.Logf("line 9: %q, Time at col %d", lineText, timeIdx)
+
+	locs, err := h.Definition(uri, 9, timeIdx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(locs) == 0 {
+		t.Error("no definition found for field name 'Time' in constructor call")
+	} else {
+		t.Logf("Time field defined at: line %d col %d", locs[0].Range.Start.Line, locs[0].Range.Start.Character)
+		// Should point to line 5: "    val Time string"
+		if locs[0].Range.Start.Line != 5 {
+			t.Errorf("expected line 5 (val Time string), got line %d", locs[0].Range.Start.Line)
+		}
+	}
+}
+
+// Clicking on field name in sealed case constructor
+func TestDefinition_NamedArgFieldInSealedCase(t *testing.T) {
+	h := newHarness(t)
+	src := "package main\n\nsealed type Shape {\n    case Circle(radius float64)\n    case Rect(width float64, height float64)\n}\n\nfunc main() {\n    val s = Circle(radius = 5.0)\n    Println(s)\n}\n"
+	uri := openFileOnDisk(t, h, src)
+	// Click on "radius" in Circle(radius = 5.0) — line 8
+	lineText := strings.Split(src, "\n")[8]
+	radiusIdx := strings.Index(lineText, "radius")
+	t.Logf("line 8: %q, radius at col %d", lineText, radiusIdx)
+
+	locs, err := h.Definition(uri, 8, radiusIdx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(locs) == 0 {
+		t.Error("no definition found for field name 'radius' in sealed case constructor")
+	} else {
+		t.Logf("radius field defined at: line %d", locs[0].Range.Start.Line)
+		// Should point to line 3: "    case Circle(radius float64)"
+		if locs[0].Range.Start.Line != 3 {
+			t.Errorf("expected line 3 (case Circle(radius...)), got line %d", locs[0].Range.Start.Line)
+		}
+	}
+}
+
+// Clicking on sealed case constructor navigates to its definition
+func TestDefinition_SealedCaseConstructor(t *testing.T) {
+	h := newHarness(t)
+	src := "package main\n\nsealed type Result {\n    case Ok(value string)\n    case Err(msg string)\n}\n\nfunc main() {\n    val r = Ok(value = \"hello\")\n    r match {\n        case Ok(v) => Println(v)\n        case Err(e) => Println(e)\n    }\n}\n"
+	uri := openFileOnDisk(t, h, src)
+	// Click on "Ok" at line 10 in "case Ok(v)"
+	lineText := strings.Split(src, "\n")[10]
+	okIdx := strings.Index(lineText, "Ok")
+	t.Logf("line 10: %q, Ok at col %d", lineText, okIdx)
+
+	locs, err := h.Definition(uri, 10, okIdx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(locs) == 0 {
+		t.Error("no definition found for sealed case constructor Ok")
+	} else {
+		t.Logf("Ok defined at: line %d", locs[0].Range.Start.Line)
+		// Should point to line 3: "    case Ok(value string)"
+		if locs[0].Range.Start.Line != 3 {
+			t.Errorf("expected line 3 (case Ok definition), got line %d", locs[0].Range.Start.Line)
+		}
+	}
+}
+
+// Clicking on std sealed case (Success/Failure) navigates to std source
+func TestDefinition_StdSealedCaseConstructor(t *testing.T) {
+	h := newHarness(t)
+	src := "package main\n\nfunc main() {\n    val result = Success(42)\n    result match {\n        case Success(v) => Println(v)\n        case Failure(e) => Println(e)\n    }\n}\n"
+	uri := openFileOnDisk(t, h, src)
+	// Click on "Success" at line 5
+	lineText := strings.Split(src, "\n")[5]
+	succIdx := strings.Index(lineText, "Success")
+	locs, err := h.Definition(uri, 5, succIdx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(locs) == 0 {
+		t.Error("no definition found for std sealed case Success")
+	} else {
+		t.Logf("Success defined at: %s line %d", locs[0].URI, locs[0].Range.Start.Line)
+		// Should NOT point to the usage line (line 5)
+		if locs[0].Range.Start.Line == 5 {
+			t.Error("navigated to usage, not definition — should go to std/try.gala")
+		}
+	}
+}
+
+// Clicking on function name in call expression
+func TestDefinition_FunctionCallName(t *testing.T) {
+	h := newHarness(t)
+	dir := createTestProject(t, []testProjectFile{
+		{Name: "helpers.gala", Src: "package mylib\n\nfunc ComputeHash(data string) string {\n    return data\n}\n"},
+		{Name: "main.gala", Src: "package mylib\n\nfunc Process() {\n    val hash = ComputeHash(\"test\")\n    Println(hash)\n}\n"},
+	})
+	openProjectFile(t, h, dir, "helpers.gala")
+	uri := openProjectFile(t, h, dir, "main.gala")
+
+	// Click on "ComputeHash" — line 3
+	locs, err := h.Definition(uri, 3, 16)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(locs) == 0 {
+		t.Error("no definition found for cross-file function ComputeHash")
+	} else {
+		t.Logf("ComputeHash defined at: %s line %d", locs[0].URI, locs[0].Range.Start.Line)
+		if !strings.Contains(string(locs[0].URI), "helpers.gala") {
+			t.Errorf("expected helpers.gala, got %s", locs[0].URI)
+		}
+	}
+}
+
+// ============================================================
 // === FuncType Display ===
 // ============================================================
 

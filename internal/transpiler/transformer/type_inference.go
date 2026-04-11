@@ -74,6 +74,9 @@ func (t *galaASTTransformer) getExprTypeNameManualUncached(expr ast.Expr) transp
 		if arr, ok := xType.(transpiler.ArrayType); ok {
 			return arr.Elem
 		}
+		if m, ok := xType.(transpiler.MapType); ok {
+			return m.Elem
+		}
 		// Handle generic type expression like Option[int]
 		return t.astTypeToTranspilerType(e)
 	case *ast.IndexListExpr:

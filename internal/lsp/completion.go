@@ -38,7 +38,8 @@ func (h *GalaHandler) Completion(ctx context.Context, params *lsp.CompletionPara
 		typeName := extractConstructorName(text, line, char)
 		items = append(items, namedArgCompletions(richAST, typeName)...)
 	} else if isMatchCaseContext(text, line, char) && richAST != nil {
-		items = append(items, matchCaseCompletions(richAST)...)
+		matchedType := extractMatchSubjectType(text, line, richAST, varTypeMap)
+		items = append(items, matchCaseCompletions(richAST, matchedType)...)
 	} else {
 		if richAST != nil {
 			items = append(items, typeCompletions(richAST)...)
@@ -364,6 +365,30 @@ func namedArgCompletions(richAST *transpiler.RichAST, typeName string) []lsp.Com
 	return items
 }
 
+// extractMatchSubjectType finds the type of the match subject by scanning upward
+// for "expr match {" and resolving the expression's type.
+func extractMatchSubjectType(text string, caseLine int, richAST *transpiler.RichAST, varTypes map[string]string) string {
+	lines := strings.Split(text, "\n")
+	enclosingFunc := findEnclosingFunc(lines, caseLine)
+	for i := caseLine - 1; i >= 0; i-- {
+		trimmed := strings.TrimSpace(lines[i])
+		if idx := strings.Index(trimmed, "match {"); idx >= 0 {
+			subject := strings.TrimSpace(trimmed[:idx])
+			if eqIdx := strings.LastIndex(subject, "="); eqIdx >= 0 {
+				subject = strings.TrimSpace(subject[eqIdx+1:])
+			}
+			if subject != "" {
+				return resolveReceiverType(subject, enclosingFunc, richAST, varTypes)
+			}
+		}
+		// Stop searching at function boundaries
+		if strings.HasPrefix(trimmed, "func ") {
+			break
+		}
+	}
+	return ""
+}
+
 // --- Match Case Completion ---
 
 func isMatchCaseContext(text string, line, _ int) bool {
@@ -371,14 +396,19 @@ func isMatchCaseContext(text string, line, _ int) bool {
 	if line >= len(lines) {
 		return false
 	}
-	return strings.HasPrefix(strings.TrimSpace(lines[line]), "case ")
+	trimmed := strings.TrimSpace(lines[line])
+	return strings.HasPrefix(trimmed, "case ") || trimmed == "case"
 }
 
-func matchCaseCompletions(richAST *transpiler.RichAST) []lsp.CompletionItem {
+func matchCaseCompletions(richAST *transpiler.RichAST, matchedType string) []lsp.CompletionItem {
 	items := make([]lsp.CompletionItem, 0)
 	seen := make(map[string]bool)
 	for _, tm := range richAST.Types {
 		if !tm.IsSealed {
+			continue
+		}
+		// If we know the matched type, only show its variants
+		if matchedType != "" && tm.Name != matchedType && tm.Name != stripTypeParams(matchedType) {
 			continue
 		}
 		for _, v := range tm.SealedVariants {

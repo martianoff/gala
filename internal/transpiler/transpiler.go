@@ -212,6 +212,7 @@ type FunctionMetadata struct {
 	ReturnType    Type
 	TypeParams    []string
 	DefaultExprs  map[int]string   // Param index -> default expression source text (nil = required)
+	DefinedIn     string           // Source file where this function was defined
 }
 
 // CompanionObjectMetadata stores information about companion objects that can be used
