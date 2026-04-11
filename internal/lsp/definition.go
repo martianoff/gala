@@ -81,6 +81,23 @@ func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionPara
 		}
 	}
 
+	// Check functions for cross-file definitions
+	for _, fm := range richAST.Functions {
+		if fm.Name == word {
+			if fm.DefinedIn != "" {
+				loc := fileLocation(fm.DefinedIn, word)
+				if loc != nil {
+					return []lsp.Location{*loc}, nil
+				}
+			}
+			// Fallback: search current directory
+			currentDir := filepath.Dir(uriToPath(uri))
+			if loc := findDefinitionInDir(currentDir, word); loc != nil {
+				return []lsp.Location{*loc}, nil
+			}
+		}
+	}
+
 	// Check struct/sealed fields — named arg field names like Circle(radius = ...)
 	for _, typeMeta := range richAST.Types {
 		// Check regular struct fields

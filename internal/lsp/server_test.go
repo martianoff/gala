@@ -2843,6 +2843,87 @@ func TestCompletion_MatchCaseFilteredByType(t *testing.T) {
 }
 
 // ============================================================
+// === Named Arg Field Definition ===
+// ============================================================
+
+// Clicking on field name in constructor call should navigate to struct field definition
+func TestDefinition_NamedArgFieldInConstructor(t *testing.T) {
+	h := newHarness(t)
+	src := "package main\n\ntype RunResult struct {\n    val Output string\n    val Error string\n    val Time string\n}\n\nfunc main() {\n    val r = RunResult(Output = \"hello\", Error = \"\", Time = \"0s\")\n    Println(r)\n}\n"
+	uri := openFileOnDisk(t, h, src)
+	// Click on "Time" in RunResult(... Time = "0s")
+	// Line 9: "    val r = RunResult(Output = "hello", Error = "", Time = "0s")"
+	// Find position of "Time" — it's after Error = "",
+	lineText := strings.Split(src, "\n")[9]
+	timeIdx := strings.LastIndex(lineText, "Time")
+	t.Logf("line 9: %q, Time at col %d", lineText, timeIdx)
+
+	locs, err := h.Definition(uri, 9, timeIdx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(locs) == 0 {
+		t.Error("no definition found for field name 'Time' in constructor call")
+	} else {
+		t.Logf("Time field defined at: line %d col %d", locs[0].Range.Start.Line, locs[0].Range.Start.Character)
+		// Should point to line 5: "    val Time string"
+		if locs[0].Range.Start.Line != 5 {
+			t.Errorf("expected line 5 (val Time string), got line %d", locs[0].Range.Start.Line)
+		}
+	}
+}
+
+// Clicking on field name in sealed case constructor
+func TestDefinition_NamedArgFieldInSealedCase(t *testing.T) {
+	h := newHarness(t)
+	src := "package main\n\nsealed type Shape {\n    case Circle(radius float64)\n    case Rect(width float64, height float64)\n}\n\nfunc main() {\n    val s = Circle(radius = 5.0)\n    Println(s)\n}\n"
+	uri := openFileOnDisk(t, h, src)
+	// Click on "radius" in Circle(radius = 5.0) — line 8
+	lineText := strings.Split(src, "\n")[8]
+	radiusIdx := strings.Index(lineText, "radius")
+	t.Logf("line 8: %q, radius at col %d", lineText, radiusIdx)
+
+	locs, err := h.Definition(uri, 8, radiusIdx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(locs) == 0 {
+		t.Error("no definition found for field name 'radius' in sealed case constructor")
+	} else {
+		t.Logf("radius field defined at: line %d", locs[0].Range.Start.Line)
+		// Should point to line 3: "    case Circle(radius float64)"
+		if locs[0].Range.Start.Line != 3 {
+			t.Errorf("expected line 3 (case Circle(radius...)), got line %d", locs[0].Range.Start.Line)
+		}
+	}
+}
+
+// Clicking on function name in call expression
+func TestDefinition_FunctionCallName(t *testing.T) {
+	h := newHarness(t)
+	dir := createTestProject(t, []testProjectFile{
+		{Name: "helpers.gala", Src: "package mylib\n\nfunc ComputeHash(data string) string {\n    return data\n}\n"},
+		{Name: "main.gala", Src: "package mylib\n\nfunc Process() {\n    val hash = ComputeHash(\"test\")\n    Println(hash)\n}\n"},
+	})
+	openProjectFile(t, h, dir, "helpers.gala")
+	uri := openProjectFile(t, h, dir, "main.gala")
+
+	// Click on "ComputeHash" — line 3
+	locs, err := h.Definition(uri, 3, 16)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(locs) == 0 {
+		t.Error("no definition found for cross-file function ComputeHash")
+	} else {
+		t.Logf("ComputeHash defined at: %s line %d", locs[0].URI, locs[0].Range.Start.Line)
+		if !strings.Contains(string(locs[0].URI), "helpers.gala") {
+			t.Errorf("expected helpers.gala, got %s", locs[0].URI)
+		}
+	}
+}
+
+// ============================================================
 // === FuncType Display ===
 // ============================================================
 

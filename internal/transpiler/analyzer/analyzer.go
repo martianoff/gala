@@ -808,8 +808,9 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 					fullFuncName = pkgName + "." + funcName
 				}
 				funcMeta := &transpiler.FunctionMetadata{
-					Name:    funcName,
-					Package: pkgName,
+					Name:      funcName,
+					Package:   pkgName,
+					DefinedIn: filePath,
 				}
 				// Collect type parameters first so we can resolve param types correctly
 				if ctx.TypeParameters() != nil {
@@ -2336,8 +2337,9 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 				}
 				if _, ok := richAST.Functions[fullFuncName]; !ok {
 					funcMeta := &transpiler.FunctionMetadata{
-						Name:    funcName,
-						Package: pkgName,
+						Name:      funcName,
+						Package:   pkgName,
+						DefinedIn: absSibPath,
 					}
 					if ctx.TypeParameters() != nil {
 						tpCtx := ctx.TypeParameters().(*grammar.TypeParametersContext)
