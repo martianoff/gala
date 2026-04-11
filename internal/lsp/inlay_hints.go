@@ -72,6 +72,9 @@ func (h *GalaHandler) InlayHint(ctx context.Context, params *lsp.InlayHintParams
 		}
 
 		// Lambda params without explicit type: (x) => or (x, y) =>
+		// Skip on val/var lines to avoid double hints (val already has its own hint)
+		hasValDecl := valDeclRegex.MatchString(line) || shortDeclRegex.MatchString(line)
+		if !hasValDecl {
 		if m := lambdaParamRegex.FindStringSubmatchIndex(line); m != nil {
 			paramStr := line[m[2]:m[3]]
 			params := strings.Split(paramStr, ",")
@@ -92,6 +95,7 @@ func (h *GalaHandler) InlayHint(ctx context.Context, params *lsp.InlayHintParams
 				}
 			}
 		}
+		} // end !hasValDecl
 
 		// Pattern match bindings: case Constructor(a, b) =>
 		if richAST != nil {

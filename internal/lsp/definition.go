@@ -267,27 +267,9 @@ func dotMethodDefinition(text, word, uri string, curLine, curChar int, richAST *
 		return nil
 	}
 
-	// Get the receiver name before the dot
-	dotPos := wordStart - 1
-	recvEnd := dotPos
-	recvStart := recvEnd - 1
-	for recvStart >= 0 && isIdentChar(l[recvStart]) {
-		recvStart--
-	}
-	recvStart++
-	if recvStart >= recvEnd {
-		return nil
-	}
-	receiverName := l[recvStart:recvEnd]
-
-	// Resolve receiver type from transpiler's VarTypes
-	var receiverType string
-	if t, ok := varTypes[receiverName]; ok {
-		receiverType = t
-		if idx := strings.Index(receiverType, "["); idx > 0 {
-			receiverType = receiverType[:idx]
-		}
-	}
+	// Resolve receiver type using the chain resolver (handles x.Method(), func().Method(), etc.)
+	enclosingFunc := findEnclosingFunc(lines, curLine)
+	receiverType := resolveChainTypeN(l[:wordStart-1], enclosingFunc, richAST, varTypes, 0)
 	if receiverType == "" {
 		return nil
 	}
