@@ -2898,6 +2898,54 @@ func TestDefinition_NamedArgFieldInSealedCase(t *testing.T) {
 	}
 }
 
+// Clicking on sealed case constructor navigates to its definition
+func TestDefinition_SealedCaseConstructor(t *testing.T) {
+	h := newHarness(t)
+	src := "package main\n\nsealed type Result {\n    case Ok(value string)\n    case Err(msg string)\n}\n\nfunc main() {\n    val r = Ok(value = \"hello\")\n    r match {\n        case Ok(v) => Println(v)\n        case Err(e) => Println(e)\n    }\n}\n"
+	uri := openFileOnDisk(t, h, src)
+	// Click on "Ok" at line 10 in "case Ok(v)"
+	lineText := strings.Split(src, "\n")[10]
+	okIdx := strings.Index(lineText, "Ok")
+	t.Logf("line 10: %q, Ok at col %d", lineText, okIdx)
+
+	locs, err := h.Definition(uri, 10, okIdx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(locs) == 0 {
+		t.Error("no definition found for sealed case constructor Ok")
+	} else {
+		t.Logf("Ok defined at: line %d", locs[0].Range.Start.Line)
+		// Should point to line 3: "    case Ok(value string)"
+		if locs[0].Range.Start.Line != 3 {
+			t.Errorf("expected line 3 (case Ok definition), got line %d", locs[0].Range.Start.Line)
+		}
+	}
+}
+
+// Clicking on std sealed case (Success/Failure) navigates to std source
+func TestDefinition_StdSealedCaseConstructor(t *testing.T) {
+	h := newHarness(t)
+	src := "package main\n\nfunc main() {\n    val result = Success(42)\n    result match {\n        case Success(v) => Println(v)\n        case Failure(e) => Println(e)\n    }\n}\n"
+	uri := openFileOnDisk(t, h, src)
+	// Click on "Success" at line 5
+	lineText := strings.Split(src, "\n")[5]
+	succIdx := strings.Index(lineText, "Success")
+	locs, err := h.Definition(uri, 5, succIdx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(locs) == 0 {
+		t.Error("no definition found for std sealed case Success")
+	} else {
+		t.Logf("Success defined at: %s line %d", locs[0].URI, locs[0].Range.Start.Line)
+		// Should NOT point to the usage line (line 5)
+		if locs[0].Range.Start.Line == 5 {
+			t.Error("navigated to usage, not definition — should go to std/try.gala")
+		}
+	}
+}
+
 // Clicking on function name in call expression
 func TestDefinition_FunctionCallName(t *testing.T) {
 	h := newHarness(t)

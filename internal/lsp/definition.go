@@ -41,6 +41,37 @@ func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionPara
 		return []lsp.Location{*loc}, nil
 	}
 
+	// Check sealed variants FIRST (Success, Failure, Some, None, etc.)
+	// Must run before the type check because companion types (e.g., "Success")
+	// would match the generic type handler and navigate to the wrong location.
+	for _, typeMeta := range richAST.Types {
+		if !typeMeta.IsSealed {
+			continue
+		}
+		for _, v := range typeMeta.SealedVariants {
+			if v.Name == word {
+				if typeMeta.DefinedIn != "" {
+					loc := fileLocation(typeMeta.DefinedIn, word)
+					if loc != nil {
+						return []lsp.Location{*loc}, nil
+					}
+				}
+				if typeMeta.Package != "" {
+					for _, searchPath := range h.getSearchPaths(uriToPath(uri)) {
+						pkgDir := filepath.Join(searchPath, typeMeta.Package)
+						if loc := findDefinitionInDir(pkgDir, word); loc != nil {
+							return []lsp.Location{*loc}, nil
+						}
+					}
+				}
+				currentDir := filepath.Dir(uriToPath(uri))
+				if loc := findDefinitionInDir(currentDir, word); loc != nil {
+					return []lsp.Location{*loc}, nil
+				}
+			}
+		}
+	}
+
 	// Check type metadata for cross-file definitions
 	for key, typeMeta := range richAST.Types {
 		typeName := typeMeta.Name
