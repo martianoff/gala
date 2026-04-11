@@ -2321,6 +2321,35 @@ func TestCompletion_CrossFileFieldChain(t *testing.T) {
 	}
 }
 
+// Issue: pair has no type hint in ForEach((pair) => ...) where Statics is Array[Tuple[string,string]]
+func TestInlayHints_LambdaParamFromFieldChain(t *testing.T) {
+	h := newHarness(t)
+	dir := createTestProject(t, []testProjectFile{
+		{Name: "types.gala", Src: "package mylib\n\nimport . \"martianoff/gala/collection_immutable\"\n\ntype Server struct {\n    val Statics Array[Tuple[string, string]]\n}\n"},
+		{Name: "builder.gala", Src: "package mylib\n\nfunc build(s Server) {\n    s.Statics.ForEach((pair) => Println(pair))\n}\n"},
+	})
+	openProjectFile(t, h, dir, "types.gala")
+	uri := openProjectFile(t, h, dir, "builder.gala")
+
+	raw, err := h.Call("textDocument/inlayHint", map[string]interface{}{
+		"textDocument": map[string]string{"uri": string(uri)},
+		"range": map[string]interface{}{
+			"start": map[string]int{"line": 0, "character": 0},
+			"end":   map[string]int{"line": 10, "character": 0},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hintStr := string(raw)
+	t.Logf("lambda param hints: %s", hintStr)
+	if strings.Contains(hintStr, "Tuple") || strings.Contains(hintStr, "string") {
+		t.Log("OK: pair type hint shows Tuple[string, string]")
+	} else {
+		t.Error("no type hint for pair in ForEach lambda — expected Tuple[string, string]")
+	}
+}
+
 // Issue: type hint shows :T instead of actual resolved type in pattern match
 func TestInlayHints_PatternMatchResolvedType(t *testing.T) {
 	h := newHarness(t)

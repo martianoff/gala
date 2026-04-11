@@ -15,6 +15,8 @@ var (
 	valDeclRegex     = regexp.MustCompile(`^\s*(val|var)\s+(\w+)\s*=`)
 	shortDeclRegex   = regexp.MustCompile(`^\s*(\w+)\s*:=\s*`)
 	casePatternRegex = regexp.MustCompile(`^\s*case\s+(\w+)\(([^)]*)\)`)
+	// Matches lambda params without explicit type: (x) =>, (x, y) =>
+	lambdaParamRegex = regexp.MustCompile(`\((\w+(?:\s*,\s*\w+)*)\)\s*=>`)
 )
 
 func (h *GalaHandler) InlayHint(ctx context.Context, params *lsp.InlayHintParams) ([]lsp.InlayHint, error) {
@@ -30,7 +32,7 @@ func (h *GalaHandler) InlayHint(ctx context.Context, params *lsp.InlayHintParams
 		return nil, nil
 	}
 
-	var hints []lsp.InlayHint
+	hints := make([]lsp.InlayHint, 0)
 	lines := strings.Split(text, "\n")
 
 	// Track enclosing function name for scoped variable lookups
@@ -66,6 +68,28 @@ func (h *GalaHandler) InlayHint(ctx context.Context, params *lsp.InlayHintParams
 			varName := line[m[2]:m[3]]
 			if typStr := lookupVarType(varTypeMap, currentFunc, varName); typStr != "" {
 				hints = append(hints, makeTypeHint(i, m[3], typStr))
+			}
+		}
+
+		// Lambda params without explicit type: (x) => or (x, y) =>
+		if m := lambdaParamRegex.FindStringSubmatchIndex(line); m != nil {
+			paramStr := line[m[2]:m[3]]
+			params := strings.Split(paramStr, ",")
+			for _, p := range params {
+				p = strings.TrimSpace(p)
+				if p == "" || p == "_" {
+					continue
+				}
+				// Skip if param already has a type annotation (contains space)
+				if strings.Contains(p, " ") {
+					continue
+				}
+				if typStr := lookupVarType(varTypeMap, currentFunc, p); typStr != "" {
+					pos := strings.Index(line, p)
+					if pos >= 0 {
+						hints = append(hints, makeTypeHint(i, pos+len(p), typStr))
+					}
+				}
 			}
 		}
 
@@ -131,7 +155,7 @@ func casePatternHints(line string, lineNum int, richAST *transpiler.RichAST) []l
 	}
 	bindingsStart := parenOpen + len(constructorName) + 1
 
-	var hints []lsp.InlayHint
+	hints := make([]lsp.InlayHint, 0)
 	parts := strings.Split(bindings, ",")
 	for i, binding := range parts {
 		binding = strings.TrimSpace(binding)
