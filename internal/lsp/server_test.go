@@ -2281,7 +2281,7 @@ func TestCompletion_CrossFileFieldChain(t *testing.T) {
 	h := newHarness(t)
 	dir := createTestProject(t, []testProjectFile{
 		{Name: "types.gala", Src: "package mylib\n\nimport . \"martianoff/gala/collection_immutable\"\n\ntype Server struct {\n    val Name string\n    val Statics Array[string]\n}\n"},
-		{Name: "builder.gala", Src: "package mylib\n\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc build(s Server) {\n    s.Statics.ForEach((item) => Println(item))\n}\n"},
+		{Name: "builder.gala", Src: "package mylib\n\nfunc build(s Server) {\n    s.Statics.ForEach((item) => Println(item))\n}\n"},
 	})
 	openProjectFile(t, h, dir, "types.gala")
 	// Step 1: valid code
@@ -2289,14 +2289,14 @@ func TestCompletion_CrossFileFieldChain(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 
 	// Step 2: edit to add dot after s.Statics
-	dotSrc := "package mylib\n\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc build(s Server) {\n    s.Statics.\n    Println(s)\n}\n"
+	dotSrc := "package mylib\n\nfunc build(s Server) {\n    s.Statics.\n    Println(s)\n}\n"
 	dotPath := filepath.Join(dir, "builder.gala")
 	os.WriteFile(dotPath, []byte(dotSrc), 0644)
 	h.DidChange(uri, 1, dotSrc)
 	time.Sleep(300 * time.Millisecond)
 
-	// Line 5 = "    s.Statics."  char 14
-	list, err := h.Completion(uri, 5, 14)
+	// Line 3 = "    s.Statics."  char 14
+	list, err := h.Completion(uri, 3, 14)
 	if err != nil {
 		t.Fatal(err)
 	}
