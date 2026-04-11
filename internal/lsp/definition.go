@@ -56,7 +56,12 @@ func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionPara
 					return []lsp.Location{*loc}, nil
 				}
 			}
-			// Fallback: search package directory for std/imported types without DefinedIn
+			// Fallback: search current file's directory (same-package sibling)
+			currentDir := filepath.Dir(uriToPath(uri))
+			if loc := findDefinitionInDir(currentDir, word); loc != nil {
+				return []lsp.Location{*loc}, nil
+			}
+			// Fallback: search package directory in search paths (std/imported types)
 			if typeMeta.Package != "" {
 				for _, searchPath := range h.getSearchPaths(uriToPath(uri)) {
 					pkgDir := filepath.Join(searchPath, typeMeta.Package)
