@@ -2565,15 +2565,16 @@ func TestDefinition_CrossFileType(t *testing.T) {
 // Clicking on Option[T] should navigate to std library
 func TestDefinition_StdType(t *testing.T) {
 	h := newHarness(t)
-	uri := openFileOnDisk(t, h, "package main\n\nfunc main() {\n    val opt Option[int] = Some(42)\n    Println(opt)\n}\n")
+	// Use Option as a field type so it's definitely in the AST
+	uri := openFileOnDisk(t, h, "package main\n\nfunc main() {\n    val opt = Some(42)\n    val x Option[int] = opt\n    Println(x)\n}\n")
 
-	// Click on "Option" (line 3, ~12th char)
-	locs, err := h.Definition(uri, 3, 12)
+	// Click on "Option" (line 4, ~10th char)
+	locs, err := h.Definition(uri, 4, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(locs) == 0 {
-		t.Log("no definition found for Option — std type DefinedIn may be empty")
+		t.Error("no definition found for Option — DefinedIn not set for std types")
 	} else {
 		t.Logf("Option defined at: %s line %d", locs[0].URI, locs[0].Range.Start.Line)
 	}
