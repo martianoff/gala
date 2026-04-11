@@ -2243,8 +2243,16 @@ func TestCompletion_UnexportedMethods(t *testing.T) {
 // Issue: field access chain s.Statics. should resolve field type and show methods
 func TestCompletion_FieldChainAccess(t *testing.T) {
 	h := newHarness(t)
-	src := "package main\n\ntype Config struct {\n    val items Array[string]\n}\n\nfunc main() {\n    val c = Config(items = ArrayOf(\"a\", \"b\"))\n    c.items.\n    Println(c)\n}\n"
-	uri := openFileOnDisk(t, h, src)
+	// Step 1: valid code to build cache
+	valid := "package main\n\ntype Config struct {\n    val items Array[string]\n}\n\nfunc main() {\n    val c = Config(items = ArrayOf(\"a\", \"b\"))\n    c.items.ForEach((x) => Println(x))\n}\n"
+	uri := openFileOnDisk(t, h, valid)
+	time.Sleep(200 * time.Millisecond)
+
+	// Step 2: edit to add dot
+	withDot := "package main\n\ntype Config struct {\n    val items Array[string]\n}\n\nfunc main() {\n    val c = Config(items = ArrayOf(\"a\", \"b\"))\n    c.items.\n    Println(c)\n}\n"
+	h.DidChange(uri, 1, withDot)
+	time.Sleep(200 * time.Millisecond)
+
 	// Line 8 = "    c.items."  char 12 = after dot
 	list, err := h.Completion(uri, 8, 12)
 	if err != nil {
