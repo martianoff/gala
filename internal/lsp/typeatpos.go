@@ -189,13 +189,13 @@ func resolveChainTypeN(text string, funcScope string, richAST *transpiler.RichAS
 
 	// If ends with ')' — method/function call, resolve its return type
 	if text[len(text)-1] == ')' {
-		depth := 1
+		parenDepth := 1
 		i := len(text) - 2
-		for i >= 0 && depth > 0 {
+		for i >= 0 && parenDepth > 0 {
 			if text[i] == ')' {
-				depth++
+				parenDepth++
 			} else if text[i] == '(' {
-				depth--
+				parenDepth--
 			}
 			i--
 		}

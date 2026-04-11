@@ -36,8 +36,8 @@ func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionPara
 		return []lsp.Location{*loc}, nil
 	}
 
-	// Check if it's a dot-accessed method: receiver.Method
-	if loc := dotMethodDefinition(text, word, uri, line, char, richAST, varTypeMap); loc != nil {
+	// Check if it's a dot-accessed method/field: receiver.Method or receiver.Field
+	if loc := h.dotMethodDefinition(text, word, uri, line, char, richAST, varTypeMap); loc != nil {
 		return []lsp.Location{*loc}, nil
 	}
 
@@ -247,8 +247,8 @@ func patternBindingDefinition(text, word, uri string, curLine, curChar int) *lsp
 	return nil
 }
 
-// dotMethodDefinition resolves receiver.Method to the correct method definition.
-func dotMethodDefinition(text, word, uri string, curLine, curChar int, richAST *transpiler.RichAST, varTypes map[string]string) *lsp.Location {
+// dotMethodDefinition resolves receiver.Method or receiver.Field to the correct definition.
+func (h *GalaHandler) dotMethodDefinition(text, word, uri string, curLine, curChar int, richAST *transpiler.RichAST, varTypes map[string]string) *lsp.Location {
 	if richAST == nil {
 		return nil
 	}
@@ -274,38 +274,79 @@ func dotMethodDefinition(text, word, uri string, curLine, curChar int, richAST *
 		return nil
 	}
 
-	// Find the method on this type
+	// Find the type metadata for this receiver
 	tm := findType(richAST, receiverType)
 	if tm == nil {
 		return nil
 	}
-	method, ok := tm.Methods[word]
-	if !ok {
-		return nil
-	}
 
-	// Navigate to the method's definition
-	if method.DefinedIn != "" {
-		return fileLocation(method.DefinedIn, word)
-	}
+	// Check methods first
+	if method, ok := tm.Methods[word]; ok {
+		if method.DefinedIn != "" {
+			return fileLocation(method.DefinedIn, word)
+		}
 
-	// Search in current file for "func (recv Type) MethodName"
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "func ") && strings.Contains(trimmed, receiverType) && strings.Contains(trimmed, word) {
-			col := strings.Index(line, word)
-			if col >= 0 {
-				return &lsp.Location{
-					URI: lsp.DocumentURI(uri),
-					Range: lsp.Range{
-						Start: lsp.Position{Line: i, Character: col},
-						End:   lsp.Position{Line: i, Character: col + len(word)},
-					},
+		// Search in current file for "func (recv Type) MethodName"
+		for i, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "func ") && strings.Contains(trimmed, receiverType) && strings.Contains(trimmed, word) {
+				col := strings.Index(line, word)
+				if col >= 0 {
+					return &lsp.Location{
+						URI: lsp.DocumentURI(uri),
+						Range: lsp.Range{
+							Start: lsp.Position{Line: i, Character: col},
+							End:   lsp.Position{Line: i, Character: col + len(word)},
+						},
+					}
 				}
 			}
 		}
+
+		// Fallback: search package directory for method definition (std/prelude types)
+		if loc := h.searchPackageDirs(uri, tm, word); loc != nil {
+			return loc
+		}
+
+		return nil
 	}
 
+	// Check fields (e.g., Tuple.V1, Tuple.V2)
+	if _, ok := tm.Fields[word]; ok {
+		// Fields are defined with the type — navigate to the field in the type definition file
+		if tm.DefinedIn != "" {
+			if loc := fileLocation(tm.DefinedIn, word); loc != nil {
+				return loc
+			}
+		}
+		// Search current file
+		if loc := localDefinition(text, word, uri); loc != nil {
+			return loc
+		}
+		// Fallback: search package directory for the field
+		if loc := h.searchPackageDirs(uri, tm, word); loc != nil {
+			return loc
+		}
+	}
+
+	return nil
+}
+
+// searchPackageDirs searches the type's package directory and search paths for a definition.
+func (h *GalaHandler) searchPackageDirs(uri string, tm *transpiler.TypeMetadata, word string) *lsp.Location {
+	if tm.Package != "" {
+		for _, searchPath := range h.getSearchPaths(uriToPath(uri)) {
+			pkgDir := filepath.Join(searchPath, tm.Package)
+			if loc := findDefinitionInDir(pkgDir, word); loc != nil {
+				return loc
+			}
+		}
+	}
+	// Also try current file's directory (same-package sibling)
+	currentDir := filepath.Dir(uriToPath(uri))
+	if loc := findDefinitionInDir(currentDir, word); loc != nil {
+		return loc
+	}
 	return nil
 }
 
