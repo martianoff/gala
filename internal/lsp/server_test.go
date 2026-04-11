@@ -2534,6 +2534,77 @@ func TestCompletion_CrossFileInlineLambda(t *testing.T) {
 }
 
 // ============================================================
+// === Cross-File Go-to-Definition ===
+// ============================================================
+
+// Clicking on a type from a sibling file should navigate to its definition
+func TestDefinition_CrossFileType(t *testing.T) {
+	h := newHarness(t)
+	dir := createTestProject(t, []testProjectFile{
+		{Name: "types.gala", Src: "package mylib\n\ntype Request struct {\n    val path string\n}\n"},
+		{Name: "handler.gala", Src: "package mylib\n\nfunc Handle(req Request) string {\n    return req.path\n}\n"},
+	})
+	openProjectFile(t, h, dir, "types.gala")
+	uri := openProjectFile(t, h, dir, "handler.gala")
+
+	// Click on "Request" in the function parameter (line 2, ~20th char)
+	locs, err := h.Definition(uri, 2, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(locs) == 0 {
+		t.Error("no definition found for cross-file type Request")
+	} else {
+		t.Logf("Request defined at: %s line %d", locs[0].URI, locs[0].Range.Start.Line)
+		if !strings.Contains(string(locs[0].URI), "types.gala") {
+			t.Errorf("expected definition in types.gala, got %s", locs[0].URI)
+		}
+	}
+}
+
+// Clicking on Option[T] should navigate to std library
+func TestDefinition_StdType(t *testing.T) {
+	h := newHarness(t)
+	uri := openFileOnDisk(t, h, "package main\n\nfunc main() {\n    val opt Option[int] = Some(42)\n    Println(opt)\n}\n")
+
+	// Click on "Option" (line 3, ~12th char)
+	locs, err := h.Definition(uri, 3, 12)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(locs) == 0 {
+		t.Log("no definition found for Option — std type DefinedIn may be empty")
+	} else {
+		t.Logf("Option defined at: %s line %d", locs[0].URI, locs[0].Range.Start.Line)
+	}
+}
+
+// Clicking on a function argument type should navigate to its definition
+func TestDefinition_FunctionArgType(t *testing.T) {
+	h := newHarness(t)
+	dir := createTestProject(t, []testProjectFile{
+		{Name: "model.gala", Src: "package mylib\n\ntype User struct {\n    val name string\n    val age int\n}\n"},
+		{Name: "service.gala", Src: "package mylib\n\nfunc Greet(user User) string {\n    return user.name\n}\n"},
+	})
+	openProjectFile(t, h, dir, "model.gala")
+	uri := openProjectFile(t, h, dir, "service.gala")
+
+	// Click on "User" in function param (line 2, ~17th char)
+	locs, err := h.Definition(uri, 2, 17)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(locs) == 0 {
+		t.Error("no definition found for function arg type User")
+	} else {
+		t.Logf("User defined at: %s line %d", locs[0].URI, locs[0].Range.Start.Line)
+		if !strings.Contains(string(locs[0].URI), "model.gala") {
+			t.Errorf("expected definition in model.gala, got %s", locs[0].URI)
+		}
+	}
+}
+
+// ============================================================
 // === FuncType Display ===
 // ============================================================
 

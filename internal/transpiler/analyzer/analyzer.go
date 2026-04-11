@@ -575,8 +575,9 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 					msCtx := ms.(*grammar.MethodSpecContext)
 					methodName := msCtx.Identifier().GetText()
 					methodMeta := &transpiler.MethodMetadata{
-						Name:    methodName,
-						Package: pkgName,
+						Name:      methodName,
+						Package:   pkgName,
+						DefinedIn: filePath,
 					}
 					if msCtx.TypeParameters() != nil {
 						tpCtx := msCtx.TypeParameters().(*grammar.TypeParametersContext)
@@ -2086,10 +2087,11 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 				}
 			}
 			meta := &transpiler.TypeMetadata{
-				Name:    typeName,
-				Package: pkgName,
-				Methods: existingMethods,
-				Fields:  make(map[string]transpiler.Type),
+				Name:      typeName,
+				Package:   pkgName,
+				Methods:   existingMethods,
+				Fields:    make(map[string]transpiler.Type),
+				DefinedIn: absSibPath,
 			}
 			if ctx.TypeParameters() != nil {
 				tpCtx := ctx.TypeParameters().(*grammar.TypeParametersContext)
@@ -2124,8 +2126,9 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 					msCtx := ms.(*grammar.MethodSpecContext)
 					methodName := msCtx.Identifier().GetText()
 					methodMeta := &transpiler.MethodMetadata{
-						Name:    methodName,
-						Package: pkgName,
+						Name:      methodName,
+						Package:   pkgName,
+						DefinedIn: absSibPath,
 					}
 					if msCtx.TypeParameters() != nil {
 						tpCtx := msCtx.TypeParameters().(*grammar.TypeParametersContext)
@@ -2197,10 +2200,11 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 				}
 			}
 			meta := &transpiler.TypeMetadata{
-				Name:    typeName,
-				Package: pkgName,
-				Methods: existingMethods,
-				Fields:  make(map[string]transpiler.Type),
+				Name:      typeName,
+				Package:   pkgName,
+				Methods:   existingMethods,
+				Fields:    make(map[string]transpiler.Type),
+				DefinedIn: absSibPath,
 			}
 			if ctx.Parameters() != nil {
 				paramsCtx := ctx.Parameters().(*grammar.ParametersContext)
@@ -2266,6 +2270,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 					Name:         methodName,
 					Package:      pkgName,
 					ReceiverName: recvCtx.Identifier().GetText(),
+					DefinedIn:    absSibPath,
 				}
 				if ctx.TypeParameters() != nil {
 					tpCtx := ctx.TypeParameters().(*grammar.TypeParametersContext)
