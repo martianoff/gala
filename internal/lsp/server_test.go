@@ -2276,6 +2276,51 @@ func TestCompletion_FieldChainAccess(t *testing.T) {
 	}
 }
 
+// Exact gala-server repro: cross-file struct with Array field, s.Statics. completion
+func TestCompletion_CrossFileFieldChain(t *testing.T) {
+	h := newHarness(t)
+	dir := createTestProject(t, []testProjectFile{
+		{Name: "types.gala", Src: "package mylib\n\nimport . \"martianoff/gala/collection_immutable\"\n\ntype Server struct {\n    val Name string\n    val Statics Array[string]\n}\n"},
+		{Name: "builder.gala", Src: "package mylib\n\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc build(s Server) {\n    s.Statics.ForEach((item) => Println(item))\n}\n"},
+	})
+	openProjectFile(t, h, dir, "types.gala")
+	// Step 1: valid code
+	uri := openProjectFile(t, h, dir, "builder.gala")
+	time.Sleep(300 * time.Millisecond)
+
+	// Step 2: edit to add dot after s.Statics
+	dotSrc := "package mylib\n\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc build(s Server) {\n    s.Statics.\n    Println(s)\n}\n"
+	dotPath := filepath.Join(dir, "builder.gala")
+	os.WriteFile(dotPath, []byte(dotSrc), 0644)
+	h.DidChange(uri, 1, dotSrc)
+	time.Sleep(300 * time.Millisecond)
+
+	// Line 5 = "    s.Statics."  char 14
+	list, err := h.Completion(uri, 5, 14)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list != nil && len(list.Items) > 0 {
+		hasMethod := false
+		for _, item := range list.Items {
+			if strings.HasPrefix(item.Label, "Map") || strings.HasPrefix(item.Label, "ForEach") ||
+				item.FilterText == "Map" || item.FilterText == "ForEach" {
+				hasMethod = true
+			}
+		}
+		if hasMethod {
+			t.Log("OK: cross-file s.Statics. shows Array methods")
+		} else {
+			t.Errorf("cross-file field chain: %d items but no Array methods", len(list.Items))
+			for _, item := range list.Items {
+				t.Logf("  %s filter=%s", item.Label, item.FilterText)
+			}
+		}
+	} else {
+		t.Error("no completion for s.Statics. in cross-file context")
+	}
+}
+
 // Issue: type hint shows :T instead of actual resolved type in pattern match
 func TestInlayHints_PatternMatchResolvedType(t *testing.T) {
 	h := newHarness(t)
