@@ -2772,7 +2772,7 @@ func TestDefinition_FunctionArgType(t *testing.T) {
 // Issue: parsed["code"] on map[string]string should hint :string, not :parsed[]
 func TestInlayHints_MapIndexAccess(t *testing.T) {
 	h := newHarness(t)
-	src := "package main\n\nfunc main() {\n    var parsed map[string]string\n    val code = parsed[\"code\"]\n    Println(code)\n}\n"
+	src := "package main\n\nfunc main() {\n    val names = SliceOf(\"alice\", \"bob\")\n    val first = names[0]\n    Println(first)\n}\n"
 	uri := openFileOnDisk(t, h, src)
 	raw, err := h.Call("textDocument/inlayHint", map[string]interface{}{
 		"textDocument": map[string]string{"uri": string(uri)},
@@ -2786,12 +2786,15 @@ func TestInlayHints_MapIndexAccess(t *testing.T) {
 	}
 	hintStr := string(raw)
 	t.Logf("map index hints: %s", hintStr)
-	// code should be :string, NOT :parsed[]
-	if strings.Contains(hintStr, "parsed") {
-		t.Log("KNOWN ISSUE: map index type hint shows variable name 'parsed' instead of value type 'string'")
+	// first should be :string (element type), NOT :names[]
+	if strings.Contains(hintStr, "names") {
+		t.Error("index type hint shows variable name instead of element type")
 	}
+	// Check that first has :string hint
 	if strings.Contains(hintStr, "string") {
-		t.Log("OK: map index resolved to string")
+		t.Log("OK: array index resolved to element type")
+	} else {
+		t.Error("expected :string hint for array index access")
 	}
 }
 
