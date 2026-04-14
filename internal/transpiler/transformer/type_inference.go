@@ -24,8 +24,11 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 		return cached
 	}
 	result := t.getExprTypeNameManualUncached(expr)
-	// Guard against nil interface value (not NilType{}) which can happen when
-	// called functions return nil instead of NilType{}.
+	// Defensive backstop: Type-returning functions are contractually required to
+	// return transpiler.NilType{} rather than a nil interface. This guard catches
+	// any contract violation and prevents downstream .IsNil() panics. Callees
+	// known to have returned nil (getGoFuncReturnType, getGoMethodReturnType,
+	// getGoFieldType) have been fixed; leave this guard as defense-in-depth.
 	if result == nil {
 		return transpiler.NilType{}
 	}
@@ -520,9 +523,26 @@ func (t *galaASTTransformer) unifyForInference(pattern, concrete transpiler.Type
 
 // substituteInType recursively substitutes type parameters in a type
 func (t *galaASTTransformer) substituteInType(typ transpiler.Type, paramMap map[string]transpiler.Type) transpiler.Type {
+	return t.substituteInTypeDepth(typ, paramMap, 0)
+}
+
+// substituteInTypeDepth is the depth-tracked implementation of substituteInType.
+// It guards against pathological cycles (e.g., a type map that maps T -> Foo[T])
+// by bailing out past maxTypeSubstDepth levels and returning the un-substituted
+// subterm. A runtime-visible panic would mask the root cause; the defensive
+// return surfaces via failed type checks in the caller.
+func (t *galaASTTransformer) substituteInTypeDepth(typ transpiler.Type, paramMap map[string]transpiler.Type, depth int) transpiler.Type {
 	if typ == nil || typ.IsNil() {
 		return typ
 	}
+	const maxTypeSubstDepth = 64
+	if depth > maxTypeSubstDepth {
+		// Cycle or pathological nesting — leave the subterm unchanged rather
+		// than recurse further. Callers will either notice the un-substituted
+		// type parameter or fall through to the "any" fallback.
+		return typ
+	}
+	depth++
 
 	switch v := typ.(type) {
 	case transpiler.BasicType:
@@ -538,9 +558,9 @@ func (t *galaASTTransformer) substituteInType(typ transpiler.Type, paramMap map[
 	case transpiler.GenericType:
 		newParams := make([]transpiler.Type, len(v.Params))
 		for i, param := range v.Params {
-			newParams[i] = t.substituteInType(param, paramMap)
+			newParams[i] = t.substituteInTypeDepth(param, paramMap, depth)
 		}
-		newBase := t.substituteInType(v.Base, paramMap)
+		newBase := t.substituteInTypeDepth(v.Base, paramMap, depth)
 		if namedBase, ok := newBase.(transpiler.NamedType); ok {
 			return transpiler.GenericType{
 				Base:   namedBase,
@@ -552,22 +572,22 @@ func (t *galaASTTransformer) substituteInType(typ transpiler.Type, paramMap map[
 			Params: newParams,
 		}
 	case transpiler.ArrayType:
-		return transpiler.ArrayType{Elem: t.substituteInType(v.Elem, paramMap)}
+		return transpiler.ArrayType{Elem: t.substituteInTypeDepth(v.Elem, paramMap, depth)}
 	case transpiler.PointerType:
-		return transpiler.PointerType{Elem: t.substituteInType(v.Elem, paramMap)}
+		return transpiler.PointerType{Elem: t.substituteInTypeDepth(v.Elem, paramMap, depth)}
 	case transpiler.MapType:
 		return transpiler.MapType{
-			Key:  t.substituteInType(v.Key, paramMap),
-			Elem: t.substituteInType(v.Elem, paramMap),
+			Key:  t.substituteInTypeDepth(v.Key, paramMap, depth),
+			Elem: t.substituteInTypeDepth(v.Elem, paramMap, depth),
 		}
 	case transpiler.FuncType:
 		newParams := make([]transpiler.Type, len(v.Params))
 		for i, p := range v.Params {
-			newParams[i] = t.substituteInType(p, paramMap)
+			newParams[i] = t.substituteInTypeDepth(p, paramMap, depth)
 		}
 		newResults := make([]transpiler.Type, len(v.Results))
 		for i, r := range v.Results {
-			newResults[i] = t.substituteInType(r, paramMap)
+			newResults[i] = t.substituteInTypeDepth(r, paramMap, depth)
 		}
 		return transpiler.FuncType{Params: newParams, Results: newResults}
 	default:
@@ -705,9 +725,12 @@ func (t *galaASTTransformer) substituteTranspilerTypeParams(typ transpiler.Type,
 // Handles package-qualified function calls like fmt.Sprintf, strings.Split, etc.
 func (t *galaASTTransformer) getGoFuncReturnType(qualifiedName string) transpiler.Type {
 	if t.goTypeInfo == nil {
-		return nil
+		return transpiler.NilType{}
 	}
-	return t.goTypeInfo.GetFuncReturnType(qualifiedName)
+	if r := t.goTypeInfo.GetFuncReturnType(qualifiedName); r != nil {
+		return r
+	}
+	return transpiler.NilType{}
 }
 
 // getGoMethodReturnType returns the first return type of a method on a Go type.
@@ -715,7 +738,7 @@ func (t *galaASTTransformer) getGoFuncReturnType(qualifiedName string) transpile
 // The typeName may be package-qualified (e.g., "bufio.Scanner") or a pointer type.
 func (t *galaASTTransformer) getGoMethodReturnType(typeName, methodName string) transpiler.Type {
 	if t.goTypeInfo == nil {
-		return nil
+		return transpiler.NilType{}
 	}
 	// Strip pointer prefix
 	cleanType := strings.TrimPrefix(typeName, "*")
@@ -733,14 +756,14 @@ func (t *galaASTTransformer) getGoMethodReturnType(typeName, methodName string) 
 		}
 	}
 
-	return nil
+	return transpiler.NilType{}
 }
 
 // getGoFieldType returns the type of a field on a Go struct type.
 // Handles field access like req.Header, resp.StatusCode, etc.
 func (t *galaASTTransformer) getGoFieldType(typeName, fieldName string) transpiler.Type {
 	if t.goTypeInfo == nil {
-		return nil
+		return transpiler.NilType{}
 	}
 	// Strip pointer prefix
 	cleanType := strings.TrimPrefix(typeName, "*")
@@ -758,5 +781,5 @@ func (t *galaASTTransformer) getGoFieldType(typeName, fieldName string) transpil
 		}
 	}
 
-	return nil
+	return transpiler.NilType{}
 }

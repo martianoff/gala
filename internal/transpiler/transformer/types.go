@@ -3,7 +3,6 @@ package transformer
 import (
 	"go/ast"
 	"go/token"
-	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
@@ -23,6 +22,11 @@ func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, 
 		if len(identifiers) == 1 {
 			// Simple type name
 			typeName := identifiers[0].GetText()
+			// B12: `_` is a wildcard type, desugared to Go's `any`. It is intended
+			// for pattern-matching contexts (e.g., `case Wrap[_] =>`) and generic
+			// type-parameter holes where the exact type does not matter. Users who
+			// write `_` outside a pattern context get `any`, which may be surprising;
+			// see docs/GALA.MD "Wildcard type" for the full contract.
 			if typeName == "_" {
 				return ast.NewIdent("any"), nil
 			}
@@ -628,7 +632,7 @@ func (t *galaASTTransformer) isImmutableType(typ transpiler.Type) bool {
 		if gen, ok := typ.(transpiler.GenericType); ok {
 			for _, p := range gen.Params {
 				if t.isImmutableType(p) {
-					panic(galaerr.NewSemanticErrorAt(t.lastLine, t.lastCol, "recursive Immutable wrapping is not allowed"))
+					t.raiseSemanticError("recursive Immutable wrapping is not allowed")
 				}
 			}
 		}

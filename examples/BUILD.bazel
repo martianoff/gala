@@ -340,6 +340,13 @@ gala_test(
 )
 
 gala_test(
+    name = "seq_rest_edge",
+    src = "seq_rest_edge.gala",
+    expected = "seq_rest_edge.out",
+    deps = ["//collection_immutable"],
+)
+
+gala_test(
     name = "custom_seq_pattern",
     src = "custom_seq_pattern.gala",
     expected = "custom_seq_pattern.out",

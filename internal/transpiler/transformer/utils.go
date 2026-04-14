@@ -277,6 +277,94 @@ func (t *galaASTTransformer) warnInference(format string, args ...interface{}) {
 	}
 }
 
+// suggestExtractorName returns the nearest known extractor (companion object or
+// type with Unapply) to the given name, or "" if nothing is close enough.
+// Uses a simple case-insensitive prefix/substring match first, then falls back
+// to Levenshtein distance <= 2.
+func (t *galaASTTransformer) suggestExtractorName(name string) string {
+	if name == "" {
+		return ""
+	}
+	candidates := make([]string, 0, len(t.companionObjects)+len(t.typeMetas))
+	for k := range t.companionObjects {
+		if idx := strings.LastIndex(k, "."); idx >= 0 {
+			candidates = append(candidates, k[idx+1:])
+		} else {
+			candidates = append(candidates, k)
+		}
+	}
+	for k, m := range t.typeMetas {
+		if m == nil {
+			continue
+		}
+		if _, ok := m.Methods["Unapply"]; !ok {
+			continue
+		}
+		if idx := strings.LastIndex(k, "."); idx >= 0 {
+			candidates = append(candidates, k[idx+1:])
+		} else {
+			candidates = append(candidates, k)
+		}
+	}
+	bestName := ""
+	bestDist := 3
+	lowerIn := strings.ToLower(name)
+	for _, c := range candidates {
+		if c == "" || c == name {
+			continue
+		}
+		if strings.EqualFold(c, name) {
+			return c
+		}
+		if strings.HasPrefix(strings.ToLower(c), lowerIn) || strings.HasPrefix(lowerIn, strings.ToLower(c)) {
+			return c
+		}
+		d := levenshteinDistance(lowerIn, strings.ToLower(c))
+		if d < bestDist {
+			bestDist = d
+			bestName = c
+		}
+	}
+	return bestName
+}
+
+// levenshteinDistance returns the edit distance between two strings.
+func levenshteinDistance(a, b string) int {
+	if len(a) == 0 {
+		return len(b)
+	}
+	if len(b) == 0 {
+		return len(a)
+	}
+	prev := make([]int, len(b)+1)
+	curr := make([]int, len(b)+1)
+	for j := 0; j <= len(b); j++ {
+		prev[j] = j
+	}
+	for i := 1; i <= len(a); i++ {
+		curr[0] = i
+		for j := 1; j <= len(b); j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			del := prev[j] + 1
+			ins := curr[j-1] + 1
+			sub := prev[j-1] + cost
+			m := del
+			if ins < m {
+				m = ins
+			}
+			if sub < m {
+				m = sub
+			}
+			curr[j] = m
+		}
+		prev, curr = curr, prev
+	}
+	return prev[len(b)]
+}
+
 // parenthesizeCompositeLits wraps any ast.CompositeLit found in an expression
 // tree with ast.ParenExpr. This is needed because Go's parser treats '{' in
 // if/for/switch conditions as the start of the block body, making composite

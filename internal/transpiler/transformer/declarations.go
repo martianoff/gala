@@ -244,7 +244,7 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 				typeExpr, _ := t.transformType(ctx.Type_())
 				typeName = t.astTypeToTranspilerType(typeExpr)
 				if t.isImmutableType(typeName) {
-					panic(galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "recursive Immutable wrapping is not allowed"))
+					return nil, t.semanticErrorAt(ctx, "recursive Immutable wrapping is not allowed")
 				}
 			}
 
@@ -305,7 +305,7 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 			typeExpr, _ := t.transformType(ctx.Type_())
 			typeName = t.astTypeToTranspilerType(typeExpr)
 			if t.isImmutableType(typeName) {
-				panic(galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "recursive Immutable wrapping is not allowed"))
+				return nil, t.semanticErrorAt(ctx, "recursive Immutable wrapping is not allowed")
 			}
 		} else if len(rhsExprs) == len(namesCtx) {
 			typeName = t.getExprTypeName(rhsExprs[i])
@@ -1204,7 +1204,15 @@ func (t *galaASTTransformer) transformParameter(ctx *grammar.ParameterContext) (
 			field.Type = typ
 		}
 	} else {
-		// Default to any if type is not specified
+		// Default to any if type is not specified. This path is reached for:
+		//   1. Lambda parameters where no expected type was available (lambdas.go
+		//      normally uses transformLambdaWithExpectedType to pass expected types).
+		//   2. Legacy tests / incomplete user code.
+		// B11: per project rule #3, emit a warning so authors can surface untyped
+		// parameter sites. A hard error would break the untyped-lambda fallback
+		// that lambdas.go:55 still depends on. TODO(B11): once every lambda path
+		// threads an expected type, convert this to `t.semanticErrorAt`.
+		t.warnInference("parameter %q has no declared type; defaulted to `any`", name)
 		if isVariadic {
 			field.Type = &ast.Ellipsis{Elt: ast.NewIdent("any")}
 		} else {

@@ -1,0 +1,56 @@
+package main
+
+import "fmt"
+import . "martianoff/gala/collection_immutable"
+
+// B3: Edge cases for rest-pattern seq matching:
+//  - rest-only: Array(all...)                   (matches anything including empty)
+//  - wildcard-rest-only: Array(_...)            (matches anything, no binding)
+//  - single-elem + rest-at-end
+//  - empty + rest-only should still match
+func main() {
+    val empty = ArrayOf[int]()
+    val one = ArrayOf[int](42)
+    val many = ArrayOf[int](1, 2, 3, 4)
+
+    // rest-only named — matches everything
+    val r1 = empty match {
+        case Array(all...) => fmt.Sprintf("empty.size=%d", all.Size())
+        case _ => "no"
+    }
+    fmt.Println(r1)
+
+    val r2 = many match {
+        case Array(all...) => fmt.Sprintf("many.size=%d", all.Size())
+        case _ => "no"
+    }
+    fmt.Println(r2)
+
+    // wildcard-rest-only — always matches
+    val r3 = empty match {
+        case Array(_...) => "matched-empty"
+        case _ => "no"
+    }
+    fmt.Println(r3)
+
+    // single-elem + rest-at-end on a 1-element array (rest should be empty)
+    val r4 = one match {
+        case Array(head, rest...) => fmt.Sprintf("head=%d rest.size=%d", head, rest.Size())
+        case _ => "no"
+    }
+    fmt.Println(r4)
+
+    // single-elem + rest-at-end on a 4-element array
+    val r5 = many match {
+        case Array(head, rest...) => fmt.Sprintf("head=%d rest.size=%d", head, rest.Size())
+        case _ => "no"
+    }
+    fmt.Println(r5)
+
+    // Ensure empty array does NOT match a pattern requiring one fixed element
+    val r6 = empty match {
+        case Array(head, _...) => fmt.Sprintf("head=%d", head)
+        case _ => "empty-no-head"
+    }
+    fmt.Println(r6)
+}

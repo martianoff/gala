@@ -5,7 +5,6 @@ import (
 	"go/token"
 	"strings"
 
-	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
 )
@@ -44,7 +43,7 @@ func (t *galaASTTransformer) inferSelectorExprType(e *ast.SelectorExpr) transpil
 	}
 	// Try Go type info for struct field access and method calls on Go types
 	if !xType.IsNil() {
-		if fType := t.getGoFieldType(xTypeName, e.Sel.Name); fType != nil {
+		if fType := t.getGoFieldType(xTypeName, e.Sel.Name); !fType.IsNil() {
 			return fType
 		}
 	}
@@ -195,7 +194,7 @@ func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.Sel
 		if len(e.Args) > 0 {
 			innerType := t.getExprTypeNameManual(e.Args[0])
 			if t.isImmutableType(innerType) {
-				panic(galaerr.NewSemanticErrorAt(t.lastLine, t.lastCol, "recursive Immutable wrapping is not allowed"))
+				t.raiseSemanticError("recursive Immutable wrapping is not allowed")
 			}
 			return transpiler.GenericType{
 				Base:   transpiler.NamedType{Package: registry.StdPackageName, Name: transpiler.TypeImmutable},
@@ -269,7 +268,7 @@ func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.Sel
 				return retType
 			}
 			// Check Go type info (stdlib, local Go files, third-party)
-			if retType := t.getGoFuncReturnType(fullName); retType != nil {
+			if retType := t.getGoFuncReturnType(fullName); !retType.IsNil() {
 				return retType
 			}
 			// Handle Receiver_Method (e.g., std.Some_Apply, std.Try_FlatMap)
@@ -303,7 +302,7 @@ func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.Sel
 		} else {
 			// For external Go packages not in t.imports, check Go type info
 			fullName := id.Name + "." + sel.Sel.Name
-			if retType := t.getGoFuncReturnType(fullName); retType != nil {
+			if retType := t.getGoFuncReturnType(fullName); !retType.IsNil() {
 				return retType
 			}
 		}
@@ -332,7 +331,7 @@ func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.Sel
 		}
 		// Fallback: try Go type info for method calls on Go types
 		// e.g., scanner.Text() -> string, req.Header.Set() -> void
-		if retType := t.getGoMethodReturnType(xTypeName, sel.Sel.Name); retType != nil {
+		if retType := t.getGoMethodReturnType(xTypeName, sel.Sel.Name); !retType.IsNil() {
 			return retType
 		}
 	}
@@ -374,7 +373,7 @@ func (t *galaASTTransformer) inferCallIdentType(e *ast.CallExpr, id *ast.Ident, 
 		if len(e.Args) > 0 {
 			innerType := t.getExprTypeNameManual(e.Args[0])
 			if t.isImmutableType(innerType) {
-				panic(galaerr.NewSemanticErrorAt(t.lastLine, t.lastCol, "recursive Immutable wrapping is not allowed"))
+				t.raiseSemanticError("recursive Immutable wrapping is not allowed")
 			}
 			return transpiler.GenericType{
 				Base:   transpiler.NamedType{Package: registry.StdPackageName, Name: transpiler.TypeImmutable},
