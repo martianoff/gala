@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
+  <defs>
+    <linearGradient id="apple" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FF8585"/>
+      <stop offset="0.55" stop-color="#FF4D5E"/>
+      <stop offset="1" stop-color="#C8243A"/>
+    </linearGradient>
+    <linearGradient id="leaf" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#83E08C"/>
+      <stop offset="1" stop-color="#3DA84F"/>
+    </linearGradient>
+  </defs>
+  <path d="M20 12 C12 6 4 10 4 20 C4 32 12 38 17 38 C18.5 38 19 37 20 37 C21 37 21.5 38 23 38 C28 38 36 32 36 20 C36 10 28 6 20 12 Z" fill="url(#apple)"/>
+  <path d="M20 11 C19 4 23 1 31 2 C30 9 26 12 20 11 Z" fill="url(#leaf)"/>
+  <rect x="19.3" y="8" width="1.4" height="4" rx="0.6" fill="#6B452A"/>
+  <ellipse cx="12" cy="20" rx="3" ry="4.2" fill="#FFFFFF" opacity="0.45"/>
+  <path d="M7 3 L7.8 5.2 L10 6 L7.8 6.8 L7 9 L6.2 6.8 L4 6 L6.2 5.2 Z" fill="#FFE680"/>
+</svg>
