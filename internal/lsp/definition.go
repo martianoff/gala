@@ -51,7 +51,7 @@ func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionPara
 		for _, v := range typeMeta.SealedVariants {
 			if v.Name == word {
 				if typeMeta.DefinedIn != "" {
-					loc := fileLocation(typeMeta.DefinedIn, word)
+					loc := fileLocationBroad(typeMeta.DefinedIn, word)
 					if loc != nil {
 						return []lsp.Location{*loc}, nil
 					}
@@ -82,7 +82,7 @@ func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionPara
 		}
 		if typeName == word {
 			if typeMeta.DefinedIn != "" {
-				loc := fileLocation(typeMeta.DefinedIn, word)
+				loc := fileLocationBroad(typeMeta.DefinedIn, word)
 				if loc != nil {
 					return []lsp.Location{*loc}, nil
 				}
@@ -104,9 +104,15 @@ func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionPara
 			}
 		}
 		// Check methods
-		if method, ok := typeMeta.Methods[word]; ok && method.DefinedIn != "" {
-			loc := fileLocation(method.DefinedIn, word)
-			if loc != nil {
+		if method, ok := typeMeta.Methods[word]; ok {
+			if method.DefinedIn != "" {
+				loc := fileLocationBroad(method.DefinedIn, word)
+				if loc != nil {
+					return []lsp.Location{*loc}, nil
+				}
+			}
+			// Fallback: search package directory for method definition
+			if loc := h.searchPackageDirs(uri, typeMeta, word); loc != nil {
 				return []lsp.Location{*loc}, nil
 			}
 		}
@@ -116,7 +122,7 @@ func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionPara
 	for _, fm := range richAST.Functions {
 		if fm.Name == word {
 			if fm.DefinedIn != "" {
-				loc := fileLocation(fm.DefinedIn, word)
+				loc := fileLocationBroad(fm.DefinedIn, word)
 				if loc != nil {
 					return []lsp.Location{*loc}, nil
 				}
@@ -135,7 +141,7 @@ func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionPara
 		for _, fn := range typeMeta.FieldNames {
 			if fn == word {
 				if typeMeta.DefinedIn != "" {
-					loc := fileLocation(typeMeta.DefinedIn, word)
+					loc := fileLocationBroad(typeMeta.DefinedIn, word)
 					if loc != nil {
 						return []lsp.Location{*loc}, nil
 					}
@@ -143,6 +149,10 @@ func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionPara
 				// Fall back to finding it in current file
 				loc := localDefinition(text, word, uri)
 				if loc != nil {
+					return []lsp.Location{*loc}, nil
+				}
+				// Fallback: search package directory (std types have empty DefinedIn)
+				if loc := h.searchPackageDirs(uri, typeMeta, word); loc != nil {
 					return []lsp.Location{*loc}, nil
 				}
 			}
@@ -154,7 +164,7 @@ func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionPara
 					// Navigate to the sealed case declaration
 					loc := localDefinition(text, v.Name, uri)
 					if loc == nil && typeMeta.DefinedIn != "" {
-						loc = fileLocation(typeMeta.DefinedIn, v.Name)
+						loc = fileLocationBroad(typeMeta.DefinedIn, v.Name)
 					}
 					if loc != nil {
 						return []lsp.Location{*loc}, nil
@@ -283,7 +293,7 @@ func (h *GalaHandler) dotMethodDefinition(text, word, uri string, curLine, curCh
 	// Check methods first
 	if method, ok := tm.Methods[word]; ok {
 		if method.DefinedIn != "" {
-			return fileLocation(method.DefinedIn, word)
+			return fileLocationBroad(method.DefinedIn, word)
 		}
 
 		// Search in current file for "func (recv Type) MethodName"
@@ -315,7 +325,7 @@ func (h *GalaHandler) dotMethodDefinition(text, word, uri string, curLine, curCh
 	if _, ok := tm.Fields[word]; ok {
 		// Fields are defined with the type — navigate to the field in the type definition file
 		if tm.DefinedIn != "" {
-			if loc := fileLocation(tm.DefinedIn, word); loc != nil {
+			if loc := fileLocationBroad(tm.DefinedIn, word); loc != nil {
 				return loc
 			}
 		}
@@ -333,19 +343,40 @@ func (h *GalaHandler) dotMethodDefinition(text, word, uri string, curLine, curCh
 }
 
 // searchPackageDirs searches the type's package directory and search paths for a definition.
+// Uses broad search because the transpiler already confirmed the method/field exists on this type.
 func (h *GalaHandler) searchPackageDirs(uri string, tm *transpiler.TypeMetadata, word string) *lsp.Location {
 	if tm.Package != "" {
 		for _, searchPath := range h.getSearchPaths(uriToPath(uri)) {
 			pkgDir := filepath.Join(searchPath, tm.Package)
-			if loc := findDefinitionInDir(pkgDir, word); loc != nil {
+			if loc := findDefinitionInDirBroad(pkgDir, word); loc != nil {
 				return loc
 			}
 		}
 	}
 	// Also try current file's directory (same-package sibling)
 	currentDir := filepath.Dir(uriToPath(uri))
-	if loc := findDefinitionInDir(currentDir, word); loc != nil {
+	if loc := findDefinitionInDirBroad(currentDir, word); loc != nil {
 		return loc
+	}
+	return nil
+}
+
+// findDefinitionInDirBroad searches .gala files in a directory using broad matching.
+// Used when the transpiler has confirmed the definition exists in this package.
+func findDefinitionInDirBroad(dir, name string) *lsp.Location {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".gala") {
+			continue
+		}
+		absPath := filepath.Join(dir, e.Name())
+		loc := fileLocationBroad(absPath, name)
+		if loc != nil {
+			return loc
+		}
 	}
 	return nil
 }
@@ -464,6 +495,27 @@ func localDefinition(text, name, uri string) *lsp.Location {
 	return nil
 }
 
+// findWholeWord returns the column of the first whole-word occurrence of name in line,
+// or -1 if not found. A whole word has no adjacent identifier characters.
+func findWholeWord(line, name string) int {
+	idx := 0
+	for {
+		pos := strings.Index(line[idx:], name)
+		if pos < 0 {
+			return -1
+		}
+		col := idx + pos
+		before := col > 0 && isIdentChar(line[col-1])
+		after := col+len(name) < len(line) && isIdentChar(line[col+len(name)])
+		if !before && !after {
+			return col
+		}
+		idx = col + len(name)
+	}
+}
+
+// fileLocation searches a file for a declaration of name using keyword patterns.
+// Used by findDefinitionInDir for directory scanning where multiple files are searched.
 func fileLocation(filePath, name string) *lsp.Location {
 	absPath, err := filepath.Abs(filePath)
 	if err != nil {
@@ -475,5 +527,42 @@ func fileLocation(filePath, name string) *lsp.Location {
 	}
 	uri := pathToURI(absPath)
 	return localDefinition(string(data), name, uri)
+}
+
+// fileLocationBroad searches a file for name using keyword patterns first,
+// then falls back to whole-word search. Only use when the transpiler has already
+// resolved the file path via DefinedIn — we know the file contains the definition.
+func fileLocationBroad(filePath, name string) *lsp.Location {
+	absPath, err := filepath.Abs(filePath)
+	if err != nil {
+		return nil
+	}
+	data, err := os.ReadFile(absPath)
+	if err != nil {
+		return nil
+	}
+	uri := pathToURI(absPath)
+	text := string(data)
+
+	if loc := localDefinition(text, name, uri); loc != nil {
+		return loc
+	}
+
+	// Whole-word fallback: the transpiler already resolved this file as the
+	// definition source — find the first whole-word occurrence of the name.
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		col := findWholeWord(line, name)
+		if col >= 0 {
+			return &lsp.Location{
+				URI: lsp.DocumentURI(uri),
+				Range: lsp.Range{
+					Start: lsp.Position{Line: i, Character: col},
+					End:   lsp.Position{Line: i, Character: col + len(name)},
+				},
+			}
+		}
+	}
+	return nil
 }
 

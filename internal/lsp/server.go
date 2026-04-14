@@ -57,6 +57,20 @@ func (h *GalaHandler) SetSearchPaths(paths []string) {
 	h.extraSearchPaths = paths
 }
 
+// DebugRichAST returns the cached RichAST for a given URI (for testing).
+func (h *GalaHandler) DebugRichAST(uri string) *transpiler.RichAST {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.richASTs[uri]
+}
+
+// DebugVarTypes returns the cached variable types for a given URI (for testing).
+func (h *GalaHandler) DebugVarTypes(uri string) map[string]string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.varTypes[uri]
+}
+
 // NewGalaHandler creates a new GALA LSP handler.
 func NewGalaHandler() *GalaHandler {
 	return &GalaHandler{
