@@ -3,7 +3,7 @@
     <name>GALA</name>
     <!-- Version is stamped at build time from the GALA_VERSION env var (see ide/intellij/build.gradle.kts). -->
     <version>0.0.0</version>
-    <vendor email="support@gala.org" url="https://github.com/martianoff/gala">GALA Team</vendor>
+    <vendor email="team@gala.fyi" url="https://github.com/martianoff/gala">GALA Team</vendor>
 
     <description><![CDATA[
     <p>Rich IDE support for <b>GALA</b> — a modern functional language that transpiles to Go,
