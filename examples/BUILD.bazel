@@ -347,6 +347,13 @@ gala_test(
 )
 
 gala_test(
+    name = "placeholder_lambda",
+    src = "placeholder_lambda.gala",
+    expected = "placeholder_lambda.out",
+    deps = ["//collection_immutable"],
+)
+
+gala_test(
     name = "sealed_recursive_list",
     src = "sealed_recursive_list.gala",
     expected = "sealed_recursive_list.out",

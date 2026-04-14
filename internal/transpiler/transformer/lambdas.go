@@ -6,6 +6,8 @@ import (
 	"go/token"
 	"strings"
 
+	"github.com/antlr4-go/antlr/v4"
+
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
@@ -1308,6 +1310,212 @@ func blockEndsWithReturn(block *ast.BlockStmt) bool {
 	}
 	_, ok := block.List[len(block.List)-1].(*ast.ReturnStmt)
 	return ok
+}
+
+// ---- L4: Placeholder lambda shorthand (`_ * 2` ⇒ `(x) => x * 2`) ----
+//
+// When an expression contains `_` identifiers and is passed as an argument to
+// a function expecting a function type, the transformer rewrites the
+// expression into a lambda, replacing each `_` with a fresh parameter.
+// Multiple underscores in a single expression become multiple parameters in
+// left-to-right order, matching Scala semantics:
+//
+//	list.Map(_ * 2)               → list.Map((x) => x * 2)
+//	list.Filter(_ > 0)            → list.Filter((x) => x > 0)
+//	list.Map(_.Name)              → list.Map((x) => x.Name)
+//	list.FoldLeft(0, _ + _)       → list.FoldLeft(0, (a, b) => a + b)
+//
+// The rewrite is gated on the argument's expected type being a function
+// type. Outside that context, `_` is still only legal in pattern positions
+// and yields a scope-lookup error at Go compile time.
+
+// countPlaceholderUnderscoresInExpr walks the parse tree under exprCtx and
+// counts leaf IDENTIFIER tokens whose text is `_`. This is a fast lexical
+// check used to decide whether to attempt a placeholder-lambda rewrite —
+// the actual renaming happens on the Go AST after transformation.
+func countPlaceholderUnderscoresInExpr(exprCtx grammar.IExpressionContext) int {
+	if exprCtx == nil {
+		return 0
+	}
+	return countPlaceholderUnderscoresInTree(exprCtx)
+}
+
+// countPlaceholderUnderscoresInTree recursively counts `_` IDENTIFIER leaves
+// in any ANTLR parse subtree. Lambda and pattern subtrees are skipped so
+// that existing `_` uses in nested lambdas or pattern positions do not
+// trigger the rewrite.
+func countPlaceholderUnderscoresInTree(node antlr.Tree) int {
+	if node == nil {
+		return 0
+	}
+	// Stop at nested lambdas — their `_` uses belong to their own body.
+	if _, ok := node.(*grammar.LambdaExpressionContext); ok {
+		return 0
+	}
+	// Stop at pattern positions where `_` means wildcard, not placeholder.
+	if _, ok := node.(*grammar.CaseClauseContext); ok {
+		return 0
+	}
+	if tn, ok := node.(antlr.TerminalNode); ok {
+		if tn.GetText() == "_" {
+			return 1
+		}
+		return 0
+	}
+	total := 0
+	for i := 0; i < node.GetChildCount(); i++ {
+		total += countPlaceholderUnderscoresInTree(node.GetChild(i))
+	}
+	return total
+}
+
+// tryRewriteAsPlaceholderLambda is the L4 entry point called by
+// transformArgumentWithExpectedType. It returns (expr, handled, error):
+//
+//	handled=false — the expression is not a placeholder lambda candidate;
+//	                caller should fall through to ordinary expression
+//	                transformation.
+//	handled=true  — the expression was successfully rewritten into a lambda;
+//	                the caller must use expr verbatim.
+//
+// Preconditions for a rewrite:
+//  1. expectedType is a FuncType
+//  2. The expression contains at least one `_` identifier in a
+//     non-pattern, non-lambda position
+//
+// The rewrite installs fresh `_` bindings of type `any` (or the expected
+// param type) in a new scope so ordinary expression transformation
+// succeeds, then walks the produced Go AST and renames each `_` ident to a
+// fresh `__pN`, finally wrapping the result in a `*ast.FuncLit` whose
+// parameter list matches the expected FuncType.
+func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
+	exprCtx grammar.IExpressionContext,
+	expectedType transpiler.Type,
+) (ast.Expr, bool, error) {
+	ft, ok := expectedType.(transpiler.FuncType)
+	if !ok {
+		return nil, false, nil
+	}
+	placeholderCount := countPlaceholderUnderscoresInExpr(exprCtx)
+	if placeholderCount == 0 {
+		return nil, false, nil
+	}
+
+	// Choose the parameter types from the expected FuncType. If the expected
+	// type has fewer params than the number of placeholders, pad with `any`
+	// — we'd rather emit code that compiles than reject the call outright.
+	paramTypes := make([]transpiler.Type, placeholderCount)
+	for i := 0; i < placeholderCount; i++ {
+		if i < len(ft.Params) && !ft.Params[i].IsNil() {
+			paramTypes[i] = ft.Params[i]
+		} else {
+			paramTypes[i] = transpiler.BasicType{Name: "any"}
+		}
+	}
+
+	// Install a fresh scope with `_` bound to `any` so the normal expression
+	// transformation can resolve the identifier without producing a
+	// scope-lookup error. The ident is renamed below after transformation.
+	t.pushScope()
+	t.addVar("_", transpiler.BasicType{Name: "any"})
+	body, err := t.transformExpression(exprCtx)
+	t.popScope()
+	if err != nil {
+		return nil, false, err
+	}
+
+	// Walk the produced AST and rename each `_` ident to a fresh parameter
+	// name, left-to-right. We also record the param types at each position.
+	paramNames := make([]string, 0, placeholderCount)
+	var renameWalk func(parent ast.Node)
+	renameWalk = func(n ast.Node) {
+		if n == nil {
+			return
+		}
+		// Manual walk so we can mutate *ast.Ident in place.
+		switch node := n.(type) {
+		case *ast.Ident:
+			if node.Name == "_" {
+				fresh := fmt.Sprintf("__p%d", len(paramNames))
+				node.Name = fresh
+				paramNames = append(paramNames, fresh)
+			}
+		case *ast.ParenExpr:
+			renameWalk(node.X)
+		case *ast.UnaryExpr:
+			renameWalk(node.X)
+		case *ast.BinaryExpr:
+			renameWalk(node.X)
+			renameWalk(node.Y)
+		case *ast.SelectorExpr:
+			renameWalk(node.X)
+		case *ast.IndexExpr:
+			renameWalk(node.X)
+			renameWalk(node.Index)
+		case *ast.CallExpr:
+			renameWalk(node.Fun)
+			for _, a := range node.Args {
+				renameWalk(a)
+			}
+		case *ast.StarExpr:
+			renameWalk(node.X)
+		case *ast.CompositeLit:
+			for _, e := range node.Elts {
+				renameWalk(e)
+			}
+		case *ast.KeyValueExpr:
+			renameWalk(node.Key)
+			renameWalk(node.Value)
+		}
+	}
+	renameWalk(body)
+
+	if len(paramNames) == 0 {
+		// Lexical scan found `_` tokens but none survived transformation
+		// (they were in dead or comment positions). Fall through to ordinary
+		// transformation.
+		return nil, false, nil
+	}
+
+	// Build the lambda parameter list.
+	fieldList := &ast.FieldList{}
+	for i, name := range paramNames {
+		typeExpr := t.typeToExpr(paramTypes[i])
+		if typeExpr == nil {
+			typeExpr = ast.NewIdent("any")
+		}
+		fieldList.List = append(fieldList.List, &ast.Field{
+			Names: []*ast.Ident{ast.NewIdent(name)},
+			Type:  typeExpr,
+		})
+	}
+
+	// Build the result type from the expected FuncType if available.
+	// When no result type is declared, infer from the body expression.
+	var resultField *ast.FieldList
+	if len(ft.Results) > 0 && !ft.Results[0].IsNil() {
+		resultField = &ast.FieldList{
+			List: []*ast.Field{{Type: t.typeToExpr(ft.Results[0])}},
+		}
+	} else {
+		bodyType := t.getExprType(body)
+		if bodyType != nil {
+			resultField = &ast.FieldList{
+				List: []*ast.Field{{Type: bodyType}},
+			}
+		}
+	}
+
+	funcLit := &ast.FuncLit{
+		Type: &ast.FuncType{
+			Params:  fieldList,
+			Results: resultField,
+		},
+		Body: &ast.BlockStmt{
+			List: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{body}}},
+		},
+	}
+	return funcLit, true, nil
 }
 
 // isGenericMethodName checks if a method is marked as generic for a given type name
