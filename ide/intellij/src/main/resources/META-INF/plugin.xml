@@ -33,7 +33,16 @@
         <li>Code folding, brace matching, comment/uncomment (<code>//</code> and <code>/* */</code>)</li>
     </ul>
 
-    <p>Requires the bundled GoLand / IntelliJ Go plugin. Source code and issue tracker:
+    <h3>Requirements</h3>
+    <ul>
+        <li><b>GALA compiler</b> — the <code>gala</code> CLI must be installed and on your <code>PATH</code>.
+        It bundles the <code>gala-lsp</code> language server that powers diagnostics, completion, hover,
+        and go-to-definition. Install instructions:
+        <a href="https://github.com/martianoff/gala#installation">github.com/martianoff/gala#installation</a>.</li>
+        <li><b>GoLand</b> or <b>IntelliJ IDEA Ultimate</b> with the bundled Go plugin (LSP API support).</li>
+    </ul>
+
+    <p>Source code and issue tracker:
     <a href="https://github.com/martianoff/gala">github.com/martianoff/gala</a>.</p>
     ]]></description>
 
