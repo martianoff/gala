@@ -1000,19 +1000,60 @@ func (t *galaASTTransformer) generateSeqPatternMatch(objExpr ast.Expr, argList *
 		return ast.NewIdent("true"), nil, nil
 	}
 
-	var stmts []ast.Stmt
-	var conds []ast.Expr
-
 	restPatternIndex, restPatternName, nonRestCount := scanSeqPatternArgs(args)
 
-	// Rest pattern must be the last argument
+	// Rest pattern must be the last argument.
 	if restPatternIndex >= 0 && restPatternIndex != len(args)-1 {
 		return nil, nil, galaerr.NewSemanticErrorAt(argList.GetStart().GetLine(), argList.GetStart().GetColumn(), "rest pattern (...) must be the last argument in a sequence pattern")
 	}
 
-	// Generate size check: _tmp_ok := obj.Size() >= minRequired
+	// Emit the size check and seed the statement+condition accumulators.
+	sizeCheckStmt, sizeCheckName := t.emitSizeCheck(objExpr, nonRestCount)
+	stmts := []ast.Stmt{sizeCheckStmt}
+	conds := []ast.Expr{ast.NewIdent(sizeCheckName)}
+
+	// Determine the element type for non-rest arg bindings.
+	elemType := t.getSeqElementType(matchedType)
+	elemTypeExpr := t.typeToExpr(elemType)
+	if elemTypeExpr == nil {
+		elemTypeExpr = ast.NewIdent("any")
+	}
+
+	// Emit bindings for the non-rest arguments.
+	varDecls, guardedAssigns, extraConds, err := t.emitNonRestBindings(args, objExpr, elemType, elemTypeExpr)
+	if err != nil {
+		return nil, nil, err
+	}
+	conds = append(conds, extraConds...)
+
+	// Handle rest pattern if present and named.
+	if restPatternName != "" {
+		varDecls, guardedAssigns = t.emitRestBinding(restPatternName, matchedType, objExpr, nonRestCount, varDecls, guardedAssigns)
+	}
+
+	stmts = append(stmts, varDecls...)
+	stmts = assembleSeqPatternGuardBlock(stmts, sizeCheckName, guardedAssigns)
+
+	t.needsStdImport = true
+
+	// Combine all conditions into a single && chain.
+	if len(conds) == 0 {
+		return ast.NewIdent("true"), stmts, nil
+	}
+	finalCond := conds[0]
+	for i := 1; i < len(conds); i++ {
+		finalCond = &ast.BinaryExpr{X: finalCond, Op: token.LAND, Y: conds[i]}
+	}
+	return finalCond, stmts, nil
+}
+
+// emitSizeCheck generates `_tmpN := obj.Size() >= nonRestCount` and returns
+// both the statement and the temp variable name (so callers can reference it
+// in the guarded block condition). Extracted from generateSeqPatternMatch as
+// part of A2 cont.
+func (t *galaASTTransformer) emitSizeCheck(objExpr ast.Expr, nonRestCount int) (ast.Stmt, string) {
 	sizeCheckName := t.nextTempVar()
-	sizeCheck := &ast.AssignStmt{
+	stmt := &ast.AssignStmt{
 		Lhs: []ast.Expr{ast.NewIdent(sizeCheckName)},
 		Tok: token.DEFINE,
 		Rhs: []ast.Expr{
@@ -1028,22 +1069,26 @@ func (t *galaASTTransformer) generateSeqPatternMatch(objExpr ast.Expr, argList *
 			},
 		},
 	}
-	stmts = append(stmts, sizeCheck)
-	conds = append(conds, ast.NewIdent(sizeCheckName))
+	return stmt, sizeCheckName
+}
 
-	// Get the element type
-	elemType := t.getSeqElementType(matchedType)
-	elemTypeExpr := t.typeToExpr(elemType)
-	if elemTypeExpr == nil {
-		elemTypeExpr = ast.NewIdent("any")
-	}
-
-	// Collect variable declarations and guarded assignments
-	var varDecls []ast.Stmt
-	var guardedAssigns []ast.Stmt
-	var bindingNames []string
-
-	// Process non-rest arguments
+// emitNonRestBindings walks the seq pattern's non-rest arguments and generates
+// the per-element bindings: a var declaration for each bound variable plus a
+// guarded assignment that reads `obj.Get(i)` (or `std.As[T](obj.Get(i))` for
+// typed patterns). Returns:
+//
+//	varDecls       — zero-value declarations outside the guard block
+//	guardedAssigns — assignments that run only when the size check passes
+//	extraConds     — additional boolean conditions introduced by typed/nested
+//	                 patterns (e.g., the `ok` result of a type assertion)
+//
+// Extracted from generateSeqPatternMatch as part of A2 cont.
+func (t *galaASTTransformer) emitNonRestBindings(
+	args []grammar.IArgumentContext,
+	objExpr ast.Expr,
+	elemType transpiler.Type,
+	elemTypeExpr ast.Expr,
+) (varDecls []ast.Stmt, guardedAssigns []ast.Stmt, extraConds []ast.Expr, err error) {
 	argIndex := 0
 	for _, argCtx := range args {
 		arg := argCtx.(*grammar.ArgumentContext)
@@ -1052,127 +1097,52 @@ func (t *galaASTTransformer) generateSeqPatternMatch(objExpr ast.Expr, argList *
 			argIndex++
 			continue
 		}
-
-		// Skip rest pattern for now
+		// Rest patterns are handled by emitRestBinding; skip here.
 		if _, ok := patCtx.(*grammar.RestPatternContext); ok {
 			continue
 		}
-
 		patternText := patCtx.GetText()
 		if isWildcard(patternText) {
 			argIndex++
 			continue
 		}
 
-		// Handle different pattern types
 		if exprPat, ok := patCtx.(*grammar.ExpressionPatternContext); ok {
+			// Simple binding: `case Array(head, tail...)` → `head` is just an identifier.
 			if p := t.getPrimaryFromExpression(exprPat.Expression()); p != nil && p.Identifier() != nil {
-				// Simple binding: declare var, then assign inside guard
 				name := p.Identifier().GetText()
-				bindingNames = append(bindingNames, name)
 				t.currentScope.vals[name] = false
 				t.currentScope.valTypes[name] = elemType
-
-				// var name ElemType
-				varDecl := &ast.DeclStmt{
-					Decl: &ast.GenDecl{
-						Tok: token.VAR,
-						Specs: []ast.Spec{
-							&ast.ValueSpec{
-								Names: []*ast.Ident{ast.NewIdent(name)},
-								Type:  elemTypeExpr,
-							},
-						},
-					},
-				}
-				varDecls = append(varDecls, varDecl)
-
-				// name = obj.Get(i) (inside guard)
-				guardedAssigns = append(guardedAssigns, &ast.AssignStmt{
-					Lhs: []ast.Expr{ast.NewIdent(name)},
-					Tok: token.ASSIGN,
-					Rhs: []ast.Expr{
-						&ast.CallExpr{
-							Fun: &ast.SelectorExpr{
-								X:   objExpr,
-								Sel: ast.NewIdent("Get"),
-							},
-							Args: []ast.Expr{&ast.BasicLit{Kind: token.INT, Value: fmt.Sprintf("%d", argIndex)}},
-						},
-					},
-				})
-
+				varDecls = append(varDecls, seqVarDecl(name, elemTypeExpr))
+				guardedAssigns = append(guardedAssigns, seqGetAssign(name, objExpr, argIndex))
 				argIndex++
 				continue
 			}
 
-			// Nested pattern - need to handle more carefully
-			// For now, just generate the Get call and transform
+			// Nested pattern: generate a temp, then recursively transform the
+			// pattern against the temp as its match subject.
 			tempName := t.nextTempVar()
-			varDecl := &ast.DeclStmt{
-				Decl: &ast.GenDecl{
-					Tok: token.VAR,
-					Specs: []ast.Spec{
-						&ast.ValueSpec{
-							Names: []*ast.Ident{ast.NewIdent(tempName)},
-							Type:  elemTypeExpr,
-						},
-					},
-				},
-			}
-			varDecls = append(varDecls, varDecl)
-
-			guardedAssigns = append(guardedAssigns, &ast.AssignStmt{
-				Lhs: []ast.Expr{ast.NewIdent(tempName)},
-				Tok: token.ASSIGN,
-				Rhs: []ast.Expr{
-					&ast.CallExpr{
-						Fun: &ast.SelectorExpr{
-							X:   objExpr,
-							Sel: ast.NewIdent("Get"),
-						},
-						Args: []ast.Expr{&ast.BasicLit{Kind: token.INT, Value: fmt.Sprintf("%d", argIndex)}},
-					},
-				},
-			})
-
-			// Transform the nested pattern using the temp variable
-			nestedCond, nestedStmts, err := t.transformExpressionPatternWithType(exprPat.Expression(), ast.NewIdent(tempName), elemType)
-			if err != nil {
-				return nil, nil, err
+			varDecls = append(varDecls, seqVarDecl(tempName, elemTypeExpr))
+			guardedAssigns = append(guardedAssigns, seqGetAssign(tempName, objExpr, argIndex))
+			nestedCond, nestedStmts, nerr := t.transformExpressionPatternWithType(exprPat.Expression(), ast.NewIdent(tempName), elemType)
+			if nerr != nil {
+				return nil, nil, nil, nerr
 			}
 			guardedAssigns = append(guardedAssigns, nestedStmts...)
 			if ident, ok := nestedCond.(*ast.Ident); !ok || ident.Name != "true" {
-				conds = append(conds, nestedCond)
+				extraConds = append(extraConds, nestedCond)
 			}
 		} else if typedPat, ok := patCtx.(*grammar.TypedPatternContext); ok {
-			// Typed pattern: case Array(x: int, y: string, ...)
+			// Typed pattern: `case Array(x: int)` → std.As[int](obj.Get(i)).
 			varName := typedPat.Identifier().GetText()
-
-			typeExpr, err := t.transformType(typedPat.Type_())
-			if err != nil {
-				return nil, nil, err
+			typeExpr, terr := t.transformType(typedPat.Type_())
+			if terr != nil {
+				return nil, nil, nil, terr
 			}
-
 			expectedType := t.resolveType(t.getBaseTypeName(typeExpr))
 			t.currentScope.vals[varName] = false
 			t.currentScope.valTypes[varName] = expectedType
-
-			// var varName ExpectedType
-			varDecl := &ast.DeclStmt{
-				Decl: &ast.GenDecl{
-					Tok: token.VAR,
-					Specs: []ast.Spec{
-						&ast.ValueSpec{
-							Names: []*ast.Ident{ast.NewIdent(varName)},
-							Type:  typeExpr,
-						},
-					},
-				},
-			}
-			varDecls = append(varDecls, varDecl)
-
-			// Generate: varName, okN := std.As[ExpectedType](obj.Get(i)) inside guard
+			varDecls = append(varDecls, seqVarDecl(varName, typeExpr))
 			okName := t.nextTempVar()
 			asCall := &ast.CallExpr{
 				Fun: &ast.IndexExpr{
@@ -1181,53 +1151,52 @@ func (t *galaASTTransformer) generateSeqPatternMatch(objExpr ast.Expr, argList *
 				},
 				Args: []ast.Expr{
 					&ast.CallExpr{
-						Fun: &ast.SelectorExpr{
-							X:   objExpr,
-							Sel: ast.NewIdent("Get"),
-						},
+						Fun:  &ast.SelectorExpr{X: objExpr, Sel: ast.NewIdent("Get")},
 						Args: []ast.Expr{&ast.BasicLit{Kind: token.INT, Value: fmt.Sprintf("%d", argIndex)}},
 					},
 				},
 			}
-
 			guardedAssigns = append(guardedAssigns, &ast.AssignStmt{
 				Lhs: []ast.Expr{ast.NewIdent(varName), ast.NewIdent(okName)},
 				Tok: token.DEFINE,
 				Rhs: []ast.Expr{asCall},
 			})
-			conds = append(conds, ast.NewIdent(okName))
+			extraConds = append(extraConds, ast.NewIdent(okName))
 		}
-
 		argIndex++
 	}
+	return varDecls, guardedAssigns, extraConds, nil
+}
 
-	// Handle rest pattern if present and named. A2: extracted to emitRestBinding.
-	if restPatternName != "" {
-		varDecls, guardedAssigns = t.emitRestBinding(restPatternName, matchedType, objExpr, nonRestCount, varDecls, guardedAssigns)
+// seqVarDecl builds `var name T` as a DeclStmt for seq-pattern bindings.
+// Helper used by emitNonRestBindings.
+func seqVarDecl(name string, typeExpr ast.Expr) ast.Stmt {
+	return &ast.DeclStmt{
+		Decl: &ast.GenDecl{
+			Tok: token.VAR,
+			Specs: []ast.Spec{
+				&ast.ValueSpec{
+					Names: []*ast.Ident{ast.NewIdent(name)},
+					Type:  typeExpr,
+				},
+			},
+		},
 	}
+}
 
-	// Add variable declarations
-	stmts = append(stmts, varDecls...)
-
-	// A2: assemble the guarded block that runs once the size check passes.
-	stmts = assembleSeqPatternGuardBlock(stmts, sizeCheckName, guardedAssigns)
-
-	t.needsStdImport = true
-
-	// Combine all conditions
-	if len(conds) == 0 {
-		return ast.NewIdent("true"), stmts, nil
+// seqGetAssign builds `name = obj.Get(i)` as an AssignStmt for seq-pattern
+// guarded bindings. Helper used by emitNonRestBindings.
+func seqGetAssign(name string, objExpr ast.Expr, index int) ast.Stmt {
+	return &ast.AssignStmt{
+		Lhs: []ast.Expr{ast.NewIdent(name)},
+		Tok: token.ASSIGN,
+		Rhs: []ast.Expr{
+			&ast.CallExpr{
+				Fun:  &ast.SelectorExpr{X: objExpr, Sel: ast.NewIdent("Get")},
+				Args: []ast.Expr{&ast.BasicLit{Kind: token.INT, Value: fmt.Sprintf("%d", index)}},
+			},
+		},
 	}
-
-	finalCond := conds[0]
-	for i := 1; i < len(conds); i++ {
-		finalCond = &ast.BinaryExpr{
-			X:  finalCond,
-			Op: token.LAND,
-			Y:  conds[i],
-		}
-	}
-	return finalCond, stmts, nil
 }
 
 // transformTuplePattern transforms a tuple pattern like (a, b, c) into direct field access.

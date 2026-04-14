@@ -224,40 +224,917 @@ func (t *galaASTTransformer) splitCallTarget(fun ast.Expr) (receiver ast.Expr, m
 	return nil, "", nil
 }
 
-// transformCallWithArgsCtx is the primary entry point for transforming GALA call
-// expressions (functions, methods, constructors, companion-object Apply, etc.) into
-// Go AST call expressions.
+// tryTransformGenericMethodAsFunction handles Section 3 of the call dispatcher:
+// when a receiver method has explicit or inferred type parameters, rewrite the
+// call site as `TypeName_Method[typeArgs](receiver, args...)` so Go's type
+// inference can handle it cleanly. Returns:
 //
-// TODO(B1): this function has grown to ~850 lines and interleaves several concerns:
+//	handled=false — the section decided it does not apply (e.g., the
+//	                receiver is actually a package identifier). The caller
+//	                should continue to Section 4.
+//	handled=true  — the section produced an output expression; the caller
+//	                must return `expr` verbatim.
 //
-//	Section 1  (~175-210) Copy method short-circuit
-//	Section 2  (~180-225) Method/function dispatch prelude (receiver, method, typeArgs)
-//	Section 3  (~225-315) Generic method -> standalone function rewrite + type-param
-//	                      substitution (recv type args, method type args, argument-based
-//	                      inference, "any" fallback)
-//	Section 4  (~315-400) Regular method-call branch with lambda expected-type passing
-//	Section 5  (~400-540) Regular function call: arg transformation, function metadata
-//	                      lookup, Go type-info fallback
-//	Section 6  (~540-620) Struct construction path: resolve struct field types as
-//	                      expected types for lambda arguments before transformation
-//	Section 7  (~620-720) Generic-function type-arg pre-inference from non-lambda args
-//	Section 8  (~720-780) Named-args path (handleNamedArgsCall)
-//	Section 9  (~780-850) Default-arg injection when positional count is short
-//	Section 10 (~850-920) Compiler intrinsics (StructMeta[T]())
-//	Section 11 (~920-1000) Companion-object Apply: Some[A](v) -> Some[A]{}.Apply(v)
-//	Section 12 (~1000-1020) Variable-with-Apply-method: add5(10) -> add5.Apply(10)
+// Extracted from transformCallWithArgsCtx as part of A1 cont.
+func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
+	argListCtx *grammar.ArgumentListContext,
+	receiver ast.Expr,
+	method string,
+	typeArgs []ast.Expr,
+	recvType transpiler.Type,
+	lookupBaseName string,
+) (handled bool, result ast.Expr, err error) {
+	// Skip if the "receiver" is actually a package identifier — that is a
+	// package-qualified function call and belongs to a later section.
+	if id, ok := receiver.(*ast.Ident); ok && t.importManager.IsPackage(id.Name) {
+		return false, nil, nil
+	}
+
+	// Look up method metadata for parameter types using unified resolution.
+	typeMeta, resolvedName := t.getTypeMetaResolved(lookupBaseName)
+	var methodMeta *transpiler.MethodMetadata
+	if typeMeta != nil {
+		methodMeta = typeMeta.Methods[method]
+		// Update lookupBaseName to the resolved name for later use.
+		lookupBaseName = resolvedName
+	}
+
+	// Build type argument substitution map: receiver type params + method type params.
+	typeSubst := make(map[string]string)
+	var recvTypeArgStrings []string
+	if methodMeta != nil && typeMeta != nil {
+		recvTypeArgStrings = t.getReceiverTypeArgStrings(recvType)
+		for i, tp := range typeMeta.TypeParams {
+			if i < len(recvTypeArgStrings) {
+				typeSubst[tp] = recvTypeArgStrings[i]
+			}
+		}
+		for i, tp := range methodMeta.TypeParams {
+			if i < len(typeArgs) {
+				typeSubst[tp] = t.exprToTypeString(typeArgs[i])
+			}
+			// Don't default to "any" — will try to infer from non-lambda args below.
+		}
+	}
+
+	// Try to infer unresolved method type params from non-lambda arguments.
+	// This enables FoldLeft(0, (acc, x) => acc + x) to infer U=int from the zero value 0.
+	preTransformed := make(map[int]ast.Expr)
+	if methodMeta != nil && typeMeta != nil && len(methodMeta.TypeParams) > 0 && len(typeArgs) < len(methodMeta.TypeParams) {
+		recvTypeArgTypes := make([]transpiler.Type, 0, len(recvTypeArgStrings))
+		for _, a := range recvTypeArgStrings {
+			recvTypeArgTypes = append(recvTypeArgTypes, transpiler.ParseType(a))
+		}
+		for i, argCtx := range argListCtx.AllArgument() {
+			if i >= len(methodMeta.ParamTypes) {
+				break
+			}
+			arg := argCtx.(*grammar.ArgumentContext)
+			exprCtx, lambdaCtx, _, extractErr := extractArgContent(arg)
+			if extractErr != nil {
+				continue
+			}
+			// Skip lambda/partial args — can't infer types from them.
+			if lambdaCtx != nil || t.findLambdaInExpression(exprCtx) != nil || t.findPartialFunctionInExpression(exprCtx) != nil {
+				continue
+			}
+			expr, txErr := t.transformExpression(exprCtx)
+			if txErr != nil {
+				continue
+			}
+			preTransformed[i] = expr
+			argType := t.getExprTypeName(expr)
+			if argType == nil || argType.IsNil() || argType.IsAny() {
+				continue
+			}
+			substitutedParamType := t.substituteConcreteTypes(methodMeta.ParamTypes[i], typeMeta.TypeParams, recvTypeArgTypes)
+			inferredMap := make(map[string]transpiler.Type)
+			t.unifyForInference(substitutedParamType, argType, methodMeta.TypeParams, inferredMap)
+			for tp, inferred := range inferredMap {
+				if _, alreadySet := typeSubst[tp]; !alreadySet {
+					typeSubst[tp] = inferred.String()
+				}
+			}
+		}
+	}
+	// Default remaining unresolved method type params to "any".
+	// NOTE: This violates project rule #3 (never emit `any` implicitly). It is
+	// retained as a fallback because removing it breaks code where the type
+	// parameter is genuinely unconstrained by the call site (e.g., a phantom
+	// type param used only in the return type with no constraining argument).
+	// A warning is emitted when GALA_WARN_TYPES=1 so authors can surface and
+	// annotate these sites. TODO(B5): replace with a hard error once all
+	// inference paths (call-site context, expected return type) are wired up.
+	if methodMeta != nil {
+		for _, tp := range methodMeta.TypeParams {
+			if _, ok := typeSubst[tp]; !ok {
+				t.warnInference("method type parameter %q defaulted to `any` (unresolved from arguments)", tp)
+				typeSubst[tp] = "any"
+			}
+		}
+	}
+
+	// Transform each argument with the correct expected type.
+	var mArgs []ast.Expr
+	hasSpread := false
+	for i, argCtx := range argListCtx.AllArgument() {
+		arg := argCtx.(*grammar.ArgumentContext)
+		exprCtx, lambdaCtx, isSpread, extractErr := extractArgContent(arg)
+		if extractErr != nil {
+			return true, nil, extractErr
+		}
+		if isSpread {
+			hasSpread = true
+		}
+		// Reuse pre-transformed expression if available.
+		if expr, ok := preTransformed[i]; ok {
+			mArgs = append(mArgs, expr)
+			continue
+		}
+		genMethodCtx := t.buildMethodCallContext(methodMeta, typeSubst, false)
+		expectedType := t.resolveExpectedArgType(genMethodCtx, i)
+		if lambdaCtx != nil {
+			expr, lerr := t.transformLambdaArgWithExpectedType(lambdaCtx, expectedType)
+			if lerr != nil {
+				return true, nil, lerr
+			}
+			mArgs = append(mArgs, expr)
+		} else {
+			expr, aerr := t.transformArgumentWithExpectedType(exprCtx, expectedType)
+			if aerr != nil {
+				return true, nil, aerr
+			}
+			mArgs = append(mArgs, expr)
+		}
+	}
+
+	// Build the standalone function identifier: pkg.TypeName_Method or TypeName_Method.
+	var funExpr ast.Expr
+	if !recvType.IsNil() {
+		recvPkg := recvType.GetPackage()
+		if recvPkg == registry.StdPackageName || hasStdPrefix(lookupBaseName) {
+			baseName := stripStdPrefix(lookupBaseName)
+			funExpr = t.stdIdent(baseName + "_" + method)
+		} else {
+			funExpr = t.ident(lookupBaseName + "_" + method)
+		}
+	} else {
+		funExpr = ast.NewIdent(method)
+	}
+
+	// Attach type arguments, filtering out unresolved type-param leaks.
+	recvTypeArgs := t.getReceiverTypeArgs(recvType)
+	var concreteRecvTypeArgs []ast.Expr
+	for _, arg := range recvTypeArgs {
+		if ident, ok := arg.(*ast.Ident); ok {
+			if len(ident.Name) == 1 && ident.Name[0] >= 'A' && ident.Name[0] <= 'Z' {
+				// Skip unresolved type params like T, U, K, V
+				continue
+			}
+		}
+		concreteRecvTypeArgs = append(concreteRecvTypeArgs, arg)
+	}
+
+	// Decide whether to add type arguments:
+	// - If method has its own type params (e.g., Map[U]) and no explicit type args: let Go infer.
+	// - Otherwise: combine explicit type args with concrete receiver type args.
+	shouldAddTypeArgs := len(typeArgs) > 0 || (methodMeta == nil || len(methodMeta.TypeParams) == 0)
+	if shouldAddTypeArgs {
+		allTypeArgs := append(typeArgs, concreteRecvTypeArgs...)
+		if len(allTypeArgs) == 1 {
+			funExpr = &ast.IndexExpr{X: funExpr, Index: allTypeArgs[0]}
+		} else if len(allTypeArgs) > 1 {
+			funExpr = &ast.IndexListExpr{X: funExpr, Indices: allTypeArgs}
+		}
+	}
+
+	return true, &ast.CallExpr{
+		Fun:      funExpr,
+		Args:     append([]ast.Expr{receiver}, mArgs...),
+		Ellipsis: ellipsisPos(hasSpread),
+	}, nil
+}
+
+// transformRegularMethodCall handles Section 4 of the call dispatcher: method
+// calls on a receiver where the method is NOT generic (or the generic path
+// declined). It has three sub-paths:
 //
-// The planned refactor is to (a) introduce a `callResolution` struct carrying the
-// mutable state (receiver, method, typeArgs, recvType, typeSubst, preTransformed),
-// (b) extract each section into a method of the form
-// `(cr *callResolution) tryFoo(ctx *argListCtx) (expr, bool, error)` returning a
-// sentinel when the section handled the call, and (c) keep this function as a
-// thin dispatcher that walks the sections in order. Doing the split in this PR
-// alongside B2-B15 would be high-risk; it is intentionally deferred to a
-// follow-up so each extraction can be tested in isolation.
+//  1. method metadata present + receiver has unresolved type params → emit a
+//     simple method call, passing only void-function expected types so lambda
+//     arguments still get their return-type stripped.
+//  2. method metadata present + receiver is fully concrete → transform args
+//     with named/positional handling and apply named-args / default-args
+//     dispatch.
+//  3. method metadata absent (FIX-042) → emit the method call directly with
+//     no expected-type threading.
 //
-// Until then: treat the section markers above as navigation anchors when
-// editing, and avoid piling new logic into the middle of an existing section.
+// Extracted from transformCallWithArgsCtx as part of A1 cont.
+func (t *galaASTTransformer) transformRegularMethodCall(
+	argListCtx *grammar.ArgumentListContext,
+	receiver ast.Expr,
+	method string,
+	recvType transpiler.Type,
+	lookupBaseName string,
+) (ast.Expr, error) {
+	var methodMeta *transpiler.MethodMetadata
+	// Look up method metadata for ALL types (not just generic ones) so that
+	// non-generic wrapper types like Str can pass expected function types to
+	// lambda arguments.
+	typeMeta := t.getTypeMeta(lookupBaseName)
+	if typeMeta != nil {
+		methodMeta = typeMeta.Methods[method]
+	}
+	if methodMeta == nil {
+		// FIX-042: method metadata unresolved → emit the method call directly.
+		return t.emitDirectMethodCall(argListCtx, receiver, method)
+	}
+
+	// Build type substitution map from receiver's type arguments.
+	typeSubst := make(map[string]string)
+	recvTypeArgs := t.getReceiverTypeArgStrings(recvType)
+	hasUnresolvedTypeParams := false
+	for i, tp := range typeMeta.TypeParams {
+		if i < len(recvTypeArgs) {
+			arg := recvTypeArgs[i]
+			if len(arg) == 1 && arg[0] >= 'A' && arg[0] <= 'Z' {
+				hasUnresolvedTypeParams = true
+				break
+			}
+			typeSubst[tp] = arg
+		}
+	}
+
+	// Unresolved receiver type params: skip full expected-type inference but
+	// still detect void function parameters for lambda return-type stripping.
+	if hasUnresolvedTypeParams {
+		return t.emitMethodCallWithVoidLambdaHint(argListCtx, receiver, method, methodMeta, typeSubst)
+	}
+
+	// Fully concrete receiver type: transform args (named + positional), then
+	// dispatch through named-args / default-args fillers if needed.
+	return t.emitMethodCallWithFullTypes(argListCtx, receiver, method, methodMeta, typeSubst, recvType)
+}
+
+// emitDirectMethodCall is the FIX-042 fallback used when the method's metadata
+// cannot be resolved. It still generates a `receiver.method(args...)` call so
+// the downstream compiler can report a meaningful error rather than having
+// the receiver.method structure silently lost. Part of A1 cont.
+func (t *galaASTTransformer) emitDirectMethodCall(argListCtx *grammar.ArgumentListContext, receiver ast.Expr, method string) (ast.Expr, error) {
+	var mArgs []ast.Expr
+	hasSpread := false
+	for _, argCtx := range argListCtx.AllArgument() {
+		arg := argCtx.(*grammar.ArgumentContext)
+		exprCtx, lambdaCtx, isSpread, extractErr := extractArgContent(arg)
+		if extractErr != nil {
+			return nil, extractErr
+		}
+		if isSpread {
+			hasSpread = true
+		}
+		var expr ast.Expr
+		var err error
+		if lambdaCtx != nil {
+			expr, err = t.transformLambdaArgWithExpectedType(lambdaCtx, transpiler.NilType{})
+		} else {
+			expr, err = t.transformArgumentWithExpectedType(exprCtx, transpiler.NilType{})
+		}
+		if err != nil {
+			return nil, err
+		}
+		mArgs = append(mArgs, expr)
+	}
+	return &ast.CallExpr{
+		Fun:      &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)},
+		Args:     mArgs,
+		Ellipsis: ellipsisPos(hasSpread),
+	}, nil
+}
+
+// emitMethodCallWithVoidLambdaHint handles the unresolved-receiver-type-params
+// sub-path of Section 4: the receiver's generic type params can't be resolved
+// so we skip full expected-type threading, but we still pass void function
+// expected types so lambda arguments can strip their return types. Part of A1 cont.
+func (t *galaASTTransformer) emitMethodCallWithVoidLambdaHint(
+	argListCtx *grammar.ArgumentListContext,
+	receiver ast.Expr,
+	method string,
+	methodMeta *transpiler.MethodMetadata,
+	typeSubst map[string]string,
+) (ast.Expr, error) {
+	var mArgs []ast.Expr
+	hasSpread := false
+	for i, argCtx := range argListCtx.AllArgument() {
+		arg := argCtx.(*grammar.ArgumentContext)
+		exprCtx, lambdaCtx, isSpread, extractErr := extractArgContent(arg)
+		if extractErr != nil {
+			return nil, extractErr
+		}
+		if isSpread {
+			hasSpread = true
+		}
+		// `true` here filters to void function types only, avoiding leaked
+		// unresolved type params in return types.
+		unresolvedCtx := t.buildMethodCallContext(methodMeta, typeSubst, true)
+		expectedType := t.resolveExpectedArgType(unresolvedCtx, i)
+		var expr ast.Expr
+		var err error
+		if lambdaCtx != nil {
+			expr, err = t.transformLambdaArgWithExpectedType(lambdaCtx, expectedType)
+		} else {
+			expr, err = t.transformArgumentWithExpectedType(exprCtx, expectedType)
+		}
+		if err != nil {
+			return nil, err
+		}
+		mArgs = append(mArgs, expr)
+	}
+	return &ast.CallExpr{
+		Fun:      &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)},
+		Args:     mArgs,
+		Ellipsis: ellipsisPos(hasSpread),
+	}, nil
+}
+
+// emitMethodCallWithFullTypes handles the concrete-receiver sub-path of
+// Section 4: transform positional and named arguments with full expected-type
+// threading, then dispatch through named-args / default-args fillers. Part of
+// A1 cont.
+func (t *galaASTTransformer) emitMethodCallWithFullTypes(
+	argListCtx *grammar.ArgumentListContext,
+	receiver ast.Expr,
+	method string,
+	methodMeta *transpiler.MethodMetadata,
+	typeSubst map[string]string,
+	recvType transpiler.Type,
+) (ast.Expr, error) {
+	var mArgs []ast.Expr
+	mNamedArgs := make(map[string]ast.Expr)
+	hasSpread := false
+	argIdx := 0
+	for _, argCtx := range argListCtx.AllArgument() {
+		arg := argCtx.(*grammar.ArgumentContext)
+		exprCtx, lambdaCtx, isSpreadAll, extractErr := extractArgContent(arg)
+		if extractErr != nil {
+			return nil, extractErr
+		}
+		if isSpreadAll {
+			hasSpread = true
+		}
+		if arg.Identifier() != nil {
+			argName := arg.Identifier().GetText()
+			resolvedMethodCtx := t.buildMethodCallContext(methodMeta, typeSubst, false)
+			expectedType := t.resolveNamedArgExpectedType(resolvedMethodCtx, argName)
+			var expr ast.Expr
+			var err error
+			if lambdaCtx != nil {
+				expr, err = t.transformLambdaArgWithExpectedType(lambdaCtx, expectedType)
+			} else {
+				expr, err = t.transformArgumentWithExpectedType(exprCtx, expectedType)
+			}
+			if err != nil {
+				return nil, err
+			}
+			mNamedArgs[argName] = expr
+		} else {
+			resolvedMethodCtx := t.buildMethodCallContext(methodMeta, typeSubst, false)
+			expectedType := t.resolveExpectedArgType(resolvedMethodCtx, argIdx)
+			var expr ast.Expr
+			var err error
+			if lambdaCtx != nil {
+				expr, err = t.transformLambdaArgWithExpectedType(lambdaCtx, expectedType)
+			} else {
+				expr, err = t.transformArgumentWithExpectedType(exprCtx, expectedType)
+			}
+			if err != nil {
+				return nil, err
+			}
+			mArgs = append(mArgs, expr)
+			argIdx++
+		}
+	}
+	methodFun := &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)}
+	recvTypeName := recvType.BaseName()
+	if len(mNamedArgs) > 0 && len(methodMeta.ParamNames) > 0 {
+		return t.handleNamedArgsMethodCall(methodFun, receiver, mArgs, mNamedArgs, methodMeta, recvTypeName, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
+	}
+	if len(methodMeta.DefaultExprs) > 0 && len(mArgs) < len(methodMeta.ParamTypes) {
+		filled, err := t.fillDefaultArgsMethod(receiver, mArgs, methodMeta, recvTypeName, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
+		if err != nil {
+			return nil, err
+		}
+		return &ast.CallExpr{Fun: methodFun, Args: filled, Ellipsis: ellipsisPos(hasSpread)}, nil
+	}
+	return &ast.CallExpr{Fun: methodFun, Args: mArgs, Ellipsis: ellipsisPos(hasSpread)}, nil
+}
+
+// tryTransformCompanionApplyOrStructCtor handles Section 10 of the call
+// dispatcher. When the call target is a registered type with either:
+//
+//  1. field count matching positional args → emit a struct composite literal
+//  2. an Apply method on its companion    → rewrite as either
+//     `TypeName_Apply[typeArgs](receiver, args...)` (generic) or
+//     `Type{}.Apply(args)` (non-generic)
+//  3. no Apply but a struct layout        → emit a struct composite literal
+//     with any extra positional args dropped
+//
+// Also handles type-parameter inference for generic Apply paths from both
+// argument types (FIX-044 unification) and the enclosing function's return
+// type (FIX-040). Returns handled=false if the type is not known, so the
+// caller can fall through to the later sections.
+//
+// Extracted from transformCallWithArgsCtx as part of A1 cont.
+func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
+	fun ast.Expr,
+	typeName string,
+	args []ast.Expr,
+) (handled bool, result ast.Expr, err error) {
+	typeMeta, resolvedTypeMeta := t.getTypeMetaResolved(typeName)
+	if typeMeta == nil {
+		return false, nil, nil
+	}
+	// Update typeName to resolved name for subsequent lookups.
+	typeName = resolvedTypeMeta
+
+	// Positional struct construction has priority over Apply: when arg count
+	// equals field count, emit a struct literal directly.
+	resolvedTypeName := t.resolveStructTypeName(typeName)
+	if fields, structOk := t.structFields[resolvedTypeName]; structOk && len(args) > 0 && len(args) == len(fields) {
+		return true, t.buildStructLiteral(fun, resolvedTypeName, fields, args, false), nil
+	}
+
+	methodMeta, hasApply := typeMeta.Methods["Apply"]
+	if !hasApply {
+		// No Apply method. Still emit a struct literal if this is a known
+		// struct layout — callers may supply a subset of fields.
+		if fields, ok := t.structFields[resolvedTypeName]; ok && len(args) > 0 {
+			return true, t.buildStructLiteral(fun, resolvedTypeName, fields, args, true), nil
+		}
+		return false, nil, nil
+	}
+
+	// Apply path: verify the base expression is a type (not a variable).
+	baseExpr := fun
+	hasTypeArgs := false
+	var typeArgs []ast.Expr
+
+	if idx, ok := fun.(*ast.IndexExpr); ok {
+		baseExpr = idx.X
+		hasTypeArgs = true
+		typeArgs = []ast.Expr{t.qualifyTypeExpr(idx.Index)}
+	} else if idxList, ok := fun.(*ast.IndexListExpr); ok {
+		baseExpr = idxList.X
+		hasTypeArgs = true
+		typeArgs = t.qualifyTypeExprs(idxList.Indices)
+	}
+
+	isType := false
+	if id, ok := baseExpr.(*ast.Ident); ok {
+		if !t.isVal(id.Name) && !t.isVar(id.Name) {
+			if !t.getType(id.Name).IsNil() {
+				isType = true
+			}
+		}
+	} else if sel, ok := baseExpr.(*ast.SelectorExpr); ok {
+		if id, ok := sel.X.(*ast.Ident); ok {
+			if t.importManager.IsPackage(id.Name) || id.Name == registry.StdPackageName {
+				isType = true
+			}
+		}
+	}
+
+	if !isType {
+		return false, nil, nil
+	}
+
+	isGeneric := methodMeta.IsGeneric || len(methodMeta.TypeParams) > 0
+
+	// Infer type args from argument types and enclosing return type (FIX-040/044).
+	if !hasTypeArgs && len(typeMeta.TypeParams) > 0 {
+		inferredMap := make(map[string]transpiler.Type)
+		// Step 1: infer from Apply method arguments.
+		for i, arg := range args {
+			if i < len(methodMeta.ParamTypes) {
+				argType := t.getExprTypeName(arg)
+				if argType != nil && !argType.IsNil() && !argType.IsAny() {
+					t.unifyForInference(methodMeta.ParamTypes[i], argType, typeMeta.TypeParams, inferredMap)
+				}
+			}
+		}
+		// Step 2 (FIX-040): fall back to enclosing function's return type.
+		if len(inferredMap) < len(typeMeta.TypeParams) && t.currentFuncReturnType != nil && !t.currentFuncReturnType.IsNil() {
+			if methodMeta.ReturnType != nil && !methodMeta.ReturnType.IsNil() {
+				returnInferred := make(map[string]transpiler.Type)
+				t.unifyForInference(methodMeta.ReturnType, t.currentFuncReturnType, typeMeta.TypeParams, returnInferred)
+				for tp, inferred := range returnInferred {
+					if _, alreadySet := inferredMap[tp]; !alreadySet {
+						inferredMap[tp] = inferred
+					}
+				}
+			}
+		}
+		if len(inferredMap) == len(typeMeta.TypeParams) {
+			inferredTypeArgs := make([]ast.Expr, len(typeMeta.TypeParams))
+			allResolved := true
+			for i, tp := range typeMeta.TypeParams {
+				if inferred, ok := inferredMap[tp]; ok {
+					inferredTypeArgs[i] = t.typeToExpr(inferred)
+				} else {
+					allResolved = false
+					break
+				}
+			}
+			if allResolved {
+				typeArgs = inferredTypeArgs
+				hasTypeArgs = true
+				if len(typeArgs) == 1 {
+					fun = &ast.IndexExpr{X: baseExpr, Index: typeArgs[0]}
+				} else if len(typeArgs) > 1 {
+					fun = &ast.IndexListExpr{X: baseExpr, Indices: typeArgs}
+				}
+			}
+		}
+	}
+
+	// Auto-inject StructMeta[T] when first Apply param is StructMetaOps.
+	// Codec[Person](SnakeCase()) → prepend _StructMeta_Person{} before SnakeCase()
+	if hasTypeArgs && len(methodMeta.ParamTypes) > 0 {
+		firstParamType := methodMeta.ParamTypes[0].BaseName()
+		if firstParamType == "StructMetaOps" || firstParamType == "json.StructMetaOps" {
+			args = t.autoInjectStructMeta(args, methodMeta, typeArgs)
+		}
+	}
+
+	if isGeneric {
+		// Generic Apply method: use standalone function form.
+		fullName := typeName + "_Apply"
+		var funExpr ast.Expr
+		isStdType := hasStdPrefix(typeName)
+		if !isStdType {
+			resolvedType := t.getType(typeName)
+			isStdType = !resolvedType.IsNil() && resolvedType.GetPackage() == registry.StdPackageName
+		}
+		if isStdType {
+			funExpr = t.stdIdent(stripStdPrefix(fullName))
+		} else {
+			funExpr = t.ident(fullName)
+		}
+		if len(typeArgs) == 1 {
+			funExpr = &ast.IndexExpr{X: funExpr, Index: typeArgs[0]}
+		} else if len(typeArgs) > 1 {
+			funExpr = &ast.IndexListExpr{X: funExpr, Indices: typeArgs}
+		}
+		receiver := &ast.CompositeLit{Type: baseExpr}
+		if hasTypeArgs {
+			receiver = &ast.CompositeLit{Type: fun}
+		}
+		return true, &ast.CallExpr{
+			Fun:  funExpr,
+			Args: append([]ast.Expr{receiver}, args...),
+		}, nil
+	}
+
+	// Non-generic Apply method: call Apply on a freshly constructed instance.
+	receiver := &ast.CompositeLit{Type: fun}
+	return true, &ast.CallExpr{
+		Fun: &ast.SelectorExpr{
+			X:   receiver,
+			Sel: ast.NewIdent("Apply"),
+		},
+		Args: args,
+	}, nil
+}
+
+// buildStructLiteral emits a struct composite literal from positional args,
+// wrapping immutable fields with NewImmutable as needed. When `truncate` is
+// true, excess args are silently dropped (used when the arg count exceeds the
+// field count); otherwise the caller is responsible for matching the counts.
+// Extracted from transformCallWithArgsCtx as part of A1 cont.
+func (t *galaASTTransformer) buildStructLiteral(typeExpr ast.Expr, resolvedTypeName string, fields []string, args []ast.Expr, truncate bool) ast.Expr {
+	immutFlags := t.structImmutFields[resolvedTypeName]
+	var elts []ast.Expr
+	for i, fieldName := range fields {
+		if i >= len(args) {
+			if truncate {
+				break
+			}
+			break
+		}
+		var valExpr ast.Expr
+		if immutFlags != nil && i < len(immutFlags) && immutFlags[i] {
+			valExpr = &ast.CallExpr{
+				Fun:  t.stdIdent("NewImmutable"),
+				Args: []ast.Expr{args[i]},
+			}
+		} else {
+			valExpr = args[i]
+		}
+		elts = append(elts, &ast.KeyValueExpr{
+			Key:   ast.NewIdent(fieldName),
+			Value: valExpr,
+		})
+	}
+	return &ast.CompositeLit{Type: typeExpr, Elts: elts}
+}
+
+// transformFunctionArgs handles Section 6 of the call dispatcher: walk the
+// argument list, classify each argument as positional or named, and transform
+// it with the correct expected type (for lambda parameter inference). Returns
+// the positional args, named args map, and the hasSpread flag. Extracted from
+// transformCallWithArgsCtx as part of A1 cont.
+func (t *galaASTTransformer) transformFunctionArgs(
+	fun ast.Expr,
+	argListCtx *grammar.ArgumentListContext,
+	callCtx functionCallContext,
+) (positional []ast.Expr, named map[string]ast.Expr, hasSpread bool, err error) {
+	named = make(map[string]ast.Expr)
+	argIdx := 0
+
+	for _, argCtx := range argListCtx.AllArgument() {
+		arg := argCtx.(*grammar.ArgumentContext)
+		exprCtx, lambdaCtx, isSpreadAll, extractErr := extractArgContent(arg)
+		if extractErr != nil {
+			return nil, nil, false, extractErr
+		}
+		if isSpreadAll {
+			hasSpread = true
+		}
+
+		if arg.Identifier() != nil {
+			// Named argument: resolve the expected type via struct-field lookup
+			// first (supports generic struct construction), then function metadata.
+			argName := arg.Identifier().GetText()
+			namedExpectedType := t.resolveNamedArgExpectedFuncType(fun, argName, callCtx)
+
+			var expr ast.Expr
+			var aerr error
+			if lambdaCtx != nil {
+				expr, aerr = t.transformLambdaArgWithExpectedType(lambdaCtx, namedExpectedType)
+			} else {
+				expr, aerr = t.transformArgumentWithExpectedType(exprCtx, namedExpectedType)
+			}
+			if aerr != nil {
+				return nil, nil, false, aerr
+			}
+			named[argName] = expr
+			continue
+		}
+
+		// Positional argument — use unified function call context.
+		funcCallCtx := t.buildFuncCallContext(callCtx.funcMeta, callCtx.inferredTypeSubst, callCtx.goFuncParamTypes, callCtx.structFieldExpectedTypes)
+		expectedType := t.resolveExpectedArgType(funcCallCtx, argIdx)
+		var expr ast.Expr
+		var aerr error
+		if lambdaCtx != nil {
+			expr, aerr = t.transformLambdaArgWithExpectedType(lambdaCtx, expectedType)
+		} else {
+			expr, aerr = t.transformArgumentWithExpectedType(exprCtx, expectedType)
+		}
+		if aerr != nil {
+			return nil, nil, false, aerr
+		}
+		positional = append(positional, expr)
+		argIdx++
+	}
+	return positional, named, hasSpread, nil
+}
+
+// resolveNamedArgExpectedFuncType looks up the expected FuncType for a named
+// argument so that lambda arguments can infer their parameter types. It tries
+// struct-field-type resolution first (with generic type-param substitution for
+// generic struct construction), then falls back to function metadata param
+// names. Returns NilType if no FuncType can be resolved. Extracted from
+// transformCallWithArgsCtx as part of A1 cont.
+func (t *galaASTTransformer) resolveNamedArgExpectedFuncType(fun ast.Expr, argName string, callCtx functionCallContext) transpiler.Type {
+	// Step 1: struct-field lookup — handles lambdas passed as named struct args.
+	if callCtx.structFieldExpectedTypes != nil {
+		if funcName := t.extractFuncName(fun); funcName != "" {
+			typeMeta, resolvedTypeName := t.getTypeMetaResolved(funcName)
+			if resolvedTypeName != "" {
+				resolved := t.resolveStructTypeName(resolvedTypeName)
+				if fieldTypes, ok := t.structFieldTypes[resolved]; ok {
+					if ft, ok := fieldTypes[argName].(transpiler.FuncType); ok {
+						expected := transpiler.Type(ft)
+						// Apply generic type substitution for generic struct
+						// construction: e.g., Wrapper[U](compute = ...) maps T -> U.
+						if typeMeta != nil && len(typeMeta.TypeParams) > 0 {
+							typeArgs := t.extractFuncCallTypeArgs(fun)
+							if len(typeArgs) > 0 {
+								typeSubst := make(map[string]string)
+								for i, tp := range typeMeta.TypeParams {
+									if i < len(typeArgs) {
+										typeSubst[tp] = typeArgs[i]
+									}
+								}
+								expected = t.substituteTranspilerTypeParams(expected, typeSubst)
+							}
+						}
+						return expected
+					}
+				}
+			}
+		}
+	}
+
+	// Step 2: function metadata lookup — handles lambdas passed as named
+	// function-call args when the function has named parameters.
+	if callCtx.funcMeta != nil && len(callCtx.funcMeta.ParamNames) > 0 {
+		for i, paramName := range callCtx.funcMeta.ParamNames {
+			if paramName == argName && i < len(callCtx.funcMeta.ParamTypes) {
+				if ft, ok := callCtx.funcMeta.ParamTypes[i].(transpiler.FuncType); ok {
+					return ft
+				}
+				break
+			}
+		}
+	}
+
+	return transpiler.NilType{}
+}
+
+// functionCallContext bundles the expected-type lookups used when
+// transforming a regular (non-method) function call's arguments. All fields
+// may be nil/empty independently when the corresponding metadata is absent.
+type functionCallContext struct {
+	funcMeta                 *transpiler.FunctionMetadata
+	goFuncParamTypes         []transpiler.Type
+	structFieldExpectedTypes []transpiler.Type
+	inferredTypeSubst        map[string]string
+}
+
+// collectFunctionCallContext handles Section 5 of the call dispatcher:
+// gather all metadata used during argument transformation. Extracted from
+// transformCallWithArgsCtx as part of A1 cont.
+func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, argListCtx *grammar.ArgumentListContext) functionCallContext {
+	var ctx functionCallContext
+
+	// Look up GALA function metadata for expected parameter types
+	// (enables void lambda detection and type-param inference).
+	if funcName := t.extractFuncName(fun); funcName != "" {
+		ctx.funcMeta = t.getFunction(funcName)
+	}
+
+	// FIX-075: When GALA function metadata is not available, try Go type
+	// info. Handles Go-defined functions and variables with function types
+	// (e.g., concurrent.Spawn) called via dot-imports or qualified references.
+	if ctx.funcMeta == nil && t.goTypeInfo != nil {
+		if funcName := t.extractFuncName(fun); funcName != "" {
+			ctx.goFuncParamTypes = t.resolveGoFuncParamTypes(funcName)
+		}
+	}
+
+	// Struct construction context: collect field types so lambdas passed
+	// as positional struct args can infer their parameter types.
+	if funcName := t.extractFuncName(fun); funcName != "" {
+		typeMeta, resolvedTypeName := t.getTypeMetaResolved(funcName)
+		if typeMeta != nil {
+			resolved := t.resolveStructTypeName(resolvedTypeName)
+			if fields, ok := t.structFields[resolved]; ok {
+				if fieldTypes, ok := t.structFieldTypes[resolved]; ok {
+					ctx.structFieldExpectedTypes = make([]transpiler.Type, len(fields))
+					for i, fieldName := range fields {
+						if ft, ok := fieldTypes[fieldName]; ok {
+							ctx.structFieldExpectedTypes[i] = ft
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// For generic functions without explicit type args (e.g.,
+	// Iterate(1, (x) => x * 2)), pre-scan non-lambda arguments to infer
+	// type params so that lambda params get concrete types.
+	if ctx.funcMeta != nil && len(ctx.funcMeta.TypeParams) > 0 {
+		funcTypeArgs := t.extractFuncCallTypeArgs(fun)
+		if len(funcTypeArgs) > 0 {
+			// Explicit type args provided — use directly.
+			ctx.inferredTypeSubst = make(map[string]string)
+			for i, tp := range ctx.funcMeta.TypeParams {
+				if i < len(funcTypeArgs) {
+					ctx.inferredTypeSubst[tp] = funcTypeArgs[i]
+				}
+			}
+		} else {
+			// No explicit type args — infer from non-lambda arguments.
+			ctx.inferredTypeSubst = t.inferFuncTypeSubstFromArgs(ctx.funcMeta, argListCtx)
+		}
+	}
+
+	return ctx
+}
+
+// tryTransformCompositeLitApply handles Section 11: when `fun` is already a
+// composite literal (e.g., `Append{...}` produced by an earlier partial
+// application) whose type has an Apply method, rewrite `fun(args)` as
+// `fun.Apply(args)`. Returns handled=false for all other shapes of `fun`.
+// Extracted from transformCallWithArgsCtx as part of A1 cont.
+func (t *galaASTTransformer) tryTransformCompositeLitApply(fun ast.Expr, args []ast.Expr) (ast.Expr, bool) {
+	compLit, ok := fun.(*ast.CompositeLit)
+	if !ok {
+		return nil, false
+	}
+	var litTypeName string
+	switch lt := compLit.Type.(type) {
+	case *ast.Ident:
+		litTypeName = lt.Name
+	case *ast.SelectorExpr:
+		litTypeName = lt.Sel.Name
+	case *ast.IndexExpr:
+		if id, ok := lt.X.(*ast.Ident); ok {
+			litTypeName = id.Name
+		} else if sel, ok := lt.X.(*ast.SelectorExpr); ok {
+			litTypeName = sel.Sel.Name
+		}
+	case *ast.IndexListExpr:
+		if id, ok := lt.X.(*ast.Ident); ok {
+			litTypeName = id.Name
+		} else if sel, ok := lt.X.(*ast.SelectorExpr); ok {
+			litTypeName = sel.Sel.Name
+		}
+	}
+	if litTypeName == "" {
+		return nil, false
+	}
+	typeMeta := t.getTypeMeta(litTypeName)
+	if typeMeta == nil {
+		return nil, false
+	}
+	if _, hasApply := typeMeta.Methods["Apply"]; !hasApply {
+		return nil, false
+	}
+	return &ast.CallExpr{
+		Fun:  &ast.SelectorExpr{X: compLit, Sel: ast.NewIdent("Apply")},
+		Args: args,
+	}, true
+}
+
+// tryTransformValWithApply handles Section 12: when `fun` is a variable
+// (or val.Get() call) whose type has an Apply method, rewrite `fun(args)` as
+// `fun.Apply(args)`. This enables `val add5 = Adder(5); add5(10)` to work.
+// Returns handled=false for all other shapes of `fun`.
+// Extracted from transformCallWithArgsCtx as part of A1 cont.
+func (t *galaASTTransformer) tryTransformValWithApply(fun ast.Expr, args []ast.Expr) (ast.Expr, bool) {
+	var valName string
+	if id, ok := fun.(*ast.Ident); ok {
+		if t.isVal(id.Name) || t.isVar(id.Name) {
+			valName = id.Name
+		}
+	} else if call, ok := fun.(*ast.CallExpr); ok {
+		// Check if this is valName.Get()
+		if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == transpiler.MethodGet && len(call.Args) == 0 {
+			if id, ok := sel.X.(*ast.Ident); ok {
+				if t.isVal(id.Name) {
+					valName = id.Name
+				}
+			}
+		}
+	}
+	if valName == "" {
+		return nil, false
+	}
+	varType := t.getType(valName)
+	if varType.IsNil() {
+		return nil, false
+	}
+	varTypeName := varType.BaseName()
+	typeMeta := t.getTypeMeta(varTypeName)
+	if typeMeta == nil {
+		return nil, false
+	}
+	if _, hasApply := typeMeta.Methods["Apply"]; !hasApply {
+		return nil, false
+	}
+	return &ast.CallExpr{
+		Fun:  &ast.SelectorExpr{X: fun, Sel: ast.NewIdent("Apply")},
+		Args: args,
+	}, true
+}
+
+// transformCallWithArgsCtx is the primary entry point for transforming GALA
+// call expressions (functions, methods, constructors, companion-object Apply,
+// etc.) into Go AST call expressions.
+//
+// The body is a thin dispatcher. Each numbered section delegates to a focused
+// helper and either returns eagerly or falls through to the next section.
+// The dispatcher is navigated in strict order:
+//
+//	Section 1  Copy method short-circuit                — inline
+//	Section 2  Dispatch prelude                         — splitCallTarget, resolveReceiverTypeAndLookupKey
+//	Section 3  Generic method → standalone function     — tryTransformGenericMethodAsFunction
+//	Section 4  Regular method call                      — transformRegularMethodCall
+//	Section 5  Regular function-call context gather     — collectFunctionCallContext
+//	Section 6  Argument transformation                  — transformFunctionArgs
+//	Section 7  Named-args dispatch                      — handleNamedArgs(Func|)Call
+//	Section 8  Default-arg injection                    — fillDefaultArgs
+//	Section 9  StructMeta[T]() intrinsic                — transformStructMetaConstruction
+//	Section 10 Companion Apply / struct construction    — tryTransformCompanionApplyOrStructCtor
+//	Section 11 CompositeLit with Apply                  — tryTransformCompositeLitApply
+//	Section 12 Variable with Apply method               — tryTransformValWithApply
+//	Section 13 Fallback: emit call verbatim             — inline
+//
+// When extending call-site behavior, add or modify a single section's helper
+// rather than growing this dispatcher. Each helper is independently testable
+// and carries its own doc comment describing the sub-path it handles.
 func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *grammar.ArgumentListContext) (ast.Expr, error) {
 	// --- Section 1: Copy method short-circuit ---
 	if sel, ok := fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Copy" {
@@ -277,808 +1154,83 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	// Check for generic method - try all possible package lookups
 	isGenericMethod := len(typeArgs) > 0 || t.isGenericMethodWithImports(lookupBaseName, recvType.GetPackage(), method)
 
+	// --- Section 3: Generic method -> standalone function rewrite ---
 	if receiver != nil && isGenericMethod {
-		// Check if receiver is a package name
-		isPkg := false
-		if id, ok := receiver.(*ast.Ident); ok {
-			if t.importManager.IsPackage(id.Name) {
-				isPkg = true
-			}
+		handled, expr, err := t.tryTransformGenericMethodAsFunction(argListCtx, receiver, method, typeArgs, recvType, lookupBaseName)
+		if err != nil {
+			return nil, err
 		}
-
-		if !isPkg {
-			// Transform generic method call to standalone function call
-			// Get method metadata for parameter types using unified resolution
-			typeMeta, resolvedName := t.getTypeMetaResolved(lookupBaseName)
-			var methodMeta *transpiler.MethodMetadata
-			if typeMeta != nil {
-				methodMeta = typeMeta.Methods[method]
-				// Update lookupBaseName to the resolved name for later use
-				lookupBaseName = resolvedName
-			}
-
-			// Build type argument substitution map
-			typeSubst := make(map[string]string)
-			var recvTypeArgStrings []string
-			if methodMeta != nil && typeMeta != nil {
-				// Add receiver's type args (e.g., T -> int)
-				recvTypeArgStrings = t.getReceiverTypeArgStrings(recvType)
-				for i, tp := range typeMeta.TypeParams {
-					if i < len(recvTypeArgStrings) {
-						typeSubst[tp] = recvTypeArgStrings[i]
-					}
-				}
-				// Add method's explicit type args (e.g., U -> string)
-				for i, tp := range methodMeta.TypeParams {
-					if i < len(typeArgs) {
-						typeSubst[tp] = t.exprToTypeString(typeArgs[i])
-					}
-					// Don't default to "any" — will try to infer from non-lambda args below
-				}
-			}
-
-			// Try to infer unresolved method type params from non-lambda arguments.
-			// This enables FoldLeft(0, (acc, x) => acc + x) to infer U=int from the zero value 0.
-			preTransformed := make(map[int]ast.Expr)
-			if methodMeta != nil && typeMeta != nil && len(methodMeta.TypeParams) > 0 && len(typeArgs) < len(methodMeta.TypeParams) {
-				recvTypeArgTypes := make([]transpiler.Type, 0, len(recvTypeArgStrings))
-				for _, a := range recvTypeArgStrings {
-					recvTypeArgTypes = append(recvTypeArgTypes, transpiler.ParseType(a))
-				}
-				for i, argCtx := range argListCtx.AllArgument() {
-					if i >= len(methodMeta.ParamTypes) {
-						break
-					}
-					arg := argCtx.(*grammar.ArgumentContext)
-					exprCtx, lambdaCtx, _, extractErr := extractArgContent(arg)
-					if extractErr != nil {
-						continue
-					}
-					// Skip lambda and partial function arguments — can't infer types from them
-					if lambdaCtx != nil || t.findLambdaInExpression(exprCtx) != nil || t.findPartialFunctionInExpression(exprCtx) != nil {
-						continue
-					}
-					expr, err := t.transformExpression(exprCtx)
-					if err != nil {
-						continue
-					}
-					preTransformed[i] = expr
-					argType := t.getExprTypeName(expr)
-					if argType == nil || argType.IsNil() || argType.IsAny() {
-						continue
-					}
-					substitutedParamType := t.substituteConcreteTypes(methodMeta.ParamTypes[i], typeMeta.TypeParams, recvTypeArgTypes)
-					inferredMap := make(map[string]transpiler.Type)
-					t.unifyForInference(substitutedParamType, argType, methodMeta.TypeParams, inferredMap)
-					for tp, inferred := range inferredMap {
-						if _, alreadySet := typeSubst[tp]; !alreadySet {
-							typeSubst[tp] = inferred.String()
-						}
-					}
-				}
-			}
-			// Default remaining unresolved method type params to "any".
-			// NOTE: This violates project rule #3 (never emit `any` implicitly). It is
-			// retained as a fallback because removing it breaks code where the type
-			// parameter is genuinely unconstrained by the call site (e.g., a phantom
-			// type param used only in the return type with no constraining argument).
-			// A warning is emitted when GALA_WARN_TYPES=1 so authors can surface and
-			// annotate these sites. TODO(B5): replace with a hard error once all
-			// inference paths (call-site context, expected return type) are wired up.
-			if methodMeta != nil {
-				for _, tp := range methodMeta.TypeParams {
-					if _, ok := typeSubst[tp]; !ok {
-						t.warnInference("method type parameter %q defaulted to `any` (unresolved from arguments)", tp)
-						typeSubst[tp] = "any"
-					}
-				}
-			}
-
-			var mArgs []ast.Expr
-			hasSpread := false
-			for i, argCtx := range argListCtx.AllArgument() {
-				arg := argCtx.(*grammar.ArgumentContext)
-				exprCtx, lambdaCtx, isSpread, extractErr := extractArgContent(arg)
-				if extractErr != nil {
-					return nil, extractErr
-				}
-				if isSpread {
-					hasSpread = true
-				}
-
-				// Reuse pre-transformed expression if available (already processed during type inference)
-				if expr, ok := preTransformed[i]; ok {
-					mArgs = append(mArgs, expr)
-					continue
-				}
-
-				// Get expected parameter type if available, with type substitution
-				genMethodCtx := t.buildMethodCallContext(methodMeta, typeSubst, false)
-				expectedType := t.resolveExpectedArgType(genMethodCtx, i)
-
-				if lambdaCtx != nil {
-					// Direct lambda argument (FIX-050)
-					expr, err := t.transformLambdaArgWithExpectedType(lambdaCtx, expectedType)
-					if err != nil {
-						return nil, err
-					}
-					mArgs = append(mArgs, expr)
-				} else {
-					expr, err := t.transformArgumentWithExpectedType(exprCtx, expectedType)
-					if err != nil {
-						return nil, err
-					}
-					mArgs = append(mArgs, expr)
-				}
-			}
-
-			var funExpr ast.Expr
-			if !recvType.IsNil() {
-				recvPkg := recvType.GetPackage()
-				if recvPkg == registry.StdPackageName || hasStdPrefix(lookupBaseName) {
-					baseName := stripStdPrefix(lookupBaseName)
-					funExpr = t.stdIdent(baseName + "_" + method)
-				} else {
-					funExpr = t.ident(lookupBaseName + "_" + method)
-				}
-			} else {
-				funExpr = ast.NewIdent(method)
-			}
-
-			// Only add type arguments when they are explicitly provided
-			// If no explicit type args, let Go infer all type parameters
-			// This is important for methods with their own type params like Map[U]
-			// Get receiver type args, filtering out unresolved type params
-			recvTypeArgs := t.getReceiverTypeArgs(recvType)
-			var concreteRecvTypeArgs []ast.Expr
-			for _, arg := range recvTypeArgs {
-				// Check if this is an unresolved type param (single uppercase letter)
-				if ident, ok := arg.(*ast.Ident); ok {
-					if len(ident.Name) == 1 && ident.Name[0] >= 'A' && ident.Name[0] <= 'Z' {
-						// Skip unresolved type params like T, U, K, V
-						continue
-					}
-				}
-				concreteRecvTypeArgs = append(concreteRecvTypeArgs, arg)
-			}
-
-			// Decide whether to add type arguments:
-			// - If method has its own type params (e.g., Map[U]) and no explicit type args: let Go infer
-			// - Otherwise: combine explicit type args with concrete receiver type args
-			shouldAddTypeArgs := len(typeArgs) > 0 || (methodMeta == nil || len(methodMeta.TypeParams) == 0)
-			if shouldAddTypeArgs {
-				allTypeArgs := append(typeArgs, concreteRecvTypeArgs...)
-				if len(allTypeArgs) == 1 {
-					funExpr = &ast.IndexExpr{X: funExpr, Index: allTypeArgs[0]}
-				} else if len(allTypeArgs) > 1 {
-					funExpr = &ast.IndexListExpr{X: funExpr, Indices: allTypeArgs}
-				}
-			}
-
-			return &ast.CallExpr{
-				Fun:      funExpr,
-				Args:     append([]ast.Expr{receiver}, mArgs...),
-				Ellipsis: ellipsisPos(hasSpread),
-			}, nil
+		if handled {
+			return expr, nil
 		}
 	}
 
-	// Handle regular method calls on generic types (methods without type params on receiver types with type params)
-	// These should remain as method calls but still need expected types for lambda arguments
+	// --- Section 4: Regular method call (non-generic method or generic-method
+	// lookup fell through). Covers both the path with method metadata and the
+	// FIX-042 fallback when metadata cannot be resolved.
 	if receiver != nil && !isGenericMethod && method != "" {
-		var methodMeta *transpiler.MethodMetadata
-		// Use unified resolution to find type metadata
-		// Look up method metadata for ALL types (not just generic ones) so that
-		// non-generic wrapper types like Str can pass expected function types to lambda arguments.
-		typeMeta := t.getTypeMeta(lookupBaseName)
-		if typeMeta != nil {
-			methodMeta = typeMeta.Methods[method]
-		}
-		if methodMeta != nil {
-			// Build type substitution map from receiver's type arguments
-			typeSubst := make(map[string]string)
-			recvTypeArgs := t.getReceiverTypeArgStrings(recvType)
-			hasUnresolvedTypeParams := false
-			for i, tp := range typeMeta.TypeParams {
-				if i < len(recvTypeArgs) {
-					arg := recvTypeArgs[i]
-					// Check if this type arg is an unresolved type param (single uppercase letter)
-					if len(arg) == 1 && arg[0] >= 'A' && arg[0] <= 'Z' {
-						hasUnresolvedTypeParams = true
-						break
-					}
-					typeSubst[tp] = arg
-				}
-			}
-
-			// If receiver has unresolved type params, skip full expected type inference
-			// but still detect void function parameters for lambda return type stripping
-			if hasUnresolvedTypeParams {
-				var mArgs []ast.Expr
-				hasSpread := false
-				for i, argCtx := range argListCtx.AllArgument() {
-					arg := argCtx.(*grammar.ArgumentContext)
-					exprCtx, lambdaCtx, isSpread, extractErr := extractArgContent(arg)
-					if extractErr != nil {
-						return nil, extractErr
-					}
-					if isSpread {
-						hasSpread = true
-					}
-					// Only pass void function types (avoids unresolved type params in return types)
-					unresolvedCtx := t.buildMethodCallContext(methodMeta, typeSubst, true)
-					expectedType := t.resolveExpectedArgType(unresolvedCtx, i)
-					var expr ast.Expr
-					var err error
-					if lambdaCtx != nil {
-						expr, err = t.transformLambdaArgWithExpectedType(lambdaCtx, expectedType)
-					} else {
-						expr, err = t.transformArgumentWithExpectedType(exprCtx, expectedType)
-					}
-					if err != nil {
-						return nil, err
-					}
-					mArgs = append(mArgs, expr)
-				}
-				return &ast.CallExpr{
-					Fun:      &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)},
-					Args:     mArgs,
-					Ellipsis: ellipsisPos(hasSpread),
-				}, nil
-			}
-
-			// Transform arguments with expected types, handling named args and defaults
-			var mArgs []ast.Expr
-			mNamedArgs := make(map[string]ast.Expr)
-			hasSpread := false
-			argIdx := 0
-			for _, argCtx := range argListCtx.AllArgument() {
-				arg := argCtx.(*grammar.ArgumentContext)
-				exprCtx, lambdaCtx, isSpreadAll, extractErr := extractArgContent(arg)
-				if extractErr != nil {
-					return nil, extractErr
-				}
-				if isSpreadAll {
-					hasSpread = true
-				}
-				if arg.Identifier() != nil {
-					argName := arg.Identifier().GetText()
-					resolvedMethodCtx := t.buildMethodCallContext(methodMeta, typeSubst, false)
-					expectedType := t.resolveNamedArgExpectedType(resolvedMethodCtx, argName)
-					var expr ast.Expr
-					var err error
-					if lambdaCtx != nil {
-						expr, err = t.transformLambdaArgWithExpectedType(lambdaCtx, expectedType)
-					} else {
-						expr, err = t.transformArgumentWithExpectedType(exprCtx, expectedType)
-					}
-					if err != nil {
-						return nil, err
-					}
-					mNamedArgs[argName] = expr
-				} else {
-					resolvedMethodCtx := t.buildMethodCallContext(methodMeta, typeSubst, false)
-					expectedType := t.resolveExpectedArgType(resolvedMethodCtx, argIdx)
-					var expr ast.Expr
-					var err error
-					if lambdaCtx != nil {
-						expr, err = t.transformLambdaArgWithExpectedType(lambdaCtx, expectedType)
-					} else {
-						expr, err = t.transformArgumentWithExpectedType(exprCtx, expectedType)
-					}
-					if err != nil {
-						return nil, err
-					}
-					mArgs = append(mArgs, expr)
-					argIdx++
-				}
-			}
-			methodFun := &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)}
-			recvTypeName := recvType.BaseName()
-			if len(mNamedArgs) > 0 && len(methodMeta.ParamNames) > 0 {
-				return t.handleNamedArgsMethodCall(methodFun, receiver, mArgs, mNamedArgs, methodMeta, recvTypeName, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
-			}
-			if len(methodMeta.DefaultExprs) > 0 && len(mArgs) < len(methodMeta.ParamTypes) {
-				filled, err := t.fillDefaultArgsMethod(receiver, mArgs, methodMeta, recvTypeName, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
-				if err != nil {
-					return nil, err
-				}
-				return &ast.CallExpr{Fun: methodFun, Args: filled, Ellipsis: ellipsisPos(hasSpread)}, nil
-			}
-			return &ast.CallExpr{Fun: methodFun, Args: mArgs, Ellipsis: ellipsisPos(hasSpread)}, nil
-		}
-
-		// FIX-042: When method metadata is not found (receiver type unresolvable),
-		// still generate the method call directly instead of falling through to the
-		// regular function call handler which would lose the receiver.method structure.
-		var mArgs []ast.Expr
-		hasSpread := false
-		for _, argCtx := range argListCtx.AllArgument() {
-			arg := argCtx.(*grammar.ArgumentContext)
-			exprCtx, lambdaCtx, isSpread, extractErr := extractArgContent(arg)
-			if extractErr != nil {
-				return nil, extractErr
-			}
-			if isSpread {
-				hasSpread = true
-			}
-			var expr ast.Expr
-			var err error
-			if lambdaCtx != nil {
-				expr, err = t.transformLambdaArgWithExpectedType(lambdaCtx, transpiler.NilType{})
-			} else {
-				expr, err = t.transformArgumentWithExpectedType(exprCtx, transpiler.NilType{})
-			}
-			if err != nil {
-				return nil, err
-			}
-			mArgs = append(mArgs, expr)
-		}
-		return &ast.CallExpr{
-			Fun:      &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)},
-			Args:     mArgs,
-			Ellipsis: ellipsisPos(hasSpread),
-		}, nil
+		return t.transformRegularMethodCall(argListCtx, receiver, method, recvType, lookupBaseName)
 	}
 
-	// Regular function call - transform arguments
-	// Look up function metadata for expected parameter types (enables void lambda detection)
-	var funcMeta *transpiler.FunctionMetadata
-	if funcName := t.extractFuncName(fun); funcName != "" {
-		funcMeta = t.getFunction(funcName)
+	// --- Section 5: Regular function call context gathering ---
+	callCtx := t.collectFunctionCallContext(fun, argListCtx)
+
+	// --- Section 6: Argument transformation ---
+	// Walks the argument list, classifying each arg as positional or named,
+	// and resolves an expected type for each from the gathered callCtx.
+	args, namedArgs, hasSpread, err := t.transformFunctionArgs(fun, argListCtx, callCtx)
+	if err != nil {
+		return nil, err
 	}
 
-	// FIX-075: When GALA function metadata is not available, try Go type info.
-	// This handles Go-defined functions and variables with function types (e.g., concurrent.Spawn)
-	// that are called from GALA code via dot imports or qualified references.
-	var goFuncParamTypes []transpiler.Type
-	if funcMeta == nil && t.goTypeInfo != nil {
-		if funcName := t.extractFuncName(fun); funcName != "" {
-			goFuncParamTypes = t.resolveGoFuncParamTypes(funcName)
-		}
-	}
-
-	// Check if this call is struct construction — if so, use struct field types as expected types
-	// for lambda arguments. This must happen BEFORE argument transformation so that lambdas
-	// can infer parameter types from the struct field definitions.
-	var structFieldExpectedTypes []transpiler.Type
-	if funcName := t.extractFuncName(fun); funcName != "" {
-		typeMeta, resolvedTypeName := t.getTypeMetaResolved(funcName)
-		if typeMeta != nil {
-			resolved := t.resolveStructTypeName(resolvedTypeName)
-			if fields, ok := t.structFields[resolved]; ok {
-				if fieldTypes, ok := t.structFieldTypes[resolved]; ok {
-					structFieldExpectedTypes = make([]transpiler.Type, len(fields))
-					for i, fieldName := range fields {
-						if ft, ok := fieldTypes[fieldName]; ok {
-							structFieldExpectedTypes[i] = ft
-						}
-					}
-				}
-			}
-		}
-	}
-
-	// For generic functions without explicit type args (e.g., Iterate(1, (x) => x * 2)),
-	// pre-scan non-lambda arguments to infer type params so that lambda params get concrete types.
-	var inferredTypeSubst map[string]string
-	if funcMeta != nil && len(funcMeta.TypeParams) > 0 {
-		funcTypeArgs := t.extractFuncCallTypeArgs(fun)
-		if len(funcTypeArgs) > 0 {
-			// Explicit type args provided — use directly
-			inferredTypeSubst = make(map[string]string)
-			for i, tp := range funcMeta.TypeParams {
-				if i < len(funcTypeArgs) {
-					inferredTypeSubst[tp] = funcTypeArgs[i]
-				}
-			}
-		} else {
-			// No explicit type args — infer from non-lambda arguments
-			inferredTypeSubst = t.inferFuncTypeSubstFromArgs(funcMeta, argListCtx)
-		}
-	}
-
-	var args []ast.Expr
-	namedArgs := make(map[string]ast.Expr)
-	hasSpread := false
-
-	argIdx := 0
-	for _, argCtx := range argListCtx.AllArgument() {
-		arg := argCtx.(*grammar.ArgumentContext)
-		exprCtx, lambdaCtx, isSpreadAll, extractErr := extractArgContent(arg)
-		if extractErr != nil {
-			return nil, extractErr
-		}
-		if isSpreadAll {
-			hasSpread = true
-		}
-
-		// Check for named argument
-		if arg.Identifier() != nil {
-			// This is a named argument
-			argName := arg.Identifier().GetText()
-			// Look up expected type from struct field types for lambda inference
-			var namedExpectedType transpiler.Type = transpiler.NilType{}
-			if structFieldExpectedTypes != nil {
-				if funcName := t.extractFuncName(fun); funcName != "" {
-					typeMeta, resolvedTypeName := t.getTypeMetaResolved(funcName)
-					if resolvedTypeName != "" {
-						resolved := t.resolveStructTypeName(resolvedTypeName)
-						if fieldTypes, ok := t.structFieldTypes[resolved]; ok {
-							if ft, ok := fieldTypes[argName].(transpiler.FuncType); ok {
-								namedExpectedType = ft
-								// Apply generic type substitution if this is a generic struct construction
-								// e.g., Wrapper[U](compute = ...) maps T -> U
-								if typeMeta != nil && len(typeMeta.TypeParams) > 0 {
-									typeArgs := t.extractFuncCallTypeArgs(fun)
-									if len(typeArgs) > 0 {
-										typeSubst := make(map[string]string)
-										for i, tp := range typeMeta.TypeParams {
-											if i < len(typeArgs) {
-												typeSubst[tp] = typeArgs[i]
-											}
-										}
-										namedExpectedType = t.substituteTranspilerTypeParams(namedExpectedType, typeSubst)
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-			// Also check function metadata for named args in function calls
-			if namedExpectedType.IsNil() && funcMeta != nil && len(funcMeta.ParamNames) > 0 {
-				for i, paramName := range funcMeta.ParamNames {
-					if paramName == argName && i < len(funcMeta.ParamTypes) {
-						if ft, ok := funcMeta.ParamTypes[i].(transpiler.FuncType); ok {
-							namedExpectedType = ft
-						}
-						break
-					}
-				}
-			}
-			var expr ast.Expr
-			var err error
-			if lambdaCtx != nil {
-				expr, err = t.transformLambdaArgWithExpectedType(lambdaCtx, namedExpectedType)
-			} else {
-				expr, err = t.transformArgumentWithExpectedType(exprCtx, namedExpectedType)
-			}
-			if err != nil {
-				return nil, err
-			}
-			namedArgs[argName] = expr
-		} else {
-			// Positional argument - use expected type if available
-			// Resolve expected type using unified function call context
-			funcCallCtx := t.buildFuncCallContext(funcMeta, inferredTypeSubst, goFuncParamTypes, structFieldExpectedTypes)
-			expectedType := t.resolveExpectedArgType(funcCallCtx, argIdx)
-			var expr ast.Expr
-			var err error
-			if lambdaCtx != nil {
-				expr, err = t.transformLambdaArgWithExpectedType(lambdaCtx, expectedType)
-			} else {
-				expr, err = t.transformArgumentWithExpectedType(exprCtx, expectedType)
-			}
-			if err != nil {
-				return nil, err
-			}
-			args = append(args, expr)
-			argIdx++
-		}
-	}
-
-	// If we have named args, try function call with named args + defaults first
+	// --- Section 7: Named-args dispatch ---
 	if len(namedArgs) > 0 {
-		if funcMeta != nil && len(funcMeta.ParamNames) > 0 {
-			return t.handleNamedArgsFuncCall(fun, args, namedArgs, funcMeta, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
+		if callCtx.funcMeta != nil && len(callCtx.funcMeta.ParamNames) > 0 {
+			return t.handleNamedArgsFuncCall(fun, args, namedArgs, callCtx.funcMeta, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
 		}
 		return t.handleNamedArgsCall(fun, args, namedArgs, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
 	}
 
-	// If fewer positional args than expected and function has defaults, inject default values
-	if funcMeta != nil && len(funcMeta.DefaultExprs) > 0 && len(args) < len(funcMeta.ParamTypes) {
-		filled, err := t.fillDefaultArgs(args, funcMeta, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
+	// --- Section 8: Default-arg injection for under-filled positional calls ---
+	if callCtx.funcMeta != nil && len(callCtx.funcMeta.DefaultExprs) > 0 && len(args) < len(callCtx.funcMeta.ParamTypes) {
+		filled, err := t.fillDefaultArgs(args, callCtx.funcMeta, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
 		if err != nil {
 			return nil, err
 		}
 		args = filled
 	}
 
-	// Check for compiler intrinsic: StructMeta[T]()
+	// --- Section 9: StructMeta[T]() compiler intrinsic ---
 	typeName := t.getBaseTypeName(fun)
 	if typeName == "StructMeta" {
 		return t.transformStructMetaConstruction(fun, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
 	}
 
-	// Check if the function being called is a type with an Apply method
-	// This handles companion object calls like Some[A](value) -> Some[A]{}.Apply(value)
+	// --- Section 10: Companion Apply / positional struct construction ---
 	if typeName != "" {
-		// Use unified resolution to find type metadata
-		typeMeta, resolvedTypeMeta := t.getTypeMetaResolved(typeName)
-		if typeMeta != nil {
-			// Update typeName to resolved name for subsequent lookups
-			typeName = resolvedTypeMeta
-			// First check if this looks like positional struct construction
-			// (args match struct field count) - prefer struct construction over Apply
-			resolvedTypeName := t.resolveStructTypeName(typeName)
-			if fields, structOk := t.structFields[resolvedTypeName]; structOk && len(args) > 0 && len(args) == len(fields) {
-				// It's struct construction with positional arguments matching field count
-				var elts []ast.Expr
-				immutFlags := t.structImmutFields[resolvedTypeName]
-				for i, fieldName := range fields {
-					var valExpr ast.Expr
-					if immutFlags != nil && i < len(immutFlags) && immutFlags[i] {
-						valExpr = &ast.CallExpr{
-							Fun:  t.stdIdent("NewImmutable"),
-							Args: []ast.Expr{args[i]},
-						}
-					} else {
-						valExpr = args[i]
-					}
-					elts = append(elts, &ast.KeyValueExpr{
-						Key:   ast.NewIdent(fieldName),
-						Value: valExpr,
-					})
-				}
-				return &ast.CompositeLit{Type: fun, Elts: elts}, nil
-			}
-
-			if methodMeta, hasApply := typeMeta.Methods["Apply"]; hasApply {
-				// Check if the base expression is a type (not a variable)
-				isType := false
-				baseExpr := fun
-				hasTypeArgs := false
-				var typeArgs []ast.Expr
-
-				if idx, ok := fun.(*ast.IndexExpr); ok {
-					baseExpr = idx.X
-					hasTypeArgs = true
-					typeArgs = []ast.Expr{t.qualifyTypeExpr(idx.Index)}
-				} else if idxList, ok := fun.(*ast.IndexListExpr); ok {
-					baseExpr = idxList.X
-					hasTypeArgs = true
-					typeArgs = t.qualifyTypeExprs(idxList.Indices)
-				}
-
-				if id, ok := baseExpr.(*ast.Ident); ok {
-					if !t.isVal(id.Name) && !t.isVar(id.Name) {
-						if !t.getType(id.Name).IsNil() {
-							isType = true
-						}
-					}
-				} else if sel, ok := baseExpr.(*ast.SelectorExpr); ok {
-					if id, ok := sel.X.(*ast.Ident); ok {
-						// Check if it's an explicitly imported package OR the std package
-						if t.importManager.IsPackage(id.Name) || id.Name == registry.StdPackageName {
-							isType = true
-						}
-					}
-				}
-
-				if isType {
-					isGeneric := methodMeta.IsGeneric || len(methodMeta.TypeParams) > 0
-
-					// If no explicit type args but type has type parameters, infer them from argument types
-					// and/or from the enclosing function's return type context (FIX-040).
-					if !hasTypeArgs && len(typeMeta.TypeParams) > 0 {
-						// Build a map from type param name to inferred concrete type
-						inferredMap := make(map[string]transpiler.Type)
-
-						// Step 1: Try to infer from Apply method arguments using unification.
-						// This handles both simple cases (param is T, arg is string -> T=string)
-						// and complex cases (param is func() T, arg is func() string -> T=string).
-						// FIX-044: Use unifyForInference instead of direct string comparison
-						// so that FuncType params like func() T can be matched against lambda arg types.
-						if len(args) > 0 {
-							for i, arg := range args {
-								if i < len(methodMeta.ParamTypes) {
-									argType := t.getExprTypeName(arg)
-									if argType != nil && !argType.IsNil() && !argType.IsAny() {
-										t.unifyForInference(methodMeta.ParamTypes[i], argType, typeMeta.TypeParams, inferredMap)
-									}
-								}
-							}
-						}
-
-						// Step 2 (FIX-040): For any type params still unresolved, try to infer
-						// from the enclosing function's return type. For example, if we're in
-						// a function returning Option[string] and calling Some(v), unify the
-						// Apply method's return type (Option[T]) with Option[string] to get T=string.
-						if len(inferredMap) < len(typeMeta.TypeParams) && t.currentFuncReturnType != nil && !t.currentFuncReturnType.IsNil() {
-							if methodMeta.ReturnType != nil && !methodMeta.ReturnType.IsNil() {
-								returnInferred := make(map[string]transpiler.Type)
-								t.unifyForInference(methodMeta.ReturnType, t.currentFuncReturnType, typeMeta.TypeParams, returnInferred)
-								for tp, inferred := range returnInferred {
-									if _, alreadySet := inferredMap[tp]; !alreadySet {
-										inferredMap[tp] = inferred
-									}
-								}
-							}
-						}
-
-						// Build the inferred type args list
-						if len(inferredMap) == len(typeMeta.TypeParams) {
-							inferredTypeArgs := make([]ast.Expr, len(typeMeta.TypeParams))
-							allResolved := true
-							for i, tp := range typeMeta.TypeParams {
-								if inferred, ok := inferredMap[tp]; ok {
-									inferredTypeArgs[i] = t.typeToExpr(inferred)
-								} else {
-									allResolved = false
-									break
-								}
-							}
-							if allResolved {
-								typeArgs = inferredTypeArgs
-								hasTypeArgs = true
-								if len(typeArgs) == 1 {
-									fun = &ast.IndexExpr{X: baseExpr, Index: typeArgs[0]}
-								} else if len(typeArgs) > 1 {
-									fun = &ast.IndexListExpr{X: baseExpr, Indices: typeArgs}
-								}
-							}
-						}
-					}
-
-					// Auto-inject StructMeta[T] when first param is StructMetaOps.
-					// Codec[Person](SnakeCase()) → prepend _StructMeta_Person{} before SnakeCase()
-					if hasTypeArgs && len(methodMeta.ParamTypes) > 0 {
-						firstParamType := methodMeta.ParamTypes[0].BaseName()
-						if firstParamType == "StructMetaOps" || firstParamType == "json.StructMetaOps" {
-							args = t.autoInjectStructMeta(args, methodMeta, typeArgs)
-						}
-					}
-
-					if isGeneric {
-						// Generic Apply method: use standalone function
-						fullName := typeName + "_Apply"
-						var funExpr ast.Expr
-						isStdType := hasStdPrefix(typeName)
-						if !isStdType {
-							resolvedType := t.getType(typeName)
-							isStdType = !resolvedType.IsNil() && resolvedType.GetPackage() == registry.StdPackageName
-						}
-						if isStdType {
-							funExpr = t.stdIdent(stripStdPrefix(fullName))
-						} else {
-							funExpr = t.ident(fullName)
-						}
-
-						if len(typeArgs) == 1 {
-							funExpr = &ast.IndexExpr{X: funExpr, Index: typeArgs[0]}
-						} else if len(typeArgs) > 1 {
-							funExpr = &ast.IndexListExpr{X: funExpr, Indices: typeArgs}
-						}
-
-						receiver := &ast.CompositeLit{Type: baseExpr}
-						if hasTypeArgs {
-							receiver = &ast.CompositeLit{Type: fun}
-						}
-
-						return &ast.CallExpr{
-							Fun:  funExpr,
-							Args: append([]ast.Expr{receiver}, args...),
-						}, nil
-					}
-
-					// Non-generic Apply method: call Apply on instance
-					receiver := &ast.CompositeLit{Type: fun}
-					return &ast.CallExpr{
-						Fun: &ast.SelectorExpr{
-							X:   receiver,
-							Sel: ast.NewIdent("Apply"),
-						},
-						Args: args,
-					}, nil
-				}
-			} else {
-				// No Apply method - check if this is struct construction with positional args
-				resolvedTypeName := t.resolveStructTypeName(typeName)
-				if fields, ok := t.structFields[resolvedTypeName]; ok && len(args) > 0 {
-					// It's struct construction with positional arguments
-					var elts []ast.Expr
-					immutFlags := t.structImmutFields[resolvedTypeName]
-					for i, fieldName := range fields {
-						if i >= len(args) {
-							break
-						}
-						var valExpr ast.Expr
-						if immutFlags != nil && i < len(immutFlags) && immutFlags[i] {
-							valExpr = &ast.CallExpr{
-								Fun:  t.stdIdent("NewImmutable"),
-								Args: []ast.Expr{args[i]},
-							}
-						} else {
-							valExpr = args[i]
-						}
-						elts = append(elts, &ast.KeyValueExpr{
-							Key:   ast.NewIdent(fieldName),
-							Value: valExpr,
-						})
-					}
-					return &ast.CompositeLit{Type: fun, Elts: elts}, nil
-				}
-			}
+		handled, expr, err := t.tryTransformCompanionApplyOrStructCtor(fun, typeName, args)
+		if err != nil {
+			return nil, err
+		}
+		if handled {
+			return expr, nil
 		}
 	}
 
-	// Check if fun is a CompositeLit (struct literal) whose type has an Apply method
-	// This handles cases like: Append("cherry")("apple") -> Append{...}.Apply("apple")
-	if compLit, ok := fun.(*ast.CompositeLit); ok {
-		var litTypeName string
-		switch lt := compLit.Type.(type) {
-		case *ast.Ident:
-			litTypeName = lt.Name
-		case *ast.SelectorExpr:
-			litTypeName = lt.Sel.Name
-		case *ast.IndexExpr:
-			if id, ok := lt.X.(*ast.Ident); ok {
-				litTypeName = id.Name
-			} else if sel, ok := lt.X.(*ast.SelectorExpr); ok {
-				litTypeName = sel.Sel.Name
-			}
-		case *ast.IndexListExpr:
-			if id, ok := lt.X.(*ast.Ident); ok {
-				litTypeName = id.Name
-			} else if sel, ok := lt.X.(*ast.SelectorExpr); ok {
-				litTypeName = sel.Sel.Name
-			}
-		}
-		if litTypeName != "" {
-			if typeMeta := t.getTypeMeta(litTypeName); typeMeta != nil {
-				if _, hasApply := typeMeta.Methods["Apply"]; hasApply {
-					// Transform to structLit.Apply(args)
-					return &ast.CallExpr{
-						Fun: &ast.SelectorExpr{
-							X:   compLit,
-							Sel: ast.NewIdent("Apply"),
-						},
-						Args: args,
-					}, nil
-				}
-			}
-		}
+	// --- Section 11: CompositeLit with Apply method ---
+	// Handles `Append("cherry")("apple")` where the left side is already a
+	// struct literal produced by an earlier partial-application step.
+	if expr, handled := t.tryTransformCompositeLitApply(fun, args); handled {
+		return expr, nil
 	}
 
-	// Check if fun is a variable whose type has an Apply method
-	// This handles cases like: val add5 = Adder(5); add5(10) -> add5.Apply(10)
-	// For vals, the expression is add5.Get() (a CallExpr), not just add5 (Ident)
-	var valName string
-	if id, ok := fun.(*ast.Ident); ok {
-		if t.isVal(id.Name) || t.isVar(id.Name) {
-			valName = id.Name
-		}
-	} else if call, ok := fun.(*ast.CallExpr); ok {
-		// Check if this is valName.Get()
-		if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == transpiler.MethodGet && len(call.Args) == 0 {
-			if id, ok := sel.X.(*ast.Ident); ok {
-				if t.isVal(id.Name) {
-					valName = id.Name
-				}
-			}
-		}
+	// --- Section 12: Variable whose type has an Apply method ---
+	// Handles `val add5 = Adder(5); add5(10)` → `add5.Apply(10)`.
+	if expr, handled := t.tryTransformValWithApply(fun, args); handled {
+		return expr, nil
 	}
 
-	if valName != "" {
-		varType := t.getType(valName)
-		if !varType.IsNil() {
-			varTypeName := varType.BaseName()
-			if typeMeta := t.getTypeMeta(varTypeName); typeMeta != nil {
-				if _, hasApply := typeMeta.Methods["Apply"]; hasApply {
-					// Transform to variable.Apply(args) or variable.Get().Apply(args)
-					return &ast.CallExpr{
-						Fun: &ast.SelectorExpr{
-							X:   fun,
-							Sel: ast.NewIdent("Apply"),
-						},
-						Args: args,
-					}, nil
-				}
-			}
-		}
-	}
-
+	// --- Section 13: Fallback — emit the call verbatim. ---
 	return &ast.CallExpr{Fun: fun, Args: args, Ellipsis: ellipsisPos(hasSpread)}, nil
 }
 
