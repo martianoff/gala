@@ -295,7 +295,13 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 				continue
 			}
 			// Skip lambda/partial args — can't infer types from them.
+			// Also skip placeholder-lambda expressions (L4): they contain `_`
+			// identifiers that only make sense once rewritten as a lambda,
+			// which happens later in transformArgumentWithExpectedType.
 			if lambdaCtx != nil || t.findLambdaInExpression(exprCtx) != nil || t.findPartialFunctionInExpression(exprCtx) != nil {
+				continue
+			}
+			if countPlaceholderUnderscoresInExpr(exprCtx) > 0 {
 				continue
 			}
 			expr, txErr := t.transformExpression(exprCtx)
@@ -1794,6 +1800,15 @@ func (t *galaASTTransformer) transformArgumentWithExpectedType(exprCtx grammar.I
 		}
 		return t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedParamTypes)
 	}
+
+	// L4: Try to rewrite as a placeholder lambda if the expected type is a
+	// function type and the expression contains `_` identifiers.
+	if expr, handled, err := t.tryRewriteAsPlaceholderLambda(exprCtx, expectedType); err != nil {
+		return nil, err
+	} else if handled {
+		return expr, nil
+	}
+
 	// Not a lambda or partial function, transform normally
 	return t.transformExpression(exprCtx)
 }

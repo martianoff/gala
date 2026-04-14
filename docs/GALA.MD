@@ -812,6 +812,12 @@ val res = c match {
 
 Extractors can be nested: `case Some(Even(n)) => ...`. You can use the underscore `_` to skip variable bindings in any extractor: `case Some(_) => "Got something"`.
 
+##### Sealed-Variant Pattern Arity
+
+Each variant pattern must bind the exact number of fields the variant
+declares — use `_` for fields you don't care about. See
+[docs/errors/GALA-E0004.md](errors/GALA-E0004.md).
+
 #### Pattern Matching Filters (Guards)
 Similar to Scala, GALA supports additional `if` conditions in pattern match clauses, often referred to as guards. These filters allow you to apply additional constraints to the extracted variables.
 
@@ -1007,6 +1013,40 @@ opt.ForEach((x) => {
     fmt.Println(x)
 })
 ```
+
+#### Placeholder Lambda Shorthand
+
+For single-expression lambdas, you can omit the parameter list entirely and
+use `_` as a placeholder for each argument. The transpiler rewrites the
+expression into a lambda whose parameter count equals the number of `_`
+tokens, left-to-right:
+
+```gala
+val nums = ArrayOf[int](1, 2, 3, 4, 5)
+
+// Single placeholder — one parameter.
+val doubled = nums.Map(_ * 2)              // ≡ (x) => x * 2
+val evens   = nums.Filter(_ % 2 == 0)      // ≡ (x) => x % 2 == 0
+val names   = people.Map(_.Name)           // ≡ (p) => p.Name
+
+// Multiple placeholders — positional, each becomes a separate parameter.
+val sum     = nums.FoldLeft(0, _ + _)      // ≡ (a, b) => a + b
+val product = nums.FoldLeft(1, _ * _)      // ≡ (a, b) => a * b
+
+// Parenthesized subexpressions are fine.
+val plus1Doubled = nums.Map((_ + 1) * 2)   // ≡ (x) => (x + 1) * 2
+```
+
+The rewrite is gated on the argument's expected type being a function type
+— GALA only rewrites when it can see that a lambda is wanted at the call
+site. Outside that context, `_` retains its existing meanings: the wildcard
+pattern in `match`, the unused-binding marker in `val (a, _) = tuple`, and
+the "any" type when written in a type position.
+
+Parameter types are inferred from the expected function type (e.g. `Map`
+on an `Array[int]` gives `_` type `int`). Placeholder lambdas may not
+escape an argument position: you cannot assign `_ * 2` to a val, return it
+from a function, or use it as a standalone expression.
 
 ### Partial Function Literals
 GALA supports Scala-style partial function syntax where `{ case pattern => result }` creates a function that returns `Option[T]`. This enables concise pattern matching that automatically wraps results in `Some` and returns `None` for unmatched cases.
