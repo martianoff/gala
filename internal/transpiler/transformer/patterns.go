@@ -186,10 +186,14 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 		suggestion := t.suggestExtractorName(rawName)
 		msg := fmt.Sprintf("extractor '%s' must define an Unapply method. For generic extractors use: func (e Extractor[T]) Unapply(v ContainerType[T]) Option[T]. For guard patterns use: func (e Extractor) Unapply(v ConcreteType) bool",
 			rawName)
+		hint := ""
 		if suggestion != "" {
-			msg += fmt.Sprintf(" (did you mean '%s'?)", suggestion)
+			hint = fmt.Sprintf("did you mean '%s'?", suggestion)
 		}
-		return nil, nil, galaerr.NewSemanticErrorAt(patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn(), msg)
+		return nil, nil, galaerr.NewCodedSemanticError(
+			galaerr.CodeMissingUnapply,
+			patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn(),
+			msg, hint)
 	}
 
 	// Simple Binding - bind variable with the matched type
@@ -448,7 +452,7 @@ func (t *galaASTTransformer) getExtractedTypeAtIndex(extractorName string, objTy
 func (t *galaASTTransformer) getExtractedTypeAtIndexWithArgs(extractorName string, objType transpiler.Type, index int, numArgs int) transpiler.Type {
 	genType, ok := objType.(transpiler.GenericType)
 	if !ok || len(genType.Params) == 0 {
-		return nil
+		return transpiler.NilType{}
 	}
 
 	baseName := genType.Base.BaseName()
@@ -471,7 +475,7 @@ func (t *galaASTTransformer) getExtractedTypeAtIndexWithArgs(extractorName strin
 		extractedType = t.getGenericExtractorResultTypeWithArgs(extractorName, objType, index, numArgs)
 
 		// If not found, look up companion object metadata
-		if extractedType == nil {
+		if extractedType == nil || extractedType.IsNil() {
 			companionMeta := t.getCompanionObjectMetadata(extractorName)
 			if companionMeta != nil {
 				// Verify the companion works with this container type
@@ -497,17 +501,20 @@ func (t *galaASTTransformer) getExtractedTypeAtIndexWithArgs(extractorName strin
 	}
 
 	// Check if the extracted type is a type parameter (like T, U, A, B)
-	// If so, return nil to avoid generating invalid type assertions
-	if extractedType != nil {
+	// If so, return NilType{} to avoid generating invalid type assertions.
+	if extractedType != nil && !extractedType.IsNil() {
 		if basic, ok := extractedType.(transpiler.BasicType); ok {
 			name := basic.Name
 			// Type parameters are typically single uppercase letters or short names
 			if len(name) == 1 && name[0] >= 'A' && name[0] <= 'Z' {
-				return nil
+				return transpiler.NilType{}
 			}
 		}
 	}
 
+	if extractedType == nil {
+		return transpiler.NilType{}
+	}
 	return extractedType
 }
 
@@ -873,7 +880,43 @@ func (t *galaASTTransformer) getSeqElementType(typ transpiler.Type) transpiler.T
 	return transpiler.BasicType{Name: "any"}
 }
 
+// scanSeqPatternArgs walks a seq-pattern's argument list, locating the rest
+// pattern (if any) and returning its index, its binding name (or "" for a
+// wildcard/anonymous rest), and the count of non-rest arguments. Extracted
+// from generateSeqPatternMatch as part of A2.
+func scanSeqPatternArgs(args []grammar.IArgumentContext) (restIndex int, restName string, nonRestCount int) {
+	restIndex = -1
+	for i, argCtx := range args {
+		arg := argCtx.(*grammar.ArgumentContext)
+		pat := arg.Pattern()
+		if pat == nil {
+			nonRestCount++
+			continue
+		}
+		if restPat, ok := pat.(*grammar.RestPatternContext); ok {
+			restIndex = i
+			exprText := restPat.Expression().GetText()
+			if !isWildcard(exprText) {
+				restName = exprText
+			}
+		} else {
+			nonRestCount++
+		}
+	}
+	return
+}
+
 // generateSeqPatternMatch generates code for sequence pattern matching with rest patterns.
+// TODO(A2): this function is 301 lines and splits naturally into:
+//   - scanSeqPatternArgs (done)              — classify args into non-rest/rest
+//   - emitSizeCheck                          — generate the `obj.Size() >= N` guard
+//   - emitNonRestBindings                    — per-arg Get() / As[T]() bindings
+//   - emitRestBinding                        — SeqDrop(N).(T) for the rest pattern
+//   - assembleGuardedBlock                   — combine into final if-condition
+//
+// The remaining extractions are deferred to a follow-up PR because they share
+// deep local state (argIndex cursor, sizeCheckName, elemType) that needs a
+// carrying struct to thread safely.
 // For example, Array(first, second, rest...) matching against Array[int] generates:
 //
 //	_tmp_ok := obj.Size() >= 2
@@ -899,26 +942,7 @@ func (t *galaASTTransformer) generateSeqPatternMatch(objExpr ast.Expr, argList *
 	var stmts []ast.Stmt
 	var conds []ast.Expr
 
-	// Find the rest pattern and count non-rest arguments
-	var restPatternIndex int = -1
-	var restPatternName string
-	nonRestCount := 0
-
-	for i, argCtx := range args {
-		arg := argCtx.(*grammar.ArgumentContext)
-		if pat := arg.Pattern(); pat == nil {
-			nonRestCount++
-		} else if restPat, ok := pat.(*grammar.RestPatternContext); ok {
-			restPatternIndex = i
-			// Get the identifier before ...
-			exprText := restPat.Expression().GetText()
-			if !isWildcard(exprText) {
-				restPatternName = exprText
-			}
-		} else {
-			nonRestCount++
-		}
-	}
+	restPatternIndex, restPatternName, nonRestCount := scanSeqPatternArgs(args)
 
 	// Rest pattern must be the last argument
 	if restPatternIndex >= 0 && restPatternIndex != len(args)-1 {
@@ -1366,31 +1390,31 @@ func (t *galaASTTransformer) getGenericExtractorResultTypeWithArgs(extractorName
 	// Use unified resolution to find the extractor's type metadata
 	extractorMeta := t.getTypeMeta(extractorName)
 	if extractorMeta == nil || len(extractorMeta.TypeParams) == 0 {
-		return nil
+		return transpiler.NilType{}
 	}
 
 	// Get the Unapply method
 	unapplyMeta, ok := extractorMeta.Methods["Unapply"]
 	if !ok || len(unapplyMeta.ParamTypes) == 0 {
-		return nil
+		return transpiler.NilType{}
 	}
 
 	// Infer type parameters from the matched type
 	inferredTypes := t.inferExtractorTypeParams(extractorMeta, objType)
 	if len(inferredTypes) != len(extractorMeta.TypeParams) {
-		return nil
+		return transpiler.NilType{}
 	}
 
 	// Substitute type parameters in the return type
 	returnType := t.substituteConcreteTypes(unapplyMeta.ReturnType, extractorMeta.TypeParams, inferredTypes)
 	if returnType == nil || returnType.IsNil() {
-		return nil
+		return transpiler.NilType{}
 	}
 
 	// Unwrap Option[X] to get X
 	innerType := t.unwrapOptionType(returnType)
 	if innerType == nil || innerType.IsNil() {
-		return nil
+		return transpiler.NilType{}
 	}
 
 	// Check if the result is a Tuple
@@ -1403,7 +1427,7 @@ func (t *galaASTTransformer) getGenericExtractorResultTypeWithArgs(extractorName
 				if index < len(genType.Params) {
 					return genType.Params[index]
 				}
-				return nil
+				return transpiler.NilType{}
 			}
 			// If numArgs is 1, return the full Tuple type for explicit Tuple matching
 			// This handles: Cons(Tuple(head, tail)) -> Tuple[int, List[int]]
@@ -1427,14 +1451,14 @@ func (t *galaASTTransformer) getGenericExtractorResultTypeWithArgs(extractorName
 		return innerType
 	}
 
-	return nil
+	return transpiler.NilType{}
 }
 
 // unwrapOptionType unwraps Option[X] to return X
 func (t *galaASTTransformer) unwrapOptionType(typ transpiler.Type) transpiler.Type {
 	genType, ok := typ.(transpiler.GenericType)
 	if !ok {
-		return nil
+		return transpiler.NilType{}
 	}
 	baseName := genType.Base.BaseName()
 	if baseName == "Option" || baseName == "std.Option" {
@@ -1442,7 +1466,7 @@ func (t *galaASTTransformer) unwrapOptionType(typ transpiler.Type) transpiler.Ty
 			return genType.Params[0]
 		}
 	}
-	return nil
+	return transpiler.NilType{}
 }
 
 // isDirectUnapplyReturnType returns true if the return type of an Unapply method

@@ -392,7 +392,7 @@ func (t *galaASTTransformer) trackPosition(ctx antlr.ParserRuleContext) {
 // Do NOT add intermediate recover() calls in callers of this helper — they would
 // swallow the error and leave the transformer in an inconsistent state.
 func (t *galaASTTransformer) raiseSemanticError(msg string) {
-	panic(galaerr.NewSemanticErrorAt(t.lastLine, t.lastCol, msg))
+	panic(galaerr.NewCodedSemanticError(galaerr.CodeRecursiveImmutable, t.lastLine, t.lastCol, msg, ""))
 }
 
 // semanticErrorAt creates a SemanticError with position info from an ANTLR context.

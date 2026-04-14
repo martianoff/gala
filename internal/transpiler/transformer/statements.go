@@ -7,7 +7,6 @@ import (
 	"go/token"
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
-	"strings"
 )
 
 func (t *galaASTTransformer) transformSimpleStatement(ctx grammar.ISimpleStatementContext) (ast.Stmt, error) {
@@ -135,10 +134,7 @@ func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext)
 			xExpr, err := t.transformExpression(exprCtx.GetChild(0).(grammar.IExpressionContext))
 			if err == nil {
 				typeName := t.getExprTypeName(xExpr).String()
-				baseTypeName := typeName
-				if idx := strings.Index(typeName, "["); idx != -1 {
-					baseTypeName = typeName[:idx]
-				}
+				baseTypeName := stripTypeNameDecorations(typeName)
 
 				resolvedTypeName := t.resolveStructTypeName(baseTypeName)
 				if fields, ok := t.structFields[resolvedTypeName]; ok {
