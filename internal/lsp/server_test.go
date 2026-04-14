@@ -4197,27 +4197,36 @@ func TestDefinition_TupleFieldV1V2_Repro(t *testing.T) {
 }
 
 // ====================================================================
-// REPRO: Stream.Tail/Filter go-to-definition
+// REPRO: go-to-definition for method declarations `func (r Type) Name`
+// Uses a local project so the test is self-contained and doesn't depend
+// on external packages that may not be in the Bazel test sandbox.
 // ====================================================================
 
-func TestDefinition_StreamTailFilter_Repro(t *testing.T) {
+func TestDefinition_MethodDeclNavigation_Repro(t *testing.T) {
 	harness, handler := newHarnessWithHandler(t)
-	src := "package main\n\nimport \"martianoff/gala/stream\"\n\nfunc main() {\n    val s = stream.NewCons(1, () => stream.Empty[int]())\n    val t = s.Tail()\n    val f = s.Filter((x) => x > 0)\n}\n"
-	uri := openFileOnDisk(t, harness, src)
+
+	// Create a multi-file project with method declarations in a sibling file.
+	// This mirrors the real-world case: methods on Stream/Option/etc. are
+	// defined in a different file than the usage.
+	dir := createTestProject(t, []testProjectFile{
+		{Name: "lib.gala", Src: "package mylib\n\ntype Box[T any] struct {\n    val value T\n}\n\nfunc (b Box[T]) Tail() Box[T] {\n    return b\n}\n\nfunc (b Box[T]) Filter(f func(T) bool) Box[T] {\n    return b\n}\n"},
+		{Name: "main.gala", Src: "package mylib\n\nfunc use(b Box[int]) Box[int] {\n    val t = b.Tail()\n    val f = b.Filter((x) => x > 0)\n    return t\n}\n"},
+	})
+	openProjectFile(t, harness, dir, "lib.gala")
+	uri := openProjectFile(t, harness, dir, "main.gala")
 
 	time.Sleep(200 * time.Millisecond)
 
 	richAST := handler.DebugRichAST(string(uri))
 	varTypes := handler.DebugVarTypes(string(uri))
-
 	if richAST == nil {
 		t.Fatal("richAST is nil")
 	}
 
-	// Check if Stream type is in richAST with methods
-	t.Log("=== Types containing 'Stream' ===")
+	// Diagnostic dump
+	t.Log("=== Types containing 'Box' ===")
 	for key, tm := range richAST.Types {
-		if strings.Contains(key, "Stream") || strings.Contains(tm.Name, "Stream") {
+		if strings.Contains(key, "Box") || strings.Contains(tm.Name, "Box") {
 			t.Logf("  type %q (Name=%s, Pkg=%s, DefinedIn=%s)", key, tm.Name, tm.Package, tm.DefinedIn)
 			methodNames := make([]string, 0, len(tm.Methods))
 			for mn := range tm.Methods {
@@ -4227,45 +4236,52 @@ func TestDefinition_StreamTailFilter_Repro(t *testing.T) {
 		}
 	}
 
-	// Check varTypes for "s"
-	t.Log("=== varTypes containing 's' ===")
+	t.Log("=== varTypes containing 'b' ===")
 	for k, v := range varTypes {
-		if k == "s" || strings.HasSuffix(k, ".s") {
+		if k == "b" || strings.HasSuffix(k, ".b") {
 			t.Logf("  %s = %s", k, v)
 		}
 	}
 
-	// Test go-to-definition for Tail
-	lineText := strings.Split(src, "\n")[6] // "    val t = s.Tail()"
+	// Click on "Tail" in "b.Tail()" at line 3 of main.gala
+	lineText := "    val t = b.Tail()"
 	tailIdx := strings.Index(lineText, ".Tail(")
 	if tailIdx < 0 {
 		t.Fatal("Tail not found in line")
 	}
-	tailIdx++
+	tailIdx++ // skip dot
 
-	locs, err := harness.Definition(uri, 6, tailIdx)
+	locs, err := harness.Definition(uri, 3, tailIdx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(locs) == 0 {
-		t.Fatal("expected definition for Stream.Tail, got none")
+		t.Fatal("expected definition for Box.Tail, got none")
 	}
-	t.Logf("Tail definition found at: %s line %d", locs[0].URI, locs[0].Range.Start.Line)
+	tailURI := string(locs[0].URI)
+	t.Logf("Tail definition found at: %s line %d", tailURI, locs[0].Range.Start.Line)
+	if !strings.Contains(tailURI, "lib.gala") {
+		t.Errorf("expected Tail definition in lib.gala, got: %s", tailURI)
+	}
 
-	// Test go-to-definition for Filter
-	lineText = strings.Split(src, "\n")[7] // "    val f = s.Filter((x) => x > 0)"
+	// Click on "Filter" in "b.Filter(...)" at line 4
+	lineText = "    val f = b.Filter((x) => x > 0)"
 	filterIdx := strings.Index(lineText, ".Filter(")
 	if filterIdx < 0 {
 		t.Fatal("Filter not found in line")
 	}
-	filterIdx++
+	filterIdx++ // skip dot
 
-	locs, err = harness.Definition(uri, 7, filterIdx)
+	locs, err = harness.Definition(uri, 4, filterIdx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(locs) == 0 {
-		t.Fatal("expected definition for Stream.Filter, got none")
+		t.Fatal("expected definition for Box.Filter, got none")
 	}
-	t.Logf("Filter definition found at: %s line %d", locs[0].URI, locs[0].Range.Start.Line)
+	filterURI := string(locs[0].URI)
+	t.Logf("Filter definition found at: %s line %d", filterURI, locs[0].Range.Start.Line)
+	if !strings.Contains(filterURI, "lib.gala") {
+		t.Errorf("expected Filter definition in lib.gala, got: %s", filterURI)
+	}
 }
