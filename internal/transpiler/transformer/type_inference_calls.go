@@ -14,13 +14,8 @@ import (
 func (t *galaASTTransformer) inferSelectorExprType(e *ast.SelectorExpr) transpiler.Type {
 	xType := t.getExprTypeNameManual(e.X)
 	xTypeName := xType.String()
-	// Extract base type name (strip generic parameters like List[T] -> List)
-	baseTypeName := xTypeName
-	if idx := strings.Index(xTypeName, "["); idx != -1 {
-		baseTypeName = xTypeName[:idx]
-	}
-	// Strip pointer prefix for struct field lookup
-	baseTypeName = strings.TrimPrefix(baseTypeName, "*")
+	// Extract base type name (strip generic parameters + pointer prefix)
+	baseTypeName := stripTypeNameDecorations(xTypeName)
 	// Resolve to fully qualified name for map lookup
 	resolvedTypeName := t.resolveStructTypeName(baseTypeName)
 	if !xType.IsNil() && t.structFieldTypes[resolvedTypeName] != nil {

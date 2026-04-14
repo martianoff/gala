@@ -270,6 +270,22 @@ func (t *galaASTTransformer) qualifyFuncType(ft *ast.FuncType) *ast.FuncType {
 	}
 }
 
+// stripTypeNameDecorations returns the bare type name from a stringified
+// transpiler.Type, with generic parameters and leading pointer markers removed.
+// For example, "*List[int]" -> "List", "Tuple[A,B]" -> "Tuple", "Person" -> "Person".
+//
+// This is the single authoritative helper for the "strip generics + unwrap pointer"
+// pattern previously duplicated inline across postfix.go, type_inference_calls.go,
+// and statements.go. Callers that need a lookup key into structFields, typeMetas,
+// or companion registries should route through this function.
+func stripTypeNameDecorations(typeName string) string {
+	base := typeName
+	if idx := strings.Index(typeName, "["); idx != -1 {
+		base = typeName[:idx]
+	}
+	return strings.TrimPrefix(base, "*")
+}
+
 // warnInference records a type inference warning (only when GALA_WARN_TYPES=1).
 func (t *galaASTTransformer) warnInference(format string, args ...interface{}) {
 	if t.warnTypeInference {

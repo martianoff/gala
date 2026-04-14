@@ -117,11 +117,7 @@ func (t *galaASTTransformer) resolveFieldAccess(base ast.Expr, selName string) (
 // isImmutableField checks if a field access should be auto-unwrapped via .Get().
 func (t *galaASTTransformer) isImmutableField(xType transpiler.Type, selExpr *ast.SelectorExpr, selName string) bool {
 	xTypeName := xType.String()
-	baseTypeName := xTypeName
-	if idx := strings.Index(xTypeName, "["); idx != -1 {
-		baseTypeName = xTypeName[:idx]
-	}
-	baseTypeName = strings.TrimPrefix(baseTypeName, "*")
+	baseTypeName := stripTypeNameDecorations(xTypeName)
 
 	// Check structFields (current package types)
 	resolvedTypeName := t.resolveStructTypeName(baseTypeName)

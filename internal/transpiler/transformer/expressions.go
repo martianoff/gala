@@ -752,6 +752,13 @@ func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchCont
 	return preceding, ast.NewIdent("nil"), nil
 }
 
+// unwrapImmutable is the single canonical unwrap helper for val-wrapped
+// Immutable[T] values. Given an expression of type Immutable[T], it returns
+// a .Get() call to produce the underlying T; otherwise it returns the
+// expression unchanged (pure type names and non-Immutable values are
+// pass-through). All transformer paths that need to read through an
+// Immutable wrapper MUST route through this function — do not re-implement
+// the logic inline. See also unwrapConstPtr for ConstPtr[T] dereference.
 func (t *galaASTTransformer) unwrapImmutable(expr ast.Expr) ast.Expr {
 	if expr == nil {
 		return nil

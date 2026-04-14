@@ -168,6 +168,42 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 	return t.transformCallWithArgsCtx(base, argList.(*grammar.ArgumentListContext))
 }
 
+// splitCallTarget classifies a call expression `fun` as either:
+//   - a package-qualified function call (returns receiver=nil, method="", typeArgs=nil)
+//   - a method call (returns the receiver expression, the method name, and any
+//     explicit type arguments from an IndexExpr/IndexListExpr wrapper)
+//
+// Extracted from transformCallWithArgsCtx as part of A1. A receiver whose
+// first identifier is a known package (imported or std) is always treated as
+// a package-qualified function call, never a method call.
+func (t *galaASTTransformer) splitCallTarget(fun ast.Expr) (receiver ast.Expr, method string, typeArgs []ast.Expr) {
+	isPkgHead := func(x ast.Expr) bool {
+		id, ok := x.(*ast.Ident)
+		return ok && (t.importManager.IsPackage(id.Name) || id.Name == registry.StdPackageName)
+	}
+
+	switch f := fun.(type) {
+	case *ast.SelectorExpr:
+		if isPkgHead(f.X) {
+			return nil, "", nil
+		}
+		return f.X, f.Sel.Name, nil
+	case *ast.IndexExpr:
+		sel, ok := f.X.(*ast.SelectorExpr)
+		if !ok || isPkgHead(sel.X) {
+			return nil, "", nil
+		}
+		return sel.X, sel.Sel.Name, []ast.Expr{t.qualifyTypeExpr(f.Index)}
+	case *ast.IndexListExpr:
+		sel, ok := f.X.(*ast.SelectorExpr)
+		if !ok || isPkgHead(sel.X) {
+			return nil, "", nil
+		}
+		return sel.X, sel.Sel.Name, t.qualifyTypeExprs(f.Indices)
+	}
+	return nil, "", nil
+}
+
 // transformCallWithArgsCtx is the primary entry point for transforming GALA call
 // expressions (functions, methods, constructors, companion-object Apply, etc.) into
 // Go AST call expressions.
@@ -209,40 +245,10 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	}
 
 	// --- Section 2: Method/function dispatch prelude ---
-
-	// Handle generic method calls or monadic methods: o.Map[T](f) -> Map[T](o, f)
-	var receiver ast.Expr
-	var method string
-	var typeArgs []ast.Expr
-
-	if sel, ok := fun.(*ast.SelectorExpr); ok {
-		if id, ok := sel.X.(*ast.Ident); ok && (t.importManager.IsPackage(id.Name) || id.Name == registry.StdPackageName) {
-			// Not a method call - it's a package-qualified function call
-		} else {
-			receiver = sel.X
-			method = sel.Sel.Name
-		}
-	} else if idx, ok := fun.(*ast.IndexExpr); ok {
-		if sel, ok := idx.X.(*ast.SelectorExpr); ok {
-			if id, ok := sel.X.(*ast.Ident); ok && (t.importManager.IsPackage(id.Name) || id.Name == registry.StdPackageName) {
-				// Not a method call - it's a package-qualified function call
-			} else {
-				receiver = sel.X
-				method = sel.Sel.Name
-				typeArgs = []ast.Expr{t.qualifyTypeExpr(idx.Index)}
-			}
-		}
-	} else if idxList, ok := fun.(*ast.IndexListExpr); ok {
-		if sel, ok := idxList.X.(*ast.SelectorExpr); ok {
-			if id, ok := sel.X.(*ast.Ident); ok && (t.importManager.IsPackage(id.Name) || id.Name == registry.StdPackageName) {
-				// Not a method call - it's a package-qualified function call
-			} else {
-				receiver = sel.X
-				method = sel.Sel.Name
-				typeArgs = t.qualifyTypeExprs(idxList.Indices)
-			}
-		}
-	}
+	// Classify `fun` as either a package-qualified function call (receiver==nil)
+	// or a method call (receiver, method, typeArgs populated). Extracted into
+	// splitCallTarget as part of A1.
+	receiver, method, typeArgs := t.splitCallTarget(fun)
 
 	recvType := t.getExprTypeName(receiver)
 	// If recvType is a generic type, preserve its type parameters when resolving the base name

@@ -102,104 +102,22 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 	defer func() { t.currentFuncReturnType = prevFuncReturnType }()
 
 	if ctx.Block() != nil {
-		b, err := t.transformBlock(ctx.Block().(*grammar.BlockContext))
+		b, inferredRet, err := t.transformBlockLambdaBody(ctx, isVoidExpected, isConcreteExpectedType)
 		if err != nil {
 			return nil, err
-		}
-		// Reject block lambdas in void context that discard error returns.
-		// Check each expression statement for Go calls returning error.
-		if isVoidExpected {
-			for _, stmt := range b.List {
-				if exprStmt, ok := stmt.(*ast.ExprStmt); ok {
-					if funcName := t.goCallReturnsErrorOnly(exprStmt.X); funcName != "" {
-						return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
-							fmt.Sprintf("cannot discard error return from %s in void lambda — use FromError(%s) to handle the error", funcName, funcName))
-					}
-				}
-			}
-		}
-		// When void is expected, strip any trailing "return nil" (legacy pattern)
-		if isVoidExpected && len(b.List) > 0 {
-			if ret, ok := b.List[len(b.List)-1].(*ast.ReturnStmt); ok && len(ret.Results) == 1 {
-				if ident, ok := ret.Results[0].(*ast.Ident); ok && ident.Name == "nil" {
-					b.List = b.List[:len(b.List)-1]
-				}
-			}
-		}
-		// Convert trailing IIFE expression statement to return statement for non-void lambdas.
-		// This handles match expressions (compiled to IIFEs) and if-else expressions that
-		// end up as ExprStmt but should be returned from the block lambda.
-		// IMPORTANT: Only convert IIFEs (CallExpr wrapping FuncLit), NOT arbitrary call expressions.
-		// Arbitrary calls like `callback(x)` may be void — converting them to `return callback(x)`
-		// breaks when isVoidExpected is incorrectly false (e.g., missing sibling metadata in sandbox).
-		// This must happen BEFORE inferBlockReturnType and the "return nil" fallback,
-		// otherwise the match IIFE result is discarded and "return nil" is appended instead.
-		if !isVoidExpected && len(b.List) > 0 {
-			if exprStmt, ok := b.List[len(b.List)-1].(*ast.ExprStmt); ok {
-				if isIIFE(exprStmt.X) {
-					b.List[len(b.List)-1] = &ast.ReturnStmt{Results: []ast.Expr{exprStmt.X}}
-				}
-			}
-		}
-		// Try to infer return type from the block's return statements
-		if !isConcreteExpectedType && !isVoidExpected {
-			if inferredType := t.inferBlockReturnType(b); inferredType != nil {
-				retType = inferredType
-			}
-			// If retType is still nil (void), strip trailing "return nil" from the block
-			if retType == nil && len(b.List) > 0 {
-				if ret, ok := b.List[len(b.List)-1].(*ast.ReturnStmt); ok && len(ret.Results) == 1 {
-					if ident, ok := ret.Results[0].(*ast.Ident); ok && ident.Name == "nil" {
-						b.List = b.List[:len(b.List)-1]
-					}
-				}
-			}
 		}
 		body = b
+		if inferredRet != nil {
+			retType = inferredRet
+		}
 	} else if ctx.Expression() != nil {
-		expr, err := t.transformExpression(ctx.Expression())
+		b, inferredRet, err := t.transformExpressionLambdaBody(ctx, isVoidExpected, isConcreteExpectedType)
 		if err != nil {
 			return nil, err
 		}
-		// Use expected type if concrete, otherwise infer from expression
-		if !isConcreteExpectedType && !isVoidExpected {
-			// Expression lambda `() => nil` is treated as void
-			if ident, ok := expr.(*ast.Ident); ok && ident.Name == "nil" {
-				// retType stays nil (void), generate empty body
-				body = &ast.BlockStmt{}
-			}
-			if body == nil {
-				retType = t.getExprType(expr)
-			}
-		}
-		if body != nil {
-			// Already set (e.g., expression lambda `() => nil` treated as void)
-		} else if isVoidExpected {
-			// Reject expression lambdas in void context that discard error returns.
-			// Users must handle errors explicitly, e.g., FromError(goCall()).OnFailure(...)
-			if funcName := t.goCallReturnsErrorOnly(expr); funcName != "" {
-				return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
-					fmt.Sprintf("cannot discard error return from %s in void lambda — use FromError(%s) to handle the error", funcName, funcName))
-			}
-			// For void functions, the expression is just a statement, not a return
-			body = &ast.BlockStmt{
-				List: []ast.Stmt{
-					&ast.ExprStmt{X: expr},
-				},
-			}
-		} else if multiRetBody, multiRetType := t.tryWrapGoMultiReturnWithErrorPanic(expr); multiRetBody != nil {
-			// FIX-045: Go function returning (T, error) or (A, B, error) in expression lambda.
-			// Generate error-panic wrapper and update return type to match.
-			body = multiRetBody
-			if multiRetType != nil && !isConcreteExpectedType {
-				retType = multiRetType
-			}
-		} else {
-			body = &ast.BlockStmt{
-				List: []ast.Stmt{
-					&ast.ReturnStmt{Results: []ast.Expr{expr}},
-				},
-			}
+		body = b
+		if inferredRet != nil {
+			retType = inferredRet
 		}
 	}
 
@@ -221,6 +139,113 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 		Type: funcType,
 		Body: body,
 	}, nil
+}
+
+// transformBlockLambdaBody handles the `{ ... }` form of a lambda body.
+// It returns (body, inferredReturnType, error). inferredReturnType is nil
+// when the expected return type is already concrete (caller keeps its own)
+// or when the lambda is void. Extracted from transformLambdaWithExpectedType
+// as part of A6.
+func (t *galaASTTransformer) transformBlockLambdaBody(ctx *grammar.LambdaExpressionContext, isVoidExpected, isConcreteExpectedType bool) (*ast.BlockStmt, ast.Expr, error) {
+	b, err := t.transformBlock(ctx.Block().(*grammar.BlockContext))
+	if err != nil {
+		return nil, nil, err
+	}
+	// Reject block lambdas in void context that discard error returns.
+	if isVoidExpected {
+		for _, stmt := range b.List {
+			if exprStmt, ok := stmt.(*ast.ExprStmt); ok {
+				if funcName := t.goCallReturnsErrorOnly(exprStmt.X); funcName != "" {
+					return nil, nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
+						fmt.Sprintf("cannot discard error return from %s in void lambda — use FromError(%s) to handle the error", funcName, funcName))
+				}
+			}
+		}
+	}
+	// When void is expected, strip any trailing "return nil" (legacy pattern).
+	if isVoidExpected && len(b.List) > 0 {
+		if ret, ok := b.List[len(b.List)-1].(*ast.ReturnStmt); ok && len(ret.Results) == 1 {
+			if ident, ok := ret.Results[0].(*ast.Ident); ok && ident.Name == "nil" {
+				b.List = b.List[:len(b.List)-1]
+			}
+		}
+	}
+	// Convert trailing IIFE expression statement to return statement for non-void
+	// lambdas. Only IIFEs (CallExpr wrapping FuncLit) — arbitrary calls may be void.
+	if !isVoidExpected && len(b.List) > 0 {
+		if exprStmt, ok := b.List[len(b.List)-1].(*ast.ExprStmt); ok {
+			if isIIFE(exprStmt.X) {
+				b.List[len(b.List)-1] = &ast.ReturnStmt{Results: []ast.Expr{exprStmt.X}}
+			}
+		}
+	}
+	var retType ast.Expr
+	if !isConcreteExpectedType && !isVoidExpected {
+		if inferredType := t.inferBlockReturnType(b); inferredType != nil {
+			retType = inferredType
+		}
+		// If retType is still nil (void), strip trailing "return nil" from the block.
+		if retType == nil && len(b.List) > 0 {
+			if ret, ok := b.List[len(b.List)-1].(*ast.ReturnStmt); ok && len(ret.Results) == 1 {
+				if ident, ok := ret.Results[0].(*ast.Ident); ok && ident.Name == "nil" {
+					b.List = b.List[:len(b.List)-1]
+				}
+			}
+		}
+	}
+	return b, retType, nil
+}
+
+// transformExpressionLambdaBody handles the `=> expr` form of a lambda body.
+// Returns (body, inferredReturnType, error). Extracted from
+// transformLambdaWithExpectedType as part of A6.
+func (t *galaASTTransformer) transformExpressionLambdaBody(ctx *grammar.LambdaExpressionContext, isVoidExpected, isConcreteExpectedType bool) (*ast.BlockStmt, ast.Expr, error) {
+	expr, err := t.transformExpression(ctx.Expression())
+	if err != nil {
+		return nil, nil, err
+	}
+	var body *ast.BlockStmt
+	var retType ast.Expr
+
+	// Use expected type if concrete, otherwise infer from expression.
+	if !isConcreteExpectedType && !isVoidExpected {
+		// Expression lambda `() => nil` is treated as void.
+		if ident, ok := expr.(*ast.Ident); ok && ident.Name == "nil" {
+			body = &ast.BlockStmt{}
+		}
+		if body == nil {
+			retType = t.getExprType(expr)
+		}
+	}
+	if body != nil {
+		// Already set (e.g., expression lambda `() => nil` treated as void).
+		return body, retType, nil
+	}
+	if isVoidExpected {
+		// Reject expression lambdas in void context that discard error returns.
+		if funcName := t.goCallReturnsErrorOnly(expr); funcName != "" {
+			return nil, nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
+				fmt.Sprintf("cannot discard error return from %s in void lambda — use FromError(%s) to handle the error", funcName, funcName))
+		}
+		body = &ast.BlockStmt{
+			List: []ast.Stmt{&ast.ExprStmt{X: expr}},
+		}
+		return body, retType, nil
+	}
+	if multiRetBody, multiRetType := t.tryWrapGoMultiReturnWithErrorPanic(expr); multiRetBody != nil {
+		// FIX-045: Go function returning (T, error) or (A, B, error) in expression lambda.
+		body = multiRetBody
+		if multiRetType != nil && !isConcreteExpectedType {
+			retType = multiRetType
+		}
+		return body, retType, nil
+	}
+	body = &ast.BlockStmt{
+		List: []ast.Stmt{
+			&ast.ReturnStmt{Results: []ast.Expr{expr}},
+		},
+	}
+	return body, retType, nil
 }
 
 // goCallReturnsErrorOnly checks if expr is a call to a Go function whose sole return

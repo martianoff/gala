@@ -606,34 +606,8 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		return nil, err
 	}
 
-	// Register function parameters in scope for type inference
-	// This is necessary so that type inference works correctly when using parameters.
-	sigCtx := ctx.Signature().(*grammar.SignatureContext)
-	paramsCtx := sigCtx.Parameters().(*grammar.ParametersContext)
-	if paramsCtx.ParameterList() != nil {
-		for _, pCtx := range paramsCtx.ParameterList().(*grammar.ParameterListContext).AllParameter() {
-			param := pCtx.(*grammar.ParameterContext)
-			paramName := param.Identifier().GetText()
-			var paramType transpiler.Type = transpiler.NilType{}
-			if param.Type_() != nil {
-				typeExpr, _ := t.transformType(param.Type_())
-				paramType = t.astTypeToTranspilerType(typeExpr)
-			}
-			// Variadic parameters are Go slices at runtime (e.g., ...Route becomes []Route).
-			// Store as ArrayType so index expressions correctly extract the element type.
-			scopeType := paramType
-			if param.ELLIPSIS() != nil && !paramType.IsNil() {
-				scopeType = transpiler.ArrayType{Elem: paramType}
-			}
-			// Check if parameter has 'val' modifier - if so, it needs .Get() unwrapping
-			// Otherwise, treat as var (no .Get() unwrapping needed)
-			if param.VAL() != nil {
-				t.addVal(paramName, scopeType)
-			} else {
-				t.addVar(paramName, scopeType)
-			}
-		}
-	}
+	// Register function parameters in scope for type inference.
+	t.registerFunctionParametersInScope(ctx.Signature().(*grammar.SignatureContext))
 
 	// Check if method return type would cause Go instantiation cycle
 	// This happens when a method of Container[T] returns Container[SomeType[T, ...]]
@@ -719,58 +693,11 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		}
 		body = b
 	} else if ctx.Expression() != nil {
-		var expr ast.Expr
-		var err error
-
-		// If the expression is a lambda and the return type resolves to a function type,
-		// pass expected types to the lambda for better type inference (BUG-047 fix).
-		// This enables lambdas in expression functions like `func Foo() Filter = (req, next) => { ... }`
-		// to receive expected param/return types from the type alias (e.g., Filter = func(Request, Handler) Future[Response]).
-		lambdaCtx := t.findLambdaInExpression(ctx.Expression())
-		if lambdaCtx != nil && funcType.Results != nil && len(funcType.Results.List) > 0 {
-			if expectedFuncType := t.resolveReturnTypeAsFuncType(funcType.Results.List[0].Type); expectedFuncType != nil {
-				var expectedRetType ast.Expr
-				var expectedParamTypes []transpiler.Type
-				if len(expectedFuncType.Results) > 0 {
-					expectedRetType = t.typeToExpr(expectedFuncType.Results[0])
-				} else {
-					expectedRetType = ExpectedVoid
-				}
-				expectedParamTypes = expectedFuncType.Params
-				expr, err = t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedParamTypes)
-				if err != nil {
-					return nil, err
-				}
-			}
+		exprBody, err := t.transformExpressionBodiedFunction(ctx.Expression(), funcType)
+		if err != nil {
+			return nil, err
 		}
-		// FIX-052: Check for if-expression with expected return type
-		if expr == nil {
-			ifExprCtx := t.findIfExpressionInExpression(ctx.Expression())
-			if ifExprCtx != nil && funcType.Results != nil && len(funcType.Results.List) > 0 {
-				expectedType := funcType.Results.List[0].Type
-				oldExpected := t.expectedIfExprType
-				t.expectedIfExprType = expectedType
-				expr, err = t.transformIfExpression(ifExprCtx)
-				t.expectedIfExprType = oldExpected
-				if err != nil {
-					return nil, err
-				}
-			}
-		}
-		if expr == nil {
-			expr, err = t.transformExpression(ctx.Expression())
-			if err != nil {
-				return nil, err
-			}
-		}
-		if funcType.Results != nil && len(funcType.Results.List) > 0 {
-			expr = t.wrapWithAssertion(expr, funcType.Results.List[0].Type)
-		}
-		body = &ast.BlockStmt{
-			List: []ast.Stmt{
-				&ast.ReturnStmt{Results: []ast.Expr{expr}},
-			},
-		}
+		body = exprBody
 	}
 
 	return &ast.FuncDecl{
@@ -778,6 +705,95 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		Name: ast.NewIdent(name),
 		Type: funcType,
 		Body: body,
+	}, nil
+}
+
+// registerFunctionParametersInScope walks a function signature's parameter list
+// and registers each parameter in the current scope with the correct mutability
+// (val vs var) and wrapped type (Array[T] for variadic). Extracted from
+// transformFunctionDeclaration as part of A5.
+func (t *galaASTTransformer) registerFunctionParametersInScope(sigCtx *grammar.SignatureContext) {
+	paramsCtx := sigCtx.Parameters().(*grammar.ParametersContext)
+	if paramsCtx.ParameterList() == nil {
+		return
+	}
+	for _, pCtx := range paramsCtx.ParameterList().(*grammar.ParameterListContext).AllParameter() {
+		param := pCtx.(*grammar.ParameterContext)
+		paramName := param.Identifier().GetText()
+		var paramType transpiler.Type = transpiler.NilType{}
+		if param.Type_() != nil {
+			typeExpr, _ := t.transformType(param.Type_())
+			paramType = t.astTypeToTranspilerType(typeExpr)
+		}
+		// Variadic parameters are Go slices at runtime (e.g., ...Route becomes []Route).
+		// Store as ArrayType so index expressions correctly extract the element type.
+		scopeType := paramType
+		if param.ELLIPSIS() != nil && !paramType.IsNil() {
+			scopeType = transpiler.ArrayType{Elem: paramType}
+		}
+		if param.VAL() != nil {
+			t.addVal(paramName, scopeType)
+		} else {
+			t.addVar(paramName, scopeType)
+		}
+	}
+}
+
+// transformExpressionBodiedFunction handles the `func foo() T = expr` form by
+// transforming the expression into a single-return block body. It threads
+// expected types into lambdas (BUG-047) and if-expressions (FIX-052) when the
+// function has a declared return type. Extracted from transformFunctionDeclaration
+// as part of A5.
+func (t *galaASTTransformer) transformExpressionBodiedFunction(exprCtx grammar.IExpressionContext, funcType *ast.FuncType) (*ast.BlockStmt, error) {
+	var expr ast.Expr
+	var err error
+
+	// If the expression is a lambda and the return type resolves to a function
+	// type, pass expected types to the lambda for better inference.
+	lambdaCtx := t.findLambdaInExpression(exprCtx)
+	if lambdaCtx != nil && funcType.Results != nil && len(funcType.Results.List) > 0 {
+		if expectedFuncType := t.resolveReturnTypeAsFuncType(funcType.Results.List[0].Type); expectedFuncType != nil {
+			var expectedRetType ast.Expr
+			if len(expectedFuncType.Results) > 0 {
+				expectedRetType = t.typeToExpr(expectedFuncType.Results[0])
+			} else {
+				expectedRetType = ExpectedVoid
+			}
+			expr, err = t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedFuncType.Params)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	// FIX-052: if-expression with expected return type.
+	if expr == nil {
+		ifExprCtx := t.findIfExpressionInExpression(exprCtx)
+		if ifExprCtx != nil && funcType.Results != nil && len(funcType.Results.List) > 0 {
+			expectedType := funcType.Results.List[0].Type
+			oldExpected := t.expectedIfExprType
+			t.expectedIfExprType = expectedType
+			expr, err = t.transformIfExpression(ifExprCtx)
+			t.expectedIfExprType = oldExpected
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	if expr == nil {
+		expr, err = t.transformExpression(exprCtx)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if funcType.Results != nil && len(funcType.Results.List) > 0 {
+		expr = t.wrapWithAssertion(expr, funcType.Results.List[0].Type)
+	}
+	return &ast.BlockStmt{
+		List: []ast.Stmt{
+			&ast.ReturnStmt{Results: []ast.Expr{expr}},
+		},
 	}, nil
 }
 

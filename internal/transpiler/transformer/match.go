@@ -179,11 +179,13 @@ func (t *galaASTTransformer) validateSealedVariantArity(matchedType transpiler.T
 		}
 		want := len(variant.FieldNames)
 		if got != want {
-			return galaerr.NewSemanticErrorAt(
+			return galaerr.NewCodedSemanticError(
+				galaerr.CodeVariantArityMismatch,
 				ctx.GetStart().GetLine(),
 				ctx.GetStart().GetColumn(),
-				fmt.Sprintf("sealed variant %q pattern binds %d field(s) but declares %d; use `_` for unused fields",
+				fmt.Sprintf("sealed variant %q pattern binds %d field(s) but declares %d",
 					name, got, want),
+				"use `_` for unused fields",
 			)
 		}
 	}
@@ -365,7 +367,11 @@ func (t *galaASTTransformer) transformMatchClauses(ctx grammar.IExpressionContex
 
 		if treatAsDefault {
 			if foundDefault {
-				return nil, nil, nil, galaerr.NewSemanticErrorAt(ccCtx.GetStart().GetLine(), ccCtx.GetStart().GetColumn(), "multiple default cases in match expression")
+				return nil, nil, nil, galaerr.NewCodedSemanticError(
+					galaerr.CodeMultipleDefaults,
+					ccCtx.GetStart().GetLine(), ccCtx.GetStart().GetColumn(),
+					"multiple default cases in match expression",
+					"")
 			}
 			foundDefault = true
 
@@ -460,8 +466,11 @@ func (t *galaASTTransformer) transformMatchClauses(ctx grammar.IExpressionContex
 
 	if !hasDefault {
 		if isSealed && !isExhaustive {
-			return nil, nil, nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
-				fmt.Sprintf("non-exhaustive match: missing cases: %s", strings.Join(missing, ", ")))
+			return nil, nil, nil, galaerr.NewCodedSemanticError(
+				galaerr.CodeNonExhaustiveMatch,
+				ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
+				fmt.Sprintf("non-exhaustive match: missing cases: %s", strings.Join(missing, ", ")),
+				"")
 		} else if isSealed && isExhaustive {
 			// Exhaustive sealed match — generate synthetic panic("unreachable") default
 			defaultBody = []ast.Stmt{
@@ -471,7 +480,11 @@ func (t *galaASTTransformer) transformMatchClauses(ctx grammar.IExpressionContex
 				}},
 			}
 		} else if !isSealed {
-			return nil, nil, nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "match expression must have a default case (case _ => ...)")
+			return nil, nil, nil, galaerr.NewCodedSemanticError(
+				galaerr.CodeMissingDefault,
+				ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
+				"match expression must have a default case",
+				"add `case _ => ...`")
 		}
 	}
 	// When foundDefault && isSealed && isExhaustive: unreachable default is harmless, allow it
