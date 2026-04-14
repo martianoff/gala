@@ -452,8 +452,21 @@ func baseTypeName(t transpiler.Type) string {
 		return bt.Name
 	case transpiler.NamedType:
 		return bt.Name
+	case transpiler.GenericType:
+		// Generic types (e.g., Option[int]) — report the base name so codec
+		// dispatch can find metadata for the parameterized container.
+		return bt.Base.BaseName()
+	case transpiler.PointerType:
+		return baseTypeName(bt.Elem)
+	case transpiler.ArrayType, transpiler.MapType, transpiler.FuncType, transpiler.NilType:
+		// Composite/terminal kinds have no single base name — codec paths that
+		// reach here with these should skip field-by-field codegen.
+		return ""
+	default:
+		// B14: unknown Type kind — new Type implementations must be added here
+		// so codec generation does not silently fall through.
+		return ""
 	}
-	return ""
 }
 
 // ---- helpers ----

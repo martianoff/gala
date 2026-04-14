@@ -1,0 +1,6 @@
+empty.size=0
+many.size=4
+matched-empty
+head=42 rest.size=0
+head=1 rest.size=3
+empty-no-head

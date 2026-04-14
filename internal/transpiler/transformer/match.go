@@ -147,6 +147,93 @@ func (t *galaASTTransformer) isSealedExhaustive(matchedType transpiler.Type, pat
 	return true, len(missing) == 0, missing
 }
 
+// validateSealedVariantArity checks that each sealed-variant extractor pattern
+// binds the same number of fields as the variant declares. Wildcards and
+// binding names each count as one field. Patterns that do not target a known
+// sealed variant are skipped. Returns nil if all patterns are well-formed.
+func (t *galaASTTransformer) validateSealedVariantArity(matchedType transpiler.Type, patternTexts []string, ctx grammar.IExpressionContext) error {
+	if matchedType == nil || matchedType.IsNil() {
+		return nil
+	}
+	meta := t.getTypeMeta(matchedType.BaseName())
+	if meta == nil || !meta.IsSealed || len(meta.SealedVariants) == 0 {
+		return nil
+	}
+	variantByName := make(map[string]*transpiler.SealedVariant, len(meta.SealedVariants))
+	for i := range meta.SealedVariants {
+		v := &meta.SealedVariants[i]
+		variantByName[v.Name] = v
+	}
+	for _, pat := range patternTexts {
+		name := extractVariantName(pat)
+		if name == "" {
+			continue
+		}
+		variant, ok := variantByName[name]
+		if !ok {
+			continue
+		}
+		got, wellFormed := countTopLevelArgs(pat)
+		if !wellFormed {
+			continue
+		}
+		want := len(variant.FieldNames)
+		if got != want {
+			return galaerr.NewSemanticErrorAt(
+				ctx.GetStart().GetLine(),
+				ctx.GetStart().GetColumn(),
+				fmt.Sprintf("sealed variant %q pattern binds %d field(s) but declares %d; use `_` for unused fields",
+					name, got, want),
+			)
+		}
+	}
+	return nil
+}
+
+// countTopLevelArgs counts the number of comma-separated arguments inside the
+// outermost parentheses of a pattern text (e.g., "Rect(w, h)" → 2, "Point()" → 0,
+// "Wrap(Pair(a, b), c)" → 2). Returns (count, wellFormed). wellFormed is false
+// if the pattern does not contain a balanced top-level `(...)`.
+func countTopLevelArgs(patternText string) (int, bool) {
+	open := strings.Index(patternText, "(")
+	if open < 0 {
+		return 0, false
+	}
+	depth := 0
+	args := 0
+	sawContent := false
+	for i := open; i < len(patternText); i++ {
+		c := patternText[i]
+		switch c {
+		case '(', '[', '{':
+			if c == '(' && depth == 0 {
+				depth++
+				continue
+			}
+			depth++
+		case ')', ']', '}':
+			depth--
+			if c == ')' && depth == 0 {
+				if sawContent {
+					args++
+				}
+				return args, true
+			}
+		case ',':
+			if depth == 1 {
+				args++
+				sawContent = false
+				continue
+			}
+		default:
+			if depth == 1 && c != ' ' && c != '\t' {
+				sawContent = true
+			}
+		}
+	}
+	return 0, false
+}
+
 // inferMatchedTypeFromCases attempts to infer the sealed parent type from case pattern names.
 // When the match subject type cannot be inferred from the expression itself, we look at the
 // case patterns (e.g., Some/None → Option, Success/Failure → Try, Left/Right → Either)
@@ -344,6 +431,13 @@ func (t *galaASTTransformer) transformMatchClauses(ctx grammar.IExpressionContex
 		if !isDefaultPattern(pat) {
 			variantPatterns = append(variantPatterns, pat)
 		}
+	}
+
+	// B6: Validate arity of sealed-variant extractor patterns. A pattern like
+	// `Rect(w, h)` against a variant `Rect(w, h, label)` silently truncates and
+	// causes runtime confusion; reject it here.
+	if arityErr := t.validateSealedVariantArity(matchedType, variantPatterns, ctx); arityErr != nil {
+		return nil, nil, nil, arityErr
 	}
 
 	isSealed, isExhaustive, missing := t.isExhaustiveMatch(matchedType, variantPatterns)

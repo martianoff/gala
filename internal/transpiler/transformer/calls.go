@@ -168,11 +168,47 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 	return t.transformCallWithArgsCtx(base, argList.(*grammar.ArgumentListContext))
 }
 
+// transformCallWithArgsCtx is the primary entry point for transforming GALA call
+// expressions (functions, methods, constructors, companion-object Apply, etc.) into
+// Go AST call expressions.
+//
+// TODO(B1): this function has grown to ~850 lines and interleaves several concerns:
+//
+//	Section 1  (~175-210) Copy method short-circuit
+//	Section 2  (~180-225) Method/function dispatch prelude (receiver, method, typeArgs)
+//	Section 3  (~225-315) Generic method -> standalone function rewrite + type-param
+//	                      substitution (recv type args, method type args, argument-based
+//	                      inference, "any" fallback)
+//	Section 4  (~315-400) Regular method-call branch with lambda expected-type passing
+//	Section 5  (~400-540) Regular function call: arg transformation, function metadata
+//	                      lookup, Go type-info fallback
+//	Section 6  (~540-620) Struct construction path: resolve struct field types as
+//	                      expected types for lambda arguments before transformation
+//	Section 7  (~620-720) Generic-function type-arg pre-inference from non-lambda args
+//	Section 8  (~720-780) Named-args path (handleNamedArgsCall)
+//	Section 9  (~780-850) Default-arg injection when positional count is short
+//	Section 10 (~850-920) Compiler intrinsics (StructMeta[T]())
+//	Section 11 (~920-1000) Companion-object Apply: Some[A](v) -> Some[A]{}.Apply(v)
+//	Section 12 (~1000-1020) Variable-with-Apply-method: add5(10) -> add5.Apply(10)
+//
+// The planned refactor is to (a) introduce a `callResolution` struct carrying the
+// mutable state (receiver, method, typeArgs, recvType, typeSubst, preTransformed),
+// (b) extract each section into a method of the form
+// `(cr *callResolution) tryFoo(ctx *argListCtx) (expr, bool, error)` returning a
+// sentinel when the section handled the call, and (c) keep this function as a
+// thin dispatcher that walks the sections in order. Doing the split in this PR
+// alongside B2-B15 would be high-risk; it is intentionally deferred to a
+// follow-up so each extraction can be tested in isolation.
+//
+// Until then: treat the section markers above as navigation anchors when
+// editing, and avoid piling new logic into the middle of an existing section.
 func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *grammar.ArgumentListContext) (ast.Expr, error) {
-	// Handle Copy method call with overrides
+	// --- Section 1: Copy method short-circuit ---
 	if sel, ok := fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Copy" {
 		return t.transformCopyCall(sel.X, argListCtx)
 	}
+
+	// --- Section 2: Method/function dispatch prelude ---
 
 	// Handle generic method calls or monadic methods: o.Map[T](f) -> Map[T](o, f)
 	var receiver ast.Expr
@@ -305,10 +341,18 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 					}
 				}
 			}
-			// Default remaining unresolved method type params to "any"
+			// Default remaining unresolved method type params to "any".
+			// NOTE: This violates project rule #3 (never emit `any` implicitly). It is
+			// retained as a fallback because removing it breaks code where the type
+			// parameter is genuinely unconstrained by the call site (e.g., a phantom
+			// type param used only in the return type with no constraining argument).
+			// A warning is emitted when GALA_WARN_TYPES=1 so authors can surface and
+			// annotate these sites. TODO(B5): replace with a hard error once all
+			// inference paths (call-site context, expected return type) are wired up.
 			if methodMeta != nil {
 				for _, tp := range methodMeta.TypeParams {
 					if _, ok := typeSubst[tp]; !ok {
+						t.warnInference("method type parameter %q defaulted to `any` (unresolved from arguments)", tp)
 						typeSubst[tp] = "any"
 					}
 				}

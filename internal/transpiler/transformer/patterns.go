@@ -181,10 +181,15 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 			}
 		}
 
-		// Extractor not found or doesn't have Unapply method
-		return nil, nil, galaerr.NewSemanticErrorAt(patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn(),
-			fmt.Sprintf("extractor '%s' must define an Unapply method. For generic extractors use: func (e Extractor[T]) Unapply(v ContainerType[T]) Option[T]. For guard patterns use: func (e Extractor) Unapply(v ConcreteType) bool",
-				rawName))
+		// Extractor not found or doesn't have Unapply method.
+		// B7: suggest near-matches from companion objects / registered types.
+		suggestion := t.suggestExtractorName(rawName)
+		msg := fmt.Sprintf("extractor '%s' must define an Unapply method. For generic extractors use: func (e Extractor[T]) Unapply(v ContainerType[T]) Option[T]. For guard patterns use: func (e Extractor) Unapply(v ConcreteType) bool",
+			rawName)
+		if suggestion != "" {
+			msg += fmt.Sprintf(" (did you mean '%s'?)", suggestion)
+		}
+		return nil, nil, galaerr.NewSemanticErrorAt(patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn(), msg)
 	}
 
 	// Simple Binding - bind variable with the matched type

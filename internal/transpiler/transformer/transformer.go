@@ -384,6 +384,17 @@ func (t *galaASTTransformer) trackPosition(ctx antlr.ParserRuleContext) {
 	}
 }
 
+// raiseSemanticError panics with a SemanticError positioned at the last tracked
+// source location. It is used by deeply-nested Type-returning helpers that cannot
+// thread an error return through their signatures. The panic is caught by the
+// recover() at the top of Transform and converted back to a normal error return.
+//
+// Do NOT add intermediate recover() calls in callers of this helper — they would
+// swallow the error and leave the transformer in an inconsistent state.
+func (t *galaASTTransformer) raiseSemanticError(msg string) {
+	panic(galaerr.NewSemanticErrorAt(t.lastLine, t.lastCol, msg))
+}
+
 // semanticErrorAt creates a SemanticError with position info from an ANTLR context.
 func (t *galaASTTransformer) semanticErrorAt(ctx antlr.ParserRuleContext, msg string) *galaerr.SemanticError {
 	if ctx != nil && ctx.GetStart() != nil {

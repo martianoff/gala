@@ -404,9 +404,20 @@ func sealedFieldAccessExpr(paramName string, fieldName string, isRecursive bool)
 }
 
 // generateSealedUnapply generates the Unapply method for a sealed type companion.
-// 0-field variant: returns bool
-// 1-field variant: returns Option[FieldType]
-// 2+-field variant: returns Option[Tuple[...]]
+//
+// Return-type contract (intentional asymmetry):
+//
+//	 0-field variant  -> bool             (guard extractor — nothing to bind)
+//	 1-field variant  -> Option[T]        (extracts a single field)
+//	 2+-field variant -> Option[TupleN]   (extracts into a tuple)
+//
+// The 0-field case returns `bool` rather than `Option[Unit]` because there is
+// no payload to wrap and unwrap — matching it is purely a tag test, and the
+// pattern-match codegen in patterns.go recognises the bool-return form as the
+// guard-extractor shape. This asymmetry is load-bearing: changing 0-field to
+// Option[Unit] would cascade through generateDirectUnapplyPattern and the
+// isDirectUnapplyReturnType check. Keep the three forms distinct and ensure
+// patterns.go handles each explicitly.
 func (t *galaASTTransformer) generateSealedUnapply(parentName string, vi sealedVariantInfo, companionType, parentType ast.Expr, tParams *ast.FieldList, recursiveFields map[string]bool) (*ast.FuncDecl, error) {
 	paramName := "v"
 

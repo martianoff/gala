@@ -18,10 +18,20 @@ import (
 //            buildMatchExpressionFromClauses, transformTupleLiteral
 
 func (t *galaASTTransformer) transformPostfixExpr(ctx *grammar.PostfixExprContext) (ast.Expr, error) {
-	// Check for match expression
+	// Check for match expression. B13: defensively guard the child cast — while
+	// ANTLR children are normally non-nil ParseTrees, a malformed parse tree
+	// would otherwise panic here rather than returning a clean error.
 	if ctx.GetChildCount() > 1 {
 		for i := 0; i < ctx.GetChildCount(); i++ {
-			if ctx.GetChild(i).(antlr.ParseTree).GetText() == "match" {
+			child := ctx.GetChild(i)
+			if child == nil {
+				continue
+			}
+			pt, ok := child.(antlr.ParseTree)
+			if !ok {
+				continue
+			}
+			if pt.GetText() == "match" {
 				return t.transformPostfixMatchExpression(ctx)
 			}
 		}
