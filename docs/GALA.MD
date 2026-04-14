@@ -814,37 +814,9 @@ Extractors can be nested: `case Some(Even(n)) => ...`. You can use the underscor
 
 ##### Sealed-Variant Pattern Arity
 
-When pattern-matching on a sealed type, each variant pattern must bind the
-exact number of fields the variant declares. Omitting a field is a compile
-error (`GALA-E0004`) — use `_` for fields you don't care about.
-
-```gala
-sealed type Shape {
-    case Rect(W int, H int, Label string)
-    case Circle(R int)
-}
-
-// ERROR: Rect has 3 fields, pattern binds 2
-func area(s Shape) int = s match {
-    case Rect(w, h)  => w * h
-    case Circle(r)   => r * r * 3
-}
-
-// OK: use _ for the field we don't need
-func area(s Shape) int = s match {
-    case Rect(w, h, _) => w * h
-    case Circle(r)     => r * r * 3
-}
-```
-
-This rule catches a class of silent bugs where adding a new field to a
-variant would otherwise leave existing patterns compiling but misaligned.
-If the error fires on a pattern that used to work, someone added a field to
-the variant — extend the pattern to match.
-
-The check runs on every case clause of a sealed match, independent of the
-exhaustiveness check (`GALA-E0002`). See [docs/errors/GALA-E0004.md](errors/GALA-E0004.md)
-for the full rationale.
+Each variant pattern must bind the exact number of fields the variant
+declares — use `_` for fields you don't care about. See
+[docs/errors/GALA-E0004.md](errors/GALA-E0004.md).
 
 #### Pattern Matching Filters (Guards)
 Similar to Scala, GALA supports additional `if` conditions in pattern match clauses, often referred to as guards. These filters allow you to apply additional constraints to the extracted variables.

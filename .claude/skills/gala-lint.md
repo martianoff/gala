@@ -309,6 +309,9 @@ func createServer(host string, port int = 8080, tls bool = true, maxConnections 
 | Redundant method type param | `list.Map[int]((x) => x * 2)` | `list.Map((x) => x * 2)` (Go infers from lambda) |
 | Redundant FoldLeft type param | `list.FoldLeft[int](0, (acc int, x int) => acc + x)` | `list.FoldLeft(0, (acc, x) => acc + x)` (accumulator type inferred from zero value) |
 | Redundant wrapper method lambda types | `str.Filter((r rune) => r == 'a')` | `str.Filter((r) => r == 'a')` (type inferred from non-generic method signature) |
+| Verbose single-use lambda params | `list.Map((x) => x * 2)` | `list.Map(_ * 2)` (placeholder lambda shorthand) |
+| Verbose two-use FoldLeft lambda | `list.FoldLeft(0, (a, b) => a + b)` | `list.FoldLeft(0, _ + _)` (placeholder lambda shorthand) |
+| Verbose field-access lambda | `list.Map((p) => p.Name)` | `list.Map(_.Name)` (placeholder lambda shorthand) |
 
 **Check**: Search for the pattern `Name[ConcreteTypes](args)` — any call where `[...]` contains concrete types (not type parameter declarations like `[T any]`) and the arguments already provide enough information for Go to infer the type parameters. This includes:
 - **Single-type-param generic struct constructors**: `Box[int](Value = 42)` → `Box(Value = 42)` — Go infers the single type param from the named field value
@@ -323,6 +326,46 @@ func createServer(host string, port int = 8080, tls bool = true, maxConnections 
 - **Multi-type-param generic functions** like `Unfold[A, S](seed, f)` — Go often cannot infer all params when multiple are involved
 - Standalone lambdas not passed to a typed method (e.g., `val f = (x int) => x * 2`)
 - Ambiguous cases where removing the type param would cause a compile error
+
+### 7a. Placeholder Lambda Shorthand (MEDIUM priority)
+
+`_` in an expression position where a function type is expected is shorthand
+for a lambda — each `_` becomes a positional parameter, left-to-right.
+See [docs/GALA.MD](../../docs/GALA.MD) "Placeholder Lambda Shorthand" for
+the full contract.
+
+**Flag**: single-expression lambdas whose parameters are each used exactly
+once and whose bodies are pure expressions. Rewrite them as placeholder
+lambdas:
+
+| Before | After |
+|-------|-------|
+| `list.Map((x) => x * 2)` | `list.Map(_ * 2)` |
+| `list.Filter((x) => x > 0)` | `list.Filter(_ > 0)` |
+| `list.Map((p) => p.Name)` | `list.Map(_.Name)` |
+| `list.FoldLeft(0, (a, b) => a + b)` | `list.FoldLeft(0, _ + _)` |
+| `list.Map((x) => (x + 1) * 2)` | `list.Map((_ + 1) * 2)` |
+
+**Do NOT flag** (keep explicit `(x) =>` form):
+
+- Lambdas with **block bodies** (multiple statements, local vals, if/match)
+- Lambdas where a **parameter is reused** (`(x) => x + x` — would need two
+  `_`s which would be two different params, changing semantics)
+- Lambdas where the **parameter name adds meaning** (`(user) => user.Name`
+  when the reader benefits from seeing "user")
+- Lambdas in a context where **no function type is expected** (e.g.,
+  assigned to a val without an explicit type annotation) — placeholder
+  shorthand only works at call sites
+- Lambdas with **explicit type annotations** the author added for clarity
+  in tricky inference contexts
+
+**Check**: search for `(\s*\w+\s*\)\s*=>\s*` patterns where the body uses
+the single parameter exactly once. If the body is a single expression with
+one parameter reference, suggest the placeholder form. For two-argument
+lambdas, only suggest the placeholder form when both parameters appear in
+declaration order and each exactly once (so `(a, b) => a + b` → `_ + _`
+but `(a, b) => b + a` stays as-is because the positional rewrite would
+reverse them).
 
 ### 7. Functional Patterns (HIGH priority)
 

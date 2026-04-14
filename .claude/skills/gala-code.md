@@ -38,6 +38,7 @@ Design the implementation following GALA best practices:
 6. **Variadic args → Array** - Convert variadic params to GALA collections with `ArrayOf(args...)` for functional processing (FoldLeft, Map, Filter). Don't write manual loops over Go slices when a functional pattern fits
 7. **Expression-bodied functions** - Use `func f() T = expr` for single-expression functions
 8. **Implicit typing** - Omit type params where inferable: `Some(42)` not `Some[int](42)`, `(x) => x * 2` not `(x int) => x * 2`
+8a. **Placeholder lambdas** - For single-expression lambdas passed to a function whose expected type is a function type, use `_` as the parameter shorthand: `list.Map(_ * 2)` instead of `list.Map((x) => x * 2)`. Multiple `_` become positional parameters left-to-right: `list.FoldLeft(0, _ + _)` ≡ `(a, b) => a + b`. Works for property access (`list.Map(_.Name)`) and parenthesized subexpressions (`list.Map((_ + 1) * 2)`). Outside a function-type context, `_` keeps its wildcard/unused meanings. Prefer `_` shorthand when the body is one expression and all parameters are each used exactly once; switch back to explicit `(x) =>` form when the body has multiple statements, when parameters need to be reused, or when explicit parameter names aid readability.
 9. **Generics over reflection** - Use type parameters for reusable code
 10. **Copy for updates** - Use `.Copy(field = newValue)` instead of mutation
 11. **Default parameters** - Use default values for optional params: `func connect(host string, port int = 8080)`. Callers can omit trailing defaults or use named args: `connect("localhost", tls = false)`
@@ -202,6 +203,7 @@ Before finishing, verify:
 - [ ] Default parameter values used for optional parameters instead of overloads/options pattern
 - [ ] Named arguments used at call sites when it improves readability
 - [ ] Type parameters omitted where inferable
+- [ ] Placeholder lambdas (`_ * 2`) used for single-expression lambdas where parameters are each used once
 - [ ] String interpolation (`s"..."` / `f"..."`) used instead of `fmt.Sprintf`
 - [ ] `Println`/`Print` used instead of `fmt.Println`/`fmt.Print`
 - [ ] No `import "fmt"` unless using functions beyond Println/Print/Sprintf (e.g., `fmt.Errorf`)
