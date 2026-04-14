@@ -1,0 +1,42 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+)
+
+// T9: Deep matrix mixing named args, default values, and generic parameters.
+// Exercises:
+//   - generic function with multiple type params
+//   - defaults on the trailing parameters (GALA requires required-first)
+//   - call sites using named args to override select defaults
+//   - type inference through the required arguments
+func wrap[A any, B any](value A, tag B, suffix string = "!", times int = 1) Tuple[string, B] {
+    var out = ""
+    for i := 0; i < times; i = i + 1 {
+        out = out + fmt.Sprintf("%v%s", value, suffix)
+    }
+    return (out, tag)
+}
+
+func main() {
+    // All defaults (explicit type args).
+    val r1 = wrap[int, string](42, "a")
+    fmt.Println(r1.V1)
+    fmt.Println(r1.V2)
+
+    // Override times via named arg.
+    val r2 = wrap[int, string](7, "b", times = 3)
+    fmt.Println(r2.V1)
+    fmt.Println(r2.V2)
+
+    // Override suffix only.
+    val r3 = wrap[string, int]("ok", 99, suffix = "?")
+    fmt.Println(r3.V1)
+    fmt.Println(r3.V2)
+
+    // Named args out of declaration order.
+    val r4 = wrap[int, bool](5, true, times = 2, suffix = "-")
+    fmt.Println(r4.V1)
+    fmt.Println(r4.V2)
+}

@@ -1,0 +1,23 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/examples/lib"
+)
+
+// T3: chained generic method calls across a package boundary.
+// Exercises:
+//   - type-parameter inference through two consecutive generic calls
+//   - cross-package Wrapper[T].Map[U] resolution
+//   - implicit Immutable unwrapping on the chained receiver
+func main() {
+    val w = Wrapper[int](V = 1)
+
+    // Chain int -> int -> string -> int across package boundary.
+    val chained = w.
+        Map((x int) => x + 10).
+        Map((x int) => fmt.Sprintf("n=%d", x)).
+        Map((s string) => len(s))
+
+    fmt.Println(chained.V)
+}

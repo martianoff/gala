@@ -880,6 +880,67 @@ func (t *galaASTTransformer) getSeqElementType(typ transpiler.Type) transpiler.T
 	return transpiler.BasicType{Name: "any"}
 }
 
+// emitRestBinding appends the var-decl + guarded-assign for a named rest
+// pattern (e.g., `case Array(head, rest...) =>` — rest is the binding name).
+// Extracted from generateSeqPatternMatch as part of A2 cont.
+func (t *galaASTTransformer) emitRestBinding(
+	restPatternName string,
+	matchedType transpiler.Type,
+	objExpr ast.Expr,
+	nonRestCount int,
+	varDecls []ast.Stmt,
+	guardedAssigns []ast.Stmt,
+) ([]ast.Stmt, []ast.Stmt) {
+	t.currentScope.vals[restPatternName] = false
+	t.currentScope.valTypes[restPatternName] = matchedType
+
+	// var restPatternName MatchedType
+	varDecl := &ast.DeclStmt{
+		Decl: &ast.GenDecl{
+			Tok: token.VAR,
+			Specs: []ast.Spec{
+				&ast.ValueSpec{
+					Names: []*ast.Ident{ast.NewIdent(restPatternName)},
+					Type:  t.typeToExpr(matchedType),
+				},
+			},
+		},
+	}
+	varDecls = append(varDecls, varDecl)
+
+	// restPatternName = obj.SeqDrop(n).(MatchedType)
+	guardedAssigns = append(guardedAssigns, &ast.AssignStmt{
+		Lhs: []ast.Expr{ast.NewIdent(restPatternName)},
+		Tok: token.ASSIGN,
+		Rhs: []ast.Expr{
+			&ast.TypeAssertExpr{
+				X: &ast.CallExpr{
+					Fun: &ast.SelectorExpr{
+						X:   objExpr,
+						Sel: ast.NewIdent("SeqDrop"),
+					},
+					Args: []ast.Expr{&ast.BasicLit{Kind: token.INT, Value: fmt.Sprintf("%d", nonRestCount)}},
+				},
+				Type: t.typeToExpr(matchedType),
+			},
+		},
+	})
+	return varDecls, guardedAssigns
+}
+
+// assembleSeqPatternGuardBlock wraps the accumulated guardedAssigns in an
+// `if sizeCheckName { ... }` block and appends it to stmts. No-op when there
+// are no guarded assigns. Extracted as part of A2 cont.
+func assembleSeqPatternGuardBlock(stmts []ast.Stmt, sizeCheckName string, guardedAssigns []ast.Stmt) []ast.Stmt {
+	if len(guardedAssigns) == 0 {
+		return stmts
+	}
+	return append(stmts, &ast.IfStmt{
+		Cond: ast.NewIdent(sizeCheckName),
+		Body: &ast.BlockStmt{List: guardedAssigns},
+	})
+}
+
 // scanSeqPatternArgs walks a seq-pattern's argument list, locating the rest
 // pattern (if any) and returning its index, its binding name (or "" for a
 // wildcard/anonymous rest), and the count of non-rest arguments. Extracted
@@ -1140,57 +1201,16 @@ func (t *galaASTTransformer) generateSeqPatternMatch(objExpr ast.Expr, argList *
 		argIndex++
 	}
 
-	// Handle rest pattern if present and named
+	// Handle rest pattern if present and named. A2: extracted to emitRestBinding.
 	if restPatternName != "" {
-		t.currentScope.vals[restPatternName] = false
-		t.currentScope.valTypes[restPatternName] = matchedType
-
-		// var restPatternName MatchedType
-		varDecl := &ast.DeclStmt{
-			Decl: &ast.GenDecl{
-				Tok: token.VAR,
-				Specs: []ast.Spec{
-					&ast.ValueSpec{
-						Names: []*ast.Ident{ast.NewIdent(restPatternName)},
-						Type:  t.typeToExpr(matchedType),
-					},
-				},
-			},
-		}
-		varDecls = append(varDecls, varDecl)
-
-		// rest = obj.SeqDrop(n).(MatchedType) inside guard
-		guardedAssigns = append(guardedAssigns, &ast.AssignStmt{
-			Lhs: []ast.Expr{ast.NewIdent(restPatternName)},
-			Tok: token.ASSIGN,
-			Rhs: []ast.Expr{
-				&ast.TypeAssertExpr{
-					X: &ast.CallExpr{
-						Fun: &ast.SelectorExpr{
-							X:   objExpr,
-							Sel: ast.NewIdent("SeqDrop"),
-						},
-						Args: []ast.Expr{&ast.BasicLit{Kind: token.INT, Value: fmt.Sprintf("%d", nonRestCount)}},
-					},
-					Type: t.typeToExpr(matchedType),
-				},
-			},
-		})
+		varDecls, guardedAssigns = t.emitRestBinding(restPatternName, matchedType, objExpr, nonRestCount, varDecls, guardedAssigns)
 	}
 
 	// Add variable declarations
 	stmts = append(stmts, varDecls...)
 
-	// Generate guarded assignment block: if sizeCheck { assignments... }
-	if len(guardedAssigns) > 0 {
-		guardedBlock := &ast.IfStmt{
-			Cond: ast.NewIdent(sizeCheckName),
-			Body: &ast.BlockStmt{
-				List: guardedAssigns,
-			},
-		}
-		stmts = append(stmts, guardedBlock)
-	}
+	// A2: assemble the guarded block that runs once the size check passes.
+	stmts = assembleSeqPatternGuardBlock(stmts, sizeCheckName, guardedAssigns)
 
 	t.needsStdImport = true
 

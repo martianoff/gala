@@ -168,6 +168,26 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 	return t.transformCallWithArgsCtx(base, argList.(*grammar.ArgumentListContext))
 }
 
+// resolveReceiverTypeAndLookupKey normalizes the inferred type of a call
+// receiver into its canonical form (preserving generic type parameters when
+// present) and returns both the resolved Type and the pointer-stripped base
+// name used as a lookup key in t.genericMethods. When the receiver is nil
+// (package-qualified call) the returned type is NilType and the key is "".
+// Extracted from transformCallWithArgsCtx as part of A1.
+func (t *galaASTTransformer) resolveReceiverTypeAndLookupKey(receiver ast.Expr) (transpiler.Type, string) {
+	recvType := t.getExprTypeName(receiver)
+	if gen, ok := recvType.(transpiler.GenericType); ok {
+		if qBase := t.getType(gen.Base.String()); !qBase.IsNil() {
+			recvType = transpiler.GenericType{Base: qBase, Params: gen.Params}
+		}
+	} else if qName := t.getType(recvType.BaseName()); !qName.IsNil() {
+		recvType = qName
+	}
+	// Strip pointer prefix for genericMethods lookup since methods are
+	// registered under the base type name without the pointer marker.
+	return recvType, strings.TrimPrefix(recvType.BaseName(), "*")
+}
+
 // splitCallTarget classifies a call expression `fun` as either:
 //   - a package-qualified function call (returns receiver=nil, method="", typeArgs=nil)
 //   - a method call (returns the receiver expression, the method name, and any
@@ -250,19 +270,9 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	// splitCallTarget as part of A1.
 	receiver, method, typeArgs := t.splitCallTarget(fun)
 
-	recvType := t.getExprTypeName(receiver)
-	// If recvType is a generic type, preserve its type parameters when resolving the base name
-	if gen, ok := recvType.(transpiler.GenericType); ok {
-		if qBase := t.getType(gen.Base.String()); !qBase.IsNil() {
-			// Keep the type parameters but use the resolved base type
-			recvType = transpiler.GenericType{Base: qBase, Params: gen.Params}
-		}
-	} else if qName := t.getType(recvType.BaseName()); !qName.IsNil() {
-		recvType = qName
-	}
-	recvBaseName := recvType.BaseName()
-	// Strip pointer prefix for genericMethods lookup since methods are registered under base type name
-	lookupBaseName := strings.TrimPrefix(recvBaseName, "*")
+	// A1: resolve the receiver type to a canonical form and compute the
+	// package-agnostic lookup key used by the generic-method registry.
+	recvType, lookupBaseName := t.resolveReceiverTypeAndLookupKey(receiver)
 
 	// Check for generic method - try all possible package lookups
 	isGenericMethod := len(typeArgs) > 0 || t.isGenericMethodWithImports(lookupBaseName, recvType.GetPackage(), method)
