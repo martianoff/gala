@@ -6,7 +6,7 @@
     <vendor email="team@gala.fyi" url="https://github.com/martianoff/gala">GALA Team</vendor>
 
     <description><![CDATA[
-    <p>Rich IDE support for <b>GALA</b> — a modern functional language that transpiles to Go,
+    <p>IDE support for <b>GALA</b> — a modern functional language that transpiles to Go,
     combining Go's runtime and ecosystem with ideas from Scala and other ML-family languages.</p>
 
     <h3>Language highlights</h3>
@@ -54,6 +54,10 @@
     <idea-version since-build="251" until-build="265.*"/>
 
     <depends>com.intellij.modules.platform</depends>
+    <!-- LSP API (platform.lsp.serverSupportProvider) — only available in IDEs that ship the LSP module
+         (IntelliJ IDEA Ultimate, GoLand, PyCharm Pro, etc.). Prevents installation on Community editions
+         where the plugin would fail to load. -->
+    <depends>com.intellij.modules.lsp</depends>
 
     <extensions defaultExtensionNs="com.intellij">
         <!-- LSP server integration — provides diagnostics, hover, go-to-def, completion from gala-lsp -->
