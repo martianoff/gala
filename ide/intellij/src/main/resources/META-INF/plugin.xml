@@ -1,9 +1,9 @@
 <idea-plugin>
-    <id>org.gala.ide.intellij</id>
+    <id>org.gala.lang</id>
     <name>GALA</name>
     <!-- Version is stamped at build time from the GALA_VERSION env var (see ide/intellij/build.gradle.kts). -->
     <version>0.0.0</version>
-    <vendor email="team@gala.fyi" url="https://github.com/martianoff/gala">GALA Team</vendor>
+    <vendor email="team@gala.fyi" url="https://gala.fyi">GALA Team</vendor>
 
     <description><![CDATA[
     <p>IDE support for <b>GALA</b> — a modern functional language that transpiles to Go,
@@ -51,7 +51,9 @@
     <a href="https://github.com/martianoff/gala/releases">GitHub Releases</a>.</p>
     ]]></change-notes>
 
-    <idea-version since-build="251" until-build="265.*"/>
+    <!-- No until-build: the plugin doesn't rely on APIs scheduled for removal,
+         so we let it remain installable on future IDE versions without needing a re-release. -->
+    <idea-version since-build="251"/>
 
     <depends>com.intellij.modules.platform</depends>
     <!-- LSP API (platform.lsp.serverSupportProvider) — only available in IDEs that ship the LSP module
