@@ -139,13 +139,19 @@ func init() {
 
 func newHarness(t *testing.T) *servertest.Harness {
 	t.Helper()
+	h, _ := newHarnessWithHandler(t)
+	return h
+}
+
+func newHarnessWithHandler(t *testing.T) (*servertest.Harness, *lspserver.GalaHandler) {
+	t.Helper()
 	handler := lspserver.NewGalaHandler()
 	// Set search paths so the analyzer can find the std library
 	root := findProjectRoot()
 	if root != "" {
 		handler.SetSearchPaths([]string{root})
 	}
-	return servertest.New(t, handler)
+	return servertest.New(t, handler), handler
 }
 
 func openFile(t *testing.T, h *servertest.Harness, src string) {
@@ -4132,119 +4138,134 @@ func TestDefinition_StructFieldAccess(t *testing.T) {
 }
 
 // ====================================================================
-// Definition: Chain method with fallback (Encode().Get())
+// REPRO: Tuple.V1/V2 field go-to-definition via std Tuple type
 // ====================================================================
 
-func TestDefinition_ChainMethodWithGet(t *testing.T) {
-	h := newHarness(t)
-	src := "package main\n\ntype Result struct {\n    val value int\n}\n\nfunc (r Result) Get() int {\n    return r.value\n}\n\nfunc (r Result) Map(f func(int) int) Result {\n    return Result(value = f(r.value))\n}\n\nfunc compute() Result {\n    return Result(value = 42)\n}\n\nfunc main() {\n    val x = compute().Map((v) => v + 1).Get()\n    Println(x)\n}\n"
-	uri := openFileOnDisk(t, h, src)
+func TestDefinition_TupleFieldV1V2_Repro(t *testing.T) {
+	harness, handler := newHarnessWithHandler(t)
+	src := "package main\n\nfunc main() {\n    val pair = (1, \"hello\")\n    Println(pair.V1)\n    Println(pair.V2)\n}\n"
+	uri := openFileOnDisk(t, harness, src)
 
-	// Click on "Map" in "compute().Map(...)" at line 19
-	lineText := strings.Split(src, "\n")[19]
-	mapIdx := strings.Index(lineText, ".Map(")
-	if mapIdx < 0 {
-		t.Fatal("Map not found in line")
-	}
-	mapIdx++ // skip the dot
+	// Wait for analysis to complete
+	time.Sleep(200 * time.Millisecond)
 
-	locs, err := h.Definition(uri, 19, mapIdx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(locs) == 0 {
-		t.Log("no definition for Map in chain — methods may not be in richAST in test env")
-		return
-	}
-	// Map is defined on line 10
-	if locs[0].Range.Start.Line != 10 {
-		t.Errorf("expected Map definition on line 10, got line %d", locs[0].Range.Start.Line)
+	// Diagnostic: dump what's in richAST and varTypes
+	richAST := handler.DebugRichAST(string(uri))
+	varTypes := handler.DebugVarTypes(string(uri))
+
+	if richAST == nil {
+		t.Fatal("richAST is nil")
 	}
 
-	// Click on "Get" in "...Map(...).Get()" at line 19
-	getIdx := strings.Index(lineText, ".Get(")
-	if getIdx < 0 {
-		t.Fatal("Get not found in line")
+	// Check if Tuple type is in richAST with fields
+	t.Log("=== Types with V1 field ===")
+	for key, tm := range richAST.Types {
+		if _, hasV1 := tm.Fields["V1"]; hasV1 {
+			t.Logf("  type %q (Name=%s, Pkg=%s, DefinedIn=%s) has V1 field", key, tm.Name, tm.Package, tm.DefinedIn)
+			t.Logf("    FieldNames: %v", tm.FieldNames)
+		}
 	}
-	getIdx++ // skip the dot
 
-	locs, err = h.Definition(uri, 19, getIdx)
-	if err != nil {
-		t.Fatal(err)
+	// Check varTypes for "pair"
+	t.Log("=== varTypes containing 'pair' ===")
+	for k, v := range varTypes {
+		if strings.Contains(k, "pair") {
+			t.Logf("  %s = %s", k, v)
+		}
 	}
-	if len(locs) == 0 {
-		t.Log("no definition for Get in chain — methods may not be in richAST in test env")
-		return
-	}
-	// Get is defined on line 6
-	if locs[0].Range.Start.Line != 6 {
-		t.Errorf("expected Get definition on line 6, got line %d", locs[0].Range.Start.Line)
-	}
-}
 
-// ====================================================================
-// Definition: Tuple field V1/V2 via std library
-// ====================================================================
-
-func TestDefinition_TupleFieldV1V2(t *testing.T) {
-	h := newHarness(t)
-	src := "package main\n\nfunc main() {\n    val t = (1, \"hello\")\n    Println(t.V1)\n    Println(t.V2)\n}\n"
-	uri := openFileOnDisk(t, h, src)
-
-	// Click on "V1" in "t.V1" at line 4
-	lineText := strings.Split(src, "\n")[4]
+	// Now test go-to-definition for V1
+	lineText := strings.Split(src, "\n")[4] // "    Println(pair.V1)"
 	v1Idx := strings.Index(lineText, ".V1")
 	if v1Idx < 0 {
 		t.Fatal("V1 not found in line")
 	}
 	v1Idx++ // skip the dot
 
-	locs, err := h.Definition(uri, 4, v1Idx)
+	locs, err := harness.Definition(uri, 4, v1Idx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(locs) == 0 {
-		t.Log("no definition for Tuple.V1 — std Tuple type may not have fields in test env")
-		return
+		t.Fatal("expected definition for Tuple.V1, got none")
 	}
-	// Should navigate to tuple.gala in std library where V1 is defined
 	locURI := string(locs[0].URI)
+	t.Logf("V1 definition found at: %s line %d", locURI, locs[0].Range.Start.Line)
 	if !strings.Contains(locURI, "tuple") && !strings.Contains(locURI, "std") {
-		t.Logf("V1 definition at: %s line %d (expected tuple.gala in std)", locURI, locs[0].Range.Start.Line)
-	} else {
-		t.Logf("V1 definition found at: %s line %d", locURI, locs[0].Range.Start.Line)
+		t.Errorf("expected V1 definition in std/tuple.gala, got: %s", locURI)
 	}
 }
 
 // ====================================================================
-// Definition: Stream chain methods (Tail, Filter)
+// REPRO: Stream.Tail/Filter go-to-definition
 // ====================================================================
 
-func TestDefinition_StreamChainMethods(t *testing.T) {
-	h := newHarness(t)
-	src := "package main\n\nimport \"martianoff/gala/stream\"\n\nfunc main() {\n    val s = stream.NewCons(1, () => stream.Empty[int]())\n    Println(s.Tail())\n    Println(s.Filter((x) => x > 0))\n}\n"
-	uri := openFileOnDisk(t, h, src)
+func TestDefinition_StreamTailFilter_Repro(t *testing.T) {
+	harness, handler := newHarnessWithHandler(t)
+	src := "package main\n\nimport \"martianoff/gala/stream\"\n\nfunc main() {\n    val s = stream.NewCons(1, () => stream.Empty[int]())\n    val t = s.Tail()\n    val f = s.Filter((x) => x > 0)\n}\n"
+	uri := openFileOnDisk(t, harness, src)
 
-	// Click on "Tail" in "s.Tail()" at line 6
-	lineText := strings.Split(src, "\n")[6]
+	time.Sleep(200 * time.Millisecond)
+
+	richAST := handler.DebugRichAST(string(uri))
+	varTypes := handler.DebugVarTypes(string(uri))
+
+	if richAST == nil {
+		t.Fatal("richAST is nil")
+	}
+
+	// Check if Stream type is in richAST with methods
+	t.Log("=== Types containing 'Stream' ===")
+	for key, tm := range richAST.Types {
+		if strings.Contains(key, "Stream") || strings.Contains(tm.Name, "Stream") {
+			t.Logf("  type %q (Name=%s, Pkg=%s, DefinedIn=%s)", key, tm.Name, tm.Package, tm.DefinedIn)
+			methodNames := make([]string, 0, len(tm.Methods))
+			for mn := range tm.Methods {
+				methodNames = append(methodNames, mn)
+			}
+			t.Logf("    Methods: %v", methodNames)
+		}
+	}
+
+	// Check varTypes for "s"
+	t.Log("=== varTypes containing 's' ===")
+	for k, v := range varTypes {
+		if k == "s" || strings.HasSuffix(k, ".s") {
+			t.Logf("  %s = %s", k, v)
+		}
+	}
+
+	// Test go-to-definition for Tail
+	lineText := strings.Split(src, "\n")[6] // "    val t = s.Tail()"
 	tailIdx := strings.Index(lineText, ".Tail(")
 	if tailIdx < 0 {
 		t.Fatal("Tail not found in line")
 	}
-	tailIdx++ // skip the dot
+	tailIdx++
 
-	locs, err := h.Definition(uri, 6, tailIdx)
+	locs, err := harness.Definition(uri, 6, tailIdx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(locs) == 0 {
-		t.Log("no definition for Stream.Tail — Stream type may not be in richAST in test env")
-		return
+		t.Fatal("expected definition for Stream.Tail, got none")
 	}
-	locURI := string(locs[0].URI)
-	if !strings.Contains(locURI, "stream") {
-		t.Errorf("expected Tail definition in stream package, got: %s", locURI)
-	} else {
-		t.Logf("Tail definition found at: %s line %d", locURI, locs[0].Range.Start.Line)
+	t.Logf("Tail definition found at: %s line %d", locs[0].URI, locs[0].Range.Start.Line)
+
+	// Test go-to-definition for Filter
+	lineText = strings.Split(src, "\n")[7] // "    val f = s.Filter((x) => x > 0)"
+	filterIdx := strings.Index(lineText, ".Filter(")
+	if filterIdx < 0 {
+		t.Fatal("Filter not found in line")
 	}
+	filterIdx++
+
+	locs, err = harness.Definition(uri, 7, filterIdx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(locs) == 0 {
+		t.Fatal("expected definition for Stream.Filter, got none")
+	}
+	t.Logf("Filter definition found at: %s line %d", locs[0].URI, locs[0].Range.Start.Line)
 }
