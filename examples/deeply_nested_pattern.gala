@@ -1,0 +1,20 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+)
+
+// T2: Deeply nested pattern matching — Some(Right((a, b))) 3+ levels.
+// Exercises pattern extraction through Option, Either, and Tuple layers.
+func classify(x Option[Either[string, Tuple[int, int]]]) string = x match {
+    case None() => "none"
+    case Some(Left(msg)) => fmt.Sprintf("left=%s", msg)
+    case Some(Right((a, b))) => fmt.Sprintf("right=(%d,%d)", a, b)
+}
+
+func main() {
+    fmt.Println(classify(None[Either[string, Tuple[int, int]]]()))
+    fmt.Println(classify(Some(Left[string, Tuple[int, int]]("oops"))))
+    fmt.Println(classify(Some(Right[string, Tuple[int, int]]((3, 4)))))
+}

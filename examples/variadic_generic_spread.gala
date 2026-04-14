@@ -1,0 +1,36 @@
+package main
+
+import "fmt"
+
+// T7: Variadic + generics combined.
+// Exercises:
+//   - generic variadic function definition
+//   - type-parameter inference from the variadic argument
+//   - multiple distinct type instantiations of the same generic
+//   - non-generic variadic as a baseline
+func headOr[T any](fallback T, xs ...T) T {
+    if len(xs) == 0 {
+        return fallback
+    }
+    return xs[0]
+}
+
+func sumAll(xs ...int) int {
+    var total = 0
+    for _, n := range xs {
+        total = total + n
+    }
+    return total
+}
+
+func main() {
+    // Generic variadic with multiple int args.
+    fmt.Println(headOr[int](-1, 10, 20, 30))
+    fmt.Println(headOr[int](-1))
+
+    // Non-generic variadic.
+    fmt.Println(sumAll(10, 20, 30))
+
+    // String instantiation exercises a different type parameter.
+    fmt.Println(headOr[string]("?", "a", "b", "c"))
+}

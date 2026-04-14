@@ -1,0 +1,46 @@
+package main
+
+import "fmt"
+
+// T1: Generic recursive sealed type — MyList[T] modelled as Cons / Nil.
+// Exercises (a) sealed types with type params, (b) self-referential variants,
+// (c) recursive pattern match folds.
+sealed type MyList[T any] {
+    case Cons(Head T, Tail MyList[T])
+    case Nil()
+}
+
+// Length folds via pattern matching over the recursive tail.
+func length[T any](l MyList[T]) int = l match {
+    case Nil() => 0
+    case Cons(_, rest) => 1 + length(rest)
+}
+
+// Sum only makes sense for numeric lists — keep it for int.
+func sum(l MyList[int]) int = l match {
+    case Nil() => 0
+    case Cons(h, rest) => h + sum(rest)
+}
+
+// Convert a MyList[int] to a comma-separated string via recursive match.
+func stringify(l MyList[int]) string = l match {
+    case Nil() => ""
+    case Cons(h, Nil()) => fmt.Sprintf("%d", h)
+    case Cons(h, rest) => fmt.Sprintf("%d,%s", h, stringify(rest))
+}
+
+func main() {
+    // Nil and single-element constructions.
+    val empty = Nil[int]()
+    val one = Cons[int](1, Nil[int]())
+
+    // Multi-element: 1 -> 2 -> 3 -> Nil
+    val l = Cons[int](1, Cons[int](2, Cons[int](3, Nil[int]())))
+
+    fmt.Println(length(empty))
+    fmt.Println(length(one))
+    fmt.Println(length(l))
+    fmt.Println(sum(empty))
+    fmt.Println(sum(l))
+    fmt.Println(stringify(l))
+}
