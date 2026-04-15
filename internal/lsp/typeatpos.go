@@ -151,7 +151,7 @@ func typeAtDot(text string, line, char int, richAST *transpiler.RichAST, varType
 			// Check if there's a dot before this name (chained: receiver.Method().next)
 			if i >= 0 && l[i] == '.' {
 				// Resolve the chain: find the receiver type, then get the method's return type
-				receiverType := resolveChainType(l[:i], enclosingFunc, richAST, varTypes)
+				receiverType := resolveChainTypeN(l[:i], enclosingFunc, richAST, varTypes, 0)
 				if receiverType != "" {
 					return resolveMethodReturn(richAST, receiverType, name)
 				}
@@ -244,10 +244,9 @@ func resolveReceiverType(name, funcScope string, richAST *transpiler.RichAST, va
 
 const maxChainDepth = 10
 
-func resolveChainType(text string, funcScope string, richAST *transpiler.RichAST, varTypes map[string]string) string {
-	return resolveChainTypeN(text, funcScope, richAST, varTypes, 0)
-}
-
+// resolveChainTypeN walks a chain of identifiers/calls backwards, resolving
+// the type of the expression at the end of the walk. Depth guards against
+// runaway recursion on malformed input.
 func resolveChainTypeN(text string, funcScope string, richAST *transpiler.RichAST, varTypes map[string]string, depth int) string {
 	if depth > maxChainDepth {
 		return ""

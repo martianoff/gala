@@ -1812,11 +1812,11 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 					return nil, fmt.Errorf("multiple package names in directory %s: %s and %s", dirPath, pkgAST.PackageName, res.PackageName)
 				}
 				for typeName, newMeta := range res.Types {
-					if newMeta.DefinedIn != filePath {
+					if !isSameFile(newMeta.DefinedIn, filePath) {
 						continue
 					}
 					if existingMeta, ok := pkgAST.Types[typeName]; ok {
-						if hasTypeDefinition(existingMeta) && existingMeta.DefinedIn != "" && existingMeta.DefinedIn != filePath {
+						if hasTypeDefinition(existingMeta) && existingMeta.DefinedIn != "" && !isSameFile(existingMeta.DefinedIn, filePath) {
 							return nil, fmt.Errorf("type %q in package %q redefined (first defined in %s)",
 								newMeta.Name, res.PackageName, existingMeta.DefinedIn)
 						}
@@ -2162,7 +2162,9 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 					fidStart := fctx.Identifier().GetStart()
 					meta.FieldPositions[fieldName] = transpiler.SourcePos{Line: fidStart.GetLine(), Column: fidStart.GetColumn()}
 				}
-				meta.DefinedIn = absSibPath
+				if meta.DefinedIn == "" {
+					meta.DefinedIn = absSibPath
+				}
 			}
 			if ctx.InterfaceType() != nil {
 				ifaceType := ctx.InterfaceType().(*grammar.InterfaceTypeContext)
@@ -2306,15 +2308,17 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 				}
 			}
 			a.analyzeSealedType(ctx, pkgName, richAST)
-			// Set DefinedIn on the parent and all companion variants
+			// Set DefinedIn on the parent and all companion variants (only when empty).
 			if meta, ok := richAST.Types[fullTypeName]; ok {
-				meta.DefinedIn = absSibPath
+				if meta.DefinedIn == "" {
+					meta.DefinedIn = absSibPath
+				}
 				for _, v := range meta.SealedVariants {
 					companionKey := v.Name
 					if pkgName != "" && pkgName != "main" && pkgName != "test" {
 						companionKey = pkgName + "." + v.Name
 					}
-					if cm, ok := richAST.Types[companionKey]; ok {
+					if cm, ok := richAST.Types[companionKey]; ok && cm.DefinedIn == "" {
 						cm.DefinedIn = absSibPath
 					}
 				}
