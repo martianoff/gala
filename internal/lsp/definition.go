@@ -176,7 +176,6 @@ func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionPara
 		for _, v := range typeMeta.SealedVariants {
 			for _, fn := range v.FieldNames {
 				if fn == word {
-					// Navigate to the sealed case declaration using the recorded variant position
 					if loc := locationAt(typeMeta.DefinedIn, v.Pos, v.Name); loc != nil {
 						return []lsp.Location{*loc}, nil
 					}

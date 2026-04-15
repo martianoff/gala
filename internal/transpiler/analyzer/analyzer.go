@@ -528,14 +528,12 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 				meta.FieldNames = nil
 				meta.ImmutFlags = nil
 				meta.FieldPositions = nil
-				idStart := ctx.Identifier().GetStart()
-				meta.Pos = transpiler.SourcePos{Line: idStart.GetLine(), Column: idStart.GetColumn()}
+				meta.Pos = transpiler.PosFromToken(ctx.Identifier().GetStart())
 			} else {
-				idStart := ctx.Identifier().GetStart()
 				meta = &transpiler.TypeMetadata{
 					Name:    typeName,
 					Package: pkgName,
-					Pos:     transpiler.SourcePos{Line: idStart.GetLine(), Column: idStart.GetColumn()},
+					Pos:     transpiler.PosFromToken(ctx.Identifier().GetStart()),
 					Methods: make(map[string]*transpiler.MethodMetadata),
 					Fields:  make(map[string]transpiler.Type),
 				}
@@ -572,8 +570,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 					if meta.FieldPositions == nil {
 						meta.FieldPositions = make(map[string]transpiler.SourcePos)
 					}
-					idStart := fctx.Identifier().GetStart()
-					meta.FieldPositions[fieldName] = transpiler.SourcePos{Line: idStart.GetLine(), Column: idStart.GetColumn()}
+					meta.FieldPositions[fieldName] = transpiler.PosFromToken(fctx.Identifier().GetStart())
 				}
 				meta.DefinedIn = filePath
 			}
@@ -637,7 +634,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 			}
 
 			var meta *transpiler.TypeMetadata
-			idStart := ctx.Identifier().GetStart()
+			pos := transpiler.PosFromToken(ctx.Identifier().GetStart())
 			if existing, ok := richAST.Types[fullTypeName]; ok && existing.Package == pkgName {
 				if existing.DefinedIn != "" && hasTypeDefinition(existing) && !(existing.DefinedIn != filePath && isSameFile(existing.DefinedIn, absFilePath)) {
 					line := ctx.GetStart().GetLine()
@@ -649,12 +646,12 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 				meta.FieldNames = nil
 				meta.ImmutFlags = nil
 				meta.FieldPositions = nil
-				meta.Pos = transpiler.SourcePos{Line: idStart.GetLine(), Column: idStart.GetColumn()}
+				meta.Pos = pos
 			} else {
 				meta = &transpiler.TypeMetadata{
 					Name:    typeName,
 					Package: pkgName,
-					Pos:     transpiler.SourcePos{Line: idStart.GetLine(), Column: idStart.GetColumn()},
+					Pos:     pos,
 					Methods: make(map[string]*transpiler.MethodMetadata),
 					Fields:  make(map[string]transpiler.Type),
 				}
@@ -677,8 +674,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 						if meta.FieldPositions == nil {
 							meta.FieldPositions = make(map[string]transpiler.SourcePos)
 						}
-						idStart := pctx.Identifier().GetStart()
-						meta.FieldPositions[fieldName] = transpiler.SourcePos{Line: idStart.GetLine(), Column: idStart.GetColumn()}
+						meta.FieldPositions[fieldName] = transpiler.PosFromToken(pctx.Identifier().GetStart())
 					}
 				}
 				meta.DefinedIn = filePath
@@ -734,11 +730,10 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 						fullBaseType = pkgName + "." + baseType
 					}
 
-					mnStart := ctx.Identifier().GetStart()
 					methodMeta := &transpiler.MethodMetadata{
 						Name:         methodName,
 						Package:      pkgName,
-						Pos:          transpiler.SourcePos{Line: mnStart.GetLine(), Column: mnStart.GetColumn()},
+						Pos:          transpiler.PosFromToken(ctx.Identifier().GetStart()),
 						ReceiverName: recvCtx.Identifier().GetText(),
 					}
 					if ctx.TypeParameters() != nil {
@@ -837,11 +832,10 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 				if pkgName != "" && pkgName != "main" && pkgName != "test" {
 					fullFuncName = pkgName + "." + funcName
 				}
-				fnStart := ctx.Identifier().GetStart()
 				funcMeta := &transpiler.FunctionMetadata{
 					Name:      funcName,
 					Package:   pkgName,
-					Pos:       transpiler.SourcePos{Line: fnStart.GetLine(), Column: fnStart.GetColumn()},
+					Pos:       transpiler.PosFromToken(ctx.Identifier().GetStart()),
 					DefinedIn: filePath,
 				}
 				// Collect type parameters first so we can resolve param types correctly
@@ -1040,11 +1034,10 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 	}
 
 	// Create parent type metadata with all variant fields merged + _variant
-	idStartSealed := ctx.Identifier().GetStart()
 	parentMeta := &transpiler.TypeMetadata{
 		Name:       typeName,
 		Package:    pkgName,
-		Pos:        transpiler.SourcePos{Line: idStartSealed.GetLine(), Column: idStartSealed.GetColumn()},
+		Pos:        transpiler.PosFromToken(ctx.Identifier().GetStart()),
 		Methods:    make(map[string]*transpiler.MethodMetadata),
 		Fields:     make(map[string]transpiler.Type),
 		IsSealed:   true,
@@ -1068,10 +1061,9 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 	for _, caseCtx := range ctx.AllSealedCase() {
 		sc := caseCtx.(*grammar.SealedCaseContext)
 		variantName := sc.Identifier().GetText()
-		vStart := sc.Identifier().GetStart()
 		vi := variantInfo{
 			name: variantName,
-			pos:  transpiler.SourcePos{Line: vStart.GetLine(), Column: vStart.GetColumn()},
+			pos:  transpiler.PosFromToken(sc.Identifier().GetStart()),
 		}
 
 		if sc.SealedCaseFieldList() != nil {
@@ -1811,12 +1803,33 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 				} else if pkgAST.PackageName != res.PackageName {
 					return nil, fmt.Errorf("multiple package names in directory %s: %s and %s", dirPath, pkgAST.PackageName, res.PackageName)
 				}
+				// Canonicalize filePath once — isSameFile resolves symlinks and
+				// runs os.Stat, which is too expensive to call per type.
+				canonFile, _ := filepath.Abs(filePath)
+				if real, err := filepath.EvalSymlinks(canonFile); err == nil {
+					canonFile = real
+				}
+				canonCache := map[string]string{filePath: canonFile}
+				sameAsFilePath := func(p string) bool {
+					if p == "" {
+						return false
+					}
+					if c, ok := canonCache[p]; ok {
+						return c == canonFile
+					}
+					abs, _ := filepath.Abs(p)
+					if real, err := filepath.EvalSymlinks(abs); err == nil {
+						abs = real
+					}
+					canonCache[p] = abs
+					return abs == canonFile
+				}
 				for typeName, newMeta := range res.Types {
-					if !isSameFile(newMeta.DefinedIn, filePath) {
+					if !sameAsFilePath(newMeta.DefinedIn) {
 						continue
 					}
 					if existingMeta, ok := pkgAST.Types[typeName]; ok {
-						if hasTypeDefinition(existingMeta) && existingMeta.DefinedIn != "" && !isSameFile(existingMeta.DefinedIn, filePath) {
+						if hasTypeDefinition(existingMeta) && existingMeta.DefinedIn != "" && !sameAsFilePath(existingMeta.DefinedIn) {
 							return nil, fmt.Errorf("type %q in package %q redefined (first defined in %s)",
 								newMeta.Name, res.PackageName, existingMeta.DefinedIn)
 						}
@@ -2119,11 +2132,10 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 					existingMethods[k] = v
 				}
 			}
-			idStartT := ctx.Identifier().GetStart()
 			meta := &transpiler.TypeMetadata{
 				Name:    typeName,
 				Package: pkgName,
-				Pos:     transpiler.SourcePos{Line: idStartT.GetLine(), Column: idStartT.GetColumn()},
+				Pos:     transpiler.PosFromToken(ctx.Identifier().GetStart()),
 				Methods: existingMethods,
 				Fields:  make(map[string]transpiler.Type),
 			}
@@ -2159,8 +2171,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 					if meta.FieldPositions == nil {
 						meta.FieldPositions = make(map[string]transpiler.SourcePos)
 					}
-					fidStart := fctx.Identifier().GetStart()
-					meta.FieldPositions[fieldName] = transpiler.SourcePos{Line: fidStart.GetLine(), Column: fidStart.GetColumn()}
+					meta.FieldPositions[fieldName] = transpiler.PosFromToken(fctx.Identifier().GetStart())
 				}
 				if meta.DefinedIn == "" {
 					meta.DefinedIn = absSibPath
@@ -2171,11 +2182,10 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 				for _, ms := range ifaceType.AllMethodSpec() {
 					msCtx := ms.(*grammar.MethodSpecContext)
 					methodName := msCtx.Identifier().GetText()
-					mnStart := msCtx.Identifier().GetStart()
 					methodMeta := &transpiler.MethodMetadata{
 						Name:      methodName,
 						Package:   pkgName,
-						Pos:       transpiler.SourcePos{Line: mnStart.GetLine(), Column: mnStart.GetColumn()},
+						Pos:       transpiler.PosFromToken(msCtx.Identifier().GetStart()),
 						DefinedIn: absSibPath,
 					}
 					if msCtx.TypeParameters() != nil {
@@ -2247,11 +2257,10 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 					existingMethods[k] = v
 				}
 			}
-			idStartS := ctx.Identifier().GetStart()
 			meta := &transpiler.TypeMetadata{
 				Name:    typeName,
 				Package: pkgName,
-				Pos:     transpiler.SourcePos{Line: idStartS.GetLine(), Column: idStartS.GetColumn()},
+				Pos:     transpiler.PosFromToken(ctx.Identifier().GetStart()),
 				Methods: existingMethods,
 				Fields:  make(map[string]transpiler.Type),
 			}
@@ -2278,8 +2287,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 						if meta.FieldPositions == nil {
 							meta.FieldPositions = make(map[string]transpiler.SourcePos)
 						}
-						fidStart := pctx.Identifier().GetStart()
-						meta.FieldPositions[fieldName] = transpiler.SourcePos{Line: fidStart.GetLine(), Column: fidStart.GetColumn()}
+						meta.FieldPositions[fieldName] = transpiler.PosFromToken(pctx.Identifier().GetStart())
 					}
 				}
 			}
@@ -2342,11 +2350,10 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 					fullBaseType = pkgName + "." + baseType
 				}
 
-				mnStart := ctx.Identifier().GetStart()
 				methodMeta := &transpiler.MethodMetadata{
 					Name:         methodName,
 					Package:      pkgName,
-					Pos:          transpiler.SourcePos{Line: mnStart.GetLine(), Column: mnStart.GetColumn()},
+					Pos:          transpiler.PosFromToken(ctx.Identifier().GetStart()),
 					ReceiverName: recvCtx.Identifier().GetText(),
 					DefinedIn:    absSibPath,
 				}
@@ -2415,11 +2422,10 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 					fullFuncName = pkgName + "." + funcName
 				}
 				if _, ok := richAST.Functions[fullFuncName]; !ok {
-					fnStart := ctx.Identifier().GetStart()
 					funcMeta := &transpiler.FunctionMetadata{
 						Name:      funcName,
 						Package:   pkgName,
-						Pos:       transpiler.SourcePos{Line: fnStart.GetLine(), Column: fnStart.GetColumn()},
+						Pos:       transpiler.PosFromToken(ctx.Identifier().GetStart()),
 						DefinedIn: absSibPath,
 					}
 					if ctx.TypeParameters() != nil {

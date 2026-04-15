@@ -24,7 +24,8 @@ func findEnclosingFunc(lines []string, targetLine int) string {
 // flattenLogicalLine returns the text up to (line, char) as a single line,
 // prepending earlier lines while the expression is an obvious continuation:
 // either the prior line ends with a continuation token (`.`, `(`, `,`, `=`, `=>`, etc.)
-// or the accumulated text has more closing than opening parens.
+// or the accumulated text has more closing than opening parens (meaning the
+// opening paren lives on an earlier line).
 func flattenLogicalLine(lines []string, line, char int) string {
 	if line >= len(lines) {
 		return ""
@@ -34,28 +35,31 @@ func flattenLogicalLine(lines []string, line, char int) string {
 		char = len(cur)
 	}
 	cur = cur[:char]
+	// Keep a running net-parens count so we don't rescan the growing `cur`
+	// on every iteration (O(n²) → O(n) over a multi-line chain).
+	net := netParens(cur)
 	for prev := line - 1; prev >= 0; prev-- {
-		if !shouldJoinPrev(lines[prev], cur) {
+		prevTrimmed := strings.TrimRight(lines[prev], " \t")
+		if !shouldJoinPrev(prevTrimmed, net) {
 			break
 		}
-		prevTrimmed := strings.TrimRight(lines[prev], " \t")
 		cur = prevTrimmed + strings.TrimLeft(cur, " \t")
+		net += netParens(prevTrimmed)
 	}
 	return cur
 }
 
-func shouldJoinPrev(prev, cur string) bool {
-	trimmed := strings.TrimRight(prev, " \t")
-	if trimmed == "" {
+func shouldJoinPrev(prevTrimmed string, curNetParens int) bool {
+	if prevTrimmed == "" {
 		return false
 	}
-	if netParens(cur) < 0 {
+	if curNetParens < 0 {
 		return true
 	}
-	if strings.HasSuffix(trimmed, "=>") {
+	if strings.HasSuffix(prevTrimmed, "=>") {
 		return true
 	}
-	switch trimmed[len(trimmed)-1] {
+	switch prevTrimmed[len(prevTrimmed)-1] {
 	case '.', '(', ',', '=', '+', '-', '*', '/', '&', '|', '?', ':':
 		return true
 	}

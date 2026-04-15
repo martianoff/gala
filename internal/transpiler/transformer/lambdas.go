@@ -74,10 +74,10 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 							field.Type = typeExpr
 							t.addVar(name, expType)
 						}
-						identStart := paramCtx.Identifier().GetStart()
+						pos := transpiler.PosFromToken(paramCtx.Identifier().GetStart())
 						t.lspLambdaParamHints = append(t.lspLambdaParamHints, transpiler.LambdaParamHint{
-							Line:   identStart.GetLine(),
-							Column: identStart.GetColumn(),
+							Line:   pos.Line,
+							Column: pos.Column,
 							Name:   name,
 							Type:   expType,
 						})

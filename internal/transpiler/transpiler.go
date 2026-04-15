@@ -192,6 +192,23 @@ type SourcePos struct {
 	Column int
 }
 
+// antlrToken is the minimal subset of antlr.Token we need for position extraction.
+// Declared locally so the transpiler package doesn't pull in the antlr dependency.
+type antlrToken interface {
+	GetLine() int
+	GetColumn() int
+}
+
+// PosFromToken builds a SourcePos from any ANTLR token (or anything that
+// exposes GetLine/GetColumn). Centralizes the Line/Column mapping so callers
+// can't accidentally swap them or forget the 1-based/0-based convention.
+func PosFromToken(tok antlrToken) SourcePos {
+	if tok == nil {
+		return SourcePos{}
+	}
+	return SourcePos{Line: tok.GetLine(), Column: tok.GetColumn()}
+}
+
 // SealedVariant holds metadata about a single case in a sealed type declaration.
 type SealedVariant struct {
 	Name       string
@@ -260,8 +277,8 @@ type TransformResult struct {
 }
 
 // LambdaParamHint records a single lambda parameter whose type was inferred
-// by the transformer. Line and Column are 1-based (ANTLR convention), with
-// Column pointing at the start of the parameter identifier.
+// by the transformer. Line is 1-based, Column is 0-based (ANTLR convention),
+// pointing at the start of the parameter identifier.
 type LambdaParamHint struct {
 	Line   int
 	Column int
