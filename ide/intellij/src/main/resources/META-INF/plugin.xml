@@ -53,7 +53,10 @@
 
     <!-- No until-build: the plugin doesn't rely on APIs scheduled for removal,
          so we let it remain installable on future IDE versions without needing a re-release. -->
-    <idea-version since-build="251"/>
+    <!-- since-build 252 = IntelliJ 2025.2: earliest build where com.intellij.modules.lsp
+         resolves correctly for external plugins. 2025.1.x does not ship the LSP module
+         in an installable form. -->
+    <idea-version since-build="252"/>
 
     <depends>com.intellij.modules.platform</depends>
     <!-- LSP API (platform.lsp.serverSupportProvider) — only available in IDEs that ship the LSP module
