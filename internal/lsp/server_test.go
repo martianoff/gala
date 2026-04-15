@@ -3064,10 +3064,19 @@ func TestInlayHints_LambdaParamNotOnValLine(t *testing.T) {
 	}
 	hintStr := string(raw)
 	t.Logf("line 7 hints: %s", hintStr)
-	// Should have at most ONE hint for val email, not two (email + lambda param e)
-	hintCount := strings.Count(hintStr, "label")
-	if hintCount > 1 {
-		t.Errorf("expected at most 1 hint on val line, got %d — lambda param hint leaking onto val line", hintCount)
+	// With transformer-sourced lambda hints, both `email` and the lambda param
+	// `e` get precisely-placed hints. They must land at distinct columns so
+	// they do not visually overlap.
+	var parsed []lsp.InlayHint
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		t.Fatal(err)
+	}
+	cols := map[int]bool{}
+	for _, h := range parsed {
+		if cols[h.Position.Character] {
+			t.Errorf("duplicate hint at column %d on val line", h.Position.Character)
+		}
+		cols[h.Position.Character] = true
 	}
 }
 
@@ -4283,5 +4292,292 @@ func TestDefinition_MethodDeclNavigation_Repro(t *testing.T) {
 	t.Logf("Filter definition found at: %s line %d", filterURI, locs[0].Range.Start.Line)
 	if !strings.Contains(filterURI, "lib.gala") {
 		t.Errorf("expected Filter definition in lib.gala, got: %s", filterURI)
+	}
+}
+
+// TestDefinition_StructFieldNotInComment reproduces a bug where clicking
+// `x.Data` navigates into a `// Example:` comment block that happens to
+// contain `Data = "..."`. The whole-word fallback in fileLocationBroad
+// matches inside comments.
+func TestDefinition_StructFieldNotInComment(t *testing.T) {
+	harness, _ := newHarnessWithHandler(t)
+	src := "package main\n" +
+		"\n" +
+		"// Example:\n" +
+		"//     SSEEvent(Event = \"message\", Data = \"Hello!\", Id = \"1\", Retry = 0),\n" +
+		"//     SSEEvent(Event = \"update\",  Data = \"{x}\",    Id = \"2\", Retry = 0),\n" +
+		"\n" +
+		"struct SSEEvent(Event string, Data string, Id string, Retry int)\n" +
+		"\n" +
+		"func use(e SSEEvent) string = e.Data\n"
+	uri := openFileOnDisk(t, harness, src)
+	time.Sleep(200 * time.Millisecond)
+
+	lineIdx := 8 // `func use(e SSEEvent) string = e.Data`
+	line := "func use(e SSEEvent) string = e.Data"
+	dataCol := strings.Index(line, "e.Data") + 2 // column of D in Data
+	locs, err := harness.Definition(uri, lineIdx, dataCol)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(locs) == 0 {
+		t.Fatal("expected a definition for e.Data")
+	}
+	loc := locs[0]
+	t.Logf("def landed at line %d col %d", loc.Range.Start.Line, loc.Range.Start.Character)
+	srcLines := strings.Split(src, "\n")
+	if loc.Range.Start.Line >= len(srcLines) {
+		t.Fatalf("line %d out of range", loc.Range.Start.Line)
+	}
+	landed := srcLines[loc.Range.Start.Line]
+	if strings.HasPrefix(strings.TrimSpace(landed), "//") {
+		t.Errorf("definition landed inside comment: %q", landed)
+	}
+	if !strings.HasPrefix(strings.TrimSpace(landed), "struct ") {
+		t.Errorf("expected definition on the struct line, got %q", landed)
+	}
+}
+
+// TestDefinition_SealedVariantCrossFile covers go-to-def on a sealed variant
+// used in a different file from where it is declared. Clicking the variant
+// must land on the `case Xxx(...)` line inside the sealed type declaration,
+// not inside a comment block that mentions the variant name.
+func TestDefinition_SealedVariantCrossFile(t *testing.T) {
+	harness, _ := newHarnessWithHandler(t)
+	dir := createTestProject(t, []testProjectFile{
+		{Name: "shape.gala", Src: "package shapelib\n" +
+			"\n" +
+			"// Circle and Square are the two supported shapes.\n" +
+			"// Example: Circle(radius = 3), Square(side = 2)\n" +
+			"sealed type Shape {\n" +
+			"    case Circle(radius float64)\n" +
+			"    case Square(side float64)\n" +
+			"}\n",
+		},
+		{Name: "use.gala", Src: "package shapelib\n" +
+			"\n" +
+			"func MakeCircle() Shape = Circle(radius = 3.0)\n",
+		},
+	})
+	openProjectFile(t, harness, dir, "shape.gala")
+	uri := openProjectFile(t, harness, dir, "use.gala")
+	time.Sleep(300 * time.Millisecond)
+
+	line := "func MakeCircle() Shape = Circle(radius = 3.0)"
+	circleCol := strings.LastIndex(line, "Circle(") + 2
+	locs, err := harness.Definition(uri, 2, circleCol)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(locs) == 0 {
+		t.Fatal("expected a definition for Circle variant")
+	}
+	defPath := uriToLocal(string(locs[0].URI))
+	if !strings.Contains(filepath.ToSlash(defPath), "shape.gala") {
+		t.Errorf("expected definition in shape.gala, got %s", defPath)
+	}
+	body, _ := os.ReadFile(defPath)
+	defLine := strings.Split(string(body), "\n")[locs[0].Range.Start.Line]
+	if strings.HasPrefix(strings.TrimSpace(defLine), "//") {
+		t.Errorf("landed in comment: %q", defLine)
+	}
+	if !strings.Contains(defLine, "case Circle(") {
+		t.Errorf("expected to land on `case Circle(...)`, got %q", defLine)
+	}
+}
+
+// TestDefinition_CrossPackage covers go-to-definition across package files:
+// clicking a type, a function, a method, and a struct field in one file
+// should navigate to their declarations in another package file.
+func TestDefinition_CrossPackage(t *testing.T) {
+	harness, _ := newHarnessWithHandler(t)
+	dir := createTestProject(t, []testProjectFile{
+		{Name: "types.gala", Src: "package mylib\n" +
+			"\n" +
+			"// Example:\n" +
+			"//     Event(Id = \"x\", Data = \"hello\")\n" +
+			"struct Event(Id string, Data string)\n" +
+			"\n" +
+			"func (e Event) WithId(id string) Event = Event(Id = id, Data = e.Data)\n" +
+			"\n" +
+			"func NewEvent(id string) Event = Event(Id = id, Data = \"\")\n",
+		},
+		{Name: "consumer.gala", Src: "package mylib\n" +
+			"\n" +
+			"func Use() string {\n" +
+			"    val e = NewEvent(\"1\")\n" +
+			"    val d = e.Data\n" +
+			"    return d\n" +
+			"}\n",
+		},
+	})
+	openProjectFile(t, harness, dir, "types.gala")
+	uri := openProjectFile(t, harness, dir, "consumer.gala")
+	time.Sleep(300 * time.Millisecond)
+
+	assertDefinesIn := func(t *testing.T, name string, line, col int, expectFile, expectKeyword string) {
+		t.Helper()
+		locs, err := harness.Definition(uri, line, col)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(locs) == 0 {
+			t.Errorf("%s: no definition returned", name)
+			return
+		}
+		loc := locs[0]
+		defPath := uriToLocal(string(loc.URI))
+		if !strings.Contains(filepath.ToSlash(defPath), expectFile) {
+			t.Errorf("%s: definition file %q does not contain %q", name, defPath, expectFile)
+			return
+		}
+		content, _ := os.ReadFile(defPath)
+		lines := strings.Split(string(content), "\n")
+		if loc.Range.Start.Line >= len(lines) {
+			t.Errorf("%s: def line %d out of range", name, loc.Range.Start.Line)
+			return
+		}
+		landed := strings.TrimSpace(lines[loc.Range.Start.Line])
+		if strings.HasPrefix(landed, "//") {
+			t.Errorf("%s: landed in comment: %q", name, landed)
+			return
+		}
+		if !strings.Contains(landed, expectKeyword) {
+			t.Errorf("%s: landed on %q, expected to contain %q", name, landed, expectKeyword)
+		}
+	}
+
+	consumerSrc := "package mylib\n\nfunc Use() string {\n    val e = NewEvent(\"1\")\n    val d = e.Data\n    return d\n}\n"
+	lines := strings.Split(consumerSrc, "\n")
+
+	findCol := func(lineIdx int, needle string, offset int) int {
+		c := strings.Index(lines[lineIdx], needle)
+		if c < 0 {
+			t.Fatalf("needle %q not found on line %d", needle, lineIdx)
+		}
+		return c + offset
+	}
+
+	assertDefinesIn(t, "NewEvent func", 3, findCol(3, "NewEvent", 2), "types.gala", "NewEvent")
+	assertDefinesIn(t, "e.Data field", 4, findCol(4, "e.Data", 2), "types.gala", "Data")
+}
+
+// uriToLocal converts an LSP file:// URI into a local filesystem path,
+// handling both Linux (file:///home/...) and Windows (file:///C:/...) forms.
+func uriToLocal(u string) string {
+	u = strings.TrimPrefix(u, "file://")
+	if len(u) >= 3 && u[0] == '/' && u[2] == ':' {
+		// Windows drive-letter path: /C:/... → C:/...
+		u = u[1:]
+	}
+	return filepath.FromSlash(u)
+}
+
+// TestInlayHint_LambdaShortParamInsideLongParam reproduces a bug where the
+// inlay hint for a short lambda param (e.g. `r`) is placed at the first
+// substring match inside a longer sibling param (e.g. `result`), splitting
+// the identifier: `(r:Route esult:Group ...)`.
+func TestInlayHint_LambdaShortParamInsideLongParam(t *testing.T) {
+	harness, handler := newHarnessWithHandler(t)
+	src := "package main\n" +
+		"\n" +
+		"import . \"martianoff/gala/collection_immutable\"\n" +
+		"\n" +
+		"func main() {\n" +
+		"    val xs = ArrayOf(1, 2, 3)\n" +
+		"    val sum = xs.FoldLeft(0, (result, r) => result + r)\n" +
+		"}\n"
+	uri := openFileOnDisk(t, harness, src)
+	time.Sleep(200 * time.Millisecond)
+
+	_ = handler
+	hints := requestInlayHints(t, harness, uri, 0, 20)
+	lineIdx := 6
+	line := "    val sum = xs.FoldLeft(0, (result, r) => result + r)"
+	paramListStart := strings.Index(line, "(result, r)")
+	resultEnd := paramListStart + 1 + len("result") // after "(result"
+	rEnd := paramListStart + len("(result, r")      // after "(result, r"
+	lineHints := findAllHintsForLine(hints, lineIdx)
+	lambdaHints := 0
+	for _, h := range lineHints {
+		pos := h.Position.Character
+		if pos < paramListStart || pos > paramListStart+len("(result, r)") {
+			continue
+		}
+		lambdaHints++
+		if pos != resultEnd && pos != rEnd {
+			var label string
+			_ = json.Unmarshal(h.Label, &label)
+			t.Errorf("lambda hint at column %d (label %q); expected %d (after 'result') or %d (after 'r')",
+				pos, label, resultEnd, rEnd)
+		}
+	}
+	if lambdaHints == 0 {
+		t.Fatal("expected lambda param hints on line")
+	}
+}
+
+// TestCompletion_MultiLineChain reproduces a bug where autocompletion after a dot
+// in a multi-line chained call (e.g. FutureOf(NewResponse(...).\n WithBody(...)).)
+// returns no items because typeAtDot only looks at the current line.
+func TestCompletion_MultiLineChain(t *testing.T) {
+	harness, handler := newHarnessWithHandler(t)
+	src := "package main\n" +
+		"\n" +
+		"type Response struct {\n" +
+		"    val status int\n" +
+		"    val body string\n" +
+		"}\n" +
+		"\n" +
+		"func (r Response) WithBody(b string) Response = Response(status = r.status, body = b)\n" +
+		"func (r Response) WithStatus(s int) Response = Response(status = s, body = r.body)\n" +
+		"func (r Response) Finish() string = r.body\n" +
+		"\n" +
+		"func NewResponse(status int) Response = Response(status = status, body = \"\")\n" +
+		"func StatusCustom(code int) int = code\n" +
+		"\n" +
+		"func main() {\n" +
+		"    val x = NewResponse(StatusCustom(413)).\n" +
+		"        WithBody(\"Request Entity Too Large\").\n" +
+		"        Finish()\n" +
+		"}\n"
+	uri := openFileOnDisk(t, harness, src)
+	time.Sleep(200 * time.Millisecond)
+
+	richAST := handler.DebugRichAST(string(uri))
+	if richAST == nil {
+		t.Fatal("richAST nil")
+	}
+	if _, ok := richAST.Types["Response"]; !ok {
+		keys := make([]string, 0, len(richAST.Types))
+		for k := range richAST.Types {
+			keys = append(keys, k)
+		}
+		t.Fatalf("Response type missing; have: %v", keys)
+	}
+
+	// Case A: cursor after `WithBody("Request Entity Too Large").`
+	// Line index 16 (0-based), char = len(line)
+	lineA := "        WithBody(\"Request Entity Too Large\")."
+	list, err := harness.Completion(uri, 16, len(lineA))
+	if err != nil {
+		t.Fatal(err)
+	}
+	labels := collectLabels(list)
+	t.Logf("case A labels: %v", labelSlice(list))
+	if !labels["Finish"] && !hasLabelPrefix(list, "Finish") {
+		t.Errorf("case A: expected Finish method after multi-line chain on Response, got %v", labelSlice(list))
+	}
+
+	// Case B: cursor after `NewResponse(StatusCustom(413)).` (same line but just after the dot)
+	lineB := "    val x = NewResponse(StatusCustom(413))."
+	list, err = harness.Completion(uri, 15, len(lineB))
+	if err != nil {
+		t.Fatal(err)
+	}
+	labels = collectLabels(list)
+	t.Logf("case B labels: %v", labelSlice(list))
+	if !hasLabelPrefix(list, "WithBody") {
+		t.Errorf("case B: expected WithBody method after NewResponse(...), got %v", labelSlice(list))
 	}
 }

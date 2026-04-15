@@ -21,6 +21,80 @@ func findEnclosingFunc(lines []string, targetLine int) string {
 	return ""
 }
 
+// flattenLogicalLine returns the text up to (line, char) as a single line,
+// prepending earlier lines while the expression is an obvious continuation:
+// either the prior line ends with a continuation token (`.`, `(`, `,`, `=`, `=>`, etc.)
+// or the accumulated text has more closing than opening parens (meaning the
+// opening paren lives on an earlier line).
+func flattenLogicalLine(lines []string, line, char int) string {
+	if line >= len(lines) {
+		return ""
+	}
+	cur := lines[line]
+	if char > len(cur) {
+		char = len(cur)
+	}
+	cur = cur[:char]
+	// Keep a running net-parens count so we don't rescan the growing `cur`
+	// on every iteration (O(n²) → O(n) over a multi-line chain).
+	net := netParens(cur)
+	for prev := line - 1; prev >= 0; prev-- {
+		prevTrimmed := strings.TrimRight(lines[prev], " \t")
+		if !shouldJoinPrev(prevTrimmed, net) {
+			break
+		}
+		cur = prevTrimmed + strings.TrimLeft(cur, " \t")
+		net += netParens(prevTrimmed)
+	}
+	return cur
+}
+
+func shouldJoinPrev(prevTrimmed string, curNetParens int) bool {
+	if prevTrimmed == "" {
+		return false
+	}
+	if curNetParens < 0 {
+		return true
+	}
+	if strings.HasSuffix(prevTrimmed, "=>") {
+		return true
+	}
+	switch prevTrimmed[len(prevTrimmed)-1] {
+	case '.', '(', ',', '=', '+', '-', '*', '/', '&', '|', '?', ':':
+		return true
+	}
+	return false
+}
+
+// netParens counts ( minus ) ignoring characters inside double-quoted strings.
+func netParens(s string) int {
+	n := 0
+	inStr := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if inStr {
+			if c == '\\' && i+1 < len(s) {
+				i++
+				continue
+			}
+			if c == '"' {
+				inStr = false
+			}
+			continue
+		}
+		if c == '"' {
+			inStr = true
+			continue
+		}
+		if c == '(' {
+			n++
+		} else if c == ')' {
+			n--
+		}
+	}
+	return n
+}
+
 // typeAtDot resolves the type of the expression before a dot at the given position.
 // Returns the type name for method/field lookup, or "__package__:name" for package completion.
 func typeAtDot(text string, line, char int, richAST *transpiler.RichAST, varTypes map[string]string) string {
@@ -35,10 +109,10 @@ func typeAtDot(text string, line, char int, richAST *transpiler.RichAST, varType
 
 	// Determine enclosing function for scoped variable lookup
 	enclosingFunc := findEnclosingFunc(lines, line)
-	l := lines[line]
-	if char > len(l) {
-		char = len(l)
-	}
+	// Flatten multi-line chained expressions into a single logical line so the
+	// backward walk can cross newlines (e.g. `NewResponse(...).\n WithBody(...).`).
+	l := flattenLogicalLine(lines, line, char)
+	char = len(l)
 	if char <= 0 {
 		return ""
 	}
@@ -81,7 +155,7 @@ func typeAtDot(text string, line, char int, richAST *transpiler.RichAST, varType
 			// Check if there's a dot before this name (chained: receiver.Method().next)
 			if i >= 0 && l[i] == '.' {
 				// Resolve the chain: find the receiver type, then get the method's return type
-				receiverType := resolveChainType(l[:i], enclosingFunc, richAST, varTypes)
+				receiverType := resolveChainTypeN(l[:i], enclosingFunc, richAST, varTypes, 0)
 				if receiverType != "" {
 					return resolveMethodReturn(richAST, receiverType, name)
 				}
@@ -174,10 +248,9 @@ func resolveReceiverType(name, funcScope string, richAST *transpiler.RichAST, va
 
 const maxChainDepth = 10
 
-func resolveChainType(text string, funcScope string, richAST *transpiler.RichAST, varTypes map[string]string) string {
-	return resolveChainTypeN(text, funcScope, richAST, varTypes, 0)
-}
-
+// resolveChainTypeN walks a chain of identifiers/calls backwards, resolving
+// the type of the expression at the end of the walk. Depth guards against
+// runaway recursion on malformed input.
 func resolveChainTypeN(text string, funcScope string, richAST *transpiler.RichAST, varTypes map[string]string, depth int) string {
 	if depth > maxChainDepth {
 		return ""

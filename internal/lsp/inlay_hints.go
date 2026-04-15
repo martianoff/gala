@@ -15,8 +15,6 @@ var (
 	valDeclRegex     = regexp.MustCompile(`^\s*(val|var)\s+(\w+)\s*=`)
 	shortDeclRegex   = regexp.MustCompile(`^\s*(\w+)\s*:=\s*`)
 	casePatternRegex = regexp.MustCompile(`^\s*case\s+(\w+)\(([^)]*)\)`)
-	// Matches lambda params without explicit type: (x) =>, (x, y) =>
-	lambdaParamRegex = regexp.MustCompile(`\((\w+(?:\s*,\s*\w+)*)\)\s*=>`)
 )
 
 func (h *GalaHandler) InlayHint(ctx context.Context, params *lsp.InlayHintParams) ([]lsp.InlayHint, error) {
@@ -26,6 +24,7 @@ func (h *GalaHandler) InlayHint(ctx context.Context, params *lsp.InlayHintParams
 	text := h.documents[uri]
 	richAST := h.richASTs[uri]
 	varTypeMap := h.varTypes[uri]
+	lambdaHints := h.lambdaHints[uri]
 	h.mu.Unlock()
 
 	if text == "" {
@@ -71,36 +70,29 @@ func (h *GalaHandler) InlayHint(ctx context.Context, params *lsp.InlayHintParams
 			}
 		}
 
-		// Lambda params without explicit type: (x) => or (x, y) =>
-		// Skip on val/var lines to avoid double hints (val already has its own hint)
-		hasValDecl := valDeclRegex.MatchString(line) || shortDeclRegex.MatchString(line)
-		if !hasValDecl {
-		if m := lambdaParamRegex.FindStringSubmatchIndex(line); m != nil {
-			paramStr := line[m[2]:m[3]]
-			params := strings.Split(paramStr, ",")
-			for _, p := range params {
-				p = strings.TrimSpace(p)
-				if p == "" || p == "_" {
-					continue
-				}
-				// Skip if param already has a type annotation (contains space)
-				if strings.Contains(p, " ") {
-					continue
-				}
-				if typStr := lookupVarType(varTypeMap, currentFunc, p); typStr != "" {
-					pos := strings.Index(line, p)
-					if pos >= 0 {
-						hints = append(hints, makeTypeHint(i, pos+len(p), typStr))
-					}
-				}
-			}
-		}
-		} // end !hasValDecl
-
 		// Pattern match bindings: case Constructor(a, b) =>
 		if richAST != nil {
 			hints = append(hints, casePatternHints(line, i, richAST)...)
 		}
+	}
+
+	// Lambda param hints come from the transformer, which records the exact
+	// (line, column) of each param whose type was inferred from the expected
+	// call-site type. No text-based parsing needed.
+	for _, lh := range lambdaHints {
+		line0 := lh.Line - 1 // transformer is 1-based
+		if line0 < params.Range.Start.Line || line0 > params.Range.End.Line {
+			continue
+		}
+		if line0 >= len(lines) {
+			continue
+		}
+		absEnd := lh.Column + len(lh.Name)
+		typeStr := cleanGoTypeForDisplay(lh.Type.String())
+		if typeStr == "" {
+			continue
+		}
+		hints = append(hints, makeTypeHint(line0, absEnd, typeStr))
 	}
 
 	return hints, nil
