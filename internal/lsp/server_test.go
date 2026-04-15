@@ -4462,10 +4462,14 @@ func TestDefinition_CrossPackage(t *testing.T) {
 	assertDefinesIn(t, "e.Data field", 4, findCol(4, "e.Data", 2), "types.gala", "Data")
 }
 
-// uriToLocal converts an LSP file:// URI into a local path.
+// uriToLocal converts an LSP file:// URI into a local filesystem path,
+// handling both Linux (file:///home/...) and Windows (file:///C:/...) forms.
 func uriToLocal(u string) string {
-	u = strings.TrimPrefix(u, "file:///")
 	u = strings.TrimPrefix(u, "file://")
+	if len(u) >= 3 && u[0] == '/' && u[2] == ':' {
+		// Windows drive-letter path: /C:/... → C:/...
+		u = u[1:]
+	}
 	return filepath.FromSlash(u)
 }
 
