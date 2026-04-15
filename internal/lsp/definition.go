@@ -50,6 +50,9 @@ func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionPara
 		}
 		for _, v := range typeMeta.SealedVariants {
 			if v.Name == word {
+				if loc := locationAt(typeMeta.DefinedIn, v.Pos, word); loc != nil {
+					return []lsp.Location{*loc}, nil
+				}
 				if typeMeta.DefinedIn != "" {
 					loc := fileLocationBroad(typeMeta.DefinedIn, word)
 					if loc != nil {
@@ -81,6 +84,9 @@ func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionPara
 			}
 		}
 		if typeName == word {
+			if loc := locationAt(typeMeta.DefinedIn, typeMeta.Pos, word); loc != nil {
+				return []lsp.Location{*loc}, nil
+			}
 			if typeMeta.DefinedIn != "" {
 				loc := fileLocationBroad(typeMeta.DefinedIn, word)
 				if loc != nil {
@@ -105,6 +111,9 @@ func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionPara
 		}
 		// Check methods
 		if method, ok := typeMeta.Methods[word]; ok {
+			if loc := locationAt(method.DefinedIn, method.Pos, word); loc != nil {
+				return []lsp.Location{*loc}, nil
+			}
 			if method.DefinedIn != "" {
 				loc := fileLocationBroad(method.DefinedIn, word)
 				if loc != nil {
@@ -121,6 +130,9 @@ func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionPara
 	// Check functions for cross-file definitions
 	for _, fm := range richAST.Functions {
 		if fm.Name == word {
+			if loc := locationAt(fm.DefinedIn, fm.Pos, word); loc != nil {
+				return []lsp.Location{*loc}, nil
+			}
 			if fm.DefinedIn != "" {
 				loc := fileLocationBroad(fm.DefinedIn, word)
 				if loc != nil {
@@ -140,6 +152,9 @@ func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionPara
 		// Check regular struct fields
 		for _, fn := range typeMeta.FieldNames {
 			if fn == word {
+				if loc := fieldDefinitionLocation(typeMeta, word); loc != nil {
+					return []lsp.Location{*loc}, nil
+				}
 				if typeMeta.DefinedIn != "" {
 					loc := fileLocationBroad(typeMeta.DefinedIn, word)
 					if loc != nil {
@@ -161,7 +176,10 @@ func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionPara
 		for _, v := range typeMeta.SealedVariants {
 			for _, fn := range v.FieldNames {
 				if fn == word {
-					// Navigate to the sealed case declaration
+					// Navigate to the sealed case declaration using the recorded variant position
+					if loc := locationAt(typeMeta.DefinedIn, v.Pos, v.Name); loc != nil {
+						return []lsp.Location{*loc}, nil
+					}
 					loc := localDefinition(text, v.Name, uri)
 					if loc == nil && typeMeta.DefinedIn != "" {
 						loc = fileLocationBroad(typeMeta.DefinedIn, v.Name)
@@ -292,6 +310,9 @@ func (h *GalaHandler) dotMethodDefinition(text, word, uri string, curLine, curCh
 
 	// Check methods first
 	if method, ok := tm.Methods[word]; ok {
+		if loc := locationAt(method.DefinedIn, method.Pos, word); loc != nil {
+			return loc
+		}
 		if method.DefinedIn != "" {
 			return fileLocationBroad(method.DefinedIn, word)
 		}
@@ -321,19 +342,21 @@ func (h *GalaHandler) dotMethodDefinition(text, word, uri string, curLine, curCh
 		return nil
 	}
 
-	// Check fields (e.g., Tuple.V1, Tuple.V2)
+	// Check fields (e.g., Tuple.V1, Tuple.V2, struct fields like SSEEvent.Data).
+	// Prefer the exact position recorded by the analyzer over any text search,
+	// which would mis-match identically-named tokens inside comments.
 	if _, ok := tm.Fields[word]; ok {
-		// Fields are defined with the type — navigate to the field in the type definition file
+		if loc := fieldDefinitionLocation(tm, word); loc != nil {
+			return loc
+		}
 		if tm.DefinedIn != "" {
 			if loc := fileLocationBroad(tm.DefinedIn, word); loc != nil {
 				return loc
 			}
 		}
-		// Search current file
 		if loc := localDefinition(text, word, uri); loc != nil {
 			return loc
 		}
-		// Fallback: search package directory for the field
 		if loc := h.searchPackageDirs(uri, tm, word); loc != nil {
 			return loc
 		}
@@ -512,6 +535,40 @@ func findWholeWord(line, name string) int {
 		}
 		idx = col + len(name)
 	}
+}
+
+// locationAt converts a (file, SourcePos, identifier) triple captured by the
+// analyzer into an LSP Location. Prefer this over any text search: the
+// analyzer records the exact identifier position at parse time, so the result
+// is immune to identically-named tokens inside comments, strings, or aliases.
+func locationAt(definedIn string, pos transpiler.SourcePos, name string) *lsp.Location {
+	if definedIn == "" || pos.Line == 0 {
+		return nil
+	}
+	absPath, err := filepath.Abs(definedIn)
+	if err != nil {
+		return nil
+	}
+	uri := pathToURI(absPath)
+	line := pos.Line - 1 // analyzer is 1-based, LSP is 0-based
+	return &lsp.Location{
+		URI: lsp.DocumentURI(uri),
+		Range: lsp.Range{
+			Start: lsp.Position{Line: line, Character: pos.Column},
+			End:   lsp.Position{Line: line, Character: pos.Column + len(name)},
+		},
+	}
+}
+
+func fieldDefinitionLocation(tm *transpiler.TypeMetadata, fieldName string) *lsp.Location {
+	if tm == nil {
+		return nil
+	}
+	pos, ok := tm.FieldPositions[fieldName]
+	if !ok {
+		return nil
+	}
+	return locationAt(tm.DefinedIn, pos, fieldName)
 }
 
 // fileLocation searches a file for a declaration of name using keyword patterns.

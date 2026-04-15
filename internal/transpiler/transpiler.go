@@ -173,9 +173,11 @@ func (r *RichAST) Merge(other *RichAST) {
 type TypeMetadata struct {
 	Name                 string
 	Package              string
+	Pos                  SourcePos // Position of the type name identifier in DefinedIn
 	Methods              map[string]*MethodMetadata
 	Fields               map[string]Type // Name -> Type
 	FieldNames           []string        // To preserve order
+	FieldPositions       map[string]SourcePos // Name -> (line, column) of the field declaration identifier
 	TypeParams           []string
 	TypeParamConstraints map[string]string // TypeParam name -> constraint (e.g., "T" -> "comparable")
 	ImmutFlags           []bool
@@ -184,9 +186,16 @@ type TypeMetadata struct {
 	DefinedIn            string          // Source file where the type definition (fields/variants) was first seen
 }
 
+// SourcePos is a 1-based line, 0-based column (ANTLR convention) position in a source file.
+type SourcePos struct {
+	Line   int
+	Column int
+}
+
 // SealedVariant holds metadata about a single case in a sealed type declaration.
 type SealedVariant struct {
 	Name       string
+	Pos        SourcePos // Position of the variant identifier in the enclosing sealed type's DefinedIn
 	FieldNames []string
 	FieldTypes []Type
 }
@@ -194,6 +203,7 @@ type SealedVariant struct {
 type MethodMetadata struct {
 	Name         string
 	Package      string
+	Pos          SourcePos // Position of the method name identifier in DefinedIn
 	ParamTypes   []Type
 	ParamNames   []string         // Parameter names (for named argument matching)
 	ReturnType   Type
@@ -207,6 +217,7 @@ type MethodMetadata struct {
 type FunctionMetadata struct {
 	Name          string
 	Package       string
+	Pos           SourcePos // Position of the function name identifier in DefinedIn
 	ParamTypes    []Type
 	ParamNames    []string         // Parameter names (for named argument matching and default injection)
 	ReturnType    Type
@@ -236,12 +247,26 @@ type Analyzer interface {
 
 // TransformResult holds the output of a GALA-to-Go AST transformation.
 type TransformResult struct {
-	Fset     *token.FileSet
-	File     *ast.File
+	Fset *token.FileSet
+	File *ast.File
 	// VarTypes maps variable names to their resolved GALA types.
 	// Populated from the transformer's scope after transformation.
 	// Used by the LSP server for inlay hints and type-aware completion.
 	VarTypes map[string]Type
+	// LambdaParamHints lists lambda parameter positions whose types were
+	// inferred from the expected call-site type. Used by the LSP for
+	// reliable inlay hint placement without text-based parsing.
+	LambdaParamHints []LambdaParamHint
+}
+
+// LambdaParamHint records a single lambda parameter whose type was inferred
+// by the transformer. Line and Column are 1-based (ANTLR convention), with
+// Column pointing at the start of the parameter identifier.
+type LambdaParamHint struct {
+	Line   int
+	Column int
+	Name   string
+	Type   Type
 }
 
 // ASTTransformer transforms a Gala RichAST into a Go AST file and its FileSet.

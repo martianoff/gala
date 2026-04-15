@@ -21,6 +21,76 @@ func findEnclosingFunc(lines []string, targetLine int) string {
 	return ""
 }
 
+// flattenLogicalLine returns the text up to (line, char) as a single line,
+// prepending earlier lines while the expression is an obvious continuation:
+// either the prior line ends with a continuation token (`.`, `(`, `,`, `=`, `=>`, etc.)
+// or the accumulated text has more closing than opening parens.
+func flattenLogicalLine(lines []string, line, char int) string {
+	if line >= len(lines) {
+		return ""
+	}
+	cur := lines[line]
+	if char > len(cur) {
+		char = len(cur)
+	}
+	cur = cur[:char]
+	for prev := line - 1; prev >= 0; prev-- {
+		if !shouldJoinPrev(lines[prev], cur) {
+			break
+		}
+		prevTrimmed := strings.TrimRight(lines[prev], " \t")
+		cur = prevTrimmed + strings.TrimLeft(cur, " \t")
+	}
+	return cur
+}
+
+func shouldJoinPrev(prev, cur string) bool {
+	trimmed := strings.TrimRight(prev, " \t")
+	if trimmed == "" {
+		return false
+	}
+	if netParens(cur) < 0 {
+		return true
+	}
+	if strings.HasSuffix(trimmed, "=>") {
+		return true
+	}
+	switch trimmed[len(trimmed)-1] {
+	case '.', '(', ',', '=', '+', '-', '*', '/', '&', '|', '?', ':':
+		return true
+	}
+	return false
+}
+
+// netParens counts ( minus ) ignoring characters inside double-quoted strings.
+func netParens(s string) int {
+	n := 0
+	inStr := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if inStr {
+			if c == '\\' && i+1 < len(s) {
+				i++
+				continue
+			}
+			if c == '"' {
+				inStr = false
+			}
+			continue
+		}
+		if c == '"' {
+			inStr = true
+			continue
+		}
+		if c == '(' {
+			n++
+		} else if c == ')' {
+			n--
+		}
+	}
+	return n
+}
+
 // typeAtDot resolves the type of the expression before a dot at the given position.
 // Returns the type name for method/field lookup, or "__package__:name" for package completion.
 func typeAtDot(text string, line, char int, richAST *transpiler.RichAST, varTypes map[string]string) string {
@@ -35,10 +105,10 @@ func typeAtDot(text string, line, char int, richAST *transpiler.RichAST, varType
 
 	// Determine enclosing function for scoped variable lookup
 	enclosingFunc := findEnclosingFunc(lines, line)
-	l := lines[line]
-	if char > len(l) {
-		char = len(l)
-	}
+	// Flatten multi-line chained expressions into a single logical line so the
+	// backward walk can cross newlines (e.g. `NewResponse(...).\n WithBody(...).`).
+	l := flattenLogicalLine(lines, line, char)
+	char = len(l)
 	if char <= 0 {
 		return ""
 	}

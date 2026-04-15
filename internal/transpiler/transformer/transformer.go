@@ -63,6 +63,7 @@ type galaASTTransformer struct {
 	expectedIfExprType     ast.Expr                     // FIX-052: expected return type for if-expression IIFE (set by expression-bodied function handler)
 	lspVarTypes            map[string]transpiler.Type   // LSP: collects all resolved var types during transformation
 	lspCurrentFunc         string                       // LSP: name of the function currently being transformed (for scoping)
+	lspLambdaParamHints    []transpiler.LambdaParamHint // LSP: positions of lambda params with inferred types
 	lastLine               int                          // last known ANTLR source line (for error reporting in deeply-nested helpers)
 	lastCol                int                          // last known ANTLR source column (for error reporting in deeply-nested helpers)
 }
@@ -94,10 +95,13 @@ func (t *galaASTTransformer) TransformForLSP(richAST *transpiler.RichAST) (*tran
 	for name, typ := range t.lspVarTypes {
 		varTypes[name] = typ
 	}
+	hints := make([]transpiler.LambdaParamHint, len(t.lspLambdaParamHints))
+	copy(hints, t.lspLambdaParamHints)
 	return &transpiler.TransformResult{
-		Fset:     fset,
-		File:     file,
-		VarTypes: varTypes,
+		Fset:             fset,
+		File:             file,
+		VarTypes:         varTypes,
+		LambdaParamHints: hints,
 	}, transformErr
 }
 
@@ -114,6 +118,7 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 	tree := richAST.Tree
 	t.currentScope = nil
 	t.lspVarTypes = make(map[string]transpiler.Type)
+	t.lspLambdaParamHints = t.lspLambdaParamHints[:0]
 	t.needsStdImport = false
 	t.needsFmtImport = false
 	t.immutFields = make(map[string]bool)

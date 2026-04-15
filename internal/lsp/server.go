@@ -43,8 +43,9 @@ type GalaHandler struct {
 	documents     map[string]string              // URI -> source text
 	docVersions   map[string]int64               // URI -> monotonic edit version
 	analysisCancels map[string]context.CancelFunc // URI -> cancel func for in-flight analysis
-	richASTs      map[string]*transpiler.RichAST // URI -> analyzed AST
-	varTypes      map[string]map[string]string   // URI -> (varName -> type) from transpiler
+	richASTs      map[string]*transpiler.RichAST       // URI -> analyzed AST
+	varTypes      map[string]map[string]string         // URI -> (varName -> type) from transpiler
+	lambdaHints   map[string][]transpiler.LambdaParamHint // URI -> lambda param hints from transformer
 }
 
 // SetClient implements server.ClientHandler — receives the LSP client for notifications.
@@ -77,6 +78,7 @@ func NewGalaHandler() *GalaHandler {
 		documents:       make(map[string]string),
 		richASTs:        make(map[string]*transpiler.RichAST),
 		varTypes:        make(map[string]map[string]string),
+		lambdaHints:     make(map[string][]transpiler.LambdaParamHint),
 		docVersions:     make(map[string]int64),
 		analysisCancels: make(map[string]context.CancelFunc),
 		parser:          transpiler.NewAntlrGalaParser(),
@@ -203,6 +205,7 @@ func (h *GalaHandler) DidClose(ctx context.Context, params *lsp.DidCloseTextDocu
 	delete(h.docVersions, uri)
 	delete(h.richASTs, uri)
 	delete(h.varTypes, uri)
+	delete(h.lambdaHints, uri)
 	h.mu.Unlock()
 	if h.client != nil {
 		h.client.PublishDiagnostics(context.Background(), &lsp.PublishDiagnosticsParams{
@@ -281,6 +284,7 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 		}
 		h.mu.Lock()
 		h.varTypes[uri] = typeMap
+		h.lambdaHints[uri] = result.LambdaParamHints
 		h.mu.Unlock()
 	}
 
