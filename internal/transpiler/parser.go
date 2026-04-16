@@ -22,5 +22,10 @@ func (p *antlrGalaParser) Parse(input string) (antlr.Tree, error) {
 	return p.wrapper.Parse(input)
 }
 
+// ParseLenient implements the GalaParser interface.
+func (p *antlrGalaParser) ParseLenient(input string) (antlr.Tree, []error) {
+	return p.wrapper.ParseLenient(input)
+}
+
 // Ensure antlrGalaParser implements GalaParser interface.
 var _ GalaParser = (*antlrGalaParser)(nil)

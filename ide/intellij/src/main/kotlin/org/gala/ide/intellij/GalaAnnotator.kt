@@ -41,7 +41,7 @@ class GalaAnnotator : Annotator {
             "GALA_TYPE_PARAMETER", DefaultLanguageHighlighterColors.CLASS_NAME
         )
         val INTERPOLATION_VAR = TextAttributesKey.createTextAttributesKey(
-            "GALA_INTERPOLATION_VAR", DefaultLanguageHighlighterColors.VALID_STRING_ESCAPE
+            "GALA_INTERPOLATION_VAR", DefaultLanguageHighlighterColors.TEMPLATE_LANGUAGE_COLOR
         )
 
         private val BUILTIN_TYPE_NAMES = setOf(
@@ -135,6 +135,30 @@ class GalaAnnotator : Annotator {
                 return
             }
         }
+
+        // Any identifier sitting inside a type context (parameter type, return
+        // type, struct field type, generic arg, type alias RHS, etc.) gets the
+        // class-name color. This catches user-defined types like Request or
+        // Handler without requiring them in a hardcoded set.
+        if (isInsideTypeContext(element)) {
+            holder.newSilentAnnotation(HighlightSeverity.INFORMATION)
+                .textAttributes(BUILTIN_TYPE)
+                .create()
+            return
+        }
+    }
+
+    private fun isInsideTypeContext(element: PsiElement): Boolean {
+        var node = element.parent
+        var depth = 0
+        while (node != null && depth < 8) {
+            if (node.node?.elementType === GalaTokenTypes.RULE_TYPE) {
+                return true
+            }
+            node = node.parent
+            depth++
+        }
+        return false
     }
 
     private fun annotateInterpolatedString(element: PsiElement, holder: AnnotationHolder) {
