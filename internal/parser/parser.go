@@ -17,6 +17,16 @@ func NewAntlrGalaParser() *AntlrGalaParser {
 }
 
 func (p *AntlrGalaParser) Parse(input string) (antlr.Tree, error) {
+	tree, errs := p.ParseLenient(input)
+	if len(errs) > 0 {
+		return nil, &galaerr.MultiError{Errors: errs}
+	}
+	return tree, nil
+}
+
+// ParseLenient always returns ANTLR's error-recovered tree alongside any
+// syntax errors. The tree contains error nodes but is structurally valid.
+func (p *AntlrGalaParser) ParseLenient(input string) (antlr.Tree, []error) {
 	is := antlr.NewInputStream(input)
 	lexer := grammar.NewgalaLexer(is)
 	stream := antlr.NewCommonTokenStream(lexer, antlr.TokenDefaultChannel)
@@ -32,15 +42,13 @@ func (p *AntlrGalaParser) Parse(input string) (antlr.Tree, error) {
 
 	tree := parser.SourceFile()
 
-	if len(errorListener.Errors) > 0 {
-		return nil, &galaerr.MultiError{Errors: errorListener.Errors}
-	}
-
+	var errs []error
+	errs = append(errs, errorListener.Errors...)
 	if err := p.checkEmptyLines(input, tree); err != nil {
-		return nil, &galaerr.MultiError{Errors: []error{err}}
+		errs = append(errs, err)
 	}
 
-	return tree, nil
+	return tree, errs
 }
 
 var emptyLineRegex = regexp.MustCompile(`\r?\n\s*\r?\n`)

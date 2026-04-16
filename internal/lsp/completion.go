@@ -25,6 +25,20 @@ func (h *GalaHandler) Completion(ctx context.Context, params *lsp.CompletionPara
 
 	isDot := isDotCompletion(text, line, char)
 
+	// If no richAST or no varTypes are cached (file has syntax errors since
+	// it was opened, or only partial analysis ran without the transformer),
+	// use the cursor position to surgically remove the dot trigger, re-parse
+	// the cleaned document, and cache the result. This is the "IntelliJ
+	// trick" used by rust-analyzer — targeted at the known cursor position,
+	// not a file-wide heuristic.
+	if isDot && (richAST == nil || len(varTypeMap) == 0) {
+		h.ensureAnalysis(uri, line, char)
+		h.mu.Lock()
+		richAST = h.richASTs[uri]
+		varTypeMap = h.varTypes[uri]
+		h.mu.Unlock()
+	}
+
 	if isDot && richAST != nil {
 		receiverType := typeAtDot(text, line, char, richAST, varTypeMap)
 		if strings.HasPrefix(receiverType, packagePrefix) {

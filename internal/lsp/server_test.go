@@ -4338,6 +4338,122 @@ func TestDefinition_StructFieldNotInComment(t *testing.T) {
 	}
 }
 
+// TestCompletion_TrailingDotMidFile reproduces a user-reported bug where a
+// trailing `.` on a single-line expression-bodied function (e.g.
+// `func handler() Response = Text("hello").`) breaks the parser for the
+// entire file. The recovery parse must strip only the "bad" dot (whose
+// continuation is a new `func`) while keeping valid chain dots intact
+// in multi-line chains later in the same file.
+func TestCompletion_TrailingDotMidFile(t *testing.T) {
+	harness, _ := newHarnessWithHandler(t)
+	src := "package main\n" +
+		"\n" +
+		"type Resp struct { val body string }\n" +
+		"func (r Resp) WithHeader(k string, v string) Resp = Resp(body = r.body)\n" +
+		"func (r Resp) Done() string = r.body\n" +
+		"func Text(s string) Resp = Resp(body = s)\n" +
+		"\n" +
+		"func textHandler() Resp = Text(\"hello\").\n" +
+		"\n" +
+		"func htmlHandler() Resp = Text(\"<h1>hi</h1>\")\n" +
+		"\n" +
+		"func main() {\n" +
+		"    val x = Text(\"a\").\n" +
+		"        WithHeader(\"k\", \"v\").\n" +
+		"        Done()\n" +
+		"    Println(x)\n" +
+		"}\n"
+	uri := openFileOnDisk(t, harness, src)
+	time.Sleep(200 * time.Millisecond)
+
+	// Cursor after the `.` on textHandler line (line 7)
+	line := "func textHandler() Resp = Text(\"hello\")."
+	list, err := harness.Completion(uri, 7, len(line))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasLabelPrefix(list, "Done") && !hasLabelPrefix(list, "WithHeader") {
+		t.Errorf("expected Resp completions after trailing dot mid-file, got %v", labelSlice(list))
+	}
+}
+
+// TestCompletion_MultiLineChainPartialIdent reproduces a user-reported
+// bug: inside a multi-line fluent chain, typing a prefix right after a dot
+// (`WithHeader(...).D`) produces no completions even though the same chain
+// with just `.` does work. The isDotCompletion walker must look past the
+// partial identifier before the cursor and the flattenLogicalLine helper
+// must then still reach back to the previous line.
+func TestCompletion_MultiLineChainPartialIdent(t *testing.T) {
+	harness, _ := newHarnessWithHandler(t)
+	src := "package main\n" +
+		"\n" +
+		"type Resp struct {\n" +
+		"    val body string\n" +
+		"}\n" +
+		"func (r Resp) WithHeader(k string, v string) Resp = Resp(body = r.body)\n" +
+		"func (r Resp) Done() string = r.body\n" +
+		"func NewResp() Resp = Resp(body = \"\")\n" +
+		"\n" +
+		"func main() {\n" +
+		"    val x = NewResp().\n" +
+		"        WithHeader(\"A\", \"1\").\n" +
+		"        WithHeader(\"B\", \"2\").D\n" +
+		"    Println(x)\n" +
+		"}\n"
+	uri := openFileOnDisk(t, harness, src)
+	time.Sleep(200 * time.Millisecond)
+
+	lineIdx := 12
+	line := "        WithHeader(\"B\", \"2\").D"
+	col := len(line) // cursor right after D
+	list, err := harness.Completion(uri, lineIdx, col)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasLabelPrefix(list, "Done") && !hasLabelPrefix(list, "WithHeader") {
+		t.Errorf("expected Resp method completions after `.D` on multi-line chain, got %v", labelSlice(list))
+	}
+}
+
+// TestCompletion_MultiLineChainInLambdaInIfInFunc mimics the exact nesting
+// from the user's CorsWithConfig bug report: completion after a trailing
+// `.` in a multi-line chain inside a lambda body inside an `if` block
+// inside a function body.
+func TestCompletion_MultiLineChainInLambdaInIfInFunc(t *testing.T) {
+	harness, _ := newHarnessWithHandler(t)
+	// Open the file already in a "partial edit" state — trailing dot at the
+	// end of a multi-line chain — with no prior valid version cached. The
+	// LSP must recover enough tree to still produce method completions;
+	// otherwise the user would see keyword fallback every time they reopen
+	// the IDE with an unsaved chain.
+	broken := "package main\n" +
+		"\n" +
+		"type Req struct { val method string }\n" +
+		"type Resp struct { val body string }\n" +
+		"func (r Req) Method() string = r.method\n" +
+		"func (r Resp) WithHeader(k string, v string) Resp = Resp(body = r.body)\n" +
+		"func (r Resp) Done() string = r.body\n" +
+		"func NewResp() Resp = Resp(body = \"\")\n" +
+		"\n" +
+		"func CorsFilter() Resp = NewResp().\n" +
+		"    WithHeader(\"A\", \"1\").\n" +
+		"    WithHeader(\"B\", \"2\").\n" +
+		"    WithHeader(\"C\", \"3\").\n"
+	uri := openFileOnDisk(t, harness, broken)
+	time.Sleep(200 * time.Millisecond)
+
+	lineIdx := 12 // last chain line with trailing dot
+	line := "    WithHeader(\"C\", \"3\")."
+	col := len(line)
+	list, err := harness.Completion(uri, lineIdx, col)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasLabelPrefix(list, "Done") && !hasLabelPrefix(list, "WithHeader") {
+		t.Errorf("expected Resp method completions after `.` in multi-line chain opened mid-edit, got %v", labelSlice(list))
+	}
+}
+
 // TestDefinition_SealedVariantCrossFile covers go-to-def on a sealed variant
 // used in a different file from where it is declared. Clicking the variant
 // must land on the `case Xxx(...)` line inside the sealed type declaration,

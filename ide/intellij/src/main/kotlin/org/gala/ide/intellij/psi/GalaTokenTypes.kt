@@ -77,4 +77,6 @@ object GalaTokenTypes {
     val RULE_PARAMETERS: IElementType get() = ruleIElementTypes[galaParser.RULE_parameters]
     val RULE_SIGNATURE: IElementType get() = ruleIElementTypes[galaParser.RULE_signature]
     val RULE_RECEIVER: IElementType get() = ruleIElementTypes[galaParser.RULE_receiver]
+    val RULE_TYPE: IElementType get() = ruleIElementTypes[galaParser.RULE_type]
+    val RULE_QUALIFIED_IDENTIFIER: IElementType get() = ruleIElementTypes[galaParser.RULE_qualifiedIdentifier]
 }

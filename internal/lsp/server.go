@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/antlr4-go/antlr/v4"
 	"github.com/owenrumney/go-lsp/lsp"
 	golsp "github.com/owenrumney/go-lsp/server"
 
@@ -252,6 +253,11 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 	tree, err := h.parser.Parse(text)
 	if err != nil {
 		diagnostics = append(diagnostics, errorsToDiagnostics(err)...)
+		// Primary parse failed — try ANTLR's error-recovered partial tree.
+		// If the analyzer can extract type metadata from it, cache the
+		// richAST so completion/hover/definition work while mid-edit.
+		partialTree, _ := h.parser.ParseLenient(text)
+		h.tryAnalyzePartial(uri, filePath, partialTree)
 		return diagnostics
 	}
 
@@ -352,6 +358,110 @@ func (h *GalaHandler) resolveProjectDeps(rootPath string) {
 		if info, err := os.Stat(depDir); err == nil && info.IsDir() {
 			h.extraSearchPaths = append(h.extraSearchPaths, depDir)
 		}
+	}
+}
+
+// tryAnalyzePartial attempts to analyze an error-recovered ANTLR tree.
+// The tree may contain nil or error nodes, so this is wrapped in a panic
+// recovery — a crash just means we skip caching rather than losing the
+// LSP connection. When it succeeds, the cached richAST/varTypes keep
+// completion and go-to-def working while the user is mid-edit.
+// tryAnalyzePartial runs the analyzer on ANTLR's error-recovered tree.
+// The tree may have nil/error nodes, so this is wrapped in panic recovery.
+func (h *GalaHandler) tryAnalyzePartial(uri, filePath string, tree antlr.Tree) {
+	if tree == nil {
+		return
+	}
+	defer func() { recover() }()
+
+	searchPaths := h.getSearchPaths(filePath)
+	a := analyzer.NewGalaAnalyzer(h.parser, searchPaths)
+	richAST, err := a.Analyze(tree, filePath)
+	if err != nil || richAST == nil {
+		return
+	}
+
+	h.mu.Lock()
+	h.richASTs[uri] = richAST
+	h.mu.Unlock()
+}
+
+// ensureAnalysis is called by the Completion handler when no cached richAST
+// exists. It uses the "IntelliJ trick" (also used by rust-analyzer): remove
+// the trigger character at the cursor position to produce a syntactically
+// valid document, parse + analyze it, and cache the result. This is surgical
+// — it touches only the character at the known cursor position, not the
+// entire file.
+func (h *GalaHandler) ensureAnalysis(uri string, line, char int) {
+	h.mu.Lock()
+	hasVarTypes := len(h.varTypes[uri]) > 0
+	if h.richASTs[uri] != nil && hasVarTypes {
+		h.mu.Unlock()
+		return
+	}
+	text := h.documents[uri]
+	h.mu.Unlock()
+
+	if text == "" {
+		return
+	}
+
+	lines := strings.Split(text, "\n")
+	if line >= len(lines) {
+		return
+	}
+	l := lines[line]
+
+	// Find the dot at or just before the cursor and remove it.
+	dotPos := -1
+	if char > 0 && char <= len(l) && l[char-1] == '.' {
+		dotPos = char - 1
+	} else {
+		// Walk back past partial identifier to find the dot
+		i := char - 1
+		for i >= 0 && i < len(l) && isIdentChar(l[i]) {
+			i--
+		}
+		if i >= 0 && i < len(l) && l[i] == '.' {
+			dotPos = i
+		}
+	}
+	if dotPos < 0 {
+		return
+	}
+
+	// Remove just the dot, producing e.g. "Text(\"hello\")" from "Text(\"hello\")."
+	lines[line] = l[:dotPos] + l[dotPos+1:]
+	cleanText := strings.Join(lines, "\n")
+
+	tree, err := h.parser.Parse(cleanText)
+	if err != nil {
+		return
+	}
+
+	filePath := uriToPath(uri)
+	searchPaths := h.getSearchPaths(filePath)
+	a := analyzer.NewGalaAnalyzer(h.parser, searchPaths)
+	richAST, aerr := a.Analyze(tree, filePath)
+	if aerr != nil || richAST == nil {
+		return
+	}
+
+	h.mu.Lock()
+	h.richASTs[uri] = richAST
+	h.mu.Unlock()
+
+	xformer := transformer.NewGalaASTTransformer()
+	result, _ := xformer.TransformForLSP(richAST)
+	if result != nil && result.VarTypes != nil {
+		typeMap := make(map[string]string, len(result.VarTypes))
+		for name, typ := range result.VarTypes {
+			typeMap[name] = cleanGoTypeForDisplay(typ.String())
+		}
+		h.mu.Lock()
+		h.varTypes[uri] = typeMap
+		h.lambdaHints[uri] = result.LambdaParamHints
+		h.mu.Unlock()
 	}
 }
 

@@ -255,6 +255,12 @@ type CompanionObjectMetadata struct {
 // GalaParser defines the interface for parsing Gala source code.
 type GalaParser interface {
 	Parse(input string) (antlr.Tree, error)
+	// ParseLenient always returns ANTLR's error-recovered tree alongside any
+	// syntax errors. The tree may contain error nodes but is structurally
+	// valid enough for the analyzer to extract types, methods, and functions.
+	// Used by the LSP so completion/hover/definition keep working while the
+	// user is mid-edit.
+	ParseLenient(input string) (tree antlr.Tree, errors []error)
 }
 
 // Analyzer analyzes a Gala ANTLR parse tree and produces a RichAST.
