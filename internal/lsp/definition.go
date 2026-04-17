@@ -294,9 +294,11 @@ func (h *GalaHandler) dotMethodDefinition(text, word, uri string, curLine, curCh
 		return nil
 	}
 
-	// Resolve receiver type using the chain resolver (handles x.Method(), func().Method(), etc.)
+	// Flatten multi-line chain expressions so the resolver can walk back
+	// across newlines (same technique as typeAtDot).
+	flat := flattenLogicalLine(lines, curLine, wordStart-1)
 	enclosingFunc := findEnclosingFunc(lines, curLine)
-	receiverType := resolveChainTypeN(l[:wordStart-1], enclosingFunc, richAST, varTypes, 0)
+	receiverType := resolveChainTypeN(flat, enclosingFunc, richAST, varTypes, 0)
 	if receiverType == "" {
 		return nil
 	}

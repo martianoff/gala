@@ -49,11 +49,16 @@ func lookupSymbol(richAST *transpiler.RichAST, name string) string {
 			return formatTypeMeta(typeMeta)
 		}
 	}
-	if funcMeta, ok := richAST.Functions[name]; ok {
-		return formatFuncMeta(funcMeta)
+	if fm := findFunction(richAST, name); fm != nil {
+		return formatFuncMeta(fm)
 	}
 	if companion, ok := richAST.CompanionObjects[name]; ok {
 		return fmt.Sprintf("```gala\n%s — sealed case constructor\n```\n", companion.Name)
+	}
+	for key, companion := range richAST.CompanionObjects {
+		if strings.HasSuffix(key, "."+name) {
+			return fmt.Sprintf("```gala\n%s — sealed case constructor\n```\n", companion.Name)
+		}
 	}
 
 	// Built-in functions
