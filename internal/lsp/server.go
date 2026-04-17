@@ -433,7 +433,6 @@ func (h *GalaHandler) ensureAnalysis(uri string, line, char int) {
 	// Remove just the dot, producing e.g. "Text(\"hello\")" from "Text(\"hello\")."
 	lines[line] = l[:dotPos] + l[dotPos+1:]
 	cleanText := strings.Join(lines, "\n")
-
 	tree, err := h.parser.Parse(cleanText)
 	if err != nil {
 		return
@@ -443,7 +442,12 @@ func (h *GalaHandler) ensureAnalysis(uri string, line, char int) {
 	searchPaths := h.getSearchPaths(filePath)
 	a := analyzer.NewGalaAnalyzer(h.parser, searchPaths)
 	richAST, aerr := a.Analyze(tree, filePath)
-	if aerr != nil || richAST == nil {
+	if aerr != nil {
+		fmt.Fprintf(os.Stderr, "[ensureAnalysis] analyze failed: %v\n", aerr)
+		return
+	}
+	if richAST == nil {
+		fmt.Fprintf(os.Stderr, "[ensureAnalysis] richAST nil\n")
 		return
 	}
 

@@ -4338,6 +4338,113 @@ func TestDefinition_StructFieldNotInComment(t *testing.T) {
 	}
 }
 
+// TestCompletion_CrossFileChainReturnType reproduces a bug where dot-completion
+// on a cross-file fluent chain resolves methods on the WRONG type. E.g.
+// `NewGroup().GET("/a", h).POST("/b", h2).` should complete with Group methods
+// (GET, POST, WithFilter) but instead shows methods from an unrelated type.
+func TestCompletion_CrossFileChainReturnType(t *testing.T) {
+	harness, handler := newHarnessWithHandler(t)
+	dir := createTestProject(t, []testProjectFile{
+		{Name: "router.gala", Src: "package mylib\n" +
+			"\n" +
+			"struct Group(prefix string)\n" +
+			"\n" +
+			"func (g Group) GET(path string) Group = Group(prefix = g.prefix)\n" +
+			"func (g Group) POST(path string) Group = Group(prefix = g.prefix)\n" +
+			"func (g Group) WithFilter(name string) Group = Group(prefix = g.prefix)\n" +
+			"\n" +
+			"func NewGroup() Group = Group(prefix = \"\")\n",
+		},
+		{Name: "app.gala", Src: "package mylib\n" +
+			"\n" +
+			"func setup() Group {\n" +
+			"    val api = NewGroup().\n" +
+			"        GET(\"/search\").\n" +
+			"        POST(\"/users\").\n" +
+			"    return api\n" +
+			"}\n",
+		},
+	})
+	openProjectFile(t, harness, dir, "router.gala")
+	uri := openProjectFile(t, harness, dir, "app.gala")
+	time.Sleep(300 * time.Millisecond)
+
+	richAST := handler.DebugRichAST(string(uri))
+	varTypes := handler.DebugVarTypes(string(uri))
+	t.Logf("richAST=%v varTypes=%d", richAST != nil, len(varTypes))
+	if richAST != nil {
+		t.Logf("types=%d funcs=%d", len(richAST.Types), len(richAST.Functions))
+		for k, tm := range richAST.Types {
+			methods := make([]string, 0)
+			for m := range tm.Methods {
+				methods = append(methods, m)
+			}
+			t.Logf("  type %q methods=%v", k, methods)
+		}
+		for k := range richAST.Functions {
+			t.Logf("  func %q", k)
+		}
+	}
+	for k, v := range varTypes {
+		t.Logf("  varType %s = %s", k, v)
+	}
+
+	// Cursor after `POST("/users").` on line 5
+	lineIdx := 5
+	line := "        POST(\"/users\")."
+	list, err := harness.Completion(uri, lineIdx, len(line))
+	if err != nil {
+		t.Fatal(err)
+	}
+	labels := collectLabels(list)
+	t.Logf("chain completion: %v", labelSlice(list))
+	if !hasLabelPrefix(list, "GET") {
+		t.Errorf("expected GET method on Group after chain, got %v", labelSlice(list))
+	}
+	if !hasLabelPrefix(list, "WithFilter") {
+		t.Errorf("expected WithFilter method on Group after chain, got %v", labelSlice(list))
+	}
+	_ = labels
+}
+
+// TestCompletion_ExprBodyTrailingDot reproduces a bug where cursor at the
+// end of `func handler() Resp = Text("hello").` produces no completions.
+// The ensureAnalysis recovery removes the dot, re-parses, and resolves
+// Text()'s return type for dot-completion.
+func TestCompletion_ExprBodyTrailingDot(t *testing.T) {
+	harness, _ := newHarnessWithHandler(t)
+	dir := createTestProject(t, []testProjectFile{
+		{Name: "resp.gala", Src: "package mylib\n" +
+			"\n" +
+			"type Resp struct { val body string }\n" +
+			"func (r Resp) WithHeader(k string, v string) Resp = Resp(body = r.body)\n" +
+			"func (r Resp) Done() string = r.body\n" +
+			"func Text(s string) Resp = Resp(body = s)\n",
+		},
+		{Name: "handlers.gala", Src: "package mylib\n" +
+			"\n" +
+			"func textHandler() Resp = Text(\"hello\").\n" +
+			"\n" +
+			"func htmlHandler() Resp = Text(\"<h1>hi</h1>\")\n",
+		},
+	})
+	openProjectFile(t, harness, dir, "resp.gala")
+	uri := openProjectFile(t, harness, dir, "handlers.gala")
+	time.Sleep(300 * time.Millisecond)
+
+	// Cursor after `Text("hello").` on line 2
+	lineIdx := 2
+	line := "func textHandler() Resp = Text(\"hello\")."
+	list, err := harness.Completion(uri, lineIdx, len(line))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("expr body trailing dot: %v", labelSlice(list))
+	if !hasLabelPrefix(list, "WithHeader") && !hasLabelPrefix(list, "Done") {
+		t.Errorf("expected Resp methods after Text(\"hello\")., got %v", labelSlice(list))
+	}
+}
+
 // TestCompletion_TrailingDotMidFile reproduces a user-reported bug where a
 // trailing `.` on a single-line expression-bodied function (e.g.
 // `func handler() Response = Text("hello").`) breaks the parser for the

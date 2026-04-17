@@ -203,8 +203,8 @@ func resolveReceiverType(name, funcScope string, richAST *transpiler.RichAST, va
 		return ""
 	}
 
-	// 2. Check if it's a function call return type
-	if fm, ok := richAST.Functions[name]; ok {
+	// 2. Check if it's a function call return type (try bare name and package-qualified)
+	if fm := findFunction(richAST, name); fm != nil {
 		if fm.ReturnType != nil && !fm.ReturnType.IsNil() {
 			return stripTypeParams(cleanGoTypeForDisplay(fm.ReturnType.String()))
 		}
@@ -331,6 +331,25 @@ func resolveMethodReturn(richAST *transpiler.RichAST, typeName, methodName strin
 		return stripTypeParams(cleanGoTypeForDisplay(ft.String()))
 	}
 	return ""
+}
+
+// findFunction looks up a function by bare name, then by "pkg.Name" suffix.
+// Handles the common case where functions are stored as "mylib.NewGroup" but
+// the call site uses the unqualified name "NewGroup".
+func findFunction(richAST *transpiler.RichAST, name string) *transpiler.FunctionMetadata {
+	if fm, ok := richAST.Functions[name]; ok {
+		return fm
+	}
+	for key, fm := range richAST.Functions {
+		simpleName := key
+		if idx := strings.LastIndex(key, "."); idx >= 0 {
+			simpleName = key[idx+1:]
+		}
+		if simpleName == name {
+			return fm
+		}
+	}
+	return nil
 }
 
 // findType looks up a type in the RichAST by name.
