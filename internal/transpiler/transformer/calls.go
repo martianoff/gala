@@ -1240,212 +1240,243 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	return &ast.CallExpr{Fun: fun, Args: args, Ellipsis: ellipsisPos(hasSpread)}, nil
 }
 
+// handleNamedArgsCall is a thin dispatcher for named-argument calls. It
+// classifies the call site (GALA struct, sealed variant companion, or
+// Go-imported type) and delegates the heavy lifting to a section helper:
+//
+//  1. extractTypeNameFromExpr — decode `fun` into (typeName, qualifiedName)
+//  2. findSealedVariantFields → buildSealedVariantApplyCall (fields=[])
+//  3. buildStructLiteralWithNamedArgs (registered GALA struct)
+//  4. buildGoCompositeLiteralWithNamedArgs (Go-imported or dot-imported type)
+//  5. fallthrough → coded semantic error
+//
+// Keeping the body a dispatcher matches the established A1 pattern for
+// `transformCallWithArgsCtx` in this file: the numbered sections map to
+// the helpers below and are easy to navigate.
 func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, namedArgs map[string]ast.Expr, line, col int) (ast.Expr, error) {
-	// Extract the type name for struct field lookup.
-	// typeName is the bare name (e.g., "Cookie") used for code generation.
-	// qualifiedName includes the package qualifier (e.g., "go_struct_bridge.Cookie")
-	// for resolveStructTypeName to distinguish Go types from same-named GALA types.
-	var typeName string
-	var qualifiedName string
-	switch f := fun.(type) {
-	case *ast.Ident:
-		typeName = f.Name
-		qualifiedName = f.Name
-	case *ast.IndexExpr:
-		if id, ok := f.X.(*ast.Ident); ok {
-			typeName = id.Name
-			qualifiedName = id.Name
-		} else if sel, ok := f.X.(*ast.SelectorExpr); ok {
-			typeName = sel.Sel.Name
-			if pkgId, ok := sel.X.(*ast.Ident); ok {
-				qualifiedName = pkgId.Name + "." + sel.Sel.Name
-			} else {
-				qualifiedName = sel.Sel.Name
-			}
-		}
-	case *ast.IndexListExpr:
-		if id, ok := f.X.(*ast.Ident); ok {
-			typeName = id.Name
-			qualifiedName = id.Name
-		} else if sel, ok := f.X.(*ast.SelectorExpr); ok {
-			typeName = sel.Sel.Name
-			if pkgId, ok := sel.X.(*ast.Ident); ok {
-				qualifiedName = pkgId.Name + "." + sel.Sel.Name
-			} else {
-				qualifiedName = sel.Sel.Name
-			}
-		}
-	case *ast.SelectorExpr:
-		typeName = f.Sel.Name
-		if pkgId, ok := f.X.(*ast.Ident); ok {
-			qualifiedName = pkgId.Name + "." + f.Sel.Name
-		} else {
-			qualifiedName = f.Sel.Name
-		}
-	}
+	// 1. Extract the type name for struct field lookup.
+	typeName, qualifiedName := extractTypeNameFromExpr(fun)
 
-	// Check if this is a known struct type.
-	// Use qualifiedName so resolveStructTypeName can detect when a Go struct type
-	// (e.g., "go_struct_bridge.Cookie") should NOT resolve to a same-named GALA type.
+	// 2. GALA struct or sealed variant companion? Use qualifiedName so a
+	// Go struct type (e.g., "go_struct_bridge.Cookie") does NOT resolve
+	// to a same-named GALA type.
 	resolvedTypeName := t.resolveStructTypeName(qualifiedName)
 	if fields, ok := t.structFields[resolvedTypeName]; ok {
-		// Check if this is a sealed variant companion (empty struct with Apply method)
-		// Sealed variants are registered with nil fields because the companion struct is empty.
-		// The actual field info lives in the parent sealed type's SealedVariants metadata.
+		// Sealed variant companion (empty struct with Apply method).
+		// Variants are registered with nil fields because the companion
+		// struct is empty; field info lives in the parent sealed type.
 		if len(fields) == 0 && len(namedArgs) > 0 {
 			if variantFieldNames := t.findSealedVariantFields(typeName); variantFieldNames != nil {
-				// Reorder named args to match the Apply method's parameter order
-				orderedArgs := make([]ast.Expr, 0, len(variantFieldNames))
-				for _, fieldName := range variantFieldNames {
-					if val, ok := namedArgs[fieldName]; ok {
-						orderedArgs = append(orderedArgs, val)
-					}
-				}
-				// Generate: VariantName{}.Apply(args...)
-				receiver := &ast.CompositeLit{Type: fun}
-				return &ast.CallExpr{
-					Fun: &ast.SelectorExpr{
-						X:   receiver,
-						Sel: ast.NewIdent("Apply"),
-					},
-					Args: orderedArgs,
-				}, nil
+				return buildSealedVariantApplyCall(fun, variantFieldNames, namedArgs), nil
 			}
 		}
-
-		// It's struct construction with named arguments
-		var elts []ast.Expr
-		immutFlags := t.structImmutFields[resolvedTypeName]
-		fieldTypes := t.structFieldTypes[resolvedTypeName]
-
-		// Check if we need to infer type parameters
-		typeExpr := fun
-		// Check for expressions without explicit type args: Ident (Tuple) or SelectorExpr (std.Tuple)
-		needsTypeInference := false
-		if _, isIdent := fun.(*ast.Ident); isIdent {
-			needsTypeInference = true
-		} else if _, isSel := fun.(*ast.SelectorExpr); isSel {
-			needsTypeInference = true
-		}
-		if needsTypeInference {
-			// No explicit type args - check if the type has type parameters
-			if typeMeta := t.getTypeMeta(resolvedTypeName); typeMeta != nil && len(typeMeta.TypeParams) > 0 {
-				// Infer type args from field values
-				inferredTypeArgs := make([]ast.Expr, len(typeMeta.TypeParams))
-				typeParamIndices := make(map[string]int)
-				for i, tp := range typeMeta.TypeParams {
-					typeParamIndices[tp] = i
-				}
-
-				// Map each field's expected type to its inferred type from the value
-				for fieldName, fieldType := range fieldTypes {
-					if val, ok := namedArgs[fieldName]; ok {
-						valType := t.getExprTypeName(val)
-						if valType != nil && !valType.IsNil() {
-							// Check if the field type is a type parameter
-							fieldTypeStr := fieldType.String()
-							if idx, isTypeParam := typeParamIndices[fieldTypeStr]; isTypeParam {
-								if inferredTypeArgs[idx] == nil {
-									inferredTypeArgs[idx] = t.typeToExpr(valType)
-								}
-							}
-						}
-					}
-				}
-
-				// Check if all type args were inferred
-				allInferred := true
-				for _, arg := range inferredTypeArgs {
-					if arg == nil {
-						allInferred = false
-						break
-					}
-				}
-
-				if allInferred && len(inferredTypeArgs) > 0 {
-					// Create the type expression with inferred type args
-					// Preserve the original expression structure (Ident or SelectorExpr)
-					var baseExpr ast.Expr
-					if sel, isSel := fun.(*ast.SelectorExpr); isSel {
-						baseExpr = &ast.SelectorExpr{X: sel.X, Sel: ast.NewIdent(typeName)}
-					} else {
-						baseExpr = ast.NewIdent(typeName)
-					}
-					if len(inferredTypeArgs) == 1 {
-						typeExpr = &ast.IndexExpr{X: baseExpr, Index: inferredTypeArgs[0]}
-					} else {
-						typeExpr = &ast.IndexListExpr{X: baseExpr, Indices: inferredTypeArgs}
-					}
-				}
-			}
-		}
-
-		for i, fieldName := range fields {
-			if val, ok := namedArgs[fieldName]; ok {
-				// Reject nil assignment to immutable (val) fields — use Option[T] instead
-				if immutFlags != nil && i < len(immutFlags) && immutFlags[i] {
-					if ident, isIdent := val.(*ast.Ident); isIdent && ident.Name == "nil" {
-						return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
-							"cannot assign nil to immutable field '%s' — use Option[T] with None() for optional values, or 'var %s' to make it mutable",
-							fieldName, fieldName))
-					}
-				}
-
-				var valExpr ast.Expr
-				if immutFlags != nil && i < len(immutFlags) && immutFlags[i] {
-					valExpr = &ast.CallExpr{
-						Fun:  t.stdIdent("NewImmutable"),
-						Args: []ast.Expr{val},
-					}
-				} else {
-					valExpr = val
-				}
-				elts = append(elts, &ast.KeyValueExpr{
-					Key:   ast.NewIdent(fieldName),
-					Value: valExpr,
-				})
-			}
-		}
-		return &ast.CompositeLit{Type: typeExpr, Elts: elts}, nil
+		// 3. Regular GALA struct construction with named args.
+		return t.buildStructLiteralWithNamedArgs(fun, typeName, resolvedTypeName, fields, namedArgs, line, col)
 	}
 
-	// Fallback: if the type is not a known GALA struct, check if it's a Go-imported type.
-	// Go structs from bridge/external packages can use GALA named-arg syntax: Type(Field = value)
-	// which generates a plain Go composite literal: Type{Field: value}.
+	// 4. Go-imported type (direct or dot-imported).
 	if t.isGoImportedType(fun) {
-		var elts []ast.Expr
-		for fieldName, val := range namedArgs {
-			elts = append(elts, &ast.KeyValueExpr{
-				Key:   ast.NewIdent(fieldName),
-				Value: val,
-			})
-		}
-		// Sort fields alphabetically for deterministic output
-		t.sortKeyValueExprs(elts)
-		return &ast.CompositeLit{Type: fun, Elts: elts}, nil
+		return buildGoCompositeLiteralWithNamedArgs(fun, namedArgs, t.sortKeyValueExprs), nil
 	}
-
-	// FIX-USR004: Fallback for dot-imported Go types.
-	// When a type is not in structFields (not a GALA struct) and isGoImportedType returns false
-	// (because the name is unqualified due to dot import), check if any non-std dot-imported
-	// package exists. If so, generate a plain Go composite literal without Immutable wrapping.
 	if _, isIdent := fun.(*ast.Ident); isIdent {
 		for _, pkg := range t.importManager.GetDotImports() {
 			if pkg != "std" && pkg != t.packageName {
-				var elts []ast.Expr
-				for fieldName, val := range namedArgs {
-					elts = append(elts, &ast.KeyValueExpr{
-						Key:   ast.NewIdent(fieldName),
-						Value: val,
-					})
-				}
-				t.sortKeyValueExprs(elts)
-				return &ast.CompositeLit{Type: fun, Elts: elts}, nil
+				return buildGoCompositeLiteralWithNamedArgs(fun, namedArgs, t.sortKeyValueExprs), nil
 			}
 		}
 	}
 
+	// 5. No match — the caller used named args against something we can't
+	// construct with them. Emit a positioned semantic error.
 	return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("named arguments only supported for Copy method or struct construction (type: %s)", typeName))
+}
+
+// extractTypeNameFromExpr decodes a call target into (typeName, qualifiedName).
+// typeName is the bare identifier used for code generation; qualifiedName
+// includes any package qualifier (e.g., "go_struct_bridge.Cookie") so
+// downstream lookups can distinguish a Go type from a same-named GALA type.
+// Handles Ident, IndexExpr, IndexListExpr, and SelectorExpr shapes.
+func extractTypeNameFromExpr(fun ast.Expr) (typeName, qualifiedName string) {
+	switch f := fun.(type) {
+	case *ast.Ident:
+		return f.Name, f.Name
+	case *ast.IndexExpr:
+		return decodeGenericBase(f.X)
+	case *ast.IndexListExpr:
+		return decodeGenericBase(f.X)
+	case *ast.SelectorExpr:
+		qn := f.Sel.Name
+		if pkgId, ok := f.X.(*ast.Ident); ok {
+			qn = pkgId.Name + "." + f.Sel.Name
+		}
+		return f.Sel.Name, qn
+	}
+	return "", ""
+}
+
+// decodeGenericBase is the Ident/SelectorExpr branch shared by IndexExpr
+// and IndexListExpr in extractTypeNameFromExpr — the generic's base expr
+// is either a bare identifier or a package-qualified selector.
+func decodeGenericBase(x ast.Expr) (string, string) {
+	switch b := x.(type) {
+	case *ast.Ident:
+		return b.Name, b.Name
+	case *ast.SelectorExpr:
+		qn := b.Sel.Name
+		if pkgId, ok := b.X.(*ast.Ident); ok {
+			qn = pkgId.Name + "." + b.Sel.Name
+		}
+		return b.Sel.Name, qn
+	}
+	return "", ""
+}
+
+// buildSealedVariantApplyCall generates `VariantName{}.Apply(args...)`
+// with args reordered to match the Apply method's parameter order.
+// Named args that don't appear in variantFieldNames are silently dropped
+// (the parser should have caught that earlier).
+func buildSealedVariantApplyCall(fun ast.Expr, variantFieldNames []string, namedArgs map[string]ast.Expr) ast.Expr {
+	orderedArgs := make([]ast.Expr, 0, len(variantFieldNames))
+	for _, fieldName := range variantFieldNames {
+		if val, ok := namedArgs[fieldName]; ok {
+			orderedArgs = append(orderedArgs, val)
+		}
+	}
+	receiver := &ast.CompositeLit{Type: fun}
+	return &ast.CallExpr{
+		Fun:  &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent("Apply")},
+		Args: orderedArgs,
+	}
+}
+
+// buildStructLiteralWithNamedArgs emits `TypeName[TypeArgs]{field: value, ...}`
+// for a known GALA struct. It handles three concerns in order:
+//
+//   - type-parameter inference when the call site omitted them (e.g.
+//     `Tuple(V1 = x, V2 = y)` → `Tuple[string, int]{V1: ..., V2: ...}`),
+//   - nil-into-immutable-field rejection (an ergonomic error pointing
+//     at Option[T]/None instead of a Go nil-deref at runtime),
+//   - NewImmutable() wrapping for each immutable field value.
+func (t *galaASTTransformer) buildStructLiteralWithNamedArgs(
+	fun ast.Expr,
+	typeName, resolvedTypeName string,
+	fields []string,
+	namedArgs map[string]ast.Expr,
+	line, col int,
+) (ast.Expr, error) {
+	immutFlags := t.structImmutFields[resolvedTypeName]
+	fieldTypes := t.structFieldTypes[resolvedTypeName]
+
+	typeExpr := t.inferTypeArgsFromNamedArgs(fun, typeName, resolvedTypeName, namedArgs, fieldTypes)
+
+	var elts []ast.Expr
+	for i, fieldName := range fields {
+		val, ok := namedArgs[fieldName]
+		if !ok {
+			continue
+		}
+		if immutFlags != nil && i < len(immutFlags) && immutFlags[i] {
+			if ident, isIdent := val.(*ast.Ident); isIdent && ident.Name == "nil" {
+				return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
+					"cannot assign nil to immutable field '%s' — use Option[T] with None() for optional values, or 'var %s' to make it mutable",
+					fieldName, fieldName))
+			}
+		}
+
+		valExpr := val
+		if immutFlags != nil && i < len(immutFlags) && immutFlags[i] {
+			valExpr = &ast.CallExpr{
+				Fun:  t.stdIdent("NewImmutable"),
+				Args: []ast.Expr{val},
+			}
+		}
+		elts = append(elts, &ast.KeyValueExpr{Key: ast.NewIdent(fieldName), Value: valExpr})
+	}
+	return &ast.CompositeLit{Type: typeExpr, Elts: elts}, nil
+}
+
+// inferTypeArgsFromNamedArgs returns a type expression with all generic
+// type parameters filled in from the types of the named-arg values, or
+// returns `fun` verbatim if inference does not apply or cannot complete.
+// Inference applies only when `fun` is a bare Ident or SelectorExpr (no
+// explicit type args in the source), and the underlying type declares
+// type parameters.
+func (t *galaASTTransformer) inferTypeArgsFromNamedArgs(
+	fun ast.Expr,
+	typeName, resolvedTypeName string,
+	namedArgs map[string]ast.Expr,
+	fieldTypes map[string]transpiler.Type,
+) ast.Expr {
+	switch fun.(type) {
+	case *ast.Ident, *ast.SelectorExpr:
+		// Eligible for inference.
+	default:
+		return fun
+	}
+
+	typeMeta := t.getTypeMeta(resolvedTypeName)
+	if typeMeta == nil || len(typeMeta.TypeParams) == 0 {
+		return fun
+	}
+
+	inferredTypeArgs := make([]ast.Expr, len(typeMeta.TypeParams))
+	typeParamIndices := make(map[string]int, len(typeMeta.TypeParams))
+	for i, tp := range typeMeta.TypeParams {
+		typeParamIndices[tp] = i
+	}
+
+	for fieldName, fieldType := range fieldTypes {
+		val, ok := namedArgs[fieldName]
+		if !ok {
+			continue
+		}
+		valType := t.getExprTypeName(val)
+		if valType == nil || valType.IsNil() {
+			continue
+		}
+		if idx, isTypeParam := typeParamIndices[fieldType.String()]; isTypeParam {
+			if inferredTypeArgs[idx] == nil {
+				inferredTypeArgs[idx] = t.typeToExpr(valType)
+			}
+		}
+	}
+
+	for _, arg := range inferredTypeArgs {
+		if arg == nil {
+			return fun // incomplete inference — let downstream stages handle it
+		}
+	}
+	if len(inferredTypeArgs) == 0 {
+		return fun
+	}
+
+	var baseExpr ast.Expr
+	if sel, isSel := fun.(*ast.SelectorExpr); isSel {
+		baseExpr = &ast.SelectorExpr{X: sel.X, Sel: ast.NewIdent(typeName)}
+	} else {
+		baseExpr = ast.NewIdent(typeName)
+	}
+	if len(inferredTypeArgs) == 1 {
+		return &ast.IndexExpr{X: baseExpr, Index: inferredTypeArgs[0]}
+	}
+	return &ast.IndexListExpr{X: baseExpr, Indices: inferredTypeArgs}
+}
+
+// buildGoCompositeLiteralWithNamedArgs emits a plain Go composite literal
+// for a Go-imported or dot-imported type. No Immutable wrapping — the
+// underlying type is outside GALA's immutable model. Fields are sorted
+// alphabetically for deterministic output.
+func buildGoCompositeLiteralWithNamedArgs(
+	fun ast.Expr,
+	namedArgs map[string]ast.Expr,
+	sortFn func([]ast.Expr),
+) ast.Expr {
+	elts := make([]ast.Expr, 0, len(namedArgs))
+	for fieldName, val := range namedArgs {
+		elts = append(elts, &ast.KeyValueExpr{Key: ast.NewIdent(fieldName), Value: val})
+	}
+	sortFn(elts)
+	return &ast.CompositeLit{Type: fun, Elts: elts}
 }
 
 
