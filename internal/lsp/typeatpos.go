@@ -246,7 +246,14 @@ func resolveReceiverType(name, funcScope string, richAST *transpiler.RichAST, va
 	return ""
 }
 
-const maxChainDepth = 10
+// Each recursion level of resolveChainTypeN consumes at least one method
+// call (a dot + identifier + paren pair) from the input text, so recursion
+// is naturally bounded by text length. maxChainDepth is a pure safety net
+// against accidental cycles on malformed input; set it generously so that
+// real-world fluent-builder chains (e.g. gala-server's NewServer()...
+// WithFilter()) never hit the limit silently and drop completion on the
+// floor. 10 was not enough — the hello example chains 30+ calls.
+const maxChainDepth = 200
 
 // resolveChainTypeN walks a chain of identifiers/calls backwards, resolving
 // the type of the expression at the end of the walk. Depth guards against
