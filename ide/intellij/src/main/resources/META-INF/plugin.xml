@@ -84,6 +84,15 @@
         <annotator language="GALA" implementationClass="org.gala.ide.intellij.GalaAnnotator"/>
         <colorSettingsPage implementation="org.gala.ide.intellij.GalaColorSettingsPage"/>
 
+        <!-- Bundled color schemes: guarantee distinct foreground for string
+             interpolation (${...} and $var inside s"..."/f"...") in both
+             light and dark default schemes. Without these, INTERPOLATION_VAR
+             falls back to a base key whose foreground often matches STRING
+             in stock themes, leaving the interpolated expression visually
+             indistinguishable from the surrounding string. -->
+        <bundledColorScheme path="/colorSchemes/GalaDefault"/>
+        <bundledColorScheme path="/colorSchemes/GalaDarcula"/>
+
         <!-- Inspections -->
         <localInspection language="GALA" groupName="GALA" shortName="GalaDuplicateDeclaration"
                          displayName="Duplicate declaration"

@@ -1,0 +1,10 @@
+<scheme name="Default" version="142" parent_scheme="Default">
+    <attributes>
+        <option name="GALA_INTERPOLATION_VAR">
+            <value>
+                <option name="FOREGROUND" value="871094"/>
+                <option name="FONT_TYPE" value="1"/>
+            </value>
+        </option>
+    </attributes>
+</scheme>
