@@ -10,6 +10,7 @@ go_library(
         "hover.go",
         "inlay_hints.go",
         "server.go",
+        "signature_help.go",
         "symbols.go",
         "typeatpos.go",
     ],
@@ -34,6 +35,7 @@ go_test(
     srcs = [
         "error_lines_test.go",
         "server_test.go",
+        "signature_help_test.go",
         "typeatpos_test.go",
     ],
     data = [

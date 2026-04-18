@@ -290,9 +290,13 @@ func resolveChainTypeN(text string, funcScope string, richAST *transpiler.RichAS
 		}
 		methodName := text[nameStart:nameEnd]
 
-		// Check if there's a dot before the method name (chain)
-		if i >= 0 && text[i] == '.' {
-			receiverType := resolveChainTypeN(text[:i], funcScope, richAST, varTypes, depth+1)
+		// Check if there's a dot before the method name (chain). Skip any
+		// whitespace (including newlines) between the name and the dot so
+		// multi-line chains survive without requiring the caller to flatten
+		// them first.
+		dotIdx := skipTrailingWhitespace(text, i)
+		if dotIdx >= 0 && text[dotIdx] == '.' {
+			receiverType := resolveChainTypeN(text[:dotIdx], funcScope, richAST, varTypes, depth+1)
 			if receiverType != "" {
 				return resolveMethodReturn(richAST, receiverType, methodName)
 			}
@@ -311,9 +315,11 @@ func resolveChainTypeN(text string, funcScope string, richAST *transpiler.RichAS
 		return ""
 	}
 
-	// Check for dot before identifier (pkg.Type or receiver.field)
-	if i >= 0 && text[i] == '.' {
-		receiverType := resolveChainTypeN(text[:i], funcScope, richAST, varTypes, depth+1)
+	// Check for dot before identifier (pkg.Type or receiver.field). Skip
+	// whitespace between the identifier and the dot — same reason as above.
+	dotIdx := skipTrailingWhitespace(text, i)
+	if dotIdx >= 0 && text[dotIdx] == '.' {
+		receiverType := resolveChainTypeN(text[:dotIdx], funcScope, richAST, varTypes, depth+1)
 		if receiverType != "" {
 			// Could be a field access — resolve field type
 			return resolveMethodReturn(richAST, receiverType, name)
@@ -321,6 +327,17 @@ func resolveChainTypeN(text string, funcScope string, richAST *transpiler.RichAS
 	}
 
 	return resolveReceiverType(name, funcScope, richAST, varTypes)
+}
+
+// skipTrailingWhitespace walks backward from `start` over ASCII whitespace
+// (space, tab, newline, carriage return) and returns the index of the first
+// non-whitespace byte, or -1 if it runs off the left.
+func skipTrailingWhitespace(text string, start int) int {
+	j := start
+	for j >= 0 && (text[j] == ' ' || text[j] == '\t' || text[j] == '\n' || text[j] == '\r') {
+		j--
+	}
+	return j
 }
 
 // resolveMethodReturn finds the return type of a method on a given type.

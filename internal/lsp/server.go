@@ -116,6 +116,10 @@ func (h *GalaHandler) Initialize(ctx context.Context, params *lsp.InitializePara
 			CompletionProvider: &lsp.CompletionOptions{
 				TriggerCharacters: []string{".", "("},
 			},
+			SignatureHelpProvider: &lsp.SignatureHelpOptions{
+				TriggerCharacters:   []string{"(", ","},
+				RetriggerCharacters: []string{","},
+			},
 			InlayHintProvider:      &lsp.InlayHintOptions{},
 			ReferencesProvider:     boolPtr(true),
 			DocumentSymbolProvider: boolPtr(true),
@@ -433,6 +437,54 @@ func (h *GalaHandler) ensureAnalysis(uri string, line, char int) {
 	// Remove just the dot, producing e.g. "Text(\"hello\")" from "Text(\"hello\")."
 	lines[line] = l[:dotPos] + l[dotPos+1:]
 	cleanText := strings.Join(lines, "\n")
+	h.analyzeAndCache(uri, cleanText, "ensureAnalysis")
+}
+
+// ensureAnalysisForSignature is the analog of ensureAnalysis for
+// textDocument/signatureHelp. The user's cursor is inside a call that
+// hasn't been closed yet (`foo(` or `foo(a,`), so the raw document
+// usually fails to parse. We close the call by inserting a matching `)`
+// at the cursor — producing a syntactically valid version — then run
+// the normal parse + analyze pipeline and cache the result.
+func (h *GalaHandler) ensureAnalysisForSignature(uri string, line, char int) {
+	h.mu.Lock()
+	hasVarTypes := len(h.varTypes[uri]) > 0
+	if h.richASTs[uri] != nil && hasVarTypes {
+		h.mu.Unlock()
+		return
+	}
+	text := h.documents[uri]
+	h.mu.Unlock()
+
+	if text == "" {
+		return
+	}
+	lines := strings.Split(text, "\n")
+	if line >= len(lines) {
+		return
+	}
+	l := lines[line]
+	if char > len(l) {
+		char = len(l)
+	}
+	// Insert a closing `)` at the cursor to balance the open call.
+	// If the cursor is just after a trailing comma, trim the comma and
+	// then close — "foo(a," → "foo(a)" rather than "foo(a,)" which also
+	// fails to parse.
+	patched := l[:char]
+	patched = strings.TrimRight(patched, " \t,")
+	patched += ")" + l[char:]
+	lines[line] = patched
+	cleanText := strings.Join(lines, "\n")
+	h.analyzeAndCache(uri, cleanText, "ensureAnalysisForSignature")
+}
+
+// analyzeAndCache parses + analyzes + runs the transformer on the given
+// (possibly surgically patched) document text, caching the resulting
+// richAST / varTypes / lambdaHints under the URI. A nil or failing
+// analysis is logged and silently skipped; LSP features then fall back
+// to their normal "no data" behavior.
+func (h *GalaHandler) analyzeAndCache(uri, cleanText, caller string) {
 	tree, err := h.parser.Parse(cleanText)
 	if err != nil {
 		return
@@ -443,11 +495,11 @@ func (h *GalaHandler) ensureAnalysis(uri string, line, char int) {
 	a := analyzer.NewGalaAnalyzer(h.parser, searchPaths)
 	richAST, aerr := a.Analyze(tree, filePath)
 	if aerr != nil {
-		fmt.Fprintf(os.Stderr, "[ensureAnalysis] analyze failed: %v\n", aerr)
+		fmt.Fprintf(os.Stderr, "[%s] analyze failed: %v\n", caller, aerr)
 		return
 	}
 	if richAST == nil {
-		fmt.Fprintf(os.Stderr, "[ensureAnalysis] richAST nil\n")
+		fmt.Fprintf(os.Stderr, "[%s] richAST nil\n", caller)
 		return
 	}
 
