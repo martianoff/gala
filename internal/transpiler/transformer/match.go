@@ -371,7 +371,7 @@ func (t *galaASTTransformer) transformMatchClauses(ctx grammar.IExpressionContex
 					galaerr.CodeMultipleDefaults,
 					ccCtx.GetStart().GetLine(), ccCtx.GetStart().GetColumn(),
 					"multiple default cases in match expression",
-					"")
+					"keep one default case; combine logic with guards or nested matches if you need sub-cases")
 			}
 			foundDefault = true
 
@@ -470,7 +470,7 @@ func (t *galaASTTransformer) transformMatchClauses(ctx grammar.IExpressionContex
 				galaerr.CodeNonExhaustiveMatch,
 				ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
 				fmt.Sprintf("non-exhaustive match: missing cases: %s", strings.Join(missing, ", ")),
-				"")
+				"add the missing variant cases, or add a `case _ => ...` default to cover them")
 		} else if isSealed && isExhaustive {
 			// Exhaustive sealed match — generate synthetic panic("unreachable") default
 			defaultBody = []ast.Stmt{

@@ -121,6 +121,50 @@ func main() {
 			expectCode:     galaerr.CodeMultipleDefaults,
 			expectContains: "multiple default",
 		},
+		{
+			name: "GALA-E0007 slice literal rejected",
+			input: `package main
+
+func main() {
+    val xs = []int{1, 2, 3}
+}`,
+			expectCode:     galaerr.CodeSliceLiteralNotSupported,
+			expectContains: "slice literals",
+		},
+		{
+			name: "GALA-E0008 map literal rejected",
+			input: `package main
+
+func main() {
+    val m = map[string]int{"a": 1}
+}`,
+			expectCode:     galaerr.CodeMapLiteralNotSupported,
+			expectContains: "map literals",
+		},
+		{
+			name: "GALA-E0013 non-defaulted param follows defaulted param",
+			input: `package main
+
+func create(a int = 5, b int) int = a + b
+
+func main() {
+    create(1, 2)
+}`,
+			expectCode:     galaerr.CodeParamMissingDefaultAfterDefault,
+			expectContains: "has no default",
+		},
+		{
+			name: "GALA-E0014 default expression type mismatch",
+			input: `package main
+
+func create(a int = "not-an-int") int = a
+
+func main() {
+    create()
+}`,
+			expectCode:     galaerr.CodeParamDefaultTypeMismatch,
+			expectContains: "default for parameter",
+		},
 	}
 
 	for _, tc := range cases {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/antlr4-go/antlr/v4"
 
+	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/generator"
@@ -224,9 +225,15 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 			if !ok {
 				continue
 			}
-			otherPkgName := otherSF.PackageClause().(*grammar.PackageClauseContext).Identifier().GetText()
+			pkgClause := otherSF.PackageClause().(*grammar.PackageClauseContext)
+			otherPkgName := pkgClause.Identifier().GetText()
 			if otherPkgName != pkgName {
-				return nil, fmt.Errorf("package file %s has package %s, expected %s", pf, otherPkgName, pkgName)
+				return nil, galaerr.NewCodedSemanticError(
+					galaerr.CodeDuplicatePackageName,
+					pkgClause.GetStart().GetLine(), pkgClause.GetStart().GetColumn(),
+					fmt.Sprintf("package file %s declares package %q but sibling files declare %q", pf, otherPkgName, pkgName),
+					"use the same package name across all sibling .gala files, or move the file to a different directory",
+				)
 			}
 			siblingTrees = append(siblingTrees, otherSF)
 			siblingPaths = append(siblingPaths, pf)
@@ -260,12 +267,18 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 						if !ok {
 							continue
 						}
-						otherPkgName := otherSF.PackageClause().(*grammar.PackageClauseContext).Identifier().GetText()
+						pkgClause := otherSF.PackageClause().(*grammar.PackageClauseContext)
+						otherPkgName := pkgClause.Identifier().GetText()
 						siblingIsTest := strings.HasSuffix(f.Name(), "_test.gala")
 						currentIsTest := strings.HasSuffix(filePath, "_test.gala")
 						// Allow _test.gala files to have different package names (like Go's _test.go convention)
 						if otherPkgName != pkgName && !(siblingIsTest || currentIsTest) {
-							return nil, fmt.Errorf("multiple package names in directory %s: %s and %s", dirPath, pkgName, otherPkgName)
+							return nil, galaerr.NewCodedSemanticError(
+								galaerr.CodeDuplicatePackageName,
+								pkgClause.GetStart().GetLine(), pkgClause.GetStart().GetColumn(),
+								fmt.Sprintf("directory %s has files with different package names: %q and %q", dirPath, pkgName, otherPkgName),
+								"use the same package name across all sibling .gala files, or move the file to a different directory",
+							)
 						}
 						// Include sibling if packages match AND (sibling is not test OR current is test)
 						// This follows Go semantics: test files see all package siblings during testing
@@ -518,9 +531,12 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 				// Error if type is being redefined from a DIFFERENT file.
 				// Skip if DefinedIn is empty (cache) or same file (re-analysis from analyzePackage).
 				if existing.DefinedIn != "" && hasTypeDefinition(existing) && !(existing.DefinedIn != filePath && isSameFile(existing.DefinedIn, absFilePath)) {
-					line := ctx.GetStart().GetLine()
-					return nil, fmt.Errorf("%s:%d: type %q in package %q redefined (first defined in %s)",
-						filePath, line, typeName, pkgName, existing.DefinedIn)
+					return nil, galaerr.NewCodedSemanticError(
+						galaerr.CodeTypeRedefinition,
+						ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
+						fmt.Sprintf("type %q in package %q redefined (first defined in %s)", typeName, pkgName, existing.DefinedIn),
+						"remove the duplicate declaration or rename one of the types",
+					)
 				}
 				meta = existing
 				// Clear fields to avoid duplicates if re-analyzing
@@ -637,9 +653,12 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 			pos := transpiler.PosFromToken(ctx.Identifier().GetStart())
 			if existing, ok := richAST.Types[fullTypeName]; ok && existing.Package == pkgName {
 				if existing.DefinedIn != "" && hasTypeDefinition(existing) && !(existing.DefinedIn != filePath && isSameFile(existing.DefinedIn, absFilePath)) {
-					line := ctx.GetStart().GetLine()
-					return nil, fmt.Errorf("%s:%d: type %q in package %q redefined (first defined in %s)",
-						filePath, line, typeName, pkgName, existing.DefinedIn)
+					return nil, galaerr.NewCodedSemanticError(
+						galaerr.CodeTypeRedefinition,
+						ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
+						fmt.Sprintf("type %q in package %q redefined (first defined in %s)", typeName, pkgName, existing.DefinedIn),
+						"remove the duplicate declaration or rename one of the types",
+					)
 				}
 				meta = existing
 				meta.Fields = make(map[string]transpiler.Type)
@@ -696,9 +715,12 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 			}
 			// Check for redefinition (skip if DefinedIn is empty — type came from cache)
 			if existing, ok := richAST.Types[fullSealedName]; ok && existing.DefinedIn != "" && hasTypeDefinition(existing) && !(existing.DefinedIn != filePath && isSameFile(existing.DefinedIn, absFilePath)) {
-				line := ctx.GetStart().GetLine()
-				return nil, fmt.Errorf("%s:%d: type %q in package %q redefined (first defined in %s)",
-					filePath, line, sealedName, pkgName, existing.DefinedIn)
+				return nil, galaerr.NewCodedSemanticError(
+					galaerr.CodeTypeRedefinition,
+					ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
+					fmt.Sprintf("type %q in package %q redefined (first defined in %s)", sealedName, pkgName, existing.DefinedIn),
+					"remove the duplicate declaration or rename one of the types",
+				)
 			}
 			a.analyzeSealedType(ctx, pkgName, richAST)
 			if meta, ok := richAST.Types[fullSealedName]; ok {
@@ -798,9 +820,12 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 						if existing, exists := typeMeta.Methods[methodName]; exists {
 							// Error if method already has a user-defined implementation
 							if existing.DefinedIn != "" && !(existing.DefinedIn != filePath && isSameFile(existing.DefinedIn, absFilePath)) {
-								line := ctx.GetStart().GetLine()
-								return nil, fmt.Errorf("%s:%d: method %q on type %q in package %q redefined (first defined in %s)",
-									filePath, line, methodName, baseType, pkgName, existing.DefinedIn)
+								return nil, galaerr.NewCodedSemanticError(
+									galaerr.CodeMethodRedefinition,
+									ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
+									fmt.Sprintf("method %q on type %q in package %q redefined (first defined in %s)", methodName, baseType, pkgName, existing.DefinedIn),
+									"remove the duplicate method or rename it",
+								)
 							}
 							// Preserve IsGeneric if it was pre-populated
 							methodMeta.IsGeneric = existing.IsGeneric
@@ -879,7 +904,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 					}
 				}
 				// Validate default parameter rules
-				if err := validateDefaultParams(funcMeta, ctx.GetStart().GetLine(), filePath); err != nil {
+				if err := validateDefaultParams(funcMeta, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), filePath); err != nil {
 					return nil, err
 				}
 				richAST.Functions[fullFuncName] = funcMeta
@@ -1830,8 +1855,12 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 					}
 					if existingMeta, ok := pkgAST.Types[typeName]; ok {
 						if hasTypeDefinition(existingMeta) && existingMeta.DefinedIn != "" && !sameAsFilePath(existingMeta.DefinedIn) {
-							return nil, fmt.Errorf("type %q in package %q redefined (first defined in %s)",
-								newMeta.Name, res.PackageName, existingMeta.DefinedIn)
+							return nil, galaerr.NewCodedSemanticError(
+								galaerr.CodeTypeRedefinition,
+								newMeta.Pos.Line, newMeta.Pos.Column,
+								fmt.Sprintf("type %q in package %q redefined (first defined in %s)", newMeta.Name, res.PackageName, existingMeta.DefinedIn),
+								"remove the duplicate declaration or rename one of the types",
+							)
 						}
 					}
 				}
@@ -2119,7 +2148,12 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 			// Skip if DefinedIn is empty — the type came from cache and should be overwritable.
 			if existing, ok := richAST.Types[fullTypeName]; ok && len(existing.FieldNames) > 0 {
 				if existing.DefinedIn != "" && !isSameFile(existing.DefinedIn, absSibPath) {
-					return fmt.Errorf("type %q in package %q redefined (first defined in %s)", typeName, pkgName, existing.DefinedIn)
+					return galaerr.NewCodedSemanticError(
+						galaerr.CodeTypeRedefinition,
+						ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
+						fmt.Sprintf("type %q in package %q redefined (first defined in %s)", typeName, pkgName, existing.DefinedIn),
+						"remove the duplicate declaration or rename one of the types",
+					)
 				}
 				if existing.DefinedIn != "" {
 					continue
@@ -2245,7 +2279,12 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 			}
 			if existing, ok := richAST.Types[fullTypeName]; ok && len(existing.FieldNames) > 0 {
 				if existing.DefinedIn != "" && !isSameFile(existing.DefinedIn, absSibPath) {
-					return fmt.Errorf("type %q in package %q redefined (first defined in %s)", typeName, pkgName, existing.DefinedIn)
+					return galaerr.NewCodedSemanticError(
+						galaerr.CodeTypeRedefinition,
+						ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
+						fmt.Sprintf("type %q in package %q redefined (first defined in %s)", typeName, pkgName, existing.DefinedIn),
+						"remove the duplicate declaration or rename one of the types",
+					)
 				}
 				if existing.DefinedIn != "" {
 					continue
@@ -2309,7 +2348,12 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 			// Skip if DefinedIn is empty — the type came from cache.
 			if existing, ok := richAST.Types[fullTypeName]; ok && existing.IsSealed {
 				if existing.DefinedIn != "" && !isSameFile(existing.DefinedIn, absSibPath) {
-					return fmt.Errorf("type %q in package %q redefined (first defined in %s)", typeName, pkgName, existing.DefinedIn)
+					return galaerr.NewCodedSemanticError(
+						galaerr.CodeTypeRedefinition,
+						ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
+						fmt.Sprintf("type %q in package %q redefined (first defined in %s)", typeName, pkgName, existing.DefinedIn),
+						"remove the duplicate declaration or rename one of the types",
+					)
 				}
 				if existing.DefinedIn != "" {
 					continue
@@ -2478,7 +2522,8 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 // 1. Parameters with defaults must come after all required parameters
 // 2. Variadic parameters cannot have defaults
 // 3. Default expression types must be compatible with parameter types (for literals)
-func validateDefaultParams(funcMeta *transpiler.FunctionMetadata, line int, filePath string) error {
+func validateDefaultParams(funcMeta *transpiler.FunctionMetadata, line, column int, filePath string) error {
+	_ = filePath // filePath is retained for future use; position info now travels via the coded error
 	if len(funcMeta.DefaultExprs) == 0 {
 		return nil
 	}
@@ -2494,8 +2539,12 @@ func validateDefaultParams(funcMeta *transpiler.FunctionMetadata, line int, file
 			if i < len(funcMeta.ParamNames) {
 				paramName = funcMeta.ParamNames[i]
 			}
-			return fmt.Errorf("%s:%d: parameter %q has no default value but follows parameter with default in function %s (parameters with defaults must be contiguous at end of parameter list)",
-				filePath, line, paramName, funcMeta.Name)
+			return galaerr.NewCodedSemanticError(
+				galaerr.CodeParamMissingDefaultAfterDefault,
+				line, column,
+				fmt.Sprintf("parameter %q in %s has no default but follows a parameter with a default", paramName, funcMeta.Name),
+				"move parameters with defaults to the end of the parameter list",
+			)
 		}
 	}
 
@@ -2517,8 +2566,12 @@ func validateDefaultParams(funcMeta *transpiler.FunctionMetadata, line int, file
 			if i < len(funcMeta.ParamNames) {
 				paramName = funcMeta.ParamNames[i]
 			}
-			return fmt.Errorf("%s:%d: default value for parameter %q has type %s, but parameter type is %s",
-				filePath, line, paramName, literalType, paramType)
+			return galaerr.NewCodedSemanticError(
+				galaerr.CodeParamDefaultTypeMismatch,
+				line, column,
+				fmt.Sprintf("default for parameter %q has type %s, expected %s", paramName, literalType, paramType),
+				"fix the default expression or change the parameter type",
+			)
 		}
 	}
 

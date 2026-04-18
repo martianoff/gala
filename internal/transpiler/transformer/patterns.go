@@ -43,7 +43,12 @@ func (t *galaASTTransformer) transformPatternWithType(patCtx grammar.IPatternCon
 		// If we get here, it's an error (rest patterns must be part of a sequence pattern)
 		return nil, nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "rest pattern (...) can only be used as the last argument in a sequence pattern like Array(first, second, rest...)")
 	default:
-		return nil, nil, fmt.Errorf("unknown pattern type: %T", patCtx)
+		return nil, nil, galaerr.NewCodedSemanticError(
+			galaerr.CodeUnknownPatternType,
+			patCtx.GetStart().GetLine(), patCtx.GetStart().GetColumn(),
+			fmt.Sprintf("unrecognized pattern syntax (internal type %T)", patCtx),
+			"this usually means a new grammar rule is missing transformer support; please report at github.com/martianoff/gala/issues",
+		)
 	}
 }
 
