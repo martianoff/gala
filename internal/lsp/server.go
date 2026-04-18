@@ -40,13 +40,19 @@ type GalaHandler struct {
 	extraSearchPaths []string          // additional search paths (for testing)
 	client           *golsp.Client     // LSP client for sending notifications
 
-	mu            sync.Mutex
-	documents     map[string]string              // URI -> source text
-	docVersions   map[string]int64               // URI -> monotonic edit version
-	analysisCancels map[string]context.CancelFunc // URI -> cancel func for in-flight analysis
-	richASTs      map[string]*transpiler.RichAST       // URI -> analyzed AST
-	varTypes      map[string]map[string]string         // URI -> (varName -> type) from transpiler
-	lambdaHints   map[string][]transpiler.LambdaParamHint // URI -> lambda param hints from transformer
+	mu              sync.Mutex
+	documents       map[string]string              // URI -> source text
+	docVersions     map[string]int64               // URI -> monotonic edit version
+	analysisCancels map[string]context.CancelFunc  // URI -> cancel func for in-flight analysis
+	richASTs        map[string]*transpiler.RichAST // URI -> analyzed AST
+	// parseTrees caches the raw ANTLR parse tree for the most recent
+	// successful analysis. Features like signatureHelp walk the tree to
+	// locate the call expression at a cursor position rather than doing
+	// byte-level scans.
+	parseTrees  map[string]antlr.Tree
+	parseTexts  map[string]string                       // URI -> the source that produced parseTrees[URI] (may be surgically patched)
+	varTypes    map[string]map[string]string            // URI -> (varName -> type) from transpiler
+	lambdaHints map[string][]transpiler.LambdaParamHint // URI -> lambda param hints from transformer
 }
 
 // SetClient implements server.ClientHandler — receives the LSP client for notifications.
@@ -73,11 +79,22 @@ func (h *GalaHandler) DebugVarTypes(uri string) map[string]string {
 	return h.varTypes[uri]
 }
 
+// DebugParseTree returns the cached parse tree and the source text it was
+// parsed from (may be surgically patched for signatureHelp / completion).
+// For tests.
+func (h *GalaHandler) DebugParseTree(uri string) (antlr.Tree, string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.parseTrees[uri], h.parseTexts[uri]
+}
+
 // NewGalaHandler creates a new GALA LSP handler.
 func NewGalaHandler() *GalaHandler {
 	return &GalaHandler{
 		documents:       make(map[string]string),
 		richASTs:        make(map[string]*transpiler.RichAST),
+		parseTrees:      make(map[string]antlr.Tree),
+		parseTexts:      make(map[string]string),
 		varTypes:        make(map[string]map[string]string),
 		lambdaHints:     make(map[string][]transpiler.LambdaParamHint),
 		docVersions:     make(map[string]int64),
@@ -261,6 +278,12 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 		// If the analyzer can extract type metadata from it, cache the
 		// richAST so completion/hover/definition work while mid-edit.
 		partialTree, _ := h.parser.ParseLenient(text)
+		if partialTree != nil {
+			h.mu.Lock()
+			h.parseTrees[uri] = partialTree
+			h.parseTexts[uri] = text
+			h.mu.Unlock()
+		}
 		h.tryAnalyzePartial(uri, filePath, partialTree)
 		return diagnostics
 	}
@@ -275,6 +298,8 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 
 	h.mu.Lock()
 	h.richASTs[uri] = richAST
+	h.parseTrees[uri] = tree
+	h.parseTexts[uri] = text
 	h.mu.Unlock()
 
 	// Use a fresh transformer per analysis to avoid race conditions between
@@ -467,13 +492,14 @@ func (h *GalaHandler) ensureAnalysisForSignature(uri string, line, char int) {
 	if char > len(l) {
 		char = len(l)
 	}
-	// Insert a closing `)` at the cursor to balance the open call.
-	// If the cursor is just after a trailing comma, trim the comma and
-	// then close — "foo(a," → "foo(a)" rather than "foo(a,)" which also
-	// fails to parse.
-	patched := l[:char]
-	patched = strings.TrimRight(patched, " \t,")
-	patched += ")" + l[char:]
+	// Insert a closing `)` at the cursor to balance the open call. We
+	// keep the original text on both sides of the cursor verbatim — no
+	// trimming of trailing whitespace or commas — so cursor byte offsets
+	// survive the patch unchanged and the grammar's trailing-comma
+	// allowance (`argumentList: argument (',' argument)* ','?`) lets
+	// `foo(a, )` parse cleanly while preserving the comma count that
+	// signature help uses for the active-parameter index.
+	patched := l[:char] + ")" + l[char:]
 	lines[line] = patched
 	cleanText := strings.Join(lines, "\n")
 	h.analyzeAndCache(uri, cleanText, "ensureAnalysisForSignature")
@@ -505,6 +531,8 @@ func (h *GalaHandler) analyzeAndCache(uri, cleanText, caller string) {
 
 	h.mu.Lock()
 	h.richASTs[uri] = richAST
+	h.parseTrees[uri] = tree
+	h.parseTexts[uri] = cleanText
 	h.mu.Unlock()
 
 	xformer := transformer.NewGalaASTTransformer()

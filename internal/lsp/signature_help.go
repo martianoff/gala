@@ -4,17 +4,21 @@ import (
 	"context"
 	"strings"
 
+	"github.com/antlr4-go/antlr/v4"
 	"github.com/owenrumney/go-lsp/lsp"
 
+	grammar "martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
 
 // SignatureHelp implements textDocument/signatureHelp.
 //
-// Walks backwards from the cursor to find the unbalanced `(` that opens the
-// current call, extracts the method/function name before it, resolves the
-// callee's parameter list (via richAST), and returns a SignatureInformation
-// with ActiveParameter set from the comma count between `(` and the cursor.
+// Locates the call expression at the cursor by walking the ANTLR parse
+// tree — not by byte-level scans — then extracts the callee name,
+// receiver chain, and argument index structurally from the tree. The
+// tree is parsed from a version of the source where the unclosed call
+// has been surgically closed with `)` (see ensureAnalysisForSignature)
+// so ANTLR can actually produce a well-formed postfixExpr.
 func (h *GalaHandler) SignatureHelp(ctx context.Context, params *lsp.SignatureHelpParams) (*lsp.SignatureHelp, error) {
 	uri := string(params.TextDocument.URI)
 	line := int(params.Position.Line)
@@ -30,9 +34,10 @@ func (h *GalaHandler) SignatureHelp(ctx context.Context, params *lsp.SignatureHe
 		return nil, nil
 	}
 
-	// The cursor is inside an unclosed call, so the raw document often
-	// fails to parse. Surgically close the call and re-analyze so we
-	// have richAST + varTypes for type resolution.
+	// Ensure richAST + varTypes are available for signature resolution.
+	// This may short-circuit if the main DidChange pipeline already
+	// produced them (from a lenient/partial parse), or it may parse a
+	// surgically closed variant of the source.
 	if richAST == nil || len(varTypeMap) == 0 {
 		h.ensureAnalysisForSignature(uri, line, char)
 		h.mu.Lock()
@@ -44,7 +49,21 @@ func (h *GalaHandler) SignatureHelp(ctx context.Context, params *lsp.SignatureHe
 		return nil, nil
 	}
 
-	call := findEnclosingCall(text, line, char)
+	// Always parse a freshly-patched version of the source for the tree
+	// walk. Relying on h.parseTrees would risk reading back a tree that
+	// was parsed from a different cursor's patched text (or from a
+	// lenient, error-recovered tree of the raw unclosed source), making
+	// call-site offsets misaligned with the current cursor.
+	treeText, cursorOffset := patchTextForSignature(text, line, char)
+	if cursorOffset < 0 {
+		return nil, nil
+	}
+	tree, _ := h.parser.ParseLenient(treeText)
+	if tree == nil {
+		return nil, nil
+	}
+
+	call := findCallAtOffset(tree, treeText, cursorOffset)
 	if call == nil {
 		return nil, nil
 	}
@@ -74,90 +93,207 @@ func (h *GalaHandler) SignatureHelp(ctx context.Context, params *lsp.SignatureHe
 	}, nil
 }
 
-// callContext captures the information about the enclosing call at a cursor
-// position needed to resolve signature help.
+// callContext captures everything the signature resolver needs about
+// the enclosing call.
 type callContext struct {
-	// name is the callee identifier immediately before the enclosing `(`.
+	// name is the callee identifier: either a trailing `.Method` in a
+	// chain, or the primaryExpr's identifier for a bare call.
 	name string
-	// receiverChain, if non-empty, is the text of the receiver expression
-	// that precedes `name.` — used for resolving method signatures on
-	// chained expressions like `NewServer().WithFilter(` where the chain
-	// before `.WithFilter(` is `NewServer()`.
+	// receiverChain, if non-empty, is the source text of the expression
+	// that precedes `.name` — used for resolving the receiver type on
+	// chained method calls.
 	receiverChain string
-	// argIndex is the zero-based index of the argument the cursor is in,
-	// computed by counting top-level commas between the enclosing `(` and
-	// the cursor.
+	// argIndex is the zero-based index of the argument the cursor sits
+	// in, counted from structural commas in the argumentList.
 	argIndex int
 }
 
-// findEnclosingCall walks backwards from the cursor to find the unbalanced
-// `(` that opens the currently-being-edited call, then extracts the callee
-// name and counts the top-level commas between that `(` and the cursor to
-// determine which argument the cursor is inside.
+// patchTextForSignature inserts a closing `)` at the cursor so the call
+// the user is typing can be parsed to completion. Returns the patched
+// text and the cursor's byte offset inside it (which, by construction,
+// equals the offset of the inserted `)`).
 //
-// Returns nil if there is no enclosing call, if the text before `(` isn't a
-// call-like expression (no identifier), or if the cursor is inside a string
-// literal.
-func findEnclosingCall(text string, line, char int) *callContext {
-	// Compute absolute byte offset of the cursor in text.
+// Everything on either side of the cursor is preserved verbatim — no
+// whitespace or comma trimming — so that (a) the grammar's trailing
+// comma in `argumentList` lets the parser accept `foo(a, )` cleanly
+// and (b) the active-argument index still reflects every comma the
+// user has typed.
+func patchTextForSignature(text string, line, char int) (patched string, cursorOffset int) {
 	lines := strings.Split(text, "\n")
-	if line >= len(lines) {
+	if line < 0 || line >= len(lines) {
+		return "", -1
+	}
+	l := lines[line]
+	if char < 0 {
+		char = 0
+	}
+	if char > len(l) {
+		char = len(l)
+	}
+	lines[line] = l[:char] + ")" + l[char:]
+	patched = strings.Join(lines, "\n")
+	cursorOffset = lineCharToOffset(patched, line, char)
+	return patched, cursorOffset
+}
+
+// lineCharToOffset converts an LSP (0-indexed line, 0-indexed char) to
+// a byte offset into text. Returns -1 if the position is out of range.
+func lineCharToOffset(text string, line, char int) int {
+	offset := 0
+	curLine := 0
+	for i := 0; i < len(text); i++ {
+		if curLine == line {
+			return offset + char // allow char == len(line) (end of line)
+		}
+		if text[i] == '\n' {
+			curLine++
+			offset = i + 1
+		}
+	}
+	if curLine == line {
+		return offset + char
+	}
+	return -1
+}
+
+// findCallAtOffset returns the innermost call-style postfixSuffix (one
+// that has an argumentList) whose argumentList's source range contains
+// the given byte offset. Returns nil if no such call is found.
+func findCallAtOffset(tree antlr.Tree, text string, cursorOffset int) *callContext {
+	f := &callFinder{cursorOffset: cursorOffset, text: text}
+	antlr.ParseTreeWalkerDefault.Walk(f, tree)
+	if f.bestSuffix == nil {
 		return nil
 	}
-	if char > len(lines[line]) {
-		char = len(lines[line])
-	}
-	cursorOffset := 0
-	for i := 0; i < line; i++ {
-		cursorOffset += len(lines[i]) + 1 // +1 for the stripped '\n'
-	}
-	cursorOffset += char
+	return buildCallContext(f.bestSuffix, f.bestParent, text, cursorOffset)
+}
 
-	// Walk backwards from the cursor, tracking nested parens/braces/brackets
-	// and skipping over string literals. We want the first `(` that is not
-	// matched by a `)` to its right (within [0, cursorOffset)).
-	openParenPos := findEnclosingOpenParen(text, cursorOffset)
-	if openParenPos < 0 {
+// callFinder is an ANTLR listener that tracks the innermost postfixSuffix
+// whose argumentList range brackets the cursor.
+type callFinder struct {
+	*grammar.BasegalaListener
+	cursorOffset int
+	text         string
+	bestSuffix   *grammar.PostfixSuffixContext
+	bestParent   *grammar.PostfixExprContext
+	bestDepth    int
+	depth        int
+}
+
+func (f *callFinder) EnterEveryRule(ctx antlr.ParserRuleContext) { f.depth++ }
+func (f *callFinder) ExitEveryRule(ctx antlr.ParserRuleContext)  { f.depth-- }
+
+func (f *callFinder) EnterPostfixSuffix(ctx *grammar.PostfixSuffixContext) {
+	argList := ctx.ArgumentList()
+	// A postfixSuffix that has no argumentList and no '(' terminal is
+	// either a `.id` or `[exprs]` — not a call. Fast-skip it.
+	openParen := findChildTerminal(ctx, "(")
+	if argList == nil && openParen == nil {
+		return
+	}
+	// The argument-list region runs from just after the '(' to the
+	// matching ')'. We consider the cursor "inside" the call when it's
+	// strictly after the '(' and at-or-before the ')'. Using at-or-before
+	// for the close paren means `foo(|)` (cursor right after `(`, at the
+	// position of `)`) counts as inside — which matches user expectation
+	// when they just typed the open paren.
+	start, stop := openParenRange(ctx)
+	if start < 0 {
+		return
+	}
+	if f.cursorOffset <= start || f.cursorOffset > stop {
+		return
+	}
+	if f.depth <= f.bestDepth {
+		return
+	}
+	parent, _ := ctx.GetParent().(*grammar.PostfixExprContext)
+	if parent == nil {
+		return
+	}
+	f.bestSuffix = ctx
+	f.bestParent = parent
+	f.bestDepth = f.depth
+}
+
+// openParenRange returns the byte offsets of the '(' and ')' of a
+// call-style postfixSuffix (or the '(' start and the argument list's
+// stop for a still-unclosed/recovered suffix). Returns (-1, -1) if the
+// suffix has no '('.
+func openParenRange(ctx *grammar.PostfixSuffixContext) (openAfter, closeAt int) {
+	openParen := findChildTerminal(ctx, "(")
+	if openParen == nil {
+		return -1, -1
+	}
+	openAfter = openParen.GetSymbol().GetStart()
+	closeParen := findChildTerminal(ctx, ")")
+	if closeParen != nil {
+		closeAt = closeParen.GetSymbol().GetStart()
+		return openAfter, closeAt
+	}
+	// Recovered tree without a matching ')' — treat end of the suffix as
+	// the close position.
+	if stop := ctx.GetStop(); stop != nil {
+		closeAt = stop.GetStop() + 1
+		return openAfter, closeAt
+	}
+	return openAfter, openAfter + 1
+}
+
+// findChildTerminal returns the first direct terminal-node child whose
+// text equals `literal`, or nil.
+func findChildTerminal(ctx antlr.RuleContext, literal string) antlr.TerminalNode {
+	for _, child := range ctx.GetChildren() {
+		if term, ok := child.(antlr.TerminalNode); ok && term.GetText() == literal {
+			return term
+		}
+	}
+	return nil
+}
+
+// buildCallContext turns a matched call-suffix + its enclosing postfixExpr
+// into the data the signature resolver needs: callee name, receiver text,
+// and argument index.
+func buildCallContext(callSuffix *grammar.PostfixSuffixContext, parent *grammar.PostfixExprContext, text string, cursorOffset int) *callContext {
+	suffixes := parent.AllPostfixSuffix()
+	callIdx := -1
+	for i, s := range suffixes {
+		if s == callSuffix {
+			callIdx = i
+			break
+		}
+	}
+	if callIdx < 0 {
 		return nil
 	}
 
-	// Extract the callee name before the `(`. Skip any whitespace.
-	i := openParenPos - 1
-	for i >= 0 && (text[i] == ' ' || text[i] == '\t') {
-		i--
+	var name, receiverChain string
+	// If the immediately-preceding suffix is `.id`, the callee is that
+	// identifier and the receiver is primaryExpr + suffixes before it.
+	if callIdx > 0 {
+		prev, _ := suffixes[callIdx-1].(*grammar.PostfixSuffixContext)
+		if prev != nil && prev.Identifier() != nil && findChildTerminal(prev, "(") == nil && findChildTerminal(prev, "[") == nil {
+			name = prev.Identifier().GetText()
+			receiverChain = contextText(parent.PrimaryExpr(), text)
+			for i := 0; i < callIdx-1; i++ {
+				receiverChain += contextText(suffixes[i], text)
+			}
+		}
 	}
-	if i < 0 {
-		return nil
-	}
-	nameEnd := i + 1
-	for i >= 0 && isIdentChar(text[i]) {
-		i--
-	}
-	nameStart := i + 1
-	if nameStart >= nameEnd {
-		// No identifier before `(` — e.g. `(expr)` grouping, or lambda
-		// parameter list. Not a call.
-		return nil
-	}
-	name := text[nameStart:nameEnd]
-
-	// Check for a dot before the name — if present, the thing before it is
-	// the receiver expression (needed to look up the method's parameter
-	// list on the receiver's type). Skip whitespace/newlines between the
-	// name and the dot so multi-line chains (`NewServer().\n    .Method(`)
-	// are handled.
-	var receiverChain string
-	j := nameStart - 1
-	for j >= 0 && (text[j] == ' ' || text[j] == '\t' || text[j] == '\n' || text[j] == '\r') {
-		j--
-	}
-	if j >= 0 && text[j] == '.' {
-		receiverChain = text[:j]
+	// No preceding `.id` — this is a bare call on the primary expression.
+	// Use the primary expression's text as the callee name.
+	if name == "" {
+		primaryText := strings.TrimSpace(contextText(parent.PrimaryExpr(), text))
+		// Only treat it as a real call when the primary expression is a
+		// simple identifier. `(x+y)(` and similar grouping-into-call
+		// shapes are not what the user wants signature help for.
+		if primaryText == "" || !isIdentifier(primaryText) {
+			return nil
+		}
+		name = primaryText
 	}
 
-	// Count top-level commas from just after `(` to the cursor.
-	argIndex := countTopLevelCommas(text, openParenPos+1, cursorOffset)
-
+	argIndex := argIndexAt(callSuffix.ArgumentList(), cursorOffset)
 	return &callContext{
 		name:          name,
 		receiverChain: receiverChain,
@@ -165,109 +301,75 @@ func findEnclosingCall(text string, line, char int) *callContext {
 	}
 }
 
-// findEnclosingOpenParen returns the byte offset of the `(` that opens the
-// call containing position `end`, or -1 if no such paren exists. Skips over
-// balanced `()`, `{}`, `[]` pairs and string literals while walking back.
-func findEnclosingOpenParen(text string, end int) int {
-	parenDepth := 0
-	braceDepth := 0
-	bracketDepth := 0
-	i := end - 1
-	for i >= 0 {
-		c := text[i]
-		// Skip over double-quoted strings (walking backwards).
-		if c == '"' && !isEscapedAt(text, i) {
-			j := i - 1
-			for j >= 0 {
-				if text[j] == '"' && !isEscapedAt(text, j) {
-					break
-				}
-				j--
-			}
-			if j < 0 {
-				return -1
-			}
-			i = j - 1
-			continue
-		}
-		switch c {
-		case ')':
-			parenDepth++
-		case '(':
-			if parenDepth == 0 && braceDepth == 0 && bracketDepth == 0 {
-				return i
-			}
-			parenDepth--
-		case '}':
-			braceDepth++
-		case '{':
-			braceDepth--
-		case ']':
-			bracketDepth++
-		case '[':
-			bracketDepth--
-		}
-		i--
+// contextText returns the original source text covered by the given
+// parse-tree context. Uses start/stop character indices from the tokens
+// so whitespace and punctuation are preserved verbatim.
+func contextText(ctx antlr.RuleContext, text string) string {
+	if ctx == nil {
+		return ""
 	}
-	return -1
+	rc, ok := ctx.(interface {
+		GetStart() antlr.Token
+		GetStop() antlr.Token
+	})
+	if !ok {
+		return ""
+	}
+	start, stop := rc.GetStart(), rc.GetStop()
+	if start == nil || stop == nil {
+		return ""
+	}
+	s, e := start.GetStart(), stop.GetStop()
+	if s < 0 || e < 0 || s > e || e >= len(text) {
+		return ""
+	}
+	return text[s : e+1]
 }
 
-// isEscapedAt reports whether the byte at position i is preceded by an odd
-// number of backslashes (i.e. the character is escaped).
-func isEscapedAt(text string, i int) bool {
-	count := 0
-	for j := i - 1; j >= 0 && text[j] == '\\'; j-- {
-		count++
+// argIndexAt counts the commas that are direct children of argumentList
+// (i.e. top-level commas for this call) and end strictly before the
+// cursor. Returns the zero-based active-argument index.
+func argIndexAt(argList grammar.IArgumentListContext, cursorOffset int) int {
+	if argList == nil {
+		return 0
 	}
-	return count%2 == 1
-}
-
-// countTopLevelCommas counts commas in text[start:end] that are not inside
-// nested (), {}, [] pairs and not inside string literals. Returns the
-// argument index for the cursor at `end` — 0 means "first argument".
-func countTopLevelCommas(text string, start, end int) int {
-	if start >= end {
+	rc, ok := argList.(antlr.RuleContext)
+	if !ok {
 		return 0
 	}
 	n := 0
-	parenDepth := 0
-	braceDepth := 0
-	bracketDepth := 0
-	inString := false
-	for i := start; i < end; i++ {
-		c := text[i]
-		if inString {
-			if c == '\\' && i+1 < end {
-				i++
-				continue
-			}
-			if c == '"' {
-				inString = false
-			}
+	for _, child := range rc.GetChildren() {
+		term, ok := child.(antlr.TerminalNode)
+		if !ok {
 			continue
 		}
-		switch c {
-		case '"':
-			inString = true
-		case '(':
-			parenDepth++
-		case ')':
-			parenDepth--
-		case '{':
-			braceDepth++
-		case '}':
-			braceDepth--
-		case '[':
-			bracketDepth++
-		case ']':
-			bracketDepth--
-		case ',':
-			if parenDepth == 0 && braceDepth == 0 && bracketDepth == 0 {
-				n++
-			}
+		if term.GetText() != "," {
+			continue
+		}
+		if term.GetSymbol().GetStart() < cursorOffset {
+			n++
 		}
 	}
 	return n
+}
+
+func isIdentifier(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if i == 0 {
+			if !(c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
+				return false
+			}
+		} else {
+			if !isIdentChar(c) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // resolveCallSignature resolves a callContext to a SignatureInformation by
@@ -360,9 +462,9 @@ func typeConstructorSignature(name string, tm *transpiler.TypeMetadata) *lsp.Sig
 
 // buildParamList returns ParameterInformation entries plus their rendered
 // "name type" labels (used to compose the full signature label). Both
-// slices are returned so the Parameters' Label strings match the
-// corresponding substring inside the signature label, which is what
-// clients use to visually highlight the active parameter.
+// slices are returned so each Parameter's Label matches the corresponding
+// substring inside the signature label — clients use that substring to
+// visually highlight the active parameter.
 func buildParamList(names []string, types []transpiler.Type) ([]lsp.ParameterInformation, []string) {
 	params := make([]lsp.ParameterInformation, 0, len(names))
 	labels := make([]string, 0, len(names))

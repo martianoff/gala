@@ -20,6 +20,7 @@ go_library(
         "//galaerr",
         "//internal/build",
         "//internal/depman/mod",
+        "//internal/parser/grammar",
         "//internal/transpiler",
         "//internal/transpiler/analyzer",
         "//internal/transpiler/generator",

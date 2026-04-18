@@ -291,9 +291,11 @@ func resolveChainTypeN(text string, funcScope string, richAST *transpiler.RichAS
 		methodName := text[nameStart:nameEnd]
 
 		// Check if there's a dot before the method name (chain). Skip any
-		// whitespace (including newlines) between the name and the dot so
-		// multi-line chains survive without requiring the caller to flatten
-		// them first.
+		// whitespace (including newlines) — receiver text that's
+		// reconstructed from parse-tree contexts preserves inter-token
+		// whitespace verbatim, so multi-line chains like
+		// `NewServer().\n    WithFilter(...).\n    Method(` arrive here
+		// with newlines between the `)` of one call and the next `.`.
 		dotIdx := skipTrailingWhitespace(text, i)
 		if dotIdx >= 0 && text[dotIdx] == '.' {
 			receiverType := resolveChainTypeN(text[:dotIdx], funcScope, richAST, varTypes, depth+1)
