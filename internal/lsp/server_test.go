@@ -4804,3 +4804,82 @@ func TestCompletion_MultiLineChain(t *testing.T) {
 		t.Errorf("case B: expected WithBody method after NewResponse(...), got %v", labelSlice(list))
 	}
 }
+
+// TestCompletion_LongBuilderChain reproduces a user-reported bug from
+// gala-server's examples/hello/main.gala: a fluent builder chain of 13+
+// method calls ending with a trailing dot produces no completion
+// suggestions. Root cause: resolveChainTypeN's maxChainDepth = 10
+// recursion guard bails out silently when the chain is deeper than 10
+// calls, leaving the receiver type unresolved.
+func TestCompletion_LongBuilderChain(t *testing.T) {
+	harness, handler := newHarnessWithHandler(t)
+	// Builder with a handful of methods, all returning Server. We chain
+	// 13 calls so we comfortably exceed the old depth-10 guard.
+	src := "package main\n" +
+		"\n" +
+		"type Server struct {\n" +
+		"    val name string\n" +
+		"}\n" +
+		"\n" +
+		"func (s Server) WithName(n string) Server = Server(name = n)\n" +
+		"func (s Server) WithPort(p int) Server = s\n" +
+		"func (s Server) WithPath(p string) Server = s\n" +
+		"func (s Server) WithFilter(f string) Server = s\n" +
+		"func (s Server) WithDebug(d bool) Server = s\n" +
+		"func (s Server) Start() string = s.name\n" +
+		"\n" +
+		"func NewServer() Server = Server(name = \"default\")\n" +
+		"\n" +
+		"func main() {\n" +
+		"    val server = NewServer().\n" +
+		"        WithName(\"demo\").\n" +
+		"        WithPort(8080).\n" +
+		"        WithPath(\"/api\").\n" +
+		"        WithDebug(true).\n" +
+		"        WithFilter(\"Logger\").\n" +
+		"        WithFilter(\"Recovery\").\n" +
+		"        WithFilter(\"Cors\").\n" +
+		"        WithFilter(\"RateLimit\").\n" +
+		"        WithFilter(\"RequestId\").\n" +
+		"        WithFilter(\"MethodOverride\").\n" +
+		"        WithFilter(\"BodyLimit\").\n" +
+		"        WithFilter(\"ETag\").\n" +
+		"}\n"
+	uri := openFileOnDisk(t, harness, src)
+	time.Sleep(200 * time.Millisecond)
+
+	richAST := handler.DebugRichAST(string(uri))
+	if richAST == nil {
+		t.Fatal("richAST nil")
+	}
+	if _, ok := richAST.Types["Server"]; !ok {
+		keys := make([]string, 0, len(richAST.Types))
+		for k := range richAST.Types {
+			keys = append(keys, k)
+		}
+		t.Fatalf("Server type missing; have: %v", keys)
+	}
+
+	// Locate the line with `WithFilter("ETag").` — cursor right after the trailing dot.
+	lines := strings.Split(src, "\n")
+	targetLine := -1
+	for i, l := range lines {
+		if strings.Contains(l, `WithFilter("ETag").`) {
+			targetLine = i
+			break
+		}
+	}
+	if targetLine < 0 {
+		t.Fatalf("could not locate WithFilter(\"ETag\"). in source")
+	}
+	targetCol := len(lines[targetLine])
+	list, err := harness.Completion(uri, targetLine, targetCol)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("long chain completion at line %d col %d: %d items — %v",
+		targetLine, targetCol, len(list.Items), labelSlice(list))
+	if !hasLabelPrefix(list, "WithFilter") || !hasLabelPrefix(list, "Start") {
+		t.Fatalf("expected Server methods (WithFilter, Start) after 13-call chain ending in WithFilter(\"ETag\"). — got %v", labelSlice(list))
+	}
+}
