@@ -29,7 +29,8 @@ func GetBaseMetadata(p transpiler.GalaParser, searchPaths []string) *transpiler.
 		parser:       p,
 		searchPaths:  searchPaths,
 		analyzedPkgs: make(map[string]*transpiler.RichAST),
-		checkedDirs:  make(map[string]bool),
+		checkedDirs:      make(map[string]bool),
+		siblingTreeCache: make(map[string]*siblingCacheEntry),
 		resolver:     module.NewResolver(searchPaths),
 	}
 
@@ -67,6 +68,26 @@ type galaAnalyzer struct {
 	currentDotImportPkgs map[string]bool                // Package names that are dot-imported in the current file
 	analyzeDepth int                                    // recursion depth for profiling
 	cache        *analysisCache                         // disk-based package analysis cache
+
+	// P1 (perf): per-analyzer in-memory cache of parsed sibling ASTs.
+	// Key is the canonical directory path; value holds the trees and paths
+	// captured on the first scan. Reused across Analyze() calls within the
+	// same process so a 5-file package does not re-read and re-parse its
+	// siblings 5 times — the dominant cost in the analyze phase (86.9% of
+	// total transpile time for collection_immutable/list.gala, baseline
+	// 2.6s on Windows).
+	siblingTreeCache map[string]*siblingCacheEntry
+}
+
+// siblingCacheEntry is the value stored in galaAnalyzer.siblingTreeCache.
+// dirSize captures the number of .gala files discovered during the
+// initial scan; on a cache hit we revalidate by re-checking that count.
+// If the directory listing has changed shape since we cached, we drop
+// the entry and re-scan from disk.
+type siblingCacheEntry struct {
+	trees   []*grammar.SourceFileContext
+	paths   []string
+	dirSize int
 }
 
 // resolveCacheRoot returns the project root for the analysis disk cache.
@@ -92,7 +113,8 @@ func NewGalaAnalyzer(p transpiler.GalaParser, searchPaths []string, projectRoot 
 		parser:       p,
 		searchPaths:  searchPaths,
 		analyzedPkgs: make(map[string]*transpiler.RichAST),
-		checkedDirs:  make(map[string]bool),
+		checkedDirs:      make(map[string]bool),
+		siblingTreeCache: make(map[string]*siblingCacheEntry),
 		resolver:     module.NewResolver(searchPaths),
 		cache:        newAnalysisCache(resolveCacheRoot(root)),
 	}
@@ -111,7 +133,8 @@ func NewGalaAnalyzerWithBase(base *transpiler.RichAST, p transpiler.GalaParser, 
 		parser:       p,
 		searchPaths:  searchPaths,
 		analyzedPkgs: make(map[string]*transpiler.RichAST),
-		checkedDirs:  make(map[string]bool),
+		checkedDirs:      make(map[string]bool),
+		siblingTreeCache: make(map[string]*siblingCacheEntry),
 		resolver:     module.NewResolver(searchPaths),
 		cache:        newAnalysisCache(resolveCacheRoot(root)),
 	}
@@ -132,7 +155,8 @@ func NewGalaAnalyzerWithPackageFiles(p transpiler.GalaParser, searchPaths []stri
 		searchPaths:  searchPaths,
 		packageFiles: packageFiles,
 		analyzedPkgs: make(map[string]*transpiler.RichAST),
-		checkedDirs:  make(map[string]bool),
+		checkedDirs:      make(map[string]bool),
+		siblingTreeCache: make(map[string]*siblingCacheEntry),
 		resolver:     module.NewResolver(searchPaths),
 		cache:        newAnalysisCache(resolveCacheRoot(root)),
 	}
@@ -159,7 +183,8 @@ func NewBatchAnalyzer(p transpiler.GalaParser, searchPaths []string, projectRoot
 			parser:       p,
 			searchPaths:  searchPaths,
 			analyzedPkgs: make(map[string]*transpiler.RichAST),
-			checkedDirs:  make(map[string]bool),
+			checkedDirs:      make(map[string]bool),
+		siblingTreeCache: make(map[string]*siblingCacheEntry),
 			resolver:     module.NewResolver(searchPaths),
 			cache:        newAnalysisCache(resolveCacheRoot(root)),
 		},
@@ -245,49 +270,71 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 		// would pollute the current file's type resolution with unrelated packages.
 		dirPath := filepath.Dir(filePath)
 		canonDir := canonicalPath(dirPath)
-		if !a.checkedDirs[canonDir] {
+
+		// P1 (perf): try the in-memory sibling AST cache first. Reuses parsed
+		// trees across Analyze() calls within the same process, so a 5-file
+		// package does not re-read and re-parse its siblings 5 times.
+		//
+		// Cache validity: re-stat the directory and compare the .gala-file
+		// count against the entry's recorded dirSize. If the listing has
+		// changed shape, drop the entry and fall through to a fresh scan.
+		// This is cheap (one ReadDir + count) and catches the common case
+		// where a file was added or removed since the cache was populated.
+		trees, paths, err := a.lookupSiblingCache(canonDir, dirPath, filePath, pkgName)
+		if err != nil {
+			return nil, err
+		}
+		if trees != nil {
+			siblingTrees = append(siblingTrees, trees...)
+			siblingPaths = append(siblingPaths, paths...)
+		} else if !a.checkedDirs[canonDir] {
+			// Cache miss — scan the directory, parse each .gala file, and
+			// cache the full set (unfiltered by current file). The per-call
+			// checkedDirs guard prevents repeat scans within a single
+			// Analyze() invocation; the per-analyzer siblingTreeCache
+			// carries the result across subsequent calls.
 			a.checkedDirs[canonDir] = true
 			files, err := ioutil.ReadDir(dirPath)
 			if err == nil {
+				var cacheTrees []*grammar.SourceFileContext
+				var cachePaths []string
+				galaFileCount := 0
 				for _, f := range files {
-					if !f.IsDir() && filepath.Ext(f.Name()) == ".gala" {
-						otherPath := filepath.Join(dirPath, f.Name())
-						if isSameFile(otherPath, filePath) {
-							continue
-						}
-						content, err := ioutil.ReadFile(otherPath)
-						if err != nil {
-							continue
-						}
-						tree, err := a.parser.Parse(string(content))
-						if err != nil {
-							continue
-						}
-						otherSF, ok := tree.(*grammar.SourceFileContext)
-						if !ok {
-							continue
-						}
-						pkgClause := otherSF.PackageClause().(*grammar.PackageClauseContext)
-						otherPkgName := pkgClause.Identifier().GetText()
-						siblingIsTest := strings.HasSuffix(f.Name(), "_test.gala")
-						currentIsTest := strings.HasSuffix(filePath, "_test.gala")
-						// Allow _test.gala files to have different package names (like Go's _test.go convention)
-						if otherPkgName != pkgName && !(siblingIsTest || currentIsTest) {
-							return nil, galaerr.NewCodedSemanticError(
-								galaerr.CodeDuplicatePackageName,
-								pkgClause.GetStart().GetLine(), pkgClause.GetStart().GetColumn(),
-								fmt.Sprintf("directory %s has files with different package names: %q and %q", dirPath, pkgName, otherPkgName),
-								"use the same package name across all sibling .gala files, or move the file to a different directory",
-							)
-						}
-						// Include sibling if packages match AND (sibling is not test OR current is test)
-						// This follows Go semantics: test files see all package siblings during testing
-						if otherPkgName == pkgName && (!siblingIsTest || currentIsTest) {
-							siblingTrees = append(siblingTrees, otherSF)
-							siblingPaths = append(siblingPaths, otherPath)
-						}
+					if f.IsDir() || filepath.Ext(f.Name()) != ".gala" {
+						continue
 					}
+					galaFileCount++
+					otherPath := filepath.Join(dirPath, f.Name())
+					content, err := ioutil.ReadFile(otherPath)
+					if err != nil {
+						continue
+					}
+					tree, err := a.parser.Parse(string(content))
+					if err != nil {
+						continue
+					}
+					otherSF, ok := tree.(*grammar.SourceFileContext)
+					if !ok {
+						continue
+					}
+					cacheTrees = append(cacheTrees, otherSF)
+					cachePaths = append(cachePaths, otherPath)
 				}
+				// Store the full (unfiltered) set so future calls on the
+				// same directory can reuse it without re-parsing.
+				a.siblingTreeCache[canonDir] = &siblingCacheEntry{
+					trees:   cacheTrees,
+					paths:   cachePaths,
+					dirSize: galaFileCount,
+				}
+				// Apply per-call filters to the freshly-scanned set.
+				filtered, filteredPaths, err := a.filterSiblingsForCurrentFile(
+					cacheTrees, cachePaths, filePath, pkgName, dirPath)
+				if err != nil {
+					return nil, err
+				}
+				siblingTrees = append(siblingTrees, filtered...)
+				siblingPaths = append(siblingPaths, filteredPaths...)
 			}
 		}
 	}
@@ -2078,7 +2125,8 @@ func (a *galaAnalyzer) ensureTranspiled(importPath string) error {
 			parser:       a.parser,
 			searchPaths:  a.searchPaths,
 			analyzedPkgs: make(map[string]*transpiler.RichAST),
-			checkedDirs:  make(map[string]bool),
+			checkedDirs:      make(map[string]bool),
+		siblingTreeCache: make(map[string]*siblingCacheEntry),
 			resolver:     a.resolver,
 		}
 
@@ -2659,3 +2707,80 @@ func typesCompatibleForDefault(paramType, literalType string) bool {
 }
 
 var _ transpiler.Analyzer = (*galaAnalyzer)(nil)
+
+// lookupSiblingCache returns parsed sibling trees from the in-memory
+// cache, filtered for the current file. Returns (nil, nil, nil) on a
+// cache miss so the caller can fall through to a fresh scan. Returns
+// (nil, nil, err) when a cached entry surfaces a still-relevant
+// GALA-E0010 package-name mismatch; the caller propagates the error.
+//
+// Validity check: compare the cached dirSize (.gala file count at
+// capture time) against the current ReadDir count. A mismatch drops
+// the entry as stale. This is cheap compared to re-parsing and covers
+// the common mutation modes (file added/removed).
+func (a *galaAnalyzer) lookupSiblingCache(canonDir, dirPath, filePath, pkgName string) ([]*grammar.SourceFileContext, []string, error) {
+	entry, ok := a.siblingTreeCache[canonDir]
+	if !ok {
+		return nil, nil, nil
+	}
+	// Revalidate: if the directory's .gala count changed, invalidate.
+	files, err := ioutil.ReadDir(dirPath)
+	if err != nil {
+		return nil, nil, nil
+	}
+	count := 0
+	for _, f := range files {
+		if !f.IsDir() && filepath.Ext(f.Name()) == ".gala" {
+			count++
+		}
+	}
+	if count != entry.dirSize {
+		delete(a.siblingTreeCache, canonDir)
+		delete(a.checkedDirs, canonDir)
+		return nil, nil, nil
+	}
+	return a.filterSiblingsForCurrentFile(entry.trees, entry.paths, filePath, pkgName, dirPath)
+}
+
+// filterSiblingsForCurrentFile applies per-Analyze filters to a set of
+// pre-parsed sibling trees: excludes the current file (via symlink-aware
+// isSameFile), enforces the package-name contract (with Go-style
+// `_test.gala` relaxation), and drops test files from non-test callers.
+//
+// Mirrors the filtering logic that previously lived inline in the
+// directory-discovery loop; extracting it lets both the cache-hit path
+// and the cache-miss path share the same rules.
+func (a *galaAnalyzer) filterSiblingsForCurrentFile(
+	trees []*grammar.SourceFileContext,
+	paths []string,
+	filePath, pkgName, dirPath string,
+) ([]*grammar.SourceFileContext, []string, error) {
+	if len(trees) == 0 {
+		return nil, nil, nil
+	}
+	currentIsTest := strings.HasSuffix(filePath, "_test.gala")
+	var outTrees []*grammar.SourceFileContext
+	var outPaths []string
+	for i, tree := range trees {
+		path := paths[i]
+		if isSameFile(path, filePath) {
+			continue
+		}
+		pkgClause := tree.PackageClause().(*grammar.PackageClauseContext)
+		otherPkgName := pkgClause.Identifier().GetText()
+		siblingIsTest := strings.HasSuffix(path, "_test.gala")
+		if otherPkgName != pkgName && !(siblingIsTest || currentIsTest) {
+			return nil, nil, galaerr.NewCodedSemanticError(
+				galaerr.CodeDuplicatePackageName,
+				pkgClause.GetStart().GetLine(), pkgClause.GetStart().GetColumn(),
+				fmt.Sprintf("directory %s has files with different package names: %q and %q", dirPath, pkgName, otherPkgName),
+				"use the same package name across all sibling .gala files, or move the file to a different directory",
+			)
+		}
+		if otherPkgName == pkgName && (!siblingIsTest || currentIsTest) {
+			outTrees = append(outTrees, tree)
+			outPaths = append(outPaths, path)
+		}
+	}
+	return outTrees, outPaths, nil
+}

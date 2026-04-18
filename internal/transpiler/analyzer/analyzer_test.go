@@ -581,6 +581,103 @@ struct Widget(B string)
 	})
 }
 
+// TestP1SiblingASTCacheReusesParsedTrees verifies that the P1 sibling
+// AST cache reuses parsed trees across multiple Analyze() calls on
+// the same directory. The proof-of-cache-hit strategy is to overwrite
+// a sibling's content with bytes that would FAIL to parse, keeping
+// the .gala-file count unchanged so the cache validity check
+// (dirSize) does not invalidate. A second Analyze() call that still
+// succeeds can only have come from the cached tree.
+//
+// Cache invalidation on size change is covered by
+// TestP1SiblingASTCacheInvalidatesOnSizeChange below.
+func TestP1SiblingASTCacheReusesParsedTrees(t *testing.T) {
+	p := transpiler.NewAntlrGalaParser()
+	searchPaths := getStdSearchPath()
+
+	tmpDir := t.TempDir()
+
+	file1 := `package demo
+
+struct Point(X int, Y int)
+`
+	file2 := `package demo
+
+struct Label(Text string)
+`
+	file1Path := filepath.Join(tmpDir, "f1.gala")
+	file2Path := filepath.Join(tmpDir, "f2.gala")
+	require.NoError(t, os.WriteFile(file1Path, []byte(file1), 0644))
+	require.NoError(t, os.WriteFile(file2Path, []byte(file2), 0644))
+
+	a := analyzer.NewGalaAnalyzer(p, searchPaths)
+
+	// First Analyze — populates the sibling cache for tmpDir.
+	tree1, err := p.Parse(file1)
+	require.NoError(t, err)
+	ast1, err := a.Analyze(tree1, file1Path)
+	require.NoError(t, err)
+	require.Contains(t, ast1.Types, "demo.Label",
+		"sibling Label should be resolved via directory scan on first call")
+
+	// Corrupt f2.gala with bytes that would fail to parse. The file
+	// count stays at 2, so the cache's dirSize validity check passes
+	// and the cache is used. If the analyzer re-read and re-parsed
+	// f2 from disk, it would see the garbage and fail.
+	require.NoError(t, os.WriteFile(file2Path, []byte("!! not valid GALA !!"), 0644))
+
+	tree1b, err := p.Parse(file1)
+	require.NoError(t, err)
+	ast2, err := a.Analyze(tree1b, file1Path)
+	require.NoError(t, err,
+		"second Analyze call must reuse the cached sibling tree and not re-parse from disk (would have failed otherwise)")
+	assert.Contains(t, ast2.Types, "demo.Label",
+		"sibling Label should still resolve — cache hit preserved the original parse")
+}
+
+// TestP1SiblingASTCacheInvalidatesOnSizeChange verifies that when the
+// directory's .gala-file count changes between Analyze() calls, the
+// cache is dropped and a fresh scan picks up the new set. This is the
+// cheap-and-correct invalidation strategy P1 relies on.
+func TestP1SiblingASTCacheInvalidatesOnSizeChange(t *testing.T) {
+	p := transpiler.NewAntlrGalaParser()
+	searchPaths := getStdSearchPath()
+
+	tmpDir := t.TempDir()
+
+	file1 := `package demo
+
+struct Point(X int, Y int)
+`
+	file1Path := filepath.Join(tmpDir, "f1.gala")
+	require.NoError(t, os.WriteFile(file1Path, []byte(file1), 0644))
+
+	a := analyzer.NewGalaAnalyzer(p, searchPaths)
+
+	tree1, err := p.Parse(file1)
+	require.NoError(t, err)
+	ast1, err := a.Analyze(tree1, file1Path)
+	require.NoError(t, err)
+	// Only Point is present; no siblings yet.
+	assert.Contains(t, ast1.Types, "demo.Point")
+	assert.NotContains(t, ast1.Types, "demo.Widget")
+
+	// Add a new sibling after the cache was populated.
+	newSibling := filepath.Join(tmpDir, "f2.gala")
+	require.NoError(t, os.WriteFile(newSibling, []byte(`package demo
+
+struct Widget(Name string)
+`), 0644))
+
+	tree1b, err := p.Parse(file1)
+	require.NoError(t, err)
+	ast2, err := a.Analyze(tree1b, file1Path)
+	require.NoError(t, err)
+	// The new sibling appears — cache was invalidated by the size change.
+	assert.Contains(t, ast2.Types, "demo.Widget",
+		"new sibling should surface: cache must invalidate when .gala-file count changes")
+}
+
 func keysOf(m map[string]*transpiler.TypeMetadata) []string {
 	var keys []string
 	for k := range m {
