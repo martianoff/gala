@@ -32,7 +32,7 @@ func main() {
     val x = []int{1, 2, 3}
 }`,
 			expectError:  true,
-			errorContain: "slice literals are not supported",
+			errorContain: "GALA-E0007",
 		},
 		{
 			name: "map literal should fail",
@@ -42,7 +42,7 @@ func main() {
     val x = map[string]int{"a": 1, "b": 2}
 }`,
 			expectError:  true,
-			errorContain: "map literals are not supported",
+			errorContain: "GALA-E0008",
 		},
 		{
 			name: "empty map literal should fail",
@@ -52,7 +52,7 @@ func main() {
     val x = map[string]int{}
 }`,
 			expectError:  true,
-			errorContain: "map literals are not supported",
+			errorContain: "GALA-E0008",
 		},
 		{
 			name: "map type in function signature is allowed",

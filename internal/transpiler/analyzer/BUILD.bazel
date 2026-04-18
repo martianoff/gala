@@ -11,6 +11,7 @@ go_library(
     importpath = "martianoff/gala/internal/transpiler/analyzer",
     visibility = ["//:__subpackages__"],
     deps = [
+        "//galaerr",
         "//internal/parser/grammar",
         "//internal/transpiler",
         "//internal/transpiler/generator",

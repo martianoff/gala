@@ -21,6 +21,14 @@ Each code has a dedicated documentation page in this directory explaining:
 | `GALA-E0004` | Sealed variant arity mismatch | [GALA-E0004.md](GALA-E0004.md) |
 | `GALA-E0005` | Missing `Unapply` on extractor | [GALA-E0005.md](GALA-E0005.md) |
 | `GALA-E0006` | Multiple default cases | [GALA-E0006.md](GALA-E0006.md) |
+| `GALA-E0007` | Slice literal not supported | [GALA-E0007.md](GALA-E0007.md) |
+| `GALA-E0008` | Map literal not supported | [GALA-E0008.md](GALA-E0008.md) |
+| `GALA-E0009` | Unknown pattern type | [GALA-E0009.md](GALA-E0009.md) |
+| `GALA-E0010` | Duplicate package name in directory | [GALA-E0010.md](GALA-E0010.md) |
+| `GALA-E0011` | Type redefined | [GALA-E0011.md](GALA-E0011.md) |
+| `GALA-E0012` | Method redefined | [GALA-E0012.md](GALA-E0012.md) |
+| `GALA-E0013` | Non-defaulted parameter after defaulted parameter | [GALA-E0013.md](GALA-E0013.md) |
+| `GALA-E0014` | Default expression type mismatch | [GALA-E0014.md](GALA-E0014.md) |
 
 ## Adding a new code
 

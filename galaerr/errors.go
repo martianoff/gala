@@ -102,6 +102,30 @@ const (
 
 	// E0006: multiple default cases in a single match expression.
 	CodeMultipleDefaults ErrorCode = "GALA-E0006"
+
+	// E0007: slice literal in GALA source; slices are not a first-class literal.
+	CodeSliceLiteralNotSupported ErrorCode = "GALA-E0007"
+
+	// E0008: map literal in GALA source; maps are not a first-class literal.
+	CodeMapLiteralNotSupported ErrorCode = "GALA-E0008"
+
+	// E0009: pattern AST node the transformer does not recognize (defensive).
+	CodeUnknownPatternType ErrorCode = "GALA-E0009"
+
+	// E0010: sibling .gala files in the same directory declare different packages.
+	CodeDuplicatePackageName ErrorCode = "GALA-E0010"
+
+	// E0011: type with the same name declared more than once in a package.
+	CodeTypeRedefinition ErrorCode = "GALA-E0011"
+
+	// E0012: method with the same name declared more than once on a type.
+	CodeMethodRedefinition ErrorCode = "GALA-E0012"
+
+	// E0013: non-defaulted parameter follows a parameter with a default value.
+	CodeParamMissingDefaultAfterDefault ErrorCode = "GALA-E0013"
+
+	// E0014: default value expression type does not match the parameter type.
+	CodeParamDefaultTypeMismatch ErrorCode = "GALA-E0014"
 )
 
 // MultiError collects multiple GALA errors.
