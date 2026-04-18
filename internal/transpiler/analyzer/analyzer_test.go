@@ -472,6 +472,115 @@ func (p Person) Greet() string = fmt.Sprintf("Hello %s", p.Name)
 	})
 }
 
+// TestT4SiblingExtractionSkipsMainAndTest encodes the foot-gun that
+// directory-discovered sibling files must NOT be pulled in when the
+// current file is in a `main` or `test` package. In those packages,
+// sibling `.gala` files are independent programs sharing a directory
+// (the canonical example is `examples/`), so cross-contaminating their
+// metadata would pollute type resolution with unrelated packages.
+//
+// The live skip lives at analyzer.go:~909 in the directory-discovery
+// branch. This test exercises the skip by placing two main-package
+// files in the same directory with conflicting type definitions and
+// asserting that analysis succeeds (the conflict is NOT surfaced
+// because the sibling is not scanned).
+func TestT4SiblingExtractionSkipsMainAndTest(t *testing.T) {
+	p := transpiler.NewAntlrGalaParser()
+	searchPaths := getStdSearchPath()
+
+	t.Run("main package does not scan siblings", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		// Two independent "main" programs sharing a directory — the
+		// canonical examples/ layout. If the analyzer scanned siblings
+		// for main, it would see the duplicate Foo definition and
+		// emit GALA-E0011; the skip should prevent that.
+		file1 := `package main
+
+struct Foo(A int)
+
+func main() {
+    val f = Foo(1)
+    _ = f
+}
+`
+		file2 := `package main
+
+struct Foo(B string)
+
+func main() {
+    val g = Foo("hello")
+    _ = g
+}
+`
+		file1Path := filepath.Join(tmpDir, "prog1.gala")
+		file2Path := filepath.Join(tmpDir, "prog2.gala")
+		require.NoError(t, os.WriteFile(file1Path, []byte(file1), 0644))
+		require.NoError(t, os.WriteFile(file2Path, []byte(file2), 0644))
+
+		a := analyzer.NewGalaAnalyzer(p, searchPaths)
+		tree, err := p.Parse(file1)
+		require.NoError(t, err)
+		_, err = a.Analyze(tree, file1Path)
+		assert.NoError(t, err,
+			"main-package sibling scanning must be skipped; otherwise prog2's Foo would collide with prog1's")
+	})
+
+	t.Run("test package does not scan siblings", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		// Two test-package programs in the same directory.
+		file1 := `package test
+
+struct Bar(X int)
+`
+		file2 := `package test
+
+struct Bar(Y string)
+`
+		file1Path := filepath.Join(tmpDir, "t1.gala")
+		file2Path := filepath.Join(tmpDir, "t2.gala")
+		require.NoError(t, os.WriteFile(file1Path, []byte(file1), 0644))
+		require.NoError(t, os.WriteFile(file2Path, []byte(file2), 0644))
+
+		a := analyzer.NewGalaAnalyzer(p, searchPaths)
+		tree, err := p.Parse(file1)
+		require.NoError(t, err)
+		_, err = a.Analyze(tree, file1Path)
+		assert.NoError(t, err,
+			"test-package sibling scanning must be skipped")
+	})
+
+	t.Run("library package DOES scan siblings (control)", func(t *testing.T) {
+		// The inverse assertion: for a normal library package, sibling
+		// scanning IS active, so a duplicate type across files DOES
+		// surface as GALA-E0011. This keeps the skip narrow and
+		// guards against an over-broad regression.
+		tmpDir := t.TempDir()
+		file1 := `package mylib
+
+struct Widget(A int)
+`
+		file2 := `package mylib
+
+struct Widget(B string)
+`
+		file1Path := filepath.Join(tmpDir, "f1.gala")
+		file2Path := filepath.Join(tmpDir, "f2.gala")
+		require.NoError(t, os.WriteFile(file1Path, []byte(file1), 0644))
+		require.NoError(t, os.WriteFile(file2Path, []byte(file2), 0644))
+
+		a := analyzer.NewGalaAnalyzer(p, searchPaths)
+		tree, err := p.Parse(file1)
+		require.NoError(t, err)
+		_, err = a.Analyze(tree, file1Path)
+		require.Error(t, err,
+			"library sibling scanning should fire redefinition error")
+		assert.Contains(t, err.Error(), "GALA-E0011")
+		assert.Contains(t, err.Error(), "Widget")
+	})
+}
+
 func keysOf(m map[string]*transpiler.TypeMetadata) []string {
 	var keys []string
 	for k := range m {
