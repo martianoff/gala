@@ -40,8 +40,16 @@ class GalaAnnotator : Annotator {
         val TYPE_PARAMETER = TextAttributesKey.createTextAttributesKey(
             "GALA_TYPE_PARAMETER", DefaultLanguageHighlighterColors.CLASS_NAME
         )
+        // Fallback to INSTANCE_FIELD: its foreground is explicitly set in
+        // the stock Default/Darcula schemes (purple, italic), so it
+        // overrides the lexer's STRING green even when no bundled GALA
+        // color scheme is active. TEMPLATE_LANGUAGE_COLOR only tints the
+        // background — STRING's foreground leaks through, making ${...}
+        // visually indistinguishable from the surrounding string. The
+        // bundled colorSchemes/*.xml set explicit foreground on top of
+        // this fallback.
         val INTERPOLATION_VAR = TextAttributesKey.createTextAttributesKey(
-            "GALA_INTERPOLATION_VAR", DefaultLanguageHighlighterColors.TEMPLATE_LANGUAGE_COLOR
+            "GALA_INTERPOLATION_VAR", DefaultLanguageHighlighterColors.INSTANCE_FIELD
         )
 
         private val BUILTIN_TYPE_NAMES = setOf(
