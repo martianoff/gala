@@ -10,6 +10,7 @@ go_library(
         "hover.go",
         "inlay_hints.go",
         "server.go",
+        "signature_help.go",
         "symbols.go",
         "typeatpos.go",
     ],
@@ -19,6 +20,7 @@ go_library(
         "//galaerr",
         "//internal/build",
         "//internal/depman/mod",
+        "//internal/parser/grammar",
         "//internal/transpiler",
         "//internal/transpiler/analyzer",
         "//internal/transpiler/generator",
@@ -34,6 +36,7 @@ go_test(
     srcs = [
         "error_lines_test.go",
         "server_test.go",
+        "signature_help_test.go",
         "typeatpos_test.go",
     ],
     data = [
