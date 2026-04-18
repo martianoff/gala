@@ -344,14 +344,19 @@ func (l List[T]) Collect[U any](pf func(T) Option[U]) List[U] {
 }
 
 // Concat returns a new list containing all elements of this list followed by
-// all elements of the other iterable.
+// all elements of the other iterable. O(n + m) where n = this length, m = other length.
+//
+// The obvious implementation — `Append`ing each other-element onto a growing
+// accumulator — is O(m^2) because Append walks the accumulator every call.
+// Instead, prepend each element onto `acc` (O(1)) and reverse at the end (O(m)),
+// then AppendAll onto the receiver (O(n)). Net: O(n + m) with one allocation
+// per input element.
 func (l List[T]) Concat(other Iterable[T]) List[T] {
-    // First collect other's elements into a temporary list
-    var otherList = emptyList[T]()
+    var acc = emptyList[T]()
     other.ForEach((elem T) => {
-        otherList = otherList.Append(elem)
+        acc = acc.Prepend(elem)
     })
-    return l.AppendAll(otherList)
+    return l.AppendAll(acc.Reverse())
 }
 
 // Filter returns a new list with only elements that satisfy the predicate.
@@ -368,11 +373,25 @@ func (l List[T]) Filter(p func(T) bool) List[T] {
 // FilterNot returns a new list with elements that do not satisfy the predicate.
 func (l List[T]) FilterNot(p func(T) bool) List[T] = l.Filter((elem T) => !p(elem))
 
-// Partition splits the list into two lists based on a predicate.
+// Partition splits the list into two lists based on a predicate. O(n).
+//
+// The obvious implementation — `(l.Filter(p), l.FilterNot(p))` — walks the
+// list twice (2n) and builds two intermediate structures. This single-pass
+// version traverses once, prepending matches to `left` and non-matches to
+// `right`, then reverses both for order preservation (still O(n)).
 func (l List[T]) Partition(p func(T) bool) Tuple[List[T], List[T]] {
-    val left = l.Filter(p)
-    val right = l.FilterNot(p)
-    return (left, right)
+    var left = emptyList[T]()
+    var right = emptyList[T]()
+    var current = l
+    for !current.isEmpty {
+        if p(current.head) {
+            left = left.Prepend(current.head)
+        } else {
+            right = right.Prepend(current.head)
+        }
+        current = *current.tail
+    }
+    return (left.Reverse(), right.Reverse())
 }
 
 // FoldLeft applies a binary operator from left to right.

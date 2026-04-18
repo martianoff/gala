@@ -333,6 +333,13 @@ gala_test(
 )
 
 gala_test(
+    name = "list_concat_partition_order",
+    src = "list_concat_partition_order.gala",
+    expected = "list_concat_partition_order.out",
+    deps = ["//collection_immutable"],
+)
+
+gala_test(
     name = "seq_pattern_match",
     src = "seq_pattern_match.gala",
     expected = "seq_pattern_match.out",

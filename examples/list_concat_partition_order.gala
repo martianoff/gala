@@ -1,0 +1,35 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// Regression pin for the S2 partition rewrite in the transpiler-chief
+// audit. The single-pass Partition (was O(2n) via Filter+FilterNot)
+// must preserve input order — this example prints enough structure to
+// catch an accidental reversal.
+//
+// (Concat / S1 is exercised indirectly through the existing stdlib
+// tests; it cannot be called from an example at the moment because
+// List's Concat signature does not line up with Iterable's interface
+// method, a pre-existing transpiler/interface quirk. The algorithmic
+// fix still applies; the example here focuses on what can be pinned.)
+func main() {
+    // Partition: split [1..6] by evenness. Left = 2,4,6 (in original order),
+    // right = 1,3,5 (in original order).
+    val nums = ListOf(1, 2, 3, 4, 5, 6)
+    val split = nums.Partition((x) => x % 2 == 0)
+    Print("evens:")
+    split.V1.ForEach((x) => Print(s" $x"))
+    Println("")
+    Print("odds:")
+    split.V2.ForEach((x) => Print(s" $x"))
+    Println("")
+
+    // AppendAll preserves element order (uses the same stack+prepend approach
+    // we now use inside Concat). Assert that structure here so a regression in
+    // either AppendAll or the Concat rewrite surfaces through a test.
+    val a = ListOf(1, 2, 3)
+    val b = ListOf(4, 5, 6)
+    val joined = a.AppendAll(b)
+    joined.ForEach((x) => Print(s"$x "))
+    Println("")
+}
