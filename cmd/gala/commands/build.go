@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -63,6 +64,16 @@ func runBuild(cmd *cobra.Command, args []string) {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
+	}
+
+	// If the argument points to a subdirectory or file inside the project,
+	// set it as source dir for multi-package builds (e.g., `gala build examples/hello`).
+	absArg, _ := filepath.Abs(projectDir)
+	if info, err := os.Stat(absArg); err == nil && !info.IsDir() {
+		absArg = filepath.Dir(absArg)
+	}
+	if absArg != absProjectDir {
+		builder.SetSourceDir(absArg)
 	}
 
 	// Run build
