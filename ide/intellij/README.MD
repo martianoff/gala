@@ -49,13 +49,13 @@ The plugin uses the [antlr4-intellij-adaptor](https://github.com/antlr/antlr4-in
 
 ### Install the LSP Server
 
-The plugin connects to `gala-lsp` for advanced features (diagnostics, hover, cross-file navigation, inlay hints).
+The plugin connects to the `gala` CLI for advanced features (diagnostics, hover, cross-file navigation, inlay hints). The LSP is now a subcommand of the main CLI — `gala lsp` — so there's no separate binary to install.
 
-1. Build: `bazel build //cmd/gala-lsp:gala-lsp`
-2. Copy to PATH: `cp bazel-bin/cmd/gala-lsp/gala-lsp_/gala-lsp ~/.local/bin/` (or set `GALA_LSP_PATH`)
-3. Restart GoLand — the LSP server starts automatically when a `.gala` file is opened
+1. Install the `gala` CLI: download from [Releases](https://github.com/martianoff/gala/releases) or build via `bazel build //cmd/gala:gala` and place the binary on your `PATH`.
+2. Override with the `GALA_PATH` environment variable if the CLI lives outside `PATH`.
+3. Restart GoLand — the LSP server starts automatically when a `.gala` file is opened.
 
-### LSP Server Features (via `gala-lsp`)
+### LSP Server Features (via `gala lsp`)
 
 | Feature | Description |
 |---------|-------------|

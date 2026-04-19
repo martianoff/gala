@@ -159,16 +159,35 @@ val dateRegex = regex.MustCompile("(\\d{4})-(\\d{2})-(\\d{2})")
 
 ## Quick Start
 
+**New to GALA?** Try it instantly in the [browser playground](https://gala-playground.fly.dev) — no install. Or follow the full [Getting Started guide](https://martianoff.github.io/gala/getting-started/).
+
 ### 1. Install
 
-Download a pre-built binary from [Releases](https://github.com/martianoff/gala/releases), or build from source:
+Download a pre-built binary from [Releases](https://github.com/martianoff/gala/releases), rename it to `gala` (or `gala.exe` on Windows), and add it to your `PATH`.
+
+GALA transpiles to Go, so it needs [Go 1.25+](https://go.dev/dl/) on your `PATH` to compile programs. Install Go first if you don't have it.
+
+Or build from source:
 
 ```bash
 git clone https://github.com/martianoff/gala.git && cd gala
 bazel build //cmd/gala:gala
 ```
 
-### 2. Write
+Verify the install:
+
+```bash
+gala version
+```
+
+### 2. Create a project
+
+```bash
+mkdir hello && cd hello
+gala mod init example.com/hello
+```
+
+Write `main.gala`:
 
 ```gala
 package main
@@ -188,14 +207,15 @@ func main() {
 ### 3. Run
 
 ```bash
-gala run main.gala                        # Transpile + compile + run
-gala build                                # Build project to binary
-gala test                                 # Run tests
-gala run examples/hello/main.gala         # Run subdirectory executable
+gala run main.gala     # Transpile + compile + run
+gala build             # Build project to a binary
+gala test              # Run tests
 
-# Or with Bazel (recommended for larger projects)
+# Or with Bazel (for larger projects)
 bazel build //... && bazel test //...
 ```
+
+**Need help?** Ask in [GitHub Discussions](https://github.com/martianoff/gala/discussions).
 
 ---
 
@@ -506,6 +526,10 @@ Download from [Releases](https://github.com/martianoff/gala/releases):
 | macOS (x64) | `gala-darwin-amd64` |
 | macOS (Apple Silicon) | `gala-darwin-arm64` |
 | Windows (x64) | `gala-windows-amd64.exe` |
+
+After downloading, rename the binary to `gala` (or `gala.exe` on Windows) and add it to your `PATH`.
+
+**Prerequisite:** GALA needs [Go 1.25+](https://go.dev/dl/) on your `PATH` to compile programs. Install Go before running `gala build` or `gala run`.
 
 ### Build from Source
 
