@@ -874,8 +874,13 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 									"remove the duplicate method or rename it",
 								)
 							}
-							// Preserve IsGeneric if it was pre-populated
-							methodMeta.IsGeneric = existing.IsGeneric
+							// Merge IsGeneric: preserve a pre-populated flag (e.g. from a
+							// sibling-metadata pass) without clobbering a fresh true that
+							// causesInstantiationCycle just set. Either source may legitimately
+							// flag the method as needing function-form generation; once flagged,
+							// never flip back to false (Go generation would emit method syntax
+							// against a function definition).
+							methodMeta.IsGeneric = methodMeta.IsGeneric || existing.IsGeneric
 						}
 						methodMeta.DefinedIn = filePath
 						typeMeta.Methods[methodName] = methodMeta
@@ -2467,6 +2472,18 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 
 				if ctx.Signature().Type_() != nil {
 					methodMeta.ReturnType = a.resolveTypeWithParams(ctx.Signature().Type_().GetText(), pkgName, allTypeParams)
+					// Mirror the section-2 IsGeneric detection so that sibling-extracted
+					// methods carry the same function-form flag as methods analyzed
+					// directly. Without this, merging a sibling's Analyze result (with
+					// IsGeneric=true) on top of an earlier sibling's result (with
+					// IsGeneric=false from extraction here) would clobber the true
+					// flag and the transpiler would emit method-syntax calls against
+					// a standalone-function definition.
+					recvTypeStr := recvCtx.Type_().GetText()
+					retTypeStr := ctx.Signature().Type_().GetText()
+					if a.causesInstantiationCycle(recvTypeStr, retTypeStr) {
+						methodMeta.IsGeneric = true
+					}
 				}
 				if ctx.Signature().Parameters() != nil {
 					pCtx := ctx.Signature().Parameters().(*grammar.ParametersContext)
@@ -2498,6 +2515,15 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 				if typeMeta, ok := richAST.Types[fullBaseType]; ok {
 					if _, exists := typeMeta.Methods[methodName]; !exists {
 						typeMeta.Methods[methodName] = methodMeta
+					} else if !typeMeta.Methods[methodName].IsGeneric && methodMeta.IsGeneric {
+						// Upgrade IsGeneric=false to true if sibling extraction
+						// detects the instantiation-cycle pattern that section 2
+						// may have missed (e.g. when the receiver type wasn't yet
+						// populated in this file's richAST). IsGeneric is
+						// append-only: once any pass sets it true, later passes
+						// keep it true. Fixes cross-package stdlib generic method
+						// dispatch (Array.ZipWithIndex, Array.Grouped, etc.).
+						typeMeta.Methods[methodName].IsGeneric = true
 					}
 				} else {
 					richAST.Types[fullBaseType] = &transpiler.TypeMetadata{
@@ -2784,3 +2810,4 @@ func (a *galaAnalyzer) filterSiblingsForCurrentFile(
 	}
 	return outTrees, outPaths, nil
 }
+
