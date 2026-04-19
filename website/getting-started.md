@@ -48,7 +48,16 @@ The compiled binary will be at `bazel-bin/cmd/gala/gala_/gala`.
 
 ## Hello World
 
-### 1. Write
+### 1. Create a project
+
+```bash
+mkdir hello && cd hello
+gala mod init example.com/hello
+```
+
+`gala mod init` creates a `gala.mod` file; the module path is any unique identifier you choose.
+
+### 2. Write
 
 Create a file called `main.gala`:
 
@@ -62,7 +71,7 @@ func main() {
 
 `Println` is a built-in function -- no imports needed.
 
-### 2. Run
+### 3. Run
 
 ```bash
 gala run main.gala
@@ -74,7 +83,7 @@ Output:
 Hello, GALA!
 ```
 
-That is it. GALA transpiles your code to Go, compiles it, and runs the binary.
+That is it. GALA transpiles your code to Go, compiles it, and runs the binary. (Make sure [Go 1.25+](https://go.dev/dl/) is on your `PATH` — GALA shells out to `go build` under the hood.)
 
 ---
 

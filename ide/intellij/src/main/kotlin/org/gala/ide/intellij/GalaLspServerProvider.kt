@@ -11,7 +11,7 @@ import java.io.File
  * LSP server provider for GALA.
  * Starts `gala lsp` when a .gala file is opened.
  *
- * The gala CLI is expected to be on PATH (installed via `gala install`).
+ * The gala CLI is expected to be on PATH (see project README for install instructions).
  * Override with GALA_PATH environment variable.
  */
 class GalaLspServerSupportProvider : LspServerSupportProvider {

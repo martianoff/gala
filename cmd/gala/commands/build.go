@@ -54,7 +54,7 @@ func runBuild(cmd *cobra.Command, args []string) {
 	absProjectDir, err := findProjectRoot(projectDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		fmt.Fprintln(os.Stderr, "Run 'gala mod init' to create one.")
+		fmt.Fprintln(os.Stderr, "Run 'gala mod init <module-path>' to create one. Example: gala mod init example.com/myapp")
 		os.Exit(1)
 	}
 
