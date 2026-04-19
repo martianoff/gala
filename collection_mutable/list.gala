@@ -509,10 +509,23 @@ func (l *List[T]) Filter(p func(T) bool) *List[T] {
 // FilterNot returns a new List with elements that do not satisfy the predicate.
 func (l *List[T]) FilterNot(p func(T) bool) *List[T] = l.Filter((elem T) => !p(elem))
 
-// Partition splits the list into two based on a predicate.
+// Partition splits the list into two based on a predicate. O(n).
+//
+// The obvious implementation — `(l.Filter(p), l.FilterNot(p))` — walks the
+// list twice (2n) and builds two intermediate structures. Single-pass version
+// walks once, Append is O(1) on mutable lists (tail pointer), so total is O(n).
 func (l *List[T]) Partition(p func(T) bool) Tuple[*List[T], *List[T]] {
-    val left = l.Filter(p)
-    val right = l.FilterNot(p)
+    var left = EmptyList[T]()
+    var right = EmptyList[T]()
+    var current = l.head
+    for current != nil {
+        if p(current.value) {
+            left.Append(current.value)
+        } else {
+            right.Append(current.value)
+        }
+        current = current.next
+    }
     return (left, right)
 }
 
