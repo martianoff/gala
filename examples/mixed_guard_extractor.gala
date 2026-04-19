@@ -1,0 +1,35 @@
+package main
+
+// L2 from the transpiler-chief audit: a single match expression can
+// combine bool-returning guards (IsZero) and Option-returning
+// extractors (NonZero) in its case list. The transpiler dispatches
+// each case on the method's return type — bool becomes an if-guard,
+// Option becomes IsDefined + Get — and both flows share the same
+// match body.
+
+type IsZero struct {}
+
+func (_ IsZero) Unapply(n int) bool = n == 0
+
+type NonZero struct {}
+
+func (_ NonZero) Unapply(n int) Option[int] {
+    if n == 0 {
+        return None[int]()
+    }
+    return Some(n)
+}
+
+func classify(n int) string = n match {
+    case IsZero()     => "zero"
+    case NonZero(v) if v < 0 => s"negative($v)"
+    case NonZero(v)   => s"positive($v)"
+    case _            => "impossible"
+}
+
+func main() {
+    Println(classify(0))
+    Println(classify(7))
+    Println(classify(-3))
+    Println(classify(1))
+}

@@ -340,6 +340,12 @@ gala_test(
 )
 
 gala_test(
+    name = "mixed_guard_extractor",
+    src = "mixed_guard_extractor.gala",
+    expected = "mixed_guard_extractor.out",
+)
+
+gala_test(
     name = "seq_pattern_match",
     src = "seq_pattern_match.gala",
     expected = "seq_pattern_match.out",

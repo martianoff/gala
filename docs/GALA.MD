@@ -812,6 +812,28 @@ val res = c match {
 
 Extractors can be nested: `case Some(Even(n)) => ...`. You can use the underscore `_` to skip variable bindings in any extractor: `case Some(_) => "Got something"`.
 
+##### Mixing guard and Option extractors in one match
+
+Boolean-returning and `Option`-returning extractors can appear side-by-side in the same `match` expression. The transpiler dispatches on the `Unapply` method's return type: `bool` becomes an `if`-style guard with no binding, `Option[T]` unwraps the inner value via `IsDefined` + `Get` and exposes it to the case body. This lets a single match express "shape" checks (guards) and "shape-plus-destructure" checks (extractors) without having to choose one style upfront.
+
+```gala
+type IsZero struct {}
+func (_ IsZero) Unapply(n int) bool = n == 0
+
+type NonZero struct {}
+func (_ NonZero) Unapply(n int) Option[int] =
+    if (n == 0) None[int]() else Some(n)
+
+func classify(n int) string = n match {
+    case IsZero()              => "zero"                // bool-return guard
+    case NonZero(v) if v < 0   => s"negative($v)"       // Option-return extractor + guard
+    case NonZero(v)            => s"positive($v)"       // Option-return extractor
+    case _                     => "impossible"
+}
+```
+
+See `examples/mixed_guard_extractor.gala` for a runnable version.
+
 ##### Sealed-Variant Pattern Arity
 
 Each variant pattern must bind the exact number of fields the variant
