@@ -1,0 +1,15 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+func main() {
+    val words = ArrayOf("a", "b", "a", "c", "b", "a")
+    val counts = words.GroupMapReduce(
+        (w) => w,
+        (w) => 1,
+        (a, b) => a + b,
+    )
+    Println(counts["a"])
+    Println(counts["b"])
+    Println(counts["c"])
+}

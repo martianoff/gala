@@ -1,0 +1,25 @@
+package main
+
+import . "martianoff/gala/std"
+
+struct User(Id int, Name string)
+
+func find(id int) Option[User] {
+    return id match {
+        case 0 => None()
+        case _ => Some(User(Id = id, Name = s"user-$id"))
+    }
+}
+
+func main() {
+    val u1 = find(0)
+    val u2 = find(42)
+    u1 match {
+        case None() => Println("none")
+        case Some(u) => Println(u.Name)
+    }
+    u2 match {
+        case None() => Println("none")
+        case Some(u) => Println(u.Name)
+    }
+}
