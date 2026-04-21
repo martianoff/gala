@@ -1,0 +1,5 @@
+a: a a a len=3
+b: b b len=2
+c: c len=1
+evens: 2 4 6
+odds: 1 3 5

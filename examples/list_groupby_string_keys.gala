@@ -1,0 +1,40 @@
+package main
+
+import (
+    . "martianoff/gala/collection_immutable"
+)
+
+// Regression test for gap #6: List.GroupBy with string keys panics in
+// AppendAll. A zero-valued List[T] returned by map[K]List[T] lookups has
+// isEmpty = false (Go bool zero value), which makes Append iterate over a
+// nil tail pointer. GroupBy must treat missing keys as empty lists.
+//
+// We stringify each bucket via FoldLeft (returns a concrete type, dodges
+// a separate lambda-inference quirk on map-indexed List values) so this
+// test pins the GroupBy fix on its own.
+func describeString(prefix string, l List[string]) string {
+    return prefix + ":" + l.FoldLeft("", (acc, w) => acc + " " + w) + " len=" + s"${l.Size()}"
+}
+
+func describeInt(prefix string, l List[int]) string {
+    return prefix + ":" + l.FoldLeft("", (acc, x) => acc + " " + s"$x")
+}
+
+func main() {
+    // String keys — the original panic case.
+    val words = ListOf("a", "b", "a", "c", "b", "a")
+    val grouped = words.GroupBy((w) => w)
+
+    val bucketA = grouped["a"]
+    val bucketB = grouped["b"]
+    val bucketC = grouped["c"]
+    Println(describeString("a", bucketA))
+    Println(describeString("b", bucketB))
+    Println(describeString("c", bucketC))
+
+    // Int keys — baseline that must keep working.
+    val nums = ListOf(1, 2, 3, 4, 5, 6)
+    val byParity = nums.GroupBy((n) => n % 2)
+    Println(describeInt("evens", byParity[0]))
+    Println(describeInt("odds", byParity[1]))
+}

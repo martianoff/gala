@@ -340,6 +340,13 @@ gala_test(
 )
 
 gala_test(
+    name = "list_groupby_string_keys",
+    src = "list_groupby_string_keys.gala",
+    expected = "list_groupby_string_keys.out",
+    deps = ["//collection_immutable"],
+)
+
+gala_test(
     name = "mixed_guard_extractor",
     src = "mixed_guard_extractor.gala",
     expected = "mixed_guard_extractor.out",
