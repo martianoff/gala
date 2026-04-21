@@ -1,4 +1,4 @@
-load("@rules_go//go:def.bzl", "go_library")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "commands",
@@ -15,6 +15,7 @@ go_library(
         "mod_tidy.go",
         "mod_update.go",
         "mod_verify.go",
+        "new.go",
         "project.go",
         "root.go",
         "run.go",
@@ -42,4 +43,10 @@ go_library(
         "@com_github_owenrumney_go_lsp//server",
         "@com_github_spf13_cobra//:cobra",
     ],
+)
+
+go_test(
+    name = "commands_test",
+    srcs = ["new_test.go"],
+    embed = [":commands"],
 )

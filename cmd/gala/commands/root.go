@@ -20,6 +20,7 @@ This tool provides:
   - Dependency management (gala mod)
 
 Usage:
+  gala new <name>               Scaffold a new GALA project
   gala build                    Build project to binary
   gala run                      Build and run project
   gala test                     Run tests in project
@@ -83,6 +84,7 @@ func init() {
 	rootCmd.AddCommand(cleanCmd)
 	rootCmd.AddCommand(testCmd)
 	rootCmd.AddCommand(cacheCmd)
+	rootCmd.AddCommand(newCmd)
 
 	// Add global flags that mirror transpile flags for backward compatibility
 	rootCmd.Flags().StringVarP(&transpileInput, "input", "i", "", "Path to the input .gala file")
