@@ -21,7 +21,9 @@ embedPatterns: STRING (',' STRING)*;
 structShorthandDeclaration: 'struct' identifier parameters;
 
 sealedTypeDeclaration: SEALED 'type' identifier (typeParameters)? '{' sealedCase+ '}';
-sealedCase: CASE identifier '(' sealedCaseFieldList? ')';
+// Parentheses are optional for zero-field variants: `case Debug` and `case Debug()` are both valid.
+// Variants with fields still require parentheses: `case Add(l Expr, r Expr)`.
+sealedCase: CASE identifier ('(' sealedCaseFieldList? ')')?;
 sealedCaseFieldList: sealedCaseField (',' sealedCaseField)* ','?;
 sealedCaseField: identifier type;
 

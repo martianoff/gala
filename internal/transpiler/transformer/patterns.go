@@ -206,6 +206,24 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 	// with an identifier, but they're not simple bindings.
 	if p := t.getPrimaryFromExpression(patExprCtx); p != nil && p.Identifier() != nil {
 		name := p.Identifier().GetText()
+
+		// Before treating as a simple binding, check if the identifier refers to a
+		// zero-field extractor (e.g., sealed variant `case Debug`). Writing `case Debug =>`
+		// in a match should be equivalent to `case Debug() =>` when Debug is a sealed
+		// case companion whose Unapply returns bool.
+		if meta := t.getTypeMeta(name); meta != nil {
+			if unapplyMeta, hasUnapply := meta.Methods["Unapply"]; hasUnapply {
+				// Only route through the extractor path for zero-arg extractors — i.e.,
+				// Unapply returns bool (guard extractor) and the type takes no type
+				// parameters. That is precisely the shape generated for zero-field
+				// sealed variants. For 1+-field sealed variants (Option-returning),
+				// a bare identifier legitimately remains a simple binding.
+				if basic, ok := unapplyMeta.ReturnType.(transpiler.BasicType); ok && basic.Name == "bool" && len(meta.TypeParams) == 0 {
+					return t.generateDirectUnapplyPattern(name, meta, nil, unapplyMeta, objExpr, nil, matchedType)
+				}
+			}
+		}
+
 		t.currentScope.vals[name] = false // Treat as var to avoid .Get() wrapping
 		// Set the type of the bound variable to the matched type
 		if matchedType != nil && !matchedType.IsNil() {
