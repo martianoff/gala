@@ -404,6 +404,15 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		return nil, err
 	}
 
+	// Reject bare `return` inside a value-producing match (the IIFE would need
+	// to return a concrete type, but a bare return produces none). See GALA-E0015.
+	{
+		startLine, startCol := ctx.GetStart().GetLine(), ctx.GetStart().GetColumn()
+		if err := t.validateNoBareReturnsInValueMatch(clauses, defaultBody, resultType, startLine, startCol); err != nil {
+			return nil, err
+		}
+	}
+
 	// Note: We keep result types with unresolved type parameters because they are valid Go
 	// when inside a generic function where the type parameters are in scope.
 

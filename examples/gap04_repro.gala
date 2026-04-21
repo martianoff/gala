@@ -1,0 +1,26 @@
+package main
+
+import "os"
+
+// Positive form of gap #4 (GALA-E0015): a match-as-value that needs to early-
+// exit from the outer function cannot use a bare `return` inside a branch,
+// because the generated IIFE has a non-void return type. Instead, destructure
+// the Try first and early-return before the match.
+//
+// The negative form — a bare `return` inside a value-producing match — is
+// exercised as a transpile-error test in
+// internal/transpiler/transformer/error_codes_test.go (GALA-E0015).
+
+func run(path string) {
+    val result = Try(() => os.ReadFile(path))
+    if (result.IsFailure()) {
+        Println("error: file not found")
+        return
+    }
+    val data = string(result.Get())
+    Println(data)
+}
+
+func main() {
+    run("nonexistent-file.txt")
+}
