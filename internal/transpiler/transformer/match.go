@@ -147,6 +147,90 @@ func (t *galaASTTransformer) isSealedExhaustive(matchedType transpiler.Type, pat
 	return true, len(missing) == 0, missing
 }
 
+// containsBareReturn reports whether any statement in stmts (recursively) is a
+// `return` with no results. It is used to detect "bare return" inside a branch
+// of a match-as-value expression, which would generate invalid Go because the
+// generated IIFE has a non-void return type.
+//
+// Only structural containers are traversed (blocks, if/else, the top-level
+// case body). Constructs that establish their own return scope (func literals,
+// nested IIFEs) are NOT traversed, since a bare return inside a nested lambda
+// exits that lambda, not the enclosing match IIFE.
+func containsBareReturn(stmts []ast.Stmt) bool {
+	for _, s := range stmts {
+		if stmtContainsBareReturn(s) {
+			return true
+		}
+	}
+	return false
+}
+
+func stmtContainsBareReturn(stmt ast.Stmt) bool {
+	switch s := stmt.(type) {
+	case *ast.ReturnStmt:
+		return len(s.Results) == 0
+	case *ast.BlockStmt:
+		return containsBareReturn(s.List)
+	case *ast.IfStmt:
+		if s.Body != nil && containsBareReturn(s.Body.List) {
+			return true
+		}
+		if s.Else != nil && stmtContainsBareReturn(s.Else) {
+			return true
+		}
+		return false
+	case *ast.LabeledStmt:
+		return stmtContainsBareReturn(s.Stmt)
+	}
+	return false
+}
+
+// validateNoBareReturnsInValueMatch rejects a match expression whose result is
+// used as a value (non-void) but whose case bodies contain a bare `return`.
+// Such a construct would emit Go like:
+//
+//	func(obj T) string { ...; return /* no value */ }(subject)
+//
+// which fails to compile with "not enough return values". The user intent is
+// ambiguous between "exit the outer function" and "exit the match IIFE", so we
+// reject it and point at explicit rewrites in docs/errors/GALA-E0015.md.
+//
+// Called after case bodies have been transformed and the common result type
+// has been inferred; no-ops when resultType is void/nil.
+func (t *galaASTTransformer) validateNoBareReturnsInValueMatch(
+	clauses []ast.Stmt,
+	defaultBody []ast.Stmt,
+	resultType transpiler.Type,
+	startLine, startCol int,
+) error {
+	if resultType == nil || resultType.IsNil() {
+		return nil
+	}
+	if _, isVoid := resultType.(transpiler.VoidType); isVoid {
+		return nil
+	}
+	offender := false
+	for _, c := range clauses {
+		if stmtContainsBareReturn(c) {
+			offender = true
+			break
+		}
+	}
+	if !offender && containsBareReturn(defaultBody) {
+		offender = true
+	}
+	if !offender {
+		return nil
+	}
+	return galaerr.NewCodedSemanticError(
+		galaerr.CodeBareReturnInValueMatch,
+		startLine, startCol,
+		"bare `return` inside a match branch whose result is used as a value",
+		"the match is wrapped in a function that must return "+resultType.String()+
+			"; restructure to early-exit before the match, or use combinators like .Recover / .GetOrElse. See docs/errors/GALA-E0015.md",
+	)
+}
+
 // validateSealedVariantArity checks that each sealed-variant extractor pattern
 // binds the same number of fields as the variant declares. Wildcards and
 // binding names each count as one field. Patterns that do not target a known
@@ -495,6 +579,13 @@ func (t *galaASTTransformer) transformMatchClauses(ctx grammar.IExpressionContex
 	}
 	resultType, err := t.inferCommonResultType(resultTypes, casePatterns, matchCtx)
 	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	// Reject bare `return` inside a value-producing match (the IIFE would need
+	// to return a concrete type, but a bare return produces none). See GALA-E0015.
+	startLine, startCol := ctx.GetStart().GetLine(), ctx.GetStart().GetColumn()
+	if err := t.validateNoBareReturnsInValueMatch(clauses, defaultBody, resultType, startLine, startCol); err != nil {
 		return nil, nil, nil, err
 	}
 

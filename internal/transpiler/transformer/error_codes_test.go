@@ -165,6 +165,50 @@ func main() {
 			expectCode:     galaerr.CodeParamDefaultTypeMismatch,
 			expectContains: "default for parameter",
 		},
+		{
+			// Repro of fix/gap-04: a match used as a value (assigned to `val`)
+			// whose Failure branch ends with a bare `return` would previously
+			// emit invalid Go (the IIFE has return type string but returns no
+			// value). We now reject this at transpile time with GALA-E0015.
+			name: "GALA-E0015 bare return inside value-producing match (Try)",
+			input: `package main
+
+import "os"
+
+func run(path string) {
+    val data = Try(() => os.ReadFile(path)) match {
+        case Success(b)   => string(b)
+        case Failure(err) => {
+            Println(s"error: ${err.Error()}")
+            return
+        }
+    }
+    Println(data)
+}
+
+func main() { run("missing.txt") }`,
+			expectCode:     galaerr.CodeBareReturnInValueMatch,
+			expectContains: "bare `return`",
+		},
+		{
+			// Same shape with Option. The Some branch yields a value, the None
+			// branch bare-returns. Result type of the match is `int`, so the
+			// bare return is ambiguous and must be rejected.
+			name: "GALA-E0015 bare return inside value-producing match (Option)",
+			input: `package main
+
+func lookup(opt Option[int]) int {
+    val n = opt match {
+        case Some(v) => v
+        case None()  => { return }
+    }
+    return n * 2
+}
+
+func main() { lookup(None[int]()) }`,
+			expectCode:     galaerr.CodeBareReturnInValueMatch,
+			expectContains: "bare `return`",
+		},
 	}
 
 	for _, tc := range cases {
@@ -209,6 +253,63 @@ func main() {
 	out, err := trans.Transpile(input, "")
 	require.NoError(t, err)
 	assert.NotEmpty(t, out)
+}
+
+// TestGap04BareReturnRefactoredCompiles is the positive companion to the
+// GALA-E0015 cases above. The same intent (early-exit on Failure) expressed
+// via an early `if` before the match — rather than a bare `return` inside a
+// match branch — must compile cleanly.
+func TestGap04BareReturnRefactoredCompiles(t *testing.T) {
+	p := transpiler.NewAntlrGalaParser()
+	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
+	tr := transformer.NewGalaASTTransformer()
+	g := generator.NewGoCodeGenerator()
+	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+
+	// Refactored form: destructure with .IsFailure() / .Get() outside the
+	// match so the `return` is a top-level statement of `run`, not nested
+	// inside an IIFE.
+	input := `package main
+
+import "os"
+
+func run(path string) {
+    val result = Try(() => os.ReadFile(path))
+    if (result.IsFailure()) {
+        Println("error reading file")
+        return
+    }
+    Println(string(result.Get()))
+}
+
+func main() { run("missing.txt") }`
+	_, err := trans.Transpile(input, "")
+	require.NoError(t, err, "refactored form (early return before match) must compile")
+}
+
+// TestGap04BareReturnAllowedInVoidMatch guards against false positives:
+// GALA-E0015 must only fire when the match's result is a value. A match whose
+// every branch is side-effectful (VoidType) may contain bare returns because
+// the generated IIFE has no return type.
+func TestGap04BareReturnAllowedInVoidMatch(t *testing.T) {
+	p := transpiler.NewAntlrGalaParser()
+	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
+	tr := transformer.NewGalaASTTransformer()
+	g := generator.NewGoCodeGenerator()
+	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+
+	input := `package main
+
+func run(opt Option[int]) {
+    opt match {
+        case Some(n) => Println(n)
+        case None()  => { Println("nothing"); return }
+    }
+}
+
+func main() { run(Some(1)) }`
+	_, err := trans.Transpile(input, "")
+	require.NoError(t, err, "bare return is allowed inside void (side-effect) match branches")
 }
 
 // TestT10TypeVarSubstitutionDepthCap exercises the B8 guard. Build a

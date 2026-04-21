@@ -615,6 +615,15 @@ gala_test(
     expected = "match_return_iife.out",
 )
 
+# Gap #4 (GALA-E0015): a value-producing match with a bare `return` inside a
+# branch is rejected at transpile time. This example shows the positive form
+# (destructure with .IsFailure() and return before the match).
+gala_test(
+    name = "gap04_repro",
+    src = "gap04_repro.gala",
+    expected = "gap04_repro.out",
+)
+
 # FIX-053: NewImmutable[T](nil) explicit type param
 gala_test(
     name = "newimmutable_nil",

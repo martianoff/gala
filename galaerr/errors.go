@@ -126,6 +126,13 @@ const (
 
 	// E0014: default value expression type does not match the parameter type.
 	CodeParamDefaultTypeMismatch ErrorCode = "GALA-E0014"
+
+	// E0015: bare `return` inside a match branch that is used as a value.
+	// The match is wrapped in an IIFE whose return type is non-void, so a
+	// bare `return` would produce invalid Go. Users intending to early-exit
+	// the enclosing function must restructure the code (e.g., `.Recover`, or
+	// pattern-match on the value first and then return outside the match).
+	CodeBareReturnInValueMatch ErrorCode = "GALA-E0015"
 )
 
 // MultiError collects multiple GALA errors.
