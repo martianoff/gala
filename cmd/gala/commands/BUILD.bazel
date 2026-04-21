@@ -47,6 +47,12 @@ go_library(
 
 go_test(
     name = "commands_test",
-    srcs = ["new_test.go"],
+    srcs = [
+        "new_test.go",
+        "run_test.go",
+    ],
     embed = [":commands"],
+    deps = [
+        "@com_github_spf13_cobra//:cobra",
+    ],
 )

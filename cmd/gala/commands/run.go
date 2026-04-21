@@ -34,30 +34,39 @@ func init() {
 	runCmd.Flags().BoolVarP(&runVerbose, "verbose", "v", false, "Verbose output")
 }
 
-func runRun(cmd *cobra.Command, args []string) {
-	// Separate project directory from program arguments
-	projectDir := "."
-	var programArgs []string
-
-	// Find -- separator
-	dashDashIdx := -1
-	for i, arg := range args {
-		if arg == "--" {
-			dashDashIdx = i
-			break
-		}
-	}
-
-	if dashDashIdx >= 0 {
-		// Arguments before -- are for us
-		if dashDashIdx > 0 {
+// splitRunArgs separates the project directory from program arguments
+// using cobra's ArgsLenAtDash() to locate the `--` terminator.
+//
+// Cobra/pflag strips the `--` terminator from the args slice before
+// invoking Run, but records the split point via cmd.ArgsLenAtDash():
+//   - returns -1 when no `--` was present on the command line
+//   - returns the count of args *before* `--` otherwise
+//
+// So for `gala run main.gala -- hello world`:
+//
+//	args               = ["main.gala", "hello", "world"]
+//	argsLenAtDash      = 1
+//	projectDir         = "main.gala"
+//	programArgs        = ["hello", "world"]
+//
+// When no `--` is present, every positional is treated as the project
+// directory (only the first is used) and programArgs is empty.
+func splitRunArgs(args []string, argsLenAtDash int) (projectDir string, programArgs []string) {
+	projectDir = "."
+	if argsLenAtDash >= 0 {
+		// A `--` separator was present on the command line.
+		if argsLenAtDash > 0 {
 			projectDir = args[0]
 		}
-		// Arguments after -- are for the program
-		programArgs = args[dashDashIdx+1:]
+		programArgs = args[argsLenAtDash:]
 	} else if len(args) > 0 {
 		projectDir = args[0]
 	}
+	return projectDir, programArgs
+}
+
+func runRun(cmd *cobra.Command, args []string) {
+	projectDir, programArgs := splitRunArgs(args, cmd.ArgsLenAtDash())
 
 	// Resolve project root and optional source directory.
 	// If the argument is a .gala file or subdirectory, find gala.mod for deps
