@@ -83,6 +83,14 @@ func NewBuilder(projectDir string, stdlibVersion string, verbose bool) (*Builder
 // Otherwise, treats it as relative to the project directory.
 // For library packages (non-main), Build performs a compile check and returns "" with no error.
 func (b *Builder) Build(outputPath string) (string, error) {
+	// Step 0: Verify Go toolchain is on PATH before doing any work.
+	// GALA transpiles to Go, so `go build` is a hard prerequisite. Without
+	// this check users see a cryptic `exec: "go": executable file not found`
+	// error only after transpilation completes.
+	if err := ensureGoToolchain(); err != nil {
+		return "", err
+	}
+
 	// Step 1: Ensure workspace exists
 	if b.verbose {
 		fmt.Printf("Using workspace: %s\n", b.workspace.Dir)
@@ -857,9 +865,25 @@ func (b *Builder) isLibraryPackage() (bool, string) {
 	return false, ""
 }
 
+// ensureGoToolchain verifies that the Go toolchain is available on PATH.
+// Pre-built GALA binaries depend on `go build` to finish the compilation pipeline,
+// so if `go` is not on PATH we surface a clear actionable error before shelling
+// out — the raw exec error ("executable file not found in $PATH") does not
+// explain the prerequisite.
+func ensureGoToolchain() error {
+	if _, err := exec.LookPath("go"); err != nil {
+		return fmt.Errorf("Go 1.25+ is required on your PATH to build GALA programs (GALA transpiles to Go).\nInstall Go from https://go.dev/dl/ and try again")
+	}
+	return nil
+}
+
 // goCompileCheck runs `go build ./...` in the workspace without producing a binary.
 // This verifies that library packages compile correctly.
 func (b *Builder) goCompileCheck() error {
+	if err := ensureGoToolchain(); err != nil {
+		return err
+	}
+
 	if b.verbose {
 		fmt.Println("Running go build (compile check)...")
 	}
@@ -882,6 +906,10 @@ func (b *Builder) goCompileCheck() error {
 
 // goBuild runs `go build` in the workspace and returns the output path.
 func (b *Builder) goBuild(outputPath string) (string, error) {
+	if err := ensureGoToolchain(); err != nil {
+		return "", err
+	}
+
 	if b.verbose {
 		fmt.Println("Running go build...")
 	}
