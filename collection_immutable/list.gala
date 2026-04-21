@@ -559,20 +559,30 @@ func (l List[T]) PartitionMap[A any, B any](f func(T) Either[A, B]) Tuple[List[A
 }
 
 // GroupBy partitions this list into a map of lists according to a discriminator function.
+//
+// A zero-valued List[T] returned by a missing-key map lookup has isEmpty=false
+// and tail=nil (Go zero values), so calling Append on it would dereference
+// a nil tail. Branch on MapContains and start a fresh emptyList for new keys.
 func (l List[T]) GroupBy[K comparable](f func(T) K) map[K]List[T] {
     var result = go_interop.MapEmpty[K, List[T]]()
     var current = l
     for !current.isEmpty {
         val elem = current.head
         val key = f(elem)
-        val existing = result[key]
-        result[key] = existing.Append(elem)
+        if go_interop.MapContains(result, key) {
+            result[key] = result[key].Append(elem)
+        } else {
+            result[key] = consList[T](elem, emptyList[T]())
+        }
         current = *current.tail
     }
     return result
 }
 
 // GroupMap partitions elements and maps values according to discriminator and value functions.
+//
+// See GroupBy for why we must branch on MapContains instead of reading the
+// zero-valued List[V] back from the map.
 func (l List[T]) GroupMap[K comparable, V any](key func(T) K, value func(T) V) map[K]List[V] {
     var result = go_interop.MapEmpty[K, List[V]]()
     var current = l
@@ -580,8 +590,11 @@ func (l List[T]) GroupMap[K comparable, V any](key func(T) K, value func(T) V) m
         val elem = current.head
         val k = key(elem)
         val v = value(elem)
-        val existing = result[k]
-        result[k] = existing.Append(v)
+        if go_interop.MapContains(result, k) {
+            result[k] = result[k].Append(v)
+        } else {
+            result[k] = consList[V](v, emptyList[V]())
+        }
         current = *current.tail
     }
     return result
