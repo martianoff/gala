@@ -1,0 +1,11 @@
+{"id":1,"name":"Alice","email":"a@b.com"}
+{"id":2,"name":"Bob","email":null}
+decoded some: a@b.com
+decoded null: <none>
+decoded missing: <none>
+{"age":42,"ratio":0.5,"active":true}
+{"age":null,"ratio":null,"active":null}
+age: 42
+ratio: 0.5
+active: true
+empty-age: <none>

@@ -1498,6 +1498,19 @@ gala_test(
     ],
 )
 
+# FIX gap #12: Codec[T] must correctly handle Option[T] struct fields.
+# Encode: Some(v) -> value, None -> JSON null.
+# Decode: JSON null or missing field -> None, JSON value -> Some(value).
+gala_test(
+    name = "json_codec_option",
+    src = "json_codec_option.gala",
+    expected = "json_codec_option.out",
+    deps = [
+        "//collection_immutable",
+        "//json",
+    ],
+)
+
 # Regex pattern matching usage
 gala_test(
     name = "regex_usage",

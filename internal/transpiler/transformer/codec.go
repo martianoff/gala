@@ -224,7 +224,7 @@ func (t *galaASTTransformer) genWriteTo(config *structMetaConfig) *ast.FuncDecl 
 			Fun:  &ast.SelectorExpr{X: ast.NewIdent("w"), Sel: ast.NewIdent("WriteKey")},
 			Args: []ast.Expr{keyExpr},
 		}))
-		fieldStmts = append(fieldStmts, genFieldWrite(fieldAccess, fieldType)...)
+		fieldStmts = append(fieldStmts, t.genFieldWrite(fieldAccess, fieldType)...)
 
 		// Wrap in if keys.Get(i) != "" to support Omit (empty key = omitted)
 		stmts = append(stmts, &ast.IfStmt{
@@ -271,6 +271,35 @@ func (t *galaASTTransformer) genReadFrom(config *structMetaConfig) *ast.FuncDecl
 		},
 	}})
 
+	// Default Option[T] fields to None[T]() so a missing JSON field produces
+	// None (not an accidental zero-valued Some). Without this, the zero
+	// _variant tag (Some) leaks through as Some(zero-T) for any field that
+	// wasn't present in the input. This matches Scala circe / serde_json /
+	// encoding/json-with-*T semantics: missing == null == None.
+	for i, fieldName := range meta.FieldNames {
+		fieldType := meta.Fields[fieldName]
+		inner, ok := optionInner(fieldType)
+		if !ok {
+			continue
+		}
+		isImmut := immutFlags != nil && i < len(immutFlags) && immutFlags[i]
+		innerExpr := t.typeToExpr(inner)
+		var defaultValue ast.Expr = &ast.CallExpr{
+			Fun: &ast.SelectorExpr{
+				X:   &ast.CompositeLit{Type: t.buildNoneType(innerExpr)},
+				Sel: ast.NewIdent("Apply"),
+			},
+		}
+		if isImmut {
+			defaultValue = &ast.CallExpr{Fun: t.stdIdent("NewImmutable"), Args: []ast.Expr{defaultValue}}
+		}
+		stmts = append(stmts, &ast.AssignStmt{
+			Lhs: []ast.Expr{&ast.SelectorExpr{X: ast.NewIdent("result"), Sel: ast.NewIdent(fieldName)}},
+			Tok: token.ASSIGN,
+			Rhs: []ast.Expr{defaultValue},
+		})
+	}
+
 	// r.BeginObject()
 	stmts = append(stmts, exprStmt(methodCall("r", "BeginObject")))
 
@@ -280,8 +309,8 @@ func (t *galaASTTransformer) genReadFrom(config *structMetaConfig) *ast.FuncDecl
 		fieldType := meta.Fields[fieldName]
 		isImmut := immutFlags != nil && i < len(immutFlags) && immutFlags[i]
 
-		readExpr := genFieldRead(fieldType)
-		if readExpr == nil {
+		caseBody := t.genFieldReadStmts(fieldName, fieldType, isImmut)
+		if caseBody == nil {
 			switchCases = append(switchCases, &ast.CaseClause{
 				List: []ast.Expr{stringLit(fieldName)},
 				Body: []ast.Stmt{exprStmt(methodCall("r", "SkipValue"))},
@@ -289,18 +318,9 @@ func (t *galaASTTransformer) genReadFrom(config *structMetaConfig) *ast.FuncDecl
 			continue
 		}
 
-		assignValue := readExpr
-		if isImmut {
-			assignValue = &ast.CallExpr{Fun: t.stdIdent("NewImmutable"), Args: []ast.Expr{assignValue}}
-		}
-
 		switchCases = append(switchCases, &ast.CaseClause{
 			List: []ast.Expr{stringLit(fieldName)},
-			Body: []ast.Stmt{&ast.AssignStmt{
-				Lhs: []ast.Expr{&ast.SelectorExpr{X: ast.NewIdent("result"), Sel: ast.NewIdent(fieldName)}},
-				Tok: token.ASSIGN,
-				Rhs: []ast.Expr{assignValue},
-			}},
+			Body: caseBody,
 		})
 	}
 
@@ -419,7 +439,50 @@ func (t *galaASTTransformer) genReadFromAny(config *structMetaConfig) *ast.FuncD
 	}
 }
 
-func genFieldWrite(fieldAccess ast.Expr, fieldType transpiler.Type) []ast.Stmt {
+// genFieldWrite generates the Go statements that serialize a single struct field
+// to the FieldWriter `w`.
+//
+// For plain types: `w.WriteString(v.Field)` (or WriteInt, WriteBool, …).
+//
+// For Option[T] fields: branches on the Option's state so `WriteNull()` is
+// called with no arguments (matching the FieldWriter interface) when the
+// field is None, and the inner T is written via the appropriate WriteXxx
+// when the field is Some:
+//
+//	if fieldAccess.IsDefined() {
+//	    w.WriteString(fieldAccess.Get())
+//	} else {
+//	    w.WriteNull()
+//	}
+func (t *galaASTTransformer) genFieldWrite(fieldAccess ast.Expr, fieldType transpiler.Type) []ast.Stmt {
+	if inner, ok := optionInner(fieldType); ok {
+		// Option[T] field: branch on IsDefined / IsEmpty.
+		innerMethod := writeMethodForBasicType(baseTypeName(unwrapGalaType(inner)))
+		if innerMethod == "WriteNull" {
+			// Unsupported inner type (nested Option, custom struct, etc.).
+			// Emit a single WriteNull so the output is at least valid JSON and
+			// the Go code still compiles. Proper support for these inner types
+			// is tracked separately.
+			return []ast.Stmt{exprStmt(methodCall("w", "WriteNull"))}
+		}
+
+		// if fieldAccess.IsDefined() { w.WriteXxx(fieldAccess.Get()) } else { w.WriteNull() }
+		someBody := &ast.BlockStmt{List: []ast.Stmt{exprStmt(&ast.CallExpr{
+			Fun: &ast.SelectorExpr{X: ast.NewIdent("w"), Sel: ast.NewIdent(innerMethod)},
+			Args: []ast.Expr{&ast.CallExpr{
+				Fun: &ast.SelectorExpr{X: fieldAccess, Sel: ast.NewIdent("Get")},
+			}},
+		})}}
+		noneBody := &ast.BlockStmt{List: []ast.Stmt{exprStmt(methodCall("w", "WriteNull"))}}
+		return []ast.Stmt{&ast.IfStmt{
+			Cond: &ast.CallExpr{
+				Fun: &ast.SelectorExpr{X: fieldAccess, Sel: ast.NewIdent("IsDefined")},
+			},
+			Body: someBody,
+			Else: noneBody,
+		}}
+	}
+
 	baseType := unwrapGalaType(fieldType)
 	method := writeMethodForBasicType(baseTypeName(baseType))
 	return []ast.Stmt{exprStmt(&ast.CallExpr{
@@ -428,19 +491,115 @@ func genFieldWrite(fieldAccess ast.Expr, fieldType transpiler.Type) []ast.Stmt {
 	})}
 }
 
-func genFieldRead(fieldType transpiler.Type) ast.Expr {
+// genFieldReadStmts generates the Go statements that populate
+// `result.<fieldName>` from the FieldReader `r` for a single field.
+//
+// For plain types it emits a single assignment:
+//
+//	result.Name = r.ReadString().Get()
+//
+// For Option[T] it branches on r.IsNull() so JSON `null` decodes to
+// None[T]() and any other JSON value decodes to Some[T](read value). A
+// missing field never reaches this code path — the switch in ReadFrom
+// simply skips fields that are absent, leaving the zero Option value
+// (None) in `result`. So JSON `null` and missing-field have the same
+// observable result: `None[T]()`. This matches Scala's circe, Go's
+// encoding/json (with *T), and most mainstream JSON libraries.
+//
+// Returns nil if the field type cannot be read (e.g. composite kinds),
+// signalling the caller to emit a SkipValue fallback.
+func (t *galaASTTransformer) genFieldReadStmts(fieldName string, fieldType transpiler.Type, isImmut bool) []ast.Stmt {
+	lhs := &ast.SelectorExpr{X: ast.NewIdent("result"), Sel: ast.NewIdent(fieldName)}
+
+	if inner, ok := optionInner(fieldType); ok {
+		innerMethod := readMethodForBasicType(baseTypeName(unwrapGalaType(inner)))
+		if innerMethod == "" {
+			// Can't decode this inner type — skip the value.
+			return nil
+		}
+		innerExpr := t.typeToExpr(inner)
+
+		// Some[T]{}.Apply(r.ReadXxx().Get())
+		someValue := &ast.CallExpr{
+			Fun: &ast.SelectorExpr{
+				X:   &ast.CompositeLit{Type: t.buildSomeType(innerExpr)},
+				Sel: ast.NewIdent("Apply"),
+			},
+			Args: []ast.Expr{&ast.CallExpr{
+				Fun: &ast.SelectorExpr{
+					X:   methodCall("r", innerMethod),
+					Sel: ast.NewIdent("Get"),
+				},
+			}},
+		}
+
+		// None[T]{}.Apply()
+		noneValue := &ast.CallExpr{
+			Fun: &ast.SelectorExpr{
+				X:   &ast.CompositeLit{Type: t.buildNoneType(innerExpr)},
+				Sel: ast.NewIdent("Apply"),
+			},
+		}
+
+		someAssignValue := ast.Expr(someValue)
+		noneAssignValue := ast.Expr(noneValue)
+		if isImmut {
+			someAssignValue = &ast.CallExpr{Fun: t.stdIdent("NewImmutable"), Args: []ast.Expr{someAssignValue}}
+			noneAssignValue = &ast.CallExpr{Fun: t.stdIdent("NewImmutable"), Args: []ast.Expr{noneAssignValue}}
+		}
+
+		// if r.IsNull() { r.ReadNull(); result.F = None[T]{}.Apply() } else { result.F = Some[T]{}.Apply(r.ReadX().Get()) }
+		thenBody := &ast.BlockStmt{List: []ast.Stmt{
+			exprStmt(methodCall("r", "ReadNull")),
+			&ast.AssignStmt{Lhs: []ast.Expr{lhs}, Tok: token.ASSIGN, Rhs: []ast.Expr{noneAssignValue}},
+		}}
+		elseBody := &ast.BlockStmt{List: []ast.Stmt{
+			&ast.AssignStmt{Lhs: []ast.Expr{lhs}, Tok: token.ASSIGN, Rhs: []ast.Expr{someAssignValue}},
+		}}
+		return []ast.Stmt{&ast.IfStmt{
+			Cond: methodCall("r", "IsNull"),
+			Body: thenBody,
+			Else: elseBody,
+		}}
+	}
+
 	baseType := unwrapGalaType(fieldType)
 	method := readMethodForBasicType(baseTypeName(baseType))
 	if method == "" {
 		return nil
 	}
 	// r.ReadXxx().Get()
-	return &ast.CallExpr{
+	var readExpr ast.Expr = &ast.CallExpr{
 		Fun: &ast.SelectorExpr{
 			X:   &ast.CallExpr{Fun: &ast.SelectorExpr{X: ast.NewIdent("r"), Sel: ast.NewIdent(method)}},
 			Sel: ast.NewIdent("Get"),
 		},
 	}
+	if isImmut {
+		readExpr = &ast.CallExpr{Fun: t.stdIdent("NewImmutable"), Args: []ast.Expr{readExpr}}
+	}
+	return []ast.Stmt{&ast.AssignStmt{
+		Lhs: []ast.Expr{lhs},
+		Tok: token.ASSIGN,
+		Rhs: []ast.Expr{readExpr},
+	}}
+}
+
+// optionInner detects Option[T] field types and returns the inner T.
+// Recognises both the bare name `Option` (when std is dot-imported, the
+// common case) and the fully-qualified `std.Option`.
+func optionInner(typ transpiler.Type) (transpiler.Type, bool) {
+	// Peel Immutable[Option[T]] -> Option[T] first (val-field).
+	t := unwrapGalaType(typ)
+	gt, ok := t.(transpiler.GenericType)
+	if !ok || len(gt.Params) != 1 {
+		return nil, false
+	}
+	base := gt.Base.BaseName()
+	if base == "Option" || base == "std.Option" {
+		return gt.Params[0], true
+	}
+	return nil, false
 }
 
 func baseTypeName(t transpiler.Type) string {

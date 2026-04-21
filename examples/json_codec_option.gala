@@ -1,0 +1,81 @@
+package main
+
+import (
+    . "martianoff/gala/std"
+    . "martianoff/gala/json"
+)
+
+// Verifies FIX-gap-12: Codec[T] generator correctly handles Option[T] fields.
+// Encode:  Some(v)    -> field has the encoded value.
+//          None[T]()  -> field is JSON null.
+// Decode:  JSON null or missing field -> None[T]().
+//          JSON value                  -> Some[T](value).
+struct User(ID int, Name string, Email Option[string])
+
+// Extra struct to exercise Option over int, float64, bool in one round-trip.
+struct Settings(Age Option[int], Ratio Option[float64], Active Option[bool])
+
+func main() {
+    val codec = Codec[User](SnakeCase())
+
+    // 1. Encode: Some("a@b.com") -> "email":"a@b.com"
+    val withEmail = User(ID = 1, Name = "Alice", Email = Some("a@b.com"))
+    Println(codec.Encode(withEmail).Get())
+
+    // 2. Encode: None -> "email":null
+    val withoutEmail = User(ID = 2, Name = "Bob", Email = None[string]())
+    Println(codec.Encode(withoutEmail).Get())
+
+    // 3. Decode: field present with value -> Some
+    val decodedSome = codec.Decode("{\"id\":1,\"name\":\"Alice\",\"email\":\"a@b.com\"}").Get()
+    decodedSome.Email match {
+        case Some(e) => Println(s"decoded some: $e")
+        case None()  => Println("decoded some: <none>")
+    }
+
+    // 4. Decode: field is JSON null -> None
+    val decodedNull = codec.Decode("{\"id\":2,\"name\":\"Bob\",\"email\":null}").Get()
+    decodedNull.Email match {
+        case Some(e) => Println(s"decoded null: $e")
+        case None()  => Println("decoded null: <none>")
+    }
+
+    // 5. Decode: field missing entirely -> None (same semantics as null)
+    val decodedMissing = codec.Decode("{\"id\":3,\"name\":\"Carol\"}").Get()
+    decodedMissing.Email match {
+        case Some(e) => Println(s"decoded missing: $e")
+        case None()  => Println("decoded missing: <none>")
+    }
+
+    // 6. Encode/decode Option over non-string primitives: int, float64, bool.
+    val settingsCodec = Codec[Settings](CamelCase())
+    val fullSettings = Settings(Age = Some(42), Ratio = Some(0.5), Active = Some(true))
+    val fullJson = settingsCodec.Encode(fullSettings).Get()
+    Println(fullJson)
+
+    val emptySettings = Settings(Age = None[int](), Ratio = None[float64](), Active = None[bool]())
+    Println(settingsCodec.Encode(emptySettings).Get())
+
+    // Round-trip: decode the full encoding and verify each field survived.
+    val roundTripped = settingsCodec.Decode(fullJson).Get()
+    roundTripped.Age match {
+        case Some(a) => Println(s"age: $a")
+        case None()  => Println("age: <none>")
+    }
+    roundTripped.Ratio match {
+        case Some(r) => Println(s"ratio: $r")
+        case None()  => Println("ratio: <none>")
+    }
+    roundTripped.Active match {
+        case Some(b) => Println(s"active: $b")
+        case None()  => Println("active: <none>")
+    }
+
+    // Round-trip the empty settings: every field should be None, regardless of
+    // whether it was serialized as null or (eventually) omitted.
+    val emptyRoundTripped = settingsCodec.Decode(settingsCodec.Encode(emptySettings).Get()).Get()
+    emptyRoundTripped.Age match {
+        case Some(a) => Println(s"empty-age: $a")
+        case None()  => Println("empty-age: <none>")
+    }
+}
