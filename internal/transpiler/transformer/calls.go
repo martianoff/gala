@@ -323,26 +323,46 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			}
 		}
 	}
-	// Default remaining unresolved method type params to "any".
-	// NOTE: This violates project rule #3 (never emit `any` implicitly). It is
-	// retained as a fallback because removing it breaks code where the type
-	// parameter is genuinely unconstrained by the call site (e.g., a phantom
-	// type param used only in the return type with no constraining argument).
-	// A warning is emitted when GALA_WARN_TYPES=1 so authors can surface and
-	// annotate these sites. TODO(B5): replace with a hard error once all
-	// inference paths (call-site context, expected return type) are wired up.
-	if methodMeta != nil {
-		for _, tp := range methodMeta.TypeParams {
-			if _, ok := typeSubst[tp]; !ok {
-				t.warnInference("method type parameter %q defaulted to `any` (unresolved from arguments)", tp)
-				typeSubst[tp] = "any"
-			}
-		}
-	}
-
-	// Transform each argument with the correct expected type.
+	// Gap #9: harvest type params from earlier lambdas to refine later ones.
+	// We transform args in declaration order. Each lambda is transformed with
+	// a *view* of typeSubst in which still-unresolved method type params are
+	// temporarily filled with "any" (so the lambda sees a concrete expected
+	// FuncType and can emit concrete param/result types from its body).
+	// After transformation, we unify the lambda's actual FuncType against the
+	// method's declared param FuncType to discover concrete types for those
+	// previously-unresolved params, and commit them to typeSubst so later
+	// lambdas see the refinement.
+	//
+	// Example: arr.GroupMapReduce(
+	//     (w) => w,        // keyFn: func(T) K    -> infers K=string
+	//     (w) => 1,        // valueFn: func(T) V  -> infers V=int
+	//     (a, b) => a + b, // reduce: func(V, V) V -> V is now int, not any
+	// )
 	var mArgs []ast.Expr
 	hasSpread := false
+	recvTypeArgTypes := make([]transpiler.Type, 0, len(recvTypeArgStrings))
+	for _, a := range recvTypeArgStrings {
+		recvTypeArgTypes = append(recvTypeArgTypes, transpiler.ParseType(a))
+	}
+	// Default-to-any view seen by buildMethodCallContext: resolved substitutions
+	// pass through; unresolved params get "any" so the expected FuncType is
+	// emittable. The real typeSubst may still gain entries via the refinement
+	// step below; we only copy those into the final substitution if they
+	// remain unresolved.
+	anyView := func() map[string]string {
+		view := make(map[string]string, len(typeSubst))
+		for k, v := range typeSubst {
+			view[k] = v
+		}
+		if methodMeta != nil {
+			for _, tp := range methodMeta.TypeParams {
+				if _, ok := view[tp]; !ok {
+					view[tp] = "any"
+				}
+			}
+		}
+		return view
+	}
 	for i, argCtx := range argListCtx.AllArgument() {
 		arg := argCtx.(*grammar.ArgumentContext)
 		exprCtx, lambdaCtx, isSpread, extractErr := extractArgContent(arg)
@@ -357,12 +377,32 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			mArgs = append(mArgs, expr)
 			continue
 		}
-		genMethodCtx := t.buildMethodCallContext(methodMeta, typeSubst, false)
+		genMethodCtx := t.buildMethodCallContext(methodMeta, anyView(), false)
 		expectedType := t.resolveExpectedArgType(genMethodCtx, i)
 		if lambdaCtx != nil {
 			expr, lerr := t.transformLambdaArgWithExpectedType(lambdaCtx, expectedType)
 			if lerr != nil {
 				return true, nil, lerr
+			}
+			// Gap #9: harvest newly-inferred method type params from the
+			// lambda's actual result/param types and commit to typeSubst.
+			if methodMeta != nil && typeMeta != nil && i < len(methodMeta.ParamTypes) {
+				if paramFT, ok := methodMeta.ParamTypes[i].(transpiler.FuncType); ok {
+					substitutedParamFT := t.substituteConcreteTypes(paramFT, typeMeta.TypeParams, recvTypeArgTypes)
+					if actualFT, isFT := t.lambdaActualFuncType(expr).(transpiler.FuncType); isFT {
+						inferredMap := make(map[string]transpiler.Type)
+						t.unifyForInference(substitutedParamFT, actualFT, methodMeta.TypeParams, inferredMap)
+						for tp, inferred := range inferredMap {
+							if _, alreadySet := typeSubst[tp]; alreadySet {
+								continue
+							}
+							if inferred == nil || inferred.IsNil() || inferred.IsAny() {
+								continue
+							}
+							typeSubst[tp] = inferred.String()
+						}
+					}
+				}
 			}
 			mArgs = append(mArgs, expr)
 		} else {
@@ -371,6 +411,23 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 				return true, nil, aerr
 			}
 			mArgs = append(mArgs, expr)
+		}
+	}
+
+	// Default remaining unresolved method type params to "any".
+	// NOTE: This violates project rule #3 (never emit `any` implicitly). It is
+	// retained as a fallback because removing it breaks code where the type
+	// parameter is genuinely unconstrained by the call site (e.g., a phantom
+	// type param used only in the return type with no constraining argument).
+	// A warning is emitted when GALA_WARN_TYPES=1 so authors can surface and
+	// annotate these sites. TODO(B5): replace with a hard error once all
+	// inference paths (call-site context, expected return type) are wired up.
+	if methodMeta != nil {
+		for _, tp := range methodMeta.TypeParams {
+			if _, ok := typeSubst[tp]; !ok {
+				t.warnInference("method type parameter %q defaulted to `any` (unresolved from arguments)", tp)
+				typeSubst[tp] = "any"
+			}
 		}
 	}
 
@@ -2021,47 +2078,107 @@ func (t *galaASTTransformer) extractFuncCallTypeArgs(fun ast.Expr) []string {
 	return nil
 }
 
-// inferZeroArgTypeParams infers type parameters for a zero-argument sealed variant
-// constructor (e.g., None()) when inside a match expression. It checks if the
-// constructor is a companion of the match subject's sealed type and extracts the
-// type parameters from the match subject type.
-// Returns a typed AST expression (e.g., None[int]) or nil if inference fails.
-func (t *galaASTTransformer) inferZeroArgTypeParams(typeName string, typeMeta *transpiler.TypeMetadata) ast.Expr {
-	if t.currentMatchSubjectType == nil || t.currentMatchSubjectType.IsNil() {
-		return nil
+// lambdaActualFuncType extracts the FuncType from a transformed lambda argument.
+// The result captures the lambda's ACTUAL inferred param and result types, which
+// may differ from the expected types (e.g., a lambda declared with expected result
+// `V` may actually have result `int` once its body is typed). Returns NilType when
+// expr is not a function literal with a usable Type field.
+//
+// Used by the gap #9 inference refinement: after transforming each lambda arg,
+// we unify its actual type against the method's declared param FuncType to
+// propagate inferred type parameters to later args.
+func (t *galaASTTransformer) lambdaActualFuncType(expr ast.Expr) transpiler.Type {
+	fnLit, ok := expr.(*ast.FuncLit)
+	if !ok || fnLit.Type == nil {
+		return transpiler.NilType{}
 	}
+	var params []transpiler.Type
+	if fnLit.Type.Params != nil {
+		for _, field := range fnLit.Type.Params.List {
+			paramType := t.astTypeToTranspilerType(field.Type)
+			if len(field.Names) == 0 {
+				params = append(params, paramType)
+				continue
+			}
+			for range field.Names {
+				params = append(params, paramType)
+			}
+		}
+	}
+	var results []transpiler.Type
+	if fnLit.Type.Results != nil {
+		for _, field := range fnLit.Type.Results.List {
+			resultType := t.astTypeToTranspilerType(field.Type)
+			if len(field.Names) == 0 {
+				results = append(results, resultType)
+				continue
+			}
+			for range field.Names {
+				results = append(results, resultType)
+			}
+		}
+	}
+	return transpiler.FuncType{Params: params, Results: results}
+}
 
+// inferZeroArgTypeParams infers type parameters for a zero-argument sealed variant
+// constructor (e.g., None()) when a concrete instantiation of the variant's parent
+// sealed type is available in the surrounding context. It checks if the constructor
+// is a companion of a sealed type whose instantiation is available and extracts the
+// type parameters from that instantiation.
+// Returns a typed AST expression (e.g., None[User]) or nil if inference fails.
+//
+// Context sources tried, in order:
+//  1. currentMatchSubjectType — `x match { case _ => None() }` where the subject is
+//     Option[T]. (Companion match required.)
+//  2. currentFuncReturnType — gap #11: `func find(id int) Option[User] { ... None() ... }`
+//     widens the zero-arg constructor from the enclosing function's return type.
+func (t *galaASTTransformer) inferZeroArgTypeParams(typeName string, typeMeta *transpiler.TypeMetadata) ast.Expr {
 	// Look up companion relationship for this type
 	companion := t.lookupCompanion(typeName)
 	if companion == nil {
 		return nil
 	}
-
-	// Check if the companion's target type matches the match subject's base type
-	subjectBaseName := stripPackagePrefix(t.currentMatchSubjectType.BaseName())
 	targetBaseName := stripPackagePrefix(companion.TargetType)
-	if subjectBaseName != targetBaseName {
-		return nil
-	}
 
-	// Extract type params from the match subject type
-	var subjectTypeParams []transpiler.Type
-	if gen, ok := t.currentMatchSubjectType.(transpiler.GenericType); ok {
-		subjectTypeParams = gen.Params
-	} else {
-		return nil
-	}
-
-	// Build the typed expression: e.g., None[int]
-	baseExpr := t.typeToExpr(transpiler.BasicType{Name: typeName})
-	if len(subjectTypeParams) == 1 {
-		return &ast.IndexExpr{
-			X:     baseExpr,
-			Index: t.typeToExpr(subjectTypeParams[0]),
+	// Try each context source in priority order: match subject first (most
+	// specific), then enclosing function return type (gap #11 widening).
+	sources := []transpiler.Type{t.currentMatchSubjectType, t.currentFuncReturnType}
+	for _, src := range sources {
+		if src == nil || src.IsNil() {
+			continue
 		}
-	} else if len(subjectTypeParams) > 1 {
-		indices := make([]ast.Expr, len(subjectTypeParams))
-		for i, p := range subjectTypeParams {
+		// The context type's base must match the companion's target type.
+		if stripPackagePrefix(src.BaseName()) != targetBaseName {
+			continue
+		}
+		// Extract concrete type params from the context type.
+		gen, ok := src.(transpiler.GenericType)
+		if !ok || len(gen.Params) == 0 {
+			continue
+		}
+		// Reject if any param is itself an unresolved type parameter (e.g., still T).
+		hasUnresolved := false
+		for _, p := range gen.Params {
+			if t.isActiveTypeParam(p.String()) {
+				hasUnresolved = true
+				break
+			}
+		}
+		if hasUnresolved {
+			continue
+		}
+
+		// Build the typed expression: e.g., None[User]
+		baseExpr := t.typeToExpr(transpiler.BasicType{Name: typeName})
+		if len(gen.Params) == 1 {
+			return &ast.IndexExpr{
+				X:     baseExpr,
+				Index: t.typeToExpr(gen.Params[0]),
+			}
+		}
+		indices := make([]ast.Expr, len(gen.Params))
+		for i, p := range gen.Params {
 			indices[i] = t.typeToExpr(p)
 		}
 		return &ast.IndexListExpr{

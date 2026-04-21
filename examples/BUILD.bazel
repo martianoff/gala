@@ -1804,3 +1804,28 @@ gala_test(
         "//examples/go_struct_bridge",
     ],
 )
+
+# Gap #9 verification: GroupMapReduce reducer lambda infers V from valueFn return type
+gala_test(
+    name = "gap09_group_map_reduce",
+    src = "gap09_group_map_reduce.gala",
+    expected = "gap09_group_map_reduce.out",
+    deps = ["//collection_immutable"],
+)
+
+# Gap #10 regression: tuple literal passed to Append on Array[Tuple[A,B]]
+# infers A,B from the receiver, not falling back to any.
+gala_test(
+    name = "gap10_tuple_literal_append",
+    src = "gap10_tuple_literal_append.gala",
+    expected = "gap10_tuple_literal_append.out",
+    deps = ["//collection_immutable"],
+)
+
+# Gap #11 verification: None() widens its type param from the enclosing function's
+# return type when no other inference source is available.
+gala_test(
+    name = "gap11_none_widening",
+    src = "gap11_none_widening.gala",
+    expected = "gap11_none_widening.out",
+)

@@ -1,0 +1,26 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+import . "martianoff/gala/std"
+
+// Map a generic array to Array[Tuple[string, int]] via FoldLeft.
+// The lambda `acc` is Array[Tuple[string, int]] (from the zero value).
+// When calling acc.Append((w, s)), the tuple literal must infer its element
+// types from the receiver's Tuple[string, int] parameters.
+func buildPairs(words Array[string], scores Array[int]) Array[Tuple[string, int]] {
+    val zero Array[Tuple[string, int]] = ArrayOf[Tuple[string, int]]()
+    return words.FoldLeft(zero, (acc, w) => {
+        val s = scores.Length()
+        return acc.Append((w, s))
+    })
+}
+
+func main() {
+    val words = ArrayOf("a", "b")
+    val scores = ArrayOf(10, 20)
+    val pairs = buildPairs(words, scores)
+    pairs.ForEach((p) => {
+        Println(p.V1)
+        Println(p.V2)
+    })
+}
