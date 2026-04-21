@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -55,4 +56,47 @@ type projectNotFoundError struct {
 
 func (e *projectNotFoundError) Error() string {
 	return "gala.mod not found in " + e.startDir + " or any parent directory"
+}
+
+// resolveRunTarget is a variant of findProjectRoot tailored to `gala run`. It
+// matches `go run main.go` semantics: when the user points at a single .gala
+// file and there is no gala.mod anywhere up the tree, fall back to an ephemeral
+// module rooted at the file's containing directory. This removes the first-30-
+// minute "gala.mod not found" wall for toy programs while leaving existing
+// project-resolution behavior untouched for directories and files inside real
+// modules.
+//
+// Returns (projectRoot, ephemeral, error). When ephemeral is true, the caller
+// should expect the Builder to synthesize an in-memory gala.mod for this run.
+func resolveRunTarget(pathArg string) (string, bool, error) {
+	root, err := findProjectRoot(pathArg)
+	if err == nil {
+		return root, false, nil
+	}
+
+	// Only fall back to ephemeral mode when the specific failure is "no
+	// gala.mod found". Any other error (permission, invalid path, etc.)
+	// should propagate unchanged.
+	var notFound *projectNotFoundError
+	if !errors.As(err, &notFound) {
+		return "", false, err
+	}
+
+	// Ephemeral mode is only safe for a single concrete .gala file. For
+	// directory arguments, "no gala.mod" remains a hard error — the user
+	// likely forgot `gala mod init` for a real project, and silently treating
+	// a whole directory as an ephemeral module would hide that.
+	absPath, absErr := filepath.Abs(pathArg)
+	if absErr != nil {
+		return "", false, err
+	}
+	info, statErr := os.Stat(absPath)
+	if statErr != nil || info.IsDir() {
+		return "", false, err
+	}
+	if !strings.HasSuffix(strings.ToLower(absPath), ".gala") {
+		return "", false, err
+	}
+
+	return filepath.Dir(absPath), true, nil
 }

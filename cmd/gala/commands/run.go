@@ -71,11 +71,18 @@ func runRun(cmd *cobra.Command, args []string) {
 	// Resolve project root and optional source directory.
 	// If the argument is a .gala file or subdirectory, find gala.mod for deps
 	// but compile from the file's directory (multi-package build).
-	absProjectDir, err := findProjectRoot(projectDir)
+	// Matching `go run main.go` semantics: if no gala.mod exists and the
+	// argument is a single .gala file, fall back to an ephemeral module
+	// rooted at the file's directory. The Builder already synthesizes an
+	// in-memory gala.mod when none is on disk.
+	absProjectDir, ephemeral, err := resolveRunTarget(projectDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		fmt.Fprintln(os.Stderr, "Run 'gala mod init <module-path>' to create one. Example: gala mod init example.com/myapp")
 		os.Exit(1)
+	}
+	if ephemeral && runVerbose {
+		fmt.Fprintf(os.Stderr, "No gala.mod found; running %s in ephemeral module at %s\n", projectDir, absProjectDir)
 	}
 
 	// Create builder

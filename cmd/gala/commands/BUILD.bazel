@@ -49,6 +49,7 @@ go_test(
     name = "commands_test",
     srcs = [
         "new_test.go",
+        "project_test.go",
         "run_test.go",
     ],
     embed = [":commands"],
