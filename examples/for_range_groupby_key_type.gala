@@ -1,0 +1,51 @@
+package main
+
+import "fmt"
+import . "martianoff/gala/collection_immutable"
+import "martianoff/gala/go_interop"
+
+// Verifies gap #8: `for k, v := range <func-returning-map[K]V>(...)` must
+// see the key and value types coming from the generic function's return type
+// `map[K]V`.
+//
+// Before the fix, the analyzer parsed `map[K]V` return types as a
+// GenericType{Base: "<pkg>.map", Params: ...} — treating `map` as a
+// package-qualified named type. This corrupted downstream type inference
+// so the range key was typed as `any`, and string interpolation picked `%d`
+// instead of `%s`, producing runtime garbage like `%!d(string=apple)`.
+//
+// `CountsOf` returns `map[K]int`. We call it with explicit [string, string]
+// type arguments to isolate the range-binding bug from the separate
+// (unrelated) issue where K cannot be inferred purely from a lambda's
+// return type.
+func CountsOf[K comparable, T any](items Array[T], keyOf func(T) K) map[K]int {
+    var counts = go_interop.MapEmpty[K, int]()
+    items.ForEach((elem T) => {
+        val key = keyOf(elem)
+        counts[key] = counts[key] + 1
+    })
+    return counts
+}
+
+func main() {
+    val items = ArrayOf("apple", "apple", "banana", "cherry", "banana", "apple")
+    val counts = CountsOf[string, string](items, (s) => s)
+
+    var sawApple = ""
+    var sawBanana = ""
+    var sawCherry = ""
+    for k, v := range counts {
+        if k == "apple" {
+            sawApple = s"$k=$v"
+        }
+        if k == "banana" {
+            sawBanana = s"$k=$v"
+        }
+        if k == "cherry" {
+            sawCherry = s"$k=$v"
+        }
+    }
+    fmt.Println(sawApple)
+    fmt.Println(sawBanana)
+    fmt.Println(sawCherry)
+}

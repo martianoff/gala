@@ -707,6 +707,20 @@ gala_test(
     deps = ["//go_interop"],
 )
 
+# gap #8 regression: `for k, v := range GroupBy(...)` must propagate map[K]V
+# key/value types from the generic method's return type into the range
+# binding, so string interpolation picks %s for k instead of defaulting to
+# %d/%v.
+gala_test(
+    name = "for_range_groupby_key_type",
+    src = "for_range_groupby_key_type.gala",
+    expected = "for_range_groupby_key_type.out",
+    deps = [
+        "//collection_immutable",
+        "//go_interop",
+    ],
+)
+
 gala_test(
     name = "variadic_functions",
     src = "variadic_functions.gala",
