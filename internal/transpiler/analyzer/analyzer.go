@@ -1450,6 +1450,30 @@ func (a *galaAnalyzer) causesInstantiationCycle(recvTypeStr, retTypeStr string) 
 	return false
 }
 
+// findMatchingCloseBracket returns the index of the `]` that matches the `[`
+// at position openIdx, respecting bracket nesting. Returns -1 if not found or
+// if openIdx does not point at a `[`. Used by the map[K]V return-type parser
+// to correctly split a key (which may itself be a generic type like `Pair[A,B]`)
+// from the value.
+func findMatchingCloseBracket(s string, openIdx int) int {
+	if openIdx >= len(s) || s[openIdx] != '[' {
+		return -1
+	}
+	depth := 0
+	for i := openIdx; i < len(s); i++ {
+		switch s[i] {
+		case '[':
+			depth++
+		case ']':
+			depth--
+			if depth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
 // extractBaseAndArgs extracts the base type name and type arguments from a type string.
 // For example, "MyList[T]" returns ("MyList", ["T"])
 // "MyList[Pair[T, int]]" returns ("MyList", ["Pair[T, int]"])
@@ -1518,6 +1542,22 @@ func (a *galaAnalyzer) resolveTypeWithParams(typeName string, pkgName string, ty
 	if strings.HasPrefix(typeName, "*") {
 		elemType := a.resolveTypeWithParams(typeName[1:], pkgName, typeParams)
 		return transpiler.PointerType{Elem: elemType}
+	}
+
+	// Handle map types: map[K]V — split at the bracket that closes the key.
+	// Must be recognized BEFORE the generic-type branch below, otherwise the
+	// `map` token gets mistaken for a named type and picks up the current
+	// package prefix (e.g., `collection_immutable.map`), corrupting downstream
+	// type inference for `for k, v := range` over method-returned maps (gap #8).
+	if strings.HasPrefix(typeName, "map[") {
+		keyEnd := findMatchingCloseBracket(typeName, 3) // index of `[` after "map"
+		if keyEnd != -1 && keyEnd+1 < len(typeName) {
+			keyStr := typeName[4:keyEnd]
+			valStr := typeName[keyEnd+1:]
+			keyType := a.resolveTypeWithParams(keyStr, pkgName, typeParams)
+			valType := a.resolveTypeWithParams(valStr, pkgName, typeParams)
+			return transpiler.MapType{Key: keyType, Elem: valType}
+		}
 	}
 
 	// If it's already package-qualified, handle it
