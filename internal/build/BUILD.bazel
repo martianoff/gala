@@ -25,7 +25,10 @@ go_library(
 
 go_test(
     name = "build_test",
-    srcs = ["deptranspiler_test.go"],
+    srcs = [
+        "deptranspiler_test.go",
+        "go_toolchain_test.go",
+    ],
     embed = [":build"],
     deps = [
         "@com_github_stretchr_testify//assert",
