@@ -1,0 +1,45 @@
+package main
+
+import "fmt"
+
+// Zero-field sealed variants may be declared with or without parentheses.
+// This mirrors Scala/Kotlin conventions and removes a small paper cut for users.
+sealed type LogLevel {
+    case Debug                  // bare identifier — no parens
+    case Info()                 // explicit empty parens
+    case Warn                   // bare identifier
+    case Error()                // explicit empty parens
+    case Custom(Name string)    // one-field variant still requires parens
+}
+
+// match patterns accept both bare-identifier and paren forms for zero-field cases.
+func describe(l LogLevel) string = l match {
+    case Debug         => "debug"
+    case Info()        => "info"
+    case Warn          => "warn"
+    case Error()       => "error"
+    case Custom(name)  => "custom: " + name
+}
+
+// Exhaustive match: mix and match forms to prove both work in the same match.
+func level(l LogLevel) int = l match {
+    case Debug        => 0
+    case Info         => 1
+    case Warn()       => 2
+    case Error        => 3
+    case Custom(_)    => 4
+}
+
+func main() {
+    fmt.Println(describe(Debug()))
+    fmt.Println(describe(Info()))
+    fmt.Println(describe(Warn()))
+    fmt.Println(describe(Error()))
+    fmt.Println(describe(Custom("alert")))
+
+    fmt.Println(level(Debug()))
+    fmt.Println(level(Info()))
+    fmt.Println(level(Warn()))
+    fmt.Println(level(Error()))
+    fmt.Println(level(Custom("x")))
+}

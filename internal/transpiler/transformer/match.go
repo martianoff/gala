@@ -78,15 +78,28 @@ func (t *galaASTTransformer) parseMatchSubject(ctx grammar.IExpressionContext) (
 }
 
 // extractVariantName extracts the variant/constructor name from a case pattern text.
-// E.g. "Circle(r)" → "Circle", "Point()" → "Point"
+// E.g. "Circle(r)" → "Circle", "Point()" → "Point", "Debug" → "Debug"
+// Bare uppercase identifiers (e.g., `case Debug =>`) name zero-field sealed variants;
+// they are recognised as variant patterns rather than simple bindings.
 func extractVariantName(patternText string) string {
 	idx := strings.Index(patternText, "(")
-	if idx <= 0 {
+	var name string
+	if idx < 0 {
+		// No call suffix — bare identifier form like `Debug`.
+		name = patternText
+	} else if idx == 0 {
 		return ""
+	} else {
+		name = patternText[:idx]
 	}
-	name := patternText[:idx]
 	if len(name) == 0 || name[0] < 'A' || name[0] > 'Z' {
 		return ""
+	}
+	// Reject identifiers containing non-identifier characters (e.g., dots, operators).
+	for _, ch := range name {
+		if !((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_') {
+			return ""
+		}
 	}
 	return name
 }

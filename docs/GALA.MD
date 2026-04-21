@@ -487,6 +487,29 @@ sealed type Shape {
 }
 ```
 
+Parentheses are optional on zero-field variants. The declaration above can also be written as:
+
+```gala
+sealed type Shape {
+    case Circle(Radius float64)
+    case Rectangle(Width float64, Height float64)
+    case Point                   // bare identifier is equivalent to `case Point()`
+}
+```
+
+The same applies in match patterns — `case Point` and `case Point()` are interchangeable:
+
+```gala
+val desc = s match {
+    case Circle(r) => ...
+    case Rectangle(w, h) => ...
+    case Point => "a point"       // bare form
+    // case Point() => "a point"  // equivalent
+}
+```
+
+Variants with one or more fields always require parentheses (`case Rectangle(w, h)`, not `case Rectangle`).
+
 This generates:
 - Parent struct `Shape` with all variant fields merged + `_variant` discriminator
 - Empty companion structs `Circle{}`, `Rectangle{}`, `Point{}`
