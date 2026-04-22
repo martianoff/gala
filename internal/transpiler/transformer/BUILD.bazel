@@ -7,6 +7,7 @@ go_library(
         "call_context.go",
         "calls.go",
         "codec.go",
+        "codec_typed.go",
         "constructors.go",
         "declarations.go",
         "expressions.go",

@@ -118,6 +118,10 @@ func (t *galaASTTransformer) generateStructMetaDecls(config *structMetaConfig) [
 	// Any-based variants for generic codec use (internal to codec libraries)
 	decls = append(decls, t.genWriteToAny(config))
 	decls = append(decls, t.genReadFromAny(config))
+	// Option-C: fully-typed per-field dispatch methods.  These coexist with
+	// the legacy WriteTo/ReadFrom for now; Phase 4 retires the legacy pair.
+	decls = append(decls, t.genEncodeFields(config))
+	decls = append(decls, t.genDecodeFields(config))
 
 	return decls
 }
