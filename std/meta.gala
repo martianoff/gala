@@ -52,3 +52,21 @@ type FieldDecoder interface {
     HasMoreFields() bool
     Skip()
 }
+
+// StructMeta[T] is the generic interface every transpiler-emitted
+// _StructMeta_T type satisfies.  It is the typed, end-to-end replacement
+// for the non-generic StructMetaOps shim used during the pre-Option-C
+// migration.
+//
+// The transpiler auto-injects a _StructMeta_T{} value whenever a
+// generic Apply method (e.g. on a library `Codec[T]`) declares its
+// first parameter as StructMeta[T].  This keeps the user call site
+// ergonomic (`Codec[Person](SnakeCase())`) while the underlying
+// dispatch is fully typed — no `any`, no runtime type assertions on
+// user data.
+type StructMeta[T any] interface {
+    NumFields() int
+    FieldName(i int) string
+    EncodeFields(w FieldEncoder, t T, nameFn func(int) string, omitFn func(int) bool)
+    DecodeFields(r FieldDecoder, lookup func(string) int) T
+}

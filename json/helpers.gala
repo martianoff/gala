@@ -4,15 +4,6 @@ import (
     . "martianoff/gala/collection_immutable"
 )
 
-// StructMetaOps is the interface that all generated StructMeta types implement.
-type StructMetaOps interface {
-    NumFields() int
-    FieldName(i int) string
-    FieldType(i int) string
-    WriteToAny(v any, w FieldWriter, keys Array[string])
-    ReadFromAny(r FieldReader, reverseKeys HashMap[string, string]) any
-}
-
 // KeyConfig holds field-level configuration for JSON serialization.
 type KeyConfig struct {
     var NamingStrategy Naming

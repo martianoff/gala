@@ -9,12 +9,14 @@ import (
 // resolveNamedArgExpectedType to provide a unified expected-type resolution
 // across generic method calls, regular method calls, and function calls.
 type callContext struct {
-	methodMeta   *transpiler.MethodMetadata   // non-nil for method calls
-	funcMeta     *transpiler.FunctionMetadata  // non-nil for function calls
-	typeSubst    map[string]string             // generic type param substitutions (type param name -> concrete type string)
-	goParamTypes []transpiler.Type             // Go type info fallback param types (for Go-defined functions)
-	structFields []transpiler.Type             // struct construction fallback field types
-	unresolvedTP bool                          // if true, only pass void FuncTypes through (unresolved type params)
+	methodMeta      *transpiler.MethodMetadata   // non-nil for method calls
+	funcMeta        *transpiler.FunctionMetadata // non-nil for function calls
+	applyMethodMeta *transpiler.MethodMetadata   // non-nil for companion-Apply calls (Type[T](args))
+	applyTypeSubst  map[string]string            // type-param substitutions derived from Type[T]'s indices
+	typeSubst       map[string]string            // generic type param substitutions (type param name -> concrete type string)
+	goParamTypes    []transpiler.Type            // Go type info fallback param types (for Go-defined functions)
+	structFields    []transpiler.Type            // struct construction fallback field types
+	unresolvedTP    bool                         // if true, only pass void FuncTypes through (unresolved type params)
 }
 
 // buildMethodCallContext creates a callContext for a method call with resolved type params.
@@ -46,11 +48,25 @@ func (t *galaASTTransformer) buildFuncCallContext(
 	}
 }
 
+// buildApplyCallContext creates a callContext for a companion-Apply call
+// (e.g., `Try[string](() => ...)`), carrying the Apply method's metadata
+// and the type-parameter substitutions derived from the call site.
+func (t *galaASTTransformer) buildApplyCallContext(
+	applyMeta *transpiler.MethodMetadata,
+	applyTypeSubst map[string]string,
+) callContext {
+	return callContext{
+		applyMethodMeta: applyMeta,
+		applyTypeSubst:  applyTypeSubst,
+	}
+}
+
 // resolveExpectedArgType resolves the expected type for a positional argument
 // at the given index. The resolution logic depends on the call kind:
 //
 //   - For method calls with unresolved type params: only void FuncTypes pass through
 //   - For method calls with resolved type params: substitute type params in param types
+//   - For companion-Apply calls (Type[T](args)): substitute into Apply's param types
 //   - For function calls: check GALA func metadata first (with type substitution for
 //     generics), then Go type info, then struct field types
 //
@@ -72,6 +88,15 @@ func (t *galaASTTransformer) resolveExpectedArgType(ctx callContext, argIdx int)
 			return t.substituteTranspilerTypeParams(ctx.methodMeta.ParamTypes[argIdx], ctx.typeSubst)
 		}
 		return transpiler.NilType{}
+	}
+
+	// Companion-Apply path: Type[T](args) where Type has Apply.  Only
+	// propagate if we have concrete substitutions for the type params —
+	// otherwise passing `func() T` with unresolved T through to the lambda
+	// breaks downstream inference (the lambda would emit a literal `T`
+	// return type instead of inferring from its body).
+	if ctx.applyMethodMeta != nil && len(ctx.applyTypeSubst) > 0 && argIdx < len(ctx.applyMethodMeta.ParamTypes) {
+		return t.substituteTranspilerTypeParams(ctx.applyMethodMeta.ParamTypes[argIdx], ctx.applyTypeSubst)
 	}
 
 	// Function call path

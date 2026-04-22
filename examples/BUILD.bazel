@@ -463,6 +463,12 @@ gala_test(
     expected = "try_basic.out",
 )
 
+gala_test(
+    name = "try_block_lambda_generic_method",
+    src = "try_block_lambda_generic_method.gala",
+    expected = "try_block_lambda_generic_method.out",
+)
+
 # Temporarily enabled for debugging
 gala_test(
     name = "try_recovery",
