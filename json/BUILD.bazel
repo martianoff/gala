@@ -3,8 +3,7 @@ load("//:gala.bzl", "gala_bootstrap_transpile")
 
 exports_files([
     "json.gala",
-    "codec_rw.gala",
-    "codec_new.gala",
+    "codec.gala",
     "helpers.gala",
     "naming.gala",
     "byte_utils.go",
@@ -26,15 +25,9 @@ gala_bootstrap_transpile(
 )
 
 gala_bootstrap_transpile(
-    name = "codec_rw_go",
-    src = "codec_rw.gala",
-    out = "codec_rw.gen.go",
-)
-
-gala_bootstrap_transpile(
-    name = "codec_new_go",
-    src = "codec_new.gala",
-    out = "codec_new.gen.go",
+    name = "codec_go",
+    src = "codec.gala",
+    out = "codec.gen.go",
 )
 
 gala_bootstrap_transpile(
@@ -53,8 +46,7 @@ go_library(
     name = "json",
     srcs = [
         "byte_utils.go",
-        "codec_new.gen.go",
-        "codec_rw.gen.go",
+        "codec.gen.go",
         "helpers.gen.go",
         "json.gen.go",
         "naming.gen.go",

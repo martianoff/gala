@@ -2,7 +2,6 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 load("//:gala.bzl", "gala_bootstrap_transpile", "gala_go_test")
 
 exports_files([
-    "codec.gala",
     "constptr.gala",
     "either.gala",
     "errors.gala",
@@ -98,12 +97,6 @@ gala_bootstrap_transpile(
 )
 
 gala_bootstrap_transpile(
-    name = "codec_go",
-    src = "codec.gala",
-    out = "codec.gen.go",
-)
-
-gala_bootstrap_transpile(
     name = "meta_go",
     src = "meta.gala",
     out = "meta.gen.go",
@@ -112,7 +105,6 @@ gala_bootstrap_transpile(
 go_library(
     name = "std",
     srcs = [
-        "codec.gen.go",
         "constptr.gen.go",
         "either.gen.go",
         "embedded_fs.go",

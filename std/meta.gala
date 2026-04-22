@@ -3,11 +3,9 @@ package std
 // FieldEncoder is the format-neutral interface used by the transpiler-generated
 // StructMeta[T].EncodeFields method to serialize a struct's fields.
 //
-// Format-specific encoders (JsonWriter, YamlWriter, etc.) implement this
-// interface. The transpiler emits fully-typed per-field dispatch against this
-// interface — no `any`, no reflection, no runtime type assertions on user data.
-//
-// (At Phase 4 cleanup, this supersedes the legacy FieldWriter in codec.gala.)
+// Format-specific encoders (JsonEncoderImpl, YamlEncoderImpl, etc.) implement
+// this interface. The transpiler emits fully-typed per-field dispatch against
+// it — no `any`, no reflection, no runtime type assertions on user data.
 type FieldEncoder interface {
     WriteKey(name string)
     WriteString(v string)
@@ -26,14 +24,12 @@ type FieldEncoder interface {
 // FieldDecoder is the format-neutral interface used by the transpiler-generated
 // StructMeta[T].DecodeFields method to reconstruct a struct from a stream.
 //
-// Format-specific decoders (JsonReader, YamlReader, etc.) implement this
-// interface. Unlike the legacy FieldReader, method return types are the raw
-// primitive values (not Try[T]), so the transpiler emits straight-line typed
-// field reads. Errors surface through the decoder's own state (implementation
-// decides: panic, sticky error flag, etc.) — reading from a failed decoder
-// must be safe.
-//
-// (At Phase 4 cleanup, this supersedes the legacy FieldReader in codec.gala.)
+// Format-specific decoders (JsonDecoderImpl, YamlDecoderImpl, etc.) implement
+// this interface.  Method return types are the raw primitive values (not
+// Try[T]), so the transpiler emits straight-line typed field reads.  Errors
+// surface through the decoder's own state (panic is the default; sticky
+// error flags are an implementation choice) — reading from a failed
+// decoder must be safe.
 type FieldDecoder interface {
     ReadKey() string
     ReadString() string
@@ -54,9 +50,7 @@ type FieldDecoder interface {
 }
 
 // StructMeta[T] is the generic interface every transpiler-emitted
-// _StructMeta_T type satisfies.  It is the typed, end-to-end replacement
-// for the non-generic StructMetaOps shim used during the pre-Option-C
-// migration.
+// _StructMeta_T type satisfies.
 //
 // The transpiler auto-injects a _StructMeta_T{} value whenever a
 // generic Apply method (e.g. on a library `Codec[T]`) declares its

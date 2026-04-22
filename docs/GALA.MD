@@ -1577,33 +1577,36 @@ struct Person(FirstName string, LastName string, Age int)
 val meta = StructMeta[Person]()
 meta.NumFields()     // 3
 meta.FieldName(0)    // "FirstName"
-meta.FieldType(0)    // "string"
 ```
 
-The transpiler generates a specialized struct (`_StructMeta_Person`) with concrete, typed methods. No `any`, no reflection.
+The transpiler generates a specialised struct (`_StructMeta_Person`) that satisfies the generic `StructMeta[Person]` interface from `std/meta.gala`. Every dispatch method is typed end to end — no `any`, no reflection, no runtime type assertions on user data.
 
 #### Auto-Injection
 
-When a generic type's `Apply` method has `StructMetaOps` as its first parameter, the transpiler auto-generates and injects `StructMeta[T]`. This is how `Codec[Person](SnakeCase())` works — the user never needs to write `StructMeta[Person]()` explicitly.
+When a generic type's `Apply` method declares its first parameter as `StructMeta[T]` (the typed interface in `std/meta.gala`), the transpiler auto-generates and injects the appropriate `_StructMeta_T{}` value. This is how `Codec[Person](SnakeCase())` works — the user never needs to write `StructMeta[Person]()` explicitly. `Codec[T]` itself is implemented as a pure GALA library (`std/json/codec.gala`) built on top of the neutral `FieldEncoder` / `FieldDecoder` interfaces from `std/meta.gala`; the transpiler carries no JSON-specific knowledge.
 
 #### Building Custom Codecs
 
-`StructMeta` is format-agnostic. To support a new format (YAML, TOML, etc.), implement `FieldWriter` and `FieldReader` interfaces from `std`:
+`StructMeta` is format-agnostic. To support a new format (YAML, TOML, etc.), implement the `FieldEncoder` / `FieldDecoder` interfaces from `std/meta.gala`:
 
 ```gala
-type FieldWriter interface {
-    BeginObject()
-    EndObject()
-    WriteKey(key string)
+type FieldEncoder interface {
+    WriteKey(name string)
     WriteString(v string)
     WriteInt(v int)
+    WriteInt64(v int64)
     WriteFloat64(v float64)
     WriteBool(v bool)
+    WriteRune(v rune)
     WriteNull()
+    WriteStartObject()
+    WriteEndObject()
+    WriteStartArray()
+    WriteEndArray()
 }
 ```
 
-Then create a codec type with an `Apply(meta StructMetaOps, ...)` method — the transpiler will auto-inject StructMeta for your format too.
+Then create a codec type with an `Apply(meta StructMeta[T], ...)` method — the transpiler will auto-inject StructMeta for your format too.
 
 #### StructMeta API
 
@@ -1611,9 +1614,8 @@ Then create a codec type with an `Apply(meta StructMetaOps, ...)` method — the
 |--------|-----------|-------------|
 | `NumFields` | `() int` | Number of fields in the struct |
 | `FieldName` | `(i int) string` | Name of field at index i |
-| `FieldType` | `(i int) string` | Type name of field at index i |
-| `WriteTo` | `(v T, w FieldWriter, keys Array[string])` | Serialize fields |
-| `ReadFrom` | `(r FieldReader, reverseKeys HashMap[string, string]) T` | Deserialize fields |
+| `EncodeFields` | `(w FieldEncoder, t T, nameFn func(int) string, omitFn func(int) bool)` | Typed serialise of a T via the writer interface |
+| `DecodeFields` | `(r FieldDecoder, lookup func(string) int) T` | Typed construct of a T via the reader interface |
 
 ### Regex
 

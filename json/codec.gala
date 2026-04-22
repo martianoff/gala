@@ -129,8 +129,8 @@ func (e *JsonEncoderImpl) writeEscapedJsonString(s string) {
     e.buf.WriteByte('"')
 }
 
-// PrettyStringJson formats compact JSON with the given indent.
-func PrettyStringJson(compact string, indent string) Try[string] {
+// PrettyIndent re-indents a compact JSON string.
+func PrettyIndent(compact string, indent string) Try[string] {
     var out bytes.Buffer
     val err = json.Indent(&out, toBytes(compact), "", indent)
     if err != nil {
