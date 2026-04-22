@@ -376,7 +376,7 @@ func (t *galaASTTransformer) genTypedRead(localIdent ast.Expr, fieldType transpi
 		}
 		if base == "Option" || base == "std.Option" {
 			if len(gt.Params) > 0 {
-				return genOptionRead(localIdent, gt.Params[0])
+				return t.genOptionRead(localIdent, gt.Params[0])
 			}
 		}
 		// TODO: Array / List / HashMap / nested struct reads.
@@ -395,13 +395,35 @@ func (t *galaASTTransformer) genTypedRead(localIdent ast.Expr, fieldType transpi
 	}}
 }
 
-// genOptionRead: if r.IsNull() { r.ReadNull(); local = None } else { local = Some(r.ReadX()) }
-func genOptionRead(localIdent ast.Expr, inner transpiler.Type) []ast.Stmt {
+// genOptionRead: if r.IsNull() { r.ReadNull(); local = None[E]{}.Apply() }
+//                else               { local = Some[E]{}.Apply(r.ReadX()) }
+func (t *galaASTTransformer) genOptionRead(localIdent ast.Expr, inner transpiler.Type) []ast.Stmt {
 	readMethod := primitiveReadMethodFor(inner)
 	if readMethod == "" {
 		return nil
 	}
 	innerName := baseTypeName(inner)
+	noneCtor := &ast.CallExpr{
+		Fun: &ast.SelectorExpr{
+			X: &ast.CompositeLit{Type: &ast.IndexExpr{
+				X:     t.stdIdent("None"),
+				Index: ast.NewIdent(innerName),
+			}},
+			Sel: ast.NewIdent("Apply"),
+		},
+	}
+	someCtor := &ast.CallExpr{
+		Fun: &ast.SelectorExpr{
+			X: &ast.CompositeLit{Type: &ast.IndexExpr{
+				X:     t.stdIdent("Some"),
+				Index: ast.NewIdent(innerName),
+			}},
+			Sel: ast.NewIdent("Apply"),
+		},
+		Args: []ast.Expr{&ast.CallExpr{
+			Fun: &ast.SelectorExpr{X: ast.NewIdent("r"), Sel: ast.NewIdent(readMethod)},
+		}},
+	}
 	return []ast.Stmt{&ast.IfStmt{
 		Cond: methodCall("r", "IsNull"),
 		Body: &ast.BlockStmt{List: []ast.Stmt{
@@ -409,21 +431,14 @@ func genOptionRead(localIdent ast.Expr, inner transpiler.Type) []ast.Stmt {
 			&ast.AssignStmt{
 				Lhs: []ast.Expr{localIdent},
 				Tok: token.ASSIGN,
-				Rhs: []ast.Expr{&ast.CallExpr{
-					Fun: &ast.IndexExpr{X: ast.NewIdent("None"), Index: ast.NewIdent(innerName)},
-				}},
+				Rhs: []ast.Expr{noneCtor},
 			},
 		}},
 		Else: &ast.BlockStmt{List: []ast.Stmt{
 			&ast.AssignStmt{
 				Lhs: []ast.Expr{localIdent},
 				Tok: token.ASSIGN,
-				Rhs: []ast.Expr{&ast.CallExpr{
-					Fun: &ast.IndexExpr{X: ast.NewIdent("Some"), Index: ast.NewIdent(innerName)},
-					Args: []ast.Expr{&ast.CallExpr{
-						Fun: &ast.SelectorExpr{X: ast.NewIdent("r"), Sel: ast.NewIdent(readMethod)},
-					}},
-				}},
+				Rhs: []ast.Expr{someCtor},
 			},
 		}},
 	}}

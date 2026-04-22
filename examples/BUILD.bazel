@@ -1534,6 +1534,31 @@ gala_test(
     ],
 )
 
+# StructMeta[T].EncodeFields / DecodeFields typed codegen (Option-C, Phase 3a).
+# Directly exercises the new typed per-field dispatch methods against a
+# JSON FieldEncoder/FieldDecoder implementation.  No `any`, no runtime
+# type assertions on user data in the codec path.
+gala_test(
+    name = "json_codec_new",
+    src = "json_codec_new.gala",
+    expected = "json_codec_new.out",
+    deps = [
+        "//collection_immutable",
+        "//json",
+    ],
+)
+
+# Gap #12 repro: Option[T] field round-trip (Some → value, None → null).
+gala_test(
+    name = "json_codec_option",
+    src = "json_codec_option.gala",
+    expected = "json_codec_option.out",
+    deps = [
+        "//collection_immutable",
+        "//json",
+    ],
+)
+
 # Regex pattern matching usage
 gala_test(
     name = "regex_usage",

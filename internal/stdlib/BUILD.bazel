@@ -40,9 +40,11 @@ genrule(
         # json package
         "//json:json_go",
         "//json:codec_rw_go",
+        "//json:codec_new_go",
         "//json:naming_go",
         "//json:json.gala",
         "//json:codec_rw.gala",
+        "//json:codec_new.gala",
         "//json:helpers_go",
         "//json:helpers.gala",
         "//json:naming.gala",

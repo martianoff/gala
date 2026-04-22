@@ -426,6 +426,12 @@ func (t *galaASTTransformer) genReadFromAny(config *structMetaConfig) *ast.FuncD
 func genFieldWrite(fieldAccess ast.Expr, fieldType transpiler.Type) []ast.Stmt {
 	baseType := unwrapGalaType(fieldType)
 	method := writeMethodForBasicType(baseTypeName(baseType))
+	// WriteNull takes no argument (legacy stops dispatching at primitives).
+	if method == "WriteNull" {
+		return []ast.Stmt{exprStmt(&ast.CallExpr{
+			Fun: &ast.SelectorExpr{X: ast.NewIdent("w"), Sel: ast.NewIdent(method)},
+		})}
+	}
 	return []ast.Stmt{exprStmt(&ast.CallExpr{
 		Fun:  &ast.SelectorExpr{X: ast.NewIdent("w"), Sel: ast.NewIdent(method)},
 		Args: []ast.Expr{fieldAccess},
