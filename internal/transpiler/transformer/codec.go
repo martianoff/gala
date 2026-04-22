@@ -113,6 +113,13 @@ func (t *galaASTTransformer) generateStructMetaDecls(config *structMetaConfig) [
 	decls = append(decls, t.genNumFields(genName, len(meta.FieldNames)))
 	decls = append(decls, t.genFieldName(genName, meta.FieldNames))
 	decls = append(decls, t.genFieldType(genName, meta))
+	// Phase-1 (in progress): emit format-agnostic FieldType accessor +
+	// erased field-value accessors so the JSON codec can move fully into
+	// std/json. These coexist with the legacy WriteTo/ReadFrom emitters
+	// until Phase 2 flips callers; Phase 4 will delete the legacy path.
+	decls = append(decls, t.genFieldTypeOf(genName, meta))
+	decls = append(decls, t.genFieldValueAny(config))
+	decls = append(decls, t.genConstructAny(config))
 	decls = append(decls, t.genWriteTo(config))
 	decls = append(decls, t.genReadFrom(config))
 	// Any-based variants for generic codec use (internal to codec libraries)
@@ -193,6 +200,326 @@ func (t *galaASTTransformer) genFieldType(genName string, meta *transpiler.TypeM
 		Body: &ast.BlockStmt{List: []ast.Stmt{
 			&ast.SwitchStmt{Tag: ast.NewIdent("i"), Body: &ast.BlockStmt{List: cases}},
 		}},
+	}
+}
+
+// --- FieldTypeOf(i int) std.FieldType ---
+// Format-agnostic neutral descriptor. Codec libraries pattern-match on the
+// returned sealed value to drive encode/decode without the transpiler ever
+// learning about JSON, YAML, or any other wire format.
+//
+// Emitted alongside the legacy FieldType(i) string method for now; once
+// Phase 2 migrates std/json, a follow-up will delete the legacy accessor
+// and rename this to FieldType per the design-doc spec.
+func (t *galaASTTransformer) genFieldTypeOf(genName string, meta *transpiler.TypeMetadata) *ast.FuncDecl {
+	var cases []ast.Stmt
+	for i, fieldName := range meta.FieldNames {
+		fieldType := meta.Fields[fieldName]
+		cases = append(cases, &ast.CaseClause{
+			List: []ast.Expr{intLit(i)},
+			Body: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{t.fieldTypeDescriptor(fieldType)}}},
+		})
+	}
+	// default: UnknownType("")
+	cases = append(cases, &ast.CaseClause{
+		Body: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{t.fieldTypeUnknown("")}}},
+	})
+
+	return &ast.FuncDecl{
+		Recv: blankRecv(genName),
+		Name: ast.NewIdent("FieldTypeOf"),
+		Type: &ast.FuncType{
+			Params:  &ast.FieldList{List: []*ast.Field{{Names: idents("i"), Type: ast.NewIdent("int")}}},
+			Results: &ast.FieldList{List: []*ast.Field{{Type: t.stdIdent("FieldType")}}},
+		},
+		Body: &ast.BlockStmt{List: []ast.Stmt{
+			&ast.SwitchStmt{Tag: ast.NewIdent("i"), Body: &ast.BlockStmt{List: cases}},
+		}},
+	}
+}
+
+// fieldTypeDescriptor maps a transpiler.Type to the AST of the corresponding
+// std.FieldType constructor call.
+//
+// V1 maps: string/int/int64/float64/bool/rune, Option[T], Array[T], List[T],
+// HashMap[K,V], and registered structs (as NestedStructType). Anything else
+// — Either, Try, sealed-valued fields, go-interop types — becomes
+// UnknownType(typeString) which codec libraries treat as "skip / write null".
+func (t *galaASTTransformer) fieldTypeDescriptor(ft transpiler.Type) ast.Expr {
+	if ft == nil {
+		return t.fieldTypeUnknown("")
+	}
+	// Immutable[T] wraps T transparently for codec purposes.
+	ft = unwrapGalaType(ft)
+	switch v := ft.(type) {
+	case transpiler.BasicType:
+		if variant, ok := basicFieldTypeVariant(v.Name); ok {
+			return t.fieldTypeNullary(variant)
+		}
+	case transpiler.NamedType:
+		if variant, ok := basicFieldTypeVariant(v.Name); ok {
+			return t.fieldTypeNullary(variant)
+		}
+		// A nested user-defined struct — emit NestedStructType(meta) once the
+		// caller has materialised a StructMeta for it. For V1 we treat it as
+		// UnknownType to avoid recursively requesting metadata that the user
+		// never asked for.
+		return t.fieldTypeUnknown(v.String())
+	case transpiler.GenericType:
+		base := v.Base.BaseName()
+		switch base {
+		case "Option", "std.Option":
+			if len(v.Params) >= 1 {
+				return t.fieldTypeRecursive("OptionType", []ast.Expr{t.fieldTypeDescriptor(v.Params[0])})
+			}
+		case "Array", "collection_immutable.Array":
+			if len(v.Params) >= 1 {
+				return t.fieldTypeRecursive("ArrayType", []ast.Expr{t.fieldTypeDescriptor(v.Params[0])})
+			}
+		case "List", "collection_immutable.List":
+			if len(v.Params) >= 1 {
+				return t.fieldTypeRecursive("ListType", []ast.Expr{t.fieldTypeDescriptor(v.Params[0])})
+			}
+		case "HashMap", "collection_immutable.HashMap":
+			if len(v.Params) >= 2 {
+				return t.fieldTypeRecursive("HashMapType",
+					[]ast.Expr{t.fieldTypeDescriptor(v.Params[0]), t.fieldTypeDescriptor(v.Params[1])})
+			}
+		}
+		return t.fieldTypeUnknown(v.String())
+	}
+	return t.fieldTypeUnknown(ft.String())
+}
+
+// fieldTypeNullary emits `std.VariantName{}.Apply()` for a zero-arg FieldType
+// variant like StringType, IntType, etc.
+func (t *galaASTTransformer) fieldTypeNullary(variantName string) ast.Expr {
+	return &ast.CallExpr{
+		Fun: &ast.SelectorExpr{
+			X:   &ast.CompositeLit{Type: t.stdIdent(variantName)},
+			Sel: ast.NewIdent("Apply"),
+		},
+	}
+}
+
+// fieldTypeRecursive emits `std.VariantName{}.Apply(arg0, arg1, ...)` for a
+// recursive variant like OptionType(Inner) or HashMapType(Key, Value).
+func (t *galaASTTransformer) fieldTypeRecursive(variantName string, args []ast.Expr) ast.Expr {
+	return &ast.CallExpr{
+		Fun: &ast.SelectorExpr{
+			X:   &ast.CompositeLit{Type: t.stdIdent(variantName)},
+			Sel: ast.NewIdent("Apply"),
+		},
+		Args: args,
+	}
+}
+
+// fieldTypeUnknown emits `std.UnknownType{}.Apply(typeStringLit)`.
+func (t *galaASTTransformer) fieldTypeUnknown(typeStr string) ast.Expr {
+	return &ast.CallExpr{
+		Fun: &ast.SelectorExpr{
+			X:   &ast.CompositeLit{Type: t.stdIdent("UnknownType")},
+			Sel: ast.NewIdent("Apply"),
+		},
+		Args: []ast.Expr{stringLit(typeStr)},
+	}
+}
+
+// basicFieldTypeVariant maps a primitive type name to its FieldType variant.
+// Returns ("", false) for non-primitive names.
+func basicFieldTypeVariant(name string) (string, bool) {
+	switch name {
+	case "string":
+		return "StringType", true
+	case "int":
+		return "IntType", true
+	case "int64":
+		return "Int64Type", true
+	case "float64":
+		return "Float64Type", true
+	case "bool":
+		return "BoolType", true
+	case "rune", "int32":
+		return "RuneType", true
+	}
+	return "", false
+}
+
+// --- FieldValueAny(i int, t any) any ---
+// Erased field extractor; callers hold `t` as `any` and ask for field i.
+// Delegates to typed per-field accesses after a type assertion on the target.
+// Together with FieldTypeOf, this is how the new std/json codec walks a
+// struct without needing a generic type parameter.
+func (t *galaASTTransformer) genFieldValueAny(config *structMetaConfig) *ast.FuncDecl {
+	meta := config.typeMetadata
+	resolvedName := t.resolveStructTypeName(config.typeName)
+	immutFlags := t.structImmutFields[resolvedName]
+
+	// typed := t.(T)
+	typedAssert := &ast.AssignStmt{
+		Lhs: []ast.Expr{ast.NewIdent("typed")},
+		Tok: token.DEFINE,
+		Rhs: []ast.Expr{
+			&ast.TypeAssertExpr{X: ast.NewIdent("t"), Type: ast.NewIdent(config.typeName)},
+		},
+	}
+
+	var cases []ast.Stmt
+	for i, fieldName := range meta.FieldNames {
+		isImmut := immutFlags != nil && i < len(immutFlags) && immutFlags[i]
+		fieldAccess := buildFieldAccess(ast.NewIdent("typed"), fieldName, isImmut)
+		cases = append(cases, &ast.CaseClause{
+			List: []ast.Expr{intLit(i)},
+			Body: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{fieldAccess}}},
+		})
+	}
+	// default: return nil
+	cases = append(cases, &ast.CaseClause{
+		Body: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{ast.NewIdent("nil")}}},
+	})
+
+	return &ast.FuncDecl{
+		Recv: blankRecv(config.generatedName),
+		Name: ast.NewIdent("FieldValueAny"),
+		Type: &ast.FuncType{
+			Params: &ast.FieldList{List: []*ast.Field{
+				{Names: idents("i"), Type: ast.NewIdent("int")},
+				{Names: idents("t"), Type: ast.NewIdent("any")},
+			}},
+			Results: &ast.FieldList{List: []*ast.Field{{Type: ast.NewIdent("any")}}},
+		},
+		Body: &ast.BlockStmt{List: []ast.Stmt{
+			typedAssert,
+			&ast.SwitchStmt{Tag: ast.NewIdent("i"), Body: &ast.BlockStmt{List: cases}},
+		}},
+	}
+}
+
+// --- ConstructAny(values []any) Try[any] ---
+// Positional struct construction used by the new codec's Decode path.
+// `values` must be in the same order as FieldName(0..NumFields()-1); each
+// element is asserted to the field's concrete type. Missing / surplus values
+// and type-assertion failures all produce `Failure[any]`.
+//
+// V1 note: the generated body assumes well-typed inputs and performs the
+// positional assertion straight line. Richer per-field error messages will
+// arrive when the Phase 2 library starts exercising this code path.
+func (t *galaASTTransformer) genConstructAny(config *structMetaConfig) *ast.FuncDecl {
+	meta := config.typeMetadata
+	resolvedName := t.resolveStructTypeName(config.typeName)
+	immutFlags := t.structImmutFields[resolvedName]
+
+	// var _result T
+	decls := []ast.Stmt{&ast.DeclStmt{Decl: &ast.GenDecl{
+		Tok: token.VAR,
+		Specs: []ast.Spec{
+			&ast.ValueSpec{Names: idents("_result"), Type: ast.NewIdent(config.typeName)},
+		},
+	}}}
+
+	// if len(values) < N { return Failure[any](fmt.Errorf("...")) }
+	decls = append(decls, &ast.IfStmt{
+		Cond: &ast.BinaryExpr{
+			X:  &ast.CallExpr{Fun: ast.NewIdent("len"), Args: []ast.Expr{ast.NewIdent("values")}},
+			Op: token.LSS,
+			Y:  intLit(len(meta.FieldNames)),
+		},
+		Body: &ast.BlockStmt{List: []ast.Stmt{
+			&ast.ReturnStmt{Results: []ast.Expr{t.tryFailureAny(fmt.Sprintf("ConstructAny[%s]: got %%d values, need %d", config.typeName, len(meta.FieldNames)))}},
+		}},
+	})
+
+	// For each field: v, ok := values[i].(FieldType); if !ok -> Failure
+	for i, fieldName := range meta.FieldNames {
+		fieldType := meta.Fields[fieldName]
+		isImmut := immutFlags != nil && i < len(immutFlags) && immutFlags[i]
+
+		// Target Go type AST
+		var goType ast.Expr
+		if fieldType != nil {
+			// Use baseTypeName-driven best-effort; fallback to any for unknown types.
+			if bn := baseTypeName(unwrapGalaType(fieldType)); bn != "" {
+				goType = ast.NewIdent(bn)
+			} else {
+				goType = ast.NewIdent("any")
+			}
+		} else {
+			goType = ast.NewIdent("any")
+		}
+
+		varName := fmt.Sprintf("_v%d", i)
+		okName := fmt.Sprintf("_ok%d", i)
+		decls = append(decls, &ast.AssignStmt{
+			Lhs: []ast.Expr{ast.NewIdent(varName), ast.NewIdent(okName)},
+			Tok: token.DEFINE,
+			Rhs: []ast.Expr{
+				&ast.TypeAssertExpr{
+					X: &ast.IndexExpr{X: ast.NewIdent("values"), Index: intLit(i)},
+					Type: goType,
+				},
+			},
+		})
+		decls = append(decls, &ast.IfStmt{
+			Cond: &ast.UnaryExpr{Op: token.NOT, X: ast.NewIdent(okName)},
+			Body: &ast.BlockStmt{List: []ast.Stmt{
+				&ast.ReturnStmt{Results: []ast.Expr{t.tryFailureAny(fmt.Sprintf("ConstructAny[%s]: field %q has wrong type", config.typeName, fieldName))}},
+			}},
+		})
+
+		rhs := ast.Expr(ast.NewIdent(varName))
+		if isImmut {
+			rhs = &ast.CallExpr{Fun: t.stdIdent("NewImmutable"), Args: []ast.Expr{rhs}}
+		}
+		decls = append(decls, &ast.AssignStmt{
+			Lhs: []ast.Expr{&ast.SelectorExpr{X: ast.NewIdent("_result"), Sel: ast.NewIdent(fieldName)}},
+			Tok: token.ASSIGN,
+			Rhs: []ast.Expr{rhs},
+		})
+	}
+
+	// return Success[any](_result)
+	decls = append(decls, &ast.ReturnStmt{Results: []ast.Expr{
+		&ast.CallExpr{
+			Fun: &ast.SelectorExpr{
+				X:   &ast.CompositeLit{Type: &ast.IndexExpr{X: t.stdIdent("Success"), Index: ast.NewIdent("any")}},
+				Sel: ast.NewIdent("Apply"),
+			},
+			Args: []ast.Expr{ast.NewIdent("_result")},
+		},
+	}})
+
+	return &ast.FuncDecl{
+		Recv: blankRecv(config.generatedName),
+		Name: ast.NewIdent("ConstructAny"),
+		Type: &ast.FuncType{
+			Params: &ast.FieldList{List: []*ast.Field{
+				{Names: idents("values"), Type: &ast.ArrayType{Elt: ast.NewIdent("any")}},
+			}},
+			Results: &ast.FieldList{List: []*ast.Field{
+				{Type: &ast.IndexExpr{X: t.stdIdent("Try"), Index: ast.NewIdent("any")}},
+			}},
+		},
+		Body: &ast.BlockStmt{List: decls},
+	}
+}
+
+// tryFailureAny emits `std.Failure[any]{}.Apply(fmt.Errorf("msg"))`.
+// Caller supplies a format string; runtime-generated args aren't threaded
+// through in V1 (static messages are enough for the codec path).
+func (t *galaASTTransformer) tryFailureAny(msg string) ast.Expr {
+	// Import fmt lazily so only generated codec structs using this path pull it.
+	t.importManager.AddTransitive("fmt", "fmt")
+	return &ast.CallExpr{
+		Fun: &ast.SelectorExpr{
+			X:   &ast.CompositeLit{Type: &ast.IndexExpr{X: t.stdIdent("Failure"), Index: ast.NewIdent("any")}},
+			Sel: ast.NewIdent("Apply"),
+		},
+		Args: []ast.Expr{
+			&ast.CallExpr{
+				Fun: &ast.SelectorExpr{X: ast.NewIdent("fmt"), Sel: ast.NewIdent("Errorf")},
+				Args: []ast.Expr{stringLit(msg)},
+			},
+		},
 	}
 }
 
