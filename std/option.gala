@@ -15,12 +15,38 @@ func getSomeValue(opt any) any = opt match {
     case _ => opt
 }
 
+// AnyOption is the non-generic interface that every `Option[T]` instantiation
+// satisfies. It is used by libraries (e.g., `std/json`) that walk values typed
+// as `any` and need to dispatch on whether the value is an Option without
+// knowing its inner type parameter.
+//
+// Every `Option[T]` automatically implements `AnyOption` because IsSome() is
+// defined below on `Option[T]` and ValueAsAny() is defined one line later.
+// This lets code write `v.(AnyOption)` — an interface assertion, not a
+// forbidden generic instantiation like `v.(Option[any])`.
+//
+// The inner-value accessor is named `ValueAsAny` rather than `GetAny` to
+// avoid colliding with std's `ImmutableUnwrapper.GetAny` contract — the
+// latter is used by `As[T]` to transparently unwrap `Immutable[U]`, so any
+// type exposing `GetAny() any` would be treated as unwrappable and break
+// runtime type matches like `case i: int`.
+type AnyOption interface {
+    IsSome() bool
+    ValueAsAny() any
+}
+
 // Option represents an optional value: every instance of Option is either an instance
 // of Some containing a value, or None representing an empty value.
 sealed type Option[T any] {
     case Some(Value T)
     case None()
 }
+
+// ValueAsAny returns the option's value boxed as `any` when the option is Some.
+// Panics when the option is None — callers should guard with IsSome() first.
+// This method (together with IsSome) is how `Option[T]` satisfies the
+// non-generic `AnyOption` interface.
+func (o Option[T]) ValueAsAny() any = o.Get()
 
 // IsDefined returns true if the option is an instance of Some, false otherwise.
 func (o Option[T]) IsDefined() bool = o.isSome()

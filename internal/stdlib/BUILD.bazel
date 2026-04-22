@@ -35,6 +35,8 @@ genrule(
         "//std:constptr.gala",
         "//std:codec_go",
         "//std:codec.gala",
+        "//std:meta_go",
+        "//std:meta.gala",
         # json package
         "//json:json_go",
         "//json:codec_rw_go",

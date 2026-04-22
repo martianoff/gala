@@ -1,0 +1,83 @@
+package std
+
+// Package std / meta.gala — struct-metadata types consumed by format codecs.
+//
+// Background
+// ----------
+// The transpiler generates a `StructMeta[T]` intrinsic for every struct that
+// appears in a `StructMeta[T]()` call (typically injected for `Codec[T]`).
+// Generated metadata implements the `StructMetaRef` interface below and
+// exposes a neutral, format-agnostic descriptor for each field via the
+// `FieldType` sealed type.
+//
+// Libraries (`std/json`, future `std/yaml`, etc.) pattern-match on FieldType
+// to drive encode/decode. The transpiler itself knows nothing about JSON or
+// any other wire format — its only contract is this file.
+
+// FieldType is a neutral, format-agnostic descriptor for a struct field's type.
+//
+// The transpiler's `StructMeta[T]` generator emits a `FieldType(i int) FieldType`
+// accessor that returns one of these variants based on the compile-time GALA
+// type of the i-th field. Codec libraries pattern-match on this value to drive
+// serialization / deserialization.
+//
+// V1 covers the primitive types, `Option[T]`, `Array[T]`, `HashMap[K,V]` and
+// nested struct references. Sealed-type-valued struct fields, generic
+// user-defined containers, and collections beyond the three above are emitted
+// as `UnknownType(name)` in V1 — codec libraries should treat that as "skip"
+// or "write null".
+sealed type FieldType {
+    // Primitive scalar types.
+    case StringType()
+    case IntType()
+    case Int64Type()
+    case Float64Type()
+    case BoolType()
+    case RuneType()
+
+    // Composite types — recursive.
+    case OptionType(Inner FieldType)
+    case ArrayType(Elem FieldType)
+    case ListType(Elem FieldType)
+    case HashMapType(Key FieldType, Value FieldType)
+
+    // A struct-valued field. `Meta` is the neutral handle onto the nested
+    // struct's own StructMeta, usable for recursive descent without knowing
+    // the concrete type parameter.
+    case NestedStructType(Meta StructMetaRef)
+
+    // Fallback for anything the transpiler cannot map cleanly in V1
+    // (sealed types, user-defined generics, unsupported go interop types).
+    // The name is informational only — codecs typically emit null.
+    case UnknownType(Name string)
+}
+
+// StructMetaRef is the non-generic view of a `StructMeta[T]` that the
+// transpiler generates. Every generated `_StructMeta_T` implements this
+// interface, so library code can walk nested struct references without
+// propagating the concrete type parameter.
+//
+// Generic methods (`FieldValue(i int, t T) any`, `Construct(...) Try[T]`)
+// live on the concrete `_StructMeta_T` for callers that do know T; the
+// erased `FieldValueAny` / `ConstructAny` are the ones callable through
+// this interface.
+type StructMetaRef interface {
+    NumFields() int
+    FieldName(i int) string
+
+    // FieldTypeOf returns the neutral field-type descriptor for field i.
+    // TODO(phase-1): once the transpiler stops emitting the legacy
+    // `FieldType(i) string` accessor, rename this to `FieldType(i) FieldType`
+    // to match the design-doc spec.
+    FieldTypeOf(i int) FieldType
+
+    // FieldValueAny extracts field i from `t` boxed as `any`.
+    // `t` must be the concrete struct type the generated StructMeta describes.
+    FieldValueAny(i int, t any) any
+
+    // ConstructAny builds a struct-typed value from positional field values.
+    // Values are boxed as `any` and must be in the same order as
+    // FieldName(0..NumFields()-1). Returns `Failure` if any element fails the
+    // field's runtime type check.
+    ConstructAny(values []any) Try[any]
+}

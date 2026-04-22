@@ -43,6 +43,20 @@ type Array[T any] struct {
     prefix   []T           // Prepended elements in forward order (prefix[0] is logical index 0)
 }
 
+// AnyArray is the non-generic interface that every `Array[T]` instantiation
+// satisfies. It is used by libraries (e.g., `std/json`) that walk values typed
+// as `any` and need to iterate an Array without knowing its element type.
+//
+// Every `Array[T]` automatically implements `AnyArray` because `Size`, `GetAny`,
+// and `ForEachAny` are defined on `Array[T]`. This lets code write
+// `v.(AnyArray)` — an interface assertion, not a forbidden generic
+// instantiation like `v.(Array[any])`.
+type AnyArray interface {
+    Size() int
+    GetAny(i int) any
+    ForEachAny(f func(any))
+}
+
 // EmptyArray returns an empty Array.
 func EmptyArray[T any]() Array[T] {
     var nilRoot *arrayNode[T] = nil
@@ -254,6 +268,18 @@ func (a Array[T]) Length() int = a.length
 
 // Size is an alias for Length.
 func (a Array[T]) Size() int = a.length
+
+// GetAny returns the element at `i` boxed as `any`. Needed for the
+// `AnyArray` interface so non-generic consumers (e.g., `std/json`'s codec)
+// can iterate an Array without knowing its element type.
+func (a Array[T]) GetAny(i int) any = a.Get(i)
+
+// ForEachAny calls `f` with every element boxed as `any`. Needed for the
+// `AnyArray` interface so non-generic consumers (e.g., `std/json`'s codec)
+// can walk an Array without knowing its element type.
+func (a Array[T]) ForEachAny(f func(any)) {
+    a.ForEach((e) => f(e))
+}
 
 // Helper function to calculate required depth for a given size.
 func requiredDepth(size int) int {

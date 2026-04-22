@@ -35,6 +35,19 @@ type HashMap[K comparable, V any] struct {
     size   int
 }
 
+// AnyMap is the non-generic interface that every `HashMap[K,V]` instantiation
+// satisfies. It is used by libraries (e.g., `std/json`) that walk values typed
+// as `any` and need to iterate a map without knowing its key/value types.
+//
+// Every `HashMap[K,V]` automatically implements `AnyMap` because `Size` is
+// defined above and `ForEachAny` is defined below. This lets code write
+// `v.(AnyMap)` — an interface assertion, not a forbidden generic
+// instantiation like `v.(HashMap[any,any])`.
+type AnyMap interface {
+    Size() int
+    ForEachAny(f func(any, any))
+}
+
 // EmptyHashMap returns an empty HashMap.
 func EmptyHashMap[K comparable, V any]() HashMap[K, V] {
     var nilRoot *hashMapNode[K, V] = nil
@@ -52,6 +65,13 @@ func (m HashMap[K, V]) Size() int = m.size
 
 // Length is an alias for Size.
 func (m HashMap[K, V]) Length() int = m.size
+
+// ForEachAny calls `f(key, value)` for every entry with both arguments boxed
+// as `any`. Needed for the `AnyMap` interface so non-generic consumers (e.g.,
+// `std/json`'s codec) can walk a HashMap without knowing its key/value types.
+func (m HashMap[K, V]) ForEachAny(f func(any, any)) {
+    m.ForEachKV((k, v) => f(k, v))
+}
 
 // hashMapHash computes a hash code for a key.
 func hashMapHash[K comparable](key K) uint32 {
