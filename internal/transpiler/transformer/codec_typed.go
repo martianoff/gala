@@ -110,12 +110,12 @@ func (t *galaASTTransformer) genTypedWrite(access ast.Expr, fieldType transpiler
 		if base == "Array" || base == "List" ||
 			base == "collection_immutable.Array" || base == "collection_immutable.List" {
 			if len(gt.Params) > 0 {
-				return genCollectionWrite(access, gt.Params[0])
+				return t.genCollectionWrite(access, gt.Params[0])
 			}
 		}
 		if base == "HashMap" || base == "collection_immutable.HashMap" {
 			if len(gt.Params) == 2 {
-				return genHashMapWrite(access, gt.Params[1])
+				return t.genHashMapWrite(access, gt.Params[1])
 			}
 		}
 	}
@@ -177,12 +177,12 @@ func genOptionWrite(access ast.Expr, inner transpiler.Type) []ast.Stmt {
 }
 
 // genCollectionWrite: write start-array, iterate, write end-array. Primitive elements only.
-func genCollectionWrite(access ast.Expr, elem transpiler.Type) []ast.Stmt {
+func (t *galaASTTransformer) genCollectionWrite(access ast.Expr, elem transpiler.Type) []ast.Stmt {
 	method := primitiveWriteMethodFor(elem)
 	if method == "" {
 		return []ast.Stmt{exprStmt(methodCall("w", "WriteNull"))}
 	}
-	elemGoType := goTypeFor(elem)
+	elemGoType := t.goTypeFor(elem)
 	if elemGoType == nil {
 		return []ast.Stmt{exprStmt(methodCall("w", "WriteNull"))}
 	}
@@ -213,12 +213,12 @@ func genCollectionWrite(access ast.Expr, elem transpiler.Type) []ast.Stmt {
 }
 
 // genHashMapWrite: write start-object, iterate (k,v), write end-object. Primitive value only.
-func genHashMapWrite(access ast.Expr, elem transpiler.Type) []ast.Stmt {
+func (t *galaASTTransformer) genHashMapWrite(access ast.Expr, elem transpiler.Type) []ast.Stmt {
 	method := primitiveWriteMethodFor(elem)
 	if method == "" {
 		return []ast.Stmt{exprStmt(methodCall("w", "WriteNull"))}
 	}
-	elemGoType := goTypeFor(elem)
+	elemGoType := t.goTypeFor(elem)
 	if elemGoType == nil {
 		return []ast.Stmt{exprStmt(methodCall("w", "WriteNull"))}
 	}
@@ -243,7 +243,7 @@ func genHashMapWrite(access ast.Expr, elem transpiler.Type) []ast.Stmt {
 	return []ast.Stmt{
 		exprStmt(methodCall("w", "WriteStartObject")),
 		exprStmt(&ast.CallExpr{
-			Fun:  &ast.SelectorExpr{X: access, Sel: ast.NewIdent("ForEach")},
+			Fun:  &ast.SelectorExpr{X: access, Sel: ast.NewIdent("ForEachKV")},
 			Args: []ast.Expr{lambda},
 		}),
 		exprStmt(methodCall("w", "WriteEndObject")),
@@ -268,11 +268,11 @@ func (t *galaASTTransformer) genDecodeFields(config *structMetaConfig) *ast.Func
 		fieldType := meta.Fields[fieldName]
 		_ = i
 		localName := "_" + fieldName
-		goType := goTypeFor(unwrapGalaType(fieldType))
+		goType := t.goTypeFor(unwrapGalaType(fieldType))
 		if goType == nil {
 			// Unsupported shape — fall back to named-type ident.
 			if name := namedTypeSimpleName(fieldType); name != "" {
-				goType = ast.NewIdent(name)
+				goType = t.qualifiedTypeIdent(name)
 			} else {
 				goType = ast.NewIdent("interface{}")
 			}
@@ -485,34 +485,92 @@ func primitiveReadMethodFor(ty transpiler.Type) string {
 // goTypeFor returns a Go AST type ident for a primitive or common generic
 // field type so DecodeFields can declare locals with the correct type.
 // Returns nil for shapes where we can't confidently name the Go type here.
-func goTypeFor(ty transpiler.Type) ast.Expr {
+// The transformer receiver is required to emit properly-qualified references
+// to non-local packages (collection_immutable, std) honouring dot-imports.
+func (t *galaASTTransformer) goTypeFor(ty transpiler.Type) ast.Expr {
 	if ty == nil {
 		return nil
 	}
-	switch t := ty.(type) {
+	switch ty := ty.(type) {
 	case transpiler.BasicType:
-		return ast.NewIdent(t.Name)
+		return ast.NewIdent(ty.Name)
 	case transpiler.NamedType:
-		return ast.NewIdent(t.Name)
+		return t.qualifiedTypeIdent(ty.Name)
 	case transpiler.GenericType:
-		base := t.Base.BaseName()
+		base := ty.Base.BaseName()
 		if base == "Immutable" || base == "std.Immutable" {
-			if len(t.Params) > 0 {
-				return goTypeFor(t.Params[0])
+			if len(ty.Params) > 0 {
+				return t.goTypeFor(ty.Params[0])
 			}
 		}
 		if base == "Option" || base == "std.Option" {
-			if len(t.Params) > 0 {
-				inner := goTypeFor(t.Params[0])
+			if len(ty.Params) > 0 {
+				inner := t.goTypeFor(ty.Params[0])
 				if inner == nil {
 					return nil
 				}
-				return &ast.IndexExpr{X: ast.NewIdent("Option"), Index: inner}
+				return &ast.IndexExpr{X: t.stdIdent("Option"), Index: inner}
+			}
+		}
+		if base == "Array" || base == "List" ||
+			base == "collection_immutable.Array" || base == "collection_immutable.List" {
+			if len(ty.Params) > 0 {
+				inner := t.goTypeFor(ty.Params[0])
+				if inner == nil {
+					return nil
+				}
+				name := base
+				if dot := lastDot(base); dot >= 0 {
+					name = base[dot+1:]
+				}
+				return &ast.IndexExpr{X: t.collectionIdent(name), Index: inner}
+			}
+		}
+		if base == "HashMap" || base == "collection_immutable.HashMap" {
+			if len(ty.Params) == 2 {
+				k := t.goTypeFor(ty.Params[0])
+				v := t.goTypeFor(ty.Params[1])
+				if k == nil || v == nil {
+					return nil
+				}
+				name := base
+				if dot := lastDot(base); dot >= 0 {
+					name = base[dot+1:]
+				}
+				return &ast.IndexListExpr{X: t.collectionIdent(name), Indices: []ast.Expr{k, v}}
 			}
 		}
 		// Other generics left for later phases.
 	}
 	return nil
+}
+
+// qualifiedTypeIdent emits an ast.Expr for a type name that may be
+// package-qualified.  For known packages (collection_immutable, std) it
+// uses the importManager-aware helpers; for anything else it falls back
+// to a plain Selector/Ident split.
+func (t *galaASTTransformer) qualifiedTypeIdent(name string) ast.Expr {
+	if dot := lastDot(name); dot >= 0 {
+		pkg := name[:dot]
+		sym := name[dot+1:]
+		switch pkg {
+		case "collection_immutable":
+			return t.collectionIdent(sym)
+		case "std":
+			return t.stdIdent(sym)
+		}
+		return &ast.SelectorExpr{X: ast.NewIdent(pkg), Sel: ast.NewIdent(sym)}
+	}
+	return ast.NewIdent(name)
+}
+
+func lastDot(s string) int {
+	for i := len(s) - 1; i >= 0; i-- {
+		if s[i] == '.' {
+			return i
+		}
+	}
+	return -1
 }
 
 func namedTypeSimpleName(ty transpiler.Type) string {
