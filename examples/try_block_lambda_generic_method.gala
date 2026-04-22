@@ -1,0 +1,34 @@
+package main
+
+import (
+    . "martianoff/gala/std"
+)
+
+// Repro for lambda-return-type inference bug with block lambdas inside a
+// concrete Try[X] constructor called from within a generic method.
+//
+// Before the fix: the transpiler emitted `func()` (no return type) for the
+// inner lambda because Section 6 (argument transformation) didn't see the
+// Apply method's param types; those were resolved only in Section 10 after
+// the lambda had already been transformed with no expected type.
+//
+// After the fix: collectFunctionCallContext detects the `Type[T](args)`
+// shape and threads Apply's param-types + type-substitutions through as
+// callContext.applyMethodMeta / applyTypeSubst, so lambda args see the
+// substituted `func() string` as their expected type.
+
+type Wrap[T any] struct {}
+
+func (w Wrap[T]) Run(v T) Try[string] {
+    return Try[string](() => {
+        val prefix = "hi-"
+        val suffix = "-end"
+        return prefix + suffix
+    })
+}
+
+func main() {
+    val w = Wrap[int]{}
+    val result = w.Run(0)
+    Println(result.Get())
+}

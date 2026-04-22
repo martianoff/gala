@@ -818,11 +818,15 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 		}
 	}
 
-	// Auto-inject StructMeta[T] when first Apply param is StructMetaOps.
+	// Auto-inject StructMeta[T] when first Apply param is StructMeta[T] (the
+	// Option-C typed interface from std/meta.gala) or the legacy StructMetaOps
+	// (the pre-migration non-generic shim in json/helpers.gala).
 	// Codec[Person](SnakeCase()) → prepend _StructMeta_Person{} before SnakeCase()
 	if hasTypeArgs && len(methodMeta.ParamTypes) > 0 {
 		firstParamType := methodMeta.ParamTypes[0].BaseName()
-		if firstParamType == "StructMetaOps" || firstParamType == "json.StructMetaOps" {
+		switch firstParamType {
+		case "StructMeta", "std.StructMeta",
+			"StructMetaOps", "json.StructMetaOps":
 			args = t.autoInjectStructMeta(args, methodMeta, typeArgs)
 		}
 	}
@@ -944,6 +948,8 @@ func (t *galaASTTransformer) transformFunctionArgs(
 
 		// Positional argument — use unified function call context.
 		funcCallCtx := t.buildFuncCallContext(callCtx.funcMeta, callCtx.inferredTypeSubst, callCtx.goFuncParamTypes, callCtx.structFieldExpectedTypes)
+		funcCallCtx.applyMethodMeta = callCtx.applyMethodMeta
+		funcCallCtx.applyTypeSubst = callCtx.applyTypeSubst
 		expectedType := t.resolveExpectedArgType(funcCallCtx, argIdx)
 		var expr ast.Expr
 		var aerr error
@@ -1022,6 +1028,15 @@ type functionCallContext struct {
 	goFuncParamTypes         []transpiler.Type
 	structFieldExpectedTypes []transpiler.Type
 	inferredTypeSubst        map[string]string
+	// applyMethodMeta is set when the call site is of the form `Type[T](args)`
+	// and Type has an Apply method. It lets the argument-transformation pass
+	// see the Apply method's expected parameter types (with type-param
+	// substitutions from `applyTypeSubst`) so lambda arguments can infer
+	// concrete return / parameter types.  Without this, lambdas passed to
+	// companion-Apply calls would be transformed before Section 10 resolves
+	// them and would miss their expected type entirely.
+	applyMethodMeta *transpiler.MethodMetadata
+	applyTypeSubst  map[string]string
 }
 
 // collectFunctionCallContext handles Section 5 of the call dispatcher:
@@ -1080,6 +1095,33 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, argListCtx
 		} else {
 			// No explicit type args — infer from non-lambda arguments.
 			ctx.inferredTypeSubst = t.inferFuncTypeSubstFromArgs(ctx.funcMeta, argListCtx)
+		}
+	}
+
+	// Companion-Apply path: when `fun` is `Type[T]` (or `Type[T1, T2]`) whose
+	// Type has an Apply method, extract the Apply method's metadata and
+	// resolve any type-param substitutions so the argument-transformation
+	// pass can propagate expected parameter types to lambda arguments.
+	// Without this, calls like `Try[string](() => {...})` would transform
+	// the lambda body with no expected return type and fail to emit the
+	// `func() string` return signature.
+	if ctx.funcMeta == nil {
+		if funcName := t.extractFuncName(fun); funcName != "" {
+			typeMeta, _ := t.getTypeMetaResolved(funcName)
+			if typeMeta != nil {
+				if applyMeta, hasApply := typeMeta.Methods["Apply"]; hasApply {
+					ctx.applyMethodMeta = applyMeta
+					funcTypeArgs := t.extractFuncCallTypeArgs(fun)
+					if len(funcTypeArgs) > 0 {
+						ctx.applyTypeSubst = make(map[string]string)
+						for i, tp := range typeMeta.TypeParams {
+							if i < len(funcTypeArgs) {
+								ctx.applyTypeSubst[tp] = funcTypeArgs[i]
+							}
+						}
+					}
+				}
+			}
 		}
 	}
 

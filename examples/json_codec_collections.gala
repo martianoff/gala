@@ -1,0 +1,30 @@
+package main
+
+import (
+    . "martianoff/gala/std"
+    . "martianoff/gala/json"
+    . "martianoff/gala/collection_immutable"
+)
+
+// Extended Codec[T] coverage: struct fields of Array / HashMap shapes.
+// Exercises the typed EncodeFields path for collections.  Decode for
+// these shapes is a Phase-2 TODO tracked in codec_typed.go — the
+// generated decoder falls back to r.Skip(), and the composite literal
+// is built with zero-valued (empty) collections.  The encode side is
+// exercised end-to-end here.
+
+struct Profile(
+    Name string,
+    Tags Array[string],
+    Labels HashMap[string, string],
+)
+
+func main() {
+    val codec = Codec[Profile](SnakeCase())
+
+    val tags = EmptyArray[string]().Append("go").Append("gala")
+    val labels = EmptyHashMap[string, string]().Put("role", "admin")
+
+    val p = Profile("alice", tags, labels)
+    Println(codec.Encode(p).Get())
+}

@@ -9,6 +9,19 @@ import (
 	"martianoff/gala/internal/transpiler"
 )
 
+// This file contains the non-codegen half of the StructMeta compiler
+// intrinsic: call-site detection, auto-injection, metadata registration,
+// and a handful of helper primitives shared with codec_typed.go (which
+// owns the fully-typed EncodeFields / DecodeFields emission).
+//
+// The JSON-specific legacy codegen that used to live here (genWriteTo,
+// genReadFrom, genWriteToAny, genReadFromAny, genFieldType, genFieldWrite,
+// genFieldRead, writeMethodForBasicType, readMethodForBasicType) was
+// removed in Phase 4 of the Option-C refactor.  JSON serialisation now
+// lives entirely in std/json/codec.gala, built on top of the
+// StructMeta[T] interface from std/meta.gala.  The transpiler carries no
+// format-specific knowledge.
+
 // structMetaConfig holds the compile-time configuration for a StructMeta[T] intrinsic.
 type structMetaConfig struct {
 	typeName      string
@@ -48,7 +61,6 @@ func (t *galaASTTransformer) transformStructMetaConstruction(fun ast.Expr, line,
 	}
 
 	// Register type metadata so the transpiler can resolve method return types.
-	// This enables type inference for expressions like meta.ReadFrom(...).FirstName
 	t.registerStructMetaTypeMeta(genName, typeName)
 
 	return &ast.CompositeLit{Type: ast.NewIdent(genName)}, nil
@@ -78,22 +90,6 @@ func (t *galaASTTransformer) collectionIdent(name string) ast.Expr {
 	}
 }
 
-// arrayStringType returns the AST for Array[string].
-func (t *galaASTTransformer) arrayStringType() ast.Expr {
-	return &ast.IndexExpr{
-		X:     t.collectionIdent("Array"),
-		Index: ast.NewIdent("string"),
-	}
-}
-
-// hashMapStringType returns the AST for HashMap[string, string].
-func (t *galaASTTransformer) hashMapStringType() ast.Expr {
-	return &ast.IndexListExpr{
-		X:       t.collectionIdent("HashMap"),
-		Indices: []ast.Expr{ast.NewIdent("string"), ast.NewIdent("string")},
-	}
-}
-
 func (t *galaASTTransformer) generateStructMetaDecls(config *structMetaConfig) []ast.Decl {
 	var decls []ast.Decl
 	meta := config.typeMetadata
@@ -112,12 +108,10 @@ func (t *galaASTTransformer) generateStructMetaDecls(config *structMetaConfig) [
 
 	decls = append(decls, t.genNumFields(genName, len(meta.FieldNames)))
 	decls = append(decls, t.genFieldName(genName, meta.FieldNames))
-	decls = append(decls, t.genFieldType(genName, meta))
-	decls = append(decls, t.genWriteTo(config))
-	decls = append(decls, t.genReadFrom(config))
-	// Any-based variants for generic codec use (internal to codec libraries)
-	decls = append(decls, t.genWriteToAny(config))
-	decls = append(decls, t.genReadFromAny(config))
+	// Option-C: the only typed serialisation methods.  EncodeFields /
+	// DecodeFields live in codec_typed.go.
+	decls = append(decls, t.genEncodeFields(config))
+	decls = append(decls, t.genDecodeFields(config))
 
 	return decls
 }
@@ -164,285 +158,6 @@ func (t *galaASTTransformer) genFieldName(genName string, fieldNames []string) *
 	}
 }
 
-// --- FieldType(i int) string ---
-
-func (t *galaASTTransformer) genFieldType(genName string, meta *transpiler.TypeMetadata) *ast.FuncDecl {
-	var cases []ast.Stmt
-	for i, fieldName := range meta.FieldNames {
-		fieldType := meta.Fields[fieldName]
-		typeStr := ""
-		if fieldType != nil {
-			typeStr = fieldType.String()
-		}
-		cases = append(cases, &ast.CaseClause{
-			List: []ast.Expr{intLit(i)},
-			Body: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{stringLit(typeStr)}}},
-		})
-	}
-	cases = append(cases, &ast.CaseClause{
-		Body: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{stringLit("")}}},
-	})
-
-	return &ast.FuncDecl{
-		Recv: blankRecv(genName),
-		Name: ast.NewIdent("FieldType"),
-		Type: &ast.FuncType{
-			Params:  &ast.FieldList{List: []*ast.Field{{Names: idents("i"), Type: ast.NewIdent("int")}}},
-			Results: &ast.FieldList{List: []*ast.Field{{Type: ast.NewIdent("string")}}},
-		},
-		Body: &ast.BlockStmt{List: []ast.Stmt{
-			&ast.SwitchStmt{Tag: ast.NewIdent("i"), Body: &ast.BlockStmt{List: cases}},
-		}},
-	}
-}
-
-// --- WriteTo(v T, w FieldWriter, keys Array[string]) ---
-
-func (t *galaASTTransformer) genWriteTo(config *structMetaConfig) *ast.FuncDecl {
-	meta := config.typeMetadata
-	resolvedName := t.resolveStructTypeName(config.typeName)
-	immutFlags := t.structImmutFields[resolvedName]
-
-	var stmts []ast.Stmt
-
-	// w.BeginObject()
-	stmts = append(stmts, exprStmt(methodCall("w", "BeginObject")))
-
-	// For each field: if keys.Get(i) != "" { w.WriteKey(keys.Get(i)); w.WriteXxx(v.Field.Get()) }
-	for i, fieldName := range meta.FieldNames {
-		fieldType := meta.Fields[fieldName]
-		isImmut := immutFlags != nil && i < len(immutFlags) && immutFlags[i]
-		fieldAccess := buildFieldAccess(ast.NewIdent("v"), fieldName, isImmut)
-
-		keyExpr := &ast.CallExpr{
-			Fun:  &ast.SelectorExpr{X: ast.NewIdent("keys"), Sel: ast.NewIdent("Get")},
-			Args: []ast.Expr{intLit(i)},
-		}
-
-		var fieldStmts []ast.Stmt
-		fieldStmts = append(fieldStmts, exprStmt(&ast.CallExpr{
-			Fun:  &ast.SelectorExpr{X: ast.NewIdent("w"), Sel: ast.NewIdent("WriteKey")},
-			Args: []ast.Expr{keyExpr},
-		}))
-		fieldStmts = append(fieldStmts, genFieldWrite(fieldAccess, fieldType)...)
-
-		// Wrap in if keys.Get(i) != "" to support Omit (empty key = omitted)
-		stmts = append(stmts, &ast.IfStmt{
-			Cond: &ast.BinaryExpr{
-				X:  &ast.CallExpr{Fun: &ast.SelectorExpr{X: ast.NewIdent("keys"), Sel: ast.NewIdent("Get")}, Args: []ast.Expr{intLit(i)}},
-				Op: token.NEQ,
-				Y:  stringLit(""),
-			},
-			Body: &ast.BlockStmt{List: fieldStmts},
-		})
-	}
-
-	// w.EndObject()
-	stmts = append(stmts, exprStmt(methodCall("w", "EndObject")))
-
-	return &ast.FuncDecl{
-		Recv: blankRecv(config.generatedName),
-		Name: ast.NewIdent("WriteTo"),
-		Type: &ast.FuncType{
-			Params: &ast.FieldList{List: []*ast.Field{
-				{Names: idents("v"), Type: ast.NewIdent(config.typeName)},
-				{Names: idents("w"), Type: t.stdIdent("FieldWriter")},
-				{Names: idents("keys"), Type: t.arrayStringType()},
-			}},
-		},
-		Body: &ast.BlockStmt{List: stmts},
-	}
-}
-
-// --- ReadFrom(r FieldReader, reverseKeys HashMap[string, string]) T ---
-
-func (t *galaASTTransformer) genReadFrom(config *structMetaConfig) *ast.FuncDecl {
-	meta := config.typeMetadata
-	resolvedName := t.resolveStructTypeName(config.typeName)
-	immutFlags := t.structImmutFields[resolvedName]
-
-	var stmts []ast.Stmt
-
-	// var result T
-	stmts = append(stmts, &ast.DeclStmt{Decl: &ast.GenDecl{
-		Tok: token.VAR,
-		Specs: []ast.Spec{
-			&ast.ValueSpec{Names: idents("result"), Type: ast.NewIdent(config.typeName)},
-		},
-	}})
-
-	// r.BeginObject()
-	stmts = append(stmts, exprStmt(methodCall("r", "BeginObject")))
-
-	// Build switch cases
-	var switchCases []ast.Stmt
-	for i, fieldName := range meta.FieldNames {
-		fieldType := meta.Fields[fieldName]
-		isImmut := immutFlags != nil && i < len(immutFlags) && immutFlags[i]
-
-		readExpr := genFieldRead(fieldType)
-		if readExpr == nil {
-			switchCases = append(switchCases, &ast.CaseClause{
-				List: []ast.Expr{stringLit(fieldName)},
-				Body: []ast.Stmt{exprStmt(methodCall("r", "SkipValue"))},
-			})
-			continue
-		}
-
-		assignValue := readExpr
-		if isImmut {
-			assignValue = &ast.CallExpr{Fun: t.stdIdent("NewImmutable"), Args: []ast.Expr{assignValue}}
-		}
-
-		switchCases = append(switchCases, &ast.CaseClause{
-			List: []ast.Expr{stringLit(fieldName)},
-			Body: []ast.Stmt{&ast.AssignStmt{
-				Lhs: []ast.Expr{&ast.SelectorExpr{X: ast.NewIdent("result"), Sel: ast.NewIdent(fieldName)}},
-				Tok: token.ASSIGN,
-				Rhs: []ast.Expr{assignValue},
-			}},
-		})
-	}
-
-	// default: r.SkipValue()
-	switchCases = append(switchCases, &ast.CaseClause{
-		Body: []ast.Stmt{exprStmt(methodCall("r", "SkipValue"))},
-	})
-
-	// for r.HasNextField() { _fn := reverseKeys.GetOrElse(r.NextKey().Get(), ""); switch _fn { ... } }
-	forBody := []ast.Stmt{
-		// _fn := reverseKeys.GetOrElse(r.NextKey().Get(), "")
-		shortVarDecl("_fn", &ast.CallExpr{
-			Fun:  &ast.SelectorExpr{X: ast.NewIdent("reverseKeys"), Sel: ast.NewIdent("GetOrElse")},
-			Args: []ast.Expr{
-				&ast.CallExpr{
-					Fun: &ast.SelectorExpr{
-						X:   methodCall("r", "NextKey"),
-						Sel: ast.NewIdent("Get"),
-					},
-				},
-				stringLit(""),
-			},
-		}),
-		&ast.SwitchStmt{
-			Tag:  ast.NewIdent("_fn"),
-			Body: &ast.BlockStmt{List: switchCases},
-		},
-	}
-
-	stmts = append(stmts, &ast.ForStmt{
-		Cond: methodCall("r", "HasNextField"),
-		Body: &ast.BlockStmt{List: forBody},
-	})
-
-	// r.EndObject()
-	stmts = append(stmts, exprStmt(methodCall("r", "EndObject")))
-
-	// return result
-	stmts = append(stmts, &ast.ReturnStmt{Results: []ast.Expr{ast.NewIdent("result")}})
-
-	return &ast.FuncDecl{
-		Recv: blankRecv(config.generatedName),
-		Name: ast.NewIdent("ReadFrom"),
-		Type: &ast.FuncType{
-			Params: &ast.FieldList{List: []*ast.Field{
-				{Names: idents("r"), Type: t.stdIdent("FieldReader")},
-				{Names: idents("reverseKeys"), Type: t.hashMapStringType()},
-			}},
-			Results: &ast.FieldList{List: []*ast.Field{{Type: ast.NewIdent(config.typeName)}}},
-		},
-		Body: &ast.BlockStmt{List: stmts},
-	}
-}
-
-// ---- field type dispatch ----
-
-// --- WriteToAny(v any, w FieldWriter, keys Array[string]) ---
-// Delegates to typed WriteTo after type assertion. Used by codec libraries internally.
-func (t *galaASTTransformer) genWriteToAny(config *structMetaConfig) *ast.FuncDecl {
-	// func (_ _StructMeta_T) WriteToAny(v any, w FieldWriter, keys Array[string]) {
-	//     _StructMeta_T{}.WriteTo(v.(T), w, keys)
-	// }
-	return &ast.FuncDecl{
-		Recv: blankRecv(config.generatedName),
-		Name: ast.NewIdent("WriteToAny"),
-		Type: &ast.FuncType{
-			Params: &ast.FieldList{List: []*ast.Field{
-				{Names: idents("v"), Type: ast.NewIdent("any")},
-				{Names: idents("w"), Type: t.stdIdent("FieldWriter")},
-				{Names: idents("keys"), Type: t.arrayStringType()},
-			}},
-		},
-		Body: &ast.BlockStmt{List: []ast.Stmt{
-			exprStmt(&ast.CallExpr{
-				Fun: &ast.SelectorExpr{
-					X:   &ast.CompositeLit{Type: ast.NewIdent(config.generatedName)},
-					Sel: ast.NewIdent("WriteTo"),
-				},
-				Args: []ast.Expr{
-					&ast.TypeAssertExpr{X: ast.NewIdent("v"), Type: ast.NewIdent(config.typeName)},
-					ast.NewIdent("w"),
-					ast.NewIdent("keys"),
-				},
-			}),
-		}},
-	}
-}
-
-// --- ReadFromAny(r FieldReader, reverseKeys HashMap[string, string]) any ---
-// Delegates to typed ReadFrom. Used by codec libraries internally.
-func (t *galaASTTransformer) genReadFromAny(config *structMetaConfig) *ast.FuncDecl {
-	// func (_ _StructMeta_T) ReadFromAny(r FieldReader, reverseKeys HashMap[string, string]) any {
-	//     return _StructMeta_T{}.ReadFrom(r, reverseKeys)
-	// }
-	return &ast.FuncDecl{
-		Recv: blankRecv(config.generatedName),
-		Name: ast.NewIdent("ReadFromAny"),
-		Type: &ast.FuncType{
-			Params: &ast.FieldList{List: []*ast.Field{
-				{Names: idents("r"), Type: t.stdIdent("FieldReader")},
-				{Names: idents("reverseKeys"), Type: t.hashMapStringType()},
-			}},
-			Results: &ast.FieldList{List: []*ast.Field{{Type: ast.NewIdent("any")}}},
-		},
-		Body: &ast.BlockStmt{List: []ast.Stmt{
-			&ast.ReturnStmt{Results: []ast.Expr{
-				&ast.CallExpr{
-					Fun: &ast.SelectorExpr{
-						X:   &ast.CompositeLit{Type: ast.NewIdent(config.generatedName)},
-						Sel: ast.NewIdent("ReadFrom"),
-					},
-					Args: []ast.Expr{ast.NewIdent("r"), ast.NewIdent("reverseKeys")},
-				},
-			}},
-		}},
-	}
-}
-
-func genFieldWrite(fieldAccess ast.Expr, fieldType transpiler.Type) []ast.Stmt {
-	baseType := unwrapGalaType(fieldType)
-	method := writeMethodForBasicType(baseTypeName(baseType))
-	return []ast.Stmt{exprStmt(&ast.CallExpr{
-		Fun:  &ast.SelectorExpr{X: ast.NewIdent("w"), Sel: ast.NewIdent(method)},
-		Args: []ast.Expr{fieldAccess},
-	})}
-}
-
-func genFieldRead(fieldType transpiler.Type) ast.Expr {
-	baseType := unwrapGalaType(fieldType)
-	method := readMethodForBasicType(baseTypeName(baseType))
-	if method == "" {
-		return nil
-	}
-	// r.ReadXxx().Get()
-	return &ast.CallExpr{
-		Fun: &ast.SelectorExpr{
-			X:   &ast.CallExpr{Fun: &ast.SelectorExpr{X: ast.NewIdent("r"), Sel: ast.NewIdent(method)}},
-			Sel: ast.NewIdent("Get"),
-		},
-	}
-}
-
 func baseTypeName(t transpiler.Type) string {
 	if t == nil {
 		return ""
@@ -463,8 +178,8 @@ func baseTypeName(t transpiler.Type) string {
 		// reach here with these should skip field-by-field codegen.
 		return ""
 	default:
-		// B14: unknown Type kind — new Type implementations must be added here
-		// so codec generation does not silently fall through.
+		// New Type implementations must be added here so codec generation does
+		// not silently fall through.
 		return ""
 	}
 }
@@ -485,11 +200,17 @@ func (t *galaASTTransformer) extractTypeArgFromIndex(expr ast.Expr, line, col in
 	return "", galaerr.NewSemanticErrorAt(line, col, "expected TypeName[T] with a single type argument")
 }
 
-// registerStructMetaTypeMeta registers type metadata for a generated StructMeta struct.
-// This allows the transpiler to resolve return types of ReadFrom, enabling
-// Immutable field unwrapping in string interpolation and type inference.
+// registerStructMetaTypeMeta registers type metadata for a generated StructMeta
+// struct so the transpiler's type inference can see the shape-building methods
+// it emits.  Note: DecodeFields intentionally does NOT have a registered return
+// type here — registering `ReturnType: targetType` would trigger the
+// auto-Immutable-unwrap pass on field chains like `d.Nickname.Get()`, inserting
+// a spurious extra `.Get()` on Option fields.  Callers of DecodeFields in the
+// stdlib (json.Codec[T]) wrap the result in Try before exposing it, and the
+// examples reach for fields via explicit `.Get()` access chains, so leaving
+// DecodeFields's return type unregistered is safe.
 func (t *galaASTTransformer) registerStructMetaTypeMeta(genName, targetTypeName string) {
-	targetType := transpiler.BasicType{Name: targetTypeName}
+	_ = targetTypeName
 	meta := &transpiler.TypeMetadata{
 		Name:    genName,
 		Package: t.packageName,
@@ -502,15 +223,6 @@ func (t *galaASTTransformer) registerStructMetaTypeMeta(genName, targetTypeName 
 				Name:       "FieldName",
 				ParamTypes: []transpiler.Type{transpiler.BasicType{Name: "int"}},
 				ReturnType: transpiler.BasicType{Name: "string"},
-			},
-			"FieldType": {
-				Name:       "FieldType",
-				ParamTypes: []transpiler.Type{transpiler.BasicType{Name: "int"}},
-				ReturnType: transpiler.BasicType{Name: "string"},
-			},
-			"ReadFrom": {
-				Name:       "ReadFrom",
-				ReturnType: targetType,
 			},
 		},
 		Fields:     make(map[string]transpiler.Type),
@@ -574,36 +286,6 @@ func unwrapGalaType(t transpiler.Type) transpiler.Type {
 	return t
 }
 
-func writeMethodForBasicType(name string) string {
-	switch name {
-	case "string":
-		return "WriteString"
-	case "int", "int64":
-		return "WriteInt"
-	case "float64":
-		return "WriteFloat64"
-	case "bool":
-		return "WriteBool"
-	default:
-		return "WriteNull"
-	}
-}
-
-func readMethodForBasicType(name string) string {
-	switch name {
-	case "string":
-		return "ReadString"
-	case "int", "int64":
-		return "ReadInt"
-	case "float64":
-		return "ReadFloat64"
-	case "bool":
-		return "ReadBool"
-	default:
-		return ""
-	}
-}
-
 // AST builder helpers
 
 func blankRecv(typeName string) *ast.FieldList {
@@ -626,14 +308,6 @@ func intLit(n int) *ast.BasicLit {
 
 func stringLit(s string) *ast.BasicLit {
 	return &ast.BasicLit{Kind: token.STRING, Value: fmt.Sprintf("%q", s)}
-}
-
-func shortVarDecl(name string, value ast.Expr) *ast.AssignStmt {
-	return &ast.AssignStmt{
-		Lhs: []ast.Expr{ast.NewIdent(name)},
-		Tok: token.DEFINE,
-		Rhs: []ast.Expr{value},
-	}
 }
 
 func exprStmt(expr ast.Expr) *ast.ExprStmt {

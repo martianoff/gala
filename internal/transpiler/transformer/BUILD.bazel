@@ -7,6 +7,7 @@ go_library(
         "call_context.go",
         "calls.go",
         "codec.go",
+        "codec_typed.go",
         "constructors.go",
         "declarations.go",
         "expressions.go",
@@ -45,6 +46,7 @@ go_test(
     srcs = [
         "apply_test.go",
         "assignment_test.go",
+        "codec_boundary_test.go",
         "compilation_gate_test.go",
         "conflict_test.go",
         "control_flow_test.go",

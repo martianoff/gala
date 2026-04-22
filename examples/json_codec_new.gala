@@ -1,0 +1,49 @@
+package main
+
+import (
+    . "martianoff/gala/std"
+    . "martianoff/gala/json"
+)
+
+// Option-C typed codec smoke test.
+//
+// Exercises _StructMeta_T.EncodeFields / DecodeFields — the fully-typed
+// per-field dispatch methods added by the transpiler in Phase 2 of the
+// codec architecture refactor.  The transpiler emits no `any`, no
+// runtime type assertions on user data; this test confirms the new API
+// works end-to-end against a JSON encoder/decoder implementation
+// (JsonEncoderImpl / JsonDecoderImpl from json/codec_new.gala).
+
+struct Point(X int, Y int, Label string)
+
+func main() {
+    // Force StructMeta[Point] generation; also gives us typed access.
+    val meta = StructMeta[Point]()
+    Println(s"NumFields=${meta.NumFields()}")
+
+    // Encode via the new typed path.
+    val p = Point(3, 7, "origin-ish")
+    val w = NewJsonEncoder()
+    val nameFn = (i int) => meta.FieldName(i)
+    val omitFn = (i int) => false
+    meta.EncodeFields(w, p, nameFn, omitFn)
+    Println(w.String())
+
+    // Decode via the new typed path: reverse-lookup from field name → index.
+    val r = NewJsonDecoder(w.String())
+    val lookup = (k string) => {
+        if k == "X" {
+            return 0
+        }
+        if k == "Y" {
+            return 1
+        }
+        if k == "Label" {
+            return 2
+        }
+        return -1
+    }
+    val decoded = meta.DecodeFields(r, lookup)
+    // Fields default to Immutable[T]; .Get() unwraps to the raw value.
+    Println(s"decoded: X=${decoded.X.Get()} Y=${decoded.Y.Get()} Label=${decoded.Label.Get()}")
+}

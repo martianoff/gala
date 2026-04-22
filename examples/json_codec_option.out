@@ -1,0 +1,6 @@
+{"Name":"alice","Nickname":"ally","Age":30}
+d1.Nickname.IsDefined=true value=ally
+d1.Age.IsDefined=true value=30
+{"Name":"bob","Nickname":null,"Age":null}
+d2.Nickname.IsDefined=false
+d2.Age.IsDefined=false

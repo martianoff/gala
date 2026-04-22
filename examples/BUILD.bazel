@@ -463,6 +463,22 @@ gala_test(
     expected = "try_basic.out",
 )
 
+gala_test(
+    name = "try_block_lambda_generic_method",
+    src = "try_block_lambda_generic_method.gala",
+    expected = "try_block_lambda_generic_method.out",
+)
+
+gala_test(
+    name = "json_codec_collections",
+    src = "json_codec_collections.gala",
+    expected = "json_codec_collections.out",
+    deps = [
+        "//collection_immutable",
+        "//json",
+    ],
+)
+
 # Temporarily enabled for debugging
 gala_test(
     name = "try_recovery",
@@ -1528,6 +1544,31 @@ gala_test(
     name = "json_codec",
     src = "json_codec.gala",
     expected = "json_codec.out",
+    deps = [
+        "//collection_immutable",
+        "//json",
+    ],
+)
+
+# StructMeta[T].EncodeFields / DecodeFields typed codegen (Option-C, Phase 3a).
+# Directly exercises the new typed per-field dispatch methods against a
+# JSON FieldEncoder/FieldDecoder implementation.  No `any`, no runtime
+# type assertions on user data in the codec path.
+gala_test(
+    name = "json_codec_new",
+    src = "json_codec_new.gala",
+    expected = "json_codec_new.out",
+    deps = [
+        "//collection_immutable",
+        "//json",
+    ],
+)
+
+# Gap #12 repro: Option[T] field round-trip (Some → value, None → null).
+gala_test(
+    name = "json_codec_option",
+    src = "json_codec_option.gala",
+    expected = "json_codec_option.out",
     deps = [
         "//collection_immutable",
         "//json",

@@ -1,0 +1,449 @@
+package json
+
+import (
+    "bytes"
+    "encoding/json"
+    "fmt"
+    "strconv"
+    "strings"
+    . "martianoff/gala/std"
+    . "martianoff/gala/collection_immutable"
+)
+
+// --- JsonEncoderImpl: implements std.FieldEncoder for JSON output. ---
+
+// JsonEncoderImpl writes JSON bytes via the typed FieldEncoder interface.
+// Produced by NewJsonEncoder(); consumed by _StructMeta_T.EncodeFields.
+type JsonEncoderImpl struct {
+    var buf        bytes.Buffer
+    var needsComma bool
+    var keyPending bool
+}
+
+func NewJsonEncoder() *JsonEncoderImpl = &JsonEncoderImpl{}
+
+func (e *JsonEncoderImpl) WriteStartObject() {
+    e.writeCommaIfNeeded()
+    e.buf.WriteByte('{')
+    e.needsComma = false
+}
+
+func (e *JsonEncoderImpl) WriteEndObject() {
+    e.buf.WriteByte('}')
+    e.needsComma = true
+}
+
+func (e *JsonEncoderImpl) WriteStartArray() {
+    e.writeCommaIfNeeded()
+    e.buf.WriteByte('[')
+    e.needsComma = false
+}
+
+func (e *JsonEncoderImpl) WriteEndArray() {
+    e.buf.WriteByte(']')
+    e.needsComma = true
+}
+
+func (e *JsonEncoderImpl) WriteKey(name string) {
+    e.writeCommaIfNeeded()
+    e.writeEscapedJsonString(name)
+    e.buf.WriteByte(':')
+    e.needsComma = false
+}
+
+func (e *JsonEncoderImpl) WriteString(v string) {
+    e.writeCommaIfNeeded()
+    e.writeEscapedJsonString(v)
+    e.needsComma = true
+}
+
+func (e *JsonEncoderImpl) WriteInt(v int) {
+    e.writeCommaIfNeeded()
+    e.buf.WriteString(strconv.Itoa(v))
+    e.needsComma = true
+}
+
+func (e *JsonEncoderImpl) WriteInt64(v int64) {
+    e.writeCommaIfNeeded()
+    e.buf.WriteString(strconv.FormatInt(v, 10))
+    e.needsComma = true
+}
+
+func (e *JsonEncoderImpl) WriteFloat64(v float64) {
+    e.writeCommaIfNeeded()
+    e.buf.WriteString(strconv.FormatFloat(v, 'f', -1, 64))
+    e.needsComma = true
+}
+
+func (e *JsonEncoderImpl) WriteBool(v bool) {
+    e.writeCommaIfNeeded()
+    if v {
+        e.buf.WriteString("true")
+    } else {
+        e.buf.WriteString("false")
+    }
+    e.needsComma = true
+}
+
+func (e *JsonEncoderImpl) WriteRune(v rune) {
+    e.writeCommaIfNeeded()
+    e.writeEscapedJsonString(RuneToString(v))
+    e.needsComma = true
+}
+
+func (e *JsonEncoderImpl) WriteNull() {
+    e.writeCommaIfNeeded()
+    e.buf.WriteString("null")
+    e.needsComma = true
+}
+
+func (e *JsonEncoderImpl) String() string = e.buf.String()
+
+func (e *JsonEncoderImpl) writeCommaIfNeeded() {
+    if e.needsComma {
+        e.buf.WriteByte(',')
+        e.needsComma = false
+    }
+}
+
+func (e *JsonEncoderImpl) writeEscapedJsonString(s string) {
+    e.buf.WriteByte('"')
+    for i := 0; i < len(s); i++ {
+        val c = s[i]
+        if c == '"' {
+            e.buf.WriteString("\\\"")
+        } else if c == '\\' {
+            e.buf.WriteString("\\\\")
+        } else if c == '\n' {
+            e.buf.WriteString("\\n")
+        } else if c == '\r' {
+            e.buf.WriteString("\\r")
+        } else if c == '\t' {
+            e.buf.WriteString("\\t")
+        } else if c < 32 {
+            e.buf.WriteString(fmt.Sprintf("\\u%04x", c))
+        } else {
+            e.buf.WriteByte(c)
+        }
+    }
+    e.buf.WriteByte('"')
+}
+
+// PrettyIndent re-indents a compact JSON string.
+func PrettyIndent(compact string, indent string) Try[string] {
+    var out bytes.Buffer
+    val err = json.Indent(&out, toBytes(compact), "", indent)
+    if err != nil {
+        return Failure[string](err)
+    }
+    return Success[string](out.String())
+}
+
+// --- JsonDecoderImpl: implements std.FieldDecoder for JSON input. ---
+
+// JsonDecoderImpl is a pull-style JSON parser. Unlike the legacy Reader it
+// exposes plain primitive returns from its Read* methods — errors are
+// surfaced by panicking out to the surrounding Try block (callers wrap the
+// Decode invocation in Try(() => { ... })).
+type JsonDecoderImpl struct {
+    var data          []byte
+    var pos           int
+    var stack         []byte
+    var firstConsumed []bool
+    var pendingKey    string
+    var hasPendingKey bool
+}
+
+func NewJsonDecoder(s string) *JsonDecoderImpl = &JsonDecoderImpl{data: toBytes(s), pos: 0}
+
+func (d *JsonDecoderImpl) StartObject() {
+    d.skipWs()
+    if d.pos >= len(d.data) || d.data[d.pos] != '{' {
+        panic(fmt.Sprintf("json at pos %d: expected '{'", d.pos))
+    }
+    d.pos = d.pos + 1
+    d.stack = append(d.stack, 'o')
+    d.firstConsumed = append(d.firstConsumed, false)
+}
+
+func (d *JsonDecoderImpl) EndObject() {
+    d.skipWs()
+    if d.pos >= len(d.data) || d.data[d.pos] != '}' {
+        panic(fmt.Sprintf("json at pos %d: expected '}'", d.pos))
+    }
+    d.pos = d.pos + 1
+    d.stack = TruncateBytes(d.stack, len(d.stack) - 1)
+    d.firstConsumed = TruncateBools(d.firstConsumed, len(d.firstConsumed) - 1)
+}
+
+func (d *JsonDecoderImpl) StartArray() {
+    d.skipWs()
+    if d.pos >= len(d.data) || d.data[d.pos] != '[' {
+        panic(fmt.Sprintf("json at pos %d: expected '['", d.pos))
+    }
+    d.pos = d.pos + 1
+    d.stack = append(d.stack, 'a')
+    d.firstConsumed = append(d.firstConsumed, false)
+}
+
+func (d *JsonDecoderImpl) EndArray() {
+    d.skipWs()
+    if d.pos >= len(d.data) || d.data[d.pos] != ']' {
+        panic(fmt.Sprintf("json at pos %d: expected ']'", d.pos))
+    }
+    d.pos = d.pos + 1
+    d.stack = TruncateBytes(d.stack, len(d.stack) - 1)
+    d.firstConsumed = TruncateBools(d.firstConsumed, len(d.firstConsumed) - 1)
+}
+
+func (d *JsonDecoderImpl) HasMoreFields() bool {
+    d.skipWs()
+    if d.pos >= len(d.data) { return false }
+    return d.data[d.pos] != '}'
+}
+
+func (d *JsonDecoderImpl) HasMoreElements() bool {
+    d.skipWs()
+    if d.pos >= len(d.data) { return false }
+    return d.data[d.pos] != ']'
+}
+
+func (d *JsonDecoderImpl) ReadKey() string {
+    d.skipWs()
+    val depth = len(d.firstConsumed) - 1
+    if depth >= 0 && d.firstConsumed[depth] {
+        if d.pos < len(d.data) && d.data[d.pos] == ',' {
+            d.pos = d.pos + 1
+            d.skipWs()
+        }
+    }
+    if depth >= 0 { d.firstConsumed[depth] = true }
+
+    val key = d.readJsonString()
+    d.skipWs()
+    if d.pos >= len(d.data) || d.data[d.pos] != ':' {
+        panic(fmt.Sprintf("json at pos %d: expected ':'", d.pos))
+    }
+    d.pos = d.pos + 1
+    return key
+}
+
+func (d *JsonDecoderImpl) ReadString() string {
+    d.consumeElemComma()
+    d.skipWs()
+    return d.readJsonString()
+}
+
+func (d *JsonDecoderImpl) ReadInt() int {
+    d.consumeElemComma()
+    d.skipWs()
+    val s = d.readNumberStr()
+    val v, err = strconv.Atoi(s)
+    if err != nil {
+        panic(fmt.Sprintf("json at pos %d: invalid int %q", d.pos, s))
+    }
+    return v
+}
+
+func (d *JsonDecoderImpl) ReadInt64() int64 {
+    d.consumeElemComma()
+    d.skipWs()
+    val s = d.readNumberStr()
+    val v, err = strconv.ParseInt(s, 10, 64)
+    if err != nil {
+        panic(fmt.Sprintf("json at pos %d: invalid int64 %q", d.pos, s))
+    }
+    return v
+}
+
+func (d *JsonDecoderImpl) ReadFloat64() float64 {
+    d.consumeElemComma()
+    d.skipWs()
+    val s = d.readNumberStr()
+    val v, err = strconv.ParseFloat(s, 64)
+    if err != nil {
+        panic(fmt.Sprintf("json at pos %d: invalid float %q", d.pos, s))
+    }
+    return v
+}
+
+func (d *JsonDecoderImpl) ReadBool() bool {
+    d.consumeElemComma()
+    d.skipWs()
+    if d.pos + 4 <= len(d.data) && BytesToString(d.data, d.pos, d.pos + 4) == "true" {
+        d.pos = d.pos + 4
+        return true
+    }
+    if d.pos + 5 <= len(d.data) && BytesToString(d.data, d.pos, d.pos + 5) == "false" {
+        d.pos = d.pos + 5
+        return false
+    }
+    panic(fmt.Sprintf("json at pos %d: expected boolean", d.pos))
+}
+
+func (d *JsonDecoderImpl) ReadRune() rune {
+    val s = d.ReadString()
+    val rs = toRunes(s)
+    if len(rs) == 0 {
+        return rune(0)
+    }
+    return rs[0]
+}
+
+func (d *JsonDecoderImpl) IsNull() bool {
+    d.skipWs()
+    return d.pos + 4 <= len(d.data) && BytesToString(d.data, d.pos, d.pos + 4) == "null"
+}
+
+func (d *JsonDecoderImpl) ReadNull() {
+    d.consumeElemComma()
+    d.skipWs()
+    if d.pos + 4 <= len(d.data) && BytesToString(d.data, d.pos, d.pos + 4) == "null" {
+        d.pos = d.pos + 4
+        return
+    }
+    panic(fmt.Sprintf("json at pos %d: expected null", d.pos))
+}
+
+func (d *JsonDecoderImpl) Skip() {
+    d.consumeElemComma()
+    d.skipWs()
+    if d.pos >= len(d.data) { return }
+    val c = d.data[d.pos]
+    if c == '"' {
+        d.readJsonString()
+        return
+    }
+    if c == '{' {
+        d.skipBetween('{', '}')
+        return
+    }
+    if c == '[' {
+        d.skipBetween('[', ']')
+        return
+    }
+    if c == 't' || c == 'f' {
+        d.ReadBool()
+        return
+    }
+    if c == 'n' {
+        d.ReadNull()
+        return
+    }
+    d.readNumberStr()
+}
+
+// --- decoder internal helpers ---
+
+func (d *JsonDecoderImpl) skipWs() {
+    for d.pos < len(d.data) {
+        val c = d.data[d.pos]
+        if c == ' ' || c == '\t' || c == '\n' || c == '\r' {
+            d.pos = d.pos + 1
+        } else {
+            return
+        }
+    }
+}
+
+func (d *JsonDecoderImpl) consumeElemComma() {
+    val depth = len(d.firstConsumed) - 1
+    if depth >= 0 && len(d.stack) > 0 && d.stack[depth] == 'a' && d.firstConsumed[depth] {
+        d.skipWs()
+        if d.pos < len(d.data) && d.data[d.pos] == ',' {
+            d.pos = d.pos + 1
+        }
+    }
+    if depth >= 0 && len(d.stack) > 0 && d.stack[depth] == 'a' {
+        d.firstConsumed[depth] = true
+    }
+}
+
+func (d *JsonDecoderImpl) readJsonString() string {
+    d.skipWs()
+    if d.pos >= len(d.data) || d.data[d.pos] != '"' {
+        panic(fmt.Sprintf("json at pos %d: expected '\"'", d.pos))
+    }
+    d.pos = d.pos + 1
+
+    var sb strings.Builder
+    for d.pos < len(d.data) {
+        val c = d.data[d.pos]
+        if c == '"' {
+            d.pos = d.pos + 1
+            return sb.String()
+        }
+        if c == '\\' {
+            d.pos = d.pos + 1
+            if d.pos >= len(d.data) {
+                panic("json: unexpected end of escape")
+            }
+            val esc = d.data[d.pos]
+            d.pos = d.pos + 1
+            if esc == '"' { sb.WriteByte('"') }
+            else if esc == '\\' { sb.WriteByte('\\') }
+            else if esc == '/' { sb.WriteByte('/') }
+            else if esc == 'n' { sb.WriteByte('\n') }
+            else if esc == 'r' { sb.WriteByte('\r') }
+            else if esc == 't' { sb.WriteByte('\t') }
+            else if esc == 'u' {
+                if d.pos + 4 > len(d.data) {
+                    panic("json: incomplete unicode escape")
+                }
+                val hexStr = BytesToString(d.data, d.pos, d.pos + 4)
+                d.pos = d.pos + 4
+                val cp, hexErr = strconv.ParseUint(hexStr, 16, 32)
+                if hexErr != nil {
+                    panic("json: invalid unicode escape")
+                }
+                sb.WriteString(RuneToString(rune(cp)))
+            } else {
+                panic("json: invalid escape sequence")
+            }
+        } else {
+            sb.WriteByte(c)
+            d.pos = d.pos + 1
+        }
+    }
+    panic("json: unterminated string")
+}
+
+func (d *JsonDecoderImpl) readNumberStr() string {
+    val start = d.pos
+    for d.pos < len(d.data) {
+        val c = d.data[d.pos]
+        if (c >= '0' && c <= '9') || c == '-' || c == '+' || c == '.' || c == 'e' || c == 'E' {
+            d.pos = d.pos + 1
+        } else {
+            break
+        }
+    }
+    return BytesToString(d.data, start, d.pos)
+}
+
+func (d *JsonDecoderImpl) skipBetween(open byte, close byte) {
+    if d.pos >= len(d.data) || d.data[d.pos] != open {
+        panic("json: expected container start")
+    }
+    d.pos = d.pos + 1
+    var depth = 1
+    var inString = false
+    for d.pos < len(d.data) && depth > 0 {
+        val c = d.data[d.pos]
+        if inString {
+            if c == '\\' {
+                d.pos = d.pos + 1
+            } else if c == '"' {
+                inString = false
+            }
+        } else {
+            if c == '"' { inString = true }
+            else if c == open { depth = depth + 1 }
+            else if c == close { depth = depth - 1 }
+        }
+        d.pos = d.pos + 1
+    }
+    if depth != 0 {
+        panic("json: unterminated container")
+    }
+}

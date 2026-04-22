@@ -1,0 +1,66 @@
+package std
+
+// FieldEncoder is the format-neutral interface used by the transpiler-generated
+// StructMeta[T].EncodeFields method to serialize a struct's fields.
+//
+// Format-specific encoders (JsonEncoderImpl, YamlEncoderImpl, etc.) implement
+// this interface. The transpiler emits fully-typed per-field dispatch against
+// it — no `any`, no reflection, no runtime type assertions on user data.
+type FieldEncoder interface {
+    WriteKey(name string)
+    WriteString(v string)
+    WriteInt(v int)
+    WriteInt64(v int64)
+    WriteFloat64(v float64)
+    WriteBool(v bool)
+    WriteRune(v rune)
+    WriteNull()
+    WriteStartArray()
+    WriteEndArray()
+    WriteStartObject()
+    WriteEndObject()
+}
+
+// FieldDecoder is the format-neutral interface used by the transpiler-generated
+// StructMeta[T].DecodeFields method to reconstruct a struct from a stream.
+//
+// Format-specific decoders (JsonDecoderImpl, YamlDecoderImpl, etc.) implement
+// this interface.  Method return types are the raw primitive values (not
+// Try[T]), so the transpiler emits straight-line typed field reads.  Errors
+// surface through the decoder's own state (panic is the default; sticky
+// error flags are an implementation choice) — reading from a failed
+// decoder must be safe.
+type FieldDecoder interface {
+    ReadKey() string
+    ReadString() string
+    ReadInt() int
+    ReadInt64() int64
+    ReadFloat64() float64
+    ReadBool() bool
+    ReadRune() rune
+    IsNull() bool
+    ReadNull()
+    StartArray()
+    EndArray()
+    HasMoreElements() bool
+    StartObject()
+    EndObject()
+    HasMoreFields() bool
+    Skip()
+}
+
+// StructMeta[T] is the generic interface every transpiler-emitted
+// _StructMeta_T type satisfies.
+//
+// The transpiler auto-injects a _StructMeta_T{} value whenever a
+// generic Apply method (e.g. on a library `Codec[T]`) declares its
+// first parameter as StructMeta[T].  This keeps the user call site
+// ergonomic (`Codec[Person](SnakeCase())`) while the underlying
+// dispatch is fully typed — no `any`, no runtime type assertions on
+// user data.
+type StructMeta[T any] interface {
+    NumFields() int
+    FieldName(i int) string
+    EncodeFields(w FieldEncoder, t T, nameFn func(int) string, omitFn func(int) bool)
+    DecodeFields(r FieldDecoder, lookup func(string) int) T
+}
