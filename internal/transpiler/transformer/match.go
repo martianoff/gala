@@ -889,7 +889,7 @@ func (t *galaASTTransformer) typesCompatible(t1, t2 transpiler.Type) bool {
 
 	// Check qualified vs unqualified equivalence: "Response" should match "server.Response"
 	// when server is dot-imported, is the current package, or is a known imported package.
-	// Type alias resolution can produce qualified names from any of these sources (FIX-035).
+	// Type alias resolution can produce qualified names from any of these sources.
 	s1, s2 := t1.String(), t2.String()
 	if strings.Contains(s2, ".") && !strings.Contains(s1, ".") {
 		// s2 is qualified (pkg.Type), s1 is bare (Type)
@@ -929,7 +929,7 @@ func (t *galaASTTransformer) typesCompatible(t1, t2 transpiler.Type) bool {
 	gen1, ok1 := t1.(transpiler.GenericType)
 	gen2, ok2 := t2.(transpiler.GenericType)
 	if ok1 && ok2 {
-		// Same base type? Use typesCompatible for base to handle qualified vs unqualified names (FIX-035).
+		// Same base type? Use typesCompatible for base to handle qualified vs unqualified names.
 		basesMatch := gen1.Base.String() == gen2.Base.String() || t.typesCompatible(gen1.Base, gen2.Base)
 		if basesMatch && len(gen1.Params) == len(gen2.Params) {
 			allParamsCompatible := true

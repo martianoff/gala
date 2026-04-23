@@ -2,7 +2,7 @@ package main
 
 import . "martianoff/gala/std"
 import . "martianoff/gala/concurrent"
-import "martianoff/gala/examples/bug013_type_alias_lib"
+import "martianoff/gala/examples/type_alias_lib_match"
 
 // Handler function with explicit return type
 func makeHandler(req typealiaslib.Request) Future[typealiaslib.Response] {

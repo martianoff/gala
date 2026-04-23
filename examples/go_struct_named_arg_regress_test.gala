@@ -1,0 +1,11 @@
+package main
+
+import "martianoff/gala/examples/go_struct_named_arg_regress"
+
+func main() {
+    // Go struct named-arg (should not wrap in Immutable)
+    Println(go_struct_named_arg_regress.GoCookieString("session", "abc123"))
+
+    // GALA struct named-arg (should wrap in Immutable — correct behavior)
+    Println(go_struct_named_arg_regress.GalaCookieName("session", "abc123"))
+}

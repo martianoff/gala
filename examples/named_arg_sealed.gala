@@ -3,7 +3,7 @@ package main
 import "fmt"
 
 // Constructs sealed type variants using named arguments from a DIFFERENT file.
-// Previously, this would silently drop all field values (BUG-DP-4).
+// Previously, this would silently drop all field values.
 func makeSuccess() MyResult {
     return MySuccess(SuccessValue = 42, SuccessMsg = "hello")
 }

@@ -608,7 +608,7 @@ func (t *galaASTTransformer) transformIfExpression(ctx *grammar.IfExpressionCont
 	}
 
 	retTypeExpr := t.typeToExpr(retType)
-	// FIX-052: If type inference failed and we have an expected type from the enclosing function, use it
+	// If type inference failed and we have an expected type from the enclosing function, use it
 	if retType.IsNil() && t.expectedIfExprType != nil {
 		retTypeExpr = t.expectedIfExprType
 	}

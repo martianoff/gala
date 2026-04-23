@@ -275,7 +275,7 @@ func (t *galaASTTransformer) transformTypedPattern(ctx *grammar.TypedPatternCont
 	if qName := t.getType(typeName.String()); !qName.IsNil() {
 		typeName = qName
 	}
-	// FIX-055: If the type expression is a pointer (*T), wrap the resolved type
+	// If the type expression is a pointer (*T), wrap the resolved type
 	// in PointerType so the pattern variable has the correct pointer type.
 	if _, isPtr := typeExpr.(*ast.StarExpr); isPtr {
 		if _, alreadyPtr := typeName.(transpiler.PointerType); !alreadyPtr {

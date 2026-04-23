@@ -3,7 +3,7 @@ package main
 import "martianoff/gala/examples/go_struct_bridge"
 
 func main() {
-    // USR-004: Go struct construction with GALA named-arg syntax
+    // Go struct construction with GALA named-arg syntax
     val c = go_struct_bridge.Cookie(Name = "session", Value = "abc123", Path = "/")
     Println(c.String())
 

@@ -4,7 +4,7 @@ import "fmt"
 import "strconv"
 
 func main() {
-    // FIX-004 verification: val with Go multi-return function
+    // Verification: val with Go multi-return function
     // strconv.Atoi returns (int, error) - should be called exactly once
     val num, err = strconv.Atoi("42")
     fmt.Println("num:", num, "err:", err)

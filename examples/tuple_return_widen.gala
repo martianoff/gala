@@ -9,7 +9,7 @@ func getName() string {
     return "world"
 }
 
-// FIX-042 verification: tuple literal return type should not widen element to any.
+// Verification: tuple literal return type should not widen element to any.
 // Case 1: val variable as first element in tuple literal with return type
 func case1() Tuple[string, int] {
     val name = "hello"

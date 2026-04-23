@@ -2,11 +2,11 @@ package main
 
 import (
     . "martianoff/gala/std"
-    "martianoff/gala/examples/bug056_lib"
+    "martianoff/gala/examples/when_generic_lib"
 )
 
 func main() {
-    val result = bug056_lib.GetSession("test")
+    val result = when_generic_lib.GetSession("test")
     result match {
         case Some(v) => Println(v)
         case _ => Println("none")

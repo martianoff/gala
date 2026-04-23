@@ -120,7 +120,7 @@ func (t *galaASTTransformer) resolveExpectedFuncArgType(ctx callContext, argIdx 
 		}
 	}
 
-	// FIX-075: Fall back to Go type info for lambda expected types
+	// Fall back to Go type info for lambda expected types
 	if expectedType.IsNil() && ctx.goParamTypes != nil && argIdx < len(ctx.goParamTypes) {
 		if ft, ok := ctx.goParamTypes[argIdx].(transpiler.FuncType); ok {
 			expectedType = ft

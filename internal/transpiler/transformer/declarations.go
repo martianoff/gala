@@ -666,7 +666,7 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 	}
 
 	// Track the current function's return type so tuple literals in return statements
-	// can use it as a fallback when element type inference fails (BUG-014 fix).
+	// can use it as a fallback when element type inference fails.
 	prevFuncReturnType := t.currentFuncReturnType
 	if funcType.Results != nil && len(funcType.Results.List) > 0 {
 		t.currentFuncReturnType = t.astTypeToTranspilerType(funcType.Results.List[0].Type)
@@ -741,7 +741,7 @@ func (t *galaASTTransformer) registerFunctionParametersInScope(sigCtx *grammar.S
 
 // transformExpressionBodiedFunction handles the `func foo() T = expr` form by
 // transforming the expression into a single-return block body. It threads
-// expected types into lambdas (BUG-047) and if-expressions (FIX-052) when the
+// expected types into lambdas and if-expressions when the
 // function has a declared return type. Extracted from transformFunctionDeclaration
 // as part of A5.
 func (t *galaASTTransformer) transformExpressionBodiedFunction(exprCtx grammar.IExpressionContext, funcType *ast.FuncType) (*ast.BlockStmt, error) {
@@ -766,7 +766,7 @@ func (t *galaASTTransformer) transformExpressionBodiedFunction(exprCtx grammar.I
 		}
 	}
 
-	// FIX-052: if-expression with expected return type.
+	// if-expression with expected return type.
 	if expr == nil {
 		ifExprCtx := t.findIfExpressionInExpression(exprCtx)
 		if ifExprCtx != nil && funcType.Results != nil && len(funcType.Results.List) > 0 {
@@ -1157,7 +1157,7 @@ func (t *galaASTTransformer) transformImportDeclaration(ctx *grammar.ImportDecla
 		} else {
 			// No alias — use the actual package name from analyzed metadata if available.
 			// The directory name may differ from the Go package name (e.g., directory
-			// "bug013_type_alias_lib" but package declaration is "typealiaslib").
+			// "type_alias_lib_match" but package declaration is "typealiaslib").
 			actualPkgName := ""
 			if t.richAST != nil {
 				actualPkgName = t.richAST.Packages[path]

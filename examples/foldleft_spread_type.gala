@@ -15,7 +15,7 @@ func join(items Array[string], sep string) string {
 }
 
 func main() {
-    // FIX-065: When using spread operator with ArrayOf, type params should
+    // When using spread operator with ArrayOf, type params should
     // infer element type (string), not slice type ([]string)
     val keys = SliceOf("a", "b", "c")
     val arr = ArrayOf(keys...)

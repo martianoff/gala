@@ -9,11 +9,11 @@ filegroup(
 filegroup(
     name = "gala_sources",
     srcs = [
-        "bug013_cross_pkg/corelib/corelib.gala",
-        "bug013_cross_pkg/main.gala",
-        "bug013_type_alias_lib/processor.gala",
-        "bug013_type_alias_lib/types.gala",
-        "bug013_type_alias_lib_test.gala",
+        "cross_pkg_try_match/corelib/corelib.gala",
+        "cross_pkg_try_match/main.gala",
+        "type_alias_lib_match/processor.gala",
+        "type_alias_lib_match/types.gala",
+        "type_alias_lib_match_test.gala",
         "cross_file_unwrap/main.gala",
         "cross_file_unwrap/types.gala",
         "cross_file_unwrap_lib/ops.gala",
@@ -419,41 +419,41 @@ gala_test(
 )
 
 gala_test(
-    name = "bug055_repro",
-    src = "bug055_repro.gala",
-    expected = "bug055_repro.out",
+    name = "typed_pattern_option_ptr",
+    src = "typed_pattern_option_ptr.gala",
+    expected = "typed_pattern_option_ptr.out",
 )
 
 gala_test(
-    name = "bug052_if_expr_return",
-    src = "bug052_if_expr_return.gala",
-    expected = "bug052_if_expr_return.out",
+    name = "if_expr_return_generic",
+    src = "if_expr_return_generic.gala",
+    expected = "if_expr_return_generic.out",
 )
 
 gala_test(
-    name = "bug056_when_generic",
-    src = "bug056_when_generic.gala",
-    expected = "bug056_when_generic.out",
+    name = "when_generic_lambda",
+    src = "when_generic_lambda.gala",
+    expected = "when_generic_lambda.out",
 )
 
 gala_library(
-    name = "bug056_lib",
-    srcs = ["bug056_lib/session.gala"],
-    importpath = "martianoff/gala/examples/bug056_lib",
+    name = "when_generic_lib",
+    srcs = ["when_generic_lib/session.gala"],
+    importpath = "martianoff/gala/examples/when_generic_lib",
     visibility = ["//visibility:public"],
 )
 
 gala_test(
-    name = "bug056_lib_test",
-    src = "bug056_lib_test.gala",
-    expected = "bug056_lib_test.out",
-    deps = [":bug056_lib"],
+    name = "when_generic_lib_test",
+    src = "when_generic_lib_test.gala",
+    expected = "when_generic_lib_test.out",
+    deps = [":when_generic_lib"],
 )
 
 gala_test(
-    name = "usr004_go_struct_immutable",
-    src = "usr004_go_struct_immutable.gala",
-    expected = "usr004_go_struct_immutable.out",
+    name = "go_struct_named_arg_dot_import",
+    src = "go_struct_named_arg_dot_import.gala",
+    expected = "go_struct_named_arg_dot_import.out",
     deps = ["//examples/go_struct_bridge"],
 )
 
@@ -631,7 +631,7 @@ gala_test(
     expected = "match_type_inference.out",
 )
 
-# FIX-051: match as last expression in function block body auto-returns
+# Match as last expression in function block body auto-returns
 gala_test(
     name = "match_return_iife",
     src = "match_return_iife.gala",
@@ -647,7 +647,7 @@ gala_test(
     expected = "gap04_repro.out",
 )
 
-# FIX-053: NewImmutable[T](nil) explicit type param
+# NewImmutable[T](nil) explicit type param
 gala_test(
     name = "newimmutable_nil",
     src = "newimmutable_nil.gala",
@@ -906,7 +906,7 @@ gala_test(
     deps = ["//time_utils"],
 )
 
-# Regression test for FIX-002: unused extracted variables in match branches
+# Regression test: unused extracted variables in match branches
 gala_test(
     name = "unused_match_vars",
     src = "unused_match_vars.gala",
@@ -1000,14 +1000,14 @@ gala_test(
     expected = "tuple_string.out",
 )
 
-# FIX-007 verification: tuple return type should not widen to any
+# Verification: tuple return type should not widen to any
 gala_test(
     name = "tuple_return_type",
     src = "tuple_return_type.gala",
     expected = "tuple_return_type.out",
 )
 
-# Multi-file binary test (FIX-004 verification)
+# Multi-file binary test
 gala_test(
     name = "multi_file",
     srcs = [
@@ -1046,7 +1046,7 @@ gala_test(
     deps = [":multi_file_lib"],
 )
 
-# Multi-file Option test (FIX-001 verification: Some/None in multi-file mode)
+# Multi-file Option test: Some/None in multi-file mode
 gala_test(
     name = "multi_file_option",
     srcs = [
@@ -1056,7 +1056,7 @@ gala_test(
     expected = "multi_file_option/multi_file_option.out",
 )
 
-# BUG-013 verification: match on method return values (multi-file)
+# Verification: match on method return values (multi-file)
 gala_test(
     name = "match_method_chain",
     srcs = [
@@ -1066,7 +1066,7 @@ gala_test(
     expected = "match_method_chain/match_method_chain.out",
 )
 
-# FIX-050 verification: match on method call chain with lambda argument
+# Verification: match on method call chain with lambda argument
 gala_test(
     name = "match_lambda_arg",
     srcs = [
@@ -1077,7 +1077,7 @@ gala_test(
     deps = ["//collection_immutable"],
 )
 
-# Struct field auto-unwrapping when passed to functions (FIX-005 verification)
+# Struct field auto-unwrapping when passed to functions
 gala_test(
     name = "struct_field_unwrap",
     srcs = [
@@ -1087,14 +1087,14 @@ gala_test(
     expected = "struct_field_unwrap/struct_field_unwrap.out",
 )
 
-# FIX-004 verification: val multi-return from single Go function call
+# Verification: val multi-return from single Go function call
 gala_test(
     name = "val_multi_return",
     src = "val_multi_return.gala",
     expected = "val_multi_return.out",
 )
 
-# FoldLeft method call (FIX-006 verification: method not transpiled as free function)
+# FoldLeft method call: method not transpiled as free function
 gala_test(
     name = "foldleft_method",
     src = "foldleft_method/main.gala",
@@ -1102,7 +1102,7 @@ gala_test(
     deps = ["//collection_immutable"],
 )
 
-# FIX-065 verification: spread args infer element type, not slice type
+# Verification: spread args infer element type, not slice type
 gala_test(
     name = "foldleft_spread_type",
     src = "foldleft_spread_type.gala",
@@ -1113,7 +1113,7 @@ gala_test(
     ],
 )
 
-# FIX-015 verification: sealed type named-arg construction in multi-file mode
+# Verification: sealed type named-arg construction in multi-file mode
 gala_test(
     name = "named_arg_sealed",
     srcs = [
@@ -1123,7 +1123,7 @@ gala_test(
     expected = "named_arg_sealed.out",
 )
 
-# FIX-016 verification: match with assignment-only branches (void match)
+# Verification: match with assignment-only branches (void match)
 gala_test(
     name = "void_match",
     src = "void_match.gala",
@@ -1134,7 +1134,7 @@ gala_test(
     ],
 )
 
-# FIX-017 verification: Future[Array[int]].Get() resolves to Array[int]
+# Verification: Future[Array[int]].Get() resolves to Array[int]
 gala_test(
     name = "future_get_type_chain",
     src = "future_get_type_chain.gala",
@@ -1160,21 +1160,21 @@ gala_test(
     deps = ["//string_utils"],
 )
 
-# FIX-022 verification: block lambda return type in generic function calls
+# Verification: block lambda return type in generic function calls
 gala_test(
     name = "block_lambda_generic_func",
     src = "block_lambda_generic_func.gala",
     expected = "block_lambda_generic_func.out",
 )
 
-# FIX-027 verification: val pointer bindings can mutate var fields of pointed-to struct
+# Verification: val pointer bindings can mutate var fields of pointed-to struct
 gala_test(
     name = "val_pointer_field_mutation",
     src = "val_pointer_field_mutation.gala",
     expected = "val_pointer_field_mutation.out",
 )
 
-# FIX-024 verification: lambda param type inferred for non-generic wrapper methods
+# Verification: lambda param type inferred for non-generic wrapper methods
 gala_test(
     name = "wrapper_method_lambda",
     src = "wrapper_method_lambda/main.gala",
@@ -1182,21 +1182,21 @@ gala_test(
     deps = ["//string_utils"],
 )
 
-# FIX-026 verification: immutable struct fields with Go slice types
+# Verification: immutable struct fields with Go slice types
 gala_test(
     name = "immutable_slice_field",
     src = "immutable_slice_field.gala",
     expected = "immutable_slice_field.out",
 )
 
-# FIX-030 verification: scientific notation literals
+# Verification: scientific notation literals
 gala_test(
     name = "scientific_notation",
     src = "scientific_notation.gala",
     expected = "scientific_notation.out",
 )
 
-# FIX-042 verification: tuple literal return type should not widen first element to any
+# Verification: tuple literal return type should not widen first element to any
 gala_test(
     name = "tuple_return_widen",
     src = "tuple_return_widen.gala",
@@ -1210,7 +1210,7 @@ gala_test(
     expected = "val_go_interface_method.out",
 )
 
-# FIX-041 verification: ToBytes/ToString/ToRunes byte conversion helpers
+# Verification: ToBytes/ToString/ToRunes byte conversion helpers
 gala_test(
     name = "byte_conversion",
     src = "byte_conversion.gala",
@@ -1218,7 +1218,7 @@ gala_test(
     deps = ["//go_interop"],
 )
 
-# FIX-038 verification: FoldLeft on Sequence.Get() result uses Array_FoldLeft
+# Verification: FoldLeft on Sequence.Get() result uses Array_FoldLeft
 gala_test(
     name = "foldleft_on_sequence_get",
     src = "foldleft_on_sequence_get.gala",
@@ -1229,7 +1229,7 @@ gala_test(
     ],
 )
 
-# FIX-042 verification: ForEach void lambda should generate func(T) not func(T) any
+# Verification: ForEach void lambda should generate func(T) not func(T) any
 gala_test(
     name = "foreach_void_lambda",
     src = "foreach_void_lambda.gala",
@@ -1261,7 +1261,7 @@ gala_test(
     deps = ["//collection_immutable"],
 )
 
-# FIX-039: String interpolation with escaped quotes inside ${...}
+# String interpolation with escaped quotes inside ${...}
 gala_test(
     name = "interpolation_escaped_quotes",
     src = "interpolation_escaped_quotes.gala",
@@ -1335,7 +1335,7 @@ gala_test(
     ],
 )
 
-# BUG-014 verification: cross-package collection lambda type inference
+# Verification: cross-package collection lambda type inference
 gala_test(
     name = "collection_lambda_inference",
     src = "collection_lambda_inference.gala",
@@ -1343,14 +1343,14 @@ gala_test(
     deps = ["//collection_immutable"],
 )
 
-# FIX-040 verification: Some(v) infers Option[string] not Option[any]
+# Verification: Some(v) infers Option[string] not Option[any]
 gala_test(
     name = "some_type_inference",
     src = "some_type_inference.gala",
     expected = "some_type_inference.out",
 )
 
-# FIX-038 verification: Try match from function call (type inference + no double prefix)
+# Verification: Try match from function call (type inference + no double prefix)
 gala_test(
     name = "try_match_from_func",
     src = "try_match_from_func.gala",
@@ -1358,65 +1358,65 @@ gala_test(
     deps = ["//concurrent"],
 )
 
-# FIX-039 verification: match expression inside block lambda
+# Verification: match expression inside block lambda
 gala_test(
     name = "block_lambda_match",
     src = "block_lambda_match.gala",
     expected = "block_lambda_match.out",
 )
 
-# BUG-013 repro: Try match extractor values typed as any
+# Repro: Try match extractor values typed as any
 gala_test(
-    name = "bug013_try_match_extractor",
-    src = "bug013_try_match_extractor.gala",
-    expected = "bug013_try_match_extractor.out",
+    name = "try_match_extractor_any_types",
+    src = "try_match_extractor_any_types.gala",
+    expected = "try_match_extractor_any_types.out",
     deps = ["//concurrent"],
 )
 
-# BUG-013 repro: cross-package match result type inference + chained function calls
+# Repro: cross-package match result type inference + chained function calls
 gala_library(
-    name = "bug013_cross_pkg_corelib",
-    srcs = ["bug013_cross_pkg/corelib/corelib.gala"],
-    importpath = "martianoff/gala/examples/bug013_cross_pkg/corelib",
+    name = "cross_pkg_try_match_corelib",
+    srcs = ["cross_pkg_try_match/corelib/corelib.gala"],
+    importpath = "martianoff/gala/examples/cross_pkg_try_match/corelib",
     visibility = ["//visibility:public"],
 )
 
 gala_test(
-    name = "bug013_cross_pkg",
-    src = "bug013_cross_pkg/main.gala",
-    expected = "bug013_cross_pkg/main.out",
+    name = "cross_pkg_try_match",
+    src = "cross_pkg_try_match/main.gala",
+    expected = "cross_pkg_try_match/main.out",
     deps = [
-        ":bug013_cross_pkg_corelib",
+        ":cross_pkg_try_match_corelib",
         "//concurrent",
     ],
 )
 
-# BUG-013 repro: type alias for func type in library package + match through alias
+# Repro: type alias for func type in library package + match through alias
 # Exercises: sibling type alias extraction, NamedType.BaseName() package qualification,
 # chained function call inference, match result type in lambda context
 gala_library(
-    name = "bug013_type_alias_lib",
+    name = "type_alias_lib_match",
     srcs = [
-        "bug013_type_alias_lib/processor.gala",
-        "bug013_type_alias_lib/types.gala",
+        "type_alias_lib_match/processor.gala",
+        "type_alias_lib_match/types.gala",
     ],
-    importpath = "martianoff/gala/examples/bug013_type_alias_lib",
+    importpath = "martianoff/gala/examples/type_alias_lib_match",
     visibility = ["//visibility:public"],
     deps = ["//concurrent"],
 )
 
 gala_test(
-    name = "bug013_type_alias_lib_test",
-    src = "bug013_type_alias_lib_test.gala",
-    expected = "bug013_type_alias_lib_test.out",
-    gala_deps = [":bug013_type_alias_lib"],
+    name = "type_alias_lib_match_test",
+    src = "type_alias_lib_match_test.gala",
+    expected = "type_alias_lib_match_test.out",
+    gala_deps = [":type_alias_lib_match"],
     deps = ["//concurrent"],
 )
 
-# BUG-017 repro: .Copy() generates self-qualified struct literal
+# Repro: .Copy() generates self-qualified struct literal
 gala_library(
-    name = "bug017_copy_self_qualify",
-    srcs = ["bug017_copy/lib.gala"],
+    name = "copy_self_qualified_struct",
+    srcs = ["copy_self_qualified_struct/lib.gala"],
 )
 
 # Go type inference: library that wraps Go stdlib functions
@@ -1452,21 +1452,21 @@ gala_test(
     deps = [":go_type_inference_lib"],
 )
 
-# FIX-046 verification: match with void function branches should not generate 'unit' type
+# Verification: match with void function branches should not generate 'unit' type
 gala_test(
     name = "match_void_branches",
     src = "match_void_branches.gala",
     expected = "match_void_branches.out",
 )
 
-# FIX-045 verification: transitive Go import for return types (e.g., io/fs from os.Stat)
+# Verification: transitive Go import for return types (e.g., io/fs from os.Stat)
 gala_test(
     name = "try_go_transitive_import",
     src = "try_go_transitive_import.gala",
     expected = "try_go_transitive_import.out",
 )
 
-# FIX-044 verification: auto-destructure (T, error) Go returns in val declarations
+# Verification: auto-destructure (T, error) Go returns in val declarations
 gala_test(
     name = "try_val_destructure",
     src = "try_val_destructure.gala",
@@ -1609,21 +1609,21 @@ gala_test(
     deps = ["//io"],
 )
 
-# FIX-033: trailing commas in multi-line function/struct parameter lists
+# Trailing commas in multi-line function/struct parameter lists
 gala_test(
     name = "trailing_comma_params",
     src = "trailing_comma_params.gala",
     expected = "trailing_comma_params.out",
 )
 
-# FIX-036: if-expression with block branches as val initializer
+# if-expression with block branches as val initializer
 gala_test(
     name = "if_expression_block",
     src = "if_expression_block.gala",
     expected = "if_expression_block.out",
 )
 
-# Method default parameters with named args (FIX-050)
+# Method default parameters with named args
 gala_test(
     name = "method_default_params",
     src = "method_default_params.gala",
@@ -1637,14 +1637,14 @@ gala_test(
     expected = "tuple_multi_return.out",
 )
 
-# Lambda multi-return type unification (FIX-058)
+# Lambda multi-return type unification
 gala_test(
     name = "lambda_multi_return_unify",
     src = "lambda_multi_return_unify.gala",
     expected = "lambda_multi_return_unify.out",
 )
 
-# SliceOf[byte] type inference and Option[Array[byte]] (FIX-060)
+# SliceOf[byte] type inference and Option[Array[byte]]
 gala_test(
     name = "option_array_byte",
     src = "option_array_byte.gala",
@@ -1676,7 +1676,7 @@ gala_test(
     ],
 )
 
-# BUG-047 repro: Lambda return type inference with multiple return paths
+# Repro: Lambda return type inference with multiple return paths
 gala_test(
     name = "lambda_multi_return_type",
     src = "lambda_multi_return_type.gala",
@@ -1686,14 +1686,14 @@ gala_test(
     ],
 )
 
-# FIX-076 verification: FromError and Unit type
+# Verification: FromError and Unit type
 gala_test(
     name = "from_error",
     src = "from_error.gala",
     expected = "from_error.out",
 )
 
-# FIX-075 verification: Lambda passed to Go func expecting func() should be void
+# Verification: Lambda passed to Go func expecting func() should be void
 gala_test(
     name = "go_func_void_lambda",
     src = "go_func_void_lambda.gala",
@@ -1704,27 +1704,27 @@ gala_test(
     ],
 )
 
-# FIX-052: if-expression with generic return type in expression-bodied function
+# if-expression with generic return type in expression-bodied function
 gala_test(
     name = "if_expr_concrete_type",
     src = "if_expr_concrete_type.gala",
     expected = "if_expr_concrete_type.out",
 )
 
-# FIX-080 (BUG-047): Lambda return type inference via type alias resolution
+# Lambda return type inference via type alias resolution
 gala_go_test(
     name = "type_alias_lambda_inference",
     srcs = ["type_alias_lambda_inference.gala"],
 )
 
-# USR-002: Option.When and Unless factory constructors
+# Option.When and Unless factory constructors
 gala_test(
     name = "option_when",
     src = "option_when.gala",
     expected = "option_when.out",
 )
 
-# USR-004: Go struct construction with GALA named-arg syntax
+# Go struct construction with GALA named-arg syntax
 gala_test(
     name = "go_struct_named_args",
     src = "go_struct_named_args.gala",
@@ -1734,7 +1734,7 @@ gala_test(
     ],
 )
 
-# USR-006: Retry combinator with backoff strategies
+# Retry combinator with backoff strategies
 gala_test(
     name = "retry_backoff",
     src = "retry_backoff.gala",
@@ -1745,7 +1745,7 @@ gala_test(
     ],
 )
 
-# BUG-054: match as standalone statement (side-effect only, no val assignment)
+# Match as standalone statement (side-effect only, no val assignment)
 gala_test(
     name = "match_standalone_stmt",
     src = "match_standalone_stmt.gala",
@@ -1757,67 +1757,67 @@ gala_test(
 # These bugs ONLY manifest in multi-file batch transpilation (gala_library).
 # Each test is commented out on master and uncommented on its fix branch.
 # After the fix PR merges, the test stays uncommented on master.
-# Source files live in regress_052/, regress_056/, regress_usr004/.
+# Source files live in if_expr_batch_regress/, when_flatmap_regress/, go_struct_named_arg_regress/.
 # =============================================================================
 
 gala_library(
-    name = "regress_052",
+    name = "if_expr_batch_regress",
     srcs = [
-        "regress_052/logic.gala",
-        "regress_052/types.gala",
+        "if_expr_batch_regress/logic.gala",
+        "if_expr_batch_regress/types.gala",
     ],
-    importpath = "martianoff/gala/examples/regress_052",
+    importpath = "martianoff/gala/examples/if_expr_batch_regress",
     visibility = ["//visibility:public"],
     deps = ["//examples/go_struct_bridge"],
 )
 
 gala_test(
-    name = "regress_052_test",
-    src = "regress_052_test.gala",
-    expected = "regress_052_test.out",
+    name = "if_expr_batch_regress_test",
+    src = "if_expr_batch_regress_test.gala",
+    expected = "if_expr_batch_regress_test.out",
     deps = [
-        ":regress_052",
+        ":if_expr_batch_regress",
         "//examples/go_struct_bridge",
     ],
 )
 
 gala_library(
-    name = "regress_056",
+    name = "when_flatmap_regress",
     srcs = [
-        "regress_056/logic.gala",
-        "regress_056/types.gala",
+        "when_flatmap_regress/logic.gala",
+        "when_flatmap_regress/types.gala",
     ],
-    importpath = "martianoff/gala/examples/regress_056",
+    importpath = "martianoff/gala/examples/when_flatmap_regress",
     visibility = ["//visibility:public"],
     deps = ["//examples/go_struct_bridge"],
 )
 
 gala_test(
-    name = "regress_056_test",
-    src = "regress_056_test.gala",
-    expected = "regress_056_test.out",
+    name = "when_flatmap_regress_test",
+    src = "when_flatmap_regress_test.gala",
+    expected = "when_flatmap_regress_test.out",
     deps = [
-        ":regress_056",
+        ":when_flatmap_regress",
         "//examples/go_struct_bridge",
     ],
 )
 
 gala_library(
-    name = "regress_usr004",
+    name = "go_struct_named_arg_regress",
     srcs = [
-        "regress_usr004/interop.gala",
-        "regress_usr004/types.gala",
+        "go_struct_named_arg_regress/interop.gala",
+        "go_struct_named_arg_regress/types.gala",
     ],
-    importpath = "martianoff/gala/examples/regress_usr004",
+    importpath = "martianoff/gala/examples/go_struct_named_arg_regress",
     visibility = ["//visibility:public"],
     deps = ["//examples/go_struct_bridge"],
 )
 
 gala_test(
-    name = "regress_usr004_test",
-    src = "regress_usr004_test.gala",
-    expected = "regress_usr004_test.out",
-    deps = [":regress_usr004"],
+    name = "go_struct_named_arg_regress_test",
+    src = "go_struct_named_arg_regress_test.gala",
+    expected = "go_struct_named_arg_regress_test.out",
+    deps = [":go_struct_named_arg_regress"],
 )
 
 # Combined regression test

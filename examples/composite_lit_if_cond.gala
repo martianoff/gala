@@ -7,7 +7,7 @@ sealed type HttpMethod {
 }
 
 func checkMethod(m HttpMethod) string {
-    // FIX-034: Composite literal in if condition must be parenthesized.
+    // Composite literal in if condition must be parenthesized.
     // OPTIONS{}.Apply() should not confuse Go parser's { detection.
     if m == OPTIONS() {
         return "options"

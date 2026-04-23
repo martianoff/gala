@@ -3,7 +3,7 @@ package main
 import "fmt"
 
 // Verification: tuple return type should NOT be widened to any when
-// the function has a declared return type (BUG-014 / FIX-007)
+// the function has a declared return type.
 
 func makePair(name string, age int) Tuple[string, int] {
     val n = name

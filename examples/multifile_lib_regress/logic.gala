@@ -6,7 +6,7 @@ import (
     "martianoff/gala/examples/go_struct_bridge"
 )
 
-// --- BUG-052 regression: if-expression with non-primitive generic return type ---
+// --- Regression: if-expression with non-primitive generic return type ---
 // Uses Go multi-return method call followed by if-expression,
 // mirroring gala-server's `val t, ok = r.bridge.ContextDeadline()`
 
@@ -26,11 +26,11 @@ func SessionValueIfExists(session *go_struct_bridge.SessionData, key string) Opt
     return if (found) Some(v) else None[string]()
 }
 
-// --- BUG-056 regression: When[T] inside generic lambda generates undefined: T ---
+// --- Regression: When[T] inside generic lambda generates undefined: T ---
 // Mirrors gala-server's SessionGet: FlatMap with Go method call inside lambda.
 
 // NOTE: When inside FlatMap with Go pointer type param (*SessionData) is a known
-// remaining edge case — BUG-056 fix handles GALA types but not Go pointer types.
+// remaining edge case — the current fix handles GALA types but not Go pointer types.
 // Verified against gala-server. Using workaround here:
 func SessionLookup(session *go_struct_bridge.SessionData, key string) Option[string] {
     var v, found = session.Get(key)

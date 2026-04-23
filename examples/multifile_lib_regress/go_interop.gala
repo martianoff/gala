@@ -2,7 +2,7 @@ package multifile_lib_regress
 
 import "martianoff/gala/examples/go_struct_bridge"
 
-// --- USR-004 regression: Go struct named-arg wraps fields in Immutable ---
+// --- Regression: Go struct named-arg wraps fields in Immutable ---
 // When a GALA struct and a Go struct share the same name (Cookie), the transpiler
 // must use the package qualifier to distinguish them:
 //   Cookie(Name = "x")              → local GALA Cookie → Immutable wrapping

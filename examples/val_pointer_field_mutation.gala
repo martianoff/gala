@@ -37,7 +37,7 @@ func testCompoundAssignment() {
 }
 
 func main() {
-    fmt.Println("=== FIX-027: val pointer field mutation ===")
+    fmt.Println("=== val pointer field mutation ===")
 
     testValPointerFieldMutation()
 

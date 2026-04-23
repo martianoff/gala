@@ -242,7 +242,7 @@ func (t *galaASTTransformer) transformExpressionLambdaBody(ctx *grammar.LambdaEx
 		return body, retType, nil
 	}
 	if multiRetBody, multiRetType := t.tryWrapGoMultiReturnWithErrorPanic(expr); multiRetBody != nil {
-		// FIX-045: Go function returning (T, error) or (A, B, error) in expression lambda.
+		// Go function returning (T, error) or (A, B, error) in expression lambda.
 		body = multiRetBody
 		if multiRetType != nil && !isConcreteExpectedType {
 			retType = multiRetType

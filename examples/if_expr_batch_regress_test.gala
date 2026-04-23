@@ -1,0 +1,20 @@
+package main
+
+import (
+    "martianoff/gala/examples/if_expr_batch_regress"
+    "martianoff/gala/examples/go_struct_bridge"
+)
+
+func main() {
+    // if-expression with time.Time
+    Println(if_expr_batch_regress.DeadlineFromString("2024-01-15T10:30:00Z").IsDefined())
+
+    // if-expression with int
+    Println(if_expr_batch_regress.CountIfPositive(42).GetOrElse(0))
+    Println(if_expr_batch_regress.CountIfPositive(-1).IsDefined())
+
+    // if-expression with Go method return
+    val session = go_struct_bridge.NewSessionData()
+    Println(if_expr_batch_regress.SessionValueIfExists(session, "user").GetOrElse("none"))
+    Println(if_expr_batch_regress.SessionValueIfExists(session, "missing").IsDefined())
+}

@@ -1,4 +1,4 @@
-package regress_056
+package when_flatmap_regress
 
 // Second file to force multi-file batch transpilation.
 

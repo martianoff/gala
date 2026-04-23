@@ -4,31 +4,31 @@ import "net"
 import "os"
 import "strconv"
 
-// Test FIX-044: Try type param inference from lambda return type
-// Test FIX-045: Go multi-return (T, error) inside Try lambda
+// Test: Try type param inference from lambda return type.
+// Test: Go multi-return (T, error) inside Try lambda.
 func main() {
-    // FIX-044: Try should infer T=string from lambda return type (single-return Go func)
+    // Try should infer T=string from lambda return type (single-return Go func)
     val dirResult = Try(() => os.TempDir()) match {
         case Success(_) => "ok"
         case Failure(err) => s"Error: ${err.Error()}"
     }
     Println(dirResult)
 
-    // FIX-045: Try with Go function returning (int, error) - auto error panic wrapping
+    // Try with Go function returning (int, error) - auto error panic wrapping
     val intResult = Try(() => strconv.Atoi("42")) match {
         case Success(n) => s"Parsed: $n"
         case Failure(err) => s"Error: ${err.Error()}"
     }
     Println(intResult)
 
-    // FIX-045: Try with Go function returning (T, error) that actually fails
+    // Try with Go function returning (T, error) that actually fails
     val failResult = Try(() => strconv.Atoi("not_a_number")) match {
         case Success(n) => s"Parsed: $n"
         case Failure(_) => "parse error caught"
     }
     Println(failResult)
 
-    // FIX-044+045: Try with os.MkdirTemp (string, error) - verify type inferred as string
+    // Try with os.MkdirTemp (string, error) - verify type inferred as string
     val tmpResult = Try(() => os.MkdirTemp("", "gala-test-*")) match {
         case Success(dir) => {
             os.RemoveAll(dir)
@@ -38,14 +38,14 @@ func main() {
     }
     Println(tmpResult)
 
-    // FIX-045 Tuple: Go function returning (string, string, error) -> Tuple[string, string]
+    // Tuple: Go function returning (string, string, error) -> Tuple[string, string]
     val hostPort = Try(() => net.SplitHostPort("localhost:8080")) match {
         case Success(hp) => s"host=${hp.V1} port=${hp.V2}"
         case Failure(err) => s"Error: ${err.Error()}"
     }
     Println(hostPort)
 
-    // FIX-045 Tuple: error case
+    // Tuple: error case
     val badHostPort = Try(() => net.SplitHostPort("invalid")) match {
         case Success(hp) => s"host=${hp.V1} port=${hp.V2}"
         case Failure(_) => "split error caught"

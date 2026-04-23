@@ -87,7 +87,7 @@ func (t *galaASTTransformer) transformStatement(ctx *grammar.StatementContext) (
 		if retCtx.Expression() != nil {
 			var expr ast.Expr
 			var err error
-			// FIX-052: If the return expression is an if-expression and we know the
+			// If the return expression is an if-expression and we know the
 			// enclosing function's return type, set expectedIfExprType so that the
 			// if-expression IIFE gets a concrete return type instead of falling back
 			// to `any` when HM type inference fails in multi-file batch mode.
@@ -268,7 +268,7 @@ func (t *galaASTTransformer) transformForStatement(ctx *grammar.ForStatementCont
 		if err != nil {
 			return nil, err
 		}
-		// FIX-034: Parenthesize composite literals in for conditions.
+		// Parenthesize composite literals in for conditions.
 		cond = parenthesizeCompositeLits(cond)
 		body, err := t.transformBlock(ctx.Block().(*grammar.BlockContext))
 		if err != nil {
@@ -370,7 +370,7 @@ func (t *galaASTTransformer) transformForStatement(ctx *grammar.ForStatementCont
 			if err != nil {
 				return nil, err
 			}
-			// FIX-034: Parenthesize composite literals in for conditions.
+			// Parenthesize composite literals in for conditions.
 			cond = parenthesizeCompositeLits(cond)
 		}
 
@@ -507,7 +507,7 @@ func (t *galaASTTransformer) transformIfStatement(ctx *grammar.IfStatementContex
 	if err != nil {
 		return nil, err
 	}
-	// FIX-034: Parenthesize composite literals in if conditions to avoid
+	// Parenthesize composite literals in if conditions to avoid
 	// Go parser ambiguity where '{' is treated as the start of the if body.
 	cond = parenthesizeCompositeLits(cond)
 	body, err := t.transformBlock(ctx.Block(0).(*grammar.BlockContext))

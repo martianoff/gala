@@ -7,14 +7,14 @@ import (
 )
 
 func main() {
-    // BUG-052: if-expression with time.Time
+    // if-expression with time.Time
     val deadline = multifile_lib_regress.DeadlineFromString("2024-01-15T10:30:00Z")
     deadline match {
         case Some(t) => Println(t.Format("2006-01-02"))
         case _ => Println("no deadline")
     }
 
-    // BUG-052: if-expression with int
+    // if-expression with int
     val count = multifile_lib_regress.CountIfPositive(42)
     count match {
         case Some(n) => Println(n)
@@ -27,7 +27,7 @@ func main() {
         case _ => Println("negative (expected)")
     }
 
-    // BUG-052: if-expression with Go method multi-return
+    // if-expression with Go method multi-return
     val session = go_struct_bridge.NewSessionData()
     val value052 = multifile_lib_regress.SessionValueIfExists(session, "user")
     value052 match {
@@ -35,7 +35,7 @@ func main() {
         case _ => Println("no value")
     }
 
-    // BUG-056: When inside FlatMap lambda (workaround for Go pointer type edge case)
+    // When inside FlatMap lambda (workaround for Go pointer type edge case)
     val user = multifile_lib_regress.SessionLookup(session, "user")
     user match {
         case Some(v) => Println(v)
@@ -48,16 +48,16 @@ func main() {
         case _ => Println("key not found (expected)")
     }
 
-    // BUG-056: When inside FlatMap lambda with simple types
+    // When inside FlatMap lambda with simple types
     val simple = multifile_lib_regress.LookupSimple("test-key")
     simple match {
         case Some(v) => Println(v)
         case _ => Println("no value")
     }
 
-    // USR-004: Go struct named-arg (qualified) — should NOT wrap in Immutable
+    // Go struct named-arg (qualified) — should NOT wrap in Immutable
     Println(multifile_lib_regress.GoCookieString("session", "abc123"))
 
-    // USR-004: GALA struct named-arg — should wrap in Immutable (correct)
+    // GALA struct named-arg — should wrap in Immutable (correct)
     Println(multifile_lib_regress.GalaCookieName("session", "abc123"))
 }
