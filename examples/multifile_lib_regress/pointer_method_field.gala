@@ -1,0 +1,26 @@
+package multifile_lib_regress
+
+// --- Regression: cross-file pointer-receiver method return field access ---
+// When a method is defined with a pointer receiver in a sibling file and its
+// return type has an immutable field, chained field access must auto-unwrap
+// the inner Immutable[T] wrapper. Previously the method-return type
+// inference bailed out for *Buffer (PointerType over non-generic named type)
+// because the fallback only retried for generic receivers, leaving xType
+// NilType at the .Bold access site and defeating isImmutableField.
+
+type StyleInfo struct {
+    Bold   bool
+    Italic bool
+}
+
+type Canvas struct {
+    Width  int
+    Height int
+}
+
+func (c *Canvas) StyleAt(x int, y int) StyleInfo = StyleInfo(Bold = true, Italic = false)
+
+func NewCanvas(w int, h int) *Canvas = &Canvas(Width = w, Height = h)
+
+// Exposes the chained access for the regression test to call from main.
+func BoldAt(c *Canvas, x int, y int) bool = c.StyleAt(x, y).Bold

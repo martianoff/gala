@@ -313,14 +313,24 @@ func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.Sel
 		// Unwrap pointer types to get to the underlying type for method lookup
 		// e.g., for *Array[int].Find(), unwrap to Array[int]
 		underlyingType := xType
+		wasPointer := false
 		if ptr, ok := xType.(transpiler.PointerType); ok {
 			underlyingType = ptr.Elem
+			wasPointer = true
 		}
 		// Fallback: try base type name for generic types
 		// e.g., for Pair[int, string].Swap(), try looking up Pair
 		if genType, ok := underlyingType.(transpiler.GenericType); ok {
 			baseTypeName := genType.Base.String()
 			if result := t.resolveMethodCallTypeWithParams(baseTypeName, sel.Sel.Name, typeArgs, e.Args, -1, genType.Params); !result.IsNil() {
+				return result
+			}
+		} else if wasPointer {
+			// Fallback: for pointer to non-generic type, retry method lookup
+			// against the unwrapped type name. Methods defined with pointer
+			// receivers are registered under the base type name, not the
+			// pointer type, so *Buffer.StyleAt → Buffer.StyleAt lookup.
+			if result := t.resolveMethodCallType(underlyingType.String(), sel.Sel.Name, typeArgs, e.Args, -1); !result.IsNil() {
 				return result
 			}
 		}

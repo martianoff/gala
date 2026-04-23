@@ -7,3 +7,4 @@ key not found (expected)
 value-for-test-key
 Cookie(session=abc123, path=/)
 session
+true
