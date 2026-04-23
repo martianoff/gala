@@ -1,0 +1,21 @@
+package main
+
+// Shorthand generic struct declaration: type params between name and (.
+// Mirrors the block-form `type Box[T any] struct { Value T }` but concise.
+struct Box[T any](Value T)
+
+// Multiple type parameters.
+struct Pair[A any, B any](First A, Second B)
+
+func main() {
+    val b = Box[int](Value = 42)
+    Println(b.Value)
+
+    // Implicit type-parameter inference on construction.
+    val s = Box(Value = "hello")
+    Println(s.Value)
+
+    val p = Pair[int, string](First = 1, Second = "two")
+    Println(p.First)
+    Println(p.Second)
+}

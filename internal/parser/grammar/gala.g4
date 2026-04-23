@@ -18,7 +18,7 @@ topLevelDeclaration
 embedDeclaration: EMBED VAL identifier type? '=' embedPatterns;
 embedPatterns: STRING (',' STRING)*;
 
-structShorthandDeclaration: 'struct' identifier parameters;
+structShorthandDeclaration: 'struct' identifier (typeParameters)? parameters;
 
 sealedTypeDeclaration: SEALED 'type' identifier (typeParameters)? '{' sealedCase+ '}';
 // Parentheses are optional for zero-field variants: `case Debug` and `case Debug()` are both valid.

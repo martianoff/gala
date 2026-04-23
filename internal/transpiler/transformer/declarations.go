@@ -830,6 +830,28 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 	t.pushScope()
 	defer t.popScope()
 
+	// Process Type Parameters first (mirrors transformTypeDeclaration).
+	var tParams *ast.FieldList
+	if ctx.TypeParameters() != nil {
+		var err error
+		tParams, err = t.transformTypeParameters(ctx.TypeParameters().(*grammar.TypeParametersContext))
+		if err != nil {
+			return nil, err
+		}
+		for _, field := range tParams.List {
+			for _, n := range field.Names {
+				t.activeTypeParams[n.Name] = true
+			}
+		}
+		defer func() {
+			for _, field := range tParams.List {
+				for _, n := range field.Names {
+					delete(t.activeTypeParams, n.Name)
+				}
+			}
+		}()
+	}
+
 	fields := &ast.FieldList{}
 	var fieldNames []string
 	var immutFlags []bool
@@ -895,8 +917,9 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 	}
 	t.structImmutFields[name] = immutFlags
 	typeSpec := &ast.TypeSpec{
-		Name: ast.NewIdent(name),
-		Type: &ast.StructType{Fields: fields},
+		Name:       ast.NewIdent(name),
+		TypeParams: tParams,
+		Type:       &ast.StructType{Fields: fields},
 	}
 
 	decls := []ast.Decl{
@@ -907,17 +930,23 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 	}
 
 	// Copy and Equal methods
-	copyMethod, err := t.generateCopyMethod(name, fields, nil)
+	copyMethod, err := t.generateCopyMethod(name, fields, tParams)
 	if err != nil {
 		return nil, err
 	}
 	decls = append(decls, copyMethod)
 
-	equalMethod, err := t.generateEqualMethod(name, fields, nil)
+	equalMethod, err := t.generateEqualMethod(name, fields, tParams)
 	if err != nil {
 		return nil, err
 	}
 	decls = append(decls, equalMethod)
+
+	// For generic structs, generate marker interface for wildcard pattern matching.
+	if tParams != nil {
+		interfaceDecl, markerMethod := t.generateInstanceMarker(name, tParams)
+		decls = append(decls, interfaceDecl, markerMethod)
+	}
 
 	// Check if Unapply already exists
 	hasUnapply := false
@@ -928,7 +957,7 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 	}
 
 	if !hasUnapply {
-		unapplyMethod, err := t.generateUnapplyMethod(name, fields, nil)
+		unapplyMethod, err := t.generateUnapplyMethod(name, fields, tParams)
 		if err != nil {
 			return nil, err
 		}

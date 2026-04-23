@@ -393,6 +393,16 @@ A concise way to define a struct, similar to Scala case classes.
 struct Person(name string, age int, var score int)
 ```
 
+Generic type parameters are supported in the same position as for generic functions — between the name and the `(`:
+
+```gala
+struct Box[T any](Value T)
+struct Pair[A any, B any](First A, Second B)
+
+val b = Box[int](Value = 42)
+val p = Pair(First = 1, Second = "two") // type params inferred from arguments
+```
+
 #### Block Struct Declaration
 Traditional Go-style declaration.
 

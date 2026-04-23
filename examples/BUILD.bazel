@@ -673,6 +673,12 @@ gala_test(
 )
 
 gala_test(
+    name = "struct_shorthand_generic",
+    src = "struct_shorthand_generic.gala",
+    expected = "struct_shorthand_generic.out",
+)
+
+gala_test(
     name = "tuple_shorthand_mutable",
     src = "tuple_shorthand_mutable.gala",
     expected = "tuple_shorthand_mutable.out",
