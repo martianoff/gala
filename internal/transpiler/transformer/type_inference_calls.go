@@ -233,7 +233,7 @@ func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.Sel
 					if len(inferredTypeArgs) > 0 {
 						retType = t.substituteConcreteTypes(fMeta.ReturnType, fMeta.TypeParams, inferredTypeArgs)
 					} else if t.currentFuncReturnType != nil && !t.currentFuncReturnType.IsNil() && t.hasTypeParams(retType) {
-						// FIX-056: When argument-based inference fails (e.g., in multi-file batch mode
+						// When argument-based inference fails (e.g., in multi-file batch mode
 						// where argument types can't be resolved), try to infer type params by unifying
 						// the function's return type pattern with the enclosing function's return type.
 						// Example: When[T](found, v) returns Option[T], enclosing returns Option[string]
@@ -393,7 +393,7 @@ func (t *galaASTTransformer) inferCallIdentType(e *ast.CallExpr, id *ast.Ident, 
 	}
 	// Handle go_interop.SliceOf[T](elements ...T) []T
 	// SliceOf is commonly used with dot imports, infer element type from arguments.
-	// FIX-060: When explicit type args are provided (e.g., SliceOf[byte](...)),
+	// When explicit type args are provided (e.g., SliceOf[byte](...)),
 	// use them instead of inferring from argument types. Without this fix,
 	// SliceOf[byte](72, 101) would infer []int (from the int literal 72)
 	// instead of []byte, causing downstream type errors like Array[int] instead of Array[byte].
@@ -429,7 +429,7 @@ func (t *galaASTTransformer) inferCallIdentType(e *ast.CallExpr, id *ast.Ident, 
 			if len(inferredTypeArgs) > 0 {
 				retType = t.substituteConcreteTypes(fMeta.ReturnType, fMeta.TypeParams, inferredTypeArgs)
 			} else if t.currentFuncReturnType != nil && !t.currentFuncReturnType.IsNil() && t.hasTypeParams(retType) {
-				// FIX-056: Fallback — unify return type with enclosing function's return type
+				// Fallback — unify return type with enclosing function's return type
 				inferredMap := make(map[string]transpiler.Type)
 				t.unifyForInference(retType, t.currentFuncReturnType, fMeta.TypeParams, inferredMap)
 				if len(inferredMap) > 0 {

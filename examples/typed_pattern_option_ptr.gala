@@ -15,7 +15,7 @@ type OtherData struct {
     Value string
 }
 
-// BUG-055: typed pattern matching with pointer type in Option return
+// Typed pattern matching with pointer type in Option return
 func findData(raw any) Option[*MyData] {
     return raw match {
         case sd: *MyData => Some(sd)

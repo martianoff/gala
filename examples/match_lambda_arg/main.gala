@@ -2,8 +2,8 @@ package main
 
 import . "martianoff/gala/collection_immutable"
 
-// FIX-050: match on method call chain with lambda argument
-// This verifies that lambda arguments parse correctly when followed by a match expression.
+// Match on method call chain with lambda argument.
+// Verifies that lambda arguments parse correctly when followed by a match expression.
 
 func findConfig(items Array[Config], key string) string =
     items.Find((item) => item.key == key) match {

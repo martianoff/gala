@@ -1,4 +1,4 @@
-package regress_usr004
+package go_struct_named_arg_regress
 
 // Second file to force multi-file batch transpilation.
 

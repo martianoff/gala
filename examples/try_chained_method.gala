@@ -4,7 +4,7 @@ import "bytes"
 import "strconv"
 import "strings"
 
-// Test FIX-048: (T, error) destructuring for chained method calls in Try lambda
+// Test: (T, error) destructuring for chained method calls in Try lambda.
 func main() {
     // Standalone call — already works (baseline)
     val result1 = Try(() => strconv.Atoi("123")) match {
@@ -13,7 +13,7 @@ func main() {
     }
     Println(result1)
 
-    // Chained method call — FIX-048
+    // Chained method call
     // bytes.NewBufferString("hello world") returns *bytes.Buffer
     // .ReadString(' ') on *bytes.Buffer returns (string, error)
     val result2 = Try(() => bytes.NewBufferString("hello world").ReadString(' ')) match {

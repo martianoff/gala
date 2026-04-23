@@ -1,0 +1,14 @@
+package main
+
+import "martianoff/gala/examples/when_flatmap_regress"
+
+func main() {
+    // When with cross-file GALA type in FlatMap
+    Println(when_flatmap_regress.LookupWithCrossFileType("test").GetOrElse("none"))
+
+    // When with simple types in FlatMap
+    Println(when_flatmap_regress.LookupSimple("test-key").GetOrElse("none"))
+
+    // Nested Map + FlatMap with When
+    Println(when_flatmap_regress.TransformIfFound("test").GetOrElse("none"))
+}

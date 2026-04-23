@@ -8,7 +8,7 @@ func externalCall(key string) string {
     return fmt.Sprintf("value_%s", key)
 }
 
-// FIX-040: Some(v) should infer Option[string] from the function return type
+// Some(v) should infer Option[string] from the function return type
 // when the argument type cannot be determined from the expression.
 func findValue(name string) Option[string] {
     val v = externalCall(name)

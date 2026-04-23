@@ -7,7 +7,7 @@ import "fmt"
 import "io"
 
 func main() {
-    // FIX-041: Use ToBytes() instead of []byte() which is not supported by GALA parser
+    // Use ToBytes() instead of []byte() which is not supported by GALA parser
     val input = "hello world"
 
     // SHA-256 hash using hash.Hash interface + io.WriteString

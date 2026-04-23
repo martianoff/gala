@@ -8,19 +8,18 @@ import (
     "martianoff/gala/go_interop"
 )
 
-// FIX-075: Lambda passed to Go function expecting func() should generate func(),
+// Lambda passed to Go function expecting func() should generate func(),
 // not func() <return-type-of-body>. This verifies that the transpiler correctly
 // detects void function parameters from Go type info.
 
 func main() {
-    // Case 1: go_interop.Spawn with block lambda (already worked via FIX-073)
+    // Case 1: go_interop.Spawn with block lambda
     go_interop.Spawn(() => {
         fmt.Println("block lambda spawn")
     })
     time.Sleep(50 * time.Millisecond)
 
     // Case 2: go_interop.Spawn with expression lambda
-    // Before FIX-075, this generated func() int (from Println return type)
     go_interop.Spawn(() => fmt.Println("expression lambda spawn"))
     time.Sleep(50 * time.Millisecond)
 

@@ -3,12 +3,12 @@ package main
 import (
     . "martianoff/gala/std"
     . "martianoff/gala/concurrent"
-    "martianoff/gala/examples/bug013_cross_pkg/corelib"
+    "martianoff/gala/examples/cross_pkg_try_match/corelib"
 )
 
 func doWork() Future[corelib.Response] = FutureOf(corelib.NewResponse(200, "OK"))
 
-// BUG-013 repro: match on Try with cross-package return type
+// Repro: match on Try with cross-package return type
 // This matches the gala-server pattern: handler(req).Await() match { ... }
 func makeBridgeHandler() func() corelib.BridgeResponse {
     return () => {

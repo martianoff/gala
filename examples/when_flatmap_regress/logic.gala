@@ -1,6 +1,6 @@
-package regress_056
+package when_flatmap_regress
 
-// BUG-056: When[T] inside generic lambda generates undefined: T (or Option[any]).
+// Regression: When[T] inside generic lambda generates undefined: T (or Option[any]).
 // In multi-file batch mode, calling When(cond, val) inside a FlatMap lambda
 // fails to resolve T to the concrete type.
 

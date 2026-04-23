@@ -60,7 +60,7 @@ type galaASTTransformer struct {
 	inferenceWarnings     []string                    // collected type inference warnings
 	structMetas           map[string]*structMetaConfig  // generated StructMeta structs (keyed by generated name)
 	instanceInterfaceNames map[string]string            // type name -> actual generated interface name (for collision avoidance)
-	expectedIfExprType     ast.Expr                     // FIX-052: expected return type for if-expression IIFE (set by expression-bodied function handler)
+	expectedIfExprType     ast.Expr                     // expected return type for if-expression IIFE (set by expression-bodied function handler)
 	lspVarTypes            map[string]transpiler.Type   // LSP: collects all resolved var types during transformation
 	lspCurrentFunc         string                       // LSP: name of the function currently being transformed (for scoping)
 	lspLambdaParamHints    []transpiler.LambdaParamHint // LSP: positions of lambda params with inferred types

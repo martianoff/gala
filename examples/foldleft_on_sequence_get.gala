@@ -7,7 +7,7 @@ import (
     . "martianoff/gala/collection_immutable"
 )
 
-// FIX-038 verification: FoldLeft on Future.Get() result uses correct namespace.
+// Verification: FoldLeft on Future.Get() result uses correct namespace.
 // When calling .FoldLeft() on a value from Sequence[int](...).Get(),
 // the transpiler should generate Array_FoldLeft, not Future_FoldLeft.
 func main() {

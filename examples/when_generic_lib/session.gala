@@ -1,4 +1,4 @@
-package bug056_lib
+package when_generic_lib
 
 import . "martianoff/gala/std"
 

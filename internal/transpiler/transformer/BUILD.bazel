@@ -54,7 +54,7 @@ go_test(
         "default_immutability_test.go",
         "dot_import_test.go",
         "equal_test.go",
-        "fix001_debug_test.go",
+        "multi_file_some_none_test.go",
         "functions_test.go",
         "generics_test.go",
         "immutable_test.go",

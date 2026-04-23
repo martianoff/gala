@@ -111,7 +111,7 @@ list, _ := h.Completion(uri, line, char)  // uses cached richAST
 2. Run ALL LSP tests: `bazel test //internal/lsp:lsp_test --test_output=errors --cache_test_results=no`
 3. Run analyzer tests: `bazel test //internal/transpiler/analyzer:analyzer_test --test_output=errors`
 4. Run transformer tests: `bazel test //internal/transpiler/transformer:transformer_test --test_output=errors`
-5. Build examples: `bazel build examples:bug013_type_alias_lib_test` (catches redefinition regressions)
+5. Build examples: `bazel build examples:type_alias_lib_match_test` (catches redefinition regressions)
 6. Full build: `bazel build //internal/... //cmd/...`
 
 ### Phase 4: Create PR

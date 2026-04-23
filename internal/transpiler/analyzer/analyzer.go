@@ -1975,7 +1975,7 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 	}
 	// Always extract Go type information from .go files, even in mixed GALA+Go packages.
 	// This ensures Go-defined functions and variables (e.g., concurrent.Spawn) are available
-	// for type inference when GALA code calls them (FIX-075).
+	// for type inference when GALA code calls them.
 	goInfo := AnalyzeGoFiles(dirPath)
 	if len(goInfo.Functions) > 0 || len(goInfo.Types) > 0 || len(goInfo.Variables) > 0 || len(goInfo.TypeAliases) > 0 {
 		if pkgAST.GoTypeInfo == nil {

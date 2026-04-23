@@ -6,8 +6,8 @@ import (
     . "martianoff/gala/concurrent"
 )
 
-// BUG-047 repro attempt: Lambda return type inference with multiple return paths.
-// Result: The multi-return type inference works correctly for same-package types.
+// Lambda return type inference with multiple return paths.
+// The multi-return type inference works correctly for same-package types.
 
 type MyResponse struct {
     Status int

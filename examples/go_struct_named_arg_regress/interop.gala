@@ -1,8 +1,8 @@
-package regress_usr004
+package go_struct_named_arg_regress
 
 import "martianoff/gala/examples/go_struct_bridge"
 
-// USR-004: Go struct named-arg construction wraps fields in Immutable.
+// Go struct named-arg construction wraps fields in Immutable.
 // The bug triggers when a GALA struct has the SAME NAME as a Go struct in another package.
 //
 // FULL REPRODUCTION of the named-arg fix requires external Go packages.

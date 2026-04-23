@@ -4,7 +4,7 @@ import (
     . "martianoff/gala/test"
 )
 
-// Type aliases for function types — used by the lambda inference fix (BUG-047).
+// Type aliases for function types — exercise lambda inference through alias resolution.
 // The transpiler must resolve these to their underlying func types and propagate
 // expected param/return types to lambdas in expression functions.
 

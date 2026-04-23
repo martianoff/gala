@@ -1,11 +1,11 @@
-package regress_052
+package if_expr_batch_regress
 
 import (
     "time"
     "martianoff/gala/examples/go_struct_bridge"
 )
 
-// BUG-052: if-expression with non-primitive generic return type.
+// Regression: if-expression with non-primitive generic return type.
 // In multi-file batch mode, `return if (ok) Some(t) else None[T]()`
 // generated `func() any { ... }()` instead of `func() Option[T] { ... }()`.
 // This only triggers when the if-expr branches use values from Go method calls.

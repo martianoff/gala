@@ -2,7 +2,7 @@ package main
 
 import "fmt"
 
-// FIX-002 verification: GALA enforces that all extracted variables in match branches
+// Verification: GALA enforces that all extracted variables in match branches
 // must be used in the branch body or guard. Unused variables cause a compiler error.
 // Use '_' to explicitly discard values you don't need.
 

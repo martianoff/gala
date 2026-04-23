@@ -488,7 +488,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 //  2. method metadata present + receiver is fully concrete → transform args
 //     with named/positional handling and apply named-args / default-args
 //     dispatch.
-//  3. method metadata absent (FIX-042) → emit the method call directly with
+//  3. method metadata absent → emit the method call directly with
 //     no expected-type threading.
 //
 // Extracted from transformCallWithArgsCtx as part of A1 cont.
@@ -508,7 +508,7 @@ func (t *galaASTTransformer) transformRegularMethodCall(
 		methodMeta = typeMeta.Methods[method]
 	}
 	if methodMeta == nil {
-		// FIX-042: method metadata unresolved → emit the method call directly.
+		// method metadata unresolved → emit the method call directly.
 		return t.emitDirectMethodCall(argListCtx, receiver, method)
 	}
 
@@ -538,7 +538,7 @@ func (t *galaASTTransformer) transformRegularMethodCall(
 	return t.emitMethodCallWithFullTypes(argListCtx, receiver, method, methodMeta, typeSubst, recvType)
 }
 
-// emitDirectMethodCall is the FIX-042 fallback used when the method's metadata
+// emitDirectMethodCall is the fallback used when the method's metadata
 // cannot be resolved. It still generates a `receiver.method(args...)` call so
 // the downstream compiler can report a meaningful error rather than having
 // the receiver.method structure silently lost. Part of A1 cont.
@@ -701,8 +701,8 @@ func (t *galaASTTransformer) emitMethodCallWithFullTypes(
 //     with any extra positional args dropped
 //
 // Also handles type-parameter inference for generic Apply paths from both
-// argument types (FIX-044 unification) and the enclosing function's return
-// type (FIX-040). Returns handled=false if the type is not known, so the
+// argument types (unification) and the enclosing function's return
+// type. Returns handled=false if the type is not known, so the
 // caller can fall through to the later sections.
 //
 // Extracted from transformCallWithArgsCtx as part of A1 cont.
@@ -771,7 +771,7 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 
 	isGeneric := methodMeta.IsGeneric || len(methodMeta.TypeParams) > 0
 
-	// Infer type args from argument types and enclosing return type (FIX-040/044).
+	// Infer type args from argument types and enclosing return type.
 	if !hasTypeArgs && len(typeMeta.TypeParams) > 0 {
 		inferredMap := make(map[string]transpiler.Type)
 		// Step 1: infer from Apply method arguments.
@@ -783,7 +783,7 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 				}
 			}
 		}
-		// Step 2 (FIX-040): fall back to enclosing function's return type.
+		// Step 2: fall back to enclosing function's return type.
 		if len(inferredMap) < len(typeMeta.TypeParams) && t.currentFuncReturnType != nil && !t.currentFuncReturnType.IsNil() {
 			if methodMeta.ReturnType != nil && !methodMeta.ReturnType.IsNil() {
 				returnInferred := make(map[string]transpiler.Type)
@@ -1051,7 +1051,7 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, argListCtx
 		ctx.funcMeta = t.getFunction(funcName)
 	}
 
-	// FIX-075: When GALA function metadata is not available, try Go type
+	// When GALA function metadata is not available, try Go type
 	// info. Handles Go-defined functions and variables with function types
 	// (e.g., concurrent.Spawn) called via dot-imports or qualified references.
 	if ctx.funcMeta == nil && t.goTypeInfo != nil {
@@ -1272,7 +1272,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 
 	// --- Section 4: Regular method call (non-generic method or generic-method
 	// lookup fell through). Covers both the path with method metadata and the
-	// FIX-042 fallback when metadata cannot be resolved.
+	// fallback when metadata cannot be resolved.
 	if receiver != nil && !isGenericMethod && method != "" {
 		return t.transformRegularMethodCall(argListCtx, receiver, method, recvType, lookupBaseName)
 	}
@@ -1943,7 +1943,7 @@ func (t *galaASTTransformer) transformArgumentWithExpectedType(exprCtx grammar.I
 	return t.transformExpression(exprCtx)
 }
 
-// transformLambdaArgWithExpectedType transforms a direct lambda argument (FIX-050).
+// transformLambdaArgWithExpectedType transforms a direct lambda argument.
 // When the grammar's argument rule matches lambdaExpression directly instead of going through
 // pattern -> expression -> primaryExpr -> lambdaExpression, we get the lambda context directly.
 func (t *galaASTTransformer) transformLambdaArgWithExpectedType(lambdaCtx *grammar.LambdaExpressionContext, expectedType transpiler.Type) (ast.Expr, error) {

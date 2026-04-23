@@ -12,11 +12,11 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// TestFix001_SomeNoneInMultiFileMode verifies that Some()/None() produce the
+// TestSomeNoneInMultiFileMode verifies that Some()/None() produce the
 // Apply constructor pattern in multi-file mode, not a plain type-conversion call.
-// Regression test for BUG-008: analyzePackage was not clearing packageFiles before
+// Regression test: analyzePackage was not clearing packageFiles before
 // recursive Analyze calls, causing std type metadata to be lost in multi-file mode.
-func TestFix001_SomeNoneInMultiFileMode(t *testing.T) {
+func TestSomeNoneInMultiFileMode(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	lookupCode := `package main

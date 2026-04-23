@@ -6,7 +6,7 @@ import (
 )
 
 // Verify that block lambdas with multiple return paths
-// unify their return types correctly (BUG-047 / FIX-058).
+// unify their return types correctly.
 
 type Response struct {
     code int
