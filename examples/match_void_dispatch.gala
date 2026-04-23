@@ -1,0 +1,25 @@
+package main
+
+sealed type Shape {
+    case Point()
+    case Line()
+    case Nothing()
+    case Nested(Inner Shape)
+}
+
+func doStuff() {
+    Println("side effect")
+}
+
+func log(s Shape) {
+    s match {
+        case Point()       => doStuff()
+        case Line()        => Println("line")
+        case Nothing()     => {}
+        case Nested(inner) => log(inner)
+    }
+}
+
+func main() {
+    log(Nested(Line()))
+}
