@@ -255,8 +255,12 @@ func (b *Builder) transpile() error {
 		return b.transpileWithSourceDir()
 	}
 
-	// Find all .gala files in the project
-	galaFiles, err := findGalaFiles(b.workspace.ProjectDir)
+	// Find all .gala files in the project, including subpackages. Subdirectories
+	// may host their own GALA packages (e.g. `sub/lib.gala` declaring `package sub`)
+	// that the root package imports; without recursion the root build would fail
+	// with "package <workspace>/gen/sub is not in std" because the subpackage was
+	// never transpiled.
+	galaFiles, err := findGalaFilesRecursive(b.workspace.ProjectDir)
 	if err != nil {
 		return fmt.Errorf("finding gala files: %w", err)
 	}
@@ -301,6 +305,15 @@ func (b *Builder) transpile() error {
 	// This avoids redundant re-analysis of imports (std, collection_immutable, etc.).
 	batchAnalyzer := analyzer.NewBatchAnalyzer(p, searchPaths, b.workspace.ProjectDir)
 
+	// Group files by their parent directory so sibling-based type resolution
+	// only sees files that actually share a Go package. A root-level file is
+	// not a sibling of a file in sub/ even though both belong to the same
+	// GALA module.
+	filesByDir := make(map[string][]string)
+	for _, f := range galaFiles {
+		filesByDir[filepath.Dir(f)] = append(filesByDir[filepath.Dir(f)], f)
+	}
+
 	var allEmbedPatterns []string
 
 	for _, galaFile := range galaFiles {
@@ -310,7 +323,7 @@ func (b *Builder) transpile() error {
 		}
 
 		var siblings []string
-		for _, other := range galaFiles {
+		for _, other := range filesByDir[filepath.Dir(galaFile)] {
 			if other != galaFile {
 				siblings = append(siblings, other)
 			}
@@ -331,10 +344,16 @@ func (b *Builder) transpile() error {
 		if err != nil {
 			relPath = filepath.Base(galaFile)
 		}
+		// Preserve the subdirectory layout in gen/ so each GALA subpackage
+		// lands in its own directory — this is what the Go toolchain needs
+		// to resolve imports like "gala-build-workspace/gen/sub".
 		outName := strings.TrimSuffix(relPath, ".gala") + ".gen.go"
-		outName = strings.ReplaceAll(outName, string(filepath.Separator), "_")
+		outPath := filepath.Join(b.workspace.GenDir, outName)
 
-		if err := b.workspace.WriteGenFile(outName, []byte(goCode)); err != nil {
+		if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
+			return fmt.Errorf("creating gen dir for %s: %w", outName, err)
+		}
+		if err := os.WriteFile(outPath, []byte(goCode), 0644); err != nil {
 			return fmt.Errorf("writing %s: %w", outName, err)
 		}
 

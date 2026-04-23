@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -138,4 +139,42 @@ func TestTestGenFileName(t *testing.T) {
 			require.Equal(t, tc.want, got)
 		})
 	}
+}
+
+// TestFindGalaFilesRecursive_IncludesSubdirs verifies that the recursive
+// file walker used by `gala build` discovers .gala files in subpackages.
+// Before the fix, the project transpilation pipeline called findGalaFiles
+// (non-recursive) and silently dropped any sub/*.gala files, which later
+// tripped up `go build` with "package gala-build-workspace/gen/sub is not
+// in std" since the subpackage had never been transpiled.
+func TestFindGalaFilesRecursive_IncludesSubdirs(t *testing.T) {
+	projectDir := t.TempDir()
+
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "main.gala"),
+		[]byte("package main\nfunc main() {}"), 0644))
+
+	subDir := filepath.Join(projectDir, "sub")
+	require.NoError(t, os.MkdirAll(subDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(subDir, "lib.gala"),
+		[]byte("package sub\nfunc Hello() string = \"hi\""), 0644))
+
+	// _test.gala must NOT be picked up by build-path recursion.
+	require.NoError(t, os.WriteFile(filepath.Join(subDir, "extra_test.gala"),
+		[]byte("package sub\nfunc TestX() {}"), 0644))
+
+	// Hidden/build-cache directories must be skipped.
+	require.NoError(t, os.MkdirAll(filepath.Join(projectDir, ".gala"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, ".gala", "cached.gala"),
+		[]byte("package whatever"), 0644))
+
+	got, err := findGalaFilesRecursive(projectDir)
+	require.NoError(t, err)
+
+	sort.Strings(got)
+	want := []string{
+		filepath.Join(projectDir, "main.gala"),
+		filepath.Join(subDir, "lib.gala"),
+	}
+	sort.Strings(want)
+	require.Equal(t, want, got)
 }
