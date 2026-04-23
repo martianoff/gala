@@ -72,14 +72,14 @@ func (dt *DepTranspiler) TranspileDeps() (map[string]string, error) {
 // resolveInternalModulePath reads a dependency's gala.mod to get its declared
 // module path. Falls back to dep.Path if not found.
 func (dt *DepTranspiler) resolveInternalModulePath(dep mod.Require) string {
-	cachedDir := dt.config.GalaModulePath(dep.Path, dep.Version)
-	galaModPath := filepath.Join(cachedDir, "gala.mod")
-	if depMod, err := mod.ParseFile(galaModPath); err == nil {
-		if depMod.Module.Path != "" {
-			return depMod.Module.Path
-		}
-	}
-	return dep.Path
+	return resolveDepInternalModulePathAt(dt.effectiveDepDir(dep), dep)
+}
+
+// effectiveDepDir returns the source directory for a dependency, honoring
+// local replace directives in the active gala.mod. Replace entries that
+// point to another module version still fall back to the cache.
+func (dt *DepTranspiler) effectiveDepDir(dep mod.Require) string {
+	return resolveEffectiveDepDir(dt.config, dt.galaMod, dt.workspace.ProjectDir, dep)
 }
 
 // collectGalaDeps recursively collects all GALA dependencies.
@@ -100,8 +100,8 @@ func (dt *DepTranspiler) collectGalaDeps(f *mod.File, allDeps map[string]mod.Req
 		}
 		visited[key] = true
 
-		// Check if cached dir has .gala files
-		cachedDir := dt.config.GalaModulePath(req.Path, req.Version)
+		// Check if cached dir (or local replacement) has .gala files
+		cachedDir := dt.effectiveDepDir(req)
 		galaFiles, err := findGalaFiles(cachedDir)
 		if err != nil || len(galaFiles) == 0 {
 			// No .gala files — pure Go package, skip transpilation
@@ -120,7 +120,7 @@ func (dt *DepTranspiler) collectGalaDeps(f *mod.File, allDeps map[string]mod.Req
 
 // transpileSingleDep transpiles a single GALA dependency and returns the output directory.
 func (dt *DepTranspiler) transpileSingleDep(dep mod.Require, transpiledDirs map[string]string) (string, error) {
-	srcDir := dt.config.GalaModulePath(dep.Path, dep.Version)
+	srcDir := dt.effectiveDepDir(dep)
 
 	galaFiles, err := findGalaFiles(srcDir)
 	if err != nil {
@@ -148,7 +148,7 @@ func (dt *DepTranspiler) transpileSingleDep(dep mod.Require, transpiledDirs map[
 	depGalaModPath := filepath.Join(srcDir, "gala.mod")
 	if depMod, err := mod.ParseFile(depGalaModPath); err == nil {
 		for _, depReq := range depMod.GalaRequires() {
-			depSrcDir := dt.config.GalaModulePath(depReq.Path, depReq.Version)
+			depSrcDir := dt.effectiveDepDir(depReq)
 			searchPaths = append(searchPaths, depSrcDir)
 		}
 	}
@@ -226,7 +226,7 @@ func (dt *DepTranspiler) generateDepGoMod(dep mod.Require, outDir string, transp
 	}
 
 	// Build a mapping from require path -> internal module path for this dep's own GALA deps
-	srcDir := dt.config.GalaModulePath(dep.Path, dep.Version)
+	srcDir := dt.effectiveDepDir(dep)
 	depGalaModPath := filepath.Join(srcDir, "gala.mod")
 
 	// depInternalPaths maps requirePath -> internalModulePath for the dep's GALA dependencies
@@ -313,8 +313,8 @@ func (dt *DepTranspiler) generateDepGoMod(dep mod.Require, outDir string, transp
 			absPath := filepath.ToSlash(dir)
 			sb.WriteString(fmt.Sprintf("replace %s => %s\n", entry.importPath, absPath))
 		} else {
-			// Fallback to source cache
-			absPath := filepath.ToSlash(dt.config.GalaModulePath(entry.req.Path, entry.req.Version))
+			// Fallback to source cache (or local replacement)
+			absPath := filepath.ToSlash(dt.effectiveDepDir(entry.req))
 			sb.WriteString(fmt.Sprintf("replace %s => %s\n", entry.importPath, absPath))
 		}
 	}

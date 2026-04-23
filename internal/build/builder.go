@@ -167,6 +167,10 @@ func (b *Builder) Build(outputPath string) (string, error) {
 }
 
 // ensureDeps fetches any GALA dependencies that are not yet cached locally.
+// Requirements covered by a `replace` directive pointing to a local path are
+// served from that directory instead of being fetched, mirroring Go's
+// `go mod` replace semantics. Non-local replaces (module => module@ver) still
+// fetch, but using the replacement coordinates.
 func (b *Builder) ensureDeps() error {
 	galaReqs := b.galaMod.GalaRequires()
 	if len(galaReqs) == 0 {
@@ -178,18 +182,92 @@ func (b *Builder) ensureDeps() error {
 	fetcher := fetch.NewGitFetcher(cache)
 
 	for _, req := range galaReqs {
-		modDir := b.config.GalaModulePath(req.Path, req.Version)
+		if _, isLocal, ok := b.resolveReplace(req); ok {
+			// Local replaces need no fetch — the source is already on disk.
+			if isLocal {
+				if b.verbose {
+					fmt.Printf("Replace: %s@%s => local path (fetch skipped)\n",
+						req.Path, req.Version)
+				}
+				continue
+			}
+			// Module replace: fetch the replacement coordinates if not cached.
+			// fall through with the effective path below
+		}
+
+		modDir := b.effectiveDepDir(req)
 		if _, err := os.Stat(modDir); err == nil {
-			continue // Already cached
+			continue // Already cached or local replacement present
 		}
+
+		fetchPath, fetchVersion := req.Path, req.Version
+		if newPath, newVersion, isModuleReplace := b.resolveModuleReplace(req); isModuleReplace {
+			fetchPath, fetchVersion = newPath, newVersion
+		}
+
 		if b.verbose {
-			fmt.Printf("Fetching %s@%s...\n", req.Path, req.Version)
+			fmt.Printf("Fetching %s@%s...\n", fetchPath, fetchVersion)
 		}
-		if _, _, err := fetcher.Fetch(req.Path, req.Version); err != nil {
-			return fmt.Errorf("fetching %s@%s: %w", req.Path, req.Version, err)
+		if _, _, err := fetcher.Fetch(fetchPath, fetchVersion); err != nil {
+			return fmt.Errorf("fetching %s@%s: %w", fetchPath, fetchVersion, err)
 		}
 	}
 	return nil
+}
+
+// resolveReplace reports whether `req` has a matching replace directive in
+// the active gala.mod, and (if so) returns the resolved source path, an
+// isLocal flag, and ok=true. A replace matches when Old.Path equals req.Path
+// and Old.Version is either empty (wildcard) or equals req.Version.
+func (b *Builder) resolveReplace(req mod.Require) (path string, isLocal bool, ok bool) {
+	if b.galaMod == nil {
+		return "", false, false
+	}
+	for _, rep := range b.galaMod.Replace {
+		if rep.Old.Path != req.Path {
+			continue
+		}
+		if rep.Old.Version != "" && rep.Old.Version != req.Version {
+			continue
+		}
+		if rep.New.IsLocal() {
+			resolved := rep.New.Path
+			if !filepath.IsAbs(resolved) {
+				resolved = filepath.Join(b.workspace.ProjectDir, resolved)
+			}
+			return filepath.Clean(resolved), true, true
+		}
+		return b.config.GalaModulePath(rep.New.Path, rep.New.Version), false, true
+	}
+	return "", false, false
+}
+
+// resolveModuleReplace returns the replacement module coordinates (path,
+// version) for a non-local replace directive, or ok=false if none applies.
+func (b *Builder) resolveModuleReplace(req mod.Require) (path, version string, ok bool) {
+	if b.galaMod == nil {
+		return "", "", false
+	}
+	for _, rep := range b.galaMod.Replace {
+		if rep.Old.Path != req.Path {
+			continue
+		}
+		if rep.Old.Version != "" && rep.Old.Version != req.Version {
+			continue
+		}
+		if rep.New.IsLocal() {
+			return "", "", false
+		}
+		return rep.New.Path, rep.New.Version, true
+	}
+	return "", "", false
+}
+
+// effectiveDepDir returns the on-disk directory where a dependency's source
+// files can be read from — the local replacement path if one is configured,
+// otherwise the standard module cache location.
+func (b *Builder) effectiveDepDir(req mod.Require) string {
+	return resolveEffectiveDepDir(b.config, b.galaMod, b.workspace.ProjectDir, req)
 }
 
 // ensureStdlib extracts the stdlib to the versioned cache if not present.
@@ -295,7 +373,7 @@ func (b *Builder) transpile() error {
 	searchPaths := []string{b.workspace.ProjectDir, stdlibDir}
 
 	for _, req := range b.galaMod.GalaRequires() {
-		searchPaths = append(searchPaths, b.config.GalaModulePath(req.Path, req.Version))
+		searchPaths = append(searchPaths, b.effectiveDepDir(req))
 	}
 	p := transpiler.NewAntlrGalaParser()
 	tr := transformer.NewGalaASTTransformer()
@@ -420,7 +498,7 @@ func (b *Builder) transpileWithSourceDir() error {
 	stdlibDir := b.config.StdlibVersionDir(b.stdlibVersion)
 	searchPaths := []string{b.workspace.ProjectDir, stdlibDir}
 	for _, req := range b.galaMod.GalaRequires() {
-		searchPaths = append(searchPaths, b.config.GalaModulePath(req.Path, req.Version))
+		searchPaths = append(searchPaths, b.effectiveDepDir(req))
 	}
 	p := transpiler.NewAntlrGalaParser()
 	tr := transformer.NewGalaASTTransformer()
@@ -810,6 +888,9 @@ func (b *Builder) generateGoMod() error {
 	}
 
 	gen := NewGoModGenerator(b.config)
+	// Propagate the project directory so local replace directives (paths
+	// relative to the user's gala.mod) resolve against the correct root.
+	gen.SetProjectDir(b.workspace.ProjectDir)
 	newContent := gen.GenerateGoMod(b.galaMod, b.stdlibVersion, b.transpiledDeps)
 
 	// Check if go.mod content has changed
@@ -997,11 +1078,17 @@ func (b *Builder) transpileDeps() error {
 		return nil
 	}
 
-	// Check if deps have changed by hashing gala.mod requirements
+	// Check if deps have changed by hashing gala.mod requirements and any
+	// replace directives. Including replaces ensures that retargeting a dep
+	// (e.g. toggling `replace X => ../localX`) invalidates the cache.
 	depsHashFile := filepath.Join(b.workspace.Dir, ".gala-deps-hash")
 	h := sha256.New()
 	for _, req := range galaReqs {
 		h.Write([]byte(req.Path + "@" + req.Version + "\n"))
+	}
+	for _, rep := range b.galaMod.Replace {
+		h.Write([]byte("replace " + rep.Old.Path + "@" + rep.Old.Version +
+			"=>" + rep.New.Path + "@" + rep.New.Version + "\n"))
 	}
 	currentHash := hex.EncodeToString(h.Sum(nil))
 
@@ -1014,8 +1101,9 @@ func (b *Builder) transpileDeps() error {
 				allExist = false
 				break
 			}
-			// Key by internal module path (from dep's gala.mod), matching TranspileDeps() behavior
-			modPath := resolveDepInternalModulePath(b.config, req)
+			// Key by internal module path (from dep's gala.mod), matching TranspileDeps() behavior.
+			// Use the replace-aware source dir so local replaces are honored.
+			modPath := resolveDepInternalModulePathAt(b.effectiveDepDir(req), req)
 			b.transpiledDeps[modPath] = dir
 		}
 		if allExist {
@@ -1047,8 +1135,14 @@ func (b *Builder) transpileDeps() error {
 // resolveDepInternalModulePath reads a dependency's gala.mod to get its declared
 // module path. Falls back to dep.Path if not found.
 func resolveDepInternalModulePath(config *Config, dep mod.Require) string {
-	cachedDir := config.GalaModulePath(dep.Path, dep.Version)
-	galaModPath := filepath.Join(cachedDir, "gala.mod")
+	return resolveDepInternalModulePathAt(config.GalaModulePath(dep.Path, dep.Version), dep)
+}
+
+// resolveDepInternalModulePathAt is like resolveDepInternalModulePath but uses
+// an explicit source directory, making it safe to use with replace directives
+// that point outside the module cache.
+func resolveDepInternalModulePathAt(srcDir string, dep mod.Require) string {
+	galaModPath := filepath.Join(srcDir, "gala.mod")
 	if depMod, err := mod.ParseFile(galaModPath); err == nil {
 		if depMod.Module.Path != "" {
 			return depMod.Module.Path
@@ -1566,7 +1660,7 @@ func (b *Builder) transpileFilesToDir(files []string, allSiblings []string, outD
 	searchPaths := []string{b.workspace.ProjectDir, stdlibDir}
 
 	for _, req := range b.galaMod.GalaRequires() {
-		searchPaths = append(searchPaths, b.config.GalaModulePath(req.Path, req.Version))
+		searchPaths = append(searchPaths, b.effectiveDepDir(req))
 	}
 
 	p := transpiler.NewAntlrGalaParser()

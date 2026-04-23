@@ -13,11 +13,59 @@ import (
 // GoModGenerator generates go.mod files for build workspaces.
 type GoModGenerator struct {
 	config *Config
+	// projectDir is the directory containing the user's gala.mod; it is used
+	// to resolve relative paths in local replace directives. A zero value
+	// disables local-replace resolution (the generator falls back to the
+	// module cache path).
+	projectDir string
 }
 
 // NewGoModGenerator creates a new go.mod generator.
 func NewGoModGenerator(config *Config) *GoModGenerator {
 	return &GoModGenerator{config: config}
+}
+
+// SetProjectDir configures the project directory used to resolve relative
+// paths in replace directives. Must be called before GenerateGoMod if the
+// project's gala.mod uses local replaces.
+func (g *GoModGenerator) SetProjectDir(dir string) {
+	g.projectDir = dir
+}
+
+// effectiveDepDir returns the on-disk source directory for a GALA dep,
+// honoring replace directives in the active gala.mod. Callers that don't
+// have a project directory (empty projectDir) always see the cached
+// module path.
+func (g *GoModGenerator) effectiveDepDir(galaMod *mod.File, req mod.Require) string {
+	return resolveEffectiveDepDir(g.config, galaMod, g.projectDir, req)
+}
+
+// resolveEffectiveDepDir is the single source of truth for translating a
+// GALA require into a source directory. It first checks the active gala.mod
+// for a matching replace directive — local replacements resolve relative
+// to projectDir, while module replacements redirect to the replacement's
+// cached path — and falls back to the normal cache location for unmatched
+// requires.
+func resolveEffectiveDepDir(config *Config, galaMod *mod.File, projectDir string, req mod.Require) string {
+	if galaMod != nil {
+		for _, rep := range galaMod.Replace {
+			if rep.Old.Path != req.Path {
+				continue
+			}
+			if rep.Old.Version != "" && rep.Old.Version != req.Version {
+				continue
+			}
+			if rep.New.IsLocal() {
+				resolved := rep.New.Path
+				if !filepath.IsAbs(resolved) && projectDir != "" {
+					resolved = filepath.Join(projectDir, resolved)
+				}
+				return filepath.Clean(resolved)
+			}
+			return config.GalaModulePath(rep.New.Path, rep.New.Version)
+		}
+	}
+	return config.GalaModulePath(req.Path, req.Version)
 }
 
 // StdlibPackages lists all GALA stdlib packages.
@@ -88,7 +136,7 @@ func (g *GoModGenerator) GenerateGoMod(galaMod *mod.File, stdlibVersion string, 
 	}
 
 	// Collect transitive dependencies from GALA packages
-	transitiveGoDeps, transitiveGalaDeps := g.collectTransitiveDeps(galaReqs)
+	transitiveGoDeps, transitiveGalaDeps := g.collectTransitiveDeps(galaMod, galaReqs)
 	for path, version := range transitiveGoDeps {
 		// Don't duplicate if already in goReqs
 		found := false
@@ -119,7 +167,7 @@ func (g *GoModGenerator) GenerateGoMod(galaMod *mod.File, stdlibVersion string, 
 	// Build mapping from require path (GitHub URL) -> internal module path
 	// by reading each dep's gala.mod. The transpiled Go code uses the internal
 	// module path for imports, so the go.mod must use it too.
-	internalModulePaths := g.resolveInternalModulePaths(galaReqs)
+	internalModulePaths := g.resolveInternalModulePaths(galaMod, galaReqs)
 
 	// Write require block
 	sb.WriteString("require (\n")
@@ -168,9 +216,10 @@ func (g *GoModGenerator) GenerateGoMod(galaMod *mod.File, stdlibVersion string, 
 				continue
 			}
 		}
-		// Fallback to source cache (pure Go package or no transpilation needed)
-		absPath := g.config.GalaModulePath(req.Path, req.Version)
-		absPath = filepath.ToSlash(absPath)
+		// Fallback to source cache (pure Go package or no transpilation needed).
+		// effectiveDepDir consults replace directives so a local replace still
+		// wins even when the dep is not transpiled (e.g. pure-Go library).
+		absPath := filepath.ToSlash(g.effectiveDepDir(galaMod, req))
 		sb.WriteString(fmt.Sprintf("replace %s => %s\n", modPath, absPath))
 	}
 
@@ -182,10 +231,10 @@ func (g *GoModGenerator) GenerateGoMod(galaMod *mod.File, stdlibVersion string, 
 // resolveInternalModulePaths reads each GALA dependency's gala.mod to discover
 // its declared module path (which may differ from the GitHub URL used in the
 // parent's require directive). Returns a map of requirePath -> internalModulePath.
-func (g *GoModGenerator) resolveInternalModulePaths(galaReqs []mod.Require) map[string]string {
+func (g *GoModGenerator) resolveInternalModulePaths(galaMod *mod.File, galaReqs []mod.Require) map[string]string {
 	result := make(map[string]string)
 	for _, req := range galaReqs {
-		pkgDir := g.config.GalaModulePath(req.Path, req.Version)
+		pkgDir := g.effectiveDepDir(galaMod, req)
 		galaModPath := filepath.Join(pkgDir, "gala.mod")
 		if depMod, err := mod.ParseFile(galaModPath); err == nil {
 			if depMod.Module.Path != "" && depMod.Module.Path != req.Path {
@@ -206,28 +255,30 @@ func (g *GoModGenerator) effectiveModulePath(reqPath string, internalPaths map[s
 }
 
 // collectTransitiveDeps scans GALA packages for their Go and GALA dependencies.
-// Returns (goDeps, galaDeps).
-func (g *GoModGenerator) collectTransitiveDeps(galaReqs []mod.Require) (map[string]string, []mod.Require) {
+// Returns (goDeps, galaDeps). The galaMod argument is the active (root)
+// gala.mod; its replace directives are consulted when resolving the source
+// directory of each transitive requirement.
+func (g *GoModGenerator) collectTransitiveDeps(galaMod *mod.File, galaReqs []mod.Require) (map[string]string, []mod.Require) {
 	goDeps := make(map[string]string)
 	var galaDeps []mod.Require
 	seen := make(map[string]bool)
 
 	for _, req := range galaReqs {
-		g.collectTransitiveDepsRecursive(req, goDeps, &galaDeps, seen)
+		g.collectTransitiveDepsRecursive(galaMod, req, goDeps, &galaDeps, seen)
 	}
 
 	return goDeps, galaDeps
 }
 
 // collectTransitiveDepsRecursive recursively collects transitive deps from a GALA package.
-func (g *GoModGenerator) collectTransitiveDepsRecursive(req mod.Require, goDeps map[string]string, galaDeps *[]mod.Require, seen map[string]bool) {
+func (g *GoModGenerator) collectTransitiveDepsRecursive(galaMod *mod.File, req mod.Require, goDeps map[string]string, galaDeps *[]mod.Require, seen map[string]bool) {
 	key := req.Path + "@" + req.Version
 	if seen[key] {
 		return
 	}
 	seen[key] = true
 
-	pkgDir := g.config.GalaModulePath(req.Path, req.Version)
+	pkgDir := g.effectiveDepDir(galaMod, req)
 
 	// Try gala.mod first
 	galaModPath := filepath.Join(pkgDir, "gala.mod")
@@ -238,7 +289,7 @@ func (g *GoModGenerator) collectTransitiveDepsRecursive(req mod.Require, goDeps 
 			} else {
 				*galaDeps = append(*galaDeps, r)
 				// Recurse for transitive GALA deps
-				g.collectTransitiveDepsRecursive(r, goDeps, galaDeps, seen)
+				g.collectTransitiveDepsRecursive(galaMod, r, goDeps, galaDeps, seen)
 			}
 		}
 	}
