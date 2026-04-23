@@ -2007,6 +2007,27 @@ Choose mutable when you need:
 
 ## 10. Literals and Type Conversions
 
+### Numeric Literals
+
+Integer and floating-point literals match Go's literal syntax.
+
+```gala
+// Decimal integers
+val n = 42
+
+// Hexadecimal integers (0x or 0X prefix, mixed-case digits allowed)
+val red    = 0xFF
+val mask   = 0x1F
+val color  = 0xDEADBEEF
+val upper  = 0X1f     // uppercase prefix works too
+
+// Floats
+val pi     = 3.14
+val scaled = 1.5e-3   // scientific notation
+```
+
+Hex literals transpile to Go as-is, so any valid Go hex integer is a valid GALA hex integer.
+
 ### String Literals
 GALA supports Go-style string literals:
 

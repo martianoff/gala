@@ -1,0 +1,24 @@
+package main
+
+// Hex integer literals: 0x / 0X prefix, case-insensitive digits.
+func main() {
+    val a = 0x0
+    val b = 0x1F
+    val c = 0xFF
+    val d = 0X1f       // uppercase prefix, lowercase digits
+    val e = 0xDEADBEEF // large value, mixed case
+
+    Println(a)
+    Println(b)
+    Println(c)
+    Println(d)
+    Println(e)
+
+    // Arithmetic with hex literals.
+    val sum = 0x10 + 0x01
+    Println(sum)
+
+    // Hex in boolean/comparison contexts.
+    val match_ff = c == 255
+    Println(match_ff)
+}
