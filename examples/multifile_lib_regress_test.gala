@@ -60,4 +60,12 @@ func main() {
 
     // GALA struct named-arg — should wrap in Immutable (correct)
     Println(multifile_lib_regress.GalaCookieName("session", "abc123"))
+
+    // Cross-file pointer-receiver method return field access: the call site
+    // `canvas.StyleAt(0, 0).Bold` must auto-unwrap the Immutable[bool] wrapper
+    // around .Bold. Before the fix, method-return type inference for *Canvas
+    // returned NilType (non-generic PointerType fallback missing), so
+    // isImmutableField on .Bold saw an unknown xType and emitted plain .Bold.
+    val canvas = multifile_lib_regress.NewCanvas(80, 24)
+    Println(multifile_lib_regress.BoldAt(canvas, 0, 0))
 }

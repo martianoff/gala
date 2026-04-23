@@ -1826,6 +1826,7 @@ gala_library(
     srcs = [
         "multifile_lib_regress/go_interop.gala",
         "multifile_lib_regress/logic.gala",
+        "multifile_lib_regress/pointer_method_field.gala",
         "multifile_lib_regress/types.gala",
     ],
     importpath = "martianoff/gala/examples/multifile_lib_regress",
