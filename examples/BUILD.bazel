@@ -9,15 +9,12 @@ filegroup(
 filegroup(
     name = "gala_sources",
     srcs = [
-        "cross_pkg_try_match/corelib/corelib.gala",
-        "cross_pkg_try_match/main.gala",
-        "type_alias_lib_match/processor.gala",
-        "type_alias_lib_match/types.gala",
-        "type_alias_lib_match_test.gala",
         "cross_file_unwrap/main.gala",
         "cross_file_unwrap/types.gala",
         "cross_file_unwrap_lib/ops.gala",
         "cross_file_unwrap_lib/types.gala",
+        "cross_pkg_try_match/corelib/corelib.gala",
+        "cross_pkg_try_match/main.gala",
         "foldleft_method/main.gala",
         "foldleft_spread_type.gala",
         "go_type_inference_lib/textutil.gala",
@@ -45,6 +42,9 @@ filegroup(
         "struct_field_unwrap/main.gala",
         "struct_field_unwrap/types.gala",
         "try_go_transitive_import.gala",
+        "type_alias_lib_match/processor.gala",
+        "type_alias_lib_match/types.gala",
+        "type_alias_lib_match_test.gala",
         "use_cross_file_unwrap_lib.gala",
         "wrapper_method_lambda/main.gala",
     ],
@@ -817,6 +817,12 @@ gala_test(
     name = "match_void_dispatch",
     src = "match_void_dispatch.gala",
     expected = "match_void_dispatch.out",
+)
+
+gala_test(
+    name = "sealed_func_field_string",
+    src = "sealed_func_field_string.gala",
+    expected = "sealed_func_field_string.out",
 )
 
 gala_test(
