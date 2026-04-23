@@ -827,11 +827,14 @@ func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patt
 				t.traceType(nil, t.currentFuncReturnType, "match-result-fallback-to-enclosing-return")
 				return t.currentFuncReturnType, nil
 			}
-			line, col := t.lastLine, t.lastCol
-			if ctx != nil && ctx.GetStart() != nil {
-				line, col = ctx.GetStart().GetLine(), ctx.GetStart().GetColumn()
-			}
-			return nil, galaerr.NewSemanticErrorAt(line, col, "cannot infer result type of match expression: no branch returns a concrete type. Please add explicit type annotation")
+			// No enclosing concrete return type either — this is a dispatch-style
+			// match used purely for side effects (all arms call void functions,
+			// recurse, or are empty `{}` blocks, with none producing a typed value).
+			// Treat the match as void: the IIFE has no return type and the result
+			// is discarded. If the caller tried to use the match as a value, the
+			// Go compiler will surface that error downstream.
+			t.traceType(nil, transpiler.VoidType{}, "match-result-fallback-to-void-dispatch")
+			return transpiler.VoidType{}, nil
 		}
 		// Type parameters or mixed type-param/nil: use 'any' as the Go type erasure
 		t.warnInference("match expression defaulting to 'any' return type (all branches are type parameters)")

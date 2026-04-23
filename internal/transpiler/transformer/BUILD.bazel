@@ -64,6 +64,7 @@ go_test(
         "literals_test.go",
         "match_return_type_test.go",
         "match_test.go",
+        "match_void_dispatch_test.go",
         "methods_test.go",
         "multi_var_test.go",
         "option_test.go",

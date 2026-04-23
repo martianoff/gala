@@ -802,6 +802,12 @@ gala_test(
 )
 
 gala_test(
+    name = "match_void_dispatch",
+    src = "match_void_dispatch.gala",
+    expected = "match_void_dispatch.out",
+)
+
+gala_test(
     name = "composite_lit_if_cond",
     src = "composite_lit_if_cond.gala",
     expected = "composite_lit_if_cond.out",
