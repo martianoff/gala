@@ -116,6 +116,7 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 
 	addedFields := make(map[string]bool)    // track struct field names already added to parent struct
 	recursiveFields := make(map[string]bool) // track which struct field names are self-referential
+	funcFields := make(map[string]bool)      // track which struct field names hold func-typed values
 	for _, vi := range variants {
 		for _, f := range vi.fields {
 			if addedFields[f.structFieldName] {
@@ -126,6 +127,12 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 			typ, err := t.transformType(f.typeCtx)
 			if err != nil {
 				return nil, err
+			}
+			if _, isFunc := typ.(*ast.FuncType); isFunc {
+				// Func-valued fields can't be formatted with %v (go vet rejects
+				// fmt.Sprintf("%v", funcValue)). The String() method must substitute
+				// a placeholder string for them instead.
+				funcFields[f.structFieldName] = true
 			}
 			fType := t.astTypeToTranspilerType(typ)
 
@@ -231,7 +238,7 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 	decls = append(decls, equalMethod)
 
 	// 6. Generate String() method on parent
-	stringMethod := t.generateSealedStringMethod(name, variants, tParams, recursiveFields)
+	stringMethod := t.generateSealedStringMethod(name, variants, tParams, recursiveFields, funcFields)
 	decls = append(decls, stringMethod)
 
 	// 7. For generic sealed types, generate InstanceMarker
@@ -713,7 +720,10 @@ func (t *galaASTTransformer) generateSealedIsMethod(parentName string, vi sealed
 
 // generateSealedStringMethod generates a String() method on the parent sealed type.
 // Each variant case returns "VariantName(field1, field2, ...)" or "VariantName()" for 0-field variants.
-func (t *galaASTTransformer) generateSealedStringMethod(parentName string, variants []sealedVariantInfo, tParams *ast.FieldList, recursiveFields map[string]bool) *ast.FuncDecl {
+//
+// Func-typed fields are rendered with a literal "<fn>" placeholder rather than %v,
+// because fmt.Sprintf("%v", funcValue) is flagged by go vet as "is a func value, not called".
+func (t *galaASTTransformer) generateSealedStringMethod(parentName string, variants []sealedVariantInfo, tParams *ast.FieldList, recursiveFields map[string]bool, funcFields map[string]bool) *ast.FuncDecl {
 	parentType := t.buildGenericTypeExpr(parentName, tParams)
 
 	var cases []ast.Stmt
@@ -729,26 +739,38 @@ func (t *galaASTTransformer) generateSealedStringMethod(parentName string, varia
 				Value: fmt.Sprintf(`"%s()"`, vi.name),
 			}
 		} else {
-			needsFmt = true
 			// Return fmt.Sprintf("VariantName(%v, %v)", s.Field1.Get(), s.Field2.Get())
 			// For recursive fields: *s.Field instead of s.Field.Get()
+			// For func-typed fields: emit a literal "<fn>" in the format string (no arg),
+			// because go vet rejects %v-formatting a function value.
 			var formatParts []string
 			var args []ast.Expr
 			for _, f := range vi.fields {
+				if funcFields[f.structFieldName] {
+					// Literal placeholder — no format verb, no argument.
+					formatParts = append(formatParts, "<fn>")
+					continue
+				}
 				formatParts = append(formatParts, "%v")
 				args = append(args, sealedFieldAccessExpr("s", f.structFieldName, recursiveFields[f.structFieldName]))
 			}
 			formatStr := fmt.Sprintf(`"%s(%s)"`, vi.name, strings.Join(formatParts, ", "))
-			allArgs := append([]ast.Expr{
-				&ast.BasicLit{Kind: token.STRING, Value: formatStr},
-			}, args...)
+			if len(args) == 0 {
+				// All fields are func-typed: no format verbs remain, use a plain string literal.
+				retExpr = &ast.BasicLit{Kind: token.STRING, Value: formatStr}
+			} else {
+				needsFmt = true
+				allArgs := append([]ast.Expr{
+					&ast.BasicLit{Kind: token.STRING, Value: formatStr},
+				}, args...)
 
-			retExpr = &ast.CallExpr{
-				Fun: &ast.SelectorExpr{
-					X:   ast.NewIdent("fmt"),
-					Sel: ast.NewIdent("Sprintf"),
-				},
-				Args: allArgs,
+				retExpr = &ast.CallExpr{
+					Fun: &ast.SelectorExpr{
+						X:   ast.NewIdent("fmt"),
+						Sel: ast.NewIdent("Sprintf"),
+					},
+					Args: allArgs,
+				}
 			}
 		}
 

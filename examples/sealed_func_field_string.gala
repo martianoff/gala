@@ -1,0 +1,19 @@
+package main
+
+// Regression: sealed variants with func-typed fields must generate a go-vet-safe
+// String() method. Formatting a function value with %v is rejected by `go vet`
+// with "is a func value, not called", which breaks `go test` on any package
+// that prints such a variant. The transpiler substitutes a literal "<fn>"
+// placeholder for func-typed fields instead.
+sealed type Handler {
+    case Plain(Msg string)
+    case Dynamic(Make func(int) string)
+}
+
+func main() {
+    val p = Plain(Msg = "hello")
+    Println(p)
+
+    val d = Dynamic(Make = (n int) => s"n=$n")
+    Println(d)
+}
