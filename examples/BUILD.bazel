@@ -79,6 +79,12 @@ gala_test(
 )
 
 gala_test(
+    name = "hex_literals",
+    src = "hex_literals.gala",
+    expected = "hex_literals.out",
+)
+
+gala_test(
     name = "with_main",
     src = "with_main.gala",
     expected = "with_main.out",
