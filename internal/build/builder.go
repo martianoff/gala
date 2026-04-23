@@ -1310,6 +1310,21 @@ func (b *Builder) transpileTestMain(sourceFiles, testFiles []string) error {
 		return err
 	}
 
+	// The test binary introduces its own synthesized `func main()` (see
+	// GenerateTestMain) that drives the test runner. If the user's source
+	// also declares `func main()` we'd get a "main redeclared in this block"
+	// error at `go build` time. Rename any user-supplied `func main()` out
+	// of the way so the generated test_main.gen.go can claim it. This only
+	// affects the test-binary build — the user's regular `gala build` output
+	// is unaffected because Build() does not call this path.
+	sourceOutNames := make(map[string]bool, len(sourceFiles))
+	for _, src := range sourceFiles {
+		sourceOutNames[testGenFileName(b.workspace.ProjectDir, src)] = true
+	}
+	if err := renameUserMainInDir(b.workspace.GenDir, sourceOutNames, b.verbose); err != nil {
+		return fmt.Errorf("renaming user main for test binary: %w", err)
+	}
+
 	// Copy local Go subpackages to gen/ so the test binary compiles
 	// when it references types from local Go packages (e.g., httpcore/).
 	if err := copyNonGalaFiles(b.workspace.ProjectDir, b.workspace.GenDir, b.verbose); err != nil {
@@ -1322,6 +1337,72 @@ func (b *Builder) transpileTestMain(sourceFiles, testFiles []string) error {
 		return fmt.Errorf("rewriting project module imports: %w", err)
 	}
 
+	return nil
+}
+
+// testGenFileName mirrors the naming that transpileFilesToDir applies when
+// emitting .gen.go outputs (subdir separators folded to `_`). It returns the
+// bare filename (without the gen dir prefix).
+func testGenFileName(projectDir, galaFile string) string {
+	relPath, err := filepath.Rel(projectDir, galaFile)
+	if err != nil {
+		relPath = filepath.Base(galaFile)
+	}
+	outName := strings.TrimSuffix(relPath, ".gala") + ".gen.go"
+	return strings.ReplaceAll(outName, string(filepath.Separator), "_")
+}
+
+// renameUserMainInDir scans the given .gen.go files in dir and renames any
+// top-level `func main()` declaration to `_galaUserMain` so it does not
+// conflict with the synthesized test runner's main(). The renamed function
+// is never called by anyone — the Go compiler tree-shakes it out — but
+// preserving it keeps other symbols in the same file (type decls, helpers,
+// etc.) compiling cleanly.
+//
+// Only files whose basename appears in sourceNames are touched; generated
+// test_main.gen.go and the transpiled test files must keep their declarations.
+func renameUserMainInDir(dir string, sourceNames map[string]bool, verbose bool) error {
+	funcMainRegex := "func main()"
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".gen.go") {
+			continue
+		}
+		if !sourceNames[entry.Name()] {
+			continue
+		}
+		path := filepath.Join(dir, entry.Name())
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("reading %s: %w", path, err)
+		}
+		text := string(content)
+		// Only touch a top-of-line `func main()` signature. Using a plain
+		// string match (plus a newline prefix to guard against accidental
+		// substring hits inside strings) is sufficient because the transpiler
+		// emits `func main()` on its own line at indent 0 when the user
+		// writes a package main with a main entry point.
+		idx := strings.Index(text, "\n"+funcMainRegex)
+		if idx < 0 && !strings.HasPrefix(text, funcMainRegex) {
+			continue
+		}
+		rewritten := strings.Replace(text, "\nfunc main()", "\nfunc _galaUserMain()", 1)
+		if strings.HasPrefix(rewritten, "func main()") {
+			rewritten = "func _galaUserMain()" + rewritten[len("func main()"):]
+		}
+		if rewritten == text {
+			continue
+		}
+		if err := os.WriteFile(path, []byte(rewritten), 0644); err != nil {
+			return fmt.Errorf("writing %s: %w", path, err)
+		}
+		if verbose {
+			fmt.Printf("  test: renamed user func main() in %s\n", entry.Name())
+		}
+	}
 	return nil
 }
 
