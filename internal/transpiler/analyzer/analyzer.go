@@ -724,6 +724,24 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 				richAST.Types[fullTypeName] = meta
 			}
 
+			if ctx.TypeParameters() != nil {
+				tpCtx := ctx.TypeParameters().(*grammar.TypeParametersContext)
+				if tpList := tpCtx.TypeParameterList(); tpList != nil {
+					for _, tp := range tpList.(*grammar.TypeParameterListContext).AllTypeParameter() {
+						tpCtx := tp.(*grammar.TypeParameterContext)
+						tpId := tpCtx.Identifier(0)
+						meta.TypeParams = append(meta.TypeParams, tpId.GetText())
+						if len(tpCtx.AllIdentifier()) > 1 {
+							constraint := tpCtx.Identifier(1).GetText()
+							if meta.TypeParamConstraints == nil {
+								meta.TypeParamConstraints = make(map[string]string)
+							}
+							meta.TypeParamConstraints[tpId.GetText()] = constraint
+						}
+					}
+				}
+			}
+
 			if ctx.Parameters() != nil {
 				paramsCtx := ctx.Parameters().(*grammar.ParametersContext)
 				if paramsCtx.ParameterList() != nil {
@@ -2402,6 +2420,23 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 			}
 			if meta.DefinedIn == "" {
 				meta.DefinedIn = absSibPath
+			}
+			if ctx.TypeParameters() != nil {
+				tpCtx := ctx.TypeParameters().(*grammar.TypeParametersContext)
+				if tpList := tpCtx.TypeParameterList(); tpList != nil {
+					for _, tp := range tpList.(*grammar.TypeParameterListContext).AllTypeParameter() {
+						tpCtx := tp.(*grammar.TypeParameterContext)
+						tpId := tpCtx.Identifier(0)
+						meta.TypeParams = append(meta.TypeParams, tpId.GetText())
+						if len(tpCtx.AllIdentifier()) > 1 {
+							constraint := tpCtx.Identifier(1).GetText()
+							if meta.TypeParamConstraints == nil {
+								meta.TypeParamConstraints = make(map[string]string)
+							}
+							meta.TypeParamConstraints[tpId.GetText()] = constraint
+						}
+					}
+				}
 			}
 			if ctx.Parameters() != nil {
 				paramsCtx := ctx.Parameters().(*grammar.ParametersContext)
