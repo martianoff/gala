@@ -1145,7 +1145,16 @@ func (b *Builder) Test(verbose bool) error {
 	}
 
 	if len(testFiles) == 0 {
-		return fmt.Errorf("no _test.gala files found in %s", b.workspace.ProjectDir)
+		// Match `go test ./...` behavior: report that no tests were found and
+		// exit successfully. Running `gala test` in a freshly-initialised project
+		// that has source files but no tests yet is a normal state, not a build
+		// failure.
+		label := b.galaMod.Module.Path
+		if label == "" || label == "gala-standalone" {
+			label = b.workspace.ProjectDir
+		}
+		fmt.Printf("?   \t%s\t[no test files]\n", label)
+		return nil
 	}
 
 	// Step 4: Determine package layout
