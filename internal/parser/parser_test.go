@@ -141,6 +141,27 @@ type Box struct {
 			input:   `val x = 10`,
 			wantErr: true,
 		},
+		{
+			name: "Hex integer literal",
+			input: `package main
+
+val x = 0x1F`,
+			wantErr: false,
+		},
+		{
+			name: "Hex integer literal uppercase prefix",
+			input: `package main
+
+val x = 0X1f`,
+			wantErr: false,
+		},
+		{
+			name: "Hex integer literal in expression",
+			input: `package main
+
+val x = 0xFF + 0x01`,
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
