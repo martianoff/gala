@@ -80,7 +80,11 @@ typeParameters: '[' typeParameterList ']';
 typeParameterList: typeParameter (',' typeParameter)*;
 typeParameter: identifier identifier; // e.g. [T any]
 
-block: '{' statement* '}';
+// Block bodies accept optional ';' separators between statements, so
+// Go-style one-liners like `if v < 0 { neg = true; v = -v }` parse.
+// Statements remain primarily newline/whitespace-separated; the semicolon
+// is a permissive alternative, not required.
+block: '{' ';'* (statement ';'*)* '}';
 
 statement
     : declaration

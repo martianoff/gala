@@ -1,0 +1,28 @@
+package main
+
+// Regression example: ';' is accepted as an optional statement separator
+// inside block bodies, enabling Go-style one-liners such as
+//   if v < 0 { neg = true; v = -v }
+// without forcing the user to break the block across multiple lines.
+
+func abs(x int) int {
+    var v = x
+    if v < 0 { v = -v }
+    return v
+}
+
+func absAndSign(x int) int {
+    var v = x
+    var neg = 0
+    if v < 0 { neg = 1; v = -v }
+    Println(neg)
+    return v
+}
+
+func main() {
+    Println(abs(-7))
+    Println(absAndSign(-5))
+    Println(absAndSign(3))
+    // Trailing ';' after a single statement should also be tolerated.
+    if true { Println("ok"); }
+}
