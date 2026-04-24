@@ -104,6 +104,31 @@ val rectKind = 1
 
 **Principle**: GALA prefers its own standard data structures over Go native types. Go native types should only be used at interop boundaries (calling Go APIs, receiving Go returns). Internal logic should use GALA types for immutability, pattern matching, and functional operations.
 
+#### 4.0. Boundary vs Internal Detection Heuristics
+
+Before flagging a Go slice or map, determine whether it sits at a true interop boundary. A value is "at a boundary" only if **every** use of it is one of:
+
+- **Argument to an imported Go package function** — `f.Write(buf)`, `strings.Join(parts, ",")`, `http.DefaultClient.Do(req)`
+- **Argument to a method on a Go-imported struct** — `(*bytes.Buffer).Read(buf)`, `(*sql.Rows).Scan(dst...)`
+- **Return value from a Go API that the caller will pass straight to another Go API** — simple forwarding, no inspection
+- **Field of a Go-imported struct being constructed** — `http.Request(Body = body, Header = hdr)`
+- **Target of JSON/YAML/gob marshal or unmarshal**
+- **Variadic spread into another variadic Go call** — `log.Printf(fmt, args...)`
+
+If the value is also:
+- indexed (`xs[i]`), iterated (`for _, x := range xs`), appended to, measured (`len(xs)`), or returned from a GALA-internal function — it has **leaked past the boundary** and should be a GALA collection.
+
+**The "scratch buffer" exception**: `SliceWithSize[byte](n)` (or `make([]byte, n)`) created *solely* to be filled by a Go `.Read(buf)` / `.Write(buf)` / `.Scan(buf)` call on the next few lines is acceptable — this is the canonical I/O buffer pattern and has no GALA equivalent. Flag only if the buffer is subsequently inspected with manual index loops, appended to, or stored as a field of a GALA struct for later GALA-side use.
+
+**Smell signals** (strong indicators the Go type has leaked internally):
+- GALA-internal function returning `[]T` or `map[K]V` (not a Go-interop shim)
+- Local `var xs []T` / `var m map[K]V` that is only read and written inside GALA code (no Go call consumes it)
+- `for _, x := range xs` over a Go slice when `xs.ForEach(f)` would work on an `Array[T]`
+- `collection_immutable` already imported in the same file but a Go slice/map is used anyway for similar work
+- Helper functions named `mapOf`, `sliceOf`, `indexBy` that build Go maps/slices — usually a sign `HashMap.GroupBy` / `Array.FoldLeft` were overlooked
+
+Apply these heuristics before flagging; record the inferred boundary/internal classification in the issue so the user can contest borderline cases.
+
 #### 4a. Go Slices → GALA Collections
 
 | Issue | Pattern to Flag | Recommended Fix |
@@ -117,11 +142,16 @@ val rectKind = 1
 | Missing functional ops | Using `[]T` then writing manual Map/Filter loops | Switch to `Array[T]` or `List[T]` which have `.Map()`, `.Filter()`, `.FoldLeft()` |
 | Manual loop on variadic args | `for i := 0; i < len(args); i++` on variadic `[]T` | Convert with `ArrayOf(args...)` then use functional methods |
 | Variadic accumulation loop | `var acc; for { acc = f(acc, args[i]) }` on variadic | `ArrayOf(args...).FoldLeft(init, f)` or `.FoldRight(init, f)` |
+| Internal function returning `[]T` | `func groupBy(xs Array[T]) []Group` — GALA-private helper returning Go slice | Return `Array[Group]` / `List[Group]` so the caller keeps functional ops |
+| Internal function taking `[]T` | Non-interop helper with `[]T` param | Take `Array[T]` / `List[T]` and let the Go boundary do the conversion |
+| Local `var xs []T` inspected in GALA code | `var xs []T; ...; for _, x := range xs` / `xs[i]` / `len(xs)` with no Go call consuming `xs` | Rebuild with `Array[T]` / `List[T]`; use `.Size()` / `.Get(i)` / `.ForEach` |
+| Scratch buffer used beyond the Go read | `val dst = SliceWithSize[byte](n); lr.Read(dst); for _, b := range dst { ... }` | Read into a scratch buffer, then `ArrayFromSlice(dst[:n])` before further processing |
 
-**Check**: Search for `SliceOf`, `SliceEmpty`, `SliceWithCapacity`, `[]T` declarations, `append(` calls, and manual loops over variadic parameters. For each, determine if the slice is passed to a Go API or used internally. Internal use should prefer GALA collections.
+**Check**: Search for `SliceOf`, `SliceEmpty`, `SliceWithCapacity`, `SliceWithSize`, `[]T` declarations, `append(` calls, and manual loops over variadic parameters. Apply the §4.0 boundary heuristics. Only flag when the slice is observed internally (index, range, len, returned from a GALA-internal function) rather than exclusively at a Go call site.
 
 **Acceptable Go slice uses**:
 - Passing to Go standard library functions (`strings.Join`, `sort.Slice`, etc.)
+- Scratch buffers for Go I/O: `SliceWithSize[byte](n)` immediately passed to `.Read` / `.Write` / `.Scan` (and not inspected afterward — see §4.0 exception)
 - Simple pass-through variadic forwarding (`other(args...)`)
 - Interop with Go libraries that expect `[]T`
 - Converting at boundaries: `collection.ToGoSlice()` when needed
@@ -138,14 +168,18 @@ val rectKind = 1
 | Manual map existence check | `val _, ok = m[key]; if ok { ... }` | `hashMap.Contains(key)` or `hashMap.Get(key) match { case Some(v) => ... }` |
 | MapForEach from go_interop | `MapForEach(goMap, func)` for internal processing | Convert to HashMap first: `HashMapFromGoMap(goMap).ForEach(...)` |
 | Mutable map accumulation | `var m = map[K]V{}; for { m[k] = v }` | Use `FoldLeft` to build HashMap, or use `collection_mutable.HashMap` |
+| Internal function returning `map[K]V` | `func countBy(xs Array[T]) map[K]int` — GALA-private helper returning Go map | Return `HashMap[K, int]` so the caller keeps functional ops |
+| Internal function taking `map[K]V` | Non-interop helper with `map[K]V` param | Take `HashMap[K, V]` and convert at the Go boundary |
+| Index-by-build-up pattern | `var m = map[K]V{}; xs.ForEach((x) => m[f(x)] = g(x))` | `xs.GroupBy(f).Map((k, vs) => (k, vs.Map(g).Head()))` or `HashMap` builder |
 
-**Check**: Search for `map[`, `make(map`, `MapEmpty`, `MapForEach`, `MapPut` from go_interop when used for internal logic rather than Go API interop. Also search for range loops over maps that could use HashMap functional methods.
+**Check**: Apply the §4.0 boundary heuristics. Search for `map[`, `make(map`, `MapEmpty`, `MapForEach`, `MapPut` from go_interop. Flag when the map is observed internally (range-loop, indexed assignment, passed to another GALA function) rather than exclusively at a Go call site.
 
 **Acceptable Go map uses**:
 - Passing to Go standard library or third-party functions expecting `map[K]V`
 - Receiving from Go API calls (convert to HashMap at the boundary)
 - Simple key lookups at Go interop boundaries
 - JSON/YAML marshal/unmarshal targets
+- Struct tags / reflect-driven code where `map[string]any` is unavoidable
 
 **Good pattern** — GALA HashMap:
 ```gala
@@ -309,9 +343,6 @@ func createServer(host string, port int = 8080, tls bool = true, maxConnections 
 | Redundant method type param | `list.Map[int]((x) => x * 2)` | `list.Map((x) => x * 2)` (Go infers from lambda) |
 | Redundant FoldLeft type param | `list.FoldLeft[int](0, (acc int, x int) => acc + x)` | `list.FoldLeft(0, (acc, x) => acc + x)` (accumulator type inferred from zero value) |
 | Redundant wrapper method lambda types | `str.Filter((r rune) => r == 'a')` | `str.Filter((r) => r == 'a')` (type inferred from non-generic method signature) |
-| Verbose single-use lambda params | `list.Map((x) => x * 2)` | `list.Map(_ * 2)` (placeholder lambda shorthand) |
-| Verbose two-use FoldLeft lambda | `list.FoldLeft(0, (a, b) => a + b)` | `list.FoldLeft(0, _ + _)` (placeholder lambda shorthand) |
-| Verbose field-access lambda | `list.Map((p) => p.Name)` | `list.Map(_.Name)` (placeholder lambda shorthand) |
 
 **Check**: Search for the pattern `Name[ConcreteTypes](args)` — any call where `[...]` contains concrete types (not type parameter declarations like `[T any]`) and the arguments already provide enough information for Go to infer the type parameters. This includes:
 - **Single-type-param generic struct constructors**: `Box[int](Value = 42)` → `Box(Value = 42)` — Go infers the single type param from the named field value
@@ -326,46 +357,6 @@ func createServer(host string, port int = 8080, tls bool = true, maxConnections 
 - **Multi-type-param generic functions** like `Unfold[A, S](seed, f)` — Go often cannot infer all params when multiple are involved
 - Standalone lambdas not passed to a typed method (e.g., `val f = (x int) => x * 2`)
 - Ambiguous cases where removing the type param would cause a compile error
-
-### 7a. Placeholder Lambda Shorthand (MEDIUM priority)
-
-`_` in an expression position where a function type is expected is shorthand
-for a lambda — each `_` becomes a positional parameter, left-to-right.
-See [docs/GALA.MD](../../docs/GALA.MD) "Placeholder Lambda Shorthand" for
-the full contract.
-
-**Flag**: single-expression lambdas whose parameters are each used exactly
-once and whose bodies are pure expressions. Rewrite them as placeholder
-lambdas:
-
-| Before | After |
-|-------|-------|
-| `list.Map((x) => x * 2)` | `list.Map(_ * 2)` |
-| `list.Filter((x) => x > 0)` | `list.Filter(_ > 0)` |
-| `list.Map((p) => p.Name)` | `list.Map(_.Name)` |
-| `list.FoldLeft(0, (a, b) => a + b)` | `list.FoldLeft(0, _ + _)` |
-| `list.Map((x) => (x + 1) * 2)` | `list.Map((_ + 1) * 2)` |
-
-**Do NOT flag** (keep explicit `(x) =>` form):
-
-- Lambdas with **block bodies** (multiple statements, local vals, if/match)
-- Lambdas where a **parameter is reused** (`(x) => x + x` — would need two
-  `_`s which would be two different params, changing semantics)
-- Lambdas where the **parameter name adds meaning** (`(user) => user.Name`
-  when the reader benefits from seeing "user")
-- Lambdas in a context where **no function type is expected** (e.g.,
-  assigned to a val without an explicit type annotation) — placeholder
-  shorthand only works at call sites
-- Lambdas with **explicit type annotations** the author added for clarity
-  in tricky inference contexts
-
-**Check**: search for `(\s*\w+\s*\)\s*=>\s*` patterns where the body uses
-the single parameter exactly once. If the body is a single expression with
-one parameter reference, suggest the placeholder form. For two-argument
-lambdas, only suggest the placeholder form when both parameters appear in
-declaration order and each exactly once (so `(a, b) => a + b` → `_ + _`
-but `(a, b) => b + a` stays as-is because the positional rewrite would
-reverse them).
 
 ### 7. Functional Patterns (HIGH priority)
 
