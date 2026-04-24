@@ -96,9 +96,26 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 	// We only use the expected type if it's more specific than "any"
 	isConcreteExpectedType := expectedRetType != nil && expectedRetType != ExpectedVoid && !containsAny(expectedRetType)
 
+	// Explicit return type declared on the lambda (e.g. `(x int) int => ...`).
+	// When present it wins over both the expected type supplied by the caller
+	// and any body-based inference: the user asked for a specific shape.
+	var explicitRetType ast.Expr
+	if ctx.Type_() != nil {
+		rt, err := t.transformType(ctx.Type_().(*grammar.TypeContext))
+		if err != nil {
+			return nil, err
+		}
+		explicitRetType = rt
+	}
+
 	// Use expected return type if provided and concrete
 	if isConcreteExpectedType {
 		retType = expectedRetType
+	}
+	// An explicit annotation trumps caller-supplied expectations.
+	if explicitRetType != nil {
+		retType = explicitRetType
+		isConcreteExpectedType = true
 	}
 
 	// Track the current function's return type for nested match expression fallback.

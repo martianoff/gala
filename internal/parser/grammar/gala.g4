@@ -181,7 +181,11 @@ compositeLiteral: type ('{' (elementList ','?)? '}');
 elementList: keyedElement (',' keyedElement)*;
 keyedElement: (expression ':')? expression;
 
-lambdaExpression: parameters '=>' (expression | block);
+// Lambda expressions may optionally declare their return type before '=>'
+// — useful when storing a lambda in a `val` where the return type isn't
+// determined by a target context (e.g. a typed method parameter). When
+// omitted, the return type is inferred from the body expression.
+lambdaExpression: parameters type? '=>' (expression | block);
 
 caseClause: 'case' pattern (IF guard=expression)? '=>' (bodyStmt=simpleStatement | bodyBlock=block);
 

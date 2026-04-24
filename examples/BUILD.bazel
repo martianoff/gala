@@ -85,6 +85,12 @@ gala_test(
 )
 
 gala_test(
+    name = "lambda_explicit_return_type",
+    src = "lambda_explicit_return_type.gala",
+    expected = "lambda_explicit_return_type.out",
+)
+
+gala_test(
     name = "with_main",
     src = "with_main.gala",
     expected = "with_main.out",

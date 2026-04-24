@@ -1,0 +1,32 @@
+package main
+
+// Regression example: lambdas may declare an explicit return type
+// between the parameter list and `=>`. Useful when storing a lambda
+// in a `val` (no typed target context to drive inference) or when the
+// author wants to assert the shape of the function for readability.
+//
+// Syntax: `(a int, b int) int => a + b`
+// Grammar: `lambdaExpression: parameters type? '=>' (expression | block);`
+
+func main() {
+    // Explicit return type on a val-bound lambda.
+    val concat = (l string, w string) string => l + " " + w
+    Println(concat("hello", "world"))
+
+    val add = (x int, y int) int => x + y
+    Println(add(3, 4))
+
+    // Explicit type with block body.
+    val describe = (n int) string => {
+        if n < 0 { return "negative" }
+        if n == 0 { return "zero" }
+        return "positive"
+    }
+    Println(describe(-5))
+    Println(describe(0))
+    Println(describe(42))
+
+    // Omitting the return type still works (existing behaviour).
+    val doubler = (x int) => x * 2
+    Println(doubler(7))
+}
