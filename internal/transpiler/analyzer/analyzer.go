@@ -1980,17 +1980,13 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 	}
 
 	// Scan .go files for exported symbols and type information.
-	hasGalaFiles := false
-	for _, f := range files {
-		if !f.IsDir() && filepath.Ext(f.Name()) == ".gala" {
-			hasGalaFiles = true
-			break
-		}
-	}
-	if !hasGalaFiles {
-		// For Go-only packages, also extract exported symbol names for collision warnings.
-		a.extractGoFileExports(files, dirPath, relPath, pkgAST)
-	}
+	// Extract GoExports unconditionally. Even in mixed GALA+Go packages
+	// we need to know the full set of exported Go-level symbols for
+	// dot-import collision detection — otherwise facade packages that
+	// re-export callables from another Go package via `var X = other.X`
+	// (e.g. concurrent re-exporting go_interop's helpers) silently collide
+	// at Go compile time instead of producing a clean GALA-level error.
+	a.extractGoFileExports(files, dirPath, relPath, pkgAST)
 	// Always extract Go type information from .go files, even in mixed GALA+Go packages.
 	// This ensures Go-defined functions and variables (e.g., concurrent.Spawn) are available
 	// for type inference when GALA code calls them.
@@ -2070,7 +2066,19 @@ func canonicalPath(path string) string {
 var goExportedFuncRe = regexp.MustCompile(`(?m)^func\s+([A-Z]\w*)\s*[\[(]`)
 
 // goExportedTypeRe matches exported type declarations in Go files.
-var goExportedTypeRe = regexp.MustCompile(`(?m)^type\s+([A-Z]\w*)\s+`)
+// Covers plain `type Name struct { ... }` as well as alias form `type Name = other.Name`.
+var goExportedTypeRe = regexp.MustCompile(`(?m)^type\s+([A-Z]\w*)(\s+|\s*=)`)
+
+// goExportedVarRe matches exported package-level variable declarations in Go files.
+// Captures forms like `var GlobalEC = go_interop.GlobalEC`, which act as function-valued
+// re-exports. Without this, facade packages that re-export callables via `var` (e.g.
+// concurrent re-exporting go_interop helpers) would silently shadow the original
+// exporter under dot-import, causing "X redeclared in this block" at Go compile time
+// rather than a clean GALA-level collision error.
+var goExportedVarRe = regexp.MustCompile(`(?m)^var\s+([A-Z]\w*)\s*(=|\w)`)
+
+// goExportedConstRe matches exported package-level constant declarations.
+var goExportedConstRe = regexp.MustCompile(`(?m)^const\s+([A-Z]\w*)\s*(=|\w)`)
 
 // goPkgNameRe matches the package declaration in Go files.
 var goPkgNameRe = regexp.MustCompile(`(?m)^package\s+(\w+)`)
@@ -2107,8 +2115,25 @@ func (a *galaAnalyzer) extractGoFileExports(files []os.FileInfo, dirPath, relPat
 			}
 		}
 
-		// Extract exported type names
+		// Extract exported type names (including `type X = ...` aliases).
 		for _, m := range goExportedTypeRe.FindAllStringSubmatch(src, -1) {
+			if !seen[m[1]] {
+				seen[m[1]] = true
+				symbols = append(symbols, m[1])
+			}
+		}
+
+		// Extract exported package-level `var` names (facade re-exports such as
+		// `var NewSingleThreadEC = go_interop.NewSingleThreadEC`).
+		for _, m := range goExportedVarRe.FindAllStringSubmatch(src, -1) {
+			if !seen[m[1]] {
+				seen[m[1]] = true
+				symbols = append(symbols, m[1])
+			}
+		}
+
+		// Extract exported package-level `const` names.
+		for _, m := range goExportedConstRe.FindAllStringSubmatch(src, -1) {
 			if !seen[m[1]] {
 				seen[m[1]] = true
 				symbols = append(symbols, m[1])
