@@ -207,6 +207,15 @@ func (t *galaASTTransformer) resolveMethodCallTypeWithParams(
 	}
 
 	result := methodMeta.ReturnType
+	// Void methods (declared without a return type) leave ReturnType as a
+	// nil interface. Callers always do `!result.IsNil()` on the resolver's
+	// return value, which panics on a bare nil. Normalise to VoidType so
+	// "method was found, returns nothing" is representable without tripping
+	// type-inference callers that feed this into match-arm body inference
+	// (where each arm's expression type is queried).
+	if result == nil {
+		result = transpiler.VoidType{}
+	}
 
 	// Determine the receiver's concrete generic type params for substitution.
 	// Use pre-resolved params if provided, otherwise extract from the receiver argument.
@@ -242,6 +251,12 @@ func (t *galaASTTransformer) resolveMethodCallTypeWithParams(
 		}
 	}
 
+	// Final safety net: substitution must preserve non-nil type. If any
+	// downstream substitution produced a bare-nil interface we'd reintroduce
+	// the panic; be defensive rather than letting the caller crash.
+	if result == nil {
+		result = transpiler.VoidType{}
+	}
 	return result
 }
 

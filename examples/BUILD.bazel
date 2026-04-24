@@ -820,6 +820,12 @@ gala_test(
 )
 
 gala_test(
+    name = "match_void_pointer_arg",
+    src = "match_void_pointer_arg.gala",
+    expected = "match_void_pointer_arg.out",
+)
+
+gala_test(
     name = "sealed_func_field_string",
     src = "sealed_func_field_string.gala",
     expected = "sealed_func_field_string.out",
