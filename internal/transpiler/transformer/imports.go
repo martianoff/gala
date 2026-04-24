@@ -502,7 +502,11 @@ func (m *ImportManager) ValidateDotImports(richAST *transpiler.RichAST, line, co
 	}
 
 	if len(clashes) > 0 {
-		msg := "dot-import symbol collision(s) detected:\n" + strings.Join(clashes, "\n") + "\nUse an aliased import for one of the packages to resolve the conflict."
+		msg := "dot-import symbol collision(s) detected:\n" + strings.Join(clashes, "\n") +
+			"\nUse a qualified or aliased import for one of the packages to resolve the conflict." +
+			"\n(Some stdlib packages intentionally re-export names from another package as a convenience facade —" +
+			" e.g. `concurrent` re-exports `go_interop`'s execution-context helpers — so dot-importing both is never" +
+			" meaningful. Pick the facade you want.)"
 		return galaerr.NewSemanticErrorAt(line, col, msg)
 	}
 	return nil

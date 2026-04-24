@@ -120,6 +120,82 @@ func test() int {
 	assert.Contains(t, transpileErr.Error(), "pkg_b")
 }
 
+// TestDotImportVarReExportClash checks that when a Go package re-exports
+// symbols from another package via `var X = other.X` (a common facade
+// pattern, e.g. concurrent re-exporting go_interop helpers), and the user
+// dot-imports BOTH packages, the collision is detected at the GALA level
+// instead of deferred to the Go compiler's opaque "X redeclared in this
+// block" error.
+func TestDotImportVarReExportClash(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "dot_import_var_reexport_test")
+	assert.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	err = os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte("module testmod\n\ngo 1.22\n"), 0644)
+	assert.NoError(t, err)
+
+	// pkg_origin declares Helper as a function.
+	originDir := filepath.Join(tempDir, "pkg_origin")
+	err = os.MkdirAll(originDir, 0755)
+	assert.NoError(t, err)
+	err = os.WriteFile(filepath.Join(originDir, "origin.go"), []byte(`package pkg_origin
+
+func Helper() int { return 7 }
+`), 0644)
+	assert.NoError(t, err)
+
+	// pkg_facade re-exports pkg_origin.Helper via a var. Mixed with a .gala
+	// file so the extraction path that is gated on "Go-only package" is
+	// NOT the one that produces the Helper symbol — the var re-export
+	// regex must fire unconditionally.
+	facadeDir := filepath.Join(tempDir, "pkg_facade")
+	err = os.MkdirAll(facadeDir, 0755)
+	assert.NoError(t, err)
+	err = os.WriteFile(filepath.Join(facadeDir, "facade.go"), []byte(`package pkg_facade
+
+import "testmod/pkg_origin"
+
+var Helper = pkg_origin.Helper
+`), 0644)
+	assert.NoError(t, err)
+	err = os.WriteFile(filepath.Join(facadeDir, "extra.gala"), []byte(`package pkg_facade
+
+func Other() int = 1
+`), 0644)
+	assert.NoError(t, err)
+
+	originalWd, err := os.Getwd()
+	assert.NoError(t, err)
+	defer os.Chdir(originalWd)
+	err = os.Chdir(tempDir)
+	assert.NoError(t, err)
+
+	p := transpiler.NewAntlrGalaParser()
+	a := analyzer.NewGalaAnalyzer(p, nil)
+	tr := transformer.NewGalaASTTransformer()
+	g := generator.NewGoCodeGenerator()
+	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+
+	input := `package testpkg
+
+import (
+    . "testmod/pkg_origin"
+    . "testmod/pkg_facade"
+)
+
+func test() int {
+    return 42
+}
+`
+
+	_, transpileErr := trans.Transpile(input, "")
+	assert.Error(t, transpileErr)
+	assert.Contains(t, transpileErr.Error(), "dot-import symbol collision")
+	assert.Contains(t, transpileErr.Error(), "Helper")
+	assert.Contains(t, transpileErr.Error(), "pkg_origin")
+	assert.Contains(t, transpileErr.Error(), "pkg_facade")
+}
+
 func TestDotImportNoQualifiedReferences(t *testing.T) {
 	p := transpiler.NewAntlrGalaParser()
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
