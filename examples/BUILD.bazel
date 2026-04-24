@@ -826,6 +826,12 @@ gala_test(
 )
 
 gala_test(
+    name = "semicolon_statement_separator",
+    src = "semicolon_statement_separator.gala",
+    expected = "semicolon_statement_separator.out",
+)
+
+gala_test(
     name = "sealed_func_field_string",
     src = "sealed_func_field_string.gala",
     expected = "sealed_func_field_string.out",
