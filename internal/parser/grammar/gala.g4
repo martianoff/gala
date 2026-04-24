@@ -257,7 +257,18 @@ fragment BRACE_CONTENT: (BRACE_CHAR | '\\' . | '"' (~["\r\n\\] | '\\' .)* '"' | 
 fragment BRACE_CHAR: ~[{}"\r\n\\];
 
 IDENTIFIER: [a-zA-Z_] [a-zA-Z0-9_]*;
-INT_LIT: '0' [xX] [0-9a-fA-F]+ | [0-9]+;
+// Integer literals support:
+//   - 0x / 0X  hex       (0x1F, 0xdead)
+//   - 0b / 0B  binary    (0b1010)
+//   - 0o / 0O  octal     (0o644) — Go 1.13+ form, matches the spec users expect
+//   - 0<digits> implicit octal (0644) — Go-classic form, retained for compatibility
+//   - plain decimal
+INT_LIT
+    : '0' [xX] [0-9a-fA-F]+
+    | '0' [bB] [01]+
+    | '0' [oO] [0-7]+
+    | [0-9]+
+    ;
 FLOAT_LIT: [0-9]+ '.' [0-9]* ([eE] [+-]? [0-9]+)? | '.' [0-9]+ ([eE] [+-]? [0-9]+)? | [0-9]+ [eE] [+-]? [0-9]+;
 STRING: '"' (~["\r\n\\] | '\\' .)* '"';
 CHAR_LIT: '\'' (~['\r\n\\] | '\\' .) '\'';

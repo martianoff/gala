@@ -1,0 +1,24 @@
+package main
+
+// Regression example: modern Go-style integer literal prefixes parse.
+//   0o / 0O — octal, introduced in Go 1.13 (file mode literals)
+//   0b / 0B — binary
+//   0<digits> — classic implicit octal, retained for compatibility
+//   0x / 0X — hex (already supported)
+
+func main() {
+    val modeNew = 0o644     // Go 1.13+ explicit octal
+    val modeOld = 0644      // classic implicit octal — same value
+    val modeCaps = 0O755    // uppercase 0O
+    val mask = 0b10101010   // binary
+    val maskCaps = 0B1111   // uppercase 0B
+    val addr = 0xdeadbeef   // hex
+
+    Println(modeNew)
+    Println(modeOld)
+    Println(modeCaps)
+    Println(mask)
+    Println(maskCaps)
+    Println(addr)
+    Println(modeNew == modeOld)
+}

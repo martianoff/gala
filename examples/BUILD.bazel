@@ -91,6 +91,12 @@ gala_test(
 )
 
 gala_test(
+    name = "octal_binary_literals",
+    src = "octal_binary_literals.gala",
+    expected = "octal_binary_literals.out",
+)
+
+gala_test(
     name = "with_main",
     src = "with_main.gala",
     expected = "with_main.out",
