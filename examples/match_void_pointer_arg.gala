@@ -1,0 +1,44 @@
+package main
+
+// Regression example for: pointer-receiver void method calls inside a
+// statement-form match arm must not panic the transpiler.
+//
+// The combination that previously broke inference:
+//   - A sealed-type `match` used as a statement (no result bound to val/var).
+//   - Arms that call pointer-receiver methods declared with no return type.
+//   - And/or arms that call free functions taking a `*T` as an argument.
+//
+// During per-arm result-type inference, resolveMethodCallType returned the
+// method's raw nil ReturnType interface; the caller's `!result.IsNil()` check
+// then nil-derefs. The resolver now normalises absent ReturnType to VoidType.
+
+sealed type W {
+    case TextW(Content string)
+    case FillW(Ch rune)
+}
+
+type Buf struct {
+    var count int
+}
+
+func (b *Buf) Bump() {
+    b.count = b.count + 1
+}
+
+func renderText(s string, buf *Buf) {
+    buf.Bump()
+}
+
+func render(w W, buf *Buf) {
+    w match {
+        case TextW(s) => renderText(s, buf)
+        case FillW(_) => buf.Bump()
+    }
+}
+
+func main() {
+    var b = Buf{count: 0}
+    render(TextW("hi"), &b)
+    render(FillW('x'), &b)
+    Println(b.count)
+}
