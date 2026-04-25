@@ -1,0 +1,9 @@
+package main
+
+func main() {
+    val f = (x int) int => {
+        val y = x * 2
+        y + 1
+    }
+    Println(f(5))
+}

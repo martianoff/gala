@@ -49,3 +49,17 @@ func LookupSimple(key string) Option[string] {
 
 // Use Array from collection_immutable to exercise cross-package type resolution
 func UserNames() Array[string] = ArrayOf("alice", "bob", "charlie")
+
+// --- Regression: lambda with multi-statement block body in generic Map[U] ---
+// The trailing struct literal should be the lambda's implicit return value
+// and U must be inferred to LabeledCell. Previously the block lambda was
+// emitted as void (`func(...) { Cell{...} }`) which broke generic inference
+// in batch transpile.
+struct LabeledCell(Width int, Label string)
+
+func BuildLabeledCells(headers Array[string], widths Array[int]) Array[LabeledCell] {
+    return headers.ZipWithIndex().Map((pair) => {
+        val w = if (pair.V2 < widths.Length()) widths.Get(pair.V2) else 0
+        LabeledCell(Width = w, Label = pair.V1)
+    })
+}

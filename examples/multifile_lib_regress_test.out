@@ -8,3 +8,6 @@ value-for-test-key
 Cookie(session=abc123, path=/)
 session
 true
+a=1
+bb=2
+ccc=3

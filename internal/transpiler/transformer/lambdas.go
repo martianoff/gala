@@ -96,6 +96,14 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 	// We only use the expected type if it's more specific than "any"
 	isConcreteExpectedType := expectedRetType != nil && expectedRetType != ExpectedVoid && !containsAny(expectedRetType)
 
+	// True when the caller has supplied a function-shaped expectation that
+	// requires a return value (non-void), even if the precise return type is
+	// still unresolved (`any`). Used by transformBlockLambdaBody to decide
+	// whether a trailing block expression should be promoted to a return.
+	// Distinct from isConcreteExpectedType (which is false when the result is
+	// `any`) and from isVoidExpected (which means no return is expected).
+	expectsReturnValue := expectedRetType != nil && !isVoidExpected
+
 	// Explicit return type declared on the lambda (e.g. `(x int) int => ...`).
 	// When present it wins over both the expected type supplied by the caller
 	// and any body-based inference: the user asked for a specific shape.
@@ -116,6 +124,7 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 	if explicitRetType != nil {
 		retType = explicitRetType
 		isConcreteExpectedType = true
+		expectsReturnValue = true
 	}
 
 	// Track the current function's return type for nested match expression fallback.
@@ -128,7 +137,7 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 	defer func() { t.currentFuncReturnType = prevFuncReturnType }()
 
 	if ctx.Block() != nil {
-		b, inferredRet, err := t.transformBlockLambdaBody(ctx, isVoidExpected, isConcreteExpectedType)
+		b, inferredRet, err := t.transformBlockLambdaBody(ctx, isVoidExpected, isConcreteExpectedType, expectsReturnValue)
 		if err != nil {
 			return nil, err
 		}
@@ -172,7 +181,7 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 // when the expected return type is already concrete (caller keeps its own)
 // or when the lambda is void. Extracted from transformLambdaWithExpectedType
 // as part of A6.
-func (t *galaASTTransformer) transformBlockLambdaBody(ctx *grammar.LambdaExpressionContext, isVoidExpected, isConcreteExpectedType bool) (*ast.BlockStmt, ast.Expr, error) {
+func (t *galaASTTransformer) transformBlockLambdaBody(ctx *grammar.LambdaExpressionContext, isVoidExpected, isConcreteExpectedType, expectsReturnValue bool) (*ast.BlockStmt, ast.Expr, error) {
 	b, err := t.transformBlock(ctx.Block().(*grammar.BlockContext))
 	if err != nil {
 		return nil, nil, err
@@ -196,11 +205,25 @@ func (t *galaASTTransformer) transformBlockLambdaBody(ctx *grammar.LambdaExpress
 			}
 		}
 	}
-	// Convert trailing IIFE expression statement to return statement for non-void
-	// lambdas. Only IIFEs (CallExpr wrapping FuncLit) — arbitrary calls may be void.
+	// Convert trailing expression statement to a return statement for non-void
+	// lambdas. GALA's grammar treats the last expression of a block as the
+	// implicit return value (no `return` keyword needed). Two cases are promoted:
+	//   1. IIFEs (CallExpr wrapping FuncLit) — match/if-expressions compile to
+	//      these and we can always trust them to produce a value. This is safe
+	//      regardless of caller context.
+	//   2. Arbitrary typed expressions, but ONLY when the caller has signalled
+	//      that the lambda must produce a value (expectsReturnValue). Without
+	//      that signal, we cannot tell whether a block like `{ doSideEffect() }`
+	//      is meant to discard the call's result (void lambda) or to forward it
+	//      (value lambda), so we keep the existing void interpretation. Inside
+	//      a generic method like `Array.Map[U]`, the caller-supplied FuncType
+	//      sets expectsReturnValue=true even when U is still unresolved (`any`),
+	//      which lets us infer U from the trailing expression's type.
 	if !isVoidExpected && len(b.List) > 0 {
 		if exprStmt, ok := b.List[len(b.List)-1].(*ast.ExprStmt); ok {
-			if isIIFE(exprStmt.X) {
+			shouldPromote := isIIFE(exprStmt.X) ||
+				(expectsReturnValue && t.exprHasConcreteType(exprStmt.X))
+			if shouldPromote {
 				b.List[len(b.List)-1] = &ast.ReturnStmt{Results: []ast.Expr{exprStmt.X}}
 			}
 		}
@@ -1304,6 +1327,28 @@ func (t *galaASTTransformer) wrapBlockReturnsInSome(stmts []ast.Stmt) []ast.Stmt
 	}
 
 	return result
+}
+
+// exprHasConcreteType reports whether the expression has a known, non-void,
+// non-`any` static type. Used by transformBlockLambdaBody to decide whether the
+// trailing expression of a block lambda is the block's value (and thus should
+// be promoted to a return statement). Composite literals, identifiers bound to
+// known types, and calls to functions with concrete return types all qualify;
+// calls to void functions and untyped expressions return false so the lambda
+// can fall through to a void-body interpretation.
+func (t *galaASTTransformer) exprHasConcreteType(expr ast.Expr) bool {
+	if expr == nil {
+		return false
+	}
+	// Composite literals always produce a concrete value of their declared type.
+	if _, ok := expr.(*ast.CompositeLit); ok {
+		return true
+	}
+	typ := t.getExprTypeName(expr)
+	if typ == nil || typ.IsNil() || typ.IsAny() {
+		return false
+	}
+	return true
 }
 
 // isIIFE checks if an expression is an immediately-invoked function expression
