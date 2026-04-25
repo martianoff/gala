@@ -34,6 +34,13 @@ import (
 type GalaHandler struct {
 	rootPath string
 
+	// Version reported in the LSP Initialize response (ServerInfo.Version).
+	// Set by SetVersion from cmd/gala/commands.Version, which is x_defs-stamped
+	// at build time from STABLE_GALA_VERSION (see cmd/gala/BUILD.bazel). Falls
+	// back to "dev" when the LSP is exercised through tests or invoked outside
+	// the stamped binary.
+	version string
+
 	parser    transpiler.GalaParser
 	generator transpiler.CodeGenerator
 
@@ -63,6 +70,23 @@ func (h *GalaHandler) SetClient(client *golsp.Client) {
 // SetSearchPaths adds additional search paths for the analyzer (for testing).
 func (h *GalaHandler) SetSearchPaths(paths []string) {
 	h.extraSearchPaths = paths
+}
+
+// SetVersion sets the version reported in the LSP Initialize response.
+// Callers should pass the build-time stamped commands.Version so the IDE
+// can surface the actual GALA release the user is running.
+func (h *GalaHandler) SetVersion(v string) {
+	h.version = v
+}
+
+// serverVersion returns the version to advertise in ServerInfo. Falls back
+// to "dev" when SetVersion was not called (test harnesses, manual launches
+// outside the stamped binary, etc.).
+func (h *GalaHandler) serverVersion() string {
+	if h.version == "" {
+		return "dev"
+	}
+	return h.version
 }
 
 // DebugRichAST returns the cached RichAST for a given URI (for testing).
@@ -143,7 +167,7 @@ func (h *GalaHandler) Initialize(ctx context.Context, params *lsp.InitializePara
 		},
 		ServerInfo: &lsp.ServerInfo{
 			Name:    "gala-lsp",
-			Version: "0.2.0",
+			Version: h.serverVersion(),
 		},
 	}, nil
 }

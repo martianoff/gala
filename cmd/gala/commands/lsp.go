@@ -35,6 +35,11 @@ func init() {
 func runLsp(cmd *cobra.Command, args []string) {
 	handler := lsp.NewGalaHandler()
 
+	// Stamp the LSP server version with the build-time GALA release.
+	// `Version` is set via x_defs in cmd/gala/BUILD.bazel from
+	// STABLE_GALA_VERSION; falls back to "dev" for unstamped builds.
+	handler.SetVersion(Version)
+
 	// Auto-resolve stdlib and GALA dependency search paths so the LSP can
 	// find standard packages (std, collection_immutable, etc.) from any project.
 	handler.SetSearchPaths(autoResolveLSPSearchPaths())
