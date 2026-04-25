@@ -250,6 +250,42 @@ func Describe(s Shape) string = s match {
 		assert.True(t, ok, "shapes.Circle companion should exist")
 	})
 
+	t.Run("sealed type preserves methods when method file is processed first", func(t *testing.T) {
+		// Regression: when sibling extraction processes a file declaring a
+		// method on a sealed type BEFORE processing the file with the sealed
+		// type declaration itself, analyzeSealedType used to overwrite the
+		// placeholder entry in richAST.Types and drop the registered Methods.
+		// Downstream this lost the method's return type, leaving val-bound
+		// chained calls untyped and suppressing the auto-inserted .Get() on
+		// subsequent field accesses (manifests as a Go build failure on the
+		// generated code).
+		//
+		// We trigger the bad ordering by analyzing the *method* file as the
+		// main tree (so its sibling extraction registers the method onto a
+		// placeholder Shape entry first), and supplying the *types* file as
+		// a package sibling (so analyzeSealedType runs second and overwrites).
+		methodContent := `package shapes
+
+func (s Shape) Tag() string = s match {
+    case Circle(_) => "c"
+    case Rect(_, _) => "r"
+}
+`
+		methodPath := filepath.Join(tmpDir, "method.gala")
+		require.NoError(t, os.WriteFile(methodPath, []byte(methodContent), 0644))
+
+		a := analyzer.NewGalaAnalyzerWithPackageFiles(p, searchPaths, []string{typesPath})
+		tree, err := p.Parse(methodContent)
+		require.NoError(t, err)
+		richAST, err := a.Analyze(tree, methodPath)
+		require.NoError(t, err)
+
+		shapeMeta, ok := richAST.Types["shapes.Shape"]
+		require.True(t, ok, "shapes.Shape should exist after sealed-decl processed")
+		require.Contains(t, shapeMeta.Methods, "Tag", "Tag method registered before analyzeSealedType ran should survive")
+		assert.Equal(t, "string", shapeMeta.Methods["Tag"].ReturnType.String())
+	})
+
 	t.Run("main package sibling has full field metadata", func(t *testing.T) {
 		// Test with main package (which was previously blocked for directory scanning)
 		mainTypesContent := `package main
