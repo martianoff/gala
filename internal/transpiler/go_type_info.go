@@ -36,6 +36,7 @@ type GoTypeData struct {
 	Fields     map[string]Type           // struct fields (exported only)
 	Methods    map[string]*GoFuncSignature // method set (exported only)
 	Underlying Type                      // underlying type for aliases and named types
+	TypeParams []string                  // type parameter names for generic types (empty for non-generic)
 }
 
 // NewGoTypeInfo creates an empty GoTypeInfo.

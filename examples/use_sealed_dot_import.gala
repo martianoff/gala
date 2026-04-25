@@ -1,0 +1,30 @@
+package main
+
+// Consumer dot-imports a multi-file GALA library that exposes a generic
+// sealed type with zero-field cases. Constructing those cases via
+// Case[T]() must lower to Case[T]{}.Apply() — Go reads Case[T]() as a
+// type conversion on the empty struct, so the plain function-call shape
+// would fail to compile.
+
+import . "martianoff/gala/examples/sealed_dot_import_lib"
+
+// Generic zero-field sealed case via dot import.
+func makeQuit() Cmd[int] = QuitCmd[int]()
+func makeNoop() Cmd[int] = NoCmd[int]()
+
+// Non-generic zero-field sealed case via dot import.
+func makeIdle() Status = Idle()
+func makeDone() Status = Done()
+
+func describeCmd(c Cmd[int]) string = c match {
+    case QuitCmd() => "quit"
+    case NoCmd() => "noop"
+    case MsgCmd(_) => "msg"
+}
+
+func main() {
+    Println(describeCmd(makeQuit()))
+    Println(describeCmd(makeNoop()))
+    Println(DescribeStatus(makeIdle()))
+    Println(DescribeStatus(makeDone()))
+}

@@ -1,0 +1,9 @@
+package sealed_dot_import_lib
+
+// Sibling file ensures the lib is multi-file (forces batch transpile,
+// matching the gala-tui repro shape).
+func DescribeStatus(s Status) string = s match {
+    case Idle() => "idle"
+    case Done() => "done"
+    case Active(n) => s"active($n)"
+}
