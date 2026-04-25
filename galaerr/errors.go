@@ -133,6 +133,13 @@ const (
 	// the enclosing function must restructure the code (e.g., `.Recover`, or
 	// pattern-match on the value first and then return outside the match).
 	CodeBareReturnInValueMatch ErrorCode = "GALA-E0015"
+
+	// E0016: a struct field's name collides with a type name in the same
+	// package. The transpiler's IIFE param-type generator can produce
+	// invalid Go (e.g., duplicated type args like `Mode[T][T]`) when the
+	// collided type appears in a `match` on the field; rejecting at the
+	// analyzer keeps the failure local and points to a rename.
+	CodeFieldNameCollidesWithType ErrorCode = "GALA-E0016"
 )
 
 // MultiError collects multiple GALA errors.

@@ -280,6 +280,122 @@ func (p Person) Greet() string = fmt.Sprintf("Hi %s", p.Name)
 	})
 }
 
+func TestStructFieldNameCollidesWithType(t *testing.T) {
+	p := transpiler.NewAntlrGalaParser()
+	searchPaths := getStdSearchPath()
+
+	t.Run("field name matches sealed type in same file", func(t *testing.T) {
+		// Repro for the IIFE param-type doubling bug surfaced by gala-tui:
+		// `func (b Box[T]) Run() T = b.Mode match { ... }` emits
+		// `func(obj Mode[T][T]) T {...}` (invalid Go) when the field is named
+		// after its sealed type. We reject at the analyzer instead.
+		tmpDir := t.TempDir()
+		src := `package mylib
+
+sealed type Mode[T any] {
+    case A(Fn func(int) T)
+    case B(Fn func(string) T)
+}
+
+struct Box[T any](Mode Mode[T])
+`
+		filePath := filepath.Join(tmpDir, "file.gala")
+		require.NoError(t, os.WriteFile(filePath, []byte(src), 0644))
+
+		a := analyzer.NewGalaAnalyzer(p, searchPaths)
+		tree, err := p.Parse(src)
+		require.NoError(t, err)
+		_, err = a.Analyze(tree, filePath)
+		require.Error(t, err, "should reject field named after a sealed type")
+		assert.Contains(t, err.Error(), "GALA-E0016")
+		assert.Contains(t, err.Error(), `"Mode"`)
+		assert.Contains(t, err.Error(), `"Box"`)
+	})
+
+	t.Run("field name matches generic struct in same file", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		src := `package mylib
+
+struct Inner[T any](X T)
+
+struct Outer[T any](Inner Inner[T])
+`
+		filePath := filepath.Join(tmpDir, "file.gala")
+		require.NoError(t, os.WriteFile(filePath, []byte(src), 0644))
+
+		a := analyzer.NewGalaAnalyzer(p, searchPaths)
+		tree, err := p.Parse(src)
+		require.NoError(t, err)
+		_, err = a.Analyze(tree, filePath)
+		require.Error(t, err, "should reject field named after another generic struct in same package")
+		assert.Contains(t, err.Error(), "GALA-E0016")
+		assert.Contains(t, err.Error(), `"Inner"`)
+	})
+
+	t.Run("non-generic field-type collision is allowed", func(t *testing.T) {
+		// Pre-existing pattern in examples/cross_file_unwrap/types.gala —
+		// `struct Route(Handler Handler)` works fine because no type-param
+		// substitution is needed. Stay narrow: only flag when both the
+		// containing struct and the shadowed type are generic.
+		tmpDir := t.TempDir()
+		src := `package mylib
+
+struct Handler(Name string)
+
+struct Route(Method string, Pattern string, Handler Handler)
+`
+		filePath := filepath.Join(tmpDir, "file.gala")
+		require.NoError(t, os.WriteFile(filePath, []byte(src), 0644))
+
+		a := analyzer.NewGalaAnalyzer(p, searchPaths)
+		tree, err := p.Parse(src)
+		require.NoError(t, err)
+		_, err = a.Analyze(tree, filePath)
+		assert.NoError(t, err, "non-generic field-type collision should not trigger E0016")
+	})
+
+	t.Run("field named after own struct is allowed", func(t *testing.T) {
+		// `struct Foo(Foo int)` is non-idiomatic but does not trigger the
+		// IIFE codegen bug; Go itself accepts it. Stay narrow and pass it.
+		tmpDir := t.TempDir()
+		src := `package mylib
+
+struct Foo(Foo int)
+`
+		filePath := filepath.Join(tmpDir, "file.gala")
+		require.NoError(t, os.WriteFile(filePath, []byte(src), 0644))
+
+		a := analyzer.NewGalaAnalyzer(p, searchPaths)
+		tree, err := p.Parse(src)
+		require.NoError(t, err)
+		_, err = a.Analyze(tree, filePath)
+		assert.NoError(t, err, "self-named field should not trigger E0016")
+	})
+
+	t.Run("renamed field passes (positive control)", func(t *testing.T) {
+		// User's gala-tui Harness pattern — field `Mode` on `Harness[M, T]` whose
+		// type is `HarnessMode[T]` (different identifier). Should compile.
+		tmpDir := t.TempDir()
+		src := `package mylib
+
+sealed type HarnessMode[T any] {
+    case KeyMode(Fn func(int) T)
+    case FullMode(Fn func(string) T)
+}
+
+struct Harness[M any, T any](Mode HarnessMode[T])
+`
+		filePath := filepath.Join(tmpDir, "file.gala")
+		require.NoError(t, os.WriteFile(filePath, []byte(src), 0644))
+
+		a := analyzer.NewGalaAnalyzer(p, searchPaths)
+		tree, err := p.Parse(src)
+		require.NoError(t, err)
+		_, err = a.Analyze(tree, filePath)
+		assert.NoError(t, err, "field name distinct from type name should compile")
+	})
+}
+
 func TestTypeRedefinitionError(t *testing.T) {
 	p := transpiler.NewAntlrGalaParser()
 	searchPaths := getStdSearchPath()
