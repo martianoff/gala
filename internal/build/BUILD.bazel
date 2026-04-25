@@ -29,11 +29,14 @@ go_test(
         "builder_test.go",
         "deptranspiler_test.go",
         "go_toolchain_test.go",
+        "transpile_batch_static_test.go",
     ],
+    data = ["builder.go"],  # transpile_batch_static_test.go does AST analysis
     embed = [":build"],
     deps = [
         "//internal/depman/mod",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
+        "@rules_go//go/tools/bazel:go_default_library",
     ],
 )

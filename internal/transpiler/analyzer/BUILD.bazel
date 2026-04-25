@@ -28,9 +28,11 @@ go_test(
     name = "analyzer_test",
     srcs = [
         "analyzer_test.go",
+        "batch_reuse_test.go",
         "go_types_debug_test.go",
         "go_types_test.go",
         "multipackage_panic_test.go",
+        "parsedfile_cache_test.go",
         "test_helper.go",
         "validation_test.go",
     ],
@@ -40,6 +42,7 @@ go_test(
     deps = [
         ":analyzer",
         "//internal/transpiler",
+        "@com_github_antlr4_go_antlr_v4//:antlr",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@rules_go//go/tools/bazel:go_default_library",
