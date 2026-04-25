@@ -1324,6 +1324,23 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 		parentMeta.SealedVariants = append(parentMeta.SealedVariants, sv)
 	}
 
+	// Preserve methods from any pre-existing placeholder entry. Sibling
+	// extraction may have processed a method on this sealed type from another
+	// file (e.g. `func (w Widget) AsFixed(...)` in fluent.gala) before this
+	// declaration was reached. That earlier pass creates a placeholder
+	// TypeMetadata at extractSiblingFullMetadata's method branch (the `else`
+	// arm where richAST.Types[fullBaseType] is created with just the method).
+	// Without this merge, the assignment below would clobber those methods,
+	// breaking return-type resolution at the call site — which in turn breaks
+	// auto-unwrap of Immutable[T] fields on chained results.
+	if existing, ok := richAST.Types[fullTypeName]; ok {
+		for name, m := range existing.Methods {
+			if _, dup := parentMeta.Methods[name]; !dup {
+				parentMeta.Methods[name] = m
+			}
+		}
+	}
+
 	richAST.Types[fullTypeName] = parentMeta
 
 	// For each variant, create companion type and register methods
