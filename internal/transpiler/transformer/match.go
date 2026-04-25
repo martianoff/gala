@@ -836,7 +836,22 @@ func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patt
 			t.traceType(nil, transpiler.VoidType{}, "match-result-fallback-to-void-dispatch")
 			return transpiler.VoidType{}, nil
 		}
-		// Type parameters or mixed type-param/nil: use 'any' as the Go type erasure
+		// Type parameters or mixed type-param/nil: prefer the enclosing
+		// function's return type when it matches one of the branch types.
+		// This handles `func f[T any](...) T { return e match { case ... => fnReturningT(...) } }`,
+		// where every branch yields the same type parameter T as the
+		// declared return — emitting `func(...) any` for the IIFE breaks
+		// the Go compile because `any` does not satisfy `T`.
+		// Fall back to `any` only when no branch type matches the enclosing return.
+		if t.currentFuncReturnType != nil && !t.currentFuncReturnType.IsNil() {
+			enclosingName := t.currentFuncReturnType.String()
+			for _, typ := range types {
+				if typ != nil && !typ.IsNil() && typ.String() == enclosingName {
+					t.traceType(nil, t.currentFuncReturnType, "match-result-fallback-to-enclosing-typeparam-return")
+					return t.currentFuncReturnType, nil
+				}
+			}
+		}
 		t.warnInference("match expression defaulting to 'any' return type (all branches are type parameters)")
 		return transpiler.BasicType{Name: "any"}, nil
 	}

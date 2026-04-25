@@ -1,0 +1,29 @@
+package main
+
+import "fmt"
+
+sealed type Event {
+    case Press(Key string)
+    case Release
+}
+
+// Generic dispatcher: every branch returns T (the function's type parameter).
+// Regression for FIX-005: previously the match-as-IIFE collapsed the result
+// type to `any`, so the Go compiler rejected the IIFE result with
+// "cannot use ... (value of type any) as T value in return statement".
+// Fix: when every branch is typed as a type parameter and the enclosing
+// function declares a matching return type, the IIFE adopts that type.
+func dispatch[T any](e Event, fn func(string) T) T {
+    return e match {
+        case Press(k)  => fn(k)
+        case Release() => fn("none")
+    }
+}
+
+func main() {
+    val e1 = Press("ctrl+a")
+    val e2 = Release()
+    fmt.Println(dispatch[string](e1, (s string) => "key=" + s))
+    fmt.Println(dispatch[string](e2, (s string) => "key=" + s))
+    fmt.Println(dispatch[int](e1, (s string) => 42))
+}
