@@ -626,6 +626,12 @@ gala_test(
     expected = "match_generic_inference.out",
 )
 
+gala_test(
+    name = "match_generic_return_dispatch",
+    src = "match_generic_return_dispatch.gala",
+    expected = "match_generic_return_dispatch.out",
+)
+
 # Transpiler issue repro tests
 gala_test(
     name = "tuple_field_unwrap",
