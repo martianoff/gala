@@ -77,6 +77,13 @@ type galaAnalyzer struct {
 	// total transpile time for collection_immutable/list.gala, baseline
 	// 2.6s on Windows).
 	siblingTreeCache map[string]*siblingCacheEntry
+
+	// When true, ensureTranspiled is a no-op — used by the LSP, where the
+	// generated .gen.go files are never consumed (analyzePackage reads .gala
+	// directly to extract the metadata diagnostics need). The disk write is
+	// dead work in LSP context and contends heavily under parallel analyzers
+	// on Windows.
+	skipTranspileToDisk bool
 }
 
 // siblingCacheEntry is the value stored in galaAnalyzer.siblingTreeCache.
@@ -159,6 +166,29 @@ func NewGalaAnalyzerWithPackageFiles(p transpiler.GalaParser, searchPaths []stri
 		siblingTreeCache: make(map[string]*siblingCacheEntry),
 		resolver:     module.NewResolver(searchPaths),
 		cache:        newAnalysisCache(resolveCacheRoot(root)),
+	}
+}
+
+// NewGalaAnalyzerForLSP creates an analyzer configured for LSP use: the heavy
+// disk-writing transpile-on-import side effect (ensureTranspiled) is disabled
+// because its output (.gen.go files) is never consumed by the LSP pipeline.
+// analyzePackage produces all the metadata diagnostics need directly from
+// .gala sources. See the docstring on galaAnalyzer.skipTranspileToDisk and
+// the no-op guard in ensureTranspiled for details.
+func NewGalaAnalyzerForLSP(p transpiler.GalaParser, searchPaths []string, projectRoot ...string) transpiler.Analyzer {
+	root := ""
+	if len(projectRoot) > 0 {
+		root = projectRoot[0]
+	}
+	return &galaAnalyzer{
+		parser:              p,
+		searchPaths:         searchPaths,
+		analyzedPkgs:        make(map[string]*transpiler.RichAST),
+		checkedDirs:         make(map[string]bool),
+		siblingTreeCache:    make(map[string]*siblingCacheEntry),
+		resolver:            module.NewResolver(searchPaths),
+		cache:               newAnalysisCache(resolveCacheRoot(root)),
+		skipTranspileToDisk: true,
 	}
 }
 
@@ -2157,6 +2187,17 @@ func (a *galaAnalyzer) extractGoFileExports(files []os.FileInfo, dirPath, relPat
 // and transpiles it if necessary. The transpiled .go files are written
 // to the same cache directory as the .gala source files.
 func (a *galaAnalyzer) ensureTranspiled(importPath string) error {
+	// LSP mode skips this entirely: the generated .gen.go files are never
+	// read back by the LSP pipeline (analyzePackage produces all the metadata
+	// needed for diagnostics directly from the .gala source). Performing the
+	// transpile + os.WriteFile here once per import on every DidOpen is the
+	// dominant cost of cross-package diagnostics under parallel load on
+	// Windows; skipping it brings the test from ~7s back to ~2s under the
+	// `--runs_per_test=20 --jobs=20` benchmark.
+	if a.skipTranspileToDisk {
+		return nil
+	}
+
 	// Find the package directory in the cache
 	dirPath, err := a.resolver.ResolvePackagePath(importPath)
 	if err != nil {
