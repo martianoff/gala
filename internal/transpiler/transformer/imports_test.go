@@ -1,9 +1,13 @@
 package transformer_test
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/transformer"
 )
 
@@ -166,6 +170,57 @@ func TestImportManager_ExplicitImportOverridesImplicit(t *testing.T) {
 	entry, ok := m.GetByPath("martianoff/gala/std")
 	assert.True(t, ok)
 	assert.Equal(t, "mystd", entry.Alias) // Explicit import wins
+}
+
+// TestPruneUnused_DotImportGenericInstantiation verifies that a dot-imported
+// package referenced ONLY through generic-type instantiations (Foo[A] /
+// Foo[A, B]) keeps the import. The pruning scan must descend through
+// *ast.IndexExpr and *ast.IndexListExpr to the base identifier; if it only
+// matched bare *ast.Ident, the dot import would be erroneously stripped and
+// the generated Go would fail with `undefined: Foo`.
+func TestPruneUnused_DotImportGenericInstantiation(t *testing.T) {
+	src := `package main
+
+import . "example.com/lib"
+
+func main() {
+	_ = Container[int]{Value: 42}
+	_ = Pair[string, int]{First: "x", Second: 1}
+}
+`
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "test.go", src, 0)
+	assert.NoError(t, err)
+
+	m := transformer.NewImportManager()
+	m.Add("example.com/lib", "", true, "lib")
+
+	richAST := &transpiler.RichAST{
+		GoExports: map[string][]string{
+			"lib": {"Container", "Pair"},
+		},
+	}
+
+	m.PruneUnused(file, richAST)
+
+	// The dot import must survive pruning.
+	dotImportFound := false
+	for _, decl := range file.Decls {
+		gd, ok := decl.(*ast.GenDecl)
+		if !ok || gd.Tok != token.IMPORT {
+			continue
+		}
+		for _, spec := range gd.Specs {
+			imp, ok := spec.(*ast.ImportSpec)
+			if !ok {
+				continue
+			}
+			if imp.Name != nil && imp.Name.Name == "." && imp.Path.Value == `"example.com/lib"` {
+				dotImportFound = true
+			}
+		}
+	}
+	assert.True(t, dotImportFound, "expected dot import of example.com/lib to be preserved when only generic types are referenced")
 }
 
 func TestImportManager_AddFromPackagesSkipsExistingPaths(t *testing.T) {
