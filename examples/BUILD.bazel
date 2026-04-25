@@ -1905,10 +1905,14 @@ gala_test(
 gala_library(
     name = "multifile_lib_regress",
     srcs = [
+        "multifile_lib_regress/events_pipe.gala",
         "multifile_lib_regress/go_interop.gala",
         "multifile_lib_regress/logic.gala",
         "multifile_lib_regress/pointer_method_field.gala",
         "multifile_lib_regress/types.gala",
+    ],
+    go_srcs = [
+        "multifile_lib_regress/events.go",
     ],
     importpath = "martianoff/gala/examples/multifile_lib_regress",
     visibility = ["//visibility:public"],

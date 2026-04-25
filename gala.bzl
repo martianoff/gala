@@ -205,7 +205,7 @@ def gala_bootstrap_transpile(name, src, out = None, package_files = []):
         tags = ["no-sandbox"],
     )
 
-def gala_library(name, src = None, srcs = None, importpath = "", deps = [], gala_deps = [], embedsrcs = [], **kwargs):
+def gala_library(name, src = None, srcs = None, importpath = "", deps = [], gala_deps = [], embedsrcs = [], go_srcs = [], **kwargs):
     """
     Build a GALA library.
 
@@ -218,6 +218,10 @@ def gala_library(name, src = None, srcs = None, importpath = "", deps = [], gala
         gala_deps: GALA library dependency labels for cross-package type resolution.
             Their source files are automatically included during transpilation.
         embedsrcs: Files to embed via //go:embed directives in GALA source.
+        go_srcs: Hand-written .go files in the same package. They are made
+            available to the transpiler (for cross-language type inference of
+            Go-declared functions/types in the local package) and included
+            verbatim in the resulting go_library.
         **kwargs: Additional arguments passed to go_library
 
     External GALA dependencies are loaded via gala_dependencies() in WORKSPACE
@@ -231,21 +235,23 @@ def gala_library(name, src = None, srcs = None, importpath = "", deps = [], gala
     if not srcs:
         fail("Either 'src' or 'srcs' must be specified")
 
-    go_srcs = [name + "_" + str(i) + ".gen.go" for i in range(len(srcs))]
+    gen_go_srcs = [name + "_" + str(i) + ".gen.go" for i in range(len(srcs))]
 
     # Use batch transpilation for packages with multiple files (much faster)
     if len(srcs) > 1:
         gala_transpile_package(
             name = name + "_transpile",
             srcs = srcs,
-            outs = go_srcs,
+            outs = gen_go_srcs,
+            extra_srcs = go_srcs,
             gala_deps = gala_deps,
         )
     else:
         gala_transpile(
             name = name + "_transpile_0",
             src = srcs[0],
-            out = go_srcs[0],
+            out = gen_go_srcs[0],
+            extra_srcs = go_srcs,
             gala_deps = gala_deps,
         )
 
@@ -254,7 +260,7 @@ def gala_library(name, src = None, srcs = None, importpath = "", deps = [], gala
 
     go_library(
         name = name,
-        srcs = go_srcs,
+        srcs = gen_go_srcs + go_srcs,
         importpath = importpath,
         deps = all_deps,
         embedsrcs = embedsrcs,
