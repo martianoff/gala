@@ -477,6 +477,16 @@ gala_test(
     deps = ["//examples/go_struct_bridge"],
 )
 
+# Verification: named-argument construction of GENERIC Go-style block-form
+# structs declared in a dot-imported package. Exercises both single-param
+# (Container[A]) and two-param (Pair[A, B]) instantiations.
+gala_test(
+    name = "go_generic_struct_dot_import",
+    src = "go_generic_struct_dot_import.gala",
+    expected = "go_generic_struct_dot_import.out",
+    deps = ["//examples/go_generic_struct_bridge"],
+)
+
 gala_test(
     name = "try_basic",
     src = "try_basic.gala",

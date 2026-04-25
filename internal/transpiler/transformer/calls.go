@@ -1377,7 +1377,14 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 	if t.isGoImportedType(fun) {
 		return buildGoCompositeLiteralWithNamedArgs(fun, namedArgs, t.sortKeyValueExprs), nil
 	}
-	if _, isIdent := fun.(*ast.Ident); isIdent {
+	// Dot-imported types (bare or generic). The base of a generic
+	// instantiation `Foo[A]` / `Foo[A, B]` is wrapped in IndexExpr /
+	// IndexListExpr; unwrap to the underlying ident before checking the
+	// dot-import set, otherwise generic Go-style block-form structs
+	// declared in a dot-imported package fall through to the "named
+	// arguments only supported..." error while their non-generic peers
+	// succeed.
+	if unwrapToBaseIdent(fun) != nil {
 		for _, pkg := range t.importManager.GetDotImports() {
 			if pkg != "std" && pkg != t.packageName {
 				return buildGoCompositeLiteralWithNamedArgs(fun, namedArgs, t.sortKeyValueExprs), nil
@@ -1579,6 +1586,27 @@ func buildGoCompositeLiteralWithNamedArgs(
 }
 
 
+
+// unwrapToBaseIdent recurses through generic instantiation wrappers
+// (IndexExpr for `Foo[A]`, IndexListExpr for `Foo[A, B]`) to return the
+// underlying *ast.Ident base, or nil if the base is anything else (e.g.
+// a SelectorExpr, which is the qualified `pkg.Type` shape handled by
+// isGoImportedType). Used to recognize `Foo`, `Foo[A]`, and `Foo[A, B]`
+// uniformly as dot-import candidates.
+func unwrapToBaseIdent(expr ast.Expr) *ast.Ident {
+	for {
+		switch e := expr.(type) {
+		case *ast.Ident:
+			return e
+		case *ast.IndexExpr:
+			expr = e.X
+		case *ast.IndexListExpr:
+			expr = e.X
+		default:
+			return nil
+		}
+	}
+}
 
 // isGoImportedType checks if an expression refers to a Go-imported type (not a GALA struct).
 // This is used to determine if named-arg syntax should generate a plain Go composite literal.
