@@ -1109,6 +1109,27 @@ gala_test(
     deps = [":multi_file_lib"],
 )
 
+# Multi-file library exposing a generic sealed type with zero-field cases.
+# Verifies that a dot-importing consumer lowers `Case[T]()` to
+# `Case[T]{}.Apply()` instead of the bare function-call shape, which Go
+# would interpret as a type conversion on an empty struct.
+gala_library(
+    name = "sealed_dot_import_lib",
+    srcs = [
+        "sealed_dot_import_lib/cmds.gala",
+        "sealed_dot_import_lib/helpers.gala",
+    ],
+    importpath = "martianoff/gala/examples/sealed_dot_import_lib",
+    visibility = ["//visibility:public"],
+)
+
+gala_test(
+    name = "use_sealed_dot_import",
+    src = "use_sealed_dot_import.gala",
+    expected = "use_sealed_dot_import.out",
+    deps = [":sealed_dot_import_lib"],
+)
+
 # Multi-file Option test: Some/None in multi-file mode
 gala_test(
     name = "multi_file_option",

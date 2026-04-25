@@ -1,0 +1,15 @@
+package sealed_dot_import_lib
+
+// Generic sealed type with zero-field cases — mirrors gala-tui's Cmd[T].
+sealed type Cmd[T any] {
+    case QuitCmd()
+    case NoCmd()
+    case MsgCmd(M T)
+}
+
+// Non-generic sealed type with zero-field case for completeness.
+sealed type Status {
+    case Idle()
+    case Done()
+    case Active(N int)
+}

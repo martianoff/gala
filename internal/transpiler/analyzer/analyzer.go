@@ -2122,12 +2122,35 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 	// Always extract Go type information from .go files, even in mixed GALA+Go packages.
 	// This ensures Go-defined functions and variables (e.g., concurrent.Spawn) are available
 	// for type inference when GALA code calls them.
-	goInfo := AnalyzeGoFiles(dirPath)
+	//
+	// When no .gala source contributed type metadata for this package, also
+	// pull in .gen.go files so externally-built GALA libraries (consumed only
+	// as compiled artifacts, e.g., across Bazel modules) still expose enough
+	// metadata for downstream sealed-case Apply lowering and similar shapes
+	// that depend on knowing a type has an `Apply` method.
+	includeGenerated := len(pkgAST.Types) == 0
+	var goInfo *transpiler.GoTypeInfo
+	if includeGenerated {
+		goInfo = AnalyzeGoFilesIncludingGenerated(dirPath)
+	} else {
+		goInfo = AnalyzeGoFiles(dirPath)
+	}
 	if len(goInfo.Functions) > 0 || len(goInfo.Types) > 0 || len(goInfo.Variables) > 0 || len(goInfo.TypeAliases) > 0 {
 		if pkgAST.GoTypeInfo == nil {
 			pkgAST.GoTypeInfo = transpiler.NewGoTypeInfo()
 		}
 		pkgAST.GoTypeInfo.Merge(goInfo)
+	}
+	// Synthesize TypeMetadata entries for Go-defined types that look like
+	// they originated from a GALA declaration (struct kind with at least one
+	// exported method). Without this, packages consumed only as precompiled
+	// .gen.go (e.g., across Bazel modules) leave the consumer's analyzer with
+	// no record of sealed-type cases, and the transformer falls back to a
+	// plain function-call shape which Go reads as a type conversion on the
+	// empty struct. We only run this when no .gala source contributed
+	// metadata for the package, so in-repo analysis is unchanged.
+	if includeGenerated {
+		synthesizeTypeMetadataFromGo(pkgAST, goInfo)
 	}
 
 	// Store in disk cache for future processes
@@ -2136,6 +2159,81 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 	}
 
 	return pkgAST, nil
+}
+
+// synthesizeTypeMetadataFromGo populates pkgAST.Types with TypeMetadata
+// entries derived from Go type information (`pkgAST.GoTypeInfo` typically
+// extracted from .gen.go files). It is intentionally narrow: a struct with
+// exported methods becomes a TypeMetadata so the transformer can find the
+// type's Apply method when the call site is `Type[T]()` or `Type()`. Types
+// that already have a TypeMetadata entry — e.g. from a real .gala source —
+// are left untouched.
+//
+// The synthesized metadata is the minimum required for the call dispatcher's
+// gates (zero-arg Apply, generic Apply detection, struct-literal construction)
+// to recognize the type. Field information is included so downstream callers
+// that build composite literals from positional args still work.
+func synthesizeTypeMetadataFromGo(pkgAST *transpiler.RichAST, goInfo *transpiler.GoTypeInfo) {
+	if goInfo == nil || len(goInfo.Types) == 0 {
+		return
+	}
+	if pkgAST.Types == nil {
+		pkgAST.Types = make(map[string]*transpiler.TypeMetadata)
+	}
+	for qualName, td := range goInfo.Types {
+		if td == nil || td.Kind != "struct" {
+			continue
+		}
+		if _, exists := pkgAST.Types[qualName]; exists {
+			continue
+		}
+		// Split "pkg.Name" into package and simple name. qualName is always
+		// dotted ("pkg.Name") for entries originating from extractPackageInfo.
+		dot := strings.LastIndex(qualName, ".")
+		if dot < 0 {
+			continue
+		}
+		pkgName := qualName[:dot]
+		simpleName := qualName[dot+1:]
+
+		methods := make(map[string]*transpiler.MethodMetadata, len(td.Methods))
+		for mName, sig := range td.Methods {
+			if sig == nil {
+				continue
+			}
+			paramTypes := make([]transpiler.Type, 0, len(sig.Params))
+			paramNames := make([]string, 0, len(sig.Params))
+			for _, p := range sig.Params {
+				paramTypes = append(paramTypes, p.Type)
+				paramNames = append(paramNames, p.Name)
+			}
+			var retType transpiler.Type
+			if len(sig.Returns) > 0 {
+				retType = sig.Returns[0]
+			}
+			methods[mName] = &transpiler.MethodMetadata{
+				Name:       mName,
+				Package:    pkgName,
+				ParamTypes: paramTypes,
+				ParamNames: paramNames,
+				ReturnType: retType,
+			}
+		}
+
+		fieldNames := make([]string, 0, len(td.Fields))
+		for fName := range td.Fields {
+			fieldNames = append(fieldNames, fName)
+		}
+
+		pkgAST.Types[qualName] = &transpiler.TypeMetadata{
+			Name:       simpleName,
+			Package:    pkgName,
+			Methods:    methods,
+			Fields:     td.Fields,
+			FieldNames: fieldNames,
+			TypeParams: td.TypeParams,
+		}
+	}
 }
 
 // hasTypeDefinition returns true if the TypeMetadata represents a full type definition
