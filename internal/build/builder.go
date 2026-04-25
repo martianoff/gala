@@ -505,15 +505,34 @@ func (b *Builder) transpileWithSourceDir() error {
 	g := generator.NewGoCodeGenerator()
 
 	// Step 1: Transpile library files (project root) into gen/.
+	// Recursive so subpackages (e.g., state/) are included; the consumer
+	// subtree is filtered out below since those files are handled in step 2.
 	// One BatchAnalyzer for all library files so analyzedPkgs (std,
 	// collection_immutable, etc.) and parsedFileCache (sibling .gala
 	// trees) are shared across the loop instead of paid per file.
-	libFiles, err := findGalaFiles(b.workspace.ProjectDir)
+	allLibFiles, err := findGalaFilesRecursive(b.workspace.ProjectDir)
 	if err != nil {
 		return fmt.Errorf("finding library files: %w", err)
 	}
+	consumerPrefix := b.sourceDir + string(filepath.Separator)
+	var libFiles []string
+	for _, f := range allLibFiles {
+		if b.sourceDir != "" && b.sourceDir != b.workspace.ProjectDir {
+			if f == b.sourceDir || strings.HasPrefix(f, consumerPrefix) {
+				continue
+			}
+		}
+		libFiles = append(libFiles, f)
+	}
 	if b.verbose {
 		fmt.Printf("  Transpiling %d library files...\n", len(libFiles))
+	}
+	// Group library files by directory: only files in the same directory
+	// share a Go package, so sibling-based type resolution must not mix
+	// root-package files with subpackage files (e.g., state/).
+	libFilesByDir := make(map[string][]string)
+	for _, f := range libFiles {
+		libFilesByDir[filepath.Dir(f)] = append(libFilesByDir[filepath.Dir(f)], f)
 	}
 	libBatch := analyzer.NewBatchAnalyzer(p, searchPaths, b.workspace.ProjectDir)
 	for _, galaFile := range libFiles {
@@ -522,7 +541,7 @@ func (b *Builder) transpileWithSourceDir() error {
 			return fmt.Errorf("reading %s: %w", galaFile, err)
 		}
 		var siblings []string
-		for _, other := range libFiles {
+		for _, other := range libFilesByDir[filepath.Dir(galaFile)] {
 			if other != galaFile {
 				siblings = append(siblings, other)
 			}
@@ -533,12 +552,23 @@ func (b *Builder) transpileWithSourceDir() error {
 		if err != nil {
 			return fmt.Errorf("transpiling %s: %w", galaFile, err)
 		}
-		outName := strings.TrimSuffix(filepath.Base(galaFile), ".gala") + ".gen.go"
-		if err := b.workspace.WriteGenFile(outName, []byte(goCode)); err != nil {
+		// Preserve subdirectory layout in gen/ so each GALA subpackage
+		// lands in its own directory — this is what the Go toolchain needs
+		// to resolve imports like "gala-build-workspace/gen/<sub>".
+		relPath, err := filepath.Rel(b.workspace.ProjectDir, galaFile)
+		if err != nil {
+			relPath = filepath.Base(galaFile)
+		}
+		outName := strings.TrimSuffix(relPath, ".gala") + ".gen.go"
+		outPath := filepath.Join(b.workspace.GenDir, outName)
+		if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
+			return fmt.Errorf("creating gen dir for %s: %w", outName, err)
+		}
+		if err := os.WriteFile(outPath, []byte(goCode), 0644); err != nil {
 			return fmt.Errorf("writing %s: %w", outName, err)
 		}
 		if b.verbose {
-			fmt.Printf("    %s -> %s\n", filepath.Base(galaFile), outName)
+			fmt.Printf("    %s -> %s\n", relPath, outName)
 		}
 	}
 
