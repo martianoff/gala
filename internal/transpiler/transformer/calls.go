@@ -284,9 +284,12 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 	// (e.g., Array[T].SortBy[K] invoked on an Array[Tuple[K,V]] where outer K,V
 	// are in scope) would be unified against the substituted outer K, producing
 	// a bogus binding like `method_K -> outer_K`.
-	freshMethodTypeParams := make([]string, len(methodMeta.TypeParams))
-	for i, tp := range methodMeta.TypeParams {
-		freshMethodTypeParams[i] = freshMethodParamPrefix + tp
+	var freshMethodTypeParams []string
+	if methodMeta != nil {
+		freshMethodTypeParams = make([]string, len(methodMeta.TypeParams))
+		for i, tp := range methodMeta.TypeParams {
+			freshMethodTypeParams[i] = freshMethodParamPrefix + tp
+		}
 	}
 
 	// Try to infer unresolved method type params from non-lambda arguments.
