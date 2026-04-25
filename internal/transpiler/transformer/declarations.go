@@ -907,6 +907,19 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 		for _, pCtx := range paramsCtx.ParameterList().(*grammar.ParameterListContext).AllParameter() {
 			param := pCtx.(*grammar.ParameterContext)
 			pName := param.Identifier().GetText()
+			// The analyzer (transformer.go:162) already populates structFieldTypes
+			// with correctly-resolved types. Re-resolving here would route through
+			// the value scope, which has been polluted by transformParameter adding
+			// each field name to the local scope (declarations.go:1232-1236). When
+			// the field name shadows a type name (e.g., `struct M(Palette Palette[T])`),
+			// the value-scope lookup returns the field's already-generic type, which
+			// then gets re-wrapped with the type arguments — producing a doubled
+			// generic like `Palette[T][T]`. Skip re-resolving when the analyzer has
+			// already provided a non-nil entry; only fall back when missing (e.g.,
+			// for shapes the analyzer didn't model).
+			if existing, ok := t.structFieldTypes[name][pName]; ok && !existing.IsNil() {
+				continue
+			}
 			var pType transpiler.Type = transpiler.NilType{}
 			if param.Type_() != nil {
 				typeExpr, _ := t.transformType(param.Type_())

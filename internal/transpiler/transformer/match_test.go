@@ -526,6 +526,110 @@ func main() {
 }`,
 			wantErr: false,
 		},
+		{
+			// Regression: when a struct field shares its name with the generic
+			// type it holds (idiomatic Go: http.Response.Header is http.Header),
+			// the transformer's struct-shorthand pass used to overwrite the
+			// analyzer-supplied field type with a doubled generic by routing
+			// through a value-scope entry that the parameter loop had just
+			// added. The match-as-IIFE on `m.Cell.Get()` then collapsed to
+			// `Option[any]`. Verify the IIFE preserves the concrete generic.
+			name: "Match on chained method call where field name shadows generic type",
+			input: `package main
+
+struct Cell[T any](Value T)
+
+func (c Cell[T]) Get() Option[T] {
+    return Some[T](c.Value)
+}
+
+struct Holder(Cell Cell[int])
+
+func unwrap(h Holder) int {
+    return h.Cell.Get() match {
+        case Some(v) => v
+        case None()  => 0
+    }
+}`,
+			expected: `package main
+
+import "martianoff/gala/std"
+
+type Cell[T any] struct {
+	Value std.Immutable[T]
+}
+
+func (s Cell[T]) Copy() Cell[T] {
+	return Cell[T]{Value: std.Copy(s.Value)}
+}
+func (s Cell[T]) Equal(other Cell[T]) bool {
+	return std.Equal(s.Value, other.Value)
+}
+
+type CellInstance interface {
+	IsCell() bool
+}
+
+func (_ Cell[T]) IsCell() bool {
+	return true
+}
+func (s Cell[T]) Unapply(v any) (std.Immutable[T], bool) {
+	if p, ok := v.(Cell[T]); ok {
+		return p.Value, true
+	}
+	if p, ok := v.(*Cell[T]); ok && p != nil {
+		return p.Value, true
+	}
+	return *new(std.Immutable[T]), false
+}
+func (c Cell[T]) Get() std.Option[T] {
+	return std.Some[T]{}.Apply(c.Value.Get())
+}
+
+type Holder struct {
+	Cell std.Immutable[Cell[int]]
+}
+
+func (s Holder) Copy() Holder {
+	return Holder{Cell: std.Copy(s.Cell)}
+}
+func (s Holder) Equal(other Holder) bool {
+	return std.Equal(s.Cell, other.Cell)
+}
+func (s Holder) Unapply(v any) (std.Immutable[Cell[int]], bool) {
+	if p, ok := v.(Holder); ok {
+		return p.Cell, true
+	}
+	if p, ok := v.(*Holder); ok && p != nil {
+		return p.Cell, true
+	}
+	return *new(std.Immutable[Cell[int]]), false
+}
+func unwrap(h Holder) int {
+	return func(obj std.Option[int]) int {
+		{
+			_tmp_1 := std.Some[int]{}.Unapply(obj)
+			_tmp_2 := _tmp_1.IsDefined()
+			var _tmp_3 int
+			if _tmp_2 {
+				_tmp_3 = _tmp_1.Get()
+			}
+			_ = _tmp_3
+			v := _tmp_3
+			if _tmp_2 {
+				return v
+			} else {
+				_tmp_4 := std.None[int]{}.Unapply(obj)
+				if _tmp_4 {
+					return 0
+				} else {
+					panic("unreachable")
+				}
+			}
+		}
+	}(h.Cell.Get().Get())
+}`,
+		},
 	}
 
 	for _, tt := range tests {
