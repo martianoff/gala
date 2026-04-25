@@ -1,0 +1,21 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+struct Cell(W int, S string)
+
+func build(headers Array[string], widths Array[int]) Array[Cell] {
+    return headers.ZipWithIndex().Map((pair) => {
+        val w = if (pair.V2 < widths.Length()) widths.Get(pair.V2) else 0
+        Cell(W = w, S = pair.V1)
+    })
+}
+
+func main() {
+    val headers = ArrayOf("a", "bb", "ccc")
+    val widths = ArrayOf(1, 2, 3)
+    val cells = build(headers, widths)
+    cells.ForEach((c) => {
+        Println(s"W=${c.W} S=${c.S}")
+    })
+}

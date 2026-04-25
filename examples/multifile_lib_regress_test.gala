@@ -3,6 +3,7 @@ package main
 import (
     "martianoff/gala/examples/multifile_lib_regress"
     "martianoff/gala/examples/go_struct_bridge"
+    . "martianoff/gala/collection_immutable"
     "time"
 )
 
@@ -68,4 +69,21 @@ func main() {
     // isImmutableField on .Bold saw an unknown xType and emitted plain .Bold.
     val canvas = multifile_lib_regress.NewCanvas(80, 24)
     Println(multifile_lib_regress.BoldAt(canvas, 0, 0))
+
+    // Block-body lambda inside Array.Map must infer the result type from the
+    // trailing struct literal in the block. Verifies the regression in batch
+    // transpile (where U was previously left unresolved/void).
+    val hdr = ArrayOf("a", "bb", "ccc")
+    val wid = ArrayOf(1, 2, 3)
+    val cells = multifile_lib_regress.BuildLabeledCells(hdr, wid)
+    cells.ForEach((c) => Println(s"${c.Label}=${c.Width}"))
+
+    // Block-body lambda whose trailing expression is a val-bound identifier:
+    // `Map((x) => { val doubled = x * 2; doubled })`. The promotion to a
+    // return statement must fire even though the trailing identifier compiles
+    // to a `.Get()` on the Immutable wrapper (whose static type is opaque to
+    // the trivial type-name oracle).
+    val nums = ArrayOf(1, 2, 3)
+    multifile_lib_regress.DoubleEach(nums).ForEach((n) => Println(n))
+    multifile_lib_regress.ExpandPairs(nums).ForEach((n) => Println(n))
 }

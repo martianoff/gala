@@ -1911,6 +1911,7 @@ gala_test(
     expected = "multifile_lib_regress_test.out",
     deps = [
         ":multifile_lib_regress",
+        "//collection_immutable",
         "//examples/go_struct_bridge",
     ],
 )
@@ -1938,4 +1939,31 @@ gala_test(
     name = "gap11_none_widening",
     src = "gap11_none_widening.gala",
     expected = "gap11_none_widening.out",
+)
+
+# Regression: lambda with multi-statement block body in Array.Map must
+# infer U from the block's trailing expression (not treat body as void).
+gala_test(
+    name = "lambda_block_body_repro",
+    src = "lambda_block_body_repro.gala",
+    expected = "lambda_block_body_repro.out",
+    deps = ["//collection_immutable"],
+)
+
+# Regression: lambda with explicit return type and multi-statement block body.
+# The trailing expression should be the implicit return value.
+gala_test(
+    name = "lambda_explicit_ret_block",
+    src = "lambda_explicit_ret_block.gala",
+    expected = "lambda_explicit_ret_block.out",
+)
+
+# Regression: block lambda whose trailing expression is a val-bound identifier
+# must still be promoted to a return statement so generic methods like
+# Array.Map[U] / FlatMap[U] / Filter can see the lambda's actual return value.
+gala_test(
+    name = "lambda_block_val_trailing",
+    src = "lambda_block_val_trailing.gala",
+    expected = "lambda_block_val_trailing.out",
+    deps = ["//collection_immutable"],
 )
