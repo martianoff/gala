@@ -1391,6 +1391,18 @@ gala_test(
     deps = ["//collection_immutable"],
 )
 
+# Verification: Collect[U] infers U from lambda returning Option[U]
+# where U is bound to an outer function's type parameter.
+gala_test(
+    name = "collect_lambda_inference",
+    src = "collect_lambda_inference.gala",
+    expected = "collect_lambda_inference.out",
+    deps = [
+        "//collection_immutable",
+        "//concurrent",
+    ],
+)
+
 # Verification: Some(v) infers Option[string] not Option[any]
 gala_test(
     name = "some_type_inference",
@@ -1891,6 +1903,7 @@ gala_test(
     expected = "multifile_lib_regress_test.out",
     deps = [
         ":multifile_lib_regress",
+        "//collection_immutable",
         "//examples/go_struct_bridge",
     ],
 )

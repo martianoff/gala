@@ -277,6 +277,18 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		}
 	}
 
+	// Build the "fresh-named" method type params and lookup for safe unification.
+	// We rename method type params to a unique prefixed form BEFORE substituting
+	// receiver type arguments into the method signature. Without this, a method
+	// type param that happens to share a letter with an outer/receiver type arg
+	// (e.g., Array[T].SortBy[K] invoked on an Array[Tuple[K,V]] where outer K,V
+	// are in scope) would be unified against the substituted outer K, producing
+	// a bogus binding like `method_K -> outer_K`.
+	freshMethodTypeParams := make([]string, len(methodMeta.TypeParams))
+	for i, tp := range methodMeta.TypeParams {
+		freshMethodTypeParams[i] = freshMethodParamPrefix + tp
+	}
+
 	// Try to infer unresolved method type params from non-lambda arguments.
 	// This enables FoldLeft(0, (acc, x) => acc + x) to infer U=int from the zero value 0.
 	preTransformed := make(map[int]ast.Expr)
@@ -313,10 +325,19 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			if argType == nil || argType.IsNil() || argType.IsAny() {
 				continue
 			}
-			substitutedParamType := t.substituteConcreteTypes(methodMeta.ParamTypes[i], typeMeta.TypeParams, recvTypeArgTypes)
+			// Rename method type params in the param type to fresh prefixed
+			// names, then substitute receiver type args. Unify using the fresh
+			// names so outer-scope names embedded in receiver args can't shadow
+			// the method's own type params.
+			renamedParamType := t.renameTypeParamsInType(methodMeta.ParamTypes[i], methodMeta.TypeParams)
+			substitutedParamType := t.substituteConcreteTypes(renamedParamType, typeMeta.TypeParams, recvTypeArgTypes)
 			inferredMap := make(map[string]transpiler.Type)
-			t.unifyForInference(substitutedParamType, argType, methodMeta.TypeParams, inferredMap)
-			for tp, inferred := range inferredMap {
+			t.unifyForInference(substitutedParamType, argType, freshMethodTypeParams, inferredMap)
+			for freshTp, inferred := range inferredMap {
+				tp := stripFreshMethodParamPrefix(freshTp)
+				if tp == "" {
+					continue
+				}
 				if _, alreadySet := typeSubst[tp]; !alreadySet {
 					typeSubst[tp] = inferred.String()
 				}
@@ -386,13 +407,21 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			}
 			// Gap #9: harvest newly-inferred method type params from the
 			// lambda's actual result/param types and commit to typeSubst.
+			// Rename method type params to fresh names first (see the non-lambda
+			// branch for rationale) to avoid name collision with outer-scope
+			// identifiers embedded in receiver type arguments.
 			if methodMeta != nil && typeMeta != nil && i < len(methodMeta.ParamTypes) {
-				if paramFT, ok := methodMeta.ParamTypes[i].(transpiler.FuncType); ok {
+				renamedParamFT := t.renameTypeParamsInType(methodMeta.ParamTypes[i], methodMeta.TypeParams)
+				if paramFT, ok := renamedParamFT.(transpiler.FuncType); ok {
 					substitutedParamFT := t.substituteConcreteTypes(paramFT, typeMeta.TypeParams, recvTypeArgTypes)
 					if actualFT, isFT := t.lambdaActualFuncType(expr).(transpiler.FuncType); isFT {
 						inferredMap := make(map[string]transpiler.Type)
-						t.unifyForInference(substitutedParamFT, actualFT, methodMeta.TypeParams, inferredMap)
-						for tp, inferred := range inferredMap {
+						t.unifyForInference(substitutedParamFT, actualFT, freshMethodTypeParams, inferredMap)
+						for freshTp, inferred := range inferredMap {
+							tp := stripFreshMethodParamPrefix(freshTp)
+							if tp == "" {
+								continue
+							}
 							if _, alreadySet := typeSubst[tp]; alreadySet {
 								continue
 							}
@@ -411,6 +440,22 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 				return true, nil, aerr
 			}
 			mArgs = append(mArgs, expr)
+		}
+	}
+
+	// Capture whether GALA's own inference resolved every method type parameter
+	// with a concrete-enough type (i.e., not the "any" fallback). When true, we
+	// emit those inferred type arguments explicitly on the generated call so we
+	// don't depend on Go's own type inference (which can fail for receivers that
+	// wrap the outer scope's type parameter, e.g., `Array[Future[T]].Collect`).
+	allMethodTypeParamsInferred := methodMeta != nil && len(methodMeta.TypeParams) > 0 && len(typeArgs) == 0
+	if allMethodTypeParamsInferred {
+		for _, tp := range methodMeta.TypeParams {
+			v, ok := typeSubst[tp]
+			if !ok || v == "" || v == "any" {
+				allMethodTypeParamsInferred = false
+				break
+			}
 		}
 	}
 
@@ -458,12 +503,26 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		concreteRecvTypeArgs = append(concreteRecvTypeArgs, arg)
 	}
 
+	// Collect inferred method type args (in declaration order) when every param
+	// was resolved by inference. `typeArgs` is empty here (user supplied none);
+	// we reuse its slot so the downstream emission path stays uniform.
+	inferredMethodTypeArgs := typeArgs
+	if allMethodTypeParamsInferred {
+		inferred := make([]ast.Expr, 0, len(methodMeta.TypeParams))
+		for _, tp := range methodMeta.TypeParams {
+			inferred = append(inferred, t.typeToExpr(transpiler.ParseType(typeSubst[tp])))
+		}
+		inferredMethodTypeArgs = inferred
+	}
+
 	// Decide whether to add type arguments:
-	// - If method has its own type params (e.g., Map[U]) and no explicit type args: let Go infer.
-	// - Otherwise: combine explicit type args with concrete receiver type args.
-	shouldAddTypeArgs := len(typeArgs) > 0 || (methodMeta == nil || len(methodMeta.TypeParams) == 0)
+	// - If method has its own type params (e.g., Map[U]) and no explicit type args
+	//   and GALA could not infer all of them: let Go infer.
+	// - Otherwise: combine explicit/inferred type args with concrete receiver
+	//   type args.
+	shouldAddTypeArgs := len(inferredMethodTypeArgs) > 0 || (methodMeta == nil || len(methodMeta.TypeParams) == 0)
 	if shouldAddTypeArgs {
-		allTypeArgs := append(typeArgs, concreteRecvTypeArgs...)
+		allTypeArgs := append(inferredMethodTypeArgs, concreteRecvTypeArgs...)
 		if len(allTypeArgs) == 1 {
 			funExpr = &ast.IndexExpr{X: funExpr, Index: allTypeArgs[0]}
 		} else if len(allTypeArgs) > 1 {

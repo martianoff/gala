@@ -320,6 +320,38 @@ func (t *galaASTTransformer) substituteConcreteTypes(returnType transpiler.Type,
 	return t.substituteInType(returnType, paramMap)
 }
 
+// freshMethodParamPrefix is prepended to method type parameter names during
+// safe substitution so they cannot collide with identically-named receiver
+// type arguments. For example, Array[T].SortBy[K] called on Array[Tuple[K,V]]
+// (where outer K, V are in scope) must not confuse the method's K with the
+// outer K embedded in the substituted receiver type arg.
+const freshMethodParamPrefix = "__gala_inf_"
+
+// renameTypeParamsInType rewrites every occurrence of a type parameter name
+// inside `typ` by wrapping it with `freshMethodParamPrefix`. Used to make
+// method type parameter names unique before substituting receiver type args,
+// so subsequent unification can distinguish them from outer names that happen
+// to share the same single-letter identifier.
+func (t *galaASTTransformer) renameTypeParamsInType(typ transpiler.Type, names []string) transpiler.Type {
+	if typ == nil || typ.IsNil() || len(names) == 0 {
+		return typ
+	}
+	renameMap := make(map[string]transpiler.Type, len(names))
+	for _, n := range names {
+		renameMap[n] = transpiler.BasicType{Name: freshMethodParamPrefix + n}
+	}
+	return t.substituteInType(typ, renameMap)
+}
+
+// stripFreshMethodParamPrefix returns the original method type parameter name
+// when `name` was produced by renameTypeParamsInType, or "" otherwise.
+func stripFreshMethodParamPrefix(name string) string {
+	if !strings.HasPrefix(name, freshMethodParamPrefix) {
+		return ""
+	}
+	return name[len(freshMethodParamPrefix):]
+}
+
 // inferMethodTypeParamsFromArgs attempts to infer method-level type parameters from call arguments.
 // For example, for FlatMap[U](f func(T) Try[U]) where the argument is a lambda returning Try[User],
 // this function infers U = User.

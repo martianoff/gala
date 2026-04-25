@@ -9,6 +9,33 @@ import (
 	"martianoff/gala/internal/transpiler/registry"
 )
 
+// isTypeMethodDispatchName reports whether `name` is a `Type_Method` dispatch
+// identifier whose enclosing type is a sealed PARENT (e.g., Option_Map,
+// Either_Map, Try_FlatMap) rather than a sealed constructor + Apply
+// (Left_Apply, Some_Apply). For the former, the call's type arguments mix
+// method-level and receiver-level params and must not be re-interpreted as
+// the parent type's params.
+func isTypeMethodDispatchName(name string) bool {
+	idx := strings.Index(name, "_")
+	if idx <= 0 {
+		return false
+	}
+	prefix := name[:idx]
+	suffix := name[idx+1:]
+	// Constructor-apply names (e.g., Left_Apply) keep the fast path.
+	if suffix == "Apply" {
+		return false
+	}
+	// Only sealed parent types trigger the method-dispatch branch — sealed
+	// variant constructors keep the fast path since their type args map
+	// one-to-one onto the parent type's params.
+	switch prefix {
+	case transpiler.TypeOption, transpiler.TypeEither, transpiler.TypeTry:
+		return true
+	}
+	return false
+}
+
 // inferSelectorExprType infers the type of a selector expression (e.g., x.Field, pkg.Name).
 // Extracted from getExprTypeNameManualUncached for readability.
 func (t *galaASTTransformer) inferSelectorExprType(e *ast.SelectorExpr) transpiler.Type {
@@ -205,8 +232,14 @@ func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.Sel
 	}
 
 	// IMPORTANT: Check for explicit type args BEFORE looking up metadata return types
-	// This ensures Left_Apply[int, string] uses [int, string] instead of [A, B] from metadata
-	if isStdQualified && len(typeArgs) > 0 {
+	// This ensures Left_Apply[int, string] uses [int, string] instead of [A, B] from metadata.
+	// Exclude method-dispatch names (e.g., Option_Map, Try_FlatMap) where the
+	// prefix before "_" is the sealed PARENT type, not a constructor variant:
+	// their type args mix method + receiver type parameters and must not be
+	// interpreted as the parent's params. Constructor-apply names like
+	// Left_Apply, Some_Apply keep the fast path since their type args *do*
+	// correspond to the parent type's params.
+	if isStdQualified && len(typeArgs) > 0 && !isTypeMethodDispatchName(sel.Sel.Name) {
 		if parentType := t.resolveStdConstructorParentType(sel.Sel.Name, true); parentType != "" {
 			return transpiler.GenericType{
 				Base:   transpiler.NamedType{Package: registry.StdPackageName, Name: parentType},
@@ -388,14 +421,24 @@ func (t *galaASTTransformer) inferCallIdentType(e *ast.CallExpr, id *ast.Ident, 
 	}
 	if parentType := t.resolveStdConstructorParentType(id.Name, false); parentType != "" {
 		baseType := transpiler.NamedType{Package: registry.StdPackageName, Name: parentType}
-		if len(typeArgs) > 0 {
-			return transpiler.GenericType{Base: baseType, Params: typeArgs}
-		}
-		// For Option_* methods without explicit type args, don't return early.
-		// Fall through to Receiver_Method handling below to infer type params.
-		// For all other std constructors/prefixes, return the base type directly.
-		if parentType != transpiler.TypeOption {
-			return baseType
+		// Distinguish direct constructors (e.g., `Left[int, string](1)`) and
+		// constructor-apply names (e.g., `Some_Apply`) from method-dispatch
+		// names (e.g., `Option_Map[U, T](...)`). For the latter, `typeArgs`
+		// mixes method + receiver type arguments, so they are NOT the parent
+		// type's params — fall through to the `Receiver_Method` handler below
+		// which knows how to separate them.
+		if isTypeMethodDispatchName(id.Name) {
+			// Let the Receiver_Method path resolve the concrete return type.
+		} else {
+			if len(typeArgs) > 0 {
+				return transpiler.GenericType{Base: baseType, Params: typeArgs}
+			}
+			// For Option_* methods without explicit type args, don't return early.
+			// Fall through to Receiver_Method handling below to infer type params.
+			// For all other std constructors/prefixes, return the base type directly.
+			if parentType != transpiler.TypeOption {
+				return baseType
+			}
 		}
 	}
 	if id.Name == "len" {
@@ -611,3 +654,4 @@ func (t *galaASTTransformer) inferGetMethodType(e *ast.CallExpr, sel *ast.Select
 	}
 	return xType
 }
+

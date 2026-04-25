@@ -49,3 +49,16 @@ func LookupSimple(key string) Option[string] {
 
 // Use Array from collection_immutable to exercise cross-package type resolution
 func UserNames() Array[string] = ArrayOf("alice", "bob", "charlie")
+
+// --- Regression: Collect[U] infers U from lambda returning Option[U] where U
+// is a type parameter from the outer function. Historically the transpiler's
+// inferencer resolved method type params but the generated call omitted them,
+// relying on Go's own inference, which can fail when the receiver wraps the
+// outer type parameter (e.g., Array[Option[T]].Collect). Using a helper whose
+// return type is Option[T] exercises the Option[U]-return unification path.
+
+func identityOption[T any](o Option[T]) Option[T] = o
+
+// Collect over an Array[Option[T]] where T comes from the outer scope.
+func UnwrapSomes[T any](xs Array[Option[T]]) Array[T] =
+    xs.Collect((o) => identityOption(o))

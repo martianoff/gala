@@ -4,6 +4,7 @@ import (
     "martianoff/gala/examples/multifile_lib_regress"
     "martianoff/gala/examples/go_struct_bridge"
     "time"
+    . "martianoff/gala/collection_immutable"
 )
 
 func main() {
@@ -68,4 +69,9 @@ func main() {
     // isImmutableField on .Bold saw an unknown xType and emitted plain .Bold.
     val canvas = multifile_lib_regress.NewCanvas(80, 24)
     Println(multifile_lib_regress.BoldAt(canvas, 0, 0))
+
+    // Collect[U] inference when U = outer-scope type parameter.
+    val mixed = ArrayOf(Some(1), None[int](), Some(2), Some(3))
+    val unwrapped = multifile_lib_regress.UnwrapSomes(mixed)
+    Println(unwrapped.ToGoSlice())
 }

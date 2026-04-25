@@ -1,0 +1,45 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/std"
+    . "martianoff/gala/collection_immutable"
+    . "martianoff/gala/concurrent"
+)
+
+// Returns Some(value) if Future is succeeded, None otherwise.
+func pollSuccessValue[T any](fut Future[T]) Option[T] = fut.Value().FlatMap((t) => t.ToOption())
+
+// Verification for FIX-003: Collect[U] on a typed receiver where U must be
+// inferred from the lambda's Option[U] return type. Here the outer function
+// has its own type parameter T, and the lambda returns Option[T]. Before the
+// fix, GALA's inferencer emitted Array_Collect(pending, ...) without type args
+// and relied on Go's inference; with the fix, GALA emits the fully-resolved
+// Array_Collect[T, Future[T]](pending, ...) call.
+func PollAll[T any](pending Array[Future[T]]) Array[T] =
+    pending.Collect((fut) => pollSuccessValue(fut))
+
+// Same thing on a List receiver.
+func PollAllList[T any](pending List[Future[T]]) List[T] =
+    pending.Collect((fut) => pollSuccessValue(fut))
+
+// Explicit form — should continue to work.
+func PollAllExplicit[T any](pending Array[Future[T]]) Array[T] =
+    pending.Collect[T]((fut) => pollSuccessValue(fut))
+
+// Block-lambda form — should also work.
+func PollAllBlock[T any](pending Array[Future[T]]) Array[T] =
+    pending.Collect((fut) => {
+        val v = pollSuccessValue(fut)
+        return v
+    })
+
+func main() {
+    val pending = ArrayOf(FutureOf(1), FutureOf(2), FutureOf(3))
+    val done = PollAll(pending)
+    fmt.Println(done.ToGoSlice())
+    val done2 = PollAllExplicit(pending)
+    fmt.Println(done2.ToGoSlice())
+    val done3 = PollAllBlock(pending)
+    fmt.Println(done3.ToGoSlice())
+}
