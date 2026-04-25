@@ -522,6 +522,19 @@ func (t *galaASTTransformer) inferCallIdentType(e *ast.CallExpr, id *ast.Ident, 
 		}
 		offset = offset + 1 + next
 	}
+
+	// Fallback: bare identifier that may name a Go-declared function in the
+	// current package (e.g., `Make` from a hand-written `event.go` next to
+	// `pipe.gala`). The analyzer registers same-directory Go functions in
+	// goTypeInfo as `pkgName.FuncName`; resolve here via the current package
+	// qualifier so chained generic-method type inference (ArrayFromSlice ->
+	// FoldLeft lambda param type) sees a concrete element type instead of
+	// the un-substituted type-parameter name.
+	if t.packageName != "" {
+		if retType := t.getGoFuncReturnType(t.packageName + "." + id.Name); !retType.IsNil() {
+			return retType
+		}
+	}
 	return transpiler.NilType{}
 }
 

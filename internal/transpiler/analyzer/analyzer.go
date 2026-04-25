@@ -558,6 +558,29 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 	logPhase("analyze-go-packages", phaseStart)
 	phaseStart = time.Now()
 
+	// 0.65 Scan hand-written .go files in the main file's directory.
+	// When a GALA library coexists with hand-written Go in the same package
+	// (e.g., `event.go` declaring `Event` and `Make() []Event` next to a
+	// `pipe.gala` that consumes them), the Go-declared functions and types
+	// are not reachable through any import path — they're in the local
+	// package. Without this scan, calls like `Make()` from GALA resolve to
+	// `NilType` and downstream type inference (e.g., `ArrayFromSlice(Make())`
+	// resolving its `T` from `[]Event`) silently fails, leaving lambda
+	// parameter types as the un-substituted type-parameter name.
+	if filePath != "" && pkgName != "main" && pkgName != "test" {
+		dirPath := filepath.Dir(filePath)
+		goInfo := AnalyzeGoFiles(dirPath)
+		if len(goInfo.Functions) > 0 || len(goInfo.Types) > 0 || len(goInfo.Variables) > 0 || len(goInfo.TypeAliases) > 0 {
+			if richAST.GoTypeInfo == nil {
+				richAST.GoTypeInfo = transpiler.NewGoTypeInfo()
+			}
+			richAST.GoTypeInfo.Merge(goInfo)
+		}
+	}
+
+	logPhase("analyze-local-go-files", phaseStart)
+	phaseStart = time.Now()
+
 	// 0.75 Also scan sibling imports to ensure all GALA packages used by siblings
 	// are loaded into richAST.Types. Without this, resolveTypeWithParams for sibling
 	// struct fields can't find types from packages that only siblings import.

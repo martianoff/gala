@@ -1,0 +1,46 @@
+package multifile_lib_regress
+
+import . "martianoff/gala/collection_immutable"
+
+// --- Regression: generic-method lambda over a Go-declared local element type ---
+// Event and MakeEvents are declared in events.go in this same package. When the
+// transpiler analyzed the GALA file alone, it never scanned events.go, so the
+// type of `arr` collapsed to Array[T] and FoldLeft/Map/Filter/Find/Exists/ForAll
+// lambdas emitted `e T` as the parameter type instead of `e Event`.
+
+func EventStatusSum() int {
+    val arr = ArrayFromSlice(MakeEvents())
+    return arr.FoldLeft(0, (acc, e) => acc + e.Status)
+}
+
+func EventStatuses() Array[int] {
+    val arr = ArrayFromSlice(MakeEvents())
+    return arr.Map((e) => e.Status)
+}
+
+func EventOkCount() int {
+    val arr = ArrayFromSlice(MakeEvents())
+    return arr.Filter((e) => e.Status < 400).Length()
+}
+
+func EventFirstGet() Option[int] {
+    val arr = ArrayFromSlice(MakeEvents())
+    return arr.Find((e) => e.Method == "GET").Map((e) => e.Status)
+}
+
+func EventAnyError() bool {
+    val arr = ArrayFromSlice(MakeEvents())
+    return arr.Exists((e) => e.Status >= 500)
+}
+
+func EventAllPositive() bool {
+    val arr = ArrayFromSlice(MakeEvents())
+    return arr.ForAll((e) => e.Status > 0)
+}
+
+// Nested generic case: chain Filter -> Map -> FoldLeft. Each lambda binds its
+// element type from the receiver carrying the Go-declared element type.
+func EventOkSum() int {
+    val arr = ArrayFromSlice(MakeEvents())
+    return arr.Filter((e) => e.Status < 400).Map((e) => e.Status).FoldLeft(0, (acc, n) => acc + n)
+}
