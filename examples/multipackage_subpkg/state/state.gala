@@ -1,0 +1,12 @@
+package state
+
+import . "martianoff/gala/std"
+
+// Simple library in a subpackage — exercises library-with-sublibrary layouts
+// (FIX-001). The root consumer at examples/multipackage_subpkg/main.gala
+// imports this file and prints values returned from it.
+struct AppState(Count int, Label string)
+
+func NewState(label string) AppState = AppState(Count = 0, Label = label)
+
+func (s AppState) Greet() string = s"Hello from state/${s.Label} with count ${s.Count}"

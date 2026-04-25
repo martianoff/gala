@@ -30,6 +30,7 @@ go_test(
         "analyzer_test.go",
         "go_types_debug_test.go",
         "go_types_test.go",
+        "multipackage_panic_test.go",
         "test_helper.go",
         "validation_test.go",
     ],
