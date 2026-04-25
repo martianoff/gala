@@ -1,0 +1,51 @@
+// Regression test for a struct field that shares its name with the generic
+// type it holds. Idiomatic Go does this routinely (e.g., http.Response.Header
+// is of type http.Header). The transpiler used to corrupt the receiver type
+// during struct-shorthand transformation: when the same value-scope entry that
+// records the field name shadowed the type identifier, the second pass over
+// the parameter list re-resolved the type through the polluted scope and
+// emitted a doubled generic (`Palette[T][T]`) into structFieldTypes. The
+// match-as-IIFE on `m.Palette.Current()` then collapsed to `Option[any]` and
+// `action.Msg` became inaccessible.
+//
+// Expected behavior: the IIFE preserves `Option[PaletteAction[MegaMsg]]`,
+// `action.Msg` resolves to `MegaMsg`, and the program prints `got: ok`.
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+struct PaletteAction[T any](Msg T)
+
+struct Palette[T any](Actions Array[PaletteAction[T]])
+
+func (p Palette[T]) Current() Option[PaletteAction[T]] {
+    if p.Actions.IsEmpty() { return None[PaletteAction[T]]() }
+    return Some[PaletteAction[T]](p.Actions.Get(0))
+}
+
+sealed type MegaMsg {
+    case MQuit()
+    case MAction(Name string)
+}
+
+// Field name (`Palette`) intentionally collides with the generic type name.
+struct MegaModel(Palette Palette[MegaMsg])
+
+func confirmPalette(m MegaModel) MegaMsg {
+    return m.Palette.Current() match {
+        case Some(action) => action.Msg
+        case None()       => MQuit()
+    }
+}
+
+func main() {
+    val pal = Palette[MegaMsg](
+        Actions = ArrayOf(PaletteAction[MegaMsg](Msg = MAction(Name = "ok"))),
+    )
+    val m = MegaModel(Palette = pal)
+    val res = confirmPalette(m)
+    res match {
+        case MAction(n) => Println(s"got: $n")
+        case MQuit()    => Println("quit")
+    }
+}

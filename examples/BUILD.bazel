@@ -632,6 +632,13 @@ gala_test(
     expected = "match_generic_return_dispatch.out",
 )
 
+gala_test(
+    name = "match_chained_call_generic",
+    src = "match_chained_call_generic.gala",
+    expected = "match_chained_call_generic.out",
+    deps = ["//collection_immutable"],
+)
+
 # Transpiler issue repro tests
 gala_test(
     name = "tuple_field_unwrap",
