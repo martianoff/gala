@@ -1,0 +1,8 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "go_generic_struct_bridge",
+    srcs = ["bridge.go"],
+    importpath = "martianoff/gala/examples/go_generic_struct_bridge",
+    visibility = ["//visibility:public"],
+)

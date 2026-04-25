@@ -1,0 +1,22 @@
+package main
+
+import . "martianoff/gala/examples/go_generic_struct_bridge"
+
+// Verifies that GALA named-argument construction works for generic
+// Go-style block-form structs declared in a dot-imported package.
+// Previously the validator's dot-import fallback only matched bare
+// *ast.Ident, so generic call targets like `Container[int]` (an
+// *ast.IndexExpr) and `Pair[string, int]` (an *ast.IndexListExpr) fell
+// through to "named arguments only supported for Copy method or struct
+// construction".
+
+func main() {
+    val box = Box(Title = "hello")
+    Println(box.Render())
+
+    val container = Container[int](Value = 42)
+    Println(container.Render())
+
+    val pair = Pair[string, int](First = "answer", Second = 42)
+    Println(pair.Render())
+}
