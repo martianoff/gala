@@ -77,6 +77,17 @@ type RichAST struct {
 }
 
 // Merge combines metadata from another RichAST into this one.
+//
+// IMPORTANT: this is NOT a pure read on `other`. Merge stores `other`'s
+// TypeMetadata pointers directly into r.Types (no copy), and when a key
+// exists in both `r` and `other`, it writes back into the shared
+// TypeMetadata's Methods map. The implication for callers: a RichAST
+// produced by Analyze() is *not* safe to share (e.g., as a pre-loaded
+// std cache) across goroutines that then call Merge against their own
+// richASTs — the merges race on the shared Methods/Fields/etc. and will
+// corrupt the source. Either deep-clone before sharing, or guard with
+// a mutex. See the LSP perf branch (518bd98) for the failed shared-std
+// experiment that hit this.
 func (r *RichAST) Merge(other *RichAST) {
 	if other == nil {
 		return
