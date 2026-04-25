@@ -1,0 +1,34 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+func main() {
+    val xs = ArrayOf(1, 2, 3)
+
+    // Map with val-bound trailing identifier
+    val ys = xs.Map((x) => {
+        val y = x * 2
+        y
+    })
+    ys.ForEach((v) => {
+        Println(v)
+    })
+
+    // FlatMap with val-bound trailing identifier
+    val zs = xs.FlatMap((x) => {
+        val ys2 = ArrayOf(x, x * 10)
+        ys2
+    })
+    zs.ForEach((v) => {
+        Println(v)
+    })
+
+    // Filter with val-bound trailing identifier
+    val evens = xs.Filter((x) => {
+        val cond = x % 2 == 0
+        cond
+    })
+    evens.ForEach((v) => {
+        Println(v)
+    })
+}

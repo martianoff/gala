@@ -210,19 +210,22 @@ func (t *galaASTTransformer) transformBlockLambdaBody(ctx *grammar.LambdaExpress
 	// implicit return value (no `return` keyword needed). Two cases are promoted:
 	//   1. IIFEs (CallExpr wrapping FuncLit) — match/if-expressions compile to
 	//      these and we can always trust them to produce a value. This is safe
-	//      regardless of caller context.
-	//   2. Arbitrary typed expressions, but ONLY when the caller has signalled
-	//      that the lambda must produce a value (expectsReturnValue). Without
-	//      that signal, we cannot tell whether a block like `{ doSideEffect() }`
-	//      is meant to discard the call's result (void lambda) or to forward it
-	//      (value lambda), so we keep the existing void interpretation. Inside
-	//      a generic method like `Array.Map[U]`, the caller-supplied FuncType
-	//      sets expectsReturnValue=true even when U is still unresolved (`any`),
-	//      which lets us infer U from the trailing expression's type.
+	//      regardless of caller context (even with no expected type, since the
+	//      promotion gives downstream type inference something to work with).
+	//   2. Arbitrary trailing expressions, but ONLY when the caller has
+	//      signalled that the lambda must produce a value (expectsReturnValue).
+	//      Without that signal, we cannot tell whether a block like
+	//      `{ doSideEffect() }` is meant to discard the call's result (void
+	//      lambda) or to forward it (value lambda), so we keep the existing
+	//      void interpretation. Inside a generic method like `Array.Map[U]`,
+	//      the caller-supplied FuncType sets expectsReturnValue=true even when
+	//      U is still unresolved (`any`), which lets us infer U from the
+	//      trailing expression's type — including val-bound identifiers whose
+	//      static type may not be reachable from getExprTypeName (e.g. they
+	//      compile to `result.Get()` on an Immutable wrapper).
 	if !isVoidExpected && len(b.List) > 0 {
 		if exprStmt, ok := b.List[len(b.List)-1].(*ast.ExprStmt); ok {
-			shouldPromote := isIIFE(exprStmt.X) ||
-				(expectsReturnValue && t.exprHasConcreteType(exprStmt.X))
+			shouldPromote := isIIFE(exprStmt.X) || expectsReturnValue
 			if shouldPromote {
 				b.List[len(b.List)-1] = &ast.ReturnStmt{Results: []ast.Expr{exprStmt.X}}
 			}
@@ -1327,28 +1330,6 @@ func (t *galaASTTransformer) wrapBlockReturnsInSome(stmts []ast.Stmt) []ast.Stmt
 	}
 
 	return result
-}
-
-// exprHasConcreteType reports whether the expression has a known, non-void,
-// non-`any` static type. Used by transformBlockLambdaBody to decide whether the
-// trailing expression of a block lambda is the block's value (and thus should
-// be promoted to a return statement). Composite literals, identifiers bound to
-// known types, and calls to functions with concrete return types all qualify;
-// calls to void functions and untyped expressions return false so the lambda
-// can fall through to a void-body interpretation.
-func (t *galaASTTransformer) exprHasConcreteType(expr ast.Expr) bool {
-	if expr == nil {
-		return false
-	}
-	// Composite literals always produce a concrete value of their declared type.
-	if _, ok := expr.(*ast.CompositeLit); ok {
-		return true
-	}
-	typ := t.getExprTypeName(expr)
-	if typ == nil || typ.IsNil() || typ.IsAny() {
-		return false
-	}
-	return true
 }
 
 // isIIFE checks if an expression is an immediately-invoked function expression

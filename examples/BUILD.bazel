@@ -1937,3 +1937,13 @@ gala_test(
     src = "lambda_explicit_ret_block.gala",
     expected = "lambda_explicit_ret_block.out",
 )
+
+# Regression: block lambda whose trailing expression is a val-bound identifier
+# must still be promoted to a return statement so generic methods like
+# Array.Map[U] / FlatMap[U] / Filter can see the lambda's actual return value.
+gala_test(
+    name = "lambda_block_val_trailing",
+    src = "lambda_block_val_trailing.gala",
+    expected = "lambda_block_val_trailing.out",
+    deps = ["//collection_immutable"],
+)

@@ -63,3 +63,21 @@ func BuildLabeledCells(headers Array[string], widths Array[int]) Array[LabeledCe
         LabeledCell(Width = w, Label = pair.V1)
     })
 }
+
+// --- Regression: val-bound trailing identifier in Map / FlatMap block lambda ---
+// The trailing `result` identifier must be promoted to a return statement
+// even when its static type compiles down to `result.Get()` on an Immutable
+// wrapper (which made the original type-name gate too conservative).
+func DoubleEach(xs Array[int]) Array[int] {
+    return xs.Map((x) => {
+        val doubled = x * 2
+        doubled
+    })
+}
+
+func ExpandPairs(xs Array[int]) Array[int] {
+    return xs.FlatMap((x) => {
+        val pair = ArrayOf(x, x * 10)
+        pair
+    })
+}

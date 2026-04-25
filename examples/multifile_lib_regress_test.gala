@@ -77,4 +77,13 @@ func main() {
     val wid = ArrayOf(1, 2, 3)
     val cells = multifile_lib_regress.BuildLabeledCells(hdr, wid)
     cells.ForEach((c) => Println(s"${c.Label}=${c.Width}"))
+
+    // Block-body lambda whose trailing expression is a val-bound identifier:
+    // `Map((x) => { val doubled = x * 2; doubled })`. The promotion to a
+    // return statement must fire even though the trailing identifier compiles
+    // to a `.Get()` on the Immutable wrapper (whose static type is opaque to
+    // the trivial type-name oracle).
+    val nums = ArrayOf(1, 2, 3)
+    multifile_lib_regress.DoubleEach(nums).ForEach((n) => Println(n))
+    multifile_lib_regress.ExpandPairs(nums).ForEach((n) => Println(n))
 }
