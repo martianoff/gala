@@ -716,7 +716,12 @@ func (b *Builder) rewriteProjectModuleImports(dir string) error {
 		return nil // No module path known, nothing to rewrite
 	}
 
-	// Check if there are any local Go subdirectories worth rewriting for
+	// Check if there are any local subdirectories — whether Go or GALA —
+	// that could be imported under the project module path. Pure GALA
+	// subpackages still need rewriting because their imports are emitted
+	// using the project module path (e.g. "github.com/user/proj/sub") and
+	// must be redirected to the workspace gen/ layout before `go build`
+	// can resolve them.
 	hasSubDirs := false
 	entries, err := os.ReadDir(b.workspace.ProjectDir)
 	if err == nil {
@@ -724,7 +729,7 @@ func (b *Builder) rewriteProjectModuleImports(dir string) error {
 			if e.IsDir() && !strings.HasPrefix(e.Name(), ".") && e.Name() != "vendor" &&
 				!strings.HasPrefix(e.Name(), "bazel-") {
 				subPath := filepath.Join(b.workspace.ProjectDir, e.Name())
-				if hasGoFiles(subPath) {
+				if hasGoFiles(subPath) || hasGalaFilesShallow(subPath) {
 					hasSubDirs = true
 					break
 				}
@@ -732,7 +737,7 @@ func (b *Builder) rewriteProjectModuleImports(dir string) error {
 		}
 	}
 	if !hasSubDirs {
-		return nil // No local Go subpackages, skip rewriting
+		return nil // No local subpackages, skip rewriting
 	}
 
 	if b.verbose {
@@ -780,6 +785,23 @@ func hasGoFiles(dir string) bool {
 	}
 	for _, e := range entries {
 		if !e.IsDir() && strings.HasSuffix(e.Name(), ".go") {
+			return true
+		}
+	}
+	return false
+}
+
+// hasGalaFilesShallow reports whether dir contains at least one .gala file at
+// its top level. Used when deciding whether the project module's import paths
+// need to be rewritten to point at the workspace gen/ directory — GALA
+// subpackages must be covered too, not just Go subpackages.
+func hasGalaFilesShallow(dir string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".gala") {
 			return true
 		}
 	}
@@ -1028,8 +1050,12 @@ func (b *Builder) goBuild(outputPath string) (string, error) {
 		outputPath += ".exe"
 	}
 
-	// Build command — in multi-package mode, build the consumer subpackage
-	buildTarget := "./gen/..."
+	// Build command — in multi-package mode, build the consumer subpackage.
+	// `go build -o <path> ./gen/...` fails with "cannot write multiple
+	// packages to non-directory" when gen/ contains a main package alongside
+	// library subpackages, so we narrow the target to the root gen package
+	// (which is main, assuming the project itself is executable).
+	buildTarget := "./gen"
 	if b.sourceDir != "" && b.sourceDir != b.workspace.ProjectDir {
 		buildTarget = "./gen/cmd/main"
 	}
@@ -1246,13 +1272,16 @@ func (b *Builder) Test(verbose bool) error {
 		return fmt.Errorf("transpiling dependencies: %w", err)
 	}
 
-	// Step 3: Find source and test files
-	sourceFiles, err := findGalaFiles(b.workspace.ProjectDir)
+	// Step 3: Find source and test files. We recurse so that subpackages
+	// (e.g. `state/state.gala`, `state/state_test.gala`) are picked up
+	// alongside the project root — otherwise `go test ./gen/...` would
+	// silently miss them, or the root package would fail to import them.
+	sourceFiles, err := findGalaFilesRecursive(b.workspace.ProjectDir)
 	if err != nil {
 		return fmt.Errorf("finding source files: %w", err)
 	}
 
-	testFiles, err := findGalaTestFiles(b.workspace.ProjectDir)
+	testFiles, err := findGalaTestFilesRecursive(b.workspace.ProjectDir)
 	if err != nil {
 		return fmt.Errorf("finding test files: %w", err)
 	}
@@ -1270,16 +1299,16 @@ func (b *Builder) Test(verbose bool) error {
 		return nil
 	}
 
-	// Step 4: Determine package layout
+	// Step 4: Determine package layout based on the project root package.
 	// Test files in GALA are always package main and import the library under test.
 	// Source files can be package main (executable) or a library package.
 	// For package main projects: transpile source + test files together.
 	// For library projects: transpile source files as library, test files separately as main.
-	isLib := false
-	if len(sourceFiles) > 0 {
-		pkgName := detectPackageName(sourceFiles[0])
-		isLib = pkgName != "" && pkgName != "main"
-	}
+	// We look at a file that actually lives in the project root (not a
+	// subpackage) to classify the project — subpackages always are libraries
+	// and must not influence the root classification.
+	rootPkgName := rootPackageName(sourceFiles, b.workspace.ProjectDir)
+	isLib := rootPkgName != "" && rootPkgName != "main"
 
 	// Always force-retranspile for tests (test files change independently)
 	if err := b.workspace.CleanGen(); err != nil {
@@ -1322,17 +1351,17 @@ func (b *Builder) Test(verbose bool) error {
 
 	// Step 8: Generate test harness
 	if isLib {
-		// For library packages: generate a _test.go harness that uses Go's testing
-		// framework with TestMain. This enables internal tests (same package) that
-		// can access unexported identifiers. Tests run via `go test`.
-		pkgName := detectPackageName(sourceFiles[0])
-		harnessCode := GenerateGoTestHarness(pkgName, allTestFuncs)
-		harnessPath := filepath.Join(b.workspace.GenDir, "gala_test_harness_test.go")
-		if err := os.WriteFile(harnessPath, []byte(harnessCode), 0644); err != nil {
-			return fmt.Errorf("writing gala_test_harness_test.go: %w", err)
+		// For library packages: generate a _test.go harness per package that
+		// hosts test files. Each harness uses Go's testing framework with
+		// TestMain and references only the TestXxx functions declared in its
+		// own package — otherwise the root harness would fail to compile when
+		// a subpackage owns a test function that the root package cannot see.
+		// Tests run via `go test ./gen/...`.
+		if err := b.writeLibraryTestHarnesses(testFiles); err != nil {
+			return fmt.Errorf("writing test harnesses: %w", err)
 		}
 		if b.verbose {
-			fmt.Println("Generated gala_test_harness_test.go")
+			fmt.Println("Generated test harnesses")
 		}
 
 		// Step 9: Run tests via `go test`
@@ -1375,7 +1404,11 @@ func (b *Builder) Test(verbose bool) error {
 			testBinary += ".exe"
 		}
 
-		args := []string{"build", "-o", testBinary, "./gen/..."}
+		// Build only the synthesized main package at gen/ root. Library
+		// subpackages under gen/<sub>/ are pulled in transitively via
+		// imports; targeting "./gen/..." would ask `go build -o` to write
+		// multiple package outputs, which fails.
+		args := []string{"build", "-o", testBinary, "./gen"}
 		cmd := exec.Command("go", args...)
 		cmd.Dir = b.workspace.Dir
 		cmd.Env = append(os.Environ(), "GOMODCACHE="+b.config.GoPkgDir)
@@ -1454,40 +1487,43 @@ func (b *Builder) transpileTestMain(sourceFiles, testFiles []string) error {
 }
 
 // testGenFileName mirrors the naming that transpileFilesToDir applies when
-// emitting .gen.go outputs (subdir separators folded to `_`). It returns the
-// bare filename (without the gen dir prefix).
+// emitting .gen.go outputs. The returned path is relative to the gen dir and
+// uses OS-native separators, mirroring the subdirectory layout of the
+// original .gala source so subpackages land in their own gen/<sub>/ folder.
 func testGenFileName(projectDir, galaFile string) string {
 	relPath, err := filepath.Rel(projectDir, galaFile)
 	if err != nil {
 		relPath = filepath.Base(galaFile)
 	}
-	outName := strings.TrimSuffix(relPath, ".gala") + ".gen.go"
-	return strings.ReplaceAll(outName, string(filepath.Separator), "_")
+	return strings.TrimSuffix(relPath, ".gala") + ".gen.go"
 }
 
-// renameUserMainInDir scans the given .gen.go files in dir and renames any
-// top-level `func main()` declaration to `_galaUserMain` so it does not
+// renameUserMainInDir scans .gen.go files under dir (recursively) and renames
+// any top-level `func main()` declaration to `_galaUserMain` so it does not
 // conflict with the synthesized test runner's main(). The renamed function
 // is never called by anyone — the Go compiler tree-shakes it out — but
 // preserving it keeps other symbols in the same file (type decls, helpers,
 // etc.) compiling cleanly.
 //
-// Only files whose basename appears in sourceNames are touched; generated
-// test_main.gen.go and the transpiled test files must keep their declarations.
+// Only files whose path (relative to dir, using the OS separator) appears in
+// sourceNames are touched; generated test_main.gen.go and the transpiled test
+// files must keep their declarations.
 func renameUserMainInDir(dir string, sourceNames map[string]bool, verbose bool) error {
 	funcMainRegex := "func main()"
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return err
-	}
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".gen.go") {
-			continue
+	return filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
 		}
-		if !sourceNames[entry.Name()] {
-			continue
+		if info.IsDir() || !strings.HasSuffix(info.Name(), ".gen.go") {
+			return nil
 		}
-		path := filepath.Join(dir, entry.Name())
+		relPath, relErr := filepath.Rel(dir, path)
+		if relErr != nil {
+			relPath = info.Name()
+		}
+		if !sourceNames[relPath] {
+			return nil
+		}
 		content, err := os.ReadFile(path)
 		if err != nil {
 			return fmt.Errorf("reading %s: %w", path, err)
@@ -1500,20 +1536,75 @@ func renameUserMainInDir(dir string, sourceNames map[string]bool, verbose bool) 
 		// writes a package main with a main entry point.
 		idx := strings.Index(text, "\n"+funcMainRegex)
 		if idx < 0 && !strings.HasPrefix(text, funcMainRegex) {
-			continue
+			return nil
 		}
 		rewritten := strings.Replace(text, "\nfunc main()", "\nfunc _galaUserMain()", 1)
 		if strings.HasPrefix(rewritten, "func main()") {
 			rewritten = "func _galaUserMain()" + rewritten[len("func main()"):]
 		}
 		if rewritten == text {
-			continue
+			return nil
 		}
 		if err := os.WriteFile(path, []byte(rewritten), 0644); err != nil {
 			return fmt.Errorf("writing %s: %w", path, err)
 		}
 		if verbose {
-			fmt.Printf("  test: renamed user func main() in %s\n", entry.Name())
+			fmt.Printf("  test: renamed user func main() in %s\n", relPath)
+		}
+		return nil
+	})
+}
+
+// writeLibraryTestHarnesses emits one gala_test_harness_test.go per package
+// that contains at least one TestXxx function. The harness lives next to the
+// transpiled files in gen/ (preserving subpackage layout) so that `go test
+// ./gen/...` picks up each package's tests independently. Each harness only
+// references tests declared in its own source directory — bundling all test
+// funcs into a single root-level harness would fail to compile when a
+// subpackage owns a test that the root package cannot see.
+func (b *Builder) writeLibraryTestHarnesses(testFiles []string) error {
+	// Group tests by the gen subdirectory they will land in.
+	type bucket struct {
+		pkgName string
+		funcs   []string
+	}
+	byDir := make(map[string]*bucket)
+	for _, tf := range testFiles {
+		funcs, err := FindTestFunctions(tf)
+		if err != nil {
+			return fmt.Errorf("scanning %s for test functions: %w", tf, err)
+		}
+		if len(funcs) == 0 {
+			continue
+		}
+		relDir, err := filepath.Rel(b.workspace.ProjectDir, filepath.Dir(tf))
+		if err != nil {
+			relDir = "."
+		}
+		pkgName := detectPackageName(tf)
+		key := filepath.Clean(relDir)
+		if bkt, ok := byDir[key]; ok {
+			bkt.funcs = append(bkt.funcs, funcs...)
+		} else {
+			byDir[key] = &bucket{pkgName: pkgName, funcs: append([]string(nil), funcs...)}
+		}
+	}
+
+	for relDir, bkt := range byDir {
+		if bkt.pkgName == "" {
+			continue
+		}
+		harnessDir := b.workspace.GenDir
+		if relDir != "." && relDir != "" {
+			harnessDir = filepath.Join(b.workspace.GenDir, relDir)
+		}
+		if err := os.MkdirAll(harnessDir, 0755); err != nil {
+			return fmt.Errorf("creating harness dir %s: %w", harnessDir, err)
+		}
+		harnessPath := filepath.Join(harnessDir, "gala_test_harness_test.go")
+		harnessCode := GenerateGoTestHarness(bkt.pkgName, bkt.funcs)
+		if err := os.WriteFile(harnessPath, []byte(harnessCode), 0644); err != nil {
+			return fmt.Errorf("writing %s: %w", harnessPath, err)
 		}
 	}
 	return nil
@@ -1655,6 +1746,15 @@ func (b *Builder) transpileFiles(files []string, allSiblings []string) error {
 }
 
 // transpileFilesToDir transpiles the given files into the specified output directory.
+//
+// When the input set spans multiple source directories (e.g. a library with
+// subpackages), each file is only given siblings from the SAME directory.
+// Mixing files from different Go-level packages into one sibling list would
+// feed the batch analyzer parse trees that disagree on `package <name>`, which
+// in turn bubbles up as an ANTLR prediction-context panic once the analyzer
+// tries to cross-reference those trees. The sub-directory layout is preserved
+// under outDir so that `go test ./...` can see each subpackage as its own Go
+// package.
 func (b *Builder) transpileFilesToDir(files []string, allSiblings []string, outDir string) error {
 	stdlibDir := b.config.StdlibVersionDir(b.stdlibVersion)
 	searchPaths := []string{b.workspace.ProjectDir, stdlibDir}
@@ -1668,6 +1768,15 @@ func (b *Builder) transpileFilesToDir(files []string, allSiblings []string, outD
 	g := generator.NewGoCodeGenerator()
 	batchAnalyzer := analyzer.NewBatchAnalyzer(p, searchPaths, b.workspace.ProjectDir)
 
+	// Group sibling candidates by source directory so we can cheaply look up
+	// "other .gala files in my own package" without re-scanning allSiblings on
+	// every iteration.
+	siblingsByDir := make(map[string][]string)
+	for _, s := range allSiblings {
+		d := filepath.Dir(s)
+		siblingsByDir[d] = append(siblingsByDir[d], s)
+	}
+
 	for _, galaFile := range files {
 		content, err := os.ReadFile(galaFile)
 		if err != nil {
@@ -1675,7 +1784,7 @@ func (b *Builder) transpileFilesToDir(files []string, allSiblings []string, outD
 		}
 
 		var siblings []string
-		for _, other := range allSiblings {
+		for _, other := range siblingsByDir[filepath.Dir(galaFile)] {
 			if other != galaFile {
 				siblings = append(siblings, other)
 			}
@@ -1693,10 +1802,15 @@ func (b *Builder) transpileFilesToDir(files []string, allSiblings []string, outD
 		if err != nil {
 			relPath = filepath.Base(galaFile)
 		}
+		// Preserve subdirectory layout under outDir. Each GALA subpackage
+		// lands in its own directory so Go can resolve imports of the form
+		// "gala-build-workspace/gen/<sub>" cleanly.
 		outName := strings.TrimSuffix(relPath, ".gala") + ".gen.go"
-		outName = strings.ReplaceAll(outName, string(filepath.Separator), "_")
-
 		outPath := filepath.Join(outDir, outName)
+
+		if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
+			return fmt.Errorf("creating gen dir for %s: %w", outName, err)
+		}
 		if err := os.WriteFile(outPath, []byte(goCode), 0644); err != nil {
 			return fmt.Errorf("writing %s: %w", outPath, err)
 		}
@@ -1707,6 +1821,24 @@ func (b *Builder) transpileFilesToDir(files []string, allSiblings []string, outD
 	}
 
 	return nil
+}
+
+// rootPackageName returns the GALA package name declared by a source file
+// that lives in projectDir (i.e. not under a subdirectory). If no such file
+// exists the function falls back to the first source file, preserving the
+// original single-package behaviour. Returns "" when no source files exist.
+func rootPackageName(sourceFiles []string, projectDir string) string {
+	absRoot, _ := filepath.Abs(projectDir)
+	for _, f := range sourceFiles {
+		abs, _ := filepath.Abs(f)
+		if filepath.Dir(abs) == absRoot {
+			return detectPackageName(f)
+		}
+	}
+	if len(sourceFiles) > 0 {
+		return detectPackageName(sourceFiles[0])
+	}
+	return ""
 }
 
 // detectPackageName reads the first line matching "package <name>" from a .gala file.
@@ -1743,6 +1875,37 @@ func findGalaTestFiles(dir string) ([]string, error) {
 	}
 
 	return files, nil
+}
+
+// findGalaTestFilesRecursive finds all _test.gala files recursively, skipping
+// the same set of hidden/build directories as findGalaFilesRecursive. This is
+// used by `gala test` so that tests declared in a subpackage (e.g.
+// state/state_test.gala) are discovered alongside tests at the project root.
+func findGalaTestFilesRecursive(dir string) ([]string, error) {
+	var files []string
+
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if info.IsDir() {
+			name := info.Name()
+			if name != "." && (strings.HasPrefix(name, ".") || name == "vendor" ||
+				name == "testdata" || strings.HasPrefix(name, "bazel-") || name == "_gala") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		if strings.HasSuffix(path, "_test.gala") {
+			files = append(files, path)
+		}
+
+		return nil
+	})
+
+	return files, err
 }
 
 // isWindows returns true if running on Windows.

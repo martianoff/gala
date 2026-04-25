@@ -1,0 +1,13 @@
+package main
+
+import . "martianoff/gala/std"
+import "martianoff/gala/examples/multipackage_subpkg/state"
+
+// Verifies that a project with one root package and one sub-directory package
+// (`state/state.gala`) is transpiled cleanly. Before FIX-001, feeding the two
+// files through a single batch analyzer tripped an ANTLR nil-pointer panic;
+// this example keeps that regression out.
+func main() {
+    val s = state.NewState("root")
+    Println(s.Greet())
+}

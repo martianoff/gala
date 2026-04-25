@@ -116,8 +116,9 @@ func TestX() {}
 }
 
 // TestTestGenFileName verifies that the helper matches the naming used by
-// transpileFilesToDir (subdir separators folded to '_', .gala suffix replaced
-// by .gen.go).
+// transpileFilesToDir. Subdirectory layout is preserved so that each GALA
+// subpackage lands in its own gen/<sub>/ folder and Go can resolve
+// cross-package imports without flattening.
 func TestTestGenFileName(t *testing.T) {
 	projectDir := filepath.Clean("/p")
 	cases := []struct {
@@ -126,7 +127,7 @@ func TestTestGenFileName(t *testing.T) {
 		want string
 	}{
 		{"root file", filepath.Join(projectDir, "main.gala"), "main.gen.go"},
-		{"subdir file", filepath.Join(projectDir, "sub", "lib.gala"), "sub_lib.gen.go"},
+		{"subdir file", filepath.Join(projectDir, "sub", "lib.gala"), filepath.Join("sub", "lib.gen.go")},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -168,6 +169,69 @@ func TestFindGalaFilesRecursive_IncludesSubdirs(t *testing.T) {
 	}
 	sort.Strings(want)
 	require.Equal(t, want, got)
+}
+
+// TestFindGalaTestFilesRecursive_IncludesSubdirs verifies that the recursive
+// test-file walker used by `gala test` discovers _test.gala files in
+// subpackages so that a library layout with state/state_test.gala is not
+// silently ignored.
+func TestFindGalaTestFilesRecursive_IncludesSubdirs(t *testing.T) {
+	projectDir := t.TempDir()
+
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "root_test.gala"),
+		[]byte("package repro\nfunc TestRoot() {}"), 0644))
+
+	subDir := filepath.Join(projectDir, "state")
+	require.NoError(t, os.MkdirAll(subDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(subDir, "state_test.gala"),
+		[]byte("package state\nfunc TestState() {}"), 0644))
+
+	// Non-test files must NOT be returned.
+	require.NoError(t, os.WriteFile(filepath.Join(subDir, "state.gala"),
+		[]byte("package state\nfunc StateFn() string = \"hi\""), 0644))
+
+	got, err := findGalaTestFilesRecursive(projectDir)
+	require.NoError(t, err)
+
+	sort.Strings(got)
+	want := []string{
+		filepath.Join(projectDir, "root_test.gala"),
+		filepath.Join(subDir, "state_test.gala"),
+	}
+	sort.Strings(want)
+	require.Equal(t, want, got)
+}
+
+// TestRootPackageName_PrefersRootDirFile verifies that classification of the
+// project kind (main vs library) looks at a file that actually lives in the
+// project root — a subpackage named `main` (unusual, but possible) must not
+// flip the whole project into main-package mode.
+func TestRootPackageName_PrefersRootDirFile(t *testing.T) {
+	projectDir := filepath.Clean("/p")
+	sources := []string{
+		filepath.Join(projectDir, "sub", "lib.gala"),
+		filepath.Join(projectDir, "root.gala"),
+	}
+
+	// rootPackageName opens the file to read the package clause, so we can't
+	// test against synthetic paths directly. Build a real temp layout.
+	tmp := t.TempDir()
+	rootFile := filepath.Join(tmp, "root.gala")
+	require.NoError(t, os.WriteFile(rootFile, []byte("package repro\n"), 0644))
+	subDir := filepath.Join(tmp, "sub")
+	require.NoError(t, os.MkdirAll(subDir, 0755))
+	subFile := filepath.Join(subDir, "lib.gala")
+	require.NoError(t, os.WriteFile(subFile, []byte("package sub\n"), 0644))
+
+	// Iteration order matters: put the subpackage first to ensure we still
+	// surface the root package name.
+	got := rootPackageName([]string{subFile, rootFile}, tmp)
+	require.Equal(t, "repro", got, "root package should be preferred over sub packages")
+
+	// Sanity check that the test's projectDir/sources vars compile (kept to
+	// satisfy the linter and document intent).
+	_ = sources
+	_ = projectDir
 }
 
 // TestResolveEffectiveDepDir_LocalReplace verifies that a `replace` directive

@@ -36,6 +36,8 @@ filegroup(
         "multi_file_option/main.gala",
         "multi_file_types/main.gala",
         "multi_file_types/model.gala",
+        "multipackage_subpkg/main.gala",
+        "multipackage_subpkg/state/state.gala",
         "newimmutable_nil.gala",
         "slice_unwrap/main.gala",
         "slice_unwrap/model.gala",
@@ -1427,6 +1429,24 @@ gala_library(
     srcs = ["cross_pkg_try_match/corelib/corelib.gala"],
     importpath = "martianoff/gala/examples/cross_pkg_try_match/corelib",
     visibility = ["//visibility:public"],
+)
+
+# Regression: library-with-sublibrary layout used to panic the analyzer
+# (FIX-001). The example keeps a main package at examples/multipackage_subpkg/
+# with a sibling subpackage in examples/multipackage_subpkg/state/ — the
+# combination that reproduced the ANTLR nil-pointer dereference.
+gala_library(
+    name = "multipackage_subpkg_state",
+    srcs = ["multipackage_subpkg/state/state.gala"],
+    importpath = "martianoff/gala/examples/multipackage_subpkg/state",
+    visibility = ["//visibility:public"],
+)
+
+gala_test(
+    name = "multipackage_subpkg",
+    src = "multipackage_subpkg/main.gala",
+    expected = "multipackage_subpkg/main.out",
+    gala_deps = [":multipackage_subpkg_state"],
 )
 
 gala_test(
