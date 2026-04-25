@@ -120,6 +120,29 @@ func (t *galaASTTransformer) resolveExpectedFuncArgType(ctx callContext, argIdx 
 		}
 	}
 
+	// Non-FuncType expected type with resolved generic substitution: propagate
+	// the concrete element type so downstream inference (e.g. sealed-variant
+	// type-arg propagation in transformCallWithArgsCtx) can use it. For
+	// variadic functions, GALA records the trailing param as a single element
+	// type, so any arg index past the declared count falls back to the last
+	// param. Only emit when substitution actually produces a concrete type;
+	// passing through a bare type param like `T` is not useful here.
+	if expectedType.IsNil() && ctx.funcMeta != nil && len(ctx.typeSubst) > 0 && len(ctx.funcMeta.ParamTypes) > 0 {
+		paramIdx := argIdx
+		if paramIdx >= len(ctx.funcMeta.ParamTypes) {
+			paramIdx = len(ctx.funcMeta.ParamTypes) - 1
+		}
+		paramType := ctx.funcMeta.ParamTypes[paramIdx]
+		if !paramType.IsNil() {
+			if _, isFunc := paramType.(transpiler.FuncType); !isFunc {
+				substituted := t.substituteTranspilerTypeParams(paramType, ctx.typeSubst)
+				if substituted != nil && !substituted.IsNil() && substituted.String() != paramType.String() {
+					expectedType = substituted
+				}
+			}
+		}
+	}
+
 	// Fall back to Go type info for lambda expected types
 	if expectedType.IsNil() && ctx.goParamTypes != nil && argIdx < len(ctx.goParamTypes) {
 		if ft, ok := ctx.goParamTypes[argIdx].(transpiler.FuncType); ok {
