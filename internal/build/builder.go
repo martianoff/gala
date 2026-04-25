@@ -504,7 +504,10 @@ func (b *Builder) transpileWithSourceDir() error {
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
 
-	// Step 1: Transpile library files (project root) into gen/
+	// Step 1: Transpile library files (project root) into gen/.
+	// One BatchAnalyzer for all library files so analyzedPkgs (std,
+	// collection_immutable, etc.) and parsedFileCache (sibling .gala
+	// trees) are shared across the loop instead of paid per file.
 	libFiles, err := findGalaFiles(b.workspace.ProjectDir)
 	if err != nil {
 		return fmt.Errorf("finding library files: %w", err)
@@ -512,6 +515,7 @@ func (b *Builder) transpileWithSourceDir() error {
 	if b.verbose {
 		fmt.Printf("  Transpiling %d library files...\n", len(libFiles))
 	}
+	libBatch := analyzer.NewBatchAnalyzer(p, searchPaths, b.workspace.ProjectDir)
 	for _, galaFile := range libFiles {
 		content, err := os.ReadFile(galaFile)
 		if err != nil {
@@ -523,13 +527,8 @@ func (b *Builder) transpileWithSourceDir() error {
 				siblings = append(siblings, other)
 			}
 		}
-		var a transpiler.Analyzer
-		if len(siblings) > 0 {
-			a = analyzer.NewGalaAnalyzerWithPackageFiles(p, searchPaths, siblings, b.workspace.ProjectDir)
-		} else {
-			a = analyzer.NewGalaAnalyzer(p, searchPaths, b.workspace.ProjectDir)
-		}
-		t := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+		libBatch.SetPackageFiles(siblings)
+		t := transpiler.NewGalaToGoTranspiler(p, libBatch, tr, g)
 		goCode, err := t.Transpile(string(content), galaFile)
 		if err != nil {
 			return fmt.Errorf("transpiling %s: %w", galaFile, err)
@@ -565,6 +564,13 @@ func (b *Builder) transpileWithSourceDir() error {
 		return fmt.Errorf("creating consumer dir: %w", err)
 	}
 
+	// Reuse libBatch for consumer files: SetPackageFiles is per-call so
+	// the consumer's sibling list does not collide with the library's.
+	// The win is that analyzedPkgs (std, collection_immutable, etc.) and
+	// parsedFileCache (every library .gala already parsed during Step 1)
+	// carry over — so the consumer's `import "<project>"` resolution does
+	// not re-read or re-parse the library files when it analyzePackages
+	// the project's own module.
 	for _, galaFile := range consumerFiles {
 		content, err := os.ReadFile(galaFile)
 		if err != nil {
@@ -576,13 +582,8 @@ func (b *Builder) transpileWithSourceDir() error {
 				siblings = append(siblings, other)
 			}
 		}
-		var a transpiler.Analyzer
-		if len(siblings) > 0 {
-			a = analyzer.NewGalaAnalyzerWithPackageFiles(p, searchPaths, siblings, b.workspace.ProjectDir)
-		} else {
-			a = analyzer.NewGalaAnalyzer(p, searchPaths, b.workspace.ProjectDir)
-		}
-		t := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+		libBatch.SetPackageFiles(siblings)
+		t := transpiler.NewGalaToGoTranspiler(p, libBatch, tr, g)
 		goCode, err := t.Transpile(string(content), galaFile)
 		if err != nil {
 			return fmt.Errorf("transpiling %s: %w", galaFile, err)

@@ -26,12 +26,13 @@ import (
 // In normal compilation flow, std is loaded via implicit import in Analyze().
 func GetBaseMetadata(p transpiler.GalaParser, searchPaths []string) *transpiler.RichAST {
 	a := &galaAnalyzer{
-		parser:       p,
-		searchPaths:  searchPaths,
-		analyzedPkgs: make(map[string]*transpiler.RichAST),
+		parser:           p,
+		searchPaths:      searchPaths,
+		analyzedPkgs:     make(map[string]*transpiler.RichAST),
 		checkedDirs:      make(map[string]bool),
 		siblingTreeCache: make(map[string]*siblingCacheEntry),
-		resolver:     module.NewResolver(searchPaths),
+		parsedFileCache:  make(map[string]*parsedFileEntry),
+		resolver:         module.NewResolver(searchPaths),
 	}
 
 	stdAST, err := a.analyzePackage(registry.StdPackageName)
@@ -78,6 +79,13 @@ type galaAnalyzer struct {
 	// 2.6s on Windows).
 	siblingTreeCache map[string]*siblingCacheEntry
 
+	// Per-file parse cache used by the explicit-package-files branch (and
+	// reusable by anyone else that wants to load + parse a .gala by path).
+	// Keyed by canonical absolute path; invalidated by mtime+size mismatch.
+	// Survives BatchAnalyzer.SetPackageFiles so a 37-file package amortizes
+	// sibling parsing to roughly N parses instead of N×(N−1).
+	parsedFileCache map[string]*parsedFileEntry
+
 	// When true, ensureTranspiled is a no-op — used by the LSP, where the
 	// generated .gen.go files are never consumed (analyzePackage reads .gala
 	// directly to extract the metadata diagnostics need). The disk write is
@@ -95,6 +103,16 @@ type siblingCacheEntry struct {
 	trees   []*grammar.SourceFileContext
 	paths   []string
 	dirSize int
+}
+
+// parsedFileEntry is one slot in galaAnalyzer.parsedFileCache. The
+// (mtime, size) pair is the staleness check: if either changes between
+// stat calls, the cached tree is dropped and the file is re-parsed.
+type parsedFileEntry struct {
+	tree    *grammar.SourceFileContext
+	pkgName string
+	mtime   time.Time
+	size    int64
 }
 
 // resolveCacheRoot returns the project root for the analysis disk cache.
@@ -117,13 +135,14 @@ func NewGalaAnalyzer(p transpiler.GalaParser, searchPaths []string, projectRoot 
 		root = projectRoot[0]
 	}
 	return &galaAnalyzer{
-		parser:       p,
-		searchPaths:  searchPaths,
-		analyzedPkgs: make(map[string]*transpiler.RichAST),
+		parser:           p,
+		searchPaths:      searchPaths,
+		analyzedPkgs:     make(map[string]*transpiler.RichAST),
 		checkedDirs:      make(map[string]bool),
 		siblingTreeCache: make(map[string]*siblingCacheEntry),
-		resolver:     module.NewResolver(searchPaths),
-		cache:        newAnalysisCache(resolveCacheRoot(root)),
+		parsedFileCache:  make(map[string]*parsedFileEntry),
+		resolver:         module.NewResolver(searchPaths),
+		cache:            newAnalysisCache(resolveCacheRoot(root)),
 	}
 }
 
@@ -136,14 +155,15 @@ func NewGalaAnalyzerWithBase(base *transpiler.RichAST, p transpiler.GalaParser, 
 		root = projectRoot[0]
 	}
 	return &galaAnalyzer{
-		baseMetadata: base,
-		parser:       p,
-		searchPaths:  searchPaths,
-		analyzedPkgs: make(map[string]*transpiler.RichAST),
+		baseMetadata:     base,
+		parser:           p,
+		searchPaths:      searchPaths,
+		analyzedPkgs:     make(map[string]*transpiler.RichAST),
 		checkedDirs:      make(map[string]bool),
 		siblingTreeCache: make(map[string]*siblingCacheEntry),
-		resolver:     module.NewResolver(searchPaths),
-		cache:        newAnalysisCache(resolveCacheRoot(root)),
+		parsedFileCache:  make(map[string]*parsedFileEntry),
+		resolver:         module.NewResolver(searchPaths),
+		cache:            newAnalysisCache(resolveCacheRoot(root)),
 	}
 }
 
@@ -158,14 +178,15 @@ func NewGalaAnalyzerWithPackageFiles(p transpiler.GalaParser, searchPaths []stri
 		root = projectRoot[0]
 	}
 	return &galaAnalyzer{
-		parser:       p,
-		searchPaths:  searchPaths,
-		packageFiles: packageFiles,
-		analyzedPkgs: make(map[string]*transpiler.RichAST),
+		parser:           p,
+		searchPaths:      searchPaths,
+		packageFiles:     packageFiles,
+		analyzedPkgs:     make(map[string]*transpiler.RichAST),
 		checkedDirs:      make(map[string]bool),
 		siblingTreeCache: make(map[string]*siblingCacheEntry),
-		resolver:     module.NewResolver(searchPaths),
-		cache:        newAnalysisCache(resolveCacheRoot(root)),
+		parsedFileCache:  make(map[string]*parsedFileEntry),
+		resolver:         module.NewResolver(searchPaths),
+		cache:            newAnalysisCache(resolveCacheRoot(root)),
 	}
 }
 
@@ -186,6 +207,7 @@ func NewGalaAnalyzerForLSP(p transpiler.GalaParser, searchPaths []string, projec
 		analyzedPkgs:        make(map[string]*transpiler.RichAST),
 		checkedDirs:         make(map[string]bool),
 		siblingTreeCache:    make(map[string]*siblingCacheEntry),
+		parsedFileCache:     make(map[string]*parsedFileEntry),
 		resolver:            module.NewResolver(searchPaths),
 		cache:               newAnalysisCache(resolveCacheRoot(root)),
 		skipTranspileToDisk: true,
@@ -210,13 +232,14 @@ func NewBatchAnalyzer(p transpiler.GalaParser, searchPaths []string, projectRoot
 	}
 	return &BatchAnalyzer{
 		inner: &galaAnalyzer{
-			parser:       p,
-			searchPaths:  searchPaths,
-			analyzedPkgs: make(map[string]*transpiler.RichAST),
+			parser:           p,
+			searchPaths:      searchPaths,
+			analyzedPkgs:     make(map[string]*transpiler.RichAST),
 			checkedDirs:      make(map[string]bool),
-		siblingTreeCache: make(map[string]*siblingCacheEntry),
-			resolver:     module.NewResolver(searchPaths),
-			cache:        newAnalysisCache(resolveCacheRoot(root)),
+			siblingTreeCache: make(map[string]*siblingCacheEntry),
+			parsedFileCache:  make(map[string]*parsedFileEntry),
+			resolver:         module.NewResolver(searchPaths),
+			cache:            newAnalysisCache(resolveCacheRoot(root)),
 		},
 	}
 }
@@ -263,26 +286,23 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 	var siblingTrees []*grammar.SourceFileContext
 	var siblingPaths []string // parallel slice: file path for each siblingTree
 	if len(a.packageFiles) > 0 {
-		// Explicit package files: parse each one, validate package name, add to siblings
+		// Explicit package files: parse each one (with cache), validate
+		// package name, add to siblings. The cache is content-addressed by
+		// (path, mtime, size) and survives across SetPackageFiles calls so
+		// a 37-file package amortizes sibling parsing across the batch.
 		for _, pf := range a.packageFiles {
 			if isSameFile(pf, filePath) {
 				continue // skip self (resolves symlinks for Bazel on Linux)
 			}
-			content, err := ioutil.ReadFile(pf)
+			otherSF, otherPkgName, err := a.parseFileCached(pf)
 			if err != nil {
+				return nil, err
+			}
+			if otherSF == nil {
 				continue
 			}
-			tree, err := a.parser.Parse(string(content))
-			if err != nil {
-				continue
-			}
-			otherSF, ok := tree.(*grammar.SourceFileContext)
-			if !ok {
-				continue
-			}
-			pkgClause := otherSF.PackageClause().(*grammar.PackageClauseContext)
-			otherPkgName := pkgClause.Identifier().GetText()
 			if otherPkgName != pkgName {
+				pkgClause := otherSF.PackageClause().(*grammar.PackageClauseContext)
 				return nil, galaerr.NewCodedSemanticError(
 					galaerr.CodeDuplicatePackageName,
 					pkgClause.GetStart().GetLine(), pkgClause.GetStart().GetColumn(),
@@ -1953,12 +1973,11 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 	for _, f := range files {
 		if !f.IsDir() && filepath.Ext(f.Name()) == ".gala" && !strings.HasSuffix(f.Name(), "_test.gala") {
 			filePath := filepath.Join(dirPath, f.Name())
-			content, err := ioutil.ReadFile(filePath)
-			if err != nil {
-				continue
-			}
-			tree, err := a.parser.Parse(string(content))
-			if err != nil {
+			// Use parseFileCached so when the same files were already parsed
+			// during a sibling pass (typical for the consumer step that
+			// imports the project's own library), the re-parse is skipped.
+			tree, _, err := a.parseFileCached(filePath)
+			if err != nil || tree == nil {
 				continue
 			}
 			res, err := a.Analyze(tree, filePath)
@@ -2251,12 +2270,13 @@ func (a *galaAnalyzer) ensureTranspiled(importPath string) error {
 		// Analyze without recursion by using a separate analyzer
 		// This avoids circular dependency issues
 		tempAnalyzer := &galaAnalyzer{
-			parser:       a.parser,
-			searchPaths:  a.searchPaths,
-			analyzedPkgs: make(map[string]*transpiler.RichAST),
+			parser:           a.parser,
+			searchPaths:      a.searchPaths,
+			analyzedPkgs:     make(map[string]*transpiler.RichAST),
 			checkedDirs:      make(map[string]bool),
-		siblingTreeCache: make(map[string]*siblingCacheEntry),
-			resolver:     a.resolver,
+			siblingTreeCache: make(map[string]*siblingCacheEntry),
+			parsedFileCache:  make(map[string]*parsedFileEntry),
+			resolver:         a.resolver,
 		}
 
 		richAST, err := tempAnalyzer.Analyze(tree, srcPath)
@@ -2874,6 +2894,63 @@ func typesCompatibleForDefault(paramType, literalType string) bool {
 }
 
 var _ transpiler.Analyzer = (*galaAnalyzer)(nil)
+
+// parseFileCached reads, parses, and validates a .gala file's package
+// clause, caching the result on the analyzer keyed by canonical absolute
+// path. Cache entries are invalidated when the file's mtime or size
+// changes between calls. Returns (nil, "", nil) for non-readable or
+// non-parseable files so the caller can decide whether that's fatal —
+// matching the silent-skip behavior of the inline parsing the
+// explicit-package-files branch used to do.
+//
+// Used by the explicit-package-files branch in Analyze (to amortize
+// sibling parsing across BatchAnalyzer calls) and by analyzePackage (so
+// when the same project files were just parsed during sibling discovery,
+// the import-resolution pass does not redo the work).
+func (a *galaAnalyzer) parseFileCached(path string) (*grammar.SourceFileContext, string, error) {
+	canonPath, err := filepath.Abs(path)
+	if err != nil {
+		canonPath = path
+	}
+	info, err := os.Stat(canonPath)
+	if err != nil {
+		return nil, "", nil
+	}
+	if a.parsedFileCache != nil {
+		if entry, ok := a.parsedFileCache[canonPath]; ok {
+			if entry.mtime.Equal(info.ModTime()) && entry.size == info.Size() {
+				return entry.tree, entry.pkgName, nil
+			}
+			delete(a.parsedFileCache, canonPath)
+		}
+	}
+	content, err := ioutil.ReadFile(canonPath)
+	if err != nil {
+		return nil, "", nil
+	}
+	tree, err := a.parser.Parse(string(content))
+	if err != nil {
+		return nil, "", nil
+	}
+	otherSF, ok := tree.(*grammar.SourceFileContext)
+	if !ok {
+		return nil, "", nil
+	}
+	pkgClause, ok := otherSF.PackageClause().(*grammar.PackageClauseContext)
+	if !ok || pkgClause.Identifier() == nil {
+		return nil, "", nil
+	}
+	pkgName := pkgClause.Identifier().GetText()
+	if a.parsedFileCache != nil {
+		a.parsedFileCache[canonPath] = &parsedFileEntry{
+			tree:    otherSF,
+			pkgName: pkgName,
+			mtime:   info.ModTime(),
+			size:    info.Size(),
+		}
+	}
+	return otherSF, pkgName, nil
+}
 
 // lookupSiblingCache returns parsed sibling trees from the in-memory
 // cache, filtered for the current file. Returns (nil, nil, nil) on a
