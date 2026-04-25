@@ -125,6 +125,94 @@ func TestTranspileWithSourceDir_UsesBatchAnalyzer(t *testing.T) {
 	})
 }
 
+// TestTranspileWithSourceDir_DiscoversSubpackagesRecursively is a static
+// AST regression guard for the multi-package run flow: when the user runs
+// `gala run subdir/main.gala` against a project whose root has subpackages
+// (e.g., a top-level library plus state/), the library transpilation must
+// walk the project root recursively. Otherwise the subpackage's .gala
+// files never reach gen/ and `go build` fails with
+//
+//	package gala-build-workspace/gen/state is not in std (...)
+//
+// Regression signature: a future change that switches the library file
+// discovery in transpileWithSourceDir back to the non-recursive
+// findGalaFiles. The test parses builder.go, finds the function, and
+// asserts that within its body findGalaFilesRecursive is called and the
+// non-recursive findGalaFiles is not (the consumer-side findGalaFiles
+// call is deliberately allowed because the consumer dir is by convention
+// a single flat package main).
+func TestTranspileWithSourceDir_DiscoversSubpackagesRecursively(t *testing.T) {
+	fset := token.NewFileSet()
+	src := findBuilderSource(t)
+	file, err := parser.ParseFile(fset, src, nil, parser.ParseComments)
+	if err != nil {
+		t.Fatalf("parse builder.go: %v", err)
+	}
+
+	var fn *ast.FuncDecl
+	for _, decl := range file.Decls {
+		fd, ok := decl.(*ast.FuncDecl)
+		if !ok {
+			continue
+		}
+		if fd.Name.Name == "transpileWithSourceDir" && fd.Recv != nil {
+			fn = fd
+			break
+		}
+	}
+	if fn == nil {
+		t.Fatal("could not find (b *Builder) transpileWithSourceDir in builder.go")
+	}
+
+	// The library-discovery call must be the recursive variant. We assert
+	// findGalaFilesRecursive appears at least once. The non-recursive
+	// findGalaFiles is still expected for the consumer subtree (single
+	// flat package main), so we verify findGalaFilesRecursive is bound
+	// to a sourceDir-aware library scan by checking its argument.
+	sawRecursiveLibScan := false
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		name := callName(call)
+		short := name
+		if dot := strings.LastIndex(name, "."); dot >= 0 {
+			short = name[dot+1:]
+		}
+		if short != "findGalaFilesRecursive" {
+			return true
+		}
+		// Argument should reference workspace project dir, not sourceDir.
+		if len(call.Args) != 1 {
+			return true
+		}
+		if sel, ok := call.Args[0].(*ast.SelectorExpr); ok {
+			argText := exprText(sel)
+			if strings.Contains(argText, "ProjectDir") {
+				sawRecursiveLibScan = true
+			}
+		}
+		return true
+	})
+	if !sawRecursiveLibScan {
+		t.Error("transpileWithSourceDir does not call findGalaFilesRecursive on workspace.ProjectDir; subpackages of the project root will be missing from gen/, breaking `gala run subdir/file.gala` for projects that have e.g. a state/ subpackage (Go reports: package gala-build-workspace/gen/<sub> is not in std).")
+	}
+}
+
+// exprText reproduces the dotted form of a SelectorExpr like b.workspace.ProjectDir
+// so a string check can match against substrings. Returns "" for shapes
+// the test does not need to recognize.
+func exprText(sel *ast.SelectorExpr) string {
+	switch x := sel.X.(type) {
+	case *ast.Ident:
+		return x.Name + "." + sel.Sel.Name
+	case *ast.SelectorExpr:
+		return exprText(x) + "." + sel.Sel.Name
+	}
+	return sel.Sel.Name
+}
+
 // callName returns the textual name of a call expression's callee.
 // Handles plain identifiers ("Foo") and selectors ("pkg.Foo", "x.Foo").
 // Returns "" for indirect calls we can't statically resolve — this test
