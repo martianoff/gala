@@ -1,0 +1,9 @@
+package step
+
+// A generic sealed type whose type parameter does not appear in any case
+// field. The transpiler must still infer the parameter at the call site by
+// looking at the enclosing element type (e.g., ArrayOf[step.Step[int]](...)).
+sealed type Step[T any] {
+    case StepA(N int)
+    case StepB(Text string)
+}

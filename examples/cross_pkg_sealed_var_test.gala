@@ -1,0 +1,29 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+import "martianoff/gala/examples/cross_pkg_sealed_var/step"
+
+// Verifies that a generic sealed type imported from another package picks up
+// its type parameter from the enclosing call context. Without the fix, the
+// bare `step.StepA(...)` reference fell through the type-arg injection (the
+// helper only handled bare *ast.Ident shapes) and Go rejected the result with
+// "cannot use generic type without instantiation".
+func main() {
+    val named = ArrayOf[step.Step[int]](
+        step.StepA(N = 1),
+        step.StepB(Text = "x"),
+    )
+    Println(s"named=${named.Length()}")
+
+    val positional = ArrayOf[step.Step[int]](
+        step.StepA(2),
+        step.StepB("y"),
+    )
+    Println(s"positional=${positional.Length()}")
+
+    val explicit = ArrayOf[step.Step[int]](
+        step.StepA[int](3),
+        step.StepB[int](Text = "z"),
+    )
+    Println(s"explicit=${explicit.Length()}")
+}
