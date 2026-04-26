@@ -2118,7 +2118,25 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 	// re-export callables from another Go package via `var X = other.X`
 	// (e.g. concurrent re-exporting go_interop's helpers) silently collide
 	// at Go compile time instead of producing a clean GALA-level error.
-	a.extractGoFileExports(files, dirPath, relPath, pkgAST)
+	//
+	// In mixed GALA+Go packages we deliberately *exclude* .gen.go files from
+	// this scan: those files are auto-generated derivatives of the .gala
+	// source and contribute the exact same symbols that already entered
+	// pkgAST.Types/Functions through the GALA analyzer above. Re-extracting
+	// them here is at best redundant and at worst actively harmful — a stale
+	// .gen.go left behind after its .gala counterpart was moved/renamed
+	// (e.g. extracted into a subpackage) would otherwise re-introduce a
+	// phantom export under the parent package's name and trip the dot-import
+	// collision check when a sibling subpackage re-exports the same symbol.
+	// Hand-written .go (non-.gen.go) files are still scanned because that's
+	// where facade-pattern `var X = other.X` re-exports live.
+	//
+	// Pure cross-module consumption — where the package directory only
+	// contains .gen.go files — is not affected: pkgAST.Types is empty in
+	// that branch and the include-generated switch below will pull metadata
+	// from the .gen.go files via AnalyzeGoFilesIncludingGenerated.
+	includeGenerated := len(pkgAST.Types) == 0
+	a.extractGoFileExports(files, dirPath, relPath, pkgAST, includeGenerated)
 	// Always extract Go type information from .go files, even in mixed GALA+Go packages.
 	// This ensures Go-defined functions and variables (e.g., concurrent.Spawn) are available
 	// for type inference when GALA code calls them.
@@ -2128,7 +2146,6 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 	// as compiled artifacts, e.g., across Bazel modules) still expose enough
 	// metadata for downstream sealed-case Apply lowering and similar shapes
 	// that depend on knowing a type has an `Apply` method.
-	includeGenerated := len(pkgAST.Types) == 0
 	var goInfo *transpiler.GoTypeInfo
 	if includeGenerated {
 		goInfo = AnalyzeGoFilesIncludingGenerated(dirPath)
@@ -2313,15 +2330,26 @@ var goExportedConstRe = regexp.MustCompile(`(?m)^const\s+([A-Z]\w*)\s*(=|\w)`)
 // goPkgNameRe matches the package declaration in Go files.
 var goPkgNameRe = regexp.MustCompile(`(?m)^package\s+(\w+)`)
 
-// extractGoFileExports scans .go files in a directory for exported symbol names.
-// These are stored in pkgAST.GoExports (separate from Types/Functions to avoid
-// interfering with type resolution). Used for dot-import clash detection.
-func (a *galaAnalyzer) extractGoFileExports(files []os.FileInfo, dirPath, relPath string, pkgAST *transpiler.RichAST) {
+// extractGoFileExports scans .go files in a directory for exported symbol names
+// and stores them in pkgAST.GoExports (separate from Types/Functions so they
+// don't interfere with type resolution). Used for dot-import clash detection.
+//
+// includeGenerated controls whether auto-generated `.gen.go` files contribute
+// to the result. Pass true only when the package is consumed without GALA
+// source (cross-module compiled artifacts); when false, .gen.go files are
+// skipped because their contents are duplicates of the .gala source already
+// reflected in pkgAST.Types/Functions, and a stale .gen.go (left behind
+// after its .gala counterpart was moved) would otherwise pollute GoExports
+// with phantom symbols that the dot-import collision check would then flag.
+func (a *galaAnalyzer) extractGoFileExports(files []os.FileInfo, dirPath, relPath string, pkgAST *transpiler.RichAST, includeGenerated bool) {
 	var symbols []string
 	seen := make(map[string]bool)
 
 	for _, f := range files {
 		if f.IsDir() || filepath.Ext(f.Name()) != ".go" || strings.HasSuffix(f.Name(), "_test.go") {
+			continue
+		}
+		if !includeGenerated && strings.HasSuffix(f.Name(), ".gen.go") {
 			continue
 		}
 		content, err := ioutil.ReadFile(filepath.Join(dirPath, f.Name()))
