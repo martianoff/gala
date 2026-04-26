@@ -2131,41 +2131,29 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 	// Hand-written .go (non-.gen.go) files are still scanned because that's
 	// where facade-pattern `var X = other.X` re-exports live.
 	//
-	// Pure cross-module consumption — where the package directory only
-	// contains .gen.go files — is not affected: pkgAST.Types is empty in
-	// that branch and the include-generated switch below will pull metadata
-	// from the .gen.go files via AnalyzeGoFilesIncludingGenerated.
+	// When no .gala source contributed metadata for this package (e.g., the
+	// directory only contains .gen.go from a precompiled artifact), allow
+	// .gen.go files to participate so cross-module GoExports stay populated.
 	includeGenerated := len(pkgAST.Types) == 0
 	a.extractGoFileExports(files, dirPath, relPath, pkgAST, includeGenerated)
 	// Always extract Go type information from .go files, even in mixed GALA+Go packages.
 	// This ensures Go-defined functions and variables (e.g., concurrent.Spawn) are available
 	// for type inference when GALA code calls them.
-	//
-	// When no .gala source contributed type metadata for this package, also
-	// pull in .gen.go files so externally-built GALA libraries (consumed only
-	// as compiled artifacts, e.g., across Bazel modules) still expose enough
-	// metadata for downstream sealed-case Apply lowering and similar shapes
-	// that depend on knowing a type has an `Apply` method.
-	var goInfo *transpiler.GoTypeInfo
-	if includeGenerated {
-		goInfo = AnalyzeGoFilesIncludingGenerated(dirPath)
-	} else {
-		goInfo = AnalyzeGoFiles(dirPath)
-	}
+	goInfo := AnalyzeGoFiles(dirPath)
 	if len(goInfo.Functions) > 0 || len(goInfo.Types) > 0 || len(goInfo.Variables) > 0 || len(goInfo.TypeAliases) > 0 {
 		if pkgAST.GoTypeInfo == nil {
 			pkgAST.GoTypeInfo = transpiler.NewGoTypeInfo()
 		}
 		pkgAST.GoTypeInfo.Merge(goInfo)
 	}
-	// Synthesize TypeMetadata entries for Go-defined types that look like
-	// they originated from a GALA declaration (struct kind with at least one
-	// exported method). Without this, packages consumed only as precompiled
-	// .gen.go (e.g., across Bazel modules) leave the consumer's analyzer with
-	// no record of sealed-type cases, and the transformer falls back to a
-	// plain function-call shape which Go reads as a type conversion on the
-	// empty struct. We only run this when no .gala source contributed
-	// metadata for the package, so in-repo analysis is unchanged.
+	// Synthesize TypeMetadata entries for Go-defined struct types when no
+	// .gala source contributed metadata for this package. This covers
+	// pure-Go packages (e.g. a hand-written `bridge.go` exposing a generic
+	// struct) so the transformer can lower constructor calls to struct
+	// literals or `{}.Apply()` shapes rather than bare function-call form
+	// that Go would interpret as a type conversion. In-repo packages with
+	// .gala source are unaffected because their TypeMetadata is already
+	// populated by the GALA analyzer.
 	if includeGenerated {
 		synthesizeTypeMetadataFromGo(pkgAST, goInfo)
 	}
@@ -2179,12 +2167,11 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 }
 
 // synthesizeTypeMetadataFromGo populates pkgAST.Types with TypeMetadata
-// entries derived from Go type information (`pkgAST.GoTypeInfo` typically
-// extracted from .gen.go files). It is intentionally narrow: a struct with
-// exported methods becomes a TypeMetadata so the transformer can find the
-// type's Apply method when the call site is `Type[T]()` or `Type()`. Types
-// that already have a TypeMetadata entry — e.g. from a real .gala source —
-// are left untouched.
+// entries derived from Go type information (`pkgAST.GoTypeInfo`). It is
+// intentionally narrow: a struct type becomes a TypeMetadata so the
+// transformer can find its methods (e.g. Apply) and field names. Types
+// that already have a TypeMetadata entry from a real .gala source are
+// left untouched, so this is a no-op for packages with .gala source.
 //
 // The synthesized metadata is the minimum required for the call dispatcher's
 // gates (zero-arg Apply, generic Apply detection, struct-literal construction)
