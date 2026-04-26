@@ -323,12 +323,17 @@ func extractTypeData(tn *types.TypeName, forceKind string) *transpiler.GoTypeDat
 	// Set underlying type
 	data.Underlying = goTypeToTranspilerType(typ.Underlying())
 
-	// Extract struct fields
+	// Extract struct fields. Preserve declaration order in FieldOrder so
+	// downstream consumers that build positional composite literals
+	// (synthesizeTypeMetadataFromGo's FieldNames slice) match the Go-side
+	// field layout instead of inheriting the random iteration order of the
+	// Fields map.
 	if s, ok := typ.Underlying().(*types.Struct); ok {
 		for i := 0; i < s.NumFields(); i++ {
 			f := s.Field(i)
 			if f.Exported() {
 				data.Fields[f.Name()] = goTypeToTranspilerType(f.Type())
+				data.FieldOrder = append(data.FieldOrder, f.Name())
 			}
 		}
 	}

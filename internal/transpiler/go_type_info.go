@@ -34,6 +34,7 @@ type GoParam struct {
 type GoTypeData struct {
 	Kind       string                    // "struct", "interface", "alias", "named"
 	Fields     map[string]Type           // struct fields (exported only)
+	FieldOrder []string                  // exported struct fields in declaration order (parallel keys to Fields)
 	Methods    map[string]*GoFuncSignature // method set (exported only)
 	Underlying Type                      // underlying type for aliases and named types
 	TypeParams []string                  // type parameter names for generic types (empty for non-generic)
