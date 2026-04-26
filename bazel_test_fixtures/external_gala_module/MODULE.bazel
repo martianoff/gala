@@ -1,0 +1,19 @@
+"""Synthetic Bazel module that simulates a separately published GALA library.
+
+The main gala_simple workspace registers this directory as a Bazel external
+module via bazel_dep + local_path_override so that any consumer referencing
+@external_gala_module//... drives the genrule's --search machinery through
+the same code path Bazel uses for genuine cross-repository dependencies
+(source files end up in bazel-out/.../external/<repo>+/...).
+
+This is the fixture half of the cross-module Apply lowering regression test:
+the consumer lives at //bazel_test_fixtures/external_gala_consumer.
+"""
+
+module(
+    name = "external_gala_module",
+    version = "0.0.0",
+)
+
+bazel_dep(name = "gala", version = "1.0.0")
+bazel_dep(name = "rules_go", version = "0.59.0")

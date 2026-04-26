@@ -1,0 +1,29 @@
+package main
+
+import . "martianoff/external_gala_module/effects"
+
+// Cross-module consumer of the synthetic external_gala_module library.
+//
+// This file is transpiled by gala_transpile with
+// gala_deps = ["@external_gala_module//effects"] which routes the
+// dep through Bazel's external-repository mechanism. The generated Go
+// must lower:
+//
+//   - Halt[int]()                    -> Halt[int]{}.Apply()
+//   - Yield[int](Val = 42)           -> Yield[int]{}.Apply(42)
+//   - Container[int](Field = 7,      -> Container[int]{Field: ...,
+//                    Cb = (x) =>            Cb: std.NewImmutable(
+//                         x + 1)               func(x int) int { ... })}
+//
+// Without the macro fix the dep's source files are not on the gala
+// resolver's search path and its sealed/struct metadata is silently
+// dropped, so the same shapes regress to broken forms.
+func main() {
+    val h = Halt[int]()
+    val y = Yield[int](Val = 42)
+    val c = Container[int](
+        Field = 7,
+        Cb = (x) => x + 1,
+    )
+    Println(s"h=${h.String()} y=${y.String()} c=${c.Field}")
+}

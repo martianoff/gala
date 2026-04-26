@@ -1,0 +1,8 @@
+load("@gala//:gala.bzl", "gala_library")
+
+gala_library(
+    name = "effects",
+    srcs = ["effects.gala"],
+    importpath = "martianoff/external_gala_module/effects",
+    visibility = ["//visibility:public"],
+)

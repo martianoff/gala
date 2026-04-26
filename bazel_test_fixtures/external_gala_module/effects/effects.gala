@@ -1,0 +1,19 @@
+package effects
+
+// Sealed type with a zero-field case and a fielded case. A consumer
+// importing this from a separately declared Bazel module must lower
+// constructor calls as Halt[T]{}.Apply() and Yield[T]{}.Apply(arg)
+// rather than as bare type conversions or struct literals.
+sealed type Effect[T any] {
+    case Halt()
+    case Yield(Val T)
+}
+
+// Plain struct with a generic field and a lambda field. A consumer
+// constructing this with named arguments must keep the lambda's
+// parameter type concrete (e.g. func(int) int) instead of collapsing
+// to func(any) any.
+struct Container[T any](
+    Field T,
+    Cb func(T) T,
+)
