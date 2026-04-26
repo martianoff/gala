@@ -47,6 +47,7 @@ go_test(
         "apply_test.go",
         "assignment_test.go",
         "codec_boundary_test.go",
+        "collect_partial_function_test.go",
         "compilation_gate_test.go",
         "conflict_test.go",
         "control_flow_test.go",

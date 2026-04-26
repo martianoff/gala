@@ -155,6 +155,16 @@ gala_test(
     expected = "copy_chained_field_access.out",
 )
 
+# Regression: tuple destructuring inside a partial-function literal passed
+# to Array.Collect must bind every element pattern, not just the first
+# non-trivial one.
+gala_test(
+    name = "collect_partial_function",
+    src = "collect_partial_function.gala",
+    expected = "collect_partial_function.out",
+    deps = ["//collection_immutable"],
+)
+
 gala_test(
     name = "option_complex",
     src = "option_complex.gala",
