@@ -1,0 +1,17 @@
+package main
+
+import . "martianoff/gala/std"
+import . "martianoff/gala/collection_immutable"
+
+func main() {
+    // Single literal-condition + identifier binding (the original repro
+    // from the bug report).
+    val pairs = ArrayOf[Tuple[bool, string]]((true, "a"), (false, "b"), (true, "c"))
+    val onlyA = pairs.Collect({ case (true, code) => code })
+    Println(onlyA.String())
+
+    // Identifier binding before the literal-condition element — verifies
+    // bindings are accumulated regardless of element order.
+    val rev = pairs.Collect({ case (b, "a") => b })
+    Println(rev.String())
+}

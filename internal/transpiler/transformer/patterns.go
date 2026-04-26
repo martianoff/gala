@@ -1234,6 +1234,7 @@ func (t *galaASTTransformer) transformTuplePattern(patternExprs []grammar.IExpre
 	}
 
 	var stmts []ast.Stmt
+	var combinedCond ast.Expr
 
 	// Extract element types from matched type if available
 	var elementTypes []transpiler.Type
@@ -1241,7 +1242,10 @@ func (t *galaASTTransformer) transformTuplePattern(patternExprs []grammar.IExpre
 		elementTypes = genType.Params
 	}
 
-	// Generate bindings for each pattern element using direct field access
+	// Generate bindings for each pattern element using direct field access.
+	// Conditions from nested element patterns are AND-combined; bindings from
+	// every element are collected so that `(true, code)` binds `code` even
+	// when an earlier element contributes a literal-equality condition.
 	for i, patExpr := range patternExprs {
 		patText := patExpr.GetText()
 		if isWildcard(patText) {
@@ -1284,23 +1288,30 @@ func (t *galaASTTransformer) transformTuplePattern(patternExprs []grammar.IExpre
 			continue
 		}
 
-		// Handle nested patterns recursively
+		// Handle nested patterns recursively. Bindings from the nested pattern
+		// must be appended BEFORE we accumulate the condition so any later
+		// element pattern (e.g. `code` in `(true, code)`) still gets bound.
 		nestedCond, nestedStmts, err := t.transformExpressionPatternWithType(patExpr, elemExpr, elemType)
 		if err != nil {
 			return nil, nil, err
 		}
 		stmts = append(stmts, nestedStmts...)
 
-		// Collect nested conditions - we'll AND them together at the end
 		if ident, ok := nestedCond.(*ast.Ident); !ok || ident.Name != "true" {
-			// Return the nested condition - caller will handle combining conditions
 			t.needsStdImport = true
-			return nestedCond, stmts, nil
+			if combinedCond == nil {
+				combinedCond = nestedCond
+			} else {
+				combinedCond = &ast.BinaryExpr{X: combinedCond, Op: token.LAND, Y: nestedCond}
+			}
 		}
 	}
 
-	// All patterns are simple bindings or wildcards, condition is always true
 	t.needsStdImport = true
+	if combinedCond != nil {
+		return combinedCond, stmts, nil
+	}
+	// All patterns are simple bindings or wildcards, condition is always true
 	return ast.NewIdent("true"), stmts, nil
 }
 
