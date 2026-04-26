@@ -3,6 +3,7 @@ load("//:gala.bzl", "gala_bootstrap_transpile", "gala_go_test")
 
 exports_files([
     "future.gala",
+    "event_bus.gala",
     "execution_context.go",
 ])
 
@@ -27,9 +28,16 @@ gala_bootstrap_transpile(
     out = "retry.gen.go",
 )
 
+gala_bootstrap_transpile(
+    name = "event_bus_go",
+    src = "event_bus.gala",
+    out = "event_bus.gen.go",
+)
+
 go_library(
     name = "concurrent",
     srcs = [
+        "event_bus.gen.go",
         "execution_context.go",
         "future.gen.go",
         "retry.gen.go",

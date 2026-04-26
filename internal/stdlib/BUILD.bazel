@@ -71,9 +71,11 @@ genrule(
         "//collection_mutable:treeset.gala",
         # concurrent package - transpiled Go
         "//concurrent:future_go",
+        "//concurrent:event_bus_go",
         "//concurrent:execution_context.go",
         # concurrent package - GALA source
         "//concurrent:future.gala",
+        "//concurrent:event_bus.gala",
         # stream package - transpiled Go
         "//stream:stream_go",
         # stream package - GALA source
