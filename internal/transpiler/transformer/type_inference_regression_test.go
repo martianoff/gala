@@ -145,6 +145,32 @@ func test() int {
 			},
 		},
 		{
+			// Generic function with concrete lambda param types and only-result type
+			// parameter (e.g. ArrayTabulate signature `func[T any](n int, f func(int) T)`).
+			// The lambda parameter `int` is concrete in the signature and must be
+			// propagated to the lambda even though the type parameter T cannot yet
+			// be resolved from the non-lambda arguments. Otherwise the lambda would
+			// emit `func(week any) any` and the body's arithmetic would fail to
+			// type-check.
+			name: "generic function with concrete lambda param + result-only type param",
+			input: `package main
+
+func Tabulate[T any](n int, f func(int) T) {
+    f(n)
+}
+
+func test() {
+    Tabulate(6, (week) => week * 2)
+}`,
+			contains: []string{
+				"func(week int)",
+			},
+			notContains: []string{
+				"func(week any)",
+				"interface{}",
+			},
+		},
+		{
 			// Lambda param inference for non-generic wrapper methods.
 			// When a method takes a function parameter with concrete types, the lambda
 			// should infer parameter types from the method signature.

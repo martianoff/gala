@@ -1472,6 +1472,16 @@ gala_test(
     deps = ["//collection_immutable"],
 )
 
+# Verification: bare lambda parameter type inferred from ArrayTabulate's
+# declared signature even though the function is generic and the type
+# parameter T is not yet resolved.
+gala_test(
+    name = "array_tabulate_lambda_inference",
+    src = "array_tabulate_lambda_inference.gala",
+    expected = "array_tabulate_lambda_inference.out",
+    deps = ["//collection_immutable"],
+)
+
 # Verification: Some(v) infers Option[string] not Option[any]
 gala_test(
     name = "some_type_inference",

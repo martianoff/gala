@@ -116,6 +116,15 @@ func (t *galaASTTransformer) resolveExpectedFuncArgType(ctx callContext, argIdx 
 			} else if len(ft.Results) == 0 || len(ctx.funcMeta.TypeParams) == 0 {
 				// Void function type or non-generic function — pass as-is
 				expectedType = ft
+			} else if !funcTypeParamsMentionTypeParams(ft.Params, ctx.funcMeta.TypeParams) {
+				// Generic function whose lambda Params don't reference any of the
+				// function's type parameters (only the Results do). The Params are
+				// concrete and can drive lambda parameter inference even though the
+				// return type is still unresolved. Mask any type-param-bearing
+				// Results so the lambda transformer doesn't emit a literal `T`
+				// return signature; the lambda's body inference fills it in.
+				maskedResults := maskTypeParamResults(ft.Results, ctx.funcMeta.TypeParams)
+				expectedType = transpiler.FuncType{Params: ft.Params, Results: maskedResults}
 			}
 		}
 	}
@@ -191,4 +200,88 @@ func (t *galaASTTransformer) resolveNamedArgExpectedType(ctx callContext, argNam
 	}
 
 	return transpiler.NilType{}
+}
+
+// typeMentionsTypeParam reports whether typ's structure mentions any name from
+// typeParams as a leaf BasicType/NamedType identifier. Used to decide whether
+// a generic function's parameter shape can be propagated to a lambda argument
+// before the type parameters have been inferred from sibling arguments.
+func typeMentionsTypeParam(typ transpiler.Type, typeParams []string) bool {
+	if typ == nil || typ.IsNil() || len(typeParams) == 0 {
+		return false
+	}
+	nameMatches := func(name string) bool {
+		for _, tp := range typeParams {
+			if tp == name {
+				return true
+			}
+		}
+		return false
+	}
+	switch v := typ.(type) {
+	case transpiler.BasicType:
+		return nameMatches(v.Name)
+	case transpiler.NamedType:
+		// Only bare names (no package) can be type parameters.
+		return v.Package == "" && nameMatches(v.Name)
+	case transpiler.GenericType:
+		if typeMentionsTypeParam(v.Base, typeParams) {
+			return true
+		}
+		for _, p := range v.Params {
+			if typeMentionsTypeParam(p, typeParams) {
+				return true
+			}
+		}
+		return false
+	case transpiler.ArrayType:
+		return typeMentionsTypeParam(v.Elem, typeParams)
+	case transpiler.PointerType:
+		return typeMentionsTypeParam(v.Elem, typeParams)
+	case transpiler.MapType:
+		return typeMentionsTypeParam(v.Key, typeParams) || typeMentionsTypeParam(v.Elem, typeParams)
+	case transpiler.FuncType:
+		for _, p := range v.Params {
+			if typeMentionsTypeParam(p, typeParams) {
+				return true
+			}
+		}
+		for _, r := range v.Results {
+			if typeMentionsTypeParam(r, typeParams) {
+				return true
+			}
+		}
+		return false
+	}
+	return false
+}
+
+// funcTypeParamsMentionTypeParams reports whether any element of params
+// references one of the type parameter names in typeParams.
+func funcTypeParamsMentionTypeParams(params []transpiler.Type, typeParams []string) bool {
+	for _, p := range params {
+		if typeMentionsTypeParam(p, typeParams) {
+			return true
+		}
+	}
+	return false
+}
+
+// maskTypeParamResults replaces any result type that mentions one of the
+// supplied type parameters with NilType. This signals to downstream lambda
+// inference that the return type is still unresolved (so the body should drive
+// it) while preserving fully-concrete result types unchanged.
+func maskTypeParamResults(results []transpiler.Type, typeParams []string) []transpiler.Type {
+	if len(results) == 0 {
+		return results
+	}
+	out := make([]transpiler.Type, len(results))
+	for i, r := range results {
+		if typeMentionsTypeParam(r, typeParams) {
+			out[i] = transpiler.NilType{}
+		} else {
+			out[i] = r
+		}
+	}
+	return out
 }

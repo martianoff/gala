@@ -1,0 +1,13 @@
+package main
+
+import . "martianoff/gala/std"
+import . "martianoff/gala/collection_immutable"
+
+func main() {
+    // Bare lambda parameter type must be inferred from ArrayTabulate's
+    // declared signature `func ArrayTabulate[T any](n int, f func(int) T) Array[T]`.
+    // The lambda parameter `week` should be `int` (not `any`) so the
+    // arithmetic `week * 2` typechecks.
+    val rows = ArrayTabulate(6, (week) => week * 2)
+    Println(rows.String())
+}
