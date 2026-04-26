@@ -346,3 +346,110 @@ func TestEnsureDeps_LocalReplaceSkipsFetch(t *testing.T) {
 	got := b.effectiveDepDir(mod.Require{Path: "example.com/parent", Version: "v0.0.0"})
 	require.Equal(t, filepath.Clean(parent), got)
 }
+
+// TestTranspile_CrossModuleSealedCaseEmitsApply verifies that a consumer
+// project consuming a sealed type from a separately declared GALA module
+// (via require + local replace in gala.mod) lowers a sealed-case constructor
+// call as `Type[T]{}.Apply(...)` rather than as a bare type conversion
+// `Type[T](...)` that Go rejects on a zero-field struct.
+//
+// Layout (all under t.TempDir()):
+//
+//	parent/
+//	  gala.mod          module example.com/qalib
+//	  effects.gala      sealed type Effect[T] { case Halt() ... }
+//	consumer/
+//	  gala.mod          module example.com/qaconsumer
+//	                    require example.com/qalib v0.0.0
+//	                    replace example.com/qalib => ../parent
+//	  main.gala         import . "example.com/qalib"
+//	                    func mkHalt() Effect[int] = Halt[int]()
+//	                    func main() { val h = mkHalt(); Println(h.String()) }
+//
+// The bug being guarded: cross-module GALA dependencies served via local
+// replace were being misclassified as Go packages because the module-root
+// discovery preferred a stray parent go.mod over the project's gala.mod and
+// because IsGalaPackage relied on a cache lookup that fails for never-fetched
+// modules. As a result the consumer's analyzer dropped the dependency's
+// sealed-type Apply method metadata, and the transformer emitted
+// `Halt[int]()` which Go rejects with "missing argument in conversion".
+func TestTranspile_CrossModuleSealedCaseEmitsApply(t *testing.T) {
+	tmp := t.TempDir()
+
+	// Library module with the sealed type.
+	libDir := filepath.Join(tmp, "qa_lib")
+	require.NoError(t, os.MkdirAll(libDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(libDir, "gala.mod"),
+		[]byte("module example.com/qalib\n\ngala 0.0.0\n"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(libDir, "effects.gala"),
+		[]byte("package qalib\n\nsealed type Effect[T any] {\n    case Halt()\n    case Yield(Val T)\n}\n"),
+		0644))
+
+	// Consumer module using the lib via local replace.
+	consumerDir := filepath.Join(tmp, "qa_consumer")
+	require.NoError(t, os.MkdirAll(consumerDir, 0755))
+	consumerGalaMod := `module example.com/qaconsumer
+
+gala 0.0.0
+
+require example.com/qalib v0.0.0
+
+replace example.com/qalib => ../qa_lib
+`
+	require.NoError(t, os.WriteFile(filepath.Join(consumerDir, "gala.mod"),
+		[]byte(consumerGalaMod), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(consumerDir, "main.gala"),
+		[]byte("package main\n\nimport . \"example.com/qalib\"\n\nfunc mkHalt() Effect[int] = Halt[int]()\n\nfunc main() {\n    val h = mkHalt()\n    Println(h.String())\n}\n"),
+		0644))
+
+	// Isolate any per-user gala state to t.TempDir() to avoid clobbering the
+	// developer's real ~/.gala cache and to keep the test hermetic.
+	origHome, hadHome := os.LookupEnv("HOME")
+	origUserProfile, hadProfile := os.LookupEnv("USERPROFILE")
+	isolated := t.TempDir()
+	os.Setenv("HOME", isolated)
+	os.Setenv("USERPROFILE", isolated)
+	t.Cleanup(func() {
+		if hadHome {
+			os.Setenv("HOME", origHome)
+		} else {
+			os.Unsetenv("HOME")
+		}
+		if hadProfile {
+			os.Setenv("USERPROFILE", origUserProfile)
+		} else {
+			os.Unsetenv("USERPROFILE")
+		}
+	})
+
+	// Make cwd the consumer dir so resolver discovery walks up from there.
+	originalWd, err := os.Getwd()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.Chdir(originalWd) })
+	require.NoError(t, os.Chdir(consumerDir))
+
+	b, err := NewBuilder(consumerDir, "test", false)
+	require.NoError(t, err)
+	require.NoError(t, b.workspace.Ensure())
+
+	// transpileDeps populates the dep workspace with effects.gen.go.
+	require.NoError(t, b.ensureStdlib())
+	require.NoError(t, b.transpileDeps())
+
+	// Transpile the consumer. This is the step that hits the resolver and
+	// must classify example.com/qalib as a GALA package via the local
+	// replace directive.
+	require.NoError(t, b.transpile())
+
+	// Read the generated consumer Go file and assert it lowers the sealed
+	// case constructor as `Halt[int]{}.Apply()`, not as a bare conversion.
+	mainGen := filepath.Join(b.workspace.GenDir, "main.gen.go")
+	data, err := os.ReadFile(mainGen)
+	require.NoError(t, err, "consumer main.gen.go must be produced")
+	got := string(data)
+
+	require.Contains(t, got, "Halt[int]{}.Apply()",
+		"sealed case constructor must lower to {}.Apply() form, got:\n%s", got)
+	require.NotContains(t, got, "Halt[int]()",
+		"sealed case constructor must not lower to a bare type conversion, got:\n%s", got)
+}

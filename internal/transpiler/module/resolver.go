@@ -37,29 +37,43 @@ type Resolver struct {
 // 4. Load gala.mod if present (for replace directives and dependencies)
 // 5. Initialize the GALA dependency cache
 func NewResolver(searchPaths []string) *Resolver {
-	moduleRoot, moduleName := findModuleRootFromCwdOrPaths(searchPaths)
-
 	r := &Resolver{
-		moduleRoot:  moduleRoot,
-		moduleName:  moduleName,
 		searchPaths: searchPaths,
 		cache:       fetch.NewCache(fetch.DefaultConfig()),
 	}
 
-	// Try to load gala.mod if module root was found
-	if moduleRoot != "" {
-		r.loadGalaMod(moduleRoot)
-	} else {
-		// If no go.mod found, try to find gala.mod directly
-		galaModRoot := findGalaModRoot(searchPaths)
-		if galaModRoot != "" {
-			r.moduleRoot = galaModRoot
-			r.loadGalaMod(galaModRoot)
-			// If gala.mod was loaded, use its module name
-			if r.galaMod != nil {
-				r.moduleName = r.galaMod.Module.Path
+	// Prefer a gala.mod located in (or above) one of the search paths over an
+	// unrelated parent go.mod found by walking up from cwd. The first search
+	// path is the project directory; if it (or one of its ancestors stopping
+	// at a gala.mod) declares the module, that is the authoritative module
+	// for this build. Without this preference a project under e.g.
+	// /tmp/qa_consumer that has no go.mod will inherit a stale parent go.mod
+	// (e.g. /tmp/go.mod), and require/replace directives in the project's
+	// gala.mod will be invisible — so cross-module GALA dependencies are
+	// silently demoted to "Go package" and their TypeMetadata is dropped.
+	galaModRoot := findGalaModRoot(searchPaths)
+	if galaModRoot != "" {
+		r.moduleRoot = galaModRoot
+		r.loadGalaMod(galaModRoot)
+		if r.galaMod != nil && r.galaMod.Module.Path != "" {
+			r.moduleName = r.galaMod.Module.Path
+		}
+		// Fall back to go.mod-derived module name only if gala.mod did not
+		// declare one (rare).
+		if r.moduleName == "" {
+			if _, modName := FindModuleRoot(galaModRoot); modName != "" {
+				r.moduleName = modName
 			}
 		}
+		return r
+	}
+
+	// No gala.mod anywhere — fall back to go.mod discovery (legacy behaviour).
+	moduleRoot, moduleName := findModuleRootFromCwdOrPaths(searchPaths)
+	r.moduleRoot = moduleRoot
+	r.moduleName = moduleName
+	if moduleRoot != "" {
+		r.loadGalaMod(moduleRoot)
 	}
 
 	return r
@@ -330,6 +344,20 @@ func (r *Resolver) IsGalaPackage(importPath string) bool {
 		return ok
 	}()) {
 		return true
+	}
+
+	// Check replace directives first: a require like
+	//     require example.com/qalib v0.0.0
+	//     replace example.com/qalib => ../qa_lib
+	// resolves through the local path, never touching the cache. Without
+	// this branch IsGalaPackage falls back to isGalaPackageInCache, which
+	// fails because the dependency was never fetched, and the dep is then
+	// misclassified as a Go package — its .gala-derived TypeMetadata is
+	// then dropped on the consumer side (sealed-case Apply lowering breaks).
+	if r.galaMod != nil {
+		if replaced := r.applyReplace(importPath); replaced != "" {
+			return isGalaDir(replaced)
+		}
 	}
 
 	// Check gala.mod require list
@@ -700,4 +728,17 @@ func hasGalaFiles(dirPath string) bool {
 		}
 	}
 	return false
+}
+
+// isGalaDir reports whether the given directory contains a gala.mod or
+// any .gala source file (signalling that the resolved replacement points
+// at a real GALA package, not at a Go-only directory).
+func isGalaDir(dirPath string) bool {
+	if !isValidPackageDir(dirPath) {
+		return false
+	}
+	if _, err := os.Stat(filepath.Join(dirPath, "gala.mod")); err == nil {
+		return true
+	}
+	return hasGalaFiles(dirPath)
 }
