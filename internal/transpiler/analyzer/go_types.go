@@ -6,8 +6,10 @@ import (
 	"go/build"
 	"go/importer"
 	"go/parser"
+	"go/printer"
 	"go/token"
 	"go/types"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -16,6 +18,13 @@ import (
 
 	"martianoff/gala/internal/transpiler"
 )
+
+// goPrint renders an AST node to w using go/printer. Centralized so the
+// AST-fallback paths can share a single rendering helper.
+func goPrint(fset *token.FileSet, w io.Writer, node interface{}) error {
+	cfg := printer.Config{Mode: printer.UseSpaces, Tabwidth: 8}
+	return cfg.Fprint(w, fset, node)
+}
 
 // goImporter is a cached importer that tries multiple strategies.
 // Created once and reused across all AnalyzeGoPackage calls.
@@ -267,11 +276,107 @@ func analyzeGoFiles(dirPath string, includeGenerated bool) *transpiler.GoTypeInf
 	if pkg == nil {
 		// Even if type-checking fails, try to extract what we can from AST
 		extractFromAST(files, info)
+		augmentFieldTypeTextFromAST(fset, files, info)
 		return info
 	}
 
 	extractPackageInfo(pkg, info)
+	// Capture source-level field type text for every struct discovered.
+	// This survives type-checker failures on transitive imports (e.g.,
+	// a precompiled cross-module .gen.go that imports a stdlib package
+	// the current transpilation context can't resolve), giving downstream
+	// metadata synthesis a fallback for shape detection.
+	augmentFieldTypeTextFromAST(fset, files, info)
 	return info
+}
+
+// augmentFieldTypeTextFromAST walks the parsed Go ASTs and records the
+// source-level type expression for each exported struct field on every
+// already-discovered type entry in info. The text is rendered with
+// go/format so that nested generics, package qualifiers, and func types
+// round-trip faithfully (e.g. "std.Immutable[string]", "func(T) Cmd[T]").
+//
+// Existing FieldTypeText entries are not overwritten, which preserves
+// any caller-supplied text (none today, but keeps composition safe).
+func augmentFieldTypeTextFromAST(fset *token.FileSet, files []*ast.File, info *transpiler.GoTypeInfo) {
+	if info == nil || len(info.Types) == 0 || len(files) == 0 {
+		return
+	}
+	for _, f := range files {
+		pkgName := ""
+		if f.Name != nil {
+			pkgName = f.Name.Name
+		}
+		if pkgName == "" {
+			continue
+		}
+		for _, decl := range f.Decls {
+			gd, ok := decl.(*ast.GenDecl)
+			if !ok || gd.Tok != token.TYPE {
+				continue
+			}
+			for _, spec := range gd.Specs {
+				ts, ok := spec.(*ast.TypeSpec)
+				if !ok || !ts.Name.IsExported() {
+					continue
+				}
+				st, ok := ts.Type.(*ast.StructType)
+				if !ok || st.Fields == nil {
+					continue
+				}
+				qualName := pkgName + "." + ts.Name.Name
+				td, ok := info.Types[qualName]
+				if !ok || td == nil {
+					continue
+				}
+				if td.FieldTypeText == nil {
+					td.FieldTypeText = make(map[string]string)
+				}
+				// Build FieldOrder from the source declaration order so
+				// downstream consumers that emit positional struct
+				// literals don't pick up a random Go-map iteration order.
+				// We only populate it once per type; if later analysis
+				// runs against the same package we keep the first walk.
+				populateOrder := len(td.FieldOrder) == 0
+				for _, field := range st.Fields.List {
+					if len(field.Names) == 0 {
+						continue // embedded field — handled elsewhere
+					}
+					typeText := renderTypeExpr(fset, field.Type)
+					for _, n := range field.Names {
+						if !n.IsExported() {
+							continue
+						}
+						if populateOrder {
+							td.FieldOrder = append(td.FieldOrder, n.Name)
+						}
+						if _, exists := td.FieldTypeText[n.Name]; exists {
+							continue
+						}
+						td.FieldTypeText[n.Name] = typeText
+					}
+				}
+			}
+		}
+	}
+}
+
+// renderTypeExpr renders a Go AST type expression back into source text.
+// Falls back to a best-effort identifier rendering on errors so callers
+// always get a usable string.
+func renderTypeExpr(fset *token.FileSet, expr ast.Expr) string {
+	if expr == nil {
+		return ""
+	}
+	var buf strings.Builder
+	if err := goPrint(fset, &buf, expr); err == nil {
+		return strings.TrimSpace(buf.String())
+	}
+	// Last-resort fallback for unprintable nodes.
+	if id, ok := expr.(*ast.Ident); ok {
+		return id.Name
+	}
+	return ""
 }
 
 // extractPackageInfo extracts all exported type information from a types.Package.

@@ -2220,9 +2220,41 @@ func synthesizeTypeMetadataFromGo(pkgAST *transpiler.RichAST, goInfo *transpiler
 			}
 		}
 
-		fieldNames := make([]string, 0, len(td.Fields))
-		for fName := range td.Fields {
-			fieldNames = append(fieldNames, fName)
+		// Compute per-field immutability from the declared Go field type — a
+		// field declared as `std.Immutable[X]` (or bare `Immutable[X]`)
+		// requires NewImmutable wrapping at construction sites. Without
+		// this, named-arg construction of a Go-style struct from a
+		// precompiled cross-module library would emit raw values that
+		// break the field's declared Immutable[T] invariant.
+		//
+		// In a Bazel cross-module context the type checker may fail to
+		// resolve a std import (the importer can't reach a package the
+		// genrule sandbox doesn't expose), in which case the resolved
+		// Fields entry degrades to BasicType{"invalid type"}. We then
+		// fall back to the source-level type text captured by
+		// augmentFieldTypeTextFromAST.
+		//
+		// FieldOrder (also populated from the source AST) preserves
+		// declaration order; without it positional struct construction
+		// would pick up a random Go-map iteration order and swap field
+		// values across fields.
+		var fieldNames []string
+		if len(td.FieldOrder) > 0 {
+			fieldNames = append(fieldNames, td.FieldOrder...)
+		} else {
+			fieldNames = make([]string, 0, len(td.Fields))
+			for fName := range td.Fields {
+				fieldNames = append(fieldNames, fName)
+			}
+		}
+		immutFlags := make([]bool, 0, len(fieldNames))
+		for _, fName := range fieldNames {
+			fType := td.Fields[fName]
+			immut := isImmutableFieldType(fType)
+			if !immut && td.FieldTypeText != nil {
+				immut = isImmutableFieldTypeText(td.FieldTypeText[fName])
+			}
+			immutFlags = append(immutFlags, immut)
 		}
 
 		pkgAST.Types[qualName] = &transpiler.TypeMetadata{
@@ -2231,8 +2263,133 @@ func synthesizeTypeMetadataFromGo(pkgAST *transpiler.RichAST, goInfo *transpiler
 			Methods:    methods,
 			Fields:     td.Fields,
 			FieldNames: fieldNames,
+			ImmutFlags: immutFlags,
 			TypeParams: td.TypeParams,
 		}
+	}
+
+	// Second pass: infer sealed parent ↔ variant relationships from the
+	// method shapes. A variant is a zero-field struct V whose `Apply(...)`
+	// method returns some other struct type Parent in the same package.
+	// Promote Parent to IsSealed = true and add a SealedVariant entry per
+	// detected variant; the variant's "field names" are the parameter
+	// names of its Apply method.
+	//
+	// Without this, named-arg construction (`V(F = v)`) against a
+	// precompiled cross-module library lacks the parent↔variant linkage
+	// and falls back to a struct literal of the zero-field companion,
+	// which silently drops the supplied values.
+	annotateSealedVariantsFromGo(pkgAST)
+}
+
+// isImmutableFieldType reports whether the field's Go-extracted type
+// represents `std.Immutable[X]`. The struct field type extraction in
+// goTypeToTranspilerType currently strips generic type arguments from
+// *types.Named, so the typical shape we see is a NamedType named
+// "Immutable" — but we accept the BasicType/GenericType shapes too in
+// case the extraction is tightened later.
+func isImmutableFieldType(fType transpiler.Type) bool {
+	if fType == nil {
+		return false
+	}
+	switch ft := fType.(type) {
+	case transpiler.NamedType:
+		return ft.Name == "Immutable"
+	case transpiler.GenericType:
+		if base, ok := ft.Base.(transpiler.NamedType); ok {
+			return base.Name == "Immutable"
+		}
+	case transpiler.BasicType:
+		if ft.Name == "Immutable" || ft.Name == "std.Immutable" ||
+			strings.HasPrefix(ft.Name, "std.Immutable[") ||
+			strings.HasPrefix(ft.Name, "Immutable[") {
+			return true
+		}
+	}
+	return false
+}
+
+// isImmutableFieldTypeText reports whether the source-level type
+// expression denotes `Immutable[...]` or `std.Immutable[...]`. Used as
+// a fallback when the Go type checker could not resolve the field's
+// referenced types (e.g., a precompiled cross-module .gen.go imports
+// a package the current transpilation context cannot reach).
+func isImmutableFieldTypeText(typeText string) bool {
+	t := strings.TrimSpace(typeText)
+	if t == "" {
+		return false
+	}
+	// Strip pointer indirection so `*std.Immutable[X]` is recognized too.
+	for strings.HasPrefix(t, "*") {
+		t = strings.TrimSpace(t[1:])
+	}
+	return strings.HasPrefix(t, "std.Immutable[") ||
+		strings.HasPrefix(t, "Immutable[") ||
+		t == "std.Immutable" || t == "Immutable"
+}
+
+// annotateSealedVariantsFromGo walks the synthesized type metadata and
+// promotes likely sealed-parent types — a struct returned by the `Apply`
+// method of one or more sibling zero-field structs in the same package —
+// to `IsSealed = true`, adding a `SealedVariant` entry per variant. The
+// variant's `FieldNames` come from the variant's `Apply` parameter names,
+// matching the GALA convention.
+//
+// Only zero-field structs are treated as variants: the parent stores
+// the union data, and the variant companion is just a tag carrier.
+// Cross-package detection is intentionally skipped — a variant whose
+// parent lives in another package would require a richer index, and
+// the GALA convention keeps them together.
+func annotateSealedVariantsFromGo(pkgAST *transpiler.RichAST) {
+	if pkgAST == nil || len(pkgAST.Types) == 0 {
+		return
+	}
+	for _, variantMeta := range pkgAST.Types {
+		if variantMeta == nil {
+			continue
+		}
+		applyMeta, hasApply := variantMeta.Methods["Apply"]
+		if !hasApply || applyMeta == nil {
+			continue
+		}
+		if len(variantMeta.FieldNames) != 0 {
+			continue // not a zero-field companion struct
+		}
+		retType := applyMeta.ReturnType
+		if retType == nil || retType.IsNil() {
+			continue
+		}
+		parentSimple := retType.BaseName()
+		if parentSimple == "" || parentSimple == variantMeta.Name {
+			continue
+		}
+		// Strip any package qualifier from the BaseName (e.g. "pkg.Type").
+		if dot := strings.LastIndex(parentSimple, "."); dot >= 0 {
+			parentSimple = parentSimple[dot+1:]
+		}
+		parentQual := variantMeta.Package + "." + parentSimple
+		parentMeta, ok := pkgAST.Types[parentQual]
+		if !ok || parentMeta == nil {
+			continue
+		}
+		// Skip if the parent already declares this variant — preserves the
+		// GALA-source-driven path that explicitly populated the relationship.
+		alreadyKnown := false
+		for _, sv := range parentMeta.SealedVariants {
+			if sv.Name == variantMeta.Name {
+				alreadyKnown = true
+				break
+			}
+		}
+		if alreadyKnown {
+			continue
+		}
+		parentMeta.SealedVariants = append(parentMeta.SealedVariants, transpiler.SealedVariant{
+			Name:       variantMeta.Name,
+			FieldNames: append([]string(nil), applyMeta.ParamNames...),
+			FieldTypes: append([]transpiler.Type(nil), applyMeta.ParamTypes...),
+		})
+		parentMeta.IsSealed = true
 	}
 }
 

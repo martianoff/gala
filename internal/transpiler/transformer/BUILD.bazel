@@ -55,6 +55,7 @@ go_test(
         "dot_import_generic_namedarg_test.go",
         "dot_import_test.go",
         "equal_test.go",
+        "external_named_arg_test.go",
         "functions_test.go",
         "generics_test.go",
         "immutable_test.go",

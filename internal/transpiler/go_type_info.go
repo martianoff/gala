@@ -32,11 +32,26 @@ type GoParam struct {
 
 // GoTypeData describes a Go type (struct, interface, or named type).
 type GoTypeData struct {
-	Kind       string                    // "struct", "interface", "alias", "named"
-	Fields     map[string]Type           // struct fields (exported only)
-	Methods    map[string]*GoFuncSignature // method set (exported only)
-	Underlying Type                      // underlying type for aliases and named types
-	TypeParams []string                  // type parameter names for generic types (empty for non-generic)
+	Kind   string          // "struct", "interface", "alias", "named"
+	Fields map[string]Type // struct fields (exported only)
+	// FieldOrder preserves the source-declaration order of exported
+	// struct fields. Iterating Fields directly is unsafe for code that
+	// emits positional literals because Go map iteration is randomized.
+	// Empty when the analyzer could not parse the source or for non-struct
+	// kinds.
+	FieldOrder []string
+	// FieldTypeText preserves the source-level type expression for each
+	// exported struct field (e.g. "std.Immutable[string]" or "func(T) Cmd[T]").
+	// It is populated alongside Fields when the analyzer parses .go source
+	// and is used as a fallback for shape detection (immutable wrapping,
+	// generic-arg recovery) when the type checker could not resolve the
+	// referenced types — typical when a precompiled cross-Bazel-module
+	// .gen.go references a package that the current transpilation context
+	// cannot import.
+	FieldTypeText map[string]string
+	Methods       map[string]*GoFuncSignature // method set (exported only)
+	Underlying    Type                        // underlying type for aliases and named types
+	TypeParams    []string                    // type parameter names for generic types (empty for non-generic)
 }
 
 // NewGoTypeInfo creates an empty GoTypeInfo.
