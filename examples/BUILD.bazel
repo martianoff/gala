@@ -150,6 +150,12 @@ gala_test(
 )
 
 gala_test(
+    name = "copy_chained_field_access",
+    src = "copy_chained_field_access.gala",
+    expected = "copy_chained_field_access.out",
+)
+
+gala_test(
     name = "option_complex",
     src = "option_complex.gala",
     expected = "option_complex.out",

@@ -1,0 +1,40 @@
+package main
+
+// Repro for: "cannot use Copy overrides: type of receiver unknown"
+// when calling .Copy(...) on a chained struct-field access.
+//
+// Failing form:
+//
+//     return o.Tab.Copy(Selected = 5)
+//
+// Working form (extract field to a val first):
+//
+//     val tab = o.Tab
+//     return tab.Copy(Selected = 5)
+//
+// Both forms should compile to the same Go code; the receiver type is
+// unambiguously `Inner` in either case.
+//
+// Filed from gala-tui (megademo.gala::megaSelectRow) where
+// `m.BuildsTable.Copy(Selected = idx)` triggered the same error.
+
+struct Inner(Selected int)
+struct Outer(Tab Inner)
+
+// Chained-field-access form: receiver of `.Copy(...)` is itself a
+// SelectorExpr (`o.Tab`). This used to fail with
+// "cannot use Copy overrides: type of receiver unknown".
+func selectChained(o Outer, idx int) Inner = o.Tab.Copy(Selected = idx)
+
+// Deeper chain: `o.Tab.Copy(...).Copy(...)` — the receiver of the
+// outer Copy is a CallExpr returning a known struct type.
+func selectChainedTwice(o Outer, idx int) Inner =
+    o.Tab.Copy(Selected = idx).Copy(Selected = idx + 1)
+
+func main() {
+    val o = Outer(Tab = Inner(Selected = 0))
+    val a = selectChained(o, 5)
+    val b = selectChainedTwice(o, 5)
+    Println(a.Selected)
+    Println(b.Selected)
+}
