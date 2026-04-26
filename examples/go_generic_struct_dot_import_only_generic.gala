@@ -1,0 +1,15 @@
+package main
+
+import . "martianoff/gala/examples/qa_lib_bridge"
+
+// Verifies that a dot-import is preserved in generated Go even when the
+// GALA file references ONLY a generic instantiation from that package
+// (no non-generic anchor). The pruning scan must descend through
+// *ast.IndexExpr (`Single[int]`) wrappers; if it only matched bare
+// *ast.Ident the import would be pruned and the generated Go would fail
+// to compile with `undefined: Single`.
+
+func main() {
+    val s = Single[int]("g", 42)
+    Println(s.Render())
+}

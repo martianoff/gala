@@ -406,14 +406,20 @@ func (m *ImportManager) dotImportUsedInAST(file *ast.File, pkgName string, richA
 	if len(exports) == 0 {
 		return true // conservatively keep — can't determine if symbols are used
 	}
-	// Scan AST for matching unqualified identifiers
+	// Scan AST for matching unqualified identifiers. Walk through generic
+	// instantiation wrappers (IndexExpr for `Foo[A]`, IndexListExpr for
+	// `Foo[A, B]`) so that files referencing only generic types from the
+	// dot-imported package still anchor the import.
 	found := false
 	ast.Inspect(file, func(n ast.Node) bool {
 		if found {
 			return false
 		}
-		ident, ok := n.(*ast.Ident)
-		if ok && exports[ident.Name] {
+		expr, ok := n.(ast.Expr)
+		if !ok {
+			return true
+		}
+		if ident := unwrapToBaseIdent(expr); ident != nil && exports[ident.Name] {
 			found = true
 		}
 		return !found

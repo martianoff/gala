@@ -487,6 +487,19 @@ gala_test(
     deps = ["//examples/go_generic_struct_bridge"],
 )
 
+# Verification: dot-import is preserved in generated Go even when the
+# consumer references ONLY generic instantiations from that package (no
+# non-generic anchor). The pruning scan must descend into *ast.IndexExpr
+# wrappers (`Single[int]("g", 42)` is *ast.CallExpr{Fun: *ast.IndexExpr})
+# otherwise the dot import is dropped and the file fails to compile with
+# `undefined: Single`.
+gala_test(
+    name = "go_generic_struct_dot_import_only_generic",
+    src = "go_generic_struct_dot_import_only_generic.gala",
+    expected = "go_generic_struct_dot_import_only_generic.out",
+    deps = ["//examples/qa_lib_bridge"],
+)
+
 gala_test(
     name = "try_basic",
     src = "try_basic.gala",

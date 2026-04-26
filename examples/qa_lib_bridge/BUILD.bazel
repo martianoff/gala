@@ -1,0 +1,8 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "qa_lib_bridge",
+    srcs = ["bridge.go"],
+    importpath = "martianoff/gala/examples/qa_lib_bridge",
+    visibility = ["//visibility:public"],
+)
