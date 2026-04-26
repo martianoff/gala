@@ -262,6 +262,16 @@ func (t *galaASTTransformer) typeToExpr(typ transpiler.Type) ast.Expr {
 		for i, p := range v.Params {
 			params[i] = t.typeToExpr(p)
 		}
+		// std.Tuple covers 2 type args; 3+ type args map to std.Tuple3..Tuple10.
+		// Mirrors the rewrite in transformType (source-level) so types
+		// reconstructed from transpiler.GenericType values (e.g., from a match
+		// subject's inferred type) emit the correct arity-specific name.
+		// Without this, `Option[Tuple[int, int, int]]` flowing through the
+		// match-IIFE param type re-emits as Tuple[int, int, int] (2-arity
+		// Tuple with 3 type args), which Go rejects.
+		if n := len(params); n >= 3 && n <= 10 && isStdTupleIdent(base) {
+			base = t.stdIdent(fmt.Sprintf("Tuple%d", n))
+		}
 		if len(params) == 1 {
 			return &ast.IndexExpr{X: base, Index: params[0]}
 		}

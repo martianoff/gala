@@ -79,6 +79,7 @@ go_test(
         "tuple_call_unwrap_test.go",
         "tuple_either_test.go",
         "tuple_field_unwrap_repro_test.go",
+        "tuple_return_arity_test.go",
         "type_inference_regression_test.go",
         "type_inference_test.go",
         "variables_test.go",
