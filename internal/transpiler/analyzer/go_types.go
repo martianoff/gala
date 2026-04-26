@@ -203,20 +203,6 @@ func AnalyzeGoPackage(importPath string) *transpiler.GoTypeInfo {
 // Generated .gen.go files are skipped — their metadata comes from analyzing the
 // originating .gala source.
 func AnalyzeGoFiles(dirPath string) *transpiler.GoTypeInfo {
-	return analyzeGoFiles(dirPath, false)
-}
-
-// AnalyzeGoFilesIncludingGenerated is like AnalyzeGoFiles but also picks up
-// .gen.go files. Use this when the .gala source for a package is unavailable
-// (e.g., the package was consumed as a precompiled artifact from an external
-// Bazel module) — without it, types declared by the original .gala (such as
-// sealed-type cases) would be invisible to downstream consumers and their
-// constructor calls would lower to invalid Go conversion form.
-func AnalyzeGoFilesIncludingGenerated(dirPath string) *transpiler.GoTypeInfo {
-	return analyzeGoFiles(dirPath, true)
-}
-
-func analyzeGoFiles(dirPath string, includeGenerated bool) *transpiler.GoTypeInfo {
 	info := transpiler.NewGoTypeInfo()
 
 	entries, err := os.ReadDir(dirPath)
@@ -233,10 +219,7 @@ func analyzeGoFiles(dirPath string, includeGenerated bool) *transpiler.GoTypeInf
 			continue
 		}
 		name := entry.Name()
-		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		if !includeGenerated && strings.HasSuffix(name, ".gen.go") {
+		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || strings.HasSuffix(name, ".gen.go") {
 			continue
 		}
 		hasGoFiles = true
@@ -351,9 +334,9 @@ func extractTypeData(tn *types.TypeName, forceKind string) *transpiler.GoTypeDat
 	}
 
 	// Extract type parameter names for generic types so downstream consumers
-	// (e.g., the transformer's sealed-case Apply gate) can recognize that
-	// `Case[T]()` should lower to `Case[T]{}.Apply()` rather than the bare
-	// function-call shape Go would interpret as a type conversion.
+	// (e.g., the dot-import-used scan and method lookup on generic Go-style
+	// structs imported via dot import) can resolve `Type[T]` references and
+	// the methods they expose.
 	if named, ok := typ.(*types.Named); ok {
 		if tps := named.TypeParams(); tps != nil {
 			for i := 0; i < tps.Len(); i++ {
@@ -390,7 +373,9 @@ func extractTypeData(tn *types.TypeName, forceKind string) *transpiler.GoTypeDat
 
 	// types.NewMethodSet returns nothing for an uninstantiated generic named
 	// type, so for generics we also pull methods directly off the *types.Named
-	// origin. Method receiver type parameters become the data's TypeParams.
+	// origin. This lets a dot-importing GALA consumer find methods on a
+	// generic Go-style struct (e.g. `Single[T]`) referenced only through a
+	// generic instantiation.
 	if named, ok := typ.(*types.Named); ok && named.TypeParams() != nil {
 		for i := 0; i < named.NumMethods(); i++ {
 			fn := named.Method(i)

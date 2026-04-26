@@ -71,7 +71,6 @@ go_test(
         "option_test.go",
         "pointer_receiver_test.go",
         "recursive_immutable_test.go",
-        "sealed_external_dot_import_test.go",
         "sealed_string_func_field_test.go",
         "structs_test.go",
         "test_helper.go",
