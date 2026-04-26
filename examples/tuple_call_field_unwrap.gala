@@ -1,0 +1,23 @@
+package main
+
+import (
+    "fmt"
+    . "martianoff/gala/examples/tuple_call_lib"
+)
+
+// TermSize() comes from a dot-imported GALA library and returns Tuple[int, int]
+// whose V1/V2 fields are std.Immutable[int]. CallExpr-rooted field access
+// (e.g. TermSize().V2 - overhead) must auto-unwrap the field with .Get() so
+// the result has type int — otherwise Go rejects the expression with a
+// "mismatched types std.Immutable[int] and int" error.
+
+val overhead = 14
+
+func availHeight() int = TermSize().V2 - overhead
+
+func availWidth() int = TermSize().V1 + 1
+
+func main() {
+    fmt.Printf("avail=%d\n", availHeight())
+    fmt.Printf("width=%d\n", availWidth())
+}

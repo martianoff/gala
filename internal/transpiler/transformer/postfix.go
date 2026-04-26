@@ -198,9 +198,137 @@ func (t *galaASTTransformer) isImmutableField(xType transpiler.Type, selExpr *as
 				}
 			}
 		}
+
+		// Fallback: when the receiver type is unknown but the LHS is a bare
+		// function call (e.g., `TermSize().V2`), resolve the call's declared
+		// return type via function metadata. The Go importer can fail to
+		// resolve transitive imports for a dot-imported Go package consumed
+		// only as compiled artifacts (no source on the module path) — when
+		// that happens, `getExprTypeName` returns NilType and the early
+		// checks above all miss, even though the function's return type is
+		// recorded in metadata. Looking up by function name still gives us a
+		// struct name we can match against typeMetas/structFields.
+		if ce, ok := selExpr.X.(*ast.CallExpr); ok {
+			if retType := t.callExprReturnType(ce); !retType.IsNil() {
+				retName := retType.String()
+				if idx := strings.Index(retName, "["); idx != -1 {
+					retName = retName[:idx]
+				}
+				retName = strings.TrimPrefix(retName, "*")
+				resolvedRet := t.resolveStructTypeName(retName)
+				if fields, ok := t.structFields[resolvedRet]; ok {
+					for i, f := range fields {
+						if f == selName {
+							return t.structImmutFields[resolvedRet][i]
+						}
+					}
+				}
+				if typeMeta := t.getTypeMeta(retName); typeMeta != nil {
+					for i, f := range typeMeta.FieldNames {
+						if f == selName {
+							return i < len(typeMeta.ImmutFlags) && typeMeta.ImmutFlags[i]
+						}
+					}
+				}
+			}
+			// Last-resort fallback: when even function metadata is unavailable
+			// (e.g., a dot-imported Go module fetched but not analyzed) and the
+			// field name matches the std.Tuple component shape (V1..V10), check
+			// any std.Tuple* typeMeta. All std.Tuple variants register their
+			// V_N fields as Immutable, so a positive hit is unambiguous and
+			// avoids the failure mode where `funcReturningTuple().V2` reaches
+			// arithmetic without an injected .Get().
+			if isTupleFieldName(selName) && t.isImmutableTupleField(selName) {
+				return true
+			}
+		}
 	}
 
 	return false
+}
+
+// isTupleFieldName reports whether name is V1..V10 — the field naming
+// convention used by std.Tuple/Tuple3/.../Tuple10.
+func isTupleFieldName(name string) bool {
+	if len(name) < 2 || name[0] != 'V' {
+		return false
+	}
+	rest := name[1:]
+	for _, c := range rest {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// isImmutableTupleField reports whether `selName` appears as an Immutable-
+// flagged field on any registered std.Tuple* metadata. Used only as a
+// last-resort fallback when no other lookup path can determine the field
+// type — see callers for the surrounding gate (CallExpr LHS, unknown xType).
+func (t *galaASTTransformer) isImmutableTupleField(selName string) bool {
+	for _, name := range []string{
+		transpiler.TypeTuple, transpiler.TypeTuple3, transpiler.TypeTuple4,
+		transpiler.TypeTuple5, transpiler.TypeTuple6, transpiler.TypeTuple7,
+		transpiler.TypeTuple8, transpiler.TypeTuple9, transpiler.TypeTuple10,
+	} {
+		typeMeta := t.getTypeMeta(name)
+		if typeMeta == nil {
+			continue
+		}
+		for i, f := range typeMeta.FieldNames {
+			if f == selName && i < len(typeMeta.ImmutFlags) && typeMeta.ImmutFlags[i] {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// callExprReturnType resolves the declared return type of a bare-ident
+// function call by consulting metadata sources directly, without re-running
+// the type-inference path that already returned NilType. Used as a fallback
+// for auto-unwrap on `funcCall().Field` when type inference for the call
+// itself failed (e.g., dot-imported Go-only packages whose transitive imports
+// the Go SDK can't load from the analyzer's view).
+//
+// Sources, in order:
+//   - GALA function metadata (functions declared in any analyzed .gala source)
+//   - Go function metadata under the current package
+//   - Go function metadata under any dot-imported package
+func (t *galaASTTransformer) callExprReturnType(ce *ast.CallExpr) transpiler.Type {
+	fun := ce.Fun
+	// Strip explicit type arguments: TermSize[int]() -> TermSize
+	if idx, ok := fun.(*ast.IndexExpr); ok {
+		fun = idx.X
+	} else if idxList, ok := fun.(*ast.IndexListExpr); ok {
+		fun = idxList.X
+	}
+	id, ok := fun.(*ast.Ident)
+	if !ok {
+		return transpiler.NilType{}
+	}
+	// GALA function metadata first.
+	if fMeta := t.getFunction(id.Name); fMeta != nil && fMeta.ReturnType != nil && !fMeta.ReturnType.IsNil() {
+		return fMeta.ReturnType
+	}
+	// Go function metadata: current package, then dot-imported packages.
+	if t.packageName != "" {
+		if r := t.getGoFuncReturnType(t.packageName + "." + id.Name); !r.IsNil() {
+			return r
+		}
+	}
+	if t.importManager != nil {
+		for _, pkg := range t.importManager.GetDotImports() {
+			if pkg == "" || pkg == t.packageName {
+				continue
+			}
+			if r := t.getGoFuncReturnType(pkg + "." + id.Name); !r.IsNil() {
+				return r
+			}
+		}
+	}
+	return transpiler.NilType{}
 }
 
 // resolveIndexAccess handles index/subscript expressions with Immutable unwrapping.

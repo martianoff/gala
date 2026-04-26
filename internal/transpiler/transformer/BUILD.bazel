@@ -75,6 +75,7 @@ go_test(
         "sealed_string_func_field_test.go",
         "structs_test.go",
         "test_helper.go",
+        "tuple_call_unwrap_test.go",
         "tuple_either_test.go",
         "tuple_field_unwrap_repro_test.go",
         "type_inference_regression_test.go",

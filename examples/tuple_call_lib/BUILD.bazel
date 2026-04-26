@@ -1,0 +1,8 @@
+load("//:gala.bzl", "gala_library")
+
+gala_library(
+    name = "tuple_call_lib",
+    src = "termlib.gala",
+    importpath = "martianoff/gala/examples/tuple_call_lib",
+    visibility = ["//visibility:public"],
+)

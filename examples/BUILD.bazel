@@ -346,6 +346,13 @@ gala_test(
 )
 
 gala_test(
+    name = "tuple_call_field_unwrap",
+    src = "tuple_call_field_unwrap.gala",
+    expected = "tuple_call_field_unwrap.out",
+    deps = ["//examples/tuple_call_lib"],
+)
+
+gala_test(
     name = "list_pattern_match",
     src = "list_pattern_match.gala",
     expected = "list_pattern_match.out",
