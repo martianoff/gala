@@ -1,0 +1,12 @@
+package main
+
+import . "martianoff/gala/std"
+
+func main() {
+    // Positional Tuple constructor — must infer type args from arg types.
+    val pair = Tuple(true, "1")
+    Println(pair.V1, pair.V2)
+
+    val triple = Tuple(1, "x", 3.5)
+    Println(triple.V1, triple.V2, triple.V3)
+}

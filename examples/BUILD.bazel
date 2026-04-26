@@ -212,6 +212,12 @@ gala_test(
 )
 
 gala_test(
+    name = "fix_001_tuple_positional_ctor",
+    src = "fix_001_tuple_positional_ctor.gala",
+    expected = "fix_001_tuple_positional_ctor.out",
+)
+
+gala_test(
     name = "either",
     src = "either.gala",
     expected = "either.out",
