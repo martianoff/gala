@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -2224,9 +2225,23 @@ func synthesizeTypeMetadataFromGo(pkgAST *transpiler.RichAST, goInfo *transpiler
 			}
 		}
 
-		fieldNames := make([]string, 0, len(td.Fields))
-		for fName := range td.Fields {
-			fieldNames = append(fieldNames, fName)
+		// Use the declaration-order slice captured during Go-type extraction
+		// so positional composite literals match the field layout. Iterating
+		// the Fields map directly is non-deterministic and produces wrong
+		// codegen on platforms whose iteration order differs from the
+		// struct's declared field order.
+		var fieldNames []string
+		if len(td.FieldOrder) > 0 {
+			fieldNames = append(fieldNames, td.FieldOrder...)
+		} else {
+			// Fallback for callers that hand-build a GoTypeData without
+			// setting FieldOrder. Sorts lexicographically so the result is
+			// at least deterministic across runs.
+			fieldNames = make([]string, 0, len(td.Fields))
+			for fName := range td.Fields {
+				fieldNames = append(fieldNames, fName)
+			}
+			sort.Strings(fieldNames)
 		}
 
 		pkgAST.Types[qualName] = &transpiler.TypeMetadata{
