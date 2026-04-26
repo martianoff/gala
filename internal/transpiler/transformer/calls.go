@@ -711,6 +711,21 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 	typeName string,
 	args []ast.Expr,
 ) (handled bool, result ast.Expr, err error) {
+	// Tuple → TupleN arity rewrite for the bare positional constructor.
+	// Mirrors the rewrite in transformTupleLiteral (postfix.go) and
+	// transformType (types.go): the user-visible name `Tuple` covers all
+	// arities 2..10, but the underlying Go types are Tuple, Tuple3..Tuple10.
+	// Without this rewrite, `Tuple(a, b, c)` falls through to the Apply path
+	// and emits a 2-field literal `Tuple{V1, V2}`, dropping the third arg.
+	// Only applies when no explicit type args were given (bare ident or
+	// qualified selector); explicit type args have already been resolved
+	// to the right arity by transformType.
+	if n := len(args); n >= 3 && n <= 10 && isStdTupleIdent(fun) {
+		rewritten := fmt.Sprintf("Tuple%d", n)
+		typeName = rewritten
+		fun = t.stdIdent(rewritten)
+	}
+
 	typeMeta, resolvedTypeMeta := t.getTypeMetaResolved(typeName)
 	if typeMeta == nil {
 		return false, nil, nil
@@ -722,7 +737,11 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 	// equals field count, emit a struct literal directly.
 	resolvedTypeName := t.resolveStructTypeName(typeName)
 	if fields, structOk := t.structFields[resolvedTypeName]; structOk && len(args) > 0 && len(args) == len(fields) {
-		return true, t.buildStructLiteral(fun, resolvedTypeName, fields, args, false), nil
+		// Infer type args from positional arg types when the call site omitted
+		// them. Without this, a generic struct like `Tuple(a, b)` emits
+		// `Tuple{V1: a, V2: b}` — Go rejects the bare generic type.
+		typedFun := t.inferTypeArgsFromPositionalArgs(fun, typeName, resolvedTypeName, fields, args)
+		return true, t.buildStructLiteral(typedFun, resolvedTypeName, fields, args, false), nil
 	}
 
 	methodMeta, hasApply := typeMeta.Methods["Apply"]
@@ -1515,6 +1534,84 @@ func (t *galaASTTransformer) buildStructLiteralWithNamedArgs(
 		elts = append(elts, &ast.KeyValueExpr{Key: ast.NewIdent(fieldName), Value: valExpr})
 	}
 	return &ast.CompositeLit{Type: typeExpr, Elts: elts}, nil
+}
+
+// inferTypeArgsFromPositionalArgs is the positional-args counterpart of
+// inferTypeArgsFromNamedArgs. It returns a type expression with all
+// generic type parameters filled in from the types of the positional
+// arg values, or returns `fun` verbatim if inference does not apply or
+// cannot complete. Inference applies only when `fun` is a bare Ident or
+// SelectorExpr (no explicit type args in the source), and the underlying
+// type declares type parameters. The fields slice gives the positional
+// index → field-name mapping so we can look up each field's declared
+// type and check whether it is a type parameter to fill in.
+func (t *galaASTTransformer) inferTypeArgsFromPositionalArgs(
+	fun ast.Expr,
+	typeName, resolvedTypeName string,
+	fields []string,
+	args []ast.Expr,
+) ast.Expr {
+	switch fun.(type) {
+	case *ast.Ident, *ast.SelectorExpr:
+		// Eligible for inference.
+	default:
+		return fun
+	}
+
+	typeMeta := t.getTypeMeta(resolvedTypeName)
+	if typeMeta == nil || len(typeMeta.TypeParams) == 0 {
+		return fun
+	}
+
+	fieldTypes := t.structFieldTypes[resolvedTypeName]
+	if fieldTypes == nil {
+		return fun
+	}
+
+	inferredTypeArgs := make([]ast.Expr, len(typeMeta.TypeParams))
+	typeParamIndices := make(map[string]int, len(typeMeta.TypeParams))
+	for i, tp := range typeMeta.TypeParams {
+		typeParamIndices[tp] = i
+	}
+
+	for i, fieldName := range fields {
+		if i >= len(args) {
+			break
+		}
+		fieldType, ok := fieldTypes[fieldName]
+		if !ok {
+			continue
+		}
+		idx, isTypeParam := typeParamIndices[fieldType.String()]
+		if !isTypeParam {
+			continue
+		}
+		valType := t.getExprTypeName(args[i])
+		if valType == nil || valType.IsNil() {
+			continue
+		}
+		if inferredTypeArgs[idx] == nil {
+			inferredTypeArgs[idx] = t.typeToExpr(valType)
+		}
+	}
+
+	for _, arg := range inferredTypeArgs {
+		if arg == nil {
+			return fun // incomplete inference — let downstream stages handle it
+		}
+	}
+	if len(inferredTypeArgs) == 0 {
+		return fun
+	}
+
+	// Use `fun` itself as the base — it is already the correctly qualified
+	// identifier shape (bare Ident when dot-imported, SelectorExpr otherwise),
+	// so we don't need to reconstruct from `typeName` (which may carry the
+	// `std.` prefix and produce a malformed `std.std.Tuple` literal).
+	if len(inferredTypeArgs) == 1 {
+		return &ast.IndexExpr{X: fun, Index: inferredTypeArgs[0]}
+	}
+	return &ast.IndexListExpr{X: fun, Indices: inferredTypeArgs}
 }
 
 // inferTypeArgsFromNamedArgs returns a type expression with all generic

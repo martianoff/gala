@@ -81,3 +81,14 @@ func ExpandPairs(xs Array[int]) Array[int] {
         pair
     })
 }
+
+// --- Regression: positional Tuple constructor must infer type args ---
+// `Tuple(a, b)` and `Tuple(a, b, c)` (no explicit type args, no named-arg
+// form) previously emitted bare `std.Tuple{V1, V2}` literals — Go rejected
+// these as "cannot use generic type without instantiation". The 3-arity
+// form additionally lost its third arg because the Tuple→TupleN arity
+// rewrite was missing on this path.
+func MakeFlagPair(flag bool, label string) Tuple[bool, string] = Tuple(flag, label)
+
+func MakeTriple(n int, label string, ratio float64) Tuple3[int, string, float64] =
+    Tuple(n, label, ratio)

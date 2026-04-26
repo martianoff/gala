@@ -101,4 +101,13 @@ func main() {
     Println(multifile_lib_regress.EventAnyError())
     Println(multifile_lib_regress.EventAllPositive())
     Println(multifile_lib_regress.EventOkSum())
+
+    // Positional Tuple constructor across packages — verify the cross-package
+    // import sees the typed Tuple[bool, string] / Tuple3[int, string, float64]
+    // signature and the call site receives the inferred values intact.
+    val fp = multifile_lib_regress.MakeFlagPair(true, "ready")
+    Println(fp.V1, fp.V2)
+
+    val tr = multifile_lib_regress.MakeTriple(7, "label", 1.5)
+    Println(tr.V1, tr.V2, tr.V3)
 }

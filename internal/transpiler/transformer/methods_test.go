@@ -95,7 +95,7 @@ func (s Box[T]) Unapply(v any) (std.Immutable[T], bool) {
 	return *new(std.Immutable[T]), false
 }
 func Box_MyMap[U any, T any](b Box[T], f func(T) U) Box[U] {
-	return Box{Value: std.NewImmutable(f(b.Value.Get()))}
+	return Box[U]{Value: std.NewImmutable(f(b.Value.Get()))}
 }
 `,
 		},
@@ -141,11 +141,11 @@ func (s Box[T]) Unapply(v any) (std.Immutable[T], bool) {
 	return *new(std.Immutable[T]), false
 }
 func Box_MyMap[U any, T any](b Box[T], f func(T) U) Box[U] {
-	return Box{Value: std.NewImmutable(f(b.Value.Get()))}
+	return Box[U]{Value: std.NewImmutable(f(b.Value.Get()))}
 }
 func main() {
-	var b = std.NewImmutable(Box{Value: std.NewImmutable(1)})
-	var b2 = std.NewImmutable(Box_MyMap[string](b.Get(), func(i int) string {
+	var b = std.NewImmutable(Box[int]{Value: std.NewImmutable(1)})
+	var b2 = std.NewImmutable(Box_MyMap[string, int](b.Get(), func(i int) string {
 		return "res"
 	}))
 }
