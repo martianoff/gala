@@ -181,11 +181,7 @@ func (r *Resolver) ResolvePackagePath(importPath string) (string, error) {
 	// Also handles VCS host prefix mismatches (e.g., import "martianoff/gala-server"
 	// matching module "github.com/martianoff/gala-server").
 	for _, sp := range r.searchPaths {
-		spModRoot, spModName := FindModuleRoot(sp)
-		// Also try gala.mod if go.mod wasn't found (pure GALA packages may not have go.mod)
-		if spModName == "" {
-			spModRoot, spModName = findGalaModuleRoot(sp)
-		}
+		spModRoot, spModName := findModuleRootForSearchPath(sp)
 		if spModName == "" || spModRoot == r.moduleRoot {
 			continue // skip primary module (already handled in Strategy 1)
 		}
@@ -301,10 +297,7 @@ func hasModulePrefix(importPath, moduleName string) (relPath string, ok bool) {
 func (r *Resolver) ResolveGoImportPath(importPath string) string {
 	// Check search paths for module roots with VCS prefix differences
 	for _, sp := range r.searchPaths {
-		spModRoot, spModName := FindModuleRoot(sp)
-		if spModName == "" {
-			spModRoot, spModName = findGalaModuleRoot(sp)
-		}
+		spModRoot, spModName := findModuleRootForSearchPath(sp)
 		if spModName == "" || spModRoot == r.moduleRoot {
 			continue
 		}
@@ -360,7 +353,17 @@ func (r *Resolver) IsGalaPackage(importPath string) bool {
 		}
 	}
 
-	// Check gala.mod require list
+	// Check gala.mod require list. The cache check is authoritative when
+	// the dep is actually cached — but under Bazel (bazel_dep +
+	// local_path_override) the dep is materialised in
+	// execroot/external/<repo>+/ and the cache at ~/.gala/cache is never
+	// populated. In that situation isGalaPackageInCache returns false even
+	// though the dep IS a GALA package, just one that reaches the build
+	// via a search path instead of through the cache. So fall through to
+	// the search-path scan below when the cache check is negative — only
+	// treat the require entry as authoritative when the dep is explicitly
+	// marked Go (req.Go), which is a deliberate gala.mod declaration that
+	// should override search-path discovery.
 	if r.galaMod != nil {
 		for _, req := range r.galaMod.Require {
 			if matchesModuleName(importPath, req.Path) || func() bool {
@@ -371,20 +374,18 @@ func (r *Resolver) IsGalaPackage(importPath string) bool {
 				if req.Go {
 					return false
 				}
-				// Found in require list, now check if it's actually a GALA package
-				// by looking for .gala files or gala.mod in the cache
-				return r.isGalaPackageInCache(req.Path, req.Version)
+				if r.isGalaPackageInCache(req.Path, req.Version) {
+					return true
+				}
+				// Cache miss — let the search-path scan decide.
+				break
 			}
 		}
 	}
 
 	// Check if any search path is a module root whose name matches
 	for _, sp := range r.searchPaths {
-		spModRoot, spModName := FindModuleRoot(sp)
-		// Also try gala.mod if go.mod wasn't found (pure GALA packages may not have go.mod)
-		if spModName == "" {
-			spModRoot, spModName = findGalaModuleRoot(sp)
-		}
+		spModRoot, spModName := findModuleRootForSearchPath(sp)
 		if spModName == "" || spModName == r.moduleName {
 			continue
 		}
@@ -628,6 +629,23 @@ func FindModuleRoot(startPath string) (moduleRoot, moduleName string) {
 	}
 
 	return "", ""
+}
+
+// findModuleRootForSearchPath identifies the module root that owns a given
+// search path. It prefers a gala.mod found at the search path or any of its
+// ancestors (walking up) over a walked-up go.mod, so a GALA dep that lives
+// under an unrelated parent directory containing a stray go.mod is not
+// misclassified — common pitfalls include the system temp directory sitting
+// under someone's GOPATH, and Bazel's execroot junctions exposing unrelated
+// workspace module files. Falls back to FindModuleRoot's go.mod walk-up
+// when no gala.mod is reachable from sp.
+func findModuleRootForSearchPath(sp string) (moduleRoot, moduleName string) {
+	if galaModDir := findGalaModFromDir(sp); galaModDir != "" {
+		if root, name := findGalaModuleRoot(galaModDir); name != "" {
+			return root, name
+		}
+	}
+	return FindModuleRoot(sp)
 }
 
 // findGalaModuleRoot looks for gala.mod in the given directory (not walking up)
