@@ -94,10 +94,12 @@ def _dep_search_shell_prelude(gala_deps):
         # _locs is the space-separated list of dep source file paths.
         # _first is the first path; _pkg_dir is its directory; the
         # grandparent typically equals the module root.
+        # Use POSIX parameter expansion (no `dirname` dependency) — Bazel's
+        # genrule shell on Windows msys2 doesn't have coreutils on PATH.
         parts.append("_locs=\"$(locations %s)\"" % src_label)
         parts.append("_first=\"$${_locs%% *}\"")
-        parts.append("_pkg_dir=\"$$(dirname \"$$_first\")\"")
-        parts.append("_dep_search=\"$${_dep_search},$${_pkg_dir},$$(dirname \"$$_pkg_dir\")\"")
+        parts.append("_pkg_dir=\"$${_first%/*}\"")
+        parts.append("_dep_search=\"$${_dep_search},$${_pkg_dir},$${_pkg_dir%/*}\"")
 
     prelude = " ; ".join(parts) + " ; "
     return prelude, "$${_dep_search}"
