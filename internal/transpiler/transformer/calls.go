@@ -308,12 +308,64 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			if txErr != nil {
 				continue
 			}
+			substitutedParamType := t.substituteConcreteTypes(methodMeta.ParamTypes[i], typeMeta.TypeParams, recvTypeArgTypes)
+			// Special case: bare reference to a generic GALA function. Without
+			// instantiation, Go cannot infer the function's own type params at
+			// the call site (and the method's result type-param U is also left
+			// unresolved). Unify the function's raw signature against the
+			// expected param type to bind both: method-level type params (e.g.
+			// Map's U) AND the function's own type params (e.g. tickerAdvance's
+			// T). If the function's params are fully bound, rewrite the AST to
+			// an explicit instantiation `funcName[A, B, ...]` so Go gets a
+			// concrete signature.
+			if id, isIdent := expr.(*ast.Ident); isIdent && substitutedParamType != nil && !substitutedParamType.IsNil() {
+				if fm, exists := t.functions[id.Name]; exists && len(fm.TypeParams) > 0 {
+					if expectedFT, isFT := substitutedParamType.(transpiler.FuncType); isFT {
+						rawFT := t.funcMetaToRawType(fm)
+						combined := append([]string{}, methodMeta.TypeParams...)
+						combined = append(combined, fm.TypeParams...)
+						combinedInferred := make(map[string]transpiler.Type)
+						t.unifyForInference(expectedFT, rawFT, combined, combinedInferred)
+						// If all function-level type params got bound, instantiate.
+						funcTypeArgs := make([]transpiler.Type, 0, len(fm.TypeParams))
+						allBound := true
+						for _, fp := range fm.TypeParams {
+							if v, ok := combinedInferred[fp]; ok && v != nil && !v.IsNil() {
+								funcTypeArgs = append(funcTypeArgs, v)
+							} else {
+								allBound = false
+								break
+							}
+						}
+						if allBound {
+							// Rewrite the AST to attach the inferred type args
+							// to the function reference.
+							var typeArgExprs []ast.Expr
+							for _, ta := range funcTypeArgs {
+								typeArgExprs = append(typeArgExprs, t.typeToExpr(ta))
+							}
+							if len(typeArgExprs) == 1 {
+								expr = &ast.IndexExpr{X: id, Index: typeArgExprs[0]}
+							} else {
+								expr = &ast.IndexListExpr{X: id, Indices: typeArgExprs}
+							}
+							// Commit method-level inferences from the same unification.
+							for _, mtp := range methodMeta.TypeParams {
+								if v, ok := combinedInferred[mtp]; ok && v != nil && !v.IsNil() {
+									if _, alreadySet := typeSubst[mtp]; !alreadySet {
+										typeSubst[mtp] = v.String()
+									}
+								}
+							}
+						}
+					}
+				}
+			}
 			preTransformed[i] = expr
 			argType := t.getExprTypeName(expr)
 			if argType == nil || argType.IsNil() || argType.IsAny() {
 				continue
 			}
-			substitutedParamType := t.substituteConcreteTypes(methodMeta.ParamTypes[i], typeMeta.TypeParams, recvTypeArgTypes)
 			inferredMap := make(map[string]transpiler.Type)
 			t.unifyForInference(substitutedParamType, argType, methodMeta.TypeParams, inferredMap)
 			for tp, inferred := range inferredMap {

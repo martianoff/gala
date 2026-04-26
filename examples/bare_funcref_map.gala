@@ -1,0 +1,48 @@
+package main
+
+import . "martianoff/gala/std"
+import . "martianoff/gala/collection_immutable"
+
+struct IntBox(Value int)
+
+// Generic function whose type parameter participates in both param and
+// return types. Identity, but with a free type parameter — exactly the
+// shape that previously generated unresolved-type-param Go output.
+func tickerAdvance[T any](b T) T = b
+
+// Concrete-typed function for PartitionMap (return Tuple[Array[A], Array[B]]).
+func splitInts(n int) Either[int, int] = if (n > 0) Right(n) else Left(n)
+
+// Generic version of the partition predicate. With a bare reference, the
+// transpiler must instantiate it so Go can resolve A and B.
+func splitGeneric[T any](b T) Either[T, T] = Right(b)
+
+func ApplyAll[T any](items Array[T], step func(T) T) Array[T] = items.Map(step)
+
+func main() {
+    val xs = ArrayOf(IntBox(1), IntBox(2), IntBox(3))
+
+    // Bare reference to a generic function on Map.
+    val zs = xs.Map(tickerAdvance)
+    Println(zs.String())
+
+    // Same generic ref through a non-generic wrapper (works today).
+    val ys = ApplyAll(xs, tickerAdvance)
+    Println(ys.String())
+
+    // Same generic ref on a different element type.
+    val ints = ArrayOf(1, 2, 3)
+    val ws = ints.Map(tickerAdvance)
+    Println(ws.String())
+
+    // Concrete-typed function ref into PartitionMap.
+    val parts = ints.PartitionMap(splitInts)
+    Println(parts.V1.String())
+    Println(parts.V2.String())
+
+    // Bare GENERIC function ref into PartitionMap — must instantiate
+    // splitGeneric and bind both A and B for PartitionMap.
+    val gparts = ints.PartitionMap(splitGeneric)
+    Println(gparts.V1.String())
+    Println(gparts.V2.String())
+}
