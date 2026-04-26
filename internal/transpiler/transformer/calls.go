@@ -1241,6 +1241,22 @@ func (t *galaASTTransformer) tryTransformValWithApply(fun ast.Expr, args []ast.E
 // rather than growing this dispatcher. Each helper is independently testable
 // and carries its own doc comment describing the sub-path it handles.
 func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *grammar.ArgumentListContext) (ast.Expr, error) {
+	// Consume the expected-type hint (set by transformArgumentWithExpectedType
+	// for the immediately-enclosing call). Cleared eagerly so nested arg
+	// transforms inside this call don't pick up the outer call's expectation.
+	pendingExpected := t.pendingExpectedArgType
+	t.pendingExpectedArgType = nil
+
+	// Sealed-variant type-arg propagation: when the expected type is a
+	// generic sealed parent (e.g. `Step[int]`) and `fun` names one of its
+	// variants without explicit type args (`StepA(...)`), inject the parent's
+	// type args into `fun` so downstream codegen emits `StepA[int]{}.Apply(...)`.
+	if pendingExpected != nil && !pendingExpected.IsNil() {
+		if rewritten, ok := t.injectSealedVariantTypeArgs(fun, pendingExpected); ok {
+			fun = rewritten
+		}
+	}
+
 	// --- Section 1: Copy method short-circuit ---
 	if sel, ok := fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Copy" {
 		return t.transformCopyCall(sel.X, argListCtx)
@@ -1656,6 +1672,84 @@ func (t *galaASTTransformer) findSealedVariantFields(variantName string) []strin
 	return nil
 }
 
+// findSealedParentForVariant returns the parent sealed type's metadata for a
+// given variant name, or nil if the name is not a known sealed variant.
+func (t *galaASTTransformer) findSealedParentForVariant(variantName string) *transpiler.TypeMetadata {
+	for _, meta := range t.typeMetas {
+		if !meta.IsSealed {
+			continue
+		}
+		for _, sv := range meta.SealedVariants {
+			if sv.Name == variantName {
+				return meta
+			}
+		}
+	}
+	return nil
+}
+
+// injectSealedVariantTypeArgs rewrites a bare sealed-variant reference (an
+// Ident or package-qualified SelectorExpr without explicit type args) into
+// the equivalent generic instantiation when the expected type is the
+// variant's parent sealed type with concrete type arguments.
+//
+// For example, when the call site is `ArrayOf[Step[int]](StepA(N=1))`, the
+// argument's expected type is `Step[int]`. This helper rewrites the bare
+// `StepA` ident into `StepA[int]` so the downstream sealed-variant codegen
+// emits `StepA[int]{}.Apply(1)` instead of `StepA{}.Apply(1)` — Go cannot
+// otherwise infer the variant's vestigial type parameter from an empty
+// composite literal whose `T` does not appear in any field.
+//
+// Returns the rewritten expression and true on success; returns the original
+// expression and false when the rewrite does not apply.
+func (t *galaASTTransformer) injectSealedVariantTypeArgs(fun ast.Expr, expected transpiler.Type) (ast.Expr, bool) {
+	// Already has explicit type args — nothing to do.
+	switch fun.(type) {
+	case *ast.IndexExpr, *ast.IndexListExpr:
+		return fun, false
+	}
+
+	// Resolve the bare variant name from the call target.
+	var variantName string
+	switch f := fun.(type) {
+	case *ast.Ident:
+		variantName = f.Name
+	case *ast.SelectorExpr:
+		variantName = f.Sel.Name
+	default:
+		return fun, false
+	}
+	if variantName == "" {
+		return fun, false
+	}
+
+	parent := t.findSealedParentForVariant(variantName)
+	if parent == nil || len(parent.TypeParams) == 0 {
+		return fun, false
+	}
+
+	// Expected type must be the parent sealed generic with concrete params.
+	gen, ok := expected.(transpiler.GenericType)
+	if !ok || gen.BaseName() != parent.Name {
+		return fun, false
+	}
+	if len(gen.Params) != len(parent.TypeParams) {
+		return fun, false
+	}
+
+	typeArgs := make([]ast.Expr, len(gen.Params))
+	for i, p := range gen.Params {
+		if p == nil || p.IsNil() {
+			return fun, false
+		}
+		typeArgs[i] = t.typeToExpr(p)
+	}
+	if len(typeArgs) == 1 {
+		return &ast.IndexExpr{X: fun, Index: typeArgs[0]}, true
+	}
+	return &ast.IndexListExpr{X: fun, Indices: typeArgs}, true
+}
+
 // parseDefaultExpr parses a GALA expression string (from a default parameter value)
 // into an ANTLR expression context that can be transformed by the normal pipeline.
 func (t *galaASTTransformer) parseDefaultExpr(exprText string) (grammar.IExpressionContext, error) {
@@ -1965,6 +2059,17 @@ func (t *galaASTTransformer) transformArgumentWithExpectedType(exprCtx grammar.I
 		return nil, err
 	} else if handled {
 		return expr, nil
+	}
+
+	// Bidirectional inference for sealed-variant constructors: stash the
+	// expected type so that a call expression nested directly inside this
+	// argument can pick up the parent sealed type's type arguments. The
+	// dispatcher in transformCallWithArgsCtx consumes-and-clears this value
+	// on entry, so deeper sub-expressions don't accidentally see it.
+	if expectedType != nil && !expectedType.IsNil() {
+		prev := t.pendingExpectedArgType
+		t.pendingExpectedArgType = expectedType
+		defer func() { t.pendingExpectedArgType = prev }()
 	}
 
 	// Not a lambda or partial function, transform normally

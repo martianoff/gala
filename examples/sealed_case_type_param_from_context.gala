@@ -1,0 +1,33 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+sealed type Step[T any] {
+    case StepA(N int)
+    case StepB(Text string)
+}
+
+func main() {
+    // Named-arg case constructors infer T from the enclosing
+    // ArrayOf[Step[int]] element type.
+    val steps = ArrayOf[Step[int]](
+        StepA(N = 1),
+        StepB(Text = "x"),
+    )
+    Println(s"named=${steps.Length()}")
+
+    // Positional case constructors infer T the same way.
+    val pos = ArrayOf[Step[int]](
+        StepA(2),
+        StepB("y"),
+    )
+    Println(s"positional=${pos.Length()}")
+
+    // Existing behavior: explicit type args on the variant still works
+    // (rewrite must not clobber an already-instantiated reference).
+    val explicit = ArrayOf[Step[int]](
+        StepA[int](3),
+        StepB[int](Text = "z"),
+    )
+    Println(s"explicit=${explicit.Length()}")
+}
