@@ -73,6 +73,14 @@ func (t *galaASTTransformer) getExprTypeNameManualUncached(expr ast.Expr) transp
 		}
 		return transpiler.NilType{}
 	case *ast.IndexExpr:
+		// e.g., funcName[T] — instantiated reference to a generic function.
+		// Resolve to the substituted FuncType so callers can unify against it.
+		if id, ok := e.X.(*ast.Ident); ok {
+			if fm, exists := t.functions[id.Name]; exists && len(fm.TypeParams) == 1 {
+				typeArgs := []transpiler.Type{t.astTypeToTranspilerType(e.Index)}
+				return t.instantiateFuncMetaType(fm, typeArgs)
+			}
+		}
 		xType := t.getExprTypeNameManual(e.X)
 		if arr, ok := xType.(transpiler.ArrayType); ok {
 			return arr.Elem
@@ -83,6 +91,17 @@ func (t *galaASTTransformer) getExprTypeNameManualUncached(expr ast.Expr) transp
 		// Handle generic type expression like Option[int]
 		return t.astTypeToTranspilerType(e)
 	case *ast.IndexListExpr:
+		// e.g., funcName[T, U] — instantiated reference to a generic function with
+		// multiple type parameters. Resolve to the substituted FuncType.
+		if id, ok := e.X.(*ast.Ident); ok {
+			if fm, exists := t.functions[id.Name]; exists && len(fm.TypeParams) == len(e.Indices) {
+				var typeArgs []transpiler.Type
+				for _, idx := range e.Indices {
+					typeArgs = append(typeArgs, t.astTypeToTranspilerType(idx))
+				}
+				return t.instantiateFuncMetaType(fm, typeArgs)
+			}
+		}
 		// Handle generic type expression like Tuple[int, string]
 		return t.astTypeToTranspilerType(e)
 	case *ast.ParenExpr:
@@ -299,6 +318,34 @@ func (t *galaASTTransformer) resolveType(name string) transpiler.Type {
 		return transpiler.NilType{}
 	}
 	return transpiler.ParseType(name)
+}
+
+// funcMetaToRawType returns the FuncType for a (possibly generic) function as
+// declared, leaving its own type parameters as type-variables in the signature.
+// Use this when callers need to unify the function's signature against an
+// expected param type to bind both method-level and function-level type params.
+func (t *galaASTTransformer) funcMetaToRawType(fm *transpiler.FunctionMetadata) transpiler.FuncType {
+	var params []transpiler.Type
+	params = append(params, fm.ParamTypes...)
+	var results []transpiler.Type
+	if fm.ReturnType != nil && !fm.ReturnType.IsNil() {
+		results = append(results, fm.ReturnType)
+	}
+	return transpiler.FuncType{Params: params, Results: results}
+}
+
+// instantiateFuncMetaType substitutes the function's type parameters with
+// concrete types and returns the resulting FuncType.
+func (t *galaASTTransformer) instantiateFuncMetaType(fm *transpiler.FunctionMetadata, typeArgs []transpiler.Type) transpiler.FuncType {
+	raw := t.funcMetaToRawType(fm)
+	if len(fm.TypeParams) == 0 {
+		return raw
+	}
+	substituted := t.substituteConcreteTypes(raw, fm.TypeParams, typeArgs)
+	if ft, ok := substituted.(transpiler.FuncType); ok {
+		return ft
+	}
+	return raw
 }
 
 // substituteConcreteTypes substitutes type parameters in a type with concrete types.

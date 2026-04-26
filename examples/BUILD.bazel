@@ -165,6 +165,16 @@ gala_test(
     deps = ["//collection_immutable"],
 )
 
+# Regression: bare function reference passed to method whose receiver
+# carries a type parameter (Array.Map). Must infer method type arg U from
+# the bare function's signature, not leave U unresolved as "any".
+gala_test(
+    name = "bare_funcref_map",
+    src = "bare_funcref_map.gala",
+    expected = "bare_funcref_map.out",
+    deps = ["//collection_immutable"],
+)
+
 gala_test(
     name = "option_complex",
     src = "option_complex.gala",
