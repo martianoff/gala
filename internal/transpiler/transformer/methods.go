@@ -10,20 +10,16 @@ import (
 )
 
 func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *grammar.ArgumentListContext) (ast.Expr, error) {
-	// 1. Identify receiver type
-	var typeObj transpiler.Type = transpiler.NilType{}
-	if id, ok := receiver.(*ast.Ident); ok {
-		typeObj = t.getType(id.Name)
-	} else if call, ok := receiver.(*ast.CallExpr); ok {
-		// Handle p.Get().Copy() case where p is std.Immutable[T]
-		if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == transpiler.MethodGet {
-			if id, ok := sel.X.(*ast.Ident); ok {
-				typeObj = t.getType(id.Name)
-			}
-		}
-	}
+	// 1. Identify receiver type via the general expression-type inferencer.
+	// This handles all receiver shapes uniformly: bare identifiers (`p.Copy(...)`),
+	// chained struct-field access (`o.Tab.Copy(...)`, `m.View.Section.Copy(...)`),
+	// `.Get().Copy()` chains for std.Immutable wrappers, and any other expression
+	// the inferencer can resolve to a struct type.
+	typeObj := t.getExprTypeNameManual(receiver)
 
-	typeName := typeObj.String()
+	// Strip generic decorations (e.g. "Person[int]" -> "Person") and any pointer
+	// prefix so the name lines up with the structFields map keys.
+	typeName := stripTypeNameDecorations(typeObj.String())
 	if typeName == "" {
 		// If we can't find the type, we might still be able to proceed if it's a direct struct literal copy,
 		// but GALA seems to prefer explicit types for Copy overrides.

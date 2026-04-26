@@ -103,6 +103,69 @@ var p = std.NewImmutable(Person{name: std.NewImmutable("Alice")})
 var p2 = std.NewImmutable(p.Get().Copy())
 `,
 		},
+		{
+			// Regression: a chained struct-field-access receiver
+			// (`o.Tab.Copy(...)`) used to fail with
+			// "cannot use Copy overrides: type of receiver unknown"
+			// because the receiver-type inferencer only handled bare
+			// identifiers and `.Get()` chains. The fix routes through
+			// the general expression-type inferencer so any receiver
+			// shape that resolves to a struct type works.
+			name: "Copy on chained struct-field access",
+			input: `package main
+
+struct Inner(Selected int)
+struct Outer(Tab Inner)
+
+func selectChained(o Outer, idx int) Inner = o.Tab.Copy(Selected = idx)`,
+			expected: `package main
+
+import "martianoff/gala/std"
+
+type Inner struct {
+	Selected std.Immutable[int]
+}
+
+func (s Inner) Copy() Inner {
+	return Inner{Selected: std.Copy(s.Selected)}
+}
+func (s Inner) Equal(other Inner) bool {
+	return std.Equal(s.Selected, other.Selected)
+}
+func (s Inner) Unapply(v any) (std.Immutable[int], bool) {
+	if p, ok := v.(Inner); ok {
+		return p.Selected, true
+	}
+	if p, ok := v.(*Inner); ok && p != nil {
+		return p.Selected, true
+	}
+	return *new(std.Immutable[int]), false
+}
+
+type Outer struct {
+	Tab std.Immutable[Inner]
+}
+
+func (s Outer) Copy() Outer {
+	return Outer{Tab: std.Copy(s.Tab)}
+}
+func (s Outer) Equal(other Outer) bool {
+	return std.Equal(s.Tab, other.Tab)
+}
+func (s Outer) Unapply(v any) (std.Immutable[Inner], bool) {
+	if p, ok := v.(Outer); ok {
+		return p.Tab, true
+	}
+	if p, ok := v.(*Outer); ok && p != nil {
+		return p.Tab, true
+	}
+	return *new(std.Immutable[Inner]), false
+}
+func selectChained(o Outer, idx int) Inner {
+	return Inner{Selected: std.NewImmutable(idx)}
+}
+`,
+		},
 	}
 
 	for _, tt := range tests {
