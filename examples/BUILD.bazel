@@ -228,6 +228,12 @@ gala_test(
 )
 
 gala_test(
+    name = "fix_006_three_tuple_return",
+    src = "fix_006_three_tuple_return.gala",
+    expected = "fix_006_three_tuple_return.out",
+)
+
+gala_test(
     name = "either",
     src = "either.gala",
     expected = "either.out",

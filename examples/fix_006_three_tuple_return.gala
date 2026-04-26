@@ -1,0 +1,25 @@
+package main
+
+import . "martianoff/gala/std"
+
+// User-visible name `Tuple` covers all arities; the transpiler is responsible
+// for rewriting Tuple[A, B, C] (>=3 args) to Tuple3[A, B, C] across BOTH
+// signature emission (already correct via transformType) AND type expressions
+// reconstructed from inferred transpiler.GenericType values (e.g., a match
+// IIFE parameter type).
+//
+// The bug surfaces when a function's return type contains a 3+-tuple and
+// the value flows into a match expression. The match IIFE parameter type
+// is rebuilt via typeToExpr from the inferred transpiler.GenericType, and
+// without the arity rewrite that path emits std.Tuple[int, int, int]
+// (2-arity Tuple with 3 type args) — Go rejects it as malformed
+// instantiation.
+
+func wrap() Option[Tuple[int, int, int]] = Some((1, 2, 3))
+
+func main() {
+    wrap() match {
+        case Some(_) => Println("ok")
+        case _       => Println("none")
+    }
+}
