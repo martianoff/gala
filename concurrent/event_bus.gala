@@ -1,0 +1,127 @@
+package concurrent
+
+import (
+    . "martianoff/gala/collection_immutable"
+    . "martianoff/gala/std"
+    "martianoff/gala/go_interop"
+)
+
+// EventBus is a thread-safe queue for many-producer / one-or-few-drain
+// workloads. HTTP handler goroutines (or any concurrent producers) push
+// events; a single coordinator goroutine drains them on a tick.
+//
+// Like Future[T], EventBus[T] follows the handle pattern — the value-type
+// wrapper holds a pointer to shared state, so passing the bus by value
+// across goroutines does not lose identity.
+//
+// Inspired by Scala's cats.effect.std.Queue and akka-streams Source.queue.
+// Two flavours:
+//   - NewEventBus[T]()                     — unbounded, every Push accepted
+//   - NewBoundedEventBus[T](capacity)      — bounded, Push returns false on full
+//
+// Typical use:
+//
+//   val bus = NewEventBus[RequestEvent]()
+//
+//   // Producers (any goroutine — e.g. HTTP filter):
+//   bus.Push(NewRequestEvent(...))
+//
+//   // Consumer (single drain on a tick):
+//   val events = bus.DrainAll()             // Array[RequestEvent]
+//
+// Both Push and DrainAll are safe from any goroutine. DrainAll swaps the
+// internal buffer under the lock, so producers don't share state with the
+// returned Array.
+
+// eventBusState is the shared state behind an EventBus value-type handle.
+// Package-private — consumers see only EventBus[T].
+type eventBusState[T any] struct {
+    var mu       *go_interop.Mutex
+    var events   []T
+    var capacity int       // 0 means unbounded
+}
+
+// EventBus is the public handle. Copy-by-value is safe and intentional:
+// every copy refers to the same underlying state.
+type EventBus[T any] struct {
+    var state *eventBusState[T]
+}
+
+// NewEventBus returns an unbounded bus. Push always succeeds.
+// The buffer starts with a small capacity (256) to avoid the first Push
+// allocating; it grows on demand.
+func NewEventBus[T any]() EventBus[T] = EventBus[T](
+    state = &eventBusState[T](
+        mu       = go_interop.NewMutex(),
+        events   = go_interop.SliceWithCapacity[T](256),
+        capacity = 0,
+    ),
+)
+
+// NewBoundedEventBus returns a bus that holds at most `capacity` events.
+// Push returns false (event dropped) when the bus is full — drop-newest
+// overflow strategy. Use the explicit Push return value for back-pressure
+// signalling. For drop-oldest semantics, drain more aggressively.
+func NewBoundedEventBus[T any](capacity int) EventBus[T] = EventBus[T](
+    state = &eventBusState[T](
+        mu       = go_interop.NewMutex(),
+        events   = go_interop.SliceWithCapacity[T](capacity),
+        capacity = capacity,
+    ),
+)
+
+// Push enqueues an event. Returns true if accepted, false if the bus is
+// bounded and full. Safe from any goroutine.
+func (b EventBus[T]) Push(e T) bool {
+    b.state.mu.Lock()
+    if b.state.capacity > 0 && len(b.state.events) >= b.state.capacity {
+        b.state.mu.Unlock()
+        return false
+    }
+    b.state.events = go_interop.SliceAppendAll(b.state.events, go_interop.SliceOf(e))
+    b.state.mu.Unlock()
+    return true
+}
+
+// DrainAll atomically removes every queued event and returns them as an
+// Array. The bus's internal buffer is reset; subsequent pushes don't share
+// state with the returned Array. Safe to call from any goroutine; intended
+// for a single drain consumer (typically a render-loop tick).
+func (b EventBus[T]) DrainAll() Array[T] {
+    b.state.mu.Lock()
+    val out = b.state.events
+    val initialCap = if (b.state.capacity > 0) b.state.capacity else 256
+    b.state.events = go_interop.SliceWithCapacity[T](initialCap)
+    b.state.mu.Unlock()
+    return ArrayFromSlice(out)
+}
+
+// TryTake removes and returns the oldest event, or None if the bus is
+// empty. Safe from any goroutine. For batch consumers prefer DrainAll —
+// it does one lock acquisition for the whole batch.
+func (b EventBus[T]) TryTake() Option[T] {
+    b.state.mu.Lock()
+    if len(b.state.events) == 0 {
+        b.state.mu.Unlock()
+        return None[T]()
+    }
+    val e = b.state.events[0]
+    b.state.events = go_interop.SliceDrop(b.state.events, 1)
+    b.state.mu.Unlock()
+    return Some(e)
+}
+
+// Size returns the current number of queued events. Useful for telemetry
+// and back-pressure checks.
+func (b EventBus[T]) Size() int {
+    b.state.mu.Lock()
+    val n = len(b.state.events)
+    b.state.mu.Unlock()
+    return n
+}
+
+// IsEmpty reports whether the bus has no queued events.
+func (b EventBus[T]) IsEmpty() bool = b.Size() == 0
+
+// Capacity returns the bus's capacity, or 0 if unbounded.
+func (b EventBus[T]) Capacity() int = b.state.capacity
