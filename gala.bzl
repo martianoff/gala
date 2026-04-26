@@ -61,22 +61,46 @@ def _gala_sources_label(dep):
     name = dep.split("/")[-1]
     return dep + ":" + name + "_gala_sources"
 
-def _dep_parent_dir(dep):
-    """Extract the parent directory from a dependency label for --search.
+def _dep_search_shell_prelude(gala_deps):
+    """Build a shell prelude that populates the _dep_search variable.
 
-    For //examples/cross_file_block_lambda/crossfile, returns
-    examples/cross_file_block_lambda so the resolver can find crossfile/
-    as a subdirectory.
+    For each GALA dep, expand $(locations <_gala_sources>) to the actual
+    on-disk file paths produced by Bazel, take the first one, and derive
+    both its parent directory (the dep package dir) and grandparent
+    directory (typically the dep module root containing gala.mod/go.mod).
+    Both are appended to _dep_search as comma-separated entries.
+
+    This works uniformly for in-repo deps (paths like
+    examples/cross_file_block_lambda/crossfile/methods.gala) and
+    cross-module deps (paths like
+    bazel-out/.../external/<repo>+/some_pkg/foo.gala) because Bazel
+    resolves the locations to real filesystem paths inside the genrule
+    sandbox at execution time. The previous label-string-derived
+    approach returned tokens like @<repo> that are not filesystem
+    paths and could not be walked by the transpiler's resolver, so
+    cross-repository GALA deps were misclassified as Go packages and
+    their sealed-type / struct metadata was silently dropped.
+
+    Returns the shell snippet (terminated with ' ; ' so it can be
+    prepended to the existing cmd) plus the shell expansion to splice
+    into the --search argument. Both are empty when gala_deps is empty.
     """
-    if ":" in dep:
-        pkg = dep.split(":")[0]
-    else:
-        pkg = dep
-    pkg = pkg.lstrip("/")
-    parts = pkg.rsplit("/", 1)
-    if len(parts) > 1:
-        return parts[0]
-    return "."
+    if not gala_deps:
+        return "", ""
+
+    parts = ["_dep_search=\"\""]
+    for dep in gala_deps:
+        src_label = _gala_sources_label(dep)
+        # _locs is the space-separated list of dep source file paths.
+        # _first is the first path; _pkg_dir is its directory; the
+        # grandparent typically equals the module root.
+        parts.append("_locs=\"$(locations %s)\"" % src_label)
+        parts.append("_first=\"$${_locs%% *}\"")
+        parts.append("_pkg_dir=\"$$(dirname \"$$_first\")\"")
+        parts.append("_dep_search=\"$${_dep_search},$${_pkg_dir},$$(dirname \"$$_pkg_dir\")\"")
+
+    prelude = " ; ".join(parts) + " ; "
+    return prelude, "$${_dep_search}"
 
 def gala_transpile(name, src, out = None, package_files = [], extra_srcs = [], gala_deps = []):
     """Transpile a GALA source file to Go using the full gala binary.
@@ -101,11 +125,10 @@ def gala_transpile(name, src, out = None, package_files = [], extra_srcs = [], g
     # Auto-include GALA source files from dependencies for cross-package type resolution
     dep_srcs = [_gala_sources_label(dep) for dep in gala_deps]
 
-    # Build search path: repo root + parent dirs of dependencies
-    dep_search = ""
-    if gala_deps:
-        parents = [_dep_parent_dir(dep) for dep in gala_deps]
-        dep_search = "," + ",".join(parents)
+    # Build a shell prelude that derives --search paths from the actual
+    # Bazel-resolved dep source file locations (so cross-module deps in
+    # external Bazel repositories work the same as in-repo deps).
+    dep_prelude, dep_search_expansion = _dep_search_shell_prelude(gala_deps)
 
     # Use go.mod location to find the repository root for search path.
     # Pass GOROOT via --goroot flag so the transpiler can use go/importer
@@ -114,11 +137,12 @@ def gala_transpile(name, src, out = None, package_files = [], extra_srcs = [], g
         name = name,
         srcs = [src] + package_files + extra_srcs + dep_srcs + [Label("//:all_gala_sources"), Label("//:go.mod")],
         outs = [out],
-        cmd = "_gomod=$(location {gomod}) ; $(location {tool}) --input $(location {src}) --output $@ --search $${{_gomod%/*}}{dep_search}{pf} --goroot=$${{GOROOT:-}}".format(
+        cmd = "_gomod=$(location {gomod}) ; {dep_prelude}$(location {tool}) --input $(location {src}) --output $@ --search $${{_gomod%/*}}{dep_search}{pf} --goroot=$${{GOROOT:-}}".format(
             tool = Label("//cmd/gala"),
             src = src,
             gomod = Label("//:go.mod"),
-            dep_search = dep_search,
+            dep_prelude = dep_prelude,
+            dep_search = dep_search_expansion,
             pf = pf_flag,
         ),
         tools = [Label("//cmd/gala")],
@@ -149,11 +173,10 @@ def gala_transpile_package(name, srcs, outs = None, extra_srcs = [], gala_deps =
     # Auto-include GALA source files from dependencies for cross-package type resolution
     dep_srcs = [_gala_sources_label(dep) for dep in gala_deps]
 
-    # Build search path: repo root + parent dirs of dependencies
-    dep_search = ""
-    if gala_deps:
-        parents = [_dep_parent_dir(dep) for dep in gala_deps]
-        dep_search = "," + ",".join(parents)
+    # Build a shell prelude that derives --search paths from the actual
+    # Bazel-resolved dep source file locations (so cross-module deps in
+    # external Bazel repositories work the same as in-repo deps).
+    dep_prelude, dep_search_expansion = _dep_search_shell_prelude(gala_deps)
 
     inputs_flag = ",".join(["$(location %s)" % s for s in srcs])
     outputs_flag = ",".join(["$(location %s)" % o for o in outs])
@@ -162,12 +185,13 @@ def gala_transpile_package(name, srcs, outs = None, extra_srcs = [], gala_deps =
         name = name,
         srcs = srcs + extra_srcs + dep_srcs + [Label("//:all_gala_sources"), Label("//:go.mod")],
         outs = outs,
-        cmd = "_gomod=$(location {gomod}) ; $(location {tool}) transpile-package --inputs {inputs} --outputs {outputs} --search $${{_gomod%/*}}{dep_search} --goroot=$${{GOROOT:-}}".format(
+        cmd = "_gomod=$(location {gomod}) ; {dep_prelude}$(location {tool}) transpile-package --inputs {inputs} --outputs {outputs} --search $${{_gomod%/*}}{dep_search} --goroot=$${{GOROOT:-}}".format(
             tool = Label("//cmd/gala"),
             inputs = inputs_flag,
             outputs = outputs_flag,
             gomod = Label("//:go.mod"),
-            dep_search = dep_search,
+            dep_prelude = dep_prelude,
+            dep_search = dep_search_expansion,
         ),
         tools = [Label("//cmd/gala")],
         visibility = ["//visibility:public"],

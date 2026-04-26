@@ -1,0 +1,45 @@
+"""Cross-module Bazel regression test for the gala_transpile macro.
+
+The dep label @external_gala_module//effects forces Bazel to materialise
+the dep's source files at bazel-out/.../external/external_gala_module+/...,
+exercising the same external-repository code path that genuine cross-
+module GALA dependencies use. The previous gala_transpile macro derived
+its --search entries from the raw Starlark dep label, returning the token
+@external_gala_module that is not a filesystem path. The transpiler's
+resolver then could not classify the dep as a GALA package and silently
+dropped its sealed-type / struct metadata, so the generated Go regressed
+to bare type conversions and func(any, any) lambda parameters.
+
+This consumer drives all three lowering shapes that broke under that
+regression: zero-field sealed case (Halt), fielded sealed case (Yield),
+and a struct with a lambda field constructed via named arguments
+(Container). The test target downstream of the gala_binary asserts the
+generated Go contains the correct {}.Apply() forms and concrete-typed
+lambdas.
+"""
+
+load("@gala//:gala.bzl", "gala_binary")
+load("@rules_go//go:def.bzl", "go_test")
+
+# Gazelle would otherwise auto-generate a duplicate go_test target named
+# external_gala_consumer_test for the same test source. The hand-written
+# consumer_lowering_test below already wires the genrule's gen.go file
+# into runfiles via a data dep, so the gazelle target is redundant.
+# gazelle:exclude consumer_lowering_test.go
+
+gala_binary(
+    name = "consumer",
+    src = "main.gala",
+    gala_deps = ["@external_gala_module//effects"],
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "consumer_lowering_test",
+    srcs = ["consumer_lowering_test.go"],
+    data = [":consumer_transpile_0"],
+    deps = [
+        "@com_github_stretchr_testify//require",
+        "@rules_go//go/tools/bazel:go_default_library",
+    ],
+)
