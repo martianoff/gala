@@ -87,6 +87,10 @@ var f = std.NewImmutable(func(x int) int {
 `,
 		},
 		{
+			// When HM-based inference cannot resolve the branches' types
+			// (here `c` is undeclared), per-branch fallback inference picks
+			// the common arm type — both arms are int literals, so the IIFE
+			// is typed `func() int` rather than the legacy `func() any`.
 			name: "If expression",
 			input: `package main
 
@@ -95,7 +99,7 @@ val res = if (c) 1 else 2`,
 
 import "martianoff/gala/std"
 
-var res = std.NewImmutable(func() any {
+var res = std.NewImmutable(func() int {
 	if c {
 		return 1
 	} else {

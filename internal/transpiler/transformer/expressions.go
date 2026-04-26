@@ -607,6 +607,29 @@ func (t *galaASTTransformer) transformIfExpression(ctx *grammar.IfExpressionCont
 		retType = inferred
 	}
 
+	// HM-based inference cannot model methods on user-defined generic types
+	// (the type env only carries top-level functions and current-scope vals),
+	// so an if-expression like `if (x.IsDue()) x.Advance() else x` falls
+	// through with retType=NilType. Before defaulting to `any`, try per-branch
+	// inference via getExprTypeName and unify — this is the same machinery
+	// used by block-bodied lambdas (unifyBlockReturnTypes) and reliably
+	// resolves the common arm type even when both arms are user methods.
+	if retType.IsNil() {
+		thenT := t.getExprTypeName(thenExpr)
+		elseT := t.getExprTypeName(elseExpr)
+		if !thenT.IsNil() && !thenT.IsAny() && !elseT.IsNil() && !elseT.IsAny() {
+			if thenT.String() == elseT.String() {
+				retType = thenT
+			} else if unified := t.pickMoreSpecificType(thenT, elseT); unified != nil {
+				retType = unified
+			}
+		} else if !thenT.IsNil() && !thenT.IsAny() {
+			retType = thenT
+		} else if !elseT.IsNil() && !elseT.IsAny() {
+			retType = elseT
+		}
+	}
+
 	retTypeExpr := t.typeToExpr(retType)
 	// If type inference failed and we have an expected type from the enclosing function, use it
 	if retType.IsNil() && t.expectedIfExprType != nil {

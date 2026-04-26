@@ -1498,6 +1498,16 @@ gala_test(
     deps = ["//collection_immutable"],
 )
 
+# Verification: expression-bodied if-expression inside a generic Map lambda
+# must infer the lambda return type as T (the common arm type) rather than
+# widening to any. Otherwise downstream Array[T] usage fails to type-check.
+gala_test(
+    name = "if_expr_lambda_return_type",
+    src = "if_expr_lambda_return_type.gala",
+    expected = "if_expr_lambda_return_type.out",
+    deps = ["//collection_immutable"],
+)
+
 # Verification: Some(v) infers Option[string] not Option[any]
 gala_test(
     name = "some_type_inference",

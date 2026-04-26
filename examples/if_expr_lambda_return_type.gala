@@ -1,0 +1,33 @@
+package main
+
+import . "martianoff/gala/std"
+import . "martianoff/gala/collection_immutable"
+
+struct TickerState[T any](
+    Tag  string,
+    Make func() T,
+)
+
+// Method on a generic struct returning Self type. This call shape often
+// trips up HM-based type inference because the receiver is the same type
+// as the result.
+func (st TickerState[T]) Advance() TickerState[T] =
+    TickerState[T](Tag = "armed", Make = st.Make)
+
+func (st TickerState[T]) IsDue() bool = st.Tag == "due"
+
+// Expression-bodied if-expression where both arms have the same generic
+// type but the LUB is computed on identifiers + method calls. The lambda
+// is passed to a generic Map[U] whose U is inferred from the body.
+func dispatchDueTicks[T any](states Array[TickerState[T]]) Array[TickerState[T]] {
+    return states.Map((st) =>
+        if (st.IsDue()) st.Advance() else st)
+}
+
+func main() {
+    val s1 = TickerState[int](Tag = "armed", Make = () => 1)
+    val s2 = TickerState[int](Tag = "due",   Make = () => 2)
+    val states = ArrayOf(s1, s2)
+    val next = dispatchDueTicks(states)
+    next.ForEach((st) => Println(st.Tag))
+}
