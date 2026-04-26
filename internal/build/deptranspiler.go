@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"martianoff/gala/internal/depman/mod"
@@ -119,10 +120,12 @@ func (dt *DepTranspiler) collectGalaDeps(f *mod.File, allDeps map[string]mod.Req
 }
 
 // transpileSingleDep transpiles a single GALA dependency and returns the output directory.
+// Subpackages (e.g. gala-tui's state/) are transpiled into matching subdirectories
+// of outDir so the dep's own go.mod covers them as part of the same Go module.
 func (dt *DepTranspiler) transpileSingleDep(dep mod.Require, transpiledDirs map[string]string) (string, error) {
 	srcDir := dt.effectiveDepDir(dep)
 
-	galaFiles, err := findGalaFiles(srcDir)
+	galaFiles, err := findGalaFilesRecursive(srcDir)
 	if err != nil {
 		return "", fmt.Errorf("finding gala files in %s: %w", srcDir, err)
 	}
@@ -130,8 +133,19 @@ func (dt *DepTranspiler) transpileSingleDep(dep mod.Require, transpiledDirs map[
 		return "", nil
 	}
 
+	// Group files by subpackage directory. Each subdirectory is its own
+	// GALA package — its sibling list spans only files in the same dir,
+	// not the whole module. (Cross-package references go through imports.)
+	filesByPackageDir := make(map[string][]string)
+	for _, f := range galaFiles {
+		dir := filepath.Dir(f)
+		filesByPackageDir[dir] = append(filesByPackageDir[dir], f)
+	}
+
 	if dt.verbose {
-		fmt.Printf("  Transpiling dependency: %s@%s (%d files)\n", dep.Path, dep.Version, len(galaFiles))
+		nPkgs := len(filesByPackageDir)
+		fmt.Printf("  Transpiling dependency: %s@%s (%d files across %d package(s))\n",
+			dep.Path, dep.Version, len(galaFiles), nPkgs)
 	}
 
 	// Set up output directory
@@ -140,7 +154,9 @@ func (dt *DepTranspiler) transpileSingleDep(dep mod.Require, transpiledDirs map[
 		return "", fmt.Errorf("creating dep output dir: %w", err)
 	}
 
-	// Set up search paths: source dir, stdlib, and source dirs of dep's own GALA deps
+	// Set up search paths: source dir, stdlib, and source dirs of dep's own GALA deps.
+	// The single search path covers all subpackages because the analyzer can resolve
+	// `import "github.com/foo/bar/sub"` against bar's source-cache root.
 	stdlibDir := dt.config.StdlibVersionDir(dt.stdlibVersion)
 	searchPaths := []string{srcDir, stdlibDir}
 
@@ -159,38 +175,71 @@ func (dt *DepTranspiler) transpileSingleDep(dep mod.Require, transpiledDirs map[
 	g := generator.NewGoCodeGenerator()
 	batchAnalyzer := analyzer.NewBatchAnalyzer(p, searchPaths, srcDir)
 
-	for _, galaFile := range galaFiles {
-		content, err := os.ReadFile(galaFile)
+	// Process subpackages in deterministic order for stable verbose output.
+	pkgDirs := make([]string, 0, len(filesByPackageDir))
+	for d := range filesByPackageDir {
+		pkgDirs = append(pkgDirs, d)
+	}
+	sort.Strings(pkgDirs)
+
+	for _, pkgDir := range pkgDirs {
+		pkgFiles := filesByPackageDir[pkgDir]
+
+		// Compute the relative path from srcDir to pkgDir; "" for the root package,
+		// "state" for a state/ subpackage, "demo/foo" for nested demos, etc.
+		relPkg, err := filepath.Rel(srcDir, pkgDir)
 		if err != nil {
-			return "", fmt.Errorf("reading %s: %w", galaFile, err)
+			return "", fmt.Errorf("computing relative path for %s: %w", pkgDir, err)
+		}
+		if relPkg == "." {
+			relPkg = ""
 		}
 
-		// Compute sibling files for multi-file package support
-		var siblings []string
-		for _, other := range galaFiles {
-			if other != galaFile {
-				siblings = append(siblings, other)
+		// Subpackage output directory: outDir/state/, outDir/demo/, etc.
+		pkgOutDir := outDir
+		if relPkg != "" {
+			pkgOutDir = filepath.Join(outDir, relPkg)
+			if err := os.MkdirAll(pkgOutDir, 0755); err != nil {
+				return "", fmt.Errorf("creating subpackage output dir %s: %w", pkgOutDir, err)
 			}
 		}
-		batchAnalyzer.SetPackageFiles(siblings)
 
-		t := transpiler.NewGalaToGoTranspiler(p, batchAnalyzer, tr, g)
+		for _, galaFile := range pkgFiles {
+			content, err := os.ReadFile(galaFile)
+			if err != nil {
+				return "", fmt.Errorf("reading %s: %w", galaFile, err)
+			}
 
-		goCode, err := t.Transpile(string(content), galaFile)
-		if err != nil {
-			return "", fmt.Errorf("transpiling %s: %w", galaFile, err)
-		}
+			// Siblings: other files in the same subpackage directory only.
+			var siblings []string
+			for _, other := range pkgFiles {
+				if other != galaFile {
+					siblings = append(siblings, other)
+				}
+			}
+			batchAnalyzer.SetPackageFiles(siblings)
 
-		// Generate output filename
-		outName := strings.TrimSuffix(filepath.Base(galaFile), ".gala") + ".gen.go"
-		outPath := filepath.Join(outDir, outName)
+			t := transpiler.NewGalaToGoTranspiler(p, batchAnalyzer, tr, g)
 
-		if err := os.WriteFile(outPath, []byte(goCode), 0644); err != nil {
-			return "", fmt.Errorf("writing %s: %w", outPath, err)
-		}
+			goCode, err := t.Transpile(string(content), galaFile)
+			if err != nil {
+				return "", fmt.Errorf("transpiling %s: %w", galaFile, err)
+			}
 
-		if dt.verbose {
-			fmt.Printf("    %s -> %s\n", filepath.Base(galaFile), outName)
+			outName := strings.TrimSuffix(filepath.Base(galaFile), ".gala") + ".gen.go"
+			outPath := filepath.Join(pkgOutDir, outName)
+
+			if err := os.WriteFile(outPath, []byte(goCode), 0644); err != nil {
+				return "", fmt.Errorf("writing %s: %w", outPath, err)
+			}
+
+			if dt.verbose {
+				if relPkg == "" {
+					fmt.Printf("    %s -> %s\n", filepath.Base(galaFile), outName)
+				} else {
+					fmt.Printf("    %s/%s -> %s/%s\n", relPkg, filepath.Base(galaFile), relPkg, outName)
+				}
+			}
 		}
 	}
 
@@ -257,6 +306,12 @@ func (dt *DepTranspiler) generateDepGoMod(dep mod.Require, outDir string, transp
 		}
 		if IsStdlibImport(imp) {
 			stdlibReqs = append(stdlibReqs, imp)
+			continue
+		}
+		// Skip self-prefixed imports (subpackages of the current dep, e.g.
+		// gala-tui's `github.com/martianoff/gala-tui/state`). They live in
+		// the same Go module as the parent and don't need a separate require.
+		if imp == modPath || strings.HasPrefix(imp, modPath+"/") {
 			continue
 		}
 		// Check if it's a known GALA dependency (match by internal module path or require path)
