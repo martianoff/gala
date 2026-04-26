@@ -242,3 +242,90 @@ replace github.com/example/utils => ../local-utils
 	require.NoError(t, err)
 	assert.Equal(t, localPkgDir, filepath.Clean(path))
 }
+
+// TestResolver_IsGalaPackage_LocalReplace verifies that a require + replace
+// pointing at a local directory containing .gala files (or a gala.mod) is
+// classified as a GALA package. Without this, cross-module GALA dependencies
+// served via local replace would be misclassified as Go packages because the
+// cache lookup fails for never-fetched modules.
+func TestResolver_IsGalaPackage_LocalReplace(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "resolver_xmod_local_replace_test")
+	require.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	// Local GALA library with gala.mod and a .gala source file.
+	libDir := filepath.Join(tempDir, "qa_lib")
+	require.NoError(t, os.MkdirAll(libDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(libDir, "gala.mod"),
+		[]byte("module example.com/qalib\n\ngala dev\n"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(libDir, "effects.gala"),
+		[]byte("package qalib\n"), 0644))
+
+	// Consumer with gala.mod that requires the lib via local replace.
+	consumerDir := filepath.Join(tempDir, "qa_consumer")
+	require.NoError(t, os.MkdirAll(consumerDir, 0755))
+	galaModContent := `module example.com/qaconsumer
+
+gala dev
+
+require example.com/qalib v0.0.0
+
+replace example.com/qalib => ../qa_lib
+`
+	require.NoError(t, os.WriteFile(filepath.Join(consumerDir, "gala.mod"),
+		[]byte(galaModContent), 0644))
+
+	originalWd, err := os.Getwd()
+	require.NoError(t, err)
+	defer os.Chdir(originalWd)
+	require.NoError(t, os.Chdir(consumerDir))
+
+	resolver := NewResolver(nil)
+	require.True(t, resolver.HasGalaMod(),
+		"consumer's gala.mod must be loaded — otherwise replace directives are invisible")
+	require.Equal(t, "example.com/qaconsumer", resolver.ModuleName(),
+		"module name must come from gala.mod, not a stray parent go.mod")
+
+	// The consumer's GALA dependency, served via local replace, must classify
+	// as a GALA package. If this returns false the analyzer routes the dep
+	// through AnalyzeGoPackage and drops sealed-type Apply method metadata,
+	// causing the transformer to emit a bare conversion call on the consumer
+	// side instead of `Type[T]{}.Apply(...)`.
+	assert.True(t, resolver.IsGalaPackage("example.com/qalib"),
+		"locally replaced GALA dependency must be recognised as a GALA package")
+}
+
+// TestResolver_PrefersGalaModOverParentGoMod verifies that when a project
+// directory has gala.mod but lives under an unrelated parent go.mod, the
+// resolver picks the project's gala.mod as the authoritative module root
+// rather than the parent go.mod. This ensures the project's replace and
+// require directives are loaded.
+func TestResolver_PrefersGalaModOverParentGoMod(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "resolver_prefer_galamod_test")
+	require.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	// Unrelated parent go.mod above the project — simulates running gala
+	// build inside e.g. /tmp/my_project where /tmp/go.mod exists.
+	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "go.mod"),
+		[]byte("module unrelated/parent\n\ngo 1.22\n"), 0644))
+
+	// Project directory: only gala.mod, no go.mod.
+	projectDir := filepath.Join(tempDir, "project")
+	require.NoError(t, os.MkdirAll(projectDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "gala.mod"),
+		[]byte("module example.com/project\n\ngala dev\n"), 0644))
+
+	originalWd, err := os.Getwd()
+	require.NoError(t, err)
+	defer os.Chdir(originalWd)
+	require.NoError(t, os.Chdir(projectDir))
+
+	resolver := NewResolver(nil)
+	require.True(t, resolver.HasGalaMod(),
+		"project's gala.mod must be loaded, not the parent go.mod")
+	assert.Equal(t, "example.com/project", resolver.ModuleName(),
+		"module name must come from gala.mod (example.com/project), not parent go.mod (unrelated/parent)")
+	assert.Equal(t, projectDir, resolver.ModuleRoot(),
+		"module root must be the project directory, not the parent")
+}
