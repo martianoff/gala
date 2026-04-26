@@ -70,6 +70,22 @@ func autoResolveSearchPaths(inputPath string, basePaths []string) []string {
 
 	projectRoot := findGalaModDir(startDir)
 	if projectRoot != "" {
+		// PREPEND the consumer's gala.mod directory ahead of any other
+		// search path. The transpiler's resolver walks up from each search
+		// path looking for gala.mod (NewResolver.findGalaModRoot) and
+		// accepts the FIRST one it finds. If projectRoot is appended after
+		// dep search paths — which under Bazel typically point inside
+		// external/<repo>+/ directories that themselves contain the dep's
+		// own gala.mod — the dep's gala.mod gets loaded as if it were the
+		// project's, completely masking the consumer's require/replace
+		// directives. Without that masking the cross-module sealed-case
+		// Apply lowering and Go-style struct field metadata break (the
+		// BUG-10 / BUG-15 / BUG-16 trio against gala-tui consumers).
+		// The .gala source's gala.mod (the one walking up from inputPath
+		// finds) is unambiguously the right answer, so it must win the
+		// findGalaModRoot race.
+		basePaths = prependIfNew(basePaths, projectRoot)
+
 		galaModPath := filepath.Join(projectRoot, "gala.mod")
 		if galaMod, err := mod.ParseFile(galaModPath); err == nil {
 			for _, req := range galaMod.GalaRequires() {
@@ -107,6 +123,18 @@ func appendIfNew(slice []string, val string) []string {
 		}
 	}
 	return append(slice, val)
+}
+
+// prependIfNew prepends val to slice if not already present. Used when the
+// caller needs a search path tried first regardless of how callers ordered
+// the rest of the slice.
+func prependIfNew(slice []string, val string) []string {
+	for _, s := range slice {
+		if s == val {
+			return slice
+		}
+	}
+	return append([]string{val}, slice...)
 }
 
 func runTranspile(cmd *cobra.Command, args []string) {

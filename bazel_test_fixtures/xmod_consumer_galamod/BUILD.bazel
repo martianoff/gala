@@ -1,0 +1,56 @@
+"""Cross-module Bazel regression test for the BUG-10/BUG-15/BUG-16 trio.
+
+Unlike the sibling external_gala_consumer fixture, this consumer declares its
+own gala.mod with a `require` entry pointing at the dep's module path:
+
+    module example.com/consumer_with_galamod
+    gala dev
+    require martianoff/external_gala_module v0.0.0
+
+There is deliberately NO `replace` directive — bazel_dep + local_path_override
+in MODULE.bazel supply the dep at link time, and gala.mod just records the
+version. This is the same shape gala-server uses for its
+`require github.com/martianoff/gala-tui v0.1.0` entry that triggered the
+real-world regression.
+
+Routing the gala.mod through `extra_srcs` materialises it inside the genrule
+sandbox at the same workspace-relative path the .gala source lives at, so
+the gala CLI's autoResolveSearchPaths walk-up from the input file's
+directory finds the consumer's gala.mod and triggers the require-list code
+path that the original synthetic fixture missed.
+
+The downstream go_test asserts the generated Go contains the correct
+{}.Apply() / std.NewImmutable / concrete-typed lambda lowerings, locking in
+the fix for the require-list short-circuit in resolver.go::IsGalaPackage
+plus the search-path-precedence fix in transpile.go::autoResolveSearchPaths.
+
+The directory name is deliberately short — the full Windows runfiles path
+('<exec-root>/.../<test-bin-dir>/<test-bin>.runfiles/_main/<test-bin-dir>/<test-bin>')
+contains the fixture directory name three times, so a long name here pushes
+the path past the Windows MAX_PATH limit (260 chars) and bazel test fails
+with 'fork/exec: The parameter is incorrect'.
+"""
+
+load("@gala//:gala.bzl", "gala_transpile")
+load("@rules_go//go:def.bzl", "go_test")
+
+# Gazelle would otherwise auto-generate a duplicate go_test target.
+# gazelle:exclude lowering_test.go
+
+gala_transpile(
+    name = "transpile",
+    src = "main.gala",
+    out = "main.gen.go",
+    extra_srcs = ["gala.mod"],
+    gala_deps = ["@external_gala_module//effects"],
+)
+
+go_test(
+    name = "lowering_test",
+    srcs = ["lowering_test.go"],
+    data = [":transpile"],
+    deps = [
+        "@com_github_stretchr_testify//require",
+        "@rules_go//go/tools/bazel:go_default_library",
+    ],
+)

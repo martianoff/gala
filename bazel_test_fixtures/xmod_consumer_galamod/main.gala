@@ -1,0 +1,40 @@
+package main
+
+import . "martianoff/external_gala_module/effects"
+
+// Cross-module consumer that, unlike its sibling external_gala_consumer,
+// declares its own gala.mod with a `require` entry pointing at the dep's
+// module path. This exercises the resolver code path that gala-server
+// hits in the wild: bazel_dep + local_path_override supply the dep at
+// link time, gala.mod records the version (no `replace` directive), and
+// the GALA cache at ~/.gala/cache is empty inside the genrule sandbox.
+//
+// Without the resolver fix, IsGalaPackage walks the require list, calls
+// isGalaPackageInCache, gets false (cache miss), and short-circuits
+// to false — misclassifying the dep as a Go package. The analyzer then
+// drops the dep's sealed-case Apply metadata and struct field metadata,
+// and the transformer regresses to:
+//
+//   - Halt[int]()                  (bare conversion, Go rejects it as
+//                                   "missing argument in conversion to
+//                                   external.Halt[int]")
+//   - Yield[int]{Val: 42}          (struct literal with named fields on a
+//                                   zero-field variant struct, "unknown
+//                                   field" / "too many arguments" error)
+//   - Container[int]{Field: 7,     (raw values where std.Immutable[T] is
+//                    Cb: func(x any) any { ... }}    expected, plus lambda
+//                                   parameter type collapsed to any)
+//
+// The corrected lowering — guaranteed by consumer_lowering_test.go in
+// this directory — is `Halt[int]{}.Apply()`, `Yield[int]{}.Apply(42)`,
+// and `Container[int]{Field: std.NewImmutable(7), Cb: std.NewImmutable(
+// func(x int) int { ... })}`.
+func main() {
+    val h = Halt[int]()
+    val y = Yield[int](Val = 42)
+    val c = Container[int](
+        Field = 7,
+        Cb = (x) => x + 1,
+    )
+    Println(s"h=${h.String()} y=${y.String()} c=${c.Field}")
+}

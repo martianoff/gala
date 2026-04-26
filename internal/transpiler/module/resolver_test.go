@@ -329,3 +329,72 @@ func TestResolver_PrefersGalaModOverParentGoMod(t *testing.T) {
 	assert.Equal(t, projectDir, resolver.ModuleRoot(),
 		"module root must be the project directory, not the parent")
 }
+
+// TestResolver_IsGalaPackage_RequireWithoutCache_FallsThroughToSearchPath
+// captures the failure mode that breaks gala-server's cross-module Bazel build
+// (the BUG-10/BUG-15/BUG-16 trio). The consumer's gala.mod declares
+//
+//	require example.com/dep v0.1.0
+//
+// without a `replace` directive — Bazel's local_path_override materialises the
+// dep at execroot/external/<repo>+/, never populating the GALA cache at
+// ~/.gala/cache. The dep is therefore reachable only through a search path.
+//
+// Before the fix, IsGalaPackage hit the require entry, called
+// isGalaPackageInCache, got back false (cache empty), and returned false
+// straight away. The analyzer then routed the import through
+// AnalyzeGoPackage and discarded the dep's sealed-case and struct field
+// metadata, so the transformer emitted bare `Case[T]()` conversions and
+// `Struct{Field: rawValue}` literals on the consumer side.
+//
+// The fix lets the require check fall through to the search-path module-root
+// scan when isGalaPackageInCache returns false. The dep's gala.mod is then
+// found via the search path and the import is correctly classified as GALA.
+func TestResolver_IsGalaPackage_RequireWithoutCache_FallsThroughToSearchPath(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "resolver_require_no_cache_test")
+	require.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	// External GALA dep — has gala.mod and at least one .gala source.
+	// Simulates execroot/external/dep+/ under Bazel's local_path_override.
+	depDir := filepath.Join(tempDir, "external_dep")
+	require.NoError(t, os.MkdirAll(depDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(depDir, "gala.mod"),
+		[]byte("module example.com/dep\n\ngala dev\n"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(depDir, "lib.gala"),
+		[]byte("package dep\n"), 0644))
+
+	// Consumer with gala.mod that REQUIRES the dep but does NOT replace it.
+	// Under Bazel this is the realistic shape: bazel_dep + local_path_override
+	// supply the dep at link time, gala.mod just records the version.
+	consumerDir := filepath.Join(tempDir, "consumer")
+	require.NoError(t, os.MkdirAll(consumerDir, 0755))
+	galaModContent := `module example.com/consumer
+
+gala dev
+
+require example.com/dep v0.1.0
+`
+	require.NoError(t, os.WriteFile(filepath.Join(consumerDir, "gala.mod"),
+		[]byte(galaModContent), 0644))
+
+	originalWd, err := os.Getwd()
+	require.NoError(t, err)
+	defer os.Chdir(originalWd)
+	require.NoError(t, os.Chdir(consumerDir))
+
+	// Search path points at the dep dir, mirroring what gala_transpile does
+	// from $(locations <dep>_gala_sources) inside the genrule sandbox.
+	resolver := NewResolver([]string{depDir})
+	require.True(t, resolver.HasGalaMod(),
+		"consumer's gala.mod must be loaded for the require entry to be visible")
+	require.Equal(t, "example.com/consumer", resolver.ModuleName())
+
+	// The dep must classify as a GALA package even though it isn't in the
+	// cache — because the search path leads to a directory whose gala.mod
+	// matches the import path. If this is false the analyzer routes the
+	// import through AnalyzeGoPackage and the consumer regresses to bare
+	// `Case[T]()` conversions for sealed-case constructors.
+	assert.True(t, resolver.IsGalaPackage("example.com/dep"),
+		"GALA dep required without a cached version must still classify as GALA when reachable via a search path")
+}
