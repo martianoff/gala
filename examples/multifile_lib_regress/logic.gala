@@ -92,3 +92,27 @@ func MakeFlagPair(flag bool, label string) Tuple[bool, string] = Tuple(flag, lab
 
 func MakeTriple(n int, label string, ratio float64) Tuple3[int, string, float64] =
     Tuple(n, label, ratio)
+
+// --- Regression: expression-bodied if-expression inside Map lambda whose
+// arms reference methods on a user-defined generic type. HM type inference
+// can't model methods on generics (env only carries top-level functions
+// and current-scope vals), so the if-expression's IIFE return type must
+// fall back to per-branch inference. Both arms are State[T], so the lambda
+// must emit `func(State[T]) State[T]` rather than widening to `any`.
+struct State[T any](Tag string, Make func() T)
+
+func (s State[T]) Advance() State[T] = State[T](Tag = "armed", Make = s.Make)
+func (s State[T]) IsDue() bool = s.Tag == "due"
+
+func DispatchStates[T any](items Array[State[T]]) Array[State[T]] {
+    return items.Map((it) => if (it.IsDue()) it.Advance() else it)
+}
+
+// --- Regression: expression-bodied if-expression inside Map lambda over a
+// generic element type. Both arms return T, so the lambda's inferred return
+// type must be T (and Map's U must be inferred to T). Previously the
+// if-expression's IIFE return type was widened to `any` and the result
+// became Array[any], breaking downstream Array[T] use sites.
+func IfMapEcho[T any](items Array[T], pred func(T) bool, advance func(T) T) Array[T] {
+    return items.Map((it) => if (pred(it)) advance(it) else it)
+}

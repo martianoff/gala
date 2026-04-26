@@ -87,6 +87,22 @@ func main() {
     multifile_lib_regress.DoubleEach(nums).ForEach((n) => Println(n))
     multifile_lib_regress.ExpandPairs(nums).ForEach((n) => Println(n))
 
+    // Map with expression-bodied if-expression body over a generic element T:
+    // both arms must unify to T so Map[U] resolves to T (not any). Otherwise
+    // Array[any] leaks into downstream Array[T] use sites at the call site.
+    val ifEcho = multifile_lib_regress.IfMapEcho(ArrayOf(1, 2, 3, 4), (x) => x % 2 == 0, (x) => x * 10)
+    ifEcho.ForEach((n) => Println(n))
+
+    // Map with expression-bodied if-expression body whose arms invoke
+    // methods on a user-defined generic type. HM inference can't model
+    // those methods, so the IIFE must fall back to per-branch type
+    // inference. Without that fallback the lambda return widens to `any`
+    // and Array[any] leaks into Array[State[T]] use sites.
+    val s1 = multifile_lib_regress.State[int](Tag = "armed", Make = () => 1)
+    val s2 = multifile_lib_regress.State[int](Tag = "due",   Make = () => 2)
+    val nextStates = multifile_lib_regress.DispatchStates(ArrayOf(s1, s2))
+    nextStates.ForEach((s) => Println(s.Tag))
+
     // Generic-method lambdas over a Go-declared local element type: Event is
     // defined in events.go alongside the GALA sources. The lambdas must bind
     // their element parameter to Event (not to the literal type-parameter name)

@@ -98,6 +98,36 @@ func test() string {
 			},
 		},
 		{
+			// Expression-bodied if-expression as a lambda body, where both
+			// arms reference user-defined methods on a generic type. HM
+			// inference can't resolve methods on user-defined generics
+			// (the type env carries only top-level functions and
+			// current-scope vals), so the if-expression's IIFE must fall
+			// back to per-branch inference. Both arms have the same
+			// concrete type after substitution, so the IIFE return must
+			// be that type rather than `any`.
+			name: "if-expression with method-call arms infers branch type",
+			input: `package main
+
+import . "martianoff/gala/collection_immutable"
+
+struct State[T any](Tag string, Make func() T)
+
+func (s State[T]) Advance() State[T] = State[T](Tag = "armed", Make = s.Make)
+func (s State[T]) IsDue() bool = s.Tag == "due"
+
+func process[T any](items Array[State[T]]) Array[State[T]] {
+    return items.Map((it) => if (it.IsDue()) it.Advance() else it)
+}`,
+			contains: []string{
+				"func(it State[T]) State[T]",
+			},
+			notContains: []string{
+				"func(it State[T]) any",
+				"Array[any]",
+			},
+		},
+		{
 			// Unify return types across all paths in block lambdas.
 			// When a block lambda has multiple return paths (e.g., if/else),
 			// the return type should be unified from all branches.
