@@ -122,9 +122,19 @@ func (t *galaASTTransformer) isImmutableField(xType transpiler.Type, selExpr *as
 	// Check structFields (current package types)
 	resolvedTypeName := t.resolveStructTypeName(baseTypeName)
 	if fields, ok := t.structFields[resolvedTypeName]; ok {
+		immut := t.structImmutFields[resolvedTypeName]
 		for i, f := range fields {
 			if f == selName {
-				return t.structImmutFields[resolvedTypeName][i]
+				// Some registration paths populate structFields but not
+				// structImmutFields (e.g. a struct synthesized from a Go
+				// `type X struct {…}` declaration in a hand-written .go
+				// file or a cross-package metadata path that only fills
+				// names). Treat missing entries as not-immutable rather
+				// than panicking with index-out-of-range.
+				if i < len(immut) {
+					return immut[i]
+				}
+				return false
 			}
 		}
 	}
