@@ -1674,10 +1674,35 @@ func (t *galaASTTransformer) findSealedVariantFields(variantName string) []strin
 
 // findSealedParentForVariant returns the parent sealed type's metadata for a
 // given variant name, or nil if the name is not a known sealed variant.
-func (t *galaASTTransformer) findSealedParentForVariant(variantName string) *transpiler.TypeMetadata {
+//
+// pkgQualifier is the optional package qualifier from the call site (e.g.
+// "step" when the call target is `step.StepA(...)`). When non-empty it
+// restricts the search to sealed parents whose package matches the
+// qualifier; the qualifier is resolved through the import manager so an
+// alias (`import alias "real/pkg"`) maps to the canonical package name
+// before comparison.
+func (t *galaASTTransformer) findSealedParentForVariant(variantName, pkgQualifier string) *transpiler.TypeMetadata {
+	// Resolve a possible import alias to the actual package name; metadata
+	// is registered under the real package, not the alias.
+	actualPkg := pkgQualifier
+	if pkgQualifier != "" {
+		if resolved, ok := t.importManager.ResolveAlias(pkgQualifier); ok {
+			actualPkg = resolved
+		}
+	}
+
 	for _, meta := range t.typeMetas {
 		if !meta.IsSealed {
 			continue
+		}
+		if pkgQualifier != "" {
+			// Restrict to the named package — variants from other packages
+			// might happen to share a name (e.g. two `Some` variants), and
+			// using one parent's type args on another parent's variant
+			// would produce nonsense.
+			if meta.Package != pkgQualifier && meta.Package != actualPkg {
+				continue
+			}
 		}
 		for _, sv := range meta.SealedVariants {
 			if sv.Name == variantName {
@@ -1693,12 +1718,16 @@ func (t *galaASTTransformer) findSealedParentForVariant(variantName string) *tra
 // the equivalent generic instantiation when the expected type is the
 // variant's parent sealed type with concrete type arguments.
 //
-// For example, when the call site is `ArrayOf[Step[int]](StepA(N=1))`, the
-// argument's expected type is `Step[int]`. This helper rewrites the bare
-// `StepA` ident into `StepA[int]` so the downstream sealed-variant codegen
-// emits `StepA[int]{}.Apply(1)` instead of `StepA{}.Apply(1)` — Go cannot
-// otherwise infer the variant's vestigial type parameter from an empty
-// composite literal whose `T` does not appear in any field.
+// For same-package call sites (`ArrayOf[Step[int]](StepA(N=1))`), the
+// argument's expected type is `Step[int]` and `fun` is a bare `*ast.Ident`;
+// this helper rewrites it to `StepA[int]`. For cross-package call sites
+// (`ArrayOf[step.Step[int]](step.StepA(N=1))`) the variant reference is a
+// `*ast.SelectorExpr` and the rewrite wraps the whole selector in an
+// `*ast.IndexExpr`, producing `step.StepA[int]`. Either shape lets the
+// downstream sealed-variant codegen emit `<Variant>[int]{}.Apply(...)`
+// instead of an uninstantiated `<Variant>{}.Apply(...)` — Go cannot infer
+// the variant's vestigial type parameter from an empty composite literal
+// whose `T` does not appear in any field.
 //
 // Returns the rewritten expression and true on success; returns the original
 // expression and false when the rewrite does not apply.
@@ -1709,13 +1738,21 @@ func (t *galaASTTransformer) injectSealedVariantTypeArgs(fun ast.Expr, expected 
 		return fun, false
 	}
 
-	// Resolve the bare variant name from the call target.
-	var variantName string
+	// Resolve the bare variant name (and optional package qualifier) from
+	// the call target. SelectorExpr corresponds to qualified references
+	// like `step.StepA`; bare Ident covers same-package calls.
+	var (
+		variantName  string
+		pkgQualifier string
+	)
 	switch f := fun.(type) {
 	case *ast.Ident:
 		variantName = f.Name
 	case *ast.SelectorExpr:
 		variantName = f.Sel.Name
+		if pkgIdent, ok := f.X.(*ast.Ident); ok {
+			pkgQualifier = pkgIdent.Name
+		}
 	default:
 		return fun, false
 	}
@@ -1723,14 +1760,27 @@ func (t *galaASTTransformer) injectSealedVariantTypeArgs(fun ast.Expr, expected 
 		return fun, false
 	}
 
-	parent := t.findSealedParentForVariant(variantName)
+	parent := t.findSealedParentForVariant(variantName, pkgQualifier)
 	if parent == nil || len(parent.TypeParams) == 0 {
 		return fun, false
 	}
 
 	// Expected type must be the parent sealed generic with concrete params.
+	// The expected type's base is package-qualified for cross-package types
+	// (e.g. `step.Step`), but TypeMetadata stores Name and Package
+	// separately. Compare both forms so same-package references (where
+	// `gen.BaseName()` is just `Step`) still match.
 	gen, ok := expected.(transpiler.GenericType)
-	if !ok || gen.BaseName() != parent.Name {
+	if !ok {
+		return fun, false
+	}
+	expectedBase := gen.BaseName()
+	parentSimple := parent.Name
+	parentQualified := parent.Name
+	if parent.Package != "" {
+		parentQualified = parent.Package + "." + parent.Name
+	}
+	if expectedBase != parentSimple && expectedBase != parentQualified {
 		return fun, false
 	}
 	if len(gen.Params) != len(parent.TypeParams) {
