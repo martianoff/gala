@@ -1,6 +1,7 @@
 package transformer
 
 import (
+	"fmt"
 	"go/ast"
 	"go/token"
 	"martianoff/gala/internal/parser/grammar"
@@ -8,6 +9,22 @@ import (
 	"martianoff/gala/internal/transpiler/registry"
 	"strings"
 )
+
+// isStdTupleIdent reports whether `ident` refers to the `std.Tuple` (2-arity)
+// type, written either as the bare `Tuple` ident (when the file dot-imports
+// std) or as the qualified `std.Tuple` selector. Used to decide whether to
+// rewrite a Tuple[T1,…,Tn] type expression to its arity-specific form
+// std.Tuple3 / Tuple4 / … / Tuple10 when the user wrote `Tuple` with 3+ args.
+func isStdTupleIdent(ident ast.Expr) bool {
+	switch e := ident.(type) {
+	case *ast.Ident:
+		return e.Name == "Tuple"
+	case *ast.SelectorExpr:
+		x, ok := e.X.(*ast.Ident)
+		return ok && x.Name == registry.StdPackageName && e.Sel != nil && e.Sel.Name == "Tuple"
+	}
+	return false
+}
 
 func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, error) {
 	if ctx == nil {
@@ -78,6 +95,15 @@ func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, 
 					return nil, err
 				}
 				argExprs = append(argExprs, ae)
+			}
+
+			// std.Tuple covers 2 type args; 3+ type args map to std.Tuple3..Tuple10.
+			// The user-visible type name is always "Tuple"; rewrite to the
+			// arity-specific name so signatures (return types, parameter types,
+			// field types) match the value-construction path which already uses
+			// the right arity (see transformer/postfix.go::~640).
+			if n := len(argExprs); n >= 3 && n <= 10 && isStdTupleIdent(ident) {
+				ident = t.stdIdent(fmt.Sprintf("Tuple%d", n))
 			}
 
 			if len(argExprs) == 1 {
