@@ -229,6 +229,25 @@ func main() {
 			expectCode:     galaerr.CodeSealedVariantUninferred,
 			expectContains: "cannot infer type parameter",
 		},
+		{
+			// Empty parenthesized expression `()` (the unit-shorthand the
+			// grammar admits but the transpiler has no Go lowering for)
+			// must surface as GALA-E0019 with a real source span instead
+			// of crashing Go's printer downstream.
+			name: "GALA-E0019 empty parens in match arm",
+			input: `package main
+
+func handle(code Int) Unit = code match {
+    case 0 => Println("zero")
+    case _ => ()
+}
+
+func main() {
+    handle(0)
+}`,
+			expectCode:     galaerr.CodeEmptyParenExpression,
+			expectContains: "empty parenthesized expression",
+		},
 	}
 
 	for _, tc := range cases {
