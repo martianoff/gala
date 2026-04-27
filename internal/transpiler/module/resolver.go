@@ -516,16 +516,25 @@ func (e *PackageNotFoundError) Error() string {
 	return "package not found: " + e.ImportPath
 }
 
-// findGalaModRoot searches for gala.mod starting from cwd, then falling back to search paths.
-// Returns the directory containing gala.mod, or empty string if not found.
+// findGalaModRoot searches for gala.mod, preferring the explicit search paths
+// over cwd. Returns the directory containing gala.mod, or empty string if not
+// found.
+//
+// When the caller passes search paths (gala_transpile prepends the consumer's
+// project directory; gala_bootstrap_transpile passes the staged module root
+// for the std files), those paths are the authoritative module roots for this
+// build. cwd is whatever the parent shell or build sandbox happens to be —
+// for a Bazel genrule it is the *consumer's* execroot, which under
+// `local_path_override` may itself contain a `gala.mod` belonging to an
+// unrelated module. Letting cwd win there hijacks `moduleRoot` for the
+// transpile of std (or any package whose source files live under the search
+// path), causing the analyzer to register the same .gala file under two
+// different `DefinedIn` strings and trip GALA-E0011 ("type X redefined").
+//
+// cwd is still consulted as a fallback for callers that pass no search paths
+// (legacy CLI invocations from inside a project directory).
 func findGalaModRoot(searchPaths []string) string {
-	// Try current working directory first
-	cwd, _ := os.Getwd()
-	if root := findGalaModFromDir(cwd); root != "" {
-		return root
-	}
-
-	// Fall back to search paths
+	// Prefer explicit search paths — these are authoritative when set.
 	for _, sp := range searchPaths {
 		absPath, err := filepath.Abs(sp)
 		if err != nil {
@@ -534,6 +543,13 @@ func findGalaModRoot(searchPaths []string) string {
 		if root := findGalaModFromDir(absPath); root != "" {
 			return root
 		}
+	}
+
+	// Fall back to cwd when no search paths were provided (or none yielded a
+	// gala.mod).
+	cwd, _ := os.Getwd()
+	if root := findGalaModFromDir(cwd); root != "" {
+		return root
 	}
 
 	return ""

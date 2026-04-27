@@ -383,9 +383,12 @@ require example.com/dep v0.1.0
 	defer os.Chdir(originalWd)
 	require.NoError(t, os.Chdir(consumerDir))
 
-	// Search path points at the dep dir, mirroring what gala_transpile does
-	// from $(locations <dep>_gala_sources) inside the genrule sandbox.
-	resolver := NewResolver([]string{depDir})
+	// Search paths mirror what gala_transpile produces in real builds:
+	// the consumer's project root is the first entry (so its gala.mod wins
+	// the findGalaModRoot scan), with the dep dir appended after — see
+	// gala.bzl's _dep_search_shell_prelude and the --search assembly in
+	// gala_transpile / gala_transpile_package.
+	resolver := NewResolver([]string{consumerDir, depDir})
 	require.True(t, resolver.HasGalaMod(),
 		"consumer's gala.mod must be loaded for the require entry to be visible")
 	require.Equal(t, "example.com/consumer", resolver.ModuleName())
@@ -397,4 +400,67 @@ require example.com/dep v0.1.0
 	// `Case[T]()` conversions for sealed-case constructors.
 	assert.True(t, resolver.IsGalaPackage("example.com/dep"),
 		"GALA dep required without a cached version must still classify as GALA when reachable via a search path")
+}
+
+// TestResolver_PrefersSearchPathGalaModOverCwdGalaMod captures the
+// gala_bootstrap-from-downstream-execroot scenario. Reproduces the original
+// failure where transpiling std/*.gala from a downstream Bazel project
+// (consumer using local_path_override of @gala) hijacked moduleRoot via
+// cwd-walking and tripped GALA-E0011 "type ... redefined".
+//
+// Shape:
+//   - Search path points at the gala module's staged dir (e.g.,
+//     execroot/external/gala+/std/), which has gala.mod for the GALA module.
+//   - cwd is the consumer's execroot (e.g., execroot/_main/), which is
+//     incidentally inside a directory tree containing the consumer's own
+//     gala.mod for an unrelated module.
+//
+// The resolver MUST pick the search path's gala.mod (the actual module being
+// transpiled), not the cwd's gala.mod (the consumer that just happens to be
+// staged in the parent tree). Otherwise the std files end up registered with
+// two different DefinedIn strings (one through the --search resolution path,
+// one through cwd-walking) and the duplicate-type check in the analyzer
+// trips.
+func TestResolver_PrefersSearchPathGalaModOverCwdGalaMod(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "resolver_search_over_cwd_test")
+	require.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	// The GALA module being transpiled — has gala.mod plus a std-like package
+	// dir with a .gala source. Mirrors execroot/external/gala+/.
+	galaModuleDir := filepath.Join(tempDir, "gala_module")
+	require.NoError(t, os.MkdirAll(galaModuleDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(galaModuleDir, "gala.mod"),
+		[]byte("module martianoff/gala\n\ngala dev\n"), 0644))
+	stdDir := filepath.Join(galaModuleDir, "std")
+	require.NoError(t, os.MkdirAll(stdDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(stdDir, "option.gala"),
+		[]byte("package std\n"), 0644))
+
+	// Consumer's execroot — has its own gala.mod for an unrelated module.
+	// Mirrors what bazel stages at execroot/_main/ when the consumer module
+	// has a workspace-root gala.mod and uses local_path_override of @gala.
+	consumerExecroot := filepath.Join(tempDir, "consumer_execroot")
+	require.NoError(t, os.MkdirAll(consumerExecroot, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(consumerExecroot, "gala.mod"),
+		[]byte("module github.com/example/consumer\n\ngala dev\n"), 0644))
+
+	originalWd, err := os.Getwd()
+	require.NoError(t, err)
+	defer os.Chdir(originalWd)
+	require.NoError(t, os.Chdir(consumerExecroot))
+
+	// Bootstrap-style invocation: --search points at the gala module's staged
+	// dir, cwd is the consumer's execroot. With the cwd-first lookup the
+	// resolver would pick consumerExecroot/gala.mod ("github.com/example/consumer")
+	// — wrong; the std files belong to martianoff/gala. With the fix the
+	// search path's gala.mod ("martianoff/gala") wins.
+	resolver := NewResolver([]string{galaModuleDir})
+
+	require.True(t, resolver.HasGalaMod(),
+		"resolver must load the gala module's gala.mod (reached via search path), not the consumer's stale one at cwd")
+	assert.Equal(t, "martianoff/gala", resolver.ModuleName(),
+		"moduleName must come from the search path's gala.mod (martianoff/gala), not cwd's gala.mod (github.com/example/consumer)")
+	assert.Equal(t, galaModuleDir, resolver.ModuleRoot(),
+		"moduleRoot must be the search path's gala.mod directory, not the consumer's execroot")
 }
