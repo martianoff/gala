@@ -464,3 +464,58 @@ func TestResolver_PrefersSearchPathGalaModOverCwdGalaMod(t *testing.T) {
 	assert.Equal(t, galaModuleDir, resolver.ModuleRoot(),
 		"moduleRoot must be the search path's gala.mod directory, not the consumer's execroot")
 }
+
+// TestResolver_PrefersSearchPathGoModOverCwdGoMod is the go.mod-fallback
+// counterpart to TestResolver_PrefersSearchPathGalaModOverCwdGalaMod. It
+// captures the second half of the bootstrap-from-downstream-execroot bug:
+// when the GALA module being transpiled ships only `go.mod` at its repo
+// root (no `gala.mod` — the shape gala_simple itself uses), the resolver's
+// gala.mod scan returns empty and NewResolver falls through to
+// findModuleRootFromCwdOrPaths. That fallback must mirror the search-paths-
+// first ordering or the consumer's go.mod (staged at execroot/_main/go.mod
+// under local_path_override) hijacks moduleRoot for the std transpile and
+// trips GALA-E0011 "type X redefined".
+func TestResolver_PrefersSearchPathGoModOverCwdGoMod(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "resolver_search_over_cwd_gomod_test")
+	require.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	// The GALA module being transpiled — go.mod ONLY (no gala.mod), mirroring
+	// gala_simple's actual repo layout. Has a std-like package dir with a
+	// .gala source.
+	galaModuleDir := filepath.Join(tempDir, "gala_module")
+	require.NoError(t, os.MkdirAll(galaModuleDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(galaModuleDir, "go.mod"),
+		[]byte("module martianoff/gala\n\ngo 1.22\n"), 0644))
+	stdDir := filepath.Join(galaModuleDir, "std")
+	require.NoError(t, os.MkdirAll(stdDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(stdDir, "either.gala"),
+		[]byte("package std\n"), 0644))
+
+	// Consumer's execroot — has its own go.mod for an unrelated module.
+	// Mirrors what bazel stages at execroot/_main/go.mod when the consumer
+	// uses local_path_override of @gala. No gala.mod on either side, so the
+	// gala.mod scan returns empty and the resolver falls through to the
+	// go.mod path.
+	consumerExecroot := filepath.Join(tempDir, "consumer_execroot")
+	require.NoError(t, os.MkdirAll(consumerExecroot, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(consumerExecroot, "go.mod"),
+		[]byte("module github.com/example/consumer\n\ngo 1.22\n"), 0644))
+
+	originalWd, err := os.Getwd()
+	require.NoError(t, err)
+	defer os.Chdir(originalWd)
+	require.NoError(t, os.Chdir(consumerExecroot))
+
+	// Bootstrap-style invocation: --search points at the gala module's staged
+	// dir, cwd is the consumer's execroot. With the cwd-first lookup the
+	// resolver would pick consumerExecroot/go.mod ("github.com/example/consumer")
+	// — wrong; the std files belong to martianoff/gala. With the fix the
+	// search path's go.mod ("martianoff/gala") wins.
+	resolver := NewResolver([]string{galaModuleDir})
+
+	assert.Equal(t, "martianoff/gala", resolver.ModuleName(),
+		"moduleName must come from the search path's go.mod (martianoff/gala), not cwd's go.mod (github.com/example/consumer)")
+	assert.Equal(t, galaModuleDir, resolver.ModuleRoot(),
+		"moduleRoot must be the search path's go.mod directory, not the consumer's execroot")
+}

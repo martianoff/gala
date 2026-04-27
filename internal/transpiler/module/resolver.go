@@ -582,17 +582,23 @@ func findGalaModFromDir(startPath string) string {
 	return ""
 }
 
-// findModuleRootFromCwdOrPaths searches for go.mod starting from cwd,
-// then falling back to search paths.
+// findModuleRootFromCwdOrPaths searches for go.mod, preferring the explicit
+// search paths over cwd. Falls back to cwd only when no search paths were
+// provided (or none yielded a go.mod).
+//
+// Same rationale as findGalaModRoot: when the caller passes search paths,
+// those are authoritative for the module being transpiled. cwd may be a
+// downstream consumer's Bazel execroot whose go.mod belongs to an unrelated
+// module — picking it up there hijacks moduleRoot for transpiles whose
+// source files actually live under the search path. This bites the
+// gala_bootstrap path in particular: gala_simple ships only go.mod (no
+// gala.mod) at its repo root, so the bootstrap genrule for std/*.gala
+// reaches this fallback after findGalaModRoot returns empty, and a
+// consumer's go.mod staged at execroot/_main/go.mod takes over moduleRoot
+// — causing GALA-E0011 "type X redefined" once the std file is registered
+// under two different DefinedIn strings.
 func findModuleRootFromCwdOrPaths(searchPaths []string) (moduleRoot, moduleName string) {
-	// Try current working directory first
-	cwd, _ := os.Getwd()
-	moduleRoot, moduleName = FindModuleRoot(cwd)
-	if moduleRoot != "" {
-		return moduleRoot, moduleName
-	}
-
-	// Fall back to search paths
+	// Prefer explicit search paths — these are authoritative when set.
 	for _, sp := range searchPaths {
 		absPath, err := filepath.Abs(sp)
 		if err != nil {
@@ -602,6 +608,14 @@ func findModuleRootFromCwdOrPaths(searchPaths []string) (moduleRoot, moduleName 
 		if moduleRoot != "" {
 			return moduleRoot, moduleName
 		}
+	}
+
+	// Fall back to cwd when no search paths yielded a go.mod (legacy CLI
+	// invocations from inside a project directory).
+	cwd, _ := os.Getwd()
+	moduleRoot, moduleName = FindModuleRoot(cwd)
+	if moduleRoot != "" {
+		return moduleRoot, moduleName
 	}
 
 	return "", ""
