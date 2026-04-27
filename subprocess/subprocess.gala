@@ -1,0 +1,197 @@
+package subprocess
+
+import (
+    "bufio"
+    "errors"
+    "io"
+    "os/exec"
+    . "martianoff/gala/std"
+    "martianoff/gala/go_interop"
+)
+
+// SpawnOpts is the bag of inputs to Spawn.
+//
+// Cmd  - executable name (looked up on PATH unless absolute).
+// Args - arguments, NOT including argv[0].
+// Env  - extra "KEY=VAL" entries appended to os.Environ; pass empty to inherit.
+// Dir  - working directory; empty inherits the parent's cwd.
+struct SpawnOpts(
+    Cmd  string,
+    Args []string,
+    Env  []string,
+    Dir  string,
+)
+
+// processState carries every mutable bit of a running child. Unexported so
+// GALA users only ever see the Process handle.
+type processState struct {
+    var cmd        *exec.Cmd
+    var stdin      io.WriteCloser
+    var stdoutScan *bufio.Scanner
+    var stderrScan *bufio.Scanner
+    var stdinMu    *go_interop.Mutex      // serialises WriteLine calls
+    var waitOnce   *go_interop.Once       // ensures cmd.Wait() runs at most once
+    var waitDone   go_interop.Signal      // closed when Wait returns
+    var waitErr    error
+    var exitCode   int
+}
+
+// Process is a running child plus its IO pipes. Value-type handle wrapping a
+// pointer to mutable state — copies share the same underlying child (mirrors
+// concurrent.Future[T]). Methods are safe to call from multiple goroutines
+// (Kill / Wait from one, ReadLine from another) but each ReadLine /
+// WriteLine call itself is sequential — the caller serialises reads.
+type Process struct {
+    var state *processState
+}
+
+// Spawn launches the child process described by opts and returns Try[Process].
+// On success the process is running and its stdin/stdout/stderr pipes are
+// connected. The returned Process is reaped only when Wait or Kill is called —
+// long-running consumers MUST call Wait or Kill exactly once when done.
+func Spawn(opts SpawnOpts) Try[Process] = Try[Process](() => {
+    if opts.Cmd == "" {
+        panic("subprocess.Spawn: empty Cmd")
+    }
+    val c = exec.Command(opts.Cmd, opts.Args...)
+    if opts.Dir != "" {
+        c.Dir = opts.Dir
+    }
+    if len(opts.Env) > 0 {
+        // Append rather than overwrite — replace mode would be a footgun
+        // (forgetting PATH breaks every spawn).
+        c.Env = append(c.Environ(), opts.Env...)
+    }
+    val sin, sErr = c.StdinPipe()
+    if sErr != nil { panic(sErr) }
+    val sout, oErr = c.StdoutPipe()
+    if oErr != nil { panic(oErr) }
+    val serr, eErr = c.StderrPipe()
+    if eErr != nil { panic(eErr) }
+    val startErr = c.Start()
+    if startErr != nil { panic(startErr) }
+    return Process(state = &processState{
+        cmd:        c,
+        stdin:      sin,
+        stdoutScan: newLineScanner(sout),
+        stderrScan: newLineScanner(serr),
+        stdinMu:    go_interop.NewMutex(),
+        waitOnce:   go_interop.NewOnce(),
+        waitDone:   go_interop.NewSignal(),
+    })
+})
+
+// WriteLine writes s + "\n" to the child's stdin, flushing immediately.
+// Concurrent callers are serialised so two writers can't interleave bytes.
+//
+// Returns Success(true) on a clean write. A failed write usually means the
+// child closed stdin or exited; Failure carries the underlying io error.
+func (p Process) WriteLine(s string) Try[bool] = Try[bool](() => {
+    val st = p.state
+    st.stdinMu.Lock()
+    defer st.stdinMu.Unlock()
+    val _, e1 = io.WriteString(st.stdin, s)
+    if e1 != nil { panic(e1) }
+    val _, e2 = io.WriteString(st.stdin, "\n")
+    if e2 != nil { panic(e2) }
+    return true
+})
+
+// ReadLine blocks until the child writes a complete line on stdout, then
+// returns it without the trailing newline. EOF (the child closed stdout, or
+// exited) returns Failure(io.EOF) — callers can recognise this via the std
+// Try API (e.g. .Recover) and treat it as "stream done", not as an error.
+func (p Process) ReadLine() Try[string] = Try[string](() => {
+    if !p.state.stdoutScan.Scan() {
+        val err = p.state.stdoutScan.Err()
+        if err != nil { panic(err) }
+        panic(io.EOF)
+    }
+    return p.state.stdoutScan.Text()
+})
+
+// ReadStderrLine is the stderr counterpart to ReadLine. Same EOF semantics.
+func (p Process) ReadStderrLine() Try[string] = Try[string](() => {
+    if !p.state.stderrScan.Scan() {
+        val err = p.state.stderrScan.Err()
+        if err != nil { panic(err) }
+        panic(io.EOF)
+    }
+    return p.state.stderrScan.Text()
+})
+
+// Wait blocks until the child exits and returns its exit code. Idempotent —
+// the underlying *exec.Cmd.Wait is called at most once. Subsequent Wait calls
+// return the cached result.
+//
+// Note: ReadLine / ReadStderrLine on the same Process should drain to EOF
+// before Wait, otherwise the child may block writing to a full pipe. The
+// scanner returning EOF naturally signals "you can Wait now".
+func (p Process) Wait() Try[int] = Try[int](() => {
+    val st = p.state
+    val _ = st.waitOnce.Do(() => {
+        val err = st.cmd.Wait()
+        // Be tidy — pipe may already be closed.
+        val _ = st.stdin.Close()
+        if err == nil {
+            st.exitCode = st.cmd.ProcessState.ExitCode()
+        } else {
+            // exec.ExitError still gives us a process state with a code.
+            // Non-zero exit is information, not a Failure — surface via
+            // Success(code). exitCodeFromError extracts the code or returns
+            // -1 plus the original error for true failures.
+            val code, residualErr = exitCodeFromError(err)
+            st.exitCode = code
+            st.waitErr = residualErr
+        }
+        go_interop.CloseSignal(st.waitDone)
+    })
+    go_interop.WaitSignal(st.waitDone)
+    if st.waitErr != nil { panic(st.waitErr) }
+    return st.exitCode
+})
+
+// Kill terminates the child immediately (SIGKILL on Unix, TerminateProcess on
+// Windows — exec.Cmd handles the platform difference). Idempotent against an
+// already-exited process: a kill after Wait returns Success(true) without
+// error. Caller is still responsible for invoking Wait afterwards to reap.
+func (p Process) Kill() Try[bool] = Try[bool](() => {
+    if !p.IsAlive() {
+        return true
+    }
+    val err = p.state.cmd.Process.Kill()
+    if err != nil {
+        // "process already finished" can race with the IsAlive check — treat
+        // as success rather than confusing the caller.
+        if isProcessFinished(err) { return true }
+        panic(err)
+    }
+    return true
+})
+
+// IsAlive returns true if the child is still running. Non-blocking; consults
+// the cached Wait result first, then falls back to a process-state poll.
+func (p Process) IsAlive() bool {
+    // WaitSignalTimeout(s, 0) is a non-blocking poll: returns true if the
+    // signal is closed, false otherwise.
+    if go_interop.WaitSignalTimeout(p.state.waitDone, 0) {
+        return false
+    }
+    if p.state.cmd.ProcessState != nil {
+        return false
+    }
+    return true
+}
+
+// Pid returns the OS process id; -1 if the child failed to start.
+func (p Process) Pid() int {
+    if p.state.cmd.Process == nil {
+        return -1
+    }
+    return p.state.cmd.Process.Pid
+}
+
+// errProcessFinished is the os/exec sentinel for "you tried to kill an
+// already-exited process". Used by isProcessFinished to recognise the race
+// between IsAlive and Kill.
+var errProcessFinished = errors.New("os: process already finished")

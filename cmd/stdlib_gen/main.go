@@ -23,6 +23,7 @@ func packageFromPath(path string) string {
 		"collection_mutable",
 		"go_interop",
 		"concurrent",
+		"subprocess",
 		"lazy",
 		"stream",
 		"string_utils",
@@ -144,6 +145,7 @@ var PackageImportPaths = map[string]string{
 	"regex":                "martianoff/gala/regex",
 	"io":                   "martianoff/gala/io",
 	"json":                 "martianoff/gala/json",
+	"subprocess":           "martianoff/gala/subprocess",
 	"test":                 "martianoff/gala/test",
 }
 `)
