@@ -17,3 +17,18 @@ struct Container[T any](
     Field T,
     Cb func(T) T,
 )
+
+// Top-level generic function whose lambda parameter is typed `int` (not
+// a type-parameter). Mirrors the shape of std's ArrayTabulate. A
+// consumer importing this across Bazel modules must propagate the
+// `func(int) T` signature into the lambda transformer so that the
+// generated Go reads `func(i int) string`, not `func(i any) string`.
+func TabulateInts[T any](n int, f func(int) T) T = f(n)
+
+// Call ArrayTabulate (from std's collection_immutable) inside the
+// external module's own source. When the module is transpiled inside
+// a downstream consumer's Bazel sandbox, the analyzer must still
+// resolve `ArrayTabulate`'s `func(int) T` signature so the lambda's
+// `i` parameter lowers to `int`, not `any`. Reproduces the gala_tui
+// cross-module ArrayTabulate regression.
+func BuildLabels(n int) Array[string] = ArrayTabulate(n, (i) => s"row=$i")

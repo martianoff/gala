@@ -59,6 +59,18 @@ func TestCrossModuleApplyLoweringForExternalRepoDep(t *testing.T) {
 		"lambda parameter must not collapse to func(any) any, got:\n%s", got)
 	require.True(t, strings.Contains(got, "func(x int) int"),
 		"expected concrete-typed lambda func(x int) int in generated Go, got:\n%s", got)
+
+	// Top-level cross-module function call: the analyzer must load the
+	// imported package's function metadata so the lambda's first parameter
+	// gets the declared `int` type and the result type stays string. If the
+	// signature is dropped, the lambda regresses to `func(i any) any` and
+	// the body's string-interpolation produces the wrong return type.
+	require.False(t, strings.Contains(got, "func(i any) any"),
+		"top-level cross-module lambda must not collapse to func(i any) any, got:\n%s", got)
+	require.False(t, strings.Contains(got, "func(i any) string"),
+		"top-level cross-module lambda parameter must not be typed any, got:\n%s", got)
+	require.True(t, strings.Contains(got, "func(i int) string"),
+		"expected concrete-typed lambda func(i int) string for TabulateInts call, got:\n%s", got)
 }
 
 // containsBareConversion reports whether the source text contains a bare
