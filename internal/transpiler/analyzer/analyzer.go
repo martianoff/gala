@@ -2022,7 +2022,12 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 	// Use the resolver to find the package directory
 	dirPath, err := a.resolver.ResolvePackagePath(relPath)
 	if err != nil {
-		return nil, fmt.Errorf("package not found: %s", relPath)
+		return nil, galaerr.NewCodedSemanticError(
+			galaerr.CodePackageNotFound,
+			0, 0,
+			fmt.Sprintf("package not found: %s", relPath),
+			"check that the directory exists on a search path; for cross-module imports verify gala.mod has a `require` (and `replace` if local) for the module",
+		)
 	}
 
 	// Check disk cache before doing expensive analysis.
@@ -2069,7 +2074,17 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 				if pkgAST.PackageName == "" {
 					pkgAST.PackageName = res.PackageName
 				} else if pkgAST.PackageName != res.PackageName {
-					return nil, fmt.Errorf("multiple package names in directory %s: %s and %s", dirPath, pkgAST.PackageName, res.PackageName)
+					// Mirror the explicit --package-files path (line ~308) which
+					// already raises CodeDuplicatePackageName for the same
+					// condition. The auto-discovery walk had been emitting an
+					// uncoded fmt.Errorf; both paths now produce the same code
+					// so tools and CI can match on a single identifier.
+					return nil, galaerr.NewCodedSemanticError(
+						galaerr.CodeDuplicatePackageName,
+						0, 0,
+						fmt.Sprintf("multiple package names in directory %s: %s and %s", dirPath, pkgAST.PackageName, res.PackageName),
+						"use the same package name across all sibling .gala files, or move the file to a different directory",
+					)
 				}
 				// Canonicalize filePath once — isSameFile resolves symlinks and
 				// runs os.Stat, which is too expensive to call per type.
