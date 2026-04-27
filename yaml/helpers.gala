@@ -1,0 +1,71 @@
+package yaml
+
+import (
+    . "martianoff/gala/collection_immutable"
+)
+
+// KeyConfig holds field-level configuration for YAML serialization.
+// Mirror of json.KeyConfig.
+type KeyConfig struct {
+    var NamingStrategy Naming
+    var Renames        HashMap[string, string]
+    var Omits          HashMap[string, bool]
+    var OmitEmpties    HashMap[string, bool]
+}
+
+func NewKeyConfig() KeyConfig = KeyConfig{
+    NamingStrategy: AsIs(),
+    Renames:        EmptyHashMap[string, string](),
+    Omits:          EmptyHashMap[string, bool](),
+    OmitEmpties:    EmptyHashMap[string, bool](),
+}
+
+func (c KeyConfig) WithNaming(n Naming) KeyConfig {
+    c.NamingStrategy = n
+    return c
+}
+
+func (c KeyConfig) WithRename(field string, key string) KeyConfig {
+    c.Renames = c.Renames.Put(field, key)
+    return c
+}
+
+func (c KeyConfig) WithOmit(field string) KeyConfig {
+    c.Omits = c.Omits.Put(field, true)
+    return c
+}
+
+func (c KeyConfig) WithOmitEmpty(field string) KeyConfig {
+    c.OmitEmpties = c.OmitEmpties.Put(field, true)
+    return c
+}
+
+// KeysConfig holds the computed key arrays for WriteTo/ReadFrom.
+type KeysConfig struct {
+    Keys        Array[string]
+    ReverseKeys HashMap[string, string]
+}
+
+// BuildKeys computes serialization keys from metadata, naming, and config.
+func BuildKeys(numFields int, fieldName func(int) string, naming Naming, config KeyConfig) KeysConfig {
+    var keys = EmptyArray[string]()
+    var reverseKeys = EmptyHashMap[string, string]()
+    var i = 0
+    for i < numFields {
+        val name = fieldName(i)
+        if config.Omits.Contains(name) {
+            keys = keys.Append("")
+        } else {
+            val renamed = config.Renames.Get(name)
+            val key = if (renamed.IsDefined()) renamed.Get() else ApplyNaming(name, naming)
+            keys = keys.Append(key)
+            reverseKeys = reverseKeys.Put(key, name)
+        }
+        i = i + 1
+    }
+    return KeysConfig{Keys: keys, ReverseKeys: reverseKeys}
+}
+
+// BuildKeysSimple computes keys with a naming strategy and no overrides.
+func BuildKeysSimple(numFields int, fieldName func(int) string, naming Naming) KeysConfig =
+    BuildKeys(numFields, fieldName, naming, NewKeyConfig())
