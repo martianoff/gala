@@ -1,0 +1,14 @@
+load("@rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "echoecho_lib",
+    srcs = ["main.go"],
+    importpath = "martianoff/gala/subprocess/testdata/echoecho",
+    visibility = ["//visibility:private"],
+)
+
+go_binary(
+    name = "echoecho",
+    embed = [":echoecho_lib"],
+    visibility = ["//subprocess:__subpackages__"],
+)

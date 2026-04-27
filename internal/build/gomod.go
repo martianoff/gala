@@ -82,6 +82,7 @@ var StdlibPackages = []string{
 	"regex",
 	"io",
 	"json",
+	"subprocess",
 	"test",
 }
 
@@ -99,6 +100,7 @@ var StdlibImportPaths = map[string]string{
 	"regex":                "martianoff/gala/regex",
 	"io":                   "martianoff/gala/io",
 	"json":                 "martianoff/gala/json",
+	"subprocess":           "martianoff/gala/subprocess",
 	"test":                 "martianoff/gala/test",
 }
 

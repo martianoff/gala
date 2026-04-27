@@ -100,6 +100,10 @@ genrule(
         "//io:io_go",
         # io package - GALA source
         "//io:io.gala",
+        # subprocess package - GALA surface + Go-side helpers (errors.As / scanner buffer)
+        "//subprocess:subprocess_go",
+        "//subprocess:subprocess.gala",
+        "//subprocess:subprocess.go",
         # test package - transpiled Go
         "//test:assertions_go",
         "//test:bench_go",

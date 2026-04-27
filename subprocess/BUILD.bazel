@@ -1,0 +1,44 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+load("//:gala.bzl", "gala_bootstrap_transpile")
+
+exports_files([
+    "subprocess.gala",
+    "subprocess.go",
+])
+
+filegroup(
+    name = "gala_sources",
+    srcs = glob(
+        ["*.gala"],
+        exclude = ["*_test.gala"],
+    ),
+    visibility = ["//visibility:public"],
+)
+
+gala_bootstrap_transpile(
+    name = "subprocess_go",
+    src = "subprocess.gala",
+    out = "subprocess.gen.go",
+)
+
+go_library(
+    name = "subprocess",
+    srcs = [
+        "subprocess.gen.go",
+        "subprocess.go",
+    ],
+    importpath = "martianoff/gala/subprocess",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//go_interop",
+        "//std",
+    ],
+)
+
+go_test(
+    name = "subprocess_test",
+    srcs = ["subprocess_test.go"],
+    data = ["//subprocess/testdata/echoecho"],
+    embed = [":subprocess"],
+    deps = ["@rules_go//go/runfiles"],
+)
