@@ -1,0 +1,46 @@
+"""Cross-module Bazel regression test for qualified-import Apply lowering.
+
+The sibling //bazel_test_fixtures/external_gala_consumer fixture covers the
+dot-import case (`import . "martianoff/external_gala_module/effects"`),
+which routes the call site through a bare-Ident shape such as
+`Halt[int](...)`. This fixture covers the qualified-import case
+(`import "martianoff/external_gala_module/effects"`) which routes the
+call site through a SelectorExpr shape such as `effects.Halt[int](...)`.
+
+Before the fix, the call dispatcher's Section-10 typeName extraction
+returned the bare leaf `Halt` for selector calls, missing the imported
+package's type metadata stored under the qualified key
+`effects.Halt`. The transformer fell through to the verbatim emit
+path, producing `effects.Halt[int]()` (a bare type conversion Go
+rejects as "missing argument in conversion") for zero-field sealed
+cases and `effects.Container[int]{Field: ..., Cb: ...}` (a raw struct
+literal where each field is std.Immutable[T]-wrapped at codegen) for
+named-arg struct constructors.
+"""
+
+load("@gala//:gala.bzl", "gala_transpile")
+load("@rules_go//go:def.bzl", "go_test")
+
+# Gazelle would otherwise auto-generate a duplicate go_test target.
+# gazelle:exclude qualified_lowering_test.go
+
+# Use gala_transpile (not gala_binary) so we exercise the same Bazel
+# wiring as the sibling xmod_consumer_galamod fixture: gala.mod with a
+# require directive routed through extra_srcs, no link step downstream.
+gala_transpile(
+    name = "transpile",
+    src = "main.gala",
+    out = "main.gen.go",
+    extra_srcs = ["gala.mod"],
+    gala_deps = ["@external_gala_module//effects"],
+)
+
+go_test(
+    name = "qualified_lowering_test",
+    srcs = ["qualified_lowering_test.go"],
+    data = [":transpile"],
+    deps = [
+        "@com_github_stretchr_testify//require",
+        "@rules_go//go/tools/bazel:go_default_library",
+    ],
+)
