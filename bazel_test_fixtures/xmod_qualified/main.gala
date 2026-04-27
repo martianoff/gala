@@ -1,0 +1,57 @@
+package main
+
+import "martianoff/external_gala_module/effects"
+
+// Cross-module consumer that imports the external GALA module under a
+// qualified (non-dot) name. Sibling //bazel_test_fixtures/external_gala_consumer
+// covers the dot-import case (`Halt[int]()`); this fixture covers the
+// SelectorExpr call shape that arises from qualified import
+// (`effects.Halt[int]()`, etc.).
+//
+// All three call shapes must lower the same way as their dot-imported
+// counterparts:
+//
+//   - effects.Halt[int]()              -> effects.Halt[int]{}.Apply()
+//   - effects.Yield[int](Val = 42)     -> effects.Yield[int]{}.Apply(42)
+//   - effects.Container[int](
+//         Field = 7,
+//         Cb = (x) => x + 1,
+//     )                                 -> effects.Container[int]{
+//                                              Field: std.NewImmutable(7),
+//                                              Cb: std.NewImmutable(
+//                                                  func(x int) int { ... }),
+//                                          }
+//
+// The hazard the dispatcher must avoid: emitting a bare type conversion
+// `effects.Halt[int]()` (Go rejects: "missing argument in conversion to
+// effects.Halt[int]") or a raw struct literal whose fields would receive
+// raw values for std.Immutable[T]-wrapped fields (Go rejects:
+// "cannot use ... as std.Immutable[T] value in struct literal").
+//
+// Beyond the simple call sites the fixture also drives a function whose
+// return type embeds the imported sealed parent generic
+// (`effects.Effect[Msg]`) with a CONSUMER-defined type argument. This
+// exercises the "type-arg flows back into the imported sealed case"
+// path: the call-site `effects.Halt[Msg]()` must still lower to
+// `effects.Halt[Msg]{}.Apply()` even though Msg is defined in this
+// file, not in the imported module.
+sealed type Msg {
+    case Tick()
+    case Quit()
+}
+
+func step(m int, msg Msg) Tuple[int, effects.Effect[Msg]] = msg match {
+    case Tick() => (m + 1, effects.Halt[Msg]())
+    case Quit() => (m, effects.Yield[Msg](Val = Tick()))
+}
+
+func main() {
+    val h = effects.Halt[int]()
+    val y = effects.Yield[int](Val = 42)
+    val c = effects.Container[int](
+        Field = 7,
+        Cb = (x) => x + 1,
+    )
+    val (n, _) = step(0, Tick())
+    Println(s"h=${h.String()} y=${y.String()} c=${c.Field} n=$n")
+}
