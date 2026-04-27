@@ -2135,7 +2135,13 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 	// When no .gala source contributed metadata for this package (e.g., the
 	// directory only contains .gen.go from a precompiled artifact), allow
 	// .gen.go files to participate so cross-module GoExports stay populated.
-	includeGenerated := len(pkgAST.Types) == 0
+	// All four maps must be empty: a func-only or alias-only .gala package
+	// would otherwise fall through to includeGenerated=true and re-introduce
+	// the phantom-export bug PR #237 fixed (B5).
+	includeGenerated := len(pkgAST.Types) == 0 &&
+		len(pkgAST.Functions) == 0 &&
+		len(pkgAST.CompanionObjects) == 0 &&
+		len(pkgAST.TypeAliases) == 0
 	a.extractGoFileExports(files, dirPath, relPath, pkgAST, includeGenerated)
 	// Always extract Go type information from .go files, even in mixed GALA+Go packages.
 	// This ensures Go-defined functions and variables (e.g., concurrent.Spawn) are available

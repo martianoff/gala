@@ -178,6 +178,24 @@ func isNoReturnCallExpr(expr ast.Expr) bool {
 	return false
 }
 
+// lowerMatchArmTailExpr classifies a tail expression in a match arm and
+// returns the statement that should appear in its place along with the
+// type that should feed common-result-type inference. (B8 — single source
+// of truth for the value-vs-no-return decision that PR #209 / #214 / #260
+// have each had to re-derive in slightly different ways.)
+//
+//   - For a no-return call (e.g. `panic("…")`), return a bare ExprStmt and
+//     NilType. Wrapping in `return panic(…)` would produce invalid Go;
+//     NilType keeps the arm out of common-type inference.
+//   - For any other expression, return a `return <expr>` statement and
+//     report the expression's inferred type.
+func (t *galaASTTransformer) lowerMatchArmTailExpr(expr ast.Expr) (ast.Stmt, transpiler.Type) {
+	if isNoReturnCallExpr(expr) {
+		return &ast.ExprStmt{X: expr}, transpiler.NilType{}
+	}
+	return &ast.ReturnStmt{Results: []ast.Expr{expr}}, t.inferResultType(expr)
+}
+
 // containsBareReturn reports whether any statement in stmts (recursively) is a
 // `return` with no results. It is used to detect "bare return" inside a branch
 // of a match-as-value expression, which would generate invalid Go because the
@@ -515,16 +533,11 @@ func (t *galaASTTransformer) transformMatchClauses(ctx grammar.IExpressionContex
 						resultTypes = append(resultTypes, t.inferResultType(ret.Results[0]))
 						casePatterns = append(casePatterns, "case _")
 					} else if exprStmt, ok := lastStmt.(*ast.ExprStmt); ok {
-						if isNoReturnCallExpr(exprStmt.X) {
-							// Leave bare `panic(...)` as ExprStmt; NilType
-							// keeps this arm out of common-type inference.
-							resultTypes = append(resultTypes, transpiler.NilType{})
-							casePatterns = append(casePatterns, "case _")
-						} else {
-							defaultBody[len(defaultBody)-1] = &ast.ReturnStmt{Results: []ast.Expr{exprStmt.X}}
-							resultTypes = append(resultTypes, t.inferResultType(exprStmt.X))
-							casePatterns = append(casePatterns, "case _")
-						}
+						// B8: classify and lower via the unified helper.
+						stmt, typ := t.lowerMatchArmTailExpr(exprStmt.X)
+						defaultBody[len(defaultBody)-1] = stmt
+						resultTypes = append(resultTypes, typ)
+						casePatterns = append(casePatterns, "case _")
 					}
 				}
 			} else if ccCtx.GetBodyStmt() != nil {
@@ -867,7 +880,6 @@ func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patt
 		// where every branch yields the same type parameter T as the
 		// declared return — emitting `func(...) any` for the IIFE breaks
 		// the Go compile because `any` does not satisfy `T`.
-		// Fall back to `any` only when no branch type matches the enclosing return.
 		if t.currentFuncReturnType != nil && !t.currentFuncReturnType.IsNil() {
 			enclosingName := t.currentFuncReturnType.String()
 			for _, typ := range types {
@@ -876,6 +888,42 @@ func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patt
 					return t.currentFuncReturnType, nil
 				}
 			}
+		}
+		// B3: when no enclosing return is available (or it doesn't match), but
+		// every typed arm names the *same* type parameter AND that parameter
+		// is in scope of the currently-transforming function, return it
+		// directly. Without the in-scope guard the IIFE would be emitted
+		// with a return type Go cannot resolve (the type param is bound at
+		// the matched value's type, not at this function's signature) — so
+		// we fall through to `any` for the out-of-scope case.
+		var sharedTypeParam transpiler.Type
+		for _, typ := range types {
+			if typ == nil || typ.IsNil() {
+				continue
+			}
+			if _, isVoid := typ.(transpiler.VoidType); isVoid {
+				continue
+			}
+			name := typ.String()
+			if !t.isTypeParameter(name) {
+				sharedTypeParam = nil
+				break
+			}
+			if sharedTypeParam == nil {
+				sharedTypeParam = typ
+			} else if sharedTypeParam.String() != name {
+				sharedTypeParam = nil
+				break
+			}
+		}
+		// Direct map lookup, bypassing the single-uppercase-letter fallback in
+		// isActiveTypeParam — that fallback fires when activeTypeParams is empty
+		// (e.g. inside a non-generic function whose body matches on a generic
+		// type), and would otherwise let us emit a type-param Go signature
+		// for a function that doesn't declare it.
+		if sharedTypeParam != nil && t.activeTypeParams[sharedTypeParam.String()] {
+			t.traceType(nil, sharedTypeParam, "match-result-fallback-to-shared-type-param")
+			return sharedTypeParam, nil
 		}
 		t.warnInference("match expression defaulting to 'any' return type (all branches are type parameters)")
 		return transpiler.BasicType{Name: "any"}, nil
@@ -1123,14 +1171,10 @@ func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClause
 			lastStmt := body[len(body)-1]
 			if lastStmt != nil {
 				if exprStmt, ok := lastStmt.(*ast.ExprStmt); ok {
-					if isNoReturnCallExpr(exprStmt.X) {
-						// Leave bare `panic(...)` as an ExprStmt; reporting
-						// NilType keeps this arm out of common-type inference.
-						resultType = transpiler.NilType{}
-					} else {
-						body[len(body)-1] = &ast.ReturnStmt{Results: []ast.Expr{exprStmt.X}}
-						resultType = t.inferResultType(exprStmt.X)
-					}
+					// B8: classify and lower via the unified helper.
+					stmt, typ := t.lowerMatchArmTailExpr(exprStmt.X)
+					body[len(body)-1] = stmt
+					resultType = typ
 				} else if ret, ok := lastStmt.(*ast.ReturnStmt); ok && len(ret.Results) > 0 {
 					resultType = t.inferResultType(ret.Results[0])
 				}
@@ -1200,15 +1244,10 @@ func (t *galaASTTransformer) transformCaseBodyStmt(ctx grammar.ISimpleStatementC
 		if err != nil {
 			return nil, nil, err
 		}
-		// Calls that do not return (e.g., `panic(...)`) cannot be wrapped in
-		// `return <expr>`. Emit as a bare statement and report NilType so the
-		// arm is skipped during common-result-type inference; the IIFE still
-		// type-checks because Go recognizes panic as a terminating statement.
-		if isNoReturnCallExpr(expr) {
-			return []ast.Stmt{&ast.ExprStmt{X: expr}}, transpiler.NilType{}, nil
-		}
-		resultType := t.inferResultType(expr)
-		return []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{expr}}}, resultType, nil
+		// B8: route through the unified value-vs-no-return classifier so
+		// every match-arm-tail decision agrees.
+		stmt, typ := t.lowerMatchArmTailExpr(expr)
+		return []ast.Stmt{stmt}, typ, nil
 	}
 	// Otherwise it's a side-effect statement (assignment, incDec, shortVarDecl)
 	stmt, err := t.transformSimpleStatement(ctx)

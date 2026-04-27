@@ -154,7 +154,7 @@ func (t *galaASTTransformer) resolveExpectedFuncArgType(ctx callContext, argIdx 
 
 	// Non-FuncType param of a non-generic GALA function: pass the declared
 	// param type through verbatim so sealed-variant downward inference (the
-	// pendingExpectedArgType propagation in transformArgumentWithExpectedType)
+	// expectedArgTypes push in transformArgumentWithExpectedType)
 	// can resolve a zero-arg case constructor like `NoCmd()` against the
 	// callee's declared parameter type (e.g. `Cmd[Msg]`). Skipping FuncType
 	// is intentional: those have a dedicated path above with masking logic.

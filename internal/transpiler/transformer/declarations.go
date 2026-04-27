@@ -201,19 +201,18 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 
 	// Downward type-inference for sealed-variant constructors (context 1):
 	// when the val carries an explicit type annotation (`val c Cmd[int] = NoCmd()`),
-	// stash the declared type as the expected type so the RHS call dispatcher
+	// push the declared type onto expectedArgTypes so the RHS call dispatcher
 	// can pick up the parent sealed type's type arguments and emit
 	// `NoCmd[int]{}.Apply()` instead of an uninstantiated `NoCmd{}.Apply()`.
-	// transformCallWithArgsCtx consumes-and-clears pendingExpectedArgType on
-	// entry so this only affects the immediately-enclosing call.
+	// transformCallWithArgsCtx consumes the top hint on entry so this only
+	// affects the immediately-enclosing call (B1).
 	if ctx.Type_() != nil && len(namesCtx) == 1 {
 		typeExpr, terr := t.transformType(ctx.Type_())
 		if terr == nil {
 			declaredType := t.astTypeToTranspilerType(typeExpr)
 			if declaredType != nil && !declaredType.IsNil() {
-				prev := t.pendingExpectedArgType
-				t.pendingExpectedArgType = declaredType
-				defer func() { t.pendingExpectedArgType = prev }()
+				release := t.expectedArgTypes.push(declaredType)
+				defer release()
 			}
 		}
 	}
@@ -475,17 +474,16 @@ func (t *galaASTTransformer) transformValTuplePattern(ctx *grammar.ValDeclaratio
 func (t *galaASTTransformer) transformVarDeclaration(ctx *grammar.VarDeclarationContext) (ast.Decl, error) {
 	namesCtx := ctx.IdentifierList().(*grammar.IdentifierListContext).AllIdentifier()
 
-	// Mirror transformValDeclaration: thread an explicit declared type as
-	// pendingExpectedArgType so RHS sealed-variant constructors can pick up
-	// the parent's concrete type args.
+	// Mirror transformValDeclaration: push an explicit declared type onto
+	// expectedArgTypes so RHS sealed-variant constructors can pick up the
+	// parent's concrete type args (B1).
 	if ctx.Type_() != nil && len(namesCtx) == 1 {
 		typeExpr, terr := t.transformType(ctx.Type_())
 		if terr == nil {
 			declaredType := t.astTypeToTranspilerType(typeExpr)
 			if declaredType != nil && !declaredType.IsNil() {
-				prev := t.pendingExpectedArgType
-				t.pendingExpectedArgType = declaredType
-				defer func() { t.pendingExpectedArgType = prev }()
+				release := t.expectedArgTypes.push(declaredType)
+				defer release()
 			}
 		}
 	}

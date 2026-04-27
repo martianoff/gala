@@ -61,7 +61,7 @@ type galaASTTransformer struct {
 	structMetas           map[string]*structMetaConfig  // generated StructMeta structs (keyed by generated name)
 	instanceInterfaceNames map[string]string            // type name -> actual generated interface name (for collision avoidance)
 	expectedIfExprType     ast.Expr                     // expected return type for if-expression IIFE (set by expression-bodied function handler)
-	pendingExpectedArgType transpiler.Type              // expected type for the next call expression being transformed (consumed and cleared by transformCallWithArgsCtx for sealed-variant type-arg propagation)
+	expectedArgTypes       expectedArgTypeStack         // (B1) LIFO stack of expected-type hints for downward inference; replaces a single-field side-channel. See expected_arg_stack.go for the contract.
 	lspVarTypes            map[string]transpiler.Type   // LSP: collects all resolved var types during transformation
 	lspCurrentFunc         string                       // LSP: name of the function currently being transformed (for scoping)
 	lspLambdaParamHints    []transpiler.LambdaParamHint // LSP: positions of lambda params with inferred types
@@ -111,9 +111,18 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 		if r := recover(); r != nil {
 			if semErr, ok := r.(*galaerr.SemanticError); ok {
 				err = semErr
-			} else {
-				panic(r)
+				return
 			}
+			// B4: convert any other panic into a coded internal error so CLI
+			// users see a single search target (GALA-E0017) instead of a raw
+			// Go stack trace. The recovered value is preserved in the message
+			// for issue-filing context.
+			err = galaerr.NewCodedSemanticError(
+				galaerr.CodeInternalTransformerPanic,
+				t.lastLine, t.lastCol,
+				fmt.Sprintf("internal transpiler panic: %v", r),
+				"please file an issue at https://github.com/martianoff/gala/issues with the source that triggered this panic",
+			)
 		}
 	}()
 	tree := richAST.Tree

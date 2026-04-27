@@ -277,11 +277,7 @@ func isTupleFieldName(name string) bool {
 // last-resort fallback when no other lookup path can determine the field
 // type — see callers for the surrounding gate (CallExpr LHS, unknown xType).
 func (t *galaASTTransformer) isImmutableTupleField(selName string) bool {
-	for _, name := range []string{
-		transpiler.TypeTuple, transpiler.TypeTuple3, transpiler.TypeTuple4,
-		transpiler.TypeTuple5, transpiler.TypeTuple6, transpiler.TypeTuple7,
-		transpiler.TypeTuple8, transpiler.TypeTuple9, transpiler.TypeTuple10,
-	} {
+	for _, name := range tupleTypeNames() {
 		typeMeta := t.getTypeMeta(name)
 		if typeMeta == nil {
 			continue
@@ -451,14 +447,14 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	// concrete type (val with explicit type, function return, function arg),
 	// promote that expected type to the IIFE's enclosing return type so each
 	// arm's expression can resolve unannotated case constructors against it.
-	// pendingExpectedArgType captures the slot type set by the val-decl /
-	// argument transformers; consume it (so subsequent unrelated calls don't
-	// see it) and stash on currentFuncReturnType for the duration of arm
-	// processing.
-	if pending := t.pendingExpectedArgType; pending != nil && !pending.IsNil() {
+	// expectedArgTypes carries the slot type set by the val-decl / argument
+	// transformers; consume the top hint (so subsequent unrelated calls
+	// don't see it) and stash on currentFuncReturnType for the duration of
+	// arm processing (B1).
+	if pending := t.expectedArgTypes.peek(); pending != nil && !pending.IsNil() {
+		t.expectedArgTypes.consume()
 		prevReturn := t.currentFuncReturnType
 		t.currentFuncReturnType = pending
-		t.pendingExpectedArgType = nil
 		defer func() { t.currentFuncReturnType = prevReturn }()
 	}
 
@@ -665,28 +661,8 @@ func (t *galaASTTransformer) transformTupleLiteral(exprs []ast.Expr, line ...int
 		return nil, galaerr.NewSemanticErrorAt(errLine, errCol, fmt.Sprintf("tuple literals must have 2-10 elements, got %d", n))
 	}
 
-	// Determine tuple type name based on arity
-	var typeName string
-	switch n {
-	case 2:
-		typeName = transpiler.TypeTuple
-	case 3:
-		typeName = transpiler.TypeTuple3
-	case 4:
-		typeName = transpiler.TypeTuple4
-	case 5:
-		typeName = transpiler.TypeTuple5
-	case 6:
-		typeName = transpiler.TypeTuple6
-	case 7:
-		typeName = transpiler.TypeTuple7
-	case 8:
-		typeName = transpiler.TypeTuple8
-	case 9:
-		typeName = transpiler.TypeTuple9
-	case 10:
-		typeName = transpiler.TypeTuple10
-	}
+	// Determine tuple type name based on arity (B2 — single source of truth).
+	typeName, _ := tupleArityName(n)
 
 	// Infer type parameters from expression types.
 	// When inference fails for an element, fall back to the enclosing function's

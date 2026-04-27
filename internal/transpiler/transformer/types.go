@@ -1,7 +1,6 @@
 package transformer
 
 import (
-	"fmt"
 	"go/ast"
 	"go/token"
 	"martianoff/gala/internal/parser/grammar"
@@ -24,6 +23,72 @@ func isStdTupleIdent(ident ast.Expr) bool {
 		return ok && x.Name == registry.StdPackageName && e.Sel != nil && e.Sel.Name == "Tuple"
 	}
 	return false
+}
+
+// tupleArityName returns the canonical std type name for a tuple of arity n
+// (2..10): `Tuple` for n==2, `Tuple3`..`Tuple10` for n in [3, 10]. The bool
+// return is true when n is a valid tuple arity. Centralizes the encoding so
+// every callsite (`transformType`, `typeToExpr`, the positional ctor in
+// `tryTransformCompanionApplyOrStructCtor`, and `transformTupleLiteral`)
+// agrees on the mapping. (B2 — collapses 4 open-coded `Tuple%d` sites.)
+func tupleArityName(n int) (string, bool) {
+	switch n {
+	case 2:
+		return transpiler.TypeTuple, true
+	case 3:
+		return transpiler.TypeTuple3, true
+	case 4:
+		return transpiler.TypeTuple4, true
+	case 5:
+		return transpiler.TypeTuple5, true
+	case 6:
+		return transpiler.TypeTuple6, true
+	case 7:
+		return transpiler.TypeTuple7, true
+	case 8:
+		return transpiler.TypeTuple8, true
+	case 9:
+		return transpiler.TypeTuple9, true
+	case 10:
+		return transpiler.TypeTuple10, true
+	}
+	return "", false
+}
+
+// tupleTypeNames returns the canonical std tuple type names in arity order
+// (`Tuple` then `Tuple3` … `Tuple10`). Used by callers that need to iterate
+// every tuple metadata entry. (B2)
+func tupleTypeNames() []string {
+	return []string{
+		transpiler.TypeTuple, transpiler.TypeTuple3, transpiler.TypeTuple4,
+		transpiler.TypeTuple5, transpiler.TypeTuple6, transpiler.TypeTuple7,
+		transpiler.TypeTuple8, transpiler.TypeTuple9, transpiler.TypeTuple10,
+	}
+}
+
+// isTupleTypeName reports whether `name` is one of the canonical std tuple
+// type names. Mirror of tupleArityName for recognition contexts (pattern
+// matching, type unification). (B2)
+func isTupleTypeName(name string) bool {
+	for _, n := range tupleTypeNames() {
+		if name == n {
+			return true
+		}
+	}
+	return false
+}
+
+// rewriteStdTupleIdent rewrites a bare `Tuple` (or `std.Tuple`) ident to
+// the arity-specific `std.TupleN` form when the call/type expression supplies
+// 3+ type/value arguments. Returns the original ident unchanged when it is
+// not std.Tuple or when n < 3 (the 2-arity case keeps the canonical name).
+// All four Tuple-arity rewrite sites in the transformer route through here.
+func (t *galaASTTransformer) rewriteStdTupleIdent(ident ast.Expr, n int) ast.Expr {
+	if n < 3 || n > 10 || !isStdTupleIdent(ident) {
+		return ident
+	}
+	name, _ := tupleArityName(n)
+	return t.stdIdent(name)
 }
 
 func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, error) {
@@ -98,13 +163,9 @@ func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, 
 			}
 
 			// std.Tuple covers 2 type args; 3+ type args map to std.Tuple3..Tuple10.
-			// The user-visible type name is always "Tuple"; rewrite to the
-			// arity-specific name so signatures (return types, parameter types,
-			// field types) match the value-construction path which already uses
-			// the right arity (see transformer/postfix.go::~640).
-			if n := len(argExprs); n >= 3 && n <= 10 && isStdTupleIdent(ident) {
-				ident = t.stdIdent(fmt.Sprintf("Tuple%d", n))
-			}
+			// Route through the unified helper so every Tuple-arity rewrite site
+			// agrees on the mapping (B2).
+			ident = t.rewriteStdTupleIdent(ident, len(argExprs))
 
 			if len(argExprs) == 1 {
 				return &ast.IndexExpr{X: ident, Index: argExprs[0]}, nil
@@ -265,13 +326,8 @@ func (t *galaASTTransformer) typeToExpr(typ transpiler.Type) ast.Expr {
 		// std.Tuple covers 2 type args; 3+ type args map to std.Tuple3..Tuple10.
 		// Mirrors the rewrite in transformType (source-level) so types
 		// reconstructed from transpiler.GenericType values (e.g., from a match
-		// subject's inferred type) emit the correct arity-specific name.
-		// Without this, `Option[Tuple[int, int, int]]` flowing through the
-		// match-IIFE param type re-emits as Tuple[int, int, int] (2-arity
-		// Tuple with 3 type args), which Go rejects.
-		if n := len(params); n >= 3 && n <= 10 && isStdTupleIdent(base) {
-			base = t.stdIdent(fmt.Sprintf("Tuple%d", n))
-		}
+		// subject's inferred type) emit the correct arity-specific name (B2).
+		base = t.rewriteStdTupleIdent(base, len(params))
 		if len(params) == 1 {
 			return &ast.IndexExpr{X: base, Index: params[0]}
 		}

@@ -140,6 +140,19 @@ const (
 	// collided type appears in a `match` on the field; rejecting at the
 	// analyzer keeps the failure local and points to a rename.
 	CodeFieldNameCollidesWithType ErrorCode = "GALA-E0016"
+
+	// E0017: an unhandled panic inside the transformer was caught and
+	// surfaced as a coded error. Indicates a transpiler bug; the user is
+	// asked to file an issue with the offending source snippet.
+	CodeInternalTransformerPanic ErrorCode = "GALA-E0017"
+
+	// E0018: a sealed-variant zero-arg constructor (e.g. `NoCmd()` from
+	// `sealed type Cmd[T] = case NoCmd() | case RunCmd(arg: T)`) appears in
+	// a position where the parent's type parameter cannot be inferred —
+	// no enclosing match subject, val annotation, or function return type
+	// pins it. Without that signal the transpiler can only emit an
+	// untyped `Variant{}` literal that Go cannot instantiate.
+	CodeSealedVariantUninferred ErrorCode = "GALA-E0018"
 )
 
 // MultiError collects multiple GALA errors.
