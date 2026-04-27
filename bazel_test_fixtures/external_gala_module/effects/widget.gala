@@ -1,0 +1,16 @@
+package effects
+
+// Sibling file in the same external module. It explicitly imports
+// collection_immutable. In the in-repo (single-module) build the
+// analyzer's sibling-import scan picks up this dependency so that
+// effects.gala's bare `ArrayTabulate` reference is resolved to the
+// imported package and the lambda parameter is typed `int`.
+//
+// Cross-module — when this package is transpiled inside a downstream
+// consumer's Bazel sandbox — must behave the same way: the lambda
+// parameter must NOT regress to `any` just because the source files
+// are reached via @<module>+/effects/* instead of //effects/*.
+import . "martianoff/gala/collection_immutable"
+
+// Use the imported package somewhere so the import isn't dead code.
+func WidgetSize(n int) Array[int] = ArrayTabulate(n, (i) => i + 1)

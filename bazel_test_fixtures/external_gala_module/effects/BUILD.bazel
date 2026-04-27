@@ -1,8 +1,18 @@
 load("@gala//:gala.bzl", "gala_library")
 
+# Note: ArrayTabulate / Array (used by BuildLabels in effects.gala) are
+# auto-imported from std's collection_immutable. They do not appear in
+# gala_deps because stdlib types are reached via the gala.bzl --search
+# argument that points at the gala module root (the dep's go.mod
+# directory), not via explicit gala_deps. This mirrors how downstream
+# external GALA modules reach stdlib types in production.
 gala_library(
     name = "effects",
-    srcs = ["effects.gala"],
+    srcs = [
+        "effects.gala",
+        "widget.gala",
+    ],
     importpath = "martianoff/external_gala_module/effects",
     visibility = ["//visibility:public"],
+    deps = ["@gala//collection_immutable"],
 )

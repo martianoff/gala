@@ -25,5 +25,10 @@ func main() {
         Field = 7,
         Cb = (x) => x + 1,
     )
-    Println(s"h=${h.String()} y=${y.String()} c=${c.Field}")
+    // Top-level function call: lambda's `i` parameter must lower to
+    // `func(i int) string`, not `func(i any) string`. The signature
+    // for TabulateInts lives in the external Bazel module's package
+    // and must be loaded by the analyzer when transpiling this file.
+    val s = TabulateInts(3, (i) => s"n=$i")
+    Println(s"h=${h.String()} y=${y.String()} c=${c.Field} s=$s")
 }

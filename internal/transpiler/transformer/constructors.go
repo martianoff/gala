@@ -42,6 +42,32 @@ func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.
 		if resolvedFunc != nil && resolvedFunc.Package == registry.StdPackageName {
 			return t.stdIdent(name), nil
 		}
+		// Function from another GALA package (e.g., ArrayTabulate from
+		// collection_immutable). Either keep the bare name (when the package
+		// is dot-imported in this file) and mark the dot-import as used, or
+		// qualify as `pkg.Name` and add a transitive import. Without this,
+		// a sibling file's dot-import propagates the function's metadata into
+		// our richAST so the lambda's parameter type is inferred correctly,
+		// but the call site emits an unqualified `Name(...)` that the Go
+		// compiler rejects with `undefined: Name`.
+		if resolvedFunc != nil && resolvedFunc.Package != "" && resolvedFunc.Package != t.packageName {
+			pkg := resolvedFunc.Package
+			if t.importManager.IsDotImported(pkg) {
+				t.markDotImportUsed(pkg)
+				return ident, nil
+			}
+			alias := pkg
+			if a, ok := t.importManager.GetAlias(pkg); ok {
+				alias = a
+			}
+			if path, ok := t.importManager.GetPath(pkg); ok {
+				t.importManager.AddTransitive(path, alias)
+			}
+			return &ast.SelectorExpr{
+				X:   ast.NewIdent(alias),
+				Sel: ast.NewIdent(name),
+			}, nil
+		}
 		// Check if it's a known std exported function (defined in Go, not GALA)
 		if registry.IsStdFunction(name) {
 			return t.stdIdent(name), nil
