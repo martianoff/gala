@@ -29,6 +29,10 @@ Each code has a dedicated documentation page in this directory explaining:
 | `GALA-E0012` | Method redefined | [GALA-E0012.md](GALA-E0012.md) |
 | `GALA-E0013` | Non-defaulted parameter after defaulted parameter | [GALA-E0013.md](GALA-E0013.md) |
 | `GALA-E0014` | Default expression type mismatch | [GALA-E0014.md](GALA-E0014.md) |
+| `GALA-E0015` | Bare `return` inside a value-producing match | [GALA-E0015.md](GALA-E0015.md) |
+| `GALA-E0016` | Struct field name collides with type name | [GALA-E0016.md](GALA-E0016.md) |
+| `GALA-E0017` | Internal transpiler panic | [GALA-E0017.md](GALA-E0017.md) |
+| `GALA-E0018` | Sealed variant type parameter cannot be inferred | [GALA-E0018.md](GALA-E0018.md) |
 
 ## Adding a new code
 

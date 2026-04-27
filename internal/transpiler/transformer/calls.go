@@ -82,15 +82,35 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 							// sealed type (`Cmd[int]`) needs explicit type args injected
 							// onto the variant — without them Go cannot pin the
 							// vestigial type parameter from an empty composite literal.
-							// Consume the pendingExpectedArgType set by enclosing val
-							// declarations / argument transforms.
+							// Consume the top expected-type hint set by enclosing val
+							// declarations / argument transforms (B1).
 							if receiverType == base {
-								pending := t.pendingExpectedArgType
-								if pending != nil && !pending.IsNil() {
+								if pending := t.expectedArgTypes.peek(); pending != nil && !pending.IsNil() {
 									if rewritten, ok := t.injectSealedVariantTypeArgs(base, pending); ok {
 										receiverType = rewritten
-										t.pendingExpectedArgType = nil
+										t.expectedArgTypes.consume()
 									}
+								}
+							}
+							// B6 fail-loud: if neither inference path resolved the
+							// generic parameter, emitting an untyped `Variant{}`
+							// would produce an obscure Go error far from the GALA
+							// source. Surface as GALA-E0018 with a hint pointing at
+							// the three resolving signals (val annotation, match
+							// subject, function return). Limited to sealed variants
+							// of generic parents written without explicit type args
+							// (`baseExpr == base`) — explicit `Variant[T]()` shapes
+							// and non-sealed generic types still fall through to Go's
+							// deduction.
+							if receiverType == base && baseExpr == base && len(typeMeta.TypeParams) > 0 {
+								if t.isSealedVariantTypeName(typeName) {
+									line, col := suffix.GetStart().GetLine(), suffix.GetStart().GetColumn()
+									return nil, galaerr.NewCodedSemanticError(
+										galaerr.CodeSealedVariantUninferred,
+										line, col,
+										fmt.Sprintf("cannot infer type parameter for sealed variant constructor %q", typeName+"()"),
+										fmt.Sprintf("annotate the binding (e.g. `val x: ParentType[Int] = %s()`) or pass type args explicitly (`%s[Int]()`)", typeName, typeName),
+									)
 								}
 							}
 							receiver := &ast.CompositeLit{Type: receiverType}
@@ -780,18 +800,15 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 	args []ast.Expr,
 ) (handled bool, result ast.Expr, err error) {
 	// Tuple → TupleN arity rewrite for the bare positional constructor.
-	// Mirrors the rewrite in transformTupleLiteral (postfix.go) and
-	// transformType (types.go): the user-visible name `Tuple` covers all
-	// arities 2..10, but the underlying Go types are Tuple, Tuple3..Tuple10.
-	// Without this rewrite, `Tuple(a, b, c)` falls through to the Apply path
-	// and emits a 2-field literal `Tuple{V1, V2}`, dropping the third arg.
+	// Routes through the unified helper (B2) so every site agrees. Without
+	// this rewrite, `Tuple(a, b, c)` falls through to the Apply path and
+	// emits a 2-field literal `Tuple{V1, V2}`, dropping the third arg.
 	// Only applies when no explicit type args were given (bare ident or
 	// qualified selector); explicit type args have already been resolved
 	// to the right arity by transformType.
 	if n := len(args); n >= 3 && n <= 10 && isStdTupleIdent(fun) {
-		rewritten := fmt.Sprintf("Tuple%d", n)
-		typeName = rewritten
-		fun = t.stdIdent(rewritten)
+		typeName, _ = tupleArityName(n)
+		fun = t.rewriteStdTupleIdent(fun, n)
 	}
 
 	typeMeta, resolvedTypeMeta := t.getTypeMetaResolved(typeName)
@@ -1329,10 +1346,10 @@ func (t *galaASTTransformer) tryTransformValWithApply(fun ast.Expr, args []ast.E
 // and carries its own doc comment describing the sub-path it handles.
 func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *grammar.ArgumentListContext) (ast.Expr, error) {
 	// Consume the expected-type hint (set by transformArgumentWithExpectedType
-	// for the immediately-enclosing call). Cleared eagerly so nested arg
-	// transforms inside this call don't pick up the outer call's expectation.
-	pendingExpected := t.pendingExpectedArgType
-	t.pendingExpectedArgType = nil
+	// for the immediately-enclosing call). Removed eagerly so nested arg
+	// transforms inside this call don't pick up the outer call's expectation
+	// (B1).
+	pendingExpected := t.expectedArgTypes.consume()
 
 	// Sealed-variant type-arg propagation: when the expected type is a
 	// generic sealed parent (e.g. `Step[int]`) and `fun` names one of its
@@ -1837,6 +1854,14 @@ func (t *galaASTTransformer) findSealedVariantFields(variantName string) []strin
 	return nil
 }
 
+// isSealedVariantTypeName reports whether `typeName` (an unqualified variant
+// name in the current package) is a registered sealed variant. Used by the
+// B6 fail-loud check to limit the GALA-E0018 diagnostic to sealed variants —
+// other generic types still fall through to Go's deduction.
+func (t *galaASTTransformer) isSealedVariantTypeName(typeName string) bool {
+	return t.findSealedParentForVariant(typeName, "") != nil
+}
+
 // findSealedParentForVariant returns the parent sealed type's metadata for a
 // given variant name, or nil if the name is not a known sealed variant.
 //
@@ -2276,15 +2301,14 @@ func (t *galaASTTransformer) transformArgumentWithExpectedType(exprCtx grammar.I
 		return expr, nil
 	}
 
-	// Bidirectional inference for sealed-variant constructors: stash the
+	// Bidirectional inference for sealed-variant constructors: push the
 	// expected type so that a call expression nested directly inside this
 	// argument can pick up the parent sealed type's type arguments. The
 	// dispatcher in transformCallWithArgsCtx consumes-and-clears this value
-	// on entry, so deeper sub-expressions don't accidentally see it.
+	// on entry, so deeper sub-expressions don't accidentally see it (B1).
 	if expectedType != nil && !expectedType.IsNil() {
-		prev := t.pendingExpectedArgType
-		t.pendingExpectedArgType = expectedType
-		defer func() { t.pendingExpectedArgType = prev }()
+		release := t.expectedArgTypes.push(expectedType)
+		defer release()
 	}
 
 	// Not a lambda or partial function, transform normally

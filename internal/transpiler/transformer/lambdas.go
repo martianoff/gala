@@ -61,27 +61,24 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 			// If param has no type annotation and we have an expected type, use it
 			if paramCtx.Type_() == nil && expectedParamTypes != nil && i < len(expectedParamTypes) {
 				expType := expectedParamTypes[i]
-				if expType != nil && !expType.IsNil() {
-					expTypeName := expType.String()
-					if expTypeName != "any" && expTypeName != "" {
-						typeExpr := t.typeToExpr(expType)
-						name := paramCtx.Identifier().GetText()
-						isVal := paramCtx.VAL() != nil
-						if isVal {
-							field.Type = &ast.IndexExpr{X: t.stdIdent("Immutable"), Index: typeExpr}
-							t.addVal(name, expType)
-						} else {
-							field.Type = typeExpr
-							t.addVar(name, expType)
-						}
-						pos := transpiler.PosFromToken(paramCtx.Identifier().GetStart())
-						t.lspLambdaParamHints = append(t.lspLambdaParamHints, transpiler.LambdaParamHint{
-							Line:   pos.Line,
-							Column: pos.Column,
-							Name:   name,
-							Type:   expType,
-						})
+				if expType != nil && !expType.IsNil() && !expType.IsAny() {
+					typeExpr := t.typeToExpr(expType)
+					name := paramCtx.Identifier().GetText()
+					isVal := paramCtx.VAL() != nil
+					if isVal {
+						field.Type = &ast.IndexExpr{X: t.stdIdent("Immutable"), Index: typeExpr}
+						t.addVal(name, expType)
+					} else {
+						field.Type = typeExpr
+						t.addVar(name, expType)
 					}
+					pos := transpiler.PosFromToken(paramCtx.Identifier().GetStart())
+					t.lspLambdaParamHints = append(t.lspLambdaParamHints, transpiler.LambdaParamHint{
+						Line:   pos.Line,
+						Column: pos.Column,
+						Name:   name,
+						Type:   expType,
+					})
 				}
 			}
 			fieldList.List = append(fieldList.List, field)
@@ -417,10 +414,7 @@ func (t *galaASTTransformer) tryWrapGoMultiReturnWithErrorPanic(expr ast.Expr) (
 		// (A, B, error) -> return std.Tuple[A, B]{V1: _v0, V2: _v1}
 		// (A, B, C, error) -> return std.Tuple3[A, B, C]{V1: _v0, V2: _v1, V3: _v2}
 		// etc.
-		tupleName := "Tuple"
-		if valueCount > 2 {
-			tupleName = fmt.Sprintf("Tuple%d", valueCount)
-		}
+		tupleName, _ := tupleArityName(valueCount)
 
 		// Build type args from the non-error return types
 		var typeArgs []ast.Expr

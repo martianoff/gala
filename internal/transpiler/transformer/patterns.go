@@ -581,15 +581,11 @@ func (t *galaASTTransformer) isDirectStructMatch(patternTypeName string, matched
 	return false
 }
 
-// isTupleType checks if a type name is a Tuple type (Tuple, Tuple3, ..., Tuple10)
+// isTupleType checks if a type name is a Tuple type (Tuple, Tuple3, ..., Tuple10).
+// Thin wrapper around isTupleTypeName (B2) — kept as a method so existing
+// receiver-style call sites stay readable.
 func (t *galaASTTransformer) isTupleType(typeName string) bool {
-	switch typeName {
-	case transpiler.TypeTuple, transpiler.TypeTuple3, transpiler.TypeTuple4,
-		transpiler.TypeTuple5, transpiler.TypeTuple6, transpiler.TypeTuple7,
-		transpiler.TypeTuple8, transpiler.TypeTuple9, transpiler.TypeTuple10:
-		return true
-	}
-	return false
+	return isTupleTypeName(typeName)
 }
 
 // generateDirectTupleStructMatch generates direct field access code for tuple patterns.

@@ -209,6 +209,26 @@ func main() { lookup(None[int]()) }`,
 			expectCode:     galaerr.CodeBareReturnInValueMatch,
 			expectContains: "bare `return`",
 		},
+		{
+			// B6: zero-arg sealed variant of a generic parent with no
+			// inference signal must surface as GALA-E0018 instead of
+			// silently emitting an untyped composite literal that Go
+			// fails to instantiate far from the GALA source.
+			name: "GALA-E0018 sealed variant uninferred",
+			input: `package main
+
+sealed type Box[T] {
+    case Empty()
+    case Filled(value T)
+}
+
+func main() {
+    val x = Empty()
+    Println(x)
+}`,
+			expectCode:     galaerr.CodeSealedVariantUninferred,
+			expectContains: "cannot infer type parameter",
+		},
 	}
 
 	for _, tc := range cases {
