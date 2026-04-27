@@ -57,18 +57,92 @@ func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.
 	}
 	for i := 0; i < ctx.GetChildCount(); i++ {
 		if exprListCtx, ok := ctx.GetChild(i).(grammar.IExpressionListContext); ok {
-			exprs, err := t.transformExpressionList(exprListCtx.(*grammar.ExpressionListContext))
+			el := exprListCtx.(*grammar.ExpressionListContext)
+			// When a tuple literal flows into a Tuple-shaped enclosing context
+			// (e.g., the return position of a function declared to return
+			// `Tuple[int, Cmd[Msg]]`), thread each element's expected type so
+			// that nested sealed-variant constructors like `NoCmd()` infer their
+			// type parameters from the tuple's slot.
+			elemExprs := el.AllExpression()
+			if len(elemExprs) > 1 {
+				perElemExpected := t.tupleElementExpectedTypes(len(elemExprs))
+				exprs, err := t.transformTupleElementExpressions(elemExprs, perElemExpected)
+				if err != nil {
+					return nil, err
+				}
+				return t.transformTupleLiteral(exprs, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
+			}
+			exprs, err := t.transformExpressionList(el)
 			if err != nil {
 				return nil, err
 			}
 			if len(exprs) == 1 {
 				return &ast.ParenExpr{X: exprs[0]}, nil
 			}
-			// Multiple expressions in parentheses -> tuple literal syntax
 			return t.transformTupleLiteral(exprs, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
 		}
 	}
 	return nil, nil
+}
+
+// tupleElementExpectedTypes returns the per-element expected types for a
+// tuple literal of the given arity, computed from the most-specific available
+// outer context. Currently checks `currentFuncReturnType` for the
+// enclosing-return case (context 2 of downward sealed-variant inference).
+// Returns nil if no Tuple-shaped expected type is available.
+func (t *galaASTTransformer) tupleElementExpectedTypes(arity int) []transpiler.Type {
+	candidates := []transpiler.Type{t.currentFuncReturnType}
+	for _, cand := range candidates {
+		if cand == nil || cand.IsNil() {
+			continue
+		}
+		gen, ok := cand.(transpiler.GenericType)
+		if !ok {
+			continue
+		}
+		if !t.isTupleTypeName(gen.Base.String()) {
+			continue
+		}
+		if len(gen.Params) != arity {
+			continue
+		}
+		return gen.Params
+	}
+	return nil
+}
+
+// transformTupleElementExpressions transforms each element of a tuple literal
+// with its corresponding expected type stashed in pendingExpectedArgType, so
+// that sealed-variant constructors nested directly inside an element can
+// resolve their type arguments from the surrounding tuple slot.
+func (t *galaASTTransformer) transformTupleElementExpressions(
+	elemExprs []grammar.IExpressionContext,
+	perElemExpected []transpiler.Type,
+) ([]ast.Expr, error) {
+	out := make([]ast.Expr, 0, len(elemExprs))
+	for i, eCtx := range elemExprs {
+		var expected transpiler.Type
+		if i < len(perElemExpected) {
+			expected = perElemExpected[i]
+		}
+		if expected != nil && !expected.IsNil() {
+			prev := t.pendingExpectedArgType
+			t.pendingExpectedArgType = expected
+			expr, err := t.transformExpression(eCtx)
+			t.pendingExpectedArgType = prev
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, expr)
+			continue
+		}
+		expr, err := t.transformExpression(eCtx)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, expr)
+	}
+	return out, nil
 }
 
 func (t *galaASTTransformer) transformCompositeLiteral(ctx *grammar.CompositeLiteralContext) (ast.Expr, error) {

@@ -77,6 +77,22 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 									receiverType = inferredBase
 								}
 							}
+							// Downward inference: a sealed-variant zero-arg constructor
+							// (e.g. `NoCmd()`) inside a context that expects the parent
+							// sealed type (`Cmd[int]`) needs explicit type args injected
+							// onto the variant — without them Go cannot pin the
+							// vestigial type parameter from an empty composite literal.
+							// Consume the pendingExpectedArgType set by enclosing val
+							// declarations / argument transforms.
+							if receiverType == base {
+								pending := t.pendingExpectedArgType
+								if pending != nil && !pending.IsNil() {
+									if rewritten, ok := t.injectSealedVariantTypeArgs(base, pending); ok {
+										receiverType = rewritten
+										t.pendingExpectedArgType = nil
+									}
+								}
+							}
 							receiver := &ast.CompositeLit{Type: receiverType}
 							return &ast.CallExpr{
 								Fun: &ast.SelectorExpr{

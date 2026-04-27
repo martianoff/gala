@@ -116,3 +116,42 @@ func DispatchStates[T any](items Array[State[T]]) Array[State[T]] {
 func IfMapEcho[T any](items Array[T], pred func(T) bool, advance func(T) T) Array[T] {
     return items.Map((it) => if (pred(it)) advance(it) else it)
 }
+
+// --- Regression: downward inference of generic sealed-type case constructors.
+// `NoCmd()` and `QuitCmd()` should resolve their type parameter from the
+// enclosing context (val with explicit type, function return type, function
+// argument expected type, container element type, match arm result type).
+// Without inference these constructors emit uninstantiated `NoCmd{}.Apply()`
+// literals which Go rejects with "cannot use generic type without
+// instantiation".
+sealed type Effect[T any] {
+    case NoEffect()
+    case Halt()
+    case Yield(Value T)
+}
+
+// Context (1): val with explicit type drives downward inference.
+val effectOne Effect[int] = NoEffect()
+
+// Context (2): function return type drives downward inference.
+func makeHalt() Effect[string] = Halt()
+
+// Context (3): argument expected type drives downward inference.
+func runEffect(e Effect[int]) string = e match {
+    case NoEffect() => "noop"
+    case Halt() => "halt"
+    case Yield(_) => "yield"
+}
+
+func runDefaultNoEffect() string = runEffect(NoEffect())
+
+// Context (4): container element type drives downward inference.
+func defaultEffects() Array[Effect[int]] =
+    ArrayOf[Effect[int]](NoEffect(), Halt(), Yield(7))
+
+// Context (5): match arm result drives downward inference.
+func selectEffect(n int) Effect[int] = n match {
+    case 0 => NoEffect()
+    case 1 => Halt()
+    case _ => Yield(n)
+}

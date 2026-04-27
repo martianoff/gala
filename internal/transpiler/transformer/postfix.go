@@ -446,6 +446,22 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	t.currentMatchSubjectType = matchedType
 	defer func() { t.currentMatchSubjectType = prevMatchSubjectType }()
 
+	// Downward inference for match-arm sealed-variant constructors (context 5):
+	// when the match expression's value flows into a slot with a known
+	// concrete type (val with explicit type, function return, function arg),
+	// promote that expected type to the IIFE's enclosing return type so each
+	// arm's expression can resolve unannotated case constructors against it.
+	// pendingExpectedArgType captures the slot type set by the val-decl /
+	// argument transformers; consume it (so subsequent unrelated calls don't
+	// see it) and stash on currentFuncReturnType for the duration of arm
+	// processing.
+	if pending := t.pendingExpectedArgType; pending != nil && !pending.IsNil() {
+		prevReturn := t.currentFuncReturnType
+		t.currentFuncReturnType = pending
+		t.pendingExpectedArgType = nil
+		defer func() { t.currentFuncReturnType = prevReturn }()
+	}
+
 	var clauses []ast.Stmt
 	var defaultBody []ast.Stmt
 	foundDefault := false

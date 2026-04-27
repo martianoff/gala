@@ -168,7 +168,7 @@ val res = x match {
 
 import "martianoff/gala/std"
 
-var x std.Immutable[std.Option[any]] = std.NewImmutable[std.Option[any]](std.Some[string]{}.Apply("test"))
+var x std.Immutable[std.Option[any]] = std.NewImmutable[std.Option[any]](std.Some[any]{}.Apply("test"))
 var res = std.NewImmutable(func(obj std.Option[any]) string {
 	{
 		_tmp_1 := std.Some[any]{}.Unapply(obj)

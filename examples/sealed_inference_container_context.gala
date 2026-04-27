@@ -1,0 +1,28 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// Context (4): elements of a container with a concrete element type
+// (Array[Cmd[Msg]]) drive downward inference for unannotated case
+// constructors. Bare `NoCmd()` etc. should infer T from the slot's type.
+
+sealed type Msg {
+    case Tick()
+    case Quit()
+}
+
+sealed type Cmd[T any] {
+    case NoCmd()
+    case QuitCmd()
+    case MsgCmd(M T)
+}
+
+func main() {
+    val cmds = ArrayOf[Cmd[Msg]](
+        NoCmd(),
+        QuitCmd(),
+        MsgCmd(Tick()),
+    )
+    Println(s"length=${cmds.Length()}")
+    cmds.ForEach((c) => Println(c))
+}

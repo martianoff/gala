@@ -365,6 +365,50 @@ val joined = list.FoldLeft("", (acc, x) => acc + x)     // acc inferred as strin
 
 ---
 
+## Downward Inference for Generic Sealed-Type Case Constructors
+
+A generic sealed type's case constructors (e.g. `NoCmd()` for `sealed type Cmd[T any]`) carry a vestigial type parameter that cannot be inferred from the constructor's own arguments — a zero-field variant has no value of type `T` to pin against. To avoid forcing users to write `NoCmd[Msg]()` everywhere, the transpiler propagates an **expected type** downward from the surrounding context and rewrites the bare reference into an explicit instantiation (`NoCmd[Msg]{}.Apply()`).
+
+Five contexts feed the expected type:
+
+| # | Context | Example |
+|---|---------|---------|
+| 1 | `val`/`var` with explicit type | `val c Cmd[int] = NoCmd()` |
+| 2 | Function return type | `func make() Cmd[Msg] = NoCmd()` |
+| 3 | Function argument expected type | `runCmd(NoCmd())` where `runCmd(c Cmd[Msg])` |
+| 4 | Container element type | `ArrayOf[Cmd[Msg]](NoCmd(), QuitCmd())` |
+| 5 | Match arm with externally-pinned result | `val c Cmd[Msg] = m match { case Tick() => NoCmd() … }` |
+
+### Propagation mechanism
+
+- A single transformer field, `pendingExpectedArgType`, threads the expected slot type from a setter context (val decl, argument transform, tuple element) into the call dispatcher. The dispatcher consumes-and-clears it on entry, so deeper sub-expressions don't accidentally see a stale value.
+- For the **zero-arg call** path (`NoCmd()` with empty parens), `applyCallSuffix` consults `pendingExpectedArgType` after `inferZeroArgTypeParams` (which already covered the match-subject and enclosing-return fallbacks for `None()` / `Some()`), and rewrites the receiver via `injectSealedVariantTypeArgs`.
+- For the **non-zero-arg call** path, `transformCallWithArgsCtx` already invoked the same rewrite at the top of the dispatcher.
+- For **function arguments** (context 3), `resolveExpectedFuncArgType` was extended to return the declared param type verbatim for non-FuncType params of non-generic GALA functions, so the existing argument-transform path can stash it in `pendingExpectedArgType`.
+- For **tuple elements** (context 2 with tuple return), `transformPrimary` inspects the enclosing `currentFuncReturnType` for a Tuple-shaped expected type and threads each per-slot type into the corresponding element transform.
+- For **match arms** (context 5), `buildMatchExpressionFromClauses` promotes a pending expected slot type to `currentFuncReturnType` for the IIFE's body, so each arm's expression — not just the first — picks it up via the existing companion-of-sealed lookup.
+
+If none of the contexts supply a concrete type and the constructor is genuinely ambiguous, the existing "cannot infer type for case constructor" error fires; downward inference does not silently fall back to `any`.
+
+### Limitations
+
+- The match-arm path (5) currently propagates a single type only when the match expression is itself the immediate value of one of the contexts above. Arms inside a match used purely as a side-effect dispatch still rely on per-arm inference.
+- The propagation field is a single value, not a stack of expected types per nesting depth. Re-entrancy is handled with `defer` saves; cleanup is reliable but observers should not assume the value persists past one dispatcher entry.
+
+### Pointers
+
+| File | Role |
+|------|------|
+| `transformer/calls.go::injectSealedVariantTypeArgs` | Rewrites `Variant(...)` → `Variant[Args]` when expected is the sealed parent |
+| `transformer/calls.go::applyCallSuffix` (zero-arg branch) | Consumes `pendingExpectedArgType` for `Variant()` |
+| `transformer/calls.go::transformCallWithArgsCtx` | Consumes `pendingExpectedArgType` for `Variant(arg, …)` |
+| `transformer/call_context.go::resolveExpectedFuncArgType` | Surfaces non-FuncType param types from non-generic functions |
+| `transformer/constructors.go::transformPrimary` (paren/tuple case) | Threads per-element expected type for tuple literals |
+| `transformer/declarations.go::transformValDeclaration` / `transformVarDeclaration` | Stashes the explicit declared type before transforming RHS |
+| `transformer/postfix.go::buildMatchExpressionFromClauses` | Promotes a pending slot type to `currentFuncReturnType` for arm bodies |
+
+---
+
 ## Go Type Inference
 
 When the Go SDK is available (via `GOROOT` or `PATH`), the transpiler can infer types from Go standard library and third-party packages:

@@ -1,0 +1,27 @@
+package main
+
+// Context (3): function argument expected-type drives downward inference.
+// `runCmd(NoCmd())` should infer `Cmd[Msg]` from `runCmd`'s parameter type.
+
+sealed type Msg {
+    case Tick()
+    case Quit()
+}
+
+sealed type Cmd[T any] {
+    case NoCmd()
+    case QuitCmd()
+    case MsgCmd(M T)
+}
+
+func runCmd(c Cmd[Msg]) string = c match {
+    case NoCmd() => "no"
+    case QuitCmd() => "quit"
+    case MsgCmd(_) => "msg"
+}
+
+func main() {
+    Println(runCmd(NoCmd()))
+    Println(runCmd(QuitCmd()))
+    Println(runCmd(MsgCmd(Tick())))
+}
