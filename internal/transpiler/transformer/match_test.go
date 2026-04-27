@@ -630,6 +630,76 @@ func unwrap(h Holder) int {
 	}(h.Cell.Get().Get())
 }`,
 		},
+		{
+			// Regression: panic(...) as a value-producing match arm used to
+			// emit invalid `return panic(...)` Go ("no value used as value").
+			// The arm must be lowered to a bare panic statement so the IIFE
+			// type-checks via Go's terminating-statement analysis.
+			name: "Panic as match arm emits bare statement (not return)",
+			input: `package main
+
+func resolve(opt Option[int]) int {
+	return opt match {
+		case Some(n) => n
+		case None()  => panic("missing")
+	}
+}`,
+			expected: `package main
+
+import "martianoff/gala/std"
+
+func resolve(opt std.Option[int]) int {
+	return func(obj std.Option[int]) int {
+		{
+			_tmp_1 := std.Some[int]{}.Unapply(obj)
+			_tmp_2 := _tmp_1.IsDefined()
+			var _tmp_3 int
+			if _tmp_2 {
+				_tmp_3 = _tmp_1.Get()
+			}
+			_ = _tmp_3
+			n := _tmp_3
+			if _tmp_2 {
+				return n
+			} else {
+				_tmp_4 := std.None[int]{}.Unapply(obj)
+				if _tmp_4 {
+					panic("missing")
+				} else {
+					panic("unreachable")
+				}
+			}
+		}
+	}(opt)
+}`,
+		},
+		{
+			// Regression: panic on the default `case _` arm. Exercises the
+			// distinct default-case lowering path in transformMatchClauses.
+			name: "Panic as default match arm emits bare statement",
+			input: `package main
+
+func describe(code int) string {
+	return code match {
+		case 0 => "ok"
+		case 1 => "warn"
+		case _ => panic("invalid")
+	}
+}`,
+			expected: `package main
+
+func describe(code int) string {
+	return func(obj int) string {
+		if obj == 0 {
+			return "ok"
+		} else if obj == 1 {
+			return "warn"
+		} else {
+			panic("invalid")
+		}
+	}(code)
+}`,
+		},
 	}
 
 	for _, tt := range tests {

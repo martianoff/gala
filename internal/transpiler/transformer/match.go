@@ -160,6 +160,24 @@ func (t *galaASTTransformer) isSealedExhaustive(matchedType transpiler.Type, pat
 	return true, len(missing) == 0, missing
 }
 
+// isNoReturnCallExpr reports whether expr is a call to a Go builtin/function
+// that does not return a value (e.g., `panic(...)`). Such a call cannot be
+// wrapped in a `return <expr>` statement — Go rejects `return panic(...)` as
+// "no value used as value". When such a call appears at the tail of a match
+// arm, the transformer must emit it as a bare statement and rely on Go's
+// terminating-statement analysis (panic does not fall through) so the
+// surrounding IIFE still type-checks.
+func isNoReturnCallExpr(expr ast.Expr) bool {
+	call, ok := expr.(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	if ident, ok := call.Fun.(*ast.Ident); ok {
+		return ident.Name == "panic"
+	}
+	return false
+}
+
 // containsBareReturn reports whether any statement in stmts (recursively) is a
 // `return` with no results. It is used to detect "bare return" inside a branch
 // of a match-as-value expression, which would generate invalid Go because the
@@ -497,9 +515,16 @@ func (t *galaASTTransformer) transformMatchClauses(ctx grammar.IExpressionContex
 						resultTypes = append(resultTypes, t.inferResultType(ret.Results[0]))
 						casePatterns = append(casePatterns, "case _")
 					} else if exprStmt, ok := lastStmt.(*ast.ExprStmt); ok {
-						defaultBody[len(defaultBody)-1] = &ast.ReturnStmt{Results: []ast.Expr{exprStmt.X}}
-						resultTypes = append(resultTypes, t.inferResultType(exprStmt.X))
-						casePatterns = append(casePatterns, "case _")
+						if isNoReturnCallExpr(exprStmt.X) {
+							// Leave bare `panic(...)` as ExprStmt; NilType
+							// keeps this arm out of common-type inference.
+							resultTypes = append(resultTypes, transpiler.NilType{})
+							casePatterns = append(casePatterns, "case _")
+						} else {
+							defaultBody[len(defaultBody)-1] = &ast.ReturnStmt{Results: []ast.Expr{exprStmt.X}}
+							resultTypes = append(resultTypes, t.inferResultType(exprStmt.X))
+							casePatterns = append(casePatterns, "case _")
+						}
 					}
 				}
 			} else if ccCtx.GetBodyStmt() != nil {
@@ -1098,8 +1123,14 @@ func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClause
 			lastStmt := body[len(body)-1]
 			if lastStmt != nil {
 				if exprStmt, ok := lastStmt.(*ast.ExprStmt); ok {
-					body[len(body)-1] = &ast.ReturnStmt{Results: []ast.Expr{exprStmt.X}}
-					resultType = t.inferResultType(exprStmt.X)
+					if isNoReturnCallExpr(exprStmt.X) {
+						// Leave bare `panic(...)` as an ExprStmt; reporting
+						// NilType keeps this arm out of common-type inference.
+						resultType = transpiler.NilType{}
+					} else {
+						body[len(body)-1] = &ast.ReturnStmt{Results: []ast.Expr{exprStmt.X}}
+						resultType = t.inferResultType(exprStmt.X)
+					}
 				} else if ret, ok := lastStmt.(*ast.ReturnStmt); ok && len(ret.Results) > 0 {
 					resultType = t.inferResultType(ret.Results[0])
 				}
@@ -1168,6 +1199,13 @@ func (t *galaASTTransformer) transformCaseBodyStmt(ctx grammar.ISimpleStatementC
 		expr, err := t.transformExpression(exprCtx)
 		if err != nil {
 			return nil, nil, err
+		}
+		// Calls that do not return (e.g., `panic(...)`) cannot be wrapped in
+		// `return <expr>`. Emit as a bare statement and report NilType so the
+		// arm is skipped during common-result-type inference; the IIFE still
+		// type-checks because Go recognizes panic as a terminating statement.
+		if isNoReturnCallExpr(expr) {
+			return []ast.Stmt{&ast.ExprStmt{X: expr}}, transpiler.NilType{}, nil
 		}
 		resultType := t.inferResultType(expr)
 		return []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{expr}}}, resultType, nil

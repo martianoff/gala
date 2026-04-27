@@ -226,6 +226,12 @@ gala_test(
 )
 
 gala_test(
+    name = "match_arm_panic",
+    src = "match_arm_panic.gala",
+    expected = "match_arm_panic.out",
+)
+
+gala_test(
     name = "tuple",
     src = "tuple.gala",
     expected = "tuple.out",
