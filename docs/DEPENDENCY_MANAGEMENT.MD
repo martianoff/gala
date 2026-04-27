@@ -487,6 +487,31 @@ Transpiling GALA files...
 
 GALA provides Bazel rules for dependency management. Dependencies are declared in `gala.mod` and automatically loaded into Bazel.
 
+### Required `.bazelrc` settings
+
+Every Bazel project that consumes the GALA toolchain must enable the
+following at the root of the project (`.bazelrc`):
+
+```
+common --enable_bzlmod
+common --noenable_workspace
+build  --enable_runfiles
+
+# Cross-language type inference: pass GOROOT and PATH through to genrules
+# so the transpiler can use go/importer to resolve Go package types
+# (function signatures, struct fields, method sets).
+build  --action_env=GOROOT
+build  --action_env=PATH
+```
+
+Why each one matters:
+
+| Flag | Why |
+|---|---|
+| `--enable_bzlmod` / `--noenable_workspace` | Bzlmod is the dependency model GALA's Bazel rules are wired against; legacy `WORKSPACE` mode won't resolve `@gala//...` correctly. |
+| **`--enable_runfiles`** | **Required on Windows** for `gala_go_test` / `gala_unit_test` targets to work. Without it the test wrappers (`.bat` files) can't locate their binaries via runfiles and tests fail with "the system cannot find the path specified" before any test code runs. (On Linux/macOS Bazel materializes runfiles via symlinks by default; on Windows the manifest-only mode needs this flag.) |
+| `--action_env=GOROOT` / `--action_env=PATH` | Lets the transpiler invoke `go/importer` for cross-language type inference. Without these, transpilation still succeeds but Go-side function/struct types are resolved as `any` and downstream code may fail to compile. |
+
 ### MODULE.bazel (Bzlmod)
 
 ```python
