@@ -1,0 +1,33 @@
+package main
+
+// Context (2): function return-type drives downward inference.
+// When a function declares `Cmd[MegaMsg]` as return, a tail-position
+// `NoCmd()` (or `(model, NoCmd())`) should infer `[MegaMsg]` without
+// explicit type-args on the variant.
+
+sealed type Msg {
+    case Tick()
+    case Quit()
+}
+
+sealed type Cmd[T any] {
+    case NoCmd()
+    case QuitCmd()
+    case MsgCmd(M T)
+}
+
+func makeNoCmd() Cmd[Msg] = NoCmd()
+
+func makeQuitCmd() Cmd[Msg] = QuitCmd()
+
+func updateBlock(n int) Tuple[int, Cmd[Msg]] {
+    val next = n + 1
+    return (next, NoCmd())
+}
+
+func main() {
+    Println(makeNoCmd())
+    Println(makeQuitCmd())
+    val (n, c) = updateBlock(0)
+    Println(s"n=$n cmd=$c")
+}

@@ -1,0 +1,33 @@
+package main
+
+// Context (5): match-arm inference. When a match expression's result type
+// is constrained externally (e.g. assigned to a typed val or returned from
+// a typed function), each arm's expression should resolve unannotated
+// case constructors against that expected type.
+
+sealed type Msg {
+    case Tick()
+    case Quit()
+}
+
+sealed type Cmd[T any] {
+    case NoCmd()
+    case QuitCmd()
+    case MsgCmd(M T)
+}
+
+func updateMsg(m Msg) Cmd[Msg] = m match {
+    case Tick() => NoCmd()
+    case Quit() => QuitCmd()
+}
+
+func main() {
+    val a Cmd[Msg] = Tick() match {
+        case Tick() => NoCmd()
+        case Quit() => QuitCmd()
+    }
+    Println(a)
+
+    Println(updateMsg(Tick()))
+    Println(updateMsg(Quit()))
+}

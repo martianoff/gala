@@ -1,0 +1,21 @@
+package main
+
+// Context (1): direct val assignment with an explicit type.
+// `val c Cmd[int] = NoCmd()` should resolve T -> int from the
+// declared variable type rather than requiring `NoCmd[int]()`.
+sealed type Cmd[T any] {
+    case NoCmd()
+    case QuitCmd()
+    case MsgCmd(M T)
+}
+
+func main() {
+    val c1 Cmd[int] = NoCmd()
+    Println(c1)
+
+    val c2 Cmd[string] = QuitCmd()
+    Println(c2)
+
+    val c3 Cmd[int] = MsgCmd(42)
+    Println(c3)
+}
