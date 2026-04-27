@@ -1,0 +1,50 @@
+package main
+
+import "fmt"
+
+func roleFromName(name string) Option[string] {
+    return name match {
+        case "admin" => Some("Administrator")
+        case "user"  => Some("Regular User")
+        case _       => None[string]()
+    }
+}
+
+// Simple-statement panic arm: `case None() => panic(...)`.
+// Pre-fix this emitted invalid `return panic(...)` Go.
+func resolveRole(name string) string {
+    return roleFromName(name) match {
+        case Some(r) => r
+        case None()  => panic(s"unknown role '$name'")
+    }
+}
+
+// Default-case panic arm: `case _ => panic(...)`. The default branch
+// also went through the buggy `return <expr>` lowering before the fix.
+func describeCode(code int) string {
+    return code match {
+        case 0 => "ok"
+        case 1 => "warn"
+        case _ => panic(s"invalid code $code")
+    }
+}
+
+// Block-body panic arm with a side-effect statement before the panic.
+// Exercises the multi-statement block lowering path.
+func mustParseRole(name string) string {
+    return roleFromName(name) match {
+        case Some(r) => r
+        case None() => {
+            Println(s"role lookup failed for '$name'")
+            panic(s"missing role '$name'")
+        }
+    }
+}
+
+func main() {
+    fmt.Println(resolveRole("admin"))
+    fmt.Println(resolveRole("user"))
+    fmt.Println(describeCode(0))
+    fmt.Println(describeCode(1))
+    fmt.Println(mustParseRole("user"))
+}
