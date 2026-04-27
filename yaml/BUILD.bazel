@@ -1,0 +1,64 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+load("//:gala.bzl", "gala_bootstrap_transpile", "gala_go_test")
+
+exports_files([
+    "yaml.gala",
+    "naming.gala",
+    "helpers.gala",
+    "codec.go",
+])
+
+filegroup(
+    name = "gala_sources",
+    srcs = glob(
+        ["*.gala"],
+        exclude = ["*_test.gala"],
+    ),
+    visibility = ["//visibility:public"],
+)
+
+gala_bootstrap_transpile(
+    name = "yaml_go",
+    src = "yaml.gala",
+    out = "yaml.gen.go",
+)
+
+gala_bootstrap_transpile(
+    name = "naming_go",
+    src = "naming.gala",
+    out = "naming.gen.go",
+)
+
+gala_bootstrap_transpile(
+    name = "helpers_go",
+    src = "helpers.gala",
+    out = "helpers.gen.go",
+)
+
+go_library(
+    name = "yaml",
+    srcs = [
+        "codec.go",
+        "helpers.gen.go",
+        "naming.gen.go",
+        "yaml.gen.go",
+    ],
+    importpath = "martianoff/gala/yaml",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//collection_immutable",
+        "//std",
+    ],
+)
+
+go_test(
+    name = "yaml_go_unit_test",
+    srcs = ["codec_test.go"],
+    embed = [":yaml"],
+)
+
+gala_go_test(
+    name = "yaml_test",
+    srcs = ["yaml_test.gala"],
+    deps = [":yaml"],
+)

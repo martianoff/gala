@@ -1,0 +1,29 @@
+package main
+
+import (
+    . "martianoff/gala/test"
+    . "martianoff/gala/yaml"
+)
+
+struct Project(Name string, Repo string, Port int)
+
+func TestRoundTrip_Flat(t T) T {
+    val codec = Codec[Project](SnakeCase())
+    val p = Project(Name = "auth-service", Repo = ".", Port = 8080)
+    val encoded = codec.Encode(p)
+    val t1 = IsSuccess(t, encoded)
+    val decoded = codec.Decode(encoded.Get())
+    val t2 = IsSuccess(t1, decoded)
+    val got = decoded.Get()
+    val t3 = Eq(t2, got.Name, "auth-service")
+    val t4 = Eq(t3, got.Repo, ".")
+    return Eq(t4, got.Port, 8080)
+}
+
+func TestEncode_FormatLooksRight(t T) T {
+    val codec = Codec[Project](SnakeCase())
+    val p = Project(Name = "auth", Repo = ".", Port = 8080)
+    val encoded = codec.Encode(p).Get()
+    val expected = "name: auth\nrepo: .\nport: 8080"
+    return Eq(t, encoded, expected)
+}

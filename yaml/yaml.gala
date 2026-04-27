@@ -1,0 +1,140 @@
+package yaml
+
+import (
+    . "martianoff/gala/std"
+    . "martianoff/gala/collection_immutable"
+)
+
+// Codec[T] is a type-safe, zero-reflection YAML codec.
+// Mirrors json.Codec[T] — same builder API, same auto-injected StructMeta[T],
+// same Encode/Decode/Unapply surface — but emits and parses block-style YAML
+// instead of JSON.
+//
+// The transpiler auto-injects StructMeta[T] when Codec[T]'s Apply method
+// declares StructMeta[T] as its first parameter. This means the user
+// writes Codec[Person](SnakeCase()) and the transpiler expands it to:
+//
+//     Codec[Person]{}.Apply(_StructMeta_Person{}, SnakeCase())
+//
+// Usage:
+//   val codec = Codec[Person](SnakeCase())
+//       .Omit("Password")
+//       .Rename("Email", "email_address")
+//       .OmitEmpty("Bio")
+//
+//   codec.Encode(person)   // Try[string]
+//   codec.Decode(yamlStr)  // Try[Person]
+//
+//   yamlStr match {
+//       case codec(p) => s"Hello ${p.Name}"
+//       case _ => "invalid"
+//   }
+//
+// Supported subset: block-style mappings, block-style sequences, scalars
+// (string/int/float/bool/null), literal block scalars (`|`), comments,
+// nested structures. Out of scope (until needed): anchors, aliases, flow
+// style, custom tags. See docs (coming) for the full grammar.
+type Codec[T any] struct {}
+
+// Apply creates a typed YamlEncoder[T].
+// The first parameter (meta StructMeta[T]) is auto-injected by the transpiler
+// when the user calls Codec[T](naming).
+func (c Codec[T]) Apply(meta StructMeta[T], naming Naming) YamlEncoder[T] {
+    val config = NewKeyConfig().WithNaming(naming)
+    return YamlEncoder[T]{
+        Meta:   meta,
+        Config: config,
+        Keys:   BuildKeysSimple(meta.NumFields(), meta.FieldName, naming),
+    }
+}
+
+// YamlEncoder[T] is a fully typed YAML codec instance.
+// Created by Codec[T](naming) and configured via builder methods.
+// All methods return new instances — YamlEncoder is immutable.
+type YamlEncoder[T any] struct {
+    Meta   StructMeta[T]
+    Config KeyConfig
+    Keys   KeysConfig
+}
+
+// Naming sets the field naming strategy and returns a new encoder.
+func (c YamlEncoder[T]) Naming(n Naming) YamlEncoder[T] =
+    rebuildEncoder[T](c.Meta, c.Config.WithNaming(n))
+
+// Omit excludes a field from serialization/deserialization.
+func (c YamlEncoder[T]) Omit(field string) YamlEncoder[T] =
+    rebuildEncoder[T](c.Meta, c.Config.WithOmit(field))
+
+// Rename maps a GALA field name to a custom YAML key.
+func (c YamlEncoder[T]) Rename(field string, key string) YamlEncoder[T] =
+    rebuildEncoder[T](c.Meta, c.Config.WithRename(field, key))
+
+// OmitEmpty excludes a field when its value is zero.
+func (c YamlEncoder[T]) OmitEmpty(field string) YamlEncoder[T] =
+    rebuildEncoder[T](c.Meta, c.Config.WithOmitEmpty(field))
+
+func rebuildEncoder[T any](meta StructMeta[T], config KeyConfig) YamlEncoder[T] =
+    YamlEncoder[T]{
+        Meta:   meta,
+        Config: config,
+        Keys:   BuildKeys(meta.NumFields(), meta.FieldName, config.NamingStrategy, config),
+    }
+
+func nameFnFromKeys(keys Array[string]) func(int) string =
+    (i int) => keys.GetOption(i).GetOrElse("")
+
+func omitFnFromKeys(keys Array[string]) func(int) bool =
+    (i int) => keys.GetOption(i).GetOrElse("") == ""
+
+// Encode serializes a value to a YAML string (block-style, zero-reflection).
+func (c YamlEncoder[T]) Encode(v T) Try[string] {
+    return Try[string](() => {
+        val w = NewYamlEncoder()
+        c.Meta.EncodeFields(w, v, nameFnFromKeys(c.Keys.Keys), omitFnFromKeys(c.Keys.Keys))
+        return w.String()
+    })
+}
+
+// Decode deserializes a YAML string into Try[T] (zero-reflection).
+// DecodeFields panics on malformed input; Try() catches the panic and
+// surfaces it as a Failure.
+func (c YamlEncoder[T]) Decode(s string) Try[T] {
+    return Try[T](() => {
+        val r = NewYamlDecoder(s)
+        val lookup = buildLookup(c.Keys.ReverseKeys, c.Meta.NumFields(), c.Meta.FieldName)
+        return c.Meta.DecodeFields(r, lookup)
+    })
+}
+
+// Unapply attempts to decode a YAML string using the codec's naming config.
+// Returns Option[T] for pattern matching support.
+func (c YamlEncoder[T]) Unapply(s string) Option[T] {
+    val decoded = c.Decode(s)
+    if decoded.IsFailure() { return None[T]() }
+    return Some[T](decoded.Get())
+}
+
+// buildLookup turns the precomputed reverseKeys map (serialized key → GALA
+// field name) into the index-lookup function DecodeFields expects.
+func buildLookup(
+    reverseKeys HashMap[string, string],
+    numFields int,
+    fieldName func(int) string,
+) func(string) int {
+    var nameToIdx = EmptyHashMap[string, int]()
+    var i = 0
+    for i < numFields {
+        nameToIdx = nameToIdx.Put(fieldName(i), i)
+        i = i + 1
+    }
+    return (key string) => {
+        val gName = reverseKeys.Get(key)
+        if gName.IsDefined() {
+            val idx = nameToIdx.Get(gName.Get())
+            if idx.IsDefined() {
+                return idx.Get()
+            }
+        }
+        return -1
+    }
+}

@@ -45,6 +45,14 @@ genrule(
         "//json:helpers.gala",
         "//json:naming.gala",
         "//json:byte_utils.go",
+        # yaml package
+        "//yaml:yaml_go",
+        "//yaml:naming_go",
+        "//yaml:helpers_go",
+        "//yaml:yaml.gala",
+        "//yaml:naming.gala",
+        "//yaml:helpers.gala",
+        "//yaml:codec.go",
         # go_interop package
         "//go_interop:types.go",
         # collection_immutable package - transpiled Go

@@ -83,6 +83,7 @@ var StdlibPackages = []string{
 	"io",
 	"json",
 	"subprocess",
+	"yaml",
 	"test",
 }
 
@@ -101,6 +102,7 @@ var StdlibImportPaths = map[string]string{
 	"io":                   "martianoff/gala/io",
 	"json":                 "martianoff/gala/json",
 	"subprocess":           "martianoff/gala/subprocess",
+	"yaml":                 "martianoff/gala/yaml",
 	"test":                 "martianoff/gala/test",
 }
 
