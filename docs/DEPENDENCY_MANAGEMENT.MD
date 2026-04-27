@@ -544,7 +544,21 @@ The `gala.from_file()` extension is only needed when your project has external G
 
 ### BUILD Files
 
-Reference dependencies in the standard `deps` attribute:
+`gala_library` / `gala_binary` accept two related dep attributes:
+
+- **`gala_deps`** — GALA library labels whose **source files** must be
+  visible to the transpiler during this target's transpile step.
+  Required whenever your code calls into the dep's **sealed-type case
+  constructors** (`NoCmd[Msg]()`), **named-arg struct constructors**
+  (`Program[Model, Msg](Initial = ..., …)`), or other forms where the
+  analyzer needs the dep's GALA-side metadata to lower correctly.
+- **`deps`** — plain Bazel labels (Go libraries / GALA libraries used
+  only via fully-typed function calls). Sufficient when the call site
+  doesn't trigger any GALA-side lowering.
+
+When in doubt, **prefer `gala_deps` for any GALA library you import**.
+The cost is only at transpile time (Bazel re-reads the source files);
+the runtime artifact is identical.
 
 ```python
 load("//:gala.bzl", "gala_library", "gala_binary")
@@ -553,15 +567,25 @@ gala_library(
     name = "mylib",
     src = "mylib.gala",
     importpath = "github.com/user/project/mylib",
-    deps = ["@com_github_example_utils//:utils"],
+    gala_deps = ["@com_github_example_utils//:utils"],  # GALA library — analyzer needs source
+    deps = ["@com_github_other_go_lib//:lib"],          # plain Go library
 )
 
 gala_binary(
     name = "myapp",
     src = "main.gala",
-    deps = ["@com_github_example_utils//:utils"],
+    gala_deps = ["@com_github_example_utils//:utils"],
 )
 ```
+
+**Symptom of the wrong split** (GALA dep listed under `deps` instead of
+`gala_deps`): Go-side compile errors at the call site, e.g.
+`missing argument in conversion to pkg.NoCmd[Msg]` or
+`cannot use Model{…} as std.Immutable[Model] value in struct literal`.
+The transpiled `.gen.go` emits a raw type conversion / raw struct
+literal because the analyzer couldn't see that `NoCmd` is a sealed-case
+constructor or that `Program`'s fields are auto-wrapped in
+`std.Immutable`.
 
 ### Repository Naming Convention
 
