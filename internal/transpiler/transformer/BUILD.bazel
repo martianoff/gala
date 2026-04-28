@@ -54,6 +54,7 @@ go_test(
         "conflict_test.go",
         "control_flow_test.go",
         "copy_test.go",
+        "cross_module_matrix_test.go",
         "default_immutability_test.go",
         "dot_import_generic_namedarg_test.go",
         "dot_import_test.go",
