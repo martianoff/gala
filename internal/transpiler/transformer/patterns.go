@@ -1570,6 +1570,28 @@ func (t *galaASTTransformer) fixupReturnStatement(stmt ast.Stmt, resultType tran
 	}
 }
 
+// isValidGoExprStatement reports whether expr can legally appear as a Go
+// expression statement. Go restricts expression statements to function/method
+// calls, channel receives (`<-ch`), and a few builtins it forwards as calls.
+// A bare literal, identifier, selector, binary expression, or type assertion
+// is rejected by the Go compiler ("X evaluated but not used"). We use this
+// when lowering a value-producing arm into a void context: pure expressions
+// have no observable effect with their value discarded, so they can be
+// dropped instead of emitted as invalid Go.
+func isValidGoExprStatement(expr ast.Expr) bool {
+	switch e := expr.(type) {
+	case *ast.CallExpr:
+		return true
+	case *ast.UnaryExpr:
+		// Channel receive used for side effects (`<-ch`).
+		return e.Op == token.ARROW
+	case *ast.ParenExpr:
+		return isValidGoExprStatement(e.X)
+	default:
+		return false
+	}
+}
+
 // stripReturnStatements converts return statements to expression statements + empty returns for void match.
 // This is used when a match is used purely for side effects (like fmt.Printf calls).
 // We keep empty returns to ensure early exit after each case branch.
@@ -1584,15 +1606,18 @@ func (t *galaASTTransformer) stripReturnStatements(stmts []ast.Stmt) []ast.Stmt 
 func (t *galaASTTransformer) stripReturnStatement(stmt ast.Stmt) ast.Stmt {
 	switch s := stmt.(type) {
 	case *ast.ReturnStmt:
-		// Convert "return expr" to "expr; return" (execute the expression, then return with no value)
+		// Convert "return expr" to "expr; return" (execute the expression, then return with no value).
+		// In void context the expression's value is discarded; if the expression has no
+		// observable side effects (e.g. a bare literal, identifier, or selector left over from
+		// a value-producing match arm), Go would reject it as an "expression evaluated but not
+		// used" expression statement. Drop such expressions and keep just the empty return.
 		if len(s.Results) > 0 {
-			// Create a block with the expression statement followed by an empty return
-			return &ast.BlockStmt{
-				List: []ast.Stmt{
-					&ast.ExprStmt{X: s.Results[0]},
-					&ast.ReturnStmt{}, // Empty return for early exit
-				},
+			list := []ast.Stmt{}
+			if isValidGoExprStatement(s.Results[0]) {
+				list = append(list, &ast.ExprStmt{X: s.Results[0]})
 			}
+			list = append(list, &ast.ReturnStmt{}) // Empty return for early exit
+			return &ast.BlockStmt{List: list}
 		}
 		// Keep empty returns as-is
 		return s
