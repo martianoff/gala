@@ -9,6 +9,7 @@ go_library(
     ],
     importpath = "martianoff/gala/internal/transpiler/infer",
     visibility = ["//:__subpackages__"],
+    deps = ["//galaerr"],
 )
 
 go_test(

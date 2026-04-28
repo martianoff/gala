@@ -160,6 +160,36 @@ const (
 	// written as `case _ => ()` — replace with a real statement (e.g.
 	// `case _ => Println("…")`) or remove the arm if it cannot occur.
 	CodeEmptyParenExpression ErrorCode = "GALA-E0019"
+
+	// E0020: an `import` statement (or directory walk) references a GALA
+	// package the analyzer cannot locate on its search paths. Distinct
+	// from a malformed import (parser error) — the path is well-formed
+	// but no matching directory exists in the workspace.
+	CodePackageNotFound ErrorCode = "GALA-E0020"
+
+	// E0021: type unification failure during inference. Two types that
+	// must agree (call argument vs. parameter, both arms of an if, etc.)
+	// could not be reconciled. Covers the inference engine's general
+	// "cannot unify" diagnostics so users see one stable code regardless
+	// of which specific unification site fired.
+	CodeTypeMismatch ErrorCode = "GALA-E0021"
+
+	// E0022: occurs check failure during type unification. A type
+	// variable would have to expand into a type that contains itself
+	// (e.g. `T = List[T]` with no constructor) — Hindley-Milner rejects
+	// these to keep types finite.
+	CodeOccursCheck ErrorCode = "GALA-E0022"
+
+	// E0023: a variable referenced in an expression has no binding in
+	// the type-inference environment. Usually means the name is mis-
+	// spelled, the import is missing, or the variable is shadowed by a
+	// pattern that did not actually fire.
+	CodeUndefinedVariable ErrorCode = "GALA-E0023"
+
+	// E0024: the inference engine encountered an expression node it does
+	// not know how to handle. Indicates a transpiler bug rather than user
+	// error; the user is asked to file an issue with the snippet.
+	CodeInternalInferenceFailure ErrorCode = "GALA-E0024"
 )
 
 // MultiError collects multiple GALA errors.

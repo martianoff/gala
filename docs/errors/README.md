@@ -34,6 +34,11 @@ Each code has a dedicated documentation page in this directory explaining:
 | `GALA-E0017` | Internal transpiler panic | [GALA-E0017.md](GALA-E0017.md) |
 | `GALA-E0018` | Sealed variant type parameter cannot be inferred | [GALA-E0018.md](GALA-E0018.md) |
 | `GALA-E0019` | Empty parenthesized expression | [GALA-E0019.md](GALA-E0019.md) |
+| `GALA-E0020` | Package not found | [GALA-E0020.md](GALA-E0020.md) |
+| `GALA-E0021` | Type mismatch (unification failure) | [GALA-E0021.md](GALA-E0021.md) |
+| `GALA-E0022` | Occurs check failure | [GALA-E0022.md](GALA-E0022.md) |
+| `GALA-E0023` | Undefined variable | [GALA-E0023.md](GALA-E0023.md) |
+| `GALA-E0024` | Internal inference failure | [GALA-E0024.md](GALA-E0024.md) |
 
 ## Adding a new code
 

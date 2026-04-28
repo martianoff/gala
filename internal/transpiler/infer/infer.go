@@ -2,7 +2,20 @@ package infer
 
 import (
 	"fmt"
+
+	"martianoff/gala/galaerr"
 )
+
+// codedInferError builds a SemanticError with no source span. The infer
+// package operates on its own AST that does not carry GALA source
+// positions; downstream callers wrap the error with a real span via
+// `galaerr.NewSemanticErrorAt` when they have one. The code makes the
+// failure family stable for tools and CI.
+func codedInferError(code galaerr.ErrorCode, msg, hint string) error {
+	return galaerr.NewCodedSemanticError(code, 0, 0, msg, hint)
+}
+
+const typeMismatchHint = "the expression's type does not match what the surrounding context expects — annotate the binding or convert the value explicitly"
 
 // TypeEnv is a mapping from variable names to type schemes.
 type TypeEnv map[string]*Scheme
@@ -74,7 +87,8 @@ func (inf *Inferer) unify(t1, t2 Type) (Substitution, error) {
 	if a, ok := t1.(*TypeApp); ok {
 		if b, ok := t2.(*TypeApp); ok {
 			if a.Name != b.Name || len(a.Args) != len(b.Args) {
-				return nil, fmt.Errorf("cannot unify %s and %s", a, b)
+				return nil, codedInferError(galaerr.CodeTypeMismatch,
+					fmt.Sprintf("cannot unify %s and %s", a, b), typeMismatchHint)
 			}
 			s := make(Substitution)
 			for i := 0; i < len(a.Args); i++ {
@@ -96,7 +110,8 @@ func (inf *Inferer) unify(t1, t2 Type) (Substitution, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("cannot unify %s and %s", t1, t2)
+	return nil, codedInferError(galaerr.CodeTypeMismatch,
+		fmt.Sprintf("cannot unify %s and %s", t1, t2), typeMismatchHint)
 }
 
 func (inf *Inferer) bind(v *TypeVariable, t Type) (Substitution, error) {
@@ -104,7 +119,9 @@ func (inf *Inferer) bind(v *TypeVariable, t Type) (Substitution, error) {
 		return make(Substitution), nil
 	}
 	if t.FreeTypeVars()[v] {
-		return nil, fmt.Errorf("occurs check failed: %s in %s", v, t)
+		return nil, codedInferError(galaerr.CodeOccursCheck,
+			fmt.Sprintf("occurs check failed: %s in %s", v, t),
+			"the inferred type would have to refer to itself; add an explicit type annotation or restructure the recursion")
 	}
 	return Substitution{v: t}, nil
 }
@@ -123,7 +140,9 @@ func (inf *Inferer) infer(env TypeEnv, e Expr) (Type, Substitution, error) {
 		if s, ok := env[expr.Name]; ok {
 			return inf.instantiate(s), make(Substitution), nil
 		}
-		return nil, nil, fmt.Errorf("undefined variable: %s", expr.Name)
+		return nil, nil, codedInferError(galaerr.CodeUndefinedVariable,
+			fmt.Sprintf("undefined variable: %s", expr.Name),
+			"check the spelling, ensure the import that introduces it is in scope, and verify the binding is reachable from the reference site")
 
 	case *Abs:
 		tv := inf.NewTypeVar()
@@ -174,7 +193,8 @@ func (inf *Inferer) infer(env TypeEnv, e Expr) (Type, Substitution, error) {
 		}
 		s2, err := inf.unify(tCond, &TypeConst{Name: "bool"})
 		if err != nil {
-			return nil, nil, fmt.Errorf("if condition must be bool, got %s", tCond)
+			return nil, nil, codedInferError(galaerr.CodeTypeMismatch,
+				fmt.Sprintf("if condition must be bool, got %s", tCond), typeMismatchHint)
 		}
 		newEnv := env.Apply(s2).Apply(s1)
 		tThen, s3, err := inf.infer(newEnv, expr.Then)
@@ -187,10 +207,13 @@ func (inf *Inferer) infer(env TypeEnv, e Expr) (Type, Substitution, error) {
 		}
 		s5, err := inf.unify(tThen.Apply(s4), tElse)
 		if err != nil {
-			return nil, nil, fmt.Errorf("if branches must have same type: %s and %s", tThen.Apply(s4), tElse)
+			return nil, nil, codedInferError(galaerr.CodeTypeMismatch,
+				fmt.Sprintf("if branches must have same type: %s and %s", tThen.Apply(s4), tElse), typeMismatchHint)
 		}
 		return tThen.Apply(s4).Apply(s5), s5.Compose(s4).Compose(s3).Compose(s2).Compose(s1), nil
 	}
 
-	return nil, nil, fmt.Errorf("unknown expression type: %T", e)
+	return nil, nil, codedInferError(galaerr.CodeInternalInferenceFailure,
+		fmt.Sprintf("unknown expression type: %T", e),
+		"please file an issue at https://github.com/martianoff/gala/issues with the source that triggered this failure")
 }
