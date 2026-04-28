@@ -632,7 +632,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	stmts := t.buildMatchBody(clauses, defaultBody, resultType)
 
 	// Check if result type is void (for side-effect only match statements)
-	_, isVoid := resultType.(transpiler.VoidType)
+	isVoid := resultType != nil && resultType.IsVoid()
 
 	// Build IIFE with or without return type depending on void
 	var resultsField *ast.FieldList
