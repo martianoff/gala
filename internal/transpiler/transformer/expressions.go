@@ -401,8 +401,15 @@ func (t *galaASTTransformer) getPrimaryFromExpression(ctx grammar.IExpressionCon
 	if primaryExpr == nil {
 		return nil
 	}
-	// primaryExpr -> primary
-	return primaryExpr.(*grammar.PrimaryExprContext).Primary().(*grammar.PrimaryContext)
+	// primaryExpr -> primary. The primaryExpr alternation also covers
+	// lambdaExpression, ifExpression, and partialFunctionLiteral; for those
+	// shapes Primary() returns a typed-nil interface and the cast below would
+	// panic. Callers all check for nil already, so just bail out.
+	primary := primaryExpr.(*grammar.PrimaryExprContext).Primary()
+	if primary == nil {
+		return nil
+	}
+	return primary.(*grammar.PrimaryContext)
 }
 
 // getCallPatternFromExpression checks if an expression is a call pattern like Left(n)
