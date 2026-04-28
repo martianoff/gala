@@ -1,0 +1,68 @@
+package main
+
+// Regression: a `subject match { ... }` used as a *statement* (its value
+// discarded) where each arm's body ends with a bare expression — a
+// trailing literal, identifier, or selector that pre-existed when arms
+// had to "return" a value to satisfy the IIFE's typing.
+//
+// In statement position the IIFE is lowered as void; the trailing
+// expression is then dropped because it has no observable effect when
+// its value is discarded. Without that drop, Go rejects the generated
+// code with "X (untyped bool constant) is not used".
+
+sealed type Mode {
+    case Read()
+    case Write()
+    case Append()
+}
+
+func observeLiteralTail(m Mode) int {
+    var seen = 0
+    // Each arm ends with a bare literal; the value is discarded because
+    // the match itself sits in statement position.
+    m match {
+        case Read() => {
+            seen = 1
+            true
+        }
+        case Write() => {
+            seen = 2
+            true
+        }
+        case Append() => {
+            seen = 3
+            true
+        }
+    }
+    return seen
+}
+
+func observeIdentTail(m Mode, label string) string {
+    var picked = ""
+    // Each arm ends with a bare identifier reference — also a non-call
+    // expression that Go would otherwise reject as a statement.
+    m match {
+        case Read() => {
+            picked = "r"
+            label
+        }
+        case Write() => {
+            picked = "w"
+            label
+        }
+        case Append() => {
+            picked = "a"
+            label
+        }
+    }
+    return picked
+}
+
+func main() {
+    Println(observeLiteralTail(Read()))
+    Println(observeLiteralTail(Write()))
+    Println(observeLiteralTail(Append()))
+    Println(observeIdentTail(Read(), "x"))
+    Println(observeIdentTail(Write(), "x"))
+    Println(observeIdentTail(Append(), "x"))
+}
