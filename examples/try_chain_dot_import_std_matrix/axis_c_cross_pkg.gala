@@ -1,0 +1,28 @@
+package try_chain_dot_import_std_matrix
+
+// Axis C2 / C3: receiver type Process lives in a sibling GALA package. Both
+// the std-as-dot-import and std-as-explicit-qualifier shapes must preserve
+// the inner type argument.
+import (
+    . "martianoff/gala/std"
+    . "martianoff/gala/examples/try_chain_dot_import_std_matrix_proc"
+)
+
+// C3 + A3 + B1 + D2 + E1 + F2: Process from a different GALA package
+// (dot-imported), receiver chain under dot-imported std.
+func C3_A3_B1_D2_E1_F2(p Process) Try[bool] =
+    p.Kill().FlatMap((_) => p.Wait().Map((_) => true))
+
+// C3 + A3 + B1 + D5 + E1: match-arm form, cross-pkg receiver, dot-imported std.
+func C3_A3_B1_D5_E1(p Process) Try[bool] = p.Kill() match {
+    case Success(_)   => p.Wait().Map((_) => true)
+    case Failure(err) => Failure[bool](err)
+}
+
+// Holder used by C3 + B2 (struct field) cell.
+struct HolderC3(Proc Process)
+
+// C3 + A3 + B2 + D2 + E1 + F2: struct field with cross-package value type
+// under dot-imported std.
+func C3_A3_B2_D2_E1_F2(h HolderC3) Try[bool] =
+    h.Proc.Kill().FlatMap((_) => h.Proc.Wait().Map((_) => true))

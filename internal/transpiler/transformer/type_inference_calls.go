@@ -391,10 +391,16 @@ func (t *galaASTTransformer) inferCallIdentType(e *ast.CallExpr, id *ast.Ident, 
 		if len(typeArgs) > 0 {
 			return transpiler.GenericType{Base: baseType, Params: typeArgs}
 		}
-		// For Option_* methods without explicit type args, don't return early.
-		// Fall through to Receiver_Method handling below to infer type params.
-		// For all other std constructors/prefixes, return the base type directly.
-		if parentType != transpiler.TypeOption {
+		// `Type_Method` shaped names (e.g. `Try_Map`, `Option_FlatMap`) refer to
+		// methods on a parent type whose return type carries the method's own
+		// type-arg shape (e.g. `Map[U]` returns `Try[U]`). Returning the bare
+		// parent named type here would drop the method's type argument and
+		// produce uninstantiated `Try` / `Option` in the generated Go. Fall
+		// through to the Receiver_Method resolver below, which substitutes
+		// the inferred U into the method's declared return type. The early
+		// return remains correct for direct constructor names that match the
+		// parent type itself (e.g. `Left`, `Right` -> Either).
+		if !strings.Contains(id.Name, "_") {
 			return baseType
 		}
 	}

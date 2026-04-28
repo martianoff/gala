@@ -1,0 +1,16 @@
+package try_chain_dot_import_std_matrix
+
+// Local fixtures used by the matrix. Defined here (without dot-importing std)
+// so axis A1 (auto-import std) cells have a same-package receiver that does
+// NOT route Try / Option / Either through a dot-import resolution path.
+
+struct ProcA1(Pid int)
+
+func (p ProcA1) Kill() Try[bool] = Success[bool](true)
+func (p ProcA1) Wait() Try[int]  = Success[int](0)
+
+// Holder is used by axis B2 (struct field receiver) cells under A1.
+struct HolderA1(Proc ProcA1)
+
+// MakeProcA1 is used by axis B3 (function-return receiver) cells under A1.
+func MakeProcA1() ProcA1 = ProcA1(Pid = 1)

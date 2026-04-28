@@ -1,0 +1,85 @@
+package main
+
+// Driver for the Try-chain dot-import-of-std test matrix. Each function in
+// the matrix library returns a typed monad; the driver invokes a
+// representative cell from each axis combination and asserts the resulting
+// success branch carries a bool true (or the corresponding sentinel for
+// other element types).
+
+import (
+    "martianoff/gala/examples/try_chain_dot_import_std_matrix"
+    "martianoff/gala/examples/try_chain_dot_import_std_matrix_proc"
+)
+
+func reportTry(label string, t Try[bool]) {
+    t match {
+        case Success(b) => Println(s"$label: $b")
+        case Failure(e) => Println(s"$label err: ${e.Error()}")
+    }
+}
+
+func reportTryInt(label string, t Try[int]) {
+    t match {
+        case Success(i) => Println(s"$label: $i")
+        case Failure(e) => Println(s"$label err: ${e.Error()}")
+    }
+}
+
+func reportTryArray(label string, t Try[Array[int]]) {
+    t match {
+        case Success(arr) => Println(s"$label: ${arr.Length()}")
+        case Failure(e) => Println(s"$label err: ${e.Error()}")
+    }
+}
+
+func reportOption(label string, o Option[bool]) {
+    o match {
+        case Some(b) => Println(s"$label: $b")
+        case None()  => Println(s"$label: none")
+    }
+}
+
+func reportEither(label string, ei Either[string, bool]) {
+    ei match {
+        case Right(b)  => Println(s"$label: $b")
+        case Left(err) => Println(s"$label err: $err")
+    }
+}
+
+func main() {
+    val pa1 = try_chain_dot_import_std_matrix.ProcA1(Pid = 1)
+    val ha1 = try_chain_dot_import_std_matrix.HolderA1(Proc = pa1)
+
+    // Axis A1 (auto-import std)
+    reportTry("a1_b1_c1_d2_e1_f2", try_chain_dot_import_std_matrix.A1_B1_C1_D2_E1_F2(pa1))
+    reportTry("a1_b1_c1_d1_e1",    try_chain_dot_import_std_matrix.A1_B1_C1_D1_E1(pa1))
+    reportTry("a1_b1_c1_d5_e1",    try_chain_dot_import_std_matrix.A1_B1_C1_D5_E1(pa1))
+
+    // Axis A3 (dot-imported std) — the trigger axis.
+    reportTry("a3_b1_c1_d2_e1_f2", try_chain_dot_import_std_matrix.A3_B1_C1_D2_E1_F2(pa1))
+    reportTry("a3_b1_c1_d5_e1",    try_chain_dot_import_std_matrix.A3_B1_C1_D5_E1(pa1))
+    reportTry("a3_b1_c1_d3_e1",    try_chain_dot_import_std_matrix.A3_B1_C1_D3_E1(pa1))
+    reportTry("a3_b1_c1_d4_e1",    try_chain_dot_import_std_matrix.A3_B1_C1_D4_E1(pa1))
+    reportTry("a3_b2_c1_d2_e1",    try_chain_dot_import_std_matrix.A3_B2_C1_D2_E1(ha1))
+    reportTry("a3_b3_c1_d2_e1",    try_chain_dot_import_std_matrix.A3_B3_C1_D2_E1())
+    reportTryInt("a3_b1_c1_d2_e1_f1", try_chain_dot_import_std_matrix.A3_B1_C1_D2_E1_F1(pa1))
+    reportTryArray("a3_b1_c1_d2_e1_f3", try_chain_dot_import_std_matrix.A3_B1_C1_D2_E1_F3(pa1))
+
+    // Axis E2 (Option) under dot-imported std.
+    val src = try_chain_dot_import_std_matrix.Source(Tag = "src")
+    reportOption("e2_a3_b1_c1_d2_f2", try_chain_dot_import_std_matrix.E2_A3_B1_C1_D2_F2(src))
+    reportOption("e2_a3_b1_c1_d5",    try_chain_dot_import_std_matrix.E2_A3_B1_C1_D5(src))
+    reportOption("e2_a3_b1_c1_d3",    try_chain_dot_import_std_matrix.E2_A3_B1_C1_D3(src))
+
+    // Axis E3 (Either) under dot-imported std.
+    val lk = try_chain_dot_import_std_matrix.Lookup(Tag = "lk")
+    reportEither("e3_a3_b1_c1_d2_f2", try_chain_dot_import_std_matrix.E3_A3_B1_C1_D2_F2(lk))
+    reportEither("e3_a3_b1_c1_d5",    try_chain_dot_import_std_matrix.E3_A3_B1_C1_D5(lk))
+
+    // Axis C3 (cross-package Process via dot-imported pkg) under dot-imported std.
+    val pc3 = try_chain_dot_import_std_matrix_proc.Process(Pid = 1)
+    val hc3 = try_chain_dot_import_std_matrix.HolderC3(Proc = pc3)
+    reportTry("c3_a3_b1_d2_e1_f2", try_chain_dot_import_std_matrix.C3_A3_B1_D2_E1_F2(pc3))
+    reportTry("c3_a3_b1_d5_e1",    try_chain_dot_import_std_matrix.C3_A3_B1_D5_E1(pc3))
+    reportTry("c3_a3_b2_d2_e1_f2", try_chain_dot_import_std_matrix.C3_A3_B2_D2_E1_F2(hc3))
+}

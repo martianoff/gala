@@ -1,0 +1,51 @@
+package try_chain_dot_import_std_matrix
+
+// Axis A3: std is dot-imported. This is the trigger axis. The synthesized
+// FlatMap closure return type must spell out the inner type argument.
+// collection_immutable is dot-imported too so the F3 (nested generic) cell
+// can use Array[int].
+import (
+    . "martianoff/gala/std"
+    . "martianoff/gala/collection_immutable"
+)
+
+// A3 + B1 + C1 + D2 + E1 + F2: the original failing repro shape.
+func A3_B1_C1_D2_E1_F2(p ProcA1) Try[bool] =
+    p.Kill().FlatMap((_) => p.Wait().Map((_) => true))
+
+// A3 + B1 + C1 + D5 + E1: match-arm form. Both arms must agree on Try[bool].
+func A3_B1_C1_D5_E1(p ProcA1) Try[bool] = p.Kill() match {
+    case Success(_)   => p.Wait().Map((_) => true)
+    case Failure(err) => Failure[bool](err)
+}
+
+// A3 + B1 + C1 + D3 + E1: depth-3 chain to confirm type-arg propagation
+// holds at multiple nesting levels.
+func A3_B1_C1_D3_E1(p ProcA1) Try[bool] =
+    p.Kill().FlatMap((_) =>
+        p.Wait().FlatMap((_) =>
+            p.Kill().Map((_) => true)))
+
+// A3 + B1 + C1 + D4 + E1: FlatMap whose closure is a typed match expression.
+func A3_B1_C1_D4_E1(p ProcA1) Try[bool] =
+    p.Kill().FlatMap((_) => p.Wait() match {
+        case Success(_)   => Success[bool](true)
+        case Failure(err) => Failure[bool](err)
+    })
+
+// A3 + B2 + C1 + D2 + E1: struct-field receiver (auto-Get on Immutable).
+func A3_B2_C1_D2_E1(h HolderA1) Try[bool] =
+    h.Proc.Kill().FlatMap((_) => h.Proc.Wait().Map((_) => true))
+
+// A3 + B3 + C1 + D2 + E1: function-return receiver. Note: GALA's parser
+// chains method calls onto the call expression directly.
+func A3_B3_C1_D2_E1() Try[bool] =
+    MakeProcA1().Kill().FlatMap((_) => MakeProcA1().Wait().Map((_) => true))
+
+// A3 + B1 + C1 + D2 + E1 + F1: same outer/inner type (Try[int] → Try[int]).
+func A3_B1_C1_D2_E1_F1(p ProcA1) Try[int] =
+    p.Wait().FlatMap((_) => p.Wait().Map((_) => 42))
+
+// A3 + B1 + C1 + D2 + E1 + F3: nested generic inner type (Try[Array[int]]).
+func A3_B1_C1_D2_E1_F3(p ProcA1) Try[Array[int]] =
+    p.Kill().FlatMap((_) => p.Wait().Map((_) => ArrayOf(1, 2, 3)))

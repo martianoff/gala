@@ -1,0 +1,21 @@
+package try_chain_dot_import_std_matrix
+
+// Axis E3: Either[E, T] under the dot-import-of-std trigger.
+import (
+    . "martianoff/gala/std"
+)
+
+struct Lookup(Tag string)
+
+func (l Lookup) Read()  Either[string, bool] = Right[string, bool](true)
+func (l Lookup) Count() Either[string, int]  = Right[string, int](0)
+
+// E3 + A3 + B1 + C1 + D2 + F2: Either FlatMap-Map under dot-import.
+func E3_A3_B1_C1_D2_F2(l Lookup) Either[string, bool] =
+    l.Read().FlatMap((_) => l.Count().Map((_) => true))
+
+// E3 + A3 + B1 + C1 + D5: match-arm form for Either (Left/Right).
+func E3_A3_B1_C1_D5(l Lookup) Either[string, bool] = l.Read() match {
+    case Right(_)   => l.Count().Map((_) => true)
+    case Left(err)  => Left[string, bool](err)
+}
