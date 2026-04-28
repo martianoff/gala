@@ -1,0 +1,20 @@
+package try_chain_dot_import_std_matrix
+
+// Axis A1: std is auto-imported (no `std` in import block, no `import .`).
+// Try / Success / Failure resolve via the auto-import path. These cells must
+// stay green to confirm the fix does not regress the working baseline.
+
+// A1 + B1 + C1 + D2 + E1 + F2: bare param + same-package + FlatMap-Map +
+// Try + asymmetric type args.
+func A1_B1_C1_D2_E1_F2(p ProcA1) Try[bool] =
+    p.Kill().FlatMap((_) => p.Wait().Map((_) => true))
+
+// A1 + B1 + C1 + D1 + E1: bare param, just .Map.
+func A1_B1_C1_D1_E1(p ProcA1) Try[bool] =
+    p.Kill().Map((_) => true)
+
+// A1 + B1 + C1 + D5 + E1: match-arm form (cross-arm consistency).
+func A1_B1_C1_D5_E1(p ProcA1) Try[bool] = p.Kill() match {
+    case Success(_)   => p.Wait().Map((_) => true)
+    case Failure(err) => Failure[bool](err)
+}

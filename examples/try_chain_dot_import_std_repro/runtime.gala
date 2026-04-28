@@ -1,0 +1,15 @@
+package try_chain_dot_import_std_repro
+
+import (
+    . "martianoff/gala/std"
+)
+
+// The dot import of std is the trigger axis: Try, Success, and Failure
+// resolve unqualified through the dot-imported std namespace. The chain
+// p.Kill().FlatMap((_) => p.Wait().Map((_) => true)) must emit the inner
+// FlatMap closure's return type as Try[bool] — without the [bool] type
+// argument the call instantiates Try[T any] without arguments and Go
+// rejects the program.
+
+func CloseSessionLocalRepro(p ProcessLocal) Try[bool] =
+    p.Kill().FlatMap((_) => p.Wait().Map((_) => true))

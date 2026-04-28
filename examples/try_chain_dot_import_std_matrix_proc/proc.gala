@@ -1,0 +1,10 @@
+package try_chain_dot_import_std_matrix_proc
+
+// Cross-package source of Process used by axis C2 / C3 cells. Defined in a
+// separate package so the test matrix can exercise both same-package and
+// cross-package receivers under the dot-import-of-std trigger.
+
+struct Process(Pid int)
+
+func (p Process) Kill() Try[bool] = Success[bool](true)
+func (p Process) Wait() Try[int]  = Success[int](0)

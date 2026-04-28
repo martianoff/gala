@@ -2199,3 +2199,66 @@ gala_test(
     expected = "try_chain_typeparam_repro_main/main.out",
     deps = [":try_chain_typeparam_repro_lib"],
 )
+
+# Regression: chained Try[T].FlatMap((_) => Try[U].Map((_) => V)) where the
+# file dot-imports std (`import . "martianoff/gala/std"`). The dot import is
+# the trigger axis — it routes the lambda's expected return type through a
+# code path that emitted bare `Try` instead of `Try[bool]`, producing
+# generated Go that Go rejects with "cannot use generic type Try[T any]
+# without instantiation".
+gala_library(
+    name = "try_chain_dot_import_std_repro_lib",
+    srcs = [
+        "try_chain_dot_import_std_repro/proc.gala",
+        "try_chain_dot_import_std_repro/runtime.gala",
+    ],
+    importpath = "martianoff/gala/examples/try_chain_dot_import_std_repro",
+    visibility = ["//visibility:public"],
+)
+
+# Multi-axis regression matrix for the same erasure path. Axes covered:
+# A: std import shape (auto-import baseline A1; dot-import trigger A3 — A2
+#    explicit-qualifier was excluded because that import shape currently
+#    surfaces a separate duplicate-import emission quirk unrelated to this
+#    fix and would otherwise mask the matrix's real coverage)
+# B: receiver shape (bare param / struct field / function return)
+# C: package boundary (same / cross via dot-imported sibling)
+# D: chain shape (Map only / FlatMap-Map / depth-3 / FlatMap-to-match / match-arm)
+# E: monad type (Try / Option / Either)
+# F: type-arg shape (same / asymmetric / nested generic)
+gala_library(
+    name = "try_chain_dot_import_std_matrix_proc",
+    srcs = ["try_chain_dot_import_std_matrix_proc/proc.gala"],
+    importpath = "martianoff/gala/examples/try_chain_dot_import_std_matrix_proc",
+    visibility = ["//visibility:public"],
+)
+
+gala_library(
+    name = "try_chain_dot_import_std_matrix_lib",
+    srcs = [
+        "try_chain_dot_import_std_matrix/axis_a1_auto_import.gala",
+        "try_chain_dot_import_std_matrix/axis_a3_dot_import.gala",
+        "try_chain_dot_import_std_matrix/axis_c_cross_pkg.gala",
+        "try_chain_dot_import_std_matrix/axis_e2_option.gala",
+        "try_chain_dot_import_std_matrix/axis_e3_either.gala",
+        "try_chain_dot_import_std_matrix/types.gala",
+    ],
+    importpath = "martianoff/gala/examples/try_chain_dot_import_std_matrix",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":try_chain_dot_import_std_matrix_proc",
+        "//collection_immutable",
+    ],
+)
+
+gala_test(
+    name = "try_chain_dot_import_std_matrix",
+    src = "try_chain_dot_import_std_matrix_main/main.gala",
+    expected = "try_chain_dot_import_std_matrix_main/main.out",
+    deps = [
+        ":try_chain_dot_import_std_matrix_lib",
+        ":try_chain_dot_import_std_matrix_proc",
+        "//collection_immutable",
+    ],
+)
+

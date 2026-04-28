@@ -1,0 +1,31 @@
+package try_chain_dot_import_std_matrix
+
+// Axis E2: Option[T] under the dot-import-of-std trigger. The same erasure
+// path that dropped Try[bool] would drop Option[bool] without the fix.
+import (
+    . "martianoff/gala/std"
+)
+
+// Cells use a local Source whose methods return Option[bool] / Option[int].
+// Source lives in this file so the auto-import siblings (A1) don't share it.
+
+struct Source(Tag string)
+
+func (s Source) Find()  Option[bool] = Some(true)
+func (s Source) Count() Option[int]  = Some(0)
+
+// E2 + A3 + B1 + C1 + D2 + F2: FlatMap-Map under dot-import.
+func E2_A3_B1_C1_D2_F2(s Source) Option[bool] =
+    s.Find().FlatMap((_) => s.Count().Map((_) => true))
+
+// E2 + A3 + B1 + C1 + D5: match-arm form for Option (Some/None).
+func E2_A3_B1_C1_D5(s Source) Option[bool] = s.Find() match {
+    case Some(_) => s.Count().Map((_) => true)
+    case None()  => None[bool]()
+}
+
+// E2 + A3 + B1 + C1 + D3: depth-3 chain.
+func E2_A3_B1_C1_D3(s Source) Option[bool] =
+    s.Find().FlatMap((_) =>
+        s.Count().FlatMap((_) =>
+            s.Find().Map((_) => true)))

@@ -1,0 +1,13 @@
+package try_chain_dot_import_std_repro
+
+// ProcessLocal exercises the Try chain repro at the same-package level so the
+// runtime.gala chain calls method on a bare-named ProcessLocal value (not a
+// cross-package qualifier). Kill returns Try[bool], Wait returns Try[int] —
+// the asymmetric element types let runtime.gala build the
+// FlatMap((_) => Map((_) => v)) shape whose synthesized closure return type
+// must preserve the [bool] type argument.
+
+struct ProcessLocal(Pid int)
+
+func (p ProcessLocal) Kill() Try[bool] = Success[bool](true)
+func (p ProcessLocal) Wait() Try[int]  = Success[int](0)
