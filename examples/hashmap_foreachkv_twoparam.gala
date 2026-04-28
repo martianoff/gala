@@ -1,0 +1,54 @@
+package main
+
+import (
+    im "martianoff/gala/collection_immutable"
+)
+
+// Regression: HashMap[K, V].ForEachKV((k, v) => …) — the lambda's `v`
+// (and `k`) parameter must be bound to V (and K) from the receiver. Before
+// the fix, the two-param lambda binding lost K/V, generating Go code that
+// typed `v` as `interface{}` and refused to access fields on it. Mirrors
+// the original failing source from the gala-server CloseAllSessions site
+// as closely as possible: lambda body is a single statement-position match
+// over a Try value computed from `v`, with one arm side-effecting an outer
+// `var failures` accumulator that takes the concrete V via a function call.
+
+struct Member(Name string, Email string)
+
+// CloseSession takes a concrete Member by value (not any). The bug fired
+// on this exact call shape.
+func CloseSession(s Member) Try[bool] = Success(true)
+
+func memberKey(m Member) string = s"${m.Name}<${m.Email}>"
+
+func CloseAll(sessions HashMap[string, Member]) Array[string] {
+    var failures = EmptyArray[string]()
+    sessions.ForEachKV((name, s) => {
+        CloseSession(s) match {
+            case Success(_)   => {}
+            case Failure(err) => failures = failures.Append(s"$name: ${err.Error()}")
+        }
+    })
+    return failures
+}
+
+// Plain (non-generic) usage with an unannotated `(k, v) =>` lambda whose
+// body uses both `k` as K=string and `v` as V=Member with field access.
+func DumpKV(sessions HashMap[string, Member]) Array[string] {
+    var out = EmptyArray[string]()
+    sessions.ForEachKV((k, v) => {
+        out = out.Append(s"$k=${memberKey(v)}")
+    })
+    return out
+}
+
+func main() {
+    var sessions = im.EmptyHashMap[string, Member]()
+    sessions = sessions.Put("alice", Member(Name = "Alice", Email = "a@x"))
+    sessions = sessions.Put("bob",   Member(Name = "Bob",   Email = "b@x"))
+
+    val results = CloseAll(sessions)
+    Println(results.Length())
+
+    DumpKV(sessions).Sorted().ForEach((s) => Println(s))
+}

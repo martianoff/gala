@@ -628,6 +628,15 @@ gala_test(
 )
 
 gala_test(
+    name = "hashmap_foreachkv_twoparam",
+    src = "hashmap_foreachkv_twoparam.gala",
+    expected = "hashmap_foreachkv_twoparam.out",
+    deps = [
+        "//collection_immutable",
+    ],
+)
+
+gala_test(
     name = "partial_function",
     src = "partial_function.gala",
     expected = "partial_function.out",

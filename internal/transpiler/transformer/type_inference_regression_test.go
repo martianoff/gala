@@ -371,6 +371,71 @@ func test() {
 }`,
 			expectError: "cannot use '_' as a parameter type",
 		},
+		{
+			// Two-param lambda for HashMap[K, V].ForEachKV must bind k:K and v:V
+			// from the receiver's type arguments. Earlier breakage typed both as
+			// `any`, which made any subsequent call expecting a concrete value
+			// reject the lambda parameter ("cannot use v (variable of interface
+			// type any) as Member value"). The expected param types from the
+			// methodMeta substitution must propagate through both lambda slots
+			// — not just the first.
+			name: "HashMap.ForEachKV two-param lambda binds K and V from receiver",
+			input: `package main
+
+import . "martianoff/gala/collection_immutable"
+
+struct Member(Name string)
+
+func test() {
+    var m = EmptyHashMap[string, Member]()
+    m = m.Put("a", Member(Name = "A"))
+    m.ForEachKV((k, v) => {
+        Println(k)
+        Println(v.Name)
+    })
+}`,
+			contains: []string{
+				"func(k string, v Member)",
+			},
+			notContains: []string{
+				"func(k any, v any)",
+				"func(k string, v any)",
+				"func(k any, v Member)",
+			},
+		},
+		{
+			// Same as above but the lambda body is a single statement-position
+			// match — mirrors the failing source from the original bug report.
+			// The lambda must still bind k:K and v:V so that an inner call
+			// taking the concrete V (e.g. CloseSession(v)) compiles.
+			name: "HashMap.ForEachKV lambda body is a statement-position match",
+			input: `package main
+
+import . "martianoff/gala/collection_immutable"
+import . "martianoff/gala/std"
+
+struct Member(Name string)
+
+func tryClose(s Member) Try[bool] = Success(true)
+
+func test() {
+    var m = EmptyHashMap[string, Member]()
+    m = m.Put("a", Member(Name = "A"))
+    m.ForEachKV((name, s) => {
+        tryClose(s) match {
+            case Success(_)    => {}
+            case Failure(_)    => {}
+        }
+    })
+}`,
+			contains: []string{
+				"func(name string, s Member)",
+				"tryClose(s)",
+			},
+			notContains: []string{
+				"func(name any, s any)",
+			},
+		},
 	}
 
 	for _, tt := range tests {
