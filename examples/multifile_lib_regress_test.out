@@ -45,3 +45,5 @@ warn
 0
 1
 err: oops
+alice => Alice<a@x>
+bob => Bob<b@x>

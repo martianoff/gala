@@ -236,3 +236,56 @@ func MakeProcessor() func(ProcMember) {
         }
     }
 }
+
+// --- Regression: two-param lambda passed to HashMap[K, V].ForEachKV must
+// bind both K and V from the receiver's type arguments. Without the fix,
+// the lambda's `(name, m)` parameters were inferred as (any, any), and the
+// next call expecting a concrete Member value rejected the `any`-typed v
+// with "cannot use m (variable of interface type any) as Member value in
+// argument to memberKey: need type assertion".
+struct Member(Name string, Email string)
+
+// memberKey takes a concrete Member by value (not any). This call only
+// compiles when the lambda binds v to V=Member.
+func memberKey(m Member) string = s"${m.Name}<${m.Email}>"
+
+func MembersByName(members HashMap[string, Member]) Array[string] {
+    var out = EmptyArray[string]()
+    members.ForEachKV((name, m) => {
+        // `name` must be string (key type), `m` must be Member (value type).
+        // Concatenate name with a member-derived string to exercise both.
+        out = out.Append(s"$name => ${memberKey(m)}")
+    })
+    return out
+}
+
+// HashMap whose value type is a Go-declared struct (Event from events.go).
+// The two-param lambda must bind `e` to the Go type Event, not any, so
+// that field access `e.Status` compiles.
+func EventStatusByMethod(events HashMap[string, Event]) Array[int] {
+    var out = EmptyArray[int]()
+    events.ForEachKV((m, e) => {
+        // m: string, e: Event — accessing .Status only compiles when the
+        // value type plumbed through to the lambda.
+        out = out.Append(e.Status)
+    })
+    return out.Sorted()
+}
+
+// Two-param lambda whose body is a single statement-position match —
+// mirrors the original failing shape from the bug report. The lambda
+// must still bind v to V=Member.
+sealed type CloseResult { case Closed() case CloseFailed(Err string) }
+
+func tryClose(m Member) CloseResult = Closed()
+
+func CloseAllMembers(members HashMap[string, Member]) Array[string] {
+    var failures = EmptyArray[string]()
+    members.ForEachKV((name, m) => {
+        tryClose(m) match {
+            case Closed()        => {}
+            case CloseFailed(_)  => failures = failures.Append(s"$name=${memberKey(m)}")
+        }
+    })
+    return failures.Sorted()
+}

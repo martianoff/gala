@@ -152,4 +152,17 @@ func main() {
     val proc = multifile_lib_regress.MakeProcessor()
     proc(multifile_lib_regress.ProcMember(Name = "ok"))
     proc(multifile_lib_regress.ProcMember(Name = "bad"))
+    // HashMap.ForEachKV two-param lambda must bind both K and V from
+    // the receiver's type args. The lambda calls memberKey(m) which
+    // takes a concrete Member by value — this only compiles when the
+    // lambda binds m to V=Member, not to any.
+    val mm0 = EmptyHashMap[string, multifile_lib_regress.Member]()
+    val mm1 = mm0.Put("alice", multifile_lib_regress.Member(Name = "Alice", Email = "a@x"))
+    val mm2 = mm1.Put("bob",   multifile_lib_regress.Member(Name = "Bob",   Email = "b@x"))
+    multifile_lib_regress.MembersByName(mm2).Sorted().ForEach((s) => Println(s))
+
+    // Same shape but the lambda body is a single statement-position match
+    // (mirrors the original failing report). The lambda must still bind
+    // v to V=Member.
+    multifile_lib_regress.CloseAllMembers(mm2).ForEach((s) => Println(s))
 }
