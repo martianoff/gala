@@ -37,6 +37,8 @@ true
 401
 true ready
 7 label 1.5
+alpha=failed-alpha
+beta=failed-beta
 info
 0
 warn

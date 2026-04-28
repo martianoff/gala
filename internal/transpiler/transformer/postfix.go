@@ -670,6 +670,19 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 }
 
 func (t *galaASTTransformer) transformTupleLiteral(exprs []ast.Expr, line ...int) (ast.Expr, error) {
+	return t.transformTupleLiteralWithExpected(exprs, nil, line...)
+}
+
+// transformTupleLiteralWithExpected lowers a tuple literal `(a, b, ...)` to
+// `std.TupleN[T1, T2, ...]{V1: NewImmutable(a), V2: NewImmutable(b), ...}`.
+// `perElemExpected`, when non-nil, supplies a higher-priority per-element
+// fallback for type-parameter synthesis (used for the call-site bidirectional
+// inference path). The previous fallback —
+// `currentFuncReturnType` — is still consulted when the per-element hint is
+// absent or itself uninformative, preserving the enclosing-return-type case.
+// When neither hint resolves a concrete element type, the parameter
+// degrades to `any` (matching the historical behavior).
+func (t *galaASTTransformer) transformTupleLiteralWithExpected(exprs []ast.Expr, perElemExpected []transpiler.Type, line ...int) (ast.Expr, error) {
 	n := len(exprs)
 	if n < 2 || n > 10 {
 		errLine, errCol := t.lastLine, t.lastCol
@@ -682,13 +695,18 @@ func (t *galaASTTransformer) transformTupleLiteral(exprs []ast.Expr, line ...int
 	// Determine tuple type name based on arity (B2 — single source of truth).
 	typeName, _ := tupleArityName(n)
 
-	// Infer type parameters from expression types.
-	// When inference fails for an element, fall back to the enclosing function's
-	// return type if it is a Tuple with matching arity (prevents type widening to any).
+	// Build the per-element fallback ladder. The most-specific source —
+	// the explicit per-element expected types passed in by the caller —
+	// wins over the enclosing function's return type.
 	var fallbackTypes []transpiler.Type
-	if retType, ok := t.currentFuncReturnType.(transpiler.GenericType); ok &&
-		t.isTupleTypeName(retType.Base.String()) && len(retType.Params) == n {
-		fallbackTypes = retType.Params
+	if perElemExpected != nil && len(perElemExpected) == n {
+		fallbackTypes = perElemExpected
+	}
+	if fallbackTypes == nil {
+		if retType, ok := t.currentFuncReturnType.(transpiler.GenericType); ok &&
+			t.isTupleTypeName(retType.Base.String()) && len(retType.Params) == n {
+			fallbackTypes = retType.Params
+		}
 	}
 
 	var typeParams []ast.Expr

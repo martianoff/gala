@@ -127,6 +127,13 @@ func main() {
     val tr = multifile_lib_regress.MakeTriple(7, "label", 1.5)
     Println(tr.V1, tr.V2, tr.V3)
 
+    // Tuple literal in call-argument position inherits element types from
+    // the call-site's expected parameter type (bidirectional inference).
+    // Without this the `(name, err)` literal was emitted as
+    // Tuple[any, error] and Array.Append rejected the mismatch.
+    val fails = multifile_lib_regress.CollectFailures(ArrayOf("alpha", "beta"))
+    fails.ForEach((p) => Println(s"${p.V1}=${p.V2.Error()}"))
+
     // Statement-position match with mixed value/void arms (regression).
     // EmitLevel runs `level match { ... }` as a statement; one arm calls
     // a value-returning function, another calls a void function, and

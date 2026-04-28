@@ -94,6 +94,21 @@ func MakeFlagPair(flag bool, label string) Tuple[bool, string] = Tuple(flag, lab
 func MakeTriple(n int, label string, ratio float64) Tuple3[int, string, float64] =
     Tuple(n, label, ratio)
 
+// --- Regression: tuple literal as call argument inherits element types from
+// the call-site's expected parameter type (bidirectional inference).
+// Without this the `(name, err)` literal had its first element collapse to
+// `any` because `getExprTypeName` of the val-bound `name` did not resolve
+// to a concrete `string` from the call-site context, and Append was rejected
+// with `cannot use Tuple[any, error] as Tuple[string, error]`.
+func CollectFailures(names Array[string]) Array[Tuple[string, error]] {
+    var failures = EmptyArray[Tuple[string, error]]()
+    names.ForEach((name) => {
+        val err = NoSuchElement(s"failed-$name")
+        failures = failures.Append((name, err))
+    })
+    return failures
+}
+
 // --- Regression: expression-bodied if-expression inside Map lambda whose
 // arms reference methods on a user-defined generic type. HM type inference
 // can't model methods on generics (env only carries top-level functions

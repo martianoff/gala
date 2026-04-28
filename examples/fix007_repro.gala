@@ -1,0 +1,21 @@
+package main
+
+import (
+    "errors"
+    . "martianoff/gala/collection_immutable"
+)
+
+// FIX-007 reproducer: tuple literal as call argument should infer concrete element types
+// from the call-site expected parameter type, not collapse to `Tuple[any, error]`.
+func collectFailures() Array[Tuple[string, error]] {
+    var failures = EmptyArray[Tuple[string, error]]()
+    val name = "session-1"
+    val err = errors.New("boom")
+    failures = failures.Append((name, err))
+    return failures
+}
+
+func main() {
+    val out = collectFailures()
+    out.ForEach((p) => Println(s"${p.V1}=${p.V2.Error()}"))
+}
