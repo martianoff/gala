@@ -2265,6 +2265,9 @@ gala_library(
     name = "try_chain_dot_import_std_matrix_proc",
     srcs = ["try_chain_dot_import_std_matrix_proc/proc.gala"],
     importpath = "martianoff/gala/examples/try_chain_dot_import_std_matrix_proc",
+    visibility = ["//visibility:public"],
+)
+
 # receiver methods come from a *different* GALA package than the consumer.
 # This is the cross-package counterpart of try_chain_typeparam_repro_lib —
 # it forces the cross-package method-return-type lookup path through the
@@ -2307,6 +2310,7 @@ gala_test(
     ],
 )
 
+gala_library(
     name = "cross_pkg_try_chain_session",
     srcs = ["cross_pkg_try_chain/pkg_session/session.gala"],
     importpath = "martianoff/gala/examples/cross_pkg_try_chain/pkg_session",
