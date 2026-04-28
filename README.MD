@@ -553,6 +553,12 @@ gala_binary(
 
 ---
 
+## Get Lines of Code
+
+```bash
+cloc --vcs=git --read-lang-def=gala_cloc.def .
+```
+
 ## Documentation
 
 - [Language Specification](docs/GALA.MD) -- Complete language reference
