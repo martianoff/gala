@@ -68,8 +68,26 @@ Present findings in the output format specified at the end.
 | Iota enum without data | `const ( Red = iota; Green; Blue )` for a fixed set of values | `sealed type Color { case Red() case Green() case Blue() }` |
 | Iota enum with data | Iota constants + separate struct fields per variant | `sealed type` with fields on each case |
 | Struct union pattern | A struct with fields for multiple variants where only some are used at a time | `sealed type` with variant-specific fields |
+| `{}.Apply()` on zero-arg case | `TeamLead{}.Apply()`, `Idle{}.Apply()`, `None[string]{}.Apply()` | `TeamLead()`, `Idle()`, `None[string]()` — call the case constructor directly |
 
-**Check**: Search for `iota` declarations that represent a fixed set of categories/kinds/variants. Search for struct fields named `kind`, `type`, `tag`, `variant` of integer type paired with constants.
+**Check**: Search for `iota` declarations that represent a fixed set of categories/kinds/variants. Search for struct fields named `kind`, `type`, `tag`, `variant` of integer type paired with constants. Grep `\{\}\.Apply\(\)` (and `\][a-z_, 0-9]*\{\}\.Apply\(\)` for the parameterized form like `None[string]{}.Apply()`) — every hit is a leftover workaround from an early transpiler bug where bare zero-arg sealed-case constructors didn't lower correctly. The bug has been fixed; the `{}.Apply()` form should be replaced with the direct call. Pervasive in test files and any code that predates the fix.
+
+**Bad pattern** — `{}.Apply()` boilerplate:
+```gala
+// BAD: leftover workaround
+val msg = TeamLead{}.Apply()
+val state = Idle{}.Apply()
+val maybe = None[string]{}.Apply()
+val s = Transition(Idle{}.Apply(), UserPrompted{}.Apply(), ctx)
+```
+
+**Good pattern** — direct case construction:
+```gala
+val msg = TeamLead()
+val state = Idle()
+val maybe = None[string]()
+val s = Transition(Idle(), UserPrompted(), ctx)
+```
 
 **Good pattern** - sealed type with exhaustive match:
 ```gala
