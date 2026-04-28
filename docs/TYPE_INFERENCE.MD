@@ -381,30 +381,61 @@ Five contexts feed the expected type:
 
 ### Propagation mechanism
 
-- A single transformer field, `pendingExpectedArgType`, threads the expected slot type from a setter context (val decl, argument transform, tuple element) into the call dispatcher. The dispatcher consumes-and-clears it on entry, so deeper sub-expressions don't accidentally see a stale value.
-- For the **zero-arg call** path (`NoCmd()` with empty parens), `applyCallSuffix` consults `pendingExpectedArgType` after `inferZeroArgTypeParams` (which already covered the match-subject and enclosing-return fallbacks for `None()` / `Some()`), and rewrites the receiver via `injectSealedVariantTypeArgs`.
-- For the **non-zero-arg call** path, `transformCallWithArgsCtx` already invoked the same rewrite at the top of the dispatcher.
-- For **function arguments** (context 3), `resolveExpectedFuncArgType` was extended to return the declared param type verbatim for non-FuncType params of non-generic GALA functions, so the existing argument-transform path can stash it in `pendingExpectedArgType`.
-- For **tuple elements** (context 2 with tuple return), `transformPrimary` inspects the enclosing `currentFuncReturnType` for a Tuple-shaped expected type and threads each per-slot type into the corresponding element transform.
-- For **match arms** (context 5), `buildMatchExpressionFromClauses` promotes a pending expected slot type to `currentFuncReturnType` for the IIFE's body, so each arm's expression — not just the first — picks it up via the existing companion-of-sealed lookup.
+- A LIFO stack on the transformer, `expectedArgTypes` (see
+  `transformer/expected_arg_stack.go`), threads expected slot types
+  from setter contexts (val decl, argument transform, tuple element)
+  into the call dispatcher. Each `push` returns an idempotent unwind
+  function — if a downstream `consume` removes the hint first, the
+  unwind is a no-op. This replaced an earlier single-field channel
+  whose mismatched save/restore bookkeeping silently leaked state
+  across siblings.
+- For the **zero-arg call** path (`NoCmd()` with empty parens),
+  `applyCallSuffix` peeks the top hint after `inferZeroArgTypeParams`
+  (which already covered the match-subject and enclosing-return
+  fallbacks for `None()` / `Some()`), and rewrites the receiver via
+  `injectSealedVariantTypeArgs`. On a successful rewrite it consumes
+  the hint so deeper sub-expressions cannot pick it up.
+- For the **non-zero-arg call** path, `transformCallWithArgsCtx`
+  consumes the top hint at dispatcher entry and invokes the same
+  rewrite.
+- For **function arguments** (context 3),
+  `resolveExpectedFuncArgType` returns the declared param type
+  verbatim for non-FuncType params of non-generic GALA functions, so
+  the argument-transform path can push it onto the stack.
+- For **tuple elements** (context 4 / context 2 with tuple return),
+  `transformPrimary` inspects the enclosing `currentFuncReturnType`
+  for a Tuple-shaped expected type and pushes each per-slot type
+  onto the stack for the duration of that element's transform.
+- For **match arms** (context 5), `buildMatchExpressionFromClauses`
+  promotes a pending expected slot type to `currentFuncReturnType`
+  for the IIFE's body, so each arm's expression — not just the first
+  — picks it up via the existing companion-of-sealed lookup.
 
-If none of the contexts supply a concrete type and the constructor is genuinely ambiguous, the existing "cannot infer type for case constructor" error fires; downward inference does not silently fall back to `any`.
+If none of the contexts supplies a concrete type and the constructor
+is a sealed variant of a generic parent, the transpiler fails fast
+with [`GALA-E0018`](errors/GALA-E0018.md) at the offending call — it
+does **not** silently emit an untyped `Variant{}` literal that Go
+would later reject with an obscure deduction error far from the
+source.
 
 ### Limitations
 
-- The match-arm path (5) currently propagates a single type only when the match expression is itself the immediate value of one of the contexts above. Arms inside a match used purely as a side-effect dispatch still rely on per-arm inference.
-- The propagation field is a single value, not a stack of expected types per nesting depth. Re-entrancy is handled with `defer` saves; cleanup is reliable but observers should not assume the value persists past one dispatcher entry.
+The match-arm path (context 5) currently propagates a single type
+only when the match expression is itself the immediate value of one
+of the surrounding contexts. Arms inside a match used purely as a
+side-effect dispatch still rely on per-arm inference.
 
 ### Pointers
 
 | File | Role |
 |------|------|
+| `transformer/expected_arg_stack.go` | Push/peek/consume primitives + the idempotent-unwind contract |
 | `transformer/calls.go::injectSealedVariantTypeArgs` | Rewrites `Variant(...)` → `Variant[Args]` when expected is the sealed parent |
-| `transformer/calls.go::applyCallSuffix` (zero-arg branch) | Consumes `pendingExpectedArgType` for `Variant()` |
-| `transformer/calls.go::transformCallWithArgsCtx` | Consumes `pendingExpectedArgType` for `Variant(arg, …)` |
+| `transformer/calls.go::applyCallSuffix` (zero-arg branch) | Peeks/consumes the top hint for `Variant()`; emits `GALA-E0018` when no signal pins the parameter |
+| `transformer/calls.go::transformCallWithArgsCtx` | Consumes the top hint for `Variant(arg, …)` |
 | `transformer/call_context.go::resolveExpectedFuncArgType` | Surfaces non-FuncType param types from non-generic functions |
-| `transformer/constructors.go::transformPrimary` (paren/tuple case) | Threads per-element expected type for tuple literals |
-| `transformer/declarations.go::transformValDeclaration` / `transformVarDeclaration` | Stashes the explicit declared type before transforming RHS |
+| `transformer/constructors.go::transformPrimary` (paren/tuple case) | Pushes per-element expected type for tuple literals |
+| `transformer/declarations.go::transformValDeclaration` / `transformVarDeclaration` | Pushes the explicit declared type before transforming RHS |
 | `transformer/postfix.go::buildMatchExpressionFromClauses` | Promotes a pending slot type to `currentFuncReturnType` for arm bodies |
 
 ---

@@ -556,6 +556,15 @@ val success = Ok[int](42)
 val failure = Err[int](fmt.Errorf("oops"))
 ```
 
+When a generic sealed variant takes no fields that mention the parent's
+type parameter (e.g. `case None()` of `Option[T]`, or `case NoCmd()` of
+`Cmd[T]`), the parameter is pinned by downward inference from the
+surrounding context — match subject, `val`/`var` annotation, or
+function return. If no signal is available, the transpiler rejects the
+call with [`GALA-E0018`](errors/GALA-E0018.md). The full set of
+contexts and the propagation mechanism are described in
+[Downward Inference for Generic Sealed-Type Case Constructors](TYPE_INFERENCE.MD#downward-inference-for-generic-sealed-type-case-constructors).
+
 #### Wildcard Catch-All in Sealed Match
 When you only care about a subset of variants, use `case _ =>` as a catch-all instead of listing every variant. This is valid for exhaustive matching:
 

@@ -255,7 +255,7 @@ func (t *galaASTTransformer) validateNoBareReturnsInValueMatch(
 	if resultType == nil || resultType.IsNil() {
 		return nil
 	}
-	if _, isVoid := resultType.(transpiler.VoidType); isVoid {
+	if resultType != nil && resultType.IsVoid() {
 		return nil
 	}
 	offender := false
@@ -671,7 +671,7 @@ func (t *galaASTTransformer) buildMatchBody(clauses []ast.Stmt, defaultBody []as
 		body = defaultBody
 	}
 
-	_, isVoid := resultType.(transpiler.VoidType)
+	isVoid := resultType != nil && resultType.IsVoid()
 	if isVoid {
 		body = t.stripReturnStatements(body)
 	} else if resultType != nil && !resultType.IsNil() && !resultType.IsAny() {
@@ -689,7 +689,7 @@ func (t *galaASTTransformer) generateMatchIIFE(expr ast.Expr, paramName string, 
 	}
 
 	var resultsField *ast.FieldList
-	if _, isVoid := resultType.(transpiler.VoidType); !isVoid {
+	if resultType == nil || !resultType.IsVoid() {
 		resultTypeExpr := t.typeToExpr(resultType)
 		if resultTypeExpr == nil {
 			return nil, galaerr.NewSemanticErrorAt(matchLine, matchCol, "cannot infer result type of match expression. Please ensure all branches return the same type")
@@ -811,7 +811,7 @@ func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patt
 	// Check if all branches are void (side-effect only, like fmt.Printf calls)
 	allVoid := true
 	for _, typ := range types {
-		if _, isVoid := typ.(transpiler.VoidType); !isVoid {
+		if !typ.IsVoid() {
 			allVoid = false
 			break
 		}
@@ -831,7 +831,7 @@ func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patt
 				continue
 			}
 			// Skip void types when looking for reference
-			if _, isVoid := typ.(transpiler.VoidType); isVoid {
+			if typ.IsVoid() {
 				continue
 			}
 			refType = typ
@@ -846,7 +846,7 @@ func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patt
 		allNilOrVoid := true
 		for _, typ := range types {
 			if typ != nil && !typ.IsNil() {
-				if _, isVoid := typ.(transpiler.VoidType); !isVoid {
+				if !typ.IsVoid() {
 					allNilOrVoid = false
 					if t.isTypeParameter(typ.String()) {
 						hasTypeParam = true
@@ -901,7 +901,7 @@ func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patt
 			if typ == nil || typ.IsNil() {
 				continue
 			}
-			if _, isVoid := typ.(transpiler.VoidType); isVoid {
+			if typ.IsVoid() {
 				continue
 			}
 			name := typ.String()
@@ -939,7 +939,7 @@ func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patt
 			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("cannot infer result type for '%s'. Please add explicit type annotation", patterns[i]))
 		}
 		// VoidType is compatible with any type (for mixed match where some branches are void)
-		if _, isVoid := typ.(transpiler.VoidType); isVoid {
+		if typ.IsVoid() {
 			continue
 		}
 		// NilType means inference failed for this branch — treat as compatible

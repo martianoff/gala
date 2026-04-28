@@ -5,10 +5,17 @@ import (
 )
 
 // Type represents a structured type in GALA/Go.
+//
+// Predicates (IsNil, IsAny, IsVoid) are exposed as interface methods
+// rather than ad-hoc type assertions so callers can check kind without
+// importing the concrete type definitions and without hard-coded
+// string comparisons. Each implementation returns the obvious answer
+// for its kind; only the matching variant returns true.
 type Type interface {
 	String() string
 	IsNil() bool
 	IsAny() bool
+	IsVoid() bool
 	BaseName() string
 	GetPackage() string // Returns the package of the type, or "" if none
 }
@@ -21,6 +28,7 @@ type BasicType struct {
 func (t BasicType) String() string     { return t.Name }
 func (t BasicType) IsNil() bool        { return false }
 func (t BasicType) IsAny() bool        { return t.Name == "any" }
+func (t BasicType) IsVoid() bool       { return false }
 func (t BasicType) BaseName() string   { return t.Name }
 func (t BasicType) GetPackage() string { return "" }
 
@@ -39,6 +47,7 @@ func (t NamedType) String() string {
 }
 func (t NamedType) IsNil() bool        { return false }
 func (t NamedType) IsAny() bool        { return false }
+func (t NamedType) IsVoid() bool       { return false }
 func (t NamedType) BaseName() string   { return t.String() }
 func (t NamedType) GetPackage() string { return t.Package }
 
@@ -65,6 +74,7 @@ func (t GenericType) String() string {
 }
 func (t GenericType) IsNil() bool        { return false }
 func (t GenericType) IsAny() bool        { return false }
+func (t GenericType) IsVoid() bool       { return false }
 func (t GenericType) BaseName() string   { return t.Base.BaseName() }
 func (t GenericType) GetPackage() string { return t.Base.GetPackage() }
 
@@ -81,6 +91,7 @@ func (t ArrayType) String() string {
 }
 func (t ArrayType) IsNil() bool        { return false }
 func (t ArrayType) IsAny() bool        { return false }
+func (t ArrayType) IsVoid() bool       { return false }
 func (t ArrayType) BaseName() string   { return "[]" + t.Elem.BaseName() }
 func (t ArrayType) GetPackage() string { return "" }
 
@@ -95,6 +106,7 @@ func (t MapType) String() string {
 }
 func (t MapType) IsNil() bool        { return false }
 func (t MapType) IsAny() bool        { return false }
+func (t MapType) IsVoid() bool       { return false }
 func (t MapType) BaseName() string   { return "map" }
 func (t MapType) GetPackage() string { return "" }
 
@@ -108,6 +120,7 @@ func (t PointerType) String() string {
 }
 func (t PointerType) IsNil() bool        { return false }
 func (t PointerType) IsAny() bool        { return false }
+func (t PointerType) IsVoid() bool       { return false }
 func (t PointerType) BaseName() string   { return "*" + t.Elem.BaseName() }
 func (t PointerType) GetPackage() string { return "" }
 
@@ -144,6 +157,7 @@ func (t FuncType) String() string {
 }
 func (t FuncType) IsNil() bool        { return false }
 func (t FuncType) IsAny() bool        { return false }
+func (t FuncType) IsVoid() bool       { return false }
 func (t FuncType) BaseName() string   { return "func" }
 func (t FuncType) GetPackage() string { return "" }
 
@@ -153,6 +167,7 @@ type NilType struct{}
 func (t NilType) String() string     { return "" }
 func (t NilType) IsNil() bool        { return true }
 func (t NilType) IsAny() bool        { return false }
+func (t NilType) IsVoid() bool       { return false }
 func (t NilType) BaseName() string   { return "" }
 func (t NilType) GetPackage() string { return "" }
 
@@ -164,6 +179,7 @@ type VoidType struct{}
 func (t VoidType) String() string     { return "void" }
 func (t VoidType) IsNil() bool        { return false }
 func (t VoidType) IsAny() bool        { return false }
+func (t VoidType) IsVoid() bool       { return true }
 func (t VoidType) BaseName() string   { return "void" }
 func (t VoidType) GetPackage() string { return "" }
 
