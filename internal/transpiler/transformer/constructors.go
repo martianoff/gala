@@ -108,7 +108,19 @@ func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.
 			return t.transformTupleLiteral(exprs, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
 		}
 	}
-	return nil, nil
+	// Empty parenthesized expression `()` — the grammar admits it because
+	// `'(' expressionList? ')'` makes the inner list optional, but GALA
+	// has no unit/void literal we can lower to a Go expression. Surface
+	// as GALA-E0019 with a hint pointing at the common offender (void
+	// match-arm shorthand). Without this guard the call returned nil, nil
+	// and downstream code crashed Go's printer with `ast.Walk: unexpected
+	// node type <nil>` far from the source span.
+	return nil, galaerr.NewCodedSemanticError(
+		galaerr.CodeEmptyParenExpression,
+		ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
+		"empty parenthesized expression \"()\" cannot be used as a value",
+		"use a real statement (e.g. `Println(\"…\")`) or remove the arm if it cannot occur",
+	)
 }
 
 // tupleElementExpectedTypes returns the per-element expected types for a

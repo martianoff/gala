@@ -33,6 +33,7 @@ Each code has a dedicated documentation page in this directory explaining:
 | `GALA-E0016` | Struct field name collides with type name | [GALA-E0016.md](GALA-E0016.md) |
 | `GALA-E0017` | Internal transpiler panic | [GALA-E0017.md](GALA-E0017.md) |
 | `GALA-E0018` | Sealed variant type parameter cannot be inferred | [GALA-E0018.md](GALA-E0018.md) |
+| `GALA-E0019` | Empty parenthesized expression | [GALA-E0019.md](GALA-E0019.md) |
 
 ## Adding a new code
 

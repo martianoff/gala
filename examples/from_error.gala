@@ -4,26 +4,35 @@ import (
     "fmt"
     . "martianoff/gala/std"
     "os"
+    "path/filepath"
 )
 
 // Verify FromError converts Go error returns to Try[Void],
 // and that Void type works correctly.
+//
+// The example uses os.TempDir() instead of a hardcoded "/tmp" path so
+// the test passes in Bazel sandboxes on every platform (the previous
+// "/tmp/gala-test-from-error" path failed under Windows Bazel because
+// the sandbox does not expose the MSYS /tmp mapping).
 
 func main() {
+    val testDir = filepath.Join(os.TempDir(), "gala-test-from-error")
+    val nonexistentDir = filepath.Join(os.TempDir(), "gala-nonexistent-dir-12345")
+
     // FromError with a successful operation
-    val result = FromError(os.Mkdir("/tmp/gala-test-from-error", 0755))
+    val result = FromError(os.Mkdir(testDir, 0755))
     fmt.Println(result.IsSuccess())
 
     // Clean up — also via FromError
-    val cleanup = FromError(os.Remove("/tmp/gala-test-from-error"))
+    val cleanup = FromError(os.Remove(testDir))
     fmt.Println(cleanup.IsSuccess())
 
     // FromError with an error (remove non-existent dir)
-    val fail = FromError(os.Remove("/tmp/gala-nonexistent-dir-12345"))
+    val fail = FromError(os.Remove(nonexistentDir))
     fmt.Println(fail.IsFailure())
 
     // Chain with OnFailure — just check it fires
-    FromError(os.Remove("/tmp/gala-nonexistent-dir-12345"))
+    FromError(os.Remove(nonexistentDir))
         .OnFailure((err) => fmt.Println("error handled"))
 
     // Void type

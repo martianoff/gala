@@ -153,6 +153,13 @@ const (
 	// pins it. Without that signal the transpiler can only emit an
 	// untyped `Variant{}` literal that Go cannot instantiate.
 	CodeSealedVariantUninferred ErrorCode = "GALA-E0018"
+
+	// E0019: empty parenthesized expression `()` in expression position.
+	// The grammar permits the form, but GALA has no unit/void value the
+	// transpiler can emit for it. Common offender: a void match arm
+	// written as `case _ => ()` — replace with a real statement (e.g.
+	// `case _ => Println("…")`) or remove the arm if it cannot occur.
+	CodeEmptyParenExpression ErrorCode = "GALA-E0019"
 )
 
 // MultiError collects multiple GALA errors.
