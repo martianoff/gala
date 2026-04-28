@@ -188,3 +188,39 @@ func EmitLevel(level string) int {
     }
     return unhandled
 }
+
+// --- Regression: statement-position match arm bodies ending in a bare
+// literal (true/false/int/string) compiled to invalid Go after the
+// void-IIFE lowering landed. The trailing literal was a leftover from
+// the pre-lowering value-IIFE shape that consumed it as the arm's
+// "value". Once the IIFE became void, the literal turned into a bare
+// expression statement Go rejects with "X (untyped K constant) is not
+// used". The fix drops a pure-literal trailing expression in
+// statement-position match lowering. The multi-file BatchAnalyzer path
+// is the rigorous test — a single-file gala_test alone wouldn't catch
+// the interaction with cross-package import resolution that ships in a
+// real workspace.
+sealed type Mode {
+    case Read()
+    case Write()
+    case Append()
+}
+
+func ObserveMode(m Mode) int {
+    var seen = 0
+    m match {
+        case Read() => {
+            seen = 1
+            true
+        }
+        case Write() => {
+            seen = 2
+            true
+        }
+        case Append() => {
+            seen = 3
+            true
+        }
+    }
+    return seen
+}

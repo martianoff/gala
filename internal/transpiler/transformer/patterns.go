@@ -1570,6 +1570,50 @@ func (t *galaASTTransformer) fixupReturnStatement(stmt ast.Stmt, resultType tran
 	}
 }
 
+// isPureLiteralExpr reports whether expr is a side-effect-free literal whose
+// evaluation can safely be elided. This covers the bool/int/float/string/char
+// basic literals, the unit value `()` (encoded as an empty struct composite
+// literal `struct{}{}`), and parenthesised wrappers around any of those.
+//
+// It is consulted when lowering a statement-position match whose arm bodies
+// trail a bare literal — the literal is a no-op in void context and would
+// otherwise emit invalid Go like `true` (untyped bool constant) is not used.
+// Identifiers, calls, selectors, and any other expression that could carry
+// a side effect are explicitly NOT pure: dropping them would silently change
+// semantics.
+func isPureLiteralExpr(expr ast.Expr) bool {
+	switch e := expr.(type) {
+	case *ast.BasicLit:
+		// Covers INT, FLOAT, IMAG, CHAR, STRING.
+		return true
+	case *ast.Ident:
+		// Bool literals (`true`, `false`) and the special `nil` ident are
+		// represented as identifiers in Go's AST.
+		return e.Name == "true" || e.Name == "false" || e.Name == "nil"
+	case *ast.ParenExpr:
+		return isPureLiteralExpr(e.X)
+	case *ast.CompositeLit:
+		// Unit value `()` is emitted as an empty struct composite literal.
+		// Only treat empty composite literals as pure: any populated literal
+		// could invoke arbitrary expressions in its element list.
+		if len(e.Elts) != 0 {
+			return false
+		}
+		// Accept both `struct{}{}` (anonymous empty struct) and
+		// `pkg.Unit{}` / `Unit{}` style.
+		switch t := e.Type.(type) {
+		case *ast.StructType:
+			return t.Fields == nil || len(t.Fields.List) == 0
+		case *ast.Ident:
+			return true
+		case *ast.SelectorExpr:
+			return true
+		}
+		return false
+	}
+	return false
+}
+
 // stripReturnStatements converts return statements to expression statements + empty returns for void match.
 // This is used when a match is used purely for side effects (like fmt.Printf calls).
 // We keep empty returns to ensure early exit after each case branch.
@@ -1586,6 +1630,16 @@ func (t *galaASTTransformer) stripReturnStatement(stmt ast.Stmt) ast.Stmt {
 	case *ast.ReturnStmt:
 		// Convert "return expr" to "expr; return" (execute the expression, then return with no value)
 		if len(s.Results) > 0 {
+			// When the result is a pure literal with no side effects (bool, int,
+			// float, string, char, or unit `()`), drop it entirely. The literal
+			// was carried through arm-tail lowering so the value-producing IIFE
+			// could type-check, but in statement-position the IIFE is void and
+			// the literal is a bare expression statement Go rejects with
+			// "X (untyped K constant) is not used". Emitting a bare `return`
+			// preserves the early-exit behavior.
+			if isPureLiteralExpr(s.Results[0]) {
+				return &ast.ReturnStmt{}
+			}
 			// Create a block with the expression statement followed by an empty return
 			return &ast.BlockStmt{
 				List: []ast.Stmt{

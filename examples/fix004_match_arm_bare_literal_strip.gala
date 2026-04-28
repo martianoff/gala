@@ -1,0 +1,86 @@
+package main
+
+// Regression: a statement-position match arm body that ends with a bare
+// literal (true/false/int/string/unit) compiles to invalid Go. Pre-FIX-003
+// the value-returning IIFE consumed the trailing literal as the arm's
+// "value" (cargo-culted to satisfy old IIFE typing). Post-FIX-003 the
+// IIFE is void; the trailing literal becomes a bare expression statement
+// Go rejects with "X (untyped bool constant) is not used".
+//
+// Fix: when lowering a statement-position match (void IIFE), drop a
+// trailing bare-literal expression statement from each arm body before
+// emitting. The literal is semantically a no-op once the match is void.
+
+sealed type Mode {
+    case Read()
+    case Write()
+    case Append()
+}
+
+func observe(m Mode) bool {
+    var seen = 0
+    m match {
+        case Read() => {
+            seen = 1
+            true
+        }
+        case Write() => {
+            seen = 2
+            true
+        }
+        case Append() => {
+            seen = 3
+            true
+        }
+    }
+    return seen > 0
+}
+
+// Default-arm + integer-literal trailing case.
+func categorize(label string) int {
+    var category = 0
+    label match {
+        case "alpha" => {
+            category = 1
+            0
+        }
+        case "beta" => {
+            category = 2
+            0
+        }
+        case _ => {
+            category = 99
+            0
+        }
+    }
+    return category
+}
+
+// String-literal trailing case.
+func classify(n int) string {
+    var bucket = "none"
+    n match {
+        case 0 => {
+            bucket = "zero"
+            ""
+        }
+        case _ => {
+            bucket = "nonzero"
+            ""
+        }
+    }
+    return bucket
+}
+
+func main() {
+    Println(observe(Read()))
+    Println(observe(Write()))
+    Println(observe(Append()))
+
+    Println(categorize("alpha"))
+    Println(categorize("beta"))
+    Println(categorize("other"))
+
+    Println(classify(0))
+    Println(classify(7))
+}

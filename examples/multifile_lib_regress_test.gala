@@ -135,4 +135,15 @@ func main() {
     Println(multifile_lib_regress.EmitLevel("info"))
     Println(multifile_lib_regress.EmitLevel("warn"))
     Println(multifile_lib_regress.EmitLevel("other"))
+
+    // Statement-position match arm bodies trailing a bare literal
+    // (regression). ObserveMode's arm bodies each end with `true`. Before
+    // the literal-strip fix, the void IIFE emitted `{ true; return }` for
+    // each arm — Go rejected `true` as "untyped bool constant is not
+    // used". The multi-file BatchAnalyzer path exercises the bug under
+    // cross-package import resolution, which the single-file test
+    // fixture wouldn't otherwise verify.
+    Println(multifile_lib_regress.ObserveMode(multifile_lib_regress.Read()))
+    Println(multifile_lib_regress.ObserveMode(multifile_lib_regress.Write()))
+    Println(multifile_lib_regress.ObserveMode(multifile_lib_regress.Append()))
 }
