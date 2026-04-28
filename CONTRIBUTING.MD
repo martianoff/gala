@@ -180,7 +180,8 @@ bazel run //:gazelle       # if files were added or removed
 
 ## Submitting a Pull Request
 
-1. Create a feature branch from `master`:
+1. Create a feature branch from `master`. Pick a descriptive slug — see
+   [Branch naming](#branch-naming) for the convention:
 
    ```bash
    git checkout -b feature/my-feature master
@@ -209,6 +210,40 @@ bazel run //:gazelle       # if files were added or removed
    - What the change does and why
    - Example GALA code demonstrating the feature (if applicable)
    - Which documentation files were updated
+
+## Branch naming
+
+Use a `<type>/<slug>` shape — type prefix matches the commit prefix from
+the previous section, slug is a short kebab-case description. Examples:
+
+```
+feat/yaml-codec
+fix/copy-chained-field-access
+fix/cross-module-apply-lowering
+refactor/audit-systemic-correctness
+test/hex-literal-parser-regression
+docs/gala-deps-vs-deps
+```
+
+When the work corresponds to a tracked issue or PR, prefer including the
+ID in the slug so the branch is grep-able later:
+
+```
+fix/PR260-panic-as-match-arm
+fix/issue142-windows-path-normalization
+```
+
+**Avoid sequence-number-only slugs** like `fix/FIX-001-...`,
+`fix/FIX-005-...`, etc. The audit of the first ~50 PRs found four
+such IDs (`FIX-001`, `FIX-005`, `FIX-006`, `FIX-007`) each picked up by
+two unrelated bugs because the sequence was reset per-author or
+per-batch — making it impossible to disambiguate the branches in
+`git log` or PR titles. If you do not have an issue/PR number to anchor
+against, write a slug that is descriptive enough to identify the bug on
+its own (`fix/null-pointer-in-immutable-unwrap`, not `fix/FIX-001`).
+
+This is a recommendation, not enforced by tooling. Pick what reads best
+to a future reviewer searching `git log` for the change.
 
 ## Reporting Bugs
 
