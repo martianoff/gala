@@ -1,0 +1,37 @@
+package multifile_lib_regress
+
+import (
+    "martianoff/gala/examples/multifile_lib_regress/proc_pkg"
+)
+
+// --- Regression: cross-package chained Try.FlatMap synthesis ---
+// ProcSession wraps a Process imported from a sibling GALA package.
+// The chained s.Proc.Kill().FlatMap((_) => s.Proc.Wait().Map((_) => true))
+// must propagate the inner Try[bool] type argument through the synthesized
+// closure return type, even though Process and its Kill()/Wait() methods
+// live in proc_pkg (a different GALA package than this consumer). Without
+// the fix the generated Go reads `func(_ bool) Try` instead of
+// `func(_ bool) Try[bool]`, and Go rejects with
+// "cannot use generic type std.Try[T any] without instantiation".
+
+struct ProcSession(Proc proc_pkg.Process)
+
+// FlatMap form. Generated Go must spell the outer closure return type
+// as Try[bool], not bare Try.
+func CloseProcSession(s ProcSession) Try[bool] =
+    s.Proc.Kill().FlatMap((_) => s.Proc.Wait().Map((_) => true))
+
+// Match-arm form. The Success arm's s.Proc.Wait().Map(...) must be
+// typed as Try[bool] so both arms agree on the match result type.
+func CloseProcSessionMatch(s ProcSession) Try[bool] = s.Proc.Kill() match {
+    case Success(_)   => s.Proc.Wait().Map((_) => true)
+    case Failure(err) => Failure[bool](err)
+}
+
+// Manual two-arm match without .Map — compiles cleanly even when the
+// Map-driven forms above fail. Kept as a baseline that proves the
+// surrounding plumbing is otherwise healthy.
+func CloseProcSessionWorkaround(s ProcSession) Try[bool] = s.Proc.Kill() match {
+    case Success(_)   => Success[bool](true)
+    case Failure(err) => Failure[bool](err)
+}

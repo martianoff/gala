@@ -1,0 +1,28 @@
+package pkg_proc
+
+// Process lives in its own package and uses the Go-style block-form
+// struct shape with a var-pointer to state — the same shape that
+// surfaced the original cross-package regression in subprocess.Process
+// (a value-type handle wrapping a pointer to mutable state).
+//
+// Kill() returns Try[bool] and Wait() returns Try[int] — the asymmetric
+// element types let pkg_session's CloseSession exercise a chained
+// FlatMap((_) => Map((_) => v)) whose synthesized closure return type
+// must preserve the [bool] type argument across both Try methods.
+
+type processState struct {
+    var pid      int
+    var exitCode int
+}
+
+type Process struct {
+    var state *processState
+}
+
+func NewProcess(pid int) Process = Process(state = &processState{
+    pid:      pid,
+    exitCode: 0,
+})
+
+func (p Process) Kill() Try[bool] = Success[bool](true)
+func (p Process) Wait() Try[int]  = Success[int](0)
