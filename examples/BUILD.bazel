@@ -973,6 +973,13 @@ gala_test(
 )
 
 gala_test(
+    name = "fix006_match_in_lambda_void_arms",
+    src = "fix006_match_in_lambda_void_arms.gala",
+    expected = "fix006_match_in_lambda_void_arms.out",
+    deps = ["//collection_immutable"],
+)
+
+gala_test(
     name = "match_void_pointer_arg",
     src = "match_void_pointer_arg.gala",
     expected = "match_void_pointer_arg.out",

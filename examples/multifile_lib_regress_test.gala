@@ -135,4 +135,14 @@ func main() {
     Println(multifile_lib_regress.EmitLevel("info"))
     Println(multifile_lib_regress.EmitLevel("warn"))
     Println(multifile_lib_regress.EmitLevel("other"))
+
+    // Void-arm match terminating an inferred-return lambda body
+    // (regression). MakeProcessor returns a lambda whose body ends in a
+    // match-on-Try with all-void arms. Without the fix the inferred
+    // return type leaked the synthesized arm union (or `void` literal),
+    // and the trailing void IIFE was promoted to `return <void-IIFE>` —
+    // Go rejected with "(no value) used as value".
+    val proc = multifile_lib_regress.MakeProcessor()
+    proc(multifile_lib_regress.ProcMember(Name = "ok"))
+    proc(multifile_lib_regress.ProcMember(Name = "bad"))
 }

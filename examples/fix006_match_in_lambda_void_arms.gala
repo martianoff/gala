@@ -1,0 +1,69 @@
+package main
+
+import (
+    "errors"
+    . "martianoff/gala/collection_immutable"
+)
+
+// Regression: a match expression as the terminal statement of a lambda
+// body, where every arm is void (`{}` block or pure assignment), made
+// the lambda's analyzer-inferred return type the synthesized union of
+// arm results. The lambda body was then lowered as a value-returning
+// IIFE wrapping the match, but the IIFE has no value, so Go rejected
+// the call site with "(no value) used as value".
+//
+// The fix: when a lambda body's terminal statement is an IIFE whose
+// underlying match has all-void arms, the lambda's return type must
+// be `void` (not the synthesized union). When a void IIFE is the
+// trailing expression statement of a value-inferred lambda body, it
+// must NOT be promoted to a `return <void-IIFE>` call — Go rejects.
+
+struct Member(Name string)
+
+func CloseSession(m Member) Try[bool] {
+    if m.Name == "bad" {
+        return Failure[bool](errors.New("oops"))
+    }
+    return Success[bool](true)
+}
+
+// Repro: a lambda body terminating in a void-arm match. The lambda is
+// passed to Array.ForEach (void callback), so the lambda's expected
+// return type is void — this case ALREADY works pre-fix.
+func RunAll(members Array[Member]) Array[string] {
+    var failures = EmptyArray[string]()
+    members.ForEach((m) => {
+        CloseSession(m) match {
+            case Success(_)   => {}
+            case Failure(err) => failures = failures.Append(err.Error())
+        }
+    })
+    return failures
+}
+
+// Repro: lambda whose return is INFERRED from its body — the caller
+// (function-typed return) does not propagate an expected type into the
+// `return lambda` form. Without the fix the inferred return type
+// widens to the synthesized arm union (or `void` as a literal type),
+// the trailing IIFE gets promoted to `return <void-IIFE>`, and Go
+// rejects with "no value used as value".
+func MakeProcessor() func(Member) {
+    var counter = 0
+    return (m Member) => {
+        CloseSession(m) match {
+            case Success(_)   => counter = counter + 1
+            case Failure(err) => Println(s"err: ${err.Error()}")
+        }
+    }
+}
+
+func main() {
+    val members = ArrayOf(Member(Name = "alice"), Member(Name = "bad"), Member(Name = "charlie"))
+    val errs = RunAll(members)
+    Println(errs.Length())
+    errs.ForEach((e) => Println(e))
+
+    val proc = MakeProcessor()
+    proc(Member(Name = "ok"))
+    proc(Member(Name = "bad"))
+}

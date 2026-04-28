@@ -227,9 +227,16 @@ func (t *galaASTTransformer) transformBlockLambdaBody(ctx *grammar.LambdaExpress
 	//      trailing expression's type — including val-bound identifiers whose
 	//      static type may not be reachable from getExprTypeName (e.g. they
 	//      compile to `result.Get()` on an Immutable wrapper).
+	//
+	// A trailing void IIFE is NOT promoted: it has no value to return. This
+	// fires when the lambda body terminates in a statement-position match
+	// whose every arm is void (assignment / `{}` / void call). Promoting it
+	// would emit `return <void-IIFE>`, which Go rejects with "(no value)
+	// used as value". Leaving it as a bare expression statement lets the
+	// lambda's return type fall through to void.
 	if !isVoidExpected && len(b.List) > 0 {
 		if exprStmt, ok := b.List[len(b.List)-1].(*ast.ExprStmt); ok {
-			shouldPromote := isIIFE(exprStmt.X) || expectsReturnValue
+			shouldPromote := (isIIFE(exprStmt.X) || expectsReturnValue) && !isVoidIIFE(exprStmt.X)
 			if shouldPromote {
 				b.List[len(b.List)-1] = &ast.ReturnStmt{Results: []ast.Expr{exprStmt.X}}
 			}
@@ -238,7 +245,16 @@ func (t *galaASTTransformer) transformBlockLambdaBody(ctx *grammar.LambdaExpress
 	var retType ast.Expr
 	if !isConcreteExpectedType && !isVoidExpected {
 		if inferredType := t.inferBlockReturnType(b); inferredType != nil {
-			retType = inferredType
+			// `inferBlockReturnType` may surface VoidType (rendered as the
+			// literal ident `void`) when every observed return path's
+			// inferred type was VoidType — e.g. all `return` statements
+			// reference void IIFEs that the previous block left untouched.
+			// `void` is not a valid Go return type; treat it the same way
+			// we treat "no return type detected" and let the lambda be
+			// emitted without a Results clause.
+			if !isVoidTypeIdent(inferredType) {
+				retType = inferredType
+			}
 		}
 		// If retType is still nil (void), strip trailing "return nil" from the block.
 		if retType == nil && len(b.List) > 0 {
@@ -250,6 +266,37 @@ func (t *galaASTTransformer) transformBlockLambdaBody(ctx *grammar.LambdaExpress
 		}
 	}
 	return b, retType, nil
+}
+
+// isVoidIIFE reports whether expr is a CallExpr whose callee is a FuncLit
+// declaring no return type (i.e. the immediately-invoked function returns
+// nothing). Match expressions whose every arm is void lower to a void IIFE
+// in this exact shape, and they must NOT be promoted to `return <expr>`.
+func isVoidIIFE(expr ast.Expr) bool {
+	call, ok := expr.(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	funcLit, ok := call.Fun.(*ast.FuncLit)
+	if !ok {
+		return false
+	}
+	if funcLit.Type == nil {
+		return false
+	}
+	if funcLit.Type.Results == nil {
+		return true
+	}
+	return len(funcLit.Type.Results.List) == 0
+}
+
+// isVoidTypeIdent reports whether expr is the literal ident `void`. The
+// transpiler synthesises this name when typeToExpr is asked for a VoidType
+// fallthrough — useful as a sentinel internally, but invalid Go in an
+// emitted FuncType.Results clause.
+func isVoidTypeIdent(expr ast.Expr) bool {
+	ident, ok := expr.(*ast.Ident)
+	return ok && ident.Name == "void"
 }
 
 // transformExpressionLambdaBody handles the `=> expr` form of a lambda body.
