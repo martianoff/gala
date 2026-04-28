@@ -1,0 +1,19 @@
+{"conversation":[{"speaker":"you","text":"a"},{"speaker":"Iris","text":"b"},{"speaker":"you","text":"c"}]}
+array len=3
+you: a
+Iris: b
+you: c
+{"u1":{"speaker":"you","text":"hi"},"u2":{"speaker":"Iris","text":"hello"},"u3":{"speaker":"you","text":"ok"}}
+map size=3
+u1 -> you: hi
+u2 -> Iris: hello
+u3 -> you: ok
+{"evens":[2,4,6],"odds":[1,3]}
+moa size=2
+evens -> [2,4,6]
+odds -> [1,3]
+[{"a":1,"b":2},{"c":3}]
+rows len=2
+  a=1
+  b=2
+  c=3

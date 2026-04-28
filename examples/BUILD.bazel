@@ -1837,6 +1837,19 @@ gala_test(
     ],
 )
 
+# Regression: Array[Foo] of structs round-trip through manual encoder + decoder.
+# Before the StartObject/StartArray fix, the decoder panicked on element 2+
+# because container openers did not consume the inter-element comma.
+gala_test(
+    name = "json_codec_nested_array",
+    src = "json_codec_nested_array.gala",
+    expected = "json_codec_nested_array.out",
+    deps = [
+        "//collection_immutable",
+        "//json",
+    ],
+)
+
 # Regex pattern matching usage
 gala_test(
     name = "regex_usage",

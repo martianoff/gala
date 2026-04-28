@@ -1,0 +1,235 @@
+package main
+
+import (
+    . "martianoff/gala/std"
+    . "martianoff/gala/json"
+    . "martianoff/gala/collection_immutable"
+)
+
+// Round-trips composite shapes through the manual JSON encoder/decoder:
+//   1. Array[Foo] of structs              — StartObject inside StartArray
+//   2. HashMap[string, Foo]               — StartObject inside an object
+//   3a. HashMap[string, Array[int]]       — StartArray inside an object
+//   3.  Array[HashMap[string, int]]       — StartObject inside StartArray
+//                                           when the element is itself an object
+//
+// Before the StartObject/StartArray fix in json/codec.gala, cases (1) and (3)
+// panicked on element 2+ with `json at pos N: expected '{'` because the
+// inter-element comma was never consumed for container-element arrays.
+
+struct Line(Speaker string, Text string)
+
+// --- (1) Array[Line] of structs ---
+
+func encodeArray(convo Array[Line]) string {
+    val w = NewJsonEncoder()
+    w.WriteStartObject()
+    w.WriteKey("conversation")
+    w.WriteStartArray()
+    convo.ForEach((cl) => {
+        w.WriteStartObject()
+        w.WriteKey("speaker"); w.WriteString(cl.Speaker)
+        w.WriteKey("text");    w.WriteString(cl.Text)
+        w.WriteEndObject()
+    })
+    w.WriteEndArray()
+    w.WriteEndObject()
+    return w.String()
+}
+
+func decodeArray(payload string) Array[Line] {
+    var lines = EmptyArray[Line]()
+    val d = NewJsonDecoder(payload)
+    d.StartObject()
+    for d.HasMoreFields() {
+        if d.ReadKey() == "conversation" {
+            d.StartArray()
+            for d.HasMoreElements() {
+                var speaker = ""
+                var text    = ""
+                d.StartObject()
+                for d.HasMoreFields() {
+                    val k = d.ReadKey()
+                    if k == "speaker" { speaker = d.ReadString() }
+                    else if k == "text" { text = d.ReadString() }
+                    else { d.Skip() }
+                }
+                d.EndObject()
+                lines = lines.Append(Line(Speaker = speaker, Text = text))
+            }
+            d.EndArray()
+        } else {
+            d.Skip()
+        }
+    }
+    d.EndObject()
+    return lines
+}
+
+// --- (2) HashMap[string, Line] of struct values ---
+
+func encodeMap(m HashMap[string, Line]) string {
+    val w = NewJsonEncoder()
+    w.WriteStartObject()
+    // Iterate in sorted-key order so the output is deterministic.
+    val keys = m.Keys().ToArray().SortBy((k) => k)
+    keys.ForEach((k) => {
+        w.WriteKey(k)
+        val cl = m.Get(k).Get()
+        w.WriteStartObject()
+        w.WriteKey("speaker"); w.WriteString(cl.Speaker)
+        w.WriteKey("text");    w.WriteString(cl.Text)
+        w.WriteEndObject()
+    })
+    w.WriteEndObject()
+    return w.String()
+}
+
+func decodeMap(payload string) HashMap[string, Line] {
+    var out = EmptyHashMap[string, Line]()
+    val d = NewJsonDecoder(payload)
+    d.StartObject()
+    for d.HasMoreFields() {
+        val k = d.ReadKey()
+        var speaker = ""
+        var text    = ""
+        d.StartObject()
+        for d.HasMoreFields() {
+            val fk = d.ReadKey()
+            if fk == "speaker" { speaker = d.ReadString() }
+            else if fk == "text" { text = d.ReadString() }
+            else { d.Skip() }
+        }
+        d.EndObject()
+        out = out.Put(k, Line(Speaker = speaker, Text = text))
+    }
+    d.EndObject()
+    return out
+}
+
+// --- (3a) HashMap[string, Array[int]] — map of arrays ---
+
+func encodeMapOfArrays(m HashMap[string, Array[int]]) string {
+    val w = NewJsonEncoder()
+    w.WriteStartObject()
+    val keys = m.Keys().ToArray().SortBy((k) => k)
+    keys.ForEach((k) => {
+        w.WriteKey(k)
+        w.WriteStartArray()
+        m.Get(k).Get().ForEach((v) => w.WriteInt(v))
+        w.WriteEndArray()
+    })
+    w.WriteEndObject()
+    return w.String()
+}
+
+func decodeMapOfArrays(payload string) HashMap[string, Array[int]] {
+    var out = EmptyHashMap[string, Array[int]]()
+    val d = NewJsonDecoder(payload)
+    d.StartObject()
+    for d.HasMoreFields() {
+        val k = d.ReadKey()
+        var arr = EmptyArray[int]()
+        d.StartArray()
+        for d.HasMoreElements() {
+            arr = arr.Append(d.ReadInt())
+        }
+        d.EndArray()
+        out = out.Put(k, arr)
+    }
+    d.EndObject()
+    return out
+}
+
+// --- (3) Array[HashMap[string, int]] — array of maps ---
+
+func encodeArrayOfMaps(rows Array[HashMap[string, int]]) string {
+    val w = NewJsonEncoder()
+    w.WriteStartArray()
+    rows.ForEach((m) => {
+        val keys = m.Keys().ToArray().SortBy((k) => k)
+        w.WriteStartObject()
+        keys.ForEach((k) => {
+            w.WriteKey(k)
+            w.WriteInt(m.Get(k).Get())
+        })
+        w.WriteEndObject()
+    })
+    w.WriteEndArray()
+    return w.String()
+}
+
+func decodeArrayOfMaps(payload string) Array[HashMap[string, int]] {
+    var rows = EmptyArray[HashMap[string, int]]()
+    val d = NewJsonDecoder(payload)
+    d.StartArray()
+    for d.HasMoreElements() {
+        var m = EmptyHashMap[string, int]()
+        d.StartObject()
+        for d.HasMoreFields() {
+            val k = d.ReadKey()
+            m = m.Put(k, d.ReadInt())
+        }
+        d.EndObject()
+        rows = rows.Append(m)
+    }
+    d.EndArray()
+    return rows
+}
+
+func main() {
+    // (1) Array[Line]
+    val convo = ArrayOf(
+        Line(Speaker = "you",  Text = "a"),
+        Line(Speaker = "Iris", Text = "b"),
+        Line(Speaker = "you",  Text = "c"),
+    )
+    val arrayPayload = encodeArray(convo)
+    Println(arrayPayload)
+    val decodedArray = decodeArray(arrayPayload)
+    Println(s"array len=${decodedArray.Length()}")
+    decodedArray.ForEach((cl) => Println(s"${cl.Speaker}: ${cl.Text}"))
+
+    // (2) HashMap[string, Line]
+    val byId = EmptyHashMap[string, Line]()
+        .Put("u1", Line(Speaker = "you",  Text = "hi"))
+        .Put("u2", Line(Speaker = "Iris", Text = "hello"))
+        .Put("u3", Line(Speaker = "you",  Text = "ok"))
+    val mapPayload = encodeMap(byId)
+    Println(mapPayload)
+    val decodedMap = decodeMap(mapPayload)
+    Println(s"map size=${decodedMap.Size()}")
+    val mapKeys = decodedMap.Keys().ToArray().SortBy((k) => k)
+    mapKeys.ForEach((k) => {
+        val cl = decodedMap.Get(k).Get()
+        Println(s"$k -> ${cl.Speaker}: ${cl.Text}")
+    })
+
+    // (3a) HashMap[string, Array[int]]
+    val moa = EmptyHashMap[string, Array[int]]()
+        .Put("evens", ArrayOf(2, 4, 6))
+        .Put("odds",  ArrayOf(1, 3))
+    val moaPayload = encodeMapOfArrays(moa)
+    Println(moaPayload)
+    val decodedMoa = decodeMapOfArrays(moaPayload)
+    Println(s"moa size=${decodedMoa.Size()}")
+    val moaKeys = decodedMoa.Keys().ToArray().SortBy((k) => k)
+    moaKeys.ForEach((k) => {
+        val xs = decodedMoa.Get(k).Get()
+        val parts = xs.Map((v) => s"$v")
+        Println(s"$k -> [${parts.MkString(",")}]")
+    })
+
+    // (3) Array[HashMap[string, int]]
+    val row1 = EmptyHashMap[string, int]().Put("a", 1).Put("b", 2)
+    val row2 = EmptyHashMap[string, int]().Put("c", 3)
+    val rows = ArrayOf(row1, row2)
+    val rowsPayload = encodeArrayOfMaps(rows)
+    Println(rowsPayload)
+    val decodedRows = decodeArrayOfMaps(rowsPayload)
+    Println(s"rows len=${decodedRows.Length()}")
+    decodedRows.ForEach((m) => {
+        val ks = m.Keys().ToArray().SortBy((k) => k)
+        ks.ForEach((k) => Println(s"  $k=${m.Get(k).Get()}"))
+    })
+}
