@@ -711,6 +711,14 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 
 	var body *ast.BlockStmt
 	if ctx.Block() != nil {
+		// When the function has a non-void return type, the block's last
+		// expression is promoted to the implicit return below — signal that
+		// to transformBlock so a trailing bare `match` is NOT marked as
+		// statement-position (which would force the IIFE to void and break
+		// the implicit-return promotion).
+		if funcType.Results != nil && len(funcType.Results.List) > 0 {
+			t.blockLastStmtIsValue = true
+		}
 		b, err := t.transformBlock(ctx.Block().(*grammar.BlockContext))
 		if err != nil {
 			return nil, err

@@ -62,6 +62,8 @@ type galaASTTransformer struct {
 	instanceInterfaceNames map[string]string            // type name -> actual generated interface name (for collision avoidance)
 	expectedIfExprType     ast.Expr                     // expected return type for if-expression IIFE (set by expression-bodied function handler)
 	expectedArgTypes       expectedArgTypeStack         // (B1) LIFO stack of expected-type hints for downward inference; replaces a single-field side-channel. See expected_arg_stack.go for the contract.
+	matchInStatementPos    bool                         // set when transforming a `subject match { ... }` whose value is discarded (statement-position match); causes the IIFE to be lowered as void so void-returning arm calls do not appear as `return d.Skip()`
+	blockLastStmtIsValue   bool                         // set by callers of transformBlock that consume the block's last expression (function body with return type, lambda body, match arm body, partial-function body); without this, transformBlock treats the trailing statement as discarded — same as the trailing statement of for/if bodies — and marks any trailing bare `match` as statement-position
 	lspVarTypes            map[string]transpiler.Type   // LSP: collects all resolved var types during transformation
 	lspCurrentFunc         string                       // LSP: name of the function currently being transformed (for scoping)
 	lspLambdaParamHints    []transpiler.LambdaParamHint // LSP: positions of lambda params with inferred types

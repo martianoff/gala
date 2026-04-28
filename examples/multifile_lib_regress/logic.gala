@@ -155,3 +155,36 @@ func selectEffect(n int) Effect[int] = n match {
     case 1 => Halt()
     case _ => Yield(n)
 }
+
+// --- Regression: statement-position match with mixed value/void arms ---
+// Lint suggested rewriting an explicit `if/else if/else` chain as a
+// `match { ... }` used as a *statement* (its value discarded). When one
+// arm called a function returning a typed value (e.g. bool from a Go
+// method) and another arm called a void-returning function, the
+// generated IIFE inherited the typed return type and the void arm was
+// emitted as `return d.Skip()` — Go rejects that with "no value used as
+// value". The fix lowers the IIFE as void in statement position so the
+// void arms are emitted as bare expression statements.
+
+func emitInfo() bool {
+    Println("info")
+    return true
+}
+
+func emitWarn() {
+    Println("warn")
+}
+
+// EmitLevel uses match as a statement with mixed value/void arms.
+// `info` arm calls a value-returning function; `warn` arm calls a void
+// function; default arm is an assignment (statement). The match value
+// is discarded — only the side effects matter.
+func EmitLevel(level string) int {
+    var unhandled = 0
+    level match {
+        case "info" => emitInfo()
+        case "warn" => emitWarn()
+        case _      => unhandled = unhandled + 1
+    }
+    return unhandled
+}

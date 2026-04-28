@@ -1,0 +1,45 @@
+package main
+
+// Regression: a `subject match { ... }` used as a *statement* (its value
+// discarded) where one arm calls a value-returning function and another
+// arm calls a void-returning function. Without the statement-position
+// fix, the IIFE inherited the value arm's return type, and the void arm
+// was emitted as `return d.Skip()` — which Go rejects with
+// "no value used as value".
+//
+// The fix lowers the IIFE as void when the match's value is discarded
+// (statement position), so void-returning arm calls are emitted as bare
+// expression statements, not return statements.
+
+func readValue() bool {
+    Println("read")
+    return true
+}
+
+func skip() {
+    Println("skipped")
+}
+
+func dispatch(key string) {
+    var unhandled = 0
+    // Statement-position match: value discarded.
+    // - "value" arm calls a function returning bool (typed value).
+    // - "skip" arm calls a function returning nothing (void).
+    // - default arm (assignment) returns void via simple statement.
+    // Result type would otherwise widen to bool, forcing the void
+    // arms into `return <voidCall>` which fails Go compilation.
+    key match {
+        case "value" => readValue()
+        case "skip"  => skip()
+        case _       => unhandled = unhandled + 1
+    }
+    if unhandled > 0 {
+        Println(s"unhandled: $unhandled")
+    }
+}
+
+func main() {
+    dispatch("value")
+    dispatch("skip")
+    dispatch("other")
+}

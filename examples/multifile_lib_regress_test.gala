@@ -126,4 +126,13 @@ func main() {
 
     val tr = multifile_lib_regress.MakeTriple(7, "label", 1.5)
     Println(tr.V1, tr.V2, tr.V3)
+
+    // Statement-position match with mixed value/void arms (regression).
+    // EmitLevel runs `level match { ... }` as a statement; one arm calls
+    // a value-returning function, another calls a void function, and
+    // the default is a bare assignment. Without the fix the transpiler
+    // wrapped the void arm in `return <voidCall>`, breaking Go compile.
+    Println(multifile_lib_regress.EmitLevel("info"))
+    Println(multifile_lib_regress.EmitLevel("warn"))
+    Println(multifile_lib_regress.EmitLevel("other"))
 }

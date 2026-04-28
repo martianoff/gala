@@ -442,6 +442,13 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	t.currentMatchSubjectType = matchedType
 	defer func() { t.currentMatchSubjectType = prevMatchSubjectType }()
 
+	// Consume the statement-position marker set by transformBlock. Arm bodies
+	// must see matchInStatementPos = false so a NESTED match used as the arm's
+	// value is not also forced to void.
+	stmtPosition := t.matchInStatementPos
+	t.matchInStatementPos = false
+	defer func() { t.matchInStatementPos = stmtPosition }()
+
 	// Downward inference for match-arm sealed-variant constructors (context 5):
 	// when the match expression's value flows into a slot with a known
 	// concrete type (val with explicit type, function return, function arg),
@@ -506,6 +513,9 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 			}
 
 			if ccCtx.GetBodyBlock() != nil {
+				// The default arm's block-body last expression becomes the
+				// arm's value, so it is value-consumed.
+				t.blockLastStmtIsValue = true
 				b, err := t.transformBlock(ccCtx.GetBodyBlock().(*grammar.BlockContext))
 				if err != nil {
 					return nil, err
@@ -552,6 +562,14 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	resultType, err := t.inferCommonResultType(resultTypes, casePatterns, ctx)
 	if err != nil {
 		return nil, err
+	}
+
+	// Statement-position matches discard their value; force the IIFE to be
+	// void so that arms with mixed value/void payloads — e.g. one arm calling
+	// a Go method returning bool, another calling a void Go method — do not
+	// emit `return <voidCall>` (rejected by Go as "no value used as value").
+	if stmtPosition {
+		resultType = transpiler.VoidType{}
 	}
 
 	// Reject bare `return` inside a value-producing match (the IIFE would need

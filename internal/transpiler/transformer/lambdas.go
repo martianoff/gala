@@ -179,6 +179,13 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 // or when the lambda is void. Extracted from transformLambdaWithExpectedType
 // as part of A6.
 func (t *galaASTTransformer) transformBlockLambdaBody(ctx *grammar.LambdaExpressionContext, isVoidExpected, isConcreteExpectedType, expectsReturnValue bool) (*ast.BlockStmt, ast.Expr, error) {
+	// Signal to transformBlock that the lambda body's last expression is
+	// promoted to the implicit return when this lambda is value-returning.
+	// Without this, a trailing bare `match` whose value becomes the lambda's
+	// return would be marked statement-position and forced to void.
+	if !isVoidExpected {
+		t.blockLastStmtIsValue = true
+	}
 	b, err := t.transformBlock(ctx.Block().(*grammar.BlockContext))
 	if err != nil {
 		return nil, nil, err
@@ -1203,6 +1210,9 @@ func (t *galaASTTransformer) transformPartialCaseClause(ctx *grammar.CaseClauseC
 	var resultType transpiler.Type
 
 	if ctx.GetBodyBlock() != nil {
+		// Partial function arm body: the trailing expression is wrapped in
+		// Some(...) below, so it is value-consumed.
+		t.blockLastStmtIsValue = true
 		b, err := t.transformBlock(ctx.GetBodyBlock().(*grammar.BlockContext))
 		if err != nil {
 			return nil, nil, err

@@ -30,9 +30,23 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 	t.currentMatchSubjectType = matchedType
 	defer func() { t.currentMatchSubjectType = prevMatchSubjectType }()
 
+	// Consume the statement-position marker set by transformBlock so arm
+	// bodies see matchInStatementPos = false (a NESTED match used as the
+	// arm's value must remain value-producing).
+	stmtPosition := t.matchInStatementPos
+	t.matchInStatementPos = false
+	defer func() { t.matchInStatementPos = stmtPosition }()
+
 	clauses, defaultBody, resultType, err := t.transformMatchClauses(ctx, paramName, matchedType)
 	if err != nil {
 		return nil, err
+	}
+
+	// Statement-position matches discard their value; force the IIFE to be
+	// void so void-returning arm calls do not appear as `return d.Skip()`
+	// (which Go rejects as "no value used as value").
+	if stmtPosition {
+		resultType = transpiler.VoidType{}
 	}
 
 	t.needsStdImport = true
@@ -522,6 +536,9 @@ func (t *galaASTTransformer) transformMatchClauses(ctx grammar.IExpressionContex
 			}
 
 			if ccCtx.GetBodyBlock() != nil {
+				// The default arm's block-body last expression becomes the
+				// arm's value (when not void), so it is value-consumed.
+				t.blockLastStmtIsValue = true
 				b, err := t.transformBlock(ccCtx.GetBodyBlock().(*grammar.BlockContext))
 				if err != nil {
 					return nil, nil, nil, err
@@ -1160,6 +1177,9 @@ func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClause
 	var resultType transpiler.Type
 
 	if ctx.GetBodyBlock() != nil {
+		// The case body's block last expression becomes the arm's value, so
+		// it is value-consumed (not statement-position).
+		t.blockLastStmtIsValue = true
 		b, err := t.transformBlock(ctx.GetBodyBlock().(*grammar.BlockContext))
 		if err != nil {
 			return nil, nil, err
