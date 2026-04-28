@@ -1,6 +1,7 @@
 package multifile_lib_regress
 
 import (
+    "errors"
     "time"
     . "martianoff/gala/collection_immutable"
     "martianoff/gala/examples/go_struct_bridge"
@@ -187,4 +188,36 @@ func EmitLevel(level string) int {
         case _      => unhandled = unhandled + 1
     }
     return unhandled
+}
+
+// --- Regression: void-arm match terminating a lambda body inferred as
+// value-returning lowered to `return <void-IIFE>`, producing Go's
+// "(no value) used as value" error. The lambda is the trailing
+// expression of `MakeProcessor`'s `return` statement; that path does
+// not propagate an expected lambda return type, so the lambda's
+// return type was inferred from its body. With every match arm void,
+// the void IIFE was promoted to a return statement — invalid Go.
+//
+// The fix: void IIFEs are NOT promoted to `return` statements at the
+// trailing position of a value-inferred lambda body; the lambda's
+// inferred return type is left as void. Multi-file BatchAnalyzer path
+// exercises the bug under cross-package import resolution, which the
+// single-file fixture wouldn't otherwise verify.
+struct ProcMember(Name string)
+
+func ProcOutcome(m ProcMember) Try[bool] {
+    if m.Name == "bad" {
+        return Failure[bool](errors.New("oops"))
+    }
+    return Success[bool](true)
+}
+
+func MakeProcessor() func(ProcMember) {
+    var counter = 0
+    return (m ProcMember) => {
+        ProcOutcome(m) match {
+            case Success(_)   => counter = counter + 1
+            case Failure(err) => Println(s"err: ${err.Error()}")
+        }
+    }
 }
