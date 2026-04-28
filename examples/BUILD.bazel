@@ -1,5 +1,13 @@
 load("//:gala.bzl", "gala_binary", "gala_go_test", "gala_library", "gala_test")
 
+# multifile_lib_regress holds a multi-file gala_library that is
+# explicitly declared further down in this BUILD. Gazelle, left to its
+# own devices, descends into the subdir and emits a BUILD.bazel for
+# its bare `events.go` — which then conflicts with the parent's label
+# references because Bazel sees the subdir as its own package. Tell
+# gazelle to leave it alone.
+# gazelle:exclude multifile_lib_regress
+
 filegroup(
     name = "single_file_gala_sources",
     srcs = glob(["*.gala"]),
@@ -28,6 +36,7 @@ filegroup(
         "match_method_chain/main.gala",
         "match_method_chain/types.gala",
         "match_return_iife.gala",
+        "match_void_block_trailing_literal.gala",
         "match_void_branches.gala",
         "mathlib/math.gala",
         "multi_file/greeter.gala",
@@ -1719,6 +1728,16 @@ gala_test(
     name = "match_void_branches",
     src = "match_void_branches.gala",
     expected = "match_void_branches.out",
+)
+
+# Regression: a void-context match whose case bodies are blocks ending
+# in a literal trailing expression (`true`, `42`, …) used to emit
+# `{ <literal>; return }` blocks — invalid Go, since the language only
+# accepts function calls (and channel ops) as expression statements.
+gala_test(
+    name = "match_void_block_trailing_literal",
+    src = "match_void_block_trailing_literal.gala",
+    expected = "match_void_block_trailing_literal.out",
 )
 
 # Verification: transitive Go import for return types (e.g., io/fs from os.Stat)

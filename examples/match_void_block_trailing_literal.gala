@@ -1,0 +1,46 @@
+package main
+
+// Regression: a match used in void context (no result consumed) whose
+// case bodies are blocks ending in a literal trailing expression
+// (e.g. `true`, `42`, an identifier) generated invalid Go like
+// `{ true; return }` because `stripReturnStatement` blindly converted
+// `return true` to `<true>; return`. Go only permits function calls
+// (and a couple of channel ops) as bare expression statements; pure
+// values trigger "untyped bool constant is not used". The fix: drop
+// non-side-effecting expressions when stripping for void match.
+//
+// Source pattern lifted from gala_tui's layout.gala constraint walker.
+
+sealed type Constraint {
+    case Length(V int)
+    case Percent(P int)
+    case Fill(W int)
+}
+
+// classify returns 1/2/3 based on the variant. The match is used as a
+// statement (no value flows out); each arm ends in a bare literal
+// (`true`) which historically tripped the dangling-expression bug.
+func classify(c Constraint) int {
+    var kind = 0
+    c match {
+        case Length(_)  => {
+            kind = 1
+            true
+        }
+        case Percent(_) => {
+            kind = 2
+            true
+        }
+        case Fill(_)    => {
+            kind = 3
+            true
+        }
+    }
+    return kind
+}
+
+func main() {
+    Println(s"length=${classify(Length(V = 10))}")
+    Println(s"percent=${classify(Percent(P = 25))}")
+    Println(s"fill=${classify(Fill(W = 1))}")
+}

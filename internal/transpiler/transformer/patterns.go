@@ -1570,6 +1570,29 @@ func (t *galaASTTransformer) fixupReturnStatement(stmt ast.Stmt, resultType tran
 	}
 }
 
+// exprIsLegalGoStmt reports whether `expr` is one of the limited
+// expression forms Go permits as a bare statement. Per the Go spec,
+// expression statements are legal only for function and method calls
+// and for channel receive operations; everything else (literals,
+// identifiers, binary ops, …) is rejected as "expression evaluated but
+// not used". Used by stripReturnStatement to decide whether the value
+// of `return <expr>` carries side effects worth preserving when the
+// surrounding match is in void context.
+func exprIsLegalGoStmt(expr ast.Expr) bool {
+	switch e := expr.(type) {
+	case *ast.CallExpr:
+		// `f(x)`, `obj.m()`, `T(x)` — calls always evaluate side effects.
+		// Type conversions (`int(x)`) are also CallExprs but Go treats
+		// them as legal expression statements too, so the broad rule is
+		// fine.
+		return true
+	case *ast.UnaryExpr:
+		// `<-ch` is a receive; Go permits it as a statement.
+		return e.Op == token.ARROW
+	}
+	return false
+}
+
 // stripReturnStatements converts return statements to expression statements + empty returns for void match.
 // This is used when a match is used purely for side effects (like fmt.Printf calls).
 // We keep empty returns to ensure early exit after each case branch.
@@ -1584,15 +1607,26 @@ func (t *galaASTTransformer) stripReturnStatements(stmts []ast.Stmt) []ast.Stmt 
 func (t *galaASTTransformer) stripReturnStatement(stmt ast.Stmt) ast.Stmt {
 	switch s := stmt.(type) {
 	case *ast.ReturnStmt:
-		// Convert "return expr" to "expr; return" (execute the expression, then return with no value)
+		// Convert "return expr" to a void early-exit. We keep the
+		// expression as a bare statement only when Go permits it as
+		// such — function calls and channel ops carry side effects
+		// the user expects to run. A pure expression (literal,
+		// identifier, binary op, …) is emitted by the user as a
+		// trailing arm value (`true`, `42`, `name`); the value is
+		// never observed in void context, and bare-evaluating it
+		// trips Go's "expression evaluated but not used" check.
 		if len(s.Results) > 0 {
-			// Create a block with the expression statement followed by an empty return
-			return &ast.BlockStmt{
-				List: []ast.Stmt{
-					&ast.ExprStmt{X: s.Results[0]},
-					&ast.ReturnStmt{}, // Empty return for early exit
-				},
+			res := s.Results[0]
+			if exprIsLegalGoStmt(res) {
+				return &ast.BlockStmt{
+					List: []ast.Stmt{
+						&ast.ExprStmt{X: res},
+						&ast.ReturnStmt{},
+					},
+				}
 			}
+			// Pure expression: drop the value, emit only the early exit.
+			return &ast.ReturnStmt{}
 		}
 		// Keep empty returns as-is
 		return s
