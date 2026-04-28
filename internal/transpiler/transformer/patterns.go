@@ -418,6 +418,9 @@ func (t *galaASTTransformer) transformCaseClause(ctx *grammar.CaseClauseContext,
 	bodyBlockCtx := ctx.GetBodyBlock()
 	bodyStmtCtx := ctx.GetBodyStmt()
 	if bodyBlockCtx != nil {
+		// The case body's block last expression becomes the arm's value, so
+		// it is value-consumed.
+		t.blockLastStmtIsValue = true
 		b, err := t.transformBlock(bodyBlockCtx.(*grammar.BlockContext))
 		if err != nil {
 			return nil, err

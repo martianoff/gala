@@ -671,6 +671,67 @@ func (t *galaASTTransformer) transformIfExpression(ctx *grammar.IfExpressionCont
 	}, nil
 }
 
+// expressionIsBareMatch reports whether the expression context is a bare
+// `subject match { ... }` form whose value is the entire expression (i.e.
+// not nested inside arithmetic, calls, or other operators). When such a
+// match appears in statement position, its value is discarded — see
+// transformBlock, which uses this to mark the match as statement-position
+// so void-returning arm calls do not get wrapped in `return ...`.
+func (t *galaASTTransformer) expressionIsBareMatch(exprCtx grammar.IExpressionContext) bool {
+	if exprCtx == nil {
+		return false
+	}
+	orExpr := exprCtx.OrExpr()
+	if orExpr == nil {
+		return false
+	}
+	orCtx := orExpr.(*grammar.OrExprContext)
+	if len(orCtx.AllAndExpr()) != 1 {
+		return false
+	}
+	andCtx := orCtx.AndExpr(0).(*grammar.AndExprContext)
+	if len(andCtx.AllEqualityExpr()) != 1 {
+		return false
+	}
+	eqCtx := andCtx.EqualityExpr(0).(*grammar.EqualityExprContext)
+	if len(eqCtx.AllRelationalExpr()) != 1 {
+		return false
+	}
+	relCtx := eqCtx.RelationalExpr(0).(*grammar.RelationalExprContext)
+	if len(relCtx.AllAdditiveExpr()) != 1 {
+		return false
+	}
+	addCtx := relCtx.AdditiveExpr(0).(*grammar.AdditiveExprContext)
+	if len(addCtx.AllMultiplicativeExpr()) != 1 {
+		return false
+	}
+	mulCtx := addCtx.MultiplicativeExpr(0).(*grammar.MultiplicativeExprContext)
+	if len(mulCtx.AllUnaryExpr()) != 1 {
+		return false
+	}
+	unaryCtx := mulCtx.UnaryExpr(0).(*grammar.UnaryExprContext)
+	postfixExpr := unaryCtx.PostfixExpr()
+	if postfixExpr == nil {
+		return false
+	}
+	postfixCtx := postfixExpr.(*grammar.PostfixExprContext)
+	// transformPostfixExpr detects match by scanning children for a node whose
+	// text is the keyword `match`. Mirror that here.
+	if postfixCtx.GetChildCount() <= 1 {
+		return false
+	}
+	for i := 0; i < postfixCtx.GetChildCount(); i++ {
+		child := postfixCtx.GetChild(i)
+		if child == nil {
+			continue
+		}
+		if pt, ok := child.(antlr.ParseTree); ok && pt.GetText() == "match" {
+			return true
+		}
+	}
+	return false
+}
+
 // findIfExpressionInExpression traverses the expression tree to find an if-expression
 // if the expression is simply an if-expression (not part of a larger expression).
 // Follows the same traversal pattern as findLambdaInExpression in lambdas.go.

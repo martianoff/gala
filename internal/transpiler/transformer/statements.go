@@ -250,15 +250,73 @@ func (t *galaASTTransformer) transformShortVarDeclWithMutability(ctx *grammar.Sh
 func (t *galaASTTransformer) transformBlock(ctx *grammar.BlockContext) (*ast.BlockStmt, error) {
 	t.pushScope()
 	defer t.popScope()
+	// Capture and reset the block-last-stmt-is-value flag once: it applies
+	// only to *this* block's last statement, not to any nested blocks.
+	lastStmtIsValue := t.blockLastStmtIsValue
+	t.blockLastStmtIsValue = false
+	defer func() { t.blockLastStmtIsValue = lastStmtIsValue }()
+
 	block := &ast.BlockStmt{}
-	for _, stmtCtx := range ctx.AllStatement() {
+	allStmts := ctx.AllStatement()
+	lastIdx := len(allStmts) - 1
+	for i, stmtCtx := range allStmts {
+		// A bare `subject match { ... }` whose value is discarded by the
+		// surrounding ExprStmt must be lowered as a void IIFE; otherwise
+		// arms calling void Go functions (e.g. `d.Skip()`) get wrapped in
+		// `return d.Skip()` because at least one other arm produced a typed
+		// value, and Go rejects "return d.Skip()" as "no value used as
+		// value". A non-trailing statement is unconditionally
+		// statement-position; the trailing statement is statement-position
+		// only when the caller did NOT signal that the block's last
+		// expression is consumed (via blockLastStmtIsValue) — function
+		// bodies with a return type, lambda bodies, and match arm bodies
+		// all set that flag, since their trailing expression becomes the
+		// block's value.
+		prev := t.matchInStatementPos
+		isTrailing := i == lastIdx
+		discardsValue := !isTrailing || !lastStmtIsValue
+		if discardsValue && stmtIsBareMatchExpression(stmtCtx.(*grammar.StatementContext), t) {
+			t.matchInStatementPos = true
+		}
 		stmt, err := t.transformStatement(stmtCtx.(*grammar.StatementContext))
+		t.matchInStatementPos = prev
 		if err != nil {
 			return nil, err
 		}
 		block.List = append(block.List, stmt)
 	}
 	return block, nil
+}
+
+// stmtIsBareMatchExpression reports whether a statement is just a bare
+// `subject match { ... }` expression. It descends through statement →
+// declaration / simpleStatement → expression to reach the match check.
+// The transformer is passed for access to expressionIsBareMatch.
+func stmtIsBareMatchExpression(ctx *grammar.StatementContext, t *galaASTTransformer) bool {
+	if ctx == nil {
+		return false
+	}
+	declCtx := ctx.Declaration()
+	if declCtx == nil {
+		return false
+	}
+	dc, ok := declCtx.(*grammar.DeclarationContext)
+	if !ok {
+		return false
+	}
+	simpleCtx := dc.SimpleStatement()
+	if simpleCtx == nil {
+		return false
+	}
+	sc, ok := simpleCtx.(*grammar.SimpleStatementContext)
+	if !ok {
+		return false
+	}
+	exprCtx := sc.Expression()
+	if exprCtx == nil {
+		return false
+	}
+	return t.expressionIsBareMatch(exprCtx)
 }
 
 func (t *galaASTTransformer) transformForStatement(ctx *grammar.ForStatementContext) (ast.Stmt, error) {
