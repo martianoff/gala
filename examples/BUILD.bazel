@@ -2159,3 +2159,24 @@ gala_test(
     expected = "lambda_block_val_trailing.out",
     deps = ["//collection_immutable"],
 )
+
+# Regression: chained Try[T].FlatMap((_) => Try[U].Map((_) => V)) where the
+# receiver methods come from another GALA package. Generated Go must spell out
+# the outer closure return type as `Try[bool]` (not bare `Try`), otherwise it
+# fails with `cannot use generic type std.Try[T any] without instantiation`.
+gala_library(
+    name = "try_chain_typeparam_repro_lib",
+    srcs = [
+        "try_chain_typeparam_repro/proc.gala",
+        "try_chain_typeparam_repro/session.gala",
+    ],
+    importpath = "martianoff/gala/examples/try_chain_typeparam_repro",
+    visibility = ["//visibility:public"],
+)
+
+gala_test(
+    name = "try_chain_typeparam_repro",
+    src = "try_chain_typeparam_repro_main/main.gala",
+    expected = "try_chain_typeparam_repro_main/main.out",
+    deps = [":try_chain_typeparam_repro_lib"],
+)

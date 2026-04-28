@@ -1,0 +1,22 @@
+package main
+
+// Driver for the cross-package chained Try.FlatMap repro. The actual
+// FlatMap/Map chain lives in the try_chain_typeparam_repro library so the
+// closure-signature synthesis runs in batch transpilation context.
+
+import (
+    "martianoff/gala/examples/try_chain_typeparam_repro"
+)
+
+func main() {
+    val s = try_chain_typeparam_repro.Session(
+        Proc = try_chain_typeparam_repro.Process(Pid = 1))
+    try_chain_typeparam_repro.CloseSession(s) match {
+        case Success(b) => Println(s"flatmap: $b")
+        case Failure(e) => Println(s"flatmap err: ${e.Error()}")
+    }
+    try_chain_typeparam_repro.CloseSessionMatch(s) match {
+        case Success(b) => Println(s"match: $b")
+        case Failure(e) => Println(s"match err: ${e.Error()}")
+    }
+}
