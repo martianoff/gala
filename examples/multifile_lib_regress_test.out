@@ -39,6 +39,9 @@ true ready
 7 label 1.5
 alpha=failed-alpha
 beta=failed-beta
+flatmap: true
+match: true
+workaround: true
 info
 0
 warn

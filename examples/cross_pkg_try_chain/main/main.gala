@@ -1,0 +1,27 @@
+package main
+
+// Driver for the cross-package chained Try.FlatMap repro. Both pkg_proc
+// (defining Process) and pkg_session (defining Session + CloseSession)
+// are separate gala_library targets, so all three CloseSession variants
+// run in batch transpilation context with cross-package metadata lookups.
+
+import (
+    "martianoff/gala/examples/cross_pkg_try_chain/pkg_proc"
+    "martianoff/gala/examples/cross_pkg_try_chain/pkg_session"
+)
+
+func main() {
+    val s = pkg_session.Session(Proc = pkg_proc.NewProcess(1))
+    pkg_session.CloseSession(s) match {
+        case Success(b) => Println(s"flatmap: $b")
+        case Failure(e) => Println(s"flatmap err: ${e.Error()}")
+    }
+    pkg_session.CloseSessionMatch(s) match {
+        case Success(b) => Println(s"match: $b")
+        case Failure(e) => Println(s"match err: ${e.Error()}")
+    }
+    pkg_session.CloseSessionWorkaround(s) match {
+        case Success(b) => Println(s"workaround: $b")
+        case Failure(e) => Println(s"workaround err: ${e.Error()}")
+    }
+}

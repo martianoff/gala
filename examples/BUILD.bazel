@@ -15,6 +15,9 @@ filegroup(
         "cross_file_unwrap_lib/types.gala",
         "cross_pkg_sealed_var/step/step.gala",
         "cross_pkg_sealed_var_test.gala",
+        "cross_pkg_try_chain/main/main.gala",
+        "cross_pkg_try_chain/pkg_proc/proc.gala",
+        "cross_pkg_try_chain/pkg_session/session.gala",
         "cross_pkg_try_match/corelib/corelib.gala",
         "cross_pkg_try_match/main.gala",
         "foldleft_method/main.gala",
@@ -38,6 +41,8 @@ filegroup(
         "multi_file_option/main.gala",
         "multi_file_types/main.gala",
         "multi_file_types/model.gala",
+        "multifile_lib_regress/proc_pkg/proc.gala",
+        "multifile_lib_regress/proc_session.gala",
         "multipackage_subpkg/main.gala",
         "multipackage_subpkg/state/state.gala",
         "newimmutable_nil.gala",
@@ -2126,12 +2131,20 @@ gala_test(
 
 # Combined regression test
 gala_library(
+    name = "multifile_lib_regress_proc_pkg",
+    srcs = ["multifile_lib_regress/proc_pkg/proc.gala"],
+    importpath = "martianoff/gala/examples/multifile_lib_regress/proc_pkg",
+    visibility = ["//visibility:public"],
+)
+
+gala_library(
     name = "multifile_lib_regress",
     srcs = [
         "multifile_lib_regress/events_pipe.gala",
         "multifile_lib_regress/go_interop.gala",
         "multifile_lib_regress/logic.gala",
         "multifile_lib_regress/pointer_method_field.gala",
+        "multifile_lib_regress/proc_session.gala",
         "multifile_lib_regress/types.gala",
     ],
     go_srcs = [
@@ -2140,6 +2153,7 @@ gala_library(
     importpath = "martianoff/gala/examples/multifile_lib_regress",
     visibility = ["//visibility:public"],
     deps = [
+        ":multifile_lib_regress_proc_pkg",
         "//collection_immutable",
         "//examples/go_struct_bridge",
     ],
@@ -2151,6 +2165,7 @@ gala_test(
     expected = "multifile_lib_regress_test.out",
     deps = [
         ":multifile_lib_regress",
+        ":multifile_lib_regress_proc_pkg",
         "//collection_immutable",
         "//examples/go_struct_bridge",
     ],
@@ -2262,6 +2277,19 @@ gala_library(
     visibility = ["//visibility:public"],
 )
 
+# receiver methods come from a *different* GALA package than the consumer.
+# This is the cross-package counterpart of try_chain_typeparam_repro_lib —
+# it forces the cross-package method-return-type lookup path through the
+# same closure-return-synthesis logic. Generated Go must spell out the
+# outer closure return type as `Try[bool]` (not bare `Try`), otherwise it
+# fails with `cannot use generic type std.Try[T any] without instantiation`.
+gala_library(
+    name = "cross_pkg_try_chain_proc",
+    srcs = ["cross_pkg_try_chain/pkg_proc/proc.gala"],
+    importpath = "martianoff/gala/examples/cross_pkg_try_chain/pkg_proc",
+    visibility = ["//visibility:public"],
+)
+
 gala_library(
     name = "try_chain_dot_import_std_matrix_lib",
     srcs = [
@@ -2291,3 +2319,20 @@ gala_test(
     ],
 )
 
+gala_library(
+    name = "cross_pkg_try_chain_session",
+    srcs = ["cross_pkg_try_chain/pkg_session/session.gala"],
+    importpath = "martianoff/gala/examples/cross_pkg_try_chain/pkg_session",
+    visibility = ["//visibility:public"],
+    deps = [":cross_pkg_try_chain_proc"],
+)
+
+gala_test(
+    name = "cross_pkg_try_chain",
+    src = "cross_pkg_try_chain/main/main.gala",
+    expected = "cross_pkg_try_chain/main/main.out",
+    deps = [
+        ":cross_pkg_try_chain_proc",
+        ":cross_pkg_try_chain_session",
+    ],
+)

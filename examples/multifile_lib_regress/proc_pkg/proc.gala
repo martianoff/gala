@@ -1,0 +1,13 @@
+package proc_pkg
+
+// Sub-library imported by multifile_lib_regress to exercise the
+// cross-package chained Try.FlatMap synthesis pattern. Process lives
+// here; a Session wrapping it lives in multifile_lib_regress next door.
+// The chained s.Proc.Kill().FlatMap((_) => s.Proc.Wait().Map((_) => true))
+// must propagate the inner Try[bool] through the synthesized closure
+// return type even though Process is imported from another package.
+
+struct Process(Pid int)
+
+func (p Process) Kill() Try[bool] = Success[bool](true)
+func (p Process) Wait() Try[int]  = Success[int](0)

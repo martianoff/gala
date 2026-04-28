@@ -1,0 +1,34 @@
+package pkg_session
+
+import (
+    "martianoff/gala/examples/cross_pkg_try_chain/pkg_proc"
+)
+
+// Session wraps a Process whose static type lives in a *different* GALA
+// package (pkg_proc.Process). The chained Try.FlatMap/Map pattern below
+// must propagate the inner Try[bool] type argument through the synthesized
+// closure return type even though the method-return-type lookup for
+// Kill()/Wait() now goes through the cross-package metadata path.
+
+struct Session(Proc pkg_proc.Process)
+
+// CloseSession exercises Try[bool].FlatMap((_) => Try[int].Map((_) => true))
+// where the receiver methods are defined in pkg_proc. Generated Go must
+// spell the outer closure return type as Try[bool], not bare Try.
+func CloseSession(s Session) Try[bool] =
+    s.Proc.Kill().FlatMap((_) => s.Proc.Wait().Map((_) => true))
+
+// CloseSessionMatch covers the same propagation through a match expression:
+// both arms must agree on Try[bool], so Wait().Map((_) => true) must be
+// typed as Try[bool] when the analyzer compares branch types.
+func CloseSessionMatch(s Session) Try[bool] = s.Proc.Kill() match {
+    case Success(_)   => s.Proc.Wait().Map((_) => true)
+    case Failure(err) => Failure[bool](err)
+}
+
+// CloseSessionWorkaround is the manual two-arm form (no .Map). It already
+// compiles on master and acts as a parity check against the failing forms.
+func CloseSessionWorkaround(s Session) Try[bool] = s.Proc.Kill() match {
+    case Success(_)   => Success[bool](true)
+    case Failure(err) => Failure[bool](err)
+}
