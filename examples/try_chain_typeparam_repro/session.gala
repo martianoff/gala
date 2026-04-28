@@ -1,0 +1,21 @@
+package try_chain_typeparam_repro
+
+// Session wraps a Process and exercises the chained Try.FlatMap/Map pattern
+// in batch transpilation context. The FlatMap chain must propagate the inner
+// Try[bool] type argument through the synthesized closure return type so the
+// generated Go signature reads `func(_ bool) Try[bool]` and not bare `Try`.
+
+struct Session(Proc Process)
+
+// CloseSession exercises Try[bool].FlatMap((_) => Try[int].Map((_) => true)).
+// Generated Go must spell the outer closure return type as Try[bool].
+func CloseSession(s Session) Try[bool] =
+    s.Proc.Kill().FlatMap((_) => s.Proc.Wait().Map((_) => true))
+
+// CloseSessionMatch covers the same propagation through a match expression:
+// both arms must agree on Try[bool], so Wait().Map((_) => true) must be typed
+// as Try[bool] when the analyzer compares branch types.
+func CloseSessionMatch(s Session) Try[bool] = s.Proc.Kill() match {
+    case Success(_)   => s.Proc.Wait().Map((_) => true)
+    case Failure(err) => Failure[bool](err)
+}

@@ -1,0 +1,11 @@
+package try_chain_typeparam_repro
+
+// Process.Kill() returns Try[bool] and Process.Wait() returns Try[int] — the
+// asymmetric element types let session.gala exercise a chained
+// FlatMap((_) => Map((_) => v)) whose synthesized closure return type must
+// preserve the [bool] type argument across both Try methods.
+
+struct Process(Pid int)
+
+func (p Process) Kill() Try[bool] = Success[bool](true)
+func (p Process) Wait() Try[int]  = Success[int](0)
