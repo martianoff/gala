@@ -61,6 +61,7 @@ go_test(
         "equal_test.go",
         "expected_arg_stack_test.go",
         "functions_test.go",
+        "generated_format_test.go",
         "generics_test.go",
         "immutable_test.go",
         "immutable_unwrapping_test.go",
