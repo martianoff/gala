@@ -86,9 +86,13 @@ func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.
 			el := exprListCtx.(*grammar.ExpressionListContext)
 			// When a tuple literal flows into a Tuple-shaped enclosing context
 			// (e.g., the return position of a function declared to return
-			// `Tuple[int, Cmd[Msg]]`), thread each element's expected type so
-			// that nested sealed-variant constructors like `NoCmd()` infer their
-			// type parameters from the tuple's slot.
+			// `Tuple[int, Cmd[Msg]]`, or a call argument expecting
+			// `Tuple[string, error]`), thread each element's expected type so
+			// that nested sealed-variant constructors like `NoCmd()` infer
+			// their type parameters from the tuple's slot, and so the
+			// synthesized composite literal carries concrete element types
+			// rather than collapsing to `any` when an element's standalone
+			// type happens to resolve to nil/any.
 			elemExprs := el.AllExpression()
 			if len(elemExprs) > 1 {
 				perElemExpected := t.tupleElementExpectedTypes(len(elemExprs))
@@ -96,7 +100,7 @@ func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.
 				if err != nil {
 					return nil, err
 				}
-				return t.transformTupleLiteral(exprs, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
+				return t.transformTupleLiteralWithExpected(exprs, perElemExpected, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
 			}
 			exprs, err := t.transformExpressionList(el)
 			if err != nil {
@@ -125,10 +129,26 @@ func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.
 
 // tupleElementExpectedTypes returns the per-element expected types for a
 // tuple literal of the given arity, computed from the most-specific available
-// outer context. Currently checks `currentFuncReturnType` for the
-// enclosing-return case (context 2 of downward sealed-variant inference).
-// Returns nil if no Tuple-shaped expected type is available.
+// outer context. Checks two sources, most-specific first:
+//
+//  1. The top of `expectedArgTypes` — the slot type at the immediately
+//     enclosing call argument / val-decl / tuple-element position. This
+//     drives bidirectional inference for the call-site case
+//     (`f((a, b))` where `f`'s parameter is `Tuple[T1, T2]`).
+//  2. `currentFuncReturnType` — the enclosing function's declared return
+//     type, used when the tuple literal is the value at a function return.
+//
+// Returns nil if no Tuple-shaped expected type is available. When (1)
+// matches, the entry is consumed off the stack so that nested expressions
+// inside this tuple do not pick it up again (B1 contract).
 func (t *galaASTTransformer) tupleElementExpectedTypes(arity int) []transpiler.Type {
+	if pending := t.expectedArgTypes.peek(); pending != nil && !pending.IsNil() {
+		if gen, ok := pending.(transpiler.GenericType); ok &&
+			t.isTupleTypeName(gen.Base.String()) && len(gen.Params) == arity {
+			t.expectedArgTypes.consume()
+			return gen.Params
+		}
+	}
 	candidates := []transpiler.Type{t.currentFuncReturnType}
 	for _, cand := range candidates {
 		if cand == nil || cand.IsNil() {

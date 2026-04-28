@@ -250,6 +250,13 @@ gala_test(
 )
 
 gala_test(
+    name = "fix007_repro",
+    src = "fix007_repro.gala",
+    expected = "fix007_repro.out",
+    deps = ["//collection_immutable"],
+)
+
+gala_test(
     name = "either",
     src = "either.gala",
     expected = "either.out",
