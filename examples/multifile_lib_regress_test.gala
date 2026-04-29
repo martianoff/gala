@@ -261,4 +261,12 @@ func main() {
     val r2 = multifile_lib_regress.DispatchByOutcome(errOutcome)
     Println(s"DispatchByOutcome ok counter=${r1.V1.Counter}")
     Println(s"DispatchByOutcome err counter=${r2.V1.Counter}")
+
+    // --- Regression: bare string literal at a val (Immutable[string]) param
+    // slot must auto-lift to NewImmutable[string]. PolicyMatches calls a
+    // helper declared `val expected string, val actual string`; passing the
+    // literal "notify" used to fail Go compile with "cannot use \"notify\"
+    // (untyped string constant) as std.Immutable[string]".
+    Println(multifile_lib_regress.PolicyMatches("notify"))
+    Println(multifile_lib_regress.PolicyMatches("retry"))
 }

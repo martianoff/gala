@@ -2075,6 +2075,16 @@ gala_go_test(
     srcs = ["type_alias_lambda_inference.gala"],
 )
 
+# Eq(t, Immutable[V] actual, bare V literal) — when the call-site expected
+# type for an arg is Immutable[V] and the actual arg is a bare V literal,
+# the transpiler must lift the literal with NewImmutable[V]. Otherwise Go
+# rejects "cannot use \"notify\" (untyped string constant) as
+# std.Immutable[string] value".
+gala_go_test(
+    name = "fix009_eq_literal_immutable",
+    srcs = ["fix009_eq_literal_immutable.gala"],
+)
+
 # Option.When and Unless factory constructors
 gala_test(
     name = "option_when",

@@ -64,3 +64,5 @@ other
 [blue]    g bob
 DispatchByOutcome ok counter=2
 DispatchByOutcome err counter=1
+true
+false

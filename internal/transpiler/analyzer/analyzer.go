@@ -1105,6 +1105,11 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 							} else {
 								funcMeta.ParamTypes = append(funcMeta.ParamTypes, transpiler.NilType{})
 							}
+							// Record val/var status so call-site argument transformation
+							// can lift bare T values (e.g. string literals) into the
+							// Immutable[T] wrapper that `val` parameters end up with in
+							// the generated Go signature.
+							funcMeta.ParamImmutFlags = append(funcMeta.ParamImmutFlags, paramCtx.VAL() != nil)
 							// Extract parameter name
 							if paramCtx.Identifier() != nil {
 								funcMeta.ParamNames = append(funcMeta.ParamNames, paramCtx.Identifier().GetText())
@@ -3160,6 +3165,11 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 								} else {
 									funcMeta.ParamTypes = append(funcMeta.ParamTypes, transpiler.NilType{})
 								}
+								// Record val/var status (mirrors the same field
+								// population in the multifile branch above) so the
+								// call-site arg transformer can lift bare T values
+								// to Immutable[T] when the param was declared val.
+								funcMeta.ParamImmutFlags = append(funcMeta.ParamImmutFlags, paramCtx.VAL() != nil)
 								if paramCtx.Identifier() != nil {
 									funcMeta.ParamNames = append(funcMeta.ParamNames, paramCtx.Identifier().GetText())
 								} else {
