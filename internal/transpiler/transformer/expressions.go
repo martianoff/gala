@@ -600,11 +600,11 @@ func (t *galaASTTransformer) transformIfExpression(ctx *grammar.IfExpressionCont
 	}
 
 	branches := ctx.AllIfExprBranch()
-	thenStmts, thenExpr, err := t.transformIfExprBranch(branches[0].(*grammar.IfExprBranchContext))
+	thenStmts, thenExpr, thenTerminates, err := t.transformIfExprBranch(branches[0].(*grammar.IfExprBranchContext))
 	if err != nil {
 		return nil, err
 	}
-	elseStmts, elseExpr, err := t.transformIfExprBranch(branches[1].(*grammar.IfExprBranchContext))
+	elseStmts, elseExpr, elseTerminates, err := t.transformIfExprBranch(branches[1].(*grammar.IfExprBranchContext))
 	if err != nil {
 		return nil, err
 	}
@@ -643,11 +643,20 @@ func (t *galaASTTransformer) transformIfExpression(ctx *grammar.IfExpressionCont
 		retTypeExpr = t.expectedIfExprType
 	}
 
-	// Build the then-block: preceding statements + return lastExpr
-	thenBody := append(thenStmts, &ast.ReturnStmt{Results: []ast.Expr{thenExpr}})
+	// Build the then-block: preceding statements + return lastExpr.
+	// When the branch already terminates with an explicit return, the synthesized
+	// return is unreachable dead code (and would be `return nil` since the branch
+	// expression is a placeholder), so omit it.
+	thenBody := thenStmts
+	if !thenTerminates {
+		thenBody = append(thenBody, &ast.ReturnStmt{Results: []ast.Expr{thenExpr}})
+	}
 
-	// Build the else-block: preceding statements + return lastExpr
-	elseBody := append(elseStmts, &ast.ReturnStmt{Results: []ast.Expr{elseExpr}})
+	// Build the else-block: preceding statements + return lastExpr (see above).
+	elseBody := elseStmts
+	if !elseTerminates {
+		elseBody = append(elseBody, &ast.ReturnStmt{Results: []ast.Expr{elseExpr}})
+	}
 
 	// Transpile to IIFE: func() T { if cond { ...thenBody } else { ...elseBody } }()
 	return &ast.CallExpr{
@@ -792,13 +801,18 @@ func (t *galaASTTransformer) findIfExpressionInExpression(exprCtx grammar.IExpre
 // either a single expression or a block. For blocks, the last statement
 // must be an expression statement — it becomes the branch's return value,
 // and preceding statements are executed before it.
-func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchContext) ([]ast.Stmt, ast.Expr, error) {
+//
+// The third return value reports whether the branch already terminates
+// (its last statement is an explicit `return`); when true, the caller must
+// not append a synthesized `return <expr>` to the branch body, since that
+// would be unreachable dead code with a placeholder expression.
+func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchContext) ([]ast.Stmt, ast.Expr, bool, error) {
 	if exprCtx := ctx.Expression(); exprCtx != nil {
 		expr, err := t.transformExpression(exprCtx)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, false, err
 		}
-		return nil, expr, nil
+		return nil, expr, false, nil
 	}
 
 	// Block branch: transform all statements, use last as the result expression.
@@ -806,14 +820,14 @@ func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchCont
 	blockCtx := ctx.Block().(*grammar.BlockContext)
 	stmts := blockCtx.AllStatement()
 	if len(stmts) == 0 {
-		return nil, ast.NewIdent("nil"), nil
+		return nil, ast.NewIdent("nil"), false, nil
 	}
 
 	var preceding []ast.Stmt
 	for _, stmtCtx := range stmts[:len(stmts)-1] {
 		stmt, err := t.transformStatement(stmtCtx.(*grammar.StatementContext))
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, false, err
 		}
 		preceding = append(preceding, stmt)
 	}
@@ -826,21 +840,33 @@ func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchCont
 			if exprCtx := simpleCtx.Expression(); exprCtx != nil {
 				expr, err := t.transformExpression(exprCtx)
 				if err != nil {
-					return nil, nil, err
+					return nil, nil, false, err
 				}
-				return preceding, expr, nil
+				return preceding, expr, false, nil
 			}
 		}
 	}
 
 	// If the last statement isn't a bare expression, transform it normally
-	// and return nil as the expression (void block)
+	// and return nil as the expression (void block).
 	lastStmt, err := t.transformStatement(lastStmtCtx)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 	preceding = append(preceding, lastStmt)
-	return preceding, ast.NewIdent("nil"), nil
+	// If the last statement is an explicit return, the branch terminates: the
+	// caller must skip its synthesized trailing return so we don't emit dead
+	// `return nil` after a typed return. We also surface the return's value
+	// expression as the branch expression so the IIFE result type can be
+	// inferred from it (rather than defaulting to `any`).
+	if retStmt, ok := lastStmt.(*ast.ReturnStmt); ok && lastStmtCtx.ReturnStatement() != nil {
+		var branchExpr ast.Expr = ast.NewIdent("nil")
+		if len(retStmt.Results) > 0 {
+			branchExpr = retStmt.Results[0]
+		}
+		return preceding, branchExpr, true, nil
+	}
+	return preceding, ast.NewIdent("nil"), false, nil
 }
 
 // unwrapImmutable is the single canonical unwrap helper for val-wrapped
