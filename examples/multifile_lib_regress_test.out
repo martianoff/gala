@@ -56,3 +56,7 @@ chunk[topic]=first line
 end[topic] ok
 end[topic] err=boom
 runtime failure: runtime[1]: beta
+fail: boom
+chunk: hi
+sessfail: x
+other

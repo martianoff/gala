@@ -1,6 +1,7 @@
 package main
 
 import (
+    "errors"
     "martianoff/gala/examples/multifile_lib_regress"
     "martianoff/gala/examples/multifile_lib_regress/proc_pkg"
     . "martianoff/gala/examples/multifile_lib_regress/shadow_func"
@@ -226,4 +227,16 @@ func main() {
         case Some(msg) => Println(s"runtime failure: $msg")
         case None()    => Println("runtime failure: <none>")
     }
+
+    // --- Regression: nested Success(InnerCase) match inside a returned
+    // lambda. The lambda parameter has no explicit type — it is driven by
+    // the enclosing function's `func(Try[WireMsg]) string` return type.
+    // Without expected-param propagation through the `return` statement,
+    // the matched type erased to `Try[any]`, and the inner sealed-case
+    // Unapply rejected with "need type assertion".
+    val handler = multifile_lib_regress.MakeWireHandler()
+    Println(handler(Failure[multifile_lib_regress.WireMsg](errors.New("boom"))))
+    Println(handler(Success[multifile_lib_regress.WireMsg](multifile_lib_regress.WireChunk(Index = 1, Line = "hi"))))
+    Println(handler(Success[multifile_lib_regress.WireMsg](multifile_lib_regress.WireSessionFailed(Index = 2, Err = "x"))))
+    Println(handler(Success[multifile_lib_regress.WireMsg](multifile_lib_regress.WireOther())))
 }
