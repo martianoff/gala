@@ -1,0 +1,3 @@
+ended[topic-a] ok
+ended[topic-b] err=oops
+started: topic-c

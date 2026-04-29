@@ -986,6 +986,17 @@ gala_test(
     expected = "sealed_inference_arg_context.out",
 )
 
+# Regression: sealed-variant case constructor named-arg slot drives method
+# type-param inference for nested generic Map call whose lambda body is a
+# method call on a Go universe type (error.Error()). Without the fix, U=any
+# falls back, the lambda emits `func(error) any`, and Option_Map returns
+# Option[any] — incompatible with the Ended.ErrText: Option[string] slot.
+gala_test(
+    name = "sealed_option_map_method_body",
+    src = "sealed_option_map_method_body.gala",
+    expected = "sealed_option_map_method_body.out",
+)
+
 gala_test(
     name = "sealed_inference_container_context",
     src = "sealed_inference_container_context.gala",
@@ -2171,7 +2182,10 @@ gala_library(
 )
 gala_library(
     name = "multifile_lib_regress_proc_pkg",
-    srcs = ["multifile_lib_regress/proc_pkg/proc.gala"],
+    srcs = [
+        "multifile_lib_regress/proc_pkg/events.gala",
+        "multifile_lib_regress/proc_pkg/proc.gala",
+    ],
     importpath = "martianoff/gala/examples/multifile_lib_regress/proc_pkg",
     visibility = ["//visibility:public"],
 )
@@ -2191,6 +2205,7 @@ gala_library(
 gala_library(
     name = "multifile_lib_regress",
     srcs = [
+        "multifile_lib_regress/consult_end.gala",
         "multifile_lib_regress/events_pipe.gala",
         "multifile_lib_regress/go_interop.gala",
         "multifile_lib_regress/logic.gala",

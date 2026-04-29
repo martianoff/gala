@@ -279,6 +279,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 	typeArgs []ast.Expr,
 	recvType transpiler.Type,
 	lookupBaseName string,
+	pendingExpected transpiler.Type,
 ) (handled bool, result ast.Expr, err error) {
 	// Skip if the "receiver" is actually a package identifier — that is a
 	// package-qualified function call and belongs to a later section.
@@ -310,6 +311,38 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 				typeSubst[tp] = t.exprToTypeString(typeArgs[i])
 			}
 			// Don't default to "any" — will try to infer from non-lambda args below.
+		}
+	}
+
+	// Drive method-level type-param inference from the call's expected return
+	// type (the immediately-enclosing typed slot — e.g. a named arg of a
+	// surrounding constructor or a typed val initializer). When the lambda
+	// body's own return type cannot be inferred locally — e.g. the body is a
+	// method call on a Go universe type like `error`, whose `Error()` is not
+	// resolvable through goTypeInfo — the lambda emits an `any` return, gap #9
+	// unification leaves U=any, and the method's result type erases to
+	// Option[any] / Try[any]. Unifying the method's declared return shape
+	// (with receiver substitutions applied) against the call-site expected
+	// type binds U directly from the surrounding context, making the lambda
+	// see a concrete expected return type and emit `func(T) U` with the
+	// correct U.
+	if methodMeta != nil && typeMeta != nil && len(methodMeta.TypeParams) > 0 &&
+		pendingExpected != nil && !pendingExpected.IsNil() && !pendingExpected.IsAny() &&
+		methodMeta.ReturnType != nil && !methodMeta.ReturnType.IsNil() {
+		recvTypeArgTypesForReturn := make([]transpiler.Type, 0, len(recvTypeArgStrings))
+		for _, a := range recvTypeArgStrings {
+			recvTypeArgTypesForReturn = append(recvTypeArgTypesForReturn, transpiler.ParseType(a))
+		}
+		substitutedReturn := t.substituteConcreteTypes(methodMeta.ReturnType, typeMeta.TypeParams, recvTypeArgTypesForReturn)
+		inferredFromExpected := make(map[string]transpiler.Type)
+		t.unifyForInference(substitutedReturn, pendingExpected, methodMeta.TypeParams, inferredFromExpected)
+		for tp, inferred := range inferredFromExpected {
+			if inferred == nil || inferred.IsNil() || inferred.IsAny() {
+				continue
+			}
+			if _, alreadySet := typeSubst[tp]; !alreadySet {
+				typeSubst[tp] = inferred.String()
+			}
 		}
 	}
 
@@ -1071,22 +1104,30 @@ func (t *galaASTTransformer) transformFunctionArgs(
 	return positional, named, hasSpread, nil
 }
 
-// resolveNamedArgExpectedFuncType looks up the expected FuncType for a named
-// argument so that lambda arguments can infer their parameter types. It tries
-// struct-field-type resolution first (with generic type-param substitution for
-// generic struct construction), then falls back to function metadata param
-// names. Returns NilType if no FuncType can be resolved. Extracted from
-// transformCallWithArgsCtx as part of A1 cont.
+// resolveNamedArgExpectedFuncType looks up the expected type for a named
+// argument so the value expression can be transformed with the right
+// expectation. For lambda arguments this is what gives them their parameter
+// types; for non-lambda arguments (e.g. nested generic method calls) the
+// expected type drives downstream type-param inference via the
+// expectedArgTypes stack — without it, a generic call like
+// `errOpt.Map((e) => e.Error())` whose lambda body's return type is locally
+// unresolvable falls back to U=any. Tries struct-field-type resolution first
+// (with generic type-param substitution for generic struct construction),
+// then falls back to function metadata param names. Returns NilType when no
+// expected type can be determined. Extracted from transformCallWithArgsCtx
+// as part of A1 cont.
 func (t *galaASTTransformer) resolveNamedArgExpectedFuncType(fun ast.Expr, argName string, callCtx functionCallContext) transpiler.Type {
-	// Step 1: struct-field lookup — handles lambdas passed as named struct args.
+	// Step 1: struct-field lookup — handles lambdas passed as named struct args
+	// AND non-lambda named args (so the call-site expected type can drive
+	// inference of nested generic method calls).
 	if callCtx.structFieldExpectedTypes != nil {
 		if funcName := t.extractFuncName(fun); funcName != "" {
 			typeMeta, resolvedTypeName := t.getTypeMetaResolved(funcName)
 			if resolvedTypeName != "" {
 				resolved := t.resolveStructTypeName(resolvedTypeName)
 				if fieldTypes, ok := t.structFieldTypes[resolved]; ok {
-					if ft, ok := fieldTypes[argName].(transpiler.FuncType); ok {
-						expected := transpiler.Type(ft)
+					if rawType, ok := fieldTypes[argName]; ok && rawType != nil && !rawType.IsNil() {
+						expected := rawType
 						// Apply generic type substitution for generic struct
 						// construction: e.g., Wrapper[U](compute = ...) maps T -> U.
 						if typeMeta != nil && len(typeMeta.TypeParams) > 0 {
@@ -1109,19 +1150,70 @@ func (t *galaASTTransformer) resolveNamedArgExpectedFuncType(fun ast.Expr, argNa
 	}
 
 	// Step 2: function metadata lookup — handles lambdas passed as named
-	// function-call args when the function has named parameters.
+	// function-call args when the function has named parameters. Returns the
+	// declared param type as-is (FuncType for lambda inference; non-FuncType
+	// values flow through the expectedArgTypes stack).
 	if callCtx.funcMeta != nil && len(callCtx.funcMeta.ParamNames) > 0 {
 		for i, paramName := range callCtx.funcMeta.ParamNames {
 			if paramName == argName && i < len(callCtx.funcMeta.ParamTypes) {
-				if ft, ok := callCtx.funcMeta.ParamTypes[i].(transpiler.FuncType); ok {
-					return ft
+				return callCtx.funcMeta.ParamTypes[i]
+			}
+		}
+	}
+
+	// Step 3: sealed-variant case constructor. Variants register an empty
+	// companion struct (so `t.structFields[VariantName]` is nil), but the
+	// per-field types live on the parent sealed type's SealedVariants. Look
+	// them up so a named arg whose value is a nested generic call (e.g.
+	// `Ended(ErrText = errOpt.Map((e) => e.Error()))`) gets the call-site's
+	// expected slot type pushed onto expectedArgTypes — without it, the
+	// nested .Map call cannot infer its result type-param from the enclosing
+	// context and falls back to U=any.
+	if typeName, _ := extractTypeNameFromExpr(fun); typeName != "" {
+		if sv := t.findSealedVariant(typeName); sv != nil {
+			for i, fieldName := range sv.FieldNames {
+				if fieldName == argName && i < len(sv.FieldTypes) {
+					expected := sv.FieldTypes[i]
+					if expected == nil || expected.IsNil() {
+						break
+					}
+					// Apply parent sealed type's type-param substitution when the
+					// call site supplied explicit type args (e.g. `Ended[int](...)`).
+					if parent := t.findSealedParentForVariant(typeName, ""); parent != nil && len(parent.TypeParams) > 0 {
+						if typeArgs := t.extractFuncCallTypeArgs(fun); len(typeArgs) > 0 {
+							typeSubst := make(map[string]string)
+							for j, tp := range parent.TypeParams {
+								if j < len(typeArgs) {
+									typeSubst[tp] = typeArgs[j]
+								}
+							}
+							expected = t.substituteTranspilerTypeParams(expected, typeSubst)
+						}
+					}
+					return expected
 				}
-				break
 			}
 		}
 	}
 
 	return transpiler.NilType{}
+}
+
+// findSealedVariant returns the SealedVariant metadata for a variant name by
+// searching all registered sealed parent types. Returns nil if the name is
+// not a known variant.
+func (t *galaASTTransformer) findSealedVariant(variantName string) *transpiler.SealedVariant {
+	for _, meta := range t.typeMetas {
+		if !meta.IsSealed {
+			continue
+		}
+		for i := range meta.SealedVariants {
+			if meta.SealedVariants[i].Name == variantName {
+				return &meta.SealedVariants[i]
+			}
+		}
+	}
+	return nil
 }
 
 // functionCallContext bundles the expected-type lookups used when
@@ -1381,7 +1473,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 
 	// --- Section 3: Generic method -> standalone function rewrite ---
 	if receiver != nil && isGenericMethod {
-		handled, expr, err := t.tryTransformGenericMethodAsFunction(argListCtx, receiver, method, typeArgs, recvType, lookupBaseName)
+		handled, expr, err := t.tryTransformGenericMethodAsFunction(argListCtx, receiver, method, typeArgs, recvType, lookupBaseName, pendingExpected)
 		if err != nil {
 			return nil, err
 		}

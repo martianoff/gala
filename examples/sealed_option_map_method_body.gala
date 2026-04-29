@@ -1,0 +1,47 @@
+package main
+
+import "errors"
+
+// Regression: when a sealed-type case constructor named arg accepts an
+// Option[T], and the value at the call site is `errOpt.Map((e) => e.Error())`,
+// the lambda's body is a method call on a Go universe type (`error.Error()`)
+// whose method signature is not registered in goTypeInfo. Without driving the
+// `Map` method's type-arg U from the call-site expected type, U falls back to
+// `any` and the resulting `Option_Map` returns `Option[any]` — incompatible
+// with the target slot `Option[string]`.
+//
+// The fix: when the immediately-enclosing typed slot supplies a concrete
+// expected return type (here `Option[string]` from the Ended.ErrText field),
+// unify it against the method's declared return shape `Option[U]` to bind
+// U=string before transforming the lambda body. The lambda then sees a
+// concrete expected return and emits `func(error) string` instead of
+// `func(error) any`.
+
+sealed type AppMsg {
+    case Ended(Name string, ErrText Option[string])
+    case Started(Name string)
+}
+
+func describe(m AppMsg) string = m match {
+    case Started(name)        => s"started: $name"
+    case Ended(name, errText) => errText match {
+        case Some(s) => s"ended[$name] err=$s"
+        case None()  => s"ended[$name] ok"
+    }
+}
+
+// The transform that triggered the bug: the named arg ErrText receives an
+// Option.Map whose lambda body is a method call on an Option[error] element.
+func makeEnded(name string, errOpt Option[error]) AppMsg =
+    Ended(Name = name, ErrText = errOpt.Map((e) => e.Error()))
+
+func main() {
+    val ok = makeEnded("topic-a", None[error]())
+    Println(describe(ok))
+
+    val err = makeEnded("topic-b", Some(errors.New("oops")))
+    Println(describe(err))
+
+    val started = Started(Name = "topic-c")
+    Println(describe(started))
+}

@@ -1,0 +1,40 @@
+package multifile_lib_regress
+
+import (
+    . "martianoff/gala/examples/multifile_lib_regress/proc_pkg"
+)
+
+// --- Regression: cross-package Option.Map lambda body returns method call.
+// ConsultEvent is sealed with cases ConsultChunk / ConsultEnd defined in
+// proc_pkg (a sibling GALA package). The ConsultEnd case carries an
+// Option[error] field. Pattern-matching on a ConsultEvent in this package
+// binds errOpt to that Option[error]; calling errOpt.Map((e) => e.Error())
+// must yield Option[string] — the lambda body's return type is a method
+// call on the bound element name, and the method's return type (`string`)
+// has to be propagated back through the .Map's result type even though
+// the receiver Option[error] is constructed in another package.
+//
+// Before the fix the generated Go was:
+//   Option_Map(errOpt, func(e error) any { return e.Error() })
+// which Go rejects because Option_Map's result Option[any] cannot satisfy
+// the surrounding Option[string] context.
+
+sealed type AppMsg {
+    case ChunkArrived(Name string, Line string)
+    case Ended(Name string, ErrText Option[string])
+}
+
+func ToAppMsg(ev ConsultEvent) AppMsg = ev match {
+    case ConsultChunk(name, line) =>
+        ChunkArrived(Name = name, Line = line)
+    case ConsultEnd(name, errOpt) =>
+        Ended(Name = name, ErrText = errOpt.Map((e) => e.Error()))
+}
+
+func DescribeAppMsg(m AppMsg) string = m match {
+    case ChunkArrived(name, line) => s"chunk[$name]=$line"
+    case Ended(name, errText)     => errText match {
+        case Some(msg) => s"end[$name] err=$msg"
+        case None()    => s"end[$name] ok"
+    }
+}

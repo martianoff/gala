@@ -202,4 +202,18 @@ func main() {
     // Reference a non-clashing helper from the shadow package so the
     // dot-import is actually exercised at compile time.
     Println(ShadowMarker())
+
+    // --- Regression: cross-package Option.Map lambda whose body is a method
+    // call on the bound element name. ConsultEvent is sealed with cases
+    // defined in proc_pkg; ConsultEnd carries an Option[error]. The transform
+    // function pattern-matches on a ConsultEvent and chains
+    // errOpt.Map((e) => e.Error()) — the lambda body must keep its inferred
+    // string return type even though the receiver Option's metadata lives in
+    // another GALA package and the body is a method call (not an identifier).
+    val chunkEv = proc_pkg.MakeChunk("topic", "first line")
+    val endOkEv = proc_pkg.MakeEndOk("topic")
+    val endErrEv = proc_pkg.MakeEndErr("topic", "boom")
+    Println(multifile_lib_regress.DescribeAppMsg(multifile_lib_regress.ToAppMsg(chunkEv)))
+    Println(multifile_lib_regress.DescribeAppMsg(multifile_lib_regress.ToAppMsg(endOkEv)))
+    Println(multifile_lib_regress.DescribeAppMsg(multifile_lib_regress.ToAppMsg(endErrEv)))
 }
