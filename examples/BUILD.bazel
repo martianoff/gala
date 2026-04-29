@@ -183,6 +183,19 @@ gala_test(
     deps = ["//collection_immutable"],
 )
 
+# Regression: empty collection literal as parameter default
+# (Array[T] = EmptyArray[T](), HashMap[K,V] = EmptyHashMap[K,V]()) must be
+# filled in at call sites that omit the defaulted arg. Prior to the fix the
+# emitter only recognised primitive scalar literals as defaults — collection
+# literal defaults silently dropped through, leaving the Go compiler with a
+# `not enough arguments` mismatch.
+gala_test(
+    name = "collection_default_param",
+    src = "collection_default_param.gala",
+    expected = "collection_default_param.out",
+    deps = ["//collection_immutable"],
+)
+
 gala_test(
     name = "option_complex",
     src = "option_complex.gala",

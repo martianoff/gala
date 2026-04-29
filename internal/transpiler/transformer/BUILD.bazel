@@ -50,6 +50,7 @@ go_test(
         "bare_funcref_test.go",
         "codec_boundary_test.go",
         "collect_partial_function_test.go",
+        "collection_default_param_test.go",
         "compilation_gate_test.go",
         "conflict_test.go",
         "control_flow_test.go",
