@@ -1932,6 +1932,14 @@ gala_test(
     expected = "if_expression_block.out",
 )
 
+# if-expression IIFE where both branches end with explicit return
+gala_test(
+    name = "if_iife_terminating_branches",
+    src = "if_iife_terminating_branches.gala",
+    expected = "if_iife_terminating_branches.out",
+    deps = ["//collection_immutable"],
+)
+
 # Method default parameters with named args
 gala_test(
     name = "method_default_params",

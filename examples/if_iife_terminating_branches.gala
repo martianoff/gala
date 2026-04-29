@@ -1,0 +1,25 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+struct Item(val Name string)
+
+func emptyHint() Item = Item(Name = "empty")
+func Header() Item = Item(Name = "header")
+
+func buildRows(items Array[Item]) Array[Item] = items
+
+func panel(items Array[Item]) Array[Item] {
+    val children = if (items.IsEmpty()) {
+        return ArrayOf[Item](emptyHint())
+    } else {
+        val rows = buildRows(items)
+        return ArrayOf[Item](Header()).AppendAll(rows)
+    }
+    return children
+}
+
+func main() {
+    val empty = panel(EmptyArray[Item]())
+    Println(empty.Get(0).Name)
+}
