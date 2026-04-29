@@ -407,103 +407,28 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 	}
 
 	phaseStart = time.Now()
-	// 0.25 Load std package metadata
-	// For non-std packages: add as implicit import
-	// For std package: still load for intra-package type resolution, but don't add to Packages
-	if cachedStd, ok := a.analyzedPkgs[registry.StdImportPath]; ok && cachedStd != nil {
-		// Use cached std metadata
-		richAST.Merge(cachedStd)
-		if pkgName != registry.StdPackageName {
-			richAST.Packages[registry.StdImportPath] = registry.StdPackageName
-		}
-	} else if _, inProgress := a.analyzedPkgs[registry.StdImportPath]; !inProgress {
-		// First time analyzing std - set placeholder to prevent infinite recursion
-		a.analyzedPkgs[registry.StdImportPath] = nil
-		stdAST, err := a.analyzePackage(registry.StdPackageName)
-		if err == nil {
-			a.analyzedPkgs[registry.StdImportPath] = stdAST
-			richAST.Merge(stdAST)
-			if pkgName != registry.StdPackageName {
-				richAST.Packages[registry.StdImportPath] = registry.StdPackageName
-			}
-		}
+	// 0.25 Load std package metadata transitively. Errors during std
+	// loading are intentionally silent: cross-module test fixtures set
+	// up environments without std, and the existing contract is that
+	// missing std degrades to the registry-driven type resolver rather
+	// than producing a coded error. Pass errLine=-1 to suppress.
+	importVisited := make(map[string]bool)
+	a.mergeImportTransitive(registry.StdImportPath, richAST, importVisited, -1)
+	if pkgName == registry.StdPackageName {
+		// Self-import inside std should not appear in Packages
+		delete(richAST.Packages, registry.StdImportPath)
 	}
 
 	logPhase("load-std", phaseStart)
 	phaseStart = time.Now()
 
-	// 0.5 Scan imports
+	// 0.5 Scan imports — load each one (and its transitive deps) into richAST.
 	for _, impDecl := range sourceFile.AllImportDeclaration() {
 		ctx := impDecl.(*grammar.ImportDeclarationContext)
 		for _, spec := range ctx.AllImportSpec() {
 			s := spec.(*grammar.ImportSpecContext)
 			path := strings.Trim(s.STRING().GetText(), "\"")
-
-			// Check if this is a GALA package (internal or external)
-			isInternalGala := strings.HasPrefix(path, "martianoff/gala/")
-			isExternalGala := a.resolver.IsGalaPackage(path)
-
-			if isInternalGala || isExternalGala {
-				// Determine how to resolve the package
-				var relPath string
-				if isInternalGala {
-					relPath = strings.TrimPrefix(path, "martianoff/gala/")
-				} else {
-					relPath = path // External packages use full path
-				}
-
-				// Check if the GALA import path differs from the actual Go module path
-				// (e.g., "martianoff/gala-server" vs "github.com/martianoff/gala-server")
-				if goPath := a.resolver.ResolveGoImportPath(path); goPath != "" {
-					if richAST.ImportPathMap == nil {
-						richAST.ImportPathMap = make(map[string]string)
-					}
-					richAST.ImportPathMap[path] = goPath
-				}
-
-				if cached, ok := a.analyzedPkgs[path]; ok && cached != nil {
-					// Use cached metadata
-					richAST.Merge(cached)
-					if cached.PackageName != "" && cached.PackageName != "main" && cached.PackageName != "test" {
-						richAST.Packages[path] = cached.PackageName
-					}
-				} else if _, inProgress := a.analyzedPkgs[path]; !inProgress {
-					// First time analyzing this package - set placeholder to prevent infinite recursion
-					a.analyzedPkgs[path] = nil
-
-					// For external GALA packages, ensure they're transpiled
-					if isExternalGala && !isInternalGala {
-						if err := a.ensureTranspiled(path); err != nil {
-							// Log error but continue - we'll still try to analyze
-							fmt.Fprintf(os.Stderr, "Warning: failed to transpile dependency %s: %v\n", path, err)
-						}
-					}
-
-					importedAST, err := a.analyzePackage(relPath)
-					if err != nil {
-						line := s.GetStart().GetLine()
-						warnMsg := fmt.Sprintf("failed to analyze package %s (imported at line %d): %v", relPath, line, err)
-						fmt.Fprintf(os.Stderr, "Warning: %s\n", warnMsg)
-						richAST.AnalysisWarnings = append(richAST.AnalysisWarnings, warnMsg)
-					}
-					if err == nil {
-						a.analyzedPkgs[path] = importedAST
-						richAST.Merge(importedAST)
-						// Store package name from the imported package
-						if importedAST.PackageName != "" && importedAST.PackageName != "main" && importedAST.PackageName != "test" {
-							richAST.Packages[path] = importedAST.PackageName
-						} else {
-							// Fallback if PackageName is not set properly
-							for _, typeMeta := range importedAST.Types {
-								if typeMeta.Package != "" && typeMeta.Package != "main" && typeMeta.Package != "test" && !registry.Global.IsPreludePackage(typeMeta.Package) {
-									richAST.Packages[path] = typeMeta.Package
-									break
-								}
-							}
-						}
-					}
-				}
-			}
+			a.mergeImportTransitive(path, richAST, importVisited, s.GetStart().GetLine())
 		}
 	}
 
@@ -1771,57 +1696,125 @@ func (a *galaAnalyzer) resolveTypeWithParams(typeName string, pkgName string, ty
 	return a.resolveBaseName(typeName, pkgName)
 }
 
-// scanImports processes GALA imports from a source file and loads their metadata
-// into richAST. This is used to ensure sibling files' dependencies are available
-// for type resolution during extractSiblingFullMetadata.
+// scanImports processes GALA imports from a source file and loads
+// their metadata transitively into richAST. Used during sibling
+// extraction so the sibling file's imports are available for type
+// resolution.
 func (a *galaAnalyzer) scanImports(sf *grammar.SourceFileContext, richAST *transpiler.RichAST) {
+	visited := make(map[string]bool)
 	for _, impDecl := range sf.AllImportDeclaration() {
 		ctx := impDecl.(*grammar.ImportDeclarationContext)
 		for _, spec := range ctx.AllImportSpec() {
 			s := spec.(*grammar.ImportSpecContext)
 			path := strings.Trim(s.STRING().GetText(), "\"")
+			a.mergeImportTransitive(path, richAST, visited, s.GetStart().GetLine())
+		}
+	}
+}
 
-			isInternalGala := strings.HasPrefix(path, "martianoff/gala/")
-			isExternalGala := a.resolver.IsGalaPackage(path)
+// mergeImportTransitive loads `path`'s metadata (from cache or by
+// invoking analyzePackage) and merges it into richAST along with every
+// transitive GALA import it carries. The visited set is shared across
+// calls within one Analyze pass so each package contributes once and
+// any import cycle terminates. Errors during transitive analysis are
+// recorded as warnings on richAST so the caller can decide whether to
+// hard-fail at Transform time.
+//
+// The cached entry returned from analyzePackage is an OwnView (own
+// types only); transitive metadata is reconstructed here by walking
+// `cached.Packages`. That replaces the previous design where every
+// cached entry baked in its full transitive view, which made cache
+// files O(N^2) in package count and inflated peak RAM during gob
+// decode.
+//
+// `errLine` is the source line to attribute to error messages; pass 0
+// for transitive walks where no specific line applies.
+func (a *galaAnalyzer) mergeImportTransitive(path string, richAST *transpiler.RichAST, visited map[string]bool, errLine int) {
+	if visited[path] {
+		return
+	}
+	visited[path] = true
 
-			if isInternalGala || isExternalGala {
-				var relPath string
-				if isInternalGala {
-					relPath = strings.TrimPrefix(path, "martianoff/gala/")
-				} else {
-					relPath = path
-				}
+	isInternalGala := strings.HasPrefix(path, "martianoff/gala/")
+	isExternalGala := a.resolver.IsGalaPackage(path)
+	if !isInternalGala && !isExternalGala {
+		return
+	}
 
-				if cached, ok := a.analyzedPkgs[path]; ok && cached != nil {
-					richAST.Merge(cached)
-					if cached.PackageName != "" && cached.PackageName != "main" && cached.PackageName != "test" {
-						richAST.Packages[path] = cached.PackageName
-					}
-				} else if _, inProgress := a.analyzedPkgs[path]; !inProgress {
-					a.analyzedPkgs[path] = nil
-					if isExternalGala && !isInternalGala {
-						if err := a.ensureTranspiled(path); err != nil {
-							fmt.Fprintf(os.Stderr, "Warning: failed to transpile dependency %s: %v\n", path, err)
-						}
-					}
-					importedAST, err := a.analyzePackage(relPath)
-					if err == nil {
-						a.analyzedPkgs[path] = importedAST
-						richAST.Merge(importedAST)
-						if importedAST.PackageName != "" && importedAST.PackageName != "main" && importedAST.PackageName != "test" {
-							richAST.Packages[path] = importedAST.PackageName
-						} else {
-							for _, typeMeta := range importedAST.Types {
-								if typeMeta.Package != "" && typeMeta.Package != "main" && typeMeta.Package != "test" && !registry.Global.IsPreludePackage(typeMeta.Package) {
-									richAST.Packages[path] = typeMeta.Package
-									break
-								}
-							}
-						}
-					}
-				}
+	var relPath string
+	if isInternalGala {
+		relPath = strings.TrimPrefix(path, "martianoff/gala/")
+	} else {
+		relPath = path
+	}
+
+	// Track import-path map for any GALA package whose Go-side path
+	// differs (e.g. "martianoff/gala-server" vs "github.com/martianoff/gala-server").
+	if goPath := a.resolver.ResolveGoImportPath(path); goPath != "" {
+		if richAST.ImportPathMap == nil {
+			richAST.ImportPathMap = make(map[string]string)
+		}
+		richAST.ImportPathMap[path] = goPath
+	}
+
+	cached, ok := a.analyzedPkgs[path]
+	if !ok {
+		// First time — analyze. Mark in-progress to break cycles.
+		a.analyzedPkgs[path] = nil
+		if isExternalGala && !isInternalGala {
+			if err := a.ensureTranspiled(path); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to transpile dependency %s: %v\n", path, err)
 			}
 		}
+		importedAST, err := a.analyzePackage(relPath)
+		if err != nil {
+			// errLine == -1 marks an internal load (std seed) where
+			// the original code silently swallowed analysis failures.
+			// Keep that contract so cross-module tests without std
+			// continue to fall back to the registry-driven resolver.
+			if errLine >= 0 {
+				warnMsg := fmt.Sprintf("failed to analyze package %s (imported at line %d): %v", relPath, errLine, err)
+				fmt.Fprintf(os.Stderr, "Warning: %s\n", warnMsg)
+				richAST.AnalysisWarnings = append(richAST.AnalysisWarnings, warnMsg)
+			}
+			return
+		}
+		cached = importedAST
+		a.analyzedPkgs[path] = cached
+	}
+	if cached == nil {
+		return
+	}
+
+	richAST.Merge(cached)
+
+	// Update richAST.Packages with the current import (path → pkg name).
+	pkgName := cached.PackageName
+	if pkgName != "" && pkgName != "main" && pkgName != "test" {
+		if richAST.Packages == nil {
+			richAST.Packages = make(map[string]string)
+		}
+		richAST.Packages[path] = pkgName
+	} else {
+		// Fallback when PackageName isn't populated on the cached entry
+		// (older cache files): scan for a non-main/test type to pull a
+		// package name out of.
+		for _, typeMeta := range cached.Types {
+			if typeMeta.Package != "" && typeMeta.Package != "main" && typeMeta.Package != "test" && !registry.Global.IsPreludePackage(typeMeta.Package) {
+				if richAST.Packages == nil {
+					richAST.Packages = make(map[string]string)
+				}
+				richAST.Packages[path] = typeMeta.Package
+				break
+			}
+		}
+	}
+
+	// Recurse into the cached entry's own imports so the merged view
+	// covers everything reachable transitively. The visited set guards
+	// against cycles and against re-merging on diamond-shaped graphs.
+	for transPath := range cached.Packages {
+		a.mergeImportTransitive(transPath, richAST, visited, 0)
 	}
 }
 
@@ -2180,12 +2173,18 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 		synthesizeTypeMetadataFromGo(pkgAST, goInfo)
 	}
 
+	// Strip transitive metadata from pkgAST before caching: callers will
+	// reconstruct the merged view on demand via mergeImportTransitive.
+	// On-disk and in-memory analyzed-package entries thus carry only
+	// what the package itself defined, not every type its imports do.
+	own := pkgAST.OwnView()
+
 	// Store in disk cache for future processes
 	if contentHash != "" && a.cache != nil {
-		a.cache.Put(relPath, contentHash, depsHash, pkgAST)
+		a.cache.Put(relPath, contentHash, depsHash, own)
 	}
 
-	return pkgAST, nil
+	return own, nil
 }
 
 // synthesizeTypeMetadataFromGo populates pkgAST.Types with TypeMetadata

@@ -203,6 +203,146 @@ func (r *RichAST) Merge(other *RichAST) {
 	}
 }
 
+// OwnView returns a copy of `r` containing only entries that belong to
+// `r.PackageName` — its own types, functions, companions, aliases, and
+// the slice of GoTypeInfo entries keyed under this package's prefix.
+// `Packages` and `ImportPathMap` are kept intact so consumers can
+// recursively chase transitive imports.
+//
+// Use this at the analyzer cache boundary: the on-disk cache file then
+// carries only the package's own metadata (KB-MB instead of tens of MB
+// for a deeply-imported package), and consumers reconstruct the merged
+// view at scan-time by walking `Packages`. The analyzer's working set
+// scales O(N) in the number of packages instead of the previous O(N^2).
+func (r *RichAST) OwnView() *RichAST {
+	if r == nil {
+		return nil
+	}
+	belongs := func(pkg string) bool {
+		// An entry is "own" when its Package field matches the
+		// RichAST's PackageName. The analyzer leaves Package empty
+		// for a few primitives — keep those too so OwnView is a
+		// no-op for entries the analyzer never tagged.
+		return pkg == r.PackageName || pkg == ""
+	}
+	out := &RichAST{
+		Tree:             r.Tree,
+		PackageName:      r.PackageName,
+		ImportAliases:    r.ImportAliases,
+		EmbedDirectives:  r.EmbedDirectives,
+		ImportPathMap:    r.ImportPathMap,
+		FilePath:         r.FilePath,
+		SourceContent:    r.SourceContent,
+		AnalysisWarnings: r.AnalysisWarnings,
+	}
+	// GoExports is keyed by package name. Keep only this package's entries
+	// (and any unkeyed/empty entries) so cached files don't duplicate
+	// every transitive package's exports.
+	if len(r.GoExports) > 0 {
+		out.GoExports = make(map[string][]string)
+		for pkg, syms := range r.GoExports {
+			if pkg == r.PackageName || pkg == "" {
+				out.GoExports[pkg] = syms
+			}
+		}
+	}
+	// GoTypeInfo entries are keyed "<pkg>.<Name>". Filter to this
+	// package's prefix; consumers recover other packages' Go type info
+	// by recursively merging cached entries from those packages.
+	if r.GoTypeInfo != nil {
+		out.GoTypeInfo = filterGoTypeInfoToPackage(r.GoTypeInfo, r.PackageName)
+	}
+	if len(r.Packages) > 0 {
+		out.Packages = make(map[string]string, len(r.Packages))
+		for k, v := range r.Packages {
+			out.Packages[k] = v
+		}
+	}
+	if len(r.Types) > 0 {
+		out.Types = make(map[string]*TypeMetadata)
+		for k, v := range r.Types {
+			if v != nil && belongs(v.Package) {
+				out.Types[k] = v
+			}
+		}
+	}
+	if len(r.Functions) > 0 {
+		out.Functions = make(map[string]*FunctionMetadata)
+		for k, v := range r.Functions {
+			if v != nil && belongs(v.Package) {
+				out.Functions[k] = v
+			}
+		}
+	}
+	if len(r.CompanionObjects) > 0 {
+		out.CompanionObjects = make(map[string]*CompanionObjectMetadata)
+		for k, v := range r.CompanionObjects {
+			if v != nil && belongs(v.Package) {
+				out.CompanionObjects[k] = v
+			}
+		}
+	}
+	if len(r.TypeAliases) > 0 {
+		// TypeAliases values are Type, not metadata with a Package
+		// field. They are package-local by construction (a sibling
+		// `type X = ...` declaration) and only land in `r` when the
+		// analyzer added them for `r.PackageName`, so keep them all.
+		out.TypeAliases = make(map[string]Type, len(r.TypeAliases))
+		for k, v := range r.TypeAliases {
+			out.TypeAliases[k] = v
+		}
+	}
+	return out
+}
+
+// filterGoTypeInfoToPackage returns a copy of `g` containing only the
+// Functions/Types/Variables/Constants/TypeAliases keyed by entries
+// whose qualified name starts with `pkgName.`. Used by RichAST.OwnView
+// at the analyzer cache boundary; consumers reassemble the merged view
+// by chasing transitive imports.
+func filterGoTypeInfoToPackage(g *GoTypeInfo, pkgName string) *GoTypeInfo {
+	if g == nil {
+		return nil
+	}
+	prefix := pkgName + "."
+	keep := func(k string) bool {
+		// pkgName == "" or "main"/"test" packages may have empty prefix;
+		// fall back to "no prefix filter" so the analyzer's invariants
+		// don't change for those edge cases.
+		if pkgName == "" || pkgName == "main" || pkgName == "test" {
+			return true
+		}
+		return strings.HasPrefix(k, prefix)
+	}
+	out := NewGoTypeInfo()
+	for k, v := range g.Functions {
+		if keep(k) {
+			out.Functions[k] = v
+		}
+	}
+	for k, v := range g.Types {
+		if keep(k) {
+			out.Types[k] = v
+		}
+	}
+	for k, v := range g.Variables {
+		if keep(k) {
+			out.Variables[k] = v
+		}
+	}
+	for k, v := range g.Constants {
+		if keep(k) {
+			out.Constants[k] = v
+		}
+	}
+	for k, v := range g.TypeAliases {
+		if keep(k) {
+			out.TypeAliases[k] = v
+		}
+	}
+	return out
+}
+
 type TypeMetadata struct {
 	Name                 string
 	Package              string
