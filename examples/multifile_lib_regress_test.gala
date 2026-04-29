@@ -216,4 +216,25 @@ func main() {
     Println(multifile_lib_regress.DescribeAppMsg(multifile_lib_regress.ToAppMsg(chunkEv)))
     Println(multifile_lib_regress.DescribeAppMsg(multifile_lib_regress.ToAppMsg(endOkEv)))
     Println(multifile_lib_regress.DescribeAppMsg(multifile_lib_regress.ToAppMsg(endErrEv)))
+
+    // --- Regression: match subject is a direct method-call expression
+    // returning a sealed-type element (`arr.Get(N) match`). Cross-package
+    // batch mode previously typed the IIFE param as the receiver
+    // (Array[Directive]) rather than the method's return type (Directive).
+    Println(multifile_lib_regress.DescribeFirstDirective())
+    Println(multifile_lib_regress.DescribeFirstDirectiveVal())
+    Println(multifile_lib_regress.DescribeFirstDirectiveVar())
+
+    // --- Regression: chained `arr.Get(N).Field` where Field is Option[string]
+    // — the match-IIFE param must be Option[string], not Option[any].
+    Println(multifile_lib_regress.DescribeFirstTargetModel())
+    Println(multifile_lib_regress.DescribeFirstTargetModelVar())
+
+    // Generic-returning enclosing function: IIFE param must be the element
+    // type Directive, not the receiver Array.
+    Println(multifile_lib_regress.DescribeWithMatchInGeneric())
+
+    // Original report shape: val from .Get(N), match with wildcard arm,
+    // result stored in another val.
+    Println(multifile_lib_regress.MatchOnValAndStore())
 }

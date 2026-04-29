@@ -289,3 +289,116 @@ func CloseAllMembers(members HashMap[string, Member]) Array[string] {
     })
     return failures.Sorted()
 }
+
+// --- Regression: match subject is a direct method-call expression
+// (`arr.Get(0) match { ... }`) on a sealed-type element, with no
+// intermediate val. Without the fix, the match-IIFE was typed against
+// the receiver `Array[Directive]` instead of the element type
+// `Directive`, producing Go errors like
+//   cannot use obj (variable of struct type Array[Directive]) as Directive
+// in argument to <Variant>{}.Unapply.
+//
+// Cross-package mode is required to surface the bug — single-file
+// transpilation already typed the call correctly; the bug only fires
+// when `Array.Get(...)` is resolved through batch metadata.
+sealed type Directive {
+    case DispatchCmd(Name string, Args int)
+    case SkipCmd()
+    case StopCmd()
+}
+
+func ParseDirectives() Array[Directive] =
+    ArrayOf[Directive](DispatchCmd("go", 1), SkipCmd())
+
+// Direct method-call match subject (no val binding).
+func DescribeFirstDirective() string = ParseDirectives().Get(0) match {
+    case DispatchCmd(name, _) => s"dispatch:$name"
+    case SkipCmd()            => "skip"
+    case StopCmd()            => "stop"
+}
+
+// Match assigned to a val (IIFE wrapped in NewImmutable). Match subject is
+// a direct method-call expression on a cross-package Array. Enclosing
+// function has a non-generic return — exercises the case shape.
+func DescribeFirstDirectiveVar() string {
+    val description = ParseDirectives().Get(0) match {
+        case DispatchCmd(name, _) => s"dispatch:$name"
+        case SkipCmd()            => "skip"
+        case StopCmd()            => "stop"
+    }
+    return description
+}
+
+// Same shape as battle-test report: val firstD = dirs.Get(0); firstD match.
+// This must compile WITHOUT an explicit `Directive` annotation.
+func DescribeFirstDirectiveVal() string {
+    val dirs   = ParseDirectives()
+    val firstD = dirs.Get(0)
+    return firstD match {
+        case DispatchCmd(name, _) => s"dispatch:$name"
+        case SkipCmd()            => "skip"
+        case StopCmd()            => "stop"
+    }
+}
+
+// --- Regression: chained `arr.Get(N).Field` field access where the field
+// is a generic type (e.g., `Option[string]`). The match-IIFE param must be
+// `Option[string]`, not `Option[any]`.
+struct DirectiveTarget(Model Option[string])
+
+func TargetsList() Array[DirectiveTarget] =
+    ArrayOf[DirectiveTarget](
+        DirectiveTarget(Model = Some("alpha")),
+        DirectiveTarget(Model = None[string]()),
+    )
+
+func DescribeFirstTargetModel() string = TargetsList().Get(0).Model match {
+    case Some(m) => s"model:$m"
+    case None()  => "no-model"
+}
+
+// Same shape with a val binding to the chained accessor result. The val
+// (`m0`) takes the inferred Option[string] type without explicit annotation.
+func DescribeFirstTargetModelVar() string {
+    val m0 = TargetsList().Get(0).Model
+    return m0 match {
+        case Some(m) => s"model:$m"
+        case None()  => "no-model"
+    }
+}
+
+// Generic-returning enclosing function: the IIFE result type unifies with
+// the enclosing return type T. The match subject is a direct method call
+// on a cross-package Array — the IIFE's `obj` parameter must take the
+// element type, not the receiver Array type. Mirrors the original report
+// shape `func(obj Array[Directive]) T`.
+func MatchInGeneric[T any](dirs Array[Directive], whenDispatch func(string) T, whenSkip T, whenStop T) T {
+    return dirs.Get(0) match {
+        case DispatchCmd(name, _) => whenDispatch(name)
+        case SkipCmd()            => whenSkip
+        case StopCmd()            => whenStop
+    }
+}
+
+// Original report shape: `val firstD = dirs.Get(0); firstD match { ... case _ => ...}`
+// where the match is wrapped in NewImmutable and the result is assigned to
+// another val. Without explicit annotation, firstD must take the element
+// type Directive — not Array[Directive].
+func MatchOnValAndStore() string {
+    val dirs   = ParseDirectives()
+    val firstD = dirs.Get(0)
+    val label = firstD match {
+        case DispatchCmd(name, _) => s"dispatch:$name"
+        case _                    => "other"
+    }
+    return label
+}
+
+func DescribeWithMatchInGeneric() string {
+    return MatchInGeneric[string](
+        ParseDirectives(),
+        (n) => s"dispatch:$n",
+        "skip",
+        "stop",
+    )
+}

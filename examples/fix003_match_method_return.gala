@@ -1,0 +1,37 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+sealed type Directive {
+    case DispatchCmd(Name string, Args int)
+    case SkipCmd()
+    case StopCmd()
+}
+
+func Parse() Array[Directive] = ArrayOf[Directive](DispatchCmd("go", 1), SkipCmd())
+
+// Direct method-call match subject — `dirs.Get(0) match` should type the
+// match-IIFE param as Directive (the method's return type), not as the
+// receiver Array[Directive].
+func describe() string = Parse().Get(0) match {
+    case DispatchCmd(name, _) => s"dispatch:$name"
+    case SkipCmd()            => "skip"
+    case StopCmd()            => "stop"
+}
+
+// Val-bound shape — `firstD match` (where firstD is a typed val) — also
+// should type the IIFE param as Directive without explicit annotation.
+func describeVal() string {
+    val dirs   = Parse()
+    val firstD = dirs.Get(0)
+    return firstD match {
+        case DispatchCmd(name, _) => s"dispatch:$name"
+        case SkipCmd()            => "skip"
+        case StopCmd()            => "stop"
+    }
+}
+
+func main() {
+    Println(describe())
+    Println(describeVal())
+}

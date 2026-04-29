@@ -55,3 +55,10 @@ shadow-marker
 chunk[topic]=first line
 end[topic] ok
 end[topic] err=boom
+dispatch:go
+dispatch:go
+dispatch:go
+model:alpha
+model:alpha
+dispatch:go
+dispatch:go

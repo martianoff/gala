@@ -1035,6 +1035,17 @@ gala_test(
     deps = ["//collection_immutable"],
 )
 
+# Regression: match subject is a direct method-call expression returning a
+# sealed-type element (`arr.Get(N) match { ... }`). The match-IIFE param
+# must take the method's return type (the element type), not the receiver
+# Array type. Battle-test report from gala_team consult dispatch.
+gala_test(
+    name = "fix003_match_method_return",
+    src = "fix003_match_method_return.gala",
+    expected = "fix003_match_method_return.out",
+    deps = ["//collection_immutable"],
+)
+
 gala_test(
     name = "match_void_pointer_arg",
     src = "match_void_pointer_arg.gala",
