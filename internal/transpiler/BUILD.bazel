@@ -1,4 +1,4 @@
-load("@rules_go//go:def.bzl", "go_library")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "transpiler",
@@ -15,4 +15,10 @@ go_library(
         "//internal/transpiler/profiler",
         "@com_github_antlr4_go_antlr_v4//:antlr",
     ],
+)
+
+go_test(
+    name = "merge_test",
+    srcs = ["merge_test.go"],
+    embed = [":transpiler"],
 )

@@ -78,16 +78,15 @@ type RichAST struct {
 
 // Merge combines metadata from another RichAST into this one.
 //
-// IMPORTANT: this is NOT a pure read on `other`. Merge stores `other`'s
-// TypeMetadata pointers directly into r.Types (no copy), and when a key
-// exists in both `r` and `other`, it writes back into the shared
-// TypeMetadata's Methods map. The implication for callers: a RichAST
-// produced by Analyze() is *not* safe to share (e.g., as a pre-loaded
-// std cache) across goroutines that then call Merge against their own
-// richASTs — the merges race on the shared Methods/Fields/etc. and will
-// corrupt the source. Either deep-clone before sharing, or guard with
-// a mutex. See the LSP perf branch (518bd98) for the failed shared-std
-// experiment that hit this.
+// Pure read on `other`. When a key collides we copy `existing` before
+// adding fields/methods, so neither `r` nor `other` ever observes a
+// `TypeMetadata` mutation made on behalf of a third RichAST. Without
+// the copy-on-write, repeated cross-package merges mutate cached
+// `TypeMetadata.Methods` maps in place — which (a) races across
+// concurrent analyses and (b) inflates each on-disk cache entry with
+// methods accumulated from every package that ever transited the
+// shared pointer (gala_team's app/cli cache reached 4.3 GB before the
+// fix landed).
 func (r *RichAST) Merge(other *RichAST) {
 	if other == nil {
 		return
@@ -105,32 +104,55 @@ func (r *RichAST) Merge(other *RichAST) {
 		r.CompanionObjects = make(map[string]*CompanionObjectMetadata)
 	}
 	for k, v := range other.Types {
-		if existing, ok := r.Types[k]; ok {
-			// Merge methods so methods defined across multiple files
-			// in the same package are all preserved.
-			if existing.Methods == nil {
-				existing.Methods = make(map[string]*MethodMetadata)
-			}
-			for methodName, methodMeta := range v.Methods {
-				existing.Methods[methodName] = methodMeta
-			}
-			// Update fields if incoming has them and existing doesn't
-			if len(v.FieldNames) > 0 && len(existing.FieldNames) == 0 {
-				existing.Fields = v.Fields
-				existing.FieldNames = v.FieldNames
-				existing.ImmutFlags = v.ImmutFlags
-			}
-			if len(v.TypeParams) > 0 && len(existing.TypeParams) == 0 {
-				existing.TypeParams = v.TypeParams
-				existing.TypeParamConstraints = v.TypeParamConstraints
-			}
-			if v.IsSealed {
-				existing.IsSealed = v.IsSealed
-				existing.SealedVariants = v.SealedVariants
-			}
-		} else {
+		existing, ok := r.Types[k]
+		if !ok {
 			r.Types[k] = v
+			continue
 		}
+		// Decide whether `existing` needs any change. If `v` brings no
+		// new methods, fields, type-params, or sealed-variant info, the
+		// existing pointer can stand as-is.
+		methodsToAdd := 0
+		for mn := range v.Methods {
+			if _, present := existing.Methods[mn]; !present {
+				methodsToAdd++
+			}
+		}
+		fieldsNeeded := len(v.FieldNames) > 0 && len(existing.FieldNames) == 0
+		typeParamsNeeded := len(v.TypeParams) > 0 && len(existing.TypeParams) == 0
+		sealedNeeded := v.IsSealed && !existing.IsSealed
+		if methodsToAdd == 0 && !fieldsNeeded && !typeParamsNeeded && !sealedNeeded {
+			continue
+		}
+		// Copy-on-write: clone `existing` so we never mutate a pointer
+		// that another RichAST (e.g. the analyzer's std cache) shares.
+		copied := *existing
+		if methodsToAdd > 0 {
+			merged := make(map[string]*MethodMetadata, len(existing.Methods)+methodsToAdd)
+			for mn, mm := range existing.Methods {
+				merged[mn] = mm
+			}
+			for mn, mm := range v.Methods {
+				if _, present := merged[mn]; !present {
+					merged[mn] = mm
+				}
+			}
+			copied.Methods = merged
+		}
+		if fieldsNeeded {
+			copied.Fields = v.Fields
+			copied.FieldNames = v.FieldNames
+			copied.ImmutFlags = v.ImmutFlags
+		}
+		if typeParamsNeeded {
+			copied.TypeParams = v.TypeParams
+			copied.TypeParamConstraints = v.TypeParamConstraints
+		}
+		if sealedNeeded {
+			copied.IsSealed = v.IsSealed
+			copied.SealedVariants = v.SealedVariants
+		}
+		r.Types[k] = &copied
 	}
 	for k, v := range other.Functions {
 		r.Functions[k] = v
