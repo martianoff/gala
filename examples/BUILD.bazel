@@ -44,6 +44,7 @@ filegroup(
         "multi_file_types/model.gala",
         "multifile_lib_regress/proc_pkg/proc.gala",
         "multifile_lib_regress/proc_session.gala",
+        "multifile_lib_regress/shadow_func/shadow.gala",
         "multifile_lib_regress/team_lookup.gala",
         "multipackage_subpkg/main.gala",
         "multipackage_subpkg/state/state.gala",
@@ -2146,6 +2147,18 @@ gala_library(
     visibility = ["//visibility:public"],
 )
 
+# Sibling package that intentionally exports a top-level function whose name
+# shadows the `Snapshot` struct in multifile_lib_regress. Used by the
+# multifile_lib_regress_test consumer to verify that a qualified named-arg
+# constructor (`multifile_lib_regress.Snapshot(Field = ...)`) anchors lookup
+# to the qualifier rather than silently matching the dot-imported function.
+gala_library(
+    name = "multifile_lib_regress_shadow_func",
+    srcs = ["multifile_lib_regress/shadow_func/shadow.gala"],
+    importpath = "martianoff/gala/examples/multifile_lib_regress/shadow_func",
+    visibility = ["//visibility:public"],
+)
+
 gala_library(
     name = "multifile_lib_regress",
     srcs = [
@@ -2177,6 +2190,7 @@ gala_test(
     deps = [
         ":multifile_lib_regress",
         ":multifile_lib_regress_proc_pkg",
+        ":multifile_lib_regress_shadow_func",
         "//collection_immutable",
         "//examples/go_struct_bridge",
     ],
