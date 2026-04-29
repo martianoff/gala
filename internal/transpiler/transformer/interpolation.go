@@ -130,13 +130,21 @@ func (t *galaASTTransformer) buildSprintfCall(parts []interpolationPart, isForma
 	})
 	allArgs = append(allArgs, args...)
 
-	return &ast.CallExpr{
+	call := &ast.CallExpr{
 		Fun: &ast.SelectorExpr{
 			X:   ast.NewIdent("fmt"),
 			Sel: ast.NewIdent("Sprintf"),
 		},
 		Args: allArgs,
-	}, nil
+	}
+	// Tag the resulting CallExpr with type `string` so downstream type
+	// inference (getExprTypeNameManual / getExprTypeName) recognises it
+	// without re-deriving the return type from `fmt.Sprintf`. Without this,
+	// when the Go SDK is unavailable for type info, an if-expression whose
+	// arms are s-string interpolations would widen its IIFE return type to
+	// `func() any` and break callers that expect a concrete `string`.
+	t.exprTypeCache[call] = transpiler.BasicType{Name: "string"}
+	return call, nil
 }
 
 // parseAndTransformExpr parses a GALA expression string and transforms it to Go AST.

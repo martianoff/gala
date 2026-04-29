@@ -239,4 +239,12 @@ func main() {
     Println(handler(Success[multifile_lib_regress.WireMsg](multifile_lib_regress.WireChunk(Index = 1, Line = "hi"))))
     Println(handler(Success[multifile_lib_regress.WireMsg](multifile_lib_regress.WireSessionFailed(Index = 2, Err = "x"))))
     Println(handler(Success[multifile_lib_regress.WireMsg](multifile_lib_regress.WireOther())))
+
+    // --- Regression: if-expression in var-initialiser whose arms are both
+    // s-string interpolations must lower to `func() string`, not
+    // `func() any`. Otherwise the call to TextStyled (which takes a
+    // concrete `string` first param) rejects the `any` value with
+    // "cannot use ... as string".
+    Println(multifile_lib_regress.RenderRow(true, "G", "alice"))
+    Println(multifile_lib_regress.RenderRow(false, "g", "bob"))
 }

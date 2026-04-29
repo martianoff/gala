@@ -334,3 +334,22 @@ func MakeWireHandler() func(Try[WireMsg]) string {
         case _ => "other"
     }
 }
+
+// --- Regression: if-expression with both arms producing s-string
+// interpolations must lower to `func() string { ... }()`, not
+// `func() any { ... }()`. The if-expression sits in `var` initialiser
+// position (not a return), which exercises the IIFE-typing fallback
+// path. The lowered `fmt.Sprintf` CallExpr's return type was not
+// recognised as `string` by the per-branch type oracle, so the IIFE
+// widened to `func() any` and the consumer of `label` (here
+// TextStyled, which expects a concrete `string`) failed to compile.
+struct LabelStyle(Color string)
+
+func TextStyled(label string, style LabelStyle) string =
+    s"[${style.Color}] $label"
+
+func RenderRow(isCursor bool, glyph string, name string) string {
+    val label = if (isCursor) s">> $glyph $name" else s"   $glyph $name"
+    val style = LabelStyle(Color = "blue")
+    return TextStyled(label, style)
+}

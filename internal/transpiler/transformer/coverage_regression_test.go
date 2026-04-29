@@ -163,6 +163,44 @@ func main() {
 		"expected tuple access to auto-unwrap the Immutable val binding via .Get() before projecting V1")
 }
 
+// TestIfExpressionStringInterpolationIIFEReturnType pins the regression
+// where an if-expression whose arms were s-string interpolations lowered
+// to `func() any { ... }()` instead of `func() string { ... }()`.
+//
+// The bug: the per-branch type oracle used by transformIfExpression's
+// IIFE-typing fallback could not always reach inside the lowered
+// `fmt.Sprintf(...)` CallExpr to recover its `string` return type
+// (e.g. when the Go SDK was unavailable for type info, falling back
+// to the universal `any` widening). The fix tags every Sprintf call
+// produced by buildSprintfCall with type `string` so the per-branch
+// oracle resolves it without re-deriving the return type from `fmt`.
+//
+// Verifies the IIFE wrapper for an if-expression whose arms are s-string
+// interpolations is `func() string`, not `func() any`.
+func TestIfExpressionStringInterpolationIIFEReturnType(t *testing.T) {
+	trans := newTranspiler()
+	input := `package main
+
+func makeLabel(use bool, name string) string {
+    val label = if (use) s">> $name" else s"-- $name"
+    return label
+}
+
+func main() {
+    _ = makeLabel(true, "alice")
+}`
+	out, err := trans.Transpile(input, "")
+	require.NoError(t, err)
+	// The if-expression IIFE wrapper must be typed as `func() string`,
+	// not `func() any` — otherwise downstream consumers expecting a
+	// concrete `string` (e.g. `NewImmutable[string]`) would reject the
+	// `any` value with "need type assertion".
+	assert.Contains(t, out, "func() string {",
+		"expected if-expression IIFE wrapper to be func() string for s-string interpolation arms")
+	assert.NotContains(t, out, "func() any {",
+		"if-expression IIFE wrapper must not widen to func() any when both arms are string-interpolation s-strings")
+}
+
 // firstSprintf returns the first fmt.Sprintf(...) call from generated
 // Go, or the full string if none found. Used by T5 to narrow the
 // assertion window to the interpolation-generated call site.
