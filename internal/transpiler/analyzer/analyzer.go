@@ -1734,6 +1734,9 @@ func (a *galaAnalyzer) mergeImportTransitive(path string, richAST *transpiler.Ri
 		return
 	}
 	visited[path] = true
+	if os.Getenv("GALA_DEBUG_MERGE") == "1" {
+		fmt.Fprintf(os.Stderr, "[merge] path=%s richAST.PackageName=%s\n", path, richAST.PackageName)
+	}
 
 	isInternalGala := strings.HasPrefix(path, "martianoff/gala/")
 	isExternalGala := a.resolver.IsGalaPackage(path)
@@ -1787,6 +1790,10 @@ func (a *galaAnalyzer) mergeImportTransitive(path string, richAST *transpiler.Ri
 	}
 
 	richAST.Merge(cached)
+	if os.Getenv("GALA_DEBUG_MERGE") == "1" {
+		fmt.Fprintf(os.Stderr, "[merge]   merged %s: %d types, %d functions, %d transitives in cached.Packages\n",
+			path, len(cached.Types), len(cached.Functions), len(cached.Packages))
+	}
 
 	// Update richAST.Packages with the current import (path → pkg name).
 	pkgName := cached.PackageName
@@ -2178,6 +2185,10 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 	// On-disk and in-memory analyzed-package entries thus carry only
 	// what the package itself defined, not every type its imports do.
 	own := pkgAST.OwnView()
+	if os.Getenv("GALA_DEBUG_MERGE") == "1" {
+		fmt.Fprintf(os.Stderr, "[ownview] %s: pkg=%d→own=%d types, %d→%d functions, %d packages\n",
+			relPath, len(pkgAST.Types), len(own.Types), len(pkgAST.Functions), len(own.Functions), len(own.Packages))
+	}
 
 	// Store in disk cache for future processes
 	if contentHash != "" && a.cache != nil {

@@ -33,6 +33,12 @@ jobs:
       - name: Build
         run: |
           echo "GOROOT=$GOROOT"
+          bazel build //bazel_test_fixtures/external_gala_module/effects:effects --action_env=GOROOT="$GOROOT" --action_env=PATH --action_env=GALA_DEBUG_MERGE=1 --verbose_failures 2>&1 | tee /tmp/effects_build.log || true
+          echo "--- relevant log lines ---"
+          grep -E "merge|ownview|Generated Go code|effects_0.gen.go" /tmp/effects_build.log | head -100 || true
+          echo "--- generated effects_0.gen.go ---"
+          cat bazel-out/k8-fastbuild/bin/bazel_test_fixtures/external_gala_module/effects/effects_0.gen.go 2>/dev/null | head -120 || true
+          echo "---"
           bazel build //... --action_env=GOROOT="$GOROOT" --action_env=PATH
 
       - name: Test
