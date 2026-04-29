@@ -1,0 +1,33 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// Verifies that empty generic-collection literals (`EmptyArray[T]()`,
+// `EmptyHashMap[K,V]()`, `EmptyList[T]()`) supplied as parameter defaults
+// are filled in at call sites that omit the argument. Prior to the fix the
+// emitter only recognised primitive scalar literals as defaults; collection
+// literals were silently dropped, so the call site `makeRow("alpha")` was
+// emitted as `makeRow("alpha")` (one positional arg) and the Go compiler
+// rejected it with `not enough arguments in call to makeRow`.
+
+struct Row(Name string, Tags Array[string], Attrs HashMap[string, string])
+
+func makeRow(
+    name string,
+    tags Array[string] = EmptyArray[string](),
+    attrs HashMap[string, string] = EmptyHashMap[string, string](),
+) Row = Row(Name = name, Tags = tags, Attrs = attrs)
+
+func main() {
+    // All defaults: omit both collection-typed args.
+    val r1 = makeRow("alpha")
+    Println(s"r1: ${r1.Name} tags=${r1.Tags.Length()} attrs=${r1.Attrs.Size()}")
+
+    // Override the first default, leave the second.
+    val r2 = makeRow("beta", ArrayOf("a", "b"))
+    Println(s"r2: ${r2.Name} tags=${r2.Tags.Length()} attrs=${r2.Attrs.Size()}")
+
+    // Override both.
+    val r3 = makeRow("gamma", ArrayOf("x"), EmptyHashMap[string, string]().Put("k", "v"))
+    Println(s"r3: ${r3.Name} tags=${r3.Tags.Length()} attrs=${r3.Attrs.Size()}")
+}
