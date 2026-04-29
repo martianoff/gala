@@ -1,0 +1,27 @@
+package proc_pkg
+
+import "errors"
+
+// Sealed type whose ConsultEnd case carries an Option[error] field. This
+// mirrors the original failing report (see issue #290): a sealed-type case
+// constructed in a sibling package that holds Option[T] / Try[T], so that
+// the pattern-bound name in a consumer file points at a generic value
+// whose receiver-package metadata is not local.
+
+sealed type ConsultEvent {
+    case ConsultChunk(Name string, Line string)
+    case ConsultEnd(Name string, Err Option[error])
+}
+
+// Constructors that build sample values from the cross-package side. The
+// consumer pattern-matches on these and chains .Map on the Option[error]
+// field — without the fix, the Map lambda's body type erases to `any`.
+
+func MakeChunk(name string, line string) ConsultEvent =
+    ConsultChunk(Name = name, Line = line)
+
+func MakeEndOk(name string) ConsultEvent =
+    ConsultEnd(Name = name, Err = None[error]())
+
+func MakeEndErr(name string, msg string) ConsultEvent =
+    ConsultEnd(Name = name, Err = Some(errors.New(msg)))
