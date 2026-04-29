@@ -1,5 +1,12 @@
 package effects
 
+// Cross-package symbols (Array, ArrayTabulate from the stdlib's
+// collection_immutable) require an explicit import in this file —
+// sibling files' imports do not propagate (GALA-E0023). The dot
+// import here brings them into scope unqualified, matching the form
+// widget.gala uses.
+import . "martianoff/gala/collection_immutable"
+
 // Sealed type with a zero-field case and a fielded case. A consumer
 // importing this from a separately declared Bazel module must lower
 // constructor calls as Halt[T]{}.Apply() and Yield[T]{}.Apply(arg)

@@ -190,6 +190,14 @@ const (
 	// not know how to handle. Indicates a transpiler bug rather than user
 	// error; the user is asked to file an issue with the snippet.
 	CodeInternalInferenceFailure ErrorCode = "GALA-E0024"
+
+	// E0025: a type or function name was used unqualified but does not
+	// resolve through the file's explicit imports, dot imports, std
+	// prelude, or the current package's siblings. GALA mirrors Go's
+	// rule: cross-package symbols require an explicit `import "..."`
+	// (or `import . "..."`) in the file that uses them. Sibling files'
+	// imports do not propagate.
+	CodeUnresolvedCrossPackageSymbol ErrorCode = "GALA-E0025"
 )
 
 // MultiError collects multiple GALA errors.
