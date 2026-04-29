@@ -2265,15 +2265,43 @@ func synthesizeTypeMetadataFromGo(pkgAST *transpiler.RichAST, goInfo *transpiler
 			sort.Strings(fieldNames)
 		}
 
+		// Derive ImmutFlags from each field type: a field whose Go type is
+		// std.Immutable[T] (the wrapper produced by GALA codegen for `val`
+		// struct fields) must be flagged immutable so downstream auto-unwrap
+		// in comparisons like `t.Field == x` inserts the required `.Get()`.
+		// Without this, cross-package access through a Go-only metadata
+		// source emits `Immutable[T] == T` and Go rejects the comparison.
+		immutFlags := make([]bool, len(fieldNames))
+		for i, fName := range fieldNames {
+			if fType, ok := td.Fields[fName]; ok && isGoFieldImmutable(fType) {
+				immutFlags[i] = true
+			}
+		}
+
 		pkgAST.Types[qualName] = &transpiler.TypeMetadata{
 			Name:       simpleName,
 			Package:    pkgName,
 			Methods:    methods,
 			Fields:     td.Fields,
 			FieldNames: fieldNames,
+			ImmutFlags: immutFlags,
 			TypeParams: td.TypeParams,
 		}
 	}
+}
+
+// isGoFieldImmutable reports whether a field type extracted from a Go
+// source is std.Immutable[T] — i.e. the wrapper that GALA codegen emits
+// for `val` (immutable) struct fields. Used by synthesizeTypeMetadataFromGo
+// to populate ImmutFlags so downstream auto-unwrap fires on cross-package
+// access of types whose only metadata source is the generated .gen.go.
+func isGoFieldImmutable(typ transpiler.Type) bool {
+	if typ == nil || typ.IsNil() {
+		return false
+	}
+	base := typ.BaseName()
+	return base == transpiler.TypeImmutable ||
+		strings.HasSuffix(base, "."+transpiler.TypeImmutable)
 }
 
 // hasTypeDefinition returns true if the TypeMetadata represents a full type definition

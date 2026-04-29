@@ -1,0 +1,5 @@
+package team_pkg
+
+// Team is a simple struct used to verify cross-package struct field
+// auto-unwrap in equality comparisons (see team_lookup.gala).
+struct Team(val Key string, val Name string)
