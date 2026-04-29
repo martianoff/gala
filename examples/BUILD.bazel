@@ -254,6 +254,14 @@ gala_test(
     expected = "fix_006_three_tuple_return.out",
 )
 
+# Verifies that multi-line tuple literals with trailing commas parse when used
+# as match arm bodies (Elm-style update functions returning (model, cmd)).
+gala_test(
+    name = "fix004_repro",
+    src = "fix004_repro.gala",
+    expected = "fix004_repro.out",
+)
+
 gala_test(
     name = "fix007_repro",
     src = "fix007_repro.gala",

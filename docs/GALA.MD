@@ -197,7 +197,7 @@ struct Cookie(
 )
 ```
 
-Trailing commas are optional — single-line parameter lists work with or without them. This also applies to sealed type case fields.
+Trailing commas are optional — single-line parameter lists work with or without them. This also applies to sealed type case fields, function call arguments, and tuple literals (e.g. `(model, cmd,)`), so a multi-line tuple body in a `match` arm parses cleanly.
 
 ### Named Arguments
 

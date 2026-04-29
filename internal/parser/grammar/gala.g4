@@ -173,9 +173,16 @@ argument: (identifier '=')? (lambdaExpression | pattern);
 primary
     : identifier
     | literal
-    | '(' expressionList? ')'
+    | '(' tupleExpressionList? ')'
     | compositeLiteral
     ;
+
+// Parenthesized tuple/grouping expressions allow an optional trailing comma so
+// multi-line tuple literals (Elm-style `(model, cmd,)`) parse cleanly. Kept
+// separate from `expressionList`, which is used in statement positions
+// (assignments, short var decls, val declarations) where a trailing comma
+// would be a syntax error in the surrounding production.
+tupleExpressionList: expression (',' expression)* ','?;
 
 compositeLiteral: type ('{' (elementList ','?)? '}');
 elementList: keyedElement (',' keyedElement)*;

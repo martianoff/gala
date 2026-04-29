@@ -63,8 +63,8 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 
 	// Tuple pattern with parentheses syntax: (a, b, c) => Tuple3(a, b, c)
 	if p := t.getPrimaryFromExpression(patExprCtx); p != nil {
-		if exprList := p.ExpressionList(); exprList != nil {
-			if el, ok := exprList.(*grammar.ExpressionListContext); ok {
+		if exprList := p.TupleExpressionList(); exprList != nil {
+			if el, ok := exprList.(*grammar.TupleExpressionListContext); ok {
 				exprs := el.AllExpression()
 				if len(exprs) >= 2 {
 					// This is a tuple pattern (a, b, c) - transform to TupleN pattern
