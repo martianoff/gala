@@ -68,8 +68,20 @@ type galaAnalyzer struct {
 	resolver            *module.Resolver               // Handles module root discovery and package path resolution
 	currentRichAST      *transpiler.RichAST            // Set during Analyze() for cross-reference in resolveTypeWithParams
 	currentDotImportPkgs map[string]bool                // Package names that are dot-imported in the current file
+	currentNamedImportPkgs map[string]bool              // Package names imported with a non-dot import in the current file (e.g. `import "pkg/x"` or `import al "pkg/x"`)
+	currentExplicitImportPaths map[string]bool          // Full GALA import paths the current file declared (covers BOTH dot and named imports — used to scope unresolved-symbol errors to symbols that *should* have been imported)
 	analyzeDepth int                                    // recursion depth for profiling
 	cache        *analysisCache                         // disk-based package analysis cache
+
+	// pendingResolveErrors collects GALA-E0025 errors for unqualified
+	// names that don't resolve through the current file's explicit
+	// imports + std prelude + current package. Drained at the end of
+	// each top-level Analyze (analyzeDepth == 1) so the user gets a
+	// concrete error rather than the previous silent "default to
+	// current package" mis-qualification. Never carries across
+	// recursive analyzePackage boundaries — each sibling/dependency
+	// analysis collects its own list.
+	pendingResolveErrors []*galaerr.SemanticError
 
 	// P1 (perf): per-analyzer in-memory cache of parsed sibling ASTs.
 	// Key is the canonical directory path; value holds the trees and paths
@@ -619,6 +631,26 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 	}
 	// std is always implicitly dot-imported
 	dotImportPkgs[registry.StdPackageName] = true
+
+	// Build the THIS-FILE explicit-import package set (path → pkgName).
+	// Used by the unresolved-cross-package validation pass after analysis:
+	// a name like `Array` that resolves to `collection_immutable.Array` is
+	// only accepted if *this file* explicitly imported
+	// `martianoff/gala/collection_immutable` (dot or named). Sibling
+	// imports do NOT propagate — that's the GALA-E0025 contract.
+	explicitImportPkgs := make(map[string]bool)
+	explicitImportPkgs[registry.StdPackageName] = true // std prelude
+	explicitImportPkgs[pkgName] = true                 // self
+	for _, impDecl := range sourceFile.AllImportDeclaration() {
+		ctx := impDecl.(*grammar.ImportDeclarationContext)
+		for _, spec := range ctx.AllImportSpec() {
+			s := spec.(*grammar.ImportSpecContext)
+			path := strings.Trim(s.STRING().GetText(), "\"")
+			if pname, ok := richAST.Packages[path]; ok && pname != "" {
+				explicitImportPkgs[pname] = true
+			}
+		}
+	}
 
 	// Set currentRichAST and dot-import tracking so resolveTypeWithParams can check
 	// already-known types (from dot-imported packages) before blindly qualifying with
@@ -1203,12 +1235,151 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 		}
 	}
 
+	// GALA-E0025: enforce explicit cross-package imports in this file.
+	// We've finished collecting metadata for THIS file's own types and
+	// functions (extractSiblingFullMetadata earlier did the siblings).
+	// Now walk this file's entries and check that every NamedType /
+	// GenericType referenced by a signature points to a package that
+	// the file itself imported (or std, or this package's own name).
+	// If not, that's the auto-import fallback we used to silently
+	// take — fail loud so users get a clear "add the import" message.
+	if isTopLevel {
+		canonFile, _ := filepath.Abs(filePath)
+		if real, err := filepath.EvalSymlinks(canonFile); err == nil {
+			canonFile = real
+		}
+		// Build the set of *known GALA package names* that appear as
+		// values in richAST.Packages — those are the only packages we
+		// validate against. Anything else is either a Go-side import
+		// (validated separately by the Go compiler) or a typo we
+		// can't usefully diagnose at this layer.
+		knownGalaPkgs := make(map[string]bool, len(richAST.Packages))
+		for _, name := range richAST.Packages {
+			if name != "" {
+				knownGalaPkgs[name] = true
+			}
+		}
+		if errs := validateExplicitImports(richAST, canonFile, explicitImportPkgs, knownGalaPkgs); len(errs) > 0 {
+			return nil, errs[0]
+		}
+	}
+
 	logPhase("finalize", phaseStart)
 	if profiler.Enabled && isTopLevel {
 		fmt.Fprintf(os.Stderr, "  [analyze] %-35s %s\n", "TOTAL", time.Since(analyzeStart).Round(time.Millisecond))
 	}
 
 	return richAST, nil
+}
+
+// validateExplicitImports walks the metadata for entries defined in
+// `canonFile` and reports any NamedType reference whose Package isn't
+// in `explicit`. The check covers function signatures (params + return
+// types) and struct field types — every place where the analyzer
+// previously fell back to "default to current package" qualification
+// when a bare name didn't resolve. Mirrors Go's compile-time rule that
+// every cross-package symbol needs an explicit import in the file
+// using it.
+func validateExplicitImports(richAST *transpiler.RichAST, canonFile string, explicit, knownGala map[string]bool) []*galaerr.SemanticError {
+	var errs []*galaerr.SemanticError
+	isThisFile := func(p string) bool {
+		if p == "" {
+			return false
+		}
+		abs, _ := filepath.Abs(p)
+		if real, err := filepath.EvalSymlinks(abs); err == nil {
+			abs = real
+		}
+		return abs == canonFile
+	}
+	check := func(t transpiler.Type, pos transpiler.SourcePos, ctxName string) {
+		walkTypeForUnresolvedPackages(t, explicit, knownGala, &errs, pos, ctxName)
+	}
+	for fname, fm := range richAST.Functions {
+		if fm == nil || !isThisFile(fm.DefinedIn) {
+			continue
+		}
+		for _, pt := range fm.ParamTypes {
+			check(pt, fm.Pos, fname)
+		}
+		if fm.ReturnType != nil {
+			check(fm.ReturnType, fm.Pos, fname)
+		}
+	}
+	for tname, tm := range richAST.Types {
+		if tm == nil || !isThisFile(tm.DefinedIn) {
+			continue
+		}
+		for _, ft := range tm.Fields {
+			check(ft, tm.Pos, tname)
+		}
+		// Methods on this type are themselves "function-like" — verify
+		// their signatures too.
+		for mname, mm := range tm.Methods {
+			if mm == nil {
+				continue
+			}
+			for _, pt := range mm.ParamTypes {
+				check(pt, mm.Pos, tname+"."+mname)
+			}
+			if mm.ReturnType != nil {
+				check(mm.ReturnType, mm.Pos, tname+"."+mname)
+			}
+		}
+		// Sealed variants — each variant's field types
+		for _, sv := range tm.SealedVariants {
+			for _, ft := range sv.FieldTypes {
+				check(ft, sv.Pos, tname+"."+sv.Name)
+			}
+		}
+	}
+	return errs
+}
+
+// walkTypeForUnresolvedPackages recursively descends a transpiler.Type
+// looking for NamedType nodes whose Package is a known GALA package
+// but isn't in `explicit`. Each such reference becomes a coded error
+// against CodeUnresolvedCrossPackageSymbol (GALA-E0025): GALA mirrors
+// Go's rule that every cross-package symbol needs an explicit import
+// in the file using it. Packages not in `knownGala` are treated as
+// Go-side (validated by the Go compiler) and skipped.
+func walkTypeForUnresolvedPackages(t transpiler.Type, explicit, knownGala map[string]bool, errs *[]*galaerr.SemanticError, pos transpiler.SourcePos, ctxName string) {
+	if t == nil {
+		return
+	}
+	switch tt := t.(type) {
+	case transpiler.NamedType:
+		if tt.Package != "" && !explicit[tt.Package] && knownGala[tt.Package] {
+			msg := fmt.Sprintf("undefined: %s (used in %s) — '%s' is not imported in this file",
+				tt.Name, ctxName, tt.Package)
+			hint := fmt.Sprintf(
+				"add an explicit import to this file. For unqualified usage: `import . \"<path-ending-in-%s>\"`. "+
+					"For qualified usage: `import \"<path>\"` and call it as `%s.%s`. Sibling files' imports do not propagate.",
+				tt.Package, tt.Package, tt.Name)
+			*errs = append(*errs, galaerr.NewCodedSemanticError(
+				galaerr.CodeUnresolvedCrossPackageSymbol,
+				pos.Line, pos.Column, msg, hint))
+		}
+	case transpiler.GenericType:
+		walkTypeForUnresolvedPackages(tt.Base, explicit, knownGala, errs, pos, ctxName)
+		for _, p := range tt.Params {
+			walkTypeForUnresolvedPackages(p, explicit, knownGala, errs, pos, ctxName)
+		}
+	case transpiler.ArrayType:
+		walkTypeForUnresolvedPackages(tt.Elem, explicit, knownGala, errs, pos, ctxName)
+	case transpiler.MapType:
+		walkTypeForUnresolvedPackages(tt.Key, explicit, knownGala, errs, pos, ctxName)
+		walkTypeForUnresolvedPackages(tt.Elem, explicit, knownGala, errs, pos, ctxName)
+	case transpiler.PointerType:
+		walkTypeForUnresolvedPackages(tt.Elem, explicit, knownGala, errs, pos, ctxName)
+	case transpiler.FuncType:
+		for _, pt := range tt.Params {
+			walkTypeForUnresolvedPackages(pt, explicit, knownGala, errs, pos, ctxName)
+		}
+		for _, rt := range tt.Results {
+			walkTypeForUnresolvedPackages(rt, explicit, knownGala, errs, pos, ctxName)
+		}
+	}
 }
 
 // countErrors returns the number of Error-severity warnings in the list.
