@@ -1,0 +1,25 @@
+package multifile_lib_regress
+
+import (
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/examples/multifile_lib_regress/team_pkg"
+    . "martianoff/gala/examples/multifile_lib_regress/team_pkg"
+)
+
+// --- Regression: cross-package struct field auto-unwrap in equality ---
+// FindTeamByKey is the gala_team consult dispatch shape: a lambda compares
+// a struct field (`t.Key`) against a value, where the struct is defined
+// in a *different* GALA package (team_pkg) than the comparison site.
+// Same-package transpilation correctly inserts `.Get()` on the field;
+// cross-package previously emitted `Immutable[T] == T` (Go reject).
+
+func FindTeamByKey(teams Array[team_pkg.Team], key string) Option[team_pkg.Team] =
+    teams.Find((t) => t.Key == key)
+
+// Same shape but using dot-imported name (qualifier-free).
+func FindTeamByKeyDotImport(teams Array[Team], key string) Option[Team] =
+    teams.Find((t) => t.Key == key)
+
+// Variant using a Go-style explicit lambda parameter type.
+func FindTeamByKeyTypedLambda(teams Array[team_pkg.Team], key string) Option[team_pkg.Team] =
+    teams.Find((t team_pkg.Team) => t.Key == key)

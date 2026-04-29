@@ -1,4 +1,5 @@
 load("//:gala.bzl", "gala_binary", "gala_go_test", "gala_library", "gala_test")
+load("@rules_go//go:def.bzl", "go_library")
 
 filegroup(
     name = "single_file_gala_sources",
@@ -43,6 +44,7 @@ filegroup(
         "multi_file_types/model.gala",
         "multifile_lib_regress/proc_pkg/proc.gala",
         "multifile_lib_regress/proc_session.gala",
+        "multifile_lib_regress/team_lookup.gala",
         "multipackage_subpkg/main.gala",
         "multipackage_subpkg/state/state.gala",
         "newimmutable_nil.gala",
@@ -2130,6 +2132,13 @@ gala_test(
 )
 
 # Combined regression test
+
+gala_library(
+    name = "multifile_lib_regress_team_pkg",
+    srcs = ["multifile_lib_regress/team_pkg/team.gala"],
+    importpath = "martianoff/gala/examples/multifile_lib_regress/team_pkg",
+    visibility = ["//visibility:public"],
+)
 gala_library(
     name = "multifile_lib_regress_proc_pkg",
     srcs = ["multifile_lib_regress/proc_pkg/proc.gala"],
@@ -2145,6 +2154,7 @@ gala_library(
         "multifile_lib_regress/logic.gala",
         "multifile_lib_regress/pointer_method_field.gala",
         "multifile_lib_regress/proc_session.gala",
+        "multifile_lib_regress/team_lookup.gala",
         "multifile_lib_regress/types.gala",
     ],
     go_srcs = [
@@ -2153,6 +2163,7 @@ gala_library(
     importpath = "martianoff/gala/examples/multifile_lib_regress",
     visibility = ["//visibility:public"],
     deps = [
+        ":multifile_lib_regress_team_pkg",
         ":multifile_lib_regress_proc_pkg",
         "//collection_immutable",
         "//examples/go_struct_bridge",
