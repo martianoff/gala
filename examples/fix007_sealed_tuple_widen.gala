@@ -1,0 +1,63 @@
+package main
+
+import "errors"
+
+// Repro for sealed-type case widening inside a tuple-typed match arm result.
+//
+// The function below has declared return type `Tuple[AppModel, Cmd[AppMsg]]`,
+// where `Cmd` is a sealed type with cases `NoCmd` and `MsgCmd`. When match
+// arms differ in whether the second tuple slot carries the sealed PARENT
+// (`Cmd[AppMsg]`) or the sealed CASE (`MsgCmd[AppMsg]`), match-arm
+// unification must widen the case to the parent. Without widening the
+// transpiler rejects the match with:
+//
+//   type mismatch in match expression:
+//     'case Failure(e)' returns 'Tuple[AppModel, MsgCmd[AppMsg]]'
+//     'case Success(s)' returns 'Tuple[AppModel, Cmd[AppMsg]]'
+//
+// even though every value of `MsgCmd[AppMsg]` is a value of `Cmd[AppMsg]`.
+
+sealed type AppMsg {
+    case Tick()
+    case ConsultFailed(Reason string)
+}
+
+sealed type Cmd[T any] {
+    case NoCmd()
+    case MsgCmd(Msg T)
+}
+
+struct AppModel(Counter int)
+
+// consultEventFutureCmd returns the sealed PARENT type Cmd[AppMsg].
+func consultEventFutureCmd(s string) Cmd[AppMsg] = NoCmd[AppMsg]()
+
+
+// DispatchConsult mirrors the original bug subject — a Try[T]-shaped match
+// where each arm produces a tuple with a Cmd[AppMsg] in slot 2.
+func DispatchConsult(n int) Try[string] =
+    if (n == 0) Failure[string](errors.New("boom")) else Success("ok")
+
+// dispatchOneConsult exercises the bug: arm 1's tuple slot 2 is bound to
+// the sealed CASE `MsgCmd[AppMsg]` via a val whose RHS is a sealed-case
+// constructor; arm 2's slot 2 is the sealed PARENT `Cmd[AppMsg]` from a
+// function returning the parent. Both arms must unify to the declared
+// return Tuple[AppModel, Cmd[AppMsg]].
+func dispatchOneConsult(n int) Tuple[AppModel, Cmd[AppMsg]] {
+    return DispatchConsult(n) match {
+        case Failure(e) => {
+            val cmd = MsgCmd[AppMsg](Msg = ConsultFailed(Reason = e.Error()))
+            return (AppModel(Counter = 1), cmd)
+        }
+        case Success(s) => {
+            return (AppModel(Counter = 2), consultEventFutureCmd(s))
+        }
+    }
+}
+
+func main() {
+    val r1 = dispatchOneConsult(0)
+    val r2 = dispatchOneConsult(7)
+    Println(s"r1.counter=${r1.V1.Counter}")
+    Println(s"r2.counter=${r2.V1.Counter}")
+}

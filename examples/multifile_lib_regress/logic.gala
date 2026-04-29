@@ -353,3 +353,42 @@ func RenderRow(isCursor bool, glyph string, name string) string {
     val style = LabelStyle(Color = "blue")
     return TextStyled(label, style)
 }
+
+// --- Regression: sealed-case → sealed-parent widening inside a tuple-typed
+// match-arm result. When a function returns `Tuple[A, Cmd[T]]`, one match
+// arm produces `(a, MsgCmd[T](...))` (sealed CASE constructor in slot 2)
+// and another produces `(a, otherCmdReturningFunc())` (sealed PARENT). The
+// transpiler must widen the case to the parent so both arms agree on the
+// declared `Tuple[A, Cmd[T]]`. Without widening the transpiler rejected the
+// match with a "type mismatch" error even though every value of the case
+// type is a value of the parent type via the case's Apply method.
+sealed type DispatchMsg {
+    case TickMsg()
+    case FailMsg(Reason string)
+}
+
+sealed type DispatchCmd[T any] {
+    case NoDispatch()
+    case SendDispatch(Payload T)
+}
+
+struct DispatchModel(Counter int)
+
+// dispatchParent returns the sealed PARENT type DispatchCmd[DispatchMsg].
+func dispatchParent(seed string) DispatchCmd[DispatchMsg] = NoDispatch[DispatchMsg]()
+
+// dispatchByOutcome: arm 1's tuple slot 2 is bound to the sealed CASE via a
+// val whose RHS is a sealed-case constructor; arm 2's slot 2 is the sealed
+// PARENT from a function returning the parent. Both arms unify to the
+// declared return Tuple[DispatchModel, DispatchCmd[DispatchMsg]].
+func DispatchByOutcome(outcome Try[string]) Tuple[DispatchModel, DispatchCmd[DispatchMsg]] {
+    return outcome match {
+        case Failure(e) => {
+            val cmd = SendDispatch[DispatchMsg](Payload = FailMsg(Reason = e.Error()))
+            return (DispatchModel(Counter = 1), cmd)
+        }
+        case Success(s) => {
+            return (DispatchModel(Counter = 2), dispatchParent(s))
+        }
+    }
+}

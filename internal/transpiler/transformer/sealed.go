@@ -843,3 +843,93 @@ func isSelfReferentialSealedField(fieldTypeText, parentName string) bool {
 	}
 	return false
 }
+
+// sealedCaseParent returns the sealed parent type for a sealed-case type, or
+// nil if `caseType` is not a known sealed-variant case. The parent type
+// preserves the case type's type-argument bindings — e.g. given a case
+// `MsgCmd[AppMsg]` of sealed type `Cmd[T]`, the result is `Cmd[AppMsg]`.
+//
+// Used by match arm result-type unification to widen a sealed-case arm to
+// its parent when a sibling arm produced the parent type. Without this,
+// `Tuple[A, MsgCmd[X]]` and `Tuple[A, Cmd[X]]` are treated as incompatible
+// match-arm result types even though `MsgCmd[X]` is a value of `Cmd[X]`.
+func (t *galaASTTransformer) sealedCaseParent(caseType transpiler.Type) transpiler.Type {
+	if caseType == nil || caseType.IsNil() {
+		return nil
+	}
+	// Extract the case's bare base name and any type arguments.
+	caseBase := stripPackagePrefix(caseType.BaseName())
+	var caseArgs []transpiler.Type
+	if gen, ok := caseType.(transpiler.GenericType); ok {
+		caseArgs = gen.Params
+	}
+
+	// A sealed case must be registered as a companion object whose target is
+	// the parent sealed type. lookupCompanion handles std-prefix and
+	// package-qualified lookup.
+	companion := t.lookupCompanion(caseBase)
+	if companion == nil {
+		return nil
+	}
+	parentBase := stripPackagePrefix(companion.TargetType)
+	if parentBase == "" || parentBase == caseBase {
+		return nil
+	}
+
+	// Confirm the parent is registered as a sealed type AND lists this case
+	// as one of its variants. Without this guard a non-sealed companion
+	// (e.g. a plain extractor type) could masquerade as a sealed case.
+	parentMeta := t.getTypeMeta(parentBase)
+	if parentMeta == nil && companion.Package != "" {
+		parentMeta = t.getTypeMeta(companion.Package + "." + parentBase)
+	}
+	if parentMeta == nil || !parentMeta.IsSealed {
+		return nil
+	}
+	variantMatches := false
+	for _, v := range parentMeta.SealedVariants {
+		if v.Name == caseBase {
+			variantMatches = true
+			break
+		}
+	}
+	if !variantMatches {
+		return nil
+	}
+
+	// Reconstruct the parent type with the case's bound type arguments.
+	// The companion's TargetType may include a package prefix; preserve it
+	// so the resulting GenericType prints with the same qualification as
+	// other references to the parent type produce in the same scope.
+	//
+	// Special case: when the companion's package is the current package (or
+	// the convenience markers "main"/"test" the analyzer applies to local
+	// declarations), other inferred references print the type WITHOUT a
+	// package prefix. Mirror that here so the widened parent stringifies
+	// identically — otherwise the expected-type comparison at the call site
+	// (`expected.String() == parent.String()`) would mismatch on package
+	// qualification alone.
+	var parentBaseType transpiler.Type
+	pkg := companion.Package
+	if pkg == "main" || pkg == "test" || pkg == t.packageName {
+		pkg = ""
+	}
+	if pkg != "" {
+		typeName := companion.TargetType
+		if strings.HasPrefix(typeName, pkg+".") {
+			typeName = typeName[len(pkg)+1:]
+		}
+		parentBaseType = transpiler.NamedType{Package: pkg, Name: typeName}
+	} else {
+		parentBaseType = transpiler.BasicType{Name: parentBase}
+	}
+	if len(caseArgs) > 0 && len(caseArgs) == len(parentMeta.TypeParams) {
+		return transpiler.GenericType{Base: parentBaseType, Params: caseArgs}
+	}
+	if len(parentMeta.TypeParams) == 0 {
+		return parentBaseType
+	}
+	// Generic parent but case had no/mismatched type args — surface the parent
+	// without args; downstream substitution handles the mismatch.
+	return parentBaseType
+}

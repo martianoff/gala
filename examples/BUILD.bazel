@@ -286,6 +286,12 @@ gala_test(
 )
 
 gala_test(
+    name = "fix007_sealed_tuple_widen",
+    src = "fix007_sealed_tuple_widen.gala",
+    expected = "fix007_sealed_tuple_widen.out",
+)
+
+gala_test(
     name = "either",
     src = "either.gala",
     expected = "either.out",
