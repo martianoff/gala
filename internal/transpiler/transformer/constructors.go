@@ -81,36 +81,38 @@ func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.
 	if ctx.CompositeLiteral() != nil {
 		return t.transformCompositeLiteral(ctx.CompositeLiteral().(*grammar.CompositeLiteralContext))
 	}
-	for i := 0; i < ctx.GetChildCount(); i++ {
-		if exprListCtx, ok := ctx.GetChild(i).(grammar.IExpressionListContext); ok {
-			el := exprListCtx.(*grammar.ExpressionListContext)
-			// When a tuple literal flows into a Tuple-shaped enclosing context
-			// (e.g., the return position of a function declared to return
-			// `Tuple[int, Cmd[Msg]]`, or a call argument expecting
-			// `Tuple[string, error]`), thread each element's expected type so
-			// that nested sealed-variant constructors like `NoCmd()` infer
-			// their type parameters from the tuple's slot, and so the
-			// synthesized composite literal carries concrete element types
-			// rather than collapsing to `any` when an element's standalone
-			// type happens to resolve to nil/any.
-			elemExprs := el.AllExpression()
-			if len(elemExprs) > 1 {
-				perElemExpected := t.tupleElementExpectedTypes(len(elemExprs))
-				exprs, err := t.transformTupleElementExpressions(elemExprs, perElemExpected)
-				if err != nil {
-					return nil, err
-				}
-				return t.transformTupleLiteralWithExpected(exprs, perElemExpected, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
-			}
-			exprs, err := t.transformExpressionList(el)
+	if tupleListCtx := ctx.TupleExpressionList(); tupleListCtx != nil {
+		el := tupleListCtx.(*grammar.TupleExpressionListContext)
+		// When a tuple literal flows into a Tuple-shaped enclosing context
+		// (e.g., the return position of a function declared to return
+		// `Tuple[int, Cmd[Msg]]`, or a call argument expecting
+		// `Tuple[string, error]`), thread each element's expected type so
+		// that nested sealed-variant constructors like `NoCmd()` infer
+		// their type parameters from the tuple's slot, and so the
+		// synthesized composite literal carries concrete element types
+		// rather than collapsing to `any` when an element's standalone
+		// type happens to resolve to nil/any.
+		elemExprs := el.AllExpression()
+		if len(elemExprs) > 1 {
+			perElemExpected := t.tupleElementExpectedTypes(len(elemExprs))
+			exprs, err := t.transformTupleElementExpressions(elemExprs, perElemExpected)
 			if err != nil {
 				return nil, err
 			}
-			if len(exprs) == 1 {
-				return &ast.ParenExpr{X: exprs[0]}, nil
-			}
-			return t.transformTupleLiteral(exprs, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
+			return t.transformTupleLiteralWithExpected(exprs, perElemExpected, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
 		}
+		exprs := make([]ast.Expr, 0, len(elemExprs))
+		for _, eCtx := range elemExprs {
+			expr, err := t.transformExpression(eCtx)
+			if err != nil {
+				return nil, err
+			}
+			exprs = append(exprs, expr)
+		}
+		if len(exprs) == 1 {
+			return &ast.ParenExpr{X: exprs[0]}, nil
+		}
+		return t.transformTupleLiteral(exprs, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
 	}
 	// Empty parenthesized expression `()` — the grammar admits it because
 	// `'(' expressionList? ')'` makes the inner list optional, but GALA

@@ -1,0 +1,30 @@
+package main
+
+import . "martianoff/gala/std"
+
+sealed type Msg {
+    case Boom(reason string)
+    case Ok(name string)
+}
+
+// Multi-line tuple literals as match arm bodies, with trailing commas, mirror
+// the Elm-style update-function pattern that returns (model, cmd). Make sure
+// the parser accepts this layout — it used to choke on the trailing comma.
+func dispatch(model string, msg Msg) Tuple[string, string] = msg match {
+    case Boom(reason) => (
+        model,
+        reason,
+    )
+    case Ok(name) => (
+        model,
+        name,
+    )
+}
+
+func main() {
+    val (m1, c1) = dispatch("M", Boom("bang"))
+    Println(s"$m1 / $c1")
+
+    val (m2, c2) = dispatch("M", Ok("hello"))
+    Println(s"$m2 / $c2")
+}

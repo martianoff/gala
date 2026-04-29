@@ -162,6 +162,49 @@ val x = 0X1f`,
 val x = 0xFF + 0x01`,
 			wantErr: false,
 		},
+		{
+			name: "Single-line tuple as match arm body",
+			input: `package main
+
+func dispatch(m string, n int) Tuple[string, int] = n match {
+	case 0 => (m, n)
+	case _ => (m, n)
+}`,
+			wantErr: false,
+		},
+		{
+			name: "Multi-line tuple as match arm body without trailing comma",
+			input: `package main
+
+func dispatch(m string, n int) Tuple[string, int] = n match {
+	case 0 => (
+		m,
+		n
+	)
+	case _ => (m, n)
+}`,
+			wantErr: false,
+		},
+		{
+			name: "Multi-line tuple as match arm body with trailing comma",
+			input: `package main
+
+func dispatch(m string, n int) Tuple[string, int] = n match {
+	case 0 => (
+		m,
+		n,
+	)
+	case _ => (m, n)
+}`,
+			wantErr: false,
+		},
+		{
+			name: "Tuple literal with trailing comma",
+			input: `package main
+
+val t = (1, 2,)`,
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
