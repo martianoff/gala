@@ -216,4 +216,9 @@ func main() {
     Println(multifile_lib_regress.DescribeAppMsg(multifile_lib_regress.ToAppMsg(chunkEv)))
     Println(multifile_lib_regress.DescribeAppMsg(multifile_lib_regress.ToAppMsg(endOkEv)))
     Println(multifile_lib_regress.DescribeAppMsg(multifile_lib_regress.ToAppMsg(endErrEv)))
+
+    // --- Regression: chained `arr.Get(N).Field` where Field is Option[T].
+    // The match-IIFE param must take Option[string], not Option[any].
+    Println(multifile_lib_regress.DescribeFirstConfigModel())
+    Println(multifile_lib_regress.DescribeFirstConfigModelVal())
 }

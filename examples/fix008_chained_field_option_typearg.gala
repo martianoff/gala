@@ -1,0 +1,48 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// Repro: chained `arr.Get(N).Field` where Field is `Option[string]`.
+// The match-IIFE param must be `Option[string]`, not `Option[any]` —
+// the type-arg `string` must be preserved through the chained accessor
+// (Array.Get -> Member -> .Model field of type Option[string]).
+
+struct Member(Name string, Model Option[string])
+
+func mkMembers() Array[Member] = ArrayOf[Member](
+    Member(Name = "alice", Model = Some("alpha")),
+    Member(Name = "bob",   Model = None[string]()),
+)
+
+// Direct chained-field match subject. No intermediate val.
+func describeFirstModel() string = mkMembers().Get(0).Model match {
+    case Some(m) => s"model:$m"
+    case None()  => "no-model"
+}
+
+// Same chain bound to a val first; then matched. No explicit annotation.
+func describeFirstModelVal() string {
+    val members = mkMembers()
+    val model0  = members.Get(0).Model
+    return model0 match {
+        case Some(m) => s"model:$m"
+        case None()  => "no-model"
+    }
+}
+
+// Chained accessor in a generic-returning function: result type is `T`,
+// but the match subject's element type must still be Option[string].
+func choose[T any](members Array[Member], yes func(string) T, no T) T =
+    members.Get(0).Model match {
+        case Some(m) => yes(m)
+        case None()  => no
+    }
+
+func describeViaGeneric() string =
+    choose[string](mkMembers(), (m) => s"got:$m", "missing")
+
+func main() {
+    Println(describeFirstModel())
+    Println(describeFirstModelVal())
+    Println(describeViaGeneric())
+}

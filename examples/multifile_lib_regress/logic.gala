@@ -289,3 +289,34 @@ func CloseAllMembers(members HashMap[string, Member]) Array[string] {
     })
     return failures.Sorted()
 }
+
+// --- Regression: chained `arr.Get(N).Field` match where Field has a
+// generic type-arg (Option[string]). The match-IIFE param must keep the
+// type-arg `string` — not erase to `Option[any]`. Cross-package batch
+// mode is the path that originally surfaced the type-arg loss.
+struct ConfigEntry(Name string, Model Option[string])
+
+func ConfigEntries() Array[ConfigEntry] = ArrayOf[ConfigEntry](
+    ConfigEntry(Name = "alpha", Model = Some("a-model")),
+    ConfigEntry(Name = "beta",  Model = None[string]()),
+)
+
+// Direct chained accessor: `entries.Get(0).Model match { ... }`. Without
+// the fix, the IIFE wrapper expected `Option[any]` but received
+// `Immutable[Option[string]]`.
+func DescribeFirstConfigModel() string = ConfigEntries().Get(0).Model match {
+    case Some(m) => s"first-model:$m"
+    case None()  => "first-no-model"
+}
+
+// Same shape with a val binding for the chained accessor result. Without
+// an explicit annotation `Option[string]`, the val type-arg must still
+// be preserved.
+func DescribeFirstConfigModelVal() string {
+    val entries = ConfigEntries()
+    val model0  = entries.Get(0).Model
+    return model0 match {
+        case Some(m) => s"first-model:$m"
+        case None()  => "first-no-model"
+    }
+}

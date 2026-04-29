@@ -55,3 +55,5 @@ shadow-marker
 chunk[topic]=first line
 end[topic] ok
 end[topic] err=boom
+first-model:a-model
+first-model:a-model

@@ -1035,6 +1035,16 @@ gala_test(
     deps = ["//collection_immutable"],
 )
 
+# Regression: chained `arr.Get(N).Field` match where Field is Option[T].
+# The match-IIFE param must take the field's full generic type
+# (Option[string]) — not Option[any] with the type-arg erased.
+gala_test(
+    name = "fix008_chained_field_option_typearg",
+    src = "fix008_chained_field_option_typearg.gala",
+    expected = "fix008_chained_field_option_typearg.out",
+    deps = ["//collection_immutable"],
+)
+
 gala_test(
     name = "match_void_pointer_arg",
     src = "match_void_pointer_arg.gala",
