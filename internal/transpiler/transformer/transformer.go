@@ -445,10 +445,14 @@ func (t *galaASTTransformer) resolveTypeName(typeName string, exists func(string
 		return typeName, true
 	}
 
-	// 2. If typeName has a package prefix (e.g., "pkg.Type"), extract the simple name
-	// and try resolving it — but ONLY if the package is a GALA package (has types
-	// registered from GALA analysis). Go packages (time, fmt, httpcore, go_struct_bridge)
-	// should NOT have their types resolved to same-named GALA types.
+	// 2. If typeName has a package prefix (e.g., "pkg.Type"), the qualifier is
+	// authoritative — the user explicitly anchored the lookup to that package.
+	// Resolve any alias on the qualifier and re-check; if still unresolved, do
+	// NOT fall through to a simple-name search across other packages. Falling
+	// back would let `session.Snapshot` (a struct in `session`) silently match
+	// a same-named symbol in a dot-imported sibling (`gala_tui.Snapshot`
+	// function), producing a misleading "unknown parameter" error at the call
+	// site.
 	if idx := strings.LastIndex(typeName, "."); idx != -1 {
 		pkgPrefix := typeName[:idx]
 		simpleName := typeName[idx+1:]
@@ -456,39 +460,20 @@ func (t *galaASTTransformer) resolveTypeName(typeName string, exists func(string
 		// Resolve import alias to actual package name (e.g., "libalias" -> "lib",
 		// "im" -> "collection_immutable") since types are registered under actual
 		// package names, not user-chosen aliases.
-		actualPkg := pkgPrefix
-		if resolved, ok := t.importManager.ResolveAlias(pkgPrefix); ok {
-			actualPkg = resolved
-		}
-
-		// Try exact match with the resolved package name first
-		// (e.g., "collection_immutable.HashMap" when alias was "im")
-		if actualPkg != pkgPrefix {
+		if actualPkg, ok := t.importManager.ResolveAlias(pkgPrefix); ok && actualPkg != pkgPrefix {
 			resolvedName := actualPkg + "." + simpleName
 			if exists(resolvedName) {
 				return resolvedName, true
 			}
 		}
 
-		// A package is a GALA package if any of its types exist in typeMetas
-		// (registered during GALA source analysis). Go packages won't have entries.
-		isGalaPackage := false
-		for key := range t.typeMetas {
-			if strings.HasPrefix(key, pkgPrefix+".") || strings.HasPrefix(key, actualPkg+".") {
-				isGalaPackage = true
-				break
-			}
-		}
-
-		// Only resolve the simple name to a GALA type if the qualifier is a GALA package
-		if isGalaPackage {
-			if resolved, found := t.tryResolveSimpleName(simpleName, exists); found {
-				return resolved, true
-			}
-		}
+		// Qualifier was provided but no match in that package. Stop here
+		// rather than allowing a cross-package shadow match.
+		return "", false
 	}
 
-	// 3. Try resolving the original typeName through all package prefixes
+	// 3. Unqualified name — try resolving through all package prefixes
+	// (current package, std, dot imports, named imports).
 	if resolved, found := t.tryResolveSimpleName(typeName, exists); found {
 		return resolved, true
 	}

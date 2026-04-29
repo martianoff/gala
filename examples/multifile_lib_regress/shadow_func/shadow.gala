@@ -1,0 +1,14 @@
+package shadow_func
+
+// Snapshot is intentionally a top-level function whose name shadows the
+// `Snapshot` struct in the sibling multifile_lib_regress package. Consumers
+// dot-import this package alongside the qualified import of
+// multifile_lib_regress; the qualified constructor call
+// `multifile_lib_regress.Snapshot(ProjectName = ...)` must resolve to the
+// struct, not to this function.
+func Snapshot(width int, height int) string = "tui-snap"
+
+// ShadowMarker is a non-clashing helper used by consumers that need to refer
+// to *something* exported from this package — keeps the dot-import live so
+// the consumer test file actually exercises the shadow scenario.
+func ShadowMarker() string = "shadow-marker"

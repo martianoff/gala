@@ -3,6 +3,7 @@ package main
 import (
     "martianoff/gala/examples/multifile_lib_regress"
     "martianoff/gala/examples/multifile_lib_regress/proc_pkg"
+    . "martianoff/gala/examples/multifile_lib_regress/shadow_func"
     "martianoff/gala/examples/go_struct_bridge"
     . "martianoff/gala/collection_immutable"
     "time"
@@ -185,4 +186,20 @@ func main() {
     // (mirrors the original failing report). The lambda must still bind
     // v to V=Member.
     multifile_lib_regress.CloseAllMembers(mm2).ForEach((s) => Println(s))
+
+    // Qualified named-arg struct constructor must anchor the lookup to the
+    // explicit package qualifier even when a dot-imported sibling exports a
+    // function with the same identifier. Before the fix, the resolver would
+    // strip the qualifier and match the dot-imported `shadow_func.Snapshot`
+    // function — its (width, height) parameters did not match the struct's
+    // (ProjectName, SavedAt) field names and a misleading "unknown
+    // parameter" error fired at the call site.
+    val snap = multifile_lib_regress.Snapshot(
+        ProjectName = "demo",
+        SavedAt = int64(1234),
+    )
+    Println(s"snap: ${snap.ProjectName}=${snap.SavedAt}")
+    // Reference a non-clashing helper from the shadow package so the
+    // dot-import is actually exercised at compile time.
+    Println(ShadowMarker())
 }

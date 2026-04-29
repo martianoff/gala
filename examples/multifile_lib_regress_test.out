@@ -50,3 +50,5 @@ warn
 err: oops
 alice => Alice<a@x>
 bob => Bob<b@x>
+snap: demo=1234
+shadow-marker

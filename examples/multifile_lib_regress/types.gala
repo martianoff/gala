@@ -12,4 +12,12 @@ type UserInfo struct {
 
 func NewUser(name string, email string) UserInfo = UserInfo(Name = name, Email = email)
 
+// Snapshot exists ALSO as a function in the sibling shadow_func package below.
+// At call sites that import the shadow_func package via dot-import, the
+// qualified `multifile_lib_regress.Snapshot(Field = ...)` constructor must
+// resolve to this struct — not silently match the dot-imported function and
+// emit "unknown parameter" errors. Verifies the qualifier-anchored resolution
+// path.
+struct Snapshot(ProjectName string, SavedAt int64)
+
 // time.Parse is a Go function returning (time.Time, error)
