@@ -92,13 +92,34 @@ func (t *galaASTTransformer) transformStatement(ctx *grammar.StatementContext) (
 			// if-expression IIFE gets a concrete return type instead of falling back
 			// to `any` when HM type inference fails in multi-file batch mode.
 			ifExprCtx := t.findIfExpressionInExpression(retCtx.Expression())
-			if ifExprCtx != nil && t.currentFuncReturnType != nil && !t.currentFuncReturnType.IsNil() {
-				oldExpected := t.expectedIfExprType
-				t.expectedIfExprType = t.typeToExpr(t.currentFuncReturnType)
-				expr, err = t.transformIfExpression(ifExprCtx)
-				t.expectedIfExprType = oldExpected
-			} else {
-				expr, err = t.transformExpression(retCtx.Expression())
+			// If the return expression is a bare lambda and the enclosing
+			// function returns a function type, propagate the expected param
+			// and return types into the lambda. This mirrors what
+			// transformExpressionBodiedFunction does for `func f() T = lambda`,
+			// without which the lambda's untyped parameters fall through as
+			// `any` and downstream match expressions that scrutinize them
+			// erase their generic type arguments (e.g. `Try[Msg]` → `Try[any]`).
+			lambdaCtx := t.findLambdaInExpression(retCtx.Expression())
+			if lambdaCtx != nil && t.currentFuncReturnType != nil && !t.currentFuncReturnType.IsNil() {
+				if expectedFuncType := t.resolveTranspilerTypeAsFuncType(t.currentFuncReturnType); expectedFuncType != nil {
+					var expectedRetType ast.Expr
+					if len(expectedFuncType.Results) > 0 {
+						expectedRetType = t.typeToExpr(expectedFuncType.Results[0])
+					} else {
+						expectedRetType = ExpectedVoid
+					}
+					expr, err = t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedFuncType.Params)
+				}
+			}
+			if expr == nil && err == nil {
+				if ifExprCtx != nil && t.currentFuncReturnType != nil && !t.currentFuncReturnType.IsNil() {
+					oldExpected := t.expectedIfExprType
+					t.expectedIfExprType = t.typeToExpr(t.currentFuncReturnType)
+					expr, err = t.transformIfExpression(ifExprCtx)
+					t.expectedIfExprType = oldExpected
+				} else {
+					expr, err = t.transformExpression(retCtx.Expression())
+				}
 			}
 			if err != nil {
 				return nil, err

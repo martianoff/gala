@@ -850,6 +850,19 @@ func (t *galaASTTransformer) resolveReturnTypeAsFuncType(typeExpr ast.Expr) *tra
 		return nil
 	}
 
+	return t.resolveTranspilerTypeAsFuncType(tp)
+}
+
+// resolveTranspilerTypeAsFuncType is the transpiler.Type-input variant of
+// resolveReturnTypeAsFuncType. Used at sites where the enclosing function's
+// return type is already a transpiler.Type (e.g. currentFuncReturnType) and
+// we want to thread expected lambda param/return types into a returned
+// lambda expression.
+func (t *galaASTTransformer) resolveTranspilerTypeAsFuncType(tp transpiler.Type) *transpiler.FuncType {
+	if tp == nil || tp.IsNil() {
+		return nil
+	}
+
 	// Check if it's already a FuncType
 	if ft, ok := tp.(transpiler.FuncType); ok {
 		return &ft

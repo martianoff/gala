@@ -77,6 +77,7 @@ go_test(
         "methods_test.go",
         "multi_file_some_none_test.go",
         "multi_var_test.go",
+        "nested_success_typearg_test.go",
         "option_test.go",
         "panic_audit_test.go",
         "phantom_reexport_funconly_test.go",

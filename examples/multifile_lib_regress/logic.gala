@@ -312,3 +312,25 @@ func RuntimeFailure(seeds Array[string], cap int) Option[string] {
     })
     return failure
 }
+
+// --- Regression: nested sealed-case pattern inside Success(...) inside a
+// returned-lambda whose parameter type is implicit (driven by the enclosing
+// function's `func(Try[Msg]) string` return type). Without expected-param
+// propagation through the `return` statement, the lambda's `t` parameter
+// dropped to `any` and the match's matched type degraded to `Try[any]`.
+// Then `Success.Unapply(obj)` returned `any`, the inner `WireChunk.Unapply`
+// required `WireMsg`, and Go rejected with "need type assertion".
+sealed type WireMsg {
+    case WireChunk(Index int, Line string)
+    case WireSessionFailed(Index int, Err string)
+    case WireOther
+}
+
+func MakeWireHandler() func(Try[WireMsg]) string {
+    return (t) => t match {
+        case Failure(err) => s"fail: ${err.Error()}"
+        case Success(WireChunk(_, line)) => s"chunk: $line"
+        case Success(WireSessionFailed(_, e))   => s"sessfail: $e"
+        case _ => "other"
+    }
+}
