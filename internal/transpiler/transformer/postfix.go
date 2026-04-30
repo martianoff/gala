@@ -528,7 +528,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 						casePatterns = append(casePatterns, "case _")
 					} else if exprStmt, ok := lastStmt.(*ast.ExprStmt); ok {
 						// Block's last expression statement becomes the return value
-						defaultBody[len(defaultBody)-1] = &ast.ReturnStmt{Results: []ast.Expr{exprStmt.X}}
+						defaultBody[len(defaultBody)-1] = t.markSynthesizedArmReturn(&ast.ReturnStmt{Results: []ast.Expr{exprStmt.X}})
 						resultTypes = append(resultTypes, t.inferResultType(exprStmt.X))
 						casePatterns = append(casePatterns, "case _")
 					}
@@ -644,6 +644,23 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		}
 		// When foundDefault && isSealed && isExhaustive: unreachable default is harmless, allow it
 		_ = isSealed
+	}
+
+	// Statement-position match with a user-written `return X` inside an arm
+	// body cannot use the IIFE lowering. Wrapping the body in
+	// `func(obj T) { ... }(subject)` would trap that `return X` inside the
+	// IIFE's lambda — the surrounding gala function never returns, and any
+	// enclosing for-loop spins forever (the bug fired as a runtime hang, not
+	// a compile error). Inline the body instead so user returns become
+	// genuine Go returns from the enclosing function. Synthesized arm-tail
+	// returns (added to feed the IIFE's value channel) are stripped, since
+	// the value would have been discarded anyway.
+	if stmtPosition && t.containsUserReturnInClauses(clauses, defaultBody) {
+		body := t.buildMatchBodyForInline(clauses, defaultBody)
+		t.pendingMatchStmtBlock = t.buildInlinedMatchBlock(subject, paramName, matchedType, body)
+		// Return a placeholder; transformBlock recognises pendingMatchStmtBlock
+		// and replaces the wrapping ExprStmt with the inlined block.
+		return ast.NewIdent("_"), nil
 	}
 
 	// Build the match body: chain clauses into if-else, attach default, handle void stripping

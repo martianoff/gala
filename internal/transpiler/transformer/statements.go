@@ -320,6 +320,19 @@ func (t *galaASTTransformer) transformBlock(ctx *grammar.BlockContext) (*ast.Blo
 		if err != nil {
 			return nil, err
 		}
+		// A statement-position match with a user-written `return X` inside an
+		// arm body cannot be lowered as an IIFE (the bare return that
+		// stripReturnStatements emits only exits the synthetic lambda, leaving
+		// any enclosing for-loop spinning forever). transformMatchExpression
+		// detects this case, builds the body as an inlined block, and stores
+		// it in pendingMatchStmtBlock; we replace the placeholder ExprStmt
+		// with the inlined block here so the user's `return X` becomes a real
+		// Go return from the enclosing function.
+		if t.pendingMatchStmtBlock != nil {
+			block.List = append(block.List, t.pendingMatchStmtBlock)
+			t.pendingMatchStmtBlock = nil
+			continue
+		}
 		block.List = append(block.List, stmt)
 	}
 	return block, nil
