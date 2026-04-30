@@ -68,6 +68,16 @@ var binarySelfHash = func() string {
 }()
 
 // CachedRichAST is the serializable subset of RichAST (no antlr.Tree).
+//
+// Only the package's OWN metadata is persisted on disk. Transitive
+// imports are NOT inlined — instead, DirectImports lists the GALA import
+// paths that the package directly references, and the analyzer is
+// responsible for re-loading them (which is itself cache-served) and
+// merging their metadata back into the returned RichAST after a cache
+// hit. This avoids the O(N×M) blowup that occurred when every downstream
+// pkgAST inlined the full transitive type closure of its imports — a
+// pattern that produced multi-GB .gob files for the most-downstream
+// package in a deep dependency graph.
 type CachedRichAST struct {
 	PackageName      string
 	Types            map[string]*transpiler.TypeMetadata
@@ -78,25 +88,162 @@ type CachedRichAST struct {
 	GoTypeInfo       *transpiler.GoTypeInfo
 	TypeAliases      map[string]transpiler.Type
 	ImportPathMap    map[string]string
-	DepsHash         string // hash of transitive dependency content (for invalidation)
+	DepsHash         string   // hash of transitive dependency content (for invalidation)
+	DirectImports    []string // GALA import paths this package directly imports (for re-merge on load)
 }
 
-func toCachedRichAST(r *transpiler.RichAST, depsHash string) *CachedRichAST {
+// belongsToPkg reports whether a fully-qualified key like "pkgName.SymName"
+// (or a bare "SymName" in main/test packages) belongs to the named package.
+// Empty pkgName matches keys without a dot prefix (main/test packages).
+func belongsToPkg(key, pkgName string) bool {
+	dot := strings.IndexByte(key, '.')
+	if dot < 0 {
+		// Bare name — only main/test packages should keep these.
+		return pkgName == "" || pkgName == "main" || pkgName == "test"
+	}
+	return key[:dot] == pkgName
+}
+
+// toCachedRichAST builds the on-disk projection of `r`. It strips the
+// transitive type closure that Merge accumulated from imports, keeping
+// only metadata that originated in this package. The resulting object
+// is small and bounded by the package's own source size.
+func toCachedRichAST(r *transpiler.RichAST, depsHash string, directImports []string) *CachedRichAST {
 	if r == nil {
 		return nil
 	}
+	pkg := r.PackageName
+
+	// Filter Types to entries owned by this package.
+	var ownTypes map[string]*transpiler.TypeMetadata
+	if len(r.Types) > 0 {
+		ownTypes = make(map[string]*transpiler.TypeMetadata)
+		for k, v := range r.Types {
+			if v == nil {
+				continue
+			}
+			// Authoritative check: the metadata's own Package field.
+			// Falls back to key-prefix when Package is unset (defensive;
+			// some entries set Package="" for main/test packages).
+			if v.Package == pkg {
+				ownTypes[k] = v
+			} else if v.Package == "" && belongsToPkg(k, pkg) {
+				ownTypes[k] = v
+			}
+		}
+	}
+
+	// Filter Functions similarly.
+	var ownFuncs map[string]*transpiler.FunctionMetadata
+	if len(r.Functions) > 0 {
+		ownFuncs = make(map[string]*transpiler.FunctionMetadata)
+		for k, v := range r.Functions {
+			if v == nil {
+				continue
+			}
+			if v.Package == pkg {
+				ownFuncs[k] = v
+			} else if v.Package == "" && belongsToPkg(k, pkg) {
+				ownFuncs[k] = v
+			}
+		}
+	}
+
+	// Filter CompanionObjects similarly.
+	var ownCos map[string]*transpiler.CompanionObjectMetadata
+	if len(r.CompanionObjects) > 0 {
+		ownCos = make(map[string]*transpiler.CompanionObjectMetadata)
+		for k, v := range r.CompanionObjects {
+			if v == nil {
+				continue
+			}
+			if v.Package == pkg {
+				ownCos[k] = v
+			} else if v.Package == "" && belongsToPkg(k, pkg) {
+				ownCos[k] = v
+			}
+		}
+	}
+
+	// GoExports[pkg] is keyed by package name; keep only this package's row.
+	// When pkg is "" (the analyzer's fallback uses relPath), we can't filter
+	// reliably — but in that case the map is small enough to keep verbatim.
+	var ownGoExports map[string][]string
+	if len(r.GoExports) > 0 {
+		if pkg != "" {
+			if syms, ok := r.GoExports[pkg]; ok && len(syms) > 0 {
+				ownGoExports = map[string][]string{pkg: syms}
+			}
+		} else {
+			ownGoExports = r.GoExports
+		}
+	}
+
+	// GoTypeInfo entries are keyed "pkgName.SymName" — keep only this package's.
+	var ownGoTypeInfo *transpiler.GoTypeInfo
+	if r.GoTypeInfo != nil {
+		ownGoTypeInfo = filterGoTypeInfo(r.GoTypeInfo, pkg)
+	}
+
 	return &CachedRichAST{
 		PackageName:      r.PackageName,
-		Types:            r.Types,
-		Functions:        r.Functions,
-		Packages:         r.Packages,
-		CompanionObjects: r.CompanionObjects,
-		GoExports:        r.GoExports,
-		GoTypeInfo:       r.GoTypeInfo,
-		TypeAliases:      r.TypeAliases,
+		Types:            ownTypes,
+		Functions:        ownFuncs,
+		Packages:         nil, // reconstructed at load time from DirectImports
+		CompanionObjects: ownCos,
+		GoExports:        ownGoExports,
+		GoTypeInfo:       ownGoTypeInfo,
+		TypeAliases:      r.TypeAliases, // small; alias entries originate from this package's source
 		ImportPathMap:    r.ImportPathMap,
 		DepsHash:         depsHash,
+		DirectImports:    directImports,
 	}
+}
+
+// filterGoTypeInfo returns a new GoTypeInfo containing only entries whose
+// "pkgName.SymName" qualified keys match the given package. Returns nil
+// if no entries belong to this package.
+func filterGoTypeInfo(g *transpiler.GoTypeInfo, pkg string) *transpiler.GoTypeInfo {
+	if g == nil {
+		return nil
+	}
+	prefix := pkg + "."
+	out := transpiler.NewGoTypeInfo()
+	any := false
+	for k, v := range g.Functions {
+		if strings.HasPrefix(k, prefix) {
+			out.Functions[k] = v
+			any = true
+		}
+	}
+	for k, v := range g.Types {
+		if strings.HasPrefix(k, prefix) {
+			out.Types[k] = v
+			any = true
+		}
+	}
+	for k, v := range g.Variables {
+		if strings.HasPrefix(k, prefix) {
+			out.Variables[k] = v
+			any = true
+		}
+	}
+	for k, v := range g.Constants {
+		if strings.HasPrefix(k, prefix) {
+			out.Constants[k] = v
+			any = true
+		}
+	}
+	for k, v := range g.TypeAliases {
+		if strings.HasPrefix(k, prefix) {
+			out.TypeAliases[k] = v
+			any = true
+		}
+	}
+	if !any {
+		return nil
+	}
+	return out
 }
 
 func fromCachedRichAST(c *CachedRichAST) *transpiler.RichAST {
@@ -148,51 +295,107 @@ func newAnalysisCache(projectRoot string) *analysisCache {
 	if binarySelfHash != "" {
 		cacheDir = cacheDir + "-" + binarySelfHash
 	}
-	dir := filepath.Join(projectRoot, ".gala", "cache", cacheDir)
+	parent := filepath.Join(projectRoot, ".gala", "cache")
+	dir := filepath.Join(parent, cacheDir)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return &analysisCache{enabled: false}
+	}
+	// Asynchronously prune sibling cache directories whose binary hash
+	// differs from the current binary's. Without this, every rebuild of
+	// an unstamped dev binary leaves a fresh v1-dev-<hash>/ behind, and
+	// the .gala/cache/ tree grows without bound. Pruning is gated by
+	// GALA_KEEP_STALE_CACHES=1 for users who want to inspect prior
+	// generations; failures are silent (best-effort cleanup).
+	if os.Getenv("GALA_KEEP_STALE_CACHES") != "1" {
+		go pruneStaleCaches(parent, cacheDir)
 	}
 	return &analysisCache{dir: dir, enabled: true}
 }
 
+// pruneStaleCaches removes sibling directories under parent that look like
+// analysis caches from a previous binary (v1-* / v1-<ver>-* / v1-dev-*) but
+// don't match keepName. Only directories older than staleCacheMaxAge are
+// removed so that concurrent compiles using a slightly different binary
+// (e.g. a rolling upgrade or two parallel invocations) don't trip on each
+// other. The function is intentionally conservative: it only removes
+// directories whose name starts with the CacheVersion prefix and looks
+// like a cache directory.
+func pruneStaleCaches(parent, keepName string) {
+	defer func() { _ = recover() }() // best-effort; never crash the host
+
+	entries, err := ioutil.ReadDir(parent)
+	if err != nil {
+		return
+	}
+	cutoff := time.Now().Add(-staleCacheMaxAge)
+	prefix := CacheVersion // e.g. "v1"
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if name == keepName {
+			continue
+		}
+		// Only consider directories that look like analysis caches:
+		// either exactly the version (e.g. "v1") or version-prefixed
+		// (e.g. "v1-dev-abcdef"). This avoids touching unrelated dirs.
+		if name != prefix && !strings.HasPrefix(name, prefix+"-") {
+			continue
+		}
+		if e.ModTime().After(cutoff) {
+			continue
+		}
+		_ = os.RemoveAll(filepath.Join(parent, name))
+	}
+}
+
+// staleCacheMaxAge is the age threshold beyond which a non-matching
+// sibling cache directory is eligible for removal. 7 days is long
+// enough that an active developer's hot caches survive normal use,
+// but short enough that abandoned dev-build directories from prior
+// branches don't accumulate indefinitely.
+const staleCacheMaxAge = 7 * 24 * time.Hour
+
 // Get retrieves a cached RichAST for the given package path and content hash.
 // depsHash is the hash of transitive dependency content — must match for a valid hit.
-// Returns nil on any error (cache miss, corruption, stale deps).
-func (c *analysisCache) Get(pkgPath string, contentHash string, depsHash string) *transpiler.RichAST {
+// Returns (nil, nil) on cache miss / corruption / stale deps. On a hit, returns
+// the deserialized own-only RichAST and the package's direct GALA import paths;
+// the caller is responsible for re-loading and merging those imports.
+func (c *analysisCache) Get(pkgPath string, contentHash string, depsHash string) (*transpiler.RichAST, []string) {
 	if !c.enabled {
-		return nil
+		return nil, nil
 	}
 	path := c.cachePath(pkgPath, contentHash)
 	data, err := ioutil.ReadFile(path)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 
 	var cached CachedRichAST
 	if err := gob.NewDecoder(bytes.NewReader(data)).Decode(&cached); err != nil {
 		os.Remove(path)
-		return nil
+		return nil, nil
 	}
 
 	// Validate transitive dependency hash
 	if depsHash != "" && cached.DepsHash != depsHash {
 		os.Remove(path)
-		return nil
+		return nil, nil
 	}
 
-	// Validate the cached data has meaningful content
-	if cached.Types == nil && cached.Functions == nil {
-		os.Remove(path)
-		return nil
-	}
-
-	return fromCachedRichAST(&cached)
+	return fromCachedRichAST(&cached), cached.DirectImports
 }
 
 // Put stores a RichAST in the cache using atomic write (temp file + rename).
 // This prevents parallel Bazel genrules from reading partially-written files.
 // Also removes stale entries for the same package (different content hashes).
-func (c *analysisCache) Put(pkgPath string, contentHash string, depsHash string, richAST *transpiler.RichAST) {
+//
+// The serialized form is the package's OWN metadata only — transitive imports
+// are recorded as a list of direct import paths and re-loaded at Get time. This
+// avoids the multi-GB blowup that occurred when each pkgAST inlined the full
+// type closure of every package it transitively depended on.
+func (c *analysisCache) Put(pkgPath string, contentHash string, depsHash string, richAST *transpiler.RichAST, directImports []string) {
 	if !c.enabled || richAST == nil {
 		return
 	}
@@ -210,7 +413,7 @@ func (c *analysisCache) Put(pkgPath string, contentHash string, depsHash string,
 	}
 	tmpPath := tmpFile.Name()
 
-	cached := toCachedRichAST(richAST, depsHash)
+	cached := toCachedRichAST(richAST, depsHash, directImports)
 	if err := gob.NewEncoder(tmpFile).Encode(cached); err != nil {
 		tmpFile.Close()
 		os.Remove(tmpPath)
@@ -292,12 +495,29 @@ func hashPackageDir(dirPath string) string {
 // Combined with the content hash of each resolved dependency, this ensures transitive
 // invalidation when any dependency's source changes.
 func hashImportPaths(dirPath string) string {
+	h := sha256.New()
+	for _, importPath := range extractDirectImportPaths(dirPath) {
+		h.Write([]byte(importPath))
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// extractDirectImportPaths reads all non-test .gala files in dirPath and
+// returns the set of import paths that appear in their import declarations.
+// The result is sorted and deduplicated so it can be persisted in a cache
+// entry and replayed deterministically.
+//
+// This is a quick line-based scan (no full ANTLR parse) that mirrors the
+// scan used by hashImportPaths. It treats any quoted string containing a
+// "/" on a non-comment line as a possible import. The analyzer further
+// filters this list — entries that don't resolve to GALA packages are
+// silently ignored at re-merge time.
+func extractDirectImportPaths(dirPath string) []string {
 	files, err := ioutil.ReadDir(dirPath)
 	if err != nil {
-		return ""
+		return nil
 	}
-
-	h := sha256.New()
+	seen := make(map[string]struct{})
 	for _, f := range files {
 		if f.IsDir() || filepath.Ext(f.Name()) != ".gala" {
 			continue
@@ -309,21 +529,24 @@ func hashImportPaths(dirPath string) string {
 		if err != nil {
 			continue
 		}
-		// Quick import extraction: look for lines matching 'import "..."' or '"..."'
 		for _, line := range strings.Split(string(content), "\n") {
 			trimmed := strings.TrimSpace(line)
 			if idx := strings.Index(trimmed, "\""); idx >= 0 {
 				if end := strings.Index(trimmed[idx+1:], "\""); end >= 0 {
 					importPath := trimmed[idx+1 : idx+1+end]
 					if strings.Contains(importPath, "/") {
-						h.Write([]byte(importPath))
+						seen[importPath] = struct{}{}
 					}
 				}
 			}
 		}
 	}
-
-	return hex.EncodeToString(h.Sum(nil))
+	out := make([]string, 0, len(seen))
+	for p := range seen {
+		out = append(out, p)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // findProjectRoot walks up from startDir looking for go.mod or gala.mod.
