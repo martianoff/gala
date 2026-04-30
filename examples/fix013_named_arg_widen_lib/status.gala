@@ -1,0 +1,18 @@
+package fix013_named_arg_widen_lib
+
+// Sealed type with multi-arg, single-arg, and zero-arg cases.
+// Mirrors a real-world Status enum with several no-paren cases, several
+// single-arg cases, and a multi-arg case. The multi-arg + named-arg
+// constructor at function-return position is the historically-failing
+// path this regression test guards.
+sealed type RecoveryStatus {
+    case Healthy
+    case Idle
+    case Queued
+    case Working
+    case Slow
+    case Stuck
+    case Recovering(Attempt int, Max int)
+    case HelpWaiting(Question string)
+    case Failed(Reason string)
+}

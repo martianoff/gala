@@ -2086,6 +2086,25 @@ gala_go_test(
     srcs = ["fix009_eq_literal_immutable.gala"],
 )
 
+# Multi-arg sealed-case constructor invoked with NAMED arguments must widen
+# to the parent sealed type at function-return position and call-arg
+# position. Single-arg named (`Failed(Reason = s)`) and positional multi-arg
+# (`Recovering(a, m)`) already widen; only the multi-arg + named-arg path
+# was failing.
+gala_library(
+    name = "fix013_named_arg_widen_lib",
+    srcs = ["fix013_named_arg_widen_lib/status.gala"],
+    importpath = "martianoff/gala/examples/fix013_named_arg_widen_lib",
+    visibility = ["//visibility:public"],
+)
+
+gala_test(
+    name = "fix013_named_arg_widen",
+    src = "fix013_named_arg_widen.gala",
+    expected = "fix013_named_arg_widen.out",
+    deps = [":fix013_named_arg_widen_lib"],
+)
+
 # Option.When and Unless factory constructors
 gala_test(
     name = "option_when",
