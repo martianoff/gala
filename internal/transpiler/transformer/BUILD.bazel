@@ -85,6 +85,7 @@ go_test(
         "qualified_namedarg_shadow_test.go",
         "recursive_immutable_test.go",
         "sealed_string_func_field_test.go",
+        "sealed_tuple_widen_test.go",
         "structs_test.go",
         "test_helper.go",
         "tuple_arity_matrix_test.go",

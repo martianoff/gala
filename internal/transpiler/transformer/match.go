@@ -966,17 +966,87 @@ func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patt
 			continue
 		}
 		// Note: NilType (from nil literal) is allowed and checked in typesCompatible
-		if !t.typesCompatible(refType, typ) {
-			msg := fmt.Sprintf("type mismatch in match expression: '%s' returns '%s' but '%s' returns '%s'. All branches must return the same type",
-				refPattern, refType.String(), patterns[i], typ.String())
-			if ctx != nil {
-				return nil, t.semanticErrorAt(ctx, msg)
-			}
-			return nil, galaerr.NewSemanticErrorAt(t.lastLine, t.lastCol, msg)
+		if t.typesCompatible(refType, typ) {
+			continue
 		}
+		// Sealed widening: when the only mismatch is a sealed-CASE in one arm
+		// vs. its sealed-PARENT in another (possibly nested in a tuple slot),
+		// widen both arms to the common parent type and continue. This lets a
+		// match arm produce a sealed CASE value (e.g. `MsgCmd[AppMsg]`) while
+		// a sibling arm produces the parent (`Cmd[AppMsg]`) without forcing
+		// the user to add `: Cmd[AppMsg]` annotations. The widened parent
+		// becomes the new reference type so subsequent arms unify against it.
+		if widened, ok := t.unifyWithSealedWidening(refType, typ); ok {
+			refType = widened
+			continue
+		}
+		msg := fmt.Sprintf("type mismatch in match expression: '%s' returns '%s' but '%s' returns '%s'. All branches must return the same type",
+			refPattern, refType.String(), patterns[i], typ.String())
+		if ctx != nil {
+			return nil, t.semanticErrorAt(ctx, msg)
+		}
+		return nil, galaerr.NewSemanticErrorAt(t.lastLine, t.lastCol, msg)
 	}
 
 	return refType, nil
+}
+
+// unifyWithSealedWidening attempts to unify two match arm result types by
+// widening sealed-variant CASE positions to their declared sealed PARENT
+// when the sibling arm carries the parent in the same position. Returns
+// (widenedType, true) on success and (nil, false) when no widening can
+// reconcile the two types.
+//
+// Handles three shapes:
+//
+//  1. Direct case ↔ parent: `MsgCmd[AppMsg]` and `Cmd[AppMsg]` widen to
+//     `Cmd[AppMsg]`.
+//  2. Generic container with mismatching params, where exactly one slot
+//     differs and that slot is a sealed-case-vs-parent: `Tuple[A, MsgCmd[X]]`
+//     and `Tuple[A, Cmd[X]]` widen to `Tuple[A, Cmd[X]]`.
+//  3. Recursive descent for nested generics (e.g. `Array[Tuple[A, Cmd[X]]]`)
+//     by reusing this helper on each parameter slot.
+//
+// The widening direction is fixed: when one operand is the case and the
+// other is the parent, the parent wins. This mirrors the value semantics —
+// every CASE value is a value of the PARENT type via the case's Apply
+// method — so widening never loses information at the Go-level.
+func (t *galaASTTransformer) unifyWithSealedWidening(a, b transpiler.Type) (transpiler.Type, bool) {
+	if a == nil || b == nil {
+		return nil, false
+	}
+	if t.typesCompatible(a, b) {
+		return a, true
+	}
+	// Direct sealed case → parent widening (in either direction).
+	if parent := t.sealedCaseParent(a); parent != nil && t.typesCompatible(parent, b) {
+		return b, true
+	}
+	if parent := t.sealedCaseParent(b); parent != nil && t.typesCompatible(parent, a) {
+		return a, true
+	}
+	// Same generic base, recurse into params. This covers the tuple-slot
+	// case from the bug report: Tuple[A, MsgCmd[X]] vs Tuple[A, Cmd[X]].
+	gen1, ok1 := a.(transpiler.GenericType)
+	gen2, ok2 := b.(transpiler.GenericType)
+	if !ok1 || !ok2 {
+		return nil, false
+	}
+	if gen1.Base.String() != gen2.Base.String() && !t.typesCompatible(gen1.Base, gen2.Base) {
+		return nil, false
+	}
+	if len(gen1.Params) != len(gen2.Params) {
+		return nil, false
+	}
+	mergedParams := make([]transpiler.Type, len(gen1.Params))
+	for i := range gen1.Params {
+		merged, ok := t.unifyWithSealedWidening(gen1.Params[i], gen2.Params[i])
+		if !ok {
+			return nil, false
+		}
+		mergedParams[i] = merged
+	}
+	return transpiler.GenericType{Base: gen1.Base, Params: mergedParams}, true
 }
 
 // typesCompatible checks if two types are compatible (same type, both any, or type parameter with any)

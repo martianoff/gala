@@ -719,6 +719,21 @@ func (t *galaASTTransformer) transformTupleLiteralWithExpected(exprs []ast.Expr,
 				typeParams = append(typeParams, ast.NewIdent("any"))
 			}
 		} else {
+			// Sealed widening: when the element's static type is a sealed CASE
+			// (e.g. `MsgCmd[AppMsg]`) and the expected slot type is its sealed
+			// PARENT (`Cmd[AppMsg]`), emit the parent in the tuple's type
+			// arguments. This keeps a tuple-typed match-arm result aligned
+			// with the surrounding function's declared return type, where
+			// the parent type is the lowest common type for both arms.
+			if fallbackTypes != nil && i < len(fallbackTypes) {
+				expected := fallbackTypes[i]
+				if expected != nil && !expected.IsNil() && !expected.IsAny() && expected.String() != exprType.String() {
+					if parent := t.sealedCaseParent(exprType); parent != nil && parent.String() == expected.String() {
+						typeParams = append(typeParams, t.typeToExpr(expected))
+						continue
+					}
+				}
+			}
 			typeParams = append(typeParams, t.typeToExpr(exprType))
 		}
 	}

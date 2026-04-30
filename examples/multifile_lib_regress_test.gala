@@ -247,4 +247,18 @@ func main() {
     // "cannot use ... as string".
     Println(multifile_lib_regress.RenderRow(true, "G", "alice"))
     Println(multifile_lib_regress.RenderRow(false, "g", "bob"))
+
+    // --- Regression: sealed-case → sealed-parent widening inside a
+    // tuple-typed match-arm result. The function's declared return is
+    // Tuple[DispatchModel, DispatchCmd[DispatchMsg]]; one arm produces the
+    // tuple with a sealed-CASE constructor (SendDispatch[DispatchMsg]) in
+    // slot 2 via a val binding, and the sibling arm produces the parent
+    // (DispatchCmd[DispatchMsg]) from a function returning the parent.
+    // Both arms must unify against the declared return.
+    val okOutcome = Success("hello")
+    val errOutcome = Failure[string](errors.New("nope"))
+    val r1 = multifile_lib_regress.DispatchByOutcome(okOutcome)
+    val r2 = multifile_lib_regress.DispatchByOutcome(errOutcome)
+    Println(s"DispatchByOutcome ok counter=${r1.V1.Counter}")
+    Println(s"DispatchByOutcome err counter=${r2.V1.Counter}")
 }

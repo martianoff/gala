@@ -62,3 +62,5 @@ sessfail: x
 other
 [blue] >> G alice
 [blue]    g bob
+DispatchByOutcome ok counter=2
+DispatchByOutcome err counter=1
