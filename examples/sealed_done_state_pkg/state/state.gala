@@ -1,0 +1,20 @@
+package state
+
+// Regression: a sealed type whose first non-trivial case is named
+// `Done(Body string)` lives in a sub-package literally named `state`
+// (i.e. the import path is `<...>/state` with `state` as the last segment).
+// A consumer that dot-imports this package and writes
+// `case Done(body) => ...` must resolve `Done` to this case companion,
+// not be silently routed to an unrelated namesake package elsewhere
+// in the workspace.
+sealed type Status {
+    case Done(Body string)
+    case Help
+    case Blocked
+    case Finished
+}
+
+func MakeDone(body string) Status = Done(body)
+func MakeHelp() Status            = Help()
+func MakeBlocked() Status         = Blocked()
+func MakeFinished() Status        = Finished()
