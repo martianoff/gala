@@ -201,16 +201,34 @@ func (r *Resolver) ResolvePackagePath(importPath string) (string, error) {
 	// Strategy 6: Recursive directory search — when the import path's directory name
 	// doesn't match the filesystem layout (e.g., importpath "martianoff/gala/crossfile"
 	// maps to "crossfile" but the actual directory is "examples/.../crossfile/").
-	// Search the module root and search paths for a directory whose name matches
-	// the last segment of the import path and contains .gala files.
-	pkgName := filepath.Base(importPath)
+	// Search the module root and search paths for a directory whose path matches
+	// the longest possible suffix of the import path and contains .gala files.
+	//
+	// Matching by longest suffix (rather than just the last segment) prevents a
+	// distinct package from accidentally claiming the lookup when two unrelated
+	// directories happen to share the same base name. For example,
+	// `examples/sealed_done_state_pkg/state` and `examples/multipackage_subpkg/state`
+	// both have base name `state`; matching only the base name picks whichever
+	// directory the walk visits first, surfacing as a confusing
+	// "extractor must define an Unapply method" error when the consumer tries
+	// to pattern-match a sealed case from the package it actually imported.
+	//
+	// For module-prefixed import paths, the relative-to-module-root portion is
+	// used as the suffix to match (the module name itself is not part of any
+	// real on-disk path). Other paths use the full import path as the suffix.
+	suffixPath := importPath
+	if r.moduleName != "" {
+		if rel, ok := hasModulePrefix(importPath, r.moduleName); ok {
+			suffixPath = rel
+		}
+	}
 	searchRoots := make([]string, 0, 1+len(r.searchPaths))
 	if r.moduleRoot != "" {
 		searchRoots = append(searchRoots, r.moduleRoot)
 	}
 	searchRoots = append(searchRoots, r.searchPaths...)
 	for _, root := range searchRoots {
-		if found := findPackageDirByName(root, pkgName); found != "" {
+		if found := findPackageDirByLongestSuffix(root, suffixPath); found != "" {
 			return found, nil
 		}
 	}
@@ -709,6 +727,110 @@ func findGalaModuleRoot(startPath string) (moduleRoot, moduleName string) {
 func isValidPackageDir(dirPath string) bool {
 	info, err := os.Stat(dirPath)
 	return err == nil && info.IsDir()
+}
+
+// findPackageDirByLongestSuffix walks root searching for a directory whose
+// trailing path segments match the longest possible suffix of importPath and
+// that contains at least one .gala file. Trying suffixes in decreasing length
+// disambiguates two directories that share a base name: an importpath of
+// "user/foo/bar" prefers a directory ending in "foo/bar" over a directory
+// ending in just "bar" elsewhere in the tree.
+//
+// When the import path has more than one segment, the search refuses to fall
+// back to matching only the final segment. A multi-segment path where every
+// multi-segment suffix is missing is almost certainly pointing at an entirely
+// different package than any unrelated namesake elsewhere in the tree, and
+// returning the namesake silently picks the wrong sources — which surfaces
+// downstream as a confusing
+// "extractor 'X' must define an Unapply method" error when the consumer tries
+// to pattern-match a sealed case that lives in the package they actually
+// imported.
+func findPackageDirByLongestSuffix(root, importPath string) string {
+	parts := splitImportPath(importPath)
+	// Stop one short of the single-segment fallback when the import path has
+	// more than one segment — see comment above.
+	stop := len(parts)
+	if len(parts) > 1 {
+		stop = len(parts) - 1
+	}
+	for i := 0; i < stop; i++ {
+		suffix := parts[i:]
+		if found := findPackageDirByPathSuffix(root, suffix); found != "" {
+			return found
+		}
+	}
+	return ""
+}
+
+// splitImportPath splits an import path into segments using forward slashes.
+func splitImportPath(importPath string) []string {
+	if importPath == "" {
+		return nil
+	}
+	return strings.Split(importPath, "/")
+}
+
+// findPackageDirByPathSuffix recursively searches under root for a directory
+// whose trailing path segments equal `suffix` and that contains at least one
+// .gala file. Returns the first match found, or empty string if none found.
+func findPackageDirByPathSuffix(root string, suffix []string) string {
+	if len(suffix) == 0 {
+		return ""
+	}
+	pkgName := suffix[len(suffix)-1]
+
+	skipDirs := map[string]bool{
+		"bazel-out": true, "bazel-bin": true, "bazel-testlogs": true,
+		".git": true, ".idea": true, ".ijwb": true, ".bazelbsp": true,
+		"node_modules": true, "external": true,
+	}
+
+	matchesSuffix := func(path string) bool {
+		// Walk up `path`'s components and verify the last len(suffix) segments
+		// equal suffix.
+		segs := strings.Split(filepath.ToSlash(path), "/")
+		if len(segs) < len(suffix) {
+			return false
+		}
+		for i := range suffix {
+			if segs[len(segs)-len(suffix)+i] != suffix[i] {
+				return false
+			}
+		}
+		return true
+	}
+
+	var walk func(dir string) string
+	walk = func(dir string) string {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return ""
+		}
+		for _, e := range entries {
+			path := filepath.Join(dir, e.Name())
+
+			isDir := e.IsDir()
+			if !isDir {
+				if info, err := os.Stat(path); err == nil {
+					isDir = info.IsDir()
+				}
+			}
+			if !isDir {
+				continue
+			}
+			if skipDirs[e.Name()] {
+				continue
+			}
+			if e.Name() == pkgName && matchesSuffix(path) && hasGalaFiles(path) {
+				return path
+			}
+			if found := walk(path); found != "" {
+				return found
+			}
+		}
+		return ""
+	}
+	return walk(root)
 }
 
 // findPackageDirByName recursively searches under root for a directory whose base name

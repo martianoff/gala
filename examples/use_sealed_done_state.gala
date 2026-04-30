@@ -1,0 +1,26 @@
+package main
+
+// Regression: a sealed case named `Done(Body string)` lives in a
+// dot-imported sub-package whose final path segment is `state`. Pattern
+// matching on bare `case Done(body) =>` must resolve the case companion
+// from the package the consumer actually imported, not from any unrelated
+// sibling package elsewhere in the workspace that happens to share the
+// name `state`.
+
+import . "martianoff/gala/examples/sealed_done_state_pkg/state"
+
+func describe(s Status) string = s match {
+    case Done(body) => s"done($body)"
+    case Help()     => "help"
+    case Blocked()  => "blocked"
+    case Finished() => "finished"
+}
+
+func main() {
+    Println(describe(MakeDone("hello")))
+    Println(describe(MakeHelp()))
+    Println(describe(MakeBlocked()))
+    Println(describe(MakeFinished()))
+    // Also exercise the sibling-file match arm via DescribeStatus.
+    Println(DescribeStatus(MakeDone("again")))
+}

@@ -519,3 +519,57 @@ func TestResolver_PrefersSearchPathGoModOverCwdGoMod(t *testing.T) {
 	assert.Equal(t, galaModuleDir, resolver.ModuleRoot(),
 		"moduleRoot must be the search path's go.mod directory, not the consumer's execroot")
 }
+
+// TestResolver_ResolvePackagePath_MultiSegmentDoesNotCollapseToSingleSegment
+// pins the regression where two distinct multi-segment import paths shared the
+// same final directory name. The recursive fallback in Strategy 6 used to match
+// only the last segment, so a request for `mod/foo/state` could be answered with
+// `mod/bar/state` whenever the actual `mod/foo/state` directory was missing
+// from the test sandbox. The consumer then loaded the namesake's metadata and
+// any unrelated sealed cases (e.g. `Done(Body string)`) would surface as
+// `extractor 'Done' must define an Unapply method` because the right package's
+// types were never registered.
+func TestResolver_ResolvePackagePath_MultiSegmentDoesNotCollapseToSingleSegment(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "resolver_multi_segment_test")
+	require.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	goModContent := "module martianoff/gala\n\ngo 1.22\n"
+	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte(goModContent), 0644))
+
+	// Create a NAMESAKE package at examples/other/state/state.gala — the
+	// directory whose base name matches the import path's last segment but
+	// is at the wrong location.
+	otherDir := filepath.Join(tempDir, "examples", "other", "state")
+	require.NoError(t, os.MkdirAll(otherDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(otherDir, "state.gala"), []byte("package state\n"), 0644))
+
+	originalWd, err := os.Getwd()
+	require.NoError(t, err)
+	defer os.Chdir(originalWd)
+	require.NoError(t, os.Chdir(tempDir))
+
+	resolver := NewResolver([]string{tempDir})
+
+	// The requested package `examples/wanted/state` is not on disk. The
+	// resolver MUST NOT degrade to matching just `state` and silently return
+	// the namesake under `examples/other/state`.
+	_, resolveErr := resolver.ResolvePackagePath("martianoff/gala/examples/wanted/state")
+	assert.Error(t, resolveErr,
+		"resolver must refuse to fall back to a single-segment match when the multi-segment import path has no actual directory at the expected location")
+
+	// Sanity: a SINGLE-segment import path that has no exact match still uses
+	// the recursive fallback (this is the bazel-importpath shape that Strategy 6
+	// is intended for).
+	pathOnly, err := resolver.ResolvePackagePath("state")
+	require.NoError(t, err)
+	assert.Equal(t, otherDir, pathOnly,
+		"single-segment import path should still use the recursive name match")
+
+	// Sanity: a multi-segment import path whose suffix matches a real on-disk
+	// path of two or more segments resolves correctly.
+	pathTwoSeg, err := resolver.ResolvePackagePath("martianoff/gala/examples/other/state")
+	require.NoError(t, err)
+	assert.Equal(t, otherDir, pathTwoSeg,
+		"multi-segment import path with a real two-segment suffix match should resolve to that directory")
+}

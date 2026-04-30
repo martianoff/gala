@@ -50,6 +50,8 @@ filegroup(
         "multipackage_subpkg/main.gala",
         "multipackage_subpkg/state/state.gala",
         "newimmutable_nil.gala",
+        "sealed_done_state_pkg/state/helpers.gala",
+        "sealed_done_state_pkg/state/state.gala",
         "slice_unwrap/main.gala",
         "slice_unwrap/model.gala",
         "struct_field_unwrap/main.gala",
@@ -1337,6 +1339,28 @@ gala_test(
     src = "use_sealed_dot_import.gala",
     expected = "use_sealed_dot_import.out",
     deps = [":sealed_dot_import_lib"],
+)
+
+# Regression: a dot-imported sealed type whose first case is named `Done`
+# (with at least one field) must not be shadowed by an entry whose simple
+# name happens to be the sub-package name (`state`). Pattern
+# `case Done(body) =>` must resolve to the dot-imported sealed case
+# companion.
+gala_library(
+    name = "sealed_done_state_pkg",
+    srcs = [
+        "sealed_done_state_pkg/state/helpers.gala",
+        "sealed_done_state_pkg/state/state.gala",
+    ],
+    importpath = "martianoff/gala/examples/sealed_done_state_pkg/state",
+    visibility = ["//visibility:public"],
+)
+
+gala_test(
+    name = "use_sealed_done_state",
+    src = "use_sealed_done_state.gala",
+    expected = "use_sealed_done_state.out",
+    deps = [":sealed_done_state_pkg"],
 )
 
 # Multi-file Option test: Some/None in multi-file mode

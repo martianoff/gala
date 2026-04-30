@@ -1,0 +1,10 @@
+package state
+
+// Sibling file forces a multi-file batch transpile, matching the original
+// reproduction shape.
+func DescribeStatus(s Status) string = s match {
+    case Done(body) => s"done($body)"
+    case Help()     => "help"
+    case Blocked()  => "blocked"
+    case Finished() => "finished"
+}
