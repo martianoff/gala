@@ -2256,6 +2256,17 @@ gala_test(
     deps = ["//collection_immutable"],
 )
 
+# FIX-004: if-expression with both arms producing s-string interpolations
+# must lower to `func() string { ... }()`, not `func() any { ... }()`.
+# Otherwise downstream callers expecting a concrete string (e.g. a
+# `string`-typed val initialiser) fail to compile in the generated Go.
+gala_test(
+    name = "fix004_if_string_iife",
+    src = "fix004_if_string_iife.gala",
+    expected = "fix004_if_string_iife.out",
+    deps = ["//collection_immutable"],
+)
+
 # Gap #10 regression: tuple literal passed to Append on Array[Tuple[A,B]]
 # infers A,B from the receiver, not falling back to any.
 gala_test(

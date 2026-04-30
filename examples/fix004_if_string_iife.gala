@@ -1,0 +1,49 @@
+package main
+
+import (
+    . "martianoff/gala/collection_immutable"
+)
+
+// Repro for FIX-004: `if (cond) sStr1 else sStr2` previously produced a
+// `func() any { ... }()` IIFE instead of `func() string { ... }()`, because
+// the lowered `fmt.Sprintf` CallExpr was not tagged with its return type.
+// When the if-expression appears in a `var` initialiser or argument position
+// (rather than a return statement), the IIFE return type was widened to
+// `any` and downstream callers expecting a concrete `string` failed to
+// compile in the generated Go (e.g. `NewImmutable[string](...)` rejected
+// the `any` value with "need type assertion").
+//
+// The original failing shape interpolates a value whose static type is
+// `Immutable[T]` (auto-unwrapped to `.Get()` by the s-string lowering).
+// HM type inference cannot reliably reach inside the lowered fmt.Sprintf
+// call to recover its `string` return type, so the if-expression's
+// per-branch fallback must rely on the AST-node type tag we attach in
+// `buildSprintfCall`.
+
+struct Style(Color string)
+
+func TextStyled(label string, style Style) string =
+    s"[${style.Color}] $label"
+
+// glyph is `Immutable[string]` (val-bindings are wrapped). The s-string
+// lowering inserts `glyph.Get()`, but the CallExpr's return type still
+// needs to be tagged as string for the if-expression IIFE.
+func render(isCursor bool, name string) string {
+    val glyph = if (isCursor) ">>" else "--"
+    val label = if (isCursor) s"$glyph cursor: $name" else s"$glyph: $name"
+    val style = Style(Color = "blue")
+    return TextStyled(label, style)
+}
+
+// f-string variant: same lowering, same expected type tagging.
+func formatNum(n int) string {
+    val s = if (n >= 0) f"+$n%d" else f"$n%d"
+    return s
+}
+
+func main() {
+    Println(render(true, "alice"))
+    Println(render(false, "bob"))
+    Println(formatNum(3))
+    Println(formatNum(-1))
+}

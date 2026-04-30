@@ -60,3 +60,5 @@ fail: boom
 chunk: hi
 sessfail: x
 other
+[blue] >> G alice
+[blue]    g bob
