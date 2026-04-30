@@ -66,3 +66,12 @@ DispatchByOutcome ok counter=2
 DispatchByOutcome err counter=1
 true
 false
+first dispatch -> first
+second dispatch -> second
+member 0: no model (expected)
+member 1: opus-4
+hasModel(0)=false
+hasModel(1)=true
+modelOr(0)=<none>
+hook0.args.size=0
+cfgs(1).Lead=Theo

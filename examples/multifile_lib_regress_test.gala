@@ -4,6 +4,7 @@ import (
     "errors"
     "martianoff/gala/examples/multifile_lib_regress"
     "martianoff/gala/examples/multifile_lib_regress/proc_pkg"
+    . "martianoff/gala/examples/multifile_lib_regress/directive_pkg"
     . "martianoff/gala/examples/multifile_lib_regress/shadow_func"
     "martianoff/gala/examples/go_struct_bridge"
     . "martianoff/gala/collection_immutable"
@@ -269,4 +270,67 @@ func main() {
     // (untyped string constant) as std.Immutable[string]".
     Println(multifile_lib_regress.PolicyMatches("notify"))
     Println(multifile_lib_regress.PolicyMatches("retry"))
+
+    // --- Regression: chained accessor `dirs.Get(N) match` over a
+    // cross-package sealed type + Array indirection.
+    //
+    // `Parse(msg)` returns `Array[Directive]` from the dot-imported
+    // directive_pkg. The val `dirs` therefore stores `Array[Directive]`.
+    // `dirs.Get(N)` should yield `Directive`. The match arms then bind
+    // case fields. Before the cache-invalidation fix this regressed
+    // when a stale on-disk pkgAST for directive_pkg was reused — the
+    // collection_immutable.Array typeMeta was missing from the
+    // consumer's lookup table, so `inferGetMethodType` fell through to
+    // returning the receiver type, and `firstD` was stored as
+    // `Array[Directive]` instead of `Directive`. The match-IIFE then
+    // typed `obj` as `Array[Directive]` and Go rejected the
+    // `Dispatch{}.Unapply` call.
+    val dirs = multifile_lib_regress.ParseDirectives("payload")
+    val firstD  = dirs.Get(0)
+    val secondD = dirs.Get(1)
+    Println(firstD match {
+        case Dispatch(target, _) => s"first dispatch -> $target"
+        case Summary(body)       => s"first summary  -> $body"
+    })
+    Println(secondD match {
+        case Dispatch(target, _) => s"second dispatch -> $target"
+        case Summary(body)       => s"second summary  -> $body"
+    })
+
+    // --- Regression: chained accessor `cfg.Members.Get(N).Model match`
+    // (FIX-008 + FIX-010 shape). Cfg.Members is `Array[Member]`,
+    // .Get(N) returns `Member`, .Model is `Option[string]`. The match
+    // subject must be typed as `Option[string]` — not `Option[any]`,
+    // and the match-IIFE param must accept the Immutable wrapper unwrap.
+    val cfg = multifile_lib_regress.LoadCfg()
+    Println(cfg.Members.Get(0).Model match {
+        case None()  => "member 0: no model (expected)"
+        case Some(m) => s"member 0: $m"
+    })
+    Println(cfg.Members.Get(1).Model match {
+        case Some(m) => s"member 1: $m"
+        case None()  => "member 1: no model"
+    })
+
+    // --- Regression: `.IsDefined()` / `.GetOrElse(...)` on
+    // `Immutable[Option[T]]` reached through a chained accessor
+    // (FIX-010 shape). The auto-unwrap codegen must dispatch through
+    // the Immutable wrapper before the method lookup.
+    Println(s"hasModel(0)=${cfg.Members.Get(0).Model.IsDefined()}")
+    Println(s"hasModel(1)=${cfg.Members.Get(1).Model.IsDefined()}")
+    Println(s"modelOr(0)=${cfg.Members.Get(0).Model.GetOrElse(\"<none>\")}")
+
+    // --- Regression: `.Size()` on `Immutable[Array[T]]` reached
+    // through a chained accessor (FIX-011 shape). cfg.Hooks.Get(0)
+    // returns `Immutable[Hook]`, .Args returns `Immutable[Array[string]]`,
+    // .Size() must auto-unwrap before dispatching the method.
+    Println(s"hook0.args.size=${cfg.Hooks.Get(0).Args.Size()}")
+
+    // --- Regression: 3-deep chain `cfgs.Get(N).Lead.Name` (FIX-012
+    // shape). The chain goes Cfg → Array[Cfg] → Cfg → Member → string,
+    // each traversed through Immutable wrappers. .Name on
+    // `Immutable[Member]` must resolve to the field's `Immutable[string]`
+    // and Go must accept a bare string literal at the Eq site.
+    val cfgs = multifile_lib_regress.LoadCfgs()
+    Println(s"cfgs(1).Lead=${cfgs.Get(1).Lead.Name}")
 }
