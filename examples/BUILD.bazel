@@ -1,5 +1,4 @@
 load("//:gala.bzl", "gala_binary", "gala_go_test", "gala_library", "gala_test")
-load("@rules_go//go:def.bzl", "go_library")
 
 filegroup(
     name = "single_file_gala_sources",
@@ -42,6 +41,8 @@ filegroup(
         "multi_file_option/main.gala",
         "multi_file_types/main.gala",
         "multi_file_types/model.gala",
+        "multifile_lib_regress/directive_chain.gala",
+        "multifile_lib_regress/directive_pkg/directive.gala",
         "multifile_lib_regress/proc_pkg/proc.gala",
         "multifile_lib_regress/proc_session.gala",
         "multifile_lib_regress/shadow_func/shadow.gala",
@@ -2204,6 +2205,7 @@ gala_library(
     importpath = "martianoff/gala/examples/multifile_lib_regress/team_pkg",
     visibility = ["//visibility:public"],
 )
+
 gala_library(
     name = "multifile_lib_regress_proc_pkg",
     srcs = [
@@ -2212,6 +2214,25 @@ gala_library(
     ],
     importpath = "martianoff/gala/examples/multifile_lib_regress/proc_pkg",
     visibility = ["//visibility:public"],
+)
+
+# Sub-library exercising the chained-accessor regression: a sealed
+# Directive type plus a Parse(string) Array[Directive] function whose
+# return type comes from collection_immutable. The consumer (in the
+# test driver) dot-imports this package and exercises:
+#   - dirs.Get(N) match  — sealed-type match through Array.Get
+#   - cfg.Members.Get(N).Model match  — Option[T] match through 2-deep chain
+#   - cfg.Members.Get(N).Model.IsDefined() / .GetOrElse(...)  — method
+#     dispatch through Immutable[Option[T]]
+#   - cfg.Hooks.Get(0).Args.Size()  — method dispatch through
+#     Immutable[Array[T]]
+#   - cfgs.Get(N).Lead.Name  — 3-deep field chain
+gala_library(
+    name = "multifile_lib_regress_directive_pkg",
+    srcs = ["multifile_lib_regress/directive_pkg/directive.gala"],
+    importpath = "martianoff/gala/examples/multifile_lib_regress/directive_pkg",
+    visibility = ["//visibility:public"],
+    deps = ["//collection_immutable"],
 )
 
 # Sibling package that intentionally exports a top-level function whose name
@@ -2230,6 +2251,7 @@ gala_library(
     name = "multifile_lib_regress",
     srcs = [
         "multifile_lib_regress/consult_end.gala",
+        "multifile_lib_regress/directive_chain.gala",
         "multifile_lib_regress/events_pipe.gala",
         "multifile_lib_regress/go_interop.gala",
         "multifile_lib_regress/logic.gala",
@@ -2244,8 +2266,9 @@ gala_library(
     importpath = "martianoff/gala/examples/multifile_lib_regress",
     visibility = ["//visibility:public"],
     deps = [
-        ":multifile_lib_regress_team_pkg",
+        ":multifile_lib_regress_directive_pkg",
         ":multifile_lib_regress_proc_pkg",
+        ":multifile_lib_regress_team_pkg",
         "//collection_immutable",
         "//examples/go_struct_bridge",
     ],
@@ -2257,6 +2280,7 @@ gala_test(
     expected = "multifile_lib_regress_test.out",
     deps = [
         ":multifile_lib_regress",
+        ":multifile_lib_regress_directive_pkg",
         ":multifile_lib_regress_proc_pkg",
         ":multifile_lib_regress_shadow_func",
         "//collection_immutable",

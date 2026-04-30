@@ -1,0 +1,86 @@
+package directive_pkg
+
+import (
+    . "martianoff/gala/collection_immutable"
+)
+
+// directive_pkg mirrors the real-world shape that hit the chained
+// auto-unwrap regressions in production: a sealed type plus a
+// `Parse(string) Array[Sealed]` function that returns an Array from a
+// transitively-imported library (collection_immutable). The consumer
+// dot-imports this package and exercises:
+//
+//   - `dirs.Get(N) match { case Foo(...) => ... }` — match-IIFE over a
+//     chained-accessor result whose type comes from Array[T].Get → T,
+//     where T is a sealed type defined here.
+//   - `cfg.Items.Get(N).Field match { ... }` — match over a deep chain
+//     ending at an `Immutable[Option[T]]` field.
+//   - `Eq(t, x.Get(N).Field, "lit")` — literal lift through chained
+//     accessors that return `Immutable[string]`.
+//   - `.Size()` / `.IsDefined()` / `.GetOrElse(...)` on chained
+//     accessors that return `Immutable[Array[T]]` / `Immutable[Option[T]]`.
+//
+// All of these failed when the on-disk analyzer cache was poisoned
+// with a pre-merge pkgAST for this package — the consumer would load
+// only the local types and miss `collection_immutable.Array`'s method
+// metadata, falling back to the receiver type for `dirs.Get(0)` and
+// then typing match subjects as `Array[Directive]` instead of
+// `Directive`. The fix invalidates that cache when the gala compiler
+// binary itself changes.
+
+sealed type Directive {
+    case Dispatch(Target string, Body string)
+    case Summary(Body string)
+}
+
+// Parse synthesises a fixed sequence of directives. The two-Dispatch
+// shape exercises Array.Get(0) / Array.Get(1) returning `Directive`,
+// the consumer's match arms then bind `target` and `body`.
+func Parse(msg string) Array[Directive] = ArrayOf(
+    Dispatch(Target = "first",  Body = msg),
+    Dispatch(Target = "second", Body = msg),
+)
+
+// Member is a struct whose Model field is `Option[string]`. The
+// consumer reaches it via `cfg.Members.Get(N).Model.IsDefined()` —
+// a 3-deep chain (Cfg → Array[Member] → Member → Option[string]).
+struct Member(
+    Name  string,
+    Model Option[string],
+)
+
+// Hook holds an Array[string]. The consumer reaches `.Args.Size()`
+// via `cfg.Hooks.Get(0).Args.Size()` to exercise method dispatch on
+// `Immutable[Array[string]]`.
+struct Hook(
+    Name string,
+    Cmd  string,
+    Args Array[string],
+)
+
+// Cfg is the top-level container the consumer pulls everything from.
+// Members → Array[Member]; Hooks → Array[Hook]; Lead → Member (3-deep
+// chain via Cfg → Array[Cfg] → Cfg → Member → field).
+struct Cfg(
+    Members Array[Member],
+    Hooks   Array[Hook],
+    Lead    Member,
+)
+
+// SampleCfg builds a fixture Cfg with mixed `None` / `Some` members
+// and a hook with no args. The consumer test driver matches against
+// this exact shape.
+func SampleCfg() Cfg = Cfg(
+    Members = ArrayOf(
+        Member(Name = "Iris",  Model = None[string]()),
+        Member(Name = "Felix", Model = Some("opus-4")),
+    ),
+    Hooks = ArrayOf(
+        Hook(Name = "lint", Cmd = "go", Args = EmptyArray[string]()),
+    ),
+    Lead = Member(Name = "Theo", Model = Some("sonnet-4")),
+)
+
+// SampleCfgs returns an Array[Cfg] so the consumer can exercise the
+// 3-deep chain `cfgs.Get(N).Lead.Name` (returns `Immutable[string]`).
+func SampleCfgs() Array[Cfg] = ArrayOf(SampleCfg(), SampleCfg())

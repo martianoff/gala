@@ -41,6 +41,32 @@ const CacheVersion = "v1"
 // If empty, only CacheVersion is used (backward compatible).
 var CompilerVersion string
 
+// binarySelfHash returns a short content hash of the running gala binary.
+// It is used to invalidate the on-disk analysis cache automatically when the
+// compiler binary changes — critical for unstamped "dev" builds (Version="dev",
+// GitCommit="unknown") where CompilerVersion alone cannot distinguish between
+// compiler revisions. Without this, recompiling the transpiler does not bust
+// the cache, and cached metadata produced by an older analyzer can poison new
+// builds (e.g., a per-package pkgAST that was serialized before transitive
+// type-merge was introduced will still be loaded by a newer analyzer that
+// expects the merged form, producing "no typeMeta for collection_immutable.Array"
+// failures at the consumer side).
+//
+// Returns an empty string on any I/O failure; the caller treats the empty case
+// as "no extra invalidation key", which preserves the previous behaviour.
+var binarySelfHash = func() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	data, err := ioutil.ReadFile(exe)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])[:12]
+}()
+
 // CachedRichAST is the serializable subset of RichAST (no antlr.Tree).
 type CachedRichAST struct {
 	PackageName      string
@@ -98,6 +124,19 @@ type analysisCache struct {
 
 // newAnalysisCache creates a cache rooted at the given project directory.
 // Returns a disabled cache if the directory can't be created.
+//
+// The cache directory path embeds:
+//   - CacheVersion: bump on serialization-format changes.
+//   - CompilerVersion: when stamping is active (Version + "-" + GitCommit).
+//   - binarySelfHash: short hash of the gala binary itself, so unstamped "dev"
+//     builds also invalidate when the binary changes. Without this, the
+//     analyzer's serialized pkgAST from an older revision (e.g. before
+//     transitive-type-merge in scanImports) could outlive the binary upgrade
+//     and silently feed stale metadata to a newer transformer expecting the
+//     merged shape — producing failures like
+//     `firstD = NewImmutable(dirs.Get().Get(0))` typed as `Array[T]` instead
+//     of `T` because `collection_immutable.Array` had been pruned from the
+//     cached `directive` package's metadata.
 func newAnalysisCache(projectRoot string) *analysisCache {
 	if projectRoot == "" {
 		return &analysisCache{enabled: false}
@@ -105,6 +144,9 @@ func newAnalysisCache(projectRoot string) *analysisCache {
 	cacheDir := CacheVersion
 	if CompilerVersion != "" {
 		cacheDir = CacheVersion + "-" + CompilerVersion
+	}
+	if binarySelfHash != "" {
+		cacheDir = cacheDir + "-" + binarySelfHash
 	}
 	dir := filepath.Join(projectRoot, ".gala", "cache", cacheDir)
 	if err := os.MkdirAll(dir, 0755); err != nil {

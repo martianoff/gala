@@ -1,0 +1,43 @@
+package multifile_lib_regress
+
+import (
+    "martianoff/gala/examples/multifile_lib_regress/directive_pkg"
+    . "martianoff/gala/collection_immutable"
+)
+
+// --- Regression: chained accessor through Immutable wrapper ---
+//
+// These helpers re-export directive_pkg fixtures so the test driver
+// can exercise them through dot-imports. The pre-existing failure
+// mode: when the consumer's on-disk pkgAST cache predates the
+// transitive-type-merge in scanImports, `collection_immutable.Array`
+// is missing from the consumer's typeMetas. Then `dirs.Get(0)` (where
+// `dirs` was a val storing `Array[Directive]`) inferred its type via
+// `inferGetMethodType` → `getTypeMeta("collection_immutable.Array")`
+// → nil → fall through to `return xType` (the Array receiver itself,
+// not the .Get(0) return type).
+//
+// Downstream:
+//   - `val firstD = dirs.Get(0)` stored `firstD` as `Array[Directive]`
+//     instead of `Directive`.
+//   - `firstD match { case Dispatch(...) => ... }` typed the IIFE
+//     param as `Array[Directive]` and `Dispatch{}.Unapply(obj)` was
+//     rejected because Unapply expects `Directive`, not the array.
+//
+// The fix invalidates that stale cache by mixing the gala compiler
+// binary's content hash into the cache directory key.
+
+// ParseDirectives returns Array[Directive] for the consumer to chain
+// .Get(N) and match against. Routes through directive_pkg so the
+// match site sits across a package boundary.
+func ParseDirectives(msg string) Array[directive_pkg.Directive] =
+    directive_pkg.Parse(msg)
+
+// LoadCfg is the cross-package container access helper.
+func LoadCfg() directive_pkg.Cfg = directive_pkg.SampleCfg()
+
+// LoadCfgs is the 3-deep chain test helper. The driver does
+// `cfgs.Get(N).Lead.Name` which traverses
+//   `Array[Cfg] → Cfg → Member → string`
+// where each hop is wrapped/unwrapped through Immutable.
+func LoadCfgs() Array[directive_pkg.Cfg] = directive_pkg.SampleCfgs()
