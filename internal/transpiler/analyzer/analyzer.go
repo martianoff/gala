@@ -2214,9 +2214,16 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 	// 3. Any imported package's content changes (depsHash includes resolved dep hashes)
 	contentHash := hashPackageDir(dirPath)
 	depsHash := hashImportPaths(dirPath)
+	directImports := extractDirectImportPaths(dirPath)
 	if contentHash != "" && a.cache != nil {
 		cacheStart := time.Now()
-		if cached := a.cache.Get(relPath, contentHash, depsHash); cached != nil {
+		if cached, cachedDirectImports := a.cache.Get(relPath, contentHash, depsHash); cached != nil {
+			// Re-merge the package's direct imports into the cached own-only
+			// pkgAST. Each import resolves through analyzePackage, which is
+			// itself cache-served — so a deep dependency graph is recovered
+			// in memory without any of the transitive duplication that
+			// previously bloated the on-disk representation.
+			a.rehydrateImports(relPath, cached, cachedDirectImports)
 			logCache(true, relPath, time.Since(cacheStart))
 			return cached, nil
 		}
@@ -2356,12 +2363,75 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 		synthesizeTypeMetadataFromGo(pkgAST, goInfo)
 	}
 
-	// Store in disk cache for future processes
+	// Store in disk cache for future processes. Only the package's OWN
+	// metadata (types, functions, methods declared in this package) is
+	// persisted — the direct import list is recorded separately so the
+	// transitive type closure can be reconstructed at load time without
+	// inflating each on-disk entry to N×M of the dependency graph.
 	if contentHash != "" && a.cache != nil {
-		a.cache.Put(relPath, contentHash, depsHash, pkgAST)
+		a.cache.Put(relPath, contentHash, depsHash, pkgAST, directImports)
 	}
 
 	return pkgAST, nil
+}
+
+// rehydrateImports re-merges the metadata of each direct import into the
+// loaded own-only pkgAST. The recursion bottoms out at packages with no
+// imports; cycle protection is handled by the analyzer's analyzedPkgs map
+// (a placeholder nil entry blocks re-entry while a package is in progress).
+//
+// pkgPath is the path of the package being rehydrated and is excluded from
+// its own import list as a defensive guard against pathological cycles
+// where a serialized cache might list itself.
+func (a *galaAnalyzer) rehydrateImports(pkgPath string, pkgAST *transpiler.RichAST, directImports []string) {
+	if pkgAST == nil || len(directImports) == 0 {
+		return
+	}
+	if pkgAST.Packages == nil {
+		pkgAST.Packages = make(map[string]string)
+	}
+	for _, imp := range directImports {
+		if imp == "" || imp == pkgPath {
+			continue
+		}
+		// Reuse the in-memory analyzedPkgs cache when possible — this
+		// avoids redundant disk reads and keeps cycle detection simple.
+		if cached, ok := a.analyzedPkgs[imp]; ok {
+			if cached != nil {
+				pkgAST.Merge(cached)
+				if cached.PackageName != "" && cached.PackageName != "main" && cached.PackageName != "test" {
+					pkgAST.Packages[imp] = cached.PackageName
+				}
+			}
+			continue
+		}
+
+		// Determine whether this is a GALA package; non-GALA imports
+		// (e.g. Go stdlib) don't have a pkgAST and are handled elsewhere.
+		isInternalGala := strings.HasPrefix(imp, "martianoff/gala/")
+		isExternalGala := a.resolver != nil && a.resolver.IsGalaPackage(imp)
+		if !isInternalGala && !isExternalGala {
+			continue
+		}
+		var relPath string
+		if isInternalGala {
+			relPath = strings.TrimPrefix(imp, "martianoff/gala/")
+		} else {
+			relPath = imp
+		}
+
+		// Mark as in-progress so a cycle through this import does not loop.
+		a.analyzedPkgs[imp] = nil
+		importedAST, err := a.analyzePackage(relPath)
+		if err != nil || importedAST == nil {
+			continue
+		}
+		a.analyzedPkgs[imp] = importedAST
+		pkgAST.Merge(importedAST)
+		if importedAST.PackageName != "" && importedAST.PackageName != "main" && importedAST.PackageName != "test" {
+			pkgAST.Packages[imp] = importedAST.PackageName
+		}
+	}
 }
 
 // synthesizeTypeMetadataFromGo populates pkgAST.Types with TypeMetadata
