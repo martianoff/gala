@@ -2076,6 +2076,14 @@ gala_test(
     expected = "option_when.out",
 )
 
+# Reassignment of Some(...) to an Option[T] var must inherit the type-arg
+# from the LHS so the variant is emitted as Some[T]{}.Apply(...).
+gala_test(
+    name = "fix001_some_reassign",
+    src = "fix001_some_reassign.gala",
+    expected = "fix001_some_reassign.out",
+)
+
 # Go struct construction with GALA named-arg syntax
 gala_test(
     name = "go_struct_named_args",

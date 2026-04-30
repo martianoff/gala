@@ -216,4 +216,14 @@ func main() {
     Println(multifile_lib_regress.DescribeAppMsg(multifile_lib_regress.ToAppMsg(chunkEv)))
     Println(multifile_lib_regress.DescribeAppMsg(multifile_lib_regress.ToAppMsg(endOkEv)))
     Println(multifile_lib_regress.DescribeAppMsg(multifile_lib_regress.ToAppMsg(endErrEv)))
+
+    // --- Regression: `failure = Some(...)` reassignment to an Option[T] var
+    // must inherit the LHS type-arg so the variant is emitted as
+    // `Some[T]{}.Apply(...)`. Exercises the cross-package shape with the
+    // helper defined in multifile_lib_regress/logic.gala.
+    val seeds = ArrayOf("alpha", "beta", "gamma")
+    multifile_lib_regress.RuntimeFailure(seeds, 2) match {
+        case Some(msg) => Println(s"runtime failure: $msg")
+        case None()    => Println("runtime failure: <none>")
+    }
 }

@@ -1,0 +1,37 @@
+package main
+
+import (
+    "errors"
+    . "martianoff/gala/std"
+)
+
+// FIX-001 regression: reassigning `Some(...)` to a `var` of inferred
+// `Option[string]` must inherit the LHS type so the variant is emitted
+// as `Some[string]{}.Apply(...)` (not `Some{}.Apply(...)` which Go
+// rejects as "generic type Some[T any] without instantiation").
+func describe(opt Option[string]) string = opt match {
+    case Some(s) => s
+    case None()  => "<none>"
+}
+
+func main() {
+    val onbErr Option[error] = Some[error](errors.New("init"))
+    var failure Option[string] = onbErr.Map((e) => s"onboarding: ${e.Error()}")  // Option[string]
+
+    // Reassignment must pick up Option[string] from the var's declared type.
+    // Use a literal whose type the call-site arg-inference cannot resolve
+    // (Get() on a fresh Option[string] returns string at runtime, but the
+    // transpiler resolves this through Immutable wrappers): the type-arg
+    // for Some must come from the LHS declared type.
+    val src Option[string] = Some[string]("plain")
+    failure = Some(src.Get())
+    Println(describe(failure))
+
+    // Mutate again to check the path is exercised at every site.
+    failure = None[string]()
+    Println(describe(failure))
+
+    // Direct string literal — already worked, kept as a sanity check.
+    failure = Some("recovered")
+    Println(describe(failure))
+}

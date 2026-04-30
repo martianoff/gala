@@ -155,7 +155,23 @@ func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext)
 	if err != nil {
 		return nil, err
 	}
-	rhsExprs, err := t.transformExpressionList(ctx.GetChild(2).(*grammar.ExpressionListContext))
+
+	// Downward type-inference for sealed-variant constructors on the RHS:
+	// when the LHS is a single bare variable (`failure = Some(...)`) and that
+	// variable's declared type carries concrete type arguments
+	// (e.g. `Option[string]`), push the LHS type onto the expected-type stack
+	// so the RHS call dispatcher can pick up the parent sealed type's type
+	// arguments and emit `Some[string]{}.Apply(...)` instead of an
+	// uninstantiated `Some{}.Apply(...)`. Mirrors the same hint pushed by val
+	// declarations with explicit type annotations (declarations.go).
+	rhsListCtx := ctx.GetChild(2).(*grammar.ExpressionListContext)
+	if lhsName, lhsOk := t.singleAssignmentLHSName(lhsCtx); lhsOk {
+		if lhsType := t.getValType(lhsName); !lhsType.IsNil() {
+			release := t.expectedArgTypes.push(lhsType)
+			defer release()
+		}
+	}
+	rhsExprs, err := t.transformExpressionList(rhsListCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -514,6 +530,29 @@ func (t *galaASTTransformer) isConstPtrDerefAssignment(ctx grammar.IExpressionCo
 		}
 	}
 	return false
+}
+
+// singleAssignmentLHSName returns the bare variable name on the LHS of a
+// single-target assignment (`x = ...`). Returns ("", false) for tuple-style
+// assignments (`a, b = ...`), field/index targets (`v.f = ...`, `v[i] = ...`),
+// and any other expression that is not a plain identifier.
+//
+// Used by transformAssignment to look up the variable's declared type so
+// downward inference can drive sealed-variant constructors on the RHS.
+func (t *galaASTTransformer) singleAssignmentLHSName(lhsCtx *grammar.ExpressionListContext) (string, bool) {
+	exprs := lhsCtx.AllExpression()
+	if len(exprs) != 1 {
+		return "", false
+	}
+	exprCtx := exprs[0]
+	if !t.isDirectVariableExpression(exprCtx) {
+		return "", false
+	}
+	pc := t.getPrimaryFromExpression(exprCtx)
+	if pc == nil || pc.Identifier() == nil {
+		return "", false
+	}
+	return pc.Identifier().GetText(), true
 }
 
 // isDirectVariableExpression checks whether the expression is a bare identifier

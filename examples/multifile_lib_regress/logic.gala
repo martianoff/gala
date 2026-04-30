@@ -289,3 +289,26 @@ func CloseAllMembers(members HashMap[string, Member]) Array[string] {
     })
     return failures.Sorted()
 }
+
+// --- Regression: reassigning `Some(...)` to an Option[T] var must propagate
+// the LHS variable's declared type-arg into the RHS sealed-variant
+// constructor so the variant is emitted as `Some[T]{}.Apply(...)` (not the
+// uninstantiated `Some{}.Apply(...)` which Go rejects).
+//
+// Mirrors the gala-server runtime-error fallback shape: an Option[string]
+// var is initialised from a cross-package mapping and later reassigned
+// inside a loop. Without LHS-type propagation, the per-iteration `Some(...)`
+// erases to Some[any] and downstream uses of `failure` (passed to a function
+// expecting Option[string]) fail Go compile.
+func RuntimeFailure(seeds Array[string], cap int) Option[string] {
+    val onbErr Option[error] = Some[error](errors.New("seed missing"))
+    var failure = onbErr.Map((e) => s"onboarding: ${e.Error()}")
+    var i = 0
+    seeds.ForEach((s) => {
+        if i < cap {
+            failure = Some(s"runtime[$i]: $s")
+        }
+        i = i + 1
+    })
+    return failure
+}
