@@ -292,6 +292,19 @@ gala_test(
     expected = "fix007_sealed_tuple_widen.out",
 )
 
+# Regression: a user-written `return X` inside a match-arm body, when the
+# match is in statement position inside a `for` loop, must escape the
+# enclosing function (not just the match-IIFE). Pre-fix this lowered to a
+# bare `return` inside the synthetic IIFE, leaving the for-loop spinning
+# (runtime infinite loop). Bazel's per-target test timeout catches the
+# regression if it ever returns.
+gala_test(
+    name = "fix024_match_arm_return_in_loop",
+    src = "fix024_match_arm_return_in_loop.gala",
+    expected = "fix024_match_arm_return_in_loop.out",
+    deps = ["//collection_immutable"],
+)
+
 gala_test(
     name = "either",
     src = "either.gala",

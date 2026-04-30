@@ -50,14 +50,87 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 	}
 
 	t.needsStdImport = true
-	body := t.buildMatchBody(clauses, defaultBody, resultType)
 
 	matchLine, matchCol := 0, 0
 	if ctx != nil && ctx.GetStart() != nil {
 		matchLine = ctx.GetStart().GetLine()
 		matchCol = ctx.GetStart().GetColumn()
 	}
+
+	// Statement-position match with a user-written `return X` inside an arm
+	// body cannot use the IIFE lowering. Wrapping the body in
+	// `func(obj T) { ... }(subject)` would trap that `return X` inside the
+	// IIFE's lambda — the surrounding gala function never returns, and any
+	// enclosing for-loop spins forever (the bug fired as a runtime hang, not
+	// a compile error). Inline the body instead so user returns become
+	// genuine Go returns from the enclosing function. Synthesized arm-tail
+	// returns (added to feed the IIFE's value channel) are stripped, since
+	// the value would have been discarded anyway.
+	if stmtPosition && t.containsUserReturnInClauses(clauses, defaultBody) {
+		body := t.buildMatchBodyForInline(clauses, defaultBody)
+		t.pendingMatchStmtBlock = t.buildInlinedMatchBlock(expr, paramName, matchedType, body)
+		// Return a placeholder; transformBlock recognises pendingMatchStmtBlock
+		// and replaces the wrapping ExprStmt with the inlined block.
+		return ast.NewIdent("_"), nil
+	}
+
+	body := t.buildMatchBody(clauses, defaultBody, resultType)
 	return t.generateMatchIIFE(expr, paramName, matchedType, body, resultType, matchLine, matchCol)
+}
+
+// containsUserReturnInClauses reports whether any user-written `return X`
+// appears inside the if-else clauses or default body of a lowered match.
+func (t *galaASTTransformer) containsUserReturnInClauses(clauses []ast.Stmt, defaultBody []ast.Stmt) bool {
+	for _, c := range clauses {
+		if t.stmtContainsUserReturn(c) {
+			return true
+		}
+	}
+	return t.containsUserReturnStmt(defaultBody)
+}
+
+// buildMatchBodyForInline builds the if-else chain for an inlined statement-
+// position match. Unlike buildMatchBody, it does NOT call stripReturnStatements
+// (which would corrupt user returns) or fixupReturnStatements (only useful
+// for the IIFE's value channel). Synthesized arm-tail returns are removed so
+// they do not erroneously exit the enclosing function with a discarded value.
+func (t *galaASTTransformer) buildMatchBodyForInline(clauses []ast.Stmt, defaultBody []ast.Stmt) []ast.Stmt {
+	var rootIf ast.Stmt
+	var currentIf *ast.IfStmt
+	for _, clause := range clauses {
+		if rootIf == nil {
+			rootIf = clause
+			currentIf = findLeafIf(clause)
+		} else if currentIf != nil {
+			currentIf.Else = clause
+			currentIf = findLeafIf(clause)
+		}
+	}
+	var body []ast.Stmt
+	if rootIf != nil {
+		if len(defaultBody) > 0 && currentIf != nil {
+			currentIf.Else = &ast.BlockStmt{List: defaultBody}
+		}
+		body = []ast.Stmt{rootIf}
+	} else {
+		body = defaultBody
+	}
+	return t.stripSynthesizedArmReturns(body)
+}
+
+// buildInlinedMatchBlock wraps the inlined match body in a Go block that
+// binds the subject to paramName, mirroring the IIFE's parameter binding so
+// the if-else chain (which references paramName) stays well-formed. The block
+// also contains a fresh scope so the binding does not leak.
+func (t *galaASTTransformer) buildInlinedMatchBlock(expr ast.Expr, paramName string, matchedType transpiler.Type, body []ast.Stmt) *ast.BlockStmt {
+	stmts := make([]ast.Stmt, 0, len(body)+1)
+	stmts = append(stmts, &ast.AssignStmt{
+		Lhs: []ast.Expr{ast.NewIdent(paramName)},
+		Tok: token.DEFINE,
+		Rhs: []ast.Expr{expr},
+	})
+	stmts = append(stmts, body...)
+	return &ast.BlockStmt{List: stmts}
 }
 
 // parseMatchSubject extracts and type-checks the expression being matched.
@@ -207,7 +280,143 @@ func (t *galaASTTransformer) lowerMatchArmTailExpr(expr ast.Expr) (ast.Stmt, tra
 	if isNoReturnCallExpr(expr) {
 		return &ast.ExprStmt{X: expr}, transpiler.NilType{}
 	}
-	return &ast.ReturnStmt{Results: []ast.Expr{expr}}, t.inferResultType(expr)
+	return t.markSynthesizedArmReturn(&ast.ReturnStmt{Results: []ast.Expr{expr}}), t.inferResultType(expr)
+}
+
+// markSynthesizedArmReturn records that ret was synthesized by the match-arm
+// tail-expression lowering (i.e., it was an `ExprStmt{X}` rewritten into
+// `ReturnStmt{Results: [X]}` to feed the match IIFE's value channel). User-
+// written `return X` statements are NOT marked. This distinction lets the
+// statement-position-with-user-return inliner strip only the synthesized
+// returns and leave user returns intact so they exit the enclosing function.
+func (t *galaASTTransformer) markSynthesizedArmReturn(ret *ast.ReturnStmt) *ast.ReturnStmt {
+	if ret == nil {
+		return nil
+	}
+	if t.synthesizedReturns == nil {
+		t.synthesizedReturns = make(map[*ast.ReturnStmt]bool)
+	}
+	t.synthesizedReturns[ret] = true
+	return ret
+}
+
+// isSynthesizedArmReturn reports whether ret was created by the match-arm
+// tail synthesizer (see markSynthesizedArmReturn).
+func (t *galaASTTransformer) isSynthesizedArmReturn(ret *ast.ReturnStmt) bool {
+	if ret == nil || t.synthesizedReturns == nil {
+		return false
+	}
+	return t.synthesizedReturns[ret]
+}
+
+// containsUserReturnStmt reports whether stmts contain any non-bare
+// `return X` that was NOT synthesized by the match-arm tail lowering.
+// Such a return represents user intent to exit the enclosing function.
+// Like containsBareReturn, this skips constructs that establish their own
+// return scope (func literals).
+func (t *galaASTTransformer) containsUserReturnStmt(stmts []ast.Stmt) bool {
+	for _, s := range stmts {
+		if t.stmtContainsUserReturn(s) {
+			return true
+		}
+	}
+	return false
+}
+
+func (t *galaASTTransformer) stmtContainsUserReturn(stmt ast.Stmt) bool {
+	switch s := stmt.(type) {
+	case *ast.ReturnStmt:
+		if len(s.Results) == 0 {
+			return false // bare returns are handled by validateNoBareReturnsInValueMatch
+		}
+		return !t.isSynthesizedArmReturn(s)
+	case *ast.BlockStmt:
+		return t.containsUserReturnStmt(s.List)
+	case *ast.IfStmt:
+		if s.Body != nil && t.containsUserReturnStmt(s.Body.List) {
+			return true
+		}
+		if s.Else != nil && t.stmtContainsUserReturn(s.Else) {
+			return true
+		}
+		return false
+	case *ast.ForStmt:
+		if s.Body != nil {
+			return t.containsUserReturnStmt(s.Body.List)
+		}
+	case *ast.RangeStmt:
+		if s.Body != nil {
+			return t.containsUserReturnStmt(s.Body.List)
+		}
+	case *ast.SwitchStmt:
+		if s.Body != nil {
+			return t.containsUserReturnStmt(s.Body.List)
+		}
+	case *ast.TypeSwitchStmt:
+		if s.Body != nil {
+			return t.containsUserReturnStmt(s.Body.List)
+		}
+	case *ast.CaseClause:
+		return t.containsUserReturnStmt(s.Body)
+	case *ast.LabeledStmt:
+		return t.stmtContainsUserReturn(s.Stmt)
+	}
+	return false
+}
+
+// stripSynthesizedArmReturns rewrites synthesized arm-tail `return X` statements
+// inside a statement-position match body that is being inlined (so user-written
+// `return X` statements are NOT touched and continue to escape the enclosing
+// function). For a synthesized `return X`:
+//   - If X is a valid Go expression statement (e.g., a call), replace with `X`
+//     so the side effect runs even when the value is discarded.
+//   - Otherwise, drop the statement entirely (the value was the only payload).
+//
+// User-written returns are left untouched. Recurses through BlockStmt and IfStmt
+// (the only structural nodes the match lowering produces); other compound
+// statements are returned unchanged.
+func (t *galaASTTransformer) stripSynthesizedArmReturns(stmts []ast.Stmt) []ast.Stmt {
+	out := make([]ast.Stmt, 0, len(stmts))
+	for _, s := range stmts {
+		switch n := s.(type) {
+		case *ast.ReturnStmt:
+			if len(n.Results) > 0 && t.isSynthesizedArmReturn(n) {
+				if isValidGoExprStatement(n.Results[0]) {
+					out = append(out, &ast.ExprStmt{X: n.Results[0]})
+				}
+				// Drop entirely if not a valid expression statement; the value
+				// was the only payload and is being discarded.
+				continue
+			}
+			out = append(out, n)
+		case *ast.BlockStmt:
+			out = append(out, &ast.BlockStmt{List: t.stripSynthesizedArmReturns(n.List)})
+		case *ast.IfStmt:
+			newIf := &ast.IfStmt{Init: n.Init, Cond: n.Cond}
+			if n.Body != nil {
+				newIf.Body = &ast.BlockStmt{List: t.stripSynthesizedArmReturns(n.Body.List)}
+			}
+			if n.Else != nil {
+				switch e := n.Else.(type) {
+				case *ast.BlockStmt:
+					newIf.Else = &ast.BlockStmt{List: t.stripSynthesizedArmReturns(e.List)}
+				case *ast.IfStmt:
+					stripped := t.stripSynthesizedArmReturns([]ast.Stmt{e})
+					if len(stripped) == 1 {
+						newIf.Else = stripped[0]
+					} else {
+						newIf.Else = &ast.BlockStmt{List: stripped}
+					}
+				default:
+					newIf.Else = n.Else
+				}
+			}
+			out = append(out, newIf)
+		default:
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // containsBareReturn reports whether any statement in stmts (recursively) is a

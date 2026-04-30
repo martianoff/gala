@@ -432,7 +432,7 @@ func (t *galaASTTransformer) transformCaseClause(ctx *grammar.CaseClauseContext,
 			lastStmt := body[len(body)-1]
 			if lastStmt != nil {
 				if exprStmt, ok := lastStmt.(*ast.ExprStmt); ok {
-					body[len(body)-1] = &ast.ReturnStmt{Results: []ast.Expr{exprStmt.X}}
+					body[len(body)-1] = t.markSynthesizedArmReturn(&ast.ReturnStmt{Results: []ast.Expr{exprStmt.X}})
 				}
 			}
 		}

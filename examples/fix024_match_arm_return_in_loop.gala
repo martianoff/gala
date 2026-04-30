@@ -1,0 +1,69 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// Regression: a `return X` inside a match-arm body, when the match is in
+// statement position inside a `for` loop, was lowered to a bare `return`
+// from the synthetic match-IIFE. The bare return only exits the IIFE
+// lambda — not the enclosing gala function — so the surrounding for-loop
+// continued to spin (the loop counter never advanced on the return path),
+// producing a runtime infinite loop rather than a compile error.
+//
+// The fix detects a statement-position match whose arm bodies contain a
+// user-written `return X` and inlines the body as a Go block (no IIFE
+// wrapper). The user's `return X` then becomes a real Go return that
+// exits the enclosing function.
+
+// findFirstOver scans `values` and returns the first element greater than
+// `threshold`, or -1 if none. The early-exit `return v` lives inside a
+// match-arm body that is itself the only statement of a `for` loop body —
+// the precise shape that used to hang.
+func findFirstOver(values Array[int], threshold int) int {
+    var i = 0
+    val n = values.Length()
+    for i < n {
+        values.Get(i) match {
+            case 0 => { i = i + 1 }
+            case v => {
+                if v > threshold { return v }
+                i = i + 1
+            }
+        }
+    }
+    return -1
+}
+
+// findFirstSome exercises the `Some/None` shape from the original report:
+// the early `return Some(...)` inside a `Some(opened)` arm must escape the
+// enclosing function, not just the match-IIFE.
+func findFirstSome(values Array[int], target int) Option[int] {
+    var i = 0
+    val n = values.Length()
+    for i < n {
+        Some(values.Get(i)) match {
+            case Some(v) => {
+                if v == target { return Some(v) }
+                i = i + 1
+            }
+            case None() => { i = i + 1 }
+        }
+    }
+    return None[int]()
+}
+
+func main() {
+    val arr = ArrayOf(1, 2, 3, 200, 4, 999)
+    Println(findFirstOver(arr, 100))
+    Println(findFirstOver(arr, 50000))
+
+    val opt1 = findFirstSome(arr, 200)
+    opt1 match {
+        case Some(v) => Println(s"found ${v}")
+        case None()  => Println("none")
+    }
+    val opt2 = findFirstSome(arr, 50000)
+    opt2 match {
+        case Some(v) => Println(s"found ${v}")
+        case None()  => Println("none")
+    }
+}
