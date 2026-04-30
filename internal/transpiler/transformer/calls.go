@@ -2404,7 +2404,66 @@ func (t *galaASTTransformer) transformArgumentWithExpectedType(exprCtx grammar.I
 	}
 
 	// Not a lambda or partial function, transform normally
-	return t.transformExpression(exprCtx)
+	expr, err := t.transformExpression(exprCtx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Lift bare T value to Immutable[T] when the expected param type is
+	// Immutable[T] but the actual arg expression is a bare T (literal,
+	// arithmetic, etc.). Without this, Go rejects the bare value against
+	// the Immutable[T] parameter slot — the canonical case is calling
+	// `Eq[V](t, a, b)` where V resolves to `Immutable[string]` from one
+	// arg and the other arg is the bare string literal "notify".
+	if expectedType != nil && !expectedType.IsNil() && t.isImmutableType(expectedType) {
+		expr = t.liftToImmutableForArg(expr, expectedType)
+	}
+
+	return expr, nil
+}
+
+// liftToImmutableForArg wraps `expr` with `std.NewImmutable[T](expr)` when
+// the call-site expected param type is `Immutable[T]` and `expr` is a bare
+// `T` value (its inferred type does not already satisfy the Immutable
+// shape). Returns `expr` unchanged when no wrap is needed — including:
+//   - the expression already has type `Immutable[…]`,
+//   - `expr` is the `nil` literal (Immutable[T] has no nil shape — let the
+//     existing Some/None / Option diagnostics fire instead),
+//   - the inner type `T` can't be resolved (let the Go compiler surface a
+//     real mismatch rather than masking it).
+func (t *galaASTTransformer) liftToImmutableForArg(expr ast.Expr, expectedType transpiler.Type) ast.Expr {
+	if expr == nil {
+		return expr
+	}
+	// Skip nil literal — wrapping nil in NewImmutable is never desirable.
+	if id, ok := expr.(*ast.Ident); ok && id.Name == "nil" {
+		return expr
+	}
+	// If the expression is already Immutable[…], no wrap is needed.
+	exprType := t.getExprTypeName(expr)
+	if exprType != nil && !exprType.IsNil() && t.isImmutableType(exprType) {
+		return expr
+	}
+	// Resolve the inner type T from Immutable[T].
+	gen, ok := expectedType.(transpiler.GenericType)
+	if !ok || len(gen.Params) != 1 {
+		return expr
+	}
+	inner := gen.Params[0]
+	if inner == nil || inner.IsNil() {
+		return expr
+	}
+	innerExpr := t.typeToExpr(inner)
+	if innerExpr == nil {
+		return expr
+	}
+	return &ast.CallExpr{
+		Fun: &ast.IndexExpr{
+			X:     t.stdIdent("NewImmutable"),
+			Index: innerExpr,
+		},
+		Args: []ast.Expr{expr},
+	}
 }
 
 // transformLambdaArgWithExpectedType transforms a direct lambda argument.

@@ -1,0 +1,27 @@
+package main
+
+import (
+    . "martianoff/gala/std"
+    . "martianoff/gala/test"
+)
+
+// FIX-009 regression: when a function's call-site expected parameter
+// type is Immutable[T] and the actual arg is a bare T literal, the
+// transpiler must lift the literal with NewImmutable[T] — Go rejects
+// the bare literal as "cannot use \"notify\" (untyped string constant)
+// as std.Immutable[string] value in argument".
+//
+// Mirrors the gala-server team_config.PolicyConfig shape: a function
+// expecting Immutable[string] is called with a bare string literal at
+// one of its slots, and the literal must be auto-lifted to
+// Immutable[string] rather than emitted as `"notify"` directly.
+
+// EqStr expects both args as Immutable[string] (via the `val` keyword).
+// Calling EqStr(t, "notify", "notify") with bare literals must lift
+// each literal to Immutable[string]; no type parameter is involved so
+// the test isolates the literal-lift fix from generic inference.
+func EqStr(t T, val actual string, val expected string) T = Eq(t, actual, expected)
+
+func TestEqLiteralImmutable(t T) T {
+    return EqStr(t, "notify", "notify")
+}

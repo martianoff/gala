@@ -392,3 +392,13 @@ func DispatchByOutcome(outcome Try[string]) Tuple[DispatchModel, DispatchCmd[Dis
         }
     }
 }
+
+// --- Regression: bare T literal lift to Immutable[T] at val-param sites.
+// MatchPolicyName takes a `val expected string` parameter (so the Go
+// signature is `expected std.Immutable[string]`). Calling it with a bare
+// string literal must lift the literal to NewImmutable[string] — Go
+// rejects "cannot use \"notify\" (untyped string constant) as
+// std.Immutable[string] value" without that promotion.
+func MatchPolicyName(val expected string, val actual string) bool = expected == actual
+
+func PolicyMatches(name string) bool = MatchPolicyName("notify", name)

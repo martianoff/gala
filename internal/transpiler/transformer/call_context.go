@@ -181,6 +181,22 @@ func (t *galaASTTransformer) resolveExpectedFuncArgType(ctx callContext, argIdx 
 		}
 	}
 
+	// `val` parameters end up as `Immutable[T]` in the generated Go signature.
+	// When the callee declared this slot with `val`, surface the wrapped type
+	// to the argument transformer so it can lift bare T values (e.g. string
+	// literals) into `NewImmutable[T](…)`. Skip FuncType params: a function
+	// value parameter with `val` keeps its function type — wrapping it in
+	// Immutable would defeat the lambda inference paths.
+	if !expectedType.IsNil() && ctx.funcMeta != nil &&
+		argIdx < len(ctx.funcMeta.ParamImmutFlags) && ctx.funcMeta.ParamImmutFlags[argIdx] {
+		if _, isFunc := expectedType.(transpiler.FuncType); !isFunc {
+			expectedType = transpiler.GenericType{
+				Base:   transpiler.NamedType{Package: "std", Name: transpiler.TypeImmutable},
+				Params: []transpiler.Type{expectedType},
+			}
+		}
+	}
+
 	return expectedType
 }
 
