@@ -97,6 +97,24 @@ func (p Process) WriteLine(s string) Try[bool] = Try[bool](() => {
     return true
 })
 
+// CloseStdin closes the child's stdin pipe. Required for children
+// like `claude --print` that read stdin to EOF before producing
+// any output — without an explicit close, the child waits forever
+// for more input and the orchestrator's read pump times out.
+//
+// Idempotent: a Close error from a pipe that was already closed
+// (os.ErrClosed on Linux/macOS, ERROR_BROKEN_PIPE on Windows) is
+// swallowed — the caller wanted "stdin should be closed", and it
+// is. Concurrent with WriteLine: serialised through the stdin
+// mutex so a write in flight isn't truncated.
+func (p Process) CloseStdin() Try[bool] = Try[bool](() => {
+    val st = p.state
+    st.stdinMu.Lock()
+    defer st.stdinMu.Unlock()
+    val _ = st.stdin.Close()
+    return true
+})
+
 // ReadLine blocks until the child writes a complete line on stdout, then
 // returns it without the trailing newline. EOF (the child closed stdout, or
 // exited) returns Failure(io.EOF) — callers can recognise this via the std
