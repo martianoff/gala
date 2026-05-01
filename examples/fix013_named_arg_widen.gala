@@ -1,0 +1,40 @@
+package main
+
+// Multi-arg sealed-case constructor invoked with named arguments must widen
+// to the parent sealed type when used at function-return position and at
+// call-arg position. The single-arg named form and the positional multi-arg
+// form already widen; only the multi-arg + named-arg path was failing.
+
+import . "martianoff/gala/examples/fix013_named_arg_widen_lib"
+
+func makeRecovering(a int, m int) RecoveryStatus =
+    Recovering(Attempt = a, Max = m)
+
+func makeFailed(s string) RecoveryStatus =
+    Failed(Reason = s)
+
+func makeHelpWaiting(q string) RecoveryStatus =
+    HelpWaiting(Question = q)
+
+func describe(s RecoveryStatus) string = s match {
+    case Recovering(_, _) => "recovering"
+    case Failed(_)        => "failed"
+    case HelpWaiting(_)   => "help-waiting"
+    case Healthy          => "healthy"
+    case Idle             => "idle"
+    case Queued           => "queued"
+    case Working          => "working"
+    case Slow             => "slow"
+    case Stuck            => "stuck"
+}
+
+func recoveringDescription(a int, m int) string =
+    describe(Recovering(Attempt = a, Max = m))
+
+func main() {
+    Println(describe(makeRecovering(2, 5)))
+    Println(describe(makeFailed("boom")))
+    Println(describe(makeHelpWaiting("clarify?")))
+    Println(describe(Healthy()))
+    Println(recoveringDescription(3, 7))
+}
