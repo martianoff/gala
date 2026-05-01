@@ -1,0 +1,139 @@
+name: Perf — real-repo build budget
+
+# Manual + nightly only. The synthetic perf tests
+# (//internal/transpiler/analyzer:analyzer_test //
+# TestCachedRichAST_GobSizeBounded and TestCacheE2E_DiskFootprintBounded)
+# run on every PR and are the fast feedback loop. This lane builds a real
+# downstream repo (gala_team) against the upstream gala module to catch
+# regressions that the synthetic fixture is too small to surface — typically
+# issues where the analyzer cache is correctly small but per-package
+# transpile work has grown elsewhere (parser, transformer, or Go-type
+# extraction).
+#
+# Thresholds match what is achievable today (warm: ~55 s, cold: ~120 s on
+# the original investigation hardware, 2026-04-30) with 2× headroom so
+# CI variance does not nuisance-fail the lane. They should ratchet downward
+# any time a perf improvement lands; never upward without a documented
+# reason in the PR description.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 04:17 UTC nightly — small offset to dodge the top-of-hour
+    # GitHub Actions traffic spike.
+    - cron: "17 4 * * *"
+
+jobs:
+  real-repo-build:
+    name: Build gala_team against this branch
+    runs-on: ubuntu-latest
+    # Even a v1 baseline run finishes in well under 10 minutes;
+    # a 30-minute ceiling traps a runaway regression without
+    # paying for a worker forever.
+    timeout-minutes: 30
+
+    # NOTE: pin tags before running. Update both when the gala_tui
+    # or gala_team API surface intentionally changes; otherwise the
+    # build failures will reveal real semantic drift.
+    env:
+      GALA_TUI_REF: master
+      GALA_TEAM_REF: master
+      WARM_BUDGET_SECONDS: "120"
+      COLD_BUDGET_SECONDS: "240"
+
+    steps:
+      - name: Checkout gala (this branch)
+        uses: actions/checkout@v4
+        with:
+          path: gala_simple
+
+      - name: Checkout gala_tui
+        uses: actions/checkout@v4
+        with:
+          repository: martianoff/gala_tui
+          ref: ${{ env.GALA_TUI_REF }}
+          path: gala_tui
+
+      - name: Checkout gala_team
+        uses: actions/checkout@v4
+        with:
+          repository: martianoff/gala_team
+          ref: ${{ env.GALA_TEAM_REF }}
+          path: gala_team
+
+      - name: Setup Go
+        id: setup-go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: false
+
+      - name: Export GOROOT
+        run: echo "GOROOT=$(go env GOROOT)" >> "$GITHUB_ENV"
+
+      - name: Setup Bazel
+        uses: bazel-contrib/setup-bazel@0.14.0
+        with:
+          bazelisk-cache: true
+          disk-cache: perf-real-build-${{ steps.setup-go.outputs.go-version }}
+          repository-cache: true
+
+      - name: Cold build
+        working-directory: gala_team
+        run: |
+          set -euo pipefail
+          start=$(date +%s)
+          bazel build //cmd:gala_team \
+            --override_module=gala=$GITHUB_WORKSPACE/gala_simple \
+            --override_module=gala_tui=$GITHUB_WORKSPACE/gala_tui \
+            --action_env=GOROOT="$GOROOT" --action_env=PATH
+          end=$(date +%s)
+          elapsed=$((end - start))
+          echo "Cold build wall: ${elapsed}s (budget ${COLD_BUDGET_SECONDS}s)"
+          if [ "$elapsed" -gt "$COLD_BUDGET_SECONDS" ]; then
+            echo "::error::Cold build exceeded ${COLD_BUDGET_SECONDS}s budget (took ${elapsed}s)"
+            exit 1
+          fi
+
+      - name: Warm build
+        working-directory: gala_team
+        run: |
+          set -euo pipefail
+          # Force genrule re-execution against the populated analyzer
+          # disk cache so the timing reflects analyzer-cache HITs,
+          # not Bazel action-cache HITs.
+          start=$(date +%s)
+          bazel build //cmd:gala_team \
+            --override_module=gala=$GITHUB_WORKSPACE/gala_simple \
+            --override_module=gala_tui=$GITHUB_WORKSPACE/gala_tui \
+            --action_env=GOROOT="$GOROOT" --action_env=PATH \
+            --action_env=PERF_RUN=warm-$(date +%s)
+          end=$(date +%s)
+          elapsed=$((end - start))
+          echo "Warm build wall: ${elapsed}s (budget ${WARM_BUDGET_SECONDS}s)"
+          if [ "$elapsed" -gt "$WARM_BUDGET_SECONDS" ]; then
+            echo "::error::Warm build exceeded ${WARM_BUDGET_SECONDS}s budget (took ${elapsed}s)"
+            exit 1
+          fi
+
+      - name: Cache size budget
+        working-directory: gala_team
+        run: |
+          set -euo pipefail
+          if [ ! -d .gala/cache ]; then
+            echo "::warning::no .gala/cache directory; analyzer cache may have been disabled"
+            exit 0
+          fi
+          # Each individual analyzer cache entry should stay tiny; the
+          # symptom we care about is per-entry blowup (a hub package
+          # inlining its full transitive type closure), so we cap the
+          # largest single .gob.
+          biggest=$(find .gala/cache -name '*.gob' -printf '%s\n' | sort -nr | head -1 || echo 0)
+          biggest=${biggest:-0}
+          echo "Largest cache entry: ${biggest} bytes"
+          # 5 MiB ceiling — pre-fix saw 138 MiB for app/cli; even with
+          # a stdlib bigger than today's, ~5 MiB is loose-but-firm.
+          if [ "$biggest" -gt $((5 * 1024 * 1024)) ]; then
+            echo "::error::A single cache entry is ${biggest} bytes (>5 MiB) — likely a transitive-merge regression"
+            exit 1
+          fi
