@@ -198,15 +198,41 @@ func AnalyzeGoPackage(importPath string) *transpiler.GoTypeInfo {
 	return info
 }
 
+// goFilesCache memoizes AnalyzeGoFiles results across worker requests.
+// The directory's relevant .go files don't change during one Bazel build
+// invocation, and parsing + type-checking them with go/types is the most
+// expensive thing this package does after the analyzer itself. Without
+// memoization, the apex transpile of cmd/main.gala in gala_team
+// re-parses every transitive package's hand-written Go files (plus the
+// transitive Go-stdlib graph reachable via go/importer) on every visit.
+var goFilesCache = struct {
+	mu    sync.Mutex
+	cache map[string]*transpiler.GoTypeInfo
+}{cache: make(map[string]*transpiler.GoTypeInfo)}
+
 // AnalyzeGoFiles parses and type-checks local .go files and extracts type info.
 // This handles Go source files that live alongside GALA files or in Go-only packages.
 // Generated .gen.go files are skipped — their metadata comes from analyzing the
 // originating .gala source.
+//
+// Results are memoized per dirPath for the lifetime of the process. Within one
+// Bazel build the .go files in a package directory don't change, so the
+// parse + type-check work happens at most once per directory per worker.
 func AnalyzeGoFiles(dirPath string) *transpiler.GoTypeInfo {
+	goFilesCache.mu.Lock()
+	if cached, ok := goFilesCache.cache[dirPath]; ok {
+		goFilesCache.mu.Unlock()
+		return cached
+	}
+	goFilesCache.mu.Unlock()
+
 	info := transpiler.NewGoTypeInfo()
 
 	entries, err := os.ReadDir(dirPath)
 	if err != nil {
+		goFilesCache.mu.Lock()
+		goFilesCache.cache[dirPath] = info
+		goFilesCache.mu.Unlock()
 		return info
 	}
 
@@ -232,6 +258,9 @@ func AnalyzeGoFiles(dirPath string) *transpiler.GoTypeInfo {
 	}
 
 	if !hasGoFiles || len(files) == 0 {
+		goFilesCache.mu.Lock()
+		goFilesCache.cache[dirPath] = info
+		goFilesCache.mu.Unlock()
 		return info
 	}
 
@@ -250,10 +279,16 @@ func AnalyzeGoFiles(dirPath string) *transpiler.GoTypeInfo {
 	if pkg == nil {
 		// Even if type-checking fails, try to extract what we can from AST
 		extractFromAST(files, info)
+		goFilesCache.mu.Lock()
+		goFilesCache.cache[dirPath] = info
+		goFilesCache.mu.Unlock()
 		return info
 	}
 
 	extractPackageInfo(pkg, info)
+	goFilesCache.mu.Lock()
+	goFilesCache.cache[dirPath] = info
+	goFilesCache.mu.Unlock()
 	return info
 }
 
