@@ -1,0 +1,33 @@
+package main
+
+import (
+    . "martianoff/gala/std"
+    . "martianoff/gala/yaml"
+    . "martianoff/gala/collection_immutable"
+)
+
+// YAML twin of json_codec_array_of_structs.gala — same shape (Wrap → Msg →
+// Array[Part]) round-tripped through the YAML codec.  The fix to
+// genTypedRead / genCollectionWrite / genHashMapWrite in
+// codec_typed.go is shared between formats via the std.FieldEncoder /
+// std.FieldDecoder interface, so a single transpiler change lights up
+// both JSON and YAML codecs.
+
+struct Part(Type string, Text string)
+struct Msg(Content Array[Part])
+struct Wrap(Type string, Message Msg)
+
+func main() {
+    val codec = Codec[Wrap](SnakeCase())
+    val part = Part("text", "hello")
+    val parts = EmptyArray[Part]().Append(part)
+    val msg = Msg(parts)
+    val w = Wrap("assistant", msg)
+    val encoded = codec.Encode(w).Get()
+    Println(encoded)
+    val decoded = codec.Decode(encoded).Get()
+    Println(s"type=${decoded.Type}")
+    Println(s"content size=${decoded.Message.Content.Size()}")
+    Println(s"first text=${decoded.Message.Content.Get(0).Text}")
+    Println(s"round-trip equal=${w.Equal(decoded)}")
+}

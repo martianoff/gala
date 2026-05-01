@@ -26,7 +26,8 @@ func main() {
     val w = NewJsonEncoder()
     val nameFn = (i int) => meta.FieldName(i)
     val omitFn = (i int) => false
-    meta.EncodeFields(w, p, nameFn, omitFn)
+    val naming = (n string) => n
+    meta.EncodeFields(w, p, nameFn, omitFn, naming)
     Println(w.String())
 
     // Decode via the new typed path: reverse-lookup from field name → index.
@@ -43,7 +44,7 @@ func main() {
         }
         return -1
     }
-    val decoded = meta.DecodeFields(r, lookup)
+    val decoded = meta.DecodeFields(r, lookup, naming)
     // Fields default to Immutable[T]; .Get() unwraps to the raw value.
     Println(s"decoded: X=${decoded.X.Get()} Y=${decoded.Y.Get()} Label=${decoded.Label.Get()}")
 }

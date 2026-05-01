@@ -16,11 +16,12 @@ func main() {
     val meta = StructMeta[User]()
     val nameFn = (i int) => meta.FieldName(i)
     val omitFn = (i int) => false
+    val naming = (n string) => n
 
     // --- case 1: Some fields round-trip ---
     val u1 = User("alice", Some("ally"), Some(30))
     val w1 = NewJsonEncoder()
-    meta.EncodeFields(w1, u1, nameFn, omitFn)
+    meta.EncodeFields(w1, u1, nameFn, omitFn, naming)
     Println(w1.String())
 
     val r1 = NewJsonDecoder(w1.String())
@@ -36,18 +37,18 @@ func main() {
         }
         return -1
     }
-    val d1 = meta.DecodeFields(r1, lookup)
+    val d1 = meta.DecodeFields(r1, lookup, naming)
     Println(s"d1.Nickname.IsDefined=${d1.Nickname.Get().IsDefined()} value=${d1.Nickname.Get().GetOrElse("")}")
     Println(s"d1.Age.IsDefined=${d1.Age.Get().IsDefined()} value=${d1.Age.Get().GetOrElse(0)}")
 
     // --- case 2: None fields round-trip ---
     val u2 = User("bob", None[string](), None[int]())
     val w2 = NewJsonEncoder()
-    meta.EncodeFields(w2, u2, nameFn, omitFn)
+    meta.EncodeFields(w2, u2, nameFn, omitFn, naming)
     Println(w2.String())
 
     val r2 = NewJsonDecoder(w2.String())
-    val d2 = meta.DecodeFields(r2, lookup)
+    val d2 = meta.DecodeFields(r2, lookup, naming)
     Println(s"d2.Nickname.IsDefined=${d2.Nickname.Get().IsDefined()}")
     Println(s"d2.Age.IsDefined=${d2.Age.Get().IsDefined()}")
 }

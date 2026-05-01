@@ -58,9 +58,18 @@ type FieldDecoder interface {
 // ergonomic (`Codec[Person](SnakeCase())`) while the underlying
 // dispatch is fully typed — no `any`, no runtime type assertions on
 // user data.
+// The `naming` parameter on EncodeFields/DecodeFields is the GALA-field-name
+// (PascalCase) to serialized-key converter used for nested struct dispatch.
+// The generated EncodeFields/DecodeFields uses the precomputed nameFn/omitFn/
+// lookup for *its own* fields (which already account for Rename/Omit/Naming
+// at the top level), and constructs fresh per-type nameFn/omitFn/lookup for
+// any nested struct fields by composing `naming` with the inner struct's
+// FieldName.  This propagates the naming convention into nested decodes
+// without giving the std interface a dependency on json/yaml's `Naming`
+// sealed type.
 type StructMeta[T any] interface {
     NumFields() int
     FieldName(i int) string
-    EncodeFields(w FieldEncoder, t T, nameFn func(int) string, omitFn func(int) bool)
-    DecodeFields(r FieldDecoder, lookup func(string) int) T
+    EncodeFields(w FieldEncoder, t T, nameFn func(int) string, omitFn func(int) bool, naming func(string) string)
+    DecodeFields(r FieldDecoder, lookup func(string) int, naming func(string) string) T
 }

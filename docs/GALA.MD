@@ -30,6 +30,7 @@ GALA (Go Alternative LAnguage) is a modern programming language that transpiles 
    - [Try Monad](#try-monad)
    - [Future Monad](#future-monad)
    - [Json](#json)
+   - [Yaml](#yaml)
    - [Regex](#regex)
    - [IO Effect](#io-effect)
    - [Slices](#slices)
@@ -1586,6 +1587,57 @@ val codec = json.Codec[Person](json.SnakeCase())
 | `.Decode(s)` | `string → Try[T]` | Deserialize from JSON |
 | `.Unapply(s)` | `string → Option[T]` | Pattern matching extractor |
 
+#### Nested Structures and Unknown Fields
+
+`Codec[T]` handles nested struct fields including `Array[Struct]`, `List[Struct]`, `HashMap[string, Struct]`, and combinations such as `Array[Array[Struct]]`. The transpiler discovers reachable structs transitively (including across packages), and the naming strategy propagates into nested fields automatically.
+
+```gala
+struct Tag(Key string, Color string)
+struct User(Name string, Tags Array[Tag])
+
+val codec = Codec[User](SnakeCase())
+val tags = EmptyArray[Tag]().Append(Tag("urgent", "red"))
+val user = User("alice", tags)
+codec.Encode(user).Get()
+// => {"name":"alice","tags":[{"key":"urgent","color":"red"}]}
+```
+
+The decoder silently drops fields that are not declared on the target struct — there is no strict mode. See the website [Json docs](https://martianov.dev/docs/json/) for the long-form treatment.
+
+### Yaml
+
+The `yaml` package mirrors `json` exactly: same builder API, same auto-injected `StructMeta[T]`, same `Encode` / `Decode` / `Unapply` surface. The only difference is the emitted format — block-style YAML instead of JSON. Located in the `yaml` package.
+
+```gala
+import . "martianoff/gala/yaml"
+
+struct Person(FirstName string, LastName string, Age int)
+
+val codec = Codec[Person](SnakeCase())
+
+val yamlStr = codec.Encode(Person("Alice", "Smith", 30)).Get()
+// =>
+// first_name: Alice
+// last_name: Smith
+// age: 30
+
+val decoded = codec.Decode(yamlStr)  // Try[Person]
+
+// Pattern matching extractor
+val msg = yamlStr match {
+    case codec(p) => s"Hello ${p.FirstName}"
+    case _ => "invalid"
+}
+```
+
+Builder methods (`Naming`, `Omit`, `Rename`, `OmitEmpty`), naming strategies (`AsIs`, `CamelCase`, `SnakeCase`, `KebabCase`), nested struct collections, and the silent-drop behaviour for unknown fields all match the JSON codec — see the [Json](#json) section for details. There is no `EncodePretty` for YAML; block-style output is already readable.
+
+#### Supported YAML Subset
+
+The codec covers a focused subset: block-style mappings, block-style sequences, scalars (`string`, `int`, `float`, `bool`, `null`), literal block scalars (`|`), comments, and nested structures. Out of scope: anchors, aliases, flow style, custom tags.
+
+See the website [Yaml docs](https://martianov.dev/docs/yaml/) for the long-form treatment.
+
 ### StructMeta — Compile-Time Struct Introspection
 
 `StructMeta[T]` is a compiler intrinsic that provides zero-reflection, type-safe access to struct fields. It is the foundation for building codecs and any code that needs to inspect struct layout at compile time.
@@ -1602,7 +1654,7 @@ The transpiler generates a specialised struct (`_StructMeta_Person`) that satisf
 
 #### Auto-Injection
 
-When a generic type's `Apply` method declares its first parameter as `StructMeta[T]` (the typed interface in `std/meta.gala`), the transpiler auto-generates and injects the appropriate `_StructMeta_T{}` value. This is how `Codec[Person](SnakeCase())` works — the user never needs to write `StructMeta[Person]()` explicitly. `Codec[T]` itself is implemented as a pure GALA library (`std/json/codec.gala`) built on top of the neutral `FieldEncoder` / `FieldDecoder` interfaces from `std/meta.gala`; the transpiler carries no JSON-specific knowledge.
+When a generic type's `Apply` method declares its first parameter as `StructMeta[T]` (the typed interface in `std/meta.gala`), the transpiler auto-generates and injects the appropriate `_StructMeta_T{}` value. This is how `Codec[Person](SnakeCase())` works — the user never needs to write `StructMeta[Person]()` explicitly. `Codec[T]` itself is implemented as a pure GALA library (`json/json.gala`, with the `yaml` package as its YAML twin) built on top of the neutral `FieldEncoder` / `FieldDecoder` interfaces from `std/meta.gala`; the transpiler carries no format-specific knowledge.
 
 #### Building Custom Codecs
 
@@ -1633,8 +1685,8 @@ Then create a codec type with an `Apply(meta StructMeta[T], ...)` method — the
 |--------|-----------|-------------|
 | `NumFields` | `() int` | Number of fields in the struct |
 | `FieldName` | `(i int) string` | Name of field at index i |
-| `EncodeFields` | `(w FieldEncoder, t T, nameFn func(int) string, omitFn func(int) bool)` | Typed serialise of a T via the writer interface |
-| `DecodeFields` | `(r FieldDecoder, lookup func(string) int) T` | Typed construct of a T via the reader interface |
+| `EncodeFields` | `(w FieldEncoder, t T, nameFn func(int) string, omitFn func(int) bool, naming func(string) string)` | Typed serialise of a T via the writer interface; `naming` propagates into nested struct dispatch |
+| `DecodeFields` | `(r FieldDecoder, lookup func(string) int, naming func(string) string) T` | Typed construct of a T via the reader interface; `naming` propagates into nested struct dispatch |
 
 ### Regex
 
