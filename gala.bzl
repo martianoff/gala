@@ -233,6 +233,22 @@ def _gala_transpile_worker_impl(ctx):
             # genrule path uses).
             "no-sandbox": "1",
         },
+        # Inherit the bazel client's --action_env-declared env (GOROOT, PATH).
+        # The genrule path got these automatically; ctx.actions.run does NOT
+        # unless we opt in here. Without this, the worker subprocess starts
+        # with an empty PATH and possibly no GOROOT, so go/importer's
+        # findGOROOT() fails on the FIRST request — and because the importer
+        # is sync.Once-initialized inside the long-lived worker process,
+        # every subsequent request silently emits `any` for Go callback
+        # parameters (`func(any)` instead of `func(net.Listener)` etc.),
+        # breaking downstream Go compilation. Reproduces on CI Linux runners
+        # where the runner's PATH (containing `go`) is the only path GOROOT
+        # can be derived from.
+        use_default_shell_env = True,
+        # `env` still overrides matching keys in the default shell env, so
+        # an explicit GOROOT (already extracted from default_shell_env above)
+        # is preserved as a defensive belt-and-braces. If GOROOT is empty
+        # we omit the dict so default_shell_env passes through untouched.
         env = {"GOROOT": goroot} if goroot else {},
     )
 
