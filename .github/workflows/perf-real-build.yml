@@ -18,6 +18,8 @@ name: Perf — real-repo build budget
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [master, main]
   schedule:
     # 04:17 UTC nightly — small offset to dodge the top-of-hour
     # GitHub Actions traffic spike.
@@ -50,14 +52,14 @@ jobs:
       - name: Checkout gala_tui
         uses: actions/checkout@v4
         with:
-          repository: martianoff/gala_tui
+          repository: martianoff/gala-tui
           ref: ${{ env.GALA_TUI_REF }}
           path: gala_tui
 
       - name: Checkout gala_team
         uses: actions/checkout@v4
         with:
-          repository: martianoff/gala_team
+          repository: martianoff/gala-team
           ref: ${{ env.GALA_TEAM_REF }}
           path: gala_team
 
