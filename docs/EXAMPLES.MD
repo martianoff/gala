@@ -591,31 +591,74 @@ hello
 ```gala
 package main
 
-import . "martianoff/gala/std"
+import (
+    . "martianoff/gala/std"
+    . "martianoff/gala/json"
+    . "martianoff/gala/collection_immutable"
+)
 
-type Person struct {
-    var Name string
-    var Age  int
-}
+struct Tag(Key string, Color string)
+struct User(Name string, Tags Array[Tag])
 
 func main() {
-    val person = Person{Name: "Alice", Age: 30}
-    val jsonStr = JsonStringify(person).Get()
+    val codec = Codec[User](SnakeCase())
+
+    val tags = EmptyArray[Tag]().Append(Tag("urgent", "red"))
+    val user = User("alice", tags)
+
+    val jsonStr = codec.Encode(user).Get()
     Println(jsonStr)
 
-    // Pattern matching with Json extractor
-    val result = jsonStr match {
-        case Json[Person](p) => s"Matched: ${p.Name}, age ${p.Age}"
-        case _ => "no match"
+    // Pattern matching extractor: case fails (no panic) if decode fails.
+    val msg = jsonStr match {
+        case codec(u) => s"Matched: ${u.Name}, ${u.Tags.Get(0).Key}"
+        case _        => "no match"
     }
-    Println(result)
+    Println(msg)
 }
 ```
 
 Output:
 ```
-{"Name":"Alice","Age":30}
-Matched: Alice, age 30
+{"name":"alice","tags":[{"key":"urgent","color":"red"}]}
+Matched: alice, urgent
+```
+
+## YAML Serialization
+
+```gala
+package main
+
+import (
+    . "martianoff/gala/std"
+    . "martianoff/gala/yaml"
+    . "martianoff/gala/collection_immutable"
+)
+
+struct Tag(Key string, Color string)
+struct User(Name string, Tags Array[Tag])
+
+func main() {
+    val codec = Codec[User](SnakeCase())
+
+    val tags = EmptyArray[Tag]().Append(Tag("urgent", "red"))
+    val user = User("alice", tags)
+
+    val yamlStr = codec.Encode(user).Get()
+    Println(yamlStr)
+
+    val decoded = codec.Decode(yamlStr).Get()
+    Println(s"first tag: ${decoded.Tags.Get(0).Key}/${decoded.Tags.Get(0).Color}")
+}
+```
+
+Output:
+```
+name: alice
+tags:
+  - key: urgent
+    color: red
+first tag: urgent/red
 ```
 
 ## Regex Pattern Matching

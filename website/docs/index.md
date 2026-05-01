@@ -28,6 +28,7 @@ Welcome to the GALA documentation hub. Here you will find everything you need to
 | [Concurrency]({{ '/features/concurrency/' | relative_url }}) | `Future[T]`, `Promise[T]`, `ExecutionContext`, `Await`, and `Zip` |
 | [Go Interop]({{ '/features/go-interop/' | relative_url }}) | Import and use any Go package, type, or function directly from GALA |
 | [Json]({{ '/docs/json/' | relative_url }}) | Type-safe JSON serialization, deserialization, and pattern matching extractors |
+| [Yaml]({{ '/docs/yaml/' | relative_url }}) | Type-safe YAML serialization, deserialization, and pattern matching extractors |
 | [Regex]({{ '/docs/regex/' | relative_url }}) | Regular expressions with pattern matching and Array destructuring |
 | [IO Effect]({{ '/docs/io/' | relative_url }}) | Lazy composable side effects with `IO[T]` |
 
