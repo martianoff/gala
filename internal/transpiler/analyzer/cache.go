@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"martianoff/gala/internal/transpiler"
@@ -590,34 +591,157 @@ func (c *analysisCache) cachePath(pkgPath, contentHash string) string {
 	return filepath.Join(c.dir, c.cachePrefix(pkgPath)+contentHash[:12]+".gob")
 }
 
-// hashPackageDir computes a content hash for all .gala and .go files in a directory.
-func hashPackageDir(dirPath string) string {
+// pkgFingerprint is the per-process memo of the three derived quantities
+// the analyzer pulls out of a package directory on every analyzePackage call:
+// the source content hash, the imports hash, and the sorted direct-import
+// list. Computing each one independently — as the original code did — costs
+// three full file reads of every .gala/.go file in the package, which on
+// the apex transpile of a project like gala_team (~100 transitive packages,
+// ~5 files each) explodes to 1500+ tiny reads. On ubuntu-latest's I/O-
+// bound CI runners that round-trips through readahead/page-cache and slows
+// the cmd/main.gala apex transpile to 600+ s, even after PR #316
+// concentrated cold-start cost in a single process.
+//
+// We key by (dirPath, dirModTime, fileCount) so a write to the directory
+// (touch / new / delete) invalidates the entry on the next access. Within
+// a stable build that signature is invariant, so the heavy reads happen
+// once per package per worker process instead of (3 × visits-during-walk).
+type pkgFingerprint struct {
+	contentHash   string
+	depsHash      string
+	directImports []string
+}
+
+type pkgFingerprintCache struct {
+	mu      sync.Mutex
+	entries map[string]*pkgFingerprintEntry
+}
+
+type pkgFingerprintEntry struct {
+	dirSize int64       // st.Size() of the directory inode
+	mtime   time.Time   // st.ModTime() of the directory inode
+	count   int         // number of relevant non-test files
+	fp      pkgFingerprint
+}
+
+var fpCache = &pkgFingerprintCache{
+	entries: make(map[string]*pkgFingerprintEntry),
+}
+
+// pkgFingerprintForDir returns the (cached) content hash, deps hash, and
+// direct-imports list for a package directory. On cache miss it does ONE
+// pass over the directory, ONE read per file, and computes all three
+// derived values from the same buffer — vs the previous three-pass shape
+// that read every file three times. The result is memoized per process
+// keyed by (dirPath, directory mtime + size + entry count) so a churn-
+// free build pays the read cost once per package per worker process.
+func pkgFingerprintForDir(dirPath string) pkgFingerprint {
+	dirInfo, err := os.Stat(dirPath)
+	if err != nil {
+		return pkgFingerprint{}
+	}
 	files, err := ioutil.ReadDir(dirPath)
 	if err != nil {
-		return ""
+		return pkgFingerprint{}
 	}
-
-	h := sha256.New()
-	var names []string
+	// First pass: collect only the relevant filenames so the cache key
+	// doesn't oscillate when irrelevant files are touched (Bazel sandbox
+	// drops have a habit of scattering symlinks). Sort for hash stability.
+	type fileEntry struct {
+		name      string
+		isGala    bool
+	}
+	var entries []fileEntry
 	for _, f := range files {
-		if !f.IsDir() && (filepath.Ext(f.Name()) == ".gala" || filepath.Ext(f.Name()) == ".go") {
-			if !strings.HasSuffix(f.Name(), "_test.gala") && !strings.HasSuffix(f.Name(), "_test.go") && !strings.HasSuffix(f.Name(), ".gen.go") {
-				names = append(names, f.Name())
+		if f.IsDir() {
+			continue
+		}
+		name := f.Name()
+		ext := filepath.Ext(name)
+		if ext != ".gala" && ext != ".go" {
+			continue
+		}
+		if strings.HasSuffix(name, "_test.gala") || strings.HasSuffix(name, "_test.go") || strings.HasSuffix(name, ".gen.go") {
+			continue
+		}
+		entries = append(entries, fileEntry{name: name, isGala: ext == ".gala"})
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].name < entries[j].name })
+
+	fpCache.mu.Lock()
+	if e, ok := fpCache.entries[dirPath]; ok {
+		if e.mtime.Equal(dirInfo.ModTime()) && e.dirSize == dirInfo.Size() && e.count == len(entries) {
+			fp := e.fp
+			fpCache.mu.Unlock()
+			return fp
+		}
+	}
+	fpCache.mu.Unlock()
+
+	// Cache miss: do the heavy work once, then memoize. Read each file
+	// exactly once; both the content hash and the import-line scan share
+	// the same buffer.
+	contentH := sha256.New()
+	importSet := make(map[string]struct{})
+	for _, e := range entries {
+		content, err := ioutil.ReadFile(filepath.Join(dirPath, e.name))
+		if err != nil {
+			return pkgFingerprint{}
+		}
+		contentH.Write([]byte(e.name))
+		contentH.Write(content)
+		// Imports only come from .gala source — scan the same buffer.
+		if e.isGala {
+			scanImportsLineByLine(content, importSet)
+		}
+	}
+	directImports := make([]string, 0, len(importSet))
+	for p := range importSet {
+		directImports = append(directImports, p)
+	}
+	sort.Strings(directImports)
+	depsH := sha256.New()
+	for _, p := range directImports {
+		depsH.Write([]byte(p))
+	}
+	fp := pkgFingerprint{
+		contentHash:   hex.EncodeToString(contentH.Sum(nil)),
+		depsHash:      hex.EncodeToString(depsH.Sum(nil)),
+		directImports: directImports,
+	}
+	fpCache.mu.Lock()
+	fpCache.entries[dirPath] = &pkgFingerprintEntry{
+		dirSize: dirInfo.Size(),
+		mtime:   dirInfo.ModTime(),
+		count:   len(entries),
+		fp:      fp,
+	}
+	fpCache.mu.Unlock()
+	return fp
+}
+
+// scanImportsLineByLine extracts quoted "path/with/slashes" import strings
+// from a .gala source buffer. Mirrors the original line-based scan; we
+// pull it into a helper so the fingerprint loop and the test path can
+// share the implementation without re-reading the file.
+func scanImportsLineByLine(content []byte, into map[string]struct{}) {
+	for _, line := range strings.Split(string(content), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if idx := strings.Index(trimmed, "\""); idx >= 0 {
+			if end := strings.Index(trimmed[idx+1:], "\""); end >= 0 {
+				importPath := trimmed[idx+1 : idx+1+end]
+				if strings.Contains(importPath, "/") {
+					into[importPath] = struct{}{}
+				}
 			}
 		}
 	}
-	sort.Strings(names)
+}
 
-	for _, name := range names {
-		content, err := ioutil.ReadFile(filepath.Join(dirPath, name))
-		if err != nil {
-			return ""
-		}
-		h.Write([]byte(name))
-		h.Write(content)
-	}
-
-	return hex.EncodeToString(h.Sum(nil))
+// hashPackageDir computes a content hash for all .gala and .go files in a directory.
+// Memoized by pkgFingerprintForDir; see that function for cache semantics.
+func hashPackageDir(dirPath string) string {
+	return pkgFingerprintForDir(dirPath).contentHash
 }
 
 // hashImportPaths computes a hash of the import paths found in .gala files in a directory.
@@ -625,16 +749,14 @@ func hashPackageDir(dirPath string) string {
 // Combined with the content hash of each resolved dependency, this ensures transitive
 // invalidation when any dependency's source changes.
 func hashImportPaths(dirPath string) string {
-	h := sha256.New()
-	for _, importPath := range extractDirectImportPaths(dirPath) {
-		h.Write([]byte(importPath))
-	}
-	return hex.EncodeToString(h.Sum(nil))
+	return pkgFingerprintForDir(dirPath).depsHash
 }
 
 // extractDirectImportPaths reads all non-test .gala files in dirPath and
 // returns the set of import paths that appear in their import declarations.
-// The result is sorted and deduplicated so it can be persisted in a cache
+// Memoized by pkgFingerprintForDir.
+//
+// The list is sorted and deduplicated so it can be persisted in a cache
 // entry and replayed deterministically.
 //
 // This is a quick line-based scan (no full ANTLR parse) that mirrors the
@@ -643,39 +765,13 @@ func hashImportPaths(dirPath string) string {
 // filters this list — entries that don't resolve to GALA packages are
 // silently ignored at re-merge time.
 func extractDirectImportPaths(dirPath string) []string {
-	files, err := ioutil.ReadDir(dirPath)
-	if err != nil {
+	src := pkgFingerprintForDir(dirPath).directImports
+	if src == nil {
 		return nil
 	}
-	seen := make(map[string]struct{})
-	for _, f := range files {
-		if f.IsDir() || filepath.Ext(f.Name()) != ".gala" {
-			continue
-		}
-		if strings.HasSuffix(f.Name(), "_test.gala") {
-			continue
-		}
-		content, err := ioutil.ReadFile(filepath.Join(dirPath, f.Name()))
-		if err != nil {
-			continue
-		}
-		for _, line := range strings.Split(string(content), "\n") {
-			trimmed := strings.TrimSpace(line)
-			if idx := strings.Index(trimmed, "\""); idx >= 0 {
-				if end := strings.Index(trimmed[idx+1:], "\""); end >= 0 {
-					importPath := trimmed[idx+1 : idx+1+end]
-					if strings.Contains(importPath, "/") {
-						seen[importPath] = struct{}{}
-					}
-				}
-			}
-		}
-	}
-	out := make([]string, 0, len(seen))
-	for p := range seen {
-		out = append(out, p)
-	}
-	sort.Strings(out)
+	// Defensive copy so callers that append/sort don't mutate the cached slice.
+	out := make([]string, len(src))
+	copy(out, src)
 	return out
 }
 

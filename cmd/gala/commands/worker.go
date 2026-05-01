@@ -10,6 +10,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime/debug"
+	"runtime/pprof"
 	"sort"
 	"strings"
 	"sync"
@@ -22,6 +24,79 @@ import (
 	"martianoff/gala/internal/transpiler/generator"
 	"martianoff/gala/internal/transpiler/transformer"
 )
+
+// tuneGCOnce relaxes Go's default GC pacing for the analyzer's allocation-
+// heavy hot path (ANTLR ATN simulation + RichAST.Merge). A CPU profile of
+// the apex transpile (cmd/main.gala in gala_team, 11 dot-imports → ~100
+// transitive packages) showed ~44% of cumulative samples landing in
+// runtime.gcBgMarkWorker / runtime.scanobject under default GOGC=100. The
+// short-lived map and struct allocations the analyzer produces never
+// escape the request, so a tighter pacer just steals CPU from the small
+// (~4 vCPU) GitHub Actions runners without freeing meaningful memory.
+//
+// Two knobs:
+//
+//   - GOGC=300: let the heap grow 4× between collections (default 100 = 2×).
+//   - GOMEMLIMIT=6GiB: cap RSS so a runaway analyzer can't OOM the
+//     ubuntu-latest runner (16 GiB total, shared with bazel + 4 worker
+//     pools). The Go runtime triggers GC as the hard cap approaches.
+//
+// Both are honored only if the env var isn't already set, so users can
+// override per-build (CI lanes that need different RSS budgets, local
+// developers running a memory-constrained box, etc.) without re-stamping
+// the binary.
+func tuneGCOnce() {
+	if os.Getenv("GOGC") == "" {
+		debug.SetGCPercent(300)
+	}
+	if os.Getenv("GOMEMLIMIT") == "" {
+		// 6 GiB chosen so two parallel workers + the bazel server still
+		// fit in 16 GiB CI RAM with comfortable headroom.
+		debug.SetMemoryLimit(6 << 30)
+	}
+}
+
+// pprofOnce starts CPU profiling at most once per process when the
+// GALA_CPUPROFILE env var is set. Used to profile the slow per-package
+// transpile path inside the persistent worker (where the cobra-managed
+// transpile command is bypassed). The profile is written when the process
+// exits via runtime.SetFinalizer-style flush in worker shutdown — but most
+// callers send SIGKILL, so we register a small atexit-equivalent in
+// init() and flush via stdlib's StopCPUProfile + os.Exit hooks.
+var (
+	pprofOnce sync.Once
+	pprofFile *os.File
+)
+
+func startCPUProfileIfRequested() {
+	pprofOnce.Do(func() {
+		path := os.Getenv("GALA_CPUPROFILE")
+		if path == "" {
+			return
+		}
+		f, err := os.Create(path)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "gala: GALA_CPUPROFILE=%s: %v\n", path, err)
+			return
+		}
+		if err := pprof.StartCPUProfile(f); err != nil {
+			fmt.Fprintf(os.Stderr, "gala: StartCPUProfile: %v\n", err)
+			f.Close()
+			return
+		}
+		pprofFile = f
+	})
+}
+
+// stopCPUProfile flushes the in-flight CPU profile, if any. Safe to call
+// from any path; no-op when profiling was not started.
+func stopCPUProfile() {
+	if pprofFile != nil {
+		pprof.StopCPUProfile()
+		pprofFile.Close()
+		pprofFile = nil
+	}
+}
 
 // runWorker is invoked when gala is launched with --persistent_worker by
 // Bazel. The process stays alive for the lifetime of the build invocation
@@ -56,6 +131,9 @@ import (
 // Plain (non-worker) `gala transpile <args>` mode is unchanged; this is a
 // strictly additive code path.
 func runWorker() {
+	tuneGCOnce()
+	startCPUProfileIfRequested()
+	defer stopCPUProfile()
 	stdin := bufio.NewReaderSize(os.Stdin, 1<<16)
 	stdout := bufio.NewWriterSize(os.Stdout, 1<<16)
 

@@ -138,6 +138,10 @@ func prependIfNew(slice []string, val string) []string {
 }
 
 func runTranspile(cmd *cobra.Command, args []string) {
+	tuneGCOnce()
+	startCPUProfileIfRequested()
+	defer stopCPUProfile()
+
 	// Determine input file
 	inputPath := transpileInput
 	if inputPath == "" && len(args) > 0 {

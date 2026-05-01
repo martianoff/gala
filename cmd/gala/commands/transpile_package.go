@@ -46,6 +46,9 @@ func init() {
 }
 
 func runTranspilePackage(cmd *cobra.Command, args []string) {
+	tuneGCOnce()
+	startCPUProfileIfRequested()
+	defer stopCPUProfile()
 	if tpInputs == "" {
 		fmt.Fprintln(os.Stderr, "Error: --inputs is required")
 		os.Exit(1)

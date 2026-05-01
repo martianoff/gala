@@ -384,16 +384,16 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 					}
 					galaFileCount++
 					otherPath := filepath.Join(dirPath, f.Name())
-					content, err := ioutil.ReadFile(otherPath)
-					if err != nil {
-						continue
-					}
-					tree, err := a.parser.Parse(string(content))
-					if err != nil {
-						continue
-					}
-					otherSF, ok := tree.(*grammar.SourceFileContext)
-					if !ok {
+					// Use parseFileCached so a sibling that was already
+					// parsed by a previous Analyze() (or by the explicit-
+					// package-files branch) on the same BatchAnalyzer is
+					// not re-parsed. The original code called the lower-
+					// level parser directly, which on a multi-package
+					// closure (e.g. cmd/main.gala dot-importing 11
+					// libraries) re-parsed the same dependency files
+					// repeatedly inside one apex transpile.
+					otherSF, _, err := a.parseFileCached(otherPath)
+					if err != nil || otherSF == nil {
 						continue
 					}
 					cacheTrees = append(cacheTrees, otherSF)
