@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"martianoff/gala/internal/depman/fetch"
 	"martianoff/gala/internal/depman/mod"
@@ -25,6 +26,22 @@ type Resolver struct {
 	galaMod     *mod.File    // Parsed gala.mod file (if present)
 	galaModPath string       // Path to gala.mod file
 	cache       *fetch.Cache // GALA dependency cache
+
+	// resolveCache memoizes ResolvePackagePath results for the lifetime
+	// of the resolver. Within one Bazel build invocation the directory
+	// tree is invariant, so the resolution from import path to filesystem
+	// path is also invariant — and the recursive findPackageDirByLongestSuffix
+	// walk in Strategy 6 is the most expensive thing the resolver can do
+	// on a slow CI disk. Without this layer the apex transpile of
+	// cmd/main.gala in gala_team can re-walk the same large search tree
+	// hundreds of times per worker process.
+	resolveMu    sync.Mutex
+	resolveCache map[string]resolveCacheEntry
+}
+
+type resolveCacheEntry struct {
+	path string
+	err  error
 }
 
 // NewResolver creates a Resolver by searching for go.mod and gala.mod.
@@ -126,6 +143,27 @@ func (r *Resolver) ModuleName() string {
 //   - "github.com/user/pkg" in require -> cache path
 //   - "external/pkg" -> tries each search path
 func (r *Resolver) ResolvePackagePath(importPath string) (string, error) {
+	// Per-resolver memoization — see resolveCache field comment for why.
+	r.resolveMu.Lock()
+	if r.resolveCache == nil {
+		r.resolveCache = make(map[string]resolveCacheEntry)
+	}
+	if e, ok := r.resolveCache[importPath]; ok {
+		r.resolveMu.Unlock()
+		return e.path, e.err
+	}
+	r.resolveMu.Unlock()
+	path, err := r.resolvePackagePathUncached(importPath)
+	r.resolveMu.Lock()
+	r.resolveCache[importPath] = resolveCacheEntry{path: path, err: err}
+	r.resolveMu.Unlock()
+	return path, err
+}
+
+// resolvePackagePathUncached performs the actual resolution work. Split
+// out so ResolvePackagePath can wrap it with a memoization layer without
+// rewriting every early return.
+func (r *Resolver) resolvePackagePathUncached(importPath string) (string, error) {
 	// Strategy 0: Check replace directives in gala.mod
 	if r.galaMod != nil {
 		if replaced := r.applyReplace(importPath); replaced != "" {
