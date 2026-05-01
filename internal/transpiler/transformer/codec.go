@@ -69,10 +69,110 @@ func (t *galaASTTransformer) transformStructMetaConstruction(fun ast.Expr, line,
 // ---- code generation ----
 
 // finalizeCodecs generates all StructMeta Go declarations.
+//
+// Before codegen runs we close over the set of nested struct types
+// reachable from the registered top-level metas — every field whose
+// (unwrapped) type is itself a struct, including struct elements inside
+// Array/List/HashMap, gets its own _StructMeta_X registered so the
+// recursive EncodeFields/DecodeFields dispatch in codec_typed.go can
+// find it.  The walk is a simple worklist fixpoint.
 func (t *galaASTTransformer) finalizeCodecs(file *ast.File) {
+	t.expandNestedStructMetas()
 	for _, config := range t.structMetas {
 		decls := t.generateStructMetaDecls(config)
 		file.Decls = append(file.Decls, decls...)
+	}
+}
+
+// expandNestedStructMetas walks every registered StructMeta config's fields
+// and registers fresh entries for any nested struct types that we have
+// metadata for.  Repeats until the set is closed.
+func (t *galaASTTransformer) expandNestedStructMetas() {
+	worklist := make([]string, 0, len(t.structMetas))
+	for genName := range t.structMetas {
+		worklist = append(worklist, genName)
+	}
+	for len(worklist) > 0 {
+		genName := worklist[0]
+		worklist = worklist[1:]
+		config, ok := t.structMetas[genName]
+		if !ok || config.typeMetadata == nil {
+			continue
+		}
+		for _, fieldName := range config.typeMetadata.FieldNames {
+			fieldType := config.typeMetadata.Fields[fieldName]
+			added := t.registerNestedStructMetaForType(fieldType)
+			worklist = append(worklist, added...)
+		}
+	}
+}
+
+// registerNestedStructMetaForType registers a _StructMeta_X for any struct
+// type reachable through the given field type's container layers
+// (Immutable, Option, Array, List, HashMap value).  Returns the list of
+// freshly-registered generated names so the caller can keep walking.
+func (t *galaASTTransformer) registerNestedStructMetaForType(fieldType transpiler.Type) []string {
+	var added []string
+	t.collectNestedStructTypeNames(fieldType, func(name string) {
+		genName := "_StructMeta_" + name
+		if _, exists := t.structMetas[genName]; exists {
+			return
+		}
+		typeMeta, resolved := t.getTypeMetaResolved(name)
+		if typeMeta == nil || len(typeMeta.FieldNames) == 0 {
+			return
+		}
+		t.structMetas[genName] = &structMetaConfig{
+			typeName:      name,
+			typeMetadata:  typeMeta,
+			generatedName: genName,
+			resolvedName:  resolved,
+		}
+		t.registerStructMetaTypeMeta(genName, name)
+		added = append(added, genName)
+	})
+	return added
+}
+
+// collectNestedStructTypeNames invokes `cb` for every potentially-struct
+// named type reachable from `ty` by unwrapping Immutable/Option and
+// stepping into Array/List element + HashMap value parameters.
+func (t *galaASTTransformer) collectNestedStructTypeNames(ty transpiler.Type, cb func(string)) {
+	if ty == nil {
+		return
+	}
+	if gt, ok := ty.(transpiler.GenericType); ok {
+		base := gt.Base.BaseName()
+		if base == "Immutable" || base == "std.Immutable" ||
+			base == "Option" || base == "std.Option" {
+			if len(gt.Params) > 0 {
+				t.collectNestedStructTypeNames(gt.Params[0], cb)
+			}
+			return
+		}
+		if base == "Array" || base == "List" ||
+			base == "collection_immutable.Array" || base == "collection_immutable.List" {
+			if len(gt.Params) > 0 {
+				t.collectNestedStructTypeNames(gt.Params[0], cb)
+			}
+			return
+		}
+		if base == "HashMap" || base == "collection_immutable.HashMap" {
+			if len(gt.Params) == 2 {
+				t.collectNestedStructTypeNames(gt.Params[1], cb)
+			}
+			return
+		}
+		// Other generics (user-defined) — only recurse into the base name as
+		// the candidate; their type params are not part of any struct shape
+		// the transpiler currently codegens for.
+		if name := gt.Base.BaseName(); name != "" {
+			cb(name)
+		}
+		return
+	}
+	if name := namedTypeSimpleName(ty); name != "" {
+		cb(name)
 	}
 }
 

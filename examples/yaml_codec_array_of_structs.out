@@ -1,0 +1,9 @@
+type: assistant
+message:
+  content:
+    - type: text
+      text: hello
+type=assistant
+content size=1
+first text=hello
+round-trip equal=true

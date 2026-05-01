@@ -1,0 +1,3 @@
+package inner
+
+struct Part(Type string, Text string)

@@ -93,7 +93,14 @@ func omitFnFromKeys(keys Array[string]) func(int) bool =
 func (c JsonEncoder[T]) Encode(v T) Try[string] {
     return Try[string](() => {
         val w = NewJsonEncoder()
-        c.Meta.EncodeFields(w, v, nameFnFromKeys(c.Keys.Keys), omitFnFromKeys(c.Keys.Keys))
+        val naming = c.Config.NamingStrategy
+        c.Meta.EncodeFields(
+            w,
+            v,
+            nameFnFromKeys(c.Keys.Keys),
+            omitFnFromKeys(c.Keys.Keys),
+            (name string) => ApplyNaming(name, naming),
+        )
         return w.String()
     })
 }
@@ -112,7 +119,8 @@ func (c JsonEncoder[T]) Decode(s string) Try[T] {
     return Try[T](() => {
         val r = NewJsonDecoder(s)
         val lookup = buildLookup(c.Keys.ReverseKeys, c.Meta.NumFields(), c.Meta.FieldName)
-        return c.Meta.DecodeFields(r, lookup)
+        val naming = c.Config.NamingStrategy
+        return c.Meta.DecodeFields(r, lookup, (name string) => ApplyNaming(name, naming))
     })
 }
 

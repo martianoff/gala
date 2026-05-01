@@ -2,27 +2,18 @@ package main
 
 import (
     . "martianoff/gala/std"
-    . "martianoff/gala/json"
+    . "martianoff/gala/yaml"
     . "martianoff/gala/collection_immutable"
 )
 
-// Extended Codec[T] coverage: struct fields of Array / HashMap shapes,
-// including Array[Struct], List[Struct], HashMap[string, Struct], and
-// Array[Array[Struct]] (double nesting).  Round-trip property: for every
-// value v, Codec[T].Decode(Codec[T].Encode(v).Get()).Get() == v (the
-// generated Equal method handles immutable-wrapped fields).
-//
-// Naming config (SnakeCase) propagates into the inner struct's
-// field-name resolution: nested fields are also serialised in
-// snake_case and looked up by the same convention on decode.
+// YAML twin of json_codec_collections.gala — same shapes (Array[Struct],
+// List[Struct], HashMap[string, Struct], Array[Array[Struct]], mixed
+// primitive + struct fields), same round-trip property, exercised
+// through the YAML codec.  The transpiler's codegen is format-agnostic
+// (writes through std.FieldEncoder / std.FieldDecoder), so the JSON
+// fix lights up YAML at the same time — this file is the explicit
+// proof.
 
-struct Profile(
-    Name string,
-    Tags Array[string],
-    Labels HashMap[string, string],
-)
-
-// Array[Struct] / HashMap[string, Struct] / mixed-primitives parent.
 struct Tag(Key string, Color string)
 struct Item(
     Title string,
@@ -31,23 +22,14 @@ struct Item(
     Meta HashMap[string, Tag],
 )
 
-// List[Struct] case (List uses the same FromSlice constructor under the hood).
 struct Step(Order int, Note string)
 struct Recipe(Name string, Steps List[Step])
 
-// Double-nested: Array[Array[Struct]].
 struct Cell(Value int, Tag string)
 struct Grid(Rows Array[Array[Cell]])
 
 func main() {
-    // --- 1) Primitive collections (legacy, still works) ---
-    val codec = Codec[Profile](SnakeCase())
-    val tags = EmptyArray[string]().Append("go").Append("gala")
-    val labels = EmptyHashMap[string, string]().Put("role", "admin")
-    val p = Profile("alice", tags, labels)
-    Println(codec.Encode(p).Get())
-
-    // --- 2) Array[Struct] + HashMap[string, Struct] + mixed primitives ---
+    // --- 1) Array[Struct] + HashMap[string, Struct] + mixed primitives ---
     val itemCodec = Codec[Item](SnakeCase())
     val tag1 = Tag("urgent", "red")
     val tag2 = Tag("draft", "yellow")
@@ -63,7 +45,7 @@ func main() {
     Println(s"item.meta[hot]=${hot.Key}/${hot.Color}")
     Println(s"item round-trip equal=${item.Equal(itemDecoded)}")
 
-    // --- 3) List[Struct] ---
+    // --- 2) List[Struct] ---
     val recipeCodec = Codec[Recipe](SnakeCase())
     val steps = EmptyList[Step]().Append(Step(1, "mix")).Append(Step(2, "bake"))
     val recipe = Recipe("Bread", steps)
@@ -73,7 +55,7 @@ func main() {
     Println(s"recipe.steps.size=${recipeDecoded.Steps.Length()}")
     Println(s"recipe round-trip equal=${recipe.Equal(recipeDecoded)}")
 
-    // --- 4) Array[Array[Struct]] (double nesting) ---
+    // --- 3) Array[Array[Struct]] (double nesting) ---
     val gridCodec = Codec[Grid](SnakeCase())
     val row0 = EmptyArray[Cell]().Append(Cell(1, "a")).Append(Cell(2, "b"))
     val row1 = EmptyArray[Cell]().Append(Cell(3, "c"))

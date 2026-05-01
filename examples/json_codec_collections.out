@@ -1,1 +1,13 @@
 {"name":"alice","tags":["go","gala"],"labels":{"role":"admin"}}
+{"title":"Demo","score":42,"tags":[{"key":"urgent","color":"red"},{"key":"draft","color":"yellow"}],"meta":{"hot":{"key":"urgent","color":"red"}}}
+item.title=Demo score=42
+item.tags.size=2 first=urgent/red
+item.meta[hot]=urgent/red
+item round-trip equal=true
+{"name":"Bread","steps":[{"order":1,"note":"mix"},{"order":2,"note":"bake"}]}
+recipe.steps.size=2
+recipe round-trip equal=true
+{"rows":[[{"value":1,"tag":"a"},{"value":2,"tag":"b"}],[{"value":3,"tag":"c"}]]}
+grid.rows.size=2
+grid.rows[0].size=2 first=1/a
+grid round-trip equal=true

@@ -1,0 +1,25 @@
+package main
+
+import (
+    . "martianoff/gala/std"
+    . "martianoff/gala/json"
+    . "martianoff/gala/collection_immutable"
+)
+
+// Repro for Codec[T]: Array[Struct] / List[Struct] / HashMap[string, Struct].
+// Mirrors the claude stream-json shape: assistant message wraps a list of
+// content parts.  Before the fix, the Array[Part] field was silently
+// skipped on decode and the array always ended up empty.
+
+struct Part(Type string, Text string)
+struct Msg(Content Array[Part])
+struct Wrap(Type string, Message Msg)
+
+func main() {
+    val codec = Codec[Wrap](SnakeCase())
+    val raw = "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"hello\"}]}}"
+    val decoded = codec.Decode(raw).Get()
+    Println(s"type=${decoded.Type}")
+    Println(s"content size=${decoded.Message.Content.Size()}")
+    Println(s"first text=${decoded.Message.Content.Get(0).Text}")
+}

@@ -633,6 +633,57 @@ gala_test(
     ],
 )
 
+gala_test(
+    name = "json_codec_array_of_structs",
+    src = "json_codec_array_of_structs.gala",
+    expected = "json_codec_array_of_structs.out",
+    deps = [
+        "//collection_immutable",
+        "//json",
+    ],
+)
+
+gala_test(
+    name = "yaml_codec_array_of_structs",
+    src = "yaml_codec_array_of_structs.gala",
+    expected = "yaml_codec_array_of_structs.out",
+    deps = [
+        "//collection_immutable",
+        "//yaml",
+    ],
+)
+
+gala_test(
+    name = "yaml_codec_collections",
+    src = "yaml_codec_collections.gala",
+    expected = "yaml_codec_collections.out",
+    deps = [
+        "//collection_immutable",
+        "//yaml",
+    ],
+)
+
+# Cross-package nested struct codec: parent in main, inner struct in a
+# sibling package — exercises the recursive _StructMeta_X{} lookup
+# across module boundaries.
+gala_library(
+    name = "json_codec_cross_pkg_inner",
+    srcs = ["json_codec_cross_pkg/inner/inner.gala"],
+    importpath = "martianoff/gala/examples/json_codec_cross_pkg/inner",
+    visibility = ["//visibility:public"],
+)
+
+gala_test(
+    name = "json_codec_cross_pkg",
+    src = "json_codec_cross_pkg/main.gala",
+    expected = "json_codec_cross_pkg/main.out",
+    deps = [
+        "//collection_immutable",
+        "//json",
+    ],
+    gala_deps = [":json_codec_cross_pkg_inner"],
+)
+
 # Temporarily enabled for debugging
 gala_test(
     name = "try_recovery",

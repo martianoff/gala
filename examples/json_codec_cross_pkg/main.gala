@@ -1,0 +1,24 @@
+package main
+
+import (
+    . "martianoff/gala/std"
+    . "martianoff/gala/json"
+    . "martianoff/gala/collection_immutable"
+    . "martianoff/gala/examples/json_codec_cross_pkg/inner"
+)
+
+// Cross-package nested struct codec: parent (Wrap) is in main, inner
+// (Part) is in a sibling package.  Acceptance criterion #6 from
+// FIX-025 — codec recursion works across module boundaries.
+
+struct Msg(Content Array[Part])
+struct Wrap(Type string, Message Msg)
+
+func main() {
+    val codec = Codec[Wrap](SnakeCase())
+    val raw = "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"hello\"}]}}"
+    val decoded = codec.Decode(raw).Get()
+    Println(s"type=${decoded.Type}")
+    Println(s"content size=${decoded.Message.Content.Size()}")
+    Println(s"first text=${decoded.Message.Content.Get(0).Text}")
+}
