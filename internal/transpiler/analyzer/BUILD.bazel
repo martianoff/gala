@@ -27,6 +27,7 @@ go_library(
 go_test(
     name = "analyzer_test",
     srcs = [
+        "analyzed_pkgs_invariant_test.go",
         "analyzer_test.go",
         "batch_reuse_test.go",
         "cache_e2e_test.go",
