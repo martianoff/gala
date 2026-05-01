@@ -246,6 +246,136 @@ func filterGoTypeInfo(g *transpiler.GoTypeInfo, pkg string) *transpiler.GoTypeIn
 	return out
 }
 
+// projectOwnRichAST returns an in-memory own-only projection of `r`. It is
+// the live counterpart of toCachedRichAST: produces a *RichAST (instead of
+// the gob-serializable *CachedRichAST) so it can be stored in the analyzer's
+// analyzedPkgs map without the transitive type closure that Merge accumulated
+// from imports.
+//
+// Why this exists: the BatchAnalyzer keeps `analyzedPkgs[path]` for the entire
+// run so std and shared deps are not re-analyzed per file. Without projection,
+// each entry is the post-Merge "full closure" RichAST, which on a project
+// like gala_team (16 first-party packages + ~80 transitive) blows past 16 GB
+// of RSS because every package re-stores cloned (COW'd) copies of the same
+// transitive types. Projection retains only the metadata that *originated* in
+// this package; downstream consumers reconstruct the closure on demand by
+// recursively merging direct imports' projections via mergeAnalyzedClosureAt.
+//
+// Tree, FilePath, SourceContent, AnalysisWarnings, EmbedDirectives, and
+// ImportAliases are intentionally dropped — they belong to the per-file
+// Analyze invocation, not to the package-level shared cache. PackageName,
+// Types, Functions, CompanionObjects, GoExports, GoTypeInfo, TypeAliases,
+// and ImportPathMap follow the same own-package filter as toCachedRichAST.
+//
+// Packages is set to nil; the recursive closure walker re-establishes
+// path→pkgName mappings from analyzedPkgImports + analyzedPkgs[imp].PackageName.
+func projectOwnRichAST(r *transpiler.RichAST) *transpiler.RichAST {
+	if r == nil {
+		return nil
+	}
+	pkg := r.PackageName
+
+	var ownTypes map[string]*transpiler.TypeMetadata
+	if len(r.Types) > 0 {
+		ownTypes = make(map[string]*transpiler.TypeMetadata)
+		for k, v := range r.Types {
+			if v == nil {
+				continue
+			}
+			if v.Package == pkg {
+				ownTypes[k] = v
+			} else if v.Package == "" && belongsToPkg(k, pkg) {
+				ownTypes[k] = v
+			}
+		}
+	}
+
+	var ownFuncs map[string]*transpiler.FunctionMetadata
+	if len(r.Functions) > 0 {
+		ownFuncs = make(map[string]*transpiler.FunctionMetadata)
+		for k, v := range r.Functions {
+			if v == nil {
+				continue
+			}
+			if v.Package == pkg {
+				ownFuncs[k] = v
+			} else if v.Package == "" && belongsToPkg(k, pkg) {
+				ownFuncs[k] = v
+			}
+		}
+	}
+
+	var ownCos map[string]*transpiler.CompanionObjectMetadata
+	if len(r.CompanionObjects) > 0 {
+		ownCos = make(map[string]*transpiler.CompanionObjectMetadata)
+		for k, v := range r.CompanionObjects {
+			if v == nil {
+				continue
+			}
+			if v.Package == pkg {
+				ownCos[k] = v
+			} else if v.Package == "" && belongsToPkg(k, pkg) {
+				ownCos[k] = v
+			}
+		}
+	}
+
+	var ownGoExports map[string][]string
+	if len(r.GoExports) > 0 {
+		if pkg != "" {
+			if syms, ok := r.GoExports[pkg]; ok && len(syms) > 0 {
+				ownGoExports = map[string][]string{pkg: syms}
+			}
+		} else {
+			ownGoExports = r.GoExports
+		}
+	}
+
+	var ownGoTypeInfo *transpiler.GoTypeInfo
+	if r.GoTypeInfo != nil {
+		ownGoTypeInfo = filterGoTypeInfo(r.GoTypeInfo, pkg)
+	}
+
+	return &transpiler.RichAST{
+		PackageName:      r.PackageName,
+		Types:            ownTypes,
+		Functions:        ownFuncs,
+		Packages:         nil, // re-established by mergeAnalyzedClosureAt walker
+		CompanionObjects: ownCos,
+		GoExports:        ownGoExports,
+		GoTypeInfo:       ownGoTypeInfo,
+		TypeAliases:      r.TypeAliases,
+		ImportPathMap:    r.ImportPathMap,
+	}
+}
+
+// extractDirectGalaImports returns the GALA import paths declared by the
+// package whose RichAST is `r`. We reuse `r.Packages` because it is built
+// up at line ~478 of Analyze with one entry per direct GALA import scanned
+// from the source file (transitive paths are also added there via Merge,
+// but those entries' values are still resolved by the time we project, and
+// the recursive closure walker is idempotent under repeated visits — over-
+// reporting is harmless, missing edges would lose types). When projecting
+// the post-Merge form for storage in analyzedPkgs, we therefore record
+// every Packages key as a "direct" import for traversal purposes.
+//
+// This is deliberately broader than the on-disk DirectImports list (which
+// uses extractDirectImportPaths to read source). The on-disk list is the
+// authoritative direct-import set used for cache invalidation and disk
+// rehydration; the in-memory list is just a closure traversal map and only
+// needs to cover all paths reachable via Merge so the walker doesn't miss
+// types.
+func extractDirectGalaImports(r *transpiler.RichAST) []string {
+	if r == nil || len(r.Packages) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(r.Packages))
+	for path := range r.Packages {
+		out = append(out, path)
+	}
+	return out
+}
+
 func fromCachedRichAST(c *CachedRichAST) *transpiler.RichAST {
 	if c == nil {
 		return nil
