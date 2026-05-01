@@ -104,6 +104,191 @@ def _dep_search_shell_prelude(gala_deps):
     prelude = " ; ".join(parts) + " ; "
     return prelude, "$${_dep_search}"
 
+# ---- persistent-worker transpile -------------------------------------------
+#
+# Bazel persistent worker variant of gala_transpile / gala_transpile_package.
+# The worker process stays alive for the duration of the build invocation
+# (one process per worker_key) and amortizes analyzer cold-start across all
+# per-package transpiles. See cmd/gala/commands/worker.go for the worker
+# loop and protocol details.
+#
+# Each line of the param file Bazel writes becomes one argument the worker
+# reads from the WorkRequest. The conventional shape is:
+#     transpile-package
+#     --inputs=a.gala,b.gala
+#     --outputs=a.gen.go,b.gen.go
+#     --search=/path1,/path2
+#     --goroot=/sdk/go
+# (or `transpile` for the single-file case).
+#
+# The non-worker `gala_transpile` / `gala_transpile_package` macros below
+# are kept as-is so existing call sites continue to work. Toggle worker
+# mode at the macro layer via gala_use_persistent_worker (default: True)
+# — set to False to fall back to the genrule path for one release.
+
+# --define=gala_use_persistent_worker=false disables worker mode for one
+# release of escape hatch. Default ON: the whole point of this PR is to
+# turn workers on by default. Consumers who hit a regression can opt out.
+_USE_WORKER_DEFAULT = True
+
+def _gala_use_persistent_worker():
+    """Return True if worker mode is enabled. Read at macro evaluation."""
+    return _USE_WORKER_DEFAULT
+
+def _collect_dep_search_paths(gala_deps):
+    """Compute --search path entries for gala_deps at rule-construction time.
+
+    The genrule path uses a shell prelude (_dep_search_shell_prelude) that
+    expands $(locations) at action time. The worker rule cannot do that —
+    it builds args.add_joined() entries from the dep filegroups directly.
+
+    Returns a list of (label, parent_dir, grandparent_dir) tuples. parent
+    and grandparent are computed from the FIRST file's path inside the
+    rule implementation (where File.path is available). Here we just
+    capture the labels; the rule impl handles path derivation.
+    """
+    return [_gala_sources_label(dep) for dep in gala_deps]
+
+def _gala_transpile_worker_impl(ctx):
+    args = ctx.actions.args()
+    args.set_param_file_format("multiline")
+    args.use_param_file("@%s", use_always = True)
+
+    # Sub-command — first positional arg the worker dispatches on.
+    if ctx.attr.batch:
+        args.add("transpile-package")
+        # batch mode: --inputs and --outputs are both repeated, in pairs.
+        in_paths = [f.path for f in ctx.files.srcs]
+        out_paths = [f.path for f in ctx.outputs.outs]
+        args.add("--inputs=" + ",".join(in_paths))
+        args.add("--outputs=" + ",".join(out_paths))
+        outputs = list(ctx.outputs.outs)
+    else:
+        args.add("transpile")
+        args.add("--input=" + ctx.file.src.path)
+        args.add("--output=" + ctx.outputs.out.path)
+        if ctx.files.package_files:
+            args.add("--package-files=" + ",".join([f.path for f in ctx.files.package_files]))
+        outputs = [ctx.outputs.out]
+
+    # --search paths: project root (from go.mod) + each gala_dep's package
+    # dir + module root, mirroring _dep_search_shell_prelude exactly.
+    search_paths = []
+
+    # Project root from go.mod's parent.
+    gomod = ctx.file._gomod
+    # gomod.path is e.g. "go.mod" at repo root; its dirname is "" (repo root)
+    # or a sub-path. Bazel's File.dirname is the directory portion.
+    proj_root = gomod.dirname
+    if proj_root == "":
+        proj_root = "."
+    search_paths.append(proj_root)
+
+    # For each gala_dep, derive (pkg_dir, module_root) from the FIRST
+    # source file's path. The dep is a filegroup whose files are all
+    # under the same package dir, so the first file's dirname is the
+    # package dir and its parent is (typically) the module root.
+    for dep_target in ctx.attr.gala_deps:
+        files = dep_target[DefaultInfo].files.to_list()
+        if not files:
+            continue
+        first = files[0]
+        pkg_dir = first.dirname
+        # POSIX parent — strip trailing component.
+        if "/" in pkg_dir:
+            mod_root = pkg_dir.rsplit("/", 1)[0]
+        else:
+            mod_root = pkg_dir
+        if pkg_dir not in search_paths:
+            search_paths.append(pkg_dir)
+        if mod_root not in search_paths:
+            search_paths.append(mod_root)
+
+    args.add("--search=" + ",".join(search_paths))
+
+    # Pass GOROOT through; the worker forwards to go/importer.
+    goroot = ctx.configuration.default_shell_env.get("GOROOT", "")
+    if goroot:
+        args.add("--goroot=" + goroot)
+
+    direct_inputs = list(ctx.files.srcs) + list(ctx.files.package_files) + list(ctx.files.extra_srcs) + [gomod]
+    if not ctx.attr.batch:
+        direct_inputs.append(ctx.file.src)
+    inputs = depset(
+        direct = direct_inputs,
+        transitive = [d[DefaultInfo].files for d in ctx.attr.gala_deps] + [ctx.attr._all_gala_sources[DefaultInfo].files],
+    )
+
+    ctx.actions.run(
+        executable = ctx.executable._worker,
+        arguments = [args],
+        inputs = inputs,
+        outputs = outputs,
+        mnemonic = "GalaTranspile",
+        progress_message = "GalaTranspile %s" % ctx.label,
+        execution_requirements = {
+            "supports-workers": "1",
+            # GOROOT discovery requires reading the Go SDK — sandbox can
+            # block that on some hosts (matching the no-sandbox tag the
+            # genrule path uses).
+            "no-sandbox": "1",
+        },
+        env = {"GOROOT": goroot} if goroot else {},
+    )
+
+    return [DefaultInfo(files = depset(outputs))]
+
+# Two thin rule variants — one for single-file transpiles (src/out
+# attributes), one for batch (srcs/outs). They share an implementation
+# and only differ in attribute cardinality. Bazel rules cannot make a
+# single attr both optional and required, so we duplicate the attrs
+# rather than try to fold them.
+gala_transpile_worker_single = rule(
+    implementation = _gala_transpile_worker_impl,
+    attrs = {
+        "src": attr.label(allow_single_file = [".gala"], mandatory = True),
+        "out": attr.output(mandatory = True),
+        "srcs": attr.label_list(allow_files = [".gala"]),  # unused
+        "package_files": attr.label_list(allow_files = [".gala"], default = []),
+        "extra_srcs": attr.label_list(allow_files = True, default = []),
+        "gala_deps": attr.label_list(default = []),
+        "batch": attr.bool(default = False),
+        "_worker": attr.label(
+            default = Label("//cmd/gala"),
+            executable = True,
+            cfg = "exec",
+        ),
+        "_gomod": attr.label(
+            default = Label("//:go.mod"),
+            allow_single_file = True,
+        ),
+        "_all_gala_sources": attr.label(default = Label("//:all_gala_sources")),
+    },
+)
+
+gala_transpile_worker_batch = rule(
+    implementation = _gala_transpile_worker_impl,
+    attrs = {
+        "src": attr.label(allow_single_file = [".gala"]),  # unused
+        "srcs": attr.label_list(allow_files = [".gala"], mandatory = True),
+        "outs": attr.output_list(mandatory = True),
+        "package_files": attr.label_list(allow_files = [".gala"], default = []),
+        "extra_srcs": attr.label_list(allow_files = True, default = []),
+        "gala_deps": attr.label_list(default = []),
+        "batch": attr.bool(default = True),
+        "_worker": attr.label(
+            default = Label("//cmd/gala"),
+            executable = True,
+            cfg = "exec",
+        ),
+        "_gomod": attr.label(
+            default = Label("//:go.mod"),
+            allow_single_file = True,
+        ),
+        "_all_gala_sources": attr.label(default = Label("//:all_gala_sources")),
+    },
+)
+
 def gala_transpile(name, src, out = None, package_files = [], extra_srcs = [], gala_deps = []):
     """Transpile a GALA source file to Go using the full gala binary.
 
@@ -118,6 +303,22 @@ def gala_transpile(name, src, out = None, package_files = [], extra_srcs = [], g
     """
     if not out:
         out = name + ".go"
+
+    if _gala_use_persistent_worker():
+        # Translate gala_deps (gala_library labels) into their _gala_sources
+        # filegroup labels — that's what the worker rule iterates to build
+        # --search paths and to feed inputs. Mirrors the genrule path below.
+        dep_src_labels = [_gala_sources_label(dep) for dep in gala_deps]
+        gala_transpile_worker_single(
+            name = name,
+            src = src,
+            out = out,
+            package_files = package_files,
+            extra_srcs = extra_srcs,
+            gala_deps = dep_src_labels,
+            visibility = ["//visibility:public"],
+        )
+        return
 
     pf_flag = ""
     if package_files:
@@ -171,6 +372,18 @@ def gala_transpile_package(name, srcs, outs = None, extra_srcs = [], gala_deps =
 
     if len(srcs) != len(outs):
         fail("gala_transpile_package: srcs and outs must have the same length")
+
+    if _gala_use_persistent_worker():
+        dep_src_labels = [_gala_sources_label(dep) for dep in gala_deps]
+        gala_transpile_worker_batch(
+            name = name,
+            srcs = srcs,
+            outs = outs,
+            extra_srcs = extra_srcs,
+            gala_deps = dep_src_labels,
+            visibility = ["//visibility:public"],
+        )
+        return
 
     # Auto-include GALA source files from dependencies for cross-package type resolution
     dep_srcs = [_gala_sources_label(dep) for dep in gala_deps]

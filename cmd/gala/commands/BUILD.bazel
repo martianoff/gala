@@ -24,10 +24,12 @@ go_library(
         "transpile_package.go",
         "version.go",
         "version_cache.go",
+        "worker.go",
     ],
     importpath = "martianoff/gala/cmd/gala/commands",
     visibility = ["//visibility:public"],
     deps = [
+        "//cmd/gala/commands/worker",
         "//internal/build",
         "//internal/depman/fetch",
         "//internal/depman/graph",
