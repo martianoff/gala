@@ -3201,6 +3201,8 @@ If the Go SDK is not found, transpilation still succeeds but Go type inference i
 
 ## 16. Best Practices
 
+> **Quick reference:** [GALA_BEST_PRACTICES.MD](GALA_BEST_PRACTICES.MD) — the same rules in scannable form, with anchors back into this document.
+
 ### Immutability
 - **Prefer `val` over `var`** - Use mutable variables only when necessary (accumulators, loop counters)
 - **Use `Copy()` for updates** - Instead of mutating, create modified copies: `person.Copy(age = 31)`

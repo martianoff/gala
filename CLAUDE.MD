@@ -16,7 +16,7 @@ GALA is a programming language that transpiles to Go. Build system: Bazel.
 
 4. **ALWAYS use bazel for testing, compilation** - Both GO and GALA have build-in bazel actions for compilation and testing.
 
-5. **ALWAYS research GALA syntax and best practices from docs/GALA.MD before writing GALA code** - GALA is a functional language that extensively relies on pattern matching.
+5. **ALWAYS research GALA syntax and best practices before writing GALA code** - Start with [docs/GALA_BEST_PRACTICES.MD](docs/GALA_BEST_PRACTICES.MD) for the rule list; fall back to [docs/GALA.MD](docs/GALA.MD) for full specification details. GALA is a functional language that extensively relies on pattern matching.
 
 6. **NEVER try to find workaround if you found a transpiler bug, you must create a repro test case and fix the transpiler issue before moving forward**
 
@@ -83,13 +83,14 @@ Go stdlib/third-party packages — GALA's own type system works without it.
 
 ### GALA Code
 
-- Prefer: functional style, pattern matching, immutable variables
-- Prefer: generics, type-safe programming
-- Prefer: implicit typing everywhere — omit generic params (`Some(42)` not `Some[int](42)`), lambda param types (`(x) => x * 2` not `(x int) => x * 2`), variable types (`val x = 42` not `val x int = 42`), method type params (`list.Map((x) => x * 2)` not `list.Map[int]((x) => x * 2)`), and FoldLeft accumulator types (`list.FoldLeft(0, (acc, x) => acc + x)` not `list.FoldLeft[int](0, (acc int, x int) => acc + x)`)
-- Prefer: string interpolation (`s"Hello $name"`) over `fmt.Sprintf("Hello %s", name)` — no import needed
-- Prefer: `Println(...)` / `Print(...)` over `fmt.Println(...)` / `fmt.Print(...)` — no import needed
-- Prefer: `f"$x%.2f"` for explicit format control over `fmt.Sprintf("%.2f", x)`
-- Prefer: table-driven tests
+See [docs/GALA_BEST_PRACTICES.MD](docs/GALA_BEST_PRACTICES.MD) for the full rule list (variables, type inference, collections, pattern matching, lambdas, strings, error handling, naming, performance). Top-level highlights:
+
+- Functional style, pattern matching, immutable variables (`val` over `var`); generics over reflection
+- Implicit typing everywhere — omit generic params, lambda param types, variable types, method type params, and FoldLeft accumulator types
+- `s"..."` / `f"..."` over `fmt.Sprintf`; `Println`/`Print` over `fmt.Println`/`fmt.Print` (no `fmt` import needed)
+- GALA collections (`Array`/`List`/`HashMap` from `collection_immutable`) over Go slices/maps; `go_interop` only for Go interop
+- `Option`/`Try`/`Either` over `nil` and naked error pairs
+- Table-driven tests
 
 ---
 
