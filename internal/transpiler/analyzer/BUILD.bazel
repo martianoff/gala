@@ -37,6 +37,7 @@ go_test(
         "go_types_debug_test.go",
         "go_types_test.go",
         "multipackage_panic_test.go",
+        "parallel_parse_test.go",
         "parsedfile_cache_test.go",
         "test_helper.go",
         "validation_test.go",

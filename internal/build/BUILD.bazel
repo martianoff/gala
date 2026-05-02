@@ -29,12 +29,21 @@ go_test(
         "builder_test.go",
         "deptranspiler_test.go",
         "go_toolchain_test.go",
+        "contention_perf_test.go",
         "transpile_batch_static_test.go",
+        "transpile_perf_test.go",
     ],
-    data = ["builder.go"],  # transpile_batch_static_test.go does AST analysis
+    data = [
+        "builder.go",  # transpile_batch_static_test.go does AST analysis
+        "//std:gala_sources",  # transpile_perf_test.go needs std for analyzer
+    ],
     embed = [":build"],
     deps = [
         "//internal/depman/mod",
+        "//internal/transpiler",
+        "//internal/transpiler/analyzer",
+        "//internal/transpiler/generator",
+        "//internal/transpiler/transformer",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@rules_go//go/tools/bazel:go_default_library",
