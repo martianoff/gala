@@ -356,3 +356,5 @@ You are set up and running. Here is where to go from here:
 | [State Machine Example](https://github.com/martianoff/gala-state-machine-example) | State machines with sealed types and pattern matching |
 | [Log Analyzer](https://github.com/martianoff/gala-log-analyzer) | Structured log parsing with Go stdlib interop and functional pipelines |
 | [GALA Server](https://github.com/martianoff/gala-server) | Immutable HTTP server library with builder-pattern configuration |
+| [GALA TUI](https://github.com/martianoff/gala-tui) | Elm-architecture TUI framework -- immutable widgets, differential renderer, async runtime |
+| [GALA Team](https://github.com/martianoff/gala-team) | Multi-agent Claude CLI orchestrator -- Team Lead delegates to Engineers and QAs, reviews work, hands you a PR |

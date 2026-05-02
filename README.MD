@@ -436,6 +436,7 @@ Mutable variants of all collection types are available in `collection_mutable` f
 | [Log Analyzer](https://github.com/martianoff/gala-log-analyzer) | Structured log parsing with Go stdlib interop (strings, strconv, fmt) + functional pipelines (FoldLeft, Filter, AppendAll) (with Go comparison) |
 | [GALA Server](https://github.com/martianoff/gala-server) | Immutable HTTP server library with builder-pattern configuration, route groups, filters, and pattern matching -- written entirely in GALA |
 | [GALA TUI](https://github.com/martianoff/gala-tui) | Elm-architecture TUI framework -- immutable widgets, differential renderer, async runtime, fuzzy command palette, markdown, mouse, themes -- written entirely in GALA |
+| [GALA Team](https://github.com/martianoff/gala-team) | Multi-agent Claude CLI orchestrator -- a Team Lead delegates to Engineers and QAs, reviews their work, and hands you a PR for sign-off -- written entirely in GALA with gala_tui |
 
 ---
 
