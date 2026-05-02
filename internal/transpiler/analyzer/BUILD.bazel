@@ -39,6 +39,7 @@ go_test(
         "multipackage_panic_test.go",
         "parallel_parse_test.go",
         "parsedfile_cache_test.go",
+        "test_exports_test.go",
         "test_helper.go",
         "validation_test.go",
     ],
@@ -48,6 +49,8 @@ go_test(
     embed = [":analyzer"],
     deps = [
         "//internal/transpiler",
+        "//internal/transpiler/module",
+        "//internal/transpiler/registry",
         "@com_github_antlr4_go_antlr_v4//:antlr",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

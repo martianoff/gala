@@ -25,35 +25,6 @@ import (
 	"martianoff/gala/internal/transpiler/transformer"
 )
 
-// GetBaseMetadata loads standard library metadata for use in tests and backward compatibility.
-// In normal compilation flow, std is loaded via implicit import in Analyze().
-func GetBaseMetadata(p transpiler.GalaParser, searchPaths []string) *transpiler.RichAST {
-	a := &galaAnalyzer{
-		parser:           p,
-		searchPaths:      searchPaths,
-		analyzedPkgs:        make(map[string]*transpiler.RichAST),
-		analyzedPkgImports:  make(map[string][]string),
-		checkedDirs:      make(map[string]bool),
-		siblingTreeCache: make(map[string]*siblingCacheEntry),
-		parsedFileCache:   make(map[string]*parsedFileEntry),
-		parsedFileCacheMu: &sync.Mutex{},
-		pkgResultCache:  make(map[string]*pkgResultCacheEntry),
-		resolver:         module.NewResolver(searchPaths),
-	}
-
-	stdAST, err := a.analyzePackage(registry.StdPackageName)
-	if err != nil {
-		// Return empty RichAST if std can't be loaded
-		return &transpiler.RichAST{
-			Types:            make(map[string]*transpiler.TypeMetadata),
-			Functions:        make(map[string]*transpiler.FunctionMetadata),
-			Packages:         make(map[string]string),
-			CompanionObjects: make(map[string]*transpiler.CompanionObjectMetadata),
-		}
-	}
-	return stdAST
-}
-
 // CheckStdConflict returns an error if the given name conflicts with std library exports.
 // This prevents user code from shadowing std types and functions.
 //
@@ -197,30 +168,6 @@ func NewGalaAnalyzer(p transpiler.GalaParser, searchPaths []string, projectRoot 
 		root = projectRoot[0]
 	}
 	return &galaAnalyzer{
-		parser:           p,
-		searchPaths:      searchPaths,
-		analyzedPkgs:        make(map[string]*transpiler.RichAST),
-		analyzedPkgImports:  make(map[string][]string),
-		checkedDirs:      make(map[string]bool),
-		siblingTreeCache: make(map[string]*siblingCacheEntry),
-		parsedFileCache:   make(map[string]*parsedFileEntry),
-		parsedFileCacheMu: &sync.Mutex{},
-		pkgResultCache:  make(map[string]*pkgResultCacheEntry),
-		resolver:         module.NewResolver(searchPaths),
-		cache:            newAnalysisCache(resolveCacheRoot(root)),
-	}
-}
-
-// NewGalaAnalyzerWithBase creates a new transpiler.Analyzer with base metadata.
-// projectRoot is the directory containing gala.mod — used for the analysis disk cache.
-// Pass "" to auto-detect from the current working directory.
-func NewGalaAnalyzerWithBase(base *transpiler.RichAST, p transpiler.GalaParser, searchPaths []string, projectRoot ...string) transpiler.Analyzer {
-	root := ""
-	if len(projectRoot) > 0 {
-		root = projectRoot[0]
-	}
-	return &galaAnalyzer{
-		baseMetadata:     base,
 		parser:           p,
 		searchPaths:      searchPaths,
 		analyzedPkgs:        make(map[string]*transpiler.RichAST),
@@ -1799,7 +1746,7 @@ func (a *galaAnalyzer) discoverCompanionObjects(richAST *transpiler.RichAST) {
 
 		// Determine which indices are extracted based on Apply method parameters
 		// The Apply method's parameter types tell us which container type params are extracted
-		extractIndices := a.computeExtractIndices(applyMethod, containerTypeParams)
+		extractIndices := computeExtractIndices(applyMethod, containerTypeParams)
 
 		companionMeta := &transpiler.CompanionObjectMetadata{
 			Name:           meta.Name,
@@ -1816,35 +1763,25 @@ func (a *galaAnalyzer) discoverCompanionObjects(richAST *transpiler.RichAST) {
 	}
 }
 
-// computeExtractIndices determines which type parameter indices are extracted by a companion object.
-// It looks at the Apply method's parameters and finds their positions in the container's type parameters.
-func (a *galaAnalyzer) computeExtractIndices(applyMethod *transpiler.MethodMetadata, containerTypeParams []string) []int {
+// computeExtractIndices determines which type parameter indices are
+// extracted by a companion object. It looks at the Apply method's
+// parameters and finds their positions in the container's type
+// parameters. Zero-arity extractors (like None) get an empty slice —
+// they match without binding values.
+func computeExtractIndices(applyMethod *transpiler.MethodMetadata, containerTypeParams []string) []int {
 	var indices []int
-
-	// For each parameter type in Apply, find its index in the container's type parameters
 	for _, paramType := range applyMethod.ParamTypes {
 		if transpiler.IsUnusable(paramType) {
 			continue
 		}
 		paramTypeName := normalizeTypeName(paramType.String())
-
-		// Find this type in the container's type parameters
 		for idx, containerParam := range containerTypeParams {
-			normalizedContainerParam := normalizeTypeName(containerParam)
-			if normalizedContainerParam == paramTypeName {
+			if normalizeTypeName(containerParam) == paramTypeName {
 				indices = append(indices, idx)
 				break
 			}
 		}
 	}
-
-	// If we couldn't determine indices from parameters, default to [0]
-	// This handles cases like None which has no parameters
-	if len(indices) == 0 && len(containerTypeParams) > 0 {
-		// For extractors with no params (like None), don't add any indices
-		// They match but don't extract values
-	}
-
 	return indices
 }
 
