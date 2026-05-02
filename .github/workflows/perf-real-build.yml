@@ -43,7 +43,7 @@ jobs:
     env:
       GALA_TUI_REF: main
       GALA_TEAM_REF: master
-      WARM_BUDGET_SECONDS: "500"
+      WARM_BUDGET_SECONDS: "250"
       COLD_BUDGET_SECONDS: "600"
 
     steps:
