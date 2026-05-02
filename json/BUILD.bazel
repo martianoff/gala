@@ -1,4 +1,4 @@
-load("@rules_go//go:def.bzl", "go_library")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
 load("//:gala.bzl", "gala_bootstrap_transpile")
 
 exports_files([
@@ -57,4 +57,10 @@ go_library(
         "//collection_immutable",
         "//std",
     ],
+)
+
+go_test(
+    name = "json_go_unit_test",
+    srcs = ["codec_test.go"],
+    embed = [":json"],
 )
