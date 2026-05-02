@@ -29,10 +29,12 @@ func GetBaseMetadata(p transpiler.GalaParser, searchPaths []string) *transpiler.
 	a := &galaAnalyzer{
 		parser:           p,
 		searchPaths:      searchPaths,
-		analyzedPkgs:     make(map[string]*transpiler.RichAST),
+		analyzedPkgs:        make(map[string]*transpiler.RichAST),
+		analyzedPkgImports:  make(map[string][]string),
 		checkedDirs:      make(map[string]bool),
 		siblingTreeCache: make(map[string]*siblingCacheEntry),
 		parsedFileCache:  make(map[string]*parsedFileEntry),
+		pkgResultCache:  make(map[string]*pkgResultCacheEntry),
 		resolver:         module.NewResolver(searchPaths),
 	}
 
@@ -63,7 +65,17 @@ type galaAnalyzer struct {
 	parser       transpiler.GalaParser
 	searchPaths  []string
 	packageFiles []string                       // Explicit sibling files belonging to the same package
-	analyzedPkgs map[string]*transpiler.RichAST // Cache of analyzed packages
+	// analyzedPkgs caches per-package metadata across files in a batch.
+	// Each entry holds an OWN-ONLY projection of the package's RichAST
+	// (Types/Functions/methods/etc. originating in that package). The
+	// transitive closure required by a downstream consumer is reconstructed
+	// at read time by recursively merging direct-import entries via
+	// analyzedPkgImports — see mergeAnalyzedClosureAt. This bounds the
+	// in-memory size of the batch cache to O(packages × own_metadata)
+	// instead of O(packages × full_closure), which is the in-memory
+	// counterpart to PR #308's on-disk cache projection.
+	analyzedPkgs        map[string]*transpiler.RichAST // Cache of analyzed packages (own-only projections)
+	analyzedPkgImports  map[string][]string            // path -> direct GALA import paths (for closure rehydration)
 	checkedDirs  map[string]bool
 	resolver            *module.Resolver               // Handles module root discovery and package path resolution
 	currentRichAST      *transpiler.RichAST            // Set during Analyze() for cross-reference in resolveTypeWithParams
@@ -99,6 +111,19 @@ type galaAnalyzer struct {
 	// sibling parsing to roughly N parses instead of N×(N−1).
 	parsedFileCache map[string]*parsedFileEntry
 
+	// Per-analyzer in-memory cache of analyzePackage results, keyed by the
+	// resolved package directory path. The same package directory is
+	// frequently reached through several different import paths during the
+	// closure walk on apex transpiles (e.g. martianoff/gala/std appears in
+	// every file's import list AND inside every transitive dep's import
+	// list). Without this layer, each visit re-runs hashPackageDir +
+	// cache.Get + gob.Decode + rehydrateImports — a ~50 ms-per-package
+	// disk-bound dance that on ubuntu-latest CI runners stretches to the
+	// hundreds of seconds for a single apex action. The memoization makes
+	// the work O(unique-packages) per worker process instead of
+	// O(visits-during-closure-walk).
+	pkgResultCache map[string]*pkgResultCacheEntry
+
 	// When true, ensureTranspiled is a no-op — used by the LSP, where the
 	// generated .gen.go files are never consumed (analyzePackage reads .gala
 	// directly to extract the metadata diagnostics need). The disk write is
@@ -116,6 +141,19 @@ type siblingCacheEntry struct {
 	trees   []*grammar.SourceFileContext
 	paths   []string
 	dirSize int
+}
+
+// pkgResultCacheEntry is one slot in galaAnalyzer.pkgResultCache. We
+// stash the fully-analyzed RichAST so a subsequent analyzePackage call
+// for the same directory short-circuits before doing any disk work,
+// AND we stash the directImports list so the closure walker that
+// already lives on the warm-cache path keeps functioning. Cached
+// entries are valid for the lifetime of the worker process: source
+// files don't change during a single Bazel build, and the cache is
+// dropped when the BatchAnalyzer is replaced.
+type pkgResultCacheEntry struct {
+	pkgAST        *transpiler.RichAST
+	directImports []string
 }
 
 // parsedFileEntry is one slot in galaAnalyzer.parsedFileCache. The
@@ -150,10 +188,12 @@ func NewGalaAnalyzer(p transpiler.GalaParser, searchPaths []string, projectRoot 
 	return &galaAnalyzer{
 		parser:           p,
 		searchPaths:      searchPaths,
-		analyzedPkgs:     make(map[string]*transpiler.RichAST),
+		analyzedPkgs:        make(map[string]*transpiler.RichAST),
+		analyzedPkgImports:  make(map[string][]string),
 		checkedDirs:      make(map[string]bool),
 		siblingTreeCache: make(map[string]*siblingCacheEntry),
 		parsedFileCache:  make(map[string]*parsedFileEntry),
+		pkgResultCache:  make(map[string]*pkgResultCacheEntry),
 		resolver:         module.NewResolver(searchPaths),
 		cache:            newAnalysisCache(resolveCacheRoot(root)),
 	}
@@ -171,10 +211,12 @@ func NewGalaAnalyzerWithBase(base *transpiler.RichAST, p transpiler.GalaParser, 
 		baseMetadata:     base,
 		parser:           p,
 		searchPaths:      searchPaths,
-		analyzedPkgs:     make(map[string]*transpiler.RichAST),
+		analyzedPkgs:        make(map[string]*transpiler.RichAST),
+		analyzedPkgImports:  make(map[string][]string),
 		checkedDirs:      make(map[string]bool),
 		siblingTreeCache: make(map[string]*siblingCacheEntry),
 		parsedFileCache:  make(map[string]*parsedFileEntry),
+		pkgResultCache:  make(map[string]*pkgResultCacheEntry),
 		resolver:         module.NewResolver(searchPaths),
 		cache:            newAnalysisCache(resolveCacheRoot(root)),
 	}
@@ -194,10 +236,12 @@ func NewGalaAnalyzerWithPackageFiles(p transpiler.GalaParser, searchPaths []stri
 		parser:           p,
 		searchPaths:      searchPaths,
 		packageFiles:     packageFiles,
-		analyzedPkgs:     make(map[string]*transpiler.RichAST),
+		analyzedPkgs:        make(map[string]*transpiler.RichAST),
+		analyzedPkgImports:  make(map[string][]string),
 		checkedDirs:      make(map[string]bool),
 		siblingTreeCache: make(map[string]*siblingCacheEntry),
 		parsedFileCache:  make(map[string]*parsedFileEntry),
+		pkgResultCache:  make(map[string]*pkgResultCacheEntry),
 		resolver:         module.NewResolver(searchPaths),
 		cache:            newAnalysisCache(resolveCacheRoot(root)),
 	}
@@ -218,9 +262,11 @@ func NewGalaAnalyzerForLSP(p transpiler.GalaParser, searchPaths []string, projec
 		parser:              p,
 		searchPaths:         searchPaths,
 		analyzedPkgs:        make(map[string]*transpiler.RichAST),
+		analyzedPkgImports:  make(map[string][]string),
 		checkedDirs:         make(map[string]bool),
 		siblingTreeCache:    make(map[string]*siblingCacheEntry),
 		parsedFileCache:     make(map[string]*parsedFileEntry),
+		pkgResultCache:     make(map[string]*pkgResultCacheEntry),
 		resolver:            module.NewResolver(searchPaths),
 		cache:               newAnalysisCache(resolveCacheRoot(root)),
 		skipTranspileToDisk: true,
@@ -245,14 +291,16 @@ func NewBatchAnalyzer(p transpiler.GalaParser, searchPaths []string, projectRoot
 	}
 	return &BatchAnalyzer{
 		inner: &galaAnalyzer{
-			parser:           p,
-			searchPaths:      searchPaths,
-			analyzedPkgs:     make(map[string]*transpiler.RichAST),
-			checkedDirs:      make(map[string]bool),
-			siblingTreeCache: make(map[string]*siblingCacheEntry),
-			parsedFileCache:  make(map[string]*parsedFileEntry),
-			resolver:         module.NewResolver(searchPaths),
-			cache:            newAnalysisCache(resolveCacheRoot(root)),
+			parser:             p,
+			searchPaths:        searchPaths,
+			analyzedPkgs:       make(map[string]*transpiler.RichAST),
+			analyzedPkgImports: make(map[string][]string),
+			checkedDirs:        make(map[string]bool),
+			siblingTreeCache:   make(map[string]*siblingCacheEntry),
+			parsedFileCache:    make(map[string]*parsedFileEntry),
+		pkgResultCache:    make(map[string]*pkgResultCacheEntry),
+			resolver:           module.NewResolver(searchPaths),
+			cache:              newAnalysisCache(resolveCacheRoot(root)),
 		},
 	}
 }
@@ -368,16 +416,16 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 					}
 					galaFileCount++
 					otherPath := filepath.Join(dirPath, f.Name())
-					content, err := ioutil.ReadFile(otherPath)
-					if err != nil {
-						continue
-					}
-					tree, err := a.parser.Parse(string(content))
-					if err != nil {
-						continue
-					}
-					otherSF, ok := tree.(*grammar.SourceFileContext)
-					if !ok {
+					// Use parseFileCached so a sibling that was already
+					// parsed by a previous Analyze() (or by the explicit-
+					// package-files branch) on the same BatchAnalyzer is
+					// not re-parsed. The original code called the lower-
+					// level parser directly, which on a multi-package
+					// closure (e.g. cmd/main.gala dot-importing 11
+					// libraries) re-parsed the same dependency files
+					// repeatedly inside one apex transpile.
+					otherSF, _, err := a.parseFileCached(otherPath)
+					if err != nil || otherSF == nil {
 						continue
 					}
 					cacheTrees = append(cacheTrees, otherSF)
@@ -419,12 +467,23 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 	}
 
 	phaseStart = time.Now()
+	// mergeVisited tracks which analyzedPkgs entries we've already merged
+	// into richAST during this Analyze call, so each closure walk skips
+	// shared-dependency subtrees (e.g., std appearing inside every import)
+	// that the previous walk already brought in. This is a pure perf knob —
+	// RichAST.Merge is idempotent (the COW guard at transpiler.go:124 makes
+	// repeat merges no-ops for already-present types), so missing this
+	// dedupe wastes cycles but never produces wrong results.
+	mergeVisited := make(map[string]bool)
+
 	// 0.25 Load std package metadata
 	// For non-std packages: add as implicit import
 	// For std package: still load for intra-package type resolution, but don't add to Packages
 	if cachedStd, ok := a.analyzedPkgs[registry.StdImportPath]; ok && cachedStd != nil {
-		// Use cached std metadata
-		richAST.Merge(cachedStd)
+		// Use cached std metadata — walk its closure to materialize transitive
+		// types (analyzedPkgs entries are own-only projections; see
+		// projectOwnRichAST + mergeAnalyzedClosureAt for rationale).
+		a.mergeAnalyzedClosureAt(richAST, registry.StdImportPath, mergeVisited)
 		if pkgName != registry.StdPackageName {
 			richAST.Packages[registry.StdImportPath] = registry.StdPackageName
 		}
@@ -433,8 +492,8 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 		a.analyzedPkgs[registry.StdImportPath] = nil
 		stdAST, err := a.analyzePackage(registry.StdPackageName)
 		if err == nil {
-			a.analyzedPkgs[registry.StdImportPath] = stdAST
-			richAST.Merge(stdAST)
+			a.storeAnalyzedPkg(registry.StdImportPath, stdAST)
+			a.mergeAnalyzedClosureAt(richAST, registry.StdImportPath, mergeVisited)
 			if pkgName != registry.StdPackageName {
 				richAST.Packages[registry.StdImportPath] = registry.StdPackageName
 			}
@@ -474,8 +533,8 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 				}
 
 				if cached, ok := a.analyzedPkgs[path]; ok && cached != nil {
-					// Use cached metadata
-					richAST.Merge(cached)
+					// Use cached metadata — walk closure to materialize transitive types.
+					a.mergeAnalyzedClosureAt(richAST, path, mergeVisited)
 					if cached.PackageName != "" && cached.PackageName != "main" && cached.PackageName != "test" {
 						richAST.Packages[path] = cached.PackageName
 					}
@@ -499,8 +558,8 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 						richAST.AnalysisWarnings = append(richAST.AnalysisWarnings, warnMsg)
 					}
 					if err == nil {
-						a.analyzedPkgs[path] = importedAST
-						richAST.Merge(importedAST)
+						a.storeAnalyzedPkg(path, importedAST)
+						a.mergeAnalyzedClosureAt(richAST, path, mergeVisited)
 						// Store package name from the imported package
 						if importedAST.PackageName != "" && importedAST.PackageName != "main" && importedAST.PackageName != "test" {
 							richAST.Packages[path] = importedAST.PackageName
@@ -598,7 +657,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 	// are loaded into richAST.Types. Without this, resolveTypeWithParams for sibling
 	// struct fields can't find types from packages that only siblings import.
 	for _, sibTree := range siblingTrees {
-		a.scanImports(sibTree, richAST)
+		a.scanImports(sibTree, richAST, mergeVisited)
 	}
 
 	logPhase("scan-sibling-imports", phaseStart)
@@ -1950,7 +2009,15 @@ func (a *galaAnalyzer) resolveTypeWithParams(typeName string, pkgName string, ty
 // scanImports processes GALA imports from a source file and loads their metadata
 // into richAST. This is used to ensure sibling files' dependencies are available
 // for type resolution during extractSiblingFullMetadata.
-func (a *galaAnalyzer) scanImports(sf *grammar.SourceFileContext, richAST *transpiler.RichAST) {
+//
+// mergeVisited is the closure-walk dedup set scoped to the enclosing top-level
+// Analyze call. Pass nil to allocate one fresh per scan; pass the Analyze-level
+// set to share visited bookkeeping across the whole call so sibling imports
+// don't re-walk the std/collection_immutable subtree the main file already merged.
+func (a *galaAnalyzer) scanImports(sf *grammar.SourceFileContext, richAST *transpiler.RichAST, mergeVisited map[string]bool) {
+	if mergeVisited == nil {
+		mergeVisited = make(map[string]bool)
+	}
 	for _, impDecl := range sf.AllImportDeclaration() {
 		ctx := impDecl.(*grammar.ImportDeclarationContext)
 		for _, spec := range ctx.AllImportSpec() {
@@ -1969,7 +2036,7 @@ func (a *galaAnalyzer) scanImports(sf *grammar.SourceFileContext, richAST *trans
 				}
 
 				if cached, ok := a.analyzedPkgs[path]; ok && cached != nil {
-					richAST.Merge(cached)
+					a.mergeAnalyzedClosureAt(richAST, path, mergeVisited)
 					if cached.PackageName != "" && cached.PackageName != "main" && cached.PackageName != "test" {
 						richAST.Packages[path] = cached.PackageName
 					}
@@ -1982,8 +2049,8 @@ func (a *galaAnalyzer) scanImports(sf *grammar.SourceFileContext, richAST *trans
 					}
 					importedAST, err := a.analyzePackage(relPath)
 					if err == nil {
-						a.analyzedPkgs[path] = importedAST
-						richAST.Merge(importedAST)
+						a.storeAnalyzedPkg(path, importedAST)
+						a.mergeAnalyzedClosureAt(richAST, path, mergeVisited)
 						if importedAST.PackageName != "" && importedAST.PackageName != "main" && importedAST.PackageName != "test" {
 							richAST.Packages[path] = importedAST.PackageName
 						} else {
@@ -2206,6 +2273,20 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 		)
 	}
 
+	// In-memory result cache: same dirPath → same RichAST, for the lifetime
+	// of this analyzer. Avoids the disk-cache.Get + gob.Decode +
+	// rehydrateImports re-walk that the original disk-only path performed
+	// every time analyzePackage was called for a package the closure walker
+	// had already visited via a different import path. The visit count for
+	// a hub package like std on cmd/main.gala can reach the dozens; even
+	// at ~50 ms per visit on CI, this dominates the apex transpile.
+	if a.pkgResultCache != nil {
+		if entry, ok := a.pkgResultCache[dirPath]; ok && entry != nil {
+			a.rehydrateImports(relPath, entry.pkgAST, entry.directImports)
+			return entry.pkgAST, nil
+		}
+	}
+
 	// Check disk cache before doing expensive analysis.
 	// The cache key combines the package's own content hash with a hash of its
 	// import paths (dependency identity). This ensures the cache invalidates when:
@@ -2224,6 +2305,12 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 			// in memory without any of the transitive duplication that
 			// previously bloated the on-disk representation.
 			a.rehydrateImports(relPath, cached, cachedDirectImports)
+			if a.pkgResultCache != nil {
+				a.pkgResultCache[dirPath] = &pkgResultCacheEntry{
+					pkgAST:        cached,
+					directImports: cachedDirectImports,
+				}
+			}
 			logCache(true, relPath, time.Since(cacheStart))
 			return cached, nil
 		}
@@ -2372,7 +2459,90 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 		a.cache.Put(relPath, contentHash, depsHash, pkgAST, directImports)
 	}
 
+	// Memoize for in-process reuse so the closure walker doesn't re-do the
+	// disk-cache lookup + rehydrate dance the next time this package is
+	// reached through a different import path.
+	if a.pkgResultCache != nil {
+		a.pkgResultCache[dirPath] = &pkgResultCacheEntry{
+			pkgAST:        pkgAST,
+			directImports: directImports,
+		}
+	}
+
 	return pkgAST, nil
+}
+
+// storeAnalyzedPkg projects `importedAST` to its own-only form and records
+// it in analyzedPkgs along with the direct imports needed to recover the
+// transitive closure on demand. Returning the projection lets the caller
+// substitute it for `importedAST` in subsequent richAST.Merge calls so the
+// immediate Merge into the consumer is bounded by the package's own metadata
+// rather than its full closure (the closure is reconstructed by walking
+// directImports recursively — see mergeAnalyzedClosureAt).
+//
+// The projection shares Type/Function/Method pointers with `importedAST`
+// (it filters keys, not data), so this is cheap and the caller's continued
+// use of `importedAST` is safe.
+func (a *galaAnalyzer) storeAnalyzedPkg(path string, importedAST *transpiler.RichAST) *transpiler.RichAST {
+	if importedAST == nil {
+		return nil
+	}
+	own := projectOwnRichAST(importedAST)
+	a.analyzedPkgs[path] = own
+	if a.analyzedPkgImports != nil {
+		a.analyzedPkgImports[path] = extractDirectGalaImports(importedAST)
+	}
+	return own
+}
+
+// mergeAnalyzedClosureAt walks the in-memory analyzedPkgs entry for `path`
+// and recursively merges the own-only projections of all transitively-
+// reachable GALA packages into `target`. This reconstructs, on demand, the
+// type closure that was previously stored eagerly at every analyzedPkgs
+// entry — except the closure now lives only in `target` (the consumer's
+// richAST), so the analyzedPkgs cache stays small.
+//
+// `visited` deduplicates work within a single closure walk. It is allocated
+// fresh per call site (one per direct import in the consumer's source file)
+// because RichAST.Merge is idempotent under repeated visits — the COW guard
+// at transpiler.go:124 short-circuits when the existing entry already has
+// every method/field/sealed-variant the merged copy would contribute. An
+// over-eager walk costs only map lookups, never data duplication.
+//
+// Returns the package name of `path` if known (so callers can populate
+// target.Packages[path]).
+func (a *galaAnalyzer) mergeAnalyzedClosureAt(target *transpiler.RichAST, path string, visited map[string]bool) string {
+	if visited == nil || target == nil {
+		return ""
+	}
+	if visited[path] {
+		// Already merged in this walk — but caller may still want pkgName.
+		if cached := a.analyzedPkgs[path]; cached != nil {
+			return cached.PackageName
+		}
+		return ""
+	}
+	visited[path] = true
+	cached := a.analyzedPkgs[path]
+	if cached == nil {
+		return ""
+	}
+	target.Merge(cached)
+	for _, imp := range a.analyzedPkgImports[path] {
+		if imp == "" || imp == path {
+			continue
+		}
+		impPkg := a.mergeAnalyzedClosureAt(target, imp, visited)
+		if impPkg != "" && impPkg != "main" && impPkg != "test" {
+			if target.Packages == nil {
+				target.Packages = make(map[string]string)
+			}
+			if _, ok := target.Packages[imp]; !ok {
+				target.Packages[imp] = impPkg
+			}
+		}
+	}
+	return cached.PackageName
 }
 
 // rehydrateImports re-merges the metadata of each direct import into the
@@ -2383,6 +2553,13 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 // pkgPath is the path of the package being rehydrated and is excluded from
 // its own import list as a defensive guard against pathological cycles
 // where a serialized cache might list itself.
+//
+// Note: analyzedPkgs entries are themselves own-only projections (see
+// projectOwnRichAST), so a single Merge of `analyzedPkgs[imp]` would only
+// bring `imp`'s own types in. We use mergeAnalyzedClosureAt to walk the
+// transitive closure and pull every reachable package's own metadata into
+// pkgAST — this is the same closure walk that callers of analyzedPkgs use
+// during a fresh Analyze, applied here to a disk-cache-hit pkgAST.
 func (a *galaAnalyzer) rehydrateImports(pkgPath string, pkgAST *transpiler.RichAST, directImports []string) {
 	if pkgAST == nil || len(directImports) == 0 {
 		return
@@ -2390,6 +2567,10 @@ func (a *galaAnalyzer) rehydrateImports(pkgPath string, pkgAST *transpiler.RichA
 	if pkgAST.Packages == nil {
 		pkgAST.Packages = make(map[string]string)
 	}
+	visited := make(map[string]bool)
+	// The pkgAST itself is own-only (loaded from disk cache); mark it visited
+	// so the closure walk doesn't re-merge its own entries.
+	visited[pkgPath] = true
 	for _, imp := range directImports {
 		if imp == "" || imp == pkgPath {
 			continue
@@ -2398,7 +2579,7 @@ func (a *galaAnalyzer) rehydrateImports(pkgPath string, pkgAST *transpiler.RichA
 		// avoids redundant disk reads and keeps cycle detection simple.
 		if cached, ok := a.analyzedPkgs[imp]; ok {
 			if cached != nil {
-				pkgAST.Merge(cached)
+				a.mergeAnalyzedClosureAt(pkgAST, imp, visited)
 				if cached.PackageName != "" && cached.PackageName != "main" && cached.PackageName != "test" {
 					pkgAST.Packages[imp] = cached.PackageName
 				}
@@ -2426,8 +2607,8 @@ func (a *galaAnalyzer) rehydrateImports(pkgPath string, pkgAST *transpiler.RichA
 		if err != nil || importedAST == nil {
 			continue
 		}
-		a.analyzedPkgs[imp] = importedAST
-		pkgAST.Merge(importedAST)
+		a.storeAnalyzedPkg(imp, importedAST)
+		a.mergeAnalyzedClosureAt(pkgAST, imp, visited)
 		if importedAST.PackageName != "" && importedAST.PackageName != "main" && importedAST.PackageName != "test" {
 			pkgAST.Packages[imp] = importedAST.PackageName
 		}
@@ -2776,13 +2957,15 @@ func (a *galaAnalyzer) ensureTranspiled(importPath string) error {
 		// Analyze without recursion by using a separate analyzer
 		// This avoids circular dependency issues
 		tempAnalyzer := &galaAnalyzer{
-			parser:           a.parser,
-			searchPaths:      a.searchPaths,
-			analyzedPkgs:     make(map[string]*transpiler.RichAST),
-			checkedDirs:      make(map[string]bool),
-			siblingTreeCache: make(map[string]*siblingCacheEntry),
-			parsedFileCache:  make(map[string]*parsedFileEntry),
-			resolver:         a.resolver,
+			parser:             a.parser,
+			searchPaths:        a.searchPaths,
+			analyzedPkgs:       make(map[string]*transpiler.RichAST),
+			analyzedPkgImports: make(map[string][]string),
+			checkedDirs:        make(map[string]bool),
+			siblingTreeCache:   make(map[string]*siblingCacheEntry),
+			parsedFileCache:    make(map[string]*parsedFileEntry),
+		pkgResultCache:    make(map[string]*pkgResultCacheEntry),
+			resolver:           a.resolver,
 		}
 
 		richAST, err := tempAnalyzer.Analyze(tree, srcPath)

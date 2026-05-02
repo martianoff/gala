@@ -1,8 +1,6 @@
 package analyzer
 
 import (
-	"bytes"
-	"encoding/gob"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -172,14 +170,14 @@ func TestCacheE2E_DiskFootprintBounded(t *testing.T) {
 func readDiskCacheEntry(t *testing.T, projectRoot, pkgRelPath string) *CachedRichAST {
 	t.Helper()
 	data := readDiskCacheEntryRaw(t, projectRoot, pkgRelPath)
-	var cached CachedRichAST
-	require.NoError(t, gob.NewDecoder(bytes.NewReader(data)).Decode(&cached))
-	return &cached
+	cached, err := decodeCachedRichAST(data)
+	require.NoError(t, err)
+	return cached
 }
 
 // readDiskCacheEntryRaw returns the raw on-disk bytes for the entry —
 // the size is itself the regression signal for the bounded-footprint
-// test, independent of any specific gob field layout.
+// test, independent of any specific bytes-format layout.
 func readDiskCacheEntryRaw(t *testing.T, projectRoot, pkgRelPath string) []byte {
 	t.Helper()
 	cacheDirs, err := filepath.Glob(filepath.Join(projectRoot, ".gala", "cache", "v*"))
@@ -195,7 +193,14 @@ func readDiskCacheEntryRaw(t *testing.T, projectRoot, pkgRelPath string) []byte 
 			if e.IsDir() {
 				continue
 			}
-			if !strings.HasPrefix(e.Name(), prefix) || !strings.HasSuffix(e.Name(), ".gob") {
+			if !strings.HasPrefix(e.Name(), prefix) {
+				continue
+			}
+			// Accept either v1's .gob or v2's .bin so a transitional run
+			// (mixed versions in stale dirs) doesn't trip the test. The
+			// active version's directory always wins because the analyzer
+			// only writes there.
+			if !strings.HasSuffix(e.Name(), ".bin") && !strings.HasSuffix(e.Name(), ".gob") {
 				continue
 			}
 			data, err := os.ReadFile(filepath.Join(d, e.Name()))

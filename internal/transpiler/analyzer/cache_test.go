@@ -1,8 +1,6 @@
 package analyzer
 
 import (
-	"bytes"
-	"encoding/gob"
 	"os"
 	"path/filepath"
 	"testing"
@@ -65,12 +63,17 @@ func TestCachedRichAST_StripsTransitiveTypes(t *testing.T) {
 	}
 }
 
-// TestCachedRichAST_GobSizeBounded checks that the gob-serialized size
-// of a CachedRichAST scales with the package's OWN metadata, not with
-// the transitive closure that Merge accumulated. This is the size
-// regression test: if a future change re-introduces transitive inlining,
-// the encoded size will jump.
-func TestCachedRichAST_GobSizeBounded(t *testing.T) {
+// TestCachedRichAST_SizeBounded checks that the serialized size of a
+// CachedRichAST scales with the package's OWN metadata, not with the
+// transitive closure that Merge accumulated. This is the size regression
+// test: if a future change re-introduces transitive inlining, the encoded
+// size will jump.
+//
+// Originally written against gob; now exercised against the v2 binary
+// codec. The bound is intentionally generous so encode-format quirks
+// don't trip it — the regression we're guarding against would push the
+// size two orders of magnitude past this budget.
+func TestCachedRichAST_SizeBounded(t *testing.T) {
 	// Build a pkgAST with 3 own types and 2000 foreign types, mirroring
 	// the shape of a downstream package that imports from many transitively.
 	r := &transpiler.RichAST{
@@ -99,22 +102,23 @@ func TestCachedRichAST_GobSizeBounded(t *testing.T) {
 	}
 
 	cached := toCachedRichAST(r, "h", nil)
-	var buf bytes.Buffer
-	if err := gob.NewEncoder(&buf).Encode(cached); err != nil {
-		t.Fatalf("gob encode failed: %v", err)
+	encoded, err := encodeCachedRichAST(cached)
+	if err != nil {
+		t.Fatalf("encode failed: %v", err)
 	}
 
 	// 3 own types with no methods serialize to roughly a few hundred
-	// bytes. Allow 64 KiB headroom for gob's type registration overhead.
+	// bytes. 64 KiB headroom keeps the budget meaningful while tolerating
+	// minor format drift.
 	const maxBytes = 64 * 1024
-	if buf.Len() > maxBytes {
-		t.Errorf("encoded size %d bytes exceeds budget %d — transitive types likely leaked into cache", buf.Len(), maxBytes)
+	if len(encoded) > maxBytes {
+		t.Errorf("encoded size %d bytes exceeds budget %d — transitive types likely leaked into cache", len(encoded), maxBytes)
 	}
 
 	// Sanity: re-decode and confirm only own types survive.
-	var decoded CachedRichAST
-	if err := gob.NewDecoder(bytes.NewReader(buf.Bytes())).Decode(&decoded); err != nil {
-		t.Fatalf("gob decode failed: %v", err)
+	decoded, err := decodeCachedRichAST(encoded)
+	if err != nil {
+		t.Fatalf("decode failed: %v", err)
 	}
 	if got, want := len(decoded.Types), 3; got != want {
 		t.Errorf("decoded type count: got %d, want %d", got, want)
@@ -179,12 +183,16 @@ func TestPruneStaleCaches(t *testing.T) {
 		return p
 	}
 
-	keep := mk("v1-dev-abc123", 0)
-	stale := mk("v1-dev-old111", staleCacheMaxAge+24*time.Hour)
-	fresh := mk("v1-dev-new222", time.Hour) // freshly used; preserve
+	// Names use the active CacheVersion prefix (currently "v2"). The
+	// pruner is gated by `strings.HasPrefix(name, prefix+"-")`, so these
+	// have to match the live constant — hard-coding "v1" would silently
+	// no-op once the version bumps.
+	keep := mk(CacheVersion+"-dev-abc123", 0)
+	stale := mk(CacheVersion+"-dev-old111", staleCacheMaxAge+24*time.Hour)
+	fresh := mk(CacheVersion+"-dev-new222", time.Hour) // freshly used; preserve
 	unrelated := mk("scratch", staleCacheMaxAge+24*time.Hour)
 
-	pruneStaleCaches(parent, "v1-dev-abc123")
+	pruneStaleCaches(parent, CacheVersion+"-dev-abc123")
 
 	mustExist := func(p string) {
 		if _, err := os.Stat(p); err != nil {
@@ -209,7 +217,7 @@ func TestPruneStaleCaches_SkippedByEnv(t *testing.T) {
 	t.Setenv("GALA_KEEP_STALE_CACHES", "1")
 	parent := t.TempDir()
 	older := time.Now().Add(-(staleCacheMaxAge + time.Hour))
-	stalePath := filepath.Join(parent, "v1-dev-stale")
+	stalePath := filepath.Join(parent, CacheVersion+"-dev-stale")
 	if err := os.Mkdir(stalePath, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +228,7 @@ func TestPruneStaleCaches_SkippedByEnv(t *testing.T) {
 	// pruneStaleCaches itself doesn't read the env — the GC is gated at
 	// newAnalysisCache. Sanity-check that direct invocation still prunes;
 	// the gate is enforced one level up.
-	pruneStaleCaches(parent, "v1-dev-current")
+	pruneStaleCaches(parent, CacheVersion+"-dev-current")
 	if _, err := os.Stat(stalePath); !os.IsNotExist(err) {
 		t.Errorf("expected stale dir to be pruned by direct call, but it remains")
 	}

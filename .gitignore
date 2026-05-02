@@ -123,8 +123,25 @@ gradle-app.setting
 .claude/commands
 .claude/worktrees
 .claude/settings.local.json
+# Scratch the agents leave behind (profiles, grammar regen, repro scripts,
+# rebase staging, scheduler locks) — none of it is meant to be committed.
+.claude/*.pprof
+.claude/grammar_gen/
+.claude/rebase-staging/
+.claude/repro.sh
+.claude/scheduled_tasks.lock
 
 # Private Docs
 docs/private/*
 .gala/
 BUGS.MD
+
+# Build workspace produced by `gala build` / `gala test` when run inside
+# this repo against a downstream module (e.g., when reproducing perf
+# regressions); not part of the source tree.
+.gala_team/
+
+# Bazel-emitted Go output from gala_transpile genrules. These live in
+# bazel-bin/ normally; if they show up in the source tree it's because a
+# gala CLI run leaked them into a test fixture, which we don't track.
+bazel_test_fixtures/**/*.gen.go

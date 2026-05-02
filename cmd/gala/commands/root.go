@@ -67,6 +67,21 @@ func Execute() {
 	// Set compiler version for cache invalidation
 	InitCompilerVersion()
 
+	// Bazel launches a persistent worker by spawning the worker binary
+	// once with `--persistent_worker` and then sending WorkRequests on
+	// stdin. We must short-circuit cobra entirely in that case: cobra
+	// would treat the flag as unknown and reject it. This matches the
+	// shape rules_go's compilepkg / rules_jvm_external use. Other
+	// arguments on the launch command line (e.g. flags configured via
+	// the Bazel rule's `arguments`) come through on every WorkRequest,
+	// not on the launch invocation.
+	for _, a := range os.Args[1:] {
+		if a == "--persistent_worker" {
+			runWorker()
+			return
+		}
+	}
+
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)
@@ -85,6 +100,7 @@ func init() {
 	rootCmd.AddCommand(testCmd)
 	rootCmd.AddCommand(cacheCmd)
 	rootCmd.AddCommand(newCmd)
+	rootCmd.AddCommand(workerCmd)
 
 	// Add global flags that mirror transpile flags for backward compatibility
 	rootCmd.Flags().StringVarP(&transpileInput, "input", "i", "", "Path to the input .gala file")

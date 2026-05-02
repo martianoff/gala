@@ -1,0 +1,14 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "worker",
+    srcs = ["proto.go"],
+    importpath = "martianoff/gala/cmd/gala/commands/worker",
+    visibility = ["//cmd/gala/commands:__pkg__"],
+)
+
+go_test(
+    name = "worker_test",
+    srcs = ["proto_test.go"],
+    embed = [":worker"],
+)
