@@ -544,7 +544,7 @@ func (t *galaASTTransformer) resolveMethodSignatureOnExpr(receiver ast.Expr, met
 		return nil
 	}
 	receiverType := t.getExprTypeNameManual(receiver)
-	if receiverType == nil || receiverType.IsNil() {
+	if transpiler.IsUnusable(receiverType) {
 		return nil
 	}
 	typeName := receiverType.String()
@@ -1112,12 +1112,12 @@ func (t *galaASTTransformer) transformPartialFunctionLiteral(ctx *grammar.Partia
 	}
 
 	// If we couldn't infer from context, try to infer from the patterns themselves
-	if paramType == nil || paramType.IsNil() {
+	if transpiler.IsUnusable(paramType) {
 		paramType = t.inferPartialFunctionParamType(caseClauses)
 	}
 
 	// Fall back to 'any' if we still can't infer
-	if paramType == nil || paramType.IsNil() {
+	if transpiler.IsUnusable(paramType) {
 		t.warnInference("partial function param type defaulting to 'any' — could not infer from context")
 		paramType = transpiler.BasicType{Name: "any"}
 	}
@@ -1157,7 +1157,7 @@ func (t *galaASTTransformer) transformPartialFunctionLiteral(ctx *grammar.Partia
 		return nil, err
 	}
 
-	if innerResultType == nil || innerResultType.IsNil() {
+	if transpiler.IsUnusable(innerResultType) {
 		innerResultType = transpiler.BasicType{Name: "any"}
 	}
 
@@ -1310,7 +1310,7 @@ func (t *galaASTTransformer) transformPartialCaseClause(ctx *grammar.CaseClauseC
 func (t *galaASTTransformer) wrapInSome(expr ast.Expr) ast.Expr {
 	// Infer the type of expr for the type parameter
 	exprType := t.getExprTypeNameManual(expr)
-	if exprType == nil || exprType.IsNil() {
+	if transpiler.IsUnusable(exprType) {
 		exprType, _ = t.inferExprType(expr)
 	}
 

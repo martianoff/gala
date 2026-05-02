@@ -20,6 +20,27 @@ type Type interface {
 	GetPackage() string // Returns the package of the type, or "" if none
 }
 
+// IsUnusable reports whether t cannot drive type-directed code
+// generation: either the value is nil (no type info at all) or it
+// resolved to NilType (the analyzer's "I gave up" placeholder).
+//
+// Centralizes the `t == nil || t.IsNil()` pattern that appeared in
+// 25+ call sites across the transformer. Inline copies were always
+// vulnerable to forgetting the nil check before dereferencing into
+// IsNil(), which would panic on a nil interface — the helper makes
+// that impossible.
+func IsUnusable(t Type) bool {
+	return t == nil || t.IsNil()
+}
+
+// IsUnusableOrAny extends IsUnusable to also reject the unparametrized
+// `any` placeholder. Use this in type-inference contexts where falling
+// back to `any` would defeat the inference (e.g. resolving a generic
+// param from a call-site arg type — `any` carries no information).
+func IsUnusableOrAny(t Type) bool {
+	return t == nil || t.IsNil() || t.IsAny()
+}
+
 // BasicType represents a basic type like int, string, bool.
 type BasicType struct {
 	Name string
