@@ -10,11 +10,14 @@ name: Perf — real-repo build budget
 # transpile work has grown elsewhere (parser, transformer, or Go-type
 # extraction).
 #
-# Thresholds match what is achievable today (warm: ~55 s, cold: ~120 s on
-# the original investigation hardware, 2026-04-30) with 2× headroom so
-# CI variance does not nuisance-fail the lane. They should ratchet downward
-# any time a perf improvement lands; never upward without a documented
-# reason in the PR description.
+# Thresholds are calibrated for ubuntu-latest GitHub Actions runners
+# (4 vCPU, 16 GB) — not the maintainer's local hardware, which is roughly
+# 3-5x faster. Cold floor is dominated by full-closure ANTLR parsing of
+# gala_team's apex transpile (`cmd/main.gala` dot-imports the whole
+# module ≈ 100 packages); persistent-worker mode + memo'd analyzer paths
+# get this down from ~1160 s to ~400 s as of PR #317. They should ratchet
+# downward any time a perf improvement lands; never upward without a
+# documented reason in the PR description.
 
 on:
   workflow_dispatch:
@@ -41,7 +44,7 @@ jobs:
       GALA_TUI_REF: main
       GALA_TEAM_REF: master
       WARM_BUDGET_SECONDS: "120"
-      COLD_BUDGET_SECONDS: "240"
+      COLD_BUDGET_SECONDS: "400"
 
     steps:
       - name: Checkout gala (this branch)
