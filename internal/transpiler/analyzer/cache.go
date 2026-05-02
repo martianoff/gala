@@ -446,7 +446,15 @@ func newAnalysisCache(projectRoot string) *analysisCache {
 // directories whose name starts with the CacheVersion prefix and looks
 // like a cache directory.
 func pruneStaleCaches(parent, keepName string) {
-	defer func() { _ = recover() }() // best-effort; never crash the host
+	// Best-effort cleanup — never crash the host. We do log the
+	// recovered value to stderr so a misbehaving filesystem
+	// (permission errors, OS-level corruption) leaves a breadcrumb
+	// instead of being silently absorbed.
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Fprintf(os.Stderr, "gala: pruneStaleCaches recovered from panic: %v\n", r)
+		}
+	}()
 
 	entries, err := ioutil.ReadDir(parent)
 	if err != nil {
