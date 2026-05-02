@@ -197,11 +197,29 @@ func TestTranspile_ParallelSpeedup(t *testing.T) {
 		return time.Since(start)
 	}
 
-	serial := timeOnce("serial", 1)
-	t.Logf("serial transpile (GOMAXPROCS=1): %s", serial)
+	// Run multiple iterations and take the BEST (min) per mode —
+	// short benchmarks on a busy machine produce noisy maxima but
+	// the minimum represents the no-contention floor and is a much
+	// more stable signal of the parallel-vs-serial ratio. Single-shot
+	// measurements flake when a GC or background process steals time
+	// from one mode but not the other.
+	const iters = 5
+	bestOf := func(label string, maxprocs int) time.Duration {
+		t.Helper()
+		var best time.Duration
+		for i := 0; i < iters; i++ {
+			d := timeOnce(label, maxprocs)
+			if best == 0 || d < best {
+				best = d
+			}
+		}
+		return best
+	}
+	serial := bestOf("serial", 1)
+	t.Logf("serial transpile (GOMAXPROCS=1, best of %d): %s", iters, serial)
 
-	parallel := timeOnce("parallel", runtime.NumCPU())
-	t.Logf("parallel transpile (GOMAXPROCS=%d): %s", runtime.NumCPU(), parallel)
+	parallel := bestOf("parallel", runtime.NumCPU())
+	t.Logf("parallel transpile (GOMAXPROCS=%d, best of %d): %s", runtime.NumCPU(), iters, parallel)
 
 	speedup := float64(serial) / float64(parallel)
 	t.Logf("speedup: %.2fx", speedup)
@@ -209,7 +227,8 @@ func TestTranspile_ParallelSpeedup(t *testing.T) {
 	// 1.3× is a conservative floor: locally the optimization
 	// delivers 3-5×, but CI runners with 4 vCPU and short jobs often
 	// only show 1.5-2×. Below 1.3× the parallel path is effectively
-	// inert and we want a loud failure.
+	// inert and we want a loud failure. Best-of-iters above absorbs
+	// transient noise.
 	const minSpeedup = 1.3
 	if speedup < minSpeedup {
 		t.Errorf("parallel speedup %.2fx is below threshold %.2fx — parseFilesConcurrent may have been silently serialized; check that analyzer.parseFilesConcurrent still spawns a goroutine pool of size GOMAXPROCS, and that Analyze + analyzePackage still route through it",

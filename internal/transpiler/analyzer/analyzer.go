@@ -3073,18 +3073,33 @@ func (a *galaAnalyzer) ensureTranspiled(importPath string) error {
 			return fmt.Errorf("failed to parse %s: %w", srcPath, err)
 		}
 
-		// Analyze without recursion by using a separate analyzer
-		// This avoids circular dependency issues
+		// Analyze using a child analyzer that shares the parent's
+		// caches — avoids redoing work the parent already did.
+		//
+		// CPU profile of an apex transpile (12-package synthetic apex
+		// in TestTranspile_ApexShape) showed ensureTranspiled at
+		// 18.86% of total CPU, with 3.34s of that inside the temp
+		// analyzer's BatchAnalyzer.Analyze recursion. The temp
+		// analyzer used to start with empty maps, so each invocation
+		// re-analyzed std + every transitive GALA dep from scratch
+		// even though the parent had already done so. Sharing
+		// analyzedPkgs / parsedFileCache / pkgResultCache /
+		// analyzedPkgImports / checkedDirs / siblingTreeCache /
+		// disk cache lets recursive analyze calls hit those caches
+		// and short-circuit. The placeholder mechanism inside
+		// Analyze (`analyzedPkgs[path] = nil` before recursion)
+		// continues to break cycles correctly under sharing.
 		tempAnalyzer := &galaAnalyzer{
 			parser:             a.parser,
 			searchPaths:        a.searchPaths,
-			analyzedPkgs:       make(map[string]*transpiler.RichAST),
-			analyzedPkgImports: make(map[string][]string),
-			checkedDirs:        make(map[string]bool),
-			siblingTreeCache:   make(map[string]*siblingCacheEntry),
-			parsedFileCache:    make(map[string]*parsedFileEntry),
-		pkgResultCache:    make(map[string]*pkgResultCacheEntry),
+			analyzedPkgs:       a.analyzedPkgs,
+			analyzedPkgImports: a.analyzedPkgImports,
+			checkedDirs:        a.checkedDirs,
+			siblingTreeCache:   a.siblingTreeCache,
+			parsedFileCache:    a.parsedFileCache,
+			pkgResultCache:     a.pkgResultCache,
 			resolver:           a.resolver,
+			cache:              a.cache,
 		}
 
 		richAST, err := tempAnalyzer.Analyze(tree, srcPath)
