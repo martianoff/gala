@@ -29,6 +29,7 @@ go_test(
         "builder_test.go",
         "deptranspiler_test.go",
         "go_toolchain_test.go",
+        "contention_perf_test.go",
         "transpile_batch_static_test.go",
         "transpile_perf_test.go",
     ],

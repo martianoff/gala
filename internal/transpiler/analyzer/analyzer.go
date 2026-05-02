@@ -1377,15 +1377,37 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 // using it.
 func validateExplicitImports(richAST *transpiler.RichAST, canonFile string, explicit, knownGala map[string]bool) []*galaerr.SemanticError {
 	var errs []*galaerr.SemanticError
+	// Per-call memo: many TypeMetadata / FunctionMetadata entries share
+	// the same DefinedIn (e.g. all 100+ types declared in one .gala
+	// file). The original closure called filepath.Abs +
+	// filepath.EvalSymlinks once per metadata entry; on the apex
+	// transpile of cmd/main.gala in gala_team, richAST.Types +
+	// richAST.Functions reach ~1000 entries (full transitive closure),
+	// turning this into 1000+ filesystem syscalls. CPU-profile of the
+	// gala-build perf test had filepath.EvalSymlinks at 56% of total
+	// CPU time, with this closure responsible for 26% on its own.
+	// Memoizing by raw input path collapses the cost to one syscall
+	// per unique DefinedIn. The fast-path `abs == canonFile` check
+	// also lets us skip EvalSymlinks entirely when the paths already
+	// match — Bazel sandboxes typically deliver pre-canonicalized
+	// paths, so the symlink resolution is dead work in the common case.
+	resolvedCache := make(map[string]bool)
 	isThisFile := func(p string) bool {
 		if p == "" {
 			return false
 		}
-		abs, _ := filepath.Abs(p)
-		if real, err := filepath.EvalSymlinks(abs); err == nil {
-			abs = real
+		if cached, ok := resolvedCache[p]; ok {
+			return cached
 		}
-		return abs == canonFile
+		abs, _ := filepath.Abs(p)
+		match := abs == canonFile
+		if !match {
+			if real, err := filepath.EvalSymlinks(abs); err == nil {
+				match = real == canonFile
+			}
+		}
+		resolvedCache[p] = match
+		return match
 	}
 	check := func(t transpiler.Type, pos transpiler.SourcePos, ctxName string) {
 		walkTypeForUnresolvedPackages(t, explicit, knownGala, &errs, pos, ctxName)
@@ -2413,10 +2435,15 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 				}
 				// Canonicalize filePath once — isSameFile resolves symlinks and
 				// runs os.Stat, which is too expensive to call per type.
+				// Same per-call memoization + basename-skip optimization
+				// as validateExplicitImports above: most DefinedIn entries
+				// are obviously different files (different basename) and
+				// don't need a syscall to confirm.
 				canonFile, _ := filepath.Abs(filePath)
 				if real, err := filepath.EvalSymlinks(canonFile); err == nil {
 					canonFile = real
 				}
+				canonFileBase := filepath.Base(canonFile)
 				canonCache := map[string]string{filePath: canonFile}
 				sameAsFilePath := func(p string) bool {
 					if p == "" {
@@ -2426,6 +2453,17 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 						return c == canonFile
 					}
 					abs, _ := filepath.Abs(p)
+					if abs == canonFile {
+						canonCache[p] = abs
+						return true
+					}
+					// Basename mismatch can never be the same file (modulo
+					// cross-directory symlinks, vanishingly rare); skip
+					// the EvalSymlinks syscall.
+					if filepath.Base(abs) != canonFileBase {
+						canonCache[p] = abs
+						return false
+					}
 					if real, err := filepath.EvalSymlinks(abs); err == nil {
 						abs = real
 					}
@@ -2795,6 +2833,24 @@ func hasTypeDefinition(meta *transpiler.TypeMetadata) bool {
 
 // isSameFile checks whether two paths refer to the same file.
 // Handles relative/absolute paths and Bazel symlinks on Linux.
+//
+// Fast paths (no syscalls beyond the cheap filepath.Abs):
+//
+//   1. absA == absB → same file
+//   2. filepath.Base(absA) != filepath.Base(absB) → can never be the
+//      same file unless one is a symlink to the other across
+//      directories with different basenames (essentially never in
+//      practice). Without this guard, every per-Analyze sibling-
+//      filter loop pays two filepath.EvalSymlinks calls per sibling
+//      just to discover that file_01.gala and file_02.gala are
+//      different — on the gala-build CPU profile this was 22% of
+//      total CPU time (1.54s of 7.12s).
+//
+// Slow path (only reached when basenames match but absolute paths
+// differ — i.e. potential symlink alias) keeps the original three-
+// strategy resolution for correctness on Bazel local_path_override
+// on Linux where the same file is reachable via real and sandbox-
+// symlinked paths.
 func isSameFile(pathA, pathB string) bool {
 	if pathA == "" || pathB == "" {
 		return false
@@ -2807,9 +2863,17 @@ func isSameFile(pathA, pathB string) bool {
 	if err != nil {
 		absB = pathB
 	}
-	// Fast path: string comparison after Abs
 	if absA == absB {
 		return true
+	}
+	// Basename mismatch → impossible to be the same file in any
+	// realistic filesystem layout. Skip the symlink-resolution
+	// syscalls entirely. The previous unconditional fall-through to
+	// EvalSymlinks burned thousands of syscalls per apex transpile
+	// to discover that obviously-different files were obviously
+	// different.
+	if filepath.Base(absA) != filepath.Base(absB) {
+		return false
 	}
 	// Resolve symlinks (critical for Bazel local_path_override on Linux where
 	// the same file is reachable via symlinked and real paths)
