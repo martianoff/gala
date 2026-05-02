@@ -25,7 +25,7 @@ func (t *galaASTTransformer) normalizeTypeName(name string) string {
 
 // toInferType converts a transpiler.Type to an infer.Type
 func (t *galaASTTransformer) toInferType(typ transpiler.Type) infer.Type {
-	if typ == nil || typ.IsNil() {
+	if transpiler.IsUnusable(typ) {
 		return &infer.TypeConst{Name: "any"}
 	}
 

@@ -42,7 +42,7 @@ func (t *galaASTTransformer) addVar(name string, typeName transpiler.Type) {
 }
 
 func (t *galaASTTransformer) recordLSPVarType(name string, typeName transpiler.Type) {
-	if t.lspVarTypes == nil || typeName == nil || typeName.IsNil() {
+	if t.lspVarTypes == nil || transpiler.IsUnusable(typeName) {
 		return
 	}
 	key := name

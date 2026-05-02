@@ -854,7 +854,7 @@ func isSelfReferentialSealedField(fieldTypeText, parentName string) bool {
 // `Tuple[A, MsgCmd[X]]` and `Tuple[A, Cmd[X]]` are treated as incompatible
 // match-arm result types even though `MsgCmd[X]` is a value of `Cmd[X]`.
 func (t *galaASTTransformer) sealedCaseParent(caseType transpiler.Type) transpiler.Type {
-	if caseType == nil || caseType.IsNil() {
+	if transpiler.IsUnusable(caseType) {
 		return nil
 	}
 	// Extract the case's bare base name and any type arguments.

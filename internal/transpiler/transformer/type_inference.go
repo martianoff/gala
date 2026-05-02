@@ -352,7 +352,7 @@ func (t *galaASTTransformer) instantiateFuncMetaType(fm *transpiler.FunctionMeta
 // For example, if returnType is Pair[B, A], typeParams is ["A", "B"], and concreteTypes is [int, string],
 // the result will be Pair[string, int].
 func (t *galaASTTransformer) substituteConcreteTypes(returnType transpiler.Type, typeParams []string, concreteTypes []transpiler.Type) transpiler.Type {
-	if returnType == nil || returnType.IsNil() {
+	if transpiler.IsUnusable(returnType) {
 		return returnType
 	}
 
@@ -394,10 +394,10 @@ func (t *galaASTTransformer) inferMethodTypeParamsFromArgs(methodMeta *transpile
 
 		// Get the actual type of the argument
 		argType := t.getExprTypeNameManual(arg)
-		if argType == nil || argType.IsNil() {
+		if transpiler.IsUnusable(argType) {
 			argType, _ = t.inferExprType(arg)
 		}
-		if argType == nil || argType.IsNil() {
+		if transpiler.IsUnusable(argType) {
 			continue
 		}
 
@@ -455,10 +455,10 @@ func (t *galaASTTransformer) inferFuncTypeParamsFromArgs(fMeta *transpiler.Funct
 
 		// Get the actual type of the argument
 		argType := t.getExprTypeNameManual(arg)
-		if argType == nil || argType.IsNil() {
+		if transpiler.IsUnusable(argType) {
 			argType, _ = t.inferExprType(arg)
 		}
-		if argType == nil || argType.IsNil() {
+		if transpiler.IsUnusable(argType) {
 			continue
 		}
 
@@ -594,7 +594,7 @@ func (t *galaASTTransformer) substituteInType(typ transpiler.Type, paramMap map[
 // subterm. A runtime-visible panic would mask the root cause; the defensive
 // return surfaces via failed type checks in the caller.
 func (t *galaASTTransformer) substituteInTypeDepth(typ transpiler.Type, paramMap map[string]transpiler.Type, depth int) transpiler.Type {
-	if typ == nil || typ.IsNil() {
+	if transpiler.IsUnusable(typ) {
 		return typ
 	}
 	const maxTypeSubstDepth = 64
@@ -708,7 +708,7 @@ func (t *galaASTTransformer) getTupleTypeFromName(name string) string {
 // getReceiverTypeArgs extracts type arguments from a receiver type and converts them to ast.Expr.
 // For example, for *Array[int] or Array[int], it returns [int] as []ast.Expr.
 func (t *galaASTTransformer) getReceiverTypeArgs(recvType transpiler.Type) []ast.Expr {
-	if recvType == nil || recvType.IsNil() {
+	if transpiler.IsUnusable(recvType) {
 		return nil
 	}
 	// Unwrap pointer type
@@ -729,7 +729,7 @@ func (t *galaASTTransformer) getReceiverTypeArgs(recvType transpiler.Type) []ast
 // getReceiverTypeArgStrings extracts type arguments from a receiver type as strings.
 // For example, for *Container[int], it returns ["int"].
 func (t *galaASTTransformer) getReceiverTypeArgStrings(recvType transpiler.Type) []string {
-	if recvType == nil || recvType.IsNil() {
+	if transpiler.IsUnusable(recvType) {
 		return nil
 	}
 	// Unwrap pointer type

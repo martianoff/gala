@@ -586,7 +586,7 @@ func (t *galaASTTransformer) inferGetMethodType(e *ast.CallExpr, sel *ast.Select
 			}
 		}
 	}
-	if xType == nil || xType.IsNil() {
+	if transpiler.IsUnusable(xType) {
 		xType = t.getExprTypeNameManual(sel.X)
 	}
 	// For vals and immutable field access, .Get() unwraps the implicit Immutable wrapper

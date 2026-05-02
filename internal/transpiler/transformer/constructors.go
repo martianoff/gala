@@ -153,7 +153,7 @@ func (t *galaASTTransformer) tupleElementExpectedTypes(arity int) []transpiler.T
 	}
 	candidates := []transpiler.Type{t.currentFuncReturnType}
 	for _, cand := range candidates {
-		if cand == nil || cand.IsNil() {
+		if transpiler.IsUnusable(cand) {
 			continue
 		}
 		gen, ok := cand.(transpiler.GenericType)

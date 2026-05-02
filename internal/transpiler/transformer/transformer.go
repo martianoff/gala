@@ -74,22 +74,31 @@ type galaASTTransformer struct {
 }
 
 // NewGalaASTTransformer creates a new instance of ASTTransformer for GALA.
+//
+// Capacity hints reduce map reallocations during the transform pass. The
+// values are sized for a representative GALA package: ~50 types, ~50
+// functions, and a few hundred expressions in the type-inference cache.
+// Small packages waste a kilobyte or two of bucket space; large ones
+// avoid the doubling-and-rehash cycle that an empty map walks through
+// at 8, 16, 32, ... entries. CPU profile of an apex-shaped transpile
+// flagged growing these maps as a contributor to allocation pressure
+// (gcDrain / scanobject 18% of cumulative samples).
 func NewGalaASTTransformer() transpiler.ASTTransformer {
 	return &galaASTTransformer{
-		immutFields:       make(map[string]bool),
-		structImmutFields: make(map[string][]bool),
-		activeTypeParams:  make(map[string]bool),
-		structFields:      make(map[string][]string),
-		structFieldTypes:  make(map[string]map[string]transpiler.Type),
-		genericMethods:    make(map[string]map[string]bool),
-		functions:         make(map[string]*transpiler.FunctionMetadata),
-		typeMetas:         make(map[string]*transpiler.TypeMetadata),
-		companionObjects:  make(map[string]*transpiler.CompanionObjectMetadata),
+		immutFields:       make(map[string]bool, 64),
+		structImmutFields: make(map[string][]bool, 32),
+		activeTypeParams:  make(map[string]bool, 16),
+		structFields:      make(map[string][]string, 32),
+		structFieldTypes:  make(map[string]map[string]transpiler.Type, 32),
+		genericMethods:    make(map[string]map[string]bool, 16),
+		functions:         make(map[string]*transpiler.FunctionMetadata, 64),
+		typeMetas:         make(map[string]*transpiler.TypeMetadata, 64),
+		companionObjects:  make(map[string]*transpiler.CompanionObjectMetadata, 16),
 		importManager:     NewImportManager(),
 		inferer:           infer.NewInferer(),
-		typeAliases:       make(map[string]transpiler.Type),
-		exprTypeCache:     make(map[ast.Expr]transpiler.Type),
-		structMetas:       make(map[string]*structMetaConfig),
+		typeAliases:       make(map[string]transpiler.Type, 16),
+		exprTypeCache:     make(map[ast.Expr]transpiler.Type, 256),
+		structMetas:       make(map[string]*structMetaConfig, 16),
 	}
 }
 
