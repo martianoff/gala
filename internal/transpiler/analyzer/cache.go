@@ -1,9 +1,7 @@
 package analyzer
 
 import (
-	"bytes"
 	"crypto/sha256"
-	"encoding/gob"
 	"encoding/hex"
 	"fmt"
 	"io/ioutil"
@@ -18,22 +16,18 @@ import (
 	"martianoff/gala/internal/transpiler/profiler"
 )
 
-func init() {
-	// Register all concrete Type implementations for gob encoding
-	gob.Register(transpiler.BasicType{})
-	gob.Register(transpiler.NamedType{})
-	gob.Register(transpiler.GenericType{})
-	gob.Register(transpiler.ArrayType{})
-	gob.Register(transpiler.MapType{})
-	gob.Register(transpiler.PointerType{})
-	gob.Register(transpiler.FuncType{})
-	gob.Register(transpiler.NilType{})
-	gob.Register(transpiler.VoidType{})
-}
-
-// CacheVersion is incremented when the cache format or analysis semantics change.
-// This ensures stale caches from older compiler versions are automatically invalidated.
-const CacheVersion = "v1"
+// CacheVersion is incremented when the cache format or analysis semantics
+// change. This ensures stale caches from older compiler versions are
+// automatically invalidated.
+//
+// v2 (PR #318): switched from encoding/gob to a hand-rolled binary codec.
+// Decode of the largest gala_team cache entry (~417 KB) dropped from
+// 3.7 ms / 43k allocs (gob) to 1.16 ms / 24.5k allocs (binary) on a
+// 14900KF — the wins compound across the ~26 cached packages an apex
+// transpile rehydrates. The on-disk projection is unchanged; only the
+// bytes-format differs. v1 caches sit under a separate version-keyed
+// directory and are pruned by the existing stale-cache GC.
+const CacheVersion = "v2"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path
@@ -503,8 +497,8 @@ func (c *analysisCache) Get(pkgPath string, contentHash string, depsHash string)
 		return nil, nil
 	}
 
-	var cached CachedRichAST
-	if err := gob.NewDecoder(bytes.NewReader(data)).Decode(&cached); err != nil {
+	cached, err := decodeCachedRichAST(data)
+	if err != nil || cached == nil {
 		os.Remove(path)
 		return nil, nil
 	}
@@ -515,7 +509,7 @@ func (c *analysisCache) Get(pkgPath string, contentHash string, depsHash string)
 		return nil, nil
 	}
 
-	return fromCachedRichAST(&cached), cached.DirectImports
+	return fromCachedRichAST(cached), cached.DirectImports
 }
 
 // Put stores a RichAST in the cache using atomic write (temp file + rename).
@@ -545,7 +539,13 @@ func (c *analysisCache) Put(pkgPath string, contentHash string, depsHash string,
 	tmpPath := tmpFile.Name()
 
 	cached := toCachedRichAST(richAST, depsHash, directImports)
-	if err := gob.NewEncoder(tmpFile).Encode(cached); err != nil {
+	encoded, err := encodeCachedRichAST(cached)
+	if err != nil {
+		tmpFile.Close()
+		os.Remove(tmpPath)
+		return
+	}
+	if _, err := tmpFile.Write(encoded); err != nil {
 		tmpFile.Close()
 		os.Remove(tmpPath)
 		return
@@ -588,7 +588,10 @@ func (c *analysisCache) cachePrefix(pkgPath string) string {
 }
 
 func (c *analysisCache) cachePath(pkgPath, contentHash string) string {
-	return filepath.Join(c.dir, c.cachePrefix(pkgPath)+contentHash[:12]+".gob")
+	// Extension is decorative — the directory's CacheVersion key is the
+	// real format identifier. Kept as ".bin" for v2 to make the binary
+	// codec switch visible at a glance when inspecting the cache tree.
+	return filepath.Join(c.dir, c.cachePrefix(pkgPath)+contentHash[:12]+".bin")
 }
 
 // pkgFingerprint is the per-process memo of the three derived quantities

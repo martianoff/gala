@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "analyzer.go",
         "cache.go",
+        "cache_codec.go",
         "go_types.go",
         "validation.go",
     ],
@@ -30,6 +31,7 @@ go_test(
         "analyzed_pkgs_invariant_test.go",
         "analyzer_test.go",
         "batch_reuse_test.go",
+        "cache_codec_test.go",
         "cache_e2e_test.go",
         "cache_test.go",
         "go_types_debug_test.go",
