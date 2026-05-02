@@ -846,7 +846,7 @@ func (t *galaASTTransformer) transformExpressionBodiedFunction(exprCtx grammar.I
 func (t *galaASTTransformer) resolveReturnTypeAsFuncType(typeExpr ast.Expr) *transpiler.FuncType {
 	// Convert AST type to transpiler type
 	tp := t.astTypeToTranspilerType(typeExpr)
-	if tp == nil || tp.IsNil() {
+	if transpiler.IsUnusable(tp) {
 		return nil
 	}
 
@@ -859,7 +859,7 @@ func (t *galaASTTransformer) resolveReturnTypeAsFuncType(typeExpr ast.Expr) *tra
 // we want to thread expected lambda param/return types into a returned
 // lambda expression.
 func (t *galaASTTransformer) resolveTranspilerTypeAsFuncType(tp transpiler.Type) *transpiler.FuncType {
-	if tp == nil || tp.IsNil() {
+	if transpiler.IsUnusable(tp) {
 		return nil
 	}
 

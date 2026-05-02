@@ -1816,7 +1816,7 @@ func (a *galaAnalyzer) computeExtractIndices(applyMethod *transpiler.MethodMetad
 
 	// For each parameter type in Apply, find its index in the container's type parameters
 	for _, paramType := range applyMethod.ParamTypes {
-		if paramType == nil || paramType.IsNil() {
+		if transpiler.IsUnusable(paramType) {
 			continue
 		}
 		paramTypeName := normalizeTypeName(paramType.String())
@@ -2816,7 +2816,7 @@ func synthesizeTypeMetadataFromGo(pkgAST *transpiler.RichAST, goInfo *transpiler
 // to populate ImmutFlags so downstream auto-unwrap fires on cross-package
 // access of types whose only metadata source is the generated .gen.go.
 func isGoFieldImmutable(typ transpiler.Type) bool {
-	if typ == nil || typ.IsNil() {
+	if transpiler.IsUnusable(typ) {
 		return false
 	}
 	base := typ.BaseName()

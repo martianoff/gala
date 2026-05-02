@@ -412,15 +412,15 @@ func (t *galaASTTransformer) transformPostfixMatchExpression(ctx *grammar.Postfi
 func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, paramName string, caseClauses []grammar.ICaseClauseContext, ctx antlr.ParserRuleContext) (ast.Expr, error) {
 	// Get the type of the matched expression
 	matchedType := t.getExprTypeNameManual(subject)
-	if matchedType == nil || matchedType.IsNil() {
+	if transpiler.IsUnusable(matchedType) {
 		matchedType, _ = t.inferExprType(subject)
 	}
-	if matchedType == nil || matchedType.IsNil() {
+	if transpiler.IsUnusable(matchedType) {
 		// Fallback: try to infer the sealed parent type from the case patterns.
 		// If cases are Some/None, the subject must be Option; Success/Failure → Try; etc.
 		matchedType = t.inferMatchedTypeFromCases(caseClauses)
 	}
-	if matchedType == nil || matchedType.IsNil() {
+	if transpiler.IsUnusable(matchedType) {
 		if len(caseClauses) > 0 {
 			cc := caseClauses[0].(*grammar.CaseClauseContext)
 			return nil, galaerr.NewSemanticErrorAt(cc.GetStart().GetLine(), cc.GetStart().GetColumn(), "cannot infer type of matched expression")

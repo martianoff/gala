@@ -123,7 +123,7 @@ func validateTypeReferences(ast *transpiler.RichAST) []ValidationWarning {
 // checkTypeExists verifies that a referenced type can be resolved.
 // Returns nil if the type is valid, or a warning if it cannot be found.
 func checkTypeExists(ast *transpiler.RichAST, t transpiler.Type, location string) *ValidationWarning {
-	if t == nil || t.IsNil() || t.IsAny() {
+	if transpiler.IsUnusableOrAny(t) {
 		return nil
 	}
 
@@ -404,7 +404,7 @@ func validateImportTypeConsistency(ast *transpiler.RichAST) []ValidationWarning 
 // checkPackagePrefixInType recursively checks if any NamedType in a type tree has an
 // unknown package prefix.
 func checkPackagePrefixInType(ast *transpiler.RichAST, t transpiler.Type, location string, warnings *[]ValidationWarning) {
-	if t == nil || t.IsNil() {
+	if transpiler.IsUnusable(t) {
 		return
 	}
 	switch ty := t.(type) {

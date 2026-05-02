@@ -501,7 +501,7 @@ func (t *galaASTTransformer) getExtractedTypeAtIndexWithArgs(extractorName strin
 		extractedType = t.getGenericExtractorResultTypeWithArgs(extractorName, objType, index, numArgs)
 
 		// If not found, look up companion object metadata
-		if extractedType == nil || extractedType.IsNil() {
+		if transpiler.IsUnusable(extractedType) {
 			companionMeta := t.getCompanionObjectMetadata(extractorName)
 			if companionMeta != nil {
 				// Verify the companion works with this container type
@@ -551,7 +551,7 @@ func (t *galaASTTransformer) getExtractedTypeAtIndexWithArgs(extractorName strin
 // - Companion objects like Some matching Option[T]
 // - Non-generic struct matching (like Person matching Person) which should use UnapplyFull
 func (t *galaASTTransformer) isDirectStructMatch(patternTypeName string, matchedType transpiler.Type) bool {
-	if matchedType == nil || matchedType.IsNil() {
+	if transpiler.IsUnusable(matchedType) {
 		return false
 	}
 
@@ -850,7 +850,7 @@ func (t *galaASTTransformer) hasRestPattern(argList *grammar.ArgumentListContext
 
 // isSeqType checks if a type implements the Seq interface (has Size, Get, SeqDrop methods).
 func (t *galaASTTransformer) isSeqType(typ transpiler.Type) bool {
-	if typ == nil || typ.IsNil() {
+	if transpiler.IsUnusable(typ) {
 		return false
 	}
 
@@ -1359,7 +1359,7 @@ func (t *galaASTTransformer) inferExtractorTypeParams(extractorMeta *transpiler.
 
 	// Get the first parameter type (the type we're matching against)
 	unapplyParamType := unapplyMeta.ParamTypes[0]
-	if unapplyParamType == nil || unapplyParamType.IsNil() {
+	if transpiler.IsUnusable(unapplyParamType) {
 		return nil
 	}
 
@@ -1429,13 +1429,13 @@ func (t *galaASTTransformer) getGenericExtractorResultTypeWithArgs(extractorName
 
 	// Substitute type parameters in the return type
 	returnType := t.substituteConcreteTypes(unapplyMeta.ReturnType, extractorMeta.TypeParams, inferredTypes)
-	if returnType == nil || returnType.IsNil() {
+	if transpiler.IsUnusable(returnType) {
 		return transpiler.NilType{}
 	}
 
 	// Unwrap Option[X] to get X
 	innerType := t.unwrapOptionType(returnType)
-	if innerType == nil || innerType.IsNil() {
+	if transpiler.IsUnusable(innerType) {
 		return transpiler.NilType{}
 	}
 
@@ -1496,7 +1496,7 @@ func (t *galaASTTransformer) unwrapOptionType(typ transpiler.Type) transpiler.Ty
 // - bool (guard pattern)
 // - Option[T] (extractor pattern)
 func (t *galaASTTransformer) isDirectUnapplyReturnType(typ transpiler.Type) bool {
-	if typ == nil || typ.IsNil() {
+	if transpiler.IsUnusable(typ) {
 		return false
 	}
 	// Check for bool

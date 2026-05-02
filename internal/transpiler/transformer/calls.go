@@ -337,7 +337,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		inferredFromExpected := make(map[string]transpiler.Type)
 		t.unifyForInference(substitutedReturn, pendingExpected, methodMeta.TypeParams, inferredFromExpected)
 		for tp, inferred := range inferredFromExpected {
-			if inferred == nil || inferred.IsNil() || inferred.IsAny() {
+			if transpiler.IsUnusableOrAny(inferred) {
 				continue
 			}
 			if _, alreadySet := typeSubst[tp]; !alreadySet {
@@ -432,7 +432,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			}
 			preTransformed[i] = expr
 			argType := t.getExprTypeName(expr)
-			if argType == nil || argType.IsNil() || argType.IsAny() {
+			if transpiler.IsUnusableOrAny(argType) {
 				continue
 			}
 			inferredMap := make(map[string]transpiler.Type)
@@ -517,7 +517,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 							if _, alreadySet := typeSubst[tp]; alreadySet {
 								continue
 							}
-							if inferred == nil || inferred.IsNil() || inferred.IsAny() {
+							if transpiler.IsUnusableOrAny(inferred) {
 								continue
 							}
 							typeSubst[tp] = inferred.String()
@@ -1174,7 +1174,7 @@ func (t *galaASTTransformer) resolveNamedArgExpectedFuncType(fun ast.Expr, argNa
 			for i, fieldName := range sv.FieldNames {
 				if fieldName == argName && i < len(sv.FieldTypes) {
 					expected := sv.FieldTypes[i]
-					if expected == nil || expected.IsNil() {
+					if transpiler.IsUnusable(expected) {
 						break
 					}
 					// Apply parent sealed type's type-param substitution when the
@@ -1764,7 +1764,7 @@ func (t *galaASTTransformer) inferTypeArgsFromPositionalArgs(
 			continue
 		}
 		valType := t.getExprTypeName(args[i])
-		if valType == nil || valType.IsNil() {
+		if transpiler.IsUnusable(valType) {
 			continue
 		}
 		if inferredTypeArgs[idx] == nil {
@@ -1827,7 +1827,7 @@ func (t *galaASTTransformer) inferTypeArgsFromNamedArgs(
 			continue
 		}
 		valType := t.getExprTypeName(val)
-		if valType == nil || valType.IsNil() {
+		if transpiler.IsUnusable(valType) {
 			continue
 		}
 		if idx, isTypeParam := typeParamIndices[fieldType.String()]; isTypeParam {
@@ -2071,7 +2071,7 @@ func (t *galaASTTransformer) injectSealedVariantTypeArgs(fun ast.Expr, expected 
 
 	typeArgs := make([]ast.Expr, len(gen.Params))
 	for i, p := range gen.Params {
-		if p == nil || p.IsNil() {
+		if transpiler.IsUnusable(p) {
 			return fun, false
 		}
 		typeArgs[i] = t.typeToExpr(p)
@@ -2450,7 +2450,7 @@ func (t *galaASTTransformer) liftToImmutableForArg(expr ast.Expr, expectedType t
 		return expr
 	}
 	inner := gen.Params[0]
-	if inner == nil || inner.IsNil() {
+	if transpiler.IsUnusable(inner) {
 		return expr
 	}
 	innerExpr := t.typeToExpr(inner)
@@ -2524,7 +2524,7 @@ func (t *galaASTTransformer) inferTypeArgsFromApply(
 
 	// Check if all type parameters were inferred with concrete types
 	for _, tp := range result {
-		if tp == nil || tp.IsNil() {
+		if transpiler.IsUnusable(tp) {
 			return nil // Could not infer all type parameters
 		}
 		// Make sure we didn't infer a type parameter (like T) instead of a concrete type
@@ -2710,7 +2710,7 @@ func (t *galaASTTransformer) inferZeroArgTypeParams(typeName string, typeMeta *t
 	// specific), then enclosing function return type (gap #11 widening).
 	sources := []transpiler.Type{t.currentMatchSubjectType, t.currentFuncReturnType}
 	for _, src := range sources {
-		if src == nil || src.IsNil() {
+		if transpiler.IsUnusable(src) {
 			continue
 		}
 		// The context type's base must match the companion's target type.
@@ -2792,10 +2792,10 @@ func (t *galaASTTransformer) inferFuncTypeSubstFromArgs(funcMeta *transpiler.Fun
 		}
 
 		argType := t.getExprTypeNameManual(expr)
-		if argType == nil || argType.IsNil() {
+		if transpiler.IsUnusable(argType) {
 			argType, _ = t.inferExprType(expr)
 		}
-		if argType == nil || argType.IsNil() {
+		if transpiler.IsUnusable(argType) {
 			argIdx++
 			continue
 		}

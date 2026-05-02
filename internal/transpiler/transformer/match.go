@@ -150,10 +150,10 @@ func (t *galaASTTransformer) parseMatchSubject(ctx grammar.IExpressionContext) (
 
 	// Infer matched expression type (manual first, then HM fallback)
 	matchedType := t.getExprTypeNameManual(expr)
-	if matchedType == nil || matchedType.IsNil() {
+	if transpiler.IsUnusable(matchedType) {
 		matchedType, _ = t.inferExprType(expr)
 	}
-	if matchedType == nil || matchedType.IsNil() {
+	if transpiler.IsUnusable(matchedType) {
 		if parserCtx, ok := ctx.(antlr.ParserRuleContext); ok {
 			return nil, "", nil, t.semanticErrorAt(parserCtx, "cannot infer type of matched expression. Please add explicit type annotation to the variable being matched")
 		}
@@ -475,7 +475,7 @@ func (t *galaASTTransformer) validateNoBareReturnsInValueMatch(
 	resultType transpiler.Type,
 	startLine, startCol int,
 ) error {
-	if resultType == nil || resultType.IsNil() {
+	if transpiler.IsUnusable(resultType) {
 		return nil
 	}
 	if resultType != nil && resultType.IsVoid() {
@@ -508,7 +508,7 @@ func (t *galaASTTransformer) validateNoBareReturnsInValueMatch(
 // binding names each count as one field. Patterns that do not target a known
 // sealed variant are skipped. Returns nil if all patterns are well-formed.
 func (t *galaASTTransformer) validateSealedVariantArity(matchedType transpiler.Type, patternTexts []string, ctx grammar.IExpressionContext) error {
-	if matchedType == nil || matchedType.IsNil() {
+	if transpiler.IsUnusable(matchedType) {
 		return nil
 	}
 	meta := t.getTypeMeta(matchedType.BaseName())
@@ -1124,7 +1124,7 @@ func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patt
 		// we fall through to `any` for the out-of-scope case.
 		var sharedTypeParam transpiler.Type
 		for _, typ := range types {
-			if typ == nil || typ.IsNil() {
+			if transpiler.IsUnusable(typ) {
 				continue
 			}
 			if typ.IsVoid() {
