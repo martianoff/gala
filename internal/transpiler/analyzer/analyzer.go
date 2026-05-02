@@ -35,7 +35,8 @@ func GetBaseMetadata(p transpiler.GalaParser, searchPaths []string) *transpiler.
 		analyzedPkgImports:  make(map[string][]string),
 		checkedDirs:      make(map[string]bool),
 		siblingTreeCache: make(map[string]*siblingCacheEntry),
-		parsedFileCache:  make(map[string]*parsedFileEntry),
+		parsedFileCache:   make(map[string]*parsedFileEntry),
+		parsedFileCacheMu: &sync.Mutex{},
 		pkgResultCache:  make(map[string]*pkgResultCacheEntry),
 		resolver:         module.NewResolver(searchPaths),
 	}
@@ -112,13 +113,14 @@ type galaAnalyzer struct {
 	// Survives BatchAnalyzer.SetPackageFiles so a 37-file package amortizes
 	// sibling parsing to roughly N parses instead of N×(N−1).
 	//
-	// parsedFileCacheMu guards parsedFileCache against concurrent writes.
-	// The parallel sibling-parse helper (parseFilesConcurrent) populates
-	// the cache from worker goroutines, so accesses must be serialized.
-	// Single-threaded callers (parseFileCached) take the lock too — the
-	// uncontended cost is a single atomic op per call.
+	// parsedFileCacheMu guards parsedFileCache against concurrent
+	// writes. Pointer type (not embedded value) so that a child
+	// analyzer constructed with a shared parsedFileCache can also
+	// share the mutex — otherwise a copied value-typed mutex would
+	// give the child its own lock and let goroutines from parent and
+	// child write to the same map under different locks.
 	parsedFileCache   map[string]*parsedFileEntry
-	parsedFileCacheMu sync.Mutex
+	parsedFileCacheMu *sync.Mutex
 
 	// Per-analyzer in-memory cache of analyzePackage results, keyed by the
 	// resolved package directory path. The same package directory is
@@ -201,7 +203,8 @@ func NewGalaAnalyzer(p transpiler.GalaParser, searchPaths []string, projectRoot 
 		analyzedPkgImports:  make(map[string][]string),
 		checkedDirs:      make(map[string]bool),
 		siblingTreeCache: make(map[string]*siblingCacheEntry),
-		parsedFileCache:  make(map[string]*parsedFileEntry),
+		parsedFileCache:   make(map[string]*parsedFileEntry),
+		parsedFileCacheMu: &sync.Mutex{},
 		pkgResultCache:  make(map[string]*pkgResultCacheEntry),
 		resolver:         module.NewResolver(searchPaths),
 		cache:            newAnalysisCache(resolveCacheRoot(root)),
@@ -224,7 +227,8 @@ func NewGalaAnalyzerWithBase(base *transpiler.RichAST, p transpiler.GalaParser, 
 		analyzedPkgImports:  make(map[string][]string),
 		checkedDirs:      make(map[string]bool),
 		siblingTreeCache: make(map[string]*siblingCacheEntry),
-		parsedFileCache:  make(map[string]*parsedFileEntry),
+		parsedFileCache:   make(map[string]*parsedFileEntry),
+		parsedFileCacheMu: &sync.Mutex{},
 		pkgResultCache:  make(map[string]*pkgResultCacheEntry),
 		resolver:         module.NewResolver(searchPaths),
 		cache:            newAnalysisCache(resolveCacheRoot(root)),
@@ -249,7 +253,8 @@ func NewGalaAnalyzerWithPackageFiles(p transpiler.GalaParser, searchPaths []stri
 		analyzedPkgImports:  make(map[string][]string),
 		checkedDirs:      make(map[string]bool),
 		siblingTreeCache: make(map[string]*siblingCacheEntry),
-		parsedFileCache:  make(map[string]*parsedFileEntry),
+		parsedFileCache:   make(map[string]*parsedFileEntry),
+		parsedFileCacheMu: &sync.Mutex{},
 		pkgResultCache:  make(map[string]*pkgResultCacheEntry),
 		resolver:         module.NewResolver(searchPaths),
 		cache:            newAnalysisCache(resolveCacheRoot(root)),
@@ -275,6 +280,7 @@ func NewGalaAnalyzerForLSP(p transpiler.GalaParser, searchPaths []string, projec
 		checkedDirs:         make(map[string]bool),
 		siblingTreeCache:    make(map[string]*siblingCacheEntry),
 		parsedFileCache:     make(map[string]*parsedFileEntry),
+		parsedFileCacheMu:   &sync.Mutex{},
 		pkgResultCache:     make(map[string]*pkgResultCacheEntry),
 		resolver:            module.NewResolver(searchPaths),
 		cache:               newAnalysisCache(resolveCacheRoot(root)),
@@ -307,6 +313,7 @@ func NewBatchAnalyzer(p transpiler.GalaParser, searchPaths []string, projectRoot
 			checkedDirs:        make(map[string]bool),
 			siblingTreeCache:   make(map[string]*siblingCacheEntry),
 			parsedFileCache:    make(map[string]*parsedFileEntry),
+			parsedFileCacheMu:  &sync.Mutex{},
 		pkgResultCache:    make(map[string]*pkgResultCacheEntry),
 			resolver:           module.NewResolver(searchPaths),
 			cache:              newAnalysisCache(resolveCacheRoot(root)),
@@ -3073,22 +3080,15 @@ func (a *galaAnalyzer) ensureTranspiled(importPath string) error {
 			return fmt.Errorf("failed to parse %s: %w", srcPath, err)
 		}
 
-		// Analyze using a child analyzer that shares the parent's
-		// caches — avoids redoing work the parent already did.
-		//
-		// CPU profile of an apex transpile (12-package synthetic apex
-		// in TestTranspile_ApexShape) showed ensureTranspiled at
-		// 18.86% of total CPU, with 3.34s of that inside the temp
-		// analyzer's BatchAnalyzer.Analyze recursion. The temp
-		// analyzer used to start with empty maps, so each invocation
-		// re-analyzed std + every transitive GALA dep from scratch
-		// even though the parent had already done so. Sharing
-		// analyzedPkgs / parsedFileCache / pkgResultCache /
-		// analyzedPkgImports / checkedDirs / siblingTreeCache /
-		// disk cache lets recursive analyze calls hit those caches
-		// and short-circuit. The placeholder mechanism inside
-		// Analyze (`analyzedPkgs[path] = nil` before recursion)
-		// continues to break cycles correctly under sharing.
+		// Child analyzer shares the parent's caches so its recursive
+		// Analyze hits already-populated entries instead of redoing
+		// std + every transitive GALA dep from scratch. Cycle safety
+		// still holds: the placeholder pattern (`analyzedPkgs[path]
+		// = nil` before recursion) breaks cycles regardless of who
+		// owns the map. parsedFileCacheMu must be the *same* mutex
+		// instance, not a fresh value-typed copy, or goroutines
+		// from parent and child would write to the shared map under
+		// different locks.
 		tempAnalyzer := &galaAnalyzer{
 			parser:             a.parser,
 			searchPaths:        a.searchPaths,
@@ -3097,6 +3097,7 @@ func (a *galaAnalyzer) ensureTranspiled(importPath string) error {
 			checkedDirs:        a.checkedDirs,
 			siblingTreeCache:   a.siblingTreeCache,
 			parsedFileCache:    a.parsedFileCache,
+			parsedFileCacheMu:  a.parsedFileCacheMu,
 			pkgResultCache:     a.pkgResultCache,
 			resolver:           a.resolver,
 			cache:              a.cache,
