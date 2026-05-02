@@ -15,9 +15,14 @@ name: Perf — real-repo build budget
 # 3-5x faster. Cold floor is dominated by full-closure ANTLR parsing of
 # gala_team's apex transpile (`cmd/main.gala` dot-imports the whole
 # module ≈ 100 packages); persistent-worker mode + memo'd analyzer paths
-# get this down from ~1160 s to ~400 s as of PR #317. They should ratchet
-# downward any time a perf improvement lands; never upward without a
-# documented reason in the PR description.
+# get this down from ~1160 s to ~400 s as of PR #317, and parallel
+# sibling parsing inside the analyzer brings the per-package parse
+# loop down further (cold transpile of collection_immutable/list.gala
+# went 4.6 s → 2.07 s locally, sibling-discovery alone 2.4 s → 470 ms;
+# the apex's ~100 transitive analyzePackage calls each compound that
+# saving). Budgets ratcheted to reflect the new floor. They should
+# continue to ratchet downward any time a perf improvement lands;
+# never upward without a documented reason in the PR description.
 
 on:
   workflow_dispatch:
@@ -43,8 +48,8 @@ jobs:
     env:
       GALA_TUI_REF: main
       GALA_TEAM_REF: master
-      WARM_BUDGET_SECONDS: "500"
-      COLD_BUDGET_SECONDS: "600"
+      WARM_BUDGET_SECONDS: "300"
+      COLD_BUDGET_SECONDS: "400"
 
     steps:
       - name: Checkout gala (this branch)
