@@ -568,6 +568,22 @@ func (t *galaASTTransformer) getTypeMeta(typeName string) *transpiler.TypeMetada
 	return t.typeMetas[resolved]
 }
 
+// userDefinedMethodFlags reports whether the user has explicitly declared
+// Copy / Equal / Unapply methods on the given type. The transpiler auto-generates
+// each of these methods on every struct (and sealed parent), but a user-supplied
+// definition must take precedence — emitting both would produce a duplicate-method
+// error in the generated Go.
+func (t *galaASTTransformer) userDefinedMethodFlags(typeName string) (hasCopy, hasEqual, hasUnapply bool) {
+	meta := t.getTypeMeta(typeName)
+	if meta == nil {
+		return false, false, false
+	}
+	_, hasCopy = meta.Methods["Copy"]
+	_, hasEqual = meta.Methods["Equal"]
+	_, hasUnapply = meta.Methods["Unapply"]
+	return
+}
+
 // getTypeMetaResolved returns the type metadata and the resolved (canonical) type name.
 // Use this when you need both the metadata and the resolved name to avoid double resolution.
 func (t *galaASTTransformer) getTypeMetaResolved(typeName string) (*transpiler.TypeMetadata, string) {

@@ -47,6 +47,7 @@ go_test(
     srcs = [
         "apply_test.go",
         "assignment_test.go",
+        "auto_method_override_test.go",
         "bare_funcref_test.go",
         "codec_boundary_test.go",
         "collect_partial_function_test.go",
