@@ -1,0 +1,149 @@
+package main
+
+import (
+    . "martianoff/gala/test"
+    . "martianoff/gala/collection_immutable"
+    . "martianoff/gala/go_interop"
+    "martianoff/gala/crypto"
+)
+
+// ---- helpers -------------------------------------------------------------
+
+func bytesOf(s string) Array[byte] = ArrayFromSlice(ToBytes(s))
+
+// ---- known-vector tables -------------------------------------------------
+
+struct HashCase(Name string, Input string, ExpectedHex string)
+
+func TestSha256KnownVectors(t T) T {
+    return RunCases[HashCase, string](t,
+        (sub T, c HashCase, _ string) => {
+            val d = crypto.Sha256{}.Hash(bytesOf(c.Input))
+            return Eq[string](sub, d.Hex(), c.ExpectedHex)
+        },
+        Case[HashCase, string](
+            Name = "empty",
+            Input = HashCase(
+                Name = "empty",
+                Input = "",
+                ExpectedHex = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            ),
+            Expected = "",
+        ),
+        Case[HashCase, string](
+            Name = "abc",
+            Input = HashCase(
+                Name = "abc",
+                Input = "abc",
+                ExpectedHex = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+            ),
+            Expected = "",
+        ),
+    )
+}
+
+func TestSha512KnownVectors(t T) T {
+    val expected = "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f"
+    val d = crypto.Sha512{}.Hash(bytesOf("abc"))
+    return Eq[string](t, d.Hex(), expected)
+}
+
+func TestSha1KnownVectors(t T) T {
+    val d = crypto.Sha1{}.Hash(bytesOf("abc"))
+    return Eq[string](t, d.Hex(), "a9993e364706816aba3e25717850c26c9cd0d89d")
+}
+
+func TestMd5KnownVectors(t T) T {
+    val d = crypto.Md5{}.Hash(bytesOf("abc"))
+    return Eq[string](t, d.Hex(), "900150983cd24fb0d6963f7d28e17f72")
+}
+
+// ---- algorithm metadata --------------------------------------------------
+
+func TestAlgorithmMetadata(t T) T {
+    var t1 = Eq[string](t, crypto.Sha256{}.Algorithm(), "SHA-256")
+    var t2 = Eq[int](t1, crypto.Sha256{}.Size(), 32)
+    var t3 = Eq[string](t2, crypto.Sha512{}.Algorithm(), "SHA-512")
+    var t4 = Eq[int](t3, crypto.Sha512{}.Size(), 64)
+    var t5 = Eq[string](t4, crypto.Sha1{}.Algorithm(), "SHA-1")
+    var t6 = Eq[int](t5, crypto.Sha1{}.Size(), 20)
+    var t7 = Eq[string](t6, crypto.Md5{}.Algorithm(), "MD5")
+    return Eq[int](t7, crypto.Md5{}.Size(), 16)
+}
+
+// ---- digest size matches algorithm --------------------------------------
+
+func TestDigestSize(t T) T {
+    val d = crypto.Sha256{}.Hash(bytesOf("hello"))
+    return Eq[int](t, d.Size(), 32)
+}
+
+// ---- streaming matches one-shot -----------------------------------------
+
+func TestStreamingMatchesOneShot(t T) T {
+    val full = "the quick brown fox jumps over the lazy dog"
+    val oneShot = crypto.Sha256{}.Hash(bytesOf(full))
+
+    val hasher = crypto.Sha256{}.NewHasher()
+    val streamed = hasher.
+        Update(bytesOf("the quick brown fox ")).
+        Update(bytesOf("jumps over ")).
+        Update(bytesOf("the lazy dog")).
+        Finish()
+
+    var t1 = Eq[string](t, oneShot.Hex(), streamed.Hex())
+    return IsTrue(t1, oneShot.Equal(streamed))
+}
+
+func TestStreamingSha512(t T) T {
+    val oneShot = crypto.Sha512{}.Hash(bytesOf("abc"))
+    val streamed = crypto.Sha512{}.NewHasher().
+        Update(bytesOf("a")).
+        Update(bytesOf("b")).
+        Update(bytesOf("c")).
+        Finish()
+    return Eq[string](t, oneShot.Hex(), streamed.Hex())
+}
+
+func TestHasherAlgorithm(t T) T {
+    val h = crypto.Sha256{}.NewHasher()
+    return Eq[string](t, h.Algorithm(), "SHA-256")
+}
+
+// ---- encoding -----------------------------------------------------------
+
+func TestDigestHex(t T) T {
+    val d = crypto.Sha256{}.Hash(bytesOf(""))
+    return Eq[string](t, d.Hex(), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+}
+
+func TestDigestBase64(t T) T {
+    // SHA-256("abc") base64-std = "ungWv48Bz+pBQUDeXa4iI7ADYaOWF3qctBD/YfIAFa0="
+    val d = crypto.Sha256{}.Hash(bytesOf("abc"))
+    return Eq[string](t, d.Base64(), "ungWv48Bz+pBQUDeXa4iI7ADYaOWF3qctBD/YfIAFa0=")
+}
+
+func TestDigestStringEqualsHex(t T) T {
+    val d = crypto.Sha256{}.Hash(bytesOf("abc"))
+    return Eq[string](t, d.String(), d.Hex())
+}
+
+// ---- equality ------------------------------------------------------------
+
+func TestDigestEqualSame(t T) T {
+    val d1 = crypto.Sha256{}.Hash(bytesOf("abc"))
+    val d2 = crypto.Sha256{}.Hash(bytesOf("abc"))
+    return IsTrue(t, d1.Equal(d2))
+}
+
+func TestDigestEqualDifferentBytes(t T) T {
+    val d1 = crypto.Sha256{}.Hash(bytesOf("abc"))
+    val d2 = crypto.Sha256{}.Hash(bytesOf("abd"))
+    return IsFalse(t, d1.Equal(d2))
+}
+
+func TestDigestEqualDifferentSizes(t T) T {
+    val d256 = crypto.Sha256{}.Hash(bytesOf("abc"))
+    val d512 = crypto.Sha512{}.Hash(bytesOf("abc"))
+    return IsFalse(t, d256.Equal(d512))
+}

@@ -1,0 +1,38 @@
+load("//:gala.bzl", "gala_bootstrap_transpile", "gala_go_test", "gala_library")
+
+exports_files(["crypto.gala"])
+
+gala_bootstrap_transpile(
+    name = "crypto_go",
+    src = "crypto.gala",
+    out = "crypto.gen.go",
+)
+
+filegroup(
+    name = "gala_sources",
+    srcs = glob(
+        ["*.gala"],
+        exclude = ["*_test.gala"],
+    ),
+    visibility = ["//visibility:public"],
+)
+
+gala_library(
+    name = "crypto",
+    src = "crypto.gala",
+    importpath = "martianoff/gala/crypto",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//collection_immutable",
+    ],
+)
+
+gala_go_test(
+    name = "crypto_test",
+    srcs = ["crypto_test.gala"],
+    deps = [
+        ":crypto",
+        "//collection_immutable",
+        "//go_interop",
+    ],
+)

@@ -1,0 +1,150 @@
+package crypto
+
+import (
+    "crypto/md5"
+    "crypto/sha1"
+    "crypto/sha256"
+    "crypto/sha512"
+    "crypto/subtle"
+    "encoding/base64"
+    "encoding/hex"
+    "hash"
+    . "martianoff/gala/collection_immutable"
+)
+
+// Digest is the opaque output of a hash function. The internal
+// representation is Array[byte]; the only way out is via the encoding
+// methods below.
+struct Digest(bytes Array[byte])
+
+// Bytes returns the raw digest as an immutable Array[byte].
+func (d Digest) Bytes() Array[byte] = d.bytes
+
+// Size returns the length of the digest in bytes.
+func (d Digest) Size() int = d.bytes.Size()
+
+// Hex returns the lowercase hex encoding of the digest.
+func (d Digest) Hex() string {
+    var goBytes = d.bytes.ToGoSlice()
+    return hex.EncodeToString(goBytes)
+}
+
+// Base64 returns the standard (padded) base64 encoding of the digest.
+func (d Digest) Base64() string {
+    var goBytes = d.bytes.ToGoSlice()
+    return base64.StdEncoding.EncodeToString(goBytes)
+}
+
+// String returns the hex encoding (same as Hex).
+func (d Digest) String() string = d.Hex()
+
+// Equal compares two digests in constant time. Different sizes compare
+// as not equal (subtle.ConstantTimeCompare returns 0 on length mismatch).
+func (d Digest) Equal(other Digest) bool {
+    var a = d.bytes.ToGoSlice()
+    var b = other.bytes.ToGoSlice()
+    return subtle.ConstantTimeCompare(a, b) == 1
+}
+
+// Hasher is a streaming hash. Holds a Go hash.Hash; mutable because the
+// underlying stdlib hashers are inherently stateful. Hasher is the only
+// place that mutability lives — Digest is fully immutable.
+type Hasher struct {
+    algorithm string
+    var h     hash.Hash
+}
+
+// Update feeds more bytes into the running hash and returns the receiver
+// for chaining: h.Update(a).Update(b).Finish().
+func (h *Hasher) Update(data Array[byte]) *Hasher {
+    var goData = data.ToGoSlice()
+    var _, _ = h.h.Write(goData)
+    return h
+}
+
+// Finish returns the current digest. The hasher remains usable, but
+// continuing to feed bytes will produce a digest of the full stream so
+// far rather than just what came after Finish.
+func (h *Hasher) Finish() Digest {
+    val sum = h.h.Sum(nil)
+    return Digest(bytes = ArrayFromSlice(sum))
+}
+
+// Algorithm returns the human-readable algorithm name (e.g. "SHA-256").
+func (h *Hasher) Algorithm() string = h.algorithm
+
+// ---- algorithm objects ---------------------------------------------------
+
+// Sha256 is the SHA-256 algorithm (FIPS 180-4), 32-byte digest.
+type Sha256 struct {}
+
+func (s Sha256) Algorithm() string = "SHA-256"
+func (s Sha256) Size() int = 32
+
+func (s Sha256) Hash(data Array[byte]) Digest {
+    var goData = data.ToGoSlice()
+    var h = sha256.New()
+    var _, _ = h.Write(goData)
+    val sum = h.Sum(nil)
+    return Digest(bytes = ArrayFromSlice(sum))
+}
+
+func (s Sha256) NewHasher() *Hasher {
+    return &Hasher(algorithm = "SHA-256", h = sha256.New())
+}
+
+// Sha512 is the SHA-512 algorithm (FIPS 180-4), 64-byte digest.
+type Sha512 struct {}
+
+func (s Sha512) Algorithm() string = "SHA-512"
+func (s Sha512) Size() int = 64
+
+func (s Sha512) Hash(data Array[byte]) Digest {
+    var goData = data.ToGoSlice()
+    var h = sha512.New()
+    var _, _ = h.Write(goData)
+    val sum = h.Sum(nil)
+    return Digest(bytes = ArrayFromSlice(sum))
+}
+
+func (s Sha512) NewHasher() *Hasher {
+    return &Hasher(algorithm = "SHA-512", h = sha512.New())
+}
+
+// Sha1 is the SHA-1 algorithm, 20-byte digest. Considered cryptographically
+// broken for collision resistance — included for legacy interop only.
+type Sha1 struct {}
+
+func (s Sha1) Algorithm() string = "SHA-1"
+func (s Sha1) Size() int = 20
+
+func (s Sha1) Hash(data Array[byte]) Digest {
+    var goData = data.ToGoSlice()
+    var h = sha1.New()
+    var _, _ = h.Write(goData)
+    val sum = h.Sum(nil)
+    return Digest(bytes = ArrayFromSlice(sum))
+}
+
+func (s Sha1) NewHasher() *Hasher {
+    return &Hasher(algorithm = "SHA-1", h = sha1.New())
+}
+
+// Md5 is the MD5 algorithm, 16-byte digest. Considered cryptographically
+// broken — included for legacy interop only.
+type Md5 struct {}
+
+func (s Md5) Algorithm() string = "MD5"
+func (s Md5) Size() int = 16
+
+func (s Md5) Hash(data Array[byte]) Digest {
+    var goData = data.ToGoSlice()
+    var h = md5.New()
+    var _, _ = h.Write(goData)
+    val sum = h.Sum(nil)
+    return Digest(bytes = ArrayFromSlice(sum))
+}
+
+func (s Md5) NewHasher() *Hasher {
+    return &Hasher(algorithm = "MD5", h = md5.New())
+}
