@@ -85,6 +85,7 @@ var StdlibPackages = []string{
 	"subprocess",
 	"yaml",
 	"test",
+	"crypto",
 }
 
 // StdlibImportPaths maps package names to their import paths.
@@ -104,6 +105,7 @@ var StdlibImportPaths = map[string]string{
 	"subprocess":           "martianoff/gala/subprocess",
 	"yaml":                 "martianoff/gala/yaml",
 	"test":                 "martianoff/gala/test",
+	"crypto":               "martianoff/gala/crypto",
 }
 
 // GenerateGoMod generates a go.mod file content for the workspace.

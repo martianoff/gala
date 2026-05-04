@@ -122,6 +122,10 @@ genrule(
         "//test:bench.gala",
         "//test:framework.gala",
         "//test:table.gala",
+        # crypto package - transpiled Go
+        "//crypto:crypto_go",
+        # crypto package - GALA source
+        "//crypto:crypto.gala",
     ],
     outs = ["embedded_gen.go"],
     cmd = "$(location //cmd/stdlib_gen) -output $@ $(SRCS)",
