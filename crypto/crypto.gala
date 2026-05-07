@@ -12,7 +12,6 @@ import (
     "encoding/hex"
     "hash"
     . "martianoff/gala/collection_immutable"
-    "martianoff/gala/go_interop"
 )
 
 // Digest is the opaque output of a hash function. The internal
@@ -233,7 +232,7 @@ func RandomBytes(n int) Array[byte] {
     if n == 0 {
         return EmptyArray[byte]()
     }
-    var buf = go_interop.SliceWithSize[byte](n)
+    var buf = ArrayFill[byte](n, byte(0)).ToGoSlice()
     var _, err = rand.Read(buf)
     if err != nil {
         panic(s"crypto.RandomBytes: rand.Read failed: ${err.Error()}")
