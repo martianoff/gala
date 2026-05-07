@@ -997,31 +997,29 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 		},
 	}
 
-	// Copy and Equal methods
-	copyMethod, err := t.generateCopyMethod(name, fields, tParams)
-	if err != nil {
-		return nil, err
-	}
-	decls = append(decls, copyMethod)
+	// Copy and Equal methods — skip if user-defined
+	hasCopy, hasEqual, hasUnapply := t.userDefinedMethodFlags(name)
 
-	equalMethod, err := t.generateEqualMethod(name, fields, tParams)
-	if err != nil {
-		return nil, err
+	if !hasCopy {
+		copyMethod, err := t.generateCopyMethod(name, fields, tParams)
+		if err != nil {
+			return nil, err
+		}
+		decls = append(decls, copyMethod)
 	}
-	decls = append(decls, equalMethod)
+
+	if !hasEqual {
+		equalMethod, err := t.generateEqualMethod(name, fields, tParams)
+		if err != nil {
+			return nil, err
+		}
+		decls = append(decls, equalMethod)
+	}
 
 	// For generic structs, generate marker interface for wildcard pattern matching.
 	if tParams != nil {
 		interfaceDecl, markerMethod := t.generateInstanceMarker(name, tParams)
 		decls = append(decls, interfaceDecl, markerMethod)
-	}
-
-	// Check if Unapply already exists
-	hasUnapply := false
-	if meta := t.getTypeMeta(name); meta != nil {
-		if _, ok := meta.Methods["Unapply"]; ok {
-			hasUnapply = true
-		}
 	}
 
 	if !hasUnapply {
@@ -1106,31 +1104,29 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 			Specs: []ast.Spec{typeSpec},
 		})
 
-		// Methods
-		copyMethod, err := t.generateCopyMethod(name, fields, tParams)
-		if err != nil {
-			return nil, err
-		}
-		decls = append(decls, copyMethod)
+		// Methods — skip Copy/Equal/Unapply if user-defined
+		hasCopy, hasEqual, hasUnapply := t.userDefinedMethodFlags(name)
 
-		equalMethod, err := t.generateEqualMethod(name, fields, tParams)
-		if err != nil {
-			return nil, err
+		if !hasCopy {
+			copyMethod, err := t.generateCopyMethod(name, fields, tParams)
+			if err != nil {
+				return nil, err
+			}
+			decls = append(decls, copyMethod)
 		}
-		decls = append(decls, equalMethod)
+
+		if !hasEqual {
+			equalMethod, err := t.generateEqualMethod(name, fields, tParams)
+			if err != nil {
+				return nil, err
+			}
+			decls = append(decls, equalMethod)
+		}
 
 		// For generic structs, generate marker interface for wildcard pattern matching
 		if tParams != nil {
 			interfaceDecl, markerMethod := t.generateInstanceMarker(name, tParams)
 			decls = append(decls, interfaceDecl, markerMethod)
-		}
-
-		// Check if Unapply already exists
-		hasUnapply := false
-		if meta := t.getTypeMeta(name); meta != nil {
-			if _, ok := meta.Methods["Unapply"]; ok {
-				hasUnapply = true
-			}
 		}
 
 		if !hasUnapply {

@@ -224,18 +224,24 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 		decls = append(decls, isMethod)
 	}
 
-	// 5. Generate Copy, Equal methods on parent
-	copyMethod, err := t.generateCopyMethod(name, parentFields, tParams)
-	if err != nil {
-		return nil, err
-	}
-	decls = append(decls, copyMethod)
+	// 5. Generate Copy, Equal methods on parent — skip if user-defined
+	hasCopy, hasEqual, _ := t.userDefinedMethodFlags(name)
 
-	equalMethod, err := t.generateEqualMethod(name, parentFields, tParams)
-	if err != nil {
-		return nil, err
+	if !hasCopy {
+		copyMethod, err := t.generateCopyMethod(name, parentFields, tParams)
+		if err != nil {
+			return nil, err
+		}
+		decls = append(decls, copyMethod)
 	}
-	decls = append(decls, equalMethod)
+
+	if !hasEqual {
+		equalMethod, err := t.generateEqualMethod(name, parentFields, tParams)
+		if err != nil {
+			return nil, err
+		}
+		decls = append(decls, equalMethod)
+	}
 
 	// 6. Generate String() method on parent
 	stringMethod := t.generateSealedStringMethod(name, variants, tParams, recursiveFields, funcFields)
