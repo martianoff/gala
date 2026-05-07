@@ -75,3 +75,6 @@ hasModel(1)=true
 modelOr(0)=<none>
 hook0.args.size=0
 cfgs(1).Lead=Theo
+processed-42
+Cookie(session=session, path=/)
+Cookie(opt=opt, path=/)

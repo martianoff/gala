@@ -36,3 +36,36 @@ func (s *SessionData) Get(key string) (string, bool) {
 func MakeCookie(name, value, path string) Cookie {
 	return Cookie{Name: name, Value: value, Path: path}
 }
+
+// Processor exposes a function-typed field. GALA code calling p.Process(x)
+// (where Process is `func(int) (string, error)`) used to infer the call's
+// return type as NilType — inferCallSelectorType never consulted the Go
+// field type for func-typed fields after method lookups failed.
+type Processor struct {
+	Process func(int) (string, error)
+}
+
+// NewProcessor returns a *Processor whose Process field formats its
+// argument and never errors.
+func NewProcessor() *Processor {
+	return &Processor{Process: func(x int) (string, error) {
+		return fmt.Sprintf("processed-%d", x), nil
+	}}
+}
+
+// CookieBuilder exposes a single-return function-typed field whose result
+// type is a struct (Cookie). This shape exercises GALA-level method
+// dispatch on the call's result — `b.Build(s).String()` requires the
+// transpiler to know the inner call returns Cookie so it can resolve
+// String on the receiver.
+type CookieBuilder struct {
+	Build func(string) Cookie
+}
+
+// NewCookieBuilder returns a *CookieBuilder whose Build field constructs
+// a Cookie from its argument.
+func NewCookieBuilder() *CookieBuilder {
+	return &CookieBuilder{Build: func(s string) Cookie {
+		return Cookie{Name: s, Value: s, Path: "/"}
+	}}
+}
