@@ -339,16 +339,6 @@ func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.Sel
 		if retType := t.getGoMethodReturnType(xTypeName, sel.Sel.Name); !retType.IsNil() {
 			return retType
 		}
-		// Fallback: a Go struct field of function type invoked as a method,
-		// e.g., proc.Process(x) where Process is `func(int) (string, error)`.
-		// getGoFieldType already understands the field surface; consult it
-		// here so the call's return type tracks the field's declared results
-		// instead of collapsing to NilType (issue #326).
-		if fType := t.getGoFieldType(xTypeName, sel.Sel.Name); !fType.IsNil() {
-			if funcType, ok := fType.(transpiler.FuncType); ok && len(funcType.Results) > 0 {
-				return funcType.Results[0]
-			}
-		}
 	}
 
 	if isStdQualified {
