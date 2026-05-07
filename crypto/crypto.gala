@@ -249,4 +249,3 @@ func ConstantTimeEqual(a Array[byte], b Array[byte]) bool {
     var bGo = b.ToGoSlice()
     return subtle.ConstantTimeCompare(aGo, bGo) == 1
 }
-}
