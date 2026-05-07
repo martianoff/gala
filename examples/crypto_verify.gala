@@ -1,0 +1,79 @@
+package main
+
+import (
+    . "martianoff/gala/test"
+    . "martianoff/gala/crypto"
+)
+
+func TestSha256Empty(t T) T {
+    val h = Sha256(BytesFromString(""))
+    return Eq(t, h.Hex(), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+}
+
+func TestSha256Abc(t T) T {
+    val h = Sha256(BytesFromString("abc"))
+    return Eq(t, h.Hex(), "ba7816bf8f01cfea414140de5dae2223b00361a3396177a9cb410ff61f20015a")
+}
+
+func TestSha512Abc(t T) T {
+    val h = Sha512(BytesFromString("abc"))
+    return Eq(t, h.Hex(), "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f")
+}
+
+func TestSha1Abc(t T) T {
+    val h = Sha1(BytesFromString("abc"))
+    return Eq(t, h.Hex(), "a9993e364706816aba3e25717850c26c9cd0d89d")
+}
+
+func TestMd5Abc(t T) T {
+    val h = Md5(BytesFromString("abc"))
+    return Eq(t, h.Hex(), "900150983cd24fb0d6963f7d28e17f72")
+}
+
+func TestHmacSha256Rfc4231Case1(t T) T {
+    val key = BytesFromHex("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b").Get()
+    val msg = BytesFromString("Hi There")
+    val mac = HmacSha256(key, msg)
+    return Eq(t, mac.Hex(), "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7")
+}
+
+func TestHexRoundtrip(t T) T {
+    val b = BytesFromHex("deadbeef").Get()
+    return Eq(t, b.Hex(), "deadbeef")
+}
+
+func TestBase64Roundtrip(t T) T {
+    val b = BytesFromBase64("SGVsbG8=").Get()
+    return Eq(t, b.ToString(), "Hello")
+}
+
+func TestConstEqual(t T) T {
+    val a = BytesFromString("abc")
+    val b = BytesFromString("abc")
+    val c = BytesFromString("abd")
+    val d = BytesFromString("abcd")
+    var t1 = IsTrue(t, a.ConstEqual(b))
+    var t2 = IsFalse(t1, a.ConstEqual(c))
+    return IsFalse(t2, a.ConstEqual(d))
+}
+
+func TestRandomBytes32(t T) T {
+    val r = RandomBytes(32)
+    var t1 = IsTrue(t, r.IsSuccess())
+    return Eq(t1, r.Get().Length(), 32)
+}
+
+func main() {
+    RunTests(
+        TestFunc(Name = "TestSha256Empty", F = TestSha256Empty),
+        TestFunc(Name = "TestSha256Abc", F = TestSha256Abc),
+        TestFunc(Name = "TestSha512Abc", F = TestSha512Abc),
+        TestFunc(Name = "TestSha1Abc", F = TestSha1Abc),
+        TestFunc(Name = "TestMd5Abc", F = TestMd5Abc),
+        TestFunc(Name = "TestHmacSha256Rfc4231Case1", F = TestHmacSha256Rfc4231Case1),
+        TestFunc(Name = "TestHexRoundtrip", F = TestHexRoundtrip),
+        TestFunc(Name = "TestBase64Roundtrip", F = TestBase64Roundtrip),
+        TestFunc(Name = "TestConstEqual", F = TestConstEqual),
+        TestFunc(Name = "TestRandomBytes32", F = TestRandomBytes32),
+    )
+}
