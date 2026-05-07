@@ -3,6 +3,7 @@ package crypto
 import (
     "crypto/hmac"
     "crypto/md5"
+    "crypto/rand"
     "crypto/sha1"
     "crypto/sha256"
     "crypto/sha512"
@@ -11,6 +12,7 @@ import (
     "encoding/hex"
     "hash"
     . "martianoff/gala/collection_immutable"
+    "martianoff/gala/go_interop"
 )
 
 // Digest is the opaque output of a hash function. The internal
@@ -216,4 +218,36 @@ func (h HmacSha1) Sum(data Array[byte]) Digest {
 func (h HmacSha1) NewHasher() *Hasher {
     var goKey = h.Key.ToGoSlice()
     return &Hasher(algorithm = "HMAC-SHA1", h = hmac.New(sha1.New, goKey))
+}
+
+// ---- random + constant-time helpers --------------------------------------
+
+// RandomBytes returns n cryptographically secure random bytes from the OS
+// RNG. n == 0 returns an empty Array. n < 0 panics. A read failure panics
+// (matches the Go stdlib idiom — crypto/rand.Read only fails on a broken
+// OS RNG, which is unrecoverable).
+func RandomBytes(n int) Array[byte] {
+    if n < 0 {
+        panic(s"crypto.RandomBytes: negative size $n")
+    }
+    if n == 0 {
+        return EmptyArray[byte]()
+    }
+    var buf = go_interop.SliceWithSize[byte](n)
+    var _, err = rand.Read(buf)
+    if err != nil {
+        panic(s"crypto.RandomBytes: rand.Read failed: ${err.Error()}")
+    }
+    return ArrayFromSlice(buf)
+}
+
+// ConstantTimeEqual reports whether a and b are byte-for-byte equal, using
+// a constant-time comparison. Different lengths return false (subtle
+// handles this). Generalizes Digest.Equal to arbitrary byte slices — useful
+// for comparing tokens, MACs, or any secret-bearing bytes.
+func ConstantTimeEqual(a Array[byte], b Array[byte]) bool {
+    var aGo = a.ToGoSlice()
+    var bGo = b.ToGoSlice()
+    return subtle.ConstantTimeCompare(aGo, bGo) == 1
+}
 }

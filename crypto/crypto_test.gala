@@ -1,6 +1,7 @@
 package main
 
 import (
+    "encoding/hex"
     . "martianoff/gala/test"
     . "martianoff/gala/collection_immutable"
     . "martianoff/gala/go_interop"
@@ -235,4 +236,32 @@ func TestHmacEqualDifferentData(t T) T {
     val m1 = crypto.HmacSha256(key).Sum(bytesOf("payload-a"))
     val m2 = crypto.HmacSha256(key).Sum(bytesOf("payload-b"))
     return IsFalse(t, m1.Equal(m2))
+}
+
+// ---- RandomBytes ---------------------------------------------------------
+
+func TestRandomBytesSize(t T) T {
+    var t1 = Eq[int](t, crypto.RandomBytes(32).Size(), 32)
+    return Eq[int](t1, crypto.RandomBytes(0).Size(), 0)
+}
+
+func TestRandomBytesUnique(t T) T {
+    val a = hex.EncodeToString(crypto.RandomBytes(32).ToGoSlice())
+    val b = hex.EncodeToString(crypto.RandomBytes(32).ToGoSlice())
+    return NotEq[string](t, a, b)
+}
+
+// ---- ConstantTimeEqual ---------------------------------------------------
+
+func TestConstantTimeEqualSame(t T) T {
+    return IsTrue(t, crypto.ConstantTimeEqual(bytesOf("hello"), bytesOf("hello")))
+}
+
+func TestConstantTimeEqualOneBitDifferent(t T) T {
+    // "hello" vs "hellp" — last byte differs by one bit ('o' = 0x6F, 'p' = 0x70).
+    return IsFalse(t, crypto.ConstantTimeEqual(bytesOf("hello"), bytesOf("hellp")))
+}
+
+func TestConstantTimeEqualDifferentLengths(t T) T {
+    return IsFalse(t, crypto.ConstantTimeEqual(bytesOf("hello"), bytesOf("hello!")))
 }
