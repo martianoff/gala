@@ -1,6 +1,8 @@
 package crypto
 
 import (
+    "crypto/ecdh"
+    "crypto/ed25519"
     "crypto/hmac"
     "crypto/md5"
     "crypto/rand"
@@ -12,6 +14,8 @@ import (
     "encoding/hex"
     "hash"
     . "martianoff/gala/collection_immutable"
+    "martianoff/gala/go_interop"
+    . "martianoff/gala/std"
 )
 
 // Digest is the opaque output of a hash function. The internal
@@ -248,4 +252,214 @@ func ConstantTimeEqual(a Array[byte], b Array[byte]) bool {
     var aGo = a.ToGoSlice()
     var bGo = b.ToGoSlice()
     return subtle.ConstantTimeCompare(aGo, bGo) == 1
+}
+
+// ==========================================================================
+// Ed25519 — EdDSA digital signatures (RFC 8032).
+// ==========================================================================
+
+// Ed25519PublicKey wraps a 32-byte Ed25519 public key.
+struct Ed25519PublicKey(bytes Array[byte])
+
+// Ed25519PrivateKey wraps a 64-byte Ed25519 private key in Go's
+// representation: the 32-byte seed followed by the 32-byte public key.
+struct Ed25519PrivateKey(bytes Array[byte])
+
+// Ed25519KeyPair bundles a matched Ed25519 public/private pair.
+struct Ed25519KeyPair(Public Ed25519PublicKey, Private Ed25519PrivateKey)
+
+// Signature wraps a 64-byte Ed25519 signature.
+struct Signature(bytes Array[byte])
+
+// GenerateEd25519KeyPair returns a fresh Ed25519 keypair drawn from
+// crypto/rand. Panics if the OS RNG fails — a broken RNG is unrecoverable.
+func GenerateEd25519KeyPair() Ed25519KeyPair {
+    var pub, priv, err = ed25519.GenerateKey(rand.Reader)
+    if err != nil {
+        panic(s"crypto: ed25519.GenerateKey failed: ${err.Error()}")
+    }
+    return Ed25519KeyPair(
+        Public  = Ed25519PublicKey(bytes = ArrayFromSlice[byte](pub)),
+        Private = Ed25519PrivateKey(bytes = ArrayFromSlice[byte](priv)),
+    )
+}
+
+// Ed25519PrivateKeyFromSeed derives the 64-byte Ed25519 private key from a
+// 32-byte seed (the canonical RFC 8032 wire format for an Ed25519 secret).
+func Ed25519PrivateKeyFromSeed(seed Array[byte]) Ed25519PrivateKey {
+    var goSeed = seed.ToGoSlice()
+    val priv = ed25519.NewKeyFromSeed(goSeed)
+    return Ed25519PrivateKey(bytes = ArrayFromSlice[byte](priv))
+}
+
+// Ed25519PrivateKeyFromBytes wraps a raw 64-byte Ed25519 private key
+// (Go's seed||pub representation).
+func Ed25519PrivateKeyFromBytes(bytes Array[byte]) Ed25519PrivateKey =
+    Ed25519PrivateKey(bytes = bytes)
+
+// Ed25519PublicKeyFromBytes wraps a raw 32-byte Ed25519 public key.
+func Ed25519PublicKeyFromBytes(bytes Array[byte]) Ed25519PublicKey =
+    Ed25519PublicKey(bytes = bytes)
+
+// SignatureFromBytes wraps a raw 64-byte Ed25519 signature.
+func SignatureFromBytes(bytes Array[byte]) Signature =
+    Signature(bytes = bytes)
+
+// Sign returns the Ed25519 signature of message under sk.
+func (sk Ed25519PrivateKey) Sign(message Array[byte]) Signature {
+    var goSk  = sk.bytes.ToGoSlice()
+    var goMsg = message.ToGoSlice()
+    val sig = ed25519.Sign(goSk, goMsg)
+    return Signature(bytes = ArrayFromSlice[byte](sig))
+}
+
+// Verify reports whether sig is a valid Ed25519 signature on message under pk.
+func (pk Ed25519PublicKey) Verify(message Array[byte], sig Signature) bool {
+    var goPk  = pk.bytes.ToGoSlice()
+    var goMsg = message.ToGoSlice()
+    var goSig = sig.bytes.ToGoSlice()
+    return ed25519.Verify(goPk, goMsg, goSig)
+}
+
+// PublicKey returns the Ed25519 public key embedded in sk. Go's
+// PrivateKey is laid out as seed||pub, so this is a slice — no curve
+// math needed.
+func (sk Ed25519PrivateKey) PublicKey() Ed25519PublicKey {
+    var goSk = sk.bytes.ToGoSlice()
+    val pub = go_interop.SliceDrop(goSk, 32)
+    return Ed25519PublicKey(bytes = ArrayFromSlice[byte](pub))
+}
+
+// Bytes returns the raw 32-byte public key.
+func (pk Ed25519PublicKey) Bytes() Array[byte] = pk.bytes
+
+// Bytes returns the raw 64-byte private key (seed||pub).
+func (sk Ed25519PrivateKey) Bytes() Array[byte] = sk.bytes
+
+// Bytes returns the raw 64-byte signature.
+func (s Signature) Bytes() Array[byte] = s.bytes
+
+// Hex returns the lowercase hex encoding of the signature.
+func (s Signature) Hex() string {
+    var goBytes = s.bytes.ToGoSlice()
+    return hex.EncodeToString(goBytes)
+}
+
+// Base64 returns the standard (padded) base64 encoding of the signature.
+func (s Signature) Base64() string {
+    var goBytes = s.bytes.ToGoSlice()
+    return base64.StdEncoding.EncodeToString(goBytes)
+}
+
+// Equal compares two signatures in constant time. Different sizes
+// compare as not equal (subtle.ConstantTimeCompare returns 0 on length
+// mismatch).
+func (s Signature) Equal(other Signature) bool {
+    var a = s.bytes.ToGoSlice()
+    var b = other.bytes.ToGoSlice()
+    return subtle.ConstantTimeCompare(a, b) == 1
+}
+
+// ==========================================================================
+// X25519 — Diffie-Hellman key agreement (RFC 7748).
+// ==========================================================================
+
+// X25519PublicKey wraps a 32-byte X25519 public key (a Curve25519 u-coord).
+struct X25519PublicKey(bytes Array[byte])
+
+// X25519PrivateKey wraps a 32-byte X25519 scalar.
+struct X25519PrivateKey(bytes Array[byte])
+
+// X25519KeyPair bundles a matched X25519 public/private pair.
+struct X25519KeyPair(Public X25519PublicKey, Private X25519PrivateKey)
+
+// GenerateX25519KeyPair returns a fresh X25519 keypair drawn from
+// crypto/rand. Panics if the OS RNG fails — a broken RNG is unrecoverable.
+func GenerateX25519KeyPair() X25519KeyPair {
+    val curve = ecdh.X25519()
+    var priv, err = curve.GenerateKey(rand.Reader)
+    if err != nil {
+        panic(s"crypto: ecdh.GenerateKey failed: ${err.Error()}")
+    }
+    val pub = priv.PublicKey()
+    return X25519KeyPair(
+        Public  = X25519PublicKey(bytes  = ArrayFromSlice[byte](pub.Bytes())),
+        Private = X25519PrivateKey(bytes = ArrayFromSlice[byte](priv.Bytes())),
+    )
+}
+
+// X25519PrivateKeyFromBytes wraps a raw 32-byte X25519 scalar.
+func X25519PrivateKeyFromBytes(bytes Array[byte]) X25519PrivateKey =
+    X25519PrivateKey(bytes = bytes)
+
+// X25519PublicKeyFromBytes wraps a raw 32-byte X25519 public key.
+func X25519PublicKeyFromBytes(bytes Array[byte]) X25519PublicKey =
+    X25519PublicKey(bytes = bytes)
+
+// ECDH computes the X25519 shared secret between sk and peer. The
+// stdlib rejects all-zero outputs and low-order points (RFC 7748 §6.1)
+// and returns an error in those cases — that error becomes Failure here.
+func (sk X25519PrivateKey) ECDH(peer X25519PublicKey) Try[Array[byte]] {
+    val curve = ecdh.X25519()
+    var goSk = sk.bytes.ToGoSlice()
+    var privKey, perr = curve.NewPrivateKey(goSk)
+    if perr != nil {
+        return Failure[Array[byte]](perr)
+    }
+    var goPk = peer.bytes.ToGoSlice()
+    var pubKey, kerr = curve.NewPublicKey(goPk)
+    if kerr != nil {
+        return Failure[Array[byte]](kerr)
+    }
+    var secret, eerr = privKey.ECDH(pubKey)
+    if eerr != nil {
+        return Failure[Array[byte]](eerr)
+    }
+    return Success[Array[byte]](ArrayFromSlice[byte](secret))
+}
+
+// PublicKey derives the X25519 public key from sk. Panics if sk's bytes
+// are not a well-formed X25519 scalar — that's a programmer error
+// (corrupt or incorrectly constructed key), not a runtime condition.
+func (sk X25519PrivateKey) PublicKey() X25519PublicKey {
+    val curve = ecdh.X25519()
+    var goSk = sk.bytes.ToGoSlice()
+    var privKey, err = curve.NewPrivateKey(goSk)
+    if err != nil {
+        panic(s"crypto: invalid X25519 private key: ${err.Error()}")
+    }
+    val pub = privKey.PublicKey().Bytes()
+    return X25519PublicKey(bytes = ArrayFromSlice[byte](pub))
+}
+
+// Bytes returns the raw 32-byte X25519 public key.
+func (pk X25519PublicKey) Bytes() Array[byte] = pk.bytes
+
+// Bytes returns the raw 32-byte X25519 scalar.
+func (sk X25519PrivateKey) Bytes() Array[byte] = sk.bytes
+
+// ==========================================================================
+// Random token helpers.
+// ==========================================================================
+
+// RandomHex returns a hex-encoded string of n random bytes drawn from
+// crypto/rand (length 2n). Panics if the OS RNG fails.
+func RandomHex(n int) string {
+    var buf = go_interop.SliceWithSize[byte](n)
+    var _, err = rand.Read(buf)
+    if err != nil {
+        panic(s"crypto: rand.Read failed: ${err.Error()}")
+    }
+    return hex.EncodeToString(buf)
+}
+
+// RandomBase64URL returns base64.RawURLEncoding (URL-safe, no padding) of
+// n random bytes drawn from crypto/rand. Panics if the OS RNG fails.
+func RandomBase64URL(n int) string {
+    var buf = go_interop.SliceWithSize[byte](n)
+    var _, err = rand.Read(buf)
+    if err != nil {
+        panic(s"crypto: rand.Read failed: ${err.Error()}")
+    }
+    return base64.RawURLEncoding.EncodeToString(buf)
 }
