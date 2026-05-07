@@ -1,6 +1,9 @@
 package multifile_lib_regress
 
-import "martianoff/gala/examples/go_struct_bridge"
+import (
+    "martianoff/gala/examples/go_struct_bridge"
+    . "martianoff/gala/std"
+)
 
 // --- Regression: Go struct named-arg wraps fields in Immutable ---
 // When a GALA struct and a Go struct share the same name (Cookie), the transpiler
@@ -24,3 +27,36 @@ func GoCookieString(name string, value string) string =
 
 func GalaCookieName(name string, value string) string =
     MakeGalaCookie(name, value).Name
+
+// --- Regression: method call on Go struct's func-typed field (issue #326).
+// `p.Process(42)` where Process is `func(int) (string, error)` must infer
+// the call's return type from the field's declared results. Without the
+// fix the call's return type collapsed to NilType, and the multi-return
+// destructure `var s, err = p.Process(x)` produced untyped slots that Go
+// then rejected at the consumer site (string concat, error nil-check).
+func ProcessorRun(x int) string {
+    val p = go_struct_bridge.NewProcessor()
+    var s, err = p.Process(x)
+    if err != nil { return "<error>" }
+    return s
+}
+
+// Single-return shape that exercises GALA-level method dispatch on the
+// call's result: `.Build(s)` returns a Go Cookie, and `.String()` is
+// resolved against that Cookie's Go method set. With NilType leaking as
+// the call's result type the second-stage method lookup has no receiver
+// type to consult and the transpiler can't synthesise the chained call.
+func CookieBuilderDescribe(s string) string {
+    val b = go_struct_bridge.NewCookieBuilder()
+    return b.Build(s).String()
+}
+
+// Wrapping the call result in Some(...) exercises GALA-level generic
+// inference: the function's declared return is Option[Cookie], so
+// `Some(b.Build(s))` must infer T=Cookie from the argument. Without the
+// fix the call typed as NilType, Some inferred T=NilType, and the result
+// failed to satisfy the declared Option[Cookie] return type.
+func CookieBuilderOption(s string) Option[go_struct_bridge.Cookie] {
+    val b = go_struct_bridge.NewCookieBuilder()
+    return Some(b.Build(s))
+}

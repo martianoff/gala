@@ -333,4 +333,21 @@ func main() {
     // and Go must accept a bare string literal at the Eq site.
     val cfgs = multifile_lib_regress.LoadCfgs()
     Println(s"cfgs(1).Lead=${cfgs.Get(1).Lead.Name}")
+
+    // --- Regression: method call on Go struct's func-typed field (issue #326).
+    // `p.Process(42)` where Process is `func(int) (string, error)` must infer
+    // the call's return type from the field's declared results. Without the
+    // fix the call typed as NilType and the `var s, err = ...` destructure
+    // produced untyped slots that downstream code rejected.
+    Println(multifile_lib_regress.ProcessorRun(42))
+    // Single-return shape: `b.Build(s).String()` requires the GALA-level
+    // type tracker to know `b.Build(s)` returns a Cookie so the chained
+    // `.String()` call resolves to Cookie.String. Without the fix the
+    // inner call typed as NilType, the second-stage lookup had no receiver
+    // type, and the chained call could not be synthesised.
+    Println(multifile_lib_regress.CookieBuilderDescribe("session"))
+    multifile_lib_regress.CookieBuilderOption("opt") match {
+        case Some(c) => Println(c.String())
+        case None()  => Println("<no cookie>")
+    }
 }
