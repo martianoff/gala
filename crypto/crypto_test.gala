@@ -1,6 +1,7 @@
 package main
 
 import (
+    "encoding/hex"
     . "martianoff/gala/test"
     . "martianoff/gala/collection_immutable"
     . "martianoff/gala/go_interop"
@@ -146,4 +147,121 @@ func TestDigestEqualDifferentSizes(t T) T {
     val d256 = crypto.Sha256{}.Hash(bytesOf("abc"))
     val d512 = crypto.Sha512{}.Hash(bytesOf("abc"))
     return IsFalse(t, d256.Equal(d512))
+}
+
+// ---- HMAC ----------------------------------------------------------------
+//
+// RFC 4231 test case 1: key = 20 bytes of 0x0b, data = "Hi There".
+// Covers HMAC-SHA-256 / HMAC-SHA-512 (RFC 4231) and HMAC-SHA-1 (RFC 2202
+// test 1, which uses the same key/data and is the canonical SHA-1 vector).
+
+func rfc4231TestKey() Array[byte] = ArrayFill(20, byte(0x0b))
+
+func TestHmacSha256Rfc4231Case1(t T) T {
+    // RFC 4231 §4.2:
+    //   b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7
+    val mac = crypto.HmacSha256(rfc4231TestKey()).Sum(bytesOf("Hi There"))
+    return Eq[string](t, mac.Hex(),
+        "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7")
+}
+
+func TestHmacSha512Rfc4231Case1(t T) T {
+    // RFC 4231 §4.2:
+    //   87aa7cdea5ef619d4ff0b4241a1d6cb02379f4e2ce4ec2787ad0b30545e17cde
+    //   daa833b7d6b8a702038b274eaea3f4e4be9d914eeb61f1702e696c203a126854
+    val mac = crypto.HmacSha512(rfc4231TestKey()).Sum(bytesOf("Hi There"))
+    return Eq[string](t, mac.Hex(),
+        "87aa7cdea5ef619d4ff0b4241a1d6cb02379f4e2ce4ec2787ad0b30545e17cdedaa833b7d6b8a702038b274eaea3f4e4be9d914eeb61f1702e696c203a126854")
+}
+
+func TestHmacSha1Rfc2202Case1(t T) T {
+    // RFC 2202 §3 test 1:
+    //   b617318655057264e28bc0b6fb378c8ef146be00
+    val mac = crypto.HmacSha1(rfc4231TestKey()).Sum(bytesOf("Hi There"))
+    return Eq[string](t, mac.Hex(),
+        "b617318655057264e28bc0b6fb378c8ef146be00")
+}
+
+// ---- HMAC streaming matches one-shot ------------------------------------
+
+func TestHmacStreamingMatchesOneShot(t T) T {
+    val key = bytesOf("secret-key")
+    val full = "the quick brown fox jumps over the lazy dog"
+    val oneShot = crypto.HmacSha256(key).Sum(bytesOf(full))
+
+    val streamed = crypto.HmacSha256(key).NewHasher().
+        Update(bytesOf("the quick brown fox ")).
+        Update(bytesOf("jumps over ")).
+        Update(bytesOf("the lazy dog")).
+        Finish()
+
+    var t1 = Eq[string](t, oneShot.Hex(), streamed.Hex())
+    return IsTrue(t1, oneShot.Equal(streamed))
+}
+
+// ---- HMAC metadata -------------------------------------------------------
+
+func TestHmacAlgorithmMetadata(t T) T {
+    val key = bytesOf("k")
+    var t1 = Eq[string](t, crypto.HmacSha256(key).Algorithm(), "HMAC-SHA256")
+    var t2 = Eq[int](t1, crypto.HmacSha256(key).Size(), 32)
+    var t3 = Eq[string](t2, crypto.HmacSha512(key).Algorithm(), "HMAC-SHA512")
+    var t4 = Eq[int](t3, crypto.HmacSha512(key).Size(), 64)
+    var t5 = Eq[string](t4, crypto.HmacSha1(key).Algorithm(), "HMAC-SHA1")
+    return Eq[int](t5, crypto.HmacSha1(key).Size(), 20)
+}
+
+func TestHmacHasherAlgorithm(t T) T {
+    val h = crypto.HmacSha256(bytesOf("k")).NewHasher()
+    return Eq[string](t, h.Algorithm(), "HMAC-SHA256")
+}
+
+// ---- HMAC tag equality (constant-time) -----------------------------------
+
+func TestHmacEqualSameKeySameData(t T) T {
+    val key = bytesOf("shared-secret")
+    val m1 = crypto.HmacSha256(key).Sum(bytesOf("payload"))
+    val m2 = crypto.HmacSha256(key).Sum(bytesOf("payload"))
+    return IsTrue(t, m1.Equal(m2))
+}
+
+func TestHmacEqualDifferentKey(t T) T {
+    val m1 = crypto.HmacSha256(bytesOf("key-a")).Sum(bytesOf("payload"))
+    val m2 = crypto.HmacSha256(bytesOf("key-b")).Sum(bytesOf("payload"))
+    return IsFalse(t, m1.Equal(m2))
+}
+
+func TestHmacEqualDifferentData(t T) T {
+    val key = bytesOf("shared-secret")
+    val m1 = crypto.HmacSha256(key).Sum(bytesOf("payload-a"))
+    val m2 = crypto.HmacSha256(key).Sum(bytesOf("payload-b"))
+    return IsFalse(t, m1.Equal(m2))
+}
+
+// ---- RandomBytes ---------------------------------------------------------
+
+func TestRandomBytesSize(t T) T {
+    var t1 = Eq[int](t, crypto.RandomBytes(32).Size(), 32)
+    return Eq[int](t1, crypto.RandomBytes(0).Size(), 0)
+}
+
+func TestRandomBytesUnique(t T) T {
+    val a = hex.EncodeToString(crypto.RandomBytes(32).ToGoSlice())
+    val b = hex.EncodeToString(crypto.RandomBytes(32).ToGoSlice())
+    return NotEq[string](t, a, b)
+}
+
+// ---- ConstantTimeEqual ---------------------------------------------------
+
+func TestConstantTimeEqualSame(t T) T {
+    return IsTrue(t, crypto.ConstantTimeEqual(bytesOf("hello"), bytesOf("hello")))
+}
+
+func TestConstantTimeEqualOneBitDifferent(t T) T {
+    // "hello" vs "hellp" — last byte differs by one bit ('o' = 0x6F, 'p' = 0x70).
+    return IsFalse(t, crypto.ConstantTimeEqual(bytesOf("hello"), bytesOf("hellp")))
+}
+
+func TestConstantTimeEqualDifferentLengths(t T) T {
+    return IsFalse(t, crypto.ConstantTimeEqual(bytesOf("hello"), bytesOf("hello!")))
 }

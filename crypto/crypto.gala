@@ -1,7 +1,9 @@
 package crypto
 
 import (
+    "crypto/hmac"
     "crypto/md5"
+    "crypto/rand"
     "crypto/sha1"
     "crypto/sha256"
     "crypto/sha512"
@@ -147,4 +149,103 @@ func (s Md5) Hash(data Array[byte]) Digest {
 
 func (s Md5) NewHasher() *Hasher {
     return &Hasher(algorithm = "MD5", h = md5.New())
+}
+
+// ---- HMAC ----------------------------------------------------------------
+//
+// HMAC (RFC 2104) keyed-hash message authentication. Construct with a key
+// and call Sum / NewHasher; the resulting Hasher reuses the same streaming
+// machinery as the unkeyed hashes, so .Update().Update().Finish() works
+// identically. Tags compare in constant time via Digest.Equal.
+
+// HmacSha256 is HMAC-SHA-256, 32-byte tag.
+struct HmacSha256(Key Array[byte])
+
+func (h HmacSha256) Algorithm() string = "HMAC-SHA256"
+func (h HmacSha256) Size() int = 32
+
+func (h HmacSha256) Sum(data Array[byte]) Digest {
+    var goKey = h.Key.ToGoSlice()
+    var goData = data.ToGoSlice()
+    var mac = hmac.New(sha256.New, goKey)
+    var _, _ = mac.Write(goData)
+    val tag = mac.Sum(nil)
+    return Digest(bytes = ArrayFromSlice(tag))
+}
+
+func (h HmacSha256) NewHasher() *Hasher {
+    var goKey = h.Key.ToGoSlice()
+    return &Hasher(algorithm = "HMAC-SHA256", h = hmac.New(sha256.New, goKey))
+}
+
+// HmacSha512 is HMAC-SHA-512, 64-byte tag.
+struct HmacSha512(Key Array[byte])
+
+func (h HmacSha512) Algorithm() string = "HMAC-SHA512"
+func (h HmacSha512) Size() int = 64
+
+func (h HmacSha512) Sum(data Array[byte]) Digest {
+    var goKey = h.Key.ToGoSlice()
+    var goData = data.ToGoSlice()
+    var mac = hmac.New(sha512.New, goKey)
+    var _, _ = mac.Write(goData)
+    val tag = mac.Sum(nil)
+    return Digest(bytes = ArrayFromSlice(tag))
+}
+
+func (h HmacSha512) NewHasher() *Hasher {
+    var goKey = h.Key.ToGoSlice()
+    return &Hasher(algorithm = "HMAC-SHA512", h = hmac.New(sha512.New, goKey))
+}
+
+// HmacSha1 is HMAC-SHA-1, 20-byte tag. SHA-1 collision resistance is
+// broken, but HMAC-SHA-1 remains in use for legacy interop.
+struct HmacSha1(Key Array[byte])
+
+func (h HmacSha1) Algorithm() string = "HMAC-SHA1"
+func (h HmacSha1) Size() int = 20
+
+func (h HmacSha1) Sum(data Array[byte]) Digest {
+    var goKey = h.Key.ToGoSlice()
+    var goData = data.ToGoSlice()
+    var mac = hmac.New(sha1.New, goKey)
+    var _, _ = mac.Write(goData)
+    val tag = mac.Sum(nil)
+    return Digest(bytes = ArrayFromSlice(tag))
+}
+
+func (h HmacSha1) NewHasher() *Hasher {
+    var goKey = h.Key.ToGoSlice()
+    return &Hasher(algorithm = "HMAC-SHA1", h = hmac.New(sha1.New, goKey))
+}
+
+// ---- random + constant-time helpers --------------------------------------
+
+// RandomBytes returns n cryptographically secure random bytes from the OS
+// RNG. n == 0 returns an empty Array. n < 0 panics. A read failure panics
+// (matches the Go stdlib idiom — crypto/rand.Read only fails on a broken
+// OS RNG, which is unrecoverable).
+func RandomBytes(n int) Array[byte] {
+    if n < 0 {
+        panic(s"crypto.RandomBytes: negative size $n")
+    }
+    if n == 0 {
+        return EmptyArray[byte]()
+    }
+    var buf = ArrayFill[byte](n, byte(0)).ToGoSlice()
+    var _, err = rand.Read(buf)
+    if err != nil {
+        panic(s"crypto.RandomBytes: rand.Read failed: ${err.Error()}")
+    }
+    return ArrayFromSlice(buf)
+}
+
+// ConstantTimeEqual reports whether a and b are byte-for-byte equal, using
+// a constant-time comparison. Different lengths return false (subtle
+// handles this). Generalizes Digest.Equal to arbitrary byte slices — useful
+// for comparing tokens, MACs, or any secret-bearing bytes.
+func ConstantTimeEqual(a Array[byte], b Array[byte]) bool {
+    var aGo = a.ToGoSlice()
+    var bGo = b.ToGoSlice()
+    return subtle.ConstantTimeCompare(aGo, bGo) == 1
 }
