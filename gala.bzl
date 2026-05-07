@@ -270,7 +270,11 @@ gala_transpile_worker_single = rule(
         "gala_deps": attr.label_list(default = []),
         "batch": attr.bool(default = False),
         "_worker": attr.label(
-            default = Label("//cmd/gala"),
+            # Use the worker-only binary (not //cmd/gala) so the
+            # persistent worker process holds a different .exe file
+            # than whatever `gala lsp` the user's IDE is running.
+            # See cmd/gala/BUILD.bazel for the rationale.
+            default = Label("//cmd/gala:gala_worker"),
             executable = True,
             cfg = "exec",
         ),
@@ -293,7 +297,11 @@ gala_transpile_worker_batch = rule(
         "gala_deps": attr.label_list(default = []),
         "batch": attr.bool(default = True),
         "_worker": attr.label(
-            default = Label("//cmd/gala"),
+            # Use the worker-only binary (not //cmd/gala) so the
+            # persistent worker process holds a different .exe file
+            # than whatever `gala lsp` the user's IDE is running.
+            # See cmd/gala/BUILD.bazel for the rationale.
+            default = Label("//cmd/gala:gala_worker"),
             executable = True,
             cfg = "exec",
         ),

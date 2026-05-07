@@ -18,3 +18,26 @@ go_binary(
         "martianoff/gala/cmd/gala/commands.BuildDate": "{BUILD_DATE}",
     },
 )
+
+# Separate binary used by the Bazel persistent worker
+# (gala.bzl::_gala_transpile_worker_impl). Same code as `gala` —
+# `worker` is just one of its subcommands — but linked into a
+# distinctly-named .exe so it doesn't share Windows mandatory file
+# locks with whatever `gala.exe` the user's IDE/LSP is running.
+#
+# Without this split, an active `gala lsp` process (the IDE plugin
+# starts one per project) holds gala.exe open, and any subsequent
+# Bazel build that needs to rebuild gala — including engineer
+# `bazel test` runs from .gala_team/worktrees/<Name>/ — fails the
+# link step with "failed to delete output files (Permission
+# denied)". The split lets the LSP and the worker coexist.
+go_binary(
+    name = "gala_worker",
+    embed = [":gala_lib"],
+    visibility = ["//visibility:public"],
+    x_defs = {
+        "martianoff/gala/cmd/gala/commands.Version": "{STABLE_GALA_VERSION}",
+        "martianoff/gala/cmd/gala/commands.GitCommit": "{STABLE_GIT_COMMIT}",
+        "martianoff/gala/cmd/gala/commands.BuildDate": "{BUILD_DATE}",
+    },
+)
