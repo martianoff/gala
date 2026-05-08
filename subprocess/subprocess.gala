@@ -49,9 +49,9 @@ type Process struct {
 // On success the process is running and its stdin/stdout/stderr pipes are
 // connected. The returned Process is reaped only when Wait or Kill is called —
 // long-running consumers MUST call Wait or Kill exactly once when done.
-func Spawn(opts SpawnOpts) Try[Process] = Try[Process](() => {
+func Spawn(opts SpawnOpts) Try[Process] {
     if opts.Cmd == "" {
-        panic("subprocess.Spawn: empty Cmd")
+        return Failure[Process](errors.New("subprocess.Spawn: empty Cmd"))
     }
     val c = exec.Command(opts.Cmd, opts.Args...)
     if opts.Dir != "" {
@@ -63,14 +63,14 @@ func Spawn(opts SpawnOpts) Try[Process] = Try[Process](() => {
         c.Env = append(c.Environ(), opts.Env...)
     }
     val sin, sErr = c.StdinPipe()
-    if sErr != nil { panic(sErr) }
+    if sErr != nil { return Failure[Process](sErr) }
     val sout, oErr = c.StdoutPipe()
-    if oErr != nil { panic(oErr) }
+    if oErr != nil { return Failure[Process](oErr) }
     val serr, eErr = c.StderrPipe()
-    if eErr != nil { panic(eErr) }
+    if eErr != nil { return Failure[Process](eErr) }
     val startErr = c.Start()
-    if startErr != nil { panic(startErr) }
-    return Process(state = &processState{
+    if startErr != nil { return Failure[Process](startErr) }
+    return Success(Process(state = &processState{
         cmd:        c,
         stdin:      sin,
         stdoutScan: newLineScanner(sout),
@@ -78,24 +78,24 @@ func Spawn(opts SpawnOpts) Try[Process] = Try[Process](() => {
         stdinMu:    go_interop.NewMutex(),
         waitOnce:   go_interop.NewOnce(),
         waitDone:   go_interop.NewSignal(),
-    })
-})
+    }))
+}
 
 // WriteLine writes s + "\n" to the child's stdin, flushing immediately.
 // Concurrent callers are serialised so two writers can't interleave bytes.
 //
 // Returns Success(true) on a clean write. A failed write usually means the
 // child closed stdin or exited; Failure carries the underlying io error.
-func (p Process) WriteLine(s string) Try[bool] = Try[bool](() => {
+func (p Process) WriteLine(s string) Try[bool] {
     val st = p.state
     st.stdinMu.Lock()
     defer st.stdinMu.Unlock()
     val _, e1 = io.WriteString(st.stdin, s)
-    if e1 != nil { panic(e1) }
+    if e1 != nil { return Failure[bool](e1) }
     val _, e2 = io.WriteString(st.stdin, "\n")
-    if e2 != nil { panic(e2) }
-    return true
-})
+    if e2 != nil { return Failure[bool](e2) }
+    return Success(true)
+}
 
 // CloseStdin closes the child's stdin pipe. Required for children
 // like `claude --print` that read stdin to EOF before producing
@@ -107,36 +107,36 @@ func (p Process) WriteLine(s string) Try[bool] = Try[bool](() => {
 // swallowed — the caller wanted "stdin should be closed", and it
 // is. Concurrent with WriteLine: serialised through the stdin
 // mutex so a write in flight isn't truncated.
-func (p Process) CloseStdin() Try[bool] = Try[bool](() => {
+func (p Process) CloseStdin() Try[bool] {
     val st = p.state
     st.stdinMu.Lock()
     defer st.stdinMu.Unlock()
     val _ = st.stdin.Close()
-    return true
-})
+    return Success(true)
+}
 
 // ReadLine blocks until the child writes a complete line on stdout, then
 // returns it without the trailing newline. EOF (the child closed stdout, or
 // exited) returns Failure(io.EOF) — callers can recognise this via the std
 // Try API (e.g. .Recover) and treat it as "stream done", not as an error.
-func (p Process) ReadLine() Try[string] = Try[string](() => {
+func (p Process) ReadLine() Try[string] {
     if !p.state.stdoutScan.Scan() {
         val err = p.state.stdoutScan.Err()
-        if err != nil { panic(err) }
-        panic(io.EOF)
+        if err != nil { return Failure[string](err) }
+        return Failure[string](io.EOF)
     }
-    return p.state.stdoutScan.Text()
-})
+    return Success(p.state.stdoutScan.Text())
+}
 
 // ReadStderrLine is the stderr counterpart to ReadLine. Same EOF semantics.
-func (p Process) ReadStderrLine() Try[string] = Try[string](() => {
+func (p Process) ReadStderrLine() Try[string] {
     if !p.state.stderrScan.Scan() {
         val err = p.state.stderrScan.Err()
-        if err != nil { panic(err) }
-        panic(io.EOF)
+        if err != nil { return Failure[string](err) }
+        return Failure[string](io.EOF)
     }
-    return p.state.stderrScan.Text()
-})
+    return Success(p.state.stderrScan.Text())
+}
 
 // Wait blocks until the child exits and returns its exit code. Idempotent —
 // the underlying *exec.Cmd.Wait is called at most once. Subsequent Wait calls
@@ -145,7 +145,7 @@ func (p Process) ReadStderrLine() Try[string] = Try[string](() => {
 // Note: ReadLine / ReadStderrLine on the same Process should drain to EOF
 // before Wait, otherwise the child may block writing to a full pipe. The
 // scanner returning EOF naturally signals "you can Wait now".
-func (p Process) Wait() Try[int] = Try[int](() => {
+func (p Process) Wait() Try[int] {
     val st = p.state
     val _ = st.waitOnce.Do(() => {
         val err = st.cmd.Wait()
@@ -165,27 +165,27 @@ func (p Process) Wait() Try[int] = Try[int](() => {
         go_interop.CloseSignal(st.waitDone)
     })
     go_interop.WaitSignal(st.waitDone)
-    if st.waitErr != nil { panic(st.waitErr) }
-    return st.exitCode
-})
+    if st.waitErr != nil { return Failure[int](st.waitErr) }
+    return Success(st.exitCode)
+}
 
 // Kill terminates the child immediately (SIGKILL on Unix, TerminateProcess on
 // Windows — exec.Cmd handles the platform difference). Idempotent against an
 // already-exited process: a kill after Wait returns Success(true) without
 // error. Caller is still responsible for invoking Wait afterwards to reap.
-func (p Process) Kill() Try[bool] = Try[bool](() => {
+func (p Process) Kill() Try[bool] {
     if !p.IsAlive() {
-        return true
+        return Success(true)
     }
     val err = p.state.cmd.Process.Kill()
     if err != nil {
         // "process already finished" can race with the IsAlive check — treat
         // as success rather than confusing the caller.
-        if isProcessFinished(err) { return true }
-        panic(err)
+        if isProcessFinished(err) { return Success(true) }
+        return Failure[bool](err)
     }
-    return true
-})
+    return Success(true)
+}
 
 // IsAlive returns true if the child is still running. Non-blocking; consults
 // the cached Wait result first, then falls back to a process-state poll.
