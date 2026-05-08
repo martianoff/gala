@@ -253,14 +253,18 @@ func TestHmacEqualDifferentData(t T) T {
 // ---- RandomBytes ---------------------------------------------------------
 
 func TestRandomBytesSize(t T) T {
-    var t1 = Eq[int](t, crypto.RandomBytes(32).Size(), 32)
-    return Eq[int](t1, crypto.RandomBytes(0).Size(), 0)
+    var t1 = Eq[int](t, crypto.RandomBytes(32).Get().Size(), 32)
+    return Eq[int](t1, crypto.RandomBytes(0).Get().Size(), 0)
 }
 
 func TestRandomBytesUnique(t T) T {
-    val a = hex.EncodeToString(crypto.RandomBytes(32).ToGoSlice())
-    val b = hex.EncodeToString(crypto.RandomBytes(32).ToGoSlice())
+    val a = hex.EncodeToString(crypto.RandomBytes(32).Get().ToGoSlice())
+    val b = hex.EncodeToString(crypto.RandomBytes(32).Get().ToGoSlice())
     return NotEq[string](t, a, b)
+}
+
+func TestRandomBytesNegative(t T) T {
+    return IsFailure[Array[byte]](t, crypto.RandomBytes(-1))
 }
 
 // ---- ConstantTimeEqual ---------------------------------------------------
