@@ -1,6 +1,7 @@
 package main
 
 import (
+    "encoding/base64"
     "encoding/hex"
     . "martianoff/gala/test"
     . "martianoff/gala/collection_immutable"
@@ -11,6 +12,17 @@ import (
 // ---- helpers -------------------------------------------------------------
 
 func bytesOf(s string) Array[byte] = ArrayFromSlice(ToBytes(s))
+
+// hexBytes decodes a hex string into Array[byte]. Panics on invalid hex —
+// only used in tests with hard-coded vectors, so a malformed input is a
+// test bug.
+func hexBytes(s string) Array[byte] {
+    var decoded, err = hex.DecodeString(s)
+    if err != nil {
+        panic(s"hexBytes: invalid hex: ${err.Error()}")
+    }
+    return ArrayFromSlice[byte](decoded)
+}
 
 // ---- known-vector tables -------------------------------------------------
 
@@ -264,4 +276,188 @@ func TestConstantTimeEqualOneBitDifferent(t T) T {
 
 func TestConstantTimeEqualDifferentLengths(t T) T {
     return IsFalse(t, crypto.ConstantTimeEqual(bytesOf("hello"), bytesOf("hello!")))
+}
+
+// ---- Ed25519 -------------------------------------------------------------
+
+// RFC 8032 §7.1 test 1: empty-message vector.
+// The canonical signature is the value emitted by every conforming Ed25519
+// implementation for this seed/message — verified against Go's
+// crypto/ed25519/testdata/sign.input.gz (the python-ed25519 reference
+// vectors). The brief's quoted value had a transcription error in the
+// final 10 bytes of S; the value below is the real one.
+func TestEd25519RFC8032Vector1(t T) T {
+    val seed = hexBytes("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60")
+    val expectedPubHex = "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
+    val expectedSigHex = "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"
+
+    val sk = crypto.Ed25519PrivateKeyFromSeed(seed)
+    val pk = sk.PublicKey()
+
+    var t1 = Eq[string](t, hex.EncodeToString(pk.Bytes().ToGoSlice()), expectedPubHex)
+
+    val sig = sk.Sign(EmptyArray[byte]())
+    var t2 = Eq[string](t1, sig.Hex(), expectedSigHex)
+
+    return IsTrue(t2, pk.Verify(EmptyArray[byte](), sig))
+}
+
+func TestEd25519SignVerifyRoundTrip(t T) T {
+    val kp = crypto.GenerateEd25519KeyPair()
+    val msg = bytesOf("hello")
+    val sig = kp.Private.Sign(msg)
+    return IsTrue(t, kp.Public.Verify(msg, sig))
+}
+
+func TestEd25519VerifyWrongKey(t T) T {
+    val kp1 = crypto.GenerateEd25519KeyPair()
+    val kp2 = crypto.GenerateEd25519KeyPair()
+    val msg = bytesOf("hello")
+    val sig = kp1.Private.Sign(msg)
+    return IsFalse(t, kp2.Public.Verify(msg, sig))
+}
+
+func TestEd25519VerifyTamperedMessage(t T) T {
+    val kp = crypto.GenerateEd25519KeyPair()
+    val sig = kp.Private.Sign(bytesOf("hello"))
+    return IsFalse(t, kp.Public.Verify(bytesOf("HELLO"), sig))
+}
+
+func TestEd25519VerifyTamperedSignature(t T) T {
+    val kp = crypto.GenerateEd25519KeyPair()
+    val msg = bytesOf("hello")
+    val good = kp.Private.Sign(msg)
+    // Flip the low bit of the first signature byte.
+    var raw = good.Bytes().ToGoSlice()
+    var copy = SliceCopy(raw)
+    copy[0] = copy[0] ^ 1
+    val tampered = crypto.SignatureFromBytes(ArrayFromSlice[byte](copy))
+    return IsFalse(t, kp.Public.Verify(msg, tampered))
+}
+
+// PublicKey() derived from the private key matches kp.Public.
+func TestEd25519PublicKeyConsistency(t T) T {
+    val kp = crypto.GenerateEd25519KeyPair()
+    val derived = kp.Private.PublicKey()
+    val a = kp.Public.Bytes().ToGoSlice()
+    val b = derived.Bytes().ToGoSlice()
+    return Eq[string](t, hex.EncodeToString(a), hex.EncodeToString(b))
+}
+
+func TestEd25519SignatureSize(t T) T {
+    val kp = crypto.GenerateEd25519KeyPair()
+    val sig = kp.Private.Sign(bytesOf("hello"))
+    return Eq[int](t, sig.Bytes().Size(), 64)
+}
+
+func TestEd25519PublicKeySize(t T) T {
+    val kp = crypto.GenerateEd25519KeyPair()
+    return Eq[int](t, kp.Public.Bytes().Size(), 32)
+}
+
+func TestEd25519PrivateKeySize(t T) T {
+    val kp = crypto.GenerateEd25519KeyPair()
+    return Eq[int](t, kp.Private.Bytes().Size(), 64)
+}
+
+func TestSignatureEqualSame(t T) T {
+    val kp = crypto.GenerateEd25519KeyPair()
+    val msg = bytesOf("hello")
+    val s1 = kp.Private.Sign(msg)
+    val s2 = kp.Private.Sign(msg)
+    return IsTrue(t, s1.Equal(s2))
+}
+
+func TestSignatureEqualDifferent(t T) T {
+    val kp = crypto.GenerateEd25519KeyPair()
+    val s1 = kp.Private.Sign(bytesOf("hello"))
+    val s2 = kp.Private.Sign(bytesOf("world"))
+    return IsFalse(t, s1.Equal(s2))
+}
+
+// ---- X25519 --------------------------------------------------------------
+
+// RFC 7748 §6.1 test vector: Alice and Bob compute the same shared secret.
+func TestX25519RFC7748Vector(t T) T {
+    val alicePriv = crypto.X25519PrivateKeyFromBytes(
+        hexBytes("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a"))
+    val alicePub = crypto.X25519PublicKeyFromBytes(
+        hexBytes("8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a"))
+    val bobPriv = crypto.X25519PrivateKeyFromBytes(
+        hexBytes("5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb"))
+    val bobPub = crypto.X25519PublicKeyFromBytes(
+        hexBytes("de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f"))
+    val expectedHex = "4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742"
+
+    val aliceShared = alicePriv.ECDH(bobPub)
+    val bobShared = bobPriv.ECDH(alicePub)
+
+    var t1 = IsSuccess[Array[byte]](t, aliceShared)
+    var t2 = IsSuccess[Array[byte]](t1, bobShared)
+    var t3 = Eq[string](t2, hex.EncodeToString(aliceShared.Get().ToGoSlice()), expectedHex)
+    return Eq[string](t3, hex.EncodeToString(bobShared.Get().ToGoSlice()), expectedHex)
+}
+
+func TestX25519RoundTrip(t T) T {
+    val alice = crypto.GenerateX25519KeyPair()
+    val bob = crypto.GenerateX25519KeyPair()
+
+    val a = alice.Private.ECDH(bob.Public)
+    val b = bob.Private.ECDH(alice.Public)
+
+    var t1 = IsSuccess[Array[byte]](t, a)
+    var t2 = IsSuccess[Array[byte]](t1, b)
+    return Eq[string](t2,
+        hex.EncodeToString(a.Get().ToGoSlice()),
+        hex.EncodeToString(b.Get().ToGoSlice()),
+    )
+}
+
+func TestX25519PublicKeyConsistency(t T) T {
+    val kp = crypto.GenerateX25519KeyPair()
+    val derived = kp.Private.PublicKey()
+    return Eq[string](t,
+        hex.EncodeToString(kp.Public.Bytes().ToGoSlice()),
+        hex.EncodeToString(derived.Bytes().ToGoSlice()),
+    )
+}
+
+func TestX25519PublicKeySize(t T) T {
+    val kp = crypto.GenerateX25519KeyPair()
+    return Eq[int](t, kp.Public.Bytes().Size(), 32)
+}
+
+func TestX25519PrivateKeySize(t T) T {
+    val kp = crypto.GenerateX25519KeyPair()
+    return Eq[int](t, kp.Private.Bytes().Size(), 32)
+}
+
+// ---- random helpers ------------------------------------------------------
+
+func TestRandomHexLength(t T) T {
+    return Eq[int](t, len(crypto.RandomHex(16)), 32)
+}
+
+func TestRandomHexDifferent(t T) T {
+    val a = crypto.RandomHex(16)
+    val b = crypto.RandomHex(16)
+    return IsFalse(t, a == b)
+}
+
+func TestRandomBase64URLLength(t T) T {
+    // base64.RawURLEncoding.EncodedLen(32) == 43
+    return Eq[int](t, len(crypto.RandomBase64URL(32)), 43)
+}
+
+func TestRandomBase64URLNoPadding(t T) T {
+    val s = crypto.RandomBase64URL(32)
+    var decoded, err = base64.RawURLEncoding.DecodeString(s)
+    var t1 = IsNil(t, err)
+    return Eq[int](t1, len(decoded), 32)
+}
+
+func TestRandomBase64URLDifferent(t T) T {
+    val a = crypto.RandomBase64URL(24)
+    val b = crypto.RandomBase64URL(24)
+    return IsFalse(t, a == b)
 }
