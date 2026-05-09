@@ -15,3 +15,15 @@ build:macos --workspace_status_command=tools/workspace_status.sh
 # struct fields, method sets, etc.).
 build --action_env=GOROOT
 build --action_env=PATH
+
+# Recycle persistent workers between builds. Workers stay alive only
+# for the duration of a single `bazel build`; the next invocation
+# spawns a fresh pool. This loses the across-build analyzer cache
+# warm-up but eliminates a Windows-specific failure mode where a
+# previous build's running worker holds an exclusive lock on
+# gala_worker.exe and the next build's relink step fails with
+# "Permission denied" trying to overwrite the in-use binary file.
+# (Linux can overwrite an executable while it runs; Windows can't.)
+# In-build worker reuse — which is where the analyzer warm cache
+# pays off most — is unaffected.
+build --worker_quit_after_build
