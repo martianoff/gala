@@ -1,0 +1,63 @@
+package path
+
+import (
+    "path/filepath"
+    . "martianoff/gala/std"
+)
+
+// path wraps Go's path/filepath in a string-in / string-out surface so
+// consumers can write `path.Join(...)`, `path.Dir(...)`, etc. without
+// importing the Go std lib directly. The signatures mirror filepath
+// 1:1 — only fallible operations differ, returning Try[string] instead
+// of (string, error).
+
+// Join joins any number of path elements into a single path,
+// separating them with the OS-specific separator. Empty elements are
+// ignored.
+func Join(parts ...string) string = filepath.Join(parts...)
+
+// Dir returns all but the last element of p. If p is empty, Dir
+// returns ".". If the path is entirely separators, Dir returns a
+// single separator. The returned path does not end in a separator
+// unless it is the root.
+func Dir(p string) string = filepath.Dir(p)
+
+// Base returns the last element of p. Trailing path separators are
+// removed before extracting the last element. If p is empty, Base
+// returns ".". If p consists entirely of separators, Base returns a
+// single separator.
+func Base(p string) string = filepath.Base(p)
+
+// Ext returns the file name extension used by p. The extension is
+// the suffix beginning at the final dot in the final element of p;
+// it is empty if there is no dot.
+func Ext(p string) string = filepath.Ext(p)
+
+// IsAbs reports whether the path is absolute.
+func IsAbs(p string) bool = filepath.IsAbs(p)
+
+// Abs returns an absolute representation of p. If the path is not
+// absolute it will be joined with the current working directory.
+// Returns Failure if the working directory can't be determined.
+func Abs(p string) Try[string] = Try[string](() => {
+    val resolved, err = filepath.Abs(p)
+    if err != nil {
+        panic(err)
+    }
+    return resolved
+})
+
+// ToSlash returns the result of replacing each separator character in
+// p with a slash ('/'). Multiple separators are replaced by multiple
+// slashes.
+func ToSlash(p string) string = filepath.ToSlash(p)
+
+// FromSlash returns the result of replacing each slash ('/') in p
+// with a separator character. Multiple slashes are replaced by
+// multiple separators.
+func FromSlash(p string) string = filepath.FromSlash(p)
+
+// Clean returns the shortest path name equivalent to p by purely
+// lexical processing. It applies the rules described in
+// path/filepath.Clean.
+func Clean(p string) string = filepath.Clean(p)

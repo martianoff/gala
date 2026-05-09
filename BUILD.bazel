@@ -32,6 +32,7 @@ filegroup(
         "//examples:gala_sources",
         "//io:gala_sources",
         "//lazy:lazy.gala",
+        "//path:gala_sources",
         "//regex:gala_sources",
         "//json:gala_sources",
         "//std:constptr.gala",

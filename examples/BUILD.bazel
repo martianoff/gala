@@ -1236,6 +1236,14 @@ gala_test(
     deps = ["//time_utils"],
 )
 
+# Verification example for the `path` stdlib package.
+gala_test(
+    name = "path_basics",
+    src = "path_basics.gala",
+    expected = "path_basics.out",
+    deps = ["//path"],
+)
+
 # Regression test: unused extracted variables in match branches
 gala_test(
     name = "unused_match_vars",

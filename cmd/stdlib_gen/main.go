@@ -147,6 +147,7 @@ var PackageImportPaths = map[string]string{
 	"regex":                "martianoff/gala/regex",
 	"io":                   "martianoff/gala/io",
 	"json":                 "martianoff/gala/json",
+	"path":                 "martianoff/gala/path",
 	"subprocess":           "martianoff/gala/subprocess",
 	"yaml":                 "martianoff/gala/yaml",
 	"test":                 "martianoff/gala/test",
