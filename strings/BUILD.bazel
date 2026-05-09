@@ -1,0 +1,41 @@
+load("@rules_go//go:def.bzl", "go_library")
+load("//:gala.bzl", "gala_bootstrap_transpile", "gala_go_test")
+
+exports_files([
+    "strings.gala",
+])
+
+filegroup(
+    name = "gala_sources",
+    srcs = glob(
+        ["*.gala"],
+        exclude = ["*_test.gala"],
+    ),
+    visibility = ["//visibility:public"],
+)
+
+gala_bootstrap_transpile(
+    name = "strings_go",
+    src = "strings.gala",
+    out = "strings.gen.go",
+)
+
+go_library(
+    name = "strings",
+    srcs = ["strings.gen.go"],
+    importpath = "martianoff/gala/strings",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//collection_immutable",
+        "//std",
+    ],
+)
+
+gala_go_test(
+    name = "strings_test",
+    srcs = ["strings_test.gala"],
+    deps = [
+        ":strings",
+        "//collection_immutable",
+    ],
+)

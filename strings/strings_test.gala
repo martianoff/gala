@@ -1,0 +1,263 @@
+package main
+
+// The strings package is qualified (`s.`) so its `Contains`, `HasPrefix`,
+// and `HasSuffix` don't collide with the test framework's same-named
+// string-shaped assertion helpers.
+import (
+    . "martianoff/gala/test"
+    . "martianoff/gala/std"
+    s "martianoff/gala/strings"
+    . "martianoff/gala/collection_immutable"
+)
+
+// ---------------------------------------------------------------------------
+// Predicate functions: Contains, HasPrefix, HasSuffix, EqualFold, LastIndex
+// ---------------------------------------------------------------------------
+
+func TestContains(t T) T = RunCases[Tuple[string, string], bool](t,
+    (sub T, input Tuple[string, string], expected bool) =>
+        Eq(sub, s.Contains(input.V1, input.V2), expected),
+    Case[Tuple[string, string], bool](Name = "single hit",     Input = ("hello world", "world"), Expected = true),
+    Case[Tuple[string, string], bool](Name = "miss",           Input = ("hello", "x"),           Expected = false),
+    Case[Tuple[string, string], bool](Name = "empty needle",   Input = ("hello", ""),            Expected = true),
+    Case[Tuple[string, string], bool](Name = "empty haystack", Input = ("", "x"),                Expected = false),
+    Case[Tuple[string, string], bool](Name = "both empty",     Input = ("", ""),                 Expected = true),
+    Case[Tuple[string, string], bool](Name = "case sensitive", Input = ("Hello", "hello"),       Expected = false),
+    Case[Tuple[string, string], bool](Name = "unicode",        Input = ("héllo", "é"),           Expected = true),
+)
+
+func TestHasPrefix(t T) T = RunCases[Tuple[string, string], bool](t,
+    (sub T, input Tuple[string, string], expected bool) =>
+        Eq(sub, s.HasPrefix(input.V1, input.V2), expected),
+    Case[Tuple[string, string], bool](Name = "match",         Input = ("hello world", "hello"), Expected = true),
+    Case[Tuple[string, string], bool](Name = "no match",      Input = ("hello", "world"),       Expected = false),
+    Case[Tuple[string, string], bool](Name = "empty prefix",  Input = ("hello", ""),            Expected = true),
+    Case[Tuple[string, string], bool](Name = "empty string",  Input = ("", "x"),                Expected = false),
+    Case[Tuple[string, string], bool](Name = "exact",         Input = ("abc", "abc"),           Expected = true),
+)
+
+func TestHasSuffix(t T) T = RunCases[Tuple[string, string], bool](t,
+    (sub T, input Tuple[string, string], expected bool) =>
+        Eq(sub, s.HasSuffix(input.V1, input.V2), expected),
+    Case[Tuple[string, string], bool](Name = "match",         Input = ("hello world", "world"), Expected = true),
+    Case[Tuple[string, string], bool](Name = "no match",      Input = ("hello", "world"),       Expected = false),
+    Case[Tuple[string, string], bool](Name = "empty suffix",  Input = ("hello", ""),            Expected = true),
+    Case[Tuple[string, string], bool](Name = "empty string",  Input = ("", "x"),                Expected = false),
+    Case[Tuple[string, string], bool](Name = "exact",         Input = ("abc", "abc"),           Expected = true),
+)
+
+func TestEqualFold(t T) T = RunCases[Tuple[string, string], bool](t,
+    (sub T, input Tuple[string, string], expected bool) =>
+        Eq(sub, s.EqualFold(input.V1, input.V2), expected),
+    Case[Tuple[string, string], bool](Name = "same case",    Input = ("hello", "hello"),     Expected = true),
+    Case[Tuple[string, string], bool](Name = "mixed case",   Input = ("Hello", "hELLO"),     Expected = true),
+    Case[Tuple[string, string], bool](Name = "different",    Input = ("hello", "world"),     Expected = false),
+    Case[Tuple[string, string], bool](Name = "both empty",   Input = ("", ""),               Expected = true),
+    Case[Tuple[string, string], bool](Name = "unicode fold", Input = ("ÄPFEL", "äpfel"),     Expected = true),
+)
+
+func TestLastIndex(t T) T = RunCases[Tuple[string, string], int](t,
+    (sub T, input Tuple[string, string], expected int) =>
+        Eq(sub, s.LastIndex(input.V1, input.V2), expected),
+    Case[Tuple[string, string], int](Name = "single",    Input = ("hello", "l"),  Expected = 3),
+    Case[Tuple[string, string], int](Name = "first",     Input = ("hello", "h"),  Expected = 0),
+    Case[Tuple[string, string], int](Name = "absent",    Input = ("hello", "z"),  Expected = -1),
+    Case[Tuple[string, string], int](Name = "empty s",   Input = ("", "x"),       Expected = -1),
+    Case[Tuple[string, string], int](Name = "empty sub", Input = ("hello", ""),   Expected = 5),
+    Case[Tuple[string, string], int](Name = "multibyte", Input = ("a/b/c", "/"),  Expected = 3),
+)
+
+// ---------------------------------------------------------------------------
+// Trim family: TrimSpace, Trim, TrimLeft, TrimRight, TrimPrefix, TrimSuffix
+// ---------------------------------------------------------------------------
+
+func TestTrimSpace(t T) T = RunCases[string, string](t,
+    (sub T, input string, expected string) => Eq(sub, s.TrimSpace(input), expected),
+    Case[string, string](Name = "leading",       Input = "   hello",       Expected = "hello"),
+    Case[string, string](Name = "trailing",      Input = "hello   ",       Expected = "hello"),
+    Case[string, string](Name = "both",          Input = "  hello  ",      Expected = "hello"),
+    Case[string, string](Name = "none",          Input = "hello",          Expected = "hello"),
+    Case[string, string](Name = "all space",     Input = "   ",            Expected = ""),
+    Case[string, string](Name = "empty",         Input = "",               Expected = ""),
+    Case[string, string](Name = "tabs/newlines", Input = "\t\n hello\n",   Expected = "hello"),
+)
+
+func TestTrim(t T) T = RunCases[Tuple[string, string], string](t,
+    (sub T, input Tuple[string, string], expected string) =>
+        Eq(sub, s.Trim(input.V1, input.V2), expected),
+    Case[Tuple[string, string], string](Name = "single cut",   Input = ("xhellox", "x"),       Expected = "hello"),
+    Case[Tuple[string, string], string](Name = "multi cut",    Input = ("xy hello yx", "xy "), Expected = "hello"),
+    Case[Tuple[string, string], string](Name = "empty cutset", Input = ("hello", ""),          Expected = "hello"),
+    Case[Tuple[string, string], string](Name = "empty s",      Input = ("", "x"),              Expected = ""),
+)
+
+func TestTrimLeft(t T) T = RunCases[Tuple[string, string], string](t,
+    (sub T, input Tuple[string, string], expected string) =>
+        Eq(sub, s.TrimLeft(input.V1, input.V2), expected),
+    Case[Tuple[string, string], string](Name = "leading only",    Input = ("xxxhello", "x"),    Expected = "hello"),
+    Case[Tuple[string, string], string](Name = "leaves trailing", Input = ("xxxhelloxxx", "x"), Expected = "helloxxx"),
+    Case[Tuple[string, string], string](Name = "empty s",         Input = ("", "x"),            Expected = ""),
+)
+
+func TestTrimRight(t T) T = RunCases[Tuple[string, string], string](t,
+    (sub T, input Tuple[string, string], expected string) =>
+        Eq(sub, s.TrimRight(input.V1, input.V2), expected),
+    Case[Tuple[string, string], string](Name = "trailing only",  Input = ("helloxxx", "x"),    Expected = "hello"),
+    Case[Tuple[string, string], string](Name = "leaves leading", Input = ("xxxhelloxxx", "x"), Expected = "xxxhello"),
+    Case[Tuple[string, string], string](Name = "empty s",        Input = ("", "x"),            Expected = ""),
+)
+
+func TestTrimPrefix(t T) T = RunCases[Tuple[string, string], string](t,
+    (sub T, input Tuple[string, string], expected string) =>
+        Eq(sub, s.TrimPrefix(input.V1, input.V2), expected),
+    Case[Tuple[string, string], string](Name = "match",        Input = ("hello world", "hello "), Expected = "world"),
+    Case[Tuple[string, string], string](Name = "no match",     Input = ("hello world", "x"),      Expected = "hello world"),
+    Case[Tuple[string, string], string](Name = "empty prefix", Input = ("hello", ""),             Expected = "hello"),
+    Case[Tuple[string, string], string](Name = "exact",        Input = ("abc", "abc"),            Expected = ""),
+)
+
+func TestTrimSuffix(t T) T = RunCases[Tuple[string, string], string](t,
+    (sub T, input Tuple[string, string], expected string) =>
+        Eq(sub, s.TrimSuffix(input.V1, input.V2), expected),
+    Case[Tuple[string, string], string](Name = "match",        Input = ("file.gala", ".gala"), Expected = "file"),
+    Case[Tuple[string, string], string](Name = "no match",     Input = ("file.gala", ".go"),   Expected = "file.gala"),
+    Case[Tuple[string, string], string](Name = "empty suffix", Input = ("hello", ""),          Expected = "hello"),
+    Case[Tuple[string, string], string](Name = "exact",        Input = ("abc", "abc"),         Expected = ""),
+)
+
+// ---------------------------------------------------------------------------
+// Case folding: ToLower, ToUpper
+// ---------------------------------------------------------------------------
+
+func TestToLower(t T) T = RunCases[string, string](t,
+    (sub T, input string, expected string) => Eq(sub, s.ToLower(input), expected),
+    Case[string, string](Name = "upper",       Input = "HELLO",       Expected = "hello"),
+    Case[string, string](Name = "mixed",       Input = "Hello World", Expected = "hello world"),
+    Case[string, string](Name = "lower",       Input = "hello",       Expected = "hello"),
+    Case[string, string](Name = "empty",       Input = "",            Expected = ""),
+    Case[string, string](Name = "non-letters", Input = "ABC123!",     Expected = "abc123!"),
+)
+
+func TestToUpper(t T) T = RunCases[string, string](t,
+    (sub T, input string, expected string) => Eq(sub, s.ToUpper(input), expected),
+    Case[string, string](Name = "lower",       Input = "hello",       Expected = "HELLO"),
+    Case[string, string](Name = "mixed",       Input = "Hello World", Expected = "HELLO WORLD"),
+    Case[string, string](Name = "upper",       Input = "HELLO",       Expected = "HELLO"),
+    Case[string, string](Name = "empty",       Input = "",            Expected = ""),
+    Case[string, string](Name = "non-letters", Input = "abc123!",     Expected = "ABC123!"),
+)
+
+// ---------------------------------------------------------------------------
+// Repeat
+// ---------------------------------------------------------------------------
+
+func TestRepeat(t T) T = RunCases[Tuple[string, int], string](t,
+    (sub T, input Tuple[string, int], expected string) =>
+        Eq(sub, s.Repeat(input.V1, input.V2), expected),
+    Case[Tuple[string, int], string](Name = "thrice",      Input = ("ab", 3), Expected = "ababab"),
+    Case[Tuple[string, int], string](Name = "once",        Input = ("ab", 1), Expected = "ab"),
+    Case[Tuple[string, int], string](Name = "zero",        Input = ("ab", 0), Expected = ""),
+    Case[Tuple[string, int], string](Name = "empty s",     Input = ("", 5),   Expected = ""),
+    Case[Tuple[string, int], string](Name = "single rune", Input = ("-", 5),  Expected = "-----"),
+)
+
+// ---------------------------------------------------------------------------
+// Replace, ReplaceAll
+// ---------------------------------------------------------------------------
+
+func TestReplaceAll(t T) T {
+    val t1 = Eq(t,  s.ReplaceAll("hello world hello", "hello", "hi"), "hi world hi")
+    val t2 = Eq(t1, s.ReplaceAll("aaaa", "aa", "b"),                  "bb")
+    val t3 = Eq(t2, s.ReplaceAll("hello", "x", "y"),                  "hello")
+    val t4 = Eq(t3, s.ReplaceAll("", "x", "y"),                       "")
+    return Eq(t4, s.ReplaceAll("a/b/c", "/", "."),                    "a.b.c")
+}
+
+func TestReplace(t T) T {
+    val t1 = Eq(t,  s.Replace("aaaa", "a", "b", 2),  "bbaa")
+    val t2 = Eq(t1, s.Replace("aaaa", "a", "b", 0),  "aaaa")
+    val t3 = Eq(t2, s.Replace("aaaa", "a", "b", -1), "bbbb")
+    val t4 = Eq(t3, s.Replace("aaaa", "a", "b", 99), "bbbb")
+    return Eq(t4, s.Replace("hello", "x", "y", -1),  "hello")
+}
+
+// ---------------------------------------------------------------------------
+// Split, SplitN, Fields, Join — return Array[string]
+// ---------------------------------------------------------------------------
+
+func TestSplit(t T) T {
+    val a = s.Split("a,b,c", ",")
+    val t1 = Eq(t,  a.Length(), 3)
+    val t2 = Eq(t1, a.Get(0), "a")
+    val t3 = Eq(t2, a.Get(2), "c")
+
+    // Empty separator → one entry per rune
+    val r = s.Split("abc", "")
+    val t4 = Eq(t3, r.Length(), 3)
+    val t5 = Eq(t4, r.Get(1), "b")
+
+    // No separator match → one entry containing the whole string
+    val u = s.Split("hello", ",")
+    val t6 = Eq(t5, u.Length(), 1)
+    val t7 = Eq(t6, u.Get(0), "hello")
+
+    // Empty input → one empty entry
+    val e = s.Split("", ",")
+    return Eq(t7, e.Length(), 1)
+}
+
+func TestSplitN(t T) T {
+    val a = s.SplitN("a,b,c,d", ",", 2)
+    val t1 = Eq(t,  a.Length(), 2)
+    val t2 = Eq(t1, a.Get(0), "a")
+    val t3 = Eq(t2, a.Get(1), "b,c,d")
+
+    val all = s.SplitN("a,b,c", ",", -1)
+    val t4 = Eq(t3, all.Length(), 3)
+
+    val none = s.SplitN("a,b,c", ",", 0)
+    return Eq(t4, none.Length(), 0)
+}
+
+func TestFields(t T) T {
+    val a = s.Fields("  hello   world  ")
+    val t1 = Eq(t,  a.Length(), 2)
+    val t2 = Eq(t1, a.Get(0), "hello")
+    val t3 = Eq(t2, a.Get(1), "world")
+
+    // All-whitespace input → empty Array
+    val e = s.Fields("   \t\n  ")
+    val t4 = Eq(t3, e.Length(), 0)
+
+    // Empty input → empty Array
+    val z = s.Fields("")
+    val t5 = Eq(t4, z.Length(), 0)
+
+    // Tabs/newlines also count as separators
+    val tabs = s.Fields("a\tb\nc")
+    val t6 = Eq(t5, tabs.Length(), 3)
+    return Eq(t6, tabs.Get(2), "c")
+}
+
+func TestJoin(t T) T {
+    val parts = ArrayOf("a", "b", "c")
+    val t1 = Eq(t, s.Join(parts, ", "), "a, b, c")
+
+    val one = ArrayOf("solo")
+    val t2 = Eq(t1, s.Join(one, ", "), "solo")
+
+    val empty = EmptyArray[string]()
+    val t3 = Eq(t2, s.Join(empty, ", "), "")
+
+    val noSep = ArrayOf("a", "b", "c")
+    return Eq(t3, s.Join(noSep, ""), "abc")
+}
+
+// ---------------------------------------------------------------------------
+// Round-trip: Split then Join recovers (when sep is non-empty and present)
+// ---------------------------------------------------------------------------
+
+func TestSplitJoinRoundTrip(t T) T {
+    val parts = s.Split("alpha/beta/gamma", "/")
+    return Eq(t, s.Join(parts, "/"), "alpha/beta/gamma")
+}

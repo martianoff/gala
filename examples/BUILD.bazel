@@ -1610,6 +1610,18 @@ gala_test(
     deps = ["//go_interop"],
 )
 
+# Verification: ergonomic free-function `strings` package — every
+# heavy-hitter from gala_team's call sites at least once.
+gala_test(
+    name = "strings_basics",
+    src = "strings_basics.gala",
+    expected = "strings_basics.out",
+    deps = [
+        "//collection_immutable",
+        "//strings",
+    ],
+)
+
 # Verification: FoldLeft on Sequence.Get() result uses Array_FoldLeft
 gala_test(
     name = "foldleft_on_sequence_get",

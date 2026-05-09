@@ -35,6 +35,7 @@ GALA (Go Alternative LAnguage) is a modern programming language that transpiles 
    - [IO Effect](#io-effect)
    - [Path](#path)
    - [Filesystem](#filesystem)
+   - [Strings (free functions)](#strings-free-functions)
    - [Slices](#slices)
    - [Maps](#maps)
    - [HashMap](#hashmap)
@@ -1907,6 +1908,63 @@ val flow = MkdirTemp("", "x_")
 
 Modes are passed as plain `int` (e.g. `0o644`, `0o755`); GALA does not
 introduce a separate `FileMode` wrapper.
+
+### Strings (free functions)
+
+The `strings` package exposes free functions over plain Go `string` values, mirroring Go's `strings.X` names exactly. Located in the `strings` package.
+
+```gala
+import . "martianoff/gala/strings"
+```
+
+This is a parallel target to [`string_utils`](STRING_UTILS.MD) — the two coexist with different ergonomic targets:
+
+| | `string_utils` (`Str`) | `strings` (free functions) |
+|---|---|---|
+| Shape | Immutable wrapper around the string + a lazy rune array | Pure `string -> string` (and friends) |
+| Call site | `S("hello").Trim().ToString()` | `TrimSpace("hello")` |
+| Best for | Multi-step pipelines that benefit from caching the rune view | Migrating from raw Go `strings.X` calls without rewriting the call shape |
+
+#### API
+
+| Function | Signature | Notes |
+|---|---|---|
+| `Contains` | `(s, substr string) bool` | |
+| `HasPrefix` | `(s, prefix string) bool` | |
+| `HasSuffix` | `(s, suffix string) bool` | |
+| `EqualFold` | `(a, b string) bool` | Unicode case-folding (rune-by-rune; ß≠"ss"). |
+| `LastIndex` | `(s, substr string) int` | -1 when absent. |
+| `TrimSpace` | `(s string) string` | |
+| `Trim` | `(s, cutset string) string` | |
+| `TrimLeft` | `(s, cutset string) string` | |
+| `TrimRight` | `(s, cutset string) string` | |
+| `TrimPrefix` | `(s, prefix string) string` | |
+| `TrimSuffix` | `(s, suffix string) string` | |
+| `ToLower` | `(s string) string` | |
+| `ToUpper` | `(s string) string` | |
+| `Repeat` | `(s string, count int) string` | |
+| `Replace` | `(s, old, new string, n int) string` | `n < 0` ⇒ replace all. |
+| `ReplaceAll` | `(s, old, new string) string` | |
+| `Split` | `(s, sep string) Array[string]` | |
+| `SplitN` | `(s, sep string, n int) Array[string]` | |
+| `Fields` | `(s string) Array[string]` | |
+| `Join` | `(parts Array[string], sep string) string` | |
+
+`Split`, `SplitN`, and `Fields` return a GALA `Array[string]` (from `collection_immutable`), not a Go `[]string`. `Join` accepts an `Array[string]` for symmetry. See `examples/strings_basics.gala` for a runnable tour of every function.
+
+#### Example
+
+```gala
+import . "martianoff/gala/strings"
+import . "martianoff/gala/collection_immutable"
+
+func main() {
+    val ok = HasPrefix("/api/v1/users", "/api/")        // true
+    val parts = Split("alpha,beta,gamma", ",")           // Array("alpha", "beta", "gamma")
+    val joined = Join(ArrayOf("a", "b", "c"), " - ")     // "a - b - c"
+    Println(s"$ok $parts $joined")
+}
+```
 
 ### Slices (Go Interop)
 
