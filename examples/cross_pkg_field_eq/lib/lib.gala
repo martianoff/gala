@@ -1,0 +1,29 @@
+package lib
+
+import . "martianoff/gala/collection_immutable"
+
+struct Team(
+    Key     string,
+    Name    string,
+    Members Array[string],
+    Counts  HashMap[string, int],
+)
+
+func MakeTeams() Array[Team] = ArrayOf(
+    Team(
+        Key     = "alpha",
+        Name    = "Alpha team",
+        Members = ArrayOf("a", "b", "c"),
+        Counts  = HashMapOf(("a", 1), ("b", 2), ("c", 3)),
+    ),
+    Team(
+        Key     = "beta",
+        Name    = "Beta team",
+        Members = ArrayOf("x"),
+        Counts  = HashMapOf(("x", 9)),
+    ),
+)
+
+struct AppModel(
+    Teams Array[Team],
+)

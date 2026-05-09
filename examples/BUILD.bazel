@@ -13,6 +13,8 @@ filegroup(
         "cross_file_unwrap/types.gala",
         "cross_file_unwrap_lib/ops.gala",
         "cross_file_unwrap_lib/types.gala",
+        "cross_pkg_field_eq/lib/lib.gala",
+        "cross_pkg_field_eq/main.gala",
         "cross_pkg_sealed_var/step/step.gala",
         "cross_pkg_sealed_var_test.gala",
         "cross_pkg_try_chain/main/main.gala",
@@ -1795,6 +1797,28 @@ gala_test(
         ":cross_pkg_try_match_corelib",
         "//concurrent",
     ],
+)
+
+# Regression guard: equality (`==` / `!=`) and method calls on a struct
+# field accessed across package boundaries must auto-unwrap
+# std.Immutable[T]. gala_team's app/team/team.gala kept FindTeamByKey
+# inside the team package on the assumption that the lambda body
+# `tm.Key == key` wouldn't compile elsewhere; this guard pins the
+# cross-package shape down so the workaround can come back out.
+gala_library(
+    name = "cross_pkg_field_eq_lib",
+    srcs = ["cross_pkg_field_eq/lib/lib.gala"],
+    importpath = "martianoff/gala/examples/cross_pkg_field_eq/lib",
+    visibility = ["//visibility:public"],
+    deps = ["//collection_immutable"],
+)
+
+gala_test(
+    name = "cross_pkg_field_eq_test",
+    src = "cross_pkg_field_eq/main.gala",
+    expected = "cross_pkg_field_eq/cross_pkg_field_eq.out",
+    gala_deps = [":cross_pkg_field_eq_lib"],
+    deps = ["//collection_immutable"],
 )
 
 # Regression: cross-package generic sealed-case constructors must pick up the

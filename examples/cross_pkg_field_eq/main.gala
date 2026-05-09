@@ -1,0 +1,62 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+import "martianoff/gala/examples/cross_pkg_field_eq/lib"
+
+// Verifies that `==` and `!=` on a struct field accessed across package
+// boundaries auto-unwraps the std.Immutable[T] wrapper the same way
+// same-package field access does. Before the fix the wrapper leaked
+// through to Go and the comparison wouldn't typecheck.
+func FindTeamByKey(teams Array[lib.Team], key string) Option[lib.Team] =
+    teams.Find((tm) => tm.Key == key)
+
+// Same story for `!=` and for direct method calls on a cross-package
+// field that's an Immutable[Array[T]] under the hood: the lambda body
+// must auto-unwrap through `tm.Members` before calling `.Size()`.
+func TeamsLargerThan(teams Array[lib.Team], threshold int) Array[lib.Team] =
+    teams.Filter((tm) => tm.Members.Size() > threshold)
+
+// Equality between two cross-package fields (Immutable[T] on both
+// sides) — the previous regression specifically about wrapper-vs-raw
+// produced a Go type mismatch.
+func SameKey(a lib.Team, b lib.Team) bool = a.Key == b.Key
+
+// Chained method on cross-package field: `model.Teams.Map(...)`
+// requires unwrapping `model.Teams` (Immutable[Array[Team]]) before
+// the .Map() call. This is the FIX-010/011/012 pattern.
+func KeysOf(m lib.AppModel) Array[string] =
+    m.Teams.Map((t) => t.Key)
+
+// Cross-package HashMap field: `team.Counts.Get(name)` must unwrap
+// `team.Counts` (Immutable[HashMap[...]]) before calling .Get(name).
+func LookupCount(team lib.Team, name string) Option[int] =
+    team.Counts.Get(name)
+
+func main() {
+    val teams = lib.MakeTeams()
+
+    val a = FindTeamByKey(teams, "alpha")
+    Println(s"alpha=${a.IsDefined()}")
+
+    val b = FindTeamByKey(teams, "beta")
+    Println(s"beta=${b.IsDefined()}")
+
+    val miss = FindTeamByKey(teams, "ghost")
+    Println(s"miss=${miss.IsDefined()}")
+
+    val first = teams.Get(0)
+    Println(s"firstNameLen=${len(first.Name)}")
+
+    val big = TeamsLargerThan(teams, 1)
+    Println(s"big=${big.Length()}")
+
+    val same = SameKey(first, first)
+    Println(s"same=${same}")
+
+    val model = lib.AppModel(Teams = teams)
+    val keys = KeysOf(model)
+    Println(s"keys=${keys.MkString(\",\")}")
+
+    val cnt = LookupCount(first, "b")
+    Println(s"cntB=${cnt.GetOrElse(-1)}")
+}
