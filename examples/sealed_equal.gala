@@ -1,0 +1,39 @@
+package main
+
+// Verifies that Equal() is synthesized on sealed types — and dispatches
+// field-wise after a _variant tag check — so the gala_team `focusEquals`
+// hand-written equality helper is redundant.
+
+sealed type FocusState {
+    case FocusComposer()
+    case FocusSidebar()
+}
+
+sealed type Status {
+    case StIdle()
+    case StRecovering(Attempt int, Max int)
+    case StHelpWaiting(Question string)
+}
+
+func main() {
+    // Zero-field sealed: same variant compares equal, distinct variants don't.
+    val f1 FocusState = FocusComposer()
+    val f2 FocusState = FocusComposer()
+    val f3 FocusState = FocusSidebar()
+    Println(f1.Equal(f2))
+    Println(f1.Equal(f3))
+    Println(f1 == f2)
+    Println(f1 == f3)
+
+    // Multi-field sealed: same variant + fields equal, distinct fields differ.
+    val s1 Status = StRecovering(1, 2)
+    val s2 Status = StRecovering(1, 2)
+    val s3 Status = StRecovering(3, 4)
+    val s4 Status = StIdle()
+    val s5 Status = StHelpWaiting("why?")
+    val s6 Status = StHelpWaiting("why?")
+    Println(s1.Equal(s2))
+    Println(s1.Equal(s3))
+    Println(s1.Equal(s4))
+    Println(s5.Equal(s6))
+}

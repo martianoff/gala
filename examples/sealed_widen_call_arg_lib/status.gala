@@ -1,0 +1,15 @@
+package sealed_widen_call_arg_lib
+
+sealed type Status {
+    case StIdle()
+    case StWorking()
+    case StRecovering(Attempt int, Max int)
+    case StHelpWaiting(Question string)
+}
+
+func DescribeStatus(s Status) string = s match {
+    case StIdle()           => "idle"
+    case StWorking()        => "working"
+    case StRecovering(a, m) => s"recovering $a/$m"
+    case StHelpWaiting(q)   => s"help: $q"
+}

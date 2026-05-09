@@ -2236,6 +2236,51 @@ gala_test(
     expected = "match_standalone_stmt.out",
 )
 
+# `return X` inside a match arm at statement position must return from the
+# enclosing function, not just from the IIFE that lowers the match.
+gala_test(
+    name = "match_return_statement",
+    src = "match_return_statement.gala",
+    expected = "match_return_statement.out",
+    deps = ["//collection_immutable"],
+)
+
+# Sealed-case widening at function-call argument sites (same-package).
+gala_test(
+    name = "sealed_widen_call_arg",
+    src = "sealed_widen_call_arg.gala",
+    expected = "sealed_widen_call_arg.out",
+)
+
+# Sealed types must auto-synthesize Equal(other) and support ==
+# (field-wise comparison gated on the _variant tag).
+gala_test(
+    name = "sealed_equal",
+    src = "sealed_equal.gala",
+    expected = "sealed_equal.out",
+)
+
+# Sealed-case widening at function-call argument sites (cross-package
+# dot-import; the gala_team Status shape).  Both positional and
+# named-arg construction must widen to the parent sealed type, the
+# same way `return SomeCase(...)` does.
+gala_library(
+    name = "sealed_widen_call_arg_lib",
+    srcs = [
+        "sealed_widen_call_arg_lib/sink.gala",
+        "sealed_widen_call_arg_lib/status.gala",
+    ],
+    importpath = "martianoff/gala/examples/sealed_widen_call_arg_lib",
+    visibility = ["//visibility:public"],
+)
+
+gala_test(
+    name = "use_sealed_widen_call_arg",
+    src = "use_sealed_widen_call_arg.gala",
+    expected = "use_sealed_widen_call_arg.out",
+    deps = [":sealed_widen_call_arg_lib"],
+)
+
 # =============================================================================
 # Per-bug multi-file library regression tests.
 # These bugs ONLY manifest in multi-file batch transpilation (gala_library).
