@@ -96,6 +96,10 @@ genrule(
         "//string_utils:string_utils_go",
         # string_utils package - GALA source
         "//string_utils:strings.gala",
+        # strings package - transpiled Go
+        "//strings:strings_go",
+        # strings package - GALA source
+        "//strings:strings.gala",
         # time_utils package - transpiled Go
         "//time_utils:time_utils_go",
         # time_utils package - GALA source

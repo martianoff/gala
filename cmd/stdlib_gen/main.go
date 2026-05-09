@@ -143,6 +143,7 @@ var PackageImportPaths = map[string]string{
 	"lazy":                 "martianoff/gala/lazy",
 	"stream":               "martianoff/gala/stream",
 	"string_utils":         "martianoff/gala/string_utils",
+	"strings":              "martianoff/gala/strings",
 	"time_utils":           "martianoff/gala/time_utils",
 	"regex":                "martianoff/gala/regex",
 	"io":                   "martianoff/gala/io",
