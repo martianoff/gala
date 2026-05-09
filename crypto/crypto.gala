@@ -12,6 +12,7 @@ import (
     "crypto/subtle"
     "encoding/base64"
     "encoding/hex"
+    "errors"
     "hash"
     . "martianoff/gala/collection_immutable"
     "martianoff/gala/go_interop"
@@ -226,22 +227,21 @@ func (h HmacSha1) NewHasher() *Hasher {
 // ---- random + constant-time helpers --------------------------------------
 
 // RandomBytes returns n cryptographically secure random bytes from the OS
-// RNG. n == 0 returns an empty Array. n < 0 panics. A read failure panics
-// (matches the Go stdlib idiom — crypto/rand.Read only fails on a broken
-// OS RNG, which is unrecoverable).
-func RandomBytes(n int) Array[byte] {
+// RNG. n == 0 returns an empty Array. Returns Failure on negative size or
+// RNG read error.
+func RandomBytes(n int) Try[Array[byte]] {
     if n < 0 {
-        panic(s"crypto.RandomBytes: negative size $n")
+        return Failure[Array[byte]](errors.New(s"crypto.RandomBytes: negative size $n"))
     }
     if n == 0 {
-        return EmptyArray[byte]()
+        return Success[Array[byte]](EmptyArray[byte]())
     }
     var buf = ArrayFill[byte](n, byte(0)).ToGoSlice()
     var _, err = rand.Read(buf)
     if err != nil {
-        panic(s"crypto.RandomBytes: rand.Read failed: ${err.Error()}")
+        return Failure[Array[byte]](errors.New(s"crypto.RandomBytes: rand.Read failed: ${err.Error()}"))
     }
-    return ArrayFromSlice(buf)
+    return Success[Array[byte]](ArrayFromSlice(buf))
 }
 
 // ConstantTimeEqual reports whether a and b are byte-for-byte equal, using
