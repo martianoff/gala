@@ -1,0 +1,20 @@
+contains: true
+hasPrefix: true
+hasSuffix: true
+equalFold: true
+lastIndex: 3
+trimSpace: 'spaced'
+trimPrefix: /v1
+trimSuffix: file
+trim: hello
+trimLeft: helloxx
+trimRight: xxhello
+toLower: hello world
+toUpper: HELLO WORLD
+repeat: -----
+replace: b-b-a-a
+replaceAll: a.b.c
+split: alpha|beta|gamma
+splitN(2): alpha|beta,gamma,delta
+fields: hello|world
+join: a · b · c

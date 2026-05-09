@@ -1,0 +1,37 @@
+load("@rules_go//go:def.bzl", "go_library")
+load("//:gala.bzl", "gala_bootstrap_transpile", "gala_go_test")
+
+exports_files([
+    "path.gala",
+])
+
+filegroup(
+    name = "gala_sources",
+    srcs = glob(
+        ["*.gala"],
+        exclude = ["*_test.gala"],
+    ),
+    visibility = ["//visibility:public"],
+)
+
+gala_bootstrap_transpile(
+    name = "path_go",
+    src = "path.gala",
+    out = "path.gen.go",
+)
+
+go_library(
+    name = "path",
+    srcs = ["path.gen.go"],
+    importpath = "martianoff/gala/path",
+    visibility = ["//visibility:public"],
+    deps = ["//std"],
+)
+
+gala_go_test(
+    name = "path_test",
+    srcs = ["path_test.gala"],
+    deps = [
+        ":path",
+    ],
+)

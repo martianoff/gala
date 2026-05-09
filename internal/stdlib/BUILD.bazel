@@ -96,6 +96,10 @@ genrule(
         "//string_utils:string_utils_go",
         # string_utils package - GALA source
         "//string_utils:strings.gala",
+        # strings package - transpiled Go
+        "//strings:strings_go",
+        # strings package - GALA source
+        "//strings:strings.gala",
         # time_utils package - transpiled Go
         "//time_utils:time_utils_go",
         # time_utils package - GALA source
@@ -108,6 +112,14 @@ genrule(
         "//io:io_go",
         # io package - GALA source
         "//io:io.gala",
+        # path package - transpiled Go
+        "//path:path_go",
+        # path package - GALA source
+        "//path:path.gala",
+        # fs package - transpiled Go
+        "//fs:fs_go",
+        # fs package - GALA source
+        "//fs:fs.gala",
         # subprocess package - GALA surface + Go-side helpers (errors.As / scanner buffer)
         "//subprocess:subprocess_go",
         "//subprocess:subprocess.gala",

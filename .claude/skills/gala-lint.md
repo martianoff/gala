@@ -690,12 +690,22 @@ Try(() => findConfig()).FlatMap((path) => Try(() => readFile(path)))
 |-------|-----------------|-----------------|
 | Go struct colon literal | `GoType{Field: value}` | `GoType(Field = value)` — GALA named-arg syntax works for Go structs |
 
-### 11d. `match` as Standalone Statement (MEDIUM priority)
+### 11d. `val _ =` is a code smell — use a bare statement (HIGH priority)
+
+`val _ = <expr>` is **always** a smell. Whatever the right-hand side is, it should stand on its own as a statement.
 
 | Issue | Pattern to Flag | Recommended Fix |
 |-------|-----------------|-----------------|
-| Discard match result | `val _ = x match { ... }` | Use `match` directly as statement |
+| Discard call result | `val _ = fs.WriteFileString(p, s, mode)` | `fs.WriteFileString(p, s, mode)` — bare call |
+| Discard match result | `val _ = x match { ... }` | `x match { ... }` — bare match |
+| Discard `error`-returning call | `val _ = file.Close()` | `file.Close()` — bare call (function-body), or `FromError(file.Close())` if inside a void lambda |
 | ForEach when match fits | `opt.ForEach((v) => ...)` when multiple cases needed | `opt match { case Some(v) => ...; case None() => ... }` |
+
+Rationale: `val _ = ...` adds noise without expressing any intent the bare expression doesn't already express. If the result genuinely matters, bind it to a real name and use it (e.g. assert `.IsSuccess()` in tests). If it doesn't, the call/match should stand alone.
+
+**Void-lambda exception.** Inside a lambda whose body is `func()` (no return), the analyzer rejects bare `error`-returning calls — error: "cannot discard error return from X — use FromError(X) to handle the error". Use `FromError(call())` from `std`: it returns `Try[Void]` and can itself stand as a bare statement (or chain `.OnFailure((err) => ...)`). Function-body bare calls are unaffected.
+
+**If bare-statement form does not transpile elsewhere** — that is a **transpiler bug**, not a license to keep `val _ =`. Open a repro test against the transpiler and fix the bug. Per CLAUDE.md rule 6, never work around transpiler bugs.
 
 ### 12. Naming Conventions (LOW priority)
 

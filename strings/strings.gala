@@ -1,0 +1,105 @@
+package strings
+
+import (
+    gostrings "strings"
+    . "martianoff/gala/collection_immutable"
+)
+
+// Package strings exposes free functions over plain Go `string` values,
+// mirroring Go's `strings.X` names exactly so call sites can migrate from
+// `import "strings"` to `import . "martianoff/gala/strings"` without
+// touching call shape.
+//
+// This package is a parallel target to `martianoff/gala/string_utils`.
+// `string_utils` is the rich, immutable `Str`-wrapped library; `strings`
+// is the boring, ergonomic free-function shim. Both coexist — pick the
+// one that matches the call site.
+//
+// Functions that return a sequence of strings produce a GALA
+// `Array[string]` (from `collection_immutable`), not a Go `[]string`.
+
+// Contains reports whether `substr` is within `s`.
+func Contains(s string, substr string) bool = gostrings.Contains(s, substr)
+
+// HasPrefix reports whether `s` begins with `prefix`.
+func HasPrefix(s string, prefix string) bool = gostrings.HasPrefix(s, prefix)
+
+// HasSuffix reports whether `s` ends with `suffix`.
+func HasSuffix(s string, suffix string) bool = gostrings.HasSuffix(s, suffix)
+
+// EqualFold reports whether `a` and `b` are equal under Unicode
+// case-folding. ASCII or non-ASCII.
+func EqualFold(a string, b string) bool = gostrings.EqualFold(a, b)
+
+// LastIndex returns the byte index of the last instance of `substr` in
+// `s`, or -1 if `substr` is not present.
+func LastIndex(s string, substr string) int = gostrings.LastIndex(s, substr)
+
+// TrimSpace returns `s` with leading and trailing white space removed
+// (per Unicode IsSpace).
+func TrimSpace(s string) string = gostrings.TrimSpace(s)
+
+// Trim returns `s` with all leading and trailing Unicode code points
+// contained in `cutset` removed.
+func Trim(s string, cutset string) string = gostrings.Trim(s, cutset)
+
+// TrimLeft returns `s` with all leading Unicode code points contained in
+// `cutset` removed.
+func TrimLeft(s string, cutset string) string = gostrings.TrimLeft(s, cutset)
+
+// TrimRight returns `s` with all trailing Unicode code points contained
+// in `cutset` removed.
+func TrimRight(s string, cutset string) string = gostrings.TrimRight(s, cutset)
+
+// TrimPrefix returns `s` without the provided leading `prefix`. If `s`
+// doesn't start with `prefix`, it is returned unchanged.
+func TrimPrefix(s string, prefix string) string = gostrings.TrimPrefix(s, prefix)
+
+// TrimSuffix returns `s` without the provided trailing `suffix`. If `s`
+// doesn't end with `suffix`, it is returned unchanged.
+func TrimSuffix(s string, suffix string) string = gostrings.TrimSuffix(s, suffix)
+
+// ToLower returns `s` with all Unicode letters mapped to lowercase.
+func ToLower(s string) string = gostrings.ToLower(s)
+
+// ToUpper returns `s` with all Unicode letters mapped to uppercase.
+func ToUpper(s string) string = gostrings.ToUpper(s)
+
+// Repeat returns a new string consisting of `count` copies of `s`. Panics
+// for negative `count` or if the result would overflow (same contract as
+// Go's `strings.Repeat`).
+func Repeat(s string, count int) string = gostrings.Repeat(s, count)
+
+// Replace returns a copy of `s` with the first `n` non-overlapping
+// instances of `old` replaced by `new`. If `n < 0`, all instances are
+// replaced.
+func Replace(s string, old string, new string, n int) string =
+    gostrings.Replace(s, old, new, n)
+
+// ReplaceAll returns a copy of `s` with all non-overlapping instances of
+// `old` replaced by `new`.
+func ReplaceAll(s string, old string, new string) string =
+    gostrings.ReplaceAll(s, old, new)
+
+// Split slices `s` into all substrings separated by `sep` and returns
+// them as a GALA Array. If `sep` is empty, Split returns one entry per
+// rune of `s` (Go's behaviour).
+func Split(s string, sep string) Array[string] =
+    ArrayFromSlice[string](gostrings.Split(s, sep))
+
+// SplitN slices `s` into substrings separated by `sep`. The count `n`
+// limits the number of substrings: `n > 0` caps the slice; `n == 0`
+// returns nil; `n < 0` returns all substrings (Go's behaviour).
+func SplitN(s string, sep string, n int) Array[string] =
+    ArrayFromSlice[string](gostrings.SplitN(s, sep, n))
+
+// Fields splits `s` around each instance of one or more consecutive
+// white-space characters, returning the substrings as a GALA Array.
+// Returns an empty Array if `s` contains only white space.
+func Fields(s string) Array[string] =
+    ArrayFromSlice[string](gostrings.Fields(s))
+
+// Join concatenates the elements of `parts`, inserting `sep` between
+// adjacent elements.
+func Join(parts Array[string], sep string) string =
+    gostrings.Join(parts.ToGoSlice(), sep)

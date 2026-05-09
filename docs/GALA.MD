@@ -33,6 +33,9 @@ GALA (Go Alternative LAnguage) is a modern programming language that transpiles 
    - [Yaml](#yaml)
    - [Regex](#regex)
    - [IO Effect](#io-effect)
+   - [Path](#path)
+   - [Filesystem](#filesystem)
+   - [Strings (free functions)](#strings-free-functions)
    - [Slices](#slices)
    - [Maps](#maps)
    - [HashMap](#hashmap)
@@ -1800,6 +1803,168 @@ io.ForEach(io.Of(42), (v) => { Println(v) }).Run()
 | Re-execution | Cached — `.Get()` returns same result | Fresh — every `.Run()` re-executes |
 | Thread safety | Yes (via `sync.Once`) | No memoization |
 | Use case | Expensive pure computations | Side effects (HTTP, file I/O, logging) |
+
+### Path
+
+The `path` package wraps Go's `path/filepath` in a string-in / string-out
+surface so consumers can reach for `path.Join(...)`, `path.Dir(...)`, etc.
+without dropping back to the Go stdlib. Names mirror `filepath` so
+migration is mechanical.
+
+```gala
+import . "martianoff/gala/path"
+```
+
+#### Surface
+
+| Function | Signature | Notes |
+|----------|-----------|-------|
+| `Join` | `(parts ...string) string` | Variadic; joins with the OS separator. |
+| `Dir` | `(p string) string` | Drops the last element. |
+| `Base` | `(p string) string` | Returns the last element. |
+| `Ext` | `(p string) string` | Returns the suffix at the final dot. |
+| `IsAbs` | `(p string) bool` | Platform-aware absolute check. |
+| `Abs` | `(p string) Try[string]` | Resolves against cwd; `Failure` if cwd is unreadable. |
+| `ToSlash` | `(p string) string` | Replaces OS separators with `/`. Useful for printing. |
+| `FromSlash` | `(p string) string` | Reverse of `ToSlash`. |
+| `Clean` | `(p string) string` | Lexical normalisation (collapses `..`, `.`, repeated separators). |
+
+```gala
+val full = Join("workspace", "src", "main.go")
+Println(ToSlash(Dir(full)))   // workspace/src
+Println(Base(full))           // main.go
+Println(Ext(full))            // .go
+Println(IsAbs("relative"))    // false
+val abs = Abs(".").GetOrElse("")
+```
+
+There is no `Path` type and no string wrapper — `path` operates on plain
+strings so every call site is a one-line replacement for raw `filepath`.
+
+### Filesystem
+
+The `fs` package is the GALA wrapper around the parts of Go's `os` that
+consumers reach for to read, write, and stat regular files. Every
+fallible operation returns `Try[T]`; non-fallible convenience checks
+return `bool`. Bytes flow through `Array[byte]` (immutable) at the
+language boundary, with `ToGoSlice` / `ArrayFromSlice` round trips
+internally at the Go-interop seam.
+
+```gala
+import . "martianoff/gala/fs"
+```
+
+#### Surface
+
+| Function | Signature |
+|----------|-----------|
+| `ReadFile` | `(path string) Try[Array[byte]]` |
+| `ReadFileString` | `(path string) Try[string]` |
+| `WriteFile` | `(path string, data Array[byte], mode int) Try[bool]` |
+| `WriteFileString` | `(path string, contents string, mode int) Try[bool]` |
+| `Stat` | `(path string) Try[FileInfo]` |
+| `Exists` | `(path string) bool` — non-fallible; `false` on any error |
+| `MkdirAll` | `(path string, mode int) Try[bool]` |
+| `MkdirTemp` | `(dir string, pattern string) Try[string]` — returns the created path |
+| `RemoveAll` | `(path string) Try[bool]` — `Success` if path didn't exist |
+| `ReadDir` | `(path string) Try[Array[FileInfo]]` |
+
+`FileInfo` is the immutable snapshot returned by `Stat` and `ReadDir`:
+
+```gala
+struct FileInfo(
+    Name    string,
+    Size    int64,
+    IsDir   bool,
+    Mode    int,
+    ModTime time_utils.Instant,
+)
+```
+
+The raw `os.FileInfo` interface is intentionally not leaked.
+
+```gala
+import . "martianoff/gala/fs"
+import "martianoff/gala/path"
+
+val dir = MkdirTemp("", "scratch_").Get()
+val target = path.Join(dir, "greeting.txt")
+WriteFileString(target, "hello", 0o644).Get()
+val info = Stat(target).Get()
+Println(s"size=${info.Size} dir=${info.IsDir}")
+val payload = ReadFileString(target).Get()
+RemoveAll(dir).Get()
+```
+
+`Try`-returning ops chain naturally with `FlatMap` so a multi-step
+filesystem flow short-circuits on the first failure:
+
+```gala
+val flow = MkdirTemp("", "x_")
+    .FlatMap[string]((d) => WriteFileString(path.Join(d, "f"), "ok", 0o644)
+        .Map((_) => d))
+    .FlatMap[bool]((d) => RemoveAll(d))
+```
+
+Modes are passed as plain `int` (e.g. `0o644`, `0o755`); GALA does not
+introduce a separate `FileMode` wrapper.
+
+### Strings (free functions)
+
+The `strings` package exposes free functions over plain Go `string` values, mirroring Go's `strings.X` names exactly. Located in the `strings` package.
+
+```gala
+import . "martianoff/gala/strings"
+```
+
+This is a parallel target to [`string_utils`](STRING_UTILS.MD) — the two coexist with different ergonomic targets:
+
+| | `string_utils` (`Str`) | `strings` (free functions) |
+|---|---|---|
+| Shape | Immutable wrapper around the string + a lazy rune array | Pure `string -> string` (and friends) |
+| Call site | `S("hello").Trim().ToString()` | `TrimSpace("hello")` |
+| Best for | Multi-step pipelines that benefit from caching the rune view | Migrating from raw Go `strings.X` calls without rewriting the call shape |
+
+#### API
+
+| Function | Signature | Notes |
+|---|---|---|
+| `Contains` | `(s, substr string) bool` | |
+| `HasPrefix` | `(s, prefix string) bool` | |
+| `HasSuffix` | `(s, suffix string) bool` | |
+| `EqualFold` | `(a, b string) bool` | Unicode case-folding (rune-by-rune; ß≠"ss"). |
+| `LastIndex` | `(s, substr string) int` | -1 when absent. |
+| `TrimSpace` | `(s string) string` | |
+| `Trim` | `(s, cutset string) string` | |
+| `TrimLeft` | `(s, cutset string) string` | |
+| `TrimRight` | `(s, cutset string) string` | |
+| `TrimPrefix` | `(s, prefix string) string` | |
+| `TrimSuffix` | `(s, suffix string) string` | |
+| `ToLower` | `(s string) string` | |
+| `ToUpper` | `(s string) string` | |
+| `Repeat` | `(s string, count int) string` | |
+| `Replace` | `(s, old, new string, n int) string` | `n < 0` ⇒ replace all. |
+| `ReplaceAll` | `(s, old, new string) string` | |
+| `Split` | `(s, sep string) Array[string]` | |
+| `SplitN` | `(s, sep string, n int) Array[string]` | |
+| `Fields` | `(s string) Array[string]` | |
+| `Join` | `(parts Array[string], sep string) string` | |
+
+`Split`, `SplitN`, and `Fields` return a GALA `Array[string]` (from `collection_immutable`), not a Go `[]string`. `Join` accepts an `Array[string]` for symmetry. See `examples/strings_basics.gala` for a runnable tour of every function.
+
+#### Example
+
+```gala
+import . "martianoff/gala/strings"
+import . "martianoff/gala/collection_immutable"
+
+func main() {
+    val ok = HasPrefix("/api/v1/users", "/api/")        // true
+    val parts = Split("alpha,beta,gamma", ",")           // Array("alpha", "beta", "gamma")
+    val joined = Join(ArrayOf("a", "b", "c"), " - ")     // "a - b - c"
+    Println(s"$ok $parts $joined")
+}
+```
 
 ### Slices (Go Interop)
 

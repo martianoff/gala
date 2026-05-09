@@ -1,0 +1,50 @@
+package main
+
+import (
+    . "martianoff/gala/strings"
+    . "martianoff/gala/collection_immutable"
+)
+
+// Verifies the new ergonomic `martianoff/gala/strings` package — free
+// functions over plain `string` mirroring Go's `strings` namespace.
+// Consumer migration is `s/strings\./strings\./` with no logic change;
+// the call site still reads exactly like Go.
+
+func main() {
+    // Predicates — the heavy hitters in consumer code.
+    Println(s"contains: ${Contains("hello world", "world")}")     // true
+    Println(s"hasPrefix: ${HasPrefix("/api/v1/users", "/api/")}") // true
+    Println(s"hasSuffix: ${HasSuffix("file.gala", ".gala")}")     // true
+    Println(s"equalFold: ${EqualFold("Foo", "FOO")}")             // true
+    Println(s"lastIndex: ${LastIndex("a/b/c", "/")}")             // 3
+
+    // Trim family — no more reaching for go strings imports.
+    Println(s"trimSpace: '${TrimSpace("   spaced   ")}'")         // 'spaced'
+    Println(s"trimPrefix: ${TrimPrefix("/api/v1", "/api")}")      // /v1
+    Println(s"trimSuffix: ${TrimSuffix("file.gala", ".gala")}")   // file
+    Println(s"trim: ${Trim("xxhelloxx", "x")}")                   // hello
+    Println(s"trimLeft: ${TrimLeft("xxhelloxx", "x")}")           // helloxx
+    Println(s"trimRight: ${TrimRight("xxhelloxx", "x")}")         // xxhello
+
+    // Case folding.
+    Println(s"toLower: ${ToLower("HELLO World")}")                // hello world
+    Println(s"toUpper: ${ToUpper("hello World")}")                // HELLO WORLD
+
+    // Build-up.
+    Println(s"repeat: ${Repeat("-", 5)}")                         // -----
+    Println(s"replace: ${Replace("a-a-a-a", "a", "b", 2)}")       // b-b-a-a
+    Println(s"replaceAll: ${ReplaceAll("a/b/c", "/", ".")}")      // a.b.c
+
+    // Split / Fields / Join — return GALA Array[string].
+    val parts = Split("alpha,beta,gamma", ",")
+    Println(s"split: ${parts.MkString("|")}")                     // alpha|beta|gamma
+
+    val twoTokens = SplitN("alpha,beta,gamma,delta", ",", 2)
+    Println(s"splitN(2): ${twoTokens.MkString("|")}")             // alpha|beta,gamma,delta
+
+    val tokens = Fields("  hello   world  ")
+    Println(s"fields: ${tokens.MkString("|")}")                   // hello|world
+
+    val joined = Join(ArrayOf("a", "b", "c"), " · ")
+    Println(s"join: ${joined}")                                   // a · b · c
+}

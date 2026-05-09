@@ -682,11 +682,11 @@ gala_test(
     name = "json_codec_cross_pkg",
     src = "json_codec_cross_pkg/main.gala",
     expected = "json_codec_cross_pkg/main.out",
+    gala_deps = [":json_codec_cross_pkg_inner"],
     deps = [
         "//collection_immutable",
         "//json",
     ],
-    gala_deps = [":json_codec_cross_pkg_inner"],
 )
 
 # Temporarily enabled for debugging
@@ -1236,6 +1236,25 @@ gala_test(
     deps = ["//time_utils"],
 )
 
+# Verification example for the `path` stdlib package.
+gala_test(
+    name = "path_basics",
+    src = "path_basics.gala",
+    expected = "path_basics.out",
+    deps = ["//path"],
+)
+
+# Verification example for the `fs` stdlib package.
+gala_test(
+    name = "fs_roundtrip",
+    src = "fs_roundtrip.gala",
+    expected = "fs_roundtrip.out",
+    deps = [
+        "//fs",
+        "//path",
+    ],
+)
+
 # Regression test: unused extracted variables in match branches
 gala_test(
     name = "unused_match_vars",
@@ -1589,6 +1608,18 @@ gala_test(
     src = "byte_conversion.gala",
     expected = "byte_conversion.out",
     deps = ["//go_interop"],
+)
+
+# Verification: ergonomic free-function `strings` package — every
+# heavy-hitter from gala_team's call sites at least once.
+gala_test(
+    name = "strings_basics",
+    src = "strings_basics.gala",
+    expected = "strings_basics.out",
+    deps = [
+        "//collection_immutable",
+        "//strings",
+    ],
 )
 
 # Verification: FoldLeft on Sequence.Get() result uses Array_FoldLeft

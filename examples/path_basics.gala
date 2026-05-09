@@ -1,0 +1,18 @@
+package main
+
+// Verification example for the `path` stdlib package.
+// Exercises the surface that consumers most commonly reach for from
+// gala_team and similar code bases: Join, Dir, Base, Ext, IsAbs, Clean,
+// ToSlash. ToSlash gives us a stable cross-OS form for printing.
+
+import . "martianoff/gala/path"
+
+func main() {
+    val joined = Join("a", "b", "c.txt")
+    Println(ToSlash(joined))           // a/b/c.txt
+    Println(ToSlash(Dir(joined)))      // a/b
+    Println(Base(joined))              // c.txt
+    Println(Ext(joined))               // .txt
+    Println(ToSlash(Clean("a//b/./c"))) // a/b/c
+    Println(IsAbs("relative/path"))    // false
+}
