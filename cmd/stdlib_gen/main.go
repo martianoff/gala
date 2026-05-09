@@ -148,6 +148,7 @@ var PackageImportPaths = map[string]string{
 	"io":                   "martianoff/gala/io",
 	"json":                 "martianoff/gala/json",
 	"path":                 "martianoff/gala/path",
+	"fs":                   "martianoff/gala/fs",
 	"subprocess":           "martianoff/gala/subprocess",
 	"yaml":                 "martianoff/gala/yaml",
 	"test":                 "martianoff/gala/test",

@@ -112,6 +112,10 @@ genrule(
         "//path:path_go",
         # path package - GALA source
         "//path:path.gala",
+        # fs package - transpiled Go
+        "//fs:fs_go",
+        # fs package - GALA source
+        "//fs:fs.gala",
         # subprocess package - GALA surface + Go-side helpers (errors.As / scanner buffer)
         "//subprocess:subprocess_go",
         "//subprocess:subprocess.gala",

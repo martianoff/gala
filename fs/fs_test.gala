@@ -1,0 +1,135 @@
+package main
+
+import (
+    . "martianoff/gala/test"
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/fs"
+    "os"
+    "path/filepath"
+)
+
+// scratchDir creates a fresh temp dir per-test so tests are isolated
+// and don't depend on /tmp shape. The caller is responsible for
+// removing it (Defer-equivalent: tests call fs.RemoveAll at the end).
+func scratchDir(prefix string) string {
+    val dir, err = os.MkdirTemp("", prefix)
+    if err != nil { panic(err) }
+    return dir
+}
+
+func TestWriteAndReadFile(t T) T {
+    val dir = scratchDir("fs_write_read")
+    defer os.RemoveAll(dir)
+
+    val target = filepath.Join(dir, "hello.txt")
+    val payload = "hello, world"
+    val w = fs.WriteFileString(target, payload, 0o644)
+    var t1 = IsTrue(t, w.IsSuccess())
+
+    val r = fs.ReadFileString(target)
+    var t2 = IsTrue(t1, r.IsSuccess())
+    return Eq[string](t2, r.Get(), payload)
+}
+
+func TestReadFileBytesRoundTrip(t T) T {
+    val dir = scratchDir("fs_bytes")
+    defer os.RemoveAll(dir)
+
+    val target = filepath.Join(dir, "bytes.bin")
+    val data = ArrayOf[byte](byte(1), byte(2), byte(3), byte(255))
+    val w = fs.WriteFile(target, data, 0o644)
+    var t1 = IsTrue(t, w.IsSuccess())
+
+    val r = fs.ReadFile(target)
+    var t2 = IsTrue(t1, r.IsSuccess())
+    return Eq[int](t2, r.Get().Size(), data.Size())
+}
+
+func TestReadFileMissing(t T) T {
+    val r = fs.ReadFile("/this/path/should/never/exist/xyz")
+    return IsTrue(t, r.IsFailure())
+}
+
+func TestStat(t T) T {
+    val dir = scratchDir("fs_stat")
+    defer os.RemoveAll(dir)
+
+    val target = filepath.Join(dir, "info.txt")
+    val _ = fs.WriteFileString(target, "abcdef", 0o644)
+
+    val info = fs.Stat(target)
+    var t1 = IsTrue(t, info.IsSuccess())
+    val fi = info.Get()
+    var t2 = Eq[string](t1, fi.Name, "info.txt")
+    var t3 = Eq[int64](t2, fi.Size, int64(6))
+    return IsFalse(t3, fi.IsDir)
+}
+
+func TestStatDirectoryFlag(t T) T {
+    val dir = scratchDir("fs_stat_dir")
+    defer os.RemoveAll(dir)
+
+    val info = fs.Stat(dir)
+    var t1 = IsTrue(t, info.IsSuccess())
+    return IsTrue(t1, info.Get().IsDir)
+}
+
+func TestExists(t T) T {
+    val dir = scratchDir("fs_exists")
+    defer os.RemoveAll(dir)
+
+    var t1 = IsTrue(t, fs.Exists(dir))
+    return IsFalse(t1, fs.Exists(filepath.Join(dir, "nope")))
+}
+
+func TestMkdirAll(t T) T {
+    val dir = scratchDir("fs_mkdir")
+    defer os.RemoveAll(dir)
+
+    val nested = filepath.Join(dir, "a", "b", "c")
+    val r = fs.MkdirAll(nested, 0o755)
+    var t1 = IsTrue(t, r.IsSuccess())
+    return IsTrue(t1, fs.Exists(nested))
+}
+
+func TestMkdirTemp(t T) T {
+    val r = fs.MkdirTemp("", "fs_mkdirtemp_")
+    var t1 = IsTrue(t, r.IsSuccess())
+    val created = r.Get()
+    val t2 = IsTrue(t1, fs.Exists(created))
+    val _ = fs.RemoveAll(created)
+    return t2
+}
+
+func TestRemoveAll(t T) T {
+    val dir = scratchDir("fs_remove")
+    val nested = filepath.Join(dir, "x", "y")
+    val _ = fs.MkdirAll(nested, 0o755)
+    val _ = fs.WriteFileString(filepath.Join(nested, "f.txt"), "data", 0o644)
+
+    var t1 = IsTrue(t, fs.Exists(dir))
+    val r = fs.RemoveAll(dir)
+    var t2 = IsTrue(t1, r.IsSuccess())
+    return IsFalse(t2, fs.Exists(dir))
+}
+
+func TestRemoveAllMissingIsSuccess(t T) T {
+    // os.RemoveAll convention: removing a nonexistent path is a no-op,
+    // not an error.
+    val r = fs.RemoveAll("/this/path/does/not/exist/zzz")
+    return IsTrue(t, r.IsSuccess())
+}
+
+func TestReadDir(t T) T {
+    val dir = scratchDir("fs_readdir")
+    defer os.RemoveAll(dir)
+
+    val _ = fs.WriteFileString(filepath.Join(dir, "a.txt"), "1", 0o644)
+    val _ = fs.WriteFileString(filepath.Join(dir, "b.txt"), "22", 0o644)
+    val _ = fs.MkdirAll(filepath.Join(dir, "sub"), 0o755)
+
+    val r = fs.ReadDir(dir)
+    var t1 = IsTrue(t, r.IsSuccess())
+    val entries = r.Get()
+    return Eq[int](t1, entries.Size(), 3)
+}

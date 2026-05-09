@@ -1,0 +1,33 @@
+package main
+
+// Verification example for the `fs` stdlib package: write a file,
+// stat it, read it back, then remove the scratch dir. Output is the
+// round-trip text plus the recovered byte count, so the example
+// has a stable cross-OS `.out`.
+
+import (
+    . "martianoff/gala/fs"
+    "martianoff/gala/path"
+    "os"
+)
+
+func main() {
+    val dir, mkErr = os.MkdirTemp("", "fs_roundtrip_")
+    if mkErr != nil { panic(mkErr) }
+
+    val target = path.Join(dir, "greeting.txt")
+
+    val payload = "hello, gala fs"
+    val w = WriteFileString(target, payload, 0o644)
+    Println(s"wrote: ${w.IsSuccess()}")
+
+    val info = Stat(target)
+    Println(s"stat ok: ${info.IsSuccess()} size=${info.Get().Size}")
+
+    val r = ReadFileString(target)
+    Println(s"read back: ${r.Get()}")
+
+    val cleanup = RemoveAll(dir)
+    Println(s"cleanup: ${cleanup.IsSuccess()}")
+    Println(s"dir gone: ${!Exists(dir)}")
+}

@@ -30,6 +30,7 @@ filegroup(
         "//concurrent:gala_sources",
         "//crypto:gala_sources",
         "//examples:gala_sources",
+        "//fs:gala_sources",
         "//io:gala_sources",
         "//lazy:lazy.gala",
         "//path:gala_sources",
