@@ -16,6 +16,9 @@ go_library(
         "mod_update.go",
         "mod_verify.go",
         "new.go",
+        "parent_watcher.go",
+        "parent_watcher_unix.go",
+        "parent_watcher_windows.go",
         "project.go",
         "root.go",
         "run.go",
@@ -44,7 +47,12 @@ go_library(
         "//internal/transpiler/transformer",
         "@com_github_owenrumney_go_lsp//server",
         "@com_github_spf13_cobra//:cobra",
-    ],
+    ] + select({
+        "@rules_go//go/platform:windows": [
+            "@org_golang_x_sys//windows",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 go_test(

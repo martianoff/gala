@@ -134,6 +134,13 @@ func runWorker() {
 	tuneGCOnce()
 	startCPUProfileIfRequested()
 	defer stopCPUProfile()
+	// Defensive parent-death watcher: if the bazel server that spawned
+	// us is force-killed (taskkill, system crash, IDE termination), the
+	// pipe our ReadRequest blocks on may not eagerly EOF. Without the
+	// watcher we'd sit forever holding our binary file open, blocking
+	// the next bazel build of the same project from relinking the
+	// worker. See parent_watcher.go for the full background.
+	go watchParentForDeath()
 	stdin := bufio.NewReaderSize(os.Stdin, 1<<16)
 	stdout := bufio.NewWriterSize(os.Stdout, 1<<16)
 
