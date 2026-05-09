@@ -1,0 +1,8 @@
+package widget
+
+// Snapshot is a function (not a struct), mimicking the gala-tui collision
+// the reporter cited: `gala_tui.Snapshot(widget, w, h) string` is a
+// utility, while `session.Snapshot(...)` is a struct in another package.
+// The transpiler must keep these straight when both are imported in the
+// same file.
+func Snapshot(label string, width int) string = label

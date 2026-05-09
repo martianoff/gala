@@ -1,0 +1,16 @@
+package lib
+
+import . "martianoff/gala/collection_immutable"
+
+// ConversationLine mirrors gala_team's session.ConversationLine — a
+// plain struct used as the element type of an Array field on Snapshot.
+struct ConversationLine(Speaker string, Text string, At int64)
+
+// Snapshot mirrors gala_team's session.Snapshot — a plain struct with
+// mixed primitive and Array[<custom-struct>] fields.
+struct Snapshot(
+    ProjectName    string,
+    SavedAt        int64,
+    Conversation   Array[ConversationLine],
+    ActiveMembers  Array[string],
+)

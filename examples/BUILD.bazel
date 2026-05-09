@@ -15,6 +15,9 @@ filegroup(
         "cross_file_unwrap_lib/types.gala",
         "cross_pkg_field_eq/lib/lib.gala",
         "cross_pkg_field_eq/main.gala",
+        "cross_pkg_namedarg/lib/lib.gala",
+        "cross_pkg_namedarg/main.gala",
+        "cross_pkg_namedarg/widget/widget.gala",
         "cross_pkg_sealed_var/step/step.gala",
         "cross_pkg_sealed_var_test.gala",
         "cross_pkg_try_chain/main/main.gala",
@@ -1818,6 +1821,37 @@ gala_test(
     src = "cross_pkg_field_eq/main.gala",
     expected = "cross_pkg_field_eq/cross_pkg_field_eq.out",
     gala_deps = [":cross_pkg_field_eq_lib"],
+    deps = ["//collection_immutable"],
+)
+
+# Regression guard: named-arg construction on a qualified cross-package
+# struct (`lib.Snapshot(field = ...)`) must produce a struct literal with
+# the fields in declared order — including reordering and skipping
+# defaulted fields. gala_team's app/ui/update_test.gala fell back to
+# positional construction on the assumption this didn't work.
+gala_library(
+    name = "cross_pkg_namedarg_lib",
+    srcs = ["cross_pkg_namedarg/lib/lib.gala"],
+    importpath = "martianoff/gala/examples/cross_pkg_namedarg/lib",
+    visibility = ["//visibility:public"],
+    deps = ["//collection_immutable"],
+)
+
+gala_library(
+    name = "cross_pkg_namedarg_widget",
+    srcs = ["cross_pkg_namedarg/widget/widget.gala"],
+    importpath = "martianoff/gala/examples/cross_pkg_namedarg/widget",
+    visibility = ["//visibility:public"],
+)
+
+gala_test(
+    name = "cross_pkg_namedarg_test",
+    src = "cross_pkg_namedarg/main.gala",
+    expected = "cross_pkg_namedarg/cross_pkg_namedarg.out",
+    gala_deps = [
+        ":cross_pkg_namedarg_lib",
+        ":cross_pkg_namedarg_widget",
+    ],
     deps = ["//collection_immutable"],
 )
 
