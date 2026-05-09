@@ -527,6 +527,7 @@ This generates:
 - `Apply` methods on each companion for construction
 - `Unapply` methods for pattern matching
 - `IsCircle()`, `IsRectangle()`, `IsPoint()` methods on `Shape`
+- `Copy()` and `Equal(other Shape) bool` on `Shape` — the same auto-synthesis as for ordinary structs (see [§4 Automatic Copy and Equal Methods](#automatic-copy-and-equal-methods)). `Equal` first compares the `_variant` tag, then dispatches field-wise via `std.Equal`, so `a.Equal(b)` is the canonical way to test sealed values for structural equality. The Go `==` operator also works on sealed values when every variant field is a Go-comparable type.
 
 #### Construction and Pattern Matching
 ```gala

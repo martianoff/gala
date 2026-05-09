@@ -1,0 +1,25 @@
+package main
+
+// Cross-package + dot-import variant of the sealed-widen-call-arg test.
+// gala_team's Status sealed type lives in the `team` package and is dot-
+// imported into `ui`; the FIX-013 widening regression was reported
+// against this exact shape.
+
+import . "martianoff/gala/examples/sealed_widen_call_arg_lib"
+
+func main() {
+    // Zero-arg variants at call-arg site.
+    Println(DescribeStatus(StIdle()))
+    Println(DescribeStatus(StWorking()))
+
+    // Single-arg positional + named.
+    Println(DescribeStatus(StHelpWaiting("?")))
+    Println(DescribeStatus(StHelpWaiting(Question = "why")))
+
+    // Multi-arg positional + named (the FIX-013 shape).
+    Println(DescribeStatus(StRecovering(1, 2)))
+    Println(DescribeStatus(StRecovering(Attempt = 3, Max = 4)))
+
+    // Sink also takes Status — same widening rules.
+    Println(Sink(StRecovering(Attempt = 5, Max = 6)))
+}

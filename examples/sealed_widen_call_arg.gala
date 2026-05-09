@@ -1,0 +1,39 @@
+package main
+
+// Regression: a sealed-case constructor used as a function-call argument
+// must widen to the parent sealed type, the same way `return SomeCase(...)`
+// does. Both positional and named-arg construction must widen consistently.
+//
+// Pre-fix the named-arg multi-arg form (`StRecovering(Attempt = a, Max = m)`)
+// failed to widen at call-arg sites and gala_team had to wrap construction
+// in a return-typed helper (mkRecoveringStatus).
+
+sealed type Status {
+    case StIdle()
+    case StWorking()
+    case StRecovering(Attempt int, Max int)
+    case StHelpWaiting(Question string)
+}
+
+func describe(s Status) string = s match {
+    case StIdle()              => "idle"
+    case StWorking()           => "working"
+    case StRecovering(a, m)    => s"recovering $a/$m"
+    case StHelpWaiting(q)      => s"help: $q"
+}
+
+func main() {
+    // Zero-arg case at call-arg site
+    Println(describe(StIdle()))
+    Println(describe(StWorking()))
+
+    // Single-arg positional case at call-arg site
+    Println(describe(StHelpWaiting("?")))
+    // Single-arg named-args case at call-arg site
+    Println(describe(StHelpWaiting(Question = "why")))
+
+    // Multi-arg positional case at call-arg site
+    Println(describe(StRecovering(1, 2)))
+    // Multi-arg named-args case at call-arg site (the FIX-013 shape)
+    Println(describe(StRecovering(Attempt = 3, Max = 4)))
+}

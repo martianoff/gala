@@ -13,6 +13,11 @@ filegroup(
         "cross_file_unwrap/types.gala",
         "cross_file_unwrap_lib/ops.gala",
         "cross_file_unwrap_lib/types.gala",
+        "cross_pkg_field_eq/lib/lib.gala",
+        "cross_pkg_field_eq/main.gala",
+        "cross_pkg_namedarg/lib/lib.gala",
+        "cross_pkg_namedarg/main.gala",
+        "cross_pkg_namedarg/widget/widget.gala",
         "cross_pkg_sealed_var/step/step.gala",
         "cross_pkg_sealed_var_test.gala",
         "cross_pkg_try_chain/main/main.gala",
@@ -1797,6 +1802,59 @@ gala_test(
     ],
 )
 
+# Regression guard: equality (`==` / `!=`) and method calls on a struct
+# field accessed across package boundaries must auto-unwrap
+# std.Immutable[T]. gala_team's app/team/team.gala kept FindTeamByKey
+# inside the team package on the assumption that the lambda body
+# `tm.Key == key` wouldn't compile elsewhere; this guard pins the
+# cross-package shape down so the workaround can come back out.
+gala_library(
+    name = "cross_pkg_field_eq_lib",
+    srcs = ["cross_pkg_field_eq/lib/lib.gala"],
+    importpath = "martianoff/gala/examples/cross_pkg_field_eq/lib",
+    visibility = ["//visibility:public"],
+    deps = ["//collection_immutable"],
+)
+
+gala_test(
+    name = "cross_pkg_field_eq_test",
+    src = "cross_pkg_field_eq/main.gala",
+    expected = "cross_pkg_field_eq/cross_pkg_field_eq.out",
+    gala_deps = [":cross_pkg_field_eq_lib"],
+    deps = ["//collection_immutable"],
+)
+
+# Regression guard: named-arg construction on a qualified cross-package
+# struct (`lib.Snapshot(field = ...)`) must produce a struct literal with
+# the fields in declared order — including reordering and skipping
+# defaulted fields. gala_team's app/ui/update_test.gala fell back to
+# positional construction on the assumption this didn't work.
+gala_library(
+    name = "cross_pkg_namedarg_lib",
+    srcs = ["cross_pkg_namedarg/lib/lib.gala"],
+    importpath = "martianoff/gala/examples/cross_pkg_namedarg/lib",
+    visibility = ["//visibility:public"],
+    deps = ["//collection_immutable"],
+)
+
+gala_library(
+    name = "cross_pkg_namedarg_widget",
+    srcs = ["cross_pkg_namedarg/widget/widget.gala"],
+    importpath = "martianoff/gala/examples/cross_pkg_namedarg/widget",
+    visibility = ["//visibility:public"],
+)
+
+gala_test(
+    name = "cross_pkg_namedarg_test",
+    src = "cross_pkg_namedarg/main.gala",
+    expected = "cross_pkg_namedarg/cross_pkg_namedarg.out",
+    gala_deps = [
+        ":cross_pkg_namedarg_lib",
+        ":cross_pkg_namedarg_widget",
+    ],
+    deps = ["//collection_immutable"],
+)
+
 # Regression: cross-package generic sealed-case constructors must pick up the
 # parent's type parameter from the enclosing call context. The same-package
 # variant of this rewrite was added in the previous release; this verifies
@@ -2234,6 +2292,51 @@ gala_test(
     name = "match_standalone_stmt",
     src = "match_standalone_stmt.gala",
     expected = "match_standalone_stmt.out",
+)
+
+# `return X` inside a match arm at statement position must return from the
+# enclosing function, not just from the IIFE that lowers the match.
+gala_test(
+    name = "match_return_statement",
+    src = "match_return_statement.gala",
+    expected = "match_return_statement.out",
+    deps = ["//collection_immutable"],
+)
+
+# Sealed-case widening at function-call argument sites (same-package).
+gala_test(
+    name = "sealed_widen_call_arg",
+    src = "sealed_widen_call_arg.gala",
+    expected = "sealed_widen_call_arg.out",
+)
+
+# Sealed types must auto-synthesize Equal(other) and support ==
+# (field-wise comparison gated on the _variant tag).
+gala_test(
+    name = "sealed_equal",
+    src = "sealed_equal.gala",
+    expected = "sealed_equal.out",
+)
+
+# Sealed-case widening at function-call argument sites (cross-package
+# dot-import; the gala_team Status shape).  Both positional and
+# named-arg construction must widen to the parent sealed type, the
+# same way `return SomeCase(...)` does.
+gala_library(
+    name = "sealed_widen_call_arg_lib",
+    srcs = [
+        "sealed_widen_call_arg_lib/sink.gala",
+        "sealed_widen_call_arg_lib/status.gala",
+    ],
+    importpath = "martianoff/gala/examples/sealed_widen_call_arg_lib",
+    visibility = ["//visibility:public"],
+)
+
+gala_test(
+    name = "use_sealed_widen_call_arg",
+    src = "use_sealed_widen_call_arg.gala",
+    expected = "use_sealed_widen_call_arg.out",
+    deps = [":sealed_widen_call_arg_lib"],
 )
 
 # =============================================================================

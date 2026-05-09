@@ -1,0 +1,74 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// Regression: `return X` inside a `match` arm body at statement position
+// (i.e. the match's value is discarded; the match is being used as a
+// statement, not as the value of an expression) must return from the
+// enclosing function, not just from the IIFE that lowers the match.
+//
+// Two shapes are exercised here:
+//   1. firstOdd: simple match-as-statement with a return inside an `if`
+//      inside the case body.
+//   2. parseImpl: mirrors the real-world stateful tape walk shape from
+//      gala_team's directive parser — a `for` loop where the trailing
+//      statement is a match, the case body is a block containing more
+//      `val` bindings, an `if` whose `then` arm wants to bail out via
+//      `return out`, and an `else` arm that contains *another* nested
+//      match. Without the fix, the `return out` only escapes the IIFE,
+//      the cursor `i` never advances past the early-exit branch, and
+//      the for loop spins forever.
+
+
+func firstOdd(xs Array[int]) int {
+    var i = 0
+    val n = xs.Size()
+    for i < n {
+        val v = xs.Get(i)
+        Some(v) match {
+            case Some(x) => {
+                if x % 2 == 1 {
+                    return x
+                }
+                i = i + 1
+            }
+            case None() => i = i + 1
+        }
+    }
+    return -1
+}
+
+func parseImpl(lines Array[int], stopAtNegative bool) Array[int] {
+    var out = EmptyArray[int]()
+    var i = 0
+    val n = lines.Size()
+    for i < n {
+        val line = lines.Get(i)
+        Some(line) match {
+            case Some(v) => {
+                val doubled = v * 2
+                if stopAtNegative && v < 0 {
+                    return out
+                } else {
+                    Some(doubled) match {
+                        case Some(d) => out = out.Append(d)
+                        case None()  => {}
+                    }
+                    i = i + 1
+                }
+            }
+            case None() => i = i + 1
+        }
+    }
+    return out
+}
+
+func main() {
+    val xs = ArrayOf(2, 4, 6, 7, 8, 9)
+    Println(firstOdd(xs))
+    val ys = ArrayOf(2, 4, 6)
+    Println(firstOdd(ys))
+    val zs = ArrayOf(1, 2, 3, -1, 99)
+    Println(parseImpl(zs, true).MkString(","))
+    Println(parseImpl(zs, false).MkString(","))
+}

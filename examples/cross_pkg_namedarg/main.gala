@@ -1,0 +1,56 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+import "martianoff/gala/examples/cross_pkg_namedarg/lib"
+import "martianoff/gala/examples/cross_pkg_namedarg/widget"
+
+// Verifies that named-arg construction works on a struct imported from
+// another package via a qualified reference: `lib.Snapshot(field = ...)`.
+// The reporter cited gala_team/app/ui/update_test.gala:1900-1902 — the
+// test fell back to positional args under the assumption that the
+// qualified named-arg form didn't transpile.
+func makeSnap() lib.Snapshot {
+    val convo = EmptyArray[lib.ConversationLine]()
+    return lib.Snapshot(
+        ProjectName   = "demo",
+        SavedAt       = int64(12345),
+        Conversation  = convo,
+        ActiveMembers = ArrayOf("alice", "bob"),
+    )
+}
+
+// Reordered named args — the transpiler must reorder them to match the
+// declared field order.
+func makeSnapReordered() lib.Snapshot {
+    val convo = EmptyArray[lib.ConversationLine]()
+    return lib.Snapshot(
+        ActiveMembers = ArrayOf("zoe"),
+        ProjectName   = "reorder",
+        Conversation  = convo,
+        SavedAt       = int64(99),
+    )
+}
+
+// Cross-package construction of a struct with all fields named.
+func makeLine() lib.ConversationLine = lib.ConversationLine(
+    Speaker = "user",
+    Text    = "hi",
+    At      = int64(7),
+)
+
+func main() {
+    val a = makeSnap()
+    Println(s"project=${a.ProjectName} saved=${a.SavedAt} members=${a.ActiveMembers.Length()}")
+
+    val b = makeSnapReordered()
+    Println(s"project=${b.ProjectName} saved=${b.SavedAt} members=${b.ActiveMembers.Length()}")
+
+    val l = makeLine()
+    Println(s"line=${l.Speaker}/${l.Text}/${l.At}")
+
+    // Co-importing a different `Snapshot` (a function) from another
+    // package must NOT shadow `lib.Snapshot` — the qualified form
+    // disambiguates by package.
+    val w = widget.Snapshot("widget-1", 80)
+    Println(s"widget=${w}")
+}
