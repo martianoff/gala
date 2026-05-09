@@ -111,7 +111,7 @@ func (p Process) CloseStdin() Try[bool] {
     val st = p.state
     st.stdinMu.Lock()
     defer st.stdinMu.Unlock()
-    val _ = st.stdin.Close()
+    st.stdin.Close()
     return Success(true)
 }
 
@@ -147,10 +147,10 @@ func (p Process) ReadStderrLine() Try[string] {
 // scanner returning EOF naturally signals "you can Wait now".
 func (p Process) Wait() Try[int] {
     val st = p.state
-    val _ = st.waitOnce.Do(() => {
+    st.waitOnce.Do(() => {
         val err = st.cmd.Wait()
         // Be tidy — pipe may already be closed.
-        val _ = st.stdin.Close()
+        FromError(st.stdin.Close())
         if err == nil {
             st.exitCode = st.cmd.ProcessState.ExitCode()
         } else {

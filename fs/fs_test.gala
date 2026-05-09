@@ -55,7 +55,7 @@ func TestStat(t T) T {
     defer os.RemoveAll(dir)
 
     val target = filepath.Join(dir, "info.txt")
-    val _ = fs.WriteFileString(target, "abcdef", 0o644)
+    fs.WriteFileString(target, "abcdef", 0o644)
 
     val info = fs.Stat(target)
     var t1 = IsTrue(t, info.IsSuccess())
@@ -97,15 +97,15 @@ func TestMkdirTemp(t T) T {
     var t1 = IsTrue(t, r.IsSuccess())
     val created = r.Get()
     val t2 = IsTrue(t1, fs.Exists(created))
-    val _ = fs.RemoveAll(created)
+    fs.RemoveAll(created)
     return t2
 }
 
 func TestRemoveAll(t T) T {
     val dir = scratchDir("fs_remove")
     val nested = filepath.Join(dir, "x", "y")
-    val _ = fs.MkdirAll(nested, 0o755)
-    val _ = fs.WriteFileString(filepath.Join(nested, "f.txt"), "data", 0o644)
+    fs.MkdirAll(nested, 0o755)
+    fs.WriteFileString(filepath.Join(nested, "f.txt"), "data", 0o644)
 
     var t1 = IsTrue(t, fs.Exists(dir))
     val r = fs.RemoveAll(dir)
@@ -124,9 +124,9 @@ func TestReadDir(t T) T {
     val dir = scratchDir("fs_readdir")
     defer os.RemoveAll(dir)
 
-    val _ = fs.WriteFileString(filepath.Join(dir, "a.txt"), "1", 0o644)
-    val _ = fs.WriteFileString(filepath.Join(dir, "b.txt"), "22", 0o644)
-    val _ = fs.MkdirAll(filepath.Join(dir, "sub"), 0o755)
+    fs.WriteFileString(filepath.Join(dir, "a.txt"), "1", 0o644)
+    fs.WriteFileString(filepath.Join(dir, "b.txt"), "22", 0o644)
+    fs.MkdirAll(filepath.Join(dir, "sub"), 0o755)
 
     val r = fs.ReadDir(dir)
     var t1 = IsTrue(t, r.IsSuccess())
