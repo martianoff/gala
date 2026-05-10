@@ -156,6 +156,18 @@ func TestCapitalize(t T) T {
     return Eq(t3, S("").Uncapitalize().ToString(), "")
 }
 
+// Test TitleCase
+func TestTitleCase(t T) T = RunCases[string, string](t,
+    (sub T, input string, expected string) => Eq(sub, S(input).TitleCase().ToString(), expected),
+    Case[string, string](Name = "empty", Input = "", Expected = ""),
+    Case[string, string](Name = "single word", Input = "hello", Expected = "Hello"),
+    Case[string, string](Name = "two words", Input = "hello world", Expected = "Hello World"),
+    Case[string, string](Name = "whitespace runs collapse", Input = "  hello   world  ", Expected = "Hello World"),
+    Case[string, string](Name = "apostrophe inside word", Input = "alice's cat", Expected = "Alice's Cat"),
+    Case[string, string](Name = "tab and newline split", Input = "\thello\nworld", Expected = "Hello World"),
+    Case[string, string](Name = "unicode", Input = "héllo wörld", Expected = "Héllo Wörld"),
+)
+
 // Test Split
 func TestSplit(t T) T {
     val parts = S("a,b,c").Split(",")
