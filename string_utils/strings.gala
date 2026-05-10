@@ -217,6 +217,12 @@ func (s Str) Uncapitalize() Str {
     return strFromRunes(EmptyArray[rune]().Append(first).AppendAll(s.runes.Get().Tail()))
 }
 
+// TitleCase capitalizes each whitespace-separated word.
+// "hello world" -> "Hello World", "perf_guide" -> "Perf_guide".
+// Whitespace runs collapse to a single space (matches strings.Fields).
+// Empty input returns empty.
+func (s Str) TitleCase() Str = Join(s.Words().Map((w) => w.Capitalize()), " ")
+
 // Split splits the string by separator.
 func (s Str) Split(sep string) Array[Str] {
     val parts = strings.Split(s.str, sep)

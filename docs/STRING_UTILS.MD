@@ -77,6 +77,7 @@ S("hello") match {
 | `ToLower() Str` | Convert to lowercase |
 | `Capitalize() Str` | Uppercase first character |
 | `Uncapitalize() Str` | Lowercase first character |
+| `TitleCase() Str` | Capitalize each whitespace-separated word; whitespace runs collapse to single space |
 
 ### Trimming
 
