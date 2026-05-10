@@ -3005,10 +3005,16 @@ mypackage/
 ### Writing Tests
 
 Test functions must:
-- Use the **same package** as the code being tested (for internal tests) or `package main` (for standalone tests)
+- Declare the **same package** as their sibling `.gala` files in the directory (see *Package rule* below)
 - Start with `Test` prefix (e.g., `TestAddition`)
 - Take a single parameter of type `T` and return `T`
 - Return the modified test context after assertions
+
+#### Package rule
+
+GALA enforces the same one-package-per-directory rule as Go. Every `.gala` file in a directory — including `_test.gala` files — must declare the same package. Mixing packages (for example, a `_test.gala` file declaring `package main` next to library files declaring `package mypackage`) is rejected with [GALA-E0010](errors/GALA-E0010.md), and the resulting Go output would not compile either.
+
+This means there is exactly one valid in-directory test pattern: the **internal test**, where the test file declares the same package as the library it tests. Internal tests have full access to unexported identifiers, which is the same trade-off Go makes.
 
 #### Internal Tests (Library Packages)
 
@@ -3028,11 +3034,21 @@ func TestInternalLogic(t T) T {
 }
 ```
 
-#### External Tests (Standalone)
+#### Standalone Tests (Separate Directory)
 
-External tests use `package main` and import the modules being tested:
+A standalone test program is a `package main` GALA file that imports the modules under test by their public API. Place it in its **own directory** (no library sources alongside it), so the package rule above is satisfied:
+
+```
+mymodule/
+  mypackage/
+    code.gala            # package mypackage
+    code_test.gala       # package mypackage  (internal test)
+  smoke_tests/
+    smoke_test.gala      # package main       (standalone test, own directory)
+```
 
 ```gala
+// smoke_tests/smoke_test.gala
 package main
 
 import (
@@ -3044,12 +3060,9 @@ func TestAddition(t T) T {
     val x = 1 + 1
     return Eq(t, x, 2)
 }
-
-func TestMultiplication(t T) T {
-    val x = 2 * 3
-    return Eq(t, x, 6)
-}
 ```
+
+> **Migration note:** earlier versions of this guide showed `package main` test files living next to library sources. That layout was always invalid (it violates the per-directory package rule) and broke `gala test`; switch any such files to the internal pattern by renaming `package main` to the library's package name and dropping the now-redundant self-import.
 
 ### Panic Recovery
 
@@ -3250,23 +3263,9 @@ The `T` test context provides methods:
 
 ### BUILD.bazel Configuration
 
-#### External Tests (package main)
-
-Use `gala_go_test` for tests that import the library as a dependency:
-
-```python
-load("//:gala.bzl", "gala_go_test")
-
-gala_go_test(
-    name = "mycode_test",
-    srcs = ["main_test.gala"],
-    deps = [":mypackage"],
-)
-```
-
 #### Internal Tests (same package)
 
-For internal tests that need access to unexported identifiers, use `pkg` to match the library package name and `lib_srcs` to include the library source files:
+For tests collocated with the library — the standard pattern — use `pkg` to match the library package name and `lib_srcs` to include the library source files:
 
 ```python
 load("//:gala.bzl", "gala_go_test")
@@ -3283,6 +3282,22 @@ gala_go_test(
 ```
 
 The macro uses `go_test` with `embed` for internal tests, properly handling the package compilation that `go_binary` cannot support. Add any GALA stdlib packages your library imports to `deps` — the macro auto-adds `@gala//test` and `@gala//std`.
+
+#### Standalone Tests (package main, separate directory)
+
+For a `package main` test program that lives in its own directory and imports the library by its public path, omit `pkg` (it defaults to `"main"`):
+
+```python
+load("//:gala.bzl", "gala_go_test")
+
+gala_go_test(
+    name = "smoke_test",
+    srcs = ["smoke_test.gala"],
+    deps = ["//mypackage"],
+)
+```
+
+Do not use this pattern for a `_test.gala` file that lives next to library sources — Bazel will still build it, but `gala test`, `go test`, and the GALA semantic checker all reject the mixed-package layout. See the *Package rule* note above.
 
 #### Output Comparison Tests
 
@@ -3311,8 +3326,10 @@ gala test -v                  # Verbose output
 ```
 
 `gala test` handles both project types:
-- **`package main` projects**: source and test files are compiled together as `package main`
-- **Library packages**: source and test files are compiled together in the **same package**, enabling internal tests that can access unexported identifiers. Under the hood, `gala test` generates a `_test.go` harness with `TestMain` and runs tests via `go test`.
+- **`package main` projects** (e.g. a single-binary CLI): source and test files are compiled together as `package main`.
+- **Library packages and multi-package projects**: each directory's source and test files are compiled together in the **same package**, enabling internal tests that can access unexported identifiers. Under the hood, `gala test` generates a `_test.go` harness with `TestMain` per package and runs tests via `go test ./...`.
+
+Test files must follow the *Package rule*: every `.gala` file in a directory declares the same package name. A `_test.gala` file declaring `package main` while its siblings declare a library package will be rejected with [GALA-E0010](errors/GALA-E0010.md). Standalone `package main` test programs belong in their own directory.
 
 #### Using Bazel
 
