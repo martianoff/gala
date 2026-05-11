@@ -574,7 +574,7 @@ cloc --vcs=git --read-lang-def=gala_cloc.def .
 - [Stream](docs/STREAM.MD) -- Lazy, potentially infinite sequences
 - [Immutable Collections](docs/IMMUTABLE_COLLECTIONS.MD) -- List, Array, HashMap, HashSet, TreeSet, TreeMap
 - [Mutable Collections](docs/MUTABLE_COLLECTIONS.MD) -- Mutable variants for performance
-- [String Utils](docs/STRING_UTILS.MD) -- Rich string operations
+- [Strings](docs/STRINGS.MD) -- Free functions over `string`, `Str` wrapper, and `StringBuilder`
 - [Time Utils](docs/TIME_UTILS.MD) -- Duration and Instant types
 - [Dependency Management](docs/DEPENDENCY_MANAGEMENT.MD) -- Module system
 

@@ -1,5 +1,5 @@
-load("@rules_go//go:def.bzl", "go_library")
-load("//:gala.bzl", "gala_bootstrap_transpile", "gala_go_test")
+load("@rules_go//go:def.bzl", "go_binary", "go_library")
+load("//:gala.bzl", "gala_binary", "gala_bootstrap_transpile", "gala_go_test")
 
 exports_files([
     "strings.gala",
@@ -14,6 +14,7 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+# Bootstrap transpile for stdlib embedding.
 gala_bootstrap_transpile(
     name = "strings_go",
     src = "strings.gala",
@@ -26,8 +27,10 @@ go_library(
     importpath = "martianoff/gala/strings",
     visibility = ["//visibility:public"],
     deps = [
-        "//collection_immutable",
-        "//std",
+        "//collection_immutable",  # keep
+        "//collection_mutable",  # keep
+        "//lazy",  # keep
+        "//std",  # keep
     ],
 )
 
@@ -38,4 +41,17 @@ gala_go_test(
         ":strings",
         "//collection_immutable",
     ],
+)
+
+# Side-by-side perf benchmarks: GALA Str/StringBuilder vs Go-native
+# `strings`/`strings.Builder`. Used for the table in docs/STRINGS.MD.
+gala_binary(
+    name = "perf_gala",
+    src = "perf_test.gala",
+    deps = [":strings"],
+)
+
+go_binary(
+    name = "perf_go",
+    srcs = ["go_native_perf_test.go"],
 )
