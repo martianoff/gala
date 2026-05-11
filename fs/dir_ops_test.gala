@@ -1,0 +1,125 @@
+package main
+
+import (
+    . "martianoff/gala/test"
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/fs"
+    "os"
+    "path/filepath"
+)
+
+// scratchDir creates a fresh temp dir per-test so tests are isolated.
+// Each test cleans up via fs.RemoveAll / defer os.RemoveAll.
+func scratchDirDirOps(prefix string) string {
+    val dir, err = os.MkdirTemp("", prefix)
+    if err != nil { panic(err) }
+    return dir
+}
+
+func TestCopyFile(t T) T {
+    val dir = scratchDirDirOps("fs_copy")
+    defer os.RemoveAll(dir)
+
+    val src = filepath.Join(dir, "src.txt")
+    val dst = filepath.Join(dir, "dst.txt")
+    val payload = "stream me byte by byte"
+    fs.WriteFileString(src, payload, 0o644)
+
+    val r = fs.CopyFile(src, dst, 0o644)
+    var t1 = IsTrue(t, r.IsSuccess())
+    var t2 = IsTrue(t1, fs.Exists(dst))
+    val read = fs.ReadFileString(dst)
+    var t3 = IsTrue(t2, read.IsSuccess())
+    return Eq[string](t3, read.Get(), payload)
+}
+
+func TestCopyMissingSource(t T) T {
+    val dir = scratchDirDirOps("fs_copy_missing")
+    defer os.RemoveAll(dir)
+
+    val dst = filepath.Join(dir, "dst.txt")
+    val r = fs.CopyFile(filepath.Join(dir, "nope.txt"), dst, 0o644)
+    return IsTrue(t, r.IsFailure())
+}
+
+func TestRename(t T) T {
+    val dir = scratchDirDirOps("fs_rename")
+    defer os.RemoveAll(dir)
+
+    val src = filepath.Join(dir, "before.txt")
+    val dst = filepath.Join(dir, "after.txt")
+    val payload = "rename me"
+    fs.WriteFileString(src, payload, 0o644)
+
+    val r = fs.Rename(src, dst)
+    var t1 = IsTrue(t, r.IsSuccess())
+    var t2 = IsFalse(t1, fs.Exists(src))
+    var t3 = IsTrue(t2, fs.Exists(dst))
+    val read = fs.ReadFileString(dst)
+    return Eq[string](t3, read.Get(), payload)
+}
+
+func TestWalk(t T) T {
+    val dir = scratchDirDirOps("fs_walk")
+    defer os.RemoveAll(dir)
+
+    // root/{a.txt, b.txt, sub/{c.txt}}
+    fs.WriteFileString(filepath.Join(dir, "a.txt"), "1", 0o644)
+    fs.WriteFileString(filepath.Join(dir, "b.txt"), "22", 0o644)
+    fs.MkdirAll(filepath.Join(dir, "sub"), 0o755)
+    fs.WriteFileString(filepath.Join(dir, "sub", "c.txt"), "333", 0o644)
+
+    val r = fs.Walk(dir)
+    var t1 = IsTrue(t, r.IsSuccess())
+    val entries = r.Get()
+    // root + a.txt + b.txt + sub + sub/c.txt = 5 entries
+    var t2 = Eq[int](t1, entries.Size(), 5)
+
+    // Assert every expected path is reachable; don't pin a specific order.
+    val expected = ArrayOf[string](
+        dir,
+        filepath.Join(dir, "a.txt"),
+        filepath.Join(dir, "b.txt"),
+        filepath.Join(dir, "sub"),
+        filepath.Join(dir, "sub", "c.txt"),
+    )
+    var tn = t2
+    for i := 0; i < expected.Size(); i++ {
+        val want = expected.Get(i)
+        val found = entries.Exists((e) => e.Path == want)
+        tn = IsTrue(tn, found)
+    }
+    return tn
+}
+
+func TestWalkMissingRoot(t T) T {
+    val r = fs.Walk("/this/path/should/never/exist/qqq")
+    return IsTrue(t, r.IsFailure())
+}
+
+func TestGlob(t T) T {
+    val dir = scratchDirDirOps("fs_glob")
+    defer os.RemoveAll(dir)
+
+    fs.WriteFileString(filepath.Join(dir, "a.txt"), "1", 0o644)
+    fs.WriteFileString(filepath.Join(dir, "b.txt"), "22", 0o644)
+    fs.WriteFileString(filepath.Join(dir, "c.md"), "333", 0o644)
+
+    val r = fs.Glob(filepath.Join(dir, "*.txt"))
+    var t1 = IsTrue(t, r.IsSuccess())
+    return Eq[int](t1, r.Get().Size(), 2)
+}
+
+func TestGlobNoMatches(t T) T {
+    val dir = scratchDirDirOps("fs_glob_empty")
+    defer os.RemoveAll(dir)
+
+    val r = fs.Glob(filepath.Join(dir, "*.nothing"))
+    var t1 = IsTrue(t, r.IsSuccess())
+    return Eq[int](t1, r.Get().Size(), 0)
+}
+
+func TestGlobMalformed(t T) T {
+    val r = fs.Glob("[invalid")
+    return IsTrue(t, r.IsFailure())
+}
