@@ -3,6 +3,7 @@ load("//:gala.bzl", "gala_bootstrap_transpile", "gala_go_test")
 
 exports_files([
     "fs.gala",
+    "streaming.gala",
 ])
 
 filegroup(
@@ -20,9 +21,18 @@ gala_bootstrap_transpile(
     out = "fs.gen.go",
 )
 
+gala_bootstrap_transpile(
+    name = "streaming_go",
+    src = "streaming.gala",
+    out = "streaming.gen.go",
+)
+
 go_library(
     name = "fs",
-    srcs = ["fs.gen.go"],
+    srcs = [
+        "fs.gen.go",
+        "streaming.gen.go",
+    ],
     importpath = "martianoff/gala/fs",
     visibility = ["//visibility:public"],
     deps = [
@@ -40,5 +50,14 @@ gala_go_test(
         ":fs",
         "//collection_immutable",
         "//time_utils",
+    ],
+)
+
+gala_go_test(
+    name = "streaming_test",
+    srcs = ["streaming_test.gala"],
+    deps = [
+        ":fs",
+        "//collection_immutable",
     ],
 )
