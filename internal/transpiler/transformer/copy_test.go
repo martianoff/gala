@@ -225,3 +225,35 @@ val p2 = p.Copy("Bob")`,
 		})
 	}
 }
+
+// TestPackageQualifiedCopyIsNotStructCopy guards against a regression
+// where `io.Copy(dst, src)` was misrouted into the struct-Copy
+// short-circuit, which then errored with "cannot use Copy overrides:
+// type of receiver unknown" because the receiver "io" is a package,
+// not a struct value. The dispatcher must skip the short-circuit when
+// the receiver is a known imported package and let regular
+// package-qualified function dispatch handle the call.
+func TestPackageQualifiedCopyIsNotStructCopy(t *testing.T) {
+	p := transpiler.NewAntlrGalaParser()
+	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
+	tr := transformer.NewGalaASTTransformer()
+	g := generator.NewGoCodeGenerator()
+	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+
+	input := `package main
+
+import (
+    "io"
+    "os"
+)
+
+func copyStream(src string, dst string) {
+    var srcF, _ = os.Open(src)
+    var dstF, _ = os.Create(dst)
+    val _, _ = io.Copy(dstF, srcF)
+}`
+	got, err := trans.Transpile(input, "")
+	assert.NoError(t, err)
+	assert.Contains(t, got, "io.Copy(dstF, srcF)",
+		"expected io.Copy(...) to transpile as a regular package call, not a struct-Copy override")
+}
