@@ -2,13 +2,19 @@ package main
 
 // The strings package is qualified (`s.`) so its `Contains`, `HasPrefix`,
 // and `HasSuffix` don't collide with the test framework's same-named
-// string-shaped assertion helpers.
+// string-shaped assertion helpers — and so the `Str` wrapper API
+// (`s.S(...)`, `s.NewStringBuilder()`, `s.JoinStrs(...)`) reads
+// consistently next to the free functions.
 import (
     . "martianoff/gala/test"
     . "martianoff/gala/std"
     s "martianoff/gala/strings"
     . "martianoff/gala/collection_immutable"
 )
+
+// ===========================================================================
+// Free functions over plain `string`.
+// ===========================================================================
 
 // ---------------------------------------------------------------------------
 // Predicate functions: Contains, HasPrefix, HasSuffix, EqualFold, LastIndex
@@ -260,4 +266,464 @@ func TestJoin(t T) T {
 func TestSplitJoinRoundTrip(t T) T {
     val parts = s.Split("alpha/beta/gamma", "/")
     return Eq(t, s.Join(parts, "/"), "alpha/beta/gamma")
+}
+
+// ===========================================================================
+// Str — immutable wrapper with chainable methods.
+// ===========================================================================
+
+// Test S constructor and ToString
+func TestStrConstructor(t T) T {
+    val str = s.S("hello")
+    return Eq(t, str.ToString(), "hello")
+}
+
+// Test Length
+func TestStrLength(t T) T = RunCases[string, int](t,
+    (sub T, input string, expected int) => Eq(sub, s.S(input).Length(), expected),
+    Case[string, int](Name = "hello", Input = "hello", Expected = 5),
+    Case[string, int](Name = "empty", Input = "", Expected = 0),
+    Case[string, int](Name = "abc", Input = "abc", Expected = 3),
+)
+
+// Test IsEmpty and NonEmpty
+func TestStrIsEmptyNonEmpty(t T) T {
+    val t1 = IsTrue(t, s.S("").IsEmpty())
+    val t2 = IsFalse(t1, s.S("hello").IsEmpty())
+    val t3 = IsFalse(t2, s.S("").NonEmpty())
+    return IsTrue(t3, s.S("hello").NonEmpty())
+}
+
+// Test CharAt
+func TestStrCharAt(t T) T {
+    val str = s.S("hello")
+    val t1 = Eq(t, str.CharAt(0).GetOrElse('?'), 'h')
+    val t2 = Eq(t1, str.CharAt(4).GetOrElse('?'), 'o')
+    val t3 = IsNone(t2, str.CharAt(5))
+    return IsNone(t3, str.CharAt(-1))
+}
+
+// Test Substring
+func TestStrSubstring(t T) T {
+    val str = s.S("hello world")
+    val t1 = Eq(t, str.Substring(0, 5).ToString(), "hello")
+    val t2 = Eq(t1, str.Substring(6, 11).ToString(), "world")
+    val t3 = Eq(t2, str.Substring(0, 0).ToString(), "")
+    return Eq(t3, str.Substring(6, 100).ToString(), "world")
+}
+
+// Test Take
+func TestStrTake(t T) T {
+    val str = s.S("hello")
+    return RunCases[int, string](t,
+        (sub T, n int, expected string) => Eq(sub, str.Take(n).ToString(), expected),
+        Case[int, string](Name = "take 3", Input = 3, Expected = "hel"),
+        Case[int, string](Name = "take 0", Input = 0, Expected = ""),
+        Case[int, string](Name = "take 10", Input = 10, Expected = "hello"),
+        Case[int, string](Name = "take -1", Input = -1, Expected = ""),
+    )
+}
+
+// Test TakeRight
+func TestStrTakeRight(t T) T {
+    val str = s.S("hello")
+    return RunCases[int, string](t,
+        (sub T, n int, expected string) => Eq(sub, str.TakeRight(n).ToString(), expected),
+        Case[int, string](Name = "take right 3", Input = 3, Expected = "llo"),
+        Case[int, string](Name = "take right 0", Input = 0, Expected = ""),
+        Case[int, string](Name = "take right 10", Input = 10, Expected = "hello"),
+    )
+}
+
+// Test Drop
+func TestStrDrop(t T) T {
+    val str = s.S("hello")
+    return RunCases[int, string](t,
+        (sub T, n int, expected string) => Eq(sub, str.Drop(n).ToString(), expected),
+        Case[int, string](Name = "drop 2", Input = 2, Expected = "llo"),
+        Case[int, string](Name = "drop 0", Input = 0, Expected = "hello"),
+        Case[int, string](Name = "drop 10", Input = 10, Expected = ""),
+    )
+}
+
+// Test DropRight
+func TestStrDropRight(t T) T {
+    val str = s.S("hello")
+    return RunCases[int, string](t,
+        (sub T, n int, expected string) => Eq(sub, str.DropRight(n).ToString(), expected),
+        Case[int, string](Name = "drop right 2", Input = 2, Expected = "hel"),
+        Case[int, string](Name = "drop right 0", Input = 0, Expected = "hello"),
+        Case[int, string](Name = "drop right 10", Input = 10, Expected = ""),
+    )
+}
+
+// Test ToUpper and ToLower
+func TestStrCase(t T) T {
+    val t1 = Eq(t, s.S("Hello World").ToUpper().ToString(), "HELLO WORLD")
+    return Eq(t1, s.S("Hello World").ToLower().ToString(), "hello world")
+}
+
+// Test Trim
+func TestStrTrim(t T) T {
+    val str = s.S("  hello  ")
+    val t1 = Eq(t, str.Trim().ToString(), "hello")
+    val t2 = Eq(t1, str.TrimLeft().ToString(), "hello  ")
+    return Eq(t2, str.TrimRight().ToString(), "  hello")
+}
+
+// Test TrimPrefix and TrimSuffix
+func TestStrTrimPrefixSuffix(t T) T {
+    val str = s.S("hello world")
+    val t1 = Eq(t, str.TrimPrefix("hello ").ToString(), "world")
+    val t2 = Eq(t1, str.TrimSuffix(" world").ToString(), "hello")
+    return Eq(t2, str.TrimPrefix("xyz").ToString(), "hello world")
+}
+
+// Test Replace
+func TestStrReplace(t T) T {
+    val str = s.S("hello hello")
+    val t1 = Eq(t, str.Replace("hello", "hi").ToString(), "hi hello")
+    return Eq(t1, str.ReplaceAll("hello", "hi").ToString(), "hi hi")
+}
+
+// Test Reverse
+func TestStrReverse(t T) T = RunCases[string, string](t,
+    (sub T, input string, expected string) => Eq(sub, s.S(input).Reverse().ToString(), expected),
+    Case[string, string](Name = "hello", Input = "hello", Expected = "olleh"),
+    Case[string, string](Name = "empty", Input = "", Expected = ""),
+    Case[string, string](Name = "single", Input = "a", Expected = "a"),
+)
+
+// Test Repeat
+func TestStrRepeat(t T) T {
+    val str = s.S("ab")
+    return RunCases[int, string](t,
+        (sub T, n int, expected string) => Eq(sub, str.Repeat(n).ToString(), expected),
+        Case[int, string](Name = "repeat 3", Input = 3, Expected = "ababab"),
+        Case[int, string](Name = "repeat 0", Input = 0, Expected = ""),
+        Case[int, string](Name = "repeat 1", Input = 1, Expected = "ab"),
+    )
+}
+
+// Test PadLeft and PadRight
+func TestStrPadding(t T) T {
+    val t1 = Eq(t, s.S("42").PadLeft(5, '0').ToString(), "00042")
+    val t2 = Eq(t1, s.S("hi").PadRight(5, '-').ToString(), "hi---")
+    val t3 = Eq(t2, s.S("hello").PadLeft(3, 'x').ToString(), "hello")
+    return Eq(t3, s.S("a").Center(5, '-').ToString(), "--a--")
+}
+
+// Test Capitalize and Uncapitalize
+func TestStrCapitalize(t T) T {
+    val t1 = Eq(t, s.S("hello").Capitalize().ToString(), "Hello")
+    val t2 = Eq(t1, s.S("Hello").Uncapitalize().ToString(), "hello")
+    val t3 = Eq(t2, s.S("").Capitalize().ToString(), "")
+    return Eq(t3, s.S("").Uncapitalize().ToString(), "")
+}
+
+// Test TitleCase
+func TestStrTitleCase(t T) T = RunCases[string, string](t,
+    (sub T, input string, expected string) => Eq(sub, s.S(input).TitleCase().ToString(), expected),
+    Case[string, string](Name = "empty", Input = "", Expected = ""),
+    Case[string, string](Name = "single word", Input = "hello", Expected = "Hello"),
+    Case[string, string](Name = "two words", Input = "hello world", Expected = "Hello World"),
+    Case[string, string](Name = "whitespace runs collapse", Input = "  hello   world  ", Expected = "Hello World"),
+    Case[string, string](Name = "apostrophe inside word", Input = "alice's cat", Expected = "Alice's Cat"),
+    Case[string, string](Name = "tab and newline split", Input = "\thello\nworld", Expected = "Hello World"),
+    Case[string, string](Name = "unicode", Input = "héllo wörld", Expected = "Héllo Wörld"),
+)
+
+// Test Str.Split
+func TestStrSplit(t T) T {
+    val parts = s.S("a,b,c").Split(",")
+    val t1 = Eq(t, parts.Length(), 3)
+    val t2 = Eq(t1, parts.Get(0).ToString(), "a")
+    val t3 = Eq(t2, parts.Get(1).ToString(), "b")
+    return Eq(t3, parts.Get(2).ToString(), "c")
+}
+
+// Test SplitAt
+func TestStrSplitAt(t T) T {
+    val (first, second) = s.S("hello").SplitAt(2)
+    val t1 = Eq(t, first.ToString(), "he")
+    return Eq(t1, second.ToString(), "llo")
+}
+
+// Test Lines
+func TestStrLines(t T) T {
+    val lines = s.S("line1\nline2\nline3").Lines()
+    val t1 = Eq(t, lines.Length(), 3)
+    val t2 = Eq(t1, lines.Get(0).ToString(), "line1")
+    return Eq(t2, lines.Get(2).ToString(), "line3")
+}
+
+// Test Words
+func TestStrWords(t T) T {
+    val words = s.S("hello  world\tfoo").Words()
+    val t1 = Eq(t, words.Length(), 3)
+    val t2 = Eq(t1, words.Get(0).ToString(), "hello")
+    return Eq(t2, words.Get(2).ToString(), "foo")
+}
+
+// Test JoinStrs
+func TestJoinStrs(t T) T {
+    val strs = ArrayOf(s.S("a"), s.S("b"), s.S("c"))
+    val t1 = Eq(t, s.JoinStrs(strs, ", ").ToString(), "a, b, c")
+    return Eq(t1, s.JoinStrs(EmptyArray[s.Str](), ", ").ToString(), "")
+}
+
+// Test Str.Contains/ContainsAny
+func TestStrContains(t T) T {
+    val str = s.S("hello world")
+    val t1 = IsTrue(t, str.Contains("world"))
+    val t2 = IsFalse(t1, str.Contains("xyz"))
+    val t3 = IsTrue(t2, str.ContainsAny("aeiou"))
+    return IsFalse(t3, str.ContainsAny("xyz"))
+}
+
+// Test StartsWith and EndsWith
+func TestStrStartsEndsWith(t T) T {
+    val str = s.S("hello world")
+    val t1 = IsTrue(t, str.StartsWith("hello"))
+    val t2 = IsFalse(t1, str.StartsWith("world"))
+    val t3 = IsTrue(t2, str.EndsWith("world"))
+    return IsFalse(t3, str.EndsWith("hello"))
+}
+
+// Test IsAlpha, IsNumeric, IsAlphanumeric
+func TestStrCharacterPredicates(t T) T {
+    val t1 = IsTrue(t, s.S("hello").IsAlpha())
+    val t2 = IsFalse(t1, s.S("hello1").IsAlpha())
+    val t3 = IsTrue(t2, s.S("12345").IsNumeric())
+    val t4 = IsFalse(t3, s.S("123a5").IsNumeric())
+    val t5 = IsTrue(t4, s.S("hello123").IsAlphanumeric())
+    val t6 = IsFalse(t5, s.S("hello 123").IsAlphanumeric())
+    val t7 = IsTrue(t6, s.S("   \t").IsWhitespace())
+    return IsFalse(t7, s.S("").IsAlpha())
+}
+
+// Test IsUpper and IsLower
+func TestStrCasePredicates(t T) T {
+    val t1 = IsTrue(t, s.S("HELLO").IsUpper())
+    val t2 = IsFalse(t1, s.S("Hello").IsUpper())
+    val t3 = IsTrue(t2, s.S("hello").IsLower())
+    val t4 = IsFalse(t3, s.S("Hello").IsLower())
+    val t5 = IsTrue(t4, s.S("HELLO 123").IsUpper())
+    return IsTrue(t5, s.S("hello 123").IsLower())
+}
+
+// Test IndexOf
+func TestStrIndexOf(t T) T {
+    val str = s.S("hello world")
+    val t1 = Eq(t, str.IndexOf("world").GetOrElse(-1), 6)
+    val t2 = IsNone(t1, str.IndexOf("xyz"))
+    return Eq(t2, str.LastIndexOf("o").GetOrElse(-1), 7)
+}
+
+// Test Count
+func TestStrCount(t T) T {
+    val t1 = Eq(t, s.S("hello").Count("l"), 2)
+    return Eq(t1, s.S("hello").Count("x"), 0)
+}
+
+// Test ToChars
+func TestStrToChars(t T) T {
+    val chars = s.S("hi").ToChars()
+    val t1 = Eq(t, chars.Length(), 2)
+    val t2 = Eq(t1, chars.Get(0), 'h')
+    return Eq(t2, chars.Get(1), 'i')
+}
+
+// Test Concat and Plus
+func TestStrConcat(t T) T {
+    val s1 = s.S("hello")
+    val s2 = s.S(" world")
+    val t1 = Eq(t, s1.Concat(s2).ToString(), "hello world")
+    return Eq(t1, s1.Plus(s2).ToString(), "hello world")
+}
+
+// Test Map
+func TestStrMap(t T) T {
+    val str = s.S("abc")
+    val result = str.Map((r rune) => r + 1)
+    return Eq(t, result.ToString(), "bcd")
+}
+
+// Test Filter
+func TestStrFilter(t T) T {
+    val str = s.S("hello world")
+    val result = str.Filter((r rune) => r != ' ')
+    return Eq(t, result.ToString(), "helloworld")
+}
+
+// Test Fold (via Length since Fold[U] is a generic method)
+func TestStrFold(t T) T {
+    val str = s.S("hello")
+    return Eq(t, str.Length(), 5)
+}
+
+// Test Exists and ForAll
+func TestStrExistsForAll(t T) T {
+    val str = s.S("hello")
+    val t1 = IsTrue(t, str.Exists((r rune) => r == 'l'))
+    val t2 = IsFalse(t1, str.Exists((r rune) => r == 'x'))
+    val t3 = IsTrue(t2, str.ForAll((r rune) => r >= 'a' && r <= 'z'))
+    return IsFalse(t3, str.ForAll((r rune) => r == 'h'))
+}
+
+// Test Find
+func TestStrFind(t T) T {
+    val str = s.S("hello")
+    val t1 = Eq(t, str.Find((r rune) => r == 'l').GetOrElse('?'), 'l')
+    return IsNone(t1, str.Find((r rune) => r == 'x'))
+}
+
+// Test ZipWithIndex
+func TestStrZipWithIndex(t T) T {
+    val str = s.S("ab")
+    val result = str.ZipWithIndex()
+    val t1 = Eq(t, result.Length(), 2)
+    val (r0, i0) = result.Get(0)
+    val (r1, i1) = result.Get(1)
+    val t2 = Eq(t1, r0, 'a')
+    val t3 = Eq(t2, i0, 0)
+    val t4 = Eq(t3, r1, 'b')
+    return Eq(t4, i1, 1)
+}
+
+// Test Equals and EqualsIgnoreCase
+func TestStrEquals(t T) T {
+    val t1 = IsTrue(t, s.S("hello").Equals(s.S("hello")))
+    val t2 = IsFalse(t1, s.S("hello").Equals(s.S("HELLO")))
+    val t3 = IsTrue(t2, s.S("hello").EqualsIgnoreCase(s.S("HELLO")))
+    return IsTrue(t3, s.S("hello").EqualsIgnoreCase(s.S("HeLLo")))
+}
+
+// Test Compare
+func TestStrCompare(t T) T {
+    val t1 = Eq(t, s.S("abc").Compare(s.S("abc")), 0)
+    val t2 = Eq(t1, s.S("abc").Compare(s.S("abd")), -1)
+    return Eq(t2, s.S("abd").Compare(s.S("abc")), 1)
+}
+
+// Test chained operations
+func TestStrChainedOperations(t T) T {
+    val result = s.S("  Hello, World!  ")
+        .Trim()
+        .ToLower()
+        .ReplaceAll(",", "")
+        .ReplaceAll("!", "")
+    return Eq(t, result.ToString(), "hello world")
+}
+
+// ===========================================================================
+// StringBuilder
+// ===========================================================================
+
+// Test NewStringBuilder
+func TestNewStringBuilder(t T) T {
+    val sb = s.NewStringBuilder()
+    val t1 = IsTrue(t, sb.IsEmpty())
+    val t2 = Eq(t1, sb.Length(), 0)
+    return Eq(t2, sb.ToString(), "")
+}
+
+// Test NewStringBuilderFrom
+func TestNewStringBuilderFrom(t T) T {
+    val sb = s.NewStringBuilderFrom(s.S("hello"))
+    val t1 = IsFalse(t, sb.IsEmpty())
+    return Eq(t1, sb.ToString(), "hello")
+}
+
+// Test NewStringBuilderFromString
+func TestNewStringBuilderFromString(t T) T {
+    val sb = s.NewStringBuilderFromString("hello")
+    return Eq(t, sb.ToString(), "hello")
+}
+
+// Test Append with Str
+func TestStringBuilderAppend(t T) T {
+    val sb = s.NewStringBuilder()
+    sb.Append(s.S("hello"))
+    sb.Append(s.S(" world"))
+    return Eq(t, sb.ToString(), "hello world")
+}
+
+// Test chaining
+func TestStringBuilderChaining(t T) T {
+    val result = s.NewStringBuilder()
+        .AppendString("hello")
+        .AppendString(" ")
+        .AppendString("world")
+        .ToString()
+    return Eq(t, result, "hello world")
+}
+
+// Test AppendString
+func TestStringBuilderAppendString(t T) T {
+    val sb = s.NewStringBuilder()
+    sb.AppendString("abc")
+    sb.AppendString("def")
+    return Eq(t, sb.ToString(), "abcdef")
+}
+
+// Test AppendRune
+func TestStringBuilderAppendRune(t T) T {
+    val sb = s.NewStringBuilder()
+    sb.AppendRune('a')
+    sb.AppendRune('b')
+    sb.AppendRune('c')
+    return Eq(t, sb.ToString(), "abc")
+}
+
+// Test AppendLine
+func TestStringBuilderAppendLine(t T) T {
+    val sb = s.NewStringBuilder()
+    sb.AppendLine(s.S("line1"))
+    sb.AppendLine(s.S("line2"))
+    return Eq(t, sb.ToString(), "line1\nline2\n")
+}
+
+// Test AppendStringLine
+func TestStringBuilderAppendStringLine(t T) T {
+    val sb = s.NewStringBuilder()
+    sb.AppendStringLine("line1")
+    sb.AppendStringLine("line2")
+    return Eq(t, sb.ToString(), "line1\nline2\n")
+}
+
+// Test ToStr
+func TestStringBuilderToStr(t T) T {
+    val sb = s.NewStringBuilderFromString("hello")
+    val str = sb.ToStr()
+    val t1 = Eq(t, str.ToString(), "hello")
+    return Eq(t1, str.Length(), 5)
+}
+
+// Test Reset
+func TestStringBuilderReset(t T) T {
+    val sb = s.NewStringBuilderFromString("hello")
+    sb.Reset()
+    val t1 = IsTrue(t, sb.IsEmpty())
+    return Eq(t1, sb.ToString(), "")
+}
+
+// Test NonEmpty
+func TestStringBuilderNonEmpty(t T) T {
+    val sb = s.NewStringBuilder()
+    val t1 = IsFalse(t, sb.NonEmpty())
+    sb.AppendString("x")
+    return IsTrue(t1, sb.NonEmpty())
+}
+
+// Test RuneCount
+func TestStringBuilderRuneCount(t T) T {
+    val sb = s.NewStringBuilderFromString("hello")
+    return Eq(t, sb.RuneCount(), 5)
+}
+
+// Test Length (byte length)
+func TestStringBuilderLength(t T) T {
+    val sb = s.NewStringBuilderFromString("hello")
+    return Eq(t, sb.Length(), 5)
 }

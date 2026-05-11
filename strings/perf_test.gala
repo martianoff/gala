@@ -2,10 +2,9 @@ package main
 
 import (
     "fmt"
-    "strings"
     "unicode"
     "time"
-    . "martianoff/gala/string_utils"
+    . "martianoff/gala/strings"
 )
 
 // Helper functions to work around lambda return type inference limitation
@@ -37,22 +36,22 @@ func printResult(name string, nsPerOp int64) {
 // ============ TEST DATA ============
 
 var shortStr = S("Hello, World!")
-var mediumStr = S(strings.Repeat("abcdefghij", 100))
-var longStr = S(strings.Repeat("abcdefghij", 10000))
+var mediumStr = S(Repeat("abcdefghij", 100))
+var longStr = S(Repeat("abcdefghij", 10000))
 var wordsStr = S("hello world foo bar baz qux quux corge grault garply")
 
 // ============ CREATION ============
 
 func benchCreation() {
     var ns = measureNs(100000, () => {
-        var _ = S(strings.Repeat("abcdefghij", 100))
+        var _ = S(Repeat("abcdefghij", 100))
     })
     printResult("Str.S(1000)", ns)
 }
 
 func benchCreationLong() {
     var ns = measureNs(1000, () => {
-        var _ = S(strings.Repeat("abcdefghij", 10000))
+        var _ = S(Repeat("abcdefghij", 10000))
     })
     printResult("Str.S(100000)", ns)
 }
@@ -85,7 +84,7 @@ func benchToLower() {
 // ============ TRIMMING ============
 
 func benchTrim() {
-    var padded = S("   " + strings.Repeat("abcdefghij", 100) + "   ")
+    var padded = S("   " + Repeat("abcdefghij", 100) + "   ")
     var ns = measureNs(100000, () => {
         var _ = padded.Trim()
     })
@@ -127,7 +126,7 @@ func benchSplit() {
 }
 
 func benchSplitLong() {
-    var longWords = S(strings.Repeat("word ", 1000))
+    var longWords = S(Repeat("word ", 1000))
     var ns = measureNs(1000, () => {
         var _ = longWords.Split(" ")
     })
@@ -171,7 +170,7 @@ func benchForEachCount() {
 // ============ COMPARISON ============
 
 func benchEquals() {
-    var other = S(strings.Repeat("abcdefghij", 100))
+    var other = S(Repeat("abcdefghij", 100))
     var ns = measureNs(1000000, () => {
         var _ = mediumStr.Equals(other)
     })
@@ -192,7 +191,7 @@ func benchConcat() {
 // ============ PREDICATES ============
 
 func benchIsAlpha() {
-    var alpha = S(strings.Repeat("abcdefghij", 100))
+    var alpha = S(Repeat("abcdefghij", 100))
     var ns = measureNs(10000, () => {
         var _ = alpha.IsAlpha()
     })

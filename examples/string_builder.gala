@@ -2,7 +2,7 @@ package main
 
 import (
     "fmt"
-    . "martianoff/gala/string_utils"
+    . "martianoff/gala/strings"
 )
 
 func main() {

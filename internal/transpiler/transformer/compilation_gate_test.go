@@ -54,7 +54,7 @@ func TestCompilationGate(t *testing.T) {
 		"json_codec.gala":                 "imports json",
 		"json_serialization.gala":         "imports json (semantic error without full pkg)",
 		"regex_usage.gala":                "imports regex",
-		"string_builder.gala":             "imports string_utils",
+		"string_builder.gala":             "imports strings",
 		"type_alias_lambda_inference.gala": "imports test",
 	}
 

@@ -4,10 +4,10 @@ import (
     "fmt"
     "unicode"
     . "martianoff/gala/std"
-    . "martianoff/gala/string_utils"
+    . "martianoff/gala/strings"
 )
 
-// Test examples from STRING_UTILS.MD
+// Test examples from STRINGS.MD
 
 // Quick Start (line 24-30)
 func testQuickStart() {

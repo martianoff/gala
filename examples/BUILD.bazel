@@ -1223,10 +1223,10 @@ gala_test(
 )
 
 gala_test(
-    name = "doc_verify_string_utils_md",
-    src = "doc_verify/string_utils_md.gala",
-    expected = "doc_verify/string_utils_md.out",
-    deps = ["//string_utils"],
+    name = "doc_verify_strings_md",
+    src = "doc_verify/strings_md.gala",
+    expected = "doc_verify/strings_md.out",
+    deps = ["//strings"],
 )
 
 gala_test(
@@ -1549,7 +1549,7 @@ gala_test(
     name = "string_builder",
     src = "string_builder.gala",
     expected = "string_builder.out",
-    deps = ["//string_utils"],
+    deps = ["//strings"],
 )
 
 # Verification: block lambda return type in generic function calls
@@ -1571,7 +1571,7 @@ gala_test(
     name = "wrapper_method_lambda",
     src = "wrapper_method_lambda/main.gala",
     expected = "wrapper_method_lambda/wrapper_method_lambda.out",
-    deps = ["//string_utils"],
+    deps = ["//strings"],
 )
 
 # Verification: immutable struct fields with Go slice types

@@ -1909,23 +1909,21 @@ val flow = MkdirTemp("", "x_")
 Modes are passed as plain `int` (e.g. `0o644`, `0o755`); GALA does not
 introduce a separate `FileMode` wrapper.
 
-### Strings (free functions)
+### Strings
 
-The `strings` package exposes free functions over plain Go `string` values, mirroring Go's `strings.X` names exactly. Located in the `strings` package.
+The `strings` package is GALA's unified string library. One package, two surfaces:
+
+- **Free functions** over plain Go `string` — `TrimSpace`, `Split`, `Contains`, etc. — mirroring Go's `strings.X` names exactly.
+- **`Str`** — an immutable wrapper that caches the Go string and lazily materialises an `Array[rune]` for functional methods. Chainable: every transform returns a new `Str`.
+- **`StringBuilder`** — a mutable, O(n)-assembly builder for hot-path concatenation.
 
 ```gala
 import . "martianoff/gala/strings"
 ```
 
-This is a parallel target to [`string_utils`](STRING_UTILS.MD) — the two coexist with different ergonomic targets:
+Pick the shape that fits the call site. Free functions are right for one-shots and `strings.X` migrations; `Str` is right for multi-step pipelines that benefit from caching the rune view. See [STRINGS.MD](STRINGS.MD) for the full reference.
 
-| | `string_utils` (`Str`) | `strings` (free functions) |
-|---|---|---|
-| Shape | Immutable wrapper around the string + a lazy rune array | Pure `string -> string` (and friends) |
-| Call site | `S("hello").Trim().ToString()` | `TrimSpace("hello")` |
-| Best for | Multi-step pipelines that benefit from caching the rune view | Migrating from raw Go `strings.X` calls without rewriting the call shape |
-
-#### API
+#### Free function API
 
 | Function | Signature | Notes |
 |---|---|---|
@@ -1949,8 +1947,13 @@ This is a parallel target to [`string_utils`](STRING_UTILS.MD) — the two coexi
 | `SplitN` | `(s, sep string, n int) Array[string]` | |
 | `Fields` | `(s string) Array[string]` | |
 | `Join` | `(parts Array[string], sep string) string` | |
+| `JoinStrs` | `(strs Array[Str], sep string) Str` | `Str`-shaped sibling of `Join`. |
 
 `Split`, `SplitN`, and `Fields` return a GALA `Array[string]` (from `collection_immutable`), not a Go `[]string`. `Join` accepts an `Array[string]` for symmetry. See `examples/strings_basics.gala` for a runnable tour of every function.
+
+#### `Str` wrapper
+
+`Str` adds chainable, immutable transformations on top of the free functions, plus a lazily evaluated rune view for functional ops. Construct with `S(...)`. Pattern-match with `NonEmptyStr(head, tail)` / `EmptyStr(_)`. Build incrementally with `NewStringBuilder()`. Full reference in [STRINGS.MD](STRINGS.MD).
 
 #### Example
 
@@ -1963,6 +1966,9 @@ func main() {
     val parts = Split("alpha,beta,gamma", ",")           // Array("alpha", "beta", "gamma")
     val joined = Join(ArrayOf("a", "b", "c"), " - ")     // "a - b - c"
     Println(s"$ok $parts $joined")
+
+    val cleaned = S("  Hello, World!  ").Trim().ToLower().ReplaceAll(",", "")
+    Println(cleaned.ToString())                          // hello world!
 }
 ```
 
@@ -2865,7 +2871,7 @@ A GALA library is a reusable package that other GALA (or Go) projects can depend
 ```
 mylib/
   math_utils.gala     # package mathutils
-  string_utils.gala   # package mathutils (same package)
+  geom_utils.gala     # package mathutils (same package)
   BUILD.bazel
 ```
 
@@ -2878,7 +2884,7 @@ Use the `gala_library` rule in your `BUILD.bazel`:
 ```python
 gala_library(
     name = "mathutils",
-    srcs = ["math_utils.gala", "string_utils.gala"],
+    srcs = ["math_utils.gala", "geom_utils.gala"],
     importpath = "github.com/user/project/mathutils",
     visibility = ["//visibility:public"],
 )
@@ -3703,7 +3709,7 @@ import "github.com/google/uuid"
 - [Examples](EXAMPLES.MD) - More examples of GALA code.
 - [Concurrent](CONCURRENT.MD) - Future, Promise, and ExecutionContext for async programming.
 - [Stream](STREAM.MD) - Lazy, potentially infinite sequences.
-- [String Utils](STRING_UTILS.MD) - Rich, immutable string operations with functional programming support.
+- [Strings](STRINGS.MD) - Free functions over `string`, the immutable `Str` wrapper, and `StringBuilder` — all in one package.
 - [Time Utils](TIME_UTILS.MD) - Duration and Instant types for immutable time handling.
 - [Immutable Collections](IMMUTABLE_COLLECTIONS.MD) - Array, List, HashMap, HashSet, TreeSet.
 - [Mutable Collections](MUTABLE_COLLECTIONS.MD) - Mutable collection types.

@@ -1,26 +1,43 @@
 ---
 layout: default
-title: "String Utilities in GALA - Rich String Operations"
-description: "GALA's Str type wraps Go strings with functional operations. Map, Filter, FoldLeft, Split, Contains, Replace, and more — chainable string manipulation for Go."
-keywords: "gala string utils, go string operations, golang string manipulation, gala Str type"
-permalink: /docs/string-utils/
+title: "Strings in GALA - Free functions, Str wrapper, StringBuilder"
+description: "GALA's unified strings package: free functions over plain `string` mirroring Go's `strings.X`, plus an immutable `Str` wrapper with Map/Filter/Fold and a chainable StringBuilder."
+keywords: "gala strings, go string operations, golang string manipulation, gala Str type, StringBuilder"
+permalink: /docs/strings/
 ---
 
-<p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/language-reference/">Docs</a> / String Utilities</p>
+<p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/language-reference/">Docs</a> / Strings</p>
 
-# string_utils
+# strings
 
-Rich, immutable string operations for GALA with full functional programming support.
+Unified GALA string library. One package, two surfaces:
+
+- **Free functions** over plain Go `string` — `TrimSpace`, `Split`, `Contains`, etc. — mirroring Go's `strings.X` names so call sites look like idiomatic Go.
+- **`Str`** — an immutable wrapper that caches the Go string and lazily materialises an `Array[rune]` for functional methods. Chainable: every transform returns a new `Str`.
+- **`StringBuilder`** — a mutable, O(n)-assembly builder for hot-path concatenation.
+
+Pick the shape that fits the call site.
 
 ## Import
 
 ```gala
 import (
-    . "martianoff/gala/string_utils"
+    . "martianoff/gala/strings"
 )
 ```
 
-## Overview
+## Quick Start — free functions
+
+```gala
+val ok = HasPrefix("/api/v1/users", "/api/")  // true
+val parts = Split("alpha,beta,gamma", ",")     // Array("alpha", "beta", "gamma")
+val joined = Join(ArrayOf("a", "b", "c"), " - ")  // "a - b - c"
+Println(s"trimmed: '${TrimSpace("   hello   ")}'")  // 'hello'
+```
+
+Names mirror Go's `strings.X` exactly. Migration from `strings.X` calls is a one-line import swap; the call shape stays the same.
+
+## `Str` wrapper
 
 The `Str` type uses **lazy dual storage** — a `Lazy[Array[rune]]` and a cached Go `string` — providing:
 
@@ -29,8 +46,6 @@ The `Str` type uses **lazy dual storage** — a `Lazy[Array[rune]]` and a cached
 - **Efficient chaining** - String-based operations (ToUpper, Trim, etc.) use cached string directly without triggering rune conversion
 - **Functional methods** - Map, Filter, Fold, etc. evaluate the lazy rune array on first use and cache the result
 - **Pattern matching** - `NonEmptyStr` and `EmptyStr` extractors
-
-## Quick Start
 
 ```gala
 // Create a Str
@@ -123,7 +138,7 @@ S("hello") match {
 | `SplitAt(index int) Tuple[Str, Str]` | Split at index |
 | `Lines() Array[Str]` | Split by newlines |
 | `Words() Array[Str]` | Split by whitespace |
-| `Join(strs Array[Str], sep string) Str` | Join with separator |
+| `JoinStrs(strs Array[Str], sep string) Str` | Join `Array[Str]` with separator (free function) |
 
 ### Concatenation
 
@@ -271,8 +286,8 @@ val parts = S("a,b,c").Split(",")
 val (left, right) = S("hello").SplitAt(2)
 // left.ToString() == "he", right.ToString() == "llo"
 
-// Join
-val joined = Join(ArrayOf(S("a"), S("b"), S("c")), "-")
+// JoinStrs (Str-shaped sibling of the free `Join`)
+val joined = JoinStrs(ArrayOf(S("a"), S("b"), S("c")), "-")
 // joined.ToString() == "a-b-c"
 
 // Lines
@@ -352,10 +367,10 @@ Benchmark results comparing GALA `Str` to Go native string operations on a 1,000
 
 ```shell
 # GALA Str benchmark
-bazel run //string_utils:perf_gala
+bazel run //strings:perf_gala
 
 # Go native benchmark
-bazel run //string_utils:perf_go
+bazel run //strings:perf_go
 ```
 
 ### Str vs Go String (ns/op) - 1,000 Characters

@@ -188,8 +188,8 @@ func main() {
 }`,
 		},
 		{
-			name: "qualified generic with dot imports (string_utils pattern)",
-			input: `package string_utils
+			name: "qualified generic with dot imports (Str wrapper pattern)",
+			input: `package mywrapper
 
 import (
     . "martianoff/gala/std"
