@@ -1455,7 +1455,17 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 
 	// --- Section 1: Copy method short-circuit ---
 	if sel, ok := fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Copy" {
-		return t.transformCopyCall(sel.X, argListCtx)
+		// Skip the struct-Copy short-circuit when the receiver is a package
+		// identifier — `io.Copy(dst, src)` is a regular package-qualified
+		// function call, not a struct `.Copy(field = value)` override.
+		// Without this guard, the dispatcher tried to type-infer the package
+		// name "io" as a struct receiver and bailed out with "type of
+		// receiver unknown".
+		if id, ok := sel.X.(*ast.Ident); ok && t.importManager.IsPackage(id.Name) {
+			// Fall through to package-qualified function dispatch.
+		} else {
+			return t.transformCopyCall(sel.X, argListCtx)
+		}
 	}
 
 	// --- Section 2: Method/function dispatch prelude ---

@@ -1,0 +1,104 @@
+package fs
+
+import (
+    "bufio"
+    "os"
+    "strings"
+    . "martianoff/gala/collection_immutable"
+    . "martianoff/gala/go_interop"
+    . "martianoff/gala/std"
+)
+
+// Line-oriented and append helpers. Eager line reads, streaming line
+// iteration with a generously-sized scanner buffer, atomic line writes,
+// and append modes for both string and byte payloads. Same Try[T] /
+// Array[T]-at-the-boundary conventions as fs.gala.
+
+// Initial scratch size for bufio.Scanner. Matches the stdlib default;
+// the scanner grows up to scannerMaxLineBytes as needed.
+val scannerInitialBufBytes = 64 * 1024
+
+// Hard cap on a single line read by ForEachLine. The bufio default of
+// 64 KiB surprises consumers the moment a log file or generated source
+// has a long line; 1 MiB is large enough for the vast majority of
+// real-world inputs without unbounded memory growth.
+val scannerMaxLineBytes = 1024 * 1024
+
+// ReadLines reads the entire file at `path` into memory and returns
+// its contents split on "\n". Newlines themselves are stripped. If the
+// file ends in a trailing newline, the empty trailing element from the
+// split is discarded — a file with N lines yields N strings, not N+1.
+//
+// For files that don't fit in memory, prefer ForEachLine.
+func ReadLines(path string) Try[Array[string]] = Try[Array[string]](() => {
+    val data, err = os.ReadFile(path)
+    if err != nil { panic(err) }
+    val parts = strings.Split(string(data), "\n")
+    var n = len(parts)
+    if n > 0 && parts[n-1] == "" {
+        n = n - 1
+    }
+    return ArrayFromSlice(SliceTake(parts, n))
+})
+
+// ForEachLine streams the file at `path` line by line through the
+// supplied callback. The callback's bool return controls iteration:
+// true continues, false stops (the analogue of `break`). Newlines are
+// stripped from each line before the callback sees it.
+//
+// The underlying bufio.Scanner is configured with a 1 MiB max line
+// length so long lines don't trip bufio.ErrTooLong; the default 64 KiB
+// is too tight for many real inputs.
+func ForEachLine(path string, fn func(string) bool) Try[bool] = Try[bool](() => {
+    val f, err = os.Open(path)
+    if err != nil { panic(err) }
+    defer f.Close()
+    val scanner = bufio.NewScanner(f)
+    scanner.Buffer(SliceWithCapacity[byte](scannerInitialBufBytes), scannerMaxLineBytes)
+    for scanner.Scan() {
+        if !fn(scanner.Text()) {
+            return false
+        }
+    }
+    val scanErr = scanner.Err()
+    if scanErr != nil { panic(scanErr) }
+    return true
+})
+
+// WriteLines writes `lines` to `path` joined by "\n" with a trailing
+// newline appended after the last line. Existing contents at `path`
+// are replaced (atomic in the same sense as os.WriteFile). `mode` is
+// applied if the file is newly created.
+func WriteLines(path string, lines Array[string], mode int) Try[bool] = Try[bool](() => {
+    val joined = strings.Join(lines.ToGoSlice(), "\n") + "\n"
+    val err = os.WriteFile(path, ToBytes(joined), os.FileMode(mode))
+    if err != nil { panic(err) }
+    return true
+})
+
+// AppendString appends `contents` to the file at `path`. If the file
+// does not exist it is created with `mode`; otherwise the file is
+// opened with O_APPEND and existing contents are preserved. Both the
+// write and close errors are surfaced — a successful write followed by
+// a failed close still becomes Failure.
+func AppendString(path string, contents string, mode int) Try[bool] = Try[bool](() => {
+    val f, err = os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, os.FileMode(mode))
+    if err != nil { panic(err) }
+    val _, writeErr = f.WriteString(contents)
+    val closeErr = f.Close()
+    if writeErr != nil { panic(writeErr) }
+    if closeErr != nil { panic(closeErr) }
+    return true
+})
+
+// Append is the byte-payload companion to AppendString. Same create-
+// or-append semantics; both write and close errors are reported.
+func Append(path string, data Array[byte], mode int) Try[bool] = Try[bool](() => {
+    val f, err = os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, os.FileMode(mode))
+    if err != nil { panic(err) }
+    val _, writeErr = f.Write(data.ToGoSlice())
+    val closeErr = f.Close()
+    if writeErr != nil { panic(writeErr) }
+    if closeErr != nil { panic(closeErr) }
+    return true
+})
