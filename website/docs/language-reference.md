@@ -10,7 +10,7 @@ permalink: /docs/language-reference/
 
 {% raw %}
 
-**Related pages:** [Why GALA?](/docs/why-gala/) | [Code Examples](/docs/examples/) | [Immutable Collections](/docs/immutable-collections/) | [Mutable Collections](/docs/mutable-collections/) | [Streams](/docs/streams/) | [String Utilities](/docs/string-utils/) | [Time Utilities](/docs/time-utils/) | [Dependency Management](/docs/dependency-management/)
+**Related pages:** [Why GALA?](/docs/why-gala/) | [Code Examples](/docs/examples/) | [Immutable Collections](/docs/immutable-collections/) | [Mutable Collections](/docs/mutable-collections/) | [Streams](/docs/streams/) | [Strings](/docs/strings/) | [Time Utilities](/docs/time-utils/) | [Dependency Management](/docs/dependency-management/)
 
 # GALA Language Specification
 
@@ -606,7 +606,7 @@ gala mod tidy
 
 - [Code Examples](/docs/examples/) - More examples of GALA code
 - [Streams](/docs/streams/) - Lazy, potentially infinite sequences
-- [String Utilities](/docs/string-utils/) - Rich, immutable string operations
+- [Strings](/docs/strings/) - Free functions over `string`, `Str` wrapper, and `StringBuilder`
 - [Time Utilities](/docs/time-utils/) - Duration and Instant types
 - [Immutable Collections](/docs/immutable-collections/) - Array, List, HashMap, HashSet, TreeSet, TreeMap
 - [Mutable Collections](/docs/mutable-collections/) - Mutable collection types

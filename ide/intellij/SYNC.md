@@ -71,7 +71,7 @@ Packages with importable types:
 - `io` — Reader, Writer, etc.
 - `stream` — Stream
 - `concurrent` — Future, ExecutionContext
-- `string_utils` — StringBuilder
+- `strings` — Str, StringBuilder
 - `regex` — Regex, Match
 
 ### 6. Syntax Highlighter Token Mapping

@@ -95,7 +95,7 @@ Print summary of changes made.
 
 1. **Only add keywords that exist in gala.g4** — if a keyword isn't in the grammar, it's not GALA syntax
 2. **Only auto-imported std types in static completion** — `Option`, `Some`, `None`, `Either`, `Left`, `Right`, `Try`, `Success`, `Failure`, `Tuple`, `Immutable` are always available without import
-3. **NEVER add importable package types to static completion** — types from `collection_immutable`, `collection_mutable`, `io`, `stream`, `concurrent`, `regex`, `string_utils` etc. require explicit `import` and are handled by the LSP server dynamically
+3. **NEVER add importable package types to static completion** — types from `collection_immutable`, `collection_mutable`, `io`, `stream`, `concurrent`, `regex`, `strings` etc. require explicit `import` and are handled by the LSP server dynamically
 4. **Don't remove method templates** that are conceptually correct even if the exact method signature isn't in std (e.g., `match` is a language keyword, not a method)
 5. **Built-in types must be identical** across plugin (3 files) and LSP server
 6. **Keywords must be identical** between plugin (`GalaCompletionContributor.kt`) and LSP server (`completion.go`)

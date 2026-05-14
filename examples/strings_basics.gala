@@ -5,10 +5,10 @@ import (
     . "martianoff/gala/collection_immutable"
 )
 
-// Verifies the new ergonomic `martianoff/gala/strings` package — free
-// functions over plain `string` mirroring Go's `strings` namespace.
-// Consumer migration is `s/strings\./strings\./` with no logic change;
-// the call site still reads exactly like Go.
+// Verifies the free-function surface of the unified `strings` package
+// (the `Str` wrapper has its own example in `string_builder.gala`).
+// Names mirror Go's `strings.X` exactly so migration from `strings.X`
+// is a one-line import swap with no logic change.
 
 func main() {
     // Predicates — the heavy hitters in consumer code.
