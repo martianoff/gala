@@ -143,6 +143,11 @@ struct FutureError(Message string)
 
 func (e FutureError) Error() string = e.Message
 
+// TimeoutError is returned when a Future fails to complete before its timeout expires.
+struct TimeoutError(Timeout Duration)
+
+func (e TimeoutError) Error() string = s"future timed out after ${e.Timeout}"
+
 // IsCompleted returns true if the Future has been completed (success or failure).
 func (f Future[T]) IsCompleted() bool {
     f.state.mu.RLock()
@@ -184,6 +189,27 @@ func (f Future[T]) AwaitFor(timeout Duration) Option[Try[T]] {
         return Some[Try[T]](r)
     }
     return None[Try[T]]()
+}
+
+// WithTimeout returns a new Future that completes with this Future's result
+// if it arrives before the timeout, or fails with TimeoutError if the timeout
+// expires first. The returned Future inherits this Future's ExecutionContext.
+//
+// WithTimeout does not cancel the underlying computation — side effects still
+// run in the background after a timeout fires. Make async work cancellable
+// (e.g., honor context.Context) if that matters.
+func (f Future[T]) WithTimeout(timeout Duration) Future[T] {
+    val p = NewPromiseWith[T](f.state.ec)
+    f.OnComplete((r Try[T]) => {
+        p.Complete(r)
+    })
+    f.state.ec.Execute(() => {
+        val received = go_interop.WaitSignalTimeout(f.state.done, timeout.ToGoDuration())
+        if !received {
+            p.Failure(TimeoutError(Timeout = timeout))
+        }
+    })
+    return p.Future()
 }
 
 // Get blocks until the Future is completed and returns the value.
