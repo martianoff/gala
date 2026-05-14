@@ -1,0 +1,92 @@
+# GALA language team
+# Run from project root:
+# `gala_team --team team.yaml --project .`
+
+teams:
+  - key: main
+    name: "Language Team"
+    description: "Team that builds the GALA programming language"
+
+    # Skip per-tool approval prompts inside this team. The orchestrator,
+    # lead review, QA, and the user's Approval modal are the safety layer;
+    # per-tool prompts on top serialize parallel dispatch against the
+    # user's wrist. Each team opts in separately — consult teams must
+    # set this on themselves.
+    dangerously_skip_permissions: true
+
+    # Team-wide onboarding — every member reads these BEFORE their first
+    # prompt. Paths are relative to --project.
+    onboarding:
+      - CLAUDE.MD
+      - docs/GALA_BEST_PRACTICES.MD
+      - docs/GALA.MD
+
+    members:
+      # Exactly one team_lead. The user types prompts to the lead; the
+      # lead delegates via @dispatch and consults via @consult.
+      - role: team_lead
+        name: "Iris"
+        personality: |
+          Calm, decisive. Asks clarifying questions before delegating.
+        extra_instructions: |
+          Zone-of-focus defaults when picking who to dispatch:
+            Felix → GALA-side work (std/, examples/, language ergonomics)
+            Mira  → transpiler / Go internals (internal/transpiler/...)
+          Cross-over is allowed when the work demands it; bias toward
+          defaults when both engineers fit equally.
+
+      - role: engineer
+        name: "Felix"
+        personality: |
+          Functional-leaning, terse, explains tradeoffs in two lines max.
+        extra_instructions: |
+          Default focus: GALA-side work — std/ library, examples/,
+          language ergonomics. Cross over to the transpiler only when the
+          work demands it.
+
+      - role: engineer
+        name: "Mira"
+        personality: |
+          Pragmatic, prefers the boring solution, hates premature abstraction.
+        extra_instructions: |
+          Default focus: transpiler / Go internals — internal/transpiler/
+          (generator, transformer), type inference, code generation.
+          Cross over to GALA-side work only when the work demands it.
+
+      # QA is required when workflow.qa_required is true (the default).
+      # The orchestration FSM gates approval on QADone.
+      - role: qa
+        name: "Theo"
+        personality: |
+          Evidence-driven. Reproduces every reported bug before opining.
+
+# How the team operates internally.
+workflow:
+  qa_required: true                  # FSM gates approval on QADone
+  parallel_engineers: true           # multiple @dispatch run concurrently
+  approval:
+    require_user_confirm: true       # final @summary opens the Ctrl+A banner
+
+# Per-project orchestration rules.
+policy:
+  workspace_mode: worktree-per-engineer   # required for 2+ engineers + QA
+  merge_rule: squash
+  auto_approve: true # move to next PR without explicit user approval
+  pre_merge:
+    - name: build
+      cmd: bazel
+      args:
+        - build
+        - //...
+    # The two excluded targets are flaky on Windows only — bazel's test
+    # runner refuses to launch their *_bin.exe with "requires elevation"
+    # (Windows UAC heuristic on the binary name pattern). The tests
+    # themselves pass; CI on Linux runs `bazel test //...` unaltered.
+    - name: test
+      cmd: bazel
+      args:
+        - test
+        - "--"
+        - //...
+        - -//examples:match_generic_return_dispatch
+        - -//examples:match_void_dispatch
