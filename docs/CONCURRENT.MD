@@ -59,6 +59,26 @@ val recovered = failed.Recover((e) => 0)
 val recoveredWith = failed.RecoverWith((e) => FutureOf[int](0))
 ```
 
+### Timeouts
+
+Two complementary primitives:
+
+- `AwaitFor(duration) Option[Try[T]]` — blocks the caller; `None` on timeout.
+- `WithTimeout(duration) Future[T]` — monadic; the returned Future fails with `TimeoutError` if the original doesn't complete in time, otherwise mirrors its result.
+
+```gala
+val slow = FutureApply[int](() => { Sleep(Seconds(2)); 42 })
+
+// Monadic: stays a Future, composes with Map/Recover/etc.
+val bounded = slow.WithTimeout(Milliseconds(500))
+    .Recover((e) => 0)                            // 0 on timeout
+
+// Blocking: returns Option[Try[T]] inline.
+val maybe = slow.AwaitFor(Milliseconds(500))      // None on timeout
+```
+
+`WithTimeout` does not cancel the underlying computation — side effects still run after the timeout fires. Make async work cancellable (e.g., honor `context.Context`) if that matters.
+
 ### Combining Futures
 
 ```gala
@@ -211,6 +231,7 @@ pool.Shutdown()
 | `Value()` | Get current result as Option[Try[T]] |
 | `Await()` | Block until completion, returns Try[T] |
 | `AwaitFor(duration)` | Block with timeout, returns Option[Try[T]] |
+| `WithTimeout(duration)` | Return Future that fails with TimeoutError if not done in time (inherits EC) |
 | `Get()` | Block and get value, panics on failure |
 | `GetOrElse(default)` | Block and get value or default |
 | `ExecutionContext()` | Get the associated ExecutionContext |

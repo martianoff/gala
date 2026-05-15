@@ -226,6 +226,38 @@ func TestAwaitFor(t T) T {
     return Eq[int](t1, result.Get().Get(), 42)
 }
 
+func TestWithTimeoutDoesNotFire(t T) T {
+    val f = FutureOf[int](42)
+    val result = f.WithTimeout(Seconds(5)).Await()
+    var t1 = IsSuccess(t, result)
+    return Eq[int](t1, result.Get(), 42)
+}
+
+func TestWithTimeoutFires(t T) T {
+    val p = NewPromise[int]()
+    val result = p.Future().WithTimeout(Milliseconds(50)).Await()
+    var t1 = IsFailure(t, result)
+    return Contains(t1, result.Err.Error(), "timed out")
+}
+
+func TestWithTimeoutPreservesOriginalFailure(t T) T {
+    val f = FutureFailed[int](FutureError(Message = "original error"))
+    val result = f.WithTimeout(Seconds(5)).Await()
+    var t1 = IsFailure(t, result)
+    return Eq[string](t1, result.Err.Error(), "original error")
+}
+
+func TestWithTimeoutSlowFutureBeats(t T) T {
+    val p = NewPromise[int]()
+    Spawn(() => {
+        Sleep(Milliseconds(10))
+        p.Success(7)
+    })
+    val result = p.Future().WithTimeout(Milliseconds(200)).Await()
+    var t1 = IsSuccess(t, result)
+    return Eq[int](t1, result.Get(), 7)
+}
+
 func TestTransform(t T) T {
     val f = FutureOf[int](5)
     val transformed = f.Transform[string](
