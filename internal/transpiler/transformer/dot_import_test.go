@@ -118,6 +118,10 @@ func test() int {
 	assert.Contains(t, transpileErr.Error(), "Greet")
 	assert.Contains(t, transpileErr.Error(), "pkg_a")
 	assert.Contains(t, transpileErr.Error(), "pkg_b")
+	// Should carry the stable error code GALA-E0032 so tools and tests
+	// can pin against the kind of collision rather than the message text.
+	assert.Contains(t, transpileErr.Error(), "GALA-E0032",
+		"dot-import collision must surface as a coded error")
 }
 
 // TestDotImportVarReExportClash checks that when a Go package re-exports

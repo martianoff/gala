@@ -248,6 +248,92 @@ func main() {
 			expectCode:     galaerr.CodeEmptyParenExpression,
 			expectContains: "empty parenthesized expression",
 		},
+		{
+			// Two top-level functions with the same name in one file must
+			// surface as a redeclaration error rather than silently keeping
+			// only the second definition.
+			name: "GALA-E0027 function redeclared",
+			input: `package main
+
+func greet(name string) string = "hello " + name
+func greet(other string) string = "hi " + other
+
+func main() {
+    Println(greet("world"))
+}`,
+			expectCode:     galaerr.CodeFunctionRedeclared,
+			expectContains: `function "greet"`,
+		},
+		{
+			// Two `type Foo = Bar` aliases with the same name silently
+			// overwrote one another in the transformer; now rejected.
+			name: "GALA-E0028 type alias redeclared",
+			input: `package main
+
+type Handler = func(string) string
+type Handler = func(int) int
+
+func main() {
+    Println("unused")
+}`,
+			expectCode:     galaerr.CodeTypeAliasRedeclared,
+			expectContains: `type alias "Handler"`,
+		},
+		{
+			// Two method specs with the same name within one interface
+			// are now rejected. The grammar accepts the form but Go would
+			// only see the second.
+			name: "GALA-E0029 interface method redeclared",
+			input: `package main
+
+type Repo interface {
+    Find(id int) string
+    Find(name string) string
+}
+
+func main() {
+    Println("unused")
+}`,
+			expectCode:     galaerr.CodeInterfaceMethodRedeclared,
+			expectContains: `method "Find"`,
+		},
+		{
+			// Two struct fields with the same name now rejected; previously
+			// the second silently overwrote the first in metadata.
+			name: "GALA-E0030 struct field redeclared",
+			input: `package main
+
+type Point struct {
+    val x int
+    val x int
+}
+
+func main() {
+    val p = Point(x = 1)
+    Println(p.x)
+}`,
+			expectCode:     galaerr.CodeStructFieldRedeclared,
+			expectContains: `field "x"`,
+		},
+		{
+			// Two sealed cases sharing a name now rejected. Without this
+			// guard the second case overwrote the first's companion type
+			// and methods.
+			name: "GALA-E0031 sealed variant case redeclared",
+			input: `package main
+
+sealed type Shape {
+    case Box(W int)
+    case Box(H int)
+}
+
+func main() {
+    val b = Box(1)
+    Println(b)
+}`,
+			expectCode:     galaerr.CodeSealedVariantCaseRedeclared,
+			expectContains: `sealed case "Box"`,
+		},
 	}
 
 	for _, tc := range cases {

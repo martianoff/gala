@@ -206,6 +206,47 @@ const (
 	// (same-package) declarations always shadow dot-imports, so this code
 	// only fires when the conflict is across two imports.
 	CodeAmbiguousSealedVariant ErrorCode = "GALA-E0026"
+
+	// E0027: a top-level function with the same name is declared more than
+	// once within a package. Mirrors Go's "redeclared in this block" rule.
+	// The analyzer previously silently overwrote the earlier metadata entry
+	// with the latter one, causing the second declaration to win and the
+	// first to be lost; now both are surfaced as a hard error so the user
+	// can rename or remove one.
+	CodeFunctionRedeclared ErrorCode = "GALA-E0027"
+
+	// E0028: a type alias (`type Foo = Bar`) with the same name is declared
+	// more than once in the same file. Without this guard the second
+	// alias silently replaced the first in the transformer's lookup table,
+	// leading to surprising type resolution at unrelated call sites.
+	CodeTypeAliasRedeclared ErrorCode = "GALA-E0028"
+
+	// E0029: an interface lists two method specs with the same name. The
+	// earlier method metadata was silently overwritten by the later one,
+	// which could mask a parameter-list or return-type mismatch the user
+	// intended to keep distinct (and would have hit at the Go compiler
+	// otherwise, with a less useful message).
+	CodeInterfaceMethodRedeclared ErrorCode = "GALA-E0029"
+
+	// E0030: a struct declares two fields with the same name. The earlier
+	// field type was silently overwritten by the later one, and the
+	// `FieldNames` slice would contain the name twice — producing invalid
+	// Go output. Rejecting at the analyzer keeps the error close to the
+	// source.
+	CodeStructFieldRedeclared ErrorCode = "GALA-E0030"
+
+	// E0031: a sealed type lists two `case` variants with the same name.
+	// The earlier variant's companion type, Apply/Unapply, and isXxx
+	// methods would all be overwritten by the later variant, so only one
+	// remained reachable — silent loss of code the user wrote.
+	CodeSealedVariantCaseRedeclared ErrorCode = "GALA-E0031"
+
+	// E0032: two dot-imported packages export the same identifier. Go
+	// would reject the resulting generated code with "redeclared in this
+	// block"; surfacing the collision at the GALA level lets the user
+	// resolve it by qualifying or aliasing one import. Previously this
+	// case was reported as an uncoded semantic error.
+	CodeDotImportCollision ErrorCode = "GALA-E0032"
 )
 
 // MultiError collects multiple GALA errors.

@@ -777,6 +777,21 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 				for _, field := range structType.AllStructField() {
 					fctx := field.(*grammar.StructFieldContext)
 					fieldName := fctx.Identifier().GetText()
+					// Reject duplicate field names within a single struct
+					// declaration. Without this, the second declaration
+					// silently overwrote the first in the Fields map and
+					// duplicated the name in FieldNames, producing invalid
+					// Go output. This guard is scoped to one parse of one
+					// struct (Fields was cleared on re-analysis at line ~740),
+					// so it does not need an existing.DefinedIn check.
+					if _, exists := meta.Fields[fieldName]; exists {
+						return nil, galaerr.NewCodedSemanticError(
+							galaerr.CodeStructFieldRedeclared,
+							fctx.Identifier().GetStart().GetLine(), fctx.Identifier().GetStart().GetColumn(),
+							fmt.Sprintf("field %q already declared in struct %q", fieldName, typeName),
+							"rename or remove the duplicate field",
+						)
+					}
 					meta.Fields[fieldName] = a.resolveTypeWithParams(fctx.Type_().GetText(), pkgName, meta.TypeParams)
 					meta.FieldNames = append(meta.FieldNames, fieldName)
 					meta.ImmutFlags = append(meta.ImmutFlags, fctx.VAR() == nil)
@@ -791,9 +806,24 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 			// Extract interface method signatures as type methods
 			if ctx.InterfaceType() != nil {
 				ifaceType := ctx.InterfaceType().(*grammar.InterfaceTypeContext)
+				// seenSpecs is a per-declaration dedup so re-analysis (which
+				// preserves the Methods map across calls) does not falsely
+				// trigger the redeclaration check on already-registered
+				// specs. Within ONE iteration of AllMethodSpec() we still
+				// catch genuine duplicates.
+				seenSpecs := make(map[string]bool)
 				for _, ms := range ifaceType.AllMethodSpec() {
 					msCtx := ms.(*grammar.MethodSpecContext)
 					methodName := msCtx.Identifier().GetText()
+					if seenSpecs[methodName] {
+						return nil, galaerr.NewCodedSemanticError(
+							galaerr.CodeInterfaceMethodRedeclared,
+							msCtx.Identifier().GetStart().GetLine(), msCtx.Identifier().GetStart().GetColumn(),
+							fmt.Sprintf("method %q already declared in interface %q", methodName, typeName),
+							"rename or remove the duplicate method",
+						)
+					}
+					seenSpecs[methodName] = true
 					methodMeta := &transpiler.MethodMetadata{
 						Name:      methodName,
 						Package:   pkgName,
@@ -898,6 +928,17 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 					for _, param := range paramsCtx.ParameterList().(*grammar.ParameterListContext).AllParameter() {
 						pctx := param.(*grammar.ParameterContext)
 						fieldName := pctx.Identifier().GetText()
+						// Reject duplicate field names within a shorthand
+						// struct declaration. Fields was cleared above on
+						// re-analysis, so this check is scoped to one parse.
+						if _, exists := meta.Fields[fieldName]; exists {
+							return nil, galaerr.NewCodedSemanticError(
+								galaerr.CodeStructFieldRedeclared,
+								pctx.Identifier().GetStart().GetLine(), pctx.Identifier().GetStart().GetColumn(),
+								fmt.Sprintf("field %q already declared in struct %q", fieldName, typeName),
+								"rename or remove the duplicate field",
+							)
+						}
 						fieldType := ""
 						if pctx.Type_() != nil {
 							fieldType = pctx.Type_().GetText()
@@ -937,7 +978,9 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 					"remove the duplicate declaration or rename one of the types",
 				)
 			}
-			a.analyzeSealedType(ctx, pkgName, richAST)
+			if err := a.analyzeSealedType(ctx, pkgName, richAST); err != nil {
+				return nil, err
+			}
 			if meta, ok := richAST.Types[fullSealedName]; ok {
 				meta.DefinedIn = filePath
 				for _, v := range meta.SealedVariants {
@@ -1174,6 +1217,23 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 				// Validate default parameter rules
 				if err := validateDefaultParams(funcMeta, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), filePath); err != nil {
 					return nil, err
+				}
+				// Reject redeclaration of a top-level function within the same
+				// package. The sibling-metadata pass may have already registered
+				// the function from another file; if it lives in a different
+				// file, that's a true redeclaration (mirrors Go's "redeclared
+				// in this block"). Skip when the existing entry is empty
+				// (placeholder / cache) or refers to this same file
+				// (re-analysis of the same source).
+				if existing, ok := richAST.Functions[fullFuncName]; ok {
+					if existing.DefinedIn != "" && !(existing.DefinedIn != filePath && isSameFile(existing.DefinedIn, absFilePath)) {
+						return nil, galaerr.NewCodedSemanticError(
+							galaerr.CodeFunctionRedeclared,
+							ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
+							fmt.Sprintf("function %q in package %q redeclared (first defined in %s)", funcName, pkgName, existing.DefinedIn),
+							"remove the duplicate declaration or rename one of the functions",
+						)
+					}
 				}
 				richAST.Functions[fullFuncName] = funcMeta
 			}
@@ -1467,7 +1527,9 @@ func countErrors(warnings []ValidationWarning) int {
 // analyzeSealedType registers metadata for a sealed type declaration.
 // It creates the parent type (with all variant fields merged + _variant),
 // companion types for each case, and Apply/Unapply/IsXxx methods.
-func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationContext, pkgName string, richAST *transpiler.RichAST) {
+// Returns a non-nil error if the declaration is rejected (e.g. duplicate
+// variant case names within the same sealed type).
+func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationContext, pkgName string, richAST *transpiler.RichAST) error {
 	typeName := ctx.Identifier().GetText()
 
 	fullTypeName := typeName
@@ -1515,6 +1577,21 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 	for _, caseCtx := range ctx.AllSealedCase() {
 		sc := caseCtx.(*grammar.SealedCaseContext)
 		variantName := sc.Identifier().GetText()
+		// Reject duplicate sealed-variant case names within a single sealed
+		// type declaration. Without this guard the second variant's
+		// companion type and Apply/Unapply/isXxx methods would be silently
+		// overwritten by the later case, dropping reachable code. Scoped to
+		// one parse of one sealed type, so no re-analysis guard is needed.
+		for _, existing := range variants {
+			if existing.name == variantName {
+				return galaerr.NewCodedSemanticError(
+					galaerr.CodeSealedVariantCaseRedeclared,
+					sc.Identifier().GetStart().GetLine(), sc.Identifier().GetStart().GetColumn(),
+					fmt.Sprintf("sealed case %q already declared in sealed type %q", variantName, typeName),
+					"rename or remove the duplicate case",
+				)
+			}
+		}
 		vi := variantInfo{
 			name: variantName,
 			pos:  transpiler.PosFromToken(sc.Identifier().GetStart()),
@@ -1701,6 +1778,7 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 			ReturnType: transpiler.BasicType{Name: "bool"},
 		}
 	}
+	return nil
 }
 
 // discoverCompanionObjects identifies types that can be used as pattern extractors.
@@ -3334,7 +3412,9 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 					continue
 				}
 			}
-			a.analyzeSealedType(ctx, pkgName, richAST)
+			if err := a.analyzeSealedType(ctx, pkgName, richAST); err != nil {
+				return err
+			}
 			// Set DefinedIn on the parent and all companion variants (only when empty).
 			if meta, ok := richAST.Types[fullTypeName]; ok {
 				if meta.DefinedIn == "" {

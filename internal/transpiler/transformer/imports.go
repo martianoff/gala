@@ -513,7 +513,11 @@ func (m *ImportManager) ValidateDotImports(richAST *transpiler.RichAST, line, co
 			"\n(Some stdlib packages intentionally re-export names from another package as a convenience facade —" +
 			" e.g. `concurrent` re-exports `go_interop`'s execution-context helpers — so dot-importing both is never" +
 			" meaningful. Pick the facade you want.)"
-		return galaerr.NewSemanticErrorAt(line, col, msg)
+		return galaerr.NewCodedSemanticError(
+			galaerr.CodeDotImportCollision,
+			line, col, msg,
+			"qualify or alias one of the dot-imports to disambiguate",
+		)
 	}
 	return nil
 }
