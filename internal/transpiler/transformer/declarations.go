@@ -1190,6 +1190,24 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 		// (e.g., Handler -> func(string) Future[string])
 		if targetType != nil {
 			if underlyingType := t.astTypeToTranspilerType(targetType); !underlyingType.IsNil() {
+				// Reject duplicate alias names. The map is seeded from
+				// sibling files at Transform() entry, so this catches
+				// both within-file dups and cross-file dups in the same
+				// package. Without the guard the second alias silently
+				// replaced the first in t.typeAliases.
+				if _, exists := t.typeAliases[name]; exists {
+					line, col := 0, 0
+					if ctx.Identifier() != nil && ctx.Identifier().GetStart() != nil {
+						line = ctx.Identifier().GetStart().GetLine()
+						col = ctx.Identifier().GetStart().GetColumn()
+					}
+					return nil, galaerr.NewCodedSemanticError(
+						galaerr.CodeTypeAliasRedeclared,
+						line, col,
+						fmt.Sprintf("type alias %q already declared in package %q", name, t.packageName),
+						"remove the duplicate declaration or rename one of the aliases",
+					)
+				}
 				t.typeAliases[name] = underlyingType
 			}
 		}
