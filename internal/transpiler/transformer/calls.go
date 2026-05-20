@@ -1587,7 +1587,16 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 		// Variants are registered with nil fields because the companion
 		// struct is empty; field info lives in the parent sealed type.
 		if len(fields) == 0 && len(namedArgs) > 0 {
-			if variantFieldNames := t.findSealedVariantFields(typeName); variantFieldNames != nil {
+			// Scope the sealed-parent lookup to the variant's own package.
+			// resolvedTypeName is fully qualified (e.g. "pkg_a.B"), so the
+			// segment before the last "." is the package the variant came
+			// from — using it prevents a same-named variant in another
+			// package from shadowing the local one via map-iteration order.
+			variantPkg := ""
+			if idx := strings.LastIndex(resolvedTypeName, "."); idx != -1 {
+				variantPkg = resolvedTypeName[:idx]
+			}
+			if variantFieldNames, found := t.findSealedVariantFields(typeName, variantPkg); found {
 				return buildSealedVariantApplyCall(fun, variantFieldNames, namedArgs), nil
 			}
 		}
@@ -1941,19 +1950,70 @@ func (t *galaASTTransformer) sortKeyValueExprs(elts []ast.Expr) {
 	}
 }
 
-// findSealedVariantFields looks up the field names for a sealed variant by searching
-// parent sealed types in typeMetas. Returns nil if the variant is not found.
-func (t *galaASTTransformer) findSealedVariantFields(variantName string) []string {
-	for _, meta := range t.typeMetas {
-		if meta.IsSealed {
+// findSealedVariantFields looks up the field names for a sealed variant by
+// searching parent sealed types in typeMetas. The optional pkgQualifier
+// restricts the search to a specific package; when empty, the current
+// package is preferred over other packages so a local variant always
+// shadows a same-named variant in an imported sealed type. Returns
+// (fields, true) when a parent sealed type is found — the fields slice
+// may be empty for zero-arg variants, which is distinct from "not
+// found". Returns (nil, false) when no sealed parent contains the name.
+//
+// The package-aware search prevents a non-deterministic map-iteration
+// match: without it, two packages declaring same-named cases (e.g. a
+// local `case B(P string)` and an imported `case B`) could resolve to
+// either variant depending on Go map ordering. Picking the wrong one
+// drops field info and the caller emits a bare zero-value struct
+// literal, losing the constructor args entirely.
+func (t *galaASTTransformer) findSealedVariantFields(variantName, pkgQualifier string) ([]string, bool) {
+	// Resolve a possible import alias to the actual package name.
+	actualPkg := pkgQualifier
+	if pkgQualifier != "" {
+		if resolved, ok := t.importManager.ResolveAlias(pkgQualifier); ok {
+			actualPkg = resolved
+		}
+	}
+
+	// Two-pass: first try the explicitly named package (or current
+	// package when no qualifier), then fall back to any package. This
+	// gives local declarations precedence over cross-package matches.
+	primaryPkg := actualPkg
+	if primaryPkg == "" {
+		primaryPkg = t.packageName
+	}
+
+	if primaryPkg != "" {
+		for _, meta := range t.typeMetas {
+			if !meta.IsSealed || meta.Package != primaryPkg {
+				continue
+			}
 			for _, sv := range meta.SealedVariants {
 				if sv.Name == variantName {
-					return sv.FieldNames
+					return sv.FieldNames, true
 				}
 			}
 		}
 	}
-	return nil
+
+	// When the caller explicitly qualified the variant, do not fall
+	// through to other packages — the qualifier is authoritative and a
+	// miss should propagate as such (the caller's struct-literal branch
+	// handles the not-found case).
+	if pkgQualifier != "" {
+		return nil, false
+	}
+
+	for _, meta := range t.typeMetas {
+		if !meta.IsSealed {
+			continue
+		}
+		for _, sv := range meta.SealedVariants {
+			if sv.Name == variantName {
+				return sv.FieldNames, true
+			}
+		}
+	}
+	return nil, false
 }
 
 // isSealedVariantTypeName reports whether `typeName` (an unqualified variant
