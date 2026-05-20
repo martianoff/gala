@@ -152,3 +152,160 @@ func wrap(tag string, x string) Option[T] {
 			bareFrag, gen)
 	}
 }
+
+// TestSomeWrapSealedCaseDotImportLookup verifies the deterministic
+// dot-import fallback for sealed-variant constructors. When the
+// current package does not declare the variant locally and exactly
+// one dot-imported package does, the unqualified call site must
+// resolve to that variant's Apply form.
+//
+// This locks the happy path of the dot-import fallback. The lookup
+// must succeed reliably across runs; previously a map-iteration
+// scan of every sealed type in every loaded package could pick the
+// wrong one when names collided, or miss a deterministic resolution
+// when only one package contained the variant.
+func TestSomeWrapSealedCaseDotImportLookup(t *testing.T) {
+	tmpDir := t.TempDir()
+	const modulePath = "github.com/example/dotimportlookup"
+	require.NoError(t, os.WriteFile(
+		filepath.Join(tmpDir, "go.mod"),
+		[]byte("module "+modulePath+"\n\ngo 1.22\n"),
+		0644,
+	))
+
+	// `other` declares the sealed type and its cases.
+	otherDir := filepath.Join(tmpDir, "other")
+	require.NoError(t, os.MkdirAll(otherDir, 0755))
+	otherSrc := `package other
+
+sealed type O {
+    case W(P string, Q string)
+}
+`
+	require.NoError(t, os.WriteFile(filepath.Join(otherDir, "o.gala"), []byte(otherSrc), 0644))
+
+	// `host` dot-imports `other` and constructs W unqualified.
+	hostDir := filepath.Join(tmpDir, "host")
+	require.NoError(t, os.MkdirAll(hostDir, 0755))
+	hostSrc := `package host
+
+import . "` + modulePath + `/other"
+
+func wrap(x string) Option[O] {
+    return Some[O](W(P = x, Q = x))
+}
+`
+	hostPath := filepath.Join(hostDir, "host.gala")
+	require.NoError(t, os.WriteFile(hostPath, []byte(hostSrc), 0644))
+
+	originalWd, err := os.Getwd()
+	require.NoError(t, err)
+	defer func() { _ = os.Chdir(originalWd) }()
+	require.NoError(t, os.Chdir(tmpDir))
+
+	p := transpiler.NewAntlrGalaParser()
+	searchPaths := append([]string{tmpDir}, getStdSearchPath()...)
+	a := analyzer.NewGalaAnalyzer(p, searchPaths)
+	tree, err := p.Parse(hostSrc)
+	require.NoError(t, err)
+	richAST, err := a.Analyze(tree, hostPath)
+	require.NoError(t, err)
+
+	tr := transformer.NewGalaASTTransformer()
+	g := generator.NewGoCodeGenerator()
+	fset, file, err := tr.Transform(richAST)
+	require.NoError(t, err)
+	gen, err := g.Generate(fset, file)
+	require.NoError(t, err)
+
+	require.True(t, strings.Contains(gen, "W{}.Apply("),
+		"expected generated code to contain W{}.Apply(...) for dot-imported variant\n--- generated ---\n%s", gen)
+	require.False(t, strings.Contains(gen, "Apply(W{})"),
+		"expected generated code to NOT contain bare Apply(W{}) (dropped args)\n--- generated ---\n%s", gen)
+}
+
+// TestSomeWrapSealedCaseDotImportAmbiguousIsError verifies that an
+// unqualified sealed-variant constructor that matches a case in two
+// or more dot-imported packages is rejected with a clear error
+// rather than silently resolved by import order. Silent first-wins
+// would re-introduce the same class of non-determinism the parent
+// fix removed for the in-package overlap case; the strict error
+// surface makes the user qualify the call site instead.
+//
+// The analyzer's existing dot-import symbol-collision detector
+// surfaces this case as the primary diagnostic (it fires before the
+// transformer's sealed-variant lookup is reached). This test locks
+// that behavior: the user MUST see an error mentioning the variant
+// name and both conflicting packages so they can qualify the call
+// site. The transformer-level ambiguity guard added alongside this
+// test is defense-in-depth for paths the analyzer detector might
+// miss in future refactors.
+func TestSomeWrapSealedCaseDotImportAmbiguousIsError(t *testing.T) {
+	tmpDir := t.TempDir()
+	const modulePath = "github.com/example/dotimportambig"
+	require.NoError(t, os.WriteFile(
+		filepath.Join(tmpDir, "go.mod"),
+		[]byte("module "+modulePath+"\n\ngo 1.22\n"),
+		0644,
+	))
+
+	// Two dot-imported packages, each declaring its own sealed type
+	// with a `case B`. Different field sets prevent accidental coincidence.
+	aDir := filepath.Join(tmpDir, "pkga")
+	require.NoError(t, os.MkdirAll(aDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(aDir, "a.gala"), []byte(`package pkga
+
+sealed type A {
+    case B(P string)
+}
+`), 0644))
+
+	bDir := filepath.Join(tmpDir, "pkgb")
+	require.NoError(t, os.MkdirAll(bDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(bDir, "b.gala"), []byte(`package pkgb
+
+sealed type B2 {
+    case B(Q string, R string)
+}
+`), 0644))
+
+	hostDir := filepath.Join(tmpDir, "host")
+	require.NoError(t, os.MkdirAll(hostDir, 0755))
+	hostSrc := `package host
+
+import . "` + modulePath + `/pkga"
+import . "` + modulePath + `/pkgb"
+
+func wrap(x string) Option[A] {
+    return Some[A](B(P = x))
+}
+`
+	hostPath := filepath.Join(hostDir, "host.gala")
+	require.NoError(t, os.WriteFile(hostPath, []byte(hostSrc), 0644))
+
+	originalWd, err := os.Getwd()
+	require.NoError(t, err)
+	defer func() { _ = os.Chdir(originalWd) }()
+	require.NoError(t, os.Chdir(tmpDir))
+
+	p := transpiler.NewAntlrGalaParser()
+	searchPaths := append([]string{tmpDir}, getStdSearchPath()...)
+	a := analyzer.NewGalaAnalyzer(p, searchPaths)
+	tree, err := p.Parse(hostSrc)
+	require.NoError(t, err)
+	richAST, err := a.Analyze(tree, hostPath)
+	require.NoError(t, err)
+
+	tr := transformer.NewGalaASTTransformer()
+	_, _, err = tr.Transform(richAST)
+	require.Error(t, err, "expected transpile to fail with a dot-import ambiguity error")
+	errMsg := err.Error()
+	// The analyzer's dot-import symbol-collision detector reports it
+	// as "dot-import symbol collision" (see imports.go). The exact
+	// surface phrasing may evolve; assert on the load-bearing facts:
+	// the variant name and the two conflicting packages, so the user
+	// has enough information to qualify the call site.
+	require.Contains(t, errMsg, "\"B\"", "error should name the variant: %s", errMsg)
+	require.Contains(t, errMsg, "pkga", "error should name the first conflicting package: %s", errMsg)
+	require.Contains(t, errMsg, "pkgb", "error should name the second conflicting package: %s", errMsg)
+}

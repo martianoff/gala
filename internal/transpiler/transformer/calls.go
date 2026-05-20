@@ -1596,7 +1596,11 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 			if idx := strings.LastIndex(resolvedTypeName, "."); idx != -1 {
 				variantPkg = resolvedTypeName[:idx]
 			}
-			if variantFieldNames, found := t.findSealedVariantFields(typeName, variantPkg); found {
+			variantFieldNames, found, ferr := t.findSealedVariantFields(typeName, variantPkg, line, col)
+			if ferr != nil {
+				return nil, ferr
+			}
+			if found {
 				return buildSealedVariantApplyCall(fun, variantFieldNames, namedArgs), nil
 			}
 		}
@@ -1953,19 +1957,27 @@ func (t *galaASTTransformer) sortKeyValueExprs(elts []ast.Expr) {
 // findSealedVariantFields looks up the field names for a sealed variant by
 // searching parent sealed types in typeMetas. The optional pkgQualifier
 // restricts the search to a specific package; when empty, the current
-// package is preferred over other packages so a local variant always
-// shadows a same-named variant in an imported sealed type. Returns
-// (fields, true) when a parent sealed type is found — the fields slice
-// may be empty for zero-arg variants, which is distinct from "not
-// found". Returns (nil, false) when no sealed parent contains the name.
+// package is searched first (so a local variant always shadows a same-
+// named variant in an imported sealed type) and dot-imported packages
+// are searched as a deterministic fallback. Returns (fields, true, nil)
+// when a parent sealed type is found — the fields slice may be empty
+// for zero-arg variants, which is distinct from "not found". Returns
+// (nil, false, nil) when no sealed parent contains the name. Returns
+// (nil, false, err) when an unqualified call site matches in two or
+// more dot-imported packages: GALA mirrors Go's rule that an ambiguous
+// name across imports is a compile error, not a silent first-wins.
 //
 // The package-aware search prevents a non-deterministic map-iteration
-// match: without it, two packages declaring same-named cases (e.g. a
+// match. Without it, two packages declaring same-named cases (e.g. a
 // local `case B(P string)` and an imported `case B`) could resolve to
-// either variant depending on Go map ordering. Picking the wrong one
-// drops field info and the caller emits a bare zero-value struct
-// literal, losing the constructor args entirely.
-func (t *galaASTTransformer) findSealedVariantFields(variantName, pkgQualifier string) ([]string, bool) {
+// either variant depending on Go's map iteration order; picking the
+// wrong one drops field info and the caller emits a bare zero-value
+// struct literal, losing the constructor args entirely. The fallback
+// is intentionally limited to dot-imports because that is the only
+// case where a same-named variant can legitimately appear at the call
+// site without a qualifier — qualified references go through the
+// pkgQualifier path above.
+func (t *galaASTTransformer) findSealedVariantFields(variantName, pkgQualifier string, line, col int) ([]string, bool, error) {
 	// Resolve a possible import alias to the actual package name.
 	actualPkg := pkgQualifier
 	if pkgQualifier != "" {
@@ -1974,9 +1986,8 @@ func (t *galaASTTransformer) findSealedVariantFields(variantName, pkgQualifier s
 		}
 	}
 
-	// Two-pass: first try the explicitly named package (or current
-	// package when no qualifier), then fall back to any package. This
-	// gives local declarations precedence over cross-package matches.
+	// First pass: explicitly named package, or current package when no
+	// qualifier. Gives local declarations precedence.
 	primaryPkg := actualPkg
 	if primaryPkg == "" {
 		primaryPkg = t.packageName
@@ -1989,7 +2000,7 @@ func (t *galaASTTransformer) findSealedVariantFields(variantName, pkgQualifier s
 			}
 			for _, sv := range meta.SealedVariants {
 				if sv.Name == variantName {
-					return sv.FieldNames, true
+					return sv.FieldNames, true, nil
 				}
 			}
 		}
@@ -2000,20 +2011,51 @@ func (t *galaASTTransformer) findSealedVariantFields(variantName, pkgQualifier s
 	// miss should propagate as such (the caller's struct-literal branch
 	// handles the not-found case).
 	if pkgQualifier != "" {
-		return nil, false
+		return nil, false, nil
 	}
 
-	for _, meta := range t.typeMetas {
-		if !meta.IsSealed {
+	// Second pass: dot-imported packages. Collect every match so we can
+	// reject ambiguity instead of silently picking by import order. The
+	// dot-import slice itself is appended in declared order, so the walk
+	// is deterministic regardless of typeMetas' map iteration order;
+	// determinism only matters here for the error path's package list.
+	type dotMatch struct {
+		pkg    string
+		fields []string
+	}
+	var matches []dotMatch
+	for _, dotPkg := range t.importManager.GetDotImports() {
+		if dotPkg == "" || dotPkg == t.packageName {
 			continue
 		}
-		for _, sv := range meta.SealedVariants {
-			if sv.Name == variantName {
-				return sv.FieldNames, true
+		for _, meta := range t.typeMetas {
+			if !meta.IsSealed || meta.Package != dotPkg {
+				continue
+			}
+			for _, sv := range meta.SealedVariants {
+				if sv.Name == variantName {
+					matches = append(matches, dotMatch{pkg: dotPkg, fields: sv.FieldNames})
+				}
 			}
 		}
 	}
-	return nil, false
+	switch len(matches) {
+	case 0:
+		return nil, false, nil
+	case 1:
+		return matches[0].fields, true, nil
+	default:
+		pkgs := make([]string, len(matches))
+		for i, m := range matches {
+			pkgs[i] = m.pkg
+		}
+		return nil, false, galaerr.NewCodedSemanticError(
+			galaerr.CodeAmbiguousSealedVariant,
+			line, col,
+			fmt.Sprintf("ambiguous sealed-variant reference: case %q is declared in multiple dot-imported packages (%s)", variantName, strings.Join(pkgs, ", ")),
+			fmt.Sprintf("qualify the call site with the package name, e.g. `%s.%s(...)`", pkgs[0], variantName),
+		)
+	}
 }
 
 // isSealedVariantTypeName reports whether `typeName` (an unqualified variant
