@@ -3,21 +3,28 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ page.title }} | GALA Language</title>
+  <meta name="theme-color" content="#00ADD8">
+  <title>{{ page.title }} | GALA</title>
   <meta name="description" content="{{ page.description | default: site.description }}">
-  <meta name="keywords" content="{{ page.keywords | default: 'gala, golang sum types, golang pattern matching, golang option type, transpile to go, go algebraic data types' }}">
+  <meta name="keywords" content="{{ page.keywords | default: 'gala language, scala on go, golang sum types, golang pattern matching, golang option type, transpile to go, go algebraic data types' }}">
 
   <!-- Open Graph -->
   <meta property="og:title" content="{{ page.title }}">
   <meta property="og:description" content="{{ page.description | default: site.description }}">
   <meta property="og:type" content="website">
   <meta property="og:url" content="{{ page.url | absolute_url }}">
-  <meta property="og:site_name" content="GALA Language">
+  <meta property="og:site_name" content="GALA">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:image" content="{{ '/assets/images/og-card.png' | absolute_url }}">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="GALA — Scala on Go. Sealed types, pattern matching, monads, native Go binaries.">
 
   <!-- Twitter -->
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="{{ page.title }}">
   <meta name="twitter:description" content="{{ page.description | default: site.description }}">
+  <meta name="twitter:image" content="{{ '/assets/images/og-card.png' | absolute_url }}">
 
   <!-- Canonical -->
   <link rel="canonical" href="{{ page.url | absolute_url }}">
@@ -36,8 +43,6 @@
     }
   }
   </script>
-
-  {% seo %}
 
   <style>
     :root {
@@ -161,7 +166,7 @@
     }
     .cta {
       display: inline-block;
-      background: var(--accent);
+      background: var(--accent-dark);
       color: white;
       padding: 0.75rem 2rem;
       border-radius: 6px;
@@ -170,7 +175,7 @@
       margin: 0.5rem;
       transition: background 0.2s;
     }
-    .cta:hover { background: var(--accent-dark); color: white; }
+    .cta:hover { background: #005f7a; color: white; }
     .cta-secondary {
       background: transparent;
       border: 2px solid var(--accent);
@@ -208,6 +213,18 @@
       text-align: center;
       font-size: 0.85rem;
       color: #666;
+    }
+    .hero-code {
+      text-align: left;
+      max-width: 640px;
+      margin: 2rem auto 0;
+      font-size: 0.9rem;
+    }
+    .hero-aside {
+      text-align: center;
+      color: #666;
+      font-size: 0.95rem;
+      margin: 0.75rem 0 1.5rem;
     }
   </style>
 </head>
