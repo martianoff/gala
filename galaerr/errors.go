@@ -198,6 +198,14 @@ const (
 	// (or `import . "..."`) in the file that uses them. Sibling files'
 	// imports do not propagate.
 	CodeUnresolvedCrossPackageSymbol ErrorCode = "GALA-E0025"
+
+	// E0026: an unqualified sealed-variant constructor name matches a case
+	// in two or more dot-imported sealed types. The transpiler cannot
+	// pick one without silently shadowing the others, so it asks the user
+	// to qualify the call site (`pkg.Variant(...)`) to disambiguate. Local
+	// (same-package) declarations always shadow dot-imports, so this code
+	// only fires when the conflict is across two imports.
+	CodeAmbiguousSealedVariant ErrorCode = "GALA-E0026"
 )
 
 // MultiError collects multiple GALA errors.
