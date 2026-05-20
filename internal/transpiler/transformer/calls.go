@@ -1065,9 +1065,17 @@ func (t *galaASTTransformer) transformFunctionArgs(
 
 		if arg.Identifier() != nil {
 			// Named argument: resolve the expected type via struct-field lookup
-			// first (supports generic struct construction), then function metadata.
+			// first (supports generic struct construction), then function metadata,
+			// then sealed-variant cases. The line/col is for the dot-import
+			// ambiguity diagnostic in findSealedVariant — point at the named arg
+			// itself so the error pins the exact call-site token rather than
+			// the surrounding statement.
 			argName := arg.Identifier().GetText()
-			namedExpectedType := t.resolveNamedArgExpectedFuncType(fun, argName, callCtx)
+			argLine, argCol := arg.GetStart().GetLine(), arg.GetStart().GetColumn()
+			namedExpectedType, expErr := t.resolveNamedArgExpectedFuncType(fun, argName, callCtx, argLine, argCol)
+			if expErr != nil {
+				return nil, nil, false, expErr
+			}
 
 			var expr ast.Expr
 			var aerr error
@@ -1113,10 +1121,14 @@ func (t *galaASTTransformer) transformFunctionArgs(
 // `errOpt.Map((e) => e.Error())` whose lambda body's return type is locally
 // unresolvable falls back to U=any. Tries struct-field-type resolution first
 // (with generic type-param substitution for generic struct construction),
-// then falls back to function metadata param names. Returns NilType when no
-// expected type can be determined. Extracted from transformCallWithArgsCtx
-// as part of A1 cont.
-func (t *galaASTTransformer) resolveNamedArgExpectedFuncType(fun ast.Expr, argName string, callCtx functionCallContext) transpiler.Type {
+// then falls back to function metadata param names, then to sealed-variant
+// case constructors. Returns NilType when no expected type can be
+// determined. The error return propagates an ambiguous-dot-import diagnostic
+// from the sealed-variant lookup (see findSealedVariant); other failure
+// modes here surface as NilType so the caller can still transform the
+// value expression without an expected type. Extracted from
+// transformCallWithArgsCtx as part of A1 cont.
+func (t *galaASTTransformer) resolveNamedArgExpectedFuncType(fun ast.Expr, argName string, callCtx functionCallContext, line, col int) (transpiler.Type, error) {
 	// Step 1: struct-field lookup — handles lambdas passed as named struct args
 	// AND non-lambda named args (so the call-site expected type can drive
 	// inference of nested generic method calls).
@@ -1142,7 +1154,7 @@ func (t *galaASTTransformer) resolveNamedArgExpectedFuncType(fun ast.Expr, argNa
 								expected = t.substituteTranspilerTypeParams(expected, typeSubst)
 							}
 						}
-						return expected
+						return expected, nil
 					}
 				}
 			}
@@ -1156,7 +1168,7 @@ func (t *galaASTTransformer) resolveNamedArgExpectedFuncType(fun ast.Expr, argNa
 	if callCtx.funcMeta != nil && len(callCtx.funcMeta.ParamNames) > 0 {
 		for i, paramName := range callCtx.funcMeta.ParamNames {
 			if paramName == argName && i < len(callCtx.funcMeta.ParamTypes) {
-				return callCtx.funcMeta.ParamTypes[i]
+				return callCtx.funcMeta.ParamTypes[i], nil
 			}
 		}
 	}
@@ -1169,8 +1181,28 @@ func (t *galaASTTransformer) resolveNamedArgExpectedFuncType(fun ast.Expr, argNa
 	// expected slot type pushed onto expectedArgTypes — without it, the
 	// nested .Map call cannot infer its result type-param from the enclosing
 	// context and falls back to U=any.
-	if typeName, _ := extractTypeNameFromExpr(fun); typeName != "" {
-		if sv := t.findSealedVariant(typeName); sv != nil {
+	//
+	// The lookup is scoped to the variant's own package (extracted from the
+	// call's qualified name and resolved through the struct registry) so a
+	// same-named variant in a sibling package cannot shadow the local one
+	// via Go map iteration order — without scoping, the wrong variant's
+	// FieldTypes could be pushed onto the expectedArgTypes stack and break
+	// type-param inference for the nested call. See findSealedVariant for
+	// the package-aware lookup discipline this mirrors from the
+	// findSealedVariantFields fix on the codegen side.
+	if typeName, qualifiedName := extractTypeNameFromExpr(fun); typeName != "" {
+		variantPkg := ""
+		if qualifiedName != "" {
+			resolvedTypeName := t.resolveStructTypeName(qualifiedName)
+			if idx := strings.LastIndex(resolvedTypeName, "."); idx != -1 {
+				variantPkg = resolvedTypeName[:idx]
+			}
+		}
+		sv, err := t.findSealedVariant(typeName, variantPkg, line, col)
+		if err != nil {
+			return transpiler.NilType{}, err
+		}
+		if sv != nil {
 			for i, fieldName := range sv.FieldNames {
 				if fieldName == argName && i < len(sv.FieldTypes) {
 					expected := sv.FieldTypes[i]
@@ -1179,7 +1211,7 @@ func (t *galaASTTransformer) resolveNamedArgExpectedFuncType(fun ast.Expr, argNa
 					}
 					// Apply parent sealed type's type-param substitution when the
 					// call site supplied explicit type args (e.g. `Ended[int](...)`).
-					if parent := t.findSealedParentForVariant(typeName, ""); parent != nil && len(parent.TypeParams) > 0 {
+					if parent := t.findSealedParentForVariant(typeName, variantPkg); parent != nil && len(parent.TypeParams) > 0 {
 						if typeArgs := t.extractFuncCallTypeArgs(fun); len(typeArgs) > 0 {
 							typeSubst := make(map[string]string)
 							for j, tp := range parent.TypeParams {
@@ -1190,30 +1222,109 @@ func (t *galaASTTransformer) resolveNamedArgExpectedFuncType(fun ast.Expr, argNa
 							expected = t.substituteTranspilerTypeParams(expected, typeSubst)
 						}
 					}
-					return expected
+					return expected, nil
 				}
 			}
 		}
 	}
 
-	return transpiler.NilType{}
+	return transpiler.NilType{}, nil
 }
 
 // findSealedVariant returns the SealedVariant metadata for a variant name by
-// searching all registered sealed parent types. Returns nil if the name is
-// not a known variant.
-func (t *galaASTTransformer) findSealedVariant(variantName string) *transpiler.SealedVariant {
-	for _, meta := range t.typeMetas {
-		if !meta.IsSealed {
-			continue
+// searching parent sealed types in typeMetas. The optional pkgQualifier
+// restricts the search to a specific package; when empty, the current
+// package is searched first (so a local variant always shadows a same-
+// named variant in an imported sealed type) and dot-imported packages
+// are searched as a deterministic fallback. Returns (variant, nil) when
+// a match is found, (nil, nil) when no sealed parent contains the name,
+// and (nil, err) when an unqualified call site matches in two or more
+// dot-imported packages — mirrors the same package-aware lookup
+// discipline as findSealedVariantFields so a same-named variant in a
+// sibling package cannot shadow the local one through Go map iteration
+// order.
+//
+// The expected-type propagation path in resolveNamedArgExpectedFuncType
+// is what makes this lookup load-bearing: when a named arg's value is a
+// nested generic call (e.g. `Wrap(Field = opt.Map((e) => e.Error()))`),
+// the call-site's expected slot type must come from the local variant's
+// FieldTypes — a wrong-package match would push the wrong type onto the
+// expectedArgTypes stack and break type-param inference for the nested
+// call, silently falling back to `any` in the generated Go.
+func (t *galaASTTransformer) findSealedVariant(variantName, pkgQualifier string, line, col int) (*transpiler.SealedVariant, error) {
+	// Resolve a possible import alias to the actual package name.
+	actualPkg := pkgQualifier
+	if pkgQualifier != "" {
+		if resolved, ok := t.importManager.ResolveAlias(pkgQualifier); ok {
+			actualPkg = resolved
 		}
-		for i := range meta.SealedVariants {
-			if meta.SealedVariants[i].Name == variantName {
-				return &meta.SealedVariants[i]
+	}
+
+	// First pass: explicitly named package, or current package when no
+	// qualifier. Gives local declarations precedence.
+	primaryPkg := actualPkg
+	if primaryPkg == "" {
+		primaryPkg = t.packageName
+	}
+
+	if primaryPkg != "" {
+		for _, meta := range t.typeMetas {
+			if !meta.IsSealed || meta.Package != primaryPkg {
+				continue
+			}
+			for i := range meta.SealedVariants {
+				if meta.SealedVariants[i].Name == variantName {
+					return &meta.SealedVariants[i], nil
+				}
 			}
 		}
 	}
-	return nil
+
+	// When the caller explicitly qualified the variant, do not fall
+	// through to other packages — the qualifier is authoritative.
+	if pkgQualifier != "" {
+		return nil, nil
+	}
+
+	// Second pass: dot-imported packages. Collect every match so we can
+	// reject ambiguity instead of silently picking by import order.
+	type dotMatch struct {
+		pkg     string
+		variant *transpiler.SealedVariant
+	}
+	var matches []dotMatch
+	for _, dotPkg := range t.importManager.GetDotImports() {
+		if dotPkg == "" || dotPkg == t.packageName {
+			continue
+		}
+		for _, meta := range t.typeMetas {
+			if !meta.IsSealed || meta.Package != dotPkg {
+				continue
+			}
+			for i := range meta.SealedVariants {
+				if meta.SealedVariants[i].Name == variantName {
+					matches = append(matches, dotMatch{pkg: dotPkg, variant: &meta.SealedVariants[i]})
+				}
+			}
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return nil, nil
+	case 1:
+		return matches[0].variant, nil
+	default:
+		pkgs := make([]string, len(matches))
+		for i, m := range matches {
+			pkgs[i] = m.pkg
+		}
+		return nil, galaerr.NewCodedSemanticError(
+			galaerr.CodeAmbiguousSealedVariant,
+			line, col,
+			fmt.Sprintf("ambiguous sealed-variant reference: case %q is declared in multiple dot-imported packages (%s)", variantName, strings.Join(pkgs, ", ")),
+			fmt.Sprintf("qualify the call site with the package name, e.g. `%s.%s(...)`", pkgs[0], variantName),
+		)
+	}
 }
 
 // functionCallContext bundles the expected-type lookups used when
@@ -2062,6 +2173,16 @@ func (t *galaASTTransformer) findSealedVariantFields(variantName, pkgQualifier s
 // name in the current package) is a registered sealed variant. Used by the
 // B6 fail-loud check to limit the GALA-E0018 diagnostic to sealed variants —
 // other generic types still fall through to Go's deduction.
+//
+// The empty pkgQualifier passed to findSealedParentForVariant is deliberate:
+// this is purely an existence check ("does any loaded sealed type expose a
+// case with this name?") used to gate a more specific error message. It is
+// NOT a codegen path, so the cross-package map walk that the codegen-side
+// lookups (findSealedVariant, findSealedVariantFields) had to package-scope
+// for determinism would only reduce diagnostic coverage here. A false
+// positive (the name exists in some package, but not the one the user
+// meant) still produces the correct user-visible error — pointing at an
+// uninferable sealed-variant constructor — so the looser scope is safe.
 func (t *galaASTTransformer) isSealedVariantTypeName(typeName string) bool {
 	return t.findSealedParentForVariant(typeName, "") != nil
 }
