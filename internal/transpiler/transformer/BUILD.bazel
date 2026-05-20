@@ -62,6 +62,7 @@ go_test(
         "dot_import_test.go",
         "equal_test.go",
         "expected_arg_stack_test.go",
+        "expected_type_sealed_variant_overlap_test.go",
         "functions_test.go",
         "generated_format_test.go",
         "generics_test.go",
