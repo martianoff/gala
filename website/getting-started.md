@@ -1,6 +1,6 @@
 ---
 layout: default
-title: "Getting Started with GALA — Install and Write Your First Go Alternative Program"
+title: "Getting Started with GALA — Install and Write Your First Program"
 description: "Install GALA and write your first program in minutes. Pre-built binaries for Linux, macOS, and Windows. Get sum types, pattern matching, and Option types for Go in 3 steps."
 keywords: "install gala, gala getting started, gala tutorial, gala hello world, gala setup, gala quickstart, transpile gala to go, golang sum types install, go pattern matching setup"
 permalink: /getting-started/
@@ -13,6 +13,8 @@ permalink: /getting-started/
 # Getting Started with GALA
 
 GALA transpiles to Go, so you get native binaries, full Go library access, and the entire Go toolchain. This guide takes you from installation to a running program in minutes.
+
+*Want to try GALA without installing? Open the [Playground]({{ '/playground/' | relative_url }}) — full editor, runs in your browser.*
 
 ---
 

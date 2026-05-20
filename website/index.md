@@ -1,26 +1,70 @@
 ---
 layout: default
-title: "GALA - Sum Types, Pattern Matching, Default Parameters, and Zero-Reflection JSON for Go"
-description: "GALA adds the features Go developers want most — sum types, exhaustive pattern matching, default parameters with named arguments, zero-reflection JSON codec, Option/Either/Try monads, and immutable collections. Transpiles to native Go binaries with full library compatibility."
-keywords: "golang sum types, golang pattern matching, golang option type, go algebraic data types, go sealed types, transpile to go, golang error handling alternative, golang immutable collections, gala language, golang default parameters, golang named arguments, go json without reflection, golang json codec, golang regex pattern matching, go functional programming"
+title: "GALA — Scala on Go"
+description: "Scala on Go. A statically typed, functional-first language that transpiles to Go — sealed types, pattern matching, monads, full Go interop."
+keywords: "gala language, scala on go, golang sum types, golang pattern matching, golang option type, golang algebraic data types, transpile to go, golang functional programming, golang sealed types, golang zero reflection json"
 schema_type: "SoftwareApplication"
 permalink: /
 ---
 
 <div class="hero">
-  <h1>GALA</h1>
-  <p class="tagline">Sum types, pattern matching, default parameters, and zero-reflection JSON that Go is missing — compiled to native Go binaries</p>
+  <h1>Scala on Go.</h1>
+  <p class="tagline">Sealed types and exhaustive pattern matching, <code>Option</code>/<code>Either</code>/<code>Try</code> monads, zero-reflection JSON, and first-class interop with every Go module — transpiled to native Go binaries.</p>
   <a href="https://gala-playground.fly.dev" class="cta">Try in Playground</a>
   <a href="https://github.com/martianoff/gala" class="cta cta-secondary">View on GitHub</a>
+
+  <pre class="hero-code"><code>sealed type Shape {
+    case Circle(Radius float64)
+    case Rectangle(Width float64, Height float64)
+}
+
+func area(s Shape) string = s match {
+    case Circle(r)       =&gt; f"circle: ${3.14159 * r * r}%.2f"
+    case Rectangle(w, h) =&gt; f"rect:   ${w * h}%.2f"
+}</code></pre>
 </div>
 
-## Sum Types and Pattern Matching for Go — Without Leaving the Ecosystem
+<p class="hero-aside"><em>GALA — Go Alternative LAnguage — is a statically typed, functional-first language that transpiles to Go.</em></p>
 
-**GALA** (Go Alternative LAnguage) is a modern programming language that transpiles to Go. The [2024 Go Developer Survey](https://go.dev/blog/survey2024-h1-results) confirmed that **sum types and enums are the #1 most-requested missing feature** in Go. As of Go 1.25, they still don't exist. GALA delivers them today — along with exhaustive pattern matching, `Option[T]`/`Either[A,B]`/`Try[T]` monads, default parameters with named arguments, a zero-reflection JSON codec, regex pattern matching extractors, and immutable collections — all compiling to a single native binary through the standard Go toolchain.
+## Why GALA Exists
 
-Unlike libraries like samber/lo or IBM/fp-go that bolt functional patterns onto Go's syntax, GALA adds these features **at the language level** with clean, concise syntax. Every Go library works out of the box. Your existing Go modules, third-party packages, and tooling remain fully compatible. GALA extends Go with the type-safety features it deliberately omits, while preserving Go's performance, deployment simplicity, and ecosystem.
+The [2024 Go Developer Survey](https://go.dev/blog/survey2024-h1-results) confirmed that **sum types and enums are the #1 most-requested missing feature** in Go. As of Go 1.25, they still don't exist. GALA delivers them today — along with exhaustive pattern matching, `Option[T]`/`Either[A,B]`/`Try[T]` monads, default parameters with named arguments, a zero-reflection JSON codec, regex pattern matching extractors, and immutable collections — all compiling to a single native binary through the standard Go toolchain.
 
-GALA's transpiler performs type inference, exhaustive match checking, and immutability enforcement at compile time. The generated Go code is clean and readable — you can always inspect what GALA produces. There is no runtime overhead beyond what the equivalent hand-written Go would have.
+Unlike libraries like samber/lo or IBM/fp-go that bolt functional patterns onto Go's syntax, GALA adds these features **at the language level** with clean, concise syntax. Every Go library works out of the box. Your existing Go modules, third-party packages, and tooling remain fully compatible.
+
+GALA's transpiler performs type inference, exhaustive match checking, and immutability enforcement at compile time. The generated Go code is clean and readable — there is no runtime overhead beyond what the equivalent hand-written Go would have.
+
+## GALA vs Go — A Quick Look
+
+Pattern matching is one of the most visible differences between GALA and Go. Where Go requires a manual type switch with field accessors, GALA destructures values directly and ensures every case is handled at compile time.
+
+<div class="comparison">
+<div>
+<p><strong>GALA</strong></p>
+<pre><code>val msg = shape match {
+    case Circle(r)       =&gt; f"r=$r%.1f"
+    case Rectangle(w, h) =&gt; f"$w%.0fx$h%.0f"
+    case Point()         =&gt; "point"
+}</code></pre>
+</div>
+<div>
+<p><strong>Go</strong></p>
+<pre><code>var msg string
+switch shape._variant {
+case Shape_Circle:
+    msg = fmt.Sprintf("r=%.1f",
+        shape.Radius.Get())
+case Shape_Rectangle:
+    msg = fmt.Sprintf("%fx%f",
+        shape.Width.Get(),
+        shape.Height.Get())
+case Shape_Point:
+    msg = "point"
+}</code></pre>
+</div>
+</div>
+
+GALA's version is shorter, handles destructuring automatically, and produces a compile-time error if you forget a case. See the [full GALA vs Go comparison]({{ '/vs-go/' | relative_url }}) for more examples including Option handling, immutable structs, and error handling.
 
 ## Features
 
@@ -126,38 +170,6 @@ val name = user.Name
 
 </div>
 
-## GALA vs Go — A Quick Look
-
-Pattern matching is one of the most visible differences between GALA and Go. Where Go requires a manual type switch with field accessors, GALA destructures values directly and ensures every case is handled at compile time.
-
-<div class="comparison">
-<div>
-<p><strong>GALA</strong></p>
-<pre><code>val msg = shape match {
-    case Circle(r)       =&gt; f"r=$r%.1f"
-    case Rectangle(w, h) =&gt; f"$w%.0fx$h%.0f"
-    case Point()         =&gt; "point"
-}</code></pre>
-</div>
-<div>
-<p><strong>Go</strong></p>
-<pre><code>var msg string
-switch shape._variant {
-case Shape_Circle:
-    msg = fmt.Sprintf("r=%.1f",
-        shape.Radius.Get())
-case Shape_Rectangle:
-    msg = fmt.Sprintf("%fx%f",
-        shape.Width.Get(),
-        shape.Height.Get())
-case Shape_Point:
-    msg = "point"
-}</code></pre>
-</div>
-</div>
-
-GALA's version is shorter, handles destructuring automatically, and produces a compile-time error if you forget a case. See the [full GALA vs Go comparison]({{ '/vs-go/' | relative_url }}) for more examples including Option handling, immutable structs, and error handling.
-
 ## Get Started in 3 Steps
 
 ### 1. Install
@@ -191,6 +203,7 @@ func main() {
 ### 3. Run
 
 ```bash
+gala mod init example.com/hello
 gala run main.gala
 ```
 

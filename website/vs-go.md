@@ -1,7 +1,7 @@
 ---
 layout: default
-title: "GALA vs Go — Sum Types, Pattern Matching, JSON Codec, and Default Parameters Compared"
-description: "Side-by-side comparison of GALA and Go. See how sum types replace type switches, pattern matching replaces switch, Option replaces nil checks, zero-reflection JSON replaces struct tags, default parameters replace functional options — same Go binary."
+title: "GALA vs Go — Scala on Go, Side-by-Side"
+description: "Side-by-side comparison of GALA and Go: sum types replace type switches, pattern matching replaces switch, Option replaces nil."
 keywords: "gala vs go, golang sum types comparison, go pattern matching vs switch, golang option vs nil, go error handling comparison, transpile to go, golang functional vs imperative, golang missing features, golang json without reflection, go json alternative, golang default parameters, golang named arguments, go functional options alternative"
 permalink: /vs-go/
 ---
@@ -9,6 +9,8 @@ permalink: /vs-go/
 <div class="breadcrumb">
   <a href="{{ '/' | relative_url }}">Home</a> &raquo; GALA vs Go
 </div>
+
+*Scala on Go. Same Go runtime, same Go libraries — different source language.*
 
 # GALA vs Go -- Side-by-Side Comparison
 
@@ -274,7 +276,7 @@ GALA's codec is resolved entirely at compile time — zero reflection overhead a
 
 ---
 
-## 7. Default Parameter Values
+## Default Parameter Values
 
 Go has no default parameters. The common workaround is the "functional options" pattern, which requires a struct, variadic functions, and option types. GALA adds defaults directly to the function signature.
 
