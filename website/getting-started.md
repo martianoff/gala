@@ -195,7 +195,49 @@ gala clean --cache
 
 ### With Bazel (Recommended for Larger Projects)
 
-For larger projects, Bazel provides incremental builds, dependency management, and test orchestration. GALA provides three Bazel rules:
+For larger projects, Bazel provides incremental builds, dependency management, and test orchestration.
+
+#### One-Time Setup
+
+GALA's Bazel rules ship as the [`rules_gala`](https://github.com/martianoff/rules-gala) module. The transpiler binary, stdlib, and toolchain registration ship as the `gala` module. Both are resolved from a custom registry hosted in the `rules-gala` repo.
+
+Add the registry to your project's `.bazelrc`:
+
+```
+common --enable_bzlmod
+common --noenable_workspace
+build  --enable_runfiles
+
+# The custom registry must come first so it wins for `rules_gala`.
+common --registry=https://raw.githubusercontent.com/martianoff/rules-gala/main/
+common --registry=https://bcr.bazel.build
+
+# Pass GOROOT/PATH through to genrules so the transpiler can use
+# go/importer for cross-language Go type inference.
+build --action_env=GOROOT
+build --action_env=PATH
+```
+
+In `MODULE.bazel`:
+
+```python
+module(name = "myproject", version = "0.0.1")
+
+bazel_dep(name = "rules_gala", version = "0.1.1")
+bazel_dep(name = "gala", version = "0.50.0")
+bazel_dep(name = "rules_go", version = "0.59.0")
+bazel_dep(name = "gazelle", version = "0.47.0")
+
+# Register the GALA toolchains that ship with the gala language module.
+register_toolchains(
+    "@gala//tools/toolchain:gala_toolchain",
+    "@gala//tools/toolchain:gala_bootstrap_toolchain",
+)
+```
+
+#### Rules
+
+GALA provides three Bazel rules:
 
 **`gala_binary`** -- builds an executable:
 
@@ -220,14 +262,14 @@ gala_library(
 )
 ```
 
-**`gala_test`** -- builds and runs tests:
+**`gala_test`** -- builds and runs tests (auto-discovers every `func TestXxx(t T) T`):
 
 ```python
 load("@rules_gala//gala:defs.bzl", "gala_test")
 
 gala_test(
     name = "handler_test",
-    src = "handler_test.gala",
+    srcs = ["handler_test.gala"],
 )
 ```
 
