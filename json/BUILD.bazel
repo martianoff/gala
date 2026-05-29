@@ -1,5 +1,5 @@
 load("@rules_go//go:def.bzl", "go_library", "go_test")
-load("//:gala.bzl", "gala_bootstrap_transpile")
+load("@rules_gala//gala:defs.bzl", "gala_bootstrap_transpile")
 
 exports_files([
     "json.gala",

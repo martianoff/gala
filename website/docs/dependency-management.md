@@ -518,7 +518,7 @@ go_deps.from_file(go_mod = "//:go.mod")
 use_repo(go_deps, "com_github_google_uuid")
 
 # GALA dependencies
-gala = use_extension("@gala//:extensions.bzl", "gala")
+gala = use_extension("@rules_gala//gala:extensions.bzl", "gala")
 gala.from_file(gala_mod = "//:gala.mod")
 use_repo(gala, "com_github_example_utils")
 ```
@@ -530,7 +530,7 @@ use_repo(gala, "com_github_example_utils")
 Reference dependencies in the standard `deps` attribute:
 
 ```python
-load("//:gala.bzl", "gala_library", "gala_binary")
+load("@rules_gala//gala:defs.bzl", "gala_library", "gala_binary")
 
 gala_library(
     name = "mylib",

@@ -18,7 +18,7 @@ literal where each field is std.Immutable[T]-wrapped at codegen) for
 named-arg struct constructors.
 """
 
-load("@gala//:gala.bzl", "gala_transpile")
+load("@rules_gala//gala:defs.bzl", "gala_transpile")
 load("@rules_go//go:def.bzl", "go_test")
 
 # Gazelle would otherwise auto-generate a duplicate go_test target.

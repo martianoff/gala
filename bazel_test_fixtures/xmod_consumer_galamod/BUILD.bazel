@@ -31,7 +31,7 @@ the path past the Windows MAX_PATH limit (260 chars) and bazel test fails
 with 'fork/exec: The parameter is incorrect'.
 """
 
-load("@gala//:gala.bzl", "gala_transpile")
+load("@rules_gala//gala:defs.bzl", "gala_transpile")
 load("@rules_go//go:def.bzl", "go_test")
 
 # Gazelle would otherwise auto-generate a duplicate go_test target.

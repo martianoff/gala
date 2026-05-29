@@ -1,6 +1,6 @@
-load("//:gala.bzl", "gala_test")
+load("@rules_gala//gala:defs.bzl", "gala_exec_test")
 
-gala_test(
+gala_exec_test(
     name = "embed_string",
     src = "main.gala",
     embedsrcs = ["greeting.txt"],

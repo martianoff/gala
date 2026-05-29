@@ -1,4 +1,4 @@
-load("//:gala.bzl", "gala_library")
+load("@rules_gala//gala:defs.bzl", "gala_library")
 
 gala_library(
     name = "tuple_call_lib",

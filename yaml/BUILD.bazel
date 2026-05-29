@@ -1,5 +1,5 @@
 load("@rules_go//go:def.bzl", "go_library", "go_test")
-load("//:gala.bzl", "gala_bootstrap_transpile", "gala_go_test")
+load("@rules_gala//gala:defs.bzl", "gala_bootstrap_transpile", "gala_test")
 
 exports_files([
     "yaml.gala",
@@ -57,7 +57,7 @@ go_test(
     embed = [":yaml"],
 )
 
-gala_go_test(
+gala_test(
     name = "yaml_test",
     srcs = ["yaml_test.gala"],
     deps = [":yaml"],

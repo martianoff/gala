@@ -3274,11 +3274,11 @@ The `T` test context provides methods:
 For tests collocated with the library — the standard pattern — use `pkg` to match the library package name and `lib_srcs` to include the library source files:
 
 ```python
-load("//:gala.bzl", "gala_go_test")
+load("@rules_gala//gala:defs.bzl", "gala_test")
 
 _SRCS = glob(["*.gala"], exclude = ["*_test.gala"])
 
-gala_go_test(
+gala_test(
     name = "mypackage_test",
     srcs = glob(["*_test.gala"]),
     pkg = "mypackage",
@@ -3294,9 +3294,9 @@ The macro uses `go_test` with `embed` for internal tests, properly handling the 
 For a `package main` test program that lives in its own directory and imports the library by its public path, omit `pkg` (it defaults to `"main"`):
 
 ```python
-load("//:gala.bzl", "gala_go_test")
+load("@rules_gala//gala:defs.bzl", "gala_test")
 
-gala_go_test(
+gala_test(
     name = "smoke_test",
     srcs = ["smoke_test.gala"],
     deps = ["//mypackage"],
@@ -3307,12 +3307,12 @@ Do not use this pattern for a `_test.gala` file that lives next to library sourc
 
 #### Output Comparison Tests
 
-For tests that compare program output against expected files, use `gala_test`:
+For tests that compare program output against expected files, use `gala_exec_test`:
 
 ```python
-load("//:gala.bzl", "gala_test")
+load("@rules_gala//gala:defs.bzl", "gala_exec_test")
 
-gala_test(
+gala_exec_test(
     name = "output_test",
     src = "output_test.gala",
     expected = "output_test.out",
@@ -3339,7 +3339,7 @@ Test files must follow the *Package rule*: every `.gala` file in a directory dec
 
 #### Using Bazel
 
-For Bazel-based projects, use the `gala_go_test` and `gala_test` macros (see [BUILD.bazel Configuration](#buildbazel-configuration) above).
+For Bazel-based projects, use the `gala_test` and `gala_exec_test` macros (see [BUILD.bazel Configuration](#buildbazel-configuration) above).
 
 ##### Prerequisites
 
@@ -3677,7 +3677,7 @@ replace github.com/example/utils => ../local-utils
 Load dependencies from `gala.mod` in your WORKSPACE:
 
 ```python
-load("@gala//:gala_deps.bzl", "gala_dependencies")
+load("@rules_gala//gala:repositories.bzl", "gala_dependencies")
 gala_dependencies()
 ```
 
@@ -3901,12 +3901,12 @@ gala transpile-package \
   --search /path/to/gala
 ```
 
-The `gala_library`, `gala_binary`, and `gala_go_test` Bazel macros automatically use batch transpilation for multi-file packages via the `gala_transpile_package` rule.
+The `gala_library`, `gala_binary`, and `gala_test` Bazel macros automatically use batch transpilation for multi-file packages via the `gala_transpile_package` rule.
 
 #### Bazel Rule
 
 ```python
-load("//:gala.bzl", "gala_transpile_package")
+load("@rules_gala//gala:defs.bzl", "gala_transpile_package")
 
 gala_transpile_package(
     name = "my_package_transpile",

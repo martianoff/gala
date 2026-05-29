@@ -1,0 +1,49 @@
+"""GALA toolchains for this repo.
+
+Two separate toolchains are registered because the stdlib (//std) is
+built using `gala_bootstrap_transpile`, and the main transpiler binary
+(`//cmd/gala:gala_worker`) embeds the stdlib it would otherwise need —
+binding both onto a single toolchain target makes stdlib targets
+depend transitively on the binary that embeds them, which is a cycle.
+The bootstrap toolchain only carries `//cmd/gala_bootstrap`, which has
+no stdlib dependency, so the cycle is broken.
+"""
+
+load(
+    "@rules_gala//gala:toolchain.bzl",
+    "gala_bootstrap_toolchain",
+    "gala_toolchain",
+)
+
+gala_toolchain(
+    name = "gala_toolchain_impl",
+    gala_binary = "//cmd/gala:gala",
+    gala_worker = "//cmd/gala:gala_worker",
+    test_runner = "//cmd/gala_test_runner",
+    test_gen = "//cmd/gala_test_gen",
+    all_gala_sources = "//:all_gala_sources",
+    go_mod = "//:go.mod",
+    visibility = ["//visibility:public"],
+)
+
+toolchain(
+    name = "gala_toolchain",
+    toolchain = ":gala_toolchain_impl",
+    toolchain_type = "@rules_gala//gala:toolchain_type",
+    visibility = ["//visibility:public"],
+)
+
+gala_bootstrap_toolchain(
+    name = "gala_bootstrap_toolchain_impl",
+    gala_bootstrap = "//cmd/gala_bootstrap",
+    all_gala_sources = "//:all_gala_sources",
+    go_mod = "//:go.mod",
+    visibility = ["//visibility:public"],
+)
+
+toolchain(
+    name = "gala_bootstrap_toolchain",
+    toolchain = ":gala_bootstrap_toolchain_impl",
+    toolchain_type = "@rules_gala//gala:bootstrap_toolchain_type",
+    visibility = ["//visibility:public"],
+)

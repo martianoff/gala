@@ -200,7 +200,7 @@ For larger projects, Bazel provides incremental builds, dependency management, a
 **`gala_binary`** -- builds an executable:
 
 ```python
-load("//:gala.bzl", "gala_binary")
+load("@rules_gala//gala:defs.bzl", "gala_binary")
 
 gala_binary(
     name = "myapp",
@@ -211,7 +211,7 @@ gala_binary(
 **`gala_library`** -- builds a reusable package:
 
 ```python
-load("//:gala.bzl", "gala_library")
+load("@rules_gala//gala:defs.bzl", "gala_library")
 
 gala_library(
     name = "handler",
@@ -220,12 +220,12 @@ gala_library(
 )
 ```
 
-**`gala_go_test`** -- builds and runs tests:
+**`gala_test`** -- builds and runs tests:
 
 ```python
-load("//:gala.bzl", "gala_go_test")
+load("@rules_gala//gala:defs.bzl", "gala_test")
 
-gala_go_test(
+gala_test(
     name = "handler_test",
     src = "handler_test.gala",
 )

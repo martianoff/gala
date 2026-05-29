@@ -1,4 +1,4 @@
-load("@gala//:gala.bzl", "gala_library")
+load("@rules_gala//gala:defs.bzl", "gala_library")
 
 # Note: ArrayTabulate / Array (used by BuildLabels in effects.gala) are
 # auto-imported from std's collection_immutable. They do not appear in

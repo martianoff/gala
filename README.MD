@@ -535,7 +535,7 @@ bazel build //cmd/gala:gala
 ### Using Bazel
 
 ```python
-load("//:gala.bzl", "gala_binary", "gala_library")
+load("@rules_gala//gala:defs.bzl", "gala_binary", "gala_library")
 
 gala_binary(
     name = "myapp",

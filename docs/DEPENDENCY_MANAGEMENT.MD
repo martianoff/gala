@@ -497,6 +497,12 @@ common --enable_bzlmod
 common --noenable_workspace
 build  --enable_runfiles
 
+# Resolve the rules_gala module from the registry hosted in
+# github.com/martianoff/rules-gala. Order matters — list this first
+# so it wins for the rules_gala module name.
+common --registry=https://raw.githubusercontent.com/martianoff/rules-gala/main/
+common --registry=https://bcr.bazel.build
+
 # Cross-language type inference: pass GOROOT and PATH through to genrules
 # so the transpiler can use go/importer to resolve Go package types
 # (function signatures, struct fields, method sets).
@@ -509,7 +515,7 @@ Why each one matters:
 | Flag | Why |
 |---|---|
 | `--enable_bzlmod` / `--noenable_workspace` | Bzlmod is the dependency model GALA's Bazel rules are wired against; legacy `WORKSPACE` mode won't resolve `@gala//...` correctly. |
-| **`--enable_runfiles`** | **Required on Windows** for `gala_go_test` / `gala_unit_test` targets to work. Without it the test wrappers (`.bat` files) can't locate their binaries via runfiles and tests fail with "the system cannot find the path specified" before any test code runs. (On Linux/macOS Bazel materializes runfiles via symlinks by default; on Windows the manifest-only mode needs this flag.) |
+| **`--enable_runfiles`** | **Required on Windows** for `gala_test` / `gala_unit_test` targets to work. Without it the test wrappers (`.bat` files) can't locate their binaries via runfiles and tests fail with "the system cannot find the path specified" before any test code runs. (On Linux/macOS Bazel materializes runfiles via symlinks by default; on Windows the manifest-only mode needs this flag.) |
 | `--action_env=GOROOT` / `--action_env=PATH` | Lets the transpiler invoke `go/importer` for cross-language type inference. Without these, transpilation still succeeds but Go-side function/struct types are resolved as `any` and downstream code may fail to compile. |
 
 ### MODULE.bazel (Bzlmod)
@@ -520,8 +526,10 @@ module(
     version = "0.0.1",
 )
 
-# GALA toolchain
+# GALA rules + language toolchain
+bazel_dep(name = "rules_gala", version = "0.1.1")
 bazel_dep(name = "gala", version = "1.0.0")
+register_toolchains("@gala//tools/toolchain:gala_toolchain")
 
 # Go rules (required for Go dependencies)
 bazel_dep(name = "rules_go", version = "0.50.1")
@@ -533,7 +541,7 @@ go_deps.from_file(go_mod = "//:go.mod")
 use_repo(go_deps, "com_github_google_uuid")
 
 # GALA dependencies (only needed if gala.mod has external GALA deps)
-gala = use_extension("@gala//:extensions.bzl", "gala")
+gala = use_extension("@rules_gala//gala:extensions.bzl", "gala")
 gala.from_file(gala_mod = "//:gala.mod")
 use_repo(gala, "com_github_example_utils")
 ```
@@ -561,7 +569,7 @@ The cost is only at transpile time (Bazel re-reads the source files);
 the runtime artifact is identical.
 
 ```python
-load("//:gala.bzl", "gala_library", "gala_binary")
+load("@rules_gala//gala:defs.bzl", "gala_library", "gala_binary")
 
 gala_library(
     name = "mylib",
