@@ -40,9 +40,12 @@ jobs:
     # NOTE: pin tags before running. Update both when the gala_tui
     # or gala_team API surface intentionally changes; otherwise the
     # build failures will reveal real semantic drift.
+    #
+    # Pinned to the rules_gala migration branches while gala-tui#13 and
+    # gala-team#92 are open. Revert to main/master once both land.
     env:
-      GALA_TUI_REF: main
-      GALA_TEAM_REF: master
+      GALA_TUI_REF: feat/migrate-to-rules-gala
+      GALA_TEAM_REF: feat/migrate-to-rules-gala
       WARM_BUDGET_SECONDS: "500"
       COLD_BUDGET_SECONDS: "600"
 
