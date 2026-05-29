@@ -528,7 +528,7 @@ module(
 
 # GALA rules + language toolchain
 bazel_dep(name = "rules_gala", version = "0.1.1")
-bazel_dep(name = "gala", version = "1.0.0")
+bazel_dep(name = "gala", version = "0.50.0")
 register_toolchains("@gala//tools/toolchain:gala_toolchain")
 
 # Go rules (required for Go dependencies)

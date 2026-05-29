@@ -506,7 +506,7 @@ module(
 )
 
 # GALA toolchain
-bazel_dep(name = "gala", version = "1.0.0")
+bazel_dep(name = "gala", version = "0.50.0")
 
 # Go rules (required for Go dependencies)
 bazel_dep(name = "rules_go", version = "0.50.1")
