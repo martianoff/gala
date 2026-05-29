@@ -1,5 +1,5 @@
 load("@rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
-load("//:gala.bzl", "gala_binary", "gala_bootstrap_transpile", "gala_go_test", "gala_library")
+load("@rules_gala//gala:defs.bzl", "gala_binary", "gala_bootstrap_transpile", "gala_library", "gala_test")
 
 exports_files([
     "list.gala",
@@ -74,37 +74,37 @@ go_library(
     ],
 )
 
-gala_go_test(
+gala_test(
     name = "array_test",
     srcs = ["array_test.gala"],
     deps = [":collection_immutable"],
 )
 
-gala_go_test(
+gala_test(
     name = "list_test",
     srcs = ["list_test.gala"],
     deps = [":collection_immutable"],
 )
 
-gala_go_test(
+gala_test(
     name = "inference_test",
     srcs = ["inference_test.gala"],
     deps = [":collection_immutable"],
 )
 
-gala_go_test(
+gala_test(
     name = "validation_test",
     srcs = ["validation_test.gala"],
     deps = [":collection_immutable"],
 )
 
-gala_go_test(
+gala_test(
     name = "hashset_test",
     srcs = ["hashset_test.gala"],
     deps = [":collection_immutable"],
 )
 
-gala_go_test(
+gala_test(
     name = "treeset_test",
     srcs = ["treeset_test.gala"],
     deps = [
@@ -113,7 +113,7 @@ gala_go_test(
     ],
 )
 
-gala_go_test(
+gala_test(
     name = "hashmap_test",
     srcs = ["hashmap_test.gala"],
     deps = [
@@ -122,7 +122,7 @@ gala_go_test(
     ],
 )
 
-gala_go_test(
+gala_test(
     name = "treemap_test",
     srcs = ["treemap_test.gala"],
     deps = [

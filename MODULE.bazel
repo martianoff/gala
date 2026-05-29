@@ -7,7 +7,11 @@
 
 module(
     name = "gala",
-    version = "1.0.0",
+    # Tracks the latest tagged gala release. Bump in lockstep with the
+    # release-script tag and gala.mod so `bazel_dep(name = "gala",
+    # version = X)` always matches the published binary the registry
+    # serves for that version.
+    version = "0.50.0",
 )
 
 bazel_dep(name = "platforms", version = "1.0.0")
@@ -17,6 +21,18 @@ bazel_dep(name = "rules_go", version = "0.59.0")
 bazel_dep(name = "rules_java", version = "8.6.1")
 bazel_dep(name = "rules_kotlin", version = "1.9.6")
 bazel_dep(name = "rules_shell", version = "0.4.1")
+bazel_dep(name = "rules_gala", version = "0.1.1")
+
+# Register the GALA toolchains shipped by this module. The main
+# toolchain binds rules_gala's user-facing rules to our in-repo
+# transpiler, stdlib, and test framework. The bootstrap toolchain is
+# used only by gala_bootstrap_transpile when building the stdlib; it
+# is kept separate so stdlib targets don't pull in the full transpiler
+# binary (which embeds the stdlib — that's a cycle).
+register_toolchains(
+    "//tools/toolchain:gala_toolchain",
+    "//tools/toolchain:gala_bootstrap_toolchain",
+)
 
 go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
 go_sdk.download(version = "1.25.5")

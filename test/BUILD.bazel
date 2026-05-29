@@ -1,4 +1,4 @@
-load("//:gala.bzl", "gala_go_test", "gala_library", "gala_bootstrap_transpile")
+load("@rules_gala//gala:defs.bzl", "gala_bootstrap_transpile", "gala_library", "gala_test")
 
 exports_files([
     "assertions.gala",
@@ -28,7 +28,7 @@ gala_library(
     visibility = ["//visibility:public"],
 )
 
-gala_go_test(
+gala_test(
     name = "framework_test",
     srcs = ["framework_test.gala"],
 )

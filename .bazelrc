@@ -1,6 +1,12 @@
 # This tells Bazel how to interact with the version control system
 common --enable_bzlmod
 common --noenable_workspace
+
+# Resolve the rules_gala module from the registry hosted in
+# github.com/martianoff/rules-gala. Order matters — list this first so it
+# wins for the rules_gala module name.
+common --registry=https://raw.githubusercontent.com/martianoff/rules-gala/main/
+common --registry=https://bcr.bazel.build
 build --java_runtime_version=remotejdk_17 --enable_runfiles
 
 # Platform-specific workspace status command for version stamping

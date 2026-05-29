@@ -1,5 +1,5 @@
 load("@rules_go//go:def.bzl", "go_library")
-load("//:gala.bzl", "gala_bootstrap_transpile", "gala_go_test")
+load("@rules_gala//gala:defs.bzl", "gala_bootstrap_transpile", "gala_test")
 
 exports_files([
     "fs.gala",
@@ -63,7 +63,7 @@ go_library(
     ],
 )
 
-gala_go_test(
+gala_test(
     name = "fs_test",
     srcs = ["fs_test.gala"],
     deps = [
@@ -73,7 +73,7 @@ gala_go_test(
     ],
 )
 
-gala_go_test(
+gala_test(
     name = "streaming_test",
     srcs = ["streaming_test.gala"],
     deps = [
@@ -82,7 +82,7 @@ gala_go_test(
     ],
 )
 
-gala_go_test(
+gala_test(
     name = "dir_ops_test",
     srcs = ["dir_ops_test.gala"],
     deps = [

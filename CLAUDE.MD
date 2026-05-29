@@ -62,7 +62,8 @@ go mod tidy && bazel run //:gazelle && bazel run //:gazelle-update-repos && baze
 The `.bazelrc` file includes `--action_env=GOROOT` and `--action_env=PATH` so that
 transpilation genrules can access the Go SDK for type inference (resolving function
 return types, struct fields, method signatures from Go packages). The genrules also
-use `tags = ["no-sandbox"]` in `gala.bzl` to allow filesystem access to the SDK.
+use `tags = ["no-sandbox"]` in the rules_gala transpile rules to allow filesystem
+access to the SDK.
 
 If the Go SDK is not found, transpilation still succeeds but Go type inference is
 disabled (a warning is printed to stderr). This only affects type resolution for

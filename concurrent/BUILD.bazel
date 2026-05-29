@@ -1,5 +1,5 @@
 load("@rules_go//go:def.bzl", "go_library")
-load("//:gala.bzl", "gala_bootstrap_transpile", "gala_go_test")
+load("@rules_gala//gala:defs.bzl", "gala_bootstrap_transpile", "gala_test")
 
 exports_files([
     "future.gala",
@@ -52,7 +52,7 @@ go_library(
     ],
 )
 
-gala_go_test(
+gala_test(
     name = "future_test",
     srcs = ["future_test.gala"],
     deps = [

@@ -18,7 +18,7 @@ generated Go contains the correct {}.Apply() forms and concrete-typed
 lambdas.
 """
 
-load("@gala//:gala.bzl", "gala_binary")
+load("@rules_gala//gala:defs.bzl", "gala_binary")
 load("@rules_go//go:def.bzl", "go_test")
 
 # Gazelle would otherwise auto-generate a duplicate go_test target named
