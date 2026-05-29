@@ -91,6 +91,8 @@ jobs:
           bazel build //cmd:gala_team \
             --override_module=gala=$GITHUB_WORKSPACE/gala_simple \
             --override_module=gala_tui=$GITHUB_WORKSPACE/gala_tui \
+            --registry=https://raw.githubusercontent.com/martianoff/rules-gala/main/ \
+            --registry=https://bcr.bazel.build \
             --action_env=GOROOT="$GOROOT" --action_env=PATH
           end=$(date +%s)
           elapsed=$((end - start))
@@ -111,6 +113,8 @@ jobs:
           bazel build //cmd:gala_team \
             --override_module=gala=$GITHUB_WORKSPACE/gala_simple \
             --override_module=gala_tui=$GITHUB_WORKSPACE/gala_tui \
+            --registry=https://raw.githubusercontent.com/martianoff/rules-gala/main/ \
+            --registry=https://bcr.bazel.build \
             --action_env=GOROOT="$GOROOT" --action_env=PATH \
             --action_env=PERF_RUN=warm-$(date +%s)
           end=$(date +%s)
