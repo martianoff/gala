@@ -41,10 +41,11 @@ jobs:
     # or gala_team API surface intentionally changes; otherwise the
     # build failures will reveal real semantic drift.
     #
-    # Pinned to the rules_gala migration branches while gala-tui#13 and
-    # gala-team#92 are open. Revert to main/master once both land.
+    # gala-tui#13 landed (rules_gala migration), so GALA_TUI_REF is
+    # back on main. GALA_TEAM_REF stays pinned to the migration branch
+    # until gala-team#92 lands; revert it to master afterward.
     env:
-      GALA_TUI_REF: feat/migrate-to-rules-gala
+      GALA_TUI_REF: main
       GALA_TEAM_REF: feat/migrate-to-rules-gala
       WARM_BUDGET_SECONDS: "500"
       COLD_BUDGET_SECONDS: "600"
