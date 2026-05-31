@@ -65,7 +65,12 @@ Every language is a set of trade-offs in service of a small number of goals. GAL
    diagnostic that names the problem is one an agent can act on directly instead of
    guessing — which keeps the edit/transpile/fix cycle tight. Conciseness serves the same
    goal: less ceremony means less for both reader and agent to parse before the intent is
-   clear.
+   clear. The deepest version of a short feedback loop, though, is the error that never
+   reaches runtime at all — so GALA pushes as many failures as it can into transpile time:
+   exhaustive pattern matching turns a forgotten case into a compile error, and replacing
+   `nil` and bare pointers with `Option`/`Try`/`Either` removes whole classes of nil-deref
+   and missing-check bugs before the program ever runs. A compile-time error is the
+   shortest feedback loop there is, and the easiest for an AI agent to act on.
 
 These goals are in tension with each other — goal 1 (rich runtime semantics) pushes
 against goal 5 (clean output), and goal 2 (zero-cost interop) constrains how far goal 3
