@@ -333,8 +333,6 @@ Stating the non-goals is part of the design:
   type-safe; an unresolved type is an error, not an `interface{}`.
 - **It does not invent runtime semantics Go lacks.** No custom scheduler, no GC of its
   own — it lowers onto Go's runtime and lives within it.
-- **It does not work around its own transpiler bugs.** A failing construct becomes a repro
-  test and a transpiler fix, never a rewritten-to-dodge-it idiom.
 
 ---
 
