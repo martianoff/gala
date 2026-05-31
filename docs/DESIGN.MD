@@ -52,8 +52,13 @@ Every language is a set of trade-offs in service of a small number of goals. GAL
    should be compile errors, not conventions checked in code review.
 4. **Inference over annotation.** If the compiler has enough information to know a type,
    the programmer should not have to write it.
-5. **Readable output.** The generated Go should be code a human could have written, so it
-   stays debuggable, reviewable, and trustworthy.
+5. **Readable — but not hand-written — output.** The generated Go should be legible enough
+   to debug, review, and trust: clear names, ordinary control flow, no obfuscation. It is
+   explicitly *not* a goal to reproduce idiomatic, high-quality, human-authored Go. The
+   output is a compilation target shaped by GALA's semantics — you will see `std.Immutable`
+   wrappers, generated `Copy` methods, discriminator switches, and other machinery a human
+   writing Go by hand would never introduce. "Readable" here means *inspectable when you
+   need to*, not *indistinguishable from a person's code*.
 6. **Short feedback loops — for humans and AI alike.** Errors should be concise, *coded*
    (`GALA-Exxxx`), and actionable rather than vague resolution failures. A growing share of
    GALA is written with AI coding agents in the loop, and a short, machine-readable
@@ -87,7 +92,9 @@ the lowering, not for code generation, GC, or a scheduler.
 **What it costs.**
 - **A transpilation step in the loop.** There is an extra build phase, and stack traces /
   debugger line numbers refer to generated Go, not GALA source. Readable output (goal 5)
-  is partly a mitigation for this: when you do drop into the Go, it looks familiar.
+  is partly a mitigation for this: when you do drop into the Go, it is legible enough to
+  follow — though it carries GALA's machinery and is not the idiomatic Go a person would
+  have hand-written.
 - **Latency to new Go features.** A new Go language or stdlib feature is usable from GALA
   only once the transpiler knows how to emit or infer it.
 - **Semantics bounded by Go's.** GALA cannot offer anything Go's runtime can't express —
