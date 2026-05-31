@@ -3723,6 +3723,8 @@ import "github.com/google/uuid"
 
 ## 18. Further Reading
 
+- [Why GALA?](WHY_GALA.MD) - The feature-by-feature case for GALA, with side-by-side Go comparisons.
+- [Design and Tradeoffs](DESIGN.MD) - Why GALA is built the way it is, and what each decision costs.
 - [Examples](EXAMPLES.MD) - More examples of GALA code.
 - [Concurrent](CONCURRENT.MD) - Future, Promise, and ExecutionContext for async programming.
 - [Stream](STREAM.MD) - Lazy, potentially infinite sequences.
