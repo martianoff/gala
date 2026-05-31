@@ -247,58 +247,26 @@ safe sharing without the naive cost of cloning on every update.
 
 ## Implementation Notes
 
-This section goes one layer deeper for contributors. It assumes familiarity with the
-transpiler layout in [CLAUDE.md](../CLAUDE.md) (`internal/transpiler/transformer` for
+A few entry points for contributors, beyond what the decisions above already cover. The
+transpiler layout is in [CLAUDE.md](../CLAUDE.md) (`internal/transpiler/transformer` for
 GALA-AST → Go-AST, `internal/transpiler/generator` for emission).
 
-### Immutability lowering and the wrap/unwrap discipline
-
-The core representational rule: **`val` → `std.Immutable[T]`, `var` → raw `T`.** The
-transpiler wraps a value when it is bound to a `val` and inserts `.Get()` wherever that
-binding is *used* as its underlying value. Getting this right everywhere — call arguments,
-struct fields, match scrutinees, interpolation, closures — is the bulk of the inference
-work, and a mis-wrapped or mis-unwrapped value is a classic transpiler-bug shape. Pointer
-immutability is a separate axis: GALA distinguishes the *binding's* mutability (can the
-pointer be reassigned) from the *pointee's* mutability, and `ConstPtr[T]` represents a
-read-only pointer obtained from a `val`. This is why an immutable pointer field can't be
-assigned `nil` — a forever-nil immutable pointer is useless, so it's a compile error
-directing you to `var`. Full rules: [GALA.MD §12](GALA.MD#12-immutability-under-the-hood).
-
-### The two-layer inference engine
-
-Inference is split deliberately (see [TYPE_INFERENCE.MD](TYPE_INFERENCE.MD)):
-
-- **Layer 1 — manual inference** (`getExprTypeNameManual`): a direct, fast walk that
-  resolves the overwhelmingly common cases (literals, known method signatures, obvious
-  generic instantiations) without building a constraint system.
-- **Layer 2 — Hindley-Milner** (`inferExprType`): the fallback for genuinely ambiguous
-  cases, where types must be solved from constraints rather than read off directly.
-
-The split is a performance/power trade-off: full HM on every expression would be slower
-and its failures harder to explain, while manual-only would miss the hard cases. The
-hardest region for both layers is cross-package generic inference, where the expected type
-at a call site must propagate into a generic constructor or `.Map` defined in another
-package. Most recent inference fixes live in that region.
-
-### Go-SDK-assisted inference is optional, by design
-
-For resolving Go stdlib/third-party signatures (return types, struct fields, method
-signatures), the transpiler can consult the Go SDK at transpile time. This is wired
-through `.bazelrc` (`--action_env=GOROOT`/`PATH`) and `no-sandbox` tags on the transpile
-rules. Crucially, **if the Go SDK is absent, transpilation still succeeds** — Go type
-inference is simply disabled with a warning, and GALA's own type system is unaffected.
-That graceful degradation is intentional: it keeps GALA's core independent of an external
-toolchain while still letting interop inference get sharper when the SDK is present.
-
-### Exhaustiveness and coded diagnostics
-
-Exhaustiveness checking for `match` over sealed types is performed by the transpiler
-because Go cannot perform it for us. As the type system reaches across packages and into
-generics, gaps in the checker become correctness bugs — hence the project rule to reproduce
-any such gap as a minimal test and fix the transpiler rather than work around it in GALA.
-The `GALA-Exxxx` coded diagnostics (see [docs/errors/](errors/)) are the user-facing side
-of this: a named, documented error beats a vague resolution failure when inference or
-resolution can't proceed.
+- **The wrap/unwrap discipline is where the immutability model actually lives.** Beyond the
+  `val → std.Immutable[T]` rule (decision 2), the work is *placement*: the transpiler must
+  insert `.Get()` wherever a `val` binding is used as its underlying value — call arguments,
+  struct fields, match scrutinees, interpolation, closures. A mis-wrapped or mis-unwrapped
+  value is the classic transpiler-bug shape.
+- **Inference has two named entry points** (see [TYPE_INFERENCE.MD](TYPE_INFERENCE.MD)):
+  `getExprTypeNameManual` (the fast Layer 1 walk) and `inferExprType` (the Hindley-Milner
+  Layer 2 fallback). Most recent fixes land in the cross-package generic region.
+- **Go-SDK-assisted inference is optional by design.** The transpiler can consult the Go SDK
+  (wired via `.bazelrc` `--action_env=GOROOT`/`PATH` and `no-sandbox` tags) to resolve Go
+  signatures — but if the SDK is absent, transpilation still succeeds with a warning and
+  GALA's own type system is unaffected. The graceful degradation keeps GALA's core
+  independent of an external toolchain.
+- **Coded diagnostics are the user-facing edge of the inference/exhaustiveness checks.** When
+  inference or resolution can't proceed, GALA emits a named, documented `GALA-Exxxx` error
+  (see [docs/errors/](errors/)) rather than a vague failure.
 
 ---
 
