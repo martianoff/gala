@@ -14,6 +14,31 @@ how a decision maps onto generated Go.
 
 ---
 
+## Language at a Glance
+
+From a language-design standpoint, GALA classifies as:
+
+- **Statically typed** — every expression has a type known at transpile time; there is no
+  runtime type negotiation.
+- **Strongly typed** — no implicit coercions; even numeric widening is explicit. An
+  unresolved type is an error, never a silent `any`/`interface{}`.
+- **Type-inferred** — types are checked but rarely written. Generic params, lambda
+  parameter types, variable types, and fold accumulators are inferred (see
+  [TYPE_INFERENCE.MD](TYPE_INFERENCE.MD)).
+- **Functional-first** — expression-oriented, immutable by default, with first-class
+  functions, sealed algebraic data types, exhaustive pattern matching, and a monad stack
+  (`Option`/`Try`/`Either`/`Future`/`IO`).
+- **Compiled, via transpilation** — GALA is not interpreted; it lowers to readable Go
+  source and is then compiled by the Go toolchain to a native single binary.
+- **Eagerly evaluated**, with opt-in laziness where it earns its keep (e.g. `Stream`).
+- **Memory-managed by Go's runtime** — GALA brings no GC or scheduler of its own; it lives
+  within Go's.
+
+In one line: **a statically and strongly typed, type-inferred, functional-first language
+that transpiles to Go.**
+
+---
+
 ## Design Goals
 
 Every language is a set of trade-offs in service of a small number of goals. GALA's are:
@@ -29,6 +54,13 @@ Every language is a set of trade-offs in service of a small number of goals. GAL
    the programmer should not have to write it.
 5. **Readable output.** The generated Go should be code a human could have written, so it
    stays debuggable, reviewable, and trustworthy.
+6. **Short feedback loops — for humans and AI alike.** Errors should be concise, *coded*
+   (`GALA-Exxxx`), and actionable rather than vague resolution failures. A growing share of
+   GALA is written with AI coding agents in the loop, and a short, machine-readable
+   diagnostic that names the problem is one an agent can act on directly instead of
+   guessing — which keeps the edit/transpile/fix cycle tight. Conciseness serves the same
+   goal: less ceremony means less for both reader and agent to parse before the intent is
+   clear.
 
 These goals are in tension with each other — goal 1 (rich runtime semantics) pushes
 against goal 5 (clean output), and goal 2 (zero-cost interop) constrains how far goal 3
