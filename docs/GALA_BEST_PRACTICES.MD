@@ -152,7 +152,7 @@ Use the GALA test framework from `martianoff/gala/test` — not Go's `testing`/`
 - **Table-driven:** use `RunCases[In, Out]` with `Case[In, Out](Name=..., Input=..., Expected=...)` — each case runs as a subtest.
 - **Subtests:** `t.Run("name", (sub) => Eq(sub, ...))` — panic-recovered.
 - **Internal tests** live in the same package (access to unexported names); **external tests** use `package main` and import the lib.
-- **Run with `gala test`** (auto-discovers `_test.gala`, generates the runner). For Bazel, use the `gala_go_test` macro (`gala_test` for output-comparison tests).
+- **Run with `gala test`** (auto-discovers `_test.gala`, generates the runner). For Bazel, generate the test target with `bazel run //:gazelle` rather than hand-writing it — it emits the `gala_go_test` macro (`gala_test` for output-comparison tests).
 - **When adding a language feature**, add a verification program under `examples/` in addition to unit tests.
 
 ---
@@ -161,6 +161,6 @@ Use the GALA test framework from `martianoff/gala/test` — not Go's `testing`/`
 
 1. `bazel build //...` passes.
 2. `bazel test //...` passes.
-3. `bazel run //:gazelle` if files were added/removed.
+3. `bazel run //:gazelle` if files were added/removed — it generates and maintains BUILD files for Go, GALA, and mixed GALA+GO packages, so prefer it over hand-writing `gala_library` / `gala_binary` / `gala_test` targets.
 4. Examples in `examples/` compile.
 5. Update [GALA.MD](GALA.MD) / [TYPE_INFERENCE.MD](TYPE_INFERENCE.MD) / [EXAMPLES.MD](EXAMPLES.MD) if grammar or features changed.

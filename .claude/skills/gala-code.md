@@ -133,9 +133,20 @@ func TestSubtests(t T) T {
 }
 ```
 
-### Step 4: Create BUILD.bazel
+### Step 4: Generate BUILD.bazel with gazelle
 
-Add Bazel build configuration.
+Run `bazel run //:gazelle` to generate and maintain the BUILD targets. A single
+pass manages Go, GALA, and mixed GALA+GO packages — it discovers `.gala` sources,
+groups them by package, and emits the `gala_library` / `gala_test` targets with
+`deps` resolved from each file's imports. Prefer this over hand-authoring the
+targets. (GALA support ships from rules-gala as the `gala_gazelle` Bazel module,
+which uses the `gala imports` CLI subcommand as a parse-only import helper.)
+
+If generation needs steering, add `# gazelle:` directives — set `gala_prefix` to
+your module's import prefix. The directive reference lives in rules-gala's
+`gazelle/README.md`.
+
+For reference, the targets gazelle produces look like:
 
 **For a library + test**:
 ```python
@@ -184,7 +195,7 @@ After writing the code, invoke the `/gala-lint` skill on the generated files to 
 
 Run the following commands to verify everything works:
 
-1. `bazel run //:gazelle` - regenerate BUILD files if needed
+1. `bazel run //:gazelle` - regenerate BUILD files (covers Go, GALA, and mixed GALA+GO packages)
 2. `bazel build //...` - verify compilation
 3. `bazel test //...` - run all tests (including the new ones)
 

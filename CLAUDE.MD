@@ -45,12 +45,26 @@ GALA is a programming language that transpiles to Go. Build system: Bazel.
 | Test | `bazel test //...` |
 | Test (verbose) | `bazel test //... --test_output=errors --verbose_failures` |
 | Test single target | `bazel test //examples:match_type_inference` |
-| Generate BUILD files | `bazel run //:gazelle` |
+| Generate BUILD files | `bazel run //:gazelle` (covers Go, GALA, and mixed GALA+GO packages) |
 
 **Update Go dependencies (run in order):**
 ```shell
 go mod tidy && bazel run //:gazelle && bazel run //:gazelle-update-repos && bazel run //:gazelle && bazel mod tidy
 ```
+
+### Managing BUILD files with gazelle
+
+`bazel run //:gazelle` is the recommended way to generate and maintain BUILD
+files. A single pass now manages Go, GALA, and mixed GALA+GO packages — prefer
+it over hand-authoring `gala_library` / `gala_binary` / `gala_test` targets.
+
+GALA support ships from rules-gala as the `gala_gazelle` Bazel module (consumed
+via `bazel_dep`); it uses the `gala imports` CLI subcommand as a parse-only
+import helper. Steer it with `# gazelle:` directives in your BUILD files — set
+`gala_prefix` to your module's import prefix so generated `deps` resolve
+correctly. The full directive reference (`gala_prefix`, `gala_helper`,
+`gala_stdlib_prefix`, `gala_stdlib_repo`, `gala_implicit_dep`) lives in
+rules-gala's `gazelle/README.md`.
 
 ### Prerequisites
 
@@ -119,6 +133,6 @@ MUST complete ALL steps in order before considering work done:
 
 1. [ ] `bazel build //...` passes
 2. [ ] `bazel test //...` passes
-3. [ ] `bazel run //:gazelle` (if files added/removed)
+3. [ ] `bazel run //:gazelle` (if files added/removed — manages Go, GALA, and mixed GALA+GO BUILD files)
 4. [ ] Examples in `examples/` compile without errors
 5. [ ] Documentation updated (if grammar/features changed)

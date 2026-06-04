@@ -80,7 +80,9 @@ shapes/
   ops.gala        # func (p Point) String(), func Describe(s Shape)
 ```
 
-In Bazel, list all source files in `srcs`:
+In Bazel, run `bazel run //:gazelle` to generate and maintain these targets —
+it lists every `.gala` file in `srcs` for you (and handles mixed GALA+GO
+packages in the same pass). The generated rules look like:
 
 ```python
 gala_library(
@@ -2799,7 +2801,14 @@ func Describe(s Shape) string = s match {
 }
 ```
 
-In Bazel, specify all source files with `srcs`:
+In Bazel, the recommended way to generate and maintain the BUILD target is to
+run `bazel run //:gazelle`. It discovers all `.gala` files in the package,
+groups them by package name, and emits the `gala_library` target (`srcs`,
+`importpath`, and `deps`) for you — including mixed GALA+GO packages, in the
+same pass. GALA support ships from rules-gala as the `gala_gazelle` Bazel module
+and uses the `gala imports` CLI subcommand as its parse-only import helper.
+
+For reference, the generated target looks like:
 
 ```python
 gala_library(
@@ -2879,7 +2888,16 @@ Each `.gala` file must declare the same package name. The package name does not 
 
 #### Bazel Setup
 
-Use the `gala_library` rule in your `BUILD.bazel`:
+Run `bazel run //:gazelle` to generate and maintain the `BUILD.bazel`. It emits
+the `gala_library` target for the package; set the `# gazelle:gala_prefix`
+directive to your module's import prefix so the generated `importpath` and
+`deps` resolve correctly. GALA support is provided by the `gala_gazelle` Bazel
+module from rules-gala, which uses the `gala imports` CLI subcommand as a
+parse-only import helper. The directive reference (`gala_prefix`, `gala_helper`,
+`gala_stdlib_prefix`, `gala_stdlib_repo`, `gala_implicit_dep`) lives in
+rules-gala's `gazelle/README.md`.
+
+For reference, the generated `gala_library` rule looks like:
 
 ```python
 gala_library(
@@ -2895,7 +2913,9 @@ gala_library(
 
 #### Consuming a Library
 
-In the consumer's `BUILD.bazel`, add the library to `deps`:
+Add the import to your GALA source and re-run `bazel run //:gazelle`; it resolves
+the import to the right target and adds it to `deps`. For reference, the
+generated consumer target looks like:
 
 ```python
 gala_binary(
@@ -3268,6 +3288,11 @@ The `T` test context provides methods:
 - `t.Skipped() bool` - Check if test was skipped
 
 ### BUILD.bazel Configuration
+
+The recommended way to generate and maintain these `gala_test` targets is to run
+`bazel run //:gazelle`, which discovers `*_test.gala` files and emits the
+appropriate target (including for mixed GALA+GO packages) in one pass. The blocks
+below show the rules it produces for reference and for cases you tune by hand.
 
 #### Internal Tests (same package)
 
@@ -3681,7 +3706,9 @@ load("@rules_gala//gala:repositories.bzl", "gala_dependencies")
 gala_dependencies()
 ```
 
-Then reference them in BUILD files:
+Then run `bazel run //:gazelle` to generate the BUILD targets and wire up `deps`
+from the imports in your GALA sources. For reference, a generated target looks
+like:
 
 ```python
 gala_library(
