@@ -57,7 +57,7 @@ local_path_override(
 # The root gazelle_binary bundles "@gazelle//language/go" + "@gala_gazelle//gala"
 # so a single `bazel run //:gazelle` manages Go, GALA, and mixed GALA+Go BUILD
 # files.
-bazel_dep(name = "gala_gazelle", version = "0.1.4", dev_dependency = True)
+bazel_dep(name = "gala_gazelle", version = "0.1.5", dev_dependency = True)
 
 # ANTLR tool jar (not in BCR, loaded via use_repo_rule)
 http_jar = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_jar")
