@@ -21,8 +21,15 @@ gazelle_binary(
     ],
 )
 
+# Drive the GALA import helper from the bazel-built gala binary instead of
+# whatever `gala` is on PATH, so the helper always matches this tree (a stale
+# PATH gala fails with "imports --json unknown flag"). The relative $(execpath)
+# is resolved against BUILD_WORKSPACE_DIRECTORY by the extension
+# (gala_gazelle >= 0.1.5).
 gazelle(
     name = "gazelle",
+    data = ["//cmd/gala:gala"],
+    extra_args = ["-gala_helper=$(execpath //cmd/gala:gala)"],
     gazelle = ":gazelle_bin",
 )
 
