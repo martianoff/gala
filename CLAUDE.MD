@@ -66,6 +66,14 @@ correctly. The full directive reference (`gala_prefix`, `gala_helper`,
 `gala_stdlib_prefix`, `gala_stdlib_repo`, `gala_implicit_dep`) lives in
 rules-gala's `gazelle/README.md`.
 
+Two things to know:
+- The helper needs a `gala` on `PATH` new enough to support `gala imports
+  --json` (or point at one with `# gazelle:gala_helper`); an older CLI fails
+  with `unknown flag: --json` and no GALA deps get resolved.
+- Packages that mix hand-written `.go` with `.gala` sources are intentionally
+  left to manual `gala_bootstrap_transpile` + `go_library` wiring — gazelle
+  detects the mix and backs off rather than generating a `gala_library`.
+
 ### Prerequisites
 
 - **Bazel** (via Bazelisk): install from https://github.com/bazelbuild/bazelisk
