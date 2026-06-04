@@ -1,0 +1,3 @@
+package core
+
+func Core() int = 1

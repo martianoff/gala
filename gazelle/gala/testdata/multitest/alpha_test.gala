@@ -1,0 +1,8 @@
+package main
+
+import (
+    . "martianoff/gala/test"
+    "martianoff/gala/multitest"
+)
+
+func TestAlpha(t T) T = IsTrue(t, true)

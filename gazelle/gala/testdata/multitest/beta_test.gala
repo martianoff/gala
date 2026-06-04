@@ -1,0 +1,8 @@
+package main
+
+import (
+    . "martianoff/gala/test"
+    . "martianoff/gala/collection_immutable"
+)
+
+func TestBeta(t T) T = IsTrue(t, true)
