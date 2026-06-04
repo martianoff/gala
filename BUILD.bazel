@@ -5,24 +5,22 @@ exports_files(
     visibility = ["//visibility:public"],
 )
 
+# One gazelle binary bundles the Go and GALA languages, so a single
+# `bazel run //:gazelle` generates and maintains go_*, gala_*, and mixed
+# GALA+Go BUILD files across the repo.
 # gazelle:prefix martianoff/gala
+# gazelle:gala_prefix martianoff/gala
+gazelle_binary(
+    name = "gazelle_bin",
+    languages = [
+        "@gazelle//language/go",
+        "@gala_gazelle//gala",
+    ],
+)
+
 gazelle(
     name = "gazelle",
-    args = [],
-)
-
-# Dogfood the in-repo GALA Gazelle extension (nested //gazelle module). The
-# binary bundles the GALA language so `bazel run //:gazelle-gala` regenerates
-# gala_library / gala_binary / gala_test targets from .gala sources.
-gazelle_binary(
-    name = "gazelle_gala_bin",
-    languages = ["@gala_gazelle//gala"],
-)
-
-# gazelle:gala_prefix martianoff/gala
-gazelle(
-    name = "gazelle-gala",
-    gazelle = ":gazelle_gala_bin",
+    gazelle = ":gazelle_bin",
 )
 
 # gazelle:prefix martianoff/gala

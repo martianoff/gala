@@ -1,3 +1,0 @@
-package coll
-
-func N() int = 1

@@ -1,7 +1,0 @@
-package main
-
-import . "martianoff/gala/collection_immutable"
-
-func main() {
-    Println("bench")
-}
