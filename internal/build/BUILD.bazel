@@ -26,12 +26,12 @@ go_library(
 go_test(
     name = "build_test",
     srcs = [
+        "apex_perf_test.go",
         "builder_test.go",
+        "contention_perf_test.go",
         "deptranspiler_test.go",
         "go_toolchain_test.go",
         "gomod_test.go",
-        "apex_perf_test.go",
-        "contention_perf_test.go",
         "transpile_batch_static_test.go",
         "transpile_perf_test.go",
     ],
@@ -49,6 +49,6 @@ go_test(
         "//internal/transpiler/transformer",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
-        "@rules_go//go/tools/bazel:go_default_library",
+        "@rules_go//go/tools/bazel",
     ],
 )
