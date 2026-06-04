@@ -1,0 +1,12 @@
+package regex
+
+import (
+    "regexp"
+    . "martianoff/gala/std"
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/go_interop"
+)
+
+type Regex struct {
+    Pattern string
+}

@@ -1,4 +1,4 @@
-load("@gazelle//:def.bzl", "gazelle")
+load("@gazelle//:def.bzl", "gazelle", "gazelle_binary")
 
 exports_files(
     ["go.mod"],
@@ -9,6 +9,20 @@ exports_files(
 gazelle(
     name = "gazelle",
     args = [],
+)
+
+# Dogfood the in-repo GALA Gazelle extension (nested //gazelle module). The
+# binary bundles the GALA language so `bazel run //:gazelle-gala` regenerates
+# gala_library / gala_binary / gala_test targets from .gala sources.
+gazelle_binary(
+    name = "gazelle_gala_bin",
+    languages = ["@gala_gazelle//gala"],
+)
+
+# gazelle:gala_prefix martianoff/gala
+gazelle(
+    name = "gazelle-gala",
+    gazelle = ":gazelle_gala_bin",
 )
 
 # gazelle:prefix martianoff/gala

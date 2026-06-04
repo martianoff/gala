@@ -1,0 +1,10 @@
+package main
+
+import (
+    . "martianoff/gala/test"
+    "martianoff/gala/regex"
+)
+
+func TestX(t T) T {
+    return IsTrue(t, true)
+}

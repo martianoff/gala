@@ -1,0 +1,20 @@
+"""gala_gazelle — a Gazelle language extension for GALA.
+
+Distribution model 2 (standalone module): consumers add this module via
+`bazel_dep(name = "gala_gazelle", version = ...)`, then build a gazelle_binary
+that lists "@gala_gazelle//gala" among its `languages`. See README.md.
+"""
+
+module(
+    name = "gala_gazelle",
+    version = "0.1.0",
+)
+
+bazel_dep(name = "gazelle", version = "0.47.0")
+bazel_dep(name = "rules_go", version = "0.59.0")
+
+go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
+go_sdk.download(version = "1.25.5")
+
+go_deps = use_extension("@gazelle//:extensions.bzl", "go_deps")
+go_deps.from_file(go_mod = "//:go.mod")

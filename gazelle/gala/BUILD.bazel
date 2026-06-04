@@ -1,0 +1,40 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "gala",
+    srcs = [
+        "config.go",
+        "generate.go",
+        "imports.go",
+        "lang.go",
+        "resolve.go",
+    ],
+    importpath = "martianoff/gala/gazelle/gala",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@gazelle//config",
+        "@gazelle//label",
+        "@gazelle//language",
+        "@gazelle//repo",
+        "@gazelle//resolve",
+        "@gazelle//rule",
+    ],
+)
+
+go_test(
+    name = "gala_test",
+    srcs = [
+        "generate_test.go",
+        "imports_test.go",
+        "resolve_test.go",
+    ],
+    data = glob(["testdata/**"]),
+    embed = [":gala"],
+    deps = [
+        "@gazelle//config",
+        "@gazelle//label",
+        "@gazelle//language",
+        "@gazelle//resolve",
+        "@gazelle//rule",
+    ],
+)

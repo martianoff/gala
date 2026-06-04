@@ -1,0 +1,19 @@
+load("@gazelle//:def.bzl", "gazelle_binary")
+
+# Standalone gazelle binary bundling the GALA language extension. Consumers
+# normally declare their own gazelle_binary listing "@gala_gazelle//gala"
+# among `languages`; this one lets the module dogfood and test itself.
+gazelle_binary(
+    name = "gazelle_gala",
+    languages = [
+        "@gazelle//language/go",
+        "@gazelle//language/proto",
+        "//gala",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+exports_files([
+    "go.mod",
+    "go.sum",
+])
