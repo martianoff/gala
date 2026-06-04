@@ -10,6 +10,9 @@ exports_files(
 # GALA+Go BUILD files across the repo.
 # gazelle:prefix martianoff/gala
 # gazelle:gala_prefix martianoff/gala
+# bazel_test_fixtures/ holds bespoke, hand-wired cross-module regression
+# fixtures (custom gala_transpile + go_test wiring); gazelle must not manage them.
+# gazelle:exclude bazel_test_fixtures
 gazelle_binary(
     name = "gazelle_bin",
     languages = [
