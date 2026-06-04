@@ -550,6 +550,32 @@ The `gala.from_file()` extension is only needed when your project has external G
 
 **Important:** Run `gala mod tidy` to keep `go.mod` in sync. For Bazel projects, `go.mod` only contains Go dependencies — GALA stdlib deps are resolved by Bazel automatically.
 
+### Generating BUILD Files with Gazelle
+
+The recommended way to create and maintain BUILD files — for Go, GALA, and mixed
+GALA+GO packages — is the GALA Gazelle extension. It ships from rules-gala as the
+`gala_gazelle` Bazel module and uses the `gala imports` CLI subcommand as a
+parse-only import helper (no transpilation, no Go SDK needed). A single
+`bazel run //:gazelle` pass discovers `.gala` sources, groups them by package,
+and emits `gala_library` / `gala_binary` / `gala_test` targets with `deps`
+resolved from each file's imports.
+
+To enable it, add the `bazel_dep` to your `MODULE.bazel` alongside the other
+Gazelle wiring (use the current version published by rules-gala):
+
+```python
+bazel_dep(name = "gala_gazelle", version = "<version>")  # from rules-gala
+```
+
+Then steer generation with `# gazelle:` directives in your BUILD files — most
+importantly `gala_prefix`, set to your module's import prefix so generated
+`importpath` and `deps` resolve correctly. The full directive reference
+(`gala_prefix`, `gala_helper`, `gala_stdlib_prefix`, `gala_stdlib_repo`,
+`gala_implicit_dep`) lives in rules-gala's `gazelle/README.md`.
+
+Re-running `bazel run //:gazelle` after adding or removing imports keeps the
+`deps` below up to date, so you rarely need to hand-edit them.
+
 ### BUILD Files
 
 `gala_library` / `gala_binary` accept two related dep attributes:
@@ -567,6 +593,10 @@ The `gala.from_file()` extension is only needed when your project has external G
 When in doubt, **prefer `gala_deps` for any GALA library you import**.
 The cost is only at transpile time (Bazel re-reads the source files);
 the runtime artifact is identical.
+
+Gazelle (see [above](#generating-build-files-with-gazelle)) generates and
+maintains the targets below; the example is for reference and for the cases
+where you tune the `gala_deps` / `deps` split by hand:
 
 ```python
 load("@rules_gala//gala:defs.bzl", "gala_library", "gala_binary")

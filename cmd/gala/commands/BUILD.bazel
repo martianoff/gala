@@ -6,6 +6,7 @@ go_library(
         "build.go",
         "cache.go",
         "clean.go",
+        "imports.go",
         "lsp.go",
         "mod.go",
         "mod_add.go",
@@ -40,6 +41,8 @@ go_library(
         "//internal/depman/sum",
         "//internal/depman/version",
         "//internal/lsp",
+        "//internal/parser",
+        "//internal/parser/grammar",
         "//internal/transpiler",
         "//internal/transpiler/analyzer",
         "//internal/transpiler/generator",
@@ -58,6 +61,7 @@ go_library(
 go_test(
     name = "commands_test",
     srcs = [
+        "imports_test.go",
         "new_test.go",
         "project_test.go",
         "run_test.go",
@@ -65,5 +69,7 @@ go_test(
     embed = [":commands"],
     deps = [
         "@com_github_spf13_cobra//:cobra",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
     ],
 )

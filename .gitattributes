@@ -1,0 +1,9 @@
+# Bazel build files are written by Gazelle with LF line endings. Pin them to LF
+# so a `bazel run //:gazelle` run is stable (idempotent) on Windows checkouts
+# instead of showing every file as fully rewritten by CRLF<->LF churn.
+*.bazel text eol=lf
+*.bzl text eol=lf
+BUILD text eol=lf
+WORKSPACE text eol=lf
+WORKSPACE.bazel text eol=lf
+MODULE.bazel text eol=lf
