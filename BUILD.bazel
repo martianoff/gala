@@ -13,6 +13,55 @@ exports_files(
 # bazel_test_fixtures/ holds bespoke, hand-wired cross-module regression
 # fixtures (custom gala_transpile + go_test wiring); gazelle must not manage them.
 # gazelle:exclude bazel_test_fixtures
+# examples/ is a hand-curated tree of gala_exec_test targets (singular src=,
+# expected=, deliberate importpaths) that gazelle cannot model.
+# gazelle:exclude examples
+# IntelliJ parser golden files (.gala/.txt pairs), not a compilable program.
+# gazelle:exclude ide/intellij/src/test/testData
+# First-party GALA stdlib packages are bootstrap-built: each .gala is
+# transpiled per-file via gala_bootstrap_transpile and bundled (with any
+# hand-written .go) into a single go_library. That hand-wired shape is not the
+# standard gala_library pattern the extension generates, and the .gen.go srcs
+# don't exist at gazelle time — so neither the GALA nor the Go language can
+# manage them without breaking the build. Keep them hand-maintained.
+# gazelle:exclude collection_immutable
+# gazelle:exclude collection_mutable
+# gazelle:exclude concurrent
+# gazelle:exclude crypto
+# gazelle:exclude fs
+# gazelle:exclude io
+# gazelle:exclude json
+# gazelle:exclude lazy
+# gazelle:exclude path
+# gazelle:exclude regex
+# gazelle:exclude std
+# gazelle:exclude stream
+# gazelle:exclude strings
+# gazelle:exclude subprocess
+# gazelle:exclude test
+# gazelle:exclude time_utils
+# gazelle:exclude yaml
+# gazelle:exclude tools/toolchain
+# The internal Go tooling imports the excluded stdlib go_libraries; since those
+# packages aren't gazelle-indexed, map each import path to its label so deps
+# still resolve.
+# gazelle:resolve go martianoff/gala/collection_immutable //collection_immutable
+# gazelle:resolve go martianoff/gala/collection_mutable //collection_mutable
+# gazelle:resolve go martianoff/gala/concurrent //concurrent
+# gazelle:resolve go martianoff/gala/crypto //crypto
+# gazelle:resolve go martianoff/gala/fs //fs
+# gazelle:resolve go martianoff/gala/io //io
+# gazelle:resolve go martianoff/gala/json //json
+# gazelle:resolve go martianoff/gala/lazy //lazy
+# gazelle:resolve go martianoff/gala/path //path
+# gazelle:resolve go martianoff/gala/regex //regex
+# gazelle:resolve go martianoff/gala/std //std
+# gazelle:resolve go martianoff/gala/stream //stream
+# gazelle:resolve go martianoff/gala/strings //strings
+# gazelle:resolve go martianoff/gala/subprocess //subprocess
+# gazelle:resolve go martianoff/gala/test //test
+# gazelle:resolve go martianoff/gala/time_utils //time_utils
+# gazelle:resolve go martianoff/gala/yaml //yaml
 gazelle_binary(
     name = "gazelle_bin",
     languages = [
@@ -28,7 +77,7 @@ gazelle_binary(
 # (gala_gazelle >= 0.1.5).
 gazelle(
     name = "gazelle",
-    data = ["//cmd/gala:gala"],
+    data = ["//cmd/gala"],
     extra_args = ["-gala_helper=$(execpath //cmd/gala:gala)"],
     gazelle = ":gazelle_bin",
 )
