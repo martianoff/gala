@@ -1,13 +1,22 @@
 load("@gazelle//:def.bzl", "gazelle", "gazelle_binary")
+load("@rules_gala//gala:defs.bzl", "gala_imports_helper")
 
 exports_files(
     ["go.mod"],
     visibility = ["//visibility:public"],
 )
 
-# One gazelle binary bundles the Go and GALA languages, so a single
-# `bazel run //:gazelle` generates and maintains go_*, gala_*, and mixed
-# GALA+Go BUILD files across the repo.
+# A single composite gazelle binary (one `@gala_gazelle//gala` language that
+# embeds Gazelle's Go language), so `bazel run //:gazelle` generates and
+# maintains go_*, gala_*, and mixed GALA+Go BUILD files across the repo. The
+# import helper is driven from the registered GALA toolchain (reproducible).
+#
+# We wire this by hand rather than via @gala_gazelle's gala_gazelle() macro: the
+# macro requires `load("@gala_gazelle//...")`, but @gala_gazelle is a
+# dev_dependency, and this root BUILD is loaded by *consumers* of the gala module
+# (their toolchain references //:all_gala_sources). A load of a dev-only repo
+# would fail there. Referencing @gala_gazelle as a string label in
+# gazelle_binary (resolved only when the gazelle binary is built) avoids that.
 # gazelle:prefix martianoff/gala
 # gazelle:gala_prefix martianoff/gala
 # bazel_test_fixtures/ holds bespoke, hand-wired cross-module regression
@@ -64,21 +73,17 @@ exports_files(
 # gazelle:resolve go martianoff/gala/yaml //yaml
 gazelle_binary(
     name = "gazelle_bin",
-    languages = [
-        "@gazelle//language/go",
-        "@gala_gazelle//gala",
-    ],
+    languages = ["@gala_gazelle//gala"],
 )
 
-# Drive the GALA import helper from the bazel-built gala binary instead of
-# whatever `gala` is on PATH, so the helper always matches this tree (a stale
-# PATH gala fails with "imports --json unknown flag"). The relative $(execpath)
-# is resolved against BUILD_WORKSPACE_DIRECTORY by the extension
-# (gala_gazelle >= 0.1.5).
+# Re-export the registered GALA toolchain's gala as the import helper, so the
+# gala that extracts imports is the same one the toolchain transpiles with.
+gala_imports_helper(name = "gala_imports")
+
 gazelle(
     name = "gazelle",
-    data = ["//cmd/gala"],
-    extra_args = ["-gala_helper=$(execpath //cmd/gala:gala)"],
+    data = [":gala_imports"],
+    extra_args = ["-gala_helper=$(execpath :gala_imports)"],
     gazelle = ":gazelle_bin",
 )
 
