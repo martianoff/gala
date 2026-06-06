@@ -21,7 +21,7 @@ bazel_dep(name = "rules_go", version = "0.59.0")
 bazel_dep(name = "rules_java", version = "8.6.1")
 bazel_dep(name = "rules_kotlin", version = "1.9.6")
 bazel_dep(name = "rules_shell", version = "0.4.1")
-bazel_dep(name = "rules_gala", version = "0.1.1")
+bazel_dep(name = "rules_gala", version = "0.1.3")
 
 # Register the GALA toolchains shipped by this module. The main
 # toolchain binds rules_gala's user-facing rules to our in-repo
@@ -54,10 +54,11 @@ local_path_override(
 )
 
 # GALA's Gazelle language extension, consumed from the rules-gala registry.
-# The root gazelle_binary bundles "@gazelle//language/go" + "@gala_gazelle//gala"
-# so a single `bazel run //:gazelle` manages Go, GALA, and mixed GALA+Go BUILD
-# files.
-bazel_dep(name = "gala_gazelle", version = "0.1.5", dev_dependency = True)
+# "@gala_gazelle//gala" is a composite language (it embeds Gazelle's Go
+# language), so a single `bazel run //:gazelle` manages Go, GALA, and mixed
+# GALA+Go BUILD files. Wired via the gala_gazelle() macro in //BUILD.bazel,
+# which drives the import helper from the registered GALA toolchain.
+bazel_dep(name = "gala_gazelle", version = "0.2.4", dev_dependency = True)
 
 # ANTLR tool jar (not in BCR, loaded via use_repo_rule)
 http_jar = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_jar")
