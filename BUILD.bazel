@@ -1,16 +1,22 @@
-load("@gala_gazelle//gala:defs.bzl", "gala_gazelle")
-load("@gazelle//:def.bzl", "gazelle")
+load("@gazelle//:def.bzl", "gazelle", "gazelle_binary")
+load("@rules_gala//gala:defs.bzl", "gala_imports_helper")
 
 exports_files(
     ["go.mod"],
     visibility = ["//visibility:public"],
 )
 
-# The gala_gazelle() macro below builds a composite gazelle binary (one
-# `@gala_gazelle//gala` language that embeds Gazelle's Go language), so a single
-# `bazel run //:gazelle` generates and maintains go_*, gala_*, and mixed
-# GALA+Go BUILD files across the repo. The import helper is driven from the
-# registered GALA toolchain (reproducible), so it always matches this tree.
+# A single composite gazelle binary (one `@gala_gazelle//gala` language that
+# embeds Gazelle's Go language), so `bazel run //:gazelle` generates and
+# maintains go_*, gala_*, and mixed GALA+Go BUILD files across the repo. The
+# import helper is driven from the registered GALA toolchain (reproducible).
+#
+# We wire this by hand rather than via @gala_gazelle's gala_gazelle() macro: the
+# macro requires `load("@gala_gazelle//...")`, but @gala_gazelle is a
+# dev_dependency, and this root BUILD is loaded by *consumers* of the gala module
+# (their toolchain references //:all_gala_sources). A load of a dev-only repo
+# would fail there. Referencing @gala_gazelle as a string label in
+# gazelle_binary (resolved only when the gazelle binary is built) avoids that.
 # gazelle:prefix martianoff/gala
 # gazelle:gala_prefix martianoff/gala
 # bazel_test_fixtures/ holds bespoke, hand-wired cross-module regression
@@ -65,9 +71,21 @@ exports_files(
 # gazelle:resolve go martianoff/gala/test //test
 # gazelle:resolve go martianoff/gala/time_utils //time_utils
 # gazelle:resolve go martianoff/gala/yaml //yaml
-# Composite gazelle wired to the registered GALA toolchain's import helper.
-# Creates //:gazelle_bin, //:gazelle_gala_imports, and //:gazelle.
-gala_gazelle(name = "gazelle")
+gazelle_binary(
+    name = "gazelle_bin",
+    languages = ["@gala_gazelle//gala"],
+)
+
+# Re-export the registered GALA toolchain's gala as the import helper, so the
+# gala that extracts imports is the same one the toolchain transpiles with.
+gala_imports_helper(name = "gala_imports")
+
+gazelle(
+    name = "gazelle",
+    data = [":gala_imports"],
+    extra_args = ["-gala_helper=$(execpath :gala_imports)"],
+    gazelle = ":gazelle_bin",
+)
 
 # gazelle:prefix martianoff/gala
 gazelle(
