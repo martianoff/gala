@@ -134,109 +134,107 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 // "acp.Acked"). It handles direct-Unapply extractors, sequence patterns, tuple
 // and struct field matches, and instance extractors, in that order.
 func (t *galaASTTransformer) transformConstructorCallPattern(rawName string, argList *grammar.ArgumentListContext, explicitTypeArgs *grammar.ExpressionListContext, objExpr ast.Expr, matchedType transpiler.Type, patExprCtx grammar.IExpressionContext) (ast.Expr, []ast.Stmt, error) {
-	{
-		// Check if we can use direct Unapply call (no reflection)
-		// This applies to any extractor with an Unapply method - both generic and non-generic
-		// For generic extractors like Cons[T], Some[T], we infer type params from the matched type
-		// For non-generic extractors like Even, we just call Even{}.Unapply(x) directly
-		// Requires Unapply to return bool or Option[T] - otherwise fall back to reflection
-		if meta := t.getTypeMeta(rawName); meta != nil {
-			if unapplyMeta, hasUnapply := meta.Methods["Unapply"]; hasUnapply {
-				var inferredTypes []transpiler.Type
-				if len(meta.TypeParams) > 0 {
-					// Check if explicit type arguments were provided (e.g., Unwrap[int](v))
-					if explicitTypeArgs != nil && len(explicitTypeArgs.AllExpression()) > 0 {
-						// Use explicit type arguments instead of inferring
-						for _, typeExpr := range explicitTypeArgs.AllExpression() {
-							typeAst, err := t.transformExpression(typeExpr)
-							if err != nil {
-								return nil, nil, err
-							}
-							inferredTypes = append(inferredTypes, t.resolveType(t.getBaseTypeName(typeAst)))
+	// Check if we can use direct Unapply call (no reflection)
+	// This applies to any extractor with an Unapply method - both generic and non-generic
+	// For generic extractors like Cons[T], Some[T], we infer type params from the matched type
+	// For non-generic extractors like Even, we just call Even{}.Unapply(x) directly
+	// Requires Unapply to return bool or Option[T] - otherwise fall back to reflection
+	if meta := t.getTypeMeta(rawName); meta != nil {
+		if unapplyMeta, hasUnapply := meta.Methods["Unapply"]; hasUnapply {
+			var inferredTypes []transpiler.Type
+			if len(meta.TypeParams) > 0 {
+				// Check if explicit type arguments were provided (e.g., Unwrap[int](v))
+				if explicitTypeArgs != nil && len(explicitTypeArgs.AllExpression()) > 0 {
+					// Use explicit type arguments instead of inferring
+					for _, typeExpr := range explicitTypeArgs.AllExpression() {
+						typeAst, err := t.transformExpression(typeExpr)
+						if err != nil {
+							return nil, nil, err
 						}
-						if len(inferredTypes) != len(meta.TypeParams) {
-							return nil, nil, galaerr.NewSemanticErrorAt(patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn(),
-								fmt.Sprintf("extractor '%s' expects %d type parameters, got %d", rawName, len(meta.TypeParams), len(inferredTypes)))
-						}
-					} else {
-						// Infer type parameters from the matched type
-						inferredTypes = t.inferExtractorTypeParams(meta, matchedType)
-						if len(inferredTypes) != len(meta.TypeParams) {
-							return nil, nil, galaerr.NewSemanticErrorAt(patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn(),
-								fmt.Sprintf("cannot infer type parameters for extractor '%s'. Ensure the Unapply method's parameter type matches the matched type", rawName))
-						}
+						inferredTypes = append(inferredTypes, t.resolveType(t.getBaseTypeName(typeAst)))
+					}
+					if len(inferredTypes) != len(meta.TypeParams) {
+						return nil, nil, galaerr.NewSemanticErrorAt(patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn(),
+							fmt.Sprintf("extractor '%s' expects %d type parameters, got %d", rawName, len(meta.TypeParams), len(inferredTypes)))
+					}
+				} else {
+					// Infer type parameters from the matched type
+					inferredTypes = t.inferExtractorTypeParams(meta, matchedType)
+					if len(inferredTypes) != len(meta.TypeParams) {
+						return nil, nil, galaerr.NewSemanticErrorAt(patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn(),
+							fmt.Sprintf("cannot infer type parameters for extractor '%s'. Ensure the Unapply method's parameter type matches the matched type", rawName))
 					}
 				}
-				// Check if return type is supported (bool or Option[T])
-				returnType := t.substituteConcreteTypes(unapplyMeta.ReturnType, meta.TypeParams, inferredTypes)
+			}
+			// Check if return type is supported (bool or Option[T])
+			returnType := t.substituteConcreteTypes(unapplyMeta.ReturnType, meta.TypeParams, inferredTypes)
+			if !t.isDirectUnapplyReturnType(returnType) {
+				return nil, nil, galaerr.NewSemanticErrorAt(patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn(),
+					fmt.Sprintf("extractor '%s' must have Unapply returning bool or Option[T], got '%s'. Use Option[T] for extractors or bool for guard patterns. Unapply(any) any is not allowed",
+						rawName, returnType.String()))
+			}
+			// Use direct Unapply call - no reflection needed!
+			return t.generateDirectUnapplyPattern(rawName, meta, inferredTypes, unapplyMeta, objExpr, argList, matchedType)
+		}
+	}
+
+	// Check if this is a sequence pattern (e.g., Array(first, second, rest...) or Array(a, b, c))
+	// This handles Seq types like Array and List with element extraction.
+	// Must be checked BEFORE struct field match, since Array/List are also structs
+	// but their pattern arguments represent elements, not struct fields.
+	if t.isSeqType(matchedType) {
+		return t.generateSeqPatternMatch(objExpr, argList, matchedType)
+	}
+	if t.hasRestPattern(argList) {
+		return nil, nil, galaerr.NewSemanticErrorAt(patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn(),
+			fmt.Sprintf("rest pattern (...) requires a sequence type (Array, List, or type implementing Seq). Got '%s'", matchedType.String()))
+	}
+
+	// Check if this is a direct struct match for tuples (pattern type equals container type)
+	// This handles cases like (a, b) matching against Tuple[A, B]
+	if t.isDirectStructMatch(rawName, matchedType) {
+		return t.generateDirectTupleStructMatch(objExpr, argList, matchedType)
+	}
+
+	// Check if this is a non-generic struct pattern match (e.g., Person(name, age))
+	// Use direct field access for known structs
+	resolvedStructName := t.resolveStructTypeName(rawName)
+	if fields, ok := t.structFields[resolvedStructName]; ok && len(fields) > 0 {
+		return t.generateDirectStructFieldMatch(objExpr, argList, fields, resolvedStructName)
+	}
+
+	// Check if rawName is a variable whose type has an Unapply method (instance extractor).
+	// This enables patterns like: val r = regex.MustCompile("..."); x match { case r(groups) => ... }
+	// where `r` is a variable of a type that defines Unapply.
+	if varType := t.getType(rawName); varType != nil && !varType.IsNil() {
+		varTypeName := varType.BaseName()
+		if varMeta := t.getTypeMeta(varTypeName); varMeta != nil {
+			if unapplyMeta, hasUnapply := varMeta.Methods["Unapply"]; hasUnapply {
+				// Variable's type has Unapply - use the variable itself as the extractor
+				returnType := unapplyMeta.ReturnType
 				if !t.isDirectUnapplyReturnType(returnType) {
 					return nil, nil, galaerr.NewSemanticErrorAt(patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn(),
-						fmt.Sprintf("extractor '%s' must have Unapply returning bool or Option[T], got '%s'. Use Option[T] for extractors or bool for guard patterns. Unapply(any) any is not allowed",
-							rawName, returnType.String()))
+						fmt.Sprintf("extractor variable '%s' (type '%s') must have Unapply returning bool or Option[T], got '%s'",
+							rawName, varTypeName, returnType.String()))
 				}
-				// Use direct Unapply call - no reflection needed!
-				return t.generateDirectUnapplyPattern(rawName, meta, inferredTypes, unapplyMeta, objExpr, argList, matchedType)
+				return t.generateVariableUnapplyPattern(rawName, varMeta, unapplyMeta, objExpr, argList, matchedType)
 			}
 		}
-
-		// Check if this is a sequence pattern (e.g., Array(first, second, rest...) or Array(a, b, c))
-		// This handles Seq types like Array and List with element extraction.
-		// Must be checked BEFORE struct field match, since Array/List are also structs
-		// but their pattern arguments represent elements, not struct fields.
-		if t.isSeqType(matchedType) {
-			return t.generateSeqPatternMatch(objExpr, argList, matchedType)
-		}
-		if t.hasRestPattern(argList) {
-			return nil, nil, galaerr.NewSemanticErrorAt(patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn(),
-				fmt.Sprintf("rest pattern (...) requires a sequence type (Array, List, or type implementing Seq). Got '%s'", matchedType.String()))
-		}
-
-		// Check if this is a direct struct match for tuples (pattern type equals container type)
-		// This handles cases like (a, b) matching against Tuple[A, B]
-		if t.isDirectStructMatch(rawName, matchedType) {
-			return t.generateDirectTupleStructMatch(objExpr, argList, matchedType)
-		}
-
-		// Check if this is a non-generic struct pattern match (e.g., Person(name, age))
-		// Use direct field access for known structs
-		resolvedStructName := t.resolveStructTypeName(rawName)
-		if fields, ok := t.structFields[resolvedStructName]; ok && len(fields) > 0 {
-			return t.generateDirectStructFieldMatch(objExpr, argList, fields, resolvedStructName)
-		}
-
-		// Check if rawName is a variable whose type has an Unapply method (instance extractor).
-		// This enables patterns like: val r = regex.MustCompile("..."); x match { case r(groups) => ... }
-		// where `r` is a variable of a type that defines Unapply.
-		if varType := t.getType(rawName); varType != nil && !varType.IsNil() {
-			varTypeName := varType.BaseName()
-			if varMeta := t.getTypeMeta(varTypeName); varMeta != nil {
-				if unapplyMeta, hasUnapply := varMeta.Methods["Unapply"]; hasUnapply {
-					// Variable's type has Unapply - use the variable itself as the extractor
-					returnType := unapplyMeta.ReturnType
-					if !t.isDirectUnapplyReturnType(returnType) {
-						return nil, nil, galaerr.NewSemanticErrorAt(patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn(),
-							fmt.Sprintf("extractor variable '%s' (type '%s') must have Unapply returning bool or Option[T], got '%s'",
-								rawName, varTypeName, returnType.String()))
-					}
-					return t.generateVariableUnapplyPattern(rawName, varMeta, unapplyMeta, objExpr, argList, matchedType)
-				}
-			}
-		}
-
-		// Extractor not found or doesn't have Unapply method.
-		// B7: suggest near-matches from companion objects / registered types.
-		suggestion := t.suggestExtractorName(rawName)
-		msg := fmt.Sprintf("extractor '%s' must define an Unapply method. For generic extractors use: func (e Extractor[T]) Unapply(v ContainerType[T]) Option[T]. For guard patterns use: func (e Extractor) Unapply(v ConcreteType) bool",
-			rawName)
-		hint := ""
-		if suggestion != "" {
-			hint = fmt.Sprintf("did you mean '%s'?", suggestion)
-		}
-		return nil, nil, galaerr.NewCodedSemanticError(
-			galaerr.CodeMissingUnapply,
-			patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn(),
-			msg, hint)
 	}
+
+	// Extractor not found or doesn't have Unapply method.
+	// B7: suggest near-matches from companion objects / registered types.
+	suggestion := t.suggestExtractorName(rawName)
+	msg := fmt.Sprintf("extractor '%s' must define an Unapply method. For generic extractors use: func (e Extractor[T]) Unapply(v ContainerType[T]) Option[T]. For guard patterns use: func (e Extractor) Unapply(v ConcreteType) bool",
+		rawName)
+	hint := ""
+	if suggestion != "" {
+		hint = fmt.Sprintf("did you mean '%s'?", suggestion)
+	}
+	return nil, nil, galaerr.NewCodedSemanticError(
+		galaerr.CodeMissingUnapply,
+		patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn(),
+		msg, hint)
 }
 
 // transformSimpleBindingOrLiteral handles the two remaining pattern shapes once a

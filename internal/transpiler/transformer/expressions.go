@@ -420,53 +420,64 @@ func (t *galaASTTransformer) getCallPatternFromExpression(ctx grammar.IExpressio
 	return primaryExpr, argList
 }
 
+// getSinglePostfixExpr unwraps an expression that is a single operand with no
+// binary or unary operators down to its PostfixExprContext, navigating
+// expression -> orExpr -> andExpr -> ... -> unaryExpr -> postfixExpr. It returns
+// nil for any compound (binary/unary-prefixed) expression. This is the shared
+// front half of the call-pattern detectors, which only apply to an atomic
+// postfix expression like `Foo(x)`, `Foo[T](x)`, or `pkg.Foo(x)`.
+func (t *galaASTTransformer) getSinglePostfixExpr(ctx grammar.IExpressionContext) *grammar.PostfixExprContext {
+	if ctx == nil {
+		return nil
+	}
+	orExpr := ctx.OrExpr()
+	if orExpr == nil {
+		return nil
+	}
+	andExprs := orExpr.(*grammar.OrExprContext).AllAndExpr()
+	if len(andExprs) != 1 {
+		return nil
+	}
+	eqExprs := andExprs[0].(*grammar.AndExprContext).AllEqualityExpr()
+	if len(eqExprs) != 1 {
+		return nil
+	}
+	relExprs := eqExprs[0].(*grammar.EqualityExprContext).AllRelationalExpr()
+	if len(relExprs) != 1 {
+		return nil
+	}
+	addExprs := relExprs[0].(*grammar.RelationalExprContext).AllAdditiveExpr()
+	if len(addExprs) != 1 {
+		return nil
+	}
+	mulExprs := addExprs[0].(*grammar.AdditiveExprContext).AllMultiplicativeExpr()
+	if len(mulExprs) != 1 {
+		return nil
+	}
+	unaryExprs := mulExprs[0].(*grammar.MultiplicativeExprContext).AllUnaryExpr()
+	if len(unaryExprs) != 1 {
+		return nil
+	}
+	unaryCtx := unaryExprs[0].(*grammar.UnaryExprContext)
+	if unaryCtx.UnaryOp() != nil {
+		return nil
+	}
+	postfixExpr := unaryCtx.PostfixExpr()
+	if postfixExpr == nil {
+		return nil
+	}
+	return postfixExpr.(*grammar.PostfixExprContext)
+}
+
 // getCallPatternWithTypeArgsFromExpression checks if an expression is a call pattern
 // and returns the base expression context, argument list, and any explicit type arguments.
 // This handles both simple patterns like Left(n) and generic patterns like Unwrap[int](v).
 // Returns nil values if not a call pattern.
 func (t *galaASTTransformer) getCallPatternWithTypeArgsFromExpression(ctx grammar.IExpressionContext) (*grammar.PrimaryExprContext, *grammar.ArgumentListContext, *grammar.ExpressionListContext) {
-	if ctx == nil {
+	postfixCtx := t.getSinglePostfixExpr(ctx)
+	if postfixCtx == nil {
 		return nil, nil, nil
 	}
-	// Navigate through: expression -> orExpr -> andExpr -> equalityExpr -> relationalExpr -> additiveExpr -> multiplicativeExpr -> unaryExpr -> postfixExpr
-	orExpr := ctx.OrExpr()
-	if orExpr == nil {
-		return nil, nil, nil
-	}
-	andExprs := orExpr.(*grammar.OrExprContext).AllAndExpr()
-	if len(andExprs) == 0 || len(andExprs) > 1 {
-		return nil, nil, nil // Not a simple expression
-	}
-	eqExprs := andExprs[0].(*grammar.AndExprContext).AllEqualityExpr()
-	if len(eqExprs) == 0 || len(eqExprs) > 1 {
-		return nil, nil, nil
-	}
-	relExprs := eqExprs[0].(*grammar.EqualityExprContext).AllRelationalExpr()
-	if len(relExprs) == 0 || len(relExprs) > 1 {
-		return nil, nil, nil
-	}
-	addExprs := relExprs[0].(*grammar.RelationalExprContext).AllAdditiveExpr()
-	if len(addExprs) == 0 || len(addExprs) > 1 {
-		return nil, nil, nil
-	}
-	mulExprs := addExprs[0].(*grammar.AdditiveExprContext).AllMultiplicativeExpr()
-	if len(mulExprs) == 0 || len(mulExprs) > 1 {
-		return nil, nil, nil
-	}
-	unaryExprs := mulExprs[0].(*grammar.MultiplicativeExprContext).AllUnaryExpr()
-	if len(unaryExprs) == 0 || len(unaryExprs) > 1 {
-		return nil, nil, nil
-	}
-	unaryCtx := unaryExprs[0].(*grammar.UnaryExprContext)
-	// Check if there's a unary operator (like !)
-	if unaryCtx.UnaryOp() != nil {
-		return nil, nil, nil
-	}
-	postfixExpr := unaryCtx.PostfixExpr()
-	if postfixExpr == nil {
-		return nil, nil, nil
-	}
-	postfixCtx := postfixExpr.(*grammar.PostfixExprContext)
 
 	suffixes := postfixCtx.AllPostfixSuffix()
 	if len(suffixes) == 0 || len(suffixes) > 2 {
@@ -537,46 +548,10 @@ func (t *galaASTTransformer) getCallPatternWithTypeArgsFromExpression(ctx gramma
 // Returns the primary expr for the package qualifier, the constructor name, the
 // argument list (nil for an empty call), and ok=true when the shape matches.
 func (t *galaASTTransformer) getQualifiedCallPattern(ctx grammar.IExpressionContext) (pkgPrimaryExpr *grammar.PrimaryExprContext, ctorName string, argList *grammar.ArgumentListContext, ok bool) {
-	if ctx == nil {
+	postfixCtx := t.getSinglePostfixExpr(ctx)
+	if postfixCtx == nil {
 		return nil, "", nil, false
 	}
-	orExpr := ctx.OrExpr()
-	if orExpr == nil {
-		return nil, "", nil, false
-	}
-	andExprs := orExpr.(*grammar.OrExprContext).AllAndExpr()
-	if len(andExprs) != 1 {
-		return nil, "", nil, false
-	}
-	eqExprs := andExprs[0].(*grammar.AndExprContext).AllEqualityExpr()
-	if len(eqExprs) != 1 {
-		return nil, "", nil, false
-	}
-	relExprs := eqExprs[0].(*grammar.EqualityExprContext).AllRelationalExpr()
-	if len(relExprs) != 1 {
-		return nil, "", nil, false
-	}
-	addExprs := relExprs[0].(*grammar.RelationalExprContext).AllAdditiveExpr()
-	if len(addExprs) != 1 {
-		return nil, "", nil, false
-	}
-	mulExprs := addExprs[0].(*grammar.AdditiveExprContext).AllMultiplicativeExpr()
-	if len(mulExprs) != 1 {
-		return nil, "", nil, false
-	}
-	unaryExprs := mulExprs[0].(*grammar.MultiplicativeExprContext).AllUnaryExpr()
-	if len(unaryExprs) != 1 {
-		return nil, "", nil, false
-	}
-	unaryCtx := unaryExprs[0].(*grammar.UnaryExprContext)
-	if unaryCtx.UnaryOp() != nil {
-		return nil, "", nil, false
-	}
-	postfixExpr := unaryCtx.PostfixExpr()
-	if postfixExpr == nil {
-		return nil, "", nil, false
-	}
-	postfixCtx := postfixExpr.(*grammar.PostfixExprContext)
 
 	suffixes := postfixCtx.AllPostfixSuffix()
 	if len(suffixes) != 2 {
