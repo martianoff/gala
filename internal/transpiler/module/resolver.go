@@ -284,8 +284,24 @@ func (r *Resolver) resolveFromCache(importPath string) (string, error) {
 	// Check if this import path matches any require directive
 	for _, req := range r.galaMod.Require {
 		if req.Path == importPath {
-			// Found in require list, resolve from cache
-			return r.cache.ResolveVersion(req.Path, req.Version)
+			// Found in require list, resolve from cache.
+			basePath, err := r.cache.ResolveVersion(req.Path, req.Version)
+			if err != nil {
+				return "", err
+			}
+			// A GALA `require` directive may name a subpackage directly
+			// (e.g. `require github.com/x/mod/sub`). The fetcher stores the
+			// whole module under that subpackage key, so basePath is the
+			// module ROOT, not the imported package. If the cached module's
+			// gala.mod declares a module path that importPath extends, descend
+			// into the subdirectory that actually holds the package. Without
+			// this, the analyzer reads the module-root package (wrong package
+			// name), the consumer's import is pruned as unused, and the build
+			// fails with "undefined: <subpkg>".
+			if sub := r.subpackageDirForCachedModule(basePath, importPath); sub != "" {
+				return sub, nil
+			}
+			return basePath, nil
 		}
 		// Also check if it's a subpackage of a required module
 		if strings.HasPrefix(importPath, req.Path+"/") {
@@ -303,6 +319,28 @@ func (r *Resolver) resolveFromCache(importPath string) (string, error) {
 	}
 
 	return "", &PackageNotFoundError{ImportPath: importPath}
+}
+
+// subpackageDirForCachedModule handles the case where a cached module was stored
+// under a subpackage key (because a GALA `require` directive named the subpackage
+// directly). baseDir is the cached module root; if its gala.mod declares a module
+// path that importPath strictly extends, the imported package lives in the
+// matching subdirectory. Returns that subdirectory if it is a valid package dir,
+// or "" when baseDir already is the imported package (no descent needed).
+func (r *Resolver) subpackageDirForCachedModule(baseDir, importPath string) string {
+	depMod, err := mod.ParseFile(filepath.Join(baseDir, "gala.mod"))
+	if err != nil || depMod.Module.Path == "" {
+		return ""
+	}
+	rel, ok := hasModulePrefix(importPath, depMod.Module.Path)
+	if !ok || rel == "" {
+		return ""
+	}
+	cand := filepath.Join(baseDir, rel)
+	if isValidPackageDir(cand) {
+		return cand
+	}
+	return ""
 }
 
 // matchesModuleName checks if importPath matches moduleName, accounting for
