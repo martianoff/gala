@@ -4765,11 +4765,18 @@ func TestCompletion_MultiLineChain(t *testing.T) {
 		"        Finish()\n" +
 		"}\n"
 	uri := openFileOnDisk(t, harness, src)
-	time.Sleep(200 * time.Millisecond)
 
+	// Analysis runs asynchronously after the file opens; poll for the richAST
+	// to materialize rather than asserting after a single fixed 200ms sleep,
+	// which races on loaded CI runners and intermittently observed a nil
+	// richAST here.
 	richAST := handler.DebugRichAST(string(uri))
+	for deadline := time.Now().Add(5 * time.Second); richAST == nil && time.Now().Before(deadline); {
+		time.Sleep(50 * time.Millisecond)
+		richAST = handler.DebugRichAST(string(uri))
+	}
 	if richAST == nil {
-		t.Fatal("richAST nil")
+		t.Fatal("richAST nil after 5s")
 	}
 	if _, ok := richAST.Types["Response"]; !ok {
 		keys := make([]string, 0, len(richAST.Types))
@@ -4846,11 +4853,18 @@ func TestCompletion_LongBuilderChain(t *testing.T) {
 		"        WithFilter(\"ETag\").\n" +
 		"}\n"
 	uri := openFileOnDisk(t, harness, src)
-	time.Sleep(200 * time.Millisecond)
 
+	// Analysis runs asynchronously after the file opens; poll for the richAST
+	// to materialize rather than asserting after a single fixed 200ms sleep,
+	// which races on loaded CI runners and intermittently observed a nil
+	// richAST here.
 	richAST := handler.DebugRichAST(string(uri))
+	for deadline := time.Now().Add(5 * time.Second); richAST == nil && time.Now().Before(deadline); {
+		time.Sleep(50 * time.Millisecond)
+		richAST = handler.DebugRichAST(string(uri))
+	}
 	if richAST == nil {
-		t.Fatal("richAST nil")
+		t.Fatal("richAST nil after 5s")
 	}
 	if _, ok := richAST.Types["Server"]; !ok {
 		keys := make([]string, 0, len(richAST.Types))
