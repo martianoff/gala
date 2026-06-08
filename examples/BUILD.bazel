@@ -18,6 +18,8 @@ filegroup(
         "cross_pkg_namedarg/lib/lib.gala",
         "cross_pkg_namedarg/main.gala",
         "cross_pkg_namedarg/widget/widget.gala",
+        "cross_pkg_sealed_qualified_match/event/event.gala",
+        "cross_pkg_sealed_qualified_match_test.gala",
         "cross_pkg_sealed_var/step/step.gala",
         "cross_pkg_sealed_var_test.gala",
         "cross_pkg_try_chain/main/main.gala",
@@ -1891,6 +1893,20 @@ gala_exec_test(
 # variant of this rewrite was added in the previous release; this verifies
 # the qualified-reference shape (`pkg.Variant(...)`) goes through the same
 # inference path.
+gala_library(
+    name = "cross_pkg_sealed_qualified_match_event",
+    srcs = ["cross_pkg_sealed_qualified_match/event/event.gala"],
+    importpath = "martianoff/gala/examples/cross_pkg_sealed_qualified_match/event",
+    visibility = ["//visibility:public"],
+)
+
+gala_exec_test(
+    name = "cross_pkg_sealed_qualified_match_test",
+    src = "cross_pkg_sealed_qualified_match_test.gala",
+    expected = "cross_pkg_sealed_qualified_match_test.out",
+    gala_deps = [":cross_pkg_sealed_qualified_match_event"],
+)
+
 gala_library(
     name = "cross_pkg_sealed_var_step",
     srcs = ["cross_pkg_sealed_var/step/step.gala"],

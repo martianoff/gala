@@ -74,6 +74,28 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 		}
 	}
 
+	// Package-qualified constructor pattern: pkg.Ctor(args) — e.g. `case acp.Acked()`
+	// or `case acp.OutcomeResult(x)`. Sealed-case companions and structs from a
+	// qualified import are registered under their qualified name (e.g. "acp.Acked"),
+	// so resolve that name and route through the same extractor/struct logic. This
+	// MUST come before the unqualified call-pattern check, whose two-suffix branch
+	// assumes `Ctor[T](...)` and would otherwise leave this shape to fall through to
+	// a (wrong) simple binding of the package identifier.
+	if pkgPrimaryExpr, ctorName, qArgList, ok := t.getQualifiedCallPattern(patExprCtx); ok {
+		pkgAst, err := t.transformPrimaryExpr(pkgPrimaryExpr)
+		if err != nil {
+			return nil, nil, err
+		}
+		if pkgIdent, isIdent := pkgAst.(*ast.Ident); isIdent && t.importManager.IsPackage(pkgIdent.Name) {
+			pkgName := pkgIdent.Name
+			if actual, ok := t.importManager.ResolveAlias(pkgName); ok {
+				pkgName = actual
+			}
+			rawName := pkgName + "." + ctorName
+			return t.transformConstructorCallPattern(rawName, qArgList, nil, objExpr, matchedType, patExprCtx)
+		}
+	}
+
 	// Extractor - check for call patterns like Left(n), Some(x), IntStack(first, second, _...) etc.
 	// This check must come BEFORE the simple binding check because a pattern like `Foo(x)`
 	// has a primary with identifier `Foo`, but it's not a simple binding.
@@ -98,6 +120,21 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 			}
 		}
 
+		return t.transformConstructorCallPattern(rawName, argList, explicitTypeArgs, objExpr, matchedType, patExprCtx)
+	}
+
+	// Simple Binding - bind variable with the matched type
+	// This check comes after the extractor check because extractors like `Foo(x)` have a primary
+	// with an identifier, but they're not simple bindings.
+	return t.transformSimpleBindingOrLiteral(patExprCtx, objExpr, matchedType)
+}
+
+// transformConstructorCallPattern lowers a call-shaped pattern whose constructor
+// resolves to rawName (which may be unqualified like "Some" or qualified like
+// "acp.Acked"). It handles direct-Unapply extractors, sequence patterns, tuple
+// and struct field matches, and instance extractors, in that order.
+func (t *galaASTTransformer) transformConstructorCallPattern(rawName string, argList *grammar.ArgumentListContext, explicitTypeArgs *grammar.ExpressionListContext, objExpr ast.Expr, matchedType transpiler.Type, patExprCtx grammar.IExpressionContext) (ast.Expr, []ast.Stmt, error) {
+	{
 		// Check if we can use direct Unapply call (no reflection)
 		// This applies to any extractor with an Unapply method - both generic and non-generic
 		// For generic extractors like Cons[T], Some[T], we infer type params from the matched type
@@ -200,10 +237,13 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 			patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn(),
 			msg, hint)
 	}
+}
 
-	// Simple Binding - bind variable with the matched type
-	// This check comes after the extractor check because extractors like `Foo(x)` have a primary
-	// with an identifier, but they're not simple bindings.
+// transformSimpleBindingOrLiteral handles the two remaining pattern shapes once a
+// pattern is known not to be a tuple/extractor/constructor call: a bare identifier
+// binds a variable (with a zero-field sealed-variant shortcut), and anything else
+// is compared for equality as a literal.
+func (t *galaASTTransformer) transformSimpleBindingOrLiteral(patExprCtx grammar.IExpressionContext, objExpr ast.Expr, matchedType transpiler.Type) (ast.Expr, []ast.Stmt, error) {
 	if p := t.getPrimaryFromExpression(patExprCtx); p != nil && p.Identifier() != nil {
 		name := p.Identifier().GetText()
 

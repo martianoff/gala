@@ -1,0 +1,24 @@
+package main
+
+import "martianoff/gala/examples/cross_pkg_sealed_qualified_match/event"
+
+// Verifies package-qualified case patterns in a match expression. The sealed
+// type is imported QUALIFIED (not dot-imported), so its cases are referenced as
+// `event.Tick`, `event.Message`, `event.Stop`. Previously `case event.Tick(n)`
+// was parsed as a binding of `event` (the postfix `event.Tick(...)` has two
+// suffixes — a member access then a call — which the call-pattern detector only
+// handled for the `Ctor[T](...)` shape), producing
+// "unused variable 'event' in match branch". Both zero-field and field-bearing
+// qualified cases must now destructure correctly.
+func describe(e event.Event) string =
+    e match {
+        case event.Tick(n)       => s"tick ${n}"
+        case event.Message(text) => s"message ${text}"
+        case event.Stop()        => "stop"
+    }
+
+func main() {
+    Println(describe(event.Tick(N = 7)))
+    Println(describe(event.Message(Text = "hi")))
+    Println(describe(event.Stop()))
+}

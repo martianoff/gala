@@ -526,6 +526,89 @@ func (t *galaASTTransformer) getCallPatternWithTypeArgsFromExpression(ctx gramma
 	return primaryExpr.(*grammar.PrimaryExprContext), argList, typeArgs
 }
 
+// getQualifiedCallPattern detects a package-qualified constructor pattern of the
+// shape `pkg.Ctor(args)` — e.g. `case acp.Acked()` or `case acp.OutcomeResult(x)`.
+// In the grammar this is a postfix expression with primary `pkg` and two
+// suffixes: a member access `.Ctor` followed by a call `(...)`. The unqualified
+// helper (getCallPatternWithTypeArgsFromExpression) treats a two-suffix postfix
+// as `Ctor[T](...)`, so it does not recognize this shape and the pattern would
+// otherwise fall through to a simple binding of `pkg`.
+//
+// Returns the primary expr for the package qualifier, the constructor name, the
+// argument list (nil for an empty call), and ok=true when the shape matches.
+func (t *galaASTTransformer) getQualifiedCallPattern(ctx grammar.IExpressionContext) (pkgPrimaryExpr *grammar.PrimaryExprContext, ctorName string, argList *grammar.ArgumentListContext, ok bool) {
+	if ctx == nil {
+		return nil, "", nil, false
+	}
+	orExpr := ctx.OrExpr()
+	if orExpr == nil {
+		return nil, "", nil, false
+	}
+	andExprs := orExpr.(*grammar.OrExprContext).AllAndExpr()
+	if len(andExprs) != 1 {
+		return nil, "", nil, false
+	}
+	eqExprs := andExprs[0].(*grammar.AndExprContext).AllEqualityExpr()
+	if len(eqExprs) != 1 {
+		return nil, "", nil, false
+	}
+	relExprs := eqExprs[0].(*grammar.EqualityExprContext).AllRelationalExpr()
+	if len(relExprs) != 1 {
+		return nil, "", nil, false
+	}
+	addExprs := relExprs[0].(*grammar.RelationalExprContext).AllAdditiveExpr()
+	if len(addExprs) != 1 {
+		return nil, "", nil, false
+	}
+	mulExprs := addExprs[0].(*grammar.AdditiveExprContext).AllMultiplicativeExpr()
+	if len(mulExprs) != 1 {
+		return nil, "", nil, false
+	}
+	unaryExprs := mulExprs[0].(*grammar.MultiplicativeExprContext).AllUnaryExpr()
+	if len(unaryExprs) != 1 {
+		return nil, "", nil, false
+	}
+	unaryCtx := unaryExprs[0].(*grammar.UnaryExprContext)
+	if unaryCtx.UnaryOp() != nil {
+		return nil, "", nil, false
+	}
+	postfixExpr := unaryCtx.PostfixExpr()
+	if postfixExpr == nil {
+		return nil, "", nil, false
+	}
+	postfixCtx := postfixExpr.(*grammar.PostfixExprContext)
+
+	suffixes := postfixCtx.AllPostfixSuffix()
+	if len(suffixes) != 2 {
+		return nil, "", nil, false
+	}
+	memberSuffix := suffixes[0].(*grammar.PostfixSuffixContext)
+	callSuffix := suffixes[1].(*grammar.PostfixSuffixContext)
+
+	// First suffix must be a member access `.Ident`.
+	if memberSuffix.Identifier() == nil {
+		return nil, "", nil, false
+	}
+	ctorName = memberSuffix.Identifier().GetText()
+
+	// Second suffix must be a call `(...)`.
+	if callSuffix.GetChildCount() < 2 {
+		return nil, "", nil, false
+	}
+	if callSuffix.GetChild(0).(antlr.ParseTree).GetText() != "(" {
+		return nil, "", nil, false
+	}
+
+	primaryExpr := postfixCtx.PrimaryExpr()
+	if primaryExpr == nil {
+		return nil, "", nil, false
+	}
+	if al := callSuffix.ArgumentList(); al != nil {
+		argList = al.(*grammar.ArgumentListContext)
+	}
+	return primaryExpr.(*grammar.PrimaryExprContext), ctorName, argList, true
+}
+
 func (t *galaASTTransformer) getBinaryToken(op string) token.Token {
 	switch op {
 	case "||":

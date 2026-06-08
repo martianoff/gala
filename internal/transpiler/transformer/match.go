@@ -179,6 +179,13 @@ func extractVariantName(patternText string) string {
 	} else {
 		name = patternText[:idx]
 	}
+	// Strip a package qualifier: `event.Tick` → `Tick`. Sealed variants are
+	// recorded by their bare case name, so a package-qualified case pattern
+	// (from a qualified import, e.g. `case event.Tick(n)`) must collapse to the
+	// same bare name for the exhaustiveness and arity checks to recognize it.
+	if dot := strings.LastIndex(name, "."); dot >= 0 {
+		name = name[dot+1:]
+	}
 	if len(name) == 0 || name[0] < 'A' || name[0] > 'Z' {
 		return ""
 	}
