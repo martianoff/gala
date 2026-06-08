@@ -1,0 +1,11 @@
+package event
+
+// A sealed type defined in its own package, imported QUALIFIED by the consumer
+// (no dot-import). Used to verify that package-qualified case patterns such as
+// `case event.Tick(n)` are recognized as constructor patterns rather than
+// mis-parsed as a simple binding of the package identifier `event`.
+sealed type Event {
+    case Tick(N int)
+    case Message(Text string)
+    case Stop()
+}

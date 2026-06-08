@@ -573,3 +573,52 @@ func TestResolver_ResolvePackagePath_MultiSegmentDoesNotCollapseToSingleSegment(
 	assert.Equal(t, otherDir, pathTwoSeg,
 		"multi-segment import path with a real two-segment suffix match should resolve to that directory")
 }
+
+// TestResolver_subpackageDirForCachedModule covers the cross-module subpackage
+// resolution bug: when a GALA `require` directive names a subpackage directly
+// (e.g. `require github.com/martianoff/gala-acp/agent`), the fetcher stores the
+// whole module under that subpackage key, so the cached directory is the module
+// ROOT (whose package is `acp`), not the imported `agent` package. Resolving the
+// import must descend into the `agent/` subdirectory; returning the module root
+// makes the analyzer report the wrong package name, the consumer's import is
+// pruned as unused, and the build fails with "undefined: agent".
+func TestResolver_subpackageDirForCachedModule(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "resolver_subpkg_cache_test")
+	require.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	// Lay out a cached module ROOT keyed under the subpackage path, matching the
+	// on-disk shape the fetcher produces for `require .../gala-acp/agent`.
+	moduleRoot := filepath.Join(tempDir, "gala-acp", "agent@v0.1.0")
+	require.NoError(t, os.MkdirAll(moduleRoot, 0755))
+	galaModContent := "module github.com/martianoff/gala-acp\n\ngala 0.52.0\n"
+	require.NoError(t, os.WriteFile(filepath.Join(moduleRoot, "gala.mod"), []byte(galaModContent), 0644))
+	// Root files are package `acp`.
+	require.NoError(t, os.WriteFile(filepath.Join(moduleRoot, "envelope.gala"), []byte("package acp\n"), 0644))
+	// The imported package lives in the `agent/` subdirectory.
+	agentDir := filepath.Join(moduleRoot, "agent")
+	require.NoError(t, os.MkdirAll(agentDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(agentDir, "session_id.gala"), []byte("package agent\n"), 0644))
+
+	resolver := NewResolver(nil)
+
+	// Subpackage import must descend into the agent/ subdirectory.
+	got := resolver.subpackageDirForCachedModule(moduleRoot, "github.com/martianoff/gala-acp/agent")
+	assert.Equal(t, agentDir, got,
+		"subpackage import must resolve to the agent/ subdirectory, not the module root")
+
+	// An import equal to the module path itself needs no descent.
+	gotRoot := resolver.subpackageDirForCachedModule(moduleRoot, "github.com/martianoff/gala-acp")
+	assert.Equal(t, "", gotRoot,
+		"module-path import needs no subdirectory descent")
+
+	// An unrelated import path must not match.
+	gotOther := resolver.subpackageDirForCachedModule(moduleRoot, "github.com/other/mod/sub")
+	assert.Equal(t, "", gotOther,
+		"unrelated import path must not resolve into this module")
+
+	// A subpackage that does not exist on disk must not resolve.
+	gotMissing := resolver.subpackageDirForCachedModule(moduleRoot, "github.com/martianoff/gala-acp/missing")
+	assert.Equal(t, "", gotMissing,
+		"non-existent subpackage must not resolve")
+}
