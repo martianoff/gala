@@ -166,6 +166,16 @@ var goPackageCache = struct {
 	cache map[string]*transpiler.GoTypeInfo
 }{cache: make(map[string]*transpiler.GoTypeInfo)}
 
+// goTypeInfoNonEmpty reports whether a GoTypeInfo carries any usable type
+// data. Used to decide whether go/importer resolved a package or whether the
+// analyzer should fall back to parsing the package's .go source directly.
+func goTypeInfoNonEmpty(info *transpiler.GoTypeInfo) bool {
+	if info == nil {
+		return false
+	}
+	return len(info.Functions) > 0 || len(info.Types) > 0 || len(info.Variables) > 0 || len(info.TypeAliases) > 0
+}
+
 // AnalyzeGoPackage loads type information for a Go package by import path.
 // Uses go/importer to resolve installed packages (stdlib and third-party).
 // Returns empty GoTypeInfo if Go SDK is not available (e.g., Bazel sandbox).

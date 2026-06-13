@@ -112,6 +112,20 @@ type galaAnalyzer struct {
 	// dead work in LSP context and contends heavily under parallel analyzers
 	// on Windows.
 	skipTranspileToDisk bool
+
+	// goSrcDirs maps a Go import-path prefix (a module path, or an exact
+	// package path) to the on-disk directory holding that package's .go
+	// source. It is the module-aware escape hatch for third-party Go
+	// interop: go/importer's "source" mode (AnalyzeGoPackage) is
+	// GOPATH/GOROOT-based and cannot resolve a versioned module from the
+	// module cache (CLI) or Bazel's external tree, so it returns nothing for
+	// e.g. github.com/google/uuid. When the importer comes up empty, the
+	// analyzer falls back to parsing the package's real .go sources from the
+	// directory resolved here (the same code path that already resolves
+	// hand-written local .go files). Populated by the builder (from gala.mod
+	// + GOMODCACHE) and by the worker's --go-src flag (from the Bazel rule).
+	// Nil when no Go module sources are wired in (stdlib-only projects).
+	goSrcDirs map[string]string
 }
 
 // siblingCacheEntry is the value stored in galaAnalyzer.siblingTreeCache.
@@ -275,9 +289,49 @@ func (b *BatchAnalyzer) SetPackageFiles(files []string) {
 	b.inner.checkedDirs = make(map[string]bool)
 }
 
+// SetGoSrcDirs wires module-aware Go source directories into the inner
+// analyzer (see galaAnalyzer.goSrcDirs). Idempotent and invariant for a build,
+// so callers set it once after construction.
+func (b *BatchAnalyzer) SetGoSrcDirs(dirs map[string]string) {
+	b.inner.goSrcDirs = dirs
+}
+
 // Analyze delegates to the inner analyzer, sharing the package cache.
 func (b *BatchAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.RichAST, error) {
 	return b.inner.Analyze(tree, filePath)
+}
+
+// SetGoSrcDirs wires module-aware Go source directories into the analyzer
+// (see galaAnalyzer.goSrcDirs). Used by the single-file/LSP analyzers that
+// are not BatchAnalyzers.
+func (a *galaAnalyzer) SetGoSrcDirs(dirs map[string]string) {
+	a.goSrcDirs = dirs
+}
+
+// resolveGoSrcDir maps a Go import path to its on-disk .go source directory
+// using the wired goSrcDirs table. It first tries an exact match, then the
+// longest registered import-path prefix (a module path), appending the
+// remaining package subpath. Returns ("", false) when nothing is wired or
+// no prefix matches — in which case the caller leaves Go type resolution to
+// go/importer (correct for stdlib, which is always on GOROOT).
+func (a *galaAnalyzer) resolveGoSrcDir(importPath string) (string, bool) {
+	if len(a.goSrcDirs) == 0 {
+		return "", false
+	}
+	if dir, ok := a.goSrcDirs[importPath]; ok {
+		return dir, true
+	}
+	bestKey := ""
+	for k := range a.goSrcDirs {
+		if len(k) > len(bestKey) && strings.HasPrefix(importPath, k+"/") {
+			bestKey = k
+		}
+	}
+	if bestKey == "" {
+		return "", false
+	}
+	rel := strings.TrimPrefix(importPath, bestKey+"/")
+	return filepath.Join(a.goSrcDirs[bestKey], filepath.FromSlash(rel)), true
 }
 
 // Analyze walk the ANTLR tree and collects metadata for RichAST.
@@ -601,9 +655,25 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 				continue // Already handled above
 			}
 
-			// This is a Go package — analyze it for type info
+			// This is a Go package — analyze it for type info.
 			goInfo := AnalyzeGoPackage(path)
-			if len(goInfo.Functions) > 0 || len(goInfo.Types) > 0 || len(goInfo.Variables) > 0 || len(goInfo.TypeAliases) > 0 {
+			// go/importer "source" mode resolves Go stdlib (always on
+			// GOROOT/src) but cannot find a versioned third-party module in
+			// the module cache or Bazel's external tree, so it returns
+			// nothing for e.g. github.com/google/uuid. When that happens and
+			// the package's real .go source directory has been wired in (CLI
+			// builder from gala.mod+GOMODCACHE, or the worker's --go-src flag
+			// under Bazel), parse it directly — the same path that already
+			// resolves hand-written local .go files, yielding concrete types
+			// instead of falling back to `any`.
+			if !goTypeInfoNonEmpty(goInfo) {
+				if dir, ok := a.resolveGoSrcDir(path); ok {
+					if srcInfo := AnalyzeGoFiles(dir); goTypeInfoNonEmpty(srcInfo) {
+						goInfo = srcInfo
+					}
+				}
+			}
+			if goTypeInfoNonEmpty(goInfo) {
 				if richAST.GoTypeInfo == nil {
 					richAST.GoTypeInfo = transpiler.NewGoTypeInfo()
 				}

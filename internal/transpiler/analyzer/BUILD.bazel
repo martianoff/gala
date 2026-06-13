@@ -34,6 +34,7 @@ go_test(
         "cache_codec_test.go",
         "cache_e2e_test.go",
         "cache_test.go",
+        "go_src_dirs_test.go",
         "go_types_debug_test.go",
         "go_types_test.go",
         "multipackage_panic_test.go",
