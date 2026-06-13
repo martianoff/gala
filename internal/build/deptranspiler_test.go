@@ -6,9 +6,82 @@ import (
 	"strings"
 	"testing"
 
+	"martianoff/gala/internal/depman/mod"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestResolveGoModuleForImport(t *testing.T) {
+	// A dependency (e.g. gala-tui) that declares golang.org/x/term but imports
+	// the package golang.org/x/sys/windows (provided by module golang.org/x/sys,
+	// which it does NOT declare).
+	goReqs := []mod.Require{
+		{Path: "golang.org/x/term", Version: "v0.25.0", Go: true},
+		{Path: "golang.org/x/sys", Version: "v0.26.0", Go: true},
+		{Path: "github.com/foo/bar", Version: "v1.2.3", Go: true},
+	}
+
+	tests := []struct {
+		name        string
+		importPath  string
+		wantModule  string
+		wantVersion string
+		wantOK      bool
+	}{
+		{
+			name:        "import path is the module root",
+			importPath:  "golang.org/x/term",
+			wantModule:  "golang.org/x/term",
+			wantVersion: "v0.25.0",
+			wantOK:      true,
+		},
+		{
+			name:        "package path resolves to module prefix (BUG-1)",
+			importPath:  "golang.org/x/sys/windows",
+			wantModule:  "golang.org/x/sys",
+			wantVersion: "v0.26.0",
+			wantOK:      true,
+		},
+		{
+			name:        "nested subpackage resolves to declared module",
+			importPath:  "github.com/foo/bar/baz/qux",
+			wantModule:  "github.com/foo/bar",
+			wantVersion: "v1.2.3",
+			wantOK:      true,
+		},
+		{
+			name:       "no declared module prefix is omitted",
+			importPath: "golang.org/x/sys/windows",
+			wantOK:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reqs := goReqs
+			if tt.name == "no declared module prefix is omitted" {
+				// Drop the golang.org/x/sys declaration so the import has no
+				// declared prefix and must be omitted (resolved by `go mod tidy`).
+				reqs = []mod.Require{{Path: "golang.org/x/term", Version: "v0.25.0", Go: true}}
+			}
+			gotModule, gotVersion, gotOK := resolveGoModuleForImport(tt.importPath, reqs)
+			assert.Equal(t, tt.wantOK, gotOK)
+			if tt.wantOK {
+				assert.Equal(t, tt.wantModule, gotModule)
+				assert.Equal(t, tt.wantVersion, gotVersion)
+			}
+		})
+	}
+}
+
+func TestResolveGoModuleForImport_PrefixBoundary(t *testing.T) {
+	// A module path must match on a path boundary: golang.org/x/term must NOT
+	// match the import golang.org/x/terminal.
+	goReqs := []mod.Require{{Path: "golang.org/x/term", Version: "v0.25.0", Go: true}}
+	_, _, ok := resolveGoModuleForImport("golang.org/x/terminal", goReqs)
+	assert.False(t, ok, "golang.org/x/term must not match golang.org/x/terminal")
+}
 
 func TestCopyNonGalaFiles(t *testing.T) {
 	// Create source directory structure simulating a GALA module with Go subpackages

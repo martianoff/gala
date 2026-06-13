@@ -281,8 +281,10 @@ func (dt *DepTranspiler) generateDepGoMod(dep mod.Require, outDir string, transp
 	// depInternalPaths maps requirePath -> internalModulePath for the dep's GALA dependencies
 	depInternalPaths := make(map[string]string)
 	var depGalaReqs []mod.Require
+	var depGoReqs []mod.Require
 	if depMod, parseErr := mod.ParseFile(depGalaModPath); parseErr == nil {
 		depGalaReqs = depMod.GalaRequires()
+		depGoReqs = depMod.GoRequires()
 		for _, depReq := range depGalaReqs {
 			internalPath := dt.resolveInternalModulePath(depReq)
 			if internalPath != depReq.Path {
@@ -298,7 +300,12 @@ func (dt *DepTranspiler) generateDepGoMod(dep mod.Require, outDir string, transp
 		importPath string // the internal module path used in Go imports
 	}
 	var galaDepReqs []galaDepEntry
-	var goReqs []string
+	// goReqs maps a resolved Go *module* path -> its required version. A scanned
+	// import is a *package* path; its module may be a proper prefix of it (e.g.
+	// the package golang.org/x/sys/windows belongs to module golang.org/x/sys).
+	// Keying by module path also dedupes multiple imported subpackages of the
+	// same module.
+	goReqs := make(map[string]string)
 
 	for _, imp := range imports {
 		if IsGoStdlibImport(imp) {
@@ -327,13 +334,30 @@ func (dt *DepTranspiler) generateDepGoMod(dep mod.Require, outDir string, transp
 				break
 			}
 		}
-		if !found {
-			goReqs = append(goReqs, imp)
+		if found {
+			continue
+		}
+		// Plain Go import. Resolve it to the module that provides it using the
+		// dep's declared `// go` requires (longest module-path prefix), and
+		// require THAT module at its declared version. Emitting the full import
+		// path as a module at a fake v0.0.0 makes `go build` try to download a
+		// nonexistent module (e.g. golang.org/x/sys/windows v0.0.0). Imports
+		// with no declared module prefix are left out entirely — the workspace's
+		// `go mod tidy` resolves their real versions across the whole graph.
+		if goModPath, version, ok := resolveGoModuleForImport(imp, depGoReqs); ok {
+			goReqs[goModPath] = version
 		}
 	}
 
+	// Stable, deduped ordering for the generated require block.
+	goReqPaths := make([]string, 0, len(goReqs))
+	for p := range goReqs {
+		goReqPaths = append(goReqPaths, p)
+	}
+	sort.Strings(goReqPaths)
+
 	// Write require block
-	if len(stdlibReqs) > 0 || len(galaDepReqs) > 0 || len(goReqs) > 0 {
+	if len(stdlibReqs) > 0 || len(galaDepReqs) > 0 || len(goReqPaths) > 0 {
 		sb.WriteString("require (\n")
 		for _, imp := range stdlibReqs {
 			sb.WriteString(fmt.Sprintf("\t%s v0.0.0\n", imp))
@@ -341,8 +365,8 @@ func (dt *DepTranspiler) generateDepGoMod(dep mod.Require, outDir string, transp
 		for _, entry := range galaDepReqs {
 			sb.WriteString(fmt.Sprintf("\t%s v0.0.0\n", entry.importPath))
 		}
-		for _, imp := range goReqs {
-			sb.WriteString(fmt.Sprintf("\t%s v0.0.0\n", imp))
+		for _, goModPath := range goReqPaths {
+			sb.WriteString(fmt.Sprintf("\t%s %s\n", goModPath, goReqs[goModPath]))
 		}
 		sb.WriteString(")\n\n")
 	}
@@ -376,6 +400,31 @@ func (dt *DepTranspiler) generateDepGoMod(dep mod.Require, outDir string, transp
 
 	goModPath := filepath.Join(outDir, "go.mod")
 	return os.WriteFile(goModPath, []byte(sb.String()), 0644)
+}
+
+// resolveGoModuleForImport maps a scanned Go import (a package path) to the
+// declared Go module that provides it. A module path can be a proper prefix of
+// the import path — e.g. the package "golang.org/x/sys/windows" is provided by
+// module "golang.org/x/sys". It matches against the dep's declared `// go`
+// requires, choosing the longest module-path prefix (the same rule Go uses),
+// and returns that module's path, its declared version, and whether a match was
+// found. Imports with no declared module prefix return ok=false so the caller
+// can omit them and let the workspace's `go mod tidy` resolve them globally.
+func resolveGoModuleForImport(importPath string, goReqs []mod.Require) (string, string, bool) {
+	bestPath := ""
+	bestVersion := ""
+	for _, r := range goReqs {
+		if importPath == r.Path || strings.HasPrefix(importPath, r.Path+"/") {
+			if len(r.Path) > len(bestPath) {
+				bestPath = r.Path
+				bestVersion = r.Version
+			}
+		}
+	}
+	if bestPath == "" {
+		return "", "", false
+	}
+	return bestPath, bestVersion, true
 }
 
 // copyNonGalaFiles copies non-.gala files and subdirectories from srcDir to dstDir.
