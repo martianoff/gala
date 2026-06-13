@@ -79,6 +79,50 @@ val dir = result.GetOrElse("/tmp")
 
 ---
 
+## Third-Party Go Modules
+
+Third-party modules work exactly like the standard library — not just stdlib.
+Add the module as a Go dependency, import it, and call it directly. GALA reads
+the module's source to infer concrete types (return types, struct fields,
+methods), so you get `uuid.UUID`, never `any`.
+
+Add the dependency with `--go` so GALA tracks it as a Go (not GALA) package:
+
+```bash
+gala mod add github.com/google/uuid@v1.6.0 --go
+```
+
+Then use it like any other package:
+
+```gala
+import "github.com/google/uuid"
+
+func main() {
+    val id = uuid.New()
+    Println(s"id: ${id.String()}")
+}
+```
+
+A function returning `(T, error)` — like `uuid.Parse(string) (uuid.UUID, error)`
+— is consumed exactly like a stdlib error pair: as a multi-return, or wrapped in
+`Try` for pattern matching:
+
+```gala
+import "github.com/google/uuid"
+
+func describe(s string) string = Try(() => uuid.Parse(s)) match {
+    case Success(id) => s"valid: ${id.String()}"
+    case Failure(_)  => s"invalid: $s"
+}
+```
+
+Both the plain CLI (`gala build` / `gala run`) and Bazel builds resolve these
+types from the dependency's source. See
+[Dependency Management](/docs/dependency-management/) for adding and pinning Go
+modules.
+
+---
+
 ## Using Go Types
 
 Define and use Go struct types with GALA syntax:
