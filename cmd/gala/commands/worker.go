@@ -260,6 +260,34 @@ var (
 	analyzerCache   = map[string]*analyzerCacheEntry{}
 )
 
+// parseGoSrc parses the --go-src flag into an import-path -> source-dir map.
+// The value is a comma-separated list of "importpath=dir" entries (Go import
+// paths never contain '=' or ',', so the split is unambiguous). The Bazel
+// gala rules emit one entry per Go dependency, pointing at the staged .go
+// source so the analyzer can resolve third-party Go module types that
+// go/importer's source mode cannot find in the sandbox. Returns nil for an
+// empty flag.
+func parseGoSrc(s string) map[string]string {
+	if s == "" {
+		return nil
+	}
+	dirs := make(map[string]string)
+	for _, entry := range strings.Split(s, ",") {
+		if entry == "" {
+			continue
+		}
+		eq := strings.IndexByte(entry, '=')
+		if eq <= 0 {
+			continue
+		}
+		dirs[entry[:eq]] = entry[eq+1:]
+	}
+	if len(dirs) == 0 {
+		return nil
+	}
+	return dirs
+}
+
 func cacheKey(searchPaths []string, goroot, projectRoot string) string {
 	h := sha256.New()
 	for _, p := range searchPaths {
@@ -313,11 +341,13 @@ func runWorkerTranspilePackage(argv []string, out io.Writer) int {
 		outputs string
 		search  string
 		goroot  string
+		goSrc   string
 	)
 	fs.StringVar(&inputs, "inputs", "", "")
 	fs.StringVar(&outputs, "outputs", "", "")
 	fs.StringVar(&search, "search", ".", "")
 	fs.StringVar(&goroot, "goroot", "", "")
+	fs.StringVar(&goSrc, "go-src", "", "")
 	if err := fs.Parse(argv); err != nil {
 		fmt.Fprintf(out, "transpile-package: parse flags: %v\n", err)
 		return 1
@@ -347,6 +377,9 @@ func runWorkerTranspilePackage(argv []string, out io.Writer) int {
 	projectRoot := findGalaModDir(filepath.Dir(mustAbs(inList[0])))
 
 	parser, batch := getBatchAnalyzer(paths, goroot, projectRoot)
+	if dirs := parseGoSrc(goSrc); dirs != nil {
+		batch.SetGoSrcDirs(dirs)
+	}
 
 	hasError := false
 	for i, inputPath := range inList {
@@ -411,12 +444,14 @@ func runWorkerTranspile(argv []string, out io.Writer) int {
 		search       string
 		packageFiles string
 		goroot       string
+		goSrc        string
 	)
 	fs.StringVar(&input, "input", "", "")
 	fs.StringVar(&output, "output", "", "")
 	fs.StringVar(&search, "search", ".", "")
 	fs.StringVar(&packageFiles, "package-files", "", "")
 	fs.StringVar(&goroot, "goroot", "", "")
+	fs.StringVar(&goSrc, "go-src", "", "")
 	if err := fs.Parse(argv); err != nil {
 		fmt.Fprintf(out, "transpile: parse flags: %v\n", err)
 		return 1
@@ -448,6 +483,9 @@ func runWorkerTranspile(argv []string, out io.Writer) int {
 	projectRoot := findGalaModDir(filepath.Dir(mustAbs(input)))
 
 	parser, batch := getBatchAnalyzer(paths, goroot, projectRoot)
+	if dirs := parseGoSrc(goSrc); dirs != nil {
+		batch.SetGoSrcDirs(dirs)
+	}
 
 	var pkgFiles []string
 	if packageFiles != "" {

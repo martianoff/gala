@@ -270,6 +270,88 @@ func (b *Builder) effectiveDepDir(req mod.Require) string {
 	return resolveEffectiveDepDir(b.config, b.galaMod, b.workspace.ProjectDir, req)
 }
 
+// goModuleSrcDirs maps each Go (`// go`) dependency's module path to the
+// on-disk directory holding its .go source, so the analyzer can resolve
+// third-party Go types module-aware (go/importer's source mode can't — see
+// analyzer.goSrcDirs). The source is parsed, not compiled, so either cache
+// works: GALA's own dep cache (populated by `gala mod add --go` / auto-fetch,
+// source-only) or the Go module cache (populated by `go build`). We prefer the
+// GALA cache because it is available at transpile time, which runs before the
+// `go build` step that fills GOMODCACHE. Returns nil when there are no Go deps
+// or none are cached yet (the analyzer then leaves Go resolution to the
+// importer, which is correct for stdlib-only code).
+func (b *Builder) goModuleSrcDirs() map[string]string {
+	reqs := b.galaMod.GoRequires()
+	if len(reqs) == 0 {
+		return nil
+	}
+	dirs := make(map[string]string, len(reqs))
+	for _, req := range reqs {
+		// GALA dep cache stores the module path verbatim; the Go module
+		// cache case-escapes it (uppercase letter c -> "!"+lower(c)).
+		galaCand := filepath.Join(b.config.GalaPkgDir, filepath.FromSlash(req.Path)+"@"+req.Version)
+		goCand := filepath.Join(b.config.GoPkgDir, filepath.FromSlash(escapeGoModulePath(req.Path))+"@"+req.Version)
+		for _, cand := range []string{galaCand, goCand} {
+			if dirHasGoFiles(cand) {
+				dirs[req.Path] = cand
+				break
+			}
+		}
+	}
+	if len(dirs) == 0 {
+		return nil
+	}
+	return dirs
+}
+
+// escapeGoModulePath applies the Go module cache path escaping: every
+// uppercase ASCII letter is replaced with "!" followed by its lowercase form
+// (e.g. github.com/BurntSushi/toml -> github.com/!burnt!sushi/toml). This
+// mirrors golang.org/x/mod/module.EscapePath for the common case without
+// taking on the dependency.
+func escapeGoModulePath(p string) string {
+	hasUpper := false
+	for i := 0; i < len(p); i++ {
+		if p[i] >= 'A' && p[i] <= 'Z' {
+			hasUpper = true
+			break
+		}
+	}
+	if !hasUpper {
+		return p
+	}
+	var sb strings.Builder
+	for i := 0; i < len(p); i++ {
+		c := p[i]
+		if c >= 'A' && c <= 'Z' {
+			sb.WriteByte('!')
+			sb.WriteByte(c + ('a' - 'A'))
+		} else {
+			sb.WriteByte(c)
+		}
+	}
+	return sb.String()
+}
+
+// dirHasGoFiles reports whether dir exists and contains at least one
+// non-test, non-generated .go source file.
+func dirHasGoFiles(dir string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if strings.HasSuffix(name, ".go") && !strings.HasSuffix(name, "_test.go") && !strings.HasSuffix(name, ".gen.go") {
+			return true
+		}
+	}
+	return false
+}
+
 // ensureStdlib extracts the stdlib to the versioned cache if not present.
 func (b *Builder) ensureStdlib() error {
 	stdlibDir := b.config.StdlibVersionDir(b.stdlibVersion)
@@ -382,6 +464,7 @@ func (b *Builder) transpile() error {
 	// Use BatchAnalyzer to share analyzed package cache across all files.
 	// This avoids redundant re-analysis of imports (std, collection_immutable, etc.).
 	batchAnalyzer := analyzer.NewBatchAnalyzer(p, searchPaths, b.workspace.ProjectDir)
+	batchAnalyzer.SetGoSrcDirs(b.goModuleSrcDirs())
 
 	// Group files by their parent directory so sibling-based type resolution
 	// only sees files that actually share a Go package. A root-level file is
@@ -535,6 +618,7 @@ func (b *Builder) transpileWithSourceDir() error {
 		libFilesByDir[filepath.Dir(f)] = append(libFilesByDir[filepath.Dir(f)], f)
 	}
 	libBatch := analyzer.NewBatchAnalyzer(p, searchPaths, b.workspace.ProjectDir)
+	libBatch.SetGoSrcDirs(b.goModuleSrcDirs())
 	for _, galaFile := range libFiles {
 		content, err := os.ReadFile(galaFile)
 		if err != nil {
@@ -1798,6 +1882,7 @@ func (b *Builder) transpileFilesToDir(files []string, allSiblings []string, outD
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
 	batchAnalyzer := analyzer.NewBatchAnalyzer(p, searchPaths, b.workspace.ProjectDir)
+	batchAnalyzer.SetGoSrcDirs(b.goModuleSrcDirs())
 
 	// Group sibling candidates by source directory so we can cheaply look up
 	// "other .gala files in my own package" without re-scanning allSiblings on
