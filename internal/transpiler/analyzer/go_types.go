@@ -9,6 +9,7 @@ import (
 	"go/token"
 	"go/types"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -70,11 +71,21 @@ func GoImporterAvailable() bool {
 
 // findGOROOT discovers the Go SDK root directory.
 // It tries multiple strategies:
+// 0. The hermetic Go SDK provided by rules_go when running under Bazel
 // 1. GOROOT environment variable (if valid)
 // 2. runtime.GOROOT() (if valid)
 // 3. Walk up from the running binary to find a Go SDK layout (for Bazel)
 // 4. Find 'go' binary on PATH and derive GOROOT from it
 func findGOROOT() string {
+	// 0. Prefer the hermetic Go SDK that rules_go materializes inside the Bazel
+	// execution root. This must win over the GOROOT env / host PATH so that type
+	// inference uses the exact same Go version Bazel compiles the generated code
+	// with, instead of whatever `go` happens to be installed on the host. It only
+	// matches inside a Bazel action; standalone `gala build` falls through below.
+	if goroot := findBazelGoSDK(); goroot != "" {
+		return goroot
+	}
+
 	// 1. Check GOROOT env
 	if goroot := os.Getenv("GOROOT"); goroot != "" && goroot != "GOROOT" && isGoRoot(goroot) {
 		return goroot
@@ -105,13 +116,98 @@ func findGOROOT() string {
 
 	// 4. Find 'go' binary on PATH and derive GOROOT
 	if goPath, err := findGoOnPath(); err == nil {
-		// go binary is at <goroot>/bin/go
-		goroot := filepath.Dir(filepath.Dir(goPath))
-		if isGoRoot(goroot) {
+		if goroot := gorootFromGoBinary(goPath); goroot != "" {
 			return goroot
 		}
 	}
 
+	return ""
+}
+
+// gorootFromGoBinary derives a valid GOROOT from a `go` executable path.
+//
+// The naive guess is <dir>/.. of <goroot>/bin/go, but that breaks for managed
+// installs where `go` on PATH is a symlink — e.g. Homebrew's
+// /opt/homebrew/bin/go points into /opt/homebrew/Cellar/go/<ver>/libexec/bin/go,
+// so the unresolved guess yields /opt/homebrew (not a Go SDK). We therefore try,
+// in order: the literal parent-of-bin, the same after resolving symlinks, and
+// finally `go env GOROOT` which is authoritative. Returns "" if none is a valid
+// Go SDK root.
+func gorootFromGoBinary(goPath string) string {
+	candidates := []string{filepath.Dir(filepath.Dir(goPath))}
+	if resolved, err := filepath.EvalSymlinks(goPath); err == nil && resolved != goPath {
+		candidates = append(candidates, filepath.Dir(filepath.Dir(resolved)))
+	}
+	for _, c := range candidates {
+		if isGoRoot(c) {
+			return c
+		}
+	}
+	// Authoritative fallback: ask the toolchain itself.
+	if out, err := exec.Command(goPath, "env", "GOROOT").Output(); err == nil {
+		goroot := strings.TrimSpace(string(out))
+		if goroot != "" && isGoRoot(goroot) {
+			return goroot
+		}
+	}
+	return ""
+}
+
+// findBazelGoSDK locates the hermetic Go SDK that rules_go provides when the
+// transpiler runs inside a Bazel action. Transpile actions run with the execution
+// root as their working directory (and tagged no-sandbox so the SDK on disk is
+// reachable), with the SDK materialized at external/<rules_go go_sdk repo>/, e.g.
+// external/rules_go++go_sdk+main___download_0 (bzlmod) or external/go_sdk
+// (legacy WORKSPACE). Returns "" when not running under Bazel so the normal
+// host-Go discovery in findGOROOT applies.
+func findBazelGoSDK() string {
+	// Search from the working directory (the execution root during an action) and
+	// from the running binary's directory, walking up a few levels so we find the
+	// `external/` tree regardless of which one Bazel hands us.
+	var bases []string
+	if cwd, err := os.Getwd(); err == nil {
+		bases = append(bases, cwd)
+	}
+	if exe, err := os.Executable(); err == nil {
+		bases = append(bases, filepath.Dir(exe))
+	}
+	return findBazelGoSDKFrom(bases)
+}
+
+// findBazelGoSDKFrom walks up from each base directory (bounded) looking for an
+// `external/` tree that contains a rules_go Go SDK. Split out from findBazelGoSDK
+// so the search logic can be tested without depending on the ambient process
+// working directory or executable path.
+func findBazelGoSDKFrom(bases []string) string {
+	for _, base := range bases {
+		dir := base
+		for i := 0; i < 8; i++ {
+			if sdk := matchBazelGoSDKUnder(filepath.Join(dir, "external")); sdk != "" {
+				return sdk
+			}
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
+		}
+	}
+	return ""
+}
+
+// matchBazelGoSDKUnder returns the first entry under externalDir that both looks
+// like a rules_go SDK repo (its name contains "go_sdk") and is a valid Go SDK
+// root. The legacy WORKSPACE name `go_sdk` is matched by the same glob.
+func matchBazelGoSDKUnder(externalDir string) string {
+	matches, err := filepath.Glob(filepath.Join(externalDir, "*go_sdk*"))
+	if err != nil {
+		return ""
+	}
+	for _, m := range matches {
+		if isGoRoot(m) {
+			return m
+		}
+	}
 	return ""
 }
 

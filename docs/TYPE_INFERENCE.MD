@@ -322,8 +322,10 @@ The `getType(name)` method in scope.go implements this resolution order.
 | `arr[i]` | Array element type |
 | `Some(x)`, `None[T]()` | Option type construction |
 | `Left(x)`, `Right(x)` | Either type construction |
-| `expr.Get()` | Immutable inner type |
+| `expr.Get()` | Immutable inner type, generic container element (`Array[T].Get()` → `T`), or — when the receiver is a non-generic named type with a user-declared `Get` method — that method's declared return type |
 | `NewImmutable(x)` | Immutable wrapper type |
+
+> **Note:** `Get` is special-cased because it backs implicit `Immutable` unwrapping and the built-in container accessors. A user type may still declare its own `Get` method (e.g. a `Get() Option[T]` accessor); its declared return type is honored so that chained higher-order calls on the result (`expr.Get().FlatMap(...)`, `.Map(...)`) keep their concrete element type instead of widening to `any`.
 
 ### Hindley-Milner Inference (`inferExprType`)
 
@@ -451,6 +453,24 @@ When the Go SDK is available (via `GOROOT` or `PATH`), the transpiler can infer 
 This enables seamless interop without explicit type annotations when calling Go functions.
 
 Go type inference is optional — if the Go SDK is not found, transpilation still succeeds but Go type resolution is disabled (a warning is printed to stderr).
+
+### GOROOT discovery (`findGOROOT` in `internal/transpiler/analyzer/go_types.go`)
+
+The transpiler resolves the Go SDK in this priority order:
+
+1. **Hermetic Bazel SDK** — when running inside a Bazel action, the SDK that
+   `rules_go` materializes in the execution root (`external/<…go_sdk…>/`) is
+   preferred. This keeps type inference on the exact Go version Bazel compiles the
+   generated code with, instead of whatever `go` is installed on the host.
+2. `GOROOT` environment variable (e.g. via `--goroot` / `--action_env=GOROOT`).
+3. `runtime.GOROOT()` of the running binary.
+4. Walking up from the running binary to a Go SDK layout.
+5. A `go` binary on `PATH`. Symlinks are resolved (so a Homebrew `go`, which links
+   into `…/Cellar/go/<ver>/libexec`, derives the correct root), with `go env
+   GOROOT` as an authoritative fallback.
+
+Standalone `gala build` skips step 1 (no Bazel execution root) and uses the host
+Go discovered in steps 2–5.
 
 ---
 

@@ -1539,6 +1539,16 @@ gala_exec_test(
     ],
 )
 
+# Verification: user-defined Get() returning Option[T] chains with FlatMap/Map
+gala_exec_test(
+    name = "user_get_method_option_chain",
+    src = "user_get_method_option_chain.gala",
+    expected = "user_get_method_option_chain.out",
+    deps = [
+        "//collection_immutable",
+    ],
+)
+
 # Character literals and raw strings
 gala_exec_test(
     name = "char_and_raw_string",
