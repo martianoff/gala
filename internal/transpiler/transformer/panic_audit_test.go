@@ -156,29 +156,6 @@ func exprSummary(call *ast.CallExpr) string {
 	return "<expr>"
 }
 
-// itoa is a tiny helper to avoid pulling in strconv just for line numbers.
-func itoa(i int) string {
-	if i == 0 {
-		return "0"
-	}
-	neg := i < 0
-	if neg {
-		i = -i
-	}
-	var buf [20]byte
-	n := len(buf)
-	for i > 0 {
-		n--
-		buf[n] = byte('0' + i%10)
-		i /= 10
-	}
-	if neg {
-		n--
-		buf[n] = '-'
-	}
-	return string(buf[n:])
-}
-
 // findTransformerSourceDir locates the transformer package's source directory
 // so the audit can read its .go files. Returns "" if the directory cannot be
 // located (e.g. running in a Bazel sandbox without source-file data deps).

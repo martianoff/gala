@@ -42,7 +42,7 @@ go_test(
         "parallel_parse_test.go",
         "parsedfile_cache_test.go",
         "test_exports_test.go",
-        "test_helper.go",
+        "test_helper_test.go",
         "validation_test.go",
     ],
     data = [
@@ -56,6 +56,6 @@ go_test(
         "@com_github_antlr4_go_antlr_v4//:antlr",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
-        "@rules_go//go/tools/bazel:go_default_library",
+        "@rules_go//go/tools/bazel",
     ],
 )

@@ -514,7 +514,7 @@ func (t *galaASTTransformer) validateNoBareReturnsInValueMatch(
 // binds the same number of fields as the variant declares. Wildcards and
 // binding names each count as one field. Patterns that do not target a known
 // sealed variant are skipped. Returns nil if all patterns are well-formed.
-func (t *galaASTTransformer) validateSealedVariantArity(matchedType transpiler.Type, patternTexts []string, ctx grammar.IExpressionContext) error {
+func (t *galaASTTransformer) validateSealedVariantArity(matchedType transpiler.Type, patternTexts []string, ctx antlr.ParserRuleContext) error {
 	if transpiler.IsUnusable(matchedType) {
 		return nil
 	}

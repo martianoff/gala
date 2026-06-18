@@ -1728,6 +1728,18 @@ gala_exec_test(
     deps = ["//go_interop"],
 )
 
+# Verification: cross-file package-level `val` auto-unwrap from std.Immutable[T].
+# A `val` declared in one file and referenced from another file of the same
+# package must unwrap to plain T at the use site (function args, interpolation).
+gala_exec_test(
+    name = "crossfile_package_val",
+    srcs = [
+        "crossfile_package_val/main.gala",
+        "crossfile_package_val/protocol.gala",
+    ],
+    expected = "crossfile_package_val/crossfile_package_val.out",
+)
+
 # FIX-GS-011 verification: cross-file struct field auto-unwrap (library package)
 gala_library(
     name = "cross_file_unwrap_lib",

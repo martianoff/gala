@@ -25,30 +25,27 @@ func newTranspiler() *transpiler.GalaToGoTranspiler {
 // TestT1PhantomTypeParamFallback pins the current behaviour of a generic
 // function whose type parameter appears only in the return position.
 //
-// Today this falls back to `any` with a warnInference() message rather
-// than a hard semantic error; see calls.go TODO(B5). The intent is that
-// once every inference path threads the expected type, the fallback is
-// promoted to a coded error. Until then, this test documents the
-// behaviour so a regression into a panic or corrupted type is caught.
+// The transpiler no longer erases an uninferable T to `any`; it emits a
+// concrete Go generic (`func magic[T any]() std.Option[T]`) and leaves
+// inference to Go at the call site. This test guards against a regression
+// into a panic, corrupted output, or a silent `any` erasure.
 func TestT1PhantomTypeParamFallback(t *testing.T) {
 	trans := newTranspiler()
-	// `magic[T](x int) T` — T is only in the return position. Without
-	// call-site context pinning T, the transpiler falls back to `any`.
+	// `magic[T any]() Option[T]` — T is only in the return position.
 	input := `package main
 
-func magic[T](x int) T
+func magic[T any]() Option[T] = None[T]()
 
 func main() {
-    val r = magic(42)
+    val r = magic()
     _ = r
 }`
 	out, err := trans.Transpile(input, "")
 	require.NoError(t, err, "phantom type param should transpile (not panic)")
 	assert.NotEmpty(t, out)
-	// Document the current fallback: `any` shows up in the return position.
-	// When B5 lands, replace this with an error-code assertion (the
-	// surrounding commentary explains the promotion contract).
-	assert.Contains(t, out, "any", "expected phantom T to fall back to `any` until B5 lands")
+	// The return-only T is preserved as a real Go type parameter rather than
+	// erased to `any`.
+	assert.Contains(t, out, "func magic[T any]()", "expected phantom T to stay a concrete generic param")
 }
 
 // TestT2UntypedLambdaFallback pins the current behaviour of a lambda

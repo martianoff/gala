@@ -1,0 +1,4 @@
+error(-32700)
+[jsonrpc]
+true
+protocol=jsonrpc code=-32700

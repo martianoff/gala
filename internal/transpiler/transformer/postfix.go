@@ -471,6 +471,21 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	var resultTypes []transpiler.Type
 	var casePatterns []string
 
+	// Validate sealed-variant pattern arity before transforming arms. An
+	// under-/over-bound extractor pattern (e.g. `Rect(w, h)` for a 3-field
+	// Rect) must surface as a coded GALA-E0004 here; otherwise the mis-bound
+	// pattern flows into arm type inference and fails far away as a confusing
+	// match-branch type mismatch.
+	{
+		patternTexts := make([]string, 0, len(caseClauses))
+		for _, cc := range caseClauses {
+			patternTexts = append(patternTexts, cc.(*grammar.CaseClauseContext).Pattern().GetText())
+		}
+		if arityErr := t.validateSealedVariantArity(matchedType, patternTexts, ctx); arityErr != nil {
+			return nil, arityErr
+		}
+	}
+
 	// Pre-scan: check if there's an explicit wildcard `_` case.
 	// If there is, binding patterns are regular clauses. If not, the last
 	// binding pattern acts as the default (catch-all) case.
@@ -494,7 +509,11 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 
 		if treatAsDefault {
 			if foundDefault {
-				return nil, galaerr.NewSemanticErrorAt(ccCtx.GetStart().GetLine(), ccCtx.GetStart().GetColumn(), "multiple default cases in match expression")
+				return nil, galaerr.NewCodedSemanticError(
+					galaerr.CodeMultipleDefaults,
+					ccCtx.GetStart().GetLine(), ccCtx.GetStart().GetColumn(),
+					"multiple default cases in match expression",
+					"keep one default case; combine logic with guards or nested matches if you need sub-cases")
 			}
 			foundDefault = true
 
@@ -619,13 +638,16 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 
 		if !hasDefault {
 			if isSealed && !isExhaustive {
+				line, col := ctx.GetStart().GetLine(), ctx.GetStart().GetColumn()
 				if len(caseClauses) > 0 {
 					cc := caseClauses[0].(*grammar.CaseClauseContext)
-					return nil, galaerr.NewSemanticErrorAt(cc.GetStart().GetLine(), cc.GetStart().GetColumn(),
-						fmt.Sprintf("non-exhaustive match: missing cases: %s", strings.Join(missing, ", ")))
+					line, col = cc.GetStart().GetLine(), cc.GetStart().GetColumn()
 				}
-				return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
-					fmt.Sprintf("non-exhaustive match: missing cases: %s", strings.Join(missing, ", ")))
+				return nil, galaerr.NewCodedSemanticError(
+					galaerr.CodeNonExhaustiveMatch,
+					line, col,
+					fmt.Sprintf("non-exhaustive match: missing cases: %s", strings.Join(missing, ", ")),
+					"add the missing variant cases, or add a `case _ => ...` default to cover them")
 			} else if isSealed && isExhaustive {
 				// Exhaustive sealed match — generate synthetic panic("unreachable") default
 				defaultBody = []ast.Stmt{
@@ -635,11 +657,16 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 					}},
 				}
 			} else if !isSealed {
+				line, col := ctx.GetStart().GetLine(), ctx.GetStart().GetColumn()
 				if len(caseClauses) > 0 {
 					cc := caseClauses[0].(*grammar.CaseClauseContext)
-					return nil, galaerr.NewSemanticErrorAt(cc.GetStart().GetLine(), cc.GetStart().GetColumn(), "match expression must have a default case (case _ => ...)")
+					line, col = cc.GetStart().GetLine(), cc.GetStart().GetColumn()
 				}
-				return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "match expression must have a default case (case _ => ...)")
+				return nil, galaerr.NewCodedSemanticError(
+					galaerr.CodeMissingDefault,
+					line, col,
+					"match expression must have a default case (case _ => ...)",
+					"add `case _ => ...`")
 			}
 		}
 		// When foundDefault && isSealed && isExhaustive: unreachable default is harmless, allow it

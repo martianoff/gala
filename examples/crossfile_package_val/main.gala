@@ -1,0 +1,12 @@
+package main
+
+func main() {
+    // Cross-file references to package-level `val`s: each must auto-unwrap
+    // from std.Immutable[T] when passed to a plain-T parameter.
+    Println(formatError(parseErrorCode))
+    Println(tagName(protocolName))
+    Println(withinLimit(10, maxBatch))
+
+    // Cross-file `val` read directly in a string interpolation.
+    Println(s"protocol=$protocolName code=$parseErrorCode")
+}
