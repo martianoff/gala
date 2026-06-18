@@ -102,6 +102,7 @@ go_test(
         "tuple_return_arity_test.go",
         "type_inference_regression_test.go",
         "type_inference_test.go",
+        "user_get_method_test.go",
         "variables_test.go",
     ],
     # Gala source files needed by the analyzer for type resolution in tests.

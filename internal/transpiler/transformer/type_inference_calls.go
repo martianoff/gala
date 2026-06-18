@@ -625,6 +625,21 @@ func (t *galaASTTransformer) inferGetMethodType(e *ast.CallExpr, sel *ast.Select
 			}
 		}
 	}
+	// For a non-generic named type that declares its own method (e.g. a user type
+	// with a real `Get() Option[T]` accessor), return the method's declared return
+	// type. Without this, the fallback below returns the receiver type itself,
+	// erasing the real return type — which silently breaks downstream inference such
+	// as a chained `Option.FlatMap`/`Map` on the result (it would be keyed off the
+	// receiver type instead of Option, producing an undefined monomorphized helper).
+	// The generic-type branches above already handle generic receivers with
+	// substitution, so this only fills the non-generic named-type gap.
+	if !transpiler.IsUnusable(xType) {
+		if typeMeta := t.getTypeMeta(xBaseName); typeMeta != nil {
+			if methodMeta, ok := typeMeta.Methods[sel.Sel.Name]; ok {
+				return methodMeta.ReturnType
+			}
+		}
+	}
 	if xType == nil {
 		return transpiler.NilType{}
 	}

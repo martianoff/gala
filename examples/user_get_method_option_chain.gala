@@ -1,0 +1,57 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// Regression: a user-defined method named `Get` that returns Option[T] must not
+// collide with the builtin Option/collection `Get` handling. Chained higher-order
+// Option methods (FlatMap, Map) on the result of such a `Get` must keep the
+// concrete element type instead of erasing it to `any`.
+
+sealed type Node {
+    case NLeaf(Str string)
+    case NList(Items Array[Node])
+}
+
+func (n Node) AsString() Option[string] = n match {
+    case NLeaf(s) => Some(s)
+    case _ => None[string]()
+}
+
+// User method named `Get`, no params, returns Option[Node].
+func (n Node) Get() Option[Node] = n match {
+    case NList(items) => items.GetOption(0)
+    case _ => None[Node]()
+}
+
+// User method named `Get` with a param, returns Option[Node].
+func (n Node) GetAt(i int) Option[Node] = n match {
+    case NList(items) => items.GetOption(i)
+    case _ => None[Node]()
+}
+
+// Chained FlatMap on the result of `Get()`.
+func (n Node) FirstString() Option[string] =
+    n.Get().FlatMap[string]((x) => x.AsString())
+
+// Chained Map on the result of `Get()`.
+func (n Node) FirstNodeMapped() Option[Node] =
+    n.Get().Map((x) => x)
+
+// Assigning Get() to a val first, then chaining FlatMap on the val.
+func (n Node) FirstStringViaVal() Option[string] {
+    val inner = n.Get()
+    return inner.FlatMap[string]((x) => x.AsString())
+}
+
+// Chained FlatMap on the result of a parameterized Get.
+func (n Node) StringAt(i int) Option[string] =
+    n.GetAt(i).FlatMap[string]((x) => x.AsString())
+
+func main() {
+    val tree = NList(ArrayOf(NLeaf("hi"), NLeaf("bye")))
+    Println(tree.FirstString().GetOrElse("none"))
+    Println(tree.FirstStringViaVal().GetOrElse("none"))
+    Println(tree.StringAt(1).GetOrElse("none"))
+    Println(tree.FirstNodeMapped().FlatMap[string]((x) => x.AsString()).GetOrElse("none"))
+    Println(NLeaf("solo").FirstString().GetOrElse("none"))
+}
