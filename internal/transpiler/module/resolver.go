@@ -588,8 +588,14 @@ func (r *Resolver) applyReplace(importPath string) string {
 				newPath = rep.New.Path + suffix
 			}
 
-			// Handle local paths (relative to gala.mod location)
-			if rep.New.IsLocal() {
+			// Handle local paths. A relative replacement (./ or ../) is
+			// resolved against the gala.mod location; an absolute path is
+			// already complete and must be used verbatim. Joining an absolute
+			// path onto galaModDir corrupts it (filepath.Join strips the
+			// leading separator and appends), producing a nonexistent dir —
+			// which silently demotes the dependency to a Go package and drops
+			// its .gala-derived metadata (function signatures, sealed cases).
+			if rep.New.IsLocal() && !filepath.IsAbs(newPath) {
 				galaModDir := filepath.Dir(r.galaModPath)
 				newPath = filepath.Join(galaModDir, newPath)
 			}

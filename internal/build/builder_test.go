@@ -453,3 +453,83 @@ replace example.com/qalib => ../qa_lib
 	require.NotContains(t, got, "Halt[int]()",
 		"sealed case constructor must not lower to a bare type conversion, got:\n%s", got)
 }
+
+// TestTranspile_CrossModuleLambdaInfersParamType verifies that a lambda passed
+// to a higher-order function imported from another module — reached via a
+// require + ABSOLUTE-path replace directive — has its parameter and return
+// types inferred from the callee's declared function-typed parameter.
+//
+// The dependency is recognised as a GALA package only if the replace branch of
+// the resolver resolves the absolute path correctly. When an absolute replace
+// target was (incorrectly) joined onto the gala.mod directory, the dep was
+// demoted to a Go package: its FunctionMetadata (with the `func(int) Res`
+// parameter type) was dropped, the expected type never reached the lambda
+// literal, and the lambda lowered to `func(x any) any` — which does not satisfy
+// `func(int) Res` and fails the downstream Go build.
+func TestTranspile_CrossModuleLambdaInfersParamType(t *testing.T) {
+	tmp := t.TempDir()
+
+	// Library module with a struct and a higher-order function whose parameter
+	// is a concrete function type.
+	libDir := filepath.Join(tmp, "lreplib")
+	require.NoError(t, os.MkdirAll(libDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(libDir, "gala.mod"),
+		[]byte("module example.com/lreplib\n\ngala 0.0.0\n"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(libDir, "lib.gala"),
+		[]byte("package lreplib\n\nstruct Res(V string)\n\nfunc MkRes(s string) Res = Res(s)\n\nfunc Apply(f func(int) Res) Res = f(7)\n"),
+		0644))
+
+	// Consumer module using the lib via an ABSOLUTE-path local replace.
+	consumerDir := filepath.Join(tmp, "lrepapp")
+	require.NoError(t, os.MkdirAll(consumerDir, 0755))
+	consumerGalaMod := "module example.com/lrepapp\n\ngala 0.0.0\n\n" +
+		"require example.com/lreplib v0.0.0\n\n" +
+		"replace example.com/lreplib => " + libDir + "\n"
+	require.NoError(t, os.WriteFile(filepath.Join(consumerDir, "gala.mod"),
+		[]byte(consumerGalaMod), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(consumerDir, "main.gala"),
+		[]byte("package main\n\nimport . \"example.com/lreplib\"\n\nfunc main() {\n    val r = Apply((x) => MkRes(\"hi\"))\n    Println(r.V)\n}\n"),
+		0644))
+
+	// Isolate per-user gala state to keep the test hermetic.
+	origHome, hadHome := os.LookupEnv("HOME")
+	origUserProfile, hadProfile := os.LookupEnv("USERPROFILE")
+	isolated := t.TempDir()
+	os.Setenv("HOME", isolated)
+	os.Setenv("USERPROFILE", isolated)
+	t.Cleanup(func() {
+		if hadHome {
+			os.Setenv("HOME", origHome)
+		} else {
+			os.Unsetenv("HOME")
+		}
+		if hadProfile {
+			os.Setenv("USERPROFILE", origUserProfile)
+		} else {
+			os.Unsetenv("USERPROFILE")
+		}
+	})
+
+	originalWd, err := os.Getwd()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.Chdir(originalWd) })
+	require.NoError(t, os.Chdir(consumerDir))
+
+	b, err := NewBuilder(consumerDir, "test", false)
+	require.NoError(t, err)
+	require.NoError(t, b.workspace.Ensure())
+
+	require.NoError(t, b.ensureStdlib())
+	require.NoError(t, b.transpileDeps())
+	require.NoError(t, b.transpile())
+
+	mainGen := filepath.Join(b.workspace.GenDir, "main.gen.go")
+	data, err := os.ReadFile(mainGen)
+	require.NoError(t, err, "consumer main.gen.go must be produced")
+	got := string(data)
+
+	require.Contains(t, got, "func(x int) Res",
+		"lambda must infer its param/return types from the cross-module callee's func(int) Res parameter, got:\n%s", got)
+	require.NotContains(t, got, "func(x any) any",
+		"lambda must not fall back to func(any) any when the callee is imported from another module, got:\n%s", got)
+}

@@ -15,6 +15,8 @@ filegroup(
         "cross_file_unwrap_lib/types.gala",
         "cross_pkg_field_eq/lib/lib.gala",
         "cross_pkg_field_eq/main.gala",
+        "cross_pkg_lambda_infer/lib/lib.gala",
+        "cross_pkg_lambda_infer/main.gala",
         "cross_pkg_namedarg/lib/lib.gala",
         "cross_pkg_namedarg/main.gala",
         "cross_pkg_namedarg/widget/widget.gala",
@@ -1884,6 +1886,20 @@ gala_exec_test(
 # the fields in declared order — including reordering and skipping
 # defaulted fields. gala_team's app/ui/update_test.gala fell back to
 # positional construction on the assumption this didn't work.
+gala_library(
+    name = "cross_pkg_lambda_infer_lib",
+    srcs = ["cross_pkg_lambda_infer/lib/lib.gala"],
+    importpath = "martianoff/gala/examples/cross_pkg_lambda_infer/lib",
+    visibility = ["//visibility:public"],
+)
+
+gala_exec_test(
+    name = "cross_pkg_lambda_infer_test",
+    src = "cross_pkg_lambda_infer/main.gala",
+    expected = "cross_pkg_lambda_infer/main.out",
+    gala_deps = [":cross_pkg_lambda_infer_lib"],
+)
+
 gala_library(
     name = "cross_pkg_namedarg_lib",
     srcs = ["cross_pkg_namedarg/lib/lib.gala"],
