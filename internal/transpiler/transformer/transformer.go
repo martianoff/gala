@@ -221,6 +221,23 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 	t.pushScope() // Global scope
 	defer t.popScope()
 
+	// Pre-register package-level val/var symbols from every file in this
+	// package (this file plus its siblings, collected by the analyzer). This
+	// lets a reference to a package-level `val` declared in another file unwrap
+	// its std.Immutable[T] wrapper at the use site, exactly as a same-file
+	// reference does. Same-file declarations refine these entries with their
+	// precisely-inferred type when their own declaration is transformed below.
+	for name, meta := range richAST.PackageVals {
+		if meta == nil {
+			continue
+		}
+		if meta.IsVal {
+			t.addVal(name, meta.Type)
+		} else {
+			t.addVar(name, meta.Type)
+		}
+	}
+
 	fset = token.NewFileSet()
 	sourceFile, ok := any(tree).(*grammar.SourceFileContext)
 	if !ok {

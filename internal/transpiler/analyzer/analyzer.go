@@ -1328,6 +1328,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 			if err := a.extractSiblingFullMetadata(sibTree, pkgName, richAST, sibPath); err != nil {
 				return nil, err
 			}
+			a.extractPackageVals(sibTree, pkgName, richAST)
 		}
 	} else if pkgName != "main" && pkgName != "test" {
 		// Directory-discovered siblings: full metadata extraction (same as --package-files mode).
@@ -1341,6 +1342,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 			if err := a.extractSiblingFullMetadata(sibTree, pkgName, richAST, sibPath); err != nil {
 				return nil, err
 			}
+			a.extractPackageVals(sibTree, pkgName, richAST)
 		}
 	}
 
@@ -1395,6 +1397,10 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 			})
 		}
 	}
+
+	// 2b. Record this file's package-level val/var declarations so cross-file
+	// references unwrap their std.Immutable[T] wrapper correctly.
+	a.extractPackageVals(sourceFile, pkgName, richAST)
 
 	// 3. Discover companion objects - types with Unapply methods that can be used for pattern matching
 	a.discoverCompanionObjects(richAST)
@@ -3727,6 +3733,83 @@ func validateDefaultParams(funcMeta *transpiler.FunctionMetadata, line, column i
 	}
 
 	return nil
+}
+
+// extractPackageVals records package-level `val`/`var` declarations from a
+// source file into richAST.PackageVals. The transformer pre-registers these so
+// that a reference to a package-level `val` in another file of the same package
+// is unwrapped from its `std.Immutable[T]` wrapper at the use site — exactly as
+// a same-file reference already is. Without this, the cross-file reference emits
+// the raw wrapper where a plain `T` is expected and `go build` rejects it.
+//
+// The element type is recorded when it can be determined cheaply (an explicit
+// annotation or a literal initializer); otherwise it is left as NilType. The
+// unwrap itself only needs the val/var classification, so an unknown type still
+// produces correct code — it merely yields weaker downstream type inference for
+// that identifier.
+func (a *galaAnalyzer) extractPackageVals(sourceFile *grammar.SourceFileContext, pkgName string, richAST *transpiler.RichAST) {
+	for _, topDecl := range sourceFile.AllTopLevelDeclaration() {
+		var (
+			idList   grammar.IIdentifierListContext
+			typeCtx  grammar.ITypeContext
+			exprList grammar.IExpressionListContext
+			isVal    bool
+		)
+		switch {
+		case topDecl.ValDeclaration() != nil:
+			vc := topDecl.ValDeclaration().(*grammar.ValDeclarationContext)
+			idList = vc.IdentifierList()
+			typeCtx = vc.Type_()
+			exprList = vc.ExpressionList()
+			isVal = true
+		case topDecl.VarDeclaration() != nil:
+			vc := topDecl.VarDeclaration().(*grammar.VarDeclarationContext)
+			idList = vc.IdentifierList()
+			typeCtx = vc.Type_()
+			exprList = vc.ExpressionList()
+			isVal = false
+		default:
+			continue
+		}
+		if idList == nil {
+			// Tuple-pattern destructuring (`val (a, b) = ...`) — names still
+			// reach the same Immutable lowering, but inferring each element's
+			// type here is more than the cross-file unwrap requires, so skip.
+			continue
+		}
+
+		names := idList.(*grammar.IdentifierListContext).AllIdentifier()
+		var exprs []grammar.IExpressionContext
+		if exprList != nil {
+			exprs = exprList.(*grammar.ExpressionListContext).AllExpression()
+		}
+
+		for i, idCtx := range names {
+			name := idCtx.GetText()
+			var valType transpiler.Type = transpiler.NilType{}
+			if typeCtx != nil {
+				valType = a.resolveTypeWithParams(typeCtx.GetText(), pkgName, nil)
+			} else if len(exprs) == len(names) {
+				if lit := inferLiteralType(exprs[i].GetText()); lit != "" {
+					valType = transpiler.BasicType{Name: lit}
+				}
+			}
+			if richAST.PackageVals == nil {
+				richAST.PackageVals = make(map[string]*transpiler.PackageValMetadata)
+			}
+			// Prefer a known type: don't let a later (e.g. sibling) Nil entry
+			// clobber a precise one already recorded for the same name.
+			if existing, ok := richAST.PackageVals[name]; ok &&
+				!transpiler.IsUnusable(existing.Type) && transpiler.IsUnusable(valType) {
+				continue
+			}
+			richAST.PackageVals[name] = &transpiler.PackageValMetadata{
+				Name:  name,
+				Type:  valType,
+				IsVal: isVal,
+			}
+		}
+	}
 }
 
 // inferLiteralType returns the type of a literal expression, or "" if not a literal.

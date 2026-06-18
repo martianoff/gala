@@ -57,6 +57,22 @@ type EmbedDirective struct {
 	TypeName string   // Declared type: "string", "EmbeddedFS", or "" (infer)
 }
 
+// PackageValMetadata describes a package-level `val`/`var` declaration so that
+// references from other files of the same package resolve correctly.
+//
+// A package-level `val` lowers to a `std.Immutable[T]` value; reading it
+// requires a `.Get()` unwrap before it can be passed where a plain `T` is
+// expected. The transformer inserts that unwrap when it knows the identifier
+// is a val, but it only learns this from declarations in the file it is
+// currently transforming. Recording every package file's val/var symbols here
+// lets the transformer pre-register them, so a cross-file reference unwraps
+// the same way a same-file one does.
+type PackageValMetadata struct {
+	Name  string
+	Type  Type // declared/inferred element type T (NilType when unknown)
+	IsVal bool // true for `val` (Immutable-wrapped); false for `var` (plain)
+}
+
 // RichAST provides metadata about a Gala source file.
 type RichAST struct {
 	Tree             antlr.Tree
@@ -70,6 +86,7 @@ type RichAST struct {
 	GoTypeInfo       *GoTypeInfo                         // type info extracted from Go source files and packages
 	TypeAliases      map[string]Type                     // type alias name -> underlying type (e.g., "Handler" -> func(Request) Future[Response])
 	EmbedDirectives  []EmbedDirective                    // embed val declarations
+	PackageVals      map[string]*PackageValMetadata      // package-level val/var name -> metadata (for cross-file Immutable unwrap)
 	ImportPathMap    map[string]string                   // GALA import path -> actual Go module path (when they differ due to VCS host prefix)
 	FilePath         string                              // source file path (for error reporting)
 	SourceContent    string                              // raw source text (for error snippets)

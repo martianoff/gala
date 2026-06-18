@@ -217,7 +217,7 @@ func main() { lookup(None[int]()) }`,
 			name: "GALA-E0018 sealed variant uninferred",
 			input: `package main
 
-sealed type Box[T] {
+sealed type Box[T any] {
     case Empty()
     case Filled(value T)
 }
@@ -270,8 +270,8 @@ func main() {
 			name: "GALA-E0028 type alias redeclared",
 			input: `package main
 
-type Handler = func(string) string
-type Handler = func(int) int
+type Handler func(string) string
+type Handler func(int) int
 
 func main() {
     Println("unused")
@@ -338,7 +338,11 @@ func main() {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := trans.Transpile(tc.input, "")
+			// A non-empty file path is required for the analyzer's
+			// redeclaration checks (function / method): an empty DefinedIn is
+			// treated as a cache/placeholder entry and skipped. All inputs are
+			// `package main`, so no sibling-file discovery is triggered.
+			_, err := trans.Transpile(tc.input, "error_codes_test.gala")
 			require.Error(t, err, "expected transpile to fail")
 			msg := err.Error()
 			assert.Contains(t, msg, string(tc.expectCode),
@@ -480,16 +484,4 @@ func TestT10TypeVarSubstitutionDepthCap(t *testing.T) {
 
 	_, err := trans.Transpile(b.String(), "")
 	assert.NoError(t, err, "deep substitution should not blow the stack or hang")
-}
-
-func itoa(i int) string {
-	if i == 0 {
-		return "0"
-	}
-	var digits []byte
-	for i > 0 {
-		digits = append([]byte{byte('0' + i%10)}, digits...)
-		i /= 10
-	}
-	return string(digits)
 }

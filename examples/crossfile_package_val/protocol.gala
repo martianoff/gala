@@ -1,0 +1,15 @@
+package main
+
+// Shared constants declared as package-level `val`s in a dedicated file — a
+// common layout for protocol error codes, version strings, and limits. Each
+// lowers to a std.Immutable[T] wrapper; references from another file in the
+// same package must unwrap it to plain T at the use site.
+val parseErrorCode = -32700
+val protocolName = "jsonrpc"
+val maxBatch = 50
+
+func formatError(code int) string = s"error($code)"
+
+func tagName(name string) string = s"[$name]"
+
+func withinLimit(n int, limit int) bool = n <= limit

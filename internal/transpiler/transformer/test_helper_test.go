@@ -18,6 +18,31 @@ func stripGeneratedHeader(s string) string {
 	return strings.TrimPrefix(s, generatedHeader)
 }
 
+// itoa converts an int to its decimal string without pulling in strconv.
+// Shared across the transformer test package (e.g. for embedding line numbers
+// in expected output); handles negative values.
+func itoa(i int) string {
+	if i == 0 {
+		return "0"
+	}
+	neg := i < 0
+	if neg {
+		i = -i
+	}
+	var buf [20]byte
+	n := len(buf)
+	for i > 0 {
+		n--
+		buf[n] = byte('0' + i%10)
+		i /= 10
+	}
+	if neg {
+		n--
+		buf[n] = '-'
+	}
+	return string(buf[n:])
+}
+
 // getStdSearchPath returns the search path for the std package.
 // In Bazel tests, it uses runfiles to find the std directory.
 // Outside of Bazel, it falls back to finding go.mod and using the module root.
