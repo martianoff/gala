@@ -279,6 +279,25 @@ func (t *galaASTTransformer) resolveMethodCallTypeWithParams(
 	return result
 }
 
+// stdCallTypeArgsAreParentParams reports whether the explicit type args on a
+// std-qualified call named `name` map directly onto the parent type's own type
+// parameters. This holds for constructor calls — direct constructors (`Some`,
+// `Left`, ...), their lowered `_Apply` forms (`Left_Apply`), and tuple type
+// constructors (`Tuple2`) — but NOT for monomorphized generic method calls
+// (`Try_FlatMap[U, T]`, `Option_Map[U, T]`), whose type-arg list mixes method-
+// level and receiver-level params. Method calls instead resolve through the
+// Receiver_Method path, which substitutes those args into the method's own
+// declared return type.
+func (t *galaASTTransformer) stdCallTypeArgsAreParentParams(name string) bool {
+	if _, ok := registry.StdConstructorRule(name); ok {
+		return true
+	}
+	if strings.HasSuffix(name, "_Apply") {
+		return true
+	}
+	return t.isTupleTypeName(name)
+}
+
 // resolveStdConstructorParentType checks if the given name is a std constructor or has a
 // std type/constructor prefix, and returns the parent type name (e.g., "Option", "Either", "Try").
 // Returns empty string if the name doesn't match any known std constructor pattern.

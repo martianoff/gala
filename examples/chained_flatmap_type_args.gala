@@ -1,0 +1,23 @@
+package main
+
+// A FlatMap whose receiver is itself a FlatMap result must monomorphize each
+// level with exactly two type args (`Try_FlatMap[U, T]`). The receiver's
+// element type (the outer T) is the inner FlatMap's *result* element type — not
+// its full `[U, T]` type-arg list, which would over-arity the parent `Try` and
+// leak an extra type arg into the next chained call.
+func tryChain() Try[string] =
+    Try(() => 1)
+        .FlatMap[int]((a) => Try(() => a + 1))
+        .FlatMap[int]((b) => Try(() => b * 10))
+        .FlatMap[string]((c) => Try(() => s"v$c"))
+
+// The same shape over Option, with the element type changing across links.
+func optionChain() Option[int] =
+    Some("hi")
+        .FlatMap[bool]((s) => Some(len(s) > 0))
+        .FlatMap[int]((b) => Some(if (b) 1 else 0))
+
+func main() {
+    Println(tryChain().GetOrElse("err"))
+    Println(optionChain().GetOrElse(-1))
+}

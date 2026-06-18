@@ -49,6 +49,7 @@ go_test(
         "assignment_test.go",
         "auto_method_override_test.go",
         "bare_funcref_test.go",
+        "chained_flatmap_test.go",
         "codec_boundary_test.go",
         "collect_partial_function_test.go",
         "collection_default_param_test.go",
@@ -108,6 +109,7 @@ go_test(
         "type_inference_test.go",
         "user_get_method_test.go",
         "variables_test.go",
+        "zero_field_struct_ctor_test.go",
     ],
     # Gala source files needed by the analyzer for type resolution in tests.
     # Linux CI uses a sandbox so only declared data deps are accessible.

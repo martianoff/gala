@@ -205,8 +205,18 @@ func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.Sel
 	}
 
 	// IMPORTANT: Check for explicit type args BEFORE looking up metadata return types
-	// This ensures Left_Apply[int, string] uses [int, string] instead of [A, B] from metadata
-	if isStdQualified && len(typeArgs) > 0 {
+	// This ensures Left_Apply[int, string] uses [int, string] instead of [A, B] from metadata.
+	//
+	// This shortcut is only valid for *constructor* calls, where the explicit
+	// type args ARE the parent type's params (e.g. `Left_Apply[int, string]` ->
+	// `Either[int, string]`, `Some[int]` -> `Option[int]`). It must NOT fire for
+	// monomorphized generic *method* calls like `Try_FlatMap[U, T]`: there the
+	// type-arg list is `[methodU, receiverT]`, not the parent's params, so
+	// splicing it as `Try[U, T]` over-arity'd the parent (`Try[int, int]`) and
+	// the next chained call then leaked the extra arg. Generic methods fall
+	// through to the Receiver_Method resolver below, which substitutes the
+	// method's type args into its declared return type (`Try[U]`).
+	if isStdQualified && len(typeArgs) > 0 && t.stdCallTypeArgsAreParentParams(sel.Sel.Name) {
 		if parentType := t.resolveStdConstructorParentType(sel.Sel.Name, true); parentType != "" {
 			return transpiler.GenericType{
 				Base:   transpiler.NamedType{Package: registry.StdPackageName, Name: parentType},

@@ -329,6 +329,18 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "zero_field_struct_ctor",
+    src = "zero_field_struct_ctor.gala",
+    expected = "zero_field_struct_ctor.out",
+)
+
+gala_exec_test(
+    name = "chained_flatmap_type_args",
+    src = "chained_flatmap_type_args.gala",
+    expected = "chained_flatmap_type_args.out",
+)
+
+gala_exec_test(
     name = "option_apply_unapply",
     src = "option_apply_unapply.gala",
     expected = "option_apply_unapply.out",
