@@ -1,0 +1,8 @@
+package main
+
+import . "martianoff/gala/examples/cross_pkg_lambda_infer/lib"
+
+func main() {
+    val r = Apply((x) => MkRes("hi"))
+    Println(r.V)
+}

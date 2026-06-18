@@ -237,10 +237,16 @@ replace github.com/example/utils => ../local-utils
 	resolver := NewResolver(nil)
 	require.True(t, resolver.HasGalaMod())
 
-	// Should resolve to local path
+	// Should resolve to local path. Canonicalize both sides: on macOS the
+	// MkdirTemp path is /var/... while resolution flows through os.Getwd(),
+	// which reports the symlink-resolved /private/var/... form.
 	path, err := resolver.ResolvePackagePath("github.com/example/utils")
 	require.NoError(t, err)
-	assert.Equal(t, localPkgDir, filepath.Clean(path))
+	wantPkg, err := filepath.EvalSymlinks(localPkgDir)
+	require.NoError(t, err)
+	gotPkg, err := filepath.EvalSymlinks(filepath.Clean(path))
+	require.NoError(t, err)
+	assert.Equal(t, wantPkg, gotPkg)
 }
 
 // TestResolver_IsGalaPackage_LocalReplace verifies that a require + replace
@@ -295,6 +301,56 @@ replace example.com/qalib => ../qa_lib
 		"locally replaced GALA dependency must be recognised as a GALA package")
 }
 
+// TestResolver_IsGalaPackage_AbsoluteReplace verifies that a replace
+// directive pointing at an ABSOLUTE local path classifies the dependency as a
+// GALA package. A relative replace (../qa_lib) is joined onto the gala.mod
+// directory, but an absolute path is already complete and must be used
+// verbatim — joining it onto the gala.mod dir produces a corrupt,
+// nonexistent directory (filepath.Join strips the leading separator and
+// appends), so IsGalaPackage's replace branch returns false and the dep is
+// silently demoted to a Go package. Its .gala-derived metadata (function
+// signatures with function-typed params, sealed cases) is then dropped, which
+// breaks cross-module higher-order calls: a lambda argument loses its expected
+// type and lowers to `func(any) any`.
+func TestResolver_IsGalaPackage_AbsoluteReplace(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "resolver_xmod_abs_replace_test")
+	require.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	// Local GALA library with gala.mod and a .gala source file.
+	libDir := filepath.Join(tempDir, "lreplib")
+	require.NoError(t, os.MkdirAll(libDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(libDir, "gala.mod"),
+		[]byte("module example.com/lreplib\n\ngala dev\n"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(libDir, "lib.gala"),
+		[]byte("package lreplib\n"), 0644))
+
+	// Consumer whose replace directive points at the lib via an ABSOLUTE path.
+	consumerDir := filepath.Join(tempDir, "lrepapp")
+	require.NoError(t, os.MkdirAll(consumerDir, 0755))
+	galaModContent := "module example.com/lrepapp\n\ngala dev\n\n" +
+		"require example.com/lreplib v0.0.0\n\n" +
+		"replace example.com/lreplib => " + libDir + "\n"
+	require.NoError(t, os.WriteFile(filepath.Join(consumerDir, "gala.mod"),
+		[]byte(galaModContent), 0644))
+
+	originalWd, err := os.Getwd()
+	require.NoError(t, err)
+	defer os.Chdir(originalWd)
+	require.NoError(t, os.Chdir(consumerDir))
+
+	resolver := NewResolver(nil)
+	require.True(t, resolver.HasGalaMod(),
+		"consumer's gala.mod must be loaded — otherwise replace directives are invisible")
+
+	// applyReplace must return the absolute path verbatim, not a corrupt join.
+	require.Equal(t, libDir, resolver.applyReplace("example.com/lreplib"),
+		"absolute replace target must be used as-is, not joined onto the gala.mod directory")
+
+	assert.True(t, resolver.IsGalaPackage("example.com/lreplib"),
+		"GALA dependency replaced via an absolute local path must be recognised as a GALA package")
+}
+
 // TestResolver_PrefersGalaModOverParentGoMod verifies that when a project
 // directory has gala.mod but lives under an unrelated parent go.mod, the
 // resolver picks the project's gala.mod as the authoritative module root
@@ -326,7 +382,15 @@ func TestResolver_PrefersGalaModOverParentGoMod(t *testing.T) {
 		"project's gala.mod must be loaded, not the parent go.mod")
 	assert.Equal(t, "example.com/project", resolver.ModuleName(),
 		"module name must come from gala.mod (example.com/project), not parent go.mod (unrelated/parent)")
-	assert.Equal(t, projectDir, resolver.ModuleRoot(),
+	// Canonicalize both paths before comparing: on macOS os.MkdirTemp returns a
+	// /var/... path while os.Getwd() (used during module-root discovery) reports
+	// its symlink-resolved /private/var/... form, so a raw string compare would
+	// spuriously fail.
+	wantRoot, err := filepath.EvalSymlinks(projectDir)
+	require.NoError(t, err)
+	gotRoot, err := filepath.EvalSymlinks(resolver.ModuleRoot())
+	require.NoError(t, err)
+	assert.Equal(t, wantRoot, gotRoot,
 		"module root must be the project directory, not the parent")
 }
 

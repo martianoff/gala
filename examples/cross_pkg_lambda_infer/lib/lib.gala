@@ -1,0 +1,8 @@
+package lib
+
+struct Res(V string)
+
+func MkRes(s string) Res = Res(s)
+
+// Higher-order function: parameter has a concrete function type.
+func Apply(f func(int) Res) Res = f(7)
