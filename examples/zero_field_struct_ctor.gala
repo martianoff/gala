@@ -1,0 +1,20 @@
+package main
+
+// A zero-field shorthand struct is the idiomatic stateless marker/strategy
+// type. Constructing it with `Foo()` must produce a value, not lower to a Go
+// type conversion `Foo(...)` (which would need an argument).
+struct Mock()
+
+func (m Mock) Tag() string = "mock"
+
+// The `Foo{}` literal form must keep working alongside `Foo()`.
+struct Other()
+
+func (o Other) Tag() string = "other"
+
+func main() {
+    val m = Mock()
+    val o = Other{}
+    Println(m.Tag())
+    Println(o.Tag())
+}

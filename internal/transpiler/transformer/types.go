@@ -711,6 +711,28 @@ func (t *galaASTTransformer) getBaseTypeName(expr ast.Expr) string {
 	return ""
 }
 
+// isTypeBaseExpr reports whether a call-target expression names a type (as
+// opposed to a value of that type). It mirrors the isType detection used by the
+// Apply-constructor paths: a bare identifier resolves to a known type only when
+// it is not shadowed by a local val/var, and a package-qualified selector is a
+// type when its head is a known package. Generic instantiations (`Foo[T]`) are
+// unwrapped to their base before the check.
+func (t *galaASTTransformer) isTypeBaseExpr(expr ast.Expr) bool {
+	switch e := expr.(type) {
+	case *ast.IndexExpr:
+		return t.isTypeBaseExpr(e.X)
+	case *ast.IndexListExpr:
+		return t.isTypeBaseExpr(e.X)
+	case *ast.Ident:
+		return !t.isVal(e.Name) && !t.isVar(e.Name) && !t.getType(e.Name).IsNil()
+	case *ast.SelectorExpr:
+		if id, ok := e.X.(*ast.Ident); ok {
+			return t.importManager.IsPackage(id.Name) || id.Name == registry.StdPackageName
+		}
+	}
+	return false
+}
+
 func (t *galaASTTransformer) isImmutableType(typ transpiler.Type) bool {
 	if typ == nil || typ.IsNil() {
 		return false

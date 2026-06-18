@@ -198,6 +198,19 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 				return &ast.CallExpr{Fun: base, Args: filled}, nil
 			}
 		}
+
+		// Zero-field shorthand struct constructed as `Foo()`. A bare `Foo()`
+		// call lowers to a Go type conversion `Foo(...)`, which requires
+		// exactly one argument ("missing argument in conversion to Foo"), so
+		// emit a composite literal `Foo{}` instead. Non-empty shorthand
+		// structs route through the positional-construction path (their argList
+		// is non-nil); zero-field sealed variants carry a zero-arg Apply method
+		// and are already handled above.
+		if typeName := t.getBaseTypeName(base); typeName != "" {
+			if fields, ok := t.structFields[t.resolveStructTypeName(typeName)]; ok && len(fields) == 0 && t.isTypeBaseExpr(base) {
+				return &ast.CompositeLit{Type: base}, nil
+			}
+		}
 		return &ast.CallExpr{Fun: base, Args: nil}, nil
 	}
 
