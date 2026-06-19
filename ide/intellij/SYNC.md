@@ -7,7 +7,12 @@ Run `/gala-ide-sync` to automatically verify and fix sync issues.
 
 ### 1. Keywords
 
-**Plugin files:** `GalaCompletionContributor.kt` (DECLARATION_KEYWORDS, CONTROL_KEYWORDS, LITERAL_KEYWORDS, TYPE_KEYWORDS)
+> **Note:** `GalaCompletionContributor.kt` is intentionally empty — all
+> completion items (keywords, types, methods, etc.) come from the LSP server.
+> The plugin's only hardcoded keyword data is the syntax-highlighter token list
+> (sync point #6). Keyword *completion* lives in the LSP server (sync point #7).
+
+**LSP file:** `internal/lsp/completion.go` (`keywordCompletions()`)
 
 **Source of truth:** `internal/parser/grammar/gala.g4` — named lexer rules (VAL, VAR, FUNC, etc.) and inline keyword literals in parser rules ('true', 'false', 'nil', 'map', 'return', etc.)
 
@@ -22,7 +27,7 @@ grep -oP "'[a-z]+'" internal/parser/grammar/gala.g4 | sort -u
 
 ### 2. Built-in Types
 
-**Plugin files:** `GalaCompletionContributor.kt` (BUILTIN_TYPES), `GalaAnnotator.kt` (BUILTIN_TYPE_NAMES), `GalaSyntaxHighlighter.kt` (BUILTIN_TYPE_NAMES)
+**Plugin files:** `GalaAnnotator.kt` (BUILTIN_TYPE_NAMES), `GalaSyntaxHighlighter.kt` (BUILTIN_TYPE_NAMES)
 
 **Source of truth:** `internal/transpiler/types.go` — `IsPrimitiveType()` function
 
@@ -33,9 +38,17 @@ grep -A20 "func IsPrimitiveType" internal/transpiler/types.go
 
 ### 3. Standard Library Auto-Imported Types
 
-**Plugin file:** `GalaCompletionContributor.kt` (STD_AUTO_IMPORTED)
+**Plugin file:** `GalaAnnotator.kt` (STD_TYPE_NAMES)
 
-**Source of truth:** `std/*.gala` — ONLY types that are auto-imported (available without explicit `import`). These are the core sealed types, their constructors, and fundamental types like `Tuple` and `Immutable`.
+**Source of truth:** exported types in `package std` (`std/*.gala`) plus the prelude
+list in `internal/transpiler/registry/std.go` (`StdPackageInfo().Types`) — ONLY
+types that are auto-imported (available without explicit `import`). These are the
+core sealed types and their constructors, the `Tuple`/`Tuple3..10` family, and
+fundamental types like `Immutable`, `ConstPtr`, `Void`, `EmbeddedFS`, the
+collection traits (`Traversable`, `Iterable`, `Seq`, `Ordered`, `Hashable`), and
+the reflection-free codec metadata types (`StructMeta`, `FieldEncoder`,
+`FieldDecoder`). Dynamic per-type completion for these comes from the LSP server
+via the analyzer's `RichAST`; the plugin set only drives semantic highlighting.
 
 **Important:** Types from other packages (`collection_immutable`, `collection_mutable`, `io`, `stream`, `concurrent`, etc.) require explicit `import` and should NOT be in static completion lists. They will be suggested by the LSP server (Phase 5) when imports are resolved.
 
@@ -48,9 +61,10 @@ grep -h "^sealed type \|^    case " std/*.gala | head -20
 grep -h "^type " std/tuple.gala std/immutable.gala
 ```
 
-### 4. Standard Library Methods (postfix completion)
+### 4. Standard Library Methods (dot completion)
 
-**Plugin file:** `GalaCompletionContributor.kt` (POSTFIX_TEMPLATES)
+**LSP file:** `internal/lsp/completion.go` (`typeSpecificCompletions()`) — driven
+dynamically by the analyzer's `RichAST` method metadata; no hardcoded method list.
 
 **Source of truth:** `std/*.gala` — public method definitions (`func (receiver) MethodName(...)`)
 
@@ -146,8 +160,9 @@ The LSP server (`internal/lsp/`) also has hardcoded data that must stay in sync:
 ### Building
 
 ```bash
-# Build everything
-bazel build //ide/intellij:plugin //cmd/gala-lsp:gala-lsp
+# Build everything. The LSP server ships as the `gala lsp` subcommand of the
+# main gala binary — there is no separate gala-lsp binary.
+bazel build //ide/intellij:plugin //cmd/gala:gala
 ```
 
 ### Installing the Plugin
@@ -158,16 +173,19 @@ bazel build //ide/intellij:plugin //cmd/gala-lsp:gala-lsp
 
 ### Installing the LSP Server
 
+The LSP server is the `gala lsp` subcommand of the main `gala` binary, so
+installing `gala` on PATH is all that is required.
+
 1. Copy the binary to PATH:
    ```bash
    # Linux/macOS
-   cp bazel-bin/cmd/gala-lsp/gala-lsp_/gala-lsp ~/.local/bin/
+   cp bazel-bin/cmd/gala/gala_/gala ~/.local/bin/
 
    # Windows
-   copy bazel-bin\cmd\gala-lsp\gala-lsp_\gala-lsp.exe %USERPROFILE%\bin\
+   copy bazel-bin\cmd\gala\gala_\gala.exe %USERPROFILE%\bin\
    ```
-2. Or set `GALA_LSP_PATH` environment variable to the binary path
-3. Restart GoLand — the LSP server starts automatically when a `.gala` file is opened
+2. Or set the `GALA_PATH` environment variable to the `gala` binary path
+3. Restart GoLand — the LSP server (`gala lsp`) starts automatically when a `.gala` file is opened
 
 ### Using with Other Editors
 
@@ -178,8 +196,8 @@ The LSP server works with any LSP-capable editor:
 {
   "lsp.servers": {
     "gala": {
-      "command": "gala-lsp",
-      "args": ["--stdio"],
+      "command": "gala",
+      "args": ["lsp"],
       "filetypes": ["gala"]
     }
   }
@@ -190,7 +208,7 @@ The LSP server works with any LSP-capable editor:
 ```lua
 require('lspconfig.configs').gala = {
   default_config = {
-    cmd = { 'gala-lsp', '--stdio' },
+    cmd = { 'gala', 'lsp' },
     filetypes = { 'gala' },
     root_dir = require('lspconfig.util').root_pattern('gala.mod', '.git'),
   },

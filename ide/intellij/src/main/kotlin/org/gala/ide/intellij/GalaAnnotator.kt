@@ -61,21 +61,37 @@ class GalaAnnotator : Annotator {
             "string"
         )
 
-        // Built-in functions available without import
+        // Built-in functions available without import. Keep in sync with the
+        // LSP server's builtinFuncs in internal/lsp/completion.go.
         private val BUILTIN_FUNCTION_NAMES = setOf(
             "Println", "Print",
             "SliceOf",
             "len", "cap", "make", "append", "copy", "delete",
-            "close", "panic", "recover"
+            "close", "panic", "recover",
+            // Auto-imported std prelude constructors / converters (distinctive
+            // names — see internal/transpiler/registry/std.go and std/*.gala)
+            "NewImmutable", "NewConstPtr", "NewEmbeddedFS",
+            "FromError", "FromOption", "FromEitherError"
         )
 
-        // Standard library types (auto-imported)
+        // Standard library types (auto-imported / prelude — available without
+        // an explicit import). Source of truth: exported types in `package std`
+        // (std/*.gala) plus the prelude list in
+        // internal/transpiler/registry/std.go.
         private val STD_TYPE_NAMES = setOf(
+            // Core sealed types and their constructors
             "Option", "Some", "None",
             "Either", "Left", "Right",
             "Try", "Success", "Failure",
-            "Tuple", "Immutable", "ConstPtr", "Void",
-            "Seq", "Traversable", "Iterable"
+            // Fundamental value types
+            "Immutable", "ConstPtr", "Void", "EmbeddedFS",
+            // Tuple family (Tuple is the 2-tuple, Tuple3+ are higher arities)
+            "Tuple", "Tuple3", "Tuple4", "Tuple5", "Tuple6",
+            "Tuple7", "Tuple8", "Tuple9", "Tuple10",
+            // Traits / interfaces
+            "Traversable", "Iterable", "Seq", "Hashable", "Ordered",
+            // Errors and reflection-free metadata (JSON codec)
+            "NoSuchElementError", "StructMeta", "FieldEncoder", "FieldDecoder"
         )
     }
 
