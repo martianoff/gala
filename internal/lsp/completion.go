@@ -244,6 +244,10 @@ func keywordCompletions() []lsp.CompletionItem {
 		"Println", "Print", "SliceOf",
 		"len", "cap", "make", "append", "copy", "delete",
 		"close", "panic", "recover",
+		// Auto-imported std prelude constructors / converters
+		// (see internal/transpiler/registry/std.go and std/*.gala).
+		"NewImmutable", "NewConstPtr", "NewEmbeddedFS",
+		"FromError", "FromOption", "FromEitherError",
 	}
 	items := make([]lsp.CompletionItem, 0)
 	for _, kw := range keywords {
