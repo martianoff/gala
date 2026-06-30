@@ -1028,16 +1028,9 @@ func scanSeqPatternArgs(args []grammar.IArgumentContext) (restIndex int, restNam
 }
 
 // generateSeqPatternMatch generates code for sequence pattern matching with rest patterns.
-// TODO(A2): this function is 301 lines and splits naturally into:
-//   - scanSeqPatternArgs (done)              — classify args into non-rest/rest
-//   - emitSizeCheck                          — generate the `obj.Size() >= N` guard
-//   - emitNonRestBindings                    — per-arg Get() / As[T]() bindings
-//   - emitRestBinding                        — SeqDrop(N).(T) for the rest pattern
-//   - assembleGuardedBlock                   — combine into final if-condition
+// It orchestrates the extracted helpers scanSeqPatternArgs, emitSizeCheck,
+// emitNonRestBindings, and emitRestBinding.
 //
-// The remaining extractions are deferred to a follow-up PR because they share
-// deep local state (argIndex cursor, sizeCheckName, elemType) that needs a
-// carrying struct to thread safely.
 // For example, Array(first, second, rest...) matching against Array[int] generates:
 //
 //	_tmp_ok := obj.Size() >= 2

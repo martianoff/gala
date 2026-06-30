@@ -2086,7 +2086,7 @@ func (a *galaAnalyzer) resolveTypeWithParams(typeName string, pkgName string, ty
 	// Must be recognized BEFORE the generic-type branch below, otherwise the
 	// `map` token gets mistaken for a named type and picks up the current
 	// package prefix (e.g., `collection_immutable.map`), corrupting downstream
-	// type inference for `for k, v := range` over method-returned maps (gap #8).
+	// type inference for `for k, v := range` over method-returned maps.
 	if strings.HasPrefix(typeName, "map[") {
 		keyEnd := findMatchingCloseBracket(typeName, 3) // index of `[` after "map"
 		if keyEnd != -1 && keyEnd+1 < len(typeName) {

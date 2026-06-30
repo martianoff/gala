@@ -657,15 +657,24 @@ func (t *galaASTTransformer) transformIfExpression(ctx *grammar.IfExpressionCont
 		return nil, err
 	}
 
+	// An if-expression feeding a function-typed slot (e.g.
+	// `val f func(int) int = if (c) { (x) => x } else { (x) => x * 2 }`) threads
+	// the declared signature into each branch's lambda. The bare lambda consumes
+	// the hint (transformLambda), so re-establish it before each branch.
+	branchParams, branchRet := t.expectedLambdaParamTypes, t.expectedLambdaRetType
+
 	branches := ctx.AllIfExprBranch()
+	t.expectedLambdaParamTypes, t.expectedLambdaRetType = branchParams, branchRet
 	thenStmts, thenExpr, thenTerminates, err := t.transformIfExprBranch(branches[0].(*grammar.IfExprBranchContext))
 	if err != nil {
 		return nil, err
 	}
+	t.expectedLambdaParamTypes, t.expectedLambdaRetType = branchParams, branchRet
 	elseStmts, elseExpr, elseTerminates, err := t.transformIfExprBranch(branches[1].(*grammar.IfExprBranchContext))
 	if err != nil {
 		return nil, err
 	}
+	t.expectedLambdaParamTypes, t.expectedLambdaRetType = branchParams, branchRet
 
 	retType := transpiler.Type(transpiler.NilType{})
 	if inferred, err := t.inferIfType(cond, thenExpr, elseExpr); err == nil && !inferred.IsNil() {

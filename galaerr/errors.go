@@ -247,6 +247,16 @@ const (
 	// resolve it by qualifying or aliasing one import. Previously this
 	// case was reported as an uncoded semantic error.
 	CodeDotImportCollision ErrorCode = "GALA-E0032"
+
+	// E0033: a lambda parameter has no type annotation and no expected type
+	// can be inferred from the surrounding context (e.g. `val f = (x) => x + 1`
+	// with no declared type, or a lambda element of an untyped collection
+	// literal). Emitting `any` for the parameter would violate the
+	// concrete-types invariant and produce Go that either fails to compile or
+	// silently erases the type. The author must annotate the parameter
+	// (`(x int) => ...`) or place the lambda in a typed context that supplies
+	// the parameter types.
+	CodeUntypedLambdaParam ErrorCode = "GALA-E0033"
 )
 
 // MultiError collects multiple GALA errors.

@@ -214,6 +214,27 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 				release := t.expectedArgTypes.push(declaredType)
 				defer release()
 			}
+			// When the declared type is a function type and the initializer is a
+			// bare lambda (directly or via if-expression branches), thread the
+			// declared signature into the lambda so untyped params resolve to the
+			// declared types instead of `any` (which would emit non-compiling Go).
+			if ft := t.resolveReturnTypeAsFuncType(typeExpr); ft != nil {
+				var expectedRetType ast.Expr
+				if len(ft.Results) > 0 {
+					expectedRetType = t.typeToExpr(ft.Results[0])
+				} else {
+					expectedRetType = ExpectedVoid
+				}
+				prevParams, prevRet, prevIf := t.expectedLambdaParamTypes, t.expectedLambdaRetType, t.expectedIfExprType
+				t.expectedLambdaParamTypes = ft.Params
+				t.expectedLambdaRetType = expectedRetType
+				t.expectedIfExprType = typeExpr
+				defer func() {
+					t.expectedLambdaParamTypes = prevParams
+					t.expectedLambdaRetType = prevRet
+					t.expectedIfExprType = prevIf
+				}()
+			}
 		}
 	}
 
@@ -801,7 +822,7 @@ func (t *galaASTTransformer) transformExpressionBodiedFunction(exprCtx grammar.I
 			} else {
 				expectedRetType = ExpectedVoid
 			}
-			expr, err = t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedFuncType.Params)
+			expr, err = t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedFuncType.Params, false)
 			if err != nil {
 				return nil, err
 			}
@@ -1331,14 +1352,15 @@ func (t *galaASTTransformer) transformParameter(ctx *grammar.ParameterContext) (
 			field.Type = typ
 		}
 	} else {
-		// Default to any if type is not specified. This path is reached for:
-		//   1. Lambda parameters where no expected type was available (lambdas.go
-		//      normally uses transformLambdaWithExpectedType to pass expected types).
-		//   2. Legacy tests / incomplete user code.
-		// B11: per project rule #3, emit a warning so authors can surface untyped
-		// parameter sites. A hard error would break the untyped-lambda fallback
-		// that lambdas.go:55 still depends on. TODO(B11): once every lambda path
-		// threads an expected type, convert this to `t.semanticErrorAt`.
+		// Provisional `any` when no type is specified. For lambda parameters this
+		// is a placeholder that transformLambdaWithExpectedType either overrides
+		// with the threaded expected type or rejects with GALA-E0033 when no type
+		// can be inferred — so untyped lambda params never reach generated Go as
+		// `any`. The fallback survives here only for non-lambda callers (function
+		// and method signatures, struct-shorthand fields), where the grammar
+		// requires an explicit type, making this an unreachable safety net rather
+		// than a sanctioned `any`. A warning is still emitted so any such site is
+		// surfaced under GALA_WARN_TYPES.
 		t.warnInference("parameter %q has no declared type; defaulted to `any`", name)
 		if isVariadic {
 			field.Type = &ast.Ellipsis{Elt: ast.NewIdent("any")}

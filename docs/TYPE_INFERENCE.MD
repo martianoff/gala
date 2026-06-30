@@ -365,6 +365,26 @@ val sum = list.FoldLeft(0, (acc, x) => acc + x)        // acc inferred as int fr
 val joined = list.FoldLeft("", (acc, x) => acc + x)     // acc inferred as string from ""
 ```
 
+4. **Function-typed declaration contexts** — When a lambda initializes a slot
+   with a declared function type, that signature is threaded into the lambda so
+   its parameters resolve to the declared types. This covers a direct
+   initializer, both branches of an if-expression feeding the slot, and curried
+   lambdas (the return type is decomposed into the body lambda):
+
+```gala
+val direct func(int) int = (x) => x + 1                       // x inferred as int
+val branched func(int) int = if (c) { (x) => x } else { (x) => x * 2 }
+val curried func(int) func(int) int = (a) => (b) => a + b     // a, b inferred as int
+```
+
+When a lambda parameter has no annotation **and** no expected type can be
+inferred — e.g. a bare `val f = (x) => x + 1` with no declared type — the
+transpiler rejects it with [`GALA-E0033`](errors/GALA-E0033.md) rather than
+defaulting the parameter to `any`. Annotate the parameter (`(x int) => …`) or
+place the lambda in one of the typed contexts above. (Call-argument lambdas
+whose parameter types cannot yet be inferred still fall back to `any`; that is a
+separate inference-completeness concern, not a hard error.)
+
 ---
 
 ## Downward Inference for Generic Sealed-Type Case Constructors

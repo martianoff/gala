@@ -108,7 +108,7 @@ func (t *galaASTTransformer) transformStatement(ctx *grammar.StatementContext) (
 					} else {
 						expectedRetType = ExpectedVoid
 					}
-					expr, err = t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedFuncType.Params)
+					expr, err = t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedFuncType.Params, false)
 				}
 			}
 			if expr == nil && err == nil {
