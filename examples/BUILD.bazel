@@ -1834,6 +1834,13 @@ gala_exec_test(
     expected = "block_lambda_match.out",
 )
 
+# Verification: statement-position match dispatch + guarded wildcard before default
+gala_exec_test(
+    name = "match_stmt_guard_dispatch",
+    src = "match_stmt_guard_dispatch.gala",
+    expected = "match_stmt_guard_dispatch.out",
+)
+
 # Verification: bare None() infers its element type from context
 gala_exec_test(
     name = "none_downward_inference",

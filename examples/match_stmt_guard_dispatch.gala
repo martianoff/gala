@@ -1,0 +1,28 @@
+package main
+
+// A statement-position match (its value is discarded) dispatches purely for
+// side effects, so its arms may call functions with different return types.
+func record(c int) {
+    c match {
+        case 1 => { Println("one") }
+        case 2 => { Println(s"two=${2}") }
+        case _ => { Println("many") }
+    }
+}
+
+// A guarded wildcard `case _ if g` is conditional, so it can precede a real
+// `case _` default without being treated as a duplicate default.
+func size(n int) string = n match {
+    case 0          => "empty"
+    case _ if n < 10 => "small"
+    case _          => "large"
+}
+
+func main() {
+    record(1)
+    record(2)
+    record(9)
+    Println(size(0))
+    Println(size(5))
+    Println(size(42))
+}

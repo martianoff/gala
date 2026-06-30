@@ -79,6 +79,7 @@ go_test(
         "match_in_lambda_void_test.go",
         "match_return_statement_test.go",
         "match_return_type_test.go",
+        "match_stmt_dispatch_test.go",
         "match_test.go",
         "match_void_dispatch_test.go",
         "methods_test.go",

@@ -1204,8 +1204,9 @@ func (t *galaASTTransformer) transformPartialFunctionLiteral(ctx *grammar.Partia
 		}
 	}
 
-	// Infer common inner result type T from all branches
-	innerResultType, err := t.inferCommonResultType(resultTypes, casePatterns, ctx)
+	// Infer common inner result type T from all branches. A match used as a
+	// lambda's value is value-producing, so arms must unify (discardValue=false).
+	innerResultType, err := t.inferCommonResultType(resultTypes, casePatterns, ctx, false)
 	if err != nil {
 		return nil, err
 	}
