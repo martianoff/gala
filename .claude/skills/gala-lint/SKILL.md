@@ -352,6 +352,7 @@ func createServer(host string, port int = 8080, tls bool = true, maxConnections 
 |-------|-----------------|-----------------|
 | Redundant variable type | `val x int = 42` | `val x = 42` |
 | Redundant generic params on helpers | `Some[int](42)` | `Some(42)` |
+| Redundant type arg on `None[T]()` in inferable context | `func parse() Option[int] = None[int]()` | `func parse() Option[int] = None()` (type pinned by the return type) |
 | Redundant collection types | `ListOf[int](1, 2, 3)` | `ListOf(1, 2, 3)` |
 | Redundant single-param struct constructor | `Box[int](Value = 42)` | `Box(Value = 42)` (type inferred from named field value) |
 | Redundant generic function call type params | `Try[int](() => { return 1 })` | `Try(() => { return 1 })` (type inferred from lambda return) |
@@ -366,9 +367,18 @@ func createServer(host string, port int = 8080, tls bool = true, maxConnections 
 - **Single-type-param generic struct constructors**: `Box[int](Value = 42)` → `Box(Value = 42)` — Go infers the single type param from the named field value
 - **Single-type-param generic function calls**: `Try[int](f)`, `NewCons[int](head, tail)` — argument types determine the type param
 - **Helper constructors**: `Some[int](42)`, `ListOf[int](1, 2, 3)` — element values determine type params
+- **Zero-arg sealed-variant constructors in an inferable context**: `None[T]()` (and other zero-field cases of a generic sealed type) when the surrounding context pins the type. A zero-field variant has no argument to infer from, but the transpiler propagates an **expected type** downward and injects the type arg, so the explicit `[T]` is redundant. Flag `None[T]()` → `None()` when it appears as any of:
+  - a function body or `return` whose declared return type is `Option[T]` — `func f() Option[T] = None[T]()`
+  - the RHS of a `val`/`var` with an explicit `Option[T]` type — `val x Option[T] = None[T]()`
+  - an argument to a function/constructor whose parameter type is `Option[T]`
+  - an element of a typed container — `ArrayOf[Option[T]](None[T]())`
+  - a `match` arm whose result type is externally pinned (e.g. the match is the body of a function returning `Option[T]`)
+  - an `if`/`else` branch whose sibling branch is a `Some(...)` of known type — `if (c) Some(x) else None[int]()`
+
+  Do NOT flag (explicit typing is still required) when none of the above pins the type — most commonly a bare `None[T]()` inside a lambda whose result type is unconstrained, e.g. `arr.Map((x) => None[int]())`: the element-result type is free, so removing `[int]` makes the type undeterminable and the transpiler reports GALA-E0018.
 
 **Exception**: Explicit types ARE required for:
-- `None[T]()`, `Left[L, R]()`, `Right[L, R]()` — no value arguments to infer from
+- `Left[L, R]()`, `Right[L, R]()` — no value arguments to infer from (and Either carries two params)
 - Empty collections: `EmptyArray[T]()`, `EmptyList[T]()`, `EmptyHashMap[K, V]()`, `Empty[T]()` — no elements to infer from
 - **Multi-type-param generic struct constructors**: `Pair[string, int]("a", 1)` — Go cannot infer when there are 2+ type params on struct instantiation
 - **Generic struct constructors inside generic method bodies**: `Pair[C, B](First = ...)` — abstract type params from enclosing method must be explicit

@@ -1425,14 +1425,23 @@ func (t *galaASTTransformer) inferExtractorTypeParams(extractorMeta *transpiler.
 // stripPackagePrefix removes package prefixes from type names for comparison.
 // For example, "std.Either" becomes "Either", "main.User" becomes "User".
 func stripPackagePrefix(name string) string {
-	if idx := len(name) - 1; idx >= 0 {
-		for i := idx; i >= 0; i-- {
-			if name[i] == '.' {
-				return name[i+1:]
-			}
+	_, bare := splitPackageQualifier(name)
+	return bare
+}
+
+// splitPackageQualifier splits a possibly-qualified type name at its last "."
+// into its package qualifier and bare name: "std.None" → ("std", "None"),
+// "User" → ("", "User"). Sealed-variant lookups follow the last-dot convention
+// (the bare case name is the metadata key, the prefix is the package scope), so
+// callers that need both halves should use this rather than re-deriving the
+// split inline.
+func splitPackageQualifier(name string) (pkg, bare string) {
+	for i := len(name) - 1; i >= 0; i-- {
+		if name[i] == '.' {
+			return name[:i], name[i+1:]
 		}
 	}
-	return name
+	return "", name
 }
 
 // unifyTypes attempts to unify two types and extract type parameter substitutions.

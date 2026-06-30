@@ -105,11 +105,12 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 							if receiverType == base && baseExpr == base && len(typeMeta.TypeParams) > 0 {
 								if t.isSealedVariantTypeName(typeName) {
 									line, col := suffix.GetStart().GetLine(), suffix.GetStart().GetColumn()
+									bareName := stripPackagePrefix(typeName)
 									return nil, galaerr.NewCodedSemanticError(
 										galaerr.CodeSealedVariantUninferred,
 										line, col,
-										fmt.Sprintf("cannot infer type parameter for sealed variant constructor %q", typeName+"()"),
-										fmt.Sprintf("annotate the binding (e.g. `val x: ParentType[Int] = %s()`) or pass type args explicitly (`%s[Int]()`)", typeName, typeName),
+										fmt.Sprintf("cannot infer type parameter for sealed variant constructor %q", bareName+"()"),
+										fmt.Sprintf("annotate the binding (e.g. `val x: ParentType[Int] = %s()`) or pass type args explicitly (`%s[Int]()`)", bareName, bareName),
 									)
 								}
 							}
@@ -1716,10 +1717,7 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 			// segment before the last "." is the package the variant came
 			// from — using it prevents a same-named variant in another
 			// package from shadowing the local one via map-iteration order.
-			variantPkg := ""
-			if idx := strings.LastIndex(resolvedTypeName, "."); idx != -1 {
-				variantPkg = resolvedTypeName[:idx]
-			}
+			variantPkg, _ := splitPackageQualifier(resolvedTypeName)
 			variantFieldNames, found, ferr := t.findSealedVariantFields(typeName, variantPkg, line, col)
 			if ferr != nil {
 				return nil, ferr
@@ -2182,22 +2180,20 @@ func (t *galaASTTransformer) findSealedVariantFields(variantName, pkgQualifier s
 	}
 }
 
-// isSealedVariantTypeName reports whether `typeName` (an unqualified variant
-// name in the current package) is a registered sealed variant. Used by the
-// B6 fail-loud check to limit the GALA-E0018 diagnostic to sealed variants —
-// other generic types still fall through to Go's deduction.
+// isSealedVariantTypeName reports whether `typeName` (qualified `std.None` or
+// bare `None`) is a registered sealed variant, gating the GALA-E0018
+// diagnostic; other generic types fall through to Go's deduction.
 //
-// The empty pkgQualifier passed to findSealedParentForVariant is deliberate:
-// this is purely an existence check ("does any loaded sealed type expose a
-// case with this name?") used to gate a more specific error message. It is
-// NOT a codegen path, so the cross-package map walk that the codegen-side
-// lookups (findSealedVariant, findSealedVariantFields) had to package-scope
-// for determinism would only reduce diagnostic coverage here. A false
-// positive (the name exists in some package, but not the one the user
-// meant) still produces the correct user-visible error — pointing at an
-// uninferable sealed-variant constructor — so the looser scope is safe.
+// The zero-arg call path derives the name from `getBaseTypeName`, which keeps
+// the package selector for dot-imported / std variants, but metadata is keyed
+// by the bare case name — so the qualifier is split off and passed as the
+// lookup scope (see findSealedParentForVariant, which also resolves import
+// aliases against it). Comparing the qualified `std.None` directly never
+// matched, so the guard previously missed `std.None()` and the transpiler
+// emitted an uninstantiated `std.None{}.Apply()` (invalid Go) instead.
 func (t *galaASTTransformer) isSealedVariantTypeName(typeName string) bool {
-	return t.findSealedParentForVariant(typeName, "") != nil
+	pkgQualifier, bareName := splitPackageQualifier(typeName)
+	return t.findSealedParentForVariant(bareName, pkgQualifier) != nil
 }
 
 // findSealedParentForVariant returns the parent sealed type's metadata for a
@@ -2940,10 +2936,19 @@ func (t *galaASTTransformer) lambdaActualFuncType(expr ast.Expr) transpiler.Type
 // Returns a typed AST expression (e.g., None[User]) or nil if inference fails.
 //
 // Context sources tried, in order:
-//  1. currentMatchSubjectType — `x match { case _ => None() }` where the subject is
-//     Option[T]. (Companion match required.)
-//  2. currentFuncReturnType — gap #11: `func find(id int) Option[User] { ... None() ... }`
-//     widens the zero-arg constructor from the enclosing function's return type.
+//  1. currentFuncReturnType — the enclosing function's return type (or the
+//     expected-result type promoted onto it by val/arg/match-arm contexts).
+//     Authoritative for a constructor in *value* position: the arm body's type
+//     is the match *result* type, not the subject type.
+//  2. currentMatchSubjectType — `x match { case _ => None() }` where the subject
+//     is Option[T] and no result type is in scope (e.g. inside a lambda whose
+//     result type is unconstrained). Only a proxy: it equals the result type
+//     when the match maps Option[T] to Option[T].
+//
+// Return type is tried first because subject and result can diverge (a match on
+// Option[A] whose arm returns Option[B]); see the worked example under
+// "Downward Inference for Generic Sealed-Type Case Constructors" in
+// docs/TYPE_INFERENCE.MD.
 func (t *galaASTTransformer) inferZeroArgTypeParams(typeName string, typeMeta *transpiler.TypeMetadata) ast.Expr {
 	// Look up companion relationship for this type
 	companion := t.lookupCompanion(typeName)
@@ -2952,9 +2957,10 @@ func (t *galaASTTransformer) inferZeroArgTypeParams(typeName string, typeMeta *t
 	}
 	targetBaseName := stripPackagePrefix(companion.TargetType)
 
-	// Try each context source in priority order: match subject first (most
-	// specific), then enclosing function return type (gap #11 widening).
-	sources := []transpiler.Type{t.currentMatchSubjectType, t.currentFuncReturnType}
+	// Try each context source in priority order: enclosing function return type
+	// first (authoritative for value position), then match subject (proxy
+	// fallback when no return type pins the result).
+	sources := []transpiler.Type{t.currentFuncReturnType, t.currentMatchSubjectType}
 	for _, src := range sources {
 		if transpiler.IsUnusable(src) {
 			continue

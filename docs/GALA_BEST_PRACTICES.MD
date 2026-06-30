@@ -28,7 +28,8 @@ A scannable rule list for writing idiomatic GALA — useful as both a learning c
 - **No variable types** — `val x = 42`, not `val x int = 42`.
 - **No method type params** — `list.Map((x) => x * 2)`, not `list.Map[int](...)`.
 - **No FoldLeft accumulator type** — `list.FoldLeft(0, (acc, x) => acc + x)`.
-- **Annotate only when there's nothing to infer from**: `None[int]()`, `Left[string, int]("err")`, empty collections, standalone lambdas.
+- **No type arg on `None()`** when the context pins the type — `func f() Option[int] = None()`, `val x Option[int] = None()`, or a `None()` arm of a match returning `Option[int]`. The type flows down from the return/annotation, so `None[int]()` is redundant there.
+- **Annotate only when there's nothing to infer from**: `None[int]()` *only* where no context pins it (e.g. a bare `None[int]()` in a lambda whose result type is unconstrained), `Left[string, int]("err")`, empty collections, standalone lambdas.
 
 ---
 

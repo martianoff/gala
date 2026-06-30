@@ -230,6 +230,32 @@ func main() {
 			expectContains: "cannot infer type parameter",
 		},
 		{
+			// B6, qualified-variant path: a bare `None()` (a std.Option case,
+			// so the call target lowers to the package-qualified `std.None`)
+			// with no inference signal must also surface as GALA-E0018. The
+			// guard's sealed-variant check previously compared the qualified
+			// name `std.None` against the unqualified variant names in
+			// metadata, never matched, and let the transpiler emit an
+			// uninstantiated `std.None{}.Apply()` — invalid Go reported far
+			// from the source. Here the lambda's result type is unconstrained
+			// (Array.Map's element-result type), so no context pins T.
+			name: "GALA-E0018 qualified None() uninferred in lambda",
+			input: `package main
+
+import . "martianoff/gala/collection_immutable"
+
+func f(arr Array[int]) bool {
+    val mapped = arr.Map((x) => None())
+    return mapped.Size() > 0
+}
+
+func main() {
+    Println(f(ArrayOf(1, 2, 3)))
+}`,
+			expectCode:     galaerr.CodeSealedVariantUninferred,
+			expectContains: `constructor "None()"`,
+		},
+		{
 			// Empty parenthesized expression `()` (the unit-shorthand the
 			// grammar admits but the transpiler has no Go lowering for)
 			// must surface as GALA-E0019 with a real source span instead
