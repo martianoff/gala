@@ -13,8 +13,8 @@ func main() {
     }
     fmt.Println(r1)
 
-    // Either match inside FutureApply lambda (BUG-WP-1)
-    val future = FutureApply[string](() => {
+    // Either match inside Future(...) lambda (BUG-WP-1)
+    val future = Future[string](() => {
         val result Either[string, string] = Right[string, string]("ok")
         return result match {
             case Right(output) => output

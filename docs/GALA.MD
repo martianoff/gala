@@ -1500,26 +1500,28 @@ tuple wrapping. Access tuple fields via `.V1`, `.V2`, etc. Supported patterns:
 
 `Future[T]` represents an asynchronous computation that will eventually produce a value of type T or fail with an error. It provides a functional approach to concurrent programming, similar to Scala's Future monad.
 
-**Pointer type:** All Future factory functions return `*Future[T]` (a pointer), not `Future[T]`. This is because `Future` contains mutable shared state (mutex, channel, completion flag) that must be shared by reference — copying a Future would break its synchronization. Use `*Future[T]` in explicit type annotations (function signatures, struct fields):
+**Value type (handle pattern):** `Future[T]` is a value type — pass it by value, never as `*Future[T]`. Although a Future holds mutable shared state (mutex, signal, completion flag), that state lives behind a pointer wrapped inside the Future, so copying a Future copies the handle and preserves its identity and synchronization. Use `Future[T]` in explicit type annotations (function signatures, struct fields):
 
 ```gala
-// Function returning a Future — use *Future[T]
-func fetchUser(id int) *Future[User] = FutureApply[User](() => loadFromDB(id))
+// Function returning a Future — use Future[T]
+func fetchUser(id int) Future[User] = Future[User](() => loadFromDB(id))
 
-// Struct with a Future field — use *Future[T]
+// Struct with a Future field — use Future[T]
 type AsyncResult struct {
-    future *Future[string]
+    future Future[string]
 }
 ```
 
-With `val` and type inference, the pointer type is inferred automatically:
+The async constructor is the type name itself: `Future[T](() => body)` runs body
+asynchronously on `GlobalEC()`. With `val` and type inference, the type is
+inferred automatically:
 
 ```gala
 import . "martianoff/gala/concurrent"
 
-// Create Futures — type is inferred as *Future[T]
+// Create Futures — type is inferred as Future[T]
 val immediate = FutureOf[int](42)                    // Already completed with value
-val async = FutureApply[int](() => expensiveComputation())  // Runs asynchronously
+val async = Future[int](() => expensiveComputation())  // Runs asynchronously
 
 // Blocking operations
 val result = async.Await()           // Returns Try[int]

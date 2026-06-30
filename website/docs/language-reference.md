@@ -443,7 +443,7 @@ val msg = result match {
 ```gala
 import . "martianoff/gala/concurrent"
 
-val async = FutureApply[int](() => expensiveComputation())
+val async = Future[int](() => expensiveComputation())
 val result = async.Await()           // Returns Try[int]
 val doubled = async.Map((v) => v * 2)
 ```

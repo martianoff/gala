@@ -8,7 +8,7 @@ import . "martianoff/gala/collection_immutable"
 // type namespace (Array_FoldLeft, not Future_FoldLeft).
 // This tests that Future[Array[int]].Get() resolves to Array[int].
 func main() {
-    val f = FutureApply[Array[int]](() => ArrayOf(1, 2, 3, 4, 5))
+    val f = Future[Array[int]](() => ArrayOf(1, 2, 3, 4, 5))
     val result = f.Get()
     val sum = result.FoldLeft[int](0, (acc int, v int) => acc + v)
     fmt.Println(sum)

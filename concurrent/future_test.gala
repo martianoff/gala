@@ -22,8 +22,8 @@ func TestFutureFailed(t T) T {
     return Eq(t1, result.Err.Error(), "test error")
 }
 
-func TestFutureApply(t T) T {
-    val f = FutureApply(() => 1 + 1)
+func TestFutureConstructor(t T) T {
+    val f = Future[int](() => 1 + 1)
     val result = f.Await()
     val t1 = IsSuccess(t, result)
     return Eq(t1, result.Get(), 2)
@@ -322,27 +322,27 @@ func TestAndThen(t T) T {
 
 // === ExecutionContext Tests ===
 
-func TestFutureApplyWithCustomEC(t T) T {
+func TestFutureOnCustomEC(t T) T {
     val pool = NewFixedPoolEC(2)
-    val f = FutureApplyWith[int](() => 1 + 1, pool)
+    val f = FutureOn[int](() => 1 + 1, pool)
     val result = f.Await()
     pool.Shutdown()
     val t1 = IsSuccess(t, result)
     return Eq(t1, result.Get(), 2)
 }
 
-func TestFutureOfWithCustomEC(t T) T {
+func TestFutureOfCustomEC(t T) T {
     val pool = NewFixedPoolEC(2)
-    val f = FutureOfWith[int](42, pool)
+    val f = FutureOf[int](42, pool)
     val result = f.Await()
     pool.Shutdown()
     val t1 = IsSuccess(t, result)
     return Eq(t1, result.Get(), 42)
 }
 
-func TestFutureFailedWithCustomEC(t T) T {
+func TestFutureFailedCustomEC(t T) T {
     val pool = NewFixedPoolEC(2)
-    val f = FutureFailedWith[int](FutureError(Message = "test error"), pool)
+    val f = FutureFailed[int](FutureError(Message = "test error"), pool)
     val result = f.Await()
     pool.Shutdown()
     return IsFailure(t, result)
@@ -350,7 +350,7 @@ func TestFutureFailedWithCustomEC(t T) T {
 
 func TestPromiseWithCustomEC(t T) T {
     val pool = NewFixedPoolEC(2)
-    val p = NewPromiseWith[int](pool)
+    val p = NewPromise[int](pool)
     val f = p.Future()
     p.Success(42)
     val result = f.Await()
@@ -361,7 +361,7 @@ func TestPromiseWithCustomEC(t T) T {
 
 func TestECInheritanceThroughMap(t T) T {
     val pool = NewFixedPoolEC(2)
-    val f = FutureOfWith[int](10, pool)
+    val f = FutureOf[int](10, pool)
     val mapped = f.Map((x) => x * 2)
     val result = mapped.Await()
     pool.Shutdown()
@@ -371,7 +371,7 @@ func TestECInheritanceThroughMap(t T) T {
 
 func TestECInheritanceThroughFlatMap(t T) T {
     val pool = NewFixedPoolEC(2)
-    val f = FutureOfWith[int](5, pool)
+    val f = FutureOf[int](5, pool)
     val chained = f.FlatMap((x) => FutureOf(x * 3))
     val result = chained.Await()
     pool.Shutdown()
@@ -381,7 +381,7 @@ func TestECInheritanceThroughFlatMap(t T) T {
 
 func TestECInheritanceChain(t T) T {
     val pool = NewFixedPoolEC(2)
-    val f = FutureOfWith[int](2, pool)
+    val f = FutureOf[int](2, pool)
         .Map((x) => x + 3)
         .Map((x) => x * 2)
         .Filter((x) => x > 5)
@@ -394,8 +394,8 @@ func TestECInheritanceChain(t T) T {
 func TestSingleThreadEC(t T) T {
     val ec = NewSingleThreadEC()
 
-    val f1 = FutureApplyWith[int](() => 1 + 1, ec)
-    val f2 = FutureApplyWith[int](() => 2 + 2, ec)
+    val f1 = FutureOn[int](() => 1 + 1, ec)
+    val f2 = FutureOn[int](() => 2 + 2, ec)
 
     val r1 = f1.Await()
     val r2 = f2.Await()
@@ -409,7 +409,7 @@ func TestSingleThreadEC(t T) T {
 
 func TestECInheritanceWithRecover(t T) T {
     val pool = NewFixedPoolEC(2)
-    val f = FutureFailedWith[int](FutureError(Message = "error"), pool)
+    val f = FutureFailed[int](FutureError(Message = "error"), pool)
     val recovered = f.Recover((e) => 100)
     val result = recovered.Await()
     pool.Shutdown()
@@ -419,7 +419,7 @@ func TestECInheritanceWithRecover(t T) T {
 
 func TestECInheritanceWithTransform(t T) T {
     val pool = NewFixedPoolEC(2)
-    val f = FutureOfWith[int](5, pool)
+    val f = FutureOf[int](5, pool)
     val transformed = f.Transform[string](
         (v) => Success[string]("success"),
         (e) => Success[string]("recovered")
@@ -432,7 +432,7 @@ func TestECInheritanceWithTransform(t T) T {
 
 func TestECInheritanceWithZip(t T) T {
     val pool = NewFixedPoolEC(2)
-    val f1 = FutureOfWith[int](1, pool)
+    val f1 = FutureOf[int](1, pool)
     val f2 = FutureOf("hello")
     val zipped = f1.Zip(f2)
     val result = zipped.Await()
@@ -446,9 +446,9 @@ func TestECInheritanceWithZip(t T) T {
 func TestPoolShutdownGraceful(t T) T {
     val pool = NewFixedPoolEC(4)
 
-    val f1 = FutureApplyWith[int](() => 10 * 1, pool)
-    val f2 = FutureApplyWith[int](() => 10 * 2, pool)
-    val f3 = FutureApplyWith[int](() => 10 * 3, pool)
+    val f1 = FutureOn[int](() => 10 * 1, pool)
+    val f2 = FutureOn[int](() => 10 * 2, pool)
+    val f3 = FutureOn[int](() => 10 * 3, pool)
 
     val r1 = f1.Await()
     val r2 = f2.Await()

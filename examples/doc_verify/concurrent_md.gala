@@ -16,6 +16,12 @@ func testCreatingFutures() {
     Println(s"Failed isCompleted=${failed.IsCompleted()}")
 }
 
+// Async constructor — the type name itself runs body asynchronously on GlobalEC().
+func testAsyncConstructor() {
+    val f = Future[int](() => 21 * 2)
+    Println(s"Async=${f.Get()}")
+}
+
 // Blocking Operations (line 32-36)
 func testBlockingOps() {
     val f = FutureOf[int](100)
@@ -86,6 +92,7 @@ func testPromise() {
 
 func main() {
     testCreatingFutures()
+    testAsyncConstructor()
     testBlockingOps()
     testMonadicOps()
     testErrorRecovery()

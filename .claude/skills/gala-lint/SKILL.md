@@ -226,7 +226,7 @@ for k, v := range config {
 
 | Issue | Pattern to Flag | Recommended Fix |
 |-------|-----------------|-----------------|
-| Channel for single async result | `ch := make(chan T, 1); go func() { ch <- f() }(); <-ch` | `FutureApply(() => f())` then `.Await()` or `.Map()` |
+| Channel for single async result | `ch := make(chan T, 1); go func() { ch <- f() }(); <-ch` | `Future[T](() => f())` then `.Await()` or `.Map()` |
 | Channel for timeout | `select { case r := <-ch: ... case <-time.After(d): ... }` | `future.WithTimeout(d)` or `FirstCompletedOf` |
 | Channel for fan-out | Spawning goroutines writing to shared channel | `Future.Sequence(futures)` or `Future.Traverse(items, f)` |
 | WaitGroup for completion | `sync.WaitGroup` + goroutines | `Future.Sequence(ArrayOf(futures...))` |
