@@ -172,6 +172,32 @@ val c = Circle(5.0)          // Shape, no type annotation needed
 val r = Rectangle(3.0, 4.0)  // Shape
 ```
 
+### Zero-field variants of a generic sealed type
+
+A zero-field case of a *generic* sealed type — `None()` for `Option[T]`, or
+any `case Empty()`-style variant — has no argument to infer its type parameter
+from. GALA fills it in by **downward inference**: the type flows in from the
+surrounding context, so you write `None()`, not `None[T]()`, whenever the
+context pins the type.
+
+```gala
+// Return type pins the element type
+func parseObject(v JsonValue) Option[Array[JField]] = v match {
+    case JObj(fields) => Some(fields)
+    case _            => None()        // inferred as Option[Array[JField]]
+}
+
+// A val annotation pins it
+val empty Option[int] = None()         // inferred as Option[int]
+
+// An if/else sibling pins it
+func pick(b bool) Option[int] = if (b) Some(1) else None()
+```
+
+When **no** context pins the type — for example a bare `None()` inside a lambda
+whose result type is unconstrained — the type genuinely cannot be determined,
+and GALA asks you to annotate it explicitly (`None[int]()`) rather than guess.
+
 ---
 
 ## What Is NOT Inferred

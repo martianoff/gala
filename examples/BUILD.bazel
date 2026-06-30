@@ -1827,6 +1827,14 @@ gala_exec_test(
     expected = "block_lambda_match.out",
 )
 
+# Verification: bare None() infers its element type from context
+gala_exec_test(
+    name = "none_downward_inference",
+    src = "none_downward_inference.gala",
+    expected = "none_downward_inference.out",
+    deps = ["//collection_immutable"],
+)
+
 # Repro: Try match extractor values typed as any
 gala_exec_test(
     name = "try_match_extractor_any_types",

@@ -1,0 +1,39 @@
+package main
+
+import . "martianoff/gala/std"
+import . "martianoff/gala/collection_immutable"
+
+// A bare `None()` infers its element type from context, so callers never need
+// to spell out `None[Array[JField]]()` when the type is predictable.
+
+sealed type JField {
+    case JF(Name string)
+}
+
+sealed type JsonValue {
+    case JObj(Fields Array[JField])
+    case JNull()
+}
+
+// Match arm: `Some(fields)` pins the element type; the `None()` arm inherits it
+// via the method's declared return type.
+func (v JsonValue) AsObject() Option[Array[JField]] = v match {
+    case JObj(fields) => Some(fields)
+    case _ => None()
+}
+
+// Plain function return type pins the element type directly.
+func firstName(v JsonValue) Option[string] = v.AsObject() match {
+    case Some(fields) => fields.HeadOption().Map((f) => f.Name)
+    case None() => None()
+}
+
+func main() {
+    val obj = JObj(ArrayOf(JF("id"), JF("name")))
+    val empty = JNull()
+
+    Println(obj.AsObject().IsDefined())
+    Println(empty.AsObject().IsDefined())
+    Println(firstName(obj).GetOrElse("<none>"))
+    Println(firstName(empty).GetOrElse("<none>"))
+}

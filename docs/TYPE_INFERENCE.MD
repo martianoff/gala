@@ -393,10 +393,20 @@ Five contexts feed the expected type:
   across siblings.
 - For the **zero-arg call** path (`NoCmd()` with empty parens),
   `applyCallSuffix` peeks the top hint after `inferZeroArgTypeParams`
-  (which already covered the match-subject and enclosing-return
-  fallbacks for `None()` / `Some()`), and rewrites the receiver via
+  (which covers the enclosing-return and match-subject fallbacks for
+  `None()` / `Some()`), and rewrites the receiver via
   `injectSealedVariantTypeArgs`. On a successful rewrite it consumes
   the hint so deeper sub-expressions cannot pick it up.
+  `inferZeroArgTypeParams` consults `currentFuncReturnType` **before**
+  `currentMatchSubjectType`: in value position the arm body's type is
+  the match *result* type, which the declared return pins, while the
+  subject is only a proxy that coincides with the result when the match
+  maps `Option[T]` to `Option[T]`. The two diverge in e.g.
+  `v.AsObject() match { case Some(fields) => …; case None() => None() }`
+  inside `func firstName(v) Option[string]` — the subject is
+  `Option[Array[JField]]` but the result must be `Option[string]`, so
+  the return type wins and the subject stays a fallback for the
+  no-return-type case.
 - For the **non-zero-arg call** path, `transformCallWithArgsCtx`
   consumes the top hint at dispatcher entry and invokes the same
   rewrite.
@@ -418,7 +428,17 @@ is a sealed variant of a generic parent, the transpiler fails fast
 with [`GALA-E0018`](errors/GALA-E0018.md) at the offending call — it
 does **not** silently emit an untyped `Variant{}` literal that Go
 would later reject with an obscure deduction error far from the
-source.
+source. The sealed-variant gate (`isSealedVariantTypeName`) splits any
+package qualifier off the name and passes it as the lookup scope: the
+zero-arg path derives the name from `getBaseTypeName`, which keeps the
+selector for dot-imported / std variants (`std.None`), while
+sealed-variant metadata is registered under the bare case name.
+Matching the qualified `std.None` against the unqualified metadata
+names found nothing, so the guard never fired for `std.None()` and an
+uninstantiated `std.None{}.Apply()` (invalid Go) was emitted instead of
+the diagnostic. Passing the qualifier as scope (rather than searching
+every package) also keeps the check precise when two packages declare
+a sealed case of the same name.
 
 ### Limitations
 
