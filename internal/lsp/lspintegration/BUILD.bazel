@@ -1,0 +1,14 @@
+load("@rules_go//go:def.bzl", "go_test")
+
+go_test(
+    name = "lspintegration_test",
+    srcs = [
+        "client_test.go",
+        "diagnostics_test.go",
+    ],
+    data = ["//cmd/gala"],
+    # Spawns the real `gala lsp` subprocess (which reads the Go SDK for type
+    # inference), so it cannot run inside the sandbox.
+    tags = ["no-sandbox"],
+    deps = ["@rules_go//go/tools/bazel"],
+)
