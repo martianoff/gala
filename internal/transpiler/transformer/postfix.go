@@ -486,12 +486,14 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		}
 	}
 
-	// Pre-scan: check if there's an explicit wildcard `_` case.
+	// Pre-scan: check if there's an explicit, UNGUARDED wildcard `_` case.
 	// If there is, binding patterns are regular clauses. If not, the last
-	// binding pattern acts as the default (catch-all) case.
+	// binding pattern acts as the default (catch-all) case. A guarded wildcard
+	// (`case _ if g`) is conditional, not a catch-all, so it does not count.
 	hasExplicitWildcard := false
 	for _, cc := range caseClauses {
-		if isWildcard(cc.(*grammar.CaseClauseContext).Pattern().GetText()) {
+		ccCtx := cc.(*grammar.CaseClauseContext)
+		if isWildcard(ccCtx.Pattern().GetText()) && ccCtx.GetGuard() == nil {
 			hasExplicitWildcard = true
 			break
 		}
@@ -503,9 +505,12 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		patCtx := ccCtx.Pattern()
 		patternText := patCtx.GetText()
 		// Treat as default: explicit wildcard `_` always, OR binding pattern when
-		// there's no explicit wildcard elsewhere (binding acts as catch-all).
-		treatAsDefault := isWildcard(patternText) ||
-			(!hasExplicitWildcard && isBindingPattern(patternText))
+		// there's no explicit wildcard elsewhere (binding acts as catch-all). A
+		// guarded clause is conditional and never a default — control can fall
+		// through to a later case when the guard is false.
+		treatAsDefault := ccCtx.GetGuard() == nil &&
+			(isWildcard(patternText) ||
+				(!hasExplicitWildcard && isBindingPattern(patternText)))
 
 		if treatAsDefault {
 			if foundDefault {
@@ -577,8 +582,9 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		}
 	}
 
-	// Infer common result type from all branches
-	resultType, err := t.inferCommonResultType(resultTypes, casePatterns, ctx)
+	// Infer common result type from all branches. In statement position the
+	// value is discarded, so arms need not unify (see inferCommonResultType).
+	resultType, err := t.inferCommonResultType(resultTypes, casePatterns, ctx, stmtPosition)
 	if err != nil {
 		return nil, err
 	}

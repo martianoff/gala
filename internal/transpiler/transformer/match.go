@@ -37,7 +37,7 @@ func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionCon
 	t.matchInStatementPos = false
 	defer func() { t.matchInStatementPos = stmtPosition }()
 
-	clauses, defaultBody, resultType, err := t.transformMatchClauses(ctx, paramName, matchedType)
+	clauses, defaultBody, resultType, err := t.transformMatchClauses(ctx, paramName, matchedType, stmtPosition)
 	if err != nil {
 		return nil, err
 	}
@@ -700,18 +700,21 @@ func (t *galaASTTransformer) lookupCompanion(name string) *transpiler.CompanionO
 }
 
 // transformMatchClauses processes all case clauses and infers the common result type.
-func (t *galaASTTransformer) transformMatchClauses(ctx grammar.IExpressionContext, paramName string, matchedType transpiler.Type) ([]ast.Stmt, []ast.Stmt, transpiler.Type, error) {
+func (t *galaASTTransformer) transformMatchClauses(ctx grammar.IExpressionContext, paramName string, matchedType transpiler.Type, discardValue bool) ([]ast.Stmt, []ast.Stmt, transpiler.Type, error) {
 	var clauses []ast.Stmt
 	var defaultBody []ast.Stmt
 	foundDefault := false
 	var resultTypes []transpiler.Type
 	var casePatterns []string
 
-	// Pre-scan: check if there's an explicit wildcard `_` case.
+	// Pre-scan: check if there's an explicit, UNGUARDED wildcard `_` case.
+	// A guarded wildcard (`case _ if g`) is conditional — it can fall through
+	// to later cases — so it is not a catch-all and must not suppress a binding
+	// pattern acting as the default.
 	hasExplicitWildcard := false
 	for i := 3; i < ctx.GetChildCount()-1; i++ {
 		ccCtx, ok := ctx.GetChild(i).(*grammar.CaseClauseContext)
-		if ok && isWildcard(ccCtx.Pattern().GetText()) {
+		if ok && isWildcard(ccCtx.Pattern().GetText()) && ccCtx.GetGuard() == nil {
 			hasExplicitWildcard = true
 			break
 		}
@@ -725,8 +728,12 @@ func (t *galaASTTransformer) transformMatchClauses(ctx grammar.IExpressionContex
 
 		patCtx := ccCtx.Pattern()
 		patternText := patCtx.GetText()
-		treatAsDefault := isWildcard(patternText) ||
-			(!hasExplicitWildcard && isBindingPattern(patternText))
+		// A guarded clause is conditional and never a default, even when its
+		// pattern is a wildcard or binding — control can fall through to a
+		// later case when the guard is false.
+		treatAsDefault := ccCtx.GetGuard() == nil &&
+			(isWildcard(patternText) ||
+				(!hasExplicitWildcard && isBindingPattern(patternText)))
 
 		if treatAsDefault {
 			if foundDefault {
@@ -825,7 +832,8 @@ func (t *galaASTTransformer) transformMatchClauses(ctx grammar.IExpressionContex
 			if !ok {
 				continue
 			}
-			if isBindingPattern(ccCtx.Pattern().GetText()) {
+			// A guarded binding pattern is conditional, not a catch-all default.
+			if isBindingPattern(ccCtx.Pattern().GetText()) && ccCtx.GetGuard() == nil {
 				hasDefault = true
 				break
 			}
@@ -861,7 +869,7 @@ func (t *galaASTTransformer) transformMatchClauses(ctx grammar.IExpressionContex
 	if pc, ok := ctx.(antlr.ParserRuleContext); ok {
 		matchCtx = pc
 	}
-	resultType, err := t.inferCommonResultType(resultTypes, casePatterns, matchCtx)
+	resultType, err := t.inferCommonResultType(resultTypes, casePatterns, matchCtx, discardValue)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -1032,13 +1040,29 @@ func (t *galaASTTransformer) isKnownMultiReturnFunction(pkgName, funcName string
 
 // inferCommonResultType checks that all result types are compatible and returns the common type.
 // ctx is optional and used for position info in error messages.
-func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patterns []string, ctx antlr.ParserRuleContext) (transpiler.Type, error) {
+//
+// discardValue is set when the match is in statement position — its value is
+// discarded by the enclosing block, so the arms are pure side-effect dispatch
+// and their result types need not unify. In that case the match lowers to a
+// void IIFE (the result type is overwritten with VoidType by the caller), so a
+// mismatch among arm types (e.g. one arm calling a string-returning method,
+// another a bool-returning one) is not an error. Skipping the unification here
+// is what lets `c match { case '"' => readString(); case 't' => readBool() }`
+// stand as a statement.
+func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patterns []string, ctx antlr.ParserRuleContext, discardValue bool) (transpiler.Type, error) {
 	if len(types) == 0 {
 		line, col := t.lastLine, t.lastCol
 		if ctx != nil && ctx.GetStart() != nil {
 			line, col = ctx.GetStart().GetLine(), ctx.GetStart().GetColumn()
 		}
 		return nil, galaerr.NewSemanticErrorAt(line, col, "match expression has no case branches")
+	}
+
+	// Value-discarding (statement-position) match: arms are side-effect
+	// dispatch, so they need not share a type. Caller forces the lowered IIFE
+	// to void.
+	if discardValue {
+		return transpiler.VoidType{}, nil
 	}
 
 	// Check if all branches are void (side-effect only, like fmt.Printf calls)

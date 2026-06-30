@@ -589,6 +589,36 @@ val msg = animal match {
 }
 ```
 
+A **guarded** wildcard (`case _ if cond`) is conditional, not a catch-all:
+control falls through to later cases when the guard is false. So a guarded
+wildcard may precede a real `case _` default without conflicting with it — only
+an *unguarded* `case _` counts as the default:
+
+```gala
+val label = n match {
+    case 0           => "zero"
+    case _ if n < 10 => "small"   // conditional — not the default
+    case _           => "large"   // the actual default
+}
+```
+
+#### Match in statement position (side-effect dispatch)
+When a `match` is used as a statement — its value is discarded — the arms are
+pure side-effect dispatch and need not produce a common type. This lets each
+arm call a different function whose result is ignored:
+
+```gala
+// value discarded: arms may return different types (string, bool, void)
+c match {
+    case '"' => { readString() }   // returns string
+    case 't' => { readBool() }     // returns bool
+    case _   => { skipOther() }    // returns nothing
+}
+```
+
+When the match's value *is* used (assigned to a `val`, returned, passed as an
+argument), all arms must still unify to one type.
+
 #### Standard Library Sealed Types
 The `std` package defines `Option[T]`, `Either[A, B]`, and `Try[T]` as sealed types. See [Standard Library Types](#9-standard-library-types) for details.
 
