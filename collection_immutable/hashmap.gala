@@ -170,11 +170,10 @@ func (m HashMap[K, V]) GetOrElse(key K, defaultValue V) V {
 
 // Apply returns the value for a key. Panics if key not found. O(eC).
 func (m HashMap[K, V]) Apply(key K) V {
-    val opt = m.Get(key)
-    if opt.IsEmpty() {
-        panic(fmt.Sprintf("HashMap: key not found: %v", key))
+    return m.Get(key) match {
+        case Some(v) => v
+        case None() => panic(s"HashMap: key not found: $key")
     }
-    return opt.Get()
 }
 
 // Put adds or updates a key-value pair. Returns a new map. O(eC).
@@ -612,11 +611,10 @@ func (m HashMap[K, V]) PutAll(other HashMap[K, V]) HashMap[K, V] {
 // Merge merges another map with a combining function for duplicate keys.
 func (m HashMap[K, V]) Merge(other HashMap[K, V], f func(V, V) V) HashMap[K, V] {
     return other.FoldLeftKV[HashMap[K, V]](m, (acc HashMap[K, V], k K, v V) => {
-        val existing = acc.Get(k)
-        if existing.IsDefined() {
-            return acc.Put(k, f(existing.Get(), v))
+        return acc.Get(k) match {
+            case Some(existing) => acc.Put(k, f(existing, v))
+            case None() => acc.Put(k, v)
         }
-        return acc.Put(k, v)
     })
 }
 
@@ -647,7 +645,7 @@ func (m HashMap[K, V]) String() string {
         if !first {
             result = result + ", "
         }
-        result = result + fmt.Sprintf("%v -> %v", k, v)
+        result = result + s"$k -> $v"
         first = false
     })
     return result + ")"
@@ -664,7 +662,7 @@ func (m HashMap[K, V]) MkString(sep string) string {
         if !first {
             result = result + sep
         }
-        result = result + fmt.Sprintf("%v -> %v", k, v)
+        result = result + s"$k -> $v"
         first = false
     })
     return result
@@ -698,11 +696,10 @@ func (m HashMap[K, V]) Find(p func(K, V) bool) Option[Tuple[K, V]] {
 
 // Head returns the first entry. Panics if empty.
 func (m HashMap[K, V]) Head() Tuple[K, V] {
-    val opt = m.HeadOption()
-    if opt.IsEmpty() {
-        panic("HashMap: head of empty map")
+    return m.HeadOption() match {
+        case Some(v) => v
+        case None() => panic("HashMap: head of empty map")
     }
-    return opt.Get()
 }
 
 // HeadOption returns the first entry as Option.

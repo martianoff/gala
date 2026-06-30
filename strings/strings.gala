@@ -152,15 +152,6 @@ func stringToRunes(s string) Array[rune] {
 // runesToString converts an Array of runes to a string.
 func runesToString(runes Array[rune]) string = string(runes.ToGoSlice())
 
-// arrayFill creates an array of n copies of value.
-func arrayFill[T any](n int, value T) Array[T] {
-    var result = EmptyArray[T]()
-    for i := 0; i < n; i++ {
-        result = result.Append(value)
-    }
-    return result
-}
-
 // Length returns the number of runes. O(1).
 func (s Str) Length() int = s.runes.Get().Length()
 
@@ -288,7 +279,7 @@ func (s Str) PadLeft(length int, pad rune) Str {
         return s
     }
     val padCount = length - s.Length()
-    return strFromRunes(arrayFill(padCount, pad).AppendAll(s.runes.Get()))
+    return strFromRunes(ArrayFill(padCount, pad).AppendAll(s.runes.Get()))
 }
 
 // PadRight pads on the right.
@@ -297,7 +288,7 @@ func (s Str) PadRight(length int, pad rune) Str {
         return s
     }
     val padCount = length - s.Length()
-    return strFromRunes(s.runes.Get().AppendAll(arrayFill(padCount, pad)))
+    return strFromRunes(s.runes.Get().AppendAll(ArrayFill(padCount, pad)))
 }
 
 // Center pads on both sides.
@@ -308,7 +299,7 @@ func (s Str) Center(length int, pad rune) Str {
     val totalPad = length - s.Length()
     val leftPad = totalPad / 2
     val rightPad = totalPad - leftPad
-    return strFromRunes(arrayFill(leftPad, pad).AppendAll(s.runes.Get()).AppendAll(arrayFill(rightPad, pad)))
+    return strFromRunes(ArrayFill(leftPad, pad).AppendAll(s.runes.Get()).AppendAll(ArrayFill(rightPad, pad)))
 }
 
 // Capitalize capitalizes first character.
@@ -336,10 +327,8 @@ func (s Str) Uncapitalize() Str {
 func (s Str) TitleCase() Str = JoinStrs(s.Words().Map((w) => w.Capitalize()), " ")
 
 // Split splits the string by separator.
-func (s Str) Split(sep string) Array[Str] {
-    val parts = gostrings.Split(s.str, sep)
-    return ArrayTabulate(len(parts), (i int) => strFromString(parts[i]))
-}
+func (s Str) Split(sep string) Array[Str] =
+    ArrayFromSlice(gostrings.Split(s.str, sep)).Map(strFromString)
 
 // SplitAt splits at index.
 func (s Str) SplitAt(index int) Tuple[Str, Str] {
@@ -350,15 +339,12 @@ func (s Str) SplitAt(index int) Tuple[Str, Str] {
 // Lines splits into lines.
 func (s Str) Lines() Array[Str] {
     val normalized = gostrings.ReplaceAll(s.str, "\r\n", "\n")
-    val parts = gostrings.Split(normalized, "\n")
-    return ArrayTabulate(len(parts), (i int) => strFromString(parts[i]))
+    return ArrayFromSlice(gostrings.Split(normalized, "\n")).Map(strFromString)
 }
 
 // Words splits into words.
-func (s Str) Words() Array[Str] {
-    val parts = gostrings.Fields(s.str)
-    return ArrayTabulate(len(parts), (i int) => strFromString(parts[i]))
-}
+func (s Str) Words() Array[Str] =
+    ArrayFromSlice(gostrings.Fields(s.str)).Map(strFromString)
 
 // JoinStrs joins a sequence of Str values with a separator. The
 // `string`-shaped sibling lives under the bare name `Join`.
@@ -366,11 +352,7 @@ func JoinStrs(strs Array[Str], sep string) Str {
     if strs.IsEmpty() {
         return emptyStr()
     }
-    var goStrs []string
-    for i := 0; i < strs.Length(); i++ {
-        goStrs = append(goStrs, strs.Get(i).str)
-    }
-    return strFromString(gostrings.Join(goStrs, sep))
+    return strFromString(gostrings.Join(strs.Map((x) => x.str).ToGoSlice(), sep))
 }
 
 // Concat concatenates strings.
@@ -428,19 +410,13 @@ func (s Str) IsLower() bool {
 // IndexOf returns index of first occurrence of substring.
 func (s Str) IndexOf(substr string) Option[int] {
     val idx = gostrings.Index(s.str, substr)
-    if idx < 0 {
-        return None[int]()
-    }
-    return Some(byteIndexToRuneIndex(s.str, idx))
+    return When(idx >= 0, byteIndexToRuneIndex(s.str, idx))
 }
 
 // LastIndexOf returns index of last occurrence of substring.
 func (s Str) LastIndexOf(substr string) Option[int] {
     val idx = gostrings.LastIndex(s.str, substr)
-    if idx < 0 {
-        return None[int]()
-    }
-    return Some(byteIndexToRuneIndex(s.str, idx))
+    return When(idx >= 0, byteIndexToRuneIndex(s.str, idx))
 }
 
 // byteIndexToRuneIndex converts a byte index to a rune index.
@@ -459,12 +435,8 @@ func byteIndexToRuneIndex(str string, byteIdx int) int {
 
 // IndexOfChar returns index of rune.
 func (s Str) IndexOfChar(target rune) Option[int] {
-    for i := 0; i < s.runes.Get().Length(); i++ {
-        if s.runes.Get().Get(i) == target {
-            return Some(i)
-        }
-    }
-    return None[int]()
+    val idx = s.runes.Get().IndexOf(target)
+    return When(idx >= 0, idx)
 }
 
 // Map applies function to each character.
@@ -604,22 +576,11 @@ func (sb *StringBuilder) ToString() string {
 func (sb *StringBuilder) String() string = sb.ToString()
 
 // Length returns the total byte length of the built string.
-func (sb *StringBuilder) Length() int {
-    var total = 0
-    for i := 0; i < sb.parts.Length(); i++ {
-        total = total + len(sb.parts.Get(i))
-    }
-    return total
-}
+func (sb *StringBuilder) Length() int = sb.parts.FoldLeft(0, (acc, p) => acc + len(p))
 
 // RuneCount returns the total number of runes in the built string.
-func (sb *StringBuilder) RuneCount() int {
-    var total = 0
-    for i := 0; i < sb.parts.Length(); i++ {
-        total = total + utf8.RuneCountInString(sb.parts.Get(i))
-    }
-    return total
-}
+func (sb *StringBuilder) RuneCount() int =
+    sb.parts.FoldLeft(0, (acc, p) => acc + utf8.RuneCountInString(p))
 
 // IsEmpty returns true if the builder has no content.
 func (sb *StringBuilder) IsEmpty() bool = sb.parts.Length() == 0

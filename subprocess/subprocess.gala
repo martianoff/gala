@@ -70,15 +70,15 @@ func Spawn(opts SpawnOpts) Try[Process] {
     if eErr != nil { return Failure[Process](eErr) }
     val startErr = c.Start()
     if startErr != nil { return Failure[Process](startErr) }
-    return Success(Process(state = &processState{
-        cmd:        c,
-        stdin:      sin,
-        stdoutScan: newLineScanner(sout),
-        stderrScan: newLineScanner(serr),
-        stdinMu:    go_interop.NewMutex(),
-        waitOnce:   go_interop.NewOnce(),
-        waitDone:   go_interop.NewSignal(),
-    }))
+    return Success(Process(state = &processState(
+        cmd        = c,
+        stdin      = sin,
+        stdoutScan = newLineScanner(sout),
+        stderrScan = newLineScanner(serr),
+        stdinMu    = go_interop.NewMutex(),
+        waitOnce   = go_interop.NewOnce(),
+        waitDone   = go_interop.NewSignal(),
+    )))
 }
 
 // WriteLine writes s + "\n" to the child's stdin, flushing immediately.

@@ -1,7 +1,6 @@
 package test
 
 import (
-    "fmt"
     "os"
     "time"
 )
@@ -10,8 +9,8 @@ import (
 // It tracks test state and provides assertion and logging methods.
 type T struct {
     name     string
-    var failed   bool
-    var skipped  bool
+    failed   bool
+    skipped  bool
 }
 
 // newT creates a new test context with the given name.
@@ -40,40 +39,40 @@ func (t T) Skip() T {
 
 // Log prints a message to the test output.
 func (t T) Log(msg string) {
-    fmt.Printf("    %s\n", msg)
+    Println(s"    ${msg}")
 }
 
 // Error logs an error message and marks the test as failed.
 func (t T) Error(msg string) T {
-    fmt.Printf("    ERROR: %s\n", msg)
+    Println(s"    ERROR: ${msg}")
     return T(name = t.name, failed = true, skipped = t.skipped)
 }
 
 // Fatal logs an error message, marks the test as failed, and stops execution.
 func (t T) Fatal(msg string) {
-    fmt.Printf("    FATAL: %s\n", msg)
-    panic(fmt.Sprintf("Test %s fatal error: %s", t.name, msg))
+    Println(s"    FATAL: ${msg}")
+    panic(s"Test ${t.name} fatal error: ${msg}")
 }
 
 // Run runs a subtest with the given name and function.
 // This enables table-driven testing patterns.
 // Panics in subtests are recovered and reported as failures.
 func (t T) Run(name string, f func(T) T) T {
-    var subT = newT(t.name + "/" + name)
-    fmt.Printf("=== RUN   %s\n", subT.name)
+    val subT = newT(t.name + "/" + name)
+    Println(s"=== RUN   ${subT.name}")
 
-    var start = time.Now()
-    var result = runTest(subT, f)
-    var elapsed = time.Since(start)
+    val start = time.Now()
+    val result = runTest(subT, f)
+    val elapsed = time.Since(start)
 
     if result.failed {
-        fmt.Printf("--- FAIL: %s (%.3fs)\n", subT.name, elapsed.Seconds())
+        Println(f"--- FAIL: ${subT.name} (${elapsed.Seconds()}%.3fs)")
         return T(name = t.name, failed = true, skipped = t.skipped)
     } else if result.skipped {
-        fmt.Printf("--- SKIP: %s (%.3fs)\n", subT.name, elapsed.Seconds())
+        Println(f"--- SKIP: ${subT.name} (${elapsed.Seconds()}%.3fs)")
         return t
     } else {
-        fmt.Printf("--- PASS: %s (%.3fs)\n", subT.name, elapsed.Seconds())
+        Println(f"--- PASS: ${subT.name} (${elapsed.Seconds()}%.3fs)")
         return t
     }
 }
@@ -82,10 +81,10 @@ func (t T) Run(name string, f func(T) T) T {
 // If the function panics, the panic is caught and reported as a test failure.
 func runTest(t T, f func(T) T) T {
     val result = Try[T](() => f(t))
-    if result.IsSuccess() {
-        return result.Get()
+    return result match {
+        case Success(v) => v
+        case Failure(e) => t.Error(s"PANIC: $e")
     }
-    return t.Error(fmt.Sprintf("PANIC: %v", result.GetError()))
 }
 
 // ============================================================================
@@ -100,20 +99,20 @@ type TestFunc struct {
 
 // Run executes the test function and returns the result.
 func (tf TestFunc) Run() T {
-    var t = newT(tf.Name)
-    fmt.Printf("=== RUN   %s\n", t.name)
+    val t = newT(tf.Name)
+    Println(s"=== RUN   ${t.name}")
 
-    var start = time.Now()
-    var result = runTest(t, tf.F)
-    var elapsed = time.Since(start)
+    val start = time.Now()
+    val result = runTest(t, tf.F)
+    val elapsed = time.Since(start)
 
     // Print result
     if result.failed {
-        fmt.Printf("--- FAIL: %s (%.3fs)\n", t.name, elapsed.Seconds())
+        Println(f"--- FAIL: ${t.name} (${elapsed.Seconds()}%.3fs)")
     } else if result.skipped {
-        fmt.Printf("--- SKIP: %s (%.3fs)\n", t.name, elapsed.Seconds())
+        Println(f"--- SKIP: ${t.name} (${elapsed.Seconds()}%.3fs)")
     } else {
-        fmt.Printf("--- PASS: %s (%.3fs)\n", t.name, elapsed.Seconds())
+        Println(f"--- PASS: ${t.name} (${elapsed.Seconds()}%.3fs)")
     }
     return result
 }
@@ -125,10 +124,10 @@ func RunTests(tests ...TestFunc) {
     var failed = 0
     var skipped = 0
 
-    fmt.Println("=== STARTING TESTS ===")
+    Println("=== STARTING TESTS ===")
     for i := 0; i < len(tests); i++ {
-        var test = tests[i]
-        var result = test.Run()
+        val test = tests[i]
+        val result = test.Run()
         if result.failed {
             failed++
         } else if result.skipped {
@@ -138,13 +137,13 @@ func RunTests(tests ...TestFunc) {
         }
     }
 
-    fmt.Println()
-    fmt.Println("=== RESULTS ===")
-    fmt.Printf("Passed: %d, Failed: %d, Skipped: %d\n", passed, failed, skipped)
+    Println()
+    Println("=== RESULTS ===")
+    Println(s"Passed: ${passed}, Failed: ${failed}, Skipped: ${skipped}")
 
     if failed > 0 {
-        fmt.Println("FAIL")
+        Println("FAIL")
         os.Exit(1)
     }
-    fmt.Println("PASS")
+    Println("PASS")
 }

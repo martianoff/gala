@@ -163,10 +163,7 @@ func (f Future[T]) Value() Option[Try[T]] {
     val c = f.state.complete
     val r = f.state.result
     f.state.mu.RUnlock()
-    if c {
-        return Some[Try[T]](r)
-    }
-    return None[Try[T]]()
+    return When(c, r)
 }
 
 // Await blocks until the Future is completed and returns the result.
@@ -186,7 +183,7 @@ func (f Future[T]) AwaitFor(timeout Duration) Option[Try[T]] {
         f.state.mu.RLock()
         val r = f.state.result
         f.state.mu.RUnlock()
-        return Some[Try[T]](r)
+        return Some(r)
     }
     return None[Try[T]]()
 }
@@ -239,8 +236,9 @@ func (f Future[T]) OnComplete(callback func(Try[T])) {
 // The callback is executed asynchronously.
 func (f Future[T]) OnSuccess(callback func(T)) {
     f.OnComplete((r Try[T]) => {
-        if r.IsSuccess() {
-            callback(r.Value)
+        r match {
+            case Success(v) => callback(v)
+            case Failure(_) => {}
         }
     })
 }
@@ -249,8 +247,9 @@ func (f Future[T]) OnSuccess(callback func(T)) {
 // The callback is executed asynchronously.
 func (f Future[T]) OnFailure(callback func(error)) {
     f.OnComplete((r Try[T]) => {
-        if r.IsFailure() {
-            callback(r.Err)
+        r match {
+            case Success(_) => {}
+            case Failure(e) => callback(e)
         }
     })
 }
@@ -272,12 +271,11 @@ func (f Future[T]) Map[U any](fn func(T) U) Future[U] {
 func (f Future[T]) FlatMap[U any](fn func(T) Future[U]) Future[U] {
     val p = NewPromiseWith[U](f.state.ec)
     f.OnComplete((r Try[T]) => {
-        if r.IsSuccess() {
-            fn(r.Value).OnComplete((innerResult Try[U]) => {
+        r match {
+            case Success(v) => fn(v).OnComplete((innerResult Try[U]) => {
                 p.Complete(innerResult)
             })
-        } else {
-            p.Failure(r.Err)
+            case Failure(e) => p.Failure(e)
         }
     })
     return p.Future()
@@ -313,10 +311,9 @@ func (f Future[T]) Recover(pf func(error) T) Future[T] {
 func (f Future[T]) RecoverWith(pf func(error) Future[T]) Future[T] {
     val p = NewPromiseWith[T](f.state.ec)
     f.OnComplete((r Try[T]) => {
-        if r.IsSuccess() {
-            p.Success(r.Value)
-        } else {
-            pf(r.Err).OnComplete((recovered Try[T]) => {
+        r match {
+            case Success(v) => p.Success(v)
+            case Failure(e) => pf(e).OnComplete((recovered Try[T]) => {
                 p.Complete(recovered)
             })
         }
@@ -329,10 +326,9 @@ func (f Future[T]) RecoverWith(pf func(error) Future[T]) Future[T] {
 func (f Future[T]) Transform[U any](s func(T) Try[U], fn func(error) Try[U]) Future[U] {
     val p = NewPromiseWith[U](f.state.ec)
     f.OnComplete((r Try[T]) => {
-        if r.IsSuccess() {
-            p.Complete(s(r.Value))
-        } else {
-            p.Complete(fn(r.Err))
+        r match {
+            case Success(v) => p.Complete(s(v))
+            case Failure(e) => p.Complete(fn(e))
         }
     })
     return p.Future()
@@ -343,12 +339,11 @@ func (f Future[T]) Transform[U any](s func(T) Try[U], fn func(error) Try[U]) Fut
 func (f Future[T]) TransformWith[U any](s func(T) Future[U], fn func(error) Future[U]) Future[U] {
     val p = NewPromiseWith[U](f.state.ec)
     f.OnComplete((r Try[T]) => {
-        if r.IsSuccess() {
-            s(r.Value).OnComplete((res Try[U]) => {
+        r match {
+            case Success(v) => s(v).OnComplete((res Try[U]) => {
                 p.Complete(res)
             })
-        } else {
-            fn(r.Err).OnComplete((res Try[U]) => {
+            case Failure(e) => fn(e).OnComplete((res Try[U]) => {
                 p.Complete(res)
             })
         }
@@ -424,20 +419,23 @@ func Sequence[T any](futures Array[Future[T]]) Future[Array[T]] {
             mu.Lock()
 
             if !failed {
-                if r.IsSuccess() {
-                    resultMap = resultMap.Put(idx, r.Value)
-                    remaining = remaining - 1
-                    if remaining == 0 {
-                        // Build the result array in order
-                        var result = EmptyArray[T]()
-                        for i := 0; i < size; i++ {
-                            result = result.Append(resultMap.GetOrElse(i, r.Value))
+                r match {
+                    case Success(v) => {
+                        resultMap = resultMap.Put(idx, v)
+                        remaining = remaining - 1
+                        if remaining == 0 {
+                            // Build the result array in order
+                            var result = EmptyArray[T]()
+                            for i := 0; i < size; i++ {
+                                result = result.Append(resultMap.GetOrElse(i, v))
+                            }
+                            p.Success(result)
                         }
-                        p.Success(result)
                     }
-                } else {
-                    failed = true
-                    p.Failure(r.Err)
+                    case Failure(e) => {
+                        failed = true
+                        p.Failure(e)
+                    }
                 }
             }
 
@@ -508,7 +506,7 @@ func (c Completed[T]) Unapply(f Future[T]) Option[Try[T]] {
     if f.state == nil {
         return None[Try[T]]()
     }
-    return Some[Try[T]](f.Await())
+    return Some(f.Await())
 }
 
 // Succeeded is an extractor for pattern matching on successful Futures.
@@ -527,11 +525,10 @@ func (s Succeeded[T]) Unapply(f Future[T]) Option[T] {
     if f.state == nil {
         return None[T]()
     }
-    val result = f.Await()
-    if result.IsSuccess() {
-        return Some[T](result.Value)
+    return f.Await() match {
+        case Success(v) => Some(v)
+        case Failure(_) => None[T]()
     }
-    return None[T]()
 }
 
 // Failed is an extractor for pattern matching on failed Futures.
@@ -550,11 +547,10 @@ func (fa Failed[T]) Unapply(f Future[T]) Option[error] {
     if f.state == nil {
         return None[error]()
     }
-    val result = f.Await()
-    if result.IsFailure() {
-        return Some[error](result.Err)
+    return f.Await() match {
+        case Success(_) => None[error]()
+        case Failure(e) => Some(e)
     }
-    return None[error]()
 }
 
 // === Sequence Pattern Matching Support ===
@@ -572,11 +568,10 @@ type AllSucceeded[T any] struct {}
 
 // Unapply sequences the Futures and extracts all values if all succeed.
 func (a AllSucceeded[T]) Unapply(futures Array[Future[T]]) Option[Array[T]] {
-    val result = Sequence[T](futures).Await()
-    if result.IsSuccess() {
-        return Some[Array[T]](result.Value)
+    return Sequence[T](futures).Await() match {
+        case Success(v) => Some(v)
+        case Failure(_) => None[Array[T]]()
     }
-    return None[Array[T]]()
 }
 
 // AnyFailed is an extractor for matching when any Future in a sequence fails.
@@ -592,9 +587,8 @@ type AnyFailed[T any] struct {}
 
 // Unapply returns the first error if any Future in the sequence fails.
 func (a AnyFailed[T]) Unapply(futures Array[Future[T]]) Option[error] {
-    val result = Sequence[T](futures).Await()
-    if result.IsFailure() {
-        return Some[error](result.Err)
+    return Sequence[T](futures).Await() match {
+        case Success(_) => None[error]()
+        case Failure(e) => Some(e)
     }
-    return None[error]()
 }

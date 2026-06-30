@@ -22,17 +22,17 @@ func TestReadLinesRoundTrip(t T) T {
     defer os.RemoveAll(dir)
 
     val target = filepath.Join(dir, "lines.txt")
-    val lines = ArrayOf[string]("alpha", "beta", "gamma")
+    val lines = ArrayOf("alpha", "beta", "gamma")
     val w = fs.WriteLines(target, lines, 0o644)
-    var t1 = IsTrue(t, w.IsSuccess())
+    val t1 = IsTrue(t, w.IsSuccess())
 
     val r = fs.ReadLines(target)
-    var t2 = IsTrue(t1, r.IsSuccess())
+    val t2 = IsTrue(t1, r.IsSuccess())
     val read = r.Get()
-    var t3 = Eq[int](t2, read.Size(), 3)
-    var t4 = Eq[string](t3, read.Get(0), "alpha")
-    var t5 = Eq[string](t4, read.Get(1), "beta")
-    return Eq[string](t5, read.Get(2), "gamma")
+    val t3 = Eq(t2, read.Size(), 3)
+    val t4 = Eq(t3, read.Get(0), "alpha")
+    val t5 = Eq(t4, read.Get(1), "beta")
+    return Eq(t5, read.Get(2), "gamma")
 }
 
 func TestReadLinesEmptyFile(t T) T {
@@ -43,8 +43,8 @@ func TestReadLinesEmptyFile(t T) T {
     fs.WriteFileString(target, "", 0o644)
 
     val r = fs.ReadLines(target)
-    var t1 = IsTrue(t, r.IsSuccess())
-    return Eq[int](t1, r.Get().Size(), 0)
+    val t1 = IsTrue(t, r.IsSuccess())
+    return Eq(t1, r.Get().Size(), 0)
 }
 
 func TestReadLinesNoTrailingNewline(t T) T {
@@ -55,10 +55,10 @@ func TestReadLinesNoTrailingNewline(t T) T {
     fs.WriteFileString(target, "one\ntwo\nthree", 0o644)
 
     val r = fs.ReadLines(target)
-    var t1 = IsTrue(t, r.IsSuccess())
+    val t1 = IsTrue(t, r.IsSuccess())
     val read = r.Get()
-    var t2 = Eq[int](t1, read.Size(), 3)
-    return Eq[string](t2, read.Get(2), "three")
+    val t2 = Eq(t1, read.Size(), 3)
+    return Eq(t2, read.Get(2), "three")
 }
 
 func TestForEachLineVisitsAll(t T) T {
@@ -66,18 +66,18 @@ func TestForEachLineVisitsAll(t T) T {
     defer os.RemoveAll(dir)
 
     val target = filepath.Join(dir, "lines.txt")
-    fs.WriteLines(target, ArrayOf[string]("a", "b", "c"), 0o644)
+    fs.WriteLines(target, ArrayOf("a", "b", "c"), 0o644)
 
     var seen = EmptyArray[string]()
     val r = fs.ForEachLine(target, (line) => {
         seen = seen.Append(line)
         return true
     })
-    var t1 = IsTrue(t, r.IsSuccess())
-    var t2 = Eq[int](t1, seen.Size(), 3)
-    var t3 = Eq[string](t2, seen.Get(0), "a")
-    var t4 = Eq[string](t3, seen.Get(1), "b")
-    return Eq[string](t4, seen.Get(2), "c")
+    val t1 = IsTrue(t, r.IsSuccess())
+    val t2 = Eq(t1, seen.Size(), 3)
+    val t3 = Eq(t2, seen.Get(0), "a")
+    val t4 = Eq(t3, seen.Get(1), "b")
+    return Eq(t4, seen.Get(2), "c")
 }
 
 func TestForEachLineEarlyStop(t T) T {
@@ -85,16 +85,16 @@ func TestForEachLineEarlyStop(t T) T {
     defer os.RemoveAll(dir)
 
     val target = filepath.Join(dir, "lines.txt")
-    fs.WriteLines(target, ArrayOf[string]("a", "b", "c", "d"), 0o644)
+    fs.WriteLines(target, ArrayOf("a", "b", "c", "d"), 0o644)
 
     var seen = EmptyArray[string]()
     val r = fs.ForEachLine(target, (line) => {
         seen = seen.Append(line)
         return seen.Size() < 2
     })
-    var t1 = IsTrue(t, r.IsSuccess())
+    val t1 = IsTrue(t, r.IsSuccess())
     // Callback returned false on line 2, so iteration stopped there.
-    return Eq[int](t1, seen.Size(), 2)
+    return Eq(t1, seen.Size(), 2)
 }
 
 func TestForEachLineMissingFileFails(t T) T {
@@ -108,13 +108,13 @@ func TestAppendStringRoundTrip(t T) T {
 
     val target = filepath.Join(dir, "log.txt")
     val w1 = fs.AppendString(target, "a\n", 0o644)
-    var t1 = IsTrue(t, w1.IsSuccess())
+    val t1 = IsTrue(t, w1.IsSuccess())
     val w2 = fs.AppendString(target, "b\n", 0o644)
-    var t2 = IsTrue(t1, w2.IsSuccess())
+    val t2 = IsTrue(t1, w2.IsSuccess())
 
     val r = fs.ReadFileString(target)
-    var t3 = IsTrue(t2, r.IsSuccess())
-    return Eq[string](t3, r.Get(), "a\nb\n")
+    val t3 = IsTrue(t2, r.IsSuccess())
+    return Eq(t3, r.Get(), "a\nb\n")
 }
 
 func TestAppendStringCreatesFile(t T) T {
@@ -122,13 +122,13 @@ func TestAppendStringCreatesFile(t T) T {
     defer os.RemoveAll(dir)
 
     val target = filepath.Join(dir, "fresh.txt")
-    var t1 = IsFalse(t, fs.Exists(target))
+    val t1 = IsFalse(t, fs.Exists(target))
     val w = fs.AppendString(target, "hello", 0o644)
-    var t2 = IsTrue(t1, w.IsSuccess())
-    var t3 = IsTrue(t2, fs.Exists(target))
+    val t2 = IsTrue(t1, w.IsSuccess())
+    val t3 = IsTrue(t2, fs.Exists(target))
 
     val r = fs.ReadFileString(target)
-    return Eq[string](t3, r.Get(), "hello")
+    return Eq(t3, r.Get(), "hello")
 }
 
 func TestAppendBytesRoundTrip(t T) T {
@@ -136,14 +136,14 @@ func TestAppendBytesRoundTrip(t T) T {
     defer os.RemoveAll(dir)
 
     val target = filepath.Join(dir, "bytes.bin")
-    val payload1 = ArrayOf[byte](byte(1), byte(2))
-    val payload2 = ArrayOf[byte](byte(3), byte(4))
+    val payload1 = ArrayOf(byte(1), byte(2))
+    val payload2 = ArrayOf(byte(3), byte(4))
     val w1 = fs.Append(target, payload1, 0o644)
-    var t1 = IsTrue(t, w1.IsSuccess())
+    val t1 = IsTrue(t, w1.IsSuccess())
     val w2 = fs.Append(target, payload2, 0o644)
-    var t2 = IsTrue(t1, w2.IsSuccess())
+    val t2 = IsTrue(t1, w2.IsSuccess())
 
     val r = fs.ReadFile(target)
-    var t3 = IsTrue(t2, r.IsSuccess())
-    return Eq[int](t3, r.Get().Size(), 4)
+    val t3 = IsTrue(t2, r.IsSuccess())
+    return Eq(t3, r.Get().Size(), 4)
 }

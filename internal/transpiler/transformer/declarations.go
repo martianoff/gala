@@ -736,11 +736,17 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		// expression is promoted to the implicit return below — signal that
 		// to transformBlock so a trailing bare `match` is NOT marked as
 		// statement-position (which would force the IIFE to void and break
-		// the implicit-return promotion).
-		if funcType.Results != nil && len(funcType.Results.List) > 0 {
-			t.blockLastStmtIsValue = true
-		}
+		// the implicit-return promotion). Set the flag explicitly for BOTH
+		// the value-returning and void cases and restore it afterward: a bare
+		// assignment that only set `true` would leak into the next top-level
+		// function, so a void function declared after a value-returning one
+		// would inherit `true` and a trailing bare `match` in its body would
+		// wrongly skip statement-position lowering (its arms then forced to
+		// unify to one type).
+		prevBlockLastStmtIsValue := t.blockLastStmtIsValue
+		t.blockLastStmtIsValue = funcType.Results != nil && len(funcType.Results.List) > 0
 		b, err := t.transformBlock(ctx.Block().(*grammar.BlockContext))
+		t.blockLastStmtIsValue = prevBlockLastStmtIsValue
 		if err != nil {
 			return nil, err
 		}

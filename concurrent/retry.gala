@@ -27,11 +27,11 @@ func Retry[T any](maxAttempts int, backoff func(int) Duration, action func(int) 
 
 // ConstantBackoff returns a backoff function that always waits the same duration.
 func ConstantBackoff(d Duration) func(int) Duration =
-    (_ int) => d
+    (_) => d
 
 // ExponentialBackoff returns a backoff function with exponential growth capped at max.
-func ExponentialBackoff(initial Duration, max Duration) func(int) Duration {
-    return (attempt int) => {
+func ExponentialBackoff(initial Duration, max Duration) func(int) Duration =
+    (attempt) => {
         var d = initial
         for i := 0; i < attempt; i++ {
             d = d.Multiply(2)
@@ -39,8 +39,7 @@ func ExponentialBackoff(initial Duration, max Duration) func(int) Duration {
         }
         return d
     }
-}
 
 // NoBackoff returns a backoff function with zero delay.
 func NoBackoff() func(int) Duration =
-    (_ int) => ZeroDuration()
+    (_) => ZeroDuration()

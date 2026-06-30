@@ -1,7 +1,6 @@
 package stream
 
 import (
-    "fmt"
     . "martianoff/gala/std"
     . "martianoff/gala/collection_immutable"
 )
@@ -34,10 +33,10 @@ func empty[T any]() Stream[T] {
 func cons[T any](head T, tail func() Stream[T]) Stream[T] {
     var nilTail *Stream[T] = nil
     return Stream[T](
-        headThunk = () => Some[T](head),
+        headThunk = () => Some(head),
         tailThunk = tail,
         evaluated = false,
-        cachedHead = Some[T](head),
+        cachedHead = Some(head),
         cachedTail = nilTail,
     )
 }
@@ -151,10 +150,10 @@ func Repeat[T any](elem T) Stream[T] = cons[T](elem, () => Repeat[T](elem))
 
 // Head returns the first element of the stream wrapped in Option.
 func (s Stream[T]) Head() Option[T] {
-    if s.cachedHead.IsDefined() {
-        return s.cachedHead
+    return s.cachedHead match {
+        case Some(h) => Some(h)
+        case None() => s.headThunk()
     }
-    return s.headThunk()
 }
 
 // HeadOrElse returns the first element or a default value.
@@ -179,20 +178,18 @@ func (s Stream[T]) NonEmpty() bool = s.Head().IsDefined()
 
 // Map transforms each element using a function (lazy).
 func (s Stream[T]) Map[U any](f func(T) U) Stream[U] {
-    val head = s.Head()
-    if head.IsDefined() {
-        return cons[U](f(head.Get()), () => s.Tail().Map[U](f))
+    return s.Head() match {
+        case Some(h) => cons[U](f(h), () => s.Tail().Map[U](f))
+        case None() => empty[U]()
     }
-    return empty[U]()
 }
 
 // FlatMap applies a function returning a stream to each element and flattens (lazy).
 func (s Stream[T]) FlatMap[U any](f func(T) Stream[U]) Stream[U] {
-    val head = s.Head()
-    if head.IsDefined() {
-        return f(head.Get()).Concat(Suspend[U](() => s.Tail().FlatMap[U](f)))
+    return s.Head() match {
+        case Some(h) => f(h).Concat(Suspend[U](() => s.Tail().FlatMap[U](f)))
+        case None() => empty[U]()
     }
-    return empty[U]()
 }
 
 // Suspend creates a stream that is entirely lazy - even existence of elements is deferred.
@@ -205,15 +202,10 @@ func Suspend[T any](thunk func() Stream[T]) Stream[T] {
 
 // Filter keeps only elements satisfying the predicate (lazy).
 func (s Stream[T]) Filter(p func(T) bool) Stream[T] {
-    val head = s.Head()
-    if head.IsDefined() {
-        val h = head.Get()
-        if p(h) {
-            return cons[T](h, () => s.Tail().Filter(p))
-        }
-        return s.Tail().Filter(p)
+    return s.Head() match {
+        case Some(h) => if (p(h)) cons[T](h, () => s.Tail().Filter(p)) else s.Tail().Filter(p)
+        case None() => empty[T]()
     }
-    return empty[T]()
 }
 
 // FilterNot keeps only elements not satisfying the predicate (lazy).
@@ -224,24 +216,18 @@ func (s Stream[T]) Take(n int) Stream[T] {
     if n <= 0 {
         return empty[T]()
     }
-    val head = s.Head()
-    if head.IsDefined() {
-        return cons[T](head.Get(), () => s.Tail().Take(n - 1))
+    return s.Head() match {
+        case Some(h) => cons[T](h, () => s.Tail().Take(n - 1))
+        case None() => empty[T]()
     }
-    return empty[T]()
 }
 
 // TakeWhile returns elements while predicate holds (lazy).
 func (s Stream[T]) TakeWhile(p func(T) bool) Stream[T] {
-    val head = s.Head()
-    if head.IsDefined() {
-        val h = head.Get()
-        if p(h) {
-            return cons[T](h, () => s.Tail().TakeWhile(p))
-        }
-        return empty[T]()
+    return s.Head() match {
+        case Some(h) => if (p(h)) cons[T](h, () => s.Tail().TakeWhile(p)) else empty[T]()
+        case None() => empty[T]()
     }
-    return empty[T]()
 }
 
 // Drop skips the first n elements (lazy).
@@ -249,53 +235,47 @@ func (s Stream[T]) Drop(n int) Stream[T] {
     if n <= 0 {
         return s
     }
-    val head = s.Head()
-    if head.IsDefined() {
-        return s.Tail().Drop(n - 1)
+    return s.Head() match {
+        case Some(_) => s.Tail().Drop(n - 1)
+        case None() => empty[T]()
     }
-    return empty[T]()
 }
 
 // DropWhile skips elements while predicate holds (lazy).
 func (s Stream[T]) DropWhile(p func(T) bool) Stream[T] {
-    val head = s.Head()
-    if head.IsDefined() {
-        if p(head.Get()) {
-            return s.Tail().DropWhile(p)
-        }
-        return s
+    return s.Head() match {
+        case Some(h) => if (p(h)) s.Tail().DropWhile(p) else s
+        case None() => empty[T]()
     }
-    return empty[T]()
 }
 
 // Zip combines two streams into a stream of tuples (lazy).
 func (s Stream[T]) Zip[U any](other Stream[U]) Stream[Tuple[T, U]] {
-    val h1 = s.Head()
-    val h2 = other.Head()
-    if h1.IsDefined() && h2.IsDefined() {
-        return cons[Tuple[T, U]]((h1.Get(), h2.Get()), () => s.Tail().Zip[U](other.Tail()))
+    return s.Head() match {
+        case Some(a) => other.Head() match {
+            case Some(b) => cons[Tuple[T, U]]((a, b), () => s.Tail().Zip[U](other.Tail()))
+            case None() => empty[Tuple[T, U]]()
+        }
+        case None() => empty[Tuple[T, U]]()
     }
-    return empty[Tuple[T, U]]()
 }
 
 // ZipWithIndex pairs each element with its index (lazy).
 func (s Stream[T]) ZipWithIndex() Stream[Tuple[T, int]] = zipWithIndexFrom[T](s, 0)
 
 func zipWithIndexFrom[T any](s Stream[T], idx int) Stream[Tuple[T, int]] {
-    val head = s.Head()
-    if head.IsDefined() {
-        return cons[Tuple[T, int]]((head.Get(), idx), () => zipWithIndexFrom[T](s.Tail(), idx + 1))
+    return s.Head() match {
+        case Some(h) => cons[Tuple[T, int]]((h, idx), () => zipWithIndexFrom[T](s.Tail(), idx + 1))
+        case None() => empty[Tuple[T, int]]()
     }
-    return empty[Tuple[T, int]]()
 }
 
 // Concat appends another stream (lazy).
 func (s Stream[T]) Concat(other Stream[T]) Stream[T] {
-    val head = s.Head()
-    if head.IsDefined() {
-        return cons[T](head.Get(), () => s.Tail().Concat(other))
+    return s.Head() match {
+        case Some(h) => cons[T](h, () => s.Tail().Concat(other))
+        case None() => other
     }
-    return other
 }
 
 // Append adds an element at the end (lazy, but must traverse to end).
@@ -306,32 +286,32 @@ func (s Stream[T]) Prepend(elem T) Stream[T] = cons[T](elem, () => s)
 
 // Intersperse inserts a separator between elements (lazy).
 func (s Stream[T]) Intersperse(sep T) Stream[T] {
-    val head = s.Head()
-    if head.IsDefined() {
-        val h = head.Get()
-        val tail = s.Tail()
-        if tail.IsEmpty() {
-            return cons[T](h, () => empty[T]())
+    return s.Head() match {
+        case Some(h) => {
+            val tail = s.Tail()
+            if tail.IsEmpty() {
+                return cons[T](h, () => empty[T]())
+            }
+            return cons[T](h, () => cons[T](sep, () => tail.Intersperse(sep)))
         }
-        return cons[T](h, () => cons[T](sep, () => tail.Intersperse(sep)))
+        case None() => empty[T]()
     }
-    return empty[T]()
 }
 
 // Distinct removes duplicates (lazy, uses O(n) memory for seen elements).
 func (s Stream[T]) Distinct() Stream[T] = distinctHelper[T](s, EmptyHashSet[any]())
 
 func distinctHelper[T any](s Stream[T], seen HashSet[any]) Stream[T] {
-    val head = s.Head()
-    if head.IsDefined() {
-        val h = head.Get()
-        val key any = h
-        if seen.Contains(key) {
-            return distinctHelper[T](s.Tail(), seen)
+    return s.Head() match {
+        case Some(h) => {
+            val key any = h
+            if seen.Contains(key) {
+                return distinctHelper[T](s.Tail(), seen)
+            }
+            return cons[T](h, () => distinctHelper[T](s.Tail(), seen.Add(key)))
         }
-        return cons[T](h, () => distinctHelper[T](s.Tail(), seen.Add(key)))
+        case None() => empty[T]()
     }
-    return empty[T]()
 }
 
 // ToArray forces evaluation and collects elements into an Array.
@@ -384,11 +364,10 @@ func (s Stream[T]) Fold[U any](zero U, f func(U, T) U) U {
 // Returns None for empty stream.
 // WARNING: Will not terminate for infinite streams!
 func (s Stream[T]) Reduce(f func(T, T) T) Option[T] {
-    val head = s.Head()
-    if head.IsDefined() {
-        return Some[T](s.Tail().Fold[T](head.Get(), f))
+    return s.Head() match {
+        case Some(h) => Some(s.Tail().Fold[T](h, f))
+        case None() => None[T]()
     }
-    return None[T]()
 }
 
 // Find returns the first element satisfying the predicate.
@@ -397,7 +376,7 @@ func (s Stream[T]) Find(p func(T) bool) Option[T] {
     for current.NonEmpty() {
         val h = current.Head().Get()
         if p(h) {
-            return Some[T](h)
+            return Some(h)
         }
         current = current.Tail()
     }
@@ -448,7 +427,7 @@ func (s Stream[T]) MkString(sep string) string {
         if !first {
             result = result + sep
         }
-        result = result + fmt.Sprintf("%v", current.Head().Get())
+        result = result + s"${current.Head().Get()}"
         first = false
         current = current.Tail()
     }
@@ -459,17 +438,8 @@ func (s Stream[T]) MkString(sep string) string {
 // Only shows first few elements to avoid infinite output.
 func (s Stream[T]) String() string {
     val preview = s.Take(10).ToArray()
-    var result = "Stream("
-    for i := 0; i < preview.Length(); i++ {
-        if i > 0 {
-            result = result + ", "
-        }
-        result = result + fmt.Sprintf("%v", preview.Get(i))
-    }
-    if s.Drop(10).NonEmpty() {
-        result = result + ", ..."
-    }
-    return result + ")"
+    val suffix = if (s.Drop(10).NonEmpty()) ", ..." else ""
+    return s"Stream(${preview.MkString(", ")}$suffix)"
 }
 
 // Get returns the element at index n.
@@ -485,15 +455,13 @@ func (s Stream[T]) Slice(start int, end int) Stream[T] = s.Drop(start).Take(end 
 
 // Collect applies a partial function and keeps defined results (lazy).
 func (s Stream[T]) Collect[U any](pf func(T) Option[U]) Stream[U] {
-    val head = s.Head()
-    if head.IsDefined() {
-        val result = pf(head.Get())
-        if result.IsDefined() {
-            return cons[U](result.Get(), () => s.Tail().Collect[U](pf))
+    return s.Head() match {
+        case Some(h) => pf(h) match {
+            case Some(v) => cons[U](v, () => s.Tail().Collect[U](pf))
+            case None() => s.Tail().Collect[U](pf)
         }
-        return s.Tail().Collect[U](pf)
+        case None() => empty[U]()
     }
-    return empty[U]()
 }
 
 // Scan produces a stream of cumulative results (lazy).
@@ -502,12 +470,13 @@ func (s Stream[T]) Scan[U any](zero U, f func(U, T) U) Stream[U] {
 }
 
 func scanHelper[T any, U any](s Stream[T], acc U, f func(U, T) U) Stream[U] {
-    val head = s.Head()
-    if head.IsDefined() {
-        val newAcc = f(acc, head.Get())
-        return cons[U](newAcc, () => scanHelper[T, U](s.Tail(), newAcc, f))
+    return s.Head() match {
+        case Some(h) => {
+            val newAcc = f(acc, h)
+            return cons[U](newAcc, () => scanHelper[T, U](s.Tail(), newAcc, f))
+        }
+        case None() => empty[U]()
     }
-    return empty[U]()
 }
 
 // SplitAt splits the stream at position n.
@@ -570,8 +539,8 @@ type StreamCons[T any] struct {}
 
 func (c StreamCons[T]) Unapply(s Stream[T]) Option[Tuple[T, Stream[T]]] {
     return s.Head() match {
-        case Some(h) => Some[Tuple[T, Stream[T]]]((h, s.Tail()))
-        case _ => None[Tuple[T, Stream[T]]]()
+        case Some(h) => Some((h, s.Tail()))
+        case None() => None[Tuple[T, Stream[T]]]()
     }
 }
 
@@ -579,8 +548,8 @@ func (c StreamCons[T]) Unapply(s Stream[T]) Option[Tuple[T, Stream[T]]] {
 type StreamNil[T any] struct {}
 
 func (n StreamNil[T]) Unapply(s Stream[T]) Option[bool] {
-    if s.IsEmpty() {
-        return Some[bool](true)
+    return s.Head() match {
+        case Some(_) => None[bool]()
+        case None() => Some(true)
     }
-    return None[bool]()
 }

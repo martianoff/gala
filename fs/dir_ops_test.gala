@@ -26,11 +26,11 @@ func TestCopyFile(t T) T {
     fs.WriteFileString(src, payload, 0o644)
 
     val r = fs.CopyFile(src, dst, 0o644)
-    var t1 = IsTrue(t, r.IsSuccess())
-    var t2 = IsTrue(t1, fs.Exists(dst))
+    val t1 = IsTrue(t, r.IsSuccess())
+    val t2 = IsTrue(t1, fs.Exists(dst))
     val read = fs.ReadFileString(dst)
-    var t3 = IsTrue(t2, read.IsSuccess())
-    return Eq[string](t3, read.Get(), payload)
+    val t3 = IsTrue(t2, read.IsSuccess())
+    return Eq(t3, read.Get(), payload)
 }
 
 func TestCopyMissingSource(t T) T {
@@ -52,11 +52,11 @@ func TestRename(t T) T {
     fs.WriteFileString(src, payload, 0o644)
 
     val r = fs.Rename(src, dst)
-    var t1 = IsTrue(t, r.IsSuccess())
-    var t2 = IsFalse(t1, fs.Exists(src))
-    var t3 = IsTrue(t2, fs.Exists(dst))
+    val t1 = IsTrue(t, r.IsSuccess())
+    val t2 = IsFalse(t1, fs.Exists(src))
+    val t3 = IsTrue(t2, fs.Exists(dst))
     val read = fs.ReadFileString(dst)
-    return Eq[string](t3, read.Get(), payload)
+    return Eq(t3, read.Get(), payload)
 }
 
 func TestWalk(t T) T {
@@ -70,13 +70,13 @@ func TestWalk(t T) T {
     fs.WriteFileString(filepath.Join(dir, "sub", "c.txt"), "333", 0o644)
 
     val r = fs.Walk(dir)
-    var t1 = IsTrue(t, r.IsSuccess())
+    val t1 = IsTrue(t, r.IsSuccess())
     val entries = r.Get()
     // root + a.txt + b.txt + sub + sub/c.txt = 5 entries
-    var t2 = Eq[int](t1, entries.Size(), 5)
+    val t2 = Eq(t1, entries.Size(), 5)
 
     // Assert every expected path is reachable; don't pin a specific order.
-    val expected = ArrayOf[string](
+    val expected = ArrayOf(
         dir,
         filepath.Join(dir, "a.txt"),
         filepath.Join(dir, "b.txt"),
@@ -106,8 +106,8 @@ func TestGlob(t T) T {
     fs.WriteFileString(filepath.Join(dir, "c.md"), "333", 0o644)
 
     val r = fs.Glob(filepath.Join(dir, "*.txt"))
-    var t1 = IsTrue(t, r.IsSuccess())
-    return Eq[int](t1, r.Get().Size(), 2)
+    val t1 = IsTrue(t, r.IsSuccess())
+    return Eq(t1, r.Get().Size(), 2)
 }
 
 func TestGlobNoMatches(t T) T {
@@ -115,8 +115,8 @@ func TestGlobNoMatches(t T) T {
     defer os.RemoveAll(dir)
 
     val r = fs.Glob(filepath.Join(dir, "*.nothing"))
-    var t1 = IsTrue(t, r.IsSuccess())
-    return Eq[int](t1, r.Get().Size(), 0)
+    val t1 = IsTrue(t, r.IsSuccess())
+    return Eq(t1, r.Get().Size(), 0)
 }
 
 func TestGlobMalformed(t T) T {

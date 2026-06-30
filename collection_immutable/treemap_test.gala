@@ -12,8 +12,8 @@ import (
 
 func TestTreeMapEmpty(t T) T {
     val m = EmptyTreeMap[string, int]()
-    var t1 = IsTrue(t, m.IsEmpty())
-    var t2 = IsFalse(t1, m.NonEmpty())
+    val t1 = IsTrue(t, m.IsEmpty())
+    val t2 = IsFalse(t1, m.NonEmpty())
     return Eq[int](t2, m.Size(), 0)
 }
 
@@ -23,9 +23,9 @@ func TestTreeMapPut(t T) T {
     val m2 = m1.Put("a", 1)
     val m3 = m2.Put("b", 2)
 
-    var t1 = Eq[int](t, m.Size(), 0)
-    var t2 = Eq[int](t1, m1.Size(), 1)
-    var t3 = Eq[int](t2, m2.Size(), 2)
+    val t1 = Eq[int](t, m.Size(), 0)
+    val t2 = Eq[int](t1, m1.Size(), 1)
+    val t3 = Eq[int](t2, m2.Size(), 2)
     return Eq[int](t3, m3.Size(), 3)
 }
 
@@ -34,40 +34,40 @@ func TestTreeMapPutUpdate(t T) T {
     val m1 = m.Put("a", 1)
     val m2 = m1.Put("a", 2)
 
-    var t1 = Eq[int](t, m2.Size(), 1)
+    val t1 = Eq[int](t, m2.Size(), 1)
     return Eq[int](t1, m2.GetOrElse("a", 0), 2)
 }
 
 func TestTreeMapOf(t T) T {
     val m = TreeMapOf[string, int](
-        Tuple[string, int](V1 = "a", V2 = 1),
-        Tuple[string, int](V1 = "b", V2 = 2),
-        Tuple[string, int](V1 = "c", V2 = 3)
+        ("a", 1),
+        ("b", 2),
+        ("c", 3)
     )
-    var t1 = Eq[int](t, m.Size(), 3)
-    var t2 = IsTrue(t1, m.Contains("a"))
-    var t3 = IsTrue(t2, m.Contains("b"))
+    val t1 = Eq[int](t, m.Size(), 3)
+    val t2 = IsTrue(t1, m.Contains("a"))
+    val t3 = IsTrue(t2, m.Contains("b"))
     return IsTrue(t3, m.Contains("c"))
 }
 
 func TestTreeMapContains(t T) T {
     val m = EmptyTreeMap[string, int]().Put("a", 1).Put("b", 2)
-    var t1 = IsTrue(t, m.Contains("a"))
-    var t2 = IsTrue(t1, m.Contains("b"))
+    val t1 = IsTrue(t, m.Contains("a"))
+    val t2 = IsTrue(t1, m.Contains("b"))
     return IsFalse(t2, m.Contains("c"))
 }
 
 func TestTreeMapGet(t T) T {
     val m = EmptyTreeMap[string, int]().Put("a", 1).Put("b", 2)
-    var t1 = IsSome(t, m.Get("a"))
-    var t2 = Eq[int](t1, m.Get("a").Get(), 1)
-    var t3 = Eq[int](t2, m.Get("b").Get(), 2)
+    val t1 = IsSome(t, m.Get("a"))
+    val t2 = Eq[int](t1, m.Get("a").Get(), 1)
+    val t3 = Eq[int](t2, m.Get("b").Get(), 2)
     return IsNone(t3, m.Get("c"))
 }
 
 func TestTreeMapGetOrElse(t T) T {
     val m = EmptyTreeMap[string, int]().Put("a", 1)
-    var t1 = Eq[int](t, m.GetOrElse("a", 0), 1)
+    val t1 = Eq[int](t, m.GetOrElse("a", 0), 1)
     return Eq[int](t1, m.GetOrElse("b", 42), 42)
 }
 
@@ -75,9 +75,9 @@ func TestTreeMapRemove(t T) T {
     val m = EmptyTreeMap[string, int]().Put("a", 1).Put("b", 2).Put("c", 3)
     val m2 = m.Remove("b")
 
-    var t1 = Eq[int](t, m2.Size(), 2)
-    var t2 = IsTrue(t1, m2.Contains("a"))
-    var t3 = IsFalse(t2, m2.Contains("b"))
+    val t1 = Eq[int](t, m2.Size(), 2)
+    val t2 = IsTrue(t1, m2.Contains("a"))
+    val t3 = IsFalse(t2, m2.Contains("b"))
     return IsTrue(t3, m2.Contains("c"))
 }
 
@@ -92,15 +92,15 @@ func TestTreeMapRemoveNonExistent(t T) T {
 func TestTreeMapSortedOrder(t T) T {
     val m = EmptyTreeMap[int, string]().Put(5, "e").Put(3, "c").Put(1, "a").Put(4, "d").Put(2, "b")
     var keys []int
-    m.ForEachKV((k int, v string) => {
+    m.ForEachKV((k, v) => {
         keys = append(keys, k)
     })
 
-    var t1 = Eq[int](t, len(keys), 5)
-    var t2 = Eq[int](t1, keys[0], 1)
-    var t3 = Eq[int](t2, keys[1], 2)
-    var t4 = Eq[int](t3, keys[2], 3)
-    var t5 = Eq[int](t4, keys[3], 4)
+    val t1 = Eq[int](t, len(keys), 5)
+    val t2 = Eq[int](t1, keys[0], 1)
+    val t3 = Eq[int](t2, keys[1], 2)
+    val t4 = Eq[int](t3, keys[2], 3)
+    val t5 = Eq[int](t4, keys[3], 4)
     return Eq[int](t5, keys[4], 5)
 }
 
@@ -120,8 +120,8 @@ func TestTreeMapMinKeyOption(t T) T {
     val m = EmptyTreeMap[int, string]().Put(5, "e").Put(3, "c")
     val empty = EmptyTreeMap[int, string]()
 
-    var t1 = IsSome(t, m.MinKeyOption())
-    var t2 = Eq[int](t1, m.MinKeyOption().GetOrElse(0), 3)
+    val t1 = IsSome(t, m.MinKeyOption())
+    val t2 = Eq[int](t1, m.MinKeyOption().GetOrElse(0), 3)
     return IsNone(t2, empty.MinKeyOption())
 }
 
@@ -129,22 +129,22 @@ func TestTreeMapMaxKeyOption(t T) T {
     val m = EmptyTreeMap[int, string]().Put(5, "e").Put(3, "c")
     val empty = EmptyTreeMap[int, string]()
 
-    var t1 = IsSome(t, m.MaxKeyOption())
-    var t2 = Eq[int](t1, m.MaxKeyOption().GetOrElse(0), 5)
+    val t1 = IsSome(t, m.MaxKeyOption())
+    val t2 = Eq[int](t1, m.MaxKeyOption().GetOrElse(0), 5)
     return IsNone(t2, empty.MaxKeyOption())
 }
 
 func TestTreeMapMinEntry(t T) T {
     val m = EmptyTreeMap[int, string]().Put(5, "e").Put(3, "c").Put(1, "a")
     val entry = m.MinEntry()
-    var t1 = Eq[int](t, entry.V1, 1)
+    val t1 = Eq[int](t, entry.V1, 1)
     return Eq[string](t1, entry.V2, "a")
 }
 
 func TestTreeMapMaxEntry(t T) T {
     val m = EmptyTreeMap[int, string]().Put(5, "e").Put(3, "c").Put(1, "a")
     val entry = m.MaxEntry()
-    var t1 = Eq[int](t, entry.V1, 5)
+    val t1 = Eq[int](t, entry.V1, 5)
     return Eq[string](t1, entry.V2, "e")
 }
 
@@ -157,11 +157,11 @@ func TestTreeMapRange(t T) T {
     }
     val rangeMap = m.Range(3, 7)
 
-    var t1 = Eq[int](t, rangeMap.Size(), 5)
-    var t2 = IsTrue(t1, rangeMap.Contains(3))
-    var t3 = IsTrue(t2, rangeMap.Contains(5))
-    var t4 = IsTrue(t3, rangeMap.Contains(7))
-    var t5 = IsFalse(t4, rangeMap.Contains(2))
+    val t1 = Eq[int](t, rangeMap.Size(), 5)
+    val t2 = IsTrue(t1, rangeMap.Contains(3))
+    val t3 = IsTrue(t2, rangeMap.Contains(5))
+    val t4 = IsTrue(t3, rangeMap.Contains(7))
+    val t5 = IsFalse(t4, rangeMap.Contains(2))
     return IsFalse(t5, rangeMap.Contains(8))
 }
 
@@ -172,10 +172,10 @@ func TestTreeMapRangeFrom(t T) T {
     }
     val rangeMap = m.RangeFrom(3)
 
-    var t1 = Eq[int](t, rangeMap.Size(), 3)
-    var t2 = IsTrue(t1, rangeMap.Contains(3))
-    var t3 = IsTrue(t2, rangeMap.Contains(4))
-    var t4 = IsTrue(t3, rangeMap.Contains(5))
+    val t1 = Eq[int](t, rangeMap.Size(), 3)
+    val t2 = IsTrue(t1, rangeMap.Contains(3))
+    val t3 = IsTrue(t2, rangeMap.Contains(4))
+    val t4 = IsTrue(t3, rangeMap.Contains(5))
     return IsFalse(t4, rangeMap.Contains(2))
 }
 
@@ -186,10 +186,10 @@ func TestTreeMapRangeTo(t T) T {
     }
     val rangeMap = m.RangeTo(3)
 
-    var t1 = Eq[int](t, rangeMap.Size(), 3)
-    var t2 = IsTrue(t1, rangeMap.Contains(1))
-    var t3 = IsTrue(t2, rangeMap.Contains(2))
-    var t4 = IsTrue(t3, rangeMap.Contains(3))
+    val t1 = Eq[int](t, rangeMap.Size(), 3)
+    val t2 = IsTrue(t1, rangeMap.Contains(1))
+    val t3 = IsTrue(t2, rangeMap.Contains(2))
+    val t4 = IsTrue(t3, rangeMap.Contains(3))
     return IsFalse(t4, rangeMap.Contains(4))
 }
 
@@ -197,48 +197,48 @@ func TestTreeMapRangeTo(t T) T {
 
 func TestTreeMapFilter(t T) T {
     val m = EmptyTreeMap[string, int]().Put("a", 1).Put("b", 2).Put("c", 3).Put("d", 4)
-    val filtered = m.Filter((k string, v int) => v > 2)
+    val filtered = m.Filter((k, v) => v > 2)
 
-    var t1 = Eq[int](t, filtered.Size(), 2)
-    var t2 = IsFalse(t1, filtered.Contains("a"))
-    var t3 = IsFalse(t2, filtered.Contains("b"))
-    var t4 = IsTrue(t3, filtered.Contains("c"))
+    val t1 = Eq[int](t, filtered.Size(), 2)
+    val t2 = IsFalse(t1, filtered.Contains("a"))
+    val t3 = IsFalse(t2, filtered.Contains("b"))
+    val t4 = IsTrue(t3, filtered.Contains("c"))
     return IsTrue(t4, filtered.Contains("d"))
 }
 
 func TestTreeMapFilterKeys(t T) T {
     val m = EmptyTreeMap[string, int]().Put("apple", 1).Put("banana", 2).Put("cherry", 3)
-    val filtered = m.FilterKeys((k string) => len(k) > 5)
+    val filtered = m.FilterKeys((k) => len(k) > 5)
 
-    var t1 = Eq[int](t, filtered.Size(), 2)
-    var t2 = IsFalse(t1, filtered.Contains("apple"))
+    val t1 = Eq[int](t, filtered.Size(), 2)
+    val t2 = IsFalse(t1, filtered.Contains("apple"))
     return IsTrue(t2, filtered.Contains("banana"))
 }
 
 func TestTreeMapFilterValues(t T) T {
     val m = EmptyTreeMap[string, int]().Put("a", 1).Put("b", 2).Put("c", 3)
-    val filtered = m.FilterValues((v int) => v % 2 == 0)
+    val filtered = m.FilterValues((v) => v % 2 == 0)
 
-    var t1 = Eq[int](t, filtered.Size(), 1)
+    val t1 = Eq[int](t, filtered.Size(), 1)
     return IsTrue(t1, filtered.Contains("b"))
 }
 
 func TestTreeMapMapValues(t T) T {
     val m = EmptyTreeMap[string, int]().Put("a", 1).Put("b", 2).Put("c", 3)
-    val doubled = m.MapValues[int]((v int) => v * 2)
+    val doubled = m.MapValues((v) => v * 2)
 
-    var t1 = Eq[int](t, doubled.GetOrElse("a", 0), 2)
-    var t2 = Eq[int](t1, doubled.GetOrElse("b", 0), 4)
+    val t1 = Eq[int](t, doubled.GetOrElse("a", 0), 2)
+    val t2 = Eq[int](t1, doubled.GetOrElse("b", 0), 4)
     return Eq[int](t2, doubled.GetOrElse("c", 0), 6)
 }
 
 func TestTreeMapPartition(t T) T {
     val m = EmptyTreeMap[string, int]().Put("a", 1).Put("b", 2).Put("c", 3).Put("d", 4)
-    val result = m.Partition((k string, v int) => v % 2 == 0)
+    val result = m.Partition((k, v) => v % 2 == 0)
     val even = result.V1
     val odd = result.V2
 
-    var t1 = Eq[int](t, even.Size(), 2)
+    val t1 = Eq[int](t, even.Size(), 2)
     return Eq[int](t1, odd.Size(), 2)
 }
 
@@ -246,7 +246,7 @@ func TestTreeMapPartition(t T) T {
 
 func TestTreeMapFoldLeftKV(t T) T {
     val m = EmptyTreeMap[string, int]().Put("a", 1).Put("b", 2).Put("c", 3)
-    val sum = m.FoldLeftKV[int](0, (acc int, k string, v int) => acc + v)
+    val sum = m.FoldLeftKV(0, (acc, k, v) => acc + v)
     return Eq[int](t, sum, 6)
 }
 
@@ -254,31 +254,31 @@ func TestTreeMapFoldLeftKV(t T) T {
 
 func TestTreeMapExists(t T) T {
     val m = EmptyTreeMap[string, int]().Put("a", 1).Put("b", 2).Put("c", 3)
-    var t1 = IsTrue(t, m.Exists((k string, v int) => v > 2))
-    return IsFalse(t1, m.Exists((k string, v int) => v > 10))
+    val t1 = IsTrue(t, m.Exists((k, v) => v > 2))
+    return IsFalse(t1, m.Exists((k, v) => v > 10))
 }
 
 func TestTreeMapForAll(t T) T {
     val m = EmptyTreeMap[string, int]().Put("a", 2).Put("b", 4).Put("c", 6)
-    var t1 = IsTrue(t, m.ForAll((k string, v int) => v % 2 == 0))
-    return IsFalse(t1, m.ForAll((k string, v int) => v < 5))
+    val t1 = IsTrue(t, m.ForAll((k, v) => v % 2 == 0))
+    return IsFalse(t1, m.ForAll((k, v) => v < 5))
 }
 
 func TestTreeMapFind(t T) T {
     val m = EmptyTreeMap[string, int]().Put("a", 1).Put("b", 2).Put("c", 3)
-    val found = m.Find((k string, v int) => v == 2)
-    var t1 = IsSome(t, found)
+    val found = m.Find((k, v) => v == 2)
+    val t1 = IsSome(t, found)
     return Eq[string](t1, found.Get().V1, "b")
 }
 
 func TestTreeMapCount(t T) T {
     val m = EmptyTreeMap[string, int]().Put("a", 1).Put("b", 2).Put("c", 3).Put("d", 4)
-    return Eq[int](t, m.Count((k string, v int) => v > 2), 2)
+    return Eq[int](t, m.Count((k, v) => v > 2), 2)
 }
 
 func TestTreeMapCollect(t T) T {
     val m = EmptyTreeMap[string, int]().Put("a", 1).Put("b", 2).Put("c", 3)
-    val result = m.Collect((k string, v int) => {
+    val result = m.Collect((k, v) => {
         if v > 1 {
             return Some(fmt.Sprintf("%s:%d", k, v))
         }
@@ -294,20 +294,20 @@ func TestTreeMapPutAll(t T) T {
     val m2 = EmptyTreeMap[string, int]().Put("c", 3).Put("d", 4)
     val merged = m1.PutAll(m2)
 
-    var t1 = Eq[int](t, merged.Size(), 4)
-    var t2 = IsTrue(t1, merged.Contains("a"))
-    var t3 = IsTrue(t2, merged.Contains("c"))
+    val t1 = Eq[int](t, merged.Size(), 4)
+    val t2 = IsTrue(t1, merged.Contains("a"))
+    val t3 = IsTrue(t2, merged.Contains("c"))
     return IsTrue(t3, merged.Contains("d"))
 }
 
 func TestTreeMapMerge(t T) T {
     val m1 = EmptyTreeMap[string, int]().Put("a", 1).Put("b", 2)
     val m2 = EmptyTreeMap[string, int]().Put("b", 3).Put("c", 4)
-    val merged = m1.Merge(m2, (v1 int, v2 int) => v1 + v2)
+    val merged = m1.Merge(m2, (v1, v2) => v1 + v2)
 
-    var t1 = Eq[int](t, merged.Size(), 3)
-    var t2 = Eq[int](t1, merged.GetOrElse("a", 0), 1)
-    var t3 = Eq[int](t2, merged.GetOrElse("b", 0), 5)
+    val t1 = Eq[int](t, merged.Size(), 3)
+    val t2 = Eq[int](t1, merged.GetOrElse("a", 0), 1)
+    val t3 = Eq[int](t2, merged.GetOrElse("b", 0), 5)
     return Eq[int](t3, merged.GetOrElse("c", 0), 4)
 }
 
@@ -316,9 +316,9 @@ func TestTreeMapMerge(t T) T {
 func TestTreeMapKeys(t T) T {
     val m = EmptyTreeMap[string, int]().Put("c", 3).Put("a", 1).Put("b", 2)
     val keys = m.Keys()
-    var t1 = Eq[int](t, keys.Size(), 3)
-    var t2 = IsTrue(t1, keys.Contains("a"))
-    var t3 = IsTrue(t2, keys.Contains("b"))
+    val t1 = Eq[int](t, keys.Size(), 3)
+    val t2 = IsTrue(t1, keys.Contains("a"))
+    val t3 = IsTrue(t2, keys.Contains("b"))
     return IsTrue(t3, keys.Contains("c"))
 }
 
@@ -331,7 +331,7 @@ func TestTreeMapValues(t T) T {
 func TestTreeMapHead(t T) T {
     val m = EmptyTreeMap[int, string]().Put(3, "c").Put(1, "a").Put(2, "b")
     val head = m.Head()
-    var t1 = Eq[int](t, head.V1, 1)
+    val t1 = Eq[int](t, head.V1, 1)
     return Eq[string](t1, head.V2, "a")
 }
 
@@ -339,14 +339,14 @@ func TestTreeMapHeadOption(t T) T {
     val m = EmptyTreeMap[string, int]().Put("a", 1)
     val empty = EmptyTreeMap[string, int]()
 
-    var t1 = IsSome(t, m.HeadOption())
+    val t1 = IsSome(t, m.HeadOption())
     return IsNone(t1, empty.HeadOption())
 }
 
 func TestTreeMapLast(t T) T {
     val m = EmptyTreeMap[int, string]().Put(3, "c").Put(1, "a").Put(2, "b")
     val last = m.Last()
-    var t1 = Eq[int](t, last.V1, 3)
+    val t1 = Eq[int](t, last.V1, 3)
     return Eq[string](t1, last.V2, "c")
 }
 
@@ -354,7 +354,7 @@ func TestTreeMapLastOption(t T) T {
     val m = EmptyTreeMap[string, int]().Put("a", 1)
     val empty = EmptyTreeMap[string, int]()
 
-    var t1 = IsSome(t, m.LastOption())
+    val t1 = IsSome(t, m.LastOption())
     return IsNone(t1, empty.LastOption())
 }
 
@@ -363,24 +363,24 @@ func TestTreeMapLastOption(t T) T {
 func TestTreeMapToArray(t T) T {
     val m = EmptyTreeMap[int, string]().Put(3, "c").Put(1, "a").Put(2, "b")
     val arr = m.ToArray()
-    var t1 = Eq[int](t, arr.Size(), 3)
+    val t1 = Eq[int](t, arr.Size(), 3)
     // Should be in sorted key order
-    var t2 = Eq[int](t1, arr.Get(0).V1, 1)
-    var t3 = Eq[int](t2, arr.Get(1).V1, 2)
+    val t2 = Eq[int](t1, arr.Get(0).V1, 1)
+    val t3 = Eq[int](t2, arr.Get(1).V1, 2)
     return Eq[int](t3, arr.Get(2).V1, 3)
 }
 
 func TestTreeMapToGoMap(t T) T {
     val m = EmptyTreeMap[string, int]().Put("a", 1).Put("b", 2)
     val goMap = m.ToGoMap()
-    var t1 = Eq[int](t, len(goMap), 2)
+    val t1 = Eq[int](t, len(goMap), 2)
     return Eq[int](t1, goMap["a"], 1)
 }
 
 func TestTreeMapToList(t T) T {
     val m = EmptyTreeMap[int, string]().Put(3, "c").Put(1, "a").Put(2, "b")
     val list = m.ToList()
-    var t1 = Eq[int](t, list.Size(), 3)
+    val t1 = Eq[int](t, list.Size(), 3)
     // Head should be the min-key entry
     return Eq[int](t1, list.Head().V1, 1)
 }
@@ -388,21 +388,21 @@ func TestTreeMapToList(t T) T {
 func TestTreeMapToHashMap(t T) T {
     val m = EmptyTreeMap[string, int]().Put("a", 1).Put("b", 2).Put("c", 3)
     val hm = m.ToHashMap()
-    var t1 = Eq[int](t, hm.Size(), 3)
-    var t2 = Eq[int](t1, hm.GetOrElse("a", 0), 1)
+    val t1 = Eq[int](t, hm.Size(), 3)
+    val t2 = Eq[int](t1, hm.GetOrElse("a", 0), 1)
     return Eq[int](t2, hm.GetOrElse("c", 0), 3)
 }
 
 func TestTreeMapFromSlice(t T) T {
     val entries = go_interop.SliceOf[Tuple[string, int]](
-        Tuple[string, int](V1 = "a", V2 = 1),
-        Tuple[string, int](V1 = "b", V2 = 2),
-        Tuple[string, int](V1 = "c", V2 = 3)
+        ("a", 1),
+        ("b", 2),
+        ("c", 3)
     )
 
     val m = TreeMapFromSlice[string, int](entries)
-    var t1 = Eq[int](t, m.Size(), 3)
-    var t2 = Eq[int](t1, m.GetOrElse("a", 0), 1)
+    val t1 = Eq[int](t, m.Size(), 3)
+    val t2 = Eq[int](t1, m.GetOrElse("a", 0), 1)
     return Eq[int](t2, m.GetOrElse("b", 0), 2)
 }
 
@@ -410,7 +410,7 @@ func TestTreeMapFromSlice(t T) T {
 
 func TestTreeMapString(t T) T {
     val empty = EmptyTreeMap[string, int]()
-    var t1 = Eq[string](t, empty.String(), "TreeMap()")
+    val t1 = Eq[string](t, empty.String(), "TreeMap()")
 
     val m = EmptyTreeMap[int, string]().Put(2, "b").Put(1, "a").Put(3, "c")
     // Should be in sorted key order
@@ -424,11 +424,11 @@ func TestTreeMapLarge(t T) T {
     for i := 0; i < 1000; i++ {
         m = m.Put(i, i * 2)
     }
-    var t1 = Eq[int](t, m.Size(), 1000)
-    var t2 = Eq[int](t1, m.GetOrElse(0, -1), 0)
-    var t3 = Eq[int](t2, m.GetOrElse(500, -1), 1000)
-    var t4 = Eq[int](t3, m.GetOrElse(999, -1), 1998)
-    var t5 = Eq[int](t4, m.MinKey(), 0)
+    val t1 = Eq[int](t, m.Size(), 1000)
+    val t2 = Eq[int](t1, m.GetOrElse(0, -1), 0)
+    val t3 = Eq[int](t2, m.GetOrElse(500, -1), 1000)
+    val t4 = Eq[int](t3, m.GetOrElse(999, -1), 1998)
+    val t5 = Eq[int](t4, m.MinKey(), 0)
     return Eq[int](t5, m.MaxKey(), 999)
 }
 
@@ -439,9 +439,9 @@ func TestTreeMapImmutability(t T) T {
     val m2 = m1.Put("b", 2)
     val m3 = m1.Remove("a")
 
-    var t1 = Eq[int](t, m1.Size(), 1)
-    var t2 = Eq[int](t1, m2.Size(), 2)
-    var t3 = Eq[int](t2, m3.Size(), 0)
+    val t1 = Eq[int](t, m1.Size(), 1)
+    val t2 = Eq[int](t1, m2.Size(), 2)
+    val t3 = Eq[int](t2, m3.Size(), 0)
     return IsTrue(t3, m1.Contains("a"))
 }
 
@@ -450,30 +450,30 @@ func TestTreeMapImmutability(t T) T {
 func TestTreeMapSorted(t T) T {
     val m = EmptyTreeMap[int, string]().Put(3, "c").Put(1, "a").Put(2, "b")
     val sorted = m.Sorted()
-    var t1 = Eq[int](t, sorted.Size(), 3)
+    val t1 = Eq[int](t, sorted.Size(), 3)
     // Already in sorted key order
-    var t2 = Eq[int](t1, sorted.Get(0).V1, 1)
-    var t3 = Eq[int](t2, sorted.Get(1).V1, 2)
+    val t2 = Eq[int](t1, sorted.Get(0).V1, 1)
+    val t3 = Eq[int](t2, sorted.Get(1).V1, 2)
     return Eq[int](t3, sorted.Get(2).V1, 3)
 }
 
 func TestTreeMapSortWith(t T) T {
     val m = EmptyTreeMap[string, int]().Put("a", 3).Put("b", 1).Put("c", 2)
     // Sort by value instead of key
-    val sorted = m.SortWith((a Tuple[string, int], b Tuple[string, int]) => a.V2 < b.V2)
-    var t1 = Eq[int](t, sorted.Size(), 3)
-    var t2 = Eq[string](t1, sorted.Get(0).V1, "b")
-    var t3 = Eq[string](t2, sorted.Get(1).V1, "c")
+    val sorted = m.SortWith((a, b) => a.V2 < b.V2)
+    val t1 = Eq[int](t, sorted.Size(), 3)
+    val t2 = Eq[string](t1, sorted.Get(0).V1, "b")
+    val t3 = Eq[string](t2, sorted.Get(1).V1, "c")
     return Eq[string](t3, sorted.Get(2).V1, "a")
 }
 
 func TestTreeMapSortBy(t T) T {
     val m = EmptyTreeMap[string, int]().Put("a", 30).Put("b", 10).Put("c", 20)
     // Sort by value
-    val sorted = m.SortBy[int]((entry Tuple[string, int]) => entry.V2)
-    var t1 = Eq[int](t, sorted.Size(), 3)
-    var t2 = Eq[string](t1, sorted.Get(0).V1, "b")
-    var t3 = Eq[string](t2, sorted.Get(1).V1, "c")
+    val sorted = m.SortBy((entry) => entry.V2)
+    val t1 = Eq[int](t, sorted.Size(), 3)
+    val t2 = Eq[string](t1, sorted.Get(0).V1, "b")
+    val t3 = Eq[string](t2, sorted.Get(1).V1, "c")
     return Eq[string](t3, sorted.Get(2).V1, "a")
 }
 
@@ -498,9 +498,9 @@ func TestTreeMapCustomOrderedKey(t T) T {
     val k3 = OrderedKey(Priority = 1, Name = "gamma")
 
     val m = EmptyTreeMap[OrderedKey, string]().Put(k2, "second").Put(k1, "first").Put(k3, "third")
-    var t1 = Eq[int](t, m.Size(), 3)
+    val t1 = Eq[int](t, m.Size(), 3)
     // Min should be k1 (priority=1, name=alpha)
-    var t2 = Eq[string](t1, m.MinEntry().V2, "first")
+    val t2 = Eq[string](t1, m.MinEntry().V2, "first")
     // Max should be k2 (priority=2)
     return Eq[string](t2, m.MaxEntry().V2, "second")
 }

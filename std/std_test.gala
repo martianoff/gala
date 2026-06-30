@@ -7,28 +7,28 @@ import (
 // === Option Tests ===
 
 func TestSomeNotEmpty(t T) T {
-    var opt = std.Some[int](42)
+    val opt = std.Some(42)
     return IsSome(t, opt)
 }
 
 func TestNoneIsEmpty(t T) T {
-    var opt = std.None[int]()
+    val opt = std.None[int]()
     return IsNone(t, opt)
 }
 
 func TestSomeGet(t T) T {
-    var opt = std.Some[string]("hello")
-    return Eq[string](t, opt.Get(), "hello")
+    val opt = std.Some("hello")
+    return Eq(t, opt.Get(), "hello")
 }
 
 func TestSomeGetOrElse(t T) T {
-    var opt = std.Some[int](42)
-    return Eq[int](t, opt.GetOrElse(0), 42)
+    val opt = std.Some(42)
+    return Eq(t, opt.GetOrElse(0), 42)
 }
 
 func TestNoneGetOrElse(t T) T {
-    var opt = std.None[int]()
-    return Eq[int](t, opt.GetOrElse(99), 99)
+    val opt = std.None[int]()
+    return Eq(t, opt.GetOrElse(99), 99)
 }
 
 func mapIntToString(x int) string {
@@ -39,15 +39,15 @@ func mapIntToString(x int) string {
 }
 
 func TestSomeMap(t T) T {
-    var opt = std.Some[int](42)
-    var mapped = opt.Map[string](mapIntToString)
-    var t1 = IsSome(t, mapped)
-    return Eq[string](t1, mapped.Get(), "forty-two")
+    val opt = std.Some(42)
+    val mapped = opt.Map(mapIntToString)
+    val t1 = IsSome(t, mapped)
+    return Eq(t1, mapped.Get(), "forty-two")
 }
 
 func TestNoneMap(t T) T {
-    var opt = std.None[int]()
-    var mapped = opt.Map[string](mapIntToString)
+    val opt = std.None[int]()
+    val mapped = opt.Map(mapIntToString)
     return IsNone(t, mapped)
 }
 
@@ -56,40 +56,40 @@ func isPositive(x int) bool {
 }
 
 func TestSomeFilterPass(t T) T {
-    var opt = std.Some[int](42)
-    var filtered = opt.Filter(isPositive)
-    var t1 = IsSome(t, filtered)
-    return Eq[int](t1, filtered.Get(), 42)
+    val opt = std.Some(42)
+    val filtered = opt.Filter(isPositive)
+    val t1 = IsSome(t, filtered)
+    return Eq(t1, filtered.Get(), 42)
 }
 
 func TestSomeFilterFail(t T) T {
-    var opt = std.Some[int](-5)
-    var filtered = opt.Filter(isPositive)
+    val opt = std.Some(-5)
+    val filtered = opt.Filter(isPositive)
     return IsNone(t, filtered)
 }
 
 func TestNoneFilter(t T) T {
-    var opt = std.None[int]()
-    var filtered = opt.Filter(isPositive)
+    val opt = std.None[int]()
+    val filtered = opt.Filter(isPositive)
     return IsNone(t, filtered)
 }
 
 // === Either Tests ===
 
 func TestLeftGetLeft(t T) T {
-    var e = std.Left[string, int]("error")
-    return Eq[string](t, e.GetLeft(), "error")
+    val e = std.Left[string, int]("error")
+    return Eq(t, e.GetLeft(), "error")
 }
 
 func TestRightGetRight(t T) T {
-    var e = std.Right[string, int](42)
-    return Eq[int](t, e.GetRight(), 42)
+    val e = std.Right[string, int](42)
+    return Eq(t, e.GetRight(), 42)
 }
 
 func TestEitherSwap(t T) T {
-    var e = std.Left[string, int]("error")
-    var swapped = e.Swap()
-    return Eq[string](t, swapped.GetRight(), "error")
+    val e = std.Left[string, int]("error")
+    val swapped = e.Swap()
+    return Eq(t, swapped.GetRight(), "error")
 }
 
 func handleLeft(s string) int {
@@ -101,15 +101,15 @@ func handleRight(n int) int {
 }
 
 func TestLeftFold(t T) T {
-    var e = std.Left[string, int]("error")
-    var result = e.Fold[int](handleLeft, handleRight)
-    return Eq[int](t, result, -1)
+    val e = std.Left[string, int]("error")
+    val result = e.Fold(handleLeft, handleRight)
+    return Eq(t, result, -1)
 }
 
 func TestRightFold(t T) T {
-    var e = std.Right[string, int](21)
-    var result = e.Fold[int](handleLeft, handleRight)
-    return Eq[int](t, result, 42)
+    val e = std.Right[string, int](21)
+    val result = e.Fold(handleLeft, handleRight)
+    return Eq(t, result, 42)
 }
 
 func doubleInt(x int) int {
@@ -117,13 +117,13 @@ func doubleInt(x int) int {
 }
 
 func TestRightMap(t T) T {
-    var e = std.Right[string, int](21)
-    var mapped = e.Map[int](doubleInt)
-    return Eq[int](t, mapped.GetRight(), 42)
+    val e = std.Right[string, int](21)
+    val mapped = e.Map(doubleInt)
+    return Eq(t, mapped.GetRight(), 42)
 }
 
 func TestLeftMap(t T) T {
-    var e = std.Left[string, int]("error")
-    var mapped = e.Map[int](doubleInt)
-    return Eq[string](t, mapped.GetLeft(), "error")
+    val e = std.Left[string, int]("error")
+    val mapped = e.Map(doubleInt)
+    return Eq(t, mapped.GetLeft(), "error")
 }

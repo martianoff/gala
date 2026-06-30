@@ -1,7 +1,6 @@
 package collection_mutable
 
 import (
-    "fmt"
     "sort"
     . "martianoff/gala/std"
     "martianoff/gala/go_interop"
@@ -105,7 +104,7 @@ func (a *Array[T]) Capacity() int = cap(a.elements)
 // Panics if index is out of bounds.
 func (a *Array[T]) Get(index int) T {
     if (index < 0) || (index >= len(a.elements)) {
-        panic(fmt.Sprintf("Array.Get: index %d out of bounds [0, %d)", index, len(a.elements)))
+        panic(f"Array.Get: index $index out of bounds [0, ${len(a.elements)})")
     }
     return a.elements[index]
 }
@@ -158,7 +157,7 @@ func (a *Array[T]) LastOption() Option[T] {
 // Panics if index is out of bounds.
 func (a *Array[T]) Set(index int, value T) {
     if (index < 0) || (index >= len(a.elements)) {
-        panic(fmt.Sprintf("Array.Set: index %d out of bounds [0, %d)", index, len(a.elements)))
+        panic(f"Array.Set: index $index out of bounds [0, ${len(a.elements)})")
     }
     a.elements[index] = value
 }
@@ -194,7 +193,7 @@ func (a *Array[T]) PrependAll(values []T) {
 // Panics if index is out of bounds (0 <= index <= length).
 func (a *Array[T]) Insert(index int, value T) {
     if (index < 0) || (index > len(a.elements)) {
-        panic(fmt.Sprintf("Array.Insert: index %d out of bounds [0, %d]", index, len(a.elements)))
+        panic(f"Array.Insert: index $index out of bounds [0, ${len(a.elements)}]")
     }
     a.elements = go_interop.SliceInsert(a.elements, index, value)
 }
@@ -203,7 +202,7 @@ func (a *Array[T]) Insert(index int, value T) {
 // Panics if index is out of bounds.
 func (a *Array[T]) RemoveAt(index int) {
     if (index < 0) || (index >= len(a.elements)) {
-        panic(fmt.Sprintf("Array.RemoveAt: index %d out of bounds [0, %d)", index, len(a.elements)))
+        panic(f"Array.RemoveAt: index $index out of bounds [0, ${len(a.elements)})")
     }
     a.elements = go_interop.SliceRemoveAt(a.elements, index)
 }
@@ -654,7 +653,7 @@ func (a *Array[T]) String() string {
         if i > 0 {
             result = result + ", "
         }
-        result = result + fmt.Sprintf("%v", a.elements[i])
+        result = result + s"${a.elements[i]}"
     }
     return result + ")"
 }
@@ -669,7 +668,7 @@ func (a *Array[T]) MkString(sep string) string {
         if i > 0 {
             result = result + sep
         }
-        result = result + fmt.Sprintf("%v", a.elements[i])
+        result = result + s"${a.elements[i]}"
     }
     return result
 }

@@ -59,6 +59,53 @@ func main() { dispatch(1) }`
 	assert.NotContains(t, out, "return bi()")
 }
 
+// TestStatementMatchAfterValueReturningMethod is a regression test for a
+// source-order state leak: a block-bodied, value-returning function/method
+// declared BEFORE a statement-position match left the transformer's
+// "block's last statement is the value" flag set to true, and the later
+// (void) method inherited it — so its trailing bare `match` was not recognized
+// as statement-position and its side-effect-dispatch arms were wrongly forced
+// to unify to one type. The function-declaration transform now restores the
+// flag after each body. The motivating real-world case was the JSON
+// pull-parser's Skip(), declared after the value-returning ReadBool().
+func TestStatementMatchAfterValueReturningMethod(t *testing.T) {
+	trans := newMatchDispatchTranspiler()
+
+	input := `package main
+
+type Dec struct {
+    var pos int
+}
+
+// value-returning, block body, declared BEFORE the statement-position match
+func (d *Dec) readBool() bool {
+    if d.pos > 0 {
+        return true
+    }
+    panic("eof")
+}
+
+func (d *Dec) readStr() string = "s"
+
+func (d *Dec) skip(c int) {
+    c match {
+        case 1 => { d.readStr() }
+        case 2 => { d.readBool() }
+        case _ => { d.pos = d.pos + 1 }
+    }
+}
+
+func main() {
+    val d = &Dec(pos = 1)
+    d.skip(2)
+}`
+
+	out, err := trans.Transpile(input, "stmt_match_order_test.gala")
+	require.NoError(t, err, "statement-position match must be recognized even when a value-returning method precedes it")
+	assert.NotContains(t, out, "return d.readStr()",
+		"discarded arm value must not be wrapped in return (void IIFE expected)")
+}
+
 // Note on scope: discard position is recognized for a match that is itself a
 // statement (the json pull-parser's flat `Skip()`/`writeEscapedJsonString`
 // dispatch). A *nested* match whose value flows up through an enclosing arm

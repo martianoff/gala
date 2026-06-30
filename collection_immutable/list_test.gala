@@ -8,127 +8,127 @@ import (
 // === List Creation Tests ===
 
 func TestEmptyList(t T) T {
-    var list = EmptyList[int]()
-    var t1 = IsTrue(t, list.IsEmpty())
+    val list = EmptyList[int]()
+    val t1 = IsTrue(t, list.IsEmpty())
     return Eq[int](t1, list.Length(), 0)
 }
 
 func TestListOf(t T) T {
-    var list = ListOf[int](1, 2, 3)
-    var t1 = IsFalse(t, list.IsEmpty())
+    val list = ListOf(1, 2, 3)
+    val t1 = IsFalse(t, list.IsEmpty())
     return Eq[int](t1, list.Length(), 3)
 }
 
 func TestListToGoSlice(t T) T {
-    var list = ListOf[int](10, 20, 30)
-    var slice = list.ToGoSlice()
-    var t1 = Eq[int](t, len(slice), 3)
+    val list = ListOf(10, 20, 30)
+    val slice = list.ToGoSlice()
+    val t1 = Eq[int](t, len(slice), 3)
     return Eq[int](t1, slice[0], 10)
 }
 
 // === List Access Tests ===
 
 func TestListHead(t T) T {
-    var list = ListOf[string]("first", "second", "third")
+    val list = ListOf("first", "second", "third")
     return Eq[string](t, list.Head(), "first")
 }
 
 func TestListTail(t T) T {
-    var list = ListOf[int](1, 2, 3)
-    var tail = list.Tail()
-    var t1 = Eq[int](t, tail.Length(), 2)
+    val list = ListOf(1, 2, 3)
+    val tail = list.Tail()
+    val t1 = Eq[int](t, tail.Length(), 2)
     return Eq[int](t1, tail.Head(), 2)
 }
 
 func TestListLast(t T) T {
-    var list = ListOf[string]("first", "second", "third")
+    val list = ListOf("first", "second", "third")
     return Eq[string](t, list.Last(), "third")
 }
 
 func TestListGet(t T) T {
-    var list = ListOf[int](10, 20, 30)
-    var t1 = Eq[int](t, list.Get(0), 10)
-    var t2 = Eq[int](t1, list.Get(1), 20)
+    val list = ListOf(10, 20, 30)
+    val t1 = Eq[int](t, list.Get(0), 10)
+    val t2 = Eq[int](t1, list.Get(1), 20)
     return Eq[int](t2, list.Get(2), 30)
 }
 
 func TestListHeadOption(t T) T {
-    var list = ListOf[int](42)
-    var opt = list.HeadOption()
-    var t1 = IsSome(t, opt)
+    val list = ListOf(42)
+    val opt = list.HeadOption()
+    val t1 = IsSome(t, opt)
     return Eq[int](t1, opt.Get(), 42)
 }
 
 func TestListHeadOptionEmpty(t T) T {
-    var list = EmptyList[int]()
-    var opt = list.HeadOption()
+    val list = EmptyList[int]()
+    val opt = list.HeadOption()
     return IsNone(t, opt)
 }
 
 // === List Modification Tests ===
 
 func TestListPrepend(t T) T {
-    var list = ListOf[int](2, 3)
-    var newList = list.Prepend(1)
-    var t1 = Eq[int](t, newList.Length(), 3)
+    val list = ListOf(2, 3)
+    val newList = list.Prepend(1)
+    val t1 = Eq[int](t, newList.Length(), 3)
     return Eq[int](t1, newList.Head(), 1)
 }
 
 func TestListAppend(t T) T {
-    var list = ListOf[int](1, 2)
-    var newList = list.Append(3)
-    var t1 = Eq[int](t, list.Length(), 2)
-    var t2 = Eq[int](t1, newList.Length(), 3)
+    val list = ListOf(1, 2)
+    val newList = list.Append(3)
+    val t1 = Eq[int](t, list.Length(), 2)
+    val t2 = Eq[int](t1, newList.Length(), 3)
     return Eq[int](t2, newList.Last(), 3)
 }
 
 func TestListUpdated(t T) T {
-    var list = ListOf[int](1, 2, 3)
-    var newList = list.Updated(1, 99)
-    var t1 = Eq[int](t, list.Get(1), 2)
+    val list = ListOf(1, 2, 3)
+    val newList = list.Updated(1, 99)
+    val t1 = Eq[int](t, list.Get(1), 2)
     return Eq[int](t1, newList.Get(1), 99)
 }
 
 func TestListTake(t T) T {
-    var list = ListOf[int](1, 2, 3, 4, 5)
-    var taken = list.Take(3)
-    var t1 = Eq[int](t, taken.Length(), 3)
+    val list = ListOf(1, 2, 3, 4, 5)
+    val taken = list.Take(3)
+    val t1 = Eq[int](t, taken.Length(), 3)
     return Eq[int](t1, taken.Last(), 3)
 }
 
 func TestListDrop(t T) T {
-    var list = ListOf[int](1, 2, 3, 4, 5)
-    var dropped = list.Drop(2)
-    var t1 = Eq[int](t, dropped.Length(), 3)
+    val list = ListOf(1, 2, 3, 4, 5)
+    val dropped = list.Drop(2)
+    val t1 = Eq[int](t, dropped.Length(), 3)
     return Eq[int](t1, dropped.Head(), 3)
 }
 
 func TestListReverse(t T) T {
-    var list = ListOf[int](1, 2, 3)
-    var reversed = list.Reverse()
-    var t1 = Eq[int](t, reversed.Get(0), 3)
-    var t2 = Eq[int](t1, reversed.Get(1), 2)
+    val list = ListOf(1, 2, 3)
+    val reversed = list.Reverse()
+    val t1 = Eq[int](t, reversed.Get(0), 3)
+    val t2 = Eq[int](t1, reversed.Get(1), 2)
     return Eq[int](t2, reversed.Get(2), 1)
 }
 
 func TestListInit(t T) T {
-    var list = ListOf[int](1, 2, 3)
-    var init = list.Init()
-    var t1 = Eq[int](t, init.Length(), 2)
+    val list = ListOf(1, 2, 3)
+    val init = list.Init()
+    val t1 = Eq[int](t, init.Length(), 2)
     return Eq[int](t1, init.Last(), 2)
 }
 
 // === List Search Tests ===
 
 func TestListContains(t T) T {
-    var list = ListOf[int](1, 2, 3)
-    var t1 = IsTrue(t, list.Contains(2))
+    val list = ListOf(1, 2, 3)
+    val t1 = IsTrue(t, list.Contains(2))
     return IsFalse(t1, list.Contains(5))
 }
 
 func TestListIndexOf(t T) T {
-    var list = ListOf[string]("a", "b", "c")
-    var t1 = Eq[int](t, list.IndexOf("b"), 1)
+    val list = ListOf("a", "b", "c")
+    val t1 = Eq[int](t, list.IndexOf("b"), 1)
     return Eq[int](t1, list.IndexOf("z"), -1)
 }
 
@@ -139,10 +139,10 @@ func doubleValue(x int) int {
 }
 
 func TestListMap(t T) T {
-    var list = ListOf[int](1, 2, 3)
-    var mapped = list.Map[int](doubleValue)
-    var t1 = Eq[int](t, mapped.Get(0), 2)
-    var t2 = Eq[int](t1, mapped.Get(1), 4)
+    val list = ListOf(1, 2, 3)
+    val mapped = list.Map(doubleValue)
+    val t1 = Eq[int](t, mapped.Get(0), 2)
+    val t2 = Eq[int](t1, mapped.Get(1), 4)
     return Eq[int](t2, mapped.Get(2), 6)
 }
 
@@ -151,10 +151,10 @@ func isEven(x int) bool {
 }
 
 func TestListFilter(t T) T {
-    var list = ListOf[int](1, 2, 3, 4, 5)
-    var filtered = list.Filter(isEven)
-    var t1 = Eq[int](t, filtered.Length(), 2)
-    var t2 = Eq[int](t1, filtered.Get(0), 2)
+    val list = ListOf(1, 2, 3, 4, 5)
+    val filtered = list.Filter(isEven)
+    val t1 = Eq[int](t, filtered.Length(), 2)
+    val t2 = Eq[int](t1, filtered.Get(0), 2)
     return Eq[int](t2, filtered.Get(1), 4)
 }
 
@@ -163,8 +163,8 @@ func sum(acc int, x int) int {
 }
 
 func TestListFoldLeft(t T) T {
-    var list = ListOf[int](1, 2, 3, 4)
-    var result = list.FoldLeft[int](0, sum)
+    val list = ListOf(1, 2, 3, 4)
+    val result = list.FoldLeft(0, sum)
     return Eq[int](t, result, 10)
 }
 
@@ -173,8 +173,8 @@ func multiply(x int, acc int) int {
 }
 
 func TestListFoldRight(t T) T {
-    var list = ListOf[int](1, 2, 3, 4)
-    var result = list.FoldRight[int](1, multiply)
+    val list = ListOf(1, 2, 3, 4)
+    val result = list.FoldRight(1, multiply)
     return Eq[int](t, result, 24)
 }
 
@@ -185,14 +185,14 @@ func isGreaterThanZero(x int) bool {
 }
 
 func TestListExists(t T) T {
-    var list = ListOf[int](-1, 0, 1, 2)
+    val list = ListOf(-1, 0, 1, 2)
     return IsTrue(t, list.Exists(isGreaterThanZero))
 }
 
 func TestListForAll(t T) T {
-    var list1 = ListOf[int](1, 2, 3)
-    var list2 = ListOf[int](-1, 0, 1)
-    var t1 = IsTrue(t, list1.ForAll(isGreaterThanZero))
+    val list1 = ListOf(1, 2, 3)
+    val list2 = ListOf(-1, 0, 1)
+    val t1 = IsTrue(t, list1.ForAll(isGreaterThanZero))
     return IsFalse(t1, list2.ForAll(isGreaterThanZero))
 }
 
@@ -201,56 +201,56 @@ func isGreaterThanTen(x int) bool {
 }
 
 func TestListFind(t T) T {
-    var list = ListOf[int](5, 15, 25)
-    var found = list.Find(isGreaterThanTen)
-    var t1 = IsSome(t, found)
+    val list = ListOf(5, 15, 25)
+    val found = list.Find(isGreaterThanTen)
+    val t1 = IsSome(t, found)
     return Eq[int](t1, found.Get(), 15)
 }
 
 func TestListFindNone(t T) T {
-    var list = ListOf[int](1, 2, 3)
-    var found = list.Find(isGreaterThanTen)
+    val list = ListOf(1, 2, 3)
+    val found = list.Find(isGreaterThanTen)
     return IsNone(t, found)
 }
 
 func TestListCount(t T) T {
-    var list = ListOf[int](1, 2, 3, 4, 5)
-    var count = list.Count(isEven)
+    val list = ListOf(1, 2, 3, 4, 5)
+    val count = list.Count(isEven)
     return Eq[int](t, count, 2)
 }
 
 // === List Utility Tests ===
 
 func TestListDistinct(t T) T {
-    var list = ListOf[int](1, 2, 2, 3, 3, 3)
-    var distinct = list.Distinct()
+    val list = ListOf(1, 2, 2, 3, 3, 3)
+    val distinct = list.Distinct()
     return Eq[int](t, distinct.Length(), 3)
 }
 
 func TestListAppendAll(t T) T {
-    var list1 = ListOf[int](1, 2)
-    var list2 = ListOf[int](3, 4)
-    var combined = list1.AppendAll(list2)
-    var t1 = Eq[int](t, combined.Length(), 4)
-    var t2 = Eq[int](t1, combined.Get(0), 1)
+    val list1 = ListOf(1, 2)
+    val list2 = ListOf(3, 4)
+    val combined = list1.AppendAll(list2)
+    val t1 = Eq[int](t, combined.Length(), 4)
+    val t2 = Eq[int](t1, combined.Get(0), 1)
     return Eq[int](t2, combined.Get(3), 4)
 }
 
 func TestListPrependAll(t T) T {
-    var list1 = ListOf[int](3, 4)
-    var list2 = ListOf[int](1, 2)
-    var combined = list1.PrependAll(list2)
-    var t1 = Eq[int](t, combined.Length(), 4)
+    val list1 = ListOf(3, 4)
+    val list2 = ListOf(1, 2)
+    val combined = list1.PrependAll(list2)
+    val t1 = Eq[int](t, combined.Length(), 4)
     return Eq[int](t1, combined.Head(), 1)
 }
 
 func TestListString(t T) T {
-    var list = ListOf[int](1, 2, 3)
+    val list = ListOf(1, 2, 3)
     return Eq[string](t, list.String(), "List(1, 2, 3)")
 }
 
 func TestEmptyListString(t T) T {
-    var list = EmptyList[int]()
+    val list = EmptyList[int]()
     return Eq[string](t, list.String(), "List()")
 }
 
@@ -259,16 +259,16 @@ func lessThanThree(x int) bool {
 }
 
 func TestListTakeWhile(t T) T {
-    var list = ListOf[int](1, 2, 3, 4, 5)
-    var taken = list.TakeWhile(lessThanThree)
-    var t1 = Eq[int](t, taken.Length(), 2)
+    val list = ListOf(1, 2, 3, 4, 5)
+    val taken = list.TakeWhile(lessThanThree)
+    val t1 = Eq[int](t, taken.Length(), 2)
     return Eq[int](t1, taken.Last(), 2)
 }
 
 func TestListDropWhile(t T) T {
-    var list = ListOf[int](1, 2, 3, 4, 5)
-    var dropped = list.DropWhile(lessThanThree)
-    var t1 = Eq[int](t, dropped.Length(), 3)
+    val list = ListOf(1, 2, 3, 4, 5)
+    val dropped = list.DropWhile(lessThanThree)
+    val t1 = Eq[int](t, dropped.Length(), 3)
     return Eq[int](t1, dropped.Head(), 3)
 }
 
@@ -276,39 +276,39 @@ func TestListDropWhile(t T) T {
 
 // Test using HeadOption with GetOrElse (functional pattern)
 func TestListPatternMatchHeadOption(t T) T {
-    var empty = EmptyList[int]()
-    var nonEmpty = ListOf[int](42, 2, 3)
+    val empty = EmptyList[int]()
+    val nonEmpty = ListOf(42, 2, 3)
     // GetOrElse is the functional way to handle Option
-    var t1 = Eq[int](t, empty.HeadOption().GetOrElse(-1), -1)
+    val t1 = Eq[int](t, empty.HeadOption().GetOrElse(-1), -1)
     return Eq[int](t1, nonEmpty.HeadOption().GetOrElse(-1), 42)
 }
 
 // Test using GetOption with GetOrElse for safe access
 func TestListPatternMatchGetOption(t T) T {
-    var list = ListOf[int](10, 20, 30)
-    var t1 = Eq[int](t, list.GetOption(0).GetOrElse(0), 10)
-    var t2 = Eq[int](t1, list.GetOption(1).GetOrElse(0), 20)
-    var t3 = Eq[int](t2, list.GetOption(2).GetOrElse(0), 30)
+    val list = ListOf(10, 20, 30)
+    val t1 = Eq[int](t, list.GetOption(0).GetOrElse(0), 10)
+    val t2 = Eq[int](t1, list.GetOption(1).GetOrElse(0), 20)
+    val t3 = Eq[int](t2, list.GetOption(2).GetOrElse(0), 30)
     return Eq[int](t3, list.GetOption(99).GetOrElse(0), 0)
 }
 
 // Test processing list with isEmpty check (functional pattern)
 func TestListEmptyNonEmptyCheck(t T) T {
-    var empty = EmptyList[int]()
-    var nonEmpty = ListOf[int](1, 2, 3)
-    var t1 = IsTrue(t, empty.IsEmpty())
-    var t2 = IsFalse(t1, nonEmpty.IsEmpty())
-    var t3 = IsFalse(t2, empty.NonEmpty())
+    val empty = EmptyList[int]()
+    val nonEmpty = ListOf(1, 2, 3)
+    val t1 = IsTrue(t, empty.IsEmpty())
+    val t2 = IsFalse(t1, nonEmpty.IsEmpty())
+    val t3 = IsFalse(t2, empty.NonEmpty())
     return IsTrue(t3, nonEmpty.NonEmpty())
 }
 
 // Test Find with pattern matching behavior
 func TestListFindPattern(t T) T {
-    var list = ListOf[int](1, 5, 10, 15)
-    var found = list.Find(isGreaterThanTen)
-    var notFound = list.Find((x int) => x > 100)
-    var t1 = IsSome(t, found)
-    var t2 = Eq[int](t1, found.GetOrElse(0), 15)
+    val list = ListOf(1, 5, 10, 15)
+    val found = list.Find(isGreaterThanTen)
+    val notFound = list.Find((x) => x > 100)
+    val t1 = IsSome(t, found)
+    val t2 = Eq[int](t1, found.GetOrElse(0), 15)
     return IsNone(t2, notFound)
 }
 
@@ -316,105 +316,105 @@ func TestListFindPattern(t T) T {
 
 func TestListPrependImmutability(t T) T {
     // Original list should remain unchanged after prepend
-    var original = ListOf[int](2, 3, 4)
-    var modified = original.Prepend(1)
-    var t1 = Eq[int](t, original.Length(), 3)
-    var t2 = Eq[int](t1, modified.Length(), 4)
-    var t3 = Eq[int](t2, original.Head(), 2)
+    val original = ListOf(2, 3, 4)
+    val modified = original.Prepend(1)
+    val t1 = Eq[int](t, original.Length(), 3)
+    val t2 = Eq[int](t1, modified.Length(), 4)
+    val t3 = Eq[int](t2, original.Head(), 2)
     return Eq[int](t3, modified.Head(), 1)
 }
 
 func TestListAppendImmutability(t T) T {
     // Original list should remain unchanged after append
-    var original = ListOf[int](1, 2, 3)
-    var modified = original.Append(4)
-    var t1 = Eq[int](t, original.Length(), 3)
-    var t2 = Eq[int](t1, modified.Length(), 4)
-    var t3 = Eq[int](t2, original.Last(), 3)
+    val original = ListOf(1, 2, 3)
+    val modified = original.Append(4)
+    val t1 = Eq[int](t, original.Length(), 3)
+    val t2 = Eq[int](t1, modified.Length(), 4)
+    val t3 = Eq[int](t2, original.Last(), 3)
     return Eq[int](t3, modified.Last(), 4)
 }
 
 func TestListUpdatedImmutability(t T) T {
     // Original list should remain unchanged after update
-    var original = ListOf[int](1, 2, 3)
-    var modified = original.Updated(1, 99)
-    var t1 = Eq[int](t, original.Get(1), 2)
-    var t2 = Eq[int](t1, modified.Get(1), 99)
+    val original = ListOf(1, 2, 3)
+    val modified = original.Updated(1, 99)
+    val t1 = Eq[int](t, original.Get(1), 2)
+    val t2 = Eq[int](t1, modified.Get(1), 99)
     // Verify other elements unchanged
-    var t3 = Eq[int](t2, original.Get(0), 1)
+    val t3 = Eq[int](t2, original.Get(0), 1)
     return Eq[int](t3, original.Get(2), 3)
 }
 
 func TestListTailImmutability(t T) T {
     // Original list should remain unchanged after tail
-    var original = ListOf[int](1, 2, 3)
-    var tail = original.Tail()
-    var t1 = Eq[int](t, original.Length(), 3)
-    var t2 = Eq[int](t1, tail.Length(), 2)
+    val original = ListOf(1, 2, 3)
+    val tail = original.Tail()
+    val t1 = Eq[int](t, original.Length(), 3)
+    val t2 = Eq[int](t1, tail.Length(), 2)
     return Eq[int](t2, original.Head(), 1)
 }
 
 func TestListFilterImmutability(t T) T {
     // Original list should remain unchanged after filter
-    var original = ListOf[int](1, 2, 3, 4, 5)
-    var filtered = original.Filter(isEven)
-    var t1 = Eq[int](t, original.Length(), 5)
-    var t2 = Eq[int](t1, filtered.Length(), 2)
+    val original = ListOf(1, 2, 3, 4, 5)
+    val filtered = original.Filter(isEven)
+    val t1 = Eq[int](t, original.Length(), 5)
+    val t2 = Eq[int](t1, filtered.Length(), 2)
     // Original still has all elements
-    var t3 = Eq[int](t2, original.Get(0), 1)
+    val t3 = Eq[int](t2, original.Get(0), 1)
     return Eq[int](t3, original.Get(4), 5)
 }
 
 func TestListMapImmutability(t T) T {
     // Original list should remain unchanged after map
-    var original = ListOf[int](1, 2, 3)
-    var mapped = original.Map[int](doubleValue)
-    var t1 = Eq[int](t, original.Get(0), 1)
-    var t2 = Eq[int](t1, original.Get(1), 2)
-    var t3 = Eq[int](t2, original.Get(2), 3)
-    var t4 = Eq[int](t3, mapped.Get(0), 2)
+    val original = ListOf(1, 2, 3)
+    val mapped = original.Map(doubleValue)
+    val t1 = Eq[int](t, original.Get(0), 1)
+    val t2 = Eq[int](t1, original.Get(1), 2)
+    val t3 = Eq[int](t2, original.Get(2), 3)
+    val t4 = Eq[int](t3, mapped.Get(0), 2)
     return Eq[int](t4, mapped.Get(1), 4)
 }
 
 func TestListReverseImmutability(t T) T {
     // Original list should remain unchanged after reverse
-    var original = ListOf[int](1, 2, 3)
-    var reversed = original.Reverse()
-    var t1 = Eq[int](t, original.Get(0), 1)
-    var t2 = Eq[int](t1, original.Get(2), 3)
-    var t3 = Eq[int](t2, reversed.Get(0), 3)
+    val original = ListOf(1, 2, 3)
+    val reversed = original.Reverse()
+    val t1 = Eq[int](t, original.Get(0), 1)
+    val t2 = Eq[int](t1, original.Get(2), 3)
+    val t3 = Eq[int](t2, reversed.Get(0), 3)
     return Eq[int](t3, reversed.Get(2), 1)
 }
 
 func TestListMultipleModificationsImmutability(t T) T {
     // Chain of operations should not affect original
-    var original = ListOf[int](1, 2, 3)
-    var step1 = original.Append(4)
-    var step2 = step1.Prepend(0)
-    var step3 = step2.Updated(2, 99)
+    val original = ListOf(1, 2, 3)
+    val step1 = original.Append(4)
+    val step2 = step1.Prepend(0)
+    val step3 = step2.Updated(2, 99)
     // Original unchanged
-    var t1 = Eq[int](t, original.Length(), 3)
-    var t2 = Eq[int](t1, original.Get(0), 1)
+    val t1 = Eq[int](t, original.Length(), 3)
+    val t2 = Eq[int](t1, original.Get(0), 1)
     // step1 unchanged
-    var t3 = Eq[int](t2, step1.Length(), 4)
-    var t4 = Eq[int](t3, step1.Get(0), 1)
+    val t3 = Eq[int](t2, step1.Length(), 4)
+    val t4 = Eq[int](t3, step1.Get(0), 1)
     // step2 unchanged
-    var t5 = Eq[int](t4, step2.Length(), 5)
-    var t6 = Eq[int](t5, step2.Get(0), 0)
+    val t5 = Eq[int](t4, step2.Length(), 5)
+    val t6 = Eq[int](t5, step2.Get(0), 0)
     // step3 has all modifications
-    var t7 = Eq[int](t6, step3.Length(), 5)
+    val t7 = Eq[int](t6, step3.Length(), 5)
     return Eq[int](t7, step3.Get(2), 99)
 }
 
 // List shares structure with prepended elements
 func TestListStructuralSharing(t T) T {
-    var base = ListOf[int](2, 3, 4)
-    var extended1 = base.Prepend(1)
-    var extended2 = base.Prepend(0)
+    val base = ListOf(2, 3, 4)
+    val extended1 = base.Prepend(1)
+    val extended2 = base.Prepend(0)
     // Both extended lists share the same tail (base)
-    var t1 = Eq[int](t, extended1.Tail().Head(), 2)
-    var t2 = Eq[int](t1, extended2.Tail().Head(), 2)
+    val t1 = Eq[int](t, extended1.Tail().Head(), 2)
+    val t2 = Eq[int](t1, extended2.Tail().Head(), 2)
     // But have different heads
-    var t3 = Eq[int](t2, extended1.Head(), 1)
+    val t3 = Eq[int](t2, extended1.Head(), 1)
     return Eq[int](t3, extended2.Head(), 0)
 }

@@ -10,7 +10,7 @@ import (
 // Regex wraps a compiled regular expression with pattern matching support.
 type Regex struct {
     Pattern string
-    var Re  *regexp.Regexp
+    Re      *regexp.Regexp
 }
 
 // Compile compiles a regular expression pattern.
@@ -35,10 +35,7 @@ func (r Regex) Matches(s string) bool = r.Re.MatchString(s)
 // FindFirst returns the first match as Option[string].
 func (r Regex) FindFirst(s string) Option[string] {
     val result = r.Re.FindString(s)
-    if result == "" {
-        return None[string]()
-    }
-    return Some(result)
+    return When(result != "", result)
 }
 
 // FindAll returns all non-overlapping matches as an Array.
@@ -50,10 +47,7 @@ func (r Regex) FindAll(s string) Array[string] {
 // FindGroups returns the first match with capture groups as Option[Array[string]].
 func (r Regex) FindGroups(s string) Option[Array[string]] {
     val result = r.Re.FindStringSubmatch(s)
-    if result == nil {
-        return None[Array[string]]()
-    }
-    return Some[Array[string]](ArrayFromSlice(result))
+    return When(result != nil, ArrayFromSlice(result))
 }
 
 // ReplaceAll replaces all matches with the replacement string.
@@ -77,10 +71,7 @@ func (r Regex) Split(s string) Array[string] {
 //   }
 func (r Regex) Unapply(s string) Option[Array[string]] {
     val result = r.Re.FindStringSubmatch(s)
-    if result == nil {
-        return None[Array[string]]()
-    }
-    if len(result) < 2 {
+    if result == nil || len(result) < 2 {
         return None[Array[string]]()
     }
     return Some[Array[string]](ArrayFromSlice(go_interop.SliceFrom(result, 1)))

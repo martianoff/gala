@@ -367,15 +367,19 @@ func createServer(host string, port int = 8080, tls bool = true, maxConnections 
 - **Single-type-param generic struct constructors**: `Box[int](Value = 42)` → `Box(Value = 42)` — Go infers the single type param from the named field value
 - **Single-type-param generic function calls**: `Try[int](f)`, `NewCons[int](head, tail)` — argument types determine the type param
 - **Helper constructors**: `Some[int](42)`, `ListOf[int](1, 2, 3)` — element values determine type params
-- **Zero-arg sealed-variant constructors in an inferable context**: `None[T]()` (and other zero-field cases of a generic sealed type) when the surrounding context pins the type. A zero-field variant has no argument to infer from, but the transpiler propagates an **expected type** downward and injects the type arg, so the explicit `[T]` is redundant. Flag `None[T]()` → `None()` when it appears as any of:
-  - a function body or `return` whose declared return type is `Option[T]` — `func f() Option[T] = None[T]()`
-  - the RHS of a `val`/`var` with an explicit `Option[T]` type — `val x Option[T] = None[T]()`
-  - an argument to a function/constructor whose parameter type is `Option[T]`
-  - an element of a typed container — `ArrayOf[Option[T]](None[T]())`
-  - a `match` arm whose result type is externally pinned (e.g. the match is the body of a function returning `Option[T]`)
-  - an `if`/`else` branch whose sibling branch is a `Some(...)` of known type — `if (c) Some(x) else None[int]()`
+- **Zero-arg sealed-variant constructors when the context pins a CONCRETE type**: `None[int]()` (and other zero-field cases of a generic sealed type) when the surrounding context supplies a **concrete** type argument. A zero-field variant has no argument to infer from, but the transpiler propagates an **expected type** downward and injects the type arg, so the explicit `[…]` is redundant. Flag `None[Concrete]()` → `None()` when it appears as any of:
+  - a function body or `return` whose declared return type is a concrete `Option[Concrete]` — `func parse() Option[int] = None[int]()` → `None()`
+  - the RHS of a `val`/`var` with an explicit concrete `Option[Concrete]` type — `val x Option[string] = None[string]()` → `None()`
+  - an argument to a function/constructor whose parameter type is a concrete `Option[Concrete]`
+  - an element of a typed container — `ArrayOf[Option[int]](None[int]())` → `ArrayOf[Option[int]](None())`
+  - a `match` arm whose result type is externally pinned to a concrete `Option[Concrete]` (e.g. the match is the body of a function returning `Option[int]`)
+  - an `if`/`else` branch whose sibling branch is a `Some(...)` of known concrete type — `if (c) Some(x) else None[int]()`
 
-  Do NOT flag (explicit typing is still required) when none of the above pins the type — most commonly a bare `None[T]()` inside a lambda whose result type is unconstrained, e.g. `arr.Map((x) => None[int]())`: the element-result type is free, so removing `[int]` makes the type undeterminable and the transpiler reports GALA-E0018.
+  Do NOT flag (explicit typing is still REQUIRED) when:
+  - the pinning type is an **abstract type parameter** of the enclosing generic function/method, e.g. `func (a Array[T]) HeadOption() Option[T] = … None[T]()` or `func (o Option[T]) OrElse(...) = … None[T]()`. The transpiler cannot infer an unresolved `T` from context and rejects bare `None()` with `GALA-E0018`. Keep `None[T]()`. (This is the common case inside the collection/std library — do not flag those.)
+  - no context pins the type at all — most commonly a bare `None[int]()` inside a lambda whose result type is unconstrained, e.g. `arr.Map((x) => None[int]())`: removing `[int]` makes the type undeterminable (`GALA-E0018`). Keep it.
+
+  Rule of thumb: only flag when the type argument you would remove is a **concrete** type (`int`, `string`, `Array[JField]`, …), never when it is an in-scope abstract type parameter.
 
 **Exception**: Explicit types ARE required for:
 - `Left[L, R]()`, `Right[L, R]()` — no value arguments to infer from (and Either carries two params)

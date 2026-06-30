@@ -61,20 +61,12 @@ func (d Duration) Minus(other Duration) Duration = Duration(nanos = d.nanos - ot
 func (d Duration) Multiply(factor int64) Duration = Duration(nanos = d.nanos * factor)
 
 // Divide divides by a divisor.
-func (d Duration) Divide(divisor int64) Duration {
-    if divisor == 0 {
-        return d
-    }
-    return Duration(nanos = d.nanos / divisor)
-}
+func (d Duration) Divide(divisor int64) Duration =
+    if (divisor == 0) d else Duration(nanos = d.nanos / divisor)
 
 // Abs returns the absolute value.
-func (d Duration) Abs() Duration {
-    if d.nanos < 0 {
-        return Duration(nanos = -d.nanos)
-    }
-    return d
-}
+func (d Duration) Abs() Duration =
+    if (d.nanos < 0) Duration(nanos = -d.nanos) else d
 
 // Negate returns the negated duration.
 func (d Duration) Negate() Duration = Duration(nanos = -d.nanos)
@@ -154,13 +146,8 @@ func UnixEpoch() Instant = Instant(nanos = int64(0))
 
 // Parse parses a time string with the given layout.
 func Parse(layout string, value string) Option[Instant] {
-    var result time.Time
-    var err error
-    result, err = time.Parse(layout, value)
-    if err != nil {
-        return None[Instant]()
-    }
-    return Some(FromGoTime(result))
+    val result, err = time.Parse(layout, value)
+    return When(err == nil, FromGoTime(result))
 }
 
 // ParseISO parses an ISO 8601 time string.
@@ -208,20 +195,10 @@ func (i Instant) Compare(other Instant) int {
 }
 
 // Min returns the earlier of two instants.
-func (i Instant) Min(other Instant) Instant {
-    if i.nanos < other.nanos {
-        return i
-    }
-    return other
-}
+func (i Instant) Min(other Instant) Instant = if (i.nanos < other.nanos) i else other
 
 // Max returns the later of two instants.
-func (i Instant) Max(other Instant) Instant {
-    if i.nanos > other.nanos {
-        return i
-    }
-    return other
-}
+func (i Instant) Max(other Instant) Instant = if (i.nanos > other.nanos) i else other
 
 // Instant accessors
 
@@ -283,9 +260,7 @@ func (i Instant) YearDay() int = i.ToGoTime().YearDay()
 
 // InTimezone returns the Instant formatted in a specific timezone.
 func (i Instant) InTimezone(tz string) Option[time.Time] {
-    var loc *time.Location
-    var err error
-    loc, err = time.LoadLocation(tz)
+    val loc, err = time.LoadLocation(tz)
     if err != nil {
         return None[time.Time]()
     }

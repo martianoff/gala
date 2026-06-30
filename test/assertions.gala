@@ -1,7 +1,6 @@
 package test
 
 import (
-    "fmt"
     "strings"
 )
 
@@ -12,7 +11,7 @@ import (
 // Eq asserts that actual equals expected.
 func Eq[V any](t T, actual V, expected V) T {
     if !std.Equal(actual, expected) {
-        return t.Error(fmt.Sprintf("expected %v, got %v", expected, actual))
+        return t.Error(s"expected ${expected}, got ${actual}")
     }
     return t
 }
@@ -20,7 +19,7 @@ func Eq[V any](t T, actual V, expected V) T {
 // NotEq asserts that actual does not equal expected.
 func NotEq[V any](t T, actual V, expected V) T {
     if std.Equal(actual, expected) {
-        return t.Error(fmt.Sprintf("expected value different from %v", expected))
+        return t.Error(s"expected value different from ${expected}")
     }
     return t
 }
@@ -28,7 +27,7 @@ func NotEq[V any](t T, actual V, expected V) T {
 // EqMsg asserts that actual equals expected with a custom message.
 func EqMsg[V any](t T, actual V, expected V, msg string) T {
     if !std.Equal(actual, expected) {
-        return t.Error(fmt.Sprintf("%s: expected %v, got %v", msg, expected, actual))
+        return t.Error(s"${msg}: expected ${expected}, got ${actual}")
     }
     return t
 }
@@ -36,7 +35,7 @@ func EqMsg[V any](t T, actual V, expected V, msg string) T {
 // IsNil asserts that the value is nil.
 func IsNil(t T, value any) T {
     if value != nil {
-        return t.Error(fmt.Sprintf("expected nil, got %v", value))
+        return t.Error(s"expected nil, got ${value}")
     }
     return t
 }
@@ -76,7 +75,7 @@ func IsFalse(t T, condition bool) T {
 // Greater asserts that a > b.
 func Greater[V any](t T, a V, b V) T {
     if std.CompareValues(a, b) <= 0 {
-        return t.Error(fmt.Sprintf("expected %v > %v", a, b))
+        return t.Error(s"expected ${a} > ${b}")
     }
     return t
 }
@@ -84,7 +83,7 @@ func Greater[V any](t T, a V, b V) T {
 // GreaterOrEq asserts that a >= b.
 func GreaterOrEq[V any](t T, a V, b V) T {
     if std.CompareValues(a, b) < 0 {
-        return t.Error(fmt.Sprintf("expected %v >= %v", a, b))
+        return t.Error(s"expected ${a} >= ${b}")
     }
     return t
 }
@@ -92,7 +91,7 @@ func GreaterOrEq[V any](t T, a V, b V) T {
 // Less asserts that a < b.
 func Less[V any](t T, a V, b V) T {
     if std.CompareValues(a, b) >= 0 {
-        return t.Error(fmt.Sprintf("expected %v < %v", a, b))
+        return t.Error(s"expected ${a} < ${b}")
     }
     return t
 }
@@ -100,7 +99,7 @@ func Less[V any](t T, a V, b V) T {
 // LessOrEq asserts that a <= b.
 func LessOrEq[V any](t T, a V, b V) T {
     if std.CompareValues(a, b) > 0 {
-        return t.Error(fmt.Sprintf("expected %v <= %v", a, b))
+        return t.Error(s"expected ${a} <= ${b}")
     }
     return t
 }
@@ -112,7 +111,7 @@ func LessOrEq[V any](t T, a V, b V) T {
 // Contains asserts that haystack contains needle.
 func Contains(t T, haystack string, needle string) T {
     if !strings.Contains(haystack, needle) {
-        return t.Error(fmt.Sprintf("expected %q to contain %q", haystack, needle))
+        return t.Error(f"expected $haystack%q to contain $needle%q")
     }
     return t
 }
@@ -120,7 +119,7 @@ func Contains(t T, haystack string, needle string) T {
 // NotContains asserts that haystack does not contain needle.
 func NotContains(t T, haystack string, needle string) T {
     if strings.Contains(haystack, needle) {
-        return t.Error(fmt.Sprintf("expected %q to not contain %q", haystack, needle))
+        return t.Error(f"expected $haystack%q to not contain $needle%q")
     }
     return t
 }
@@ -128,7 +127,7 @@ func NotContains(t T, haystack string, needle string) T {
 // HasPrefix asserts that s starts with prefix.
 func HasPrefix(t T, s string, prefix string) T {
     if !strings.HasPrefix(s, prefix) {
-        return t.Error(fmt.Sprintf("expected %q to have prefix %q", s, prefix))
+        return t.Error(f"expected $s%q to have prefix $prefix%q")
     }
     return t
 }
@@ -136,7 +135,7 @@ func HasPrefix(t T, s string, prefix string) T {
 // HasSuffix asserts that s ends with suffix.
 func HasSuffix(t T, s string, suffix string) T {
     if !strings.HasSuffix(s, suffix) {
-        return t.Error(fmt.Sprintf("expected %q to have suffix %q", s, suffix))
+        return t.Error(f"expected $s%q to have suffix $suffix%q")
     }
     return t
 }
@@ -156,7 +155,7 @@ func IsSome[V any](t T, opt Option[V]) T {
 // IsNone asserts that the Option is None (empty).
 func IsNone[V any](t T, opt Option[V]) T {
     if opt.IsDefined() {
-        return t.Error(fmt.Sprintf("expected None, got Some(%v)", opt.Get()))
+        return t.Error(s"expected None, got Some(${opt.Get()})")
     }
     return t
 }
@@ -168,7 +167,7 @@ func IsNone[V any](t T, opt Option[V]) T {
 // IsSuccess asserts that the Try is Success.
 func IsSuccess[V any](t T, tr Try[V]) T {
     if tr.IsFailure() {
-        return t.Error(fmt.Sprintf("expected Success, got Failure(%v)", tr.GetError()))
+        return t.Error(s"expected Success, got Failure(${tr.GetError()})")
     }
     return t
 }
@@ -176,7 +175,7 @@ func IsSuccess[V any](t T, tr Try[V]) T {
 // IsFailure asserts that the Try is Failure.
 func IsFailure[V any](t T, tr Try[V]) T {
     if tr.IsSuccess() {
-        return t.Error(fmt.Sprintf("expected Failure, got Success(%v)", tr.Get()))
+        return t.Error(s"expected Failure, got Success(${tr.Get()})")
     }
     return t
 }
@@ -204,7 +203,7 @@ func NotPanics(t T, f func()) T {
         return true
     })
     if result.IsFailure() {
-        return t.Error(fmt.Sprintf("expected no panic but got: %v", result.GetError()))
+        return t.Error(s"expected no panic but got: ${result.GetError()}")
     }
     return t
 }

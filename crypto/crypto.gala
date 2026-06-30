@@ -31,27 +31,18 @@ func (d Digest) Bytes() Array[byte] = d.bytes
 func (d Digest) Size() int = d.bytes.Size()
 
 // Hex returns the lowercase hex encoding of the digest.
-func (d Digest) Hex() string {
-    var goBytes = d.bytes.ToGoSlice()
-    return hex.EncodeToString(goBytes)
-}
+func (d Digest) Hex() string = hex.EncodeToString(d.bytes.ToGoSlice())
 
 // Base64 returns the standard (padded) base64 encoding of the digest.
-func (d Digest) Base64() string {
-    var goBytes = d.bytes.ToGoSlice()
-    return base64.StdEncoding.EncodeToString(goBytes)
-}
+func (d Digest) Base64() string = base64.StdEncoding.EncodeToString(d.bytes.ToGoSlice())
 
 // String returns the hex encoding (same as Hex).
 func (d Digest) String() string = d.Hex()
 
 // Equal compares two digests in constant time. Different sizes compare
 // as not equal (subtle.ConstantTimeCompare returns 0 on length mismatch).
-func (d Digest) Equal(other Digest) bool {
-    var a = d.bytes.ToGoSlice()
-    var b = other.bytes.ToGoSlice()
-    return subtle.ConstantTimeCompare(a, b) == 1
-}
+func (d Digest) Equal(other Digest) bool =
+    subtle.ConstantTimeCompare(d.bytes.ToGoSlice(), other.bytes.ToGoSlice()) == 1
 
 // Hasher is a streaming hash. Holds a Go hash.Hash; mutable because the
 // underlying stdlib hashers are inherently stateful. Hasher is the only
@@ -64,8 +55,7 @@ type Hasher struct {
 // Update feeds more bytes into the running hash and returns the receiver
 // for chaining: h.Update(a).Update(b).Finish().
 func (h *Hasher) Update(data Array[byte]) *Hasher {
-    var goData = data.ToGoSlice()
-    var _, _ = h.h.Write(goData)
+    h.h.Write(data.ToGoSlice())
     return h
 }
 
@@ -89,11 +79,9 @@ func (s Sha256) Algorithm() string = "SHA-256"
 func (s Sha256) Size() int = 32
 
 func (s Sha256) Hash(data Array[byte]) Digest {
-    var goData = data.ToGoSlice()
-    var h = sha256.New()
-    var _, _ = h.Write(goData)
-    val sum = h.Sum(nil)
-    return Digest(bytes = ArrayFromSlice(sum))
+    val h = sha256.New()
+    h.Write(data.ToGoSlice())
+    return Digest(bytes = ArrayFromSlice(h.Sum(nil)))
 }
 
 func (s Sha256) NewHasher() *Hasher {
@@ -107,11 +95,9 @@ func (s Sha512) Algorithm() string = "SHA-512"
 func (s Sha512) Size() int = 64
 
 func (s Sha512) Hash(data Array[byte]) Digest {
-    var goData = data.ToGoSlice()
-    var h = sha512.New()
-    var _, _ = h.Write(goData)
-    val sum = h.Sum(nil)
-    return Digest(bytes = ArrayFromSlice(sum))
+    val h = sha512.New()
+    h.Write(data.ToGoSlice())
+    return Digest(bytes = ArrayFromSlice(h.Sum(nil)))
 }
 
 func (s Sha512) NewHasher() *Hasher {
@@ -126,11 +112,9 @@ func (s Sha1) Algorithm() string = "SHA-1"
 func (s Sha1) Size() int = 20
 
 func (s Sha1) Hash(data Array[byte]) Digest {
-    var goData = data.ToGoSlice()
-    var h = sha1.New()
-    var _, _ = h.Write(goData)
-    val sum = h.Sum(nil)
-    return Digest(bytes = ArrayFromSlice(sum))
+    val h = sha1.New()
+    h.Write(data.ToGoSlice())
+    return Digest(bytes = ArrayFromSlice(h.Sum(nil)))
 }
 
 func (s Sha1) NewHasher() *Hasher {
@@ -145,11 +129,9 @@ func (s Md5) Algorithm() string = "MD5"
 func (s Md5) Size() int = 16
 
 func (s Md5) Hash(data Array[byte]) Digest {
-    var goData = data.ToGoSlice()
-    var h = md5.New()
-    var _, _ = h.Write(goData)
-    val sum = h.Sum(nil)
-    return Digest(bytes = ArrayFromSlice(sum))
+    val h = md5.New()
+    h.Write(data.ToGoSlice())
+    return Digest(bytes = ArrayFromSlice(h.Sum(nil)))
 }
 
 func (s Md5) NewHasher() *Hasher {
@@ -170,17 +152,13 @@ func (h HmacSha256) Algorithm() string = "HMAC-SHA256"
 func (h HmacSha256) Size() int = 32
 
 func (h HmacSha256) Sum(data Array[byte]) Digest {
-    var goKey = h.Key.ToGoSlice()
-    var goData = data.ToGoSlice()
-    var mac = hmac.New(sha256.New, goKey)
-    var _, _ = mac.Write(goData)
-    val tag = mac.Sum(nil)
-    return Digest(bytes = ArrayFromSlice(tag))
+    val mac = hmac.New(sha256.New, h.Key.ToGoSlice())
+    mac.Write(data.ToGoSlice())
+    return Digest(bytes = ArrayFromSlice(mac.Sum(nil)))
 }
 
 func (h HmacSha256) NewHasher() *Hasher {
-    var goKey = h.Key.ToGoSlice()
-    return &Hasher(algorithm = "HMAC-SHA256", h = hmac.New(sha256.New, goKey))
+    return &Hasher(algorithm = "HMAC-SHA256", h = hmac.New(sha256.New, h.Key.ToGoSlice()))
 }
 
 // HmacSha512 is HMAC-SHA-512, 64-byte tag.
@@ -190,17 +168,13 @@ func (h HmacSha512) Algorithm() string = "HMAC-SHA512"
 func (h HmacSha512) Size() int = 64
 
 func (h HmacSha512) Sum(data Array[byte]) Digest {
-    var goKey = h.Key.ToGoSlice()
-    var goData = data.ToGoSlice()
-    var mac = hmac.New(sha512.New, goKey)
-    var _, _ = mac.Write(goData)
-    val tag = mac.Sum(nil)
-    return Digest(bytes = ArrayFromSlice(tag))
+    val mac = hmac.New(sha512.New, h.Key.ToGoSlice())
+    mac.Write(data.ToGoSlice())
+    return Digest(bytes = ArrayFromSlice(mac.Sum(nil)))
 }
 
 func (h HmacSha512) NewHasher() *Hasher {
-    var goKey = h.Key.ToGoSlice()
-    return &Hasher(algorithm = "HMAC-SHA512", h = hmac.New(sha512.New, goKey))
+    return &Hasher(algorithm = "HMAC-SHA512", h = hmac.New(sha512.New, h.Key.ToGoSlice()))
 }
 
 // HmacSha1 is HMAC-SHA-1, 20-byte tag. SHA-1 collision resistance is
@@ -211,17 +185,13 @@ func (h HmacSha1) Algorithm() string = "HMAC-SHA1"
 func (h HmacSha1) Size() int = 20
 
 func (h HmacSha1) Sum(data Array[byte]) Digest {
-    var goKey = h.Key.ToGoSlice()
-    var goData = data.ToGoSlice()
-    var mac = hmac.New(sha1.New, goKey)
-    var _, _ = mac.Write(goData)
-    val tag = mac.Sum(nil)
-    return Digest(bytes = ArrayFromSlice(tag))
+    val mac = hmac.New(sha1.New, h.Key.ToGoSlice())
+    mac.Write(data.ToGoSlice())
+    return Digest(bytes = ArrayFromSlice(mac.Sum(nil)))
 }
 
 func (h HmacSha1) NewHasher() *Hasher {
-    var goKey = h.Key.ToGoSlice()
-    return &Hasher(algorithm = "HMAC-SHA1", h = hmac.New(sha1.New, goKey))
+    return &Hasher(algorithm = "HMAC-SHA1", h = hmac.New(sha1.New, h.Key.ToGoSlice()))
 }
 
 // ---- random + constant-time helpers --------------------------------------
@@ -236,8 +206,8 @@ func RandomBytes(n int) Try[Array[byte]] {
     if n == 0 {
         return Success[Array[byte]](EmptyArray[byte]())
     }
-    var buf = ArrayFill[byte](n, byte(0)).ToGoSlice()
-    var _, err = rand.Read(buf)
+    val buf = ArrayFill[byte](n, byte(0)).ToGoSlice()
+    val _, err = rand.Read(buf)
     if err != nil {
         return Failure[Array[byte]](errors.New(s"crypto.RandomBytes: rand.Read failed: ${err.Error()}"))
     }
@@ -248,11 +218,8 @@ func RandomBytes(n int) Try[Array[byte]] {
 // a constant-time comparison. Different lengths return false (subtle
 // handles this). Generalizes Digest.Equal to arbitrary byte slices — useful
 // for comparing tokens, MACs, or any secret-bearing bytes.
-func ConstantTimeEqual(a Array[byte], b Array[byte]) bool {
-    var aGo = a.ToGoSlice()
-    var bGo = b.ToGoSlice()
-    return subtle.ConstantTimeCompare(aGo, bGo) == 1
-}
+func ConstantTimeEqual(a Array[byte], b Array[byte]) bool =
+    subtle.ConstantTimeCompare(a.ToGoSlice(), b.ToGoSlice()) == 1
 
 // ==========================================================================
 // Ed25519 — EdDSA digital signatures (RFC 8032).
@@ -274,7 +241,7 @@ struct Signature(bytes Array[byte])
 // GenerateEd25519KeyPair returns a fresh Ed25519 keypair drawn from
 // crypto/rand. Panics if the OS RNG fails — a broken RNG is unrecoverable.
 func GenerateEd25519KeyPair() Ed25519KeyPair {
-    var pub, priv, err = ed25519.GenerateKey(rand.Reader)
+    val pub, priv, err = ed25519.GenerateKey(rand.Reader)
     if err != nil {
         panic(s"crypto: ed25519.GenerateKey failed: ${err.Error()}")
     }
@@ -287,8 +254,7 @@ func GenerateEd25519KeyPair() Ed25519KeyPair {
 // Ed25519PrivateKeyFromSeed derives the 64-byte Ed25519 private key from a
 // 32-byte seed (the canonical RFC 8032 wire format for an Ed25519 secret).
 func Ed25519PrivateKeyFromSeed(seed Array[byte]) Ed25519PrivateKey {
-    var goSeed = seed.ToGoSlice()
-    val priv = ed25519.NewKeyFromSeed(goSeed)
+    val priv = ed25519.NewKeyFromSeed(seed.ToGoSlice())
     return Ed25519PrivateKey(bytes = ArrayFromSlice[byte](priv))
 }
 
@@ -307,26 +273,19 @@ func SignatureFromBytes(bytes Array[byte]) Signature =
 
 // Sign returns the Ed25519 signature of message under sk.
 func (sk Ed25519PrivateKey) Sign(message Array[byte]) Signature {
-    var goSk  = sk.bytes.ToGoSlice()
-    var goMsg = message.ToGoSlice()
-    val sig = ed25519.Sign(goSk, goMsg)
+    val sig = ed25519.Sign(sk.bytes.ToGoSlice(), message.ToGoSlice())
     return Signature(bytes = ArrayFromSlice[byte](sig))
 }
 
 // Verify reports whether sig is a valid Ed25519 signature on message under pk.
-func (pk Ed25519PublicKey) Verify(message Array[byte], sig Signature) bool {
-    var goPk  = pk.bytes.ToGoSlice()
-    var goMsg = message.ToGoSlice()
-    var goSig = sig.bytes.ToGoSlice()
-    return ed25519.Verify(goPk, goMsg, goSig)
-}
+func (pk Ed25519PublicKey) Verify(message Array[byte], sig Signature) bool =
+    ed25519.Verify(pk.bytes.ToGoSlice(), message.ToGoSlice(), sig.bytes.ToGoSlice())
 
 // PublicKey returns the Ed25519 public key embedded in sk. Go's
 // PrivateKey is laid out as seed||pub, so this is a slice — no curve
 // math needed.
 func (sk Ed25519PrivateKey) PublicKey() Ed25519PublicKey {
-    var goSk = sk.bytes.ToGoSlice()
-    val pub = go_interop.SliceDrop(goSk, 32)
+    val pub = go_interop.SliceDrop(sk.bytes.ToGoSlice(), 32)
     return Ed25519PublicKey(bytes = ArrayFromSlice[byte](pub))
 }
 
@@ -340,25 +299,16 @@ func (sk Ed25519PrivateKey) Bytes() Array[byte] = sk.bytes
 func (s Signature) Bytes() Array[byte] = s.bytes
 
 // Hex returns the lowercase hex encoding of the signature.
-func (s Signature) Hex() string {
-    var goBytes = s.bytes.ToGoSlice()
-    return hex.EncodeToString(goBytes)
-}
+func (s Signature) Hex() string = hex.EncodeToString(s.bytes.ToGoSlice())
 
 // Base64 returns the standard (padded) base64 encoding of the signature.
-func (s Signature) Base64() string {
-    var goBytes = s.bytes.ToGoSlice()
-    return base64.StdEncoding.EncodeToString(goBytes)
-}
+func (s Signature) Base64() string = base64.StdEncoding.EncodeToString(s.bytes.ToGoSlice())
 
 // Equal compares two signatures in constant time. Different sizes
 // compare as not equal (subtle.ConstantTimeCompare returns 0 on length
 // mismatch).
-func (s Signature) Equal(other Signature) bool {
-    var a = s.bytes.ToGoSlice()
-    var b = other.bytes.ToGoSlice()
-    return subtle.ConstantTimeCompare(a, b) == 1
-}
+func (s Signature) Equal(other Signature) bool =
+    subtle.ConstantTimeCompare(s.bytes.ToGoSlice(), other.bytes.ToGoSlice()) == 1
 
 // ==========================================================================
 // X25519 — Diffie-Hellman key agreement (RFC 7748).
@@ -377,7 +327,7 @@ struct X25519KeyPair(Public X25519PublicKey, Private X25519PrivateKey)
 // crypto/rand. Panics if the OS RNG fails — a broken RNG is unrecoverable.
 func GenerateX25519KeyPair() X25519KeyPair {
     val curve = ecdh.X25519()
-    var priv, err = curve.GenerateKey(rand.Reader)
+    val priv, err = curve.GenerateKey(rand.Reader)
     if err != nil {
         panic(s"crypto: ecdh.GenerateKey failed: ${err.Error()}")
     }
@@ -401,17 +351,15 @@ func X25519PublicKeyFromBytes(bytes Array[byte]) X25519PublicKey =
 // and returns an error in those cases — that error becomes Failure here.
 func (sk X25519PrivateKey) ECDH(peer X25519PublicKey) Try[Array[byte]] {
     val curve = ecdh.X25519()
-    var goSk = sk.bytes.ToGoSlice()
-    var privKey, perr = curve.NewPrivateKey(goSk)
+    val privKey, perr = curve.NewPrivateKey(sk.bytes.ToGoSlice())
     if perr != nil {
         return Failure[Array[byte]](perr)
     }
-    var goPk = peer.bytes.ToGoSlice()
-    var pubKey, kerr = curve.NewPublicKey(goPk)
+    val pubKey, kerr = curve.NewPublicKey(peer.bytes.ToGoSlice())
     if kerr != nil {
         return Failure[Array[byte]](kerr)
     }
-    var secret, eerr = privKey.ECDH(pubKey)
+    val secret, eerr = privKey.ECDH(pubKey)
     if eerr != nil {
         return Failure[Array[byte]](eerr)
     }
@@ -423,8 +371,7 @@ func (sk X25519PrivateKey) ECDH(peer X25519PublicKey) Try[Array[byte]] {
 // (corrupt or incorrectly constructed key), not a runtime condition.
 func (sk X25519PrivateKey) PublicKey() X25519PublicKey {
     val curve = ecdh.X25519()
-    var goSk = sk.bytes.ToGoSlice()
-    var privKey, err = curve.NewPrivateKey(goSk)
+    val privKey, err = curve.NewPrivateKey(sk.bytes.ToGoSlice())
     if err != nil {
         panic(s"crypto: invalid X25519 private key: ${err.Error()}")
     }
@@ -445,8 +392,8 @@ func (sk X25519PrivateKey) Bytes() Array[byte] = sk.bytes
 // RandomHex returns a hex-encoded string of n random bytes drawn from
 // crypto/rand (length 2n). Panics if the OS RNG fails.
 func RandomHex(n int) string {
-    var buf = go_interop.SliceWithSize[byte](n)
-    var _, err = rand.Read(buf)
+    val buf = go_interop.SliceWithSize[byte](n)
+    val _, err = rand.Read(buf)
     if err != nil {
         panic(s"crypto: rand.Read failed: ${err.Error()}")
     }
@@ -456,8 +403,8 @@ func RandomHex(n int) string {
 // RandomBase64URL returns base64.RawURLEncoding (URL-safe, no padding) of
 // n random bytes drawn from crypto/rand. Panics if the OS RNG fails.
 func RandomBase64URL(n int) string {
-    var buf = go_interop.SliceWithSize[byte](n)
-    var _, err = rand.Read(buf)
+    val buf = go_interop.SliceWithSize[byte](n)
+    val _, err = rand.Read(buf)
     if err != nil {
         panic(s"crypto: rand.Read failed: ${err.Error()}")
     }

@@ -1,7 +1,6 @@
 package collection_immutable
 
 import (
-    "fmt"
     . "martianoff/gala/std"
     "martianoff/gala/go_interop"
 )
@@ -174,7 +173,7 @@ func (l List[T]) AppendAll(other List[T]) List[T] {
 // Panics if index is out of bounds.
 func (l List[T]) Get(index int) T {
     if (index < 0) || (index >= l.length) {
-        panic(fmt.Sprintf("List.Get: index %d out of bounds [0, %d)", index, l.length))
+        panic(f"List.Get: index $index out of bounds [0, ${l.length})")
     }
     var current = l
     for i := 0; i < index; i++ {
@@ -194,7 +193,7 @@ func (l List[T]) GetOption(index int) Option[T] {
 // Updated returns a new list with element at index replaced. O(n).
 func (l List[T]) Updated(index int, elem T) List[T] {
     if (index < 0) || (index >= l.length) {
-        panic(fmt.Sprintf("List.Updated: index %d out of bounds [0, %d)", index, l.length))
+        panic(f"List.Updated: index $index out of bounds [0, ${l.length})")
     }
     if index == 0 {
         return consList[T](elem, *l.tail)
@@ -336,11 +335,10 @@ func (l List[T]) Collect[U any](pf func(T) Option[U]) List[U] {
         return emptyList[U]()
     }
     val tail = *l.tail
-    val opt = pf(l.head)
-    if opt.IsDefined() {
-        return consList[U](opt.Get(), tail.Collect[U](pf))
+    return pf(l.head) match {
+        case Some(v) => consList[U](v, tail.Collect[U](pf))
+        case None() => tail.Collect[U](pf)
     }
-    return tail.Collect[U](pf)
 }
 
 // Concat returns a new list containing all elements of this list followed by
@@ -651,7 +649,7 @@ func (l List[T]) String() string {
         if !first {
             result = result + ", "
         }
-        result = result + fmt.Sprintf("%v", current.head)
+        result = result + s"${current.head}"
         current = *current.tail
         first = false
     }
@@ -670,7 +668,7 @@ func (l List[T]) MkString(sep string) string {
         if !first {
             result = result + sep
         }
-        result = result + fmt.Sprintf("%v", current.head)
+        result = result + s"${current.head}"
         current = *current.tail
         first = false
     }

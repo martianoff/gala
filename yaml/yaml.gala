@@ -41,11 +41,11 @@ type Codec[T any] struct {}
 // when the user calls Codec[T](naming).
 func (c Codec[T]) Apply(meta StructMeta[T], naming Naming) YamlEncoder[T] {
     val config = NewKeyConfig().WithNaming(naming)
-    return YamlEncoder[T]{
-        Meta:   meta,
-        Config: config,
-        Keys:   BuildKeysSimple(meta.NumFields(), meta.FieldName, naming),
-    }
+    return YamlEncoder[T](
+        Meta = meta,
+        Config = config,
+        Keys = BuildKeysSimple(meta.NumFields(), meta.FieldName, naming),
+    )
 }
 
 // YamlEncoder[T] is a fully typed YAML codec instance.
@@ -74,11 +74,11 @@ func (c YamlEncoder[T]) OmitEmpty(field string) YamlEncoder[T] =
     rebuildEncoder[T](c.Meta, c.Config.WithOmitEmpty(field))
 
 func rebuildEncoder[T any](meta StructMeta[T], config KeyConfig) YamlEncoder[T] =
-    YamlEncoder[T]{
-        Meta:   meta,
-        Config: config,
-        Keys:   BuildKeys(meta.NumFields(), meta.FieldName, config.NamingStrategy, config),
-    }
+    YamlEncoder[T](
+        Meta = meta,
+        Config = config,
+        Keys = BuildKeys(meta.NumFields(), meta.FieldName, config.NamingStrategy, config),
+    )
 
 func nameFnFromKeys(keys Array[string]) func(int) string =
     (i int) => keys.GetOption(i).GetOrElse("")
@@ -116,11 +116,7 @@ func (c YamlEncoder[T]) Decode(s string) Try[T] {
 
 // Unapply attempts to decode a YAML string using the codec's naming config.
 // Returns Option[T] for pattern matching support.
-func (c YamlEncoder[T]) Unapply(s string) Option[T] {
-    val decoded = c.Decode(s)
-    if decoded.IsFailure() { return None[T]() }
-    return Some[T](decoded.Get())
-}
+func (c YamlEncoder[T]) Unapply(s string) Option[T] = c.Decode(s).ToOption()
 
 // buildLookup turns the precomputed reverseKeys map (serialized key → GALA
 // field name) into the index-lookup function DecodeFields expects.
@@ -135,14 +131,6 @@ func buildLookup(
         nameToIdx = nameToIdx.Put(fieldName(i), i)
         i = i + 1
     }
-    return (key string) => {
-        val gName = reverseKeys.Get(key)
-        if gName.IsDefined() {
-            val idx = nameToIdx.Get(gName.Get())
-            if idx.IsDefined() {
-                return idx.Get()
-            }
-        }
-        return -1
-    }
+    return (key string) =>
+        reverseKeys.Get(key).FlatMap((gName) => nameToIdx.Get(gName)).GetOrElse(-1)
 }

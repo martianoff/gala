@@ -1,7 +1,5 @@
 package std
 
-import "fmt"
-
 // Ordered is an interface that types can implement to provide custom ordering.
 // Used by TreeSet and TreeMap for sorted collections.
 //
@@ -188,5 +186,5 @@ func compareValuesUint8s(a uint8, vb any) int {
 }
 
 func panicNotOrderable(v any) int {
-    panic(fmt.Sprintf("CompareValues: type %T does not support ordering", v))
+    panic(f"CompareValues: type $v%T does not support ordering")
 }

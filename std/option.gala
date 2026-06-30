@@ -109,13 +109,7 @@ func (o Option[T]) Filter(p func(T) bool) Option[T] {
 }
 
 // When returns Some(value) if condition is true, None otherwise.
-func When[T any](condition bool, value T) Option[T] {
-    if condition { return Some(value) }
-    return None[T]()
-}
+func When[T any](condition bool, value T) Option[T] = if (condition) Some(value) else None[T]()
 
 // Unless returns Some(value) if condition is false, None otherwise.
-func Unless[T any](condition bool, value T) Option[T] {
-    if !condition { return Some(value) }
-    return None[T]()
-}
+func Unless[T any](condition bool, value T) Option[T] = if (!condition) Some(value) else None[T]()

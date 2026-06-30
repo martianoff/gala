@@ -263,11 +263,10 @@ func (m *TreeMap[K, V]) GetOrElse(key K, defaultValue V) V {
 
 // Apply returns the value for a key. Panics if key not found.
 func (m *TreeMap[K, V]) Apply(key K) V {
-    val opt = m.Get(key)
-    if opt.IsEmpty() {
-        panic(fmt.Sprintf("TreeMap: key not found: %v", key))
+    return m.Get(key) match {
+        case Some(v) => v
+        case None() => panic(s"TreeMap: key not found: $key")
     }
-    return opt.Get()
 }
 
 // === Mutating Operations ===
@@ -999,11 +998,9 @@ func (m *TreeMap[K, V]) PutFrom(other *TreeMap[K, V]) {
 // Merge merges another map, using a function for duplicate keys.
 func (m *TreeMap[K, V]) Merge(other *TreeMap[K, V], f func(V, V) V) {
     other.ForEachKV((k K, v V) => {
-        val existing = m.Get(k)
-        if existing.IsDefined() {
-            m.Put(k, f(existing.Get(), v))
-        } else {
-            m.Put(k, v)
+        m.Get(k) match {
+            case Some(e) => m.Put(k, f(e, v))
+            case None() => m.Put(k, v)
         }
     })
 }
@@ -1072,7 +1069,7 @@ func (m *TreeMap[K, V]) String() string {
         if !first {
             result = result + ", "
         }
-        result = result + fmt.Sprintf("%v -> %v", k, v)
+        result = result + s"$k -> $v"
         first = false
     })
     return result + ")"
@@ -1089,7 +1086,7 @@ func (m *TreeMap[K, V]) MkString(sep string) string {
         if !first {
             result = result + sep
         }
-        result = result + fmt.Sprintf("%v -> %v", k, v)
+        result = result + s"$k -> $v"
         first = false
     })
     return result

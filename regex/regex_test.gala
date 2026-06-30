@@ -7,14 +7,14 @@ import (
 
 func TestMatches(t T) T {
     val r = regex.MustCompile("\\d+")
-    var t1 = IsTrue(t, r.Matches("abc123"))
+    val t1 = IsTrue(t, r.Matches("abc123"))
     return IsFalse(t1, r.Matches("no digits"))
 }
 
 func TestFindFirst(t T) T {
     val r = regex.MustCompile("\\d+")
     val result = r.FindFirst("abc 123 def")
-    return Eq[string](t, result.Get(), "123")
+    return Eq(t, result.Get(), "123")
 }
 
 func TestFindFirstNoMatch(t T) T {
@@ -26,20 +26,20 @@ func TestFindFirstNoMatch(t T) T {
 func TestFindAll(t T) T {
     val r = regex.MustCompile("\\d+")
     val results = r.FindAll("a1 b22 c333")
-    var t1 = Eq[int](t, results.Size(), 3)
-    var t2 = Eq[string](t1, results.Get(0), "1")
-    var t3 = Eq[string](t2, results.Get(1), "22")
-    return Eq[string](t3, results.Get(2), "333")
+    val t1 = Eq(t, results.Size(), 3)
+    val t2 = Eq(t1, results.Get(0), "1")
+    val t3 = Eq(t2, results.Get(1), "22")
+    return Eq(t3, results.Get(2), "333")
 }
 
 func TestUnapplyMatch(t T) T {
     val dateRegex = regex.MustCompile("(\\d{4})-(\\d{2})-(\\d{2})")
     val groups = dateRegex.Unapply("2024-01-15")
-    var t1 = IsTrue(t, groups.IsDefined())
+    val t1 = IsTrue(t, groups.IsDefined())
     val g = groups.Get()
-    var t2 = Eq[string](t1, g.Get(0), "2024")
-    var t3 = Eq[string](t2, g.Get(1), "01")
-    return Eq[string](t3, g.Get(2), "15")
+    val t2 = Eq(t1, g.Get(0), "2024")
+    val t3 = Eq(t2, g.Get(1), "01")
+    return Eq(t3, g.Get(2), "15")
 }
 
 func TestUnapplyNoMatch(t T) T {
@@ -60,18 +60,18 @@ func TestCompileError(t T) T {
 
 func TestReplaceAll(t T) T {
     val r = regex.MustCompile("\\d+")
-    return Eq[string](t, r.ReplaceAll("a1b2c3", "X"), "aXbXcX")
+    return Eq(t, r.ReplaceAll("a1b2c3", "X"), "aXbXcX")
 }
 
 func TestSplit(t T) T {
     val r = regex.MustCompile("[,;\\s]+")
     val parts = r.Split("a, b; c d")
-    var t1 = Eq[int](t, parts.Size(), 4)
-    var t2 = Eq[string](t1, parts.Get(0), "a")
-    return Eq[string](t2, parts.Get(3), "d")
+    val t1 = Eq(t, parts.Size(), 4)
+    val t2 = Eq(t1, parts.Get(0), "a")
+    return Eq(t2, parts.Get(3), "d")
 }
 
 func TestString(t T) T {
     val r = regex.MustCompile("\\d+")
-    return Eq[string](t, r.String(), "Regex(\\d+)")
+    return Eq(t, r.String(), "Regex(\\d+)")
 }
