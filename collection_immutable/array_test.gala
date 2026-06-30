@@ -8,128 +8,128 @@ import (
 // === Array Creation Tests ===
 
 func TestEmptyArray(t T) T {
-    var arr = EmptyArray[int]()
-    var t1 = IsTrue(t, arr.IsEmpty())
+    val arr = EmptyArray[int]()
+    val t1 = IsTrue(t, arr.IsEmpty())
     return Eq[int](t1, arr.Length(), 0)
 }
 
 func TestArrayOf(t T) T {
-    var arr = ArrayOf[int](1, 2, 3)
-    var t1 = IsFalse(t, arr.IsEmpty())
+    val arr = ArrayOf(1, 2, 3)
+    val t1 = IsFalse(t, arr.IsEmpty())
     return Eq[int](t1, arr.Length(), 3)
 }
 
 func TestArrayToGoSlice(t T) T {
-    var arr = ArrayOf[int](10, 20, 30)
-    var slice = arr.ToGoSlice()
-    var t1 = Eq[int](t, len(slice), 3)
+    val arr = ArrayOf(10, 20, 30)
+    val slice = arr.ToGoSlice()
+    val t1 = Eq[int](t, len(slice), 3)
     return Eq[int](t1, slice[0], 10)
 }
 
 // === Array Access Tests ===
 
 func TestArrayGet(t T) T {
-    var arr = ArrayOf[int](10, 20, 30)
-    var t1 = Eq[int](t, arr.Get(0), 10)
-    var t2 = Eq[int](t1, arr.Get(1), 20)
+    val arr = ArrayOf(10, 20, 30)
+    val t1 = Eq[int](t, arr.Get(0), 10)
+    val t2 = Eq[int](t1, arr.Get(1), 20)
     return Eq[int](t2, arr.Get(2), 30)
 }
 
 func TestArrayHead(t T) T {
-    var arr = ArrayOf[string]("first", "second", "third")
+    val arr = ArrayOf("first", "second", "third")
     return Eq[string](t, arr.Head(), "first")
 }
 
 func TestArrayLast(t T) T {
-    var arr = ArrayOf[string]("first", "second", "third")
+    val arr = ArrayOf("first", "second", "third")
     return Eq[string](t, arr.Last(), "third")
 }
 
 func TestArrayHeadOption(t T) T {
-    var arr = ArrayOf[int](42)
-    var opt = arr.HeadOption()
-    var t1 = IsSome(t, opt)
+    val arr = ArrayOf(42)
+    val opt = arr.HeadOption()
+    val t1 = IsSome(t, opt)
     return Eq[int](t1, opt.Get(), 42)
 }
 
 func TestArrayHeadOptionEmpty(t T) T {
-    var arr = EmptyArray[int]()
-    var opt = arr.HeadOption()
+    val arr = EmptyArray[int]()
+    val opt = arr.HeadOption()
     return IsNone(t, opt)
 }
 
 // === Array Modification Tests ===
 
 func TestArrayAppend(t T) T {
-    var arr = ArrayOf[int](1, 2)
-    var newArr = arr.Append(3)
-    var t1 = Eq[int](t, arr.Length(), 2)
-    var t2 = Eq[int](t1, newArr.Length(), 3)
+    val arr = ArrayOf(1, 2)
+    val newArr = arr.Append(3)
+    val t1 = Eq[int](t, arr.Length(), 2)
+    val t2 = Eq[int](t1, newArr.Length(), 3)
     return Eq[int](t2, newArr.Get(2), 3)
 }
 
 func TestArrayPrepend(t T) T {
-    var arr = ArrayOf[int](2, 3)
-    var newArr = arr.Prepend(1)
-    var t1 = Eq[int](t, newArr.Length(), 3)
+    val arr = ArrayOf(2, 3)
+    val newArr = arr.Prepend(1)
+    val t1 = Eq[int](t, newArr.Length(), 3)
     return Eq[int](t1, newArr.Head(), 1)
 }
 
 func TestArrayUpdated(t T) T {
-    var arr = ArrayOf[int](1, 2, 3)
-    var newArr = arr.Updated(1, 99)
-    var t1 = Eq[int](t, arr.Get(1), 2)
+    val arr = ArrayOf(1, 2, 3)
+    val newArr = arr.Updated(1, 99)
+    val t1 = Eq[int](t, arr.Get(1), 2)
     return Eq[int](t1, newArr.Get(1), 99)
 }
 
 func TestArrayTail(t T) T {
-    var arr = ArrayOf[int](1, 2, 3)
-    var tail = arr.Tail()
-    var t1 = Eq[int](t, tail.Length(), 2)
+    val arr = ArrayOf(1, 2, 3)
+    val tail = arr.Tail()
+    val t1 = Eq[int](t, tail.Length(), 2)
     return Eq[int](t1, tail.Head(), 2)
 }
 
 func TestArrayTake(t T) T {
-    var arr = ArrayOf[int](1, 2, 3, 4, 5)
-    var taken = arr.Take(3)
-    var t1 = Eq[int](t, taken.Length(), 3)
+    val arr = ArrayOf(1, 2, 3, 4, 5)
+    val taken = arr.Take(3)
+    val t1 = Eq[int](t, taken.Length(), 3)
     return Eq[int](t1, taken.Last(), 3)
 }
 
 func TestArrayDrop(t T) T {
-    var arr = ArrayOf[int](1, 2, 3, 4, 5)
-    var dropped = arr.Drop(2)
-    var t1 = Eq[int](t, dropped.Length(), 3)
+    val arr = ArrayOf(1, 2, 3, 4, 5)
+    val dropped = arr.Drop(2)
+    val t1 = Eq[int](t, dropped.Length(), 3)
     return Eq[int](t1, dropped.Head(), 3)
 }
 
 func TestArraySlice(t T) T {
-    var arr = ArrayOf[int](1, 2, 3, 4, 5)
-    var sliced = arr.Slice(1, 4)
-    var t1 = Eq[int](t, sliced.Length(), 3)
-    var t2 = Eq[int](t1, sliced.Head(), 2)
+    val arr = ArrayOf(1, 2, 3, 4, 5)
+    val sliced = arr.Slice(1, 4)
+    val t1 = Eq[int](t, sliced.Length(), 3)
+    val t2 = Eq[int](t1, sliced.Head(), 2)
     return Eq[int](t2, sliced.Last(), 4)
 }
 
 func TestArrayReverse(t T) T {
-    var arr = ArrayOf[int](1, 2, 3)
-    var reversed = arr.Reverse()
-    var t1 = Eq[int](t, reversed.Get(0), 3)
-    var t2 = Eq[int](t1, reversed.Get(1), 2)
+    val arr = ArrayOf(1, 2, 3)
+    val reversed = arr.Reverse()
+    val t1 = Eq[int](t, reversed.Get(0), 3)
+    val t2 = Eq[int](t1, reversed.Get(1), 2)
     return Eq[int](t2, reversed.Get(2), 1)
 }
 
 // === Array Search Tests ===
 
 func TestArrayContains(t T) T {
-    var arr = ArrayOf[int](1, 2, 3)
-    var t1 = IsTrue(t, arr.Contains(2))
+    val arr = ArrayOf(1, 2, 3)
+    val t1 = IsTrue(t, arr.Contains(2))
     return IsFalse(t1, arr.Contains(5))
 }
 
 func TestArrayIndexOf(t T) T {
-    var arr = ArrayOf[string]("a", "b", "c")
-    var t1 = Eq[int](t, arr.IndexOf("b"), 1)
+    val arr = ArrayOf("a", "b", "c")
+    val t1 = Eq[int](t, arr.IndexOf("b"), 1)
     return Eq[int](t1, arr.IndexOf("z"), -1)
 }
 
@@ -140,10 +140,10 @@ func doubleValue(x int) int {
 }
 
 func TestArrayMap(t T) T {
-    var arr = ArrayOf[int](1, 2, 3)
-    var mapped = arr.Map[int](doubleValue)
-    var t1 = Eq[int](t, mapped.Get(0), 2)
-    var t2 = Eq[int](t1, mapped.Get(1), 4)
+    val arr = ArrayOf(1, 2, 3)
+    val mapped = arr.Map(doubleValue)
+    val t1 = Eq[int](t, mapped.Get(0), 2)
+    val t2 = Eq[int](t1, mapped.Get(1), 4)
     return Eq[int](t2, mapped.Get(2), 6)
 }
 
@@ -152,10 +152,10 @@ func isEven(x int) bool {
 }
 
 func TestArrayFilter(t T) T {
-    var arr = ArrayOf[int](1, 2, 3, 4, 5)
-    var filtered = arr.Filter(isEven)
-    var t1 = Eq[int](t, filtered.Length(), 2)
-    var t2 = Eq[int](t1, filtered.Get(0), 2)
+    val arr = ArrayOf(1, 2, 3, 4, 5)
+    val filtered = arr.Filter(isEven)
+    val t1 = Eq[int](t, filtered.Length(), 2)
+    val t2 = Eq[int](t1, filtered.Get(0), 2)
     return Eq[int](t2, filtered.Get(1), 4)
 }
 
@@ -164,8 +164,8 @@ func sum(acc int, x int) int {
 }
 
 func TestArrayFoldLeft(t T) T {
-    var arr = ArrayOf[int](1, 2, 3, 4)
-    var result = arr.FoldLeft[int](0, sum)
+    val arr = ArrayOf(1, 2, 3, 4)
+    val result = arr.FoldLeft(0, sum)
     return Eq[int](t, result, 10)
 }
 
@@ -176,14 +176,14 @@ func isGreaterThanZero(x int) bool {
 }
 
 func TestArrayExists(t T) T {
-    var arr = ArrayOf[int](-1, 0, 1, 2)
+    val arr = ArrayOf(-1, 0, 1, 2)
     return IsTrue(t, arr.Exists(isGreaterThanZero))
 }
 
 func TestArrayForAll(t T) T {
-    var arr1 = ArrayOf[int](1, 2, 3)
-    var arr2 = ArrayOf[int](-1, 0, 1)
-    var t1 = IsTrue(t, arr1.ForAll(isGreaterThanZero))
+    val arr1 = ArrayOf(1, 2, 3)
+    val arr2 = ArrayOf(-1, 0, 1)
+    val t1 = IsTrue(t, arr1.ForAll(isGreaterThanZero))
     return IsFalse(t1, arr2.ForAll(isGreaterThanZero))
 }
 
@@ -192,56 +192,56 @@ func isGreaterThanTen(x int) bool {
 }
 
 func TestArrayFind(t T) T {
-    var arr = ArrayOf[int](5, 15, 25)
-    var found = arr.Find(isGreaterThanTen)
-    var t1 = IsSome(t, found)
+    val arr = ArrayOf(5, 15, 25)
+    val found = arr.Find(isGreaterThanTen)
+    val t1 = IsSome(t, found)
     return Eq[int](t1, found.Get(), 15)
 }
 
 func TestArrayFindNone(t T) T {
-    var arr = ArrayOf[int](1, 2, 3)
-    var found = arr.Find(isGreaterThanTen)
+    val arr = ArrayOf(1, 2, 3)
+    val found = arr.Find(isGreaterThanTen)
     return IsNone(t, found)
 }
 
 func TestArrayCount(t T) T {
-    var arr = ArrayOf[int](1, 2, 3, 4, 5)
-    var count = arr.Count(isEven)
+    val arr = ArrayOf(1, 2, 3, 4, 5)
+    val count = arr.Count(isEven)
     return Eq[int](t, count, 2)
 }
 
 // === Array Utility Tests ===
 
 func TestArrayDistinct(t T) T {
-    var arr = ArrayOf[int](1, 2, 2, 3, 3, 3)
-    var distinct = arr.Distinct()
+    val arr = ArrayOf(1, 2, 2, 3, 3, 3)
+    val distinct = arr.Distinct()
     return Eq[int](t, distinct.Length(), 3)
 }
 
 func TestArrayGrouped(t T) T {
-    var arr = ArrayOf[int](1, 2, 3, 4, 5)
-    var grouped = arr.Grouped(2)
-    var t1 = Eq[int](t, grouped.Length(), 3)
-    var t2 = Eq[int](t1, grouped.Get(0).Length(), 2)
+    val arr = ArrayOf(1, 2, 3, 4, 5)
+    val grouped = arr.Grouped(2)
+    val t1 = Eq[int](t, grouped.Length(), 3)
+    val t2 = Eq[int](t1, grouped.Get(0).Length(), 2)
     return Eq[int](t2, grouped.Get(2).Length(), 1)
 }
 
 func TestArrayAppendAll(t T) T {
-    var arr1 = ArrayOf[int](1, 2)
-    var arr2 = ArrayOf[int](3, 4)
-    var combined = arr1.AppendAll(arr2)
-    var t1 = Eq[int](t, combined.Length(), 4)
-    var t2 = Eq[int](t1, combined.Get(0), 1)
+    val arr1 = ArrayOf(1, 2)
+    val arr2 = ArrayOf(3, 4)
+    val combined = arr1.AppendAll(arr2)
+    val t1 = Eq[int](t, combined.Length(), 4)
+    val t2 = Eq[int](t1, combined.Get(0), 1)
     return Eq[int](t2, combined.Get(3), 4)
 }
 
 func TestArrayString(t T) T {
-    var arr = ArrayOf[int](1, 2, 3)
+    val arr = ArrayOf(1, 2, 3)
     return Eq[string](t, arr.String(), "Array(1, 2, 3)")
 }
 
 func TestEmptyArrayString(t T) T {
-    var arr = EmptyArray[int]()
+    val arr = EmptyArray[int]()
     return Eq[string](t, arr.String(), "Array()")
 }
 
@@ -249,39 +249,39 @@ func TestEmptyArrayString(t T) T {
 
 // Test using HeadOption with GetOrElse (functional pattern)
 func TestArrayPatternMatchHeadOption(t T) T {
-    var empty = EmptyArray[int]()
-    var nonEmpty = ArrayOf[int](42, 2, 3)
+    val empty = EmptyArray[int]()
+    val nonEmpty = ArrayOf(42, 2, 3)
     // GetOrElse is the functional way to handle Option
-    var t1 = Eq[int](t, empty.HeadOption().GetOrElse(-1), -1)
+    val t1 = Eq[int](t, empty.HeadOption().GetOrElse(-1), -1)
     return Eq[int](t1, nonEmpty.HeadOption().GetOrElse(-1), 42)
 }
 
 // Test using GetOption with GetOrElse for safe access
 func TestArrayPatternMatchGetOption(t T) T {
-    var arr = ArrayOf[int](10, 20, 30)
-    var t1 = Eq[int](t, arr.GetOption(0).GetOrElse(0), 10)
-    var t2 = Eq[int](t1, arr.GetOption(1).GetOrElse(0), 20)
-    var t3 = Eq[int](t2, arr.GetOption(2).GetOrElse(0), 30)
+    val arr = ArrayOf(10, 20, 30)
+    val t1 = Eq[int](t, arr.GetOption(0).GetOrElse(0), 10)
+    val t2 = Eq[int](t1, arr.GetOption(1).GetOrElse(0), 20)
+    val t3 = Eq[int](t2, arr.GetOption(2).GetOrElse(0), 30)
     return Eq[int](t3, arr.GetOption(99).GetOrElse(0), 0)
 }
 
 // Test processing array with isEmpty check (functional pattern)
 func TestArrayEmptyNonEmptyCheck(t T) T {
-    var empty = EmptyArray[int]()
-    var nonEmpty = ArrayOf[int](1, 2, 3)
-    var t1 = IsTrue(t, empty.IsEmpty())
-    var t2 = IsFalse(t1, nonEmpty.IsEmpty())
-    var t3 = IsFalse(t2, empty.NonEmpty())
+    val empty = EmptyArray[int]()
+    val nonEmpty = ArrayOf(1, 2, 3)
+    val t1 = IsTrue(t, empty.IsEmpty())
+    val t2 = IsFalse(t1, nonEmpty.IsEmpty())
+    val t3 = IsFalse(t2, empty.NonEmpty())
     return IsTrue(t3, nonEmpty.NonEmpty())
 }
 
 // Test Find with pattern matching behavior
 func TestArrayFindPattern(t T) T {
-    var arr = ArrayOf[int](1, 5, 10, 15)
-    var found = arr.Find(isGreaterThanTen)
-    var notFound = arr.Find((x int) => x > 100)
-    var t1 = IsSome(t, found)
-    var t2 = Eq[int](t1, found.GetOrElse(0), 15)
+    val arr = ArrayOf(1, 5, 10, 15)
+    val found = arr.Find(isGreaterThanTen)
+    val notFound = arr.Find((x) => x > 100)
+    val t1 = IsSome(t, found)
+    val t2 = Eq[int](t1, found.GetOrElse(0), 15)
     return IsNone(t2, notFound)
 }
 
@@ -289,94 +289,94 @@ func TestArrayFindPattern(t T) T {
 
 func TestArrayAppendImmutability(t T) T {
     // Original array should remain unchanged after append
-    var original = ArrayOf[int](1, 2, 3)
-    var modified = original.Append(4)
-    var t1 = Eq[int](t, original.Length(), 3)
-    var t2 = Eq[int](t1, modified.Length(), 4)
-    var t3 = Eq[int](t2, original.Get(0), 1)
-    var t4 = Eq[int](t3, original.Get(1), 2)
+    val original = ArrayOf(1, 2, 3)
+    val modified = original.Append(4)
+    val t1 = Eq[int](t, original.Length(), 3)
+    val t2 = Eq[int](t1, modified.Length(), 4)
+    val t3 = Eq[int](t2, original.Get(0), 1)
+    val t4 = Eq[int](t3, original.Get(1), 2)
     return Eq[int](t4, original.Get(2), 3)
 }
 
 func TestArrayPrependImmutability(t T) T {
     // Original array should remain unchanged after prepend
-    var original = ArrayOf[int](2, 3, 4)
-    var modified = original.Prepend(1)
-    var t1 = Eq[int](t, original.Length(), 3)
-    var t2 = Eq[int](t1, modified.Length(), 4)
-    var t3 = Eq[int](t2, original.Head(), 2)
+    val original = ArrayOf(2, 3, 4)
+    val modified = original.Prepend(1)
+    val t1 = Eq[int](t, original.Length(), 3)
+    val t2 = Eq[int](t1, modified.Length(), 4)
+    val t3 = Eq[int](t2, original.Head(), 2)
     return Eq[int](t3, modified.Head(), 1)
 }
 
 func TestArrayUpdatedImmutability(t T) T {
     // Original array should remain unchanged after update
-    var original = ArrayOf[int](1, 2, 3)
-    var modified = original.Updated(1, 99)
-    var t1 = Eq[int](t, original.Get(1), 2)
-    var t2 = Eq[int](t1, modified.Get(1), 99)
+    val original = ArrayOf(1, 2, 3)
+    val modified = original.Updated(1, 99)
+    val t1 = Eq[int](t, original.Get(1), 2)
+    val t2 = Eq[int](t1, modified.Get(1), 99)
     // Verify other elements unchanged
-    var t3 = Eq[int](t2, original.Get(0), 1)
+    val t3 = Eq[int](t2, original.Get(0), 1)
     return Eq[int](t3, original.Get(2), 3)
 }
 
 func TestArrayTailImmutability(t T) T {
     // Original array should remain unchanged after tail
-    var original = ArrayOf[int](1, 2, 3)
-    var tail = original.Tail()
-    var t1 = Eq[int](t, original.Length(), 3)
-    var t2 = Eq[int](t1, tail.Length(), 2)
+    val original = ArrayOf(1, 2, 3)
+    val tail = original.Tail()
+    val t1 = Eq[int](t, original.Length(), 3)
+    val t2 = Eq[int](t1, tail.Length(), 2)
     return Eq[int](t2, original.Head(), 1)
 }
 
 func TestArrayFilterImmutability(t T) T {
     // Original array should remain unchanged after filter
-    var original = ArrayOf[int](1, 2, 3, 4, 5)
-    var filtered = original.Filter(isEven)
-    var t1 = Eq[int](t, original.Length(), 5)
-    var t2 = Eq[int](t1, filtered.Length(), 2)
+    val original = ArrayOf(1, 2, 3, 4, 5)
+    val filtered = original.Filter(isEven)
+    val t1 = Eq[int](t, original.Length(), 5)
+    val t2 = Eq[int](t1, filtered.Length(), 2)
     // Original still has all elements
-    var t3 = Eq[int](t2, original.Get(0), 1)
+    val t3 = Eq[int](t2, original.Get(0), 1)
     return Eq[int](t3, original.Get(4), 5)
 }
 
 func TestArrayMapImmutability(t T) T {
     // Original array should remain unchanged after map
-    var original = ArrayOf[int](1, 2, 3)
-    var mapped = original.Map[int](doubleValue)
-    var t1 = Eq[int](t, original.Get(0), 1)
-    var t2 = Eq[int](t1, original.Get(1), 2)
-    var t3 = Eq[int](t2, original.Get(2), 3)
-    var t4 = Eq[int](t3, mapped.Get(0), 2)
+    val original = ArrayOf(1, 2, 3)
+    val mapped = original.Map(doubleValue)
+    val t1 = Eq[int](t, original.Get(0), 1)
+    val t2 = Eq[int](t1, original.Get(1), 2)
+    val t3 = Eq[int](t2, original.Get(2), 3)
+    val t4 = Eq[int](t3, mapped.Get(0), 2)
     return Eq[int](t4, mapped.Get(1), 4)
 }
 
 func TestArrayReverseImmutability(t T) T {
     // Original array should remain unchanged after reverse
-    var original = ArrayOf[int](1, 2, 3)
-    var reversed = original.Reverse()
-    var t1 = Eq[int](t, original.Get(0), 1)
-    var t2 = Eq[int](t1, original.Get(2), 3)
-    var t3 = Eq[int](t2, reversed.Get(0), 3)
+    val original = ArrayOf(1, 2, 3)
+    val reversed = original.Reverse()
+    val t1 = Eq[int](t, original.Get(0), 1)
+    val t2 = Eq[int](t1, original.Get(2), 3)
+    val t3 = Eq[int](t2, reversed.Get(0), 3)
     return Eq[int](t3, reversed.Get(2), 1)
 }
 
 func TestArrayMultipleModificationsImmutability(t T) T {
     // Chain of operations should not affect original
-    var original = ArrayOf[int](1, 2, 3)
-    var step1 = original.Append(4)
-    var step2 = step1.Prepend(0)
-    var step3 = step2.Updated(2, 99)
+    val original = ArrayOf(1, 2, 3)
+    val step1 = original.Append(4)
+    val step2 = step1.Prepend(0)
+    val step3 = step2.Updated(2, 99)
     // Original unchanged
-    var t1 = Eq[int](t, original.Length(), 3)
-    var t2 = Eq[int](t1, original.Get(0), 1)
+    val t1 = Eq[int](t, original.Length(), 3)
+    val t2 = Eq[int](t1, original.Get(0), 1)
     // step1 unchanged
-    var t3 = Eq[int](t2, step1.Length(), 4)
-    var t4 = Eq[int](t3, step1.Get(0), 1)
+    val t3 = Eq[int](t2, step1.Length(), 4)
+    val t4 = Eq[int](t3, step1.Get(0), 1)
     // step2 unchanged
-    var t5 = Eq[int](t4, step2.Length(), 5)
-    var t6 = Eq[int](t5, step2.Get(0), 0)
+    val t5 = Eq[int](t4, step2.Length(), 5)
+    val t6 = Eq[int](t5, step2.Get(0), 0)
     // step3 has all modifications
-    var t7 = Eq[int](t6, step3.Length(), 5)
+    val t7 = Eq[int](t6, step3.Length(), 5)
     return Eq[int](t7, step3.Get(2), 99)
 }
 
@@ -392,10 +392,10 @@ func TestArrayAppendBeyondBranchingFactor(t T) T {
         arr = arr.Append(i)
     }
     // Verify length
-    var t1 = Eq[int](t, arr.Length(), 100)
+    val t1 = Eq[int](t, arr.Length(), 100)
     // Verify first, middle, and last elements
-    var t2 = Eq[int](t1, arr.Get(0), 0)
-    var t3 = Eq[int](t2, arr.Get(50), 50)
+    val t2 = Eq[int](t1, arr.Get(0), 0)
+    val t3 = Eq[int](t2, arr.Get(50), 50)
     return Eq[int](t3, arr.Get(99), 99)
 }
 
@@ -406,9 +406,9 @@ func TestArrayOfLarge(t T) T {
     for i := 0; i < 50; i++ {
         arr = arr.Append(i * 2)
     }
-    var t1 = Eq[int](t, arr.Length(), 50)
-    var t2 = Eq[int](t1, arr.Get(0), 0)
-    var t3 = Eq[int](t2, arr.Get(25), 50)
+    val t1 = Eq[int](t, arr.Length(), 50)
+    val t2 = Eq[int](t1, arr.Get(0), 0)
+    val t3 = Eq[int](t2, arr.Get(25), 50)
     return Eq[int](t3, arr.Get(49), 98)
 }
 
@@ -419,11 +419,11 @@ func TestArrayFromSliceLarge(t T) T {
     for i := 0; i < 100; i++ {
         slice = append(slice, i)
     }
-    var arr = ArrayFromSlice[int](slice)
-    var t1 = Eq[int](t, arr.Length(), 100)
-    var t2 = Eq[int](t1, arr.Get(0), 0)
-    var t3 = Eq[int](t2, arr.Get(32), 32)  // First element in second node
-    var t4 = Eq[int](t3, arr.Get(64), 64)  // First element in third node
+    val arr = ArrayFromSlice[int](slice)
+    val t1 = Eq[int](t, arr.Length(), 100)
+    val t2 = Eq[int](t1, arr.Get(0), 0)
+    val t3 = Eq[int](t2, arr.Get(32), 32)  // First element in second node
+    val t4 = Eq[int](t3, arr.Get(64), 64)  // First element in third node
     return Eq[int](t4, arr.Get(99), 99)
 }
 
@@ -434,10 +434,10 @@ func TestArrayUpdatedLarge(t T) T {
         arr = arr.Append(i)
     }
     // Update element at position 33 (in second node)
-    var updated = arr.Updated(33, 999)
-    var t1 = Eq[int](t, arr.Get(33), 33)      // Original unchanged
-    var t2 = Eq[int](t1, updated.Get(33), 999) // Updated has new value
-    var t3 = Eq[int](t2, updated.Get(32), 32)  // Adjacent unchanged
+    val updated = arr.Updated(33, 999)
+    val t1 = Eq[int](t, arr.Get(33), 33)      // Original unchanged
+    val t2 = Eq[int](t1, updated.Get(33), 999) // Updated has new value
+    val t3 = Eq[int](t2, updated.Get(32), 32)  // Adjacent unchanged
     return Eq[int](t3, updated.Get(34), 34)    // Adjacent unchanged
 }
 
@@ -445,45 +445,45 @@ func TestArrayUpdatedLarge(t T) T {
 
 // Test multiple prepends that stay within the prefix buffer (< 32)
 func TestArrayPrependMultiple(t T) T {
-    var arr = ArrayOf[int](100, 200, 300)
+    var arr = ArrayOf(100, 200, 300)
     // Prepend 5 elements - should all stay in prefix buffer
     arr = arr.Prepend(5)
     arr = arr.Prepend(4)
     arr = arr.Prepend(3)
     arr = arr.Prepend(2)
     arr = arr.Prepend(1)
-    var t1 = Eq[int](t, arr.Length(), 8)
-    var t2 = Eq[int](t1, arr.Get(0), 1)  // First prepended (most recent at logical 0)
-    var t3 = Eq[int](t2, arr.Get(4), 5)  // Last prepended
-    var t4 = Eq[int](t3, arr.Get(5), 100) // Original first element
+    val t1 = Eq[int](t, arr.Length(), 8)
+    val t2 = Eq[int](t1, arr.Get(0), 1)  // First prepended (most recent at logical 0)
+    val t3 = Eq[int](t2, arr.Get(4), 5)  // Last prepended
+    val t4 = Eq[int](t3, arr.Get(5), 100) // Original first element
     return Eq[int](t4, arr.Get(7), 300) // Original last element
 }
 
 // Test prepend that triggers consolidation (32+ prepends)
 func TestArrayPrependConsolidation(t T) T {
-    var arr = ArrayOf[int](999)
+    var arr = ArrayOf(999)
     // Prepend 35 elements - should trigger consolidation at 32
     for i := 35; i >= 1; i-- {
         arr = arr.Prepend(i)
     }
-    var t1 = Eq[int](t, arr.Length(), 36)
-    var t2 = Eq[int](t1, arr.Get(0), 1)   // First prepended
-    var t3 = Eq[int](t2, arr.Get(34), 35) // Last prepended
+    val t1 = Eq[int](t, arr.Length(), 36)
+    val t2 = Eq[int](t1, arr.Get(0), 1)   // First prepended
+    val t3 = Eq[int](t2, arr.Get(34), 35) // Last prepended
     return Eq[int](t3, arr.Get(35), 999)  // Original element
 }
 
 // Test mixed prepend and append operations
 func TestArrayPrependAndAppendMixed(t T) T {
-    var arr = ArrayOf[int](50)
+    var arr = ArrayOf(50)
     arr = arr.Prepend(25)  // Add to front
     arr = arr.Append(75)   // Add to back
     arr = arr.Prepend(10)  // Add to front again
     arr = arr.Append(90)   // Add to back again
-    var t1 = Eq[int](t, arr.Length(), 5)
-    var t2 = Eq[int](t1, arr.Get(0), 10)  // First (most recent prepend)
-    var t3 = Eq[int](t2, arr.Get(1), 25)  // Second prepend
-    var t4 = Eq[int](t3, arr.Get(2), 50)  // Original
-    var t5 = Eq[int](t4, arr.Get(3), 75)  // First append
+    val t1 = Eq[int](t, arr.Length(), 5)
+    val t2 = Eq[int](t1, arr.Get(0), 10)  // First (most recent prepend)
+    val t3 = Eq[int](t2, arr.Get(1), 25)  // Second prepend
+    val t4 = Eq[int](t3, arr.Get(2), 50)  // Original
+    val t5 = Eq[int](t4, arr.Get(3), 75)  // First append
     return Eq[int](t5, arr.Get(4), 90)    // Second append
 }
 
@@ -491,7 +491,7 @@ func TestArrayPrependAndAppendMixed(t T) T {
 func TestArrayPrependEmpty(t T) T {
     var arr = EmptyArray[int]()
     arr = arr.Prepend(42)
-    var t1 = Eq[int](t, arr.Length(), 1)
+    val t1 = Eq[int](t, arr.Length(), 1)
     return Eq[int](t1, arr.Get(0), 42)
 }
 
@@ -500,41 +500,41 @@ func TestArrayPrependChain(t T) T {
     var arr = EmptyArray[int]()
     // Build array by prepending: result should be 1, 2, 3, 4, 5
     arr = arr.Prepend(5).Prepend(4).Prepend(3).Prepend(2).Prepend(1)
-    var t1 = Eq[int](t, arr.Length(), 5)
-    var t2 = Eq[int](t1, arr.Get(0), 1)
-    var t3 = Eq[int](t2, arr.Get(2), 3)
+    val t1 = Eq[int](t, arr.Length(), 5)
+    val t2 = Eq[int](t1, arr.Get(0), 1)
+    val t3 = Eq[int](t2, arr.Get(2), 3)
     return Eq[int](t3, arr.Get(4), 5)
 }
 
 // Test Updated on array with prefix
 func TestArrayUpdatedWithPrefix(t T) T {
-    var arr = ArrayOf[int](100, 200, 300)
+    var arr = ArrayOf(100, 200, 300)
     arr = arr.Prepend(50)
     arr = arr.Prepend(25)
     // Array is now: [25, 50, 100, 200, 300]
     // Update in prefix (index 0)
-    var updated1 = arr.Updated(0, 999)
-    var t1 = Eq[int](t, updated1.Get(0), 999)
-    var t2 = Eq[int](t1, updated1.Get(1), 50) // Other prefix element unchanged
+    val updated1 = arr.Updated(0, 999)
+    val t1 = Eq[int](t, updated1.Get(0), 999)
+    val t2 = Eq[int](t1, updated1.Get(1), 50) // Other prefix element unchanged
     // Update in tree (index 3)
-    var updated2 = arr.Updated(3, 888)
-    var t3 = Eq[int](t2, updated2.Get(3), 888)
-    var t4 = Eq[int](t3, updated2.Get(0), 25) // Prefix unchanged
+    val updated2 = arr.Updated(3, 888)
+    val t3 = Eq[int](t2, updated2.Get(3), 888)
+    val t4 = Eq[int](t3, updated2.Get(0), 25) // Prefix unchanged
     // Original unchanged
     return Eq[int](t4, arr.Get(0), 25)
 }
 
 // Test that prepend maintains immutability
 func TestArrayPrependImmutabilityDeep(t T) T {
-    var arr1 = ArrayOf[int](100, 200)
-    var arr2 = arr1.Prepend(50)
-    var arr3 = arr2.Prepend(25)
+    val arr1 = ArrayOf(100, 200)
+    val arr2 = arr1.Prepend(50)
+    val arr3 = arr2.Prepend(25)
     // All arrays should be independent
-    var t1 = Eq[int](t, arr1.Length(), 2)
-    var t2 = Eq[int](t1, arr2.Length(), 3)
-    var t3 = Eq[int](t2, arr3.Length(), 4)
-    var t4 = Eq[int](t3, arr1.Get(0), 100) // arr1 unchanged
-    var t5 = Eq[int](t4, arr2.Get(0), 50)  // arr2 has its own state
+    val t1 = Eq[int](t, arr1.Length(), 2)
+    val t2 = Eq[int](t1, arr2.Length(), 3)
+    val t3 = Eq[int](t2, arr3.Length(), 4)
+    val t4 = Eq[int](t3, arr1.Get(0), 100) // arr1 unchanged
+    val t5 = Eq[int](t4, arr2.Get(0), 50)  // arr2 has its own state
     return Eq[int](t5, arr3.Get(0), 25)    // arr3 has its own state
 }
 
@@ -545,8 +545,8 @@ func TestArrayPrependLargeAccess(t T) T {
     for i := 50; i >= 1; i-- {
         arr = arr.Prepend(i)
     }
-    var t1 = Eq[int](t, arr.Length(), 50)
-    var t2 = Eq[int](t1, arr.Get(0), 1)
-    var t3 = Eq[int](t2, arr.Get(24), 25)
+    val t1 = Eq[int](t, arr.Length(), 50)
+    val t2 = Eq[int](t1, arr.Get(0), 1)
+    val t3 = Eq[int](t2, arr.Get(24), 25)
     return Eq[int](t3, arr.Get(49), 50)
 }

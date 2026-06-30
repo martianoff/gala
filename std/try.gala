@@ -163,20 +163,16 @@ func (t Try[T]) ToEither() Either[error, T] {
 
 // FromOption creates a Try from an Option.
 // Returns Success if the Option is Some, Failure with NoSuchElementError if None.
-func FromOption[T any](o Option[T]) Try[T] {
-    if o.IsDefined() {
-        return Success[T](o.Get())
-    }
-    return Failure[T](NoSuchElementError(Message = "Option is None"))
+func FromOption[T any](o Option[T]) Try[T] = o match {
+    case Some(v) => Success[T](v)
+    case None() => Failure[T](NoSuchElementError(Message = "Option is None"))
 }
 
 // FromEitherError creates a Try from an Either[error, T].
 // Returns Success if Right, Failure if Left.
-func FromEitherError[T any](e Either[error, T]) Try[T] {
-    if e.IsRight() {
-        return Success[T](e.GetRight())
-    }
-    return Failure[T](e.GetLeft())
+func FromEitherError[T any](e Either[error, T]) Try[T] = e match {
+    case Right(v) => Success[T](v)
+    case Left(err) => Failure[T](err)
 }
 
 // TryApply executes f and catches any panic, converting it to a Failure.
@@ -201,6 +197,6 @@ func FromError(err error) Try[Void] {
     if err != nil {
         return Failure[Void](err)
     }
-    return Success[Void](Void{})
+    return Success[Void](Void())
 }
 

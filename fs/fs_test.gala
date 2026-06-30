@@ -24,11 +24,11 @@ func TestWriteAndReadFile(t T) T {
     val target = filepath.Join(dir, "hello.txt")
     val payload = "hello, world"
     val w = fs.WriteFileString(target, payload, 0o644)
-    var t1 = IsTrue(t, w.IsSuccess())
+    val t1 = IsTrue(t, w.IsSuccess())
 
     val r = fs.ReadFileString(target)
-    var t2 = IsTrue(t1, r.IsSuccess())
-    return Eq[string](t2, r.Get(), payload)
+    val t2 = IsTrue(t1, r.IsSuccess())
+    return Eq(t2, r.Get(), payload)
 }
 
 func TestReadFileBytesRoundTrip(t T) T {
@@ -36,13 +36,13 @@ func TestReadFileBytesRoundTrip(t T) T {
     defer os.RemoveAll(dir)
 
     val target = filepath.Join(dir, "bytes.bin")
-    val data = ArrayOf[byte](byte(1), byte(2), byte(3), byte(255))
+    val data = ArrayOf(byte(1), byte(2), byte(3), byte(255))
     val w = fs.WriteFile(target, data, 0o644)
-    var t1 = IsTrue(t, w.IsSuccess())
+    val t1 = IsTrue(t, w.IsSuccess())
 
     val r = fs.ReadFile(target)
-    var t2 = IsTrue(t1, r.IsSuccess())
-    return Eq[int](t2, r.Get().Size(), data.Size())
+    val t2 = IsTrue(t1, r.IsSuccess())
+    return Eq(t2, r.Get().Size(), data.Size())
 }
 
 func TestReadFileMissing(t T) T {
@@ -58,10 +58,10 @@ func TestStat(t T) T {
     fs.WriteFileString(target, "abcdef", 0o644)
 
     val info = fs.Stat(target)
-    var t1 = IsTrue(t, info.IsSuccess())
+    val t1 = IsTrue(t, info.IsSuccess())
     val fi = info.Get()
-    var t2 = Eq[string](t1, fi.Name, "info.txt")
-    var t3 = Eq[int64](t2, fi.Size, int64(6))
+    val t2 = Eq(t1, fi.Name, "info.txt")
+    val t3 = Eq(t2, fi.Size, int64(6))
     return IsFalse(t3, fi.IsDir)
 }
 
@@ -70,7 +70,7 @@ func TestStatDirectoryFlag(t T) T {
     defer os.RemoveAll(dir)
 
     val info = fs.Stat(dir)
-    var t1 = IsTrue(t, info.IsSuccess())
+    val t1 = IsTrue(t, info.IsSuccess())
     return IsTrue(t1, info.Get().IsDir)
 }
 
@@ -78,7 +78,7 @@ func TestExists(t T) T {
     val dir = scratchDir("fs_exists")
     defer os.RemoveAll(dir)
 
-    var t1 = IsTrue(t, fs.Exists(dir))
+    val t1 = IsTrue(t, fs.Exists(dir))
     return IsFalse(t1, fs.Exists(filepath.Join(dir, "nope")))
 }
 
@@ -88,13 +88,13 @@ func TestMkdirAll(t T) T {
 
     val nested = filepath.Join(dir, "a", "b", "c")
     val r = fs.MkdirAll(nested, 0o755)
-    var t1 = IsTrue(t, r.IsSuccess())
+    val t1 = IsTrue(t, r.IsSuccess())
     return IsTrue(t1, fs.Exists(nested))
 }
 
 func TestMkdirTemp(t T) T {
     val r = fs.MkdirTemp("", "fs_mkdirtemp_")
-    var t1 = IsTrue(t, r.IsSuccess())
+    val t1 = IsTrue(t, r.IsSuccess())
     val created = r.Get()
     val t2 = IsTrue(t1, fs.Exists(created))
     fs.RemoveAll(created)
@@ -107,9 +107,9 @@ func TestRemoveAll(t T) T {
     fs.MkdirAll(nested, 0o755)
     fs.WriteFileString(filepath.Join(nested, "f.txt"), "data", 0o644)
 
-    var t1 = IsTrue(t, fs.Exists(dir))
+    val t1 = IsTrue(t, fs.Exists(dir))
     val r = fs.RemoveAll(dir)
-    var t2 = IsTrue(t1, r.IsSuccess())
+    val t2 = IsTrue(t1, r.IsSuccess())
     return IsFalse(t2, fs.Exists(dir))
 }
 
@@ -129,7 +129,7 @@ func TestReadDir(t T) T {
     fs.MkdirAll(filepath.Join(dir, "sub"), 0o755)
 
     val r = fs.ReadDir(dir)
-    var t1 = IsTrue(t, r.IsSuccess())
+    val t1 = IsTrue(t, r.IsSuccess())
     val entries = r.Get()
-    return Eq[int](t1, entries.Size(), 3)
+    return Eq(t1, entries.Size(), 3)
 }

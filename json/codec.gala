@@ -3,7 +3,6 @@ package json
 import (
     "bytes"
     "encoding/json"
-    "fmt"
     "strconv"
     "strings"
     . "martianoff/gala/std"
@@ -77,11 +76,7 @@ func (e *JsonEncoderImpl) WriteFloat64(v float64) {
 
 func (e *JsonEncoderImpl) WriteBool(v bool) {
     e.writeCommaIfNeeded()
-    if v {
-        e.buf.WriteString("true")
-    } else {
-        e.buf.WriteString("false")
-    }
+    e.buf.WriteString(if (v) "true" else "false")
     e.needsComma = true
 }
 
@@ -121,7 +116,7 @@ func (e *JsonEncoderImpl) writeEscapedJsonString(s string) {
         } else if c == '\t' {
             e.buf.WriteString("\\t")
         } else if c < 32 {
-            e.buf.WriteString(fmt.Sprintf("\\u%04x", c))
+            e.buf.WriteString(f"\\u${c}%04x")
         } else {
             e.buf.WriteByte(c)
         }
@@ -164,7 +159,7 @@ func (d *JsonDecoderImpl) StartObject() {
     d.consumeElemComma()
     d.skipWs()
     if d.pos >= len(d.data) || d.data[d.pos] != '{' {
-        panic(fmt.Sprintf("json at pos %d: expected '{'", d.pos))
+        panic(s"json at pos ${d.pos}: expected '{'")
     }
     d.pos = d.pos + 1
     d.stack = append(d.stack, 'o')
@@ -174,7 +169,7 @@ func (d *JsonDecoderImpl) StartObject() {
 func (d *JsonDecoderImpl) EndObject() {
     d.skipWs()
     if d.pos >= len(d.data) || d.data[d.pos] != '}' {
-        panic(fmt.Sprintf("json at pos %d: expected '}'", d.pos))
+        panic(s"json at pos ${d.pos}: expected '}'")
     }
     d.pos = d.pos + 1
     d.stack = TruncateBytes(d.stack, len(d.stack) - 1)
@@ -187,7 +182,7 @@ func (d *JsonDecoderImpl) StartArray() {
     d.consumeElemComma()
     d.skipWs()
     if d.pos >= len(d.data) || d.data[d.pos] != '[' {
-        panic(fmt.Sprintf("json at pos %d: expected '['", d.pos))
+        panic(s"json at pos ${d.pos}: expected '['")
     }
     d.pos = d.pos + 1
     d.stack = append(d.stack, 'a')
@@ -197,7 +192,7 @@ func (d *JsonDecoderImpl) StartArray() {
 func (d *JsonDecoderImpl) EndArray() {
     d.skipWs()
     if d.pos >= len(d.data) || d.data[d.pos] != ']' {
-        panic(fmt.Sprintf("json at pos %d: expected ']'", d.pos))
+        panic(s"json at pos ${d.pos}: expected ']'")
     }
     d.pos = d.pos + 1
     d.stack = TruncateBytes(d.stack, len(d.stack) - 1)
@@ -230,7 +225,7 @@ func (d *JsonDecoderImpl) ReadKey() string {
     val key = d.readJsonString()
     d.skipWs()
     if d.pos >= len(d.data) || d.data[d.pos] != ':' {
-        panic(fmt.Sprintf("json at pos %d: expected ':'", d.pos))
+        panic(s"json at pos ${d.pos}: expected ':'")
     }
     d.pos = d.pos + 1
     return key
@@ -248,7 +243,7 @@ func (d *JsonDecoderImpl) ReadInt() int {
     val s = d.readNumberStr()
     val v, err = strconv.Atoi(s)
     if err != nil {
-        panic(fmt.Sprintf("json at pos %d: invalid int %q", d.pos, s))
+        panic(f"json at pos ${d.pos}: invalid int ${s}%q")
     }
     return v
 }
@@ -259,7 +254,7 @@ func (d *JsonDecoderImpl) ReadInt64() int64 {
     val s = d.readNumberStr()
     val v, err = strconv.ParseInt(s, 10, 64)
     if err != nil {
-        panic(fmt.Sprintf("json at pos %d: invalid int64 %q", d.pos, s))
+        panic(f"json at pos ${d.pos}: invalid int64 ${s}%q")
     }
     return v
 }
@@ -270,7 +265,7 @@ func (d *JsonDecoderImpl) ReadFloat64() float64 {
     val s = d.readNumberStr()
     val v, err = strconv.ParseFloat(s, 64)
     if err != nil {
-        panic(fmt.Sprintf("json at pos %d: invalid float %q", d.pos, s))
+        panic(f"json at pos ${d.pos}: invalid float ${s}%q")
     }
     return v
 }
@@ -286,7 +281,7 @@ func (d *JsonDecoderImpl) ReadBool() bool {
         d.pos = d.pos + 5
         return false
     }
-    panic(fmt.Sprintf("json at pos %d: expected boolean", d.pos))
+    panic(s"json at pos ${d.pos}: expected boolean")
 }
 
 func (d *JsonDecoderImpl) ReadRune() rune {
@@ -310,7 +305,7 @@ func (d *JsonDecoderImpl) ReadNull() {
         d.pos = d.pos + 4
         return
     }
-    panic(fmt.Sprintf("json at pos %d: expected null", d.pos))
+    panic(s"json at pos ${d.pos}: expected null")
 }
 
 func (d *JsonDecoderImpl) Skip() {
@@ -318,27 +313,15 @@ func (d *JsonDecoderImpl) Skip() {
     d.skipWs()
     if d.pos >= len(d.data) { return }
     val c = d.data[d.pos]
-    if c == '"' {
-        d.readJsonString()
-        return
+    c match {
+        case '"' => { d.readJsonString() }
+        case '{' => { d.skipBetween('{', '}') }
+        case '[' => { d.skipBetween('[', ']') }
+        case 't' => { d.ReadBool() }
+        case 'f' => { d.ReadBool() }
+        case 'n' => { d.ReadNull() }
+        case _ => { d.readNumberStr() }
     }
-    if c == '{' {
-        d.skipBetween('{', '}')
-        return
-    }
-    if c == '[' {
-        d.skipBetween('[', ']')
-        return
-    }
-    if c == 't' || c == 'f' {
-        d.ReadBool()
-        return
-    }
-    if c == 'n' {
-        d.ReadNull()
-        return
-    }
-    d.readNumberStr()
 }
 
 // --- decoder internal helpers ---
@@ -370,7 +353,7 @@ func (d *JsonDecoderImpl) consumeElemComma() {
 func (d *JsonDecoderImpl) readJsonString() string {
     d.skipWs()
     if d.pos >= len(d.data) || d.data[d.pos] != '"' {
-        panic(fmt.Sprintf("json at pos %d: expected '\"'", d.pos))
+        panic(s"json at pos ${d.pos}: expected '\"'")
     }
     d.pos = d.pos + 1
 
@@ -388,25 +371,26 @@ func (d *JsonDecoderImpl) readJsonString() string {
             }
             val esc = d.data[d.pos]
             d.pos = d.pos + 1
-            if esc == '"' { sb.WriteByte('"') }
-            else if esc == '\\' { sb.WriteByte('\\') }
-            else if esc == '/' { sb.WriteByte('/') }
-            else if esc == 'n' { sb.WriteByte('\n') }
-            else if esc == 'r' { sb.WriteByte('\r') }
-            else if esc == 't' { sb.WriteByte('\t') }
-            else if esc == 'u' {
-                if d.pos + 4 > len(d.data) {
-                    panic("json: incomplete unicode escape")
+            esc match {
+                case '"' => { sb.WriteByte('"') }
+                case '\\' => { sb.WriteByte('\\') }
+                case '/' => { sb.WriteByte('/') }
+                case 'n' => { sb.WriteByte('\n') }
+                case 'r' => { sb.WriteByte('\r') }
+                case 't' => { sb.WriteByte('\t') }
+                case 'u' => {
+                    if d.pos + 4 > len(d.data) {
+                        panic("json: incomplete unicode escape")
+                    }
+                    val hexStr = BytesToString(d.data, d.pos, d.pos + 4)
+                    d.pos = d.pos + 4
+                    val cp, hexErr = strconv.ParseUint(hexStr, 16, 32)
+                    if hexErr != nil {
+                        panic("json: invalid unicode escape")
+                    }
+                    sb.WriteString(RuneToString(rune(cp)))
                 }
-                val hexStr = BytesToString(d.data, d.pos, d.pos + 4)
-                d.pos = d.pos + 4
-                val cp, hexErr = strconv.ParseUint(hexStr, 16, 32)
-                if hexErr != nil {
-                    panic("json: invalid unicode escape")
-                }
-                sb.WriteString(RuneToString(rune(cp)))
-            } else {
-                panic("json: invalid escape sequence")
+                case _ => { panic("json: invalid escape sequence") }
             }
         } else {
             sb.WriteByte(c)

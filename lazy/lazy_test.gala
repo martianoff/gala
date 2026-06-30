@@ -12,7 +12,7 @@ func TestNew(t T) T {
 
 func TestOf(t T) T {
     val l = Of[int](99)
-    var t1 = IsTrue(t, l.IsEvaluated())
+    val t1 = IsTrue(t, l.IsEvaluated())
     return Eq[int](t1, l.Get(), 99)
 }
 
@@ -24,29 +24,29 @@ func TestGetCaching(t T) T {
     })
     val first = l.Get()
     val second = l.Get()
-    var t1 = Eq[int](t, first, 10)
-    var t2 = Eq[int](t1, second, 10)
+    val t1 = Eq[int](t, first, 10)
+    val t2 = Eq[int](t1, second, 10)
     return Eq[int](t2, count, 1)
 }
 
 func TestIsEvaluated(t T) T {
     val l = New[int](() => 5)
-    var t1 = IsFalse(t, l.IsEvaluated())
+    val t1 = IsFalse(t, l.IsEvaluated())
     l.Get()
     return IsTrue(t1, l.IsEvaluated())
 }
 
 func TestMap(t T) T {
     val l = New[int](() => 10)
-    val mapped = l.Map[int]((x int) => x * 2)
-    var t1 = IsFalse(t, mapped.IsEvaluated())
-    var t2 = Eq[int](t1, mapped.Get(), 20)
+    val mapped = l.Map((x) => x * 2)
+    val t1 = IsFalse(t, mapped.IsEvaluated())
+    val t2 = Eq[int](t1, mapped.Get(), 20)
     return IsTrue(t2, mapped.IsEvaluated())
 }
 
 func TestFlatMap(t T) T {
     val l = New[int](() => 5)
-    val chained = l.FlatMap[int]((x int) => New[int](() => x + 3))
-    var t1 = IsFalse(t, chained.IsEvaluated())
+    val chained = l.FlatMap((x) => New[int](() => x + 3))
+    val t1 = IsFalse(t, chained.IsEvaluated())
     return Eq[int](t1, chained.Get(), 8)
 }

@@ -6,9 +6,9 @@ package test
 
 // Case represents a single test case for table-driven tests.
 type Case[In any, Out any] struct {
-    var Name     string
-    var Input    In
-    var Expected Out
+    Name     string
+    Input    In
+    Expected Out
 }
 
 // RunCases runs a series of test cases as subtests.

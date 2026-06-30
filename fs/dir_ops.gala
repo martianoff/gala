@@ -25,10 +25,10 @@ struct WalkEntry(
 // Named CopyFile rather than Copy to avoid colliding with std.Copy,
 // the generic deep-copy helper exported as a prelude symbol.
 func CopyFile(src string, dst string, mode int) Try[bool] = Try[bool](() => {
-    var srcF, openErr = os.Open(src)
+    val srcF, openErr = os.Open(src)
     if openErr != nil { panic(openErr) }
     defer srcF.Close()
-    var dstF, createErr = os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, os.FileMode(mode))
+    val dstF, createErr = os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, os.FileMode(mode))
     if createErr != nil { panic(createErr) }
     defer dstF.Close()
     val _, copyErr = io.Copy(dstF, srcF)

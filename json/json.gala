@@ -40,11 +40,11 @@ type Codec[T any] struct {}
 // when the user calls Codec[T](naming).
 func (c Codec[T]) Apply(meta StructMeta[T], naming Naming) JsonEncoder[T] {
     val config = NewKeyConfig().WithNaming(naming)
-    return JsonEncoder[T]{
-        Meta:   meta,
-        Config: config,
-        Keys:   BuildKeysSimple(meta.NumFields(), meta.FieldName, naming),
-    }
+    return JsonEncoder[T](
+        Meta = meta,
+        Config = config,
+        Keys = BuildKeysSimple(meta.NumFields(), meta.FieldName, naming),
+    )
 }
 
 // JsonEncoder[T] is a fully typed JSON codec instance.
@@ -73,11 +73,11 @@ func (c JsonEncoder[T]) OmitEmpty(field string) JsonEncoder[T] =
     rebuildEncoder[T](c.Meta, c.Config.WithOmitEmpty(field))
 
 func rebuildEncoder[T any](meta StructMeta[T], config KeyConfig) JsonEncoder[T] =
-    JsonEncoder[T]{
-        Meta:   meta,
-        Config: config,
-        Keys:   BuildKeys(meta.NumFields(), meta.FieldName, config.NamingStrategy, config),
-    }
+    JsonEncoder[T](
+        Meta = meta,
+        Config = config,
+        Keys = BuildKeys(meta.NumFields(), meta.FieldName, config.NamingStrategy, config),
+    )
 
 // nameFnFromKeys returns a function that maps a field index to its serialized
 // key.  An empty key signals an omitted field.
@@ -106,11 +106,8 @@ func (c JsonEncoder[T]) Encode(v T) Try[string] {
 }
 
 // EncodePretty serializes a value to a pretty-printed JSON string.
-func (c JsonEncoder[T]) EncodePretty(v T) Try[string] {
-    val result = c.Encode(v)
-    if result.IsFailure() { return result }
-    return PrettyIndent(result.Get(), "  ")
-}
+func (c JsonEncoder[T]) EncodePretty(v T) Try[string] =
+    c.Encode(v).FlatMap((s) => PrettyIndent(s, "  "))
 
 // Decode deserializes a JSON string into Try[T] (zero-reflection).
 // DecodeFields panics on malformed input; Try() catches the panic and
@@ -126,11 +123,7 @@ func (c JsonEncoder[T]) Decode(s string) Try[T] {
 
 // Unapply attempts to decode a JSON string using the codec's naming config.
 // Returns Option[T] for pattern matching support.
-func (c JsonEncoder[T]) Unapply(s string) Option[T] {
-    val decoded = c.Decode(s)
-    if decoded.IsFailure() { return None[T]() }
-    return Some[T](decoded.Get())
-}
+func (c JsonEncoder[T]) Unapply(s string) Option[T] = c.Decode(s).ToOption()
 
 // buildLookup turns the precomputed reverseKeys map (serialized key → GALA
 // field name) into the index-lookup function DecodeFields expects.
@@ -145,14 +138,6 @@ func buildLookup(
         nameToIdx = nameToIdx.Put(fieldName(i), i)
         i = i + 1
     }
-    return (key string) => {
-        val gName = reverseKeys.Get(key)
-        if gName.IsDefined() {
-            val idx = nameToIdx.Get(gName.Get())
-            if idx.IsDefined() {
-                return idx.Get()
-            }
-        }
-        return -1
-    }
+    return (key string) =>
+        reverseKeys.Get(key).FlatMap((gName) => nameToIdx.Get(gName)).GetOrElse(-1)
 }

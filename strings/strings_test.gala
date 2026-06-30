@@ -545,14 +545,14 @@ func TestStrConcat(t T) T {
 // Test Map
 func TestStrMap(t T) T {
     val str = s.S("abc")
-    val result = str.Map((r rune) => r + 1)
+    val result = str.Map((r) => r + 1)
     return Eq(t, result.ToString(), "bcd")
 }
 
 // Test Filter
 func TestStrFilter(t T) T {
     val str = s.S("hello world")
-    val result = str.Filter((r rune) => r != ' ')
+    val result = str.Filter((r) => r != ' ')
     return Eq(t, result.ToString(), "helloworld")
 }
 
@@ -565,17 +565,17 @@ func TestStrFold(t T) T {
 // Test Exists and ForAll
 func TestStrExistsForAll(t T) T {
     val str = s.S("hello")
-    val t1 = IsTrue(t, str.Exists((r rune) => r == 'l'))
-    val t2 = IsFalse(t1, str.Exists((r rune) => r == 'x'))
-    val t3 = IsTrue(t2, str.ForAll((r rune) => r >= 'a' && r <= 'z'))
-    return IsFalse(t3, str.ForAll((r rune) => r == 'h'))
+    val t1 = IsTrue(t, str.Exists((r) => r == 'l'))
+    val t2 = IsFalse(t1, str.Exists((r) => r == 'x'))
+    val t3 = IsTrue(t2, str.ForAll((r) => r >= 'a' && r <= 'z'))
+    return IsFalse(t3, str.ForAll((r) => r == 'h'))
 }
 
 // Test Find
 func TestStrFind(t T) T {
     val str = s.S("hello")
-    val t1 = Eq(t, str.Find((r rune) => r == 'l').GetOrElse('?'), 'l')
-    return IsNone(t1, str.Find((r rune) => r == 'x'))
+    val t1 = Eq(t, str.Find((r) => r == 'l').GetOrElse('?'), 'l')
+    return IsNone(t1, str.Find((r) => r == 'x'))
 }
 
 // Test ZipWithIndex

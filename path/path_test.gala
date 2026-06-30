@@ -14,65 +14,62 @@ func nativeJoin(parts ...string) string = path.Join(parts...)
 func TestJoin(t T) T {
     val joined = path.Join("a", "b", "c")
     val expected = nativeJoin("a", "b", "c")
-    return Eq[string](t, joined, expected)
+    return Eq(t, joined, expected)
 }
 
 func TestJoinIgnoresEmpty(t T) T {
     val joined = path.Join("a", "", "b")
     val expected = nativeJoin("a", "b")
-    return Eq[string](t, joined, expected)
+    return Eq(t, joined, expected)
 }
 
 func TestDir(t T) T {
     val full = path.Join("foo", "bar", "baz.txt")
     val expected = path.Join("foo", "bar")
-    return Eq[string](t, path.Dir(full), expected)
+    return Eq(t, path.Dir(full), expected)
 }
 
 func TestDirEmpty(t T) T {
-    return Eq[string](t, path.Dir(""), ".")
+    return Eq(t, path.Dir(""), ".")
 }
 
 func TestBase(t T) T {
     val full = path.Join("foo", "bar", "baz.txt")
-    return Eq[string](t, path.Base(full), "baz.txt")
+    return Eq(t, path.Base(full), "baz.txt")
 }
 
 func TestBaseEmpty(t T) T {
-    return Eq[string](t, path.Base(""), ".")
+    return Eq(t, path.Base(""), ".")
 }
 
 func TestExt(t T) T {
-    var t1 = Eq[string](t, path.Ext("file.gala"), ".gala")
-    var t2 = Eq[string](t1, path.Ext("file.tar.gz"), ".gz")
-    return Eq[string](t2, path.Ext("README"), "")
+    val t1 = Eq(t, path.Ext("file.gala"), ".gala")
+    val t2 = Eq(t1, path.Ext("file.tar.gz"), ".gz")
+    return Eq(t2, path.Ext("README"), "")
 }
 
 func TestIsAbs(t T) T {
     // Unix / Windows differ — pick a platform-native absolute and a
     // platform-native relative path and check both.
     if runtime.GOOS == "windows" {
-        var t1 = IsTrue(t, path.IsAbs("C:\\foo"))
+        val t1 = IsTrue(t, path.IsAbs("C:\\foo"))
         return IsFalse(t1, path.IsAbs("foo\\bar"))
     }
-    var t1 = IsTrue(t, path.IsAbs("/foo/bar"))
+    val t1 = IsTrue(t, path.IsAbs("/foo/bar"))
     return IsFalse(t1, path.IsAbs("foo/bar"))
 }
 
 func TestAbsResolvesRelative(t T) T {
     val result = path.Abs("foo")
-    var t1 = IsTrue(t, result.IsSuccess())
+    val t1 = IsTrue(t, result.IsSuccess())
     return IsTrue(t1, path.IsAbs(result.Get()))
 }
 
 func TestAbsAlreadyAbsolute(t T) T {
     // An already-absolute path stays absolute (and Clean-ed).
-    var input = "/already/abs"
-    if runtime.GOOS == "windows" {
-        input = "C:\\already\\abs"
-    }
+    val input = if (runtime.GOOS == "windows") "C:\\already\\abs" else "/already/abs"
     val result = path.Abs(input)
-    var t1 = IsTrue(t, result.IsSuccess())
+    val t1 = IsTrue(t, result.IsSuccess())
     return IsTrue(t1, path.IsAbs(result.Get()))
 }
 
@@ -80,18 +77,18 @@ func TestToSlash(t T) T {
     // ToSlash is identity on Unix; on Windows it replaces '\\' with '/'.
     val joined = path.Join("a", "b")
     val sl = path.ToSlash(joined)
-    return Eq[string](t, sl, "a/b")
+    return Eq(t, sl, "a/b")
 }
 
 func TestFromSlash(t T) T {
     // Round-trip: ToSlash(FromSlash(x)) == x for any forward-slash x.
     val original = "a/b/c"
     val native = path.FromSlash(original)
-    return Eq[string](t, path.ToSlash(native), original)
+    return Eq(t, path.ToSlash(native), original)
 }
 
 func TestClean(t T) T {
-    var t1 = Eq[string](t, path.Clean("a/./b"), nativeJoin("a", "b"))
-    var t2 = Eq[string](t1, path.Clean("a/b/.."), "a")
-    return Eq[string](t2, path.Clean(""), ".")
+    val t1 = Eq(t, path.Clean("a/./b"), nativeJoin("a", "b"))
+    val t2 = Eq(t1, path.Clean("a/b/.."), "a")
+    return Eq(t2, path.Clean(""), ".")
 }

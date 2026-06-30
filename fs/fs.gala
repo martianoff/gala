@@ -79,10 +79,7 @@ func Stat(path string) Try[FileInfo] = Try[FileInfo](() => {
 // Returns false on any error (including NotExist, permission denied,
 // or transient IO failure). Callers who care about *why* something is
 // missing should use Stat directly.
-func Exists(path string) bool {
-    val _, err = os.Stat(path)
-    return err == nil
-}
+func Exists(path string) bool = Stat(path).IsSuccess()
 
 // MkdirAll creates `path` along with any necessary parents. It is a
 // no-op if the directory already exists. `mode` is the Unix permission

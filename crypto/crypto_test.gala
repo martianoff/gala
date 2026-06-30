@@ -17,7 +17,7 @@ func bytesOf(s string) Array[byte] = ArrayFromSlice(ToBytes(s))
 // only used in tests with hard-coded vectors, so a malformed input is a
 // test bug.
 func hexBytes(s string) Array[byte] {
-    var decoded, err = hex.DecodeString(s)
+    val decoded, err = hex.DecodeString(s)
     if err != nil {
         panic(s"hexBytes: invalid hex: ${err.Error()}")
     }
@@ -32,7 +32,7 @@ func TestSha256KnownVectors(t T) T {
     return RunCases[HashCase, string](t,
         (sub T, c HashCase, _ string) => {
             val d = crypto.Sha256{}.Hash(bytesOf(c.Input))
-            return Eq[string](sub, d.Hex(), c.ExpectedHex)
+            return Eq(sub, d.Hex(), c.ExpectedHex)
         },
         Case[HashCase, string](
             Name = "empty",
@@ -58,37 +58,37 @@ func TestSha256KnownVectors(t T) T {
 func TestSha512KnownVectors(t T) T {
     val expected = "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f"
     val d = crypto.Sha512{}.Hash(bytesOf("abc"))
-    return Eq[string](t, d.Hex(), expected)
+    return Eq(t, d.Hex(), expected)
 }
 
 func TestSha1KnownVectors(t T) T {
     val d = crypto.Sha1{}.Hash(bytesOf("abc"))
-    return Eq[string](t, d.Hex(), "a9993e364706816aba3e25717850c26c9cd0d89d")
+    return Eq(t, d.Hex(), "a9993e364706816aba3e25717850c26c9cd0d89d")
 }
 
 func TestMd5KnownVectors(t T) T {
     val d = crypto.Md5{}.Hash(bytesOf("abc"))
-    return Eq[string](t, d.Hex(), "900150983cd24fb0d6963f7d28e17f72")
+    return Eq(t, d.Hex(), "900150983cd24fb0d6963f7d28e17f72")
 }
 
 // ---- algorithm metadata --------------------------------------------------
 
 func TestAlgorithmMetadata(t T) T {
-    var t1 = Eq[string](t, crypto.Sha256{}.Algorithm(), "SHA-256")
-    var t2 = Eq[int](t1, crypto.Sha256{}.Size(), 32)
-    var t3 = Eq[string](t2, crypto.Sha512{}.Algorithm(), "SHA-512")
-    var t4 = Eq[int](t3, crypto.Sha512{}.Size(), 64)
-    var t5 = Eq[string](t4, crypto.Sha1{}.Algorithm(), "SHA-1")
-    var t6 = Eq[int](t5, crypto.Sha1{}.Size(), 20)
-    var t7 = Eq[string](t6, crypto.Md5{}.Algorithm(), "MD5")
-    return Eq[int](t7, crypto.Md5{}.Size(), 16)
+    val t1 = Eq(t, crypto.Sha256{}.Algorithm(), "SHA-256")
+    val t2 = Eq(t1, crypto.Sha256{}.Size(), 32)
+    val t3 = Eq(t2, crypto.Sha512{}.Algorithm(), "SHA-512")
+    val t4 = Eq(t3, crypto.Sha512{}.Size(), 64)
+    val t5 = Eq(t4, crypto.Sha1{}.Algorithm(), "SHA-1")
+    val t6 = Eq(t5, crypto.Sha1{}.Size(), 20)
+    val t7 = Eq(t6, crypto.Md5{}.Algorithm(), "MD5")
+    return Eq(t7, crypto.Md5{}.Size(), 16)
 }
 
 // ---- digest size matches algorithm --------------------------------------
 
 func TestDigestSize(t T) T {
     val d = crypto.Sha256{}.Hash(bytesOf("hello"))
-    return Eq[int](t, d.Size(), 32)
+    return Eq(t, d.Size(), 32)
 }
 
 // ---- streaming matches one-shot -----------------------------------------
@@ -104,7 +104,7 @@ func TestStreamingMatchesOneShot(t T) T {
         Update(bytesOf("the lazy dog")).
         Finish()
 
-    var t1 = Eq[string](t, oneShot.Hex(), streamed.Hex())
+    val t1 = Eq(t, oneShot.Hex(), streamed.Hex())
     return IsTrue(t1, oneShot.Equal(streamed))
 }
 
@@ -115,30 +115,30 @@ func TestStreamingSha512(t T) T {
         Update(bytesOf("b")).
         Update(bytesOf("c")).
         Finish()
-    return Eq[string](t, oneShot.Hex(), streamed.Hex())
+    return Eq(t, oneShot.Hex(), streamed.Hex())
 }
 
 func TestHasherAlgorithm(t T) T {
     val h = crypto.Sha256{}.NewHasher()
-    return Eq[string](t, h.Algorithm(), "SHA-256")
+    return Eq(t, h.Algorithm(), "SHA-256")
 }
 
 // ---- encoding -----------------------------------------------------------
 
 func TestDigestHex(t T) T {
     val d = crypto.Sha256{}.Hash(bytesOf(""))
-    return Eq[string](t, d.Hex(), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+    return Eq(t, d.Hex(), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
 }
 
 func TestDigestBase64(t T) T {
     // SHA-256("abc") base64-std = "ungWv48Bz+pBQUDeXa4iI7ADYaOWF3qctBD/YfIAFa0="
     val d = crypto.Sha256{}.Hash(bytesOf("abc"))
-    return Eq[string](t, d.Base64(), "ungWv48Bz+pBQUDeXa4iI7ADYaOWF3qctBD/YfIAFa0=")
+    return Eq(t, d.Base64(), "ungWv48Bz+pBQUDeXa4iI7ADYaOWF3qctBD/YfIAFa0=")
 }
 
 func TestDigestStringEqualsHex(t T) T {
     val d = crypto.Sha256{}.Hash(bytesOf("abc"))
-    return Eq[string](t, d.String(), d.Hex())
+    return Eq(t, d.String(), d.Hex())
 }
 
 // ---- equality ------------------------------------------------------------
@@ -173,7 +173,7 @@ func TestHmacSha256Rfc4231Case1(t T) T {
     // RFC 4231 §4.2:
     //   b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7
     val mac = crypto.HmacSha256(rfc4231TestKey()).Sum(bytesOf("Hi There"))
-    return Eq[string](t, mac.Hex(),
+    return Eq(t, mac.Hex(),
         "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7")
 }
 
@@ -182,7 +182,7 @@ func TestHmacSha512Rfc4231Case1(t T) T {
     //   87aa7cdea5ef619d4ff0b4241a1d6cb02379f4e2ce4ec2787ad0b30545e17cde
     //   daa833b7d6b8a702038b274eaea3f4e4be9d914eeb61f1702e696c203a126854
     val mac = crypto.HmacSha512(rfc4231TestKey()).Sum(bytesOf("Hi There"))
-    return Eq[string](t, mac.Hex(),
+    return Eq(t, mac.Hex(),
         "87aa7cdea5ef619d4ff0b4241a1d6cb02379f4e2ce4ec2787ad0b30545e17cdedaa833b7d6b8a702038b274eaea3f4e4be9d914eeb61f1702e696c203a126854")
 }
 
@@ -190,7 +190,7 @@ func TestHmacSha1Rfc2202Case1(t T) T {
     // RFC 2202 §3 test 1:
     //   b617318655057264e28bc0b6fb378c8ef146be00
     val mac = crypto.HmacSha1(rfc4231TestKey()).Sum(bytesOf("Hi There"))
-    return Eq[string](t, mac.Hex(),
+    return Eq(t, mac.Hex(),
         "b617318655057264e28bc0b6fb378c8ef146be00")
 }
 
@@ -207,7 +207,7 @@ func TestHmacStreamingMatchesOneShot(t T) T {
         Update(bytesOf("the lazy dog")).
         Finish()
 
-    var t1 = Eq[string](t, oneShot.Hex(), streamed.Hex())
+    val t1 = Eq(t, oneShot.Hex(), streamed.Hex())
     return IsTrue(t1, oneShot.Equal(streamed))
 }
 
@@ -215,17 +215,17 @@ func TestHmacStreamingMatchesOneShot(t T) T {
 
 func TestHmacAlgorithmMetadata(t T) T {
     val key = bytesOf("k")
-    var t1 = Eq[string](t, crypto.HmacSha256(key).Algorithm(), "HMAC-SHA256")
-    var t2 = Eq[int](t1, crypto.HmacSha256(key).Size(), 32)
-    var t3 = Eq[string](t2, crypto.HmacSha512(key).Algorithm(), "HMAC-SHA512")
-    var t4 = Eq[int](t3, crypto.HmacSha512(key).Size(), 64)
-    var t5 = Eq[string](t4, crypto.HmacSha1(key).Algorithm(), "HMAC-SHA1")
-    return Eq[int](t5, crypto.HmacSha1(key).Size(), 20)
+    val t1 = Eq(t, crypto.HmacSha256(key).Algorithm(), "HMAC-SHA256")
+    val t2 = Eq(t1, crypto.HmacSha256(key).Size(), 32)
+    val t3 = Eq(t2, crypto.HmacSha512(key).Algorithm(), "HMAC-SHA512")
+    val t4 = Eq(t3, crypto.HmacSha512(key).Size(), 64)
+    val t5 = Eq(t4, crypto.HmacSha1(key).Algorithm(), "HMAC-SHA1")
+    return Eq(t5, crypto.HmacSha1(key).Size(), 20)
 }
 
 func TestHmacHasherAlgorithm(t T) T {
     val h = crypto.HmacSha256(bytesOf("k")).NewHasher()
-    return Eq[string](t, h.Algorithm(), "HMAC-SHA256")
+    return Eq(t, h.Algorithm(), "HMAC-SHA256")
 }
 
 // ---- HMAC tag equality (constant-time) -----------------------------------
@@ -253,18 +253,18 @@ func TestHmacEqualDifferentData(t T) T {
 // ---- RandomBytes ---------------------------------------------------------
 
 func TestRandomBytesSize(t T) T {
-    var t1 = Eq[int](t, crypto.RandomBytes(32).Get().Size(), 32)
-    return Eq[int](t1, crypto.RandomBytes(0).Get().Size(), 0)
+    val t1 = Eq(t, crypto.RandomBytes(32).Get().Size(), 32)
+    return Eq(t1, crypto.RandomBytes(0).Get().Size(), 0)
 }
 
 func TestRandomBytesUnique(t T) T {
     val a = hex.EncodeToString(crypto.RandomBytes(32).Get().ToGoSlice())
     val b = hex.EncodeToString(crypto.RandomBytes(32).Get().ToGoSlice())
-    return NotEq[string](t, a, b)
+    return NotEq(t, a, b)
 }
 
 func TestRandomBytesNegative(t T) T {
-    return IsFailure[Array[byte]](t, crypto.RandomBytes(-1))
+    return IsFailure(t, crypto.RandomBytes(-1))
 }
 
 // ---- ConstantTimeEqual ---------------------------------------------------
@@ -298,10 +298,10 @@ func TestEd25519RFC8032Vector1(t T) T {
     val sk = crypto.Ed25519PrivateKeyFromSeed(seed)
     val pk = sk.PublicKey()
 
-    var t1 = Eq[string](t, hex.EncodeToString(pk.Bytes().ToGoSlice()), expectedPubHex)
+    val t1 = Eq(t, hex.EncodeToString(pk.Bytes().ToGoSlice()), expectedPubHex)
 
     val sig = sk.Sign(EmptyArray[byte]())
-    var t2 = Eq[string](t1, sig.Hex(), expectedSigHex)
+    val t2 = Eq(t1, sig.Hex(), expectedSigHex)
 
     return IsTrue(t2, pk.Verify(EmptyArray[byte](), sig))
 }
@@ -332,8 +332,8 @@ func TestEd25519VerifyTamperedSignature(t T) T {
     val msg = bytesOf("hello")
     val good = kp.Private.Sign(msg)
     // Flip the low bit of the first signature byte.
-    var raw = good.Bytes().ToGoSlice()
-    var copy = SliceCopy(raw)
+    val raw = good.Bytes().ToGoSlice()
+    val copy = SliceCopy(raw)
     copy[0] = copy[0] ^ 1
     val tampered = crypto.SignatureFromBytes(ArrayFromSlice[byte](copy))
     return IsFalse(t, kp.Public.Verify(msg, tampered))
@@ -345,23 +345,23 @@ func TestEd25519PublicKeyConsistency(t T) T {
     val derived = kp.Private.PublicKey()
     val a = kp.Public.Bytes().ToGoSlice()
     val b = derived.Bytes().ToGoSlice()
-    return Eq[string](t, hex.EncodeToString(a), hex.EncodeToString(b))
+    return Eq(t, hex.EncodeToString(a), hex.EncodeToString(b))
 }
 
 func TestEd25519SignatureSize(t T) T {
     val kp = crypto.GenerateEd25519KeyPair()
     val sig = kp.Private.Sign(bytesOf("hello"))
-    return Eq[int](t, sig.Bytes().Size(), 64)
+    return Eq(t, sig.Bytes().Size(), 64)
 }
 
 func TestEd25519PublicKeySize(t T) T {
     val kp = crypto.GenerateEd25519KeyPair()
-    return Eq[int](t, kp.Public.Bytes().Size(), 32)
+    return Eq(t, kp.Public.Bytes().Size(), 32)
 }
 
 func TestEd25519PrivateKeySize(t T) T {
     val kp = crypto.GenerateEd25519KeyPair()
-    return Eq[int](t, kp.Private.Bytes().Size(), 64)
+    return Eq(t, kp.Private.Bytes().Size(), 64)
 }
 
 func TestSignatureEqualSame(t T) T {
@@ -396,10 +396,10 @@ func TestX25519RFC7748Vector(t T) T {
     val aliceShared = alicePriv.ECDH(bobPub)
     val bobShared = bobPriv.ECDH(alicePub)
 
-    var t1 = IsSuccess[Array[byte]](t, aliceShared)
-    var t2 = IsSuccess[Array[byte]](t1, bobShared)
-    var t3 = Eq[string](t2, hex.EncodeToString(aliceShared.Get().ToGoSlice()), expectedHex)
-    return Eq[string](t3, hex.EncodeToString(bobShared.Get().ToGoSlice()), expectedHex)
+    val t1 = IsSuccess(t, aliceShared)
+    val t2 = IsSuccess(t1, bobShared)
+    val t3 = Eq(t2, hex.EncodeToString(aliceShared.Get().ToGoSlice()), expectedHex)
+    return Eq(t3, hex.EncodeToString(bobShared.Get().ToGoSlice()), expectedHex)
 }
 
 func TestX25519RoundTrip(t T) T {
@@ -409,9 +409,9 @@ func TestX25519RoundTrip(t T) T {
     val a = alice.Private.ECDH(bob.Public)
     val b = bob.Private.ECDH(alice.Public)
 
-    var t1 = IsSuccess[Array[byte]](t, a)
-    var t2 = IsSuccess[Array[byte]](t1, b)
-    return Eq[string](t2,
+    val t1 = IsSuccess(t, a)
+    val t2 = IsSuccess(t1, b)
+    return Eq(t2,
         hex.EncodeToString(a.Get().ToGoSlice()),
         hex.EncodeToString(b.Get().ToGoSlice()),
     )
@@ -420,7 +420,7 @@ func TestX25519RoundTrip(t T) T {
 func TestX25519PublicKeyConsistency(t T) T {
     val kp = crypto.GenerateX25519KeyPair()
     val derived = kp.Private.PublicKey()
-    return Eq[string](t,
+    return Eq(t,
         hex.EncodeToString(kp.Public.Bytes().ToGoSlice()),
         hex.EncodeToString(derived.Bytes().ToGoSlice()),
     )
@@ -428,18 +428,18 @@ func TestX25519PublicKeyConsistency(t T) T {
 
 func TestX25519PublicKeySize(t T) T {
     val kp = crypto.GenerateX25519KeyPair()
-    return Eq[int](t, kp.Public.Bytes().Size(), 32)
+    return Eq(t, kp.Public.Bytes().Size(), 32)
 }
 
 func TestX25519PrivateKeySize(t T) T {
     val kp = crypto.GenerateX25519KeyPair()
-    return Eq[int](t, kp.Private.Bytes().Size(), 32)
+    return Eq(t, kp.Private.Bytes().Size(), 32)
 }
 
 // ---- random helpers ------------------------------------------------------
 
 func TestRandomHexLength(t T) T {
-    return Eq[int](t, len(crypto.RandomHex(16)), 32)
+    return Eq(t, len(crypto.RandomHex(16)), 32)
 }
 
 func TestRandomHexDifferent(t T) T {
@@ -450,14 +450,14 @@ func TestRandomHexDifferent(t T) T {
 
 func TestRandomBase64URLLength(t T) T {
     // base64.RawURLEncoding.EncodedLen(32) == 43
-    return Eq[int](t, len(crypto.RandomBase64URL(32)), 43)
+    return Eq(t, len(crypto.RandomBase64URL(32)), 43)
 }
 
 func TestRandomBase64URLNoPadding(t T) T {
     val s = crypto.RandomBase64URL(32)
-    var decoded, err = base64.RawURLEncoding.DecodeString(s)
-    var t1 = IsNil(t, err)
-    return Eq[int](t1, len(decoded), 32)
+    val decoded, err = base64.RawURLEncoding.DecodeString(s)
+    val t1 = IsNil(t, err)
+    return Eq(t1, len(decoded), 32)
 }
 
 func TestRandomBase64URLDifferent(t T) T {

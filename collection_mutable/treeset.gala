@@ -996,7 +996,7 @@ func (s *TreeSet[T]) String() string {
         if !first {
             result = result + ", "
         }
-        result = result + fmt.Sprintf("%v", elem)
+        result = result + s"$elem"
         first = false
     })
     return result + ")"
@@ -1013,7 +1013,7 @@ func (s *TreeSet[T]) MkString(sep string) string {
         if !first {
             result = result + sep
         }
-        result = result + fmt.Sprintf("%v", elem)
+        result = result + s"$elem"
         first = false
     })
     return result

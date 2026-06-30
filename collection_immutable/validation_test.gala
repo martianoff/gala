@@ -18,7 +18,7 @@ func TestArrayLargeScale(t T) T {
     }
 
     // Verify all elements are correct
-    var t1 = Eq[int](t, arr.Length(), 10000)
+    val t1 = Eq[int](t, arr.Length(), 10000)
     var allCorrect = true
     for i := 0; i < 10000; i++ {
         if arr.Get(i) != i {
@@ -36,7 +36,7 @@ func TestArrayPrependStress(t T) T {
         arr = arr.Prepend(i)
     }
 
-    var t1 = Eq[int](t, arr.Length(), 100)
+    val t1 = Eq[int](t, arr.Length(), 100)
     // Verify order is correct (1, 2, 3, ..., 100)
     var allCorrect = true
     for i := 0; i < 100; i++ {
@@ -58,7 +58,7 @@ func TestArrayMixedOperationsIntegrity(t T) T {
     }
 
     // Should have 100 elements: 0-49 (prepended) then 100-149 (appended)
-    var t1 = Eq[int](t, arr.Length(), 100)
+    val t1 = Eq[int](t, arr.Length(), 100)
 
     // Check first half (prepended in reverse, so 0-49)
     var firstHalfCorrect = true
@@ -76,7 +76,7 @@ func TestArrayMixedOperationsIntegrity(t T) T {
         }
     }
 
-    var t2 = IsTrue(t1, firstHalfCorrect)
+    val t2 = IsTrue(t1, firstHalfCorrect)
     return IsTrue(t2, secondHalfCorrect)
 }
 
@@ -94,14 +94,14 @@ func TestArrayUpdateAcrossTree(t T) T {
     updated = updated.Updated(63, 1063)   // Last of second leaf
     updated = updated.Updated(99, 1099)   // Last element
 
-    var t1 = Eq[int](t, updated.Get(0), 1000)
-    var t2 = Eq[int](t1, updated.Get(31), 1031)
-    var t3 = Eq[int](t2, updated.Get(32), 1032)
-    var t4 = Eq[int](t3, updated.Get(63), 1063)
-    var t5 = Eq[int](t4, updated.Get(99), 1099)
+    val t1 = Eq[int](t, updated.Get(0), 1000)
+    val t2 = Eq[int](t1, updated.Get(31), 1031)
+    val t3 = Eq[int](t2, updated.Get(32), 1032)
+    val t4 = Eq[int](t3, updated.Get(63), 1063)
+    val t5 = Eq[int](t4, updated.Get(99), 1099)
 
     // Original unchanged
-    var t6 = Eq[int](t5, arr.Get(0), 0)
+    val t6 = Eq[int](t5, arr.Get(0), 0)
     return Eq[int](t6, arr.Get(99), 99)
 }
 
@@ -112,11 +112,11 @@ func TestArrayTakeDropDataIntegrity(t T) T {
         arr = arr.Append(i * 2)
     }
 
-    var taken = arr.Take(50)
-    var dropped = arr.Drop(50)
+    val taken = arr.Take(50)
+    val dropped = arr.Drop(50)
 
     // Verify taken has first 50 elements
-    var t1 = Eq[int](t, taken.Length(), 50)
+    val t1 = Eq[int](t, taken.Length(), 50)
     var takenCorrect = true
     for i := 0; i < 50; i++ {
         if taken.Get(i) != (i * 2) {
@@ -125,7 +125,7 @@ func TestArrayTakeDropDataIntegrity(t T) T {
     }
 
     // Verify dropped has last 50 elements
-    var t2 = Eq[int](t1, dropped.Length(), 50)
+    val t2 = Eq[int](t1, dropped.Length(), 50)
     var droppedCorrect = true
     for i := 0; i < 50; i++ {
         if dropped.Get(i) != ((50 + i) * 2) {
@@ -133,7 +133,7 @@ func TestArrayTakeDropDataIntegrity(t T) T {
         }
     }
 
-    var t3 = IsTrue(t2, takenCorrect)
+    val t3 = IsTrue(t2, takenCorrect)
     return IsTrue(t3, droppedCorrect)
 }
 
@@ -144,11 +144,11 @@ func TestArrayMapDataIntegrity(t T) T {
         arr = arr.Append(i)
     }
 
-    var doubled = arr.Map[int]((x int) => x * 2)
-    var squared = arr.Map[int]((x int) => x * x)
+    val doubled = arr.Map((x) => x * 2)
+    val squared = arr.Map((x) => x * x)
 
-    var t1 = Eq[int](t, doubled.Length(), 100)
-    var t2 = Eq[int](t1, squared.Length(), 100)
+    val t1 = Eq[int](t, doubled.Length(), 100)
+    val t2 = Eq[int](t1, squared.Length(), 100)
 
     var doubledCorrect = true
     var squaredCorrect = true
@@ -161,7 +161,7 @@ func TestArrayMapDataIntegrity(t T) T {
         }
     }
 
-    var t3 = IsTrue(t2, doubledCorrect)
+    val t3 = IsTrue(t2, doubledCorrect)
     return IsTrue(t3, squaredCorrect)
 }
 
@@ -172,11 +172,11 @@ func TestArrayFilterDataIntegrity(t T) T {
         arr = arr.Append(i)
     }
 
-    var evens = arr.Filter((x int) => x % 2 == 0)
-    var multiplesOf10 = arr.Filter((x int) => x % 10 == 0)
+    val evens = arr.Filter((x) => x % 2 == 0)
+    val multiplesOf10 = arr.Filter((x) => x % 10 == 0)
 
-    var t1 = Eq[int](t, evens.Length(), 50)
-    var t2 = Eq[int](t1, multiplesOf10.Length(), 10)
+    val t1 = Eq[int](t, evens.Length(), 50)
+    val t2 = Eq[int](t1, multiplesOf10.Length(), 10)
 
     // Verify evens are actually even
     var evensCorrect = true
@@ -194,7 +194,7 @@ func TestArrayFilterDataIntegrity(t T) T {
         }
     }
 
-    var t3 = IsTrue(t2, evensCorrect)
+    val t3 = IsTrue(t2, evensCorrect)
     return IsTrue(t3, multiplesCorrect)
 }
 
@@ -206,12 +206,12 @@ func TestArrayFoldDataIntegrity(t T) T {
     }
 
     // Sum 1 to 100 = 5050
-    var sum = arr.FoldLeft[int](0, (acc int, x int) => acc + x)
-    var t1 = Eq[int](t, sum, 5050)
+    val sum = arr.FoldLeft(0, (acc, x) => acc + x)
+    val t1 = Eq[int](t, sum, 5050)
 
     // Product of first 5: 1*2*3*4*5 = 120
-    var first5 = arr.Take(5)
-    var product = first5.FoldLeft[int](1, (acc int, x int) => acc * x)
+    val first5 = arr.Take(5)
+    val product = first5.FoldLeft(1, (acc, x) => acc * x)
     return Eq[int](t1, product, 120)
 }
 
@@ -222,8 +222,8 @@ func TestArrayReverseDataIntegrity(t T) T {
         arr = arr.Append(i)
     }
 
-    var reversed = arr.Reverse()
-    var t1 = Eq[int](t, reversed.Length(), 100)
+    val reversed = arr.Reverse()
+    val t1 = Eq[int](t, reversed.Length(), 100)
 
     var allCorrect = true
     for i := 0; i < 100; i++ {
@@ -241,8 +241,8 @@ func TestArraySliceDataIntegrity(t T) T {
         arr = arr.Append(i)
     }
 
-    var slice1 = arr.Slice(25, 75)
-    var t1 = Eq[int](t, slice1.Length(), 50)
+    val slice1 = arr.Slice(25, 75)
+    val t1 = Eq[int](t, slice1.Length(), 50)
 
     var allCorrect = true
     for i := 0; i < 50; i++ {
@@ -264,7 +264,7 @@ func TestListLargeScale(t T) T {
         list = list.Prepend(i)
     }
 
-    var t1 = Eq[int](t, list.Length(), 1000)
+    val t1 = Eq[int](t, list.Length(), 1000)
     var allCorrect = true
     for i := 0; i < 1000; i++ {
         if list.Get(i) != i {
@@ -276,7 +276,7 @@ func TestListLargeScale(t T) T {
 
 // Test List structural integrity through many tail operations
 func TestListTailChainIntegrity(t T) T {
-    var list = ListOf[int](1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
+    val list = ListOf(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
 
     var lengths []int
     var heads []int
@@ -288,7 +288,7 @@ func TestListTailChainIntegrity(t T) T {
     }
 
     // Should have 10 iterations
-    var t1 = Eq[int](t, len(lengths), 10)
+    val t1 = Eq[int](t, len(lengths), 10)
 
     // Each tail should have decreasing length
     var lengthsCorrect = true
@@ -306,7 +306,7 @@ func TestListTailChainIntegrity(t T) T {
         }
     }
 
-    var t2 = IsTrue(t1, lengthsCorrect)
+    val t2 = IsTrue(t1, lengthsCorrect)
     return IsTrue(t2, headsCorrect)
 }
 
@@ -317,9 +317,9 @@ func TestListMapDataIntegrity(t T) T {
         list = list.Prepend(i)
     }
 
-    var doubled = list.Map[int]((x int) => x * 2)
+    val doubled = list.Map((x) => x * 2)
 
-    var t1 = Eq[int](t, doubled.Length(), 100)
+    val t1 = Eq[int](t, doubled.Length(), 100)
     var allCorrect = true
     for i := 0; i < 100; i++ {
         if doubled.Get(i) != (i * 2) {
@@ -336,9 +336,9 @@ func TestListFilterDataIntegrity(t T) T {
         list = list.Prepend(i)
     }
 
-    var evens = list.Filter((x int) => x % 2 == 0)
+    val evens = list.Filter((x) => x % 2 == 0)
 
-    var t1 = Eq[int](t, evens.Length(), 50)
+    val t1 = Eq[int](t, evens.Length(), 50)
     var allEven = true
     for i := 0; i < evens.Length(); i++ {
         if evens.Get(i) % 2 != 0 {
@@ -356,12 +356,12 @@ func TestListFoldDataIntegrity(t T) T {
     }
 
     // Sum 1 to 100 = 5050
-    var sum = list.FoldLeft[int](0, (acc int, x int) => acc + x)
-    var t1 = Eq[int](t, sum, 5050)
+    val sum = list.FoldLeft(0, (acc, x) => acc + x)
+    val t1 = Eq[int](t, sum, 5050)
 
     // Product of first 5: 1*2*3*4*5 = 120
-    var first5 = list.Take(5)
-    var product = first5.FoldLeft[int](1, (acc int, x int) => acc * x)
+    val first5 = list.Take(5)
+    val product = first5.FoldLeft(1, (acc, x) => acc * x)
     return Eq[int](t1, product, 120)
 }
 
@@ -372,8 +372,8 @@ func TestListReverseDataIntegrity(t T) T {
         list = list.Prepend(i)
     }
 
-    var reversed = list.Reverse()
-    var t1 = Eq[int](t, reversed.Length(), 100)
+    val reversed = list.Reverse()
+    val t1 = Eq[int](t, reversed.Length(), 100)
 
     var allCorrect = true
     for i := 0; i < 100; i++ {
@@ -396,31 +396,31 @@ func TestArrayImmutabilityChain(t T) T {
     }
 
     // Create multiple derived arrays
-    var appended = original.Append(999)
-    var prepended = original.Prepend(-1)
-    var updated = original.Updated(25, 999)
-    var taken = original.Take(25)
-    var dropped = original.Drop(25)
-    var mapped = original.Map[int]((x int) => x * 2)
-    var filtered = original.Filter((x int) => x % 2 == 0)
+    val appended = original.Append(999)
+    val prepended = original.Prepend(-1)
+    val updated = original.Updated(25, 999)
+    val taken = original.Take(25)
+    val dropped = original.Drop(25)
+    val mapped = original.Map((x) => x * 2)
+    val filtered = original.Filter((x) => x % 2 == 0)
 
     // Original must be unchanged
-    var t1 = Eq[int](t, original.Length(), 50)
-    var t2 = Eq[int](t1, original.Get(0), 0)
-    var t3 = Eq[int](t2, original.Get(25), 25)
-    var t4 = Eq[int](t3, original.Get(49), 49)
+    val t1 = Eq[int](t, original.Length(), 50)
+    val t2 = Eq[int](t1, original.Get(0), 0)
+    val t3 = Eq[int](t2, original.Get(25), 25)
+    val t4 = Eq[int](t3, original.Get(49), 49)
 
     // Derived arrays have expected values
-    var t5 = Eq[int](t4, appended.Length(), 51)
-    var t6 = Eq[int](t5, appended.Get(50), 999)
+    val t5 = Eq[int](t4, appended.Length(), 51)
+    val t6 = Eq[int](t5, appended.Get(50), 999)
 
-    var t7 = Eq[int](t6, prepended.Length(), 51)
-    var t8 = Eq[int](t7, prepended.Get(0), -1)
+    val t7 = Eq[int](t6, prepended.Length(), 51)
+    val t8 = Eq[int](t7, prepended.Get(0), -1)
 
-    var t9 = Eq[int](t8, updated.Get(25), 999)
-    var t10 = Eq[int](t9, taken.Length(), 25)
-    var t11 = Eq[int](t10, dropped.Length(), 25)
-    var t12 = Eq[int](t11, mapped.Get(10), 20)
+    val t9 = Eq[int](t8, updated.Get(25), 999)
+    val t10 = Eq[int](t9, taken.Length(), 25)
+    val t11 = Eq[int](t10, dropped.Length(), 25)
+    val t12 = Eq[int](t11, mapped.Get(10), 20)
     return Eq[int](t12, filtered.Length(), 25)
 }
 
@@ -432,29 +432,29 @@ func TestListImmutabilityChain(t T) T {
     }
 
     // Create multiple derived lists
-    var appended = original.Append(999)
-    var prepended = original.Prepend(-1)
-    var taken = original.Take(25)
-    var dropped = original.Drop(25)
-    var mapped = original.Map[int]((x int) => x * 2)
-    var filtered = original.Filter((x int) => x % 2 == 0)
+    val appended = original.Append(999)
+    val prepended = original.Prepend(-1)
+    val taken = original.Take(25)
+    val dropped = original.Drop(25)
+    val mapped = original.Map((x) => x * 2)
+    val filtered = original.Filter((x) => x % 2 == 0)
 
     // Original must be unchanged
-    var t1 = Eq[int](t, original.Length(), 50)
-    var t2 = Eq[int](t1, original.Get(0), 0)
-    var t3 = Eq[int](t2, original.Get(25), 25)
-    var t4 = Eq[int](t3, original.Get(49), 49)
+    val t1 = Eq[int](t, original.Length(), 50)
+    val t2 = Eq[int](t1, original.Get(0), 0)
+    val t3 = Eq[int](t2, original.Get(25), 25)
+    val t4 = Eq[int](t3, original.Get(49), 49)
 
     // Derived lists have expected values
-    var t5 = Eq[int](t4, appended.Length(), 51)
-    var t6 = Eq[int](t5, appended.Last(), 999)
+    val t5 = Eq[int](t4, appended.Length(), 51)
+    val t6 = Eq[int](t5, appended.Last(), 999)
 
-    var t7 = Eq[int](t6, prepended.Length(), 51)
-    var t8 = Eq[int](t7, prepended.Get(0), -1)
+    val t7 = Eq[int](t6, prepended.Length(), 51)
+    val t8 = Eq[int](t7, prepended.Get(0), -1)
 
-    var t9 = Eq[int](t8, taken.Length(), 25)
-    var t10 = Eq[int](t9, dropped.Length(), 25)
-    var t11 = Eq[int](t10, mapped.Get(10), 20)
+    val t9 = Eq[int](t8, taken.Length(), 25)
+    val t10 = Eq[int](t9, dropped.Length(), 25)
+    val t11 = Eq[int](t10, mapped.Get(10), 20)
     return Eq[int](t11, filtered.Length(), 25)
 }
 
@@ -469,22 +469,22 @@ func TestArrayBranchingBoundary(t T) T {
     for i := 0; i < 32; i++ {
         arr32 = arr32.Append(i)
     }
-    var t1 = Eq[int](t, arr32.Length(), 32)
-    var t2 = Eq[int](t1, arr32.Get(0), 0)
-    var t3 = Eq[int](t2, arr32.Get(31), 31)
+    val t1 = Eq[int](t, arr32.Length(), 32)
+    val t2 = Eq[int](t1, arr32.Get(0), 0)
+    val t3 = Eq[int](t2, arr32.Get(31), 31)
 
     // Test at 33 elements (triggers second leaf)
-    var arr33 = arr32.Append(32)
-    var t4 = Eq[int](t3, arr33.Length(), 33)
-    var t5 = Eq[int](t4, arr33.Get(32), 32)
+    val arr33 = arr32.Append(32)
+    val t4 = Eq[int](t3, arr33.Length(), 33)
+    val t5 = Eq[int](t4, arr33.Get(32), 32)
 
     // Test at 64 elements (two full leaves)
     var arr64 = EmptyArray[int]()
     for i := 0; i < 64; i++ {
         arr64 = arr64.Append(i)
     }
-    var t6 = Eq[int](t5, arr64.Length(), 64)
-    var t7 = Eq[int](t6, arr64.Get(31), 31)
+    val t6 = Eq[int](t5, arr64.Length(), 64)
+    val t7 = Eq[int](t6, arr64.Get(31), 31)
     return Eq[int](t7, arr64.Get(32), 32)
 }
 
@@ -495,64 +495,64 @@ func TestArrayDepth3(t T) T {
         arr = arr.Append(i)
     }
 
-    var t1 = Eq[int](t, arr.Length(), 1024)
-    var t2 = Eq[int](t1, arr.Get(0), 0)
-    var t3 = Eq[int](t2, arr.Get(511), 511)
-    var t4 = Eq[int](t3, arr.Get(512), 512)
+    val t1 = Eq[int](t, arr.Length(), 1024)
+    val t2 = Eq[int](t1, arr.Get(0), 0)
+    val t3 = Eq[int](t2, arr.Get(511), 511)
+    val t4 = Eq[int](t3, arr.Get(512), 512)
     return Eq[int](t4, arr.Get(1023), 1023)
 }
 
 // Test empty collection operations don't panic
 func TestEmptyCollectionOperations(t T) T {
-    var emptyArr = EmptyArray[int]()
-    var emptyList = EmptyList[int]()
+    val emptyArr = EmptyArray[int]()
+    val emptyList = EmptyList[int]()
 
     // These should return empty results, not panic
-    var t1 = Eq[int](t, emptyArr.Take(10).Length(), 0)
-    var t2 = Eq[int](t1, emptyArr.Drop(10).Length(), 0)
-    var t3 = Eq[int](t2, emptyArr.Filter((x int) => true).Length(), 0)
-    var t4 = Eq[int](t3, emptyArr.Map[int]((x int) => x).Length(), 0)
+    val t1 = Eq[int](t, emptyArr.Take(10).Length(), 0)
+    val t2 = Eq[int](t1, emptyArr.Drop(10).Length(), 0)
+    val t3 = Eq[int](t2, emptyArr.Filter((x) => true).Length(), 0)
+    val t4 = Eq[int](t3, emptyArr.Map((x) => x).Length(), 0)
 
-    var t5 = Eq[int](t4, emptyList.Take(10).Length(), 0)
-    var t6 = Eq[int](t5, emptyList.Drop(10).Length(), 0)
-    var t7 = Eq[int](t6, emptyList.Filter((x int) => true).Length(), 0)
-    return Eq[int](t7, emptyList.Map[int]((x int) => x).Length(), 0)
+    val t5 = Eq[int](t4, emptyList.Take(10).Length(), 0)
+    val t6 = Eq[int](t5, emptyList.Drop(10).Length(), 0)
+    val t7 = Eq[int](t6, emptyList.Filter((x) => true).Length(), 0)
+    return Eq[int](t7, emptyList.Map((x) => x).Length(), 0)
 }
 
 // Test single element operations
 func TestSingleElementOperations(t T) T {
-    var arr = ArrayOf[int](42)
-    var list = ListOf[int](42)
+    val arr = ArrayOf(42)
+    val list = ListOf(42)
 
-    var t1 = Eq[int](t, arr.Head(), 42)
-    var t2 = Eq[int](t1, arr.Last(), 42)
-    var t3 = Eq[int](t2, arr.Tail().Length(), 0)
+    val t1 = Eq[int](t, arr.Head(), 42)
+    val t2 = Eq[int](t1, arr.Last(), 42)
+    val t3 = Eq[int](t2, arr.Tail().Length(), 0)
 
-    var t4 = Eq[int](t3, list.Head(), 42)
-    var t5 = Eq[int](t4, list.Last(), 42)
+    val t4 = Eq[int](t3, list.Head(), 42)
+    val t5 = Eq[int](t4, list.Last(), 42)
     return Eq[int](t5, list.Tail().Length(), 0)
 }
 
 // Test FlatMap data integrity
 func TestArrayFlatMapDataIntegrity(t T) T {
-    var arr = ArrayOf[int](1, 2, 3)
+    val arr = ArrayOf(1, 2, 3)
 
     // Each element becomes [x, x*10]
-    var flattened = arr.FlatMap[int]((x int) => ArrayOf[int](x, x * 10))
+    val flattened = arr.FlatMap((x) => ArrayOf(x, x * 10))
 
-    var t1 = Eq[int](t, flattened.Length(), 6)
-    var t2 = Eq[int](t1, flattened.Get(0), 1)
-    var t3 = Eq[int](t2, flattened.Get(1), 10)
-    var t4 = Eq[int](t3, flattened.Get(2), 2)
-    var t5 = Eq[int](t4, flattened.Get(3), 20)
-    var t6 = Eq[int](t5, flattened.Get(4), 3)
+    val t1 = Eq[int](t, flattened.Length(), 6)
+    val t2 = Eq[int](t1, flattened.Get(0), 1)
+    val t3 = Eq[int](t2, flattened.Get(1), 10)
+    val t4 = Eq[int](t3, flattened.Get(2), 2)
+    val t5 = Eq[int](t4, flattened.Get(3), 20)
+    val t6 = Eq[int](t5, flattened.Get(4), 3)
     return Eq[int](t6, flattened.Get(5), 30)
 }
 
 // Test Concat data integrity (using manual iteration since Array.Concat expects Iterable)
 func TestArrayConcatDataIntegrity(t T) T {
-    var arr1 = ArrayOf[int](1, 2, 3)
-    var arr2 = ArrayOf[int](4, 5, 6)
+    val arr1 = ArrayOf(1, 2, 3)
+    val arr2 = ArrayOf(4, 5, 6)
 
     // Manually concatenate since Array doesn't implement Iterable interface
     var concatenated = arr1
@@ -560,7 +560,7 @@ func TestArrayConcatDataIntegrity(t T) T {
         concatenated = concatenated.Append(arr2.Get(i))
     }
 
-    var t1 = Eq[int](t, concatenated.Length(), 6)
+    val t1 = Eq[int](t, concatenated.Length(), 6)
     var allCorrect = true
     for i := 0; i < 6; i++ {
         if concatenated.Get(i) != (i + 1) {
@@ -577,12 +577,12 @@ func TestArrayPartitionDataIntegrity(t T) T {
         arr = arr.Append(i)
     }
 
-    var partitioned = arr.Partition((x int) => x % 2 == 0)
-    var evens = partitioned.V1
-    var odds = partitioned.V2
+    val partitioned = arr.Partition((x) => x % 2 == 0)
+    val evens = partitioned.V1
+    val odds = partitioned.V2
 
-    var t1 = Eq[int](t, evens.Length(), 50)
-    var t2 = Eq[int](t1, odds.Length(), 50)
+    val t1 = Eq[int](t, evens.Length(), 50)
+    val t2 = Eq[int](t1, odds.Length(), 50)
 
     // Verify evens
     var evensCorrect = true
@@ -600,73 +600,73 @@ func TestArrayPartitionDataIntegrity(t T) T {
         }
     }
 
-    var t3 = IsTrue(t2, evensCorrect)
+    val t3 = IsTrue(t2, evensCorrect)
     return IsTrue(t3, oddsCorrect)
 }
 
 // Test Zip data integrity
 func TestArrayZipDataIntegrity(t T) T {
-    var arr1 = ArrayOf[int](1, 2, 3, 4, 5)
-    var arr2 = ArrayOf[string]("a", "b", "c", "d", "e")
-    var arr3 = ArrayOf[int](10, 20, 30)  // Shorter array
+    val arr1 = ArrayOf(1, 2, 3, 4, 5)
+    val arr2 = ArrayOf("a", "b", "c", "d", "e")
+    val arr3 = ArrayOf(10, 20, 30)  // Shorter array
 
     // Test basic zip
-    var zipped = arr1.Zip[string](arr2)
-    var t1 = Eq[int](t, zipped.Length(), 5)
+    val zipped = arr1.Zip[string](arr2)
+    val t1 = Eq[int](t, zipped.Length(), 5)
 
     // Test zip with different lengths (takes minimum)
-    var zippedShort = arr1.Zip[int](arr3)
-    var t2 = Eq[int](t1, zippedShort.Length(), 3)
+    val zippedShort = arr1.Zip[int](arr3)
+    val t2 = Eq[int](t1, zippedShort.Length(), 3)
 
     // Test empty arrays
-    var empty = EmptyArray[int]()
-    var zippedEmpty = empty.Zip[string](arr2)
-    var t3 = Eq[int](t2, zippedEmpty.Length(), 0)
+    val empty = EmptyArray[int]()
+    val zippedEmpty = empty.Zip[string](arr2)
+    val t3 = Eq[int](t2, zippedEmpty.Length(), 0)
 
     // Verify tuple contents by extracting and checking first element of each pair
-    var first0 = zippedShort.Get(0)
-    var first0V1 = first0.V1
-    var first1 = zippedShort.Get(1)
-    var first1V1 = first1.V1
-    var first2 = zippedShort.Get(2)
-    var first2V1 = first2.V1
+    val first0 = zippedShort.Get(0)
+    val first0V1 = first0.V1
+    val first1 = zippedShort.Get(1)
+    val first1V1 = first1.V1
+    val first2 = zippedShort.Get(2)
+    val first2V1 = first2.V1
 
-    var t4 = Eq[int](t3, first0V1, 1)
-    var t5 = Eq[int](t4, first1V1, 2)
+    val t4 = Eq[int](t3, first0V1, 1)
+    val t5 = Eq[int](t4, first1V1, 2)
     return Eq[int](t5, first2V1, 3)
 }
 
 // Test ZipWithIndex data integrity
 func TestArrayZipWithIndexDataIntegrity(t T) T {
-    var arr = ArrayOf[string]("a", "b", "c", "d", "e")
-    var zipped = arr.ZipWithIndex()
+    val arr = ArrayOf("a", "b", "c", "d", "e")
+    val zipped = arr.ZipWithIndex()
 
-    var t1 = Eq[int](t, zipped.Length(), 5)
+    val t1 = Eq[int](t, zipped.Length(), 5)
 
     // Test empty array
-    var empty = EmptyArray[string]()
-    var zippedEmpty = empty.ZipWithIndex()
-    var t2 = Eq[int](t1, zippedEmpty.Length(), 0)
+    val empty = EmptyArray[string]()
+    val zippedEmpty = empty.ZipWithIndex()
+    val t2 = Eq[int](t1, zippedEmpty.Length(), 0)
 
     // Verify tuple contents by extracting and checking index values
-    var elem0 = zipped.Get(0)
-    var elem0V2 = elem0.V2
-    var elem2 = zipped.Get(2)
-    var elem2V2 = elem2.V2
-    var elem4 = zipped.Get(4)
-    var elem4V2 = elem4.V2
+    val elem0 = zipped.Get(0)
+    val elem0V2 = elem0.V2
+    val elem2 = zipped.Get(2)
+    val elem2V2 = elem2.V2
+    val elem4 = zipped.Get(4)
+    val elem4V2 = elem4.V2
 
-    var t3 = Eq[int](t2, elem0V2, 0)
-    var t4 = Eq[int](t3, elem2V2, 2)
+    val t3 = Eq[int](t2, elem0V2, 0)
+    val t4 = Eq[int](t3, elem2V2, 2)
     return Eq[int](t4, elem4V2, 4)
 }
 
 // Test Distinct data integrity
 func TestArrayDistinctDataIntegrity(t T) T {
-    var arr = ArrayOf[int](1, 2, 2, 3, 3, 3, 4, 4, 4, 4, 5)
-    var distinct = arr.Distinct()
+    val arr = ArrayOf(1, 2, 2, 3, 3, 3, 4, 4, 4, 4, 5)
+    val distinct = arr.Distinct()
 
-    var t1 = Eq[int](t, distinct.Length(), 5)
+    val t1 = Eq[int](t, distinct.Length(), 5)
 
     var allCorrect = true
     for i := 0; i < 5; i++ {
@@ -684,28 +684,28 @@ func TestArrayGroupedDataIntegrity(t T) T {
         arr = arr.Append(i)
     }
 
-    var grouped = arr.Grouped(3)
-    var t1 = Eq[int](t, grouped.Length(), 4)
-    var t2 = Eq[int](t1, grouped.Get(0).Length(), 3)  // [1,2,3]
-    var t3 = Eq[int](t2, grouped.Get(1).Length(), 3)  // [4,5,6]
-    var t4 = Eq[int](t3, grouped.Get(2).Length(), 3)  // [7,8,9]
-    var t5 = Eq[int](t4, grouped.Get(3).Length(), 1)  // [10]
+    val grouped = arr.Grouped(3)
+    val t1 = Eq[int](t, grouped.Length(), 4)
+    val t2 = Eq[int](t1, grouped.Get(0).Length(), 3)  // [1,2,3]
+    val t3 = Eq[int](t2, grouped.Get(1).Length(), 3)  // [4,5,6]
+    val t4 = Eq[int](t3, grouped.Get(2).Length(), 3)  // [7,8,9]
+    val t5 = Eq[int](t4, grouped.Get(3).Length(), 1)  // [10]
 
-    var t6 = Eq[int](t5, grouped.Get(0).Get(0), 1)
+    val t6 = Eq[int](t5, grouped.Get(0).Get(0), 1)
     return Eq[int](t6, grouped.Get(3).Get(0), 10)
 }
 
 // Test Sliding window data integrity
 func TestArraySlidingDataIntegrity(t T) T {
-    var arr = ArrayOf[int](1, 2, 3, 4, 5)
-    var windows = arr.Sliding(3)
+    val arr = ArrayOf(1, 2, 3, 4, 5)
+    val windows = arr.Sliding(3)
 
-    var t1 = Eq[int](t, windows.Length(), 3)  // [1,2,3], [2,3,4], [3,4,5]
+    val t1 = Eq[int](t, windows.Length(), 3)  // [1,2,3], [2,3,4], [3,4,5]
 
-    var t2 = Eq[int](t1, windows.Get(0).Get(0), 1)
-    var t3 = Eq[int](t2, windows.Get(0).Get(2), 3)
-    var t4 = Eq[int](t3, windows.Get(1).Get(0), 2)
-    var t5 = Eq[int](t4, windows.Get(2).Get(0), 3)
+    val t2 = Eq[int](t1, windows.Get(0).Get(0), 1)
+    val t3 = Eq[int](t2, windows.Get(0).Get(2), 3)
+    val t4 = Eq[int](t3, windows.Get(1).Get(0), 2)
+    val t5 = Eq[int](t4, windows.Get(2).Get(0), 3)
     return Eq[int](t5, windows.Get(2).Get(2), 5)
 }
 
@@ -717,7 +717,7 @@ func TestArrayMassivePrepend(t T) T {
         arr = arr.Prepend(i)
     }
 
-    var t1 = Eq[int](t, arr.Length(), 200)
+    val t1 = Eq[int](t, arr.Length(), 200)
     var allCorrect = true
     for i := 0; i < 200; i++ {
         if arr.Get(i) != (i + 1) {
@@ -729,7 +729,7 @@ func TestArrayMassivePrepend(t T) T {
 
 // Test interleaved prepend/append maintains order
 func TestArrayInterleavedPrependAppend(t T) T {
-    var arr = ArrayOf[int](50)
+    var arr = ArrayOf(50)
 
     // Interleave: prepend 49, append 51, prepend 48, append 52, ...
     for i := 1; i <= 49; i++ {
@@ -738,7 +738,7 @@ func TestArrayInterleavedPrependAppend(t T) T {
     }
 
     // Should have 99 elements: 1, 2, ..., 99
-    var t1 = Eq[int](t, arr.Length(), 99)
+    val t1 = Eq[int](t, arr.Length(), 99)
 
     var allCorrect = true
     for i := 0; i < 99; i++ {

@@ -98,9 +98,9 @@ func ForEach[T any](io IO[T], f func(T)) IO[T] {
 func Effect(f func()) IO[bool] {
     return IO[bool](exec = () => {
         f()
-        return Success[bool](true)
+        return Success(true)
     })
 }
 
 // Unit creates an IO that succeeds with no meaningful value.
-func Unit() IO[bool] = Of[bool](true)
+func Unit() IO[bool] = Of(true)

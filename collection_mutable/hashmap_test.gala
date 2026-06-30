@@ -12,43 +12,43 @@ import (
 
 func TestHashMapEmpty(t T) T {
     val m = EmptyHashMap[string, int]()
-    var t1 = IsTrue(t, m.IsEmpty())
-    var t2 = IsFalse(t1, m.NonEmpty())
+    val t1 = IsTrue(t, m.IsEmpty())
+    val t2 = IsFalse(t1, m.NonEmpty())
     return Eq[int](t2, m.Size(), 0)
 }
 
 func TestHashMapPut(t T) T {
     val m = EmptyHashMap[string, int]()
-    var added1 = m.Put("a", 1)
-    var added2 = m.Put("b", 2)
-    var added3 = m.Put("c", 3)
+    val added1 = m.Put("a", 1)
+    val added2 = m.Put("b", 2)
+    val added3 = m.Put("c", 3)
 
-    var t1 = IsTrue(t, added1)
-    var t2 = IsTrue(t1, added2)
-    var t3 = IsTrue(t2, added3)
+    val t1 = IsTrue(t, added1)
+    val t2 = IsTrue(t1, added2)
+    val t3 = IsTrue(t2, added3)
     return Eq[int](t3, m.Size(), 3)
 }
 
 func TestHashMapPutUpdate(t T) T {
     val m = EmptyHashMap[string, int]()
-    var added1 = m.Put("a", 1)
-    var added2 = m.Put("a", 2)
+    val added1 = m.Put("a", 1)
+    val added2 = m.Put("a", 2)
 
-    var t1 = IsTrue(t, added1)
-    var t2 = IsFalse(t1, added2)
-    var t3 = Eq[int](t2, m.Size(), 1)
+    val t1 = IsTrue(t, added1)
+    val t2 = IsFalse(t1, added2)
+    val t3 = Eq[int](t2, m.Size(), 1)
     return Eq[int](t3, m.GetOrElse("a", 0), 2)
 }
 
 func TestHashMapOf(t T) T {
     val m = HashMapOf[string, int](
-        Tuple[string, int](V1 = "a", V2 = 1),
-        Tuple[string, int](V1 = "b", V2 = 2),
-        Tuple[string, int](V1 = "c", V2 = 3)
+        ("a", 1),
+        ("b", 2),
+        ("c", 3)
     )
-    var t1 = Eq[int](t, m.Size(), 3)
-    var t2 = IsTrue(t1, m.Contains("a"))
-    var t3 = IsTrue(t2, m.Contains("b"))
+    val t1 = Eq[int](t, m.Size(), 3)
+    val t2 = IsTrue(t1, m.Contains("a"))
+    val t3 = IsTrue(t2, m.Contains("b"))
     return IsTrue(t3, m.Contains("c"))
 }
 
@@ -56,8 +56,8 @@ func TestHashMapContains(t T) T {
     val m = EmptyHashMap[string, int]()
     m.Put("a", 1)
     m.Put("b", 2)
-    var t1 = IsTrue(t, m.Contains("a"))
-    var t2 = IsTrue(t1, m.Contains("b"))
+    val t1 = IsTrue(t, m.Contains("a"))
+    val t2 = IsTrue(t1, m.Contains("b"))
     return IsFalse(t2, m.Contains("c"))
 }
 
@@ -65,16 +65,16 @@ func TestHashMapGet(t T) T {
     val m = EmptyHashMap[string, int]()
     m.Put("a", 1)
     m.Put("b", 2)
-    var t1 = IsSome(t, m.Get("a"))
-    var t2 = Eq[int](t1, m.Get("a").Get(), 1)
-    var t3 = Eq[int](t2, m.Get("b").Get(), 2)
+    val t1 = IsSome(t, m.Get("a"))
+    val t2 = Eq[int](t1, m.Get("a").Get(), 1)
+    val t3 = Eq[int](t2, m.Get("b").Get(), 2)
     return IsNone(t3, m.Get("c"))
 }
 
 func TestHashMapGetOrElse(t T) T {
     val m = EmptyHashMap[string, int]()
     m.Put("a", 1)
-    var t1 = Eq[int](t, m.GetOrElse("a", 0), 1)
+    val t1 = Eq[int](t, m.GetOrElse("a", 0), 1)
     return Eq[int](t1, m.GetOrElse("b", 42), 42)
 }
 
@@ -83,20 +83,20 @@ func TestHashMapRemove(t T) T {
     m.Put("a", 1)
     m.Put("b", 2)
     m.Put("c", 3)
-    var removed = m.Remove("b")
+    val removed = m.Remove("b")
 
-    var t1 = IsTrue(t, removed)
-    var t2 = Eq[int](t1, m.Size(), 2)
-    var t3 = IsTrue(t2, m.Contains("a"))
-    var t4 = IsFalse(t3, m.Contains("b"))
+    val t1 = IsTrue(t, removed)
+    val t2 = Eq[int](t1, m.Size(), 2)
+    val t3 = IsTrue(t2, m.Contains("a"))
+    val t4 = IsFalse(t3, m.Contains("b"))
     return IsTrue(t4, m.Contains("c"))
 }
 
 func TestHashMapRemoveNonExistent(t T) T {
     val m = EmptyHashMap[string, int]()
     m.Put("a", 1)
-    var removed = m.Remove("b")
-    var t1 = IsFalse(t, removed)
+    val removed = m.Remove("b")
+    val t1 = IsFalse(t, removed)
     return Eq[int](t1, m.Size(), 1)
 }
 
@@ -105,7 +105,7 @@ func TestHashMapClear(t T) T {
     m.Put("a", 1)
     m.Put("b", 2)
     m.Clear()
-    var t1 = Eq[int](t, m.Size(), 0)
+    val t1 = Eq[int](t, m.Size(), 0)
     return IsTrue(t1, m.IsEmpty())
 }
 
@@ -116,9 +116,9 @@ func TestHashMapIntKeys(t T) T {
     m.Put(1, "one")
     m.Put(2, "two")
     m.Put(3, "three")
-    var t1 = Eq[int](t, m.Size(), 3)
-    var t2 = Eq[string](t1, m.GetOrElse(1, ""), "one")
-    var t3 = Eq[string](t2, m.GetOrElse(2, ""), "two")
+    val t1 = Eq[int](t, m.Size(), 3)
+    val t2 = Eq[string](t1, m.GetOrElse(1, ""), "one")
+    val t3 = Eq[string](t2, m.GetOrElse(2, ""), "two")
     return Eq[string](t3, m.GetOrElse(3, ""), "three")
 }
 
@@ -127,12 +127,12 @@ func TestHashMapIntKeys(t T) T {
 func TestHashMapPutIfAbsent(t T) T {
     val m = EmptyHashMap[string, int]()
     m.Put("a", 1)
-    var added1 = m.PutIfAbsent("a", 2)
-    var added2 = m.PutIfAbsent("b", 2)
+    val added1 = m.PutIfAbsent("a", 2)
+    val added2 = m.PutIfAbsent("b", 2)
 
-    var t1 = IsFalse(t, added1)
-    var t2 = IsTrue(t1, added2)
-    var t3 = Eq[int](t2, m.GetOrElse("a", 0), 1)
+    val t1 = IsFalse(t, added1)
+    val t2 = IsTrue(t1, added2)
+    val t3 = Eq[int](t2, m.GetOrElse("a", 0), 1)
     return Eq[int](t3, m.GetOrElse("b", 0), 2)
 }
 
@@ -143,19 +143,19 @@ func TestHashMapGetOrElseUpdate(t T) T {
     val v1 = m.GetOrElseUpdate("a", () => 99)
     val v2 = m.GetOrElseUpdate("b", () => 42)
 
-    var t1 = Eq[int](t, v1, 1)
-    var t2 = Eq[int](t1, v2, 42)
+    val t1 = Eq[int](t, v1, 1)
+    val t2 = Eq[int](t1, v2, 42)
     return Eq[int](t2, m.GetOrElse("b", 0), 42)
 }
 
 func TestHashMapUpdate(t T) T {
     val m = EmptyHashMap[string, int]()
     m.Put("a", 1)
-    var updated = m.Update("a", (v int) => v * 2)
-    var notUpdated = m.Update("b", (v int) => v * 2)
+    val updated = m.Update("a", (v) => v * 2)
+    val notUpdated = m.Update("b", (v) => v * 2)
 
-    var t1 = IsTrue(t, updated)
-    var t2 = IsFalse(t1, notUpdated)
+    val t1 = IsTrue(t, updated)
+    val t2 = IsFalse(t1, notUpdated)
     return Eq[int](t2, m.GetOrElse("a", 0), 2)
 }
 
@@ -163,12 +163,12 @@ func TestHashMapPutAllEntries(t T) T {
     val m = EmptyHashMap[string, int]()
     m.Put("a", 1)
     val entries = ArrayOf[Tuple[string, int]](
-        Tuple[string, int](V1 = "b", V2 = 2),
-        Tuple[string, int](V1 = "c", V2 = 3)
+        ("b", 2),
+        ("c", 3)
     )
     m.PutAllEntries(entries)
 
-    var t1 = Eq[int](t, m.Size(), 3)
+    val t1 = Eq[int](t, m.Size(), 3)
     return IsTrue(t1, m.Contains("c"))
 }
 
@@ -190,11 +190,11 @@ func TestHashMapMerge(t T) T {
     val m2 = EmptyHashMap[string, int]()
     m2.Put("b", 3)
     m2.Put("c", 4)
-    m1.Merge(m2, (v1 int, v2 int) => v1 + v2)
+    m1.Merge(m2, (v1, v2) => v1 + v2)
 
-    var t1 = Eq[int](t, m1.Size(), 3)
-    var t2 = Eq[int](t1, m1.GetOrElse("a", 0), 1)
-    var t3 = Eq[int](t2, m1.GetOrElse("b", 0), 5)
+    val t1 = Eq[int](t, m1.Size(), 3)
+    val t2 = Eq[int](t1, m1.GetOrElse("a", 0), 1)
+    val t3 = Eq[int](t2, m1.GetOrElse("b", 0), 5)
     return Eq[int](t3, m1.GetOrElse("c", 0), 4)
 }
 
@@ -206,10 +206,10 @@ func TestHashMapFilter(t T) T {
     m.Put("b", 2)
     m.Put("c", 3)
     m.Put("d", 4)
-    val filtered = m.Filter((k string, v int) => v > 2)
+    val filtered = m.Filter((k, v) => v > 2)
 
-    var t1 = Eq[int](t, filtered.Size(), 2)
-    var t2 = IsFalse(t1, filtered.Contains("a"))
+    val t1 = Eq[int](t, filtered.Size(), 2)
+    val t2 = IsFalse(t1, filtered.Contains("a"))
     return IsTrue(t2, filtered.Contains("c"))
 }
 
@@ -219,7 +219,7 @@ func TestHashMapCollect(t T) T {
     m.Put("b", 2)
     m.Put("c", 3)
     // Collect values > 1 as formatted strings
-    var result = m.Collect((k string, v int) => {
+    val result = m.Collect((k, v) => {
         if v > 1 {
             return Some(fmt.Sprintf("%s:%d", k, v))
         }
@@ -234,9 +234,9 @@ func TestHashMapFilterKeys(t T) T {
     m.Put("apple", 1)
     m.Put("banana", 2)
     m.Put("cherry", 3)
-    val filtered = m.FilterKeys((k string) => len(k) > 5)
+    val filtered = m.FilterKeys((k) => len(k) > 5)
 
-    var t1 = Eq[int](t, filtered.Size(), 2)
+    val t1 = Eq[int](t, filtered.Size(), 2)
     return IsFalse(t1, filtered.Contains("apple"))
 }
 
@@ -245,9 +245,9 @@ func TestHashMapFilterValues(t T) T {
     m.Put("a", 1)
     m.Put("b", 2)
     m.Put("c", 3)
-    val filtered = m.FilterValues((v int) => v % 2 == 0)
+    val filtered = m.FilterValues((v) => v % 2 == 0)
 
-    var t1 = Eq[int](t, filtered.Size(), 1)
+    val t1 = Eq[int](t, filtered.Size(), 1)
     return IsTrue(t1, filtered.Contains("b"))
 }
 
@@ -256,10 +256,10 @@ func TestHashMapMapValues(t T) T {
     m.Put("a", 1)
     m.Put("b", 2)
     m.Put("c", 3)
-    val doubled = m.MapValues[int]((v int) => v * 2)
+    val doubled = m.MapValues[int]((v) => v * 2)
 
-    var t1 = Eq[int](t, doubled.GetOrElse("a", 0), 2)
-    var t2 = Eq[int](t1, doubled.GetOrElse("b", 0), 4)
+    val t1 = Eq[int](t, doubled.GetOrElse("a", 0), 2)
+    val t2 = Eq[int](t1, doubled.GetOrElse("b", 0), 4)
     return Eq[int](t2, doubled.GetOrElse("c", 0), 6)
 }
 
@@ -269,11 +269,11 @@ func TestHashMapPartition(t T) T {
     m.Put("b", 2)
     m.Put("c", 3)
     m.Put("d", 4)
-    val result = m.Partition((k string, v int) => v % 2 == 0)
+    val result = m.Partition((k, v) => v % 2 == 0)
     val even = result.V1
     val odd = result.V2
 
-    var t1 = Eq[int](t, even.Size(), 2)
+    val t1 = Eq[int](t, even.Size(), 2)
     return Eq[int](t1, odd.Size(), 2)
 }
 
@@ -285,9 +285,9 @@ func TestHashMapFilterInPlace(t T) T {
     m.Put("b", 2)
     m.Put("c", 3)
     m.Put("d", 4)
-    m.FilterInPlace((k string, v int) => v > 2)
+    m.FilterInPlace((k, v) => v > 2)
 
-    var t1 = Eq[int](t, m.Size(), 2)
+    val t1 = Eq[int](t, m.Size(), 2)
     return IsTrue(t1, m.Contains("c"))
 }
 
@@ -296,10 +296,10 @@ func TestHashMapUpdateAll(t T) T {
     m.Put("a", 1)
     m.Put("b", 2)
     m.Put("c", 3)
-    m.UpdateAll((k string, v int) => v * 10)
+    m.UpdateAll((k, v) => v * 10)
 
-    var t1 = Eq[int](t, m.GetOrElse("a", 0), 10)
-    var t2 = Eq[int](t1, m.GetOrElse("b", 0), 20)
+    val t1 = Eq[int](t, m.GetOrElse("a", 0), 10)
+    val t2 = Eq[int](t1, m.GetOrElse("b", 0), 20)
     return Eq[int](t2, m.GetOrElse("c", 0), 30)
 }
 
@@ -310,7 +310,7 @@ func TestHashMapFoldLeft(t T) T {
     m.Put("a", 1)
     m.Put("b", 2)
     m.Put("c", 3)
-    val sum = m.FoldLeftKV[int](0, (acc int, k string, v int) => acc + v)
+    val sum = m.FoldLeftKV[int](0, (acc, k, v) => acc + v)
     return Eq[int](t, sum, 6)
 }
 
@@ -321,8 +321,8 @@ func TestHashMapExists(t T) T {
     m.Put("a", 1)
     m.Put("b", 2)
     m.Put("c", 3)
-    var t1 = IsTrue(t, m.Exists((k string, v int) => v > 2))
-    return IsFalse(t1, m.Exists((k string, v int) => v > 10))
+    val t1 = IsTrue(t, m.Exists((k, v) => v > 2))
+    return IsFalse(t1, m.Exists((k, v) => v > 10))
 }
 
 func TestHashMapForAll(t T) T {
@@ -330,8 +330,8 @@ func TestHashMapForAll(t T) T {
     m.Put("a", 2)
     m.Put("b", 4)
     m.Put("c", 6)
-    var t1 = IsTrue(t, m.ForAll((k string, v int) => v % 2 == 0))
-    return IsFalse(t1, m.ForAll((k string, v int) => v < 5))
+    val t1 = IsTrue(t, m.ForAll((k, v) => v % 2 == 0))
+    return IsFalse(t1, m.ForAll((k, v) => v < 5))
 }
 
 func TestHashMapFind(t T) T {
@@ -339,8 +339,8 @@ func TestHashMapFind(t T) T {
     m.Put("a", 1)
     m.Put("b", 2)
     m.Put("c", 3)
-    val found = m.Find((k string, v int) => v == 2)
-    var t1 = IsSome(t, found)
+    val found = m.Find((k, v) => v == 2)
+    val t1 = IsSome(t, found)
     return Eq[string](t1, found.Get().V1, "b")
 }
 
@@ -350,7 +350,7 @@ func TestHashMapCount(t T) T {
     m.Put("b", 2)
     m.Put("c", 3)
     m.Put("d", 4)
-    return Eq[int](t, m.Count((k string, v int) => v > 2), 2)
+    return Eq[int](t, m.Count((k, v) => v > 2), 2)
 }
 
 // === Key/Value Access Tests ===
@@ -361,9 +361,9 @@ func TestHashMapKeys(t T) T {
     m.Put("b", 2)
     m.Put("c", 3)
     val keys = m.Keys()
-    var t1 = Eq[int](t, keys.Size(), 3)
-    var t2 = IsTrue(t1, keys.Contains("a"))
-    var t3 = IsTrue(t2, keys.Contains("b"))
+    val t1 = Eq[int](t, keys.Size(), 3)
+    val t2 = IsTrue(t1, keys.Contains("a"))
+    val t3 = IsTrue(t2, keys.Contains("b"))
     return IsTrue(t3, keys.Contains("c"))
 }
 
@@ -405,7 +405,7 @@ func TestHashMapHeadOption(t T) T {
     m.Put("a", 1)
     val empty = EmptyHashMap[string, int]()
 
-    var t1 = IsSome(t, m.HeadOption())
+    val t1 = IsSome(t, m.HeadOption())
     return IsNone(t1, empty.HeadOption())
 }
 
@@ -425,7 +425,7 @@ func TestHashMapToGoMap(t T) T {
     m.Put("a", 1)
     m.Put("b", 2)
     val goMap = m.ToGoMap()
-    var t1 = Eq[int](t, len(goMap), 2)
+    val t1 = Eq[int](t, len(goMap), 2)
     return Eq[int](t1, goMap["a"], 1)
 }
 
@@ -444,20 +444,20 @@ func TestHashMapClone(t T) T {
     val clone = m.Clone()
 
     m.Put("c", 3)
-    var t1 = Eq[int](t, clone.Size(), 2)
+    val t1 = Eq[int](t, clone.Size(), 2)
     return Eq[int](t1, m.Size(), 3)
 }
 
 func TestHashMapFromSlice(t T) T {
     val entries = go_interop.SliceOf[Tuple[string, int]](
-        Tuple[string, int](V1 = "a", V2 = 1),
-        Tuple[string, int](V1 = "b", V2 = 2),
-        Tuple[string, int](V1 = "c", V2 = 3)
+        ("a", 1),
+        ("b", 2),
+        ("c", 3)
     )
 
     val m = HashMapFromSlice[string, int](entries)
-    var t1 = Eq[int](t, m.Size(), 3)
-    var t2 = Eq[int](t1, m.GetOrElse("a", 0), 1)
+    val t1 = Eq[int](t, m.Size(), 3)
+    val t2 = Eq[int](t1, m.GetOrElse("a", 0), 1)
     return Eq[int](t2, m.GetOrElse("b", 0), 2)
 }
 
@@ -468,9 +468,9 @@ func TestHashMapLarge(t T) T {
     for i := 0; i < 1000; i++ {
         m.Put(i, i * 2)
     }
-    var t1 = Eq[int](t, m.Size(), 1000)
-    var t2 = Eq[int](t1, m.GetOrElse(0, -1), 0)
-    var t3 = Eq[int](t2, m.GetOrElse(500, -1), 1000)
+    val t1 = Eq[int](t, m.Size(), 1000)
+    val t2 = Eq[int](t1, m.GetOrElse(0, -1), 0)
+    val t3 = Eq[int](t2, m.GetOrElse(500, -1), 1000)
     return Eq[int](t3, m.GetOrElse(999, -1), 1998)
 }
 
@@ -495,8 +495,8 @@ func TestHashMapWithHashableKey(t T) T {
     m.Put(p1, "Engineer")
     m.Put(p2, "Designer")
 
-    var t1 = Eq[int](t, m.Size(), 2)
-    var t2 = Eq[string](t1, m.GetOrElse(p1, ""), "Engineer")
+    val t1 = Eq[int](t, m.Size(), 2)
+    val t2 = Eq[string](t1, m.GetOrElse(p1, ""), "Engineer")
     return Eq[string](t2, m.GetOrElse(p2, ""), "Designer")
 }
 
@@ -508,7 +508,7 @@ func TestHashMapHashableKeyUpdate(t T) T {
     m.Put(p1, "Engineer")
     m.Put(p1copy, "Senior Engineer")
 
-    var t1 = Eq[int](t, m.Size(), 1)
+    val t1 = Eq[int](t, m.Size(), 1)
     return Eq[string](t1, m.GetOrElse(p1, ""), "Senior Engineer")
 }
 
@@ -516,7 +516,7 @@ func TestHashMapHashableKeyUpdate(t T) T {
 
 func TestHashMapString(t T) T {
     val empty = EmptyHashMap[string, int]()
-    var t1 = Eq[string](t, empty.String(), "HashMap()")
+    val t1 = Eq[string](t, empty.String(), "HashMap()")
 
     val m = EmptyHashMap[string, int]()
     m.Put("a", 1)
@@ -530,7 +530,7 @@ func TestHashMapResize(t T) T {
     for i := 0; i < 100; i++ {
         m.Put(i, i)
     }
-    var t1 = Eq[int](t, m.Size(), 100)
+    val t1 = Eq[int](t, m.Size(), 100)
     for i := 0; i < 100; i++ {
         if !m.Contains(i) {
             return t1.Error("Missing key after resize")

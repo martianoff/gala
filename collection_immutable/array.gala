@@ -1,7 +1,6 @@
 package collection_immutable
 
 import (
-    "fmt"
     . "martianoff/gala/std"
     "martianoff/gala/go_interop"
 )
@@ -312,7 +311,7 @@ func getFromNode[T any](node *arrayNode[T], index int, depth int) T {
 // Panics if index is out of bounds.
 func (a Array[T]) Get(index int) T {
     if (index < 0) || (index >= a.length) {
-        panic(fmt.Sprintf("Array.Get: index %d out of bounds [0, %d)", index, a.length))
+        panic(f"Array.Get: index $index out of bounds [0, ${a.length})")
     }
 
     // Check if index is in prefix (prefix is stored in forward order)
@@ -385,7 +384,7 @@ func updateInNode[T any](node *arrayNode[T], index int, value T, depth int) *arr
 // Updated returns a new array with the element at index replaced. O(log32 n).
 func (a Array[T]) Updated(index int, value T) Array[T] {
     if (index < 0) || (index >= a.length) {
-        panic(fmt.Sprintf("Array.Updated: index %d out of bounds [0, %d)", index, a.length))
+        panic(f"Array.Updated: index $index out of bounds [0, ${a.length})")
     }
 
     var prefixLen = len(a.prefix)
@@ -1012,7 +1011,7 @@ func (a Array[T]) String() string {
         if i > 0 {
             result = result + ", "
         }
-        result = result + fmt.Sprintf("%v", a.Get(i))
+        result = result + s"${a.Get(i)}"
     }
     return result + ")"
 }
@@ -1027,7 +1026,7 @@ func (a Array[T]) MkString(sep string) string {
         if i > 0 {
             result = result + sep
         }
-        result = result + fmt.Sprintf("%v", a.Get(i))
+        result = result + s"${a.Get(i)}"
     }
     return result
 }

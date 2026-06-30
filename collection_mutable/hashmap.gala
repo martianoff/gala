@@ -259,11 +259,10 @@ func (m *HashMap[K, V]) GetOrElse(key K, defaultValue V) V {
 
 // Apply returns the value for a key. Panics if key not found.
 func (m *HashMap[K, V]) Apply(key K) V {
-    val opt = m.Get(key)
-    if opt.IsEmpty() {
-        panic(fmt.Sprintf("HashMap: key not found: %v", key))
+    return m.Get(key) match {
+        case Some(v) => v
+        case None() => panic(s"HashMap: key not found: $key")
     }
-    return opt.Get()
 }
 
 // ContainsAllKeys returns true if the map contains all keys from an Array.
@@ -525,7 +524,7 @@ func (m *HashMap[K, V]) String() string {
         if !first {
             result = result + ", "
         }
-        result = result + fmt.Sprintf("%v -> %v", k, v)
+        result = result + s"$k -> $v"
         first = false
     })
     return result + ")"
@@ -542,7 +541,7 @@ func (m *HashMap[K, V]) MkString(sep string) string {
         if !first {
             result = result + sep
         }
-        result = result + fmt.Sprintf("%v -> %v", k, v)
+        result = result + s"$k -> $v"
         first = false
     })
     return result
@@ -574,11 +573,9 @@ func (m *HashMap[K, V]) PutFrom(other *HashMap[K, V]) {
 // Merge merges another map, using a function for duplicate keys.
 func (m *HashMap[K, V]) Merge(other *HashMap[K, V], f func(V, V) V) {
     other.ForEachKV((k K, v V) => {
-        val existing = m.Get(k)
-        if existing.IsDefined() {
-            m.Put(k, f(existing.Get(), v))
-        } else {
-            m.Put(k, v)
+        m.Get(k) match {
+            case Some(e) => m.Put(k, f(e, v))
+            case None() => m.Put(k, v)
         }
     })
 }
@@ -604,11 +601,10 @@ func (m *HashMap[K, V]) Find(p func(K, V) bool) Option[Tuple[K, V]] {
 
 // Head returns the first entry. Panics if empty.
 func (m *HashMap[K, V]) Head() Tuple[K, V] {
-    val opt = m.HeadOption()
-    if opt.IsEmpty() {
-        panic("HashMap: head of empty map")
+    return m.HeadOption() match {
+        case Some(v) => v
+        case None() => panic("HashMap: head of empty map")
     }
-    return opt.Get()
 }
 
 // HeadOption returns the first entry as Option.
