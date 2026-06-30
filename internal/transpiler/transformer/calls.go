@@ -874,10 +874,22 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 	// Update typeName to resolved name for subsequent lookups.
 	typeName = resolvedTypeMeta
 
+	methodMeta, hasApply := typeMeta.Methods["Apply"]
+
 	// Positional struct construction has priority over Apply: when arg count
 	// equals field count, emit a struct literal directly.
+	//
+	// Exception: a sealed type's parent layout is synthetic (merged variant
+	// fields plus a `_variant` discriminator) and is never a valid positional
+	// construction target — callers construct sealed values through case
+	// constructors or the companion Apply. Without this guard, calling a sealed
+	// type that has an Apply method with an arg count that happens to equal the
+	// synthetic field count (e.g. `Future[T](() => x, ec)` where the parent has
+	// `state` + `_variant`) silently miscompiles into a wrong struct literal
+	// instead of dispatching to Apply.
 	resolvedTypeName := t.resolveStructTypeName(typeName)
-	if fields, structOk := t.structFields[resolvedTypeName]; structOk && len(args) > 0 && len(args) == len(fields) {
+	sealedWithApply := typeMeta.IsSealed && hasApply
+	if fields, structOk := t.structFields[resolvedTypeName]; structOk && len(args) > 0 && len(args) == len(fields) && !sealedWithApply {
 		// Infer type args from positional arg types when the call site omitted
 		// them. Without this, a generic struct like `Tuple(a, b)` emits
 		// `Tuple{V1: a, V2: b}` — Go rejects the bare generic type.
@@ -885,7 +897,6 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 		return true, t.buildStructLiteral(typedFun, resolvedTypeName, fields, args, false), nil
 	}
 
-	methodMeta, hasApply := typeMeta.Methods["Apply"]
 	if !hasApply {
 		// No Apply method. Still emit a struct literal if this is a known
 		// struct layout — callers may supply a subset of fields.

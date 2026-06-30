@@ -26,7 +26,7 @@ val immediate = FutureOf[int](42)
 val failed = FutureFailed[int](SomeError("oops"))
 
 // Runs asynchronously
-val async = FutureApply[int](() => expensiveComputation())
+val async = Future[int](() => expensiveComputation())
 ```
 
 ### Blocking Operations
@@ -67,7 +67,7 @@ Two complementary primitives:
 - `WithTimeout(duration) Future[T]` — monadic; the returned Future fails with `TimeoutError` if the original doesn't complete in time, otherwise mirrors its result.
 
 ```gala
-val slow = FutureApply[int](() => { Sleep(Seconds(2)); 42 })
+val slow = Future[int](() => { Sleep(Seconds(2)); 42 })
 
 // Monadic: stays a Future, composes with Map/Recover/etc.
 val bounded = slow.WithTimeout(Milliseconds(500))
@@ -171,11 +171,11 @@ Each Future has an associated `ExecutionContext` that determines where callbacks
 
 ```gala
 // Default: uses GlobalEC (UnboundedExecutionContext)
-val f1 = FutureApply[int](() => compute())
+val f1 = Future[int](() => compute())
 
 // With custom ExecutionContext
 val pool = NewFixedPoolEC(4)  // Worker pool with 4 goroutines
-val f2 = FutureApplyWith[int](() => compute(), pool)
+val f2 = FutureOn[int](() => compute(), pool)
 
 // Derived futures inherit EC from parent
 val f3 = f2.Map((n) => s"$n")                             // uses pool
@@ -212,12 +212,16 @@ pool.Shutdown()
 
 ### Constructor Variants with Custom EC
 
-| Default | With EC |
-|---------|---------|
-| `FutureApply[T](f)` | `FutureApplyWith[T](f, ec)` |
-| `FutureOf[T](v)` | `FutureOfWith[T](v, ec)` |
-| `FutureFailed[T](e)` | `FutureFailedWith[T](e, ec)` |
-| `NewPromise[T]()` | `NewPromiseWith[T](ec)` |
+The async constructor `Future[T](() => body)` always runs on `GlobalEC()`; use
+`FutureOn` for a custom EC. The eager constructors and `NewPromise` take an
+optional trailing `ec` argument (default `GlobalEC()`).
+
+| Default EC (GlobalEC) | Custom EC |
+|-----------------------|-----------|
+| `Future[T](() => f)` | `FutureOn[T](() => f, ec)` |
+| `FutureOf[T](v)` | `FutureOf[T](v, ec)` |
+| `FutureFailed[T](e)` | `FutureFailed[T](e, ec)` |
+| `NewPromise[T]()` | `NewPromise[T](ec)` |
 
 ---
 

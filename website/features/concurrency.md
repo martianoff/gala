@@ -17,8 +17,8 @@ Every Future runs on an `ExecutionContext` that controls goroutine scheduling. T
 ```gala
 import . "martianoff/gala/concurrent"
 
-val f1 = FutureApply[int](() => expensiveComputation())
-val f2 = FutureApply[string](() => fetchName())
+val f1 = Future[int](() => expensiveComputation())
+val f2 = Future[string](() => fetchName())
 
 val combined = f1.Zip(f2)
     .Map((pair) => s"Result: ${pair.V1} from ${pair.V2}")
@@ -36,7 +36,7 @@ Println(combined.Get())
 import . "martianoff/gala/concurrent"
 
 // Run a computation asynchronously in a goroutine
-val async = FutureApply[int](() => expensiveComputation())
+val async = Future[int](() => expensiveComputation())
 
 // Already completed with a known value
 val immediate = FutureOf[int](42)
@@ -54,13 +54,13 @@ val failed = FutureFailed[int](SomeError("oops"))
 `Map` transforms a successful result. `FlatMap` chains a function that returns another Future. Both propagate errors automatically:
 
 ```gala
-val userId = FutureApply[int](() => lookupUserId("alice"))
+val userId = Future[int](() => lookupUserId("alice"))
 
 // Map: transform the result
 val greeting = userId.Map((id) => s"User #$id")
 
 // FlatMap: chain another async operation
-val profile = userId.FlatMap((id) => FutureApply[string](() => fetchProfile(id)))
+val profile = userId.FlatMap((id) => Future[string](() => fetchProfile(id)))
 ```
 
 If the original Future fails, Map and FlatMap short-circuit — the error propagates through the chain without executing the transform function.
@@ -72,8 +72,8 @@ If the original Future fails, Map and FlatMap short-circuit — the error propag
 `Zip` runs two Futures concurrently and combines their results into a Tuple when both complete:
 
 ```gala
-val f1 = FutureApply[int](() => fetchCount())
-val f2 = FutureApply[string](() => fetchLabel())
+val f1 = Future[int](() => fetchCount())
+val f2 = Future[string](() => fetchLabel())
 
 val combined = f1.Zip(f2)  // Future[Tuple[int, string]]
 val pair = combined.Get()
@@ -93,13 +93,13 @@ val total = f1.ZipWith(f2, (count, label) => s"$label = $count")
 `Recover` provides a fallback value when a Future fails. `RecoverWith` provides a fallback Future:
 
 ```gala
-val risky = FutureApply[int](() => riskyOperation())
+val risky = Future[int](() => riskyOperation())
 
 // Recover with a default value
 val safe = risky.Recover((e) => 0)
 
 // Recover with another Future
-val retried = risky.RecoverWith((e) => FutureApply[int](() => fallbackOperation()))
+val retried = risky.RecoverWith((e) => Future[int](() => fallbackOperation()))
 
 // Fallback: use another Future if this one fails
 val withFallback = risky.Fallback(FutureOf[int](0))
@@ -112,7 +112,7 @@ val withFallback = risky.Fallback(FutureOf[int](0))
 Block the current goroutine until a Future completes:
 
 ```gala
-val f = FutureApply[int](() => compute())
+val f = Future[int](() => compute())
 
 // Block indefinitely, get Try[T]
 val result = f.Await()           // Try[int]
@@ -131,7 +131,7 @@ val safe = f.GetOrElse(0)       // int — returns 0 on failure
 Register callbacks that fire when a Future completes, without blocking:
 
 ```gala
-val f = FutureApply[int](() => compute())
+val f = Future[int](() => compute())
 
 f.OnSuccess((v) => Println(s"Got: $v"))
 f.OnFailure((e) => Println(s"Error: $e"))
@@ -219,7 +219,7 @@ import . "martianoff/gala/concurrent"
 val pool = NewFixedPoolEC(4)
 
 // Run futures on the pool
-val f1 = FutureApplyWith[int](() => compute(), pool)
+val f1 = FutureOn[int](() => compute(), pool)
 
 // Derived futures inherit the parent's EC
 val f2 = f1.Map((n) => s"$n")          // also runs on pool
@@ -280,9 +280,9 @@ import . "martianoff/gala/concurrent"
 
 func main() {
     // Launch three independent async operations
-    val userF    = FutureApply[string](() => fetchUser())
-    val ordersF  = FutureApply[int](() => fetchOrderCount())
-    val balanceF = FutureApply[float64](() => fetchBalance())
+    val userF    = Future[string](() => fetchUser())
+    val ordersF  = Future[int](() => fetchOrderCount())
+    val balanceF = Future[float64](() => fetchBalance())
 
     // Combine user and orders in parallel
     val summary = userF.ZipWith(ordersF, (user, orders) =>

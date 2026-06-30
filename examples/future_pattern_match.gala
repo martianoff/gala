@@ -72,9 +72,9 @@ func main() {
     fmt.Println(classify(smallValueFuture))
 
     // Pattern matching on async computation results
-    fmt.Println("\n=== Pattern Matching on FutureApply ===")
+    fmt.Println("\n=== Pattern Matching on Future(...) ===")
 
-    val computeFuture = FutureApply[int](() => 21 * 2)
+    val computeFuture = Future[int](() => 21 * 2)
 
     val computeResult = computeFuture match {
         case Succeeded[int](v) => fmt.Sprintf("Computation result: %d", v)

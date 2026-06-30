@@ -10,7 +10,7 @@ Completed with failure: something went wrong
 Large value: 100
 Small value: 5
 
-=== Pattern Matching on FutureApply ===
+=== Pattern Matching on Future(...) ===
 Computation result: 42
 
 === Pattern Matching on Sequence of Futures ===

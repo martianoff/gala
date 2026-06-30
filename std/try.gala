@@ -24,9 +24,12 @@ func (t Try[T]) IsFailure() bool = t.isFailure()
 func (t Try[T]) Apply(f func() T) Try[T] = tryRecover[T](f)
 
 // Get returns the value if this is a Success, otherwise panics.
+// On Failure it panics with the original error value (not a string), so a
+// surrounding recover (e.g. a Future's panic capture) can recover the typed
+// error unchanged rather than a wrapped message.
 func (t Try[T]) Get() T {
     if t.isFailure() {
-        panic("Try.Get on Failure: " + t.Err.Error())
+        panic(t.Err)
     }
     return t.Value
 }

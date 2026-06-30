@@ -64,7 +64,7 @@ func main() {
     }
     fmt.Println(msg4)
 
-    // Test 5: Future with inferred type parameter - T inferred from f2's type *Future[int]
+    // Test 5: Future with inferred type parameter - T inferred from f2's type Future[int]
     val f2 = FutureOf[int](200)
     val msg5 = f2 match {
         case Succeeded(v) => fmt.Sprintf("Inferred Succeeded: %d", v)
