@@ -575,15 +575,37 @@ func (h *GalaHandler) analyzeAndCache(uri, cleanText, caller string) {
 
 // --- Helpers ---
 
+// uriToPath converts a "file://" URI to a native filesystem path. It must work
+// cross-platform:
+//
+//	POSIX:   "file:///tmp/x"          -> "/tmp/x"
+//	Windows: "file:///C:/Users/x"     -> "C:\\Users\\x"
+//	Windows: "file:///c%3A/Users/x"   -> "c:\\Users\\x"  (percent-encoded ':')
+//
+// Only the "file://" scheme is stripped. For a POSIX absolute path the URI is
+// "file://" + "/abs/path" = "file:///abs/path", so the third slash is the
+// leading slash of the path and MUST be preserved. The previous implementation
+// stripped "file:///" wholesale, which dropped that slash and produced a
+// relative path — breaking sibling-directory discovery for every analyzed file
+// and so silently disabling cross-file type resolution in the LSP.
 func uriToPath(uri string) string {
-	path := uri
-	path = strings.TrimPrefix(path, "file:///")
-	path = strings.TrimPrefix(path, "file://")
-	// Decode percent-encoded characters (e.g., %3A → :, %20 → space)
+	path := strings.TrimPrefix(uri, "file://")
+	// Decode percent-encoded characters (e.g., %3A → :, %20 → space) before
+	// drive-letter detection so an encoded colon ("/c%3A/...") is recognized.
 	if decoded, err := url.PathUnescape(path); err == nil {
 		path = decoded
 	}
+	// Windows drive paths arrive as "/C:/Users/..."; drop the leading slash so
+	// the result is the valid "C:/Users/..." form. POSIX paths keep their
+	// leading slash.
+	if len(path) >= 3 && path[0] == '/' && isASCIILetter(path[1]) && path[2] == ':' {
+		path = path[1:]
+	}
 	return filepath.FromSlash(path)
+}
+
+func isASCIILetter(b byte) bool {
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
 }
 
 func pathToURI(path string) string {

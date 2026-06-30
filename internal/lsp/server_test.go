@@ -18,6 +18,22 @@ import (
 
 const testURI = "file:///test/main.gala"
 
+// fileURIForPath builds a file:// URI the way a real LSP client (IntelliJ,
+// VS Code) does: "file://" + the slash-normalized absolute path, with a single
+// leading slash. On POSIX an absolute path already starts with "/", so this
+// yields "file:///abs/path" (three slashes) — NOT the "file:////abs/path"
+// (four slashes) that "file:///" + path would produce. Using the real format
+// is what lets these tests exercise uriToPath the same way production does;
+// the four-slash form masked the leading-slash bug that broke sibling
+// discovery for every analyzed file.
+func fileURIForPath(p string) lsp.DocumentURI {
+	s := filepath.ToSlash(p)
+	if !strings.HasPrefix(s, "/") {
+		s = "/" + s // Windows drive paths: C:/... -> /C:/...
+	}
+	return lsp.DocumentURI("file://" + s)
+}
+
 // testDir creates a temp directory with a .gala file and returns the file URI.
 // The analyzer needs files on disk to resolve imports and sibling files.
 func testFileOnDisk(t *testing.T, src string) (uri lsp.DocumentURI, cleanup func()) {
@@ -31,7 +47,7 @@ func testFileOnDisk(t *testing.T, src string) (uri lsp.DocumentURI, cleanup func
 		os.RemoveAll(dir)
 		t.Fatal(err)
 	}
-	fileURI := lsp.DocumentURI("file:///" + filepath.ToSlash(filePath))
+	fileURI := fileURIForPath(filePath)
 	return fileURI, func() { os.RemoveAll(dir) }
 }
 
@@ -54,7 +70,7 @@ func openNamedFileOnDisk(t *testing.T, h *servertest.Harness, name, src string) 
 	if err := os.WriteFile(filePath, []byte(src), 0644); err != nil {
 		t.Fatal(err)
 	}
-	fileURI := lsp.DocumentURI("file:///" + filepath.ToSlash(filePath))
+	fileURI := fileURIForPath(filePath)
 	if err := h.DidOpen(fileURI, "gala", src); err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +112,7 @@ func openProjectFile(t *testing.T, h *servertest.Harness, dir, name string) lsp.
 	if err != nil {
 		t.Fatal(err)
 	}
-	fileURI := lsp.DocumentURI("file:///" + filepath.ToSlash(filePath))
+	fileURI := fileURIForPath(filePath)
 	if err := h.DidOpen(fileURI, "gala", string(src)); err != nil {
 		t.Fatal(err)
 	}

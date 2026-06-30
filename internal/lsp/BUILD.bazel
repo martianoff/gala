@@ -35,9 +35,11 @@ go_test(
     name = "lsp_test",
     srcs = [
         "error_lines_test.go",
+        "repro_gala_mcp_test.go",
         "server_test.go",
         "signature_help_test.go",
         "typeatpos_test.go",
+        "uri_internal_test.go",
     ],
     data = [
         "//collection_immutable:gala_sources",
