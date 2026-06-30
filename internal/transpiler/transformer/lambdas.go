@@ -21,13 +21,30 @@ import (
 //            wrapBlockReturnsInSome
 
 func (t *galaASTTransformer) transformLambda(ctx *grammar.LambdaExpressionContext) (ast.Expr, error) {
-	return t.transformLambdaWithExpectedType(ctx, nil, nil)
+	// An initializer in a typed slot (e.g. `val f func(int) int = (x) => x + 1`)
+	// threads the declared signature here so the otherwise context-free lambda
+	// resolves its params/return to the declared types instead of falling back to
+	// `any`. Consume the hint so it applies to exactly this lambda and does not
+	// leak into nested body lambdas (curried `(a) => (b) => ...`), which receive
+	// their own decomposed expectation from transformLambdaWithExpectedType.
+	if t.expectedLambdaParamTypes != nil || t.expectedLambdaRetType != nil {
+		params, ret := t.expectedLambdaParamTypes, t.expectedLambdaRetType
+		t.expectedLambdaParamTypes, t.expectedLambdaRetType = nil, nil
+		return t.transformLambdaWithExpectedType(ctx, ret, params, true)
+	}
+	return t.transformLambdaWithExpectedType(ctx, nil, nil, true)
 }
 
 // ExpectedVoid is a sentinel value indicating the lambda should have no return type
 var ExpectedVoid ast.Expr = &ast.Ident{Name: "__void__"}
 
-func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.LambdaExpressionContext, expectedRetType ast.Expr, expectedParamTypes []transpiler.Type) (ast.Expr, error) {
+// transformLambdaWithExpectedType lowers a lambda, applying expectedParamTypes /
+// expectedRetType when present. requireTypedParams controls the untyped-parameter
+// policy: when true (the bare/initializer path), a parameter with no annotation
+// and no inferable type is a hard error (GALA-E0033); when false (call-argument /
+// return-position path, where param-type inference may still be incomplete), it
+// falls back to `any` to preserve best-effort lowering.
+func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.LambdaExpressionContext, expectedRetType ast.Expr, expectedParamTypes []transpiler.Type, requireTypedParams bool) (ast.Expr, error) {
 	t.pushScope()
 	defer t.popScope()
 	paramsCtx := ctx.Parameters().(*grammar.ParametersContext)
@@ -59,6 +76,7 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 				return nil, err
 			}
 			// If param has no type annotation and we have an expected type, use it
+			typeApplied := false
 			if paramCtx.Type_() == nil && expectedParamTypes != nil && i < len(expectedParamTypes) {
 				expType := expectedParamTypes[i]
 				if expType != nil && !expType.IsNil() && !expType.IsAny() {
@@ -79,7 +97,22 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 						Name:   name,
 						Type:   expType,
 					})
+					typeApplied = true
 				}
+			}
+			// A lambda parameter with no annotation and no inferable expected type
+			// would emit `any` (transformParameter's fallback). Reject it instead of
+			// generating non-concrete Go: the author must annotate the parameter or
+			// place the lambda in a typed context. (Replaces the prior `any`+warning
+			// fallback now that typed contexts thread expected types.)
+			if requireTypedParams && paramCtx.Type_() == nil && !typeApplied {
+				name := paramCtx.Identifier().GetText()
+				return nil, galaerr.NewCodedSemanticError(
+					galaerr.CodeUntypedLambdaParam,
+					paramCtx.GetStart().GetLine(), paramCtx.GetStart().GetColumn(),
+					fmt.Sprintf("lambda parameter %q has no type and none can be inferred from context", name),
+					fmt.Sprintf("annotate it (e.g. `(%s int) => …`) or use the lambda in a typed context (typed val, function argument, or return)", name),
+				)
 			}
 			fieldList.List = append(fieldList.List, field)
 		}
@@ -133,6 +166,25 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 	}
 	defer func() { t.currentFuncReturnType = prevFuncReturnType }()
 
+	// Curried lambda: when this lambda's return type is itself a function type
+	// and the body is another lambda, thread the decomposed signature into the
+	// body lambda so its params/return resolve to the declared types instead of
+	// `any`. Set here (and cleared after the body transform) so it reaches only
+	// the body's bare lambda, which consumes it in transformLambda.
+	prevInnerParams, prevInnerRet := t.expectedLambdaParamTypes, t.expectedLambdaRetType
+	if retType != nil && retType != ExpectedVoid {
+		if innerFT := t.resolveReturnTypeAsFuncType(retType); innerFT != nil {
+			var innerRet ast.Expr
+			if len(innerFT.Results) > 0 {
+				innerRet = t.typeToExpr(innerFT.Results[0])
+			} else {
+				innerRet = ExpectedVoid
+			}
+			t.expectedLambdaParamTypes = innerFT.Params
+			t.expectedLambdaRetType = innerRet
+		}
+	}
+
 	if ctx.Block() != nil {
 		b, inferredRet, err := t.transformBlockLambdaBody(ctx, isVoidExpected, isConcreteExpectedType, expectsReturnValue)
 		if err != nil {
@@ -152,6 +204,7 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 			retType = inferredRet
 		}
 	}
+	t.expectedLambdaParamTypes, t.expectedLambdaRetType = prevInnerParams, prevInnerRet
 
 	// Build the function literal
 	funcType := &ast.FuncType{

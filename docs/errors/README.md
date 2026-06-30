@@ -39,6 +39,7 @@ Each code has a dedicated documentation page in this directory explaining:
 | `GALA-E0022` | Occurs check failure | [GALA-E0022.md](GALA-E0022.md) |
 | `GALA-E0023` | Undefined variable | [GALA-E0023.md](GALA-E0023.md) |
 | `GALA-E0024` | Internal inference failure | [GALA-E0024.md](GALA-E0024.md) |
+| `GALA-E0033` | Untyped lambda parameter | [GALA-E0033.md](GALA-E0033.md) |
 
 ## Adding a new code
 

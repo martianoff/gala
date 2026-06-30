@@ -1,0 +1,10 @@
+package main
+
+func main() {
+    val direct func(int) int = (x) => x + 1
+    val branched func(int) int = if (true) { (x) => x } else { (x) => x * 2 }
+    val curried func(int) func(int) int = (a) => (b) => a + b
+    Println(direct(2))
+    Println(branched(5))
+    Println(curried(3)(4))
+}

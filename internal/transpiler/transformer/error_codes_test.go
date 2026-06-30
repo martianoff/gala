@@ -360,6 +360,21 @@ func main() {
 			expectCode:     galaerr.CodeSealedVariantCaseRedeclared,
 			expectContains: `sealed case "Box"`,
 		},
+		{
+			// A lambda whose parameter has no annotation and sits in a context
+			// that supplies no expected type (untyped val initializer) cannot be
+			// given a concrete parameter type. Emitting `any` would violate the
+			// concrete-types invariant, so it is rejected with a remediation hint.
+			name: "GALA-E0033 untyped lambda parameter",
+			input: `package main
+
+func main() {
+    val f = (x) => x + 1
+    Println(f(2))
+}`,
+			expectCode:     galaerr.CodeUntypedLambdaParam,
+			expectContains: `lambda parameter "x" has no type`,
+		},
 	}
 
 	for _, tc := range cases {
@@ -408,6 +423,69 @@ func main() {
 	out, err := trans.Transpile(input, "")
 	require.NoError(t, err)
 	assert.NotEmpty(t, out)
+}
+
+// TestUntypedLambdaTypedContextThreads is the positive companion to the
+// GALA-E0033 case: when an untyped lambda initializes a function-typed val,
+// the declared signature is threaded into the lambda so its parameters resolve
+// to the declared types instead of `any`. This covers the three shapes whose
+// blast radius motivated the threading work: a direct initializer lambda, an
+// if-expression whose branches are lambdas, and a curried lambda. Each must
+// emit concrete Go (no `any` in the parameter/return positions).
+func TestUntypedLambdaTypedContextThreads(t *testing.T) {
+	p := transpiler.NewAntlrGalaParser()
+	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
+	tr := transformer.NewGalaASTTransformer()
+	g := generator.NewGoCodeGenerator()
+	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+
+	cases := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name: "direct initializer lambda",
+			input: `package main
+
+func main() {
+    val f func(int) int = (x) => x + 1
+    Println(f(2))
+}`,
+			want: "func(x int) int",
+		},
+		{
+			name: "if-expression branch lambdas",
+			input: `package main
+
+func main() {
+    val f func(int) int = if (true) { (x) => x } else { (x) => x * 2 }
+    Println(f(5))
+}`,
+			want: "func(x int) int",
+		},
+		{
+			name: "curried lambda",
+			input: `package main
+
+func main() {
+    val mk func(int) func(int) int = (a) => (b) => a + b
+    Println(mk(3)(4))
+}`,
+			want: "func(b int) int",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := trans.Transpile(tc.input, "")
+			require.NoError(t, err)
+			assert.Contains(t, out, tc.want,
+				"expected the declared signature to be threaded into the lambda params")
+			assert.NotContains(t, out, "any",
+				"expected no `any` to leak into a typed-context lambda")
+		})
+	}
 }
 
 // TestGap04BareReturnRefactoredCompiles is the positive companion to the

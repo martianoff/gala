@@ -333,7 +333,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 	// surrounding constructor or a typed val initializer). When the lambda
 	// body's own return type cannot be inferred locally — e.g. the body is a
 	// method call on a Go universe type like `error`, whose `Error()` is not
-	// resolvable through goTypeInfo — the lambda emits an `any` return, gap #9
+	// resolvable through goTypeInfo — the lambda emits an `any` return,
 	// unification leaves U=any, and the method's result type erases to
 	// Option[any] / Try[any]. Unifying the method's declared return shape
 	// (with receiver substitutions applied) against the call-site expected
@@ -458,7 +458,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			}
 		}
 	}
-	// Gap #9: harvest type params from earlier lambdas to refine later ones.
+	// Harvest type params from earlier lambdas to refine later ones.
 	// We transform args in declaration order. Each lambda is transformed with
 	// a *view* of typeSubst in which still-unresolved method type params are
 	// temporarily filled with "any" (so the lambda sees a concrete expected
@@ -519,7 +519,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			if lerr != nil {
 				return true, nil, lerr
 			}
-			// Gap #9: harvest newly-inferred method type params from the
+			// Harvest newly-inferred method type params from the
 			// lambda's actual result/param types and commit to typeSubst.
 			if methodMeta != nil && typeMeta != nil && i < len(methodMeta.ParamTypes) {
 				if paramFT, ok := methodMeta.ParamTypes[i].(transpiler.FuncType); ok {
@@ -549,14 +549,23 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		}
 	}
 
-	// Default remaining unresolved method type params to "any".
-	// NOTE: This violates project rule #3 (never emit `any` implicitly). It is
-	// retained as a fallback because removing it breaks code where the type
-	// parameter is genuinely unconstrained by the call site (e.g., a phantom
-	// type param used only in the return type with no constraining argument).
-	// A warning is emitted when GALA_WARN_TYPES=1 so authors can surface and
-	// annotate these sites. TODO(B5): replace with a hard error once all
-	// inference paths (call-site context, expected return type) are wired up.
+	// Record "any" for any method type param GALA could not resolve from the
+	// arguments. This entry is a placeholder, not a committed output type: the
+	// generic-method call below omits explicit type arguments (shouldAddTypeArgs
+	// is false when the method has its own type params), so Go infers the param
+	// from the concrete argument. The "any" only surfaces when building the
+	// expected type for a *lambda* argument — for non-lambda callables (function
+	// references like `xs.Map(step)`, placeholder lambdas like `xs.Map(_ * 2)`,
+	// and partial-function literals like `xs.Collect({ case ... })`) it never
+	// reaches the generated Go, because Go infers the param from the argument's
+	// own type. A warning is emitted under GALA_WARN_TYPES so the unresolved site
+	// is still visible.
+	//
+	// This is deliberately not a hard error: the cases above are valid programs
+	// that compile via Go's inference. The only shape it cannot save is a method
+	// type param Go also cannot infer (one that appears solely in the return type
+	// with nothing at the call site to bind it) — that produces a Go "cannot
+	// infer" error and needs call-site-context threading, tracked separately.
 	if methodMeta != nil {
 		for _, tp := range methodMeta.TypeParams {
 			if _, ok := typeSubst[tp]; !ok {
@@ -2624,7 +2633,7 @@ func (t *galaASTTransformer) transformArgumentWithExpectedType(exprCtx grammar.I
 			}
 			expectedParamTypes = funcType.Params
 		}
-		return t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedParamTypes)
+		return t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedParamTypes, false)
 	}
 
 	// L4: Try to rewrite as a placeholder lambda if the expected type is a
@@ -2722,7 +2731,7 @@ func (t *galaASTTransformer) transformLambdaArgWithExpectedType(lambdaCtx *gramm
 		}
 		expectedParamTypes = funcType.Params
 	}
-	return t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedParamTypes)
+	return t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedParamTypes, false)
 }
 
 func (t *galaASTTransformer) inferTypeArgsFromApply(
@@ -2891,7 +2900,7 @@ func (t *galaASTTransformer) extractFuncCallTypeArgs(fun ast.Expr) []string {
 // `V` may actually have result `int` once its body is typed). Returns NilType when
 // expr is not a function literal with a usable Type field.
 //
-// Used by the gap #9 inference refinement: after transforming each lambda arg,
+// Used by the lambda inference refinement: after transforming each lambda arg,
 // we unify its actual type against the method's declared param FuncType to
 // propagate inferred type parameters to later args.
 func (t *galaASTTransformer) lambdaActualFuncType(expr ast.Expr) transpiler.Type {

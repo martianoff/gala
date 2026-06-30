@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
 	"martianoff/gala/internal/transpiler/generator"
@@ -48,13 +49,15 @@ func main() {
 	assert.Contains(t, out, "func magic[T any]()", "expected phantom T to stay a concrete generic param")
 }
 
-// TestT2UntypedLambdaFallback pins the current behaviour of a lambda
-// whose parameter types cannot be inferred from the surrounding context.
+// TestT2UntypedLambdaFallback pins the behaviour of a lambda whose parameter
+// types cannot be inferred from the surrounding context.
 //
-// Today this falls back to `any` parameters with a warnInference()
-// message; see declarations.go TODO(B11). The test guards against
-// regression into a panic or corrupted Go output; once B11 lands, the
-// assertion flips to an error-code check.
+// A bare lambda initializer with no declared type has no expected type to draw
+// from, so its parameter would have to be emitted as `any`. Rather than emit
+// non-concrete Go, the transpiler rejects it with GALA-E0033 and a remediation
+// hint. (Typed contexts — a function-typed val, function argument, or return —
+// thread their declared signature into the lambda; see
+// TestUntypedLambdaTypedContextThreads.)
 func TestT2UntypedLambdaFallback(t *testing.T) {
 	trans := newTranspiler()
 	// `val f = (x) => x + 1` — x has no annotation and no expected type.
@@ -64,17 +67,12 @@ func main() {
     val f = (x) => x + 1
     _ = f
 }`
-	out, err := trans.Transpile(input, "")
-	// Today: transpiles with `any` — acceptable until B11.
-	// If this starts erroring, B11 has landed — upgrade the test to
-	// assert the coded error and remove this branch.
-	if err != nil {
-		// B11 has landed; sanity-check that the error carries a code.
-		assert.Contains(t, err.Error(), "GALA-E", "B11 fallback should emit a coded error")
-		return
-	}
-	assert.NotEmpty(t, out)
-	assert.Contains(t, out, "any", "expected untyped lambda param to fall back to `any` until B11 lands")
+	_, err := trans.Transpile(input, "")
+	require.Error(t, err, "expected an untyped lambda parameter to be rejected")
+	assert.Contains(t, err.Error(), string(galaerr.CodeUntypedLambdaParam),
+		"expected the coded GALA-E0033 error")
+	assert.Contains(t, err.Error(), `lambda parameter "x" has no type`,
+		"expected the error to name the offending parameter")
 }
 
 // TestT3ExhaustiveSealedNoDefaultEmitsUnreachable asserts that an
