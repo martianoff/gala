@@ -42,7 +42,10 @@ jobs:
     # build failures will reveal real semantic drift.
     #
     env:
-      GALA_TUI_REF: main
+      # Temporarily pinned to the gala-tui migration branch for the
+      # Future(...) constructor change (gala-tui#18). Revert to `main`
+      # once that PR merges (after this change ships in a gala release).
+      GALA_TUI_REF: feat/future-name-constructor
       GALA_TEAM_REF: master
       WARM_BUDGET_SECONDS: "500"
       COLD_BUDGET_SECONDS: "600"
