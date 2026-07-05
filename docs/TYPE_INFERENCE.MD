@@ -24,9 +24,11 @@ GALA implements a custom type inference and unwrapping system to handle its uniq
    - [Expression Unwrapping](#2-expression-unwrapping)
 7. [Type Resolution](#type-resolution)
 8. [Supported Expressions](#supported-expressions)
-9. [Go Type Inference](#go-type-inference)
-10. [Limitations and Edge Cases](#limitations-and-edge-cases)
-11. [Key Files](#key-files)
+9. [Downward Inference for Generic Sealed-Type Case Constructors](#downward-inference-for-generic-sealed-type-case-constructors)
+10. [Downward Inference for Generic Function Phantom Type Parameters](#downward-inference-for-generic-function-phantom-type-parameters)
+11. [Go Type Inference](#go-type-inference)
+12. [Limitations and Edge Cases](#limitations-and-edge-cases)
+13. [Key Files](#key-files)
 
 ---
 
@@ -508,6 +510,67 @@ side-effect dispatch still rely on per-arm inference.
 | `transformer/constructors.go::transformPrimary` (paren/tuple case) | Pushes per-element expected type for tuple literals |
 | `transformer/declarations.go::transformValDeclaration` / `transformVarDeclaration` | Pushes the explicit declared type before transforming RHS |
 | `transformer/postfix.go::buildMatchExpressionFromClauses` | Promotes a pending slot type to `currentFuncReturnType` for arm bodies |
+
+---
+
+## Downward Inference for Generic Function Phantom Type Parameters
+
+The same problem arises for a generic **free function** whose type parameter
+appears only in its **return type**, never in a parameter — a *phantom*
+result-only param. The canonical case is an error-only constructor for a
+two-parameter type:
+
+```gala
+// `A` is phantom: it appears in the return type but in no parameter.
+func InvalidOf[E any, A any](err E) Validated[E, A] = Invalid(ArrayOf(err))
+
+func vName(s string) Validated[string, string] =
+    if (s != "") Valid(s) else InvalidOf("name required")
+```
+
+`E` is inferable from the argument, but `A` is not — there is no value of
+type `A` at the call site to pin it against. Go's own type inference cannot
+recover it either, so emitting the call verbatim (`InvalidOf("…")`) produces
+Go that fails to compile with `cannot infer A`. That would violate the
+"generate concrete types, or fail with an error" rule by silently emitting
+un-compilable output.
+
+### Propagation mechanism
+
+`transformCallWithArgsCtx` resolves the call's type parameters in two steps,
+via `injectFuncPhantomTypeArgs` (`transformer/type_inference.go`), just before
+the verbatim-call fallback:
+
+1. **From arguments.** Unify each declared parameter type against the
+   corresponding argument type, accumulating a partial substitution map. If
+   this already determines *every* type parameter, the call is left unchanged
+   so Go's own inference keeps producing the existing output — no explicit args
+   are injected.
+2. **From the expected type.** Otherwise, unify the function's declared return
+   type against the expected type to fill the remaining (phantom) params. Two
+   expected-type sources are tried in order: the call-site hint on the
+   `expectedArgTypes` stack (consumed at dispatcher entry — e.g. an argument
+   slot, a `val` with a declared type, or a `bind` block's trailing value),
+   then the enclosing function's return type (`currentFuncReturnType`).
+
+The call target is rewritten into an explicit instantiation
+(`InvalidOf[string, string]("…")`) **only when every type parameter resolves to
+a concrete type**. If any remains unresolved, the target is left unchanged.
+This makes the rewrite strictly *broken-to-working or a no-op*: it never turns
+output Go already accepts into something it rejects, and it is skipped entirely
+when arguments alone suffice.
+
+This mirrors the sealed-variant mechanism above (`injectSealedVariantTypeArgs`)
+— both propagate an expected type downward to pin a parameter the call's own
+arguments cannot — but applies to any generic function rather than only
+sealed-case constructors.
+
+### Pointers
+
+| File | Role |
+|------|------|
+| `transformer/type_inference.go::injectFuncPhantomTypeArgs` | Fills phantom function type params from args + expected type; wraps the target in explicit type args when all resolve |
+| `transformer/calls.go::transformCallWithArgsCtx` | Invokes the fill just before the verbatim-call fallback, passing the consumed call-site hint |
 
 ---
 
