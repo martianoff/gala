@@ -1,0 +1,46 @@
+package main
+
+import . "martianoff/gala/std"
+
+// Validated is a two-type-param generic whose FlatMap/Map result type params
+// (named B) intentionally reuse the letter used by the enclosing generic
+// functions below. This exercises method-result-type inference when the
+// method's own type param collides in name with a receiver type argument.
+type Validated[E any, A any] struct {
+    Err E
+    Val A
+    Ok bool
+}
+
+func (v Validated[E, A]) FlatMap[B any](f func(A) Validated[E, B]) Validated[E, B] {
+    if v.Ok {
+        return f(v.Val)
+    }
+    return Validated[E, B]{Err: v.Err, Ok: false}
+}
+
+func (v Validated[E, A]) Map[B any](f func(A) B) Validated[E, B] {
+    if v.Ok {
+        return Validated[E, B]{Val: f(v.Val), Ok: true}
+    }
+    return Validated[E, B]{Err: v.Err, Ok: false}
+}
+
+func ok[E any, A any](value A) Validated[E, A] = Validated[E, A]{Val: value, Ok: true}
+
+// Repro A: FlatMap's result type param must be inferred from the inner Map
+// lambda's return type (Tuple[A, B]), not collapse to the enclosing B.
+func pair[A any, B any](va Validated[string, A], vb Validated[string, B]) Validated[string, Tuple[A, B]] =
+    va.FlatMap((a) => vb.Map((b) => Tuple(a, b)))
+
+// Repro B: mapping over a nested-generic receiver keeps the element type
+// Tuple[B, C] intact for the lambda parameter.
+func flatten[A any, B any, C any](vbc Validated[string, Tuple[B, C]], a A) Validated[string, Tuple3[A, B, C]] =
+    vbc.Map((bc) => Tuple(a, bc.V1, bc.V2))
+
+func main() {
+    val p = pair(ok[string, int](1), ok[string, string]("x"))
+    Println(p.Val)
+    val f = flatten(ok[string, Tuple[int, bool]](Tuple(2, true)), "a")
+    Println(f.Val)
+}

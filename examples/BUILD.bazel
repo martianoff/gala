@@ -391,6 +391,12 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "nested_generic_flatmap",
+    src = "nested_generic_flatmap.gala",
+    expected = "nested_generic_flatmap.out",
+)
+
+gala_exec_test(
     name = "option_apply_unapply",
     src = "option_apply_unapply.gala",
     expected = "option_apply_unapply.out",
