@@ -3792,6 +3792,10 @@ import "github.com/google/uuid"
 - [Immutable Collections](IMMUTABLE_COLLECTIONS.MD) - Array, List, HashMap, HashSet, TreeSet.
 - [Mutable Collections](MUTABLE_COLLECTIONS.MD) - Mutable collection types.
 
+### Design proposals (not yet implemented)
+
+- [`bind` / `also` notation](BIND_NOTATION.MD) - Proposed monadic binding notation: flat, named, in-scope bindings over `Try`/`Option`/`Either`/`Future` — and any user-defined monad — that desugar to `FlatMap`/`Zip`, with an applicative independence axis (`also`). OCaml `let*`/`and*` semantics without the `*`.
+
 ## 19. IDE Support
 
 GALA provides a full-featured GoLand/IntelliJ plugin and a Language Server Protocol (LSP) server for editor-agnostic IDE support. The plugin runs a local ANTLR parser for instant feedback, while the LSP server (`gala lsp`) connects to the transpiler for type-aware features.

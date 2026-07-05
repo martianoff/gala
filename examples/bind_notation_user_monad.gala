@@ -1,0 +1,60 @@
+package main
+
+// Extensibility check: `bind` / `also` must work over ANY user-defined monad,
+// not just the standard library's Try/Option/Either. See docs/BIND_NOTATION.MD
+// section 7 (Extensibility).
+//
+// `Step` is a user-defined short-circuiting monad with no relationship to std.
+// It satisfies the minimal bindable contract: a `FlatMap` method (plus a `Go`
+// constructor used as `pure`). `bind` desugars to `FlatMap` exactly as it does
+// for `Try` -- the transpiler special-cases no type.
+//
+// Proposed surface (NOT yet implemented):
+//
+//     func pipeline(n int) Step[int] = {
+//         bind a = start(n)
+//         bind b = twice(a)
+//         Go(a + b)          // `a` still in scope; Stop anywhere short-circuits
+//     }
+
+sealed type Step[T any] {
+    case Go(Value T)
+    case Stop(Reason string)
+}
+
+// Minimal contract: FlatMap. The short-circuit lives entirely in here, so the
+// desugaring never needs to know which variant is the "zero".
+func (s Step[T]) FlatMap[U any](f func(T) Step[U]) Step[U] = s match {
+    case Go(v)   => f(v)
+    case Stop(r) => Stop[U](r)
+}
+
+// Derivable from FlatMap + Go; shown for completeness.
+func (s Step[T]) Map[U any](f func(T) U) Step[U] = s match {
+    case Go(v)   => Go(f(v))
+    case Stop(r) => Stop[U](r)
+}
+
+func start(n int) Step[int] =
+    if (n > 0) Go(n) else Stop[int](s"non-positive: $n")
+
+func twice(n int) Step[int] =
+    if (n < 100) Go(n * 2) else Stop[int]("too big")
+
+// Desugaring of the proposed `bind` block. `a` stays in scope for the tail, and
+// a Stop anywhere short-circuits -- all from the user's own FlatMap.
+func pipeline(n int) Step[int] =
+    start(n).FlatMap[int]((a) =>
+    twice(a).FlatMap[int]((b) =>
+    Go(a + b)))
+
+func describe(s Step[int]) string = s match {
+    case Go(v)   => s"go: $v"
+    case Stop(r) => s"stop: $r"
+}
+
+func main() {
+    Println(describe(pipeline(5)))    // 5 -> 10 -> 5+10
+    Println(describe(pipeline(0)))    // short-circuits at start
+    Println(describe(pipeline(200)))  // short-circuits at twice
+}
