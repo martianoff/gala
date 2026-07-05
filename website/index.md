@@ -34,13 +34,34 @@ The [2024 Go Developer Survey](https://go.dev/blog/survey2024-h1-results) found 
 
 Sum types with **exhaustive** pattern matching (an incomplete `match` is a build error, not a production panic), no `nil` (`Option`/`Either`/`Try` instead), immutable by default (`val`, immutable structs, read-only `ConstPtr`), always-concrete types — never a silent `any` — and zero-reflection typed JSON. The transpiler enforces match exhaustiveness and immutability at compile time.
 
+<pre><code>sealed type Payment {
+    case Card(Last4 string)
+    case Cash()
+}
+
+func describe(p Payment) string = p match {
+    case Card(n) =&gt; s"card ****$n"
+    case Cash()  =&gt; "cash"
+}   // omit a case and it won't compile</code></pre>
+
 ### Ergonomic — the functional code you want to write, minus the ceremony
 
 `bind`/`also` do-notation for composing monads, string interpolation (`s"…"` / `f"…"`), named arguments and default parameters, type inference everywhere, expression functions, and `Map`/`Filter`/`FoldLeft`/`Collect` collections. These are language features with clean syntax — not patterns bolted onto Go like samber/lo or IBM/fp-go.
 
+<pre><code>func checkout(id int) Try[Receipt] {
+    bind order   = fetchOrder(id)     // unwraps Try, or short-circuits
+    bind payment = charge(order)
+    Success(Receipt(order.Id, payment))
+}</code></pre>
+
 ### Compatible — every Go library, no bindings, native binaries
 
-Full third-party Go interop with return types inferred **directly from the Go SDK — no declaration files to write or generate**. `(T, error)` results are auto-wrapped into `Try[T]`, the generated Go is clean and readable, and it builds to a single native binary inside your existing Go project. No runtime overhead beyond hand-written Go.
+Full third-party Go interop with return types inferred **directly from the Go SDK — no declaration files to write or generate**. Wrap a Go `(T, error)` call in `Try` and it becomes a `Try[T]`, the generated Go is clean and readable, and it builds to a single native binary inside your existing Go project. No runtime overhead beyond hand-written Go.
+
+<pre><code>import "strconv"
+
+// a Go (int, error) call, wrapped into Try[int]
+val port = Try(strconv.Atoi("8080")).GetOrElse(80)</code></pre>
 
 ## GALA vs Go — A Quick Look
 
