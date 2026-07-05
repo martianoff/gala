@@ -1,0 +1,23 @@
+package main
+
+import . "martianoff/gala/concurrent"
+
+// `also` over Future runs the independent clauses CONCURRENTLY. A leading `bind`
+// plus `also` clauses lower to Future.ZipN(...).FlatMap(...); ZipN starts every
+// future and joins them, so the group waits on all of them in parallel rather
+// than threading each through the next. Each bound name is an immutable `val`.
+// See docs/BIND_NOTATION.MD.
+
+func compute(n int) Future[int] = Future[int](n * n)
+
+func total() Future[int] {
+    bind a = compute(2)
+    also b = compute(3)
+    also c = compute(4)
+    Future[int](a + b + c)
+}
+
+func main() {
+    val sum = total().Get()
+    Println(s"sum of squares: $sum")   // 4 + 9 + 16
+}
