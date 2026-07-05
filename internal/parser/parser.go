@@ -2,6 +2,7 @@ package parser
 
 import (
 	"regexp"
+	"sync"
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
@@ -26,11 +27,28 @@ func (p *AntlrGalaParser) Parse(input string) (antlr.Tree, error) {
 
 // ParseLenient always returns ANTLR's error-recovered tree alongside any
 // syntax errors. The tree contains error nodes but is structurally valid.
+//
+// Concurrency: the ANTLR-generated NewgalaLexer/NewgalaParser constructors
+// hand every instance the same package-global ATN simulator state — the
+// decisionToDFA slice and, critically, a shared *PredictionContextCache.
+// The DFA slice is safe to share because every mutation of it goes through the
+// ATN's own stateMu/edgeMu mutexes. The prediction-context cache is NOT: its
+// add() ends in an unsynchronised map write + slice append
+// (JMap.Put: `store[h] = append(store[h], …)`), so two parses running on
+// different goroutines corrupt it — which surfaces as a hard fault inside
+// runtime.growslice/memmove or a "fatal error: concurrent map writes".
+// isolateLexerCaches/isolateParserCaches below rebind each parse's ATN
+// simulator to a per-parse PredictionContextCache while reusing a shared,
+// mutex-protected DFA set (built once) so DFA state is still reused across
+// files. The deserialized ATN stays shared too (it is read-mostly and guards
+// its own lazily-cached token sets with a mutex).
 func (p *AntlrGalaParser) ParseLenient(input string) (antlr.Tree, []error) {
 	is := antlr.NewInputStream(input)
 	lexer := grammar.NewgalaLexer(is)
+	isolateLexerCaches(lexer.BaseLexer)
 	stream := antlr.NewCommonTokenStream(lexer, antlr.TokenDefaultChannel)
 	parser := grammar.NewgalaParser(stream)
+	isolateParserCaches(parser.BaseParser)
 
 	errorListener := &GalaErrorListener{}
 
@@ -49,6 +67,46 @@ func (p *AntlrGalaParser) ParseLenient(input string) (antlr.Tree, []error) {
 	}
 
 	return tree, errs
+}
+
+// sharedDFA lazily builds one DFA slice per ATN and reuses it forever. The
+// generated static decisionToDFA is unexported, so we build our own from the
+// same (shared) ATN. Concurrent parses may mutate these DFA states, but every
+// such mutation is serialised by the ATN's stateMu/edgeMu, so a single shared
+// slice is safe — and reusing it preserves ANTLR's cross-parse DFA caching.
+type sharedDFA struct {
+	once sync.Once
+	dfa  []*antlr.DFA
+}
+
+func (s *sharedDFA) get(atn *antlr.ATN) []*antlr.DFA {
+	s.once.Do(func() {
+		s.dfa = make([]*antlr.DFA, len(atn.DecisionToState))
+		for i, ds := range atn.DecisionToState {
+			s.dfa[i] = antlr.NewDFA(ds, i)
+		}
+	})
+	return s.dfa
+}
+
+var (
+	lexerSharedDFA  sharedDFA
+	parserSharedDFA sharedDFA
+)
+
+// isolateLexerCaches rebinds a lexer's ATN simulator to a per-parse
+// PredictionContextCache (the one piece the ANTLR runtime does not guard),
+// while keeping the shared, mutex-protected DFA set so concurrent lexing is
+// both race-free and DFA-cache-warm.
+func isolateLexerCaches(l *antlr.BaseLexer) {
+	atn := l.GetATN()
+	l.Interpreter = antlr.NewLexerATNSimulator(l, atn, lexerSharedDFA.get(atn), antlr.NewPredictionContextCache())
+}
+
+// isolateParserCaches is the parser-side counterpart of isolateLexerCaches.
+func isolateParserCaches(p *antlr.BaseParser) {
+	atn := p.GetATN()
+	p.Interpreter = antlr.NewParserATNSimulator(p, atn, parserSharedDFA.get(atn), antlr.NewPredictionContextCache())
 }
 
 var emptyLineRegex = regexp.MustCompile(`\r?\n\s*\r?\n`)
