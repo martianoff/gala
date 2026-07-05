@@ -490,7 +490,7 @@ func (h *GalaHandler) References(ctx context.Context, params *lsp.ReferenceParam
 func localDefinition(text, name, uri string) *lsp.Location {
 	lines := strings.Split(text, "\n")
 	patterns := []string{
-		"val " + name, "var " + name, "func " + name,
+		"val " + name, "var " + name, "bind " + name, "also " + name, "func " + name,
 		"type " + name, "sealed type " + name, "struct " + name, "case " + name,
 	}
 	for i, line := range lines {

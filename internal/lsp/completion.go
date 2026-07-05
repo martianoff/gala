@@ -236,7 +236,7 @@ func methodCompletions(richAST *transpiler.RichAST) []lsp.CompletionItem {
 
 func keywordCompletions() []lsp.CompletionItem {
 	keywords := []string{
-		"package", "import", "val", "var", "func", "type", "struct",
+		"package", "import", "val", "var", "bind", "also", "func", "type", "struct",
 		"interface", "sealed", "embed", "if", "else", "for", "range",
 		"return", "match", "case", "true", "false", "nil", "map",
 	}

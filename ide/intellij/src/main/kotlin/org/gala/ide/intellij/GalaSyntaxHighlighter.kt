@@ -56,6 +56,8 @@ class GalaSyntaxHighlighter : SyntaxHighlighterBase() {
             // Keywords
             galaLexer.VAL,
             galaLexer.VAR,
+            galaLexer.BIND,
+            galaLexer.ALSO,
             galaLexer.FUNC,
             galaLexer.TYPE,
             galaLexer.STRUCT,
