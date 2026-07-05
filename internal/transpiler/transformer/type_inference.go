@@ -505,6 +505,200 @@ func (t *galaASTTransformer) inferMethodTypeParamsFromArgs(methodMeta *transpile
 	return result
 }
 
+// injectFuncPhantomTypeArgs wraps a generic free-function call target with
+// explicit type arguments for its *phantom* type parameters — those that appear
+// in the declared return type but in NONE of the parameter types (e.g. the `A`
+// of `func InvalidOf[E, A](err E) Validated[E, A]`). Go cannot infer a phantom
+// param from the call arguments, so emitting the call verbatim yields invalid
+// Go ("cannot infer A"). We recover the phantom params by unifying the declared
+// return type against the expected type — the call-site hint first, then the
+// enclosing function's return type — and emit `Fn[E, A](args)` with concrete
+// args.
+//
+// Restrictions that keep this regression-free:
+//
+//   - It fires ONLY when the function has at least one phantom param. A function
+//     whose every type param appears in some parameter (e.g. `ArrayFromSlice[T]
+//     (s []T)`) is left untouched: Go infers those params from the arguments,
+//     even when GALA's transform-time argument-type resolution fails, and
+//     injecting a return-type-derived guess for such a param can *contradict*
+//     the actual argument (`ArrayFromSlice[Str]` over a `[]string` argument).
+//   - Arg-bound params are resolved ONLY from the arguments, never from the
+//     return type; a phantom param's value never overwrites one an argument
+//     determines. If any arg-bound param cannot be resolved from the arguments,
+//     the call is left unchanged rather than guessed.
+//
+// The rewrite therefore only ever supplies args Go genuinely could not infer,
+// making it strictly broken-to-working or a no-op.
+func (t *galaASTTransformer) injectFuncPhantomTypeArgs(fun ast.Expr, funcMeta *transpiler.FunctionMetadata, args []ast.Expr, hasSpread bool, expected transpiler.Type) ast.Expr {
+	if funcMeta == nil || len(funcMeta.TypeParams) == 0 {
+		return fun
+	}
+	// Skip when explicit type args are already present.
+	switch fun.(type) {
+	case *ast.IndexExpr, *ast.IndexListExpr:
+		return fun
+	}
+
+	// Classify each type param: "arg-bound" if it appears in any parameter type
+	// (Go can infer it from arguments), otherwise "phantom".
+	argBound := make(map[string]bool)
+	for _, pt := range funcMeta.ParamTypes {
+		t.collectReferencedParams(pt, funcMeta.TypeParams, argBound)
+	}
+	hasPhantom := false
+	for _, tp := range funcMeta.TypeParams {
+		if !argBound[tp] {
+			hasPhantom = true
+			break
+		}
+	}
+	if !hasPhantom {
+		// Every type param is determined by an argument — leave it to Go.
+		return fun
+	}
+
+	// Resolve arg-bound params strictly from the arguments.
+	argInferred := make(map[string]transpiler.Type)
+	for i, arg := range args {
+		var paramType transpiler.Type
+		if i < len(funcMeta.ParamTypes) {
+			paramType = funcMeta.ParamTypes[i]
+		} else if len(funcMeta.ParamTypes) > 0 {
+			last := funcMeta.ParamTypes[len(funcMeta.ParamTypes)-1]
+			if arr, ok := last.(transpiler.ArrayType); ok {
+				paramType = arr.Elem
+			} else {
+				paramType = last
+			}
+		}
+		if paramType == nil {
+			continue
+		}
+		argType := t.getExprTypeNameManual(arg)
+		if transpiler.IsUnusable(argType) {
+			argType, _ = t.inferExprType(arg)
+		}
+		if transpiler.IsUnusable(argType) {
+			continue
+		}
+		if hasSpread {
+			if arr, ok := argType.(transpiler.ArrayType); ok {
+				argType = arr.Elem
+			}
+		}
+		t.unifyForInference(paramType, argType, funcMeta.TypeParams, argInferred)
+	}
+	// Every arg-bound param must be resolvable from the arguments; if not, do not
+	// guess (a return-type-derived value could contradict the real argument).
+	for _, tp := range funcMeta.TypeParams {
+		if argBound[tp] {
+			if _, ok := argInferred[tp]; !ok {
+				return fun
+			}
+		}
+	}
+
+	resolved := make(map[string]transpiler.Type, len(funcMeta.TypeParams))
+	for tp, ty := range argInferred {
+		resolved[tp] = ty
+	}
+
+	// Fill phantom params from the expected type via return-type unification.
+	// Only phantom params are taken from here; arg-bound params keep their
+	// argument-derived value.
+	phantomUnfilled := func() bool {
+		for _, tp := range funcMeta.TypeParams {
+			if !argBound[tp] {
+				if _, ok := resolved[tp]; !ok {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	if funcMeta.ReturnType != nil && !funcMeta.ReturnType.IsNil() {
+		for _, exp := range []transpiler.Type{expected, t.currentFuncReturnType} {
+			if !phantomUnfilled() {
+				break
+			}
+			if exp == nil || exp.IsNil() {
+				continue
+			}
+			retInferred := make(map[string]transpiler.Type)
+			t.unifyForInference(funcMeta.ReturnType, exp, funcMeta.TypeParams, retInferred)
+			for _, tp := range funcMeta.TypeParams {
+				if argBound[tp] {
+					continue
+				}
+				if _, ok := resolved[tp]; ok {
+					continue
+				}
+				if v, ok := retInferred[tp]; ok {
+					resolved[tp] = v
+				}
+			}
+		}
+	}
+
+	// Rewrite only when every type param is now resolved to a concrete type.
+	typeArgs := make([]ast.Expr, len(funcMeta.TypeParams))
+	for i, tp := range funcMeta.TypeParams {
+		got, ok := resolved[tp]
+		if !ok || transpiler.IsUnusable(got) {
+			return fun
+		}
+		typeArgs[i] = t.typeToExpr(got)
+	}
+	if len(typeArgs) == 1 {
+		return &ast.IndexExpr{X: fun, Index: typeArgs[0]}
+	}
+	return &ast.IndexListExpr{X: fun, Indices: typeArgs}
+}
+
+// collectReferencedParams records, into out, every name from params that appears
+// anywhere within typ (matched by simple name, package prefix stripped). Used to
+// distinguish type params a call's arguments can pin (they appear in a parameter
+// type) from phantom params (they do not).
+func (t *galaASTTransformer) collectReferencedParams(typ transpiler.Type, params []string, out map[string]bool) {
+	if typ == nil || typ.IsNil() {
+		return
+	}
+	match := func(name string) {
+		stripped := stripPackagePrefix(name)
+		for _, p := range params {
+			if name == p || stripped == p {
+				out[p] = true
+			}
+		}
+	}
+	switch v := typ.(type) {
+	case transpiler.BasicType:
+		match(v.Name)
+	case transpiler.NamedType:
+		match(v.Name)
+	case transpiler.GenericType:
+		t.collectReferencedParams(v.Base, params, out)
+		for _, p := range v.Params {
+			t.collectReferencedParams(p, params, out)
+		}
+	case transpiler.ArrayType:
+		t.collectReferencedParams(v.Elem, params, out)
+	case transpiler.PointerType:
+		t.collectReferencedParams(v.Elem, params, out)
+	case transpiler.MapType:
+		t.collectReferencedParams(v.Key, params, out)
+		t.collectReferencedParams(v.Elem, params, out)
+	case transpiler.FuncType:
+		for _, p := range v.Params {
+			t.collectReferencedParams(p, params, out)
+		}
+		for _, r := range v.Results {
+			t.collectReferencedParams(r, params, out)
+		}
+	}
+}
+
 // inferFuncTypeParamsFromArgs attempts to infer type parameters for standalone function calls.
 // For example, for ArrayOf[T any](elements ...T) Array[T] where the arguments are [1, 2, 3],
 // this function infers T = int.

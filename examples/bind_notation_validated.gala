@@ -8,17 +8,19 @@ import . "martianoff/gala/validation"
 // clause's errors, an invalid group reports ALL failures at once — here all three.
 // See docs/BIND_NOTATION.MD.
 
+// Type arguments are omitted throughout (best practice: implicit typing). Both
+// `Valid`/`Invalid` (whose phantom type param is fixed by the declared return
+// type) and the `InvalidOf` helper (whose result-only param is likewise fixed)
+// infer their `Validated[E, A]` instantiation from context.
+
 func vName(s string) Validated[string, string] =
-    if (s != "") Valid[string, string](s)
-    else InvalidOf[string, string]("name required")
+    if (s != "") Valid(s) else InvalidOf("name required")
 
 func vEmail(s string) Validated[string, string] =
-    if (s != "") Valid[string, string](s)
-    else InvalidOf[string, string]("email required")
+    if (s != "") Valid(s) else InvalidOf("email required")
 
 func vAge(n int) Validated[string, int] =
-    if (n >= 0) Valid[string, int](n)
-    else InvalidOf[string, int]("age negative")
+    if (n >= 0) Valid(n) else InvalidOf("age negative")
 
 struct Person(Name string, Email string, Age int)
 
@@ -26,7 +28,7 @@ func makePerson(name string, email string, age int) Validated[string, Person] {
     bind n = vName(name)
     also e = vEmail(email)
     also a = vAge(age)
-    Valid[string, Person](Person(n, e, a))
+    Valid(Person(n, e, a))
 }
 
 func main() {
