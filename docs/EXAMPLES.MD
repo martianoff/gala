@@ -10,7 +10,7 @@ The following example demonstrates many of GALA's features, including structs, i
 package main
 
 
-struct Point(X, Y int)
+struct Point(X int, Y int)
 
 func moveX(p Point, delta int) Point = p.Copy(X = p.X + delta)
 
@@ -93,7 +93,7 @@ package main
 func main() {
     val x = Some(10)
     val y = x.Map((v) => v * 2)         // parameter type inferred as int
-    val z = None().GetOrElse(42)
+    val z = None[int]().GetOrElse(42)
 
     val res = y match {
         case Some(v) => v
@@ -102,6 +102,78 @@ func main() {
     
     Println(res, z)
 }
+```
+
+## Sealed Types (Algebraic Data Types)
+
+A `sealed type` defines a closed set of variants (an ADT). Because the compiler
+knows every case, a `match` over a sealed type is checked for exhaustiveness — no
+`case _` default is needed once all variants are covered. Variants may carry
+fields or be empty.
+
+```gala
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+sealed type Shape {
+    case Circle(Radius float64)
+    case Rectangle(Width float64, Height float64)
+    case Point()
+}
+
+// Exhaustive match — every variant is covered, so no default case is required.
+func area(s Shape) float64 = s match {
+    case Circle(r)       => 3.14159 * r * r
+    case Rectangle(w, h) => w * h
+    case Point()         => 0.0
+}
+
+func main() {
+    val shapes = ArrayOf[Shape](Circle(2.0), Rectangle(3.0, 4.0), Point())
+    shapes.ForEach((s) => Println(s, "=> area", area(s)))
+}
+```
+
+Output:
+```
+Circle(2) => area 12.56636
+Rectangle(3, 4) => area 12
+Point() => area 0
+```
+
+## Either Monad
+
+`Either[L, R]` holds one of two values — conventionally `Left` for failure and
+`Right` for success. Monadic operations (`Map`, `FlatMap`) act on the `Right`
+side and pass `Left` through untouched.
+
+```gala
+package main
+
+func parseEven(n int) Either[string, int] =
+    if (n % 2 == 0) Right[string, int](n) else Left[string, int](s"$n is odd")
+
+func main() {
+    val a = parseEven(10)
+    val b = parseEven(7)
+
+    // Map transforms the Right side; a Left passes through unchanged.
+    val doubled = a.Map((v) => v * 2)
+    Println(doubled)   // Right(20)
+
+    val r = b match {
+        case Right(v) => s"got $v"
+        case Left(e)  => s"error: $e"
+    }
+    Println(r)         // error: 7 is odd
+}
+```
+
+Output:
+```
+Right(20)
+error: 7 is odd
 ```
 
 ## Generic Methods Example
@@ -126,17 +198,18 @@ func main() {
 ```gala
 package main
 
+import . "martianoff/gala/collection_immutable"
 
 struct Person(Name string, Age int)
 
 func main() {
-    val people = SliceOf(
+    val people = ArrayOf(
         Person("Alice", 25),
         Person("Bob", 15),
         Person("Charlie", 70),
     )
 
-    for _, p := range people {
+    people.ForEach((p) => {
         val status = p match {
             case Person(name, age) if age < 18 => name + " is a minor"
             case Person(name, age) if age > 65 => name + " is a senior"
@@ -144,7 +217,7 @@ func main() {
             case _                             => "Unknown"
         }
         Println(status)
-    }
+    })
 }
 ```
 
@@ -281,8 +354,8 @@ struct Circle(radius float64)
 func (c Circle) Area() float64 = 3.14159 * c.radius * c.radius
 
 func main() {
-    val r = Rect(10, 5)
-    val c = Circle(10)
+    val r = Rect(10.0, 5.0)
+    val c = Circle(10.0)
     
     val s1 Shaper = r
     val s2 Shaper = c
@@ -371,11 +444,116 @@ func main() {
 Boolean pattern matching is exhaustive when both `true` and `false` cases are covered:
 
 ```gala
-val desc = flag match {
-    case true  => "enabled"
-    case false => "disabled"
-    // No case _ needed — true/false is exhaustive
+package main
+
+func main() {
+    val flag = true
+    val desc = flag match {
+        case true  => "enabled"
+        case false => "disabled"
+        // No case _ needed — true/false is exhaustive
+    }
+    Println(desc)
 }
+```
+
+## For Loops
+
+GALA supports Go-style `for` in its familiar forms: a three-clause counting loop
+and a condition-only (while-style) loop. `break` and `continue` work as usual.
+For iterating collections, prefer the functional methods (`ForEach`, `Map`, …)
+shown elsewhere on this page.
+
+```gala
+package main
+
+func main() {
+    // Three-clause counting loop
+    for i := 0; i < 3; i++ {
+        Println(s"i = $i")
+    }
+
+    // Condition-only (while-style) loop
+    var n = 3
+    for n > 0 {
+        Println(s"countdown $n")
+        n = n - 1
+    }
+}
+```
+
+Output:
+```
+i = 0
+i = 1
+i = 2
+countdown 3
+countdown 2
+countdown 1
+```
+
+## String Interpolation
+
+GALA has two interpolated string forms. `s"..."` inserts values with `$var` or
+`${expr}`; `f"..."` adds explicit printf-style format specs. Neither needs an
+`fmt` import.
+
+```gala
+package main
+
+func main() {
+    val name = "Alice"
+    val age = 30
+    val pi = 3.14159
+
+    // s-string: value interpolation with $var and ${expr}
+    Println(s"$name is $age years old")
+    Println(s"Next year: ${age + 1}")
+    Println(s"Price: $$99")          // literal dollar sign
+
+    // f-string: explicit printf-style format specs
+    Println(f"Padded: $age%05d")
+    Println(f"Fixed point: $pi%.2f")
+}
+```
+
+Output:
+```
+Alice is 30 years old
+Next year: 31
+Price: $99
+Padded: 00030
+Fixed point: 3.14
+```
+
+## Variadic Functions and the Spread Operator
+
+A trailing `...T` parameter accepts any number of arguments. At a call site, an
+existing collection can be spread into such a parameter with the postfix `...`
+operator.
+
+```gala
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+func sum(nums ...int) int = ArrayOf(nums...).FoldLeft(0, (acc, n) => acc + n)
+
+func main() {
+    Println(sum(1, 2, 3))              // 6
+    Println(sum())                     // 0
+
+    // Spread a collection into the variadic parameter.
+    val more = ArrayOf(4, 5, 6)
+    Println(sum(more.ToGoSlice()...))  // 15
+}
+```
+
+Output:
+```
+6
+0
+15
 ```
 
 ## Void Closures and Lambda Parameter Inference
@@ -383,26 +561,37 @@ val desc = flag match {
 Functions can accept void closures (no return value), and lambda parameter types can be inferred from context. Prefer omitting parameter types in lambdas — the compiler infers them from the method signature:
 
 ```gala
-val opt = Some(42)
+package main
 
-// ForEach takes func(T) — void, no return needed
-opt.ForEach((x) => {
-    Println(x)
-})
+import (
+    . "martianoff/gala/collection_immutable"
+    . "martianoff/gala/strings"
+)
 
-// Parameter type inferred from Option[int].Filter's signature
-val positive = opt.Filter((x) => x > 0)
+func main() {
+    val opt = Some(42)
 
-// Method type param and lambda param both inferred
-val doubled = opt.Map((x) => x * 2)
+    // ForEach takes func(T) — void, no return needed
+    opt.ForEach((x) => {
+        Println(x)
+    })
 
-// FoldLeft accumulator type inferred from zero value
-val list = ArrayOf(1, 2, 3)
-val sum = list.FoldLeft(0, (acc, x) => acc + x)
+    // Parameter type inferred from Option[int].Filter's signature
+    val positive = opt.Filter((x) => x > 0)
 
-// Non-generic wrapper methods also infer lambda param types
-val s = S("hello")
-val hasVowel = s.Exists((r) => r == 'a' || r == 'e' || r == 'i' || r == 'o' || r == 'u')
+    // Method type param and lambda param both inferred
+    val doubled = opt.Map((x) => x * 2)
+
+    // FoldLeft accumulator type inferred from zero value
+    val list = ArrayOf(1, 2, 3)
+    val sum = list.FoldLeft(0, (acc, x) => acc + x)
+
+    // Non-generic wrapper methods also infer lambda param types
+    val s = S("hello")
+    val hasVowel = s.Exists((r) => r == 'a' || r == 'e' || r == 'i' || r == 'o' || r == 'u')
+
+    Println(positive, doubled, sum, hasVowel)
+}
 ```
 
 ## Collect - Filter and Transform in One Pass
@@ -459,8 +648,9 @@ func main() {
     // Function reference (preferred for zero-arg functions)
     val dir = Try(os.TempDir)
 
-    // Lambda form (use when args needed)
-    val result = Try(os.MkdirAll("/tmp/test", 0755))
+    // Lambda form (use when args needed) — a bare Try(...) statement discards
+    // the result; bind it to a val only when you go on to use it.
+    Try(os.MkdirAll("/tmp/test", 0755))
 
     dir.OnSuccess((d) => Println(s"Temp dir: $d"))
 }
@@ -506,6 +696,42 @@ Output:
 An argument that is already a function value is passed through untouched (never
 double-wrapped), and multi-argument function parameters still require an explicit
 lambda.
+
+## Future - Asynchronous Computations
+
+`Future[T]` runs a computation asynchronously. Thanks to by-name arguments,
+`Future(expr)` schedules `expr` on a background executor. Results compose with
+`Map`/`FlatMap` without blocking; `Get()` blocks until the value is available.
+`Succeeded`/`Failed` are extractor patterns, so a `case _` default is required.
+
+```gala
+package main
+
+import . "martianoff/gala/concurrent"
+
+func main() {
+    // Future(expr) runs the body asynchronously.
+    val f = Future(21 * 2)
+
+    // Transform the eventual result without blocking.
+    val g = f.Map((x) => x + 1)
+
+    Println(g.Get())   // 43 — Get() blocks for the result
+
+    val result = g match {
+        case Succeeded(v) => s"ok: $v"
+        case Failed(e)    => s"err: ${e.Error()}"
+        case _            => "pending"
+    }
+    Println(result)    // ok: 43
+}
+```
+
+Output:
+```
+43
+ok: 43
+```
 
 ## Try with Go Multi-Return Functions
 
@@ -566,6 +792,40 @@ func main() {
     val empty = EmptyArray[int]()
     Println(empty.MkString(", "))    // ""
 }
+```
+
+## HashMap - Immutable Key/Value Maps
+
+`HashMap[K, V]` is an immutable map: `Put`/`Remove` return a new map rather than
+mutating in place. Lookups return an `Option`, and the usual functional
+operations (`MapValues`, `Filter`, `FoldLeftKV`, …) are available.
+
+```gala
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+func main() {
+    val scores = HashMapOf(("Alice", 85), ("Bob", 92))
+    val updated = scores.Put("Carol", 78)   // returns a new map
+
+    Println(updated.GetOrElse("Bob", 0))     // 92
+    Println(updated.Get("Dave"))             // None() — lookups return Option
+
+    // Transform every value; the key set is unchanged.
+    val grades = updated.MapValues((v) => v match {
+        case n if n >= 90 => "A"
+        case _            => "B"
+    })
+    Println(grades.GetOrElse("Bob", "?"))    // A
+}
+```
+
+Output:
+```
+92
+None()
+A
 ```
 
 ## Sorted API - Sorting Collections

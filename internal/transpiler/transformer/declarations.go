@@ -945,7 +945,7 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 			// For shorthand structs, we want the fields in the struct to be std.Immutable if isVal
 			// but transformParameter handles function parameters.
 			// We'll transform it as a parameter first, then adjust for the struct field.
-			field, err := t.transformParameter(param)
+			field, err := t.transformParameter(param, true)
 			if err != nil {
 				return nil, err
 			}
@@ -1310,7 +1310,13 @@ func (t *galaASTTransformer) transformImportDeclaration(ctx *grammar.ImportDecla
 	}, nil
 }
 
-func (t *galaASTTransformer) transformParameter(ctx *grammar.ParameterContext) (*ast.Field, error) {
+// transformParameter lowers a single parameter node to a Go field. When
+// requireType is true (function/method signatures and struct-shorthand fields)
+// a missing type annotation is a hard error (GALA-E0034): those sites have no
+// context to infer from and Go-style grouped syntax like `(a, b int)` is not
+// supported. When false (lambda parameters) a provisional `any` is returned so
+// the lambda lowering can thread an expected type or reject it with E0033.
+func (t *galaASTTransformer) transformParameter(ctx *grammar.ParameterContext, requireType bool) (*ast.Field, error) {
 	name := ctx.Identifier().GetText()
 	field := &ast.Field{
 		Names: []*ast.Ident{ast.NewIdent(name)},
@@ -1357,17 +1363,24 @@ func (t *galaASTTransformer) transformParameter(ctx *grammar.ParameterContext) (
 		} else {
 			field.Type = typ
 		}
+	} else if requireType {
+		// Function/method signatures and struct-shorthand fields have no context
+		// to infer a parameter type from. A missing type here comes from Go-style
+		// grouped syntax like `func add(a, b int)` or `struct Point(X, Y int)`,
+		// which GALA does not support. Reject it with a clear error rather than
+		// silently emitting `any` (which violates the concrete-types invariant and
+		// only surfaces later as a confusing Go build failure).
+		return nil, galaerr.NewCodedSemanticError(
+			galaerr.CodeUntypedParam,
+			ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
+			fmt.Sprintf("parameter %q has no declared type", name),
+			fmt.Sprintf("type every parameter individually (e.g. `%s int`); GALA does not support Go-style grouped parameters like `(a, b int)`", name),
+		)
 	} else {
-		// Provisional `any` when no type is specified. For lambda parameters this
-		// is a placeholder that transformLambdaWithExpectedType either overrides
-		// with the threaded expected type or rejects with GALA-E0033 when no type
-		// can be inferred — so untyped lambda params never reach generated Go as
-		// `any`. The fallback survives here only for non-lambda callers (function
-		// and method signatures, struct-shorthand fields), where the grammar
-		// requires an explicit type, making this an unreachable safety net rather
-		// than a sanctioned `any`. A warning is still emitted so any such site is
-		// surfaced under GALA_WARN_TYPES.
-		t.warnInference("parameter %q has no declared type; defaulted to `any`", name)
+		// Provisional `any` for lambda parameters only: transformLambdaWithExpectedType
+		// either overrides this with the threaded expected type or rejects it with
+		// GALA-E0033 when no type can be inferred, so untyped lambda params never
+		// reach generated Go as `any`.
 		if isVariadic {
 			field.Type = &ast.Ellipsis{Elt: ast.NewIdent("any")}
 		} else {
@@ -1425,7 +1438,7 @@ func (t *galaASTTransformer) transformSignature(ctx *grammar.SignatureContext, t
 	fieldList := &ast.FieldList{}
 	if paramsCtx.ParameterList() != nil {
 		for _, pCtx := range paramsCtx.ParameterList().(*grammar.ParameterListContext).AllParameter() {
-			field, err := t.transformParameter(pCtx.(*grammar.ParameterContext))
+			field, err := t.transformParameter(pCtx.(*grammar.ParameterContext), true)
 			if err != nil {
 				return nil, err
 			}

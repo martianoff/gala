@@ -1,10 +1,15 @@
 package main
 
-import . "martianoff/gala/collection_immutable"
-import . "martianoff/gala/go_interop"
-import "os"
+import (
+    . "martianoff/gala/collection_immutable"
+    . "martianoff/gala/concurrent"
+    . "martianoff/gala/strings"
+    "os"
+)
 
-// Test examples from EXAMPLES.MD
+// Verifies the runnable examples in docs/EXAMPLES.MD. Each function mirrors one
+// documented section; main() runs them in document order. Kept in sync with the
+// markdown so the examples stay executable.
 
 // Complete Example
 struct Point(X int, Y int)
@@ -14,28 +19,75 @@ func moveX(p Point, delta int) Point = p.Copy(X = p.X + delta)
 func testCompleteExample() {
     val p1 = Point(10, 20)
     val p2 = moveX(p1, 5)
-
     val msg = if (p2.X > 10) "moved" else "static"
     Println(msg, p2)
 }
 
-// Option Monad Example
+// Named Arguments
+func describe(name string, age int, role string) string = s"$name ($role, age $age)"
+
+func testNamedArguments() {
+    Println(describe("Alice", 30, "engineer"))
+    Println(describe(role = "designer", name = "Bob", age = 25))
+}
+
+// Default Parameter Values
+func greet(name string, greeting string = "Hello", punctuation string = "!") string =
+    s"$greeting, $name$punctuation"
+
+func testDefaultParams() {
+    Println(greet("World"))
+    Println(greet("World", "Hi"))
+    Println(greet("World", punctuation = "?"))
+}
+
+// Option Monad
 func testOptionMonad() {
     val x = Some(10)
     val y = x.Map((v) => v * 2)
     val z = None[int]().GetOrElse(42)
-
     val res = y match {
         case Some(v) => v
         case _       => 0
     }
-
     Println(res, z)
 }
 
-// Generic Methods Example
-type Box[T any] struct { Value T }
+// Sealed Types (ADT)
+sealed type Shape {
+    case Circle(Radius float64)
+    case Rectangle(Width float64, Height float64)
+    case Point2()
+}
 
+func area(s Shape) float64 = s match {
+    case Circle(r)       => 3.14159 * r * r
+    case Rectangle(w, h) => w * h
+    case Point2()        => 0.0
+}
+
+func testSealedTypes() {
+    val shapes = ArrayOf[Shape](Circle(2.0), Rectangle(3.0, 4.0), Point2())
+    shapes.ForEach((s) => Println(s, "=> area", area(s)))
+}
+
+// Either Monad
+func parseEven(n int) Either[string, int] =
+    if (n % 2 == 0) Right[string, int](n) else Left[string, int](s"$n is odd")
+
+func testEither() {
+    val a = parseEven(10)
+    val b = parseEven(7)
+    Println(a.Map((v) => v * 2))
+    val r = b match {
+        case Right(v) => s"got $v"
+        case Left(e)  => s"error: $e"
+    }
+    Println(r)
+}
+
+// Generic Methods
+type Box[T any] struct { Value T }
 func (b Box[T]) Transform[U any](f func(T) U) Box[U] = Box[U](Value = f(b.Value))
 
 func testGenericMethods() {
@@ -44,17 +96,16 @@ func testGenericMethods() {
     Println(s.Value)
 }
 
-// Pattern Matching with Filters Example
+// Pattern Matching with Filters (Guards)
 struct Person(Name string, Age int)
 
 func testPatternFilters() {
-    val people = SliceOf(
+    val people = ArrayOf(
         Person("Alice", 25),
         Person("Bob", 15),
         Person("Charlie", 70),
     )
-
-    for _, p := range people {
+    people.ForEach((p) => {
         val status = p match {
             case Person(name, age) if age < 18 => name + " is a minor"
             case Person(name, age) if age > 65 => name + " is a senior"
@@ -62,170 +113,208 @@ func testPatternFilters() {
             case _                             => "Unknown"
         }
         Println(status)
-    }
+    })
 }
 
-// Custom Extractor Example
+// Pattern Matching with Extractors
 type Even struct {}
 func (e Even) Unapply(i int) Option[int] = if (i % 2 == 0) Some(i) else None[int]()
 
-func testCustomExtractor() {
+func testExtractors() {
     val number = 42
-
     val description = number match {
         case Even(n) => s"$n is an even number"
         case _       => s"$number is odd"
     }
-
     Println(description)
-
-    // Nested patterns
-    val opt = Some(10)
-    opt match {
-        case Some(Even(n)) => Println("Found some even number", n)
-        case Some(n)       => Println("Found some odd number", n)
-        case None()        => Println("Nothing found")
-        case _             => Println("Other")
-    }
 }
 
-// Type-Based Pattern Matching Example
+// Type-Based Pattern Matching
 func testTypeMatch() {
     val x any = "hello"
-
     val res = x match {
         case s: string => s"string: $s"
         case i: int    => s"int: $i"
         case _         => "unknown"
     }
-
     Println(res)
 }
 
-// Interface Example
+// Interface
 type Shaper interface {
     Area() float64
 }
-
 struct Rect(width float64, height float64)
 func (r Rect) Area() float64 = r.width * r.height
-
-struct Circle(radius float64)
-func (c Circle) Area() float64 = 3.14159 * c.radius * c.radius
+struct Circ(radius float64)
+func (c Circ) Area() float64 = 3.14159 * c.radius * c.radius
 
 func testInterface() {
-    val r = Rect(10.0, 5.0)
-    val c = Circle(10.0)
-
-    val s1 Shaper = r
-    val s2 Shaper = c
-
+    val s1 Shaper = Rect(10.0, 5.0)
+    val s2 Shaper = Circ(10.0)
     Println("Area 1:", s1.Area())
     Println("Area 2:", s2.Area())
 }
 
-// Apply Method Example
+// Apply Method
 type Adder struct { Delta int }
 func (a Adder) Apply(x int) int = x + a.Delta
-
 type Multiply struct {}
 func (m Multiply) Apply(x int, y int) int = x * y
 
-func testApplyMethod() {
+func testApply() {
     val add5 = Adder(Delta = 5)
-    val res1 = add5(10)
-
-    val res2 = Multiply(3, 4)
-
-    Println(res1, res2)
+    Println(add5(10), Multiply(3, 4))
 }
 
-// Type Aliases Example
-type MyString string
+// For Loops
+func testForLoops() {
+    for i := 0; i < 3; i++ {
+        Println(s"i = $i")
+    }
+    var n = 3
+    for n > 0 {
+        Println(s"countdown $n")
+        n = n - 1
+    }
+}
 
+// String Interpolation
+func testStringInterpolation() {
+    val name = "Alice"
+    val age = 30
+    val pi = 3.14159
+    Println(s"$name is $age years old")
+    Println(s"Next year: ${age + 1}")
+    Println(s"Price: $$99")
+    Println(f"Padded: $age%05d")
+    Println(f"Fixed point: $pi%.2f")
+}
+
+// Variadic + Spread
+func sum(nums ...int) int = ArrayOf(nums...).FoldLeft(0, (acc, n) => acc + n)
+
+func testVariadicSpread() {
+    Println(sum(1, 2, 3))
+    Println(sum())
+    val more = ArrayOf(4, 5, 6)
+    Println(sum(more.ToGoSlice()...))
+}
+
+// Void Closures / Lambda Inference
+func testVoidClosures() {
+    val opt = Some(42)
+    opt.ForEach((x) => {
+        Println(x)
+    })
+    val positive = opt.Filter((x) => x > 0)
+    val doubled = opt.Map((x) => x * 2)
+    val list = ArrayOf(1, 2, 3)
+    val total = list.FoldLeft(0, (acc, x) => acc + x)
+    val str = S("hello")
+    val hasVowel = str.Exists((r) => r == 'a' || r == 'e' || r == 'i' || r == 'o' || r == 'u')
+    Println(positive, doubled, total, hasVowel)
+}
+
+// Collect
+func testCollect() {
+    val nums = ArrayOf(1, 2, 3, 4, 5, 6)
+    Println(nums.Collect({ case n if n % 2 == 0 => n * 2 }))
+    val options = ArrayOf(Some(1), None[int](), Some(2), None[int](), Some(3))
+    Println(options.Collect({ case Some(v) => v * 10 }))
+}
+
+// Option.OrElse
+func testOrElse() {
+    val primary = None[string]()
+    val fallback = Some("default")
+    Println(primary.OrElse(fallback).Get())
+    Println(Some("actual").OrElse(fallback).Get())
+}
+
+// Try with Function References
+func testTryFuncRef() {
+    val dir = Try(os.TempDir)
+    dir.OnSuccess((d) => Println(s"Temp dir ok: ${d != ""}"))
+}
+
+// Future
+func testFuture() {
+    val f = Future(21 * 2)
+    val g = f.Map((x) => x + 1)
+    Println(g.Get())
+    val result = g match {
+        case Succeeded(v) => s"ok: $v"
+        case Failed(e)    => s"err: ${e.Error()}"
+        case _            => "pending"
+    }
+    Println(result)
+}
+
+// MkString
+func testMkString() {
+    val nums = ArrayOf(1, 2, 3, 4, 5)
+    Println(nums.MkString(", "))
+    val words = ListOf("hello", "world")
+    Println(words.MkString(" "))
+    Println(EmptyArray[int]().MkString(", "))
+}
+
+// HashMap
+func testHashMap() {
+    val scores = HashMapOf(("Alice", 85), ("Bob", 92))
+    val updated = scores.Put("Carol", 78)
+    Println(updated.GetOrElse("Bob", 0))
+    Println(updated.Get("Dave"))
+    val grades = updated.MapValues((v) => v match {
+        case n if n >= 90 => "A"
+        case _            => "B"
+    })
+    Println(grades.GetOrElse("Bob", "?"))
+}
+
+// Sorted
+func testSorted() {
+    val arr = ArrayOf(3, 1, 4, 1, 5, 9)
+    Println(arr.Sorted())
+    Println(arr.SortWith((a, b) => a > b))
+    Println(ArrayOf(1, 9, 3, 7, 5).SortBy((x) => x))
+    Println(ListOf("banana", "apple", "cherry").Sorted())
+    Println(TreeSetOf(30, 10, 20).Sorted())
+    Println(HashSetOf(5, 3, 1).Sorted())
+    Println(EmptyArray[int]().Sorted())
+}
+
+// Type Aliases
+type MyString string
 func testTypeAlias() {
     val s MyString = "hello"
     Println(s)
 }
 
-// Option.OrElse Example
-func testOrElse() {
-    val primary = None[string]()
-    val fallback = Some("default")
-
-    val result = primary.OrElse(fallback)
-    Println(result.Get())
-
-    val present = Some("actual")
-    val result2 = present.OrElse(fallback)
-    Println(result2.Get())
-}
-
-// Try with Function References Example
-func testTryFuncRef() {
-    val dir = Try(os.TempDir)
-    dir.OnSuccess((d) => Println(s"Temp dir success: ${d != ""}"))
-}
-
-// Collect Example
-func testCollect() {
-    val nums = ArrayOf(1, 2, 3, 4, 5, 6)
-
-    val evenDoubled = nums.Collect({ case n if n % 2 == 0 => n * 2 })
-    Println(evenDoubled)
-
-    val options = ArrayOf(Some(1), None[int](), Some(2), None[int](), Some(3))
-    val values = options.Collect({ case Some(v) => v * 10 })
-    Println(values)
-}
-
-// MkString Example
-func testMkString() {
-    val nums = ArrayOf(1, 2, 3, 4, 5)
-    Println(nums.MkString(", "))
-    Println(nums.MkString(" | "))
-
-    val words = ListOf("hello", "world")
-    Println(words.MkString(" "))
-
-    val empty = EmptyArray[int]()
-    Println(empty.MkString(", "))
-}
-
-// Sorted API Example
-func testSorted() {
-    val arr = ArrayOf(3, 1, 4, 1, 5, 9)
-    Println(arr.Sorted())
-    Println(arr.SortWith((a, b) => a > b))
-
-    val arr2 = ArrayOf(1, 9, 3, 7, 5)
-    Println(arr2.SortBy((x) => x))
-
-    val list = ListOf("banana", "apple", "cherry")
-    Println(list.Sorted())
-
-    val tree = TreeSetOf(30, 10, 20)
-    Println(tree.Sorted())
-
-    val set = HashSetOf(5, 3, 1)
-    Println(set.Sorted())
-
-    Println(EmptyArray[int]().Sorted())
-}
-
 func main() {
     testCompleteExample()
+    testNamedArguments()
+    testDefaultParams()
     testOptionMonad()
+    testSealedTypes()
+    testEither()
     testGenericMethods()
     testPatternFilters()
-    testCustomExtractor()
+    testExtractors()
     testTypeMatch()
     testInterface()
-    testApplyMethod()
-    testTypeAlias()
+    testApply()
+    testForLoops()
+    testStringInterpolation()
+    testVariadicSpread()
+    testVoidClosures()
+    testCollect()
     testOrElse()
     testTryFuncRef()
-    testCollect()
+    testFuture()
     testMkString()
+    testHashMap()
     testSorted()
+    testTypeAlias()
 }

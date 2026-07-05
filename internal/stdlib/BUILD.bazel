@@ -60,11 +60,15 @@ genrule(
         "//collection_immutable:list_go",
         "//collection_immutable:hashmap_go",
         "//collection_immutable:hashset_go",
+        "//collection_immutable:treeset_go",
+        "//collection_immutable:treemap_go",
         # collection_immutable package - GALA source
         "//collection_immutable:array.gala",
         "//collection_immutable:list.gala",
         "//collection_immutable:hashmap.gala",
         "//collection_immutable:hashset.gala",
+        "//collection_immutable:treeset.gala",
+        "//collection_immutable:treemap.gala",
         # collection_mutable package - transpiled Go
         "//collection_mutable:array_go",
         "//collection_mutable:list_go",

@@ -375,6 +375,37 @@ func main() {
 			expectCode:     galaerr.CodeUntypedLambdaParam,
 			expectContains: `lambda parameter "x" has no type`,
 		},
+		{
+			// Go-style grouped function parameters `(a, b int)` parse as a
+			// typeless `a` followed by a typed `b int`. GALA has no group-type
+			// propagation, so the typeless `a` must be rejected rather than
+			// silently emitted as `any`.
+			name: "GALA-E0034 grouped function parameter",
+			input: `package main
+
+func add(a, b int) int = a + b
+
+func main() {
+    Println(add(3, 4))
+}`,
+			expectCode:     galaerr.CodeUntypedParam,
+			expectContains: `parameter "a" has no declared type`,
+		},
+		{
+			// The same grouped-shorthand shape in a struct declaration
+			// (`struct Point(X, Y int)`) must likewise be rejected.
+			name: "GALA-E0034 grouped struct-shorthand field",
+			input: `package main
+
+struct Point(X, Y int)
+
+func main() {
+    val p = Point(3, 4)
+    Println(p.X + p.Y)
+}`,
+			expectCode:     galaerr.CodeUntypedParam,
+			expectContains: `parameter "X" has no declared type`,
+		},
 	}
 
 	for _, tc := range cases {

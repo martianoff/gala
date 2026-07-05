@@ -257,6 +257,16 @@ const (
 	// (`(x int) => ...`) or place the lambda in a typed context that supplies
 	// the parameter types.
 	CodeUntypedLambdaParam ErrorCode = "GALA-E0033"
+
+	// E0034: a function/method parameter or struct-shorthand field has no type
+	// annotation. Unlike lambda parameters, these declaration sites have no
+	// surrounding context to infer from, so every parameter/field must state its
+	// own type. This most often surfaces from Go-style grouped syntax such as
+	// `func add(a, b int)` or `struct Point(X, Y int)`, which GALA does not
+	// support — each parameter or field must be typed individually
+	// (`func add(a int, b int)`, `struct Point(X int, Y int)`). Emitting `any`
+	// for the untyped parameter would violate the concrete-types invariant.
+	CodeUntypedParam ErrorCode = "GALA-E0034"
 )
 
 // MultiError collects multiple GALA errors.

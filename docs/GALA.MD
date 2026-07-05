@@ -142,6 +142,11 @@ func add(a int, b int) int {
 }
 ```
 
+> **Note:** Every parameter states its own type. GALA does not support Go-style
+> grouped parameters (`func add(a, b int)`); write `func add(a int, b int)`
+> instead. The same applies to struct-shorthand fields. A grouped declaration
+> is rejected with [GALA-E0034](errors/GALA-E0034.md).
+
 ### Expression Functions
 For simple functions, you can use the `=` syntax.
 
