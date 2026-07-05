@@ -374,6 +374,30 @@ val res = arr match {
 }
 ```
 
+### Monadic Binding (`bind` / `also`)
+
+Inside a function whose result type is a monad `M`, `bind name = expr` unwraps `M` and binds the success value; the block lowers to a `FlatMap` chain, so every bound name stays in scope for later statements. `also` marks an *independent* clause: a `bind`+`also` group lowers through `Zip{N}` when the monad provides it — `Validated` (in the `validation` package) accumulates all errors, `Future` runs the clauses concurrently — and falls back to the sequential `FlatMap` chain for fail-fast monads (`Try`/`Option`/`Either`).
+
+```gala
+// bind: each value stays in scope; the first Failure short-circuits.
+func processOrder(id int) Try[Receipt] {
+    bind o = fetchOrder(id)
+    bind valid = validateOrder(o)
+    bind payment = chargePayment(valid)
+    Success(Receipt(o.Id, payment))
+}
+
+// also over Validated: report ALL invalid fields, not just the first.
+func makePerson(name string, email string, age int) Validated[string, Person] {
+    bind n = vName(name)
+    also e = vEmail(email)
+    also a = vAge(age)
+    Valid[string, Person](Person(n, e, a))
+}
+```
+
+Bound names are immutable `val`s. `bind`/`also` work over any user-defined monad that defines `FlatMap[U](f func(T) M[U]) M[U]`; a type without `FlatMap` is rejected with a clear compiler error. See [`bind` / `also` notation](https://github.com/martianoff/gala/blob/master/docs/BIND_NOTATION.MD) for the full specification and the user-monad extension guide.
+
 ### For Statement
 ```gala
 for i := 0; i < 10; i++ {
