@@ -575,6 +575,26 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		}
 	}
 
+	return true, t.emitGenericMethodFreeFunc(method, receiver, recvType, lookupBaseName, typeArgs, methodMeta, mArgs, hasSpread), nil
+}
+
+// emitGenericMethodFreeFunc builds the monomorphized free-function call that a
+// generic method lowers to: `pkg.TypeName_Method[typeArgs...](receiver, args...)`
+// (or unqualified `TypeName_Method[...]` for a non-std/current-package type).
+// It is the shared emission step used both by tryTransformGenericMethodAsFunction
+// (context-driven path) and by the `bind`/`also` desugaring, which synthesizes
+// the call directly. `explicitTypeArgs` are the method-level type args (e.g. U in
+// FlatMap[U]); the receiver's concrete type args (e.g. T of Try[T]) are appended.
+func (t *galaASTTransformer) emitGenericMethodFreeFunc(
+	method string,
+	receiver ast.Expr,
+	recvType transpiler.Type,
+	lookupBaseName string,
+	explicitTypeArgs []ast.Expr,
+	methodMeta *transpiler.MethodMetadata,
+	mArgs []ast.Expr,
+	hasSpread bool,
+) ast.Expr {
 	// Build the standalone function identifier: pkg.TypeName_Method or TypeName_Method.
 	var funExpr ast.Expr
 	if !recvType.IsNil() {
@@ -605,9 +625,9 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 	// Decide whether to add type arguments:
 	// - If method has its own type params (e.g., Map[U]) and no explicit type args: let Go infer.
 	// - Otherwise: combine explicit type args with concrete receiver type args.
-	shouldAddTypeArgs := len(typeArgs) > 0 || (methodMeta == nil || len(methodMeta.TypeParams) == 0)
+	shouldAddTypeArgs := len(explicitTypeArgs) > 0 || (methodMeta == nil || len(methodMeta.TypeParams) == 0)
 	if shouldAddTypeArgs {
-		allTypeArgs := append(typeArgs, concreteRecvTypeArgs...)
+		allTypeArgs := append(explicitTypeArgs, concreteRecvTypeArgs...)
 		if len(allTypeArgs) == 1 {
 			funExpr = &ast.IndexExpr{X: funExpr, Index: allTypeArgs[0]}
 		} else if len(allTypeArgs) > 1 {
@@ -615,11 +635,11 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		}
 	}
 
-	return true, &ast.CallExpr{
+	return &ast.CallExpr{
 		Fun:      funExpr,
 		Args:     append([]ast.Expr{receiver}, mArgs...),
 		Ellipsis: ellipsisPos(hasSpread),
-	}, nil
+	}
 }
 
 // transformRegularMethodCall handles Section 4 of the call dispatcher: method

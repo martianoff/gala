@@ -103,6 +103,18 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "bind_notation",
+    src = "bind_notation.gala",
+    expected = "bind_notation.out",
+)
+
+gala_exec_test(
+    name = "bind_notation_user",
+    src = "bind_notation_user.gala",
+    expected = "bind_notation_user.out",
+)
+
+gala_exec_test(
     name = "bind_notation_desugared",
     src = "bind_notation_desugared.gala",
     expected = "bind_notation_desugared.out",

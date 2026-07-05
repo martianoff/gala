@@ -3,6 +3,7 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "transformer",
     srcs = [
+        "bind.go",
         "bridge.go",
         "call_context.go",
         "calls.go",
@@ -49,6 +50,7 @@ go_test(
         "assignment_test.go",
         "auto_method_override_test.go",
         "bare_funcref_test.go",
+        "bind_test.go",
         "chained_flatmap_test.go",
         "codec_boundary_test.go",
         "collect_partial_function_test.go",
