@@ -37,8 +37,6 @@ We want to be fair to Borgo: it was an influential proof of concept, and the dem
 | Monadic do-notation | `bind` / `also` | No |
 | Self-hosting path | Transpiler written in Go | Compiler written in Rust |
 
-Star counts are not on this table on purpose — they measure interest, not whether you can build on something today.
-
 ---
 
 ## What this means in practice

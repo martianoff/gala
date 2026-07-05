@@ -38,8 +38,6 @@ We'll say up front: Lisette is a strong, actively maintained project with real m
 | Standard library | `Option`/`Either`/`Try`/`Future`/`IO`, immutable collections, JSON + YAML codecs, regex, crypto, fs | Ships a curated stdlib |
 | Editor tooling | GoLand/IntelliJ plugin + LSP (VS Code, Neovim) | LSP (VS Code, Neovim, Zed) |
 
-Star counts aren't on this table on purpose — both projects are real and maintained; the question is which fits your work.
-
 ---
 
 ## The three differences that actually matter
