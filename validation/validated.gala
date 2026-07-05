@@ -1,0 +1,184 @@
+package validation
+
+import (
+    . "martianoff/gala/std"
+    . "martianoff/gala/collection_immutable"
+)
+
+// Validated[E, A] is an applicative companion to Either that ACCUMULATES errors
+// instead of short-circuiting on the first one. It is the type an `also` group
+// uses to collect every failure: validating three fields with
+// `bind name = ... also email = ... also age = ...` over Validated reports all
+// of the errors, not just the first. See docs/BIND_NOTATION.MD.
+//
+// Errors are held as an Array[E] (a non-empty list by construction of Invalid).
+sealed type Validated[E any, A any] {
+    case Valid(Value A)
+    case Invalid(Errors Array[E])
+}
+
+// InvalidOf builds an Invalid holding a single error.
+func InvalidOf[E any, A any](err E) Validated[E, A] = Invalid[E, A](ArrayOf(err))
+
+// IsValid returns true if this is a Valid.
+func (v Validated[E, A]) IsValid() bool = v match {
+    case Valid(_)   => true
+    case Invalid(_) => false
+}
+
+// IsInvalid returns true if this is an Invalid.
+func (v Validated[E, A]) IsInvalid() bool = !v.IsValid()
+
+// GetOrElse returns the valid value, or defaultValue if invalid.
+func (v Validated[E, A]) GetOrElse(defaultValue A) A = v match {
+    case Valid(a)   => a
+    case Invalid(_) => defaultValue
+}
+
+// Errors returns the accumulated errors, or an empty Array if valid.
+func (v Validated[E, A]) GetErrors() Array[E] = v match {
+    case Valid(_)      => ArrayOf[E]()
+    case Invalid(errs) => errs
+}
+
+// Map transforms the valid value; an Invalid passes through unchanged.
+func (v Validated[E, A]) Map[B any](f func(A) B) Validated[E, B] = v match {
+    case Valid(a)      => Valid[E, B](f(a))
+    case Invalid(errs) => Invalid[E, B](errs)
+}
+
+// FlatMap is the monadic (fail-fast) bind — it does NOT accumulate. Error
+// accumulation is the job of Zip2/Zip3 (reached through `also`).
+func (v Validated[E, A]) FlatMap[B any](f func(A) Validated[E, B]) Validated[E, B] = v match {
+    case Valid(a)      => f(a)
+    case Invalid(errs) => Invalid[E, B](errs)
+}
+
+// Zip2..Zip10 combine N Validated values, ACCUMULATING every error across all of
+// them. Each pre-collects the full error list; when it is empty (all valid) a
+// FlatMap chain builds the result tuple — no error can occur in that branch, so
+// it always yields a Valid. The explicit `[TupleN[...]]` type arguments follow the
+// same convention as Future.Zip.
+
+func (v0 Validated[E, A]) Zip2[B any](v1 Validated[E, B]) Validated[E, Tuple[A, B]] {
+    val errs = v0.GetErrors().AppendAll(v1.GetErrors())
+    if (errs.IsEmpty()) {
+        return v0.FlatMap[Tuple[A, B]]((a A) =>
+            v1.Map[Tuple[A, B]]((b B) => Tuple(a, b)))
+    }
+    return Invalid[E, Tuple[A, B]](errs)
+}
+
+func (v0 Validated[E, A]) Zip3[B any, C any](v1 Validated[E, B], v2 Validated[E, C]) Validated[E, Tuple3[A, B, C]] {
+    val errs = v0.GetErrors().AppendAll(v1.GetErrors()).AppendAll(v2.GetErrors())
+    if (errs.IsEmpty()) {
+        return v0.FlatMap[Tuple3[A, B, C]]((a A) =>
+            v1.FlatMap[Tuple3[A, B, C]]((b B) =>
+            v2.Map[Tuple3[A, B, C]]((c C) => Tuple(a, b, c))))
+    }
+    return Invalid[E, Tuple3[A, B, C]](errs)
+}
+
+func (v0 Validated[E, A]) Zip4[B any, C any, D any](v1 Validated[E, B], v2 Validated[E, C], v3 Validated[E, D]) Validated[E, Tuple4[A, B, C, D]] {
+    val errs = v0.GetErrors().AppendAll(v1.GetErrors()).AppendAll(v2.GetErrors()).AppendAll(v3.GetErrors())
+    if (errs.IsEmpty()) {
+        return v0.FlatMap[Tuple4[A, B, C, D]]((a A) =>
+            v1.FlatMap[Tuple4[A, B, C, D]]((b B) =>
+            v2.FlatMap[Tuple4[A, B, C, D]]((c C) =>
+            v3.Map[Tuple4[A, B, C, D]]((d D) => Tuple(a, b, c, d)))))
+    }
+    return Invalid[E, Tuple4[A, B, C, D]](errs)
+}
+
+func (v0 Validated[E, A]) Zip5[B any, C any, D any, F any](v1 Validated[E, B], v2 Validated[E, C], v3 Validated[E, D], v4 Validated[E, F]) Validated[E, Tuple5[A, B, C, D, F]] {
+    val errs = v0.GetErrors().AppendAll(v1.GetErrors()).AppendAll(v2.GetErrors()).AppendAll(v3.GetErrors()).AppendAll(v4.GetErrors())
+    if (errs.IsEmpty()) {
+        return v0.FlatMap[Tuple5[A, B, C, D, F]]((a A) =>
+            v1.FlatMap[Tuple5[A, B, C, D, F]]((b B) =>
+            v2.FlatMap[Tuple5[A, B, C, D, F]]((c C) =>
+            v3.FlatMap[Tuple5[A, B, C, D, F]]((d D) =>
+            v4.Map[Tuple5[A, B, C, D, F]]((f F) => Tuple(a, b, c, d, f))))))
+    }
+    return Invalid[E, Tuple5[A, B, C, D, F]](errs)
+}
+
+func (v0 Validated[E, A]) Zip6[B any, C any, D any, F any, G any](v1 Validated[E, B], v2 Validated[E, C], v3 Validated[E, D], v4 Validated[E, F], v5 Validated[E, G]) Validated[E, Tuple6[A, B, C, D, F, G]] {
+    val errs = v0.GetErrors().AppendAll(v1.GetErrors()).AppendAll(v2.GetErrors()).AppendAll(v3.GetErrors()).AppendAll(v4.GetErrors()).AppendAll(v5.GetErrors())
+    if (errs.IsEmpty()) {
+        return v0.FlatMap[Tuple6[A, B, C, D, F, G]]((a A) =>
+            v1.FlatMap[Tuple6[A, B, C, D, F, G]]((b B) =>
+            v2.FlatMap[Tuple6[A, B, C, D, F, G]]((c C) =>
+            v3.FlatMap[Tuple6[A, B, C, D, F, G]]((d D) =>
+            v4.FlatMap[Tuple6[A, B, C, D, F, G]]((f F) =>
+            v5.Map[Tuple6[A, B, C, D, F, G]]((g G) => Tuple(a, b, c, d, f, g)))))))
+    }
+    return Invalid[E, Tuple6[A, B, C, D, F, G]](errs)
+}
+
+func (v0 Validated[E, A]) Zip7[B any, C any, D any, F any, G any, H any](v1 Validated[E, B], v2 Validated[E, C], v3 Validated[E, D], v4 Validated[E, F], v5 Validated[E, G], v6 Validated[E, H]) Validated[E, Tuple7[A, B, C, D, F, G, H]] {
+    val errs = v0.GetErrors().AppendAll(v1.GetErrors()).AppendAll(v2.GetErrors()).AppendAll(v3.GetErrors()).AppendAll(v4.GetErrors()).AppendAll(v5.GetErrors()).AppendAll(v6.GetErrors())
+    if (errs.IsEmpty()) {
+        return v0.FlatMap[Tuple7[A, B, C, D, F, G, H]]((a A) =>
+            v1.FlatMap[Tuple7[A, B, C, D, F, G, H]]((b B) =>
+            v2.FlatMap[Tuple7[A, B, C, D, F, G, H]]((c C) =>
+            v3.FlatMap[Tuple7[A, B, C, D, F, G, H]]((d D) =>
+            v4.FlatMap[Tuple7[A, B, C, D, F, G, H]]((f F) =>
+            v5.FlatMap[Tuple7[A, B, C, D, F, G, H]]((g G) =>
+            v6.Map[Tuple7[A, B, C, D, F, G, H]]((h H) => Tuple(a, b, c, d, f, g, h))))))))
+    }
+    return Invalid[E, Tuple7[A, B, C, D, F, G, H]](errs)
+}
+
+func (v0 Validated[E, A]) Zip8[B any, C any, D any, F any, G any, H any, I any](v1 Validated[E, B], v2 Validated[E, C], v3 Validated[E, D], v4 Validated[E, F], v5 Validated[E, G], v6 Validated[E, H], v7 Validated[E, I]) Validated[E, Tuple8[A, B, C, D, F, G, H, I]] {
+    val errs = v0.GetErrors().AppendAll(v1.GetErrors()).AppendAll(v2.GetErrors()).AppendAll(v3.GetErrors()).AppendAll(v4.GetErrors()).AppendAll(v5.GetErrors()).AppendAll(v6.GetErrors()).AppendAll(v7.GetErrors())
+    if (errs.IsEmpty()) {
+        return v0.FlatMap[Tuple8[A, B, C, D, F, G, H, I]]((a A) =>
+            v1.FlatMap[Tuple8[A, B, C, D, F, G, H, I]]((b B) =>
+            v2.FlatMap[Tuple8[A, B, C, D, F, G, H, I]]((c C) =>
+            v3.FlatMap[Tuple8[A, B, C, D, F, G, H, I]]((d D) =>
+            v4.FlatMap[Tuple8[A, B, C, D, F, G, H, I]]((f F) =>
+            v5.FlatMap[Tuple8[A, B, C, D, F, G, H, I]]((g G) =>
+            v6.FlatMap[Tuple8[A, B, C, D, F, G, H, I]]((h H) =>
+            v7.Map[Tuple8[A, B, C, D, F, G, H, I]]((i I) => Tuple(a, b, c, d, f, g, h, i)))))))))
+    }
+    return Invalid[E, Tuple8[A, B, C, D, F, G, H, I]](errs)
+}
+
+func (v0 Validated[E, A]) Zip9[B any, C any, D any, F any, G any, H any, I any, J any](v1 Validated[E, B], v2 Validated[E, C], v3 Validated[E, D], v4 Validated[E, F], v5 Validated[E, G], v6 Validated[E, H], v7 Validated[E, I], v8 Validated[E, J]) Validated[E, Tuple9[A, B, C, D, F, G, H, I, J]] {
+    val errs = v0.GetErrors().AppendAll(v1.GetErrors()).AppendAll(v2.GetErrors()).AppendAll(v3.GetErrors()).AppendAll(v4.GetErrors()).AppendAll(v5.GetErrors()).AppendAll(v6.GetErrors()).AppendAll(v7.GetErrors()).AppendAll(v8.GetErrors())
+    if (errs.IsEmpty()) {
+        return v0.FlatMap[Tuple9[A, B, C, D, F, G, H, I, J]]((a A) =>
+            v1.FlatMap[Tuple9[A, B, C, D, F, G, H, I, J]]((b B) =>
+            v2.FlatMap[Tuple9[A, B, C, D, F, G, H, I, J]]((c C) =>
+            v3.FlatMap[Tuple9[A, B, C, D, F, G, H, I, J]]((d D) =>
+            v4.FlatMap[Tuple9[A, B, C, D, F, G, H, I, J]]((f F) =>
+            v5.FlatMap[Tuple9[A, B, C, D, F, G, H, I, J]]((g G) =>
+            v6.FlatMap[Tuple9[A, B, C, D, F, G, H, I, J]]((h H) =>
+            v7.FlatMap[Tuple9[A, B, C, D, F, G, H, I, J]]((i I) =>
+            v8.Map[Tuple9[A, B, C, D, F, G, H, I, J]]((j J) => Tuple(a, b, c, d, f, g, h, i, j))))))))))
+    }
+    return Invalid[E, Tuple9[A, B, C, D, F, G, H, I, J]](errs)
+}
+
+func (v0 Validated[E, A]) Zip10[B any, C any, D any, F any, G any, H any, I any, J any, K any](v1 Validated[E, B], v2 Validated[E, C], v3 Validated[E, D], v4 Validated[E, F], v5 Validated[E, G], v6 Validated[E, H], v7 Validated[E, I], v8 Validated[E, J], v9 Validated[E, K]) Validated[E, Tuple10[A, B, C, D, F, G, H, I, J, K]] {
+    val errs = v0.GetErrors().AppendAll(v1.GetErrors()).AppendAll(v2.GetErrors()).AppendAll(v3.GetErrors()).AppendAll(v4.GetErrors()).AppendAll(v5.GetErrors()).AppendAll(v6.GetErrors()).AppendAll(v7.GetErrors()).AppendAll(v8.GetErrors()).AppendAll(v9.GetErrors())
+    if (errs.IsEmpty()) {
+        return v0.FlatMap[Tuple10[A, B, C, D, F, G, H, I, J, K]]((a A) =>
+            v1.FlatMap[Tuple10[A, B, C, D, F, G, H, I, J, K]]((b B) =>
+            v2.FlatMap[Tuple10[A, B, C, D, F, G, H, I, J, K]]((c C) =>
+            v3.FlatMap[Tuple10[A, B, C, D, F, G, H, I, J, K]]((d D) =>
+            v4.FlatMap[Tuple10[A, B, C, D, F, G, H, I, J, K]]((f F) =>
+            v5.FlatMap[Tuple10[A, B, C, D, F, G, H, I, J, K]]((g G) =>
+            v6.FlatMap[Tuple10[A, B, C, D, F, G, H, I, J, K]]((h H) =>
+            v7.FlatMap[Tuple10[A, B, C, D, F, G, H, I, J, K]]((i I) =>
+            v8.FlatMap[Tuple10[A, B, C, D, F, G, H, I, J, K]]((j J) =>
+            v9.Map[Tuple10[A, B, C, D, F, G, H, I, J, K]]((k K) => Tuple(a, b, c, d, f, g, h, i, j, k)))))))))))
+    }
+    return Invalid[E, Tuple10[A, B, C, D, F, G, H, I, J, K]](errs)
+}
+
+// ToEither converts to Either: Valid → Right, Invalid → Left(errors).
+func (v Validated[E, A]) ToEither() Either[Array[E], A] = v match {
+    case Valid(a)      => Right[Array[E], A](a)
+    case Invalid(errs) => Left[Array[E], A](errs)
+}

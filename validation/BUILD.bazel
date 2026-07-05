@@ -1,0 +1,40 @@
+load("@rules_go//go:def.bzl", "go_library")
+load("@rules_gala//gala:defs.bzl", "gala_bootstrap_transpile", "gala_test")
+
+exports_files(["validated.gala"])
+
+filegroup(
+    name = "gala_sources",
+    srcs = glob(
+        ["*.gala"],
+        exclude = ["*_test.gala"],
+    ),
+    visibility = ["//visibility:public"],
+)
+
+gala_bootstrap_transpile(
+    name = "validated_go",
+    src = "validated.gala",
+    out = "validated.gen.go",
+)
+
+go_library(
+    name = "validation",
+    srcs = ["validated.gen.go"],
+    importpath = "martianoff/gala/validation",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//collection_immutable",
+        "//go_interop",
+        "//std",
+    ],
+)
+
+gala_test(
+    name = "validated_test",
+    srcs = ["validated_test.gala"],
+    deps = [
+        ":validation",
+        "//collection_immutable",
+    ],
+)

@@ -379,6 +379,81 @@ func (f Future[T]) ZipWith[U any, V any](other Future[U], fn func(T, U) V) Futur
     })
 }
 
+// Zip2..Zip10 combine N Futures under the naming the `also` notation uses. Every
+// Future is already running, so the results are awaited concurrently — wall-clock
+// cost is the slowest, not the sum. They are fail-fast: the first failure
+// short-circuits. See docs/BIND_NOTATION.MD.
+
+func (f Future[T]) Zip2[U any](other Future[U]) Future[Tuple[T, U]] = f.Zip(other)
+
+func (f Future[T]) Zip3[U any, V any](fu Future[U], fv Future[V]) Future[Tuple3[T, U, V]] =
+    f.FlatMap[Tuple3[T, U, V]]((t T) =>
+        fu.FlatMap[Tuple3[T, U, V]]((u U) =>
+        fv.Map[Tuple3[T, U, V]]((v V) => Tuple(t, u, v))))
+
+func (f Future[T]) Zip4[U any, V any, W any](fu Future[U], fv Future[V], fw Future[W]) Future[Tuple4[T, U, V, W]] =
+    f.FlatMap[Tuple4[T, U, V, W]]((t T) =>
+        fu.FlatMap[Tuple4[T, U, V, W]]((u U) =>
+        fv.FlatMap[Tuple4[T, U, V, W]]((v V) =>
+        fw.Map[Tuple4[T, U, V, W]]((w W) => Tuple(t, u, v, w)))))
+
+func (f Future[T]) Zip5[U any, V any, W any, X any](fu Future[U], fv Future[V], fw Future[W], fx Future[X]) Future[Tuple5[T, U, V, W, X]] =
+    f.FlatMap[Tuple5[T, U, V, W, X]]((t T) =>
+        fu.FlatMap[Tuple5[T, U, V, W, X]]((u U) =>
+        fv.FlatMap[Tuple5[T, U, V, W, X]]((v V) =>
+        fw.FlatMap[Tuple5[T, U, V, W, X]]((w W) =>
+        fx.Map[Tuple5[T, U, V, W, X]]((x X) => Tuple(t, u, v, w, x))))))
+
+func (f Future[T]) Zip6[U any, V any, W any, X any, Y any](fu Future[U], fv Future[V], fw Future[W], fx Future[X], fy Future[Y]) Future[Tuple6[T, U, V, W, X, Y]] =
+    f.FlatMap[Tuple6[T, U, V, W, X, Y]]((t T) =>
+        fu.FlatMap[Tuple6[T, U, V, W, X, Y]]((u U) =>
+        fv.FlatMap[Tuple6[T, U, V, W, X, Y]]((v V) =>
+        fw.FlatMap[Tuple6[T, U, V, W, X, Y]]((w W) =>
+        fx.FlatMap[Tuple6[T, U, V, W, X, Y]]((x X) =>
+        fy.Map[Tuple6[T, U, V, W, X, Y]]((y Y) => Tuple(t, u, v, w, x, y)))))))
+
+func (f Future[T]) Zip7[U any, V any, W any, X any, Y any, Z any](fu Future[U], fv Future[V], fw Future[W], fx Future[X], fy Future[Y], fz Future[Z]) Future[Tuple7[T, U, V, W, X, Y, Z]] =
+    f.FlatMap[Tuple7[T, U, V, W, X, Y, Z]]((t T) =>
+        fu.FlatMap[Tuple7[T, U, V, W, X, Y, Z]]((u U) =>
+        fv.FlatMap[Tuple7[T, U, V, W, X, Y, Z]]((v V) =>
+        fw.FlatMap[Tuple7[T, U, V, W, X, Y, Z]]((w W) =>
+        fx.FlatMap[Tuple7[T, U, V, W, X, Y, Z]]((x X) =>
+        fy.FlatMap[Tuple7[T, U, V, W, X, Y, Z]]((y Y) =>
+        fz.Map[Tuple7[T, U, V, W, X, Y, Z]]((z Z) => Tuple(t, u, v, w, x, y, z))))))))
+
+func (f Future[T]) Zip8[U any, V any, W any, X any, Y any, Z any, P any](fu Future[U], fv Future[V], fw Future[W], fx Future[X], fy Future[Y], fz Future[Z], fp Future[P]) Future[Tuple8[T, U, V, W, X, Y, Z, P]] =
+    f.FlatMap[Tuple8[T, U, V, W, X, Y, Z, P]]((t T) =>
+        fu.FlatMap[Tuple8[T, U, V, W, X, Y, Z, P]]((u U) =>
+        fv.FlatMap[Tuple8[T, U, V, W, X, Y, Z, P]]((v V) =>
+        fw.FlatMap[Tuple8[T, U, V, W, X, Y, Z, P]]((w W) =>
+        fx.FlatMap[Tuple8[T, U, V, W, X, Y, Z, P]]((x X) =>
+        fy.FlatMap[Tuple8[T, U, V, W, X, Y, Z, P]]((y Y) =>
+        fz.FlatMap[Tuple8[T, U, V, W, X, Y, Z, P]]((z Z) =>
+        fp.Map[Tuple8[T, U, V, W, X, Y, Z, P]]((p P) => Tuple(t, u, v, w, x, y, z, p)))))))))
+
+func (f Future[T]) Zip9[U any, V any, W any, X any, Y any, Z any, P any, Q any](fu Future[U], fv Future[V], fw Future[W], fx Future[X], fy Future[Y], fz Future[Z], fp Future[P], fq Future[Q]) Future[Tuple9[T, U, V, W, X, Y, Z, P, Q]] =
+    f.FlatMap[Tuple9[T, U, V, W, X, Y, Z, P, Q]]((t T) =>
+        fu.FlatMap[Tuple9[T, U, V, W, X, Y, Z, P, Q]]((u U) =>
+        fv.FlatMap[Tuple9[T, U, V, W, X, Y, Z, P, Q]]((v V) =>
+        fw.FlatMap[Tuple9[T, U, V, W, X, Y, Z, P, Q]]((w W) =>
+        fx.FlatMap[Tuple9[T, U, V, W, X, Y, Z, P, Q]]((x X) =>
+        fy.FlatMap[Tuple9[T, U, V, W, X, Y, Z, P, Q]]((y Y) =>
+        fz.FlatMap[Tuple9[T, U, V, W, X, Y, Z, P, Q]]((z Z) =>
+        fp.FlatMap[Tuple9[T, U, V, W, X, Y, Z, P, Q]]((p P) =>
+        fq.Map[Tuple9[T, U, V, W, X, Y, Z, P, Q]]((q Q) => Tuple(t, u, v, w, x, y, z, p, q))))))))))
+
+func (f Future[T]) Zip10[U any, V any, W any, X any, Y any, Z any, P any, Q any, R any](fu Future[U], fv Future[V], fw Future[W], fx Future[X], fy Future[Y], fz Future[Z], fp Future[P], fq Future[Q], fr Future[R]) Future[Tuple10[T, U, V, W, X, Y, Z, P, Q, R]] =
+    f.FlatMap[Tuple10[T, U, V, W, X, Y, Z, P, Q, R]]((t T) =>
+        fu.FlatMap[Tuple10[T, U, V, W, X, Y, Z, P, Q, R]]((u U) =>
+        fv.FlatMap[Tuple10[T, U, V, W, X, Y, Z, P, Q, R]]((v V) =>
+        fw.FlatMap[Tuple10[T, U, V, W, X, Y, Z, P, Q, R]]((w W) =>
+        fx.FlatMap[Tuple10[T, U, V, W, X, Y, Z, P, Q, R]]((x X) =>
+        fy.FlatMap[Tuple10[T, U, V, W, X, Y, Z, P, Q, R]]((y Y) =>
+        fz.FlatMap[Tuple10[T, U, V, W, X, Y, Z, P, Q, R]]((z Z) =>
+        fp.FlatMap[Tuple10[T, U, V, W, X, Y, Z, P, Q, R]]((p P) =>
+        fq.FlatMap[Tuple10[T, U, V, W, X, Y, Z, P, Q, R]]((q Q) =>
+        fr.Map[Tuple10[T, U, V, W, X, Y, Z, P, Q, R]]((r R) => Tuple(t, u, v, w, x, y, z, p, q, r)))))))))))
+
 // Fallback returns the first successful Future, or the last failure if both fail.
 // The resulting Future inherits this Future's ExecutionContext.
 func (f Future[T]) Fallback(that Future[T]) Future[T] {

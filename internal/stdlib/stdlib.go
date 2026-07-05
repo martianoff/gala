@@ -99,6 +99,15 @@ func generatePackageGoMod(pkgName, importPath string) string {
 		content += "\nreplace martianoff/gala/std => ../std\n"
 		content += "\nreplace martianoff/gala/go_interop => ../go_interop\n"
 		content += "replace martianoff/gala/collection_immutable => ../collection_immutable\n"
+	case "validation":
+		content += "\nrequire (\n"
+		content += "\tmartianoff/gala/std v0.0.0\n"
+		content += "\tmartianoff/gala/go_interop v0.0.0\n"
+		content += "\tmartianoff/gala/collection_immutable v0.0.0\n"
+		content += ")\n"
+		content += "\nreplace martianoff/gala/std => ../std\n"
+		content += "\nreplace martianoff/gala/go_interop => ../go_interop\n"
+		content += "replace martianoff/gala/collection_immutable => ../collection_immutable\n"
 	case "stream":
 		content += "\nrequire (\n"
 		content += "\tmartianoff/gala/std v0.0.0\n"
