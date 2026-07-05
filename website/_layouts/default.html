@@ -4,6 +4,17 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#00ADD8">
+
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-T1Z3YLCCD9"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-T1Z3YLCCD9');
+  </script>
+
   <title>{{ page.title }} | GALA</title>
   <meta name="description" content="{{ page.description | default: site.description }}">
   <meta name="keywords" content="{{ page.keywords | default: 'gala language, scala on go, golang sum types, golang pattern matching, golang option type, transpile to go, go algebraic data types' }}">
