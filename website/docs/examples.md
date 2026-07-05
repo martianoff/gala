@@ -485,7 +485,7 @@ func main() {
     val dir = Try(os.TempDir)
 
     // Lambda form (use when args needed)
-    val result = Try(() => os.MkdirAll("/tmp/test", 0755))
+    val result = Try(os.MkdirAll("/tmp/test", 0755))
 
     dir.OnSuccess((d) => Println(s"Temp dir: $d"))
 }

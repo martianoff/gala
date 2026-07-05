@@ -385,6 +385,35 @@ place the lambda in one of the typed contexts above. (Call-argument lambdas
 whose parameter types cannot yet be inferred still fall back to `any`; that is a
 separate inference-completeness concern, not a hard error.)
 
+### By-Name Argument Lifting (Thunk Sugar)
+
+When a call argument's expected type is a **zero-arg** function type (`func() T`
+or void `func()`) and the argument is a plain expression rather than a lambda or
+a function value, the transpiler lifts it into `func() T { return expr }`
+(`func() { expr }` for void). This lets `Future(compute())` mean
+`Future(() => compute())`.
+
+The thunk's result type `T` is resolved as follows:
+
+- If the expected result type is already concrete (e.g. `Future[int](compute())`
+  or a non-generic `func() int` parameter), it is used directly.
+- Otherwise — the un-annotated generic case such as `Future(compute())` — the
+  companion `Apply`'s parameter type still mentions an unresolved type parameter.
+  The expected-type resolver propagates a **masked** function type whose
+  type-param-bearing results become `NilType`, so the argument transformer falls
+  back to the lifted expression's own inferred type (`compute()`'s `int`) for the
+  thunk's declared result. The concrete `func() int` literal then drives the
+  companion's type-parameter unification, yielding `Future[int]`.
+
+The masking is what keeps the lambda and bare-expression paths consistent: a
+lambda argument in the same position sees the masked result as `any`
+(`typeToExpr(NilType)`), stays non-concrete, and self-infers its return type from
+its body exactly as before.
+
+The lift is purely additive — passing a bare `T` where a `func() T` is expected
+is otherwise a type error — and an argument whose own type is already a function
+is passed through untouched, so an existing thunk is never double-wrapped.
+
 ---
 
 ## Downward Inference for Generic Sealed-Type Case Constructors

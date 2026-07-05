@@ -13,7 +13,7 @@ package main
 import "os"
 
 func run(path string) {
-    val data = Try(() => os.ReadFile(path)) match {
+    val data = Try(os.ReadFile(path)) match {
         case Success(b)   => string(b)
         case Failure(err) => {
             Println(s"error: ${err.Error()}")
@@ -53,7 +53,7 @@ compiler rejects it with *"not enough return values"*.
 
     ```gala
     func run(path string) {
-        val result = Try(() => os.ReadFile(path))
+        val result = Try(os.ReadFile(path))
         if (result.IsFailure()) {
             Println(s"error: ${result.GetError().Error()}")
             return
@@ -67,7 +67,7 @@ compiler rejects it with *"not enough return values"*.
 
     ```gala
     func run(path string) {
-        val data = Try(() => os.ReadFile(path))
+        val data = Try(os.ReadFile(path))
             .Map((b) => string(b))
             .GetOrElse("")
         if (data == "") { return }

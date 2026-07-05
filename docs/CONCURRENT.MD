@@ -26,7 +26,7 @@ val immediate = FutureOf[int](42)
 val failed = FutureFailed[int](SomeError("oops"))
 
 // Runs asynchronously
-val async = Future[int](() => expensiveComputation())
+val async = Future[int](expensiveComputation())
 ```
 
 ### Blocking Operations
@@ -171,11 +171,11 @@ Each Future has an associated `ExecutionContext` that determines where callbacks
 
 ```gala
 // Default: uses GlobalEC (UnboundedExecutionContext)
-val f1 = Future[int](() => compute())
+val f1 = Future[int](compute())
 
 // With custom ExecutionContext
 val pool = NewFixedPoolEC(4)  // Worker pool with 4 goroutines
-val f2 = FutureOn[int](() => compute(), pool)
+val f2 = FutureOn[int](compute(), pool)
 
 // Derived futures inherit EC from parent
 val f3 = f2.Map((n) => s"$n")                             // uses pool
@@ -212,13 +212,13 @@ pool.Shutdown()
 
 ### Constructor Variants with Custom EC
 
-The async constructor `Future[T](() => body)` always runs on `GlobalEC()`; use
+The async constructor `Future[T](body)` always runs on `GlobalEC()`; use
 `FutureOn` for a custom EC. The eager constructors and `NewPromise` take an
 optional trailing `ec` argument (default `GlobalEC()`).
 
 | Default EC (GlobalEC) | Custom EC |
 |-----------------------|-----------|
-| `Future[T](() => f)` | `FutureOn[T](() => f, ec)` |
+| `Future[T](f)` | `FutureOn[T](f, ec)` |
 | `FutureOf[T](v)` | `FutureOf[T](v, ec)` |
 | `FutureFailed[T](e)` | `FutureFailed[T](e, ec)` |
 | `NewPromise[T]()` | `NewPromise[T](ec)` |

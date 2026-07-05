@@ -80,6 +80,7 @@ Use `collection_immutable.{Array, List, HashMap}` for general work. Use `go_inte
 - **Block body when multi-statement** — `(x) => { val y = x*2; return y + 1 }`.
 - **Underscore shorthand** for trivial transforms — `nums.Map(_ * 2)`, `people.Map(_.Name)`.
 - **Explicit types only for standalone lambdas** — `val f = (x int) => x * 2`.
+- **Drop `() =>` for zero-arg thunk params** — where a parameter is `func() T`, pass the bare expression: `Try(strconv.Atoi(s))`, `Future(loadFromDB(id))` instead of `Try(() => …)` / `Future(() => …)`. Keep the `() =>` only for block bodies. ([§3 By-Name Arguments](GALA.MD#by-name-arguments-thunk-sugar))
 
 ---
 

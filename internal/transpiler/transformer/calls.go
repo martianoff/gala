@@ -1129,6 +1129,7 @@ func (t *galaASTTransformer) transformFunctionArgs(
 		funcCallCtx := t.buildFuncCallContext(callCtx.funcMeta, callCtx.inferredTypeSubst, callCtx.goFuncParamTypes, callCtx.structFieldExpectedTypes)
 		funcCallCtx.applyMethodMeta = callCtx.applyMethodMeta
 		funcCallCtx.applyTypeSubst = callCtx.applyTypeSubst
+		funcCallCtx.applyTypeParams = callCtx.applyTypeParams
 		expectedType := t.resolveExpectedArgType(funcCallCtx, argIdx)
 		var expr ast.Expr
 		var aerr error
@@ -1378,6 +1379,10 @@ type functionCallContext struct {
 	// them and would miss their expected type entirely.
 	applyMethodMeta *transpiler.MethodMetadata
 	applyTypeSubst  map[string]string
+	// applyTypeParams carries the companion type's own type-param names so the
+	// argument pass can mask unresolved Apply parameter result types (see
+	// resolveExpectedArgType's companion-Apply branch).
+	applyTypeParams []string
 }
 
 // collectFunctionCallContext handles Section 5 of the call dispatcher:
@@ -1452,6 +1457,7 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, argListCtx
 			if typeMeta != nil {
 				if applyMeta, hasApply := typeMeta.Methods["Apply"]; hasApply {
 					ctx.applyMethodMeta = applyMeta
+					ctx.applyTypeParams = typeMeta.TypeParams
 					funcTypeArgs := t.extractFuncCallTypeArgs(fun)
 					if len(funcTypeArgs) > 0 {
 						ctx.applyTypeSubst = make(map[string]string)
@@ -2681,7 +2687,115 @@ func (t *galaASTTransformer) transformArgumentWithExpectedType(exprCtx grammar.I
 		expr = t.liftToImmutableForArg(expr, expectedType)
 	}
 
+	// By-name / thunk sugar: when the expected parameter type is a zero-arg
+	// function type, lift a plain expression argument into a thunk so
+	// `Future(doSomething())` means `Future(() => doSomething())`. Lambdas and
+	// placeholder lambdas are handled by the earlier branches, so only bare
+	// expressions reach here.
+	if wrapped, ok := t.wrapExprAsThunkIfNeeded(expr, expectedType); ok {
+		expr = wrapped
+	}
+
 	return expr, nil
+}
+
+// wrapExprAsThunkIfNeeded implements by-name / thunk sugar. When the call-site
+// expected parameter type is a zero-arg function type (`func() T`, or void
+// `func()`) and `expr` is a plain expression rather than a function value, it
+// lifts `expr` into `func() T { return expr }` (or `func() { expr }` for void).
+// This lets
+//
+//	val f = Future(doSomething())
+//
+// mean the same as `Future(() => doSomething())`.
+//
+// The conversion is purely additive and never changes the meaning of an
+// existing valid program: passing a bare `T` where a `func() T` is expected is
+// otherwise a compile error, and an argument whose own type is already a
+// function is passed through untouched (returns ok=false) so an existing thunk
+// is never double-wrapped. Returns ok=false — leaving `expr` unchanged — when
+// the sugar does not apply, including when the thunk's result type cannot be
+// determined (so the normal type error surfaces instead of masking it).
+func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType transpiler.Type) (ast.Expr, bool) {
+	if expr == nil || expectedType == nil || expectedType.IsNil() {
+		return expr, false
+	}
+	// The expected type must be a zero-arg function type. Multi-result function
+	// types (Go tuples) are not expressible as a single GALA expression.
+	ft, ok := expectedType.(transpiler.FuncType)
+	if !ok || len(ft.Params) != 0 || len(ft.Results) > 1 {
+		return expr, false
+	}
+
+	// Already a function value: pass through untouched. This preserves the
+	// pre-sugar behavior of handing an existing thunk (a `func() T` value or a
+	// method/eta reference) directly to the parameter, and guarantees we never
+	// re-wrap a valid program.
+	exprType := t.getExprTypeName(expr)
+	if _, isFunc := exprType.(transpiler.FuncType); isFunc {
+		return expr, false
+	}
+
+	// Void thunk: `func()` expecting no result. The body is the expression as a
+	// statement, matching the void expression-lambda form `() => expr`.
+	if len(ft.Results) == 0 {
+		return &ast.FuncLit{
+			Type: &ast.FuncType{Params: &ast.FieldList{}},
+			Body: &ast.BlockStmt{List: []ast.Stmt{&ast.ExprStmt{X: expr}}},
+		}, true
+	}
+
+	// Value thunk: `func() T`. The body mirrors the expression-lambda body
+	// exactly, so the sugar is equivalent to writing `() => expr` by hand.
+	resultType := ft.Results[0]
+	concreteResult := !resultType.IsNil() && !transpiler.IsUnusable(resultType) && !t.hasTypeParams(resultType)
+
+	// A Go call returning `(T, error)` (or `(A, B, error)`, …) is wrapped so the
+	// error becomes a panic, matching `() => goCall(...)`. Without this the thunk
+	// would be `func() T { return goCall(...) }`, which is not valid Go because
+	// the call yields multiple values. This is what makes `Try(strconv.Atoi(s))`
+	// behave the same as `Try(() => strconv.Atoi(s))`.
+	if multiRetBody, multiRetType := t.tryWrapGoMultiReturnWithErrorPanic(expr); multiRetBody != nil {
+		var retTypeExpr ast.Expr
+		if concreteResult {
+			retTypeExpr = t.typeToExpr(resultType)
+		} else if multiRetType != nil {
+			retTypeExpr = multiRetType
+		}
+		if retTypeExpr == nil {
+			return expr, false
+		}
+		return &ast.FuncLit{
+			Type: &ast.FuncType{
+				Params:  &ast.FieldList{},
+				Results: &ast.FieldList{List: []*ast.Field{{Type: retTypeExpr}}},
+			},
+			Body: multiRetBody,
+		}, true
+	}
+
+	// Plain single-expression thunk. Determine T — prefer the concrete expected
+	// result type, otherwise fall back to the argument expression's own inferred
+	// type so a still-unresolved type parameter (e.g. Future's T) is bound
+	// downstream from the thunk's declared result. Bail out when neither yields a
+	// usable type.
+	var retTypeExpr ast.Expr
+	if concreteResult {
+		retTypeExpr = t.typeToExpr(resultType)
+	} else if !exprType.IsNil() && !transpiler.IsUnusable(exprType) && !t.hasTypeParams(exprType) {
+		retTypeExpr = t.typeToExpr(exprType)
+	}
+	if retTypeExpr == nil {
+		return expr, false
+	}
+
+	return &ast.FuncLit{
+		Type: &ast.FuncType{
+			Params:  &ast.FieldList{},
+			Results: &ast.FieldList{List: []*ast.Field{{Type: retTypeExpr}}},
+		},
+		Body: &ast.BlockStmt{List: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{expr}}}},
+	}, true
 }
 
 // liftToImmutableForArg wraps `expr` with `std.NewImmutable[T](expr)` when
