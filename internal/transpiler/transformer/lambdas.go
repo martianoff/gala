@@ -1568,12 +1568,35 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 		}
 	}
 
-	// Install a fresh scope with `_` bound to `any` so the normal expression
-	// transformation can resolve the identifier without producing a
-	// scope-lookup error. The ident is renamed below after transformation.
+	// Install a fresh scope with `_` bound to the placeholder's parameter type
+	// so the normal expression transformation can resolve the identifier AND
+	// apply the same type-directed rewrites the explicit lambda path uses —
+	// most importantly the Immutable field auto-unwrap (`.Field` -> `.Field.Get()`).
+	// Binding `_` to `any` (as was done previously) hid the struct metadata
+	// from resolveFieldAccess, so `_.Field` diverged from `(p) => p.Field` by
+	// leaking an `Immutable[T]` instead of `T`.
+	//
+	// All placeholders share the single `_` scope var during transformation
+	// (they are renamed to distinct `__pN` params afterwards, positionally), so
+	// we can only supply one type here. When every placeholder maps to the same
+	// parameter type we use it; otherwise we fall back to `any` rather than risk
+	// mistyping a heterogeneous placeholder. The renamed params still carry
+	// their correct per-position types via paramTypes below.
+	scopeType := placeholderScopeType(paramTypes)
 	t.pushScope()
-	t.addVar("_", transpiler.BasicType{Name: "any"})
+	t.addVar("_", scopeType)
 	body, err := t.transformExpression(exprCtx)
+	// Resolve the body's concrete result type while `_` is still bound in scope
+	// (before popScope and before the `_` -> `__pN` rename). This mirrors the
+	// explicit lambda path, which infers its return type from the body rather
+	// than from the expected callback result — the latter is frequently an
+	// unresolved `any` (e.g. `Array.Map`'s `func(T) U` where `U` is a free type
+	// param). Doing it here keeps `_.Name` producing a `string` result, exactly
+	// like `(p) => p.Name`, instead of a widened `any`.
+	var bodyResultType ast.Expr
+	if err == nil {
+		bodyResultType = t.getExprType(body)
+	}
 	t.popScope()
 	if err != nil {
 		return nil, false, err
@@ -1645,19 +1668,24 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 		})
 	}
 
-	// Build the result type from the expected FuncType if available.
-	// When no result type is declared, infer from the body expression.
+	// Build the result type. Prefer the concrete type inferred from the body —
+	// this matches the explicit lambda path and avoids widening a resolvable
+	// result (e.g. `string`) to the callback's unresolved `any`. Fall back to
+	// the expected FuncType's declared result only when the body type could not
+	// be resolved concretely.
 	var resultField *ast.FieldList
-	if len(ft.Results) > 0 && !ft.Results[0].IsNil() {
+	switch {
+	case !isAnyTypeExpr(bodyResultType):
+		resultField = &ast.FieldList{
+			List: []*ast.Field{{Type: bodyResultType}},
+		}
+	case len(ft.Results) > 0 && !ft.Results[0].IsNil():
 		resultField = &ast.FieldList{
 			List: []*ast.Field{{Type: t.typeToExpr(ft.Results[0])}},
 		}
-	} else {
-		bodyType := t.getExprType(body)
-		if bodyType != nil {
-			resultField = &ast.FieldList{
-				List: []*ast.Field{{Type: bodyType}},
-			}
+	case bodyResultType != nil:
+		resultField = &ast.FieldList{
+			List: []*ast.Field{{Type: bodyResultType}},
 		}
 	}
 
@@ -1671,6 +1699,50 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 		},
 	}
 	return funcLit, true, nil
+}
+
+// isAnyTypeExpr reports whether a Go type expression is the untyped `any`
+// placeholder that getExprType emits when it cannot resolve a concrete type.
+// Used to decide whether a placeholder-lambda's body yielded a usable result
+// type or whether we should fall back to the expected callback result type.
+func isAnyTypeExpr(e ast.Expr) bool {
+	if e == nil {
+		return true
+	}
+	if id, ok := e.(*ast.Ident); ok {
+		return id.Name == "any"
+	}
+	if _, ok := e.(*ast.InterfaceType); ok {
+		return true
+	}
+	return false
+}
+
+// placeholderScopeType picks the type to bind `_` to while a placeholder-lambda
+// body is transformed. All placeholders share one `_` scope var during
+// transformation, so a single type must serve every occurrence. When every
+// placeholder maps to the same (non-nil) parameter type we return it — this is
+// the common single-placeholder case (`_.Field`, `_.Method()`) and the
+// homogeneous multi-placeholder case (`_ + _`). Otherwise we return `any` so a
+// heterogeneous placeholder is never mistyped. Binding the concrete type is
+// what lets resolveFieldAccess apply the Immutable field auto-unwrap, keeping
+// `_.Field` identical to `(p) => p.Field`.
+func placeholderScopeType(paramTypes []transpiler.Type) transpiler.Type {
+	anyType := transpiler.BasicType{Name: "any"}
+	if len(paramTypes) == 0 {
+		return anyType
+	}
+	first := paramTypes[0]
+	if first == nil || first.IsNil() || first.IsAny() {
+		return anyType
+	}
+	firstName := first.String()
+	for _, pt := range paramTypes[1:] {
+		if pt == nil || pt.IsNil() || pt.String() != firstName {
+			return anyType
+		}
+	}
+	return first
 }
 
 // isGenericMethodName checks if a method is marked as generic for a given type name
