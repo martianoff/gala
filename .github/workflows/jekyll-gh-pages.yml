@@ -2,9 +2,17 @@
 name: Deploy Jekyll with GitHub Pages dependencies preinstalled
 
 on:
-  # Runs on pushes targeting the default branch
+  # Runs on pushes targeting the default branch, but only when the published
+  # site actually changes. The Jekyll source is ./website, so commits that touch
+  # only code/docs (the vast majority) must NOT trigger a redeploy — doing so
+  # piled up concurrent Pages deployments on clustered merges, and the GitHub
+  # Pages backend fails the superseded ones with "Deployment failed, try again
+  # later." (`docs/` is repo documentation, not part of the published site.)
   push:
     branches: ["master"]
+    paths:
+      - "website/**"
+      - ".github/workflows/jekyll-gh-pages.yml"
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
@@ -15,11 +23,13 @@ permissions:
   pages: write
   id-token: write
 
-# Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
-# However, do NOT cancel in-progress runs as we want to allow these production deployments to complete.
+# Allow only one concurrent deployment. When two website changes land close
+# together, cancel the older in-progress deploy so only the newest publishes —
+# for a static docs site the superseded version is never wanted, and letting
+# both run is exactly what triggers the Pages "try again later" failure.
 concurrency:
   group: "pages"
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   # Build job
