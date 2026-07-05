@@ -55,6 +55,9 @@
   }
   </script>
 
+  <!-- Prism syntax highlighting theme -->
+  <link href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
   <style>
     :root {
       --bg: #ffffff;
@@ -152,6 +155,19 @@
       margin-bottom: 1.5rem;
     }
     pre code { background: none; padding: 0; }
+    /* Syntax-highlighted code cards (Prism). Falls back to the light --code-bg
+       block above if the class is absent (e.g. Prism JS fails to load). */
+    pre[class*="language-"] {
+      border-radius: 10px;
+      border: 1px solid #2d3340;
+      padding: 1.15rem 1.35rem;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+      margin-bottom: 1.5rem;
+    }
+    pre[class*="language-"], code[class*="language-"] {
+      font-family: 'Cascadia Code', 'SF Mono', 'Consolas', Menlo, monospace;
+      font-size: 0.86rem;
+    }
     table {
       width: 100%;
       border-collapse: collapse;
@@ -209,7 +225,14 @@
     .comparison > div > p:first-child { font-weight: 600; margin-bottom: 0.5rem; }
     @media (max-width: 640px) {
       .comparison { grid-template-columns: 1fr; }
-      nav { padding: 0.75rem 1rem; gap: 1rem; }
+      /* Nav becomes a swipeable strip so items never get clipped on small screens */
+      nav { padding: 0.6rem 0.9rem; gap: 0.9rem; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+      nav::-webkit-scrollbar { display: none; }
+      nav a { font-size: 0.85rem; white-space: nowrap; }
+      nav .logo { margin-right: 0.9rem; }
+      pre[class*="language-"], code[class*="language-"] { font-size: 0.78rem; }
+      .hero h1 { font-size: 2rem; }
+      .hero .tagline { font-size: 1.05rem; }
     }
     .breadcrumb {
       font-size: 0.85rem;
@@ -286,5 +309,45 @@
   <footer>
     GALA Language &mdash; Apache 2.0 License &mdash; <a href="https://github.com/martianoff/gala">GitHub</a>
   </footer>
+
+  <!-- Prism syntax highlighting: custom GALA grammar over prism-core -->
+  <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-core.min.js"></script>
+  <script>
+    Prism.languages.gala = {
+      'comment': { pattern: /\/\/.*|\/\*[\s\S]*?\*\//, greedy: true },
+      'string': {
+        pattern: /[sf]?"(?:[^"\\]|\\.)*"/,
+        greedy: true,
+        inside: {
+          'interpolation': {
+            pattern: /\$\{[^}]*\}/,
+            inside: {
+              'punctuation': /^\$\{|\}$/,
+              'number': /\b\d+(?:\.\d+)?\b/,
+              'operator': /[+\-*\/]/
+            }
+          },
+          'format': { pattern: /%[.\d]*[a-zA-Z]/, alias: 'symbol' }
+        }
+      },
+      'keyword': /\b(?:sealed|type|case|func|match|val|var|bind|also|bindable|lift|if|else|for|while|switch|default|import|package|struct|trait|given|return|extends|with|const|range|go|defer|chan|select|nil)\b/,
+      'boolean': /\b(?:true|false)\b/,
+      'builtin': /\b(?:int|int8|int16|int32|int64|uint|string|float64|float32|bool|byte|rune|any|error|Option|Either|Try|Future|IO|List|Array|HashMap|HashSet|TreeSet|TreeMap|Validated|ConstPtr|Stream|Tuple)\b/,
+      'class-name': /\b[A-Z]\w*/,
+      'function': /\b[a-z_]\w*(?=\s*\()/,
+      'number': /\b\d+(?:\.\d+)?\b/,
+      'operator': /=>|->|:=|[=+\-*\/<>!]=?|&&|\|\||[&|%]/,
+      'punctuation': /[{}[\];(),.:]/
+    };
+    (function () {
+      document.querySelectorAll('pre > code').forEach(function (c) {
+        if (!/language-/.test(c.className)) {
+          c.classList.add('language-gala');
+          c.parentElement.classList.add('language-gala');
+        }
+      });
+      Prism.highlightAll();
+    })();
+  </script>
 </body>
 </html>
