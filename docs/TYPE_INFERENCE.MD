@@ -24,11 +24,12 @@ GALA implements a custom type inference and unwrapping system to handle its uniq
    - [Expression Unwrapping](#2-expression-unwrapping)
 7. [Type Resolution](#type-resolution)
 8. [Supported Expressions](#supported-expressions)
-9. [Downward Inference for Generic Sealed-Type Case Constructors](#downward-inference-for-generic-sealed-type-case-constructors)
-10. [Downward Inference for Generic Function Phantom Type Parameters](#downward-inference-for-generic-function-phantom-type-parameters)
-11. [Go Type Inference](#go-type-inference)
-12. [Limitations and Edge Cases](#limitations-and-edge-cases)
-13. [Key Files](#key-files)
+9. [`bind` / `also` Element and Result Inference](#bind--also-element-and-result-inference)
+10. [Downward Inference for Generic Sealed-Type Case Constructors](#downward-inference-for-generic-sealed-type-case-constructors)
+11. [Downward Inference for Generic Function Phantom Type Parameters](#downward-inference-for-generic-function-phantom-type-parameters)
+12. [Go Type Inference](#go-type-inference)
+13. [Limitations and Edge Cases](#limitations-and-edge-cases)
+14. [Key Files](#key-files)
 
 ---
 
