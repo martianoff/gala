@@ -60,6 +60,10 @@ Use `collection_immutable.{Array, List, HashMap}` for general work. Use `go_inte
 - **`Try[T]` for operations that may fail** — wraps success or panic-equivalent.
 - **`Either[E, T]` when the error type carries data.**
 - **Chain with `FlatMap`** for railway-oriented composition.
+- **Prefer `bind`/`also` over nested `FlatMap` pyramids** for multi-step monadic code. A `bind` block keeps every intermediate value in scope (the "graph" case a linear pipe can't express) and reads top-to-bottom instead of nesting. Reach for it whenever a `FlatMap` chain would nest more than once or a later step reuses an earlier value. ([bind / also notation](BIND_NOTATION.MD))
+- **Use `also` for independent clauses** — a `bind` + `also` group. Over `Validated` (in the `validation` package) it **accumulates** all errors; over `Future` (in `concurrent`) it runs the clauses **concurrently**; over the fail-fast `std` monads it is a sequential fallback. Never make `also` clauses reference each other — use `bind` when a later step depends on an earlier one.
+- **Bound names are immutable `val`s; the trailing value must be `M[R]`** — write the constructor (`Success`/`Some`/`Valid`); it infers its type argument from the block.
+- **Still use `Map`/`match`/`Recover`/`GetOrElse` where they fit** — a single transform is `Map`, extracting a result is `match` or `GetOrElse`, and error recovery is `Recover`/`RecoverWith`. `bind`/`also` is for *sequencing* several fallible steps, not a replacement for those.
 - **Pattern-match to extract:** `case Some(x) =>` / `case None =>`. Do not call `.Get()` without first checking.
 
 ---

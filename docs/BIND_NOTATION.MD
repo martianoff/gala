@@ -1,9 +1,15 @@
 # `bind` / `also` — Monadic Binding Notation
 
-**Status:** Design proposal — not yet implemented.
-**Verification (passing today, against the real transpiler):**
-- [`examples/bind_notation_desugared.gala`](../examples/bind_notation_desugared.gala) — the runtime semantics this notation desugars to, over `std`'s `Try`.
-- [`examples/bind_notation_user_monad.gala`](../examples/bind_notation_user_monad.gala) — the same desugaring over a **user-defined** monad with no relationship to `std`, proving extensibility (§7).
+**Status:** Implemented.
+
+**Runnable verification examples** (all pass under `bazel test //examples/...`):
+
+- [`examples/bind_notation.gala`](../examples/bind_notation.gala) — sequential `bind` over `Try` (the "graph" case: an early value reused on the final line).
+- [`examples/bind_notation_also.gala`](../examples/bind_notation_also.gala) — `also` over `Option` (fail-fast fallback).
+- [`examples/bind_notation_validated.gala`](../examples/bind_notation_validated.gala) — `also` over `Validated`, **accumulating** all errors.
+- [`examples/bind_notation_future.gala`](../examples/bind_notation_future.gala) — `also` over `Future`, running clauses **concurrently**.
+- [`examples/bind_notation_user.gala`](../examples/bind_notation_user.gala) — a **user-defined** monad (`Step`) with no relationship to `std`, proving extensibility (§7).
+- [`examples/bind_notation_desugared.gala`](../examples/bind_notation_desugared.gala) / [`examples/bind_notation_user_monad.gala`](../examples/bind_notation_user_monad.gala) — the hand-written `FlatMap` chains the notation lowers to, kept as golden references.
 
 ---
 
@@ -11,27 +17,59 @@
 
 GALA already has monadic error handling — `Option`, `Try`, `Either`, `Future` — with
 `Map`/`FlatMap` combinators. Those are excellent when the computation is a single
-linear pipeline. They fall down on two shapes that dominate real code:
+linear pipeline. They fall down on two shapes that dominate real code. For a strictly
+linear chain `bind` is only a *readability* win over `FlatMap` (top-to-bottom, named, no
+closing-paren pile); the shapes below are where it is a **structural** or **capability**
+win — where the `FlatMap` form is materially worse or cannot express the behavior at all.
 
-1. **The graph shape.** When a later step needs a value from *two steps back*, a
-   `FlatMap` chain has to nest, because each intermediate value is trapped inside a
-   closure:
+1. **The graph shape** — a later step needs a value from *several steps back*. Each
+   intermediate is trapped in a closure, so `FlatMap` nests one level deeper per step,
+   repeats the accumulator type at every link (inference can't always flow it through the
+   lambda), and ends in a pile of closing parens. Here the final `Receipt` needs the
+   original `o` *and* the `payment`, so `o` must stay reachable through all the nesting:
 
    ```gala
-   // "the receipt needs both the order AND the payment"
-   fetchOrder(id).FlatMap((o) =>
-       validateOrder(o).FlatMap((valid) =>
-           chargePayment(valid).FlatMap((payment) =>
-               createReceipt(o, payment))))   // o survives only via nesting
+   // FlatMap — `o` survives only via the deepening indentation; `[Receipt]` is repeated
+   // at every link and the block ends in `))))`.
+   fetchOrder(id).FlatMap[Receipt]((o) =>
+       validateOrder(o).FlatMap[Receipt]((valid) =>
+           chargePayment(valid).FlatMap[Receipt]((payment) =>
+               Success(Receipt(o.Id, payment)))))
    ```
 
-   The indentation deepens with every cross-reference, and the explicit `[U]` type
-   argument must be repeated at each link because inference cannot always flow the
-   accumulator type through the lambda.
+   ```gala
+   // bind — flat, top-to-bottom, every name in scope, no repeated type arguments.
+   bind o       = fetchOrder(id)
+   bind valid   = validateOrder(o)
+   bind payment = chargePayment(valid)
+   Success(Receipt(o.Id, payment))
+   ```
 
-2. **The independence shape.** When two fallible steps do *not* depend on each other,
-   a monadic chain still forces them to run sequentially and short-circuit on the
-   first error — you cannot run them concurrently, nor accumulate both errors.
+2. **The independence shape** — two fallible steps that do *not* depend on each other. A
+   `FlatMap` chain forces them to run sequentially and **short-circuits on the first
+   error**, so it cannot accumulate both, nor run them concurrently:
+
+   ```gala
+   // FlatMap — validates name, email, age but STOPS at the first failure. A user with
+   // three bad fields is told about one, fixes it, resubmits, and is told about the next.
+   vName(f.Name).FlatMap((name) =>
+       vEmail(f.Email).FlatMap((email) =>
+           vAge(f.Age).FlatMap((age) => Valid(User(name, email, age)))))
+   ```
+
+   ```gala
+   // also — reports ALL THREE errors at once (Validated accumulates); the FlatMap form
+   // above simply cannot do this. Over Future, the same `also` runs the clauses
+   // concurrently. One keyword changes the behavior; the shape stays flat and named.
+   bind name  = vName(f.Name)
+   also email = vEmail(f.Email)
+   also age   = vAge(f.Age)
+   Valid(User(name, email, age))
+   ```
+
+   The hand-written way to accumulate without `also` is `vName(...).Zip3(vEmail(...),
+   vAge(...)).Map((t) => User(t.V1, t.V2, t.V3))` — correct, but positional (`t.V1/V2/V3`,
+   no names) and it does not scale past a handful of fields.
 
 Three surfaces were considered and rejected for GALA before landing here:
 
@@ -41,7 +79,7 @@ Three surfaces were considered and rejected for GALA before landing here:
 | Rust **`?`** / Zig **`try`** | Imperative — a non-local return that hijacks the *enclosing function*. Not an expression; a middle slice of a `?`-chain cannot be factored into a helper without changing the function's return type. |
 | OCaml **`let*` / `and*`** (the closest fit) | Perfect *semantics*, but the `*` spelling collides with GALA's pointer-deref `*`, and a `let`/`val` that secretly short-circuits reads as ordinary binding. |
 
-`bind` / `also` keeps OCaml's semantics (see §9, Prior Art) with a keyword surface that
+`bind` / `also` keeps OCaml's semantics (see §8, Prior Art) with a keyword surface that
 telegraphs fallibility, avoids every symbol collision, and reads like GALA's existing
 declarations.
 
@@ -50,37 +88,38 @@ declarations.
 ## 2. Surface syntax
 
 ```gala
-func processOrder(id int) Try[Receipt] = {
-    bind o       = fetchOrder(id)
-    bind valid   = validateOrder(o)
+func processOrder(id int) Try[Receipt] {
+    bind o = fetchOrder(id)
+    bind valid = validateOrder(o)
     bind payment = chargePayment(valid)
-    Receipt(o.Id, payment)          // trailing expression is the block's value
+    Success(Receipt(o.Id, payment))   // trailing expression is the block's value
 }
 ```
 
 - **`bind name = expr`** — sequential monadic bind. `expr` must be of the block's
-  bindable type `M[A]`; `name : A` is a normal immutable local, in scope for the rest
-  of the block. On the short-circuit variant (`Failure`/`None`/`Left`) the whole block
-  evaluates to that variant.
+  bindable type `M[A]`; `name : A` is a normal **immutable `val`**, in scope for the
+  rest of the block. On the short-circuit variant (`Failure`/`None`/`Left`/`Invalid`)
+  the whole block evaluates to that variant.
 - **`also name = expr`** — an *independent* bind. A leading `bind` followed by one or
   more `also` forms one **product group** (see §4).
 - **Legality.** `bind`/`also` are legal only inside a block whose result type is a
   bindable monad `M` (§7). Outside such a block they are a compile error — so there is
   no hidden, function-level control flow.
-- **Trailing value.** The block's final expression is its result. If it is already
-  `M[R]` it is used as-is; if it is a plain `R` it is auto-lifted via `M`'s `Pure`
-  (`Success` / `Some` / `Right`). Both forms below are equivalent:
+- **Trailing value.** The block's final expression is its result and must already be
+  `M[R]` — write the constructor explicitly (`Success(...)` / `Some(...)` /
+  `Right(...)` / `Valid(...)` / your own). It is transformed with `M[R]` pushed as the
+  expected type, so those constructors infer their type arguments and you rarely need
+  to spell them out.
 
-  ```gala
-  Receipt(o.Id, payment)            // plain -> auto-lifted
-  Success(Receipt(o.Id, payment))   // already M[R] -> used directly
-  ```
+Bound names are ordinary immutable `val`s. There is no `bind`-specific mutability: a
+`bind`/`also` name behaves exactly like a `val name = …` local, including single-unwrap
+reads.
 
 ---
 
-## 3. Sequential semantics — desugars to `FlatMap`
+## 3. Sequential semantics — lowers to `FlatMap`
 
-The block in §2 desugars mechanically to:
+The block in §2 lowers mechanically to:
 
 ```gala
 func processOrder(id int) Try[Receipt] =
@@ -90,109 +129,191 @@ func processOrder(id int) Try[Receipt] =
     Success(Receipt(o.Id, payment)))))
 ```
 
-This is verified to compile and run in
-[`examples/bind_notation_desugared.gala`](../examples/bind_notation_desugared.gala):
+This is verified in [`examples/bind_notation.gala`](../examples/bind_notation.gala):
 `processOrder(1)` yields `ok: order=1 charged=100`, and `processOrder(0)` short-circuits
-at the first `bind` to `err: no order 0`.
+at the first `bind` to `err: no order 0`. The hand-written chain it lowers to is kept as
+a golden in [`examples/bind_notation_desugared.gala`](../examples/bind_notation_desugared.gala).
 
 Properties preserved:
 
 - **Named bindings stay in scope** — the graph shape is expressed flat, no nesting.
 - **Referential transparency** — the block is an ordinary expression of type `M[R]`;
   it can be named, returned, or passed. It is *not* `?`-style imperative control flow.
-- **No type-argument tax** — the desugaring carries the accumulator type directly, so
+- **No type-argument tax** — the lowering carries the accumulator type directly, so
   the per-link `.FlatMap[U]` annotation disappears from the surface.
 
 ---
 
-## 4. Independent semantics — `also` desugars to `Zip` (applicative)
+## 4. Independent semantics — `also` uses `Zip` when the monad provides it
 
-A `bind` + `also` group desugars through a **product** (`Zip`), not `FlatMap`:
+A `bind` + `also` group of arity `N` (2..10) lowers to `M`'s `Zip{N}` **when `M`
+defines that method**, threading every clause through one `FlatMap` continuation:
 
 ```gala
 bind name  = validateName(r.Name)
 also email = validateEmail(r.Email)
 also age   = validateAge(r.Age)
-Form(name, email, age)
+Valid[string, Form](Form(name, email, age))
 ```
 
-desugars to:
+lowers to (conceptually):
 
 ```gala
 Zip3(validateName(r.Name), validateEmail(r.Email), validateAge(r.Age))
-    .FlatMap((t) => Success(Form(t.V1, t.V2, t.V3)))
+    .FlatMap((t) => Valid[string, Form](Form(t.V1, t.V2, t.V3)))
 ```
 
 The `Zip` is where independence pays off, and its behavior is **per type**:
 
-| Type | `Zip` behavior |
-|------|----------------|
-| `Future` | runs the group **concurrently** — structured concurrency for free |
-| `Validated` | **accumulates all errors** instead of stopping at the first |
-| `Try` / `Option` / `Either` | sequential short-circuit on the first failure; grouping still documents independence and licenses reordering |
+| Type | `Zip{N}`? | `also` behavior |
+|------|-----------|-----------------|
+| `Future` (in `concurrent`) | yes | runs the group **concurrently** — structured concurrency for free |
+| `Validated` (in `validation`) | yes | **accumulates all errors** instead of stopping at the first |
+| `Try` / `Option` / `Either` (in `std`) | no | falls back to the sequential `FlatMap` chain — fail-fast on the first failure; grouping still documents independence |
 
-**Independence rule.** `also` bindings may not reference each other or the `bind` in
-their group — that non-dependence is exactly what makes the group applicative. A
-cross-reference is a compile error that points the author to `bind`.
+**Fallback.** When `M` has no `Zip{N}` — a lone `bind`, or a fail-fast `std` monad —
+the group lowers to the same nested `FlatMap` chain as §3. For a fail-fast monad the two
+lowerings are observably identical, so the fallback loses nothing. `also` is therefore
+always legal; supplying a `Zip{N}` only changes *how* the independent clauses combine.
 
-> **std gap.** `Zip`/product combinators do **not** exist on `Try`/`Option`/`Either`
-> today (only `Map`/`FlatMap`/`Filter`). Implementing `also` requires adding them, plus
-> a `Validated` accumulating type. This is why the verification example exercises only
-> the sequential form.
+**Independence rule (enforced).** Clauses in one group may not reference each other or the
+group's leading `bind` — that non-dependence is exactly what makes the group applicative.
+A `Future` group runs its clauses *concurrently* and a `Validated` group evaluates *all* of
+them to accumulate errors, so an earlier clause's value is genuinely not available to a
+later one. Referencing a sibling is a compile error with a clear diagnostic rather than a
+raw Go `undefined`:
 
----
+```
+cannot reference `n` here: clauses in a `bind`/`also` group are evaluated independently,
+so a binding from one clause is not in scope for its siblings. Move this clause to its
+own `bind` if it must see `n`.
+```
 
-## 5. Mixing monads — heterogeneous lift
+If a later clause needs an earlier value, give it its own `bind` — that starts a new group
+(§4.1), which sequences it and brings the earlier bindings into scope.
 
-`bind x = e` where `e : N[A]` and `N` differs from the block's `M` is legal **iff a
-`Lift[N, M]` conversion is resolvable** — the same idea as Rust's `?` requiring a
-`From` impl:
+### 4.1 Multiple groups in one block
+
+A block may hold several groups back-to-back, each a `bind` optionally followed by its
+`also`s. Groups are chained by `FlatMap`, so the governing rule is **applicative within a
+group, monadic across groups**:
+
+- Clauses *inside* one group combine through `Zip` — concurrent (`Future`) or accumulating
+  (`Validated`) or sequential-fail-fast (`std`).
+- *Consecutive* groups are sequenced: a later group runs only if every earlier group
+  succeeded, and it sees all earlier bindings in scope.
 
 ```gala
-val out = Either[AppErr, Receipt] {
-    bind cfg  = loadConfig()                        // Either[ConfigErr, _], lifted via Lift[ConfigErr, AppErr]
-    bind user = findUser(id).ToRight(NotFound(id))  // Option -> Either at the call site
-    buildReceipt(cfg, user)
+func makeForm(name string, email string, age int, score int) Validated[string, Form] {
+    bind n = vName(name)      // ┐ group 1 — accumulates n + e errors,
+    also e = vEmail(email)    // ┘ then FlatMaps into group 2
+    bind a = vAge(age)        // ┐ group 2 — runs only if group 1 was Valid;
+    also s = vScore(score)    // ┘ n and e are in scope here
+    Valid(Form(n, e, a, s))
 }
 ```
 
-Homogeneous binds need no lift. A missing `Lift` is a compile error, never a silent
-coercion. This replaces Scala's monad transformers (`EitherT`/`OptionT`) for the common
-case.
+The accumulation boundary is the group. If `name` and `email` are both invalid, the result
+carries **2** errors (group 1's), not 4 — group 1 accumulates its pair and then
+short-circuits, so group 2 never runs. Put every field you want reported together in **one**
+wider `also` group; split into separate groups precisely where a later step depends on an
+earlier result (and must fail-fast on it).
 
 ---
 
-## 6. The "no zero" wrinkle
+## 5. Mixing monads
 
-Short-circuiting to "nothing" is only free for types that *have* a canonical empty:
+> **Different element types are not "mixing".** A homogeneous block whose bindings have
+> different *value* types is the normal case: `bind n = parseInt(s)  // Try[int]` then
+> `bind label = describe(n)  // Try[string]` is a single `Try` block; `n` and `label` just
+> have different element types. "Mixing monads" means different *monads* — a `Try` clause
+> and an `Option` clause in the same block — which is what this section is about.
 
-- `Option` → `None`, `List`/`Array` → empty, `Validated` → the accumulated errors.
-- `Try` / `Either` short-circuit by propagating the **existing** `Failure`/`Left` from
-  the bound expression — fine, because that error value came from the expression itself.
+A `bind`/`also` clause's monad must match the block's monad; a mismatch is rejected with a
+clear diagnostic
+(`cannot bind a Option inside a Try block (heterogeneous bind is not supported)`) — never a
+silent widen to `any`. A do-block binds exactly one monad, matching Haskell `do`, Scala
+for-comprehensions, and OCaml `let*`.
 
-The wrinkle appears in exactly one case: **lifting a zero-type into an error-type**
-(e.g. an `Option` bound inside a `Try` block). `None` carries no error, so that specific
-`Lift` must *explicitly supply* one (as `.ToRight(err)` / `.ToTry(err)` does above). The
-compiler forces the annotation there and nowhere else.
+Convert at the **call site** so every clause has the block's type — e.g. turn an
+`Option` into a `Try` with a small helper before binding it:
+
+```gala
+func toTry[T any](o Option[T], err error) Try[T] = o match {
+    case Some(v) => Success(v)
+    case None()  => Failure[T](err)
+}
+
+func buildReceipt(id int) Try[Receipt] {
+    bind cfg  = loadConfig()                                        // Try[Config]
+    bind user = toTry(findUser(id), NoSuchElementError(Message = "no user"))  // Option -> Try first
+    Success(assemble(cfg, user))
+}
+```
+
+The conversion is explicit and local, which keeps the block homogeneous and the error
+type visible — no implicit widening, and no hidden monad-transformer machinery.
+
+Std provides the conversions that carry information forward for free — `Try.ToOption()`
+and `Try.ToEither()` — plus `GetOrElse`/`OrElse` and pattern matching for the rest; a
+two-line `toTry`/`toEither` helper (as above) covers a direction std does not yet ship. The
+conversion supplies exactly the piece the target monad needs that the source lacks (the
+error value when turning an absence-only `Option` into a `Try`), so it is a place to be
+explicit, not boilerplate to eliminate.
 
 ---
 
-## 7. Extensibility: user-defined monads
+## 6. Type-safety rules
 
-Extensibility is a first-class requirement, not an afterthought: **the notation must
-work over any user-defined monad exactly as it does over the standard library, and the
-transpiler must special-case no type.** This is enforced by the project's standing rule
-that `std` gets no special treatment — `Try`/`Option`/`Either`/`Future` are resolved
-through the *same* mechanism a third-party monad is.
+1. `bind`/`also` are rejected unless the enclosing block's result type is a known,
+   bindable `M` (a type exposing `FlatMap`, §7).
+2. A `bind`/`also` whose expression is not that same `M` is a compile error
+   (heterogeneous bind is not supported — convert at the call site, §5).
+3. `also` must directly follow a `bind` or another `also`; an `also` that does not is a
+   compile error.
+4. The trailing expression must be `M[R]` (write the constructor — it is transformed
+   with `M[R]` as the expected type).
+
+These keep the notation from degrading into untyped, `?`-style control flow.
+
+---
+
+## 7. Extending `bind`/`also` to your own monad
+
+Extensibility is a first-class requirement, not an afterthought: **the notation works
+over any user-defined monad exactly as it does over the standard library, and the
+transpiler special-cases no type.** This upholds the project's standing rule that `std`
+gets no special treatment — `Try`/`Option`/`Either`/`Future`/`Validated` are resolved
+through the *same* structural mechanism a third-party monad is.
 
 Go generics cannot express a higher-kinded `Bindable[F[_]]` interface, so GALA does not
-try to. Instead the transpiler resolves the desugaring **structurally, on the block's
-concrete type `M`, at transpile time** — before Go ever sees it.
+try to. Instead the transpiler resolves the lowering **structurally, on the block's
+concrete type `M`, at transpile time** — before Go ever sees it. It looks up `M`'s
+metadata and emits `M`'s own `FlatMap` (as the free-function form `M_FlatMap`, with no
+package qualifier for a local type).
 
-Verified end-to-end in
-[`examples/bind_notation_user_monad.gala`](../examples/bind_notation_user_monad.gala): a
-user-defined sealed `Step` monad, with no relationship to `std`, desugars through its own
-`FlatMap` identically to `Try`.
+Verified end-to-end in [`examples/bind_notation_user.gala`](../examples/bind_notation_user.gala):
+a user-defined sealed `Step` monad, with no relationship to `std`, lowers through its own
+`FlatMap` identically to `Try`:
+
+```gala
+sealed type Step[T any] {
+    case Go(Value T)
+    case Stop(Reason string)
+}
+
+// The only method `bind` requires: FlatMap. The short-circuit lives inside it.
+func (s Step[T]) FlatMap[U any](f func(T) Step[U]) Step[U] = s match {
+    case Go(v)   => f(v)
+    case Stop(r) => Stop[U](r)
+}
+
+func pipeline(n int) Step[int] {
+    bind a = start(n)
+    bind b = twice(a)
+    Go(a + b)              // `a` still in scope; a Stop anywhere short-circuits
+}
+```
 
 ### 7.1 The minimal contract
 
@@ -202,52 +323,41 @@ A type `M[T]` becomes bindable by providing **one** method:
 func (m M[T]) FlatMap[U any](f func(T) M[U]) M[U]
 ```
 
-That alone enables `bind`. The short-circuit/empty behavior lives entirely inside the
-author's `FlatMap`, so the desugaring never inspects — and never hardcodes — which
-variant is the "zero". Everything else is **derived** from `FlatMap` + a unit:
+That alone enables `bind` **and** sequential `also` (via the §4 fallback). The
+short-circuit/empty behavior lives entirely inside the author's `FlatMap`, so the
+lowering never inspects — and never hardcodes — which variant is the "zero". A type with
+no `FlatMap` gives a clear compiler error naming the method it must define.
 
-| Feature | Needs | Derivation if not supplied |
-|---------|-------|----------------------------|
-| `bind` | `FlatMap` | — (required) |
-| trailing plain value (auto-lift) | `Pure` (unit) | none — author must write the explicit constructor instead |
-| `Map` | — | `FlatMap((t) => Pure(f(t)))` |
-| `also` (sequential) | `FlatMap` + `Pure` | `Zip(a, b) = a.FlatMap((x) => b.Map((y) => Tuple(x, y)))` |
-| `also` (concurrent / accumulating) | custom `Zip` | falls back to the sequential derivation above |
-| heterogeneous `bind` | a resolvable `Lift[N, M]` | none — a missing lift is a compile error |
+| Feature | Needs |
+|---------|-------|
+| `bind` | `FlatMap` (required) |
+| `also` (sequential, fail-fast) | `FlatMap` — nothing more |
+| `also` (concurrent / accumulating) | a `Zip{N}` method for the group's arity `N` (2..10) |
 
-So the floor is `FlatMap`; supplying `Pure` unlocks auto-lift and `also`; supplying a
-custom `Zip`/`Lift` unlocks richer applicative and cross-monad behavior. A brand-new user
-monad gets `bind` *and* sequential `also` for free.
+So the floor is `FlatMap`; adding `Zip2`…`Zip{N}` unlocks the richer applicative
+behavior (concurrency, error accumulation) for `also` groups of that arity. A brand-new
+user monad gets `bind` *and* sequential `also` for free.
 
-### 7.2 Resolution: convention first, explicit opt-in as the escape hatch
+### 7.2 The `Zip{N}` shape
 
-**Convention (zero ceremony).** A type exposing `FlatMap` with the canonical signature is
-automatically bindable; if its package also exposes a unit function returning `M[T]`,
-auto-lift is enabled. This is how `Step` in the example opts in — by existing.
-
-**Explicit registration (escape hatch).** When names don't match the convention, or to
-wire a custom `Zip`/`Lift`, the author declares a `bindable` instance. This is a
-typeclass instance in spirit, resolved at transpile time, with no HKT and no runtime
-dispatch:
+To make `also` groups of arity `N` combine independently, define a method whose receiver
+starts the group and whose parameters are the remaining clauses, returning `M` of a std
+`Tuple{N}`:
 
 ```gala
-bindable Step {
-    flatMap = FlatMap       // method on Step[T]  (required)
-    pure    = Go            // func/ctor: T -> Step[T]  (enables auto-lift + `also`)
-    zip     = zipStep       // optional: custom applicative (concurrency / accumulation)
-}
-
-// cross-monad bind: register how N lifts into M
-lift OptionToStep = func[A](o Option[A]) Step[A] =
-    o match { case Some(v) => Go(v); case None() => Stop[A]("empty") }
+// enables `also` groups of arity 3 to combine via this method
+func (a M[A0]) Zip3[A1, A2](b M[A1], c M[A2]) M[Tuple3[A0, A1, A2]]
 ```
 
-`std`'s own monads are registered the same way in the standard library — there is no
-hidden built-in list.
+The lowering calls `Zip{N}` to build `M[Tuple{N}]`, then `FlatMap`s once, binding each
+`val` to a tuple field (`V1`, `V2`, …) before the continuation. `Validated`'s `Zip`
+pre-collects every clause's errors (accumulation); `Future`'s starts every clause before
+joining (concurrency). `std`'s own monads are looked up the same way — there is no
+built-in list.
 
 ### 7.3 Laws are the author's contract
 
-The desugaring is sound only if `M` obeys the monad laws. The transpiler cannot verify
+The lowering is sound only if `M` obeys the monad laws. The transpiler cannot verify
 them, so they are the author's responsibility (a `test` helper that checks them on
 representative values is recommended):
 
@@ -255,59 +365,45 @@ representative values is recommended):
 - **Right identity:** `m.FlatMap(Pure)` ≡ `m`
 - **Associativity:** `m.FlatMap(f).FlatMap(g)` ≡ `m.FlatMap((x) => f(x).FlatMap(g))`
 
-A custom `Zip` used for `also` must additionally agree with the sequential derivation up
+A custom `Zip{N}` used for `also` must additionally agree with the sequential fallback up
 to the effect it adds (ordering for concurrency, error set for accumulation).
 
 ### 7.4 Conformance checklist for a new monad
 
 1. Define `M[T]` (typically a sealed type).
-2. Implement `FlatMap[U](f func(T) M[U]) M[U]` obeying the laws — `bind` now works.
-3. Provide a unit (`Pure`/constructor) — auto-lift and sequential `also` now work.
-4. *(optional)* Implement `Zip` for concurrency or error accumulation.
-5. *(optional)* Register `Lift[N, M]` instances to allow binding other monads inside an
-   `M` block.
-6. Add a `bindable` declaration only if step 2/3 names differ from the convention.
+2. Implement `FlatMap[U](f func(T) M[U]) M[U]` obeying the laws — `bind` and sequential
+   `also` now work.
+3. *(optional)* Implement `Zip{N}` for the arities you want `also` to combine
+   concurrently or accumulatively.
 
 ---
 
-## 8. Type-safety rules
-
-1. `bind`/`also` are rejected unless the enclosing block's result type is a known,
-   bindable `M`.
-2. A `bind` whose expression's short-circuit type cannot be lifted to `M` is a compile
-   error (no implicit widening to `any`).
-3. `also` bindings that reference their group is a compile error (§4).
-4. The trailing expression must be `M[R]` or plainly liftable to it via `Pure`.
-
-These keep the notation from degrading into untyped, `?`-style control flow.
-
----
-
-## 9. Prior art
+## 8. Prior art
 
 | Language | Construct | Relationship |
 |----------|-----------|--------------|
-| OCaml | `let* x = e in …`, `and*` | Direct model. `bind` = `let*`, `also` = `and*`. Same desugaring (`bind`/`product`), resolved lexically instead of structurally. |
+| OCaml | `let* x = e in …`, `and*` | Direct model. `bind` = `let*`, `also` = `and*`. Same lowering (`bind`/`product`), resolved structurally instead of via a registered `let` operator. |
 | Haskell | `do { x <- e; … }` | Same monadic denotation; `do` has no applicative-independence keyword equivalent to `also`. |
 | F# | computation expressions `let!` / `and!` | `let!`≈`bind`, `and!`≈`also`. |
 | Scala | for-comprehension | Same flatMap denotation; rejected surface (see §1). |
-| Gleam | `use x <- e` | Callback-desugaring, single-value. |
+| Gleam | `use x <- e` | Callback-lowering, single-value. |
 | Rust / Zig | `?` / `try` | Imperative escape hatch; complementary, not equivalent (see §1). |
 
 ---
 
-## 10. Grammar sketch
+## 9. Grammar
 
-Illustrative additions to `internal/parser/grammar/gala.g4` (the ANTLR source; the
-generated `*.go` is never hand-edited). Modeled on the existing
-`valDeclaration: 'val' (tuplePattern | identifierList) (type)? '=' expressionList;`:
+`bind`/`also` are declarations, modeled on the existing
+`valDeclaration: 'val' (tuplePattern | identifierList) (type)? '=' expressionList;` in
+`internal/parser/grammar/gala.g4` (the ANTLR source; the generated `*.go` is never
+hand-edited):
 
 ```antlr
 declaration
     : valDeclaration
     | varDeclaration
-    | bindDeclaration      // new
-    | alsoDeclaration      // new
+    | bindDeclaration      // bind name (type)? = expr
+    | alsoDeclaration      // also name (type)? = expr
     | ...
     ;
 
@@ -318,109 +414,53 @@ BIND: 'bind';
 ALSO: 'also';
 ```
 
-`also` is only well-formed immediately following a `bind`/`also` (enforced in the
-transformer, not the grammar, to give a good error message).
+`also` is only well-formed immediately following a `bind`/`also`; the transformer (not
+the grammar) enforces that, to give a good error message.
 
 ---
 
-## 11. Implementation plan
+## 10. Implementation
 
-Phases are ordered by dependency. Each has explicit acceptance criteria; do not start a
-phase until the previous one's criteria pass. **No implementation begins until Phase 0 is
-signed off.** Every phase ends green against the standing pre-commit checklist
-(`bazel build //...`, `bazel test //...`, `bazel run //:gazelle`, examples compile).
-
-### Phase 0 — Design sign-off (gate)
-- Resolve the §12 open questions (`Validated` shape, `also` applicative-vs-monadic,
-  `Future` auto-parallelism) and record the decisions in this doc.
-- **Acceptance:** this document approved; the two verification examples
-  (`bind_notation_desugared`, `bind_notation_user_monad`) pass. *(Both already pass.)*
-
-### Phase 1 — Grammar
-- Add `BIND`/`ALSO` tokens and `bindDeclaration`/`alsoDeclaration` to
-  `internal/parser/grammar/gala.g4` (§10). Add the `bindable`/`lift` registration forms
-  (§7.2).
-- Regenerate the parser via the grammar build. **Never hand-edit the generated `*.go`.**
-- **Acceptance:** `bind`/`also`/`bindable`/`lift` parse into the expected AST; a parser
-  unit test covers each form and the "`also` without a preceding `bind`" error.
-
-### Phase 2 — Transformer / desugaring
-- In `internal/transpiler/transformer`, desugar `bind`/`also` groups to `FlatMap` /
-  `Zip` + `Pure` (§3, §4); implement structural resolution and the `bindable`/`lift`
-  registry (§7); emit the §8 type-safety diagnostics; implement heterogeneous lift (§5)
-  and the no-zero error (§6).
-- **No special-casing of `std`** — `Try`/`Option`/`Either`/`Future` resolve through the
-  same registry as a user monad.
-- **Acceptance:** transformer unit tests for sequential `bind`, `also` groups, auto-lift,
-  heterogeneous lift, and each diagnostic; a golden test asserting `bind` output is
-  identical to the hand-written `FlatMap` chain in `bind_notation_desugared`.
-
-### Phase 3 — Standard library
-- Add `Zip`/product combinators to `Try`, `Option`, `Either` (`std/`), a **concurrent**
-  `Zip` to `Future` (`concurrent/`), and introduce a `Validated` accumulating type.
-- Register each as `bindable` in the standard library (proving the mechanism on `std`).
-- **Acceptance:** `std` tests for each `Zip` (short-circuit, concurrent, accumulating);
-  `Validated` law/accumulation tests.
-
-### Phase 4 — Examples (verification programs)
-- Rewrite `bind_notation_desugared` to use real `bind` syntax; keep the desugared form as
-  a golden reference. Keep and extend `bind_notation_user_monad` to also exercise `also`
-  and a registered `lift`. Add a new `bind_notation_validated` example (error
-  accumulation) and a `bind_notation_future` example (concurrent `also`).
-- **Acceptance:** all `examples/` `gala_exec_test` targets pass; per CLAUDE.md, a
-  verification example exists for every new language feature (`bind`, `also`, `bindable`,
-  `lift`).
-
-### Phase 5 — IDE / LSP sync
-- Run the IDE sync so the IntelliJ plugin and LSP server learn the new keywords
-  (`bind`, `also`, `bindable`, `lift`): syntax highlighting, semantic annotator, and a
-  live template for a `bind` block.
-- **Acceptance:** plugin builds; new keywords highlight; `gala-ide-sync` reports no drift.
-
-### Phase 6 — In-repo documentation (`docs/`)
-- **`docs/GALA.MD`** — promote the "Design proposals" pointer to real sections: §6
-  Control Flow (the `bind`/`also` block) and §9 Standard Library Types (`Validated`,
-  `Zip`). Remove the "not yet implemented" framing from this file's status header.
-- **`docs/TYPE_INFERENCE.MD`** — the lift resolution, trailing-value auto-lift, and
-  `also` product inference rules.
-- **`docs/EXAMPLES.MD`** — concise `bind`/`also` examples (concise functional syntax).
-- **`docs/GALA_BEST_PRACTICES.MD`** — a new rule: prefer `bind`/`also` over nested
-  `FlatMap` for multi-step monadic code; prefer `also` over `bind` for independent steps;
-  when to still reach for `Map`/`match`/`Recover` (see §"complementary tools").
-- **Extension guide** — a dedicated "Extending `bind`/`also` to your own monad" section
-  (promote §7 here) with the conformance checklist and the `Step` walkthrough.
-- **Acceptance:** `gala-doc-verifier` passes; every doc code block transpiles.
-
-### Phase 7 — Website (`website/`, Jekyll)
-- **`website/features/error-handling.md`** — add a `bind`/`also` subsection (or a new
-  `website/features/monadic-binding.md` linked from the features nav in `_config.yml`).
-- **`website/docs/language-reference.md`** — mirror the `docs/GALA.MD` additions.
-- **`website/docs/examples.md`** — add the `bind`/`also`/`Validated` examples.
-- **`website/vs-go.md`** — optional: a side-by-side of a `bind` block vs the Go
-  `if err != nil` ladder.
-- **Extension how-to on the site** — surface the user-monad extension guide as a page so
-  third-party authors can find it.
-- **Acceptance:** site builds (`bundle exec jekyll build`); new pages appear in nav; code
-  samples match the verified examples.
-
-### Phase 8 — Final verification
-- Full `bazel build //...` + `bazel test //...`; `bazel run //:gazelle`; all `examples/`
-  compile; docs verified; website builds.
-- **Acceptance:** the CLAUDE.md pre-commit checklist passes end to end.
+- **Grammar:** `BIND`/`ALSO` tokens and `bindDeclaration`/`alsoDeclaration` in
+  `internal/parser/grammar/gala.g4`.
+- **Lowering:** `internal/transpiler/transformer/bind.go` — collects a `bind`+`also`
+  group, checks bindability structurally (`FlatMap` in the type's metadata), and emits
+  either the nested `FlatMap` chain or `Zip{N}(...).FlatMap(...)`. Each bound name is
+  registered as a `val` so reads unwrap exactly once. No type is special-cased.
+- **Standard library:** `Zip{N}` on `Future` (`concurrent/`) and on the new
+  `Validated[E, A]` accumulating type (`validation/`). `Try`/`Option`/`Either` keep only
+  `Map`/`FlatMap`/`Filter` and use the sequential fallback for `also`.
+- **Tests:** `internal/transpiler/transformer/bind_test.go` (golden lowerings, user
+  monad, non-monad rejection, `also` fallback, `also` Zip) plus the `examples/` programs
+  listed at the top of this doc.
 
 ---
 
-## 12. Resolved decisions (Phase 0)
+## 11. Resolved design decisions
 
 - **One `also` keyword, semantics chosen by the type.** GALA exposes a single `also`; it
   does *not* mirror OCaml's `and*`/`and+` split. The applicative-vs-monadic distinction
-  is academic to most users and a source of confusion, so it is hidden: `also` desugars
-  through the block type's registered `Zip`, and each type defines what that means
-  (concurrent for `Future`, accumulating for `Validated`, sequential short-circuit
-  otherwise). See §4.
-- **`Validated` is a distinct sealed type.** Error accumulation lives in a new
-  `Validated[E, A]` (Valid/Invalid) with a combining `E`, kept separate from `Either`'s
-  fail-fast semantics — never an overloaded second behavior on `Either`.
+  is academic to most users, so it is hidden: `also` uses the block type's `Zip{N}` when
+  present, and each type defines what that means (concurrent for `Future`, accumulating
+  for `Validated`, sequential short-circuit otherwise). See §4.
+- **`Validated` is a distinct sealed type.** Error accumulation lives in
+  `validation`'s `Validated[E, A]` (`Valid`/`Invalid`) with a combining `E`, kept
+  separate from `Either`'s fail-fast semantics — never an overloaded second behavior on
+  `Either`.
 - **`Future` concurrency is opt-in via `also`.** Sequential `bind`s on a `Future` run
   sequentially; only an `also` group runs concurrently. Concurrency is always visible in
   the source — the transpiler never auto-parallelizes consecutive `bind`s.
+- **No heterogeneous bind, no auto-lift of plain trailing values.** A clause must be the
+  block's own monad (convert at the call site, §5), and the trailing expression must be
+  `M[R]` (write the constructor, §2). Both keep the generated Go concrete and the control
+  flow honest.
+- **The group is the accumulation/independence boundary.** A block is any number of groups
+  chained by `FlatMap` (§4.1): applicative *within* a group (concurrent / accumulating),
+  monadic *across* groups (each later group fail-fast on the earlier ones and sees their
+  bindings). This makes the source itself say where independence ends and dependence
+  begins — one wide `also` group to collect every error, a new `bind` group exactly where a
+  step depends on a prior result.
+- **Cross-clause references in a group are a compile error, not a footgun.** Because a
+  group's clauses are evaluated independently, referencing a sibling binding inside a group
+  cannot mean what it says; the transformer rejects it up front with a clear diagnostic
+  (§4) instead of emitting Go that fails with an obscure `undefined`.

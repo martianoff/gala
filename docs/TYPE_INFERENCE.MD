@@ -24,11 +24,12 @@ GALA implements a custom type inference and unwrapping system to handle its uniq
    - [Expression Unwrapping](#2-expression-unwrapping)
 7. [Type Resolution](#type-resolution)
 8. [Supported Expressions](#supported-expressions)
-9. [Downward Inference for Generic Sealed-Type Case Constructors](#downward-inference-for-generic-sealed-type-case-constructors)
-10. [Downward Inference for Generic Function Phantom Type Parameters](#downward-inference-for-generic-function-phantom-type-parameters)
-11. [Go Type Inference](#go-type-inference)
-12. [Limitations and Edge Cases](#limitations-and-edge-cases)
-13. [Key Files](#key-files)
+9. [`bind` / `also` Element and Result Inference](#bind--also-element-and-result-inference)
+10. [Downward Inference for Generic Sealed-Type Case Constructors](#downward-inference-for-generic-sealed-type-case-constructors)
+11. [Downward Inference for Generic Function Phantom Type Parameters](#downward-inference-for-generic-function-phantom-type-parameters)
+12. [Go Type Inference](#go-type-inference)
+13. [Limitations and Edge Cases](#limitations-and-edge-cases)
+14. [Key Files](#key-files)
 
 ---
 
@@ -415,6 +416,50 @@ its body exactly as before.
 The lift is purely additive — passing a bare `T` where a `func() T` is expected
 is otherwise a type error — and an argument whose own type is already a function
 is passed through untouched, so an existing thunk is never double-wrapped.
+
+---
+
+## `bind` / `also` Element and Result Inference
+
+The `bind`/`also` lowering (`internal/transpiler/transformer/bind.go`) resolves three
+things by type inference: the **result monad** `M[R]`, each clause's **bound element
+type** `A`, and — for an `also` group with a `Zip` — the **product tuple** type.
+
+- **Result monad `M[R]`.** Taken from the enclosing block's declared result type (the
+  function's return type, or the expected type pushed onto the block). It fixes both the
+  base monad `M` a clause must belong to and the FlatMap continuation's return type
+  `M[R]`. The trailing value expression is transformed with `M[R]` pushed as its expected
+  type, so constructors like `Success`/`Some`/`Valid` infer their type arguments from the
+  block instead of needing explicit `[…]`.
+
+- **Bound element type `A`.** For a clause `bind name = expr` whose transformed RHS has
+  monad type `M[A]`, `A` is the monad's **value element** — the *last* type argument
+  (`monadElemType`). For a single-argument monad (`Try[T]`, `Option[T]`) that is `T`; for
+  a two-argument monad (`Either[A, B]`, `Validated[E, A]`) it is the value side (`B` /
+  `A`), while the leading error/left argument is fixed. An explicit annotation on the
+  clause — `bind name A = expr` — overrides the inferred element type. `name` is then
+  registered as an immutable `val` of type `A`, so later reads emit a single `.Get()`
+  unwrap.
+
+- **Bindability and same-monad check.** The clause's monad base name is resolved from its
+  transformed RHS and looked up in type metadata: it must expose a `FlatMap` method
+  (structural — no type is special-cased) or inference fails with a "not a bindable
+  monad" diagnostic. The clause's base name must also equal the result monad's base name;
+  a mismatch (e.g. an `Option` clause in a `Try` block) is a "heterogeneous bind" error.
+
+- **FlatMap type arguments.** The emitted `M_FlatMap` carries the method-level type arg
+  `[R]` (the result element of `M[R]`, from `resultElemTypeArgs`); the receiver's own
+  element type is appended by the generic-method emitter. The callback parameter is typed
+  `A`.
+
+- **`also` product tuple.** For a `bind` + `also` group of arity `N` (2..10) whose monad
+  provides `Zip{N}`, each clause `i` contributes its inferred element type `A_i` as a
+  `Zip{N}` method type argument. The `Zip{N}` result element is the std tuple
+  `Tuple{N}[A_0, …, A_{N-1}]`, and the whole Zip result is `M[Tuple{N}]`. The single
+  following `FlatMap` binds each `val name_i` to tuple field `V{i+1}` — tuple fields are
+  already `Immutable`-wrapped, so the field is bound straight to the `val` (no extra
+  wrap) and read with one `.Get()`. If the monad has no `Zip{N}`, the group falls back to
+  the nested sequential `FlatMap` chain and no tuple type is formed.
 
 ---
 
