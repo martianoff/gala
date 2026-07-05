@@ -168,6 +168,17 @@
       font-family: 'Cascadia Code', 'SF Mono', 'Consolas', Menlo, monospace;
       font-size: 0.86rem;
     }
+    /* Keep INLINE code (prose) light + subtle — kramdown tags it
+       `language-plaintext`, which the Prism theme would otherwise darken. */
+    :not(pre) > code[class*="language-"] {
+      background: var(--code-bg);
+      color: var(--text);
+      padding: 0.15em 0.4em;
+      border-radius: 3px;
+      font-size: 0.9em;
+      text-shadow: none;
+      white-space: normal;
+    }
     table {
       width: 100%;
       border-collapse: collapse;
