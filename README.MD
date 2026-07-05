@@ -40,16 +40,22 @@ It's aimed at Go developers who have used Scala, Kotlin, F#, or OCaml and miss t
 
 ---
 
-## Why GALA?
+## Why GALA? — Safe, Ergonomic, Compatible
 
-- **Full Go third-party module interop.** Any Go package works — not just stdlib. Return types are inferred from the Go SDK, and `(T, error)` returns are wrapped into `Try[T]` automatically.
-- **Zero-reflection JSON.** `Codec[T]` is backed by a compiler-generated `StructMeta[T]` intrinsic — no `reflect`, no struct tags, and the codec itself works as a pattern-match extractor.
-- **Sealed types with exhaustive matching.** The compiler rejects incomplete matches at build time, including in nested patterns, guards, and generic extractors.
-- **Functional standard library.** `Option`, `Either`, `Try`, `Future`, `IO` with `Map` / `FlatMap` / `Recover`, plus immutable `List`, `Array`, `HashMap`, `HashSet`, `TreeSet`, `TreeMap`.
+**Safe — Go's runtime bugs, caught by the compiler.**
+- **Sealed types with exhaustive matching.** The compiler rejects incomplete matches at build time — including nested patterns, guards, and generic extractors. An incomplete `match` is a build error, not a production panic.
+- **No `nil`.** `Option` / `Either` / `Try` replace nil checks and naked error returns.
+- **Immutable by default.** `val` bindings, immutable struct fields, read-only `ConstPtr[T]`; always concrete types, never a silent `any`.
+- **Zero-reflection JSON.** `Codec[T]` is backed by a compiler-generated `StructMeta[T]` intrinsic — no `reflect`, no struct tags, and it doubles as a pattern-match extractor.
+
+**Ergonomic — the functional code you want to write, minus the ceremony.**
 - **`bind` / `also` do-notation.** Flat monadic binding over any monad — sequential `bind`, plus `also` for independent steps that accumulate errors (`Validated`) or run concurrently (`Future`). No nested `FlatMap` staircases.
-- **Regex extractors in `match`.** Compile-safe regex destructures capture groups directly inside a pattern.
-- **Shipped IDE tooling.** Shipped GoLand/IntelliJ plugin and an LSP server (`gala lsp`) for VS Code and Neovim — diagnostics, hover, go-to-definition, inlay hints, completion.
-- Batched transpilation and analysis caching make multi-file packages noticeably faster on incremental rebuilds; the LSP debounces analysis to stay quiet while you type.
+- **Functional standard library.** `Option`, `Either`, `Try`, `Future`, `IO` with `Map` / `FlatMap` / `Recover`, plus immutable `List`, `Array`, `HashMap`, `HashSet`, `TreeSet`, `TreeMap`.
+- **Less syntax.** String interpolation (`s"…"` / `f"…"`), named arguments and default parameters, type inference everywhere, expression functions, and regex extractors that destructure capture groups directly inside `match`.
+
+**Compatible — every Go library, no bindings, native binaries.**
+- **Full Go third-party module interop.** Any Go package works — not just stdlib. Return types are inferred **directly from the Go SDK** (no declaration files), and `(T, error)` returns are wrapped into `Try[T]` automatically.
+- **Shipped IDE tooling.** GoLand/IntelliJ plugin and an LSP server (`gala lsp`) for VS Code and Neovim — diagnostics, hover, go-to-definition, inlay hints, completion. Batched transpilation and analysis caching keep multi-file rebuilds fast.
 
 ---
 

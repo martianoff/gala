@@ -26,13 +26,21 @@ func area(s Shape) string = s match {
 
 <p class="hero-aside"><em>GALA — Go Alternative LAnguage — is a statically typed, functional-first language that transpiles to Go.</em></p>
 
-## Why GALA Exists
+## Safe. Ergonomic. Compatible.
 
-The [2024 Go Developer Survey](https://go.dev/blog/survey2024-h1-results) confirmed that **sum types and enums are the #1 most-requested missing feature** in Go. As of Go 1.25, they still don't exist. GALA delivers them today — along with exhaustive pattern matching, `Option[T]`/`Either[A,B]`/`Try[T]` monads, default parameters with named arguments, a zero-reflection JSON codec, regex pattern matching extractors, and immutable collections — all compiling to a single native binary through the standard Go toolchain.
+The [2024 Go Developer Survey](https://go.dev/blog/survey2024-h1-results) found that **sum types are the #1 most-requested missing feature** in Go. As of Go 1.25 they still don't exist. GALA delivers them — and organizes everything else around three promises.
 
-Unlike libraries like samber/lo or IBM/fp-go that bolt functional patterns onto Go's syntax, GALA adds these features **at the language level** with clean, concise syntax. Every Go library works out of the box. Your existing Go modules, third-party packages, and tooling remain fully compatible.
+### Safe — Go's runtime bugs, caught by the compiler
 
-GALA's transpiler performs type inference, exhaustive match checking, and immutability enforcement at compile time. The generated Go code is clean and readable — there is no runtime overhead beyond what the equivalent hand-written Go would have.
+Sum types with **exhaustive** pattern matching (an incomplete `match` is a build error, not a production panic), no `nil` (`Option`/`Either`/`Try` instead), immutable by default (`val`, immutable structs, read-only `ConstPtr`), always-concrete types — never a silent `any` — and zero-reflection typed JSON. The transpiler enforces match exhaustiveness and immutability at compile time.
+
+### Ergonomic — the functional code you want to write, minus the ceremony
+
+`bind`/`also` do-notation for composing monads, string interpolation (`s"…"` / `f"…"`), named arguments and default parameters, type inference everywhere, expression functions, and `Map`/`Filter`/`FoldLeft`/`Collect` collections. These are language features with clean syntax — not patterns bolted onto Go like samber/lo or IBM/fp-go.
+
+### Compatible — every Go library, no bindings, native binaries
+
+Full third-party Go interop with return types inferred **directly from the Go SDK — no declaration files to write or generate**. `(T, error)` results are auto-wrapped into `Try[T]`, the generated Go is clean and readable, and it builds to a single native binary inside your existing Go project. No runtime overhead beyond hand-written Go.
 
 ## GALA vs Go — A Quick Look
 
