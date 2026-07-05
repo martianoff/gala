@@ -1,0 +1,39 @@
+package main
+
+// Extensibility, proven with the real `bind` feature: `bind` works over a
+// user-defined monad exactly as over std. `Step` has no relationship to std and
+// provides only the minimal contract (a `FlatMap` method); `bind` desugars to
+// `Step_FlatMap` with no package qualifier and no transpiler special-casing.
+// See docs/BIND_NOTATION.MD section 7. Compare bind_notation_user_monad.gala,
+// the hand-written desugaring this transpiles to.
+
+sealed type Step[T any] {
+    case Go(Value T)
+    case Stop(Reason string)
+}
+
+// The only method `bind` requires: FlatMap. The short-circuit lives inside it.
+func (s Step[T]) FlatMap[U any](f func(T) Step[U]) Step[U] = s match {
+    case Go(v)   => f(v)
+    case Stop(r) => Stop[U](r)
+}
+
+func start(n int) Step[int] = if (n > 0) Go(n) else Stop[int](s"non-positive: $n")
+func twice(n int) Step[int] = if (n < 100) Go(n * 2) else Stop[int]("too big")
+
+func pipeline(n int) Step[int] {
+    bind a = start(n)
+    bind b = twice(a)
+    Go(a + b)              // `a` still in scope; a Stop anywhere short-circuits
+}
+
+func describe(s Step[int]) string = s match {
+    case Go(v)   => s"go: $v"
+    case Stop(r) => s"stop: $r"
+}
+
+func main() {
+    Println(describe(pipeline(5)))    // 5 -> 10 -> 5+10
+    Println(describe(pipeline(0)))    // short-circuits at start
+    Println(describe(pipeline(200)))  // short-circuits at twice
+}

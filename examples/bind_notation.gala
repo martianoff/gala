@@ -1,0 +1,41 @@
+package main
+
+// Real `bind` monadic do-notation over std Try. This transpiles to the FlatMap
+// chain in bind_notation_desugared.gala (kept as a hand-written golden). See
+// docs/BIND_NOTATION.MD.
+//
+// `bind name = e` unwraps a Try, binds the success value, and short-circuits the
+// whole block on the first Failure. Every binding stays in scope — note `o` is
+// reused on the final line, the "graph" case a linear FlatMap/pipe cannot express.
+
+struct Order(Id int, Amount int)
+struct Receipt(OrderId int, Charged int)
+
+func fetchOrder(id int) Try[Order] =
+    if (id > 0) Success(Order(id, 100))
+    else Failure[Order](NoSuchElementError(Message = s"no order $id"))
+
+func validateOrder(o Order) Try[Order] =
+    if (o.Amount > 0) Success(o)
+    else Failure[Order](NoSuchElementError(Message = "invalid amount"))
+
+func chargePayment(o Order) Try[int] =
+    if (o.Amount <= 1000) Success(o.Amount)
+    else Failure[int](NoSuchElementError(Message = "amount too large"))
+
+func processOrder(id int) Try[Receipt] {
+    bind o = fetchOrder(id)
+    bind valid = validateOrder(o)
+    bind payment = chargePayment(valid)
+    Success(Receipt(o.Id, payment))
+}
+
+func describe(t Try[Receipt]) string = t match {
+    case Success(r) => s"ok: order=${r.OrderId} charged=${r.Charged}"
+    case Failure(e) => s"err: ${e.Error()}"
+}
+
+func main() {
+    Println(describe(processOrder(1)))   // happy path, all binds succeed
+    Println(describe(processOrder(0)))   // breaks at the first bind, short-circuits
+}

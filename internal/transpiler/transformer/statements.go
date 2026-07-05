@@ -297,6 +297,29 @@ func (t *galaASTTransformer) transformBlock(ctx *grammar.BlockContext) (*ast.Blo
 	allStmts := ctx.AllStatement()
 	lastIdx := len(allStmts) - 1
 	for i, stmtCtx := range allStmts {
+		// Monadic do-notation: a `bind` collapses itself and every following
+		// statement in the block into a FlatMap chain (see bind.go). Statements
+		// before the first `bind` are emitted normally by prior iterations. An
+		// `also` is only valid immediately following a `bind`/`also` (handled
+		// inside the chain), so one reached here has no preceding `bind`.
+		if alsoDeclFromStatement(stmtCtx) != nil {
+			return nil, t.semanticErrorAt(stmtCtx.(*grammar.StatementContext), "`also` must follow a `bind`")
+		}
+		if bindDeclFromStatement(stmtCtx) != nil {
+			if t.currentFuncReturnType == nil || t.currentFuncReturnType.IsNil() {
+				return nil, t.semanticErrorAt(stmtCtx.(*grammar.StatementContext), "`bind` requires the enclosing function to declare a monad return type")
+			}
+			expr, err := t.desugarBindChain(allStmts[i:], t.currentFuncReturnType)
+			if err != nil {
+				return nil, err
+			}
+			if lastStmtIsValue {
+				block.List = append(block.List, &ast.ReturnStmt{Results: []ast.Expr{expr}})
+			} else {
+				block.List = append(block.List, &ast.ExprStmt{X: expr})
+			}
+			return block, nil
+		}
 		// A bare `subject match { ... }` whose value is discarded by the
 		// surrounding ExprStmt must be lowered as a void IIFE; otherwise
 		// arms calling void Go functions (e.g. `d.Skip()`) get wrapped in

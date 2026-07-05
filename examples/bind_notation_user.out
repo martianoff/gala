@@ -1,0 +1,3 @@
+go: 15
+stop: non-positive: 0
+stop: too big
