@@ -17,27 +17,59 @@
 
 GALA already has monadic error handling — `Option`, `Try`, `Either`, `Future` — with
 `Map`/`FlatMap` combinators. Those are excellent when the computation is a single
-linear pipeline. They fall down on two shapes that dominate real code:
+linear pipeline. They fall down on two shapes that dominate real code. For a strictly
+linear chain `bind` is only a *readability* win over `FlatMap` (top-to-bottom, named, no
+closing-paren pile); the shapes below are where it is a **structural** or **capability**
+win — where the `FlatMap` form is materially worse or cannot express the behavior at all.
 
-1. **The graph shape.** When a later step needs a value from *two steps back*, a
-   `FlatMap` chain has to nest, because each intermediate value is trapped inside a
-   closure:
+1. **The graph shape** — a later step needs a value from *several steps back*. Each
+   intermediate is trapped in a closure, so `FlatMap` nests one level deeper per step,
+   repeats the accumulator type at every link (inference can't always flow it through the
+   lambda), and ends in a pile of closing parens. Here the final `Receipt` needs the
+   original `o` *and* the `payment`, so `o` must stay reachable through all the nesting:
 
    ```gala
-   // "the receipt needs both the order AND the payment"
-   fetchOrder(id).FlatMap((o) =>
-       validateOrder(o).FlatMap((valid) =>
-           chargePayment(valid).FlatMap((payment) =>
-               Success(Receipt(o.Id, payment)))))   // o survives only via nesting
+   // FlatMap — `o` survives only via the deepening indentation; `[Receipt]` is repeated
+   // at every link and the block ends in `))))`.
+   fetchOrder(id).FlatMap[Receipt]((o) =>
+       validateOrder(o).FlatMap[Receipt]((valid) =>
+           chargePayment(valid).FlatMap[Receipt]((payment) =>
+               Success(Receipt(o.Id, payment)))))
    ```
 
-   The indentation deepens with every cross-reference, and the explicit `[U]` type
-   argument often has to be repeated at each link because inference cannot always flow
-   the accumulator type through the lambda.
+   ```gala
+   // bind — flat, top-to-bottom, every name in scope, no repeated type arguments.
+   bind o       = fetchOrder(id)
+   bind valid   = validateOrder(o)
+   bind payment = chargePayment(valid)
+   Success(Receipt(o.Id, payment))
+   ```
 
-2. **The independence shape.** When two fallible steps do *not* depend on each other,
-   a `FlatMap` chain still forces them to run sequentially and short-circuit on the
-   first error — you cannot run them concurrently, nor accumulate both errors.
+2. **The independence shape** — two fallible steps that do *not* depend on each other. A
+   `FlatMap` chain forces them to run sequentially and **short-circuits on the first
+   error**, so it cannot accumulate both, nor run them concurrently:
+
+   ```gala
+   // FlatMap — validates name, email, age but STOPS at the first failure. A user with
+   // three bad fields is told about one, fixes it, resubmits, and is told about the next.
+   vName(f.Name).FlatMap((name) =>
+       vEmail(f.Email).FlatMap((email) =>
+           vAge(f.Age).FlatMap((age) => Valid(User(name, email, age)))))
+   ```
+
+   ```gala
+   // also — reports ALL THREE errors at once (Validated accumulates); the FlatMap form
+   // above simply cannot do this. Over Future, the same `also` runs the clauses
+   // concurrently. One keyword changes the behavior; the shape stays flat and named.
+   bind name  = vName(f.Name)
+   also email = vEmail(f.Email)
+   also age   = vAge(f.Age)
+   Valid(User(name, email, age))
+   ```
+
+   The hand-written way to accumulate without `also` is `vName(...).Zip3(vEmail(...),
+   vAge(...)).Map((t) => User(t.V1, t.V2, t.V3))` — correct, but positional (`t.V1/V2/V3`,
+   no names) and it does not scale past a handful of fields.
 
 Three surfaces were considered and rejected for GALA before landing here:
 
@@ -144,17 +176,64 @@ the group lowers to the same nested `FlatMap` chain as §3. For a fail-fast mona
 lowerings are observably identical, so the fallback loses nothing. `also` is therefore
 always legal; supplying a `Zip{N}` only changes *how* the independent clauses combine.
 
-**Independence rule.** `also` bindings may not reference each other or the `bind` in
-their group — that non-dependence is exactly what makes the group applicative. If a later
-clause needs an earlier value, use `bind` (sequential) instead.
+**Independence rule (enforced).** Clauses in one group may not reference each other or the
+group's leading `bind` — that non-dependence is exactly what makes the group applicative.
+A `Future` group runs its clauses *concurrently* and a `Validated` group evaluates *all* of
+them to accumulate errors, so an earlier clause's value is genuinely not available to a
+later one. Referencing a sibling is a compile error with a clear diagnostic rather than a
+raw Go `undefined`:
+
+```
+cannot reference `n` here: clauses in a `bind`/`also` group are evaluated independently,
+so a binding from one clause is not in scope for its siblings. Move this clause to its
+own `bind` if it must see `n`.
+```
+
+If a later clause needs an earlier value, give it its own `bind` — that starts a new group
+(§4.1), which sequences it and brings the earlier bindings into scope.
+
+### 4.1 Multiple groups in one block
+
+A block may hold several groups back-to-back, each a `bind` optionally followed by its
+`also`s. Groups are chained by `FlatMap`, so the governing rule is **applicative within a
+group, monadic across groups**:
+
+- Clauses *inside* one group combine through `Zip` — concurrent (`Future`) or accumulating
+  (`Validated`) or sequential-fail-fast (`std`).
+- *Consecutive* groups are sequenced: a later group runs only if every earlier group
+  succeeded, and it sees all earlier bindings in scope.
+
+```gala
+func makeForm(name string, email string, age int, score int) Validated[string, Form] {
+    bind n = vName(name)      // ┐ group 1 — accumulates n + e errors,
+    also e = vEmail(email)    // ┘ then FlatMaps into group 2
+    bind a = vAge(age)        // ┐ group 2 — runs only if group 1 was Valid;
+    also s = vScore(score)    // ┘ n and e are in scope here
+    Valid(Form(n, e, a, s))
+}
+```
+
+The accumulation boundary is the group. If `name` and `email` are both invalid, the result
+carries **2** errors (group 1's), not 4 — group 1 accumulates its pair and then
+short-circuits, so group 2 never runs. Put every field you want reported together in **one**
+wider `also` group; split into separate groups precisely where a later step depends on an
+earlier result (and must fail-fast on it).
 
 ---
 
 ## 5. Mixing monads
 
-A `bind`/`also` clause's monad must match the block's monad. Binding an `Option` inside a
-`Try` block, for example, is rejected with a clear diagnostic
-(`cannot bind a Option inside a Try block (heterogeneous bind is not supported)`).
+> **Different element types are not "mixing".** A homogeneous block whose bindings have
+> different *value* types is the normal case: `bind n = parseInt(s)  // Try[int]` then
+> `bind label = describe(n)  // Try[string]` is a single `Try` block; `n` and `label` just
+> have different element types. "Mixing monads" means different *monads* — a `Try` clause
+> and an `Option` clause in the same block — which is what this section is about.
+
+A `bind`/`also` clause's monad must match the block's monad; a mismatch is rejected with a
+clear diagnostic
+(`cannot bind a Option inside a Try block (heterogeneous bind is not supported)`) — never a
+silent widen to `any`. A do-block binds exactly one monad, matching Haskell `do`, Scala
+for-comprehensions, and OCaml `let*`.
 
 Convert at the **call site** so every clause has the block's type — e.g. turn an
 `Option` into a `Try` with a small helper before binding it:
@@ -174,6 +253,13 @@ func buildReceipt(id int) Try[Receipt] {
 
 The conversion is explicit and local, which keeps the block homogeneous and the error
 type visible — no implicit widening, and no hidden monad-transformer machinery.
+
+Std provides the conversions that carry information forward for free — `Try.ToOption()`
+and `Try.ToEither()` — plus `GetOrElse`/`OrElse` and pattern matching for the rest; a
+two-line `toTry`/`toEither` helper (as above) covers a direction std does not yet ship. The
+conversion supplies exactly the piece the target monad needs that the source lacks (the
+error value when turning an absence-only `Option` into a `Try`), so it is a place to be
+explicit, not boilerplate to eliminate.
 
 ---
 
@@ -368,3 +454,13 @@ the grammar) enforces that, to give a good error message.
   block's own monad (convert at the call site, §5), and the trailing expression must be
   `M[R]` (write the constructor, §2). Both keep the generated Go concrete and the control
   flow honest.
+- **The group is the accumulation/independence boundary.** A block is any number of groups
+  chained by `FlatMap` (§4.1): applicative *within* a group (concurrent / accumulating),
+  monadic *across* groups (each later group fail-fast on the earlier ones and sees their
+  bindings). This makes the source itself say where independence ends and dependence
+  begins — one wide `also` group to collect every error, a new `bind` group exactly where a
+  step depends on a prior result.
+- **Cross-clause references in a group are a compile error, not a footgun.** Because a
+  group's clauses are evaluated independently, referencing a sibling binding inside a group
+  cannot mean what it says; the transformer rejects it up front with a clear diagnostic
+  (§4) instead of emitting Go that fails with an obscure `undefined`.

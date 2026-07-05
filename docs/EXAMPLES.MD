@@ -1065,19 +1065,19 @@ min=3 max=7
 
 ### The "graph" case — a value reused several steps later (`Try`)
 
-A `FlatMap` chain has to *nest* whenever a later step needs a value from an earlier one, because each intermediate is trapped in a closure. Here the final `Receipt` needs both the original order **and** the payment:
+A `FlatMap` chain has to *nest* whenever a later step needs a value from an earlier one, because each intermediate is trapped in a closure. The final `Receipt` needs the original `o` (bound first) **and** the `payment` (bound last), so `o` must survive to the bottom — and the accumulator type `[Receipt]` is repeated at every link because inference can't flow it through the lambdas:
 
-**Before — the nested `FlatMap` pyramid** (`o` survives only via deepening indentation):
+**Before — the nested `FlatMap` pyramid** (`o` survives three levels of nesting, `[Receipt]` repeated at each link, ending in a `))))` pile):
 
 ```gala
 func processOrder(id int) Try[Receipt] =
-    fetchOrder(id).FlatMap((o) =>
-    validateOrder(o).FlatMap((valid) =>
-    chargePayment(valid).FlatMap((payment) =>
+    fetchOrder(id).FlatMap[Receipt]((o) =>
+    validateOrder(o).FlatMap[Receipt]((valid) =>
+    chargePayment(valid).FlatMap[Receipt]((payment) =>
     Success(Receipt(o.Id, payment)))))
 ```
 
-**After — a flat `bind` block** (every value in scope, reads top-to-bottom):
+**After — a flat `bind` block** (every value in scope, top-to-bottom, no repeated type args, no paren pile):
 
 ```gala
 func processOrder(id int) Try[Receipt] {
@@ -1088,7 +1088,7 @@ func processOrder(id int) Try[Receipt] {
 }
 ```
 
-Both forms are equivalent — the `bind` block *lowers* to the pyramid — but the second keeps `o` visible and drops the closure nesting. Full program: [`examples/bind_notation.gala`](../examples/bind_notation.gala).
+Both forms are equivalent — the `bind` block *lowers* to exactly that pyramid (see [`examples/bind_notation_desugared.gala`](../examples/bind_notation_desugared.gala)) — but the `bind` form stays flat as the graph deepens, drops the repeated `[Receipt]`, and reads top-to-bottom. Full program: [`examples/bind_notation.gala`](../examples/bind_notation.gala).
 
 ### Error accumulation — report ALL invalid fields (`Validated`)
 
@@ -1101,7 +1101,7 @@ func makePerson(name string, email string, age int) Validated[string, Person] {
     bind n = vName(name)
     also e = vEmail(email)
     also a = vAge(age)
-    Valid[string, Person](Person(n, e, a))
+    Valid(Person(n, e, a))
 }
 
 func main() {
