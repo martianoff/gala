@@ -1,0 +1,38 @@
+package main
+
+import . "martianoff/gala/validation"
+
+// `also` over Validated ACCUMULATES errors instead of short-circuiting. A leading
+// `bind` plus one or more `also` clauses form a product group that lowers to
+// Validated.ZipN(...).FlatMap(...). Because Validated's Zip pre-collects every
+// clause's errors, an invalid group reports ALL failures at once — here all three.
+// See docs/BIND_NOTATION.MD.
+
+func vName(s string) Validated[string, string] =
+    if (s != "") Valid[string, string](s)
+    else InvalidOf[string, string]("name required")
+
+func vEmail(s string) Validated[string, string] =
+    if (s != "") Valid[string, string](s)
+    else InvalidOf[string, string]("email required")
+
+func vAge(n int) Validated[string, int] =
+    if (n >= 0) Valid[string, int](n)
+    else InvalidOf[string, int]("age negative")
+
+struct Person(Name string, Email string, Age int)
+
+func makePerson(name string, email string, age int) Validated[string, Person] {
+    bind n = vName(name)
+    also e = vEmail(email)
+    also a = vAge(age)
+    Valid[string, Person](Person(n, e, a))
+}
+
+func main() {
+    val ok = makePerson("Ada", "ada@example.com", 36)
+    Println(s"ok valid? ${ok.IsValid()}")            // all clauses valid
+
+    val bad = makePerson("", "", -1)
+    Println(s"bad errors: ${bad.GetErrors().Size()}")  // all three accumulated
+}

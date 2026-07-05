@@ -127,6 +127,26 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "bind_notation_also",
+    src = "bind_notation_also.gala",
+    expected = "bind_notation_also.out",
+)
+
+gala_exec_test(
+    name = "bind_notation_validated",
+    src = "bind_notation_validated.gala",
+    expected = "bind_notation_validated.out",
+    deps = ["//validation"],
+)
+
+gala_exec_test(
+    name = "bind_notation_future",
+    src = "bind_notation_future.gala",
+    expected = "bind_notation_future.out",
+    deps = ["//concurrent"],
+)
+
+gala_exec_test(
     name = "hex_literals",
     src = "hex_literals.gala",
     expected = "hex_literals.out",

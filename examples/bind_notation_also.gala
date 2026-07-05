@@ -1,0 +1,23 @@
+package main
+
+// `also` marks independent binds. For a fail-fast monad (Option/Try/Either) that
+// has no Zip, an `also` group lowers to the same sequential FlatMap chain as
+// `bind` — short-circuiting on the first None/Failure. (Over Validated/Future,
+// `also` instead runs the clauses independently to accumulate errors / run
+// concurrently.) See docs/BIND_NOTATION.MD.
+
+func lookup(k string) Option[int] =
+    if (k == "a") Some(1)
+    else if (k == "b") Some(2)
+    else None[int]()
+
+func sum2(x string, y string) Option[int] {
+    bind a = lookup(x)
+    also b = lookup(y)
+    Some(a + b)
+}
+
+func main() {
+    Println(s"a+b = ${sum2("a", "b").GetOrElse(-1)}")   // both present
+    Println(s"a+z = ${sum2("a", "z").GetOrElse(-1)}")   // second missing -> None
+}
