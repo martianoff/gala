@@ -389,6 +389,69 @@ The GALA version reads top-to-bottom. The happy path is the main path. Error han
 
 ---
 
+## Monadic Binding: `bind` and `also`
+
+`Map`/`FlatMap` chains are great for a single linear pipeline. `bind`/`also` do-notation earns its keep on two shapes they handle badly: reusing an earlier value several steps later (a **graph**), and combining **independent** steps — where `also` unlocks error *accumulation* and *concurrency* that a `FlatMap` chain cannot express at all. Inside a function whose result is a monad, `bind name = expr` unwraps and names each step; the block lowers to the same `FlatMap` chain.
+
+### The "graph" case — reuse an earlier value later
+
+The final `Receipt` needs both the original order **and** the payment, so a `FlatMap` chain must nest — each value is trapped in a closure, the accumulator type `[Receipt]` is repeated at every link, and the block ends in a pile of closing parens:
+
+**Before — nested `FlatMap`** (`o` survives only via the deepening indentation):
+
+```gala
+func processOrder(id int) Try[Receipt] =
+    fetchOrder(id).FlatMap[Receipt]((o) =>
+    validateOrder(o).FlatMap[Receipt]((valid) =>
+    chargePayment(valid).FlatMap[Receipt]((payment) =>
+    Success(Receipt(o.Id, payment)))))
+```
+
+**After — a flat `bind` block** (every value stays in scope, reads top-to-bottom):
+
+```gala
+func processOrder(id int) Try[Receipt] {
+    bind o = fetchOrder(id)
+    bind valid = validateOrder(o)
+    bind payment = chargePayment(valid)
+    Success(Receipt(o.Id, payment))   // `o` still in scope; first Failure short-circuits
+}
+```
+
+### Error accumulation — report ALL invalid fields
+
+`bind` is fail-fast: over `Try`/`Option`/`Either` the first failure wins. `also` marks **independent** clauses, and over `Validated` (in the `validation` package) it accumulates *every* error instead of stopping at the first:
+
+```gala
+import . "martianoff/gala/validation"
+
+func makePerson(name string, email string, age int) Validated[string, Person] {
+    bind n = vName(name)
+    also e = vEmail(email)
+    also a = vAge(age)
+    Valid(Person(n, e, a))
+}
+```
+
+`makePerson("", "", -1).GetErrors().Size()` returns **3** — all three failures at once, not just the first. A `FlatMap` chain cannot do this: it is fail-fast, so it stops at the first error. Swap the `also`s for `bind`s and you'd get `1`.
+
+### Concurrency — run independent clauses in parallel
+
+Over `Future`, an `also` group runs its clauses **concurrently** rather than threading each through the next:
+
+```gala
+func total() Future[int] {
+    bind a = compute(2)
+    also b = compute(3)   // independent — all three run at once
+    also c = compute(4)
+    Future[int](a + b + c)
+}
+```
+
+Bound names are immutable `val`s, and `bind`/`also` work over any user-defined monad that provides a `FlatMap` method. See the [language reference](/docs/language-reference/) for the full specification.
+
+---
+
 ## When Go's Error Handling Is Fine
 
 GALA's monadic types are not always the right tool. Honest trade-offs:
