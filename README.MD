@@ -454,9 +454,9 @@ Mutable variants of all collection types are available in `collection_mutable` f
 
 ---
 
-## Showcase
+## Built with GALA
 
-Real applications written in GALA:
+GALA is dogfooded, not just demoed — its own tooling and these projects are written **in the language**, which is how the ergonomics get stress-tested. Real applications written in GALA:
 
 | Project | Description |
 |---------|-------------|
@@ -494,20 +494,7 @@ GALA ships with a GoLand/IntelliJ plugin and an LSP server (`gala lsp`) for edit
 2. Install plugin: GoLand > Settings > Plugins > Install from Disk > select `gala-intellij-plugin.zip` from [releases](https://github.com/martianoff/gala/releases).
 3. Restart GoLand — the LSP server starts automatically when a `.gala` file is opened.
 
-**Plugin features (local, no LSP needed):**
-- Full ANTLR-based parser with complete PSI tree
-- Syntax highlighting (keywords, types, strings, comments, operators, built-in functions, std types)
-- Semantic annotator, code folding, brace matching, structure view
-- 12 live templates (`func`, `val`, `var`, `match`, `if`, `for`, `sealed`, `struct`, `lambda`, `main`, `println`, `sinterp`)
-
-**LSP features (via `gala lsp`):**
-- Real-time diagnostics (parse errors, transpilation errors, unused variables, match exhaustiveness)
-- Hover with type signatures, fields, methods, sealed cases, built-in docs
-- Go to Definition (cross-file via analyzer metadata, local declarations, pattern bindings, named-arg fields)
-- Find References (same-file occurrences)
-- Completion (type-aware dot completion, named-arg fields, sealed case patterns with destructuring, keywords, built-ins)
-- Inlay hints from the transpiler's `VarTypes` for all declarations
-- Debounced analysis (500ms) to stay quiet while typing
+The plugin works locally (ANTLR parser, semantic highlighting, structure view, 12 live templates). The LSP server (`gala lsp`) adds real-time diagnostics including match-exhaustiveness, hover types, cross-file go-to-definition, type-aware completion, and inlay hints — for VS Code and Neovim too. Full feature list: [IDE Support](https://martianoff.github.io/gala/features/ide-support/).
 
 ### VS Code
 
