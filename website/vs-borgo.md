@@ -74,14 +74,6 @@ GALA ships a GoLand/IntelliJ plugin and an LSP server (`gala lsp`) for VS Code a
 
 ---
 
-## Where Borgo still deserves credit
-
-- **The framing.** "Rust on Go" was a clean, one-line pitch that made the value obvious. GALA's "Scala on Go" owes a debt to that clarity.
-- **The playground-first landing page.** Letting people run the language in the browser before installing anything was the right instinct — GALA does the same with its [playground](https://gala-playground.fly.dev).
-- **Surfacing the demand.** The thousands of developers who starred Borgo proved the appetite for a more expressive language on the Go runtime. That appetite is exactly what GALA is trying to serve — with the maintenance, license, and tooling to make it usable.
-
----
-
 ## If you came from Borgo
 
 The concepts transfer directly — you already think in sum types and pattern matching. The syntax is Scala-flavored rather than Rust-flavored, and the surrounding pieces (deps, stdlib, IDE) are there. The fastest way to see whether it fits:
