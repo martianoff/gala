@@ -84,6 +84,10 @@ genrule(
         # concurrent package - GALA source
         "//concurrent:future.gala",
         "//concurrent:event_bus.gala",
+        # validation package - transpiled Go
+        "//validation:validated_go",
+        # validation package - GALA source
+        "//validation:validated.gala",
         # stream package - transpiled Go
         "//stream:stream_go",
         # stream package - GALA source

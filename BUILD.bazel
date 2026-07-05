@@ -49,6 +49,7 @@ exports_files(
 # gazelle:exclude subprocess
 # gazelle:exclude test
 # gazelle:exclude time_utils
+# gazelle:exclude validation
 # gazelle:exclude yaml
 # gazelle:exclude tools/toolchain
 # The internal Go tooling imports the excluded stdlib go_libraries; since those
@@ -57,6 +58,7 @@ exports_files(
 # gazelle:resolve go martianoff/gala/collection_immutable //collection_immutable
 # gazelle:resolve go martianoff/gala/collection_mutable //collection_mutable
 # gazelle:resolve go martianoff/gala/concurrent //concurrent
+# gazelle:resolve go martianoff/gala/validation //validation
 # gazelle:resolve go martianoff/gala/crypto //crypto
 # gazelle:resolve go martianoff/gala/fs //fs
 # gazelle:resolve go martianoff/gala/io //io
@@ -126,6 +128,7 @@ filegroup(
         "//std:tuple.gala",
         "//stream:stream.gala",
         "//strings:gala_sources",
+        "//validation:gala_sources",
         "//time_utils:gala_sources",
     ],
     visibility = ["//visibility:public"],

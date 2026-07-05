@@ -1,0 +1,51 @@
+package main
+
+import (
+    . "martianoff/gala/test"
+    . "martianoff/gala/validation"
+)
+
+// === Zip2: accumulation vs fail-fast ===
+
+func TestValidatedZip2BothValid(t T) T {
+    val r = Valid[string, int](1).Zip2(Valid[string, int](2))
+    val t1 = IsTrue(t, r.IsValid())
+    return Eq[int](t1, r.GetErrors().Size(), 0)
+}
+
+func TestValidatedZip2OneInvalid(t T) T {
+    val r = Valid[string, int](1).Zip2(InvalidOf[string, int]("bad"))
+    val t1 = IsTrue(t, r.IsInvalid())
+    return Eq[int](t1, r.GetErrors().Size(), 1)
+}
+
+func TestValidatedZip2AccumulatesBoth(t T) T {
+    val r = InvalidOf[string, int]("e1").Zip2(InvalidOf[string, int]("e2"))
+    val t1 = IsTrue(t, r.IsInvalid())
+    return Eq[int](t1, r.GetErrors().Size(), 2)
+}
+
+// === Zip3: accumulates across all three ===
+
+func TestValidatedZip3AllValid(t T) T {
+    val r = Valid[string, int](1).Zip3(Valid[string, int](2), Valid[string, int](3))
+    return IsTrue(t, r.IsValid())
+}
+
+func TestValidatedZip3AccumulatesAll(t T) T {
+    val r = InvalidOf[string, int]("a").Zip3(InvalidOf[string, int]("b"), InvalidOf[string, int]("c"))
+    val t1 = IsTrue(t, r.IsInvalid())
+    return Eq[int](t1, r.GetErrors().Size(), 3)
+}
+
+// === FlatMap is fail-fast (monadic), Map transforms ===
+
+func TestValidatedFlatMapFailFast(t T) T {
+    val r = InvalidOf[string, int]("x").FlatMap((n) => Valid[string, int](n + 1))
+    return IsTrue(t, r.IsInvalid())
+}
+
+func TestValidatedMap(t T) T {
+    val r = Valid[string, int](10).Map((n) => n * 2)
+    return Eq[int](t, r.GetOrElse(0), 20)
+}
