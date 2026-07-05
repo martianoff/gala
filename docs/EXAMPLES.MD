@@ -460,11 +460,52 @@ func main() {
     val dir = Try(os.TempDir)
 
     // Lambda form (use when args needed)
-    val result = Try(() => os.MkdirAll("/tmp/test", 0755))
+    val result = Try(os.MkdirAll("/tmp/test", 0755))
 
     dir.OnSuccess((d) => Println(s"Temp dir: $d"))
 }
 ```
+
+## By-Name Arguments (Thunk Sugar)
+
+When a parameter's expected type is a zero-arg function (`func() T`), you can pass
+a bare expression — it is lifted into `() => expr` and evaluated lazily on each
+call. This is what lets the async `Future` constructor read like a direct call:
+
+```gala
+package main
+
+import . "martianoff/gala/concurrent"
+
+func double(n int) int = n * 2
+
+// A plain function whose parameter is a zero-arg function.
+func runTwice(body func() int) int = body() + body()
+
+func main() {
+    // Bare expression lifted to a thunk: runTwice(double(21)).
+    Println(runTwice(double(21))) // 84 (double(21) evaluated on each body() call)
+
+    // Headline case: Future(expr) == Future(() => expr); T inferred from the body.
+    val f = Future(double(50))
+    Println(f.Get()) // 100
+
+    // The explicit lambda form remains valid and equivalent.
+    val g = Future(() => double(50))
+    Println(g.Get()) // 100
+}
+```
+
+Output:
+```
+84
+100
+100
+```
+
+An argument that is already a function value is passed through untouched (never
+double-wrapped), and multi-argument function parameters still require an explicit
+lambda.
 
 ## Try with Go Multi-Return Functions
 
@@ -478,21 +519,21 @@ import "strconv"
 
 func main() {
     // (int, error) -> Try[int]
-    val intResult = Try(() => strconv.Atoi("42")) match {
+    val intResult = Try(strconv.Atoi("42")) match {
         case Success(n) => s"Parsed: $n"
         case Failure(err) => s"Error: ${err.Error()}"
     }
     Println(intResult) // Parsed: 42
 
     // (string, string, error) -> Try[Tuple[string, string]]
-    val hostPort = Try(() => net.SplitHostPort("localhost:8080")) match {
+    val hostPort = Try(net.SplitHostPort("localhost:8080")) match {
         case Success(hp) => s"host=${hp.V1} port=${hp.V2}"
         case Failure(err) => s"Error: ${err.Error()}"
     }
     Println(hostPort) // host=localhost port=8080
 
     // Error case is caught as Failure
-    val bad = Try(() => net.SplitHostPort("invalid")) match {
+    val bad = Try(net.SplitHostPort("invalid")) match {
         case Success(hp) => s"host=${hp.V1} port=${hp.V2}"
         case Failure(_) => "split error caught"
     }

@@ -323,6 +323,40 @@ func main() {
 }
 ```
 
+#### By-Name Arguments (Thunk Sugar)
+When a parameter's expected type is a **zero-arg** function type (`func() T` or
+the void `func()`), you may pass a plain expression where a lambda is expected.
+The expression is automatically lifted into `() => expr`, so it is evaluated
+lazily — each time the thunk is invoked — instead of eagerly at the call site:
+
+```gala
+func runTwice(body func() int) int = body() + body()
+
+func main() {
+    // These two calls are identical — the bare expression is lifted to a thunk.
+    val a = runTwice(compute())        // sugar: compute() runs on each body() call
+    val b = runTwice(() => compute())  // explicit lambda
+
+    // The headline case — the async constructor takes a `func() T`:
+    val f = Future(loadFromDB(id))     // same as Future(() => loadFromDB(id))
+    val g = Future[int](expensive())   // T may be explicit or inferred from the body
+}
+```
+
+The element type `T` is inferred from the lifted expression's own type, so
+`Future(compute())` where `compute() int` yields a `Future[int]`.
+
+This sugar is purely additive: it only applies where a `func() T` is expected
+(passing a bare `T` there would otherwise be a type error), and an argument that
+is *already* a function value is passed through untouched — never double-wrapped.
+For multi-argument function parameters (`func(a, b) T`) you must still write an
+explicit lambda; only zero-arg function parameters accept a bare expression.
+
+Related: a zero-arg *function reference* can likewise be passed directly (the
+"Function reference sugar" under Error Handling, e.g. `Try(os.TempDir)`). The
+difference is that a reference passes the existing function value, whereas
+by-name sugar wraps an arbitrary expression in a fresh thunk.
+
 ### Variadic Functions
 GALA supports variadic functions using the `...T` syntax, allowing functions to accept a variable number of arguments. The variadic parameter must be the last parameter.
 
@@ -1384,11 +1418,15 @@ sealed type Try[T any] {
 val success = Success(42)
 val failure = Failure[int](NoSuchElementError(Message = "not found"))
 
-// Try: safely execute code that may panic
-val result = Try(() => riskyDivide(10, 0))  // Failure (catches panic)
-val safe = Try(() => riskyDivide(10, 2))    // Success(5)
+// Try: safely execute code that may panic. Try's parameter is a `func() T`
+// thunk, so by the by-name sugar (see §3, By-Name Arguments) a bare expression
+// is lifted into `() => expr` and run lazily inside Try — no explicit lambda:
+val result = Try(riskyDivide(10, 0))  // same as Try(() => riskyDivide(10, 0)) — Failure (catches panic)
+val safe = Try(riskyDivide(10, 2))    // Success(5)
+val parsed = Try(strconv.Atoi("42"))  // (T, error) auto-wrapped — Success(42)
 
-// Function reference sugar: pass a zero-arg function directly (no lambda needed)
+// Function reference sugar: when the body is exactly a zero-arg call, pass the
+// function itself for the most concise form.
 val dir = Try(os.TempDir)               // same as Try(() => os.TempDir())
 val answer = Try(getAnswer)             // works with GALA functions too
 
@@ -1465,7 +1503,7 @@ detects the error return and wraps the call so that a non-nil error becomes `Fai
 ```gala
 import "strconv"
 
-val result = Try(() => strconv.Atoi("42")) match {
+val result = Try(strconv.Atoi("42")) match {
     case Success(n) => s"Parsed: $n"
     case Failure(err) => s"Error: ${err.Error()}"
 }
@@ -1480,7 +1518,7 @@ import "net"
 
 // net.SplitHostPort returns (string, string, error)
 // Try wraps it as Try[Tuple[string, string]]
-val result = Try(() => net.SplitHostPort("localhost:8080")) match {
+val result = Try(net.SplitHostPort("localhost:8080")) match {
     case Success(hp) => s"host=${hp.V1} port=${hp.V2}"
     case Failure(err) => s"Error: ${err.Error()}"
 }
@@ -1504,7 +1542,7 @@ tuple wrapping. Access tuple fields via `.V1`, `.V2`, etc. Supported patterns:
 
 ```gala
 // Function returning a Future — use Future[T]
-func fetchUser(id int) Future[User] = Future[User](() => loadFromDB(id))
+func fetchUser(id int) Future[User] = Future[User](loadFromDB(id))
 
 // Struct with a Future field — use Future[T]
 type AsyncResult struct {
@@ -1512,16 +1550,20 @@ type AsyncResult struct {
 }
 ```
 
-The async constructor is the type name itself: `Future[T](() => body)` runs body
-asynchronously on `GlobalEC()`. With `val` and type inference, the type is
-inferred automatically:
+The async constructor is the type name itself: `Future[T](body)` runs body
+asynchronously on `GlobalEC()`. Its parameter is a `func() T` thunk, so by the
+by-name sugar (see §3, By-Name Arguments) a bare expression is lifted into
+`() => expr` — `Future(loadFromDB(id))` means `Future(() => loadFromDB(id))` and
+defers the work onto the execution context rather than running it eagerly at the
+call site. With `val` and type inference, the type parameter is inferred from the
+body automatically (`Future(expr)` needs no explicit `[T]`):
 
 ```gala
 import . "martianoff/gala/concurrent"
 
 // Create Futures — type is inferred as Future[T]
 val immediate = FutureOf[int](42)                    // Already completed with value
-val async = Future[int](() => expensiveComputation())  // Runs asynchronously
+val async = Future[int](expensiveComputation())  // Runs asynchronously
 
 // Blocking operations
 val result = async.Await()           // Returns Try[int]
@@ -1789,7 +1831,7 @@ import "martianoff/gala/io"
 val pure = io.Of(42)
 
 // Lazy thunk (panics caught as Failure)
-val suspended = io.Suspend(() => expensiveComputation())
+val suspended = io.Suspend(expensiveComputation())
 
 // Failing IO
 val failing = io.Fail[int](errors.New("boom"))

@@ -13,6 +13,7 @@ type callContext struct {
 	funcMeta        *transpiler.FunctionMetadata // non-nil for function calls
 	applyMethodMeta *transpiler.MethodMetadata   // non-nil for companion-Apply calls (Type[T](args))
 	applyTypeSubst  map[string]string            // type-param substitutions derived from Type[T]'s indices
+	applyTypeParams []string                     // the companion type's own type-param names (for masking unresolved Apply param types)
 	typeSubst       map[string]string            // generic type param substitutions (type param name -> concrete type string)
 	goParamTypes    []transpiler.Type            // Go type info fallback param types (for Go-defined functions)
 	structFields    []transpiler.Type            // struct construction fallback field types
@@ -90,13 +91,30 @@ func (t *galaASTTransformer) resolveExpectedArgType(ctx callContext, argIdx int)
 		return transpiler.NilType{}
 	}
 
-	// Companion-Apply path: Type[T](args) where Type has Apply.  Only
-	// propagate if we have concrete substitutions for the type params —
-	// otherwise passing `func() T` with unresolved T through to the lambda
-	// breaks downstream inference (the lambda would emit a literal `T`
-	// return type instead of inferring from its body).
-	if ctx.applyMethodMeta != nil && len(ctx.applyTypeSubst) > 0 && argIdx < len(ctx.applyMethodMeta.ParamTypes) {
-		return t.substituteTranspilerTypeParams(ctx.applyMethodMeta.ParamTypes[argIdx], ctx.applyTypeSubst)
+	// Companion-Apply path: Type[T](args) where Type has Apply.
+	if ctx.applyMethodMeta != nil && argIdx < len(ctx.applyMethodMeta.ParamTypes) {
+		paramType := ctx.applyMethodMeta.ParamTypes[argIdx]
+		// With concrete substitutions for the type params, substitute and return.
+		if len(ctx.applyTypeSubst) > 0 {
+			return t.substituteTranspilerTypeParams(paramType, ctx.applyTypeSubst)
+		}
+		// Without them (e.g. `Future(doSomething())` with no explicit type
+		// arg), a bare `func() T` cannot be propagated verbatim: a lambda
+		// argument would emit a literal `T` return type instead of inferring
+		// from its body. Instead propagate a *masked* function type whose
+		// type-param-bearing results become NilType. A lambda then still
+		// self-infers (typeToExpr(NilType) -> `any`, isConcreteExpectedType
+		// stays false), while a bare-expression argument is recognized as
+		// targeting a zero-arg function type and lifted into a thunk by
+		// transformArgumentWithExpectedType. Mirrors the generic-funcMeta
+		// masking in resolveExpectedFuncArgType below.
+		if ft, ok := paramType.(transpiler.FuncType); ok &&
+			!funcTypeParamsMentionTypeParams(ft.Params, ctx.applyTypeParams) {
+			return transpiler.FuncType{
+				Params:  ft.Params,
+				Results: maskTypeParamResults(ft.Results, ctx.applyTypeParams),
+			}
+		}
 	}
 
 	// Function call path

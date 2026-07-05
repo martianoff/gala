@@ -196,8 +196,8 @@ val success = Success(42)
 val failure = Failure[int](fmt.Errorf("oops"))
 
 // Wrapping a failable computation — catches panics
-val result = Try(() => riskyDivide(10, 0))     // Failure
-val safe = Try(() => riskyDivide(10, 2))       // Success(5)
+val result = Try(riskyDivide(10, 0))     // Failure
+val safe = Try(riskyDivide(10, 2))       // Success(5)
 
 // Function reference sugar — no lambda needed for zero-arg functions
 val dir = Try(os.TempDir)

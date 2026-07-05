@@ -203,6 +203,29 @@ func main() {
 }
 ```
 
+### By-Name Arguments (Thunk Sugar)
+When a parameter's expected type is a **zero-arg** function type (`func() T` or
+void `func()`), you can pass a plain expression where a lambda is expected — it
+is automatically lifted into `() => expr` and evaluated lazily each time the
+thunk is called. This is what lets `Try` and `Future` read like direct calls:
+
+```gala
+func runTwice(body func() int) int = body() + body()
+
+func main() {
+    val a = runTwice(compute())        // sugar — lifted to () => compute()
+    val b = runTwice(() => compute())  // explicit form; identical
+
+    val f = Future(loadFromDB(id))     // same as Future(() => loadFromDB(id))
+    val r = Try(strconv.Atoi("42"))    // same as Try(() => strconv.Atoi("42"))
+}
+```
+
+The type parameter is inferred from the lifted expression's own type
+(`Future(compute())` where `compute() int` yields `Future[int]`). The lift is
+purely additive: an argument that is already a function value is passed through
+untouched, and multi-argument function parameters still require an explicit lambda.
+
 ### Variadic Functions
 ```gala
 func sum(numbers ...int) int {
@@ -430,8 +453,9 @@ val msg = e match {
 
 ### Try Monad
 ```gala
-val result = Try(() => riskyDivide(10, 0))
-val dir = Try(os.TempDir)  // function reference sugar
+val result = Try(riskyDivide(10, 0))  // by-name sugar: runs () => riskyDivide(...) lazily
+val parsed = Try(strconv.Atoi("42"))  // Go (T, error) auto-wrapped
+val dir = Try(os.TempDir)             // function reference sugar (bare zero-arg call)
 
 val msg = result match {
     case Success(n) => s"Got: $n"
@@ -443,7 +467,7 @@ val msg = result match {
 ```gala
 import . "martianoff/gala/concurrent"
 
-val async = Future[int](() => expensiveComputation())
+val async = Future[int](expensiveComputation())  // by-name: runs () => expensiveComputation() async
 val result = async.Await()           // Returns Try[int]
 val doubled = async.Map((v) => v * 2)
 ```

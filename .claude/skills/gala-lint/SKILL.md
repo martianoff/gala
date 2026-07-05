@@ -57,7 +57,7 @@ Present findings in the output format specified at the end.
 | IsXxx() chains on sealed type | `if s.IsCircle() { ... } else if s.IsRectangle() { ... }` | `s match { case Circle(r) => ... case Rectangle(w, h) => ... }` |
 | If-err-nil on Go error return | `val x, err = f(); if err == nil { ... }` | Wrap with `Try(f)` (if f takes no args) or `Try(() => f(args))` then use `.Map`, `.GetOrElse`, or `match` |
 | Sequential if-err-nil fallback | Multiple `val x, err = f(); if err == nil { return x }` in sequence | `Try(f1).OrElse(Try(f2))` chain (or `Try(() => f1(args)).OrElse(Try(() => f2(args)))` if args needed) |
-| Lambda wrapper for zero-arg func | `Try(() => f())` where f takes no arguments | `Try(f)` — pass function reference directly |
+| Lambda wrapper for zero-arg func | `Try(() => f())` where f takes no arguments | `Try(f)` — pass function reference directly (for any other single-expression body, drop `() =>` instead — see rule 11e) |
 
 ### 3. Sealed Types (HIGH priority)
 
@@ -356,7 +356,7 @@ func createServer(host string, port int = 8080, tls bool = true, maxConnections 
 | Redundant collection types | `ListOf[int](1, 2, 3)` | `ListOf(1, 2, 3)` |
 | Redundant single-param struct constructor | `Box[int](Value = 42)` | `Box(Value = 42)` (type inferred from named field value) |
 | Redundant generic function call type params | `Try[int](() => { return 1 })` | `Try(() => { return 1 })` (type inferred from lambda return) |
-| Unnecessary lambda for zero-arg func | `Try(() => os.TempDir())` | `Try(os.TempDir)` — pass function reference directly when func takes no args |
+| Unnecessary lambda for zero-arg func | `Try(() => os.TempDir())` | `Try(os.TempDir)` — pass function reference directly when func takes no args; for any other single-expression body drop `() =>` (see rule 11e) |
 | Redundant generic function call type params | `NewCons[int](head, tail)` | `NewCons(head, tail)` (type inferred from arguments) |
 | Redundant lambda param type | `list.Map((x int) => x * 2)` | `list.Map((x) => x * 2)` (type inferred from method signature) |
 | Redundant method type param | `list.Map[int]((x) => x * 2)` | `list.Map((x) => x * 2)` (Go infers from lambda) |
@@ -720,6 +720,60 @@ Rationale: `val _ = ...` adds noise without expressing any intent the bare expre
 **Void-lambda exception.** Inside a lambda whose body is `func()` (no return), the analyzer rejects bare `error`-returning calls — error: "cannot discard error return from X — use FromError(X) to handle the error". Use `FromError(call())` from `std`: it returns `Try[Void]` and can itself stand as a bare statement (or chain `.OnFailure((err) => ...)`). Function-body bare calls are unaffected.
 
 **If bare-statement form does not transpile elsewhere** — that is a **transpiler bug**, not a license to keep `val _ =`. Open a repro test against the transpiler and fix the bug. Per CLAUDE.md rule 6, never work around transpiler bugs.
+
+### 11e. By-Name Argument Sugar for Zero-Arg Thunks (MEDIUM priority)
+
+When a parameter's expected type is a **zero-arg** function type (`func() T`, or
+void `func()`), a bare expression can be passed instead of an explicit `() => expr`
+lambda — the transpiler lifts it into a thunk automatically (`f(expr)` means
+`f(() => expr)`). Prefer the bare-expression form; it strips ceremony from the
+most common `Try` and `Future` call sites while preserving the lazy, panic/error-
+catching semantics.
+
+| Issue | Pattern to Flag | Recommended Fix |
+|-------|-----------------|-----------------|
+| Zero-arg lambda wrapping a single expression | `Try(() => strconv.Atoi(s))` | `Try(strconv.Atoi(s))` |
+| Zero-arg lambda for a Future body | `Future(() => compute())` / `Future[int](() => compute())` | `Future(compute())` / `Future[int](compute())` |
+| Zero-arg lambda over a Go `(T, error)` call | `Try(() => os.ReadFile(p))` | `Try(os.ReadFile(p))` — the error is still caught as `Failure` |
+| Zero-arg lambda in any thunk param | `FutureOn(() => compute(), pool)` | `FutureOn(compute(), pool)` |
+
+**Preferred forms, most concise first:**
+1. **Bare function reference** — when the lambda body is *exactly* a call to a
+   zero-arg function with no other arguments, pass the reference (see rules 2 and
+   11): `Try(() => os.TempDir())` → `Try(os.TempDir)`.
+2. **Bare expression (by-name sugar)** — for every other single-expression body,
+   drop the `() =>`: `Try(() => f(x))` → `Try(f(x))`, `Future(() => a * b)` →
+   `Future(a * b)`.
+
+**Check**: Grep for `(() => ` — an open paren immediately followed by a zero-arg
+lambda (empty parameter list). When the lambda body is a **single expression**
+(the char after `=>` is not `{`), flag it and remove the `() => `. Applies to
+`Try`, `Future`, `FutureOn`, and any call whose argument is a zero-parameter
+lambda.
+
+**Do NOT flag** (keep the explicit lambda):
+- **Block bodies** — `Future(() => { setup(); compute() })` cannot be desugared;
+  only single-expression lambdas convert.
+- **Lambdas with parameters** — `xs.Map((x) => x * 2)` is a `func(T) U`, not a
+  zero-arg thunk. This rule is strictly about `() =>` (empty parameter list).
+- **A body that is itself a function value** — e.g. `schedule(() => makeHandler())`
+  where `makeHandler()` returns a `func()`. Dropping `() =>` would pass the inner
+  function through directly (the sugar never re-wraps an existing function value),
+  changing meaning. Keep the lambda when the body's own type is a zero-arg function.
+
+**Good pattern**:
+```gala
+val parsed = Try(strconv.Atoi(input))   // was Try(() => strconv.Atoi(input))
+val result = Try(riskyDivide(10, 2))    // was Try(() => riskyDivide(10, 2))
+val async  = Future(loadFromDB(id))     // was Future(() => loadFromDB(id))
+val onPool = FutureOn(compute(), pool)  // was FutureOn(() => compute(), pool)
+```
+
+**Bad pattern** — redundant zero-arg lambda wrapper:
+```gala
+val parsed = Try(() => strconv.Atoi(input))
+val async  = Future(() => loadFromDB(id))
+```
 
 ### 12. Naming Conventions (LOW priority)
 

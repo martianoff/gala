@@ -120,6 +120,13 @@ gala_exec_test(
     expected = "typed_val_lambda_inference.out",
 )
 
+gala_exec_test(
+    name = "expr_as_thunk_sugar",
+    src = "expr_as_thunk_sugar.gala",
+    expected = "expr_as_thunk_sugar.out",
+    deps = ["//concurrent"],
+)
+
 
 gala_exec_test(
     name = "octal_binary_literals",

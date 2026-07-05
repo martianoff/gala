@@ -211,7 +211,7 @@ val dir = Try(os.TempDir)
     .GetOrElse("/tmp/myapp")
 
 // Try with arguments uses a lambda
-val num = Try(() => strconv.Atoi(input))
+val num = Try(strconv.Atoi(input))
     .OnFailure((e) => { Println(s"Parse failed: ${e.Error()}") })
     .GetOrElse(0)
 
@@ -228,8 +228,8 @@ Side-effect methods (`OnSuccess`/`OnFailure`, `OnSome`/`OnNone`, `OnRight`/`OnLe
 
 ```gala
 func findBinary() Option[string] =
-    Try(() => exec.LookPath("gala"))
-        .OrElse(Try(() => exec.LookPath("gala.exe")))
+    Try(exec.LookPath("gala"))
+        .OrElse(Try(exec.LookPath("gala.exe")))
         .OnSuccess((p) => { Println(s"Found binary: $p") })
         .OnFailure((e) => { Println("Binary not found") })
         .ToOption()
@@ -341,7 +341,7 @@ import "encoding/json"
 val dir = Try(os.TempDir)
 
 // Go multi-return functions are handled automatically
-val result = Try(() => json.Marshal(data))
+val result = Try(json.Marshal(data))
     .Map((bytes) => string(bytes))
     .GetOrElse("{}")
 

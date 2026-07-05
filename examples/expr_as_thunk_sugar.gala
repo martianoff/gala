@@ -1,0 +1,43 @@
+package main
+
+import (
+    . "martianoff/gala/std"
+    . "martianoff/gala/concurrent"
+    "strconv"
+)
+
+// By-name / thunk sugar: when a parameter's expected type is a zero-arg
+// function type `func() T`, a bare expression argument is automatically lifted
+// into `() => expr`. So `f(expr)` means `f(() => expr)` wherever `f` expects a
+// thunk. The expression is evaluated lazily — each time the thunk is invoked —
+// exactly as if the caller had written the lambda by hand.
+
+func double(n int) int = n * 2
+
+// A plain (non-generic) function whose parameter is a zero-arg function.
+// `runTwice(double(21))` desugars to `runTwice(() => double(21))`, so the body
+// is evaluated on every call: 42 + 42 = 84.
+func runTwice(body func() int) int = body() + body()
+
+// riskyDivide panics on division by zero; Try turns that panic into a Failure.
+func riskyDivide(a int, b int) int = a / b
+
+func main() {
+    // Bare expression lifted into a thunk for a non-generic function param.
+    Println(runTwice(double(21)))
+
+    // The headline case: a companion Apply whose parameter is `func() T`.
+    // `Future(double(50))` means `Future(() => double(50))`, and T is inferred
+    // to int from the lifted thunk's result type.
+    Println(Future(double(50)).Get())
+
+    // Try with the sugar — no explicit `() =>` needed. The expression runs
+    // lazily inside Try, so a panic is caught as a Failure.
+    Println(Try(riskyDivide(10, 2)).GetOrElse(-1)) // 5
+    Println(Try(riskyDivide(10, 0)).GetOrElse(-1)) // -1 (panic caught)
+
+    // Try over a Go `(T, error)` call: the error is converted to a panic and
+    // caught, just as with the explicit `Try(() => strconv.Atoi(...))` form.
+    Println(Try(strconv.Atoi("42")).GetOrElse(-1))  // 42
+    Println(Try(strconv.Atoi("abc")).GetOrElse(-1)) // -1 (parse error caught)
+}

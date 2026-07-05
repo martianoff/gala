@@ -73,7 +73,7 @@ Or wrap them in `Try` for monadic error handling:
 import "os"
 import . "martianoff/gala/std"
 
-val result = Try(() => os.Getwd())
+val result = Try(os.Getwd())
 val dir = result.GetOrElse("/tmp")
 ```
 
@@ -110,7 +110,7 @@ A function returning `(T, error)` — like `uuid.Parse(string) (uuid.UUID, error
 ```gala
 import "github.com/google/uuid"
 
-func describe(s string) string = Try(() => uuid.Parse(s)) match {
+func describe(s string) string = Try(uuid.Parse(s)) match {
     case Success(id) => s"valid: ${id.String()}"
     case Failure(_)  => s"invalid: $s"
 }
