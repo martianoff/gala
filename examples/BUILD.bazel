@@ -209,6 +209,18 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
+# Regression: placeholder-lambda `_.Field` must be equivalent to the explicit
+# lambda `(p) => p.Field`, including the Immutable field auto-unwrap. Prior to
+# the fix `_.Name` bound `_` to `any`, hiding the struct metadata from the
+# field-access transform, so it leaked Array[Immutable[string]] (printed as
+# {Alice}) instead of Array[string] (Alice).
+gala_exec_test(
+    name = "placeholder_field_unwrap",
+    src = "placeholder_field_unwrap.gala",
+    expected = "placeholder_field_unwrap.out",
+    deps = ["//collection_immutable"],
+)
+
 # Regression: empty collection literal as parameter default
 # (Array[T] = EmptyArray[T](), HashMap[K,V] = EmptyHashMap[K,V]()) must be
 # filled in at call sites that omit the defaulted arg. Prior to the fix the

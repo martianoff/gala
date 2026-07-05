@@ -1,0 +1,25 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// Shorthand struct: every field gets `val`/Immutable semantics, so field
+// access must auto-unwrap the Immutable[T] wrapper via .Get().
+struct Person(Name string, Age int)
+
+func main() {
+    val people = ArrayOf(Person(Name = "Alice", Age = 30), Person(Name = "Bob", Age = 25))
+
+    // Placeholder shorthand `_.Field` MUST behave exactly like the explicit
+    // lambda `(p) => p.Field`, including the Immutable auto-unwrap. Both must
+    // print unwrapped values (Alice, Bob), not wrapped ({Alice}, {Bob}).
+    val namesPlaceholder = people.Map(_.Name)
+    val namesExplicit = people.Map((p) => p.Name)
+    Println(namesPlaceholder.String())
+    Println(namesExplicit.String())
+
+    // Same for a non-string (int) field.
+    val agesPlaceholder = people.Map(_.Age)
+    val agesExplicit = people.Map((p) => p.Age)
+    Println(agesPlaceholder.String())
+    Println(agesExplicit.String())
+}
