@@ -30,6 +30,8 @@ sealedCaseField: identifier type;
 declaration
     : valDeclaration
     | varDeclaration
+    | bindDeclaration
+    | alsoDeclaration
     | functionDeclaration
     | typeDeclaration
     | importDeclaration
@@ -54,6 +56,12 @@ methodSpec: identifier (typeParameters)? signature;
 
 valDeclaration: 'val' (tuplePattern | identifierList) (type)? '=' expressionList;
 varDeclaration: 'var' (tuplePattern | identifierList) (type)? ('=' expressionList)?;
+
+// Monadic binding (do-notation). Legal only inside a block whose result type is
+// a bindable monad. `also` must follow a `bind`/`also` in the same block; that
+// ordering is enforced in the transformer, not the grammar, for better errors.
+bindDeclaration: BIND identifier (type)? '=' expression;
+alsoDeclaration: ALSO identifier (type)? '=' expression;
 
 // Tuple pattern for destructuring: val (a, b) = tuple
 tuplePattern: '(' identifierList ')';
@@ -235,6 +243,8 @@ literal
 // Lexer
 VAL: 'val';
 VAR: 'var';
+BIND: 'bind';
+ALSO: 'also';
 FUNC: 'func';
 TYPE: 'type';
 STRUCT: 'struct';

@@ -205,6 +205,44 @@ func dispatch(m string, n int) Tuple[string, int] = n match {
 val t = (1, 2,)`,
 			wantErr: false,
 		},
+		{
+			name: "bind declaration in a block",
+			input: `package main
+
+func f() Try[int] {
+	bind a = g()
+	Success(a)
+}`,
+			wantErr: false,
+		},
+		{
+			name: "bind followed by also in a block",
+			input: `package main
+
+func f() Validated[Errs, Form] {
+	bind a = va()
+	also b = vb()
+	Form(a, b)
+}`,
+			wantErr: false,
+		},
+		{
+			name: "bind with explicit unwrapped type",
+			input: `package main
+
+func f() Try[int] {
+	bind a int = g()
+	Success(a)
+}`,
+			wantErr: false,
+		},
+		{
+			name: "bind not allowed at top level",
+			input: `package main
+
+bind x = foo()`,
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
