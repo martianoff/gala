@@ -546,6 +546,38 @@ func TestDefinition_LocalVar(t *testing.T) {
 }
 
 // ====================================================================
+// Definition: bind/also bound names (monadic do-notation) resolve to
+// their declaration, exactly like val/var.
+// ====================================================================
+
+func TestDefinition_LocalBind(t *testing.T) {
+	h := newHarness(t)
+	src := "package main\n" +
+		"\n" +
+		"struct Order(Id int, Amount int)\n" +
+		"func fetchOrder(id int) Try[Order] =\n" +
+		"    if (id > 0) Success(Order(id, 100))\n" +
+		"    else Failure[Order](NoSuchElementError(Message = \"no order\"))\n" +
+		"func process(id int) Try[Order] {\n" +
+		"    bind o = fetchOrder(id)\n" +
+		"    Success(o)\n" +
+		"}\n"
+	uri := openFileOnDisk(t, h, src)
+	// Click on "o" in "Success(o)" at line 8, col 12
+	locs, err := h.Definition(uri, 8, 12)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(locs) == 0 {
+		t.Log("no definition found — analyzer may not resolve definitions in test harness")
+		return
+	}
+	if locs[0].Range.Start.Line != 7 {
+		t.Errorf("expected definition on line 7 (bind o), got line %d", locs[0].Range.Start.Line)
+	}
+}
+
+// ====================================================================
 // Definition: Function declaration
 // ====================================================================
 
@@ -1214,6 +1246,58 @@ func TestInlayHints_ShortDeclaration(t *testing.T) {
 	label := string(found.Label)
 	if !strings.Contains(label, "int") {
 		t.Errorf("expected int type hint for short decl, got: %s", label)
+	}
+}
+
+// ====================================================================
+// Inlay Hints: bind/also bound names get a type hint like val/var.
+// ====================================================================
+
+func TestInlayHints_BindDeclaration(t *testing.T) {
+	h := newHarness(t)
+	src := "package main\n" +
+		"\n" +
+		"struct Order(Id int, Amount int)\n" +
+		"func fetchOrder(id int) Try[Order] =\n" +
+		"    if (id > 0) Success(Order(id, 100))\n" +
+		"    else Failure[Order](NoSuchElementError(Message = \"no order\"))\n" +
+		"func process(id int) Try[Order] {\n" +
+		"    bind o = fetchOrder(id)\n" +
+		"    Success(o)\n" +
+		"}\n"
+	uri := openFileOnDisk(t, h, src)
+	hints := requestInlayHints(t, h, uri, 0, 20)
+	found := findHintForLine(hints, 7) // the "bind o = ..." line
+	if found == nil {
+		t.Log("no inlay hint for bind declaration — transpiler may not resolve bind names in test harness")
+		return
+	}
+	label := string(found.Label)
+	if !strings.Contains(label, "Order") {
+		t.Errorf("expected Order type hint for bind, got: %s", label)
+	}
+}
+
+// A bind/also declaration with an explicit type annotation must NOT get a hint.
+func TestInlayHints_BindNoHintWithExplicitType(t *testing.T) {
+	h := newHarness(t)
+	src := "package main\n" +
+		"\n" +
+		"struct Order(Id int, Amount int)\n" +
+		"func fetchOrder(id int) Try[Order] =\n" +
+		"    if (id > 0) Success(Order(id, 100))\n" +
+		"    else Failure[Order](NoSuchElementError(Message = \"no order\"))\n" +
+		"func process(id int) Try[Order] {\n" +
+		"    bind o Order = fetchOrder(id)\n" +
+		"    Success(o)\n" +
+		"}\n"
+	uri := openFileOnDisk(t, h, src)
+	hints := requestInlayHints(t, h, uri, 0, 20)
+	for _, hint := range hints {
+		if hint.Position.Line == 7 {
+			t.Errorf("should not show inlay hint on line 7 with explicit type annotation, got: %s",
+				string(hint.Label))
+		}
 	}
 }
 

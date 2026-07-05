@@ -35,6 +35,8 @@ class GalaFindUsagesProvider : FindUsagesProvider {
             is SealedCaseNode -> "case"
             is ValDeclarationNode -> "value"
             is VarDeclarationNode -> "variable"
+            is BindDeclarationNode -> "value"
+            is AlsoDeclarationNode -> "value"
             is StructShorthandDeclarationNode -> "struct"
             is MethodSpecNode -> "method"
             else -> "symbol"

@@ -13,6 +13,10 @@ import (
 
 var (
 	valDeclRegex     = regexp.MustCompile(`^\s*(val|var)\s+(\w+)\s*=`)
+	// bind/also bind a local name exactly like val/var. No trailing `=` here so
+	// the "explicit type annotation" check below can inspect what sits between
+	// the name and the `=` (e.g. `bind n Type = ...`).
+	bindDeclRegex = regexp.MustCompile(`^\s*(bind|also)\s+(\w+)\s*`)
 	shortDeclRegex   = regexp.MustCompile(`^\s*(\w+)\s*:=\s*`)
 	casePatternRegex = regexp.MustCompile(`^\s*case\s+(\w+)\(([^)]*)\)`)
 )
@@ -55,6 +59,23 @@ func (h *GalaHandler) InlayHint(ctx context.Context, params *lsp.InlayHintParams
 				between := strings.TrimSpace(line[m[5] : m[5]+eqIdx])
 				if between == "" {
 					// No explicit type — show hint from transpiler (scoped lookup)
+					if typStr := lookupVarType(varTypeMap, currentFunc, varName); typStr != "" {
+						hints = append(hints, makeTypeHint(i, m[5], typStr))
+					}
+				}
+			}
+		}
+
+		// bind/also declarations without explicit type. The transpiler records
+		// the bound name's inferred element type into the same VarTypes map, so
+		// these behave exactly like val/var for inlay hints.
+		if m := bindDeclRegex.FindStringSubmatchIndex(line); m != nil {
+			varName := line[m[4]:m[5]]
+			// Skip if has explicit type annotation (`bind n Type = ...`).
+			eqIdx := strings.Index(line[m[5]:], "=")
+			if eqIdx >= 0 {
+				between := strings.TrimSpace(line[m[5] : m[5]+eqIdx])
+				if between == "" {
 					if typStr := lookupVarType(varTypeMap, currentFunc, varName); typStr != "" {
 						hints = append(hints, makeTypeHint(i, m[5], typStr))
 					}
