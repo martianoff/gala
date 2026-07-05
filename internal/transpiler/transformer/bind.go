@@ -121,6 +121,76 @@ func collectBindGroup(stmts []grammar.IStatementContext) ([]bindEntry, []grammar
 	return group, stmts[i:]
 }
 
+// checkBindGroupIndependence rejects a clause that references a binding
+// introduced by a *sibling* clause of the same product group. A group is a
+// leading `bind` plus one or more `also` clauses; its clauses are evaluated
+// independently (concurrently for Future, error-accumulating for Validated), so
+// a sibling's bound value is genuinely not available. The clauses' RHS were
+// transformed before any group name was added to scope, so a same-group name
+// appearing in a clause can only be a forward reference — unless that name also
+// names a variable already in the enclosing scope (a legitimate outer binding
+// the sibling would merely shadow), which is left alone. Emitting a clear
+// diagnostic here replaces the raw Go "undefined: x" that the generated code
+// would otherwise produce far from the source.
+func (t *galaASTTransformer) checkBindGroupIndependence(group []bindEntry, prepped []preppedBind) error {
+	if len(group) < 2 {
+		return nil // a lone `bind` has no sibling to leak from.
+	}
+	for i := range group {
+		siblings := make(map[string]bool)
+		for j := range group {
+			if j == i {
+				continue
+			}
+			name := group[j].name
+			if name == "" || name == "_" || t.isNameInScope(name) {
+				continue
+			}
+			siblings[name] = true
+		}
+		if ref := firstReferencedName(prepped[i].recvExpr, siblings); ref != "" {
+			return t.semanticErrorAt(group[i].ctx,
+				"cannot reference `"+ref+"` here: clauses in a `bind`/`also` group are "+
+					"evaluated independently, so a binding from one clause is not in scope "+
+					"for its siblings. Move this clause to its own `bind` if it must see `"+ref+"`.")
+		}
+	}
+	return nil
+}
+
+// isNameInScope reports whether name resolves to a variable in the current
+// lexical scope chain. Group names are added to scope only after independence
+// checking, so during that check this distinguishes an outer binding from a
+// not-yet-bound same-group sibling.
+func (t *galaASTTransformer) isNameInScope(name string) bool {
+	for s := t.currentScope; s != nil; s = s.parent {
+		if _, ok := s.vals[name]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// firstReferencedName returns the first identifier in expr whose name is in
+// names, or "" if none.
+func firstReferencedName(expr ast.Expr, names map[string]bool) string {
+	if expr == nil || len(names) == 0 {
+		return ""
+	}
+	found := ""
+	ast.Inspect(expr, func(n ast.Node) bool {
+		if found != "" {
+			return false
+		}
+		if id, ok := n.(*ast.Ident); ok && names[id.Name] {
+			found = id.Name
+			return false
+		}
+		return true
+	})
+	return found
+}
+
 // desugarBindChain lowers a run of statements beginning with a `bind` into a
 // FlatMap/Zip call expression of type resultType (the enclosing monad M[R]).
 func (t *galaASTTransformer) desugarBindChain(stmts []grammar.IStatementContext, resultType transpiler.Type) (ast.Expr, error) {
@@ -133,6 +203,10 @@ func (t *galaASTTransformer) desugarBindChain(stmts []grammar.IStatementContext,
 			return nil, err
 		}
 		prepped[i] = p
+	}
+
+	if err := t.checkBindGroupIndependence(group, prepped); err != nil {
+		return nil, err
 	}
 
 	// An `also` group whose monad provides a Zip combinator uses it (Future runs

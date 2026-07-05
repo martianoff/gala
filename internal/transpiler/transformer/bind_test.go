@@ -1,6 +1,7 @@
 package transformer_test
 
 import (
+	"strings"
 	"testing"
 
 	"martianoff/gala/internal/transpiler"
@@ -167,6 +168,86 @@ func run() Try[int] {
 	_, err := trans.Transpile(input, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "also")
+}
+
+// A clause in an `also` product group may not reference a binding introduced by
+// a sibling clause of the same group: the clauses are evaluated independently
+// (a product/Zip), so the value is genuinely not available. This is reported
+// with a clear GALA diagnostic rather than the raw Go "undefined: a" that the
+// generated code would otherwise produce.
+func TestAlsoRejectsSiblingReference(t *testing.T) {
+	trans := newBindTranspiler()
+	input := `package main
+
+func run() Try[int] {
+    bind a = Success(1)
+    also b = Success(a)
+    Success(a + b)
+}
+`
+	_, err := trans.Transpile(input, "")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "independently")
+	assert.Contains(t, err.Error(), "`a`")
+}
+
+// The independence check must not flag a legitimate reference to a binding from
+// an EARLIER group (which is in scope): only same-group siblings are rejected.
+func TestBindAllowsCrossGroupReference(t *testing.T) {
+	trans := newBindTranspiler()
+	input := `package main
+
+func run() Try[int] {
+    bind a = Success(1)
+    also b = Success(2)
+    bind c = Success(a + b)
+    Success(a + b + c)
+}
+`
+	got, err := trans.Transpile(input, "")
+	assert.NoError(t, err)
+	assert.Contains(t, got, "FlatMap")
+}
+
+// A block may hold several product groups back-to-back. Each group lowers through
+// its own `Zip`, and consecutive groups compose via `FlatMap` (applicative within
+// a group, monadic across groups). Here two `also` groups each lower through the
+// monad's Zip2 and are threaded together, with every bound name in scope for the
+// trailing value.
+func TestBindMultipleZipGroupsCompose(t *testing.T) {
+	trans := newBindTranspiler()
+	input := `package main
+
+sealed type Box[T any] {
+    case Wrap(Value T)
+}
+
+func (b Box[T]) FlatMap[U any](f func(T) Box[U]) Box[U] = b match {
+    case Wrap(v) => f(v)
+}
+
+func (b Box[T]) Zip2[U any](o Box[U]) Box[Tuple[T, U]] = b match {
+    case Wrap(v) => o match {
+        case Wrap(w) => Wrap(Tuple(v, w))
+    }
+}
+
+func run() Box[int] {
+    bind a = Wrap(1)
+    also b = Wrap(2)
+    bind c = Wrap(3)
+    also d = Wrap(4)
+    Wrap(a + b + c + d)
+}
+`
+	got, err := trans.Transpile(input, "")
+	assert.NoError(t, err)
+	// Two distinct product groups, each lowered through its own Zip2 call
+	// (matching the instantiated call site, not the generic definition).
+	assert.Equal(t, 2, strings.Count(got, "Box_Zip2[int, int]("),
+		"each of the two `also` groups lowers through its own Zip2")
+	// All four bindings are in scope for the trailing value.
+	assert.Contains(t, got, "a.Get() + b.Get() + c.Get() + d.Get()")
 }
 
 // `bind` on a user-defined type that has other methods but no FlatMap is rejected
