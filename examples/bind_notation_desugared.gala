@@ -1,26 +1,25 @@
 package main
 
-// Runtime semantics that the proposed `bind` / `also` notation desugars to.
-// Full design: docs/BIND_NOTATION.MD
+// The FlatMap chain that `bind` lowers to. This is the hand-written desugaring;
+// the real `bind` form is in examples/bind_notation.gala. Docs: docs/BIND_NOTATION.MD
 //
-// Proposed surface (NOT yet implemented -- this file uses today's std to prove
-// the target semantics):
+// Equivalent `bind` form:
 //
-//     func processOrder(id int) Try[Receipt] = {
+//     func processOrder(id int) Try[Receipt] {
 //         bind o       = fetchOrder(id)
 //         bind valid   = validateOrder(o)
 //         bind payment = chargePayment(valid)
-//         Receipt(o.Id, payment)        // trailing value, auto-lifted via Success
+//         Success(Receipt(o.Id, payment))
 //     }
 //
-// `bind` desugars to `FlatMap`. Two properties this example verifies:
-//   1. Every binding stays in scope -- note `o` is reused on the final line,
-//      the "graph" case that a linear FlatMap/pipe chain cannot express.
+// `bind` lowers to `FlatMap`. Two properties this desugaring shows:
+//   1. Every binding stays in scope -- `o` is reused on the final line, the
+//      "graph" case that a linear FlatMap/pipe chain cannot express.
 //   2. The first Failure short-circuits the whole block (railway semantics).
 //
-// The independent form (`bind ... also ...`) desugars to a `Zip`/product step
-// and is documented in the design doc; it needs a new `Zip` combinator on Try
-// that does not exist in std yet, so it is not exercised here.
+// The independent form (`bind ... also ...`) lowers to a `Zip{N}` product over a
+// monad that provides it (Validated accumulates, Future runs concurrently); a
+// fail-fast monad like Try with no Zip falls back to this same sequential chain.
 
 struct Order(Id int, Amount int)
 struct Receipt(OrderId int, Charged int)

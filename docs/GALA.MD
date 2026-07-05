@@ -1027,6 +1027,48 @@ type Seq[T any] interface {
 
 The pattern generates a size check (`Size() >= N`) before extracting elements, ensuring safe access. The rest pattern (`...`) captures remaining elements using `SeqDrop(N)`.
 
+### `bind` / `also` — Monadic Binding
+
+Inside a block whose result type is a bindable monad `M` (any type with a `FlatMap`
+method — `Try`, `Option`, `Either`, `Future`, `Validated`, or your own), `bind name = expr`
+unwraps `M[A]` and binds the success value as an **immutable `val`** that stays in scope
+for the rest of the block. The first failure short-circuits the whole block. This flattens
+the nested `FlatMap` "pyramid" — every intermediate value is in scope, even one reused
+several steps later (the "graph" shape a linear pipe cannot express):
+
+```gala
+func processOrder(id int) Try[Receipt] {
+    bind o = fetchOrder(id)
+    bind valid = validateOrder(o)
+    bind payment = chargePayment(valid)
+    Success(Receipt(o.Id, payment))   // `o` still in scope; trailing value is the result
+}
+```
+
+`bind` lowers to `FlatMap`; the block is an ordinary expression of type `M[R]` (not a
+`?`-style non-local return). The trailing expression must be `M[R]` — write the
+constructor (`Success`/`Some`/`Right`/`Valid`); it infers its type argument from the block.
+
+`also name = expr` marks an **independent** clause. A leading `bind` plus one or more
+`also` form a product group. The behavior is per type: for `Future` the group runs
+**concurrently**, for `Validated` it **accumulates all errors**, and for the fail-fast
+`std` monads (`Try`/`Option`/`Either`) it falls back to the sequential `FlatMap` chain.
+`also` clauses may not reference each other — use `bind` when a later step needs an
+earlier value.
+
+```gala
+// Validated: report ALL invalid fields at once, not just the first
+func makePerson(name string, email string, age int) Validated[string, Person] {
+    bind n = vName(name)
+    also e = vEmail(email)
+    also a = vAge(age)
+    Valid[string, Person](Person(n, e, a))
+}
+```
+
+See [`bind` / `also` notation](BIND_NOTATION.MD) for the full spec, the `Zip{N}` rule, and
+how to make your own monad bindable.
+
 ### For Statement
 GALA supports Go-style for loops with the following variants:
 
@@ -1408,6 +1450,39 @@ val logged = Right[string, int](42)
     .OnLeft((e) => { Println(s"Error: $e") })
     .Map((x) => x * 2)
 ```
+
+### Validated
+
+`Validated[E, A]` is a sealed type for **error-accumulating** validation. Unlike
+`Either`/`Try`, which fail fast on the first error, `Validated` collects every error so a
+form or config can report all of its problems at once. It lives in the `validation`
+package (`import . "martianoff/gala/validation"`), kept separate from `Either`'s
+fail-fast semantics.
+
+```gala
+import . "martianoff/gala/validation"
+
+// Defined as a sealed type in the validation package:
+sealed type Validated[E any, A any] {
+    case Valid(Value A)
+    case Invalid(Errors Array[E])
+}
+
+func vName(s string) Validated[string, string] =
+    if (s != "") Valid[string, string](s)
+    else InvalidOf[string, string]("name required")   // InvalidOf wraps one error
+
+val ok = vName("Ada")
+Println(s"valid? ${ok.IsValid()}")                    // true
+
+val bad = vName("")
+Println(s"errors: ${bad.GetErrors().Size()}")         // 1
+```
+
+Accumulation happens through `Validated`'s `Zip{N}`, which is exactly what the `also`
+notation uses: a `bind` + `also` group over `Validated` reports **all** invalid clauses at
+once rather than stopping at the first. See [`bind` / `also` notation](BIND_NOTATION.MD)
+and the [Monadic Binding](#bind--also--monadic-binding) subsection.
 
 ### Try Monad
 `Try[T]` is a sealed type representing a computation that may either succeed with a value of type T or fail with an error. It provides a functional approach to error handling, similar to Scala's Try monad.
@@ -3838,10 +3913,7 @@ import "github.com/google/uuid"
 - [Time Utils](TIME_UTILS.MD) - Duration and Instant types for immutable time handling.
 - [Immutable Collections](IMMUTABLE_COLLECTIONS.MD) - Array, List, HashMap, HashSet, TreeSet.
 - [Mutable Collections](MUTABLE_COLLECTIONS.MD) - Mutable collection types.
-
-### Design proposals (not yet implemented)
-
-- [`bind` / `also` notation](BIND_NOTATION.MD) - Proposed monadic binding notation: flat, named, in-scope bindings over `Try`/`Option`/`Either`/`Future` — and any user-defined monad — that desugar to `FlatMap`/`Zip`, with an applicative independence axis (`also`). OCaml `let*`/`and*` semantics without the `*`.
+- [`bind` / `also` notation](BIND_NOTATION.MD) - Monadic binding notation: flat, named, in-scope bindings over `Try`/`Option`/`Either`/`Future`/`Validated` — and any user-defined monad — that lower to `FlatMap`/`Zip`, with an applicative independence axis (`also`). OCaml `let*`/`and*` semantics without the `*`.
 
 ## 19. IDE Support
 

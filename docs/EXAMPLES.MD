@@ -1059,6 +1059,85 @@ min=3 max=7
 3 remainder 2 (ok)
 ```
 
+## Monadic Binding with `bind` / `also`
+
+`bind`/`also` flatten multi-step monadic code. See [`bind` / `also` notation](BIND_NOTATION.MD) for the full spec.
+
+### The "graph" case — a value reused several steps later (`Try`)
+
+A `FlatMap` chain has to *nest* whenever a later step needs a value from an earlier one, because each intermediate is trapped in a closure. Here the final `Receipt` needs both the original order **and** the payment:
+
+**Before — the nested `FlatMap` pyramid** (`o` survives only via deepening indentation):
+
+```gala
+func processOrder(id int) Try[Receipt] =
+    fetchOrder(id).FlatMap((o) =>
+    validateOrder(o).FlatMap((valid) =>
+    chargePayment(valid).FlatMap((payment) =>
+    Success(Receipt(o.Id, payment)))))
+```
+
+**After — a flat `bind` block** (every value in scope, reads top-to-bottom):
+
+```gala
+func processOrder(id int) Try[Receipt] {
+    bind o = fetchOrder(id)
+    bind valid = validateOrder(o)
+    bind payment = chargePayment(valid)
+    Success(Receipt(o.Id, payment))   // `o` still in scope; first Failure short-circuits
+}
+```
+
+Both forms are equivalent — the `bind` block *lowers* to the pyramid — but the second keeps `o` visible and drops the closure nesting. Full program: [`examples/bind_notation.gala`](../examples/bind_notation.gala).
+
+### Error accumulation — report ALL invalid fields (`Validated`)
+
+Validating several independent fields with a fail-fast monad only ever surfaces the **first** error: `vName(name).FlatMap((n) => vEmail(email).FlatMap((e) => vAge(age).Map((a) => Person(n, e, a))))` stops at the first failure. `Validated` (in the `validation` package) accumulates instead, and `also` opts into that accumulation:
+
+```gala
+import . "martianoff/gala/validation"
+
+func makePerson(name string, email string, age int) Validated[string, Person] {
+    bind n = vName(name)
+    also e = vEmail(email)
+    also a = vAge(age)
+    Valid[string, Person](Person(n, e, a))
+}
+
+func main() {
+    val ok = makePerson("Ada", "ada@example.com", 36)
+    Println(s"ok valid? ${ok.IsValid()}")              // all clauses valid
+
+    val bad = makePerson("", "", -1)
+    Println(s"bad errors: ${bad.GetErrors().Size()}")  // ALL three accumulated
+}
+```
+
+Output:
+```
+ok valid? true
+bad errors: 3
+```
+
+Swap the three `also`s for `bind`s (or use `Try`) and `bad errors` would be `1`. Full program: [`examples/bind_notation_validated.gala`](../examples/bind_notation_validated.gala).
+
+### Concurrency — run independent clauses in parallel (`Future`)
+
+Over `Future`, an `also` group runs its clauses **concurrently** instead of threading each through the next:
+
+```gala
+import . "martianoff/gala/concurrent"
+
+func total() Future[int] {
+    bind a = compute(2)
+    also b = compute(3)   // b and c do not depend on a — run all three at once
+    also c = compute(4)
+    Future[int](a + b + c)
+}
+```
+
+Full program: [`examples/bind_notation_future.gala`](../examples/bind_notation_future.gala).
+
 ## More Examples
 
 You can find more examples in the `examples/` directory of the project:
@@ -1071,6 +1150,11 @@ You can find more examples in the `examples/` directory of the project:
 - `tuple.gala`: Demonstrates using `Tuple[A, B]` with pattern matching.
 - `either.gala`: Demonstrates using `Either[A, B]` with monadic operations and pattern matching.
 - `either_map_flatmap.gala`: Demonstrates `Either.Map` and `Either.FlatMap` chaining.
+- `bind_notation.gala`: Sequential `bind` over `Try` (the "graph" case).
+- `bind_notation_also.gala`: `also` over `Option` (fail-fast fallback).
+- `bind_notation_validated.gala`: `also` over `Validated`, accumulating all errors.
+- `bind_notation_future.gala`: `also` over `Future`, running clauses concurrently.
+- `bind_notation_user.gala`: `bind` over a user-defined monad (`Step`).
 - `unary_minus.gala`: Demonstrates unary operators (`-`, `!`).
 - `sealed_wildcard.gala`: Demonstrates wildcard `case _ =>` catch-all in sealed type matching.
 - `sorted.gala`: Demonstrates `Sorted()`, `SortWith()`, and `SortBy()` on collections.
