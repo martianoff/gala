@@ -103,6 +103,18 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "bind_notation_desugared",
+    src = "bind_notation_desugared.gala",
+    expected = "bind_notation_desugared.out",
+)
+
+gala_exec_test(
+    name = "bind_notation_user_monad",
+    src = "bind_notation_user_monad.gala",
+    expected = "bind_notation_user_monad.out",
+)
+
+gala_exec_test(
     name = "hex_literals",
     src = "hex_literals.gala",
     expected = "hex_literals.out",

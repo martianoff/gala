@@ -1,0 +1,56 @@
+package main
+
+// Runtime semantics that the proposed `bind` / `also` notation desugars to.
+// Full design: docs/BIND_NOTATION.MD
+//
+// Proposed surface (NOT yet implemented -- this file uses today's std to prove
+// the target semantics):
+//
+//     func processOrder(id int) Try[Receipt] = {
+//         bind o       = fetchOrder(id)
+//         bind valid   = validateOrder(o)
+//         bind payment = chargePayment(valid)
+//         Receipt(o.Id, payment)        // trailing value, auto-lifted via Success
+//     }
+//
+// `bind` desugars to `FlatMap`. Two properties this example verifies:
+//   1. Every binding stays in scope -- note `o` is reused on the final line,
+//      the "graph" case that a linear FlatMap/pipe chain cannot express.
+//   2. The first Failure short-circuits the whole block (railway semantics).
+//
+// The independent form (`bind ... also ...`) desugars to a `Zip`/product step
+// and is documented in the design doc; it needs a new `Zip` combinator on Try
+// that does not exist in std yet, so it is not exercised here.
+
+struct Order(Id int, Amount int)
+struct Receipt(OrderId int, Charged int)
+
+func fetchOrder(id int) Try[Order] =
+    if (id > 0) Success(Order(id, 100))
+    else Failure[Order](NoSuchElementError(Message = s"no order $id"))
+
+func validateOrder(o Order) Try[Order] =
+    if (o.Amount > 0) Success(o)
+    else Failure[Order](NoSuchElementError(Message = "invalid amount"))
+
+func chargePayment(o Order) Try[int] =
+    if (o.Amount <= 1000) Success(o.Amount)
+    else Failure[int](NoSuchElementError(Message = "amount too large"))
+
+// Desugaring of the `bind` block above. The nested lambdas keep `o`, `valid`
+// and `payment` all in scope for the final expression.
+func processOrder(id int) Try[Receipt] =
+    fetchOrder(id).FlatMap[Receipt]((o) =>
+    validateOrder(o).FlatMap[Receipt]((valid) =>
+    chargePayment(valid).FlatMap[Receipt]((payment) =>
+    Success(Receipt(o.Id, payment)))))
+
+func describe(t Try[Receipt]) string = t match {
+    case Success(r) => s"ok: order=${r.OrderId} charged=${r.Charged}"
+    case Failure(e) => s"err: ${e.Error()}"
+}
+
+func main() {
+    Println(describe(processOrder(1)))   // happy path, all binds succeed
+    Println(describe(processOrder(0)))   // breaks at the first bind, short-circuits
+}
