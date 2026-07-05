@@ -42,6 +42,16 @@ func failWith[E any, A any](e E) Result[E, A] = Result[E, A]{tag: e, ok: false}
 // idf's single param is fully determined by its argument — Go infers it, so we
 // must NOT inject explicit type args here (that would change working output).
 func idf[T any](x T) T = x
+
+struct Box[T any](Val T)
+
+// boxOf's T appears in a parameter (v T) -- it is arg-bound, not phantom. Even
+// when the result feeds a typed context, T must be left to Go's inference and
+// never pulled from the expected type. This guards the regression where
+// ArrayFromSlice[T](xs []T), used as ArrayFromSlice(goSplit(...)).Map(...) in an
+// Array[Str] context, was wrongly rewritten to ArrayFromSlice[Str],
+// contradicting its actual []string argument.
+func boxOf[T any](v T) Box[T] = Box(v)
 `
 
 	tests := []struct {
@@ -68,6 +78,17 @@ func useId() int = idf(5)
 `,
 			contains:    []string{"idf(5)"},
 			notContains: []string{"idf[int]"},
+		},
+		{
+			// No-phantom function: every type param is arg-bound. Even in a typed
+			// return context it must stay verbatim — the return type must never
+			// override what the argument determines.
+			name: "no-phantom function not injected under typed return context",
+			input: decl + `
+func useBox() Box[string] = boxOf("hi")
+`,
+			contains:    []string{`boxOf("hi")`},
+			notContains: []string{"boxOf[string]", "boxOf[Box"},
 		},
 	}
 
