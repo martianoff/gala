@@ -40,6 +40,7 @@ Each code has a dedicated documentation page in this directory explaining:
 | `GALA-E0023` | Undefined variable | [GALA-E0023.md](GALA-E0023.md) |
 | `GALA-E0024` | Internal inference failure | [GALA-E0024.md](GALA-E0024.md) |
 | `GALA-E0033` | Untyped lambda parameter | [GALA-E0033.md](GALA-E0033.md) |
+| `GALA-E0034` | Untyped function/struct parameter | [GALA-E0034.md](GALA-E0034.md) |
 
 ## Adding a new code
 

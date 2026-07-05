@@ -71,7 +71,7 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 		}
 		for i, pCtx := range allParams {
 			paramCtx := pCtx.(*grammar.ParameterContext)
-			field, err := t.transformParameter(paramCtx)
+			field, err := t.transformParameter(paramCtx, false)
 			if err != nil {
 				return nil, err
 			}

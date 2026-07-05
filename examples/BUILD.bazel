@@ -1266,7 +1266,8 @@ gala_exec_test(
     expected = "doc_verify/examples_md.out",
     deps = [
         "//collection_immutable",
-        "//go_interop",
+        "//concurrent",
+        "//strings",
     ],
 )
 
