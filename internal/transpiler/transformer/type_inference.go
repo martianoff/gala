@@ -246,16 +246,40 @@ func (t *galaASTTransformer) resolveMethodCallTypeWithParams(
 		}
 	}
 
+	// Alpha-rename the method's own type params to fresh sentinel names BEFORE
+	// substituting struct-level params. A method type param can share its source
+	// name with one of the receiver's type arguments — e.g. inside a generic
+	// function `pair[A, B]`, a receiver `Validated[string, B]` whose method is
+	// `Map[B]` has TWO distinct `B`s (the receiver element and the method result
+	// param). Substituting the receiver arg `B` into the method's declared param
+	// type `func(A) B` would make the method param textually identical to the
+	// receiver element, and unification would then bind the method param from the
+	// lambda's *parameter* position instead of its *result* position (or reject
+	// the correct result binding as inconsistent). Renaming to sentinels keeps
+	// the two apart so inference reads the method param from the return type.
+	methodParamNames := methodMeta.TypeParams
+	var methodRenameMap map[string]transpiler.Type
+	if len(methodMeta.TypeParams) > 0 {
+		methodParamNames = make([]string, len(methodMeta.TypeParams))
+		methodRenameMap = make(map[string]transpiler.Type, len(methodMeta.TypeParams))
+		for i, tp := range methodMeta.TypeParams {
+			fresh := freshMethodTypeParamName(i)
+			methodParamNames[i] = fresh
+			methodRenameMap[tp] = transpiler.NamedType{Name: fresh}
+		}
+		result = t.substituteInType(result, methodRenameMap)
+	}
+
 	// Substitute struct-level type params (e.g., T -> int for Array[int])
 	if len(receiverGenericParams) > 0 && len(typeMeta.TypeParams) > 0 {
 		result = t.substituteConcreteTypes(result, typeMeta.TypeParams, receiverGenericParams)
 	}
 
-	// Substitute method-level type params
+	// Substitute method-level type params (now under their fresh sentinel names).
 	if len(methodMeta.TypeParams) > 0 {
 		if len(typeArgs) > 0 {
 			// Use explicit type args (e.g., Zip[string])
-			result = t.substituteConcreteTypes(result, methodMeta.TypeParams, typeArgs)
+			result = t.substituteConcreteTypes(result, methodParamNames, typeArgs)
 		} else {
 			// Try to infer method-level type params from arguments
 			// For Receiver_Method calls, the method's regular params start after the receiver
@@ -263,9 +287,9 @@ func (t *galaASTTransformer) resolveMethodCallTypeWithParams(
 			if receiverArgIndex >= 0 && receiverArgIndex < len(args) {
 				methodArgs = args[receiverArgIndex+1:]
 			}
-			inferredTypeArgs := t.inferMethodTypeParamsFromArgs(methodMeta, methodArgs, typeMeta.TypeParams, receiverGenericParams)
+			inferredTypeArgs := t.inferMethodTypeParamsFromArgs(methodMeta, methodRenameMap, methodParamNames, methodArgs, typeMeta.TypeParams, receiverGenericParams)
 			if len(inferredTypeArgs) > 0 {
-				result = t.substituteConcreteTypes(result, methodMeta.TypeParams, inferredTypeArgs)
+				result = t.substituteConcreteTypes(result, methodParamNames, inferredTypeArgs)
 			}
 		}
 	}
@@ -386,19 +410,58 @@ func (t *galaASTTransformer) substituteConcreteTypes(returnType transpiler.Type,
 	return t.substituteInType(returnType, paramMap)
 }
 
+// freshMethodTypeParamName returns a sentinel name for the i-th method type
+// parameter that cannot collide with any user-written type name or type
+// parameter (which are never prefixed with "__"). Used to alpha-rename a
+// method's own type params so they stay distinct from identically-named
+// receiver type arguments during unification-based inference.
+func freshMethodTypeParamName(i int) string {
+	return "__mtp" + itoaInt(i)
+}
+
+// itoaInt converts a small non-negative int to its decimal string without
+// pulling in strconv at every call site.
+func itoaInt(i int) string {
+	if i == 0 {
+		return "0"
+	}
+	var buf [20]byte
+	n := len(buf)
+	for i > 0 {
+		n--
+		buf[n] = byte('0' + i%10)
+		i /= 10
+	}
+	return string(buf[n:])
+}
+
 // inferMethodTypeParamsFromArgs attempts to infer method-level type parameters from call arguments.
 // For example, for FlatMap[U](f func(T) Try[U]) where the argument is a lambda returning Try[User],
 // this function infers U = User.
-func (t *galaASTTransformer) inferMethodTypeParamsFromArgs(methodMeta *transpiler.MethodMetadata, args []ast.Expr, structTypeParams []string, structTypeArgs []transpiler.Type) []transpiler.Type {
+//
+// methodRenameMap / freshParamNames alpha-rename the method's own type params to
+// collision-proof sentinels (see resolveMethodCallTypeWithParams); the returned
+// slice is ordered to match freshParamNames (which is 1:1 with
+// methodMeta.TypeParams). Pass a nil rename map and methodMeta.TypeParams to
+// disable renaming.
+func (t *galaASTTransformer) inferMethodTypeParamsFromArgs(methodMeta *transpiler.MethodMetadata, methodRenameMap map[string]transpiler.Type, freshParamNames []string, args []ast.Expr, structTypeParams []string, structTypeArgs []transpiler.Type) []transpiler.Type {
 	if len(methodMeta.TypeParams) == 0 || len(methodMeta.ParamTypes) == 0 || len(args) == 0 {
 		return nil
 	}
+	if len(freshParamNames) == 0 {
+		freshParamNames = methodMeta.TypeParams
+	}
 
-	// First substitute struct-level type params in method param types
+	// First alpha-rename the method's own type params to sentinels, then
+	// substitute struct-level type params in method param types.
 	// e.g., for Try[User].FlatMap, substitute T -> User in func(T) Try[U] to get func(User) Try[U]
 	substitutedParamTypes := make([]transpiler.Type, len(methodMeta.ParamTypes))
 	for i, pt := range methodMeta.ParamTypes {
-		substitutedParamTypes[i] = t.substituteConcreteTypes(pt, structTypeParams, structTypeArgs)
+		renamed := pt
+		if methodRenameMap != nil {
+			renamed = t.substituteInType(pt, methodRenameMap)
+		}
+		substitutedParamTypes[i] = t.substituteConcreteTypes(renamed, structTypeParams, structTypeArgs)
 	}
 
 	// Build a mapping from method type param names to inferred concrete types
@@ -421,7 +484,7 @@ func (t *galaASTTransformer) inferMethodTypeParamsFromArgs(methodMeta *transpile
 		}
 
 		// Try to unify paramType with argType to find type param substitutions
-		t.unifyForInference(paramType, argType, methodMeta.TypeParams, inferredMap)
+		t.unifyForInference(paramType, argType, freshParamNames, inferredMap)
 	}
 
 	// Build result in order of type params
@@ -429,8 +492,8 @@ func (t *galaASTTransformer) inferMethodTypeParamsFromArgs(methodMeta *transpile
 		return nil
 	}
 
-	result := make([]transpiler.Type, len(methodMeta.TypeParams))
-	for i, paramName := range methodMeta.TypeParams {
+	result := make([]transpiler.Type, len(freshParamNames))
+	for i, paramName := range freshParamNames {
 		if inferredType, ok := inferredMap[paramName]; ok {
 			result[i] = inferredType
 		} else {
