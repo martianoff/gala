@@ -1728,6 +1728,14 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 		return expr, nil
 	}
 
+	// --- Section 12.5: Fill phantom return-only type params ---
+	// A generic free function whose type param appears only in its return type
+	// (not in any parameter) cannot have that param inferred by Go from the
+	// call arguments. Emit explicit type args resolved from the expected type
+	// (or the enclosing function's return type) so the generated Go is concrete
+	// rather than an uninstantiated `Fn(args)` that fails with "cannot infer".
+	fun = t.injectFuncPhantomTypeArgs(fun, callCtx.funcMeta, args, hasSpread, pendingExpected)
+
 	// --- Section 13: Fallback — emit the call verbatim. ---
 	return &ast.CallExpr{Fun: fun, Args: args, Ellipsis: ellipsisPos(hasSpread)}, nil
 }

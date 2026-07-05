@@ -505,6 +505,100 @@ func (t *galaASTTransformer) inferMethodTypeParamsFromArgs(methodMeta *transpile
 	return result
 }
 
+// injectFuncPhantomTypeArgs wraps a generic free-function call target with
+// explicit type arguments when the call's arguments alone cannot determine
+// every type parameter — specifically for a *phantom* return-only param: a type
+// param that appears in the declared return type but in none of the parameter
+// types (e.g. the `A` of `func InvalidOf[E, A](err E) Validated[E, A]`). Go
+// cannot infer such a param from the arguments, so emitting the call verbatim
+// yields invalid Go ("cannot infer A"). We recover the missing params by
+// unifying the function's declared return type against the expected type — the
+// call-site hint first, then the enclosing function's return type — and emit
+// `Fn[E, A](args)` with concrete args.
+//
+// When the arguments already resolve every type param, the call is returned
+// unchanged so Go's own inference keeps producing the existing output. The
+// rewrite fires only when it can resolve ALL params to concrete types, so it
+// can never turn working output into broken output — the change is strictly
+// broken-to-working or a no-op.
+func (t *galaASTTransformer) injectFuncPhantomTypeArgs(fun ast.Expr, funcMeta *transpiler.FunctionMetadata, args []ast.Expr, hasSpread bool, expected transpiler.Type) ast.Expr {
+	if funcMeta == nil || len(funcMeta.TypeParams) == 0 {
+		return fun
+	}
+	// Skip when explicit type args are already present.
+	switch fun.(type) {
+	case *ast.IndexExpr, *ast.IndexListExpr:
+		return fun
+	}
+
+	inferred := make(map[string]transpiler.Type)
+	// Step 1: infer from arguments (mirrors inferFuncTypeParamsFromArgs but
+	// accumulates a partial map instead of giving up when incomplete).
+	for i, arg := range args {
+		var paramType transpiler.Type
+		if i < len(funcMeta.ParamTypes) {
+			paramType = funcMeta.ParamTypes[i]
+		} else if len(funcMeta.ParamTypes) > 0 {
+			last := funcMeta.ParamTypes[len(funcMeta.ParamTypes)-1]
+			if arr, ok := last.(transpiler.ArrayType); ok {
+				paramType = arr.Elem
+			} else {
+				paramType = last
+			}
+		}
+		if paramType == nil {
+			continue
+		}
+		argType := t.getExprTypeNameManual(arg)
+		if transpiler.IsUnusable(argType) {
+			argType, _ = t.inferExprType(arg)
+		}
+		if transpiler.IsUnusable(argType) {
+			continue
+		}
+		if hasSpread {
+			if arr, ok := argType.(transpiler.ArrayType); ok {
+				argType = arr.Elem
+			}
+		}
+		t.unifyForInference(paramType, argType, funcMeta.TypeParams, inferred)
+	}
+
+	// Arguments already determine every type param: leave to Go's inference so
+	// the emitted output is unchanged (minimal, regression-free).
+	if len(inferred) == len(funcMeta.TypeParams) {
+		return fun
+	}
+
+	// Step 2: fill remaining (phantom) params by unifying the declared return
+	// type with the expected type — call-site hint first, enclosing return next.
+	if funcMeta.ReturnType != nil && !funcMeta.ReturnType.IsNil() {
+		for _, exp := range []transpiler.Type{expected, t.currentFuncReturnType} {
+			if len(inferred) == len(funcMeta.TypeParams) {
+				break
+			}
+			if exp == nil || exp.IsNil() {
+				continue
+			}
+			t.unifyForInference(funcMeta.ReturnType, exp, funcMeta.TypeParams, inferred)
+		}
+	}
+
+	// Rewrite only when every type param is now resolved to a concrete type.
+	typeArgs := make([]ast.Expr, len(funcMeta.TypeParams))
+	for i, tp := range funcMeta.TypeParams {
+		got, ok := inferred[tp]
+		if !ok || transpiler.IsUnusable(got) {
+			return fun
+		}
+		typeArgs[i] = t.typeToExpr(got)
+	}
+	if len(typeArgs) == 1 {
+		return &ast.IndexExpr{X: fun, Index: typeArgs[0]}
+	}
+	return &ast.IndexListExpr{X: fun, Indices: typeArgs}
+}
+
 // inferFuncTypeParamsFromArgs attempts to infer type parameters for standalone function calls.
 // For example, for ArrayOf[T any](elements ...T) Array[T] where the arguments are [1, 2, 3],
 // this function infers T = int.
