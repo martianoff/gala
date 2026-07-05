@@ -392,7 +392,7 @@ func makePerson(name string, email string, age int) Validated[string, Person] {
     bind n = vName(name)
     also e = vEmail(email)
     also a = vAge(age)
-    Valid[string, Person](Person(n, e, a))
+    Valid(Person(n, e, a))
 }
 ```
 

@@ -391,19 +391,19 @@ The GALA version reads top-to-bottom. The happy path is the main path. Error han
 
 ## Monadic Binding: `bind` and `also`
 
-`Map`/`FlatMap` chains are great for a single linear pipeline — but the moment a later step needs a value from an **earlier** step, or you want to combine **independent** steps, they force awkward nesting. GALA's `bind`/`also` do-notation flattens both cases. Inside a function whose result is a monad, `bind name = expr` unwraps and names each step; the block lowers to the same `FlatMap` chain.
+`Map`/`FlatMap` chains are great for a single linear pipeline. `bind`/`also` do-notation earns its keep on two shapes they handle badly: reusing an earlier value several steps later (a **graph**), and combining **independent** steps — where `also` unlocks error *accumulation* and *concurrency* that a `FlatMap` chain cannot express at all. Inside a function whose result is a monad, `bind name = expr` unwraps and names each step; the block lowers to the same `FlatMap` chain.
 
 ### The "graph" case — reuse an earlier value later
 
-The final `Receipt` needs both the original order **and** the payment, so a `FlatMap` chain must nest (each value is trapped in a closure):
+The final `Receipt` needs both the original order **and** the payment, so a `FlatMap` chain must nest — each value is trapped in a closure, the accumulator type `[Receipt]` is repeated at every link, and the block ends in a pile of closing parens:
 
-**Before — nested `FlatMap`:**
+**Before — nested `FlatMap`** (`o` survives only via the deepening indentation):
 
 ```gala
 func processOrder(id int) Try[Receipt] =
-    fetchOrder(id).FlatMap((o) =>
-    validateOrder(o).FlatMap((valid) =>
-    chargePayment(valid).FlatMap((payment) =>
+    fetchOrder(id).FlatMap[Receipt]((o) =>
+    validateOrder(o).FlatMap[Receipt]((valid) =>
+    chargePayment(valid).FlatMap[Receipt]((payment) =>
     Success(Receipt(o.Id, payment)))))
 ```
 
@@ -429,11 +429,11 @@ func makePerson(name string, email string, age int) Validated[string, Person] {
     bind n = vName(name)
     also e = vEmail(email)
     also a = vAge(age)
-    Valid[string, Person](Person(n, e, a))
+    Valid(Person(n, e, a))
 }
 ```
 
-`makePerson("", "", -1).GetErrors().Size()` returns **3** — all three failures at once, not just the first. Swap the `also`s for `bind`s and you'd get `1`.
+`makePerson("", "", -1).GetErrors().Size()` returns **3** — all three failures at once, not just the first. A `FlatMap` chain cannot do this: it is fail-fast, so it stops at the first error. Swap the `also`s for `bind`s and you'd get `1`.
 
 ### Concurrency — run independent clauses in parallel
 
