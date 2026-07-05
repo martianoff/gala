@@ -9,7 +9,7 @@ permalink: /
 
 <div class="hero">
   <h1>Scala on Go.</h1>
-  <p class="tagline">Sealed types and exhaustive pattern matching, <code>Option</code>/<code>Either</code>/<code>Try</code> monads, zero-reflection JSON, and first-class interop with every Go module — transpiled to native Go binaries.</p>
+  <p class="tagline">The sum types, exhaustive pattern matching, and <code>Option</code> types Go still doesn't have — as a language, not a library. <code>Option</code>/<code>Either</code>/<code>Try</code> monads, zero-reflection JSON, first-class interop with every Go module, native binaries.</p>
   <a href="https://gala-playground.fly.dev" class="cta">Try in Playground</a>
   <a href="https://github.com/martianoff/gala" class="cta cta-secondary">View on GitHub</a>
 
@@ -106,6 +106,18 @@ val updated = config.Copy(Port = 8080)</code></pre>
     .FlatMap((x) =&gt; divide(x, 3))
     .Recover((e) =&gt; 0)</code></pre>
 <p><a href="{{ '/features/error-handling/' | relative_url }}">Learn about error handling</a></p>
+</div>
+
+<div class="feature-card">
+<h3>Monadic Binding (<code>bind</code> / <code>also</code>)</h3>
+<p>Do-notation for any monad. <code>bind</code> flattens <code>FlatMap</code> chains; <code>also</code> marks independent steps that accumulate errors (<code>Validated</code>) or run concurrently (<code>Future</code>).</p>
+<pre><code>func processOrder(id int) Try[Receipt] {
+    bind o       = fetchOrder(id)
+    bind valid   = validateOrder(o)
+    bind payment = chargePayment(valid)
+    Success(Receipt(o.Id, payment))
+}</code></pre>
+<p><a href="{{ '/features/monadic-binding/' | relative_url }}">Learn about bind / also</a></p>
 </div>
 
 <div class="feature-card">

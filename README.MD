@@ -1,5 +1,7 @@
 # GALA
 
+**Sum types, exhaustive pattern matching, and `Option`/`Try` — the type system Go is missing, as a language, not a library.**
+
 **Scala on Go.**
 
 [![Build](https://github.com/martianoff/gala/actions/workflows/test.yml/badge.svg)](https://github.com/martianoff/gala/actions/workflows/test.yml)
@@ -44,6 +46,7 @@ It's aimed at Go developers who have used Scala, Kotlin, F#, or OCaml and miss t
 - **Zero-reflection JSON.** `Codec[T]` is backed by a compiler-generated `StructMeta[T]` intrinsic — no `reflect`, no struct tags, and the codec itself works as a pattern-match extractor.
 - **Sealed types with exhaustive matching.** The compiler rejects incomplete matches at build time, including in nested patterns, guards, and generic extractors.
 - **Functional standard library.** `Option`, `Either`, `Try`, `Future`, `IO` with `Map` / `FlatMap` / `Recover`, plus immutable `List`, `Array`, `HashMap`, `HashSet`, `TreeSet`, `TreeMap`.
+- **`bind` / `also` do-notation.** Flat monadic binding over any monad — sequential `bind`, plus `also` for independent steps that accumulate errors (`Validated`) or run concurrently (`Future`). No nested `FlatMap` staircases.
 - **Regex extractors in `match`.** Compile-safe regex destructures capture groups directly inside a pattern.
 - **Shipped IDE tooling.** Shipped GoLand/IntelliJ plugin and an LSP server (`gala lsp`) for VS Code and Neovim — diagnostics, hover, go-to-definition, inlay hints, completion.
 - Batched transpilation and analysis caching make multi-file packages noticeably faster on incremental rebuilds; the LSP debounces analysis to stay quiet while you type.
@@ -260,6 +263,37 @@ if err != nil {
 </td>
 </tr>
 </table>
+
+---
+
+## Monadic Binding: `bind` / `also`
+
+`Map`/`FlatMap` chains nest badly the moment a later step needs an earlier value. `bind` flattens them — every binding is a normal immutable local that stays in scope, and the block short-circuits on the first failure:
+
+```gala
+func processOrder(id int) Try[Receipt] {
+    bind o       = fetchOrder(id)
+    bind valid   = validateOrder(o)
+    bind payment = chargePayment(valid)
+    Success(Receipt(o.Id, payment))   // `o` still in scope; no nested FlatMap
+}
+```
+
+`also` marks a bind as **independent** of its group, and the block's type decides what that unlocks. Over `Validated` it **accumulates every error** instead of stopping at the first:
+
+```gala
+import . "martianoff/gala/validation"
+
+func makePerson(name string, email string, age int) Validated[string, Person] {
+    bind n = vName(name)
+    also e = vEmail(email)
+    also a = vAge(age)
+    Valid(Person(n, e, a))
+}
+// makePerson("", "", -1).GetErrors().Size() == 3  — all failures at once
+```
+
+Over `Future`, an `also` group runs its clauses **concurrently**. And it's not special-cased to the standard library: any type with a `FlatMap` method is bindable, resolved structurally at transpile time — no higher-kinded types. See [Monadic binding](docs/BIND_NOTATION.MD).
 
 ---
 
