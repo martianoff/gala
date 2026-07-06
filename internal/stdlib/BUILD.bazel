@@ -1,4 +1,4 @@
-load("@rules_go//go:def.bzl", "go_library")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 # Generate embedded stdlib Go file from transpiled sources and GALA source files.
 # This uses gala_bootstrap (not gala) to avoid circular dependency.
@@ -75,12 +75,14 @@ genrule(
         "//collection_mutable:hashmap_go",
         "//collection_mutable:hashset_go",
         "//collection_mutable:treeset_go",
+        "//collection_mutable:treemap_go",
         # collection_mutable package - GALA source
         "//collection_mutable:array.gala",
         "//collection_mutable:list.gala",
         "//collection_mutable:hashmap.gala",
         "//collection_mutable:hashset.gala",
         "//collection_mutable:treeset.gala",
+        "//collection_mutable:treemap.gala",
         # concurrent package - transpiled Go
         "//concurrent:future_go",
         "//concurrent:event_bus_go",
@@ -157,4 +159,10 @@ go_library(
     ],
     importpath = "martianoff/gala/internal/stdlib",
     visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "stdlib_test",
+    srcs = ["embed_collections_test.go"],
+    embed = [":stdlib"],
 )
