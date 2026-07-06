@@ -1230,6 +1230,12 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "match_any_struct_pattern",
+    src = "match_any_struct_pattern.gala",
+    expected = "match_any_struct_pattern.out",
+)
+
+gala_exec_test(
     name = "match_literal_pattern",
     src = "match_literal_pattern.gala",
     expected = "match_literal_pattern.out",

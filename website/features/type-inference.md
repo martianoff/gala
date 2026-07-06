@@ -82,6 +82,7 @@ val positive = opt.Filter((x) => x > 0)     // x inferred as int
 **Non-generic wrapper types** — Methods on concrete types that take function parameters:
 
 ```gala
+// S / Str come from martianoff/gala/strings
 val s = S("hello")
 val upper = s.Map((r) => r - 32)             // r inferred as rune
 val hasVowel = s.Exists((r) => r == 'a')     // r inferred as rune

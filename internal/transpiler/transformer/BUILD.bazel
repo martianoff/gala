@@ -78,6 +78,7 @@ go_test(
         "import_test.go",
         "imports_test.go",
         "literals_test.go",
+        "match_any_struct_pattern_test.go",
         "match_arm_dispatch_matrix_test.go",
         "match_in_lambda_void_test.go",
         "match_literal_subpattern_test.go",
