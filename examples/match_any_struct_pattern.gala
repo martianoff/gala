@@ -1,0 +1,22 @@
+package main
+
+// Verifies that a plain (non-sealed) struct destructuring pattern works when the
+// match subject is statically `any`. Mixing a type pattern (`case i: int`) with a
+// struct pattern forces the subject to stay `any`; the transpiler must insert a
+// type assertion (`v.(Person)`) before reading struct fields, otherwise the
+// generated Go fails with "type any has no field or method Name".
+struct Person(Name string, Age int)
+
+func describe(v any) string = v match {
+    case i: int                        => s"int: $i"
+    case Person(name, age) if age < 18 => s"$name is a minor"
+    case Person(name, _)               => s"$name is an adult"
+    case _                             => "unknown"
+}
+
+func main() {
+    Println(describe(Person("Bob", 15)))
+    Println(describe(Person("Alice", 30)))
+    Println(describe(42))
+    Println(describe("hello"))
+}

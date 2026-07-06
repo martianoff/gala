@@ -200,7 +200,7 @@ func (t *galaASTTransformer) transformConstructorCallPattern(rawName string, arg
 	// Use direct field access for known structs
 	resolvedStructName := t.resolveStructTypeName(rawName)
 	if fields, ok := t.structFields[resolvedStructName]; ok && len(fields) > 0 {
-		return t.generateDirectStructFieldMatch(objExpr, argList, fields, resolvedStructName)
+		return t.generateDirectStructFieldMatch(objExpr, argList, fields, resolvedStructName, matchedType)
 	}
 
 	// Check if rawName is a variable whose type has an Unapply method (instance extractor).
@@ -738,22 +738,42 @@ func (t *galaASTTransformer) generateDirectTupleStructMatch(objExpr ast.Expr, ar
 // For example, Person(name, age) matching against Person{Name: "Alice", Age: 25}
 // generates: name := obj.Name; age := obj.Age
 // The condition is always true since we're just extracting fields.
-func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, argList *grammar.ArgumentListContext, fields []string, structName string) (ast.Expr, []ast.Stmt, error) {
-	if argList == nil {
-		return ast.NewIdent("true"), nil, nil
+func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, argList *grammar.ArgumentListContext, fields []string, structName string, matchedType transpiler.Type) (ast.Expr, []ast.Stmt, error) {
+	var stmts []ast.Stmt
+	var conds []ast.Expr
+
+	// When the match subject is statically an interface (`any`) — e.g. a match
+	// that mixes a type pattern (`case i: int`) with a struct pattern, or a
+	// parameter declared `any` — the struct's fields are not directly reachable:
+	// Go requires a type assertion first. Insert `castVar, ok := obj.(Struct)`
+	// and gate the arm on `ok`; subsequent field access reads from castVar.
+	// (We assert ONLY for interface subjects: `p.(Struct)` on a concrete,
+	// non-interface value is itself a Go compile error, so a concretely-typed
+	// subject keeps reading fields straight off objExpr.)
+	baseExpr := objExpr
+	if matchedType != nil && matchedType.IsAny() {
+		castName := t.nextTempVar()
+		okName := t.nextTempVar()
+		stmts = append(stmts, &ast.AssignStmt{
+			Lhs: []ast.Expr{ast.NewIdent(castName), ast.NewIdent(okName)},
+			Tok: token.DEFINE,
+			Rhs: []ast.Expr{&ast.TypeAssertExpr{X: objExpr, Type: t.ident(structName)}},
+		})
+		conds = append(conds, ast.NewIdent(okName))
+		baseExpr = ast.NewIdent(castName)
 	}
 
-	args := argList.AllArgument()
+	var args []grammar.IArgumentContext
+	if argList != nil {
+		args = argList.AllArgument()
+	}
 	if len(args) == 0 {
-		return ast.NewIdent("true"), nil, nil
+		return combineStructMatchConds(conds, stmts)
 	}
 
 	if len(args) > len(fields) {
 		return nil, nil, galaerr.NewSemanticErrorAt(argList.GetStart().GetLine(), argList.GetStart().GetColumn(), fmt.Sprintf("struct '%s' has %d fields but pattern has %d arguments", structName, len(fields), len(args)))
 	}
-
-	var stmts []ast.Stmt
-	var conds []ast.Expr
 
 	// Get field types if available
 	fieldTypes := t.structFieldTypes[structName]
@@ -779,12 +799,13 @@ func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, ar
 			}
 		}
 
-		// Generate direct field access: objExpr.FieldName.Get()
-		// Struct fields are stored as Immutable[T], so we need to call .Get()
+		// Generate direct field access: baseExpr.FieldName.Get()
+		// Struct fields are stored as Immutable[T], so we need to call .Get().
+		// baseExpr is the type-asserted castVar for `any` subjects, else objExpr.
 		elemExpr := &ast.CallExpr{
 			Fun: &ast.SelectorExpr{
 				X: &ast.SelectorExpr{
-					X:   objExpr,
+					X:   baseExpr,
 					Sel: ast.NewIdent(fieldName),
 				},
 				Sel: ast.NewIdent("Get"),
@@ -854,18 +875,19 @@ func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, ar
 
 	t.needsStdImport = true
 
-	// Combine all conditions
+	return combineStructMatchConds(conds, stmts)
+}
+
+// combineStructMatchConds ANDs a struct pattern's accumulated conditions into a
+// single expression (or the literal `true` when there are none) and returns it
+// alongside the pattern's binding statements.
+func combineStructMatchConds(conds []ast.Expr, stmts []ast.Stmt) (ast.Expr, []ast.Stmt, error) {
 	if len(conds) == 0 {
 		return ast.NewIdent("true"), stmts, nil
 	}
-
 	finalCond := conds[0]
 	for i := 1; i < len(conds); i++ {
-		finalCond = &ast.BinaryExpr{
-			X:  finalCond,
-			Op: token.LAND,
-			Y:  conds[i],
-		}
+		finalCond = &ast.BinaryExpr{X: finalCond, Op: token.LAND, Y: conds[i]}
 	}
 	return finalCond, stmts, nil
 }
