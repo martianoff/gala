@@ -2583,7 +2583,6 @@ Since GALA transpiles to Go, Go's built-in functions are available. The followin
 | `new(T)` | Allocate zeroed value, return pointer | `new(int)` |
 | `append(s, v...)` | Append to slice | `append(items, 4)` |
 | `delete(m, k)` | Delete map entry | `delete(myMap, "key")` |
-| `close(ch)` | Close a channel | `close(done)` |
 | `panic(v)` | Trigger a panic | `panic("error")` |
 | `recover()` | Recover from panic (in defer) | `recover()` |
 
