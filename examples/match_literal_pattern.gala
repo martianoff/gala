@@ -1,0 +1,40 @@
+package main
+
+import . "martianoff/gala/go_interop"
+
+// Verifies that literal values used as constructor sub-patterns in a sealed-type
+// match are compared for equality, not bound as variables. Previously the
+// boolean literals `true`/`false` (which lex as the `literal` grammar rule but
+// are all-letters) were misclassified as simple identifier bindings by the
+// extractor path, producing a spurious "unused variable 'true'" error. Numeric
+// literals like `0` are exercised here too as a guard against the same class of
+// bug.
+sealed type Animal {
+    case Dog(Name string, Tricks int)
+    case Cat(Name string, Indoor bool)
+    case Fish(Species string)
+}
+
+func describe(a Animal) string = a match {
+    case Dog(name, tricks) if tricks > 5 => s"$name is a talented dog with $tricks tricks"
+    case Dog(name, 0)                    => s"$name is a lazy dog"
+    case Dog(name, _)                    => s"$name is a good dog"
+    case Cat(name, true)                 => s"$name is an indoor cat"
+    case Cat(name, false)                => s"$name is an outdoor cat"
+    case Fish(species)                   => s"a $species fish"
+}
+
+func main() {
+    val animals = SliceOf(
+        Dog("Rex", 8),
+        Cat("Whiskers", true),
+        Fish("Goldfish"),
+        Dog("Buddy", 3),
+        Cat("Luna", false),
+        Dog("Sleepy", 0),
+    )
+
+    for _, a := range animals {
+        Println(describe(a))
+    }
+}

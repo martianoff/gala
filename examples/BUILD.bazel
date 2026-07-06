@@ -1230,6 +1230,13 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "match_literal_pattern",
+    src = "match_literal_pattern.gala",
+    expected = "match_literal_pattern.out",
+    deps = ["//go_interop"],
+)
+
+gala_exec_test(
     name = "nested_match",
     src = "nested_match.gala",
     expected = "nested_match.out",

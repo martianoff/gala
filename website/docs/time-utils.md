@@ -283,9 +283,10 @@ func main() {
     // Parse and format dates
     val parsed = ParseISO("2024-12-25T00:00:00Z")
     parsed match {
-        case Some(christmas) =>
+        case Some(christmas) => {
             val daysUntil = Now().Until(christmas).ToDays()
             Println(s"Days until Christmas: $daysUntil")
+        }
         case _ =>
             Println("Failed to parse date")
     }

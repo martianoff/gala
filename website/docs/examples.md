@@ -21,7 +21,7 @@ The following example demonstrates many of GALA's features, including structs, i
 package main
 
 
-struct Point(X, Y int)
+struct Point(X int, Y int)
 
 func moveX(p Point, delta int) Point = p.Copy(X = p.X + delta)
 
@@ -104,7 +104,7 @@ package main
 func main() {
     val x = Some(10)
     val y = x.Map((v) => v * 2)         // parameter type inferred as int
-    val z = None().GetOrElse(42)
+    val z = None[int]().GetOrElse(42)
 
     val res = y match {
         case Some(v) => v
@@ -141,17 +141,18 @@ See also: [Language Reference - Generics](/docs/language-reference/#8-generics)
 ```gala
 package main
 
+import . "martianoff/gala/collection_immutable"
 
 struct Person(Name string, Age int)
 
 func main() {
-    val people = SliceOf(
+    val people = ArrayOf(
         Person("Alice", 25),
         Person("Bob", 15),
         Person("Charlie", 70),
     )
 
-    for _, p := range people {
+    people.ForEach((p) => {
         val status = p match {
             case Person(name, age) if age < 18 => name + " is a minor"
             case Person(name, age) if age > 65 => name + " is a senior"
@@ -159,7 +160,7 @@ func main() {
             case _                             => "Unknown"
         }
         Println(status)
-    }
+    })
 }
 ```
 
@@ -300,8 +301,8 @@ struct Circle(radius float64)
 func (c Circle) Area() float64 = 3.14159 * c.radius * c.radius
 
 func main() {
-    val r = Rect(10, 5)
-    val c = Circle(10)
+    val r = Rect(10.0, 5.0)
+    val c = Circle(10.0)
 
     val s1 Shaper = r
     val s2 Shaper = c
@@ -485,7 +486,7 @@ func main() {
     val dir = Try(os.TempDir)
 
     // Lambda form (use when args needed)
-    val result = Try(os.MkdirAll("/tmp/test", 0755))
+    Try(os.MkdirAll("/tmp/test", 0755))
 
     dir.OnSuccess((d) => Println(s"Temp dir: $d"))
 }

@@ -128,8 +128,8 @@ filegroup(
         "//std:tuple.gala",
         "//stream:stream.gala",
         "//strings:gala_sources",
-        "//validation:gala_sources",
         "//time_utils:gala_sources",
+        "//validation:gala_sources",
     ],
     visibility = ["//visibility:public"],
 )

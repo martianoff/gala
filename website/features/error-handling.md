@@ -298,23 +298,24 @@ func processOrder(id int) Try[Receipt] =
 
 ## Json: Type-Safe JSON with Try
 
-GALA's `Json` module integrates with `Try[T]` for safe JSON handling. All operations return `Try` — no unchecked errors.
+GALA's `json` package integrates with `Try[T]` for safe JSON handling. A `Codec[T]` serializes and parses with zero reflection; every operation returns `Try` — no unchecked errors. The naming strategy (`AsIs`, `SnakeCase`, `CamelCase`, `KebabCase`) controls how field names map to keys.
 
 ### Serialization
 
 ```gala
-import . "martianoff/gala/std"
+import . "martianoff/gala/json"
 
 type Config struct {
     var Host string
     var Port int
 }
 
+val codec = Codec[Config](AsIs())
 val config = Config{Host: "localhost", Port: 8080}
-val jsonStr = JsonStringify(config).Get()
+val jsonStr = codec.Encode(config).Get()
 // => {"Host":"localhost","Port":8080}
 
-val pretty = JsonStringifyPretty(config).Get()
+val pretty = codec.EncodePretty(config).Get()
 // => {
 //   "Host": "localhost",
 //   "Port": 8080
@@ -324,7 +325,7 @@ val pretty = JsonStringifyPretty(config).Get()
 ### Deserialization
 
 ```gala
-val parsed = JsonParse[Config](jsonStr)
+val parsed = codec.Decode(jsonStr)
 // parsed: Try[Config]
 
 val host = parsed.Map((c) => c.Host).GetOrElse("unknown")
@@ -332,16 +333,16 @@ val host = parsed.Map((c) => c.Host).GetOrElse("unknown")
 
 ### Json Pattern Matching
 
-The `Json[T]` extractor parses JSON inside `match` expressions:
+A codec doubles as a pattern-matching extractor — it parses JSON inside `match` expressions:
 
 ```gala
 val result = inputStr match {
-    case Json[Config](c) => s"Host: ${c.Host}, Port: ${c.Port}"
+    case codec(c) => s"Host: ${c.Host}, Port: ${c.Port}"
     case _ => "invalid config"
 }
 ```
 
-This combines `Try`-based safety with pattern matching — the `Json[T]` extractor returns `None` on parse failure, so the `case _` branch handles malformed input.
+This combines `Try`-based safety with pattern matching — the codec's extractor returns `None` on parse failure, so the `case _` branch handles malformed input.
 
 ---
 

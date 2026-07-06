@@ -96,23 +96,23 @@ Here is a program that uses structs, pattern matching, and string interpolation:
 ```gala
 package main
 
+import . "martianoff/gala/collection_immutable"
+
 struct Person(Name string, Age int)
 
 func greet(p Person) string = p match {
     case Person(name, age) if age < 18 => s"Hey, $name!"
-    case Person(name, _)               => s"Hello, $name"
+    case _                             => s"Hello, ${p.Name}"
 }
 
 func main() {
-    val people = SliceOf(
+    val people = ArrayOf(
         Person("Alice", 25),
         Person("Bob", 15),
         Person("Charlie", 70),
     )
 
-    for _, p := range people {
-        Println(greet(p))
-    }
+    people.ForEach((p) => Println(greet(p)))
 }
 ```
 

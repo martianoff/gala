@@ -131,12 +131,14 @@ Define and use Go struct types with GALA syntax:
 import "net/http"
 
 // Go struct types work in GALA
-var client = &http.Client{}
+val client = &http.Client{}
 ```
 
 GALA structs are Go structs under the hood, so they interoperate seamlessly:
 
 ```gala
+import "encoding/json"
+
 type Config struct {
     var Host string
     var Port int
@@ -156,7 +158,8 @@ GALA supports Go-style type conversions:
 // Numeric conversions
 val n = int64(42)
 val f = float64(10)
-val i = int(3.14)           // truncates to 3
+val pi = 3.14
+val i = int(pi)             // truncates to 3
 
 // Rune/string conversions
 val r = rune(65)            // int to rune: 'A'
@@ -230,7 +233,7 @@ val backToArray = ArrayFromSlice(goSlice)
 GALA's `HashMap` is preferred for most use cases. When you need Go-native `map[K]V` for interoperability:
 
 ```gala
-import . "martianoff/gala/std"
+import . "martianoff/gala/go_interop"
 
 // Create and populate
 var goMap = MapEmpty[string, int]()

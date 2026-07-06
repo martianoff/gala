@@ -68,13 +68,13 @@ Structs with public fields automatically generate `Unapply` methods, enabling po
 ```gala
 struct Person(Name string, Age int)
 
-val people = SliceOf(
+val people = ArrayOf(
     Person("Alice", 25),
     Person("Bob", 15),
     Person("Charlie", 70),
 )
 
-for _, p := range people {
+people.ForEach((p) => {
     val status = p match {
         case Person(name, age) if age < 18 => name + " is a minor"
         case Person(name, age) if age > 65 => name + " is a senior"
@@ -82,7 +82,7 @@ for _, p := range people {
         case _                             => "Unknown"
     }
     Println(status)
-}
+})
 ```
 
 You can match on specific field values and ignore others with `_`:
@@ -188,7 +188,7 @@ Patterns compose. You can nest extractors inside extractors for deep matching:
 
 ```gala
 type Even struct {}
-func (e Even) Unapply(i int) Option[int] = if (i % 2 == 0) Some(i) else None[int]()
+func (e Even) Unapply(i int) Option[int] = if (i % 2 == 0) Some(i) else None()
 
 val opt = Some(10)
 opt match {
@@ -252,7 +252,7 @@ Return `Option[T]` — `Some` means the pattern matched, `None` means it did not
 
 ```gala
 type Even struct {}
-func (e Even) Unapply(i int) Option[int] = if (i % 2 == 0) Some(i) else None[int]()
+func (e Even) Unapply(i int) Option[int] = if (i % 2 == 0) Some(i) else None()
 
 val number = 42
 val description = number match {
@@ -301,18 +301,17 @@ val parts = "user@example.com" match {
 
 #### JSON Pattern Matching
 
-The `Json[T]` extractor in `std` works the same way — it attempts to parse a JSON string into the target type:
+The `json` package's `Codec[T]` works the same way — a codec value is an instance extractor that attempts to parse a JSON string into the target type:
 
 ```gala
-import . "martianoff/gala/std"
+import . "martianoff/gala/json"
 
-type Person struct {
-    var Name string
-    var Age  int
-}
+struct Person(Name string, Age int)
+
+val codec = Codec[Person](AsIs())
 
 val result = jsonStr match {
-    case Json[Person](p) => s"Found: ${p.Name}"
+    case codec(p) => s"Found: ${p.Name}"
     case _ => "invalid JSON"
 }
 ```
