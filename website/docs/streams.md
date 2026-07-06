@@ -383,51 +383,15 @@ val result = myStream match {
 }
 ```
 
-### Sequence Pattern Matching
+### Head/tail pattern matching
 
-Stream implements the `Seq[T]` interface, enabling sequence pattern matching syntax:
+A `Stream` is a lazy, possibly-infinite source — not a finite `Seq` — so array-style
+sequence/rest patterns (`case Stream(a, b, rest...)`) do **not** apply to it. Match a
+stream by its head and (lazy) tail with the `StreamCons` / `StreamNil` extractors shown
+above; these decompose a stream without forcing evaluation of the remaining elements.
 
-```gala
-val s = Of(1, 2, 3, 4, 5)
-
-val result = s match {
-    // Match first two elements, rest goes into 'tail'
-    case Stream(first, second, tail...) => {
-        Println(s"First: $first, Second: $second, Rest size: ${tail.Size()}")
-        return first + second
-    }
-    // Match single element
-    case Stream(only) => only
-    // Match empty stream
-    case Stream() => 0
-    case _ => -1
-}
-// Result: first=1, second=2, tail.Size()=3, returns 3
-```
-
-**Seq Interface Methods:**
-
-| Method | Description |
-|--------|-------------|
-| `Size()` | Number of elements (terminal operation) |
-| `Get(n)` | Element at index n, panics if out of bounds |
-| `GetOption(n)` | Element at index n as Option |
-| `SeqDrop(n)` | Drop first n elements (for rest pattern) |
-
-**WARNING:** Sequence pattern matching on infinite streams will not terminate! The `Size()` method is called to determine the number of elements, which requires traversing the entire stream. Always use `Take` or similar limiting operations before sequence pattern matching:
-
-```gala
-// WRONG: Will hang on infinite stream
-val naturals = From(1)
-val result = naturals match {
-    case Stream(a, b, rest...) => a + b  // Never terminates!
-}
-
-// CORRECT: Limit first
-val result = From(1).Take(10) match {
-    case Stream(a, b, rest...) => a + b  // Returns 3
-}
-```
+If you need positional or index-based matching, first collect a bounded prefix (e.g. with
+`Take`) into an `Array`, which *is* a finite `Seq` and supports sequence/rest patterns.
 
 ---
 
@@ -549,14 +513,6 @@ val first10 = fibs.Take(10).ToArray()
 | `GetOption(n)` | Element at index as Option |
 | `IsEmpty()` | Check if empty |
 | `NonEmpty()` | Check if non-empty |
-
-### Seq Interface (Sequence Pattern Matching)
-
-| Method | Description |
-|--------|-------------|
-| `Size()` | Number of elements (same as Count) |
-| `Get(n)` | Element at index (panics if out of bounds) |
-| `SeqDrop(n)` | Drop first n elements (returns Stream) |
 
 ### Pattern Matching
 

@@ -24,7 +24,6 @@ With sealed types you get:
 - **Exhaustive pattern matching** — the compiler rejects incomplete matches
 - **Auto-generated constructors** — companion objects with `Apply` methods
 - **Auto-generated extractors** — `Unapply` methods for pattern matching
-- **Discriminator methods** — `IsXxx()` boolean checks on every instance
 
 ---
 
@@ -60,15 +59,7 @@ val r = Rectangle(10.0, 20.0)
 val p = Point()
 ```
 
-**Unapply methods** — Each companion gets an `Unapply` method for use in pattern matching. You never need to call these directly; the `match` expression uses them behind the scenes.
-
-**IsXxx discriminators** — Methods on the parent type to test which variant an instance is:
-
-```gala
-val c = Circle(3.14)
-Println(c.IsCircle())      // true
-Println(c.IsRectangle())   // false
-```
+**Unapply methods** — Each companion gets an `Unapply` method for use in pattern matching. You never need to call these directly; the `match` expression uses them behind the scenes. To test which variant a value is, `match` on it (see [Pattern Matching](pattern-matching.md)) — that's the idiomatic approach, and it stays exhaustive.
 
 **Copy and Equal** — Like all GALA structs, sealed types get `Copy()` and `Equal()` for free.
 
@@ -103,7 +94,7 @@ val success = Ok(42)
 val failure = Err[int](fmt.Errorf("oops"))
 ```
 
-Generic sealed types work exactly like non-generic ones — you get companion objects, `Apply`/`Unapply`, `IsXxx()`, and exhaustive matching, all parameterized by the type argument.
+Generic sealed types work exactly like non-generic ones — you get companion objects, `Apply`/`Unapply`, and exhaustive matching, all parameterized by the type argument.
 
 ---
 

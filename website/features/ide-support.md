@@ -62,7 +62,7 @@ The plugin provides a **structure view** panel showing the outline of your GALA 
 
 <img src="{{ '/assets/images/ide/structure-view.png' | relative_url }}" alt="GALA structure view showing sealed type Shape with Circle, Rectangle, Triangle variants and their fields" style="max-width: 100%; border: 1px solid #e1e4e8; border-radius: 6px; margin: 1rem 0;">
 
-The structure view displays sealed type `Shape` with its variants (`Circle`, `Rectangle`, `Triangle`), each variant's fields, and auto-generated methods like `IsCircle()`, `IsRectangle()`, `IsTriangle()`.
+The structure view displays sealed type `Shape` with its variants (`Circle`, `Rectangle`, `Triangle`), each variant's fields, and the auto-generated `Apply`/`Unapply` companion methods.
 
 ---
 

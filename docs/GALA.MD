@@ -531,7 +531,7 @@ Type aliases transpile to Go type aliases (`type X = Y`), so methods defined on 
 
 ### Sealed Types (Algebraic Data Types)
 
-Sealed types define algebraic data types (ADTs) concisely. The transpiler auto-generates the parent struct, companion objects, `Apply`/`Unapply` methods, `IsXxx()` discriminators, `Copy`, and `Equal`.
+Sealed types define algebraic data types (ADTs) concisely. The transpiler auto-generates the parent struct, companion objects, `Apply`/`Unapply` methods, `Copy`, and `Equal`. To test which variant a value is, `match` on it — that is the idiomatic (and exhaustive) approach.
 
 #### Basic Sealed Type
 ```gala
@@ -570,7 +570,6 @@ This generates:
 - Empty companion structs `Circle{}`, `Rectangle{}`, `Point{}`
 - `Apply` methods on each companion for construction
 - `Unapply` methods for pattern matching
-- `IsCircle()`, `IsRectangle()`, `IsPoint()` methods on `Shape`
 - `Copy()` and `Equal(other Shape) bool` on `Shape` — the same auto-synthesis as for ordinary structs (see [§4 Automatic Copy and Equal Methods](#automatic-copy-and-equal-methods)). `Equal` first compares the `_variant` tag, then dispatches field-wise via `std.Equal`, so `a.Equal(b)` is the canonical way to test sealed values for structural equality. The Go `==` operator also works on sealed values when every variant field is a Go-comparable type.
 
 #### Construction and Pattern Matching
@@ -578,11 +577,7 @@ This generates:
 val c = Circle(3.14)
 val r = Rectangle(10.0, 20.0)
 
-// IsXxx() checks
-fmt.Println(c.IsCircle())     // true
-fmt.Println(c.IsRectangle())  // false
-
-// Pattern matching
+// Pattern matching — the idiomatic way to test/branch on a variant
 val desc = c match {
     case Circle(radius) => fmt.Sprintf("radius=%.2f", radius)
     case Rectangle(w, h) => fmt.Sprintf("%fx%f", w, h)
@@ -2274,11 +2269,6 @@ val m2 = m1.Put("apple", 1).Put("banana", 2).Put("cherry", 3)
 // Using factory with tuple syntax
 val m3 = HashMapOf[string, int](("a", 1), ("b", 2))
 
-// From Go map
-var goMap = make(map[string]int)
-goMap["x"] = 100
-val m4 = HashMapFromGoMap[string, int](goMap)
-
 // Getting values
 val opt = m2.Get("apple")           // Option[int]
 val value = m2.GetOrElse("apple", 0) // int
@@ -2590,11 +2580,9 @@ Since GALA transpiles to Go, Go's built-in functions are available. The followin
 |----------|-------------|---------|
 | `len(x)` | Length of string, slice, array, or map | `len("hello")` → `5` |
 | `cap(x)` | Capacity of slice | `cap(mySlice)` |
-| `make(T, ...)` | Create slice, map, or channel | `make(map[string]int)` |
 | `new(T)` | Allocate zeroed value, return pointer | `new(int)` |
 | `append(s, v...)` | Append to slice | `append(items, 4)` |
 | `delete(m, k)` | Delete map entry | `delete(myMap, "key")` |
-| `close(ch)` | Close a channel | `close(done)` |
 | `panic(v)` | Trigger a panic | `panic("error")` |
 | `recover()` | Recover from panic (in defer) | `recover()` |
 
