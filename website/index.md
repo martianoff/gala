@@ -233,7 +233,7 @@ struct Person(Name string, Age int)
 
 func greet(p Person) string = p match {
     case Person(name, age) if age < 18 => s"Hey, $name!"
-    case Person(name, _)               => s"Hello, $name"
+    case _                             => s"Hello, ${p.Name}"
 }
 
 func main() {

@@ -61,8 +61,9 @@ val noSpaces = S("hello world").Filter((r rune) => r != rune(32))
 
 // Pattern matching
 S("hello") match {
-    case NonEmptyStr(head, tail) => Println(s"First: ${string(head)}")
+    case NonEmptyStr(head, tail) => Println(s"First: ${string(head)}, rest: ${tail.ToString()}")
     case EmptyStr(_) => Println("Empty")
+    case _ => {}
 }
 ```
 
@@ -268,6 +269,7 @@ func describe(s Str) string = s match {
         }
         return "starts with " + string(head) + ", rest: " + tail.ToString()
     }
+    case _ => "other"
 }
 
 describe(S(""))       // "empty"

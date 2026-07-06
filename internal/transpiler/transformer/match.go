@@ -1383,6 +1383,15 @@ func (t *galaASTTransformer) isSimpleIdentifier(s string) bool {
 	if s == "_" || s == "" {
 		return false
 	}
+	// The literal keywords `true`, `false`, and `nil` lex as the `literal`
+	// grammar rule, not `identifier`. In a constructor sub-pattern like
+	// `case Cat(name, true)` they must be matched as literal-equality
+	// conditions, never bound as variables — otherwise the extractor path
+	// would create a binding named `true`/`false`/`nil` and later reject it
+	// as an unused variable.
+	if s == "true" || s == "false" || s == "nil" {
+		return false
+	}
 	// Simple identifiers start with a letter and contain only letters, digits, or underscores
 	for i, c := range s {
 		if i == 0 {

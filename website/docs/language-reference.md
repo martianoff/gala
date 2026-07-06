@@ -288,8 +288,8 @@ sealed type Shape {
 
 val c = Circle(3.14)
 val desc = c match {
-    case Circle(radius) => fmt.Sprintf("radius=%.2f", radius)
-    case Rectangle(w, h) => fmt.Sprintf("%fx%f", w, h)
+    case Circle(radius) => f"radius=$radius%.2f"
+    case Rectangle(w, h) => f"$w%fx$h%f"
     case Point() => "point"
 }
 ```
@@ -325,7 +325,7 @@ val status = if (score > 50) "pass" else "fail"
 val result = x match {
     case 1 => "one"
     case 2 => "two"
-    case n => "Value is " + fmt.Sprintf("%d", n)
+    case n => s"Value is $n"
     case _ => "other"
 }
 
@@ -339,8 +339,8 @@ val desc = flag match {
 #### Type-Based Pattern Matching
 ```gala
 val res = x match {
-    case s: string => "Found string: " + s
-    case i: int    => "Found int: " + fmt.Sprintf("%d", i)
+    case s: string => s"Found string: $s"
+    case i: int    => s"Found int: $i"
     case _         => "Unknown type"
 }
 ```
@@ -369,7 +369,7 @@ val res = x match {
 ```gala
 val arr = ArrayOf(1, 2, 3, 4, 5)
 val res = arr match {
-    case Array(head, tail...) => fmt.Sprintf("Head: %d, Tail size: %d", head, tail.Size())
+    case Array(head, tail...) => s"Head: $head, Tail size: ${tail.Size()}"
     case _ => "Empty"
 }
 ```
@@ -401,7 +401,7 @@ Bound names are immutable `val`s. `bind`/`also` work over any user-defined monad
 ### For Statement
 ```gala
 for i := 0; i < 10; i++ {
-    fmt.Println(i)
+    Println(i)
 }
 
 for count < 5 {
@@ -409,7 +409,7 @@ for count < 5 {
 }
 
 for _, v := range items {
-    fmt.Println(v)
+    Println(v)
 }
 ```
 
@@ -423,7 +423,7 @@ val f = (x int) => x * x
 val doubled = opt.Map((x) => x * 2)
 
 // Void closures
-opt.ForEach((x) => { fmt.Println(x) })
+opt.ForEach((x) => { Println(x) })
 ```
 
 ### Partial Function Literals
@@ -500,11 +500,14 @@ val doubled = async.Map((v) => v * 2)
 **Prefer GALA collections** over Go slices for most use cases. See [Immutable Collections](/docs/immutable-collections/).
 
 ```gala
+import . "martianoff/gala/collection_immutable"
+import . "martianoff/gala/go_interop"
+
 // PREFERRED: GALA collections
 val nums = ArrayOf(1, 2, 3, 4, 5)
 val doubled = nums.Map((x) => x * 2)
 
-// GO INTEROP: When you need []T
+// GO INTEROP: When you need []T (SliceOf lives in go_interop)
 val goSlice = SliceOf(1, 2, 3)
 ```
 

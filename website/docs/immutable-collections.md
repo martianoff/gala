@@ -312,7 +312,7 @@ list.SortBy((s) => len(s))                 // List("apple", "banana", "cherry")
 ```gala
 val list = ListOf(1, 2, 3)
 
-list.ToSlice()    // []int{1, 2, 3}
+list.ToGoSlice()  // []int{1, 2, 3}
 list.ToArray()    // Array(1, 2, 3)
 list.String()     // "List(1, 2, 3)"
 list.MkString(", ")  // "1, 2, 3"
@@ -334,7 +334,7 @@ Flatten[int](nested)  // List(1, 2, 3, 4)
 val list = ListOf(1, 2, 3)
 
 val result = list match {
-    case Cons(head, tail) => head  // Matches non-empty list
+    case Cons(head, _) => head     // Matches non-empty list
     case Nil() => -1               // Matches empty list
     case _ => -2
 }
@@ -363,9 +363,9 @@ val empty Array[int] = EmptyArray[int]()
 // From elements
 val arr = ArrayOf(1, 2, 3, 4, 5)
 
-// From slice
+// From a Go slice (SliceOf comes from go_interop)
 val slice = SliceOf(1, 2, 3)
-val arr2 = ArrayFrom(slice)
+val arr2 = ArrayFromSlice(slice)
 
 // Tabulate: compute each element from index (O(n) via arrayBuilder)
 val squares = ArrayTabulate(5, (i) => i * i)
@@ -559,7 +559,7 @@ arr2.SortBy((x) => x)                       // Array(1, 3, 5, 7, 9)
 ```gala
 val arr = ArrayOf(1, 2, 3)
 
-arr.ToSlice()       // []int{1, 2, 3}
+arr.ToGoSlice()     // []int{1, 2, 3}
 arr.ToList()        // List(1, 2, 3)
 arr.String()        // "Array(1, 2, 3)"
 arr.MkString(", ")  // "1, 2, 3"
@@ -626,7 +626,7 @@ val empty = EmptyHashSet[int]()
 // From elements
 val set = HashSetOf(1, 2, 3, 4, 5)
 
-// From slice
+// From a Go slice (SliceOf comes from go_interop)
 val slice = SliceOf(1, 2, 3)
 val set2 = HashSetFromSlice(slice)
 ```
@@ -751,8 +751,8 @@ m.MapValues((v) => v * 2)                    // HashMap(a -> 2, b -> 4, c -> 6)
 m.FoldLeftKV(0, (acc, k, v) => acc + v)      // 6
 m.Sorted()                                    // Array((a,1), (b,2), (c,3))
 
-// Collect - applies a partial function to each entry, returns Array[U]
-m.Collect({ case (k, v) if v > 1 => k })
+// Collect - filter-and-map each entry into an Array[U]
+m.Collect((k, v) => if (v > 1) Some(k) else None[string]())
 // Array("b", "c")
 ```
 

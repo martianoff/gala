@@ -116,7 +116,7 @@ Extractors compose. Guards add conditions. Sequence patterns destructure lists. 
 val list = ListOf(1, 2, 3, 4, 5)
 val msg = list match {
     case List(head, tail...) => s"head=$head, rest has ${tail.Size()} items"
-    case List()              => "empty"
+    case _                   => "empty"
 }
 ```
 
@@ -155,7 +155,7 @@ Go variables are mutable by default. There is no language-level way to declare a
 ```gala
 struct Config(Host string, Port int, var RetryCount int)
 
-val cfg = Config("localhost", 8080, 3)
+var cfg = Config("localhost", 8080, 3)
 // cfg.Host = "other"       // compile error: Host is immutable
 // cfg.Port = 9090          // compile error: Port is immutable
 cfg.RetryCount = 5          // OK: RetryCount is explicitly var
@@ -435,6 +435,7 @@ struct Person(Name string, Age int)
 func greet(p Person) string = p match {
     case Person(name, age) if age < 18 => s"Hey, $name!"
     case Person(name, _)               => s"Hello, $name"
+    case _                             => "Hello there"
 }
 
 func main() {

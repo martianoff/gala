@@ -48,6 +48,7 @@ Every collection type has a corresponding factory function. Type parameters are 
 
 ```gala
 import . "martianoff/gala/collection_immutable"
+import . "martianoff/gala/go_interop"
 
 // Sequences
 val list = ListOf(1, 2, 3, 4, 5)
@@ -67,7 +68,7 @@ val emptyArr = EmptyArray[string]()
 val emptyMap = EmptyHashMap[string, int]()
 
 // From slices
-val fromSlice = ArrayFrom(SliceOf(10, 20, 30))
+val fromSlice = ArrayFromSlice(SliceOf(10, 20, 30))
 
 // Tabulate and Fill
 val squares = ArrayTabulate(5, (i) => i * i)  // Array(0, 1, 4, 9, 16)
@@ -158,7 +159,7 @@ Println(values)  // Array(10, 20, 30)
 
 ```gala
 val m = HashMapOf(("a", 1), ("b", 2), ("c", 3))
-val highKeys = m.Collect({ case (k, v) if v > 1 => k })
+val highKeys = m.Collect((k, v) => if (v > 1) Some(k) else None[string]())
 // Array("b", "c")
 ```
 
@@ -194,7 +195,7 @@ Collections can be converted to Go slices, other collection types, or formatted 
 ```gala
 val list = ListOf(1, 2, 3)
 
-list.ToSlice()          // []int{1, 2, 3}
+list.ToGoSlice()        // []int{1, 2, 3}
 list.ToArray()          // Array(1, 2, 3)
 list.MkString(", ")     // "1, 2, 3"
 list.String()           // "List(1, 2, 3)"
@@ -269,7 +270,7 @@ List and Array support destructuring in pattern matching:
 val list = ListOf(1, 2, 3)
 
 val result = list match {
-    case Cons(head, tail) => head  // Matches non-empty list, extracts head
+    case Cons(head, _) => head     // Matches non-empty list, extracts head
     case Nil() => -1               // Matches empty list
     case _ => -2
 }

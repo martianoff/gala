@@ -45,6 +45,8 @@ Paste this into the playground to see sealed types, pattern matching, and string
 ```gala
 package main
 
+import . "martianoff/gala/collection_immutable"
+
 sealed type Animal {
     case Dog(Name string, Tricks int)
     case Cat(Name string, Indoor bool)
@@ -60,7 +62,7 @@ func describe(a Animal) string = a match {
 }
 
 func main() {
-    val animals = SliceOf(
+    val animals = ArrayOf(
         Dog("Rex", 8),
         Cat("Whiskers", true),
         Fish("Goldfish"),
@@ -68,9 +70,7 @@ func main() {
         Cat("Luna", false),
     )
 
-    for _, a := range animals {
-        Println(describe(a))
-    }
+    animals.ForEach((a) => Println(describe(a)))
 }
 ```
 
