@@ -313,10 +313,12 @@ func lowerPanicWrapperToBuiltin(expr ast.Expr) ast.Expr {
 	}
 	isWrapper := false
 	if ident, ok := call.Fun.(*ast.Ident); ok && ident.Name == "Panic" {
-		isWrapper = true
+		isWrapper = true // bare `Panic` via `import . "…/go_builtins"`
 	}
 	if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Panic" {
-		isWrapper = true
+		if x, ok := sel.X.(*ast.Ident); ok && x.Name == "go_builtins" {
+			isWrapper = true // qualified `go_builtins.Panic`
+		}
 	}
 	if !isWrapper {
 		return expr

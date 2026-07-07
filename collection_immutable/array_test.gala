@@ -3,6 +3,7 @@ package main
 import (
     . "martianoff/gala/test"
     . "martianoff/gala/collection_immutable"
+    "martianoff/gala/go_interop"
 )
 
 // === Array Creation Tests ===
@@ -22,7 +23,7 @@ func TestArrayOf(t T) T {
 func TestArrayToGoSlice(t T) T {
     val arr = ArrayOf(10, 20, 30)
     val slice = arr.ToGoSlice()
-    val t1 = Eq[int](t, len(slice), 3)
+    val t1 = Eq[int](t, slice.Size(), 3)
     return Eq[int](t1, slice[0], 10)
 }
 
@@ -384,7 +385,7 @@ func TestArrayMultipleModificationsImmutability(t T) T {
 
 // Test that appending beyond 32 elements (branching factor) works correctly.
 // This tests the fix for the bounds check bug in appendToNode where
-// node.children[childIndex] was accessed without verifying childIndex < len(node.children).
+// node.children[childIndex] was accessed without verifying childIndex < node.children.Size().
 func TestArrayAppendBeyondBranchingFactor(t T) T {
     var arr = EmptyArray[int]()
     // Append 100 elements - this will cause the tree to grow beyond depth 1
@@ -417,7 +418,7 @@ func TestArrayFromSliceLarge(t T) T {
     // Build using ArrayFromSlice (optimized bottom-up construction)
     var slice []int
     for i := 0; i < 100; i++ {
-        slice = append(slice, i)
+        slice = go_interop.SliceAppend(slice, i)
     }
     val arr = ArrayFromSlice[int](slice)
     val t1 = Eq[int](t, arr.Length(), 100)

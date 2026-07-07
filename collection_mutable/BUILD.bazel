@@ -132,7 +132,10 @@ gala_test(
 gala_binary(
     name = "perf_gala",
     src = "perf_test.gala",
-    deps = [":collection_mutable"],
+    deps = [
+        ":collection_mutable",
+        "//go_interop",
+    ],
 )
 
 # Performance benchmarks - Go native collections

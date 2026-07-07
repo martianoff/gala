@@ -432,9 +432,10 @@ func (t *galaASTTransformer) inferCallIdentType(e *ast.CallExpr, id *ast.Ident, 
 			return baseType
 		}
 	}
-	if id.Name == "len" {
-		return transpiler.BasicType{Name: "int"}
-	}
+	// (The bare `len` inference rule was removed: `len` is a forbidden Go
+	// builtin on the GALA surface — see checkForbiddenGoBuiltinCall — and its
+	// logical-size replacement `.Size()`/`.ByteSize()` is inferred as `int` in
+	// inferCallSelectorType.)
 	// Handle go_interop.SliceOf[T](elements ...T) []T
 	// SliceOf is commonly used with dot imports, infer element type from arguments.
 	// When explicit type args are provided (e.g., SliceOf[byte](...)),

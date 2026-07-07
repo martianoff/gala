@@ -1,5 +1,7 @@
 package json
 
+import "martianoff/gala/go_interop"
+
 // Naming represents a field naming strategy for serialization.
 // Used with BuildKeys to control how GALA field names are converted to serialized key names.
 //
@@ -30,8 +32,8 @@ func toCamelCase(s string) string {
     if s == "" { return s }
     var i = 0
     var upper = 0
-    val runes = toRunes(s)
-    for i < len(runes) && runes[i] >= 'A' && runes[i] <= 'Z' {
+    val runes []rune = toRunes(s)
+    for i < runes.Size() && runes[i] >= 'A' && runes[i] <= 'Z' {
         upper = upper + 1
         i = i + 1
     }
@@ -40,7 +42,7 @@ func toCamelCase(s string) string {
         runes[0] = runes[0] + 32
         return runesToString(runes)
     }
-    if upper < len(runes) {
+    if upper < runes.Size() {
         var j = 0
         for j < upper - 1 {
             runes[j] = runes[j] + 32
@@ -48,7 +50,7 @@ func toCamelCase(s string) string {
         }
     } else {
         var j = 0
-        for j < len(runes) {
+        for j < runes.Size() {
             if runes[j] >= 'A' && runes[j] <= 'Z' {
                 runes[j] = runes[j] + 32
             }
@@ -63,23 +65,23 @@ func toKebabCase(s string) string = toDelimited(s, '-')
 
 func toDelimited(s string, delim rune) string {
     if s == "" { return s }
-    val runes = toRunes(s)
+    val runes []rune = toRunes(s)
     var result []rune
     var i = 0
-    for i < len(runes) {
+    for i < runes.Size() {
         val r = runes[i]
         if r >= 'A' && r <= 'Z' {
             if i > 0 {
                 val prev = runes[i - 1]
                 if prev >= 'a' && prev <= 'z' {
-                    result = append(result, delim)
-                } else if i + 1 < len(runes) && runes[i + 1] >= 'a' && runes[i + 1] <= 'z' && prev >= 'A' && prev <= 'Z' {
-                    result = append(result, delim)
+                    result = go_interop.SliceAppend(result, delim)
+                } else if i + 1 < runes.Size() && runes[i + 1] >= 'a' && runes[i + 1] <= 'z' && prev >= 'A' && prev <= 'Z' {
+                    result = go_interop.SliceAppend(result, delim)
                 }
             }
-            result = append(result, r + 32)
+            result = go_interop.SliceAppend(result, r + 32)
         } else {
-            result = append(result, r)
+            result = go_interop.SliceAppend(result, r)
         }
         i = i + 1
     }

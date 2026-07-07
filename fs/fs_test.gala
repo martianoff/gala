@@ -13,7 +13,7 @@ import (
 // removing it (Defer-equivalent: tests call fs.RemoveAll at the end).
 func scratchDir(prefix string) string {
     val dir, err = os.MkdirTemp("", prefix)
-    if err != nil { panic(err) }
+    if err != nil { go_builtins.Panic(err) }
     return dir
 }
 

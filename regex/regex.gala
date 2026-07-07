@@ -71,7 +71,7 @@ func (r Regex) Split(s string) Array[string] {
 //   }
 func (r Regex) Unapply(s string) Option[Array[string]] {
     val result = r.Re.FindStringSubmatch(s)
-    if result == nil || len(result) < 2 {
+    if result == nil || result.Size() < 2 {
         return None[Array[string]]()
     }
     return Some[Array[string]](ArrayFromSlice(go_interop.SliceFrom(result, 1)))

@@ -51,7 +51,7 @@ func (t T) Error(msg string) T {
 // Fatal logs an error message, marks the test as failed, and stops execution.
 func (t T) Fatal(msg string) {
     Println(s"    FATAL: ${msg}")
-    panic(s"Test ${t.name} fatal error: ${msg}")
+    go_builtins.Panic(s"Test ${t.name} fatal error: ${msg}")
 }
 
 // Run runs a subtest with the given name and function.
@@ -125,7 +125,7 @@ func RunTests(tests ...TestFunc) {
     var skipped = 0
 
     Println("=== STARTING TESTS ===")
-    for i := 0; i < len(tests); i++ {
+    for i := 0; i < tests.Size(); i++ {
         val test = tests[i]
         val result = test.Run()
         if result.failed {

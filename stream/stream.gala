@@ -58,7 +58,7 @@ func Empty[T any]() Stream[T] = empty[T]()
 
 // Of creates a Stream from variadic arguments.
 func Of[T any](elements ...T) Stream[T] {
-    if len(elements) == 0 {
+    if elements.Size() == 0 {
         return empty[T]()
     }
     return fromSliceIndex[T](elements, 0)
@@ -66,7 +66,7 @@ func Of[T any](elements ...T) Stream[T] {
 
 // fromSliceIndex creates a stream starting at index i.
 func fromSliceIndex[T any](elements []T, i int) Stream[T] {
-    if i >= len(elements) {
+    if i >= elements.Size() {
         return empty[T]()
     }
     val head = elements[i]

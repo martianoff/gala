@@ -427,7 +427,7 @@ func byteIndexToRuneIndex(str string, byteIdx int) int {
         if bytePos >= byteIdx {
             return runeIdx
         }
-        bytePos = bytePos + len(string(r))
+        bytePos = bytePos + string(r).ByteSize()
         runeIdx = runeIdx + 1
     }
     return runeIdx
@@ -576,7 +576,7 @@ func (sb *StringBuilder) ToString() string {
 func (sb *StringBuilder) String() string = sb.ToString()
 
 // Length returns the total byte length of the built string.
-func (sb *StringBuilder) Length() int = sb.parts.FoldLeft(0, (acc, p) => acc + len(p))
+func (sb *StringBuilder) Length() int = sb.parts.FoldLeft(0, (acc, p) => acc + p.Size())
 
 // RuneCount returns the total number of runes in the built string.
 func (sb *StringBuilder) RuneCount() int =

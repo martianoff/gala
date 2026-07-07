@@ -19,7 +19,7 @@ func bytesOf(s string) Array[byte] = ArrayFromSlice(ToBytes(s))
 func hexBytes(s string) Array[byte] {
     val decoded, err = hex.DecodeString(s)
     if err != nil {
-        panic(s"hexBytes: invalid hex: ${err.Error()}")
+        go_builtins.Panic(s"hexBytes: invalid hex: ${err.Error()}")
     }
     return ArrayFromSlice[byte](decoded)
 }
@@ -439,7 +439,7 @@ func TestX25519PrivateKeySize(t T) T {
 // ---- random helpers ------------------------------------------------------
 
 func TestRandomHexLength(t T) T {
-    return Eq(t, len(crypto.RandomHex(16)), 32)
+    return Eq(t, crypto.RandomHex(16).Size(), 32)
 }
 
 func TestRandomHexDifferent(t T) T {
@@ -450,14 +450,14 @@ func TestRandomHexDifferent(t T) T {
 
 func TestRandomBase64URLLength(t T) T {
     // base64.RawURLEncoding.EncodedLen(32) == 43
-    return Eq(t, len(crypto.RandomBase64URL(32)), 43)
+    return Eq(t, crypto.RandomBase64URL(32).Size(), 43)
 }
 
 func TestRandomBase64URLNoPadding(t T) T {
     val s = crypto.RandomBase64URL(32)
     val decoded, err = base64.RawURLEncoding.DecodeString(s)
     val t1 = IsNil(t, err)
-    return Eq(t1, len(decoded), 32)
+    return Eq(t1, SliceLen(decoded), 32)
 }
 
 func TestRandomBase64URLDifferent(t T) T {

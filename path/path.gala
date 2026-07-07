@@ -42,7 +42,7 @@ func IsAbs(p string) bool = filepath.IsAbs(p)
 func Abs(p string) Try[string] = Try[string](() => {
     val resolved, err = filepath.Abs(p)
     if err != nil {
-        panic(err)
+        go_builtins.Panic(err)
     }
     return resolved
 })

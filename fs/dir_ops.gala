@@ -26,13 +26,13 @@ struct WalkEntry(
 // the generic deep-copy helper exported as a prelude symbol.
 func CopyFile(src string, dst string, mode int) Try[bool] = Try[bool](() => {
     val srcF, openErr = os.Open(src)
-    if openErr != nil { panic(openErr) }
+    if openErr != nil { go_builtins.Panic(openErr) }
     defer srcF.Close()
     val dstF, createErr = os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, os.FileMode(mode))
-    if createErr != nil { panic(createErr) }
+    if createErr != nil { go_builtins.Panic(createErr) }
     defer dstF.Close()
     val _, copyErr = io.Copy(dstF, srcF)
-    if copyErr != nil { panic(copyErr) }
+    if copyErr != nil { go_builtins.Panic(copyErr) }
     return true
 })
 
@@ -42,7 +42,7 @@ func CopyFile(src string, dst string, mode int) Try[bool] = Try[bool](() => {
 // we deliberately do not paper over that case.
 func Rename(src string, dst string) Try[bool] = Try[bool](() => {
     val err = os.Rename(src, dst)
-    if err != nil { panic(err) }
+    if err != nil { go_builtins.Panic(err) }
     return true
 })
 
@@ -59,7 +59,7 @@ func Walk(root string) Try[Array[WalkEntry]] = Try[Array[WalkEntry]](() => {
         entries = entries.Append(WalkEntry(Path = path, Info = fromGoFileInfo(info)))
         return nil
     })
-    if walkErr != nil { panic(walkErr) }
+    if walkErr != nil { go_builtins.Panic(walkErr) }
     return entries
 })
 
@@ -69,6 +69,6 @@ func Walk(root string) Try[Array[WalkEntry]] = Try[Array[WalkEntry]](() => {
 // Failure is reserved for malformed patterns (filepath.ErrBadPattern).
 func Glob(pattern string) Try[Array[string]] = Try[Array[string]](() => {
     val matches, err = filepath.Glob(pattern)
-    if err != nil { panic(err) }
+    if err != nil { go_builtins.Panic(err) }
     return ArrayFromSlice(matches)
 })

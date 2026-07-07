@@ -136,7 +136,7 @@ func TestHashMapFilter(t T) T {
 
 func TestHashMapFilterKeys(t T) T {
     val m = EmptyHashMap[string, int]().Put("apple", 1).Put("banana", 2).Put("cherry", 3)
-    val filtered = m.FilterKeys((k) => len(k) > 5)
+    val filtered = m.FilterKeys((k) => k.Size() > 5)
 
     val t1 = Eq[int](t, filtered.Size(), 2)
     val t2 = IsFalse(t1, filtered.Contains("apple"))
@@ -259,7 +259,7 @@ func TestHashMapToArray(t T) T {
 func TestHashMapToGoMap(t T) T {
     val m = EmptyHashMap[string, int]().Put("a", 1).Put("b", 2)
     val goMap = m.ToGoMap()
-    val t1 = Eq[int](t, len(goMap), 2)
+    val t1 = Eq[int](t, goMap.Size(), 2)
     return Eq[int](t1, goMap["a"], 1)
 }
 
@@ -339,7 +339,7 @@ func TestHashMapString(t T) T {
     val t1 = Eq[string](t, empty.String(), "HashMap()")
 
     val m = EmptyHashMap[string, int]().Put("a", 1)
-    return IsTrue(t1, len(m.String()) > 10)
+    return IsTrue(t1, m.String().Size() > 10)
 }
 
 // === Immutability Tests ===

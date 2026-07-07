@@ -57,10 +57,10 @@ func Spawn(opts SpawnOpts) Try[Process] {
     if opts.Dir != "" {
         c.Dir = opts.Dir
     }
-    if len(opts.Env) > 0 {
+    if opts.Env.Size() > 0 {
         // Append rather than overwrite — replace mode would be a footgun
         // (forgetting PATH breaks every spawn).
-        c.Env = append(c.Environ(), opts.Env...)
+        c.Env = go_interop.SliceAppendAll(c.Environ(), opts.Env)
     }
     val sin, sErr = c.StdinPipe()
     if sErr != nil { return Failure[Process](sErr) }

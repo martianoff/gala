@@ -18,6 +18,67 @@ import (
 //            transformArgumentWithExpectedType, inferTypeArgsFromApply,
 //            isGenericMethodName, isGenericMethodWithImports, isMethodGenericViaTypeMeta
 
+// forbiddenGoBuiltinSuggestions maps each bare Go builtin that GALA forbids in
+// source to an actionable replacement. Bare builtins are the last symbols that
+// resolve with no import and no GALA declaration; forbidding them removes that
+// implicit Go-leakage special case and steers authors toward GALA-native
+// idioms or the sanctioned interop wrappers.
+var forbiddenGoBuiltinSuggestions = map[string]string{
+	"len":     "use `.Size()` (logical size — characters for strings) or `.ByteSize()` (raw bytes) instead of `len(...)`",
+	"append":  "use `go_interop.SliceAppend` / `SliceAppendAll`, or build an `Array`/`List` from collection_immutable",
+	"make":    "use `go_interop.SliceWithSize` / `SliceWithCapacity` / `MapEmpty`, or an empty `Array`/`HashMap`",
+	"new":     "use `go_interop.New[T]()` for a pointer, or a zero value / `Option[T]`",
+	"cap":     "use `go_interop.SliceCap(...)`",
+	"copy":    "use `go_interop.SliceCopy(...)`, or copy an `Array`",
+	"delete":  "use `go_interop.MapDelete(...)`, or `HashMap.Remove(...)`",
+	"close":   "use `go_interop.CloseChan(...)` (or `CloseSignal(...)` for a signal channel)",
+	"complex": "use `go_interop.Complex(...)`",
+	"real":    "use `go_interop.Real(...)`",
+	"imag":    "use `go_interop.Imag(...)`",
+	"panic":   "use `go_builtins.Panic(...)` — or prefer `Option` / `Try` / `Either` for recoverable failure",
+	"recover": "`recover` is not available on the GALA surface; `Try` captures panics — use `Try(() => ...)` / `TryApply`",
+}
+
+// checkForbiddenGoBuiltinCall rejects a call to a bare Go builtin as a hard
+// error (GALA-E0035). It is resolver-aware: the name is only forbidden when it
+// is a bare identifier that does NOT resolve to a user-defined function, a
+// local binding (val/var/param), or a declared type/struct. This keeps
+// user-defined functions that happen to share a builtin's name legal — e.g.
+// `func delete(...)` (examples/kvstore.gala) and `func copy(...)`
+// (examples/method_default_params.gala) — while forbidding the builtins
+// themselves. A selector call (`x.copy()`) is never a bare builtin and is not
+// checked. Returns nil when the call is allowed.
+func (t *galaASTTransformer) checkForbiddenGoBuiltinCall(fun ast.Expr, line, col int) error {
+	id, ok := fun.(*ast.Ident)
+	if !ok {
+		return nil
+	}
+	suggestion, isBuiltin := forbiddenGoBuiltinSuggestions[id.Name]
+	if !isBuiltin {
+		return nil
+	}
+	// Resolver-aware guards: a name that resolves to something the author
+	// declared is that declaration, not the builtin.
+	if t.getFunction(id.Name) != nil { // user-defined function (delete/copy stay legal)
+		return nil
+	}
+	if !t.getType(id.Name).IsNil() { // local val/var/param, or a type in scope
+		return nil
+	}
+	if t.getTypeMeta(id.Name) != nil { // declared type / companion
+		return nil
+	}
+	if _, ok := t.structFields[id.Name]; ok { // struct layout used as a constructor
+		return nil
+	}
+	return galaerr.NewCodedSemanticError(
+		galaerr.CodeForbiddenGoBuiltin,
+		line, col,
+		fmt.Sprintf("bare Go builtin %q is not part of GALA's surface", id.Name+"(...)"),
+		suggestion,
+	)
+}
+
 func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.PostfixSuffixContext) (ast.Expr, error) {
 	// Rewrite Println/Print to fmt.Println/fmt.Print (auto-imported)
 	base = t.rewriteBuiltinPrintFuncs(base)
@@ -224,6 +285,10 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 			if fields, ok := t.structFields[t.resolveStructTypeName(typeName)]; ok && len(fields) == 0 && t.isTypeBaseExpr(base) {
 				return &ast.CompositeLit{Type: base}, nil
 			}
+		}
+		// Zero-argument bare builtin (e.g. `recover()`) is forbidden too.
+		if err := t.checkForbiddenGoBuiltinCall(base, suffix.GetStart().GetLine(), suffix.GetStart().GetColumn()); err != nil {
+			return nil, err
 		}
 		return &ast.CallExpr{Fun: base, Args: nil}, nil
 	}
@@ -1621,6 +1686,13 @@ func (t *galaASTTransformer) tryTransformValWithApply(fun ast.Expr, args []ast.E
 // rather than growing this dispatcher. Each helper is independently testable
 // and carries its own doc comment describing the sub-path it handles.
 func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *grammar.ArgumentListContext) (ast.Expr, error) {
+	// Bare Go builtins (append, len, panic, ...) are a hard error: they are the
+	// last symbols that resolve with no import and no GALA declaration. Reject
+	// them here where the call target and the symbol tables are both available.
+	if err := t.checkForbiddenGoBuiltinCall(fun, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn()); err != nil {
+		return nil, err
+	}
+
 	// Consume the expected-type hint (set by transformArgumentWithExpectedType
 	// for the immediately-enclosing call). Removed eagerly so nested arg
 	// transforms inside this call don't pick up the outer call's expectation
@@ -1750,7 +1822,14 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	fun = t.injectFuncPhantomTypeArgs(fun, callCtx.funcMeta, args, hasSpread, pendingExpected)
 
 	// --- Section 13: Fallback — emit the call verbatim. ---
-	return &ast.CallExpr{Fun: fun, Args: args, Ellipsis: ellipsisPos(hasSpread)}, nil
+	// The go_builtins.Panic wrapper lowers to Go's builtin `panic` in EVERY
+	// position (statement, match-arm tail, value-returning function body). A
+	// void wrapper call is not a Go terminating statement, so a value/tail
+	// position would fail with "missing return"; the builtin terminates. The
+	// now-unused go_builtins import is pruned by the import cleanup pass. GALA
+	// source never spells bare `panic` — only emitted Go does, exactly like the
+	// `.Size()` sugar's `len()`.
+	return lowerPanicWrapperToBuiltin(&ast.CallExpr{Fun: fun, Args: args, Ellipsis: ellipsisPos(hasSpread)}), nil
 }
 
 // handleNamedArgsCall is a thin dispatcher for named-argument calls. It

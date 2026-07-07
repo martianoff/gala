@@ -348,7 +348,7 @@ func TestTreeSetCount(t T) T {
 func TestTreeSetToGoSlice(t T) T {
     val s = TreeSetOf[int](3, 1, 2)
     val slice = s.ToGoSlice()
-    val t1 = Eq[int](t, len(slice), 3)
+    val t1 = Eq[int](t, slice.Size(), 3)
     val t2 = Eq[int](t1, slice[0], 1) // Sorted
     return Eq[int](t2, slice[2], 3)
 }

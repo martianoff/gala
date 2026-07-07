@@ -267,6 +267,16 @@ const (
 	// (`func add(a int, b int)`, `struct Point(X int, Y int)`). Emitting `any`
 	// for the untyped parameter would violate the concrete-types invariant.
 	CodeUntypedParam ErrorCode = "GALA-E0034"
+
+	// E0035: a bare Go builtin (append, make, new, cap, copy, delete, close,
+	// complex, real, imag, panic, recover, len) was called as a function. These
+	// are the last symbols that resolved with no import and no GALA declaration
+	// — an implicit Go leakage the language forbids. Each has a GALA-native or
+	// sanctioned interop replacement (`.Size()`/`.ByteSize()`, the go_interop
+	// wrappers, go_builtins.Panic, Option/Try/Either). The check is
+	// resolver-aware: a user-defined function of the same name (e.g. a local
+	// `func delete(...)`) is not a builtin and is left untouched.
+	CodeForbiddenGoBuiltin ErrorCode = "GALA-E0035"
 )
 
 // MultiError collects multiple GALA errors.

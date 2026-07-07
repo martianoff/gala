@@ -243,7 +243,7 @@ struct Signature(bytes Array[byte])
 func GenerateEd25519KeyPair() Ed25519KeyPair {
     val pub, priv, err = ed25519.GenerateKey(rand.Reader)
     if err != nil {
-        panic(s"crypto: ed25519.GenerateKey failed: ${err.Error()}")
+        go_builtins.Panic(s"crypto: ed25519.GenerateKey failed: ${err.Error()}")
     }
     return Ed25519KeyPair(
         Public  = Ed25519PublicKey(bytes = ArrayFromSlice[byte](pub)),
@@ -329,7 +329,7 @@ func GenerateX25519KeyPair() X25519KeyPair {
     val curve = ecdh.X25519()
     val priv, err = curve.GenerateKey(rand.Reader)
     if err != nil {
-        panic(s"crypto: ecdh.GenerateKey failed: ${err.Error()}")
+        go_builtins.Panic(s"crypto: ecdh.GenerateKey failed: ${err.Error()}")
     }
     val pub = priv.PublicKey()
     return X25519KeyPair(
@@ -373,7 +373,7 @@ func (sk X25519PrivateKey) PublicKey() X25519PublicKey {
     val curve = ecdh.X25519()
     val privKey, err = curve.NewPrivateKey(sk.bytes.ToGoSlice())
     if err != nil {
-        panic(s"crypto: invalid X25519 private key: ${err.Error()}")
+        go_builtins.Panic(s"crypto: invalid X25519 private key: ${err.Error()}")
     }
     val pub = privKey.PublicKey().Bytes()
     return X25519PublicKey(bytes = ArrayFromSlice[byte](pub))
@@ -395,7 +395,7 @@ func RandomHex(n int) string {
     val buf = go_interop.SliceWithSize[byte](n)
     val _, err = rand.Read(buf)
     if err != nil {
-        panic(s"crypto: rand.Read failed: ${err.Error()}")
+        go_builtins.Panic(s"crypto: rand.Read failed: ${err.Error()}")
     }
     return hex.EncodeToString(buf)
 }
@@ -406,7 +406,7 @@ func RandomBase64URL(n int) string {
     val buf = go_interop.SliceWithSize[byte](n)
     val _, err = rand.Read(buf)
     if err != nil {
-        panic(s"crypto: rand.Read failed: ${err.Error()}")
+        go_builtins.Panic(s"crypto: rand.Read failed: ${err.Error()}")
     }
     return base64.RawURLEncoding.EncodeToString(buf)
 }

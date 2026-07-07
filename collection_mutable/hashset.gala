@@ -49,7 +49,7 @@ func EmptyHashSet[T comparable]() *HashSet[T] {
 // Example: HashSetOf[int](1, 2, 3) creates HashSet(1, 2, 3)
 func HashSetOf[T comparable](elements ...T) *HashSet[T] {
     var result = EmptyHashSet[T]()
-    for i := 0; i < len(elements); i++ {
+    for i := 0; i < elements.Size(); i++ {
         result.Add(elements[i])
     }
     return result
@@ -58,7 +58,7 @@ func HashSetOf[T comparable](elements ...T) *HashSet[T] {
 // HashSetFromSlice creates a HashSet from a slice.
 func HashSetFromSlice[T comparable](elements []T) *HashSet[T] {
     var result = EmptyHashSet[T]()
-    for i := 0; i < len(elements); i++ {
+    for i := 0; i < elements.Size(); i++ {
         result.Add(elements[i])
     }
     return result
@@ -92,7 +92,7 @@ func hashSetHash[T comparable](value T) uint32 {
 
 // hashSetPanicNotHashable panics with a helpful error message.
 func hashSetPanicNotHashable(v any) uint32 {
-    panic(fmt.Sprintf("HashSet: type %T must implement std.Hashable interface", v))
+    go_builtins.Panic(fmt.Sprintf("HashSet: type %T must implement std.Hashable interface", v))
 }
 
 // === Basic Operations ===
@@ -132,7 +132,7 @@ func (s *HashSet[T]) Add(elem T) bool {
     s.size++
 
     // Check if resize needed
-    if float64(s.size) > float64(len(s.buckets)) * hashSetLoadFactor {
+    if float64(s.size) > float64(s.buckets.Size()) * hashSetLoadFactor {
         s.resize()
     }
 
@@ -141,12 +141,12 @@ func (s *HashSet[T]) Add(elem T) bool {
 
 // resize doubles the bucket array and rehashes all entries.
 func (s *HashSet[T]) resize() {
-    var newSize = len(s.buckets) * 2
+    var newSize = s.buckets.Size() * 2
     var newBuckets = go_interop.SliceWithSize[*hashSetEntry[T]](newSize)
     var newMask = uint32(newSize - 1)
 
     // Rehash all entries
-    for i := 0; i < len(s.buckets); i++ {
+    for i := 0; i < s.buckets.Size(); i++ {
         var entry = s.buckets[i]
         for entry != nil {
             var nextEntry = entry.next
@@ -161,9 +161,9 @@ func (s *HashSet[T]) resize() {
     s.bucketMask = newMask
 }
 
-// AddAll adds all elements from a slice. O(m) where m = len(elements).
+// AddAll adds all elements from a slice. O(m) where m = elements.Size().
 func (s *HashSet[T]) AddAll(elements []T) {
-    for i := 0; i < len(elements); i++ {
+    for i := 0; i < elements.Size(); i++ {
         s.Add(elements[i])
     }
 }
@@ -201,7 +201,7 @@ func (s *HashSet[T]) Remove(elem T) bool {
 
 // RemoveAll removes all elements from a slice.
 func (s *HashSet[T]) RemoveAll(elements []T) {
-    for i := 0; i < len(elements); i++ {
+    for i := 0; i < elements.Size(); i++ {
         s.Remove(elements[i])
     }
 }
@@ -239,7 +239,7 @@ func (s *HashSet[T]) Contains(elem T) bool {
 
 // ContainsAll returns true if the set contains all elements from a slice.
 func (s *HashSet[T]) ContainsAll(elements []T) bool {
-    for i := 0; i < len(elements); i++ {
+    for i := 0; i < elements.Size(); i++ {
         if !s.Contains(elements[i]) {
             return false
         }
@@ -332,7 +332,7 @@ func (s *HashSet[T]) IntersectInPlace(other *HashSet[T]) {
     var toRemove []T
     s.ForEach((elem T) => {
         if !other.Contains(elem) {
-            toRemove = append(toRemove, elem)
+            toRemove = go_interop.SliceAppend(toRemove, elem)
         }
     })
     s.RemoveAll(toRemove)
@@ -347,7 +347,7 @@ func (s *HashSet[T]) DiffInPlace(other *HashSet[T]) {
 
 // ForEach applies a function to each element for side effects.
 func (s *HashSet[T]) ForEach(f func(T)) {
-    for i := 0; i < len(s.buckets); i++ {
+    for i := 0; i < s.buckets.Size(); i++ {
         var entry = s.buckets[i]
         for entry != nil {
             f(entry.value)
@@ -423,7 +423,7 @@ func (s *HashSet[T]) FoldLeft[U any](initial U, f func(U, T) U) U {
 // Panics if the set is empty.
 func (s *HashSet[T]) Reduce(f func(T, T) T) T {
     if s.Size() == 0 {
-        panic("HashSet.Reduce on empty set")
+        go_builtins.Panic("HashSet.Reduce on empty set")
     }
     var first = true
     var acc T
@@ -484,7 +484,7 @@ func (s *HashSet[T]) Count(p func(T) bool) int {
 // Panics if the set is empty.
 func (s *HashSet[T]) Head() T {
     if s.Size() == 0 {
-        panic("HashSet.Head on empty set")
+        go_builtins.Panic("HashSet.Head on empty set")
     }
     var result T
     var found = false
@@ -511,7 +511,7 @@ func (s *HashSet[T]) HeadOption() Option[T] {
 func (s *HashSet[T]) ToGoSlice() []T {
     var result []T
     s.ForEach((elem T) => {
-        result = append(result, elem)
+        result = go_interop.SliceAppend(result, elem)
     })
     return result
 }

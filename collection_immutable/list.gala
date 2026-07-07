@@ -3,6 +3,7 @@ package collection_immutable
 import (
     . "martianoff/gala/std"
     "martianoff/gala/go_interop"
+    "martianoff/gala/go_builtins"
 )
 
 // List is an immutable linked list with the following performance characteristics:
@@ -59,7 +60,7 @@ func (n Nil[T]) Unapply(l List[T]) Option[bool] {
 // Example: ListOf[int](1, 2, 3) creates List(1, 2, 3)
 func ListOf[T any](elements ...T) List[T] {
     var result = emptyList[T]()
-    for i := len(elements) - 1; i >= 0; i-- {
+    for i := elements.Size() - 1; i >= 0; i-- {
         result = consList[T](elements[i], result)
     }
     return result
@@ -68,7 +69,7 @@ func ListOf[T any](elements ...T) List[T] {
 // ListFromSlice creates a List from a slice.
 func ListFromSlice[T any](elements []T) List[T] {
     var result = emptyList[T]()
-    for i := len(elements) - 1; i >= 0; i-- {
+    for i := elements.Size() - 1; i >= 0; i-- {
         result = consList[T](elements[i], result)
     }
     return result
@@ -87,7 +88,7 @@ func (l List[T]) NonEmpty() bool = !l.isEmpty
 // Panics if the list is empty.
 func (l List[T]) Head() T {
     if l.isEmpty {
-        panic("List.Head on empty list")
+        go_builtins.Panic("List.Head on empty list")
     }
     return l.head
 }
@@ -104,7 +105,7 @@ func (l List[T]) HeadOption() Option[T] {
 // Panics if the list is empty.
 func (l List[T]) Tail() List[T] {
     if l.isEmpty {
-        panic("List.Tail on empty list")
+        go_builtins.Panic("List.Tail on empty list")
     }
     return *l.tail
 }
@@ -173,7 +174,7 @@ func (l List[T]) AppendAll(other List[T]) List[T] {
 // Panics if index is out of bounds.
 func (l List[T]) Get(index int) T {
     if (index < 0) || (index >= l.length) {
-        panic(f"List.Get: index $index out of bounds [0, ${l.length})")
+        go_builtins.Panic(f"List.Get: index $index out of bounds [0, ${l.length})")
     }
     var current = l
     for i := 0; i < index; i++ {
@@ -193,7 +194,7 @@ func (l List[T]) GetOption(index int) Option[T] {
 // Updated returns a new list with element at index replaced. O(n).
 func (l List[T]) Updated(index int, elem T) List[T] {
     if (index < 0) || (index >= l.length) {
-        panic(f"List.Updated: index $index out of bounds [0, ${l.length})")
+        go_builtins.Panic(f"List.Updated: index $index out of bounds [0, ${l.length})")
     }
     if index == 0 {
         return consList[T](elem, *l.tail)
@@ -205,7 +206,7 @@ func (l List[T]) Updated(index int, elem T) List[T] {
 // Panics if the list is empty.
 func (l List[T]) Last() T {
     if l.isEmpty {
-        panic("List.Last on empty list")
+        go_builtins.Panic("List.Last on empty list")
     }
     var current = l
     var next = *current.tail
@@ -228,7 +229,7 @@ func (l List[T]) LastOption() Option[T] {
 // Panics if the list is empty.
 func (l List[T]) Init() List[T] {
     if l.isEmpty {
-        panic("List.Init on empty list")
+        go_builtins.Panic("List.Init on empty list")
     }
     var tail = *l.tail
     if tail.isEmpty {
@@ -416,7 +417,7 @@ func (l List[T]) FoldRight[U any](initial U, f func(T, U) U) U {
 // Panics if the list is empty.
 func (l List[T]) Reduce(f func(T, T) T) T {
     if l.isEmpty {
-        panic("List.Reduce on empty list")
+        go_builtins.Panic("List.Reduce on empty list")
     }
     var tail = *l.tail
     return tail.FoldLeft[T](l.head, f)
@@ -631,7 +632,7 @@ func (l List[T]) ToGoSlice() []T {
     var result []T
     var current = l
     for !current.isEmpty {
-        result = append(result, current.head)
+        result = go_interop.SliceAppend(result, current.head)
         current = *current.tail
     }
     return result

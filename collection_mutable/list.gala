@@ -41,7 +41,7 @@ func EmptyList[T any]() *List[T] {
 // ListOf creates a List from variadic arguments.
 func ListOf[T any](elements ...T) *List[T] {
     var list = EmptyList[T]()
-    for i := 0; i < len(elements); i++ {
+    for i := 0; i < elements.Size(); i++ {
         list.Append(elements[i])
     }
     return list
@@ -50,7 +50,7 @@ func ListOf[T any](elements ...T) *List[T] {
 // ListFromSlice creates a List from a slice.
 func ListFromSlice[T any](elements []T) *List[T] {
     var list = EmptyList[T]()
-    for i := 0; i < len(elements); i++ {
+    for i := 0; i < elements.Size(); i++ {
         list.Append(elements[i])
     }
     return list
@@ -97,7 +97,7 @@ func (l *List[T]) nodeAt(index int) *listNode[T] {
 // Panics if index is out of bounds.
 func (l *List[T]) Get(index int) T {
     if (index < 0) || (index >= l.length) {
-        panic(f"List.Get: index $index out of bounds [0, ${l.length})")
+        go_builtins.Panic(f"List.Get: index $index out of bounds [0, ${l.length})")
     }
     var node = l.nodeAt(index)
     return node.value
@@ -115,7 +115,7 @@ func (l *List[T]) GetOption(index int) Option[T] {
 // Panics if the list is empty.
 func (l *List[T]) Head() T {
     if l.length == 0 {
-        panic("List.Head on empty list")
+        go_builtins.Panic("List.Head on empty list")
     }
     return l.head.value
 }
@@ -132,7 +132,7 @@ func (l *List[T]) HeadOption() Option[T] {
 // Panics if the list is empty.
 func (l *List[T]) Last() T {
     if l.length == 0 {
-        panic("List.Last on empty list")
+        go_builtins.Panic("List.Last on empty list")
     }
     return l.tail.value
 }
@@ -151,7 +151,7 @@ func (l *List[T]) LastOption() Option[T] {
 // Panics if index is out of bounds.
 func (l *List[T]) Set(index int, value T) {
     if (index < 0) || (index >= l.length) {
-        panic(f"List.Set: index $index out of bounds [0, ${l.length})")
+        go_builtins.Panic(f"List.Set: index $index out of bounds [0, ${l.length})")
     }
     var node = l.nodeAt(index)
     node.value = value
@@ -187,14 +187,14 @@ func (l *List[T]) Append(value T) {
 
 // PrependAll prepends all elements from a slice. O(m) where m is slice length.
 func (l *List[T]) PrependAll(values []T) {
-    for i := len(values) - 1; i >= 0; i-- {
+    for i := values.Size() - 1; i >= 0; i-- {
         l.Prepend(values[i])
     }
 }
 
 // AppendAll appends all elements from a slice. O(m) where m is slice length.
 func (l *List[T]) AppendAll(values []T) {
-    for i := 0; i < len(values); i++ {
+    for i := 0; i < values.Size(); i++ {
         l.Append(values[i])
     }
 }
@@ -212,7 +212,7 @@ func (l *List[T]) AppendFrom(other *List[T]) {
 // Panics if index is out of bounds (0 <= index <= length).
 func (l *List[T]) Insert(index int, value T) {
     if (index < 0) || (index > l.length) {
-        panic(f"List.Insert: index $index out of bounds [0, ${l.length}]")
+        go_builtins.Panic(f"List.Insert: index $index out of bounds [0, ${l.length}]")
     }
     if index == 0 {
         l.Prepend(value)
@@ -234,7 +234,7 @@ func (l *List[T]) Insert(index int, value T) {
 // Panics if index is out of bounds.
 func (l *List[T]) RemoveAt(index int) T {
     if (index < 0) || (index >= l.length) {
-        panic(f"List.RemoveAt: index $index out of bounds [0, ${l.length})")
+        go_builtins.Panic(f"List.RemoveAt: index $index out of bounds [0, ${l.length})")
     }
     var node = l.nodeAt(index)
     var removed = node.value
@@ -261,7 +261,7 @@ func (l *List[T]) unlinkNode(node *listNode[T]) {
 // Panics if the list is empty.
 func (l *List[T]) RemoveFirst() T {
     if l.length == 0 {
-        panic("List.RemoveFirst on empty list")
+        go_builtins.Panic("List.RemoveFirst on empty list")
     }
     var removed = l.head.value
     l.head = l.head.next
@@ -280,7 +280,7 @@ func (l *List[T]) RemoveFirst() T {
 // Panics if the list is empty.
 func (l *List[T]) RemoveLast() T {
     if l.length == 0 {
-        panic("List.RemoveLast on empty list")
+        go_builtins.Panic("List.RemoveLast on empty list")
     }
     var removed = l.tail.value
     l.tail = l.tail.prev
@@ -434,7 +434,7 @@ func (l *List[T]) Clone() *List[T] {
 // Tail returns all elements except the first.
 func (l *List[T]) Tail() *List[T] {
     if l.length == 0 {
-        panic("List.Tail on empty list")
+        go_builtins.Panic("List.Tail on empty list")
     }
     return l.Drop(1)
 }
@@ -442,7 +442,7 @@ func (l *List[T]) Tail() *List[T] {
 // Init returns all elements except the last.
 func (l *List[T]) Init() *List[T] {
     if l.length == 0 {
-        panic("List.Init on empty list")
+        go_builtins.Panic("List.Init on empty list")
     }
     return l.Take(l.length - 1)
 }
@@ -581,7 +581,7 @@ func (l *List[T]) FoldRight[U any](initial U, f func(T, U) U) U {
 // Panics if the list is empty.
 func (l *List[T]) Reduce(f func(T, T) T) T {
     if l.length == 0 {
-        panic("List.Reduce on empty list")
+        go_builtins.Panic("List.Reduce on empty list")
     }
     var acc = l.head.value
     var current = l.head.next
@@ -739,7 +739,7 @@ func (l *List[T]) ToGoSlice() []T {
     var result []T
     var current = l.head
     for current != nil {
-        result = append(result, current.value)
+        result = go_interop.SliceAppend(result, current.value)
         current = current.next
     }
     return result

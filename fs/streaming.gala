@@ -32,9 +32,11 @@ val scannerMaxLineBytes = 1024 * 1024
 // For files that don't fit in memory, prefer ForEachLine.
 func ReadLines(path string) Try[Array[string]] = Try[Array[string]](() => {
     val data, err = os.ReadFile(path)
-    if err != nil { panic(err) }
-    val parts = strings.Split(string(data), "\n")
-    val n = if (len(parts) > 0 && parts[len(parts)-1] == "") len(parts) - 1 else len(parts)
+    if err != nil { go_builtins.Panic(err) }
+    val parts []string = strings.Split(string(data), "\n")
+    val total = SliceLen(parts)
+    var n = total
+    if (total > 0 && parts[total-1] == "") { n = total - 1 }
     return ArrayFromSlice(SliceTake(parts, n))
 })
 
@@ -48,7 +50,7 @@ func ReadLines(path string) Try[Array[string]] = Try[Array[string]](() => {
 // is too tight for many real inputs.
 func ForEachLine(path string, fn func(string) bool) Try[bool] = Try[bool](() => {
     val f, err = os.Open(path)
-    if err != nil { panic(err) }
+    if err != nil { go_builtins.Panic(err) }
     defer f.Close()
     val scanner = bufio.NewScanner(f)
     scanner.Buffer(SliceWithCapacity[byte](scannerInitialBufBytes), scannerMaxLineBytes)
@@ -58,7 +60,7 @@ func ForEachLine(path string, fn func(string) bool) Try[bool] = Try[bool](() => 
         }
     }
     val scanErr = scanner.Err()
-    if scanErr != nil { panic(scanErr) }
+    if scanErr != nil { go_builtins.Panic(scanErr) }
     return true
 })
 
@@ -69,7 +71,7 @@ func ForEachLine(path string, fn func(string) bool) Try[bool] = Try[bool](() => 
 func WriteLines(path string, lines Array[string], mode int) Try[bool] = Try[bool](() => {
     val joined = strings.Join(lines.ToGoSlice(), "\n") + "\n"
     val err = os.WriteFile(path, ToBytes(joined), os.FileMode(mode))
-    if err != nil { panic(err) }
+    if err != nil { go_builtins.Panic(err) }
     return true
 })
 
@@ -80,11 +82,11 @@ func WriteLines(path string, lines Array[string], mode int) Try[bool] = Try[bool
 // a failed close still becomes Failure.
 func AppendString(path string, contents string, mode int) Try[bool] = Try[bool](() => {
     val f, err = os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, os.FileMode(mode))
-    if err != nil { panic(err) }
+    if err != nil { go_builtins.Panic(err) }
     val _, writeErr = f.WriteString(contents)
     val closeErr = f.Close()
-    if writeErr != nil { panic(writeErr) }
-    if closeErr != nil { panic(closeErr) }
+    if writeErr != nil { go_builtins.Panic(writeErr) }
+    if closeErr != nil { go_builtins.Panic(closeErr) }
     return true
 })
 
@@ -92,10 +94,10 @@ func AppendString(path string, contents string, mode int) Try[bool] = Try[bool](
 // or-append semantics; both write and close errors are reported.
 func Append(path string, data Array[byte], mode int) Try[bool] = Try[bool](() => {
     val f, err = os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, os.FileMode(mode))
-    if err != nil { panic(err) }
+    if err != nil { go_builtins.Panic(err) }
     val _, writeErr = f.Write(data.ToGoSlice())
     val closeErr = f.Close()
-    if writeErr != nil { panic(writeErr) }
-    if closeErr != nil { panic(closeErr) }
+    if writeErr != nil { go_builtins.Panic(writeErr) }
+    if closeErr != nil { go_builtins.Panic(closeErr) }
     return true
 })

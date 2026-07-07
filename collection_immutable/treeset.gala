@@ -3,6 +3,8 @@ package collection_immutable
 import (
     "fmt"
     . "martianoff/gala/std"
+    "martianoff/gala/go_interop"
+    "martianoff/gala/go_builtins"
 )
 
 // TreeSet is an immutable sorted set implemented as a Red-Black tree.
@@ -49,7 +51,7 @@ func EmptyTreeSet[T comparable]() TreeSet[T] {
 // Example: TreeSetOf(1, 2, 3) creates TreeSet(1, 2, 3)
 func TreeSetOf[T comparable](elements ...T) TreeSet[T] {
     var result = EmptyTreeSet[T]()
-    for i := 0; i < len(elements); i++ {
+    for i := 0; i < elements.Size(); i++ {
         result = result.Add(elements[i])
     }
     return result
@@ -58,7 +60,7 @@ func TreeSetOf[T comparable](elements ...T) TreeSet[T] {
 // TreeSetFromSlice creates a TreeSet from a slice.
 func TreeSetFromSlice[T comparable](elements []T) TreeSet[T] {
     var result = EmptyTreeSet[T]()
-    for i := 0; i < len(elements); i++ {
+    for i := 0; i < elements.Size(); i++ {
         result = result.Add(elements[i])
     }
     return result
@@ -254,7 +256,7 @@ func compareUint8s(a uint8, b uint8) int {
 
 // panicNotOrdered panics with a helpful error message for types that don't implement Ordered.
 func panicNotOrdered(v any) int {
-    panic(fmt.Sprintf("TreeSet: type %T must implement std.Ordered interface", v))
+    go_builtins.Panic(fmt.Sprintf("TreeSet: type %T must implement std.Ordered interface", v))
 }
 
 // isRedNode checks if a node is red (nil nodes are black).
@@ -421,7 +423,7 @@ func balanceRemoveTree[T comparable](node *treeNode[T]) *treeNode[T] {
 // Panics if the set is empty.
 func (s TreeSet[T]) Min() T {
     if s.size == 0 {
-        panic("TreeSet.Min on empty set")
+        go_builtins.Panic("TreeSet.Min on empty set")
     }
     return findMinTree[T](s.root)
 }
@@ -438,7 +440,7 @@ func (s TreeSet[T]) MinOption() Option[T] {
 // Panics if the set is empty.
 func (s TreeSet[T]) Max() T {
     if s.size == 0 {
-        panic("TreeSet.Max on empty set")
+        go_builtins.Panic("TreeSet.Max on empty set")
     }
     return findMaxTree[T](s.root)
 }
@@ -582,7 +584,7 @@ func (s TreeSet[T]) FoldLeft[U any](initial U, f func(U, T) U) U {
 // Panics if the set is empty.
 func (s TreeSet[T]) Reduce(f func(T, T) T) T {
     if s.size == 0 {
-        panic("TreeSet.Reduce on empty set")
+        go_builtins.Panic("TreeSet.Reduce on empty set")
     }
     var first = true
     var acc T
@@ -729,7 +731,7 @@ func rangeToTree[T comparable](node *treeNode[T], to T, f func(T)) {
 func (s TreeSet[T]) ToGoSlice() []T {
     var result []T
     s.ForEach((elem T) => {
-        result = append(result, elem)
+        result = go_interop.SliceAppend(result, elem)
     })
     return result
 }

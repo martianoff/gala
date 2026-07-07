@@ -128,6 +128,15 @@ func SliceCap[T any](s []T) int {
 	return cap(s)
 }
 
+// SliceLen returns the length of a slice. Prefer the `.Size()` sugar for
+// slice-length; SliceLen is the explicit escape hatch for Go-interop slices
+// whose element type the transpiler cannot resolve at the call site (e.g. a
+// multi-return `val xs, err = goCall()` binding a []os.DirEntry / []byte),
+// where the receiver-typed sugar cannot fire.
+func SliceLen[T any](s []T) int {
+	return len(s)
+}
+
 // === Pointer Allocation ===
 
 // New allocates a zeroed value of type T and returns a pointer to it.

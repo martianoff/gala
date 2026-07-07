@@ -26,7 +26,7 @@ type BenchFunc struct {
 // then the final measurement is reported in ns/op format.
 func RunBenchmarks(benchmarks ...BenchFunc) {
     Println("=== STARTING BENCHMARKS ===")
-    for i := 0; i < len(benchmarks); i++ {
+    for i := 0; i < benchmarks.Size(); i++ {
         val bench = benchmarks[i]
         runBenchmark(bench)
     }

@@ -4,6 +4,7 @@ import (
     "fmt"
     . "martianoff/gala/std"
     "martianoff/gala/go_interop"
+    "martianoff/gala/go_builtins"
 )
 
 // HashMap is an immutable map with effectively constant time operations.
@@ -80,7 +81,7 @@ func hashMapHash[K comparable](key K) uint32 {
 
 // hashMapPanicNotHashable panics with a helpful error message.
 func hashMapPanicNotHashable(v any) uint32 {
-    panic(fmt.Sprintf("HashMap: type %T must implement std.Hashable interface", v))
+    go_builtins.Panic(fmt.Sprintf("HashMap: type %T must implement std.Hashable interface", v))
 }
 
 // hashMapBitpos returns the bit position for a hash at a given level.
@@ -117,7 +118,7 @@ func (m HashMap[K, V]) Contains(key K) bool {
 // containsKeyInNode searches for a key in a node.
 func containsKeyInNode[K comparable, V any](node *hashMapNode[K, V], key K, hashCode uint32, level int) bool {
     if node.isLeaf {
-        for i := 0; i < len(node.keys); i++ {
+        for i := 0; i < node.keys.Size(); i++ {
             if node.keys[i] == key {
                 return true
             }
@@ -146,7 +147,7 @@ func (m HashMap[K, V]) Get(key K) Option[V] {
 // getFromNodeMap searches for a key in a node and returns its value.
 func getFromNodeMap[K comparable, V any](node *hashMapNode[K, V], key K, hashCode uint32, level int) Option[V] {
     if node.isLeaf {
-        for i := 0; i < len(node.keys); i++ {
+        for i := 0; i < node.keys.Size(); i++ {
             if node.keys[i] == key {
                 return Some[V](node.values[i])
             }
@@ -172,7 +173,7 @@ func (m HashMap[K, V]) GetOrElse(key K, defaultValue V) V {
 func (m HashMap[K, V]) Apply(key K) V {
     return m.Get(key) match {
         case Some(v) => v
-        case None() => panic(s"HashMap: key not found: $key")
+        case None() => go_builtins.Panic(s"HashMap: key not found: $key")
     }
 }
 
@@ -190,8 +191,8 @@ func (m HashMap[K, V]) Put(key K, value V) HashMap[K, V] {
     if m.root == nil {
         var keys []K
         var values []V
-        keys = append(keys, key)
-        values = append(values, value)
+        keys = go_interop.SliceAppend(keys, key)
+        values = go_interop.SliceAppend(values, value)
         newRoot = &hashMapNode[K, V](keys = keys, values = values, isLeaf = true)
     } else {
         newRoot = putToNode[K, V](m.root, key, value, hashCode, 0)
@@ -204,16 +205,16 @@ func (m HashMap[K, V]) Put(key K, value V) HashMap[K, V] {
 func putToNode[K comparable, V any](node *hashMapNode[K, V], key K, value V, hashCode uint32, level int) *hashMapNode[K, V] {
     if node.isLeaf {
         // Check if key already exists - update value
-        for i := 0; i < len(node.keys); i++ {
+        for i := 0; i < node.keys.Size(); i++ {
             if node.keys[i] == key {
                 var newKeys []K
                 var newValues []V
-                for j := 0; j < len(node.keys); j++ {
-                    newKeys = append(newKeys, node.keys[j])
+                for j := 0; j < node.keys.Size(); j++ {
+                    newKeys = go_interop.SliceAppend(newKeys, node.keys[j])
                     if j == i {
-                        newValues = append(newValues, value)
+                        newValues = go_interop.SliceAppend(newValues, value)
                     } else {
-                        newValues = append(newValues, node.values[j])
+                        newValues = go_interop.SliceAppend(newValues, node.values[j])
                     }
                 }
                 return &hashMapNode[K, V](keys = newKeys, values = newValues, isLeaf = true)
@@ -225,12 +226,12 @@ func putToNode[K comparable, V any](node *hashMapNode[K, V], key K, value V, has
             // Max depth reached, just add to entries (hash collision)
             var newKeys []K
             var newValues []V
-            for i := 0; i < len(node.keys); i++ {
-                newKeys = append(newKeys, node.keys[i])
-                newValues = append(newValues, node.values[i])
+            for i := 0; i < node.keys.Size(); i++ {
+                newKeys = go_interop.SliceAppend(newKeys, node.keys[i])
+                newValues = go_interop.SliceAppend(newValues, node.values[i])
             }
-            newKeys = append(newKeys, key)
-            newValues = append(newValues, value)
+            newKeys = go_interop.SliceAppend(newKeys, key)
+            newValues = go_interop.SliceAppend(newValues, value)
             return &hashMapNode[K, V](keys = newKeys, values = newValues, isLeaf = true)
         }
 
@@ -238,7 +239,7 @@ func putToNode[K comparable, V any](node *hashMapNode[K, V], key K, value V, has
         var newNode = &hashMapNode[K, V](bitmap = uint32(0), isLeaf = false)
 
         // Add existing entries
-        for i := 0; i < len(node.keys); i++ {
+        for i := 0; i < node.keys.Size(); i++ {
             val existingHash = hashMapHash[K](node.keys[i])
             newNode = insertIntoInternalNodeMap[K, V](newNode, node.keys[i], node.values[i], existingHash, level)
         }
@@ -255,18 +256,18 @@ func putToNode[K comparable, V any](node *hashMapNode[K, V], key K, value V, has
         // No child at this position, create new leaf
         var newKeys []K
         var newValues []V
-        newKeys = append(newKeys, key)
-        newValues = append(newValues, value)
+        newKeys = go_interop.SliceAppend(newKeys, key)
+        newValues = go_interop.SliceAppend(newValues, value)
         val newLeaf = &hashMapNode[K, V](keys = newKeys, values = newValues, isLeaf = true)
 
         // Copy children and insert new leaf
         var newChildren []*hashMapNode[K, V]
         for i := 0; i < idx; i++ {
-            newChildren = append(newChildren, node.children[i])
+            newChildren = go_interop.SliceAppend(newChildren, node.children[i])
         }
-        newChildren = append(newChildren, newLeaf)
-        for i := idx; i < len(node.children); i++ {
-            newChildren = append(newChildren, node.children[i])
+        newChildren = go_interop.SliceAppend(newChildren, newLeaf)
+        for i := idx; i < node.children.Size(); i++ {
+            newChildren = go_interop.SliceAppend(newChildren, node.children[i])
         }
 
         return &hashMapNode[K, V](bitmap = node.bitmap | bit, children = newChildren, isLeaf = false)
@@ -277,11 +278,11 @@ func putToNode[K comparable, V any](node *hashMapNode[K, V], key K, value V, has
 
     // Copy children with updated child
     var newChildren []*hashMapNode[K, V]
-    for i := 0; i < len(node.children); i++ {
+    for i := 0; i < node.children.Size(); i++ {
         if i == idx {
-            newChildren = append(newChildren, newChild)
+            newChildren = go_interop.SliceAppend(newChildren, newChild)
         } else {
-            newChildren = append(newChildren, node.children[i])
+            newChildren = go_interop.SliceAppend(newChildren, node.children[i])
         }
     }
 
@@ -297,18 +298,18 @@ func insertIntoInternalNodeMap[K comparable, V any](node *hashMapNode[K, V], key
         // No child at this position, create new leaf
         var newKeys []K
         var newValues []V
-        newKeys = append(newKeys, key)
-        newValues = append(newValues, value)
+        newKeys = go_interop.SliceAppend(newKeys, key)
+        newValues = go_interop.SliceAppend(newValues, value)
         val newLeaf = &hashMapNode[K, V](keys = newKeys, values = newValues, isLeaf = true)
 
         // Copy children and insert new leaf
         var newChildren []*hashMapNode[K, V]
         for i := 0; i < idx; i++ {
-            newChildren = append(newChildren, node.children[i])
+            newChildren = go_interop.SliceAppend(newChildren, node.children[i])
         }
-        newChildren = append(newChildren, newLeaf)
-        for i := idx; i < len(node.children); i++ {
-            newChildren = append(newChildren, node.children[i])
+        newChildren = go_interop.SliceAppend(newChildren, newLeaf)
+        for i := idx; i < node.children.Size(); i++ {
+            newChildren = go_interop.SliceAppend(newChildren, node.children[i])
         }
 
         return &hashMapNode[K, V](bitmap = node.bitmap | bit, children = newChildren, isLeaf = false)
@@ -319,11 +320,11 @@ func insertIntoInternalNodeMap[K comparable, V any](node *hashMapNode[K, V], key
 
     // Copy children with updated child
     var newChildren []*hashMapNode[K, V]
-    for i := 0; i < len(node.children); i++ {
+    for i := 0; i < node.children.Size(); i++ {
         if i == idx {
-            newChildren = append(newChildren, newChild)
+            newChildren = go_interop.SliceAppend(newChildren, newChild)
         } else {
-            newChildren = append(newChildren, node.children[i])
+            newChildren = go_interop.SliceAppend(newChildren, node.children[i])
         }
     }
 
@@ -352,13 +353,13 @@ func removeFromNodeMap[K comparable, V any](node *hashMapNode[K, V], key K, hash
     if node.isLeaf {
         var newKeys []K
         var newValues []V
-        for i := 0; i < len(node.keys); i++ {
+        for i := 0; i < node.keys.Size(); i++ {
             if node.keys[i] != key {
-                newKeys = append(newKeys, node.keys[i])
-                newValues = append(newValues, node.values[i])
+                newKeys = go_interop.SliceAppend(newKeys, node.keys[i])
+                newValues = go_interop.SliceAppend(newValues, node.values[i])
             }
         }
-        if len(newKeys) == 0 {
+        if newKeys.Size() == 0 {
             return nil
         }
         return &hashMapNode[K, V](keys = newKeys, values = newValues, isLeaf = true)
@@ -380,9 +381,9 @@ func removeFromNodeMap[K comparable, V any](node *hashMapNode[K, V], key K, hash
         }
 
         var newChildren []*hashMapNode[K, V]
-        for i := 0; i < len(node.children); i++ {
+        for i := 0; i < node.children.Size(); i++ {
             if i != idx {
-                newChildren = append(newChildren, node.children[i])
+                newChildren = go_interop.SliceAppend(newChildren, node.children[i])
             }
         }
         return &hashMapNode[K, V](bitmap = node.bitmap & (^bit), children = newChildren, isLeaf = false)
@@ -390,11 +391,11 @@ func removeFromNodeMap[K comparable, V any](node *hashMapNode[K, V], key K, hash
 
     // Copy children with updated child
     var newChildren []*hashMapNode[K, V]
-    for i := 0; i < len(node.children); i++ {
+    for i := 0; i < node.children.Size(); i++ {
         if i == idx {
-            newChildren = append(newChildren, newChild)
+            newChildren = go_interop.SliceAppend(newChildren, newChild)
         } else {
-            newChildren = append(newChildren, node.children[i])
+            newChildren = go_interop.SliceAppend(newChildren, node.children[i])
         }
     }
 
@@ -416,13 +417,13 @@ func (m HashMap[K, V]) ForEachKV(f func(K, V)) {
 // forEachInNodeMapKV traverses a node and applies f to each entry.
 func forEachInNodeMapKV[K comparable, V any](node *hashMapNode[K, V], f func(K, V)) {
     if node.isLeaf {
-        for i := 0; i < len(node.keys); i++ {
+        for i := 0; i < node.keys.Size(); i++ {
             f(node.keys[i], node.values[i])
         }
         return
     }
 
-    for i := 0; i < len(node.children); i++ {
+    for i := 0; i < node.children.Size(); i++ {
         forEachInNodeMapKV[K, V](node.children[i], f)
     }
 }
@@ -527,14 +528,14 @@ func (m HashMap[K, V]) Exists(p func(K, V) bool) bool {
 // existsInNodeMap searches for an entry satisfying p with early exit.
 func existsInNodeMap[K comparable, V any](node *hashMapNode[K, V], p func(K, V) bool) bool {
     if node.isLeaf {
-        for i := 0; i < len(node.keys); i++ {
+        for i := 0; i < node.keys.Size(); i++ {
             if p(node.keys[i], node.values[i]) {
                 return true
             }
         }
         return false
     }
-    for i := 0; i < len(node.children); i++ {
+    for i := 0; i < node.children.Size(); i++ {
         if existsInNodeMap[K, V](node.children[i], p) {
             return true
         }
@@ -554,14 +555,14 @@ func (m HashMap[K, V]) ForAll(p func(K, V) bool) bool {
 // forAllInNodeMap checks if all entries satisfy p with early exit.
 func forAllInNodeMap[K comparable, V any](node *hashMapNode[K, V], p func(K, V) bool) bool {
     if node.isLeaf {
-        for i := 0; i < len(node.keys); i++ {
+        for i := 0; i < node.keys.Size(); i++ {
             if !p(node.keys[i], node.values[i]) {
                 return false
             }
         }
         return true
     }
-    for i := 0; i < len(node.children); i++ {
+    for i := 0; i < node.children.Size(); i++ {
         if !forAllInNodeMap[K, V](node.children[i], p) {
             return false
         }
@@ -698,7 +699,7 @@ func (m HashMap[K, V]) Find(p func(K, V) bool) Option[Tuple[K, V]] {
 func (m HashMap[K, V]) Head() Tuple[K, V] {
     return m.HeadOption() match {
         case Some(v) => v
-        case None() => panic("HashMap: head of empty map")
+        case None() => go_builtins.Panic("HashMap: head of empty map")
     }
 }
 
@@ -736,7 +737,7 @@ func (m HashMap[K, V]) Partition(p func(K, V) bool) Tuple[HashMap[K, V], HashMap
 // HashMapOf creates a HashMap from key-value tuples.
 func HashMapOf[K comparable, V any](entries ...Tuple[K, V]) HashMap[K, V] {
     var result = EmptyHashMap[K, V]()
-    for i := 0; i < len(entries); i++ {
+    for i := 0; i < entries.Size(); i++ {
         result = result.Put(entries[i].V1, entries[i].V2)
     }
     return result
@@ -745,7 +746,7 @@ func HashMapOf[K comparable, V any](entries ...Tuple[K, V]) HashMap[K, V] {
 // HashMapFromSlice creates a HashMap from a slice of tuples.
 func HashMapFromSlice[K comparable, V any](entries []Tuple[K, V]) HashMap[K, V] {
     var result = EmptyHashMap[K, V]()
-    for i := 0; i < len(entries); i++ {
+    for i := 0; i < entries.Size(); i++ {
         result = result.Put(entries[i].V1, entries[i].V2)
     }
     return result

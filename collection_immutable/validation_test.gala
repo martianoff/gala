@@ -3,6 +3,7 @@ package main
 import (
     . "martianoff/gala/test"
     . "martianoff/gala/collection_immutable"
+    "martianoff/gala/go_interop"
 )
 
 // ============================================================================
@@ -282,17 +283,17 @@ func TestListTailChainIntegrity(t T) T {
     var heads []int
     var current = list
     for !current.IsEmpty() {
-        lengths = append(lengths, current.Length())
-        heads = append(heads, current.Head())
+        lengths = go_interop.SliceAppend(lengths, current.Length())
+        heads = go_interop.SliceAppend(heads, current.Head())
         current = current.Tail()
     }
 
     // Should have 10 iterations
-    val t1 = Eq[int](t, len(lengths), 10)
+    val t1 = Eq[int](t, lengths.Size(), 10)
 
     // Each tail should have decreasing length
     var lengthsCorrect = true
-    for i := 0; i < len(lengths); i++ {
+    for i := 0; i < lengths.Size(); i++ {
         if lengths[i] != (10 - i) {
             lengthsCorrect = false
         }
@@ -300,7 +301,7 @@ func TestListTailChainIntegrity(t T) T {
 
     // First element of each tail should be i+1
     var headsCorrect = true
-    for i := 0; i < len(heads); i++ {
+    for i := 0; i < heads.Size(); i++ {
         if heads[i] != (i + 1) {
             headsCorrect = false
         }

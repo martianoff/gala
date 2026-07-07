@@ -4,6 +4,7 @@ import (
     . "martianoff/gala/test"
     . "martianoff/gala/collection_mutable"
     . "martianoff/gala/std"
+    "martianoff/gala/go_interop"
 )
 
 // === Basic Operations Tests ===
@@ -106,10 +107,10 @@ func TestMutableTreeMapSortedOrder(t T) T {
 
     var keys []int
     m.ForEachKV((k int, v string) => {
-        keys = append(keys, k)
+        keys = go_interop.SliceAppend(keys, k)
     })
 
-    val t1 = Eq[int](t, len(keys), 5)
+    val t1 = Eq[int](t, keys.Size(), 5)
     val t2 = Eq[int](t1, keys[0], 1)
     val t3 = Eq[int](t2, keys[1], 2)
     val t4 = Eq[int](t3, keys[2], 3)
@@ -436,7 +437,7 @@ func TestMutableTreeMapToGoMap(t T) T {
     m.Put("a", 1)
     m.Put("b", 2)
     val goMap = m.ToGoMap()
-    val t1 = Eq[int](t, len(goMap), 2)
+    val t1 = Eq[int](t, goMap.Size(), 2)
     return Eq[int](t1, goMap["a"], 1)
 }
 

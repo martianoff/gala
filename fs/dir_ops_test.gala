@@ -12,7 +12,7 @@ import (
 // Each test cleans up via fs.RemoveAll / defer os.RemoveAll.
 func scratchDirDirOps(prefix string) string {
     val dir, err = os.MkdirTemp("", prefix)
-    if err != nil { panic(err) }
+    if err != nil { go_builtins.Panic(err) }
     return dir
 }
 

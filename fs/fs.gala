@@ -40,7 +40,7 @@ func fromGoFileInfo(fi os.FileInfo) FileInfo = FileInfo(
 // is captured as Failure.
 func ReadFile(path string) Try[Array[byte]] = Try[Array[byte]](() => {
     val data, err = os.ReadFile(path)
-    if err != nil { panic(err) }
+    if err != nil { go_builtins.Panic(err) }
     return ArrayFromSlice(data)
 })
 
@@ -48,7 +48,7 @@ func ReadFile(path string) Try[Array[byte]] = Try[Array[byte]](() => {
 // text file. Equivalent to ReadFile + decoding the bytes as UTF-8.
 func ReadFileString(path string) Try[string] = Try[string](() => {
     val data, err = os.ReadFile(path)
-    if err != nil { panic(err) }
+    if err != nil { go_builtins.Panic(err) }
     return string(data)
 })
 
@@ -57,21 +57,21 @@ func ReadFileString(path string) Try[string] = Try[string](() => {
 // is mostly advisory; only the read-only bit is honored.
 func WriteFile(path string, data Array[byte], mode int) Try[bool] = Try[bool](() => {
     val err = os.WriteFile(path, data.ToGoSlice(), os.FileMode(mode))
-    if err != nil { panic(err) }
+    if err != nil { go_builtins.Panic(err) }
     return true
 })
 
 // WriteFileString is the string-content companion to WriteFile.
 func WriteFileString(path string, contents string, mode int) Try[bool] = Try[bool](() => {
     val err = os.WriteFile(path, ToBytes(contents), os.FileMode(mode))
-    if err != nil { panic(err) }
+    if err != nil { go_builtins.Panic(err) }
     return true
 })
 
 // Stat returns metadata about the file at `path`.
 func Stat(path string) Try[FileInfo] = Try[FileInfo](() => {
     val fi, err = os.Stat(path)
-    if err != nil { panic(err) }
+    if err != nil { go_builtins.Panic(err) }
     return fromGoFileInfo(fi)
 })
 
@@ -86,7 +86,7 @@ func Exists(path string) bool = Stat(path).IsSuccess()
 // mode applied to newly-created directories.
 func MkdirAll(path string, mode int) Try[bool] = Try[bool](() => {
     val err = os.MkdirAll(path, os.FileMode(mode))
-    if err != nil { panic(err) }
+    if err != nil { go_builtins.Panic(err) }
     return true
 })
 
@@ -97,7 +97,7 @@ func MkdirAll(path string, mode int) Try[bool] = Try[bool](() => {
 // gets replaced by random characters.
 func MkdirTemp(dir string, pattern string) Try[string] = Try[string](() => {
     val created, err = os.MkdirTemp(dir, pattern)
-    if err != nil { panic(err) }
+    if err != nil { go_builtins.Panic(err) }
     return created
 })
 
@@ -107,7 +107,7 @@ func MkdirTemp(dir string, pattern string) Try[string] = Try[string](() => {
 // (matching os.RemoveAll's convention).
 func RemoveAll(path string) Try[bool] = Try[bool](() => {
     val err = os.RemoveAll(path)
-    if err != nil { panic(err) }
+    if err != nil { go_builtins.Panic(err) }
     return true
 })
 
@@ -117,11 +117,11 @@ func RemoveAll(path string) Try[bool] = Try[bool](() => {
 // a stable order should sort).
 func ReadDir(path string) Try[Array[FileInfo]] = Try[Array[FileInfo]](() => {
     val entries, err = os.ReadDir(path)
-    if err != nil { panic(err) }
+    if err != nil { go_builtins.Panic(err) }
     var out = EmptyArray[FileInfo]()
-    for i := 0; i < len(entries); i++ {
+    for i := 0; i < SliceLen(entries); i++ {
         val info, infoErr = entries[i].Info()
-        if infoErr != nil { panic(infoErr) }
+        if infoErr != nil { go_builtins.Panic(infoErr) }
         out = out.Append(fromGoFileInfo(info))
     }
     return out

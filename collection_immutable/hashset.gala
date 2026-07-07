@@ -3,6 +3,8 @@ package collection_immutable
 import (
     "fmt"
     . "martianoff/gala/std"
+    "martianoff/gala/go_interop"
+    "martianoff/gala/go_builtins"
 )
 
 // HashSet is an immutable set with effectively constant time operations.
@@ -45,7 +47,7 @@ func EmptyHashSet[T comparable]() HashSet[T] {
 // Example: HashSetOf[int](1, 2, 3) creates HashSet(1, 2, 3)
 func HashSetOf[T comparable](elements ...T) HashSet[T] {
     var result = EmptyHashSet[T]()
-    for i := 0; i < len(elements); i++ {
+    for i := 0; i < elements.Size(); i++ {
         result = result.Add(elements[i])
     }
     return result
@@ -54,7 +56,7 @@ func HashSetOf[T comparable](elements ...T) HashSet[T] {
 // HashSetFromSlice creates a HashSet from a slice.
 func HashSetFromSlice[T comparable](elements []T) HashSet[T] {
     var result = EmptyHashSet[T]()
-    for i := 0; i < len(elements); i++ {
+    for i := 0; i < elements.Size(); i++ {
         result = result.Add(elements[i])
     }
     return result
@@ -104,7 +106,7 @@ func hash[T comparable](value T) uint32 {
 
 // panicNotHashable panics with a helpful error message for types that don't implement Hashable.
 func panicNotHashable(v any) uint32 {
-    panic(fmt.Sprintf("HashSet: type %T must implement std.Hashable interface", v))
+    go_builtins.Panic(fmt.Sprintf("HashSet: type %T must implement std.Hashable interface", v))
 }
 
 // bitpos returns the bit position for a hash at a given level.
@@ -142,7 +144,7 @@ func (s HashSet[T]) Contains(elem T) bool {
 func containsInNode[T comparable](node *hashSetNode[T], elem T, hashCode uint32, level int) bool {
     if node.isLeaf {
         // Check entries at this leaf
-        for i := 0; i < len(node.entries); i++ {
+        for i := 0; i < node.entries.Size(); i++ {
             if node.entries[i] == elem {
                 return true
             }
@@ -172,7 +174,7 @@ func (s HashSet[T]) Add(elem T) HashSet[T] {
     if s.root == nil {
         // Create new leaf node
         var entries []T
-        entries = append(entries, elem)
+        entries = go_interop.SliceAppend(entries, elem)
         newRoot = &hashSetNode[T](entries = entries, isLeaf = true)
     } else {
         newRoot = addToNode[T](s.root, elem, hashCode, 0)
@@ -188,10 +190,10 @@ func addToNode[T comparable](node *hashSetNode[T], elem T, hashCode uint32, leve
         if level >= 6 {
             // Max depth reached, just add to entries (hash collision)
             var newEntries []T
-            for i := 0; i < len(node.entries); i++ {
-                newEntries = append(newEntries, node.entries[i])
+            for i := 0; i < node.entries.Size(); i++ {
+                newEntries = go_interop.SliceAppend(newEntries, node.entries[i])
             }
-            newEntries = append(newEntries, elem)
+            newEntries = go_interop.SliceAppend(newEntries, elem)
             return &hashSetNode[T](entries = newEntries, isLeaf = true)
         }
 
@@ -199,7 +201,7 @@ func addToNode[T comparable](node *hashSetNode[T], elem T, hashCode uint32, leve
         var newNode = &hashSetNode[T](bitmap = uint32(0), isLeaf = false)
 
         // Add existing entries
-        for i := 0; i < len(node.entries); i++ {
+        for i := 0; i < node.entries.Size(); i++ {
             val existingHash = hash[T](node.entries[i])
             newNode = insertIntoInternalNode[T](newNode, node.entries[i], existingHash, level)
         }
@@ -215,17 +217,17 @@ func addToNode[T comparable](node *hashSetNode[T], elem T, hashCode uint32, leve
     if (node.bitmap & bit) == 0 {
         // No child at this position, create new leaf
         var newEntries []T
-        newEntries = append(newEntries, elem)
+        newEntries = go_interop.SliceAppend(newEntries, elem)
         val newLeaf = &hashSetNode[T](entries = newEntries, isLeaf = true)
 
         // Copy children and insert new leaf
         var newChildren []*hashSetNode[T]
         for i := 0; i < idx; i++ {
-            newChildren = append(newChildren, node.children[i])
+            newChildren = go_interop.SliceAppend(newChildren, node.children[i])
         }
-        newChildren = append(newChildren, newLeaf)
-        for i := idx; i < len(node.children); i++ {
-            newChildren = append(newChildren, node.children[i])
+        newChildren = go_interop.SliceAppend(newChildren, newLeaf)
+        for i := idx; i < node.children.Size(); i++ {
+            newChildren = go_interop.SliceAppend(newChildren, node.children[i])
         }
 
         return &hashSetNode[T](bitmap = node.bitmap | bit, children = newChildren, isLeaf = false)
@@ -236,11 +238,11 @@ func addToNode[T comparable](node *hashSetNode[T], elem T, hashCode uint32, leve
 
     // Copy children with updated child
     var newChildren []*hashSetNode[T]
-    for i := 0; i < len(node.children); i++ {
+    for i := 0; i < node.children.Size(); i++ {
         if i == idx {
-            newChildren = append(newChildren, newChild)
+            newChildren = go_interop.SliceAppend(newChildren, newChild)
         } else {
-            newChildren = append(newChildren, node.children[i])
+            newChildren = go_interop.SliceAppend(newChildren, node.children[i])
         }
     }
 
@@ -255,17 +257,17 @@ func insertIntoInternalNode[T comparable](node *hashSetNode[T], elem T, hashCode
     if (node.bitmap & bit) == 0 {
         // No child at this position, create new leaf
         var newEntries []T
-        newEntries = append(newEntries, elem)
+        newEntries = go_interop.SliceAppend(newEntries, elem)
         val newLeaf = &hashSetNode[T](entries = newEntries, isLeaf = true)
 
         // Copy children and insert new leaf
         var newChildren []*hashSetNode[T]
         for i := 0; i < idx; i++ {
-            newChildren = append(newChildren, node.children[i])
+            newChildren = go_interop.SliceAppend(newChildren, node.children[i])
         }
-        newChildren = append(newChildren, newLeaf)
-        for i := idx; i < len(node.children); i++ {
-            newChildren = append(newChildren, node.children[i])
+        newChildren = go_interop.SliceAppend(newChildren, newLeaf)
+        for i := idx; i < node.children.Size(); i++ {
+            newChildren = go_interop.SliceAppend(newChildren, node.children[i])
         }
 
         return &hashSetNode[T](bitmap = node.bitmap | bit, children = newChildren, isLeaf = false)
@@ -276,11 +278,11 @@ func insertIntoInternalNode[T comparable](node *hashSetNode[T], elem T, hashCode
 
     // Copy children with updated child
     var newChildren []*hashSetNode[T]
-    for i := 0; i < len(node.children); i++ {
+    for i := 0; i < node.children.Size(); i++ {
         if i == idx {
-            newChildren = append(newChildren, newChild)
+            newChildren = go_interop.SliceAppend(newChildren, newChild)
         } else {
-            newChildren = append(newChildren, node.children[i])
+            newChildren = go_interop.SliceAppend(newChildren, node.children[i])
         }
     }
 
@@ -308,12 +310,12 @@ func (s HashSet[T]) Remove(elem T) HashSet[T] {
 func removeFromNode[T comparable](node *hashSetNode[T], elem T, hashCode uint32, level int) *hashSetNode[T] {
     if node.isLeaf {
         var newEntries []T
-        for i := 0; i < len(node.entries); i++ {
+        for i := 0; i < node.entries.Size(); i++ {
             if node.entries[i] != elem {
-                newEntries = append(newEntries, node.entries[i])
+                newEntries = go_interop.SliceAppend(newEntries, node.entries[i])
             }
         }
-        if len(newEntries) == 0 {
+        if newEntries.Size() == 0 {
             return nil
         }
         return &hashSetNode[T](entries = newEntries, isLeaf = true)
@@ -335,9 +337,9 @@ func removeFromNode[T comparable](node *hashSetNode[T], elem T, hashCode uint32,
         }
 
         var newChildren []*hashSetNode[T]
-        for i := 0; i < len(node.children); i++ {
+        for i := 0; i < node.children.Size(); i++ {
             if i != idx {
-                newChildren = append(newChildren, node.children[i])
+                newChildren = go_interop.SliceAppend(newChildren, node.children[i])
             }
         }
         return &hashSetNode[T](bitmap = node.bitmap & (^bit), children = newChildren, isLeaf = false)
@@ -345,11 +347,11 @@ func removeFromNode[T comparable](node *hashSetNode[T], elem T, hashCode uint32,
 
     // Copy children with updated child
     var newChildren []*hashSetNode[T]
-    for i := 0; i < len(node.children); i++ {
+    for i := 0; i < node.children.Size(); i++ {
         if i == idx {
-            newChildren = append(newChildren, newChild)
+            newChildren = go_interop.SliceAppend(newChildren, newChild)
         } else {
-            newChildren = append(newChildren, node.children[i])
+            newChildren = go_interop.SliceAppend(newChildren, node.children[i])
         }
     }
 
@@ -413,13 +415,13 @@ func (s HashSet[T]) ForEach(f func(T)) {
 // forEachInNode traverses a node and applies f to each element.
 func forEachInNode[T comparable](node *hashSetNode[T], f func(T)) {
     if node.isLeaf {
-        for i := 0; i < len(node.entries); i++ {
+        for i := 0; i < node.entries.Size(); i++ {
             f(node.entries[i])
         }
         return
     }
 
-    for i := 0; i < len(node.children); i++ {
+    for i := 0; i < node.children.Size(); i++ {
         forEachInNode[T](node.children[i], f)
     }
 }
@@ -483,7 +485,7 @@ func (s HashSet[T]) FoldLeft[U any](initial U, f func(U, T) U) U {
 // Panics if the set is empty.
 func (s HashSet[T]) Reduce(f func(T, T) T) T {
     if s.size == 0 {
-        panic("HashSet.Reduce on empty set")
+        go_builtins.Panic("HashSet.Reduce on empty set")
     }
     var first = true
     var acc T
@@ -540,7 +542,7 @@ func (s HashSet[T]) Count(p func(T) bool) int {
 // Panics if the set is empty.
 func (s HashSet[T]) Head() T {
     if s.size == 0 {
-        panic("HashSet.Head on empty set")
+        go_builtins.Panic("HashSet.Head on empty set")
     }
     var result T
     var found = false
@@ -565,7 +567,7 @@ func (s HashSet[T]) HeadOption() Option[T] {
 func (s HashSet[T]) ToGoSlice() []T {
     var result []T
     s.ForEach((elem T) => {
-        result = append(result, elem)
+        result = go_interop.SliceAppend(result, elem)
     })
     return result
 }

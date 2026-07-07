@@ -93,10 +93,10 @@ func TestTreeMapSortedOrder(t T) T {
     val m = EmptyTreeMap[int, string]().Put(5, "e").Put(3, "c").Put(1, "a").Put(4, "d").Put(2, "b")
     var keys []int
     m.ForEachKV((k, v) => {
-        keys = append(keys, k)
+        keys = go_interop.SliceAppend(keys, k)
     })
 
-    val t1 = Eq[int](t, len(keys), 5)
+    val t1 = Eq[int](t, keys.Size(), 5)
     val t2 = Eq[int](t1, keys[0], 1)
     val t3 = Eq[int](t2, keys[1], 2)
     val t4 = Eq[int](t3, keys[2], 3)
@@ -208,7 +208,7 @@ func TestTreeMapFilter(t T) T {
 
 func TestTreeMapFilterKeys(t T) T {
     val m = EmptyTreeMap[string, int]().Put("apple", 1).Put("banana", 2).Put("cherry", 3)
-    val filtered = m.FilterKeys((k) => len(k) > 5)
+    val filtered = m.FilterKeys((k) => k.Size() > 5)
 
     val t1 = Eq[int](t, filtered.Size(), 2)
     val t2 = IsFalse(t1, filtered.Contains("apple"))
@@ -373,7 +373,7 @@ func TestTreeMapToArray(t T) T {
 func TestTreeMapToGoMap(t T) T {
     val m = EmptyTreeMap[string, int]().Put("a", 1).Put("b", 2)
     val goMap = m.ToGoMap()
-    val t1 = Eq[int](t, len(goMap), 2)
+    val t1 = Eq[int](t, goMap.Size(), 2)
     return Eq[int](t1, goMap["a"], 1)
 }
 

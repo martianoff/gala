@@ -79,7 +79,7 @@ func TestFailurePropagation(t T) T {
 
 func TestSuspendCatchesPanic(t T) T {
     val panicking = io.Suspend[int](() => {
-        panic("boom")
+        go_builtins.Panic("boom")
         return 0
     })
     val result = panicking.Run()
