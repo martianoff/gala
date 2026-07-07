@@ -570,6 +570,24 @@ func (t *galaASTTransformer) inferCallIdentType(e *ast.CallExpr, id *ast.Ident, 
 			return retType
 		}
 	}
+
+	// Fallback: a bare identifier naming a dot-imported Go function
+	// (e.g. `ToRunes` from `import . "martianoff/gala/go_interop"`, which
+	// returns `[]rune`). Resolve its return type through goTypeInfo so it
+	// yields a concrete ArrayType/MapType/BasicType rather than NilType.
+	// Without this, downstream consumers that key off the receiver type —
+	// notably the `.Size()`/`.ByteSize()` sugar (via sizeSugarReceiverType)
+	// and val-type inference for `val r = ToRunes(...)` — cannot fire and
+	// fall back to a raw Go slice with no `.Size()` method. Mirrors the
+	// dot-import resolution already done for parameter types in
+	// resolveGoFuncParamTypes. `std` is dot-imported too but its functions
+	// are GALA (resolved above via getFunction), so a `std.<name>` miss here
+	// is harmless.
+	for _, entry := range t.importManager.dotImports {
+		if retType := t.getGoFuncReturnType(entry.PkgName + "." + id.Name); !retType.IsNil() {
+			return retType
+		}
+	}
 	return transpiler.NilType{}
 }
 

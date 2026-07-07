@@ -106,6 +106,7 @@ go_test(
         "sealed_equal_synth_test.go",
         "sealed_string_func_field_test.go",
         "sealed_tuple_widen_test.go",
+        "size_sugar_go_return_test.go",
         "some_wrap_sealed_case_test.go",
         "structs_test.go",
         "test_helper_test.go",
