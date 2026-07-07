@@ -370,7 +370,7 @@ GALA supports variadic functions using the `...T` syntax, allowing functions to 
 func sum(numbers ...int) int {
     var total = 0
     var i = 0
-    for ; i < len(numbers) ; {
+    for ; i < numbers.Size() ; {
         total = total + numbers[i]
         i = i + 1
     }
@@ -387,7 +387,7 @@ Variadic functions can be combined with generics for flexible factory functions.
 ```gala
 func ListOf[T any](elements ...T) List[T] {
     var result = EmptyList[T]()
-    var i = len(elements) - 1
+    var i = elements.Size() - 1
     for ; i >= 0 ; {
         result = result.Prepend(elements[i])
         i = i - 1
@@ -1431,7 +1431,7 @@ val msg = e match {
 }
 
 // Monadic operations are biased towards Right
-val length = e.Map((s) => len(s))
+val length = e.Map((s) => s.Size())
 
 // FlatMap chains computations that return Either
 val result = Right[string, int](5).FlatMap((x) => Right[string, int](x + 100))
@@ -2570,51 +2570,46 @@ val runes = ToRunes("hello")  // string to rune slice
 
 **Note:** Type conversions are explicit in GALA — there is no implicit numeric widening or narrowing.
 
-## 11. Go Built-in Functions
+## 11. Go Built-in Functions Are Forbidden
 
-Since GALA transpiles to Go, Go's built-in functions are available. The following are commonly used:
+Bare Go builtins are **not** part of GALA's surface. Calling one is a hard
+transpile error (**GALA-E0035**). They were the last symbols that resolved with
+no import and no GALA declaration — a silent Go-leakage special case GALA
+removes. Each has a GALA-native form or a sanctioned interop wrapper:
 
-### Available Built-in Functions
+| Forbidden builtin | Use instead |
+|---|---|
+| `len(x)` | `x.Size()` (logical size; **characters** for strings) or `x.ByteSize()` (string bytes); `go_interop.SliceLen(x)` for an unresolved Go slice |
+| `cap(x)` | `go_interop.SliceCap(x)` |
+| `new(T)` | `go_interop.New[T]()` (pointer), or a zero value / `Option[T]` |
+| `append(s, v)` | `go_interop.SliceAppend(s, v)` / `SliceAppendAll(s, more)`, or an `Array`/`List` |
+| `make([]T, n)` | `go_interop.SliceWithSize` / `SliceWithCapacity`; `MapEmpty` for maps |
+| `delete(m, k)` | `go_interop.MapDelete(m, k)`, or `HashMap.Remove(k)` |
+| `close(ch)` | `go_interop.CloseChan(ch)` (or `CloseSignal` for a signal channel) |
+| `complex`/`real`/`imag` | `go_interop.Complex` / `Real` / `Imag` |
+| `panic(v)` | `go_builtins.Panic(v)` — but prefer `Option` / `Try` / `Either` |
+| `recover()` | not available — `Try` captures panics (`Try(() => …)` / `TryApply`) |
 
-| Function | Description | Example |
-|----------|-------------|---------|
-| `len(x)` | Length of string, slice, array, or map | `len("hello")` → `5` |
-| `cap(x)` | Capacity of slice | `cap(mySlice)` |
-| `new(T)` | Allocate zeroed value, return pointer | `new(int)` |
-| `append(s, v...)` | Append to slice | `append(items, 4)` |
-| `delete(m, k)` | Delete map entry | `delete(myMap, "key")` |
-| `panic(v)` | Trigger a panic | `panic("error")` |
-| `recover()` | Recover from panic (in defer) | `recover()` |
+The check is **resolver-aware**: a user-defined function that happens to share a
+builtin's name (e.g. `func delete(...)`) is that function, not the builtin, and
+is left alone.
 
-### GALA vs Go Built-ins
-
-For most use cases, prefer GALA's collection types and their methods over Go built-ins:
-
-| Operation | GALA (preferred) | Go built-in |
-|-----------|-----------------|-------------|
-| Collection length | `arr.Size()` / `list.Length()` | `len(slice)` |
-| Add to collection | `arr.Append(x)` | `append(slice, x)` |
-| Optional access | `arr.GetOption(i)` | `slice[i]` (may panic) |
-| Map lookup | `map.Get(k)` → `Option[V]` | `v, ok := m[k]` |
-| Create empty | `EmptyArray[int]()` | `make([]int, 0)` |
-
-Use Go built-ins when:
-- Working with Go slices (`[]T`) from interop
-- Using `len()` on Go strings for byte length
-- Using channels or other Go-specific features
+> `.Size()` fixes a real footgun: Go's `len(string)` returns **bytes**, so any
+> non-ASCII text mis-counts. `.Size()` means logical size (`"héllo".Size() == 5`);
+> `.ByteSize()` is there when you actually want bytes (`== 6`).
 
 ```gala
 import . "martianoff/gala/collection_immutable"
 
-// PREFERRED: GALA collections
 val nums = ArrayOf(1, 2, 3)
-val size = nums.Size()         // 3
-val first = nums.GetOption(0)  // Some(1)
-
-// GO INTEROP: when you need Go built-ins
-val goSlice = nums.ToSlice()
-val byteLen = len("hello")     // 5 (byte length, not rune count)
+val size = nums.Size()          // 3
+val chars = "héllo".Size()      // 5  (characters)
+val bytes = "héllo".ByteSize()  // 6  (raw bytes)
 ```
+
+There is likewise no `defer` or `go` statement on the GALA surface: use the
+`resource` combinators (`Using`/`Bracket`/`WithLock`, §on resource management)
+for cleanup and `go_interop.Spawn` for goroutines.
 
 ## 12. Immutability Under the Hood
 
@@ -3338,7 +3333,7 @@ func TestOption(t T) T {
 | `NotPanics(t, f)` | Asserts `f()` does not panic |
 
 ```gala
-func doPanic() { panic("boom") }
+func doPanic() { go_builtins.Panic("boom") }
 
 func TestPanics(t T) T = Panics(t, doPanic)
 ```
@@ -3687,7 +3682,7 @@ val list = ListOf(1, 2, 3)
 val doubled = list.Map((x) => x * 2)
 val sum = list.FoldLeft(0, (acc, x) => acc + x)
 val opt = Some("hello")
-val length = opt.Map((s) => len(s))
+val length = opt.Map((s) => s.Size())
 val s = S("hello")
 val upper = s.Exists((r) => r >= 'A' && r <= 'Z')
 

@@ -41,6 +41,23 @@ GALA distinguishes between immutable variables (`val`) and mutable variables (`v
 
 The transpiler is responsible for automatically wrapping values into `std.Immutable` and unwrapping them using the `.Get()` method.
 
+### `.Size()` / `.ByteSize()` sugar (replaces bare `len`)
+
+Bare `len` is a forbidden Go builtin. On a Go primitive receiver the transpiler
+lowers the size methods and infers `int`:
+
+| Receiver | `.Size()` lowers to | `.ByteSize()` lowers to |
+|---|---|---|
+| `string` | `utf8.RuneCountInString(s)` (character count) | `len(s)` (bytes) |
+| Go slice `[]T` / map | `len(x)` | — |
+| GALA `Array`/`List`/`HashMap` | the type's real `Size()` method | — |
+
+Both are inferred as `int` (see `inferCallSelectorType`). The receiver's type
+must be resolvable for the sugar to fire; for a Go-interop slice whose element
+type cannot be resolved at the call site (e.g. a multi-return
+`val xs, err = goCall()`), use `go_interop.SliceLen(xs)` instead. `go_builtins.Panic`
+lowers to Go's builtin `panic` in every position.
+
 ---
 
 ## Two-Layer Type Inference Architecture
