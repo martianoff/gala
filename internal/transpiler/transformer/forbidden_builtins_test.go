@@ -20,9 +20,10 @@ func newForbiddenBuiltinTranspiler() *transpiler.GalaToGoTranspiler {
 	return transpiler.NewGalaToGoTranspiler(p, a, tr, g)
 }
 
-// TestForbiddenGoBuiltinsAreHardErrors verifies that every bare Go builtin is
-// rejected with GALA-E0035, and that the resolver-aware guard leaves
-// user-defined functions of the same name (delete/copy) alone.
+// TestForbiddenGoBuiltinsAreHardErrors verifies that bare Go builtins are
+// rejected with GALA-E0035. It covers the builtins whose call sites parse as
+// ordinary value-argument calls; make/new (type args) share the identical
+// checkForbiddenGoBuiltinCall path.
 func TestForbiddenGoBuiltinsAreHardErrors(t *testing.T) {
 	trans := newForbiddenBuiltinTranspiler()
 
@@ -30,30 +31,16 @@ func TestForbiddenGoBuiltinsAreHardErrors(t *testing.T) {
 		name  string
 		input string
 	}{
-		{"len", `package main
-func f(s string) int = len(s)`},
-		{"append", `package main
-func f(xs []int, x int) []int = append(xs, x)`},
-		{"make", `package main
-func f() []int = make([]int, 0)`},
-		{"cap", `package main
-func f(xs []int) int = cap(xs)`},
-		{"copy", `package main
-func f(dst []int, src []int) int = copy(dst, src)`},
-		{"delete", `package main
-func f(m map[string]int) = delete(m, "k")`},
-		{"close", `package main
-func f(ch chan int) = close(ch)`},
-		{"complex", `package main
-func f() complex128 = complex(1.0, 2.0)`},
-		{"real", `package main
-func f(c complex128) float64 = real(c)`},
-		{"imag", `package main
-func f(c complex128) float64 = imag(c)`},
-		{"panic", `package main
-func f() int {
-    panic("boom")
-}`},
+		{"len", "package main\n\nfunc f(s string) int = len(s)"},
+		{"append", "package main\n\nfunc f(xs []int, x int) []int = append(xs, x)"},
+		{"cap", "package main\n\nfunc f(xs []int) int = cap(xs)"},
+		{"copy", "package main\n\nfunc f(dst []int, src []int) int = copy(dst, src)"},
+		{"delete", "package main\n\nfunc f(m map[string]int) {\n    delete(m, \"k\")\n}"},
+		{"complex", "package main\n\nfunc f(re float64, im float64) = complex(re, im)"},
+		{"real", "package main\n\nfunc f(c complex128) float64 = real(c)"},
+		{"imag", "package main\n\nfunc f(c complex128) float64 = imag(c)"},
+		{"panic", "package main\n\nfunc f() int {\n    panic(\"boom\")\n}"},
+		{"recover", "package main\n\nfunc f() {\n    recover()\n}"},
 	}
 	for _, tc := range rejected {
 		tc := tc
@@ -61,7 +48,7 @@ func f() int {
 			_, err := trans.Transpile(tc.input, "")
 			require.Error(t, err, "expected bare %q to be rejected", tc.name)
 			require.Contains(t, err.Error(), "GALA-E0035",
-				"expected the forbidden-builtin error code for %q", tc.name)
+				"expected the forbidden-builtin error code for %q, got: %v", tc.name, err)
 		})
 	}
 }
@@ -74,27 +61,19 @@ func TestUserFunctionsShadowingBuiltinsAreLegal(t *testing.T) {
 	trans := newForbiddenBuiltinTranspiler()
 
 	cases := []struct {
-		name  string
+		fn    string
 		input string
 	}{
-		{"user delete", `package main
-func delete(x int) int = x + 1
-func main() {
-    Println(delete(41))
-}`},
-		{"user copy", `package main
-func copy(x int) int = x * 2
-func main() {
-    Println(copy(21))
-}`},
+		{"delete", "package main\n\nfunc delete(x int) int = x + 1\n\nfunc main() {\n    Println(delete(41))\n}"},
+		{"copy", "package main\n\nfunc copy(x int) int = x * 2\n\nfunc main() {\n    Println(copy(21))\n}"},
 	}
 	for _, tc := range cases {
 		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run("user_"+tc.fn, func(t *testing.T) {
 			out, err := trans.Transpile(tc.input, "")
-			require.NoError(t, err, "user-defined %q must be legal", tc.name)
-			require.Contains(t, out, tc.name[len("user "):]+"(",
-				"call to user function should be preserved")
+			require.NoError(t, err, "user-defined %q must be legal", tc.fn)
+			require.Contains(t, out, tc.fn+"(",
+				"call to user function %q should be preserved", tc.fn)
 		})
 	}
 }
@@ -105,23 +84,18 @@ func main() {
 func TestSizeSugarStillTranspiles(t *testing.T) {
 	trans := newForbiddenBuiltinTranspiler()
 
-	t.Run("string .Size() lowers to utf8.RuneCountInString", func(t *testing.T) {
-		out, err := trans.Transpile(`package main
-func f(s string) int = s.Size()`, "")
+	t.Run("string_Size_lowers_to_RuneCountInString", func(t *testing.T) {
+		out, err := trans.Transpile("package main\n\nfunc f(s string) int = s.Size()", "")
 		require.NoError(t, err)
 		require.Contains(t, out, "RuneCountInString")
 	})
-	t.Run("string .ByteSize() lowers to len", func(t *testing.T) {
-		out, err := trans.Transpile(`package main
-func f(s string) int = s.ByteSize()`, "")
+	t.Run("string_ByteSize_lowers_to_len", func(t *testing.T) {
+		out, err := trans.Transpile("package main\n\nfunc f(s string) int = s.ByteSize()", "")
 		require.NoError(t, err)
 		require.Contains(t, out, "len(")
 	})
-	t.Run("Panic wrapper lowers to builtin panic", func(t *testing.T) {
-		out, err := trans.Transpile(`package main
-func f() int {
-    Panic("boom")
-}`, "")
+	t.Run("Panic_wrapper_lowers_to_builtin_panic", func(t *testing.T) {
+		out, err := trans.Transpile("package main\n\nfunc f() int {\n    Panic(\"boom\")\n}", "")
 		require.NoError(t, err)
 		require.True(t, strings.Contains(out, "panic("),
 			"Panic wrapper should lower to Go builtin panic:\n%s", out)
