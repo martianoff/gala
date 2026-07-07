@@ -73,7 +73,8 @@ func generatePackageGoMod(pkgName, importPath string) string {
 	// Add dependencies based on package
 	switch pkgName {
 	case "std":
-		// std has no dependencies
+		content += "\nrequire martianoff/gala/go_builtins v0.0.0\n"
+		content += "\nreplace martianoff/gala/go_builtins => ../go_builtins\n"
 	case "go_interop":
 		// go_interop has no GALA dependencies
 	case "go_builtins":

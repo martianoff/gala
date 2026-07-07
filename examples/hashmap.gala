@@ -204,7 +204,7 @@ func demonstrateFunctionalOperations() {
 
     // Convert to Go map
     val goMap = s.ToGoMap()
-    fmt.Printf("Go map type: map[string]int with %d entries\n", len(goMap))
+    fmt.Printf("Go map type: map[string]int with %d entries\n", goMap.Size())
 
     // Create HashMap using HashMapOf with tuple syntax
     val fromTuples = im.HashMapOf[string, int](("X", 100), ("Y", 200))

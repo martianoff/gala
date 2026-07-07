@@ -19,7 +19,7 @@ filegroup(
 
 gala_library(
     name = "resource",
-    src = "resource.gala",
+    srcs = ["resource.gala"],
     importpath = "martianoff/gala/resource",
     visibility = ["//visibility:public"],
     deps = ["//go_interop"],

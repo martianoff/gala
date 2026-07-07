@@ -1,5 +1,7 @@
 package std
 
+import . "martianoff/gala/go_builtins"
+
 // Either represents a value of one of two possible types (a disjoint union).
 // An instance of Either is an instance of either Left or Right.
 sealed type Either[A any, B any] {

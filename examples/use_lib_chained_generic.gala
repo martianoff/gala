@@ -17,7 +17,7 @@ func main() {
     val chained = w.
         Map((x int) => x + 10).
         Map((x int) => fmt.Sprintf("n=%d", x)).
-        Map((s string) => len(s))
+        Map((s string) => s.Size())
 
     fmt.Println(chained.V)
 }

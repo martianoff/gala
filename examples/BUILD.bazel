@@ -332,6 +332,7 @@ gala_exec_test(
     name = "match_arm_panic",
     src = "match_arm_panic.gala",
     expected = "match_arm_panic.out",
+    deps = ["//go_builtins"],
 )
 
 gala_exec_test(
@@ -792,6 +793,7 @@ gala_exec_test(
     name = "lambda_type_inference",
     src = "lambda_type_inference.gala",
     expected = "lambda_type_inference.out",
+    deps = ["//go_interop"],
 )
 
 gala_exec_test(
@@ -941,6 +943,7 @@ gala_exec_test(
     name = "lambda_return_generic",
     src = "lambda_return_generic.gala",
     expected = "lambda_return_generic.out",
+    deps = ["//go_interop"],
 )
 
 gala_exec_test(
@@ -994,6 +997,7 @@ gala_exec_test(
     name = "tuple_shorthand_generic",
     src = "tuple_shorthand_generic.gala",
     expected = "tuple_shorthand_generic.out",
+    deps = ["//go_interop"],
 )
 
 gala_exec_test(
@@ -1099,6 +1103,7 @@ gala_exec_test(
     name = "try_panic_recovery",
     src = "try_panic_recovery.gala",
     expected = "try_panic_recovery.out",
+    deps = ["//go_builtins"],
 )
 
 gala_exec_test(
@@ -1357,6 +1362,7 @@ gala_exec_test(
     expected = "fs_roundtrip.out",
     deps = [
         "//fs",
+        "//go_builtins",
         "//path",
     ],
 )
@@ -1680,6 +1686,7 @@ gala_exec_test(
     name = "val_pointer_field_mutation",
     src = "val_pointer_field_mutation.gala",
     expected = "val_pointer_field_mutation.out",
+    deps = ["//go_interop"],
 )
 
 # Verification: lambda param type inferred for non-generic wrapper methods
@@ -1695,6 +1702,7 @@ gala_exec_test(
     name = "immutable_slice_field",
     src = "immutable_slice_field.gala",
     expected = "immutable_slice_field.out",
+    deps = ["//go_interop"],
 )
 
 # Verification: scientific notation literals
@@ -2147,6 +2155,7 @@ gala_exec_test(
         "go_type_inference_multifile/main.gala",
     ],
     expected = "go_type_inference_multifile/go_type_inference_multifile.out",
+    deps = ["//go_interop"],
 )
 
 # Go type inference: cross-package test using a GALA library that wraps Go stdlib

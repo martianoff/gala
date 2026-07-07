@@ -123,6 +123,7 @@ go_library(
     ],
     importpath = "martianoff/gala/std",
     visibility = ["//visibility:public"],
+    deps = ["//go_builtins"],
 )
 
 go_test(

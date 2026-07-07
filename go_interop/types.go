@@ -38,6 +38,13 @@ func ToRunes(s string) []rune {
 
 // === Slice Helper Functions for efficient operations ===
 
+// SliceAppend appends a single value to the end of a slice, returning the
+// (possibly reallocated) result. Sanctioned single-element replacement for the
+// bare Go `append` builtin; SliceAppendAll covers the multi-element case.
+func SliceAppend[T any](s []T, value T) []T {
+	return append(s, value)
+}
+
 // SliceAppendAll appends all elements from src to dst. O(m) where m = len(src).
 func SliceAppendAll[T any](dst []T, src []T) []T {
 	return append(dst, src...)

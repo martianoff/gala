@@ -1,6 +1,7 @@
 package main
 
 import "fmt"
+import . "martianoff/gala/go_interop"
 
 type Value struct {
     var data float64
@@ -42,7 +43,7 @@ func main() {
     testValPointerFieldMutation()
 
     var vals []*Value = nil
-    vals = append(vals, &Value{data: 1.0, grad: 0.0})
+    vals = SliceAppend(vals, &Value{data: 1.0, grad: 0.0})
     testValFromSlice(vals)
 
     testCompoundAssignment()

@@ -1,6 +1,7 @@
 package main
 
 import "fmt"
+import . "martianoff/gala/go_interop"
 
 type Container struct {
     items []int
@@ -11,8 +12,8 @@ type Container struct {
 func main() {
     // Test 1: Go-style struct construction with immutable slice field
     var x []int = nil
-    x = append(x, 1)
-    x = append(x, 2)
+    x = SliceAppend(x, 1)
+    x = SliceAppend(x, 2)
     val c1 = Container{items: x, label: "test", count: 2}
     fmt.Println("items:", c1.items)
     fmt.Println("label:", c1.label)

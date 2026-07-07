@@ -4,6 +4,7 @@ import (
     "strings"
     "strconv"
     "fmt"
+    . "martianoff/gala/go_interop"
 )
 
 // Functions that use Go stdlib and return values whose types
@@ -22,13 +23,13 @@ func trimAll(items []string) []string {
     for _, item := range items {
         // strings.TrimSpace returns string (Go type inference)
         val trimmed = strings.TrimSpace(item)
-        result = append(result, trimmed)
+        result = SliceAppend(result, trimmed)
     }
     return result
 }
 
 func summarize(items []string) {
-    val count = len(items)
+    val count = items.Size()
     val joined = strings.Join(items, " | ")
     val upper = strings.ToUpper(joined)
     fmt.Println(s"Count: $count")

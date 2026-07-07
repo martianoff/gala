@@ -1,5 +1,7 @@
 package std
 
+import . "martianoff/gala/go_builtins"
+
 // isDefined returns true if the value is defined.
 // It handles Option types by checking defined field, bool types by their value,
 // nil as false, and all other types as true.
@@ -31,7 +33,7 @@ func (o Option[T]) IsEmpty() bool = o.isNone()
 // Get returns the option's value if the option is Some, otherwise it panics.
 func (o Option[T]) Get() T {
     if o.isNone() {
-        panic("Option.Get on None")
+        Panic("Option.Get on None")
     }
     return o.Value
 }

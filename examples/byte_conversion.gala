@@ -23,6 +23,6 @@ func main() {
     fmt.Println(backToString)
 
     // ToRunes: string -> []rune
-    val runes = ToRunes("hello")
-    fmt.Println(len(runes))
+    val runes []rune = ToRunes("hello")
+    fmt.Println(runes.Size())
 }

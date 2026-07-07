@@ -267,7 +267,13 @@ func isNoReturnCallExpr(expr ast.Expr) bool {
 		return false
 	}
 	if ident, ok := call.Fun.(*ast.Ident); ok {
-		return ident.Name == "panic"
+		// Bare `panic` (the Go builtin) or the dot-imported `Panic` wrapper from
+		// go_builtins, which std/examples use in place of the forbidden builtin.
+		return ident.Name == "panic" || ident.Name == "Panic"
+	}
+	if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+		// Qualified `go_builtins.Panic(...)`.
+		return sel.Sel.Name == "Panic"
 	}
 	return false
 }
@@ -285,9 +291,37 @@ func isNoReturnCallExpr(expr ast.Expr) bool {
 //     report the expression's inferred type.
 func (t *galaASTTransformer) lowerMatchArmTailExpr(expr ast.Expr) (ast.Stmt, transpiler.Type) {
 	if isNoReturnCallExpr(expr) {
-		return &ast.ExprStmt{X: expr}, transpiler.NilType{}
+		return &ast.ExprStmt{X: lowerPanicWrapperToBuiltin(expr)}, transpiler.NilType{}
 	}
 	return t.markSynthesizedArmReturn(&ast.ReturnStmt{Results: []ast.Expr{expr}}), t.inferResultType(expr)
+}
+
+// lowerPanicWrapperToBuiltin rewrites a call to the go_builtins.Panic wrapper
+// (bare `Panic` via dot-import, or qualified `go_builtins.Panic`) into a call
+// to Go's builtin `panic`. It is applied at no-return TAIL positions (match-arm
+// tails) where Go's terminating-statement analysis must see a construct it
+// recognizes as diverging: a bare `Panic(x)` statement is an ordinary void call
+// that falls through, so the enclosing match IIFE would fail with "missing
+// return", whereas `panic(x)` terminates. This lowering is the generated-Go
+// counterpart of the `.Size()` sugar's `len()` emission — GALA source never
+// spells bare `panic`, but the transpiler emits it where Go requires it. A bare
+// Go `panic(...)` (already the builtin) passes through unchanged.
+func lowerPanicWrapperToBuiltin(expr ast.Expr) ast.Expr {
+	call, ok := expr.(*ast.CallExpr)
+	if !ok {
+		return expr
+	}
+	isWrapper := false
+	if ident, ok := call.Fun.(*ast.Ident); ok && ident.Name == "Panic" {
+		isWrapper = true
+	}
+	if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Panic" {
+		isWrapper = true
+	}
+	if !isWrapper {
+		return expr
+	}
+	return &ast.CallExpr{Fun: ast.NewIdent("panic"), Args: call.Args, Ellipsis: call.Ellipsis}
 }
 
 // markSynthesizedArmReturn records that ret was synthesized by the match-arm

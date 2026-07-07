@@ -16,9 +16,17 @@
 package go_builtins
 
 // Panic raises a Go panic carrying v. It is the sanctioned replacement for the
-// bare `panic` builtin, which is not part of GALA's surface. Panic never
-// returns; prefer Option / Try / Either for recoverable failure and reserve
-// Panic for truly unrecoverable invariants.
+// bare `panic` builtin, which is not part of GALA's surface. Prefer
+// Option / Try / Either for recoverable failure and reserve Panic for truly
+// unrecoverable invariants.
+//
+// Panic is void. In a statement position (`if cond { Panic(x) }`) it lowers to
+// a plain call. In a no-return tail position — a match-arm tail or an
+// expression-bodied function body, where Go's terminating-statement analysis
+// requires a construct it recognizes as diverging — the transpiler lowers the
+// wrapper to Go's builtin `panic(x)` directly (a void call to Panic would fail
+// there with "missing return"). Either way bare `panic` never appears in GALA
+// source.
 func Panic(v any) {
 	panic(v)
 }

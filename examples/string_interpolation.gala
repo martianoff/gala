@@ -14,7 +14,7 @@ func main() {
 
     // Expression interpolation
     Println(s"Next year: ${age + 1}")
-    Println(s"Name length: ${len(name)}")
+    Println(s"Name length: ${name.Size()}")
 
     // Literal dollar sign
     Println(s"Price: $$99")

@@ -110,7 +110,7 @@ func main() {
 	fmt.Println("\n7. Chain Maps to get email length:")
 	val emailLen = fetchUser(1)
 		.Map((u User) => u.email)
-		.Map((email string) => len(email))
+		.Map((email string) => email.Size())
 	fmt.Printf("   Email length: %d\n", emailLen.GetOrElse(0))
 
 	fmt.Println("\n=== ForEach Side Effects ===")

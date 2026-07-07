@@ -442,11 +442,11 @@ func testDeepChaining() {
 func testGoFunctions() {
     // Go built-in functions
     val nums = SliceOf(1, 2, 3, 4, 5)
-    val size = len(nums)               // [EXPECT] : int
+    val size = nums.Size()               // [EXPECT] : int
     // [EXPECT] len highlighted as built-in function
 
     val s = "Hello, GALA!"
-    val sLen = len(s)                   // [EXPECT] : int
+    val sLen = s.Size()                   // [EXPECT] : int
 
     // fmt package functions
     fmt.Println("direct fmt call")

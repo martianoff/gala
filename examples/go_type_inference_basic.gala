@@ -16,7 +16,7 @@ import (
 func main() {
     // strings.Split should return []string — inferred from Go type info
     val parts = strings.Split("hello,world,gala", ",")
-    fmt.Println(len(parts))
+    fmt.Println(parts.Size())
 
     // strings.Join should return string
     val joined = strings.Join(parts, " + ")
@@ -48,5 +48,5 @@ func main() {
 
     // os.Getenv returns string
     val path = os.Getenv("PATH")
-    fmt.Println(len(path) > 0)
+    fmt.Println(path.Size() > 0)
 }

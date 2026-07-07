@@ -65,7 +65,7 @@ func HashUint(n uint64) uint32 {
 // HashString hashes a string value using FNV-1a.
 func HashString(s string) uint32 {
     var h uint32 = 2166136261
-    for i := 0; i < len(s); i++ {
+    for i := 0; i < s.ByteSize(); i++ {
         h = h ^ uint32(s[i])
         h = h * 16777619
     }

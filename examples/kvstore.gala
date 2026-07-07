@@ -216,7 +216,7 @@ func main() {
     fmt.Println("Session from value map:", valueMap.GetOrElse("session", "N/A"))
 
     // ForAll: check if all entries have non-empty values
-    val allNonEmpty = s5b.Data.ForAll((k string, v Entry) => len(v.Value) > 0)
+    val allNonEmpty = s5b.Data.ForAll((k string, v Entry) => v.Value.Size() > 0)
     fmt.Printf("All values non-empty: %v\n", allNonEmpty)
 
     // Exists: check if any entry has TTL

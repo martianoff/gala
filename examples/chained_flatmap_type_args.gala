@@ -14,7 +14,7 @@ func tryChain() Try[string] =
 // The same shape over Option, with the element type changing across links.
 func optionChain() Option[int] =
     Some("hi")
-        .FlatMap[bool]((s) => Some(len(s) > 0))
+        .FlatMap[bool]((s) => Some(s.Size() > 0))
         .FlatMap[int]((b) => Some(if (b) 1 else 0))
 
 func main() {
