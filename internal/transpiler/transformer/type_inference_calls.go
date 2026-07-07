@@ -152,6 +152,24 @@ func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.Sel
 		}
 	}
 
+	// Size()/ByteSize() sugar on Go primitives (string/slice/map) lowers to
+	// len()/utf8.RuneCountInString(), both of which return int. Only claim the
+	// result type when the receiver is actually a Go string/slice/map; GALA
+	// collections have their own Size() method and must fall through to their
+	// declared return type.
+	if len(e.Args) == 0 && (sel.Sel.Name == "Size" || sel.Sel.Name == "ByteSize") {
+		recvType := t.sizeSugarReceiverType(sel.X)
+		if basic, ok := recvType.(transpiler.BasicType); ok && basic.Name == "string" {
+			return transpiler.BasicType{Name: "int"}
+		}
+		if sel.Sel.Name == "Size" {
+			switch recvType.(type) {
+			case transpiler.ArrayType, transpiler.MapType:
+				return transpiler.BasicType{Name: "int"}
+			}
+		}
+	}
+
 	// Handle Apply method on composite literal: Some[int]{}.Apply(value) -> Option[int]
 	if sel.Sel.Name == "Apply" {
 		if compLit, ok := sel.X.(*ast.CompositeLit); ok {

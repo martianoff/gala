@@ -9,6 +9,69 @@ import (
 	"martianoff/gala/internal/transpiler"
 )
 
+// tryTransformSizeSugar lowers the `.Size()` / `.ByteSize()` sugar for Go
+// primitive receivers (string, slice, map), where bare len() is not part of
+// GALA's surface:
+//
+//	"abc".Size()        -> utf8.RuneCountInString("abc")  // character count
+//	"abc".ByteSize()    -> len("abc")                      // raw byte count
+//	xs.Size()  ([]T)    -> len(xs)
+//	m.Size()   (map)    -> len(m)
+//
+// It returns handled=false when the receiver is not a Go string/slice/map (e.g.
+// a GALA Array/List/HashMap, which has its own Size() method) so the caller
+// falls through to normal method dispatch. `sel.X` is already the transformed
+// Go receiver expression at this point, so it can be wrapped directly.
+func (t *galaASTTransformer) tryTransformSizeSugar(sel *ast.SelectorExpr) (ast.Expr, bool) {
+	recvType := t.sizeSugarReceiverType(sel.X)
+	// Read through an Immutable[T] val wrapper (`val s = "x"` -> `s.Get()`).
+	recv := t.unwrapImmutable(sel.X)
+	basic, isString := recvType.(transpiler.BasicType)
+	isString = isString && basic.Name == "string"
+
+	lenCall := func() ast.Expr {
+		return &ast.CallExpr{Fun: ast.NewIdent("len"), Args: []ast.Expr{recv}}
+	}
+
+	switch sel.Sel.Name {
+	case "ByteSize":
+		// ByteSize is only meaningful on strings; other receivers fall through.
+		if isString {
+			return lenCall(), true
+		}
+		return nil, false
+	case "Size":
+		if isString {
+			t.needsUtf8Import = true
+			return &ast.CallExpr{
+				Fun: &ast.SelectorExpr{
+					X:   ast.NewIdent("utf8"),
+					Sel: ast.NewIdent("RuneCountInString"),
+				},
+				Args: []ast.Expr{sel.X},
+			}, true
+		}
+		switch recvType.(type) {
+		case transpiler.ArrayType, transpiler.MapType:
+			return lenCall(), true
+		}
+	}
+	return nil, false
+}
+
+// sizeSugarReceiverType returns the effective type of a .Size()/.ByteSize()
+// receiver, reading through an Immutable[T] wrapper so `val s = "x"` (typed
+// Immutable[string]) resolves to string.
+func (t *galaASTTransformer) sizeSugarReceiverType(recv ast.Expr) transpiler.Type {
+	recvType := t.getExprTypeNameManual(recv)
+	if t.isImmutableType(recvType) {
+		if gt, ok := recvType.(transpiler.GenericType); ok && len(gt.Params) == 1 {
+			return gt.Params[0]
+		}
+	}
+	return recvType
+}
+
 func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *grammar.ArgumentListContext) (ast.Expr, error) {
 	// 1. Identify receiver type via the general expression-type inferencer.
 	// This handles all receiver shapes uniformly: bare identifiers (`p.Copy(...)`),

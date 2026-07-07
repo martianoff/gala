@@ -1,0 +1,20 @@
+package main
+
+import . "martianoff/gala/go_interop"
+
+// Verifies the .Size() / .ByteSize() sugar for Go primitives:
+//   string.Size()     -> utf8.RuneCountInString  (character count)
+//   string.ByteSize() -> len                      (raw byte count)
+//   []T.Size()        -> len
+func main() {
+    // "héllo": 5 characters but 6 bytes ('é' is 2 bytes in UTF-8).
+    val word = "héllo"
+    Println(word.Size())     // 5  (characters)
+    Println(word.ByteSize()) // 6  (bytes)
+
+    val xs = SliceOf(10, 20, 30, 40)
+    Println(xs.Size())       // 4
+
+    val empty = ""
+    Println(empty.Size())    // 0
+}

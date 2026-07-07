@@ -128,6 +128,19 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 			}
 		}
 
+		// Size()/ByteSize() sugar on Go primitives (string/slice/map). These are
+		// zero-argument calls, so they must be intercepted here — the primary
+		// dispatcher (transformCallWithArgsCtx) is only reached for calls that
+		// carry an argument list. GALA collections keep their real Size() method
+		// (tryTransformSizeSugar returns handled=false for non Go-primitive
+		// receivers, so they fall through to the generic-method path below).
+		if sel, ok := base.(*ast.SelectorExpr); ok &&
+			(sel.Sel.Name == "Size" || sel.Sel.Name == "ByteSize") {
+			if lowered, handled := t.tryTransformSizeSugar(sel); handled {
+				return lowered, nil
+			}
+		}
+
 		// Check for zero-argument generic method call (e.g., p.Swap())
 		if sel, ok := base.(*ast.SelectorExpr); ok {
 			receiver := sel.X
