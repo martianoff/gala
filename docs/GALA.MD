@@ -2579,7 +2579,7 @@ removes. Each has a GALA-native form or a sanctioned interop wrapper:
 
 | Forbidden builtin | Use instead |
 |---|---|
-| `len(x)` | `x.Size()` (logical size; **characters** for strings) or `x.ByteSize()` (string bytes); `go_interop.SliceLen(x)` for an unresolved Go slice |
+| `len(x)` | `x.Size()` (logical size; **characters** for strings) or `x.ByteSize()` (string bytes) |
 | `cap(x)` | `go_interop.SliceCap(x)` |
 | `new(T)` | `go_interop.New[T]()` (pointer), or a zero value / `Option[T]` |
 | `append(s, v)` | `go_interop.SliceAppend(s, v)` / `SliceAppendAll(s, more)`, or an `Array`/`List` |
@@ -2607,9 +2607,9 @@ val chars = "héllo".Size()      // 5  (characters)
 val bytes = "héllo".ByteSize()  // 6  (raw bytes)
 ```
 
-There is likewise no `defer` or `go` statement on the GALA surface: use the
-`resource` combinators (`Using`/`Bracket`/`WithLock`, §on resource management)
-for cleanup and `go_interop.Spawn` for goroutines.
+For guaranteed resource cleanup, prefer the `resource` combinators
+(`Using`/`Bracket`/`WithLock`) over a hand-written `Close()` call — they release
+on every exit path, including panics (see the `resource` package).
 
 ## 12. Immutability Under the Hood
 

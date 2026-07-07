@@ -52,11 +52,11 @@ lowers the size methods and infers `int`:
 | Go slice `[]T` / map | `len(x)` | — |
 | GALA `Array`/`List`/`HashMap` | the type's real `Size()` method | — |
 
-Both are inferred as `int` (see `inferCallSelectorType`). The receiver's type
-must be resolvable for the sugar to fire; for a Go-interop slice whose element
-type cannot be resolved at the call site (e.g. a multi-return
-`val xs, err = goCall()`), use `go_interop.SliceLen(xs)` instead. `go_builtins.Panic`
-lowers to Go's builtin `panic` in every position.
+Both are inferred as `int` (see `inferCallSelectorType`). The sugar fires once
+the receiver's type is known — including the value component of a multi-return
+binding (`val xs, err = goCall()`), whose per-name types are resolved from the
+call's Go signature. `go_builtins.Panic` lowers to Go's builtin `panic` in
+every position.
 
 ---
 

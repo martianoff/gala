@@ -11,7 +11,6 @@ A scannable rule list for writing idiomatic GALA — useful as both a learning c
 - **No special-casing `std`.** The standard library uses the same import/resolution mechanism as any other library.
 - **Concrete types only.** Never emit `any`/`interface{}` unless the GALA source explicitly asks for it.
 - **No bare Go builtins.** `append`, `make`, `new`, `cap`, `copy`, `delete`, `close`, `complex`, `real`, `imag`, `panic`, `recover`, and `len` are a hard error (GALA-E0035). Use the GALA-native form or the sanctioned interop wrapper (see *Length & size* and *Resource cleanup* below). A user-defined function that happens to share one of these names is fine — only the builtin is forbidden.
-- **No `defer` / `go` statements.** Cleanup is a `resource` combinator (below); a goroutine is `go_interop.Spawn`.
 
 ---
 
@@ -62,26 +61,24 @@ Bare `len` is forbidden. Ask a value for its size instead:
 
 - **`.Size()`** — logical size everywhere: element count for `Array`/`List`/`HashMap` and Go slices/maps, **character count** for strings (`"héllo".Size() == 5`). This avoids Go's `len(string)`-is-bytes footgun.
 - **`.ByteSize()`** — a string's raw **byte** count (`"héllo".ByteSize() == 6`). Use it when you genuinely mean bytes (hashing, byte offsets).
-- **`go_interop.SliceLen(xs)`** — the explicit escape hatch for a Go-interop slice whose element type the transpiler can't resolve at the call site (e.g. a multi-return `val xs, err = goCall()` binding `[]byte`), where the receiver-typed sugar can't fire.
 - **`append` → `go_interop.SliceAppend` / `SliceAppendAll`** (or an `Array`); **`cap` → `go_interop.SliceCap`**; **`make` → `SliceWithSize` / `MapEmpty`**; **`new` → `go_interop.New[T]()`**.
 
 ---
 
-## Resource cleanup (`resource`, not `defer`)
+## Resource cleanup (`resource` combinators)
 
-GALA has no `defer`. Import `martianoff/gala/resource` and wrap the using-code in a combinator that guarantees release on **every** exit path — normal or panic — and composes with `Try`/`Either`:
+Import `martianoff/gala/resource` and wrap the using-code in a combinator that guarantees release on **every** exit path — normal or panic — and composes with `Try`/`Either`, instead of a hand-written `Close()` you can forget:
 
 - **`Using(res, (r) => …)`** — for anything with `Close() error` (a `Closeable`, matching Go's `io.Closer`). `Close()` runs on the way out.
-- **`Bracket(acquire, release, body)`** — the general acquire/run/release primitive.
+- **`Bracket(res, release, body)`** — the general run-then-release primitive over an eagerly-acquired resource.
 - **`WithLock(mu, () => …)`** — hold a `go_interop.Mutex` for the body, unlock after.
 
 ```gala
-// defer f.Close()  ...becomes:
 func readAll(path string) string =
-    Using(OpenFile(path), (f) => f.ReadString())
+    Using(OpenFile(path), (f) => f.ReadString())  // Close() guaranteed
 ```
 
-`panic` → `go_builtins.Panic(...)` for a truly unrecoverable invariant; prefer `Option`/`Try`/`Either`. `go f()` → `go_interop.Spawn(() => f())`.
+`panic` → `go_builtins.Panic(...)` for a truly unrecoverable invariant; prefer `Option`/`Try`/`Either`. `go_interop.Spawn(() => f())` is the sanctioned goroutine primitive.
 
 ---
 
