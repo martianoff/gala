@@ -20,7 +20,7 @@ func (h Handle) Close() error {
 // body's result.
 func TestBracketNormalReleases(t T) T {
     var released = 0
-    val result = Bracket(() => 21, (r int) => { released = released + 1 }, (r int) => r * 2)
+    val result = Bracket(21, (r) => { released = released + 1 }, (r) => r * 2)
     val t1 = Eq(t, result, 42)
     return Eq(t1, released, 1)
 }
@@ -30,9 +30,9 @@ func TestBracketNormalReleases(t T) T {
 func TestBracketPanicReleasesAndReraises(t T) T {
     var released = 0
     val captured = TryApply[int](() => Bracket(
-        () => 1,
-        (r int) => { released = released + 1 },
-        (r int) => None[int]().Get()))
+        1,
+        (r) => { released = released + 1 },
+        (r) => None[int]().Get()))
     val t1 = IsTrue(t, captured.IsFailure())
     return Eq(t1, released, 1)
 }
