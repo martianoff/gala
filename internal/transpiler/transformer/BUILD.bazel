@@ -69,6 +69,7 @@ go_test(
         "error_codes_test.go",
         "expected_arg_stack_test.go",
         "expected_type_sealed_variant_overlap_test.go",
+        "forbidden_builtins_test.go",
         "func_phantom_typearg_test.go",
         "functions_test.go",
         "generated_format_test.go",
