@@ -114,6 +114,51 @@ func SliceTo[T any](s []T, to int) []T {
 	return s[:to]
 }
 
+// SliceCap returns the capacity of a slice. This is the sanctioned
+// replacement for the bare Go `cap` builtin, which is not part of GALA's
+// surface.
+func SliceCap[T any](s []T) int {
+	return cap(s)
+}
+
+// === Pointer Allocation ===
+
+// New allocates a zeroed value of type T and returns a pointer to it.
+// This is the sanctioned replacement for the bare Go `new` builtin. To obtain
+// the zero value itself, dereference the result (`*go_interop.New[T]()`).
+func New[T any]() *T {
+	return new(T)
+}
+
+// === Complex Numbers ===
+
+// Complex builds a complex128 from its real and imaginary parts. Sanctioned
+// replacement for the bare Go `complex` builtin.
+func Complex(re float64, im float64) complex128 {
+	return complex(re, im)
+}
+
+// Real returns the real part of a complex128. Sanctioned replacement for the
+// bare Go `real` builtin.
+func Real(c complex128) float64 {
+	return real(c)
+}
+
+// Imag returns the imaginary part of a complex128. Sanctioned replacement for
+// the bare Go `imag` builtin.
+func Imag(c complex128) float64 {
+	return imag(c)
+}
+
+// === Channel Helpers ===
+
+// CloseChan closes a typed channel. Sanctioned replacement for the bare Go
+// `close` builtin on channels of an arbitrary element type (CloseSignal covers
+// the `chan struct{}` signal case).
+func CloseChan[T any](ch chan T) {
+	close(ch)
+}
+
 // === Slice Creation Functions ===
 
 // SliceEmpty creates an empty slice of type T.
