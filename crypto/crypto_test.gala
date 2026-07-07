@@ -457,7 +457,7 @@ func TestRandomBase64URLNoPadding(t T) T {
     val s = crypto.RandomBase64URL(32)
     val decoded, err = base64.RawURLEncoding.DecodeString(s)
     val t1 = IsNil(t, err)
-    return Eq(t1, SliceLen(decoded), 32)
+    return Eq(t1, decoded.Size(), 32)
 }
 
 func TestRandomBase64URLDifferent(t T) T {

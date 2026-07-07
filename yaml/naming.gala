@@ -32,7 +32,7 @@ func toCamelCase(s string) string {
     if s == "" { return s }
     var i = 0
     var upper = 0
-    val runes []rune = toRunes(s)
+    val runes = go_interop.ToRunes(s)
     for i < runes.Size() && runes[i] >= 'A' && runes[i] <= 'Z' {
         upper = upper + 1
         i = i + 1
@@ -65,7 +65,7 @@ func toKebabCase(s string) string = toDelimited(s, '-')
 
 func toDelimited(s string, delim rune) string {
     if s == "" { return s }
-    val runes []rune = toRunes(s)
+    val runes = go_interop.ToRunes(s)
     var result []rune
     var i = 0
     for i < runes.Size() {

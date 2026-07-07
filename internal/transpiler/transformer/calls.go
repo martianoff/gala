@@ -3409,6 +3409,40 @@ func (t *galaASTTransformer) resolveGoFuncParamTypes(funcName string) []transpil
 	return nil
 }
 
+// resolveGoCallSignature resolves the full Go function/method signature of a
+// call expression via goTypeInfo, covering the shapes a `val a, b = goCall()`
+// binding can take: a package-qualified function (`os.ReadDir`), a method on a
+// package value (`base64.StdEncoding.DecodeString`), a method on a local
+// expression, and a bare dot-imported function. It is the multi-return
+// counterpart of resolveGoFuncParamTypes, used so each name in a destructuring
+// binding gets its corresponding return type (enabling `.Size()` etc. on the
+// value component) instead of NilType.
+func (t *galaASTTransformer) resolveGoCallSignature(expr ast.Expr) *transpiler.GoFuncSignature {
+	if t.goTypeInfo == nil {
+		return nil
+	}
+	callExpr, ok := expr.(*ast.CallExpr)
+	if !ok {
+		return nil
+	}
+	switch fun := callExpr.Fun.(type) {
+	case *ast.SelectorExpr:
+		if id, ok := fun.X.(*ast.Ident); ok {
+			if sig := t.goTypeInfo.GetFuncSignature(id.Name + "." + fun.Sel.Name); sig != nil {
+				return sig
+			}
+		}
+		return t.resolveMethodSignatureOnExpr(fun.X, fun.Sel.Name)
+	case *ast.Ident:
+		for _, entry := range t.importManager.dotImports {
+			if sig := t.goTypeInfo.GetFuncSignature(entry.PkgName + "." + fun.Name); sig != nil {
+				return sig
+			}
+		}
+	}
+	return nil
+}
+
 // splitQualifiedName splits "pkg.Name" into ["pkg", "Name"], or returns nil for bare names.
 func splitQualifiedName(name string) []string {
 	for i, c := range name {

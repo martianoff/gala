@@ -152,6 +152,16 @@ func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.Sel
 		}
 	}
 
+	// The string form of the `.Size()` sugar lowers to
+	// `utf8.RuneCountInString(...)` (returns int). Like the `len(...)` rule in
+	// inferCallIdentType, downstream inference over the emitted node — e.g. the
+	// common-result-type of an if-expression whose branches are `s.Size()` —
+	// must type it as int rather than NilType (the auto-injected `unicode/utf8`
+	// import is not analyzed by goTypeInfo, so it does not resolve otherwise).
+	if pkgId, ok := sel.X.(*ast.Ident); ok && pkgId.Name == "utf8" && sel.Sel.Name == "RuneCountInString" {
+		return transpiler.BasicType{Name: "int"}
+	}
+
 	// Size()/ByteSize() sugar on Go primitives (string/slice/map) lowers to
 	// len()/utf8.RuneCountInString(), both of which return int. Only claim the
 	// result type when the receiver is actually a Go string/slice/map; GALA
@@ -432,10 +442,16 @@ func (t *galaASTTransformer) inferCallIdentType(e *ast.CallExpr, id *ast.Ident, 
 			return baseType
 		}
 	}
-	// (The bare `len` inference rule was removed: `len` is a forbidden Go
-	// builtin on the GALA surface — see checkForbiddenGoBuiltinCall — and its
-	// logical-size replacement `.Size()`/`.ByteSize()` is inferred as `int` in
-	// inferCallSelectorType.)
+	// `len(...)` is inferred as int. Bare `len` in GALA *source* is a hard error
+	// (checkForbiddenGoBuiltinCall, applied at transform time), but the
+	// `.Size()`/`.ByteSize()` sugar EMITS `len(...)` as generated Go AST, and
+	// downstream type inference — the common-result-type of an if-expression,
+	// a binary operand like `xs.Size() - 1`, etc. — runs over that emitted node
+	// via inferResultType. Without this rule the emitted `len(...)` resolves to
+	// NilType and poisons the surrounding expression's type to `any`.
+	if id.Name == "len" {
+		return transpiler.BasicType{Name: "int"}
+	}
 	// Handle go_interop.SliceOf[T](elements ...T) []T
 	// SliceOf is commonly used with dot imports, infer element type from arguments.
 	// When explicit type args are provided (e.g., SliceOf[byte](...)),

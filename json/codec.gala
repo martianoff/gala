@@ -287,7 +287,7 @@ func (d *JsonDecoderImpl) ReadBool() bool {
 
 func (d *JsonDecoderImpl) ReadRune() rune {
     val s = d.ReadString()
-    val rs []rune = toRunes(s)
+    val rs = go_interop.ToRunes(s)
     if rs.Size() == 0 {
         return rune(0)
     }

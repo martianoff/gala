@@ -33,10 +33,8 @@ val scannerMaxLineBytes = 1024 * 1024
 func ReadLines(path string) Try[Array[string]] = Try[Array[string]](() => {
     val data, err = os.ReadFile(path)
     if err != nil { go_builtins.Panic(err) }
-    val parts []string = strings.Split(string(data), "\n")
-    val total = SliceLen(parts)
-    var n = total
-    if (total > 0 && parts[total-1] == "") { n = total - 1 }
+    val parts = strings.Split(string(data), "\n")
+    val n = if (parts.Size() > 0 && parts[parts.Size()-1] == "") parts.Size() - 1 else parts.Size()
     return ArrayFromSlice(SliceTake(parts, n))
 })
 
