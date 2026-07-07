@@ -76,6 +76,15 @@ func generatePackageGoMod(pkgName, importPath string) string {
 		// std has no dependencies
 	case "go_interop":
 		// go_interop has no GALA dependencies
+	case "go_builtins":
+		// go_builtins is a dependency-free leaf package
+	case "resource":
+		content += "\nrequire (\n"
+		content += "\tmartianoff/gala/std v0.0.0\n"
+		content += "\tmartianoff/gala/go_interop v0.0.0\n"
+		content += ")\n"
+		content += "\nreplace martianoff/gala/std => ../std\n"
+		content += "replace martianoff/gala/go_interop => ../go_interop\n"
 	case "collection_immutable":
 		content += "\nrequire (\n"
 		content += "\tmartianoff/gala/std v0.0.0\n"

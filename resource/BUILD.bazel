@@ -1,0 +1,35 @@
+load("@rules_gala//gala:defs.bzl", "gala_bootstrap_transpile", "gala_library", "gala_test")
+
+exports_files(["resource.gala"])
+
+gala_bootstrap_transpile(
+    name = "resource_go",
+    src = "resource.gala",
+    out = "resource.gen.go",
+)
+
+filegroup(
+    name = "gala_sources",
+    srcs = glob(
+        ["*.gala"],
+        exclude = ["*_test.gala"],
+    ),
+    visibility = ["//visibility:public"],
+)
+
+gala_library(
+    name = "resource",
+    src = "resource.gala",
+    importpath = "martianoff/gala/resource",
+    visibility = ["//visibility:public"],
+    deps = ["//go_interop"],
+)
+
+gala_test(
+    name = "resource_test",
+    srcs = ["resource_test.gala"],
+    deps = [
+        ":resource",
+        "//go_interop",
+    ],
+)

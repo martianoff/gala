@@ -1,0 +1,10 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+exports_files(["builtins.go"])
+
+go_library(
+    name = "go_builtins",
+    srcs = ["builtins.go"],
+    importpath = "martianoff/gala/go_builtins",
+    visibility = ["//visibility:public"],
+)

@@ -55,6 +55,11 @@ genrule(
         "//yaml:codec.go",
         # go_interop package
         "//go_interop:types.go",
+        # go_builtins package (dependency-free leaf: Panic)
+        "//go_builtins:builtins.go",
+        # resource package (Bracket/Using/WithLock) - transpiled Go + GALA source
+        "//resource:resource_go",
+        "//resource:resource.gala",
         # collection_immutable package - transpiled Go
         "//collection_immutable:array_go",
         "//collection_immutable:list_go",

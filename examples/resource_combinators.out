@@ -1,0 +1,5 @@
+close log.txt
+name length: 7
+release 21
+doubled: 42
+guarded: 8

@@ -72,6 +72,8 @@ func resolveEffectiveDepDir(config *Config, galaMod *mod.File, projectDir string
 var StdlibPackages = []string{
 	"std",
 	"go_interop",
+	"go_builtins",
+	"resource",
 	"collection_immutable",
 	"collection_mutable",
 	"concurrent",
@@ -95,6 +97,8 @@ var StdlibPackages = []string{
 var StdlibImportPaths = map[string]string{
 	"std":                  "martianoff/gala/std",
 	"go_interop":           "martianoff/gala/go_interop",
+	"go_builtins":          "martianoff/gala/go_builtins",
+	"resource":             "martianoff/gala/resource",
 	"collection_immutable": "martianoff/gala/collection_immutable",
 	"collection_mutable":   "martianoff/gala/collection_mutable",
 	"concurrent":           "martianoff/gala/concurrent",

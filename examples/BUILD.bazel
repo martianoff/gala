@@ -1734,6 +1734,17 @@ gala_exec_test(
     deps = ["//go_interop"],
 )
 
+# Verification: `resource` combinators (Using/Bracket/WithLock) replacing defer
+gala_exec_test(
+    name = "resource_combinators",
+    src = "resource_combinators.gala",
+    expected = "resource_combinators.out",
+    deps = [
+        "//go_interop",
+        "//resource",
+    ],
+)
+
 # Verification: ergonomic free-function `strings` package — every
 # heavy-hitter from gala_team's call sites at least once.
 gala_exec_test(

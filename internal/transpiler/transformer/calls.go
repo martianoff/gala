@@ -3236,12 +3236,27 @@ func (t *galaASTTransformer) inferFuncTypeSubstFromArgs(funcMeta *transpiler.Fun
 		return nil
 	}
 
-	// Only return substitutions when ALL type params are resolved.
-	// Partial inference (e.g., T resolved but U not) would leave U as a literal
-	// type name in generated Go code, which is undefined.
+	// Fill any type params we could NOT bind from the non-lambda arguments with
+	// `any`. This substitution is deliberately partial: a type param that
+	// appears only in a lambda's RETURN position (e.g. `A` in
+	// `body func(R) A`) — or solely in the function's own return type — cannot
+	// be bound from the call's non-lambda arguments, yet the params that CAN be
+	// bound (e.g. `R`, a lambda's PARAMETER type) must still be substituted so
+	// the lambda body sees concrete parameter types instead of `any`. Leaving
+	// them out (the previous all-or-nothing gate) meant one unbindable return
+	// param discarded the whole substitution and every lambda param fell back to
+	// `any` — cascading into "undefined field" errors when the body accessed the
+	// (now `any`-typed) parameter.
+	//
+	// The `any` placeholder is safe in both landing spots: where it lands in a
+	// lambda's expected RETURN type, an `any` expected return is treated as
+	// "unresolved" downstream, so the lambda infers its real return type from
+	// the body; where the type param appears in the emitted call itself, Go's
+	// own type inference recovers the concrete type from the arguments (GALA
+	// emits no explicit type args for such calls).
 	for _, tp := range funcMeta.TypeParams {
 		if _, ok := inferredMap[tp]; !ok {
-			return nil
+			inferredMap[tp] = transpiler.BasicType{Name: "any"}
 		}
 	}
 

@@ -1,0 +1,47 @@
+package resource
+
+import . "martianoff/gala/std"
+import . "martianoff/gala/go_interop"
+
+// Package resource provides scoped resource-management combinators.
+//
+// GALA does not expose Go's `defer` statement on its surface. Instead of an
+// imperative, forgettable `defer f.Close()`, cleanup is expressed as a scoped
+// combinator that TAKES the using-code and guarantees release on EVERY exit
+// path — normal return or panic — the way Haskell's `bracket`, Scala's
+// `Using`, F#'s `use`, and Clojure's `with-open` do. The combinators compose
+// with GALA's Try/Either monads and cannot be forgotten.
+//
+// Cleanup is guaranteed by capturing the body in a Try: on a panic the body's
+// Try becomes a Failure, the release still runs, and Get re-raises the original
+// error afterward. This keeps Go's `defer` off the GALA surface while giving
+// the identical all-paths guarantee.
+
+// Closeable is the contract for resources that release via Close() error.
+// It matches Go's io.Closer, so *os.File and similar satisfy it directly.
+type Closeable interface {
+    Close() error
+}
+
+// Bracket is the general primitive: acquire a resource, run body over it, then
+// ALWAYS release — even if body panics (release runs, then the failure
+// re-raises). Returns body's result.
+func Bracket[R any, A any](acquire func() R, release func(R), body func(R) A) A {
+    val r = acquire()
+    val result = TryApply(() => body(r))
+    release(r)
+    return result.Get()
+}
+
+// Using is the Closeable specialization of Bracket: the resource is acquired
+// eagerly by the caller and released via resource.Close() on every exit path
+// (normal or panic). Returns body's result. The Close() error is intentionally
+// discarded, matching Go's `defer f.Close()` idiom; use Bracket if you need it.
+func Using[R Closeable, A any](res R, body func(R) A) A =
+    Bracket(() => res, (r) => { r.Close() }, body)
+
+// WithLock is the mutex idiom built on Bracket: lock mu, run body, and unlock
+// on every exit path (normal or panic). Returns body's result. Use it in place
+// of `defer mu.Unlock()`.
+func WithLock[A any](mu *Mutex, body func() A) A =
+    Bracket(() => { mu.Lock(); mu }, (m *Mutex) => m.Unlock(), (_ *Mutex) => body())
