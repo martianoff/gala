@@ -759,38 +759,52 @@ func openConfig(p string) Try[*os.File] = Try(os.OpenFile(p, os.O_RDONLY, 0))
 // GOOD: the whole manual Try-block + if-err-nil collapses
 func Abs(p string) Try[string] = Try(filepath.Abs(p))
 
-// GOOD: when the surrounding code genuinely must abort (unrecoverable),
-// re-raise explicitly via Get — but that panic is now deliberate, not a
-// mechanical if-err-nil:
-val decoded = Try(hex.DecodeString(hardCodedVector)).Get()
+// GOOD: a function that returns Try composes and returns it — never unwraps.
+// `.Get()` re-raises a Failure as a panic, so reserve it for a genuine edge
+// (a test, `io.UnsafeRun`, or truly terminal code), NEVER inside a function
+// that returns Try:
+func DecodeHex(s string) Try[Array[byte]] =
+    Try(hex.DecodeString(s)).Map((b) => ArrayFromSlice(b))
 ```
 
 **`Try(...)` around an error-*only* Go call silently never fails.** Choose the
-wrapper by the Go function's return shape:
+wrapper by the Go function's return shape — and either way *compose and return
+the Try*, don't `.Get()` it (see the unsafe-`.Get()` rule below):
 
 - Returns a value *and* an error — `(T, error)` (`os.ReadFile`, `os.Open`,
-  `os.MkdirTemp`, `io.Copy`, `strconv.Atoi`, `hex.DecodeString`, …) → `Try(call)`
-  (optionally `.Get()`). The error becomes a `Failure`. Correct.
+  `os.MkdirTemp`, `io.Copy`, `strconv.Atoi`, `hex.DecodeString`, …) → `Try(call)`,
+  composed with `.Map`/`.FlatMap`/`bind`. The error becomes a `Failure`. Correct.
 - Returns **only** `error` (`os.Rename`, `os.WriteFile`, `os.MkdirAll`,
   `os.Remove`/`RemoveAll`, `os.Mkdir`, `os.Chdir`/`Chmod`/`Symlink`/`Truncate`/`Setenv`,
   `(*File).Close`, `.Sync`, `scanner.Err`, `encoder.Encode`, `filepath.WalkDir`, …)
-  → `FromError(call).Get()` (from `std`; returns `Try[Void]`, fails on non-nil
-  error). **Do NOT use `Try(...)` here** — `Try(os.Rename(a, b))` compiles to
-  `Try[error]` that captures the error as a *value*, so `IsFailure` is ALWAYS
-  false and the failure is silently swallowed.
+  → `FromError(call)` (from `std`; returns `Try[Void]`, fails on non-nil error).
+  **Do NOT use `Try(...)` here** — `Try(os.Rename(a, b))` compiles to `Try[error]`
+  that captures the error as a *value*, so `IsFailure` is ALWAYS false and the
+  failure is silently swallowed.
 
 ```gala
 // BAD: os.Rename returns only error → Try[error] that never reports failure
 val r = Try(os.Rename(src, dst))
 if r.IsFailure() { ... }              // dead branch — IsFailure is always false
 
-// GOOD: FromError reports a non-nil error as a Failure
-FromError(os.Rename(src, dst)).Get()  // re-raise into an enclosing Try
-val ok = FromError(os.WriteFile(path, bytes, mode))  // or compose the Try[Void]
+// GOOD: value + error → Try, composed with Map (NOT .Get()):
+func ReadText(p string) Try[string] = Try(os.ReadFile(p)).Map((b) => decode(b))
 
-// Value + error stays with Try (correct):
-val data = Try(os.ReadFile(path)).Get()   // os.ReadFile → ([]byte, error)
+// GOOD: error-only → FromError returns Try[Void]; return/compose it, don't unwrap:
+func Rename(src string, dst string) Try[Void] = FromError(os.Rename(src, dst))
+func WriteFileString(p string, s string, mode int) Try[Void] =
+    FromError(os.WriteFile(p, ToBytes(s), os.FileMode(mode)))
+
+// BAD (unsafe unwrap — re-panics; caught only by an enclosing Try):
+val data = Try(os.ReadFile(p)).Get()
+FromError(os.Rename(a, b)).Get()
 ```
+
+`.Get()` on a `Try`/`FromError` result is an **unsafe unwrap** (panics on
+`Failure`) — use it ONLY at a genuine edge (a test, `io.UnsafeRun`, or truly
+terminal code), NEVER inside a function that returns `Try` (compose with
+`.Map`/`.FlatMap`/`bind` and return the `Try`). Consistent with the
+unsafe-`.Get()` rule (11f) below.
 
 **Verify by exercising an error path** — assert `IsFailure` on a deliberately
 bad call (`os.Rename` of a missing source, `os.WriteFile` into a missing dir) so
@@ -825,9 +839,70 @@ func RemoveAll(path string) Try[bool] =
     FromError(os.RemoveAll(path)).Map((_) => true)
 ```
 
-A deliberate top-level `Try(call()).Get()` in a *non-`Try`* function that must
-abort (an unrecoverable invariant — see the crypto RNG helpers) is fine; the
-anti-pattern is specifically `.Get()` **nested inside another `Try` block**.
+`.Get()` is safe only at the genuine edges enumerated in rule 11f (a test,
+`io.UnsafeRun`, a guarded unwrap, an `Immutable` field). It is NOT made safe by
+sitting in a non-`Try` function that "must abort": a library function that
+produces a value from a fallible call should return `Try[T]` and let its caller
+decide — compose with `.Map`/`.FlatMap`/`bind`, don't `.Get()`-and-panic.
+
+### 11f. Unsafe `.Get()` unwrap (HIGH priority)
+
+`.Get()` on a `Try`/`Option`/`Either` **panics on the empty/failure case**. It
+throws away the type system's proof obligation instead of discharging it — the
+hallmark of "unsafe code that looks functional." Prefer `match` / `.GetOrElse` /
+`.Map` / `.FlatMap` / `bind` / sequence patterns; reserve `.Get()` for a guarded
+or genuinely-terminal edge.
+
+**FLAG (unsafe):**
+
+| Pattern to Flag | Recommended Fix |
+|-----------------|-----------------|
+| `Try(...).Get()` — wrap-then-unwrap | Compose: `.Map`/`.FlatMap`/`bind`, and *return the `Try`* |
+| `.Get()` on a `Try` inside an enclosing `Try(() => {...})` | Compose (rule 11 above) — the inner `.Get()` re-raises a panic the outer `Try` re-catches |
+| `opt.Get()` on an unguarded `Option` | `match { case Some(x) => …; case None() => … }`, `.GetOrElse(default)`, or `.Map(...)` |
+| `coll.Head().Get()` / `coll.HeadOption().Get()` on an unguarded collection | Sequence pattern `match { case Cons(h, t) => … }`, or `.HeadOption().GetOrElse(default)` |
+| `coll.Find(pred).Get()` / `map.Get(k).Get()` | `match` the `Option`, or `.GetOrElse(default)` / `.Map(...)` |
+| `either.GetLeft()` / `.GetRight()` without a preceding `IsLeft()`/`match` | `match { case Left(l) => …; case Right(r) => … }` and bind the value |
+| `try.GetError()` on a value not known to be `Failure` | Guard with `IsFailure()` or `match` first |
+
+**DO NOT FLAG (safe — leave these):**
+
+- `Immutable[T].Get()` — unwrapping a `val`-field's `Immutable` wrapper; always
+  succeeds (it's how `val` fields are read, not a fallible unwrap).
+- A `.Get()` **guarded** by a preceding check in the same scope:
+  `if opt.IsDefined() { opt.Get() }`, `for coll.NonEmpty() { coll.Head().Get() }`,
+  `if e.IsLeft() { e.GetLeft() }`.
+- `io.UnsafeRun()` and other explicitly-named terminal/edge unwrap points.
+- Test code (assertions, fixtures) where panic-on-failure is the intended
+  contract (e.g. a `scratchDir` helper that must abort the test on setup failure).
+
+```gala
+// BAD: unguarded Option unwrap — panics on None
+val first = xs.Find((x) => x > 10).Get()
+// GOOD: match (or .GetOrElse / .Map)
+val first = xs.Find((x) => x > 10) match {
+    case Some(x) => x
+    case None()  => 0
+}
+
+// BAD: wrap-then-unwrap
+func Head(xs Array[int]) int = Try(xs[0]).Get()
+// GOOD: sequence pattern, no panic
+func headOpt(xs Array[int]) Option[int] = xs match {
+    case Cons(h, _) => Some(h)
+    case Nil()      => None()
+}
+
+// SAFE (do not flag): guarded, and an Immutable val-field read
+if opt.IsDefined() { use(opt.Get()) }   // guarded
+val name = self.name.Get()              // Immutable[string] field unwrap
+```
+
+The three `.Get()`-related rules are mutually consistent — none recommends a bare
+`.Get()` as the fix: the Try-vs-`FromError` rule returns/composes the `Try`, the
+`.Get()`-inside-`Try` rule composes with `.Map`/`.FlatMap`/`bind`, and this rule
+prefers `match`/`.GetOrElse`/composition, reserving `.Get()` for guarded or
+terminal edges.
 
 ### 11b. `Array.Grouped` / `Array.Sliding` over Index Loops (HIGH priority)
 

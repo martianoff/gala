@@ -305,28 +305,28 @@ func TestEd25519RFC8032Vector1(t T) T {
 }
 
 func TestEd25519SignVerifyRoundTrip(t T) T {
-    val kp = crypto.GenerateEd25519KeyPair()
+    val kp = crypto.GenerateEd25519KeyPair().Get()
     val msg = bytesOf("hello")
     val sig = kp.Private.Sign(msg)
     return IsTrue(t, kp.Public.Verify(msg, sig))
 }
 
 func TestEd25519VerifyWrongKey(t T) T {
-    val kp1 = crypto.GenerateEd25519KeyPair()
-    val kp2 = crypto.GenerateEd25519KeyPair()
+    val kp1 = crypto.GenerateEd25519KeyPair().Get()
+    val kp2 = crypto.GenerateEd25519KeyPair().Get()
     val msg = bytesOf("hello")
     val sig = kp1.Private.Sign(msg)
     return IsFalse(t, kp2.Public.Verify(msg, sig))
 }
 
 func TestEd25519VerifyTamperedMessage(t T) T {
-    val kp = crypto.GenerateEd25519KeyPair()
+    val kp = crypto.GenerateEd25519KeyPair().Get()
     val sig = kp.Private.Sign(bytesOf("hello"))
     return IsFalse(t, kp.Public.Verify(bytesOf("HELLO"), sig))
 }
 
 func TestEd25519VerifyTamperedSignature(t T) T {
-    val kp = crypto.GenerateEd25519KeyPair()
+    val kp = crypto.GenerateEd25519KeyPair().Get()
     val msg = bytesOf("hello")
     val good = kp.Private.Sign(msg)
     // Flip the low bit of the first signature byte.
@@ -339,7 +339,7 @@ func TestEd25519VerifyTamperedSignature(t T) T {
 
 // PublicKey() derived from the private key matches kp.Public.
 func TestEd25519PublicKeyConsistency(t T) T {
-    val kp = crypto.GenerateEd25519KeyPair()
+    val kp = crypto.GenerateEd25519KeyPair().Get()
     val derived = kp.Private.PublicKey()
     val a = kp.Public.Bytes().ToGoSlice()
     val b = derived.Bytes().ToGoSlice()
@@ -347,23 +347,23 @@ func TestEd25519PublicKeyConsistency(t T) T {
 }
 
 func TestEd25519SignatureSize(t T) T {
-    val kp = crypto.GenerateEd25519KeyPair()
+    val kp = crypto.GenerateEd25519KeyPair().Get()
     val sig = kp.Private.Sign(bytesOf("hello"))
     return Eq(t, sig.Bytes().Size(), 64)
 }
 
 func TestEd25519PublicKeySize(t T) T {
-    val kp = crypto.GenerateEd25519KeyPair()
+    val kp = crypto.GenerateEd25519KeyPair().Get()
     return Eq(t, kp.Public.Bytes().Size(), 32)
 }
 
 func TestEd25519PrivateKeySize(t T) T {
-    val kp = crypto.GenerateEd25519KeyPair()
+    val kp = crypto.GenerateEd25519KeyPair().Get()
     return Eq(t, kp.Private.Bytes().Size(), 64)
 }
 
 func TestSignatureEqualSame(t T) T {
-    val kp = crypto.GenerateEd25519KeyPair()
+    val kp = crypto.GenerateEd25519KeyPair().Get()
     val msg = bytesOf("hello")
     val s1 = kp.Private.Sign(msg)
     val s2 = kp.Private.Sign(msg)
@@ -371,7 +371,7 @@ func TestSignatureEqualSame(t T) T {
 }
 
 func TestSignatureEqualDifferent(t T) T {
-    val kp = crypto.GenerateEd25519KeyPair()
+    val kp = crypto.GenerateEd25519KeyPair().Get()
     val s1 = kp.Private.Sign(bytesOf("hello"))
     val s2 = kp.Private.Sign(bytesOf("world"))
     return IsFalse(t, s1.Equal(s2))
@@ -401,8 +401,8 @@ func TestX25519RFC7748Vector(t T) T {
 }
 
 func TestX25519RoundTrip(t T) T {
-    val alice = crypto.GenerateX25519KeyPair()
-    val bob = crypto.GenerateX25519KeyPair()
+    val alice = crypto.GenerateX25519KeyPair().Get()
+    val bob = crypto.GenerateX25519KeyPair().Get()
 
     val a = alice.Private.ECDH(bob.Public)
     val b = bob.Private.ECDH(alice.Public)
@@ -416,8 +416,8 @@ func TestX25519RoundTrip(t T) T {
 }
 
 func TestX25519PublicKeyConsistency(t T) T {
-    val kp = crypto.GenerateX25519KeyPair()
-    val derived = kp.Private.PublicKey()
+    val kp = crypto.GenerateX25519KeyPair().Get()
+    val derived = kp.Private.PublicKey().Get()
     return Eq(t,
         hex.EncodeToString(kp.Public.Bytes().ToGoSlice()),
         hex.EncodeToString(derived.Bytes().ToGoSlice()),
@@ -425,41 +425,41 @@ func TestX25519PublicKeyConsistency(t T) T {
 }
 
 func TestX25519PublicKeySize(t T) T {
-    val kp = crypto.GenerateX25519KeyPair()
+    val kp = crypto.GenerateX25519KeyPair().Get()
     return Eq(t, kp.Public.Bytes().Size(), 32)
 }
 
 func TestX25519PrivateKeySize(t T) T {
-    val kp = crypto.GenerateX25519KeyPair()
+    val kp = crypto.GenerateX25519KeyPair().Get()
     return Eq(t, kp.Private.Bytes().Size(), 32)
 }
 
 // ---- random helpers ------------------------------------------------------
 
 func TestRandomHexLength(t T) T {
-    return Eq(t, crypto.RandomHex(16).Size(), 32)
+    return Eq(t, crypto.RandomHex(16).Get().Size(), 32)
 }
 
 func TestRandomHexDifferent(t T) T {
-    val a = crypto.RandomHex(16)
-    val b = crypto.RandomHex(16)
+    val a = crypto.RandomHex(16).Get()
+    val b = crypto.RandomHex(16).Get()
     return IsFalse(t, a == b)
 }
 
 func TestRandomBase64URLLength(t T) T {
     // base64.RawURLEncoding.EncodedLen(32) == 43
-    return Eq(t, crypto.RandomBase64URL(32).Size(), 43)
+    return Eq(t, crypto.RandomBase64URL(32).Get().Size(), 43)
 }
 
 func TestRandomBase64URLNoPadding(t T) T {
-    val s = crypto.RandomBase64URL(32)
+    val s = crypto.RandomBase64URL(32).Get()
     val decoded, err = base64.RawURLEncoding.DecodeString(s)
     val t1 = IsNil(t, err)
     return Eq(t1, decoded.Size(), 32)
 }
 
 func TestRandomBase64URLDifferent(t T) T {
-    val a = crypto.RandomBase64URL(24)
-    val b = crypto.RandomBase64URL(24)
+    val a = crypto.RandomBase64URL(24).Get()
+    val b = crypto.RandomBase64URL(24).Get()
     return IsFalse(t, a == b)
 }
