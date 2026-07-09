@@ -37,6 +37,7 @@ class GalaFindUsagesProvider : FindUsagesProvider {
             is VarDeclarationNode -> "variable"
             is BindDeclarationNode -> "value"
             is AlsoDeclarationNode -> "value"
+            is UseDeclarationNode -> "value"
             is StructShorthandDeclarationNode -> "struct"
             is MethodSpecNode -> "method"
             else -> "symbol"
