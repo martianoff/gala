@@ -39,6 +39,19 @@ var forbiddenGoBuiltinSuggestions = map[string]string{
 	"recover": "`recover` is not available on the GALA surface; `Try` captures panics — use `Try(() => ...)` / `TryApply`",
 }
 
+// ForbiddenGoBuiltins returns the set of bare Go builtins that GALA forbids on
+// its surface (GALA-E0035), keyed by name. It is the exported view of
+// forbiddenGoBuiltinSuggestions so downstream tooling — notably the LSP
+// completion provider — can avoid suggesting a builtin the compiler will
+// reject, without re-declaring a list that could drift out of sync.
+func ForbiddenGoBuiltins() map[string]bool {
+	out := make(map[string]bool, len(forbiddenGoBuiltinSuggestions))
+	for name := range forbiddenGoBuiltinSuggestions {
+		out[name] = true
+	}
+	return out
+}
+
 // checkForbiddenGoBuiltinCall rejects a call to a bare Go builtin as a hard
 // error (GALA-E0035). It is resolver-aware: the name is only forbidden when it
 // is a bare identifier that does NOT resolve to a user-defined function, a

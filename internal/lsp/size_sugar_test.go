@@ -4,7 +4,35 @@ import (
 	"testing"
 
 	"martianoff/gala/internal/transpiler"
+	"martianoff/gala/internal/transpiler/transformer"
 )
+
+// TestKeywordCompletions_NoForbiddenBuiltins verifies that keyword/builtin
+// completion never offers a bare Go builtin the compiler forbids (GALA-E0035),
+// cross-checking against the authoritative set in the transformer so the two
+// cannot drift. The sanctioned names (Println/Print/SliceOf) must still appear.
+func TestKeywordCompletions_NoForbiddenBuiltins(t *testing.T) {
+	forbidden := transformer.ForbiddenGoBuiltins()
+	if len(forbidden) == 0 {
+		t.Fatal("expected a non-empty forbidden-builtin set from the transformer")
+	}
+
+	offered := make(map[string]bool)
+	for _, item := range keywordCompletions() {
+		offered[item.Label] = true
+	}
+
+	for name := range forbidden {
+		if offered[name] {
+			t.Errorf("keywordCompletions offers forbidden Go builtin %q (GALA-E0035)", name)
+		}
+	}
+	for _, want := range []string{"Println", "Print", "SliceOf"} {
+		if !offered[want] {
+			t.Errorf("keywordCompletions missing sanctioned builtin %q", want)
+		}
+	}
+}
 
 // TestResolveMethodReturn_SizeSugar verifies that GALA's `.Size()` / `.ByteSize()`
 // magic methods on Go primitive receivers (string, slice, map) type-resolve to

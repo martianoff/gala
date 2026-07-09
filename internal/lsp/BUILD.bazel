@@ -51,6 +51,7 @@ go_test(
     tags = ["no-sandbox"],
     deps = [
         "//internal/transpiler",
+        "//internal/transpiler/transformer",
         "@com_github_owenrumney_go_lsp//lsp",
         "@com_github_owenrumney_go_lsp//servertest",
         "@rules_go//go/tools/bazel",

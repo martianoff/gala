@@ -8,6 +8,7 @@ import (
 	"github.com/owenrumney/go-lsp/lsp"
 
 	"martianoff/gala/internal/transpiler"
+	"martianoff/gala/internal/transpiler/transformer"
 )
 
 func (h *GalaHandler) Completion(ctx context.Context, params *lsp.CompletionParams) (*lsp.CompletionList, error) {
@@ -240,10 +241,13 @@ func keywordCompletions() []lsp.CompletionItem {
 		"interface", "sealed", "embed", "if", "else", "for", "range",
 		"return", "match", "case", "true", "false", "nil", "map",
 	}
+	// Only genuinely-available names belong here. The bare Go builtins
+	// (len/append/make/…) are forbidden on GALA's surface (GALA-E0035), so
+	// suggesting them would complete code the compiler rejects — use `.Size()`
+	// / `.ByteSize()` (offered as method completions) or the go_interop
+	// wrappers (ordinary symbols) instead.
 	builtinFuncs := []string{
 		"Println", "Print", "SliceOf",
-		"len", "cap", "make", "append", "copy", "delete",
-		"close", "panic", "recover",
 		// Auto-imported std prelude constructors / converters
 		// (see internal/transpiler/registry/std.go and std/*.gala).
 		"NewImmutable", "NewConstPtr", "NewEmbeddedFS",
@@ -253,7 +257,13 @@ func keywordCompletions() []lsp.CompletionItem {
 	for _, kw := range keywords {
 		items = append(items, lsp.CompletionItem{Label: kw, Kind: kindPtr(lsp.CompletionItemKindKeyword)})
 	}
+	// Defensive filter against the authoritative forbidden set so this list can
+	// never drift back into suggesting an E0035 builtin.
+	forbidden := transformer.ForbiddenGoBuiltins()
 	for _, fn := range builtinFuncs {
+		if forbidden[fn] {
+			continue
+		}
 		items = append(items, lsp.CompletionItem{Label: fn, Kind: kindPtr(lsp.CompletionItemKindFunction), Detail: "builtin"})
 	}
 	return items
