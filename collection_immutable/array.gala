@@ -899,11 +899,9 @@ func (a Array[T]) PartitionMap[A any, B any](f func(T) Either[A, B]) Tuple[Array
     var leftBuilder = newArrayBuilder[A]()
     var rightBuilder = newArrayBuilder[B]()
     for i := 0; i < a.length; i++ {
-        val either = f(a.Get(i))
-        if either.IsLeft() {
-            leftBuilder.Add(either.GetLeft())
-        } else {
-            rightBuilder.Add(either.GetRight())
+        f(a.Get(i)) match {
+            case Left(l) => leftBuilder.Add(l)
+            case Right(r) => rightBuilder.Add(r)
         }
     }
     return (leftBuilder.Result(), rightBuilder.Result())
