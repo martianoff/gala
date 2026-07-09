@@ -54,32 +54,30 @@ func Spawn(opts SpawnOpts) Try[Process] {
     if opts.Cmd == "" {
         return Failure[Process](errors.New("subprocess.Spawn: empty Cmd"))
     }
-    val c = exec.Command(opts.Cmd, opts.Args...)
-    if opts.Dir != "" {
-        c.Dir = opts.Dir
-    }
-    if opts.Env.Size() > 0 {
-        // Append rather than overwrite — replace mode would be a footgun
-        // (forgetting PATH breaks every spawn).
-        c.Env = go_interop.SliceAppendAll(c.Environ(), opts.Env)
-    }
-    val sin, sErr = c.StdinPipe()
-    if sErr != nil { return Failure[Process](sErr) }
-    val sout, oErr = c.StdoutPipe()
-    if oErr != nil { return Failure[Process](oErr) }
-    val serr, eErr = c.StderrPipe()
-    if eErr != nil { return Failure[Process](eErr) }
-    val startErr = c.Start()
-    if startErr != nil { return Failure[Process](startErr) }
-    return Success(Process(state = &processState(
-        cmd        = c,
-        stdin      = sin,
-        stdoutScan = newLineScanner(sout),
-        stderrScan = newLineScanner(serr),
-        stdinMu    = go_interop.NewMutex(),
-        waitOnce   = go_interop.NewOnce(),
-        waitDone   = go_interop.NewSignal(),
-    )))
+    return Try[Process](() => {
+        val c = exec.Command(opts.Cmd, opts.Args...)
+        if opts.Dir != "" {
+            c.Dir = opts.Dir
+        }
+        if opts.Env.Size() > 0 {
+            // Append rather than overwrite — replace mode would be a footgun
+            // (forgetting PATH breaks every spawn).
+            c.Env = go_interop.SliceAppendAll(c.Environ(), opts.Env)
+        }
+        val sin = Try(c.StdinPipe()).Get()
+        val sout = Try(c.StdoutPipe()).Get()
+        val serr = Try(c.StderrPipe()).Get()
+        FromError(c.Start()).Get()
+        return Process(state = &processState(
+            cmd        = c,
+            stdin      = sin,
+            stdoutScan = newLineScanner(sout),
+            stderrScan = newLineScanner(serr),
+            stdinMu    = go_interop.NewMutex(),
+            waitOnce   = go_interop.NewOnce(),
+            waitDone   = go_interop.NewSignal(),
+        ))
+    })
 }
 
 // WriteLine writes s + "\n" to the child's stdin, flushing immediately.
