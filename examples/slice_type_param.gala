@@ -1,6 +1,5 @@
 package main
 
-import "fmt"
 
 // Test case for slice as generic type parameter
 
@@ -25,9 +24,9 @@ func CreateSliceBox[T any]() Box[[]T] {
 func main() {
     // Create box with slice
     val wrapped = WrapSlice[int](SliceOf(1, 2, 3))
-    fmt.Println("Wrapped slice length:", wrapped.Value.Size())
+    Println("Wrapped slice length:", wrapped.Value.Size())
 
     // Create empty slice box
     val emptyBox = CreateSliceBox[string]()
-    fmt.Println("Empty box length:", emptyBox.Value.Size())
+    Println("Empty box length:", emptyBox.Value.Size())
 }

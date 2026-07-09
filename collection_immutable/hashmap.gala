@@ -1,7 +1,6 @@
 package collection_immutable
 
 import (
-    "fmt"
     . "martianoff/gala/std"
     "martianoff/gala/go_interop"
     "martianoff/gala/go_builtins"
@@ -81,7 +80,7 @@ func hashMapHash[K comparable](key K) uint32 {
 
 // hashMapPanicNotHashable panics with a helpful error message.
 func hashMapPanicNotHashable(v any) uint32 {
-    go_builtins.Panic(fmt.Sprintf("HashMap: type %T must implement std.Hashable interface", v))
+    go_builtins.Panic(f"HashMap: type ${v}%T must implement std.Hashable interface")
 }
 
 // hashMapBitpos returns the bit position for a hash at a given level.

@@ -1,7 +1,6 @@
 package collection_mutable
 
 import (
-    "fmt"
     . "martianoff/gala/std"
     "martianoff/gala/go_interop"
 )
@@ -200,7 +199,7 @@ func treeSetCompareUint8sAny(a uint8, vb any) int {
 }
 
 func treeSetPanicNotOrdered(v any) int {
-    go_builtins.Panic(fmt.Sprintf("TreeSet: type %T must implement std.Ordered interface", v))
+    go_builtins.Panic(f"TreeSet: type ${v}%T must implement std.Ordered interface")
 }
 
 // isRedTreeSetNode checks if a node is red (nil nodes are black).

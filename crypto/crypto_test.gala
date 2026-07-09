@@ -4,6 +4,7 @@ import (
     "encoding/base64"
     "encoding/hex"
     . "martianoff/gala/test"
+    . "martianoff/gala/std"
     . "martianoff/gala/collection_immutable"
     . "martianoff/gala/go_interop"
     "martianoff/gala/crypto"
@@ -17,10 +18,7 @@ func bytesOf(s string) Array[byte] = ArrayFromSlice(ToBytes(s))
 // only used in tests with hard-coded vectors, so a malformed input is a
 // test bug.
 func hexBytes(s string) Array[byte] {
-    val decoded, err = hex.DecodeString(s)
-    if err != nil {
-        go_builtins.Panic(s"hexBytes: invalid hex: ${err.Error()}")
-    }
+    val decoded = Try(hex.DecodeString(s)).Get()
     return ArrayFromSlice[byte](decoded)
 }
 

@@ -1,7 +1,6 @@
 package collection_mutable
 
 import (
-    "fmt"
     . "martianoff/gala/std"
     "martianoff/gala/go_interop"
 )
@@ -211,7 +210,7 @@ func mutableTreeMapCompareUint8sAny(a uint8, vb any) int {
 }
 
 func mutableTreeMapPanicNotOrdered(v any) int {
-    go_builtins.Panic(fmt.Sprintf("TreeMap: type %T must implement std.Ordered interface", v))
+    go_builtins.Panic(f"TreeMap: type ${v}%T must implement std.Ordered interface")
 }
 
 // isRedTreeMapNode checks if a node is red (nil nodes are black).

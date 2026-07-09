@@ -7,14 +7,13 @@ package main
 
 import (
     . "martianoff/gala/fs"
-    . "martianoff/gala/go_builtins"
+    . "martianoff/gala/std"
     "martianoff/gala/path"
     "os"
 )
 
 func main() {
-    val dir, mkErr = os.MkdirTemp("", "fs_roundtrip_")
-    if mkErr != nil { Panic(mkErr) }
+    val dir = Try(os.MkdirTemp("", "fs_roundtrip_")).Get()
 
     val target = path.Join(dir, "greeting.txt")
 

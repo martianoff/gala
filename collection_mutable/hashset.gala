@@ -1,7 +1,6 @@
 package collection_mutable
 
 import (
-    "fmt"
     . "martianoff/gala/std"
     "martianoff/gala/go_interop"
 )
@@ -92,7 +91,7 @@ func hashSetHash[T comparable](value T) uint32 {
 
 // hashSetPanicNotHashable panics with a helpful error message.
 func hashSetPanicNotHashable(v any) uint32 {
-    go_builtins.Panic(fmt.Sprintf("HashSet: type %T must implement std.Hashable interface", v))
+    go_builtins.Panic(f"HashSet: type ${v}%T must implement std.Hashable interface")
 }
 
 // === Basic Operations ===
