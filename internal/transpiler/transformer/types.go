@@ -295,7 +295,10 @@ func (t *galaASTTransformer) typeToExpr(typ transpiler.Type) ast.Expr {
 			// non-empty ImportPath and is NOT local, so it must still be qualified.
 			// Genuinely-local types (built by GALA analysis) have no ImportPath;
 			// without this guard `io/fs.FileInfo` would drop to a bare `FileInfo`
-			// and collide with the package's own `FileInfo` type.
+			// and collide with the package's own `FileInfo` type. (The local
+			// `FileInfo` struct and `io/fs.FileInfo` both stringify to `fs.FileInfo`
+			// inside this package; only ImportPath distinguishes them, so it must be
+			// preserved through inference for this guard to stay correct.)
 			if v.Package == t.packageName && v.ImportPath == "" {
 				return ast.NewIdent(v.Name)
 			}

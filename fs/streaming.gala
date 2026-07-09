@@ -30,12 +30,17 @@ val scannerMaxLineBytes = 1024 * 1024
 // split is discarded — a file with N lines yields N strings, not N+1.
 //
 // For files that don't fit in memory, prefer ForEachLine.
-func ReadLines(path string) Try[Array[string]] = Try[Array[string]](() => {
-    val data = Try(os.ReadFile(path)).Get()
+func ReadLines(path string) Try[Array[string]] =
+    Try(os.ReadFile(path)).Map((data) => splitLines(data))
+
+// splitLines is ReadLines' pure transform: split file bytes on "\n" and
+// drop the empty trailing element a final newline produces (N lines ->
+// N strings). Kept as a named helper so the return type is explicit.
+func splitLines(data []byte) Array[string] {
     val parts = strings.Split(string(data), "\n")
     val n = if (parts.Size() > 0 && parts[parts.Size()-1] == "") parts.Size() - 1 else parts.Size()
     return ArrayFromSlice(SliceTake(parts, n))
-})
+}
 
 // ForEachLine streams the file at `path` line by line through the
 // supplied callback. The callback's bool return controls iteration:
@@ -45,56 +50,52 @@ func ReadLines(path string) Try[Array[string]] = Try[Array[string]](() => {
 // The underlying bufio.Scanner is configured with a 1 MiB max line
 // length so long lines don't trip bufio.ErrTooLong; the default 64 KiB
 // is too tight for many real inputs.
-func ForEachLine(path string, fn func(string) bool) Try[bool] = Try[bool](() => {
-    val f = Try(os.Open(path)).Get()
-    defer f.Close()
-    val scanner = bufio.NewScanner(f)
-    scanner.Buffer(SliceWithCapacity[byte](scannerInitialBufBytes), scannerMaxLineBytes)
-    for scanner.Scan() {
-        if !fn(scanner.Text()) {
-            return false
+func ForEachLine(path string, fn func(string) bool) Try[bool] =
+    Try(os.Open(path)).FlatMap((f) => {
+        defer f.Close()
+        val scanner = bufio.NewScanner(f)
+        scanner.Buffer(SliceWithCapacity[byte](scannerInitialBufBytes), scannerMaxLineBytes)
+        for scanner.Scan() {
+            if !fn(scanner.Text()) {
+                return Success[bool](false)
+            }
         }
-    }
-    FromError(scanner.Err()).Get()
-    return true
-})
+        return FromError(scanner.Err()).Map((_) => true)
+    })
 
 // WriteLines writes `lines` to `path` joined by "\n" with a trailing
 // newline appended after the last line. Existing contents at `path`
 // are replaced (atomic in the same sense as os.WriteFile). `mode` is
 // applied if the file is newly created.
-func WriteLines(path string, lines Array[string], mode int) Try[bool] = Try[bool](() => {
+func WriteLines(path string, lines Array[string], mode int) Try[bool] {
     val joined = strings.Join(lines.ToGoSlice(), "\n") + "\n"
-    FromError(os.WriteFile(path, ToBytes(joined), os.FileMode(mode))).Get()
-    return true
-})
+    return FromError(os.WriteFile(path, ToBytes(joined), os.FileMode(mode))).Map((_) => true)
+}
 
 // AppendString appends `contents` to the file at `path`. If the file
 // does not exist it is created with `mode`; otherwise the file is
 // opened with O_APPEND and existing contents are preserved. Both the
 // write and close errors are surfaced — a successful write followed by
 // a failed close still becomes Failure.
-func AppendString(path string, contents string, mode int) Try[bool] = Try[bool](() => {
-    val f = Try(os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, os.FileMode(mode))).Get()
-    // Run both write and close (close must always run), then surface the write
-    // error first and the close error second — a good write with a failed close
-    // is still a Failure.
-    val writeResult = Try(f.WriteString(contents))
-    val closeResult = FromError(f.Close())
-    writeResult.Get()
-    closeResult.Get()
-    return true
-})
+func AppendString(path string, contents string, mode int) Try[bool] =
+    Try(os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, os.FileMode(mode)))
+        .FlatMap((f) => {
+            // Eagerly run both write and close (close must always run); then
+            // surface the write error first and the close error second — a good
+            // write with a failed close is still a Failure.
+            val writeResult = Try(f.WriteString(contents))
+            val closeResult = FromError(f.Close())
+            return writeResult.FlatMap((_) => closeResult).Map((_) => true)
+        })
 
 // Append is the byte-payload companion to AppendString. Same create-
 // or-append semantics; both write and close errors are reported.
-func Append(path string, data Array[byte], mode int) Try[bool] = Try[bool](() => {
-    val f = Try(os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, os.FileMode(mode))).Get()
-    // Run both write and close (close must always run), then surface the write
-    // error first and the close error second.
-    val writeResult = Try(f.Write(data.ToGoSlice()))
-    val closeResult = FromError(f.Close())
-    writeResult.Get()
-    closeResult.Get()
-    return true
-})
+func Append(path string, data Array[byte], mode int) Try[bool] =
+    Try(os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, os.FileMode(mode)))
+        .FlatMap((f) => {
+            // Eagerly run both write and close (close must always run); then
+            // surface the write error first and the close error second.
+            val writeResult = Try(f.Write(data.ToGoSlice()))
+            val closeResult = FromError(f.Close())
+            return writeResult.FlatMap((_) => closeResult).Map((_) => true)
+        })

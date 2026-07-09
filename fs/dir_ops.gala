@@ -24,45 +24,44 @@ struct WalkEntry(
 //
 // Named CopyFile rather than Copy to avoid colliding with std.Copy,
 // the generic deep-copy helper exported as a prelude symbol.
-func CopyFile(src string, dst string, mode int) Try[bool] = Try[bool](() => {
-    val srcF = Try(os.Open(src)).Get()
-    defer srcF.Close()
-    val dstF = Try(os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, os.FileMode(mode))).Get()
-    defer dstF.Close()
-    Try(io.Copy(dstF, srcF)).Get()
-    return true
-})
+func CopyFile(src string, dst string, mode int) Try[bool] =
+    Try(os.Open(src)).FlatMap((srcF) => {
+        defer srcF.Close()
+        return Try(os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, os.FileMode(mode)))
+            .FlatMap((dstF) => {
+                defer dstF.Close()
+                return Try(io.Copy(dstF, srcF)).Map((_) => true)
+            })
+    })
 
 // Rename moves src to dst by delegating to os.Rename. Atomic on the
 // same filesystem; will fail across filesystems. Callers that need
 // cross-filesystem moves should compose Copy + RemoveAll explicitly —
 // we deliberately do not paper over that case.
-func Rename(src string, dst string) Try[bool] = Try[bool](() => {
-    FromError(os.Rename(src, dst)).Get()
-    return true
-})
+func Rename(src string, dst string) Try[bool] =
+    FromError(os.Rename(src, dst)).Map((_) => true)
 
 // Walk returns every entry under `root`, recursively. The walk order
 // is filepath.WalkDir's order (lexical within each directory). The
 // root entry itself is included as the first element. A read error
 // at any level is captured as Failure.
-func Walk(root string) Try[Array[WalkEntry]] = Try[Array[WalkEntry]](() => {
+func Walk(root string) Try[Array[WalkEntry]] {
+    // filepath.WalkDir drives an imperative visitor (its callback returns
+    // error per the Go contract); accumulate into `entries`, then compose the
+    // walk's own error via FromError.Map rather than re-raising with .Get().
     var entries = EmptyArray[WalkEntry]()
-    FromError(filepath.WalkDir(root, (path string, d os.DirEntry, err error) => {
+    return FromError(filepath.WalkDir(root, (path string, d os.DirEntry, err error) => {
         if err != nil { return err }
         val info, infoErr = d.Info()
         if infoErr != nil { return infoErr }
         entries = entries.Append(WalkEntry(Path = path, Info = fromGoFileInfo(info)))
         return nil
-    })).Get()
-    return entries
-})
+    })).Map((_) => entries)
+}
 
 // Glob returns paths matching the shell-style pattern using
 // filepath.Glob semantics (`*`, `?`, `[abc]`). An empty result is
 // Success(empty Array), not Failure — "no matches" is not an error.
 // Failure is reserved for malformed patterns (filepath.ErrBadPattern).
-func Glob(pattern string) Try[Array[string]] = Try[Array[string]](() => {
-    val matches = Try(filepath.Glob(pattern)).Get()
-    return ArrayFromSlice(matches)
-})
+func Glob(pattern string) Try[Array[string]] =
+    Try(filepath.Glob(pattern)).Map((matches) => ArrayFromSlice(matches))

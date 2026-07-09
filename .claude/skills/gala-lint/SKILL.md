@@ -674,6 +674,7 @@ func (s Str) IsAlpha() bool = s.NonEmpty() && toRunes(s.value).ForAll(unicode.Is
 | Bare `panic` for errors | `panic("error message")` — a hard error (`GALA-E0035`) | Return `Try[T]` or `Either[E, T]` |
 | `go_builtins.Panic` to propagate an error | `val x, err = f(); if err != nil { go_builtins.Panic(err) }` (or the same inside a `Try` block) | Wrap the `(T, error)` call in `Try`: `Try(f(args))` returns `Try[T]` (the error becomes a `Failure`); use `.Get()` only if you truly want to re-raise |
 | `Try` around an error-**only** Go call | `Try(os.Rename(a, b))` — wrapping a Go func that returns ONLY `error` (no value) | `FromError(os.Rename(a, b)).Get()` — `Try(...)` of an error-only call compiles to `Try[error]` that captures the error as a *value*, so `IsFailure` is ALWAYS false (silent no-op). `FromError` (from `std`) returns `Try[Void]` and fails on non-nil error. Reserve `Try(call)` for `(T, error)` calls |
+| `.Get()` inside an enclosing `Try(() => {...})` | `Try[T](() => { val x = Try(call()).Get(); return f(x) })` — the inner `.Get()` re-raises a `Failure` as a *panic* the outer `Try` re-catches | Compose with the monadic API: `Try(call()).Map((x) => f(x))` (or `.FlatMap` / `bind`). Nesting `.Get()` inside an outer `Try` defeats `Try`'s purpose — it round-trips a value through a panic |
 | Ignored error | `result, _ := fallibleOp()` | Handle with `Try` or check error |
 | Sentinel return value | Returning `""`, `0`, `-1`, or `nil` to signal "not found" / failure | Return `Option[T]` or `Try[T]` instead |
 | Go-style if-err-nil | `val x, err = f(); if err == nil { use(x) }` | `Try(() => f())` then `.Map`, `.GetOrElse`, or `match` |
@@ -794,6 +795,39 @@ val data = Try(os.ReadFile(path)).Get()   // os.ReadFile → ([]byte, error)
 **Verify by exercising an error path** — assert `IsFailure` on a deliberately
 bad call (`os.Rename` of a missing source, `os.WriteFile` into a missing dir) so
 a never-failing `Try` can't hide.
+
+**`.Get()` inside an enclosing `Try(() => {...})` defeats `Try`.** Calling
+`.Get()` on a `Try` re-raises a `Failure` as a *panic*; when that `.Get()` sits
+inside another `Try(() => {...})` block, the outer `Try` merely re-catches the
+panic it just raised — a value laundered through a panic round-trip that ignores
+the monadic API entirely. Compose instead:
+
+- value call + transform → `Try(call()).Map((x) => f(x))` (or `.Map(f)` for a
+  plain function).
+- value call, no transform → `Try(call())` directly (drop the wrapper).
+- error-only call → constant → `FromError(call()).Map((_) => true)`.
+- dependent multi-step (open→read, ReadDir→per-entry) → `bind` notation or a
+  `.FlatMap(...).Map(...)` chain — never `.Get()` inside the outer `Try`.
+
+```gala
+// BAD: inner .Get() re-raises as a panic that the outer Try re-catches
+func Stat(path string) Try[FileInfo] = Try[FileInfo](() => {
+    val fi = Try(os.Stat(path)).Get()
+    return fromGoFileInfo(fi)
+})
+
+// GOOD: compose with Map — the failure flows as a Failure, no panic round-trip
+func Stat(path string) Try[FileInfo] =
+    Try(os.Stat(path)).Map(fromGoFileInfo)
+
+// GOOD: error-only call to a constant result
+func RemoveAll(path string) Try[bool] =
+    FromError(os.RemoveAll(path)).Map((_) => true)
+```
+
+A deliberate top-level `Try(call()).Get()` in a *non-`Try`* function that must
+abort (an unrecoverable invariant — see the crypto RNG helpers) is fine; the
+anti-pattern is specifically `.Get()` **nested inside another `Try` block**.
 
 ### 11b. `Array.Grouped` / `Array.Sliding` over Index Loops (HIGH priority)
 

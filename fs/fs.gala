@@ -38,37 +38,27 @@ func fromGoFileInfo(fi os.FileInfo) FileInfo = FileInfo(
 // ReadFile reads the named file and returns its contents as Array[byte].
 // On any error (file missing, permission denied, IO failure) the error
 // is captured as Failure.
-func ReadFile(path string) Try[Array[byte]] = Try[Array[byte]](() => {
-    val data = Try(os.ReadFile(path)).Get()
-    return ArrayFromSlice(data)
-})
+func ReadFile(path string) Try[Array[byte]] =
+    Try(os.ReadFile(path)).Map((data) => ArrayFromSlice(data))
 
 // ReadFileString is a convenience for the common case of reading a
 // text file. Equivalent to ReadFile + decoding the bytes as UTF-8.
-func ReadFileString(path string) Try[string] = Try[string](() => {
-    val data = Try(os.ReadFile(path)).Get()
-    return string(data)
-})
+func ReadFileString(path string) Try[string] =
+    Try(os.ReadFile(path)).Map((data) => string(data))
 
 // WriteFile writes data to the named file, creating it if necessary.
 // `mode` is a Unix permission mode (e.g. 0o644). On Windows the mode
 // is mostly advisory; only the read-only bit is honored.
-func WriteFile(path string, data Array[byte], mode int) Try[bool] = Try[bool](() => {
-    FromError(os.WriteFile(path, data.ToGoSlice(), os.FileMode(mode))).Get()
-    return true
-})
+func WriteFile(path string, data Array[byte], mode int) Try[bool] =
+    FromError(os.WriteFile(path, data.ToGoSlice(), os.FileMode(mode))).Map((_) => true)
 
 // WriteFileString is the string-content companion to WriteFile.
-func WriteFileString(path string, contents string, mode int) Try[bool] = Try[bool](() => {
-    FromError(os.WriteFile(path, ToBytes(contents), os.FileMode(mode))).Get()
-    return true
-})
+func WriteFileString(path string, contents string, mode int) Try[bool] =
+    FromError(os.WriteFile(path, ToBytes(contents), os.FileMode(mode))).Map((_) => true)
 
 // Stat returns metadata about the file at `path`.
-func Stat(path string) Try[FileInfo] = Try[FileInfo](() => {
-    val fi = Try(os.Stat(path)).Get()
-    return fromGoFileInfo(fi)
-})
+func Stat(path string) Try[FileInfo] =
+    Try(os.Stat(path)).Map(fromGoFileInfo)
 
 // Exists is the non-fallible "does this path resolve" check.
 // Returns false on any error (including NotExist, permission denied,
@@ -79,10 +69,8 @@ func Exists(path string) bool = Stat(path).IsSuccess()
 // MkdirAll creates `path` along with any necessary parents. It is a
 // no-op if the directory already exists. `mode` is the Unix permission
 // mode applied to newly-created directories.
-func MkdirAll(path string, mode int) Try[bool] = Try[bool](() => {
-    FromError(os.MkdirAll(path, os.FileMode(mode))).Get()
-    return true
-})
+func MkdirAll(path string, mode int) Try[bool] =
+    FromError(os.MkdirAll(path, os.FileMode(mode))).Map((_) => true)
 
 // MkdirTemp creates a new temporary directory in the directory `dir`
 // and returns the pathname of the new directory. If `dir` is empty
@@ -95,21 +83,26 @@ func MkdirTemp(dir string, pattern string) Try[string] = Try(os.MkdirTemp(dir, p
 // everything it can but returns the first error it encounters. If
 // `path` does not exist, the call returns Success without error
 // (matching os.RemoveAll's convention).
-func RemoveAll(path string) Try[bool] = Try[bool](() => {
-    FromError(os.RemoveAll(path)).Get()
-    return true
-})
+func RemoveAll(path string) Try[bool] =
+    FromError(os.RemoveAll(path)).Map((_) => true)
 
 // ReadDir reads the directory named by `path` and returns a snapshot
 // of its entries as FileInfo records. Entries are returned in the
 // order ReadDir yields them (filesystem-dependent — callers that need
 // a stable order should sort).
-func ReadDir(path string) Try[Array[FileInfo]] = Try[Array[FileInfo]](() => {
-    val entries = Try(os.ReadDir(path)).Get()
-    var out = EmptyArray[FileInfo]()
-    for i := 0; i < entries.Size(); i++ {
-        val info = Try(entries[i].Info()).Get()
-        out = out.Append(fromGoFileInfo(info))
-    }
-    return out
-})
+func ReadDir(path string) Try[Array[FileInfo]] =
+    Try(os.ReadDir(path)).FlatMap((entries []os.DirEntry) => {
+        // Each entry's .Info() is itself fallible. This is a genuinely
+        // imperative traverse (a real loop), but it composes off the ReadDir
+        // Try via FlatMap and surfaces a per-entry Info error as an explicit
+        // Failure — no `.Get()` re-raising inside an enclosing Try.
+        var out = EmptyArray[FileInfo]()
+        for i := 0; i < entries.Size(); i++ {
+            val info, err = entries[i].Info()
+            if err != nil {
+                return Failure[Array[FileInfo]](err)
+            }
+            out = out.Append(fromGoFileInfo(info))
+        }
+        return Success[Array[FileInfo]](out)
+    })
