@@ -114,6 +114,61 @@ func main() {
 	}
 }
 
+// TestDiagnostics_GoBuiltinsPanicResolves verifies the LSP resolves the
+// go_builtins package and its Panic function — the sanctioned replacement for
+// the forbidden bare `panic(...)` — without a false "unresolved" diagnostic.
+func TestDiagnostics_GoBuiltinsPanicResolves(t *testing.T) {
+	_, diags := getDiags(t, `package main
+
+import . "martianoff/gala/go_builtins"
+
+func main() {
+    Panic("boom")
+}
+`)
+	errs := errorDiags(diags)
+	if len(errs) != 0 {
+		for _, d := range errs {
+			t.Errorf("unexpected error importing/using go_builtins.Panic: line=%d msg=%s", d.Range.Start.Line, d.Message)
+		}
+	}
+}
+
+// TestDiagnostics_ResourcePackageResolves verifies the LSP resolves the
+// resource package (Closeable / Using / Bracket / WithLock) without false
+// errors. Mirrors examples/resource_combinators.gala.
+func TestDiagnostics_ResourcePackageResolves(t *testing.T) {
+	_, diags := getDiags(t, `package main
+
+import . "martianoff/gala/resource"
+import . "martianoff/gala/go_interop"
+
+type Handle struct {
+    name string
+}
+
+func (h Handle) Close() error {
+    return nil
+}
+
+func main() {
+    val n = Using(Handle(name = "log.txt"), (h) => h.name.Size())
+    val doubled = Bracket(21, (r) => Println(r), (r) => r * 2)
+    val mu = NewMutex()
+    val guarded = WithLock(mu, () => 7 + 1)
+    Println(n)
+    Println(doubled)
+    Println(guarded)
+}
+`)
+	errs := errorDiags(diags)
+	if len(errs) != 0 {
+		for _, d := range errs {
+			t.Errorf("unexpected error importing/using resource combinators: line=%d msg=%s", d.Range.Start.Line, d.Message)
+		}
+	}
+}
+
 // TestCompletion_SizeSugarOnString verifies dot completion on a string receiver
 // offers Size() and ByteSize().
 func TestCompletion_SizeSugarOnString(t *testing.T) {
