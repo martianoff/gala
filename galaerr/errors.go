@@ -277,6 +277,16 @@ const (
 	// resolver-aware: a user-defined function of the same name (e.g. a local
 	// `func delete(...)`) is not a builtin and is left untouched.
 	CodeForbiddenGoBuiltin ErrorCode = "GALA-E0035"
+
+	// E0036: a Go-only statement keyword (defer, go, goto, fallthrough, select,
+	// chan) appeared as a bare identifier statement. These are not part of
+	// GALA's grammar; they only "worked" as an accident of the final gofmt pass
+	// re-absorbing the following statement (e.g. `defer` + `f.Close()` gluing
+	// into a Go DeferStmt). GALA expresses cleanup with the `resource`
+	// combinators (Using/Bracket/WithLock, or a `use` binding) and goroutines
+	// with go_interop.Spawn, so the bare keywords are a hard error. The check is
+	// resolver-aware: a user binding of the same name is left untouched.
+	CodeForbiddenStatementKeyword ErrorCode = "GALA-E0036"
 )
 
 // MultiError collects multiple GALA errors.

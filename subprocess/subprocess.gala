@@ -6,6 +6,7 @@ import (
     "io"
     "os/exec"
     . "martianoff/gala/std"
+    . "martianoff/gala/resource"
     "martianoff/gala/go_interop"
 )
 
@@ -88,13 +89,13 @@ func Spawn(opts SpawnOpts) Try[Process] {
 // child closed stdin or exited; Failure carries the underlying io error.
 func (p Process) WriteLine(s string) Try[bool] {
     val st = p.state
-    st.stdinMu.Lock()
-    defer st.stdinMu.Unlock()
-    val _, e1 = io.WriteString(st.stdin, s)
-    if e1 != nil { return Failure[bool](e1) }
-    val _, e2 = io.WriteString(st.stdin, "\n")
-    if e2 != nil { return Failure[bool](e2) }
-    return Success(true)
+    return WithLock(st.stdinMu, () => {
+        val _, e1 = io.WriteString(st.stdin, s)
+        if e1 != nil { return Failure[bool](e1) }
+        val _, e2 = io.WriteString(st.stdin, "\n")
+        if e2 != nil { return Failure[bool](e2) }
+        return Success(true)
+    })
 }
 
 // CloseStdin closes the child's stdin pipe. Required for children
@@ -109,10 +110,10 @@ func (p Process) WriteLine(s string) Try[bool] {
 // mutex so a write in flight isn't truncated.
 func (p Process) CloseStdin() Try[bool] {
     val st = p.state
-    st.stdinMu.Lock()
-    defer st.stdinMu.Unlock()
-    st.stdin.Close()
-    return Success(true)
+    return WithLock(st.stdinMu, () => {
+        st.stdin.Close()
+        return Success(true)
+    })
 }
 
 // ReadLine blocks until the child writes a complete line on stdout, then

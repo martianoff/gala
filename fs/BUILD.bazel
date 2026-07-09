@@ -58,6 +58,7 @@ go_library(
     deps = [
         "//collection_immutable",
         "//go_interop",
+        "//resource",
         "//std",
         "//time_utils",
     ],
@@ -69,6 +70,7 @@ gala_test(
     deps = [
         ":fs",
         "//collection_immutable",
+        "//resource",
         "//time_utils",
     ],
 )
@@ -79,6 +81,7 @@ gala_test(
     deps = [
         ":fs",
         "//collection_immutable",
+        "//resource",
     ],
 )
 
@@ -88,6 +91,7 @@ gala_test(
     deps = [
         ":fs",
         "//collection_immutable",
+        "//resource",
         "//time_utils",
     ],
 )

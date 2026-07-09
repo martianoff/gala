@@ -5,6 +5,7 @@ import (
     "os"
     "path/filepath"
     . "martianoff/gala/collection_immutable"
+    . "martianoff/gala/resource"
     . "martianoff/gala/std"
 )
 
@@ -24,15 +25,17 @@ struct WalkEntry(
 //
 // Named CopyFile rather than Copy to avoid colliding with std.Copy,
 // the generic deep-copy helper exported as a prelude symbol.
+//
+// Each handle is released by resource.Using (GALA has no `defer`): the
+// close is guaranteed on every exit path and, being nested, runs LIFO —
+// dst closes before src.
 func CopyFile(src string, dst string, mode int) Try[bool] =
-    Try(os.Open(src)).FlatMap((srcF) => {
-        defer srcF.Close()
-        return Try(os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, os.FileMode(mode)))
-            .FlatMap((dstF) => {
-                defer dstF.Close()
-                return Try(io.Copy(dstF, srcF)).Map((_) => true)
-            })
-    })
+    Try(os.Open(src)).FlatMap((srcF) =>
+        Using(srcF, (in) =>
+            Try(os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, os.FileMode(mode)))
+                .FlatMap((dstF) =>
+                    Using(dstF, (out) =>
+                        Try(io.Copy(out, in)).Map((_) => true)))))
 
 // Rename moves src to dst by delegating to os.Rename. Atomic on the
 // same filesystem; will fail across filesystems. Callers that need

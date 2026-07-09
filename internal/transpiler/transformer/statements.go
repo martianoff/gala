@@ -30,6 +30,9 @@ func (t *galaASTTransformer) transformSimpleStatementWithMutability(ctx grammar.
 		return t.transformShortVarDeclWithMutability(shortCtx.(*grammar.ShortVarDeclContext), mutable)
 	}
 	if exprCtx := ctx.Expression(); exprCtx != nil {
+		if err := t.checkForbiddenStatementKeyword(exprCtx); err != nil {
+			return nil, err
+		}
 		expr, err := t.transformExpression(exprCtx)
 		if err != nil {
 			return nil, err
@@ -37,6 +40,71 @@ func (t *galaASTTransformer) transformSimpleStatementWithMutability(ctx grammar.
 		return &ast.ExprStmt{X: expr}, nil
 	}
 	return nil, nil
+}
+
+// forbiddenStatementKeywordSuggestions maps each Go-only statement keyword that
+// GALA does NOT have in its grammar to an actionable replacement. None of these
+// are GALA keywords, so the parser accepts them as a bare identifier
+// expression-statement; they only ever produced working Go by accident of the
+// final gofmt pass, which re-absorbs the following statement into a real Go
+// DeferStmt/GoStmt/etc. (`defer` + `f.Close()` glue into one DeferStmt). That is
+// undocumented, ungrammatical, and fragile, so a bare use is a hard error.
+var forbiddenStatementKeywordSuggestions = map[string]string{
+	"defer":       "GALA has no `defer`; use the `resource` combinators — `Using` / `Bracket` / `WithLock` from martianoff/gala/resource (or a `use x = ...` binding) — which guarantee cleanup on every exit path",
+	"go":          "GALA has no bare `go` statement; use `go_interop.Spawn(() => ...)` to start a goroutine",
+	"goto":        "GALA has no `goto`; use structured control flow — pattern matching, recursion, or a `for` loop",
+	"fallthrough": "GALA has no `fallthrough`; `match` arms never fall through — combine patterns with `|` or restructure the match",
+	"select":      "GALA has no `select` statement; use the go_interop channel helpers",
+	"chan":        "GALA has no bare `chan` statement; use the go_interop channel helpers to build and operate on channels",
+}
+
+// checkForbiddenStatementKeyword rejects a bare Go-only statement keyword
+// (`defer`, `go`, `goto`, `fallthrough`, `select`, `chan`) that the parser
+// accepted as a lone identifier expression-statement. Such statements only
+// "work" as an accident of the final gofmt round-trip (see
+// forbiddenStatementKeywordSuggestions); GALA has native replacements, so this
+// is a hard error (GALA-E0036).
+//
+// It is resolver-aware, mirroring checkForbiddenGoBuiltinCall: the name is only
+// forbidden when it is a bare identifier that does NOT resolve to a
+// user-defined function, a local binding (val/var/param), or a declared
+// type/struct — so a program that legitimately named something after one of
+// these words is left untouched.
+func (t *galaASTTransformer) checkForbiddenStatementKeyword(exprCtx grammar.IExpressionContext) error {
+	// Only a bare identifier statement (`defer`) is the accident; anything with
+	// a postfix (`x.defer()`), operator, or arguments is a normal expression.
+	if !t.isDirectVariableExpression(exprCtx) {
+		return nil
+	}
+	pc := t.getPrimaryFromExpression(exprCtx)
+	if pc == nil || pc.Identifier() == nil {
+		return nil
+	}
+	name := pc.Identifier().GetText()
+	suggestion, isKeyword := forbiddenStatementKeywordSuggestions[name]
+	if !isKeyword {
+		return nil
+	}
+	// Resolver-aware guards: a name the author actually declared is that
+	// declaration, not the leaked Go keyword.
+	if t.getFunction(name) != nil {
+		return nil
+	}
+	if !t.getType(name).IsNil() {
+		return nil
+	}
+	if t.getTypeMeta(name) != nil {
+		return nil
+	}
+	if _, ok := t.structFields[name]; ok {
+		return nil
+	}
+	return galaerr.NewCodedSemanticError(
+		galaerr.CodeForbiddenStatementKeyword,
+		exprCtx.GetStart().GetLine(), exprCtx.GetStart().GetColumn(),
+		fmt.Sprintf("bare Go statement keyword %q is not part of GALA's surface", name),
+		suggestion,
+	)
 }
 
 func (t *galaASTTransformer) transformIncDecStmt(ctx *grammar.IncDecStmtContext) (ast.Stmt, error) {
