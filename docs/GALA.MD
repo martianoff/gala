@@ -2611,6 +2611,45 @@ For guaranteed resource cleanup, prefer the `resource` combinators
 (`Using`/`Bracket`/`WithLock`) over a hand-written `Close()` call — they release
 on every exit path, including panics (see the `resource` package).
 
+### Go statement keywords are forbidden too
+
+The Go statement keywords `defer`, `go`, `goto`, `fallthrough`, `select`, and
+`chan` are **not** part of GALA's grammar. A bare use is a hard transpile error
+(**GALA-E0036**). Historically they appeared to "work" only as an accident of
+the final gofmt pass, which glued the following statement onto the keyword — an
+undocumented, fragile artifact GALA removes. The replacements:
+
+| Forbidden statement | Use instead |
+|---|---|
+| `defer x.Close()` | a `use x = …` binding, or a `resource` combinator (`Using`/`Bracket`/`WithLock`) |
+| `go f()` | `go_interop.Spawn(() => f())` |
+| `goto`, `fallthrough`, `select`, `chan` | structured control flow / pattern matching; `go_interop` channel helpers |
+
+Like the builtin check, this is **resolver-aware**: a symbol the program itself
+declared is left alone.
+
+#### `use` — scoped resource binding
+
+`use x = acquire` binds `x` for the rest of the enclosing block and guarantees
+`x.Close()` runs when the function returns, on every path (normal or panic). It
+is the top-to-bottom replacement for Go's `defer x.Close()` — the resource must
+satisfy `Close() error`. Multiple `use` bindings release **LIFO** (last acquired
+closes first), so nested resources unwind in the right order. No import is
+needed.
+
+```gala
+// Two resources; `out` (acquired last) closes first, `in` closes last.
+func copyFile(src string, dst string) Try[Int] = Try(() => {
+    use in  = OpenFile(src)
+    use out = CreateFile(dst)
+    out.Write(in.ReadString())
+})
+```
+
+`use` lowers to Go `x := acquire` plus `defer x.Close()` in the generated code —
+so Go's own `defer` still exists, but only as this sanctioned internal lowering,
+never on the GALA surface.
+
 ## 12. Immutability Under the Hood
 
 When GALA transpiles to Go, immutable values are wrapped in a `std.Immutable[T]` container to ensure safety and provide consistent semantics, especially for struct fields and global variables.

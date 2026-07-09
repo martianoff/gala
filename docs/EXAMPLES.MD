@@ -1138,6 +1138,37 @@ func total() Future[int] {
 
 Full program: [`examples/bind_notation_future.gala`](../examples/bind_notation_future.gala).
 
+## Scoped Resource Cleanup with `use`
+
+GALA has no `defer` (a bare `defer`/`go` statement is a hard error, **GALA-E0036**). Cleanup is a `use` binding: `use x = acquire` binds `x` for the rest of the block and guarantees `x.Close()` runs when the function returns, on every path. Multiple `use` bindings release **LIFO** (last acquired closes first):
+
+```gala
+type Handle struct {
+    name string
+}
+
+func (h Handle) Close() error {
+    Println(s"close ${h.name}")
+    return nil
+}
+
+func open(name string) Handle {
+    Println(s"open ${name}")
+    return Handle(name = name)
+}
+
+func work() {
+    use a = open("a")   // closes last
+    use b = open("b")   // closes first (LIFO)
+    Println(s"body sees ${a.name} and ${b.name}")
+}
+// Output: open a / open b / body sees a and b / close b / close a
+```
+
+For resources without `Close()` (a mutex, a temp dir), reach for the `resource` combinators — `Bracket(res, release, body)` or `WithLock(mu, () => …)`. A goroutine is `go_interop.Spawn(() => f())`, not a bare `go`.
+
+Full programs: [`examples/use_binding.gala`](../examples/use_binding.gala), [`examples/resource_combinators.gala`](../examples/resource_combinators.gala).
+
 ## More Examples
 
 You can find more examples in the `examples/` directory of the project:
