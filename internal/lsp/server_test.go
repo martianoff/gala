@@ -4319,7 +4319,7 @@ func TestDefinition_MethodDeclNavigation_Repro(t *testing.T) {
 	// defined in a different file than the usage.
 	dir := createTestProject(t, []testProjectFile{
 		{Name: "lib.gala", Src: "package mylib\n\ntype Box[T any] struct {\n    val value T\n}\n\nfunc (b Box[T]) Tail() Box[T] {\n    return b\n}\n\nfunc (b Box[T]) Filter(f func(T) bool) Box[T] {\n    return b\n}\n"},
-		{Name: "main.gala", Src: "package mylib\n\nfunc use(b Box[int]) Box[int] {\n    val t = b.Tail()\n    val f = b.Filter((x) => x > 0)\n    return t\n}\n"},
+		{Name: "main.gala", Src: "package mylib\n\nfunc project(b Box[int]) Box[int] {\n    val t = b.Tail()\n    val f = b.Filter((x) => x > 0)\n    return t\n}\n"},
 	})
 	openProjectFile(t, harness, dir, "lib.gala")
 	uri := openProjectFile(t, harness, dir, "main.gala")
@@ -4409,12 +4409,12 @@ func TestDefinition_StructFieldNotInComment(t *testing.T) {
 		"\n" +
 		"struct SSEEvent(Event string, Data string, Id string, Retry int)\n" +
 		"\n" +
-		"func use(e SSEEvent) string = e.Data\n"
+		"func render(e SSEEvent) string = e.Data\n"
 	uri := openFileOnDisk(t, harness, src)
 	time.Sleep(200 * time.Millisecond)
 
-	lineIdx := 8 // `func use(e SSEEvent) string = e.Data`
-	line := "func use(e SSEEvent) string = e.Data"
+	lineIdx := 8 // `func render(e SSEEvent) string = e.Data`
+	line := "func render(e SSEEvent) string = e.Data"
 	dataCol := strings.Index(line, "e.Data") + 2 // column of D in Data
 	locs, err := harness.Definition(uri, lineIdx, dataCol)
 	if err != nil {

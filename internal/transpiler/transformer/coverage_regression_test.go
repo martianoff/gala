@@ -176,8 +176,8 @@ func TestIfExpressionStringInterpolationIIFEReturnType(t *testing.T) {
 	trans := newTranspiler()
 	input := `package main
 
-func makeLabel(use bool, name string) string {
-    val label = if (use) s">> $name" else s"-- $name"
+func makeLabel(arrow bool, name string) string {
+    val label = if (arrow) s">> $name" else s"-- $name"
     return label
 }
 

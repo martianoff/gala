@@ -1,0 +1,6 @@
+open a
+open b
+body sees a and b
+close b
+close a
+done

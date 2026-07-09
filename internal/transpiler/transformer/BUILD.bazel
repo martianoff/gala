@@ -123,6 +123,7 @@ go_test(
         "tuple_return_arity_test.go",
         "type_inference_regression_test.go",
         "type_inference_test.go",
+        "use_binding_test.go",
         "user_get_method_test.go",
         "variables_test.go",
         "zero_field_struct_ctor_test.go",

@@ -68,6 +68,23 @@ func alsoDeclFromStatement(stmtCtx grammar.IStatementContext) grammar.IAlsoDecla
 	return nil
 }
 
+// useDeclFromStatement returns the UseDeclaration context if the statement is a
+// `use name = expr`, else nil.
+func useDeclFromStatement(stmtCtx grammar.IStatementContext) grammar.IUseDeclarationContext {
+	sc, ok := stmtCtx.(*grammar.StatementContext)
+	if !ok || sc == nil {
+		return nil
+	}
+	dc, ok := sc.Declaration().(*grammar.DeclarationContext)
+	if !ok || dc == nil {
+		return nil
+	}
+	if ud := dc.UseDeclaration(); ud != nil {
+		return ud
+	}
+	return nil
+}
+
 // trailingBindValueExpr extracts the value expression from a block's trailing
 // statement (e.g. `Success(...)`), or nil if the statement is not a bare
 // expression.

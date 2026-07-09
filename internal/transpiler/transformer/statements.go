@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/transpiler"
 )
 
 func (t *galaASTTransformer) transformSimpleStatement(ctx grammar.ISimpleStatementContext) (ast.Stmt, error) {
@@ -388,6 +389,18 @@ func (t *galaASTTransformer) transformBlock(ctx *grammar.BlockContext) (*ast.Blo
 			}
 			return block, nil
 		}
+		// A `use x = acquire` scoped-resource binding lowers to `x := acquire`
+		// plus `defer x.Close()`; the binding stays in scope for the rest of
+		// this block and releases (LIFO) when the function returns. Emitted
+		// inline so subsequent statements see `x`.
+		if useDecl := useDeclFromStatement(stmtCtx); useDecl != nil {
+			useStmts, err := t.transformUseDeclaration(useDecl)
+			if err != nil {
+				return nil, err
+			}
+			block.List = append(block.List, useStmts...)
+			continue
+		}
 		// A bare `subject match { ... }` whose value is discarded by the
 		// surrounding ExprStmt must be lowered as a void IIFE; otherwise
 		// arms calling void Go functions (e.g. `d.Skip()`) get wrapped in
@@ -427,6 +440,65 @@ func (t *galaASTTransformer) transformBlock(ctx *grammar.BlockContext) (*ast.Blo
 		block.List = append(block.List, stmt)
 	}
 	return block, nil
+}
+
+// transformUseDeclaration lowers a `use x = acquire` scoped-resource binding to
+// the two Go statements that implement it: `x := acquire` and `defer x.Close()`.
+// The resource is bound for the rest of the enclosing block and released — via
+// its Close() method — when the function returns, on every path (normal or
+// panic), LIFO with any other `use`/defer. This is the GALA-native, non-
+// forgettable replacement for the (now-forbidden) bare Go `defer x.Close()`;
+// emitting Go `defer` here is the sanctioned internal lowering — it lives in the
+// generated Go, never on the GALA surface.
+//
+// The binding is registered with its concrete resource type (not wrapped in
+// Immutable), so `x` and `x.Close()` read as plain Go and no `.Get()` unwrap is
+// injected. Acquisition is a single-value expression; a fallible Go acquire that
+// returns `(resource, error)` should be error-checked first (or use the
+// resource combinators directly).
+func (t *galaASTTransformer) transformUseDeclaration(ctx grammar.IUseDeclarationContext) ([]ast.Stmt, error) {
+	name := ctx.Identifier().GetText()
+	acquire, err := t.transformExpression(ctx.Expression())
+	if err != nil {
+		return nil, err
+	}
+	acquire = t.unwrapImmutable(acquire)
+
+	// Register the binding with its concrete type so downstream references and
+	// the Close() call resolve directly (no Immutable unwrapping). Prefer an
+	// explicit annotation when present; otherwise infer from the acquire expr.
+	resType := t.getExprTypeName(acquire)
+	if typeCtx := ctx.Type_(); typeCtx != nil {
+		if typeExpr, terr := t.transformType(typeCtx); terr == nil {
+			if annotated := t.astTypeToTranspilerType(typeExpr); annotated != nil && !annotated.IsNil() {
+				resType = annotated
+			}
+		}
+	}
+	// The binding holds the plain resource (`x := acquire`), not an Immutable
+	// wrapper, so strip any inferred Immutable[T] to T and register it with
+	// mutable-storage (addVar) semantics. A `val` binding is always
+	// Immutable-wrapped, so every read of it is rewritten to `x.Get()`
+	// (transformPrimary); `use` stores the resource directly, so its reads and
+	// `x.Close()` must stay plain — addVar gives exactly that.
+	if t.isImmutableType(resType) {
+		if gen, ok := resType.(transpiler.GenericType); ok && len(gen.Params) > 0 {
+			resType = gen.Params[0]
+		}
+	}
+	t.addVar(name, resType)
+
+	assign := &ast.AssignStmt{
+		Lhs: []ast.Expr{ast.NewIdent(name)},
+		Tok: token.DEFINE,
+		Rhs: []ast.Expr{acquire},
+	}
+	deferStmt := &ast.DeferStmt{
+		Call: &ast.CallExpr{
+			Fun: &ast.SelectorExpr{X: ast.NewIdent(name), Sel: ast.NewIdent("Close")},
+		},
+	}
+	return []ast.Stmt{assign, deferStmt}, nil
 }
 
 // stmtIsBareMatchExpression reports whether a statement is just a bare

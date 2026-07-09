@@ -398,7 +398,7 @@ import (
     . "github.com/example/galatui/harness"
 )
 
-func use(p Program) Harness = NewHarness(p)
+func consume(p Program) Harness = NewHarness(p)
 func makeFrame(s SessionInstance) string = PrintHarnessFrame(s)
 `
 
