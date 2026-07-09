@@ -7,16 +7,52 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestSizeSugarLowersSliceReceiverToLen exercises the `.Size()` sugar on a
-// receiver whose type the transformer resolves locally — an explicitly-typed
-// Go-slice parameter — with NO external package or Go-SDK dependency, so it is
-// hermetic in the transformer unit sandbox. It asserts the ArrayType
-// classification + `len(...)` lowering that the sugar performs.
+// TestSizeSugarOnGoFunctionReturn is the real, adversarially-sound guard for the
+// go-FUNCTION-return path: the `.Size()` sugar must fire on the result of a
+// *bare* (dot-imported) Go function, which resolves through
+// inferCallIdentType's dot-import `getGoFuncReturnType` loop (the TASK 1 fix) —
+// not the pre-existing qualified-call path in inferCallSelectorType.
 //
-// The go_interop-specific path this originally targeted — the sugar firing on
-// the []rune return of a bare dot-imported `ToRunes(...)` (fixed in
-// inferCallIdentType) — needs external-package resolution, so it is covered end
-// to end by examples/byte_conversion.gala instead of here.
+// It is hermetic in the transformer_test sandbox: `strings` is Go stdlib, so
+// its `Fields(...) []string` return resolves via goTypeInfo / the Go SDK
+// (available on CI through .bazelrc --action_env=GOROOT) with NO GALA package
+// wiring. Neutralizing the dot-import loop makes both cases keep a raw
+// `.Size()` (which does not lower), so this test fails without the fix.
+func TestSizeSugarOnGoFunctionReturn(t *testing.T) {
+	trans := newForbiddenBuiltinTranspiler()
+
+	cases := []struct {
+		name  string
+		input string
+	}{
+		{
+			name:  "direct bare dot-imported Go func return",
+			input: "package main\n\nimport . \"strings\"\n\nfunc f(s string) int = Fields(s).Size()",
+		},
+		{
+			name:  "val-bound bare dot-imported Go func return",
+			input: "package main\n\nimport . \"strings\"\n\nfunc f(s string) int {\n    val xs = Fields(s)\n    return xs.Size()\n}",
+		},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := trans.Transpile(tc.input, "")
+			require.NoError(t, err)
+			// The sugar must have fired: a []string return lowers .Size() to len().
+			require.Contains(t, out, "len(",
+				".Size() on a bare dot-imported Go []string return should lower to len():\n%s", out)
+			require.False(t, strings.Contains(out, ".Size()"),
+				"no raw .Size() method call should survive on the Go slice return:\n%s", out)
+		})
+	}
+}
+
+// TestSizeSugarLowersSliceReceiverToLen covers a DISTINCT path from the
+// go-function-return test above: the ArrayType-receiver → `len()` lowering when
+// the receiver's slice type is already known locally (an explicitly-typed
+// parameter). This path predates the go-function-return fix and is kept as its
+// own guard so neither test is misleading about what it exercises.
 func TestSizeSugarLowersSliceReceiverToLen(t *testing.T) {
 	trans := newForbiddenBuiltinTranspiler()
 
@@ -38,7 +74,6 @@ func TestSizeSugarLowersSliceReceiverToLen(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			out, err := trans.Transpile(tc.input, "")
 			require.NoError(t, err)
-			// The sugar must have fired: a Go-slice receiver lowers .Size() to len().
 			require.Contains(t, out, "len(",
 				".Size() on a Go slice receiver should lower to len():\n%s", out)
 			require.False(t, strings.Contains(out, ".Size()"),
