@@ -1,5 +1,6 @@
 wrote: true
 stat ok: true size=14
+readdir ok: true count=1
 read back: hello, gala fs
 cleanup: true
 dir gone: true

@@ -1,9 +1,13 @@
 package main
 
 // Verification example for the `fs` stdlib package: write a file,
-// stat it, read it back, then remove the scratch dir. Output is the
-// round-trip text plus the recovered byte count, so the example
-// has a stable cross-OS `.out`.
+// stat it, list the directory, read it back, then remove the scratch
+// dir. Output is the round-trip text plus the recovered byte count and
+// entry count, so the example has a stable cross-OS `.out`. ReadDir
+// exercises the `entries[i].Info()` path: a Go method returning
+// `(io/fs.FileInfo, error)` on an element of an `[]io/fs.DirEntry`
+// slice, which the `fs` package (whose Go name collides with `io/fs`)
+// must qualify correctly.
 
 import (
     . "martianoff/gala/fs"
@@ -23,6 +27,9 @@ func main() {
 
     val info = Stat(target)
     Println(s"stat ok: ${info.IsSuccess()} size=${info.Get().Size}")
+
+    val entries = ReadDir(dir)
+    Println(s"readdir ok: ${entries.IsSuccess()} count=${entries.Get().Size()}")
 
     val r = ReadFileString(target)
     Println(s"read back: ${r.Get()}")

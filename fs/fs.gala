@@ -66,8 +66,7 @@ func WriteFileString(path string, contents string, mode int) Try[bool] = Try[boo
 
 // Stat returns metadata about the file at `path`.
 func Stat(path string) Try[FileInfo] = Try[FileInfo](() => {
-    val fi, err = os.Stat(path)
-    FromError(err).Get()
+    val fi = Try(os.Stat(path)).Get()
     return fromGoFileInfo(fi)
 })
 
@@ -106,12 +105,10 @@ func RemoveAll(path string) Try[bool] = Try[bool](() => {
 // order ReadDir yields them (filesystem-dependent — callers that need
 // a stable order should sort).
 func ReadDir(path string) Try[Array[FileInfo]] = Try[Array[FileInfo]](() => {
-    val entries, err = os.ReadDir(path)
-    FromError(err).Get()
+    val entries = Try(os.ReadDir(path)).Get()
     var out = EmptyArray[FileInfo]()
     for i := 0; i < entries.Size(); i++ {
-        val info, infoErr = entries[i].Info()
-        FromError(infoErr).Get()
+        val info = Try(entries[i].Info()).Get()
         out = out.Append(fromGoFileInfo(info))
     }
     return out

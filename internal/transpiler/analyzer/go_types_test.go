@@ -273,6 +273,44 @@ func TestAnalyzeGoPackage_ResolveTypeAlias(t *testing.T) {
 	assert.Nil(t, resolved)
 }
 
+// TestAnalyzeGoPackage_ReexportedAliasTargetMethods guards the fix that makes
+// methods on a type re-exported through an alias resolvable under the type's
+// own canonical "pkgName.TypeName" key. `os.DirEntry` is an alias for
+// `io/fs.DirEntry`; `os.ReadDir` returns `[]os.DirEntry`, which Go resolves to
+// `[]fs.DirEntry`. So calling a method on an element (`entries[i].Info()`) must
+// find the method set under "fs.DirEntry" even though only "os" was analyzed —
+// io/fs is never directly imported. Without registerAliasTargetType,
+// info.Types["fs.DirEntry"] is nil and the method lookup misses, which in turn
+// breaks `Try(entries[i].Info())` (the Try type param can't be inferred and the
+// (T, error) return can't be thunked). Analyzing only "os" here mirrors the
+// real GALA import surface and keeps the test adversarially honest.
+func TestAnalyzeGoPackage_ReexportedAliasTargetMethods(t *testing.T) {
+	skipIfNoGoSDK(t)
+
+	info := analyzer.AnalyzeGoPackage("os")
+	require.NotNil(t, info)
+
+	// Baseline: the alias itself is recorded under the aliasing package's name.
+	require.NotNil(t, info.TypeAliases["os.DirEntry"], "os.DirEntry alias should be recorded")
+
+	// The fix: the alias target's method set is also registered under its own
+	// canonical name, so a value typed as fs.DirEntry can resolve its methods.
+	sig := info.GetMethodSignature("fs.DirEntry", "Info")
+	require.NotNil(t, sig, "fs.DirEntry.Info method must be resolvable from an os-only analysis")
+
+	// fs.DirEntry.Info() returns (fs.FileInfo, error) — the (T, error) shape the
+	// Try sugar depends on to thunk + catch the error.
+	require.Len(t, sig.Returns, 2)
+	assert.Equal(t, "error", sig.Returns[len(sig.Returns)-1].String())
+	assert.Equal(t, "fs.FileInfo", sig.Returns[0].String())
+
+	// The same must hold for os.FileInfo = io/fs.FileInfo (used by os.Stat).
+	fiSig := info.GetMethodSignature("fs.FileInfo", "Size")
+	require.NotNil(t, fiSig, "fs.FileInfo.Size must be resolvable from an os-only analysis")
+	require.Len(t, fiSig.Returns, 1)
+	assert.Equal(t, "int64", fiSig.Returns[0].String())
+}
+
 func TestAnalyzeGoPackage_NonExistentPackage(t *testing.T) {
 	info := analyzer.AnalyzeGoPackage("nonexistent/package/path")
 	require.NotNil(t, info)

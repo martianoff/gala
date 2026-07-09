@@ -288,8 +288,15 @@ func (t *galaASTTransformer) typeToExpr(typ transpiler.Type) ast.Expr {
 				t.markDotImportUsed(v.Package)
 				return ast.NewIdent(v.Name)
 			}
-			// Check if this is the current package - if so, don't qualify with package name
-			if v.Package == t.packageName {
+			// Check if this is the current package - if so, don't qualify with
+			// package name. Guard on ImportPath: a foreign Go package whose *name*
+			// collides with the current GALA package (e.g. `io/fs` — package name
+			// "fs" — referenced from GALA's own `fs` stdlib package) carries a
+			// non-empty ImportPath and is NOT local, so it must still be qualified.
+			// Genuinely-local types (built by GALA analysis) have no ImportPath;
+			// without this guard `io/fs.FileInfo` would drop to a bare `FileInfo`
+			// and collide with the package's own `FileInfo` type.
+			if v.Package == t.packageName && v.ImportPath == "" {
 				return ast.NewIdent(v.Name)
 			}
 			// Use the import alias if one exists (e.g., im for collection_immutable)
@@ -632,7 +639,16 @@ func (t *galaASTTransformer) astTypeToTranspilerType(expr ast.Expr) transpiler.T
 		if !ok {
 			return transpiler.NilType{}
 		}
-		return transpiler.NamedType{Package: x.Name, Name: e.Sel.Name}
+		named := transpiler.NamedType{Package: x.Name, Name: e.Sel.Name}
+		// Preserve the import path so this AST->type round trip stays lossless.
+		// Without it a foreign package whose name collides with the current GALA
+		// package (io/fs — package "fs" — inside GALA's own `fs`) becomes
+		// indistinguishable from a local type, which drops its qualifier at
+		// generation (`fs.DirEntry` -> bare `DirEntry`) and blocks method lookup.
+		if path, ok := t.importManager.GetPath(x.Name); ok {
+			named.ImportPath = path
+		}
+		return named
 	case *ast.IndexExpr:
 		base := t.astTypeToTranspilerType(e.X)
 		param := t.astTypeToTranspilerType(e.Index)

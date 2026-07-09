@@ -423,7 +423,18 @@ func extractPackageInfo(pkg *types.Package, info *transpiler.GoTypeInfo) {
 				underlying := goTypeToTranspilerType(obj.Type())
 				info.TypeAliases[qualName] = underlying
 				// Also create type data so methods can be looked up on the alias
+				// name (e.g. "os.DirEntry").
 				info.Types[qualName] = extractTypeData(obj, "alias")
+				// When the alias re-exports a *named* type from another package
+				// (e.g. `os.DirEntry = io/fs.DirEntry`), also register the target
+				// under its own canonical "pkgName.TypeName" key. Go signatures
+				// resolve such aliases to the canonical name (a return of
+				// `[]os.DirEntry` surfaces as `[]fs.DirEntry`), so a method call
+				// on a value of that type (`entries[i].Info()`) looks the method
+				// set up under `fs.DirEntry`. Without this, methods on a
+				// re-exported type are invisible whenever only the aliasing
+				// package — not the defining one — is imported.
+				registerAliasTargetType(obj.Type(), qualName, info)
 			} else {
 				// Go type definition: type X struct{...} or type X int
 				info.Types[qualName] = extractTypeData(obj, "")
@@ -436,6 +447,33 @@ func extractPackageInfo(pkg *types.Package, info *transpiler.GoTypeInfo) {
 			info.Constants[qualName] = goTypeToTranspilerType(obj.Type())
 		}
 	}
+}
+
+// registerAliasTargetType records the method set / fields of the named type an
+// alias points at under that target's own canonical "pkgName.TypeName" key.
+// aliasType is the alias TypeName's Type(); aliasQualName is the alias's own
+// qualified name (used to avoid registering a self-referential entry). It is a
+// no-op when the target is not a named type from a real package, or when a
+// (real, non-alias) entry for the canonical name already exists. This lets type
+// inference that has resolved an alias to its canonical name find the target's
+// methods even though the defining package was never directly imported.
+func registerAliasTargetType(aliasType types.Type, aliasQualName string, info *transpiler.GoTypeInfo) {
+	named, ok := types.Unalias(aliasType).(*types.Named)
+	if !ok {
+		return
+	}
+	tn := named.Obj()
+	if tn == nil || tn.Pkg() == nil {
+		return
+	}
+	canonical := tn.Pkg().Name() + "." + tn.Name()
+	if canonical == aliasQualName {
+		return
+	}
+	if _, exists := info.Types[canonical]; exists {
+		return
+	}
+	info.Types[canonical] = extractTypeData(tn, "")
 }
 
 // extractTypeData creates GoTypeData for a types.TypeName.
