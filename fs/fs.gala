@@ -58,7 +58,7 @@ func WriteFileString(path string, contents string, mode int) Try[bool] =
 
 // Stat returns metadata about the file at `path`.
 func Stat(path string) Try[FileInfo] =
-    Try(os.Stat(path)).Map(fromGoFileInfo)
+    Try(os.Stat(path)).Map((fi) => fromGoFileInfo(fi))
 
 // Exists is the non-fallible "does this path resolve" check.
 // Returns false on any error (including NotExist, permission denied,
@@ -91,7 +91,7 @@ func RemoveAll(path string) Try[bool] =
 // order ReadDir yields them (filesystem-dependent — callers that need
 // a stable order should sort).
 func ReadDir(path string) Try[Array[FileInfo]] =
-    Try(os.ReadDir(path)).FlatMap((entries []os.DirEntry) => {
+    Try(os.ReadDir(path)).FlatMap((entries) => {
         // Each entry's .Info() is itself fallible. This is a genuinely
         // imperative traverse (a real loop), but it composes off the ReadDir
         // Try via FlatMap and surfaces a per-entry Info error as an explicit

@@ -434,6 +434,22 @@ func TestX25519PrivateKeySize(t T) T {
     return Eq(t, kp.Private.Bytes().Size(), 32)
 }
 
+// ---- Try success / failure paths (post-conversion API) -------------------
+
+// GenerateEd25519KeyPair / GenerateX25519KeyPair now return Try and report
+// Success on a healthy OS RNG.
+func TestGenerateKeyPairsAreSuccess(t T) T {
+    val t1 = IsSuccess(t, crypto.GenerateEd25519KeyPair())
+    return IsSuccess(t1, crypto.GenerateX25519KeyPair())
+}
+
+// X25519 PublicKey over a malformed (wrong-length) scalar must report Failure
+// rather than panic — the point of the Try conversion.
+func TestX25519PublicKeyMalformedIsFailure(t T) T {
+    val bad = crypto.X25519PrivateKeyFromBytes(EmptyArray[byte]())
+    return IsFailure(t, bad.PublicKey())
+}
+
 // ---- random helpers ------------------------------------------------------
 
 func TestRandomHexLength(t T) T {

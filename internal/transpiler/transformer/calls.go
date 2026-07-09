@@ -390,12 +390,29 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 
 	// Build type argument substitution map: receiver type params + method type params.
 	typeSubst := make(map[string]string)
+	// Parallel ImportPath-preserving substitution for the receiver type params.
+	// The string form above drops ImportPath (via String()->ParseType), which is
+	// fatal when a foreign type's package name collides with the current package
+	// (io/fs vs GALA's own `fs`): the lambda param would emit a bare, colliding
+	// name. Carrying the receiver's actual arg Types keeps the qualifier.
+	typeSubstTypes := make(map[string]transpiler.Type)
 	var recvTypeArgStrings []string
 	if methodMeta != nil && typeMeta != nil {
 		recvTypeArgStrings = t.getReceiverTypeArgStrings(recvType)
+		recvTypeArgTypesFull := t.getReceiverTypeArgTypes(recvType)
 		for i, tp := range typeMeta.TypeParams {
 			if i < len(recvTypeArgStrings) {
 				typeSubst[tp] = recvTypeArgStrings[i]
+			}
+			// Only override with the ImportPath-preserving Type for a foreign Go
+			// type (one known to goTypeInfo). A local GALA type carries its own
+			// module-path ImportPath which must NOT survive — the string form
+			// blanks it so typeToExpr drops the current-package qualifier. Keeping
+			// it would emit `<currentPackage>.LocalType` (undefined). The foreign
+			// case (io/fs, whose name collides with the current `fs` package) is
+			// exactly the one that needs its qualifier preserved.
+			if i < len(recvTypeArgTypesFull) && t.isForeignGoType(recvTypeArgTypesFull[i]) {
+				typeSubstTypes[tp] = recvTypeArgTypesFull[i]
 			}
 		}
 		for i, tp := range methodMeta.TypeParams {
@@ -591,6 +608,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			continue
 		}
 		genMethodCtx := t.buildMethodCallContext(methodMeta, anyView(), false)
+		genMethodCtx.typeSubstTypes = typeSubstTypes
 		expectedType := t.resolveExpectedArgType(genMethodCtx, i)
 		if lambdaCtx != nil {
 			expr, lerr := t.transformLambdaArgWithExpectedType(lambdaCtx, expectedType)

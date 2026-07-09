@@ -88,3 +88,60 @@ func firstEntryInfo(p string) Try[os.FileInfo] = Try[os.FileInfo](() => {
 			"the element method Try must be instantiated, not a bare Try{}:\n%s", out)
 	})
 }
+
+// TestCombinatorParamPreservesAliasedGoQualifier is the transformer-tier guard
+// for the INFERRED monadic-combinator lambda-param case: `Try(os.Stat(p)).Map((fi)
+// => ...)` and `Try(os.ReadDir(p)).FlatMap((entries) => ...)` must keep the io/fs
+// qualifier on the lambda's inferred param type. When the current package is
+// itself named `fs` (with a local `struct FileInfo`), the inferred param must be
+// the QUALIFIED `fs.FileInfo` / `[]fs.DirEntry`, not a bare `FileInfo` / `DirEntry`
+// that collides with the local struct (or is undefined). This is the ImportPath
+// loss through Map/FlatMap param-type inference — distinct from the thunk-return
+// path guarded above.
+//
+// Hermetic: `os` is Go stdlib via the Go SDK. Before the fix the Map lambda emits
+// `func(fi FileInfo)` (bare, colliding) — this test FAILS; after, `func(fi
+// fs.FileInfo)` — it PASSES.
+func TestCombinatorParamPreservesAliasedGoQualifier(t *testing.T) {
+	trans := newForbiddenBuiltinTranspiler()
+
+	t.Run("Map lambda param over os.Stat keeps the fs.FileInfo qualifier", func(t *testing.T) {
+		input := `package fs
+
+import (
+    . "martianoff/gala/std"
+    "os"
+)
+
+struct FileInfo(n int)
+
+func describe(fi os.FileInfo) FileInfo = FileInfo(n = 1)
+
+func statInfo(p string) Try[FileInfo] = Try(os.Stat(p)).Map((fi) => describe(fi))`
+
+		out, err := trans.Transpile(input, "")
+		require.NoError(t, err)
+
+		require.Contains(t, out, "func(fi fs.FileInfo)",
+			"the Map lambda param inferred from Try[os.FileInfo] must qualify as fs.FileInfo, not a bare FileInfo:\n%s", out)
+	})
+
+	t.Run("FlatMap lambda param over os.ReadDir keeps the []fs.DirEntry qualifier", func(t *testing.T) {
+		input := `package fs
+
+import (
+    . "martianoff/gala/std"
+    "os"
+)
+
+func firstInfo(p string) Try[os.FileInfo] = Try(os.ReadDir(p)).FlatMap((entries) => Try(entries[0].Info()))`
+
+		out, err := trans.Transpile(input, "")
+		require.NoError(t, err)
+
+		require.Contains(t, out, "[]fs.DirEntry",
+			"the FlatMap lambda param inferred from Try[[]os.DirEntry] must qualify as []fs.DirEntry, not a bare []DirEntry:\n%s", out)
+		require.False(t, strings.Contains(out, "func(entries []DirEntry)"),
+			"the FlatMap lambda param must not be a bare []DirEntry:\n%s", out)
+	})
+}

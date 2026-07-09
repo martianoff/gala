@@ -15,6 +15,8 @@ type callContext struct {
 	applyTypeSubst  map[string]string            // type-param substitutions derived from Type[T]'s indices
 	applyTypeParams []string                     // the companion type's own type-param names (for masking unresolved Apply param types)
 	typeSubst       map[string]string            // generic type param substitutions (type param name -> concrete type string)
+	typeSubstTypes  map[string]transpiler.Type   // ImportPath-preserving overrides for typeSubst (receiver type args); wins over the string form so a foreign type whose package name collides with the current package stays qualified
+
 	goParamTypes    []transpiler.Type            // Go type info fallback param types (for Go-defined functions)
 	structFields    []transpiler.Type            // struct construction fallback field types
 	unresolvedTP    bool                         // if true, only pass void FuncTypes through (unresolved type params)
@@ -84,8 +86,21 @@ func (t *galaASTTransformer) resolveExpectedArgType(ctx callContext, argIdx int)
 			}
 			return transpiler.NilType{}
 		}
-		// Resolved type params — substitute and return
+		// Resolved type params — substitute and return. ImportPath-preserving
+		// receiver arg types (ctx.typeSubstTypes) override the string form so a
+		// foreign type whose package name collides with the current package stays
+		// qualified in the lambda's inferred param type.
 		if argIdx < len(ctx.methodMeta.ParamTypes) {
+			if len(ctx.typeSubstTypes) > 0 {
+				paramMap := make(map[string]transpiler.Type, len(ctx.typeSubst))
+				for k, v := range ctx.typeSubst {
+					paramMap[k] = transpiler.ParseType(v)
+				}
+				for k, v := range ctx.typeSubstTypes {
+					paramMap[k] = v
+				}
+				return t.substituteInType(ctx.methodMeta.ParamTypes[argIdx], paramMap)
+			}
 			return t.substituteTranspilerTypeParams(ctx.methodMeta.ParamTypes[argIdx], ctx.typeSubst)
 		}
 		return transpiler.NilType{}
