@@ -112,6 +112,7 @@ go_test(
         "structs_test.go",
         "test_helper_test.go",
         "thunk_sugar_test.go",
+        "try_alias_qualifier_test.go",
         "tuple_arity_matrix_test.go",
         "tuple_call_unwrap_test.go",
         "tuple_callsite_inference_test.go",

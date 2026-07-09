@@ -673,6 +673,7 @@ func (s Str) IsAlpha() bool = s.NonEmpty() && toRunes(s.value).ForAll(unicode.Is
 | Nullable without Option | `func f() *T` returning nil | `func f() Option[T]` |
 | Bare `panic` for errors | `panic("error message")` — a hard error (`GALA-E0035`) | Return `Try[T]` or `Either[E, T]` |
 | `go_builtins.Panic` to propagate an error | `val x, err = f(); if err != nil { go_builtins.Panic(err) }` (or the same inside a `Try` block) | Wrap the `(T, error)` call in `Try`: `Try(f(args))` returns `Try[T]` (the error becomes a `Failure`); use `.Get()` only if you truly want to re-raise |
+| `Try` around an error-**only** Go call | `Try(os.Rename(a, b))` — wrapping a Go func that returns ONLY `error` (no value) | `FromError(os.Rename(a, b)).Get()` — `Try(...)` of an error-only call compiles to `Try[error]` that captures the error as a *value*, so `IsFailure` is ALWAYS false (silent no-op). `FromError` (from `std`) returns `Try[Void]` and fails on non-nil error. Reserve `Try(call)` for `(T, error)` calls |
 | Ignored error | `result, _ := fallibleOp()` | Handle with `Try` or check error |
 | Sentinel return value | Returning `""`, `0`, `-1`, or `nil` to signal "not found" / failure | Return `Option[T]` or `Try[T]` instead |
 | Go-style if-err-nil | `val x, err = f(); if err == nil { use(x) }` | `Try(() => f())` then `.Map`, `.GetOrElse`, or `match` |
@@ -762,6 +763,37 @@ func Abs(p string) Try[string] = Try(filepath.Abs(p))
 // mechanical if-err-nil:
 val decoded = Try(hex.DecodeString(hardCodedVector)).Get()
 ```
+
+**`Try(...)` around an error-*only* Go call silently never fails.** Choose the
+wrapper by the Go function's return shape:
+
+- Returns a value *and* an error — `(T, error)` (`os.ReadFile`, `os.Open`,
+  `os.MkdirTemp`, `io.Copy`, `strconv.Atoi`, `hex.DecodeString`, …) → `Try(call)`
+  (optionally `.Get()`). The error becomes a `Failure`. Correct.
+- Returns **only** `error` (`os.Rename`, `os.WriteFile`, `os.MkdirAll`,
+  `os.Remove`/`RemoveAll`, `os.Mkdir`, `os.Chdir`/`Chmod`/`Symlink`/`Truncate`/`Setenv`,
+  `(*File).Close`, `.Sync`, `scanner.Err`, `encoder.Encode`, `filepath.WalkDir`, …)
+  → `FromError(call).Get()` (from `std`; returns `Try[Void]`, fails on non-nil
+  error). **Do NOT use `Try(...)` here** — `Try(os.Rename(a, b))` compiles to
+  `Try[error]` that captures the error as a *value*, so `IsFailure` is ALWAYS
+  false and the failure is silently swallowed.
+
+```gala
+// BAD: os.Rename returns only error → Try[error] that never reports failure
+val r = Try(os.Rename(src, dst))
+if r.IsFailure() { ... }              // dead branch — IsFailure is always false
+
+// GOOD: FromError reports a non-nil error as a Failure
+FromError(os.Rename(src, dst)).Get()  // re-raise into an enclosing Try
+val ok = FromError(os.WriteFile(path, bytes, mode))  // or compose the Try[Void]
+
+// Value + error stays with Try (correct):
+val data = Try(os.ReadFile(path)).Get()   // os.ReadFile → ([]byte, error)
+```
+
+**Verify by exercising an error path** — assert `IsFailure` on a deliberately
+bad call (`os.Rename` of a missing source, `os.WriteFile` into a missing dir) so
+a never-failing `Try` can't hide.
 
 ### 11b. `Array.Grouped` / `Array.Sliding` over Index Loops (HIGH priority)
 
