@@ -38,6 +38,8 @@ go_test(
         "repro_gala_mcp_test.go",
         "server_test.go",
         "signature_help_test.go",
+        "size_sugar_integration_test.go",
+        "size_sugar_test.go",
         "typeatpos_test.go",
         "uri_internal_test.go",
     ],

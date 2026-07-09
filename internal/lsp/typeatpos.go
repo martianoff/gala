@@ -342,8 +342,51 @@ func skipTrailingWhitespace(text string, start int) int {
 	return j
 }
 
+// goSizeSugarReturn resolves the result type of GALA's `.Size()` / `.ByteSize()`
+// magic methods when the receiver is a Go primitive (string, slice, or map).
+// These zero-arg methods are transpiler sugar (see
+// internal/transpiler/transformer/methods.go tryTransformSizeSugar): they lower
+// to len(...) / utf8.RuneCountInString(...) and always yield int, even though
+// the receiver has no GALA TypeMetadata in the RichAST. Mirrored rule:
+//
+//	.Size()     on string / []T / map[K]V  -> int
+//	.ByteSize() on string                   -> int
+//
+// It returns ("", false) for any other receiver/method so normal method
+// dispatch (e.g. a GALA Array/List/HashMap, which have their own Size()) is
+// unaffected.
+func goSizeSugarReturn(typeName, methodName string) (string, bool) {
+	switch methodName {
+	case "Size":
+		if isGoSizeableType(typeName) {
+			return "int", true
+		}
+	case "ByteSize":
+		if typeName == "string" {
+			return "int", true
+		}
+	}
+	return "", false
+}
+
+// isGoSizeableType reports whether typeName is a Go string, slice, or map — the
+// receivers on which `.Size()` sugar is defined. Slice types arrive as "[]T";
+// map types arrive either fully spelled ("map[K]V") or reduced to "map" by
+// stripTypeParams.
+func isGoSizeableType(typeName string) bool {
+	return typeName == "string" ||
+		strings.HasPrefix(typeName, "[]") ||
+		typeName == "map" || strings.HasPrefix(typeName, "map[")
+}
+
 // resolveMethodReturn finds the return type of a method on a given type.
 func resolveMethodReturn(richAST *transpiler.RichAST, typeName, methodName string) string {
+	// GALA's `.Size()` / `.ByteSize()` sugar resolves to int on Go primitive
+	// receivers (string/slice/map) that have no GALA TypeMetadata; check it
+	// before findType so the magic methods type-resolve like the transpiler.
+	if ret, ok := goSizeSugarReturn(typeName, methodName); ok {
+		return ret
+	}
 	tm := findType(richAST, typeName)
 	if tm == nil {
 		return ""

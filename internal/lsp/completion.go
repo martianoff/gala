@@ -482,9 +482,45 @@ func kindPtr(k lsp.CompletionItemKind) *lsp.CompletionItemKind { return &k }
 // --- Type-Aware Completion ---
 // Type resolution logic is in typeatpos.go
 
+// goSizeSugarCompletions returns the `.Size()` / `.ByteSize()` completion items
+// that apply to a Go primitive receiver (string, slice, or map). `ByteSize()` is
+// only offered on strings. Mirrors the transpiler's tryTransformSizeSugar
+// (internal/transpiler/transformer/methods.go). These are surfaced even though
+// the receiver has no GALA TypeMetadata, because the transpiler lowers them to
+// len(...) / utf8.RuneCountInString(...) at compile time.
+func goSizeSugarCompletions(typeName string) []lsp.CompletionItem {
+	if !isGoSizeableType(typeName) {
+		return nil
+	}
+	items := []lsp.CompletionItem{{
+		Label:      "Size()",
+		Kind:       kindPtr(lsp.CompletionItemKindMethod),
+		Detail:     "() int",
+		InsertText: "Size()",
+		FilterText: "Size",
+		SortText:   "Size",
+	}}
+	if typeName == "string" {
+		items = append(items, lsp.CompletionItem{
+			Label:      "ByteSize()",
+			Kind:       kindPtr(lsp.CompletionItemKindMethod),
+			Detail:     "() int",
+			InsertText: "ByteSize()",
+			FilterText: "ByteSize",
+			SortText:   "ByteSize",
+		})
+	}
+	return items
+}
+
 // typeSpecificCompletions returns methods and fields for a specific type.
 func typeSpecificCompletions(richAST *transpiler.RichAST, typeName string) []lsp.CompletionItem {
 	items := make([]lsp.CompletionItem, 0)
+
+	// GALA's `.Size()` / `.ByteSize()` sugar is available on Go primitive
+	// receivers (string/slice/map) that have no GALA TypeMetadata. Offer it up
+	// front so it shows up even when findType below returns nil.
+	items = append(items, goSizeSugarCompletions(typeName)...)
 
 	tm := findType(richAST, typeName)
 	if tm == nil {
