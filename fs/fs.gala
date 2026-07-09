@@ -39,16 +39,14 @@ func fromGoFileInfo(fi os.FileInfo) FileInfo = FileInfo(
 // On any error (file missing, permission denied, IO failure) the error
 // is captured as Failure.
 func ReadFile(path string) Try[Array[byte]] = Try[Array[byte]](() => {
-    val data, err = os.ReadFile(path)
-    if err != nil { go_builtins.Panic(err) }
+    val data = Try(os.ReadFile(path)).Get()
     return ArrayFromSlice(data)
 })
 
 // ReadFileString is a convenience for the common case of reading a
 // text file. Equivalent to ReadFile + decoding the bytes as UTF-8.
 func ReadFileString(path string) Try[string] = Try[string](() => {
-    val data, err = os.ReadFile(path)
-    if err != nil { go_builtins.Panic(err) }
+    val data = Try(os.ReadFile(path)).Get()
     return string(data)
 })
 
@@ -56,22 +54,20 @@ func ReadFileString(path string) Try[string] = Try[string](() => {
 // `mode` is a Unix permission mode (e.g. 0o644). On Windows the mode
 // is mostly advisory; only the read-only bit is honored.
 func WriteFile(path string, data Array[byte], mode int) Try[bool] = Try[bool](() => {
-    val err = os.WriteFile(path, data.ToGoSlice(), os.FileMode(mode))
-    if err != nil { go_builtins.Panic(err) }
+    FromError(os.WriteFile(path, data.ToGoSlice(), os.FileMode(mode))).Get()
     return true
 })
 
 // WriteFileString is the string-content companion to WriteFile.
 func WriteFileString(path string, contents string, mode int) Try[bool] = Try[bool](() => {
-    val err = os.WriteFile(path, ToBytes(contents), os.FileMode(mode))
-    if err != nil { go_builtins.Panic(err) }
+    FromError(os.WriteFile(path, ToBytes(contents), os.FileMode(mode))).Get()
     return true
 })
 
 // Stat returns metadata about the file at `path`.
 func Stat(path string) Try[FileInfo] = Try[FileInfo](() => {
     val fi, err = os.Stat(path)
-    if err != nil { go_builtins.Panic(err) }
+    FromError(err).Get()
     return fromGoFileInfo(fi)
 })
 
@@ -85,8 +81,7 @@ func Exists(path string) bool = Stat(path).IsSuccess()
 // no-op if the directory already exists. `mode` is the Unix permission
 // mode applied to newly-created directories.
 func MkdirAll(path string, mode int) Try[bool] = Try[bool](() => {
-    val err = os.MkdirAll(path, os.FileMode(mode))
-    if err != nil { go_builtins.Panic(err) }
+    FromError(os.MkdirAll(path, os.FileMode(mode))).Get()
     return true
 })
 
@@ -95,19 +90,14 @@ func MkdirAll(path string, mode int) Try[bool] = Try[bool](() => {
 // the OS default (TMPDIR / GetTempPath) is used. `pattern` is the
 // os.MkdirTemp pattern: a literal name, optionally with a '*' that
 // gets replaced by random characters.
-func MkdirTemp(dir string, pattern string) Try[string] = Try[string](() => {
-    val created, err = os.MkdirTemp(dir, pattern)
-    if err != nil { go_builtins.Panic(err) }
-    return created
-})
+func MkdirTemp(dir string, pattern string) Try[string] = Try(os.MkdirTemp(dir, pattern))
 
 // RemoveAll removes path and any children it contains. It removes
 // everything it can but returns the first error it encounters. If
 // `path` does not exist, the call returns Success without error
 // (matching os.RemoveAll's convention).
 func RemoveAll(path string) Try[bool] = Try[bool](() => {
-    val err = os.RemoveAll(path)
-    if err != nil { go_builtins.Panic(err) }
+    FromError(os.RemoveAll(path)).Get()
     return true
 })
 
@@ -117,11 +107,11 @@ func RemoveAll(path string) Try[bool] = Try[bool](() => {
 // a stable order should sort).
 func ReadDir(path string) Try[Array[FileInfo]] = Try[Array[FileInfo]](() => {
     val entries, err = os.ReadDir(path)
-    if err != nil { go_builtins.Panic(err) }
+    FromError(err).Get()
     var out = EmptyArray[FileInfo]()
     for i := 0; i < entries.Size(); i++ {
         val info, infoErr = entries[i].Info()
-        if infoErr != nil { go_builtins.Panic(infoErr) }
+        FromError(infoErr).Get()
         out = out.Append(fromGoFileInfo(info))
     }
     return out

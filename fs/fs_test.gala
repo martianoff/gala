@@ -2,6 +2,7 @@ package main
 
 import (
     . "martianoff/gala/test"
+    . "martianoff/gala/std"
     . "martianoff/gala/collection_immutable"
     "martianoff/gala/fs"
     "os"
@@ -11,11 +12,7 @@ import (
 // scratchDir creates a fresh temp dir per-test so tests are isolated
 // and don't depend on /tmp shape. The caller is responsible for
 // removing it (Defer-equivalent: tests call fs.RemoveAll at the end).
-func scratchDir(prefix string) string {
-    val dir, err = os.MkdirTemp("", prefix)
-    if err != nil { go_builtins.Panic(err) }
-    return dir
-}
+func scratchDir(prefix string) string = Try(os.MkdirTemp("", prefix)).Get()
 
 func TestWriteAndReadFile(t T) T {
     val dir = scratchDir("fs_write_read")

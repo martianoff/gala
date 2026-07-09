@@ -25,14 +25,11 @@ struct WalkEntry(
 // Named CopyFile rather than Copy to avoid colliding with std.Copy,
 // the generic deep-copy helper exported as a prelude symbol.
 func CopyFile(src string, dst string, mode int) Try[bool] = Try[bool](() => {
-    val srcF, openErr = os.Open(src)
-    if openErr != nil { go_builtins.Panic(openErr) }
+    val srcF = Try(os.Open(src)).Get()
     defer srcF.Close()
-    val dstF, createErr = os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, os.FileMode(mode))
-    if createErr != nil { go_builtins.Panic(createErr) }
+    val dstF = Try(os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, os.FileMode(mode))).Get()
     defer dstF.Close()
-    val _, copyErr = io.Copy(dstF, srcF)
-    if copyErr != nil { go_builtins.Panic(copyErr) }
+    Try(io.Copy(dstF, srcF)).Get()
     return true
 })
 
@@ -41,8 +38,7 @@ func CopyFile(src string, dst string, mode int) Try[bool] = Try[bool](() => {
 // cross-filesystem moves should compose Copy + RemoveAll explicitly —
 // we deliberately do not paper over that case.
 func Rename(src string, dst string) Try[bool] = Try[bool](() => {
-    val err = os.Rename(src, dst)
-    if err != nil { go_builtins.Panic(err) }
+    FromError(os.Rename(src, dst)).Get()
     return true
 })
 
@@ -52,14 +48,13 @@ func Rename(src string, dst string) Try[bool] = Try[bool](() => {
 // at any level is captured as Failure.
 func Walk(root string) Try[Array[WalkEntry]] = Try[Array[WalkEntry]](() => {
     var entries = EmptyArray[WalkEntry]()
-    val walkErr = filepath.WalkDir(root, (path string, d os.DirEntry, err error) => {
+    FromError(filepath.WalkDir(root, (path string, d os.DirEntry, err error) => {
         if err != nil { return err }
         val info, infoErr = d.Info()
         if infoErr != nil { return infoErr }
         entries = entries.Append(WalkEntry(Path = path, Info = fromGoFileInfo(info)))
         return nil
-    })
-    if walkErr != nil { go_builtins.Panic(walkErr) }
+    })).Get()
     return entries
 })
 
@@ -68,7 +63,6 @@ func Walk(root string) Try[Array[WalkEntry]] = Try[Array[WalkEntry]](() => {
 // Success(empty Array), not Failure — "no matches" is not an error.
 // Failure is reserved for malformed patterns (filepath.ErrBadPattern).
 func Glob(pattern string) Try[Array[string]] = Try[Array[string]](() => {
-    val matches, err = filepath.Glob(pattern)
-    if err != nil { go_builtins.Panic(err) }
+    val matches = Try(filepath.Glob(pattern)).Get()
     return ArrayFromSlice(matches)
 })
