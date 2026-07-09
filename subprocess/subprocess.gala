@@ -54,30 +54,31 @@ func Spawn(opts SpawnOpts) Try[Process] {
     if opts.Cmd == "" {
         return Failure[Process](errors.New("subprocess.Spawn: empty Cmd"))
     }
-    return Try[Process](() => {
-        val c = exec.Command(opts.Cmd, opts.Args...)
-        if opts.Dir != "" {
-            c.Dir = opts.Dir
-        }
-        if opts.Env.Size() > 0 {
-            // Append rather than overwrite — replace mode would be a footgun
-            // (forgetting PATH breaks every spawn).
-            c.Env = go_interop.SliceAppendAll(c.Environ(), opts.Env)
-        }
-        val sin = Try(c.StdinPipe()).Get()
-        val sout = Try(c.StdoutPipe()).Get()
-        val serr = Try(c.StderrPipe()).Get()
-        FromError(c.Start()).Get()
-        return Process(state = &processState(
-            cmd        = c,
-            stdin      = sin,
-            stdoutScan = newLineScanner(sout),
-            stderrScan = newLineScanner(serr),
-            stdinMu    = go_interop.NewMutex(),
-            waitOnce   = go_interop.NewOnce(),
-            waitDone   = go_interop.NewSignal(),
-        ))
-    })
+    val c = exec.Command(opts.Cmd, opts.Args...)
+    if opts.Dir != "" {
+        c.Dir = opts.Dir
+    }
+    if opts.Env.Size() > 0 {
+        // Append rather than overwrite — replace mode would be a footgun
+        // (forgetting PATH breaks every spawn).
+        c.Env = go_interop.SliceAppendAll(c.Environ(), opts.Env)
+    }
+    // Monadic do-notation: each fallible step threads through the next, so a
+    // pipe or start failure short-circuits to Failure — no `.Get()` re-raising.
+    // Start() runs last (after the pipes are wired, per Go's exec contract);
+    // its Void result is mapped straight into the Process.
+    bind sin = Try(c.StdinPipe())
+    bind sout = Try(c.StdoutPipe())
+    bind serr = Try(c.StderrPipe())
+    FromError(c.Start()).Map((_) => Process(state = &processState(
+        cmd        = c,
+        stdin      = sin,
+        stdoutScan = newLineScanner(sout),
+        stderrScan = newLineScanner(serr),
+        stdinMu    = go_interop.NewMutex(),
+        waitOnce   = go_interop.NewOnce(),
+        waitDone   = go_interop.NewSignal(),
+    )))
 }
 
 // WriteLine writes s + "\n" to the child's stdin, flushing immediately.
