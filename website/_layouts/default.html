@@ -168,6 +168,14 @@
       font-family: 'Cascadia Code', 'SF Mono', 'Consolas', Menlo, monospace;
       font-size: 0.86rem;
     }
+    /* Render code literally: fonts like Cascadia Code otherwise apply ligatures
+       and contextual alternates that rewrite source glyphs (=> becomes an arrow,
+       != a not-equal sign, and on some browsers * a mid-dot or ... an ellipsis),
+       which misrepresents the exact syntax this page is teaching. */
+    pre, code {
+      font-variant-ligatures: none;
+      font-feature-settings: "liga" 0, "clig" 0, "calt" 0, "dlig" 0;
+    }
     /* Keep INLINE code (prose) light + subtle — kramdown tags it
        `language-plaintext`, which the Prism theme would otherwise darken. */
     :not(pre) > code[class*="language-"] {
