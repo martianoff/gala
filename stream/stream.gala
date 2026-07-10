@@ -320,8 +320,13 @@ func (s Stream[T]) ToArray() Array[T] {
     var result = EmptyArray[T]()
     var current = s
     for current.NonEmpty() {
-        result = result.Append(current.Head().Get())
-        current = current.Tail()
+        current match {
+            case StreamCons(h, tail) => {
+                result = result.Append(h)
+                current = tail
+            }
+            case _ => {}
+        }
     }
     return result
 }
@@ -332,8 +337,13 @@ func (s Stream[T]) ToList() List[T] {
     var result = EmptyList[T]()
     var current = s
     for current.NonEmpty() {
-        result = result.Append(current.Head().Get())
-        current = current.Tail()
+        current match {
+            case StreamCons(h, tail) => {
+                result = result.Append(h)
+                current = tail
+            }
+            case _ => {}
+        }
     }
     return result
 }
@@ -343,8 +353,13 @@ func (s Stream[T]) ToList() List[T] {
 func (s Stream[T]) ForEach(f func(T)) {
     var current = s
     for current.NonEmpty() {
-        f(current.Head().Get())
-        current = current.Tail()
+        current match {
+            case StreamCons(h, tail) => {
+                f(h)
+                current = tail
+            }
+            case _ => {}
+        }
     }
 }
 
@@ -354,8 +369,13 @@ func (s Stream[T]) Fold[U any](zero U, f func(U, T) U) U {
     var acc = zero
     var current = s
     for current.NonEmpty() {
-        acc = f(acc, current.Head().Get())
-        current = current.Tail()
+        current match {
+            case StreamCons(h, tail) => {
+                acc = f(acc, h)
+                current = tail
+            }
+            case _ => {}
+        }
     }
     return acc
 }
@@ -374,11 +394,15 @@ func (s Stream[T]) Reduce(f func(T, T) T) Option[T] {
 func (s Stream[T]) Find(p func(T) bool) Option[T] {
     var current = s
     for current.NonEmpty() {
-        val h = current.Head().Get()
-        if p(h) {
-            return Some(h)
+        current match {
+            case StreamCons(h, tail) => {
+                if p(h) {
+                    return Some(h)
+                }
+                current = tail
+            }
+            case _ => {}
         }
-        current = current.Tail()
     }
     return None[T]()
 }
@@ -391,10 +415,15 @@ func (s Stream[T]) Exists(p func(T) bool) bool = s.Find(p).IsDefined()
 func (s Stream[T]) ForAll(p func(T) bool) bool {
     var current = s
     for current.NonEmpty() {
-        if !p(current.Head().Get()) {
-            return false
+        current match {
+            case StreamCons(h, tail) => {
+                if !p(h) {
+                    return false
+                }
+                current = tail
+            }
+            case _ => {}
         }
-        current = current.Tail()
     }
     return true
 }
@@ -424,12 +453,17 @@ func (s Stream[T]) MkString(sep string) string {
     var first = true
     var current = s
     for current.NonEmpty() {
-        if !first {
-            result = result + sep
+        current match {
+            case StreamCons(h, tail) => {
+                if !first {
+                    result = result + sep
+                }
+                result = result + s"${h}"
+                first = false
+                current = tail
+            }
+            case _ => {}
         }
-        result = result + s"${current.Head().Get()}"
-        first = false
-        current = current.Tail()
     }
     return result
 }
@@ -494,10 +528,15 @@ func (s Stream[T]) Partition(p func(T) bool) Tuple[Stream[T], Stream[T]] = (s.Fi
 func (s Stream[T]) Contains(elem T) bool {
     var current = s
     for current.NonEmpty() {
-        if Equal(current.Head().Get(), elem) {
-            return true
+        current match {
+            case StreamCons(h, tail) => {
+                if Equal(h, elem) {
+                    return true
+                }
+                current = tail
+            }
+            case _ => {}
         }
-        current = current.Tail()
     }
     return false
 }
@@ -508,11 +547,16 @@ func (s Stream[T]) IndexOf(elem T) int {
     var idx = 0
     var current = s
     for current.NonEmpty() {
-        if Equal(current.Head().Get(), elem) {
-            return idx
+        current match {
+            case StreamCons(h, tail) => {
+                if Equal(h, elem) {
+                    return idx
+                }
+                idx = idx + 1
+                current = tail
+            }
+            case _ => {}
         }
-        idx = idx + 1
-        current = current.Tail()
     }
     return -1
 }
@@ -523,11 +567,16 @@ func (s Stream[T]) IndexWhere(p func(T) bool) int {
     var idx = 0
     var current = s
     for current.NonEmpty() {
-        if p(current.Head().Get()) {
-            return idx
+        current match {
+            case StreamCons(h, tail) => {
+                if p(h) {
+                    return idx
+                }
+                idx = idx + 1
+                current = tail
+            }
+            case _ => {}
         }
-        idx = idx + 1
-        current = current.Tail()
     }
     return -1
 }

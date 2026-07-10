@@ -546,11 +546,9 @@ func (l List[T]) PartitionMap[A any, B any](f func(T) Either[A, B]) Tuple[List[A
     var rights = emptyList[B]()
     var current = l
     for !current.isEmpty {
-        val either = f(current.head)
-        if either.IsLeft() {
-            lefts = lefts.Append(either.GetLeft())
-        } else {
-            rights = rights.Append(either.GetRight())
+        f(current.head) match {
+            case Left(l) => lefts = lefts.Append(l)
+            case Right(r) => rights = rights.Append(r)
         }
         current = *current.tail
     }
