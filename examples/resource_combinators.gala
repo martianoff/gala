@@ -1,0 +1,38 @@
+package main
+
+import . "martianoff/gala/resource"
+import . "martianoff/gala/go_interop"
+
+// Verifies the `resource` combinators for guaranteed cleanup:
+//   Using    — Close() guaranteed on every exit path (Closeable resources)
+//   Bracket  — general run-then-release over an eagerly-acquired resource
+//   WithLock — mutex idiom (lock held for the body, released after)
+
+// A Closeable resource: satisfies resource.Closeable via `Close() error`.
+type Handle struct {
+    name string
+}
+
+func (h Handle) Close() error {
+    Println(s"close ${h.name}")
+    return nil
+}
+
+func main() {
+    // Using: body runs first, then Close() runs (guaranteed) before Using returns.
+    val n = Using(Handle(name = "log.txt"), (h) => h.name.Size())
+    Println(s"name length: $n")
+
+    // Bracket: release always runs after the body; bare lambdas infer their types.
+    val doubled = Bracket(
+        21,
+        (r) => Println(s"release $r"),
+        (r) => r * 2,
+    )
+    Println(s"doubled: $doubled")
+
+    // WithLock: the lock is held for the duration of body and released after.
+    val mu = NewMutex()
+    val guarded = WithLock(mu, () => 7 + 1)
+    Println(s"guarded: $guarded")
+}

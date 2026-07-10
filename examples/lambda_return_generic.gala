@@ -2,6 +2,7 @@ package main
 
 import (
     "fmt"
+    . "martianoff/gala/go_interop"
     . "martianoff/gala/std"
 )
 
@@ -22,7 +23,7 @@ func (n Node[T]) GetNext() Option[Node[T]] = n.next()
 // Takes thunks returning Node[T] - similar to lazyStream taking func() Stream[T]
 func createNode[T any](headThunk func() Option[T], tailThunk func() Option[Node[T]]) Node[T] {
     return Node[T](
-        value = headThunk().GetOrElse(*new(T)),
+        value = headThunk().GetOrElse(*New[T]()),
         next = tailThunk,
     )
 }

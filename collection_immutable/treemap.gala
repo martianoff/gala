@@ -1,9 +1,9 @@
 package collection_immutable
 
 import (
-    "fmt"
     . "martianoff/gala/std"
     "martianoff/gala/go_interop"
+    "martianoff/gala/go_builtins"
 )
 
 // TreeMap is an immutable sorted map implemented as a Red-Black tree.
@@ -52,7 +52,7 @@ func EmptyTreeMap[K comparable, V any]() TreeMap[K, V] {
 // Example: TreeMapOf(("a", 1), ("b", 2)) creates TreeMap(a -> 1, b -> 2)
 func TreeMapOf[K comparable, V any](entries ...Tuple[K, V]) TreeMap[K, V] {
     var result = EmptyTreeMap[K, V]()
-    for i := 0; i < len(entries); i++ {
+    for i := 0; i < entries.Size(); i++ {
         result = result.Put(entries[i].V1, entries[i].V2)
     }
     return result
@@ -61,7 +61,7 @@ func TreeMapOf[K comparable, V any](entries ...Tuple[K, V]) TreeMap[K, V] {
 // TreeMapFromSlice creates a TreeMap from a slice of tuples.
 func TreeMapFromSlice[K comparable, V any](entries []Tuple[K, V]) TreeMap[K, V] {
     var result = EmptyTreeMap[K, V]()
-    for i := 0; i < len(entries); i++ {
+    for i := 0; i < entries.Size(); i++ {
         result = result.Put(entries[i].V1, entries[i].V2)
     }
     return result
@@ -210,7 +210,7 @@ func treeMapCompareUint8sAny(a uint8, vb any) int {
 }
 
 func treeMapPanicNotOrdered(v any) int {
-    panic(fmt.Sprintf("TreeMap: type %T must implement std.Ordered interface", v))
+    go_builtins.Panic(f"TreeMap: type ${v}%T must implement std.Ordered interface")
 }
 
 // isRedTreeMapNode checks if a node is red (nil nodes are black).
@@ -272,7 +272,7 @@ func (m TreeMap[K, V]) GetOrElse(key K, defaultValue V) V {
 func (m TreeMap[K, V]) Apply(key K) V {
     return m.Get(key) match {
         case Some(v) => v
-        case None() => panic(s"TreeMap: key not found: $key")
+        case None() => go_builtins.Panic(s"TreeMap: key not found: $key")
     }
 }
 
@@ -430,7 +430,7 @@ func treeMapBalanceRemove[K comparable, V any](node *treeMapNode[K, V]) *treeMap
 // Panics if the map is empty.
 func (m TreeMap[K, V]) MinKey() K {
     if m.size == 0 {
-        panic("TreeMap.MinKey on empty map")
+        go_builtins.Panic("TreeMap.MinKey on empty map")
     }
     return treeMapFindMinKey[K, V](m.root)
 }
@@ -447,7 +447,7 @@ func (m TreeMap[K, V]) MinKeyOption() Option[K] {
 // Panics if the map is empty.
 func (m TreeMap[K, V]) MaxKey() K {
     if m.size == 0 {
-        panic("TreeMap.MaxKey on empty map")
+        go_builtins.Panic("TreeMap.MaxKey on empty map")
     }
     return treeMapFindMaxKey[K, V](m.root)
 }
@@ -464,7 +464,7 @@ func (m TreeMap[K, V]) MaxKeyOption() Option[K] {
 // Panics if the map is empty.
 func (m TreeMap[K, V]) MinEntry() Tuple[K, V] {
     if m.size == 0 {
-        panic("TreeMap.MinEntry on empty map")
+        go_builtins.Panic("TreeMap.MinEntry on empty map")
     }
     val key = treeMapFindMinKey[K, V](m.root)
     return (key, m.Apply(key))
@@ -482,7 +482,7 @@ func (m TreeMap[K, V]) MinEntryOption() Option[Tuple[K, V]] {
 // Panics if the map is empty.
 func (m TreeMap[K, V]) MaxEntry() Tuple[K, V] {
     if m.size == 0 {
-        panic("TreeMap.MaxEntry on empty map")
+        go_builtins.Panic("TreeMap.MaxEntry on empty map")
     }
     val key = treeMapFindMaxKey[K, V](m.root)
     return (key, m.Apply(key))

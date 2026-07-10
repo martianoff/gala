@@ -50,7 +50,7 @@ func main() {
     val e Either[int, string] = Left[int, string](10)
     val res = e match {
         case Left(n) => n
-        case Right(s) => len(s)
+        case Right(s) => s.Size()
         case _ => 0
     }
 }`,
@@ -68,7 +68,7 @@ func main() {
     val e = Left[int, string](10)
     val res = e match {
         case Left(n) => n
-        case Right(s) => len(s)
+        case Right(s) => s.Size()
         case _ => 0
     }
 }`,
@@ -84,7 +84,7 @@ func main() {
 
 func main() {
     val e = Left[int, string](10)
-    val mapped = e.Map[int]((s string) => len(s))
+    val mapped = e.Map[int]((s string) => s.Size())
 }`,
 			expected: []string{
 				// Explicit type args include both method type arg and receiver type args

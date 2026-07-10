@@ -239,17 +239,12 @@ struct Ed25519KeyPair(Public Ed25519PublicKey, Private Ed25519PrivateKey)
 struct Signature(bytes Array[byte])
 
 // GenerateEd25519KeyPair returns a fresh Ed25519 keypair drawn from
-// crypto/rand. Panics if the OS RNG fails — a broken RNG is unrecoverable.
-func GenerateEd25519KeyPair() Ed25519KeyPair {
-    val pub, priv, err = ed25519.GenerateKey(rand.Reader)
-    if err != nil {
-        panic(s"crypto: ed25519.GenerateKey failed: ${err.Error()}")
-    }
-    return Ed25519KeyPair(
-        Public  = Ed25519PublicKey(bytes = ArrayFromSlice[byte](pub)),
-        Private = Ed25519PrivateKey(bytes = ArrayFromSlice[byte](priv)),
-    )
-}
+// crypto/rand, or Failure if the OS RNG fails.
+func GenerateEd25519KeyPair() Try[Ed25519KeyPair] =
+    Try(ed25519.GenerateKey(rand.Reader)).Map((pair) => Ed25519KeyPair(
+        Public  = Ed25519PublicKey(bytes = ArrayFromSlice[byte](pair.V1)),
+        Private = Ed25519PrivateKey(bytes = ArrayFromSlice[byte](pair.V2)),
+    ))
 
 // Ed25519PrivateKeyFromSeed derives the 64-byte Ed25519 private key from a
 // 32-byte seed (the canonical RFC 8032 wire format for an Ed25519 secret).
@@ -324,18 +319,16 @@ struct X25519PrivateKey(bytes Array[byte])
 struct X25519KeyPair(Public X25519PublicKey, Private X25519PrivateKey)
 
 // GenerateX25519KeyPair returns a fresh X25519 keypair drawn from
-// crypto/rand. Panics if the OS RNG fails — a broken RNG is unrecoverable.
-func GenerateX25519KeyPair() X25519KeyPair {
+// crypto/rand, or Failure if the OS RNG fails.
+func GenerateX25519KeyPair() Try[X25519KeyPair] {
     val curve = ecdh.X25519()
-    val priv, err = curve.GenerateKey(rand.Reader)
-    if err != nil {
-        panic(s"crypto: ecdh.GenerateKey failed: ${err.Error()}")
-    }
-    val pub = priv.PublicKey()
-    return X25519KeyPair(
-        Public  = X25519PublicKey(bytes  = ArrayFromSlice[byte](pub.Bytes())),
-        Private = X25519PrivateKey(bytes = ArrayFromSlice[byte](priv.Bytes())),
-    )
+    return Try(curve.GenerateKey(rand.Reader)).Map((priv) => {
+        val pub = priv.PublicKey()
+        return X25519KeyPair(
+            Public  = X25519PublicKey(bytes  = ArrayFromSlice[byte](pub.Bytes())),
+            Private = X25519PrivateKey(bytes = ArrayFromSlice[byte](priv.Bytes())),
+        )
+    })
 }
 
 // X25519PrivateKeyFromBytes wraps a raw 32-byte X25519 scalar.
@@ -366,17 +359,15 @@ func (sk X25519PrivateKey) ECDH(peer X25519PublicKey) Try[Array[byte]] {
     return Success[Array[byte]](ArrayFromSlice[byte](secret))
 }
 
-// PublicKey derives the X25519 public key from sk. Panics if sk's bytes
-// are not a well-formed X25519 scalar — that's a programmer error
-// (corrupt or incorrectly constructed key), not a runtime condition.
-func (sk X25519PrivateKey) PublicKey() X25519PublicKey {
+// PublicKey derives the X25519 public key from sk. Returns Failure if sk's
+// bytes are not a well-formed X25519 scalar (corrupt or incorrectly
+// constructed key).
+func (sk X25519PrivateKey) PublicKey() Try[X25519PublicKey] {
     val curve = ecdh.X25519()
-    val privKey, err = curve.NewPrivateKey(sk.bytes.ToGoSlice())
-    if err != nil {
-        panic(s"crypto: invalid X25519 private key: ${err.Error()}")
-    }
-    val pub = privKey.PublicKey().Bytes()
-    return X25519PublicKey(bytes = ArrayFromSlice[byte](pub))
+    return Try(curve.NewPrivateKey(sk.bytes.ToGoSlice())).Map((privKey) => {
+        val pub = privKey.PublicKey().Bytes()
+        return X25519PublicKey(bytes = ArrayFromSlice[byte](pub))
+    })
 }
 
 // Bytes returns the raw 32-byte X25519 public key.
@@ -390,23 +381,15 @@ func (sk X25519PrivateKey) Bytes() Array[byte] = sk.bytes
 // ==========================================================================
 
 // RandomHex returns a hex-encoded string of n random bytes drawn from
-// crypto/rand (length 2n). Panics if the OS RNG fails.
-func RandomHex(n int) string {
+// crypto/rand (length 2n), or Failure if the OS RNG fails.
+func RandomHex(n int) Try[string] {
     val buf = go_interop.SliceWithSize[byte](n)
-    val _, err = rand.Read(buf)
-    if err != nil {
-        panic(s"crypto: rand.Read failed: ${err.Error()}")
-    }
-    return hex.EncodeToString(buf)
+    return Try(rand.Read(buf)).Map((_) => hex.EncodeToString(buf))
 }
 
 // RandomBase64URL returns base64.RawURLEncoding (URL-safe, no padding) of
-// n random bytes drawn from crypto/rand. Panics if the OS RNG fails.
-func RandomBase64URL(n int) string {
+// n random bytes drawn from crypto/rand, or Failure if the OS RNG fails.
+func RandomBase64URL(n int) Try[string] {
     val buf = go_interop.SliceWithSize[byte](n)
-    val _, err = rand.Read(buf)
-    if err != nil {
-        panic(s"crypto: rand.Read failed: ${err.Error()}")
-    }
-    return base64.RawURLEncoding.EncodeToString(buf)
+    return Try(rand.Read(buf)).Map((_) => base64.RawURLEncoding.EncodeToString(buf))
 }

@@ -641,7 +641,7 @@ func unwrap(h Holder) int {
 func resolve(opt Option[int]) int {
 	return opt match {
 		case Some(n) => n
-		case None()  => panic("missing")
+		case None()  => Panic("missing")
 	}
 }`,
 			expected: `package main
@@ -683,7 +683,7 @@ func describe(code int) string {
 	return code match {
 		case 0 => "ok"
 		case 1 => "warn"
-		case _ => panic("invalid")
+		case _ => Panic("invalid")
 	}
 }`,
 			expected: `package main

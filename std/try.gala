@@ -1,5 +1,7 @@
 package std
 
+import . "martianoff/gala/go_builtins"
+
 // Try represents a computation that may either result in a value of type T (Success)
 // or a failure with an error (Failure). It provides a functional approach to error
 // handling, similar to Scala's Try monad.
@@ -29,7 +31,7 @@ func (t Try[T]) Apply(f func() T) Try[T] = tryRecover[T](f)
 // error unchanged rather than a wrapped message.
 func (t Try[T]) Get() T {
     if t.isFailure() {
-        panic(t.Err)
+        Panic(t.Err)
     }
     return t.Value
 }
@@ -37,7 +39,7 @@ func (t Try[T]) Get() T {
 // GetError returns the error if this is a Failure, otherwise panics.
 func (t Try[T]) GetError() error {
     if t.isSuccess() {
-        panic("Try.GetError on Success")
+        Panic("Try.GetError on Success")
     }
     return t.Err
 }

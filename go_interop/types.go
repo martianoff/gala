@@ -38,6 +38,13 @@ func ToRunes(s string) []rune {
 
 // === Slice Helper Functions for efficient operations ===
 
+// SliceAppend appends a single value to the end of a slice, returning the
+// (possibly reallocated) result. Sanctioned single-element replacement for the
+// bare Go `append` builtin; SliceAppendAll covers the multi-element case.
+func SliceAppend[T any](s []T, value T) []T {
+	return append(s, value)
+}
+
 // SliceAppendAll appends all elements from src to dst. O(m) where m = len(src).
 func SliceAppendAll[T any](dst []T, src []T) []T {
 	return append(dst, src...)
@@ -112,6 +119,51 @@ func SliceFrom[T any](s []T, from int) []T {
 // Equivalent to Go's s[:to]. Same as SliceTake but with a clearer name.
 func SliceTo[T any](s []T, to int) []T {
 	return s[:to]
+}
+
+// SliceCap returns the capacity of a slice. This is the sanctioned
+// replacement for the bare Go `cap` builtin, which is not part of GALA's
+// surface.
+func SliceCap[T any](s []T) int {
+	return cap(s)
+}
+
+// === Pointer Allocation ===
+
+// New allocates a zeroed value of type T and returns a pointer to it.
+// This is the sanctioned replacement for the bare Go `new` builtin. To obtain
+// the zero value itself, dereference the result (`*go_interop.New[T]()`).
+func New[T any]() *T {
+	return new(T)
+}
+
+// === Complex Numbers ===
+
+// Complex builds a complex128 from its real and imaginary parts. Sanctioned
+// replacement for the bare Go `complex` builtin.
+func Complex(re float64, im float64) complex128 {
+	return complex(re, im)
+}
+
+// Real returns the real part of a complex128. Sanctioned replacement for the
+// bare Go `real` builtin.
+func Real(c complex128) float64 {
+	return real(c)
+}
+
+// Imag returns the imaginary part of a complex128. Sanctioned replacement for
+// the bare Go `imag` builtin.
+func Imag(c complex128) float64 {
+	return imag(c)
+}
+
+// === Channel Helpers ===
+
+// CloseChan closes a typed channel. Sanctioned replacement for the bare Go
+// `close` builtin on channels of an arbitrary element type (CloseSignal covers
+// the `chan struct{}` signal case).
+func CloseChan[T any](ch chan T) {
+	close(ch)
 }
 
 // === Slice Creation Functions ===

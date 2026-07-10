@@ -19,7 +19,7 @@ func main() {
 
     // Option.Map with string
     val name = Some("hello")
-    val length = name.Map((s) => len(s))
+    val length = name.Map((s) => s.Size())
     fmt.Println("L5 - string length:", length)
 
     // === L2: Void ForEach ===

@@ -1,0 +1,61 @@
+package main
+
+import (
+    . "martianoff/gala/test"
+    . "martianoff/gala/resource"
+    . "martianoff/gala/std"
+    . "martianoff/gala/go_interop"
+)
+
+// A Closeable used to verify Using returns the body's result.
+type Handle struct {
+    name string
+}
+
+func (h Handle) Close() error {
+    return nil
+}
+
+// Bracket runs release exactly once on the NORMAL exit path, then returns the
+// body's result.
+func TestBracketNormalReleases(t T) T {
+    var released = 0
+    val result = Bracket(21, (r) => { released = released + 1 }, (r) => r * 2)
+    val t1 = Eq(t, result, 42)
+    return Eq(t1, released, 1)
+}
+
+// Bracket runs release exactly once on the PANIC exit path and then re-raises,
+// so the surrounding TryApply captures a Failure.
+func TestBracketPanicReleasesAndReraises(t T) T {
+    var released = 0
+    val captured = TryApply[int](() => Bracket(
+        1,
+        (r) => { released = released + 1 },
+        (r) => None[int]().Get()))
+    val t1 = IsTrue(t, captured.IsFailure())
+    return Eq(t1, released, 1)
+}
+
+// Using returns the body's result (Close runs on the way out).
+func TestUsingReturnsBodyResult(t T) T {
+    val n = Using(Handle(name = "log.txt"), (h) => h.name.Size())
+    return Eq(t, n, 7)
+}
+
+// WithLock runs the body under the lock and returns its result.
+func TestWithLockReturnsBodyResult(t T) T {
+    val mu = NewMutex()
+    val guarded = WithLock(mu, () => 7 + 1)
+    return Eq(t, guarded, 8)
+}
+
+// WithLock releases the lock on the PANIC path — a second WithLock afterwards
+// would deadlock if the first left the mutex held.
+func TestWithLockUnlocksOnPanic(t T) T {
+    val mu = NewMutex()
+    val first = TryApply[int](() => WithLock(mu, () => None[int]().Get()))
+    val t1 = IsTrue(t, first.IsFailure())
+    val second = WithLock(mu, () => 99)
+    return Eq(t1, second, 99)
+}

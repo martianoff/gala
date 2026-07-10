@@ -2,6 +2,7 @@ package main
 
 import (
     "fmt"
+    . "martianoff/gala/go_interop"
     . "martianoff/gala/std"
 )
 
@@ -17,9 +18,9 @@ type Container[T any] struct {
 // Filter returns items matching the predicate
 func (c Container[T]) Filter(p func(T) bool) Container[T] {
     var result []T
-    for i := 0; i < len(c.items); i++ {
+    for i := 0; i < c.items.Size(); i++ {
         if p(c.items[i]) {
-            result = append(result, c.items[i])
+            result = SliceAppend(result, c.items[i])
         }
     }
     return Container[T](items = result)
@@ -40,9 +41,9 @@ type Pair struct {
 
 func main() {
     var items []Pair
-    items = append(items, Pair(Key = "a", Value = 1))
-    items = append(items, Pair(Key = "b", Value = 2))
-    items = append(items, Pair(Key = "c", Value = 3))
+    items = SliceAppend(items, Pair(Key = "a", Value = 1))
+    items = SliceAppend(items, Pair(Key = "b", Value = 2))
+    items = SliceAppend(items, Pair(Key = "c", Value = 3))
     val container = Container[Pair](items = items)
 
     // This should work - FilterBy delegates to Filter
@@ -50,6 +51,6 @@ func main() {
     val predicate = (k string) => k != "b"
     val filtered = container.FilterBy[string](keyFn, predicate)
 
-    fmt.Printf("Filtered count: %d\n", len(filtered.items))
+    fmt.Printf("Filtered count: %d\n", filtered.items.Size())
     fmt.Println("Done")
 }

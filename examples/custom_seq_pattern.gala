@@ -16,17 +16,17 @@ func NewIntStack(elems ...int) IntStack {
 }
 
 // Implement Seq interface
-func (s IntStack) Size() int = len(s.elements)
+func (s IntStack) Size() int = s.elements.Size()
 
 func (s IntStack) Get(index int) int = s.elements[index]
 
 func (s IntStack) SeqDrop(n int) any {
-    if n >= len(s.elements) {
+    if n >= s.elements.Size() {
         return IntStack{elements: go_interop.SliceEmpty[int]()}
     }
     var result = go_interop.SliceEmpty[int]()
-    for i := n; i < len(s.elements); i++ {
-        result = append(result, s.elements[i])
+    for i := n; i < s.elements.Size(); i++ {
+        result = go_interop.SliceAppend(result, s.elements[i])
     }
     return IntStack{elements: result}
 }

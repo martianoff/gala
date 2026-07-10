@@ -1,5 +1,7 @@
 package std
 
+import . "martianoff/gala/go_builtins"
+
 // Ordered is an interface that types can implement to provide custom ordering.
 // Used by TreeSet and TreeMap for sorted collections.
 //
@@ -186,5 +188,6 @@ func compareValuesUint8s(a uint8, vb any) int {
 }
 
 func panicNotOrderable(v any) int {
-    panic(f"CompareValues: type $v%T does not support ordering")
+    Panic(f"CompareValues: type $v%T does not support ordering")
+    return 0
 }

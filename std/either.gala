@@ -1,5 +1,7 @@
 package std
 
+import . "martianoff/gala/go_builtins"
+
 // Either represents a value of one of two possible types (a disjoint union).
 // An instance of Either is an instance of either Left or Right.
 sealed type Either[A any, B any] {
@@ -40,7 +42,7 @@ func getRightValue(e any) any = e match {
 // GetLeft returns the left value if this is a Left, otherwise it panics.
 func (e Either[A, B]) GetLeft() A {
     if e.isRight() {
-        panic("Either.GetLeft on Right")
+        Panic("Either.GetLeft on Right")
     }
     return e.LeftValue
 }
@@ -48,7 +50,7 @@ func (e Either[A, B]) GetLeft() A {
 // GetRight returns the right value if this is a Right, otherwise it panics.
 func (e Either[A, B]) GetRight() B {
     if e.isLeft() {
-        panic("Either.GetRight on Left")
+        Panic("Either.GetRight on Left")
     }
     return e.RightValue
 }

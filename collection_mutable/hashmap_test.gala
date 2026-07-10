@@ -234,7 +234,7 @@ func TestHashMapFilterKeys(t T) T {
     m.Put("apple", 1)
     m.Put("banana", 2)
     m.Put("cherry", 3)
-    val filtered = m.FilterKeys((k) => len(k) > 5)
+    val filtered = m.FilterKeys((k) => k.Size() > 5)
 
     val t1 = Eq[int](t, filtered.Size(), 2)
     return IsFalse(t1, filtered.Contains("apple"))
@@ -425,7 +425,7 @@ func TestHashMapToGoMap(t T) T {
     m.Put("a", 1)
     m.Put("b", 2)
     val goMap = m.ToGoMap()
-    val t1 = Eq[int](t, len(goMap), 2)
+    val t1 = Eq[int](t, goMap.Size(), 2)
     return Eq[int](t1, goMap["a"], 1)
 }
 
@@ -520,7 +520,7 @@ func TestHashMapString(t T) T {
 
     val m = EmptyHashMap[string, int]()
     m.Put("a", 1)
-    return IsTrue(t1, len(m.String()) > 10)
+    return IsTrue(t1, m.String().Size() > 10)
 }
 
 // === Resize Test ===

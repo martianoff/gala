@@ -7,7 +7,7 @@ struct Builder(Value int)
 func NewBuilder() Builder = Builder(Value = 0)
 
 func (b Builder) Apply(f func(int) string) Builder =
-    Builder(Value = b.Value + len(f(b.Value)))
+    Builder(Value = b.Value + f(b.Value).Size())
 
 func main() {
     // Expression lambda - should work (infers return type from method signature)

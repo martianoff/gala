@@ -4,6 +4,7 @@ import (
     "fmt"
     "time"
     . "martianoff/gala/collection_mutable"
+    "martianoff/gala/go_interop"
 )
 
 // Performance test utilities
@@ -867,7 +868,7 @@ func benchHashMapStringKeys() {
     var keys []string
     for i := 0; i < 10000; i++ {
         val key = "key" + string(rune(i%26+65)) + string(rune((i/26)%26+65))
-        keys = append(keys, key)
+        keys = go_interop.SliceAppend(keys, key)
         m.Put(key, i)
     }
     val ns = measureNs(1000000, () => {

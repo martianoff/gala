@@ -365,7 +365,7 @@ func TestListO1Last(t T) T {
 func TestListToGoSlice(t T) T {
     val list = ListOf(1, 2, 3)
     val slice = list.ToGoSlice()
-    val t1 = Eq[int](t, len(slice), 3)
+    val t1 = Eq[int](t, slice.Size(), 3)
     val t2 = Eq[int](t1, slice[0], 1)
     return Eq[int](t2, slice[2], 3)
 }

@@ -45,7 +45,7 @@ func main() {
     Println(s"miss=${miss.IsDefined()}")
 
     val first = teams.Get(0)
-    Println(s"firstNameLen=${len(first.Name)}")
+    Println(s"firstNameLen=${first.Name.Size()}")
 
     val big = TeamsLargerThan(teams, 1)
     Println(s"big=${big.Length()}")

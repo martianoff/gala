@@ -22,7 +22,7 @@ func TestListOf(t T) T {
 func TestListToGoSlice(t T) T {
     val list = ListOf(10, 20, 30)
     val slice = list.ToGoSlice()
-    val t1 = Eq[int](t, len(slice), 3)
+    val t1 = Eq[int](t, slice.Size(), 3)
     return Eq[int](t1, slice[0], 10)
 }
 

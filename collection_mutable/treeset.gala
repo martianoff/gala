@@ -1,8 +1,8 @@
 package collection_mutable
 
 import (
-    "fmt"
     . "martianoff/gala/std"
+    "martianoff/gala/go_interop"
 )
 
 // TreeSet is a mutable sorted set implemented as a Red-Black tree.
@@ -50,7 +50,7 @@ func EmptyTreeSet[T comparable]() *TreeSet[T] {
 // Example: TreeSetOf[int](3, 1, 2) creates TreeSet(1, 2, 3)
 func TreeSetOf[T comparable](elements ...T) *TreeSet[T] {
     var result = EmptyTreeSet[T]()
-    for i := 0; i < len(elements); i++ {
+    for i := 0; i < elements.Size(); i++ {
         result.Add(elements[i])
     }
     return result
@@ -59,7 +59,7 @@ func TreeSetOf[T comparable](elements ...T) *TreeSet[T] {
 // TreeSetFromSlice creates a TreeSet from a slice.
 func TreeSetFromSlice[T comparable](elements []T) *TreeSet[T] {
     var result = EmptyTreeSet[T]()
-    for i := 0; i < len(elements); i++ {
+    for i := 0; i < elements.Size(); i++ {
         result.Add(elements[i])
     }
     return result
@@ -199,7 +199,7 @@ func treeSetCompareUint8sAny(a uint8, vb any) int {
 }
 
 func treeSetPanicNotOrdered(v any) int {
-    panic(fmt.Sprintf("TreeSet: type %T must implement std.Ordered interface", v))
+    go_builtins.Panic(f"TreeSet: type ${v}%T must implement std.Ordered interface")
 }
 
 // isRedTreeSetNode checks if a node is red (nil nodes are black).
@@ -355,7 +355,7 @@ func (s *TreeSet[T]) rotateRight(x *treeSetNode[T]) {
 
 // AddAll adds all elements from a slice.
 func (s *TreeSet[T]) AddAll(elements []T) {
-    for i := 0; i < len(elements); i++ {
+    for i := 0; i < elements.Size(); i++ {
         s.Add(elements[i])
     }
 }
@@ -526,7 +526,7 @@ func (s *TreeSet[T]) fixAfterDelete(node *treeSetNode[T]) {
 
 // RemoveAll removes all elements from a slice.
 func (s *TreeSet[T]) RemoveAll(elements []T) {
-    for i := 0; i < len(elements); i++ {
+    for i := 0; i < elements.Size(); i++ {
         s.Remove(elements[i])
     }
 }
@@ -543,7 +543,7 @@ func (s *TreeSet[T]) Clear() {
 // Panics if the set is empty.
 func (s *TreeSet[T]) Min() T {
     if s.size == 0 {
-        panic("TreeSet.Min on empty set")
+        go_builtins.Panic("TreeSet.Min on empty set")
     }
     return s.minNode(s.root).value
 }
@@ -568,7 +568,7 @@ func (s *TreeSet[T]) MinOption() Option[T] {
 // Panics if the set is empty.
 func (s *TreeSet[T]) Max() T {
     if s.size == 0 {
-        panic("TreeSet.Max on empty set")
+        go_builtins.Panic("TreeSet.Max on empty set")
     }
     return s.maxNode(s.root).value
 }
@@ -593,7 +593,7 @@ func (s *TreeSet[T]) MaxOption() Option[T] {
 // Panics if the set is empty.
 func (s *TreeSet[T]) PopMin() T {
     if s.size == 0 {
-        panic("TreeSet.PopMin on empty set")
+        go_builtins.Panic("TreeSet.PopMin on empty set")
     }
     var minVal = s.Min()
     s.Remove(minVal)
@@ -604,7 +604,7 @@ func (s *TreeSet[T]) PopMin() T {
 // Panics if the set is empty.
 func (s *TreeSet[T]) PopMax() T {
     if s.size == 0 {
-        panic("TreeSet.PopMax on empty set")
+        go_builtins.Panic("TreeSet.PopMax on empty set")
     }
     var maxVal = s.Max()
     s.Remove(maxVal)
@@ -672,7 +672,7 @@ func (s *TreeSet[T]) IntersectInPlace(other *TreeSet[T]) {
     var toRemove []T
     s.ForEach((elem T) => {
         if !other.Contains(elem) {
-            toRemove = append(toRemove, elem)
+            toRemove = go_interop.SliceAppend(toRemove, elem)
         }
     })
     s.RemoveAll(toRemove)
@@ -683,7 +683,7 @@ func (s *TreeSet[T]) DiffInPlace(other *TreeSet[T]) {
     var toRemove []T
     s.ForEach((elem T) => {
         if other.Contains(elem) {
-            toRemove = append(toRemove, elem)
+            toRemove = go_interop.SliceAppend(toRemove, elem)
         }
     })
     s.RemoveAll(toRemove)
@@ -866,7 +866,7 @@ func (s *TreeSet[T]) FoldLeft[U any](initial U, f func(U, T) U) U {
 // Panics if the set is empty.
 func (s *TreeSet[T]) Reduce(f func(T, T) T) T {
     if s.size == 0 {
-        panic("TreeSet.Reduce on empty set")
+        go_builtins.Panic("TreeSet.Reduce on empty set")
     }
     var first = true
     var acc T
@@ -943,7 +943,7 @@ func (s *TreeSet[T]) LastOption() Option[T] = s.MaxOption()
 func (s *TreeSet[T]) ToGoSlice() []T {
     var result []T
     s.ForEach((elem T) => {
-        result = append(result, elem)
+        result = go_interop.SliceAppend(result, elem)
     })
     return result
 }

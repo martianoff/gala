@@ -82,7 +82,7 @@ func (d *Dec) readBool() bool {
     if d.pos > 0 {
         return true
     }
-    panic("eof")
+    Panic("eof")
 }
 
 func (d *Dec) readStr() string = "s"

@@ -37,7 +37,7 @@ func testEither() {
     }
     fmt.Printf("Either match: %s\n", msg)
 
-    val length = e.Map((s) => len(s))
+    val length = e.Map((s) => s.Size())
     fmt.Printf("Either mapped: %v\n", length)
 }
 

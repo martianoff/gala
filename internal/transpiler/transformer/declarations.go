@@ -270,11 +270,21 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 		}
 
 		// First spec: capture all return values in temp variables
+		callValue := t.unwrapImmutable(rhsExprs[0])
 		tempSpec := &ast.ValueSpec{
 			Names:  tempIdents,
-			Values: []ast.Expr{t.unwrapImmutable(rhsExprs[0])},
+			Values: []ast.Expr{callValue},
 		}
 		specs := []ast.Spec{tempSpec}
+
+		// Infer each binding's type from the call's multi-return signature when
+		// no explicit annotation is given, so e.g. `val entries, err =
+		// os.ReadDir(p)` types `entries` as its `[]os.DirEntry` return (enabling
+		// `.Size()` and other receiver-typed inference) instead of NilType.
+		var callSig *transpiler.GoFuncSignature
+		if ctx.Type_() == nil {
+			callSig = t.resolveGoCallSignature(callValue)
+		}
 
 		// Create specs for each named variable, wrapping the temp in NewImmutable
 		for i, idCtx := range namesCtx {
@@ -286,6 +296,8 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 				if t.isImmutableType(typeName) {
 					return nil, t.semanticErrorAt(ctx, "recursive Immutable wrapping is not allowed")
 				}
+			} else if callSig != nil && i < len(callSig.Returns) && callSig.Returns[i] != nil {
+				typeName = callSig.Returns[i]
 			}
 
 			if qName := t.getType(typeName.String()); !qName.IsNil() {

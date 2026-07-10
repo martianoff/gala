@@ -120,7 +120,7 @@ func hash[T comparable](value T) uint32 {
 	val v any = value
 	val result = v match {
 		case i: int => uint32(i)
-		case s: string => uint32(len(s))
+		case s: string => uint32(s.Size())
 		case _ => uint32(0)
 	}
 	return result
@@ -135,7 +135,7 @@ func process[T any](value T) int {
 	val v any = value
 	val result = v match {
 		case i: int => i
-		case s: string => len(s)
+		case s: string => s.Size()
 		case _ => 0
 	}
 	return result

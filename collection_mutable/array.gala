@@ -36,9 +36,9 @@ func EmptyArray[T any]() *Array[T] {
 // ArrayOf creates an Array from variadic arguments.
 // Pre-allocates capacity for efficiency.
 func ArrayOf[T any](elements ...T) *Array[T] {
-    var elems = go_interop.SliceWithCapacity[T](len(elements))
-    for i := 0; i < len(elements); i++ {
-        elems = append(elems, elements[i])
+    var elems = go_interop.SliceWithCapacity[T](elements.Size())
+    for i := 0; i < elements.Size(); i++ {
+        elems = go_interop.SliceAppend(elems, elements[i])
     }
     return &Array[T](elements = elems)
 }
@@ -46,9 +46,9 @@ func ArrayOf[T any](elements ...T) *Array[T] {
 // ArrayFromSlice creates an Array from a slice (copies the slice).
 // Pre-allocates capacity for efficiency.
 func ArrayFromSlice[T any](elements []T) *Array[T] {
-    var elems = go_interop.SliceWithCapacity[T](len(elements))
-    for i := 0; i < len(elements); i++ {
-        elems = append(elems, elements[i])
+    var elems = go_interop.SliceWithCapacity[T](elements.Size())
+    for i := 0; i < elements.Size(); i++ {
+        elems = go_interop.SliceAppend(elems, elements[i])
     }
     return &Array[T](elements = elems)
 }
@@ -66,7 +66,7 @@ func ArrayWithCapacity[T any](capacity int) *Array[T] {
 func ArrayTabulate[T any](n int, f func(int) T) *Array[T] {
     var elems = go_interop.SliceWithCapacity[T](n)
     for i := 0; i < n; i++ {
-        elems = append(elems, f(i))
+        elems = go_interop.SliceAppend(elems, f(i))
     }
     return &Array[T](elements = elems)
 }
@@ -76,7 +76,7 @@ func ArrayTabulate[T any](n int, f func(int) T) *Array[T] {
 func ArrayFill[T any](n int, value T) *Array[T] {
     var elems = go_interop.SliceWithCapacity[T](n)
     for i := 0; i < n; i++ {
-        elems = append(elems, value)
+        elems = go_interop.SliceAppend(elems, value)
     }
     return &Array[T](elements = elems)
 }
@@ -84,34 +84,34 @@ func ArrayFill[T any](n int, value T) *Array[T] {
 // === Basic Operations ===
 
 // IsEmpty returns true if the array is empty.
-func (a *Array[T]) IsEmpty() bool = len(a.elements) == 0
+func (a *Array[T]) IsEmpty() bool = a.elements.Size() == 0
 
 // NonEmpty returns true if the array is not empty.
-func (a *Array[T]) NonEmpty() bool = len(a.elements) > 0
+func (a *Array[T]) NonEmpty() bool = a.elements.Size() > 0
 
 // Length returns the number of elements. O(1).
-func (a *Array[T]) Length() int = len(a.elements)
+func (a *Array[T]) Length() int = a.elements.Size()
 
 // Size is an alias for Length.
-func (a *Array[T]) Size() int = len(a.elements)
+func (a *Array[T]) Size() int = a.elements.Size()
 
 // Capacity returns the current capacity of the underlying slice.
-func (a *Array[T]) Capacity() int = cap(a.elements)
+func (a *Array[T]) Capacity() int = go_interop.SliceCap(a.elements)
 
 // === Access Operations ===
 
 // Get returns the element at the given index. O(1).
 // Panics if index is out of bounds.
 func (a *Array[T]) Get(index int) T {
-    if (index < 0) || (index >= len(a.elements)) {
-        panic(f"Array.Get: index $index out of bounds [0, ${len(a.elements)})")
+    if (index < 0) || (index >= a.elements.Size()) {
+        go_builtins.Panic(f"Array.Get: index $index out of bounds [0, ${a.elements.Size()})")
     }
     return a.elements[index]
 }
 
 // GetOption returns the element at index wrapped in Option.
 func (a *Array[T]) GetOption(index int) Option[T] {
-    if (index < 0) || (index >= len(a.elements)) {
+    if (index < 0) || (index >= a.elements.Size()) {
         return None[T]()
     }
     return Some[T](a.elements[index])
@@ -120,15 +120,15 @@ func (a *Array[T]) GetOption(index int) Option[T] {
 // Head returns the first element. O(1).
 // Panics if the array is empty.
 func (a *Array[T]) Head() T {
-    if len(a.elements) == 0 {
-        panic("Array.Head on empty array")
+    if a.elements.Size() == 0 {
+        go_builtins.Panic("Array.Head on empty array")
     }
     return a.elements[0]
 }
 
 // HeadOption returns the first element wrapped in Option.
 func (a *Array[T]) HeadOption() Option[T] {
-    if len(a.elements) == 0 {
+    if a.elements.Size() == 0 {
         return None[T]()
     }
     return Some[T](a.elements[0])
@@ -137,18 +137,18 @@ func (a *Array[T]) HeadOption() Option[T] {
 // Last returns the last element. O(1).
 // Panics if the array is empty.
 func (a *Array[T]) Last() T {
-    if len(a.elements) == 0 {
-        panic("Array.Last on empty array")
+    if a.elements.Size() == 0 {
+        go_builtins.Panic("Array.Last on empty array")
     }
-    return a.elements[len(a.elements) - 1]
+    return a.elements[a.elements.Size() - 1]
 }
 
 // LastOption returns the last element wrapped in Option.
 func (a *Array[T]) LastOption() Option[T] {
-    if len(a.elements) == 0 {
+    if a.elements.Size() == 0 {
         return None[T]()
     }
-    return Some[T](a.elements[len(a.elements) - 1])
+    return Some[T](a.elements[a.elements.Size() - 1])
 }
 
 // === Mutating Operations ===
@@ -156,18 +156,18 @@ func (a *Array[T]) LastOption() Option[T] {
 // Set updates the element at index in place. O(1).
 // Panics if index is out of bounds.
 func (a *Array[T]) Set(index int, value T) {
-    if (index < 0) || (index >= len(a.elements)) {
-        panic(f"Array.Set: index $index out of bounds [0, ${len(a.elements)})")
+    if (index < 0) || (index >= a.elements.Size()) {
+        go_builtins.Panic(f"Array.Set: index $index out of bounds [0, ${a.elements.Size()})")
     }
     a.elements[index] = value
 }
 
 // Append adds an element to the end. O(1) amortized.
 func (a *Array[T]) Append(value T) {
-    a.elements = append(a.elements, value)
+    a.elements = go_interop.SliceAppend(a.elements, value)
 }
 
-// AppendAll appends all elements from a slice. O(m) where m = len(values).
+// AppendAll appends all elements from a slice. O(m) where m = values.Size().
 func (a *Array[T]) AppendAll(values []T) {
     a.elements = go_interop.SliceAppendAll(a.elements, values)
 }
@@ -192,8 +192,8 @@ func (a *Array[T]) PrependAll(values []T) {
 // Insert inserts an element at the given index. O(n).
 // Panics if index is out of bounds (0 <= index <= length).
 func (a *Array[T]) Insert(index int, value T) {
-    if (index < 0) || (index > len(a.elements)) {
-        panic(f"Array.Insert: index $index out of bounds [0, ${len(a.elements)}]")
+    if (index < 0) || (index > a.elements.Size()) {
+        go_builtins.Panic(f"Array.Insert: index $index out of bounds [0, ${a.elements.Size()}]")
     }
     a.elements = go_interop.SliceInsert(a.elements, index, value)
 }
@@ -201,8 +201,8 @@ func (a *Array[T]) Insert(index int, value T) {
 // RemoveAt removes the element at the given index. O(n).
 // Panics if index is out of bounds.
 func (a *Array[T]) RemoveAt(index int) {
-    if (index < 0) || (index >= len(a.elements)) {
-        panic(f"Array.RemoveAt: index $index out of bounds [0, ${len(a.elements)})")
+    if (index < 0) || (index >= a.elements.Size()) {
+        go_builtins.Panic(f"Array.RemoveAt: index $index out of bounds [0, ${a.elements.Size()})")
     }
     a.elements = go_interop.SliceRemoveAt(a.elements, index)
 }
@@ -211,8 +211,8 @@ func (a *Array[T]) RemoveAt(index int) {
 // Returns a slice view, so underlying memory is not reallocated.
 // Panics if the array is empty.
 func (a *Array[T]) RemoveFirst() T {
-    if len(a.elements) == 0 {
-        panic("Array.RemoveFirst on empty array")
+    if a.elements.Size() == 0 {
+        go_builtins.Panic("Array.RemoveFirst on empty array")
     }
     var removed = a.elements[0]
     a.elements = go_interop.SliceDrop(a.elements, 1)
@@ -223,10 +223,10 @@ func (a *Array[T]) RemoveFirst() T {
 // Returns a slice view, so underlying memory is not reallocated.
 // Panics if the array is empty.
 func (a *Array[T]) RemoveLast() T {
-    if len(a.elements) == 0 {
-        panic("Array.RemoveLast on empty array")
+    if a.elements.Size() == 0 {
+        go_builtins.Panic("Array.RemoveLast on empty array")
     }
-    var lastIdx = len(a.elements) - 1
+    var lastIdx = a.elements.Size() - 1
     var removed = a.elements[lastIdx]
     a.elements = go_interop.SliceTake(a.elements, lastIdx)
     return removed
@@ -245,7 +245,7 @@ func (a *Array[T]) EnsureCapacity(minCapacity int) {
 
 // Reverse reverses the array in place. O(n).
 func (a *Array[T]) Reverse() {
-    var n = len(a.elements)
+    var n = a.elements.Size()
     for i := 0; i < n / 2; i++ {
         var temp = a.elements[i]
         a.elements[i] = a.elements[n - 1 - i]
@@ -257,7 +257,7 @@ func (a *Array[T]) Reverse() {
 
 // Contains checks if the array contains the given element. O(n).
 func (a *Array[T]) Contains(elem T) bool {
-    for i := 0; i < len(a.elements); i++ {
+    for i := 0; i < a.elements.Size(); i++ {
         if Equal(a.elements[i], elem) {
             return true
         }
@@ -267,7 +267,7 @@ func (a *Array[T]) Contains(elem T) bool {
 
 // IndexOf returns the index of the first occurrence of elem, or -1 if not found.
 func (a *Array[T]) IndexOf(elem T) int {
-    for i := 0; i < len(a.elements); i++ {
+    for i := 0; i < a.elements.Size(); i++ {
         if Equal(a.elements[i], elem) {
             return i
         }
@@ -277,7 +277,7 @@ func (a *Array[T]) IndexOf(elem T) int {
 
 // LastIndexOf returns the index of the last occurrence of elem, or -1 if not found.
 func (a *Array[T]) LastIndexOf(elem T) int {
-    for i := len(a.elements) - 1; i >= 0; i-- {
+    for i := a.elements.Size() - 1; i >= 0; i-- {
         if Equal(a.elements[i], elem) {
             return i
         }
@@ -292,12 +292,12 @@ func (a *Array[T]) Take(n int) *Array[T] {
     if n <= 0 {
         return EmptyArray[T]()
     }
-    if n >= len(a.elements) {
+    if n >= a.elements.Size() {
         return a.Clone()
     }
     var elems = go_interop.SliceWithCapacity[T](n)
     for i := 0; i < n; i++ {
-        elems = append(elems, a.elements[i])
+        elems = go_interop.SliceAppend(elems, a.elements[i])
     }
     return &Array[T](elements = elems)
 }
@@ -307,13 +307,13 @@ func (a *Array[T]) Drop(n int) *Array[T] {
     if n <= 0 {
         return a.Clone()
     }
-    if n >= len(a.elements) {
+    if n >= a.elements.Size() {
         return EmptyArray[T]()
     }
-    var size = len(a.elements) - n
+    var size = a.elements.Size() - n
     var elems = go_interop.SliceWithCapacity[T](size)
-    for i := n; i < len(a.elements); i++ {
-        elems = append(elems, a.elements[i])
+    for i := n; i < a.elements.Size(); i++ {
+        elems = go_interop.SliceAppend(elems, a.elements[i])
     }
     return &Array[T](elements = elems)
 }
@@ -323,8 +323,8 @@ func (a *Array[T]) Slice(start int, end int) *Array[T] {
     if start < 0 {
         start = 0
     }
-    if end > len(a.elements) {
-        end = len(a.elements)
+    if end > a.elements.Size() {
+        end = a.elements.Size()
     }
     if start >= end {
         return EmptyArray[T]()
@@ -332,34 +332,34 @@ func (a *Array[T]) Slice(start int, end int) *Array[T] {
     var size = end - start
     var elems = go_interop.SliceWithCapacity[T](size)
     for i := start; i < end; i++ {
-        elems = append(elems, a.elements[i])
+        elems = go_interop.SliceAppend(elems, a.elements[i])
     }
     return &Array[T](elements = elems)
 }
 
 // Clone creates a shallow copy of the array.
 func (a *Array[T]) Clone() *Array[T] {
-    var elems = go_interop.SliceWithCapacity[T](len(a.elements))
-    for i := 0; i < len(a.elements); i++ {
-        elems = append(elems, a.elements[i])
+    var elems = go_interop.SliceWithCapacity[T](a.elements.Size())
+    for i := 0; i < a.elements.Size(); i++ {
+        elems = go_interop.SliceAppend(elems, a.elements[i])
     }
     return &Array[T](elements = elems)
 }
 
 // Tail returns all elements except the first.
 func (a *Array[T]) Tail() *Array[T] {
-    if len(a.elements) == 0 {
-        panic("Array.Tail on empty array")
+    if a.elements.Size() == 0 {
+        go_builtins.Panic("Array.Tail on empty array")
     }
     return a.Drop(1)
 }
 
 // Init returns all elements except the last.
 func (a *Array[T]) Init() *Array[T] {
-    if len(a.elements) == 0 {
-        panic("Array.Init on empty array")
+    if a.elements.Size() == 0 {
+        go_builtins.Panic("Array.Init on empty array")
     }
-    return a.Take(len(a.elements) - 1)
+    return a.Take(a.elements.Size() - 1)
 }
 
 // Reversed returns a new Array with elements in reverse order.
@@ -373,9 +373,9 @@ func (a *Array[T]) Reversed() *Array[T] {
 
 // Map applies a function to each element and returns a new Array.
 func (a *Array[T]) Map[U any](f func(T) U) *Array[U] {
-    var elems = go_interop.SliceWithCapacity[U](len(a.elements))
-    for i := 0; i < len(a.elements); i++ {
-        elems = append(elems, f(a.elements[i]))
+    var elems = go_interop.SliceWithCapacity[U](a.elements.Size())
+    for i := 0; i < a.elements.Size(); i++ {
+        elems = go_interop.SliceAppend(elems, f(a.elements[i]))
     }
     return &Array[U](elements = elems)
 }
@@ -383,7 +383,7 @@ func (a *Array[T]) Map[U any](f func(T) U) *Array[U] {
 // FlatMap applies a function that returns a Array to each element and flattens.
 func (a *Array[T]) FlatMap[U any](f func(T) *Array[U]) *Array[U] {
     var result = EmptyArray[U]()
-    for i := 0; i < len(a.elements); i++ {
+    for i := 0; i < a.elements.Size(); i++ {
         var inner = f(a.elements[i])
         result.AppendFrom(inner)
     }
@@ -393,7 +393,7 @@ func (a *Array[T]) FlatMap[U any](f func(T) *Array[U]) *Array[U] {
 // Collect applies a partial function to each element and collects the results.
 func (a *Array[T]) Collect[U any](pf func(T) Option[U]) *Array[U] {
     var result = EmptyArray[U]()
-    for i := 0; i < len(a.elements); i++ {
+    for i := 0; i < a.elements.Size(); i++ {
         val opt = pf(a.elements[i])
         if opt.IsDefined() {
             result.Append(opt.Get())
@@ -405,7 +405,7 @@ func (a *Array[T]) Collect[U any](pf func(T) Option[U]) *Array[U] {
 // Filter returns a new Array with only elements that satisfy the predicate.
 func (a *Array[T]) Filter(p func(T) bool) *Array[T] {
     var result = EmptyArray[T]()
-    for i := 0; i < len(a.elements); i++ {
+    for i := 0; i < a.elements.Size(); i++ {
         if p(a.elements[i]) {
             result.Append(a.elements[i])
         }
@@ -426,7 +426,7 @@ func (a *Array[T]) Partition(p func(T) bool) Tuple[*Array[T], *Array[T]] {
 // TakeWhile returns the longest prefix of elements that satisfy the predicate.
 func (a *Array[T]) TakeWhile(p func(T) bool) *Array[T] {
     var result = EmptyArray[T]()
-    for i := 0; i < len(a.elements); i++ {
+    for i := 0; i < a.elements.Size(); i++ {
         if !p(a.elements[i]) {
             return result
         }
@@ -438,7 +438,7 @@ func (a *Array[T]) TakeWhile(p func(T) bool) *Array[T] {
 // DropWhile drops the longest prefix of elements that satisfy the predicate.
 func (a *Array[T]) DropWhile(p func(T) bool) *Array[T] {
     var start = 0
-    for start < len(a.elements) && p(a.elements[start]) {
+    for start < a.elements.Size() && p(a.elements[start]) {
         start++
     }
     return a.Drop(start)
@@ -449,7 +449,7 @@ func (a *Array[T]) DropWhile(p func(T) bool) *Array[T] {
 // FoldLeft applies a binary operator from left to right.
 func (a *Array[T]) FoldLeft[U any](initial U, f func(U, T) U) U {
     var acc = initial
-    for i := 0; i < len(a.elements); i++ {
+    for i := 0; i < a.elements.Size(); i++ {
         acc = f(acc, a.elements[i])
     }
     return acc
@@ -458,7 +458,7 @@ func (a *Array[T]) FoldLeft[U any](initial U, f func(U, T) U) U {
 // FoldRight applies a binary operator from right to left.
 func (a *Array[T]) FoldRight[U any](initial U, f func(T, U) U) U {
     var acc = initial
-    for i := len(a.elements) - 1; i >= 0; i-- {
+    for i := a.elements.Size() - 1; i >= 0; i-- {
         acc = f(a.elements[i], acc)
     }
     return acc
@@ -467,11 +467,11 @@ func (a *Array[T]) FoldRight[U any](initial U, f func(T, U) U) U {
 // Reduce applies a binary operator from left to right, starting with the first element.
 // Panics if the array is empty.
 func (a *Array[T]) Reduce(f func(T, T) T) T {
-    if len(a.elements) == 0 {
-        panic("Array.Reduce on empty array")
+    if a.elements.Size() == 0 {
+        go_builtins.Panic("Array.Reduce on empty array")
     }
     var acc = a.elements[0]
-    for i := 1; i < len(a.elements); i++ {
+    for i := 1; i < a.elements.Size(); i++ {
         acc = f(acc, a.elements[i])
     }
     return acc
@@ -479,7 +479,7 @@ func (a *Array[T]) Reduce(f func(T, T) T) T {
 
 // ReduceOption is like Reduce but returns None for empty array.
 func (a *Array[T]) ReduceOption(f func(T, T) T) Option[T] {
-    if len(a.elements) == 0 {
+    if a.elements.Size() == 0 {
         return None[T]()
     }
     return Some[T](a.Reduce(f))
@@ -489,14 +489,14 @@ func (a *Array[T]) ReduceOption(f func(T, T) T) Option[T] {
 
 // ForEach applies a function to each element for side effects.
 func (a *Array[T]) ForEach(f func(T)) {
-    for i := 0; i < len(a.elements); i++ {
+    for i := 0; i < a.elements.Size(); i++ {
         f(a.elements[i])
     }
 }
 
 // Exists returns true if any element satisfies the predicate.
 func (a *Array[T]) Exists(p func(T) bool) bool {
-    for i := 0; i < len(a.elements); i++ {
+    for i := 0; i < a.elements.Size(); i++ {
         if p(a.elements[i]) {
             return true
         }
@@ -506,7 +506,7 @@ func (a *Array[T]) Exists(p func(T) bool) bool {
 
 // ForAll returns true if all elements satisfy the predicate.
 func (a *Array[T]) ForAll(p func(T) bool) bool {
-    for i := 0; i < len(a.elements); i++ {
+    for i := 0; i < a.elements.Size(); i++ {
         if !p(a.elements[i]) {
             return false
         }
@@ -516,7 +516,7 @@ func (a *Array[T]) ForAll(p func(T) bool) bool {
 
 // Find returns the first element that satisfies the predicate.
 func (a *Array[T]) Find(p func(T) bool) Option[T] {
-    for i := 0; i < len(a.elements); i++ {
+    for i := 0; i < a.elements.Size(); i++ {
         if p(a.elements[i]) {
             return Some[T](a.elements[i])
         }
@@ -526,7 +526,7 @@ func (a *Array[T]) Find(p func(T) bool) Option[T] {
 
 // FindLast returns the last element that satisfies the predicate.
 func (a *Array[T]) FindLast(p func(T) bool) Option[T] {
-    for i := len(a.elements) - 1; i >= 0; i-- {
+    for i := a.elements.Size() - 1; i >= 0; i-- {
         if p(a.elements[i]) {
             return Some[T](a.elements[i])
         }
@@ -548,9 +548,9 @@ func (a *Array[T]) Count(p func(T) bool) int {
 
 // Zip combines two arrays into an array of tuples. Result length is the minimum.
 func (a *Array[T]) Zip[U any](other *Array[U]) *Array[Tuple[T, U]] {
-    var minLen = len(a.elements)
-    if len(other.elements) < minLen {
-        minLen = len(other.elements)
+    var minLen = a.elements.Size()
+    if other.elements.Size() < minLen {
+        minLen = other.elements.Size()
     }
     var result = EmptyArray[Tuple[T, U]]()
     for i := 0; i < minLen; i++ {
@@ -562,7 +562,7 @@ func (a *Array[T]) Zip[U any](other *Array[U]) *Array[Tuple[T, U]] {
 // ZipWithIndex pairs each element with its index.
 func (a *Array[T]) ZipWithIndex() *Array[Tuple[T, int]] {
     var result = EmptyArray[Tuple[T, int]]()
-    for i := 0; i < len(a.elements); i++ {
+    for i := 0; i < a.elements.Size(); i++ {
         result.Append((a.elements[i], i))
     }
     return result
@@ -571,7 +571,7 @@ func (a *Array[T]) ZipWithIndex() *Array[Tuple[T, int]] {
 // Distinct returns a new array with duplicate elements removed.
 func (a *Array[T]) Distinct() *Array[T] {
     var result = EmptyArray[T]()
-    for i := 0; i < len(a.elements); i++ {
+    for i := 0; i < a.elements.Size(); i++ {
         if !result.Contains(a.elements[i]) {
             result.Append(a.elements[i])
         }
@@ -587,13 +587,13 @@ func (a *Array[T]) SplitAt(n int) Tuple[*Array[T], *Array[T]] {
 // Grouped splits the array into groups of size n.
 func (a *Array[T]) Grouped(n int) *Array[*Array[T]] {
     if n <= 0 {
-        panic("Array.Grouped: group size must be positive")
+        go_builtins.Panic("Array.Grouped: group size must be positive")
     }
     var result = EmptyArray[*Array[T]]()
-    for i := 0; i < len(a.elements); i += n {
+    for i := 0; i < a.elements.Size(); i += n {
         var end = i + n
-        if end > len(a.elements) {
-            end = len(a.elements)
+        if end > a.elements.Size() {
+            end = a.elements.Size()
         }
         result.Append(a.Slice(i, end))
     }
@@ -603,13 +603,13 @@ func (a *Array[T]) Grouped(n int) *Array[*Array[T]] {
 // Sliding returns a sliding window over the array.
 func (a *Array[T]) Sliding(size int) *Array[*Array[T]] {
     if size <= 0 {
-        panic("Array.Sliding: window size must be positive")
+        go_builtins.Panic("Array.Sliding: window size must be positive")
     }
-    if len(a.elements) < size {
+    if a.elements.Size() < size {
         return EmptyArray[*Array[T]]()
     }
     var result = EmptyArray[*Array[T]]()
-    var limit = len(a.elements) - size
+    var limit = a.elements.Size() - size
     for i := 0; i <= limit; i++ {
         result.Append(a.Slice(i, i + size))
     }
@@ -619,7 +619,7 @@ func (a *Array[T]) Sliding(size int) *Array[*Array[T]] {
 // GroupBy partitions this array into a map of arrays according to a discriminator function.
 func (a *Array[T]) GroupBy[K comparable](f func(T) K) map[K]*Array[T] {
     var result = go_interop.MapEmpty[K, *Array[T]]()
-    for i := 0; i < len(a.elements); i++ {
+    for i := 0; i < a.elements.Size(); i++ {
         var elem = a.elements[i]
         var key = f(elem)
         var existing = result[key]
@@ -637,19 +637,19 @@ func (a *Array[T]) GroupBy[K comparable](f func(T) K) map[K]*Array[T] {
 // ToGoSlice returns a copy of the underlying slice.
 func (a *Array[T]) ToGoSlice() []T {
     var result []T
-    for i := 0; i < len(a.elements); i++ {
-        result = append(result, a.elements[i])
+    for i := 0; i < a.elements.Size(); i++ {
+        result = go_interop.SliceAppend(result, a.elements[i])
     }
     return result
 }
 
 // String returns a string representation of the array.
 func (a *Array[T]) String() string {
-    if len(a.elements) == 0 {
+    if a.elements.Size() == 0 {
         return "Array()"
     }
     var result = "Array("
-    for i := 0; i < len(a.elements); i++ {
+    for i := 0; i < a.elements.Size(); i++ {
         if i > 0 {
             result = result + ", "
         }
@@ -660,11 +660,11 @@ func (a *Array[T]) String() string {
 
 // MkString joins elements into a string with separator.
 func (a *Array[T]) MkString(sep string) string {
-    if len(a.elements) == 0 {
+    if a.elements.Size() == 0 {
         return ""
     }
     var result = ""
-    for i := 0; i < len(a.elements); i++ {
+    for i := 0; i < a.elements.Size(); i++ {
         if i > 0 {
             result = result + sep
         }
@@ -676,7 +676,7 @@ func (a *Array[T]) MkString(sep string) string {
 // ToList converts the array to a mutable List.
 func (a *Array[T]) ToList() *List[T] {
     var result = EmptyList[T]()
-    for i := 0; i < len(a.elements); i++ {
+    for i := 0; i < a.elements.Size(); i++ {
         result.Append(a.elements[i])
     }
     return result

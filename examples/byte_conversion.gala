@@ -3,7 +3,6 @@ package main
 import . "martianoff/gala/go_interop"
 import "crypto/sha256"
 import "encoding/hex"
-import "fmt"
 import "io"
 
 func main() {
@@ -15,14 +14,14 @@ func main() {
     io.WriteString(h, input)
     val hashBytes = h.Sum(nil)
     val hashHex = hex.EncodeToString(hashBytes)
-    fmt.Println(hashHex)
+    Println(hashHex)
 
     // ToBytes: string -> []byte
     val bytes = ToBytes("test string")
     val backToString = ToString(bytes)
-    fmt.Println(backToString)
+    Println(backToString)
 
     // ToRunes: string -> []rune
     val runes = ToRunes("hello")
-    fmt.Println(len(runes))
+    Println(runes.Size())
 }

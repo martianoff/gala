@@ -2,6 +2,7 @@ package main
 
 import (
     . "martianoff/gala/test"
+    . "martianoff/gala/std"
     . "martianoff/gala/collection_immutable"
     "martianoff/gala/fs"
     "os"
@@ -11,11 +12,7 @@ import (
 // scratchStreamDir mirrors fs_test.scratchDir; redeclared here to keep
 // each test file self-contained (GALA's gala_go_test compiles each
 // _test.gala into its own package main).
-func scratchStreamDir(prefix string) string {
-    val dir, err = os.MkdirTemp("", prefix)
-    if err != nil { panic(err) }
-    return dir
-}
+func scratchStreamDir(prefix string) string = Try(os.MkdirTemp("", prefix)).Get()
 
 func TestReadLinesRoundTrip(t T) T {
     val dir = scratchStreamDir("fs_readlines_rt")

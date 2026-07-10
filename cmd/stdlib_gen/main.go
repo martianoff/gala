@@ -22,6 +22,8 @@ func packageFromPath(path string) string {
 		"collection_immutable",
 		"collection_mutable",
 		"go_interop",
+		"go_builtins",
+		"resource",
 		"concurrent",
 		"validation",
 		"subprocess",
@@ -138,6 +140,8 @@ var EmbeddedPackages = map[string]map[string]string{
 var PackageImportPaths = map[string]string{
 	"std":                  "martianoff/gala/std",
 	"go_interop":           "martianoff/gala/go_interop",
+	"go_builtins":          "martianoff/gala/go_builtins",
+	"resource":             "martianoff/gala/resource",
 	"collection_immutable": "martianoff/gala/collection_immutable",
 	"collection_mutable":   "martianoff/gala/collection_mutable",
 	"concurrent":           "martianoff/gala/concurrent",

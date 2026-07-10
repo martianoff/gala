@@ -152,6 +152,34 @@ func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.Sel
 		}
 	}
 
+	// The string form of the `.Size()` sugar lowers to
+	// `utf8.RuneCountInString(...)` (returns int). Like the `len(...)` rule in
+	// inferCallIdentType, downstream inference over the emitted node — e.g. the
+	// common-result-type of an if-expression whose branches are `s.Size()` —
+	// must type it as int rather than NilType (the auto-injected `unicode/utf8`
+	// import is not analyzed by goTypeInfo, so it does not resolve otherwise).
+	if pkgId, ok := sel.X.(*ast.Ident); ok && pkgId.Name == "utf8" && sel.Sel.Name == "RuneCountInString" {
+		return transpiler.BasicType{Name: "int"}
+	}
+
+	// Size()/ByteSize() sugar on Go primitives (string/slice/map) lowers to
+	// len()/utf8.RuneCountInString(), both of which return int. Only claim the
+	// result type when the receiver is actually a Go string/slice/map; GALA
+	// collections have their own Size() method and must fall through to their
+	// declared return type.
+	if len(e.Args) == 0 && (sel.Sel.Name == "Size" || sel.Sel.Name == "ByteSize") {
+		recvType := t.sizeSugarReceiverType(sel.X)
+		if basic, ok := recvType.(transpiler.BasicType); ok && basic.Name == "string" {
+			return transpiler.BasicType{Name: "int"}
+		}
+		if sel.Sel.Name == "Size" {
+			switch recvType.(type) {
+			case transpiler.ArrayType, transpiler.MapType:
+				return transpiler.BasicType{Name: "int"}
+			}
+		}
+	}
+
 	// Handle Apply method on composite literal: Some[int]{}.Apply(value) -> Option[int]
 	if sel.Sel.Name == "Apply" {
 		if compLit, ok := sel.X.(*ast.CompositeLit); ok {
@@ -414,6 +442,13 @@ func (t *galaASTTransformer) inferCallIdentType(e *ast.CallExpr, id *ast.Ident, 
 			return baseType
 		}
 	}
+	// `len(...)` is inferred as int. Bare `len` in GALA *source* is a hard error
+	// (checkForbiddenGoBuiltinCall, applied at transform time), but the
+	// `.Size()`/`.ByteSize()` sugar EMITS `len(...)` as generated Go AST, and
+	// downstream type inference — the common-result-type of an if-expression,
+	// a binary operand like `xs.Size() - 1`, etc. — runs over that emitted node
+	// via inferResultType. Without this rule the emitted `len(...)` resolves to
+	// NilType and poisons the surrounding expression's type to `any`.
 	if id.Name == "len" {
 		return transpiler.BasicType{Name: "int"}
 	}
@@ -548,6 +583,24 @@ func (t *galaASTTransformer) inferCallIdentType(e *ast.CallExpr, id *ast.Ident, 
 	// the un-substituted type-parameter name.
 	if t.packageName != "" {
 		if retType := t.getGoFuncReturnType(t.packageName + "." + id.Name); !retType.IsNil() {
+			return retType
+		}
+	}
+
+	// Fallback: a bare identifier naming a dot-imported Go function
+	// (e.g. `ToRunes` from `import . "martianoff/gala/go_interop"`, which
+	// returns `[]rune`). Resolve its return type through goTypeInfo so it
+	// yields a concrete ArrayType/MapType/BasicType rather than NilType.
+	// Without this, downstream consumers that key off the receiver type —
+	// notably the `.Size()`/`.ByteSize()` sugar (via sizeSugarReceiverType)
+	// and val-type inference for `val r = ToRunes(...)` — cannot fire and
+	// fall back to a raw Go slice with no `.Size()` method. Mirrors the
+	// dot-import resolution already done for parameter types in
+	// resolveGoFuncParamTypes. `std` is dot-imported too but its functions
+	// are GALA (resolved above via getFunction), so a `std.<name>` miss here
+	// is harmless.
+	for _, entry := range t.importManager.dotImports {
+		if retType := t.getGoFuncReturnType(entry.PkgName + "." + id.Name); !retType.IsNil() {
 			return retType
 		}
 	}

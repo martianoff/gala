@@ -69,6 +69,7 @@ go_library(
     importpath = "martianoff/gala/collection_immutable",
     visibility = ["//visibility:public"],
     deps = [
+        "//go_builtins",
         "//go_interop",
         "//std",
     ],
@@ -77,31 +78,31 @@ go_library(
 gala_test(
     name = "array_test",
     srcs = ["array_test.gala"],
-    deps = [":collection_immutable"],
+    deps = [":collection_immutable", "//go_interop"],
 )
 
 gala_test(
     name = "list_test",
     srcs = ["list_test.gala"],
-    deps = [":collection_immutable"],
+    deps = [":collection_immutable", "//go_interop"],
 )
 
 gala_test(
     name = "inference_test",
     srcs = ["inference_test.gala"],
-    deps = [":collection_immutable"],
+    deps = [":collection_immutable", "//go_interop"],
 )
 
 gala_test(
     name = "validation_test",
     srcs = ["validation_test.gala"],
-    deps = [":collection_immutable"],
+    deps = [":collection_immutable", "//go_interop"],
 )
 
 gala_test(
     name = "hashset_test",
     srcs = ["hashset_test.gala"],
-    deps = [":collection_immutable"],
+    deps = [":collection_immutable", "//go_interop"],
 )
 
 gala_test(
@@ -135,7 +136,7 @@ gala_test(
 gala_binary(
     name = "perf_gala",
     src = "perf_test.gala",
-    deps = [":collection_immutable"],
+    deps = [":collection_immutable", "//go_interop"],
 )
 
 # Note: go_native_perf_test.go is a standalone benchmark file (package main)

@@ -10,6 +10,7 @@ A scannable rule list for writing idiomatic GALA — useful as both a learning c
 - **No workarounds for transpiler bugs.** If a construct fails to transpile, write a minimal repro test and fix the transpiler. Do not rewrite GALA code to dodge the bug.
 - **No special-casing `std`.** The standard library uses the same import/resolution mechanism as any other library.
 - **Concrete types only.** Never emit `any`/`interface{}` unless the GALA source explicitly asks for it.
+- **No bare Go builtins.** `append`, `make`, `new`, `cap`, `copy`, `delete`, `close`, `complex`, `real`, `imag`, `panic`, `recover`, and `len` are a hard error (GALA-E0035). Use the GALA-native form or the sanctioned interop wrapper (see *Length & size* and *Resource cleanup* below). A user-defined function that happens to share one of these names is fine — only the builtin is forbidden.
 
 ---
 
@@ -51,6 +52,33 @@ Use `collection_immutable.{Array, List, HashMap}` for general work. Use `go_inte
 - **Build incrementally:** use `arrayBuilder` for hot paths.
 - **Performance:** `Array` is O(log32 n) random access; `List` is O(1) prepend.
 - See [IMMUTABLE_COLLECTIONS.MD](IMMUTABLE_COLLECTIONS.MD) and [MUTABLE_COLLECTIONS.MD](MUTABLE_COLLECTIONS.MD).
+
+---
+
+## Length & size (`.Size()` / `.ByteSize()`, not `len`)
+
+Bare `len` is forbidden. Ask a value for its size instead:
+
+- **`.Size()`** — logical size everywhere: element count for `Array`/`List`/`HashMap` and Go slices/maps, **character count** for strings (`"héllo".Size() == 5`). This avoids Go's `len(string)`-is-bytes footgun.
+- **`.ByteSize()`** — a string's raw **byte** count (`"héllo".ByteSize() == 6`). Use it when you genuinely mean bytes (hashing, byte offsets).
+- **`append` → `go_interop.SliceAppend` / `SliceAppendAll`** (or an `Array`); **`cap` → `go_interop.SliceCap`**; **`make` → `SliceWithSize` / `MapEmpty`**; **`new` → `go_interop.New[T]()`**.
+
+---
+
+## Resource cleanup (`resource` combinators)
+
+Import `martianoff/gala/resource` and wrap the using-code in a combinator that guarantees release on **every** exit path — normal or panic — and composes with `Try`/`Either`, instead of a hand-written `Close()` you can forget:
+
+- **`Using(res, (r) => …)`** — for anything with `Close() error` (a `Closeable`, matching Go's `io.Closer`). `Close()` runs on the way out.
+- **`Bracket(res, release, body)`** — the general run-then-release primitive over an eagerly-acquired resource.
+- **`WithLock(mu, () => …)`** — hold a `go_interop.Mutex` for the body, unlock after.
+
+```gala
+func readAll(path string) string =
+    Using(OpenFile(path), (f) => f.ReadString())  // Close() guaranteed
+```
+
+`panic` → `go_builtins.Panic(...)` for a truly unrecoverable invariant; prefer `Option`/`Try`/`Either`. `go_interop.Spawn(() => f())` is the sanctioned goroutine primitive.
 
 ---
 

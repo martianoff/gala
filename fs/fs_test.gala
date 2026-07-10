@@ -2,6 +2,7 @@ package main
 
 import (
     . "martianoff/gala/test"
+    . "martianoff/gala/std"
     . "martianoff/gala/collection_immutable"
     "martianoff/gala/fs"
     "os"
@@ -11,11 +12,7 @@ import (
 // scratchDir creates a fresh temp dir per-test so tests are isolated
 // and don't depend on /tmp shape. The caller is responsible for
 // removing it (Defer-equivalent: tests call fs.RemoveAll at the end).
-func scratchDir(prefix string) string {
-    val dir, err = os.MkdirTemp("", prefix)
-    if err != nil { panic(err) }
-    return dir
-}
+func scratchDir(prefix string) string = Try(os.MkdirTemp("", prefix)).Get()
 
 func TestWriteAndReadFile(t T) T {
     val dir = scratchDir("fs_write_read")
@@ -132,4 +129,19 @@ func TestReadDir(t T) T {
     val t1 = IsTrue(t, r.IsSuccess())
     val entries = r.Get()
     return Eq(t1, entries.Size(), 3)
+}
+
+// ReadDir over a missing directory must report Failure — guards that the
+// FlatMap-composed form still surfaces the os.ReadDir error (a never-failing
+// Try would silently pass here).
+func TestReadDirMissing(t T) T {
+    val r = fs.ReadDir("/this/path/does/not/exist/zzz")
+    return IsTrue(t, r.IsFailure())
+}
+
+// Stat over a missing path must report Failure — guards the Map-composed form
+// surfaces the os.Stat error.
+func TestStatMissing(t T) T {
+    val r = fs.Stat("/this/path/does/not/exist/zzz")
+    return IsTrue(t, r.IsFailure())
 }

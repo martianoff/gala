@@ -3,6 +3,7 @@ package transformer
 import (
 	"go/ast"
 	"go/token"
+	"path/filepath"
 	"strings"
 
 	"martianoff/gala/internal/transpiler"
@@ -1021,6 +1022,62 @@ func (t *galaASTTransformer) getReceiverTypeArgStrings(recvType transpiler.Type)
 		return args
 	}
 	return nil
+}
+
+// getReceiverTypeArgTypes extracts the receiver's type arguments as
+// transpiler.Type values, preserving full type information — notably ImportPath,
+// which the getReceiverTypeArgStrings + ParseType string round trip drops. This
+// keeps a foreign type whose package name collides with the current GALA package
+// (io/fs's "fs" vs GALA's own `fs`, distinguishable only by ImportPath) correctly
+// qualified when substituted into a monadic combinator's lambda param type.
+func (t *galaASTTransformer) getReceiverTypeArgTypes(recvType transpiler.Type) []transpiler.Type {
+	if transpiler.IsUnusable(recvType) {
+		return nil
+	}
+	if ptr, ok := recvType.(transpiler.PointerType); ok {
+		return t.getReceiverTypeArgTypes(ptr.Elem)
+	}
+	if gen, ok := recvType.(transpiler.GenericType); ok {
+		return append([]transpiler.Type(nil), gen.Params...)
+	}
+	return nil
+}
+
+// isForeignGoType reports whether typ (or its element, unwrapping arrays and
+// pointers) is a foreign type whose ImportPath must be preserved through
+// combinator param inference. It returns true only when the type's own
+// ImportPath exactly matches a known (explicit or transitive) import for its
+// package name. That is precisely the collision case — a foreign Go type whose
+// package name equals the current GALA package (io/fs's "fs" inside GALA's own
+// `fs`) — and it is false for a local type, whose ImportPath is the current
+// package's own path (never a foreign import) and must be dropped so its
+// current-package qualifier is not emitted (`<pkg>.LocalType` — undefined).
+func (t *galaASTTransformer) isForeignGoType(typ transpiler.Type) bool {
+	switch v := typ.(type) {
+	case transpiler.NamedType:
+		if v.ImportPath == "" {
+			return false
+		}
+		// Never preserve the ImportPath of a type that belongs to the CURRENT
+		// package. A Go type declared in the current package (e.g. via an
+		// events.go alongside the .gala sources) carries the current package's
+		// own directory as its ImportPath; keeping it would emit a
+		// `<currentPackage>.LocalType` qualifier (undefined). Only a genuinely
+		// foreign type (io/fs, whose package name collides with the current `fs`)
+		// needs its qualifier preserved through combinator param inference.
+		if t.filePath != "" {
+			currentDir := filepath.ToSlash(filepath.Dir(t.filePath))
+			if filepath.ToSlash(v.ImportPath) == currentDir {
+				return false
+			}
+		}
+		return true
+	case transpiler.PointerType:
+		return t.isForeignGoType(v.Elem)
+	case transpiler.ArrayType:
+		return t.isForeignGoType(v.Elem)
+	}
+	return false
 }
 
 // exprToTypeString converts an ast.Expr to a type string.

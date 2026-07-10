@@ -3,6 +3,7 @@ package collection_immutable
 import (
     . "martianoff/gala/std"
     "martianoff/gala/go_interop"
+    "martianoff/gala/go_builtins"
 )
 
 // Array is an immutable indexed sequence with effectively constant time operations.
@@ -78,7 +79,7 @@ func ArrayFill[T any](n int, value T) Array[T] {
 // ArrayFromSlice creates an Array from a slice.
 // Optimized to build the tree bottom-up in O(n) time.
 func ArrayFromSlice[T any](elements []T) Array[T] {
-    var n = len(elements)
+    var n = elements.Size()
     if n == 0 {
         return EmptyArray[T]()
     }
@@ -92,29 +93,29 @@ func ArrayFromSlice[T any](elements []T) Array[T] {
         }
         var values []T
         for j := i; j < end; j++ {
-            values = append(values, elements[j])
+            values = go_interop.SliceAppend(values, elements[j])
         }
         var leaf = &arrayNode[T](values = values, isLeaf = true)
-        leaves = append(leaves, leaf)
+        leaves = go_interop.SliceAppend(leaves, leaf)
     }
 
     // Build tree bottom-up
     var currentLevel = leaves
     var depth = 1
 
-    for len(currentLevel) > 1 {
+    for currentLevel.Size() > 1 {
         var nextLevel []*arrayNode[T]
-        for i := 0; i < len(currentLevel); i += branchingFactor {
+        for i := 0; i < currentLevel.Size(); i += branchingFactor {
             var end = i + branchingFactor
-            if end > len(currentLevel) {
-                end = len(currentLevel)
+            if end > currentLevel.Size() {
+                end = currentLevel.Size()
             }
             var children []*arrayNode[T]
             for j := i; j < end; j++ {
-                children = append(children, currentLevel[j])
+                children = go_interop.SliceAppend(children, currentLevel[j])
             }
             var node = &arrayNode[T](children = children, isLeaf = false)
-            nextLevel = append(nextLevel, node)
+            nextLevel = go_interop.SliceAppend(nextLevel, node)
         }
         currentLevel = nextLevel
         depth++
@@ -143,37 +144,37 @@ func newArrayBuilder[T any]() *arrayBuilder[T] {
 
 // Add appends an element to the builder. O(1) amortized.
 func (b *arrayBuilder[T]) Add(elem T) {
-    b.display0 = append(b.display0, elem)
+    b.display0 = go_interop.SliceAppend(b.display0, elem)
     b.length++
 
     // If display0 is full, flush to display1
-    if len(b.display0) >= branchingFactor {
+    if b.display0.Size() >= branchingFactor {
         b.flushDisplay0()
     }
 }
 
 // flushDisplay0 creates a leaf node from display0 and adds to display1.
 func (b *arrayBuilder[T]) flushDisplay0() {
-    if len(b.display0) == 0 {
+    if b.display0.Size() == 0 {
         return
     }
     var leaf = &arrayNode[T](values = b.display0, isLeaf = true)
-    b.display1 = append(b.display1, leaf)
+    b.display1 = go_interop.SliceAppend(b.display1, leaf)
     var newD0 []T
     b.display0 = newD0
 
     // If display1 is full, flush to display2
-    if len(b.display1) >= branchingFactor {
+    if b.display1.Size() >= branchingFactor {
         b.flushDisplay1()
     }
 }
 
 // flushDisplay1 groups display1 nodes and adds to display2.
 func (b *arrayBuilder[T]) flushDisplay1() {
-    if len(b.display1) == 0 {
+    if b.display1.Size() == 0 {
         return
     }
-    b.display2 = append(b.display2, b.display1)
+    b.display2 = go_interop.SliceAppend(b.display2, b.display1)
     var newD1 []*arrayNode[T]
     b.display1 = newD1
 }
@@ -185,14 +186,14 @@ func (b *arrayBuilder[T]) Result() Array[T] {
     }
 
     // Flush any remaining elements in display0
-    if len(b.display0) > 0 {
+    if b.display0.Size() > 0 {
         var leaf = &arrayNode[T](values = b.display0, isLeaf = true)
-        b.display1 = append(b.display1, leaf)
+        b.display1 = go_interop.SliceAppend(b.display1, leaf)
     }
 
     // If we only have display1 (no display2), build directly
-    if len(b.display2) == 0 {
-        if len(b.display1) == 1 {
+    if b.display2.Size() == 0 {
+        if b.display1.Size() == 1 {
             // Single leaf node
             var emptyPrefix []T
             return Array[T](root = b.display1[0], length = b.length, depth = 1, prefix = emptyPrefix)
@@ -205,34 +206,34 @@ func (b *arrayBuilder[T]) Result() Array[T] {
 
     // We have display2 - need to build deeper tree
     // First, add remaining display1 to display2
-    if len(b.display1) > 0 {
-        b.display2 = append(b.display2, b.display1)
+    if b.display1.Size() > 0 {
+        b.display2 = go_interop.SliceAppend(b.display2, b.display1)
     }
 
     // Build internal nodes from display2 groups
     var level2Nodes []*arrayNode[T]
-    for i := 0; i < len(b.display2); i++ {
+    for i := 0; i < b.display2.Size(); i++ {
         var node = &arrayNode[T](children = b.display2[i], isLeaf = false)
-        level2Nodes = append(level2Nodes, node)
+        level2Nodes = go_interop.SliceAppend(level2Nodes, node)
     }
 
     // Continue building up the tree
     var currentLevel = level2Nodes
     var depth = 3
 
-    for len(currentLevel) > 1 {
+    for currentLevel.Size() > 1 {
         var nextLevel []*arrayNode[T]
-        for i := 0; i < len(currentLevel); i += branchingFactor {
+        for i := 0; i < currentLevel.Size(); i += branchingFactor {
             var end = i + branchingFactor
-            if end > len(currentLevel) {
-                end = len(currentLevel)
+            if end > currentLevel.Size() {
+                end = currentLevel.Size()
             }
             var children []*arrayNode[T]
             for j := i; j < end; j++ {
-                children = append(children, currentLevel[j])
+                children = go_interop.SliceAppend(children, currentLevel[j])
             }
             var node = &arrayNode[T](children = children, isLeaf = false)
-            nextLevel = append(nextLevel, node)
+            nextLevel = go_interop.SliceAppend(nextLevel, node)
         }
         currentLevel = nextLevel
         depth++
@@ -283,8 +284,8 @@ func copyNode[T any](node *arrayNode[T]) *arrayNode[T] {
 // Helper to copy a slice.
 func copySlice[T any](src []T) []T {
     var dst []T
-    for i := 0; i < len(src); i++ {
-        dst = append(dst, src[i])
+    for i := 0; i < src.Size(); i++ {
+        dst = go_interop.SliceAppend(dst, src[i])
     }
     return dst
 }
@@ -292,8 +293,8 @@ func copySlice[T any](src []T) []T {
 // Helper to copy a node slice.
 func copyNodeSlice[T any](src []*arrayNode[T]) []*arrayNode[T] {
     var dst []*arrayNode[T]
-    for i := 0; i < len(src); i++ {
-        dst = append(dst, src[i])
+    for i := 0; i < src.Size(); i++ {
+        dst = go_interop.SliceAppend(dst, src[i])
     }
     return dst
 }
@@ -311,11 +312,11 @@ func getFromNode[T any](node *arrayNode[T], index int, depth int) T {
 // Panics if index is out of bounds.
 func (a Array[T]) Get(index int) T {
     if (index < 0) || (index >= a.length) {
-        panic(f"Array.Get: index $index out of bounds [0, ${a.length})")
+        go_builtins.Panic(f"Array.Get: index $index out of bounds [0, ${a.length})")
     }
 
     // Check if index is in prefix (prefix is stored in forward order)
-    var prefixLen = len(a.prefix)
+    var prefixLen = a.prefix.Size()
     if index < prefixLen {
         // Prefix stores elements in forward order: prefix[0] is logical index 0
         return a.prefix[index]
@@ -338,7 +339,7 @@ func (a Array[T]) GetOption(index int) Option[T] {
 // Panics if the array is empty.
 func (a Array[T]) Head() T {
     if a.length == 0 {
-        panic("Array.Head on empty array")
+        go_builtins.Panic("Array.Head on empty array")
     }
     return a.Get(0)
 }
@@ -355,7 +356,7 @@ func (a Array[T]) HeadOption() Option[T] {
 // Panics if the array is empty.
 func (a Array[T]) Last() T {
     if a.length == 0 {
-        panic("Array.Last on empty array")
+        go_builtins.Panic("Array.Last on empty array")
     }
     return a.Get(a.length - 1)
 }
@@ -384,18 +385,18 @@ func updateInNode[T any](node *arrayNode[T], index int, value T, depth int) *arr
 // Updated returns a new array with the element at index replaced. O(log32 n).
 func (a Array[T]) Updated(index int, value T) Array[T] {
     if (index < 0) || (index >= a.length) {
-        panic(f"Array.Updated: index $index out of bounds [0, ${a.length})")
+        go_builtins.Panic(f"Array.Updated: index $index out of bounds [0, ${a.length})")
     }
 
-    var prefixLen = len(a.prefix)
+    var prefixLen = a.prefix.Size()
     if index < prefixLen {
         // Update is in prefix - create new prefix with updated value
         var newPrefix []T
         for i := 0; i < prefixLen; i++ {
             if i == index {
-                newPrefix = append(newPrefix, value)
+                newPrefix = go_interop.SliceAppend(newPrefix, value)
             } else {
-                newPrefix = append(newPrefix, a.prefix[i])
+                newPrefix = go_interop.SliceAppend(newPrefix, a.prefix[i])
             }
         }
         return Array[T](root = a.root, length = a.length, depth = a.depth, prefix = newPrefix)
@@ -421,7 +422,7 @@ func appendToTree[T any](root *arrayNode[T], index int, value T, depth int) Tupl
     if index >= maxCapacity {
         // Need to add a new level
         var children []*arrayNode[T]
-        children = append(children, root)
+        children = go_interop.SliceAppend(children, root)
         newRoot = &arrayNode[T](children = children, isLeaf = false)
         newDepth = depth + 1
         return appendToTree[T](newRoot, index, value, newDepth)
@@ -436,12 +437,12 @@ func appendToNode[T any](node *arrayNode[T], index int, value T, depth int) *arr
         // Leaf level
         if node == nil {
             var values []T
-            values = append(values, value)
+            values = go_interop.SliceAppend(values, value)
             var newNode = &arrayNode[T](values = values, isLeaf = true)
             return newNode
         }
         var newNode = copyNode[T](node)
-        newNode.values = append(newNode.values, value)
+        newNode.values = go_interop.SliceAppend(newNode.values, value)
         return newNode
     }
 
@@ -451,7 +452,7 @@ func appendToNode[T any](node *arrayNode[T], index int, value T, depth int) *arr
     if node == nil {
         var children []*arrayNode[T]
         for j := 0; j <= childIndex; j++ {
-            children = append(children, nil)
+            children = go_interop.SliceAppend(children, nil)
         }
         var newNode = &arrayNode[T](children = children, isLeaf = false)
         newNode.children[childIndex] = appendToNode[T](nil, index, value, depth - 1)
@@ -461,13 +462,13 @@ func appendToNode[T any](node *arrayNode[T], index int, value T, depth int) *arr
     var newNode = copyNode[T](node)
 
     // Expand children array if needed
-    for len(newNode.children) <= childIndex {
-        newNode.children = append(newNode.children, nil)
+    for newNode.children.Size() <= childIndex {
+        newNode.children = go_interop.SliceAppend(newNode.children, nil)
     }
 
     // Get existing child if it exists, otherwise nil
     var existingChild *arrayNode[T] = nil
-    if childIndex < len(node.children) {
+    if childIndex < node.children.Size() {
         existingChild = node.children[childIndex]
     }
     newNode.children[childIndex] = appendToNode[T](existingChild, index, value, depth - 1)
@@ -477,11 +478,11 @@ func appendToNode[T any](node *arrayNode[T], index int, value T, depth int) *arr
 // Append adds an element to the end. O(log32 n) = effectively constant.
 func (a Array[T]) Append(value T) Array[T] {
     // Calculate tree length (excluding prefix)
-    var treeLen = a.length - len(a.prefix)
+    var treeLen = a.length - a.prefix.Size()
 
     if treeLen == 0 {
         var values []T
-        values = append(values, value)
+        values = go_interop.SliceAppend(values, value)
         var leaf = &arrayNode[T](values = values, isLeaf = true)
         return Array[T](root = leaf, length = a.length + 1, depth = 1, prefix = a.prefix)
     }
@@ -509,13 +510,13 @@ func (a Array[T]) AppendAll(other Array[T]) Array[T] {
 func (a Array[T]) Prepend(value T) Array[T] {
     // Create new prefix with value at front (forward order: prefix[0] is logical index 0)
     var newPrefix []T
-    newPrefix = append(newPrefix, value)
-    for i := 0; i < len(a.prefix); i++ {
-        newPrefix = append(newPrefix, a.prefix[i])
+    newPrefix = go_interop.SliceAppend(newPrefix, value)
+    for i := 0; i < a.prefix.Size(); i++ {
+        newPrefix = go_interop.SliceAppend(newPrefix, a.prefix[i])
     }
 
     // If prefix is getting too large, consolidate into tree
-    if len(newPrefix) >= branchingFactor {
+    if newPrefix.Size() >= branchingFactor {
         return a.consolidateWithPrefix(newPrefix)
     }
 
@@ -529,12 +530,12 @@ func (a Array[T]) consolidateWithPrefix(newPrefix []T) Array[T] {
     var builder = newArrayBuilder[T]()
 
     // Add prefix elements (already in forward order)
-    for i := 0; i < len(newPrefix); i++ {
+    for i := 0; i < newPrefix.Size(); i++ {
         builder.Add(newPrefix[i])
     }
 
     // Add tree elements
-    var treeLen = a.length - len(a.prefix)
+    var treeLen = a.length - a.prefix.Size()
     for i := 0; i < treeLen; i++ {
         builder.Add(getFromNode[T](a.root, i, a.depth))
     }
@@ -548,7 +549,7 @@ func (a Array[T]) PrependAll(other Array[T]) Array[T] = other.AppendAll(a)
 // Tail returns all elements except the first. O(n) for rebuilding.
 func (a Array[T]) Tail() Array[T] {
     if a.length == 0 {
-        panic("Array.Tail on empty array")
+        go_builtins.Panic("Array.Tail on empty array")
     }
     return a.Drop(1)
 }
@@ -564,7 +565,7 @@ func (a Array[T]) TailOption() Option[Array[T]] {
 // Init returns all elements except the last. O(n) for rebuilding.
 func (a Array[T]) Init() Array[T] {
     if a.length == 0 {
-        panic("Array.Init on empty array")
+        go_builtins.Panic("Array.Init on empty array")
     }
     return a.Take(a.length - 1)
 }
@@ -770,7 +771,7 @@ func (a Array[T]) FoldRight[U any](initial U, f func(T, U) U) U {
 // Panics if the array is empty.
 func (a Array[T]) Reduce(f func(T, T) T) T {
     if a.length == 0 {
-        panic("Array.Reduce on empty array")
+        go_builtins.Panic("Array.Reduce on empty array")
     }
     var tail = a.Tail()
     var head = a.Head()
@@ -954,7 +955,7 @@ func (a Array[T]) GroupMapReduce[K comparable, V any](key func(T) K, value func(
 // Grouped splits the array into groups of size n.
 func (a Array[T]) Grouped(n int) Array[Array[T]] {
     if n <= 0 {
-        panic("Array.Grouped: group size must be positive")
+        go_builtins.Panic("Array.Grouped: group size must be positive")
     }
     var builder = newArrayBuilder[Array[T]]()
     for i := 0; i < a.length; i += n {
@@ -970,7 +971,7 @@ func (a Array[T]) Grouped(n int) Array[Array[T]] {
 // Sliding returns a sliding window over the array.
 func (a Array[T]) Sliding(size int) Array[Array[T]] {
     if size <= 0 {
-        panic("Array.Sliding: window size must be positive")
+        go_builtins.Panic("Array.Sliding: window size must be positive")
     }
     if a.length < size {
         return EmptyArray[Array[T]]()

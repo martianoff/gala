@@ -278,7 +278,7 @@ func TestHashSetHeadOptionEmpty(t T) T {
 func TestHashSetToGoSlice(t T) T {
     val s = HashSetOf[int](1, 2, 3)
     val slice = s.ToGoSlice()
-    return Eq[int](t, len(slice), 3)
+    return Eq[int](t, slice.Size(), 3)
 }
 
 func TestHashSetToArray(t T) T {

@@ -6,6 +6,7 @@ import (
     "strconv"
     "strings"
     . "martianoff/gala/std"
+    "martianoff/gala/go_interop"
     . "martianoff/gala/collection_immutable"
 )
 
@@ -103,7 +104,10 @@ func (e *JsonEncoderImpl) writeCommaIfNeeded() {
 
 func (e *JsonEncoderImpl) writeEscapedJsonString(s string) {
     e.buf.WriteByte('"')
-    for i := 0; i < len(s); i++ {
+    // Byte-level loop: s[i] byte-indexes and WriteByte writes bytes, so the bound
+    // must be the byte length (.ByteSize() -> len(s)), NOT the rune count
+    // (.Size() -> utf8.RuneCountInString) — the latter truncates multibyte input.
+    for i := 0; i < s.ByteSize(); i++ {
         val c = s[i]
         if c == '"' {
             e.buf.WriteString("\\\"")
@@ -158,22 +162,22 @@ func (d *JsonDecoderImpl) StartObject() {
     // already do this; objects/arrays were missing the same hook.
     d.consumeElemComma()
     d.skipWs()
-    if d.pos >= len(d.data) || d.data[d.pos] != '{' {
-        panic(s"json at pos ${d.pos}: expected '{'")
+    if d.pos >= d.data.Size() || d.data[d.pos] != '{' {
+        go_builtins.Panic(s"json at pos ${d.pos}: expected '{'")
     }
     d.pos = d.pos + 1
-    d.stack = append(d.stack, 'o')
-    d.firstConsumed = append(d.firstConsumed, false)
+    d.stack = go_interop.SliceAppend(d.stack, 'o')
+    d.firstConsumed = go_interop.SliceAppend(d.firstConsumed, false)
 }
 
 func (d *JsonDecoderImpl) EndObject() {
     d.skipWs()
-    if d.pos >= len(d.data) || d.data[d.pos] != '}' {
-        panic(s"json at pos ${d.pos}: expected '}'")
+    if d.pos >= d.data.Size() || d.data[d.pos] != '}' {
+        go_builtins.Panic(s"json at pos ${d.pos}: expected '}'")
     }
     d.pos = d.pos + 1
-    d.stack = TruncateBytes(d.stack, len(d.stack) - 1)
-    d.firstConsumed = TruncateBools(d.firstConsumed, len(d.firstConsumed) - 1)
+    d.stack = TruncateBytes(d.stack, d.stack.Size() - 1)
+    d.firstConsumed = TruncateBools(d.firstConsumed, d.firstConsumed.Size() - 1)
 }
 
 func (d *JsonDecoderImpl) StartArray() {
@@ -181,41 +185,41 @@ func (d *JsonDecoderImpl) StartArray() {
     // consumed before we can recognise the '[' of a nested array element.
     d.consumeElemComma()
     d.skipWs()
-    if d.pos >= len(d.data) || d.data[d.pos] != '[' {
-        panic(s"json at pos ${d.pos}: expected '['")
+    if d.pos >= d.data.Size() || d.data[d.pos] != '[' {
+        go_builtins.Panic(s"json at pos ${d.pos}: expected '['")
     }
     d.pos = d.pos + 1
-    d.stack = append(d.stack, 'a')
-    d.firstConsumed = append(d.firstConsumed, false)
+    d.stack = go_interop.SliceAppend(d.stack, 'a')
+    d.firstConsumed = go_interop.SliceAppend(d.firstConsumed, false)
 }
 
 func (d *JsonDecoderImpl) EndArray() {
     d.skipWs()
-    if d.pos >= len(d.data) || d.data[d.pos] != ']' {
-        panic(s"json at pos ${d.pos}: expected ']'")
+    if d.pos >= d.data.Size() || d.data[d.pos] != ']' {
+        go_builtins.Panic(s"json at pos ${d.pos}: expected ']'")
     }
     d.pos = d.pos + 1
-    d.stack = TruncateBytes(d.stack, len(d.stack) - 1)
-    d.firstConsumed = TruncateBools(d.firstConsumed, len(d.firstConsumed) - 1)
+    d.stack = TruncateBytes(d.stack, d.stack.Size() - 1)
+    d.firstConsumed = TruncateBools(d.firstConsumed, d.firstConsumed.Size() - 1)
 }
 
 func (d *JsonDecoderImpl) HasMoreFields() bool {
     d.skipWs()
-    if d.pos >= len(d.data) { return false }
+    if d.pos >= d.data.Size() { return false }
     return d.data[d.pos] != '}'
 }
 
 func (d *JsonDecoderImpl) HasMoreElements() bool {
     d.skipWs()
-    if d.pos >= len(d.data) { return false }
+    if d.pos >= d.data.Size() { return false }
     return d.data[d.pos] != ']'
 }
 
 func (d *JsonDecoderImpl) ReadKey() string {
     d.skipWs()
-    val depth = len(d.firstConsumed) - 1
+    val depth = d.firstConsumed.Size() - 1
     if depth >= 0 && d.firstConsumed[depth] {
-        if d.pos < len(d.data) && d.data[d.pos] == ',' {
+        if d.pos < d.data.Size() && d.data[d.pos] == ',' {
             d.pos = d.pos + 1
             d.skipWs()
         }
@@ -224,8 +228,8 @@ func (d *JsonDecoderImpl) ReadKey() string {
 
     val key = d.readJsonString()
     d.skipWs()
-    if d.pos >= len(d.data) || d.data[d.pos] != ':' {
-        panic(s"json at pos ${d.pos}: expected ':'")
+    if d.pos >= d.data.Size() || d.data[d.pos] != ':' {
+        go_builtins.Panic(s"json at pos ${d.pos}: expected ':'")
     }
     d.pos = d.pos + 1
     return key
@@ -243,7 +247,7 @@ func (d *JsonDecoderImpl) ReadInt() int {
     val s = d.readNumberStr()
     val v, err = strconv.Atoi(s)
     if err != nil {
-        panic(f"json at pos ${d.pos}: invalid int ${s}%q")
+        go_builtins.Panic(f"json at pos ${d.pos}: invalid int ${s}%q")
     }
     return v
 }
@@ -254,7 +258,7 @@ func (d *JsonDecoderImpl) ReadInt64() int64 {
     val s = d.readNumberStr()
     val v, err = strconv.ParseInt(s, 10, 64)
     if err != nil {
-        panic(f"json at pos ${d.pos}: invalid int64 ${s}%q")
+        go_builtins.Panic(f"json at pos ${d.pos}: invalid int64 ${s}%q")
     }
     return v
 }
@@ -265,7 +269,7 @@ func (d *JsonDecoderImpl) ReadFloat64() float64 {
     val s = d.readNumberStr()
     val v, err = strconv.ParseFloat(s, 64)
     if err != nil {
-        panic(f"json at pos ${d.pos}: invalid float ${s}%q")
+        go_builtins.Panic(f"json at pos ${d.pos}: invalid float ${s}%q")
     }
     return v
 }
@@ -273,21 +277,21 @@ func (d *JsonDecoderImpl) ReadFloat64() float64 {
 func (d *JsonDecoderImpl) ReadBool() bool {
     d.consumeElemComma()
     d.skipWs()
-    if d.pos + 4 <= len(d.data) && BytesToString(d.data, d.pos, d.pos + 4) == "true" {
+    if d.pos + 4 <= d.data.Size() && BytesToString(d.data, d.pos, d.pos + 4) == "true" {
         d.pos = d.pos + 4
         return true
     }
-    if d.pos + 5 <= len(d.data) && BytesToString(d.data, d.pos, d.pos + 5) == "false" {
+    if d.pos + 5 <= d.data.Size() && BytesToString(d.data, d.pos, d.pos + 5) == "false" {
         d.pos = d.pos + 5
         return false
     }
-    panic(s"json at pos ${d.pos}: expected boolean")
+    go_builtins.Panic(s"json at pos ${d.pos}: expected boolean")
 }
 
 func (d *JsonDecoderImpl) ReadRune() rune {
     val s = d.ReadString()
-    val rs = toRunes(s)
-    if len(rs) == 0 {
+    val rs = go_interop.ToRunes(s)
+    if rs.Size() == 0 {
         return rune(0)
     }
     return rs[0]
@@ -295,23 +299,23 @@ func (d *JsonDecoderImpl) ReadRune() rune {
 
 func (d *JsonDecoderImpl) IsNull() bool {
     d.skipWs()
-    return d.pos + 4 <= len(d.data) && BytesToString(d.data, d.pos, d.pos + 4) == "null"
+    return d.pos + 4 <= d.data.Size() && BytesToString(d.data, d.pos, d.pos + 4) == "null"
 }
 
 func (d *JsonDecoderImpl) ReadNull() {
     d.consumeElemComma()
     d.skipWs()
-    if d.pos + 4 <= len(d.data) && BytesToString(d.data, d.pos, d.pos + 4) == "null" {
+    if d.pos + 4 <= d.data.Size() && BytesToString(d.data, d.pos, d.pos + 4) == "null" {
         d.pos = d.pos + 4
         return
     }
-    panic(s"json at pos ${d.pos}: expected null")
+    go_builtins.Panic(s"json at pos ${d.pos}: expected null")
 }
 
 func (d *JsonDecoderImpl) Skip() {
     d.consumeElemComma()
     d.skipWs()
-    if d.pos >= len(d.data) { return }
+    if d.pos >= d.data.Size() { return }
     val c = d.data[d.pos]
     c match {
         case '"' => { d.readJsonString() }
@@ -327,7 +331,7 @@ func (d *JsonDecoderImpl) Skip() {
 // --- decoder internal helpers ---
 
 func (d *JsonDecoderImpl) skipWs() {
-    for d.pos < len(d.data) {
+    for d.pos < d.data.Size() {
         val c = d.data[d.pos]
         if c == ' ' || c == '\t' || c == '\n' || c == '\r' {
             d.pos = d.pos + 1
@@ -338,27 +342,27 @@ func (d *JsonDecoderImpl) skipWs() {
 }
 
 func (d *JsonDecoderImpl) consumeElemComma() {
-    val depth = len(d.firstConsumed) - 1
-    if depth >= 0 && len(d.stack) > 0 && d.stack[depth] == 'a' && d.firstConsumed[depth] {
+    val depth = d.firstConsumed.Size() - 1
+    if depth >= 0 && d.stack.Size() > 0 && d.stack[depth] == 'a' && d.firstConsumed[depth] {
         d.skipWs()
-        if d.pos < len(d.data) && d.data[d.pos] == ',' {
+        if d.pos < d.data.Size() && d.data[d.pos] == ',' {
             d.pos = d.pos + 1
         }
     }
-    if depth >= 0 && len(d.stack) > 0 && d.stack[depth] == 'a' {
+    if depth >= 0 && d.stack.Size() > 0 && d.stack[depth] == 'a' {
         d.firstConsumed[depth] = true
     }
 }
 
 func (d *JsonDecoderImpl) readJsonString() string {
     d.skipWs()
-    if d.pos >= len(d.data) || d.data[d.pos] != '"' {
-        panic(s"json at pos ${d.pos}: expected '\"'")
+    if d.pos >= d.data.Size() || d.data[d.pos] != '"' {
+        go_builtins.Panic(s"json at pos ${d.pos}: expected '\"'")
     }
     d.pos = d.pos + 1
 
     var sb strings.Builder
-    for d.pos < len(d.data) {
+    for d.pos < d.data.Size() {
         val c = d.data[d.pos]
         if c == '"' {
             d.pos = d.pos + 1
@@ -366,8 +370,8 @@ func (d *JsonDecoderImpl) readJsonString() string {
         }
         if c == '\\' {
             d.pos = d.pos + 1
-            if d.pos >= len(d.data) {
-                panic("json: unexpected end of escape")
+            if d.pos >= d.data.Size() {
+                go_builtins.Panic("json: unexpected end of escape")
             }
             val esc = d.data[d.pos]
             d.pos = d.pos + 1
@@ -379,30 +383,30 @@ func (d *JsonDecoderImpl) readJsonString() string {
                 case 'r' => { sb.WriteByte('\r') }
                 case 't' => { sb.WriteByte('\t') }
                 case 'u' => {
-                    if d.pos + 4 > len(d.data) {
-                        panic("json: incomplete unicode escape")
+                    if d.pos + 4 > d.data.Size() {
+                        go_builtins.Panic("json: incomplete unicode escape")
                     }
                     val hexStr = BytesToString(d.data, d.pos, d.pos + 4)
                     d.pos = d.pos + 4
                     val cp, hexErr = strconv.ParseUint(hexStr, 16, 32)
                     if hexErr != nil {
-                        panic("json: invalid unicode escape")
+                        go_builtins.Panic("json: invalid unicode escape")
                     }
                     sb.WriteString(RuneToString(rune(cp)))
                 }
-                case _ => { panic("json: invalid escape sequence") }
+                case _ => { go_builtins.Panic("json: invalid escape sequence") }
             }
         } else {
             sb.WriteByte(c)
             d.pos = d.pos + 1
         }
     }
-    panic("json: unterminated string")
+    go_builtins.Panic("json: unterminated string")
 }
 
 func (d *JsonDecoderImpl) readNumberStr() string {
     val start = d.pos
-    for d.pos < len(d.data) {
+    for d.pos < d.data.Size() {
         val c = d.data[d.pos]
         if (c >= '0' && c <= '9') || c == '-' || c == '+' || c == '.' || c == 'e' || c == 'E' {
             d.pos = d.pos + 1
@@ -414,13 +418,13 @@ func (d *JsonDecoderImpl) readNumberStr() string {
 }
 
 func (d *JsonDecoderImpl) skipBetween(open byte, close byte) {
-    if d.pos >= len(d.data) || d.data[d.pos] != open {
-        panic("json: expected container start")
+    if d.pos >= d.data.Size() || d.data[d.pos] != open {
+        go_builtins.Panic("json: expected container start")
     }
     d.pos = d.pos + 1
     var depth = 1
     var inString = false
-    for d.pos < len(d.data) && depth > 0 {
+    for d.pos < d.data.Size() && depth > 0 {
         val c = d.data[d.pos]
         if inString {
             if c == '\\' {
@@ -436,6 +440,6 @@ func (d *JsonDecoderImpl) skipBetween(open byte, close byte) {
         d.pos = d.pos + 1
     }
     if depth != 0 {
-        panic("json: unterminated container")
+        go_builtins.Panic("json: unterminated container")
     }
 }

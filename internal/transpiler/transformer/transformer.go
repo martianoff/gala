@@ -35,6 +35,7 @@ type galaASTTransformer struct {
 	structImmutFields     map[string][]bool
 	needsStdImport        bool
 	needsFmtImport        bool
+	needsUtf8Import       bool
 	activeTypeParams      map[string]bool
 	structFields          map[string][]string
 	structFieldTypes      map[string]map[string]transpiler.Type // structName -> fieldName -> typeName
@@ -146,6 +147,7 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 	t.lspLambdaParamHints = t.lspLambdaParamHints[:0]
 	t.needsStdImport = false
 	t.needsFmtImport = false
+	t.needsUtf8Import = false
 	t.immutFields = make(map[string]bool)
 	t.structImmutFields = make(map[string][]bool)
 	t.activeTypeParams = make(map[string]bool)
@@ -331,6 +333,23 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 				},
 			}
 			// If std was added, it's at index 0. We want fmt to be there too.
+			file.Decls = append([]ast.Decl{importDecl}, file.Decls...)
+		}
+	}
+
+	if t.needsUtf8Import {
+		if _, hasUtf8 := t.importManager.GetByPath("unicode/utf8"); !hasUtf8 {
+			importDecl := &ast.GenDecl{
+				Tok: token.IMPORT,
+				Specs: []ast.Spec{
+					&ast.ImportSpec{
+						Path: &ast.BasicLit{
+							Kind:  token.STRING,
+							Value: "\"unicode/utf8\"",
+						},
+					},
+				},
+			}
 			file.Decls = append([]ast.Decl{importDecl}, file.Decls...)
 		}
 	}

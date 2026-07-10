@@ -56,7 +56,7 @@ func TestMatchArmDispatchMatrix(t *testing.T) {
 
 func handle(code Int) Unit = code match {
     case 0 => Println("zero")
-    case 1 => panic("one is forbidden")
+    case 1 => Panic("one is forbidden")
     case _ => Println("other")
 }
 
@@ -78,7 +78,7 @@ func main() {
 
 func resolve(opt Option[Int]) Int = opt match {
     case Some(n) => n
-    case None()  => panic("missing")
+    case None()  => Panic("missing")
 }
 
 func main() {
@@ -99,7 +99,7 @@ func main() {
 
 func describe(code Int) String = code match {
     case 0 => "zero"
-    case _ => panic("unknown")
+    case _ => Panic("unknown")
 }
 
 func main() {

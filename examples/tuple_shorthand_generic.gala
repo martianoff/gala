@@ -1,6 +1,7 @@
 package main
 
 import "fmt"
+import . "martianoff/gala/go_interop"
 
 // Test: Tuple shorthand as argument to generic method with type parameter
 // The issue is that (a.Get(i), other.Get(i)) doesn't infer types from Tuple[T, U]
@@ -18,10 +19,10 @@ func EmptySimpleArray[T any]() SimpleArray[T] {
 
 func (a SimpleArray[T]) Append(item T) SimpleArray[T] {
     var newItems []T
-    for i := 0; i < len(a.items); i++ {
-        newItems = append(newItems, a.items[i])
+    for i := 0; i < a.items.Size(); i++ {
+        newItems = SliceAppend(newItems, a.items[i])
     }
-    newItems = append(newItems, item)
+    newItems = SliceAppend(newItems, item)
     return SimpleArray[T](items = newItems)
 }
 
@@ -30,7 +31,7 @@ func (a SimpleArray[T]) Get(index int) T {
 }
 
 func (a SimpleArray[T]) Length() int {
-    return len(a.items)
+    return a.items.Size()
 }
 
 // Test 1: Tuple shorthand with concrete types - should work

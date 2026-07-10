@@ -1,10 +1,11 @@
 package main
 
 import "fmt"
+import . "martianoff/gala/go_builtins"
 
 func riskyDivide(a int, b int) int {
     if b == 0 {
-        panic("division by zero")
+        Panic("division by zero")
     }
     return a / b
 }
@@ -35,7 +36,7 @@ func main() {
 
     // Try catching error-type panic
     val errResult = Try[int](() => {
-        panic(NoSuchElementError(Message = "not found"))
+        Panic(NoSuchElementError(Message = "not found"))
         return 0
     })
     fmt.Println(errResult.IsFailure())

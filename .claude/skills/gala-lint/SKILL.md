@@ -27,6 +27,35 @@ Present findings in the output format specified at the end.
 
 ## Linting Rules
 
+### 0. Bare Go builtins are a HARD ERROR (`GALA-E0035`)
+
+Bare Go builtins are **not** part of GALA's surface — calling one is a hard
+transpile error (`GALA-E0035`), not merely "prefer GALA". This applies to
+`append`, `make`, `new`, `cap`, `copy`, `delete`, `close`, `complex`, `real`,
+`imag`, `panic`, `recover`, and `len`. Code that still calls them will not
+compile, so treat any occurrence as a must-fix. The check is resolver-aware: a
+user-defined function that happens to share one of these names (e.g. a local
+`func delete(...)`) is fine — only the builtin is forbidden.
+
+| Forbidden builtin | Sanctioned replacement |
+|---|---|
+| `len(x)` | `x.Size()` — logical size (**characters** for strings, element count for slices/maps/collections). `x.ByteSize()` — a string's raw **byte** count. |
+| `append(s, v)` | `go_interop.SliceAppend(s, v)` / `SliceAppendAll(s, more)` at a Go-slice boundary; otherwise `Array.Append` / `List.Prepend` |
+| `cap(x)` | `go_interop.SliceCap(x)` |
+| `make([]T, n)` | `go_interop.SliceWithSize` / `SliceWithCapacity`; `MapEmpty` for maps; or an empty `Array`/`HashMap` |
+| `new(T)` | `go_interop.New[T]()` (pointer), or a zero value / `Option[T]` |
+| `delete(m, k)` | `go_interop.MapDelete(m, k)`, or `HashMap.Remove(k)` |
+| `close`/`complex`/`real`/`imag` | `go_interop.CloseChan` / `Complex` / `Real` / `Imag` |
+| `panic(v)` | `go_builtins.Panic(v)` — **only** where a panic is genuinely intended (see rule 11); prefer `Option`/`Try`/`Either` |
+| `recover()` | not available — `Try` captures panics (`Try(() => …)` / `TryApply`) |
+
+> `.Size()` also fixes a footgun: Go's `len(string)` returns **bytes**, so
+> non-ASCII text mis-counts. `.Size()` is logical size (`"héllo".Size() == 5`);
+> `.ByteSize()` is the raw byte count (`== 6`).
+
+The rows below (rule 4a Go-slices, rule 11 error handling) reference these
+replacements; a bare builtin is always the higher-severity `GALA-E0035` finding.
+
 ### 1. Immutability (HIGH priority)
 
 | Issue | Pattern to Flag | Recommended Fix |
@@ -136,7 +165,7 @@ Before flagging a Go slice or map, determine whether it sits at a true interop b
 If the value is also:
 - indexed (`xs[i]`), iterated (`for _, x := range xs`), appended to, measured (`len(xs)`), or returned from a GALA-internal function — it has **leaked past the boundary** and should be a GALA collection.
 
-**The "scratch buffer" exception**: `SliceWithSize[byte](n)` (or `make([]byte, n)`) created *solely* to be filled by a Go `.Read(buf)` / `.Write(buf)` / `.Scan(buf)` call on the next few lines is acceptable — this is the canonical I/O buffer pattern and has no GALA equivalent. Flag only if the buffer is subsequently inspected with manual index loops, appended to, or stored as a field of a GALA struct for later GALA-side use.
+**The "scratch buffer" exception**: `go_interop.SliceWithSize[byte](n)` created *solely* to be filled by a Go `.Read(buf)` / `.Write(buf)` / `.Scan(buf)` call on the next few lines is acceptable (bare `make([]byte, n)` is a hard error — use `SliceWithSize`) — this is the canonical I/O buffer pattern and has no GALA equivalent. Flag only if the buffer is subsequently inspected with manual index loops, appended to, or stored as a field of a GALA struct for later GALA-side use.
 
 **Smell signals** (strong indicators the Go type has leaked internally):
 - GALA-internal function returning `[]T` or `map[K]V` (not a Go-interop shim)
@@ -154,8 +183,9 @@ Apply these heuristics before flagging; record the inferred boundary/internal cl
 | SliceOf for general use | `val items = SliceOf(1, 2, 3)` when not passing to Go API | `val items = ArrayOf(1, 2, 3)` or `ListOf(1, 2, 3)` |
 | SliceEmpty for general use | `val items = SliceEmpty[int]()` | `val items = EmptyArray[int]()` or `EmptyList[int]()` |
 | Go slice type in struct | `type Foo struct { Items []int }` when functional ops needed | Use `Array[int]` or `List[int]` |
-| Manual loop on slice | `for i := 0; i < len(slice); i++ { ... }` | Use GALA collection with `.ForEach`, `.Map`, `.Filter` |
-| append on slice | `result = append(result, item)` in accumulation loop | Use `Array.Append()` or `List.Prepend()`, or `FoldLeft` |
+| Bare `len` for length | `len(x)` — a hard error (`GALA-E0035`) | `x.Size()` (logical size; **characters** for strings) or `x.ByteSize()` (string bytes) — see rule 0 |
+| Manual loop on slice | `for i := 0; i < slice.Size(); i++ { ... }` | Use GALA collection with `.ForEach`, `.Map`, `.Filter` |
+| Bare `append` on slice | `result = append(result, item)` — a hard error (`GALA-E0035`) | `Array.Append()` / `List.Prepend()` / `FoldLeft`; `go_interop.SliceAppend`/`SliceAppendAll` only at a Go boundary |
 | SliceOf import confusion | `import . "martianoff/gala/std"` expecting SliceOf | `SliceOf` is in `go_interop`, but prefer `ArrayOf`/`ListOf` from `collection_immutable` |
 | Missing functional ops | Using `[]T` then writing manual Map/Filter loops | Switch to `Array[T]` or `List[T]` which have `.Map()`, `.Filter()`, `.FoldLeft()` |
 | Manual loop on variadic args | `for i := 0; i < len(args); i++` on variadic `[]T` | Convert with `ArrayOf(args...)` then use functional methods |
@@ -245,7 +275,7 @@ for k, v := range config {
 // BAD: manual loop over variadic Go slice
 func applyAll(handler Handler, filters ...Filter) Handler {
     var h = handler
-    for i := len(filters) - 1; i >= 0; i-- {
+    for i := filters.Size() - 1; i >= 0; i-- {
         val f = filters[i]
         val inner = h
         h = (req) => f(req, inner)
@@ -641,7 +671,10 @@ func (s Str) IsAlpha() bool = s.NonEmpty() && toRunes(s.value).ForAll(unicode.Is
 | Issue | Pattern to Flag | Recommended Fix |
 |-------|-----------------|-----------------|
 | Nullable without Option | `func f() *T` returning nil | `func f() Option[T]` |
-| Panic for errors | `panic("error message")` | Return `Try[T]` or `Either[E, T]` |
+| Bare `panic` for errors | `panic("error message")` — a hard error (`GALA-E0035`) | Return `Try[T]` or `Either[E, T]` |
+| `go_builtins.Panic` to propagate an error | `val x, err = f(); if err != nil { go_builtins.Panic(err) }` (or the same inside a `Try` block) | Wrap the `(T, error)` call in `Try`: `Try(f(args))` returns `Try[T]` (the error becomes a `Failure`); compose with `.Map`/`.FlatMap`/`bind` and return the `Try` — do not `.Get()` it inside a function that returns `Try` (rule 11f) |
+| `Try` around an error-**only** Go call | `Try(os.Rename(a, b))` — wrapping a Go func that returns ONLY `error` (no value) | `FromError(os.Rename(a, b))` — `Try(...)` of an error-only call compiles to `Try[error]` that captures the error as a *value*, so `IsFailure` is ALWAYS false (silent no-op). `FromError` (from `std`) returns `Try[Void]` and fails on non-nil error; compose/return it (don't `.Get()`). Reserve `Try(call)` for `(T, error)` calls |
+| `.Get()` inside an enclosing `Try(() => {...})` | `Try[T](() => { val x = Try(call()).Get(); return f(x) })` — the inner `.Get()` re-raises a `Failure` as a *panic* the outer `Try` re-catches | Compose with the monadic API: `Try(call()).Map((x) => f(x))` (or `.FlatMap` / `bind`). Nesting `.Get()` inside an outer `Try` defeats `Try`'s purpose — it round-trips a value through a panic |
 | Ignored error | `result, _ := fallibleOp()` | Handle with `Try` or check error |
 | Sentinel return value | Returning `""`, `0`, `-1`, or `nil` to signal "not found" / failure | Return `Option[T]` or `Try[T]` instead |
 | Go-style if-err-nil | `val x, err = f(); if err == nil { use(x) }` | `Try(() => f())` then `.Map`, `.GetOrElse`, or `match` |
@@ -691,11 +724,191 @@ Try(() => lookupInCache(key)).OrElse(Try(() => lookupInDB(key)))
 Try(() => findConfig()).FlatMap((path) => Try(() => readFile(path)))
 ```
 
+**`go_builtins.Panic(err)` to propagate an error is the same anti-pattern as bare
+`panic` for errors.** A `(T, error)` call whose error you turn into a panic
+should be a `Try` — `Try` wraps the call and turns the error into a `Failure`,
+which the caller (or an enclosing `Try`) composes with. Reserve
+`go_builtins.Panic` for a *genuinely intended* panic: an unrecoverable invariant
+(a broken RNG), a programmer error (out-of-bounds, `Option.Get` on `None`), or a
+recursive parser that panics out to the caller's surrounding `Try`.
+
+**Bad pattern** — mechanical if-err-nil that panics the error:
+```gala
+// BAD: os.OpenFile's error is turned into a panic by hand
+func openConfig(p string) *os.File {
+    val f, err = os.OpenFile(p, os.O_RDONLY, 0)
+    if err != nil {
+        go_builtins.Panic(err)
+    }
+    return f
+}
+
+// BAD: same shape inside a Try block
+func Abs(p string) Try[string] = Try[string](() => {
+    val resolved, err = filepath.Abs(p)
+    if err != nil { go_builtins.Panic(err) }
+    return resolved
+})
+```
+
+**Good pattern** — `Try` turns the Go error into a `Failure`:
+```gala
+// GOOD: return a Try; the caller decides how to handle the failure
+func openConfig(p string) Try[*os.File] = Try(os.OpenFile(p, os.O_RDONLY, 0))
+
+// GOOD: the whole manual Try-block + if-err-nil collapses
+func Abs(p string) Try[string] = Try(filepath.Abs(p))
+
+// GOOD: a function that returns Try composes and returns it — never unwraps.
+// `.Get()` re-raises a Failure as a panic, so reserve it for a genuine edge
+// (a test, `io.UnsafeRun`, or truly terminal code), NEVER inside a function
+// that returns Try:
+func DecodeHex(s string) Try[Array[byte]] =
+    Try(hex.DecodeString(s)).Map((b) => ArrayFromSlice(b))
+```
+
+**`Try(...)` around an error-*only* Go call silently never fails.** Choose the
+wrapper by the Go function's return shape — and either way *compose and return
+the Try*, don't `.Get()` it (see the unsafe-`.Get()` rule below):
+
+- Returns a value *and* an error — `(T, error)` (`os.ReadFile`, `os.Open`,
+  `os.MkdirTemp`, `io.Copy`, `strconv.Atoi`, `hex.DecodeString`, …) → `Try(call)`,
+  composed with `.Map`/`.FlatMap`/`bind`. The error becomes a `Failure`. Correct.
+- Returns **only** `error` (`os.Rename`, `os.WriteFile`, `os.MkdirAll`,
+  `os.Remove`/`RemoveAll`, `os.Mkdir`, `os.Chdir`/`Chmod`/`Symlink`/`Truncate`/`Setenv`,
+  `(*File).Close`, `.Sync`, `scanner.Err`, `encoder.Encode`, `filepath.WalkDir`, …)
+  → `FromError(call)` (from `std`; returns `Try[Void]`, fails on non-nil error).
+  **Do NOT use `Try(...)` here** — `Try(os.Rename(a, b))` compiles to `Try[error]`
+  that captures the error as a *value*, so `IsFailure` is ALWAYS false and the
+  failure is silently swallowed.
+
+```gala
+// BAD: os.Rename returns only error → Try[error] that never reports failure
+val r = Try(os.Rename(src, dst))
+if r.IsFailure() { ... }              // dead branch — IsFailure is always false
+
+// GOOD: value + error → Try, composed with Map (NOT .Get()):
+func ReadText(p string) Try[string] = Try(os.ReadFile(p)).Map((b) => decode(b))
+
+// GOOD: error-only → FromError returns Try[Void]; return/compose it, don't unwrap:
+func Rename(src string, dst string) Try[Void] = FromError(os.Rename(src, dst))
+func WriteFileString(p string, s string, mode int) Try[Void] =
+    FromError(os.WriteFile(p, ToBytes(s), os.FileMode(mode)))
+
+// BAD (unsafe unwrap — re-panics; caught only by an enclosing Try):
+val data = Try(os.ReadFile(p)).Get()
+FromError(os.Rename(a, b)).Get()
+```
+
+`.Get()` on a `Try`/`FromError` result is an **unsafe unwrap** (panics on
+`Failure`) — use it ONLY at a genuine edge (a test, `io.UnsafeRun`, or truly
+terminal code), NEVER inside a function that returns `Try` (compose with
+`.Map`/`.FlatMap`/`bind` and return the `Try`). Consistent with the
+unsafe-`.Get()` rule (11f) below.
+
+**Verify by exercising an error path** — assert `IsFailure` on a deliberately
+bad call (`os.Rename` of a missing source, `os.WriteFile` into a missing dir) so
+a never-failing `Try` can't hide.
+
+**`.Get()` inside an enclosing `Try(() => {...})` defeats `Try`.** Calling
+`.Get()` on a `Try` re-raises a `Failure` as a *panic*; when that `.Get()` sits
+inside another `Try(() => {...})` block, the outer `Try` merely re-catches the
+panic it just raised — a value laundered through a panic round-trip that ignores
+the monadic API entirely. Compose instead:
+
+- value call + transform → `Try(call()).Map((x) => f(x))` (or `.Map(f)` for a
+  plain function).
+- value call, no transform → `Try(call())` directly (drop the wrapper).
+- error-only call → constant → `FromError(call()).Map((_) => true)`.
+- dependent multi-step (open→read, ReadDir→per-entry) → `bind` notation or a
+  `.FlatMap(...).Map(...)` chain — never `.Get()` inside the outer `Try`.
+
+```gala
+// BAD: inner .Get() re-raises as a panic that the outer Try re-catches
+func Stat(path string) Try[FileInfo] = Try[FileInfo](() => {
+    val fi = Try(os.Stat(path)).Get()
+    return fromGoFileInfo(fi)
+})
+
+// GOOD: compose with Map — the failure flows as a Failure, no panic round-trip
+func Stat(path string) Try[FileInfo] =
+    Try(os.Stat(path)).Map(fromGoFileInfo)
+
+// GOOD: error-only call to a constant result
+func RemoveAll(path string) Try[bool] =
+    FromError(os.RemoveAll(path)).Map((_) => true)
+```
+
+`.Get()` is safe only at the genuine edges enumerated in rule 11f (a test,
+`io.UnsafeRun`, a guarded unwrap, an `Immutable` field). It is NOT made safe by
+sitting in a non-`Try` function that "must abort": a library function that
+produces a value from a fallible call should return `Try[T]` and let its caller
+decide — compose with `.Map`/`.FlatMap`/`bind`, don't `.Get()`-and-panic.
+
+### 11f. Unsafe `.Get()` unwrap (HIGH priority)
+
+`.Get()` on a `Try`/`Option`/`Either` **panics on the empty/failure case**. It
+throws away the type system's proof obligation instead of discharging it — the
+hallmark of "unsafe code that looks functional." Prefer `match` / `.GetOrElse` /
+`.Map` / `.FlatMap` / `bind` / sequence patterns; reserve `.Get()` for a guarded
+or genuinely-terminal edge.
+
+**FLAG (unsafe):**
+
+| Pattern to Flag | Recommended Fix |
+|-----------------|-----------------|
+| `Try(...).Get()` — wrap-then-unwrap | Compose: `.Map`/`.FlatMap`/`bind`, and *return the `Try`* |
+| `.Get()` on a `Try` inside an enclosing `Try(() => {...})` | Compose (rule 11 above) — the inner `.Get()` re-raises a panic the outer `Try` re-catches |
+| `opt.Get()` on an unguarded `Option` | `match { case Some(x) => …; case None() => … }`, `.GetOrElse(default)`, or `.Map(...)` |
+| `coll.Head().Get()` / `coll.HeadOption().Get()` on an unguarded collection | Sequence pattern `match { case Cons(h, t) => … }`, or `.HeadOption().GetOrElse(default)` |
+| `coll.Find(pred).Get()` / `map.Get(k).Get()` | `match` the `Option`, or `.GetOrElse(default)` / `.Map(...)` |
+| `either.GetLeft()` / `.GetRight()` without a preceding `IsLeft()`/`match` | `match { case Left(l) => …; case Right(r) => … }` and bind the value |
+| `try.GetError()` on a value not known to be `Failure` | Guard with `IsFailure()` or `match` first |
+
+**DO NOT FLAG (safe — leave these):**
+
+- `Immutable[T].Get()` — unwrapping a `val`-field's `Immutable` wrapper; always
+  succeeds (it's how `val` fields are read, not a fallible unwrap).
+- A `.Get()` **guarded** by a preceding check in the same scope:
+  `if opt.IsDefined() { opt.Get() }`, `for coll.NonEmpty() { coll.Head().Get() }`,
+  `if e.IsLeft() { e.GetLeft() }`.
+- `io.UnsafeRun()` and other explicitly-named terminal/edge unwrap points.
+- Test code (assertions, fixtures) where panic-on-failure is the intended
+  contract (e.g. a `scratchDir` helper that must abort the test on setup failure).
+
+```gala
+// BAD: unguarded Option unwrap — panics on None
+val first = xs.Find((x) => x > 10).Get()
+// GOOD: match (or .GetOrElse / .Map)
+val first = xs.Find((x) => x > 10) match {
+    case Some(x) => x
+    case None()  => 0
+}
+
+// BAD: wrap-then-unwrap
+func Head(xs Array[int]) int = Try(xs[0]).Get()
+// GOOD: sequence pattern, no panic
+func headOpt(xs Array[int]) Option[int] = xs match {
+    case Cons(h, _) => Some(h)
+    case Nil()      => None()
+}
+
+// SAFE (do not flag): guarded, and an Immutable val-field read
+if opt.IsDefined() { use(opt.Get()) }   // guarded
+val name = self.name.Get()              // Immutable[string] field unwrap
+```
+
+The three `.Get()`-related rules are mutually consistent — none recommends a bare
+`.Get()` as the fix: the Try-vs-`FromError` rule returns/composes the `Try`, the
+`.Get()`-inside-`Try` rule composes with `.Map`/`.FlatMap`/`bind`, and this rule
+prefers `match`/`.GetOrElse`/composition, reserving `.Get()` for guarded or
+terminal edges.
+
 ### 11b. `Array.Grouped` / `Array.Sliding` over Index Loops (HIGH priority)
 
 | Issue | Pattern to Flag | Recommended Fix |
 |-------|-----------------|-----------------|
-| Index-stepping loop by 2 | `var i = 0; for i < len(x) - 1 { use(x[i], x[i+1]); i += 2 }` | `ArrayOf(x...).Grouped(2).FoldLeft(...)` |
+| Index-stepping loop by 2 | `var i = 0; for i < x.Size() - 1 { use(x[i], x[i+1]); i += 2 }` | `ArrayOf(x...).Grouped(2).FoldLeft(...)` |
 | Sliding window loop | Manual index loop with window | `ArrayOf(x...).Sliding(n)` |
 
 ### 11c. Go Struct Named-Arg Construction (HIGH priority)

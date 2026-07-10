@@ -1,6 +1,7 @@
 package main
 
 import "fmt"
+import . "martianoff/gala/go_builtins"
 
 func roleFromName(name string) Option[string] {
     return name match {
@@ -15,7 +16,7 @@ func roleFromName(name string) Option[string] {
 func resolveRole(name string) string {
     return roleFromName(name) match {
         case Some(r) => r
-        case None()  => panic(s"unknown role '$name'")
+        case None()  => Panic(s"unknown role '$name'")
     }
 }
 
@@ -25,7 +26,7 @@ func describeCode(code int) string {
     return code match {
         case 0 => "ok"
         case 1 => "warn"
-        case _ => panic(s"invalid code $code")
+        case _ => Panic(s"invalid code $code")
     }
 }
 
@@ -36,7 +37,7 @@ func mustParseRole(name string) string {
         case Some(r) => r
         case None() => {
             Println(s"role lookup failed for '$name'")
-            panic(s"missing role '$name'")
+            Panic(s"missing role '$name'")
         }
     }
 }

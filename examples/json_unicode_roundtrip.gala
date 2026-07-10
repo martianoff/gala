@@ -1,0 +1,29 @@
+package main
+
+import (
+    . "martianoff/gala/std"
+    . "martianoff/gala/json"
+)
+
+// Regression guard for the .Size()/.ByteSize() byte-truncation bug: the JSON
+// encoder's escaped-string writer is a BYTE-level loop, so its bound must be the
+// byte length (.ByteSize()), not the rune count (.Size()). With the wrong bound a
+// multibyte string is truncated to rune-count bytes on encode ("café" -> "caf…"),
+// so the round trip loses data. This example encodes a struct with a multibyte
+// text field, decodes it back, and asserts the text survives intact.
+struct Doc(Id int, Text string)
+
+func main() {
+    val codec = Codec[Doc](SnakeCase())
+
+    val original = "café résumé 🚀 日本語 — ß ñ"
+    val doc = Doc(1, original)
+
+    val jsonStr = codec.Encode(doc).Get()
+    val decoded = codec.Decode(jsonStr).Get()
+
+    Println(s"text: ${decoded.Text}")
+    Println(s"lossless: ${decoded.Text == original}")
+    // Byte length is preserved (rune count < byte count for multibyte input).
+    Println(s"bytes: ${decoded.Text.ByteSize()} runes: ${decoded.Text.Size()}")
+}

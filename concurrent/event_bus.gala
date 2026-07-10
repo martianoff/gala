@@ -74,7 +74,7 @@ func NewBoundedEventBus[T any](capacity int) EventBus[T] = EventBus[T](
 // bounded and full. Safe from any goroutine.
 func (b EventBus[T]) Push(e T) bool {
     b.state.mu.Lock()
-    if b.state.capacity > 0 && len(b.state.events) >= b.state.capacity {
+    if b.state.capacity > 0 && b.state.events.Size() >= b.state.capacity {
         b.state.mu.Unlock()
         return false
     }
@@ -101,7 +101,7 @@ func (b EventBus[T]) DrainAll() Array[T] {
 // it does one lock acquisition for the whole batch.
 func (b EventBus[T]) TryTake() Option[T] {
     b.state.mu.Lock()
-    if len(b.state.events) == 0 {
+    if b.state.events.Size() == 0 {
         b.state.mu.Unlock()
         return None[T]()
     }
@@ -115,7 +115,7 @@ func (b EventBus[T]) TryTake() Option[T] {
 // and back-pressure checks.
 func (b EventBus[T]) Size() int {
     b.state.mu.Lock()
-    val n = len(b.state.events)
+    val n = b.state.events.Size()
     b.state.mu.Unlock()
     return n
 }

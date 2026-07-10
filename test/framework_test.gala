@@ -89,7 +89,7 @@ func TestIsFailure(t T) T = IsFailure(t, Failure[int](fmt.Errorf("test error")))
 // ============================================================================
 
 func doPanic() {
-    panic("boom")
+    go_builtins.Panic("boom")
 }
 
 func doNothing() {}

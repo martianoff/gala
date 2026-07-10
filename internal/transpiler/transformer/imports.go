@@ -248,6 +248,16 @@ func (m *ImportManager) GetPath(aliasOrPkgName string) (string, bool) {
 	if entry, ok := m.byPkgName[aliasOrPkgName]; ok {
 		return entry.Path, true
 	}
+	// Finally, transitive imports discovered by type inference (path -> alias).
+	// These aren't explicitly declared in source but are needed when generated
+	// code references a dependency's types (e.g. io/fs, pulled in via os.ReadDir's
+	// []fs.DirEntry return). Reverse-match on the alias/package name so a type
+	// round-tripping through the AST can recover its import path.
+	for path, alias := range m.transitiveImports {
+		if alias == aliasOrPkgName {
+			return path, true
+		}
+	}
 	return "", false
 }
 
