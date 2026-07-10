@@ -104,7 +104,10 @@ func (e *JsonEncoderImpl) writeCommaIfNeeded() {
 
 func (e *JsonEncoderImpl) writeEscapedJsonString(s string) {
     e.buf.WriteByte('"')
-    for i := 0; i < s.Size(); i++ {
+    // Byte-level loop: s[i] byte-indexes and WriteByte writes bytes, so the bound
+    // must be the byte length (.ByteSize() -> len(s)), NOT the rune count
+    // (.Size() -> utf8.RuneCountInString) — the latter truncates multibyte input.
+    for i := 0; i < s.ByteSize(); i++ {
         val c = s[i]
         if c == '"' {
             e.buf.WriteString("\\\"")

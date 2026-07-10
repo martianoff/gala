@@ -2264,6 +2264,18 @@ gala_exec_test(
     ],
 )
 
+# Unicode round-trip: guards the .Size()/.ByteSize() byte-truncation regression
+# (the JSON encoder's byte-level escaped-string loop must bound by .ByteSize()).
+gala_exec_test(
+    name = "json_unicode_roundtrip",
+    src = "json_unicode_roundtrip.gala",
+    expected = "json_unicode_roundtrip.out",
+    deps = [
+        "//collection_immutable",
+        "//json",
+    ],
+)
+
 # StructMeta[T].EncodeFields / DecodeFields typed codegen (Option-C, Phase 3a).
 # Directly exercises the new typed per-field dispatch methods against a
 # JSON FieldEncoder/FieldDecoder implementation.  No `any`, no runtime
