@@ -368,5 +368,25 @@
       Prism.highlightAll();
     })();
   </script>
+
+  <!-- GA4 conversion tracking: one delegated listener fires named events for
+       high-intent clicks (Playground, GitHub, Getting Started, downloads).
+       Covers every current and future link. Mark these as key events in GA4. -->
+  <script>
+    (function () {
+      document.addEventListener('click', function (e) {
+        var a = e.target.closest ? e.target.closest('a[href]') : null;
+        if (!a || typeof gtag !== 'function') return;
+        var href = a.href || '';
+        var text = (a.textContent || '').trim().slice(0, 80);
+        var name = null;
+        if (/gala-playground\.fly\.dev/.test(href) || /\/playground\/?([?#]|$)/.test(href)) name = 'playground_open';
+        else if (/github\.com\/martianoff\/gala\/releases/.test(href)) name = 'download_click';
+        else if (/github\.com\/martianoff\/gala/.test(href)) name = 'github_click';
+        else if (/\/getting-started\/?([?#]|$)/.test(href)) name = 'getting_started_click';
+        if (name) gtag('event', name, { link_url: href, link_text: text });
+      }, true);
+    })();
+  </script>
 </body>
 </html>
