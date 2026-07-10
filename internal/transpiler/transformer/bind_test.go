@@ -302,3 +302,27 @@ func run() Box[int] {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "FlatMap")
 }
+
+// A `bind _ = <effect>` sequences a monadic effect (e.g. FromError of a Go
+// error-only call) but discards its value. The lowering must NOT emit
+// `_ := std.NewImmutable(...)` — that is invalid Go ("no new variables on left
+// side of :="). The FlatMap still threads the chain; the callback param is left
+// unused (legal for a Go func parameter).
+func TestBindDiscardNameEmitsNoInvalidAssign(t *testing.T) {
+	trans := newBindTranspiler()
+	input := `package main
+
+func eff() Try[bool] = Success(true)
+
+func run() Try[int] {
+    bind _ = eff()
+    Success(42)
+}
+`
+	got, err := trans.Transpile(input, "")
+	assert.NoError(t, err)
+	assert.NotContains(t, got, "_ :=",
+		"a discard bind must not emit an invalid `_ := ...` assignment:\n%s", got)
+	assert.Contains(t, got, "FlatMap",
+		"the discard bind should still lower to a FlatMap chain:\n%s", got)
+}

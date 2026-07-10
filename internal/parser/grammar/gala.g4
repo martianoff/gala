@@ -32,6 +32,7 @@ declaration
     | varDeclaration
     | bindDeclaration
     | alsoDeclaration
+    | useDeclaration
     | functionDeclaration
     | typeDeclaration
     | importDeclaration
@@ -62,6 +63,13 @@ varDeclaration: 'var' (tuplePattern | identifierList) (type)? ('=' expressionLis
 // ordering is enforced in the transformer, not the grammar, for better errors.
 bindDeclaration: BIND identifier (type)? '=' expression;
 alsoDeclaration: ALSO identifier (type)? '=' expression;
+
+// Scoped resource binding (RAII). `use x = acquire` binds x for the rest of the
+// enclosing block and guarantees x.Close() runs when the block exits, on every
+// path — the GALA-native replacement for Go's `defer x.Close()`. Multiple `use`
+// bindings in a block close in reverse (LIFO) order. Desugared in the
+// transformer to nested resource.Using scopes; the resource must be Closeable.
+useDeclaration: USE identifier (type)? '=' expression;
 
 // Tuple pattern for destructuring: val (a, b) = tuple
 tuplePattern: '(' identifierList ')';
@@ -245,6 +253,7 @@ VAL: 'val';
 VAR: 'var';
 BIND: 'bind';
 ALSO: 'also';
+USE: 'use';
 FUNC: 'func';
 TYPE: 'type';
 STRUCT: 'struct';

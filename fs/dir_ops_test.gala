@@ -4,19 +4,22 @@ import (
     . "martianoff/gala/test"
     . "martianoff/gala/std"
     . "martianoff/gala/collection_immutable"
+    . "martianoff/gala/resource"
     "martianoff/gala/fs"
     "os"
     "path/filepath"
 )
 
-// scratchDir creates a fresh temp dir per-test so tests are isolated.
-// Each test cleans up via fs.RemoveAll / defer os.RemoveAll.
-func scratchDirDirOps(prefix string) string = Try(os.MkdirTemp("", prefix)).Get()
+// withScratch creates a fresh temp dir per-test (so tests are isolated), runs
+// `body` over it, and removes the dir on every exit path — normal return or
+// panic — via resource.Bracket. This is the GALA-native replacement for the
+// imperative `defer os.RemoveAll(dir)`.
+func withScratch[A any](prefix string, body func(string) A) A {
+    val dir = Try(os.MkdirTemp("", prefix)).Get()
+    return Bracket(dir, (d) => { fs.RemoveAll(d) }, body)
+}
 
-func TestCopyFile(t T) T {
-    val dir = scratchDirDirOps("fs_copy")
-    defer os.RemoveAll(dir)
-
+func TestCopyFile(t T) T = withScratch("fs_copy", (dir) => {
     val src = filepath.Join(dir, "src.txt")
     val dst = filepath.Join(dir, "dst.txt")
     val payload = "stream me byte by byte"
@@ -28,21 +31,15 @@ func TestCopyFile(t T) T {
     val read = fs.ReadFileString(dst)
     val t3 = IsTrue(t2, read.IsSuccess())
     return Eq(t3, read.Get(), payload)
-}
+})
 
-func TestCopyMissingSource(t T) T {
-    val dir = scratchDirDirOps("fs_copy_missing")
-    defer os.RemoveAll(dir)
-
+func TestCopyMissingSource(t T) T = withScratch("fs_copy_missing", (dir) => {
     val dst = filepath.Join(dir, "dst.txt")
     val r = fs.CopyFile(filepath.Join(dir, "nope.txt"), dst, 0o644)
     return IsTrue(t, r.IsFailure())
-}
+})
 
-func TestRename(t T) T {
-    val dir = scratchDirDirOps("fs_rename")
-    defer os.RemoveAll(dir)
-
+func TestRename(t T) T = withScratch("fs_rename", (dir) => {
     val src = filepath.Join(dir, "before.txt")
     val dst = filepath.Join(dir, "after.txt")
     val payload = "rename me"
@@ -54,12 +51,9 @@ func TestRename(t T) T {
     val t3 = IsTrue(t2, fs.Exists(dst))
     val read = fs.ReadFileString(dst)
     return Eq(t3, read.Get(), payload)
-}
+})
 
-func TestWalk(t T) T {
-    val dir = scratchDirDirOps("fs_walk")
-    defer os.RemoveAll(dir)
-
+func TestWalk(t T) T = withScratch("fs_walk", (dir) => {
     // root/{a.txt, b.txt, sub/{c.txt}}
     fs.WriteFileString(filepath.Join(dir, "a.txt"), "1", 0o644)
     fs.WriteFileString(filepath.Join(dir, "b.txt"), "22", 0o644)
@@ -87,17 +81,14 @@ func TestWalk(t T) T {
         tn = IsTrue(tn, found)
     }
     return tn
-}
+})
 
 func TestWalkMissingRoot(t T) T {
     val r = fs.Walk("/this/path/should/never/exist/qqq")
     return IsTrue(t, r.IsFailure())
 }
 
-func TestGlob(t T) T {
-    val dir = scratchDirDirOps("fs_glob")
-    defer os.RemoveAll(dir)
-
+func TestGlob(t T) T = withScratch("fs_glob", (dir) => {
     fs.WriteFileString(filepath.Join(dir, "a.txt"), "1", 0o644)
     fs.WriteFileString(filepath.Join(dir, "b.txt"), "22", 0o644)
     fs.WriteFileString(filepath.Join(dir, "c.md"), "333", 0o644)
@@ -105,16 +96,13 @@ func TestGlob(t T) T {
     val r = fs.Glob(filepath.Join(dir, "*.txt"))
     val t1 = IsTrue(t, r.IsSuccess())
     return Eq(t1, r.Get().Size(), 2)
-}
+})
 
-func TestGlobNoMatches(t T) T {
-    val dir = scratchDirDirOps("fs_glob_empty")
-    defer os.RemoveAll(dir)
-
+func TestGlobNoMatches(t T) T = withScratch("fs_glob_empty", (dir) => {
     val r = fs.Glob(filepath.Join(dir, "*.nothing"))
     val t1 = IsTrue(t, r.IsSuccess())
     return Eq(t1, r.Get().Size(), 0)
-}
+})
 
 func TestGlobMalformed(t T) T {
     val r = fs.Glob("[invalid")

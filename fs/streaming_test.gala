@@ -4,20 +4,23 @@ import (
     . "martianoff/gala/test"
     . "martianoff/gala/std"
     . "martianoff/gala/collection_immutable"
+    . "martianoff/gala/resource"
     "martianoff/gala/fs"
     "os"
     "path/filepath"
 )
 
-// scratchStreamDir mirrors fs_test.scratchDir; redeclared here to keep
-// each test file self-contained (GALA's gala_go_test compiles each
-// _test.gala into its own package main).
-func scratchStreamDir(prefix string) string = Try(os.MkdirTemp("", prefix)).Get()
+// withScratch creates a fresh temp dir per-test, runs `body` over it, and
+// removes the dir on every exit path — normal return or panic — via
+// resource.Bracket. Redeclared here to keep each test file self-contained
+// (GALA's gala_test compiles each _test.gala into its own package main). This
+// is the GALA-native replacement for the imperative `defer os.RemoveAll(dir)`.
+func withScratch[A any](prefix string, body func(string) A) A {
+    val dir = Try(os.MkdirTemp("", prefix)).Get()
+    return Bracket(dir, (d) => { fs.RemoveAll(d) }, body)
+}
 
-func TestReadLinesRoundTrip(t T) T {
-    val dir = scratchStreamDir("fs_readlines_rt")
-    defer os.RemoveAll(dir)
-
+func TestReadLinesRoundTrip(t T) T = withScratch("fs_readlines_rt", (dir) => {
     val target = filepath.Join(dir, "lines.txt")
     val lines = ArrayOf("alpha", "beta", "gamma")
     val w = fs.WriteLines(target, lines, 0o644)
@@ -30,24 +33,18 @@ func TestReadLinesRoundTrip(t T) T {
     val t4 = Eq(t3, read.Get(0), "alpha")
     val t5 = Eq(t4, read.Get(1), "beta")
     return Eq(t5, read.Get(2), "gamma")
-}
+})
 
-func TestReadLinesEmptyFile(t T) T {
-    val dir = scratchStreamDir("fs_readlines_empty")
-    defer os.RemoveAll(dir)
-
+func TestReadLinesEmptyFile(t T) T = withScratch("fs_readlines_empty", (dir) => {
     val target = filepath.Join(dir, "empty.txt")
     fs.WriteFileString(target, "", 0o644)
 
     val r = fs.ReadLines(target)
     val t1 = IsTrue(t, r.IsSuccess())
     return Eq(t1, r.Get().Size(), 0)
-}
+})
 
-func TestReadLinesNoTrailingNewline(t T) T {
-    val dir = scratchStreamDir("fs_readlines_notrail")
-    defer os.RemoveAll(dir)
-
+func TestReadLinesNoTrailingNewline(t T) T = withScratch("fs_readlines_notrail", (dir) => {
     val target = filepath.Join(dir, "lines.txt")
     fs.WriteFileString(target, "one\ntwo\nthree", 0o644)
 
@@ -56,12 +53,9 @@ func TestReadLinesNoTrailingNewline(t T) T {
     val read = r.Get()
     val t2 = Eq(t1, read.Size(), 3)
     return Eq(t2, read.Get(2), "three")
-}
+})
 
-func TestForEachLineVisitsAll(t T) T {
-    val dir = scratchStreamDir("fs_foreach_all")
-    defer os.RemoveAll(dir)
-
+func TestForEachLineVisitsAll(t T) T = withScratch("fs_foreach_all", (dir) => {
     val target = filepath.Join(dir, "lines.txt")
     fs.WriteLines(target, ArrayOf("a", "b", "c"), 0o644)
 
@@ -75,12 +69,9 @@ func TestForEachLineVisitsAll(t T) T {
     val t3 = Eq(t2, seen.Get(0), "a")
     val t4 = Eq(t3, seen.Get(1), "b")
     return Eq(t4, seen.Get(2), "c")
-}
+})
 
-func TestForEachLineEarlyStop(t T) T {
-    val dir = scratchStreamDir("fs_foreach_stop")
-    defer os.RemoveAll(dir)
-
+func TestForEachLineEarlyStop(t T) T = withScratch("fs_foreach_stop", (dir) => {
     val target = filepath.Join(dir, "lines.txt")
     fs.WriteLines(target, ArrayOf("a", "b", "c", "d"), 0o644)
 
@@ -92,17 +83,14 @@ func TestForEachLineEarlyStop(t T) T {
     val t1 = IsTrue(t, r.IsSuccess())
     // Callback returned false on line 2, so iteration stopped there.
     return Eq(t1, seen.Size(), 2)
-}
+})
 
 func TestForEachLineMissingFileFails(t T) T {
     val r = fs.ForEachLine("/this/path/should/never/exist/abcxyz", (line) => true)
     return IsTrue(t, r.IsFailure())
 }
 
-func TestAppendStringRoundTrip(t T) T {
-    val dir = scratchStreamDir("fs_append_str")
-    defer os.RemoveAll(dir)
-
+func TestAppendStringRoundTrip(t T) T = withScratch("fs_append_str", (dir) => {
     val target = filepath.Join(dir, "log.txt")
     val w1 = fs.AppendString(target, "a\n", 0o644)
     val t1 = IsTrue(t, w1.IsSuccess())
@@ -112,12 +100,9 @@ func TestAppendStringRoundTrip(t T) T {
     val r = fs.ReadFileString(target)
     val t3 = IsTrue(t2, r.IsSuccess())
     return Eq(t3, r.Get(), "a\nb\n")
-}
+})
 
-func TestAppendStringCreatesFile(t T) T {
-    val dir = scratchStreamDir("fs_append_create")
-    defer os.RemoveAll(dir)
-
+func TestAppendStringCreatesFile(t T) T = withScratch("fs_append_create", (dir) => {
     val target = filepath.Join(dir, "fresh.txt")
     val t1 = IsFalse(t, fs.Exists(target))
     val w = fs.AppendString(target, "hello", 0o644)
@@ -126,12 +111,9 @@ func TestAppendStringCreatesFile(t T) T {
 
     val r = fs.ReadFileString(target)
     return Eq(t3, r.Get(), "hello")
-}
+})
 
-func TestAppendBytesRoundTrip(t T) T {
-    val dir = scratchStreamDir("fs_append_bytes")
-    defer os.RemoveAll(dir)
-
+func TestAppendBytesRoundTrip(t T) T = withScratch("fs_append_bytes", (dir) => {
     val target = filepath.Join(dir, "bytes.bin")
     val payload1 = ArrayOf(byte(1), byte(2))
     val payload2 = ArrayOf(byte(3), byte(4))
@@ -143,4 +125,4 @@ func TestAppendBytesRoundTrip(t T) T {
     val r = fs.ReadFile(target)
     val t3 = IsTrue(t2, r.IsSuccess())
     return Eq(t3, r.Get().Size(), 4)
-}
+})

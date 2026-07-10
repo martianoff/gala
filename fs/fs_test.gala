@@ -4,20 +4,22 @@ import (
     . "martianoff/gala/test"
     . "martianoff/gala/std"
     . "martianoff/gala/collection_immutable"
+    . "martianoff/gala/resource"
     "martianoff/gala/fs"
     "os"
     "path/filepath"
 )
 
-// scratchDir creates a fresh temp dir per-test so tests are isolated
-// and don't depend on /tmp shape. The caller is responsible for
-// removing it (Defer-equivalent: tests call fs.RemoveAll at the end).
-func scratchDir(prefix string) string = Try(os.MkdirTemp("", prefix)).Get()
+// withScratch creates a fresh temp dir per-test (so tests are isolated and
+// don't depend on /tmp shape), runs `body` over it, and removes the dir on
+// every exit path — normal return or panic — via resource.Bracket. This is
+// the GALA-native replacement for the imperative `defer os.RemoveAll(dir)`.
+func withScratch[A any](prefix string, body func(string) A) A {
+    val dir = Try(os.MkdirTemp("", prefix)).Get()
+    return Bracket(dir, (d) => { fs.RemoveAll(d) }, body)
+}
 
-func TestWriteAndReadFile(t T) T {
-    val dir = scratchDir("fs_write_read")
-    defer os.RemoveAll(dir)
-
+func TestWriteAndReadFile(t T) T = withScratch("fs_write_read", (dir) => {
     val target = filepath.Join(dir, "hello.txt")
     val payload = "hello, world"
     val w = fs.WriteFileString(target, payload, 0o644)
@@ -26,12 +28,9 @@ func TestWriteAndReadFile(t T) T {
     val r = fs.ReadFileString(target)
     val t2 = IsTrue(t1, r.IsSuccess())
     return Eq(t2, r.Get(), payload)
-}
+})
 
-func TestReadFileBytesRoundTrip(t T) T {
-    val dir = scratchDir("fs_bytes")
-    defer os.RemoveAll(dir)
-
+func TestReadFileBytesRoundTrip(t T) T = withScratch("fs_bytes", (dir) => {
     val target = filepath.Join(dir, "bytes.bin")
     val data = ArrayOf(byte(1), byte(2), byte(3), byte(255))
     val w = fs.WriteFile(target, data, 0o644)
@@ -40,17 +39,14 @@ func TestReadFileBytesRoundTrip(t T) T {
     val r = fs.ReadFile(target)
     val t2 = IsTrue(t1, r.IsSuccess())
     return Eq(t2, r.Get().Size(), data.Size())
-}
+})
 
 func TestReadFileMissing(t T) T {
     val r = fs.ReadFile("/this/path/should/never/exist/xyz")
     return IsTrue(t, r.IsFailure())
 }
 
-func TestStat(t T) T {
-    val dir = scratchDir("fs_stat")
-    defer os.RemoveAll(dir)
-
+func TestStat(t T) T = withScratch("fs_stat", (dir) => {
     val target = filepath.Join(dir, "info.txt")
     fs.WriteFileString(target, "abcdef", 0o644)
 
@@ -60,34 +56,25 @@ func TestStat(t T) T {
     val t2 = Eq(t1, fi.Name, "info.txt")
     val t3 = Eq(t2, fi.Size, int64(6))
     return IsFalse(t3, fi.IsDir)
-}
+})
 
-func TestStatDirectoryFlag(t T) T {
-    val dir = scratchDir("fs_stat_dir")
-    defer os.RemoveAll(dir)
-
+func TestStatDirectoryFlag(t T) T = withScratch("fs_stat_dir", (dir) => {
     val info = fs.Stat(dir)
     val t1 = IsTrue(t, info.IsSuccess())
     return IsTrue(t1, info.Get().IsDir)
-}
+})
 
-func TestExists(t T) T {
-    val dir = scratchDir("fs_exists")
-    defer os.RemoveAll(dir)
-
+func TestExists(t T) T = withScratch("fs_exists", (dir) => {
     val t1 = IsTrue(t, fs.Exists(dir))
     return IsFalse(t1, fs.Exists(filepath.Join(dir, "nope")))
-}
+})
 
-func TestMkdirAll(t T) T {
-    val dir = scratchDir("fs_mkdir")
-    defer os.RemoveAll(dir)
-
+func TestMkdirAll(t T) T = withScratch("fs_mkdir", (dir) => {
     val nested = filepath.Join(dir, "a", "b", "c")
     val r = fs.MkdirAll(nested, 0o755)
     val t1 = IsTrue(t, r.IsSuccess())
     return IsTrue(t1, fs.Exists(nested))
-}
+})
 
 func TestMkdirTemp(t T) T {
     val r = fs.MkdirTemp("", "fs_mkdirtemp_")
@@ -99,7 +86,8 @@ func TestMkdirTemp(t T) T {
 }
 
 func TestRemoveAll(t T) T {
-    val dir = scratchDir("fs_remove")
+    // No withScratch here: this test exercises fs.RemoveAll as the cleanup.
+    val dir = Try(os.MkdirTemp("", "fs_remove")).Get()
     val nested = filepath.Join(dir, "x", "y")
     fs.MkdirAll(nested, 0o755)
     fs.WriteFileString(filepath.Join(nested, "f.txt"), "data", 0o644)
@@ -117,10 +105,7 @@ func TestRemoveAllMissingIsSuccess(t T) T {
     return IsTrue(t, r.IsSuccess())
 }
 
-func TestReadDir(t T) T {
-    val dir = scratchDir("fs_readdir")
-    defer os.RemoveAll(dir)
-
+func TestReadDir(t T) T = withScratch("fs_readdir", (dir) => {
     fs.WriteFileString(filepath.Join(dir, "a.txt"), "1", 0o644)
     fs.WriteFileString(filepath.Join(dir, "b.txt"), "22", 0o644)
     fs.MkdirAll(filepath.Join(dir, "sub"), 0o755)
@@ -129,7 +114,7 @@ func TestReadDir(t T) T {
     val t1 = IsTrue(t, r.IsSuccess())
     val entries = r.Get()
     return Eq(t1, entries.Size(), 3)
-}
+})
 
 // ReadDir over a missing directory must report Failure — guards that the
 // FlatMap-composed form still surfaces the os.ReadDir error (a never-failing

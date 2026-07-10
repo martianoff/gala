@@ -56,6 +56,65 @@ user-defined function that happens to share one of these names (e.g. a local
 The rows below (rule 4a Go-slices, rule 11 error handling) reference these
 replacements; a bare builtin is always the higher-severity `GALA-E0035` finding.
 
+### 0b. Bare Go statement keywords are a HARD ERROR (`GALA-E0036`)
+
+The Go statement keywords `defer`, `go`, `goto`, `fallthrough`, `select`, and
+`chan` are **not** part of GALA's grammar. A bare use is a hard transpile error
+(`GALA-E0036`), not merely "prefer GALA". They only ever appeared to work as an
+accident of the final gofmt pass (which glued the following statement onto the
+keyword), so treat any occurrence as a must-fix. Like rule 0, the check is
+resolver-aware — a symbol the program itself declared is left alone.
+
+| Forbidden statement | Sanctioned replacement |
+|---|---|
+| `defer x.Close()` | a `use x = acquire` binding (closes at block exit, LIFO), or a `resource` combinator — `Using` / `Bracket` / `WithLock` from `martianoff/gala/resource` |
+| `go f()` | `go_interop.Spawn(() => f())` — the sanctioned goroutine primitive |
+| `goto`, `fallthrough` | structured control flow — pattern matching (`match`), recursion, or a `for` loop |
+| `select`, `chan` | the `go_interop` channel helpers |
+
+#### `use` — the RAII scoped-resource idiom (preferred defer replacement)
+
+`use x = acquire` binds `x` for the rest of the enclosing block and guarantees
+`x.Close()` runs when the function returns, on every path (normal or panic).
+Multiple `use` bindings release **LIFO** (last acquired closes first). It lowers
+to Go `x := acquire; defer x.Close()` in the generated code — so Go's `defer`
+survives only as this sanctioned internal lowering, never on the GALA surface.
+The resource must satisfy `Close() error`; no import is needed.
+
+| Issue | Pattern to Flag | Recommended Fix |
+|---|---|---|
+| Bare `defer` for cleanup | `defer f.Close()` — a hard error (`GALA-E0036`) | `use f = open(path)` — closes at block exit |
+| Nested `Using` pyramid for sequential resources | `Using(a, (x) => Using(b, (y) => …))` | flatten to top-to-bottom `use` bindings |
+| Manual close on every exit path | `val f = open(); …; f.Close()` (forgettable, skipped on panic) | `use f = open()` — release is guaranteed |
+
+**Bad pattern** — Go-style `defer`:
+```gala
+func readAll(path string) string {
+    val f = OpenFile(path)
+    defer f.Close()              // GALA-E0036: not a GALA statement
+    f.ReadString()
+}
+```
+
+**Good pattern** — `use` binding (or a `resource` combinator):
+```gala
+// use: closes at block exit, guaranteed on every path
+func copyFile(src string, dst string) Try[Int] = Try(() => {
+    use in  = OpenFile(src)      // in.Close()  runs last
+    use out = CreateFile(dst)    // out.Close() runs first (LIFO)
+    out.Write(in.ReadString())
+})
+
+// resource combinators — for resources without Close() (a mutex, a temp dir),
+// or when the close error must be surfaced (Using discards it):
+val next = WithLock(mu, () => sharedCounter + 1)
+val text = Using(OpenFile(path), (f) => f.ReadString())
+```
+
+For a non-`Closeable` cleanup (e.g. `os.RemoveAll(dir)`), use
+`Bracket(resource, release, body)` — it runs `release` after `body` on every
+exit path.
+
 ### 1. Immutability (HIGH priority)
 
 | Issue | Pattern to Flag | Recommended Fix |

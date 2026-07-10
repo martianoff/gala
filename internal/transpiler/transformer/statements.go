@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/transpiler"
 )
 
 func (t *galaASTTransformer) transformSimpleStatement(ctx grammar.ISimpleStatementContext) (ast.Stmt, error) {
@@ -30,6 +31,9 @@ func (t *galaASTTransformer) transformSimpleStatementWithMutability(ctx grammar.
 		return t.transformShortVarDeclWithMutability(shortCtx.(*grammar.ShortVarDeclContext), mutable)
 	}
 	if exprCtx := ctx.Expression(); exprCtx != nil {
+		if err := t.checkForbiddenStatementKeyword(exprCtx); err != nil {
+			return nil, err
+		}
 		expr, err := t.transformExpression(exprCtx)
 		if err != nil {
 			return nil, err
@@ -37,6 +41,71 @@ func (t *galaASTTransformer) transformSimpleStatementWithMutability(ctx grammar.
 		return &ast.ExprStmt{X: expr}, nil
 	}
 	return nil, nil
+}
+
+// forbiddenStatementKeywordSuggestions maps each Go-only statement keyword that
+// GALA does NOT have in its grammar to an actionable replacement. None of these
+// are GALA keywords, so the parser accepts them as a bare identifier
+// expression-statement; they only ever produced working Go by accident of the
+// final gofmt pass, which re-absorbs the following statement into a real Go
+// DeferStmt/GoStmt/etc. (`defer` + `f.Close()` glue into one DeferStmt). That is
+// undocumented, ungrammatical, and fragile, so a bare use is a hard error.
+var forbiddenStatementKeywordSuggestions = map[string]string{
+	"defer":       "GALA has no `defer`; use the `resource` combinators — `Using` / `Bracket` / `WithLock` from martianoff/gala/resource (or a `use x = ...` binding) — which guarantee cleanup on every exit path",
+	"go":          "GALA has no bare `go` statement; use `go_interop.Spawn(() => ...)` to start a goroutine",
+	"goto":        "GALA has no `goto`; use structured control flow — pattern matching, recursion, or a `for` loop",
+	"fallthrough": "GALA has no `fallthrough`; `match` arms never fall through — combine patterns with `|` or restructure the match",
+	"select":      "GALA has no `select` statement; use the go_interop channel helpers",
+	"chan":        "GALA has no bare `chan` statement; use the go_interop channel helpers to build and operate on channels",
+}
+
+// checkForbiddenStatementKeyword rejects a bare Go-only statement keyword
+// (`defer`, `go`, `goto`, `fallthrough`, `select`, `chan`) that the parser
+// accepted as a lone identifier expression-statement. Such statements only
+// "work" as an accident of the final gofmt round-trip (see
+// forbiddenStatementKeywordSuggestions); GALA has native replacements, so this
+// is a hard error (GALA-E0036).
+//
+// It is resolver-aware, mirroring checkForbiddenGoBuiltinCall: the name is only
+// forbidden when it is a bare identifier that does NOT resolve to a
+// user-defined function, a local binding (val/var/param), or a declared
+// type/struct — so a program that legitimately named something after one of
+// these words is left untouched.
+func (t *galaASTTransformer) checkForbiddenStatementKeyword(exprCtx grammar.IExpressionContext) error {
+	// Only a bare identifier statement (`defer`) is the accident; anything with
+	// a postfix (`x.defer()`), operator, or arguments is a normal expression.
+	if !t.isDirectVariableExpression(exprCtx) {
+		return nil
+	}
+	pc := t.getPrimaryFromExpression(exprCtx)
+	if pc == nil || pc.Identifier() == nil {
+		return nil
+	}
+	name := pc.Identifier().GetText()
+	suggestion, isKeyword := forbiddenStatementKeywordSuggestions[name]
+	if !isKeyword {
+		return nil
+	}
+	// Resolver-aware guards: a name the author actually declared is that
+	// declaration, not the leaked Go keyword.
+	if t.getFunction(name) != nil {
+		return nil
+	}
+	if !t.getType(name).IsNil() {
+		return nil
+	}
+	if t.getTypeMeta(name) != nil {
+		return nil
+	}
+	if _, ok := t.structFields[name]; ok {
+		return nil
+	}
+	return galaerr.NewCodedSemanticError(
+		galaerr.CodeForbiddenStatementKeyword,
+		exprCtx.GetStart().GetLine(), exprCtx.GetStart().GetColumn(),
+		fmt.Sprintf("bare Go statement keyword %q is not part of GALA's surface", name),
+		suggestion,
+	)
 }
 
 func (t *galaASTTransformer) transformIncDecStmt(ctx *grammar.IncDecStmtContext) (ast.Stmt, error) {
@@ -320,6 +389,18 @@ func (t *galaASTTransformer) transformBlock(ctx *grammar.BlockContext) (*ast.Blo
 			}
 			return block, nil
 		}
+		// A `use x = acquire` scoped-resource binding lowers to `x := acquire`
+		// plus `defer x.Close()`; the binding stays in scope for the rest of
+		// this block and releases (LIFO) when the function returns. Emitted
+		// inline so subsequent statements see `x`.
+		if useDecl := useDeclFromStatement(stmtCtx); useDecl != nil {
+			useStmts, err := t.transformUseDeclaration(useDecl)
+			if err != nil {
+				return nil, err
+			}
+			block.List = append(block.List, useStmts...)
+			continue
+		}
 		// A bare `subject match { ... }` whose value is discarded by the
 		// surrounding ExprStmt must be lowered as a void IIFE; otherwise
 		// arms calling void Go functions (e.g. `d.Skip()`) get wrapped in
@@ -359,6 +440,65 @@ func (t *galaASTTransformer) transformBlock(ctx *grammar.BlockContext) (*ast.Blo
 		block.List = append(block.List, stmt)
 	}
 	return block, nil
+}
+
+// transformUseDeclaration lowers a `use x = acquire` scoped-resource binding to
+// the two Go statements that implement it: `x := acquire` and `defer x.Close()`.
+// The resource is bound for the rest of the enclosing block and released — via
+// its Close() method — when the function returns, on every path (normal or
+// panic), LIFO with any other `use`/defer. This is the GALA-native, non-
+// forgettable replacement for the (now-forbidden) bare Go `defer x.Close()`;
+// emitting Go `defer` here is the sanctioned internal lowering — it lives in the
+// generated Go, never on the GALA surface.
+//
+// The binding is registered with its concrete resource type (not wrapped in
+// Immutable), so `x` and `x.Close()` read as plain Go and no `.Get()` unwrap is
+// injected. Acquisition is a single-value expression; a fallible Go acquire that
+// returns `(resource, error)` should be error-checked first (or use the
+// resource combinators directly).
+func (t *galaASTTransformer) transformUseDeclaration(ctx grammar.IUseDeclarationContext) ([]ast.Stmt, error) {
+	name := ctx.Identifier().GetText()
+	acquire, err := t.transformExpression(ctx.Expression())
+	if err != nil {
+		return nil, err
+	}
+	acquire = t.unwrapImmutable(acquire)
+
+	// Register the binding with its concrete type so downstream references and
+	// the Close() call resolve directly (no Immutable unwrapping). Prefer an
+	// explicit annotation when present; otherwise infer from the acquire expr.
+	resType := t.getExprTypeName(acquire)
+	if typeCtx := ctx.Type_(); typeCtx != nil {
+		if typeExpr, terr := t.transformType(typeCtx); terr == nil {
+			if annotated := t.astTypeToTranspilerType(typeExpr); annotated != nil && !annotated.IsNil() {
+				resType = annotated
+			}
+		}
+	}
+	// The binding holds the plain resource (`x := acquire`), not an Immutable
+	// wrapper, so strip any inferred Immutable[T] to T and register it with
+	// mutable-storage (addVar) semantics. A `val` binding is always
+	// Immutable-wrapped, so every read of it is rewritten to `x.Get()`
+	// (transformPrimary); `use` stores the resource directly, so its reads and
+	// `x.Close()` must stay plain — addVar gives exactly that.
+	if t.isImmutableType(resType) {
+		if gen, ok := resType.(transpiler.GenericType); ok && len(gen.Params) > 0 {
+			resType = gen.Params[0]
+		}
+	}
+	t.addVar(name, resType)
+
+	assign := &ast.AssignStmt{
+		Lhs: []ast.Expr{ast.NewIdent(name)},
+		Tok: token.DEFINE,
+		Rhs: []ast.Expr{acquire},
+	}
+	deferStmt := &ast.DeferStmt{
+		Call: &ast.CallExpr{
+			Fun: &ast.SelectorExpr{X: ast.NewIdent(name), Sel: ast.NewIdent("Close")},
+		},
+	}
+	return []ast.Stmt{assign, deferStmt}, nil
 }
 
 // stmtIsBareMatchExpression reports whether a statement is just a bare

@@ -1,0 +1,35 @@
+package main
+
+// Verifies the `use` scoped-resource binding. `use x = acquire` binds x for the
+// rest of the enclosing block and guarantees x.Close() runs when the function
+// returns — on every path, LIFO across multiple `use` bindings. It is the
+// GALA-native, non-forgettable replacement for Go's `defer x.Close()` (which is
+// forbidden on the GALA surface); it lowers to Go `defer` in the generated code.
+
+// A Closeable resource that announces open/close so ordering is observable.
+type Handle struct {
+    name string
+}
+
+func (h Handle) Close() error {
+    Println(s"close ${h.name}")
+    return nil
+}
+
+func open(name string) Handle {
+    Println(s"open ${name}")
+    return Handle(name = name)
+}
+
+// Two `use` bindings: `a` is acquired first so it closes LAST; `b` is acquired
+// second so it closes FIRST (last-in, first-out).
+func work() {
+    use a = open("a")
+    use b = open("b")
+    Println(s"body sees ${a.name} and ${b.name}")
+}
+
+func main() {
+    work()
+    Println("done")
+}

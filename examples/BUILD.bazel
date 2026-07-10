@@ -1753,6 +1753,13 @@ gala_exec_test(
     ],
 )
 
+# Verification: `use x = ...` scoped-resource binding (LIFO Close on block exit)
+gala_exec_test(
+    name = "use_binding",
+    src = "use_binding.gala",
+    expected = "use_binding.out",
+)
+
 # Verification: ergonomic free-function `strings` package — every
 # heavy-hitter from gala_team's call sites at least once.
 gala_exec_test(

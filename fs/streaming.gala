@@ -6,6 +6,7 @@ import (
     "strings"
     . "martianoff/gala/collection_immutable"
     . "martianoff/gala/go_interop"
+    . "martianoff/gala/resource"
     . "martianoff/gala/std"
 )
 
@@ -50,18 +51,20 @@ func splitLines(data []byte) Array[string] {
 // The underlying bufio.Scanner is configured with a 1 MiB max line
 // length so long lines don't trip bufio.ErrTooLong; the default 64 KiB
 // is too tight for many real inputs.
+// The file handle is released by resource.Using (GALA has no `defer`):
+// Close() is guaranteed on every exit path, including an early stop.
 func ForEachLine(path string, fn func(string) bool) Try[bool] =
-    Try(os.Open(path)).FlatMap((f) => {
-        defer f.Close()
-        val scanner = bufio.NewScanner(f)
-        scanner.Buffer(SliceWithCapacity[byte](scannerInitialBufBytes), scannerMaxLineBytes)
-        for scanner.Scan() {
-            if !fn(scanner.Text()) {
-                return Success[bool](false)
+    Try(os.Open(path)).FlatMap((f) =>
+        Using(f, (file) => {
+            val scanner = bufio.NewScanner(file)
+            scanner.Buffer(SliceWithCapacity[byte](scannerInitialBufBytes), scannerMaxLineBytes)
+            for scanner.Scan() {
+                if !fn(scanner.Text()) {
+                    return Success[bool](false)
+                }
             }
-        }
-        return FromError(scanner.Err()).Map((_) => true)
-    })
+            return FromError(scanner.Err()).Map((_) => true)
+        }))
 
 // WriteLines writes `lines` to `path` joined by "\n" with a trailing
 // newline appended after the last line. Existing contents at `path`

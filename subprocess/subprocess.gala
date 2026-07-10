@@ -6,6 +6,7 @@ import (
     "io"
     "os/exec"
     . "martianoff/gala/std"
+    . "martianoff/gala/resource"
     "martianoff/gala/go_interop"
 )
 
@@ -62,15 +63,14 @@ func Spawn(opts SpawnOpts) Try[Process] {
         // (forgetting PATH breaks every spawn).
         c.Env = go_interop.SliceAppendAll(c.Environ(), opts.Env)
     }
-    val sin, sErr = c.StdinPipe()
-    if sErr != nil { return Failure[Process](sErr) }
-    val sout, oErr = c.StdoutPipe()
-    if oErr != nil { return Failure[Process](oErr) }
-    val serr, eErr = c.StderrPipe()
-    if eErr != nil { return Failure[Process](eErr) }
-    val startErr = c.Start()
-    if startErr != nil { return Failure[Process](startErr) }
-    return Success(Process(state = &processState(
+    // Monadic do-notation: each fallible step threads through the next, so a
+    // pipe or start failure short-circuits to Failure — no `.Get()` re-raising.
+    // Start() runs last (after the pipes are wired, per Go's exec contract);
+    // its Void result is mapped straight into the Process.
+    bind sin = Try(c.StdinPipe())
+    bind sout = Try(c.StdoutPipe())
+    bind serr = Try(c.StderrPipe())
+    FromError(c.Start()).Map((_) => Process(state = &processState(
         cmd        = c,
         stdin      = sin,
         stdoutScan = newLineScanner(sout),
@@ -88,13 +88,13 @@ func Spawn(opts SpawnOpts) Try[Process] {
 // child closed stdin or exited; Failure carries the underlying io error.
 func (p Process) WriteLine(s string) Try[bool] {
     val st = p.state
-    st.stdinMu.Lock()
-    defer st.stdinMu.Unlock()
-    val _, e1 = io.WriteString(st.stdin, s)
-    if e1 != nil { return Failure[bool](e1) }
-    val _, e2 = io.WriteString(st.stdin, "\n")
-    if e2 != nil { return Failure[bool](e2) }
-    return Success(true)
+    return WithLock(st.stdinMu, () => {
+        val _, e1 = io.WriteString(st.stdin, s)
+        if e1 != nil { return Failure[bool](e1) }
+        val _, e2 = io.WriteString(st.stdin, "\n")
+        if e2 != nil { return Failure[bool](e2) }
+        return Success(true)
+    })
 }
 
 // CloseStdin closes the child's stdin pipe. Required for children
@@ -109,10 +109,10 @@ func (p Process) WriteLine(s string) Try[bool] {
 // mutex so a write in flight isn't truncated.
 func (p Process) CloseStdin() Try[bool] {
     val st = p.state
-    st.stdinMu.Lock()
-    defer st.stdinMu.Unlock()
-    st.stdin.Close()
-    return Success(true)
+    return WithLock(st.stdinMu, () => {
+        st.stdin.Close()
+        return Success(true)
+    })
 }
 
 // ReadLine blocks until the child writes a complete line on stdout, then

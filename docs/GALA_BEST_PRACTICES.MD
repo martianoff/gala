@@ -11,6 +11,7 @@ A scannable rule list for writing idiomatic GALA — useful as both a learning c
 - **No special-casing `std`.** The standard library uses the same import/resolution mechanism as any other library.
 - **Concrete types only.** Never emit `any`/`interface{}` unless the GALA source explicitly asks for it.
 - **No bare Go builtins.** `append`, `make`, `new`, `cap`, `copy`, `delete`, `close`, `complex`, `real`, `imag`, `panic`, `recover`, and `len` are a hard error (GALA-E0035). Use the GALA-native form or the sanctioned interop wrapper (see *Length & size* and *Resource cleanup* below). A user-defined function that happens to share one of these names is fine — only the builtin is forbidden.
+- **No Go statement keywords.** `defer`, `go`, `goto`, `fallthrough`, `select`, and `chan` are not GALA statements — a bare use is a hard error (GALA-E0036). Use a `use` binding or the `resource` combinators for cleanup, and `go_interop.Spawn(...)` for goroutines (see *Resource cleanup* below).
 
 ---
 
@@ -78,7 +79,19 @@ func readAll(path string) string =
     Using(OpenFile(path), (f) => f.ReadString())  // Close() guaranteed
 ```
 
-`panic` → `go_builtins.Panic(...)` for a truly unrecoverable invariant; prefer `Option`/`Try`/`Either`. `go_interop.Spawn(() => f())` is the sanctioned goroutine primitive.
+- **`use x = acquire`** — the top-to-bottom binding form (no nesting pyramid): `x` is bound for the rest of the block and `x.Close()` runs when the function returns, on every path. Multiple `use` bindings release LIFO. No import needed.
+
+```gala
+func copyFile(src string, dst string) Try[Int] = Try(() => {
+    use in  = OpenFile(src)     // in.Close()  runs last
+    use out = CreateFile(dst)   // out.Close() runs first (LIFO)
+    out.Write(in.ReadString())
+})
+```
+
+**No `defer`, no bare `go`.** `defer` and `go` are not GALA statements — a bare use is a hard error (GALA-E0036). Cleanup is a `use` binding or a `resource` combinator; a goroutine is `go_interop.Spawn(() => f())`.
+
+`panic` → `go_builtins.Panic(...)` for a truly unrecoverable invariant; prefer `Option`/`Try`/`Either`.
 
 ---
 

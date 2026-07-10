@@ -291,7 +291,7 @@ func buildConsumerSource(modulePath string, dep crossModDep, cons crossModConsum
 	b.WriteString("package consumer\n\n")
 	b.WriteString(importLine)
 	b.WriteString("\n\n")
-	fmt.Fprintf(&b, "func use() Int = %s%s()\n", q, dep.exportedFunc)
+	fmt.Fprintf(&b, "func callDep() Int = %s%s()\n", q, dep.exportedFunc)
 
 	// If the dep exports a type with a constructor, exercise that too.
 	if dep.constructorCall != nil {
@@ -299,6 +299,6 @@ func buildConsumerSource(modulePath string, dep crossModDep, cons crossModConsum
 			q, dep.exportedType, dep.constructorCall(q))
 	}
 
-	b.WriteString("\nfunc main() { Println(use()) }\n")
+	b.WriteString("\nfunc main() { Println(callDep()) }\n")
 	return b.String()
 }

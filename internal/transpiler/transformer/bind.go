@@ -68,6 +68,23 @@ func alsoDeclFromStatement(stmtCtx grammar.IStatementContext) grammar.IAlsoDecla
 	return nil
 }
 
+// useDeclFromStatement returns the UseDeclaration context if the statement is a
+// `use name = expr`, else nil.
+func useDeclFromStatement(stmtCtx grammar.IStatementContext) grammar.IUseDeclarationContext {
+	sc, ok := stmtCtx.(*grammar.StatementContext)
+	if !ok || sc == nil {
+		return nil
+	}
+	dc, ok := sc.Declaration().(*grammar.DeclarationContext)
+	if !ok || dc == nil {
+		return nil
+	}
+	if ud := dc.UseDeclaration(); ud != nil {
+		return ud
+	}
+	return nil
+}
+
 // trailingBindValueExpr extracts the value expression from a block's trailing
 // statement (e.g. `Success(...)`), or nil if the statement is not a bare
 // expression.
@@ -294,7 +311,13 @@ func (t *galaASTTransformer) buildSequential(prepped []preppedBind, rest []gramm
 			return nil, err
 		}
 	}
-	body.List = append([]ast.Stmt{t.bindRebindStmt(p.name, rawParam)}, body.List...)
+	// A `_`-named bind sequences the monadic effect but discards its value, so
+	// there is no val to rebind — emitting `_ := NewImmutable(...)` would be
+	// invalid Go ("no new variables on left side of :="). The raw FlatMap
+	// callback param stays unused (legal for a Go func parameter).
+	if p.name != "_" {
+		body.List = append([]ast.Stmt{t.bindRebindStmt(p.name, rawParam)}, body.List...)
+	}
 
 	lambda := t.bindLambda(rawParam, p.elemType, resultType, body)
 	return t.emitGenericMethodFreeFunc("FlatMap", p.recvExpr, p.recvType, p.lookupBaseName, t.resultElemTypeArgs(resultType), nil, []ast.Expr{lambda}, false), nil
@@ -363,6 +386,12 @@ func (t *galaASTTransformer) buildAlsoZip(prepped []preppedBind, rest []grammar.
 		// what makes reads emit `.Get()`, unwrapping the field exactly once; a raw
 		// var would leave the field Immutable-wrapped and a downstream constructor
 		// would wrap it a second time (Immutable[Immutable[T]]).
+		// A `_`-named clause contributes its effect to the Zip but discards its
+		// value, so we skip extracting the tuple field — `_ := _zip.Vi` would be
+		// invalid Go ("no new variables on left side of :=").
+		if p.name == "_" {
+			continue
+		}
 		t.addVal(p.name, p.elemType)
 		lambdaBody.List = append(lambdaBody.List, &ast.AssignStmt{
 			Lhs: []ast.Expr{ast.NewIdent(p.name)},

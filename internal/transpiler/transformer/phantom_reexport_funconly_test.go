@@ -95,7 +95,7 @@ import (
     . "github.com/example/funconly/sub"
 )
 
-func use() Int = helper() + PhantomHelper()
+func consume() Int = helper() + PhantomHelper()
 `), 0644)
 	assert.NoError(t, err)
 
