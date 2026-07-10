@@ -18,6 +18,11 @@ GALA is not replacing Go -- it is adding expressiveness on top of it. GALA trans
 
 This page shows real code comparisons between GALA and the equivalent idiomatic Go. Every GALA snippet on this page uses only syntax from the language specification.
 
+<p style="margin:1.5rem 0 0.5rem;">
+  <a class="cta" href="https://gala-playground.fly.dev">▶ Run GALA in the Playground</a>
+  <a class="cta cta-secondary" href="https://github.com/martianoff/gala">View the code on GitHub</a>
+</p>
+
 ---
 
 ## Pattern Matching vs Switch
@@ -357,6 +362,12 @@ val dir = Try(os.TempDir)
 Go types, interfaces, and functions are all available. GALA adds its own type system on top -- sealed types, `Option[T]`, immutable structs -- but the underlying Go interop is seamless.
 
 ---
+
+<div style="text-align:center;margin:2rem 0 0.5rem;">
+  <p style="font-weight:600;margin-bottom:0.75rem;">Convinced? Run it in your browser. No install needed.</p>
+  <a class="cta" href="https://gala-playground.fly.dev">▶ Open the Playground</a>
+  <a class="cta cta-secondary" href="https://github.com/martianoff/gala">Star on GitHub</a>
+</div>
 
 ## Dive Deeper
 
