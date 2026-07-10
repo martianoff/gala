@@ -22,7 +22,7 @@ This page shows real code comparisons between GALA and the equivalent idiomatic 
 
 ## Pattern Matching vs Switch
 
-GALA sealed types define closed hierarchies. The compiler enforces exhaustive matching -- if you forget a case, it will not compile. Go requires manual variant tracking with constants and field accessors.
+GALA sealed types define closed hierarchies. The compiler enforces exhaustive matching -- if you forget a case, it will not compile. Idiomatic Go models the same closed set with a marker-method interface and a type switch -- but nothing checks that you handled every variant.
 
 <div class="comparison">
 <div>
@@ -41,22 +41,28 @@ val msg = shape match {
 </div>
 <div>
 <p><strong>Go</strong></p>
-<pre><code>var msg string
-switch shape._variant {
-case Shape_Circle:
-    msg = fmt.Sprintf("r=%.1f",
-        shape.Radius.Get())
-case Shape_Rectangle:
-    msg = fmt.Sprintf("%fx%f",
-        shape.Width.Get(),
-        shape.Height.Get())
-case Shape_Point:
+<pre><code>type Shape interface{ isShape() }
+type Circle struct{ Radius float64 }
+type Rectangle struct{ Width, Height float64 }
+type Point struct{}
+func (Circle) isShape()    {}
+func (Rectangle) isShape() {}
+func (Point) isShape()     {}
+
+var msg string
+switch s := shape.(type) {
+case Circle:
+    msg = fmt.Sprintf("r=%.1f", s.Radius)
+case Rectangle:
+    msg = fmt.Sprintf("%.0fx%.0f",
+        s.Width, s.Height)
+case Point:
     msg = "point"
 }</code></pre>
 </div>
 </div>
 
-GALA destructures values directly into named bindings (`r`, `w`, `h`) and produces a compile-time error if you forget a case. Go's `switch` does not enforce exhaustiveness and requires explicit field access through `.Get()` calls.
+GALA destructures values directly into named bindings (`r`, `w`, `h`) and produces a compile-time error if you forget a case. The idiomatic Go equivalent needs a marker-method interface (`isShape()` on every variant) to define the closed set, and its type switch is *not* exhaustiveness-checked -- drop the `Point` case and it still compiles, silently leaving `msg` empty.
 
 ---
 
@@ -91,7 +97,7 @@ val res = opt match {
 
 ---
 
-## Immutable Structs vs Manual Copying
+## Immutable Structs vs Mutable Copies
 
 GALA structs are immutable by default. Fields cannot be reassigned after construction. The compiler auto-generates a `Copy()` method for creating modified copies, and an `Equal()` method for structural comparison.
 
@@ -107,14 +113,14 @@ val updated = config.Copy(Port = 8080)</code></pre>
     Host string
     Port int
 }
-updated := Config{
-    Host: config.Host,
-    Port: 8080,
-}</code></pre>
+updated := config // shallow value copy
+updated.Port = 8080
+// config is still mutable here --
+// nothing stops a later reassignment</code></pre>
 </div>
 </div>
 
-In Go, you must manually copy every field you want to keep. With GALA's `Copy()`, you only specify the fields that change. As your struct grows, the GALA version stays the same size while the Go version grows with every field.
+Go's value copy is concise, but the copy and the original stay fully mutable -- and if `Config` holds a slice or map, the shallow copy shares it. GALA makes immutability the guarantee: fields can never be reassigned, `Copy()` is an expression you can drop straight into a pipeline, and the compiler also generates a structural `Equal()` (Go's `==` breaks the moment a field is a slice or map).
 
 ---
 
@@ -133,19 +139,16 @@ GALA's `Try[T]` type wraps computations that can fail. Instead of checking `if e
 <div>
 <p><strong>Go</strong></p>
 <pre><code>result, err := divide(10, 2)
+if err == nil {
+    result, err = divide(result*2, 3)
+}
 if err != nil {
     result = 0
-} else {
-    result = result * 2
-    result, err = divide(result, 3)
-    if err != nil {
-        result = 0
-    }
 }</code></pre>
 </div>
 </div>
 
-The GALA version reads as a linear pipeline: divide, double, divide again, recover on failure. The Go version nests deeper with each operation. Both compile to equivalent logic, but GALA expresses the intent more clearly.
+The GALA version reads as a linear pipeline: divide, double, divide again, recover on failure. The Go version threads an `err` variable through every step and interleaves the happy path with error checks. Both compile to equivalent logic, but GALA keeps the intent front and center -- and each stage composes, so adding a step is one more `.Map`/`.FlatMap`, not another `if err`.
 
 You can also pattern match on `Try[T]`:
 

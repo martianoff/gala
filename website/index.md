@@ -65,7 +65,7 @@ val port = Try(strconv.Atoi("8080")).GetOrElse(80)</code></pre>
 
 ## GALA vs Go — A Quick Look
 
-Pattern matching is one of the most visible differences between GALA and Go. Where Go requires a manual type switch with field accessors, GALA destructures values directly and ensures every case is handled at compile time.
+Pattern matching is one of the most visible differences between GALA and Go. Idiomatic Go handles a closed set with a type switch, but it destructures nothing for you and never checks that every case is covered. GALA destructures values directly and enforces exhaustiveness at compile time.
 
 <div class="comparison">
 <div>
@@ -79,15 +79,14 @@ Pattern matching is one of the most visible differences between GALA and Go. Whe
 <div>
 <p><strong>Go</strong></p>
 <pre><code>var msg string
-switch shape._variant {
-case Shape_Circle:
+switch s := shape.(type) {
+case Circle:
     msg = fmt.Sprintf("r=%.1f",
-        shape.Radius.Get())
-case Shape_Rectangle:
-    msg = fmt.Sprintf("%fx%f",
-        shape.Width.Get(),
-        shape.Height.Get())
-case Shape_Point:
+        s.Radius)
+case Rectangle:
+    msg = fmt.Sprintf("%.0fx%.0f",
+        s.Width, s.Height)
+case Point:
     msg = "point"
 }</code></pre>
 </div>

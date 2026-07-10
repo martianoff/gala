@@ -105,7 +105,7 @@ val updated = base.Copy(Port = 8080)
 // base is unchanged
 ```
 
-This replaces the tedious Go pattern of manually copying every field:
+The idiomatic Go equivalent copies the struct value, then mutates the field in place:
 
 <table>
 <tr><th>GALA</th><th>Go</th></tr>
@@ -122,13 +122,14 @@ val updated = config.Copy(Port = 8080)</code></pre>
     Host string
     Port int
 }
-updated := Config{Host: config.Host, Port: 8080}</code></pre>
+updated := config
+updated.Port = 8080</code></pre>
 
 </td>
 </tr>
 </table>
 
-With two fields the Go version is manageable. With ten fields, `Copy()` saves significant boilerplate and prevents bugs from forgetting to copy a field.
+Go's copy is concise, but `updated` and `config` both stay mutable, and if `Config` holds a slice or map the value copy shares it. GALA's `Copy()` returns a new **immutable** value as an expression -- no temp variable, no in-place mutation, and the original `val` can never be reassigned. It also composes: you can drop `config.Copy(Port = 8080)` straight into a function call or pipeline.
 
 ---
 

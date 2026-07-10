@@ -372,14 +372,11 @@ Compare this to the Go equivalent:
 <td>
 
 <pre><code class="language-go">result, err := divide(10, 2)
+if err == nil {
+    result, err = divide(result*2, 3)
+}
 if err != nil {
     result = 0
-} else {
-    result = result * 2
-    result, err = divide(result, 3)
-    if err != nil {
-        result = 0
-    }
 }</code></pre>
 
 </td>

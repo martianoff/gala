@@ -127,12 +127,12 @@ val msg = shape match {
 
 ```go
 var msg string
-switch shape._variant {
-case Shape_Circle:
-    msg = fmt.Sprintf("r=%.1f", shape.Radius.Get())
-case Shape_Rectangle:
-    msg = fmt.Sprintf("%fx%f", shape.Width.Get(), shape.Height.Get())
-case Shape_Point:
+switch s := shape.(type) {
+case Circle:
+    msg = fmt.Sprintf("r=%.1f", s.Radius)
+case Rectangle:
+    msg = fmt.Sprintf("%.0fx%.0f", s.Width, s.Height)
+case Point:
     msg = "point"
 }
 ```
@@ -188,7 +188,8 @@ type Config struct {
     Host string
     Port int
 }
-updated := Config{Host: config.Host, Port: 8080}
+updated := config     // value copy; both stay mutable
+updated.Port = 8080
 ```
 
 </td>
@@ -255,14 +256,11 @@ val result = divide(10, 2)
 
 ```go
 result, err := divide(10, 2)
+if err == nil {
+    result, err = divide(result*2, 3)
+}
 if err != nil {
     result = 0
-} else {
-    result = result * 2
-    result, err = divide(result, 3)
-    if err != nil {
-        result = 0
-    }
 }
 ```
 

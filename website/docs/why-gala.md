@@ -53,26 +53,23 @@ If you add a new variant -- say `case Triangle(Base float64, Height float64)` --
 ### Equivalent Go
 
 ```go
-type Shape struct {
-    _variant  uint8
-    Radius    float64
-    Width     float64
-    Height    float64
-}
+type Shape interface{ isShape() }
 
-const (
-    Shape_Circle    uint8 = 0
-    Shape_Rectangle uint8 = 1
-    Shape_Point     uint8 = 2
-)
+type Circle struct{ Radius float64 }
+type Rectangle struct{ Width, Height float64 }
+type Point struct{}
+
+func (Circle) isShape()    {}
+func (Rectangle) isShape() {}
+func (Point) isShape()     {}
 
 func describe(s Shape) string {
-    switch s._variant {
-    case Shape_Circle:
-        return fmt.Sprintf("circle with radius %.2f", s.Radius)
-    case Shape_Rectangle:
-        return fmt.Sprintf("rectangle %0.fx%.0f", s.Width, s.Height)
-    case Shape_Point:
+    switch v := s.(type) {
+    case Circle:
+        return fmt.Sprintf("circle with radius=%.2f", v.Radius)
+    case Rectangle:
+        return fmt.Sprintf("rectangle %vx%v", v.Width, v.Height)
+    case Point:
         return "a point"
     default:
         panic("unhandled variant")
@@ -80,7 +77,7 @@ func describe(s Shape) string {
 }
 ```
 
-The Go version is more than twice the length, carries fields that are meaningless for most variants, and relies on a runtime panic for exhaustiveness that the compiler cannot verify.
+This is idiomatic Go, and it works -- but the closed set exists only by convention: every variant needs a marker method (`isShape()`), and the type switch is never checked for completeness. Add `Triangle` and forget a case, and the compiler stays silent; a runtime `panic` in `default` is the only backstop. GALA turns that into a compile error.
 
 ### Why this matters
 
@@ -174,10 +171,11 @@ type Config struct {
     RetryCount int
 }
 
-// No compile-time enforcement of field immutability.
-// Anyone with a reference can modify any field.
-// Copy requires manually listing every field:
-updated := Config{Host: cfg.Host, Port: 9090, RetryCount: cfg.RetryCount}
+// A value copy is concise, but Go enforces nothing:
+// both cfg and updated stay fully mutable, and anyone
+// with a reference can reassign any field at any time.
+updated := cfg
+updated.Port = 9090
 ```
 
 ### Why this matters
