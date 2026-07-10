@@ -67,6 +67,7 @@ class GalaParserDefinition : ParserDefinition {
             GalaTokenTypes.RULE_VAR_DECLARATION -> VarDeclarationNode(node)
             GalaTokenTypes.RULE_BIND_DECLARATION -> BindDeclarationNode(node)
             GalaTokenTypes.RULE_ALSO_DECLARATION -> AlsoDeclarationNode(node)
+            GalaTokenTypes.RULE_USE_DECLARATION -> UseDeclarationNode(node)
             GalaTokenTypes.RULE_STRUCT_SHORTHAND_DECLARATION -> StructShorthandDeclarationNode(node)
             GalaTokenTypes.RULE_IMPORT_DECLARATION -> ImportDeclarationNode(node)
             GalaTokenTypes.RULE_BLOCK -> BlockNode(node)

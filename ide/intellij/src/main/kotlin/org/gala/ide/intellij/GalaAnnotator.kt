@@ -63,11 +63,17 @@ class GalaAnnotator : Annotator {
 
         // Built-in functions available without import. Keep in sync with the
         // LSP server's builtinFuncs in internal/lsp/completion.go.
+        //
+        // The bare Go builtins (len/append/make/new/cap/copy/delete/close/
+        // complex/real/imag/panic/recover) are deliberately NOT here: they are
+        // forbidden on GALA's surface (GALA-E0035, see
+        // forbiddenGoBuiltinSuggestions in
+        // internal/transpiler/transformer/calls.go), so highlighting them as
+        // available builtins would contradict the compiler. Use `.Size()` /
+        // `.ByteSize()` or the go_interop wrappers instead.
         private val BUILTIN_FUNCTION_NAMES = setOf(
             "Println", "Print",
             "SliceOf",
-            "len", "cap", "make", "append", "copy", "delete",
-            "close", "panic", "recover",
             // Auto-imported std prelude constructors / converters (distinctive
             // names — see internal/transpiler/registry/std.go and std/*.gala)
             "NewImmutable", "NewConstPtr", "NewEmbeddedFS",

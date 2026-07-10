@@ -168,6 +168,24 @@ class AlsoDeclarationNode(node: ASTNode) : GalaPsiNode(node), PsiNameIdentifierO
 }
 
 /**
+ * PSI node for use declarations (scoped-resource binding: `use x = acquire`).
+ * The bound name behaves exactly like a val: it is a name-owner so it is
+ * clickable (go-to-definition), find-usages/rename anchor, and gets a tooltip.
+ */
+class UseDeclarationNode(node: ASTNode) : GalaPsiNode(node), PsiNameIdentifierOwner {
+    override fun getName(): String? = nameIdentifier?.text
+
+    override fun getNameIdentifier(): PsiElement? {
+        for (child in children) {
+            if (child.node.elementType == GalaTokenTypes.RULE_IDENTIFIER) return child
+        }
+        return null
+    }
+
+    override fun setName(name: String): PsiElement = this
+}
+
+/**
  * PSI node for struct shorthand declarations.
  */
 class StructShorthandDeclarationNode(node: ASTNode) : GalaPsiNode(node), PsiNameIdentifierOwner {

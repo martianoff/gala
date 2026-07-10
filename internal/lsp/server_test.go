@@ -295,9 +295,17 @@ func TestCompletion_BuiltinFunctions(t *testing.T) {
 	}
 
 	labels := collectLabels(list)
-	for _, fn := range []string{"Println", "Print", "SliceOf", "len", "cap", "make", "append", "panic"} {
+	// Genuinely-available names must be offered.
+	for _, fn := range []string{"Println", "Print", "SliceOf"} {
 		if !labels[fn] {
 			t.Errorf("missing built-in function: %s", fn)
+		}
+	}
+	// Bare Go builtins are forbidden on GALA's surface (GALA-E0035); the LSP
+	// must NOT suggest code the compiler rejects.
+	for _, fn := range []string{"len", "cap", "make", "new", "append", "copy", "delete", "close", "complex", "real", "imag", "panic", "recover"} {
+		if labels[fn] {
+			t.Errorf("forbidden Go builtin %q should NOT be offered in completion (GALA-E0035)", fn)
 		}
 	}
 }

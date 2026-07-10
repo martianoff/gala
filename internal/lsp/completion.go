@@ -8,6 +8,7 @@ import (
 	"github.com/owenrumney/go-lsp/lsp"
 
 	"martianoff/gala/internal/transpiler"
+	"martianoff/gala/internal/transpiler/transformer"
 )
 
 func (h *GalaHandler) Completion(ctx context.Context, params *lsp.CompletionParams) (*lsp.CompletionList, error) {
@@ -240,10 +241,13 @@ func keywordCompletions() []lsp.CompletionItem {
 		"interface", "sealed", "embed", "if", "else", "for", "range",
 		"return", "match", "case", "true", "false", "nil", "map",
 	}
+	// Only genuinely-available names belong here. The bare Go builtins
+	// (len/append/make/…) are forbidden on GALA's surface (GALA-E0035), so
+	// suggesting them would complete code the compiler rejects — use `.Size()`
+	// / `.ByteSize()` (offered as method completions) or the go_interop
+	// wrappers (ordinary symbols) instead.
 	builtinFuncs := []string{
 		"Println", "Print", "SliceOf",
-		"len", "cap", "make", "append", "copy", "delete",
-		"close", "panic", "recover",
 		// Auto-imported std prelude constructors / converters
 		// (see internal/transpiler/registry/std.go and std/*.gala).
 		"NewImmutable", "NewConstPtr", "NewEmbeddedFS",
@@ -253,7 +257,13 @@ func keywordCompletions() []lsp.CompletionItem {
 	for _, kw := range keywords {
 		items = append(items, lsp.CompletionItem{Label: kw, Kind: kindPtr(lsp.CompletionItemKindKeyword)})
 	}
+	// Defensive filter against the authoritative forbidden set so this list can
+	// never drift back into suggesting an E0035 builtin.
+	forbidden := transformer.ForbiddenGoBuiltins()
 	for _, fn := range builtinFuncs {
+		if forbidden[fn] {
+			continue
+		}
 		items = append(items, lsp.CompletionItem{Label: fn, Kind: kindPtr(lsp.CompletionItemKindFunction), Detail: "builtin"})
 	}
 	return items
@@ -482,9 +492,45 @@ func kindPtr(k lsp.CompletionItemKind) *lsp.CompletionItemKind { return &k }
 // --- Type-Aware Completion ---
 // Type resolution logic is in typeatpos.go
 
+// goSizeSugarCompletions returns the `.Size()` / `.ByteSize()` completion items
+// that apply to a Go primitive receiver (string, slice, or map). `ByteSize()` is
+// only offered on strings. Mirrors the transpiler's tryTransformSizeSugar
+// (internal/transpiler/transformer/methods.go). These are surfaced even though
+// the receiver has no GALA TypeMetadata, because the transpiler lowers them to
+// len(...) / utf8.RuneCountInString(...) at compile time.
+func goSizeSugarCompletions(typeName string) []lsp.CompletionItem {
+	if !isGoSizeableType(typeName) {
+		return nil
+	}
+	items := []lsp.CompletionItem{{
+		Label:      "Size()",
+		Kind:       kindPtr(lsp.CompletionItemKindMethod),
+		Detail:     "() int",
+		InsertText: "Size()",
+		FilterText: "Size",
+		SortText:   "Size",
+	}}
+	if typeName == "string" {
+		items = append(items, lsp.CompletionItem{
+			Label:      "ByteSize()",
+			Kind:       kindPtr(lsp.CompletionItemKindMethod),
+			Detail:     "() int",
+			InsertText: "ByteSize()",
+			FilterText: "ByteSize",
+			SortText:   "ByteSize",
+		})
+	}
+	return items
+}
+
 // typeSpecificCompletions returns methods and fields for a specific type.
 func typeSpecificCompletions(richAST *transpiler.RichAST, typeName string) []lsp.CompletionItem {
 	items := make([]lsp.CompletionItem, 0)
+
+	// GALA's `.Size()` / `.ByteSize()` sugar is available on Go primitive
+	// receivers (string/slice/map) that have no GALA TypeMetadata. Offer it up
+	// front so it shows up even when findType below returns nil.
+	items = append(items, goSizeSugarCompletions(typeName)...)
 
 	tm := findType(richAST, typeName)
 	if tm == nil {

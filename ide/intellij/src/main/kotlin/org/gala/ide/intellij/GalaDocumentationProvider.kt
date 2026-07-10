@@ -68,6 +68,7 @@ class GalaDocumentationProvider : AbstractDocumentationProvider() {
             is VarDeclarationNode -> "var"
             is BindDeclarationNode -> "bind"
             is AlsoDeclarationNode -> "also"
+            is UseDeclarationNode -> "use"
             is StructShorthandDeclarationNode -> "struct"
             is MethodSpecNode -> "method"
             else -> "declaration"
@@ -111,6 +112,10 @@ class GalaDocumentationProvider : AbstractDocumentationProvider() {
                 text.substringBefore("=").trim()
             }
             is AlsoDeclarationNode -> {
+                val text = element.text.trim()
+                text.substringBefore("=").trim()
+            }
+            is UseDeclarationNode -> {
                 val text = element.text.trim()
                 text.substringBefore("=").trim()
             }
