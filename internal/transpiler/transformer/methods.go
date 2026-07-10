@@ -66,10 +66,38 @@ func (t *galaASTTransformer) sizeSugarReceiverType(recv ast.Expr) transpiler.Typ
 	recvType := t.getExprTypeNameManual(recv)
 	if t.isImmutableType(recvType) {
 		if gt, ok := recvType.(transpiler.GenericType); ok && len(gt.Params) == 1 {
-			return gt.Params[0]
+			recvType = gt.Params[0]
 		}
 	}
-	return recvType
+	return t.resolveNamedGoCollectionUnderlying(recvType)
+}
+
+// resolveNamedGoCollectionUnderlying resolves a NAMED Go type whose underlying is
+// a slice or map (e.g. `url.Values` = map[string][]string, `sort.StringSlice` =
+// []string) to that underlying ArrayType/MapType, so the .Size() sugar classifies
+// it and lowers to len(). Only slice/map underlyings qualify — never a Go struct
+// or a GALA type — so this never mis-fires on a real .Size() method. Returns the
+// type unchanged when it is not a resolvable named Go collection.
+func (t *galaASTTransformer) resolveNamedGoCollectionUnderlying(typ transpiler.Type) transpiler.Type {
+	named, ok := typ.(transpiler.NamedType)
+	if !ok || named.Package == "" || t.goTypeInfo == nil {
+		return typ
+	}
+	qualName := named.Package + "." + named.Name
+	td := t.goTypeInfo.GetTypeData(qualName)
+	if td == nil || td.Underlying == nil {
+		return typ
+	}
+	switch td.Underlying.(type) {
+	case transpiler.ArrayType, transpiler.MapType:
+		// Don't shadow a real Size() method the named type declares — call it
+		// instead of lowering to len(). (url.Values / sort.StringSlice have none.)
+		if t.goTypeInfo.GetMethodSignature(qualName, "Size") != nil {
+			return typ
+		}
+		return td.Underlying
+	}
+	return typ
 }
 
 func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *grammar.ArgumentListContext) (ast.Expr, error) {
