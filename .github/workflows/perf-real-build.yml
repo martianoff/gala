@@ -18,6 +18,15 @@ name: Perf — real-repo build budget
 # get this down from ~1160 s to ~400 s as of PR #317. They should ratchet
 # downward any time a perf improvement lands; never upward without a
 # documented reason in the PR description.
+#
+# Cold budget raised 600 s -> 680 s for the GALA 0.70 release: the stdlib
+# gained the `resource` and `go_builtins` packages, which gala_team's apex
+# `cmd/main.gala` pulls into its transitive dot-import closure, adding real
+# from-scratch transpile work. A fresh-disk-cache run was measured at 604 s
+# (vs the prior ~400 s floor); 680 s restores ~12% headroom for runner
+# variance while still firmly trapping a regression (pre-worker was ~1160 s).
+# The cache-size ceiling below is unchanged, so a per-entry blowup is still
+# caught independently of wall time.
 
 on:
   workflow_dispatch:
@@ -51,7 +60,7 @@ jobs:
       GALA_TUI_REF: feature/gala-0.70-migration
       GALA_TEAM_REF: feature/gala-0.70-migration
       WARM_BUDGET_SECONDS: "500"
-      COLD_BUDGET_SECONDS: "600"
+      COLD_BUDGET_SECONDS: "680"
 
     steps:
       - name: Checkout gala (this branch)
