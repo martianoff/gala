@@ -18,7 +18,7 @@ GALA is not replacing Go -- it is adding expressiveness on top of it. GALA trans
 
 This page shows real code comparisons between GALA and the equivalent idiomatic Go. Every GALA snippet on this page uses only syntax from the language specification.
 
-<p style="margin:1.5rem 0 0.5rem;">
+<p style="margin:1.5rem 0 0.5rem;text-align:center;">
   <a class="cta" href="https://gala-playground.fly.dev">▶ Run GALA in the Playground</a>
   <a class="cta cta-secondary" href="https://github.com/martianoff/gala">View the code on GitHub</a>
 </p>
