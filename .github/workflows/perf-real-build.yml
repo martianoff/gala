@@ -41,9 +41,15 @@ jobs:
     # or gala_team API surface intentionally changes; otherwise the
     # build failures will reveal real semantic drift.
     #
+    # Pointed at the 0.70-migration branches while the bare-builtins /
+    # defer-go / functional-error surface lands: master upstream now
+    # rejects bare Go builtins, so the pre-migration downstream tips
+    # (main / master) no longer build against it. Flip both back to
+    # main / master once the migration PRs merge and 0.70 downstream
+    # releases are cut.
     env:
-      GALA_TUI_REF: main
-      GALA_TEAM_REF: master
+      GALA_TUI_REF: feature/gala-0.70-migration
+      GALA_TEAM_REF: feature/gala-0.70-migration
       WARM_BUDGET_SECONDS: "500"
       COLD_BUDGET_SECONDS: "600"
 
