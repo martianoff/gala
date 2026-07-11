@@ -315,14 +315,25 @@ func (a *galaAnalyzer) SetGoSrcDirs(dirs map[string]string) {
 // no prefix matches — in which case the caller leaves Go type resolution to
 // go/importer (correct for stdlib, which is always on GOROOT).
 func (a *galaAnalyzer) resolveGoSrcDir(importPath string) (string, bool) {
-	if len(a.goSrcDirs) == 0 {
+	return ResolveGoSrcDir(a.goSrcDirs, importPath)
+}
+
+// ResolveGoSrcDir maps a Go import path to its on-disk .go source directory
+// using the given module-path -> directory table. It first tries an exact
+// match, then the longest registered import-path prefix (a module path),
+// appending the remaining package subpath. Returns ("", false) when nothing is
+// wired or no prefix matches. Exported so the LSP can resolve third-party Go
+// source directories for go-to-definition using the same table the analyzer
+// uses for type inference.
+func ResolveGoSrcDir(goSrcDirs map[string]string, importPath string) (string, bool) {
+	if len(goSrcDirs) == 0 {
 		return "", false
 	}
-	if dir, ok := a.goSrcDirs[importPath]; ok {
+	if dir, ok := goSrcDirs[importPath]; ok {
 		return dir, true
 	}
 	bestKey := ""
-	for k := range a.goSrcDirs {
+	for k := range goSrcDirs {
 		if len(k) > len(bestKey) && strings.HasPrefix(importPath, k+"/") {
 			bestKey = k
 		}
@@ -331,7 +342,7 @@ func (a *galaAnalyzer) resolveGoSrcDir(importPath string) (string, bool) {
 		return "", false
 	}
 	rel := strings.TrimPrefix(importPath, bestKey+"/")
-	return filepath.Join(a.goSrcDirs[bestKey], filepath.FromSlash(rel)), true
+	return filepath.Join(goSrcDirs[bestKey], filepath.FromSlash(rel)), true
 }
 
 // Analyze walk the ANTLR tree and collects metadata for RichAST.
