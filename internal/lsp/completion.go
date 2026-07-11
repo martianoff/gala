@@ -534,6 +534,10 @@ func typeSpecificCompletions(richAST *transpiler.RichAST, typeName string) []lsp
 
 	tm := findType(richAST, typeName)
 	if tm == nil {
+		// No GALA TypeMetadata — the receiver may be a Go type (e.g. a value
+		// returned from an imported Go package like bytes.Buffer or hash.Hash).
+		// Surface its method set from the analyzer's Go type info.
+		items = append(items, goTypeCompletions(richAST, typeName)...)
 		return items
 	}
 
@@ -584,6 +588,114 @@ func typeSpecificCompletions(richAST *transpiler.RichAST, typeName string) []lsp
 	})
 
 	return items
+}
+
+// goTypeCompletions surfaces the method set and fields of a Go type (struct or
+// interface) recorded in richAST.GoTypeInfo. It backs dot completion on values
+// whose type comes from an imported Go package and therefore has no GALA
+// TypeMetadata — e.g. `val b = bytes.NewBufferString("x"); b.` or a hash.Hash.
+func goTypeCompletions(richAST *transpiler.RichAST, typeName string) []lsp.CompletionItem {
+	items := make([]lsp.CompletionItem, 0)
+	gi := richAST.GoTypeInfo
+	if gi == nil {
+		return items
+	}
+
+	// Normalize the receiver type to the "pkg.Name" key used by GoTypeInfo:
+	// drop a leading pointer star and any generic arguments.
+	key := stripTypeParams(strings.TrimPrefix(strings.TrimSpace(typeName), "*"))
+
+	td := gi.Types[key]
+	if td == nil {
+		// Follow a single Go type-alias hop (type X = Y).
+		if under := gi.TypeAliases[key]; under != nil {
+			td = gi.Types[stripTypeParams(strings.TrimPrefix(under.String(), "*"))]
+		}
+	}
+	if td == nil {
+		return items
+	}
+
+	seen := make(map[string]bool, len(td.Methods))
+	for name, sig := range td.Methods {
+		if !isExported(name) || seen[name] {
+			continue
+		}
+		seen[name] = true
+		items = append(items, goMethodCompletion(name, sig))
+	}
+	for _, fn := range td.FieldOrder {
+		if !isExported(fn) {
+			continue
+		}
+		items = append(items, lsp.CompletionItem{
+			Label:  fn,
+			Kind:   kindPtr(lsp.CompletionItemKindField),
+			Detail: goTypeString(td.Fields[fn]),
+		})
+	}
+	return items
+}
+
+// goMethodCompletion builds a completion item for a Go method from its
+// signature, mirroring the parenthesis-insertion behavior of GALA methods.
+func goMethodCompletion(name string, sig *transpiler.GoFuncSignature) lsp.CompletionItem {
+	label := name + goFuncSigString(sig)
+	insertText := name + "("
+	if sig == nil || len(sig.Params) == 0 {
+		insertText = name + "()"
+	}
+	return lsp.CompletionItem{
+		Label:      label,
+		Kind:       kindPtr(lsp.CompletionItemKindMethod),
+		Detail:     goFuncSigString(sig),
+		InsertText: insertText,
+		FilterText: name,
+		SortText:   name,
+	}
+}
+
+// goFuncSigString renders a Go function/method signature like "(w []byte) int".
+func goFuncSigString(sig *transpiler.GoFuncSignature) string {
+	if sig == nil {
+		return "()"
+	}
+	var b strings.Builder
+	b.WriteString("(")
+	for i, p := range sig.Params {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		if p.Name != "" {
+			b.WriteString(p.Name)
+			b.WriteString(" ")
+		}
+		b.WriteString(goTypeString(p.Type))
+	}
+	b.WriteString(")")
+	switch len(sig.Returns) {
+	case 0:
+	case 1:
+		b.WriteString(" " + goTypeString(sig.Returns[0]))
+	default:
+		b.WriteString(" (")
+		for i, r := range sig.Returns {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			b.WriteString(goTypeString(r))
+		}
+		b.WriteString(")")
+	}
+	return b.String()
+}
+
+// goTypeString renders a Go type for display, tolerating a nil type.
+func goTypeString(t transpiler.Type) string {
+	if t == nil || t.IsNil() {
+		return "any"
+	}
+	return t.String()
 }
 
 func formatMethodSig(meta *transpiler.MethodMetadata) string {

@@ -344,6 +344,178 @@ func TestCompletion_DotOnStruct(t *testing.T) {
 }
 
 // ====================================================================
+// Completion: dot completion on a `bind`-defined variable resolves the
+// unwrapped monad element type (bind o = fetchOrder(id) -> o : Order).
+// ====================================================================
+
+func TestCompletion_DotOnBindVar(t *testing.T) {
+	h := newHarness(t)
+	valid := "package main\n" +
+		"\n" +
+		"struct Order(Id int, Amount int)\n" +
+		"func fetchOrder(id int) Try[Order] =\n" +
+		"    if (id > 0) Success(Order(id, 100))\n" +
+		"    else Failure[Order](NoSuchElementError(Message = \"no order\"))\n" +
+		"func process(id int) Try[Order] {\n" +
+		"    bind o = fetchOrder(id)\n" +
+		"    Success(o)\n" +
+		"}\n"
+	uri := openFileOnDisk(t, h, valid)
+	time.Sleep(300 * time.Millisecond)
+
+	broken := "package main\n" +
+		"\n" +
+		"struct Order(Id int, Amount int)\n" +
+		"func fetchOrder(id int) Try[Order] =\n" +
+		"    if (id > 0) Success(Order(id, 100))\n" +
+		"    else Failure[Order](NoSuchElementError(Message = \"no order\"))\n" +
+		"func process(id int) Try[Order] {\n" +
+		"    bind o = fetchOrder(id)\n" +
+		"    o.\n" +
+		"    Success(o)\n" +
+		"}\n"
+	if err := h.DidChange(uri, 1, broken); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(300 * time.Millisecond)
+
+	// "    o." on line 8, col 6
+	list, err := h.Completion(uri, 8, 6)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list == nil {
+		t.Fatal("dot completion returned nil for bind var")
+	}
+	labels := collectLabels(list)
+	if !labels["Id"] && !labels["Amount"] {
+		t.Errorf("expected Order fields (Id/Amount) for bind var completion, got %v", labelSlice(list))
+	}
+}
+
+// Mid-typing reality: the bind has no continuation yet — the dot line is the
+// only statement after it. This is the state the file is in the instant the
+// user types "o." and expects completion.
+func TestCompletion_DotOnBindVar_NoContinuation(t *testing.T) {
+	h := newHarness(t)
+	src := "package main\n" +
+		"\n" +
+		"struct Order(Id int, Amount int)\n" +
+		"func fetchOrder(id int) Try[Order] =\n" +
+		"    if (id > 0) Success(Order(id, 100))\n" +
+		"    else Failure[Order](NoSuchElementError(Message = \"no order\"))\n" +
+		"func process(id int) Try[Order] {\n" +
+		"    bind o = fetchOrder(id)\n" +
+		"    o.\n" +
+		"}\n"
+	uri := openFileOnDisk(t, h, src)
+	time.Sleep(300 * time.Millisecond)
+
+	list, err := h.Completion(uri, 8, 6)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list == nil {
+		t.Fatal("dot completion returned nil for bind var (no continuation)")
+	}
+	labels := collectLabels(list)
+	if !labels["Id"] && !labels["Amount"] {
+		t.Errorf("expected Order fields (Id/Amount) for bind var completion, got %v", labelSlice(list))
+	}
+}
+
+// Completion on a value whose type comes from a Go package (go_interop.Mutex
+// has Lock/Unlock methods defined in Go). Reproduces the "no suggestions on Go
+// native types" report.
+func TestCompletion_DotOnGoInteropType(t *testing.T) {
+	h := newHarness(t)
+	src := "package main\n" +
+		"\n" +
+		"import \"martianoff/gala/go_interop\"\n" +
+		"\n" +
+		"func main() {\n" +
+		"    val m = go_interop.NewMutex()\n" +
+		"    m.\n" +
+		"}\n"
+	uri := openFileOnDisk(t, h, src)
+	time.Sleep(300 * time.Millisecond)
+
+	// "    m." on line 6, col 6
+	list, err := h.Completion(uri, 6, 6)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list == nil {
+		t.Fatal("dot completion returned nil for go_interop Mutex value")
+	}
+	t.Logf("go_interop.Mutex dot completion: %v", labelSlice(list))
+	labels := collectLabels(list)
+	if !labels["Lock"] && !labels["Unlock"] {
+		t.Errorf("expected Mutex methods (Lock/Unlock), got %v", labelSlice(list))
+	}
+}
+
+// Completion on a value typed by an EXTERNAL Go stdlib package. bytes.Buffer's
+// methods live in the same package that is imported, so the method set is
+// available in richAST.GoTypeInfo — completion should surface them.
+func TestCompletion_DotOnExternalGoType_SamePkg(t *testing.T) {
+	h := newHarness(t)
+	src := "package main\n" +
+		"\n" +
+		"import \"bytes\"\n" +
+		"\n" +
+		"func main() {\n" +
+		"    val b = bytes.NewBufferString(\"hi\")\n" +
+		"    b.\n" +
+		"}\n"
+	uri := openFileOnDisk(t, h, src)
+	time.Sleep(300 * time.Millisecond)
+
+	list, err := h.Completion(uri, 6, 6)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list == nil {
+		t.Fatal("dot completion returned nil for bytes.Buffer value")
+	}
+	t.Logf("bytes.Buffer dot completion: %v", labelSlice(list))
+	labels := collectLabels(list)
+	if !labels["String"] && !labels["Len"] && !labels["Write"] {
+		t.Errorf("expected *bytes.Buffer methods (String/Len/Write), got %v", labelSlice(list))
+	}
+}
+
+// Completion on a value whose type is returned CROSS-PACKAGE: sha256.New()
+// returns hash.Hash (interface in package `hash`, not crypto/sha256). The
+// method set lives in a package that was never imported.
+func TestCompletion_DotOnExternalGoType_CrossPkg(t *testing.T) {
+	h := newHarness(t)
+	src := "package main\n" +
+		"\n" +
+		"import \"crypto/sha256\"\n" +
+		"\n" +
+		"func main() {\n" +
+		"    val d = sha256.New()\n" +
+		"    d.\n" +
+		"}\n"
+	uri := openFileOnDisk(t, h, src)
+	time.Sleep(300 * time.Millisecond)
+
+	list, err := h.Completion(uri, 6, 6)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list == nil {
+		t.Fatal("dot completion returned nil for sha256.New() value")
+	}
+	t.Logf("sha256.New() (hash.Hash) dot completion: %v", labelSlice(list))
+	labels := collectLabels(list)
+	if !labels["Write"] && !labels["Sum"] && !labels["Reset"] {
+		t.Errorf("expected hash.Hash methods (Write/Sum/Reset), got %v", labelSlice(list))
+	}
+}
+
+// ====================================================================
 // Completion: Dot completion should NOT include keywords
 // ====================================================================
 
@@ -712,6 +884,92 @@ func TestDefinition_PatternBinding(t *testing.T) {
 	// Should point to the binding "r" in "case Circle(r)"
 	if locs[0].Range.Start.Line != 7 {
 		t.Errorf("expected pattern binding definition on line 7, got line %d", locs[0].Range.Start.Line)
+	}
+}
+
+// ====================================================================
+// Definition: Go interop package name + functions navigate to the
+// package's .go source (go_interop is a pure-Go stdlib package).
+// ====================================================================
+
+func TestDefinition_GoInteropPackageAndFunc(t *testing.T) {
+	h := newHarness(t)
+	src := "package main\n" +
+		"\n" +
+		"import \"martianoff/gala/go_interop\"\n" +
+		"\n" +
+		"func main() {\n" +
+		"    var elems = go_interop.SliceWithCapacity[int](4)\n" +
+		"    elems = go_interop.SliceAppend(elems, 1)\n" +
+		"    Println(elems)\n" +
+		"}\n"
+	uri := openFileOnDisk(t, h, src)
+
+	// Click on the package name "go_interop" at line 5, col 20
+	pkgLocs, err := h.Definition(uri, 5, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pkgLocs) == 0 {
+		t.Errorf("no definition found for go_interop package name")
+	} else if !strings.Contains(strings.ToLower(string(pkgLocs[0].URI)), "go_interop") {
+		t.Errorf("expected package definition in go_interop dir, got %s", pkgLocs[0].URI)
+	}
+
+	// Click on the function "SliceAppend" at line 6, col 26
+	fnLocs, err := h.Definition(uri, 6, 26)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fnLocs) == 0 {
+		t.Errorf("no definition found for go_interop.SliceAppend")
+	} else if !strings.Contains(strings.ToLower(string(fnLocs[0].URI)), "go_interop") {
+		t.Errorf("expected SliceAppend definition in go_interop dir, got %s", fnLocs[0].URI)
+	}
+}
+
+// ====================================================================
+// Definition: external Go stdlib package name, function, and method all
+// navigate into the Go SDK source tree.
+// ====================================================================
+
+func TestDefinition_ExternalGoStdlib(t *testing.T) {
+	h := newHarness(t)
+	src := "package main\n" +
+		"\n" +
+		"import \"bytes\"\n" +
+		"\n" +
+		"func main() {\n" +
+		"    val b = bytes.NewBufferString(\"hi\")\n" +
+		"    b.WriteString(\"x\")\n" +
+		"}\n"
+	uri := openFileOnDisk(t, h, src)
+	time.Sleep(300 * time.Millisecond)
+
+	isBytesGoFile := func(u lsp.DocumentURI) bool {
+		s := strings.ToLower(string(u))
+		return strings.Contains(s, "/bytes/") && strings.HasSuffix(s, ".go")
+	}
+
+	// Package name "bytes" at line 5, col 12
+	if locs, err := h.Definition(uri, 5, 12); err != nil {
+		t.Fatal(err)
+	} else if len(locs) == 0 || !isBytesGoFile(locs[0].URI) {
+		t.Errorf("bytes package name: expected a Go file under bytes/, got %v", locs)
+	}
+
+	// Package function "NewBufferString" at line 5, col 22
+	if locs, err := h.Definition(uri, 5, 22); err != nil {
+		t.Fatal(err)
+	} else if len(locs) == 0 || !isBytesGoFile(locs[0].URI) {
+		t.Errorf("bytes.NewBufferString: expected a Go file under bytes/, got %v", locs)
+	}
+
+	// Method "WriteString" on *bytes.Buffer at line 6, col 8
+	if locs, err := h.Definition(uri, 6, 8); err != nil {
+		t.Fatal(err)
+	} else if len(locs) == 0 || !isBytesGoFile(locs[0].URI) {
+		t.Errorf("bytes.Buffer.WriteString: expected a Go file under bytes/, got %v", locs)
 	}
 }
 
