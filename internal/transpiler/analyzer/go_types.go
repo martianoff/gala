@@ -415,6 +415,12 @@ func extractPackageInfo(pkg *types.Package, info *transpiler.GoTypeInfo) {
 		case *types.Func:
 			sig := obj.Type().(*types.Signature)
 			info.Functions[qualName] = convertSignature(sig)
+			// A function often returns a named type defined in another package
+			// (e.g. sha256.New() returns hash.Hash). Record that type's method
+			// set under its canonical "pkg.Name" key so a value bound to the
+			// call has completions even though the defining package (hash) was
+			// never directly imported.
+			registerReturnNamedTypes(sig, info)
 
 		case *types.TypeName:
 			if obj.IsAlias() {
@@ -474,6 +480,75 @@ func registerAliasTargetType(aliasType types.Type, aliasQualName string, info *t
 		return
 	}
 	info.Types[canonical] = extractTypeData(tn, "")
+}
+
+// registerReturnNamedTypes records, for each of a function's return values, the
+// method set of any named type reached (unwrapping pointer/slice/array layers)
+// that is defined in another package. This mirrors
+// registerAliasTargetType but for return positions, so completion and type
+// inference can find methods on values produced by a call into an imported
+// package even when the value's own type lives in a package that was never
+// directly imported (the classic case: a constructor returning an interface,
+// like sha256.New() -> hash.Hash).
+func registerReturnNamedTypes(sig *types.Signature, info *transpiler.GoTypeInfo) {
+	if sig == nil {
+		return
+	}
+	res := sig.Results()
+	for i := 0; i < res.Len(); i++ {
+		registerNamedTypeClosure(res.At(i).Type(), info)
+	}
+}
+
+// registerNamedTypeClosure unwraps common type constructors (pointer, slice,
+// array, map, chan) to find a named type and records its GoTypeData under the
+// canonical "pkgName.TypeName" key. It is a no-op when the type is not a
+// package-scoped named type or when an entry already exists (which also bounds
+// the recursion).
+func registerNamedTypeClosure(t types.Type, info *transpiler.GoTypeInfo) {
+	switch tt := t.(type) {
+	case *types.Pointer:
+		registerNamedTypeClosure(tt.Elem(), info)
+	case *types.Slice:
+		registerNamedTypeClosure(tt.Elem(), info)
+	case *types.Array:
+		registerNamedTypeClosure(tt.Elem(), info)
+	case *types.Chan:
+		registerNamedTypeClosure(tt.Elem(), info)
+	case *types.Map:
+		registerNamedTypeClosure(tt.Key(), info)
+		registerNamedTypeClosure(tt.Elem(), info)
+	case *types.Named:
+		tn := tt.Obj()
+		if tn == nil || tn.Pkg() == nil {
+			return
+		}
+		canonical := tn.Pkg().Name() + "." + tn.Name()
+		if _, exists := info.Types[canonical]; exists {
+			return
+		}
+		info.Types[canonical] = extractTypeData(tn, "")
+	}
+}
+
+// GoPackageSourceDir resolves a Go import path to its on-disk source directory.
+// It covers the standard library (under GOROOT/src), which is what the LSP needs
+// to offer go-to-definition into Go source for stdlib calls. Returns "" when the
+// directory can't be located (e.g. no Go SDK, or a third-party module that isn't
+// unpacked under GOROOT).
+func GoPackageSourceDir(importPath string) string {
+	if importPath == "" {
+		return ""
+	}
+	goroot := findGOROOT()
+	if goroot == "" {
+		return ""
+	}
+	dir := filepath.Join(goroot, "src", filepath.FromSlash(importPath))
+	if info, err := os.Stat(dir); err == nil && info.IsDir() {
+		return dir
+	}
+	return ""
 }
 
 // extractTypeData creates GoTypeData for a types.TypeName.

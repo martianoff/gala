@@ -9,6 +9,7 @@ import (
 	"github.com/owenrumney/go-lsp/lsp"
 
 	"martianoff/gala/internal/transpiler"
+	"martianoff/gala/internal/transpiler/analyzer"
 )
 
 func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionParams) ([]lsp.Location, error) {
@@ -39,6 +40,27 @@ func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionPara
 	// Check if it's a dot-accessed method/field: receiver.Method or receiver.Field
 	if loc := h.dotMethodDefinition(text, word, uri, line, char, richAST, varTypeMap); loc != nil {
 		return []lsp.Location{*loc}, nil
+	}
+
+	// Imported-package navigation. Parse imports from the document because
+	// Go-only packages (e.g. go_interop, which ships only .go sources) never
+	// appear in richAST.Packages — the analyzer records a package name only
+	// when it finds GALA sources to attach it to.
+	imports := parseGalaImports(text)
+
+	// pkg.Symbol — clicking a member qualified by an imported package name
+	// navigates to that symbol's definition in the package's source files.
+	if loc := h.packageMemberDefinition(text, word, uri, line, char, imports); loc != nil {
+		return []lsp.Location{*loc}, nil
+	}
+
+	// Clicking the imported package name itself navigates to the package.
+	if importPath, ok := imports[word]; ok {
+		if dir := h.resolveImportDir(uri, importPath); dir != "" {
+			if loc := packageFileLocation(dir); loc != nil {
+				return []lsp.Location{*loc}, nil
+			}
+		}
 	}
 
 	// Check sealed variants FIRST (Success, Failure, Some, None, etc.)
@@ -306,7 +328,9 @@ func (h *GalaHandler) dotMethodDefinition(text, word, uri string, curLine, curCh
 	// Find the type metadata for this receiver
 	tm := findType(richAST, receiverType)
 	if tm == nil {
-		return nil
+		// The receiver may be a Go type (e.g. b : *bytes.Buffer). Try to
+		// resolve the method in the Go type's package source.
+		return h.goMethodDefinition(text, uri, receiverType, word, richAST)
 	}
 
 	// Check methods first
@@ -364,6 +388,381 @@ func (h *GalaHandler) dotMethodDefinition(text, word, uri string, curLine, curCh
 	}
 
 	return nil
+}
+
+// parseGalaImports scans the document text for import declarations and returns
+// a map of local package name -> import path. This captures Go-only packages
+// (e.g. go_interop) that never surface in richAST.Packages because they have
+// no .gala sources for the analyzer to attach a package name to. The local
+// name is the alias when one is given (e.g. `im "path"`), otherwise the final
+// path segment. Dot imports (`. "path"`) contribute no qualified name and are
+// skipped.
+func parseGalaImports(text string) map[string]string {
+	imports := make(map[string]string)
+	inBlock := false
+	for _, raw := range strings.Split(text, "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" || strings.HasPrefix(line, "//") {
+			continue
+		}
+		if !inBlock {
+			if strings.HasPrefix(line, "import (") {
+				inBlock = true
+				continue
+			}
+			if strings.HasPrefix(line, "import ") {
+				addImportSpec(imports, strings.TrimSpace(strings.TrimPrefix(line, "import")))
+			}
+			continue
+		}
+		if strings.HasPrefix(line, ")") {
+			inBlock = false
+			continue
+		}
+		addImportSpec(imports, line)
+	}
+	return imports
+}
+
+// addImportSpec parses a single import spec ("path", `alias "path"`, or
+// `. "path"`) and records the local-name -> path mapping.
+func addImportSpec(imports map[string]string, spec string) {
+	q := strings.Index(spec, "\"")
+	if q < 0 {
+		return
+	}
+	rest := spec[q+1:]
+	end := strings.Index(rest, "\"")
+	if end < 0 {
+		return
+	}
+	path := rest[:end]
+	if path == "" {
+		return
+	}
+	alias := strings.TrimSpace(spec[:q])
+	switch {
+	case alias == ".":
+		return // dot import: symbols are unqualified, no package name to click
+	case alias != "":
+		imports[alias] = path
+	default:
+		local := path
+		if idx := strings.LastIndex(path, "/"); idx >= 0 {
+			local = path[idx+1:]
+		}
+		imports[local] = path
+	}
+}
+
+// resolveImportDir resolves an import path to a filesystem directory using the
+// same search-path strategy the analyzer's resolver applies: internal
+// martianoff/gala/* paths map to a directory relative to a search path with
+// the module prefix stripped; everything else is tried as-is.
+func (h *GalaHandler) resolveImportDir(uri, importPath string) string {
+	relPath := strings.TrimPrefix(importPath, "martianoff/gala/")
+	for _, sp := range h.getSearchPaths(uriToPath(uri)) {
+		for _, cand := range []string{relPath, importPath} {
+			dir := filepath.Join(sp, cand)
+			if info, err := os.Stat(dir); err == nil && info.IsDir() {
+				if abs, err := filepath.Abs(dir); err == nil {
+					return abs
+				}
+				return dir
+			}
+		}
+	}
+	// Not on a GALA search path — fall back to the Go SDK source tree so
+	// definitions in Go stdlib packages (bytes, crypto/sha256, ...) resolve.
+	return analyzer.GoPackageSourceDir(importPath)
+}
+
+// packageMemberDefinition resolves a `pkg.Symbol` reference where `pkg` is an
+// imported package name, navigating to Symbol's definition in the package's
+// source files (.gala or .go). This is what makes go_interop.SliceAppend and
+// similar Go-interop calls clickable.
+func (h *GalaHandler) packageMemberDefinition(text, word, uri string, curLine, curChar int, imports map[string]string) *lsp.Location {
+	lines := strings.Split(text, "\n")
+	if curLine >= len(lines) {
+		return nil
+	}
+	l := lines[curLine]
+
+	// The word must be immediately preceded by a dot.
+	start := curChar
+	if start > len(l) {
+		start = len(l)
+	}
+	for start > 0 && isIdentChar(l[start-1]) {
+		start--
+	}
+	if start == 0 || l[start-1] != '.' {
+		return nil
+	}
+
+	// The identifier before that dot is the (candidate) package name. It must
+	// itself not be preceded by a dot — `x.pkg.Symbol` means `pkg` is a field,
+	// not an imported package.
+	pkgEnd := start - 1
+	pkgStart := pkgEnd
+	for pkgStart > 0 && isIdentChar(l[pkgStart-1]) {
+		pkgStart--
+	}
+	if pkgStart == pkgEnd || (pkgStart > 0 && l[pkgStart-1] == '.') {
+		return nil
+	}
+	importPath, ok := imports[l[pkgStart:pkgEnd]]
+	if !ok {
+		return nil
+	}
+	dir := h.resolveImportDir(uri, importPath)
+	if dir == "" {
+		return nil
+	}
+	return dirSymbolLocation(dir, word)
+}
+
+// dirSymbolLocation searches the .gala and .go files in dir for a top-level
+// definition of name. GALA files use the keyword-pattern search; Go files use
+// goSymbolLocation.
+func dirSymbolLocation(dir, name string) *lsp.Location {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var goFiles []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		n := e.Name()
+		if strings.HasSuffix(n, ".gala") && !strings.HasSuffix(n, "_test.gala") {
+			if loc := fileLocationBroad(filepath.Join(dir, n), name); loc != nil {
+				return loc
+			}
+		} else if strings.HasSuffix(n, ".go") && !strings.HasSuffix(n, "_test.go") {
+			goFiles = append(goFiles, filepath.Join(dir, n))
+		}
+	}
+	for _, gf := range goFiles {
+		if loc := goSymbolLocation(gf, name); loc != nil {
+			return loc
+		}
+	}
+	return nil
+}
+
+// goSymbolLocation searches a .go file for a top-level func/type/const/var
+// declaration of name and returns the location of its identifier. Methods
+// (func with a receiver) are skipped — a package-qualified reference resolves
+// to a package-level symbol, not a method.
+func goSymbolLocation(filePath, name string) *lsp.Location {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil
+	}
+	absPath, err := filepath.Abs(filePath)
+	if err != nil {
+		return nil
+	}
+	uri := pathToURI(absPath)
+	keywords := []string{"func ", "type ", "const ", "var "}
+	for i, line := range strings.Split(string(data), "\n") {
+		trimmed := strings.TrimSpace(line)
+		for _, kw := range keywords {
+			if !strings.HasPrefix(trimmed, kw) {
+				continue
+			}
+			rest := trimmed[len(kw):]
+			if strings.HasPrefix(rest, "(") {
+				continue // func with receiver — a method, not a package symbol
+			}
+			end := 0
+			for end < len(rest) && isIdentChar(rest[end]) {
+				end++
+			}
+			if rest[:end] != name {
+				continue
+			}
+			col := findWholeWord(line, name)
+			if col < 0 {
+				col = strings.Index(line, name)
+			}
+			if col < 0 {
+				col = 0
+			}
+			return &lsp.Location{
+				URI: lsp.DocumentURI(uri),
+				Range: lsp.Range{
+					Start: lsp.Position{Line: i, Character: col},
+					End:   lsp.Position{Line: i, Character: col + len(name)},
+				},
+			}
+		}
+	}
+	return nil
+}
+
+// packageFileLocation returns a location at the `package` declaration of a
+// representative source file in dir — a .gala file when present, else a .go
+// file. Used to navigate to a package from its imported name.
+func packageFileLocation(dir string) *lsp.Location {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var goFallback string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		n := e.Name()
+		if strings.HasSuffix(n, ".gala") && !strings.HasSuffix(n, "_test.gala") {
+			return packageDeclLocation(filepath.Join(dir, n))
+		}
+		if goFallback == "" && strings.HasSuffix(n, ".go") && !strings.HasSuffix(n, "_test.go") {
+			goFallback = filepath.Join(dir, n)
+		}
+	}
+	if goFallback != "" {
+		return packageDeclLocation(goFallback)
+	}
+	return nil
+}
+
+// packageDeclLocation points at the `package X` line of filePath, falling back
+// to the file's start when no package clause is found.
+func packageDeclLocation(filePath string) *lsp.Location {
+	absPath, err := filepath.Abs(filePath)
+	if err != nil {
+		return nil
+	}
+	uri := lsp.DocumentURI(pathToURI(absPath))
+	if data, err := os.ReadFile(absPath); err == nil {
+		for i, line := range strings.Split(string(data), "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "package ") {
+				return &lsp.Location{URI: uri, Range: lsp.Range{
+					Start: lsp.Position{Line: i, Character: 0},
+					End:   lsp.Position{Line: i, Character: 0},
+				}}
+			}
+		}
+	}
+	return &lsp.Location{URI: uri, Range: zeroRange()}
+}
+
+// goMethodDefinition resolves a method call on a value whose type comes from a
+// Go package (e.g. b.WriteString where b : *bytes.Buffer) by locating the
+// method in the Go type's package source. Best-effort: the type's package must
+// be one the document imports so its import path — hence source directory — is
+// known, and the method must be declared as `func (recv Type) Method` (struct
+// methods) or as an interface method in `type Type interface { ... }`.
+func (h *GalaHandler) goMethodDefinition(text, uri, receiverType, method string, richAST *transpiler.RichAST) *lsp.Location {
+	if richAST == nil || richAST.GoTypeInfo == nil {
+		return nil
+	}
+	key := stripTypeParams(strings.TrimPrefix(strings.TrimSpace(receiverType), "*"))
+	td := richAST.GoTypeInfo.Types[key]
+	if td == nil {
+		return nil
+	}
+	if _, ok := td.Methods[method]; !ok {
+		return nil
+	}
+	dot := strings.LastIndex(key, ".")
+	if dot < 0 {
+		return nil
+	}
+	pkgName, typeName := key[:dot], key[dot+1:]
+	importPath, ok := parseGalaImports(text)[pkgName]
+	if !ok {
+		return nil
+	}
+	dir := h.resolveImportDir(uri, importPath)
+	if dir == "" {
+		return nil
+	}
+	return goMethodInDir(dir, typeName, method)
+}
+
+// goMethodInDir searches the non-test .go files in dir for a declaration of
+// method on typeName.
+func goMethodInDir(dir, typeName, method string) *lsp.Location {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") || strings.HasSuffix(e.Name(), "_test.go") {
+			continue
+		}
+		if loc := goMethodInFile(filepath.Join(dir, e.Name()), typeName, method); loc != nil {
+			return loc
+		}
+	}
+	return nil
+}
+
+// goMethodInFile looks for `func (recv [*]typeName[...]) method(` in a .go file
+// and returns the location of the method identifier.
+func goMethodInFile(filePath, typeName, method string) *lsp.Location {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil
+	}
+	absPath, err := filepath.Abs(filePath)
+	if err != nil {
+		return nil
+	}
+	uri := pathToURI(absPath)
+	for i, line := range strings.Split(string(data), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "func (") {
+			continue
+		}
+		closeParen := strings.Index(trimmed, ")")
+		if closeParen < 0 {
+			continue
+		}
+		if !receiverMatchesType(trimmed[len("func ("):closeParen], typeName) {
+			continue
+		}
+		rest := strings.TrimSpace(trimmed[closeParen+1:])
+		end := 0
+		for end < len(rest) && isIdentChar(rest[end]) {
+			end++
+		}
+		if rest[:end] != method {
+			continue
+		}
+		col := findWholeWord(line, method)
+		if col < 0 {
+			col = 0
+		}
+		return &lsp.Location{
+			URI: lsp.DocumentURI(uri),
+			Range: lsp.Range{
+				Start: lsp.Position{Line: i, Character: col},
+				End:   lsp.Position{Line: i, Character: col + len(method)},
+			},
+		}
+	}
+	return nil
+}
+
+// receiverMatchesType reports whether a Go method receiver clause (the text
+// between the parens in `func (b *Buffer) ...`) is a receiver for typeName,
+// tolerating a pointer star and generic type parameters.
+func receiverMatchesType(recv, typeName string) bool {
+	parts := strings.Fields(strings.TrimSpace(recv))
+	if len(parts) == 0 {
+		return false
+	}
+	typ := strings.TrimPrefix(parts[len(parts)-1], "*")
+	if idx := strings.IndexByte(typ, '['); idx >= 0 {
+		typ = typ[:idx]
+	}
+	return typ == typeName
 }
 
 // searchPackageDirs searches the type's package directory and search paths for a definition.

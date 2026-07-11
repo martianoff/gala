@@ -45,6 +45,7 @@ go_test(
     ],
     data = [
         "//collection_immutable:gala_sources",
+        "//go_interop:types.go",
         "//std:gala_sources",
     ],
     embed = [":lsp"],

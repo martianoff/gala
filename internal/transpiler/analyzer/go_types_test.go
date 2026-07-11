@@ -1,6 +1,8 @@
 package analyzer_test
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"martianoff/gala/internal/transpiler"
@@ -14,6 +16,30 @@ func skipIfNoGoSDK(t *testing.T) {
 	t.Helper()
 	if !analyzer.GoImporterAvailable() {
 		t.Skip("Go SDK not available (Bazel sandbox)")
+	}
+}
+
+// A function whose return type reaches a cross-package named type through a map
+// or chan layer must still register that type's method set, so downstream
+// completion/type-inference can see its methods even though the defining
+// package was never directly imported.
+func TestAnalyzeGoFiles_RegistersMapAndChanElementTypes(t *testing.T) {
+	skipIfNoGoSDK(t)
+	dir := t.TempDir()
+	src := "package sample\n\n" +
+		"import \"bytes\"\n\n" +
+		"func MapReturn() map[string]bytes.Buffer { return nil }\n" +
+		"func ChanReturn() chan bytes.Reader { return nil }\n"
+	if err := os.WriteFile(filepath.Join(dir, "sample.go"), []byte(src), 0644); err != nil {
+		t.Fatal(err)
+	}
+	info := analyzer.AnalyzeGoFiles(dir)
+	require.NotNil(t, info)
+	if info.Types["bytes.Buffer"] == nil {
+		t.Error("expected bytes.Buffer registered via map value type")
+	}
+	if info.Types["bytes.Reader"] == nil {
+		t.Error("expected bytes.Reader registered via chan element type")
 	}
 }
 
