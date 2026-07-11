@@ -472,8 +472,14 @@ func (h *GalaHandler) resolveImportDir(uri, importPath string) string {
 			}
 		}
 	}
-	// Not on a GALA search path — fall back to the Go SDK source tree so
-	// definitions in Go stdlib packages (bytes, crypto/sha256, ...) resolve.
+	// Not on a GALA search path. Try third-party Go modules wired from the
+	// project's gala.mod (their sources live in the dependency cache), then
+	// fall back to the Go SDK source tree for stdlib (bytes, crypto/sha256, ...).
+	if dir, ok := analyzer.ResolveGoSrcDir(h.goSrcDirs, importPath); ok {
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			return dir
+		}
+	}
 	return analyzer.GoPackageSourceDir(importPath)
 }
 

@@ -44,8 +44,9 @@ type GalaHandler struct {
 	parser    transpiler.GalaParser
 	generator transpiler.CodeGenerator
 
-	extraSearchPaths []string          // additional search paths (for testing)
-	client           *golsp.Client     // LSP client for sending notifications
+	extraSearchPaths []string      // additional search paths (for testing)
+	goSrcDirs        map[string]string // Go module import-path prefix -> on-disk .go source dir (third-party deps)
+	client           *golsp.Client // LSP client for sending notifications
 
 	mu              sync.Mutex
 	documents       map[string]string              // URI -> source text
@@ -70,6 +71,13 @@ func (h *GalaHandler) SetClient(client *golsp.Client) {
 // SetSearchPaths adds additional search paths for the analyzer (for testing).
 func (h *GalaHandler) SetSearchPaths(paths []string) {
 	h.extraSearchPaths = paths
+}
+
+// SetGoSrcDirs wires the Go module import-path -> source-directory table used to
+// resolve third-party Go types (for testing; in production it is populated from
+// the project's gala.mod by resolveProjectDeps).
+func (h *GalaHandler) SetGoSrcDirs(dirs map[string]string) {
+	h.goSrcDirs = dirs
 }
 
 // SetVersion sets the version reported in the LSP Initialize response.
@@ -314,6 +322,11 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 
 	searchPaths := h.getSearchPaths(filePath)
 	a := analyzer.NewGalaAnalyzerForLSP(h.parser, searchPaths)
+	if len(h.goSrcDirs) > 0 {
+		if s, ok := a.(interface{ SetGoSrcDirs(map[string]string) }); ok {
+			s.SetGoSrcDirs(h.goSrcDirs)
+		}
+	}
 	richAST, err := a.Analyze(tree, filePath)
 	if err != nil {
 		diagnostics = append(diagnostics, errorsToDiagnostics(err)...)
@@ -412,6 +425,11 @@ func (h *GalaHandler) resolveProjectDeps(rootPath string) {
 			h.extraSearchPaths = append(h.extraSearchPaths, depDir)
 		}
 	}
+	// Wire third-party Go module source directories so the analyzer can resolve
+	// their concrete types (completion) and definition can navigate into them.
+	if dirs := build.GoModuleSrcDirs(galaMod, config); len(dirs) > 0 {
+		h.goSrcDirs = dirs
+	}
 }
 
 // tryAnalyzePartial attempts to analyze an error-recovered ANTLR tree.
@@ -429,6 +447,11 @@ func (h *GalaHandler) tryAnalyzePartial(uri, filePath string, tree antlr.Tree) {
 
 	searchPaths := h.getSearchPaths(filePath)
 	a := analyzer.NewGalaAnalyzerForLSP(h.parser, searchPaths)
+	if len(h.goSrcDirs) > 0 {
+		if s, ok := a.(interface{ SetGoSrcDirs(map[string]string) }); ok {
+			s.SetGoSrcDirs(h.goSrcDirs)
+		}
+	}
 	richAST, err := a.Analyze(tree, filePath)
 	if err != nil || richAST == nil {
 		return
@@ -543,6 +566,11 @@ func (h *GalaHandler) analyzeAndCache(uri, cleanText, caller string) {
 	filePath := uriToPath(uri)
 	searchPaths := h.getSearchPaths(filePath)
 	a := analyzer.NewGalaAnalyzerForLSP(h.parser, searchPaths)
+	if len(h.goSrcDirs) > 0 {
+		if s, ok := a.(interface{ SetGoSrcDirs(map[string]string) }); ok {
+			s.SetGoSrcDirs(h.goSrcDirs)
+		}
+	}
 	richAST, aerr := a.Analyze(tree, filePath)
 	if aerr != nil {
 		fmt.Fprintf(os.Stderr, "[%s] analyze failed: %v\n", caller, aerr)

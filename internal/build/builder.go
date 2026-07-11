@@ -281,7 +281,20 @@ func (b *Builder) effectiveDepDir(req mod.Require) string {
 // or none are cached yet (the analyzer then leaves Go resolution to the
 // importer, which is correct for stdlib-only code).
 func (b *Builder) goModuleSrcDirs() map[string]string {
-	reqs := b.galaMod.GoRequires()
+	return GoModuleSrcDirs(b.galaMod, b.config)
+}
+
+// GoModuleSrcDirs maps each Go module required by galaMod to its on-disk .go
+// source directory in the dependency cache. It checks the GALA dep cache (which
+// stores the module path verbatim) and the Go module cache (which case-escapes
+// uppercase letters). Returns nil when there are no Go requires or none resolve
+// to a directory with Go sources. Shared by the CLI builder and the LSP so both
+// resolve third-party Go types the same way.
+func GoModuleSrcDirs(galaMod *mod.File, config *Config) map[string]string {
+	if galaMod == nil || config == nil {
+		return nil
+	}
+	reqs := galaMod.GoRequires()
 	if len(reqs) == 0 {
 		return nil
 	}
@@ -289,8 +302,8 @@ func (b *Builder) goModuleSrcDirs() map[string]string {
 	for _, req := range reqs {
 		// GALA dep cache stores the module path verbatim; the Go module
 		// cache case-escapes it (uppercase letter c -> "!"+lower(c)).
-		galaCand := filepath.Join(b.config.GalaPkgDir, filepath.FromSlash(req.Path)+"@"+req.Version)
-		goCand := filepath.Join(b.config.GoPkgDir, filepath.FromSlash(escapeGoModulePath(req.Path))+"@"+req.Version)
+		galaCand := filepath.Join(config.GalaPkgDir, filepath.FromSlash(req.Path)+"@"+req.Version)
+		goCand := filepath.Join(config.GoPkgDir, filepath.FromSlash(escapeGoModulePath(req.Path))+"@"+req.Version)
 		for _, cand := range []string{galaCand, goCand} {
 			if dirHasGoFiles(cand) {
 				dirs[req.Path] = cand

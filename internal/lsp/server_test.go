@@ -974,6 +974,101 @@ func TestDefinition_ExternalGoStdlib(t *testing.T) {
 }
 
 // ====================================================================
+// Third-party Go module interop: completion + go-to-definition on a
+// value/package whose type comes from a wired Go module source dir.
+// ====================================================================
+
+// writeThirdPartyGoModule writes an import-free Go package to a temp dir and
+// returns it. Import-free means AnalyzeGoFiles never needs the Go SDK, so the
+// fixture is hermetic (mirrors the analyzer's own go_src_dirs_test.go).
+func writeThirdPartyGoModule(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	src := "package widget\n\n" +
+		"type Widget struct {\n\tName string\n}\n\n" +
+		"func New() Widget { return Widget{} }\n\n" +
+		"func (w Widget) Spin() int { return 1 }\n" +
+		"func (w Widget) Label() string { return w.Name }\n"
+	if err := os.WriteFile(filepath.Join(dir, "widget.go"), []byte(src), 0644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func TestCompletion_DotOnThirdPartyGoType(t *testing.T) {
+	h, handler := newHarnessWithHandler(t)
+	goDir := writeThirdPartyGoModule(t)
+	handler.SetGoSrcDirs(map[string]string{"example.test/widget": goDir})
+
+	src := "package main\n" +
+		"\n" +
+		"import \"example.test/widget\"\n" +
+		"\n" +
+		"func main() {\n" +
+		"    val w = widget.New()\n" +
+		"    w.\n" +
+		"}\n"
+	uri := openFileOnDisk(t, h, src)
+	time.Sleep(300 * time.Millisecond)
+
+	list, err := h.Completion(uri, 6, 6)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list == nil {
+		t.Fatal("dot completion returned nil for third-party Go type")
+	}
+	t.Logf("third-party widget.Widget dot completion: %v", labelSlice(list))
+	labels := collectLabels(list)
+	if !labels["Spin"] && !labels["Label"] {
+		t.Errorf("expected widget.Widget methods (Spin/Label), got %v", labelSlice(list))
+	}
+}
+
+func TestDefinition_ThirdPartyGoModule(t *testing.T) {
+	h, handler := newHarnessWithHandler(t)
+	goDir := writeThirdPartyGoModule(t)
+	handler.SetGoSrcDirs(map[string]string{"example.test/widget": goDir})
+
+	src := "package main\n" +
+		"\n" +
+		"import \"example.test/widget\"\n" +
+		"\n" +
+		"func main() {\n" +
+		"    val w = widget.New()\n" +
+		"    val s = w.Spin()\n" +
+		"    Println(s)\n" +
+		"}\n"
+	uri := openFileOnDisk(t, h, src)
+	time.Sleep(300 * time.Millisecond)
+
+	inWidgetGo := func(u lsp.DocumentURI) bool {
+		return strings.HasSuffix(strings.ToLower(string(u)), "widget.go")
+	}
+
+	// Package name "widget" at line 5, col 14
+	if locs, err := h.Definition(uri, 5, 14); err != nil {
+		t.Fatal(err)
+	} else if len(locs) == 0 || !inWidgetGo(locs[0].URI) {
+		t.Errorf("widget package name: expected widget.go, got %v", locs)
+	}
+
+	// Package function "New" at line 5, col 20
+	if locs, err := h.Definition(uri, 5, 20); err != nil {
+		t.Fatal(err)
+	} else if len(locs) == 0 || !inWidgetGo(locs[0].URI) {
+		t.Errorf("widget.New: expected widget.go, got %v", locs)
+	}
+
+	// Method "Spin" on widget.Widget at line 6, col 16
+	if locs, err := h.Definition(uri, 6, 16); err != nil {
+		t.Fatal(err)
+	} else if len(locs) == 0 || !inWidgetGo(locs[0].URI) {
+		t.Errorf("widget.Widget.Spin: expected widget.go, got %v", locs)
+	}
+}
+
+// ====================================================================
 // Definition: Word boundary (process vs processAll)
 // ====================================================================
 
