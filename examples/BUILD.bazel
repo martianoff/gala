@@ -103,6 +103,18 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "tco_factorial",
+    src = "tco_factorial.gala",
+    expected = "tco_factorial.out",
+)
+
+gala_exec_test(
+    name = "tco_deep_sum",
+    src = "tco_deep_sum.gala",
+    expected = "tco_deep_sum.out",
+)
+
+gala_exec_test(
     name = "bind_notation",
     src = "bind_notation.gala",
     expected = "bind_notation.out",

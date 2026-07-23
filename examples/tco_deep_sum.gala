@@ -1,0 +1,10 @@
+package main
+
+// sumTo adds every integer from n down to 1 onto acc using direct
+// self-tail-recursion. Called with a large n, this would overflow a naive
+// recursion's call stack; guaranteed TCO turns it into a constant-stack loop.
+func sumTo(n int, acc int) int = if (n <= 0) acc else sumTo(n - 1, acc + n)
+
+func main() {
+    Println(sumTo(1000000, 0))
+}

@@ -774,9 +774,27 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		}
 		body = b
 	} else if ctx.Expression() != nil {
-		exprBody, err := t.transformExpressionBodiedFunction(ctx.Expression(), funcType)
-		if err != nil {
-			return nil, err
+		var exprBody *ast.BlockStmt
+		// Guaranteed self-tail-call optimization: rewrite direct self-tail
+		// recursion in an if-expression body into a `for {}` loop so deep
+		// recursion runs in constant stack space. Restricted to plain
+		// functions (no receiver, so `name` is the un-mangled call target);
+		// receiver/generic-method forms fall through to the normal lowering.
+		if ctx.Receiver() == nil {
+			loopBody, ok, tcoErr := t.tryTransformSelfTailRecursion(ctx.Expression(), name, funcType)
+			if tcoErr != nil {
+				return nil, tcoErr
+			}
+			if ok {
+				exprBody = loopBody
+			}
+		}
+		if exprBody == nil {
+			b, err := t.transformExpressionBodiedFunction(ctx.Expression(), funcType)
+			if err != nil {
+				return nil, err
+			}
+			exprBody = b
 		}
 		body = exprBody
 	}
