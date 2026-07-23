@@ -1,0 +1,7 @@
+package main
+
+func factorial(n int, acc int) int = if (n <= 0) acc else factorial(n - 1, n * acc)
+
+func main() {
+    Println(factorial(10, 1))
+}
