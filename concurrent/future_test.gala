@@ -464,76 +464,63 @@ func TestPoolShutdownGraceful(t T) T {
 
 // === Cancellation Tests ===
 
-// A cancellable future whose body blocks on its token observes the cancellation
-// and stops, completing with the sentinel it returns after the signal.
-func TestFutureCancellableObservesCancellation(t T) T {
-    val f = FutureCancellable[string]((tok) => {
-        WaitSignal(CancelDone(tok))
-        "cancelled"
-    })
-    Sleep(Milliseconds(20))
-    f.Cancel()
-    val result = f.Await()
-    val t1 = IsSuccess(t, result)
-    return Eq(t1, result.Get(), "cancelled")
+// Cancelling a chain before a pending stage runs short-circuits that stage with
+// a CancellationError. A Promise gate keeps the root pending until after Cancel,
+// so the Map boundary check is guaranteed to observe the cancellation.
+func TestCancelShortCircuitsPendingStage(t T) T {
+    val gate = NewPromise[int]()
+    val mapped = gate.Future().Map((x) => x * 2)
+    // Cancel the shared chain before the gate opens and the Map can run.
+    mapped.Cancel()
+    gate.Success(5)
+    val result = mapped.Await()
+    val t1 = IsFailure(t, result)
+    return Contains(t1, result.Err.Error(), "cancelled")
 }
 
-// IsCancelled reflects the token state before and after Cancel.
-func TestIsCancelledReflectsState(t T) T {
-    val tok = NewCancelToken()
-    val before = IsCancelled(tok)
-    Cancel(tok)
-    // Give the monitor goroutine a beat; IsCancelled itself does not block.
-    Sleep(Milliseconds(10))
-    val after = IsCancelled(tok)
-    val t1 = IsFalse(t, before)
-    return IsTrue(t1, after)
+// WithTimeout fires TimeoutError and cancels the shared token, so a stage chained
+// off the underlying Future short-circuits after the deadline.
+func TestWithTimeoutFiresAndCancels(t T) T {
+    val gate = NewPromise[int]()
+    val root = gate.Future()
+    val bounded = root.WithTimeout(Milliseconds(50))
+    val boundedResult = bounded.Await()
+    val t1 = IsFailure(t, boundedResult)
+    val t2 = Contains(t1, boundedResult.Err.Error(), "timed out")
+    // Let the timeout goroutine finish cancelling the shared token.
+    Sleep(Milliseconds(30))
+    val downstream = root.Map((x) => x + 1)
+    gate.Success(1)
+    val dr = downstream.Await()
+    val t3 = IsFailure(t2, dr)
+    return Contains(t3, dr.Err.Error(), "cancelled")
 }
 
-// WithTimeout now cancels the underlying token when it fires, so a cooperating
-// computation stops instead of leaking. The bounded Future fails with a timeout,
-// and the original Future subsequently completes with its cancellation sentinel.
-func TestWithTimeoutSignalsToken(t T) T {
-    val f = FutureCancellable[string]((tok) => {
-        WaitSignal(CancelDone(tok))
-        "stopped"
-    })
-    val bounded = f.WithTimeout(Milliseconds(50))
-    val timedOut = bounded.Await()
-    val t1 = IsFailure(t, timedOut)
-    val t2 = Contains(t1, timedOut.Err.Error(), "timed out")
-    // The token was cancelled by WithTimeout, so the body unblocks and completes.
-    val inner = f.Await()
-    val t3 = IsSuccess(t2, inner)
-    return Eq(t3, inner.Get(), "stopped")
-}
-
-// Race returns the first result and cancels the loser, which then completes with
-// its cancellation sentinel.
+// Race returns the first result and cancels the losers, so a stage chained off a
+// loser short-circuits with a CancellationError.
 func TestRaceCancelsLoser(t T) T {
-    val winner = FutureCancellable[string]((tok) => {
-        Sleep(Milliseconds(20))
-        "winner"
-    })
-    val loser = FutureCancellable[string]((tok) => {
-        WaitSignal(CancelDone(tok))
-        "loser-cancelled"
-    })
-    val racy = Race[string](ArrayOf[Future[string]](winner, loser))
+    val winnerGate = NewPromise[int]()
+    val loserGate = NewPromise[int]()
+    val winner = winnerGate.Future()
+    val loser = loserGate.Future()
+    winnerGate.Success(1)
+    val racy = Race[int](ArrayOf[Future[int]](winner, loser))
     val result = racy.Await()
     val t1 = IsSuccess(t, result)
-    val t2 = Eq(t1, result.Get(), "winner")
-    // The loser was cancelled by Race and unblocks with its sentinel.
-    val loserResult = loser.Await()
-    val t3 = IsSuccess(t2, loserResult)
-    return Eq(t3, loserResult.Get(), "loser-cancelled")
+    val t2 = Eq(t1, result.Get(), 1)
+    // Let Race finish cancelling the losers' tokens.
+    Sleep(Milliseconds(30))
+    val downstream = loser.Map((x) => x + 1)
+    loserGate.Success(99)
+    val dr = downstream.Await()
+    val t3 = IsFailure(t2, dr)
+    return Contains(t3, dr.Err.Error(), "cancelled")
 }
 
-// Ordinary (non-cancellable) Futures ignore Cancel — it is a safe no-op.
-func TestCancelNoOpOnPlainFuture(t T) T {
-    val f = FutureOf(42)
-    f.Cancel()
+// A chain that is never cancelled completes normally (non-breaking regression).
+func TestNoCancellationCompletesNormally(t T) T {
+    val f = FutureOf(42).Map((x) => x + 1).Map((x) => x * 2)
     val result = f.Await()
     val t1 = IsSuccess(t, result)
-    return Eq(t1, result.Get(), 42)
+    return Eq(t1, result.Get(), 86)
 }

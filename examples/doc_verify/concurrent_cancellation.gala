@@ -7,46 +7,39 @@ import (
     . "martianoff/gala/time_utils"
 )
 
-// Verifies the cancellation additions documented in CONCURRENT.MD.
+// Verifies the API-level cancellation added to CONCURRENT.MD. User code never
+// touches a token — it cancels via Future.Cancel / WithTimeout / Race.
 
-// A cancellable Future receives a CancelToken and stops when it is cancelled.
-func testCancellable() {
-    val f = FutureCancellable[string]((tok) => {
-        WaitSignal(CancelDone(tok))
-        "cancelled"
-    })
-    f.Cancel()
-    Println(s"Cancellable=${f.Get()}")
+// Cancelling a chain short-circuits its pending stages with a CancellationError.
+// A Promise gate holds the root pending until after Cancel, so the Map boundary
+// deterministically observes the cancellation.
+func testCancelChain() {
+    val gate = NewPromise[int]()
+    val mapped = gate.Future().Map((x) => x * 2)
+    mapped.Cancel()
+    gate.Success(21)
+    val result = mapped.Await()
+    Println(s"Cancelled failure=${result.IsFailure()}")
 }
 
-// WithTimeout now cancels the underlying token, so a cooperating body stops.
-func testTimeoutCancels() {
-    val f = FutureCancellable[string]((tok) => {
-        WaitSignal(CancelDone(tok))
-        "stopped"
-    })
-    val bounded = f.WithTimeout(Milliseconds(50))
+// WithTimeout fails the bounded Future and cancels the underlying chain.
+func testTimeout() {
+    val gate = NewPromise[int]()
+    val bounded = gate.Future().WithTimeout(Milliseconds(50))
     Println(s"Timeout failed=${bounded.Await().IsFailure()}")
-    Println(s"Underlying=${f.Get()}")
 }
 
 // Race returns the first result and cancels the losers.
 func testRace() {
-    val winner = FutureCancellable[string]((tok) => {
-        Sleep(Milliseconds(20))
-        "fast"
-    })
-    val loser = FutureCancellable[string]((tok) => {
-        WaitSignal(CancelDone(tok))
-        "slow-cancelled"
-    })
-    val first = Race[string](ArrayOf[Future[string]](winner, loser))
+    val winnerGate = NewPromise[string]()
+    val loserGate = NewPromise[string]()
+    winnerGate.Success("fast")
+    val first = Race[string](ArrayOf[Future[string]](winnerGate.Future(), loserGate.Future()))
     Println(s"Race winner=${first.Get()}")
-    Println(s"Loser=${loser.Get()}")
 }
 
 func main() {
-    testCancellable()
-    testTimeoutCancels()
+    testCancelChain()
+    testTimeout()
     testRace()
 }

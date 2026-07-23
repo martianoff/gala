@@ -1340,7 +1340,6 @@ gala_exec_test(
     deps = [
         "//collection_immutable",
         "//concurrent",
-        "//go_interop",
         "//time_utils",
     ],
 )

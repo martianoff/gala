@@ -1,5 +1,3 @@
-Cancellable=cancelled
+Cancelled failure=true
 Timeout failed=true
-Underlying=stopped
 Race winner=fast
-Loser=slow-cancelled

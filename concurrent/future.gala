@@ -16,9 +16,9 @@ type FutureState[T any] struct {
     var mu       *go_interop.RWMutex
     var complete bool
     var ec       go_interop.ExecutionContext
-    // cancel carries the cancellation handle for computations started via
-    // FutureCancellable. It is None for ordinary Futures, which keeps this
-    // addition non-breaking — Cancel is then a no-op.
+    // cancel carries the Future's cancellation token, shared across every stage
+    // derived from it. Root constructors create a fresh token; combinators inherit
+    // the parent's. Cancelling it short-circuits pending downstream stages.
     var cancel   Option[go_interop.CancelToken]
 }
 
@@ -61,8 +61,24 @@ struct Promise[T any](future Future[T])
 // The default is a bare nil rather than GlobalEC() so the injected default at
 // each call site carries no package qualifier — callers need not import the
 // ExecutionContext's defining package.
+//
+// Every Promise carries a cancellation token: NewPromise creates a fresh one, so
+// each root Future gets its own. The public signature keeps only the `ec` default
+// (a bare nil that injects no package qualifier at call sites); the token plumbing
+// lives in the package-private newPromiseWith so callers outside this package
+// never have go_interop leaked into their generated code.
 func NewPromise[T any](ec go_interop.ExecutionContext = nil) Promise[T] {
+    return newPromiseWith[T](ec, None[go_interop.CancelToken]())
+}
+
+// newPromiseWith builds a Promise on the given ExecutionContext (nil → GlobalEC())
+// with an explicit cancellation token: an already-defined token is reused so a
+// derived stage shares its parent's token, while None means "fresh root token".
+// Combinators call this with cancel = f.state.cancel so the whole derived chain
+// shares one token and a single Cancel short-circuits every pending stage.
+func newPromiseWith[T any](ec go_interop.ExecutionContext, cancel Option[go_interop.CancelToken]) Promise[T] {
     val resolvedEc = if (ec == nil) go_interop.GlobalEC() else ec
+    val resolvedCancel = if (cancel.IsDefined()) cancel else Some(go_interop.NewCancelToken())
     val f = fut[T](
         state = &FutureState[T](
             done = go_interop.NewSignal(),
@@ -70,7 +86,7 @@ func NewPromise[T any](ec go_interop.ExecutionContext = nil) Promise[T] {
             mu = go_interop.NewRWMutex(),
             complete = false,
             ec = resolvedEc,
-            cancel = None[go_interop.CancelToken]()
+            cancel = resolvedCancel
         )
     )
     return Promise[T](future = f)
@@ -155,35 +171,6 @@ func (f Future[T]) Apply(body func() T) Future[T] = runAsync[T](body, go_interop
 // If body panics, the Future is completed with a Failure.
 func FutureOn[T any](body func() T, ec go_interop.ExecutionContext) Future[T] = runAsync[T](body, ec)
 
-// FutureCancellable runs body asynchronously and hands it a CancelToken so the
-// computation can observe cancellation and stop cooperatively. The body polls
-// IsCancelled(tok) or blocks on WaitSignal(CancelDone(tok)); when the returned
-// Future is cancelled (via its Cancel method, WithTimeout firing, or losing a
-// Race), the token is triggered and the body can return early.
-//
-// It runs on the given ExecutionContext; a nil ec (the default) means GlobalEC().
-// If body panics, the Future is completed with a Failure. This is additive:
-// ordinary Futures created without a token treat Cancel as a no-op.
-func FutureCancellable[T any](body func(go_interop.CancelToken) T, ec go_interop.ExecutionContext = nil) Future[T] {
-    val resolvedEc = if (ec == nil) go_interop.GlobalEC() else ec
-    val token = go_interop.NewCancelToken()
-    val f = fut[T](
-        state = &FutureState[T](
-            done = go_interop.NewSignal(),
-            once = go_interop.NewOnce(),
-            mu = go_interop.NewRWMutex(),
-            complete = false,
-            ec = resolvedEc,
-            cancel = Some(token)
-        )
-    )
-    val p = Promise[T](future = f)
-    val onSuccess = () => { p.Success(body(token)) }
-    val onPanic = (r any) => { p.Failure(go_interop.PanicToError(r)) }
-    resolvedEc.ExecuteWithRecover(onSuccess, onPanic)
-    return p.Future()
-}
-
 // FutureError is a custom error type for Future-related errors.
 struct FutureError(Message string)
 
@@ -193,6 +180,26 @@ func (e FutureError) Error() string = e.Message
 struct TimeoutError(Timeout Duration)
 
 func (e TimeoutError) Error() string = s"future timed out after ${e.Timeout}"
+
+// CancellationError is returned by a derived Future whose pending stage was
+// short-circuited because the shared cancellation token was triggered (via
+// Future.Cancel, WithTimeout firing, or losing a Race). It never aborts an
+// already-running body — Go has no goroutine interruption — it only prevents a
+// not-yet-started downstream stage from running.
+struct CancellationError(Message string)
+
+func (e CancellationError) Error() string = e.Message
+
+// checkCancelled fails p with a CancellationError and returns true when tok is
+// defined and already cancelled, signalling the caller to skip the now-pointless
+// stage. It returns false (and does nothing) when there is nothing to cancel.
+func checkCancelled[U any](p Promise[U], tok Option[go_interop.CancelToken]) bool {
+    if tok.IsDefined() && go_interop.IsCancelled(tok.Get()) {
+        p.Failure(CancellationError(Message = "future cancelled"))
+        return true
+    }
+    return false
+}
 
 // IsCompleted returns true if the Future has been completed (success or failure).
 func (f Future[T]) IsCompleted() bool {
@@ -234,10 +241,12 @@ func (f Future[T]) AwaitFor(timeout Duration) Option[Try[T]] {
     return None[Try[T]]()
 }
 
-// Cancel triggers this Future's cancellation token, if it has one. Futures
-// created with FutureCancellable observe the token and can stop cooperatively;
-// for any other Future this is a no-op. Cancel does not itself complete the
-// Future — the body decides how to respond (e.g., return a sentinel value).
+// Cancel triggers this Future's cancellation token, which is shared by every
+// stage derived from it. Any pending downstream combinator (Map, FlatMap, etc.)
+// that has not yet started short-circuits with a CancellationError; an
+// already-running body is not interrupted (Go has no goroutine interruption).
+// Cancel does not itself complete this Future, and cancelling an already
+// completed Future has no effect on its stored result.
 func (f Future[T]) Cancel() {
     if f.state != nil && f.state.cancel.IsDefined() {
         go_interop.Cancel(f.state.cancel.Get())
@@ -248,11 +257,10 @@ func (f Future[T]) Cancel() {
 // if it arrives before the timeout, or fails with TimeoutError if the timeout
 // expires first. The returned Future inherits this Future's ExecutionContext.
 //
-// When the timeout fires, WithTimeout also cancels this Future's cancellation
-// token (if it has one, e.g. it was created with FutureCancellable), so a
-// cooperating computation can stop instead of running to completion in the
-// background. For Futures without a token this is a no-op and behaviour is
-// unchanged.
+// When the timeout fires, WithTimeout also cancels this Future's shared
+// cancellation token, so pending downstream stages short-circuit instead of
+// running after the deadline. The bounded Future is failed first so the timeout
+// result wins the single-assignment race.
 func (f Future[T]) WithTimeout(timeout Duration) Future[T] {
     val p = NewPromise[T](f.state.ec)
     f.OnComplete((r Try[T]) => {
@@ -318,11 +326,14 @@ func (f Future[T]) OnFailure(callback func(error)) {
 
 // Map transforms the successful value of this Future using the given function.
 // If this Future fails, the resulting Future will also fail with the same error.
-// The resulting Future inherits this Future's ExecutionContext.
+// The resulting Future inherits this Future's ExecutionContext and cancellation
+// token; if the token is cancelled before this stage runs, it short-circuits.
 func (f Future[T]) Map[U any](fn func(T) U) Future[U] {
-    val p = NewPromise[U](f.state.ec)
+    val p = newPromiseWith[U](f.state.ec, f.state.cancel)
     f.OnComplete((r Try[T]) => {
-        p.Complete(r.Map[U](fn))
+        if !checkCancelled(p, f.state.cancel) {
+            p.Complete(r.Map[U](fn))
+        }
     })
     return p.Future()
 }
@@ -331,13 +342,15 @@ func (f Future[T]) Map[U any](fn func(T) U) Future[U] {
 // that returns another Future. This allows chaining asynchronous operations.
 // The resulting Future inherits this Future's ExecutionContext.
 func (f Future[T]) FlatMap[U any](fn func(T) Future[U]) Future[U] {
-    val p = NewPromise[U](f.state.ec)
+    val p = newPromiseWith[U](f.state.ec, f.state.cancel)
     f.OnComplete((r Try[T]) => {
-        r match {
-            case Success(v) => fn(v).OnComplete((innerResult Try[U]) => {
-                p.Complete(innerResult)
-            })
-            case Failure(e) => p.Failure(e)
+        if !checkCancelled(p, f.state.cancel) {
+            r match {
+                case Success(v) => fn(v).OnComplete((innerResult Try[U]) => {
+                    p.Complete(innerResult)
+                })
+                case Failure(e) => p.Failure(e)
+            }
         }
     })
     return p.Future()
@@ -348,9 +361,11 @@ func (f Future[T]) FlatMap[U any](fn func(T) Future[U]) Future[U] {
 // NoSuchElementError.
 // The resulting Future inherits this Future's ExecutionContext.
 func (f Future[T]) Filter(predicate func(T) bool) Future[T] {
-    val p = NewPromise[T](f.state.ec)
+    val p = newPromiseWith[T](f.state.ec, f.state.cancel)
     f.OnComplete((r Try[T]) => {
-        p.Complete(r.Filter(predicate))
+        if !checkCancelled(p, f.state.cancel) {
+            p.Complete(r.Filter(predicate))
+        }
     })
     return p.Future()
 }
@@ -360,9 +375,11 @@ func (f Future[T]) Filter(predicate func(T) bool) Future[T] {
 // to produce a successful value.
 // The resulting Future inherits this Future's ExecutionContext.
 func (f Future[T]) Recover(pf func(error) T) Future[T] {
-    val p = NewPromise[T](f.state.ec)
+    val p = newPromiseWith[T](f.state.ec, f.state.cancel)
     f.OnComplete((r Try[T]) => {
-        p.Complete(r.Recover(pf))
+        if !checkCancelled(p, f.state.cancel) {
+            p.Complete(r.Recover(pf))
+        }
     })
     return p.Future()
 }
@@ -371,13 +388,15 @@ func (f Future[T]) Recover(pf func(error) T) Future[T] {
 // that returns another Future.
 // The resulting Future inherits this Future's ExecutionContext.
 func (f Future[T]) RecoverWith(pf func(error) Future[T]) Future[T] {
-    val p = NewPromise[T](f.state.ec)
+    val p = newPromiseWith[T](f.state.ec, f.state.cancel)
     f.OnComplete((r Try[T]) => {
-        r match {
-            case Success(v) => p.Success(v)
-            case Failure(e) => pf(e).OnComplete((recovered Try[T]) => {
-                p.Complete(recovered)
-            })
+        if !checkCancelled(p, f.state.cancel) {
+            r match {
+                case Success(v) => p.Success(v)
+                case Failure(e) => pf(e).OnComplete((recovered Try[T]) => {
+                    p.Complete(recovered)
+                })
+            }
         }
     })
     return p.Future()
@@ -386,11 +405,13 @@ func (f Future[T]) RecoverWith(pf func(error) Future[T]) Future[T] {
 // Transform applies success or failure function based on the result.
 // The resulting Future inherits this Future's ExecutionContext.
 func (f Future[T]) Transform[U any](s func(T) Try[U], fn func(error) Try[U]) Future[U] {
-    val p = NewPromise[U](f.state.ec)
+    val p = newPromiseWith[U](f.state.ec, f.state.cancel)
     f.OnComplete((r Try[T]) => {
-        r match {
-            case Success(v) => p.Complete(s(v))
-            case Failure(e) => p.Complete(fn(e))
+        if !checkCancelled(p, f.state.cancel) {
+            r match {
+                case Success(v) => p.Complete(s(v))
+                case Failure(e) => p.Complete(fn(e))
+            }
         }
     })
     return p.Future()
@@ -399,22 +420,26 @@ func (f Future[T]) Transform[U any](s func(T) Try[U], fn func(error) Try[U]) Fut
 // TransformWith applies success or failure function that returns a Future.
 // The resulting Future inherits this Future's ExecutionContext.
 func (f Future[T]) TransformWith[U any](s func(T) Future[U], fn func(error) Future[U]) Future[U] {
-    val p = NewPromise[U](f.state.ec)
+    val p = newPromiseWith[U](f.state.ec, f.state.cancel)
     f.OnComplete((r Try[T]) => {
-        r match {
-            case Success(v) => s(v).OnComplete((res Try[U]) => {
-                p.Complete(res)
-            })
-            case Failure(e) => fn(e).OnComplete((res Try[U]) => {
-                p.Complete(res)
-            })
+        if !checkCancelled(p, f.state.cancel) {
+            r match {
+                case Success(v) => s(v).OnComplete((res Try[U]) => {
+                    p.Complete(res)
+                })
+                case Failure(e) => fn(e).OnComplete((res Try[U]) => {
+                    p.Complete(res)
+                })
+            }
         }
     })
     return p.Future()
 }
 
 // Zip combines two Futures into a Future of a tuple.
-// The resulting Future inherits this Future's ExecutionContext.
+// The resulting Future inherits this Future's ExecutionContext. Zip, ZipWith,
+// Zip2..Zip10 and Fallback are defined in terms of FlatMap/Map/RecoverWith, so
+// they inherit this Future's cancellation token and boundary check transitively.
 func (f Future[T]) Zip[U any](other Future[U]) Future[Tuple[T, U]] {
     return f.FlatMap[Tuple[T, U]]((t T) => {
         return other.Map[Tuple[T, U]]((u U) => (t, u))
@@ -514,10 +539,12 @@ func (f Future[T]) Fallback(that Future[T]) Future[T] {
 // with the same result after the callback executes.
 // The resulting Future inherits this Future's ExecutionContext.
 func (f Future[T]) AndThen(callback func(Try[T])) Future[T] {
-    val p = NewPromise[T](f.state.ec)
+    val p = newPromiseWith[T](f.state.ec, f.state.cancel)
     f.OnComplete((r Try[T]) => {
-        callback(r)
-        p.Complete(r)
+        if !checkCancelled(p, f.state.cancel) {
+            callback(r)
+            p.Complete(r)
+        }
     })
     return p.Future()
 }
@@ -600,12 +627,13 @@ func FirstCompletedOf[T any](futures Array[Future[T]]) Future[T] {
 // Race returns a Future that completes with the result of the first Future to
 // finish, then cancels the losers via their cancellation tokens. It is the
 // structured-concurrency form of FirstCompletedOf: the winner's result is kept
-// and every other Future is asked to stop.
+// and every other Future's shared token is cancelled, so their pending
+// downstream stages short-circuit instead of running on.
 //
-// Cancellation is cooperative — a loser stops promptly only if it was created
-// with FutureCancellable and observes its token. Losers without a token simply
-// run to completion in the background (their results are discarded), exactly as
-// with FirstCompletedOf.
+// Cancellation is coarse and cooperative: a loser's already-running body is not
+// interrupted (Go has no goroutine interruption), but any stage derived from it
+// that has not yet started fails with a CancellationError. The Race result
+// itself carries a fresh token and is unaffected.
 func Race[T any](futures Array[Future[T]]) Future[T] {
     val p = NewPromise[T]()
 

@@ -78,11 +78,10 @@ val maybe = slow.AwaitFor(Milliseconds(500))      // None on timeout
 ```
 
 When the timeout fires, `WithTimeout` also cancels the underlying Future's
-cancellation token, if it has one (i.e. it was created with `FutureCancellable`),
-so a cooperating computation can stop instead of running to completion in the
-background. For a plain Future without a token this is a no-op and behaviour is
-unchanged — the body keeps running and its result is discarded. See
-[Cancellation](#cancellation) for how to make a Future observe its token.
+cancellation token, so pending downstream stages short-circuit instead of running
+after the deadline (see [Cancellation](#cancellation)). The bounded Future is
+failed with `TimeoutError` first, so that result wins even though cancellation
+also unblocks the chain.
 
 ### Combining Futures
 
@@ -93,40 +92,41 @@ val winner = Race[int](ArrayOf[Future[int]](a, b))  // first result, cancels los
 ```
 
 `Race` is the structured-concurrency form of `FirstCompletedOf`: it completes
-with the first Future to finish and then cancels the losers via their
-cancellation tokens (cooperative — a loser stops promptly only if it was created
-with `FutureCancellable`).
+with the first Future to finish and then cancels the losing Futures' shared
+tokens, so their pending downstream stages short-circuit.
 
 ### Cancellation
 
-`FutureCancellable` hands the computation an opaque `CancelToken` so it can
-observe cancellation without threading a raw `context.Context` through GALA. The
-token is triggered by the Future's `Cancel()` method, by `WithTimeout` firing, or
-by losing a `Race`. Cancellation is cooperative: the body decides how to respond.
+Cancellation is **API-level**: you cancel a Future with `.Cancel()` (or let
+`.WithTimeout()` / `Race` cancel it for you). There is no token in user code — a
+Future carries an opaque cancellation token internally.
 
 ```gala
-// Poll IsCancelled, or block on the token's done Signal via WaitSignal.
-val f = FutureCancellable[string]((tok) => {
-    WaitSignal(CancelDone(tok))     // unblocks when the token is cancelled
-    "cancelled"                     // or return a partial/sentinel result
-})
-
-f.Cancel()                          // trigger cancellation
-Println(f.Get())                    // "cancelled"
+val chain = source.Map((v) => step1(v)).FlatMap((v) => step2(v))
+chain.Cancel()   // pending stages that haven't started fail with CancellationError
 ```
 
-Token API (re-exported from `go_interop` into the `concurrent` namespace):
+Three properties define the semantics:
 
-- `CancelToken` — opaque handle wrapping a context and its cancel function.
-- `NewCancelToken() CancelToken` — a token that stays live until `Cancel`.
-- `NewTimeoutToken(goDuration) CancelToken` — auto-cancels after the duration.
-- `Cancel(tok)` — cancel the token (safe to call more than once).
-- `IsCancelled(tok) bool` — non-blocking check.
-- `CancelDone(tok) Signal` — a Signal that closes on cancel; block on it with `WaitSignal`.
-- `CancelErr(tok) error` — cancellation reason, or nil while live.
+- **Checked at combinator boundaries.** Each derived stage (`Map`, `FlatMap`,
+  `Filter`, `Recover`, `RecoverWith`, `Transform`, `TransformWith`, `AndThen`,
+  and the `Zip*`/`Fallback` built on them) checks the token *before* it runs.
+  Cancelling short-circuits any stage that has not started yet, failing it with a
+  `CancellationError`. A single already-running body cannot be preempted — Go has
+  no goroutine interruption — so cancellation does not abort work that is
+  in-flight; it only prevents downstream stages from running.
+- **Graph-level and coarse.** A derived chain shares one token, so cancelling any
+  node cancels the whole shared computation. Per-node / sub-tree scoping is future
+  work.
+- **Never on success.** Successful completion does not cancel the token, so
+  `.Cancel()` after a Future has completed has no effect on its stored result.
 
-`Cancel()` on a plain Future (one created without a token) is a safe no-op, so
-this is fully additive to existing code.
+`.Cancel()` is always safe: on a chain that is already complete, or one with no
+pending stages, it simply does nothing observable. This makes the whole feature
+additive — existing code that never calls `.Cancel()` behaves exactly as before.
+
+Interrupting a long in-flight body (true preemption) is intentionally out of
+scope here and would be achieved by other means later.
 
 ---
 
