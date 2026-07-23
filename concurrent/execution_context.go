@@ -51,6 +51,3 @@ var Cancel = go_interop.Cancel
 
 // IsCancelled reports whether a token has been cancelled.
 var IsCancelled = go_interop.IsCancelled
-
-// CancelErr returns the reason a token was cancelled, or nil if still live.
-var CancelErr = go_interop.CancelErr

@@ -367,15 +367,6 @@ func IsCancelled(tok CancelToken) bool {
 	}
 }
 
-// CancelErr returns the reason the token was cancelled (context.Canceled after
-// Cancel), or nil if it is still live.
-func CancelErr(tok CancelToken) error {
-	if tok.ctx == nil {
-		return nil
-	}
-	return tok.ctx.Err()
-}
-
 // Mutex wraps sync.Mutex for GALA compatibility.
 type Mutex struct {
 	mu sync.Mutex

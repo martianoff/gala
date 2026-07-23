@@ -117,7 +117,9 @@ Three properties define the semantics:
   in-flight; it only prevents downstream stages from running.
 - **Graph-level and coarse.** A derived chain shares one token, so cancelling any
   node cancels the whole shared computation. Per-node / sub-tree scoping is future
-  work.
+  work. Scope rule: linear combinators inherit the parent's token, while the
+  aggregation / scope constructors (`Race`, `Sequence`, `FirstCompletedOf`,
+  `WithTimeout`) intentionally open a fresh token scope.
 - **Never on success.** Successful completion does not cancel the token, so
   `.Cancel()` after a Future has completed has no effect on its stored result.
 
