@@ -95,11 +95,13 @@ implementation tractable for a young language — we are responsible for the fro
 the lowering, not for code generation, GC, or a scheduler.
 
 **What it costs.**
-- **A transpilation step in the loop.** There is an extra build phase, and stack traces /
-  debugger line numbers refer to generated Go, not GALA source. Readable output (goal 5)
-  is partly a mitigation for this: when you do drop into the Go, it is legible enough to
-  follow — though it carries GALA's machinery and is not the idiomatic Go a person would
-  have hand-written.
+- **A transpilation step in the loop.** There is an extra build phase. Runtime panics and
+  stack traces do map back to GALA source: the transpiler emits Go `//line file.gala:n`
+  directives, which the compiler and runtime honor, so a panic reports `foo.gala:12` rather
+  than a generated-Go line (exact for ordinary statements, approximate inside lowered
+  constructs — see `docs/PERFORMANCE_DEBUGGING.MD`). Readable output (goal 5) remains the
+  mitigation for when you do drop into the Go: it is legible enough to follow — though it
+  carries GALA's machinery and is not the idiomatic Go a person would have hand-written.
 - **Latency to new Go features.** A new Go language or stdlib feature is usable from GALA
   only once the transpiler knows how to emit or infer it.
 - **Semantics bounded by Go's.** GALA cannot offer anything Go's runtime can't express —
@@ -277,8 +279,9 @@ expressiveness with a layer between you and Go.** That layer is the transpiler, 
 `Immutable`/`ConstPtr` wrappers, the monad adapters, and the persistent-collection
 representations. The payoff is real (enforced immutability, exhaustive matching, readable
 functional pipelines); the recurring price is indirection that you usually don't see but
-occasionally must reason about — when profiling a hot loop, when reading a stack trace in
-generated Go, or when inference can't see across a package boundary.
+occasionally must reason about — when profiling a hot loop, when reading a stack trace
+(mapped back to GALA source via emitted `//line` directives, though lowered constructs map
+only approximately), or when inference can't see across a package boundary.
 
 GALA's design response is consistent: **make the safe, expressive thing the default, and
 make the escape hatch explicit and visible** — `var` for mutation, `collection_mutable`
