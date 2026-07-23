@@ -10,6 +10,7 @@
 package go_interop
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -318,6 +319,93 @@ func WaitSignalTimeout(s Signal, timeout time.Duration) bool {
 	case <-time.After(timeout):
 		return false
 	}
+}
+
+// === Cancellation ===
+
+// CancelToken is an opaque cancellation handle. It wraps a context.Context and
+// its cancel function so GALA code can observe and trigger cancellation without
+// threading a raw context.Context through the transpiler (a historically fragile
+// codegen path).
+//
+// CancelToken is a value type (handle pattern): its fields are reference types
+// (context, func, channel), so a copy shares the same underlying cancellation
+// state and can be passed by value without loss of identity.
+type CancelToken struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+	done   chan struct{}
+}
+
+// newCancelToken bridges a context's Done channel onto a bidirectional Signal so
+// GALA can WaitSignal on it. A single monitor goroutine is the only closer of
+// done, which fires for both manual Cancel and context deadline expiry, so there
+// is no double-close race. For a timeout token the goroutine exits when the
+// deadline elapses; for a plain token it exits once Cancel is called.
+func newCancelToken(ctx context.Context, cancel context.CancelFunc) CancelToken {
+	tok := CancelToken{
+		ctx:    ctx,
+		cancel: cancel,
+		done:   make(chan struct{}),
+	}
+	go func() {
+		<-ctx.Done()
+		close(tok.done)
+	}()
+	return tok
+}
+
+// NewCancelToken creates a CancelToken backed by context.WithCancel. The token
+// stays live until Cancel is called.
+func NewCancelToken() CancelToken {
+	ctx, cancel := context.WithCancel(context.Background())
+	return newCancelToken(ctx, cancel)
+}
+
+// NewTimeoutToken creates a CancelToken that auto-cancels after d elapses. It is
+// built on context.WithTimeout and accepts the same time.Duration that the
+// concurrent package's duration helpers produce via Duration.ToGoDuration().
+func NewTimeoutToken(d time.Duration) CancelToken {
+	ctx, cancel := context.WithTimeout(context.Background(), d)
+	return newCancelToken(ctx, cancel)
+}
+
+// Cancel cancels the token, releasing its context resources and closing the
+// Signal returned by CancelDone. Calling Cancel more than once is safe.
+func Cancel(tok CancelToken) {
+	if tok.cancel != nil {
+		tok.cancel()
+	}
+}
+
+// IsCancelled reports whether the token has been cancelled or timed out. It never
+// blocks. A zero CancelToken (nil context) is reported as not cancelled.
+func IsCancelled(tok CancelToken) bool {
+	if tok.ctx == nil {
+		return false
+	}
+	select {
+	case <-tok.ctx.Done():
+		return true
+	default:
+		return false
+	}
+}
+
+// CancelDone returns a Signal that closes when the token is cancelled. GALA code
+// can WaitSignal (or WaitSignalTimeout) on it to block until cancellation, or
+// select on it inside a computation.
+func CancelDone(tok CancelToken) Signal {
+	return tok.done
+}
+
+// CancelErr returns the reason the token was cancelled: context.Canceled after
+// Cancel, context.DeadlineExceeded after a timeout, or nil if still live.
+func CancelErr(tok CancelToken) error {
+	if tok.ctx == nil {
+		return nil
+	}
+	return tok.ctx.Err()
 }
 
 // Mutex wraps sync.Mutex for GALA compatibility.

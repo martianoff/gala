@@ -461,3 +461,79 @@ func TestPoolShutdownGraceful(t T) T {
     val t3 = Eq(t2, r2.Get(), 20)
     return Eq(t3, r3.Get(), 30)
 }
+
+// === Cancellation Tests ===
+
+// A cancellable future whose body blocks on its token observes the cancellation
+// and stops, completing with the sentinel it returns after the signal.
+func TestFutureCancellableObservesCancellation(t T) T {
+    val f = FutureCancellable[string]((tok) => {
+        WaitSignal(CancelDone(tok))
+        "cancelled"
+    })
+    Sleep(Milliseconds(20))
+    f.Cancel()
+    val result = f.Await()
+    val t1 = IsSuccess(t, result)
+    return Eq(t1, result.Get(), "cancelled")
+}
+
+// IsCancelled reflects the token state before and after Cancel.
+func TestIsCancelledReflectsState(t T) T {
+    val tok = NewCancelToken()
+    val before = IsCancelled(tok)
+    Cancel(tok)
+    // Give the monitor goroutine a beat; IsCancelled itself does not block.
+    Sleep(Milliseconds(10))
+    val after = IsCancelled(tok)
+    val t1 = IsFalse(t, before)
+    return IsTrue(t1, after)
+}
+
+// WithTimeout now cancels the underlying token when it fires, so a cooperating
+// computation stops instead of leaking. The bounded Future fails with a timeout,
+// and the original Future subsequently completes with its cancellation sentinel.
+func TestWithTimeoutSignalsToken(t T) T {
+    val f = FutureCancellable[string]((tok) => {
+        WaitSignal(CancelDone(tok))
+        "stopped"
+    })
+    val bounded = f.WithTimeout(Milliseconds(50))
+    val timedOut = bounded.Await()
+    val t1 = IsFailure(t, timedOut)
+    val t2 = Contains(t1, timedOut.Err.Error(), "timed out")
+    // The token was cancelled by WithTimeout, so the body unblocks and completes.
+    val inner = f.Await()
+    val t3 = IsSuccess(t2, inner)
+    return Eq(t3, inner.Get(), "stopped")
+}
+
+// Race returns the first result and cancels the loser, which then completes with
+// its cancellation sentinel.
+func TestRaceCancelsLoser(t T) T {
+    val winner = FutureCancellable[string]((tok) => {
+        Sleep(Milliseconds(20))
+        "winner"
+    })
+    val loser = FutureCancellable[string]((tok) => {
+        WaitSignal(CancelDone(tok))
+        "loser-cancelled"
+    })
+    val racy = Race[string](ArrayOf[Future[string]](winner, loser))
+    val result = racy.Await()
+    val t1 = IsSuccess(t, result)
+    val t2 = Eq(t1, result.Get(), "winner")
+    // The loser was cancelled by Race and unblocks with its sentinel.
+    val loserResult = loser.Await()
+    val t3 = IsSuccess(t2, loserResult)
+    return Eq(t3, loserResult.Get(), "loser-cancelled")
+}
+
+// Ordinary (non-cancellable) Futures ignore Cancel — it is a safe no-op.
+func TestCancelNoOpOnPlainFuture(t T) T {
+    val f = FutureOf(42)
+    f.Cancel()
+    val result = f.Await()
+    val t1 = IsSuccess(t, result)
+    return Eq(t1, result.Get(), 42)
+}

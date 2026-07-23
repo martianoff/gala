@@ -16,6 +16,10 @@ type FutureState[T any] struct {
     var mu       *go_interop.RWMutex
     var complete bool
     var ec       go_interop.ExecutionContext
+    // cancel carries the cancellation handle for computations started via
+    // FutureCancellable. It is None for ordinary Futures, which keeps this
+    // addition non-breaking — Cancel is then a no-op.
+    var cancel   Option[go_interop.CancelToken]
 }
 
 // Future represents an asynchronous computation that will eventually produce
@@ -65,7 +69,8 @@ func NewPromise[T any](ec go_interop.ExecutionContext = nil) Promise[T] {
             once = go_interop.NewOnce(),
             mu = go_interop.NewRWMutex(),
             complete = false,
-            ec = resolvedEc
+            ec = resolvedEc,
+            cancel = None[go_interop.CancelToken]()
         )
     )
     return Promise[T](future = f)
@@ -150,6 +155,35 @@ func (f Future[T]) Apply(body func() T) Future[T] = runAsync[T](body, go_interop
 // If body panics, the Future is completed with a Failure.
 func FutureOn[T any](body func() T, ec go_interop.ExecutionContext) Future[T] = runAsync[T](body, ec)
 
+// FutureCancellable runs body asynchronously and hands it a CancelToken so the
+// computation can observe cancellation and stop cooperatively. The body polls
+// IsCancelled(tok) or blocks on WaitSignal(CancelDone(tok)); when the returned
+// Future is cancelled (via its Cancel method, WithTimeout firing, or losing a
+// Race), the token is triggered and the body can return early.
+//
+// It runs on the given ExecutionContext; a nil ec (the default) means GlobalEC().
+// If body panics, the Future is completed with a Failure. This is additive:
+// ordinary Futures created without a token treat Cancel as a no-op.
+func FutureCancellable[T any](body func(go_interop.CancelToken) T, ec go_interop.ExecutionContext = nil) Future[T] {
+    val resolvedEc = if (ec == nil) go_interop.GlobalEC() else ec
+    val token = go_interop.NewCancelToken()
+    val f = fut[T](
+        state = &FutureState[T](
+            done = go_interop.NewSignal(),
+            once = go_interop.NewOnce(),
+            mu = go_interop.NewRWMutex(),
+            complete = false,
+            ec = resolvedEc,
+            cancel = Some(token)
+        )
+    )
+    val p = Promise[T](future = f)
+    val onSuccess = () => { p.Success(body(token)) }
+    val onPanic = (r any) => { p.Failure(go_interop.PanicToError(r)) }
+    resolvedEc.ExecuteWithRecover(onSuccess, onPanic)
+    return p.Future()
+}
+
 // FutureError is a custom error type for Future-related errors.
 struct FutureError(Message string)
 
@@ -200,13 +234,25 @@ func (f Future[T]) AwaitFor(timeout Duration) Option[Try[T]] {
     return None[Try[T]]()
 }
 
+// Cancel triggers this Future's cancellation token, if it has one. Futures
+// created with FutureCancellable observe the token and can stop cooperatively;
+// for any other Future this is a no-op. Cancel does not itself complete the
+// Future — the body decides how to respond (e.g., return a sentinel value).
+func (f Future[T]) Cancel() {
+    if f.state != nil && f.state.cancel.IsDefined() {
+        go_interop.Cancel(f.state.cancel.Get())
+    }
+}
+
 // WithTimeout returns a new Future that completes with this Future's result
 // if it arrives before the timeout, or fails with TimeoutError if the timeout
 // expires first. The returned Future inherits this Future's ExecutionContext.
 //
-// WithTimeout does not cancel the underlying computation — side effects still
-// run in the background after a timeout fires. Make async work cancellable
-// (e.g., honor context.Context) if that matters.
+// When the timeout fires, WithTimeout also cancels this Future's cancellation
+// token (if it has one, e.g. it was created with FutureCancellable), so a
+// cooperating computation can stop instead of running to completion in the
+// background. For Futures without a token this is a no-op and behaviour is
+// unchanged.
 func (f Future[T]) WithTimeout(timeout Duration) Future[T] {
     val p = NewPromise[T](f.state.ec)
     f.OnComplete((r Try[T]) => {
@@ -215,7 +261,11 @@ func (f Future[T]) WithTimeout(timeout Duration) Future[T] {
     f.state.ec.Execute(() => {
         val received = go_interop.WaitSignalTimeout(f.state.done, timeout.ToGoDuration())
         if !received {
+            // Fail the bounded Future first so the timeout result wins the
+            // single-assignment race; only then cancel the token so a
+            // cooperating body stops (its later completion becomes a no-op).
             p.Failure(TimeoutError(Timeout = timeout))
+            f.Cancel()
         }
     })
     return p.Future()
@@ -541,6 +591,32 @@ func FirstCompletedOf[T any](futures Array[Future[T]]) Future[T] {
     futures.ForEach((fut Future[T]) => {
         fut.OnComplete((r Try[T]) => {
             p.Complete(r)
+        })
+    })
+
+    return p.Future()
+}
+
+// Race returns a Future that completes with the result of the first Future to
+// finish, then cancels the losers via their cancellation tokens. It is the
+// structured-concurrency form of FirstCompletedOf: the winner's result is kept
+// and every other Future is asked to stop.
+//
+// Cancellation is cooperative — a loser stops promptly only if it was created
+// with FutureCancellable and observes its token. Losers without a token simply
+// run to completion in the background (their results are discarded), exactly as
+// with FirstCompletedOf.
+func Race[T any](futures Array[Future[T]]) Future[T] {
+    val p = NewPromise[T]()
+
+    futures.ForEach((fut Future[T]) => {
+        fut.OnComplete((r Try[T]) => {
+            val won = p.Complete(r)
+            if won {
+                futures.ForEach((other Future[T]) => {
+                    other.Cancel()
+                })
+            }
         })
     })
 

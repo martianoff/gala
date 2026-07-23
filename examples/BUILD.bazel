@@ -1334,6 +1334,18 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "doc_verify_concurrent_cancellation",
+    src = "doc_verify/concurrent_cancellation.gala",
+    expected = "doc_verify/concurrent_cancellation.out",
+    deps = [
+        "//collection_immutable",
+        "//concurrent",
+        "//go_interop",
+        "//time_utils",
+    ],
+)
+
+gala_exec_test(
     name = "doc_verify_strings_md",
     src = "doc_verify/strings_md.gala",
     expected = "doc_verify/strings_md.out",

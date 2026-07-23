@@ -77,14 +77,56 @@ val bounded = slow.WithTimeout(Milliseconds(500))
 val maybe = slow.AwaitFor(Milliseconds(500))      // None on timeout
 ```
 
-`WithTimeout` does not cancel the underlying computation — side effects still run after the timeout fires. Make async work cancellable (e.g., honor `context.Context`) if that matters.
+When the timeout fires, `WithTimeout` also cancels the underlying Future's
+cancellation token, if it has one (i.e. it was created with `FutureCancellable`),
+so a cooperating computation can stop instead of running to completion in the
+background. For a plain Future without a token this is a no-op and behaviour is
+unchanged — the body keeps running and its result is discarded. See
+[Cancellation](#cancellation) for how to make a Future observe its token.
 
 ### Combining Futures
 
 ```gala
 val zipped = f1.Zip(f2)               // Future[Tuple[int, string]]
 val first = f1.Fallback(f2)          // First success or last failure
+val winner = Race[int](ArrayOf[Future[int]](a, b))  // first result, cancels losers
 ```
+
+`Race` is the structured-concurrency form of `FirstCompletedOf`: it completes
+with the first Future to finish and then cancels the losers via their
+cancellation tokens (cooperative — a loser stops promptly only if it was created
+with `FutureCancellable`).
+
+### Cancellation
+
+`FutureCancellable` hands the computation an opaque `CancelToken` so it can
+observe cancellation without threading a raw `context.Context` through GALA. The
+token is triggered by the Future's `Cancel()` method, by `WithTimeout` firing, or
+by losing a `Race`. Cancellation is cooperative: the body decides how to respond.
+
+```gala
+// Poll IsCancelled, or block on the token's done Signal via WaitSignal.
+val f = FutureCancellable[string]((tok) => {
+    WaitSignal(CancelDone(tok))     // unblocks when the token is cancelled
+    "cancelled"                     // or return a partial/sentinel result
+})
+
+f.Cancel()                          // trigger cancellation
+Println(f.Get())                    // "cancelled"
+```
+
+Token API (re-exported from `go_interop` into the `concurrent` namespace):
+
+- `CancelToken` — opaque handle wrapping a context and its cancel function.
+- `NewCancelToken() CancelToken` — a token that stays live until `Cancel`.
+- `NewTimeoutToken(goDuration) CancelToken` — auto-cancels after the duration.
+- `Cancel(tok)` — cancel the token (safe to call more than once).
+- `IsCancelled(tok) bool` — non-blocking check.
+- `CancelDone(tok) Signal` — a Signal that closes on cancel; block on it with `WaitSignal`.
+- `CancelErr(tok) error` — cancellation reason, or nil while live.
+
+`Cancel()` on a plain Future (one created without a token) is a safe no-op, so
+this is fully additive to existing code.
 
 ---
 

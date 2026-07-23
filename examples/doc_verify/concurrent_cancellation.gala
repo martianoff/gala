@@ -1,0 +1,52 @@
+package main
+
+import (
+    . "martianoff/gala/std"
+    . "martianoff/gala/concurrent"
+    . "martianoff/gala/collection_immutable"
+    . "martianoff/gala/time_utils"
+)
+
+// Verifies the cancellation additions documented in CONCURRENT.MD.
+
+// A cancellable Future receives a CancelToken and stops when it is cancelled.
+func testCancellable() {
+    val f = FutureCancellable[string]((tok) => {
+        WaitSignal(CancelDone(tok))
+        "cancelled"
+    })
+    f.Cancel()
+    Println(s"Cancellable=${f.Get()}")
+}
+
+// WithTimeout now cancels the underlying token, so a cooperating body stops.
+func testTimeoutCancels() {
+    val f = FutureCancellable[string]((tok) => {
+        WaitSignal(CancelDone(tok))
+        "stopped"
+    })
+    val bounded = f.WithTimeout(Milliseconds(50))
+    Println(s"Timeout failed=${bounded.Await().IsFailure()}")
+    Println(s"Underlying=${f.Get()}")
+}
+
+// Race returns the first result and cancels the losers.
+func testRace() {
+    val winner = FutureCancellable[string]((tok) => {
+        Sleep(Milliseconds(20))
+        "fast"
+    })
+    val loser = FutureCancellable[string]((tok) => {
+        WaitSignal(CancelDone(tok))
+        "slow-cancelled"
+    })
+    val first = Race[string](ArrayOf[Future[string]](winner, loser))
+    Println(s"Race winner=${first.Get()}")
+    Println(s"Loser=${loser.Get()}")
+}
+
+func main() {
+    testCancellable()
+    testTimeoutCancels()
+    testRace()
+}
