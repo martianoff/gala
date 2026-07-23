@@ -198,6 +198,11 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 	}
 
 	namesCtx := ctx.IdentifierList().(*grammar.IdentifierListContext).AllIdentifier()
+	for _, idCtx := range namesCtx {
+		if err := t.checkReservedName(idCtx.GetText(), idCtx); err != nil {
+			return nil, err
+		}
+	}
 
 	// Downward type-inference for sealed-variant constructors (context 1):
 	// when the val carries an explicit type annotation (`val c Cmd[int] = NoCmd()`),
@@ -506,6 +511,11 @@ func (t *galaASTTransformer) transformValTuplePattern(ctx *grammar.ValDeclaratio
 
 func (t *galaASTTransformer) transformVarDeclaration(ctx *grammar.VarDeclarationContext) (ast.Decl, error) {
 	namesCtx := ctx.IdentifierList().(*grammar.IdentifierListContext).AllIdentifier()
+	for _, idCtx := range namesCtx {
+		if err := t.checkReservedName(idCtx.GetText(), idCtx); err != nil {
+			return nil, err
+		}
+	}
 
 	// Mirror transformValDeclaration: push an explicit declared type onto
 	// expectedArgTypes so RHS sealed-variant constructors can pick up the

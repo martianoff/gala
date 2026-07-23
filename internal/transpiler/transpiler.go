@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/format"
+	"go/parser"
 	"go/token"
 	"path/filepath"
 	"strconv"
@@ -474,6 +475,14 @@ func (t *GalaToGoTranspiler) Transpile(input string, filePath string) (string, e
 //   - statement position: a bare identifier statement `__gala_line_12`
 //   - top-level position: `var __gala_line_12 int`
 //
+// Markers are identified from the PARSED AST, not a raw text scan. A raw scan
+// would misfire on a `__gala_line_N` sequence sitting inside a string literal
+// (e.g. a GALA raw/backtick string), silently corrupting the string's runtime
+// value. In the AST such content is an *ast.BasicLit — never an ExprStmt or
+// GenDecl — so it is never collected. The `__gala_line_` identifier prefix is
+// reserved for user code (rejected by the analyzer), so a genuine `var
+// __gala_line_N int` declaration is always our marker.
+//
 // gofmt inserts a blank line after a top-level `var` marker (declaration
 // separation); that blank is dropped here so the directive stays adjacent to the
 // declaration and the reported line is exact.
@@ -489,30 +498,74 @@ func (t *GalaToGoTranspiler) Transpile(input string, filePath string) (string, e
 // backslashes (C:\...) confuses the compiler's `//line` parser, whereas the
 // forward-slash form (C:/...) is handled correctly.
 func insertLineDirectives(code, sourceFile string) string {
+	fset := token.NewFileSet()
+	astFile, err := parser.ParseFile(fset, "", code, parser.ParseComments)
+	if err != nil {
+		// Should not happen on the build path (the code already round-tripped
+		// through format.Source in the generator). Leave the code untouched
+		// rather than risk a raw-text rewrite corrupting string literals.
+		return code
+	}
+
+	// marker records how to rewrite one physical source line.
+	type marker struct {
+		galaLine int  // the encoded GALA source line the directive maps to
+		isDecl   bool // top-level var marker (drops the following gofmt blank)
+	}
+	// Keyed by 1-based physical line number of the marker node in `code`.
+	markers := make(map[int]marker)
+
+	ast.Inspect(astFile, func(n ast.Node) bool {
+		switch node := n.(type) {
+		case *ast.ExprStmt:
+			// Statement marker: a bare identifier statement `__gala_line_N`.
+			if ident, ok := node.X.(*ast.Ident); ok {
+				if galaLine, ok := lineFromMarkerName(ident.Name); ok {
+					markers[fset.Position(ident.Pos()).Line] = marker{galaLine: galaLine}
+				}
+			}
+		case *ast.GenDecl:
+			// Top-level marker: `var __gala_line_N int` — a single ungrouped
+			// var spec with one name and no initializer.
+			if node.Tok == token.VAR && len(node.Specs) == 1 {
+				if vs, ok := node.Specs[0].(*ast.ValueSpec); ok &&
+					len(vs.Names) == 1 && len(vs.Values) == 0 {
+					if galaLine, ok := lineFromMarkerName(vs.Names[0].Name); ok {
+						markers[fset.Position(node.Pos()).Line] = marker{galaLine: galaLine, isDecl: true}
+					}
+				}
+			}
+		}
+		return true
+	})
+
+	if len(markers) == 0 {
+		return code
+	}
+
 	slashPath := filepath.ToSlash(sourceFile)
 	lines := strings.Split(code, "\n")
 	result := make([]string, 0, len(lines))
 
 	for i := 0; i < len(lines); i++ {
-		line := lines[i]
-		if n, ok := parseLineMarker(strings.TrimSpace(line)); ok {
-			result = append(result, fmt.Sprintf("//line %s:%d", slashPath, n))
-			// Drop a single gofmt-inserted blank line between a top-level
-			// marker and its declaration so the directive stays adjacent.
-			if i+1 < len(lines) && strings.TrimSpace(lines[i+1]) == "" {
+		if m, ok := markers[i+1]; ok {
+			result = append(result, fmt.Sprintf("//line %s:%d", slashPath, m.galaLine))
+			// For a top-level marker, drop the single gofmt-inserted blank line
+			// that separates it from its declaration so the directive stays
+			// adjacent (statement markers are not blank-separated).
+			if m.isDecl && i+1 < len(lines) && strings.TrimSpace(lines[i+1]) == "" {
 				i++
 			}
 			continue
 		}
-		result = append(result, line)
+		result = append(result, lines[i])
 	}
 
 	rewritten := strings.Join(result, "\n")
 
 	// Canonicalize so the emitted directives are gofmt-idempotent. The generated
 	// header comment is preserved by gofmt as a leading comment. If gofmt rejects
-	// the buffer (should not happen on the build path, since the input already
-	// round-tripped through format.Source in the generator), fall back to the
+	// the buffer (should not happen on the build path), fall back to the
 	// rewritten text — directives are still correctly placed, only the blank-line
 	// canonicalization is skipped.
 	if formatted, err := format.Source([]byte(rewritten)); err == nil {
@@ -521,19 +574,13 @@ func insertLineDirectives(code, sourceFile string) string {
 	return rewritten
 }
 
-// parseLineMarker recognizes a trimmed line that is one of the transformer's
-// GALA line markers and returns the encoded 1-based source line. It matches both
-// the statement form (`__gala_line_12`) and the top-level form
-// (`var __gala_line_12 int`); anything else returns ok=false so ordinary
-// generated code is left untouched.
-func parseLineMarker(trimmed string) (int, bool) {
-	s := strings.TrimPrefix(trimmed, "var ")
-	if !strings.HasPrefix(s, LineMarkerPrefix) {
+// lineFromMarkerName decodes a marker identifier (e.g. "__gala_line_12") into its
+// encoded 1-based GALA source line. Returns ok=false for any other identifier.
+func lineFromMarkerName(name string) (int, bool) {
+	if !strings.HasPrefix(name, LineMarkerPrefix) {
 		return 0, false
 	}
-	s = strings.TrimPrefix(s, LineMarkerPrefix)
-	s = strings.TrimSuffix(s, " int")
-	n, err := strconv.Atoi(s)
+	n, err := strconv.Atoi(strings.TrimPrefix(name, LineMarkerPrefix))
 	if err != nil {
 		return 0, false
 	}
