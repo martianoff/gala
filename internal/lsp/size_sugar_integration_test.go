@@ -221,6 +221,42 @@ func TestCompletion_SizeSugarOnSlice(t *testing.T) {
 	}
 }
 
+// TestDefinition_SizeSugarNoStrayJump verifies that go-to-definition on a Go
+// primitive's `.Size()` sugar does NOT jump into an unrelated type's Size()
+// method. The magic method has no source definition (the transpiler lowers it
+// to len()), so it must resolve to no location rather than falling through to a
+// global by-name scan that lands in a random same-named method.
+func TestDefinition_SizeSugarNoStrayJump(t *testing.T) {
+	h := newHarness(t)
+	src := "package main\n" +
+		"\n" +
+		"type Box struct {\n" +
+		"    val n int\n" +
+		"}\n" +
+		"func (b Box) Size() int {\n" +
+		"    return b.n\n" +
+		"}\n" +
+		"func main() {\n" +
+		"    val s = \"hello\"\n" +
+		"    val k = s.Size()\n" +
+		"    Println(k)\n" +
+		"}\n"
+	uri := openFileOnDisk(t, h, src)
+	// Cursor on "Size" of `s.Size()` — line 10 (0-indexed), col 15.
+	locs, err := h.Definition(uri, 10, 15)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, l := range locs {
+		if l.Range.Start.Line == 5 {
+			t.Fatalf("string .Size() wrongly jumped into Box.Size() at line 5; locs=%v", locs)
+		}
+	}
+	if len(locs) != 0 {
+		t.Errorf("string .Size() should resolve to no location (magic method), got: %v", locs)
+	}
+}
+
 // hasErrorContaining reports whether any error-severity diagnostic message
 // contains substr.
 func hasErrorContaining(diags []lsp.Diagnostic, substr string) bool {

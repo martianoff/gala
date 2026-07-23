@@ -63,6 +63,17 @@ func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionPara
 		}
 	}
 
+	// A member access (`receiver.Member` / `pkg.Symbol`) can only resolve to a
+	// member of its receiver or a package symbol — both handled above. If none
+	// matched, stop here: the global by-name scans below match on the bare name
+	// and would jump to an unrelated same-named symbol. This is what made
+	// clicking a Go primitive's `.Size()` / `.ByteSize()` sugar (which has no
+	// source definition — the transpiler lowers it to len()/utf8.RuneCountInString)
+	// land in some random type's Size() method.
+	if isDottedMemberAccess(text, line, char) {
+		return nil, nil
+	}
+
 	// Check sealed variants FIRST (Success, Failure, Some, None, etc.)
 	// Must run before the type check because companion types (e.g., "Success")
 	// would match the generic type handler and navigate to the wrong location.
@@ -234,6 +245,27 @@ func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionPara
 	}
 
 	return nil, nil
+}
+
+// isDottedMemberAccess reports whether the identifier at (line, char) is a
+// member access — immediately preceded by a '.' once any partial identifier to
+// its left is walked over. Such a reference resolves only to a receiver member
+// or a package symbol; when those handlers miss, Definition must not fall
+// through to the global by-name scans.
+func isDottedMemberAccess(text string, line, char int) bool {
+	lines := strings.Split(text, "\n")
+	if line < 0 || line >= len(lines) {
+		return false
+	}
+	l := lines[line]
+	if char > len(l) {
+		char = len(l)
+	}
+	i := char
+	for i > 0 && isIdentChar(l[i-1]) {
+		i--
+	}
+	return i > 0 && l[i-1] == '.'
 }
 
 // patternBindingDefinition checks if the word at the cursor is a pattern binding
