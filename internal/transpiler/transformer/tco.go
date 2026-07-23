@@ -316,6 +316,14 @@ func (t *galaASTTransformer) buildTailCallStep(
 			return nil, false, err
 		}
 		e = t.wrapWithAssertion(e, tc.paramTypes[i])
+		// A closure inside a tail-call argument would capture the loop-carried
+		// parameter by reference; once that parameter is reassigned on the next
+		// iteration, the escaped closure observes the mutated value — diverging
+		// from the per-call binding the original recursion gives each frame.
+		// Bail to the normal lowering (real recursion) for this case.
+		if containsFuncLit(e) {
+			return nil, false, nil
+		}
 		// Use the package gensym so temps can't collide with a user identifier
 		// and participate in the shared `_tmp_*` internal-temp convention.
 		tmp := t.nextTempVar()
@@ -337,4 +345,20 @@ func (t *galaASTTransformer) buildTailCallStep(
 	stmts = append(stmts, &ast.AssignStmt{Lhs: lhs, Tok: token.ASSIGN, Rhs: rhs})
 	stmts = append(stmts, &ast.BranchStmt{Tok: token.CONTINUE})
 	return stmts, true, nil
+}
+
+// containsFuncLit reports whether e contains a function literal (closure)
+// anywhere in its subtree. A closure in a tail-call argument captures the
+// loop-carried parameters by reference, which the loop rewrite mutates between
+// iterations — so its presence disqualifies the tail call from the rewrite.
+func containsFuncLit(e ast.Expr) bool {
+	found := false
+	ast.Inspect(e, func(n ast.Node) bool {
+		if _, ok := n.(*ast.FuncLit); ok {
+			found = true
+			return false
+		}
+		return !found
+	})
+	return found
 }

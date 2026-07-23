@@ -78,6 +78,29 @@ func main() {
 				"for {",
 			},
 		},
+		{
+			// Negative: a tail-call argument that embeds a closure capturing a
+			// parameter must NOT be rewritten. A loop would reassign `n` between
+			// iterations and the escaped closure would observe the mutated value,
+			// diverging from the per-frame binding of real recursion. It must fall
+			// back to normal lowering (self-call preserved, no loop).
+			name: "tail call with a closure-capturing argument falls back",
+			input: `package main
+
+func ident(f func() int) func() int = f
+
+func loop(n int, acc func() int) func() int =
+    if (n <= 0) acc else loop(n - 1, ident(() => n))
+
+func main() {
+    Println(loop(3, () => 0)())
+}
+`,
+			mustMiss: []string{
+				// The closure in the tail-call arg disqualifies TCO.
+				"for {",
+			},
+		},
 	}
 
 	for _, tt := range tests {
