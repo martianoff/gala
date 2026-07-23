@@ -366,6 +366,14 @@ func (t *galaASTTransformer) transformBlock(ctx *grammar.BlockContext) (*ast.Blo
 	allStmts := ctx.AllStatement()
 	lastIdx := len(allStmts) - 1
 	for i, stmtCtx := range allStmts {
+		// Source-mapped `//line` directive: mark each statement with its
+		// originating GALA line so a panic reports the GALA position. The marker
+		// is prepended before the statement's generated code — never appended —
+		// so the block's trailing statement stays real and downstream
+		// trailing-expression handling is unaffected (see line_directives.go).
+		if t.emitLineMarkers() && stmtCtx.GetStart() != nil {
+			block.List = append(block.List, lineMarkerStmt(stmtCtx.GetStart().GetLine()))
+		}
 		// Monadic do-notation: a `bind` collapses itself and every following
 		// statement in the block into a FlatMap chain (see bind.go). Statements
 		// before the first `bind` are emitted normally by prior iterations. An
