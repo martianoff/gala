@@ -10,6 +10,7 @@
 package go_interop
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -316,6 +317,52 @@ func WaitSignalTimeout(s Signal, timeout time.Duration) bool {
 	case <-s:
 		return true
 	case <-time.After(timeout):
+		return false
+	}
+}
+
+// === Cancellation ===
+
+// CancelToken is an opaque cancellation handle. It wraps a context.Context and
+// its cancel function so GALA code can trigger and observe cancellation at the
+// API level (Future.Cancel / WithTimeout) without threading a raw
+// context.Context through the transpiler (a historically fragile codegen path).
+//
+// CancelToken is a value type (handle pattern): both fields are reference types
+// (context, func), so a copy shares the same underlying cancellation state and
+// can be passed by value without loss of identity. There is no monitor goroutine
+// and nothing to leak — a token that is never cancelled holds only a plain
+// cancellable context.
+type CancelToken struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+}
+
+// NewCancelToken creates a CancelToken backed by context.WithCancel. The token
+// stays live until Cancel is called.
+func NewCancelToken() CancelToken {
+	ctx, cancel := context.WithCancel(context.Background())
+	return CancelToken{ctx: ctx, cancel: cancel}
+}
+
+// Cancel cancels the token, releasing its context resources. Calling Cancel on a
+// zero token, or more than once, is safe.
+func Cancel(tok CancelToken) {
+	if tok.cancel != nil {
+		tok.cancel()
+	}
+}
+
+// IsCancelled reports whether the token has been cancelled. It never blocks. A
+// zero CancelToken (nil context) is reported as not cancelled.
+func IsCancelled(tok CancelToken) bool {
+	if tok.ctx == nil {
+		return false
+	}
+	select {
+	case <-tok.ctx.Done():
+		return true
+	default:
 		return false
 	}
 }

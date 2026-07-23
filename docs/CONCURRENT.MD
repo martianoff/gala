@@ -77,14 +77,58 @@ val bounded = slow.WithTimeout(Milliseconds(500))
 val maybe = slow.AwaitFor(Milliseconds(500))      // None on timeout
 ```
 
-`WithTimeout` does not cancel the underlying computation — side effects still run after the timeout fires. Make async work cancellable (e.g., honor `context.Context`) if that matters.
+When the timeout fires, `WithTimeout` also cancels the underlying Future's
+cancellation token, so pending downstream stages short-circuit instead of running
+after the deadline (see [Cancellation](#cancellation)). The bounded Future is
+failed with `TimeoutError` first, so that result wins even though cancellation
+also unblocks the chain.
 
 ### Combining Futures
 
 ```gala
 val zipped = f1.Zip(f2)               // Future[Tuple[int, string]]
 val first = f1.Fallback(f2)          // First success or last failure
+val winner = Race[int](ArrayOf[Future[int]](a, b))  // first result, cancels losers
 ```
+
+`Race` is the structured-concurrency form of `FirstCompletedOf`: it completes
+with the first Future to finish and then cancels the losing Futures' shared
+tokens, so their pending downstream stages short-circuit.
+
+### Cancellation
+
+Cancellation is **API-level**: you cancel a Future with `.Cancel()` (or let
+`.WithTimeout()` / `Race` cancel it for you). There is no token in user code — a
+Future carries an opaque cancellation token internally.
+
+```gala
+val chain = source.Map((v) => step1(v)).FlatMap((v) => step2(v))
+chain.Cancel()   // pending stages that haven't started fail with CancellationError
+```
+
+Three properties define the semantics:
+
+- **Checked at combinator boundaries.** Each derived stage (`Map`, `FlatMap`,
+  `Filter`, `Recover`, `RecoverWith`, `Transform`, `TransformWith`, `AndThen`,
+  and the `Zip*`/`Fallback` built on them) checks the token *before* it runs.
+  Cancelling short-circuits any stage that has not started yet, failing it with a
+  `CancellationError`. A single already-running body cannot be preempted — Go has
+  no goroutine interruption — so cancellation does not abort work that is
+  in-flight; it only prevents downstream stages from running.
+- **Graph-level and coarse.** A derived chain shares one token, so cancelling any
+  node cancels the whole shared computation. Per-node / sub-tree scoping is future
+  work. Scope rule: linear combinators inherit the parent's token, while the
+  aggregation / scope constructors (`Race`, `Sequence`, `FirstCompletedOf`,
+  `WithTimeout`) intentionally open a fresh token scope.
+- **Never on success.** Successful completion does not cancel the token, so
+  `.Cancel()` after a Future has completed has no effect on its stored result.
+
+`.Cancel()` is always safe: on a chain that is already complete, or one with no
+pending stages, it simply does nothing observable. This makes the whole feature
+additive — existing code that never calls `.Cancel()` behaves exactly as before.
+
+Interrupting a long in-flight body (true preemption) is intentionally out of
+scope here and would be achieved by other means later.
 
 ---
 

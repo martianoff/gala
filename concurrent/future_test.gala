@@ -461,3 +461,66 @@ func TestPoolShutdownGraceful(t T) T {
     val t3 = Eq(t2, r2.Get(), 20)
     return Eq(t3, r3.Get(), 30)
 }
+
+// === Cancellation Tests ===
+
+// Cancelling a chain before a pending stage runs short-circuits that stage with
+// a CancellationError. A Promise gate keeps the root pending until after Cancel,
+// so the Map boundary check is guaranteed to observe the cancellation.
+func TestCancelShortCircuitsPendingStage(t T) T {
+    val gate = NewPromise[int]()
+    val mapped = gate.Future().Map((x) => x * 2)
+    // Cancel the shared chain before the gate opens and the Map can run.
+    mapped.Cancel()
+    gate.Success(5)
+    val result = mapped.Await()
+    val t1 = IsFailure(t, result)
+    return Contains(t1, result.Err.Error(), "cancelled")
+}
+
+// WithTimeout fires TimeoutError and cancels the shared token, so a stage chained
+// off the underlying Future short-circuits after the deadline.
+func TestWithTimeoutFiresAndCancels(t T) T {
+    val gate = NewPromise[int]()
+    val root = gate.Future()
+    val bounded = root.WithTimeout(Milliseconds(50))
+    val boundedResult = bounded.Await()
+    val t1 = IsFailure(t, boundedResult)
+    val t2 = Contains(t1, boundedResult.Err.Error(), "timed out")
+    // Let the timeout goroutine finish cancelling the shared token.
+    Sleep(Milliseconds(30))
+    val downstream = root.Map((x) => x + 1)
+    gate.Success(1)
+    val dr = downstream.Await()
+    val t3 = IsFailure(t2, dr)
+    return Contains(t3, dr.Err.Error(), "cancelled")
+}
+
+// Race returns the first result and cancels the losers, so a stage chained off a
+// loser short-circuits with a CancellationError.
+func TestRaceCancelsLoser(t T) T {
+    val winnerGate = NewPromise[int]()
+    val loserGate = NewPromise[int]()
+    val winner = winnerGate.Future()
+    val loser = loserGate.Future()
+    winnerGate.Success(1)
+    val racy = Race[int](ArrayOf[Future[int]](winner, loser))
+    val result = racy.Await()
+    val t1 = IsSuccess(t, result)
+    val t2 = Eq(t1, result.Get(), 1)
+    // Let Race finish cancelling the losers' tokens.
+    Sleep(Milliseconds(30))
+    val downstream = loser.Map((x) => x + 1)
+    loserGate.Success(99)
+    val dr = downstream.Await()
+    val t3 = IsFailure(t2, dr)
+    return Contains(t3, dr.Err.Error(), "cancelled")
+}
+
+// A chain that is never cancelled completes normally (non-breaking regression).
+func TestNoCancellationCompletesNormally(t T) T {
+    val f = FutureOf(42).Map((x) => x + 1).Map((x) => x * 2)
+    val result = f.Await()
+    val t1 = IsSuccess(t, result)
+    return Eq(t1, result.Get(), 86)
+}
