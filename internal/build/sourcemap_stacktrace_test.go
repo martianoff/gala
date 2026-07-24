@@ -68,6 +68,15 @@ func TestBuild_StackTracesMapToGalaSource_UserAndImportedPackage(t *testing.T) {
 	// (%LocalAppData% on Windows), so point GOCACHE at a throwaway dir — the
 	// `go build` inside Builder.Build needs a writable build cache.
 	setEnvForTest(t, "GOCACHE", filepath.Join(t.TempDir(), "gocache"))
+	// Align GOROOT with the PATH `go`'s own root BEFORE building. Builder.Build
+	// runs its OWN internal `go build`, inheriting os.Environ(); in the bazel
+	// test sandbox GOROOT is forced to the hermetic rules_go SDK (go1.25.5, for
+	// the transpiler's type inference) while the `go` on PATH is a different host
+	// version — pairing one toolchain's tool with another's std fails ("compile:
+	// version ... does not match go tool version ..."). Production `gala build`
+	// inherits a consistent host GOROOT+go, so this only corrects the sandbox;
+	// the Builder itself is left unchanged.
+	alignGorootWithPathGo(t)
 	chdirForTest(t, consumerDir)
 
 	b, err := NewBuilder(consumerDir, "test", false)
@@ -138,6 +147,44 @@ func isolateUserState(t *testing.T) {
 			}
 		})
 	}
+}
+
+// alignGorootWithPathGo sets GOROOT to the PATH `go`'s intrinsic root so the
+// tool and its standard library always agree. It queries `go env GOROOT` with
+// GOROOT stripped from the query environment, so the answer is the binary's own
+// root rather than any externally forced (e.g. bazel hermetic-SDK) GOROOT.
+// A no-op if `go` is absent or the query fails; t.Setenv auto-restores.
+func alignGorootWithPathGo(t *testing.T) {
+	t.Helper()
+	goBin, err := exec.LookPath("go")
+	if err != nil {
+		return
+	}
+	q := exec.Command(goBin, "env", "GOROOT")
+	// Strip GOROOT so `go` reports its own root; force the local toolchain so
+	// the query can't try to switch/download a version-pinned toolchain.
+	q.Env = append(stripEnvVar(os.Environ(), "GOROOT"), "GOTOOLCHAIN=local")
+	out, err := q.Output()
+	if err != nil {
+		return
+	}
+	if root := strings.TrimSpace(string(out)); root != "" {
+		t.Setenv("GOROOT", root)
+	}
+}
+
+// stripEnvVar returns env with every `KEY=...` entry removed, copying into a
+// fresh slice so the caller's os.Environ() backing array is left untouched.
+func stripEnvVar(env []string, key string) []string {
+	prefix := key + "="
+	out := make([]string, 0, len(env))
+	for _, e := range env {
+		if strings.HasPrefix(e, prefix) {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
 }
 
 // setEnvForTest sets an environment variable for the duration of the test and
