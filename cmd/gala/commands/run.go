@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/build"
 )
 
@@ -108,7 +109,7 @@ func runRun(cmd *cobra.Command, args []string) {
 	// Run build with absolute path to workspace
 	outputPath, err := builder.Build(tempOutput)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Build failed: %v\n", err)
+		fmt.Fprintln(os.Stderr, galaerr.RenderRich(err, galaerr.Options{Color: galaerr.ColorEnabled()}))
 		os.Exit(1)
 	}
 

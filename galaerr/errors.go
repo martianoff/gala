@@ -1,6 +1,7 @@
 package galaerr
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -58,6 +59,33 @@ type SemanticError struct {
 	FilePath string
 	Code     ErrorCode // optional stable error code; empty = uncoded
 	Hint     string    // optional remediation hint shown after the message
+
+	// EndColumn is an OPTIONAL exact end for the error's source span, given as
+	// a 0-based rune index that is EXCLUSIVE of the last character (i.e. one
+	// past the final rune of the offending token). It is additive: the point
+	// (Line, Column) still identifies where the error starts, and the zero
+	// value leaves the span unset. A value strictly greater than Column marks
+	// a real span whose width is EndColumn-Column; anything else (0, or <=
+	// Column) means "no exact span — let the renderer derive one by scanning
+	// the token on the source line". Error() ignores this field so existing
+	// text output is unchanged; only the rich CLI renderer consumes it.
+	EndColumn int
+}
+
+// HasSpan reports whether an exact source span was recorded on the error.
+func (e *SemanticError) HasSpan() bool {
+	return e.EndColumn > e.Column
+}
+
+// WithSpan records an exact end column (0-based, exclusive rune index) for the
+// error's source span and returns the receiver for fluent construction. It is
+// additive — the error's start point (Line, Column) and every other field are
+// left untouched — so callers that do not set a span keep the previous
+// derive-at-render behavior. Passing an endColumn that is not strictly greater
+// than Column leaves the span unset.
+func (e *SemanticError) WithSpan(endColumn int) *SemanticError {
+	e.EndColumn = endColumn
+	return e
 }
 
 func (e *SemanticError) Error() string {
@@ -346,6 +374,38 @@ func NewSemanticErrorInFile(filePath string, line, column int, msg string) *Sema
 		Line:     line,
 		Column:   column,
 		FilePath: filePath,
+	}
+}
+
+// WithFilePath stamps a source file path onto any SemanticError reachable from
+// err (directly, through the standard unwrap chain, or inside a MultiError)
+// that does not already carry one. It is used by the transpiler pipeline to
+// attach the file being compiled to errors raised deep in the transformer /
+// analyzer, so the CLI's rich renderer can re-read that file for the snippet.
+// Errors that already have a FilePath, and non-SemanticError values, are left
+// untouched. The original err is returned so callers can `return WithFilePath(...)`.
+func WithFilePath(err error, path string) error {
+	if err == nil || path == "" {
+		return err
+	}
+	stampFilePath(err, path)
+	return err
+}
+
+func stampFilePath(err error, path string) {
+	if err == nil {
+		return
+	}
+	var multi *MultiError
+	if errors.As(err, &multi) {
+		for _, sub := range multi.Errors {
+			stampFilePath(sub, path)
+		}
+		return
+	}
+	var se *SemanticError
+	if errors.As(err, &se) && se.FilePath == "" {
+		se.FilePath = path
 	}
 }
 

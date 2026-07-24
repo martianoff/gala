@@ -1263,6 +1263,10 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 				if ctx.Signature().Type_() != nil {
 					funcMeta.ReturnType = a.resolveTypeWithParams(ctx.Signature().Type_().GetText(), pkgName, funcMeta.TypeParams)
 				}
+				// Source spans of each default expression, keyed by param index.
+				// Used to give the E0014 (default type mismatch) diagnostic an
+				// exact caret span over the offending default value.
+				var defaultSpans map[int]defaultExprSpan
 				if ctx.Signature().Parameters() != nil {
 					pCtx := ctx.Signature().Parameters().(*grammar.ParametersContext)
 					if pList := pCtx.ParameterList(); pList != nil {
@@ -1290,13 +1294,18 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 									funcMeta.DefaultExprs = make(map[int]string)
 								}
 								defaultCtx := paramCtx.ParamDefault().(*grammar.ParamDefaultContext)
-								funcMeta.DefaultExprs[i] = defaultCtx.Expression().GetText()
+								exprCtx := defaultCtx.Expression()
+								funcMeta.DefaultExprs[i] = exprCtx.GetText()
+								if defaultSpans == nil {
+									defaultSpans = make(map[int]defaultExprSpan)
+								}
+								defaultSpans[i] = spanOfCtx(exprCtx)
 							}
 						}
 					}
 				}
 				// Validate default parameter rules
-				if err := validateDefaultParams(funcMeta, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), filePath); err != nil {
+				if err := validateDefaultParams(funcMeta, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), filePath, defaultSpans); err != nil {
 					return nil, err
 				}
 				// Reject redeclaration of a top-level function within the same
@@ -3686,11 +3695,41 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 }
 
 
+// defaultExprSpan is the source span of a parameter's default expression,
+// captured while collecting metadata so a later validation error can point an
+// exact caret at the offending default value. Columns are 0-based rune indices;
+// endCol is exclusive.
+type defaultExprSpan struct {
+	line     int
+	startCol int
+	endCol   int
+}
+
+// spanOfCtx returns the source span covering an ANTLR rule context, from the
+// start token's position to one past the stop token. Columns are 0-based;
+// endCol is exclusive. When the context spans multiple lines the renderer
+// clamps the caret to the start line, so only line/startCol matter there.
+func spanOfCtx(ctx antlr.ParserRuleContext) defaultExprSpan {
+	start := ctx.GetStart()
+	stop := ctx.GetStop()
+	sp := defaultExprSpan{line: start.GetLine(), startCol: start.GetColumn()}
+	if stop != nil {
+		sp.endCol = stop.GetColumn() + len([]rune(stop.GetText()))
+	} else {
+		sp.endCol = sp.startCol
+	}
+	return sp
+}
+
 // validateDefaultParams checks that default parameter values follow the rules:
 // 1. Parameters with defaults must come after all required parameters
 // 2. Variadic parameters cannot have defaults
 // 3. Default expression types must be compatible with parameter types (for literals)
-func validateDefaultParams(funcMeta *transpiler.FunctionMetadata, line, column int, filePath string) error {
+//
+// defaultSpans (optional, keyed by param index) carries each default
+// expression's source span so the type-mismatch diagnostic can render an exact
+// caret over the offending value.
+func validateDefaultParams(funcMeta *transpiler.FunctionMetadata, line, column int, filePath string, defaultSpans map[int]defaultExprSpan) error {
 	_ = filePath // filePath is retained for future use; position info now travels via the coded error
 	if len(funcMeta.DefaultExprs) == 0 {
 		return nil
@@ -3734,12 +3773,22 @@ func validateDefaultParams(funcMeta *transpiler.FunctionMetadata, line, column i
 			if i < len(funcMeta.ParamNames) {
 				paramName = funcMeta.ParamNames[i]
 			}
-			return galaerr.NewCodedSemanticError(
+			// Point the diagnostic at the default expression itself (with an
+			// exact caret span) when we captured its position; otherwise fall
+			// back to the function-declaration start.
+			errLine, errCol := line, column
+			derr := galaerr.NewCodedSemanticError(
 				galaerr.CodeParamDefaultTypeMismatch,
-				line, column,
+				errLine, errCol,
 				fmt.Sprintf("default for parameter %q has type %s, expected %s", paramName, literalType, paramType),
 				"fix the default expression or change the parameter type",
 			)
+			if sp, ok := defaultSpans[i]; ok && sp.line > 0 {
+				derr.Line = sp.line
+				derr.Column = sp.startCol
+				derr = derr.WithSpan(sp.endCol)
+			}
+			return derr
 		}
 	}
 

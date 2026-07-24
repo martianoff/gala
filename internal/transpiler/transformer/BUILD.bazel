@@ -104,6 +104,7 @@ go_test(
         "qualified_namedarg_shadow_test.go",
         "recursive_immutable_test.go",
         "resource_inference_test.go",
+        "rich_diagnostics_test.go",
         "sealed_apply_dispatch_test.go",
         "sealed_call_arg_widen_test.go",
         "sealed_equal_synth_test.go",

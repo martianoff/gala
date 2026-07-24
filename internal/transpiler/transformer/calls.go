@@ -61,7 +61,14 @@ func ForbiddenGoBuiltins() map[string]bool {
 // (examples/method_default_params.gala) — while forbidding the builtins
 // themselves. A selector call (`x.copy()`) is never a bare builtin and is not
 // checked. Returns nil when the call is allowed.
-func (t *galaASTTransformer) checkForbiddenGoBuiltinCall(fun ast.Expr, line, col int) error {
+// checkForbiddenGoBuiltinCall's line/col identify the callee identifier's start.
+// When exactStart is true the position is the real primary-expression token
+// (via primaryStartOf), so the diagnostic can carry an EXACT span covering the
+// whole identifier — the caret in the rich CLI renderer then underlines `len`
+// itself rather than a single derived character. When exactStart is false the
+// caller only had an approximate position, so the span is left for the renderer
+// to derive.
+func (t *galaASTTransformer) checkForbiddenGoBuiltinCall(fun ast.Expr, line, col int, exactStart bool) error {
 	id, ok := fun.(*ast.Ident)
 	if !ok {
 		return nil
@@ -84,12 +91,35 @@ func (t *galaASTTransformer) checkForbiddenGoBuiltinCall(fun ast.Expr, line, col
 	if _, ok := t.structFields[id.Name]; ok { // struct layout used as a constructor
 		return nil
 	}
-	return galaerr.NewCodedSemanticError(
+	err := galaerr.NewCodedSemanticError(
 		galaerr.CodeForbiddenGoBuiltin,
 		line, col,
 		fmt.Sprintf("bare Go builtin %q is not part of GALA's surface", id.Name+"(...)"),
 		suggestion,
 	)
+	if exactStart {
+		// The callee is a single identifier token on one line, so its exact
+		// end is the start column plus the identifier's rune length.
+		err = err.WithSpan(col + len([]rune(id.Name)))
+	}
+	return err
+}
+
+// primaryStartOf walks up from an ANTLR node inside a postfix call chain to the
+// enclosing postfixExpr and returns the start token of its primary expression —
+// i.e. the callee identifier (`len` in `len(s)`). This is the position the
+// forbidden-builtin diagnostic should point at, rather than the argument list.
+func primaryStartOf(node antlr.Tree) (line, col int, ok bool) {
+	for n := node; n != nil; n = n.GetParent() {
+		if pe, isPE := n.(*grammar.PostfixExprContext); isPE {
+			if prim := pe.PrimaryExpr(); prim != nil {
+				tok := prim.GetStart()
+				return tok.GetLine(), tok.GetColumn(), true
+			}
+			return 0, 0, false
+		}
+	}
+	return 0, 0, false
 }
 
 func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.PostfixSuffixContext) (ast.Expr, error) {
@@ -299,8 +329,14 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 				return &ast.CompositeLit{Type: base}, nil
 			}
 		}
-		// Zero-argument bare builtin (e.g. `recover()`) is forbidden too.
-		if err := t.checkForbiddenGoBuiltinCall(base, suffix.GetStart().GetLine(), suffix.GetStart().GetColumn()); err != nil {
+		// Zero-argument bare builtin (e.g. `recover()`) is forbidden too. Point
+		// the diagnostic at the callee identifier (the primary expr) so the
+		// caret underlines the builtin name, not the empty argument list.
+		bl, bc, exact := primaryStartOf(suffix)
+		if !exact {
+			bl, bc = suffix.GetStart().GetLine(), suffix.GetStart().GetColumn()
+		}
+		if err := t.checkForbiddenGoBuiltinCall(base, bl, bc, exact); err != nil {
 			return nil, err
 		}
 		return &ast.CallExpr{Fun: base, Args: nil}, nil
@@ -1720,7 +1756,13 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	// Bare Go builtins (append, len, panic, ...) are a hard error: they are the
 	// last symbols that resolve with no import and no GALA declaration. Reject
 	// them here where the call target and the symbol tables are both available.
-	if err := t.checkForbiddenGoBuiltinCall(fun, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn()); err != nil {
+	// Report at the callee identifier (the primary expr) so the caret spans the
+	// builtin name; fall back to the argument list start if the walk-up fails.
+	fl, fc, exact := primaryStartOf(argListCtx)
+	if !exact {
+		fl, fc = argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn()
+	}
+	if err := t.checkForbiddenGoBuiltinCall(fun, fl, fc, exact); err != nil {
 		return nil, err
 	}
 
