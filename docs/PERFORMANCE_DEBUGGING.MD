@@ -34,6 +34,14 @@ within the construct — for:
 - IIFE-lowered constructs (`match`, `if`-expressions, `bind`/`also`
   do-notation), whose generated blocks are relocated relative to the source.
 
+**Imported GALA packages map too.** The mapping is not limited to your own
+files: imported GALA libraries — the standard library and third-party
+dependencies alike — are transpiled per file with their real source path, so a
+panic that originates inside an imported package reports *that library's*
+`.gala` position (e.g. `option.gala:37`), and the surrounding frames report your
+own files. A single stack trace can therefore span library and application
+source, each mapped to GALA.
+
 **Suppression.** Directives are only emitted when the transpiler knows the
 source file path. Anonymous snippet transpilation (e.g. the LSP) emits none.
 

@@ -1,6 +1,8 @@
 package transformer_test
 
 import (
+	"go/parser"
+	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -178,9 +180,8 @@ func TestLineDirectives_RawStringNotCorrupted(t *testing.T) {
 // toolchain download (kept offline via GOTOOLCHAIN=local).
 func buildAndRunGeneratedGo(t *testing.T, goCode string) (string, error) {
 	t.Helper()
-	if _, err := exec.LookPath("go"); err != nil {
-		t.Skip("go toolchain not on PATH; cannot compile+run generated program")
-	}
+
+	goBin, env := consistentGoToolchain(t)
 
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "main.go"), []byte(goCode), 0o644))
@@ -192,13 +193,13 @@ func buildAndRunGeneratedGo(t *testing.T, goCode string) (string, error) {
 		bin += ".exe"
 	}
 
-	env := append(os.Environ(),
+	env = append(env,
 		"GOTOOLCHAIN=local",
 		"GOCACHE="+filepath.Join(dir, "gocache"),
 		"GOFLAGS=-mod=mod",
 	)
 
-	build := exec.Command("go", "build", "-o", bin, ".")
+	build := exec.Command(goBin, "build", "-o", bin, ".")
 	build.Dir = dir
 	build.Env = env
 	if out, buildErr := build.CombinedOutput(); buildErr != nil {
@@ -210,6 +211,137 @@ func buildAndRunGeneratedGo(t *testing.T, goCode string) (string, error) {
 	run.Env = env
 	out, runErr := run.CombinedOutput()
 	return string(out), runErr
+}
+
+// consistentGoToolchain returns a Go binary and a subprocess environment whose
+// compiler tool and standard library always agree.
+//
+// On CI the ambient environment sets GOROOT to the hermetic rules_go SDK (via
+// `.bazelrc --action_env=GOROOT`, needed for the transpiler's Go type
+// inference), while PATH resolves a DIFFERENT host `go` (e.g. from setup-go).
+// Building the generated program with the PATH `go` under that inherited GOROOT
+// pairs one toolchain's tool with another's std and fails:
+//
+//	compile: version "go1.25.5" does not match go tool version "go1.25.12"
+//
+// Two self-consistent options avoid the mismatch:
+//   - if GOROOT is set and $GOROOT/bin/go exists, invoke THAT go — its tool and
+//     std are the same SDK, so they always agree; keep GOROOT in the env.
+//   - otherwise fall back to PATH `go`, but strip any inherited GOROOT so the
+//     PATH go uses its own bundled std.
+func consistentGoToolchain(t *testing.T) (goBin string, env []string) {
+	t.Helper()
+
+	goExe := "go"
+	if runtime.GOOS == "windows" {
+		goExe = "go.exe"
+	}
+
+	env = os.Environ()
+	if goroot := os.Getenv("GOROOT"); goroot != "" {
+		candidate := filepath.Join(goroot, "bin", goExe)
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate, env // GOROOT's own go: tool + std are consistent.
+		}
+	}
+
+	// Fall back to PATH go with any inherited GOROOT removed.
+	p, err := exec.LookPath("go")
+	if err != nil {
+		t.Skip("go toolchain not on PATH; cannot compile+run generated program")
+	}
+	return p, stripEnvVar(env, "GOROOT")
+}
+
+// stripEnvVar returns env with every `KEY=...` entry removed. It copies into a
+// fresh slice so the caller's os.Environ() backing array is left untouched.
+func stripEnvVar(env []string, key string) []string {
+	prefix := key + "="
+	out := make([]string, 0, len(env))
+	for _, e := range env {
+		if strings.HasPrefix(e, prefix) {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
+// importBlockDemoSource uses a grouped `import (...)` block pulling in two GALA
+// packages that resolve in the transformer test sandbox — std (Option.GetOrElse)
+// and collection_immutable (ArrayTabulate). (Go-interop imports need the full
+// dependency graph, so that combination is exercised by the bazel example
+// examples/sourcemap_imports_demo.gala instead.)
+const importBlockDemoSource = `package main
+
+import (
+    . "martianoff/gala/std"
+    . "martianoff/gala/collection_immutable"
+)
+
+func main() {
+    val rows = ArrayTabulate(3, (i) => i * 2)
+    val label = Some("ok").GetOrElse("none")
+    Println(s"$label ${rows.String()}")
+}
+`
+
+const importBlockDemoFile = "sourcemap_import_block.gala"
+
+// TestLineDirectives_ImportBlockIntact verifies that the //line marker rewrite
+// leaves an `import (...)` block untouched: directives are emitted for the user
+// statements, the imports survive verbatim (no directive lands inside the block
+// or rewrites an import path), the output still parses, and no raw markers leak.
+// This is a transpile-only test — CI-safe regardless of the Go toolchain.
+func TestLineDirectives_ImportBlockIntact(t *testing.T) {
+	trans := newLineDirectiveTranspiler()
+	goCode, err := trans.Transpile(importBlockDemoSource, importBlockDemoFile)
+	require.NoError(t, err)
+
+	// Directives are emitted for the user statements.
+	assert.Contains(t, goCode, "//line "+importBlockDemoFile+":",
+		"user statements should get //line directives; generated:\n%s", goCode)
+	// No raw markers leak into the output.
+	assert.NotContains(t, goCode, transpiler.LineMarkerPrefix,
+		"no raw line markers should remain; generated:\n%s", goCode)
+
+	// The generated Go must still parse, and the import block must be intact:
+	// both imported paths present, and no `//line` directive sitting between
+	// `import (` and its closing `)`.
+	fset := token.NewFileSet()
+	file, parseErr := parser.ParseFile(fset, importBlockDemoFile+".go", goCode, parser.ParseComments)
+	require.NoError(t, parseErr, "generated Go must parse; generated:\n%s", goCode)
+
+	importPaths := make(map[string]bool)
+	for _, imp := range file.Imports {
+		importPaths[strings.Trim(imp.Path.Value, "\"")] = true
+	}
+	assert.True(t, importPaths["martianoff/gala/std"],
+		"std import must survive the marker rewrite; imports: %v", importPaths)
+	assert.True(t, importPaths["martianoff/gala/collection_immutable"],
+		"collection_immutable import must survive the marker rewrite; imports: %v", importPaths)
+
+	assertNoDirectiveInsideImportBlock(t, goCode)
+}
+
+// assertNoDirectiveInsideImportBlock fails if a `//line` directive appears
+// between `import (` and its matching `)` — a directive there would break the
+// grouped import block.
+func assertNoDirectiveInsideImportBlock(t *testing.T, goCode string) {
+	t.Helper()
+	lines := strings.Split(goCode, "\n")
+	inBlock := false
+	for _, ln := range lines {
+		trimmed := strings.TrimSpace(ln)
+		switch {
+		case strings.HasPrefix(trimmed, "import ("):
+			inBlock = true
+		case inBlock && trimmed == ")":
+			inBlock = false
+		case inBlock && strings.HasPrefix(trimmed, "//line "):
+			t.Errorf("a //line directive must not appear inside the import block: %q", ln)
+		}
+	}
 }
 
 // TestLineDirectives_ReservedNameRejected verifies Fix 2: a user declaration

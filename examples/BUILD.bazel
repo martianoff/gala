@@ -1757,6 +1757,15 @@ gala_exec_test(
     deps = ["//go_interop"],
 )
 
+# Verification: source-mapped //line directives on an import-using program
+# (std Option + go_interop SliceOf) — compiles + runs with directives injected.
+gala_exec_test(
+    name = "sourcemap_imports_demo",
+    src = "sourcemap_imports_demo.gala",
+    expected = "sourcemap_imports_demo.out",
+    deps = ["//go_interop"],
+)
+
 # Verification: .Size()/.ByteSize() sugar on Go primitives (string/slice/map)
 gala_exec_test(
     name = "size_method",

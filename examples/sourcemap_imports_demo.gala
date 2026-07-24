@@ -1,0 +1,15 @@
+package main
+
+import . "martianoff/gala/std"
+import . "martianoff/gala/go_interop"
+
+// Verification: source-mapped //line directives work for programs that USE
+// imports. Bazel builds this with a real .gala file path, so //line directives
+// are injected while the full dependency graph (std + go_interop) is resolved
+// and compiled — the generated binary still runs correctly. Exercises a GALA std
+// export (Option.GetOrElse) and Go interop (SliceOf / slice .Size()).
+func main() {
+    val nums = SliceOf(10, 20, 30)
+    val tag = Some("imports").GetOrElse("none")
+    Println(s"sourcemap $tag demo: size=${nums.Size()}")
+}

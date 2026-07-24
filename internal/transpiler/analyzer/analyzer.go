@@ -3210,6 +3210,18 @@ func (a *galaAnalyzer) ensureTranspiled(importPath string) error {
 			return fmt.Errorf("failed to analyze %s: %w", srcPath, err)
 		}
 
+		// Source-mapped stack traces for imported/std GALA packages. Unlike the
+		// main Transpile() path, ensureTranspiled writes generated Go directly
+		// via Transform+Generate, so we set FilePath (which makes the transformer
+		// stamp per-statement / per-declaration line markers for THIS file) and
+		// then run the marker->`//line` rewrite ourselves below. A panic inside
+		// e.g. std/option.gala then reports option.gala:<n> rather than a
+		// generated-Go position. These two steps are atomic: FilePath emits raw
+		// `__gala_line_N` markers (undefined identifiers) that ONLY the rewrite
+		// turns into valid `//line` directives — skipping it would break the
+		// build.
+		richAST.FilePath = srcPath
+
 		// Transform to Go AST
 		fset, goAST, err := tr.Transform(richAST)
 		if err != nil {
@@ -3221,6 +3233,10 @@ func (a *galaAnalyzer) ensureTranspiled(importPath string) error {
 		if err != nil {
 			return fmt.Errorf("failed to generate Go code for %s: %w", srcPath, err)
 		}
+
+		// Rewrite the line markers stamped above into Go `//line` directives
+		// (see the FilePath assignment). Must run whenever FilePath was set.
+		goCode = transpiler.InsertLineDirectives(goCode, srcPath)
 
 		// Write the Go file
 		goFileName := strings.TrimSuffix(galaFile, ".gala") + ".gen.go"
