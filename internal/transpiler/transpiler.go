@@ -1,14 +1,37 @@
 package transpiler
 
 import (
+	"fmt"
 	"go/ast"
+	"go/format"
+	"go/parser"
 	"go/token"
+	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/antlr4-go/antlr/v4"
 
 	"martianoff/gala/internal/transpiler/profiler"
 )
+
+// LineMarkerPrefix is the identifier prefix the transformer stamps onto each
+// statement and top-level declaration it emits, encoding the originating GALA
+// source line (e.g. "__gala_line_12"). The Go AST cannot attach a `//line`
+// pragma to a synthetic (token.NoPos) node, so — mirroring insertEmbedDirectives
+// for //go:embed — a post-generation text pass (insertLineDirectives) rewrites
+// each marker into a column-0 Go `//line <file>:<n>` directive. This makes
+// runtime panics and stack traces report GALA positions (foo.gala:12) instead
+// of generated-Go positions.
+const LineMarkerPrefix = "__gala_line_"
+
+// LineMarkerName returns the marker identifier for a given 1-based GALA source
+// line. Statement markers are emitted as a bare identifier expression statement
+// (`__gala_line_12`); top-level markers as `var __gala_line_12 int`. Both forms
+// survive gofmt re-parsing and are recognized by insertLineDirectives.
+func LineMarkerName(line int) string {
+	return LineMarkerPrefix + strconv.Itoa(line)
+}
 
 // Type and function name constants for the std library.
 // These provide semantic names for commonly used std types and functions.
@@ -430,7 +453,154 @@ func (t *GalaToGoTranspiler) Transpile(input string, filePath string) (string, e
 		code = insertEmbedDirectives(code, richAST.EmbedDirectives)
 	}
 
+	// Post-process: rewrite the transformer's per-statement / per-declaration
+	// GALA line markers into Go `//line <file>:<n>` directives so runtime panics
+	// and stack traces report GALA source positions. Only when we know the
+	// originating file — an empty filePath (e.g. LSP snippet transpilation) has
+	// no source map to point at, so markers are simply not emitted upstream.
+	if filePath != "" {
+		code = insertLineDirectives(code, filePath)
+	}
+
 	return code, nil
+}
+
+// InsertLineDirectives is the exported entry point to the source-map line-marker
+// rewrite for callers outside this package. The analyzer's per-file transpilation
+// of imported/std GALA packages (ensureTranspiled) writes generated Go directly
+// via Transform+Generate, bypassing Transpile; it uses this to apply the same
+// `//line` rewrite so panics inside an imported GALA library also report the
+// library's `.gala` source position.
+//
+// The transformer only stamps markers when the RichAST carries a FilePath, so
+// callers MUST set richAST.FilePath before Transform and pass the same path here;
+// otherwise no markers are emitted and this is a no-op. Conversely, if markers
+// WERE emitted (FilePath set) this rewrite MUST run, or the raw `__gala_line_N`
+// markers remain as undefined identifiers and the generated Go will not compile.
+func InsertLineDirectives(code, sourceFile string) string {
+	return insertLineDirectives(code, sourceFile)
+}
+
+// insertLineDirectives rewrites the transformer's GALA line markers into Go
+// `//line <file>:<n>` directives. A `//line` directive re-maps the reported
+// position of the FOLLOWING source line, so each directive is emitted on its own
+// line, at column 0 (the Go compiler ignores indented `//line` comments), and
+// immediately before the code it annotates.
+//
+// Two marker shapes are produced by the transformer (see LineMarkerName):
+//   - statement position: a bare identifier statement `__gala_line_12`
+//   - top-level position: `var __gala_line_12 int`
+//
+// Markers are identified from the PARSED AST, not a raw text scan. A raw scan
+// would misfire on a `__gala_line_N` sequence sitting inside a string literal
+// (e.g. a GALA raw/backtick string), silently corrupting the string's runtime
+// value. In the AST such content is an *ast.BasicLit — never an ExprStmt or
+// GenDecl — so it is never collected. The `__gala_line_` identifier prefix is
+// reserved for user code (rejected by the analyzer), so a genuine `var
+// __gala_line_N int` declaration is always our marker.
+//
+// gofmt inserts a blank line after a top-level `var` marker (declaration
+// separation); that blank is dropped here so the directive stays adjacent to the
+// declaration and the reported line is exact.
+//
+// After rewriting, the source is re-run through gofmt (format.Source) to
+// canonicalize blank lines between top-level declarations — gofmt separates
+// adjacent top-level decls with a blank line, which it inserts BEFORE the
+// directive while keeping the directive attached to its declaration, so the
+// final output is gofmt-idempotent (verified by generated_format_test.go)
+// without shifting any mapped line.
+//
+// The file path is emitted with forward slashes: a Windows drive path with
+// backslashes (C:\...) confuses the compiler's `//line` parser, whereas the
+// forward-slash form (C:/...) is handled correctly.
+func insertLineDirectives(code, sourceFile string) string {
+	fset := token.NewFileSet()
+	astFile, err := parser.ParseFile(fset, "", code, parser.ParseComments)
+	if err != nil {
+		// Should not happen on the build path (the code already round-tripped
+		// through format.Source in the generator). Leave the code untouched
+		// rather than risk a raw-text rewrite corrupting string literals.
+		return code
+	}
+
+	// marker records how to rewrite one physical source line.
+	type marker struct {
+		galaLine int  // the encoded GALA source line the directive maps to
+		isDecl   bool // top-level var marker (drops the following gofmt blank)
+	}
+	// Keyed by 1-based physical line number of the marker node in `code`.
+	markers := make(map[int]marker)
+
+	ast.Inspect(astFile, func(n ast.Node) bool {
+		switch node := n.(type) {
+		case *ast.ExprStmt:
+			// Statement marker: a bare identifier statement `__gala_line_N`.
+			if ident, ok := node.X.(*ast.Ident); ok {
+				if galaLine, ok := lineFromMarkerName(ident.Name); ok {
+					markers[fset.Position(ident.Pos()).Line] = marker{galaLine: galaLine}
+				}
+			}
+		case *ast.GenDecl:
+			// Top-level marker: `var __gala_line_N int` — a single ungrouped
+			// var spec with one name and no initializer.
+			if node.Tok == token.VAR && len(node.Specs) == 1 {
+				if vs, ok := node.Specs[0].(*ast.ValueSpec); ok &&
+					len(vs.Names) == 1 && len(vs.Values) == 0 {
+					if galaLine, ok := lineFromMarkerName(vs.Names[0].Name); ok {
+						markers[fset.Position(node.Pos()).Line] = marker{galaLine: galaLine, isDecl: true}
+					}
+				}
+			}
+		}
+		return true
+	})
+
+	if len(markers) == 0 {
+		return code
+	}
+
+	slashPath := filepath.ToSlash(sourceFile)
+	lines := strings.Split(code, "\n")
+	result := make([]string, 0, len(lines))
+
+	for i := 0; i < len(lines); i++ {
+		if m, ok := markers[i+1]; ok {
+			result = append(result, fmt.Sprintf("//line %s:%d", slashPath, m.galaLine))
+			// For a top-level marker, drop the single gofmt-inserted blank line
+			// that separates it from its declaration so the directive stays
+			// adjacent (statement markers are not blank-separated).
+			if m.isDecl && i+1 < len(lines) && strings.TrimSpace(lines[i+1]) == "" {
+				i++
+			}
+			continue
+		}
+		result = append(result, lines[i])
+	}
+
+	rewritten := strings.Join(result, "\n")
+
+	// Canonicalize so the emitted directives are gofmt-idempotent. The generated
+	// header comment is preserved by gofmt as a leading comment. If gofmt rejects
+	// the buffer (should not happen on the build path), fall back to the
+	// rewritten text — directives are still correctly placed, only the blank-line
+	// canonicalization is skipped.
+	if formatted, err := format.Source([]byte(rewritten)); err == nil {
+		return string(formatted)
+	}
+	return rewritten
+}
+
+// lineFromMarkerName decodes a marker identifier (e.g. "__gala_line_12") into its
+// encoded 1-based GALA source line. Returns ok=false for any other identifier.
+func lineFromMarkerName(name string) (int, bool) {
+	if !strings.HasPrefix(name, LineMarkerPrefix) {
+		return 0, false
+	}
+	n, err := strconv.Atoi(strings.TrimPrefix(name, LineMarkerPrefix))
+	if err != nil {
+		return 0, false
+	}
+	return n, true
 }
 
 // insertEmbedDirectives inserts //go:embed comments before matching var declarations

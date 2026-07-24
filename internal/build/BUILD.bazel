@@ -32,6 +32,7 @@ go_test(
         "deptranspiler_test.go",
         "go_toolchain_test.go",
         "gomod_test.go",
+        "sourcemap_stacktrace_test.go",
         "transpile_batch_static_test.go",
         "transpile_perf_test.go",
     ],

@@ -3,6 +3,58 @@
 Optional knobs for diagnosing slow or memory-hungry transpiler runs. All are
 off unless the env var is set, so production binaries carry no overhead.
 
+## Stack traces map to GALA source
+
+A runtime panic or stack trace from a GALA program reports **GALA source
+positions** (`foo.gala:12`), not positions in the generated Go. For example, a
+divide-by-zero panics with:
+
+```
+panic: runtime error: integer divide by zero
+main.divide(...)
+	foo.gala:4
+main.main()
+	foo.gala:8
+```
+
+This works through Go's own `//line` directive mechanism: the transpiler stamps
+each statement and top-level declaration with its originating GALA line and
+emits a `//line <file>.gala:<n>` directive before the generated Go, which the
+Go compiler and runtime honor in panics and stack traces. There is no separate
+source-map file and no runtime cost — the directives only affect the position
+metadata the compiler already records.
+
+**Accuracy.** The mapping is exact for ordinary statements (one GALA statement →
+one Go statement). It is *approximate* — right file, line possibly off by a few
+within the construct — for:
+
+- statements that lower to several Go statements (e.g. `use x = acquire`, which
+  becomes an assignment plus a deferred `Close()`), where only the first Go line
+  sits under the directive; and
+- IIFE-lowered constructs (`match`, `if`-expressions, `bind`/`also`
+  do-notation), whose generated blocks are relocated relative to the source.
+
+**Imported GALA packages map too.** The mapping is not limited to your own
+files: imported GALA libraries — the standard library and third-party
+dependencies alike — are transpiled per file with their real source path, so a
+panic that originates inside an imported package reports *that library's*
+`.gala` position (e.g. `option.gala:37`), and the surrounding frames report your
+own files. A single stack trace can therefore span library and application
+source, each mapped to GALA.
+
+**Suppression.** Directives are only emitted when the transpiler knows the
+source file path. Anonymous snippet transpilation (e.g. the LSP) emits none.
+
+**Reserved names.** `__gala_line_*` is a reserved identifier prefix (used for the
+internal markers that become directives); declaring a GALA identifier with that
+prefix is a compile error.
+
+**Dropping into the generated Go.** A debugger's line numbers derive from the
+same compiler position info, so they follow the `//line` directives too. When
+you do need to read the generated Go directly, it is kept legible (see
+`docs/DESIGN.MD`, goal 5) — though it carries GALA's machinery and is not the
+idiomatic Go a person would hand-write.
+
 ## When the transpiler eats RAM
 
 `gala build`, `gala transpile`, and the bazel `gala_transpile` genrule all

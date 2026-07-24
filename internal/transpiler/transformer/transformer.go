@@ -290,6 +290,12 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 			return nil, nil, err
 		}
 		if decls != nil {
+			// Source-mapped `//line` directive: mark the declaration with its
+			// originating GALA line so panics in top-level initializers report a
+			// GALA position (see line_directives.go).
+			if t.emitLineMarkers() && topDeclCtx.GetStart() != nil {
+				file.Decls = append(file.Decls, lineMarkerDecl(topDeclCtx.GetStart().GetLine()))
+			}
 			file.Decls = append(file.Decls, decls...)
 		}
 	}
