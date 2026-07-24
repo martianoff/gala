@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/build"
 	"martianoff/gala/internal/depman/mod"
 	"martianoff/gala/internal/transpiler"
@@ -186,7 +187,11 @@ func runTranspile(cmd *cobra.Command, args []string) {
 	// Transpile
 	goCode, err := t.Transpile(string(content), inputPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: transpilation failed: %v\n", err)
+		fmt.Fprintln(os.Stderr, galaerr.RenderRich(err, galaerr.Options{
+			FallbackPath:   inputPath,
+			FallbackSource: string(content),
+			Color:          galaerr.ColorEnabled(),
+		}))
 		os.Exit(1)
 	}
 

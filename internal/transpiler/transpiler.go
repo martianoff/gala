@@ -12,6 +12,7 @@ import (
 
 	"github.com/antlr4-go/antlr/v4"
 
+	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler/profiler"
 )
 
@@ -427,7 +428,9 @@ func (t *GalaToGoTranspiler) Transpile(input string, filePath string) (string, e
 	richAST, err := t.analyzer.Analyze(tree, filePath)
 	done()
 	if err != nil {
-		return "", err
+		// Stamp the file being compiled onto any positional error that lacks
+		// one, so the CLI's rich renderer can re-read the source for a snippet.
+		return "", galaerr.WithFilePath(err, filePath)
 	}
 	richAST.FilePath = filePath
 	richAST.SourceContent = input
@@ -436,7 +439,7 @@ func (t *GalaToGoTranspiler) Transpile(input string, filePath string) (string, e
 	fset, file, err := t.transformer.Transform(richAST)
 	done()
 	if err != nil {
-		return "", err
+		return "", galaerr.WithFilePath(err, filePath)
 	}
 
 	done = prof.Phase("generate")
