@@ -53,6 +53,29 @@ func metaKey(meta *transpiler.TypeMetadata) string {
 	return meta.Name
 }
 
+// instantiationKey renders type arguments into a stable suffix for the
+// visited-set key, so two instantiations of the same generic type (Node[int]
+// vs Node[MutableArray[int]]) get DISTINCT keys and the recursion only
+// terminates on a genuine same-argument self-reference. Empty args yield "",
+// so non-generic types keep their bare metaKey.
+func instantiationKey(args []transpiler.Type) string {
+	if len(args) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteByte('[')
+	for i, a := range args {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		if !transpiler.IsUnusable(a) {
+			b.WriteString(a.String())
+		}
+	}
+	b.WriteByte(']')
+	return b.String()
+}
+
 // buildSubst maps a declaration's type-parameter names to the type arguments of
 // a particular instantiation. Returns nil when there is nothing to substitute,
 // which substitute() treats as identity.

@@ -242,7 +242,15 @@ func (c *Checker) isNamedStructShareable(named transpiler.Type, typeArgs []trans
 		return false
 	}
 
-	key := metaKey(meta)
+	// The visited key must include the instantiation's type arguments, not just
+	// the type name: a generic type can recursively reference itself at a
+	// DIFFERENT fixed argument (e.g. `struct Node[T](val v T, val other
+	// Node[MutableArray[int]])`). Keying on the name alone would short-circuit
+	// the inner `Node[MutableArray[int]]` to "shareable" before its differing
+	// (mutable) argument is checked — an unsound false negative. Including the
+	// args makes Node[int] and Node[MutableArray[int]] distinct keys, so the
+	// cycle only terminates on a genuine same-argument self-reference.
+	key := metaKey(meta) + instantiationKey(typeArgs)
 	if visited[key] {
 		return true
 	}

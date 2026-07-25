@@ -182,6 +182,43 @@ var nodeMeta = &transpiler.TypeMetadata{
 	ImmutFlags: []bool{true, false},
 }
 
+// A generic struct that recursively references itself at a DIFFERENT, fixed
+// type argument. Guards the visited-key soundness fix: RecNode[int] must be NOT
+// shareable, because `other` is RecNode[collection_mutable.Array[int]] whose
+// substituted `v` field is a mutable collection. Keying the visited set on the
+// type NAME alone would short-circuit the inner instantiation to shareable
+// before its differing (mutable) argument is checked — an unsound false negative.
+//
+//	type RecNode[T] struct { val v T; val other RecNode[collection_mutable.Array[int]] }
+var recNodeMeta = &transpiler.TypeMetadata{
+	Name:       "RecNode",
+	Package:    "app",
+	TypeParams: []string{"T"},
+	FieldNames: []string{"v", "other"},
+	Fields: map[string]transpiler.Type{
+		"v":     basic("T"),
+		"other": generic(named("app", "RecNode"), mutArray(basic("int"))),
+	},
+	ImmutFlags: []bool{true, true},
+}
+
+// A generic struct that recursively references itself at the SAME type argument
+// (a proper cons list). Confirms the args-aware visited key still terminates and
+// still lets the argument's shareability govern the result.
+//
+//	type GenList[T] struct { val head T; val tail Option[GenList[T]] }
+var genListMeta = &transpiler.TypeMetadata{
+	Name:       "GenList",
+	Package:    "app",
+	TypeParams: []string{"T"},
+	FieldNames: []string{"head", "tail"},
+	Fields: map[string]transpiler.Type{
+		"head": basic("T"),
+		"tail": option(generic(named("app", "GenList"), basic("T"))),
+	},
+	ImmutFlags: []bool{true, true},
+}
+
 func fixtureResolver() MetadataResolver {
 	return stubResolver(map[string]*transpiler.TypeMetadata{
 		"Point":        pointMeta,
@@ -194,6 +231,8 @@ func fixtureResolver() MetadataResolver {
 		"app.Event":    eventMeta,
 		"app.IntList":  intListMeta,
 		"app.Node":     nodeMeta,
+		"app.RecNode":  recNodeMeta,
+		"app.GenList":  genListMeta,
 	})
 }
 
@@ -286,6 +325,12 @@ func TestIsShareable(t *testing.T) {
 		// recursion
 		{"recursive immutable list terminates+shareable", named("app", "IntList"), true},
 		{"recursive struct with var field terminates+false", named("app", "Node"), false},
+		// Visited-key soundness: a generic type that recurses at a DIFFERENT
+		// fixed argument must NOT be short-circuited to shareable.
+		{"recursive at mutable type-arg not shareable", generic(named("app", "RecNode"), basic("int")), false},
+		// Same-argument recursion still terminates and lets the arg govern.
+		{"generic cons list [int] terminates+shareable", generic(named("app", "GenList"), basic("int")), true},
+		{"generic cons list [mutable] not shareable", generic(named("app", "GenList"), mutArray(basic("int"))), false},
 
 		// function types — always false (capture analysis handles closures later)
 		{"func type", transpiler.FuncType{Params: []transpiler.Type{basic("int")}, Results: []transpiler.Type{basic("int")}}, false},
