@@ -189,6 +189,50 @@ func TestFreeVariablesInLambda(t *testing.T) {
 			lambda: "() => obj.compute(n)",
 			want:   []string{"obj", "n"},
 		},
+		{
+			// Interpolation embeds its expressions in a single token; the walker
+			// re-parses them, so a var used only inside `s"…"` is still captured.
+			name:   "interpolated string captures embedded var",
+			lambda: `() => s"n=$counter"`,
+			want:   []string{"counter"},
+		},
+		{
+			name:   "format string captures embedded expression vars",
+			lambda: `() => f"${x + y}"`,
+			want:   []string{"x", "y"},
+		},
+		{
+			name:   "format string with explicit spec captures var",
+			lambda: `() => f"${count}%04d"`,
+			want:   []string{"count"},
+		},
+		{
+			// A local referenced only inside an interpolation is not a capture.
+			name:   "interpolation referencing a local captures nothing extra",
+			lambda: `() => { val v = 1; sink(s"val=$v") }`,
+			want:   []string{"sink"},
+		},
+		{
+			// A nested lambda inside `${…}` binds its own param; the interpolation
+			// still contributes the genuinely free names.
+			name:   "nested lambda inside interpolation",
+			lambda: `() => s"${ items.Map((i) => i + base) }"`,
+			want:   []string{"items", "base"},
+		},
+		{
+			// if-EXPRESSION has no precise handler; generic child recursion must
+			// still surface every free name in it.
+			name:   "if-expression reached via generic recursion",
+			lambda: "() => if (cond) a else b",
+			want:   []string{"cond", "a", "b"},
+		},
+		{
+			// Unary op + parenthesised arithmetic: no named handler for these
+			// precedence levels — generic recursion covers them.
+			name:   "unary and nested arithmetic via generic recursion",
+			lambda: "() => -(m + n)",
+			want:   []string{"m", "n"},
+		},
 	}
 
 	for _, tc := range tests {

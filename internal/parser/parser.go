@@ -69,6 +69,30 @@ func (p *AntlrGalaParser) ParseLenient(input string) (antlr.Tree, []error) {
 	return tree, errs
 }
 
+// ParseExpression parses a single GALA expression (not a whole source file)
+// and returns its expression context alongside any syntax errors. Like
+// ParseLenient it isolates the ANTLR prediction-context cache so concurrent
+// parses stay race-free; the returned tree is error-recovered when errors are
+// present. Used to re-parse the embedded expressions of an interpolated string.
+func (p *AntlrGalaParser) ParseExpression(input string) (grammar.IExpressionContext, []error) {
+	is := antlr.NewInputStream(input)
+	lexer := grammar.NewgalaLexer(is)
+	isolateLexerCaches(lexer.BaseLexer)
+	stream := antlr.NewCommonTokenStream(lexer, antlr.TokenDefaultChannel)
+	psr := grammar.NewgalaParser(stream)
+	isolateParserCaches(psr.BaseParser)
+
+	errorListener := &GalaErrorListener{}
+
+	lexer.RemoveErrorListeners()
+	lexer.AddErrorListener(errorListener)
+	psr.RemoveErrorListeners()
+	psr.AddErrorListener(errorListener)
+
+	exprCtx := psr.Expression()
+	return exprCtx, errorListener.Errors
+}
+
 // sharedDFA lazily builds one DFA slice per ATN and reuses it forever. The
 // generated static decisionToDFA is unexported, so we build our own from the
 // same (shared) ATN. Concurrent parses may mutate these DFA states, but every

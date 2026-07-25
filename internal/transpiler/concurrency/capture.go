@@ -20,12 +20,23 @@ package concurrency
 //   - `match` / partial-function case-pattern bindings (`case Some(x)` binds x);
 //   - a nested lambda's parameters (which shadow only within the nested scope).
 //
-// The walk is deliberately, slightly OVER-approximating: it would rather report
-// a spurious free identifier (e.g. the callee of a bare `foo(...)` call, or a
-// bracketed type argument) than miss a genuine capture. PR3 classifies each
-// reported capture — resolving its `val`/`var` kind and type and enforcing
-// shareability — at which point a name that resolves to a top-level function or
-// a type harmlessly falls out as non-local.
+// COMPLETENESS. The walk is complete by construction: the precise handlers below
+// cover every binding-introducing construct and every identifier reference, and
+// ANY parse-tree node without a precise handler falls through to a GENERIC child
+// recursion (walk's default branch) that descends into all children. So no
+// subtree — hence no reference within it — is ever silently skipped, and the
+// analysis stays correct as the grammar grows. This deliberately OVER-approximates
+// (it reports spurious frees, e.g. the callee of a bare `foo(...)` call or a
+// bracketed type argument, rather than miss a genuine capture — the safe
+// direction). PR3 classifies each reported capture (resolving its `val`/`var`
+// kind and type and enforcing shareability); a name that resolves to a top-level
+// function or a type harmlessly falls out as non-local.
+//
+// String interpolation (`s"…$counter"`, `f"${x + y}"`) is a SINGLE lexer token,
+// so its embedded expressions are not child nodes. walkLiteral re-parses each
+// embedded expression (via the shared interpolation splitter + the project
+// parser) and walks it through the same machinery, so a variable referenced only
+// inside an interpolation is captured too.
 //
 // NOTE: like the Shareable predicate (PR1), this pass is wired into no
 // enforcement. It is called only by its tests. PR3 consumes it.
@@ -35,6 +46,8 @@ import (
 
 	"github.com/antlr4-go/antlr/v4"
 
+	"martianoff/gala/internal/interpolation"
+	"martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
@@ -69,7 +82,7 @@ func FreeVariablesInExpression(paramNames []string, expr grammar.IExpressionCont
 	for _, p := range paramNames {
 		a.bind(p)
 	}
-	a.walkExpression(expr)
+	a.walk(expr)
 	a.popScope()
 	return a.out
 }
@@ -81,10 +94,11 @@ type captureAnalyzer struct {
 	scopes []map[string]bool
 	out    []Capture
 	seen   map[string]bool
+	parser *parser.AntlrGalaParser // re-parses interpolation embedded expressions
 }
 
 func newCaptureAnalyzer() *captureAnalyzer {
-	return &captureAnalyzer{seen: map[string]bool{}}
+	return &captureAnalyzer{seen: map[string]bool{}, parser: parser.NewAntlrGalaParser()}
 }
 
 func (a *captureAnalyzer) pushScope() {
@@ -105,6 +119,13 @@ func (a *captureAnalyzer) bind(name string) {
 		a.pushScope()
 	}
 	a.scopes[len(a.scopes)-1][name] = true
+}
+
+// bindID binds the text of an identifier context, if present.
+func (a *captureAnalyzer) bindID(id grammar.IIdentifierContext) {
+	if id != nil {
+		a.bind(id.GetText())
+	}
 }
 
 // bound reports whether name is bound in any enclosing scope on the stack.
@@ -132,7 +153,94 @@ func (a *captureAnalyzer) reference(name string, tok antlr.Token) {
 }
 
 // ---------------------------------------------------------------------------
-// Lambda / block scoping
+// Generic dispatcher
+// ---------------------------------------------------------------------------
+
+// walk is the single entry point for descending an arbitrary parse-tree node.
+// Nodes that affect scoping or contribute references have PRECISE handlers
+// (dispatched here and returning without generic recursion, so nothing is
+// double-walked); every other node falls to the default branch, which recurses
+// into all children so no subtree is ever skipped.
+func (a *captureAnalyzer) walk(node antlr.Tree) {
+	if node == nil {
+		return
+	}
+	switch n := node.(type) {
+	// Scope-introducing constructs.
+	case *grammar.LambdaExpressionContext:
+		a.walkLambda(n)
+		return
+	case *grammar.BlockContext:
+		a.walkBlock(n)
+		return
+	case *grammar.ForStatementContext:
+		a.walkForStatement(n)
+		return
+	case *grammar.IfStatementContext:
+		a.walkIfStatement(n)
+		return
+	case *grammar.FunctionDeclarationContext:
+		a.walkNestedFunction(n)
+		return
+	case *grammar.CaseClauseContext:
+		a.walkCaseClause(n)
+		return
+	case *grammar.PartialFunctionLiteralContext:
+		for _, cc := range n.AllCaseClause() {
+			a.walkCaseClause(cc)
+		}
+		return
+
+	// Order-dependent local bindings: walk the initializer first (in the
+	// pre-binding scope), then bind, so `val x = x + 1` captures the outer x.
+	case *grammar.ValDeclarationContext:
+		a.walkValVarDecl(n.ExpressionList(), n.IdentifierList(), n.TuplePattern())
+		return
+	case *grammar.VarDeclarationContext:
+		a.walkValVarDecl(n.ExpressionList(), n.IdentifierList(), n.TuplePattern())
+		return
+	case *grammar.ShortVarDeclContext:
+		if el := n.ExpressionList(); el != nil {
+			for _, e := range el.AllExpression() {
+				a.walk(e)
+			}
+		}
+		a.bindIdentifierList(n.IdentifierList())
+		return
+	case *grammar.BindDeclarationContext:
+		a.walk(n.Expression())
+		a.bindID(n.Identifier())
+		return
+	case *grammar.AlsoDeclarationContext:
+		a.walk(n.Expression())
+		a.bindID(n.Identifier())
+		return
+	case *grammar.UseDeclarationContext:
+		a.walk(n.Expression())
+		a.bindID(n.Identifier())
+		return
+
+	// Reference-contributing leaves.
+	case *grammar.PrimaryContext:
+		a.walkPrimary(n)
+		return
+	case *grammar.PostfixSuffixContext:
+		a.walkPostfixSuffix(n)
+		return
+	case *grammar.ArgumentContext:
+		a.walkArgument(n)
+		return
+	}
+
+	// Default: no precise handler — recurse into every child so unhandled
+	// forms still surface their references (over-approximating, never missing).
+	for i := 0; i < node.GetChildCount(); i++ {
+		a.walk(node.GetChild(i))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Scope-introducing handlers
 // ---------------------------------------------------------------------------
 
 // walkLambda pushes a fresh scope, binds the lambda's parameters into it, walks
@@ -153,7 +261,7 @@ func (a *captureAnalyzer) walkLambda(lambda grammar.ILambdaExpressionContext) {
 	a.walkParameterDefaults(lambda.Parameters())
 
 	if expr := lambda.Expression(); expr != nil {
-		a.walkExpression(expr)
+		a.walk(expr)
 	} else if block := lambda.Block(); block != nil {
 		a.walkBlock(block)
 	}
@@ -171,12 +279,8 @@ func (a *captureAnalyzer) bindParameters(params grammar.IParametersContext) {
 		return
 	}
 	for _, p := range pl.AllParameter() {
-		pc, ok := p.(*grammar.ParameterContext)
-		if !ok {
-			continue
-		}
-		if id := pc.Identifier(); id != nil {
-			a.bind(id.GetText())
+		if pc, ok := p.(*grammar.ParameterContext); ok {
+			a.bindID(pc.Identifier())
 		}
 	}
 }
@@ -192,12 +296,10 @@ func (a *captureAnalyzer) walkParameterDefaults(params grammar.IParametersContex
 		return
 	}
 	for _, p := range pl.AllParameter() {
-		pc, ok := p.(*grammar.ParameterContext)
-		if !ok {
-			continue
-		}
-		if def := pc.ParamDefault(); def != nil {
-			a.walkExpression(def.Expression())
+		if pc, ok := p.(*grammar.ParameterContext); ok {
+			if def := pc.ParamDefault(); def != nil {
+				a.walk(def.Expression())
+			}
 		}
 	}
 }
@@ -212,64 +314,7 @@ func (a *captureAnalyzer) walkBlock(block grammar.IBlockContext) {
 	a.pushScope()
 	defer a.popScope()
 	for _, s := range block.AllStatement() {
-		a.walkStatement(s)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Statements & declarations
-// ---------------------------------------------------------------------------
-
-func (a *captureAnalyzer) walkStatement(stmt grammar.IStatementContext) {
-	if stmt == nil {
-		return
-	}
-	if decl := stmt.Declaration(); decl != nil {
-		a.walkDeclaration(decl)
-		return
-	}
-	if ret := stmt.ReturnStatement(); ret != nil {
-		if e := ret.Expression(); e != nil {
-			a.walkExpression(e)
-		}
-	}
-}
-
-func (a *captureAnalyzer) walkDeclaration(decl grammar.IDeclarationContext) {
-	switch {
-	case decl.ValDeclaration() != nil:
-		a.walkValVarDecl(decl.ValDeclaration().ExpressionList(),
-			decl.ValDeclaration().IdentifierList(), decl.ValDeclaration().TuplePattern())
-	case decl.VarDeclaration() != nil:
-		a.walkValVarDecl(decl.VarDeclaration().ExpressionList(),
-			decl.VarDeclaration().IdentifierList(), decl.VarDeclaration().TuplePattern())
-	case decl.BindDeclaration() != nil:
-		bd := decl.BindDeclaration()
-		a.walkExpression(bd.Expression()) // RHS resolves in the pre-binding scope
-		if id := bd.Identifier(); id != nil {
-			a.bind(id.GetText())
-		}
-	case decl.AlsoDeclaration() != nil:
-		ad := decl.AlsoDeclaration()
-		a.walkExpression(ad.Expression())
-		if id := ad.Identifier(); id != nil {
-			a.bind(id.GetText())
-		}
-	case decl.UseDeclaration() != nil:
-		ud := decl.UseDeclaration()
-		a.walkExpression(ud.Expression())
-		if id := ud.Identifier(); id != nil {
-			a.bind(id.GetText())
-		}
-	case decl.FunctionDeclaration() != nil:
-		a.walkNestedFunction(decl.FunctionDeclaration())
-	case decl.IfStatement() != nil:
-		a.walkIfStatement(decl.IfStatement())
-	case decl.ForStatement() != nil:
-		a.walkForStatement(decl.ForStatement())
-	case decl.SimpleStatement() != nil:
-		a.walkSimpleStatement(decl.SimpleStatement())
-		// TypeDeclaration / ImportDeclaration introduce no value references.
+		a.walk(s)
 	}
 }
 
@@ -280,7 +325,7 @@ func (a *captureAnalyzer) walkDeclaration(decl grammar.IDeclarationContext) {
 func (a *captureAnalyzer) walkValVarDecl(exprList grammar.IExpressionListContext, idList grammar.IIdentifierListContext, tuple grammar.ITuplePatternContext) {
 	if exprList != nil {
 		for _, e := range exprList.AllExpression() {
-			a.walkExpression(e)
+			a.walk(e)
 		}
 	}
 	a.bindIdentifierList(idList)
@@ -303,9 +348,7 @@ func (a *captureAnalyzer) bindIdentifierList(idList grammar.IIdentifierListConte
 // recurse and later statements may reference it); its parameters live in a fresh
 // nested scope covering only its body.
 func (a *captureAnalyzer) walkNestedFunction(fn grammar.IFunctionDeclarationContext) {
-	if id := fn.Identifier(); id != nil {
-		a.bind(id.GetText())
-	}
+	a.bindID(fn.Identifier())
 	a.pushScope()
 	defer a.popScope()
 	if sig := fn.Signature(); sig != nil {
@@ -315,20 +358,21 @@ func (a *captureAnalyzer) walkNestedFunction(fn grammar.IFunctionDeclarationCont
 	if block := fn.Block(); block != nil {
 		a.walkBlock(block)
 	} else if e := fn.Expression(); e != nil {
-		a.walkExpression(e)
+		a.walk(e)
 	}
 }
 
 func (a *captureAnalyzer) walkIfStatement(ifs grammar.IIfStatementContext) {
 	// An `if init; cond { … }` init binding is visible in the condition and both
-	// branches, so it gets a scope wrapping the whole statement.
+	// branches but NOT after the statement, so it gets a scope wrapping the whole
+	// statement (letting it fall to generic recursion would leak the binding).
 	a.pushScope()
 	defer a.popScope()
 	if ss := ifs.SimpleStatement(); ss != nil {
-		a.walkSimpleStatement(ss)
+		a.walk(ss)
 	}
 	if cond := ifs.Expression(); cond != nil {
-		a.walkExpression(cond)
+		a.walk(cond)
 	}
 	for _, b := range ifs.AllBlock() {
 		a.walkBlock(b)
@@ -346,15 +390,15 @@ func (a *captureAnalyzer) walkForStatement(fs grammar.IForStatementContext) {
 	if fc := fs.ForClause(); fc != nil {
 		// forClause: simpleStatement? ';' expression? ';' simpleStatement?
 		for _, ss := range fc.AllSimpleStatement() {
-			a.walkSimpleStatement(ss)
+			a.walk(ss)
 		}
 		if e := fc.Expression(); e != nil {
-			a.walkExpression(e)
+			a.walk(e)
 		}
 	} else if rc := fs.RangeClause(); rc != nil {
 		// rangeClause: (identifierList (':=' | '='))? 'range' expression
 		if e := rc.Expression(); e != nil {
-			a.walkExpression(e) // the ranged value resolves before the loop vars bind
+			a.walk(e) // the ranged value resolves before the loop vars bind
 		}
 		if idList := rc.IdentifierList(); idList != nil {
 			if strings.Contains(rc.GetText(), ":=") {
@@ -368,131 +412,84 @@ func (a *captureAnalyzer) walkForStatement(fs grammar.IForStatementContext) {
 			}
 		}
 	} else if cond := fs.ForCondition(); cond != nil {
-		a.walkExpression(cond.Expression())
+		a.walk(cond.Expression())
 	}
 
 	a.walkBlock(fs.Block())
 }
 
-func (a *captureAnalyzer) walkSimpleStatement(ss grammar.ISimpleStatementContext) {
-	if ss == nil {
-		return
-	}
-	switch {
-	case ss.IncDecStmt() != nil:
-		a.walkExpression(ss.IncDecStmt().Expression())
-	case ss.Assignment() != nil:
-		// Both sides are value positions: a plain `v = …` references the existing v.
-		for _, el := range ss.Assignment().AllExpressionList() {
-			for _, e := range el.AllExpression() {
-				a.walkExpression(e)
-			}
-		}
-	case ss.ShortVarDecl() != nil:
-		svd := ss.ShortVarDecl()
-		if el := svd.ExpressionList(); el != nil {
-			for _, e := range el.AllExpression() {
-				a.walkExpression(e)
-			}
-		}
-		a.bindIdentifierList(svd.IdentifierList())
-	case ss.Expression() != nil:
-		a.walkExpression(ss.Expression())
-	}
-}
-
 // ---------------------------------------------------------------------------
-// Expression walk
+// Reference-contributing handlers
 // ---------------------------------------------------------------------------
 
-func (a *captureAnalyzer) walkExpression(ctx grammar.IExpressionContext) {
+func (a *captureAnalyzer) walkPrimary(ctx grammar.IPrimaryContext) {
 	if ctx == nil {
 		return
 	}
-	a.walkOrExpr(ctx.OrExpr())
-}
-
-func (a *captureAnalyzer) walkOrExpr(ctx grammar.IOrExprContext) {
-	if ctx == nil {
+	if id := ctx.Identifier(); id != nil {
+		// A bare value-position identifier — the capture candidate.
+		a.reference(id.GetText(), id.GetStart())
 		return
 	}
-	for _, e := range ctx.AllAndExpr() {
-		a.walkAndExpr(e)
-	}
-}
-
-func (a *captureAnalyzer) walkAndExpr(ctx grammar.IAndExprContext) {
-	if ctx == nil {
+	if lit := ctx.Literal(); lit != nil {
+		a.walkLiteral(lit)
 		return
 	}
-	for _, e := range ctx.AllEqualityExpr() {
-		a.walkEqualityExpr(e)
-	}
-}
-
-func (a *captureAnalyzer) walkEqualityExpr(ctx grammar.IEqualityExprContext) {
-	if ctx == nil {
+	if tup := ctx.TupleExpressionList(); tup != nil {
+		for _, e := range tup.AllExpression() {
+			a.walk(e)
+		}
 		return
 	}
-	for _, e := range ctx.AllRelationalExpr() {
-		a.walkRelationalExpr(e)
+	if cl := ctx.CompositeLiteral(); cl != nil {
+		a.walkCompositeLiteral(cl)
 	}
 }
 
-func (a *captureAnalyzer) walkRelationalExpr(ctx grammar.IRelationalExprContext) {
-	if ctx == nil {
+// walkLiteral handles literals. All but interpolated/format strings contribute
+// no references. An interpolated (`s"…"`) or format (`f"…"`) string is a single
+// token whose embedded `${…}` / `$name` expressions are NOT parse-tree children,
+// so each embedded expression is re-parsed and walked in the CURRENT scope — a
+// variable referenced only inside an interpolation is captured just like any
+// other reference, and one that resolves to a local is not.
+func (a *captureAnalyzer) walkLiteral(lit grammar.ILiteralContext) {
+	var raw string
+	if tok := lit.INTERPOLATED_STRING(); tok != nil {
+		raw = tok.GetText()
+	} else if tok := lit.FORMAT_STRING(); tok != nil {
+		raw = tok.GetText()
+	} else {
 		return
 	}
-	for _, e := range ctx.AllAdditiveExpr() {
-		a.walkAdditiveExpr(e)
+	if len(raw) < 3 {
+		return
+	}
+	// Strip the `s"`/`f"` prefix and the closing `"`, matching the transformer.
+	content := raw[2 : len(raw)-1]
+	for _, part := range interpolation.Split(content) {
+		if part.IsLiteral {
+			continue
+		}
+		expr, _ := a.parser.ParseExpression(part.Text)
+		if expr != nil {
+			a.walk(expr) // best-effort even if the fragment had parse errors
+		}
 	}
 }
 
-func (a *captureAnalyzer) walkAdditiveExpr(ctx grammar.IAdditiveExprContext) {
-	if ctx == nil {
+// walkCompositeLiteral walks the element values of a composite literal. The
+// literal's `type` (its Type_) is a type, not a value, and is skipped; each
+// keyed element's expressions are value positions.
+func (a *captureAnalyzer) walkCompositeLiteral(ctx grammar.ICompositeLiteralContext) {
+	el := ctx.ElementList()
+	if el == nil {
 		return
 	}
-	for _, e := range ctx.AllMultiplicativeExpr() {
-		a.walkMultiplicativeExpr(e)
-	}
-}
-
-func (a *captureAnalyzer) walkMultiplicativeExpr(ctx grammar.IMultiplicativeExprContext) {
-	if ctx == nil {
-		return
-	}
-	for _, e := range ctx.AllUnaryExpr() {
-		a.walkUnaryExpr(e)
-	}
-}
-
-func (a *captureAnalyzer) walkUnaryExpr(ctx grammar.IUnaryExprContext) {
-	if ctx == nil {
-		return
-	}
-	if pf := ctx.PostfixExpr(); pf != nil {
-		a.walkPostfixExpr(pf)
-		return
-	}
-	// unaryOp unaryExpr
-	if inner := ctx.UnaryExpr(); inner != nil {
-		a.walkUnaryExpr(inner)
-	}
-}
-
-func (a *captureAnalyzer) walkPostfixExpr(ctx grammar.IPostfixExprContext) {
-	if ctx == nil {
-		return
-	}
-	// Subject: primaryExpr postfixSuffix*
-	a.walkPrimaryExpr(ctx.PrimaryExpr())
-	for _, s := range ctx.AllPostfixSuffix() {
-		a.walkPostfixSuffix(s)
-	}
-	// Trailing `match { case… }` — each arm is its own scope with pattern bindings.
-	if ctx.MATCH() != nil {
-		for _, cc := range ctx.AllCaseClause() {
-			a.walkCaseClause(cc)
+	for _, ke := range el.AllKeyedElement() {
+		if kec, ok := ke.(*grammar.KeyedElementContext); ok {
+			for _, e := range kec.AllExpression() {
+				a.walk(e)
+			}
 		}
 	}
 }
@@ -507,7 +504,9 @@ func (a *captureAnalyzer) walkPostfixSuffix(ctx grammar.IPostfixSuffixContext) {
 		return
 	}
 	if al := ctx.ArgumentList(); al != nil {
-		a.walkArgumentList(al)
+		for _, arg := range al.AllArgument() {
+			a.walkArgument(arg)
+		}
 		return
 	}
 	// `[ expressionList ]` — index or explicit type args. Indexing exprs are value
@@ -515,17 +514,8 @@ func (a *captureAnalyzer) walkPostfixSuffix(ctx grammar.IPostfixSuffixContext) {
 	// name harmlessly resolves to non-local in PR3).
 	if el := ctx.ExpressionList(); el != nil {
 		for _, e := range el.AllExpression() {
-			a.walkExpression(e)
+			a.walk(e)
 		}
-	}
-}
-
-func (a *captureAnalyzer) walkArgumentList(ctx grammar.IArgumentListContext) {
-	if ctx == nil {
-		return
-	}
-	for _, arg := range ctx.AllArgument() {
-		a.walkArgument(arg)
 	}
 }
 
@@ -551,96 +541,13 @@ func (a *captureAnalyzer) walkArgument(arg grammar.IArgumentContext) {
 func (a *captureAnalyzer) walkPatternAsValue(pat grammar.IPatternContext) {
 	switch p := pat.(type) {
 	case *grammar.ExpressionPatternContext:
-		a.walkExpression(p.Expression())
+		a.walk(p.Expression())
 	case *grammar.RestPatternContext:
-		a.walkExpression(p.Expression()) // spread: `xs...`
+		a.walk(p.Expression()) // spread: `xs...`
 	case *grammar.TypedPatternContext:
 		// `x: T` in argument position is unusual; treat x as a reference.
 		if id := p.Identifier(); id != nil {
 			a.reference(id.GetText(), id.GetStart())
-		}
-	}
-}
-
-func (a *captureAnalyzer) walkPrimaryExpr(ctx grammar.IPrimaryExprContext) {
-	if ctx == nil {
-		return
-	}
-	if lambda := ctx.LambdaExpression(); lambda != nil {
-		a.walkLambda(lambda)
-		return
-	}
-	if prim := ctx.Primary(); prim != nil {
-		a.walkPrimary(prim)
-		return
-	}
-	if ifExpr := ctx.IfExpression(); ifExpr != nil {
-		a.walkIfExpression(ifExpr)
-		return
-	}
-	if pf := ctx.PartialFunctionLiteral(); pf != nil {
-		for _, cc := range pf.AllCaseClause() {
-			a.walkCaseClause(cc)
-		}
-	}
-}
-
-func (a *captureAnalyzer) walkPrimary(ctx grammar.IPrimaryContext) {
-	if ctx == nil {
-		return
-	}
-	if id := ctx.Identifier(); id != nil {
-		// A bare value-position identifier — the capture candidate.
-		a.reference(id.GetText(), id.GetStart())
-		return
-	}
-	if ctx.Literal() != nil {
-		return
-	}
-	if tup := ctx.TupleExpressionList(); tup != nil {
-		for _, e := range tup.AllExpression() {
-			a.walkExpression(e)
-		}
-		return
-	}
-	if cl := ctx.CompositeLiteral(); cl != nil {
-		a.walkCompositeLiteral(cl)
-	}
-}
-
-// walkCompositeLiteral walks the element values of a composite literal. The
-// literal's `type` (its Type_) is a type, not a value, and is skipped; each
-// keyed element's expressions are value positions.
-func (a *captureAnalyzer) walkCompositeLiteral(ctx grammar.ICompositeLiteralContext) {
-	el := ctx.ElementList()
-	if el == nil {
-		return
-	}
-	for _, ke := range el.AllKeyedElement() {
-		kec, ok := ke.(*grammar.KeyedElementContext)
-		if !ok {
-			continue
-		}
-		for _, e := range kec.AllExpression() {
-			a.walkExpression(e)
-		}
-	}
-}
-
-func (a *captureAnalyzer) walkIfExpression(ctx grammar.IIfExpressionContext) {
-	if ctx == nil {
-		return
-	}
-	a.walkExpression(ctx.Expression()) // condition
-	for _, b := range ctx.AllIfExprBranch() {
-		bc, ok := b.(*grammar.IfExprBranchContext)
-		if !ok {
-			continue
-		}
-		if block := bc.Block(); block != nil {
-			a.walkBlock(block)
-		} else if e := bc.Expression(); e != nil {
-			a.walkExpression(e)
 		}
 	}
 }
@@ -660,12 +567,12 @@ func (a *captureAnalyzer) walkCaseClause(cc grammar.ICaseClauseContext) {
 	a.bindPattern(cc.Pattern())
 
 	if guard := cc.GetGuard(); guard != nil {
-		a.walkExpression(guard)
+		a.walk(guard)
 	}
 	if block := cc.GetBodyBlock(); block != nil {
 		a.walkBlock(block)
 	} else if stmt := cc.GetBodyStmt(); stmt != nil {
-		a.walkSimpleStatement(stmt)
+		a.walk(stmt)
 	}
 }
 
@@ -680,9 +587,7 @@ func (a *captureAnalyzer) bindPattern(pat grammar.IPatternContext) {
 	case *grammar.RestPatternContext:
 		a.bindPatternExpression(p.Expression()) // `rest...` binds rest
 	case *grammar.TypedPatternContext:
-		if id := p.Identifier(); id != nil {
-			a.bind(id.GetText()) // `x: T` binds x; T is a type
-		}
+		a.bindID(p.Identifier()) // `x: T` binds x; T is a type
 	}
 }
 

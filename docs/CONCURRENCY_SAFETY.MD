@@ -214,6 +214,20 @@ Lexical scoping is honoured precisely:
 - **Pattern constructor names**: in `case Some(x) =>`, `Some` is not captured;
   only the binding `x` is introduced.
 
+### String interpolation is analysed too
+
+An interpolated (`s"…"`) or format (`f"…"`) string is a **single lexer token**,
+so its embedded `${ … }` and `$name` expressions are *not* child nodes of the
+parse tree. A naive walk would never see them and would miss a variable
+referenced only inside an interpolation — an unsound false negative. The walk
+therefore re-parses each embedded expression (reusing the same interpolation
+splitter the transformer uses to transpile `s"…"`/`f"…"`, in the shared
+`internal/interpolation` package) and runs the normal expression walk over it, in
+the current scope. So `s"count is $counter"` captures `counter`, `f"${x + y}"`
+captures `x` and `y`, a nested `${ items.Map((i) => i + base) }` binds `i` and
+captures `items` + `base`, and an interpolation that references a **local**
+(`val v = 1; s"$v"`) captures nothing.
+
 ### The thunk sugar is analysed as `() => expr`
 
 `Future(counter + 1)` desugars its by-name argument to a thunk. The analysis
@@ -223,7 +237,15 @@ analysing the explicit thunk `() => counter + 1` (via `FreeVariablesInLambda`).
 So whichever way a program spells a deferred computation, its capture set — and
 therefore its shareability verdict — is the same.
 
-### Deliberately slightly over-approximate
+### Complete by construction, deliberately over-approximate
+
+The walk is **complete**: precise handlers cover every binding-introducing
+construct (lambda, block, `val`/`var`, `for`, `match`/case, `bind`/`also`, `use`,
+nested `func`) and every identifier reference, and **any parse-tree node without
+a precise handler falls through to a generic child recursion** that descends into
+all of its children. No subtree — and therefore no reference — is ever silently
+skipped, and the analysis stays correct as the grammar grows (a new expression
+form is covered the day it is added, before it has a dedicated handler).
 
 Where a purely syntactic walk cannot be certain, it prefers a spurious free
 identifier over a missed capture:
@@ -231,11 +253,15 @@ identifier over a missed capture:
 - the **callee of a bare call** `foo(…)` is reported as a free variable;
 - **bracketed arguments** `x[…]` (index vs. explicit type argument are
   syntactically indistinguishable) are walked as value references;
-- **composite-literal keys** are treated as value positions.
+- **composite-literal keys** are treated as value positions;
+- a node reached only by **generic recursion** contributes every bare identifier
+  it contains.
 
 None of these is unsound: a name that actually resolves to a top-level function
 or a type simply falls out as non-local when PR3 classifies each capture, exactly
-as a top-level function reference does.
+as a top-level function reference does. Over-approximation is the **safe**
+direction for a race-safety check — it can flag an extra name, never miss a real
+capture.
 
 ### What PR3 will do with this
 
