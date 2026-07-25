@@ -132,10 +132,10 @@ of the wrappers. It only rejects the genuinely unsound cases such as
 A function/closure type always returns `false` from this predicate. Whether a
 closure is safe to send depends on **what it captures**, not on its type
 signature — a `() => int` that captures a `MutableArray` is unsafe, while an
-identical-typed one that captures nothing is safe. Deciding that is the job of a
-later **capture-analysis** pass, which will inspect a closure passed to a
-`Sendable` parameter and verify each captured free variable is itself
-shareable. This type-only predicate cannot and does not make that call.
+identical-typed one that captures nothing is safe. Deciding that is the job of
+the **[capture-analysis](#capture-analysis)** pass, which computes the free
+variables a closure captures; enforcement then verifies each captured variable
+is itself shareable. This type-only predicate cannot and does not make that call.
 
 ### Unbounded type parameters
 
@@ -144,6 +144,107 @@ a `Shareable` bound; a `T: Shareable` will then be provably shareable, but until
 the bound is present the predicate cannot guarantee it.
 
 ---
+
+## Capture analysis
+
+The `Shareable` predicate answers *"is this **type** safe to share?"*. A closure
+has no useful type-only answer — `() => int` is safe if it captures nothing but a
+data race waiting to happen if it captures a `collection_mutable.Array`. What
+matters is **what a closure captures**. Deciding that is the job of the
+**capture-analysis** pass (`internal/transpiler/concurrency/capture.go`).
+
+### What a capture is
+
+A **capture** (free variable) is a **value-position identifier** a closure's body
+references that is **not bound within the closure's own scope** — i.e. it must
+come from the enclosing scope. Capture analysis returns the set of such
+identifiers, each with the source position of its first reference:
+
+```go
+type Capture struct {
+    Name string
+    Pos  transpiler.SourcePos
+}
+```
+
+It is a **pure, syntactic** walk over the ANTLR parse tree (like the
+transformer), with an explicit lexical scope stack — no analyzer, no type
+system, no AST mutation. Two entry points share one walker:
+
+- `FreeVariablesInLambda(lambda)` — an explicit lambda; its declared parameters
+  are bound, its body may be an expression or a block.
+- `FreeVariablesInExpression(paramNames, expr)` — a bare expression, so the same
+  analysis serves the by-name / thunk sugar (see below).
+
+### Scoping rules
+
+A name is **bound** (and therefore *not* a capture) when it is introduced by any
+of these constructs inside the closure:
+
+| Construct | Example | What binds |
+|-----------|---------|------------|
+| The closure's own parameters | `(x, y) => …` | `x`, `y` |
+| `val` / `var` locals | `val a = …` | `a` |
+| `bind` / `also` do-notation | `bind a = …` / `also b = …` | `a`, `b` |
+| `use` resource binding | `use fh = …` | `fh` |
+| `for` loop variables | `for i := range xs { … }` | `i` |
+| `match` / partial-function patterns | `case Some(x) =>`, `case Cons(h, t) =>` | `x`, `h`, `t` |
+| Nested-lambda parameters | `(x) => (y) => …` | `y` (only inside the inner lambda) |
+| Nested `func` declarations | `func g(z) = …` | `g`, and `z` inside its body |
+
+Lexical scoping is honoured precisely:
+
+- **Locals and bindings are visible only after they are declared.** The RHS of a
+  binding is analysed *before* the name is bound, so `val x = x + 1` captures the
+  outer `x` while later references resolve to the new local. This is proper
+  **shadowing**: an outer name referenced *before* an inner `val x` is a capture;
+  the same name referenced *after* resolves to the local.
+- **Nested lambdas shadow only within their own scope.** A name bound by an outer
+  lambda's parameter is free in an inner lambda but is *not* a capture of the
+  outer closure; an inner lambda's parameter is never a capture.
+- A capture is **de-duplicated by name**, keeping the **first** position (the
+  caret a diagnostic points at).
+
+### What is *not* a capture
+
+- **Type names** in annotations (`(x int) => …`, `val a T = …`, `case x: T =>`) —
+  the analysis never descends into a `type`.
+- The **method / field name** in a selector: in `recv.method(arg)`, `recv` and
+  `arg` are captures but `method` is not.
+- **Pattern constructor names**: in `case Some(x) =>`, `Some` is not captured;
+  only the binding `x` is introduced.
+
+### The thunk sugar is analysed as `() => expr`
+
+`Future(counter + 1)` desugars its by-name argument to a thunk. The analysis
+treats the two spellings identically: analysing the bare expression
+`counter + 1` (via `FreeVariablesInExpression`) yields the **same** captures as
+analysing the explicit thunk `() => counter + 1` (via `FreeVariablesInLambda`).
+So whichever way a program spells a deferred computation, its capture set — and
+therefore its shareability verdict — is the same.
+
+### Deliberately slightly over-approximate
+
+Where a purely syntactic walk cannot be certain, it prefers a spurious free
+identifier over a missed capture:
+
+- the **callee of a bare call** `foo(…)` is reported as a free variable;
+- **bracketed arguments** `x[…]` (index vs. explicit type argument are
+  syntactically indistinguishable) are walked as value references;
+- **composite-literal keys** are treated as value positions.
+
+None of these is unsound: a name that actually resolves to a top-level function
+or a type simply falls out as non-local when PR3 classifies each capture, exactly
+as a top-level function reference does.
+
+### What PR3 will do with this
+
+This pass, like the `Shareable` predicate, is **wired into no enforcement** — it
+is called only by its tests. Enforcement resolves each reported capture to its
+`val`/`var` **kind** and **type**, then requires that type to be `Shareable`
+(with a `var` capture rejected outright, since a reassignable binding shared
+across goroutines is a write race by construction). A capture that resolves to a
+top-level function or a type is non-local and ignored.
 
 ## Enforcement — a later PR
 
