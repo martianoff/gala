@@ -1,0 +1,19 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "concurrency",
+    srcs = [
+        "helpers.go",
+        "shareable.go",
+    ],
+    importpath = "martianoff/gala/internal/transpiler/concurrency",
+    visibility = ["//:__subpackages__"],
+    deps = ["//internal/transpiler"],
+)
+
+go_test(
+    name = "concurrency_test",
+    srcs = ["shareable_test.go"],
+    embed = [":concurrency"],
+    deps = ["//internal/transpiler"],
+)
