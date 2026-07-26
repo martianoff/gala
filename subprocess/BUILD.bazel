@@ -3,6 +3,7 @@ load("@rules_gala//gala:defs.bzl", "gala_bootstrap_transpile", "gala_test")
 
 exports_files([
     "subprocess.gala",
+    "async.gala",
     "subprocess.go",
 ])
 

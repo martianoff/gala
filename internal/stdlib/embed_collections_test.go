@@ -35,6 +35,39 @@ func TestCollectionFilesEmbedded(t *testing.T) {
 	}
 }
 
+// TestSubprocessAsyncEmbedded guards the same drift for the subprocess package's
+// async surface (async.gala): its methods live in a SEPARATE source file from
+// subprocess.gala, so it is easy to embed the base package while forgetting the
+// async file. When that happens the released CLI's analyzer never sees
+// ReadLineAsync / WriteLineAsync / KillAfter and `gala build` reports them as
+// undefined — even though `bazel test` (repo-source builds) passes.
+func TestSubprocessAsyncEmbedded(t *testing.T) {
+	files, ok := EmbeddedPackages["subprocess"]
+	if !ok {
+		t.Fatalf("package \"subprocess\" is not embedded at all")
+	}
+	for _, name := range []string{"async.gala", "async.gen.go"} {
+		if _, ok := files[name]; !ok {
+			t.Errorf("subprocess embed is missing %q — add it to the generate_embedded srcs in internal/stdlib/BUILD.bazel", name)
+		}
+	}
+}
+
+// TestSubprocessAsyncMethodsEmbedded is a symbol-level check: the embedded async
+// GALA source actually carries its public method surface, so a content
+// regression (not just a missing filename) is caught too.
+func TestSubprocessAsyncMethodsEmbedded(t *testing.T) {
+	content, ok := GetPackageContent("subprocess", "async.gala")
+	if !ok {
+		t.Fatalf("subprocess: async.gala not embedded")
+	}
+	for _, sym := range []string{"ReadLineAsync", "WriteLineAsync", "CloseStdinAsync", "KillAfter"} {
+		if !strings.Contains(content, sym) {
+			t.Errorf("subprocess async.gala embed does not define %s", sym)
+		}
+	}
+}
+
 // TestCollectionConstructorsEmbedded is a symbol-level sanity check: the embedded
 // GALA source for treemap actually carries its public constructor, so a content
 // regression (not just a missing filename) is caught too.
