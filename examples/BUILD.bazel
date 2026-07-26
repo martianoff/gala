@@ -183,6 +183,16 @@ gala_exec_test(
     deps = ["//concurrent"],
 )
 
+gala_exec_test(
+    name = "future_capture_safety",
+    src = "future_capture_safety.gala",
+    expected = "future_capture_safety.out",
+    deps = [
+        "//collection_immutable",
+        "//concurrent",
+    ],
+)
+
 
 gala_exec_test(
     name = "octal_binary_literals",

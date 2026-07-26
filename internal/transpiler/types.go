@@ -41,6 +41,34 @@ func IsUnusableOrAny(t Type) bool {
 	return t == nil || t.IsNil() || t.IsAny()
 }
 
+// UnwrapSendable reports whether t is the transparent boundary marker
+// `Sendable[F]` and, if so, returns its single inner type F. For any other
+// type it returns (t, false). The base-name comparison is package-agnostic so
+// `std.Sendable[F]`, a dot-imported `Sendable[F]`, and a library's own
+// re-export all unwrap identically. This is the single point that gives the
+// marker its "behaves exactly like F" transparency: every typing and codegen
+// site that might see a Sendable type first unwraps it here.
+func UnwrapSendable(t Type) (Type, bool) {
+	g, ok := t.(GenericType)
+	if !ok || len(g.Params) != 1 {
+		return t, false
+	}
+	name := g.Base.BaseName()
+	if idx := strings.LastIndex(name, "."); idx != -1 {
+		name = name[idx+1:]
+	}
+	if name != TypeSendable {
+		return t, false
+	}
+	return g.Params[0], true
+}
+
+// IsSendable reports whether t is a `Sendable[F]` boundary marker.
+func IsSendable(t Type) bool {
+	_, ok := UnwrapSendable(t)
+	return ok
+}
+
 // BasicType represents a basic type like int, string, bool.
 type BasicType struct {
 	Name string

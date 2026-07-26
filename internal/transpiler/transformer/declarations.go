@@ -564,6 +564,7 @@ func (t *galaASTTransformer) transformVarDeclaration(ctx *grammar.VarDeclaration
 		}
 
 		t.addVar(name, typeName)
+		t.markMutable(name) // genuine `var` declaration: reassignable
 		idents = append(idents, ast.NewIdent(name))
 	}
 
@@ -844,6 +845,11 @@ func (t *galaASTTransformer) registerFunctionParametersInScope(sigCtx *grammar.S
 			t.addVal(paramName, scopeType)
 		} else {
 			t.addVar(paramName, scopeType)
+			// Only an explicit `var` parameter is genuinely reassignable; a plain
+			// parameter is immutable by GALA semantics (default `val`).
+			if param.VAR() != nil {
+				t.markMutable(paramName)
+			}
 		}
 	}
 }

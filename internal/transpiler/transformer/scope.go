@@ -8,6 +8,13 @@ import (
 type scope struct {
 	vals     map[string]bool
 	valTypes map[string]transpiler.Type
+	// mutable records names that are genuinely reassignable `var` bindings —
+	// only real `var` declarations and `var`-marked parameters. It intentionally
+	// does NOT include the many val-by-semantics bindings that also route through
+	// addVar (plain parameters, match/pattern binds, lambda params, loop vars),
+	// so the concurrency capture-safety check can tell a reassignment race apart
+	// from an immutable binding. See isMutableVar.
+	mutable  map[string]bool
 	parent   *scope
 }
 
@@ -15,6 +22,7 @@ func (t *galaASTTransformer) pushScope() {
 	t.currentScope = &scope{
 		vals:     make(map[string]bool),
 		valTypes: make(map[string]transpiler.Type),
+		mutable:  make(map[string]bool),
 		parent:   t.currentScope,
 	}
 }
@@ -123,6 +131,51 @@ func (t *galaASTTransformer) isVar(name string) bool {
 		s = s.parent
 	}
 	return false
+}
+
+// markMutable flags name in the innermost scope as a genuinely reassignable
+// `var` binding. Call it only from real `var` declaration / `var`-parameter
+// sites, never from the val-by-semantics bindings that also use addVar.
+func (t *galaASTTransformer) markMutable(name string) {
+	if t.currentScope != nil {
+		t.currentScope.mutable[name] = true
+	}
+}
+
+// isMutableVar reports whether name resolves to a genuinely reassignable `var`
+// binding in the current scope chain. Plain parameters and pattern/loop binds
+// (which are immutable by GALA semantics even though they live in the `var`
+// bucket) return false.
+func (t *galaASTTransformer) isMutableVar(name string) bool {
+	s := t.currentScope
+	for s != nil {
+		if s.mutable[name] {
+			return true
+		}
+		// A same-named val/plain-binding in an inner scope shadows an outer
+		// mutable var, so stop searching once the name is bound at all.
+		if _, ok := s.valTypes[name]; ok {
+			return false
+		}
+		s = s.parent
+	}
+	return false
+}
+
+// lookupLocalBinding returns the tracked type of a local binding (val/var/param
+// or pattern/loop bind) and whether name is bound anywhere in the current scope
+// chain. A name that is NOT locally bound (a top-level function, a type, a
+// package, an imported symbol) returns (_, false) — the concurrency check uses
+// this to ignore captures that are not local bindings.
+func (t *galaASTTransformer) lookupLocalBinding(name string) (transpiler.Type, bool) {
+	s := t.currentScope
+	for s != nil {
+		if typ, ok := s.valTypes[name]; ok {
+			return typ, true
+		}
+		s = s.parent
+	}
+	return transpiler.NilType{}, false
 }
 
 func (t *galaASTTransformer) getFunction(name string) *transpiler.FunctionMetadata {

@@ -1613,6 +1613,8 @@ tuple wrapping. Access tuple fields via `.V1`, `.V2`, etc. Supported patterns:
 
 `Future[T]` represents an asynchronous computation that will eventually produce a value of type T or fail with an error. It provides a functional approach to concurrent programming, similar to Scala's Future monad.
 
+**Compile-time data-race safety.** A `Future` body is a `Sendable[func() T]` *concurrency boundary*: the transpiler statically checks that the async closure only captures immutable, shareable values. Capturing a reassignable `var` or a `val` of a non-immutable type (e.g. a `collection_mutable` value, or a struct with a `var` field) is rejected with [GALA-E0037](errors/GALA-E0037.md). Snapshot such data into an immutable `val`, or use `collection_immutable`. `Sendable[F]` is a transparent, general marker — it is exactly `F` at runtime, and any library can annotate its own boundary parameters with it. `go_interop.Spawn` is the low-level, *unchecked* escape hatch. See [CONCURRENCY_SAFETY.MD](CONCURRENCY_SAFETY.MD).
+
 **Value type (handle pattern):** `Future[T]` is a value type — pass it by value, never as `*Future[T]`. Although a Future holds mutable shared state (mutex, signal, completion flag), that state lives behind a pointer wrapped inside the Future, so copying a Future copies the handle and preserves its identity and synchronization. Use `Future[T]` in explicit type annotations (function signatures, struct fields):
 
 ```gala

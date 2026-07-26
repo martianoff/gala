@@ -306,6 +306,20 @@ const (
 	// `func delete(...)`) is not a builtin and is left untouched.
 	CodeForbiddenGoBuiltin ErrorCode = "GALA-E0035"
 
+	// E0037: a closure (explicit lambda or by-name thunk) passed to a
+	// concurrency boundary — a parameter typed `Sendable[F]`, as used by
+	// Future / FutureOn / go_interop.Spawn — captures a binding that is not
+	// safe to share across a goroutine. Two shapes trigger it: capturing a
+	// reassignable `var` (a data race on the variable slot if the enclosing
+	// scope reassigns it while the goroutine runs) and capturing a `val` whose
+	// type is not deeply immutable (a race on the shared mutable pointee, e.g.
+	// a collection_mutable value, a struct with a `var` field, or a Go-interop
+	// reference type). The fix is to snapshot the value into an immutable `val`,
+	// switch to an immutable collection, or restructure so the closure returns
+	// the value instead of capturing it. The advanced escape hatch is raw
+	// go_interop / goroutines, which opt out of the check.
+	CodeUnshareableCapture ErrorCode = "GALA-E0037"
+
 	// E0036: a Go-only statement keyword (defer, go, goto, fallthrough, select,
 	// chan) appeared as a bare identifier statement. These are not part of
 	// GALA's grammar; they only "worked" as an accident of the final gofmt pass

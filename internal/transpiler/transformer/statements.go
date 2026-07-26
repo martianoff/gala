@@ -316,6 +316,7 @@ func (t *galaASTTransformer) transformShortVarDeclWithMutability(ctx *grammar.Sh
 		}
 		if mutable {
 			t.addVar(name, typeName)
+			t.markMutable(name)
 		} else {
 			t.addVal(name, typeName)
 		}
