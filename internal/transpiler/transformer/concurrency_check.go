@@ -37,6 +37,25 @@ func (t *galaASTTransformer) sendableMetaResolver() concurrency.MetadataResolver
 		if meta == nil {
 			return nil, false
 		}
+		// Reject metadata synthesized from an imported Go package: such a type
+		// is opaque to GALA's shareability reasoning. Go has no `val`/`var`
+		// field distinction, and the synthesizer only records the type's
+		// EXPORTED fields — a Go struct with unexported mutable state (a
+		// pointer, a mutex, a slice header) surfaces here with an empty or
+		// partial field list. Structurally analysing that partial view is
+		// unsound: an all-unexported Go struct would look like a field-less
+		// (hence vacuously shareable) type and wrongly pass the boundary check.
+		//
+		// Every GALA-authored struct / sealed type records the source file it
+		// was parsed from in DefinedIn (preserved across packages by the
+		// metadata cache); only Go-synthesized metadata leaves it empty. So an
+		// empty DefinedIn is the reliable marker of a non-GALA type, which we
+		// treat as unresolvable — the checker then classifies it as not
+		// shareable, the safe direction. A genuinely empty GALA struct still
+		// has DefinedIn set, so it stays resolvable and shareable.
+		if meta.DefinedIn == "" {
+			return nil, false
+		}
 		return meta, true
 	}
 }
