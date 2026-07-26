@@ -6,10 +6,15 @@ import (
     "martianoff/gala/go_interop"
 )
 
-// Verifies subprocess.ReadLineAsync end to end: spawn a child that echoes one
-// known line, read it OFF-THREAD via the returned Future, and print it. The
-// command is selected per-platform so the program is deterministic on both
-// Windows (cmd) and Unix (sh).
+// Verifies the subprocess async operations end to end:
+//  - ReadLineAsync: spawn a child that echoes one known line, read it
+//    OFF-THREAD via the returned Future, and print it.
+//  - WriteLineAsync + CloseStdinAsync: feed a line to a `sort` filter
+//    OFF-THREAD, close its stdin OFF-THREAD so it reaches EOF and emits, then
+//    read the echoed line back — never capturing the Process handle into a
+//    goroutine by hand.
+// Commands are chosen so the program is deterministic on both Windows (cmd /
+// sort) and Unix (sh / sort).
 
 func shellOpts(script string) SpawnOpts {
     val cmd = if (runtime.GOOS == "windows") "cmd" else "sh"
@@ -22,6 +27,15 @@ func shellOpts(script string) SpawnOpts {
     )
 }
 
+// sortOpts runs the platform `sort` filter (present on both Windows and Unix),
+// which echoes a single stdin line back once stdin closes.
+func sortOpts() SpawnOpts = SpawnOpts(
+    Cmd = "sort",
+    Args = go_interop.SliceEmpty[string](),
+    Env = go_interop.SliceEmpty[string](),
+    Dir = "",
+)
+
 func main() {
     val p = Spawn(shellOpts("echo hello-async")).Get()
     // ReadLineAsync returns Future[Try[string]]: the outer .Get() awaits the
@@ -29,4 +43,12 @@ func main() {
     val line = p.ReadLineAsync().Get().Get()
     Println(line)
     p.Wait()
+
+    // Write / close off-thread, then read the echoed line back.
+    val f = Spawn(sortOpts()).Get()
+    f.WriteLineAsync("written-async").Get().Get()
+    f.CloseStdinAsync().Get().Get()
+    val echoed = f.ReadLineAsync().Get().Get()
+    Println(echoed)
+    f.Wait()
 }
