@@ -200,15 +200,18 @@ func main() {
 	}
 }
 
-// TestSendableForwardedIntoFuture covers Sendable propagation across a NESTED
-// boundary: a wrapper takes a caller-supplied computation typed
-// Sendable[func() int] and forwards it into a real concurrent.Future (itself a
-// Sendable[func() T] boundary). Because the parameter is Sendable-typed,
-// capturing it into the further Future boundary is accepted — in BOTH the
-// explicit-lambda form and the by-name thunk-sugar form. The capture-safety
-// obligation lands at the CALL SITE where the actual closure literal is written,
-// not at the forward.
-func TestSendableForwardedIntoFuture(t *testing.T) {
+// TestSendableForwardedIntoNestedBoundary covers Sendable propagation across a
+// NESTED boundary: a wrapper takes a caller-supplied computation typed
+// Sendable[func() int] and forwards it into a FURTHER Sendable boundary
+// (modelled here by the local `boundary` function, standing in for a real
+// concurrent.Future so the test needs no stdlib on its search path — the same
+// local-boundary convention every other case in this file uses). Because the
+// parameter is Sendable-typed, capturing it into the further boundary is
+// accepted — in BOTH the explicit-lambda form and the by-name thunk-sugar form.
+// The capture-safety obligation lands at the CALL SITE where the actual closure
+// literal is written, not at the forward. The real-Future end-to-end path is
+// exercised by examples/future_sendable_wrapper.gala.
+func TestSendableForwardedIntoNestedBoundary(t *testing.T) {
 	trans := newConcurrencyTranspiler()
 
 	cases := []struct {
@@ -219,28 +222,28 @@ func TestSendableForwardedIntoFuture(t *testing.T) {
 			name: "explicit lambda forwards Sendable param",
 			input: `package main
 
-import . "martianoff/gala/concurrent"
+func boundary(body Sendable[func() int]) int = body()
 
-func afterCompute(compute Sendable[func() int]) Future[int] =
-    Future(() => compute() + 1)
+func afterCompute(compute Sendable[func() int]) int =
+    boundary(() => compute() + 1)
 
 func main() {
     val base = 41
-    Println(afterCompute(() => base).Get())
+    Println(afterCompute(() => base))
 }`,
 		},
 		{
 			name: "thunk sugar forwards Sendable param",
 			input: `package main
 
-import . "martianoff/gala/concurrent"
+func boundary(body Sendable[func() int]) int = body()
 
-func afterComputeThunk(compute Sendable[func() int]) Future[int] =
-    Future(compute() + 1)
+func afterComputeThunk(compute Sendable[func() int]) int =
+    boundary(compute() + 1)
 
 func main() {
     val base = 41
-    Println(afterComputeThunk(() => base).Get())
+    Println(afterComputeThunk(() => base))
 }`,
 		},
 	}
@@ -248,7 +251,7 @@ func main() {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			out, err := trans.Transpile(tc.input, "sendable_forward.gala")
-			require.NoError(t, err, "forwarding a Sendable param into a Future must transpile cleanly")
+			require.NoError(t, err, "forwarding a Sendable param into a further boundary must transpile cleanly")
 			assert.NotEmpty(t, out)
 			// The transparent marker must never leak into generated Go.
 			assert.NotContains(t, out, "Sendable", "Sendable must not appear in generated Go")
