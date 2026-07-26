@@ -137,7 +137,9 @@ genrule(
         "//fs:streaming.gala",
         # subprocess package - GALA surface + Go-side helpers (errors.As / scanner buffer)
         "//subprocess:subprocess_go",
+        "//subprocess:async_go",
         "//subprocess:subprocess.gala",
+        "//subprocess:async.gala",
         "//subprocess:subprocess.go",
         # test package - transpiled Go
         "//test:assertions_go",
