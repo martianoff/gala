@@ -84,16 +84,17 @@ func Spawn(opts SpawnOpts) Try[Process] {
 // WriteLine writes s + "\n" to the child's stdin, flushing immediately.
 // Concurrent callers are serialised so two writers can't interleave bytes.
 //
-// Returns Success(true) on a clean write. A failed write usually means the
-// child closed stdin or exited; Failure carries the underlying io error.
-func (p Process) WriteLine(s string) Try[bool] {
+// Returns Success on a clean write. A failed write usually means the child
+// closed stdin or exited; Failure carries the underlying io error. The success
+// value is Void — there is nothing to report beyond "it went through".
+func (p Process) WriteLine(s string) Try[Void] {
     val st = p.state
     return WithLock(st.stdinMu, () => {
         val _, e1 = io.WriteString(st.stdin, s)
-        if e1 != nil { return Failure[bool](e1) }
+        if e1 != nil { return Failure[Void](e1) }
         val _, e2 = io.WriteString(st.stdin, "\n")
-        if e2 != nil { return Failure[bool](e2) }
-        return Success(true)
+        if e2 != nil { return Failure[Void](e2) }
+        return Success(Void())
     })
 }
 
@@ -107,11 +108,11 @@ func (p Process) WriteLine(s string) Try[bool] {
 // swallowed — the caller wanted "stdin should be closed", and it
 // is. Concurrent with WriteLine: serialised through the stdin
 // mutex so a write in flight isn't truncated.
-func (p Process) CloseStdin() Try[bool] {
+func (p Process) CloseStdin() Try[Void] {
     val st = p.state
     return WithLock(st.stdinMu, () => {
         st.stdin.Close()
-        return Success(true)
+        return Success(Void())
     })
 }
 
@@ -171,20 +172,20 @@ func (p Process) Wait() Try[int] {
 
 // Kill terminates the child immediately (SIGKILL on Unix, TerminateProcess on
 // Windows — exec.Cmd handles the platform difference). Idempotent against an
-// already-exited process: a kill after Wait returns Success(true) without
-// error. Caller is still responsible for invoking Wait afterwards to reap.
-func (p Process) Kill() Try[bool] {
+// already-exited process: a kill after Wait returns Success without error.
+// Caller is still responsible for invoking Wait afterwards to reap.
+func (p Process) Kill() Try[Void] {
     if !p.IsAlive() {
-        return Success(true)
+        return Success(Void())
     }
     val err = p.state.cmd.Process.Kill()
     if err != nil {
         // "process already finished" can race with the IsAlive check — treat
         // as success rather than confusing the caller.
-        if isProcessFinished(err) { return Success(true) }
-        return Failure[bool](err)
+        if isProcessFinished(err) { return Success(Void()) }
+        return Failure[Void](err)
     }
-    return Success(true)
+    return Success(Void())
 }
 
 // IsAlive returns true if the child is still running. Non-blocking; consults

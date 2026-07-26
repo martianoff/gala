@@ -70,9 +70,9 @@ func ForEachLine(path string, fn func(string) bool) Try[bool] =
 // newline appended after the last line. Existing contents at `path`
 // are replaced (atomic in the same sense as os.WriteFile). `mode` is
 // applied if the file is newly created.
-func WriteLines(path string, lines Array[string], mode int) Try[bool] {
+func WriteLines(path string, lines Array[string], mode int) Try[Void] {
     val joined = strings.Join(lines.ToGoSlice(), "\n") + "\n"
-    return FromError(os.WriteFile(path, ToBytes(joined), os.FileMode(mode))).Map((_) => true)
+    return FromError(os.WriteFile(path, ToBytes(joined), os.FileMode(mode)))
 }
 
 // AppendString appends `contents` to the file at `path`. If the file
@@ -80,7 +80,7 @@ func WriteLines(path string, lines Array[string], mode int) Try[bool] {
 // opened with O_APPEND and existing contents are preserved. Both the
 // write and close errors are surfaced — a successful write followed by
 // a failed close still becomes Failure.
-func AppendString(path string, contents string, mode int) Try[bool] =
+func AppendString(path string, contents string, mode int) Try[Void] =
     Try(os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, os.FileMode(mode)))
         .FlatMap((f) => {
             // Eagerly run both write and close (close must always run); then
@@ -88,17 +88,17 @@ func AppendString(path string, contents string, mode int) Try[bool] =
             // write with a failed close is still a Failure.
             val writeResult = Try(f.WriteString(contents))
             val closeResult = FromError(f.Close())
-            return writeResult.FlatMap((_) => closeResult).Map((_) => true)
+            return writeResult.FlatMap((_) => closeResult)
         })
 
 // Append is the byte-payload companion to AppendString. Same create-
 // or-append semantics; both write and close errors are reported.
-func Append(path string, data Array[byte], mode int) Try[bool] =
+func Append(path string, data Array[byte], mode int) Try[Void] =
     Try(os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, os.FileMode(mode)))
         .FlatMap((f) => {
             // Eagerly run both write and close (close must always run); then
             // surface the write error first and the close error second.
             val writeResult = Try(f.Write(data.ToGoSlice()))
             val closeResult = FromError(f.Close())
-            return writeResult.FlatMap((_) => closeResult).Map((_) => true)
+            return writeResult.FlatMap((_) => closeResult)
         })

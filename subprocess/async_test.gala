@@ -102,7 +102,7 @@ func TestReadStderrLineAsync(t T) T =
 // WriteLineAsync, closes its stdin OFF-THREAD via CloseStdinAsync so the filter
 // reaches EOF and emits, then reads the echoed line back. Exercises both async
 // write operations end to end: each returns a Future whose outer success means
-// the write goroutine did not panic and whose inner Try[bool] is the WriteLine /
+// the write goroutine did not panic and whose inner Try[Void] is the WriteLine /
 // CloseStdin result.
 func TestWriteLineAsyncRoundTrip(t T) T =
     RunCases[string, string](t, (st T, line string, want string) => {

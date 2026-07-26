@@ -49,12 +49,12 @@ func ReadFileString(path string) Try[string] =
 // WriteFile writes data to the named file, creating it if necessary.
 // `mode` is a Unix permission mode (e.g. 0o644). On Windows the mode
 // is mostly advisory; only the read-only bit is honored.
-func WriteFile(path string, data Array[byte], mode int) Try[bool] =
-    FromError(os.WriteFile(path, data.ToGoSlice(), os.FileMode(mode))).Map((_) => true)
+func WriteFile(path string, data Array[byte], mode int) Try[Void] =
+    FromError(os.WriteFile(path, data.ToGoSlice(), os.FileMode(mode)))
 
 // WriteFileString is the string-content companion to WriteFile.
-func WriteFileString(path string, contents string, mode int) Try[bool] =
-    FromError(os.WriteFile(path, ToBytes(contents), os.FileMode(mode))).Map((_) => true)
+func WriteFileString(path string, contents string, mode int) Try[Void] =
+    FromError(os.WriteFile(path, ToBytes(contents), os.FileMode(mode)))
 
 // Stat returns metadata about the file at `path`.
 func Stat(path string) Try[FileInfo] =
@@ -69,8 +69,8 @@ func Exists(path string) bool = Stat(path).IsSuccess()
 // MkdirAll creates `path` along with any necessary parents. It is a
 // no-op if the directory already exists. `mode` is the Unix permission
 // mode applied to newly-created directories.
-func MkdirAll(path string, mode int) Try[bool] =
-    FromError(os.MkdirAll(path, os.FileMode(mode))).Map((_) => true)
+func MkdirAll(path string, mode int) Try[Void] =
+    FromError(os.MkdirAll(path, os.FileMode(mode)))
 
 // MkdirTemp creates a new temporary directory in the directory `dir`
 // and returns the pathname of the new directory. If `dir` is empty
@@ -83,8 +83,8 @@ func MkdirTemp(dir string, pattern string) Try[string] = Try(os.MkdirTemp(dir, p
 // everything it can but returns the first error it encounters. If
 // `path` does not exist, the call returns Success without error
 // (matching os.RemoveAll's convention).
-func RemoveAll(path string) Try[bool] =
-    FromError(os.RemoveAll(path)).Map((_) => true)
+func RemoveAll(path string) Try[Void] =
+    FromError(os.RemoveAll(path))
 
 // ReadDir reads the directory named by `path` and returns a snapshot
 // of its entries as FileInfo records. Entries are returned in the
