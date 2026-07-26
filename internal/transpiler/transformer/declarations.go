@@ -564,6 +564,7 @@ func (t *galaASTTransformer) transformVarDeclaration(ctx *grammar.VarDeclaration
 		}
 
 		t.addVar(name, typeName)
+		t.markMutable(name) // genuine `var` declaration: reassignable
 		idents = append(idents, ast.NewIdent(name))
 	}
 
@@ -844,6 +845,17 @@ func (t *galaASTTransformer) registerFunctionParametersInScope(sigCtx *grammar.S
 			t.addVal(paramName, scopeType)
 		} else {
 			t.addVar(paramName, scopeType)
+			// Only an explicit `var` parameter is genuinely reassignable; a plain
+			// parameter is immutable by GALA semantics (default `val`).
+			if param.VAR() != nil {
+				t.markMutable(paramName)
+			}
+		}
+		// Remember a `Sendable[F]`-declared parameter: transformType erased the
+		// marker from scopeType, so the capture-safety check relies on this flag
+		// to accept the parameter when it is forwarded across a boundary.
+		if typeCtxIsSendable(param.Type_()) {
+			t.markSendable(paramName)
 		}
 	}
 }
@@ -1383,6 +1395,11 @@ func (t *galaASTTransformer) transformParameter(ctx *grammar.ParameterContext, r
 		t.addVal(name, scopeType)
 	} else {
 		t.addVar(name, scopeType)
+	}
+	// A `Sendable[F]`-annotated lambda/function parameter: record the erased
+	// marker so a forwarded function value is accepted by the capture check.
+	if typeCtxIsSendable(ctx.Type_()) {
+		t.markSendable(name)
 	}
 
 	if ctx.Type_() != nil {

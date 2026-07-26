@@ -7,9 +7,10 @@ goroutine boundary — a value captured by, or passed into, a `Future`, a
 This document describes the **shareability model** and the `Shareable` type
 predicate that decides it.
 
-> **Status.** This document describes the predicate only. The predicate is
-> currently wired into nothing — there is no enforcement, no surface syntax, and
-> no behaviour change. See [Enforcement — a later PR](#enforcement--a-later-pr).
+> **Status.** Enforcement is live. The `Shareable` predicate and capture
+> analysis are wired into a hard compile-time check at `Sendable[F]` concurrency
+> boundaries ([GALA-E0037](errors/GALA-E0037.md)). See
+> [Enforcement — the `Sendable` boundary and GALA-E0037](#enforcement--the-sendable-boundary-and-gala-e0037).
 
 ---
 
@@ -162,10 +163,18 @@ identifiers, each with the source position of its first reference:
 
 ```go
 type Capture struct {
-    Name string
-    Pos  transpiler.SourcePos
+    Name  string
+    Pos   transpiler.SourcePos
+    Paths []string // pure field-read access chains: `x.a` → "a", `x.a.b` → "a.b"
+    Whole bool     // used as a value (bare ref, arg, method receiver, index, match, …)
 }
 ```
+
+Alongside each captured name, the walk records **how** the closure uses it, so
+enforcement can be **field-access-sensitive** (see
+[Field-access sensitivity](#field-access-sensitivity)): `Paths` collects the pure
+`.field` selector chains applied to the variable, and `Whole` is set the moment
+it is used as a value in any other way.
 
 It is a **pure, syntactic** walk over the ANTLR parse tree (like the
 transformer), with an explicit lexical scope stack — no analyzer, no type
@@ -213,6 +222,27 @@ Lexical scoping is honoured precisely:
   `arg` are captures but `method` is not.
 - **Pattern constructor names**: in `case Some(x) =>`, `Some` is not captured;
   only the binding `x` is introduced.
+
+### Field-access sensitivity
+
+For each captured variable the walk also records **how** it is used, so
+enforcement need not demand the *whole* value be shareable when the closure only
+reads an immutable slice of it:
+
+- A **pure field-read chain** — `x.a`, `x.a.b`, a run of `.field` selectors *not*
+  followed by a call, index, or `match` — is recorded as a **path** (`"a"`,
+  `"a.b"`) on the capture.
+- Any other use marks the capture **`Whole`**: a bare reference (`x`), passing it
+  as an argument (`foo(x)`), a **method call** (`x.foo()` — a method may read or
+  write mutable internals, so it is *not* a safe field read), an index (`x[i]`), a
+  `match` subject, or anything the syntactic walk cannot classify. A variable used
+  both ways is `Whole` (the conservative direction).
+
+This is what lets enforcement accept `Future(() => g(m.team, m.statuses))` when
+`m`'s type is unshareable as a whole but `team`/`statuses` are immutable fields —
+no `val`-snapshot workaround needed. The **conservative bias** is preserved:
+anything not provably a pure field read counts as a whole use, the safe
+direction.
 
 ### String interpolation is analysed too
 
@@ -263,26 +293,156 @@ as a top-level function reference does. Over-approximation is the **safe**
 direction for a race-safety check — it can flag an extra name, never miss a real
 capture.
 
-### What PR3 will do with this
+### How enforcement uses this
 
-This pass, like the `Shareable` predicate, is **wired into no enforcement** — it
-is called only by its tests. Enforcement resolves each reported capture to its
-`val`/`var` **kind** and **type**, then requires that type to be `Shareable`
-(with a `var` capture rejected outright, since a reassignable binding shared
-across goroutines is a write race by construction). A capture that resolves to a
-top-level function or a type is non-local and ignored.
+Enforcement resolves each reported capture to its `val`/`var` **kind** and
+**type**. A `var` capture is rejected outright (a reassignable binding shared
+across goroutines is a write race by construction, even if the closure only reads
+its immutable fields — the binding slot itself can be rebound). For a `val`,
+enforcement is **field-access-sensitive**:
 
-## Enforcement — a later PR
+- a capture used **`Whole`** (as a value, or with a method called on it) must have
+  its **entire type** be `Shareable`;
+- a capture used **only via field-read paths** is accepted iff **every accessed
+  path** reads through immutable (`val`) fields to a `Shareable` type — the path's
+  type is resolved by walking the binding's type through each field with the same
+  metadata the `Shareable` predicate uses. A path through a `var` field, or one
+  that bottoms out at an unshareable type, is rejected and named.
 
-This predicate is the **foundation only**. It is not called by any non-test code
-yet. Enforcement lands in a later PR and will add:
+A capture that resolves to a top-level function or a type is non-local and
+ignored.
 
-- a **`Sendable`** bound / boundary marker for the parameters that cross a
-  goroutine boundary (Future / Spawn),
-- **capture analysis** for closures passed where a `Sendable` is expected,
-- a dedicated **error code** and diagnostic that points at the offending value
-  and explains *why* it is not shareable (e.g. "`Bag` has a
-  `collection_mutable.Array` field").
+## Enforcement — the `Sendable` boundary and GALA-E0037
 
-Until then, sending a non-shareable value compiles exactly as it does today; the
-model described here simply defines what *will* be allowed.
+The `Shareable` predicate and capture analysis are wired into a hard
+compile-time check.
+
+### The `Sendable[F]` marker
+
+`Sendable[F]` is a **transparent** concurrency-boundary marker. For
+type-checking and code generation it is *exactly* its inner type `F` — a
+`Sendable[func() T]` parameter is just `func() T` in the generated Go, with no
+runtime wrapper and no cost. What it adds is a signal to the analyzer: **this
+parameter position is a goroutine boundary.** A closure (an explicit lambda, or a
+by-name / thunk argument such as `Future(counter + 1)`) passed to a `Sendable`
+parameter is subject to the capture-safety check.
+
+`Sendable` is a **language-level marker any library can use** — the checker keys
+off the marker *type*, never off specific function names. Declare a boundary in
+your own library the same way std does:
+
+```gala
+// A library-defined boundary. `body` is transparently `func() T`; the closure
+// passed to it is checked for capture-safety.
+func runAsync[T any](body Sendable[func() T]) Future[T] = ...
+```
+
+The standard library marks its boundaries this way:
+
+- `concurrent.Future` / `concurrent.FutureOn` — `body: Sendable[func() T]`.
+
+### The check
+
+When a lambda or thunk is passed to a `Sendable` parameter, the transpiler runs
+capture analysis and classifies every captured free variable:
+
+| Capture resolves to…                              | Result |
+|---------------------------------------------------|--------|
+| a top-level function, type, or package symbol     | ignored — not per-goroutine state |
+| a reassignable `var`                              | **GALA-E0037** — reassignment race (even through an immutable field path) |
+| a binding declared `Sendable[F]`                  | allowed — a caller-vouched function value (see below) |
+| a `val` used **whole** of a non-`Shareable` type (incl. a bare `func`, or a method called on it) | **GALA-E0037** — mutable-pointee / unvouched-closure race |
+| a `val` read **only via field paths** that reach a `var` field or an unshareable type | **GALA-E0037** — race on the accessed field |
+| a `val` used whole of a `Shareable` type          | allowed |
+| a `val` read **only via field paths** that all reach immutable fields of `Shareable` type | allowed — a frozen projection, no snapshot needed |
+
+```gala
+var counter = 0
+Future(() => counter + 1)   // GALA-E0037: captures reassignable var `counter`
+
+val buffer = collection_mutable.ArrayOf(1, 2, 3)
+Future(() => buffer.Size()) // GALA-E0037: a method call is a whole use; `buffer`'s type is not shareable
+
+val xs = collection_immutable.ArrayOf(1, 2, 3)
+Future(() => xs.Size())     // OK — a deeply-immutable value is safe to share
+
+// Field-access-sensitive: AppModel is unshareable as a whole (it has a `var`
+// field), but the closure reads only its immutable `team`/`statuses` fields.
+struct AppModel(team string, statuses Array[int], var attempts int)
+val model = AppModel("qa", ArrayOf(1, 2, 3), 0)
+Future(() => project(model.team, model.statuses))   // OK — no snapshot needed
+Future(() => model.attempts + 1)                     // GALA-E0037: reads the `var` field
+```
+
+The diagnostic ([GALA-E0037](errors/GALA-E0037.md)) points its caret at the exact
+offending capture and explains *why* it is unsafe (a `var` reassignment race, a
+mutable-pointee race, or a specific unshareable field path — named as
+`model.attempts`), with a hint suggesting concrete fixes: read only immutable
+fields, snapshot the value into an immutable `val`, switch to an immutable
+collection, or restructure so the closure returns the value instead of capturing
+it.
+
+### Passing functions across a boundary — the `Sendable` bound
+
+A closure's shareability cannot be decided from its *type* alone: a bare
+`func() T` says nothing about what the function captured internally. So a captured
+or forwarded **function value** is treated exactly like Rust's `Send` bound.
+
+`Sendable[func() T]` on a parameter is a **promise the caller vouches for**: the
+closure it passes captures only shareable state. It is transparent — it compiles
+to plain `func() T` with no runtime representation or cost — and it carries only
+the compile-time capture-safety contract. The propagation rule:
+
+- A **bare `func(...) ...`** capture is **rejected** (GALA-E0037): nothing
+  vouches for its captures.
+- A **`Sendable`-typed** capture is **accepted**: the vouch has already been
+  made.
+- The requirement **rides up wrapper signatures** and **terminates at the closure
+  literal**, where the captures are actually checked. A reusable
+  concurrency-wrapper API annotates its forwarded parameter `Sendable[func() T]`;
+  the obligation then lands on whoever writes the closure.
+
+**Application code passing closure literals never writes `Sendable`** — only
+reusable concurrency-wrapper APIs annotate their forwarded parameters.
+
+**Before → after.** A helper that forwards a computation into a `Future`
+(mirroring an `afterDelay` / `async` shape):
+
+```gala
+// BEFORE — bare `func` parameter forwarded into a boundary: rejected.
+func afterDelay[T any](d Duration, make func() T) Future[T] =
+    concurrent.FutureApply[T](() => { sleep(d); make() })
+// error[GALA-E0037]: closure crossing a concurrency boundary captures function
+// value "make" (type func() T) — a function value may itself close over mutable
+// state, so it cannot cross the boundary unless it is Sendable
+//   hint: declare the parameter as `make Sendable[func() T]` — the Sendable bound
+//   requires each caller to pass a closure whose own captures are shareable, and
+//   propagates the check to the call site where the closure is written.
+
+// AFTER — the forwarded parameter is `Sendable[func() T]`: accepted.
+// The bound propagates the capture-safety obligation up to the caller.
+func afterDelay[T any](d Duration, make Sendable[func() T]) Future[T] =
+    concurrent.FutureApply[T](() => { sleep(d); make() })   // OK
+```
+
+The obligation terminates where the closure is actually written — the app-level
+caller, which passes an ordinary lambda and never mentions `Sendable`. That is
+where a genuinely unsafe capture is caught:
+
+```gala
+// OK — the closure captures only a shareable `val`.
+afterDelay(oneSecond, () => base + 1)
+
+// GALA-E0037 — caught HERE, at the closure literal, on `counter`:
+var counter = 0
+afterDelay(oneSecond, () => counter + 1)   // captures reassignable var `counter`
+```
+
+### Escape hatch — the advanced zone
+
+`go_interop.Spawn` / `SpawnWithRecover` and raw goroutine plumbing are the
+**low-level, unchecked** zone. Their parameters are *not* `Sendable`, so a closure
+spawned through them is **not** validated — you take responsibility for sharing
+correctly (mutexes, channels, atomics). Prefer `Future` for safe concurrency and
+reach for `go_interop` only when you deliberately manage synchronization
+yourself.

@@ -1,0 +1,76 @@
+package main
+
+import (
+    . "martianoff/gala/std"
+    . "martianoff/gala/concurrent"
+    . "martianoff/gala/collection_immutable"
+)
+
+// Compile-time data-race safety: a `Future` body is a `Sendable[func() T]`
+// concurrency boundary, so the transpiler statically checks that the async
+// closure only captures shareable values. Every capture below is a `val` of a
+// deeply-immutable type (or an immutable projection of one), so the program is
+// accepted and runs.
+//
+// The `Future(expr)` by-name / thunk sugar desugars to `Future(() => expr)`, so
+// each `expr` is itself the async closure whose captures are checked.
+//
+// (Capturing a `var`, a collection_mutable value, or reading a `var` field off
+// the boundary would be rejected at compile time with GALA-E0037 — those forms
+// cannot appear in a compiling example.)
+
+struct Point(x int, y int)
+
+sealed type Shape {
+    case Circle(r int)
+    case Square(side int)
+}
+
+func sumPoint(p Point) int = p.x + p.y
+
+func main() {
+    // Capture an immutable Int val.
+    val base = 41
+    val f1 = Future(base + 1)
+    Println(f1.Get())
+
+    // Capture an immutable String val.
+    val label = "gala"
+    val f2 = Future(label.Size())
+    Println(f2.Get())
+
+    // Capture an immutable Array (collection_immutable) — deeply immutable, so
+    // concurrent reads never race.
+    val xs = ArrayOf(10, 20, 30)
+    val f3 = Future(xs.Size())
+    Println(f3.Get())
+
+    // Capture an all-immutable struct WHOLE (passed by value into a function).
+    val pt = Point(3, 4)
+    val f4 = Future(sumPoint(pt))
+    Println(f4.Get())
+
+    // Capture a sealed-type value and match on it (a whole use of a
+    // deeply-immutable sealed type).
+    val shape = Circle(5)
+    val f5 = Future(shape match {
+        case Circle(r)    => r * r
+        case Square(side) => side * side
+    })
+    Println(f5.Get())
+
+    // Capture a nested immutable collection Array[Array[int]].
+    val grid = ArrayOf(ArrayOf(1, 2), ArrayOf(3, 4, 5))
+    val f6 = Future(grid.Size() + grid.Get(0).Size() + grid.Get(1).Size())
+    Println(f6.Get())
+
+    // Capture an immutable HashMap.
+    val counts = HashMapOf(("a", 1), ("b", 2), ("c", 3))
+    val f7 = Future(counts.Size())
+    Println(f7.Get())
+
+    // Capture a tuple and read its immutable slots.
+    val pair = Tuple(7, "seven")
+    val f8 = Future(pair.V1 + pair.V2.Size())
+    Println(f8.Get())
+}

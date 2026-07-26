@@ -1,0 +1,24 @@
+package main
+
+import (
+    . "martianoff/gala/std"
+    . "martianoff/gala/concurrent"
+)
+
+// Sendable propagation, end-to-end. `afterCompute` is a concurrency wrapper: it
+// takes a caller-provided computation declared `Sendable[func() int]` and
+// forwards it into a `Future` (itself a `Sendable[func() T]` boundary). The
+// `Sendable` bound propagates the capture-safety obligation to the CALL SITE
+// where the real closure literal is written — so forwarding the vouched-safe
+// `compute` across the further Future boundary is accepted.
+
+func afterCompute(compute Sendable[func() int]) Future[int] =
+    Future(() => compute() + 1)
+
+func main() {
+    // The closure literal supplied here has ITS captures checked: it captures
+    // the immutable `val base`, which is shareable.
+    val base = 41
+    val f = afterCompute(() => base)
+    Println(f.Get())
+}

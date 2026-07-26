@@ -168,12 +168,17 @@ func runAsync[T any](body func() T, ec go_interop.ExecutionContext) Future[T] {
 //
 // The receiver is an unused dispatch placeholder. If body panics, the Future is
 // completed with a Failure.
-func (f Future[T]) Apply(body func() T) Future[T] = runAsync[T](body, go_interop.GlobalEC())
+//
+// body is a concurrency boundary: `Sendable[func() T]` is transparently just
+// `func() T`, but marks the parameter so the transpiler enforces capture-safety
+// (GALA-E0037) — the async body may only capture immutable, shareable values.
+func (f Future[T]) Apply(body Sendable[func() T]) Future[T] = runAsync[T](body, go_interop.GlobalEC())
 
 // FutureOn runs body asynchronously on the given ExecutionContext. Use it when a
 // root computation needs a specific ExecutionContext; derived futures inherit it.
-// If body panics, the Future is completed with a Failure.
-func FutureOn[T any](body func() T, ec go_interop.ExecutionContext) Future[T] = runAsync[T](body, ec)
+// If body panics, the Future is completed with a Failure. body is a concurrency
+// boundary (`Sendable[func() T]`), so its captures are checked for shareability.
+func FutureOn[T any](body Sendable[func() T], ec go_interop.ExecutionContext) Future[T] = runAsync[T](body, ec)
 
 // FutureError is a custom error type for Future-related errors.
 struct FutureError(Message string)

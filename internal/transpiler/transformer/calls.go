@@ -658,6 +658,9 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		}
 		genMethodCtx := t.buildMethodCallContext(methodMeta, anyView(), false)
 		genMethodCtx.typeSubstTypes = typeSubstTypes
+		if cerr := t.checkSendableArg(genMethodCtx, i, exprCtx, lambdaCtx); cerr != nil {
+			return true, nil, cerr
+		}
 		expectedType := t.resolveExpectedArgType(genMethodCtx, i)
 		if lambdaCtx != nil {
 			expr, lerr := t.transformLambdaArgWithExpectedType(lambdaCtx, expectedType)
@@ -955,6 +958,9 @@ func (t *galaASTTransformer) emitMethodCallWithFullTypes(
 		if arg.Identifier() != nil {
 			argName := arg.Identifier().GetText()
 			resolvedMethodCtx := t.buildMethodCallContext(methodMeta, typeSubst, false)
+			if cerr := t.checkSendableNamedArg(resolvedMethodCtx, argName, exprCtx, lambdaCtx); cerr != nil {
+				return nil, cerr
+			}
 			expectedType := t.resolveNamedArgExpectedType(resolvedMethodCtx, argName)
 			var expr ast.Expr
 			var err error
@@ -969,6 +975,9 @@ func (t *galaASTTransformer) emitMethodCallWithFullTypes(
 			mNamedArgs[argName] = expr
 		} else {
 			resolvedMethodCtx := t.buildMethodCallContext(methodMeta, typeSubst, false)
+			if cerr := t.checkSendableArg(resolvedMethodCtx, argIdx, exprCtx, lambdaCtx); cerr != nil {
+				return nil, cerr
+			}
 			expectedType := t.resolveExpectedArgType(resolvedMethodCtx, argIdx)
 			var expr ast.Expr
 			var err error
@@ -1276,6 +1285,13 @@ func (t *galaASTTransformer) transformFunctionArgs(
 				return nil, nil, false, expErr
 			}
 
+			// Concurrency boundary: enforce capture-safety when this named
+			// parameter is a Sendable[F].
+			boundaryCtx := callContext{funcMeta: callCtx.funcMeta, applyMethodMeta: callCtx.applyMethodMeta}
+			if cerr := t.checkSendableNamedArg(boundaryCtx, argName, exprCtx, lambdaCtx); cerr != nil {
+				return nil, nil, false, cerr
+			}
+
 			var expr ast.Expr
 			var aerr error
 			if lambdaCtx != nil {
@@ -1295,6 +1311,11 @@ func (t *galaASTTransformer) transformFunctionArgs(
 		funcCallCtx.applyMethodMeta = callCtx.applyMethodMeta
 		funcCallCtx.applyTypeSubst = callCtx.applyTypeSubst
 		funcCallCtx.applyTypeParams = callCtx.applyTypeParams
+		// Concurrency boundary: enforce capture-safety when this positional
+		// parameter is a Sendable[F].
+		if cerr := t.checkSendableArg(funcCallCtx, argIdx, exprCtx, lambdaCtx); cerr != nil {
+			return nil, nil, false, cerr
+		}
 		expectedType := t.resolveExpectedArgType(funcCallCtx, argIdx)
 		var expr ast.Expr
 		var aerr error

@@ -71,6 +71,17 @@ const (
 	TypeConstPtr    = "ConstPtr"
 	FuncNewConstPtr = "NewConstPtr"
 	MethodDeref     = "Deref"
+
+	// Sendable is the transparent concurrency-boundary marker. A parameter
+	// typed `Sendable[F]` behaves EXACTLY like its inner type `F` for
+	// type-checking and code generation (it has no runtime representation and
+	// never appears in generated Go), but it flags the parameter position as a
+	// goroutine boundary: an explicit lambda or by-name thunk passed there is
+	// subject to the compile-time capture-safety check (GALA-E0037). It is a
+	// language-level marker any library can apply to its own boundary
+	// parameters; the checker keys off this type, never off specific function
+	// names.
+	TypeSendable = "Sendable"
 )
 
 // EmbedDirective represents a single `embed val` declaration parsed from GALA source.
