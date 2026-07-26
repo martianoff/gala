@@ -253,6 +253,11 @@ Spawn(() => {
 Println(future.Get())
 ```
 
+`Success`, `Failure`, and `Complete` each return a `bool` — `true` if that call
+completed the Promise, `false` if it was already completed. When several
+producers may race to complete the same Promise, the return value tells you which
+one won; the losers are safe no-ops.
+
 ---
 
 ## When to Use Futures vs Channels
