@@ -1,0 +1,94 @@
+package subprocess
+
+import (
+    . "martianoff/gala/std"
+    . "martianoff/gala/time_utils"
+    "martianoff/gala/go_interop"
+    "martianoff/gala/concurrent"
+)
+
+// This file adds goroutine-safe async and timeout operations directly ON the
+// Process handle. They exist so downstream code can read a child off-thread and
+// kill it on a timeout WITHOUT hand-rolling a goroutine that captures the raw
+// Process handle.
+//
+// A closure crossing a concurrent.Future boundary may only capture deeply
+// immutable (Shareable) state, and Process — a value handle wrapping a
+// mutex/once/signal-backed *processState — is documented goroutine-safe but not
+// statically provable as such, so app code cannot legally capture it into a
+// Future. The subprocess package OWNS that goroutine-safety invariant (Kill /
+// Wait from one goroutine, ReadLine from another) and already imports
+// go_interop, so the concurrency is implemented once here: the goroutine is
+// dispatched with go_interop.Spawn / SpawnWithRecover — a plain-func dispatch
+// that is deliberately NOT a Sendable boundary. That is the sanctioned escape
+// hatch, used exactly where the invariant lives. App code then just calls these
+// typed Future-returning methods and captures nothing unshareable.
+
+// ReadLineAsync reads the next stdout line off the calling goroutine, returning
+// a Future that completes with the same Try[string] a direct ReadLine() would
+// produce.
+//
+// The Future carries the inner Try as its success value: a normal line is
+// Success(Success(line)); end-of-stream is Success(Failure(io.EOF)) — EOF is
+// information about the stream, not a Future failure, so callers unwrap it via
+// the std Try API exactly as they would with the synchronous ReadLine. The
+// Future itself only fails if the read goroutine panics, in which case the
+// panic is surfaced as the Future's Failure.
+func (p Process) ReadLineAsync() concurrent.Future[Try[string]] {
+    val promise = concurrent.NewPromise[Try[string]]()
+    val onRead = () => { promise.Success(p.ReadLine()) }
+    val onPanic = (r any) => { promise.Failure(go_interop.PanicToError(r)) }
+    go_interop.SpawnWithRecover(onRead, onPanic)
+    return promise.Future()
+}
+
+// ReadStderrLineAsync is the stderr counterpart to ReadLineAsync, reading the
+// next stderr line off the calling goroutine. Same completion semantics: the
+// resulting Try[string] (including a Failure(io.EOF) at end-of-stream) is the
+// success value of the returned Future; only a panic in the read goroutine
+// fails the Future itself.
+func (p Process) ReadStderrLineAsync() concurrent.Future[Try[string]] {
+    val promise = concurrent.NewPromise[Try[string]]()
+    val onRead = () => { promise.Success(p.ReadStderrLine()) }
+    val onPanic = (r any) => { promise.Failure(go_interop.PanicToError(r)) }
+    go_interop.SpawnWithRecover(onRead, onPanic)
+    return promise.Future()
+}
+
+// KillTimer is the cancellation handle returned by KillAfter. Its single
+// operation, Cancel, aborts the pending kill. Once the timer has fired or been
+// cancelled the child is left to run to completion on its own.
+struct KillTimer(signal go_interop.Signal)
+
+// Cancel aborts a pending KillAfter timer by closing its signal, so the timer
+// goroutine wakes and exits without killing the child. Call it at most once
+// (it closes the underlying signal, and closing an already-closed signal
+// panics, mirroring go_interop.CloseSignal). A Cancel that races a timer that
+// has already fired is harmless — the kill has run and the goroutine has
+// already exited, so closing the signal just tidies up.
+func (k KillTimer) Cancel() {
+    go_interop.CloseSignal(k.signal)
+}
+
+// KillAfter arranges for the child to be killed if it is still running after d.
+// It returns immediately with a KillTimer handle; a background goroutine waits
+// up to d on a cancellation signal and, ONLY if that wait times out (i.e.
+// Cancel was not called in time), invokes p.Kill(). Because Kill is idempotent
+// and alive-checked, a late fire after the child has already exited is a safe
+// no-op — the caller is still responsible for calling Wait to reap.
+//
+// Capturing the Process handle into the timer goroutine is safe for the same
+// reason ReadLineAsync's capture is: this package owns the handle's
+// goroutine-safety invariant, so the goroutine is dispatched with
+// go_interop.Spawn rather than a Sendable Future boundary. Call Cancel on the
+// returned handle to abort the pending kill and let the goroutine exit promptly.
+func (p Process) KillAfter(d Duration) KillTimer {
+    val signal = go_interop.NewSignal()
+    val watch = () => {
+        if !go_interop.WaitSignalTimeout(signal, d.ToGoDuration()) {
+            p.Kill()
+        }
+    }
+    go_interop.Spawn(watch)
+    return KillTimer(signal = signal)
+}
