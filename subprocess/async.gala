@@ -55,6 +55,32 @@ func (p Process) ReadStderrLineAsync() concurrent.Future[Try[string]] {
     return promise.Future()
 }
 
+// WriteLineAsync writes s + "\n" to the child's stdin off the calling
+// goroutine, returning a Future that completes with the same Try[bool] a direct
+// WriteLine() would produce: Success(true) on a clean write, or the inner Try
+// carrying the io error if the child closed stdin or exited. Like WriteLine it
+// serialises against concurrent writers through the stdin mutex. Only a panic
+// in the write goroutine fails the Future itself.
+func (p Process) WriteLineAsync(s string) concurrent.Future[Try[bool]] {
+    val promise = concurrent.NewPromise[Try[bool]]()
+    val onWrite = () => { promise.Success(p.WriteLine(s)) }
+    val onPanic = (r any) => { promise.Failure(go_interop.PanicToError(r)) }
+    go_interop.SpawnWithRecover(onWrite, onPanic)
+    return promise.Future()
+}
+
+// CloseStdinAsync closes the child's stdin off the calling goroutine, returning
+// a Future that completes with the same Try[bool] a direct CloseStdin() would
+// produce (Success(true); idempotent, serialised against WriteLine through the
+// stdin mutex). Only a panic in the close goroutine fails the Future itself.
+func (p Process) CloseStdinAsync() concurrent.Future[Try[bool]] {
+    val promise = concurrent.NewPromise[Try[bool]]()
+    val onClose = () => { promise.Success(p.CloseStdin()) }
+    val onPanic = (r any) => { promise.Failure(go_interop.PanicToError(r)) }
+    go_interop.SpawnWithRecover(onClose, onPanic)
+    return promise.Future()
+}
+
 // KillTimer is the cancellation handle returned by KillAfter. Its single
 // operation, Cancel, aborts the pending kill. Once the timer has fired or been
 // cancelled the child is left to run to completion on its own.
