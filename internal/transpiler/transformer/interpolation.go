@@ -7,6 +7,7 @@ import (
 
 	"github.com/antlr4-go/antlr/v4"
 
+	"martianoff/gala/internal/interpolation"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
@@ -33,19 +34,12 @@ func (t *galaASTTransformer) rewriteBuiltinPrintFuncs(base ast.Expr) ast.Expr {
 	return base
 }
 
-// interpolationPart represents a piece of an interpolated string.
-type interpolationPart struct {
-	isLiteral  bool   // true = literal text, false = expression
-	text       string // literal text content (unescaped) or expression source
-	formatSpec string // explicit format spec (f-strings only), e.g. "%04d"
-}
-
 // transformInterpolatedString handles s"..." string interpolation.
 // Auto-infers format verbs from expression types.
 func (t *galaASTTransformer) transformInterpolatedString(raw string) (ast.Expr, error) {
 	// Strip s" prefix and " suffix
 	content := raw[2 : len(raw)-1]
-	parts := parseInterpolationParts(content)
+	parts := interpolation.Split(content)
 	return t.buildSprintfCall(parts, false)
 }
 
@@ -54,17 +48,17 @@ func (t *galaASTTransformer) transformInterpolatedString(raw string) (ast.Expr, 
 func (t *galaASTTransformer) transformFormatString(raw string) (ast.Expr, error) {
 	// Strip f" prefix and " suffix
 	content := raw[2 : len(raw)-1]
-	parts := parseInterpolationParts(content)
+	parts := interpolation.Split(content)
 	return t.buildSprintfCall(parts, true)
 }
 
 // buildSprintfCall generates a fmt.Sprintf call from interpolation parts.
 // If there are no interpolation expressions, returns a plain string literal.
-func (t *galaASTTransformer) buildSprintfCall(parts []interpolationPart, isFormatString bool) (ast.Expr, error) {
+func (t *galaASTTransformer) buildSprintfCall(parts []interpolation.Part, isFormatString bool) (ast.Expr, error) {
 	// Check if there are any expression parts
 	hasExprs := false
 	for _, p := range parts {
-		if !p.isLiteral {
+		if !p.IsLiteral {
 			hasExprs = true
 			break
 		}
@@ -74,7 +68,7 @@ func (t *galaASTTransformer) buildSprintfCall(parts []interpolationPart, isForma
 	if !hasExprs {
 		var sb strings.Builder
 		for _, p := range parts {
-			sb.WriteString(p.text)
+			sb.WriteString(p.Text)
 		}
 		return &ast.BasicLit{Kind: token.STRING, Value: `"` + sb.String() + `"`}, nil
 	}
@@ -84,14 +78,14 @@ func (t *galaASTTransformer) buildSprintfCall(parts []interpolationPart, isForma
 	var args []ast.Expr
 
 	for _, p := range parts {
-		if p.isLiteral {
+		if p.IsLiteral {
 			// Escape any % in literal text for Sprintf
-			formatBuf.WriteString(strings.ReplaceAll(p.text, "%", "%%"))
+			formatBuf.WriteString(strings.ReplaceAll(p.Text, "%", "%%"))
 			continue
 		}
 
 		// Parse expression and transform to Go AST
-		goExpr, err := t.parseAndTransformExpr(p.text)
+		goExpr, err := t.parseAndTransformExpr(p.Text)
 		if err != nil {
 			return nil, err
 		}
@@ -111,8 +105,8 @@ func (t *galaASTTransformer) buildSprintfCall(parts []interpolationPart, isForma
 			}
 		}
 
-		if isFormatString && p.formatSpec != "" {
-			verb = p.formatSpec
+		if isFormatString && p.FormatSpec != "" {
+			verb = p.FormatSpec
 		} else {
 			verb = formatVerbForType(typ)
 		}
@@ -160,195 +154,6 @@ func (t *galaASTTransformer) parseAndTransformExpr(exprText string) (ast.Expr, e
 
 	exprCtx := p.Expression()
 	return t.transformExpression(exprCtx.(*grammar.ExpressionContext))
-}
-
-// parseInterpolationParts splits interpolated string content into literal and expression parts.
-// Handles: $identifier, ${expression}, $$ (literal $)
-// For f-strings, also extracts %spec after expressions.
-func parseInterpolationParts(content string) []interpolationPart {
-	var parts []interpolationPart
-	var literal strings.Builder
-	i := 0
-
-	for i < len(content) {
-		if content[i] == '\\' && i+1 < len(content) {
-			// Escape sequence — pass through as-is
-			literal.WriteByte(content[i])
-			literal.WriteByte(content[i+1])
-			i += 2
-			continue
-		}
-
-		if content[i] != '$' {
-			literal.WriteByte(content[i])
-			i++
-			continue
-		}
-
-		// Found $
-		if i+1 >= len(content) {
-			literal.WriteByte('$')
-			i++
-			continue
-		}
-
-		next := content[i+1]
-
-		// $$ → literal $
-		if next == '$' {
-			literal.WriteByte('$')
-			i += 2
-			continue
-		}
-
-		// ${expr} or ${expr}%spec
-		if next == '{' {
-			// Flush literal
-			if literal.Len() > 0 {
-				parts = append(parts, interpolationPart{isLiteral: true, text: literal.String()})
-				literal.Reset()
-			}
-
-			// Find matching } with brace nesting
-			braceDepth := 1
-			j := i + 2
-			for j < len(content) && braceDepth > 0 {
-				if content[j] == '{' {
-					braceDepth++
-				} else if content[j] == '}' {
-					braceDepth--
-				} else if content[j] == '\\' && j+1 < len(content) {
-					j++ // skip escaped char
-				}
-				if braceDepth > 0 {
-					j++
-				}
-			}
-
-			exprText := unescapeInterpolationExpr(content[i+2 : j])
-			j++ // skip closing }
-
-			// Check for format spec
-			fmtSpec := ""
-			if j < len(content) && content[j] == '%' {
-				fmtSpec, j = extractFormatSpec(content, j)
-			}
-
-			parts = append(parts, interpolationPart{isLiteral: false, text: exprText, formatSpec: fmtSpec})
-			i = j
-			continue
-		}
-
-		// $identifier
-		if isIdentStart(next) {
-			// Flush literal
-			if literal.Len() > 0 {
-				parts = append(parts, interpolationPart{isLiteral: true, text: literal.String()})
-				literal.Reset()
-			}
-
-			j := i + 1
-			for j < len(content) && isIdentPart(content[j]) {
-				j++
-			}
-
-			identName := content[i+1 : j]
-
-			// Check for format spec
-			fmtSpec := ""
-			if j < len(content) && content[j] == '%' {
-				fmtSpec, j = extractFormatSpec(content, j)
-			}
-
-			parts = append(parts, interpolationPart{isLiteral: false, text: identName, formatSpec: fmtSpec})
-			i = j
-			continue
-		}
-
-		// $ followed by something else — treat as literal $
-		literal.WriteByte('$')
-		i++
-	}
-
-	// Flush remaining literal
-	if literal.Len() > 0 {
-		parts = append(parts, interpolationPart{isLiteral: true, text: literal.String()})
-	}
-
-	return parts
-}
-
-// unescapeInterpolationExpr converts escaped quotes inside ${} expression blocks
-// back to regular quotes so the expression can be re-parsed by the GALA parser.
-func unescapeInterpolationExpr(expr string) string {
-	return strings.ReplaceAll(expr, `\"`, `"`)
-}
-
-// extractFormatSpec extracts a Go printf format specifier starting at position i (which points to %).
-// Returns the format spec string and the position after it.
-func extractFormatSpec(content string, i int) (string, int) {
-	if i >= len(content) || content[i] != '%' {
-		return "", i
-	}
-
-	j := i + 1 // skip %
-
-	// Skip flags: +, -, #, ' ', 0
-	for j < len(content) {
-		c := content[j]
-		if c == '+' || c == '-' || c == '#' || c == ' ' || c == '0' {
-			j++
-		} else {
-			break
-		}
-	}
-
-	// Skip width: digits or *
-	if j < len(content) && content[j] == '*' {
-		j++
-	} else {
-		for j < len(content) && content[j] >= '0' && content[j] <= '9' {
-			j++
-		}
-	}
-
-	// Skip precision: .digits or .*
-	if j < len(content) && content[j] == '.' {
-		j++
-		if j < len(content) && content[j] == '*' {
-			j++
-		} else {
-			for j < len(content) && content[j] >= '0' && content[j] <= '9' {
-				j++
-			}
-		}
-	}
-
-	// Verb character
-	if j < len(content) && isFormatVerb(content[j]) {
-		j++
-		return content[i:j], j
-	}
-
-	// No valid verb found — not a format spec, treat % as literal
-	return "", i
-}
-
-// isFormatVerb returns true if c is a valid Go printf verb character.
-func isFormatVerb(c byte) bool {
-	switch c {
-	case 'b', 'c', 'd', 'e', 'E', 'f', 'F', 'g', 'G', 'o', 'O', 'p', 'q', 's', 't', 'T', 'U', 'v', 'x', 'X':
-		return true
-	}
-	return false
-}
-
-func isIdentStart(c byte) bool {
-	return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
-}
-
-func isIdentPart(c byte) bool {
-	return isIdentStart(c) || (c >= '0' && c <= '9')
 }
 
 // formatVerbForType returns the Go printf format verb for a GALA type.
