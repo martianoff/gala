@@ -6,7 +6,7 @@ parameter typed `Sendable[F]`, as used by `concurrent.Future`,
 `concurrent.FutureOn`, and any library that marks its own boundaries) and it
 captures a binding that is **not safe to share** across a goroutine.
 
-Three shapes trigger it:
+Four shapes trigger it:
 
 1. **Reassignable `var` capture — a reassignment race.** The closure runs on
    another goroutine while the enclosing scope can still reassign the variable
@@ -17,18 +17,46 @@ Three shapes trigger it:
    Future(() => counter + 1)   // ← GALA-E0037
    ```
 
-2. **`val` of a non-shareable type — a mutable-pointee race.** The binding is
-   never reassigned, but its *type* is not deeply immutable (a
-   `collection_mutable` value, a struct with a `var` field, a Go-interop
-   reference type, a bare slice/map/pointer, …), so the goroutine and the
-   enclosing scope alias the same mutable contents.
+2. **`val` used WHOLE, of a non-shareable type — a mutable-pointee race.** The
+   binding is never reassigned, but the closure uses it AS A VALUE — referenced
+   bare, passed to a function, returned, indexed, matched, or with a **method
+   called on it** (`x.foo()` — a method may read or write mutable internals) —
+   and its *type* is not deeply immutable (a `collection_mutable` value, a struct
+   with a `var` field, a Go-interop reference type, a bare slice/map/pointer, …).
+   The goroutine and the enclosing scope then alias the same mutable contents.
 
    ```gala
    val buffer = collection_mutable.ArrayOf(1, 2, 3)
-   Future(() => buffer.Size())  // ← GALA-E0037
+   Future(() => buffer.Size())  // ← GALA-E0037 (a method call is a whole use)
    ```
 
-3. **Bare `func` capture — an unvouched closure.** A captured or forwarded
+   The check is **field-access-sensitive**: if the closure reads ONLY immutable
+   (`val`) fields of the value, resolving to shareable types, it is *accepted* —
+   reading a frozen projection of an otherwise-mutable value is race-free, and no
+   snapshot `val` is needed. This fires only for a whole use, a method call, or a
+   field-read path that reaches a mutable (`var`) field or an unshareable type
+   (see shape 3).
+
+   ```gala
+   struct AppModel(team string, statuses Array[int], var attempts int)
+   val model = AppModel("qa", ArrayOf(1, 2, 3), 0)
+   // ACCEPTED: reads only the immutable `team`/`statuses` fields, even though
+   // AppModel as a whole is unshareable (it has a `var attempts` field).
+   Future(() => project(model.team, model.statuses))
+   ```
+
+4. **Unshareable field-read path — a race on the accessed field.** The closure
+   reads a field path (`x.a`, `x.a.b`) that either passes through a mutable
+   (`var`) field — reading it races with the field's reassignment — or bottoms
+   out at a type that is itself not deeply immutable.
+
+   ```gala
+   struct AppModel(team string, statuses Array[int], var attempts int)
+   val model = AppModel("qa", ArrayOf(1, 2, 3), 0)
+   Future(() => model.attempts + 1)   // ← GALA-E0037: reads the `var` field
+   ```
+
+4. **Bare `func` capture — an unvouched closure.** A captured or forwarded
    **function value** whose declared type is a bare `func(...) ...` says nothing
    about what it captured internally, so it cannot be shared. Type the parameter
    `Sendable[...]` instead (see *Fix* below).
@@ -54,6 +82,17 @@ captures (see *Fix* → *Propagate the guarantee with `Sendable`*).
 [SemanticError GALA-E0037] file.gala:9:22 closure crossing a concurrency boundary captures "buffer" (type *collection_mutable.Array[int]), whose type is not safe to share — a data race on its mutable contents (hint: use an immutable collection (collection_immutable) or snapshot the needed data into an immutable `val`; or restructure so the closure returns the value instead of capturing it)
 ```
 
+For an unshareable field-read path (shape 3), the message names the specific
+offending field path and why:
+
+```
+[SemanticError GALA-E0037] file.gala:8:22 closure crossing a concurrency boundary reads field path "model.attempts" on captured "model", which is not safe to share: it reads through a mutable (`var`) field — a data race, because the enclosing scope may reassign that field while the goroutine reads it (hint: read only immutable (`val`) fields of "model" across the boundary, or snapshot the needed field into an immutable `val` before it)
+```
+
+```
+[SemanticError GALA-E0037] file.gala:8:22 closure crossing a concurrency boundary reads field path "model.sessions" on captured "model", which is not safe to share: its type (collection_mutable.Array[int]) is not safe to share — a data race on its mutable contents (hint: read a deeply-immutable field of "model" instead, or snapshot the needed data into an immutable `val` before the boundary)
+```
+
 ```
 [SemanticError GALA-E0037] file.gala:4:37 closure crossing a concurrency boundary captures function value "compute" (type func() int), which is not safe to share — a bare function type carries no guarantee that its own captures are shareable (hint: declare the forwarded parameter's type as `Sendable[func() int]` so the caller vouches that the function's captures are shareable; that `Sendable` bound then propagates to the caller (the standard Send-style rule))
 ```
@@ -76,6 +115,21 @@ The caret points at the exact offending capture identifier.
   ```gala
   val xs = collection_immutable.ArrayOf(1, 2, 3)
   Future(() => xs.Size())     // OK
+  ```
+
+- **Read only immutable fields.** If you captured a value only to read a frozen
+  projection of it, read its immutable (`val`) fields directly across the
+  boundary — the check is field-access-sensitive and accepts that without a
+  snapshot, even when the value as a whole is unshareable. Avoid calling a
+  *method* on it (a method is treated as a whole use, since it may touch mutable
+  internals).
+
+  ```gala
+  struct AppModel(team string, statuses Array[int], var attempts int)
+  func project(team string, statuses Array[int]) string = s"$team: ${statuses.Size()}"
+  val model = AppModel("qa", ArrayOf(1, 2, 3), 0)
+  // OK: reads only the immutable `team`/`statuses` fields (no method call on model).
+  Future(() => project(model.team, model.statuses))
   ```
 
 - **Restructure** so the closure returns the value instead of capturing it, or

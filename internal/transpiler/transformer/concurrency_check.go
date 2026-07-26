@@ -2,6 +2,7 @@ package transformer
 
 import (
 	"fmt"
+	"strings"
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
@@ -152,11 +153,18 @@ func (t *galaASTTransformer) enforceSendableCapturesInExpr(exprCtx grammar.IExpr
 //     was supplied), so forwarding it across a further boundary is safe. This is
 //     the propagation that makes the canonical concurrency-wrapper pattern
 //     (forwarding a `compute Sendable[func() R]` into a Future) type-check.
-//   - a `val` whose type is not Shareable → error (mutable pointee race): the
-//     goroutine and the enclosing scope alias the same mutable payload. A bare
-//     `func` capture lands here (a function type is never Shareable on its own),
-//     with a message hinting that the parameter be made `Sendable`.
-//   - a `val` of a Shareable type → safe.
+//   - a `val` used WHOLE (as a value, or with a method called on it) whose type
+//     is not Shareable → error (mutable pointee race): the goroutine and the
+//     enclosing scope alias the same mutable payload. A bare `func` capture lands
+//     here (a function type is never Shareable on its own), with a message
+//     hinting that the parameter be made `Sendable`.
+//   - a `val` used ONLY via pure field-read access paths → checked
+//     FIELD-SENSITIVELY: accepted iff every accessed path reads through immutable
+//     (`val`) fields to a Shareable type. Reading only the immutable fields of an
+//     otherwise-unshareable value is genuinely race-free, so no `val`-snapshot
+//     workaround is needed. The first path that reads through a mutable (`var`)
+//     field, or bottoms out at an unshareable type, is rejected and named.
+//   - a `val` of a Shareable type used whole → safe.
 func (t *galaASTTransformer) checkSendableCaptures(caps []concurrency.Capture) error {
 	if len(caps) == 0 {
 		return nil
@@ -169,6 +177,8 @@ func (t *galaASTTransformer) checkSendableCaptures(caps []concurrency.Capture) e
 			// captured local, so not a capture race.
 			continue
 		}
+		// A reassignable `var` is a race even when only its immutable fields are
+		// read: the binding slot itself may be rebound while the goroutine runs.
 		if t.isMutableVar(c.Name) {
 			return unshareableVarCaptureError(c)
 		}
@@ -180,11 +190,98 @@ func (t *galaASTTransformer) checkSendableCaptures(caps []concurrency.Capture) e
 		if t.isSendableBinding(c.Name) {
 			continue
 		}
-		if !checker.IsShareable(typ) {
-			return unshareableValCaptureError(c, typ)
+		if err := t.checkCaptureShareable(checker, c, typ); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+// checkCaptureShareable enforces the shareability of a single non-var, non-
+// Sendable `val` capture. A capture used WHOLE (as a value, call callee, method
+// receiver, index/match subject) must have its ENTIRE type Shareable. A capture
+// used only via pure field-read access paths is checked path-by-path: every path
+// must read through immutable fields to a Shareable type.
+func (t *galaASTTransformer) checkCaptureShareable(checker *concurrency.Checker, c concurrency.Capture, typ transpiler.Type) error {
+	if c.Whole || len(c.Paths) == 0 {
+		if !checker.IsShareable(typ) {
+			return unshareableValCaptureError(c, typ)
+		}
+		return nil
+	}
+	for _, path := range c.Paths {
+		fieldType, allImmutable, ok := t.resolveFieldPathType(typ, path)
+		if !ok {
+			// A hop could not be resolved (opaque Go type, unknown field): fall
+			// back to the conservative whole-type check for this capture.
+			if !checker.IsShareable(typ) {
+				return unshareableValCaptureError(c, typ)
+			}
+			return nil
+		}
+		if !allImmutable || !checker.IsShareable(fieldType) {
+			return unshareableFieldPathCaptureError(c, path, fieldType, allImmutable)
+		}
+	}
+	return nil
+}
+
+// resolveFieldPathType walks a dotted field-read path (e.g. "policy.workspaceMode")
+// off a binding's type using the transformer's struct metadata, returning the
+// type the path resolves to, whether EVERY field hop along it is immutable
+// (`val`), and whether the whole path resolved. A `var` field anywhere on the
+// path clears allImmutable (reading a reassignable field races); an unresolvable
+// hop (opaque Go-interop type, unknown field) returns ok=false so the caller can
+// fall back conservatively.
+func (t *galaASTTransformer) resolveFieldPathType(base transpiler.Type, path string) (finalType transpiler.Type, allImmutable bool, ok bool) {
+	cur := base
+	allImmutable = true
+	for _, field := range strings.Split(path, ".") {
+		ft, immutable, hopOK := t.resolveStructFieldType(cur, field)
+		if !hopOK {
+			return transpiler.NilType{}, false, false
+		}
+		if !immutable {
+			allImmutable = false
+		}
+		cur = ft
+	}
+	return cur, allImmutable, true
+}
+
+// resolveStructFieldType resolves a single field of a GALA struct/sealed type via
+// its metadata, returning the field's type (with the owner's type arguments
+// substituted for the declaration's type parameters), whether the field is an
+// immutable (`val`) field, and whether resolution succeeded. Go-synthesized
+// (opaque) metadata — recognised by an empty DefinedIn, exactly as
+// sendableMetaResolver does — is treated as unresolvable, the safe direction.
+func (t *galaASTTransformer) resolveStructFieldType(owner transpiler.Type, field string) (fieldType transpiler.Type, immutable bool, ok bool) {
+	if transpiler.IsUnusable(owner) {
+		return transpiler.NilType{}, false, false
+	}
+	meta := t.getTypeMeta(owner.BaseName())
+	if meta == nil || meta.DefinedIn == "" {
+		return transpiler.NilType{}, false, false
+	}
+	ft, found := meta.Fields[field]
+	if !found {
+		return transpiler.NilType{}, false, false
+	}
+	immutable = true
+	for i, fn := range meta.FieldNames {
+		if fn == field {
+			if i < len(meta.ImmutFlags) {
+				immutable = meta.ImmutFlags[i]
+			}
+			break
+		}
+	}
+	if len(meta.TypeParams) > 0 {
+		if g, isGeneric := owner.(transpiler.GenericType); isGeneric && len(g.Params) > 0 {
+			ft = t.substituteConcreteTypes(ft, meta.TypeParams, g.Params)
+		}
+	}
+	return ft, immutable, true
 }
 
 // unshareableVarCaptureError builds the GALA-E0037 error for a captured
@@ -221,6 +318,34 @@ func unshareableValCaptureError(c concurrency.Capture, typ transpiler.Type) erro
 		c.Pos.Line, c.Pos.Column,
 		fmt.Sprintf("closure crossing a concurrency boundary captures %q%s, whose type is not safe to share — a data race on its mutable contents", c.Name, typeDesc),
 		"use an immutable collection (collection_immutable) or snapshot the needed data into an immutable `val`; or restructure so the closure returns the value instead of capturing it",
+	)
+}
+
+// unshareableFieldPathCaptureError builds the GALA-E0037 error for a capture used
+// ONLY via field-read paths where one accessed path is unsafe: it either reads
+// through a mutable (`var`) field — a race with the field's reassignment — or
+// bottoms out at a type that is itself not deeply immutable. The message names
+// the specific offending field path (e.g. `m.sessions`) and why, and the caret
+// points at the captured base identifier.
+func unshareableFieldPathCaptureError(c concurrency.Capture, path string, fieldType transpiler.Type, allImmutable bool) error {
+	fullPath := c.Name + "." + path
+	var why, hint string
+	if !allImmutable {
+		why = "it reads through a mutable (`var`) field — a data race, because the enclosing scope may reassign that field while the goroutine reads it"
+		hint = fmt.Sprintf("read only immutable (`val`) fields of %q across the boundary, or snapshot the needed field into an immutable `val` before it", c.Name)
+	} else {
+		typeDesc := ""
+		if !transpiler.IsUnusable(fieldType) {
+			typeDesc = fmt.Sprintf(" (type %s)", fieldType.String())
+		}
+		why = fmt.Sprintf("its type%s is not safe to share — a data race on its mutable contents", typeDesc)
+		hint = fmt.Sprintf("read a deeply-immutable field of %q instead, or snapshot the needed data into an immutable `val` before the boundary", c.Name)
+	}
+	return galaerr.NewCodedSemanticError(
+		galaerr.CodeUnshareableCapture,
+		c.Pos.Line, c.Pos.Column,
+		fmt.Sprintf("closure crossing a concurrency boundary reads field path %q on captured %q, which is not safe to share: %s", fullPath, c.Name, why),
+		hint,
 	)
 }
 

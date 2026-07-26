@@ -1,0 +1,32 @@
+package main
+
+import (
+    . "martianoff/gala/std"
+    . "martianoff/gala/concurrent"
+    . "martianoff/gala/collection_immutable"
+)
+
+// Field-access-sensitive data-race safety. `AppModel` is NOT shareable as a
+// whole — it carries a `var attempts` field that the enclosing scope may
+// reassign. But a `Future` body that reads ONLY its deeply-immutable projections
+// (`team`, `statuses`) never touches that mutable state, so it is genuinely
+// race-free and is accepted — with NO snapshot `val`s.
+//
+// This mirrors the real-world "prepare an immutable projection, hand it to an
+// off-thread command" pattern: the model stays mutable where the UI needs it,
+// while the async closure sees only the frozen slice of it that it reads.
+
+struct AppModel(team string, statuses Array[int], var attempts int)
+
+// project reads only immutable fields, off the concurrency boundary.
+func project(team string, statuses Array[int]) string =
+    s"$team: ${statuses.Size()} statuses"
+
+func main() {
+    val model = AppModel("qa", ArrayOf(1, 2, 3), 0)
+
+    // The whole `model` is captured, but the closure reads only the immutable
+    // `team` and `statuses` fields — accepted despite the `var attempts` field.
+    val f = Future(project(model.team, model.statuses))
+    Println(f.Get())
+}

@@ -411,6 +411,171 @@ func main() {
 	}
 }
 
+// appModelPreamble is the shared header for the field-access-sensitive cases. It
+// mirrors the real-world shape that motivated field sensitivity: an application
+// model whose OVERALL type is unshareable (it holds `sessions`, a mutable
+// collection, and a `policy` that itself carries a `var` field), yet whose
+// immutable projections (`team`, `statuses`, `policy.retries`) are perfectly safe
+// to read off-thread.
+const appModelPreamble = `package main
+
+import (
+    . "martianoff/gala/collection_immutable"
+    cm "martianoff/gala/collection_mutable"
+)
+
+struct Policy(retries int, var override bool)
+
+struct AppModel(team string, statuses Array[int], policy Policy, sessions cm.Array[int])
+
+func (m AppModel) label() string = m.team
+
+func run(body Sendable[func() int]) int = body()
+
+func runBool(body Sendable[func() bool]) bool = body()
+
+func g(a string, b Array[int]) int = a.Size() + b.Size()
+
+func sz(a cm.Array[int]) int = a.Size()
+
+func consume(x AppModel) int = x.statuses.Size()
+
+func mkModel() AppModel = AppModel("qa", ArrayOf(1, 2, 3), Policy(2, false), cm.ArrayOf(9))
+
+`
+
+// TestSendableFieldAccessSensitive is the headline coverage for field-access
+// sensitivity: capturing an otherwise-unshareable value but reading only its
+// immutable fields is accepted, with no `val`-snapshot workaround. Its mirror
+// negatives confirm the sound boundary: reading a mutable field, a nested var
+// field, using the value whole, or calling a method on it is still rejected, and
+// a reassignable `var` is rejected even through a pure immutable path.
+func TestSendableFieldAccessSensitive(t *testing.T) {
+	trans := newConcurrencyTranspiler()
+
+	accepts := []struct {
+		name  string
+		input string
+	}{
+		{
+			// The qaPromptReadyCmd shape: `Future(() => g(m.A, m.B))` — the whole
+			// AppModel is unshareable, but only its immutable `team`/`statuses`
+			// fields are read off-thread, so it is accepted with NO snapshot vals.
+			name:  "reads only immutable fields of an unshareable struct",
+			input: appModelPreamble + `func main() {
+    val m = mkModel()
+    Println(run(() => g(m.team, m.statuses)))
+}`,
+		},
+		{
+			// A nested immutable path, immutable through two hops (policy is a val
+			// field; retries is a val field of shareable type int).
+			name:  "reads a nested immutable field path",
+			input: appModelPreamble + `func main() {
+    val m = mkModel()
+    Println(run(() => m.policy.retries + 1))
+}`,
+		},
+		{
+			// Reading only the immutable V1 slot of a tuple whose OTHER slot is a
+			// mutable collection is race-free — the old coarse whole-type check
+			// rejected this; field sensitivity now accepts it.
+			name: "reads only the immutable slot of a partly-mutable tuple",
+			input: `package main
+
+import cm "martianoff/gala/collection_mutable"
+
+func run(body Sendable[func() int]) int = body()
+
+func main() {
+    val pair = Tuple(1, cm.ArrayOf(1, 2, 3))
+    Println(run(() => pair.V1 + 1))
+}`,
+		},
+		{
+			// Regression: an all-immutable struct used WHOLE (matched) is still
+			// accepted via the whole-type Shareable check.
+			name: "all-immutable struct used whole is accepted",
+			input: `package main
+
+struct Point(x int, y int)
+
+func run(body Sendable[func() int]) int = body()
+
+func main() {
+    val p = Point(1, 2)
+    Println(run(() => p match {
+        case _ => p.x + p.y
+    }))
+}`,
+		},
+	}
+	for _, tc := range accepts {
+		t.Run("accept/"+tc.name, func(t *testing.T) { assertSendableAccepted(t, trans, tc.input) })
+	}
+
+	rejects := []sendableRejectCase{
+		{
+			// Reading the mutable-collection field `sessions` (a val field whose
+			// TYPE is unshareable) — the accessed path is unshareable.
+			name:  "reads a mutable-collection field",
+			input: appModelPreamble + `func main() {
+    val m = mkModel()
+    Println(run(() => sz(m.sessions)))
+}`,
+			expectContains: "not safe to share",
+			expectCapture:  "m",
+		},
+		{
+			// A nested path whose final hop is a `var` field — reading a
+			// reassignable field races with its reassignment.
+			name:  "reads a nested mutable (var) field",
+			input: appModelPreamble + `func main() {
+    val m = mkModel()
+    Println(runBool(() => m.policy.override))
+}`,
+			expectContains: "mutable (`var`) field",
+			expectCapture:  "m",
+		},
+		{
+			// The value is used WHOLE (passed as a function argument), so the whole
+			// unshareable type is rejected.
+			name:  "uses the capture whole",
+			input: appModelPreamble + `func main() {
+    val m = mkModel()
+    Println(run(() => consume(m)))
+}`,
+			expectContains: "not safe to share",
+			expectCapture:  "m",
+		},
+		{
+			// A METHOD call on the capture (`m.label()`) is a whole use — a method
+			// may read/write mutable internals — so the whole type is rejected.
+			name:  "calls a method on the capture",
+			input: appModelPreamble + `func main() {
+    val m = mkModel()
+    Println(run(() => m.label().Size()))
+}`,
+			expectContains: "not safe to share",
+			expectCapture:  "m",
+		},
+		{
+			// A reassignable `var` accessed only via an immutable field path is
+			// STILL rejected: the binding slot itself can be rebound.
+			name:  "var binding accessed via immutable path is still rejected",
+			input: appModelPreamble + `func main() {
+    var m = mkModel()
+    Println(run(() => g(m.team, m.statuses)))
+}`,
+			expectContains: "reassignable var",
+			expectCapture:  "m",
+		},
+	}
+	for _, tc := range rejects {
+		t.Run("reject/"+tc.name, func(t *testing.T) { assertSendableRejected(t, trans, tc) })
+	}
+}
+
 // TestSendableSealedAndWrapperCaptures covers sealed types and the std value
 // wrappers (Option / Try / Either / TupleN) at the boundary.
 func TestSendableSealedAndWrapperCaptures(t *testing.T) {
@@ -458,7 +623,7 @@ func main() {
 			expectCapture:  "opt",
 		},
 		{
-			name: "tuple containing a mutable collection",
+			name: "tuple containing a mutable collection, matched whole",
 			input: `package main
 
 import cm "martianoff/gala/collection_mutable"
@@ -467,7 +632,9 @@ func run(body Sendable[func() int]) int = body()
 
 func main() {
     val pair = Tuple(1, cm.ArrayOf(1, 2, 3))
-    Println(run(() => pair.V1))
+    Println(run(() => pair match {
+        case _ => 1
+    }))
 }`,
 			expectContains: "not safe to share",
 			expectCapture:  "pair",
