@@ -15,6 +15,14 @@ type scope struct {
 	// so the concurrency capture-safety check can tell a reassignment race apart
 	// from an immutable binding. See isMutableVar.
 	mutable  map[string]bool
+	// sendable records names whose DECLARED type is the `Sendable[F]` boundary
+	// marker. The marker is transparently unwrapped by transformType, so the
+	// type stored in valTypes is the bare `F` (e.g. a plain `func() int`); this
+	// set is how the transformer remembers that the binding was declared
+	// Sendable. The concurrency capture-safety check consults it to accept a
+	// forwarded function value: a `Sendable`-typed capture is a caller-vouched
+	// safe closure (the `Send`-style bound), so it may cross a further boundary.
+	sendable map[string]bool
 	parent   *scope
 }
 
@@ -23,6 +31,7 @@ func (t *galaASTTransformer) pushScope() {
 		vals:     make(map[string]bool),
 		valTypes: make(map[string]transpiler.Type),
 		mutable:  make(map[string]bool),
+		sendable: make(map[string]bool),
 		parent:   t.currentScope,
 	}
 }
@@ -154,6 +163,35 @@ func (t *galaASTTransformer) isMutableVar(name string) bool {
 		}
 		// A same-named val/plain-binding in an inner scope shadows an outer
 		// mutable var, so stop searching once the name is bound at all.
+		if _, ok := s.valTypes[name]; ok {
+			return false
+		}
+		s = s.parent
+	}
+	return false
+}
+
+// markSendable flags name in the innermost scope as a binding whose declared
+// type is the `Sendable[F]` boundary marker. Call it right after the binding is
+// added (addVal/addVar) at any parameter/binding site whose type annotation is
+// Sendable — see typeCtxIsSendable.
+func (t *galaASTTransformer) markSendable(name string) {
+	if t.currentScope != nil {
+		t.currentScope.sendable[name] = true
+	}
+}
+
+// isSendableBinding reports whether name resolves to a binding DECLARED with a
+// `Sendable[F]` type in the current scope chain. Shadowing mirrors isMutableVar:
+// a same-named binding introduced in an inner scope (without the Sendable
+// annotation) shadows an outer Sendable one, so the search stops at the first
+// scope that binds the name at all.
+func (t *galaASTTransformer) isSendableBinding(name string) bool {
+	s := t.currentScope
+	for s != nil {
+		if s.sendable[name] {
+			return true
+		}
 		if _, ok := s.valTypes[name]; ok {
 			return false
 		}

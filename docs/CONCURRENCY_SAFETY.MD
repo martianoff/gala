@@ -310,7 +310,8 @@ capture analysis and classifies every captured free variable:
 |---------------------------------------------------|--------|
 | a top-level function, type, or package symbol     | ignored — not per-goroutine state |
 | a reassignable `var`                              | **GALA-E0037** — reassignment race |
-| a `val` of a non-`Shareable` type                 | **GALA-E0037** — mutable-pointee race |
+| a binding declared `Sendable[F]`                  | allowed — a caller-vouched function value (see below) |
+| a `val` of a non-`Shareable` type (incl. a bare `func`) | **GALA-E0037** — mutable-pointee / unvouched-closure race |
 | a `val` of a `Shareable` type                     | allowed |
 
 ```gala
@@ -329,6 +330,62 @@ offending capture and explains *why* it is unsafe (a `var` reassignment race vs.
 mutable-pointee race), with a hint suggesting concrete fixes: snapshot the value
 into an immutable `val`, switch to an immutable collection, or restructure so the
 closure returns the value instead of capturing it.
+
+### Passing functions across a boundary — the `Sendable` bound
+
+A closure's shareability cannot be decided from its *type* alone: a bare
+`func() T` says nothing about what the function captured internally. So a captured
+or forwarded **function value** is treated exactly like Rust's `Send` bound.
+
+`Sendable[func() T]` on a parameter is a **promise the caller vouches for**: the
+closure it passes captures only shareable state. It is transparent — it compiles
+to plain `func() T` with no runtime representation or cost — and it carries only
+the compile-time capture-safety contract. The propagation rule:
+
+- A **bare `func(...) ...`** capture is **rejected** (GALA-E0037): nothing
+  vouches for its captures.
+- A **`Sendable`-typed** capture is **accepted**: the vouch has already been
+  made.
+- The requirement **rides up wrapper signatures** and **terminates at the closure
+  literal**, where the captures are actually checked. A reusable
+  concurrency-wrapper API annotates its forwarded parameter `Sendable[func() T]`;
+  the obligation then lands on whoever writes the closure.
+
+**Application code passing closure literals never writes `Sendable`** — only
+reusable concurrency-wrapper APIs annotate their forwarded parameters.
+
+**Before → after.** A helper that forwards a computation into a `Future`
+(mirroring an `afterDelay` / `async` shape):
+
+```gala
+// BEFORE — bare `func` parameter forwarded into a boundary: rejected.
+func afterDelay[T any](d Duration, make func() T) Future[T] =
+    concurrent.FutureApply[T](() => { sleep(d); make() })
+// error[GALA-E0037]: closure crossing a concurrency boundary captures function
+// value "make" (type func() T) — a function value may itself close over mutable
+// state, so it cannot cross the boundary unless it is Sendable
+//   hint: declare the parameter as `make Sendable[func() T]` — the Sendable bound
+//   requires each caller to pass a closure whose own captures are shareable, and
+//   propagates the check to the call site where the closure is written.
+
+// AFTER — the forwarded parameter is `Sendable[func() T]`: accepted.
+// The bound propagates the capture-safety obligation up to the caller.
+func afterDelay[T any](d Duration, make Sendable[func() T]) Future[T] =
+    concurrent.FutureApply[T](() => { sleep(d); make() })   // OK
+```
+
+The obligation terminates where the closure is actually written — the app-level
+caller, which passes an ordinary lambda and never mentions `Sendable`. That is
+where a genuinely unsafe capture is caught:
+
+```gala
+// OK — the closure captures only a shareable `val`.
+afterDelay(oneSecond, () => base + 1)
+
+// GALA-E0037 — caught HERE, at the closure literal, on `counter`:
+var counter = 0
+afterDelay(oneSecond, () => counter + 1)   // captures reassignable var `counter`
+```
 
 ### Escape hatch — the advanced zone
 

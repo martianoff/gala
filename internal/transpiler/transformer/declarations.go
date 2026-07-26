@@ -851,6 +851,12 @@ func (t *galaASTTransformer) registerFunctionParametersInScope(sigCtx *grammar.S
 				t.markMutable(paramName)
 			}
 		}
+		// Remember a `Sendable[F]`-declared parameter: transformType erased the
+		// marker from scopeType, so the capture-safety check relies on this flag
+		// to accept the parameter when it is forwarded across a boundary.
+		if typeCtxIsSendable(param.Type_()) {
+			t.markSendable(paramName)
+		}
 	}
 }
 
@@ -1389,6 +1395,11 @@ func (t *galaASTTransformer) transformParameter(ctx *grammar.ParameterContext, r
 		t.addVal(name, scopeType)
 	} else {
 		t.addVar(name, scopeType)
+	}
+	// A `Sendable[F]`-annotated lambda/function parameter: record the erased
+	// marker so a forwarded function value is accepted by the capture check.
+	if typeCtxIsSendable(ctx.Type_()) {
+		t.markSendable(name)
 	}
 
 	if ctx.Type_() != nil {

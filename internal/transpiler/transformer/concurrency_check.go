@@ -146,8 +146,16 @@ func (t *galaASTTransformer) enforceSendableCapturesInExpr(exprCtx grammar.IExpr
 //     these are not per-goroutine state and cannot race.
 //   - a genuinely reassignable `var` → error (reassignment race): the enclosing
 //     scope could rebind the variable slot while the goroutine reads it.
+//   - a binding DECLARED `Sendable[F]` → safe: it is a caller-vouched function
+//     value. The `Sendable` bound means the closure the caller passed already
+//     had ITS captures checked (at the call site where the real closure literal
+//     was supplied), so forwarding it across a further boundary is safe. This is
+//     the propagation that makes the canonical concurrency-wrapper pattern
+//     (forwarding a `compute Sendable[func() R]` into a Future) type-check.
 //   - a `val` whose type is not Shareable → error (mutable pointee race): the
-//     goroutine and the enclosing scope alias the same mutable payload.
+//     goroutine and the enclosing scope alias the same mutable payload. A bare
+//     `func` capture lands here (a function type is never Shareable on its own),
+//     with a message hinting that the parameter be made `Sendable`.
 //   - a `val` of a Shareable type → safe.
 func (t *galaASTTransformer) checkSendableCaptures(caps []concurrency.Capture) error {
 	if len(caps) == 0 {
@@ -163,6 +171,14 @@ func (t *galaASTTransformer) checkSendableCaptures(caps []concurrency.Capture) e
 		}
 		if t.isMutableVar(c.Name) {
 			return unshareableVarCaptureError(c)
+		}
+		// A `Sendable[F]`-declared binding is a vouched-safe function value. The
+		// marker was erased from `typ` during inference (transformType unwraps
+		// Sendable), so we consult the scope's recorded Sendable-ness rather than
+		// the type. This must precede the IsShareable check, which would reject
+		// the bare `func` type the binding actually stores.
+		if t.isSendableBinding(c.Name) {
+			continue
 		}
 		if !checker.IsShareable(typ) {
 			return unshareableValCaptureError(c, typ)
@@ -183,8 +199,19 @@ func unshareableVarCaptureError(c concurrency.Capture) error {
 }
 
 // unshareableValCaptureError builds the GALA-E0037 error for a captured `val`
-// whose type is not deeply immutable (Shareable).
+// whose type is not deeply immutable (Shareable). A captured function value gets
+// a distinct message: a bare `func` type carries no guarantee about its own
+// captures, so the fix is to make the forwarded parameter `Sendable`, whose
+// bound propagates the safety obligation to the caller (the Send-style rule).
 func unshareableValCaptureError(c concurrency.Capture, typ transpiler.Type) error {
+	if ft, ok := typ.(transpiler.FuncType); ok {
+		return galaerr.NewCodedSemanticError(
+			galaerr.CodeUnshareableCapture,
+			c.Pos.Line, c.Pos.Column,
+			fmt.Sprintf("closure crossing a concurrency boundary captures function value %q (type %s) — a function value may itself close over mutable state, so it cannot cross the boundary unless it is Sendable", c.Name, ft.String()),
+			fmt.Sprintf("declare the parameter as `%s Sendable[%s]` — the Sendable bound requires each caller to pass a closure whose own captures are shareable, and propagates the check to the call site where the closure is written", c.Name, ft.String()),
+		)
+	}
 	typeDesc := ""
 	if !transpiler.IsUnusable(typ) {
 		typeDesc = fmt.Sprintf(" (type %s)", typ.String())
@@ -195,4 +222,39 @@ func unshareableValCaptureError(c concurrency.Capture, typ transpiler.Type) erro
 		fmt.Sprintf("closure crossing a concurrency boundary captures %q%s, whose type is not safe to share — a data race on its mutable contents", c.Name, typeDesc),
 		"use an immutable collection (collection_immutable) or snapshot the needed data into an immutable `val`; or restructure so the closure returns the value instead of capturing it",
 	)
+}
+
+// typeCtxIsSendable reports whether a parameter/binding's declared type
+// annotation is the `Sendable[F]` boundary marker, in any qualified form:
+// `Sendable[...]`, a package-qualified `std.Sendable[...]`, or a dot-imported
+// re-export. transformType erases the transparent marker before the type reaches
+// scope (the stored type is the bare inner `F`), so this purely syntactic check
+// is how a Sendable-declared binding is remembered — see markSendable.
+func typeCtxIsSendable(ctx grammar.ITypeContext) bool {
+	if ctx == nil {
+		return false
+	}
+	qid, ok := ctx.QualifiedIdentifier().(*grammar.QualifiedIdentifierContext)
+	if !ok || qid == nil {
+		return false
+	}
+	ta, ok := ctx.TypeArguments().(*grammar.TypeArgumentsContext)
+	if !ok || ta == nil {
+		return false
+	}
+	ids := qid.AllIdentifier()
+	if len(ids) == 0 {
+		return false
+	}
+	// The marker's own name is the last identifier; any leading qualifier (a
+	// package alias) is ignored, matching transpiler.UnwrapSendable's
+	// package-agnostic base-name comparison.
+	if ids[len(ids)-1].GetText() != transpiler.TypeSendable {
+		return false
+	}
+	tl, ok := ta.TypeList().(*grammar.TypeListContext)
+	if !ok || tl == nil {
+		return false
+	}
+	return len(tl.AllType_()) == 1
 }

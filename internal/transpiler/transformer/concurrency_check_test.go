@@ -1067,3 +1067,155 @@ func main() {
 		t.Run("accept/"+tc.name, func(t *testing.T) { assertSendableAccepted(t, trans, tc.input) })
 	}
 }
+
+// TestSendableFunctionValueCaptures covers the Sendable-propagation rule for
+// captured/forwarded FUNCTION VALUES (the Rust `Send`-style bound):
+//
+//   - A parameter declared `Sendable[func() T]` is a caller-vouched safe closure.
+//     Forwarding it across a further concurrency boundary — captured inside a
+//     Future body, or passed directly as the boundary argument — is ACCEPTED,
+//     because the vouch was already discharged at the call site that supplied the
+//     real closure literal.
+//   - A BARE `func() T` parameter carries no such guarantee, so forwarding it is
+//     REJECTED with GALA-E0037, and the message points the author at `Sendable`.
+//
+// This is what makes the canonical concurrency-wrapper pattern (a wrapper that
+// forwards a caller-provided `compute` into a Future, e.g. CancellableAsync /
+// AfterDelay) type-check. The boundary here is a locally-declared `run` so the
+// check keys off the `Sendable` marker, not off any std function name.
+func TestSendableFunctionValueCaptures(t *testing.T) {
+	trans := newConcurrencyTranspiler()
+
+	rejects := []sendableRejectCase{
+		{
+			// A bare `func() int` parameter forwarded directly into a boundary:
+			// nothing vouches for its captures, so it must be rejected with the
+			// DISTINCT function-value wording (not the mutable-pointee message).
+			name: "bare func param forwarded to a boundary is rejected",
+			input: `package main
+
+func run(body Sendable[func() int]) int = body()
+
+func forward(compute func() int) int = run(compute)
+
+func main() {
+    Println(forward(() => 7))
+}`,
+			expectContains: "function value",
+			expectCapture:  "compute",
+		},
+		{
+			// Same, but captured inside an explicit Future-body lambda rather than
+			// passed directly. Still a bare func, still rejected.
+			name: "bare func param captured in a boundary lambda is rejected",
+			input: `package main
+
+func run(body Sendable[func() int]) int = body()
+
+func forward(compute func() int) int = run(() => compute())
+
+func main() {
+    Println(forward(() => 7))
+}`,
+			expectContains: "function value",
+			expectCapture:  "compute",
+		},
+	}
+	for _, tc := range rejects {
+		t.Run("reject/"+tc.name, func(t *testing.T) { assertSendableRejected(t, trans, tc) })
+	}
+
+	// The bare-func rejection must carry an actionable AUTO-SUGGESTION: the hint
+	// names the concrete fix `<param> Sendable[<funcType>]`, built from the
+	// capture's own name and rendered type — not a generic "make it immutable"
+	// message. Assert both the distinct function-value wording and the suggestion.
+	t.Run("reject/bare func hint contains the concrete Sendable suggestion", func(t *testing.T) {
+		input := `package main
+
+func run(body Sendable[func() int]) int = body()
+
+func forward(compute func() int) int = run(compute)
+
+func main() {
+    Println(forward(() => 7))
+}`
+		_, err := trans.Transpile(input, "concurrency_check_suggest.gala")
+		require.Error(t, err)
+		msg := err.Error()
+		assert.Contains(t, msg, string(galaerr.CodeUnshareableCapture))
+		// Distinct function-value message (vs. var / mutable-pointee wording).
+		assert.Contains(t, msg, `function value "compute"`)
+		assert.Contains(t, msg, "unless it is Sendable")
+		// The concrete auto-suggestion: parameter name + rendered function type.
+		assert.Contains(t, msg, "compute Sendable[func() int]")
+		// It must NOT fall back to the generic mutable-pointee guidance.
+		assert.NotContains(t, msg, "immutable collection (collection_immutable)")
+	})
+
+	accepts := []struct {
+		name  string
+		input string
+	}{
+		{
+			// The forwarded function value is declared `Sendable[func() int]` and
+			// passed DIRECTLY as the boundary argument (the `FutureApply(compute)`
+			// shape: the by-name path analyzes `compute` as a free var).
+			name: "Sendable func param passed directly to a boundary",
+			input: `package main
+
+func run(body Sendable[func() int]) int = body()
+
+func wrapper(compute Sendable[func() int]) int = run(compute)
+
+func main() {
+    Println(wrapper(() => 7))
+}`,
+		},
+		{
+			// The same Sendable function value CAPTURED inside a Future-body lambda
+			// (the `FutureApply(() => { …; make() })` shape from AfterDelay).
+			name: "Sendable func param captured in a boundary lambda",
+			input: `package main
+
+func run(body Sendable[func() int]) int = body()
+
+func afterDelay(compute Sendable[func() int]) int = run(() => compute())
+
+func main() {
+    Println(afterDelay(() => 7))
+}`,
+		},
+		{
+			// A wrapper mirroring CancellableAsync/AfterDelay: it forwards a
+			// caller-provided Sendable computation to a boundary, alongside a
+			// shareable `val` capture, and is accepted end-to-end.
+			name: "concurrency wrapper forwarding a Sendable computation",
+			input: `package main
+
+func run(body Sendable[func() int]) int = body()
+
+func cancellableAsync(compute Sendable[func() int]) int = run(() => compute() + 1)
+
+func main() {
+    Println(cancellableAsync(() => 41))
+}`,
+		},
+		{
+			// Generic wrapper: the forwarded Sendable closure is typed over the
+			// function's own type parameter, exactly like the real signatures.
+			name: "generic Sendable wrapper forwards over a type parameter",
+			input: `package main
+
+func run[R any](body Sendable[func() R]) R = body()
+
+func afterDelay[R any](compute Sendable[func() R]) R = run[R](() => compute())
+
+func main() {
+    Println(afterDelay[int](() => 7))
+}`,
+		},
+	}
+	for _, tc := range accepts {
+		t.Run("accept/"+tc.name, func(t *testing.T) { assertSendableAccepted(t, trans, tc.input) })
+	}
+}
