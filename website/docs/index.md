@@ -26,6 +26,7 @@ Welcome to the GALA documentation hub. Here you will find everything you need to
 |-------|-------------|
 | [Collections]({{ '/features/collections/' | relative_url }}) | Immutable `List`, `Array`, `HashMap`, `HashSet`, `TreeSet`, `TreeMap` and their mutable variants |
 | [Concurrency]({{ '/features/concurrency/' | relative_url }}) | `Future[T]`, `Promise[T]`, `ExecutionContext`, `Await`, and `Zip` |
+| [Subprocess]({{ '/docs/subprocess/' | relative_url }}) | Spawn and drive external child processes with a goroutine-safe `Process` handle |
 | [Go Interop]({{ '/features/go-interop/' | relative_url }}) | Import and use any Go package, type, or function directly from GALA |
 | [Json]({{ '/docs/json/' | relative_url }}) | Type-safe JSON serialization, deserialization, and pattern matching extractors |
 | [Yaml]({{ '/docs/yaml/' | relative_url }}) | Type-safe YAML serialization, deserialization, and pattern matching extractors |

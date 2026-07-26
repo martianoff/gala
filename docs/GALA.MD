@@ -3932,6 +3932,7 @@ import "github.com/google/uuid"
 - [Design and Tradeoffs](DESIGN.MD) - Why GALA is built the way it is, and what each decision costs.
 - [Examples](EXAMPLES.MD) - More examples of GALA code.
 - [Concurrent](CONCURRENT.MD) - Future, Promise, and ExecutionContext for async programming.
+- [Subprocess](SUBPROCESS.MD) - Spawn and drive external child processes with a goroutine-safe `Process` handle.
 - [Stream](STREAM.MD) - Lazy, potentially infinite sequences.
 - [Strings](STRINGS.MD) - Free functions over `string`, the immutable `Str` wrapper, and `StringBuilder` — all in one package.
 - [Time Utils](TIME_UTILS.MD) - Duration and Instant types for immutable time handling.
