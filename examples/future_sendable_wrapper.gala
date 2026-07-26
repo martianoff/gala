@@ -5,20 +5,27 @@ import (
     . "martianoff/gala/concurrent"
 )
 
-// Sendable propagation, end-to-end. `afterCompute` is a concurrency wrapper: it
-// takes a caller-provided computation declared `Sendable[func() int]` and
-// forwards it into a `Future` (itself a `Sendable[func() T]` boundary). The
-// `Sendable` bound propagates the capture-safety obligation to the CALL SITE
-// where the real closure literal is written — so forwarding the vouched-safe
-// `compute` across the further Future boundary is accepted.
+// Sendable propagation, end-to-end. Both wrappers below take a caller-provided
+// computation declared `Sendable[func() int]` and forward it into a `Future`
+// (itself a `Sendable[func() T]` boundary). The `Sendable` bound propagates the
+// capture-safety obligation to the CALL SITE where the real closure literal is
+// written — so forwarding the vouched-safe `compute` across the further Future
+// boundary is accepted. The forward is shown in BOTH the explicit-lambda form
+// and the by-name thunk-sugar form; the two desugar identically.
 
+// afterCompute forwards via an explicit closure literal.
 func afterCompute(compute Sendable[func() int]) Future[int] =
     Future(() => compute() + 1)
+
+// afterComputeThunk forwards via thunk sugar — `Future(compute() + 1)` desugars
+// to `Future(() => compute() + 1)`, capturing the same Sendable `compute`.
+func afterComputeThunk(compute Sendable[func() int]) Future[int] =
+    Future(compute() + 1)
 
 func main() {
     // The closure literal supplied here has ITS captures checked: it captures
     // the immutable `val base`, which is shareable.
     val base = 41
-    val f = afterCompute(() => base)
-    Println(f.Get())
+    Println(afterCompute(() => base).Get())
+    Println(afterComputeThunk(() => base).Get())
 }

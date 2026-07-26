@@ -200,6 +200,62 @@ func main() {
 	}
 }
 
+// TestSendableForwardedIntoFuture covers Sendable propagation across a NESTED
+// boundary: a wrapper takes a caller-supplied computation typed
+// Sendable[func() int] and forwards it into a real concurrent.Future (itself a
+// Sendable[func() T] boundary). Because the parameter is Sendable-typed,
+// capturing it into the further Future boundary is accepted — in BOTH the
+// explicit-lambda form and the by-name thunk-sugar form. The capture-safety
+// obligation lands at the CALL SITE where the actual closure literal is written,
+// not at the forward.
+func TestSendableForwardedIntoFuture(t *testing.T) {
+	trans := newConcurrencyTranspiler()
+
+	cases := []struct {
+		name  string
+		input string
+	}{
+		{
+			name: "explicit lambda forwards Sendable param",
+			input: `package main
+
+import . "martianoff/gala/concurrent"
+
+func afterCompute(compute Sendable[func() int]) Future[int] =
+    Future(() => compute() + 1)
+
+func main() {
+    val base = 41
+    Println(afterCompute(() => base).Get())
+}`,
+		},
+		{
+			name: "thunk sugar forwards Sendable param",
+			input: `package main
+
+import . "martianoff/gala/concurrent"
+
+func afterComputeThunk(compute Sendable[func() int]) Future[int] =
+    Future(compute() + 1)
+
+func main() {
+    val base = 41
+    Println(afterComputeThunk(() => base).Get())
+}`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := trans.Transpile(tc.input, "sendable_forward.gala")
+			require.NoError(t, err, "forwarding a Sendable param into a Future must transpile cleanly")
+			assert.NotEmpty(t, out)
+			// The transparent marker must never leak into generated Go.
+			assert.NotContains(t, out, "Sendable", "Sendable must not appear in generated Go")
+		})
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Expanded corner-case coverage (structs, sealed/std wrappers, Go interop,
 // collections & wrappers, binding kinds & capture forms, negatives).
