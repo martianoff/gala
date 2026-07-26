@@ -763,17 +763,36 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 	// only accepted if *this file* explicitly imported
 	// `martianoff/gala/collection_immutable` (dot or named). Sibling
 	// imports do NOT propagate — that's the GALA-E0025 contract.
-	explicitImportPkgs := make(map[string]bool)
-	explicitImportPkgs[registry.StdPackageName] = true // std prelude
-	explicitImportPkgs[pkgName] = true                 // self
-	for _, impDecl := range sourceFile.AllImportDeclaration() {
-		ctx := impDecl.(*grammar.ImportDeclarationContext)
-		for _, spec := range ctx.AllImportSpec() {
-			s := spec.(*grammar.ImportSpecContext)
-			path := strings.Trim(s.STRING().GetText(), "\"")
-			if pname, ok := richAST.Packages[path]; ok && pname != "" {
-				explicitImportPkgs[pname] = true
+	importPkgsForFile := func(sf *grammar.SourceFileContext) map[string]bool {
+		set := make(map[string]bool)
+		set[registry.StdPackageName] = true // std prelude
+		set[pkgName] = true                 // self
+		for _, impDecl := range sf.AllImportDeclaration() {
+			ctx := impDecl.(*grammar.ImportDeclarationContext)
+			for _, spec := range ctx.AllImportSpec() {
+				s := spec.(*grammar.ImportSpecContext)
+				path := strings.Trim(s.STRING().GetText(), "\"")
+				if pname, ok := richAST.Packages[path]; ok && pname != "" {
+					set[pname] = true
+				}
 			}
+		}
+		return set
+	}
+	explicitImportPkgs := importPkgsForFile(sourceFile)
+
+	// Per-file import sets, keyed by canonical path, for the current file and
+	// every sibling. A method whose receiver type is declared in a sibling
+	// file may reference types visible in THAT file, not just its own — so
+	// the E0025 check for a method's signature accepts the union of the
+	// method's-file and the receiver-type's-file imports (see
+	// validateExplicitImports). Free functions, fields and variants remain
+	// strictly per-file.
+	fileImportSets := make(map[string]map[string]bool)
+	fileImportSets[canonicalPath(filePath)] = explicitImportPkgs
+	for i, sib := range siblingTrees {
+		if i < len(siblingPaths) {
+			fileImportSets[canonicalPath(siblingPaths[i])] = importPkgsForFile(sib)
 		}
 	}
 
@@ -1464,7 +1483,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 				knownGalaPkgs[name] = true
 			}
 		}
-		if errs := validateExplicitImports(richAST, canonFile, explicitImportPkgs, knownGalaPkgs); len(errs) > 0 {
+		if errs := validateExplicitImports(richAST, canonFile, explicitImportPkgs, knownGalaPkgs, fileImportSets); len(errs) > 0 {
 			return nil, errs[0]
 		}
 	}
@@ -1485,7 +1504,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 // when a bare name didn't resolve. Mirrors Go's compile-time rule that
 // every cross-package symbol needs an explicit import in the file
 // using it.
-func validateExplicitImports(richAST *transpiler.RichAST, canonFile string, explicit, knownGala map[string]bool) []*galaerr.SemanticError {
+func validateExplicitImports(richAST *transpiler.RichAST, canonFile string, explicit, knownGala map[string]bool, fileImportSets map[string]map[string]bool) []*galaerr.SemanticError {
 	var errs []*galaerr.SemanticError
 	// Per-call memo: many TypeMetadata / FunctionMetadata entries share
 	// the same DefinedIn (e.g. all 100+ types declared in one .gala
@@ -1534,29 +1553,58 @@ func validateExplicitImports(richAST *transpiler.RichAST, canonFile string, expl
 		}
 	}
 	for tname, tm := range richAST.Types {
-		if tm == nil || !isThisFile(tm.DefinedIn) {
+		if tm == nil {
 			continue
 		}
-		for _, ft := range tm.Fields {
-			check(ft, tm.Pos, tname)
+		// A type's fields and sealed variants belong to the file that
+		// declares the type — validate them only when that file is the
+		// one being analyzed.
+		if isThisFile(tm.DefinedIn) {
+			for _, ft := range tm.Fields {
+				check(ft, tm.Pos, tname)
+			}
+			// Sealed variants — each variant's field types
+			for _, sv := range tm.SealedVariants {
+				for _, ft := range sv.FieldTypes {
+					check(ft, sv.Pos, tname+"."+sv.Name)
+				}
+			}
 		}
 		// Methods on this type are themselves "function-like" — verify
-		// their signatures too.
+		// their signatures too. A method may be declared in a DIFFERENT
+		// file than its receiver type. Its signature types resolve
+		// against the union of the method's-own-file imports and the
+		// receiver-type's-file imports: a method can use types visible
+		// where it is written OR where its receiver type is declared.
+		// Validate each method exactly once, in the pass for its OWN
+		// declaring file, so the error (if any) is reported against that
+		// file and not duplicated.
 		for mname, mm := range tm.Methods {
-			if mm == nil {
+			if mm == nil || !isThisFile(mm.DefinedIn) {
 				continue
 			}
+			allowed := explicit
+			// If the receiver type lives in a sibling file, fold in that
+			// file's imports too.
+			if tm.DefinedIn != "" && !isThisFile(tm.DefinedIn) {
+				if typeImports := fileImportSets[canonicalPath(tm.DefinedIn)]; typeImports != nil {
+					allowed = make(map[string]bool, len(explicit)+len(typeImports))
+					for k := range explicit {
+						allowed[k] = true
+					}
+					for k := range typeImports {
+						allowed[k] = true
+					}
+				}
+			}
+			mcheck := func(t transpiler.Type, pos transpiler.SourcePos, ctxName string) {
+				walkTypeForUnresolvedPackages(t, allowed, knownGala, &errs, pos, ctxName)
+			}
 			for _, pt := range mm.ParamTypes {
-				check(pt, mm.Pos, tname+"."+mname)
+				mcheck(pt, mm.Pos, tname+"."+mname)
 			}
 			if mm.ReturnType != nil {
-				check(mm.ReturnType, mm.Pos, tname+"."+mname)
-			}
-		}
-		// Sealed variants — each variant's field types
-		for _, sv := range tm.SealedVariants {
-			for _, ft := range sv.FieldTypes {
-				check(ft, sv.Pos, tname+"."+sv.Name)
+				mcheck(mm.ReturnType, mm.Pos, tname+"."+mname)
 			}
 		}
 	}

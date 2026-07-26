@@ -159,6 +159,16 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "subprocess_async",
+    src = "subprocess_async.gala",
+    expected = "subprocess_async.out",
+    deps = [
+        "//go_interop",
+        "//subprocess",
+    ],
+)
+
+gala_exec_test(
     name = "hex_literals",
     src = "hex_literals.gala",
     expected = "hex_literals.out",

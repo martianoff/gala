@@ -1,5 +1,5 @@
 load("@rules_go//go:def.bzl", "go_library", "go_test")
-load("@rules_gala//gala:defs.bzl", "gala_bootstrap_transpile")
+load("@rules_gala//gala:defs.bzl", "gala_bootstrap_transpile", "gala_test")
 
 exports_files([
     "subprocess.gala",
@@ -21,18 +21,27 @@ gala_bootstrap_transpile(
     out = "subprocess.gen.go",
 )
 
+gala_bootstrap_transpile(
+    name = "async_go",
+    src = "async.gala",
+    out = "async.gen.go",
+)
+
 go_library(
     name = "subprocess",
     srcs = [
+        "async.gen.go",
         "subprocess.gen.go",
         "subprocess.go",
     ],
     importpath = "martianoff/gala/subprocess",
     visibility = ["//visibility:public"],
     deps = [
+        "//concurrent",
         "//go_interop",
         "//resource",
         "//std",
+        "//time_utils",
     ],
 )
 
@@ -42,4 +51,15 @@ go_test(
     data = ["//subprocess/testdata/echoecho"],
     embed = [":subprocess"],
     deps = ["@rules_go//go/runfiles"],
+)
+
+gala_test(
+    name = "async_test",
+    srcs = ["async_test.gala"],
+    deps = [
+        ":subprocess",
+        "//concurrent",
+        "//go_interop",
+        "//time_utils",
+    ],
 )
