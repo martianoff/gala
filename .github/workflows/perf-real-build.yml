@@ -50,15 +50,16 @@ jobs:
     # or gala_team API surface intentionally changes; otherwise the
     # build failures will reveal real semantic drift.
     #
-    # Back on the downstream default branches: the 0.70 migration has
-    # landed on both (gala-tui/main and gala-team/master now build
-    # against the 0.70 upstream), and gala-tui 0.10.0 / gala-team 0.11.0
-    # are released. (During the migration these were temporarily pointed
-    # at feature/gala-0.70-migration because the pre-migration tips could
-    # not build against a 0.70 upstream that rejects bare Go builtins.)
+    # TEMPORARY (data-race-safety migration): these point at the downstream
+    # migration branches because the default branches cannot yet build against
+    # an upstream that rejects capturing mutable state across a Future boundary.
+    # Once those branches merge and the dependencies are released, revert to
+    # GALA_TUI_REF: main / GALA_TEAM_REF: master — mirrors the 0.70 migration,
+    # which was temporarily pointed at its own migration branch for the same
+    # reason before landing on the default branches.
     env:
-      GALA_TUI_REF: main
-      GALA_TEAM_REF: master
+      GALA_TUI_REF: feat/sendable-migration
+      GALA_TEAM_REF: feat/sendable-migration
       WARM_BUDGET_SECONDS: "500"
       COLD_BUDGET_SECONDS: "680"
 
