@@ -52,6 +52,12 @@ at all. And an outright typo surfaced only as `undefined: x` from the
 Go compiler, pointed at generated code rather than the `.gala` line the
 author wrote.
 
+This check closes both outcomes for a name in **value position**, which
+is where the reported cases came from. It does not close them for the
+two excluded positions below — an interpolation body and a type — where
+the same erasure still reaches the generated Go and the author still
+gets the Go compiler's message rather than a framed one.
+
 **Scope.** Analyzer post-pass, run once per top-level file after all
 metadata for the file, its siblings and its imports has been collected
 (`internal/transpiler/analyzer/undefined_symbol.go`). It is an
@@ -68,23 +74,60 @@ So a bare `ArrayTabulate` in a file whose package never imports
 table); the same call in a file whose *sibling* imports it passes E0023
 and is caught by E0025 on the signature that mentions `Array`.
 
-Not covered, by design:
+Not covered. Most of the following are deliberate trades of a missed
+detection for a guaranteed absence of false positives; lambda parameter
+defaults and the assigning form of `range` are instead consequences of
+how the walk is written, and are listed so they are not mistaken for
+guarantees:
 
 - **Type positions.** `func f(x Foo)`, `val v Foo = ...` and `Foo{}`
-  are skipped; unresolved signature types belong to GALA-E0025.
+  are skipped, because the analyzer's type resolution is lossy enough
+  (Go generics, constraints, `map[K]V`, func types) that flagging here
+  would produce false positives. [GALA-E0025](GALA-E0025.md) covers a
+  signature type whose package reached the compilation but whose
+  import this file omitted; it does **not** cover a type name nothing
+  in the compilation declares, because it works from the resolved
+  metadata such a name never produces. So `func total(xs Array[int])`
+  in a package that imports `collection_immutable` nowhere is caught
+  by neither code: it transpiles, erases the body's lambda to
+  `func(acc any, x any) any`, and fails at `go build` with
+  `undefined: Array`. Closing that needs a check that can distinguish
+  an unresolvable type name from a merely lossy one.
 - **Selectors.** In `x.foo().bar`, only `x` is checked — field and
   method names require the receiver's type.
+- **Lambda parameter defaults.** `(x = missingName) => x` binds the
+  parameter without checking its default expression, unlike a function
+  declaration's parameter defaults, which are checked.
+- **The assigning form of `range`.** In `for i, v = range xs` the loop
+  variables are treated as fresh bindings, as they are for `:=`, so an
+  `i` or `v` that was never declared is not reported.
 - **`match` / `case` patterns.** Every identifier in a pattern is
   treated as a binding for that arm, because separating capture names
   from constructor references needs the scrutinee's type. This can miss
   a typo inside a pattern; it can never invent one.
 - **Interpolated strings.** `s"...$x..."` bodies are a single lexer
-  token and never reach the parse tree the walk sees.
-- **Files with an import the analyzer could not load.** If any import
-  failed to resolve, the check stands down entirely for that file:
-  none of that package's exports are in the symbol table, and blaming
-  the author for names the analyzer never saw would be worse than
-  missing a real one.
+  token and never reach the parse tree the walk sees. This is the one
+  gap through which the `any` erasure described under **Rationale**
+  still escapes: `s"${ArrayTabulate(3, (i) => ...)}"` with no
+  collection import transpiles clean and emits `func(i any) string`.
+  Reaching those bodies means re-parsing each fragment (as the capture
+  analyzer already does) and mapping the fragment's token positions
+  back onto the file, so that a hard error can point at the right
+  column.
+- **Files with an import the analyzer could not load.** If a GALA
+  import failed to resolve, the check stands down entirely for that
+  file: none of that package's exports are in the symbol table, and
+  blaming the author for names the analyzer never saw would be worse
+  than missing a real one.
+
+  The same stand-down also applies to a file that **dot-imports a Go
+  package** (`import . "math"`), even though that import is perfectly
+  healthy — a Go dot import contributes unqualified names that depend
+  on Go type info, which is silently unavailable when no Go SDK is on
+  `PATH`. So one such import switches the check off for the whole
+  file, and everything above becomes reachable again there. Named Go
+  imports are unaffected, because their symbols are only reachable
+  through a qualifier, which the check accepts on sight.
 - **The language server.** The LSP runs the analyzer for best-effort
   metadata, and a hard error there drops the whole file's `RichAST` —
   taking completion, hover and go-to-definition with it, while the

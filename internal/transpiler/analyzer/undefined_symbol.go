@@ -86,9 +86,30 @@ import (
 //     `map[K]V`, func types) that flagging here would produce false
 //     positives. Type positions are skipped wholesale: only identifiers that
 //     reach a `primary` in expression position are checked.
+//
+//     Note that GALA-E0025 does NOT pick up the whole remainder. It works
+//     from resolved metadata, so it catches a signature type whose package
+//     reached the compilation but whose import this file omitted — not a type
+//     name nothing in the compilation declares. `func total(xs Array[int])`
+//     in a package that imports collection_immutable nowhere therefore passes
+//     both checks, erases its lambda to `func(acc any, x any) any`, and fails
+//     at `go build`. Closing that needs a check that can tell an unresolvable
+//     type name from a merely lossy one; widening this one would trade the
+//     zero-false-positive property for it.
 //   - Identifiers inside interpolated strings (`s"...$x..."`). The
 //     interpolation body is a single lexer token, so those expressions never
 //     reach the parse tree this walk sees.
+//
+//     This is the one exclusion through which the `any`-erasure described
+//     above still escapes: `s"${ArrayTabulate(3, (i) => ...)}"` with no
+//     collection import transpiles clean and emits `func(i any) string`, the
+//     same as an unguarded call did before this pass. Reaching those bodies is
+//     possible — the capture analyzer in internal/transpiler/concurrency
+//     re-parses them with interpolation.Split + ParseExpression and walks the
+//     result in the current scope — but a re-parsed fragment's tokens carry
+//     positions relative to the fragment, not the file, so adopting that here
+//     needs an offset mapping before a hard error could point at the right
+//     `.gala` column. Until that exists the gap is knowingly open.
 //   - `match` / `case` *patterns*. A pattern both binds names and references
 //     constructors, and telling them apart needs the scrutinee's type. Every
 //     identifier in a pattern is therefore treated as a binding scoped to
@@ -97,10 +118,23 @@ import (
 //   - Composite-literal keys (`Point{X: 1}`), named-argument labels
 //     (`f(name = 1)`) and postfix selectors, which are member names rather
 //     than free identifiers.
+//   - Lambda parameter defaults. bindParameters is called with walkDefaults
+//     false from walkLambda, so `(x = missingName) => x` binds `x` without
+//     checking the default — unlike a function declaration's defaults, which
+//     are checked.
+//   - The assigning form of `range`. walkForStatement binds the loop
+//     variables of `for i, v = range xs` exactly as it does for `:=`, so an
+//     `i` or `v` that was never declared is not reported.
 //   - Files whose imports did not all load (see fileImportsFullyLoaded) and
 //     the LSP analyzer (see galaAnalyzer.skipUndefinedCheck). In both cases
 //     the symbol table is knowingly incomplete or the caller's contract is
 //     best-effort, so a hard error would be worse than a missed detection.
+//
+//     Note how wide the first door is: fileImportsFullyLoaded also stands the
+//     check down for a *healthy* dot import of a Go package, so a single
+//     `import . "math"` disables every check above for that whole file. That
+//     is the intended trade — see the reasoning on fileImportsFullyLoaded —
+//     but it is a file-level switch, not a narrow exclusion.
 //
 // ---------------------------------------------------------------------------
 
@@ -134,18 +168,29 @@ var galaBuiltinValueNames = map[string]bool{
 	"print":   true,
 }
 
-// goPredeclaredTypeNames are Go's predeclared type names. They reach
-// expression position as conversions (`int(x)`) and as explicit type
-// arguments (`Unfold[int, string](...)`), both of which route through
-// `primary: identifier`.
-var goPredeclaredTypeNames = map[string]bool{
-	"bool": true, "string": true, "error": true, "any": true,
-	"int": true, "int8": true, "int16": true, "int32": true, "int64": true,
-	"uint": true, "uint8": true, "uint16": true, "uint32": true, "uint64": true,
-	"uintptr": true, "byte": true, "rune": true,
-	"float32": true, "float64": true,
-	"complex64": true, "complex128": true,
-	"comparable": true,
+// otherCheckOwnedNames are the names other coded checks own: the Go builtins of
+// GALA-E0035 and the Go statement keywords of GALA-E0036. Both must keep
+// producing their own, more specific diagnostics rather than being downgraded
+// to a generic "undefined". The union is materialized once because each
+// accessor builds a fresh map per call and the lookup sits on the
+// per-identifier path.
+var otherCheckOwnedNames = func() map[string]bool {
+	out := transformer.ForbiddenGoBuiltins()
+	for name := range transformer.ForbiddenStatementKeywords() {
+		out[name] = true
+	}
+	return out
+}()
+
+// isGoPredeclaredTypeName reports whether name is one of Go's predeclared type
+// names. They reach expression position as conversions (`int(x)`) and as
+// explicit type arguments (`Unfold[int, string](...)`), both of which route
+// through `primary: identifier`. The primitive set is shared with the rest of
+// the transpiler so the two cannot drift; `comparable` is named separately
+// because it is a constraint rather than a type, and so is absent there, but it
+// does appear in type-argument position.
+func isGoPredeclaredTypeName(name string) bool {
+	return transpiler.IsPrimitiveType(name) || name == "comparable"
 }
 
 // inRepoGalaImportPrefix is the import-path prefix of packages that live in
@@ -190,9 +235,12 @@ type undefChecker struct {
 	// file's Go import paths.
 	qualifiers map[string]bool
 
-	// hintRoots are searched (only when an error is already being emitted)
-	// for a GALA package that declares the unresolved name.
-	hintRoots []hintRoot
+	// hintRoots yields the roots to search (only when an error is already being
+	// emitted) for a GALA package that declares the unresolved name. It is
+	// deferred rather than materialized up front because computing the roots
+	// reads each candidate's gala.mod/go.mod, and a successful compile must not
+	// pay for hint machinery it never uses.
+	hintRoots func() []hintRoot
 
 	// importResolves reports whether an import path maps to a directory, so
 	// the hint can suggest a spelling the compiler will accept.
@@ -219,11 +267,11 @@ func (a *galaAnalyzer) checkUndefinedSymbols(
 		declared[name] = true
 	}
 	c := &undefChecker{
-		rich:          richAST,
-		declared:      declared,
-		declaredTypes: indexDeclaredTypeNames(richAST),
+		rich:           richAST,
+		declared:       declared,
+		declaredTypes:  indexDeclaredTypeNames(richAST),
 		qualifiers:     collectQualifiers(sourceFile, richAST),
-		hintRoots:      a.hintRoots(),
+		hintRoots:      a.hintRoots,
 		importResolves: a.importPathResolvesTo,
 		reported:       make(map[string]bool),
 	}
@@ -582,7 +630,7 @@ func modulePrefixOf(dir string) string {
 			continue
 		}
 		for _, line := range strings.Split(string(data), "\n") {
-			if rest, ok := cutPrefix(strings.TrimSpace(line), "module "); ok {
+			if rest, ok := strings.CutPrefix(strings.TrimSpace(line), "module "); ok {
 				return strings.TrimSpace(rest)
 			}
 		}
@@ -599,9 +647,7 @@ func indexDeclaredSymbols(rich *transpiler.RichAST) map[string]bool {
 			return
 		}
 		out[key] = true
-		if idx := strings.LastIndex(key, "."); idx > 0 && idx+1 < len(key) {
-			out[key[idx+1:]] = true
-		}
+		out[simpleNameOf(key)] = true
 	}
 	for k := range rich.Functions {
 		add(k)
@@ -783,13 +829,12 @@ func (c *undefChecker) resolves(name string) bool {
 	if c.inScope(name) {
 		return true
 	}
-	if galaBuiltinValueNames[name] || goPredeclaredTypeNames[name] {
+	if galaBuiltinValueNames[name] || isGoPredeclaredTypeName(name) {
 		return true
 	}
 	// Names owned by other coded checks keep their own, more specific
-	// diagnostics: the Go builtins of GALA-E0035 and the Go statement
-	// keywords of GALA-E0036 must not be downgraded to "undefined".
-	if transformer.ForbiddenGoBuiltins()[name] || transformer.ForbiddenStatementKeywords()[name] {
+	// diagnostics — see otherCheckOwnedNames.
+	if otherCheckOwnedNames[name] {
 		return true
 	}
 	// A bare package name in value position is not a value, but rejecting it
@@ -849,7 +894,7 @@ func (c *undefChecker) report(name string, tok antlr.Token) {
 // declared by GALA packages the search paths can see, it names the import(s)
 // that would bring it into scope; otherwise it falls back to generic guidance.
 func (c *undefChecker) hintFor(name string) string {
-	candidates := galaPackagesDeclaring(name, c.hintRoots, c.importResolves)
+	candidates := galaPackagesDeclaring(name, c.hintRoots(), c.importResolves)
 	switch len(candidates) {
 	case 0:
 		return "check the spelling, add the import that introduces this name, or declare it — " +
@@ -1478,7 +1523,7 @@ func declaresTopLevel(src, name string, keywords []string) bool {
 		}
 		trimmed := strings.TrimRight(line, " \t\r")
 		for _, kw := range keywords {
-			rest, ok := cutPrefix(trimmed, kw)
+			rest, ok := strings.CutPrefix(trimmed, kw)
 			if !ok {
 				continue
 			}
@@ -1488,13 +1533,6 @@ func declaresTopLevel(src, name string, keywords []string) bool {
 		}
 	}
 	return false
-}
-
-func cutPrefix(s, prefix string) (string, bool) {
-	if strings.HasPrefix(s, prefix) {
-		return s[len(prefix):], true
-	}
-	return "", false
 }
 
 // declaredNameIs reports whether the declaration text `rest` names `name`
@@ -1512,7 +1550,7 @@ func declaredNameIs(rest, name string) bool {
 
 func packageClauseOf(src string) string {
 	for _, line := range strings.Split(src, "\n") {
-		if rest, ok := cutPrefix(strings.TrimSpace(line), "package "); ok {
+		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), "package "); ok {
 			return strings.TrimSpace(rest)
 		}
 	}

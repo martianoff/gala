@@ -61,13 +61,16 @@ func scopeDouble(v int) int = CountIfPositive(v) match {
 }
 
 // ScopeQualifiedImport reads a symbol from a named-imported subpackage.
-func ScopeQualifiedImport(name string) string {
-    val t = team_pkg.Team(Key = "k", Name = name)
-    return t.Name
-}
+func ScopeQualifiedImport(name string) string =
+    team_pkg.Team(Key = "k", Name = name).Name
 
 // ScopeSnapshotLabel constructs a sibling-declared struct and reads a
 // package-level val from this file in the same expression.
+//
+// SavedAt is declared int64, and the conversion around the literal is
+// required: a named-argument struct construction does not currently widen an
+// untyped integer literal to the field's declared width, so a bare `7` fails
+// to compile here. Keep the explicit `int64(...)` until that widening lands.
 func ScopeSnapshotLabel() string {
     val snap = Snapshot(ProjectName = scopePrefix, SavedAt = int64(7))
     return s"${snap.ProjectName}-${snap.SavedAt}-$scopeSuffix"

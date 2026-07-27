@@ -49,9 +49,9 @@ func analyzeSources(t *testing.T, main string, siblings map[string]string) error
 // declared nowhere.
 func TestUndefinedSymbol_Reported(t *testing.T) {
 	tests := []struct {
-		name    string
-		src     string
-		symbol  string
+		name     string
+		src      string
+		symbol   string
 		siblings map[string]string
 	}{
 		{
