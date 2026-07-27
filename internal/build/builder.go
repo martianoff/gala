@@ -12,7 +12,6 @@ import (
 
 	"martianoff/gala/internal/depman/fetch"
 	"martianoff/gala/internal/depman/mod"
-	"martianoff/gala/internal/stdlib"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
 	"martianoff/gala/internal/transpiler/generator"
@@ -365,33 +364,23 @@ func dirHasGoFiles(dir string) bool {
 	return false
 }
 
-// ensureStdlib extracts the stdlib to the versioned cache if not present.
+// ensureStdlib makes the versioned stdlib cache match the embedded snapshot,
+// re-extracting it when the cached copy was produced by a different snapshot.
+// The work is shared with Config.EnsureStdlib (used by `gala transpile` and the
+// LSP) so both entry points target the same directory and apply the same
+// freshness check.
 func (b *Builder) ensureStdlib() error {
-	stdlibDir := b.config.StdlibVersionDir(b.stdlibVersion)
-
-	// Check if already extracted
-	markerPath := filepath.Join(stdlibDir, ".stdlib-extracted")
-	if _, err := os.Stat(markerPath); err == nil {
-		if b.verbose {
+	stdlibDir, extracted, err := b.config.ensureStdlibExtracted(b.stdlibVersion)
+	if err != nil {
+		return err
+	}
+	if b.verbose {
+		if extracted {
+			fmt.Printf("Extracted stdlib to: %s\n", stdlibDir)
+		} else {
 			fmt.Printf("Stdlib already extracted at: %s\n", stdlibDir)
 		}
-		return nil
 	}
-
-	if b.verbose {
-		fmt.Printf("Extracting stdlib to: %s\n", stdlibDir)
-	}
-
-	// Extract stdlib (includes go.mod files for each package)
-	if err := stdlib.ExtractTo(stdlibDir); err != nil {
-		return fmt.Errorf("extracting stdlib: %w", err)
-	}
-
-	// Write marker file
-	if err := os.WriteFile(markerPath, []byte(b.stdlibVersion), 0644); err != nil {
-		return fmt.Errorf("writing marker: %w", err)
-	}
-
 	return nil
 }
 

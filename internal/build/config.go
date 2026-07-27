@@ -4,8 +4,6 @@ package build
 import (
 	"os"
 	"path/filepath"
-
-	"martianoff/gala/internal/stdlib"
 )
 
 // Config holds configuration for the build system.
@@ -80,37 +78,23 @@ func (c *Config) EnsureDirs() error {
 
 // StdlibVersionDir returns the path for a specific stdlib version.
 // Format: StdlibDir/v{version}/
+// The version string may contain a git describe suffix (e.g.,
+// "0.29.4-1-ga528ffd"); it is normalized to the base version ("0.29.4") here so
+// that every consumer of the cache — build, transpile and the LSP — agrees on
+// one directory.
 func (c *Config) StdlibVersionDir(version string) string {
-	return filepath.Join(c.StdlibDir, "v"+version)
+	return filepath.Join(c.StdlibDir, "v"+normalizeStdlibVersion(version))
 }
 
 // EnsureStdlib extracts the embedded stdlib for the given version and returns
-// the stdlib directory path. This is the canonical stdlib resolution used by
-// both the CLI transpiler and the LSP server.
-// The version string may contain git suffixes (e.g., "0.29.4-1-ga528ffd")
-// which are stripped to find the base version ("0.29.4").
+// the stdlib directory path, or "" if extraction failed. This is the canonical
+// stdlib resolution used by both the CLI transpiler and the LSP server; it
+// shares its implementation with the builder so the two cannot drift apart.
 func (c *Config) EnsureStdlib(version string) string {
-	// Strip git describe suffix: "0.29.4-1-ga528ffd" → "0.29.4"
-	ver := version
-	for i := 0; i < len(ver); i++ {
-		if ver[i] == '-' {
-			// Check if this looks like a git suffix (digit after last dot before dash)
-			ver = ver[:i]
-			break
-		}
+	stdlibDir, _, err := c.ensureStdlibExtracted(version)
+	if err != nil {
+		return ""
 	}
-	stdlibDir := c.StdlibVersionDir(ver)
-
-	markerPath := filepath.Join(stdlibDir, ".stdlib-extracted")
-	if _, err := os.Stat(markerPath); err == nil {
-		return stdlibDir // already extracted
-	}
-
-	os.MkdirAll(stdlibDir, 0755)
-	if err := stdlib.ExtractTo(stdlibDir); err != nil {
-		return "" // extraction failed
-	}
-	os.WriteFile(markerPath, []byte(ver), 0644)
 	return stdlibDir
 }
 

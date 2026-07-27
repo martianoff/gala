@@ -166,6 +166,7 @@ go_library(
     name = "stdlib",
     srcs = [
         "embedded_gen.go",
+        "fingerprint.go",
         "stdlib.go",
     ],
     importpath = "martianoff/gala/internal/stdlib",
@@ -174,6 +175,10 @@ go_library(
 
 go_test(
     name = "stdlib_test",
-    srcs = ["embed_collections_test.go"],
+    srcs = [
+        "embed_collections_test.go",
+        "fingerprint_test.go",
+    ],
     embed = [":stdlib"],
+    deps = ["@com_github_stretchr_testify//require"],
 )
