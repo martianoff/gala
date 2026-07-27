@@ -39,11 +39,17 @@ import (
 // in the table for a code that cannot be guarded from here at all.
 func TestErrorDocsQuoteRealOutput(t *testing.T) {
 	cases := []struct {
+		// name distinguishes several rows for the same code. A page often
+		// documents more than one shape of the same diagnostic, and those
+		// extra shapes are the ones most likely to drift, so each gets its
+		// own row rather than the table being keyed by code alone.
+		name string
 		code galaerr.ErrorCode
 		// render produces the exact diagnostic block the doc must quote.
 		render func(t *testing.T) string
 	}{
 		{
+			name: "sealed match missing a variant",
 			code: galaerr.CodeNonExhaustiveMatch, // GALA-E0002
 			render: func(t *testing.T) string {
 				return renderRepro(t, "main.gala", `package main
@@ -66,6 +72,7 @@ func main() {
 			},
 		},
 		{
+			name: "non-sealed match with no default",
 			code: galaerr.CodeMissingDefault, // GALA-E0003
 			render: func(t *testing.T) string {
 				return renderRepro(t, "main.gala", `package main
@@ -82,6 +89,7 @@ func main() {
 			},
 		},
 		{
+			name: "two default arms",
 			code: galaerr.CodeMultipleDefaults, // GALA-E0006
 			render: func(t *testing.T) string {
 				return renderRepro(t, "main.gala", `package main
@@ -107,6 +115,7 @@ func main() {
 		// absolute directory path, so there is no stable text for a page to
 		// quote. Guarding it here would lock in a message users never see.
 		{
+			name: "bare return in a value-producing match",
 			code: galaerr.CodeBareReturnInValueMatch, // GALA-E0015
 			render: func(t *testing.T) string {
 				return renderRepro(t, "main.gala", `package main
@@ -131,6 +140,9 @@ func main() {
 			},
 		},
 		{
+			// Local sealed type: nothing to qualify, so the hint prints both
+			// names bare.
+			name: "unqualified constructor, same package",
 			code: galaerr.CodeSealedVariantUninferred, // GALA-E0018
 			render: func(t *testing.T) string {
 				return renderRepro(t, "main.gala", `package main
@@ -148,13 +160,33 @@ func main() {
 			},
 		},
 		{
+			// The subtle half: the constructor comes from an ordinary import,
+			// so a hint that printed bare names would suggest two identifiers
+			// that are not in scope at the call site. This row pins that the
+			// hint carries the qualifier the user actually wrote.
+			name:   "qualified constructor behind a plain import",
+			code:   galaerr.CodeSealedVariantUninferred, // GALA-E0018
+			render: renderQualifiedVariantRepro,
+		},
+		{
+			// Named package: the "used in ..." context is package-qualified.
+			name:   "offender in a named package",
 			code:   galaerr.CodeUnresolvedCrossPackageSymbol, // GALA-E0025
 			render: renderUnresolvedSymbolRepro,
 		},
+		// The package-main shape of GALA-E0025 is documented on the page but
+		// not pinned here. Its message differs by more than a package name —
+		// the "used in ..." context is printed bare (`used in BuildLabels`)
+		// rather than qualified — and it was captured from `gala build`. The
+		// same source laid out for this in-process entry point compiles
+		// without error, so the check is not reached from here and there is
+		// nothing for a row to assert. Table rows are keyed by code + name
+		// precisely so this row can be added once that gap is understood;
+		// leaving a row that silently passes would be worse than its absence.
 	}
 
 	for _, tc := range cases {
-		t.Run(string(tc.code), func(t *testing.T) {
+		t.Run(string(tc.code)+"/"+tc.name, func(t *testing.T) {
 			want := tc.render(t)
 			require.NotEmpty(t, want, "renderer produced no diagnostic")
 			require.Contains(t, want, string(tc.code),
@@ -162,9 +194,9 @@ func main() {
 
 			doc := readErrorDoc(t, tc.code)
 			require.Contains(t, doc, want,
-				"docs/errors/%s.md does not quote the compiler's real output.\n"+
-					"Replace the page's `Error output` block with exactly:\n\n%s\n",
-				tc.code, want)
+				"docs/errors/%s.md does not quote the compiler's real output for %q.\n"+
+					"Replace (or add) the page's `Error output` block with exactly:\n\n%s\n",
+				tc.code, tc.name, want)
 		})
 	}
 }
@@ -181,6 +213,61 @@ func renderRepro(t *testing.T, path, src string) string {
 		FallbackSource: src,
 		Color:          false,
 	})
+}
+
+// renderQualifiedVariantRepro drives GALA-E0018 at a call site that names the
+// constructor through an ordinary import (`cmdpkg.NoCmd()`). The sealed type
+// has to live in a real sibling package for the qualifier to exist at all, so
+// this repro needs files on disk.
+//
+// This is the shape that catches a hint regressing to bare names: neither
+// `Cmd` nor `NoCmd` is in scope in main.gala, so a bare suggestion here fails
+// to compile with `undefined: NoCmd`.
+func renderQualifiedVariantRepro(t *testing.T) string {
+	t.Helper()
+	// Import paths are resolved by stripping the module prefix and looking the
+	// remainder up under a search root, so the sibling package is written as
+	// <searchRoot>/cmdpkg and imported under the module's own prefix. The
+	// directory name has to match the package name for the analyzer to
+	// register it.
+	searchRoot := t.TempDir()
+	pkgDir := filepath.Join(searchRoot, "cmdpkg")
+	require.NoError(t, os.MkdirAll(pkgDir, 0o755))
+
+	cmdSrc := `package cmdpkg
+
+sealed type Cmd[T any] {
+    case NoCmd()
+    case RunCmd(arg T)
+}
+`
+	require.NoError(t, os.WriteFile(filepath.Join(pkgDir, "cmd.gala"), []byte(cmdSrc), 0o600))
+
+	mainDir := filepath.Join(searchRoot, "main")
+	require.NoError(t, os.MkdirAll(mainDir, 0o755))
+	mainSrc := `package main
+
+import "martianoff/gala/cmdpkg"
+
+func main() {
+    val x = cmdpkg.NoCmd()
+    Println(x)
+}
+`
+	mainPath := filepath.Join(mainDir, "main.gala")
+	require.NoError(t, os.WriteFile(mainPath, []byte(mainSrc), 0o600))
+
+	_, err := newDocGuardTranspilerWithPaths(searchRoot).Transpile(mainSrc, mainPath)
+	require.Error(t, err, "repro was expected to fail to compile")
+
+	rendered := galaerr.RenderRich(err, galaerr.Options{
+		FallbackPath:   mainPath,
+		FallbackSource: mainSrc,
+		Color:          false,
+	})
+	rendered = strings.ReplaceAll(rendered, mainPath, "main.gala")
+	rendered = strings.ReplaceAll(rendered, filepath.ToSlash(mainPath), "main.gala")
+	return rendered
 }
 
 // renderUnresolvedSymbolRepro drives GALA-E0025. The offending file has to sit
@@ -223,8 +310,15 @@ func BuildLabels(n int) Array[string] = ArrayTabulate(n, (i) => s"row=$i")
 }
 
 func newDocGuardTranspiler() transpiler.Transpiler {
+	return newDocGuardTranspilerWithPaths()
+}
+
+// newDocGuardTranspilerWithPaths builds a transpiler whose analyzer searches
+// the std sources plus any extra roots, so a repro can import a package it
+// wrote into a temp directory.
+func newDocGuardTranspilerWithPaths(extraRoots ...string) transpiler.Transpiler {
 	p := transpiler.NewAntlrGalaParser()
-	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
+	a := analyzer.NewGalaAnalyzer(p, append(getStdSearchPath(), extraRoots...))
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
 	return transpiler.NewGalaToGoTranspiler(p, a, tr, g)
@@ -245,7 +339,17 @@ func readErrorDoc(t *testing.T, code galaerr.ErrorCode) string {
 	roots := getStdSearchPath()
 	require.NotEmpty(t, roots, "could not locate the workspace root")
 
-	data, err := os.ReadFile(filepath.Join(roots[0], "docs", "errors", string(code)+".md"))
-	require.NoError(t, err, "error doc page not found")
+	rel := filepath.Join("docs", "errors", string(code)+".md")
+	data, err := os.ReadFile(filepath.Join(roots[0], rel))
+	require.NoError(t, err, docPageUnreadableMsg, rel)
 	return strings.ReplaceAll(string(data), "\r\n", "\n")
 }
+
+// docPageUnreadableMsg names the usual cause of an unreadable page. Under
+// Bazel the likeliest reason is not a missing file but a page that exists in
+// the source tree and was never added to the //docs/errors:error_docs
+// filegroup, so it was not staged into the sandbox. A bare "no such file"
+// sends the reader hunting for something that is sitting right there.
+const docPageUnreadableMsg = "could not read %s. If the page exists in the " +
+	"source tree, it is probably missing from the //docs/errors:error_docs " +
+	"filegroup, so it was not staged into the test sandbox."

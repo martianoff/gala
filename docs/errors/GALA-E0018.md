@@ -50,6 +50,37 @@ The `-->` line echoes the source path as the compiler resolved it; the CLI
 prints it absolute. The hint names your actual parent sealed type, so the
 example it prints is copy-pasteable as-is.
 
+**When the constructor comes from another package.** If you reached the
+variant through an ordinary import, the hint qualifies both names the same way
+your call site does — otherwise the example it printed would not be in scope
+where you need to paste it:
+
+```gala
+package main
+
+import "t/cmdpkg"
+
+func main() {
+    val x = cmdpkg.NoCmd()
+    Println(x)
+}
+```
+
+```text
+error[GALA-E0018]: cannot infer type parameter for sealed variant constructor "NoCmd()"
+  --> main.gala:6:25
+  |
+6 |     val x = cmdpkg.NoCmd()
+  |                         ^ annotate the binding
+  |
+  = hint: annotate the binding (e.g. `val x cmdpkg.Cmd[int] = cmdpkg.NoCmd()`) or pass type args explicitly (`cmdpkg.NoCmd[int]()`)
+```
+
+Note the message still names the constructor bare (`"NoCmd()"`) while the hint
+qualifies it. A dot-imported package, or a variant reached through the std
+prelude, brings its names into scope unqualified, so the hint prints them bare
+in those cases.
+
 **Fix.** Pick the form that documents intent best. Both compile:
 
 ```gala

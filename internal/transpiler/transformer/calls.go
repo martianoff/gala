@@ -226,7 +226,7 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 										galaerr.CodeSealedVariantUninferred,
 										line, col,
 										fmt.Sprintf("cannot infer type parameter for sealed variant constructor %q", bareName+"()"),
-										uninferredVariantHint(parent, bareName),
+										t.uninferredVariantHint(parent, pkgQualifier, bareName),
 									)
 								}
 							}
@@ -2432,31 +2432,76 @@ func (t *galaASTTransformer) findSealedVariantFields(variantName, pkgQualifier s
 	}
 }
 
-// uninferredVariantHint builds the GALA-E0018 remediation hint. Both example
-// forms it prints must be valid, copy-pasteable GALA:
+// uninferredVariantHint builds the GALA-E0018 remediation hint. Every example
+// form it prints must be valid, copy-pasteable GALA at the offending call
+// site. Three things decide that:
 //
 //   - a type annotation follows the binding name with NO colon
-//     (`val x Box[int] = Empty()`), and
-//   - GALA's primitive spellings are lowercase (`int`, not `Int`).
+//     (`val x Box[int] = Empty()`);
+//   - GALA's primitive spellings are lowercase (`int`, not `Int`); and
+//   - both the parent type and the constructor must be spelled the way they
+//     are actually reachable in this file.
 //
 // The parent sealed type comes from the metadata the caller already resolved to
 // decide this diagnostic applies, so the annotation names a type that actually
-// exists at the call site rather than a `ParentType` placeholder the user would
-// have to translate. Both names are printed bare, matching the constructor name
-// in the message and the way the call site is written: this diagnostic only
-// fires on an unqualified zero-arg constructor, so the parent is reachable
-// unqualified there too (adding the metadata's package qualifier would produce
-// `std.Option[int]` for a prelude type that the file never imports under that
-// name). An unnamed parent degrades the hint to the explicit-type-args form
-// only, which needs no parent name — never to an example that would not
-// compile.
-func uninferredVariantHint(parent *transpiler.TypeMetadata, bareName string) string {
-	explicit := fmt.Sprintf("pass type args explicitly (`%s[int]()`)", bareName)
+// exists rather than a `ParentType` placeholder the user would have to
+// translate.
+//
+// The qualifier is the subtle part. The call site's `typeName` reaches the
+// caller already resolved, so its package selector may be one the user never
+// typed: a bare `None()` lowers to `std.None` via the prelude. Printing that
+// qualifier unconditionally yields `val x std.Option[int] = std.None()`, which
+// does not compile in a file that never imports std under that name. Dropping
+// it unconditionally is just as wrong the other way: for `cmdpkg.NoCmd()`
+// behind a plain `import "…/cmdpkg"`, the bare `val x Cmd[int] = NoCmd()`
+// fails with `undefined: NoCmd`.
+//
+// So the qualifier is printed exactly when it names a package this file can
+// actually qualify with — an ordinary (non-dot) import, under whatever alias
+// the file bound it to. Dot-imported packages and the std prelude bring their
+// symbols into scope unqualified and are printed bare. An unnamed parent
+// degrades the hint to the explicit-type-args form, which still carries the
+// constructor exactly as the call site spells it — never to an example that
+// would not compile.
+func (t *galaASTTransformer) uninferredVariantHint(parent *transpiler.TypeMetadata, pkgQualifier, bareName string) string {
+	prefix := t.callSiteQualifier(pkgQualifier)
+
+	explicit := fmt.Sprintf("pass type args explicitly (`%s%s[int]()`)", prefix, bareName)
+
 	if parent == nil || parent.Name == "" {
 		return explicit
 	}
-	return fmt.Sprintf("annotate the binding (e.g. `val x %s[int] = %s()`) or %s",
-		parent.Name, bareName, explicit)
+	return fmt.Sprintf("annotate the binding (e.g. `val x %s%s[int] = %s%s()`) or %s",
+		prefix, parent.Name, prefix, bareName, explicit)
+}
+
+// callSiteQualifier returns the `pkg.` prefix that a diagnostic should print
+// in front of a symbol from pkgQualifier, or "" when the symbol is reachable
+// unqualified in the file being transformed.
+//
+// It returns a prefix only for packages brought in by an ordinary import,
+// using the alias the file actually bound (so `import c "…/cmdpkg"` yields
+// `c.`). Dot imports and packages that are not imported here at all — most
+// notably the std prelude, whose selector the resolver attaches to names the
+// user wrote bare — yield "" because qualifying those would name something
+// that is not in scope.
+func (t *galaASTTransformer) callSiteQualifier(pkgQualifier string) string {
+	if pkgQualifier == "" || t.importManager == nil {
+		return ""
+	}
+	if !t.importManager.IsPackage(pkgQualifier) {
+		// Not an ordinary import in this file: std prelude, same package, or
+		// a dot import the resolver qualified behind the user's back.
+		return ""
+	}
+	pkgName := pkgQualifier
+	if resolved, ok := t.importManager.ResolveAlias(pkgQualifier); ok {
+		pkgName = resolved
+	}
+	if t.importManager.IsDotImported(pkgName) {
+		return ""
+	}
+	return pkgQualifier + "."
 }
 
 // findSealedParentForVariant returns the parent sealed type's metadata for a
