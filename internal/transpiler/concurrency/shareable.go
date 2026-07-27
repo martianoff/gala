@@ -117,16 +117,13 @@ func (c *Checker) isShareable(t transpiler.Type, visited map[string]bool) bool {
 		if b, decided := c.decideByName(v.Name, nil, visited); decided {
 			return b
 		}
-		if c.isNamedStructShareable(t, nil, visited) {
-			return true
-		}
-		// A Go named type whose underlying is a primitive scalar (e.g.
-		// time.Duration -> int64, os.FileMode -> uint32) is a self-contained
-		// value: no fields to alias, no reachable heap, no pointer receiver that
-		// could mutate shared state. Such a value is safe to capture across a
-		// goroutine boundary. (Go STRUCTS are intentionally excluded — see
-		// GoUnderlyingResolver.)
-		return c.isGoScalarShareable(t)
+		// A GALA struct/sealed type is decided structurally; otherwise a Go named
+		// type whose underlying is a primitive scalar (e.g. time.Duration ->
+		// int64, os.FileMode -> uint32) is a self-contained value — no fields to
+		// alias, no reachable heap, no pointer receiver that could mutate shared
+		// state — so it is safe to capture across a goroutine boundary. (Go
+		// STRUCTS are intentionally excluded — see GoUnderlyingResolver.)
+		return c.isNamedStructShareable(t, nil, visited) || c.isGoScalarShareable(t)
 
 	case transpiler.GenericType:
 		return c.isGenericShareable(v, visited)

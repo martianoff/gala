@@ -61,29 +61,6 @@ func (t *galaASTTransformer) sendableMetaResolver() concurrency.MetadataResolver
 	}
 }
 
-// sendableGoUnderlyingResolver builds the concurrency.GoUnderlyingResolver the
-// Shareable predicate uses to recognise Go scalar value types (time.Duration,
-// os.FileMode, …) as shareable. It reports the underlying type of a Go named
-// type from the analyzer's Go type info; the predicate then accepts only a
-// primitive-scalar underlying. A nil goTypeInfo or a non-Go / unqualified type
-// yields (nil, false), keeping such types conservatively not-shareable.
-func (t *galaASTTransformer) sendableGoUnderlyingResolver() concurrency.GoUnderlyingResolver {
-	return func(named transpiler.Type) (transpiler.Type, bool) {
-		if t.goTypeInfo == nil || transpiler.IsUnusable(named) {
-			return nil, false
-		}
-		nt, ok := named.(transpiler.NamedType)
-		if !ok || nt.Package == "" {
-			return nil, false
-		}
-		td := t.goTypeInfo.GetTypeData(nt.Package + "." + nt.Name)
-		if td == nil || td.Underlying == nil {
-			return nil, false
-		}
-		return td.Underlying, true
-	}
-}
-
 // checkSendableArg runs the capture-safety check for a positional call argument
 // when — and only when — the declared parameter at argIdx is a `Sendable[F]`
 // boundary. exprCtx / lambdaCtx are the argument's parse contexts (exactly one
@@ -193,7 +170,10 @@ func (t *galaASTTransformer) checkSendableCaptures(caps []concurrency.Capture) e
 		return nil
 	}
 	checker := concurrency.NewChecker(t.sendableMetaResolver())
-	checker.SetGoUnderlyingResolver(t.sendableGoUnderlyingResolver())
+	// Recognise Go scalar value types (time.Duration, os.FileMode, …) as
+	// shareable via the shared Go-named-type underlying resolver; the predicate
+	// itself accepts only a primitive-scalar underlying.
+	checker.SetGoUnderlyingResolver(t.goNamedUnderlying)
 	for _, c := range caps {
 		typ, bound := t.lookupLocalBinding(c.Name)
 		if !bound {
