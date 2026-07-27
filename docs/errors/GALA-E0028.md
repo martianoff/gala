@@ -5,9 +5,9 @@ same name is declared more than once in the same package. The transformer keeps
 one lookup table of alias name → underlying type; a second alias under the same
 name would replace the first.
 
-Like [GALA-E0027](GALA-E0027.md), the alias table is seeded from sibling files
-when transformation begins, so this catches both within-file duplicates and
-duplicates split across two files of the same package.
+Like [GALA-E0027](GALA-E0027.md), this covers duplicates within one file and
+duplicates split across sibling files of the same package — the alias table is
+seeded from siblings when transformation begins.
 
 **Minimal repro.**
 
