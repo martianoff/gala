@@ -38,10 +38,9 @@ error[GALA-E0036]: bare Go statement keyword "defer" is not part of GALA's surfa
   = hint: GALA has no `defer`; use the `resource` combinators — `Using` / `Bracket` / `WithLock` from martianoff/gala/resource (or a `use x = ...` binding) — which guarantee cleanup on every exit path
 ```
 
-## Replacements
-
-Every forbidden keyword and the replacement the compiler suggests, verbatim from
-the suggestion table in `internal/transpiler/transformer/statements.go`:
+**Replacements.** Every forbidden keyword and the replacement the compiler
+suggests, verbatim from the suggestion table in
+`internal/transpiler/transformer/statements.go`:
 
 | Keyword | Hint the compiler emits |
 |---|---|
@@ -54,7 +53,10 @@ the suggestion table in `internal/transpiler/transformer/statements.go`:
 
 **Fix — `defer` becomes `use`.** `use x = acquire` binds `x` for the rest of the
 enclosing block and guarantees `x.Close()` runs when the function returns, on
-every path. The resource must satisfy `Close() error`. No import is needed.
+every path — normal return or panic. The resource must satisfy `Close() error`.
+No import is needed. See
+[GALA.MD §11, "`use` — scoped resource binding"](../GALA.MD) for the full
+treatment.
 
 ```gala
 package main
@@ -93,19 +95,8 @@ is a checked concurrency boundary, so the transpiler verifies the closure only
 captures shareable state (see [GALA-E0037](GALA-E0037.md)). `Spawn` is the
 unchecked escape hatch.
 
-**Fix — `goto` / `fallthrough`.** Neither has a GALA equivalent by design.
-`match` arms never fall through; combine patterns with `|` when several should
-share a body, or restructure into pattern matching, recursion, or a `for` loop.
-
-**Fix — `select` / `chan`.** Channel construction and multiplexing live behind
-the `go_interop` channel helpers rather than as surface syntax.
-
-**The check is resolver-aware.** Like the builtin check
-([GALA-E0035](GALA-E0035.md)), a name the program itself declared is that
-declaration, not a leaked keyword — a user-defined function, a local
-`val`/`var`/parameter, or a declared type named `select` is left alone. Only a
-*bare* identifier statement is flagged; anything with a postfix, operator, or
-argument list (`x.defer()`) is an ordinary expression and is not checked.
+The remaining four keywords have no GALA equivalent by design — the table's
+hints are the whole answer.
 
 **Rationale.** A GALA program should not depend on the shape of the Go the
 transpiler happens to emit. The bare-keyword forms did exactly that: whether
@@ -114,3 +105,10 @@ blank line or reordering two statements could silently change whether cleanup
 ran at all. Rejecting the bare form removes that coupling and points at
 constructs — `use`, the `resource` combinators, `Future` — that make the
 guarantee explicit and are checked.
+
+**Scope.** Bare identifier statements only, and the check is **resolver-aware**:
+like the builtin check ([GALA-E0035](GALA-E0035.md)), a name the program itself
+declared is that declaration, not a leaked keyword — a user-defined function, a
+local `val`/`var`/parameter, or a declared type named `select` is left alone.
+Anything with a postfix, operator, or argument list (`x.defer()`) is an ordinary
+expression and is not checked.

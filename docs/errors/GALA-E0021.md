@@ -5,8 +5,7 @@
 > uses as a type *deriver*, not as a type *checker*. Every caller discards the
 > error. Searching for `GALA-E0021` because of something in your terminal will
 > not find a match — type errors of this class are reported by the **Go
-> compiler**, against the generated Go. See *Where type errors actually come
-> from* below.
+> compiler**, against the generated Go.
 
 **Where it comes from.** Two types that the inference engine required to agree
 could not be unified. The engine
@@ -21,11 +20,13 @@ per-site ones.
 
 **Why you never see it.** The engine is reachable only through two bridge
 methods, `inferExprType` and `inferIfType`
-(`internal/transpiler/transformer/bridge.go`). Across the transformer there are
-ten call sites of those two methods, and **not one propagates the error**:
-eight discard it explicitly with `_`, and the remaining two bind it only to
-decide whether to fall back to another inference strategy. A unification failure
+(`internal/transpiler/transformer/bridge.go`), and **no call site propagates the
+error**. Most discard it explicitly with `_`; the rest bind it only to decide
+whether to fall back to another inference strategy. A unification failure
 therefore degrades the inferred type — it never becomes a diagnostic.
+
+This is the canonical explanation for the inference-engine codes;
+[GALA-E0022](GALA-E0022.md) and [GALA-E0024](GALA-E0024.md) work the same way.
 
 **Where type errors actually come from.** The Go compiler, after transpilation.
 Both classic mismatches transpile with exit 0 and fail at build time:
@@ -41,7 +42,6 @@ func main() {
 ```
 
 ```
-# gala-build-workspace/gen
 main.gala:6: cannot use "two" (untyped string constant) as int value in argument to add
 go build: exit status 1
 ```
@@ -56,10 +56,13 @@ func main() {
 ```
 
 ```
-# gala-build-workspace/gen
 main.gala:5: non-boolean condition in if statement
 go build: exit status 1
 ```
+
+(Both transcripts are lightly trimmed — the real output is prefixed with the
+build workspace's package path, and the exact wording tracks your Go toolchain
+version.)
 
 Generated Go carries `//line` directives, so the message is attributed to your
 `.gala` file and line. The **wording**, however, is Go's — it talks about
@@ -75,8 +78,6 @@ wrapper) will be described in those terms.
 [SemanticError GALA-E0021] if branches must have same type: Int and String (hint: ...)
 ```
 
-These have not been observed from a compiler run — no caller surfaces them.
-
 **Fix.** When the Go compiler reports the mismatch, the remedy is usually one of:
 
 1. **Convert one side** explicitly — GALA has no implicit numeric widening or
@@ -87,11 +88,9 @@ These have not been observed from a compiler run — no caller surfaces them.
    types, model that with a sealed type (`Either[A, B]`, `Option[A]`) rather
    than mixing values.
 
-**Status.** Using Go as the downstream type checker is the current, deliberate
-design: the inference engine derives types for code generation, and Go verifies
-them. This page documents that arrangement rather than a temporary gap. If the
-inferer is ever promoted to a checking role, this code is the identifier those
-diagnostics will carry.
+**Status.** Using Go as the downstream type checker is deliberate, not a
+temporary gap. If the inferer is ever promoted to a checking role, this code is
+the identifier those diagnostics will carry.
 
 **Scope.** The inference engine only. Type errors the transformer raises
 directly — sealed-variant arity ([GALA-E0004](GALA-E0004.md)), default-parameter

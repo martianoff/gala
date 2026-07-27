@@ -4,10 +4,6 @@
 same name. GALA has no overloading, so the two specs are not distinct methods —
 the second simply replaces the first in the interface's method table.
 
-The check is scoped to one parse of one interface declaration: re-analysing the
-same source (incremental builds, LSP passes) preserves the method map across
-calls and does not re-trigger it.
-
 **Minimal repro.**
 
 ```gala
@@ -92,3 +88,5 @@ in the analyzer names the interface, the method, and the offending line.
 
 **Scope.** Method specs inside a single `interface` declaration. Duplicate
 *implementations* on a concrete type are [GALA-E0012](GALA-E0012.md).
+
+**Related redeclaration codes.** [GALA-E0011](GALA-E0011.md) types · [GALA-E0012](GALA-E0012.md) methods · [GALA-E0027](GALA-E0027.md) functions · [GALA-E0028](GALA-E0028.md) type aliases · [GALA-E0029](GALA-E0029.md) interface method specs · [GALA-E0030](GALA-E0030.md) struct fields · [GALA-E0031](GALA-E0031.md) sealed cases.

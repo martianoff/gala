@@ -88,12 +88,6 @@ import (
 )
 ```
 
-**Facade packages.** Some stdlib packages deliberately re-export another
-package's names as a convenience facade — `concurrent` re-exports
-`go_interop`'s execution-context helpers, for instance. Dot-importing both
-sides of a facade is never useful: pick whichever one you actually want and
-drop the other.
-
 **Rationale.** Without this check the collision surfaced from `go build`,
 against generated code, naming a file the author never wrote. Detecting it at
 the GALA level names the symbol, names every package that supplies it, and

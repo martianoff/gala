@@ -62,7 +62,7 @@ a **sealed type** matched inside one function:
 package main
 
 func greet(name string, formal bool = true) string =
-    if (formal) "hello " + name else "hi " + name
+    if (formal) s"hello $name" else s"hi $name"
 
 func main() {
     Println(greet("world"))
@@ -80,8 +80,8 @@ conflict at the declaration site.
 covered by [GALA-E0012](GALA-E0012.md); interface method specs by
 [GALA-E0029](GALA-E0029.md).
 
-Duplicates across **sibling files** of one package still fail the build, but
-from the Go compiler rather than from this code:
+Duplicates across **sibling files** of one package still fail the build, but as
+of this writing they are reported by the Go compiler rather than by this code:
 
 ```
 main.gala:3: greet redeclared in this block
@@ -92,3 +92,5 @@ That message is attributed to the right `.gala` lines via `//line` directives,
 but it is phrased in Go's terms and cites a generated-file location alongside
 each source location. Compare [GALA-E0028](GALA-E0028.md), which *does* report
 cross-file duplicates at the GALA level.
+
+**Related redeclaration codes.** [GALA-E0011](GALA-E0011.md) types · [GALA-E0012](GALA-E0012.md) methods · [GALA-E0027](GALA-E0027.md) functions · [GALA-E0028](GALA-E0028.md) type aliases · [GALA-E0029](GALA-E0029.md) interface method specs · [GALA-E0030](GALA-E0030.md) struct fields · [GALA-E0031](GALA-E0031.md) sealed cases.

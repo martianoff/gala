@@ -37,10 +37,9 @@ The caret underlines the callee identifier exactly — the diagnostic carries a
 precise span rather than letting the renderer guess the token width. The caret
 row shows a shortened hint; the full text is on the `= hint:` line.
 
-## Replacements
-
-Every forbidden builtin and the replacement the compiler suggests, verbatim from
-the suggestion table in `internal/transpiler/transformer/calls.go`:
+**Replacements.** Every forbidden builtin and the replacement the compiler
+suggests, verbatim from the suggestion table in
+`internal/transpiler/transformer/calls.go`:
 
 | Builtin | Hint the compiler emits |
 |---|---|
@@ -76,24 +75,14 @@ func main() {
 }
 ```
 
-**Pick `.Size()` or `.ByteSize()` deliberately.** This is the substantive part
-of the `len` replacement, not a cosmetic rename. Go's `len(string)` returns
-**bytes**, so any non-ASCII text mis-counts. GALA splits the two meanings:
-
-- `.Size()` — logical size. Characters for a string, elements for a collection.
-  `"héllo".Size() == 5`.
-- `.ByteSize()` — raw bytes. `"héllo".ByteSize() == 6`.
-
-Use `.Size()` when you mean "how many things"; use `.ByteSize()` only when you
-are doing genuine byte-level work (indexing into a byte buffer, computing an
-offset, sizing an I/O read). Using `.Size()` as the bound of a **byte** loop
-truncates multibyte input — the exact bug `len` used to cause silently.
-
-**The check is resolver-aware.** A name you declared yourself is your
-declaration, not the builtin. A user-defined `func delete(...)` or
-`func copy(...)` is left alone, as is a local `val`/`var`/parameter or a
-declared type with one of these names. A *selector* call is never a bare
-builtin either — `x.copy()` is a method call and is not checked.
+**Pick deliberately.** Go's `len(string)` returns **bytes**, so non-ASCII text
+mis-counts. Use `.Size()` when you mean "how many things"; use `.ByteSize()`
+only for genuine byte-level work (indexing a byte buffer, computing an offset,
+sizing an I/O read). Using `.Size()` as the bound of a **byte** loop truncates
+multibyte input — the exact bug `len` used to cause silently. See
+[GALA.MD §11](../GALA.MD) and
+[GALA_BEST_PRACTICES.MD](../GALA_BEST_PRACTICES.MD) for the language-reference
+treatment.
 
 **Rationale.** GALA's rule is that every symbol resolves through an import, a
 GALA declaration, or the std prelude. The Go builtins were the one exception:
@@ -103,5 +92,10 @@ the `len` case, where the leaked builtin silently had the wrong semantics for
 text. Forbidding the bare form removes the special case and routes each
 operation to something with a name that says what it does.
 
-**Related.** Go-only *statement* keywords (`defer`, `go`, `goto`, …) are
-rejected by [GALA-E0036](GALA-E0036.md) under the same reasoning.
+**Scope.** Bare calls only, and the check is **resolver-aware**: a name you
+declared yourself is your declaration, not the builtin. A user-defined
+`func delete(...)` or `func copy(...)` is left alone, as is a local
+`val`/`var`/parameter or a declared type with one of these names. A *selector*
+call is never a bare builtin either — `x.copy()` is a method call and is not
+checked. Go-only *statement* keywords (`defer`, `go`, `goto`, …) are rejected by
+[GALA-E0036](GALA-E0036.md) under the same reasoning.

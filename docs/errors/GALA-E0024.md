@@ -13,15 +13,12 @@ inference-layer counterpart of [GALA-E0017](GALA-E0017.md) (internal transformer
 panic). The emit site is the tail of `infer`
 (`internal/transpiler/infer/infer.go`).
 
-**Why you never see it.** The engine is reachable only through `inferExprType`
-and `inferIfType` (`internal/transpiler/transformer/bridge.go`). All ten call
-sites of those two methods across the transformer discard the error — eight with
-an explicit `_`, two by inspecting it only to choose a fallback inference
-strategy. The inferer is used as a type *deriver*, never as a *checker*, so an
-unhandled node degrades the inferred type instead of failing the build. The same
-applies to [GALA-E0021](GALA-E0021.md) and [GALA-E0022](GALA-E0022.md); type
-errors of that class are reported by the **Go compiler** against the generated
-Go.
+**Why you never see it.** No caller propagates the inference engine's errors —
+see [GALA-E0021](GALA-E0021.md) for the full explanation. The inferer is used as
+a type *deriver*, never as a *checker*, so an unhandled node degrades the
+inferred type instead of failing the build. The same applies to
+[GALA-E0021](GALA-E0021.md) and [GALA-E0022](GALA-E0022.md); type errors of that
+class are reported by the **Go compiler** against the generated Go.
 
 **Minimal repro.** None. This is an internal-consistency check, unreachable from
 valid user source and currently unreachable from any source at all.

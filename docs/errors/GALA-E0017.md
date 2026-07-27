@@ -29,10 +29,8 @@ panic, so it is a hint about where the failure happened, not a precise span.
 with the source that triggered the panic and the full message. The recovered
 value in the message is the most useful part of the report.
 
-Reducing the input to the smallest snippet that still panics is genuinely
-helpful for the report — but treat that as producing a bug report, not as fixing
-your code. Rewriting to avoid the panic leaves the defect in place for the next
-person.
+Reducing the input to the smallest snippet that still panics helps the report —
+but that is a bug report, not a fix.
 
 **Fix (transpiler).** Replace the underlying `panic(...)` site with either
 `galaerr.NewCodedSemanticError(...)` — when the cause is something user-facing

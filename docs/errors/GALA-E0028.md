@@ -45,8 +45,8 @@ type StringHandler func(string) string
 type IntHandler func(int) int
 
 func main() {
-    val upper StringHandler = (s string) => s + "!"
-    val double IntHandler = (n int) => n * 2
+    val upper StringHandler = (s) => s + "!"
+    val double IntHandler = (n) => n * 2
     Println(upper("hi"))
     Println(double(21))
 }
@@ -62,3 +62,5 @@ wrong thing. Rejecting at the declaration keeps the failure local.
 **Scope.** Type aliases (`type Foo = Bar` / `type Foo func(...)`). Duplicate
 *type declarations* (structs, sealed types, interfaces) are
 [GALA-E0011](GALA-E0011.md).
+
+**Related redeclaration codes.** [GALA-E0011](GALA-E0011.md) types · [GALA-E0012](GALA-E0012.md) methods · [GALA-E0027](GALA-E0027.md) functions · [GALA-E0028](GALA-E0028.md) type aliases · [GALA-E0029](GALA-E0029.md) interface method specs · [GALA-E0030](GALA-E0030.md) struct fields · [GALA-E0031](GALA-E0031.md) sealed cases.

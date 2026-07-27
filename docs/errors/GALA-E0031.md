@@ -8,9 +8,6 @@ Every sealed case generates a companion type plus `Apply`, `Unapply`, and an
 later case's definitions overwrite the earlier's and only one variant remains
 reachable — code the author wrote silently disappears.
 
-The check is scoped to one parse of one sealed type declaration, so re-analysis
-does not re-trigger it.
-
 **Minimal repro.**
 
 ```gala
@@ -84,5 +81,7 @@ method Box.Unapply already declared at ...
 ```
 
 That still fails the build, but the message is phrased against the generated Go
-and cites two line numbers per conflict, so prefer distinct case names across
-every sealed type in a package.
+and cites two line numbers per conflict (exact wording tracks your Go toolchain
+version), so prefer distinct case names across every sealed type in a package.
+
+**Related redeclaration codes.** [GALA-E0011](GALA-E0011.md) types · [GALA-E0012](GALA-E0012.md) methods · [GALA-E0027](GALA-E0027.md) functions · [GALA-E0028](GALA-E0028.md) type aliases · [GALA-E0029](GALA-E0029.md) interface method specs · [GALA-E0030](GALA-E0030.md) struct fields · [GALA-E0031](GALA-E0031.md) sealed cases.
