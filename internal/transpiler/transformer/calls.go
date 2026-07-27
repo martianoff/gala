@@ -214,7 +214,7 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 										galaerr.CodeSealedVariantUninferred,
 										line, col,
 										fmt.Sprintf("cannot infer type parameter for sealed variant constructor %q", bareName+"()"),
-										fmt.Sprintf("annotate the binding (e.g. `val x: ParentType[Int] = %s()`) or pass type args explicitly (`%s[Int]()`)", bareName, bareName),
+										t.uninferredVariantHint(typeName, bareName),
 									)
 								}
 							}
@@ -2434,6 +2434,35 @@ func (t *galaASTTransformer) findSealedVariantFields(variantName, pkgQualifier s
 func (t *galaASTTransformer) isSealedVariantTypeName(typeName string) bool {
 	pkgQualifier, bareName := splitPackageQualifier(typeName)
 	return t.findSealedParentForVariant(bareName, pkgQualifier) != nil
+}
+
+// uninferredVariantHint builds the GALA-E0018 remediation hint. Both example
+// forms it prints must be valid, copy-pasteable GALA:
+//
+//   - a type annotation follows the binding name with NO colon
+//     (`val x Box[int] = Empty()`), and
+//   - GALA's primitive spellings are lowercase (`int`, not `Int`).
+//
+// The parent sealed type is resolved from metadata so the annotation names a
+// type that actually exists at the call site rather than a `ParentType`
+// placeholder the user would have to translate. Both names are printed bare,
+// matching the constructor name in the message and the way the call site is
+// written: this diagnostic only fires on an unqualified zero-arg constructor,
+// so the parent is reachable unqualified there too (adding the metadata's
+// package qualifier would produce `std.Option[int]` for a prelude type that
+// the file never imports under that name). When the parent cannot be resolved
+// the hint degrades to the explicit-type-args form only, which needs no parent
+// name — never to an example that would not compile.
+func (t *galaASTTransformer) uninferredVariantHint(typeName, bareName string) string {
+	explicit := fmt.Sprintf("pass type args explicitly (`%s[int]()`)", bareName)
+
+	pkgQualifier, variantName := splitPackageQualifier(typeName)
+	parent := t.findSealedParentForVariant(variantName, pkgQualifier)
+	if parent == nil || parent.Name == "" {
+		return explicit
+	}
+	return fmt.Sprintf("annotate the binding (e.g. `val x %s[int] = %s()`) or %s",
+		parent.Name, bareName, explicit)
 }
 
 // findSealedParentForVariant returns the parent sealed type's metadata for a

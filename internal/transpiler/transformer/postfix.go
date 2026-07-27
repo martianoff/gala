@@ -668,10 +668,19 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 					cc := caseClauses[0].(*grammar.CaseClauseContext)
 					line, col = cc.GetStart().GetLine(), cc.GetStart().GetColumn()
 				}
+				// Message text is deliberately identical to the sibling
+				// GALA-E0003 site in match.go: the two match lowerings
+				// (expression-position here, statement-position there) are
+				// the same diagnosis to a user, and a code whose wording
+				// depends on which lowering happened to run is unsearchable.
+				// The remediation lives in the hint only — repeating
+				// `case _ => ...` in the message duplicated what the
+				// renderer already prints as the caret annotation and the
+				// hint footer.
 				return nil, galaerr.NewCodedSemanticError(
 					galaerr.CodeMissingDefault,
 					line, col,
-					"match expression must have a default case (case _ => ...)",
+					"match expression must have a default case",
 					"add `case _ => ...`")
 			}
 		}
