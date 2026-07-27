@@ -1,46 +1,100 @@
 # GALA-E0021 — Type mismatch (unification failure)
 
-**When it fires.** Two types that the inference engine required to
-agree could not be unified. Covers every failure of the
-Hindley-Milner unification step, including (but not limited to):
+> **This code is not currently surfaced as a user-facing type check.** It
+> originates in the Hindley-Milner type-inference engine, which the transpiler
+> uses as a type *deriver*, not as a type *checker*. No call site propagates
+> the error — most discard it explicitly, the rest bind it only to choose a
+> fallback. Searching for `GALA-E0021` because of something in your terminal will
+> not find a match — type errors of this class are reported by the **Go
+> compiler**, against the generated Go.
 
-- A function argument's type does not match the parameter type.
-- The two arms of an `if` expression produce different types.
-- The condition of an `if` expression is not `bool`.
-- A constructor's positional argument does not match the declared
-  field type.
+**Where it comes from.** Two types that the inference engine required to agree
+could not be unified. The engine
+(`internal/transpiler/infer/infer.go`) raises it from three sites:
 
-The single code lets users grep for one identifier rather than a
-zoo of per-site identifiers; the message describes the specific
-mismatch.
+- general unification failure — `cannot unify <A> and <B>`
+- a non-boolean `if` condition — `if condition must be bool, got <T>`
+- mismatched `if` arms — `if branches must have same type: <A> and <B>`
 
-**Error output (representative).**
+One code covers all three so tools can pin one identifier rather than a zoo of
+per-site ones.
+
+**Why you never see it.** The engine is reachable only through two bridge
+methods, `inferExprType` and `inferIfType`
+(`internal/transpiler/transformer/bridge.go`), and **no call site propagates the
+error**. Most discard it explicitly with `_`; the rest bind it only to decide
+whether to fall back to another inference strategy. A unification failure
+therefore degrades the inferred type — it never becomes a diagnostic.
+
+This is the canonical explanation for the inference-engine codes;
+[GALA-E0022](GALA-E0022.md) and [GALA-E0024](GALA-E0024.md) work the same way.
+
+**Where type errors actually come from.** The Go compiler, after transpilation.
+Both classic mismatches transpile with exit 0 and fail at build time:
+
+```gala
+package main
+
+func add(a int, b int) int = a + b
+
+func main() {
+    Println(add(1, "two"))
+}
+```
 
 ```
-[SemanticError GALA-E0021] line 0:0 cannot unify Int and String (hint: the expression's type does not match what the surrounding context expects — annotate the binding or convert the value explicitly)
-
-[SemanticError GALA-E0021] line 0:0 if condition must be bool, got String (hint: the expression's type does not match what the surrounding context expects — annotate the binding or convert the value explicitly)
-
-[SemanticError GALA-E0021] line 0:0 if branches must have same type: Int and String (hint: the expression's type does not match what the surrounding context expects — annotate the binding or convert the value explicitly)
+main.gala:6: cannot use "two" (untyped string constant) as int value in argument to add
+go build: exit status 1
 ```
 
-**Fix.** Usually one of three:
+```gala
+package main
 
-1. **Convert one side** — e.g. `Int.toString(n)` to coerce an `Int`
-   to `String`.
-2. **Annotate the variable** — when the inference engine has too
-   little context, an explicit type forces it to commit and the
-   real mismatch surfaces against a fixed reference type.
-3. **Restructure the expression** — if both branches of an `if`
-   honestly produce different types, you usually want a sealed type
-   (`Either[A, B]`, `Option[A]`) instead of mixing the values.
+func main() {
+    val x = if ("nope") 1 else 2
+    Println(x)
+}
+```
 
-**Rationale.** Promoting these errors out of `fmt.Errorf` lets tools
-and CI surface them with a stable identifier. The shared code matches
-how the Go compiler reports its own mismatches under one bucket
-(`cannot use X as Y`) — users learn the code once and recognize it
-across every unification site.
+```
+main.gala:5: non-boolean condition in if statement
+go build: exit status 1
+```
 
-**Scope.** Inference failures from `internal/transpiler/infer/`. Type
-errors emitted by the transformer outside the inferer (e.g. specific
-sealed-variant arity checks) still use their own dedicated codes.
+(Both transcripts are lightly trimmed — the real output is prefixed with the
+build workspace's package path, and the exact wording tracks your Go toolchain
+version.)
+
+Generated Go carries `//line` directives, so the message is attributed to your
+`.gala` file and line. The **wording**, however, is Go's — it talks about
+untyped constants and Go types, not GALA ones — and any construct that lowers to
+something structurally different in Go (a `match` IIFE, an `Immutable[T]`
+wrapper) will be described in those terms.
+
+**Error output.** The shape the code would produce, from the emit sites:
+
+```
+[SemanticError GALA-E0021] cannot unify Int and String (hint: the expression's type does not match what the surrounding context expects — annotate the binding or convert the value explicitly)
+[SemanticError GALA-E0021] if condition must be bool, got String (hint: ...)
+[SemanticError GALA-E0021] if branches must have same type: Int and String (hint: ...)
+```
+
+**Fix.** When the Go compiler reports the mismatch, the remedy is usually one of:
+
+1. **Convert one side** explicitly — GALA has no implicit numeric widening or
+   narrowing.
+2. **Annotate the binding** — an explicit type forces inference to commit, so
+   the mismatch surfaces against a fixed reference type.
+3. **Restructure** — if two `if` or `match` arms honestly produce different
+   types, model that with a sealed type (`Either[A, B]`, `Option[A]`) rather
+   than mixing values.
+
+**Status.** Using Go as the downstream type checker is deliberate, not a
+temporary gap. If the inferer is ever promoted to a checking role, this code is
+the identifier those diagnostics will carry.
+
+**Scope.** The inference engine only. Type errors the transformer raises
+directly — sealed-variant arity ([GALA-E0004](GALA-E0004.md)), default-parameter
+mismatches ([GALA-E0014](GALA-E0014.md)), untyped parameters
+([GALA-E0033](GALA-E0033.md) / [GALA-E0034](GALA-E0034.md)) — have their own
+codes and *are* surfaced.
