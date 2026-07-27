@@ -13,7 +13,7 @@ package main
 import "os"
 
 func run(path string) {
-    val data = Try(() => os.ReadFile(path)) match {
+    val data = Try(os.ReadFile(path)) match {
         case Success(b)   => string(b)
         case Failure(err) => {
             Println(s"error: ${err.Error()}")
@@ -36,7 +36,7 @@ a whole, and the hint names the type the wrapping function must return.
 error[GALA-E0015]: bare `return` inside a match branch whose result is used as a value
   --> main.gala:6:16
   |
-6 |     val data = Try(() => os.ReadFile(path)) match {
+6 |     val data = Try(os.ReadFile(path)) match {
   |                ^^^ the match is wrapped in a function that must return string
   |
   = hint: the match is wrapped in a function that must return string; restructure to early-exit before the match, or use combinators like .Recover / .GetOrElse. See docs/errors/GALA-E0015.md
@@ -68,7 +68,7 @@ compiler rejects it with *"not enough return values"*.
 
     ```gala
     func run(path string) {
-        val result = Try(() => os.ReadFile(path))
+        val result = Try(os.ReadFile(path))
         if (result.IsFailure()) {
             Println(s"error: ${result.GetError().Error()}")
             return
@@ -82,7 +82,7 @@ compiler rejects it with *"not enough return values"*.
 
     ```gala
     func run(path string) {
-        val data = Try(() => os.ReadFile(path))
+        val data = Try(os.ReadFile(path))
             .Map((b) => string(b))
             .GetOrElse("")
         if (data == "") { return }

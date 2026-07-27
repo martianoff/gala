@@ -47,6 +47,19 @@ The `-->` line echoes the source path as the compiler resolved it; the CLI
 prints it absolute. Note the hint's qualified-usage example names the symbol
 actually being reported (`collection_immutable.Array`).
 
+**The `used in ...` context is not always qualified.** It is the analyzer's
+metadata key for the offending declaration, and that key carries a package
+prefix for every package *except* `main` and `test`. Move the same two files
+into `package main` and the identical failure reads:
+
+```text
+error[GALA-E0025]: undefined: Array (used in BuildLabels) — 'collection_immutable' is not imported in this file
+```
+
+Everything else — the caret, the locus, the hint — is unchanged; only the
+parenthesized context loses its prefix. Search for the symbol name rather than
+the whole parenthesized phrase.
+
 **Fix.** Add the explicit import to the offending file. Two equivalent forms:
 
 ```gala

@@ -12,7 +12,6 @@ import (
 	"martianoff/gala/internal/transpiler/generator"
 	"martianoff/gala/internal/transpiler/transformer"
 
-	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/stretchr/testify/require"
 )
 
@@ -115,7 +114,7 @@ func main() {
 import "os"
 
 func run(path string) {
-    val data = Try(() => os.ReadFile(path)) match {
+    val data = Try(os.ReadFile(path)) match {
         case Success(b)   => string(b)
         case Failure(err) => {
             Println(s"error: ${err.Error()}")
@@ -231,43 +230,22 @@ func newDocGuardTranspiler() transpiler.Transpiler {
 	return transpiler.NewGalaToGoTranspiler(p, a, tr, g)
 }
 
-// readErrorDoc returns the text of docs/errors/<code>.md, resolved through
-// Bazel runfiles when the test runs under Bazel and by walking up to go.mod
-// otherwise (the same strategy getStdSearchPath uses for the std sources).
+// readErrorDoc returns the text of docs/errors/<code>.md. getStdSearchPath
+// already resolves the workspace root for this package's tests — through Bazel
+// runfiles when the test runs under Bazel, by walking up to go.mod otherwise —
+// and the pages sit under that same root in both layouts, so it doubles as the
+// doc root and no second lookup strategy is needed.
+//
+// Newlines are normalized so the comparison does not depend on how git checked
+// the page out: the renderer always emits "\n", and a CRLF working copy on
+// Windows would otherwise fail every case for a reason that has nothing to do
+// with message drift.
 func readErrorDoc(t *testing.T, code galaerr.ErrorCode) string {
 	t.Helper()
-	// Runfiles are addressed with forward slashes on every platform; the
-	// go.mod fallback below uses the OS separator.
-	rel := "docs/errors/" + string(code) + ".md"
+	roots := getStdSearchPath()
+	require.NotEmpty(t, roots, "could not locate the workspace root")
 
-	if p, err := bazel.Runfile(rel); err == nil {
-		data, err := os.ReadFile(p)
-		require.NoError(t, err)
-		return normalizeNewlines(string(data))
-	}
-
-	dir, err := os.Getwd()
-	require.NoError(t, err)
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(rel)))
-			require.NoError(t, err, "error doc page not found")
-			return normalizeNewlines(string(data))
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-		dir = parent
-	}
-	t.Fatalf("could not locate the repository root to read %s", rel)
-	return ""
-}
-
-// normalizeNewlines makes the comparison independent of how git checked the
-// page out. The renderer always emits "\n"; a CRLF working copy on Windows
-// would otherwise fail every case for a reason that has nothing to do with
-// message drift.
-func normalizeNewlines(s string) string {
-	return strings.ReplaceAll(s, "\r\n", "\n")
+	data, err := os.ReadFile(filepath.Join(roots[0], "docs", "errors", string(code)+".md"))
+	require.NoError(t, err, "error doc page not found")
+	return strings.ReplaceAll(string(data), "\r\n", "\n")
 }

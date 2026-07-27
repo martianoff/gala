@@ -643,12 +643,15 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		}
 
 		if !hasDefault {
+			// Both diagnoses below are about the match as a whole, so they
+			// anchor on the first case clause (the match keyword itself sits
+			// after the subject and reads worse in the framed snippet).
+			line, col := ctx.GetStart().GetLine(), ctx.GetStart().GetColumn()
+			if len(caseClauses) > 0 {
+				cc := caseClauses[0].(*grammar.CaseClauseContext)
+				line, col = cc.GetStart().GetLine(), cc.GetStart().GetColumn()
+			}
 			if isSealed && !isExhaustive {
-				line, col := ctx.GetStart().GetLine(), ctx.GetStart().GetColumn()
-				if len(caseClauses) > 0 {
-					cc := caseClauses[0].(*grammar.CaseClauseContext)
-					line, col = cc.GetStart().GetLine(), cc.GetStart().GetColumn()
-				}
 				return nil, galaerr.NewCodedSemanticError(
 					galaerr.CodeNonExhaustiveMatch,
 					line, col,
@@ -663,11 +666,6 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 					}},
 				}
 			} else if !isSealed {
-				line, col := ctx.GetStart().GetLine(), ctx.GetStart().GetColumn()
-				if len(caseClauses) > 0 {
-					cc := caseClauses[0].(*grammar.CaseClauseContext)
-					line, col = cc.GetStart().GetLine(), cc.GetStart().GetColumn()
-				}
 				// Message text is deliberately identical to the sibling
 				// GALA-E0003 site in match.go: the two match lowerings
 				// (expression-position here, statement-position there) are
@@ -685,7 +683,6 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 			}
 		}
 		// When foundDefault && isSealed && isExhaustive: unreachable default is harmless, allow it
-		_ = isSealed
 	}
 
 	// Statement-position match with a user-written `return X` inside an arm

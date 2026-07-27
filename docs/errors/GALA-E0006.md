@@ -44,7 +44,7 @@ yields the branch value):
 ```gala
 func name(n int) string = n match {
     case 1 => "one"
-    case _ => if (n > 100) { "big" } else { "other" }
+    case _ => if (n > 100) "big" else "other"
 }
 ```
 

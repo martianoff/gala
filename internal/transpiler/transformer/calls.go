@@ -207,14 +207,26 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 							// and non-sealed generic types still fall through to Go's
 							// deduction.
 							if receiverType == base && baseExpr == base && len(typeMeta.TypeParams) > 0 {
-								if t.isSealedVariantTypeName(typeName) {
+								// The zero-arg call path derives typeName from
+								// getBaseTypeName, which keeps the package selector for
+								// dot-imported / std variants, but metadata is keyed by
+								// the bare case name — so the qualifier is split off and
+								// passed as the lookup scope (findSealedParentForVariant
+								// also resolves import aliases against it). Comparing the
+								// qualified `std.None` directly never matched, so this
+								// guard used to miss `std.None()` and the transpiler
+								// emitted an uninstantiated `std.None{}.Apply()` (invalid
+								// Go) instead. The resolved parent is both the guard and
+								// the hint's source for the annotation example, so it is
+								// looked up once here rather than twice.
+								pkgQualifier, bareName := splitPackageQualifier(typeName)
+								if parent := t.findSealedParentForVariant(bareName, pkgQualifier); parent != nil {
 									line, col := suffix.GetStart().GetLine(), suffix.GetStart().GetColumn()
-									bareName := stripPackagePrefix(typeName)
 									return nil, galaerr.NewCodedSemanticError(
 										galaerr.CodeSealedVariantUninferred,
 										line, col,
 										fmt.Sprintf("cannot infer type parameter for sealed variant constructor %q", bareName+"()"),
-										t.uninferredVariantHint(typeName, bareName),
+										uninferredVariantHint(parent, bareName),
 									)
 								}
 							}
@@ -2420,22 +2432,6 @@ func (t *galaASTTransformer) findSealedVariantFields(variantName, pkgQualifier s
 	}
 }
 
-// isSealedVariantTypeName reports whether `typeName` (qualified `std.None` or
-// bare `None`) is a registered sealed variant, gating the GALA-E0018
-// diagnostic; other generic types fall through to Go's deduction.
-//
-// The zero-arg call path derives the name from `getBaseTypeName`, which keeps
-// the package selector for dot-imported / std variants, but metadata is keyed
-// by the bare case name — so the qualifier is split off and passed as the
-// lookup scope (see findSealedParentForVariant, which also resolves import
-// aliases against it). Comparing the qualified `std.None` directly never
-// matched, so the guard previously missed `std.None()` and the transpiler
-// emitted an uninstantiated `std.None{}.Apply()` (invalid Go) instead.
-func (t *galaASTTransformer) isSealedVariantTypeName(typeName string) bool {
-	pkgQualifier, bareName := splitPackageQualifier(typeName)
-	return t.findSealedParentForVariant(bareName, pkgQualifier) != nil
-}
-
 // uninferredVariantHint builds the GALA-E0018 remediation hint. Both example
 // forms it prints must be valid, copy-pasteable GALA:
 //
@@ -2443,21 +2439,19 @@ func (t *galaASTTransformer) isSealedVariantTypeName(typeName string) bool {
 //     (`val x Box[int] = Empty()`), and
 //   - GALA's primitive spellings are lowercase (`int`, not `Int`).
 //
-// The parent sealed type is resolved from metadata so the annotation names a
-// type that actually exists at the call site rather than a `ParentType`
-// placeholder the user would have to translate. Both names are printed bare,
-// matching the constructor name in the message and the way the call site is
-// written: this diagnostic only fires on an unqualified zero-arg constructor,
-// so the parent is reachable unqualified there too (adding the metadata's
-// package qualifier would produce `std.Option[int]` for a prelude type that
-// the file never imports under that name). When the parent cannot be resolved
-// the hint degrades to the explicit-type-args form only, which needs no parent
-// name — never to an example that would not compile.
-func (t *galaASTTransformer) uninferredVariantHint(typeName, bareName string) string {
+// The parent sealed type comes from the metadata the caller already resolved to
+// decide this diagnostic applies, so the annotation names a type that actually
+// exists at the call site rather than a `ParentType` placeholder the user would
+// have to translate. Both names are printed bare, matching the constructor name
+// in the message and the way the call site is written: this diagnostic only
+// fires on an unqualified zero-arg constructor, so the parent is reachable
+// unqualified there too (adding the metadata's package qualifier would produce
+// `std.Option[int]` for a prelude type that the file never imports under that
+// name). An unnamed parent degrades the hint to the explicit-type-args form
+// only, which needs no parent name — never to an example that would not
+// compile.
+func uninferredVariantHint(parent *transpiler.TypeMetadata, bareName string) string {
 	explicit := fmt.Sprintf("pass type args explicitly (`%s[int]()`)", bareName)
-
-	pkgQualifier, variantName := splitPackageQualifier(typeName)
-	parent := t.findSealedParentForVariant(variantName, pkgQualifier)
 	if parent == nil || parent.Name == "" {
 		return explicit
 	}

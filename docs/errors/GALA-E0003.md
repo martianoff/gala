@@ -49,17 +49,16 @@ func name(n int) string = n match {
 
 If you genuinely want the program to abort on unknown values, be explicit.
 A bare `panic(...)` is a Go builtin that GALA rejects (GALA-E0035), so use
-the sanctioned interop wrapper:
+the sanctioned interop wrapper. `Panic` is void, but in a match-arm tail the
+transpiler lowers it to Go's diverging `panic`, so the arm needs no trailing
+value:
 
 ```gala
 import "martianoff/gala/go_builtins"
 
 func strict(n int) string = n match {
     case 1 => "one"
-    case _ => {
-        go_builtins.Panic(s"unexpected n: $n")
-        ""
-    }
+    case _ => go_builtins.Panic(s"unexpected n: $n")
 }
 ```
 
