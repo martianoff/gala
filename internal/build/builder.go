@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/depman/fetch"
 	"martianoff/gala/internal/depman/mod"
 	"martianoff/gala/internal/stdlib"
@@ -1976,7 +1977,9 @@ func detectPackageName(galaFile string) string {
 	if err != nil {
 		return ""
 	}
-	for _, line := range strings.Split(string(content), "\n") {
+	// strings.TrimSpace does not remove U+FEFF, so a leading BOM would hide the
+	// package clause on line 1 and break the build for a file the parser accepts.
+	for _, line := range strings.Split(galaerr.StripBOM(string(content)), "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "package ") {
 			return strings.TrimSpace(strings.TrimPrefix(line, "package "))

@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/depman/fetch"
 	"martianoff/gala/internal/depman/graph"
 	"martianoff/gala/internal/depman/mod"
@@ -408,7 +409,7 @@ func scanImports(dir string) (map[string]bool, error) {
 			return nil // Skip files we can't read
 		}
 
-		lines := strings.Split(string(content), "\n")
+		lines := strings.Split(galaerr.StripBOM(string(content)), "\n")
 		inImportBlock := false
 		for _, line := range lines {
 			line = strings.TrimSpace(line)

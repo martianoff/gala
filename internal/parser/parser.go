@@ -43,6 +43,14 @@ func (p *AntlrGalaParser) Parse(input string) (antlr.Tree, error) {
 // files. The deserialized ATN stays shared too (it is read-mostly and guards
 // its own lazily-cached token sets with a mutex).
 func (p *AntlrGalaParser) ParseLenient(input string) (antlr.Tree, []error) {
+	// Drop a leading UTF-8 BOM once, up front, so the lexer and checkEmptyLines
+	// below agree on offsets. checkEmptyLines slices input with ANTLR token
+	// positions, which are rune offsets; those only coincide with Go's byte
+	// offsets while the text is ASCII, so a 3-byte BOM would otherwise both
+	// trip the lexer and shift the slice, reporting a missing empty line after
+	// the package clause on a file that has one.
+	input = galaerr.StripBOM(input)
+
 	is := antlr.NewInputStream(input)
 	lexer := grammar.NewgalaLexer(is)
 	isolateLexerCaches(lexer.BaseLexer)

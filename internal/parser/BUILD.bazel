@@ -15,6 +15,7 @@ go_library(
 go_test(
     name = "parser_test",
     srcs = [
+        "bom_test.go",
         "empty_line_unicode_test.go",
         "grammar_test.go",
         "parser_concurrent_test.go",
