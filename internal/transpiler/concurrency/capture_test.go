@@ -324,8 +324,34 @@ func TestCaptureFieldPaths(t *testing.T) {
 			wantWhole: true,
 		},
 		{
-			name:      "field read then method call is a whole use",
+			// A method call on a field reads the receiver field path; the method
+			// runs on that (to-be-verified-shareable) field value, so the capture
+			// is a read of the receiver path "a", not a whole use.
+			name:      "field read then method call records the receiver field path",
 			lambda:    "() => m.a.foo()",
+			capture:   "m",
+			wantPaths: []string{"a"},
+			wantWhole: false,
+		},
+		{
+			name:      "nested field read then method call records the receiver path",
+			lambda:    "() => m.a.b.foo()",
+			capture:   "m",
+			wantPaths: []string{"a.b"},
+			wantWhole: false,
+		},
+		{
+			// A call that is not the final suffix (a further access on its result)
+			// cannot be reduced to a receiver field path — stays a whole use.
+			name:      "field method call with a trailing index is a whole use",
+			lambda:    "() => m.a.foo()[0]",
+			capture:   "m",
+			wantPaths: nil,
+			wantWhole: true,
+		},
+		{
+			name:      "index on a field is a whole use",
+			lambda:    "() => m.a[0]",
 			capture:   "m",
 			wantPaths: nil,
 			wantWhole: true,

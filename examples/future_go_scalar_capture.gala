@@ -1,0 +1,21 @@
+package main
+
+import (
+    "time"
+    . "martianoff/gala/concurrent"
+)
+
+// FP-1 verification: a Go scalar value type (time.Duration, whose underlying is
+// int64) can be captured across a Future's Sendable boundary. A scalar is a
+// self-contained value — no fields to alias, no reachable heap — so sharing it
+// is safe. This mirrors the real downstream shape `Future(() => { Sleep(d) })`.
+// Before the shareability predicate recognised Go scalar value types, this
+// capture was wrongly rejected with GALA-E0037.
+func main() {
+    val d = time.Millisecond
+    val f = Future[string](() => {
+        time.Sleep(d)
+        "done"
+    })
+    Println(f.Get())
+}

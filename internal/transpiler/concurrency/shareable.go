@@ -41,8 +41,18 @@ type MetadataResolver func(named transpiler.Type) (*transpiler.TypeMetadata, boo
 // types — primitives, collections, and the std wrappers — are decided purely
 // from the Type and need no resolver.
 type Checker struct {
-	resolve MetadataResolver
+	resolve      MetadataResolver
+	goUnderlying GoUnderlyingResolver
 }
+
+// GoUnderlyingResolver reports the underlying type of a Go named type (e.g.
+// time.Duration -> int64), or (nil, false) when the type is not a resolvable Go
+// named type. It is how the checker recognises Go scalar value types — named
+// types whose underlying is a primitive — as shareable. It is deliberately NOT
+// used for Go structs: Go has no immutability and auto-takes a pointer receiver
+// for `d.Method()`, so an all-value-field Go struct still cannot be proven
+// non-aliased/non-mutated; only scalar (field-less) underlyings are accepted.
+type GoUnderlyingResolver func(named transpiler.Type) (transpiler.Type, bool)
 
 // NewChecker builds a Checker. A nil resolver is allowed: the checker then
 // treats every user-defined struct/sealed type as unresolvable, hence not
@@ -53,6 +63,13 @@ func NewChecker(resolve MetadataResolver) *Checker {
 		resolve = func(transpiler.Type) (*transpiler.TypeMetadata, bool) { return nil, false }
 	}
 	return &Checker{resolve: resolve}
+}
+
+// SetGoUnderlyingResolver wires an optional Go-named-type underlying resolver so
+// the checker can recognise Go scalar value types (time.Duration, os.FileMode,
+// …) as shareable. Without it, such types stay conservatively not-shareable.
+func (c *Checker) SetGoUnderlyingResolver(fn GoUnderlyingResolver) {
+	c.goUnderlying = fn
 }
 
 // IsShareable reports whether a value of type t may safely cross a goroutine
@@ -100,7 +117,16 @@ func (c *Checker) isShareable(t transpiler.Type, visited map[string]bool) bool {
 		if b, decided := c.decideByName(v.Name, nil, visited); decided {
 			return b
 		}
-		return c.isNamedStructShareable(t, nil, visited)
+		if c.isNamedStructShareable(t, nil, visited) {
+			return true
+		}
+		// A Go named type whose underlying is a primitive scalar (e.g.
+		// time.Duration -> int64, os.FileMode -> uint32) is a self-contained
+		// value: no fields to alias, no reachable heap, no pointer receiver that
+		// could mutate shared state. Such a value is safe to capture across a
+		// goroutine boundary. (Go STRUCTS are intentionally excluded — see
+		// GoUnderlyingResolver.)
+		return c.isGoScalarShareable(t)
 
 	case transpiler.GenericType:
 		return c.isGenericShareable(v, visited)
@@ -128,6 +154,25 @@ func (c *Checker) isShareable(t transpiler.Type, visited map[string]bool) bool {
 
 	// Unknown/unhandled kind: conservative.
 	return false
+}
+
+// isGoScalarShareable reports whether a Go named type is a scalar value type —
+// its underlying resolves to a primitive (time.Duration -> int64). Only a
+// primitive-scalar underlying is accepted; a struct, array, pointer, slice or
+// map underlying is rejected (Go structs cannot be proven non-aliased and Go
+// auto-takes a pointer receiver for methods, so an all-value-field struct is
+// still unsound to treat as shareable). Returns false when no Go-underlying
+// resolver is wired (the resolver-free convenience path stays conservative).
+func (c *Checker) isGoScalarShareable(named transpiler.Type) bool {
+	if c.goUnderlying == nil {
+		return false
+	}
+	u, ok := c.goUnderlying(named)
+	if !ok || transpiler.IsUnusable(u) {
+		return false
+	}
+	bt, isBasic := u.(transpiler.BasicType)
+	return isBasic && isShareablePrimitive(bt.Name)
 }
 
 // isBasicShareable decides a BasicType. Primitive value types are shareable.

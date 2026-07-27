@@ -385,6 +385,56 @@ func TestIsShareableNilResolver(t *testing.T) {
 	}
 }
 
+// TestGoScalarShareable pins FP-1: a Go named type whose underlying is a
+// primitive scalar (time.Duration -> int64) is shareable; a Go named type whose
+// underlying is a slice/pointer/struct is NOT (scalars only — Go structs cannot
+// be proven non-aliased). The Go-underlying resolver stands in for the
+// analyzer's Go type info.
+func TestGoScalarShareable(t *testing.T) {
+	underlyings := map[string]transpiler.Type{
+		"time.Duration": basic("int64"),
+		"os.FileMode":   basic("uint32"),
+		"mypkg.Label":   basic("string"),
+		"mypkg.Bytes":   transpiler.ArrayType{Elem: basic("byte")},   // []byte-backed
+		"mypkg.Handle":  transpiler.PointerType{Elem: basic("int")},  // pointer-backed
+		"mypkg.Rec":     named("mypkg", "recUnderlying"),             // struct-backed (non-primitive)
+	}
+	c := NewChecker(nil)
+	c.SetGoUnderlyingResolver(func(nt transpiler.Type) (transpiler.Type, bool) {
+		u, ok := underlyings[nt.BaseName()]
+		return u, ok
+	})
+
+	cases := []struct {
+		name string
+		typ  transpiler.Type
+		want bool
+	}{
+		{"named over int64 (time.Duration)", named("time", "Duration"), true},
+		{"named over uint32 (os.FileMode)", named("os", "FileMode"), true},
+		{"named over string", named("mypkg", "Label"), true},
+		{"named over []byte is not a scalar", named("mypkg", "Bytes"), false},
+		{"named over pointer is not a scalar", named("mypkg", "Handle"), false},
+		{"named over struct is not a scalar", named("mypkg", "Rec"), false},
+		{"unknown Go named type", named("mypkg", "Unknown"), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := c.IsShareable(tc.typ); got != tc.want {
+				t.Errorf("IsShareable(%v) = %v, want %v", tc.typ, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestGoScalarShareableNoResolver: without a Go-underlying resolver wired, Go
+// named types stay conservatively not-shareable (the resolver-free path).
+func TestGoScalarShareableNoResolver(t *testing.T) {
+	if NewChecker(nil).IsShareable(named("time", "Duration")) {
+		t.Errorf("time.Duration must not be shareable without a Go-underlying resolver")
+	}
+}
+
 // TestSubstitute pins the type-parameter substitution used for generic structs.
 func TestSubstitute(t *testing.T) {
 	subst := buildSubst([]string{"T"}, []transpiler.Type{basic("int")})
