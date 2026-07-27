@@ -777,6 +777,16 @@ func (t *galaASTTransformer) unifyForInference(pattern, concrete transpiler.Type
 		return false
 	}
 
+	// The transparent boundary marker unifies exactly as its inner type: a
+	// declared param `Sendable[func() T]` must infer T from a `func() int`
+	// argument just like a plain `func() T` would. Peel it off on either side.
+	if inner, ok := transpiler.UnwrapSendable(pattern); ok {
+		return t.unifyForInference(inner, concrete, typeParams, inferredMap)
+	}
+	if inner, ok := transpiler.UnwrapSendable(concrete); ok {
+		return t.unifyForInference(pattern, inner, typeParams, inferredMap)
+	}
+
 	// Check if pattern is one of the type parameters we're looking for
 	patternStr := pattern.String()
 	// Also try without package prefix (e.g., "collection_immutable.T" -> "T")

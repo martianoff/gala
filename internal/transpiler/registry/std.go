@@ -18,6 +18,9 @@ func StdPackageInfo() PackageInfo {
 			// Collection traits
 			"Traversable",
 			"Iterable",
+			// Transparent concurrency-boundary marker (see docs/CONCURRENCY_SAFETY.MD).
+			// It has no runtime representation; `Sendable[F]` is exactly `F`.
+			"Sendable",
 			// Companion objects also act as types
 			"Some", "None", "Left", "Right", "Success", "Failure",
 		},

@@ -159,6 +159,16 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "subprocess_async",
+    src = "subprocess_async.gala",
+    expected = "subprocess_async.out",
+    deps = [
+        "//go_interop",
+        "//subprocess",
+    ],
+)
+
+gala_exec_test(
     name = "hex_literals",
     src = "hex_literals.gala",
     expected = "hex_literals.out",
@@ -181,6 +191,35 @@ gala_exec_test(
     src = "expr_as_thunk_sugar.gala",
     expected = "expr_as_thunk_sugar.out",
     deps = ["//concurrent"],
+)
+
+gala_exec_test(
+    name = "future_capture_safety",
+    src = "future_capture_safety.gala",
+    expected = "future_capture_safety.out",
+    deps = [
+        "//collection_immutable",
+        "//concurrent",
+    ],
+)
+
+gala_exec_test(
+    name = "future_field_capture",
+    src = "future_field_capture.gala",
+    expected = "future_field_capture.out",
+    deps = [
+        "//collection_immutable",
+        "//concurrent",
+    ],
+)
+
+gala_exec_test(
+    name = "future_sendable_wrapper",
+    src = "future_sendable_wrapper.gala",
+    expected = "future_sendable_wrapper.out",
+    deps = [
+        "//concurrent",
+    ],
 )
 
 

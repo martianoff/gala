@@ -1,0 +1,145 @@
+package main
+
+import (
+    "runtime"
+    . "martianoff/gala/test"
+    . "martianoff/gala/std"
+    . "martianoff/gala/subprocess"
+    . "martianoff/gala/time_utils"
+    "martianoff/gala/go_interop"
+)
+
+// These tests drive the async Process operations against REAL child processes,
+// selecting the spawn command per-platform (cmd on Windows, sh elsewhere) so
+// they pass on both without a hardcoded Unix-only command.
+
+func isWindows() bool = runtime.GOOS == "windows"
+
+// shellOpts builds SpawnOpts that runs script through the platform shell.
+func shellOpts(script string) SpawnOpts {
+    val cmd = if (isWindows()) "cmd" else "sh"
+    val flag = if (isWindows()) "/c" else "-c"
+    return SpawnOpts(
+        Cmd = cmd,
+        Args = go_interop.SliceOf(flag, script),
+        Env = go_interop.SliceEmpty[string](),
+        Dir = "",
+    )
+}
+
+// echoStdoutScript prints line to stdout on both shells.
+func echoStdoutScript(line string) string = s"echo ${line}"
+
+// echoStderrScript prints line to stderr. The Windows form places the redirect
+// with no space before it (echo X>&2), otherwise cmd's echo keeps the trailing
+// space; sh has no such quirk.
+func echoStderrScript(line string) string =
+    if (isWindows()) s"echo ${line}>&2" else s"echo ${line} 1>&2"
+
+// sleeperOpts builds a long-running child that we expect to kill, never to let
+// finish (ping loopback ~30 times on Windows, sleep 30 elsewhere).
+func sleeperOpts() SpawnOpts {
+    if (isWindows()) {
+        return SpawnOpts(
+            Cmd = "ping",
+            Args = go_interop.SliceOf("-n", "30", "127.0.0.1"),
+            Env = go_interop.SliceEmpty[string](),
+            Dir = "",
+        )
+    }
+    return SpawnOpts(
+        Cmd = "sleep",
+        Args = go_interop.SliceOf("30"),
+        Env = go_interop.SliceEmpty[string](),
+        Dir = "",
+    )
+}
+
+// sortOpts runs the platform `sort` filter, which reads all of stdin and writes
+// it back to stdout once it reaches EOF. `sort` ships on both Windows and Unix,
+// giving a portable stdin -> stdout echo; a single-line input comes back
+// verbatim (no ordering to observe).
+func sortOpts() SpawnOpts = SpawnOpts(
+    Cmd = "sort",
+    Args = go_interop.SliceEmpty[string](),
+    Env = go_interop.SliceEmpty[string](),
+    Dir = "",
+)
+
+// TestReadLineAsync reads a known stdout line off-thread, then verifies that
+// reading past the child's single line yields Failure(io.EOF) INSIDE a
+// succeeded Future (EOF is data on the inner Try, not a Future failure).
+func TestReadLineAsync(t T) T =
+    RunCases[string, string](t, (st T, line string, want string) => {
+        val p = Spawn(shellOpts(echoStdoutScript(line))).Get()
+        val outer = p.ReadLineAsync().Await()
+        val t1 = IsSuccess(st, outer)
+        val t2 = IsSuccess(t1, outer.Get())
+        val t3 = Eq(t2, outer.Get().Get(), want)
+        val eofOuter = p.ReadLineAsync().Await()
+        val t4 = IsSuccess(t3, eofOuter)
+        val t5 = IsFailure(t4, eofOuter.Get())
+        p.Wait()
+        return t5
+    },
+    Case[string, string](Name = "simple", Input = "PING", Expected = "PING"),
+    Case[string, string](Name = "with-space", Input = "hello world", Expected = "hello world"))
+
+// TestReadStderrLineAsync reads a known stderr line off-thread.
+func TestReadStderrLineAsync(t T) T =
+    RunCases[string, string](t, (st T, line string, want string) => {
+        val p = Spawn(shellOpts(echoStderrScript(line))).Get()
+        val outer = p.ReadStderrLineAsync().Await()
+        val t1 = IsSuccess(st, outer)
+        val t2 = IsSuccess(t1, outer.Get())
+        val t3 = Eq(t2, outer.Get().Get(), want)
+        p.Wait()
+        return t3
+    },
+    Case[string, string](Name = "stderr", Input = "ERRLINE", Expected = "ERRLINE"))
+
+// TestWriteLineAsyncRoundTrip writes a line to a `sort` child OFF-THREAD via
+// WriteLineAsync, closes its stdin OFF-THREAD via CloseStdinAsync so the filter
+// reaches EOF and emits, then reads the echoed line back. Exercises both async
+// write operations end to end: each returns a Future whose outer success means
+// the write goroutine did not panic and whose inner Try[Void] is the WriteLine /
+// CloseStdin result.
+func TestWriteLineAsyncRoundTrip(t T) T =
+    RunCases[string, string](t, (st T, line string, want string) => {
+        val p = Spawn(sortOpts()).Get()
+        val wrote = p.WriteLineAsync(line).Await()
+        val t1 = IsSuccess(st, wrote)
+        val t2 = IsSuccess(t1, wrote.Get())
+        val closed = p.CloseStdinAsync().Await()
+        val t3 = IsSuccess(t2, closed)
+        val t4 = IsSuccess(t3, closed.Get())
+        val outer = p.ReadLineAsync().Await()
+        val t5 = IsSuccess(t4, outer)
+        val t6 = Eq(t5, outer.Get().Get(), want)
+        p.Wait()
+        return t6
+    },
+    Case[string, string](Name = "single", Input = "round-trip-line", Expected = "round-trip-line"))
+
+// TestKillAfterFires spawns a long sleeper and kills it via KillAfter. Wait must
+// return and the child must no longer be alive.
+func TestKillAfterFires(t T) T {
+    val p = Spawn(sleeperOpts()).Get()
+    p.KillAfter(Milliseconds(300))
+    val w = p.Wait()
+    val t1 = IsSuccess(t, w)
+    return IsFalse(t1, p.IsAlive())
+}
+
+// TestKillAfterCancelled arms a long KillAfter, cancels it immediately, then
+// lets a quick child exit on its own. The timer must NOT have killed it: the
+// child exits normally with code 0.
+func TestKillAfterCancelled(t T) T {
+    val p = Spawn(shellOpts(s"echo done")).Get()
+    val timer = p.KillAfter(Seconds(30))
+    timer.Cancel()
+    val w = p.Wait()
+    val t1 = IsSuccess(t, w)
+    val t2 = Eq(t1, w.Get(), 0)
+    return IsFalse(t2, p.IsAlive())
+}

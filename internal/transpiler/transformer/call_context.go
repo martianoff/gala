@@ -74,7 +74,70 @@ func (t *galaASTTransformer) buildApplyCallContext(
 //     generics), then Go type info, then struct field types
 //
 // Returns NilType if no expected type can be determined.
+// boundaryParamAt returns the declared parameter type at argIdx together with
+// the type-parameter names and substitutions in effect, drawn from whichever
+// metadata source resolveExpectedArgType would consult (in the same priority
+// order). It is the single point that detects the `Sendable` boundary marker on
+// a raw declared parameter type — used both to resolve a transparent expected
+// type and to gate the capture-safety check (checkSendableArg).
+func (t *galaASTTransformer) boundaryParamAt(ctx callContext, argIdx int) (raw transpiler.Type, typeParams []string, subst map[string]string, ok bool) {
+	switch {
+	case ctx.methodMeta != nil:
+		if argIdx < len(ctx.methodMeta.ParamTypes) {
+			return ctx.methodMeta.ParamTypes[argIdx], ctx.methodMeta.TypeParams, ctx.typeSubst, true
+		}
+	case ctx.applyMethodMeta != nil:
+		if argIdx < len(ctx.applyMethodMeta.ParamTypes) {
+			return ctx.applyMethodMeta.ParamTypes[argIdx], ctx.applyTypeParams, ctx.applyTypeSubst, true
+		}
+	case ctx.funcMeta != nil:
+		if argIdx < len(ctx.funcMeta.ParamTypes) {
+			return ctx.funcMeta.ParamTypes[argIdx], ctx.funcMeta.TypeParams, ctx.typeSubst, true
+		}
+	}
+	if ctx.goParamTypes != nil && argIdx < len(ctx.goParamTypes) {
+		return ctx.goParamTypes[argIdx], nil, nil, true
+	}
+	return transpiler.NilType{}, nil, nil, false
+}
+
+// sendableInnerExpected resolves the expected type for the inner function type
+// of a `Sendable[F]` parameter, applying the same type-param substitution and
+// unresolved-result masking the ordinary FuncType path uses. It returns the
+// PLAIN inner expected type (not re-wrapped): the marker is transparent, so the
+// value flowing to lambda / thunk inference is exactly what a bare `F` parameter
+// would produce. The capture-safety check is run separately by checkSendableArg.
+func (t *galaASTTransformer) sendableInnerExpected(inner transpiler.Type, typeParams []string, subst map[string]string) transpiler.Type {
+	ft, ok := inner.(transpiler.FuncType)
+	if !ok {
+		if len(subst) > 0 {
+			return t.substituteTranspilerTypeParams(inner, subst)
+		}
+		return inner
+	}
+	switch {
+	case len(subst) > 0:
+		return t.substituteTranspilerTypeParams(ft, subst)
+	case len(ft.Results) == 0 || len(typeParams) == 0:
+		return ft
+	case !funcTypeParamsMentionTypeParams(ft.Params, typeParams):
+		return transpiler.FuncType{Params: ft.Params, Results: maskTypeParamResults(ft.Results, typeParams)}
+	default:
+		return ft
+	}
+}
+
 func (t *galaASTTransformer) resolveExpectedArgType(ctx callContext, argIdx int) transpiler.Type {
+	// Concurrency boundary: a `Sendable[F]` parameter resolves transparently to
+	// the expected type of its inner F, so lambda / thunk inference and codegen
+	// are identical to a bare `F` parameter. The capture-safety check runs
+	// separately (checkSendableArg) in the argument loops.
+	if raw, typeParams, subst, ok := t.boundaryParamAt(ctx, argIdx); ok {
+		if inner, isSendable := transpiler.UnwrapSendable(raw); isSendable {
+			return t.sendableInnerExpected(inner, typeParams, subst)
+		}
+	}
+
 	// Method call path
 	if ctx.methodMeta != nil {
 		if ctx.unresolvedTP {
@@ -242,7 +305,11 @@ func (t *galaASTTransformer) resolveNamedArgExpectedType(ctx callContext, argNam
 	if ctx.methodMeta != nil {
 		for pi, pName := range ctx.methodMeta.ParamNames {
 			if pName == argName && pi < len(ctx.methodMeta.ParamTypes) {
-				return t.substituteTranspilerTypeParams(ctx.methodMeta.ParamTypes[pi], ctx.typeSubst)
+				raw := ctx.methodMeta.ParamTypes[pi]
+				if inner, isSendable := transpiler.UnwrapSendable(raw); isSendable {
+					return t.sendableInnerExpected(inner, ctx.methodMeta.TypeParams, ctx.typeSubst)
+				}
+				return t.substituteTranspilerTypeParams(raw, ctx.typeSubst)
 			}
 		}
 		return transpiler.NilType{}
@@ -255,6 +322,9 @@ func (t *galaASTTransformer) resolveNamedArgExpectedType(ctx callContext, argNam
 	if ctx.funcMeta != nil && len(ctx.funcMeta.ParamNames) > 0 {
 		for i, paramName := range ctx.funcMeta.ParamNames {
 			if paramName == argName && i < len(ctx.funcMeta.ParamTypes) {
+				if inner, isSendable := transpiler.UnwrapSendable(ctx.funcMeta.ParamTypes[i]); isSendable {
+					return t.sendableInnerExpected(inner, ctx.funcMeta.TypeParams, ctx.typeSubst)
+				}
 				if ft, ok := ctx.funcMeta.ParamTypes[i].(transpiler.FuncType); ok {
 					return ft
 				}

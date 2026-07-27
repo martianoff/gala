@@ -470,12 +470,20 @@ func (w *WaitGroup) Wait() {
 }
 
 // Spawn launches a goroutine. This is a helper to work around GALA's go statement limitations.
+//
+// Spawn is the low-level, UNCHECKED escape hatch from GALA's compile-time
+// data-race safety: unlike a Sendable boundary (Future / FutureOn), the closure
+// passed here is NOT subject to the capture-safety check. Prefer Future for
+// safe concurrency; reach for Spawn only when you deliberately manage sharing
+// yourself. See docs/CONCURRENCY_SAFETY.MD ("Escape hatch").
 func Spawn(f func()) {
 	go func() { f() }()
 }
 
 // SpawnWithRecover launches a goroutine with panic recovery.
 // If the function panics, the recovery function is called with the panic value.
+//
+// Like Spawn, this is an unchecked escape hatch — captures are not validated.
 func SpawnWithRecover(f func(), onPanic func(any)) {
 	go func() {
 		defer func() {

@@ -29,20 +29,20 @@ struct WalkEntry(
 // Each handle is released by resource.Using (GALA has no `defer`): the
 // close is guaranteed on every exit path and, being nested, runs LIFO —
 // dst closes before src.
-func CopyFile(src string, dst string, mode int) Try[bool] =
+func CopyFile(src string, dst string, mode int) Try[Void] =
     Try(os.Open(src)).FlatMap((srcF) =>
         Using(srcF, (in) =>
             Try(os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, os.FileMode(mode)))
                 .FlatMap((dstF) =>
                     Using(dstF, (out) =>
-                        Try(io.Copy(out, in)).Map((_) => true)))))
+                        Try(io.Copy(out, in)).Map((_) => Void())))))
 
 // Rename moves src to dst by delegating to os.Rename. Atomic on the
 // same filesystem; will fail across filesystems. Callers that need
 // cross-filesystem moves should compose Copy + RemoveAll explicitly —
 // we deliberately do not paper over that case.
-func Rename(src string, dst string) Try[bool] =
-    FromError(os.Rename(src, dst)).Map((_) => true)
+func Rename(src string, dst string) Try[Void] =
+    FromError(os.Rename(src, dst))
 
 // Walk returns every entry under `root`, recursively. The walk order
 // is filepath.WalkDir's order (lexical within each directory). The

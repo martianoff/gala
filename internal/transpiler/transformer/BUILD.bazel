@@ -9,6 +9,7 @@ go_library(
         "calls.go",
         "codec.go",
         "codec_typed.go",
+        "concurrency_check.go",
         "constructors.go",
         "declarations.go",
         "expected_arg_stack.go",
@@ -39,6 +40,7 @@ go_library(
         "//internal/interpolation",
         "//internal/parser/grammar",
         "//internal/transpiler",
+        "//internal/transpiler/concurrency",
         "//internal/transpiler/infer",
         "//internal/transpiler/registry",
         "//internal/transpiler/resolver",
@@ -59,6 +61,7 @@ go_test(
         "collect_partial_function_test.go",
         "collection_default_param_test.go",
         "compilation_gate_test.go",
+        "concurrency_check_test.go",
         "conflict_test.go",
         "control_flow_test.go",
         "copy_test.go",
@@ -145,6 +148,13 @@ go_test(
         "//examples:single_file_gala_sources",
         "//std:gala_sources",
         "//time_utils:gala_sources",
+        # go_interop is a pure-Go stdlib package (no .gala). The Sendable
+        # capture tests import it to build genuinely-opaque Go values (Mutex,
+        # CancelToken, slices, maps) and assert they are rejected as
+        # unshareable. The analyzer resolves it from types.go alone (regex
+        # export scan; same as the embedded-CLI snapshot), so its source must be
+        # on the sandbox search path or the import fails to resolve on Linux CI.
+        "//go_interop:types.go",
     ],
     embed = [":transformer"],
     deps = [

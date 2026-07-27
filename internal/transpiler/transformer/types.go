@@ -151,6 +151,19 @@ func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, 
 		}
 
 		if ctx.TypeArguments() != nil {
+			// Transparent concurrency-boundary marker: `Sendable[F]` is exactly
+			// `F` in generated Go — it carries no runtime representation. Emit the
+			// inner type directly so the marker never leaks into the output. The
+			// analyzer still records the un-unwrapped `Sendable[F]` in parameter
+			// metadata, which is what drives the capture-safety check at call
+			// sites; codegen (here) is the point that makes it disappear.
+			if len(identifiers) == 1 && identifiers[0].GetText() == transpiler.TypeSendable {
+				args := ctx.TypeArguments().(*grammar.TypeArgumentsContext).TypeList().(*grammar.TypeListContext).AllType_()
+				if len(args) == 1 {
+					return t.transformType(args[0])
+				}
+			}
+
 			// Generic type: T[A, B] -> *ast.IndexExpr or *ast.IndexListExpr
 			args := ctx.TypeArguments().(*grammar.TypeArgumentsContext).TypeList().(*grammar.TypeListContext).AllType_()
 			var argExprs []ast.Expr
@@ -328,6 +341,12 @@ func (t *galaASTTransformer) typeToExpr(typ transpiler.Type) ast.Expr {
 		}
 		return ast.NewIdent(v.Name)
 	case transpiler.GenericType:
+		// Transparent boundary marker: `Sendable[F]` emits as `F` (see
+		// transpiler.UnwrapSendable). Keeps the marker out of generated Go when a
+		// type is reconstructed from metadata (e.g. a thunk's expected result).
+		if inner, ok := transpiler.UnwrapSendable(v); ok {
+			return t.typeToExpr(inner)
+		}
 		base := t.typeToExpr(v.Base)
 		params := make([]ast.Expr, len(v.Params))
 		for i, p := range v.Params {

@@ -54,10 +54,29 @@ import (
 
 // Capture is a single free variable a closure references from its enclosing
 // scope. Pos is the position of the FIRST value-position reference to the name
-// within the body — the caret PR3's diagnostic points at.
+// within the body — the caret the diagnostic points at.
+//
+// Paths and Whole record HOW the closure uses the variable, so the enforcement
+// pass can be field-access-sensitive:
+//
+//   - Whole is true when the variable is ever used AS A VALUE: referenced bare,
+//     passed as a function argument, returned/stored, used as a call callee, a
+//     method receiver (`x.m(...)` — a method may touch mutable internals), an
+//     index/`match` subject, or any form other than a pure field read. A Whole
+//     use requires the variable's ENTIRE type be Shareable.
+//   - Paths lists the distinct pure field-read access chains applied to the
+//     variable (`x.a` → "a", `x.a.b` → "a.b"), i.e. selector chains NOT followed
+//     by a call, index, or match. When the variable is never used Whole, only
+//     these field paths need be Shareable — reading an immutable field of an
+//     otherwise-unshareable value is genuinely race-free.
+//
+// A variable used both ways carries Whole=true (the conservative direction);
+// the enforcement pass then ignores Paths and checks the whole type.
 type Capture struct {
-	Name string
-	Pos  transpiler.SourcePos
+	Name  string
+	Pos   transpiler.SourcePos
+	Paths []string
+	Whole bool
 }
 
 // FreeVariablesInLambda returns the free variables captured by an explicit
@@ -93,12 +112,12 @@ func FreeVariablesInExpression(paramNames []string, expr grammar.IExpressionCont
 type captureAnalyzer struct {
 	scopes []map[string]bool
 	out    []Capture
-	seen   map[string]bool
+	index  map[string]int          // capture name -> its position in out (for accumulating usage info)
 	parser *parser.AntlrGalaParser // re-parses interpolation embedded expressions
 }
 
 func newCaptureAnalyzer() *captureAnalyzer {
-	return &captureAnalyzer{seen: map[string]bool{}, parser: parser.NewAntlrGalaParser()}
+	return &captureAnalyzer{index: map[string]int{}, parser: parser.NewAntlrGalaParser()}
 }
 
 func (a *captureAnalyzer) pushScope() {
@@ -138,18 +157,54 @@ func (a *captureAnalyzer) bound(name string) bool {
 	return false
 }
 
-// reference records a value-position use of name. If name is not bound in any
-// enclosing scope it is a capture; the first such use fixes its diagnostic
-// position and later uses of the same name are de-duplicated.
+// ensureCapture returns the index of the capture named name, creating it (with
+// its diagnostic position fixed to the first-seen token) if absent. Callers must
+// have already confirmed name is unbound and not the blank identifier.
+func (a *captureAnalyzer) ensureCapture(name string, tok antlr.Token) int {
+	if idx, ok := a.index[name]; ok {
+		return idx
+	}
+	a.out = append(a.out, Capture{Name: name, Pos: transpiler.PosFromToken(tok)})
+	idx := len(a.out) - 1
+	a.index[name] = idx
+	return idx
+}
+
+// reference records a WHOLE-VALUE use of name — a bare reference, a call callee,
+// a method receiver, an index/match subject, or a function argument. If name is
+// not bound in any enclosing scope it is a capture; the first such use fixes its
+// diagnostic position, and the capture is marked used-whole (which requires its
+// entire type be Shareable at enforcement time).
 func (a *captureAnalyzer) reference(name string, tok antlr.Token) {
 	if name == "" || name == "_" {
 		return
 	}
-	if a.bound(name) || a.seen[name] {
+	if a.bound(name) {
 		return
 	}
-	a.seen[name] = true
-	a.out = append(a.out, Capture{Name: name, Pos: transpiler.PosFromToken(tok)})
+	idx := a.ensureCapture(name, tok)
+	a.out[idx].Whole = true
+}
+
+// recordPath records a pure field-read access path (`x.a`, `x.a.b`) on a capture
+// candidate. tok is the position of the BASE identifier (the caret target), and
+// path is the dotted selector chain after it ("a", "a.b"). Distinct paths are
+// de-duplicated. A capture accumulating only paths (never marked Whole) is
+// checked field-sensitively.
+func (a *captureAnalyzer) recordPath(name string, tok antlr.Token, path string) {
+	if name == "" || name == "_" {
+		return
+	}
+	if a.bound(name) {
+		return
+	}
+	idx := a.ensureCapture(name, tok)
+	for _, p := range a.out[idx].Paths {
+		if p == path {
+			return
+		}
+	}
+	a.out[idx].Paths = append(a.out[idx].Paths, path)
 }
 
 // ---------------------------------------------------------------------------
@@ -221,6 +276,9 @@ func (a *captureAnalyzer) walk(node antlr.Tree) {
 		return
 
 	// Reference-contributing leaves.
+	case *grammar.PostfixExprContext:
+		a.walkPostfixExpr(n)
+		return
 	case *grammar.PrimaryContext:
 		a.walkPrimary(n)
 		return
@@ -421,6 +479,89 @@ func (a *captureAnalyzer) walkForStatement(fs grammar.IForStatementContext) {
 // ---------------------------------------------------------------------------
 // Reference-contributing handlers
 // ---------------------------------------------------------------------------
+
+// walkPostfixExpr is the field-access-sensitive handler for a
+// `primaryExpr postfixSuffix* ('match' '{' … '}')?` chain. When the base is a
+// bare value-position identifier (the capture candidate) it classifies HOW the
+// identifier is used — a pure `.field` selector chain is recorded as a read PATH,
+// anything else (a call, an index, a trailing `match`, or a bare reference) as a
+// WHOLE use. Regardless of the base, the contents of every suffix (call
+// arguments, index expressions) and every `match` arm are still walked so nested
+// captures inside them are found.
+func (a *captureAnalyzer) walkPostfixExpr(ctx grammar.IPostfixExprContext) {
+	if ctx == nil {
+		return
+	}
+	pe := ctx.PrimaryExpr()
+	suffixes := ctx.AllPostfixSuffix()
+	caseClauses := ctx.AllCaseClause()
+
+	if id := bareIdentPrimary(pe); id != nil {
+		name := id.GetText()
+		tok := id.GetStart()
+		if path, whole := classifySuffixes(suffixes, len(caseClauses) > 0); whole {
+			a.reference(name, tok)
+		} else {
+			a.recordPath(name, tok, path)
+		}
+	} else {
+		// Base is not a bare identifier (literal, tuple/paren, composite literal,
+		// lambda, if-expression, partial function): recurse into it normally.
+		a.walk(pe)
+	}
+
+	// Walk the contents of each suffix (a call's arguments, an index's
+	// expressions); selector identifiers carry no reference and are ignored.
+	for _, s := range suffixes {
+		a.walkPostfixSuffix(s)
+	}
+	// A trailing `match { … }` — walk each arm for its own captures.
+	for _, cc := range caseClauses {
+		a.walkCaseClause(cc)
+	}
+}
+
+// classifySuffixes decides whether a bare-identifier base followed by the given
+// postfix suffixes (and an optional trailing `match`) is a pure field-read PATH
+// or a WHOLE use. A leading, uninterrupted run of `.field` selectors with no
+// call, index, or match is a field-read path (the dotted chain, e.g. "a.b"); an
+// empty suffix list (a bare reference), a trailing match, or any call/index makes
+// it a whole use. Anything it cannot classify is conservatively a whole use.
+func classifySuffixes(suffixes []grammar.IPostfixSuffixContext, hasMatch bool) (path string, whole bool) {
+	if hasMatch || len(suffixes) == 0 {
+		return "", true
+	}
+	parts := make([]string, 0, len(suffixes))
+	for _, s := range suffixes {
+		sc, ok := s.(*grammar.PostfixSuffixContext)
+		if !ok {
+			return "", true
+		}
+		if id := sc.Identifier(); id != nil {
+			parts = append(parts, id.GetText())
+			continue
+		}
+		// A call `(...)` or an index `[...]` — not a pure field read.
+		return "", true
+	}
+	return strings.Join(parts, "."), false
+}
+
+// bareIdentPrimary returns the identifier context when the primaryExpr is a bare
+// value-position identifier (`x`), or nil for any other primaryExpr shape (a
+// literal/tuple/composite primary, a lambda, an if-expression, or a partial
+// function). Such a bare identifier is the capture candidate a postfix chain
+// applies to.
+func bareIdentPrimary(pe grammar.IPrimaryExprContext) grammar.IIdentifierContext {
+	if pe == nil {
+		return nil
+	}
+	prim := pe.Primary()
+	if prim == nil {
+		return nil
+	}
+	return prim.Identifier()
+}
 
 func (a *captureAnalyzer) walkPrimary(ctx grammar.IPrimaryContext) {
 	if ctx == nil {

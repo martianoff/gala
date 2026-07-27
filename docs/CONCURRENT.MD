@@ -282,27 +282,39 @@ optional trailing `ec` argument (default `GlobalEC()`).
 | `WithTimeout(duration)` | Return Future that fails with TimeoutError if not done in time (inherits EC) |
 | `Get()` | Block and get value, panics on failure |
 | `GetOrElse(default)` | Block and get value or default |
+| `Cancel()` | Request cancellation; a pending computation fails with `CancellationError` (see [Cancellation](#cancellation)) |
 | `ExecutionContext()` | Get the associated ExecutionContext |
+| `OnComplete(callback)` | Run `callback` with the `Try[T]` when the Future completes (inherits EC) |
+| `OnSuccess(callback)` | Run `callback` with the value on success (inherits EC) |
+| `OnFailure(callback)` | Run `callback` with the error on failure (inherits EC) |
 | `Map[U](f)` | Transform successful value (inherits EC) |
 | `FlatMap[U](f)` | Chain with function returning Future (inherits EC) |
 | `Filter(predicate)` | Keep value if predicate holds (inherits EC) |
 | `Recover(f)` | Recover from failure with value (inherits EC) |
 | `RecoverWith(f)` | Recover from failure with new Future (inherits EC) |
+| `Transform[U](s, f)` | Map success via `s` and failure via `f`, each returning `Try[U]` (inherits EC) |
+| `TransformWith[U](s, f)` | Map success/failure to a new `Future[U]` (inherits EC) |
 | `Zip[U](other)` | Combine two Futures into tuple (inherits EC) |
 | `ZipWith[U,V](other, f)` | Combine with function (inherits EC) |
+| `Zip2[U](other)` … `Zip10[...]` | Combine 2–10 Futures into a `TupleN`; the highest that completes fails the whole if any fails (inherits EC) |
 | `Fallback(other)` | Use other Future if this fails (inherits EC) |
 | `AndThen(callback)` | Execute callback, return same result (inherits EC) |
 | `ToTry()` / `ToOption()` / `ToEither()` | Convert result |
 
 ### Promise Methods
 
+A Promise completes exactly once. `Success`, `Failure`, and `Complete` return a
+`bool`: `true` if this call completed the Promise, `false` if it was already
+completed (the later call is a no-op). Use the return value when a Promise may be
+raced by multiple producers and you need to know which one won.
+
 | Method | Description |
 |--------|-------------|
 | `Future()` | Get the associated Future |
 | `IsCompleted()` | Check if promise is completed |
-| `Success(value)` | Complete with success |
-| `Failure(error)` | Complete with failure |
-| `Complete(tryResult)` | Complete with Try result |
+| `Success(value)` | Complete with success; returns `bool` (`true` if this call completed it) |
+| `Failure(error)` | Complete with failure; returns `bool` (`true` if this call completed it) |
+| `Complete(tryResult)` | Complete with a `Try` result; returns `bool` (`true` if this call completed it) |
 
 ### Sequence Functions
 

@@ -273,6 +273,114 @@ func TestFreeVariablesInExpression(t *testing.T) {
 	})
 }
 
+// findCapture returns the capture named name, or nil.
+func findCapture(caps []Capture, name string) *Capture {
+	for i := range caps {
+		if caps[i].Name == name {
+			return &caps[i]
+		}
+	}
+	return nil
+}
+
+// TestCaptureFieldPaths verifies the field-access-sensitive usage info recorded
+// per capture: a pure `.field` selector chain is a read PATH (not Whole), while a
+// bare reference, a call, a method call, an index, a `match`, or a use as a
+// function argument marks the capture Whole.
+func TestCaptureFieldPaths(t *testing.T) {
+	tests := []struct {
+		name      string
+		lambda    string
+		capture   string   // the capture to inspect
+		wantPaths []string // expected field-read paths (order-insensitive)
+		wantWhole bool
+	}{
+		{
+			name:      "single field read is a path, not whole",
+			lambda:    "() => m.a",
+			capture:   "m",
+			wantPaths: []string{"a"},
+			wantWhole: false,
+		},
+		{
+			name:      "nested field read is a dotted path",
+			lambda:    "() => m.a.b",
+			capture:   "m",
+			wantPaths: []string{"a.b"},
+			wantWhole: false,
+		},
+		{
+			name:      "distinct field reads accumulate as separate paths",
+			lambda:    "() => g(m.a, m.b)",
+			capture:   "m",
+			wantPaths: []string{"a", "b"},
+			wantWhole: false,
+		},
+		{
+			name:      "method call on the capture is a whole use",
+			lambda:    "() => m.foo()",
+			capture:   "m",
+			wantPaths: nil,
+			wantWhole: true,
+		},
+		{
+			name:      "field read then method call is a whole use",
+			lambda:    "() => m.a.foo()",
+			capture:   "m",
+			wantPaths: nil,
+			wantWhole: true,
+		},
+		{
+			name:      "bare reference is a whole use",
+			lambda:    "() => m",
+			capture:   "m",
+			wantPaths: nil,
+			wantWhole: true,
+		},
+		{
+			name:      "passing the capture as an argument is a whole use",
+			lambda:    "() => foo(m)",
+			capture:   "m",
+			wantPaths: nil,
+			wantWhole: true,
+		},
+		{
+			name:      "indexing the capture is a whole use",
+			lambda:    "() => m[i]",
+			capture:   "m",
+			wantPaths: nil,
+			wantWhole: true,
+		},
+		{
+			name:      "matching on the capture is a whole use",
+			lambda:    "() => m match {\ncase _ => 1\n}",
+			capture:   "m",
+			wantPaths: nil,
+			wantWhole: true,
+		},
+		{
+			// Used both as a field read and whole: Whole dominates (the safe
+			// direction), and the path is still recorded.
+			name:      "mixed field-read and whole use is whole",
+			lambda:    "() => m.a + foo(m)",
+			capture:   "m",
+			wantPaths: []string{"a"},
+			wantWhole: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			lambda := firstLambda(t, wrapBody("val g = "+tc.lambda))
+			caps := FreeVariablesInLambda(lambda)
+			c := findCapture(caps, tc.capture)
+			require.NotNil(t, c, "expected a capture named %q in %v", tc.capture, names(caps))
+			assert.Equal(t, tc.wantWhole, c.Whole, "Whole mismatch")
+			assert.ElementsMatch(t, tc.wantPaths, c.Paths, "Paths mismatch")
+		})
+	}
+}
+
 // TestCapturePosition verifies the reported position is the first value-position
 // reference to the captured name (the caret PR3's diagnostic points at).
 func TestCapturePosition(t *testing.T) {
