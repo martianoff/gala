@@ -13,7 +13,7 @@ import (
 // capture was wrongly rejected with GALA-E0037.
 func main() {
     val d = time.Millisecond
-    val f = Future[string](() => {
+    val f = Future(() => {
         time.Sleep(d)
         "done"
     })
