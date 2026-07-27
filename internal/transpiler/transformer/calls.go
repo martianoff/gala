@@ -207,14 +207,26 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 							// and non-sealed generic types still fall through to Go's
 							// deduction.
 							if receiverType == base && baseExpr == base && len(typeMeta.TypeParams) > 0 {
-								if t.isSealedVariantTypeName(typeName) {
+								// The zero-arg call path derives typeName from
+								// getBaseTypeName, which keeps the package selector for
+								// dot-imported / std variants, but metadata is keyed by
+								// the bare case name — so the qualifier is split off and
+								// passed as the lookup scope (findSealedParentForVariant
+								// also resolves import aliases against it). Comparing the
+								// qualified `std.None` directly never matched, so this
+								// guard used to miss `std.None()` and the transpiler
+								// emitted an uninstantiated `std.None{}.Apply()` (invalid
+								// Go) instead. The resolved parent is both the guard and
+								// the hint's source for the annotation example, so it is
+								// looked up once here rather than twice.
+								pkgQualifier, bareName := splitPackageQualifier(typeName)
+								if parent := t.findSealedParentForVariant(bareName, pkgQualifier); parent != nil {
 									line, col := suffix.GetStart().GetLine(), suffix.GetStart().GetColumn()
-									bareName := stripPackagePrefix(typeName)
 									return nil, galaerr.NewCodedSemanticError(
 										galaerr.CodeSealedVariantUninferred,
 										line, col,
 										fmt.Sprintf("cannot infer type parameter for sealed variant constructor %q", bareName+"()"),
-										fmt.Sprintf("annotate the binding (e.g. `val x: ParentType[Int] = %s()`) or pass type args explicitly (`%s[Int]()`)", bareName, bareName),
+										t.uninferredVariantHint(parent, pkgQualifier, bareName),
 									)
 								}
 							}
@@ -2420,20 +2432,76 @@ func (t *galaASTTransformer) findSealedVariantFields(variantName, pkgQualifier s
 	}
 }
 
-// isSealedVariantTypeName reports whether `typeName` (qualified `std.None` or
-// bare `None`) is a registered sealed variant, gating the GALA-E0018
-// diagnostic; other generic types fall through to Go's deduction.
+// uninferredVariantHint builds the GALA-E0018 remediation hint. Every example
+// form it prints must be valid, copy-pasteable GALA at the offending call
+// site. Three things decide that:
 //
-// The zero-arg call path derives the name from `getBaseTypeName`, which keeps
-// the package selector for dot-imported / std variants, but metadata is keyed
-// by the bare case name — so the qualifier is split off and passed as the
-// lookup scope (see findSealedParentForVariant, which also resolves import
-// aliases against it). Comparing the qualified `std.None` directly never
-// matched, so the guard previously missed `std.None()` and the transpiler
-// emitted an uninstantiated `std.None{}.Apply()` (invalid Go) instead.
-func (t *galaASTTransformer) isSealedVariantTypeName(typeName string) bool {
-	pkgQualifier, bareName := splitPackageQualifier(typeName)
-	return t.findSealedParentForVariant(bareName, pkgQualifier) != nil
+//   - a type annotation follows the binding name with NO colon
+//     (`val x Box[int] = Empty()`);
+//   - GALA's primitive spellings are lowercase (`int`, not `Int`); and
+//   - both the parent type and the constructor must be spelled the way they
+//     are actually reachable in this file.
+//
+// The parent sealed type comes from the metadata the caller already resolved to
+// decide this diagnostic applies, so the annotation names a type that actually
+// exists rather than a `ParentType` placeholder the user would have to
+// translate.
+//
+// The qualifier is the subtle part. The call site's `typeName` reaches the
+// caller already resolved, so its package selector may be one the user never
+// typed: a bare `None()` lowers to `std.None` via the prelude. Printing that
+// qualifier unconditionally yields `val x std.Option[int] = std.None()`, which
+// does not compile in a file that never imports std under that name. Dropping
+// it unconditionally is just as wrong the other way: for `cmdpkg.NoCmd()`
+// behind a plain `import "…/cmdpkg"`, the bare `val x Cmd[int] = NoCmd()`
+// fails with `undefined: NoCmd`.
+//
+// So the qualifier is printed exactly when it names a package this file can
+// actually qualify with — an ordinary (non-dot) import, under whatever alias
+// the file bound it to. Dot-imported packages and the std prelude bring their
+// symbols into scope unqualified and are printed bare. An unnamed parent
+// degrades the hint to the explicit-type-args form, which still carries the
+// constructor exactly as the call site spells it — never to an example that
+// would not compile.
+func (t *galaASTTransformer) uninferredVariantHint(parent *transpiler.TypeMetadata, pkgQualifier, bareName string) string {
+	prefix := t.callSiteQualifier(pkgQualifier)
+
+	explicit := fmt.Sprintf("pass type args explicitly (`%s%s[int]()`)", prefix, bareName)
+
+	if parent == nil || parent.Name == "" {
+		return explicit
+	}
+	return fmt.Sprintf("annotate the binding (e.g. `val x %s%s[int] = %s%s()`) or %s",
+		prefix, parent.Name, prefix, bareName, explicit)
+}
+
+// callSiteQualifier returns the `pkg.` prefix that a diagnostic should print
+// in front of a symbol from pkgQualifier, or "" when the symbol is reachable
+// unqualified in the file being transformed.
+//
+// It returns a prefix only for packages brought in by an ordinary import,
+// using the alias the file actually bound (so `import c "…/cmdpkg"` yields
+// `c.`). Dot imports and packages that are not imported here at all — most
+// notably the std prelude, whose selector the resolver attaches to names the
+// user wrote bare — yield "" because qualifying those would name something
+// that is not in scope.
+func (t *galaASTTransformer) callSiteQualifier(pkgQualifier string) string {
+	if pkgQualifier == "" || t.importManager == nil {
+		return ""
+	}
+	if !t.importManager.IsPackage(pkgQualifier) {
+		// Not an ordinary import in this file: std prelude, same package, or
+		// a dot import the resolver qualified behind the user's back.
+		return ""
+	}
+	pkgName := pkgQualifier
+	if resolved, ok := t.importManager.ResolveAlias(pkgQualifier); ok {
+		pkgName = resolved
+	}
+	if t.importManager.IsDotImported(pkgName) {
+		return ""
+	}
+	return pkgQualifier + "."
 }
 
 // findSealedParentForVariant returns the parent sealed type's metadata for a

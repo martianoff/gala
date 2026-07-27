@@ -1,0 +1,355 @@
+package transformer_test
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"martianoff/gala/galaerr"
+	"martianoff/gala/internal/transpiler"
+	"martianoff/gala/internal/transpiler/analyzer"
+	"martianoff/gala/internal/transpiler/generator"
+	"martianoff/gala/internal/transpiler/transformer"
+
+	"github.com/stretchr/testify/require"
+)
+
+// TestErrorDocsQuoteRealOutput closes the loop between the compiler's
+// diagnostics and the pages under docs/errors/.
+//
+// Those pages exist so a user can paste a message they just saw into a search
+// engine and land on the explanation. That only works if the quoted text is
+// byte-identical to what the compiler emits — and nothing previously enforced
+// that, so the pages drifted: hints were dropped, caret rows were invented,
+// and one page quoted a message no emit site produces.
+//
+// For each covered code this test compiles a minimal repro, renders the
+// resulting diagnostic through the same CLI renderer a user sees
+// (galaerr.RenderRich with color off), and asserts the doc page contains that
+// exact block. A wording change in the transpiler therefore fails here until
+// the page is updated with the new text.
+//
+// Scope note: the table covers the codes whose real output was captured while
+// writing these pages — E0002, E0003, E0006, E0015, E0018 from the in-memory
+// transpiler and E0025 from a temp directory (it needs a sibling file on disk,
+// because the whole point of that code is that a sibling's imports do not
+// propagate). Every other code is deliberately absent rather than stubbed; a
+// stub would advertise coverage that does not exist. See the GALA-E0010 note
+// in the table for a code that cannot be guarded from here at all.
+func TestErrorDocsQuoteRealOutput(t *testing.T) {
+	cases := []struct {
+		// name distinguishes several rows for the same code. A page often
+		// documents more than one shape of the same diagnostic, and those
+		// extra shapes are the ones most likely to drift, so each gets its
+		// own row rather than the table being keyed by code alone.
+		name string
+		code galaerr.ErrorCode
+		// render produces the exact diagnostic block the doc must quote.
+		render func(t *testing.T) string
+	}{
+		{
+			name: "sealed match missing a variant",
+			code: galaerr.CodeNonExhaustiveMatch, // GALA-E0002
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+sealed type Color {
+    case Red()
+    case Green()
+    case Blue()
+}
+
+func name(c Color) string = c match {
+    case Red()   => "red"
+    case Green() => "green"
+}
+
+func main() {
+    Println(name(Red()))
+}
+`)
+			},
+		},
+		{
+			name: "non-sealed match with no default",
+			code: galaerr.CodeMissingDefault, // GALA-E0003
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func name(n int) string = n match {
+    case 1 => "one"
+    case 2 => "two"
+}
+
+func main() {
+    Println(name(1))
+}
+`)
+			},
+		},
+		{
+			name: "two default arms",
+			code: galaerr.CodeMultipleDefaults, // GALA-E0006
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func name(n int) string = n match {
+    case 1 => "one"
+    case _ => "other"
+    case _ => "also-other"
+}
+
+func main() {
+    Println(name(1))
+}
+`)
+			},
+		},
+		// GALA-E0010 is deliberately absent. It has two emit sites in the
+		// analyzer that produce different text ("package file X declares
+		// package ..." during sibling discovery, "directory D has files with
+		// different package names" during sibling filtering), and only the
+		// first is on the path the CLI takes. The site reachable from this
+		// in-memory entry point is the second one, and its message embeds an
+		// absolute directory path, so there is no stable text for a page to
+		// quote. Guarding it here would lock in a message users never see.
+		{
+			name: "bare return in a value-producing match",
+			code: galaerr.CodeBareReturnInValueMatch, // GALA-E0015
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+import "os"
+
+func run(path string) {
+    val data = Try(os.ReadFile(path)) match {
+        case Success(b)   => string(b)
+        case Failure(err) => {
+            Println(s"error: ${err.Error()}")
+            return
+        }
+    }
+    Println(data)
+}
+
+func main() {
+    run("missing.txt")
+}
+`)
+			},
+		},
+		{
+			// Local sealed type: nothing to qualify, so the hint prints both
+			// names bare.
+			name: "unqualified constructor, same package",
+			code: galaerr.CodeSealedVariantUninferred, // GALA-E0018
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+sealed type Box[T any] {
+    case Empty()
+    case Filled(value T)
+}
+
+func main() {
+    val x = Empty()
+    Println(x)
+}
+`)
+			},
+		},
+		{
+			// The subtle half: the constructor comes from an ordinary import,
+			// so a hint that printed bare names would suggest two identifiers
+			// that are not in scope at the call site. This row pins that the
+			// hint carries the qualifier the user actually wrote.
+			name:   "qualified constructor behind a plain import",
+			code:   galaerr.CodeSealedVariantUninferred, // GALA-E0018
+			render: renderQualifiedVariantRepro,
+		},
+		{
+			// Named package: the "used in ..." context is package-qualified.
+			name:   "offender in a named package",
+			code:   galaerr.CodeUnresolvedCrossPackageSymbol, // GALA-E0025
+			render: renderUnresolvedSymbolRepro,
+		},
+		// The package-main shape of GALA-E0025 is documented on the page but
+		// not pinned here. Its message differs by more than a package name —
+		// the "used in ..." context is printed bare (`used in BuildLabels`)
+		// rather than qualified — and it was captured from `gala build`. The
+		// same source laid out for this in-process entry point compiles
+		// without error, so the check is not reached from here and there is
+		// nothing for a row to assert. Table rows are keyed by code + name
+		// precisely so this row can be added once that gap is understood;
+		// leaving a row that silently passes would be worse than its absence.
+	}
+
+	for _, tc := range cases {
+		t.Run(string(tc.code)+"/"+tc.name, func(t *testing.T) {
+			want := tc.render(t)
+			require.NotEmpty(t, want, "renderer produced no diagnostic")
+			require.Contains(t, want, string(tc.code),
+				"repro did not fail with the code this page documents")
+
+			doc := readErrorDoc(t, tc.code)
+			require.Contains(t, doc, want,
+				"docs/errors/%s.md does not quote the compiler's real output for %q.\n"+
+					"Replace (or add) the page's `Error output` block with exactly:\n\n%s\n",
+				tc.code, tc.name, want)
+		})
+	}
+}
+
+// renderRepro transpiles src and renders the resulting error the way the CLI
+// does: no color, with src supplied as the fallback source so the framed
+// snippet is built from the in-memory repro rather than a file on disk.
+func renderRepro(t *testing.T, path, src string) string {
+	t.Helper()
+	_, err := newDocGuardTranspiler().Transpile(src, path)
+	require.Error(t, err, "repro was expected to fail to compile")
+	return galaerr.RenderRich(err, galaerr.Options{
+		FallbackPath:   path,
+		FallbackSource: src,
+		Color:          false,
+	})
+}
+
+// renderQualifiedVariantRepro drives GALA-E0018 at a call site that names the
+// constructor through an ordinary import (`cmdpkg.NoCmd()`). The sealed type
+// has to live in a real sibling package for the qualifier to exist at all, so
+// this repro needs files on disk.
+//
+// This is the shape that catches a hint regressing to bare names: neither
+// `Cmd` nor `NoCmd` is in scope in main.gala, so a bare suggestion here fails
+// to compile with `undefined: NoCmd`.
+func renderQualifiedVariantRepro(t *testing.T) string {
+	t.Helper()
+	// Import paths are resolved by stripping the module prefix and looking the
+	// remainder up under a search root, so the sibling package is written as
+	// <searchRoot>/cmdpkg and imported under the module's own prefix. The
+	// directory name has to match the package name for the analyzer to
+	// register it.
+	searchRoot := t.TempDir()
+	pkgDir := filepath.Join(searchRoot, "cmdpkg")
+	require.NoError(t, os.MkdirAll(pkgDir, 0o755))
+
+	cmdSrc := `package cmdpkg
+
+sealed type Cmd[T any] {
+    case NoCmd()
+    case RunCmd(arg T)
+}
+`
+	require.NoError(t, os.WriteFile(filepath.Join(pkgDir, "cmd.gala"), []byte(cmdSrc), 0o600))
+
+	mainDir := filepath.Join(searchRoot, "main")
+	require.NoError(t, os.MkdirAll(mainDir, 0o755))
+	mainSrc := `package main
+
+import "martianoff/gala/cmdpkg"
+
+func main() {
+    val x = cmdpkg.NoCmd()
+    Println(x)
+}
+`
+	mainPath := filepath.Join(mainDir, "main.gala")
+	require.NoError(t, os.WriteFile(mainPath, []byte(mainSrc), 0o600))
+
+	_, err := newDocGuardTranspilerWithPaths(searchRoot).Transpile(mainSrc, mainPath)
+	require.Error(t, err, "repro was expected to fail to compile")
+
+	rendered := galaerr.RenderRich(err, galaerr.Options{
+		FallbackPath:   mainPath,
+		FallbackSource: mainSrc,
+		Color:          false,
+	})
+	rendered = strings.ReplaceAll(rendered, mainPath, "main.gala")
+	rendered = strings.ReplaceAll(rendered, filepath.ToSlash(mainPath), "main.gala")
+	return rendered
+}
+
+// renderUnresolvedSymbolRepro drives GALA-E0025. The offending file has to sit
+// next to a sibling that *does* import the package, because the point of the
+// code is that a sibling's imports do not propagate — so the repro needs real
+// files on disk for the analyzer's sibling discovery to find.
+func renderUnresolvedSymbolRepro(t *testing.T) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "effects")
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+
+	seedSrc := `package effects
+
+import . "martianoff/gala/collection_immutable"
+
+func Seed() Array[string] = ArrayOf("a", "b")
+`
+	labelsSrc := `package effects
+
+func BuildLabels(n int) Array[string] = ArrayTabulate(n, (i) => s"row=$i")
+`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "seed.gala"), []byte(seedSrc), 0o600))
+	labelsPath := filepath.Join(dir, "labels.gala")
+	require.NoError(t, os.WriteFile(labelsPath, []byte(labelsSrc), 0o600))
+
+	_, err := newDocGuardTranspiler().Transpile(labelsSrc, labelsPath)
+	require.Error(t, err, "repro was expected to fail to compile")
+
+	rendered := galaerr.RenderRich(err, galaerr.Options{
+		FallbackPath:   labelsPath,
+		FallbackSource: labelsSrc,
+		Color:          false,
+	})
+	// The temp directory is per-run, so the absolute path in the locus is not
+	// stable text a doc page could quote. Normalize it to the workspace-
+	// relative name the page shows.
+	rendered = strings.ReplaceAll(rendered, labelsPath, "effects/labels.gala")
+	rendered = strings.ReplaceAll(rendered, filepath.ToSlash(labelsPath), "effects/labels.gala")
+	return rendered
+}
+
+func newDocGuardTranspiler() transpiler.Transpiler {
+	return newDocGuardTranspilerWithPaths()
+}
+
+// newDocGuardTranspilerWithPaths builds a transpiler whose analyzer searches
+// the std sources plus any extra roots, so a repro can import a package it
+// wrote into a temp directory.
+func newDocGuardTranspilerWithPaths(extraRoots ...string) transpiler.Transpiler {
+	p := transpiler.NewAntlrGalaParser()
+	a := analyzer.NewGalaAnalyzer(p, append(getStdSearchPath(), extraRoots...))
+	tr := transformer.NewGalaASTTransformer()
+	g := generator.NewGoCodeGenerator()
+	return transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+}
+
+// readErrorDoc returns the text of docs/errors/<code>.md. getStdSearchPath
+// already resolves the workspace root for this package's tests — through Bazel
+// runfiles when the test runs under Bazel, by walking up to go.mod otherwise —
+// and the pages sit under that same root in both layouts, so it doubles as the
+// doc root and no second lookup strategy is needed.
+//
+// Newlines are normalized so the comparison does not depend on how git checked
+// the page out: the renderer always emits "\n", and a CRLF working copy on
+// Windows would otherwise fail every case for a reason that has nothing to do
+// with message drift.
+func readErrorDoc(t *testing.T, code galaerr.ErrorCode) string {
+	t.Helper()
+	roots := getStdSearchPath()
+	require.NotEmpty(t, roots, "could not locate the workspace root")
+
+	rel := filepath.Join("docs", "errors", string(code)+".md")
+	data, err := os.ReadFile(filepath.Join(roots[0], rel))
+	require.NoError(t, err, docPageUnreadableMsg, rel)
+	return strings.ReplaceAll(string(data), "\r\n", "\n")
+}
+
+// docPageUnreadableMsg names the usual cause of an unreadable page. Under
+// Bazel the likeliest reason is not a missing file but a page that exists in
+// the source tree and was never added to the //docs/errors:error_docs
+// filegroup, so it was not staged into the sandbox. A bare "no such file"
+// sends the reader hunting for something that is sitting right there.
+const docPageUnreadableMsg = "could not read %s. If the page exists in the " +
+	"source tree, it is probably missing from the //docs/errors:error_docs " +
+	"filegroup, so it was not staged into the test sandbox."

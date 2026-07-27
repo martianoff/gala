@@ -73,6 +73,7 @@ go_test(
         "dot_import_test.go",
         "equal_test.go",
         "error_codes_test.go",
+        "error_docs_guard_test.go",
         "expected_arg_stack_test.go",
         "expected_type_sealed_variant_overlap_test.go",
         "forbidden_builtins_test.go",
@@ -143,6 +144,10 @@ go_test(
     # collection_immutable), add its gala_sources here or the type will
     # widen to "any" on CI while passing locally on Windows (no sandbox).
     data = [
+        # Error-code reference pages read by the doc-verification guard
+        # (error_docs_guard_test.go), which asserts each page quotes the
+        # compiler's real output verbatim.
+        "//docs/errors:error_docs",
         "//collection_immutable:gala_sources",
         "//collection_mutable:gala_sources",
         "//examples:single_file_gala_sources",

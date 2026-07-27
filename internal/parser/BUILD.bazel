@@ -15,10 +15,14 @@ go_library(
 go_test(
     name = "parser_test",
     srcs = [
+        "empty_line_unicode_test.go",
         "grammar_test.go",
         "parser_concurrent_test.go",
         "parser_test.go",
     ],
     embed = [":parser"],
-    deps = ["@com_github_stretchr_testify//assert"],
+    deps = [
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
 )

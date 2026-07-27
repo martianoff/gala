@@ -62,7 +62,7 @@ func (p *AntlrGalaParser) ParseLenient(input string) (antlr.Tree, []error) {
 
 	var errs []error
 	errs = append(errs, errorListener.Errors...)
-	if err := p.checkEmptyLines(input, tree); err != nil {
+	if err := p.checkEmptyLines(is, tree); err != nil {
 		errs = append(errs, err)
 	}
 
@@ -135,7 +135,17 @@ func isolateParserCaches(p *antlr.BaseParser) {
 
 var emptyLineRegex = regexp.MustCompile(`\r?\n\s*\r?\n`)
 
-func (p *AntlrGalaParser) checkEmptyLines(input string, tree antlr.Tree) error {
+// checkEmptyLines enforces the blank line required after the package clause and
+// after the import block. It reads the gaps out of `is` rather than out of the
+// raw source string: ANTLR token offsets index the input as a stream of CODE
+// POINTS, and a Go string slices by BYTES, so slicing the raw string with them
+// silently reads the wrong window as soon as the file contains any non-ASCII
+// rune (an em dash in a comment is enough) — which rejected perfectly
+// well-formed files with a bogus "should follow by an empty line" syntax error.
+// The InputStream owns the rune buffer those offsets index into and exposes it
+// through GetText, so asking it keeps the offsets and the text in the same
+// coordinate space by construction, with no second conversion of the source.
+func (p *AntlrGalaParser) checkEmptyLines(is *antlr.InputStream, tree antlr.Tree) error {
 	sourceFile, ok := tree.(grammar.ISourceFileContext)
 	if !ok {
 		return nil
@@ -159,8 +169,7 @@ func (p *AntlrGalaParser) checkEmptyLines(input string, tree antlr.Tree) error {
 	}
 
 	if nextToken != nil {
-		if pkgEnd+1 < len(input) && nextToken.GetStart() <= len(input) {
-			between := input[pkgEnd+1 : nextToken.GetStart()]
+		if between, ok := runeSpan(is, pkgEnd+1, nextToken.GetStart()); ok {
 			if !emptyLineRegex.MatchString(between) {
 				return galaerr.NewSyntaxError(nextToken.GetLine(), 0, "packageClause should follow by an empty line")
 			}
@@ -173,8 +182,7 @@ func (p *AntlrGalaParser) checkEmptyLines(input string, tree antlr.Tree) error {
 			importEnd := lastImport.GetStop().GetStop()
 			nextTop := tops[0].GetStart()
 
-			if importEnd+1 < len(input) && nextTop.GetStart() <= len(input) {
-				between := input[importEnd+1 : nextTop.GetStart()]
+			if between, ok := runeSpan(is, importEnd+1, nextTop.GetStart()); ok {
 				if !emptyLineRegex.MatchString(between) {
 					return galaerr.NewSyntaxError(nextTop.GetLine(), 0, "importDeclaration should follow by an empty line")
 				}
@@ -183,6 +191,26 @@ func (p *AntlrGalaParser) checkEmptyLines(input string, tree antlr.Tree) error {
 	}
 
 	return nil
+}
+
+// runeSpan returns the source text between the code-point offsets [start, end)
+// as a string, reporting ok=false when the span is not a usable window into the
+// source. It keeps the bounds checks in one place so both call sites above
+// agree, and converts the caller's exclusive end to the inclusive stop
+// InputStream.GetText expects.
+//
+// A degenerate span (start >= end) reports ok=false, so the caller skips the
+// check rather than testing an empty string — which the blank-line regex can
+// never match and which would therefore report a missing blank line at a
+// position where there is no gap to inspect at all. GALA's grammar has no way
+// to produce a zero-width gap here (the package name and the next keyword are
+// always separated by at least one space), so this only pins down the
+// degenerate case rather than changing any reachable behaviour.
+func runeSpan(is *antlr.InputStream, start, end int) (string, bool) {
+	if start < 0 || start >= end || end > is.Size() {
+		return "", false
+	}
+	return is.GetText(start, end-1), true
 }
 
 type GalaErrorListener struct {
