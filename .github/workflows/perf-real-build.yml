@@ -49,17 +49,9 @@ jobs:
     # NOTE: pin tags before running. Update both when the gala_tui
     # or gala_team API surface intentionally changes; otherwise the
     # build failures will reveal real semantic drift.
-    #
-    # TEMPORARY (data-race-safety migration): these point at the downstream
-    # migration branches because the default branches cannot yet build against
-    # an upstream that rejects capturing mutable state across a Future boundary.
-    # Once those branches merge and the dependencies are released, revert to
-    # GALA_TUI_REF: main / GALA_TEAM_REF: master — mirrors the 0.70 migration,
-    # which was temporarily pointed at its own migration branch for the same
-    # reason before landing on the default branches.
     env:
-      GALA_TUI_REF: feat/sendable-migration
-      GALA_TEAM_REF: feat/sendable-migration
+      GALA_TUI_REF: main
+      GALA_TEAM_REF: master
       WARM_BUDGET_SECONDS: "500"
       COLD_BUDGET_SECONDS: "680"
 
