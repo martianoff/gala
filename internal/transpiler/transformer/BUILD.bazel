@@ -148,6 +148,13 @@ go_test(
         "//examples:single_file_gala_sources",
         "//std:gala_sources",
         "//time_utils:gala_sources",
+        # go_interop is a pure-Go stdlib package (no .gala). The Sendable
+        # capture tests import it to build genuinely-opaque Go values (Mutex,
+        # CancelToken, slices, maps) and assert they are rejected as
+        # unshareable. The analyzer resolves it from types.go alone (regex
+        # export scan; same as the embedded-CLI snapshot), so its source must be
+        # on the sandbox search path or the import fails to resolve on Linux CI.
+        "//go_interop:types.go",
     ],
     embed = [":transformer"],
     deps = [
