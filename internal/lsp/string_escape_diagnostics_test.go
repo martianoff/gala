@@ -102,6 +102,37 @@ func awaitDiagnostics(t *testing.T, h *servertest.Harness, uri lsp.DocumentURI) 
 	return diags
 }
 
+// hasEscapeDiagnostic reports whether any diagnostic is a GALA-E0038.
+func hasEscapeDiagnostic(diags []lsp.Diagnostic) bool {
+	for _, d := range diags {
+		if strings.Contains(d.Message, "GALA-E0038") {
+			return true
+		}
+	}
+	return false
+}
+
+// awaitNoEscapeDiagnostic polls until the escape diagnostic has cleared, or the
+// budget expires. Waiting for an ABSENCE must not be a fixed sleep: the sleep
+// would have to outlast the slowest CI runner, and any run where it is too short
+// still sees the stale pre-edit diagnostic and fails spuriously. Polling turns
+// that race into a latency bound. It cannot pass vacuously either — until the
+// debounce fires the previously published set is still the one carrying
+// GALA-E0038, so the loop only exits once re-analysis has actually landed.
+func awaitNoEscapeDiagnostic(t *testing.T, h *servertest.Harness, uri lsp.DocumentURI) []lsp.Diagnostic {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	var diags []lsp.Diagnostic
+	for time.Now().Before(deadline) {
+		time.Sleep(100 * time.Millisecond)
+		diags = h.Diagnostics(uri)
+		if !hasEscapeDiagnostic(diags) {
+			return diags
+		}
+	}
+	return diags
+}
+
 // TestDiagnostics_InvalidStringEscapeIsReported pins that an unrecognised escape
 // surfaces as an editor diagnostic, on the right line, rather than being
 // silently transpiled into Go that does not compile.
@@ -145,13 +176,7 @@ func TestDefinition_SurvivesInvalidStringEscape(t *testing.T) {
 	uri := openFileOnDisk(t, h, escapeSource)
 
 	// Precondition: the file really is in the broken state.
-	var sawEscapeDiag bool
-	for _, d := range awaitDiagnostics(t, h, uri) {
-		if strings.Contains(d.Message, "GALA-E0038") {
-			sawEscapeDiag = true
-		}
-	}
-	if !sawEscapeDiag {
+	if !hasEscapeDiagnostic(awaitDiagnostics(t, h, uri)) {
 		t.Fatal("precondition failed: expected the file to report GALA-E0038")
 	}
 
@@ -184,11 +209,8 @@ func TestDefinition_UnaffectedWhenEscapeIsFixed(t *testing.T) {
 	if err := h.DidChange(uri, 1, escapeFixedSource); err != nil {
 		t.Fatal(err)
 	}
-	// The expected end state is an EMPTY diagnostic set, so there is nothing to
-	// poll for: wait out the debounce (300ms) plus analysis.
-	time.Sleep(2 * time.Second)
 
-	for _, d := range h.Diagnostics(uri) {
+	for _, d := range awaitNoEscapeDiagnostic(t, h, uri) {
 		if strings.Contains(d.Message, "GALA-E0038") {
 			t.Errorf("GALA-E0038 persisted after the escape was fixed: %s", d.Message)
 		}

@@ -1,7 +1,8 @@
 package transpiler
 
 import (
-	"strings"
+	"path/filepath"
+	"runtime"
 	"testing"
 
 	"martianoff/gala/galaerr"
@@ -147,16 +148,39 @@ func TestInsertLineDirectivesNoMarkers(t *testing.T) {
 	assert.Equal(t, code, out)
 }
 
-// TestInsertLineDirectivesWindowsPath pins that a Windows drive path is emitted
-// with forward slashes, which is the form the Go compiler's `//line` parser
-// handles.
-func TestInsertLineDirectivesWindowsPath(t *testing.T) {
+// TestInsertLineDirectivesPathSeparators pins that the emitted path uses forward
+// slashes, which is the form the Go compiler's `//line` parser handles.
+//
+// The conversion is filepath.ToSlash, and it is deliberately PLATFORM-DEPENDENT:
+// it rewrites the host's separator only. On Windows that turns C:\src\demo.gala
+// into C:/src/demo.gala; on POSIX it is a documented no-op, because `\` is not a
+// separator there but a legal character in a filename. Rewriting it
+// unconditionally (strings.ReplaceAll) would corrupt the path of a POSIX file
+// genuinely named `odd\name.gala` — so if the drive-letter case below ever fails,
+// fix the test, not the conversion.
+//
+// The first half runs everywhere and still exercises the conversion on Windows:
+// filepath.Join builds a host-native separator, which ToSlash must normalize to
+// `/` on both platforms.
+func TestInsertLineDirectivesPathSeparators(t *testing.T) {
 	code := "package main\n\nfunc main() {\n\t" + LineMarkerName(4) + "\n\tprintln(\"hi\")\n}\n"
 
-	out, err := insertLineDirectives(code, `C:\src\demo.gala`)
+	// Cross-platform: a host-native relative path is emitted slash-separated.
+	out, err := insertLineDirectives(code, filepath.Join("src", "demo.gala"))
+	require.NoError(t, err)
+	assert.Contains(t, out, "//line src/demo.gala:4")
+	assert.NotContains(t, out, `src\demo.gala`)
 
+	// Windows-only: a drive path loses its backslashes. On POSIX this input is
+	// not a path at all — it is a single filename containing backslashes, which
+	// ToSlash correctly leaves alone — so the expectation simply does not apply.
+	if runtime.GOOS != "windows" {
+		t.Skip("drive-path normalization is Windows-only: filepath.ToSlash is a no-op on POSIX, where `\\` is a legal filename character rather than a separator")
+	}
+
+	out, err = insertLineDirectives(code, `C:\src\demo.gala`)
 	require.NoError(t, err)
 	assert.Contains(t, out, "//line C:/src/demo.gala:4")
-	assert.False(t, strings.Contains(out, `C:\src`),
+	assert.NotContains(t, out, `C:\src`,
 		"backslashes confuse the compiler's //line parser")
 }
