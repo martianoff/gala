@@ -1,0 +1,12 @@
+package multifile_lib_regress
+
+// --- Regression: methods on one type spread across files of a package ---
+// Ledger is declared here and carries one of its methods; the rest live in
+// cross_file_methods_ext.gala. The analyzer merges a package's files into a
+// single method set per type, and the duplicate-method check that guards
+// that set must count a sibling's contribution as one declaration, not two.
+// This only exercises the batch (--package-files) path, so a single-file
+// test cannot stand in for it.
+struct Ledger(Owner string)
+
+func (l Ledger) OwnedBy() string = l.Owner

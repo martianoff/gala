@@ -2781,6 +2781,8 @@ gala_library(
     name = "multifile_lib_regress",
     srcs = [
         "multifile_lib_regress/consult_end.gala",
+        "multifile_lib_regress/cross_file_methods.gala",
+        "multifile_lib_regress/cross_file_methods_ext.gala",
         "multifile_lib_regress/directive_chain.gala",
         "multifile_lib_regress/events_pipe.gala",
         "multifile_lib_regress/go_interop.gala",

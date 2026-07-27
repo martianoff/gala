@@ -350,4 +350,13 @@ func main() {
         case Some(c) => Println(c.String())
         case None()  => Println("<no cookie>")
     }
+
+    // --- Regression: one type's methods declared across two files of the
+    // package. Ledger and OwnedBy live in cross_file_methods.gala, Tagged
+    // and LedgerFor in cross_file_methods_ext.gala. Both methods must reach
+    // the generated Go exactly once: the duplicate-method check runs over
+    // the merged sibling metadata, so a sibling contributing a method to a
+    // type declared elsewhere must not read as a redefinition.
+    val ledger = multifile_lib_regress.LedgerFor("nina")
+    Println(s"ledger=${ledger.OwnedBy()}/${ledger.Tagged()}")
 }
