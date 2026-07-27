@@ -482,6 +482,12 @@ func (t *GalaToGoTranspiler) Transpile(input string, filePath string) (string, e
 	return code, nil
 }
 
+// markerRewriteBugHint is the hint carried by both marker-rewrite failures.
+// Neither is something a user can fix in their own source, so it points at the
+// same place the transformer's internal-error path does.
+const markerRewriteBugHint = "this is a transpiler bug, not an error in your code — " +
+	"please file an issue at https://github.com/martianoff/gala/issues with the source that triggered it"
+
 // InsertLineDirectives is the exported entry point to the source-map line-marker
 // rewrite for callers outside this package. The analyzer's per-file transpilation
 // of imported/std GALA packages (ensureTranspiled) writes generated Go directly
@@ -556,7 +562,7 @@ func insertLineDirectives(code, sourceFile string) (string, error) {
 			galaerr.CodeInternalTransformerPanic, 0, 0,
 			fmt.Sprintf("internal transpiler error: the generated Go for %s is not parseable, so its source-map markers (%s*) could not be rewritten into //line directives: %v",
 				sourceFile, LineMarkerPrefix, err),
-			"this is a transpiler bug, not an error in your code — please report it with the source that triggered it",
+			markerRewriteBugHint,
 		)
 	}
 
@@ -612,7 +618,7 @@ func insertLineDirectives(code, sourceFile string) (string, error) {
 			galaerr.CodeInternalTransformerPanic, 0, 0,
 			fmt.Sprintf("internal transpiler error: %d of %d source-map markers (%s*) in the generated Go for %s sit in a position the //line rewrite does not handle, so they would be emitted as Go code",
 				identCount-claimedCount, identCount, LineMarkerPrefix, sourceFile),
-			"this is a transpiler bug, not an error in your code — please report it with the source that triggered it",
+			markerRewriteBugHint,
 		)
 	}
 

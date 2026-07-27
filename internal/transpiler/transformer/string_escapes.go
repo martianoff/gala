@@ -2,11 +2,13 @@ package transformer
 
 import (
 	"fmt"
+	"strconv"
 	"unicode/utf8"
 
 	"github.com/antlr4-go/antlr/v4"
 
 	"martianoff/gala/galaerr"
+	"martianoff/gala/internal/interpolation"
 )
 
 // String escape validation
@@ -59,49 +61,60 @@ func validEscapeList(q escapeQuote) string {
 	return `\a \b \f \n \r \t \v \\ ` + quoted + ` \xHH \uHHHH \UHHHHHHHH and \OOO (octal)`
 }
 
-// classifyEscape inspects the escape sequence starting at the backslash at
-// text[i]. It returns the sequence's byte length and, when the sequence is
-// invalid, a populated badEscape with ok=false.
-func classifyEscape(text string, i int, q escapeQuote) (length int, bad badEscape, ok bool) {
+// escapeLength reports the byte length of the escape sequence starting at the
+// backslash at text[i], and whether Go accepts that sequence.
+//
+// The accept/reject decision is Go's own: strconv.UnquoteChar decodes exactly
+// the escape set an interpreted Go literal admits — the same digit counts,
+// surrogate rejection and value ranges — so GALA's set stays identical to Go's
+// by construction instead of by a hand-kept table that could drift from it.
+// explainEscape below only has to describe a rejection, never make it.
+func escapeLength(text string, i int, q escapeQuote) (int, bool) {
+	_, _, tail, err := strconv.UnquoteChar(text[i:], byte(q))
+	if err != nil {
+		return 0, false
+	}
+	return len(text) - i - len(tail), true
+}
+
+// explainEscape describes the escape sequence at text[i], which escapeLength
+// has already rejected: the sequence exactly as written (so the caret can span
+// it) and, where the defect is a specific one, the reason.
+func explainEscape(text string, i int, q escapeQuote) badEscape {
 	// A trailing backslash cannot occur in a lexed literal (the grammar's
 	// `'\\' .` always consumes a following character), but guard anyway.
 	if i+1 >= len(text) {
-		return 1, badEscape{Offset: i, Seq: `\`, Reason: "a trailing backslash escapes nothing"}, false
+		return badEscape{Offset: i, Seq: `\`, Reason: "a trailing backslash escapes nothing"}
 	}
 
-	c := text[i+1]
-	switch c {
-	case 'a', 'b', 'f', 'n', 'r', 't', 'v', '\\':
-		return 2, badEscape{}, true
+	// Only the quote escape that does NOT match the literal being scanned can
+	// reach here: `\"` is valid in a string and `\'` in a rune, so whichever
+	// arrives was rejected for being written in the other one.
+	switch text[i+1] {
 	case '"':
-		if q == escapeInString {
-			return 2, badEscape{}, true
-		}
-		return 2, badEscape{Offset: i, Seq: `\"`, Reason: `\" is only valid in a string literal; inside a rune literal write "`}, false
+		return badEscape{Offset: i, Seq: `\"`, Reason: `\" is only valid in a string literal; inside a rune literal write "`}
 	case '\'':
-		if q == escapeInRune {
-			return 2, badEscape{}, true
-		}
-		return 2, badEscape{Offset: i, Seq: `\'`, Reason: `\' is only valid in a rune literal; inside a string literal write '`}, false
+		return badEscape{Offset: i, Seq: `\'`, Reason: `\' is only valid in a rune literal; inside a string literal write '`}
 	case 'x':
-		return hexEscape(text, i, 2, `\x`)
+		return explainHexEscape(text, i, 2, `\x`)
 	case 'u':
-		return hexEscape(text, i, 4, `\u`)
+		return explainHexEscape(text, i, 4, `\u`)
 	case 'U':
-		return hexEscape(text, i, 8, `\U`)
+		return explainHexEscape(text, i, 8, `\U`)
 	case '0', '1', '2', '3', '4', '5', '6', '7':
-		return octalEscape(text, i)
+		return explainOctalEscape(text, i)
 	}
 
 	// Unrecognised escape character. Report the two-byte sequence, taking the
 	// whole rune when the offending character is multi-byte.
 	_, size := utf8.DecodeRuneInString(text[i+1:])
-	return 1 + size, badEscape{Offset: i, Seq: text[i : i+1+size]}, false
+	return badEscape{Offset: i, Seq: text[i : i+1+size]}
 }
 
-// hexEscape validates `\xHH`, `\uHHHH` or `\UHHHHHHHH`: exactly n hexadecimal
-// digits, and — for the Unicode forms — a code point Go can actually encode.
-func hexEscape(text string, i, n int, form string) (int, badEscape, bool) {
+// explainHexEscape explains a rejected `\xHH`, `\uHHHH` or `\UHHHHHHHH`: either
+// it does not carry n hexadecimal digits, or — for the Unicode forms — its
+// value is not a code point Go can encode.
+func explainHexEscape(text string, i, n int, form string) badEscape {
 	digits := 0
 	value := 0
 	for digits < n && i+2+digits < len(text) {
@@ -112,37 +125,21 @@ func hexEscape(text string, i, n int, form string) (int, badEscape, bool) {
 		value = value*16 + d
 		digits++
 	}
-	seq := text[i : i+2+digits]
-	if digits < n {
-		return 2 + digits, badEscape{
-			Offset: i,
-			Seq:    seq,
-			Reason: fmt.Sprintf("%s requires exactly %d hexadecimal digits", form, n),
-		}, false
+	bad := badEscape{Offset: i, Seq: text[i : i+2+digits]}
+	switch {
+	case digits < n:
+		bad.Reason = fmt.Sprintf("%s requires exactly %d hexadecimal digits", form, n)
+	case value >= 0xD800 && value <= 0xDFFF:
+		bad.Reason = "a surrogate half (U+D800-U+DFFF) is not a valid Unicode code point"
+	default:
+		bad.Reason = "the value is above the maximum Unicode code point U+10FFFF"
 	}
-	length := 2 + n
-	if form == `\x` {
-		return length, badEscape{}, true
-	}
-	if value >= 0xD800 && value <= 0xDFFF {
-		return length, badEscape{
-			Offset: i,
-			Seq:    seq,
-			Reason: "a surrogate half (U+D800-U+DFFF) is not a valid Unicode code point",
-		}, false
-	}
-	if value > 0x10FFFF {
-		return length, badEscape{
-			Offset: i,
-			Seq:    seq,
-			Reason: "the value is above the maximum Unicode code point U+10FFFF",
-		}, false
-	}
-	return length, badEscape{}, true
+	return bad
 }
 
-// octalEscape validates `\OOO`: exactly three octal digits denoting a byte.
-func octalEscape(text string, i int) (int, badEscape, bool) {
+// explainOctalEscape explains a rejected `\OOO`: either it does not carry three
+// octal digits, or the byte they denote is out of range.
+func explainOctalEscape(text string, i int) badEscape {
 	digits := 0
 	value := 0
 	for digits < 3 && i+1+digits < len(text) {
@@ -153,22 +150,13 @@ func octalEscape(text string, i int) (int, badEscape, bool) {
 		value = value*8 + int(c-'0')
 		digits++
 	}
-	seq := text[i : i+1+digits]
+	bad := badEscape{Offset: i, Seq: text[i : i+1+digits]}
 	if digits < 3 {
-		return 1 + digits, badEscape{
-			Offset: i,
-			Seq:    seq,
-			Reason: `a backslash followed by a digit starts an octal escape, which requires exactly 3 octal digits (0-7)`,
-		}, false
+		bad.Reason = `a backslash followed by a digit starts an octal escape, which requires exactly 3 octal digits (0-7)`
+	} else {
+		bad.Reason = fmt.Sprintf("the octal value %d is above the maximum byte value 255", value)
 	}
-	if value > 255 {
-		return 4, badEscape{
-			Offset: i,
-			Seq:    seq,
-			Reason: fmt.Sprintf("the octal value %d is above the maximum byte value 255", value),
-		}, false
-	}
-	return 4, badEscape{}, true
+	return bad
 }
 
 func hexDigit(c byte) (int, bool) {
@@ -191,9 +179,9 @@ func firstInvalidEscape(text string, q escapeQuote) (badEscape, bool) {
 			i++
 			continue
 		}
-		length, bad, ok := classifyEscape(text, i, q)
+		length, ok := escapeLength(text, i, q)
 		if !ok {
-			return bad, true
+			return explainEscape(text, i, q), true
 		}
 		i += length
 	}
@@ -203,35 +191,20 @@ func firstInvalidEscape(text string, q escapeQuote) (badEscape, bool) {
 // firstInvalidEscapeInterp scans an interpolated (`s"…"`) or format (`f"…"`)
 // literal's raw text. Escapes inside a `${…}` block belong to the embedded GALA
 // expression — that expression is re-parsed and its own literals are validated
-// through the normal path — so those regions are skipped here, using the same
-// brace-nesting walk as interpolation.Split so the two agree on where an
-// embedded expression starts and ends.
+// through the normal path — so those regions are skipped here, using
+// interpolation.EndOfEmbeddedExpr, the same walk interpolation.Split uses, so
+// the two cannot disagree on where an embedded expression ends.
 func firstInvalidEscapeInterp(text string) (badEscape, bool) {
 	for i := 0; i < len(text); {
 		switch {
 		case text[i] == '\\':
-			length, bad, ok := classifyEscape(text, i, escapeInString)
+			length, ok := escapeLength(text, i, escapeInString)
 			if !ok {
-				return bad, true
+				return explainEscape(text, i, escapeInString), true
 			}
 			i += length
 		case text[i] == '$' && i+1 < len(text) && text[i+1] == '{':
-			depth := 1
-			j := i + 2
-			for j < len(text) && depth > 0 {
-				switch {
-				case text[j] == '{':
-					depth++
-				case text[j] == '}':
-					depth--
-				case text[j] == '\\' && j+1 < len(text):
-					j++
-				}
-				if depth > 0 {
-					j++
-				}
-			}
-			i = j + 1
+			i = interpolation.EndOfEmbeddedExpr(text, i) + 1
 		default:
 			i++
 		}

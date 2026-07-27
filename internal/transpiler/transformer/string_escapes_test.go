@@ -214,7 +214,7 @@ func TestValidStringEscapesAccepted(t *testing.T) {
 		{name: "octal escape", arg: `"\000\101\377"`, wantInGo: `\000\101\377`},
 		// GALA's CHAR_LIT grammar admits exactly one character after the
 		// backslash, so the numeric escape forms (\xHH, \uHHHH, \UHHHHHHHH,
-		// \OOO) are not lexable in a rune literal at all \u2014 that is a grammar
+		// \OOO) are not lexable in a rune literal at all - that is a grammar
 		// limit, reported as a syntax error before this check runs.
 		{name: "rune literal newline escape", arg: `'\n'`, wantInGo: `'\n'`},
 		{name: "rune literal tab escape", arg: `'\t'`, wantInGo: `'\t'`},
