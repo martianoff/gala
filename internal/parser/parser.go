@@ -146,6 +146,14 @@ func (p *AntlrGalaParser) checkEmptyLines(input string, tree antlr.Tree) error {
 		return nil
 	}
 
+	// ANTLR token offsets index the input as a stream of CODE POINTS, not
+	// bytes. Slicing the raw string with them silently reads the wrong window
+	// as soon as the file contains any non-ASCII rune (an em dash in a comment
+	// is enough), which used to reject perfectly well-formed files with a
+	// bogus "should follow by an empty line" syntax error. Work in runes so
+	// the offsets and the slicing agree.
+	runes := []rune(input)
+
 	pkgEnd := pkg.GetStop().GetStop()
 
 	imports := sourceFile.AllImportDeclaration()
@@ -159,8 +167,7 @@ func (p *AntlrGalaParser) checkEmptyLines(input string, tree antlr.Tree) error {
 	}
 
 	if nextToken != nil {
-		if pkgEnd+1 < len(input) && nextToken.GetStart() <= len(input) {
-			between := input[pkgEnd+1 : nextToken.GetStart()]
+		if between, ok := runeSpan(runes, pkgEnd+1, nextToken.GetStart()); ok {
 			if !emptyLineRegex.MatchString(between) {
 				return galaerr.NewSyntaxError(nextToken.GetLine(), 0, "packageClause should follow by an empty line")
 			}
@@ -173,8 +180,7 @@ func (p *AntlrGalaParser) checkEmptyLines(input string, tree antlr.Tree) error {
 			importEnd := lastImport.GetStop().GetStop()
 			nextTop := tops[0].GetStart()
 
-			if importEnd+1 < len(input) && nextTop.GetStart() <= len(input) {
-				between := input[importEnd+1 : nextTop.GetStart()]
+			if between, ok := runeSpan(runes, importEnd+1, nextTop.GetStart()); ok {
 				if !emptyLineRegex.MatchString(between) {
 					return galaerr.NewSyntaxError(nextTop.GetLine(), 0, "importDeclaration should follow by an empty line")
 				}
@@ -183,6 +189,16 @@ func (p *AntlrGalaParser) checkEmptyLines(input string, tree antlr.Tree) error {
 	}
 
 	return nil
+}
+
+// runeSpan returns runes[start:end] as a string, reporting ok=false when the
+// span is not a usable window into the source (out of range or empty). It
+// keeps the bounds checks in one place so both call sites above agree.
+func runeSpan(runes []rune, start, end int) (string, bool) {
+	if start < 0 || end > len(runes) || start >= end {
+		return "", false
+	}
+	return string(runes[start:end]), true
 }
 
 type GalaErrorListener struct {
