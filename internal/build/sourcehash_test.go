@@ -12,8 +12,9 @@ import (
 )
 
 // writeSourceTree writes a throwaway project and returns the file list that
-// `transpile` would hash. Tests stay rooted in a temp GALA_HOME so nothing here
-// can read or write the developer's real stdlib cache.
+// `transpile` would hash. GALA_HOME is redirected at a temp directory so that
+// nothing reachable from these tests can read or write the developer's real
+// stdlib cache, now or after a later edit.
 func writeSourceTree(t *testing.T) []string {
 	t.Helper()
 	t.Setenv("GALA_HOME", t.TempDir())
@@ -67,9 +68,14 @@ func TestComputeSourceHash_TracksStdlibFingerprint(t *testing.T) {
 	})
 }
 
-// TestComputeSourceHash_UsesRealEmbeddedFingerprint verifies the production call
-// site is wired to a non-empty fingerprint. An empty one would silently degrade
-// the key back to sources-plus-version.
+// TestComputeSourceHash_UsesRealEmbeddedFingerprint verifies the value the
+// production call sites pass is usable as a key: non-empty, and distinguishable
+// from the empty string that would silently degrade the key back to
+// sources-plus-version.
+//
+// It does not, and cannot here, prove that transpile() passes it: the embedded
+// fingerprint is a single memoized value for the process, so there is no second
+// snapshot to build against. That wiring is a one-line call read by review.
 func TestComputeSourceHash_UsesRealEmbeddedFingerprint(t *testing.T) {
 	files := writeSourceTree(t)
 
