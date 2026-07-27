@@ -1,0 +1,8 @@
+package multifile_lib_regress
+
+// Continuation of Ledger's method set, in a different file of the same
+// package than the struct declaration (see cross_file_methods.gala).
+
+func (l Ledger) Tagged() string = s"ledger:${l.Owner}"
+
+func LedgerFor(owner string) Ledger = Ledger(Owner = owner)

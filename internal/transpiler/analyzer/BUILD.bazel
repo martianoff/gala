@@ -42,6 +42,7 @@ go_test(
         "multipackage_panic_test.go",
         "parallel_parse_test.go",
         "parsedfile_cache_test.go",
+        "redefinition_cross_file_test.go",
         "test_exports_test.go",
         "test_helper_test.go",
         "validation_test.go",
