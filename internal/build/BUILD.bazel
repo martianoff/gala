@@ -7,6 +7,7 @@ go_library(
         "config.go",
         "deptranspiler.go",
         "gomod.go",
+        "stdlibver.go",
         "testgen.go",
         "workspace.go",
     ],
@@ -28,6 +29,7 @@ go_test(
     srcs = [
         "apex_perf_test.go",
         "builder_test.go",
+        "config_test.go",
         "contention_perf_test.go",
         "deptranspiler_test.go",
         "go_toolchain_test.go",

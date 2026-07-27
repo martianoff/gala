@@ -4,8 +4,6 @@ package build
 import (
 	"os"
 	"path/filepath"
-
-	"martianoff/gala/internal/stdlib"
 )
 
 // Config holds configuration for the build system.
@@ -79,39 +77,25 @@ func (c *Config) EnsureDirs() error {
 }
 
 // StdlibVersionDir returns the path for a specific stdlib version.
-// Format: StdlibDir/v{version}/
+// Format: StdlibDir/v{version}/, with the version put through
+// normalizeStdlibVersion so that every consumer of the cache resolves the same
+// directory for a given binary.
 func (c *Config) StdlibVersionDir(version string) string {
-	return filepath.Join(c.StdlibDir, "v"+version)
+	return filepath.Join(c.StdlibDir, "v"+normalizeStdlibVersion(version))
 }
 
 // EnsureStdlib extracts the embedded stdlib for the given version and returns
 // the stdlib directory path. This is the canonical stdlib resolution used by
-// both the CLI transpiler and the LSP server.
-// The version string may contain git suffixes (e.g., "0.29.4-1-ga528ffd")
-// which are stripped to find the base version ("0.29.4").
-func (c *Config) EnsureStdlib(version string) string {
-	// Strip git describe suffix: "0.29.4-1-ga528ffd" → "0.29.4"
-	ver := version
-	for i := 0; i < len(ver); i++ {
-		if ver[i] == '-' {
-			// Check if this looks like a git suffix (digit after last dot before dash)
-			ver = ver[:i]
-			break
-		}
-	}
-	stdlibDir := c.StdlibVersionDir(ver)
-
-	markerPath := filepath.Join(stdlibDir, ".stdlib-extracted")
-	if _, err := os.Stat(markerPath); err == nil {
-		return stdlibDir // already extracted
-	}
-
-	os.MkdirAll(stdlibDir, 0755)
-	if err := stdlib.ExtractTo(stdlibDir); err != nil {
-		return "" // extraction failed
-	}
-	os.WriteFile(markerPath, []byte(ver), 0644)
-	return stdlibDir
+// both the CLI transpiler and the LSP server; it shares its implementation with
+// the builder so the two cannot drift apart.
+//
+// The failure is reported rather than collapsed into an empty path: refusing to
+// repair the cache is exactly the situation this code exists to notice, and a
+// caller that only sees "" degrades it into the far less informative "no stdlib
+// on the search path".
+func (c *Config) EnsureStdlib(version string) (string, error) {
+	stdlibDir, _, err := c.ensureStdlibExtracted(version)
+	return stdlibDir, err
 }
 
 // GalaModulePath returns the path where a GALA module version is cached.

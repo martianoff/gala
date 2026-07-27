@@ -23,6 +23,11 @@ func Packages() []Package {
 }
 
 // ExtractTo extracts all embedded stdlib packages to the given directory.
+//
+// Whatever this writes must also be covered by fingerprintPackages: the on-disk
+// cache is only re-extracted when that digest changes, so an artifact written
+// here but left out of the digest would never be refreshed.
+//
 // The directory structure will be:
 //
 //	destDir/
