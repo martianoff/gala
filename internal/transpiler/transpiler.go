@@ -575,10 +575,16 @@ func insertLineDirectives(code, sourceFile string) (string, error) {
 	markers := make(map[int]marker)
 
 	// Every marker identifier in the file must land in one of the two shapes
-	// below. Counting both totals lets us prove afterwards that none was left
-	// behind (see the reconciliation check). A recognized marker's Ident is
-	// visited both via its enclosing node and on its own, so the two counters
-	// advance together for it.
+	// below. Counting both totals lets the reconciliation check below catch any
+	// that did not. A recognized marker's Ident is visited both via its
+	// enclosing node and on its own, so the two counters advance together.
+	//
+	// Note the counters track IDENTIFIERS, not `markers` map entries, and the
+	// map is keyed by physical line — so two markers sharing one generated line
+	// collide silently and the map is the smaller of the two. That is not a
+	// leak: deleting the shared line removes both, and gofmt puts statements on
+	// their own lines anyway. The check proves no marker sits in an unhandled
+	// POSITION; it does not prove the map is one entry per marker.
 	var identCount, claimedCount int
 
 	ast.Inspect(astFile, func(n ast.Node) bool {

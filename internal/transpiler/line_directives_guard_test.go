@@ -71,6 +71,33 @@ func TestInsertLineDirectivesRejectsUnparseableCode(t *testing.T) {
 	}
 }
 
+// TestInternalErrorRendersWithoutBogusFrame pins that the 0,0 position these
+// internal errors carry renders sanely. An internal-error path that itself
+// rendered malformed would be an unfortunate way to discover a transpiler bug:
+// the renderer must not emit a `--> file:0:0` locus, and must not try to read
+// line 0 of the source (there is no such line — source lines are 1-based).
+func TestInternalErrorRendersWithoutBogusFrame(t *testing.T) {
+	code := "package main\n\nfunc main() {\n\tx := 1 + " + LineMarkerName(7) + "\n\t_ = x\n}\n"
+	_, err := insertLineDirectives(code, "demo.gala")
+	require.Error(t, err)
+
+	// Render with source available, which is the case that would expose a
+	// bogus frame or an out-of-range line read.
+	out := galaerr.RenderRich(err, galaerr.Options{
+		FallbackSource: "package main\n\nfunc main() {\n}\n",
+		FallbackPath:   "demo.gala",
+	})
+
+	assert.NotContains(t, out, ":0:0", "must not emit a 0:0 locus")
+	assert.NotContains(t, out, "-->", "a positionless error gets no source frame")
+	assert.NotContains(t, out, "^", "no caret row without a frame")
+
+	// The useful parts still render: the code, the message and the hint.
+	assert.Contains(t, out, "GALA-E0017")
+	assert.Contains(t, out, "internal transpiler error")
+	assert.Contains(t, out, "transpiler bug")
+}
+
 // TestInsertLineDirectivesRejectsUnhandledMarkerPosition pins the second half of
 // the guard: code that parses fine but puts a marker somewhere the rewrite does
 // not handle. Such a marker would be emitted verbatim as Go, so it must be

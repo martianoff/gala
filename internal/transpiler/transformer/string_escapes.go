@@ -126,12 +126,22 @@ func explainHexEscape(text string, i, n int, form string) badEscape {
 		digits++
 	}
 	bad := badEscape{Offset: i, Seq: text[i : i+2+digits]}
+	// Every arm is a POSITIVE test, deliberately — there is no `default`.
+	//
+	// `\x` denotes a raw byte, not a code point, so neither code-point arm can
+	// apply to it: two hex digits max out at 0xFF, well below both the surrogate
+	// range and U+10FFFF. A `default` arm would therefore be unreachable for
+	// `\x` (its only possible rejection is "too few digits", the first arm) yet
+	// would label a byte escape "above the maximum Unicode code point U+10FFFF"
+	// if it ever were reached. Leaving Reason empty in that impossible case
+	// degrades to the bare "invalid escape sequence" message, which is vague but
+	// never wrong.
 	switch {
 	case digits < n:
 		bad.Reason = fmt.Sprintf("%s requires exactly %d hexadecimal digits", form, n)
 	case value >= 0xD800 && value <= 0xDFFF:
 		bad.Reason = "a surrogate half (U+D800-U+DFFF) is not a valid Unicode code point"
-	default:
+	case value > 0x10FFFF:
 		bad.Reason = "the value is above the maximum Unicode code point U+10FFFF"
 	}
 	return bad
