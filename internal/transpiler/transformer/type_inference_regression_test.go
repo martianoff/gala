@@ -62,6 +62,7 @@ func MakeTransformer() Transformer = (x) => {
 			name: "void block lambda generates func() not func() any",
 			input: `package main
 
+import . "martianoff/gala/collection_immutable"
 import . "martianoff/gala/std"
 
 func test() {
@@ -134,6 +135,7 @@ func process[T any](items Array[State[T]]) Array[State[T]] {
 			name: "block lambda unifies return types from multiple paths",
 			input: `package main
 
+import . "martianoff/gala/collection_immutable"
 import . "martianoff/gala/std"
 
 func test() {

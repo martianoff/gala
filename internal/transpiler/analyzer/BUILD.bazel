@@ -7,6 +7,7 @@ go_library(
         "cache.go",
         "cache_codec.go",
         "go_types.go",
+        "undefined_symbol.go",
         "validation.go",
     ],
     importpath = "martianoff/gala/internal/transpiler/analyzer",
@@ -20,6 +21,7 @@ go_library(
         "//internal/transpiler/profiler",
         "//internal/transpiler/registry",
         "//internal/transpiler/resolver",
+        "//internal/transpiler/scopewalk",
         "//internal/transpiler/transformer",
         "@com_github_antlr4_go_antlr_v4//:antlr",
     ],
@@ -45,10 +47,22 @@ go_test(
         "redefinition_cross_file_test.go",
         "test_exports_test.go",
         "test_helper_test.go",
+        "undefined_symbol_test.go",
         "validation_test.go",
     ],
     data = [
+        # The undefined-symbol negative cases must genuinely resolve names
+        # from these packages rather than have the check stand down on an
+        # unloadable import, so their sources have to be in runfiles.
+        "//collection_immutable:gala_sources",
+        "//go_interop:types.go",
+        "//io:gala_sources",
         "//std:gala_sources",
+        # std dot-imports go_builtins, so loading std pulls it in. If it is
+        # not staged, that import fails under the Linux sandbox, which now
+        # stands the undefined-symbol check down for every file — silently
+        # turning the positive tests below into no-ops.
+        "//go_builtins:builtins.go",
     ],
     embed = [":analyzer"],
     deps = [

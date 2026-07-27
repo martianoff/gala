@@ -208,10 +208,16 @@ const (
 	// these to keep types finite.
 	CodeOccursCheck ErrorCode = "GALA-E0022"
 
-	// E0023: a variable referenced in an expression has no binding in
-	// the type-inference environment. Usually means the name is mis-
-	// spelled, the import is missing, or the variable is shadowed by a
-	// pattern that did not actually fire.
+	// E0023: an identifier used in value position resolves to nothing —
+	// not a binding in an enclosing scope, not a declaration in the
+	// current package (its siblings included), not an export of any
+	// imported package, not a package qualifier, and not a language
+	// builtin. Usually a misspelling, a missing import, or a reference
+	// outside the scope where the name is bound. Raised authoritatively
+	// by the analyzer's scope walk (see the undefined-symbol pass), and
+	// advisorily by the inference engine for a name absent from its type
+	// environment. Distinct from E0025, which polices *which file* the
+	// import was declared in rather than whether the name exists at all.
 	CodeUndefinedVariable ErrorCode = "GALA-E0023"
 
 	// E0024: the inference engine encountered an expression node it does

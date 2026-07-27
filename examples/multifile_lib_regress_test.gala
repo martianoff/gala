@@ -359,4 +359,16 @@ func main() {
     // type declared elsewhere must not read as a redefinition.
     val ledger = multifile_lib_regress.LedgerFor("nina")
     Println(s"ledger=${ledger.OwnedBy()}/${ledger.Tagged()}")
+    // --- Regression: the analyzer's undefined-symbol check (GALA-E0023)
+    // must not fire on legal cross-file resolution. Each call below is
+    // built from a different resolution route (sibling declarations,
+    // package-level vals, forward references, dot imports, the std
+    // prelude, a named subpackage import, lambda-parameter shadowing).
+    // A regression that over-fires the check turns these into a hard
+    // analyzer error instead of a wrong result, so this case fails loudly.
+    // See multifile_lib_regress/symbol_scope.gala.
+    Println(multifile_lib_regress.ScopeReport(1))
+    Println(multifile_lib_regress.ScopeLambdaCapture(3))
+    Println(multifile_lib_regress.ScopeQualifiedImport("gamma"))
+    Println(multifile_lib_regress.ScopeSnapshotLabel())
 }

@@ -59,6 +59,20 @@ var forbiddenStatementKeywordSuggestions = map[string]string{
 	"chan":        "GALA has no bare `chan` statement; use the go_interop channel helpers to build and operate on channels",
 }
 
+// ForbiddenStatementKeywords returns the set of Go-only statement keywords
+// GALA rejects on its surface (GALA-E0036), keyed by name. It is the exported
+// view of forbiddenStatementKeywordSuggestions so other passes — notably the
+// analyzer's undefined-symbol check — can leave these names to the check that
+// owns them instead of reporting the more generic "undefined", without
+// re-declaring a list that could drift out of sync.
+func ForbiddenStatementKeywords() map[string]bool {
+	out := make(map[string]bool, len(forbiddenStatementKeywordSuggestions))
+	for name := range forbiddenStatementKeywordSuggestions {
+		out[name] = true
+	}
+	return out
+}
+
 // checkForbiddenStatementKeyword rejects a bare Go-only statement keyword
 // (`defer`, `go`, `goto`, `fallthrough`, `select`, `chan`) that the parser
 // accepted as a lone identifier expression-statement. Such statements only

@@ -1,33 +1,25 @@
 load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
-    name = "concurrency",
-    srcs = [
-        "capture.go",
-        "helpers.go",
-        "shareable.go",
-    ],
-    importpath = "martianoff/gala/internal/transpiler/concurrency",
+    name = "scopewalk",
+    srcs = ["scopewalk.go"],
+    importpath = "martianoff/gala/internal/transpiler/scopewalk",
     visibility = ["//:__subpackages__"],
     deps = [
+        "//internal/interpolation",
+        "//internal/parser",
         "//internal/parser/grammar",
-        "//internal/transpiler",
-        "//internal/transpiler/scopewalk",
         "@com_github_antlr4_go_antlr_v4//:antlr",
     ],
 )
 
 go_test(
-    name = "concurrency_test",
-    srcs = [
-        "capture_test.go",
-        "shareable_test.go",
-    ],
-    embed = [":concurrency"],
+    name = "scopewalk_test",
+    srcs = ["scopewalk_test.go"],
     deps = [
+        ":scopewalk",
         "//internal/parser",
         "//internal/parser/grammar",
-        "//internal/transpiler",
         "@com_github_antlr4_go_antlr_v4//:antlr",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

@@ -1,0 +1,80 @@
+package multifile_lib_regress
+
+import (
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/examples/multifile_lib_regress/team_pkg"
+)
+
+// Regression coverage for the analyzer's undefined-symbol check
+// (GALA-E0023), which must NOT fire on any of the resolution paths a
+// multi-file package relies on. Every identifier below resolves through a
+// different route, and each route is one the check could plausibly get wrong:
+//
+//   - NewUser / Snapshot: declared in the sibling types.gala, so they reach
+//     this file only through the sibling-metadata pass;
+//   - CountIfPositive: declared in the sibling logic.gala;
+//   - scopePrefix / scopeSuffix: package-level `val`s in this file, read from
+//     other functions (package vals live in their own metadata map, not in
+//     Types or Functions);
+//   - team_pkg.Team: a qualified reference through a named import;
+//   - ArrayOf / Some / None: a dot import and the implicit std prelude;
+//   - scopeLocalHelper / scopeDouble: declared *below* their call sites, so
+//     package-level forward references must resolve;
+//   - scopeLocalHelper is called from inside a lambda, and ScopeLambdaCapture's
+//     lambda parameter shadows an outer `val` of the same name;
+//   - every `match` arm binds names in its pattern that the arm body reads.
+//
+// This case only has teeth in multi-file batch transpilation
+// (`--package-files`), which is why it lives here rather than in a
+// single-file example.
+
+val scopePrefix = "scope"
+
+val scopeSuffix = "ok"
+
+// ScopeReport exercises sibling declarations, package vals, forward
+// references, dot imports and the std prelude from one expression.
+func ScopeReport(n int) string {
+    val user = NewUser("dana", "dana@example.com")
+    val counted = CountIfPositive(n) match {
+        case Some(v) => v
+        case None() => 0
+    }
+    val labels = ArrayOf(1, 2, 3).Map((i) => scopeLocalHelper(i + counted))
+    val joined = labels.MkString(",")
+    return s"$scopePrefix:${user.Name}:$joined:$scopeSuffix"
+}
+
+// ScopeLambdaCapture pins the case a naive scope model gets wrong: a lambda
+// parameter shadowing an outer binding of the same name, calling a
+// package-level function declared further down the file.
+func ScopeLambdaCapture(n int) int {
+    val base = n
+    val f = (base int) => scopeDouble(base)
+    return f(base) + f(0)
+}
+
+// scopeDouble reads a sibling-declared function (logic.gala) through a match.
+func scopeDouble(v int) int = CountIfPositive(v) match {
+    case Some(x) => x * 2
+    case None() => -1
+}
+
+// ScopeQualifiedImport reads a symbol from a named-imported subpackage.
+func ScopeQualifiedImport(name string) string =
+    team_pkg.Team(Key = "k", Name = name).Name
+
+// ScopeSnapshotLabel constructs a sibling-declared struct and reads a
+// package-level val from this file in the same expression.
+//
+// SavedAt is declared int64, and the conversion around the literal is
+// required: a named-argument struct construction does not currently widen an
+// untyped integer literal to the field's declared width, so a bare `7` fails
+// to compile here. Keep the explicit `int64(...)` until that widening lands.
+func ScopeSnapshotLabel() string {
+    val snap = Snapshot(ProjectName = scopePrefix, SavedAt = int64(7))
+    return s"${snap.ProjectName}-${snap.SavedAt}-$scopeSuffix"
+}
+
+// Declared after every use above on purpose.
+func scopeLocalHelper(v int) string = s"v$v"
