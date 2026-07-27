@@ -1,31 +1,47 @@
 # GALA-E0017 — Internal transpiler panic
 
-**When it fires.** A `panic` inside the transformer was caught by the
-top-level recover and surfaced as a coded error. This is a transpiler
-bug — well-formed GALA source should never trigger this code. If you
-see it, please file an issue with the offending source snippet so the
-underlying invariant can be tightened or replaced with a coded error
-that names the actual problem.
+> **This code indicates a transpiler defect, not a user error.** Well-formed
+> GALA source should never produce it. If you see it, the correct response is to
+> **file a bug report with the source that triggered it** — not to change your
+> GALA code.
 
-**Error output.**
+**When it fires.** A `panic` raised anywhere inside the transformer was caught
+by the top-level `recover` in `Transform`
+(`internal/transpiler/transformer/transformer.go`) and converted into a coded
+error. Any panic that is not already a `*galaerr.SemanticError` lands here, with
+the recovered value preserved in the message.
+
+**Minimal repro.** None. A panic is by definition an unintended path, so there
+is no user-triggerable repro to show; a specific input that reaches it is a bug
+to be fixed, not a documented trigger.
+
+**Error output.** The shape the code produces, from the emit site:
 
 ```
-[SemanticError GALA-E0017] line 0:0 internal transpiler panic: <recovered message> (hint: please file an issue at https://github.com/martianoff/gala/issues with the source that triggered this panic)
+[SemanticError GALA-E0017] line L:C internal transpiler panic: <recovered value> (hint: please file an issue at https://github.com/martianoff/gala/issues with the source that triggered this panic)
 ```
 
-**Fix (user).** None directly. As a workaround, simplify the surrounding
-expression and re-run; if the simplified form transpiles cleanly, the
-shape of the original expression is the trigger.
+The position is the last source location the transformer recorded before the
+panic, so it is a hint about where the failure happened, not a precise span.
 
-**Fix (transpiler).** Replace the underlying `panic(...)` site with
-either `galaerr.NewCodedSemanticError(...)` (when the cause is
-user-facing GALA) or a documented invariant comment + a panic that
-identifies the invariant (when the caller really should never reach
-that branch). The audit recorded in `panic_audit_test.go` enumerates
-the production-code panic sites that still need this treatment.
+**What to do.** File an issue at
+[github.com/martianoff/gala/issues](https://github.com/martianoff/gala/issues)
+with the source that triggered the panic and the full message. The recovered
+value in the message is the most useful part of the report.
 
-**Rationale.** Before this code existed, an unguarded panic surfaced as
-a raw Go stack trace from the CLI — surprising and unactionable for the
-user, and easy for transpiler maintainers to overlook because no error
-code referenced it. Wrapping at the recover seam gives both groups a
-single search target.
+Reducing the input to the smallest snippet that still panics is genuinely
+helpful for the report — but treat that as producing a bug report, not as fixing
+your code. Rewriting to avoid the panic leaves the defect in place for the next
+person.
+
+**Fix (transpiler).** Replace the underlying `panic(...)` site with either
+`galaerr.NewCodedSemanticError(...)` — when the cause is something user-facing
+that deserves its own code — or a documented invariant comment plus a panic that
+names the invariant, when the branch really is unreachable. The audit in
+`panic_audit_test.go` enumerates the production panic sites still awaiting this
+treatment.
+
+**Rationale.** Before this code existed, an unguarded panic surfaced as a raw Go
+stack trace from the CLI: unactionable for users and easy for maintainers to
+overlook, because no error code referenced it. Wrapping at the recover seam
+gives both groups a single search target.
