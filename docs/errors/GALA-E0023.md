@@ -117,6 +117,17 @@ for a guaranteed absence of false positives:
   enumerable. They normally are (via Go type info), and then the check
   stays fully live; they are not when no Go SDK is on PATH. A **named**
   Go import never disables the check.
+
+  One residue of that rule is worth knowing when debugging why the
+  check did not fire in your file. Go metadata is keyed by package
+  *name*, which the analyzer takes to be the import path's last
+  segment. A package whose declared name differs from its final path
+  element — `gopkg.in/yaml.v3` declaring `package yaml` is the
+  canonical case — therefore reads as "contributed nothing", and
+  dot-importing it stands the check down **for the whole file**. This
+  is the safe direction (it can only miss a detection, never invent
+  one), but it means a single such dot import silently disables every
+  check on this page for that file.
 - **The language server.** The LSP runs the analyzer for best-effort
   metadata, and a hard error there drops the whole file's `RichAST` —
   taking completion, hover and go-to-definition with it, while the

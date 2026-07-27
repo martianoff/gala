@@ -14,6 +14,23 @@
 // carrying its own. The differences between them are narrow and explicit — see
 // Options.
 //
+// ON ADDING AN OPTION. Options is already at the edge of what a shared walker
+// can carry before it stops being a walker and becomes a configuration object.
+// Every current flag earns its place by marking a spot where the two passes
+// genuinely disagree about what the LANGUAGE means — whether a composite
+// literal's key is a value, whether a pattern's constructor is a reference —
+// and each is set opposite ways by the two callers. Before adding a sixth, ask
+// whether the new behaviour is instead:
+//
+//   - a property of the consumer, not the walk (decide it in Visitor.Reference,
+//     which already sees the name, the token and the use), or
+//   - something both passes would want (then just change the walk), or
+//   - a binder this walker does not model (use EnterFunctionScope, or push a
+//     scope and Bind before calling in).
+//
+// A flag that only one caller ever sets to a non-zero value, or that encodes a
+// preference rather than a disagreement about meaning, belongs in the consumer.
+//
 // SCOPE MODEL. An explicit scope stack (innermost last) is pushed by every
 // binding-introducing construct: lambda and function parameters, blocks,
 // `val`/`var`/`:=` declarations, `bind`/`also`/`use` bindings, `for` loop
@@ -605,6 +622,15 @@ func (w *Walker) walkPrimary(ctx grammar.IPrimaryContext) {
 // needs — the literal that contains the offending name. Resolving to the exact
 // column inside the literal would need Split to preserve each part's span in
 // the original text, which it does not (it unescapes as it goes).
+//
+// FOLLOW-UP: threading a byte offset (and length) for each embedded part
+// through interpolation.Split would let a consumer add it to this token's
+// start and point the caret at the offending name inside the literal rather
+// than at the literal as a whole. The transformer would benefit too — it emits
+// per-part Sprintf arguments and has the same coarse position. The obstacle is
+// only that Split builds its parts by unescaping into a strings.Builder, so
+// the mapping back to source columns is lost; recording spans as it scans is
+// mechanical but touches a shared, well-tested splitter.
 func (w *Walker) walkLiteral(lit grammar.ILiteralContext) {
 	if !w.opts.ParseInterpolations {
 		return
