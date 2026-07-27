@@ -2,7 +2,7 @@
 
 > **This code indicates a transpiler defect, not a user error** — and it is
 > **not currently surfaced** either. It originates in the Hindley-Milner
-> type-inference engine, whose errors every caller discards, so it cannot reach
+> type-inference engine, whose errors no call site propagates, so it cannot reach
 > your terminal today. If a future change does surface it, the correct response
 > is to **file a bug report with the source that triggered it**, not to change
 > your GALA code.

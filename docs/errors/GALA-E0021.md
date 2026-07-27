@@ -2,8 +2,9 @@
 
 > **This code is not currently surfaced as a user-facing type check.** It
 > originates in the Hindley-Milner type-inference engine, which the transpiler
-> uses as a type *deriver*, not as a type *checker*. Every caller discards the
-> error. Searching for `GALA-E0021` because of something in your terminal will
+> uses as a type *deriver*, not as a type *checker*. No call site propagates
+> the error — most discard it explicitly, the rest bind it only to choose a
+> fallback. Searching for `GALA-E0021` because of something in your terminal will
 > not find a match — type errors of this class are reported by the **Go
 > compiler**, against the generated Go.
 

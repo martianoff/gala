@@ -3,7 +3,7 @@
 > **This code is not currently surfaced as a user-facing type check.** Like
 > [GALA-E0021](GALA-E0021.md), it originates in the Hindley-Milner
 > type-inference engine, which the transpiler uses as a type *deriver*, not a
-> type *checker*. Every caller discards the error, so searching for
+> type *checker*. No call site propagates the error, so searching for
 > `GALA-E0022` because of something in your terminal will not find a match. If
 > the inferer is ever promoted to a checking role, this code is the identifier
 > such diagnostics will carry.

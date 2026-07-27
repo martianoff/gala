@@ -31,12 +31,14 @@ import (
 // the page is updated with the new text.
 //
 // Scope note: the table covers the codes whose real output was captured while
-// writing these pages — E0002, E0003, E0006, E0015, E0018 from the in-memory
-// transpiler and E0025 from a temp directory (it needs a sibling file on disk,
-// because the whole point of that code is that a sibling's imports do not
-// propagate). Every other code is deliberately absent rather than stubbed; a
-// stub would advertise coverage that does not exist. See the GALA-E0010 note
-// in the table for a code that cannot be guarded from here at all.
+// writing these pages — E0002, E0003, E0006, E0015, E0018, E0027 through E0031,
+// E0035 and E0036 from the in-memory transpiler, plus E0025 and E0032 from a
+// temp directory (both need real files on disk: E0025 because the whole point
+// of that code is that a sibling's imports do not propagate, E0032 because a
+// collision needs two packages to collide). Every other code is deliberately
+// absent rather than stubbed; a stub would advertise coverage that does not
+// exist. See the GALA-E0010 and GALA-E0026 notes in the table for codes that
+// cannot be guarded from here at all.
 func TestErrorDocsQuoteRealOutput(t *testing.T) {
 	cases := []struct {
 		// name distinguishes several rows for the same code. A page often
@@ -183,6 +185,162 @@ func main() {
 		// nothing for a row to assert. Table rows are keyed by code + name
 		// precisely so this row can be added once that gap is understood;
 		// leaving a row that silently passes would be worse than its absence.
+
+		// GALA-E0026 is deliberately absent, and cannot be added. Its
+		// precondition — two dot-imported packages each declaring a sealed
+		// case of the same name — is a strict subset of GALA-E0032's, and the
+		// dot-import collision check runs first, so every repro that would
+		// reach it reports E0032 instead. A row here could only ever assert
+		// E0032's output, which is exactly the "row that cannot fail" this
+		// table avoids. The page says the same thing in prose and quotes its
+		// message from the emit site rather than from a run.
+		{
+			// Two declarations in one file. The cross-file shape the page also
+			// documents is not pinned: it needs a sibling on disk, and the
+			// batch entry point that reports both sites renders the terse
+			// single-line form rather than the framed block this test asserts.
+			name: "two functions of the same name in one file",
+			code: galaerr.CodeFunctionRedeclared, // GALA-E0027
+			render: func(t *testing.T) string {
+				return renderRepro(t, "a.gala", `package main
+
+func greet(name string) string = "hello " + name
+
+func greet(other string) string = "hi " + other
+
+func main() {
+    Println(greet("world"))
+}
+`)
+			},
+		},
+		{
+			name: "two aliases of the same name",
+			code: galaerr.CodeTypeAliasRedeclared, // GALA-E0028
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+type Handler func(string) string
+type Handler func(int) int
+
+func main() {
+    Println("unused")
+}
+`)
+			},
+		},
+		{
+			name: "two method specs of the same name",
+			code: galaerr.CodeInterfaceMethodRedeclared, // GALA-E0029
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+type Repo interface {
+    Find(id int) string
+    Find(name string) string
+}
+
+func main() {
+    Println("unused")
+}
+`)
+			},
+		},
+		{
+			// Shorthand struct syntax.
+			name: "duplicate field, shorthand struct",
+			code: galaerr.CodeStructFieldRedeclared, // GALA-E0030
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+struct Point(X int, X int)
+
+func main() {
+    val p = Point(1, 2)
+    Println(p.X)
+}
+`)
+			},
+		},
+		{
+			// Block struct syntax reaches a different emit site in the
+			// analyzer, so it gets its own row.
+			name: "duplicate field, block struct",
+			code: galaerr.CodeStructFieldRedeclared, // GALA-E0030
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+type Point struct {
+    val x int
+    val x int
+}
+
+func main() {
+    val p = Point(x = 1)
+    Println(p.x)
+}
+`)
+			},
+		},
+		{
+			name: "two sealed cases of the same name",
+			code: galaerr.CodeSealedVariantCaseRedeclared, // GALA-E0031
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+sealed type Shape {
+    case Box(W int)
+    case Box(H int)
+}
+
+func main() {
+    val b = Box(1)
+    Println(b)
+}
+`)
+			},
+		},
+		{
+			// Needs two real dot-imported packages on disk for the collision
+			// to exist at all.
+			name:   "same symbol from two dot-imported packages",
+			code:   galaerr.CodeDotImportCollision, // GALA-E0032
+			render: renderDotImportCollisionRepro,
+		},
+		{
+			// The `len` row also pins the terse caret annotation, which is
+			// derived by truncating the hint at its first " (" — a detail no
+			// other covered code exercises.
+			name: "bare len call",
+			code: galaerr.CodeForbiddenGoBuiltin, // GALA-E0035
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func main() {
+    val s = "héllo"
+    val n = len(s)
+    Println(n)
+}
+`)
+			},
+		},
+		{
+			name: "bare defer statement",
+			code: galaerr.CodeForbiddenStatementKeyword, // GALA-E0036
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+import "martianoff/gala/io"
+
+func main() {
+    val f = io.OpenFile("data.txt")
+    defer
+    f.Close()
+    Println("done")
+}
+`)
+			},
+		},
 	}
 
 	for _, tc := range cases {
@@ -252,6 +410,51 @@ import "martianoff/gala/cmdpkg"
 func main() {
     val x = cmdpkg.NoCmd()
     Println(x)
+}
+`
+	mainPath := filepath.Join(mainDir, "main.gala")
+	require.NoError(t, os.WriteFile(mainPath, []byte(mainSrc), 0o600))
+
+	_, err := newDocGuardTranspilerWithPaths(searchRoot).Transpile(mainSrc, mainPath)
+	require.Error(t, err, "repro was expected to fail to compile")
+
+	rendered := galaerr.RenderRich(err, galaerr.Options{
+		FallbackPath:   mainPath,
+		FallbackSource: mainSrc,
+		Color:          false,
+	})
+	rendered = strings.ReplaceAll(rendered, mainPath, "main.gala")
+	rendered = strings.ReplaceAll(rendered, filepath.ToSlash(mainPath), "main.gala")
+	return rendered
+}
+
+// renderDotImportCollisionRepro drives GALA-E0032. The collision is a property
+// of two packages both exporting a name, so both have to exist on disk for the
+// analyzer to discover their exports — an in-memory single file cannot express
+// it. The reported package names come from the `package` clauses, not the
+// import paths, so the module prefix used here does not leak into the message
+// the page quotes.
+func renderDotImportCollisionRepro(t *testing.T) string {
+	t.Helper()
+	searchRoot := t.TempDir()
+	for _, pkg := range []string{"pkg_a", "pkg_b"} {
+		dir := filepath.Join(searchRoot, pkg)
+		require.NoError(t, os.MkdirAll(dir, 0o755))
+		src := "package " + pkg + "\n\nfunc Greet() string = \"hello from " + pkg + "\"\n"
+		require.NoError(t, os.WriteFile(filepath.Join(dir, pkg+".gala"), []byte(src), 0o600))
+	}
+
+	mainDir := filepath.Join(searchRoot, "main")
+	require.NoError(t, os.MkdirAll(mainDir, 0o755))
+	mainSrc := `package main
+
+import (
+    . "martianoff/gala/pkg_a"
+    . "martianoff/gala/pkg_b"
+)
+
+func main() {
+    Println("hi")
 }
 `
 	mainPath := filepath.Join(mainDir, "main.gala")

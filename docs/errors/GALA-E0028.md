@@ -29,12 +29,14 @@ error[GALA-E0028]: type alias "Handler" already declared in package "main"
   --> main.gala:4:6
   |
 4 | type Handler func(int) int
-  |      ^^^^^^^ remove the duplicate declaration or rename one of the aliases
+  |      ^^^^^^^ remove the duplicate declaration or rename one of the aliase…
   |
   = hint: remove the duplicate declaration or rename one of the aliases
 ```
 
-The caret points at the *second* alias's name — the one to rename or remove.
+The caret points at the *second* alias's name — the one to rename or remove. The
+annotation beside the caret is the hint truncated to fit; the `= hint:` footer
+carries it in full.
 
 **Fix.** Give each alias a distinct name that says what it aliases:
 

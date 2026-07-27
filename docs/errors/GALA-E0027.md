@@ -62,9 +62,21 @@ Error transpiling a.gala: [SemanticError GALA-E0027] a.gala:5:0 function "greet"
 When the other declaration is in the file the error is reported against, the
 message gives its line instead of repeating the file name.
 
-`gala build` reports the same diagnostic in the rich framed CLI form, with the
-caret on the offending name, and stops at the first one rather than listing
-both.
+`gala build` reports the same diagnostic in the rich framed CLI form, and stops
+at the first one rather than listing both:
+
+```
+error[GALA-E0027]: function "greet" in package "main" redeclared (also declared at line 3)
+  --> a.gala:5:1
+  |
+5 | func greet(other string) string = "hi " + other
+  | ^^^^ remove the duplicate declaration or rename one of the functi…
+  |
+  = hint: remove the duplicate declaration or rename one of the functions
+```
+
+The annotation beside the caret is the hint truncated to fit; the `= hint:`
+footer carries it in full.
 
 **Fix.** Delete the redundant declaration, or rename one of them so each name
 describes what it does:
