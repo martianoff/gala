@@ -26,6 +26,14 @@ go_test(
 
 go_test(
     name = "transpiler_test",
-    srcs = ["merge_test.go"],
+    srcs = [
+        "line_directives_guard_test.go",
+        "merge_test.go",
+    ],
     embed = [":transpiler"],
+    deps = [
+        "//galaerr",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
 )

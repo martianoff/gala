@@ -302,19 +302,35 @@ func (t *galaASTTransformer) transformLiteral(ctx *grammar.LiteralContext) (ast.
 	if ctx.FLOAT_LIT() != nil {
 		return &ast.BasicLit{Kind: token.FLOAT, Value: ctx.FLOAT_LIT().GetText()}, nil
 	}
+	// A literal's raw source text is copied verbatim into the generated Go
+	// literal, so its escape sequences must be ones Go accepts — GALA's lexer
+	// admits `\` followed by any character. Backtick raw strings have no
+	// escapes and are not scanned.
 	if ctx.STRING() != nil {
+		if err := t.checkLiteralEscapes(ctx.STRING(), escapeKindString); err != nil {
+			return nil, err
+		}
 		return &ast.BasicLit{Kind: token.STRING, Value: ctx.STRING().GetText()}, nil
 	}
 	if ctx.CHAR_LIT() != nil {
+		if err := t.checkLiteralEscapes(ctx.CHAR_LIT(), escapeKindRune); err != nil {
+			return nil, err
+		}
 		return &ast.BasicLit{Kind: token.CHAR, Value: ctx.CHAR_LIT().GetText()}, nil
 	}
 	if ctx.RAW_STRING() != nil {
 		return &ast.BasicLit{Kind: token.STRING, Value: ctx.RAW_STRING().GetText()}, nil
 	}
 	if ctx.INTERPOLATED_STRING() != nil {
+		if err := t.checkLiteralEscapes(ctx.INTERPOLATED_STRING(), escapeKindInterp); err != nil {
+			return nil, err
+		}
 		return t.transformInterpolatedString(ctx.INTERPOLATED_STRING().GetText())
 	}
 	if ctx.FORMAT_STRING() != nil {
+		if err := t.checkLiteralEscapes(ctx.FORMAT_STRING(), escapeKindFormat); err != nil {
+			return nil, err
+		}
 		return t.transformFormatString(ctx.FORMAT_STRING().GetText())
 	}
 	if ctx.GetText() == "true" || ctx.GetText() == "false" {

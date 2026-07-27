@@ -473,7 +473,10 @@ func (t *GalaToGoTranspiler) Transpile(input string, filePath string) (string, e
 	// originating file — an empty filePath (e.g. LSP snippet transpilation) has
 	// no source map to point at, so markers are simply not emitted upstream.
 	if filePath != "" {
-		code = insertLineDirectives(code, filePath)
+		code, err = insertLineDirectives(code, filePath)
+		if err != nil {
+			return "", galaerr.WithFilePath(err, filePath)
+		}
 	}
 
 	return code, nil
@@ -491,7 +494,12 @@ func (t *GalaToGoTranspiler) Transpile(input string, filePath string) (string, e
 // otherwise no markers are emitted and this is a no-op. Conversely, if markers
 // WERE emitted (FilePath set) this rewrite MUST run, or the raw `__gala_line_N`
 // markers remain as undefined identifiers and the generated Go will not compile.
-func InsertLineDirectives(code, sourceFile string) string {
+//
+// That invariant is enforced rather than assumed: the rewrite returns an error
+// instead of marker-laden code whenever it cannot account for every marker (see
+// insertLineDirectives). Callers MUST propagate it — emitting the code anyway
+// ships internal markers as Go source.
+func InsertLineDirectives(code, sourceFile string) (string, error) {
 	return insertLineDirectives(code, sourceFile)
 }
 
@@ -527,14 +535,29 @@ func InsertLineDirectives(code, sourceFile string) string {
 // The file path is emitted with forward slashes: a Windows drive path with
 // backslashes (C:\...) confuses the compiler's `//line` parser, whereas the
 // forward-slash form (C:/...) is handled correctly.
-func insertLineDirectives(code, sourceFile string) string {
+//
+// Failure is reported, never absorbed. Two conditions abort the rewrite with an
+// error rather than returning the input unchanged:
+//
+//   - the generated Go does not parse, so markers cannot be located, and
+//   - a marker identifier appears somewhere the rewrite does not rewrite
+//     (anything other than a bare statement or a top-level var declaration).
+//
+// Either way the markers would survive into the emitted file as undefined
+// identifiers — output the Go compiler rejects with an error naming a symbol
+// the user never wrote. Both conditions mean a transpiler bug upstream, so the
+// error is reported as an internal failure and the transpile aborts; silently
+// shipping marker-laden Go with a success status is strictly worse.
+func insertLineDirectives(code, sourceFile string) (string, error) {
 	fset := token.NewFileSet()
 	astFile, err := parser.ParseFile(fset, "", code, parser.ParseComments)
 	if err != nil {
-		// Should not happen on the build path (the code already round-tripped
-		// through format.Source in the generator). Leave the code untouched
-		// rather than risk a raw-text rewrite corrupting string literals.
-		return code
+		return "", galaerr.NewCodedSemanticError(
+			galaerr.CodeInternalTransformerPanic, 0, 0,
+			fmt.Sprintf("internal transpiler error: the generated Go for %s is not parseable, so its source-map markers (%s*) could not be rewritten into //line directives: %v",
+				sourceFile, LineMarkerPrefix, err),
+			"this is a transpiler bug, not an error in your code — please report it with the source that triggered it",
+		)
 	}
 
 	// marker records how to rewrite one physical source line.
@@ -545,13 +568,25 @@ func insertLineDirectives(code, sourceFile string) string {
 	// Keyed by 1-based physical line number of the marker node in `code`.
 	markers := make(map[int]marker)
 
+	// Every marker identifier in the file must land in one of the two shapes
+	// below. Counting both totals lets us prove afterwards that none was left
+	// behind (see the reconciliation check). A recognized marker's Ident is
+	// visited both via its enclosing node and on its own, so the two counters
+	// advance together for it.
+	var identCount, claimedCount int
+
 	ast.Inspect(astFile, func(n ast.Node) bool {
 		switch node := n.(type) {
+		case *ast.Ident:
+			if _, ok := lineFromMarkerName(node.Name); ok {
+				identCount++
+			}
 		case *ast.ExprStmt:
 			// Statement marker: a bare identifier statement `__gala_line_N`.
 			if ident, ok := node.X.(*ast.Ident); ok {
 				if galaLine, ok := lineFromMarkerName(ident.Name); ok {
 					markers[fset.Position(ident.Pos()).Line] = marker{galaLine: galaLine}
+					claimedCount++
 				}
 			}
 		case *ast.GenDecl:
@@ -562,6 +597,7 @@ func insertLineDirectives(code, sourceFile string) string {
 					len(vs.Names) == 1 && len(vs.Values) == 0 {
 					if galaLine, ok := lineFromMarkerName(vs.Names[0].Name); ok {
 						markers[fset.Position(node.Pos()).Line] = marker{galaLine: galaLine, isDecl: true}
+						claimedCount++
 					}
 				}
 			}
@@ -569,8 +605,19 @@ func insertLineDirectives(code, sourceFile string) string {
 		return true
 	})
 
+	// A marker identifier anywhere else would be emitted verbatim as Go code and
+	// fail to compile as an undefined identifier the user never wrote.
+	if identCount != claimedCount {
+		return "", galaerr.NewCodedSemanticError(
+			galaerr.CodeInternalTransformerPanic, 0, 0,
+			fmt.Sprintf("internal transpiler error: %d of %d source-map markers (%s*) in the generated Go for %s sit in a position the //line rewrite does not handle, so they would be emitted as Go code",
+				identCount-claimedCount, identCount, LineMarkerPrefix, sourceFile),
+			"this is a transpiler bug, not an error in your code — please report it with the source that triggered it",
+		)
+	}
+
 	if len(markers) == 0 {
-		return code
+		return code, nil
 	}
 
 	slashPath := filepath.ToSlash(sourceFile)
@@ -599,9 +646,9 @@ func insertLineDirectives(code, sourceFile string) string {
 	// rewritten text — directives are still correctly placed, only the blank-line
 	// canonicalization is skipped.
 	if formatted, err := format.Source([]byte(rewritten)); err == nil {
-		return string(formatted)
+		return string(formatted), nil
 	}
-	return rewritten
+	return rewritten, nil
 }
 
 // lineFromMarkerName decodes a marker identifier (e.g. "__gala_line_12") into its

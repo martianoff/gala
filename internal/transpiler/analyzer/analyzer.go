@@ -3293,7 +3293,10 @@ func (a *galaAnalyzer) ensureTranspiled(importPath string) error {
 
 		// Rewrite the line markers stamped above into Go `//line` directives
 		// (see the FilePath assignment). Must run whenever FilePath was set.
-		goCode = transpiler.InsertLineDirectives(goCode, srcPath)
+		goCode, err = transpiler.InsertLineDirectives(goCode, srcPath)
+		if err != nil {
+			return fmt.Errorf("failed to insert line directives for %s: %w", srcPath, err)
+		}
 
 		// Write the Go file
 		goFileName := strings.TrimSuffix(galaFile, ".gala") + ".gen.go"

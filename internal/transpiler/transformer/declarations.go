@@ -1472,6 +1472,10 @@ func (t *galaASTTransformer) transformStructField(ctx *grammar.StructFieldContex
 	}
 
 	if ctx.STRING() != nil {
+		// Copied verbatim into the generated Go, same as any string literal.
+		if err := t.checkLiteralEscapes(ctx.STRING(), escapeKindFieldTag); err != nil {
+			return nil, err
+		}
 		field.Tag = &ast.BasicLit{Kind: token.STRING, Value: ctx.STRING().GetText()}
 	}
 	return field, nil

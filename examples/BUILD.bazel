@@ -451,6 +451,12 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "string_escapes",
+    src = "string_escapes.gala",
+    expected = "string_escapes.out",
+)
+
+gala_exec_test(
     name = "zero_field_struct_ctor",
     src = "zero_field_struct_ctor.gala",
     expected = "zero_field_struct_ctor.out",
