@@ -219,6 +219,8 @@ func NewGalaAnalyzer(p transpiler.GalaParser, searchPaths []string, projectRoot 
 		parsedFileCache:   make(map[string]*parsedFileEntry),
 		parsedFileCacheMu: &sync.Mutex{},
 		pkgResultCache:  make(map[string]*pkgResultCacheEntry),
+		localGoNames:    make(map[string]map[string]bool),
+		importedNames:   make(map[string]map[string]bool),
 		resolver:         module.NewResolver(searchPaths),
 		cache:            newAnalysisCache(resolveCacheRoot(root)),
 	}
@@ -245,6 +247,8 @@ func NewGalaAnalyzerWithPackageFiles(p transpiler.GalaParser, searchPaths []stri
 		parsedFileCache:   make(map[string]*parsedFileEntry),
 		parsedFileCacheMu: &sync.Mutex{},
 		pkgResultCache:  make(map[string]*pkgResultCacheEntry),
+		localGoNames:    make(map[string]map[string]bool),
+		importedNames:   make(map[string]map[string]bool),
 		resolver:         module.NewResolver(searchPaths),
 		cache:            newAnalysisCache(resolveCacheRoot(root)),
 	}
@@ -270,7 +274,9 @@ func NewGalaAnalyzerForLSP(p transpiler.GalaParser, searchPaths []string, projec
 		siblingTreeCache:    make(map[string]*siblingCacheEntry),
 		parsedFileCache:     make(map[string]*parsedFileEntry),
 		parsedFileCacheMu:   &sync.Mutex{},
-		pkgResultCache:     make(map[string]*pkgResultCacheEntry),
+		pkgResultCache:      make(map[string]*pkgResultCacheEntry),
+		localGoNames:        make(map[string]map[string]bool),
+		importedNames:       make(map[string]map[string]bool),
 		resolver:            module.NewResolver(searchPaths),
 		cache:               newAnalysisCache(resolveCacheRoot(root)),
 		skipTranspileToDisk: true,
@@ -304,7 +310,9 @@ func NewBatchAnalyzer(p transpiler.GalaParser, searchPaths []string, projectRoot
 			siblingTreeCache:   make(map[string]*siblingCacheEntry),
 			parsedFileCache:    make(map[string]*parsedFileEntry),
 			parsedFileCacheMu:  &sync.Mutex{},
-		pkgResultCache:    make(map[string]*pkgResultCacheEntry),
+			pkgResultCache:     make(map[string]*pkgResultCacheEntry),
+			localGoNames:       make(map[string]map[string]bool),
+			importedNames:      make(map[string]map[string]bool),
 			resolver:           module.NewResolver(searchPaths),
 			cache:              newAnalysisCache(resolveCacheRoot(root)),
 		},
@@ -1538,7 +1546,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 		// contribute their metadata: every symbol such an import exports is
 		// invisible to the symbol table, and reporting those as undefined
 		// would blame the author for a gap on the analyzer's side.
-		if !a.skipUndefinedCheck && a.fileImportsFullyLoaded(sourceFile) {
+		if !a.skipUndefinedCheck && a.fileImportsFullyLoaded(scanFileImports(sourceFile), richAST) {
 			if errs := a.checkUndefinedSymbols(sourceFile, richAST, filePath); len(errs) > 0 {
 				return nil, errs[0]
 			}
@@ -3314,6 +3322,11 @@ func (a *galaAnalyzer) ensureTranspiled(importPath string) error {
 			pkgResultCache:     a.pkgResultCache,
 			resolver:           a.resolver,
 			cache:              a.cache,
+			// The undefined-symbol check's two directory caches are shared for
+			// the same reason as the rest: a dependency the child transpiles
+			// pulls in the same packages the parent already indexed.
+			localGoNames:  a.localGoNames,
+			importedNames: a.importedNames,
 		}
 
 		richAST, err := tempAnalyzer.Analyze(tree, srcPath)

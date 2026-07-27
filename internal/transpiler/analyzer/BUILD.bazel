@@ -21,6 +21,7 @@ go_library(
         "//internal/transpiler/profiler",
         "//internal/transpiler/registry",
         "//internal/transpiler/resolver",
+        "//internal/transpiler/scopewalk",
         "//internal/transpiler/transformer",
         "@com_github_antlr4_go_antlr_v4//:antlr",
     ],

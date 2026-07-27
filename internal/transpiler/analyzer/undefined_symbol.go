@@ -16,6 +16,7 @@ import (
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
+	"martianoff/gala/internal/transpiler/scopewalk"
 	"martianoff/gala/internal/transpiler/transformer"
 )
 
@@ -31,11 +32,20 @@ import (
 // unresolved symbol's signature. This pass turns both into a framed GALA
 // diagnostic at the identifier's own source position.
 //
+// The traversal is the shared lexical-scope walker in
+// internal/transpiler/scopewalk, which also backs the concurrency capture
+// analysis. Both passes need the same notion of "a value-position identifier
+// that no enclosing binder introduced"; this file supplies the symbol table and
+// decides what an unbound reference means. See undefWalkOptions for the few
+// places the two passes' policies differ, and why each is set the way it is.
+//
 // WHAT THIS COVERS
 //
 // Every *bare identifier used in value position* — a variable read, a call
 // target, a bare function reference — must resolve to something the analyzer
-// knows about:
+// knows about. Identifiers inside interpolated strings (`s"…$x…"`) are included:
+// such a literal is a single lexer token, so the walker re-parses each embedded
+// expression and walks it in the enclosing scope. A name must resolve to:
 //
 //   - a binding introduced by an enclosing scope: function/method/lambda
 //     parameters and type parameters, method receivers, `val`/`var`, `:=`,
@@ -80,61 +90,38 @@ import (
 //     here and rejected there — one concern, one code.
 //   - Selectors. In `x.foo().bar`, only `x` is checked. Field and method
 //     names need the receiver's type, which is inference territory.
-//   - Type references (`func f(x Foo)`, `val v Foo = ...`, `Foo{}`). An
-//     unresolved type in a signature already has a dedicated owner, and the
+//   - Type references (`func f(x Foo)`, `val v Foo = ...`, `Foo{}`). The
 //     analyzer's type resolution is lossy enough (Go generics, constraints,
 //     `map[K]V`, func types) that flagging here would produce false
 //     positives. Type positions are skipped wholesale: only identifiers that
 //     reach a `primary` in expression position are checked.
 //
-//     Note that GALA-E0025 does NOT pick up the whole remainder. It works
-//     from resolved metadata, so it catches a signature type whose package
-//     reached the compilation but whose import this file omitted — not a type
-//     name nothing in the compilation declares. `func total(xs Array[int])`
-//     in a package that imports collection_immutable nowhere therefore passes
-//     both checks, erases its lambda to `func(acc any, x any) any`, and fails
-//     at `go build`. Closing that needs a check that can tell an unresolvable
-//     type name from a merely lossy one; widening this one would trade the
-//     zero-false-positive property for it.
-//   - Identifiers inside interpolated strings (`s"...$x..."`). The
-//     interpolation body is a single lexer token, so those expressions never
-//     reach the parse tree this walk sees.
-//
-//     This is the one exclusion through which the `any`-erasure described
-//     above still escapes: `s"${ArrayTabulate(3, (i) => ...)}"` with no
-//     collection import transpiles clean and emits `func(i any) string`, the
-//     same as an unguarded call did before this pass. Reaching those bodies is
-//     possible — the capture analyzer in internal/transpiler/concurrency
-//     re-parses them with interpolation.Split + ParseExpression and walks the
-//     result in the current scope — but a re-parsed fragment's tokens carry
-//     positions relative to the fragment, not the file, so adopting that here
-//     needs an offset mapping before a hard error could point at the right
-//     `.gala` column. Until that exists the gap is knowingly open.
-//   - `match` / `case` *patterns*. A pattern both binds names and references
-//     constructors, and telling them apart needs the scrutinee's type. Every
-//     identifier in a pattern is therefore treated as a binding scoped to
-//     that arm — a deliberate under-approximation that trades missed
-//     detections for zero false positives.
+//     GALA-E0025 does NOT pick up the remainder. It works from resolved
+//     metadata, so it catches a signature type whose package reached the
+//     compilation but whose import this file omitted — not a type name
+//     nothing in the compilation declares. `func total(xs Array[int])` in a
+//     package that imports collection_immutable nowhere therefore passes both
+//     checks, erases its lambda to `func(acc any, x any) any`, and fails at
+//     `go build`. Closing that needs a check that can tell an unresolvable
+//     type name from a merely lossy one; widening this one would trade away
+//     the zero-false-positive property.
+//   - Constructor names in `match` / `case` *patterns*. The shared walker
+//     binds the names a pattern introduces and ignores the constructor or
+//     extractor it names, because telling them apart in general needs the
+//     scrutinee's type. A typo in a pattern's constructor position is not
+//     caught; the arm's body is checked normally.
 //   - Composite-literal keys (`Point{X: 1}`), named-argument labels
 //     (`f(name = 1)`) and postfix selectors, which are member names rather
 //     than free identifiers.
-//   - Lambda parameter defaults. bindParameters is called with walkDefaults
-//     false from walkLambda, so `(x = missingName) => x` binds `x` without
-//     checking the default — unlike a function declaration's defaults, which
-//     are checked.
-//   - The assigning form of `range`. walkForStatement binds the loop
-//     variables of `for i, v = range xs` exactly as it does for `:=`, so an
-//     `i` or `v` that was never declared is not reported.
 //   - Files whose imports did not all load (see fileImportsFullyLoaded) and
 //     the LSP analyzer (see galaAnalyzer.skipUndefinedCheck). In both cases
 //     the symbol table is knowingly incomplete or the caller's contract is
 //     best-effort, so a hard error would be worse than a missed detection.
 //
-//     Note how wide the first door is: fileImportsFullyLoaded also stands the
-//     check down for a *healthy* dot import of a Go package, so a single
-//     `import . "math"` disables every check above for that whole file. That
-//     is the intended trade — see the reasoning on fileImportsFullyLoaded —
-//     but it is a file-level switch, not a narrow exclusion.
+// Four gaps an earlier revision documented are now closed by the move onto the
+// shared walker, each covered by a test: interpolated-string bodies, lambda
+// parameter defaults, the assigning form of `range`, and the file-wide
+// stand-down that any Go dot import used to trigger.
 //
 // ---------------------------------------------------------------------------
 
@@ -205,18 +192,76 @@ type hintRoot struct {
 	prefix string
 }
 
-// undefScope is one lexical scope in the checker's scope chain.
-type undefScope struct {
-	names  map[string]bool
-	parent *undefScope
+// fileImport is one `import` spec of the file under analysis, decoded once so
+// the three consumers below — the eligibility precondition, the qualifier set,
+// and the imported-declaration index — share a single walk of the import list.
+type fileImport struct {
+	// Path is the quoted import path with its quotes stripped.
+	Path string
+	// Alias is the explicit name given to the import (`import ci "…"`), empty
+	// when none was written.
+	Alias string
+	// IsDot marks the `import . "…"` form, which brings the package's exports
+	// into scope unqualified.
+	IsDot bool
 }
 
-// undefChecker walks a parsed GALA file and reports identifiers in value
-// position that resolve to nothing. See the file header for the exact scope.
+// LocalName is how the package is referred to in source: its alias when one was
+// given, otherwise the trailing segment of its path.
+func (fi fileImport) LocalName() string {
+	if fi.Alias != "" {
+		return fi.Alias
+	}
+	name := fi.Path
+	if idx := strings.LastIndex(name, "/"); idx >= 0 {
+		name = name[idx+1:]
+	}
+	return name
+}
+
+// scanFileImports decodes every import spec the file declares.
+func scanFileImports(sf *grammar.SourceFileContext) []fileImport {
+	var out []fileImport
+	for _, impDecl := range sf.AllImportDeclaration() {
+		ctx, ok := impDecl.(*grammar.ImportDeclarationContext)
+		if !ok {
+			continue
+		}
+		for _, spec := range ctx.AllImportSpec() {
+			s, ok := spec.(*grammar.ImportSpecContext)
+			if !ok || s.STRING() == nil {
+				continue
+			}
+			fi := fileImport{Path: strings.Trim(s.STRING().GetText(), "\"")}
+			if alias := s.Identifier(); alias != nil {
+				fi.Alias = alias.GetText()
+			} else {
+				// No identifier but an extra child is the `.` form (the same
+				// test the dot-import scan in Analyze makes).
+				fi.IsDot = s.GetChildCount() > 1
+			}
+			out = append(out, fi)
+		}
+	}
+	return out
+}
+
+// isGalaImport reports whether an import path names a GALA package, using the
+// same in-repo/external split as the import scan in Analyze.
+func (a *galaAnalyzer) isGalaImport(path string) bool {
+	return strings.HasPrefix(path, inRepoGalaImportPrefix) ||
+		(a.resolver != nil && a.resolver.IsGalaPackage(path))
+}
+
+// undefChecker consumes the shared scope walker's stream of unbound
+// value-position references and reports the ones that resolve to nothing. See
+// the file header for the exact scope.
 type undefChecker struct {
 	rich *transpiler.RichAST
 
-	scope *undefScope
+	// walker owns the scope stack and the traversal; this type only decides
+	// what an unbound reference means.
+	walker *scopewalk.Walker
 
 	// declared indexes every symbol the merged metadata knows about, under
 	// both its qualified key ("collection_immutable.Array") and its simple
@@ -259,26 +304,25 @@ func (a *galaAnalyzer) checkUndefinedSymbols(
 	richAST *transpiler.RichAST,
 	filePath string,
 ) []*galaerr.SemanticError {
+	imports := scanFileImports(sourceFile)
 	declared := indexDeclaredSymbols(richAST)
 	for name := range a.undefinedSymbolLocalGoNames(filePath) {
 		declared[name] = true
 	}
-	for name := range a.importedTopLevelNames(sourceFile) {
+	for name := range a.importedTopLevelNames(imports) {
 		declared[name] = true
 	}
 	c := &undefChecker{
 		rich:           richAST,
 		declared:       declared,
 		declaredTypes:  indexDeclaredTypeNames(richAST),
-		qualifiers:     collectQualifiers(sourceFile, richAST),
+		qualifiers:     collectQualifiers(imports, richAST),
 		hintRoots:      a.hintRoots,
 		importResolves: a.importPathResolvesTo,
 		reported:       make(map[string]bool),
 	}
-	c.push()
-	c.bindFileLevelNames(sourceFile)
-	c.walkTopLevel(sourceFile)
-	c.pop()
+	c.walker = scopewalk.New(c, undefWalkOptions())
+	c.walkSourceFile(sourceFile)
 
 	sort.SliceStable(c.errs, func(i, j int) bool {
 		if c.errs[i].Line != c.errs[j].Line {
@@ -296,14 +340,23 @@ func (a *galaAnalyzer) checkUndefinedSymbols(
 // table without any of that package's exports, and a name the analyzer never
 // saw must not be reported as one the author never defined.
 //
-// Two shapes make a file ineligible:
+// Exactly two shapes make a file ineligible, both of them "the analyzer did
+// not learn this package's contents", never merely "this package is Go":
 //
 //   - a GALA import with no successfully-analyzed entry in analyzedPkgs, and
-//   - a *dot* import of a Go package, whose unqualified exports depend on Go
-//     type info that is silently unavailable when no Go SDK is on PATH.
-//     Named Go imports stay eligible because their symbols are only ever
-//     reachable through a qualifier, which the check accepts on sight.
-func (a *galaAnalyzer) fileImportsFullyLoaded(sf *grammar.SourceFileContext) bool {
+//   - a *dot* import of a Go package that contributed no symbols at all.
+//     Dot-importing is what makes a Go package's exports reachable unqualified,
+//     so they have to be enumerable; they normally are, via GoTypeInfo, and
+//     then the check stays fully live. They are not when the Go SDK is absent
+//     (type inference is silently disabled — see the note in CLAUDE.md) or when
+//     the package's name differs from its path's last segment, and only then
+//     does the file stand down.
+//
+// A NAMED Go import never disqualifies a file: its symbols are reachable only
+// through a qualifier, which the check accepts on sight. An earlier revision
+// stood down for any Go dot-import whatsoever, which silently disabled the
+// check for whole files over a healthy `import . "math"`.
+func (a *galaAnalyzer) fileImportsFullyLoaded(imports []fileImport, richAST *transpiler.RichAST) bool {
 	// The implicitly dot-imported prelude is subject to the same rule: it
 	// never appears in the import list, so check it explicitly. (This is not
 	// a special case for std — it is the one import the language adds on the
@@ -311,35 +364,70 @@ func (a *galaAnalyzer) fileImportsFullyLoaded(sf *grammar.SourceFileContext) boo
 	if entry, present := a.analyzedPkgs[registry.StdImportPath]; !present || entry == nil {
 		return false
 	}
-	for _, impDecl := range sf.AllImportDeclaration() {
-		ctx, ok := impDecl.(*grammar.ImportDeclarationContext)
-		if !ok {
-			continue
-		}
-		for _, spec := range ctx.AllImportSpec() {
-			s, ok := spec.(*grammar.ImportSpecContext)
-			if !ok || s.STRING() == nil {
-				continue
-			}
-			path := strings.Trim(s.STRING().GetText(), "\"")
-			// Same in-repo/external split the import scan in Analyze uses.
-			isGala := strings.HasPrefix(path, inRepoGalaImportPrefix) ||
-				(a.resolver != nil && a.resolver.IsGalaPackage(path))
-			if isGala {
-				if entry, present := a.analyzedPkgs[path]; !present || entry == nil {
-					return false
-				}
-				continue
-			}
-			// Dot import of a Go package: `s.Identifier() == nil` with an
-			// extra child is the '.' form (see the dot-import scan in
-			// Analyze).
-			if s.Identifier() == nil && s.GetChildCount() > 1 {
+	for _, imp := range imports {
+		if a.isGalaImport(imp.Path) {
+			if entry, present := a.analyzedPkgs[imp.Path]; !present || entry == nil {
 				return false
 			}
+			continue
+		}
+		if imp.IsDot && !goPackageContributed(richAST, imp.Path) {
+			return false
 		}
 	}
 	return true
+}
+
+// goPackageContributed reports whether the analyzer learned any symbol of the
+// Go package at `importPath`. Go metadata is keyed by package name, which is
+// the path's last segment for the overwhelming majority of packages; a package
+// that renames itself simply reads as "contributed nothing", which is the safe
+// answer for the caller.
+func goPackageContributed(rich *transpiler.RichAST, importPath string) bool {
+	if rich == nil {
+		return false
+	}
+	name := importPath
+	if idx := strings.LastIndex(name, "/"); idx >= 0 {
+		name = name[idx+1:]
+	}
+	if name == "" {
+		return false
+	}
+	if len(rich.GoExports[name]) > 0 {
+		return true
+	}
+	gi := rich.GoTypeInfo
+	if gi == nil {
+		return false
+	}
+	prefix := name + "."
+	for k := range gi.Functions {
+		if strings.HasPrefix(k, prefix) {
+			return true
+		}
+	}
+	for k := range gi.Types {
+		if strings.HasPrefix(k, prefix) {
+			return true
+		}
+	}
+	for k := range gi.Variables {
+		if strings.HasPrefix(k, prefix) {
+			return true
+		}
+	}
+	for k := range gi.Constants {
+		if strings.HasPrefix(k, prefix) {
+			return true
+		}
+	}
+	for k := range gi.TypeAliases {
+		if strings.HasPrefix(k, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // importedTopLevelNames returns every name declared at the top level of the
@@ -360,29 +448,14 @@ func (a *galaAnalyzer) fileImportsFullyLoaded(sf *grammar.SourceFileContext) boo
 // type resolution or code generation. Results are cached per package directory:
 // analyzePackage has already parsed these files, so parseFileCached usually
 // hits, and a package's sources do not change during a build.
-func (a *galaAnalyzer) importedTopLevelNames(sf *grammar.SourceFileContext) map[string]bool {
+func (a *galaAnalyzer) importedTopLevelNames(imports []fileImport) map[string]bool {
 	out := make(map[string]bool)
-	for _, impDecl := range sf.AllImportDeclaration() {
-		ctx, ok := impDecl.(*grammar.ImportDeclarationContext)
-		if !ok {
-			continue
+	for _, imp := range imports {
+		if !a.isGalaImport(imp.Path) {
+			continue // Go package — its symbols come from GoTypeInfo
 		}
-		for _, spec := range ctx.AllImportSpec() {
-			s, ok := spec.(*grammar.ImportSpecContext)
-			if !ok || s.STRING() == nil {
-				continue
-			}
-			path := strings.Trim(s.STRING().GetText(), "\"")
-			relPath := path
-			isInRepo := strings.HasPrefix(path, inRepoGalaImportPrefix)
-			if isInRepo {
-				relPath = strings.TrimPrefix(path, inRepoGalaImportPrefix)
-			} else if a.resolver == nil || !a.resolver.IsGalaPackage(path) {
-				continue // Go package — its symbols come from GoTypeInfo
-			}
-			for name := range a.packageTopLevelNames(relPath) {
-				out[name] = true
-			}
+		for name := range a.packageTopLevelNames(strings.TrimPrefix(imp.Path, inRepoGalaImportPrefix)) {
+			out[name] = true
 		}
 	}
 	// The implicit prelude is subject to the same treatment as any written
@@ -409,10 +482,9 @@ func (a *galaAnalyzer) packageTopLevelNames(relPath string) map[string]bool {
 	}
 	entries, rerr := os.ReadDir(dirPath)
 	if rerr != nil {
-		if a.importedNames == nil {
-			a.importedNames = make(map[string]map[string]bool)
+		if a.importedNames != nil {
+			a.importedNames[key] = nil
 		}
-		a.importedNames[key] = nil
 		return nil
 	}
 	names := make(map[string]bool)
@@ -427,10 +499,9 @@ func (a *galaAnalyzer) packageTopLevelNames(relPath string) map[string]bool {
 		}
 		collectTopLevelDeclaredNames(tree, names)
 	}
-	if a.importedNames == nil {
-		a.importedNames = make(map[string]map[string]bool)
+	if a.importedNames != nil {
+		a.importedNames[key] = names
 	}
-	a.importedNames[key] = names
 	return names
 }
 
@@ -512,10 +583,9 @@ func (a *galaAnalyzer) undefinedSymbolLocalGoNames(filePath string) map[string]b
 		return cached
 	}
 	names := parseLocalGoDeclNames(filepath.Dir(filePath))
-	if a.localGoNames == nil {
-		a.localGoNames = make(map[string]map[string]bool)
+	if a.localGoNames != nil {
+		a.localGoNames[dir] = names
 	}
-	a.localGoNames[dir] = names
 	return names
 }
 
@@ -691,7 +761,7 @@ func indexDeclaredSymbols(rich *transpiler.RichAST) map[string]bool {
 
 // collectQualifiers builds the set of identifiers that may legally appear on
 // the left of a `pkg.Symbol` selector.
-func collectQualifiers(sf *grammar.SourceFileContext, rich *transpiler.RichAST) map[string]bool {
+func collectQualifiers(imports []fileImport, rich *transpiler.RichAST) map[string]bool {
 	q := make(map[string]bool)
 	q[registry.StdPackageName] = true
 	if rich.PackageName != "" {
@@ -725,29 +795,11 @@ func collectQualifiers(sf *grammar.SourceFileContext, rich *transpiler.RichAST) 
 			addQualifierOf(q, k)
 		}
 	}
-	// This file's own import declarations: the alias when one is given,
-	// otherwise the trailing path segment — how a Go import is referenced.
-	for _, impDecl := range sf.AllImportDeclaration() {
-		ctx, ok := impDecl.(*grammar.ImportDeclarationContext)
-		if !ok {
-			continue
-		}
-		for _, spec := range ctx.AllImportSpec() {
-			s, ok := spec.(*grammar.ImportSpecContext)
-			if !ok || s.STRING() == nil {
-				continue
-			}
-			if alias := s.Identifier(); alias != nil {
-				q[alias.GetText()] = true
-				continue
-			}
-			path := strings.Trim(s.STRING().GetText(), "\"")
-			if idx := strings.LastIndex(path, "/"); idx >= 0 {
-				path = path[idx+1:]
-			}
-			if path != "" {
-				q[path] = true
-			}
+	// This file's own imports: the alias when one is given, otherwise the
+	// trailing path segment — how a Go import is referenced.
+	for _, imp := range imports {
+		if name := imp.LocalName(); name != "" {
+			q[name] = true
 		}
 	}
 	return q
@@ -790,43 +842,26 @@ func addQualifierOf(q map[string]bool, qualified string) {
 	}
 }
 
-// --- scope handling ---------------------------------------------------------
-
-func (c *undefChecker) push() {
-	c.scope = &undefScope{names: make(map[string]bool), parent: c.scope}
-}
-
-func (c *undefChecker) pop() {
-	if c.scope != nil {
-		c.scope = c.scope.parent
-	}
-}
-
-func (c *undefChecker) bind(name string) {
-	if name == "" || c.scope == nil {
-		return
-	}
-	c.scope.names[name] = true
-}
-
-func (c *undefChecker) inScope(name string) bool {
-	for s := c.scope; s != nil; s = s.parent {
-		if s.names[name] {
-			return true
-		}
-	}
-	return false
-}
-
 // --- resolution -------------------------------------------------------------
 
-// resolves reports whether `name` denotes anything at all at this point in the
-// walk.
+// Reference implements scopewalk.Visitor. The shared walker calls it for every
+// value-position identifier no enclosing scope binds; anything that does not
+// then resolve through the compilation's symbol table is the error this pass
+// exists to raise. `use` describes how the name was used, which this pass does
+// not need — existence is existence however the name is spelled at the call
+// site.
+func (c *undefChecker) Reference(name string, tok antlr.Token, use scopewalk.Use) {
+	if c.resolves(name) {
+		return
+	}
+	c.report(name, tok)
+}
+
+// resolves reports whether `name` denotes anything at all. Scope is already
+// handled by the shared walker — it only reports names no scope binds — so this
+// consults the compilation's symbol table alone.
 func (c *undefChecker) resolves(name string) bool {
 	if name == "" {
-		return true
-	}
-	if c.inScope(name) {
 		return true
 	}
 	if galaBuiltinValueNames[name] || isGoPredeclaredTypeName(name) {
@@ -920,12 +955,114 @@ func (c *undefChecker) hintFor(name string) string {
 
 // --- walking ----------------------------------------------------------------
 
+// undefWalkOptions configures the shared scope walker for this pass. Every
+// choice is the one that cannot invent a reference, because a false positive
+// here is a hard compile error on code that works:
+//
+//   - ParseInterpolations descends into `s"…$x"` bodies, so a name used only
+//     inside an interpolation is checked like any other.
+//   - RequireCleanInterpolationParse drops a fragment whose re-parse reported
+//     errors, so ANTLR's error recovery can never become a diagnostic. Narrow
+//     by nature: the expression parser stops at the longest valid prefix
+//     without complaining, so `${x +}` still yields `x`.
+//   - SkipCompositeLiteralKeys omits `T{Field: v}`'s key, which names a struct
+//     field rather than a value.
+//   - SkipTypedPatternArgument omits the identifier of an `x: T` pattern in
+//     argument position, which is not clearly a value reference.
+//   - BindWholePattern stays FALSE, so a `case` binds only the names it
+//     actually introduces instead of every identifier it mentions. Constructor
+//     and extractor names in a pattern are still neither bound nor checked —
+//     the walker ignores them — but they no longer leak into the arm's scope,
+//     so the arm's BODY is checked against the names the pattern really
+//     introduces rather than a set inflated by its constructors. Strictly
+//     tighter, and it cannot add a reference the blunt form did not have.
+//   - EnterFunctionScope binds the two binders the walker does not model: a
+//     declaration's type parameters and a method's receiver.
+func undefWalkOptions() scopewalk.Options {
+	return scopewalk.Options{
+		ParseInterpolations:            true,
+		RequireCleanInterpolationParse: true,
+		SkipCompositeLiteralKeys:       true,
+		SkipTypedPatternArgument:       true,
+		EnterFunctionScope:             bindFunctionDeclarationScope,
+	}
+}
+
+// bindFunctionDeclarationScope binds a function or method declaration's own
+// type parameters, and, for a method, its receiver name together with any type
+// parameters the receiver type introduces (`func (l *List[T]) …` brings both
+// `l` and `T` into scope).
+func bindFunctionDeclarationScope(w *scopewalk.Walker, fn grammar.IFunctionDeclarationContext) {
+	fc, ok := fn.(*grammar.FunctionDeclarationContext)
+	if !ok {
+		return
+	}
+	bindTypeParameters(w, fc.TypeParameters())
+	recv := fc.Receiver()
+	if recv == nil {
+		return
+	}
+	rc, ok := recv.(*grammar.ReceiverContext)
+	if !ok {
+		return
+	}
+	w.BindID(rc.Identifier())
+	// The receiver's type arguments are the method's view of the type's
+	// parameters; they can sit behind a pointer or nest (`*List[T]`,
+	// `Pair[K, V]`), so every identifier in the receiver type is bound. Binding
+	// the type's own name alongside them is harmless — it is a declaration in
+	// this package either way.
+	w.BindIdentifiersIn(rc.Type_())
+}
+
+func bindTypeParameters(w *scopewalk.Walker, tp grammar.ITypeParametersContext) {
+	if tp == nil {
+		return
+	}
+	list := tp.(*grammar.TypeParametersContext).TypeParameterList()
+	if list == nil {
+		return
+	}
+	for _, p := range list.(*grammar.TypeParameterListContext).AllTypeParameter() {
+		w.BindID(p.(*grammar.TypeParameterContext).Identifier(0))
+	}
+}
+
+// walkSourceFile drives the shared walker over a whole file. Only declarations
+// that hold value-position expressions are entered: a `type` / `sealed type` /
+// `embed` declaration contains types and string literals, never a value this
+// check inspects.
+func (c *undefChecker) walkSourceFile(sf *grammar.SourceFileContext) {
+	w := c.walker
+	w.PushScope()
+	defer w.PopScope()
+	c.bindFileLevelNames(sf)
+
+	for _, topDecl := range sf.AllTopLevelDeclaration() {
+		switch {
+		case topDecl.FunctionDeclaration() != nil:
+			w.WalkFunctionDeclaration(topDecl.FunctionDeclaration())
+		case topDecl.ValDeclaration() != nil:
+			w.Walk(topDecl.ValDeclaration().(*grammar.ValDeclarationContext).ExpressionList())
+		case topDecl.VarDeclaration() != nil:
+			w.Walk(topDecl.VarDeclaration().(*grammar.VarDeclarationContext).ExpressionList())
+		case topDecl.StructShorthandDeclaration() != nil:
+			ctx := topDecl.StructShorthandDeclaration().(*grammar.StructShorthandDeclarationContext)
+			w.PushScope()
+			bindTypeParameters(w, ctx.TypeParameters())
+			w.BindParameters(ctx.Parameters())
+			w.WalkParameterDefaults(ctx.Parameters())
+			w.PopScope()
+		}
+	}
+}
+
 // bindFileLevelNames registers declarations whose names are not reachable
 // through richAST metadata: tuple-pattern package vals (`val (a, b) = ...`,
 // which extractPackageVals deliberately skips) and `embed val` directives.
 func (c *undefChecker) bindFileLevelNames(sf *grammar.SourceFileContext) {
 	for _, d := range c.rich.EmbedDirectives {
-		c.bind(d.VarName)
+		c.walker.Bind(d.VarName)
 	}
 	for _, topDecl := range sf.AllTopLevelDeclaration() {
 		var tp grammar.ITuplePatternContext
@@ -935,464 +1072,12 @@ func (c *undefChecker) bindFileLevelNames(sf *grammar.SourceFileContext) {
 		case topDecl.VarDeclaration() != nil:
 			tp = topDecl.VarDeclaration().(*grammar.VarDeclarationContext).TuplePattern()
 		case topDecl.EmbedDeclaration() != nil:
-			ctx := topDecl.EmbedDeclaration().(*grammar.EmbedDeclarationContext)
-			if ctx.Identifier() != nil {
-				c.bind(ctx.Identifier().GetText())
-			}
+			c.walker.BindID(topDecl.EmbedDeclaration().(*grammar.EmbedDeclarationContext).Identifier())
 		}
 		if tp != nil {
-			c.bindIdentifierList(tp.(*grammar.TuplePatternContext).IdentifierList())
+			c.walker.BindIdentifierList(tp.(*grammar.TuplePatternContext).IdentifierList())
 		}
 	}
-}
-
-func (c *undefChecker) walkTopLevel(sf *grammar.SourceFileContext) {
-	for _, topDecl := range sf.AllTopLevelDeclaration() {
-		switch {
-		case topDecl.FunctionDeclaration() != nil:
-			c.walkFunctionDeclaration(topDecl.FunctionDeclaration().(*grammar.FunctionDeclarationContext))
-		case topDecl.ValDeclaration() != nil:
-			c.walkExpr(topDecl.ValDeclaration().(*grammar.ValDeclarationContext).ExpressionList())
-		case topDecl.VarDeclaration() != nil:
-			c.walkExpr(topDecl.VarDeclaration().(*grammar.VarDeclarationContext).ExpressionList())
-		case topDecl.StructShorthandDeclaration() != nil:
-			ctx := topDecl.StructShorthandDeclaration().(*grammar.StructShorthandDeclarationContext)
-			c.walkParameterDefaults(ctx.Parameters(), ctx.TypeParameters())
-		}
-		// typeDeclaration / sealedTypeDeclaration / embedDeclaration hold no
-		// value-position expressions this check inspects.
-	}
-}
-
-// walkParameterDefaults checks the default-value expressions of a parameter
-// list in a scope holding the declaration's type parameters and the parameter
-// names seen so far (a default may reference an earlier parameter).
-func (c *undefChecker) walkParameterDefaults(params grammar.IParametersContext, typeParams grammar.ITypeParametersContext) {
-	if params == nil {
-		return
-	}
-	c.push()
-	defer c.pop()
-	c.bindTypeParameters(typeParams)
-	c.bindParameters(params, true)
-}
-
-func (c *undefChecker) walkFunctionDeclaration(ctx *grammar.FunctionDeclarationContext) {
-	c.push()
-	defer c.pop()
-
-	c.bindTypeParameters(ctx.TypeParameters())
-	if recv := ctx.Receiver(); recv != nil {
-		rc := recv.(*grammar.ReceiverContext)
-		if rc.Identifier() != nil {
-			c.bind(rc.Identifier().GetText())
-		}
-		// A method's receiver type may introduce type parameters
-		// (`func (s Stack[T]) Push(v T)`); bind their names so `T` resolves
-		// in the signature and body.
-		c.bindReceiverTypeParams(rc.Type_())
-	} else if ctx.Identifier() != nil {
-		// A local function may recurse; top-level ones are already
-		// package-level, but nested ones are not.
-		c.bind(ctx.Identifier().GetText())
-	}
-	if sig := ctx.Signature(); sig != nil {
-		c.bindParameters(sig.(*grammar.SignatureContext).Parameters(), true)
-	}
-	if b := ctx.Block(); b != nil {
-		c.walkBlock(b.(*grammar.BlockContext))
-	} else {
-		c.walkExpr(ctx.Expression())
-	}
-}
-
-// bindReceiverTypeParams binds the type-parameter names a method receiver
-// introduces (`Stack[T]` → `T`). Every identifier in the receiver type is
-// bound, at any nesting depth, because the type parameters can sit behind a
-// pointer or a nested type argument (`*List[T]`, `Pair[K, V]`) and because
-// binding the type's own name alongside them is harmless — it is a
-// declaration in the same package either way.
-func (c *undefChecker) bindReceiverTypeParams(t grammar.ITypeContext) {
-	if t == nil {
-		return
-	}
-	for _, id := range collectIdentifiers(t) {
-		c.bind(id)
-	}
-}
-
-func (c *undefChecker) bindTypeParameters(tp grammar.ITypeParametersContext) {
-	if tp == nil {
-		return
-	}
-	list := tp.(*grammar.TypeParametersContext).TypeParameterList()
-	if list == nil {
-		return
-	}
-	for _, p := range list.(*grammar.TypeParameterListContext).AllTypeParameter() {
-		if id := p.(*grammar.TypeParameterContext).Identifier(0); id != nil {
-			c.bind(id.GetText())
-		}
-	}
-}
-
-// bindParameters binds each named parameter. With walkDefaults set, default
-// expressions are checked as they are reached, so a default may reference an
-// earlier parameter but not a later one.
-func (c *undefChecker) bindParameters(params grammar.IParametersContext, walkDefaults bool) {
-	if params == nil {
-		return
-	}
-	pl := params.(*grammar.ParametersContext).ParameterList()
-	if pl == nil {
-		return
-	}
-	for _, p := range pl.(*grammar.ParameterListContext).AllParameter() {
-		pc := p.(*grammar.ParameterContext)
-		if walkDefaults {
-			if pd := pc.ParamDefault(); pd != nil {
-				c.walkExpr(pd.(*grammar.ParamDefaultContext).Expression())
-			}
-		}
-		if pc.Identifier() != nil {
-			c.bind(pc.Identifier().GetText())
-		}
-	}
-}
-
-func (c *undefChecker) bindIdentifierList(il grammar.IIdentifierListContext) {
-	if il == nil {
-		return
-	}
-	for _, id := range il.(*grammar.IdentifierListContext).AllIdentifier() {
-		c.bind(id.GetText())
-	}
-}
-
-func (c *undefChecker) walkBlock(b *grammar.BlockContext) {
-	if b == nil {
-		return
-	}
-	c.push()
-	defer c.pop()
-	// Hoist local function and type declarations so mutually recursive local
-	// helpers resolve regardless of declaration order.
-	for _, st := range b.AllStatement() {
-		sc, ok := st.(*grammar.StatementContext)
-		if !ok || sc.Declaration() == nil {
-			continue
-		}
-		d := sc.Declaration().(*grammar.DeclarationContext)
-		if fd := d.FunctionDeclaration(); fd != nil {
-			fc := fd.(*grammar.FunctionDeclarationContext)
-			if fc.Identifier() != nil && fc.Receiver() == nil {
-				c.bind(fc.Identifier().GetText())
-			}
-		}
-		if td := d.TypeDeclaration(); td != nil {
-			tc := td.(*grammar.TypeDeclarationContext)
-			if tc.Identifier() != nil {
-				c.bind(tc.Identifier().GetText())
-			}
-		}
-	}
-	for _, st := range b.AllStatement() {
-		c.walkStatement(st.(*grammar.StatementContext))
-	}
-}
-
-func (c *undefChecker) walkStatement(st *grammar.StatementContext) {
-	if st == nil {
-		return
-	}
-	if d := st.Declaration(); d != nil {
-		c.walkDeclaration(d.(*grammar.DeclarationContext))
-		return
-	}
-	if r := st.ReturnStatement(); r != nil {
-		c.walkExpr(r.(*grammar.ReturnStatementContext).Expression())
-	}
-}
-
-func (c *undefChecker) walkDeclaration(d *grammar.DeclarationContext) {
-	switch {
-	case d.ValDeclaration() != nil:
-		vc := d.ValDeclaration().(*grammar.ValDeclarationContext)
-		c.walkExpr(vc.ExpressionList())
-		c.bindIdentifierList(vc.IdentifierList())
-		if tp := vc.TuplePattern(); tp != nil {
-			c.bindIdentifierList(tp.(*grammar.TuplePatternContext).IdentifierList())
-		}
-	case d.VarDeclaration() != nil:
-		vc := d.VarDeclaration().(*grammar.VarDeclarationContext)
-		c.walkExpr(vc.ExpressionList())
-		c.bindIdentifierList(vc.IdentifierList())
-		if tp := vc.TuplePattern(); tp != nil {
-			c.bindIdentifierList(tp.(*grammar.TuplePatternContext).IdentifierList())
-		}
-	case d.BindDeclaration() != nil:
-		bc := d.BindDeclaration().(*grammar.BindDeclarationContext)
-		c.walkExpr(bc.Expression())
-		if bc.Identifier() != nil {
-			c.bind(bc.Identifier().GetText())
-		}
-	case d.AlsoDeclaration() != nil:
-		ac := d.AlsoDeclaration().(*grammar.AlsoDeclarationContext)
-		c.walkExpr(ac.Expression())
-		if ac.Identifier() != nil {
-			c.bind(ac.Identifier().GetText())
-		}
-	case d.UseDeclaration() != nil:
-		uc := d.UseDeclaration().(*grammar.UseDeclarationContext)
-		c.walkExpr(uc.Expression())
-		if uc.Identifier() != nil {
-			c.bind(uc.Identifier().GetText())
-		}
-	case d.FunctionDeclaration() != nil:
-		c.walkFunctionDeclaration(d.FunctionDeclaration().(*grammar.FunctionDeclarationContext))
-	case d.IfStatement() != nil:
-		c.walkIfStatement(d.IfStatement().(*grammar.IfStatementContext))
-	case d.ForStatement() != nil:
-		c.walkForStatement(d.ForStatement().(*grammar.ForStatementContext))
-	case d.SimpleStatement() != nil:
-		c.walkSimpleStatement(d.SimpleStatement().(*grammar.SimpleStatementContext))
-	}
-	// typeDeclaration / importDeclaration hold no value-position expressions.
-}
-
-func (c *undefChecker) walkIfStatement(ctx *grammar.IfStatementContext) {
-	c.push()
-	defer c.pop()
-	if init := ctx.SimpleStatement(); init != nil {
-		c.walkSimpleStatement(init.(*grammar.SimpleStatementContext))
-	}
-	c.walkExpr(ctx.Expression())
-	for _, b := range ctx.AllBlock() {
-		c.walkBlock(b.(*grammar.BlockContext))
-	}
-	if elseIf := ctx.IfStatement(); elseIf != nil {
-		c.walkIfStatement(elseIf.(*grammar.IfStatementContext))
-	}
-}
-
-func (c *undefChecker) walkForStatement(ctx *grammar.ForStatementContext) {
-	c.push()
-	defer c.pop()
-	if fc := ctx.ForClause(); fc != nil {
-		f := fc.(*grammar.ForClauseContext)
-		for _, ss := range f.AllSimpleStatement() {
-			c.walkSimpleStatement(ss.(*grammar.SimpleStatementContext))
-		}
-		c.walkExpr(f.Expression())
-	}
-	if rc := ctx.RangeClause(); rc != nil {
-		r := rc.(*grammar.RangeClauseContext)
-		c.walkExpr(r.Expression())
-		c.bindIdentifierList(r.IdentifierList())
-	}
-	if cond := ctx.ForCondition(); cond != nil {
-		c.walkExpr(cond.(*grammar.ForConditionContext).Expression())
-	}
-	if b := ctx.Block(); b != nil {
-		c.walkBlock(b.(*grammar.BlockContext))
-	}
-}
-
-func (c *undefChecker) walkSimpleStatement(ctx *grammar.SimpleStatementContext) {
-	if ctx == nil {
-		return
-	}
-	switch {
-	case ctx.IncDecStmt() != nil:
-		c.walkExpr(ctx.IncDecStmt().(*grammar.IncDecStmtContext).Expression())
-	case ctx.Assignment() != nil:
-		for _, el := range ctx.Assignment().(*grammar.AssignmentContext).AllExpressionList() {
-			c.walkExpr(el)
-		}
-	case ctx.ShortVarDecl() != nil:
-		s := ctx.ShortVarDecl().(*grammar.ShortVarDeclContext)
-		c.walkExpr(s.ExpressionList())
-		c.bindIdentifierList(s.IdentifierList())
-	case ctx.Expression() != nil:
-		c.walkExpr(ctx.Expression())
-	}
-}
-
-// walkExpr is the generic expression walker. It descends the precedence chain
-// generically and only takes over at nodes whose identifiers need special
-// treatment.
-func (c *undefChecker) walkExpr(node antlr.Tree) {
-	if node == nil {
-		return
-	}
-	switch n := node.(type) {
-	case *grammar.PostfixExprContext:
-		c.walkPostfixExpr(n)
-	case *grammar.LambdaExpressionContext:
-		c.walkLambda(n)
-	case *grammar.PartialFunctionLiteralContext:
-		for _, cc := range n.AllCaseClause() {
-			c.walkCaseClause(cc.(*grammar.CaseClauseContext))
-		}
-	case *grammar.BlockContext:
-		c.walkBlock(n)
-	case *grammar.ArgumentContext:
-		// `argument: (identifier '=')? (lambdaExpression | pattern)` — the
-		// optional leading identifier is a named-argument label, not a
-		// reference.
-		if lam := n.LambdaExpression(); lam != nil {
-			c.walkLambda(lam.(*grammar.LambdaExpressionContext))
-			return
-		}
-		c.walkArgumentPattern(n.Pattern())
-	case *grammar.KeyedElementContext:
-		// `keyedElement: (expression ':')? expression` — a leading key is a
-		// struct field name in the common case, so only the value is checked.
-		if exprs := n.AllExpression(); len(exprs) > 0 {
-			c.walkExpr(exprs[len(exprs)-1])
-		}
-	case *grammar.TypeContext:
-		// Type positions are out of scope for this check (see file header).
-	case *grammar.IfExpressionContext:
-		c.walkExpr(n.Expression())
-		for _, br := range n.AllIfExprBranch() {
-			b := br.(*grammar.IfExprBranchContext)
-			if blk := b.Block(); blk != nil {
-				c.walkBlock(blk.(*grammar.BlockContext))
-			} else {
-				c.walkExpr(b.Expression())
-			}
-		}
-	case *grammar.DeclarationContext:
-		c.walkDeclaration(n)
-	case *grammar.StatementContext:
-		c.walkStatement(n)
-	case *grammar.SimpleStatementContext:
-		c.walkSimpleStatement(n)
-	default:
-		for i := 0; i < node.GetChildCount(); i++ {
-			c.walkExpr(node.GetChild(i))
-		}
-	}
-}
-
-// walkArgumentPattern treats a `pattern` node appearing in *argument* position
-// as an ordinary expression. The same grammar rule serves `case` patterns,
-// where identifiers bind instead — see walkCaseClause.
-func (c *undefChecker) walkArgumentPattern(p grammar.IPatternContext) {
-	switch pn := p.(type) {
-	case nil:
-		return
-	case *grammar.ExpressionPatternContext:
-		c.walkExpr(pn.Expression())
-	case *grammar.RestPatternContext:
-		c.walkExpr(pn.Expression())
-	case *grammar.TypedPatternContext:
-		// `x: T` in argument position is not an expression reference.
-	default:
-		c.walkExpr(p)
-	}
-}
-
-func (c *undefChecker) walkLambda(n *grammar.LambdaExpressionContext) {
-	c.push()
-	defer c.pop()
-	c.bindParameters(n.Parameters(), false)
-	if b := n.Block(); b != nil {
-		c.walkBlock(b.(*grammar.BlockContext))
-		return
-	}
-	c.walkExpr(n.Expression())
-}
-
-// walkCaseClause binds every identifier the pattern mentions, then checks the
-// guard and body against that scope. Binding constructors as well as capture
-// names is deliberate: telling them apart needs the scrutinee's type, and
-// over-binding can only miss detections, never invent them.
-func (c *undefChecker) walkCaseClause(cc *grammar.CaseClauseContext) {
-	c.push()
-	defer c.pop()
-	if p := cc.Pattern(); p != nil {
-		for _, id := range collectIdentifiers(p) {
-			c.bind(id)
-		}
-	}
-	c.walkExpr(cc.GetGuard())
-	if b := cc.GetBodyBlock(); b != nil {
-		c.walkBlock(b.(*grammar.BlockContext))
-	}
-	if s := cc.GetBodyStmt(); s != nil {
-		c.walkSimpleStatement(s.(*grammar.SimpleStatementContext))
-	}
-}
-
-func (c *undefChecker) walkPostfixExpr(n *grammar.PostfixExprContext) {
-	suffixes := n.AllPostfixSuffix()
-	if prim := n.PrimaryExpr(); prim != nil {
-		pe := prim.(*grammar.PrimaryExprContext)
-		if p := pe.Primary(); p != nil {
-			pc := p.(*grammar.PrimaryContext)
-			if id := pc.Identifier(); id != nil {
-				name := id.GetText()
-				// `pkg.Symbol` — the head is a package qualifier, not a value.
-				isQualifier := len(suffixes) > 0 &&
-					isSelectorSuffix(suffixes[0]) &&
-					!c.inScope(name) &&
-					c.qualifiers[name]
-				if !isQualifier && !c.resolves(name) {
-					c.report(name, id.GetStart())
-				}
-			} else {
-				c.walkExpr(pc)
-			}
-		} else {
-			c.walkExpr(pe)
-		}
-	}
-	for _, sfx := range suffixes {
-		sc := sfx.(*grammar.PostfixSuffixContext)
-		if sc.Identifier() != nil {
-			continue // member selector — not a free identifier
-		}
-		if al := sc.ArgumentList(); al != nil {
-			for _, arg := range al.(*grammar.ArgumentListContext).AllArgument() {
-				c.walkExpr(arg)
-			}
-			continue
-		}
-		// Either an index (`xs[i]`) or an explicit type-argument list
-		// (`Unfold[int, string](...)`). Both route through primary
-		// identifiers, and type names resolve through the declared index.
-		c.walkExpr(sc.ExpressionList())
-	}
-	for _, cc := range n.AllCaseClause() {
-		c.walkCaseClause(cc.(*grammar.CaseClauseContext))
-	}
-}
-
-func isSelectorSuffix(s grammar.IPostfixSuffixContext) bool {
-	sc, ok := s.(*grammar.PostfixSuffixContext)
-	return ok && sc.Identifier() != nil
-}
-
-// collectIdentifiers returns every `identifier` leaf under `node`.
-func collectIdentifiers(node antlr.Tree) []string {
-	var out []string
-	var walk func(antlr.Tree)
-	walk = func(t antlr.Tree) {
-		if t == nil {
-			return
-		}
-		if id, ok := t.(*grammar.IdentifierContext); ok {
-			out = append(out, id.GetText())
-			return
-		}
-		for i := 0; i < t.GetChildCount(); i++ {
-			walk(t.GetChild(i))
-		}
-	}
-	walk(node)
-	return out
 }
 
 // --- import hint discovery --------------------------------------------------

@@ -159,6 +159,92 @@ func helper() int {
 			},
 			symbol: "helperLocal",
 		},
+		{
+			// The body of an interpolated string is a single lexer token, so
+			// its embedded expressions are not parse-tree children. The shared
+			// walker re-parses them, which is the only reason this is caught.
+			name: "undefined name inside an interpolated string",
+			src: `package main
+
+func main() {
+    Println(s"total=$missingTotal")
+}
+`,
+			symbol: "missingTotal",
+		},
+		{
+			// The `${...}` form, with a call and a method chain inside it.
+			name: "undefined call target inside an interpolation expression",
+			src: `package main
+
+func main() {
+    Println(s"labels=${missingLabels(3).Size()}")
+}
+`,
+			symbol: "missingLabels",
+		},
+		{
+			// A format string's `%spec` must not confuse the splitter into
+			// hiding the expression before it.
+			name: "undefined name inside a format string",
+			src: `package main
+
+func main() {
+    Println(f"n=${missingCount}%04d")
+}
+`,
+			symbol: "missingCount",
+		},
+		{
+			// A lambda's parameter default is walked, like a function
+			// declaration's. Before the walkers were unified this was a
+			// documented hole.
+			name: "undefined name in a lambda parameter default",
+			src: `package main
+
+func apply(f func(int) int) int = f(1)
+
+func main() {
+    Println(apply((x int = missingDefault) => x))
+}
+`,
+			symbol: "missingDefault",
+		},
+		{
+			// `for i, v = range xs` ASSIGNS to existing variables, so an
+			// undeclared one is a reference, not a binding. The `:=` form
+			// binds and is covered by the negative cases.
+			name: "undeclared variable in an assigning range clause",
+			src: `package main
+
+import . "martianoff/gala/collection_immutable"
+
+func main() {
+    val xs = ArrayOf(1, 2, 3)
+    for i, v = range xs.ToGoSlice() {
+        Println(v)
+    }
+    Println(i)
+}
+`,
+			symbol: "i",
+		},
+		{
+			// A healthy Go dot-import must not stand the check down for the
+			// whole file: `math` contributes its exports, so every other name
+			// is still checked.
+			name: "go dot-import does not disable the check",
+			src: `package main
+
+import . "math"
+
+func main() {
+    Println(Sqrt(4.0))
+    Println(missingAfterGoDotImport)
+}
+`,
+			symbol: "missingAfterGoDotImport",
+		},
 	}
 
 	for _, tc := range tests {
@@ -382,6 +468,84 @@ func (h Holder[T]) MapTo[U any](f func(T) U) U = f(h.Value)
 func main() {
     val h = Holder[int](3)
     Println(Holder_MapTo[int, string](h, (v) => s"v=$v"))
+}
+`,
+		},
+		{
+			// Everything an interpolation can legally reference: a parameter,
+			// a local, a lambda parameter, a package-level val, a method chain
+			// and a call. Re-parsing these bodies is what closed the
+			// interpolation escape, so this is where a regression would land.
+			name: "interpolated strings reference bindings of every kind",
+			src: `package main
+
+import . "martianoff/gala/collection_immutable"
+
+val prefix = "p"
+
+func label(n int) string {
+    val local = n * 2
+    val xs = ArrayOf(1, 2, 3)
+    val each = xs.Map((i) => s"i=$i/${i * 2}")
+    return s"$prefix:$n:$local:${each.Size()}:${xs.MkString(",")}"
+}
+
+func main() {
+    Println(label(1))
+    Println(f"padded=${label(2)}%10s")
+}
+`,
+		},
+		{
+			// `$$` is a literal dollar and must not be parsed as a reference;
+			// neither must a bare `$` followed by punctuation.
+			name: "interpolation escapes are not references",
+			src: `package main
+
+func main() {
+    val amount = 5
+    Println(s"cost=$$$amount")
+}
+`,
+		},
+		{
+			// The precise pattern split must still bind capture names, and
+			// must resolve constructors that genuinely exist — including a
+			// nested extractor and a tuple pattern.
+			name: "nested and tuple patterns bind their captures",
+			src: `package main
+
+sealed type Tree {
+    case Leaf(V int)
+    case Node(L Tree, R Tree)
+}
+
+func sum(t Tree) int = t match {
+    case Leaf(v)             => v
+    case Node(Leaf(a), rest) => a + sum(rest)
+    case Node(l, r)          => sum(l) + sum(r)
+}
+
+func pair() int {
+    val (a, b) = Tuple(1, 2)
+    return a + b
+}
+
+func main() {
+    Println(sum(Leaf(1)) + pair())
+}
+`,
+		},
+		{
+			// A Go dot-import whose exports the analyzer can enumerate keeps
+			// the file checked AND resolves its own unqualified names.
+			name: "go dot-import resolves its unqualified exports",
+			src: `package main
+
+import . "math"
+
+func main() {
+    Println(Sqrt(Abs(-4.0)))
 }
 `,
 		},
