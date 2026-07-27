@@ -11,4 +11,5 @@ go_library(
     srcs = ["main.go"],
     importpath = "martianoff/gala/cmd/gala_test_gen",
     visibility = ["//visibility:private"],
+    deps = ["//galaerr"],
 )

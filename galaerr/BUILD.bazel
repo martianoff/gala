@@ -3,6 +3,7 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "galaerr",
     srcs = [
+        "bom.go",
         "errors.go",
         "render.go",
     ],
@@ -13,6 +14,7 @@ go_library(
 go_test(
     name = "galaerr_test",
     srcs = [
+        "bom_test.go",
         "errors_test.go",
         "render_test.go",
     ],

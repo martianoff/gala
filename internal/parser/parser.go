@@ -43,6 +43,11 @@ func (p *AntlrGalaParser) Parse(input string) (antlr.Tree, error) {
 // files. The deserialized ATN stays shared too (it is read-mostly and guards
 // its own lazily-cached token sets with a mutex).
 func (p *AntlrGalaParser) ParseLenient(input string) (antlr.Tree, []error) {
+	// Drop a leading UTF-8 BOM once, up front: the lexer has no rule for
+	// U+FEFF and would otherwise reject the file outright. Go, which GALA
+	// transpiles to, ignores a leading BOM the same way.
+	input = galaerr.StripBOM(input)
+
 	is := antlr.NewInputStream(input)
 	lexer := grammar.NewgalaLexer(is)
 	isolateLexerCaches(lexer.BaseLexer)

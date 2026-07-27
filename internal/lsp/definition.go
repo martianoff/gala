@@ -8,6 +8,7 @@ import (
 
 	"github.com/owenrumney/go-lsp/lsp"
 
+	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
 )
@@ -677,7 +678,9 @@ func packageDeclLocation(filePath string) *lsp.Location {
 	}
 	uri := lsp.DocumentURI(pathToURI(absPath))
 	if data, err := os.ReadFile(absPath); err == nil {
-		for i, line := range strings.Split(string(data), "\n") {
+		// TrimSpace below does not drop a U+FEFF, so a leading BOM would hide a
+		// package clause sitting on line 1.
+		for i, line := range strings.Split(galaerr.StripBOM(string(data)), "\n") {
 			if strings.HasPrefix(strings.TrimSpace(line), "package ") {
 				return &lsp.Location{URI: uri, Range: lsp.Range{
 					Start: lsp.Position{Line: i, Character: 0},

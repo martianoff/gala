@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"martianoff/gala/galaerr"
 )
 
 // ParseError represents an error during gala.mod parsing.
@@ -18,8 +20,13 @@ func (e *ParseError) Error() string {
 }
 
 // Parse parses a gala.mod file from a string.
+//
+// A leading BOM is dropped first: an editor that writes one prefixes the
+// `module` directive with U+FEFF, which then matches no case below and is
+// skipped without complaint, leaving the module path empty and dependency
+// resolution silently wrong.
 func Parse(content string) (*File, error) {
-	return parseLines(strings.Split(content, "\n"))
+	return parseLines(strings.Split(galaerr.StripBOM(content), "\n"))
 }
 
 // ParseFile parses a gala.mod file from a filesystem path.

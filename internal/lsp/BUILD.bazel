@@ -34,6 +34,7 @@ go_library(
 go_test(
     name = "lsp_test",
     srcs = [
+        "bom_test.go",
         "error_lines_test.go",
         "repro_gala_mcp_test.go",
         "server_test.go",
@@ -56,6 +57,8 @@ go_test(
         "//internal/transpiler/transformer",
         "@com_github_owenrumney_go_lsp//lsp",
         "@com_github_owenrumney_go_lsp//servertest",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
         "@rules_go//go/tools/bazel",
     ],
 )

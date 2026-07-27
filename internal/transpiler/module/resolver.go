@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/depman/fetch"
 	"martianoff/gala/internal/depman/mod"
 )
@@ -793,7 +794,9 @@ func findGalaModuleRoot(startPath string) (moduleRoot, moduleName string) {
 		return "", ""
 	}
 
-	lines := strings.Split(string(content), "\n")
+	// TrimSpace below does not drop a U+FEFF, so a leading BOM would hide the
+	// module directive and silently demote the module to a plain Go package.
+	lines := strings.Split(galaerr.StripBOM(string(content)), "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "module ") {

@@ -444,7 +444,10 @@ func (t *GalaToGoTranspiler) Transpile(input string, filePath string) (string, e
 		return "", galaerr.WithFilePath(err, filePath)
 	}
 	richAST.FilePath = filePath
-	richAST.SourceContent = input
+	// The parser strips a leading BOM, so every token index on the tree is
+	// relative to the stripped text; keep the source hung off the AST in step
+	// with them rather than three bytes ahead.
+	richAST.SourceContent = galaerr.StripBOM(input)
 
 	done = prof.Phase("transform")
 	fset, file, err := t.transformer.Transform(richAST)

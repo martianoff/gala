@@ -209,13 +209,16 @@ func renderFooter(hint string, color bool) string {
 // resolveSource returns the source text for the snippet: the diagnostic's own
 // file if readable, else the caller-provided fallback when it applies.
 func resolveSource(filePath string, opts Options) string {
+	// Both paths strip a leading BOM so the rendered line 1 matches the text
+	// the parser saw; otherwise the caret sits one rune off on the first line
+	// of every diagnostic in a BOM'd file.
 	if filePath != "" {
 		if data, err := os.ReadFile(filePath); err == nil {
-			return string(data)
+			return StripBOM(string(data))
 		}
 	}
 	if opts.FallbackSource != "" && (filePath == "" || filePath == opts.FallbackPath) {
-		return opts.FallbackSource
+		return StripBOM(opts.FallbackSource)
 	}
 	return ""
 }

@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"martianoff/gala/galaerr"
 )
 
 // testFuncRegex matches function declarations that start with Test.
@@ -69,8 +71,14 @@ func findTestFunctions(path string) ([]string, error) {
 
 	var funcs []string
 	scanner := bufio.NewScanner(file)
+	first := true
 	for scanner.Scan() {
 		line := scanner.Text()
+		if first {
+			// A leading BOM would otherwise stop the regex anchoring on line 1.
+			line = galaerr.StripBOM(line)
+			first = false
+		}
 		matches := testFuncRegex.FindStringSubmatch(line)
 		if len(matches) >= 2 {
 			funcs = append(funcs, matches[1])
