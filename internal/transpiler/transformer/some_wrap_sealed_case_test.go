@@ -93,6 +93,7 @@ sealed type T {
 
 	wrapSrc := `package pkg_a
 
+import . "martianoff/gala/collection_immutable"
 import _ "` + modulePath + `/sibling"
 
 func wrap(tag string, x string) Option[T] {

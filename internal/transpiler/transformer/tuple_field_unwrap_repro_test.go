@@ -182,27 +182,11 @@ func main() {
 			},
 		},
 		{
-			name: "tuple return type with val and complex type - no import",
-			input: `package main
-
-func parse(url string) Tuple[string, HashMap[string, string]] {
-    val path = "/test"
-    val params = EmptyHashMap[string, string]()
-    return (path, params)
-}
-
-func main() {
-    val result = parse("/test")
-}
-`,
-			check: func(t *testing.T, got string) {
-				fmt.Println("=== tuple return type with val and complex type - no import ===")
-				fmt.Println(got)
-				// Even without import, the return type context should prevent widening to any
-				assert.False(t, strings.Contains(got, "Tuple[string, any]"), "should not widen to Tuple[string, any] when return type is declared, got:\n%s", got)
-			},
-		},
-		{
+			// This case previously had an import-less twin asserting the same
+			// non-widening. Using `EmptyHashMap` without importing
+			// collection_immutable is now a hard GALA-E0023, so the twin was
+			// removed; the analyzer's undefined-symbol tests cover that
+			// rejection, and this case keeps guarding the inference itself.
 			name: "tuple return type with val and complex type - with import",
 			input: `package main
 
@@ -226,21 +210,9 @@ func main() {
 			},
 		},
 		{
-			name: "tuple with HashMap val element - no import",
-			input: `package main
-
-func main() {
-    val params = EmptyHashMap[string, string]()
-    val pair = ("/test", params)
-}
-`,
-			check: func(t *testing.T, got string) {
-				fmt.Println("=== tuple with HashMap val element - no import ===")
-				fmt.Println(got)
-				// Without proper import, HashMap type can't be resolved - this is expected to widen
-			},
-		},
-		{
+			// The import-less twin of this case only documented that an
+			// unresolvable HashMap widened to `any`. That shape is now
+			// rejected outright (GALA-E0023), so it was removed.
 			name: "tuple with HashMap val element - dot import",
 			input: `package main
 

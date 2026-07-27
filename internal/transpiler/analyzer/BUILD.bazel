@@ -7,6 +7,7 @@ go_library(
         "cache.go",
         "cache_codec.go",
         "go_types.go",
+        "undefined_symbol.go",
         "validation.go",
     ],
     importpath = "martianoff/gala/internal/transpiler/analyzer",
@@ -45,9 +46,16 @@ go_test(
         "redefinition_cross_file_test.go",
         "test_exports_test.go",
         "test_helper_test.go",
+        "undefined_symbol_test.go",
         "validation_test.go",
     ],
     data = [
+        # The undefined-symbol negative cases must genuinely resolve names
+        # from these packages rather than have the check stand down on an
+        # unloadable import, so their sources have to be in runfiles.
+        "//collection_immutable:gala_sources",
+        "//go_interop:types.go",
+        "//io:gala_sources",
         "//std:gala_sources",
     ],
     embed = [":analyzer"],

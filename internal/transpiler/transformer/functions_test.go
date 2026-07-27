@@ -27,6 +27,7 @@ func TestFunctions(t *testing.T) {
 			name: "Lambda with explicit return nil should not duplicate return",
 			input: `package main
 
+import . "martianoff/gala/collection_immutable"
 import . "martianoff/gala/std"
 
 func test() {
@@ -38,6 +39,7 @@ func test() {
 }`,
 			expected: `package main
 
+import . "martianoff/gala/collection_immutable"
 import . "martianoff/gala/std"
 
 func test() {
@@ -87,18 +89,22 @@ var f = std.NewImmutable(func(x int) int {
 `,
 		},
 		{
-			// When HM-based inference cannot resolve the branches' types
-			// (here `c` is undeclared), per-branch fallback inference picks
-			// the common arm type — both arms are int literals, so the IIFE
-			// is typed `func() int` rather than the legacy `func() any`.
+			// The if-expression IIFE takes its type from the arms, not from
+			// the condition: both arms are int literals, so it is typed
+			// `func() int` rather than the legacy `func() any`. The condition
+			// is a plain `var` (it used to be an undeclared name, which the
+			// analyzer now rejects as GALA-E0023).
 			name: "If expression",
 			input: `package main
+
+var c = true
 
 val res = if (c) 1 else 2`,
 			expected: `package main
 
 import "martianoff/gala/std"
 
+var c = true
 var res = std.NewImmutable(func() int {
 	if c {
 		return 1

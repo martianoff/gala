@@ -42,7 +42,7 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0020` | Package not found | [GALA-E0020.md](GALA-E0020.md) |
 | `GALA-E0021` | Type mismatch (unification failure) | [GALA-E0021.md](GALA-E0021.md) |
 | `GALA-E0022` | Occurs check failure | [GALA-E0022.md](GALA-E0022.md) |
-| `GALA-E0023` | Undefined variable | [GALA-E0023.md](GALA-E0023.md) |
+| `GALA-E0023` | Undefined symbol | [GALA-E0023.md](GALA-E0023.md) |
 | `GALA-E0024` | Internal inference failure | [GALA-E0024.md](GALA-E0024.md) |
 | `GALA-E0025` | Unresolved cross-package symbol | [GALA-E0025.md](GALA-E0025.md) |
 | `GALA-E0026` | Ambiguous sealed-variant reference | [GALA-E0026.md](GALA-E0026.md) |
