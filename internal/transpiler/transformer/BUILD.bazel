@@ -162,6 +162,14 @@ go_test(
         # export scan; same as the embedded-CLI snapshot), so its source must be
         # on the sandbox search path or the import fails to resolve on Linux CI.
         "//go_interop:types.go",
+        # go_builtins is the same shape as go_interop — a pure-Go stdlib
+        # package the analyzer resolves from builtins.go alone. It is not
+        # imported by any fixture directly; std dot-imports it, so it is
+        # pulled in whenever std is loaded, and `Panic` (the sanctioned form —
+        # bare `panic` is GALA-E0035) resolves through that closure. Without
+        # it staged, std's import of go_builtins fails under the Linux sandbox
+        # and every fixture using `Panic` loses the name.
+        "//go_builtins:builtins.go",
     ],
     embed = [":transformer"],
     deps = [

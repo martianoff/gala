@@ -58,6 +58,11 @@ go_test(
         "//go_interop:types.go",
         "//io:gala_sources",
         "//std:gala_sources",
+        # std dot-imports go_builtins, so loading std pulls it in. If it is
+        # not staged, that import fails under the Linux sandbox, which now
+        # stands the undefined-symbol check down for every file — silently
+        # turning the positive tests below into no-ops.
+        "//go_builtins:builtins.go",
     ],
     embed = [":analyzer"],
     deps = [

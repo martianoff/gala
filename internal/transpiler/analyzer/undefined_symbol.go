@@ -340,9 +340,11 @@ func (a *galaAnalyzer) checkUndefinedSymbols(
 // table without any of that package's exports, and a name the analyzer never
 // saw must not be reported as one the author never defined.
 //
-// Exactly two shapes make a file ineligible, both of them "the analyzer did
-// not learn this package's contents", never merely "this package is Go":
+// Three shapes make a file ineligible, all of them "the analyzer did not learn
+// this package's contents", never merely "this package is Go":
 //
+//   - ANY package that failed to load during this compilation, at any depth —
+//     see the packageLoadFailures check below,
 //   - a GALA import with no successfully-analyzed entry in analyzedPkgs, and
 //   - a *dot* import of a Go package that contributed no symbols at all.
 //     Dot-importing is what makes a Go package's exports reachable unqualified,
@@ -356,7 +358,27 @@ func (a *galaAnalyzer) checkUndefinedSymbols(
 // through a qualifier, which the check accepts on sight. An earlier revision
 // stood down for any Go dot-import whatsoever, which silently disabled the
 // check for whole files over a healthy `import . "math"`.
+// notePackageLoadFailure records that a package could not be loaded. Called
+// from analyzePackage's single deferred error path, so it catches a failure at
+// any depth of the import graph.
+func (a *galaAnalyzer) notePackageLoadFailure(relPath string) {
+	if a.packageLoadFailures != nil {
+		a.packageLoadFailures[relPath] = true
+	}
+}
+
 func (a *galaAnalyzer) fileImportsFullyLoaded(imports []fileImport, richAST *transpiler.RichAST) bool {
+	// Any package that failed to load, at any depth, disqualifies every file
+	// in this compilation. The file's own import list is not enough to decide
+	// this: the missing package is usually one a DEPENDENCY imported. std
+	// dot-imports go_builtins, for instance, so a file that imports nothing
+	// still resolves bare `Panic` through std's closure — and if go_builtins
+	// did not load, that name goes missing without anything in the file
+	// hinting why. Reporting it as undefined would blame the author for an
+	// environmental failure.
+	if len(a.packageLoadFailures) > 0 {
+		return false
+	}
 	// The implicitly dot-imported prelude is subject to the same rule: it
 	// never appears in the import list, so check it explicitly. (This is not
 	// a special case for std — it is the one import the language adds on the

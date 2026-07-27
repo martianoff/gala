@@ -832,6 +832,42 @@ func main() {
 	}
 }
 
+// TestUndefinedSymbol_StandsDownOnTransitiveLoadFailure is the guard for the
+// serious half of the stand-down. The file's own imports all resolve, so
+// inspecting them says nothing is wrong — but a package that one of THEM
+// imports failed to load, and its symbols are missing from the table. A name
+// the author never wrote an import for (it would have arrived through the
+// dependency's dot-import) must not be reported as undefined.
+//
+// This is the shape that broke on CI: std dot-imports go_builtins, so a
+// sandbox that staged std but not go_builtins made bare `Panic` vanish in
+// fixtures that import nothing at all.
+func TestUndefinedSymbol_StandsDownOnTransitiveLoadFailure(t *testing.T) {
+	err := analyzeInModule(t, "main.gala", map[string]string{
+		// mid imports a package that does not exist, so analyzing mid
+		// succeeds while a package in its closure fails to load.
+		"mid/mid.gala": `package mid
+
+import . "example.com/hints/missingdep"
+
+func MidHelper() int = 1
+`,
+		"main.gala": `package main
+
+import . "example.com/hints/mid"
+
+func main() {
+    Println(MidHelper())
+    Println(nameOnlyTheMissingDepWouldSupply)
+}
+`,
+	})
+	if err != nil {
+		assert.NotContains(t, err.Error(), "GALA-E0023",
+			"a package that failed to load anywhere in the graph must stand the check down")
+	}
+}
+
 // TestCrossPackageImportCheckStillFires guards the neighbouring contract: the
 // explicit-import check (GALA-E0025) keeps rejecting a signature type that
 // only a sibling file imported. The undefined-symbol check is deliberately

@@ -148,6 +148,17 @@ type galaAnalyzer struct {
 	// analyzed. See undefinedSymbolLocalGoNames.
 	localGoNames map[string]map[string]bool
 
+	// packageLoadFailures records every package that failed to load during
+	// this compilation, at any depth. It is the precondition the
+	// undefined-symbol check needs but could not get from a file's own import
+	// list: a package that failed to load contributes none of its symbols, and
+	// the failure is usually in something a DEPENDENCY imported rather than
+	// the file being compiled — std dot-imports go_builtins, so a missing
+	// go_builtins makes bare `Panic` unresolvable in a file that imports
+	// nothing at all. Shared with child analyzers, and never cleared: a
+	// package that could not be loaded stays unloadable for the build.
+	packageLoadFailures map[string]bool
+
 	// importedNames caches, per resolved package directory, the names that
 	// package's .gala sources declare at the top level. It backs the
 	// undefined-symbol check's safety net for export kinds the merged
@@ -219,8 +230,9 @@ func NewGalaAnalyzer(p transpiler.GalaParser, searchPaths []string, projectRoot 
 		parsedFileCache:   make(map[string]*parsedFileEntry),
 		parsedFileCacheMu: &sync.Mutex{},
 		pkgResultCache:  make(map[string]*pkgResultCacheEntry),
-		localGoNames:    make(map[string]map[string]bool),
-		importedNames:   make(map[string]map[string]bool),
+		localGoNames:        make(map[string]map[string]bool),
+		importedNames:       make(map[string]map[string]bool),
+		packageLoadFailures: make(map[string]bool),
 		resolver:         module.NewResolver(searchPaths),
 		cache:            newAnalysisCache(resolveCacheRoot(root)),
 	}
@@ -247,8 +259,9 @@ func NewGalaAnalyzerWithPackageFiles(p transpiler.GalaParser, searchPaths []stri
 		parsedFileCache:   make(map[string]*parsedFileEntry),
 		parsedFileCacheMu: &sync.Mutex{},
 		pkgResultCache:  make(map[string]*pkgResultCacheEntry),
-		localGoNames:    make(map[string]map[string]bool),
-		importedNames:   make(map[string]map[string]bool),
+		localGoNames:        make(map[string]map[string]bool),
+		importedNames:       make(map[string]map[string]bool),
+		packageLoadFailures: make(map[string]bool),
 		resolver:         module.NewResolver(searchPaths),
 		cache:            newAnalysisCache(resolveCacheRoot(root)),
 	}
@@ -277,6 +290,7 @@ func NewGalaAnalyzerForLSP(p transpiler.GalaParser, searchPaths []string, projec
 		pkgResultCache:      make(map[string]*pkgResultCacheEntry),
 		localGoNames:        make(map[string]map[string]bool),
 		importedNames:       make(map[string]map[string]bool),
+		packageLoadFailures: make(map[string]bool),
 		resolver:            module.NewResolver(searchPaths),
 		cache:               newAnalysisCache(resolveCacheRoot(root)),
 		skipTranspileToDisk: true,
@@ -311,8 +325,9 @@ func NewBatchAnalyzer(p transpiler.GalaParser, searchPaths []string, projectRoot
 			parsedFileCache:    make(map[string]*parsedFileEntry),
 			parsedFileCacheMu:  &sync.Mutex{},
 			pkgResultCache:     make(map[string]*pkgResultCacheEntry),
-			localGoNames:       make(map[string]map[string]bool),
-			importedNames:      make(map[string]map[string]bool),
+			localGoNames:        make(map[string]map[string]bool),
+			importedNames:       make(map[string]map[string]bool),
+			packageLoadFailures: make(map[string]bool),
 			resolver:           module.NewResolver(searchPaths),
 			cache:              newAnalysisCache(resolveCacheRoot(root)),
 		},
@@ -2530,7 +2545,17 @@ func (a *galaAnalyzer) isStdType(name string) bool {
 	return registry.IsStdType(name)
 }
 
-func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, error) {
+func (a *galaAnalyzer) analyzePackage(relPath string) (_ *transpiler.RichAST, retErr error) {
+	// Every failure to load a package is recorded, whatever the reason. The
+	// undefined-symbol check consults the record: a package that did not load
+	// contributes none of its symbols, and its callers' callers cannot tell
+	// that from a name the author never defined. See notePackageLoadFailure.
+	defer func() {
+		if retErr != nil {
+			a.notePackageLoadFailure(relPath)
+		}
+	}()
+
 	var pkgStart time.Time
 	if profiler.Enabled {
 		pkgStart = time.Now()
@@ -3325,8 +3350,9 @@ func (a *galaAnalyzer) ensureTranspiled(importPath string) error {
 			// The undefined-symbol check's two directory caches are shared for
 			// the same reason as the rest: a dependency the child transpiles
 			// pulls in the same packages the parent already indexed.
-			localGoNames:  a.localGoNames,
-			importedNames: a.importedNames,
+			localGoNames:        a.localGoNames,
+			importedNames:       a.importedNames,
+			packageLoadFailures: a.packageLoadFailures,
 		}
 
 		richAST, err := tempAnalyzer.Analyze(tree, srcPath)

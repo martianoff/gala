@@ -107,11 +107,16 @@ for a guaranteed absence of false positives:
   pattern's constructor position is therefore not caught here. The
   arm's *body* is checked normally, against exactly the names the
   pattern introduces.
-- **Files with an import the analyzer could not load.** If a GALA
-  import failed to resolve, the check stands down entirely for that
-  file: none of that package's exports are in the symbol table, and
-  blaming the author for names the analyzer never saw would be worse
-  than missing a real one. The same applies to a *dot* import of a Go
+- **Any package that failed to load, anywhere in the graph.** If a GALA
+  package could not be analyzed — missing from a search path, a
+  transpile failure, whatever the reason — the check stands down for
+  every file in the compilation, not just files that import it
+  directly. It has to be that broad: the missing package is usually one
+  a *dependency* imported. `std` dot-imports `go_builtins`, so a file
+  that imports nothing at all still resolves bare `Panic` through
+  std's closure; if `go_builtins` did not load, that name goes missing
+  with nothing in the file to hint why, and reporting it would blame
+  the author for an environmental failure. The same applies to a *dot* import of a Go
   package that contributed no symbols at all — dot-importing is what
   makes a Go package's exports reachable unqualified, so they must be
   enumerable. They normally are (via Go type info), and then the check
