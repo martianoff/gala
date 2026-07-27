@@ -12,6 +12,7 @@ import (
 
 	"martianoff/gala/internal/depman/fetch"
 	"martianoff/gala/internal/depman/mod"
+	"martianoff/gala/internal/stdlib"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
 	"martianoff/gala/internal/transpiler/generator"
@@ -385,11 +386,23 @@ func (b *Builder) ensureStdlib() error {
 }
 
 // computeSourceHash computes a SHA256 hash of all inputs for cache invalidation.
-// Includes .gala source files, gala.mod, and the gala version so that any
-// change to sources, dependencies, or the transpiler itself triggers a rebuild.
-func computeSourceHash(files []string, galaVersion string) string {
+// Includes .gala source files, gala.mod, the gala version, and the fingerprint
+// of the standard library the sources are compiled against, so that any change
+// to sources, dependencies, or the transpiler itself triggers a rebuild.
+//
+// The stdlib fingerprint belongs in this key because the stdlib is a transpile
+// input, not just a runtime dependency: signatures declared there decide which
+// analyses run over the project's own code. A stdlib that gains (or, through a
+// stale on-disk copy, loses) a marker type on a parameter changes the
+// diagnostics the very same sources produce. Keyed on the project's files
+// alone, an already-built workspace keeps serving the result it computed
+// against the previous stdlib — so repairing the stdlib would leave every
+// project that had been built before the repair silently unchecked until one of
+// its own files happened to change.
+func computeSourceHash(files []string, galaVersion, stdlibFingerprint string) string {
 	h := sha256.New()
 	h.Write([]byte("gala:" + galaVersion + "\n"))
+	h.Write([]byte("stdlib:" + stdlibFingerprint + "\n"))
 	sorted := make([]string, len(files))
 	copy(sorted, files)
 	sort.Strings(sorted)
@@ -400,6 +413,28 @@ func computeSourceHash(files []string, galaVersion string) string {
 		}
 		h.Write([]byte(f))
 		h.Write(content)
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// computeDepsHash computes the cache key for transpiled GALA dependencies from
+// the module's requirements and any replace directives. Including replaces
+// ensures that retargeting a dep (e.g. toggling `replace X => ../localX`)
+// invalidates the cache.
+//
+// The stdlib fingerprint is part of the key for the same reason it is part of
+// computeSourceHash: dependency sources are transpiled against the stdlib, so a
+// change to it can change their generated code and the diagnostics they raise,
+// even though the requirement list is untouched.
+func computeDepsHash(requires []mod.Require, replaces []mod.Replace, stdlibFingerprint string) string {
+	h := sha256.New()
+	h.Write([]byte("stdlib:" + stdlibFingerprint + "\n"))
+	for _, req := range requires {
+		h.Write([]byte(req.Path + "@" + req.Version + "\n"))
+	}
+	for _, rep := range replaces {
+		h.Write([]byte("replace " + rep.Old.Path + "@" + rep.Old.Version +
+			"=>" + rep.New.Path + "@" + rep.New.Version + "\n"))
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
@@ -435,7 +470,7 @@ func (b *Builder) transpile() error {
 	// Include gala.mod in hash so dep changes also invalidate the cache
 	hashFile := filepath.Join(b.workspace.Dir, ".gala-source-hash")
 	galaModFile := filepath.Join(b.workspace.ProjectDir, "gala.mod")
-	currentHash := computeSourceHash(append(galaFiles, galaModFile), b.stdlibVersion)
+	currentHash := computeSourceHash(append(galaFiles, galaModFile), b.stdlibVersion, stdlib.Fingerprint())
 	if currentHash != "" {
 		if oldHash, err := os.ReadFile(hashFile); err == nil && string(oldHash) == currentHash {
 			if genFiles, err := b.workspace.GenFiles(); err == nil && len(genFiles) > 0 {
@@ -1221,19 +1256,8 @@ func (b *Builder) transpileDeps() error {
 		return nil
 	}
 
-	// Check if deps have changed by hashing gala.mod requirements and any
-	// replace directives. Including replaces ensures that retargeting a dep
-	// (e.g. toggling `replace X => ../localX`) invalidates the cache.
 	depsHashFile := filepath.Join(b.workspace.Dir, ".gala-deps-hash")
-	h := sha256.New()
-	for _, req := range galaReqs {
-		h.Write([]byte(req.Path + "@" + req.Version + "\n"))
-	}
-	for _, rep := range b.galaMod.Replace {
-		h.Write([]byte("replace " + rep.Old.Path + "@" + rep.Old.Version +
-			"=>" + rep.New.Path + "@" + rep.New.Version + "\n"))
-	}
-	currentHash := hex.EncodeToString(h.Sum(nil))
+	currentHash := computeDepsHash(galaReqs, b.galaMod.Replace, stdlib.Fingerprint())
 
 	if oldHash, err := os.ReadFile(depsHashFile); err == nil && string(oldHash) == currentHash {
 		allExist := true
