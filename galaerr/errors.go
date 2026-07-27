@@ -329,6 +329,16 @@ const (
 	// with go_interop.Spawn, so the bare keywords are a hard error. The check is
 	// resolver-aware: a user binding of the same name is left untouched.
 	CodeForbiddenStatementKeyword ErrorCode = "GALA-E0036"
+
+	// E0038: a string, rune, interpolated (`s"…"`) or format (`f"…"`) literal
+	// contains an escape sequence Go does not recognise (e.g. `"(\d{4})"`, a
+	// regular expression whose backslash was not doubled). GALA's lexer accepts
+	// a backslash followed by ANY character, and a literal's raw text is copied
+	// verbatim into the generated Go, so an unrecognised escape used to travel
+	// straight through into Go source where it is also invalid — producing
+	// output that does not compile. Validating the literal at its GALA position
+	// reports the offending escape in the file the user actually wrote.
+	CodeInvalidStringEscape ErrorCode = "GALA-E0038"
 )
 
 // MultiError collects multiple GALA errors.

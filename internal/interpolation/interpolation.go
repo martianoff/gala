@@ -78,21 +78,7 @@ func Split(content string) []Part {
 				literal.Reset()
 			}
 
-			// Find matching } with brace nesting.
-			braceDepth := 1
-			j := i + 2
-			for j < len(content) && braceDepth > 0 {
-				if content[j] == '{' {
-					braceDepth++
-				} else if content[j] == '}' {
-					braceDepth--
-				} else if content[j] == '\\' && j+1 < len(content) {
-					j++ // skip escaped char
-				}
-				if braceDepth > 0 {
-					j++
-				}
-			}
+			j := EndOfEmbeddedExpr(content, i)
 
 			exprText := unescapeExpr(content[i+2 : j])
 			j++ // skip closing }
@@ -141,6 +127,34 @@ func Split(content string) []Part {
 	}
 
 	return parts
+}
+
+// EndOfEmbeddedExpr locates the `}` that closes the `${` beginning at
+// content[dollar], counting brace nesting and skipping escaped characters so a
+// brace written inside a nested literal does not close the block early. It
+// returns the index of that `}`, or len(content) when the block is unterminated.
+//
+// Split walks embedded expressions with it, and so does the transformer's
+// escape validation, which must skip exactly the regions Split treats as
+// expression source rather than literal text. Sharing the walk is what makes
+// "exactly" true.
+func EndOfEmbeddedExpr(content string, dollar int) int {
+	depth := 1
+	j := dollar + 2
+	for j < len(content) && depth > 0 {
+		switch {
+		case content[j] == '{':
+			depth++
+		case content[j] == '}':
+			depth--
+		case content[j] == '\\' && j+1 < len(content):
+			j++ // skip escaped char
+		}
+		if depth > 0 {
+			j++
+		}
+	}
+	return j
 }
 
 // unescapeExpr converts escaped quotes inside `${}` expression blocks back to

@@ -1,0 +1,46 @@
+package main
+
+// Verification for GALA's string escape set.
+//
+// A literal's raw text is copied verbatim into the generated Go, so GALA
+// accepts exactly the escapes Go accepts inside an interpreted literal:
+//
+//     \a \b \f \n \r \t \v \\ \" \xHH \uHHHH \UHHHHHHHH \OOO
+//
+// An unrecognised escape - "\d", a regular expression whose backslash was not
+// doubled, is the usual offender - is a compile-time error (GALA-E0038)
+// reported at the offending escape, rather than Go source that does not
+// compile. This example exercises the accepted set end to end.
+func main() {
+    // Printable escapes.
+    Println("quote:[\"] backslash:[\\]")
+
+    // Hex and octal escapes both denote 'A'.
+    Println("hex:[\x41] octal:[\101]")
+
+    // A regular expression needs its backslash doubled.
+    Println("regex:[\\d{4}]")
+
+    // A backtick raw string has no escapes at all: every backslash is literal.
+    Println(`raw:[\d{4}]`)
+
+    // The seven control escapes, one byte each.
+    val controls = "\a\b\f\n\r\t\v"
+    Println(controls.ByteSize())
+
+    // Unicode escapes, measured in bytes so the output stays ASCII.
+    val eacute = "\u00e9"
+    val grin = "\U0001F600"
+    Println(s"eacute:[${eacute.ByteSize()}] grin:[${grin.ByteSize()}]")
+
+    // Interpolated and format strings share the same escape set.
+    val year = 2026
+    Println(s"year:[$year] quote:[\"] backslash:[\\]")
+    Println(f"padded:[${year}%06d]")
+
+    // Rune literals take the single-character escapes, printed as code points.
+    Println('\n')
+    Println('\t')
+    Println('\\')
+    Println('\'')
+}
