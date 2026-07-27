@@ -32,13 +32,25 @@ import (
 //
 // Scope note: the table covers the codes whose real output was captured while
 // writing these pages — E0002, E0003, E0006, E0015, E0018, E0027 through E0031,
-// E0035 and E0036 from the in-memory transpiler, plus E0025 and E0032 from a
-// temp directory (both need real files on disk: E0025 because the whole point
-// of that code is that a sibling's imports do not propagate, E0032 because a
-// collision needs two packages to collide). Every other code is deliberately
+// E0035, E0036 and E0038 from the in-memory transpiler, plus E0025 and E0032
+// from a temp directory (both need real files on disk: E0025 because the whole
+// point of that code is that a sibling's imports do not propagate, E0032 because
+// a collision needs two packages to collide). Every other code is deliberately
 // absent rather than stubbed; a stub would advertise coverage that does not
 // exist. See the GALA-E0010 and GALA-E0026 notes in the table for codes that
 // cannot be guarded from here at all.
+//
+// Most rows assert the whole rendered block. A row may instead assert a single
+// line when that is all its page quotes — see renderEscapeVariant — but never
+// less than the page claims, since a row that cannot fail is worse than no row.
+//
+// Repros are held to the same standard as the pages. A repro is supposed to
+// fail, so a fictional API inside one has nowhere to surface: an E0036 repro
+// once called `io.OpenFile`, which does not exist (GALA's `io` is the IO monad),
+// and passed anyway because E0036 fires during statement transformation, before
+// symbol resolution. Remediation snippets get compile-verified; repros do not.
+// So when adding a row, read its repro for whether every symbol and import is
+// real, not merely whether it triggers the code.
 func TestErrorDocsQuoteRealOutput(t *testing.T) {
 	cases := []struct {
 		// name distinguishes several rows for the same code. A page often
@@ -342,6 +354,58 @@ func main() {
 `)
 			},
 		},
+		{
+			// The full framed block: locus, source row, caret row and hint.
+			// This is the row that pins the caret annotation, including its
+			// truncation to `\UH…` at terseHint's 60-rune cap — the exact
+			// detail a page author is most likely to "repair" by hand after
+			// assuming their terminal clipped it.
+			//
+			// Import-free, like the E0036 row above and for the same reason:
+			// an escape is rejected while the literal is transformed, so
+			// nothing else is needed to trigger it.
+			name: "unrecognised escape in a regular expression",
+			code: galaerr.CodeInvalidStringEscape, // GALA-E0038
+			render: func(t *testing.T) string {
+				return renderRepro(t, "esc.gala", `package main
+
+func main() {
+    val pattern = "(\d{4})"
+    Println(pattern)
+}
+`)
+			},
+		},
+		// The four malformed-escape variants below. Each is a real diagnostic
+		// driven through the same renderer, but the row asserts only the
+		// message line — see renderEscapeVariant for why that is the whole of
+		// what those blocks claim.
+		{
+			name:   "hex escape with too few digits",
+			code:   galaerr.CodeInvalidStringEscape, // GALA-E0038
+			render: renderEscapeVariant(`val s = "\x4"`),
+		},
+		{
+			name:   "octal escape above the maximum byte value",
+			code:   galaerr.CodeInvalidStringEscape, // GALA-E0038
+			render: renderEscapeVariant(`val s = "\400"`),
+		},
+		{
+			name:   "unicode escape naming a surrogate half",
+			code:   galaerr.CodeInvalidStringEscape, // GALA-E0038
+			render: renderEscapeVariant(`val s = "\uD800"`),
+		},
+		{
+			name:   "single quote escaped inside a string literal",
+			code:   galaerr.CodeInvalidStringEscape, // GALA-E0038
+			render: renderEscapeVariant(`val s = "it\'s"`),
+		},
+		// The GALA-E0038 page also documents the rune-literal shape in prose
+		// (`'\d'`), but quotes no output for it, so there is nothing to pin.
+		// Its numeric forms (`'\x41'`) are not guardable here at all: GALA's
+		// CHAR_LIT admits exactly one character after the backslash, so those
+		// fail as ANTLR syntax errors before this check runs, and a row for
+		// them would assert a message the escape validator never emits.
 	}
 
 	for _, tc := range cases {
@@ -357,6 +421,31 @@ func main() {
 					"Replace (or add) the page's `Error output` block with exactly:\n\n%s\n",
 				tc.code, tc.name, want)
 		})
+	}
+}
+
+// renderEscapeVariant drives GALA-E0038 for one malformed escape and returns
+// only the FIRST LINE of the rendered diagnostic.
+//
+// The GALA-E0038 page quotes these four variants as bare message lines rather
+// than as framed blocks, and that is an editorial choice worth preserving: they
+// exist to contrast the `reason` clause after the colon, and four near-identical
+// frames would bury that contrast under ~28 lines of repeated scaffolding. So
+// the row asserts exactly what those blocks claim — the message text — and
+// nothing they do not show. The caret row, locus and hint are pinned by the full
+// framed row above, which quotes an entire block.
+//
+// This still fails on drift: the reason clause is the most detailed text on the
+// page and any rewording of it breaks these rows. What it deliberately does not
+// do is assert a frame the page never printed.
+func renderEscapeVariant(body string) func(t *testing.T) string {
+	return func(t *testing.T) string {
+		t.Helper()
+		src := "package main\n\nfunc main() {\n    " + body + "\n    Println(s)\n}\n"
+		full := renderRepro(t, "esc.gala", src)
+		line, _, found := strings.Cut(full, "\n")
+		require.True(t, found, "rendered diagnostic was a single line: %q", full)
+		return line
 	}
 }
 
