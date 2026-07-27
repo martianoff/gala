@@ -11,6 +11,21 @@ Each code has a dedicated documentation page in this directory explaining:
 - how to fix it
 - the underlying design rationale (so you can judge edge cases)
 
+Not every code is something you can trigger, and the pages say so rather than
+inventing an example:
+
+- **Transpiler defects.** [GALA-E0009](GALA-E0009.md),
+  [GALA-E0017](GALA-E0017.md), and [GALA-E0024](GALA-E0024.md) cannot be forced
+  by any valid source. The right response is a bug report, not a source change.
+- **Not currently surfaced.** [GALA-E0021](GALA-E0021.md),
+  [GALA-E0022](GALA-E0022.md), and [GALA-E0024](GALA-E0024.md) originate in the
+  type-inference engine, whose errors every caller discards. Type errors of that
+  class are reported by the Go compiler against the generated Go.
+- **Shadowed by an earlier check.** [GALA-E0026](GALA-E0026.md) is defensive;
+  [GALA-E0032](GALA-E0032.md) reports first in every construction found so far.
+- **Nested inside a wrapper.** [GALA-E0020](GALA-E0020.md) has no framed header
+  of its own — it appears inside an uncoded unresolved-imports error.
+
 ## Index
 
 | Code | Title | Page |
@@ -53,20 +68,6 @@ Each code has a dedicated documentation page in this directory explaining:
 | `GALA-E0036` | Bare Go statement keyword is forbidden | [GALA-E0036.md](GALA-E0036.md) |
 | `GALA-E0037` | Unshareable capture across a concurrency boundary | [GALA-E0037.md](GALA-E0037.md) |
 | `GALA-E0038` | Invalid string escape sequence | [GALA-E0038.md](GALA-E0038.md) |
-
-Every code defined in `galaerr/errors.go` now has a page. Three of them describe
-conditions no valid source can reach — [GALA-E0009](GALA-E0009.md),
-[GALA-E0017](GALA-E0017.md), and [GALA-E0024](GALA-E0024.md) signal a
-**transpiler defect**, and the right response is a bug report, not a source
-change. Three more originate in the type-inference engine and are **not
-currently surfaced** to users at all: [GALA-E0021](GALA-E0021.md),
-[GALA-E0022](GALA-E0022.md), and [GALA-E0024](GALA-E0024.md) — type errors of
-that class are reported by the Go compiler against the generated Go.
-[GALA-E0026](GALA-E0026.md) is a defensive check that
-[GALA-E0032](GALA-E0032.md) reports first in every construction found so far,
-and [GALA-E0020](GALA-E0020.md) surfaces nested inside an unresolved-imports
-wrapper rather than as a standalone framed diagnostic. Each page says so
-explicitly.
 
 ## Adding a new code
 
