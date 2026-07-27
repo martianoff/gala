@@ -170,6 +170,10 @@ func (t *galaASTTransformer) checkSendableCaptures(caps []concurrency.Capture) e
 		return nil
 	}
 	checker := concurrency.NewChecker(t.sendableMetaResolver())
+	// Recognise Go scalar value types (time.Duration, os.FileMode, …) as
+	// shareable via the shared Go-named-type underlying resolver; the predicate
+	// itself accepts only a primitive-scalar underlying.
+	checker.SetGoUnderlyingResolver(t.goNamedUnderlying)
 	for _, c := range caps {
 		typ, bound := t.lookupLocalBinding(c.Name)
 		if !bound {

@@ -532,7 +532,7 @@ func classifySuffixes(suffixes []grammar.IPostfixSuffixContext, hasMatch bool) (
 		return "", true
 	}
 	parts := make([]string, 0, len(suffixes))
-	for _, s := range suffixes {
+	for i, s := range suffixes {
 		sc, ok := s.(*grammar.PostfixSuffixContext)
 		if !ok {
 			return "", true
@@ -541,7 +541,23 @@ func classifySuffixes(suffixes []grammar.IPostfixSuffixContext, hasMatch bool) (
 			parts = append(parts, id.GetText())
 			continue
 		}
-		// A call `(...)` or an index `[...]` — not a pure field read.
+		// A non-selector suffix: an index `[...]` or a call `(...)`.
+		if sc.ExpressionList() != nil {
+			// Index `[...]` — a value-position use of the whole receiver.
+			return "", true
+		}
+		// A call `(...)`. Tolerate a SINGLE trailing method call on a field-path
+		// receiver: `x.a.b.m(...)` reads the immutable field value `x.a.b` and
+		// calls a method on it. The method runs on that (shareable) value, so it
+		// cannot race — the enforcement pass verifies safety via the receiver
+		// path's leaf type exactly as for a plain field read. The last selector
+		// is the method name, so the receiver path is the rest; at least one
+		// selector must remain (else it is a method on the whole captured value,
+		// which stays a whole use). The call's arguments are walked separately by
+		// the caller, so captures inside them are still found.
+		if i == len(suffixes)-1 && len(parts) >= 2 {
+			return strings.Join(parts[:len(parts)-1], "."), false
+		}
 		return "", true
 	}
 	return strings.Join(parts, "."), false

@@ -411,7 +411,7 @@ reusable concurrency-wrapper APIs annotate their forwarded parameters.
 ```gala
 // BEFORE — bare `func` parameter forwarded into a boundary: rejected.
 func afterDelay[T any](d Duration, make func() T) Future[T] =
-    concurrent.FutureApply[T](() => { sleep(d); make() })
+    concurrent.Future[T](() => { sleep(d); make() })
 // error[GALA-E0037]: closure crossing a concurrency boundary captures function
 // value "make" (type func() T) — a function value may itself close over mutable
 // state, so it cannot cross the boundary unless it is Sendable
@@ -422,7 +422,7 @@ func afterDelay[T any](d Duration, make func() T) Future[T] =
 // AFTER — the forwarded parameter is `Sendable[func() T]`: accepted.
 // The bound propagates the capture-safety obligation up to the caller.
 func afterDelay[T any](d Duration, make Sendable[func() T]) Future[T] =
-    concurrent.FutureApply[T](() => { sleep(d); make() })   // OK
+    concurrent.Future[T](() => { sleep(d); make() })   // OK
 ```
 
 The obligation terminates where the closure is actually written — the app-level

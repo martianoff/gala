@@ -99,6 +99,26 @@ func main() {
 			expectContains: "not safe to share",
 			expectCapture:  "c",
 		},
+		{
+			// FP-2 soundness guard: a method call on a field whose type is NOT
+			// shareable (a mutable collection) must still be rejected — the
+			// receiver-path relaxation only accepts shareable leaves.
+			name: "method call on a mutable-collection field is still rejected",
+			input: `package main
+
+import . "martianoff/gala/collection_mutable"
+
+func run(body Sendable[func() int]) int = body()
+
+struct Bag(items Array[int])
+
+func main() {
+    val bag = Bag(ArrayOf(1, 2, 3))
+    Println(run(() => bag.items.Size()))
+}`,
+			expectContains: "not safe to share",
+			expectCapture:  "bag",
+		},
 	}
 
 	for _, tc := range cases {
@@ -173,6 +193,41 @@ func run(body Sendable[func() int]) int = body()
 func main() {
     val label = "hi"
     Println(run(label.Size()))
+}`,
+		},
+		{
+			// FP-2: a method call on an immutable, shareable field (`team` is a
+			// `string`) reads the receiver field path and is safe, even though
+			// the enclosing struct also has a `var` field the closure never
+			// touches. Previously the method call collapsed to a whole-use of
+			// AppModel and was wrongly rejected.
+			name: "method call on a shareable string field of a mixed struct",
+			input: `package main
+
+import . "martianoff/gala/collection_immutable"
+
+func run(body Sendable[func() int]) int = body()
+
+struct AppModel(team string, statuses Array[int], var attempts int)
+
+func main() {
+    val model = AppModel("qa", ArrayOf(1, 2, 3), 0)
+    Println(run(() => model.team.Size()))
+}`,
+		},
+		{
+			name: "method call on an immutable-collection field of a mixed struct",
+			input: `package main
+
+import . "martianoff/gala/collection_immutable"
+
+func run(body Sendable[func() int]) int = body()
+
+struct AppModel(team string, statuses Array[int], var attempts int)
+
+func main() {
+    val model = AppModel("qa", ArrayOf(1, 2, 3), 0)
+    Println(run(() => model.statuses.Size()))
 }`,
 		},
 		{

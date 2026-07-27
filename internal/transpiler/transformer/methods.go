@@ -72,6 +72,27 @@ func (t *galaASTTransformer) sizeSugarReceiverType(recv ast.Expr) transpiler.Typ
 	return t.resolveNamedGoCollectionUnderlying(recvType)
 }
 
+// goNamedUnderlying resolves a NAMED Go type (package-qualified) to its
+// underlying type via the analyzer's Go type info — e.g. time.Duration -> int64,
+// url.Values -> map[string][]string. Returns (nil, false) when goTypeInfo is
+// absent, the type is unusable, or it is not a resolvable package-qualified Go
+// named type. Shared by the Sendable Go-scalar check and the .Size()-sugar
+// collection resolver.
+func (t *galaASTTransformer) goNamedUnderlying(typ transpiler.Type) (transpiler.Type, bool) {
+	if t.goTypeInfo == nil || transpiler.IsUnusable(typ) {
+		return nil, false
+	}
+	named, ok := typ.(transpiler.NamedType)
+	if !ok || named.Package == "" {
+		return nil, false
+	}
+	td := t.goTypeInfo.GetTypeData(named.Package + "." + named.Name)
+	if td == nil || td.Underlying == nil {
+		return nil, false
+	}
+	return td.Underlying, true
+}
+
 // resolveNamedGoCollectionUnderlying resolves a NAMED Go type whose underlying is
 // a slice or map (e.g. `url.Values` = map[string][]string, `sort.StringSlice` =
 // []string) to that underlying ArrayType/MapType, so the .Size() sugar classifies
@@ -79,23 +100,19 @@ func (t *galaASTTransformer) sizeSugarReceiverType(recv ast.Expr) transpiler.Typ
 // or a GALA type — so this never mis-fires on a real .Size() method. Returns the
 // type unchanged when it is not a resolvable named Go collection.
 func (t *galaASTTransformer) resolveNamedGoCollectionUnderlying(typ transpiler.Type) transpiler.Type {
-	named, ok := typ.(transpiler.NamedType)
-	if !ok || named.Package == "" || t.goTypeInfo == nil {
+	u, ok := t.goNamedUnderlying(typ)
+	if !ok {
 		return typ
 	}
-	qualName := named.Package + "." + named.Name
-	td := t.goTypeInfo.GetTypeData(qualName)
-	if td == nil || td.Underlying == nil {
-		return typ
-	}
-	switch td.Underlying.(type) {
+	switch u.(type) {
 	case transpiler.ArrayType, transpiler.MapType:
 		// Don't shadow a real Size() method the named type declares — call it
 		// instead of lowering to len(). (url.Values / sort.StringSlice have none.)
-		if t.goTypeInfo.GetMethodSignature(qualName, "Size") != nil {
+		named := typ.(transpiler.NamedType) // safe: goNamedUnderlying only reports ok for a NamedType
+		if t.goTypeInfo.GetMethodSignature(named.Package+"."+named.Name, "Size") != nil {
 			return typ
 		}
-		return td.Underlying
+		return u
 	}
 	return typ
 }
