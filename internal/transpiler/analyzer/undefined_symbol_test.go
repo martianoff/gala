@@ -257,6 +257,28 @@ func main() {
 	}
 }
 
+// TestUndefinedSymbol_InterpolationPositionIsTheLiteral pins where the caret
+// lands for a name found inside an interpolated string. The fragment is
+// re-parsed as its own token stream, so its tokens carry fragment-relative
+// positions; reporting one verbatim would put the caret on line 1. The
+// reference is attributed to the enclosing literal instead.
+func TestUndefinedSymbol_InterpolationPositionIsTheLiteral(t *testing.T) {
+	err := analyzeSources(t, `package main
+
+func main() {
+    val ok = 1
+    Println(ok)
+    Println(s"v=$missingInterpName")
+}
+`, nil)
+	require.Error(t, err)
+	msg := err.Error()
+	assert.Contains(t, msg, "undefined: missingInterpName")
+	// The literal is on line 6; line 1 would mean the fragment's own position
+	// leaked through.
+	assert.Contains(t, msg, "line 6:", "caret must point at the literal's line, got: %s", msg)
+}
+
 // TestUndefinedSymbol_NoFalsePositives is the guard rail. Every case here is
 // legal GALA whose identifiers all resolve; a firing means the check's scope
 // model has a hole, not that the program is wrong.

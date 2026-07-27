@@ -916,12 +916,18 @@ func (c *undefChecker) report(name string, tok antlr.Token) {
 		return
 	}
 	c.reported[name] = true
+	// The span covers the reported token, which is normally the identifier
+	// itself. For a name found inside an interpolated string the token is the
+	// whole literal (a re-parsed fragment has no file position of its own), so
+	// deriving the span from the token's text underlines the literal rather
+	// than a name-length slice of it.
+	span := tok.GetColumn() + len([]rune(tok.GetText()))
 	err := galaerr.NewCodedSemanticError(
 		galaerr.CodeUndefinedVariable,
 		tok.GetLine(), tok.GetColumn(),
 		fmt.Sprintf("undefined: %s", name),
 		c.hintFor(name),
-	).WithSpan(tok.GetColumn() + len([]rune(name)))
+	).WithSpan(span)
 	c.errs = append(c.errs, err)
 }
 

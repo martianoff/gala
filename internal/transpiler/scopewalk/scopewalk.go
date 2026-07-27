@@ -126,6 +126,15 @@ type Walker struct {
 	// interpParser re-parses interpolation bodies; created on first use so a
 	// consumer that leaves ParseInterpolations off never pays for it.
 	interpParser *parser.AntlrGalaParser
+
+	// posOverride, when set, replaces the token reported for a reference. A
+	// re-parsed interpolation fragment is its own token stream, so its tokens
+	// carry positions relative to the FRAGMENT, not the file — reporting one
+	// verbatim points the caret at line 1, column 1 of the source. While a
+	// fragment is being walked this holds the enclosing string literal's
+	// token, so a reference inside `s"…"` is attributed to the literal that
+	// contains it.
+	posOverride antlr.Token
 }
 
 // New returns a Walker that reports to v.
@@ -233,10 +242,15 @@ func (w *Walker) WalkParameterDefaults(params grammar.IParametersContext) {
 	}
 }
 
-// reference emits an unbound value-position reference.
+// reference emits an unbound value-position reference. Inside a re-parsed
+// interpolation fragment the reported token is the enclosing string literal —
+// see posOverride.
 func (w *Walker) reference(name string, tok antlr.Token, use Use) {
 	if name == "" || name == "_" || w.Bound(name) {
 		return
+	}
+	if w.posOverride != nil {
+		tok = w.posOverride
 	}
 	w.visitor.Reference(name, tok, use)
 }
@@ -583,24 +597,38 @@ func (w *Walker) walkPrimary(ctx grammar.IPrimaryContext) {
 // Such a literal is a single token whose embedded `${…}` / `$name` expressions
 // are NOT parse-tree children, so each is re-parsed and walked in the CURRENT
 // scope. Every other literal contributes no references.
+//
+// A re-parsed fragment is its own token stream: its tokens' line/column are
+// relative to the fragment, so reporting one verbatim would put a caret on line
+// 1 of the file. For the duration of the walk every reference is therefore
+// attributed to the string literal token itself, which is the position a reader
+// needs — the literal that contains the offending name. Resolving to the exact
+// column inside the literal would need Split to preserve each part's span in
+// the original text, which it does not (it unescapes as it goes).
 func (w *Walker) walkLiteral(lit grammar.ILiteralContext) {
 	if !w.opts.ParseInterpolations {
 		return
 	}
-	var raw string
-	if tok := lit.INTERPOLATED_STRING(); tok != nil {
-		raw = tok.GetText()
-	} else if tok := lit.FORMAT_STRING(); tok != nil {
-		raw = tok.GetText()
+	var tok antlr.TerminalNode
+	if t := lit.INTERPOLATED_STRING(); t != nil {
+		tok = t
+	} else if t := lit.FORMAT_STRING(); t != nil {
+		tok = t
 	} else {
 		return
 	}
+	raw := tok.GetText()
 	if len(raw) < 3 {
 		return
 	}
 	if w.interpParser == nil {
 		w.interpParser = parser.NewAntlrGalaParser()
 	}
+
+	prev := w.posOverride
+	w.posOverride = tok.GetSymbol()
+	defer func() { w.posOverride = prev }()
+
 	// Strip the `s"`/`f"` prefix and the closing `"`, matching the transformer.
 	content := raw[2 : len(raw)-1]
 	for _, part := range interpolation.Split(content) {
