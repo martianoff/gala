@@ -11,7 +11,7 @@ module(
     # release-script tag and gala.mod so `bazel_dep(name = "gala",
     # version = X)` always matches the published binary the registry
     # serves for that version.
-    version = "0.72.0",
+    version = "0.72.1",
 )
 
 bazel_dep(name = "platforms", version = "1.0.0")
