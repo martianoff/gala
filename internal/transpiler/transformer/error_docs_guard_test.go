@@ -325,17 +325,18 @@ func main() {
 			},
 		},
 		{
+			// Deliberately import-free. A bare keyword is rejected during
+			// statement transformation, before any symbol is resolved, so the
+			// repro needs nothing else to trigger it — and an import here
+			// would be staged into the Linux sandbox or not, making the row
+			// pass on Windows and fail on CI for reasons unrelated to E0036.
 			name: "bare defer statement",
 			code: galaerr.CodeForbiddenStatementKeyword, // GALA-E0036
 			render: func(t *testing.T) string {
 				return renderRepro(t, "main.gala", `package main
 
-import "martianoff/gala/io"
-
 func main() {
-    val f = io.OpenFile("data.txt")
     defer
-    f.Close()
     Println("done")
 }
 `)

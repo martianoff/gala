@@ -11,17 +11,14 @@ Go statement, so `defer` on one line and `f.Close()` on the next glued together
 into a Go `DeferStmt`. That behaviour is undocumented and fragile — it depends
 entirely on what happens to follow — so a bare use is a hard error.
 
-**Minimal repro.**
+**Minimal repro.** The keyword is rejected on its own — no import or resource is
+needed to trigger it, because the check runs before any symbol is resolved:
 
 ```gala
 package main
 
-import "martianoff/gala/io"
-
 func main() {
-    val f = io.OpenFile("data.txt")
     defer
-    f.Close()
     Println("done")
 }
 ```
@@ -30,13 +27,17 @@ func main() {
 
 ```
 error[GALA-E0036]: bare Go statement keyword "defer" is not part of GALA's surface
-  --> main.gala:7:5
+  --> main.gala:4:5
   |
-7 |     defer
+4 |     defer
   |     ^^^^^ GALA has no `defer`
   |
   = hint: GALA has no `defer`; use the `resource` combinators — `Using` / `Bracket` / `WithLock` from martianoff/gala/resource (or a `use x = ...` binding) — which guarantee cleanup on every exit path
 ```
+
+In real code the offender is usually a Go-style `defer f.Close()`, where the
+keyword and the call sit on consecutive lines; the diagnostic points at the
+keyword either way.
 
 **Replacements.** Every forbidden keyword and the replacement the compiler
 suggests, verbatim from the suggestion table in
