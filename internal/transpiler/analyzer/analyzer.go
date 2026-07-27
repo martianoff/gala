@@ -828,12 +828,9 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 				// Error if type is being redefined from a DIFFERENT file.
 				// Skip if DefinedIn is empty (cache) or same file (re-analysis from analyzePackage).
 				if existing.DefinedIn != "" && hasTypeDefinition(existing) && !(existing.DefinedIn != filePath && isSameFile(existing.DefinedIn, absFilePath)) {
-					return nil, galaerr.NewCodedSemanticError(
-						galaerr.CodeTypeRedefinition,
+					return nil, typeRedefinedError(typeName, pkgName,
 						ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
-						fmt.Sprintf("type %q in package %q redefined (also declared at %s)", typeName, pkgName, declSiteRef(existing.DefinedIn, filePath, existing.Pos)),
-						"remove the duplicate declaration or rename one of the types",
-					)
+						existing.DefinedIn, filePath, existing.Pos)
 				}
 				meta = existing
 				// Clear fields to avoid duplicates if re-analyzing
@@ -980,12 +977,9 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 			pos := transpiler.PosFromToken(ctx.Identifier().GetStart())
 			if existing, ok := richAST.Types[fullTypeName]; ok && existing.Package == pkgName {
 				if existing.DefinedIn != "" && hasTypeDefinition(existing) && !(existing.DefinedIn != filePath && isSameFile(existing.DefinedIn, absFilePath)) {
-					return nil, galaerr.NewCodedSemanticError(
-						galaerr.CodeTypeRedefinition,
+					return nil, typeRedefinedError(typeName, pkgName,
 						ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
-						fmt.Sprintf("type %q in package %q redefined (also declared at %s)", typeName, pkgName, declSiteRef(existing.DefinedIn, filePath, existing.Pos)),
-						"remove the duplicate declaration or rename one of the types",
-					)
+						existing.DefinedIn, filePath, existing.Pos)
 				}
 				meta = existing
 				meta.Fields = make(map[string]transpiler.Type)
@@ -1071,12 +1065,9 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 			}
 			// Check for redefinition (skip if DefinedIn is empty — type came from cache)
 			if existing, ok := richAST.Types[fullSealedName]; ok && existing.DefinedIn != "" && hasTypeDefinition(existing) && !(existing.DefinedIn != filePath && isSameFile(existing.DefinedIn, absFilePath)) {
-				return nil, galaerr.NewCodedSemanticError(
-					galaerr.CodeTypeRedefinition,
+				return nil, typeRedefinedError(sealedName, pkgName,
 					ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
-					fmt.Sprintf("type %q in package %q redefined (also declared at %s)", sealedName, pkgName, declSiteRef(existing.DefinedIn, filePath, existing.Pos)),
-					"remove the duplicate declaration or rename one of the types",
-				)
+					existing.DefinedIn, filePath, existing.Pos)
 			}
 			if err := a.analyzeSealedType(ctx, pkgName, richAST); err != nil {
 				return nil, err
@@ -1228,12 +1219,9 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 						if existing, exists := typeMeta.Methods[methodName]; exists {
 							// Error if method already has a user-defined implementation
 							if existing.DefinedIn != "" && !(existing.DefinedIn != filePath && isSameFile(existing.DefinedIn, absFilePath)) {
-								return nil, galaerr.NewCodedSemanticError(
-									galaerr.CodeMethodRedefinition,
+								return nil, methodRedefinedError(methodName, baseType, pkgName,
 									ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
-									fmt.Sprintf("method %q on type %q in package %q redefined (also declared at %s)", methodName, baseType, pkgName, declSiteRef(existing.DefinedIn, filePath, existing.Pos)),
-									"remove the duplicate method or rename it",
-								)
+									existing.DefinedIn, filePath, existing.Pos)
 							}
 							// Merge IsGeneric: preserve a pre-populated flag (e.g. from a
 							// sibling-metadata pass) without clobbering a fresh true that
@@ -1263,13 +1251,9 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 					// check above sees only a placeholder entry whose
 					// DefinedIn is still empty, and would let it through.
 					if prev, dup := decls.recordMethod(fullBaseType+"."+methodName, filePath, methodMeta.Pos); dup {
-						return nil, galaerr.NewCodedSemanticError(
-							galaerr.CodeMethodRedefinition,
+						return nil, methodRedefinedError(methodName, baseType, pkgName,
 							ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
-							fmt.Sprintf("method %q on type %q in package %q redefined (also declared at %s)",
-								methodName, baseType, pkgName, declSiteRef(prev.file, filePath, prev.pos)),
-							"remove the duplicate method or rename it",
-						)
+							prev.file, filePath, prev.pos)
 					}
 				}
 			} else {
@@ -1358,25 +1342,18 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 				// (re-analysis of the same source).
 				if existing, ok := richAST.Functions[fullFuncName]; ok {
 					if existing.DefinedIn != "" && !(existing.DefinedIn != filePath && isSameFile(existing.DefinedIn, absFilePath)) {
-						return nil, galaerr.NewCodedSemanticError(
-							galaerr.CodeFunctionRedeclared,
+						return nil, funcRedeclaredError(funcName, pkgName,
 							ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
-							fmt.Sprintf("function %q in package %q redeclared (also declared at %s)", funcName, pkgName, declSiteRef(existing.DefinedIn, filePath, existing.Pos)),
-							"remove the duplicate declaration or rename one of the functions",
-						)
+							existing.DefinedIn, filePath, existing.Pos)
 					}
 				}
 				// Record the declaration so the sibling pass can detect a
 				// second definition of this function in another file of the
 				// package.
 				if prev, dup := decls.recordFunc(fullFuncName, filePath, funcMeta.Pos); dup {
-					return nil, galaerr.NewCodedSemanticError(
-						galaerr.CodeFunctionRedeclared,
+					return nil, funcRedeclaredError(funcName, pkgName,
 						ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
-						fmt.Sprintf("function %q in package %q redeclared (also declared at %s)",
-							funcName, pkgName, declSiteRef(prev.file, filePath, prev.pos)),
-						"remove the duplicate declaration or rename one of the functions",
-					)
+						prev.file, filePath, prev.pos)
 				}
 				richAST.Functions[fullFuncName] = funcMeta
 			}
@@ -2676,12 +2653,9 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (*transpiler.RichAST, erro
 					}
 					if existingMeta, ok := pkgAST.Types[typeName]; ok {
 						if hasTypeDefinition(existingMeta) && existingMeta.DefinedIn != "" && !sameAsFilePath(existingMeta.DefinedIn) {
-							return nil, galaerr.NewCodedSemanticError(
-								galaerr.CodeTypeRedefinition,
+							return nil, typeRedefinedError(newMeta.Name, res.PackageName,
 								newMeta.Pos.Line, newMeta.Pos.Column,
-								fmt.Sprintf("type %q in package %q redefined (also declared at %s)", newMeta.Name, res.PackageName, declSiteRef(existingMeta.DefinedIn, filePath, existingMeta.Pos)),
-								"remove the duplicate declaration or rename one of the types",
-							)
+								existingMeta.DefinedIn, filePath, existingMeta.Pos)
 						}
 					}
 				}
@@ -3442,6 +3416,42 @@ func declSiteRef(otherFile, errorFile string, pos transpiler.SourcePos) string {
 	return otherFile
 }
 
+// typeRedefinedError, methodRedefinedError and funcRedeclaredError build the
+// GALA-E0011 / E0012 / E0027 diagnostics. Every site that reports a duplicate
+// declaration goes through one of these, so the wording cannot drift between
+// the same-file, cross-file and sibling paths that all raise the same code —
+// docs/errors/GALA-E0011.md and GALA-E0012.md quote this output verbatim.
+//
+// line/column place the caret. (otherFile, otherPos) is the *other*
+// declaration the message points at, spelled relative to errorFile — the file
+// the diagnostic is rendered against — by declSiteRef.
+func typeRedefinedError(typeName, pkgName string, line, column int, otherFile, errorFile string, otherPos transpiler.SourcePos) *galaerr.SemanticError {
+	return galaerr.NewCodedSemanticError(
+		galaerr.CodeTypeRedefinition, line, column,
+		fmt.Sprintf("type %q in package %q redefined (also declared at %s)",
+			typeName, pkgName, declSiteRef(otherFile, errorFile, otherPos)),
+		"remove the duplicate declaration or rename one of the types",
+	)
+}
+
+func methodRedefinedError(methodName, baseType, pkgName string, line, column int, otherFile, errorFile string, otherPos transpiler.SourcePos) *galaerr.SemanticError {
+	return galaerr.NewCodedSemanticError(
+		galaerr.CodeMethodRedefinition, line, column,
+		fmt.Sprintf("method %q on type %q in package %q redefined (also declared at %s)",
+			methodName, baseType, pkgName, declSiteRef(otherFile, errorFile, otherPos)),
+		"remove the duplicate method or rename it",
+	)
+}
+
+func funcRedeclaredError(funcName, pkgName string, line, column int, otherFile, errorFile string, otherPos transpiler.SourcePos) *galaerr.SemanticError {
+	return galaerr.NewCodedSemanticError(
+		galaerr.CodeFunctionRedeclared, line, column,
+		fmt.Sprintf("function %q in package %q redeclared (also declared at %s)",
+			funcName, pkgName, declSiteRef(otherFile, errorFile, otherPos)),
+		"remove the duplicate declaration or rename one of the functions",
+	)
+}
+
 // siblingTypeRedefinedError builds the E0011 diagnostic for a type that a
 // sibling file declares a second time. The diagnostic is rendered against the
 // file being analyzed, so when the earlier declaration lives there the caret
@@ -3453,18 +3463,10 @@ func declSiteRef(otherFile, errorFile string, pos transpiler.SourcePos) string {
 // quotes it the same way the build driver named the file rather than as an
 // absolute path next to a relative caret.
 func siblingTypeRedefinedError(typeName, pkgName string, existing *transpiler.TypeMetadata, sibPath string, sibPos transpiler.SourcePos, mainFile string) *galaerr.SemanticError {
-	line, column := sibPos.Line, sibPos.Column
-	other := declSiteRef(existing.DefinedIn, mainFile, existing.Pos)
 	if isSameFile(existing.DefinedIn, mainFile) {
-		line, column = existing.Pos.Line, existing.Pos.Column
-		other = declSiteRef(sibPath, mainFile, sibPos)
+		return typeRedefinedError(typeName, pkgName, existing.Pos.Line, existing.Pos.Column, sibPath, mainFile, sibPos)
 	}
-	return galaerr.NewCodedSemanticError(
-		galaerr.CodeTypeRedefinition,
-		line, column,
-		fmt.Sprintf("type %q in package %q redefined (also declared at %s)", typeName, pkgName, other),
-		"remove the duplicate declaration or rename one of the types",
-	)
+	return typeRedefinedError(typeName, pkgName, sibPos.Line, sibPos.Column, existing.DefinedIn, mainFile, existing.Pos)
 }
 
 // extractSiblingFullMetadata extracts full type metadata from a sibling .gala file.
@@ -3766,16 +3768,11 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 				// diagnostic is rendered against. A collision between two
 				// siblings is left to the Analyze call for one of those two
 				// files, which sees it as this same main-file case.
-				if prev, dup := decls.recordMethod(fullBaseType+"."+methodName, absSibPath, sibPos); dup {
-					if isSameFile(prev.file, decls.mainFile) {
-						return galaerr.NewCodedSemanticError(
-							galaerr.CodeMethodRedefinition,
-							prev.pos.Line, prev.pos.Column,
-							fmt.Sprintf("method %q on type %q in package %q redefined (also declared at %s)",
-								methodName, baseType, pkgName, declSiteRef(sibDisplay, decls.mainFile, sibPos)),
-							"remove the duplicate method or rename it",
-						)
-					}
+				prev, dup := decls.recordMethod(fullBaseType+"."+methodName, absSibPath, sibPos)
+				if dup && isSameFile(prev.file, decls.mainFile) {
+					return methodRedefinedError(methodName, baseType, pkgName,
+						prev.pos.Line, prev.pos.Column,
+						sibDisplay, decls.mainFile, sibPos)
 				}
 
 				methodMeta := &transpiler.MethodMetadata{
@@ -3874,16 +3871,11 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 				// Same rule as for methods above: a top-level function the
 				// analyzed file already declares is a redeclaration, and was
 				// previously dropped here without a word.
-				if prev, dup := decls.recordFunc(fullFuncName, absSibPath, sibPos); dup {
-					if isSameFile(prev.file, decls.mainFile) {
-						return galaerr.NewCodedSemanticError(
-							galaerr.CodeFunctionRedeclared,
-							prev.pos.Line, prev.pos.Column,
-							fmt.Sprintf("function %q in package %q redeclared (also declared at %s)",
-								funcName, pkgName, declSiteRef(sibDisplay, decls.mainFile, sibPos)),
-							"remove the duplicate declaration or rename one of the functions",
-						)
-					}
+				prev, dup := decls.recordFunc(fullFuncName, absSibPath, sibPos)
+				if dup && isSameFile(prev.file, decls.mainFile) {
+					return funcRedeclaredError(funcName, pkgName,
+						prev.pos.Line, prev.pos.Column,
+						sibDisplay, decls.mainFile, sibPos)
 				}
 				if _, ok := richAST.Functions[fullFuncName]; !ok {
 					funcMeta := &transpiler.FunctionMetadata{
