@@ -52,10 +52,14 @@ func runLsp(cmd *cobra.Command, args []string) {
 }
 
 func autoResolveLSPSearchPaths() []string {
-	stdlibDir := build.DefaultConfig().EnsureStdlib(Version)
-	fmt.Fprintf(os.Stderr, "[gala-lsp] version=%s stdlib=%s\n", Version, stdlibDir)
-	if stdlibDir != "" {
-		return []string{stdlibDir}
+	stdlibDir, err := build.DefaultConfig().EnsureStdlib(Version)
+	if err != nil {
+		// Without the stdlib the server still starts, but every standard
+		// symbol becomes an unresolved reference — say why, in the log the
+		// editor shows, rather than leaving it to be guessed.
+		fmt.Fprintf(os.Stderr, "[gala-lsp] version=%s stdlib unavailable: %v\n", Version, err)
+		return nil
 	}
-	return nil
+	fmt.Fprintf(os.Stderr, "[gala-lsp] version=%s stdlib=%s\n", Version, stdlibDir)
+	return []string{stdlibDir}
 }

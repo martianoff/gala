@@ -1,12 +1,9 @@
 package build
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"martianoff/gala/internal/stdlib"
@@ -46,17 +43,16 @@ func normalizeStdlibVersion(version string) string {
 }
 
 // snapshotFingerprint returns the marker contents identifying the embedded
-// stdlib snapshot for a given version. It combines the version with the content
-// hash of the embedded packages, so both a version change and a change to the
-// embedded sources invalidate a previously extracted copy.
+// stdlib snapshot for a given version: the normalized version followed by the
+// content hash of the embedded packages, so both a version change and a change
+// to the embedded sources invalidate a previously extracted copy.
+//
+// The marker is only ever compared for equality, so it is stored verbatim
+// rather than digested again — reading it tells whoever is debugging a cache
+// which binary wrote the directory. The two parts cannot run together
+// ambiguously because the fingerprint is a fixed-width hex digest.
 func snapshotFingerprint(version string) string {
-	h := sha256.New()
-	for _, part := range []string{normalizeStdlibVersion(version), stdlib.Fingerprint()} {
-		h.Write([]byte(strconv.Itoa(len(part))))
-		h.Write([]byte{':'})
-		h.Write([]byte(part))
-	}
-	return hex.EncodeToString(h.Sum(nil))
+	return normalizeStdlibVersion(version) + " " + stdlib.Fingerprint()
 }
 
 // checkStdlibVersionDir verifies that dir is a direct child of the stdlib cache
@@ -67,22 +63,19 @@ func (c *Config) checkStdlibVersionDir(dir string) error {
 	target := filepath.Clean(dir)
 	fail := &UnsafeStdlibDirError{Dir: target, Root: root}
 
-	// A degenerate root (unset, relative-current, or a filesystem/volume root
-	// such as "/" or "C:\") can never be a legitimate stdlib cache.
-	if c.StdlibDir == "" || root == "." || filepath.Dir(root) == root {
+	// A degenerate root can never be a legitimate stdlib cache. Each of these
+	// is its own parent: unset (Clean("") == "."), relative-current, and a
+	// filesystem or volume root such as "/" or "C:\".
+	if filepath.Dir(root) == root {
 		return fail
 	}
-	if target == root {
-		return fail
-	}
+
+	// The target must be one named element directly inside the root: not the
+	// root itself (Rel reports "."), not at or above it (".." — and on Windows
+	// Rel matches case-insensitively, so a differently-cased spelling of the
+	// root lands here too), and not nested deeper (any separator).
 	rel, err := filepath.Rel(root, target)
-	if err != nil {
-		return fail
-	}
-	if rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return fail
-	}
-	if strings.ContainsRune(rel, filepath.Separator) {
+	if err != nil || rel == "." || rel == ".." || strings.ContainsRune(rel, filepath.Separator) {
 		return fail
 	}
 	return nil
@@ -100,6 +93,14 @@ func (c *Config) checkStdlibVersionDir(dir string) error {
 //
 // extracted reports whether files were (re-)written, which callers use for
 // verbose output.
+//
+// There is no cross-process lock. Two binaries that normalize to the same
+// version but carry different snapshots — two unstamped "dev" builds from
+// different trees — will each wipe and rewrite the other's copy, and a third
+// process reading the directory at that moment can see it half-written.
+// Released binaries carry distinct versions and so distinct directories, and a
+// developer's CLI and LSP come from one tree, so this is narrow; it is also
+// noisy and self-correcting, unlike the silent stale cache it replaces.
 func (c *Config) ensureStdlibExtracted(version string) (dir string, extracted bool, err error) {
 	stdlibDir := c.StdlibVersionDir(version)
 	markerPath := filepath.Join(stdlibDir, stdlibMarkerName)

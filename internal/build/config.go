@@ -77,25 +77,25 @@ func (c *Config) EnsureDirs() error {
 }
 
 // StdlibVersionDir returns the path for a specific stdlib version.
-// Format: StdlibDir/v{version}/
-// The version string may contain a git describe suffix (e.g.,
-// "0.29.4-1-ga528ffd"); it is normalized to the base version ("0.29.4") here so
-// that every consumer of the cache — build, transpile and the LSP — agrees on
-// one directory.
+// Format: StdlibDir/v{version}/, with the version put through
+// normalizeStdlibVersion so that every consumer of the cache resolves the same
+// directory for a given binary.
 func (c *Config) StdlibVersionDir(version string) string {
 	return filepath.Join(c.StdlibDir, "v"+normalizeStdlibVersion(version))
 }
 
 // EnsureStdlib extracts the embedded stdlib for the given version and returns
-// the stdlib directory path, or "" if extraction failed. This is the canonical
-// stdlib resolution used by both the CLI transpiler and the LSP server; it
-// shares its implementation with the builder so the two cannot drift apart.
-func (c *Config) EnsureStdlib(version string) string {
+// the stdlib directory path. This is the canonical stdlib resolution used by
+// both the CLI transpiler and the LSP server; it shares its implementation with
+// the builder so the two cannot drift apart.
+//
+// The failure is reported rather than collapsed into an empty path: refusing to
+// repair the cache is exactly the situation this code exists to notice, and a
+// caller that only sees "" degrades it into the far less informative "no stdlib
+// on the search path".
+func (c *Config) EnsureStdlib(version string) (string, error) {
 	stdlibDir, _, err := c.ensureStdlibExtracted(version)
-	if err != nil {
-		return ""
-	}
-	return stdlibDir
+	return stdlibDir, err
 }
 
 // GalaModulePath returns the path where a GALA module version is cached.

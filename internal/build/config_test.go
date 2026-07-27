@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -79,7 +81,8 @@ func TestStdlibVersionDir_NormalizesForAllCallers(t *testing.T) {
 	plain := config.StdlibVersionDir("0.29.4")
 	require.Equal(t, plain, suffixed)
 
-	ensured := config.EnsureStdlib("0.29.4-1-ga528ffd")
+	ensured, err := config.EnsureStdlib("0.29.4-1-ga528ffd")
+	require.NoError(t, err)
 	require.Equal(t, plain, ensured)
 
 	// The freshness marker must match for both spellings too, otherwise the
@@ -146,9 +149,11 @@ func TestEnsureStdlibExtracted_StaleSnapshotIsReplaced(t *testing.T) {
 	orphan := filepath.Join(dir, pkg, "removed_upstream.gala")
 	require.NoError(t, os.WriteFile(orphan, []byte("// dropped upstream\n"), 0644))
 
-	// Simulate a marker left behind by an older binary.
+	// A marker exactly as an older binary left it: the bare version string,
+	// which used to be written and then never read back. This is the shape the
+	// regression takes in the field, so it is the shape the test uses.
 	markerPath := filepath.Join(dir, stdlibMarkerName)
-	require.NoError(t, os.WriteFile(markerPath, []byte("fingerprint-from-an-older-snapshot"), 0644))
+	require.NoError(t, os.WriteFile(markerPath, []byte("dev"), 0644))
 
 	dir2, extracted, err := config.ensureStdlibExtracted("dev")
 	require.NoError(t, err)
@@ -200,6 +205,10 @@ func TestCheckStdlibVersionDir_RejectsNonVersionDirs(t *testing.T) {
 		{name: "nested path", dir: filepath.Join(config.StdlibDir, "v0.29.4", "std"), wantErr: true},
 		{name: "unrelated path", dir: t.TempDir(), wantErr: true},
 		{name: "empty", dir: "", wantErr: true},
+		{name: "cache root with trailing separator", dir: config.StdlibDir + string(filepath.Separator), wantErr: true},
+		{name: "cache root via dot element", dir: filepath.Join(config.StdlibDir, "."), wantErr: true},
+		{name: "relative path", dir: filepath.Join("stdlib", "v0.29.4"), wantErr: true},
+		{name: "version dir reached through a detour", dir: filepath.Join(config.StdlibDir, "v0.29.4", "..", "v0.29.4"), wantErr: false},
 	}
 
 	for _, tt := range tests {
@@ -212,6 +221,54 @@ func TestCheckStdlibVersionDir_RejectsNonVersionDirs(t *testing.T) {
 			require.Error(t, err)
 			var unsafeErr *UnsafeStdlibDirError
 			require.True(t, errors.As(err, &unsafeErr))
+		})
+	}
+}
+
+// TestCheckStdlibVersionDir_RejectsDifferentlyCasedRoot verifies the cache root
+// cannot be smuggled past the guard by re-spelling it: on a case-insensitive
+// filesystem filepath.Rel folds the case and reports ".", and elsewhere the
+// re-spelling is simply a different path outside the root. Either way it is
+// refused.
+func TestCheckStdlibVersionDir_RejectsDifferentlyCasedRoot(t *testing.T) {
+	config := isolatedConfig(t)
+
+	for _, spelling := range []string{strings.ToUpper(config.StdlibDir), strings.ToLower(config.StdlibDir)} {
+		require.Error(t, config.checkStdlibVersionDir(spelling), "spelling %q must be rejected", spelling)
+	}
+}
+
+// TestStdlibVersionDir_HostileVersionCannotEscapeTheCacheRoot feeds version
+// strings that try to climb out of the cache through the naming funnel and
+// checks that whatever comes out is either refused outright or still a direct
+// child of the cache root. The version is compiled into the binary rather than
+// typed by a user, but it is the only input to the path a wipe is performed on,
+// so it must not be able to widen that wipe.
+func TestStdlibVersionDir_HostileVersionCannotEscapeTheCacheRoot(t *testing.T) {
+	config := isolatedConfig(t)
+	root := filepath.Clean(config.StdlibDir)
+
+	versions := []string{
+		"", ".", "..", "...", "/", "\\", string(filepath.Separator),
+		"../..", "/../../etc", `..\..\Windows`, "../" + filepath.Base(root),
+		`C:\Windows`, `\\server\share`, "//server/share",
+		"-rc1", "v0.29.4", "0.1.0+meta", "a\nb",
+	}
+
+	for _, version := range versions {
+		t.Run(strconv.Quote(version), func(t *testing.T) {
+			dir := config.StdlibVersionDir(version)
+			if err := config.checkStdlibVersionDir(dir); err != nil {
+				var unsafeErr *UnsafeStdlibDirError
+				require.True(t, errors.As(err, &unsafeErr))
+				return
+			}
+			// Accepted: the worst this version string can reach is one direct
+			// child of the cache root, never the root and never outside it.
+			cleaned := filepath.Clean(dir)
+			require.NotEqual(t, root, cleaned)
+			require.Equal(t, root, filepath.Dir(cleaned),
+				"accepted dir %q is not a direct child of %q", dir, root)
 		})
 	}
 }
@@ -249,4 +306,26 @@ func TestRemoveStdlibVersionDir_LeavesRejectedPathsIntact(t *testing.T) {
 	require.NoError(t, os.MkdirAll(dir, 0755))
 	require.NoError(t, config.removeStdlibVersionDir(dir))
 	require.NoDirExists(t, dir)
+}
+
+// TestRemoveStdlibVersionDir_DoesNotFollowASymlinkedVersionDir verifies that a
+// version directory which is really a link is unlinked rather than walked into.
+// The guard is purely lexical, so this property comes from os.RemoveAll itself
+// and is worth pinning: it is what stops a swapped-in link from turning the
+// cache wipe into a delete of whatever it points at.
+func TestRemoveStdlibVersionDir_DoesNotFollowASymlinkedVersionDir(t *testing.T) {
+	config := isolatedConfig(t)
+
+	outside := t.TempDir()
+	bystander := filepath.Join(outside, "bystander.txt")
+	require.NoError(t, os.WriteFile(bystander, []byte("keep"), 0644))
+
+	link := config.StdlibVersionDir("dev")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Skipf("host does not permit creating symlinks: %v", err)
+	}
+
+	require.NoError(t, config.removeStdlibVersionDir(link))
+	require.NoDirExists(t, link)
+	require.FileExists(t, bystander, "removing the version directory must not follow the link")
 }
