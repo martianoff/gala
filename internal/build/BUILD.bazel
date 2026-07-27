@@ -28,6 +28,7 @@ go_test(
     name = "build_test",
     srcs = [
         "apex_perf_test.go",
+        "bom_test.go",
         "builder_test.go",
         "contention_perf_test.go",
         "deptranspiler_test.go",

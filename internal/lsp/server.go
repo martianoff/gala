@@ -185,18 +185,25 @@ func (h *GalaHandler) Shutdown(ctx context.Context) error {
 }
 
 // --- Document Sync ---
+//
+// Every entry point normalizes the incoming text with galaerr.StripBOM before
+// caching it. The parser strips a leading BOM too, so anything that correlates
+// a cached document with a parse-tree token index (signatureHelp patches the
+// text and walks the tree by offset) would otherwise be three bytes out on a
+// document a BOM-preserving client sent us verbatim.
 
 func (h *GalaHandler) DidOpen(ctx context.Context, params *lsp.DidOpenTextDocumentParams) error {
 	uri := string(params.TextDocument.URI)
+	text := galaerr.StripBOM(params.TextDocument.Text)
 	h.mu.Lock()
-	h.documents[uri] = params.TextDocument.Text
+	h.documents[uri] = text
 	h.docVersions[uri]++
 	// Cancel any in-flight analysis from a previous DidChange
 	if cancel, ok := h.analysisCancels[uri]; ok {
 		cancel()
 	}
 	h.mu.Unlock()
-	h.publishDiagnostics(uri, params.TextDocument.Text)
+	h.publishDiagnostics(uri, text)
 	return nil
 }
 
@@ -205,7 +212,7 @@ func (h *GalaHandler) DidChange(ctx context.Context, params *lsp.DidChangeTextDo
 	if len(params.ContentChanges) == 0 {
 		return nil
 	}
-	text := params.ContentChanges[len(params.ContentChanges)-1].Text
+	text := galaerr.StripBOM(params.ContentChanges[len(params.ContentChanges)-1].Text)
 
 	h.mu.Lock()
 	h.documents[uri] = text
@@ -273,14 +280,15 @@ func (h *GalaHandler) DidClose(ctx context.Context, params *lsp.DidCloseTextDocu
 func (h *GalaHandler) DidSave(ctx context.Context, params *lsp.DidSaveTextDocumentParams) error {
 	if params.Text != nil {
 		uri := string(params.TextDocument.URI)
+		text := galaerr.StripBOM(*params.Text)
 		h.mu.Lock()
-		h.documents[uri] = *params.Text
+		h.documents[uri] = text
 		h.docVersions[uri]++
 		if cancel, ok := h.analysisCancels[uri]; ok {
 			cancel()
 		}
 		h.mu.Unlock()
-		h.publishDiagnostics(uri, *params.Text)
+		h.publishDiagnostics(uri, text)
 	}
 	return nil
 }

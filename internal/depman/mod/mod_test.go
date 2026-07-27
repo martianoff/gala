@@ -429,3 +429,23 @@ func TestRoundTrip_WithGoRequires(t *testing.T) {
 	assert.True(t, indirectGoReq.Go)
 	assert.True(t, indirectGoReq.Indirect)
 }
+
+// TestParse_LeadingBOM covers gala.mod files written by an editor that emits a
+// UTF-8 byte order mark. Without stripping it the `module` directive matches no
+// case in the parser's switch and is skipped in silence, leaving the module
+// path empty and dependency resolution quietly wrong.
+func TestParse_LeadingBOM(t *testing.T) {
+	// The BOM is written as explicit bytes: a literal U+FEFF anywhere but the
+	// very first position of a Go source file is a compile error.
+	const utf8BOM = "\xef\xbb\xbf"
+
+	content := `module github.com/user/project
+
+gala 1.0
+`
+
+	f, err := Parse(utf8BOM + content)
+	require.NoError(t, err)
+	assert.Equal(t, "github.com/user/project", f.Module.Path)
+	assert.Equal(t, "1.0", f.Gala)
+}

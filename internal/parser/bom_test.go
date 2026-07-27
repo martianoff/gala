@@ -57,6 +57,13 @@ val x = 10`,
 val x = 10`,
 			wantErr: true,
 		},
+		{
+			// A BOM'd file is almost always Windows-authored, so CRLF is the
+			// realistic pairing rather than an exotic one.
+			name:    "CRLF line endings",
+			input:   "package main\r\n\r\nval x = 10\r\n",
+			wantErr: false,
+		},
 	}
 
 	p := NewAntlrGalaParser()
@@ -85,11 +92,11 @@ val x = 10`,
 }
 
 // TestParseWithLeadingBOMNoEmptyLineCascade pins the specific misleading
-// cascade a BOM used to produce. ANTLR reports token positions as rune offsets,
-// while checkEmptyLines slices the source by Go byte offsets; the two agree
-// only while the text is ASCII, so a 3-byte BOM shifted the slice and made
-// checkEmptyLines report a missing empty line after the package clause on a
-// file that plainly has one — pointing the reader at correct code.
+// cascade a BOM used to produce: on top of the lexer error, checkEmptyLines
+// reported a missing empty line after the package clause on a file that plainly
+// has one — pointing the reader at correct code. (The multi-byte offset
+// handling that made the BOM shift that check is covered on its own by
+// TestEmptyLineRequirement.)
 func TestParseWithLeadingBOMNoEmptyLineCascade(t *testing.T) {
 	const src = `package main
 

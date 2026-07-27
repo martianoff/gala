@@ -69,6 +69,20 @@ func TestStripBOM(t *testing.T) {
 			input: "\xef\xbb" + "package main\n",
 			want:  "\xef\xbb" + "package main\n",
 		},
+		// The two rows below record a deliberate limit: only the UTF-8 marker is
+		// removed. A UTF-16 file is UTF-16 throughout, and a double-encoded BOM
+		// means the file was already mangled — dropping either prefix would hide
+		// a wrong-encoding problem behind a stranger error further in.
+		{
+			name:  "a UTF-16 BOM is not a UTF-8 BOM",
+			input: "\xff\xfep\x00a\x00",
+			want:  "\xff\xfep\x00a\x00",
+		},
+		{
+			name:  "a double-encoded BOM is left alone",
+			input: "\xc3\xaf\xc2\xbb\xc2\xbfpackage main\n",
+			want:  "\xc3\xaf\xc2\xbb\xc2\xbfpackage main\n",
+		},
 	}
 
 	for _, tt := range tests {
@@ -78,11 +92,35 @@ func TestStripBOM(t *testing.T) {
 	}
 }
 
-// TestStripBOMIsIdempotentOnStrippedInput guards the "exactly one" contract
-// from the other side: re-stripping already-clean text must be a no-op.
-func TestStripBOMIsIdempotentOnStrippedInput(t *testing.T) {
-	once := galaerr.StripBOM(utf8BOM + "package main\n")
-	assert.Equal(t, once, galaerr.StripBOM(once))
+// bomFrameSrc is a one-line source whose `len` sits at 0-based rune column 8,
+// so the caret span 8..11 is exact and any offset drift is visible.
+const (
+	bomFrameSrc  = "val n = len(s)\n"
+	bomFrameHint = "GALA strings & collections expose .Size()"
+)
+
+// bomLenErr builds the same diagnostic for both resolveSource branches; pass an
+// empty path for the FallbackSource branch.
+func bomLenErr(path string) error {
+	err := galaerr.NewCodedSemanticError(
+		galaerr.CodeForbiddenGoBuiltin, 1, 8, "bare `len` is forbidden", bomFrameHint,
+	).WithSpan(11)
+	if path == "" {
+		return err
+	}
+	return galaerr.WithFilePath(err, path)
+}
+
+// assertBOMFrameAligned pins the alignment absolutely, so the tests below still
+// mean something if both resolveSource branches were to regress together.
+func assertBOMFrameAligned(t *testing.T, rendered string) {
+	t.Helper()
+	assert.Contains(t, rendered, "1 | val n = len(s)")
+	assert.NotContains(t, rendered, utf8BOM, "the BOM must not leak into the rendered frame")
+
+	caret := caretLineOf(rendered)
+	require.NotEmpty(t, caret, "expected a caret line")
+	assert.Equal(t, strings.Repeat(" ", 8)+"^^^ "+bomFrameHint, afterPipe(caret))
 }
 
 // TestRenderRichBOMSource covers the diagnostic renderer's own re-read of the
@@ -91,60 +129,29 @@ func TestStripBOMIsIdempotentOnStrippedInput(t *testing.T) {
 // on line 1 sits one rune off for every diagnostic in the file, not just
 // BOM-related ones.
 func TestRenderRichBOMSource(t *testing.T) {
-	const src = "val n = len(s)\n"
-
-	// `len` starts at 0-based rune column 8 on line 1; exact span 8..11.
-	newErr := func() error {
-		return galaerr.NewCodedSemanticError(
-			galaerr.CodeForbiddenGoBuiltin, 1, 8,
-			"bare `len` is forbidden",
-			"GALA strings & collections expose .Size()",
-		).WithSpan(11)
-	}
-
-	plain := galaerr.RenderRich(newErr(), galaerr.Options{FallbackSource: src})
-	bommed := galaerr.RenderRich(newErr(), galaerr.Options{FallbackSource: utf8BOM + src})
+	plain := galaerr.RenderRich(bomLenErr(""), galaerr.Options{FallbackSource: bomFrameSrc})
+	bommed := galaerr.RenderRich(bomLenErr(""), galaerr.Options{FallbackSource: utf8BOM + bomFrameSrc})
 
 	assert.Equal(t, plain, bommed, "a leading BOM must not change the rendered diagnostic")
-
-	// And assert the alignment absolutely, so the test still means something if
-	// both paths were to regress together.
-	assert.Contains(t, bommed, "1 | val n = len(s)")
-	assert.NotContains(t, bommed, utf8BOM, "the BOM must not leak into the rendered frame")
-
-	caret := caretLineOf(bommed)
-	require.NotEmpty(t, caret, "expected a caret line")
-	assert.Equal(t,
-		strings.Repeat(" ", 8)+"^^^ GALA strings & collections expose .Size()",
-		afterPipe(caret))
+	assertBOMFrameAligned(t, bommed)
 }
 
 // TestRenderRichBOMSourceFromFile covers the on-disk branch of resolveSource,
 // which re-reads the file independently of whatever text the parser was given.
 func TestRenderRichBOMSourceFromFile(t *testing.T) {
-	const src = "val n = len(s)\n"
-
-	write := func(t *testing.T, content string) string {
+	write := func(content string) string {
 		t.Helper()
 		path := filepath.Join(t.TempDir(), "src.gala")
 		require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
 		return path
 	}
 
-	newErr := func(path string) error {
-		return galaerr.WithFilePath(galaerr.NewCodedSemanticError(
-			galaerr.CodeForbiddenGoBuiltin, 1, 8, "bare `len` is forbidden", "use .Size()",
-		).WithSpan(11), path)
-	}
+	plain := galaerr.RenderRich(bomLenErr(write(bomFrameSrc)), galaerr.Options{})
+	bommed := galaerr.RenderRich(bomLenErr(write(utf8BOM+bomFrameSrc)), galaerr.Options{})
 
-	plainPath := write(t, src)
-	bomPath := write(t, utf8BOM+src)
-
-	plain := galaerr.RenderRich(newErr(plainPath), galaerr.Options{})
-	bommed := galaerr.RenderRich(newErr(bomPath), galaerr.Options{})
-
-	// The locus line differs (different temp paths), so compare the frame body.
-	assert.Contains(t, bommed, "1 | val n = len(s)")
-	assert.NotContains(t, bommed, utf8BOM)
-	assert.Equal(t, afterPipe(caretLineOf(plain)), afterPipe(caretLineOf(bommed)))
+	// Comparing the caret lines alone would prove nothing — the caret is built
+	// from the error's column, not from the source — so assert the quoted
+	// source row too. That is the part a leaked BOM actually corrupts.
+	assertBOMFrameAligned(t, plain)
+	assertBOMFrameAligned(t, bommed)
 }

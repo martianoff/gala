@@ -11,13 +11,11 @@ const bom = "\xef\xbb\xbf"
 // the result unchanged otherwise.
 //
 // A BOM carries no semantic content, so GALA tolerates one at the start of a
-// source file the same way Go does. Stripping it matters for two reasons
-// beyond lexing: strings.TrimSpace does NOT remove U+FEFF (it is not Unicode
-// whitespace), so line scanners looking for a `package ` prefix silently miss
-// the first line; and ANTLR reports token positions as rune offsets, which only
-// line up with Go's byte offsets into the same source while the text is ASCII —
-// a multi-byte BOM desynchronises the two and produces misleading diagnostics
-// pointing at correct code further down the file.
+// source file the same way Go does. Two things make it worth removing rather
+// than ignoring: the lexer has no rule for U+FEFF and rejects the file outright,
+// and strings.TrimSpace does NOT remove it either (it is not Unicode
+// whitespace), so the line scanners that look for a `package ` prefix silently
+// miss the first line.
 //
 // Only a leading BOM is removed. A U+FEFF appearing anywhere else is left
 // alone, since there it is ordinary content rather than an encoding marker.
