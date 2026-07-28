@@ -4,9 +4,10 @@ title: "Golang Type Inference — Lambda and Generic Type Inference for Go"
 description: "GALA infers lambda parameter types, generic type params, and accumulator types from context. Write list.Map((x) => x * 2) without annotations — the transpiler resolves concrete Go types."
 keywords: "golang type inference, go lambda type inference, golang generic type inference, go implicit typing, golang infer types, go generics inference, golang lambda, gala type inference"
 permalink: /features/type-inference/
+last_modified_at: 2026-07-05
 ---
 
-<p class="breadcrumb"><a href="/">Home</a> / <a href="/features/type-inference/">Features</a> / Type Inference</p>
+<p class="breadcrumb"><a href="/">Home</a> / <a href="/features/">Features</a> / Type Inference</p>
 
 # Type Inference — Less Typing, Same Safety
 

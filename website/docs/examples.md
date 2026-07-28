@@ -4,9 +4,10 @@ title: "GALA Code Examples - Learn by Example"
 description: "GALA code examples covering pattern matching, sealed types, Option monads, generics, collections, and more. Complete, runnable programs you can try in the playground."
 keywords: "gala examples, gala code examples, gala tutorial examples, gala pattern matching example, gala sealed type example, learn gala"
 permalink: /docs/examples/
+last_modified_at: 2026-07-05
 ---
 
-<p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/language-reference/">Docs</a> / Examples</p>
+<p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / Examples</p>
 
 {% raw %}
 # GALA Examples

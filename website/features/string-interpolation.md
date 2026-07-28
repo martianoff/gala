@@ -4,9 +4,10 @@ title: "Golang String Interpolation — Template Strings and F-Strings for Go"
 description: "GALA adds string interpolation to Go. Write s\"Hello $name\" and f\"${pi}%.2f\" instead of fmt.Sprintf — no import needed, with auto-inferred format verbs. The string formatting Go is missing."
 keywords: "golang string interpolation, go string interpolation, go template string, golang sprintf alternative, go f string, golang string format, go string template literal, gala string interpolation"
 permalink: /features/string-interpolation/
+last_modified_at: 2026-04-19
 ---
 
-<p class="breadcrumb"><a href="/">Home</a> / <a href="/features/string-interpolation/">Features</a> / String Interpolation</p>
+<p class="breadcrumb"><a href="/">Home</a> / <a href="/features/">Features</a> / String Interpolation</p>
 
 # String Interpolation — Template Strings for Go
 

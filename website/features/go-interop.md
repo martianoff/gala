@@ -4,9 +4,10 @@ title: "GALA Go Interop — Use Any Go Library, Type, and Function"
 description: "GALA transpiles to Go and gives you full access to the Go ecosystem. Import Go packages, call Go functions, use Go types — all with GALA's cleaner syntax. Zero friction interoperability."
 keywords: "gala go interop, gala go libraries, transpile to go, gala import go, gala go types, gala go functions, gala go slices, gala go maps, gala go compatibility"
 permalink: /features/go-interop/
+last_modified_at: 2026-07-05
 ---
 
-<p class="breadcrumb"><a href="/">Home</a> / <a href="/features/sealed-types/">Features</a> / Go Interop</p>
+<p class="breadcrumb"><a href="/">Home</a> / <a href="/features/">Features</a> / Go Interop</p>
 
 # Full Go Interoperability
 

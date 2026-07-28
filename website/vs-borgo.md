@@ -4,6 +4,7 @@ title: "GALA vs Borgo — A Maintained, Licensed Language That Compiles to Go"
 description: "GALA and Borgo both bring sum types and pattern matching to Go. The practical differences: GALA is actively maintained, Apache-2.0 licensed, and ships dependency management, a standard library, and IDE tooling."
 keywords: "gala vs borgo, borgo alternative, borgo language, maintained borgo alternative, compile to go language, golang sum types, golang pattern matching, borgo abandoned, scala on go, rust on go"
 permalink: /vs-borgo/
+last_modified_at: 2026-07-05
 ---
 
 <div class="breadcrumb">

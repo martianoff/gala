@@ -4,9 +4,10 @@ title: "Golang Do-Notation — bind / also Monadic Binding for Go"
 description: "GALA's bind/also do-notation flattens FlatMap chains into readable blocks. Sequential bind, plus also for independent steps that accumulate errors (Validated) or run concurrently (Future) — over any monad, no HKT."
 keywords: "golang do notation, go monadic binding, golang for comprehension, go bind notation, golang applicative validation, go error accumulation, golang concurrent futures, go flatmap chain, gala bind also, golang monad syntax"
 permalink: /features/monadic-binding/
+last_modified_at: 2026-07-26
 ---
 
-<p class="breadcrumb"><a href="/">Home</a> / <a href="/features/monadic-binding/">Features</a> / Monadic Binding</p>
+<p class="breadcrumb"><a href="/">Home</a> / <a href="/features/">Features</a> / Monadic Binding</p>
 
 # Golang Do-Notation — `bind` / `also` for Go
 
@@ -89,6 +90,8 @@ Println(s"errors: ${bad.GetErrors().Size()}")   // 3 — all three, not just the
 ```
 
 Swap the `also`s for `bind`s and you'd get `1`. Note there isn't a single explicit type argument — `Valid` / `Invalid` fix their type parameter from the declared return type, and `InvalidOf` infers its instantiation from context.
+
+Under the sugar sit `Zip2` through **`Zip10`**, which combine that many `Validated` values into a `TupleN`, accumulating every error across all of them — so an `also` group can validate up to ten independent fields in one pass. `Map` transforms a `Valid` and passes an `Invalid` through unchanged; `FlatMap` is the monadic, **fail-fast** bind and deliberately does *not* accumulate. `GetErrors()` returns the accumulated `Array[E]`, and `ToEither()` converts (`Valid` → `Right`, `Invalid` → `Left(errors)`) when you need to hand the result to fail-fast code.
 
 ---
 

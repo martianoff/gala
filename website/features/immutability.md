@@ -4,9 +4,10 @@ title: "Golang Immutable Structs — Immutability by Default for Go"
 description: "GALA makes immutability the default in Go. val bindings, immutable struct fields, auto-generated Copy with named args, structural Equal for free, and ConstPtr read-only pointers — eliminating mutation bugs."
 keywords: "golang immutable struct, go immutable, golang immutability, go const pointer, go immutable fields, golang val var, golang immutable by default, go copy struct, go structural equality, gala immutability"
 permalink: /features/immutability/
+last_modified_at: 2026-07-10
 ---
 
-<p class="breadcrumb"><a href="/">Home</a> / <a href="/features/immutability/">Features</a> / Immutability</p>
+<p class="breadcrumb"><a href="/">Home</a> / <a href="/features/">Features</a> / Immutability</p>
 
 # Golang Immutable Structs — Immutability by Default for Go
 

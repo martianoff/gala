@@ -4,9 +4,10 @@ title: "Why GALA? - Features, Trade-offs, and Honest Assessment"
 description: "Why choose GALA over plain Go? Deep dive into GALA's features with code examples, Go comparisons, ideal use cases, and honest trade-offs. A technical assessment for Go developers."
 keywords: "why gala, gala vs go, should i use gala, gala benefits, go alternative language benefits, gala trade-offs"
 permalink: /docs/why-gala/
+last_modified_at: 2026-07-10
 ---
 
-<p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/language-reference/">Docs</a> / Why GALA?</p>
+<p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / Why GALA?</p>
 
 # Why GALA?
 

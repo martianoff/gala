@@ -4,6 +4,7 @@ title: "GALA for AI — a stricter compiler is a tighter agent loop"
 description: "Why GALA suits AI coding agents: a strict, expressive compiler turns bugs into an instant, precise, deterministic worklist — the exact feedback an agent's generate-check-fix loop converges on."
 keywords: "gala for ai, ai coding agents, llm code generation, compiler feedback loop, exhaustive pattern matching ai, sealed types refactoring, ai code correctness, agent friendly language, static types llm, go for ai agents"
 permalink: /for-ai/
+last_modified_at: 2026-07-10
 ---
 
 <div class="breadcrumb">

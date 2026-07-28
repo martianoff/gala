@@ -4,6 +4,7 @@ title: "GALA Playground — Try Golang Sum Types and Pattern Matching Online"
 description: "Try GALA in your browser — no installation required. Write and run code with sum types, pattern matching, Option/Either/Try, and functional collections. See what Go is missing, live."
 keywords: "gala playground, try gala online, gala online compiler, try golang sum types online, go pattern matching playground, gala browser, golang functional programming online"
 permalink: /playground/
+last_modified_at: 2026-07-05
 ---
 
 <div class="breadcrumb">

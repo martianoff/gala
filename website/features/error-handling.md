@@ -4,9 +4,10 @@ title: "Golang Option Type — Option, Either, and Try for Go Error Handling"
 description: "Replace Go's if-err-nil with GALA's Option[T], Either[A,B], and Try[T]. Language-level monadic error handling with Map, FlatMap, Recover, and pattern matching — cleaner than fp-go or manual nil checks."
 keywords: "golang option type, go option monad, go either type, golang error handling alternative, go try monad, golang nil alternative, go monadic error handling, golang result type, go error handling verbose, gala error handling"
 permalink: /features/error-handling/
+last_modified_at: 2026-07-10
 ---
 
-<p class="breadcrumb"><a href="/">Home</a> / <a href="/features/error-handling/">Features</a> / Error Handling</p>
+<p class="breadcrumb"><a href="/">Home</a> / <a href="/features/">Features</a> / Error Handling</p>
 
 # Golang Option Type — Option, Either, and Try for Go
 

@@ -4,9 +4,10 @@ title: "Golang Sum Types — Sealed Types and Algebraic Data Types for Go"
 description: "GALA brings sum types to Go with sealed types. Define closed type hierarchies, get exhaustive pattern matching, auto-generated constructors, and compile-time safety — the #1 most-requested Go feature, available today."
 keywords: "golang sum types, go sum types, go algebraic data types, golang enum types, go sealed types, go discriminated union, golang ADT, go closed interface, golang variant types, gala sealed types"
 permalink: /features/sealed-types/
+last_modified_at: 2026-07-05
 ---
 
-<p class="breadcrumb"><a href="/">Home</a> / <a href="/features/sealed-types/">Features</a> / Sealed Types</p>
+<p class="breadcrumb"><a href="/">Home</a> / <a href="/features/">Features</a> / Sealed Types</p>
 
 # Golang Sum Types — Sealed Types and Algebraic Data Types for Go
 

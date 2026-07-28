@@ -4,9 +4,10 @@ title: "Strings in GALA - Free functions, Str wrapper, StringBuilder"
 description: "GALA's unified strings package: free functions over plain `string` mirroring Go's `strings.X`, plus an immutable `Str` wrapper with Map/Filter/Fold and a chainable StringBuilder."
 keywords: "gala strings, go string operations, golang string manipulation, gala Str type, StringBuilder"
 permalink: /docs/strings/
+last_modified_at: 2026-07-05
 ---
 
-<p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/language-reference/">Docs</a> / Strings</p>
+<p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / Strings</p>
 
 # strings
 

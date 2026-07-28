@@ -4,9 +4,10 @@ title: "Golang Pattern Matching — Exhaustive Match Expressions for Go"
 description: "GALA brings real pattern matching to Go — struct destructuring, sealed type exhaustive matching, guard clauses, nested patterns, custom extractors, and sequence patterns. Beyond what Go's switch can do."
 keywords: "golang pattern matching, go pattern matching, golang match expression, go switch alternative, go exhaustive match, go destructuring, golang guard clauses, go struct pattern matching, golang case expression"
 permalink: /features/pattern-matching/
+last_modified_at: 2026-07-10
 ---
 
-<p class="breadcrumb"><a href="/">Home</a> / <a href="/features/pattern-matching/">Features</a> / Pattern Matching</p>
+<p class="breadcrumb"><a href="/">Home</a> / <a href="/features/">Features</a> / Pattern Matching</p>
 
 # Golang Pattern Matching — Beyond Go's Switch Statement
 

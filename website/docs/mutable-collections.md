@@ -4,9 +4,10 @@ title: "Mutable Collections in GALA - Performance-Optimized Data Structures"
 description: "Mutable collection variants in GALA for performance-sensitive code. Mutable Array, List, HashMap, HashSet with in-place operations alongside functional immutable collections."
 keywords: "gala mutable collections, go mutable array, golang mutable hashmap, gala performance collections"
 permalink: /docs/mutable-collections/
+last_modified_at: 2026-04-19
 ---
 
-<p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/language-reference/">Docs</a> / Mutable Collections</p>
+<p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / Mutable Collections</p>
 
 # Mutable Collections
 

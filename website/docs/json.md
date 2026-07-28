@@ -4,6 +4,7 @@ title: "Json in GALA — Zero-Reflection JSON Codec with Builder Pattern"
 description: "GALA's json package provides zero-reflection, compile-time JSON serialization with builder pattern configuration, naming strategies, and pattern matching support."
 keywords: "gala json, golang json alternative, go type safe json, gala json codec, gala json pattern matching, go json serialization, zero reflection json"
 permalink: /docs/json/
+last_modified_at: 2026-04-30
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / Json</p>

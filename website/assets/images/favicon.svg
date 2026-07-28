@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="GALA">
+  <title>GALA</title>
+  <defs>
+    <linearGradient id="apple" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FF6B6B"/>
+      <stop offset="0.55" stop-color="#E63946"/>
+      <stop offset="1" stop-color="#B8202E"/>
+    </linearGradient>
+    <linearGradient id="leaf" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6BCB77"/>
+      <stop offset="1" stop-color="#2E8B3D"/>
+    </linearGradient>
+  </defs>
+  <path d="M32 19.2 C19.2 9.6 6.4 16 6.4 32 C6.4 51.2 19.2 60.8 27.2 60.8 C29.6 60.8 30.4 59.2 32 59.2 C33.6 59.2 34.4 60.8 36.8 60.8 C44.8 60.8 57.6 51.2 57.6 32 C57.6 16 44.8 9.6 32 19.2 Z" fill="url(#apple)"/>
+  <path d="M32 17.6 C30.4 6.4 36.8 1.6 49.6 3.2 C48 14.4 41.6 19.2 32 17.6 Z" fill="url(#leaf)"/>
+  <rect x="30.9" y="12.8" width="2.2" height="6.4" rx="1" fill="#5A3A22"/>
+  <ellipse cx="19.2" cy="32" rx="4.8" ry="6.7" fill="#FFFFFF" opacity="0.3"/>
+</svg>

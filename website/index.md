@@ -5,6 +5,7 @@ description: "Scala on Go. A statically typed, functional-first language that tr
 keywords: "gala language, scala on go, golang sum types, golang pattern matching, golang option type, golang algebraic data types, transpile to go, golang functional programming, golang sealed types, golang zero reflection json"
 schema_type: "SoftwareApplication"
 permalink: /
+last_modified_at: 2026-07-26
 ---
 
 <div class="hero">
@@ -32,7 +33,9 @@ The [2024 Go Developer Survey](https://go.dev/blog/survey2024-h1-results) found 
 
 ### Safe — Go's runtime bugs, caught by the compiler
 
-Sum types with **exhaustive** pattern matching (an incomplete `match` is a build error, not a production panic), no `nil` (`Option`/`Either`/`Try` instead), immutable by default (`val`, immutable structs, read-only `ConstPtr`), always-concrete types — never a silent `any` — and zero-reflection typed JSON. The transpiler enforces match exhaustiveness and immutability at compile time.
+Sum types with **exhaustive** pattern matching (an incomplete `match` is a build error, not a production panic), no `nil` (`Option`/`Either`/`Try` instead), immutable by default (`val`, immutable structs, read-only `ConstPtr`), always-concrete types — never a silent `any` — and zero-reflection typed JSON.
+
+That extends to Go's worst production bug class: **data races are a compile error**. A value crossing a goroutine boundary must be deeply immutable, and the transpiler proves it before the program runs — no sampling, no `-race` build, no interleaving you happened not to hit. Because GALA is immutable by default the check is silent in the common case; it fires only on genuinely mutable state ([GALA-E0037]({{ '/features/concurrency-safety/' | relative_url }})).
 
 <pre><code>sealed type Payment {
     case Card(Last4 string)
@@ -119,6 +122,37 @@ GALA's version is shorter, handles destructuring automatically, and produces a c
 </div>
 
 <div class="feature-card">
+<h3>Compile-Time Data-Race Safety</h3>
+<p>Only deeply-immutable values may cross a goroutine boundary. A <code>Future</code> body that captures mutable state is a build error (<strong>GALA-E0037</strong>), not a race you find in production.</p>
+<pre><code>var counter = 0
+Future(() =&gt; counter + 1)
+// GALA-E0037: captures
+// reassignable var "counter"</code></pre>
+<p><a href="{{ '/features/concurrency-safety/' | relative_url }}">Learn about data-race safety</a></p>
+</div>
+
+<div class="feature-card">
+<h3>Structured Concurrency &amp; Cancellation</h3>
+<p><code>Future[T]</code> composes with <code>Map</code>/<code>FlatMap</code>/<code>Zip</code>, and bounds itself: <code>Cancel()</code>, <code>WithTimeout</code>, and <code>Race</code> short-circuit pending stages instead of leaking them.</p>
+<pre><code>val bounded = slow
+    .WithTimeout(Milliseconds(500))
+    .Recover((e) =&gt; 0)</code></pre>
+<p><a href="{{ '/features/concurrency/' | relative_url }}">Learn about concurrency</a></p>
+</div>
+
+<div class="feature-card">
+<h3>A Compiler That Works For You</h3>
+<p>Rust/Elm-style framed diagnostics with a caret and a fix. Panics report <code>foo.gala:12</code>, not generated Go. Self-tail-recursive functions become constant-stack loops.</p>
+<pre><code>error[GALA-E0035]: bare Go builtin
+"len(...)" is not part of GALA's surface
+  --&gt; bare_len.gala:5:13
+  |
+5 |     val n = len(s)
+  |             ^^^ use `.Size()`</code></pre>
+<p><a href="{{ '/features/compiler-dx/' | relative_url }}">Learn about compiler DX</a></p>
+</div>
+
+<div class="feature-card">
 <h3>Immutability by Default</h3>
 <p><code>val</code> bindings are immutable. Struct fields are immutable. Auto-generated <code>Copy()</code> for safe updates.</p>
 <pre><code>struct Config(Host string, Port int)
@@ -158,19 +192,8 @@ val sum = nums.FoldLeft(0, (acc, x) =&gt; acc + x)</code></pre>
 </div>
 
 <div class="feature-card">
-<h3>Default Parameters &amp; Named Arguments</h3>
-<p>No more functional options pattern or config structs. <strong>Default parameter values</strong> and <strong>named arguments</strong> work directly in function signatures.</p>
-<pre><code>func connect(host string,
-    port int = 8080, tls bool = true,
-) Connection
-
-connect("localhost", tls = false)</code></pre>
-<p><a href="{{ '/docs/language-reference/' | relative_url }}">Learn about default parameters</a></p>
-</div>
-
-<div class="feature-card">
-<h3>Zero-Reflection JSON Codec</h3>
-<p>Compile-time <code>StructMeta[T]</code> generates typed serialization with no reflection, no struct tags. Builder pattern for <code>Rename</code>, <code>Omit</code>, and naming strategies.</p>
+<h3>Zero-Reflection JSON &amp; YAML</h3>
+<p>Compile-time <code>StructMeta[T]</code> generates typed serialization with no reflection, no struct tags — for <a href="{{ '/docs/json/' | relative_url }}">JSON</a> and <a href="{{ '/docs/yaml/' | relative_url }}">YAML</a> alike. Builder pattern for <code>Rename</code>, <code>Omit</code>, and naming strategies.</p>
 <pre><code>val codec = Codec[Person](SnakeCase())
 val jsonStr = codec.Encode(person).Get()
 val decoded = codec.Decode(jsonStr)</code></pre>
@@ -186,6 +209,7 @@ val decoded = codec.Decode(jsonStr)</code></pre>
 input match {
     case date(Array(y, m, d)) =&gt;
         s"$y/$m/$d"
+    case _ =&gt; "not a date"
 }</code></pre>
 <p><a href="{{ '/docs/regex/' | relative_url }}">Learn about regex</a></p>
 </div>
@@ -203,7 +227,7 @@ val name = user.Name
 
 <div class="feature-card">
 <h3>IDE Support with LSP</h3>
-<p>GoLand/IntelliJ plugin with syntax highlighting, type-aware dot completion, inlay type hints, and structure view. LSP server provides diagnostics, hover, go-to-definition, and more.</p>
+<p>GoLand/IntelliJ plugin with syntax highlighting, type-aware dot completion, inlay type hints, and structure view. The LSP server adds diagnostics, hover, and go-to-definition — including into Go stdlib and third-party Go module sources.</p>
 <img src="{{ '/assets/images/ide/dot-completion.png' | relative_url }}" alt="GALA code completion in IntelliJ" style="max-width: 100%; border: 1px solid #e1e4e8; border-radius: 4px; margin: 0.5rem 0;">
 <p><a href="{{ '/features/ide-support/' | relative_url }}">See IDE features</a></p>
 </div>
@@ -266,7 +290,9 @@ GALA ships with a standard library of type-safe data structures and monads, all 
 | `Option[T]` | Optional values — `Some(value)` / `None()` | [Monadic types]({{ '/features/error-handling/' | relative_url }}) |
 | `Either[A, B]` | Disjoint union — `Left(a)` / `Right(b)` | [Monadic types]({{ '/features/error-handling/' | relative_url }}) |
 | `Try[T]` | Failable computation — `Success(value)` / `Failure(err)` | [Monadic types]({{ '/features/error-handling/' | relative_url }}) |
-| `Future[T]` | Async computation with `Map`, `FlatMap`, `Zip`, `Await` | [Concurrency]({{ '/features/concurrency/' | relative_url }}) |
+| `Future[T]` | Async computation with `Map`, `FlatMap`, `Zip`, `Await`, `Cancel`, `WithTimeout` | [Concurrency]({{ '/features/concurrency/' | relative_url }}) |
+| `Sendable[F]` | Transparent concurrency-boundary marker — compile-time capture safety | [Concurrency safety]({{ '/features/concurrency-safety/' | relative_url }}) |
+| `Validated[E, A]` | Accumulating validation — `Valid` / `Invalid`, `Zip2`…`Zip10` | [Monadic binding]({{ '/features/monadic-binding/' | relative_url }}) |
 | `Tuple[A, B]` | Pairs and triples with `(a, b)` syntax | [Language spec]({{ '/features/pattern-matching/' | relative_url }}) |
 | `ConstPtr[T]` | Read-only pointer with compile-time enforcement | [Immutability]({{ '/features/immutability/' | relative_url }}) |
 | `Codec[T]` | Zero-reflection JSON codec — `Encode`, `Decode`, `Rename`, `Omit`, pattern matching | [JSON codec]({{ '/docs/json/' | relative_url }}) |
@@ -290,7 +316,8 @@ All collections support `Map`, `Filter`, `FoldLeft`, `ForEach`, `Exists`, `Find`
 
 | Document | Description |
 |----------|-------------|
-| [Language Specification]({{ '/features/sealed-types/' | relative_url }}) | Complete reference for GALA syntax and semantics |
+| [Language Reference]({{ '/docs/language-reference/' | relative_url }}) | Complete reference for GALA syntax and semantics |
+| [All Documentation]({{ '/docs/' | relative_url }}) | Documentation hub — every guide and standard-library page |
 | [Getting Started]({{ '/getting-started/' | relative_url }}) | Installation, project setup, and first program |
 | [GALA vs Go]({{ '/vs-go/' | relative_url }}) | Side-by-side comparison with idiomatic Go |
 | [Sealed Types]({{ '/features/sealed-types/' | relative_url }}) | Algebraic data types and closed hierarchies |
@@ -298,8 +325,12 @@ All collections support `Map`, `Filter`, `FoldLeft`, `ForEach`, `Exists`, `Find`
 | [Immutability]({{ '/features/immutability/' | relative_url }}) | `val`, immutable structs, `Copy()`, and `ConstPtr[T]` |
 | [Error Handling]({{ '/features/error-handling/' | relative_url }}) | `Option[T]`, `Either[A,B]`, `Try[T]` monads |
 | [Collections]({{ '/features/collections/' | relative_url }}) | Immutable and mutable functional collections |
-| [Concurrency]({{ '/features/concurrency/' | relative_url }}) | `Future[T]`, `Promise[T]`, and `ExecutionContext` |
+| [Concurrency]({{ '/features/concurrency/' | relative_url }}) | `Future[T]`, `Promise[T]`, `ExecutionContext`, cancellation, timeouts, `Race` |
+| [Concurrency Safety]({{ '/features/concurrency-safety/' | relative_url }}) | Compile-time data-race safety — `Shareable`, `Sendable`, GALA-E0037 |
+| [Compiler DX]({{ '/features/compiler-dx/' | relative_url }}) | Framed diagnostics, GALA-source stack traces, guaranteed TCO, `use` |
+| [Subprocess]({{ '/docs/subprocess/' | relative_url }}) | Spawn and drive child processes, with Future-returning async methods |
 | [JSON Codec]({{ '/docs/json/' | relative_url }}) | Zero-reflection JSON serialization with `Codec[T]` |
+| [YAML Codec]({{ '/docs/yaml/' | relative_url }}) | Zero-reflection YAML serialization with the same builder API |
 | [Regex]({{ '/docs/regex/' | relative_url }}) | Pattern matching with regex extractors |
 | [IO Effect]({{ '/docs/io/' | relative_url }}) | Lazy, composable side effects |
 | [Go Interop]({{ '/features/go-interop/' | relative_url }}) | Using Go libraries and types from GALA |
