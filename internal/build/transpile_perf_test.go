@@ -6,9 +6,11 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/antlr4-go/antlr/v4"
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/stretchr/testify/require"
 
@@ -149,21 +151,72 @@ func TestTranspile_ParallelSiblingPerf_ColdWarm(t *testing.T) {
 	}
 }
 
-// TestTranspile_ParallelSpeedup proves that parseFilesConcurrent
-// actually parallelizes. It pins GOMAXPROCS to 1 (which collapses the
-// worker pool to a single goroutine — the pre-optimization shape) for
-// a baseline pass, then to NumCPU for a parallel pass, and asserts
-// the parallel pass is at least 1.3× faster.
+// concurrencyProbeParser wraps a GalaParser and records the high-water
+// mark of Parse calls that were inside the parser at the same instant.
 //
-// Catches regressions where parseFilesConcurrent is replaced with a
-// for-each parseFileCached or where the goroutine pool sizing logic
-// reverts to 1.
-func TestTranspile_ParallelSpeedup(t *testing.T) {
+// This is what lets the test below assert on parallelism without timing
+// anything. A serialized implementation peaks at 1 whether the machine
+// is idle or oversubscribed, so the signal survives a loaded shared CI
+// runner — unlike a wall-clock speedup ratio, which shrinks toward 1.0
+// purely because the runner is busy and reports that as a regression.
+//
+// Two atomic adds per parse are immeasurable next to an ANTLR parse.
+type concurrencyProbeParser struct {
+	inner    transpiler.GalaParser
+	inFlight atomic.Int64
+	peak     atomic.Int64
+	calls    atomic.Int64
+}
+
+var _ transpiler.GalaParser = (*concurrencyProbeParser)(nil)
+
+func (p *concurrencyProbeParser) Parse(input string) (antlr.Tree, error) {
+	p.enter()
+	defer p.leave()
+	return p.inner.Parse(input)
+}
+
+func (p *concurrencyProbeParser) ParseLenient(input string) (antlr.Tree, []error) {
+	p.enter()
+	defer p.leave()
+	return p.inner.ParseLenient(input)
+}
+
+func (p *concurrencyProbeParser) enter() {
+	p.calls.Add(1)
+	n := p.inFlight.Add(1)
+	for {
+		peak := p.peak.Load()
+		if n <= peak || p.peak.CompareAndSwap(peak, n) {
+			return
+		}
+	}
+}
+
+func (p *concurrencyProbeParser) leave() { p.inFlight.Add(-1) }
+
+// TestTranspile_SiblingParseIsConcurrent proves that
+// parseFilesConcurrent really parses siblings in parallel, by watching
+// how many parses are in flight simultaneously rather than by timing
+// two passes and dividing.
+//
+// Catches the regressions the previous timing assertion targeted — the
+// pool replaced with a for-each parseFileCached, or its sizing logic
+// reverting to 1 — plus one it could not see: the pool losing its cap
+// and oversubscribing a 4-vCPU runner.
+//
+// The GOMAXPROCS=1 control pass is what makes the parallel assertion
+// mean something. parseFilesConcurrent sizes its pool from GOMAXPROCS
+// and is the only place the transpiler spawns goroutines, so at 1 the
+// observed peak must be exactly 1. A probe that had quietly stopped
+// observing anything would report 1 there too — but so would a pool
+// that had reverted to serial, and the control tells the two apart.
+func TestTranspile_SiblingParseIsConcurrent(t *testing.T) {
 	if testing.Short() {
 		t.Skip("perf test skipped in -short mode")
 	}
 	if runtime.NumCPU() < 2 {
-		t.Skip("speedup test requires NumCPU >= 2")
+		t.Skip("concurrency test requires NumCPU >= 2")
 	}
 
 	projectDir := t.TempDir()
@@ -175,64 +228,60 @@ func TestTranspile_ParallelSpeedup(t *testing.T) {
 	content, err := os.ReadFile(target)
 	require.NoError(t, err)
 
-	timeOnce := func(label string, maxprocs int) time.Duration {
+	// One full transpile at the given GOMAXPROCS, reporting the peak
+	// number of simultaneous parses and how many parses ran at all.
+	// Fresh BatchAnalyzer and wiped on-disk cache per run, so every
+	// sibling is genuinely re-parsed instead of served from a cache.
+	peakAt := func(maxprocs int) (peak, calls int64) {
 		t.Helper()
 		prev := runtime.GOMAXPROCS(maxprocs)
 		defer runtime.GOMAXPROCS(prev)
 
-		// Fresh BatchAnalyzer per measurement so the parsedFileCache
-		// doesn't carry across — both passes pay the full sibling-
-		// parse cost.
 		_ = os.RemoveAll(filepath.Join(projectDir, ".gala"))
-		p := transpiler.NewAntlrGalaParser()
+		p := &concurrencyProbeParser{inner: transpiler.NewAntlrGalaParser()}
 		tr := transformer.NewGalaASTTransformer()
 		g := generator.NewGoCodeGenerator()
 		batch := analyzer.NewBatchAnalyzer(p, []string{projectDir, builderStdDir(t)}, projectDir)
 		batch.SetPackageFiles(siblings)
 		txp := transpiler.NewGalaToGoTranspiler(p, batch, tr, g)
 
-		start := time.Now()
 		_, err := txp.Transpile(string(content), target)
-		require.NoErrorf(t, err, "%s: Transpile", label)
-		return time.Since(start)
+		require.NoError(t, err, "Transpile at GOMAXPROCS=%d", maxprocs)
+		return p.peak.Load(), p.calls.Load()
 	}
 
-	// Run multiple iterations and take the BEST (min) per mode —
-	// short benchmarks on a busy machine produce noisy maxima but
-	// the minimum represents the no-contention floor and is a much
-	// more stable signal of the parallel-vs-serial ratio. Single-shot
-	// measurements flake when a GC or background process steals time
-	// from one mode but not the other.
-	const iters = 5
-	bestOf := func(label string, maxprocs int) time.Duration {
-		t.Helper()
-		var best time.Duration
-		for i := 0; i < iters; i++ {
-			d := timeOnce(label, maxprocs)
-			if best == 0 || d < best {
-				best = d
-			}
+	serialPeak, serialCalls := peakAt(1)
+	t.Logf("GOMAXPROCS=1: peak %d simultaneous parses over %d total", serialPeak, serialCalls)
+	require.Greater(t, serialCalls, int64(1),
+		"expected the transpile to parse the target plus its siblings; with one parse there is nothing to parallelize and the assertions below are vacuous")
+	if serialPeak != 1 {
+		t.Errorf("GOMAXPROCS=1 produced a peak of %d simultaneous parses, want exactly 1 — the worker pool no longer sizes itself from GOMAXPROCS, so the parallel check below proves nothing",
+			serialPeak)
+	}
+
+	// Two goroutines being inside Parse at the same instant is a
+	// scheduling outcome, not a guarantee. It is overwhelmingly likely
+	// for parses this long, but retry before failing: three runs that
+	// never once overlap mean the pool is serial in fact, not unlucky.
+	maxprocs := runtime.GOMAXPROCS(0)
+	const attempts = 3
+	var peak, calls int64
+	for attempt := 1; attempt <= attempts; attempt++ {
+		peak, calls = peakAt(maxprocs)
+		t.Logf("GOMAXPROCS=%d attempt %d/%d: peak %d simultaneous parses over %d total",
+			maxprocs, attempt, attempts, peak, calls)
+		if peak > 1 {
+			break
 		}
-		return best
 	}
-	serial := bestOf("serial", 1)
-	t.Logf("serial transpile (GOMAXPROCS=1, best of %d): %s", iters, serial)
 
-	parallel := bestOf("parallel", runtime.NumCPU())
-	t.Logf("parallel transpile (GOMAXPROCS=%d, best of %d): %s", runtime.NumCPU(), iters, parallel)
-
-	speedup := float64(serial) / float64(parallel)
-	t.Logf("speedup: %.2fx", speedup)
-
-	// 1.3× is a conservative floor: locally the optimization
-	// delivers 3-5×, but CI runners with 4 vCPU and short jobs often
-	// only show 1.5-2×. Below 1.3× the parallel path is effectively
-	// inert and we want a loud failure. Best-of-iters above absorbs
-	// transient noise.
-	const minSpeedup = 1.3
-	if speedup < minSpeedup {
-		t.Errorf("parallel speedup %.2fx is below threshold %.2fx — parseFilesConcurrent may have been silently serialized; check that analyzer.parseFilesConcurrent still spawns a goroutine pool of size GOMAXPROCS, and that Analyze + analyzePackage still route through it",
-			speedup, minSpeedup)
+	if peak < 2 {
+		t.Errorf("sibling parses never overlapped in %d runs at GOMAXPROCS=%d (peak %d) — parseFilesConcurrent may have been silently serialized; check that analyzer.parseFilesConcurrent still spawns a goroutine pool of size GOMAXPROCS, and that Analyze + analyzePackage still route through it",
+			attempts, maxprocs, peak)
+	}
+	if peak > int64(maxprocs) {
+		t.Errorf("peak %d simultaneous parses exceeds GOMAXPROCS=%d — parseFilesConcurrent has stopped capping its worker count and will oversubscribe small CI runners",
+			peak, maxprocs)
 	}
 }
 
