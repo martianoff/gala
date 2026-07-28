@@ -4,7 +4,7 @@ title: "GALA-E0019 — Empty Parenthesized Expression () Cannot Be Used as a Val
 description: "GALA-E0019 fires when `()` appears where an expression is required, usually as a no-op match arm. See the triggering code, the compiler message, and what to write instead."
 keywords: "gala-e0019, empty parenthesized expression, gala unit value, gala void match arm, gala () not allowed, gala match arm error"
 permalink: /docs/errors/gala-e0019/
-last_modified_at: 2026-07-26
+last_modified_at: 2026-07-27
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / <a href="/docs/errors/">Error Codes</a> / GALA-E0019</p>
@@ -18,9 +18,11 @@ The most common offender is a no-op match arm:
 ```gala
 package main
 
-func handle(code int) = code match {
-    case 0 => Println("zero")
-    case _ => ()                  // GALA-E0019
+func handle(code int) {
+    code match {
+        case 0 => Println("zero")
+        case _ => ()                  // GALA-E0019
+    }
 }
 
 func main() {
@@ -34,10 +36,10 @@ func main() {
 
 ```
 error[GALA-E0019]: empty parenthesized expression "()" cannot be used as a value
-  --> e0019.gala:5:15
+  --> e0019.gala:6:19
   |
-5 |     case _ => ()
-  |               ^ use a real statement
+6 |         case _ => ()
+  |                   ^ use a real statement
   |
   = hint: use a real statement (e.g. `Println("…")`) or remove the arm if it cannot occur
 ```
@@ -49,13 +51,37 @@ error[GALA-E0019]: empty parenthesized expression "()" cannot be used as a value
 Write what the arm actually does:
 
 ```gala
-case _ => Println("other")
+package main
+
+func handle(code int) {
+    code match {
+        case 0 => Println("zero")
+        case _ => Println("other")
+    }
+}
+
+func main() {
+    handle(0)
+}
 ```
 
-If the arm is genuinely unreachable, say so loudly rather than silently:
+Note the *statement* body (`func handle(code int) { … }`) rather than the expression body (`func handle(code int) = …`). A match whose arms only produce side effects has no value, so it belongs in a statement position. Written with `=`, the same match is used as a value and the Go compiler rejects the arms for returning nothing.
+
+If the arm is genuinely unreachable, say so loudly rather than silently. A bare `panic(...)` is [GALA-E0035](/docs/errors/gala-e0035/) — GALA's form is `go_builtins.Panic`:
 
 ```gala
-case _ => panic("unreachable: handler received unexpected code")
+package main
+
+import "martianoff/gala/go_builtins"
+
+func describe(code int) string = code match {
+    case 0 => "zero"
+    case _ => go_builtins.Panic(s"unreachable: unexpected code $code")
+}
+
+func main() {
+    Println(describe(0))
+}
 ```
 
 ---

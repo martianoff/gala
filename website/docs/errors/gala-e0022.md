@@ -4,7 +4,7 @@ title: "GALA-E0022 — Occurs Check Failed (Infinite Type)"
 description: "GALA-E0022 fires when type inference would have to substitute a type variable with a type containing itself. See the compiler message, what causes it, and how an annotation resolves it."
 keywords: "gala-e0022, occurs check failed, gala infinite type, hindley-milner occurs check, gala recursive type error, gala type inference"
 permalink: /docs/errors/gala-e0022/
-last_modified_at: 2026-07-26
+last_modified_at: 2026-07-27
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / <a href="/docs/errors/">Error Codes</a> / GALA-E0022</p>
@@ -24,7 +24,7 @@ In practice it surfaces from:
 
 The header reads `error[GALA-E0022]: occurs check failed: <var> in <type>`, naming the type variable and the type it would have to expand into, with a hint suggesting an annotation or a restructured recursion.
 
-This diagnostic comes from the Hindley-Milner unification step and is raised without a source position, so the CLI prints no framed snippet.
+This diagnostic comes from the Hindley-Milner unification step and is raised without a source position, so the CLI prints no framed snippet. No output is quoted on this page because no source we can construct reaches the code: the shapes that would provoke an occurs-check failure are rejected earlier, by [GALA-E0033](/docs/errors/gala-e0033/) or [GALA-E0034](/docs/errors/gala-e0034/) for the untyped parameter they require, or by the Go compiler after transpilation. The code and message text above come from the emit site.
 
 ---
 

@@ -27,15 +27,21 @@ Four shapes trigger it:
 
    ```gala
    val buffer = collection_mutable.ArrayOf(1, 2, 3)
-   Future(() => buffer.Size())  // ← GALA-E0037 (a method call is a whole use)
+   Future(() => buffer.Size())  // ← GALA-E0037 (buffer's own type is unshareable)
    ```
 
    The check is **field-access-sensitive**: if the closure reads ONLY immutable
    (`val`) fields of the value, resolving to shareable types, it is *accepted* —
    reading a frozen projection of an otherwise-mutable value is race-free, and no
-   snapshot `val` is needed. This fires only for a whole use, a method call, or a
-   field-read path that reaches a mutable (`var`) field or an unshareable type
-   (see shape 3).
+   snapshot `val` is needed. This fires only for a whole use, or a field-read path
+   that reaches a mutable (`var`) field or an unshareable type (see shape 3).
+
+   A **trailing method call on a field path** does not by itself force a whole
+   use: it is treated as a read of that receiver path and defers to the leaf's
+   shareability. So `model.team.Size()` is accepted when `team` is a `string`,
+   and rejected when the field's own type is unshareable. Indexing and
+   non-terminal (chained) calls stay conservative and still mark the capture
+   whole.
 
    ```gala
    struct AppModel(team string, statuses Array[int], var attempts int)
@@ -45,25 +51,13 @@ Four shapes trigger it:
    Future(() => project(model.team, model.statuses))
    ```
 
-   **Extent of the field-path run.** Only an unbroken run of `.field` reads is
-   tracked as a path. The first non-field operation ends the run and marks the
-   capture as used WHOLE — including a method call on the field just read. So a
-   method call is a whole use whether it sits on the capture itself or on a field
-   reached from it, and the check is conservative here: it rejects some accesses
-   that are in fact race-free.
-
    ```gala
-   // ACCEPTED — a pure field-read path, passed onward as a value.
-   Future(() => project(model.team, model.statuses))
-
-   // REJECTED — `.Size()` ends the field-path run, so `model` counts as used
-   // whole, even though `model.team` is a `string` and could never race.
+   // ACCEPTED — a trailing method call defers to the leaf field's shareability.
    Future(() => model.team.Size())
-   ```
 
-   To keep such code compiling, bind the field to a local `val` outside the
-   closure and call the method on that: `val team = model.team` before the
-   boundary, then `Future(() => team.Size())`.
+   // REJECTED — the receiver field's own type is unshareable.
+   Future(() => model.buf.Size())    // buf: collection_mutable.Array[int]
+   ```
 
 3. **Unshareable field-read path — a race on the accessed field.** The closure
    reads a field path (`x.a`, `x.a.b`) that either passes through a mutable

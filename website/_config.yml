@@ -8,7 +8,7 @@ remote_theme: pages-themes/minimal@v0.2.0
 
 # Current GALA release. Surfaced as `softwareVersion` in the homepage
 # SoftwareApplication JSON-LD. Bump in lockstep with gala.mod and MODULE.bazel.
-gala_version: "0.72.0"
+gala_version: "0.72.2"
 
 # jekyll-seo-tag is deliberately absent: _layouts/default.html hand-rolls every
 # meta tag plus keywords, per-page og:image overrides, and enriched

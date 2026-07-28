@@ -124,7 +124,7 @@ When a closure (an explicit lambda, or a by-name thunk such as `Future(counter +
 
 ## GALA-E0037 — the diagnostic
 
-Three shapes of unsafe capture, and what the compiler actually prints for each — a [framed diagnostic]({{ '/features/compiler-dx/#framed-compile-diagnostics' | relative_url }}) with the caret on the offending capture.
+Three of the four shapes of unsafe capture, and what the compiler actually prints for each — a [framed diagnostic]({{ '/features/compiler-dx/#framed-compile-diagnostics' | relative_url }}) with the caret on the offending capture. (The fourth, capturing a bare `func` value, is covered under [passing functions across a boundary](#passing-functions-across-a-boundary).)
 
 **A reassignable `var`** — the closure runs on another goroutine while the enclosing scope can still reassign the slot:
 
@@ -208,7 +208,7 @@ The caret points at the exact offending capture identifier, and the hint names a
 
 A conservative whole-value check would force you to copy fields into local `val`s before every `Future`. GALA's check is **field-access-sensitive** instead: it records *how* a closure uses each capture.
 
-A run of pure `.field` reads is recorded as a path. Anything else — a bare reference, an argument, a method call, an index, a `match` subject — marks the capture as used *whole*. A capture read only through field paths is accepted when every accessed path reads through `val` fields to a shareable type.
+A run of `.field` reads is recorded as a path, and a **trailing method call on that path** is treated as a read of its receiver — it defers to the leaf field's shareability rather than forcing a whole use. Anything else — a bare reference, an argument, an index, a chained (non-terminal) call, a `match` subject — marks the capture as used *whole*. A capture read only through field paths is accepted when every accessed path reads through `val` fields to a shareable type.
 
 ```gala
 struct AppModel(team string, statuses Array[int], var attempts int)
@@ -226,18 +226,17 @@ Future(() => model.attempts + 1)
 
 Reading a frozen projection of an otherwise-mutable value is race-free, so no snapshot `val` is needed.
 
-**Where the conservatism bites.** Only an *unbroken* run of `.field` reads is tracked as a path. The first non-field operation ends the run and marks the capture as used whole — including a method call on the field just read. So this is currently rejected even though a `string` cannot race:
+Calling a method on a field you just read works too — the receiver's own type decides:
 
 ```gala
-// REJECTED — `.Size()` ends the field-path run, so `model` counts as used whole.
+// OK — `team` is a `string`, which is unconditionally shareable.
 Future(() => model.team.Size())
 
-// Accepted — bind the field to a local `val` first.
-val team = model.team
-Future(() => team.Size())
+// GALA-E0037 — the receiver field's type is mutable.
+Future(() => model.buf.Size())    // buf: collection_mutable.Array[int]
 ```
 
-The bias is deliberate: anything not provably a pure field read counts as a whole use, which is the safe direction — it can reject a race-free access, never accept a racy one.
+Where a use isn't provably a field read — indexing, a chained call, a `match` subject — the capture counts as whole. That bias is deliberate and runs in the safe direction: it can reject a race-free access, never accept a racy one.
 
 ---
 

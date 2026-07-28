@@ -1,10 +1,10 @@
 ---
 layout: default
 title: "GALA-E0012 — Method Redefined on the Same Type"
-description: "GALA-E0012 fires when the same method name is declared twice on one type. See the triggering code, the compiler message naming the first definition, and how to fix it."
+description: "\"method \"Greet\" on type \"User\" in package \"main\" redefined\" — GALA-E0012 fires when the same method name is declared twice on one type. See the compiler message and how to fix it."
 keywords: "gala-e0012, method redefined, gala duplicate method, gala method redefinition, gala receiver method error"
 permalink: /docs/errors/gala-e0012/
-last_modified_at: 2026-07-26
+last_modified_at: 2026-07-27
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / <a href="/docs/errors/">Error Codes</a> / GALA-E0012</p>
@@ -36,7 +36,7 @@ func main() {
 ## Compiler message
 
 ```
-error[GALA-E0012]: method "Greet" on type "User" in package "main" redefined (first defined in e0012same.gala)
+error[GALA-E0012]: method "Greet" on type "User" in package "main" redefined (also declared at line 5)
   --> e0012same.gala:7:1
   |
 7 | func (u User) Greet() string = "hola"
@@ -45,7 +45,17 @@ error[GALA-E0012]: method "Greet" on type "User" in package "main" redefined (fi
   = hint: remove the duplicate method or rename it
 ```
 
-When the duplicate lives in a *different* file of the same package, the collision currently surfaces from the Go compiler instead (`method User.Greet already declared`) rather than as GALA-E0012.
+The check spans the whole package, so splitting the duplicates across files does not hide them. With the first `Greet` in `a.gala` and the second in `b.gala`, the header names the other file and the caret narrows to the method name:
+
+```
+error[GALA-E0012]: method "Greet" on type "User" in package "main" redefined (also declared at a.gala:5)
+  --> b.gala:3:15
+  |
+3 | func (u User) Greet() string = "hola"
+  |               ^^^^^ remove the duplicate method or rename it
+  |
+  = hint: remove the duplicate method or rename it
+```
 
 ---
 
@@ -68,4 +78,6 @@ Method resolution uses a single map keyed by method name. A second declaration w
 ## Related
 
 - [GALA-E0011](/docs/errors/gala-e0011/) — the same rule for types
+- [GALA-E0027](/docs/errors/gala-e0027/) — the same rule for top-level functions
+- [GALA-E0029](/docs/errors/gala-e0029/) — the same rule for interface method *specs*
 - [All GALA error codes](/docs/errors/)

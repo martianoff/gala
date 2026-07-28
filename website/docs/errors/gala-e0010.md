@@ -4,7 +4,7 @@ title: "GALA-E0010 — Sibling .gala Files Declare Different Package Names"
 description: "GALA-E0010 fires when two .gala files in the same directory declare different packages. See the triggering layout, the compiler message, and the two ways to resolve it."
 keywords: "gala-e0010, duplicate package name, gala package declaration, sibling files different package names, gala package error"
 permalink: /docs/errors/gala-e0010/
-last_modified_at: 2026-07-26
+last_modified_at: 2026-07-27
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / <a href="/docs/errors/">Error Codes</a> / GALA-E0010</p>
@@ -27,8 +27,8 @@ lib/b.gala   // package other    <- triggers the error
 ## Compiler message
 
 ```
-error[GALA-E0010]: package file a.gala declares package "mylib" but sibling files declare "other"
-  --> b.gala:1:1
+error[GALA-E0010]: directory lib has files with different package names: "other" and "mylib"
+  --> lib/b.gala:1:1
   |
 1 | package other
   | ^^^^^^^ use the same package name across all sibling .gala files, or…
@@ -36,7 +36,7 @@ error[GALA-E0010]: package file a.gala declares package "mylib" but sibling file
   = hint: use the same package name across all sibling .gala files, or move the file to a different directory
 ```
 
-The header names both files' package clauses; the frame points at the file being compiled.
+The header names the directory and both package names it found; the frame points at the file being compiled.
 
 ---
 

@@ -4,7 +4,7 @@ title: "GALA-E0018 — Cannot Infer Type Parameter for a Sealed Variant Construc
 description: "GALA-E0018 fires when a zero-argument sealed-variant constructor appears where its parent's type parameter cannot be pinned. See the triggering code, the compiler message, and both annotation fixes."
 keywords: "gala-e0018, cannot infer type parameter, gala sealed variant constructor, gala generic sealed type, gala type inference error"
 permalink: /docs/errors/gala-e0018/
-last_modified_at: 2026-07-26
+last_modified_at: 2026-07-27
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / <a href="/docs/errors/">Error Codes</a> / GALA-E0018</p>
@@ -14,7 +14,7 @@ last_modified_at: 2026-07-26
 **What it means.** A zero-argument constructor of a *generic* sealed type is used somewhere the parent type's parameter cannot be pinned. The transpiler checks three signals before giving up:
 
 1. The enclosing `match` subject's type (`cmd match { case NoCmd() => … }`).
-2. The enclosing function's declared return type.
+2. The enclosing function's declared return type, when that type is *concrete* (`Box[int]`).
 3. A `val` / `var` type annotation supplying an expected type.
 
 If none of those resolve the parameter, generated Go would contain a bare `Variant{}` literal whose type argument Go cannot deduce — producing an obscure `cannot infer T` far from the GALA source.
@@ -47,8 +47,10 @@ error[GALA-E0018]: cannot infer type parameter for sealed variant constructor "E
 8 |     val x = Empty()
   |                  ^ annotate the binding
   |
-  = hint: annotate the binding (e.g. `val x: ParentType[Int] = Empty()`) or pass type args explicitly (`Empty[Int]()`)
+  = hint: annotate the binding (e.g. `val x Box[int] = Empty()`) or pass type args explicitly (`Empty[int]()`)
 ```
+
+The hint is built from the variant's own parent type, so it names the exact annotation to paste in.
 
 ---
 
@@ -66,11 +68,13 @@ val x Box[int] = Empty()
 val x = Empty[int]()
 ```
 
-When the constructor is an arm of a `match` against a value of the parent type, or the body of a function with a declared return type, the signal is already present and no annotation is needed:
+When the constructor is an arm of a `match` against a value of the parent type, or the body of a function whose declared return type is *concrete*, the signal is already present and no annotation is needed:
 
 ```gala
-func empty[T any]() Box[T] = Empty()   // return type pins T
+func emptyInts() Box[int] = Empty()   // the concrete return type pins T
 ```
+
+A *generic* return type does not count as a signal. `func empty[T any]() Box[T] = Empty()` still reports GALA-E0018, because `T` is itself unbound at the constructor — there is nothing to pin. Pass the argument explicitly (`Empty[T]()`) in that case.
 
 ---
 

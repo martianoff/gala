@@ -1,10 +1,10 @@
 ---
 layout: default
 title: "GALA-E0003 — Match Expression Must Have a Default Case"
-description: "\"match expression must have a default case (case _ => ...)\" — GALA-E0003 fires when a match over a non-sealed type has no catch-all branch. See the triggering code, the compiler output, and the fix."
+description: "\"match expression must have a default case\" — GALA-E0003 fires when a match over a non-sealed type has no catch-all branch. See the triggering code, the compiler output, and the fix."
 keywords: "gala-e0003, match expression must have a default case, gala default case, gala match error, golang pattern matching default"
 permalink: /docs/errors/gala-e0003/
-last_modified_at: 2026-07-26
+last_modified_at: 2026-07-27
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / <a href="/docs/errors/">Error Codes</a> / GALA-E0003</p>
@@ -36,7 +36,7 @@ func main() {
 ## Compiler message
 
 ```
-error[GALA-E0003]: match expression must have a default case (case _ => ...)
+error[GALA-E0003]: match expression must have a default case
   --> e0003.gala:4:5
   |
 4 |     case 1 => "one"
@@ -59,10 +59,22 @@ func name(n int) string = n match {
 }
 ```
 
-If you genuinely want the program to fail on unknown values, say so explicitly:
+If you genuinely want the program to fail on unknown values, say so explicitly. A bare `panic(...)` is [GALA-E0035](/docs/errors/gala-e0035/) — GALA's form is `go_builtins.Panic`:
 
 ```gala
-case _ => panic("unexpected n")
+package main
+
+import "martianoff/gala/go_builtins"
+
+func name(n int) string = n match {
+    case 1 => "one"
+    case 2 => "two"
+    case _ => go_builtins.Panic(s"unexpected n: $n")
+}
+
+func main() {
+    Println(name(1))
+}
 ```
 
 ---
@@ -79,5 +91,6 @@ If you want the compiler to prove exhaustiveness for you instead, model the valu
 
 - [GALA-E0002](/docs/errors/gala-e0002/) — the sealed-type counterpart
 - [GALA-E0006](/docs/errors/gala-e0006/) — more than one default case
+- [GALA-E0035](/docs/errors/gala-e0035/) — why bare `panic(...)` is rejected
 - [Pattern Matching](/features/pattern-matching/)
 - [All GALA error codes](/docs/errors/)

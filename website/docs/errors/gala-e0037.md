@@ -4,7 +4,7 @@ title: "GALA-E0037 — Non-Shareable Value Crosses a Goroutine Boundary"
 description: "\"closure crossing a concurrency boundary captures reassignable var\" — GALA-E0037 is GALA's compile-time data-race check. Every shape that triggers it, the real compiler output, and the fix for each."
 keywords: "gala-e0037, closure crossing a concurrency boundary, gala data race compile time, gala sendable, gala shareable, golang data race prevention, gala future capture, gala concurrency safety"
 permalink: /docs/errors/gala-e0037/
-last_modified_at: 2026-07-26
+last_modified_at: 2026-07-27
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / <a href="/docs/errors/">Error Codes</a> / GALA-E0037</p>
@@ -105,7 +105,17 @@ error[GALA-E0037]: closure crossing a concurrency boundary reads field path "mod
    = hint: read only immutable (`val`) fields of "model" across the boundary, or snapshot the needed field into an immutable `val` before it
 ```
 
-A field path that bottoms out at a mutable *type* rather than a `var` field reports the same code with a type-specific message and a hint pointing at a deeply-immutable field instead.
+A field path that bottoms out at a mutable *type* rather than a `var` field reports the same code with a type-specific message and a hint pointing at a deeply-immutable field instead:
+
+```
+error[GALA-E0037]: closure crossing a concurrency boundary reads field path "h.buf" on captured "h", which is not safe to share: its type (type collection_mutable.Array[int]) is not safe to share — a data race on its mutable contents
+  --> f37e.gala:10:26
+   |
+10 |     val f = Future(() => h.buf.Size())
+   |                          ^ read a deeply-immutable field of "h" instead, or snapshot th…
+   |
+   = hint: read a deeply-immutable field of "h" instead, or snapshot the needed data into an immutable `val` before the boundary
+```
 
 ### 4. Capturing a bare `func` value
 
@@ -141,30 +151,17 @@ error[GALA-E0037]: closure crossing a concurrency boundary captures function val
 - A capture whose declared type is **`Sendable[F]`** — the caller already vouched for its captures.
 - **Reading only immutable (`val`) fields** of an otherwise-unshareable value. The check is field-access-sensitive: a frozen projection is race-free, and no snapshot is needed.
 
-Only an unbroken run of `.field` reads counts as a path. The first non-field operation ends the run and marks the capture as used *whole* — including a method call on the field just read. The check is deliberately conservative here and rejects some accesses that are in fact race-free:
+The check follows the field path and judges what the path *lands on*, so a method call on a deeply-immutable field is fine even when the enclosing struct is not shareable as a whole:
 
 ```gala
-// Accepted — a pure field-read path, passed onward as a value.
+// All accepted — every read lands on a deeply-immutable field of `model`,
+// even though `model` also carries a `var attempts int`.
 Future(project(model.team, model.statuses))
-
-// Rejected — `.Size()` ends the field-path run, so `model` counts as used
-// whole, even though `model.team` is a string and could never race.
 Future(model.team.Size())
+Future(() => model.statuses.Size())
 ```
 
-The second form reports the whole-value message, naming the struct's type:
-
-```
-error[GALA-E0037]: closure crossing a concurrency boundary captures "model" (type AppModel), whose type is not safe to share — a data race on its mutable contents
-  --> rej37.gala:10:20
-   |
-10 |     val f = Future(model.team.Size())
-   |                    ^^^^^ use an immutable collection
-   |
-   = hint: use an immutable collection (collection_immutable) or snapshot the needed data into an immutable `val`; or restructure so the closure returns the value instead of capturing it
-```
-
-To keep it compiling, bind the field to a local `val` outside the closure and call the method on that: `val team = model.team`, then `Future(team.Size())`.
+What is rejected is a path that passes through a `var` field, or one that bottoms out at a value whose type is not deeply immutable — the two messages under shape 3 above. Both name the field path, so the fix is local: read a different field, or snapshot the one you need into a `val` before the boundary.
 
 ---
 
@@ -185,7 +182,7 @@ val f = Future(xs.Size())
 Println(f.Get())
 ```
 
-**Read only immutable fields**, as shown above — but avoid calling a *method* on the value, since a method may touch mutable internals and counts as a whole use.
+**Read only immutable fields**, as shown above. Calling a method on such a field is fine (`Future(model.team.Size())`); what is not fine is a path through a `var` field, or one landing on a mutable type.
 
 **Restructure** so the closure returns the value instead of capturing it, or compute what you need before the boundary.
 

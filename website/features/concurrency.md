@@ -343,6 +343,11 @@ package main
 
 import . "martianoff/gala/concurrent"
 
+// Stand-ins for whatever your real I/O is.
+func fetchUser() string        = "alice"
+func fetchOrderCount() int     = 3
+func fetchBalance() float64    = 12.50
+
 func main() {
     // Launch three independent async operations
     val userF    = Future[string](fetchUser())

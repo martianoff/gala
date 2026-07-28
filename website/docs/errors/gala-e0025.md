@@ -4,7 +4,7 @@ title: "GALA-E0025 — Unresolved Cross-Package Symbol (Missing Import)"
 description: "GALA-E0025 fires when an unqualified name resolves to a package this file never imported. See the compiler message and both import forms that fix it — sibling files' imports do not propagate."
 keywords: "gala-e0025, unresolved cross-package symbol, gala is not imported in this file, gala dot import, gala missing import error, gala undefined symbol"
 permalink: /docs/errors/gala-e0025/
-last_modified_at: 2026-07-26
+last_modified_at: 2026-07-27
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / <a href="/docs/errors/">Error Codes</a> / GALA-E0025</p>
@@ -37,6 +37,20 @@ error[GALA-E0025]: undefined: Array (used in BuildLabels) — 'collection_immuta
 ```
 
 This check runs over the whole package, so it fires during `gala build` rather than a single-file `gala transpile`.
+
+**The `used in …` part has two shapes.** In a named package the enclosing function is qualified with the package name; in `main` and test packages it is not. The same file under `package effects` reports:
+
+```
+error[GALA-E0025]: undefined: Array (used in effects.BuildLabels) — 'collection_immutable' is not imported in this file
+  --> b.gala:3:6
+  |
+3 | func BuildLabels(n int) Array[string] = ArrayTabulate(n, (i) => s"row=$i")
+  |      ^^^^^^^^^^^ add an explicit import to this file
+  |
+  = hint: add an explicit import to this file. For unqualified usage: `import . "<path-ending-in-collection_immutable>"`. For qualified usage: `import "<path>"` and call it as `collection_immutable.Array`. Sibling files' imports do not propagate.
+```
+
+Search for the code, not the exact `used in` text, if you are grepping across packages.
 
 ---
 
