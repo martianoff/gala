@@ -228,7 +228,7 @@
       line-height: 1.7;
       background: var(--bg);
     }
-    nav {
+    body > nav {
       background: var(--nav-bg);
       padding: 1rem 2rem;
       display: flex;
@@ -236,14 +236,14 @@
       gap: 2rem;
       flex-wrap: wrap;
     }
-    nav a {
+    body > nav a {
       color: var(--nav-text);
       text-decoration: none;
       font-size: 0.95rem;
       opacity: 0.85;
       transition: opacity 0.2s;
     }
-    nav a:hover { opacity: 1; }
+    body > nav a:hover { opacity: 1; }
     .nav-dropdown {
       position: relative;
     }
@@ -290,7 +290,7 @@
       color: var(--accent);
       opacity: 1;
     }
-    nav .logo {
+    body > nav .logo {
       font-weight: 700;
       font-size: 1.3rem;
       opacity: 1;
@@ -412,10 +412,10 @@
     @media (max-width: 640px) {
       .comparison { grid-template-columns: 1fr; }
       /* Nav becomes a swipeable strip so items never get clipped on small screens */
-      nav { padding: 0.6rem 0.9rem; gap: 0.9rem; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-      nav::-webkit-scrollbar { display: none; }
-      nav a { font-size: 0.85rem; white-space: nowrap; }
-      nav .logo { margin-right: 0.9rem; }
+      body > nav { padding: 0.6rem 0.9rem; gap: 0.9rem; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+      body > nav::-webkit-scrollbar { display: none; }
+      body > nav a { font-size: 0.85rem; white-space: nowrap; }
+      body > nav .logo { margin-right: 0.9rem; }
       pre[class*="language-"], code[class*="language-"] { font-size: 0.78rem; }
       .hero h1 { font-size: 2rem; }
       .hero .tagline { font-size: 1.05rem; }
@@ -437,6 +437,10 @@
     /* Site map in the footer: gives every section page a crawlable, site-wide
        link, and keeps the dropdown-only pages reachable on touch devices where
        the nav menus never open. */
+    /* This is a <nav>, so it must not pick up the header nav's dark chrome.
+       The header rules are scoped to `body > nav`; these resets are belt-and-
+       braces so a future generic `nav` rule cannot silently darken the footer
+       out from under this light-on-white text again. */
     .footer-nav {
       max-width: 860px;
       margin: 0 auto 1.5rem;
@@ -444,6 +448,9 @@
       grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
       gap: 1.25rem;
       text-align: left;
+      background: none;
+      padding: 0;
+      overflow: visible;
     }
     .footer-nav h2 {
       font-size: 0.75rem;
