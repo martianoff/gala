@@ -27,6 +27,28 @@ name: Perf — real-repo build budget
 # variance while still firmly trapping a regression (pre-worker was ~1160 s).
 # The cache-size ceiling below is unchanged, so a per-entry blowup is still
 # caught independently of wall time.
+#
+# Cold budget raised 680 s -> 850 s. Read the "Cold build" step below for
+# what it actually measures: setup-bazel restores a Bazel disk cache keyed
+# on `perf-real-build-<go-version>`, so the step is only cold when that key
+# misses. Measured runs split cleanly along that line rather than along any
+# source change:
+#
+#   disk-cache RESTORED   77 s / 364 s / 416 s / 589 s
+#   disk-cache MISSED    648 s / 670 s / 672 s / 750 s
+#
+# 680 s sat inside the cache-miss cluster, so a genuine cold run was close
+# to a coin flip and the gate reddened PRs that changed nothing relevant —
+# including a docs-only PR and a version bump. 850 s clears the worst
+# observed true-cold run (750 s) by ~13%.
+#
+# Note this is a re-baseline, not permission for the build to get slower:
+# the two clusters are not comparable, and any 400-ish figure quoted from
+# an earlier run was a cache-hit measurement. Judge a regression against
+# runs with the same cache disposition, and keep ratcheting the number
+# down as perf work lands. The right long-term shape is a rolling baseline
+# instead of a fixed constant, which would not need this maintenance and
+# would not silently absorb drift; a fixed constant will land back here.
 
 on:
   workflow_dispatch:
@@ -53,7 +75,7 @@ jobs:
       GALA_TUI_REF: main
       GALA_TEAM_REF: master
       WARM_BUDGET_SECONDS: "500"
-      COLD_BUDGET_SECONDS: "680"
+      COLD_BUDGET_SECONDS: "850"
 
     steps:
       - name: Checkout gala (this branch)
@@ -96,6 +118,23 @@ jobs:
         working-directory: gala_team
         run: |
           set -euo pipefail
+          # Report whether setup-bazel restored a disk cache. Without this
+          # the wall time below is uninterpretable: a restored cache and a
+          # missed one differ by ~10x, which reads as a regression when it
+          # is only cache disposition. Pure logging — never fails the step.
+          # setup-bazel writes `common --disk_cache=<dir>` into ~/.bazelrc
+          # whether or not the cache key hit, so presence of the flag proves
+          # nothing — count entries instead.
+          disk_cache=$(grep -hoE -- '--disk_cache=[^[:space:]]+' "$HOME/.bazelrc" 2>/dev/null | head -1 | cut -d= -f2- || true)
+          entries=0
+          if [ -n "${disk_cache:-}" ] && [ -d "$disk_cache" ]; then
+            entries=$(find "$disk_cache" -type f 2>/dev/null | wc -l || echo 0)
+          fi
+          if [ "${entries:-0}" -gt 0 ]; then
+            echo "Disk cache RESTORED: ${entries} entries in ${disk_cache} ($(du -sh "$disk_cache" 2>/dev/null | cut -f1 || echo '?'))"
+          else
+            echo "Disk cache MISSED — this is a true from-scratch cold build"
+          fi
           start=$(date +%s)
           bazel build //cmd:gala_team \
             --override_module=gala=$GITHUB_WORKSPACE/gala_simple \
