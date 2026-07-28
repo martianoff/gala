@@ -6,11 +6,23 @@ baseurl: ""
 theme: null
 remote_theme: pages-themes/minimal@v0.2.0
 
+# Current GALA release. Surfaced as `softwareVersion` in the homepage
+# SoftwareApplication JSON-LD. Bump in lockstep with gala.mod and MODULE.bazel.
+gala_version: "0.72.0"
+
+# jekyll-seo-tag is deliberately absent: _layouts/default.html hand-rolls every
+# meta tag plus keywords, per-page og:image overrides, and enriched
+# SoftwareApplication/BreadcrumbList JSON-LD that the plugin cannot emit.
+# Loading it without calling {% seo %} did nothing; calling it would duplicate
+# the title, description, canonical, og:* and twitter:* tags.
 plugins:
-  - jekyll-seo-tag
   - jekyll-sitemap
   - jekyll-remote-theme
 
+# jekyll-sitemap emits <lastmod> for a page only when that page declares
+# `last_modified_at:` in its front matter, so every page carries one. Bump it
+# when you make a substantive content change (markup-only fixes don't count) —
+# a lastmod Google can't trust is a lastmod Google ignores.
 defaults:
   - scope:
       path: ""
@@ -24,6 +36,9 @@ social:
   links:
     - https://github.com/martianoff/gala
 
+# Inert as written: a Jekyll collection reads from `_features/`, and the feature
+# pages live in `features/` as ordinary pages with explicit permalinks. Kept
+# because it is harmless and would take effect if the pages ever move.
 collections:
   features:
     output: true

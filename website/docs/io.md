@@ -4,6 +4,7 @@ title: "IO Effect in GALA — Lazy Composable Side Effects for Go"
 description: "GALA's IO[T] is a lazy, composable effect type that separates pure and impure code. Build effect pipelines with Map, FlatMap, Recover, and AndThen — execute only when you call Run."
 keywords: "gala io effect, golang io monad, go side effect management, gala lazy effects, go functional effects, gala io type, golang effect system"
 permalink: /docs/io/
+last_modified_at: 2026-04-19
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / IO Effect</p>

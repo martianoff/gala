@@ -1,14 +1,15 @@
 ---
 layout: default
 title: "IDE Support — IntelliJ Plugin & LSP Server"
-description: "GALA's GoLand/IntelliJ plugin and LSP server provide syntax highlighting, type-aware code completion, inlay hints, go-to-definition, and real-time diagnostics for GALA code."
-keywords: "gala ide support, gala intellij plugin, gala goland plugin, gala lsp server, gala code completion, gala inlay hints, gala syntax highlighting"
+description: "GALA's GoLand/IntelliJ plugin and LSP server provide syntax highlighting, type-aware code completion, inlay hints, and real-time diagnostics — including go-to-definition and completion into Go stdlib and third-party Go modules."
+keywords: "gala ide support, gala intellij plugin, gala goland plugin, gala lsp server, gala code completion, gala inlay hints, gala syntax highlighting, gala go to definition, gala go interop completion, gala vscode neovim lsp"
 permalink: /features/ide-support/
+last_modified_at: 2026-07-26
 ---
 
 <div class="breadcrumb">
   <a href="{{ '/' | relative_url }}">Home</a> &rsaquo;
-  <a href="{{ '/features/sealed-types/' | relative_url }}">Features</a> &rsaquo;
+  <a href="{{ '/features/' | relative_url }}">Features</a> &rsaquo;
   IDE Support
 </div>
 
@@ -35,6 +36,21 @@ After typing a dot (`.`), the LSP server resolves the receiver's type and offers
 <img src="{{ '/assets/images/ide/dot-completion.png' | relative_url }}" alt="GALA dot completion popup showing type-aware method and field suggestions for Order type" style="max-width: 100%; border: 1px solid #e1e4e8; border-radius: 6px; margin: 1rem 0;">
 
 Here the cursor is inside a `.Map()` lambda on an `Order` value. The completion popup shows `Order`'s methods (`ApplyDiscount`, `ToSummary`, `Validate`) with return types, and its fields (`id`, `items`, `total`) — all resolved from the transpiler's type information.
+
+---
+
+## Go Interop Intelligence
+
+Values whose type comes from a **Go** package used to be a dead end in the editor: no completion, nothing to click. That gap is closed — Go-backed code now behaves like GALA code.
+
+- **Go stdlib.** Dot completion on a Go value (`val b = bytes.NewBufferString(...)` then `b.`) lists the Go type's method set and fields. Go-to-definition on a package name, a package function, or a method navigates into the Go SDK source tree.
+- **Cross-package return types.** A call like `sha256.New()` returns `hash.Hash`, defined in a package you never imported. The analyzer records the method set of named types reached through a function's return values, so completion still works on the result.
+- **Third-party Go modules.** Modules such as `github.com/google/uuid` resolve the same way the stdlib does: the LSP maps each module import path to its cached `.go` source directory using the same logic the compiler uses, so their types get completion and their symbols get go-to-definition.
+- **`go_interop` and Go-only packages** are navigable — imports are resolved straight from the document, so both the package name and `pkg.Symbol` references land on their declaration.
+
+### `.Size()` / `.ByteSize()` magic methods
+
+The transpiler lowers `.Size()` / `.ByteSize()` on Go primitive receivers (string, slice, map) to `len(...)` / `utf8.RuneCountInString(...)`. Those receivers carry no GALA type metadata, so the editor used to know nothing about them. The LSP now mirrors the transpiler's rule: both resolve to `int`, `Size()` is offered on string/slice/map and `ByteSize()` on string, and neither raises a false diagnostic. Because these methods have **no source definition**, go-to-definition on them correctly resolves to nothing rather than jumping to an unrelated same-named method.
 
 ---
 
@@ -78,15 +94,17 @@ The structure view displays sealed type `Shape` with its variants (`Circle`, `Re
 - Structure view with functions, types, and sealed types with cases
 - Comment/uncomment
 - Color settings page
+- Keyword support for `use` (scoped-resource binding) and `bind` / `also` (do-notation), with the bound name clickable, renameable, and find-usages-aware
 - **12 live templates**: `func`, `val`, `var`, `match`, `if`, `for`, `sealed`, `struct`, `lambda`, `main`, `println`, `sinterp`
 
 ### LSP features (via `gala lsp`)
 
-- **Diagnostics** — parse errors, transpilation errors, unused variables, match exhaustiveness
+- **Diagnostics** — parse errors, transpilation errors, unused variables, match exhaustiveness, and the surface guardrails: bare Go builtins (**GALA-E0035**) and bare Go statement keywords such as `defer` (**GALA-E0036**)
 - **Hover** — type signatures with fields, methods, sealed cases, built-in function docs
-- **Go to Definition** — cross-file, local declarations, pattern bindings, named arg fields
+- **Go to Definition** — cross-file, local declarations, pattern bindings, named arg fields, Go stdlib and third-party Go module sources, `go_interop` and other Go-only packages
 - **Find References** — all usages of a variable, function, or type
-- **Completion** — type-aware dot completion, named arguments, sealed case patterns, keywords
+- **Completion** — type-aware dot completion (GALA *and* Go types), named arguments, sealed case patterns, keywords including `use`/`bind`/`also`, and `.Size()`/`.ByteSize()` on Go primitives
+- **No dead ends** — the E0035-forbidden builtins (`len`, `append`, `make`, `panic`, …) are filtered out of completion against the transpiler's own authoritative list, so the editor never suggests code the compiler rejects
 - **Inlay hints** — compiler-inferred types for all `val`/`var` declarations
 - **Document symbols** — types, functions, sealed variants for outline view
 - **Debounced analysis** — 500ms delay after last keystroke to prevent noise while typing

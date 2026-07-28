@@ -4,9 +4,10 @@ title: "Time Utilities in GALA - Duration and Instant Types"
 description: "GALA's time utilities. Duration type for time spans and Instant for timestamps — with functional operations and Go time.Duration/time.Time interop."
 keywords: "gala time utils, go duration type, golang time utilities, gala instant type"
 permalink: /docs/time-utils/
+last_modified_at: 2026-07-05
 ---
 
-<p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/language-reference/">Docs</a> / Time Utilities</p>
+<p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / Time Utilities</p>
 
 # Time Utils
 

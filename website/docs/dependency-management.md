@@ -4,9 +4,10 @@ title: "Dependency Management in GALA - Module System"
 description: "Manage GALA and Go dependencies with gala mod. Initialize projects, add packages, and resolve dependencies — integrated with Go's module system."
 keywords: "gala dependency management, gala mod, gala packages, go module alternative, gala import"
 permalink: /docs/dependency-management/
+last_modified_at: 2026-05-29
 ---
 
-<p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/language-reference/">Docs</a> / Dependency Management</p>
+<p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / Dependency Management</p>
 
 {% raw %}
 # GALA Dependency Management
@@ -45,7 +46,7 @@ GALA provides a dependency management system similar to Go modules, using `gala.
 
 ---
 
-## 1. Quick Start
+## 1. Quick Start {#1-quick-start}
 
 ### Non-Bazel Projects (Recommended for simple projects)
 
@@ -110,7 +111,7 @@ bazel build //:myapp
 
 ---
 
-## 2. File Formats
+## 2. File Formats {#2-file-formats}
 
 ### gala.mod
 
@@ -171,7 +172,7 @@ Each line contains:
 
 ---
 
-## 3. CLI Commands
+## 3. CLI Commands {#3-cli-commands}
 
 ### gala build
 
@@ -330,7 +331,7 @@ gala mod verify
 
 ---
 
-## 4. Build System
+## 4. Build System {#4-build-system}
 
 GALA supports two build modes: standalone (without Bazel) and Bazel-based.
 
@@ -362,7 +363,7 @@ For Bazel projects:
 
 ---
 
-## 5. Cache Structure
+## 5. Cache Structure {#5-cache-structure}
 
 All GALA caches are stored in `~/.gala/`:
 
@@ -403,7 +404,7 @@ All GALA caches are stored in `~/.gala/`:
 
 ---
 
-## 6. Go Dependencies
+## 6. Go Dependencies {#6-go-dependencies}
 
 GALA can depend on Go packages. Mark Go dependencies with `// go` or use the `--go` flag:
 
@@ -437,7 +438,7 @@ func GenerateID() string = uuid.New().String()
 
 ---
 
-## 7. GALA Library Dependencies
+## 7. GALA Library Dependencies {#7-gala-library-dependencies}
 
 GALA projects can depend on other GALA libraries — packages written in GALA and published as `.gala` source files.
 
@@ -493,7 +494,7 @@ Transpiling GALA files...
 
 ---
 
-## 8. Bazel Integration
+## 8. Bazel Integration {#8-bazel-integration}
 
 GALA provides Bazel rules for dependency management. Dependencies are declared in `gala.mod` and automatically loaded into Bazel.
 
@@ -587,7 +588,7 @@ Module paths are converted to Bazel repository names:
 
 ---
 
-## 9. Version Constraints
+## 9. Version Constraints {#9-version-constraints}
 
 GALA supports several version constraint syntaxes:
 

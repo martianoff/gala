@@ -4,6 +4,7 @@ title: "Subprocess in GALA — Spawn and Drive Child Processes"
 description: "GALA's subprocess package spawns and drives external child processes with a goroutine-safe Process handle. Read stdout/stderr, write to stdin, wait, kill, and drive children off-thread with Future-returning async methods."
 keywords: "gala subprocess, golang os/exec alternative, gala spawn process, gala child process, gala process handle, go subprocess functional, gala async process"
 permalink: /docs/subprocess/
+last_modified_at: 2026-07-26
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / Subprocess</p>

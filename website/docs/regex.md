@@ -4,6 +4,7 @@ title: "Regex in GALA — Regular Expressions with Pattern Matching Extractors"
 description: "GALA's Regex package provides regular expression support with pattern matching extractors and Array destructuring. Type-safe regex with Try-based compilation and functional operations."
 keywords: "gala regex, golang regex alternative, go regex pattern matching, gala regular expressions, go regex extractor, gala regex destructuring"
 permalink: /docs/regex/
+last_modified_at: 2026-04-19
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / Regex</p>

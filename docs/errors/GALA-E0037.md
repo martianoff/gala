@@ -45,7 +45,27 @@ Four shapes trigger it:
    Future(() => project(model.team, model.statuses))
    ```
 
-4. **Unshareable field-read path — a race on the accessed field.** The closure
+   **Extent of the field-path run.** Only an unbroken run of `.field` reads is
+   tracked as a path. The first non-field operation ends the run and marks the
+   capture as used WHOLE — including a method call on the field just read. So a
+   method call is a whole use whether it sits on the capture itself or on a field
+   reached from it, and the check is conservative here: it rejects some accesses
+   that are in fact race-free.
+
+   ```gala
+   // ACCEPTED — a pure field-read path, passed onward as a value.
+   Future(() => project(model.team, model.statuses))
+
+   // REJECTED — `.Size()` ends the field-path run, so `model` counts as used
+   // whole, even though `model.team` is a `string` and could never race.
+   Future(() => model.team.Size())
+   ```
+
+   To keep such code compiling, bind the field to a local `val` outside the
+   closure and call the method on that: `val team = model.team` before the
+   boundary, then `Future(() => team.Size())`.
+
+3. **Unshareable field-read path — a race on the accessed field.** The closure
    reads a field path (`x.a`, `x.a.b`) that either passes through a mutable
    (`var`) field — reading it races with the field's reassignment — or bottoms
    out at a type that is itself not deeply immutable.
@@ -62,8 +82,10 @@ Four shapes trigger it:
    `Sendable[...]` instead (see *Fix* below).
 
    ```gala
-   func broken(compute func() int) Future[int] =
-       concurrent.FutureApply(compute)   // ← GALA-E0037: make `compute` Sendable
+   func run(body Sendable[func() int]) int = body()
+
+   func broken(compute func() int) int =
+       run(compute)   // ← GALA-E0037: make `compute` Sendable
    ```
 
 A capture that resolves to a **top-level function, type, or package symbol** is
@@ -72,29 +94,57 @@ capture whose declared type is **`Sendable[F]`** is likewise allowed: the
 `Sendable` bound means the caller already vouched for the function's own
 captures (see *Fix* → *Propagate the guarantee with `Sendable`*).
 
-**Error output.**
+**Error output.** The samples below are captured from the CLI, which renders
+framed diagnostics: a message line, the source location, the offending line with
+a caret span and a short inline label, and a full hint. Long inline labels are
+truncated with an ellipsis; the untruncated text is always in the `= hint:` line.
+
+Shape 1 — reassignable `var` capture:
 
 ```
-[SemanticError GALA-E0037] file.gala:7:22 closure crossing a concurrency boundary captures reassignable var "counter" — a data race, because the enclosing scope may reassign it while the goroutine runs (hint: snapshot it into an immutable `val` before the boundary (e.g. `val counter = counter` outside the closure) so the goroutine captures a stable copy)
+error[GALA-E0037]: closure crossing a concurrency boundary captures reassignable var "counter" — a data race, because the enclosing scope may reassign it while the goroutine runs
+  --> var_capture.gala:7:23
+  |
+7 |     Println(run(() => counter + 1))
+  |                       ^^^^^^^ snapshot it into an immutable `val` before the boundary
+  |
+  = hint: snapshot it into an immutable `val` before the boundary (e.g. `val counter = counter` outside the closure) so the goroutine captures a stable copy
 ```
 
-```
-[SemanticError GALA-E0037] file.gala:9:22 closure crossing a concurrency boundary captures "buffer" (type *collection_mutable.Array[int]), whose type is not safe to share — a data race on its mutable contents (hint: use an immutable collection (collection_immutable) or snapshot the needed data into an immutable `val`; or restructure so the closure returns the value instead of capturing it)
-```
-
-For an unshareable field-read path (shape 3), the message names the specific
-offending field path and why:
+Shape 2 — whole use of a non-shareable type:
 
 ```
-[SemanticError GALA-E0037] file.gala:8:22 closure crossing a concurrency boundary reads field path "model.attempts" on captured "model", which is not safe to share: it reads through a mutable (`var`) field — a data race, because the enclosing scope may reassign that field while the goroutine reads it (hint: read only immutable (`val`) fields of "model" across the boundary, or snapshot the needed field into an immutable `val` before it)
+error[GALA-E0037]: closure crossing a concurrency boundary captures "buffer" (type *collection_mutable.Array[int]), whose type is not safe to share — a data race on its mutable contents
+  --> mutbuf.gala:9:23
+  |
+9 |     Println(run(() => buffer.Size()))
+  |                       ^^^^^^ use an immutable collection
+  |
+  = hint: use an immutable collection (collection_immutable) or snapshot the needed data into an immutable `val`; or restructure so the closure returns the value instead of capturing it
 ```
 
-```
-[SemanticError GALA-E0037] file.gala:8:22 closure crossing a concurrency boundary reads field path "model.sessions" on captured "model", which is not safe to share: its type (collection_mutable.Array[int]) is not safe to share — a data race on its mutable contents (hint: read a deeply-immutable field of "model" instead, or snapshot the needed data into an immutable `val` before the boundary)
-```
+Shape 3 — unshareable field-read path; the message names the offending path and why:
 
 ```
-[SemanticError GALA-E0037] file.gala:4:37 closure crossing a concurrency boundary captures function value "compute" (type func() int), which is not safe to share — a bare function type carries no guarantee that its own captures are shareable (hint: declare the forwarded parameter's type as `Sendable[func() int]` so the caller vouches that the function's captures are shareable; that `Sendable` bound then propagates to the caller (the standard Send-style rule))
+error[GALA-E0037]: closure crossing a concurrency boundary reads field path "model.attempts" on captured "model", which is not safe to share: it reads through a mutable (`var`) field — a data race, because the enclosing scope may reassign that field while the goroutine reads it
+  --> varfield.gala:11:23
+   |
+11 |     Println(run(() => model.attempts + 1))
+   |                       ^^^^^ read only immutable
+   |
+   = hint: read only immutable (`val`) fields of "model" across the boundary, or snapshot the needed field into an immutable `val` before it
+```
+
+Shape 4 — bare `func` capture:
+
+```
+error[GALA-E0037]: closure crossing a concurrency boundary captures function value "compute" (type func() int) — a function value may itself close over mutable state, so it cannot cross the boundary unless it is Sendable
+  --> barefunc.gala:5:43
+  |
+5 | func broken(compute func() int) int = run(compute)
+  |                                           ^^^^^^^ declare the parameter as `compute Sendable[func() int]` — th…
+  |
+  = hint: declare the parameter as `compute Sendable[func() int]` — the Sendable bound requires each caller to pass a closure whose own captures are shareable, and propagates the check to the call site where the closure is written
 ```
 
 The caret points at the exact offending capture identifier.
@@ -146,11 +196,11 @@ The caret points at the exact offending capture identifier.
   ```gala
   // Reject: `compute` is a bare func — nothing vouches for its captures.
   func broken(compute func() int) Future[int] =
-      concurrent.FutureApply(compute)          // GALA-E0037
+      Future[int](compute)                     // GALA-E0037
 
   // OK: `Sendable[func() int]` makes the caller vouch; the bound propagates.
   func ok(compute Sendable[func() int]) Future[int] =
-      concurrent.FutureApply(compute)
+      Future[int](compute)
   ```
 
   `Sendable[F]` is transparent — it is exactly `F` in generated Go — so callers

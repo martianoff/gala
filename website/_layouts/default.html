@@ -15,45 +15,197 @@
     gtag('config', 'G-T1Z3YLCCD9');
   </script>
 
-  <title>{{ page.title }} | GALA</title>
-  <meta name="description" content="{{ page.description | default: site.description }}">
-  <meta name="keywords" content="{{ page.keywords | default: 'gala language, scala on go, golang sum types, golang pattern matching, golang option type, transpile to go, go algebraic data types' }}">
+  {%- comment -%}
+    Title: append the " | GALA" brand suffix only when the page title does not
+    already carry the brand, so "GALA — Scala on Go" does not render as
+    "GALA — Scala on Go | GALA". Pages can force either behaviour with
+    `title_full:` (used verbatim) or `suppress_brand: true` in front matter.
+  {%- endcomment -%}
+  {%- assign page_title = page.title | default: site.title -%}
+  {%- if page.title_full -%}
+    {%- assign head_title = page.title_full -%}
+  {%- elsif page.suppress_brand or page_title contains 'GALA' -%}
+    {%- assign head_title = page_title -%}
+  {%- else -%}
+    {%- capture head_title %}{{ page_title }} | GALA{% endcapture -%}
+  {%- endif -%}
+  {%- assign page_description = page.description | default: site.description -%}
+  {%- comment -%} Per-page social card: `og_image:` in front matter, else the site card. {%- endcomment -%}
+  {%- assign og_image = page.og_image | default: '/assets/images/og-card.png' -%}
+  {%- if og_image contains '://' -%}
+    {%- assign og_image_url = og_image -%}
+  {%- else -%}
+    {%- assign og_image_url = og_image | absolute_url -%}
+  {%- endif -%}
+
+  <title>{{ head_title | escape }}</title>
+  <meta name="description" content="{{ page_description | escape }}">
+  <meta name="keywords" content="{{ page.keywords | default: 'gala language, scala on go, golang sum types, golang pattern matching, golang option type, transpile to go, go algebraic data types' | escape }}">
+
+  <!-- Icons -->
+  <link rel="icon" href="{{ '/favicon.ico' | relative_url }}" sizes="32x32">
+  <link rel="icon" href="{{ '/assets/images/favicon.svg' | relative_url }}" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="{{ '/apple-touch-icon.png' | relative_url }}">
+  <link rel="manifest" href="{{ '/site.webmanifest' | relative_url }}">
 
   <!-- Open Graph -->
-  <meta property="og:title" content="{{ page.title }}">
-  <meta property="og:description" content="{{ page.description | default: site.description }}">
+  <meta property="og:title" content="{{ head_title | escape }}">
+  <meta property="og:description" content="{{ page_description | escape }}">
   <meta property="og:type" content="website">
   <meta property="og:url" content="{{ page.url | absolute_url }}">
   <meta property="og:site_name" content="GALA">
   <meta property="og:locale" content="en_US">
-  <meta property="og:image" content="{{ '/assets/images/og-card.png' | absolute_url }}">
+  <meta property="og:image" content="{{ og_image_url }}">
+  {%- if page.og_image %}
+  {%- if page.og_image_width %}
+  <meta property="og:image:width" content="{{ page.og_image_width }}">
+  <meta property="og:image:height" content="{{ page.og_image_height }}">
+  {%- endif %}
+  {%- else %}
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="GALA — Scala on Go. Sealed types, pattern matching, monads, native Go binaries.">
+  {%- endif %}
+  <meta property="og:image:alt" content="{{ page.og_image_alt | default: 'GALA — Scala on Go. Sealed types, pattern matching, monads, native Go binaries.' | escape }}">
 
   <!-- Twitter -->
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="{{ page.title }}">
-  <meta name="twitter:description" content="{{ page.description | default: site.description }}">
-  <meta name="twitter:image" content="{{ '/assets/images/og-card.png' | absolute_url }}">
+  <meta name="twitter:title" content="{{ head_title | escape }}">
+  <meta name="twitter:description" content="{{ page_description | escape }}">
+  <meta name="twitter:image" content="{{ og_image_url }}">
+  <meta name="twitter:image:alt" content="{{ page.og_image_alt | default: 'GALA — Scala on Go. Sealed types, pattern matching, monads, native Go binaries.' | escape }}">
 
   <!-- Canonical -->
   <link rel="canonical" href="{{ page.url | absolute_url }}">
 
   <!-- JSON-LD structured data -->
   <script type="application/ld+json">
+  {%- if page.schema_type == 'SoftwareApplication' %}
   {
     "@context": "https://schema.org",
-    "@type": "{% if page.schema_type %}{{ page.schema_type }}{% else %}WebPage{% endif %}",
-    "name": "{{ page.title }}",
-    "description": "{{ page.description | default: site.description }}",
-    "url": "{{ page.url | absolute_url }}",
+    "@type": "SoftwareApplication",
+    "name": "GALA",
+    "alternateName": "GALA Language",
+    "description": {{ page_description | jsonify }},
+    "url": {{ page.url | absolute_url | jsonify }},
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Programming Language",
+    "operatingSystem": "Linux, macOS, Windows",
+    "softwareVersion": {{ site.gala_version | jsonify }},
+    "downloadUrl": "https://github.com/martianoff/gala/releases",
+    "installUrl": {{ '/getting-started/' | absolute_url | jsonify }},
+    "softwareHelp": {{ '/docs/' | absolute_url | jsonify }},
+    "license": "https://www.apache.org/licenses/LICENSE-2.0",
+    "image": {{ og_image_url | jsonify }},
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "sameAs": [
+      "https://github.com/martianoff/gala"
+    ],
     "publisher": {
       "@type": "Organization",
-      "name": "GALA Language"
+      "name": "GALA Language",
+      "url": {{ '/' | absolute_url | jsonify }},
+      "logo": {
+        "@type": "ImageObject",
+        "url": {{ '/assets/images/favicon-192x192.png' | absolute_url | jsonify }},
+        "width": 192,
+        "height": 192
+      },
+      "sameAs": [
+        "https://github.com/martianoff/gala"
+      ]
     }
   }
+  {%- else %}
+  {
+    "@context": "https://schema.org",
+    "@type": {{ page.schema_type | default: 'WebPage' | jsonify }},
+    "name": {{ page_title | jsonify }},
+    "headline": {{ page_title | jsonify }},
+    "description": {{ page_description | jsonify }},
+    "url": {{ page.url | absolute_url | jsonify }},
+    "inLanguage": "en",
+    "isPartOf": {
+      "@type": "WebSite",
+      "name": "GALA",
+      "url": {{ '/' | absolute_url | jsonify }}
+    },
+    "about": {
+      "@type": "SoftwareApplication",
+      "name": "GALA",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "Linux, macOS, Windows",
+      "url": {{ '/' | absolute_url | jsonify }}
+    },
+    "publisher": {
+      "@type": "Organization",
+      "name": "GALA Language",
+      "url": {{ '/' | absolute_url | jsonify }},
+      "logo": {
+        "@type": "ImageObject",
+        "url": {{ '/assets/images/favicon-192x192.png' | absolute_url | jsonify }},
+        "width": 192,
+        "height": 192
+      },
+      "sameAs": [
+        "https://github.com/martianoff/gala"
+      ]
+    }
+  }
+  {%- endif %}
   </script>
+
+  {%- comment -%}
+    BreadcrumbList for nested pages (/docs/…, /features/…). page.url splits to
+    ["", "docs", "errors", "gala-e0001"], so more than two entries means the page
+    sits below a section landing page and has a trail worth declaring.
+  {%- endcomment -%}
+  {%- assign url_segments = page.url | split: '/' -%}
+  {%- if url_segments.size > 2 %}
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      {
+        "@type": "ListItem",
+        "position": 1,
+        "name": "Home",
+        "item": {{ '/' | absolute_url | jsonify }}
+      }
+      {%- assign crumb_path = '' -%}
+      {%- assign crumb_position = 1 -%}
+      {%- for segment in url_segments -%}
+        {%- if segment == '' -%}{%- continue -%}{%- endif -%}
+        {%- assign crumb_position = crumb_position | plus: 1 -%}
+        {%- assign crumb_path = crumb_path | append: '/' | append: segment -%}
+        {%- assign crumb_url = crumb_path | append: '/' -%}
+        {%- if forloop.last -%}
+          {%- assign crumb_name = page.breadcrumb_name | default: page_title -%}
+        {%- elsif segment == 'docs' -%}
+          {%- assign crumb_name = 'Documentation' -%}
+        {%- elsif segment == 'features' -%}
+          {%- assign crumb_name = 'Features' -%}
+        {%- elsif segment == 'errors' -%}
+          {%- assign crumb_name = 'Error Codes' -%}
+        {%- else -%}
+          {%- assign crumb_name = segment | replace: '-', ' ' | capitalize -%}
+        {%- endif -%}
+        ,
+      {
+        "@type": "ListItem",
+        "position": {{ crumb_position }},
+        "name": {{ crumb_name | jsonify }},
+        "item": {{ crumb_url | absolute_url | jsonify }}
+      }
+      {%- endfor %}
+    ]
+  }
+  </script>
+  {%- endif %}
 
   <!-- Prism syntax highlighting theme -->
   <link href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
@@ -112,7 +264,8 @@
       z-index: 100;
       box-shadow: 0 4px 12px rgba(0,0,0,0.3);
     }
-    .nav-dropdown:hover .nav-dropdown-menu {
+    .nav-dropdown:hover .nav-dropdown-menu,
+    .nav-dropdown:focus-within .nav-dropdown-menu {
       display: block;
     }
     .nav-dropdown-menu a {
@@ -122,6 +275,20 @@
     }
     .nav-dropdown-menu a:hover {
       background: rgba(255,255,255,0.1);
+    }
+    .nav-dropdown-menu .nav-group {
+      display: block;
+      padding: 0.55rem 1.2rem 0.2rem;
+      font-size: 0.7rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.45);
+    }
+    .nav-dropdown-menu .nav-group:first-child { padding-top: 0.1rem; }
+    .nav-dropdown-menu a.nav-hub {
+      font-weight: 600;
+      color: var(--accent);
+      opacity: 1;
     }
     nav .logo {
       font-weight: 700;
@@ -267,6 +434,30 @@
       font-size: 0.85rem;
       color: #666;
     }
+    /* Site map in the footer: gives every section page a crawlable, site-wide
+       link, and keeps the dropdown-only pages reachable on touch devices where
+       the nav menus never open. */
+    .footer-nav {
+      max-width: 860px;
+      margin: 0 auto 1.5rem;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 1.25rem;
+      text-align: left;
+    }
+    .footer-nav h2 {
+      font-size: 0.75rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #444;
+      margin: 0 0 0.4rem;
+      border: 0;
+      padding: 0;
+    }
+    .footer-nav ul { list-style: none; margin: 0; padding: 0; }
+    .footer-nav li { margin-bottom: 0.15rem; }
+    .footer-nav a { color: #555; text-decoration: none; }
+    .footer-nav a:hover { color: var(--accent-dark); text-decoration: underline; }
     .hero-code {
       text-align: left;
       max-width: 640px;
@@ -285,40 +476,60 @@
   <nav>
     <a href="{{ '/' | relative_url }}" class="logo">GALA</a>
     <div class="nav-dropdown">
-      <a href="{{ '/features/sealed-types/' | relative_url }}">Features</a>
+      <a href="{{ '/features/' | relative_url }}">Features</a>
       <div class="nav-dropdown-menu">
+        <a class="nav-hub" href="{{ '/features/' | relative_url }}">All Features</a>
+        <span class="nav-group">Language</span>
         <a href="{{ '/features/sealed-types/' | relative_url }}">Sealed Types</a>
         <a href="{{ '/features/pattern-matching/' | relative_url }}">Pattern Matching</a>
+        <a href="{{ '/features/type-inference/' | relative_url }}">Type Inference</a>
+        <a href="{{ '/features/immutability/' | relative_url }}">Immutability</a>
+        <a href="{{ '/features/string-interpolation/' | relative_url }}">String Interpolation</a>
+        <span class="nav-group">Effects &amp; Data</span>
         <a href="{{ '/features/error-handling/' | relative_url }}">Error Handling</a>
         <a href="{{ '/features/monadic-binding/' | relative_url }}">Monadic Binding</a>
-        <a href="{{ '/features/immutability/' | relative_url }}">Immutability</a>
         <a href="{{ '/features/collections/' | relative_url }}">Collections</a>
-        <a href="{{ '/features/type-inference/' | relative_url }}">Type Inference</a>
-        <a href="{{ '/features/string-interpolation/' | relative_url }}">String Interpolation</a>
         <a href="{{ '/features/concurrency/' | relative_url }}">Concurrency</a>
+        <a href="{{ '/features/concurrency-safety/' | relative_url }}">Concurrency Safety</a>
+        <span class="nav-group">Toolchain</span>
         <a href="{{ '/features/go-interop/' | relative_url }}">Go Interop</a>
+        <a href="{{ '/features/compiler-dx/' | relative_url }}">Compiler DX</a>
         <a href="{{ '/features/ide-support/' | relative_url }}">IDE Support</a>
       </div>
     </div>
     <div class="nav-dropdown">
       <a href="{{ '/docs/' | relative_url }}">Docs</a>
       <div class="nav-dropdown-menu">
-        <a href="{{ '/docs/json/' | relative_url }}">Json</a>
-        <a href="{{ '/docs/regex/' | relative_url }}">Regex</a>
-        <a href="{{ '/docs/io/' | relative_url }}">IO Effect</a>
-        <a href="{{ '/docs/streams/' | relative_url }}">Streams</a>
-        <a href="{{ '/docs/strings/' | relative_url }}">Strings</a>
-        <a href="{{ '/docs/time-utils/' | relative_url }}">Time Utils</a>
+        <a class="nav-hub" href="{{ '/docs/' | relative_url }}">All Documentation</a>
+        <span class="nav-group">Guides</span>
+        <a href="{{ '/docs/language-reference/' | relative_url }}">Language Reference</a>
+        <a href="{{ '/docs/why-gala/' | relative_url }}">Why GALA?</a>
+        <a href="{{ '/docs/examples/' | relative_url }}">Code Examples</a>
+        <a href="{{ '/docs/dependency-management/' | relative_url }}">Dependency Management</a>
+        <a href="{{ '/docs/errors/' | relative_url }}">Error Codes</a>
+        <span class="nav-group">Standard Library</span>
         <a href="{{ '/docs/immutable-collections/' | relative_url }}">Immutable Collections</a>
         <a href="{{ '/docs/mutable-collections/' | relative_url }}">Mutable Collections</a>
-        <a href="{{ '/docs/dependency-management/' | relative_url }}">Dependency Management</a>
-        <a href="{{ '/docs/language-reference/' | relative_url }}">Language Reference</a>
+        <a href="{{ '/docs/streams/' | relative_url }}">Streams</a>
+        <a href="{{ '/docs/strings/' | relative_url }}">Strings</a>
+        <a href="{{ '/docs/json/' | relative_url }}">Json</a>
+        <a href="{{ '/docs/yaml/' | relative_url }}">Yaml</a>
+        <a href="{{ '/docs/regex/' | relative_url }}">Regex</a>
+        <a href="{{ '/docs/io/' | relative_url }}">IO Effect</a>
+        <a href="{{ '/docs/time-utils/' | relative_url }}">Time Utils</a>
+        <a href="{{ '/docs/subprocess/' | relative_url }}">Subprocess</a>
+      </div>
+    </div>
+    <div class="nav-dropdown">
+      <a href="{{ '/vs-go/' | relative_url }}">Compare</a>
+      <div class="nav-dropdown-menu">
+        <a href="{{ '/vs-go/' | relative_url }}">GALA vs Go</a>
+        <a href="{{ '/vs-borgo/' | relative_url }}">GALA vs Borgo</a>
+        <a href="{{ '/vs-lisette/' | relative_url }}">GALA vs Lisette</a>
+        <a href="{{ '/docs/why-gala/' | relative_url }}">Why GALA?</a>
       </div>
     </div>
     <a href="{{ '/for-ai/' | relative_url }}">For AI</a>
-    <a href="{{ '/vs-go/' | relative_url }}">GALA vs Go</a>
-    <a href="{{ '/vs-borgo/' | relative_url }}">vs Borgo</a>
-    <a href="{{ '/vs-lisette/' | relative_url }}">vs Lisette</a>
     <a href="{{ '/getting-started/' | relative_url }}">Get Started</a>
     <a href="{{ '/playground/' | relative_url }}">Playground</a>
     <a href="https://github.com/martianoff/gala">GitHub</a>
@@ -327,6 +538,60 @@
     {{ content }}
   </div>
   <footer>
+    <nav class="footer-nav" aria-label="Site map">
+      <div>
+        <h2>Language</h2>
+        <ul>
+          <li><a href="{{ '/features/' | relative_url }}">All features</a></li>
+          <li><a href="{{ '/features/sealed-types/' | relative_url }}">Sealed types</a></li>
+          <li><a href="{{ '/features/pattern-matching/' | relative_url }}">Pattern matching</a></li>
+          <li><a href="{{ '/features/error-handling/' | relative_url }}">Error handling</a></li>
+          <li><a href="{{ '/features/monadic-binding/' | relative_url }}">Monadic binding</a></li>
+          <li><a href="{{ '/features/immutability/' | relative_url }}">Immutability</a></li>
+          <li><a href="{{ '/features/type-inference/' | relative_url }}">Type inference</a></li>
+          <li><a href="{{ '/features/string-interpolation/' | relative_url }}">String interpolation</a></li>
+        </ul>
+      </div>
+      <div>
+        <h2>Runtime &amp; tooling</h2>
+        <ul>
+          <li><a href="{{ '/features/collections/' | relative_url }}">Collections</a></li>
+          <li><a href="{{ '/features/concurrency/' | relative_url }}">Concurrency</a></li>
+          <li><a href="{{ '/features/concurrency-safety/' | relative_url }}">Concurrency safety</a></li>
+          <li><a href="{{ '/features/go-interop/' | relative_url }}">Go interop</a></li>
+          <li><a href="{{ '/features/compiler-dx/' | relative_url }}">Compiler DX</a></li>
+          <li><a href="{{ '/features/ide-support/' | relative_url }}">IDE support</a></li>
+          <li><a href="{{ '/docs/subprocess/' | relative_url }}">Subprocess</a></li>
+          <li><a href="{{ '/docs/io/' | relative_url }}">IO effect</a></li>
+        </ul>
+      </div>
+      <div>
+        <h2>Documentation</h2>
+        <ul>
+          <li><a href="{{ '/docs/' | relative_url }}">All docs</a></li>
+          <li><a href="{{ '/docs/language-reference/' | relative_url }}">Language reference</a></li>
+          <li><a href="{{ '/docs/examples/' | relative_url }}">Code examples</a></li>
+          <li><a href="{{ '/docs/errors/' | relative_url }}">Error codes</a></li>
+          <li><a href="{{ '/docs/dependency-management/' | relative_url }}">Dependency management</a></li>
+          <li><a href="{{ '/docs/immutable-collections/' | relative_url }}">Immutable collections</a></li>
+          <li><a href="{{ '/docs/streams/' | relative_url }}">Streams</a></li>
+          <li><a href="{{ '/docs/json/' | relative_url }}">Json</a> &middot; <a href="{{ '/docs/yaml/' | relative_url }}">Yaml</a></li>
+        </ul>
+      </div>
+      <div>
+        <h2>Project</h2>
+        <ul>
+          <li><a href="{{ '/getting-started/' | relative_url }}">Get started</a></li>
+          <li><a href="{{ '/playground/' | relative_url }}">Playground</a></li>
+          <li><a href="{{ '/docs/why-gala/' | relative_url }}">Why GALA?</a></li>
+          <li><a href="{{ '/for-ai/' | relative_url }}">GALA for AI</a></li>
+          <li><a href="{{ '/vs-go/' | relative_url }}">GALA vs Go</a></li>
+          <li><a href="{{ '/vs-borgo/' | relative_url }}">GALA vs Borgo</a></li>
+          <li><a href="{{ '/vs-lisette/' | relative_url }}">GALA vs Lisette</a></li>
+          <li><a href="https://github.com/martianoff/gala">GitHub</a></li>
+        </ul>
+      </div>
+    </nav>
     GALA Language &mdash; Apache 2.0 License &mdash; <a href="https://github.com/martianoff/gala">GitHub</a>
   </footer>
 

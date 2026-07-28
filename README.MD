@@ -45,6 +45,7 @@ It's aimed at Go developers who have used Scala, Kotlin, F#, or OCaml and miss t
 **Safe — Go's runtime bugs, caught by the compiler.**
 - **Sealed types with exhaustive matching.** The compiler rejects incomplete matches at build time — including nested patterns, guards, and generic extractors. An incomplete `match` is a build error, not a production panic.
 - **No `nil`.** `Option` / `Either` / `Try` replace nil checks and naked error returns.
+- **Compile-time data-race safety.** A value crossing a goroutine boundary must be *deeply immutable*, and the compiler checks it — including what a closure captures. Because GALA is already immutable by default the check is silent in ordinary code; it fires on `collection_mutable` values, `var` fields, raw Go slices/maps/pointers, and opaque Go handles.
 - **Immutable by default.** `val` bindings, immutable struct fields, read-only `ConstPtr[T]`; always concrete types, never a silent `any`.
 - **Zero-reflection JSON.** `Codec[T]` is backed by a compiler-generated `StructMeta[T]` intrinsic — no `reflect`, no struct tags, and it doubles as a pattern-match extractor.
 
@@ -52,10 +53,22 @@ It's aimed at Go developers who have used Scala, Kotlin, F#, or OCaml and miss t
 - **`bind` / `also` do-notation.** Flat monadic binding over any monad — sequential `bind`, plus `also` for independent steps that accumulate errors (`Validated`) or run concurrently (`Future`). No nested `FlatMap` staircases.
 - **Functional standard library.** `Option`, `Either`, `Try`, `Future`, `IO` with `Map` / `FlatMap` / `Recover`, plus immutable `List`, `Array`, `HashMap`, `HashSet`, `TreeSet`, `TreeMap`.
 - **Less syntax.** String interpolation (`s"…"` / `f"…"`), named arguments and default parameters, type inference everywhere, expression functions, and regex extractors that destructure capture groups directly inside `match`.
+- **Diagnostics that point at the fix.** Framed, Rust/Elm-style compile errors carrying a stable `GALA-Exxxx` code, the offending span, and a hint — and runtime panics that report *GALA* source positions (`foo.gala:12`), not generated Go.
 
 **Compatible — every Go library, no bindings, native binaries.**
 - **Full Go third-party module interop.** Any Go package works — not just stdlib. Return types are inferred **directly from the Go SDK** (no declaration files), and `(T, error)` returns are wrapped into `Try[T]` automatically.
-- **Shipped IDE tooling.** GoLand/IntelliJ plugin and an LSP server (`gala lsp`) for VS Code and Neovim — diagnostics, hover, go-to-definition, inlay hints, completion. Batched transpilation and analysis caching keep multi-file rebuilds fast.
+- **Shipped IDE tooling.** GoLand/IntelliJ plugin and an LSP server (`gala lsp`) for VS Code and Neovim — diagnostics, hover, go-to-definition, inlay hints, completion, across GALA *and* Go stdlib/third-party types. Batched transpilation and analysis caching keep multi-file rebuilds fast.
+
+### Recent highlights
+
+- **[Compile-time data-race safety](docs/CONCURRENCY_SAFETY.MD)** — closures crossing a `Future` boundary are checked for what they capture ([GALA-E0037](docs/errors/GALA-E0037.md)).
+- **[Structured concurrency](docs/CONCURRENT.MD)** — `Future` cancellation, `Race`, and `WithTimeout` that cancel the work they abandon.
+- **Guaranteed tail-call elimination** for self-tail-recursive if-expression functions — constant stack space.
+- **[GALA stack traces](docs/PERFORMANCE_DEBUGGING.MD)** — panics report `foo.gala:12`, including frames inside imported GALA packages.
+- **[Framed compile diagnostics](docs/errors/README.md)** — every error carries a stable code with its own doc page.
+- **`use` scoped-resource binding** — replaces Go's `defer x.Close()`, which is now rejected on the GALA surface.
+- **[`subprocess`](docs/SUBPROCESS.MD)** — spawn and drive child processes, with async `Future`-returning methods.
+- **IDE** — go-to-definition and completion now resolve third-party Go modules.
 
 ---
 
@@ -196,47 +209,6 @@ updated.Port = 8080
 </tr>
 </table>
 
-### Default Parameters vs Option Structs
-
-<table>
-<tr><th>GALA</th><th>Go</th></tr>
-<tr>
-<td>
-
-```gala
-func connect(
-    host string,
-    port int = 8080,
-    tls bool = true,
-) Connection
-
-connect("localhost", tls = false)
-```
-
-</td>
-<td>
-
-```go
-type ConnectOptions struct {
-    Host string
-    Port int
-    TLS  *bool
-}
-
-func Connect(opts ConnectOptions) Connection {
-    if opts.Port == 0 { opts.Port = 8080 }
-    if opts.TLS == nil {
-        t := true; opts.TLS = &t
-    }
-    // ...
-}
-Connect(ConnectOptions{Host: "localhost", TLS: ptrBool(false)})
-```
-
-</td>
-</tr>
-</table>
-
 ### Error Handling: Try vs if-err
 
 <table>
@@ -297,6 +269,8 @@ func makePerson(name string, email string, age int) Validated[string, Person] {
 // makePerson("", "", -1).GetErrors().Size() == 3  — all failures at once
 ```
 
+`Validated[E, A]` is a sealed type (`Valid` / `Invalid`) in its own `validation` package, deliberately separate from `Either`'s fail-fast semantics. It works without `bind`/`also` too: `Zip2` … `Zip10` combine up to ten independent checks and return **every** failure, and `ToEither()` converts back when you want to stop accumulating.
+
 Over `Future`, an `also` group runs its clauses **concurrently**. And it's not special-cased to the standard library: any type with a `FlatMap` method is bindable, resolved structurally at transpile time — no higher-kinded types. See [Monadic binding](docs/BIND_NOTATION.MD).
 
 ---
@@ -327,6 +301,28 @@ val list = ListOf(1, 2, 3)
 val doubled = list.Map((x) => x * 2)
 val sum = list.FoldLeft(0, (acc, x) => acc + x)
 ```
+
+**Guaranteed tail-call elimination** — a function that calls *itself* in tail position compiles to a loop, so it runs in constant stack space.
+
+```gala
+func sumTo(n int, acc int) int = if (n <= 0) acc else sumTo(n - 1, acc + n)
+
+Println(sumTo(1000000, 0))   // 500000500000 — no stack overflow
+```
+
+The guarantee is deliberately narrow: **expression-bodied plain functions** (no receiver) whose body is an **if-expression** with single-expression branches, calling themselves **directly** in tail position. Method receivers, `match`- and block-bodied functions, a tail call hidden inside a block branch, and mutual recursion all fall back to ordinary recursion. Verified in [`examples/tco_deep_sum.gala`](examples/tco_deep_sum.gala) and [`examples/tco_factorial.gala`](examples/tco_factorial.gala).
+
+**`use` — scoped resource binding** — binds a resource for the rest of the block and guarantees `Close()` on every exit path, normal or panic. Multiple bindings release LIFO.
+
+```gala
+func work() {
+    use a = open("a")
+    use b = open("b")                          // acquired last, closes first
+    Println(s"body sees ${a.name} and ${b.name}")
+}
+```
+
+`use` is the replacement for Go's `defer x.Close()` — `defer`, `go`, `goto`, `fallthrough`, `select`, and `chan` are all rejected on the GALA surface (`GALA-E0036`), routed instead through `use`, the `resource` combinators (`Using` / `Bracket` / `WithLock`), and `go_interop`. Bare Go builtins are rejected the same way (`GALA-E0035`): `len(x)` becomes `x.Size()` (characters) or `x.ByteSize()` (bytes), and `append` / `make` / `new` / `delete` become `go_interop` helpers or GALA collections. Both checks are resolver-aware — a function you declared yourself that happens to share the name is left alone.
 
 **Tuples with destructuring** — up to `Tuple5`, with pattern matching.
 
@@ -416,6 +412,78 @@ val values = options.Collect({ case Some(v) => v * 10 })
 
 ---
 
+## Concurrency — and Data Races the Compiler Catches
+
+`Future[T]` is a monad first: `Map`, `FlatMap`, `Recover`, `Zip2`…`Zip10`, `Sequence`, `Traverse`, plus `Succeeded` / `Failed` / `Completed` extractors for `match`. On top of that sits **structured concurrency** — a Future carries an opaque cancellation token, and the scope constructors cancel the work they abandon:
+
+```gala
+val bounded = slow.WithTimeout(Milliseconds(500)).Recover((e) => 0)
+val winner  = Race[int](ArrayOf[Future[int]](a, b))   // first result; losers cancelled
+
+val chain = source.Map((v) => step1(v)).FlatMap((v) => step2(v))
+chain.Cancel()   // pending stages fail with CancellationError
+```
+
+Honest limits: cancellation is checked at **combinator boundaries**, so it short-circuits stages that have not started but cannot preempt a body already running (Go has no goroutine interruption). It is **graph-level** — a derived chain shares one token — while `Race`, `Sequence`, `FirstCompletedOf`, and `WithTimeout` open a fresh scope. `.Cancel()` on a completed Future does nothing. Full semantics: [Concurrent](docs/CONCURRENT.MD).
+
+### The data-race check
+
+Sharing a value across goroutines is safe when the value is **deeply immutable** — concurrent reads of something nobody can mutate never conflict. GALA turns that into a compile-time rule at every goroutine boundary, checking not just the value's type but what the closure **captures**:
+
+```gala
+var counter = 0
+Future(() => counter + 1)      // GALA-E0037: captures a reassignable `var`
+
+val buffer = collection_mutable.ArrayOf(1, 2, 3)
+Future(() => buffer.Size())    // GALA-E0037: a method call on a mutable value
+
+val xs = collection_immutable.ArrayOf(1, 2, 3)
+Future(() => xs.Size())        // OK — deeply immutable
+```
+
+The check is **field-access-sensitive**: a closure that reads only immutable (`val`) fields of shareable type is accepted even when the enclosing value is unshareable as a whole. A boundary is marked by the `Sendable[F]` type — transparent (`Sendable[func() T]` *is* `func() T` in the generated Go, no wrapper, no cost) and available to any library, not just the standard one. Application code passing closure literals never writes `Sendable`; only a reusable wrapper annotates its forwarded parameter, pushing the obligation to whoever writes the closure:
+
+```gala
+func afterCompute(compute Sendable[func() int]) Future[int] = Future(() => compute() + 1)
+
+val base = 41
+afterCompute(() => base).Get()   // checked here, at the closure literal
+```
+
+The escape hatch is explicit: `go_interop.Spawn` / `SpawnWithRecover` are **not** `Sendable`, so raw goroutine plumbing is unchecked and synchronizing it is on you. See [Concurrency Safety](docs/CONCURRENCY_SAFETY.MD) and [GALA-E0037](docs/errors/GALA-E0037.md).
+
+---
+
+## Diagnostics and Debugging
+
+Compile errors are framed in the Rust/Elm style: a stable code, the offending span, and a hint.
+
+```
+error[GALA-E0035]: bare Go builtin "len(...)" is not part of GALA's surface
+  --> foo.gala:4:13
+  |
+4 |     val n = len(s)
+  |             ^^^ use `.Size()`
+  |
+  = hint: use `.Size()` (logical size — characters for strings) or `.ByteSize()` (raw bytes) instead of `len(...)`
+```
+
+Codes are opaque and never change meaning, so tools and tests can pin to them, and each one has a page explaining when it fires, a minimal repro, and the fix — see the [error code index](docs/errors/README.md).
+
+**Panics report GALA source positions**, not generated Go:
+
+```
+panic: runtime error: integer divide by zero
+main.divide(...)
+	foo.gala:4
+main.main()
+	foo.gala:8
+```
+
+This rides on Go's own `//line` directives, so there is no source-map file and no runtime cost. Imported GALA packages map too — a single trace can span your files and a library's `.gala` source. The mapping is exact for ordinary statements; it is *approximate* (right file, line possibly off by a few within the construct) for statements that lower to several Go statements, such as `use x = …`, and for IIFE-lowered constructs (`match`, `if`-expressions, `bind`/`also`). Details: [Performance and Debugging](docs/PERFORMANCE_DEBUGGING.MD).
+
+---
+
 ## Standard Library
 
 ### Functional Types
@@ -425,12 +493,13 @@ val values = options.Collect({ case Some(v) => v * 10 })
 | `Option[T]` | Optional values — `Some(value)` / `None()` |
 | `Either[A, B]` | Disjoint union — `Left(a)` / `Right(b)` |
 | `Try[T]` | Failable computation — `Success(value)` / `Failure(err)` |
-| `Future[T]` | Async computation with `Map`, `FlatMap`, `Zip`, `Await` |
+| `Validated[E, A]` | Error-**accumulating** validation — `Valid(a)` / `Invalid(errors)`, with `Zip2`…`Zip10` |
+| `Future[T]` | Async computation with `Map`, `FlatMap`, `Zip`, `Await`, `WithTimeout`, `Cancel` |
 | `IO[T]` | Lazy, composable effect type — `Suspend`, `Map`, `FlatMap`, `Recover` |
 | `Tuple[A, B]` | Pairs and triples with `(a, b)` syntax (up to `Tuple5`) |
 | `ConstPtr[T]` | Read-only pointer with auto-deref field access |
 
-### Serialization, Regex, IO
+### Serialization, Regex, IO, Processes
 
 | Type | Description |
 |------|-------------|
@@ -438,6 +507,10 @@ val values = options.Collect({ case Some(v) => v * 10 })
 | `yaml.Codec[T]` | YAML codec sharing the same `StructMeta[T]` intrinsic |
 | `Regex` | Compiled regex with `Matches`, `FindFirst`, `FindAll`, `ReplaceAll`, pattern matching |
 | `IO[T]` | Lazy effect — separates description from execution, re-runs on every `.Run()` |
+| `resource` | `Using` / `Bracket` / `WithLock` — cleanup that runs on every exit path, including panics |
+| `subprocess.Process` | Value-type handle to a spawned child — `ReadLine`, `WriteLine`, `Wait`, `Kill`, `KillAfter` |
+
+`subprocess` also ships `ReadLineAsync` / `WriteLineAsync` / `CloseStdinAsync`, which return a `Future` and own the goroutine-safety invariant internally — so you drive a child off-thread without capturing the handle across a `Sendable` boundary. See [Subprocess](docs/SUBPROCESS.MD).
 
 ### Collections
 
@@ -498,7 +571,9 @@ GALA ships with a GoLand/IntelliJ plugin and an LSP server (`gala lsp`) for edit
 2. Install plugin: GoLand > Settings > Plugins > Install from Disk > select `gala-intellij-plugin.zip` from [releases](https://github.com/martianoff/gala/releases).
 3. Restart GoLand — the LSP server starts automatically when a `.gala` file is opened.
 
-The plugin works locally (ANTLR parser, semantic highlighting, structure view, 12 live templates). The LSP server (`gala lsp`) adds real-time diagnostics including match-exhaustiveness, hover types, cross-file go-to-definition, type-aware completion, and inlay hints — for VS Code and Neovim too. Full feature list: [IDE Support](https://martianoff.github.io/gala/features/ide-support/).
+The plugin works locally (ANTLR parser, semantic highlighting, structure view, 12 live templates). The LSP server (`gala lsp`) adds real-time diagnostics including match-exhaustiveness, hover types, cross-file go-to-definition, type-aware completion, and inlay hints — for VS Code and Neovim too.
+
+Go interop is wired end to end: completion and go-to-definition resolve Go stdlib **and third-party Go modules**, navigating into the module's cached source the same way native GALA symbols do. The `.Size()` / `.ByteSize()` sugar type-resolves and completes on Go primitives, the `use` keyword is highlighted with its binding clickable, and the forbidden-builtin / forbidden-statement rules surface inline as `GALA-E0035` / `GALA-E0036`. Full feature list: [IDE Support](https://gala.fyi/features/ide-support/).
 
 ### VS Code
 
@@ -576,11 +651,16 @@ gala_binary(
 - [Why GALA?](docs/WHY_GALA.MD) — feature deep-dive and honest trade-offs
 - [Examples](docs/EXAMPLES.MD) — code examples for all features
 - [Type Inference](docs/TYPE_INFERENCE.MD) — how type inference works
-- [JSON Codec](https://martianoff.github.io/gala/json/) — zero-reflection JSON serialization
-- [Regex](https://martianoff.github.io/gala/regex/) — pattern matching with regex extractors
-- [IO Effect](https://martianoff.github.io/gala/io/) — lazy, composable side effects
-- [Go Interop](https://martianoff.github.io/gala/go-interop/) — seamless Go library integration
-- [Concurrent](docs/CONCURRENT.MD) — Future, Promise, and ExecutionContext
+- [Monadic Binding](docs/BIND_NOTATION.MD) — `bind` / `also` do-notation over any monad
+- [Error Codes](docs/errors/README.md) — every `GALA-Exxxx` diagnostic, with repro and fix
+- [JSON Codec](https://gala.fyi/docs/json/) — zero-reflection JSON serialization
+- [Regex](https://gala.fyi/docs/regex/) — pattern matching with regex extractors
+- [IO Effect](https://gala.fyi/docs/io/) — lazy, composable side effects
+- [Go Interop](https://gala.fyi/features/go-interop/) — seamless Go library integration
+- [Concurrent](docs/CONCURRENT.MD) — Future, Promise, cancellation, and ExecutionContext
+- [Concurrency Safety](docs/CONCURRENCY_SAFETY.MD) — the shareability model and the `Sendable` boundary
+- [Subprocess](docs/SUBPROCESS.MD) — spawning and driving child processes
+- [Performance and Debugging](docs/PERFORMANCE_DEBUGGING.MD) — GALA stack traces and profiling knobs
 - [Stream](docs/STREAM.MD) — lazy, potentially infinite sequences
 - [Immutable Collections](docs/IMMUTABLE_COLLECTIONS.MD) — List, Array, HashMap, HashSet, TreeSet, TreeMap
 - [Mutable Collections](docs/MUTABLE_COLLECTIONS.MD) — mutable variants for performance

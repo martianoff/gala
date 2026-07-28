@@ -4,9 +4,10 @@ title: "Immutable Collections in GALA - List, Array, HashMap, HashSet, TreeSet, 
 description: "GALA's immutable collection library. List, Array, HashMap, HashSet, TreeSet, and TreeMap with functional operations — Map, Filter, FoldLeft, Collect, and more. Full API reference."
 keywords: "gala immutable collections, go immutable list, go immutable hashmap, golang functional collections, gala array, gala treemap, go persistent data structures"
 permalink: /docs/immutable-collections/
+last_modified_at: 2026-07-05
 ---
 
-<p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/language-reference/">Docs</a> / Immutable Collections</p>
+<p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / Immutable Collections</p>
 
 # Immutable Collections
 
@@ -53,8 +54,6 @@ This document describes the immutable collection data structures available in GA
    - [Core Operations - O(log n)](#core-operations---olog-n)
    - [Min/Max Operations](#minmax-operations)
    - [Range Queries](#range-queries)
-   - [Functional Operations](#functional-operations-1)
-   - [Conversion](#conversion)
 9. [Choosing the Right Collection](#choosing-the-right-collection)
 10. [Implementation Details](#implementation-details)
 11. [Examples](#example-building-a-collection)

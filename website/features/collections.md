@@ -4,9 +4,10 @@ title: "Golang Immutable Collections — List, Array, HashMap, TreeMap for Go"
 description: "GALA provides immutable functional collections for Go — List, Array, HashMap, HashSet, TreeSet, TreeMap with Map, Filter, FoldLeft, Collect, SortBy, and lambda type inference. Beyond what samber/lo offers."
 keywords: "golang immutable collections, go immutable list, go immutable hashmap, golang functional collections, go map filter reduce, golang persistent data structures, go functional programming collections, golang treemap, gala collections"
 permalink: /features/collections/
+last_modified_at: 2026-07-05
 ---
 
-<p class="breadcrumb"><a href="/">Home</a> / <a href="/features/collections/">Features</a> / Functional Collections</p>
+<p class="breadcrumb"><a href="/">Home</a> / <a href="/features/">Features</a> / Functional Collections</p>
 
 # Golang Immutable Collections — Functional Data Structures for Go
 

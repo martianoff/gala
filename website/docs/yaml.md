@@ -4,6 +4,7 @@ title: "Yaml in GALA — Zero-Reflection YAML Codec with Builder Pattern"
 description: "GALA's yaml package provides zero-reflection, compile-time YAML serialization with builder pattern configuration, naming strategies, and pattern matching support."
 keywords: "gala yaml, golang yaml alternative, go type safe yaml, gala yaml codec, gala yaml pattern matching, go yaml serialization, zero reflection yaml"
 permalink: /docs/yaml/
+last_modified_at: 2026-04-30
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / Yaml</p>

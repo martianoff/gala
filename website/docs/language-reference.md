@@ -4,9 +4,10 @@ title: "GALA Language Reference - Complete Specification"
 description: "Complete GALA language specification. Variables, functions, structs, sealed types, pattern matching, generics, lambdas, interfaces, control flow, and standard library types — the full reference for the Go alternative language."
 keywords: "gala language reference, gala specification, gala syntax, gala language guide, go alternative language reference, gala documentation"
 permalink: /docs/language-reference/
+last_modified_at: 2026-07-05
 ---
 
-<p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/language-reference/">Docs</a> / Language Reference</p>
+<p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / Language Reference</p>
 
 {% raw %}
 
@@ -44,7 +45,7 @@ GALA (Go Alternative LAnguage) is a modern programming language that transpiles 
 
 ---
 
-## 1. Project Structure
+## 1. Project Structure {#1-project-structure}
 
 GALA files use the `.gala` extension. Every file must start with a package declaration, followed by an empty line. All GALA files in the same directory must belong to the same package.
 
@@ -85,7 +86,7 @@ gala_binary(
 )
 ```
 
-## 2. Variable Declarations
+## 2. Variable Declarations {#2-variable-declarations}
 
 GALA distinguishes between immutable and mutable variables.
 
@@ -116,7 +117,7 @@ func main() {
 }
 ```
 
-## 3. Functions
+## 3. Functions {#3-functions}
 
 GALA supports both Go-style block functions and Scala-style expression functions.
 
@@ -247,7 +248,7 @@ func (b Box[T]) GetValue() T = b.Value
 func (b Box[T]) Transform[U any](f func(T) U) Box[U] = Box[U](Value = f(b.Value))
 ```
 
-## 4. Types and Structs
+## 4. Types and Structs {#4-types-and-structs}
 
 ### Shorthand Struct Declaration
 ```gala
@@ -302,7 +303,7 @@ sealed type Result[T any] {
 }
 ```
 
-## 5. Interfaces
+## 5. Interfaces {#5-interfaces}
 
 ```gala
 type Shaper interface {
@@ -313,7 +314,7 @@ struct Rect(width float64, height float64)
 func (r Rect) Area() float64 = r.width * r.height
 ```
 
-## 6. Control Flow
+## 6. Control Flow {#6-control-flow}
 
 ### If Statement and Expression
 ```gala
@@ -413,7 +414,7 @@ for _, v := range items {
 }
 ```
 
-## 7. Functional Features
+## 7. Functional Features {#7-functional-features}
 
 ### Lambda Expressions
 ```gala
@@ -436,7 +437,7 @@ val r2 = pf(5)  // None[string]
 val evenDoubled = numbers.Collect({ case n if n % 2 == 0 => n * 2 })
 ```
 
-## 8. Generics
+## 8. Generics {#8-generics}
 
 ```gala
 func identity[T any](x T) T = x
@@ -444,7 +445,7 @@ func identity[T any](x T) T = x
 type Box[T any] struct { Value T }
 ```
 
-## 9. Standard Library Types
+## 9. Standard Library Types {#9-standard-library-types}
 
 ### Option Monad
 ```gala
@@ -511,7 +512,7 @@ val doubled = nums.Map((x) => x * 2)
 val goSlice = SliceOf(1, 2, 3)
 ```
 
-## 10. Literals and Type Conversions
+## 10. Literals and Type Conversions {#10-literals-and-type-conversions}
 
 ### String Interpolation
 ```gala
@@ -543,13 +544,13 @@ val r = rune(65)            // 'A'
 val s = string(r)           // "A"
 ```
 
-## 11. Go Built-in Functions
+## 11. Go Built-in Functions {#11-go-built-in-functions}
 
 Go's built-in functions are available: `len`, `cap`, `make`, `new`, `append`, `delete`, `close`, `panic`, `recover`.
 
 For most use cases, prefer GALA's collection types and their methods over Go built-ins.
 
-## 12. Immutability Under the Hood
+## 12. Immutability Under the Hood {#12-immutability-under-the-hood}
 
 ### Pointer Types and Immutability
 ```gala
@@ -567,7 +568,7 @@ val value = *ptr // OK: read
 // *ptr = 100    // ERROR: cannot write through ConstPtr
 ```
 
-## 13. GALA Packages
+## 13. GALA Packages {#13-gala-packages}
 
 GALA supports Go-style imports with aliases and dot imports.
 
@@ -583,7 +584,7 @@ func main() {
 
 See [Dependency Management](/docs/dependency-management/) for managing external packages.
 
-## 14. Embedding Files
+## 14. Embedding Files {#14-embedding-files}
 
 ```gala
 embed val readme = "README.md"              // string
@@ -592,7 +593,7 @@ embed val static EmbeddedFS = "static/*"    // EmbeddedFS
 val content = static.ReadString("static/index.html")
 ```
 
-## 15. Testing
+## 15. Testing {#15-testing}
 
 GALA provides a test framework with 22 assertions, panic recovery, timing, table-driven test support, and benchmarking.
 
@@ -631,7 +632,7 @@ func main() {
 }
 ```
 
-## 16. Best Practices
+## 16. Best Practices {#16-best-practices}
 
 - **Prefer `val` over `var`** - Use mutable variables only when necessary
 - **Use `Copy()` for updates** - `person.Copy(age = 31)`
@@ -642,7 +643,7 @@ func main() {
 - **Prefer GALA collections over Go slices** - Use `Array` or `List` from `collection_immutable`
 - **Use `Option[T]`** for nullable values, **`Try[T]`** for operations that may fail
 
-## 17. Dependency Management
+## 17. Dependency Management {#17-dependency-management}
 
 GALA provides a module system similar to Go modules. See [Dependency Management](/docs/dependency-management/) for the full guide.
 
@@ -653,7 +654,7 @@ gala mod add github.com/google/uuid@v1.6.0 --go
 gala mod tidy
 ```
 
-## 18. Further Reading
+## 18. Further Reading {#18-further-reading}
 
 - [Code Examples](/docs/examples/) - More examples of GALA code
 - [Streams](/docs/streams/) - Lazy, potentially infinite sequences
@@ -664,7 +665,7 @@ gala mod tidy
 - [Why GALA?](/docs/why-gala/) - Features, trade-offs, and honest assessment
 - [Dependency Management](/docs/dependency-management/) - Module system and package management
 
-## 19. IDE Support
+## 19. IDE Support {#19-ide-support}
 
 ### IntelliJ IDEA
 A basic IntelliJ IDEA plugin is available in `ide/intellij`.

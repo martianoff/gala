@@ -4,9 +4,10 @@ title: "Streams in GALA - Lazy Infinite Sequences for Go"
 description: "GALA's Stream type provides lazy, potentially infinite sequences with Map, Filter, Take, and FoldLeft. Process large or infinite data without loading everything into memory."
 keywords: "gala stream, go lazy sequence, golang lazy evaluation, go infinite sequence, gala lazy collections, go stream processing"
 permalink: /docs/streams/
+last_modified_at: 2026-07-05
 ---
 
-<p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/language-reference/">Docs</a> / Streams</p>
+<p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / Streams</p>
 
 # Stream Package
 
