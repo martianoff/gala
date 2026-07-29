@@ -863,34 +863,26 @@ func (b *Builder) copyEmbedFiles(patterns []string) error {
 //
 //	"github.com/user/project/httpcore" → "gala-build-workspace/gen/httpcore"
 //	"github.com/user/project"          → "gala-build-workspace/gen"
+//
+// The rewrite is driven entirely by what the generated code actually imports,
+// not by a guess about the project's directory layout. Anything that names the
+// project module must be redirected, so the only precondition is knowing that
+// module path.
+//
+// An earlier version skipped the rewrite unless an immediate child of the
+// project directory held .go or .gala files. That mis-classified every project
+// whose packages sit below a source-free directory — internal/greet/,
+// pkg/foo/, lib/a/b/ — leaving the project's own module path in the emitted
+// imports, which sent `go mod tidy` to the network for a package that was
+// sitting in gen/ the whole time. Detecting the layout is strictly harder than
+// doing the work: rewriteImportsInDir is already a no-op when nothing matches,
+// so a project with no subpackages just pays one walk of gen/ — a few
+// milliseconds against a build that spends seconds in transpile, `go mod tidy`
+// and `go build`.
 func (b *Builder) rewriteProjectModuleImports(dir string) error {
 	projectModule := b.projectGoModulePath()
 	if projectModule == "" {
 		return nil // No module path known, nothing to rewrite
-	}
-
-	// Check if there are any local subdirectories — whether Go or GALA —
-	// that could be imported under the project module path. Pure GALA
-	// subpackages still need rewriting because their imports are emitted
-	// using the project module path (e.g. "github.com/user/proj/sub") and
-	// must be redirected to the workspace gen/ layout before `go build`
-	// can resolve them.
-	hasSubDirs := false
-	entries, err := os.ReadDir(b.workspace.ProjectDir)
-	if err == nil {
-		for _, e := range entries {
-			if e.IsDir() && !strings.HasPrefix(e.Name(), ".") && e.Name() != "vendor" &&
-				!strings.HasPrefix(e.Name(), "bazel-") {
-				subPath := filepath.Join(b.workspace.ProjectDir, e.Name())
-				if hasGoFiles(subPath) || hasGalaFilesShallow(subPath) {
-					hasSubDirs = true
-					break
-				}
-			}
-		}
-	}
-	if !hasSubDirs {
-		return nil // No local subpackages, skip rewriting
 	}
 
 	if b.verbose {
@@ -928,37 +920,6 @@ func parseGoModModulePath(content string) string {
 		}
 	}
 	return ""
-}
-
-// hasGoFiles returns true if the directory contains any .go files.
-func hasGoFiles(dir string) bool {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return false
-	}
-	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".go") {
-			return true
-		}
-	}
-	return false
-}
-
-// hasGalaFilesShallow reports whether dir contains at least one .gala file at
-// its top level. Used when deciding whether the project module's import paths
-// need to be rewritten to point at the workspace gen/ directory — GALA
-// subpackages must be covered too, not just Go subpackages.
-func hasGalaFilesShallow(dir string) bool {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return false
-	}
-	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".gala") {
-			return true
-		}
-	}
-	return false
 }
 
 // rewriteImportsInDir recursively scans all .go files in dir and rewrites
