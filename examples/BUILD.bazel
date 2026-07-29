@@ -2855,6 +2855,17 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
+# An untyped numeric literal initialising an immutable (`val`) struct field
+# must adopt the field's declared type: the field is stored as `Immutable[T]`
+# and the NewImmutable wrapper used to take its type argument from the
+# literal's default type (`int`), so every int64/uint32/float64/byte field
+# failed to compile in the generated Go.
+gala_exec_test(
+    name = "fix005_sized_field_literal",
+    src = "fix005_sized_field_literal.gala",
+    expected = "fix005_sized_field_literal.out",
+)
+
 # Gap #10 regression: tuple literal passed to Append on Array[Tuple[A,B]]
 # infers A,B from the receiver, not falling back to any.
 gala_exec_test(

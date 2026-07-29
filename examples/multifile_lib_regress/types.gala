@@ -20,4 +20,24 @@ func NewUser(name string, email string) UserInfo = UserInfo(Name = name, Email =
 // path.
 struct Snapshot(ProjectName string, SavedAt int64)
 
+// Untyped numeric literals initialising immutable (`val`) fields must adopt
+// the field's declared type instead of the literal's own default type (`int`).
+// The immutable field is stored as `Immutable[T]`, so an `Immutable[int]`
+// wrapper is not assignable to an `Immutable[int64]` field and the generated
+// Go fails to compile. Batch transpilation resolves the field types from
+// sibling/imported metadata rather than the current file, so each construction
+// spelling is exercised here and again from the consumer package.
+struct Reading(Label string, TakenAtMs int64, Port uint32, Ratio float64, Tag byte)
+
+func NewReadingPositional(label string) Reading = Reading(label, 0, 8080, 1, 7)
+
+func NewReadingNamed(label string) Reading =
+    Reading(Label = label, TakenAtMs = 60 * 1000, Port = 9090, Ratio = 0.5, Tag = 8)
+
+func NewReadingComposite(label string) Reading =
+    Reading{Label: label, TakenAtMs: -2, Port: 443, Ratio: 2, Tag: 9}
+
+func DescribeReading(r Reading) string =
+    s"${r.Label}/${r.TakenAtMs}/${r.Port}/${r.Ratio}/${r.Tag}"
+
 // time.Parse is a Go function returning (time.Time, error)

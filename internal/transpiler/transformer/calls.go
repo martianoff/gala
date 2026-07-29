@@ -1235,6 +1235,8 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 // Extracted from transformCallWithArgsCtx as part of A1 cont.
 func (t *galaASTTransformer) buildStructLiteral(typeExpr ast.Expr, resolvedTypeName string, fields []string, args []ast.Expr, truncate bool) ast.Expr {
 	immutFlags := t.structImmutFields[resolvedTypeName]
+	fieldTypes := t.structFieldTypes[resolvedTypeName]
+	typeArgSubst := t.structTypeArgSubst(typeExpr, resolvedTypeName)
 	var elts []ast.Expr
 	for i, fieldName := range fields {
 		if i >= len(args) {
@@ -1245,10 +1247,7 @@ func (t *galaASTTransformer) buildStructLiteral(typeExpr ast.Expr, resolvedTypeN
 		}
 		var valExpr ast.Expr
 		if immutFlags != nil && i < len(immutFlags) && immutFlags[i] {
-			valExpr = &ast.CallExpr{
-				Fun:  t.stdIdent("NewImmutable"),
-				Args: []ast.Expr{args[i]},
-			}
+			valExpr = t.wrapImmutableFieldValue(args[i], fieldTypes[fieldName], typeArgSubst)
 		} else {
 			valExpr = args[i]
 		}
@@ -2083,6 +2082,7 @@ func (t *galaASTTransformer) buildStructLiteralWithNamedArgs(
 	fieldTypes := t.structFieldTypes[resolvedTypeName]
 
 	typeExpr := t.inferTypeArgsFromNamedArgs(fun, typeName, resolvedTypeName, namedArgs, fieldTypes)
+	typeArgSubst := t.structTypeArgSubst(typeExpr, resolvedTypeName)
 
 	var elts []ast.Expr
 	for i, fieldName := range fields {
@@ -2100,10 +2100,7 @@ func (t *galaASTTransformer) buildStructLiteralWithNamedArgs(
 
 		valExpr := val
 		if immutFlags != nil && i < len(immutFlags) && immutFlags[i] {
-			valExpr = &ast.CallExpr{
-				Fun:  t.stdIdent("NewImmutable"),
-				Args: []ast.Expr{val},
-			}
+			valExpr = t.wrapImmutableFieldValue(val, fieldTypes[fieldName], typeArgSubst)
 		}
 		elts = append(elts, &ast.KeyValueExpr{Key: ast.NewIdent(fieldName), Value: valExpr})
 	}
