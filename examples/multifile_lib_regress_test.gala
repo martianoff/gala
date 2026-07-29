@@ -399,6 +399,12 @@ func main() {
     Println(multifile_lib_regress.GoGenericLambdaMapSize("k", 7))
     Println(multifile_lib_regress.GoGenericLambdaSliceSize(4))
     Println(multifile_lib_regress.GoGenericLambdaViaCombinator(9))
+    // Same path, but the Go generic returns a GALA std type (Option[V]) that
+    // go/types cannot resolve against the un-transpiled tree. It must be
+    // recovered as a concrete Option[int], not degraded to `any` or to
+    // go/types' unparseable "invalid type" display string.
+    Println(multifile_lib_regress.GoGenericOptionLambda("k"))
+    Println(multifile_lib_regress.GoGenericOptionLambda("nope"))
 
     Println(multifile_lib_regress.ScopeReport(1))
     Println(multifile_lib_regress.ScopeLambdaCapture(3))

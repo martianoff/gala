@@ -95,3 +95,25 @@ func GoGenericLambdaViaCombinator(extra int) int {
 }
 
 func applyThunk[A any](body func() A) A = body()
+
+// --- Regression: a Go generic whose return type is a GALA type.
+//
+// `go_interop.OptionFromMap[K, V](m map[K]V, key K) std.Option[V]` is the only
+// go_interop function returning a GALA std sealed type. `std.Option` exists as Go
+// only after the std package is transpiled, but the analyzer type-checks
+// hand-written .go against the UN-transpiled tree, so go/types resolved that
+// return to Invalid. The transpiler then wrote go/types' display string for it
+// into the lambda's result clause — `func() invalid type` — which is not even
+// parseable Go, so the build aborted with an internal error naming no user
+// construct.
+//
+// The recovered type must be a genuine Option[int]: matching over the result and
+// binding `v` proves the type argument survived, not just that the file compiled.
+func GoGenericOptionLambda(key string) string {
+    val m = go_interop.MapPut(go_interop.MapEmpty[string, int](), "k", 7)
+    val look = () => go_interop.OptionFromMap(m, key)
+    return applyThunk(look) match {
+        case Some(v) => s"found ${v}"
+        case None()  => "absent"
+    }
+}
