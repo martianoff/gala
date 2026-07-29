@@ -6,6 +6,7 @@ import (
 	"go/format"
 	"go/parser"
 	"go/token"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -516,6 +517,35 @@ func InsertLineDirectives(code, sourceFile string) (string, error) {
 	return insertLineDirectives(code, sourceFile)
 }
 
+// describeUnparseableDump writes the Go the transpiler just produced to a temp
+// file and returns a fragment naming it, or "" if it could not be written.
+//
+// When the marker rewrite fails the generated source is otherwise discarded — it
+// never reaches disk, because writing the output file is downstream of this step.
+// That leaves the one artifact needed to diagnose the bug visible to nobody,
+// including whoever has to fix it: a report can quote the parser's complaint
+// ("missing ',' in argument list") but not the text that caused it. Naming a dump
+// turns that into a one-line diagnosis.
+//
+// Failure to write is deliberately silent. This path is already reporting a
+// transpiler bug; a temp-dir problem must not replace that diagnostic with a less
+// useful one.
+func describeUnparseableDump(code, sourceFile string) string {
+	base := strings.TrimSuffix(filepath.Base(sourceFile), filepath.Ext(sourceFile))
+	if base == "" {
+		base = "gala"
+	}
+	f, err := os.CreateTemp("", "gala-unparseable-"+base+"-*.go")
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	if _, err := f.WriteString(code); err != nil {
+		return ""
+	}
+	return fmt.Sprintf(" (the generated Go was written to %s for inspection)", filepath.ToSlash(f.Name()))
+}
+
 // insertLineDirectives rewrites the transformer's GALA line markers into Go
 // `//line <file>:<n>` directives. A `//line` directive re-maps the reported
 // position of the FOLLOWING source line, so each directive is emitted on its own
@@ -561,14 +591,17 @@ func InsertLineDirectives(code, sourceFile string) (string, error) {
 // the user never wrote. Both conditions mean a transpiler bug upstream, so the
 // error is reported as an internal failure and the transpile aborts; silently
 // shipping marker-laden Go with a success status is strictly worse.
+//
+// The unparseable case additionally dumps the offending Go (see
+// describeUnparseableDump) — it is the only copy that will ever exist.
 func insertLineDirectives(code, sourceFile string) (string, error) {
 	fset := token.NewFileSet()
 	astFile, err := parser.ParseFile(fset, "", code, parser.ParseComments)
 	if err != nil {
 		return "", galaerr.NewCodedSemanticError(
 			galaerr.CodeInternalTransformerPanic, 0, 0,
-			fmt.Sprintf("internal transpiler error: the generated Go for %s is not parseable, so its source-map markers (%s*) could not be rewritten into //line directives: %v",
-				sourceFile, LineMarkerPrefix, err),
+			fmt.Sprintf("internal transpiler error: the generated Go for %s is not parseable, so its source-map markers (%s*) could not be rewritten into //line directives: %v%s",
+				sourceFile, LineMarkerPrefix, err, describeUnparseableDump(code, sourceFile)),
 			markerRewriteBugHint,
 		)
 	}

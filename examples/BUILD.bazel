@@ -110,6 +110,16 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "go_generic_option_lambda_return",
+    src = "go_generic_option_lambda_return.gala",
+    expected = "go_generic_option_lambda_return.out",
+    deps = [
+        "//go_interop",
+        "//resource",
+    ],
+)
+
+gala_exec_test(
     name = "tco_factorial",
     src = "tco_factorial.gala",
     expected = "tco_factorial.out",
