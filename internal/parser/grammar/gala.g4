@@ -169,10 +169,21 @@ postfixExpr
     : primaryExpr postfixSuffix* ('match' '{' caseClause+ '}')?
     ;
 
+// `[ ... ]` after a primary is either an index (`arr[i]`, `m[k]`) or explicit
+// type arguments (`zero[int]()`, `EmptyHashMap[string, int]()`). Most type
+// arguments also parse as expressions — `int`, `pkg.T`, `*P`, `Box[T]` — so the
+// expressionList alternative covers them and the transformer reinterprets the
+// index as an instantiation. Types that have no expression spelling (`[]byte`,
+// `map[K]V`, `func(...)`) need the real `type` production; that is what the
+// typeArguments alternative supplies. It is listed last so ANTLR's
+// lowest-alternative ambiguity resolution keeps every shape that parses as an
+// expression on the existing path — only input that cannot be an expression
+// reaches it.
 postfixSuffix
     : '.' identifier
     | '(' argumentList? ')'
     | '[' expressionList ']'
+    | typeArguments
     ;
 
 primaryExpr

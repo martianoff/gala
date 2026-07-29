@@ -2806,6 +2806,7 @@ gala_library(
         "multifile_lib_regress/proc_session.gala",
         "multifile_lib_regress/symbol_scope.gala",
         "multifile_lib_regress/team_lookup.gala",
+        "multifile_lib_regress/type_args_slice_map.gala",
         "multifile_lib_regress/types.gala",
     ],
     go_srcs = [
@@ -2819,6 +2820,7 @@ gala_library(
         ":multifile_lib_regress_team_pkg",
         "//collection_immutable",
         "//examples/go_struct_bridge",
+        "//go_interop",
     ],
 )
 
@@ -2833,6 +2835,7 @@ gala_exec_test(
         ":multifile_lib_regress_shadow_func",
         "//collection_immutable",
         "//examples/go_struct_bridge",
+        "//go_interop",
     ],
 )
 
@@ -3010,5 +3013,15 @@ gala_exec_test(
     deps = [
         ":cross_pkg_try_chain_proc",
         ":cross_pkg_try_chain_session",
+    ],
+)
+
+gala_exec_test(
+    name = "type_args_slice_map",
+    src = "type_args_slice_map.gala",
+    expected = "type_args_slice_map.out",
+    deps = [
+        "//collection_immutable",
+        "//go_interop",
     ],
 )

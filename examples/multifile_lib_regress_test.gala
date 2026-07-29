@@ -371,4 +371,16 @@ func main() {
     Println(multifile_lib_regress.ScopeLambdaCapture(3))
     Println(multifile_lib_regress.ScopeQualifiedImport("gamma"))
     Println(multifile_lib_regress.ScopeSnapshotLabel())
+
+    // --- Regression: slice and map types inside explicit type-argument
+    // brackets, both inside the library and across the package boundary from
+    // here. See multifile_lib_regress/type_args_slice_map.gala.
+    Println(multifile_lib_regress.BytesBucketSize())
+    Println(multifile_lib_regress.CountsBucketSize())
+    Println(multifile_lib_regress.MissingBytes())
+    Println(multifile_lib_regress.ChunkCount())
+    Println(multifile_lib_regress.EnvelopeText(multifile_lib_regress.WrapBytes("payload")))
+    Println(multifile_lib_regress.EmptyOf[[]byte]().IsEmpty())
+    Println(multifile_lib_regress.EmptyOf[map[string]int]().IsEmpty())
+    Println(EmptyHashMap[string, []byte]().Size())
 }

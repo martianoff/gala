@@ -557,8 +557,9 @@ func classifySuffixes(suffixes []grammar.IPostfixSuffixContext, hasMatch bool) (
 			parts = append(parts, id.GetText())
 			continue
 		}
-		if sc.ExpressionList() != nil {
-			// Index `[...]` — a value-position use of the whole receiver.
+		if sc.ExpressionList() != nil || sc.TypeArguments() != nil {
+			// Index or explicit type arguments `[...]` — a value-position use of
+			// the whole receiver either way.
 			return "", true
 		}
 		// A call `(...)`. Tolerate a SINGLE trailing method call on a

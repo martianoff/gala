@@ -1101,6 +1101,20 @@ func (t *galaASTTransformer) exprToTypeString(expr ast.Expr) string {
 		}
 	case *ast.StarExpr:
 		return "*" + t.exprToTypeString(e.X)
+	case *ast.ArrayType:
+		// Slices only — GALA has no fixed-size array type, so a non-nil Len
+		// cannot come from GALA source and has no string spelling here.
+		if e.Len != nil {
+			return ""
+		}
+		if elem := t.exprToTypeString(e.Elt); elem != "" {
+			return "[]" + elem
+		}
+	case *ast.MapType:
+		key, val := t.exprToTypeString(e.Key), t.exprToTypeString(e.Value)
+		if key != "" && val != "" {
+			return "map[" + key + "]" + val
+		}
 	case *ast.IndexExpr:
 		return t.exprToTypeString(e.X) + "[" + t.exprToTypeString(e.Index) + "]"
 	case *ast.IndexListExpr:

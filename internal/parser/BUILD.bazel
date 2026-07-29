@@ -20,6 +20,7 @@ go_test(
         "grammar_test.go",
         "parser_concurrent_test.go",
         "parser_test.go",
+        "type_arguments_test.go",
     ],
     embed = [":parser"],
     deps = [

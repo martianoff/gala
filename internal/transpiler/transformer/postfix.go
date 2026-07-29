@@ -65,6 +65,14 @@ func (t *galaASTTransformer) applyPostfixSuffix(base ast.Expr, suffix *grammar.P
 		return t.resolveFieldAccess(base, suffix.Identifier().GetText())
 	}
 
+	// Explicit type arguments whose types have no expression spelling — e.g.
+	// `f[[]byte]()`, `EmptyHashMap[string, map[string]int]()`. The grammar routes
+	// those through `typeArguments` instead of the index suffix, so transform the
+	// real type productions here.
+	if ta := suffix.TypeArguments(); ta != nil {
+		return t.applyTypeArgumentSuffix(base, ta)
+	}
+
 	childCount := suffix.GetChildCount()
 	if childCount >= 2 {
 		firstChild := suffix.GetChild(0).(antlr.ParseTree).GetText()
@@ -335,6 +343,31 @@ func (t *galaASTTransformer) callExprReturnType(ce *ast.CallExpr) transpiler.Typ
 		}
 	}
 	return transpiler.NilType{}
+}
+
+// applyTypeArgumentSuffix instantiates a generic function or type at explicit
+// type arguments written with the full `type` production. Go spells generic
+// instantiation the same way an index reads, so the result is the same
+// IndexExpr/IndexListExpr shape the expression-list path produces — the rest of
+// the pipeline needs no special case.
+func (t *galaASTTransformer) applyTypeArgumentSuffix(base ast.Expr, ta grammar.ITypeArgumentsContext) (ast.Expr, error) {
+	typeList := ta.TypeList()
+	if typeList == nil {
+		return nil, galaerr.NewSemanticErrorAt(ta.GetStart().GetLine(), ta.GetStart().GetColumn(), "type arguments require at least one type")
+	}
+	types := typeList.(*grammar.TypeListContext).AllType_()
+	args := make([]ast.Expr, 0, len(types))
+	for _, typ := range types {
+		arg, err := t.transformType(typ)
+		if err != nil {
+			return nil, err
+		}
+		args = append(args, arg)
+	}
+	if len(args) == 1 {
+		return &ast.IndexExpr{X: base, Index: args[0]}, nil
+	}
+	return &ast.IndexListExpr{X: base, Indices: args}, nil
 }
 
 // resolveIndexAccess handles index/subscript expressions with Immutable unwrapping.

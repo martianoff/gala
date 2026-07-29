@@ -495,13 +495,17 @@ func (t *galaASTTransformer) getCallPatternWithTypeArgsFromExpression(ctx gramma
 		typeArgsSuffix = suffixes[0].(*grammar.PostfixSuffixContext)
 		callSuffix = suffixes[1].(*grammar.PostfixSuffixContext)
 
-		// Verify first suffix is type args (starts with '[')
-		if typeArgsSuffix.GetChildCount() < 2 {
-			return nil, nil, nil
-		}
-		firstChild := typeArgsSuffix.GetChild(0).(antlr.ParseTree).GetText()
-		if firstChild != "[" {
-			return nil, nil, nil
+		// Verify first suffix is type args: either the bracketed expression list
+		// (`Unwrap[int](v)`) or the `typeArguments` production the grammar uses
+		// for types with no expression spelling (`Unwrap[[]byte](v)`).
+		if typeArgsSuffix.TypeArguments() == nil {
+			if typeArgsSuffix.GetChildCount() < 2 {
+				return nil, nil, nil
+			}
+			firstChild := typeArgsSuffix.GetChild(0).(antlr.ParseTree).GetText()
+			if firstChild != "[" {
+				return nil, nil, nil
+			}
 		}
 	}
 

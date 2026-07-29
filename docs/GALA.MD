@@ -2175,7 +2175,9 @@ val empty = SliceEmpty[int]()            // Creates Go []int{}
 | `SliceDrop(s, n)` | Drop first n elements |
 | `SliceTake(s, n)` | Take first n elements |
 
-**Note:** Slice types (`[]T`) are still valid in function signatures and struct fields.
+**Note:** Slice types (`[]T`) are still valid in function signatures and struct
+fields — and, like every other type, inside explicit type-argument brackets:
+`EmptyHashMap[string, []byte]()`, `Array[[]byte]`, `zero[map[string]int]()`.
 
 ### Maps
 

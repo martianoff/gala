@@ -1,0 +1,39 @@
+package multifile_lib_regress
+
+import (
+    . "martianoff/gala/collection_immutable"
+    . "martianoff/gala/std"
+    "martianoff/gala/go_interop"
+)
+
+// --- Regression: a slice (`[]T`) or map (`map[K]V`) type written inside
+// explicit type-argument brackets. Those types are legal in every other type
+// position — parameters, return types, struct fields, `val` annotations — so
+// they have to be legal between `[` and `]` as well. Otherwise the idiomatic
+// collection cannot be instantiated at a byte slice at all, and the workaround
+// (declare a named type) is the only way to write byte-oriented generic code.
+//
+// Exercised here from a library package so the consumer below can instantiate
+// the same generics across a package boundary.
+
+struct Envelope[T any](Payload T)
+
+func EmptyOf[T any]() Option[T] = None[T]()
+
+// Slice type argument on a stdlib collection constructor.
+func BytesBucketSize() int = EmptyHashMap[string, []byte]().Size()
+
+// Map type argument, nested inside another instantiation.
+func CountsBucketSize() int = EmptyHashMap[string, map[string]int]().Size()
+
+// Slice type argument on a sibling-declared generic function.
+func MissingBytes() bool = EmptyOf[[]byte]().IsEmpty()
+
+// Slice type argument on a generic struct constructor.
+func WrapBytes(s string) Envelope[[]byte] =
+    Envelope[[]byte](Payload = go_interop.ToBytes(s))
+
+func EnvelopeText(e Envelope[[]byte]) string = go_interop.ToString(e.Payload)
+
+// Slice-of-slice element type.
+func ChunkCount() int = EmptyArray[[]byte]().Size()

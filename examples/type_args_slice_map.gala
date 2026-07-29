@@ -1,0 +1,50 @@
+package main
+
+// Explicit type arguments accept the full type grammar. A slice (`[]T`), a map
+// (`map[K]V`) or a function type is as legal between `[` and `]` at a call site
+// as it is in a parameter list, a return type, a struct field, or a `val`
+// annotation.
+import "martianoff/gala/collection_immutable"
+import "martianoff/gala/go_interop"
+
+struct Box[T any](Value T)
+
+func zero[T any]() Option[T] = None[T]()
+
+func describe[T any](f func(T) string) string = "fn"
+
+func main() {
+    // Slice type argument on a user-declared generic function.
+    val noBytes = zero[[]byte]()
+    Println(noBytes.IsEmpty())
+
+    // Map type argument on the same function.
+    val noCounts = zero[map[string]int]()
+    Println(noCounts.IsEmpty())
+
+    // Function type argument.
+    Println(describe[[]byte]((b) => go_interop.ToString(b)))
+
+    // Slice type argument on a user-declared generic struct.
+    val boxed = Box[[]byte](Value = go_interop.ToBytes("gala"))
+    Println(go_interop.ToString(boxed.Value))
+
+    // Slice type argument on a stdlib collection constructor — the idiomatic
+    // collection has to be instantiable at a byte slice too.
+    val m = collection_immutable.EmptyHashMap[string, []byte]()
+    Println(m.Size())
+
+    val filled = m.Put("k", go_interop.ToBytes("v"))
+    Println(go_interop.ToString(filled.Get("k").Get()))
+
+    // Nested: a slice of slices, and a map whose value is a slice.
+    val nested = collection_immutable.EmptyArray[[]byte]()
+    Println(nested.Size())
+
+    val byName = collection_immutable.EmptyHashMap[string, map[string]int]()
+    Println(byName.Size())
+
+    // ... and on a Go-interop constructor.
+    val raw = go_interop.MapEmpty[string, []byte]()
+    Println(go_interop.MapLen(raw))
+}
