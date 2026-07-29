@@ -345,6 +345,25 @@ const (
 	// output that does not compile. Validating the literal at its GALA position
 	// reports the offending escape in the file the user actually wrote.
 	CodeInvalidStringEscape ErrorCode = "GALA-E0038"
+
+	// E0040: a Go slice (`[]T`) or map (`map[K]V`) type was written inside an
+	// EXPRESSION — most often as an explicit type argument
+	// (`EmptyHashMap[string, []byte]()`), but also as a conversion
+	// (`[]byte(s)`) or a bare composite-literal type. Go slice and map types
+	// are an interop surface, not first-class GALA types: they may be written
+	// only where a TYPE is expected (function signature, struct field, `val`/
+	// `var` annotation, type alias — including as a type argument of a generic
+	// type in one of those positions). Expression position is not one of them,
+	// and the grammar reflects that: bracketed arguments after an expression
+	// are parsed as an expression list, which `[]T` is not.
+	//
+	// Without this code the failure surfaced as ANTLR's raw recovery message,
+	// `missing '{' at '('` — the parser had fallen back to the composite-literal
+	// alternative (`type '{' … '}'`), whose type does admit `[]T`, and then
+	// demanded the brace. That message named neither the offending type nor the
+	// rule, and pointed at the token after it, which sent readers looking for an
+	// unbalanced brace instead of the Go type they had written.
+	CodeGoTypeInExpression ErrorCode = "GALA-E0040"
 )
 
 // MultiError collects multiple GALA errors.

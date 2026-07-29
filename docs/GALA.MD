@@ -2177,7 +2177,73 @@ val empty = SliceEmpty[int]()            // Creates Go []int{}
 | `SliceDrop(s, n)` | Drop first n elements |
 | `SliceTake(s, n)` | Take first n elements |
 
-**Note:** Slice types (`[]T`) are still valid in function signatures and struct fields.
+<a id="where-go-slice-and-map-types-may-be-written"></a>
+
+#### Where Go slice and map types may be written
+
+Go slice (`[]T`) and map (`map[K]V`) types are an **interop surface**, not
+first-class GALA types. The rule is positional, and it is exhaustive: a Go slice
+or map type may be written **only where a type is expected, and never inside an
+expression.**
+
+These are every position where a type is expected, and a Go slice or map type is
+valid in all of them:
+
+| Position | Example |
+|----------|---------|
+| Function / method parameter | `func f(xs []int)` |
+| Function / method return type | `func f() map[string]int` |
+| Struct field | `type B struct { data []byte }` |
+| Interface method result | `type R interface { Read() []byte }` |
+| `val` / `var` annotation | `val b []byte = ToBytes("hi")` |
+| Lambda parameter annotation | `(xs []int) => xs` |
+| Type alias | `type Bytes []byte` |
+| Inside a `func` type | `func([]byte) string` |
+| Type argument of a generic **type** in any position above | `func take(m HashMap[string, []byte])` |
+
+Everywhere else — that is, anywhere a value is expected — is an expression, and a
+Go slice or map type may not appear there. The three shapes Go allows and GALA
+does not:
+
+```gala
+val m = EmptyHashMap[string, []byte]()   // NO: explicit type argument on a call
+val b = []byte("hi")                     // NO: conversion
+val xs = []int{1, 2, 3}                  // NO: composite literal
+```
+
+The first two are [GALA-E0040](errors/GALA-E0040.md); the literal forms are
+[GALA-E0007](errors/GALA-E0007.md) and [GALA-E0008](errors/GALA-E0008.md).
+
+Note the last row of the table against the first bad line: `HashMap[string,
+[]byte]` is fine as a parameter type, a struct field type, a `val` annotation or
+a type alias, because those are type positions. The identical text after
+`EmptyHashMap` is not, because that is an expression.
+
+**Write it the GALA way instead.** `[]T` is `Array[T]`, and `map[K]V` is
+`HashMap[K, V]`:
+
+```gala
+import . "martianoff/gala/collection_immutable"
+
+val m = EmptyHashMap[string, Array[byte]]()
+```
+
+For `[]byte` in particular, ask what the bytes are: text is `string` in GALA, and
+that is usually the type wanted.
+
+```gala
+val m = EmptyHashMap[string, string]()
+```
+
+When the value genuinely has to be a Go `[]T` — because it crosses into a Go API
+— keep the Go type out of the expression by giving it a name, which puts it back
+in a type position:
+
+```gala
+type Bytes []byte
+
+val m = EmptyHashMap[string, Bytes]()
+```
 
 ### Maps
 
@@ -2219,11 +2285,16 @@ MapForEach(goMap, (k string, v int) => {
     fmt.Println(k, v)
 })
 
-// Iterate Go maps with complex value types (e.g., map[string][]string)
-// V can be any type including slices — MapForEach[K comparable, V any] handles it
-var headers = MapEmpty[string, []string]()
+// Iterate Go maps with complex value types (e.g., map[string][]string).
+// V can be any type including slices — MapForEach[K comparable, V any] handles
+// it. The value type needs a NAME here: MapEmpty's type arguments sit in an
+// expression, and a Go slice type cannot be written there (GALA-E0040). A type
+// alias puts it back in a type position.
+type StrList []string
+
+var headers = MapEmpty[string, StrList]()
 headers = MapPut(headers, "Accept", SliceOf("text/html", "application/json"))
-MapForEach(headers, (k string, v []string) => {
+MapForEach(headers, (k string, v StrList) => {
     fmt.Printf("%s: %v\n", k, v)
 })
 
@@ -2253,7 +2324,16 @@ val backToGoMap = hashMap.ToGoMap()
 | `MapValues(m)` | Get all values as slice |
 | `MapCopy(m)` | Shallow copy |
 
-**Note:** Map types (`map[K]V`) are still valid in function signatures and struct fields, similar to slices.
+**Where map types may be written.** `map[K]V` follows exactly the same
+positional rule as `[]T`: valid wherever a type is expected — a signature, a
+struct field, a `val`/`var` annotation, a type alias, a lambda parameter
+annotation, or as a type argument of a generic type in one of those positions —
+and never inside an expression. See
+[Where Go slice and map types may be written](#where-go-slice-and-map-types-may-be-written)
+for the full table, the three shapes that are rejected, and the GALA spellings
+to use instead. Writing one in an expression is
+[GALA-E0040](errors/GALA-E0040.md); a `map[K]V{}` literal is
+[GALA-E0008](errors/GALA-E0008.md).
 
 ### HashMap
 

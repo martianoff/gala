@@ -406,6 +406,35 @@ func main() {
 			expectCode:     galaerr.CodeUntypedParam,
 			expectContains: `parameter "X" has no declared type`,
 		},
+		{
+			// GALA-E0040 is the one code in this table raised during PARSING
+			// rather than analysis, so it also pins that a coded parse-phase
+			// diagnostic survives the pipeline with its code intact.
+			name: "GALA-E0040 Go slice type as an explicit type argument",
+			input: `package main
+
+import "martianoff/gala/collection_immutable"
+
+func main() {
+    val m = collection_immutable.EmptyHashMap[string, []byte]()
+    Println(m.Size())
+}`,
+			expectCode:     galaerr.CodeGoTypeInExpression,
+			expectContains: "Go slice type []byte is not allowed in an expression",
+		},
+		{
+			name: "GALA-E0040 Go map type as an explicit type argument",
+			input: `package main
+
+import "martianoff/gala/collection_immutable"
+
+func main() {
+    val m = collection_immutable.EmptyHashMap[string, map[string]int]()
+    Println(m.Size())
+}`,
+			expectCode:     galaerr.CodeGoTypeInExpression,
+			expectContains: "use HashMap[string, int] instead",
+		},
 	}
 
 	for _, tc := range cases {
