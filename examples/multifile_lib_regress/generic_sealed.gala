@@ -1,0 +1,64 @@
+package multifile_lib_regress
+
+// Generic sealed types whose match subject's type is INFERRED from a variant
+// constructor rather than declared, exercised through the multi-file
+// BatchAnalyzer path.
+//
+// The subject's type comes from the variant companion's `Apply` return type. A
+// package-qualified base name there only resolves when the qualifier is also
+// the registry key — true for a named package like this one, but not for
+// `main`/`test`, whose types are registered unqualified. Batch analysis merges
+// sibling metadata on a different route than single-file analysis, so the
+// named-package direction is worth pinning too: it is what proves the fix did
+// not simply drop the qualifier everywhere.
+
+sealed type Reply[T any] {
+    case Answered(Body T)
+    case Silent
+}
+
+sealed type Outcome[A any, B any] {
+    case Ok(Value A)
+    case Bad(Err B)
+}
+
+// Subject type inferred from the constructor.
+func InferredReply() string {
+    val r = Answered("hi")
+    return r match {
+        case Answered(b) => s"reply-answered $b"
+        case Silent()    => "reply-silent"
+    }
+}
+
+func InferredSilent() string {
+    val r = Silent[string]()
+    return r match {
+        case Answered(b) => s"reply-answered $b"
+        case Silent()    => "reply-silent"
+    }
+}
+
+// Declared parameter type — the control that always worked.
+func DescribeReply(r Reply[int]) string = r match {
+    case Answered(b) => s"reply-int $b"
+    case Silent()    => "reply-silent"
+}
+
+func MakeAnsweredInt(v int) Reply[int] = Answered(v)
+
+// Two type parameters.
+func InferredOutcome() string {
+    val o = Ok[int, string](3)
+    return o match {
+        case Ok(v)  => s"outcome-ok $v"
+        case Bad(e) => s"outcome-bad $e"
+    }
+}
+
+func DescribeOutcome(o Outcome[int, string]) string = o match {
+    case Ok(v)  => s"outcome-ok $v"
+    case Bad(e) => s"outcome-bad $e"
+}
+
+func MakeBad(e string) Outcome[int, string] = Bad(e)

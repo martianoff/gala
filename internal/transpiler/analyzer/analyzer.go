@@ -1935,9 +1935,24 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 		for _, f := range vi.fields {
 			applyMeta.ParamTypes = append(applyMeta.ParamTypes, a.resolveTypeWithParams(f.typeName, pkgName, typeParams))
 		}
-		// Return type is the parent sealed type
+		// Return type is the parent sealed type.
+		//
+		// The package qualifier follows the same rule the whole analyzer uses
+		// (see resolveBaseName): types declared in `main` or `test` are keyed
+		// and referenced by their bare name, because those package names never
+		// become an import qualifier. Qualifying them here produced a base name
+		// (`main.Maybe`) that matches no key in the type registry, so every
+		// lookup keyed on the Apply return type's base silently missed — most
+		// visibly exhaustiveness checking, which saw a `val m = Just(42)` as a
+		// non-sealed subject and demanded a default case for a match that
+		// already listed every variant.
 		if len(typeParams) > 0 {
-			baseType := transpiler.NamedType{Package: pkgName, Name: typeName}
+			var baseType transpiler.Type
+			if pkgName != "" && pkgName != "main" && pkgName != "test" {
+				baseType = transpiler.NamedType{Package: pkgName, Name: typeName}
+			} else {
+				baseType = transpiler.BasicType{Name: typeName}
+			}
 			var params []transpiler.Type
 			for _, tp := range typeParams {
 				params = append(params, transpiler.BasicType{Name: tp})

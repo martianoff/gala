@@ -82,6 +82,7 @@ go_test(
         "func_phantom_typearg_test.go",
         "functions_test.go",
         "generated_format_test.go",
+        "generic_sealed_exhaustive_test.go",
         "generics_test.go",
         "immutable_test.go",
         "immutable_unwrapping_test.go",
