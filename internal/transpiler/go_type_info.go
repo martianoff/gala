@@ -22,6 +22,16 @@ type GoFuncSignature struct {
 	Params     []GoParam // parameter names + types
 	Returns    []Type    // return types (supports multi-return)
 	IsVariadic bool      // true if last param is ...T
+	// TypeParams holds the declared type-parameter names of a generic Go
+	// function, in declaration order (empty for a non-generic function).
+	//
+	// Params and Returns record the signature exactly as declared, so for
+	// `func MapPut[K comparable, V any](m map[K]V, k K, v V) map[K]V` the
+	// return is `map[K]V` — a type that only means something once K and V are
+	// bound. Without the names there is no way to tell those identifiers apart
+	// from ordinary types, so a call site cannot instantiate the signature and
+	// would materialize the type parameters verbatim into generated Go.
+	TypeParams []string
 }
 
 // GoParam describes a single function parameter.

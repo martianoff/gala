@@ -28,7 +28,7 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 	// Defensive backstop: Type-returning functions are contractually required to
 	// return transpiler.NilType{} rather than a nil interface. This guard catches
 	// any contract violation and prevents downstream .IsNil() panics. Callees
-	// known to have returned nil (getGoFuncReturnType, getGoMethodReturnType,
+	// known to have returned nil (getGoFuncReturnTypeForCall, getGoMethodReturnType,
 	// getGoFieldType) have been fixed; leave this guard as defense-in-depth.
 	if result == nil {
 		return transpiler.NilType{}
@@ -1126,16 +1126,110 @@ func (t *galaASTTransformer) substituteTranspilerTypeParams(typ transpiler.Type,
 	return t.substituteInType(typ, paramMap)
 }
 
-// getGoFuncReturnType returns the first return type of a Go function using GoTypeInfo.
-// Handles package-qualified function calls like fmt.Sprintf, strings.Split, etc.
-func (t *galaASTTransformer) getGoFuncReturnType(qualifiedName string) transpiler.Type {
+// getGoFuncReturnTypeForCall resolves a Go function's return type AT A CALL SITE
+// (package-qualified calls like fmt.Sprintf, strings.Split, go_interop.MapPut),
+// instantiating the callee's declared type parameters with the type arguments the
+// call binds them to.
+//
+// GoTypeInfo stores the signature exactly as declared, which for a generic callee
+// still mentions that callee's own type parameters — e.g.
+// `func MapPut[K comparable, V any](m map[K]V, …) map[K]V` yields `map[K]V`. That
+// is fine for a bare `val x = MapPut(m, …)` (nothing forces the type into the
+// output) but wrong the moment the transpiler must write the type down, as it must
+// for a lambda's synthesized result clause: `func() map[K]V` names identifiers that
+// exist only inside the callee's signature. GALA generic callees never had this
+// problem because their FunctionMetadata path already substitutes; this is the same
+// step for the Go path, so every Go-function return resolution goes through here.
+func (t *galaASTTransformer) getGoFuncReturnTypeForCall(qualifiedName string, e *ast.CallExpr, typeArgs []transpiler.Type) transpiler.Type {
 	if t.goTypeInfo == nil {
 		return transpiler.NilType{}
 	}
-	if r := t.goTypeInfo.GetFuncReturnType(qualifiedName); r != nil {
-		return r
+	sig := t.goTypeInfo.GetFuncSignature(qualifiedName)
+	if sig == nil || len(sig.Returns) == 0 || sig.Returns[0] == nil {
+		return transpiler.NilType{}
 	}
-	return transpiler.NilType{}
+	var args []ast.Expr
+	hasEllipsis := false
+	if e != nil {
+		args = e.Args
+		hasEllipsis = e.Ellipsis != token.NoPos
+	}
+	return t.instantiateGoSignatureReturn(sig, args, typeArgs, hasEllipsis)
+}
+
+// instantiateGoSignatureReturn substitutes a Go generic signature's type
+// parameters into its first return type, using explicit type arguments when the
+// call supplied them and otherwise unifying the DECLARED parameter types against
+// the actual argument types — the same inference inferFuncTypeParamsFromArgs
+// performs for GALA callees, driven off GoFuncSignature instead of
+// FunctionMetadata.
+//
+// Substitution is best-effort by design: a type parameter that no argument
+// determines is left alone, so the result is never worse than the un-instantiated
+// declared type, and getExprTypeName's existing "still has type params -> try
+// Hindley-Milner" fallback continues to apply.
+func (t *galaASTTransformer) instantiateGoSignatureReturn(
+	sig *transpiler.GoFuncSignature,
+	args []ast.Expr,
+	typeArgs []transpiler.Type,
+	hasEllipsis bool,
+) transpiler.Type {
+	ret := sig.Returns[0]
+	if len(sig.TypeParams) == 0 {
+		return ret
+	}
+
+	// A fully explicit instantiation (`go_interop.MapEmpty[string, int]()`)
+	// determines every type param on its own, arguments or not.
+	if len(typeArgs) == len(sig.TypeParams) {
+		return t.substituteConcreteTypes(ret, sig.TypeParams, typeArgs)
+	}
+
+	inferred := make(map[string]transpiler.Type, len(sig.TypeParams))
+	// A partial explicit prefix (`f[int](x)`) binds its positions; argument
+	// unification below fills in the rest.
+	for i, ta := range typeArgs {
+		if i < len(sig.TypeParams) && ta != nil && !ta.IsNil() {
+			inferred[sig.TypeParams[i]] = ta
+		}
+	}
+
+	for i, arg := range args {
+		var paramType transpiler.Type
+		switch {
+		case i < len(sig.Params):
+			paramType = sig.Params[i].Type
+		case sig.IsVariadic && len(sig.Params) > 0:
+			// Every trailing argument matches the variadic parameter. Its type
+			// is already stored element-wise (convertSignature unwraps `...T`
+			// to T), so no further unwrapping is needed here.
+			paramType = sig.Params[len(sig.Params)-1].Type
+		}
+		if paramType == nil || paramType.IsNil() {
+			continue
+		}
+
+		argType := t.getExprTypeNameManual(arg)
+		if transpiler.IsUnusable(argType) {
+			argType, _ = t.inferExprType(arg)
+		}
+		if transpiler.IsUnusable(argType) {
+			continue
+		}
+		// A spread call (`SliceOf(xs...)`) passes []T where the variadic
+		// parameter type is the element T, so peel one level to match.
+		if _, paramIsArray := paramType.(transpiler.ArrayType); hasEllipsis && !paramIsArray && i == len(args)-1 {
+			if arrType, ok := argType.(transpiler.ArrayType); ok {
+				argType = arrType.Elem
+			}
+		}
+		t.unifyForInference(paramType, argType, sig.TypeParams, inferred)
+	}
+
+	if len(inferred) == 0 {
+		return ret
+	}
+	return t.substituteInType(ret, inferred)
 }
 
 // getGoMethodReturnType returns the first return type of a method on a Go type.

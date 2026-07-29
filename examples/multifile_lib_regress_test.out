@@ -84,6 +84,9 @@ processed-42
 Cookie(session=session, path=/)
 Cookie(opt=opt, path=/)
 ledger=nina/ledger:nina
+1
+4
+3
 scope:dana:v2,v3,v4:ok
 5
 gamma

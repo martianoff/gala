@@ -10,7 +10,7 @@ import (
 // TestSizeSugarOnGoFunctionReturn is the real, adversarially-sound guard for the
 // go-FUNCTION-return path: the `.Size()` sugar must fire on the result of a
 // *bare* (dot-imported) Go function, which resolves through
-// inferCallIdentType's dot-import `getGoFuncReturnType` loop (the TASK 1 fix) —
+// inferCallIdentType's dot-import `getGoFuncReturnTypeForCall` loop —
 // not the pre-existing qualified-call path in inferCallSelectorType.
 //
 // It is hermetic in the transformer_test sandbox: `strings` is Go stdlib, so

@@ -389,6 +389,16 @@ func main() {
     // A regression that over-fires the check turns these into a hard
     // analyzer error instead of a wrong result, so this case fails loudly.
     // See multifile_lib_regress/symbol_scope.gala.
+    // --- Regression: lambda over a Go GENERIC call, resolved through the
+    // multi-file batch path. The lambda's synthesized result clause must carry
+    // the callee's INSTANTIATED return type (map[string]int, []int), not the
+    // declared map[K]V / []T — those name the Go callee's own type parameters,
+    // which do not exist at the call site.
+    // See multifile_lib_regress/go_interop.gala.
+    Println(multifile_lib_regress.GoGenericLambdaMapSize("k", 7))
+    Println(multifile_lib_regress.GoGenericLambdaSliceSize(4))
+    Println(multifile_lib_regress.GoGenericLambdaViaCombinator(9))
+
     Println(multifile_lib_regress.ScopeReport(1))
     Println(multifile_lib_regress.ScopeLambdaCapture(3))
     Println(multifile_lib_regress.ScopeQualifiedImport("gamma"))
