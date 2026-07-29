@@ -1,0 +1,82 @@
+package main
+
+// A generic sealed type declared in `main` must be recognized as sealed when the
+// match subject's type is INFERRED from a variant constructor rather than
+// declared. The variant's `Apply` return type is what carries that type, and it
+// used to be built with a `main.` qualifier — a base name no registry key
+// matches, since types in `main`/`test` are registered unqualified. Every check
+// keyed on the matched type then concluded "not a sealed type", so a match
+// listing every variant was rejected with "match expression must have a default
+// case".
+//
+// The runtime answers are asserted, not just compilation: the exhaustive-sealed
+// path lowers to a synthetic `panic("unreachable")` default, so a match that
+// dispatched to the wrong arm would surface here rather than in the type checker.
+
+sealed type Maybe[T any] {
+    case Just(V T)
+    case Nothing
+}
+
+sealed type Pair[A any, B any] {
+    case Both(L A, R B)
+    case Neither
+}
+
+// Subject type inferred from the constructor — the shape that regressed.
+func describeInferred() string {
+    val m = Just(42)
+    return m match {
+        case Just(v)   => s"just $v"
+        case Nothing() => "nothing"
+    }
+}
+
+func describeInferredNothing() string {
+    val m = Nothing[int]()
+    return m match {
+        case Just(v)   => s"just $v"
+        case Nothing() => "nothing"
+    }
+}
+
+// Inferred subject over the second type parameter position, so the fix is not
+// pinned to a single instantiation.
+func describeInferredString() string {
+    val m = Just("hi")
+    return m match {
+        case Just(v)   => s"just $v"
+        case Nothing() => "nothing"
+    }
+}
+
+// Declared parameter type — this path always worked, kept as the control.
+func describeDeclared(m Maybe[int]) string = m match {
+    case Just(v)   => s"just $v"
+    case Nothing() => "nothing"
+}
+
+// Two type parameters, to prove the fix is not arity-specific.
+func describePair(p Pair[int, string]) string = p match {
+    case Both(l, r) => s"both $l $r"
+    case Neither()  => "neither"
+}
+
+func describePairInferred() string {
+    val p = Both(1, "x")
+    return p match {
+        case Both(l, r) => s"both $l $r"
+        case Neither()  => "neither"
+    }
+}
+
+func main() {
+    Println(describeInferred())
+    Println(describeInferredNothing())
+    Println(describeInferredString())
+    Println(describeDeclared(Just(7)))
+    Println(describeDeclared(Nothing[int]()))
+    Println(describePair(Both(2, "y")))
+    Println(describePair(Neither[int, string]()))
+    Println(describePairInferred())
+}

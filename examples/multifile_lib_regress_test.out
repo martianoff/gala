@@ -83,3 +83,8 @@ scope:dana:v2,v3,v4:ok
 5
 gamma
 scope-7-ok
+reply-answered hi
+reply-silent
+reply-int 9
+outcome-ok 3
+outcome-bad nope

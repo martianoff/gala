@@ -459,6 +459,17 @@ gala_exec_test(
     expected = "apply_method.out",
 )
 
+# A generic sealed type declared in `main` must be recognized as sealed when the
+# match subject's type is inferred from a variant constructor. Asserts runtime
+# output, not just compilation: the exhaustive-sealed lowering emits a synthetic
+# unreachable default, so a mis-dispatched arm surfaces here rather than in the
+# type checker.
+gala_exec_test(
+    name = "generic_sealed_exhaustive",
+    src = "generic_sealed_exhaustive.gala",
+    expected = "generic_sealed_exhaustive.out",
+)
+
 gala_exec_test(
     name = "string_escapes",
     src = "string_escapes.gala",
@@ -2800,6 +2811,7 @@ gala_library(
         "multifile_lib_regress/cross_file_methods_ext.gala",
         "multifile_lib_regress/directive_chain.gala",
         "multifile_lib_regress/events_pipe.gala",
+        "multifile_lib_regress/generic_sealed.gala",
         "multifile_lib_regress/go_interop.gala",
         "multifile_lib_regress/logic.gala",
         "multifile_lib_regress/pointer_method_field.gala",

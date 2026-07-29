@@ -371,4 +371,17 @@ func main() {
     Println(multifile_lib_regress.ScopeLambdaCapture(3))
     Println(multifile_lib_regress.ScopeQualifiedImport("gamma"))
     Println(multifile_lib_regress.ScopeSnapshotLabel())
+
+    // --- Regression: a generic sealed type must be recognized as sealed when
+    // the match subject's type is INFERRED from a variant constructor. The
+    // subject's type comes from the companion's Apply return type, and a
+    // qualified base name there only resolves when the qualifier is also the
+    // registry key. A miss made every check keyed on the matched type stand
+    // down, so an exhaustive match was rejected with "must have a default
+    // case". See multifile_lib_regress/generic_sealed.gala.
+    Println(multifile_lib_regress.InferredReply())
+    Println(multifile_lib_regress.InferredSilent())
+    Println(multifile_lib_regress.DescribeReply(multifile_lib_regress.MakeAnsweredInt(9)))
+    Println(multifile_lib_regress.InferredOutcome())
+    Println(multifile_lib_regress.DescribeOutcome(multifile_lib_regress.MakeBad("nope")))
 }
