@@ -1,0 +1,29 @@
+package variant_pkg
+
+// Sealed types whose zero-field variants are matched with the bare form from
+// ANOTHER package (the consumer dot-imports this one). Variant metadata for an
+// imported sealed type is resolved through the import graph rather than from
+// the file being transformed, so the bare-identifier lowering has to work off
+// the matched type's metadata rather than anything local to the match.
+
+// Generic parent — the zero-field variant's companion carries a type parameter
+// that must be recovered from the matched type.
+sealed type Slot[T any] {
+    case Holds(Value T)
+    case Vacant
+}
+
+// Non-generic control.
+sealed type Flag {
+    case On(Label string)
+    case Off
+}
+
+func MakeSlot(v string) Slot[string] = Holds(v)
+
+func EmptySlot() Slot[string] = Vacant[string]()
+
+func MakeFlag(on bool) Flag = on match {
+    case true  => On("lit")
+    case false => Off()
+}

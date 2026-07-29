@@ -430,6 +430,32 @@ func main() {
 `)
 			},
 		},
+		{
+			// Import-free for the same reason as the E0036/E0038 rows: the
+			// collision is decided from the matched type's own metadata while
+			// the pattern is transformed, so a locally declared sealed type is
+			// the whole repro.
+			name: "bare variant name used as a match pattern",
+			code: galaerr.CodeBareVariantBinding, // GALA-E0039
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+sealed type Shape {
+    case Circle(R float64)
+    case Square(S float64)
+}
+
+func main() {
+    val s = Square(2.0)
+    val r = s match {
+        case Circle    => "circle"
+        case Square(x) => s"square $x"
+    }
+    Println(r)
+}
+`)
+			},
+		},
 		// The GALA-E0038 page also documents the rune-literal shape in prose
 		// (`'\d'`), but quotes no output for it, so there is nothing to pin.
 		// Its numeric forms (`'\x41'`) are not guardable here at all: GALA's

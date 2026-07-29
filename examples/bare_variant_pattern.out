@@ -1,0 +1,11 @@
+some 42
+none
+some 7
+none
+ping 3
+pong
+filled x
+empty
+filled y
+pong-guarded
+ping 9

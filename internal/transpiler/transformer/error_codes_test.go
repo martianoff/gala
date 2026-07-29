@@ -361,6 +361,31 @@ func main() {
 			expectContains: `sealed case "Box"`,
 		},
 		{
+			// A bare identifier in pattern position is a variable binding, and
+			// a binding matches every value. When it names a field-bearing
+			// variant of the matched type the arm reads as a test for that
+			// variant but behaves as a catch-all, so the program compiles,
+			// exits 0, and answers with the wrong arm.
+			name: "GALA-E0039 bare variant name binds instead of matching",
+			input: `package main
+
+sealed type Shape {
+    case Circle(R float64)
+    case Square(S float64)
+}
+
+func main() {
+    val s = Square(2.0)
+    val r = s match {
+        case Circle    => "circle"
+        case Square(x) => s"square $x"
+    }
+    Println(r)
+}`,
+			expectCode:     galaerr.CodeBareVariantBinding,
+			expectContains: "`Circle` is a variant of sealed type \"Shape\"",
+		},
+		{
 			// A lambda whose parameter has no annotation and sits in a context
 			// that supplies no expected type (untyped val initializer) cannot be
 			// given a concrete parameter type. Emitting `any` would violate the

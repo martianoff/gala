@@ -477,6 +477,17 @@ gala_exec_test(
     expected = "generic_sealed_exhaustive.out",
 )
 
+# A bare identifier naming a zero-field variant of the matched type is that
+# variant's pattern, not a binding. This test asserts RUNTIME OUTPUT because the
+# failure mode it guards is silent: a binding matches every value, so the arm
+# becomes a catch-all and the program compiles, exits 0, and prints the wrong
+# answer.
+gala_exec_test(
+    name = "bare_variant_pattern",
+    src = "bare_variant_pattern.gala",
+    expected = "bare_variant_pattern.out",
+)
+
 gala_exec_test(
     name = "string_escapes",
     src = "string_escapes.gala",
@@ -2822,9 +2833,24 @@ gala_library(
     visibility = ["//visibility:public"],
 )
 
+# Sibling package whose sealed types are matched from the consumer with the
+# BARE form of a zero-field variant (`case Vacant`, `case Off`). A bare
+# identifier in pattern position is otherwise a variable binding, which matches
+# everything — so a regression here turns each arm into a silent catch-all that
+# still compiles. Covers both a generic parent (Slot[T], where the variant's
+# companion needs its type argument recovered from the matched type) and a
+# non-generic one (Flag), across a package boundary.
+gala_library(
+    name = "multifile_lib_regress_variant_pkg",
+    srcs = ["multifile_lib_regress/variant_pkg/variant.gala"],
+    importpath = "martianoff/gala/examples/multifile_lib_regress/variant_pkg",
+    visibility = ["//visibility:public"],
+)
+
 gala_library(
     name = "multifile_lib_regress",
     srcs = [
+        "multifile_lib_regress/bare_variant.gala",
         "multifile_lib_regress/consult_end.gala",
         "multifile_lib_regress/cross_file_methods.gala",
         "multifile_lib_regress/cross_file_methods_ext.gala",
@@ -2863,6 +2889,7 @@ gala_exec_test(
         ":multifile_lib_regress_directive_pkg",
         ":multifile_lib_regress_proc_pkg",
         ":multifile_lib_regress_shadow_func",
+        ":multifile_lib_regress_variant_pkg",
         "//collection_immutable",
         "//examples/go_struct_bridge",
     ],

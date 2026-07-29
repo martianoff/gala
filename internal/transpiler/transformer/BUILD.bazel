@@ -56,6 +56,7 @@ go_test(
         "assignment_test.go",
         "auto_method_override_test.go",
         "bare_funcref_test.go",
+        "bare_variant_pattern_test.go",
         "bind_test.go",
         "chained_flatmap_test.go",
         "codec_boundary_test.go",

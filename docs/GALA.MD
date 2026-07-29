@@ -563,7 +563,17 @@ val desc = s match {
 }
 ```
 
-Variants with one or more fields always require parentheses (`case Rectangle(w, h)`, not `case Rectangle`).
+Variants with one or more fields always require parentheses (`case Rectangle(w, h)`, not `case Rectangle`). Writing the bare form for a field-bearing variant is rejected with [GALA-E0039](errors/GALA-E0039.md): a bare identifier is otherwise a variable binding, and a binding matches *every* value, so the arm would silently become a catch-all.
+
+The rule is scoped to the type being matched. A bare identifier that does not name a variant of the match subject's type is an ordinary binding, exactly as before:
+
+```gala
+val n = 42
+val d = n match {
+    case Rectangle => s"bound $Rectangle"   // OK — `int` has no `Rectangle` variant
+    case _         => "other"
+}
+```
 
 This generates:
 - Parent struct `Shape` with all variant fields merged + `_variant` discriminator

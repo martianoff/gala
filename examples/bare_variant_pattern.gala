@@ -1,0 +1,76 @@
+package main
+
+// A bare identifier in pattern position is a variable binding, and a binding
+// matches every value. When the identifier names a zero-field variant of the
+// type being matched, it must therefore be read as that variant's pattern —
+// otherwise the arm silently becomes a catch-all that swallows every other
+// variant. These cases assert the RUNTIME answer, not just that they compile:
+// the failure mode this file guards against exits 0 with the wrong output.
+
+sealed type Signal {
+    case Ping(Seq int)
+    case Pong
+}
+
+sealed type Slot[T any] {
+    case Filled(Value T)
+    case Empty
+}
+
+// std.Option is generic, so `None`'s companion carries a type parameter. The
+// bare form has to resolve it from the matched type exactly as `case None()`
+// already does.
+func describe(o Option[int]) string = o match {
+    case None    => "none"
+    case Some(v) => s"some $v"
+}
+
+// Arm order reversed: the bare arm must not shadow the arms after it.
+func describeNoneFirst(o Option[int]) string = o match {
+    case Some(v) => s"some $v"
+    case None    => "none"
+}
+
+// Non-generic user sealed type.
+func signal(s Signal) string = s match {
+    case Pong    => "pong"
+    case Ping(n) => s"ping $n"
+}
+
+// Generic user sealed type — same shape as Option, declared locally.
+func slot(s Slot[string]) string = s match {
+    case Empty     => "empty"
+    case Filled(v) => s"filled $v"
+}
+
+// Both fixes are needed for this one shape, which is why it lives here rather
+// than in generic_sealed_exhaustive.gala. The subject's type is INFERRED from a
+// variant constructor instead of declared, which is what left a generic sealed
+// type unrecognized; and the zero-field arm is written bare, which is what
+// turned that arm into a catch-all. With either fix absent this is rejected or
+// answers with the wrong arm.
+func slotInferred() string = Filled("y") match {
+    case Empty     => "empty"
+    case Filled(v) => s"filled $v"
+}
+
+// A guard on a bare-variant arm still tests the variant, not a binding.
+func signalGuarded(s Signal) string = s match {
+    case Pong if true => "pong-guarded"
+    case Ping(n)      => s"ping $n"
+    case _            => "other"
+}
+
+func main() {
+    Println(describe(Some(42)))
+    Println(describe(None[int]()))
+    Println(describeNoneFirst(Some(7)))
+    Println(describeNoneFirst(None[int]()))
+    Println(signal(Ping(3)))
+    Println(signal(Pong()))
+    Println(slot(Filled("x")))
+    Println(slot(Empty[string]()))
+    Println(slotInferred())
+    Println(signalGuarded(Pong()))
+    Println(signalGuarded(Ping(9)))
+}
