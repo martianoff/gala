@@ -2147,6 +2147,8 @@ val goSlice = SliceOf(1, 2, 3, 4, 5)    // Creates Go []int
 val empty = SliceEmpty[int]()            // Creates Go []int{}
 ```
 
+> **Note:** A file cannot dot-import both `go_interop` and `concurrent`. `concurrent` re-exports `go_interop`'s execution-context helpers as a convenience facade, so the two packages export thirteen identical names and the combination is rejected with [GALA-E0032](errors/GALA-E0032.md). Dot-import `concurrent` and qualify `go_interop` — see [Using `go_interop` in the same file](CONCURRENT.MD#using-go_interop-in-the-same-file).
+
 **When to use Go slices vs GALA collections:**
 
 | Use Case | Recommendation |
@@ -3025,6 +3027,8 @@ func main() {
 ```
 
 > **Note:** If your package mixes `.gala` and `.go` files, dot imports may conflict with type aliases declared in `.go` files. Prefer GALA [type aliases](#type-aliases) over Go type aliases to avoid this. See the [Type Aliases](#type-aliases) section for details.
+
+Two dot-imported packages that export the same name are rejected with [GALA-E0032](errors/GALA-E0032.md); qualify or alias one of them. This is by design for packages that deliberately re-export another's API — `concurrent` is a facade over `go_interop`'s execution-context helpers, so dot-importing both is never meaningful. See [Using `go_interop` in the same file](CONCURRENT.MD#using-go_interop-in-the-same-file).
 
 ### Using Symbols from Other Packages
 
