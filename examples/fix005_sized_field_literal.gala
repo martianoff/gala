@@ -1,0 +1,106 @@
+package main
+
+// Untyped numeric literals must adopt the declared type of the immutable
+// (`val`) struct field they initialise. Immutable fields are stored as
+// `Immutable[T]`, and the generated `NewImmutable(...)` wrapper used to take
+// its type argument from the literal's own default type (`0` → int), so any
+// field wider or narrower than `int` — int64 timestamps, uint32 ports,
+// float64 ratios, byte tags — failed to compile in the generated Go with
+// "cannot use Immutable[int] as Immutable[int64]".
+//
+// Every construction spelling is exercised below: positional, named-argument,
+// and Go-style composite literal.
+
+struct Entry(value string, expireAtMs int64)
+
+struct Sizes(i8 int8, i16 int16, i32 int32, i64 int64)
+
+struct Unsigned(u uint, u8 uint8, u16 uint16, u32 uint32, u64 uint64)
+
+struct Ratios(f32 float32, f64 float64)
+
+struct Tags(b byte, r rune)
+
+// A field genuinely declared `int` keeps the plain inferred wrapper — the
+// negative case that must not regress.
+struct Counter(n int, label string)
+
+// Mutable (`var`) fields are stored unwrapped; the untyped literal converts
+// through ordinary Go assignment.
+struct MutableEntry(value string, var expireAtMs int64)
+
+// A generic field's type is a type parameter, not a concrete numeric type:
+// the wrapper must stay inferred so the type argument is resolved from the
+// construction site.
+struct Box[T any](item T)
+
+func describeEntry(e Entry) string = s"${e.value}@${e.expireAtMs}"
+
+func main() {
+    // Positional construction.
+    val positional = Entry("pos", 0)
+    Println(describeEntry(positional))
+
+    // Named-argument construction.
+    val named = Entry(value = "named", expireAtMs = 1)
+    Println(describeEntry(named))
+
+    // Go-style composite literal.
+    val composite = Entry{value: "composite", expireAtMs: 2}
+    Println(describeEntry(composite))
+
+    // Constant arithmetic stays untyped in Go and must convert too.
+    val computed = Entry("computed", 60 * 1000)
+    Println(describeEntry(computed))
+
+    // Negative literals and parenthesised constants.
+    val negative = Entry("negative", -5)
+    Println(describeEntry(negative))
+
+    // Every signed width.
+    val signed = Sizes(1, 2, 3, 4)
+    Println(s"${signed.i8} ${signed.i16} ${signed.i32} ${signed.i64}")
+
+    val signedNamed = Sizes(i8 = 5, i16 = 6, i32 = 7, i64 = 8)
+    Println(s"${signedNamed.i8} ${signedNamed.i16} ${signedNamed.i32} ${signedNamed.i64}")
+
+    // Every unsigned width.
+    val unsigned = Unsigned(1, 2, 3, 4, 5)
+    Println(s"${unsigned.u} ${unsigned.u8} ${unsigned.u16} ${unsigned.u32} ${unsigned.u64}")
+
+    val unsignedComposite = Unsigned{u: 6, u8: 7, u16: 8, u32: 9, u64: 10}
+    Println(s"${unsignedComposite.u} ${unsignedComposite.u8} ${unsignedComposite.u16} ${unsignedComposite.u32} ${unsignedComposite.u64}")
+
+    // Floats: an integer literal must widen, and a float literal must stay a
+    // float32 where the field says so.
+    val ratios = Ratios(1, 2)
+    Println(s"${ratios.f32} ${ratios.f64}")
+
+    val fractional = Ratios(f32 = 0.5, f64 = 1.25)
+    Println(s"${fractional.f32} ${fractional.f64}")
+
+    // byte / rune aliases.
+    val tags = Tags(65, 66)
+    Println(s"${tags.b} ${tags.r}")
+
+    val charTag = Tags{b: 67, r: 'D'}
+    Println(s"${charTag.b} ${charTag.r}")
+
+    // Negative case: a plain `int` field is unchanged.
+    val counter = Counter(7, "hits")
+    Println(s"${counter.label}=${counter.n}")
+
+    val counterNamed = Counter(n = 8, label = "misses")
+    Println(s"${counterNamed.label}=${counterNamed.n}")
+
+    // `var` field: literal converts without any wrapper.
+    val mutableEntry = MutableEntry("mutable", 9)
+    Println(s"${mutableEntry.value}@${mutableEntry.expireAtMs}")
+
+    // Generic field: the type argument comes from the construction site.
+    val boxed = Box(11)
+    Println(boxed.item)
+
+    val boxedTyped = Box[int64](12)
+    Println(boxedTyped.item)
+}

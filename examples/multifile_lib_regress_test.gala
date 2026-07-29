@@ -196,11 +196,33 @@ func main() {
     // function — its (width, height) parameters did not match the struct's
     // (ProjectName, SavedAt) field names and a misleading "unknown
     // parameter" error fired at the call site.
+    // The `SavedAt` literal is written bare on purpose: an untyped numeric
+    // literal must take the declared `int64` field type through the
+    // NewImmutable wrapper the immutable field is stored in.
     val snap = multifile_lib_regress.Snapshot(
         ProjectName = "demo",
-        SavedAt = int64(1234),
+        SavedAt = 1234,
     )
     Println(s"snap: ${snap.ProjectName}=${snap.SavedAt}")
+
+    // --- Regression: untyped numeric literals into immutable struct fields
+    // declared with a non-`int` numeric type (int64/uint32/float64/byte).
+    // Constructed both inside the library (all three spellings) and here,
+    // across the package boundary, where the field types come from the
+    // imported package's metadata.
+    Println(multifile_lib_regress.DescribeReading(multifile_lib_regress.NewReadingPositional("pos")))
+    Println(multifile_lib_regress.DescribeReading(multifile_lib_regress.NewReadingNamed("named")))
+    Println(multifile_lib_regress.DescribeReading(multifile_lib_regress.NewReadingComposite("composite")))
+    val xpkgPositional = multifile_lib_regress.Reading("xpos", 5, 1, 3, 4)
+    Println(multifile_lib_regress.DescribeReading(xpkgPositional))
+    val xpkgNamed = multifile_lib_regress.Reading(
+        Label = "xnamed",
+        TakenAtMs = 6,
+        Port = 2,
+        Ratio = 4,
+        Tag = 5,
+    )
+    Println(multifile_lib_regress.DescribeReading(xpkgNamed))
     // Reference a non-clashing helper from the shadow package so the
     // dot-import is actually exercised at compile time.
     Println(ShadowMarker())

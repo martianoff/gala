@@ -204,6 +204,174 @@ func (t *galaASTTransformer) transformTupleElementExpressions(
 	return out, nil
 }
 
+// wrapImmutableFieldValue builds the `std.NewImmutable(value)` wrapper that
+// backs an immutable (`val`) struct field, naming the type argument explicitly
+// when the value alone would infer the wrong one.
+//
+// Go infers NewImmutable's type parameter from its argument, and an untyped
+// constant argument collapses to its own default type (`0` → int, `1.5` →
+// float64). A field declared `int64` therefore receives an Immutable[int],
+// which is not assignable to Immutable[int64] — even though the constant is
+// perfectly representable and a plain Go field assignment would have converted
+// it. Spelling the type argument (`std.NewImmutable[int64](0)`) restores that
+// conversion at the argument position.
+//
+// typeArgs maps the struct's type-parameter names to the type arguments of the
+// literal being built, so a field declared with a type parameter resolves to the
+// type it is instantiated with at this construction site.
+func (t *galaASTTransformer) wrapImmutableFieldValue(value ast.Expr, fieldType transpiler.Type, typeArgs map[string]ast.Expr) ast.Expr {
+	if typeArg := immutableFieldTypeArg(value, fieldType, typeArgs); typeArg != nil {
+		return &ast.CallExpr{
+			Fun:  &ast.IndexExpr{X: t.stdIdent(transpiler.FuncNewImmutable), Index: typeArg},
+			Args: []ast.Expr{value},
+		}
+	}
+	return &ast.CallExpr{
+		Fun:  t.stdIdent(transpiler.FuncNewImmutable),
+		Args: []ast.Expr{value},
+	}
+}
+
+// immutableFieldTypeArg returns the explicit NewImmutable type argument for a
+// field whose declared type differs from the default type of an untyped
+// constant value, or nil when plain inference is already correct.
+//
+// The rewrite is deliberately confined to untyped numeric constants going into
+// a field whose type resolves to a predeclared numeric type: that is exactly the
+// set of values whose type Go would have taken from the destination but takes
+// from the argument once the NewImmutable wrapper intervenes. Anything else (a
+// typed expression, a named or generic field type, a type parameter with no
+// concrete instantiation here) keeps the inferred form, so no construction that
+// compiles today changes shape.
+func immutableFieldTypeArg(value ast.Expr, fieldType transpiler.Type, typeArgs map[string]ast.Expr) ast.Expr {
+	if transpiler.IsUnusable(fieldType) {
+		return nil
+	}
+	var fieldName string
+	switch ft := fieldType.(type) {
+	case transpiler.BasicType:
+		fieldName = ft.Name
+	case transpiler.NamedType:
+		if ft.Package != "" {
+			return nil
+		}
+		fieldName = ft.Name
+	default:
+		return nil
+	}
+	// A field declared with one of the struct's type parameters takes the type
+	// it is instantiated with here (`Box[int64](0)` → NewImmutable[int64]).
+	if arg, isTypeParam := typeArgs[fieldName]; isTypeParam {
+		argIdent, ok := arg.(*ast.Ident)
+		if !ok {
+			return nil
+		}
+		fieldName = argIdent.Name
+	}
+	if !isNumericPrimitive(fieldName) {
+		return nil
+	}
+	defaultName, ok := untypedNumericConstDefault(value)
+	if !ok || defaultName == fieldName {
+		return nil
+	}
+	return ast.NewIdent(fieldName)
+}
+
+// structTypeArgSubst pairs a struct's type-parameter names with the type
+// arguments carried by the literal's type expression (`Box[int64]` → T: int64).
+// It returns nil when the literal is not an instantiation or the arity does not
+// line up, in which case fields typed with a type parameter stay uninstantiated.
+func (t *galaASTTransformer) structTypeArgSubst(typeExpr ast.Expr, resolvedTypeName string) map[string]ast.Expr {
+	var indices []ast.Expr
+	switch te := typeExpr.(type) {
+	case *ast.IndexExpr:
+		indices = []ast.Expr{te.Index}
+	case *ast.IndexListExpr:
+		indices = te.Indices
+	default:
+		return nil
+	}
+	typeMeta := t.getTypeMeta(resolvedTypeName)
+	if typeMeta == nil || len(typeMeta.TypeParams) != len(indices) {
+		return nil
+	}
+	subst := make(map[string]ast.Expr, len(indices))
+	for i, tp := range typeMeta.TypeParams {
+		subst[tp] = indices[i]
+	}
+	return subst
+}
+
+// untypedNumericConstDefault reports the Go default type of an untyped numeric
+// constant expression (`0` → int, `1.5` → float64, `'a'` → rune) and false for
+// anything that is not built purely from numeric literals. Constant arithmetic
+// stays untyped in Go, so `60 * 1000` is classified like a bare literal.
+func untypedNumericConstDefault(expr ast.Expr) (string, bool) {
+	switch e := expr.(type) {
+	case *ast.BasicLit:
+		switch e.Kind {
+		case token.INT:
+			return "int", true
+		case token.FLOAT:
+			return "float64", true
+		case token.CHAR:
+			return "rune", true
+		}
+	case *ast.ParenExpr:
+		return untypedNumericConstDefault(e.X)
+	case *ast.UnaryExpr:
+		switch e.Op {
+		case token.ADD, token.SUB, token.XOR:
+			return untypedNumericConstDefault(e.X)
+		}
+	case *ast.BinaryExpr:
+		switch e.Op {
+		case token.SHL, token.SHR:
+			// The shift count does not influence the result's default type.
+			return untypedNumericConstDefault(e.X)
+		case token.ADD, token.SUB, token.MUL, token.QUO, token.REM,
+			token.AND, token.OR, token.XOR, token.AND_NOT:
+			left, okLeft := untypedNumericConstDefault(e.X)
+			right, okRight := untypedNumericConstDefault(e.Y)
+			if !okLeft || !okRight {
+				return "", false
+			}
+			if numericConstRank(right) > numericConstRank(left) {
+				return right, true
+			}
+			return left, true
+		}
+	}
+	return "", false
+}
+
+// numericConstRank orders the untyped numeric constant kinds by how they
+// combine: mixing two kinds in a constant expression yields the wider one.
+func numericConstRank(name string) int {
+	switch name {
+	case "int":
+		return 0
+	case "rune":
+		return 1
+	case "float64":
+		return 2
+	}
+	return -1
+}
+
+// isNumericPrimitive reports whether name is a predeclared Go numeric type —
+// the destinations an untyped numeric constant can convert to implicitly.
+func isNumericPrimitive(name string) bool {
+	switch name {
+	case "int", "int8", "int16", "int32", "int64",
+		"uint", "uint8", "uint16", "uint32", "uint64", "uintptr",
+		"float32", "float64", "byte", "rune":
+		return true
+	}
+	return false
+}
+
 func (t *galaASTTransformer) transformCompositeLiteral(ctx *grammar.CompositeLiteralContext) (ast.Expr, error) {
 	// Transform the type
 	typeExpr, err := t.transformType(ctx.Type_())
@@ -237,6 +405,8 @@ func (t *galaASTTransformer) transformCompositeLiteral(ctx *grammar.CompositeLit
 	resolvedTypeName := t.resolveStructTypeName(typeName)
 	immutFlags := t.structImmutFields[resolvedTypeName]
 	fields := t.structFields[resolvedTypeName]
+	fieldTypes := t.structFieldTypes[resolvedTypeName]
+	typeArgSubst := t.structTypeArgSubst(typeExpr, resolvedTypeName)
 	// Build a map from field name to its index for quick lookup
 	fieldIndex := make(map[string]int, len(fields))
 	for i, f := range fields {
@@ -270,10 +440,7 @@ func (t *galaASTTransformer) transformCompositeLiteral(ctx *grammar.CompositeLit
 									"cannot assign nil to immutable field '%s' — use Option[T] with None() for optional values, or 'var %s' to make it mutable",
 									keyIdent.Name, keyIdent.Name))
 							}
-							value = &ast.CallExpr{
-								Fun:  t.stdIdent("NewImmutable"),
-								Args: []ast.Expr{value},
-							}
+							value = t.wrapImmutableFieldValue(value, fieldTypes[keyIdent.Name], typeArgSubst)
 						}
 					}
 				}

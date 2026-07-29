@@ -51,6 +51,11 @@ err: oops
 alice => Alice<a@x>
 bob => Bob<b@x>
 snap: demo=1234
+pos/0/8080/1/7
+named/60000/9090/0.5/8
+composite/-2/443/2/9
+xpos/5/1/3/4
+xnamed/6/2/4/5
 shadow-marker
 chunk[topic]=first line
 end[topic] ok
