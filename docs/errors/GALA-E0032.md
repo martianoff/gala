@@ -88,6 +88,38 @@ import (
 )
 ```
 
+**The common instance: `concurrent` and `go_interop`.** A file that uses both
+`Future`/`Promise` and `go_interop`'s slice, map or byte helpers runs into this
+pair. `concurrent` re-exports `go_interop`'s execution-context API —
+`ExecutionContext`, its three concrete implementations and their constructors,
+`GlobalEC`/`SetGlobalEC`, `Spawn`, and the `CancelToken` helpers — as a
+convenience facade, so the two packages export thirteen identical names and the
+error lists all thirteen. The facade is the point: dot-importing both is never
+meaningful, because either import already supplies the whole execution-context
+API.
+
+Dot-import `concurrent` and qualify `go_interop`. `concurrent`'s names appear on
+nearly every line of async code, `go_interop` is the Go escape hatch and its
+call sites are worth marking, and the standard library imports `go_interop`
+qualified in every package that also uses `concurrent`:
+
+```gala
+package main
+
+import (
+    . "martianoff/gala/concurrent"
+    "martianoff/gala/go_interop"
+)
+
+func main() {
+    val encoded = Future(go_interop.ToBytes("payload"))
+    Println(go_interop.ToString(encoded.Get()))
+}
+```
+
+See [CONCURRENT.MD](../CONCURRENT.MD) for the same guidance alongside the rest
+of the `concurrent` API.
+
 **Rationale.** Without this check the collision surfaced from `go build`,
 against generated code, naming a file the author never wrote. Detecting it at
 the GALA level names the symbol, names every package that supplies it, and

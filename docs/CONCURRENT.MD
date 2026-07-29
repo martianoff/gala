@@ -8,6 +8,28 @@ The `concurrent` package provides asynchronous programming primitives for GALA, 
 import . "martianoff/gala/concurrent"
 ```
 
+### Using `go_interop` in the same file
+
+`concurrent` re-exports `go_interop`'s execution-context API — `ExecutionContext`, its three concrete implementations and their constructors, `GlobalEC`/`SetGlobalEC`, `Spawn`, and the `CancelToken` helpers — as a convenience facade. The two packages therefore export thirteen identical names, and dot-importing both in one file is rejected with [GALA-E0032](errors/GALA-E0032.md).
+
+Dot-import `concurrent` and qualify `go_interop`. `concurrent`'s names carry the shape of the code (`Future`, `Promise`, `Await`) and appear on nearly every line, while `go_interop` is the Go escape hatch and its call sites are worth marking. That is also the direction the standard library takes: `concurrent`, `subprocess`, `json`, `lazy` and both collection packages all import `go_interop` qualified.
+
+```gala
+package main
+
+import (
+    . "martianoff/gala/concurrent"
+    "martianoff/gala/go_interop"
+)
+
+func main() {
+    val encoded = Future(go_interop.ToBytes("payload"))
+    Println(go_interop.ToString(encoded.Get()))
+}
+```
+
+An alias shortens the prefix where it appears often: `gi "martianoff/gala/go_interop"`.
+
 ---
 
 ## Future Monad
