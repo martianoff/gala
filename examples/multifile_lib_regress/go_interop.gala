@@ -2,6 +2,7 @@ package multifile_lib_regress
 
 import (
     "martianoff/gala/examples/go_struct_bridge"
+    "martianoff/gala/go_interop"
     . "martianoff/gala/std"
 )
 
@@ -60,3 +61,37 @@ func CookieBuilderOption(s string) Option[go_struct_bridge.Cookie] {
     val b = go_struct_bridge.NewCookieBuilder()
     return Some(b.Build(s))
 }
+
+// --- Regression: a lambda over a Go GENERIC call must be annotated with the
+// callee's instantiated return type, not its declared one.
+//
+// `go_interop.MapPut[K, V](m map[K]V, k K, v V) map[K]V` and
+// `go_interop.SliceAppend[T](s []T, v T) []T` are Go generics. A direct call
+// hides the defect (nothing forces the type into the output), but a lambda has
+// to write its result clause down — and the transpiler used to emit the
+// declared `map[K]V` / `[]T`, producing Go that referenced the callee's own
+// type parameters as undefined identifiers.
+//
+// This lives in the multi-file library because the batch (BatchAnalyzer) path
+// resolves Go signatures through the on-disk analysis cache rather than a fresh
+// go/types run, so the type-parameter names have to survive serialization too.
+func GoGenericLambdaMapSize(key string, value int) int {
+    val m = go_interop.MapEmpty[string, int]()
+    val put = () => go_interop.MapPut(m, key, value)
+    return go_interop.MapLen(put())
+}
+
+func GoGenericLambdaSliceSize(extra int) int {
+    val xs = go_interop.SliceOf(1, 2, 3)
+    val appended = () => go_interop.SliceAppend(xs, extra)
+    return appended().Size()
+}
+
+// Routing the same shape through a generic combinator: `A` binds to the
+// lambda's result, so the lambda's own annotation is what must be concrete.
+func GoGenericLambdaViaCombinator(extra int) int {
+    val xs = go_interop.SliceOf(1, 2)
+    return applyThunk(() => go_interop.SliceAppend(xs, extra)).Size()
+}
+
+func applyThunk[A any](body func() A) A = body()

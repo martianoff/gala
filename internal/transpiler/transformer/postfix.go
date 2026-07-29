@@ -319,8 +319,10 @@ func (t *galaASTTransformer) callExprReturnType(ce *ast.CallExpr) transpiler.Typ
 		return fMeta.ReturnType
 	}
 	// Go function metadata: current package, then dot-imported packages.
+	// Resolved through the call-site-aware form so a generic callee's declared
+	// type parameters are instantiated rather than surfacing verbatim.
 	if t.packageName != "" {
-		if r := t.getGoFuncReturnType(t.packageName + "." + id.Name); !r.IsNil() {
+		if r := t.getGoFuncReturnTypeForCall(t.packageName+"."+id.Name, ce, nil); !r.IsNil() {
 			return r
 		}
 	}
@@ -329,7 +331,7 @@ func (t *galaASTTransformer) callExprReturnType(ce *ast.CallExpr) transpiler.Typ
 			if pkg == "" || pkg == t.packageName {
 				continue
 			}
-			if r := t.getGoFuncReturnType(pkg + "." + id.Name); !r.IsNil() {
+			if r := t.getGoFuncReturnTypeForCall(pkg+"."+id.Name, ce, nil); !r.IsNil() {
 				return r
 			}
 		}

@@ -658,6 +658,15 @@ func convertSignature(sig *types.Signature) *transpiler.GoFuncSignature {
 		IsVariadic: sig.Variadic(),
 	}
 
+	// Record the declared type-parameter names so a call site can instantiate
+	// the signature. Both the function's own type params and a generic
+	// receiver's are in scope inside the signature, so both are collected.
+	for _, tps := range []*types.TypeParamList{sig.TypeParams(), sig.RecvTypeParams()} {
+		for i := 0; tps != nil && i < tps.Len(); i++ {
+			result.TypeParams = append(result.TypeParams, tps.At(i).Obj().Name())
+		}
+	}
+
 	// Convert parameters (skip receiver)
 	params := sig.Params()
 	for i := 0; i < params.Len(); i++ {

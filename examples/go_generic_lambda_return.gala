@@ -1,0 +1,35 @@
+package main
+
+import "martianoff/gala/go_interop"
+
+// A lambda whose body calls a Go generic function must be annotated with the
+// callee's INSTANTIATED return type. The transpiler used to copy the Go
+// signature's declared return type verbatim (`map[K]V`, `[]T`), so the
+// generated Go named the callee's own type parameters as undefined identifiers
+// (`undefined: K`, `undefined: V`, `undefined: T`).
+//
+// A direct call never showed the bug because nothing forces the type into the
+// output; a lambda does, because its result clause has to be written down.
+
+func apply[A any](body func() A) A = body()
+
+func main() {
+    val m = go_interop.MapEmpty[string, int]()
+
+    // map[K]V return inside a bare lambda
+    val putOne = () => go_interop.MapPut(m, "k", 1)
+    Println(go_interop.MapLen(putOne()))
+
+    // []T return inside a bare lambda
+    val xs = go_interop.SliceOf(1, 2, 3)
+    val appended = () => go_interop.SliceAppend(xs, 4)
+    Println(appended().Size())
+
+    // Same shapes routed through a user generic combinator
+    Println(go_interop.MapLen(apply(() => go_interop.MapPut(m, "k", 1))))
+    Println(apply(() => go_interop.SliceAppend(xs, 4)).Size())
+
+    // Nested: the element type comes from an inner generic call
+    val grown = () => go_interop.SliceAppendAll(xs, go_interop.SliceOf(4, 5))
+    Println(grown().Size())
+}

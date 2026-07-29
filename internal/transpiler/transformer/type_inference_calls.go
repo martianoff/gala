@@ -301,7 +301,7 @@ func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.Sel
 				return retType
 			}
 			// Check Go type info (stdlib, local Go files, third-party)
-			if retType := t.getGoFuncReturnType(fullName); !retType.IsNil() {
+			if retType := t.getGoFuncReturnTypeForCall(fullName, e, typeArgs); !retType.IsNil() {
 				return retType
 			}
 			// Handle Receiver_Method (e.g., std.Some_Apply, std.Try_FlatMap)
@@ -335,7 +335,7 @@ func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.Sel
 		} else {
 			// For external Go packages not in t.imports, check Go type info
 			fullName := id.Name + "." + sel.Sel.Name
-			if retType := t.getGoFuncReturnType(fullName); !retType.IsNil() {
+			if retType := t.getGoFuncReturnTypeForCall(fullName, e, typeArgs); !retType.IsNil() {
 				return retType
 			}
 		}
@@ -582,7 +582,7 @@ func (t *galaASTTransformer) inferCallIdentType(e *ast.CallExpr, id *ast.Ident, 
 	// FoldLeft lambda param type) sees a concrete element type instead of
 	// the un-substituted type-parameter name.
 	if t.packageName != "" {
-		if retType := t.getGoFuncReturnType(t.packageName + "." + id.Name); !retType.IsNil() {
+		if retType := t.getGoFuncReturnTypeForCall(t.packageName+"."+id.Name, e, typeArgs); !retType.IsNil() {
 			return retType
 		}
 	}
@@ -600,7 +600,7 @@ func (t *galaASTTransformer) inferCallIdentType(e *ast.CallExpr, id *ast.Ident, 
 	// are GALA (resolved above via getFunction), so a `std.<name>` miss here
 	// is harmless.
 	for _, entry := range t.importManager.dotImports {
-		if retType := t.getGoFuncReturnType(entry.PkgName + "." + id.Name); !retType.IsNil() {
+		if retType := t.getGoFuncReturnTypeForCall(entry.PkgName+"."+id.Name, e, typeArgs); !retType.IsNil() {
 			return retType
 		}
 	}

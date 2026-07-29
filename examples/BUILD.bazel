@@ -103,6 +103,13 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "go_generic_lambda_return",
+    src = "go_generic_lambda_return.gala",
+    expected = "go_generic_lambda_return.out",
+    deps = ["//go_interop"],
+)
+
+gala_exec_test(
     name = "tco_factorial",
     src = "tco_factorial.gala",
     expected = "tco_factorial.out",
@@ -2819,6 +2826,7 @@ gala_library(
         ":multifile_lib_regress_team_pkg",
         "//collection_immutable",
         "//examples/go_struct_bridge",
+        "//go_interop",
     ],
 )
 
