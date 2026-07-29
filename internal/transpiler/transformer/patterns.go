@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"strings"
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
@@ -237,6 +238,50 @@ func (t *galaASTTransformer) transformConstructorCallPattern(rawName string, arg
 		msg, hint)
 }
 
+// sealedVariantOfMatchedType reports whether name is declared as a `case`
+// variant of the sealed type currently being matched. It returns the variant
+// declaration together with the parent sealed type's metadata, or (nil, nil)
+// when the matched type is unusable, is not sealed, or declares no such
+// variant. This is deliberately scoped to the matched type: a bare identifier
+// that happens to share a name with some unrelated variant elsewhere in the
+// program is an ordinary binding.
+func (t *galaASTTransformer) sealedVariantOfMatchedType(name string, matchedType transpiler.Type) (*transpiler.SealedVariant, *transpiler.TypeMetadata) {
+	if matchedType == nil || transpiler.IsUnusable(matchedType) {
+		return nil, nil
+	}
+	meta := t.getTypeMeta(matchedType.BaseName())
+	if meta == nil || !meta.IsSealed {
+		return nil, nil
+	}
+	for i := range meta.SealedVariants {
+		if meta.SealedVariants[i].Name == name {
+			return &meta.SealedVariants[i], meta
+		}
+	}
+	return nil, nil
+}
+
+// bareVariantBindingError reports a bare identifier in pattern position that
+// names a field-bearing variant of the type being matched. Such a pattern is
+// parsed as a fresh variable binding, which matches every value — so the arm
+// silently becomes a catch-all and the variant it appears to test is never
+// distinguished. Rejecting it cannot break a program that was not already
+// misleading.
+func bareVariantBindingError(name string, variant *transpiler.SealedVariant, parent *transpiler.TypeMetadata, line, col int) error {
+	placeholders := make([]string, len(variant.FieldNames))
+	for i := range placeholders {
+		placeholders[i] = "_"
+	}
+	return galaerr.NewCodedSemanticError(
+		galaerr.CodeBareVariantBinding,
+		line, col,
+		fmt.Sprintf("`%s` is a variant of sealed type %q, so `case %s` binds a new variable and matches every value instead of testing for %s",
+			name, parent.Name, name, name),
+		fmt.Sprintf("write `case %s(%s)` to match the variant, or rename the binding if you meant to capture the whole value",
+			name, strings.Join(placeholders, ", ")),
+	)
+}
+
 // transformSimpleBindingOrLiteral handles the two remaining pattern shapes once a
 // pattern is known not to be a tuple/extractor/constructor call: a bare identifier
 // binds a variable (with a zero-field sealed-variant shortcut), and anything else
@@ -245,17 +290,38 @@ func (t *galaASTTransformer) transformSimpleBindingOrLiteral(patExprCtx grammar.
 	if p := t.getPrimaryFromExpression(patExprCtx); p != nil && p.Identifier() != nil {
 		name := p.Identifier().GetText()
 
-		// Before treating as a simple binding, check if the identifier refers to a
-		// zero-field extractor (e.g., sealed variant `case Debug`). Writing `case Debug =>`
-		// in a match should be equivalent to `case Debug() =>` when Debug is a sealed
-		// case companion whose Unapply returns bool.
+		// A bare identifier that names a variant of the type being matched is
+		// never a binding — binding it would turn the arm into a catch-all that
+		// silently swallows every other variant.
+		if variant, parent := t.sealedVariantOfMatchedType(name, matchedType); variant != nil {
+			if len(variant.FieldNames) > 0 {
+				return nil, nil, bareVariantBindingError(name, variant, parent,
+					patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn())
+			}
+			// Zero-field variant: `case None` means exactly `case None()`. Route
+			// through the constructor-call path so generic parents (Option[T],
+			// Maybe[T], …) get their type arguments inferred from the matched type.
+			// The call-shaped spelling reaches that path with the companion's
+			// canonical name (`std.None`), because it transforms the primary
+			// expression first; resolve the bare name the same way so the emitted
+			// extractor carries its package qualifier.
+			ctorName := name
+			if _, resolved := t.getTypeMetaResolved(name); resolved != "" {
+				ctorName = resolved
+			}
+			return t.transformConstructorCallPattern(ctorName, nil, nil, objExpr, matchedType, patExprCtx)
+		}
+
+		// The identifier may still refer to a zero-field extractor that is not a
+		// variant of the matched type — e.g. a standalone guard extractor, or a
+		// sealed variant matched against a subject whose type could not be
+		// inferred. Writing `case Debug =>` stays equivalent to `case Debug() =>`.
 		if meta := t.getTypeMeta(name); meta != nil {
 			if unapplyMeta, hasUnapply := meta.Methods["Unapply"]; hasUnapply {
 				// Only route through the extractor path for zero-arg extractors — i.e.,
 				// Unapply returns bool (guard extractor) and the type takes no type
 				// parameters. That is precisely the shape generated for zero-field
-				// sealed variants. For 1+-field sealed variants (Option-returning),
-				// a bare identifier legitimately remains a simple binding.
+				// sealed variants.
 				if basic, ok := unapplyMeta.ReturnType.(transpiler.BasicType); ok && basic.Name == "bool" && len(meta.TypeParams) == 0 {
 					return t.generateDirectUnapplyPattern(name, meta, nil, unapplyMeta, objExpr, nil, matchedType)
 				}

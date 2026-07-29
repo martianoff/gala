@@ -6,6 +6,7 @@ import (
     "martianoff/gala/examples/multifile_lib_regress/proc_pkg"
     . "martianoff/gala/examples/multifile_lib_regress/directive_pkg"
     . "martianoff/gala/examples/multifile_lib_regress/shadow_func"
+    . "martianoff/gala/examples/multifile_lib_regress/variant_pkg"
     "martianoff/gala/examples/go_struct_bridge"
     . "martianoff/gala/collection_immutable"
     "time"
@@ -416,4 +417,37 @@ func main() {
     Println(multifile_lib_regress.DescribeReply(multifile_lib_regress.MakeAnsweredInt(9)))
     Println(multifile_lib_regress.InferredOutcome())
     Println(multifile_lib_regress.DescribeOutcome(multifile_lib_regress.MakeBad("nope")))
+    // --- Regression: a bare identifier naming a zero-field variant of the
+    // matched type is that variant's pattern, not a fresh binding. A binding
+    // matches everything, so the historic behaviour turned each of these arms
+    // into a silent catch-all — compiling, exiting 0, and answering with the
+    // wrong arm. The library-side functions live in
+    // multifile_lib_regress/bare_variant.gala; the calls below pin the runtime
+    // answer, which is the only thing that catches a reintroduction.
+    Println(multifile_lib_regress.DescribeCursor(multifile_lib_regress.ItemCursor("k")))
+    Println(multifile_lib_regress.DescribeCursor(multifile_lib_regress.EndCursor()))
+    Println(multifile_lib_regress.DescribeMarker(multifile_lib_regress.NamedMarker("m")))
+    Println(multifile_lib_regress.DescribeMarker(multifile_lib_regress.AnonymousMarker()))
+    Println(multifile_lib_regress.DescribeOption(Some(5)))
+    Println(multifile_lib_regress.DescribeOption(None[int]()))
+    // Same shape resolved at the consumer, over sealed types dot-imported from
+    // a sibling package: cross-package variant metadata travels a different
+    // route than same-package metadata. Both the generic (`Slot[T]`) and the
+    // non-generic (`Flag`) parents are covered.
+    MakeSlot("q") match {
+        case Vacant     => Println("slot-vacant")
+        case Holds(v)   => Println(s"slot-holds $v")
+    }
+    EmptySlot() match {
+        case Vacant   => Println("slot-vacant")
+        case Holds(v) => Println(s"slot-holds $v")
+    }
+    MakeFlag(true) match {
+        case Off    => Println("flag-off")
+        case On(lb) => Println(s"flag-on $lb")
+    }
+    MakeFlag(false) match {
+        case Off    => Println("flag-off")
+        case On(lb) => Println(s"flag-on $lb")
+    }
 }

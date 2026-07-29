@@ -1,0 +1,49 @@
+package multifile_lib_regress
+
+// Bare-identifier arms over sealed types, exercised through the multi-file
+// BatchAnalyzer path rather than a single-file `gala_test`.
+//
+// A bare identifier in pattern position is a variable binding, and a binding
+// matches every value. When the identifier names a zero-field variant of the
+// type being matched it must be lowered as that variant's pattern instead —
+// otherwise the arm becomes a silent catch-all: the program compiles, exits 0,
+// and answers with the wrong arm. Sealed-variant metadata reaches the
+// transformer differently under batch analysis than in single-file mode, so the
+// shape is worth covering on both paths.
+
+// Cursor is generic, so `AtEnd`'s companion carries a type parameter that has
+// to be resolved from the matched type before the extractor can be called.
+sealed type Cursor[T any] {
+    case AtItem(Item T)
+    case AtEnd
+}
+
+// Marker is the non-generic control.
+sealed type Marker {
+    case Named(Label string)
+    case Anonymous
+}
+
+func DescribeCursor(c Cursor[string]) string = c match {
+    case AtEnd      => "cursor-end"
+    case AtItem(it) => s"cursor-item $it"
+}
+
+func DescribeMarker(m Marker) string = m match {
+    case Anonymous  => "marker-anon"
+    case Named(lbl) => s"marker-named $lbl"
+}
+
+// The bare arm listed FIRST must not swallow the arms after it.
+func DescribeOption(o Option[int]) string = o match {
+    case None    => "opt-none"
+    case Some(n) => s"opt-some $n"
+}
+
+func ItemCursor(v string) Cursor[string] = AtItem(v)
+
+func EndCursor() Cursor[string] = AtEnd[string]()
+
+func NamedMarker(label string) Marker = Named(label)
+
+func AnonymousMarker() Marker = Anonymous()

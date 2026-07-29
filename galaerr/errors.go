@@ -346,6 +346,16 @@ const (
 	// reports the offending escape in the file the user actually wrote.
 	CodeInvalidStringEscape ErrorCode = "GALA-E0038"
 
+	// E0039: a match arm's pattern is a bare identifier that names a
+	// field-bearing `case` variant of the type being matched (e.g. `case Some`
+	// against an `Option[T]`, or `case Circle` against a `Shape`). A bare
+	// identifier in pattern position is a variable binding, and a binding
+	// matches every value — so the arm becomes a catch-all that swallows the
+	// other variants while reading like a test for this one. The program
+	// compiles and produces the wrong answer. Field-bearing variants must be
+	// spelled with parentheses (`case Circle(_)`).
+	CodeBareVariantBinding ErrorCode = "GALA-E0039"
+
 	// E0040: a Go slice (`[]T`) or map (`map[K]V`) type was written inside an
 	// EXPRESSION — most often as an explicit type argument
 	// (`EmptyHashMap[string, []byte]()`), but also as a conversion
