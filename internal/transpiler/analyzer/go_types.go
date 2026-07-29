@@ -392,10 +392,243 @@ func AnalyzeGoFiles(dirPath string) *transpiler.GoTypeInfo {
 	}
 
 	extractPackageInfo(pkg, info)
+	repairUnresolvedSignatures(files, pkg.Name(), info)
 	goFilesCache.mu.Lock()
 	goFilesCache.cache[dirPath] = info
 	goFilesCache.mu.Unlock()
 	return info
+}
+
+// repairUnresolvedSignatures recovers signature slots go/types could not resolve
+// from the type as it is WRITTEN in the source.
+//
+// A hand-written .go file in a GALA package may name a GALA-defined type — e.g.
+// `func OptionFromMap[K comparable, V any](m map[K]V, key K) std.Option[V]`. That
+// type only exists as Go once the GALA package has been transpiled, but this
+// analysis deliberately runs against the un-transpiled tree (.gen.go files are
+// skipped so metadata comes from the .gala source). go/types therefore resolves
+// the reference to Invalid while the rest of the signature — including the type
+// parameters — resolves normally.
+//
+// Left alone, that unresolved slot degrades to `any` and silently erases a
+// concrete type. The AST still says `std.Option[V]`, and the file's import list
+// says which package `std` is, which together are exactly the GenericType the rest
+// of the pipeline needs. Recovery is therefore syntactic.
+//
+// Nothing here is specific to std, or even to GALA: any Go signature naming a type
+// the checker could not load is recovered the same way, and slots go/types DID
+// resolve are never touched.
+func repairUnresolvedSignatures(files []*ast.File, pkgName string, info *transpiler.GoTypeInfo) {
+	for _, f := range files {
+		imports := fileImportPaths(f)
+		for _, decl := range f.Decls {
+			fd, ok := decl.(*ast.FuncDecl)
+			if !ok || fd.Recv != nil || fd.Type == nil || !fd.Name.IsExported() {
+				continue
+			}
+			sig := info.Functions[pkgName+"."+fd.Name.Name]
+			if sig == nil {
+				continue
+			}
+			typeParams := funcDeclTypeParams(fd)
+
+			astParams := flattenFieldTypes(fd.Type.Params)
+			for i := range sig.Params {
+				if i >= len(astParams) || !isUnresolvedType(sig.Params[i].Type) {
+					continue
+				}
+				if rec := syntacticGoType(astParams[i], imports, pkgName, typeParams); !rec.IsNil() {
+					sig.Params[i].Type = rec
+				}
+			}
+
+			astResults := flattenFieldTypes(fd.Type.Results)
+			for i := range sig.Returns {
+				if i >= len(astResults) || !isUnresolvedType(sig.Returns[i]) {
+					continue
+				}
+				if rec := syntacticGoType(astResults[i], imports, pkgName, typeParams); !rec.IsNil() {
+					sig.Returns[i] = rec
+				}
+			}
+		}
+	}
+}
+
+// isUnresolvedType reports whether a converted signature slot carries an
+// unresolved type anywhere inside it. goTypeToTranspilerType maps go/types'
+// Invalid to NilType precisely so this check has something to key on.
+//
+// The check must recurse: go/types resolves `[]box.Box[T]` to a slice whose
+// ELEMENT is Invalid, so a top-level-only test would leave `[]<nothing>` in place.
+func isUnresolvedType(t transpiler.Type) bool {
+	if t == nil || t.IsNil() {
+		return true
+	}
+	switch v := t.(type) {
+	case transpiler.ArrayType:
+		return isUnresolvedType(v.Elem)
+	case transpiler.PointerType:
+		return isUnresolvedType(v.Elem)
+	case transpiler.MapType:
+		return isUnresolvedType(v.Key) || isUnresolvedType(v.Elem)
+	case transpiler.GenericType:
+		if isUnresolvedType(v.Base) {
+			return true
+		}
+		for _, p := range v.Params {
+			if isUnresolvedType(p) {
+				return true
+			}
+		}
+	case transpiler.FuncType:
+		for _, p := range v.Params {
+			if isUnresolvedType(p) {
+				return true
+			}
+		}
+		for _, r := range v.Results {
+			if isUnresolvedType(r) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// fileImportPaths maps the name a file refers to each import by (its alias, or the
+// last path segment) to that import's path.
+func fileImportPaths(f *ast.File) map[string]string {
+	out := make(map[string]string, len(f.Imports))
+	for _, imp := range f.Imports {
+		if imp.Path == nil {
+			continue
+		}
+		path := strings.Trim(imp.Path.Value, `"`)
+		name := path
+		if idx := strings.LastIndex(name, "/"); idx != -1 {
+			name = name[idx+1:]
+		}
+		if imp.Name != nil && imp.Name.Name != "" && imp.Name.Name != "_" && imp.Name.Name != "." {
+			name = imp.Name.Name
+		}
+		out[name] = path
+	}
+	return out
+}
+
+// funcDeclTypeParams returns the declaration's type-parameter names as a set, so
+// syntactic recovery can tell `V` (a type parameter) from a local type name.
+func funcDeclTypeParams(fd *ast.FuncDecl) map[string]bool {
+	if fd.Type == nil || fd.Type.TypeParams == nil {
+		return nil
+	}
+	out := make(map[string]bool)
+	for _, field := range fd.Type.TypeParams.List {
+		for _, name := range field.Names {
+			out[name.Name] = true
+		}
+	}
+	return out
+}
+
+// flattenFieldTypes expands a parameter/result list into one AST type per slot,
+// repeating the type for grouped names (`a, b int` is two slots). This makes the
+// result index-aligned with GoFuncSignature's flat Params/Returns.
+func flattenFieldTypes(fl *ast.FieldList) []ast.Expr {
+	if fl == nil {
+		return nil
+	}
+	var out []ast.Expr
+	for _, field := range fl.List {
+		n := len(field.Names)
+		if n == 0 {
+			n = 1
+		}
+		for i := 0; i < n; i++ {
+			out = append(out, field.Type)
+		}
+	}
+	return out
+}
+
+// syntacticGoType converts a Go type expression to a transpiler.Type using only
+// syntax plus the file's import table — no go/types resolution. Returns NilType for
+// any shape it cannot represent, so callers can leave the original slot alone.
+func syntacticGoType(expr ast.Expr, imports map[string]string, pkgName string, typeParams map[string]bool) transpiler.Type {
+	switch e := expr.(type) {
+	case *ast.Ident:
+		if typeParams[e.Name] || transpiler.IsPrimitiveType(e.Name) || e.Name == "any" || e.Name == "error" {
+			return transpiler.BasicType{Name: e.Name}
+		}
+		return transpiler.NamedType{Package: pkgName, Name: e.Name}
+
+	case *ast.SelectorExpr:
+		x, ok := e.X.(*ast.Ident)
+		if !ok {
+			return transpiler.NilType{}
+		}
+		return transpiler.NamedType{Package: x.Name, Name: e.Sel.Name, ImportPath: imports[x.Name]}
+
+	case *ast.ParenExpr:
+		return syntacticGoType(e.X, imports, pkgName, typeParams)
+
+	case *ast.Ellipsis:
+		// convertSignature stores a variadic parameter element-wise, so `...T`
+		// recovers as T to stay index-aligned with it.
+		return syntacticGoType(e.Elt, imports, pkgName, typeParams)
+
+	case *ast.StarExpr:
+		elem := syntacticGoType(e.X, imports, pkgName, typeParams)
+		if elem.IsNil() {
+			return transpiler.NilType{}
+		}
+		return transpiler.PointerType{Elem: elem}
+
+	case *ast.ArrayType:
+		elem := syntacticGoType(e.Elt, imports, pkgName, typeParams)
+		if elem.IsNil() {
+			return transpiler.NilType{}
+		}
+		return transpiler.ArrayType{Elem: elem}
+
+	case *ast.MapType:
+		key := syntacticGoType(e.Key, imports, pkgName, typeParams)
+		val := syntacticGoType(e.Value, imports, pkgName, typeParams)
+		if key.IsNil() || val.IsNil() {
+			return transpiler.NilType{}
+		}
+		return transpiler.MapType{Key: key, Elem: val}
+
+	case *ast.IndexExpr:
+		return syntacticGenericType(e.X, []ast.Expr{e.Index}, imports, pkgName, typeParams)
+
+	case *ast.IndexListExpr:
+		return syntacticGenericType(e.X, e.Indices, imports, pkgName, typeParams)
+
+	case *ast.InterfaceType:
+		if e.Methods == nil || len(e.Methods.List) == 0 {
+			return transpiler.BasicType{Name: "any"}
+		}
+	}
+	return transpiler.NilType{}
+}
+
+// syntacticGenericType builds a GenericType for `Base[Args...]`.
+func syntacticGenericType(base ast.Expr, args []ast.Expr, imports map[string]string, pkgName string, typeParams map[string]bool) transpiler.Type {
+	baseType := syntacticGoType(base, imports, pkgName, typeParams)
+	if baseType.IsNil() {
+		return transpiler.NilType{}
+	}
+	params := make([]transpiler.Type, 0, len(args))
+	for _, arg := range args {
+		p := syntacticGoType(arg, imports, pkgName, typeParams)
+		if p.IsNil() {
+			return transpiler.NilType{}
+		}
+		params = append(params, p)
+	}
+	return transpiler.GenericType{Base: baseType, Params: params}
 }
 
 // extractPackageInfo extracts all exported type information from a types.Package.
@@ -704,6 +937,15 @@ func goTypeToTranspilerType(t types.Type) transpiler.Type {
 	switch t := t.(type) {
 	case *types.Basic:
 		name := t.Name()
+		// An unresolved type is NOT a type. go/types names the Invalid basic
+		// "invalid type" — a display string, not a Go identifier — and emitting
+		// it produces Go that does not even parse (`func() invalid type`), which
+		// then surfaces as an opaque internal error naming no user construct.
+		// NilType is the pipeline's contract for "unknown", and it is what lets
+		// repairUnresolvedSignatures find the slot and recover it from source.
+		if t.Kind() == types.Invalid {
+			return transpiler.NilType{}
+		}
 		// Untyped constants (e.g., "untyped string", "untyped int") should
 		// resolve to their concrete Go type for code generation purposes.
 		if t.Info()&types.IsUntyped != 0 {

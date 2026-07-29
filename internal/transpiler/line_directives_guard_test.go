@@ -1,8 +1,10 @@
 package transpiler
 
 import (
+	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"martianoff/gala/galaerr"
@@ -68,8 +70,31 @@ func TestInsertLineDirectivesRejectsUnparseableCode(t *testing.T) {
 			assert.Contains(t, se.Error(), "demo.gala")
 			assert.Contains(t, se.Error(), LineMarkerPrefix)
 			assert.Contains(t, se.Hint, "transpiler bug")
+
+			// The Go that failed to parse is the one artifact needed to
+			// diagnose the bug, and this is the only place it exists — the
+			// output file is never written on this path. The diagnostic must
+			// name a dump of it rather than discard it.
+			dump := dumpPathFromMessage(t, se.Error())
+			t.Cleanup(func() { _ = os.Remove(dump) })
+			written, readErr := os.ReadFile(dump)
+			require.NoError(t, readErr, "the named dump must exist and be readable")
+			assert.Equal(t, tc.code, string(written),
+				"the dump must be the exact source that failed to parse")
 		})
 	}
+}
+
+// dumpPathFromMessage extracts the dump path the unparseable-Go diagnostic names.
+func dumpPathFromMessage(t *testing.T, msg string) string {
+	t.Helper()
+	const prefix = "the generated Go was written to "
+	idx := strings.Index(msg, prefix)
+	require.NotEqual(t, -1, idx, "diagnostic must name the dump it wrote: %s", msg)
+	rest := msg[idx+len(prefix):]
+	end := strings.Index(rest, " for inspection)")
+	require.NotEqual(t, -1, end, "diagnostic must close the dump clause: %s", msg)
+	return rest[:end]
 }
 
 // TestInternalErrorRendersWithoutBogusFrame pins that the 0,0 position these

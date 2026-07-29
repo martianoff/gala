@@ -1,0 +1,38 @@
+package main
+
+import "martianoff/gala/go_interop"
+import . "martianoff/gala/resource"
+
+// `resource.WithLock(mu, () => …)` is the prescribed way to hold a mutex, and
+// `go_interop.OptionFromMap` is the sanctioned nil-safe bridge for reading a
+// possibly-nil Go map into an Option. Composing them is the obvious way to write
+// a locked map read.
+//
+// OptionFromMap is a Go generic returning a GALA std sealed type
+// (`std.Option[V]`), so a lambda over it forces the transpiler to write that
+// return type down. It used to emit unparseable Go and abort the build.
+
+func apply[A any](body func() A) A = body()
+
+func main() {
+    val mu = go_interop.NewMutex()
+    val m = go_interop.MapPut(go_interop.MapEmpty[string, int](), "k", 7)
+
+    // The documented lock-combinator idiom
+    Println(WithLock(mu, () => go_interop.OptionFromMap(m, "k")))
+    Println(WithLock(mu, () => go_interop.OptionFromMap(m, "missing")))
+
+    // Bare lambda, no combinator
+    val look = () => go_interop.OptionFromMap(m, "k")
+    Println(look())
+
+    // Routed through a user generic combinator
+    Println(apply(() => go_interop.OptionFromMap(m, "missing")))
+
+    // The recovered type must be a real Option[int], not an opaque value:
+    // pattern matching over it has to bind a concrete `v`.
+    apply(() => go_interop.OptionFromMap(m, "k")) match {
+        case Some(v) => Println(s"found ${v}")
+        case None()  => Println("absent")
+    }
+}

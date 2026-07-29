@@ -43,6 +43,57 @@ func TestAnalyzeGoFiles_RegistersMapAndChanElementTypes(t *testing.T) {
 	}
 }
 
+// A Go signature naming a type the checker cannot load must be recovered from
+// source rather than degraded.
+//
+// This is the shape go_interop's `OptionFromMap(...) std.Option[V]` has: `std` is
+// a GALA package, so it exists as Go only after transpilation, while this analysis
+// runs against the un-transpiled tree. go/types resolves such a reference to
+// Invalid — whose display string, "invalid type", is not a Go identifier at all.
+// Emitting it produced Go that could not be parsed. The recovery must yield the
+// type as written, with its type argument intact, so a call site can instantiate it.
+//
+// The unresolvable import here is a nonexistent path, not a GALA one: the recovery
+// is a property of unresolved types in general, with nothing specific to GALA or
+// to std.
+func TestAnalyzeGoFiles_RecoversUnresolvedSignatureTypesFromSource(t *testing.T) {
+	skipIfNoGoSDK(t)
+	dir := t.TempDir()
+	src := "package sample\n\n" +
+		"import \"example.test/nonexistent/box\"\n\n" +
+		"func Wrap[K comparable, V any](m map[K]V, k K) box.Box[V] { panic(\"x\") }\n" +
+		"func WrapSlice[T any](xs []T) []box.Box[T] { panic(\"x\") }\n" +
+		"func Plain(s string) int { return len(s) }\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "sample.go"), []byte(src), 0644))
+
+	info := analyzer.AnalyzeGoFiles(dir)
+	require.NotNil(t, info)
+
+	sig := info.GetFuncSignature("sample.Wrap")
+	require.NotNil(t, sig, "the function must still be registered")
+	require.Len(t, sig.Returns, 1)
+	assert.Equal(t, "box.Box[V]", sig.Returns[0].String(),
+		"the unresolvable return must be recovered as written, keeping its type argument")
+	assert.NotContains(t, sig.Returns[0].String(), "invalid",
+		"go/types' Invalid display string must never reach a transpiler.Type")
+	assert.Equal(t, []string{"K", "V"}, sig.TypeParams,
+		"type-parameter names are what make the recovered type instantiable")
+
+	sig = info.GetFuncSignature("sample.WrapSlice")
+	require.NotNil(t, sig)
+	require.Len(t, sig.Returns, 1)
+	assert.Equal(t, "[]box.Box[T]", sig.Returns[0].String(),
+		"recovery must descend through composite types")
+
+	// Signatures go/types DID resolve must be left exactly as they were.
+	sig = info.GetFuncSignature("sample.Plain")
+	require.NotNil(t, sig)
+	require.Len(t, sig.Returns, 1)
+	assert.Equal(t, "int", sig.Returns[0].String())
+	require.Len(t, sig.Params, 1)
+	assert.Equal(t, "string", sig.Params[0].Type.String())
+}
+
 func TestAnalyzeGoPackage_FmtPackage(t *testing.T) {
 	skipIfNoGoSDK(t)
 
