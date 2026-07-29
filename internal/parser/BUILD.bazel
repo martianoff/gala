@@ -17,12 +17,14 @@ go_test(
     srcs = [
         "bom_test.go",
         "empty_line_unicode_test.go",
+        "go_type_in_expression_test.go",
         "grammar_test.go",
         "parser_concurrent_test.go",
         "parser_test.go",
     ],
     embed = [":parser"],
     deps = [
+        "//galaerr",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],

@@ -1774,6 +1774,18 @@ gala_exec_test(
     deps = ["//strings"],
 )
 
+# Verification: every position where a Go slice or map type may be written
+# (the accept half of the GALA-E0040 rule)
+gala_exec_test(
+    name = "go_type_positions",
+    src = "go_type_positions.gala",
+    expected = "go_type_positions.out",
+    deps = [
+        "//collection_immutable",
+        "//go_interop",
+    ],
+)
+
 # Verification: immutable struct fields with Go slice types
 gala_exec_test(
     name = "immutable_slice_field",

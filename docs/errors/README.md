@@ -58,6 +58,7 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0036` | Bare Go statement keyword is not part of GALA's surface | [GALA-E0036.md](GALA-E0036.md) |
 | `GALA-E0037` | Unshareable capture across a concurrency boundary | [GALA-E0037.md](GALA-E0037.md) |
 | `GALA-E0038` | Invalid string escape sequence | [GALA-E0038.md](GALA-E0038.md) |
+| `GALA-E0040` | Go slice or map type in an expression | [GALA-E0040.md](GALA-E0040.md) |
 
 ## Adding a new code
 

@@ -1,7 +1,9 @@
 package parser
 
 import (
+	"fmt"
 	"regexp"
+	"strings"
 	"sync"
 
 	"martianoff/gala/galaerr"
@@ -221,8 +223,146 @@ func runeSpan(is *antlr.InputStream, start, end int) (string, bool) {
 type GalaErrorListener struct {
 	*antlr.DefaultErrorListener
 	Errors []error
+
+	// reportedGoType is the composite-literal context a GALA-E0040 has already
+	// been reported for, if any. See SyntaxError for why it is remembered.
+	reportedGoType *grammar.CompositeLiteralContext
 }
 
 func (l *GalaErrorListener) SyntaxError(recognizer antlr.Recognizer, offendingSymbol interface{}, line, column int, msg string, e antlr.RecognitionException) {
+	lit := currentCompositeLiteral(recognizer)
+
+	// Cascade suppression. Once E0040 is reported, ANTLR recovers by INSERTING
+	// the '{' it wanted and carries on parsing the rest of the file as that
+	// literal's element list, so every following token is re-reported against
+	// the same context ("mismatched input 'Println' expecting {',', '}'}").
+	// Those follow-ups describe a brace the user never wrote. Keyed on context
+	// identity, so an unrelated error elsewhere in the file is untouched.
+	if lit != nil && lit == l.reportedGoType {
+		return
+	}
+
+	if err := goTypeInExpressionError(lit); err != nil {
+		l.reportedGoType = lit
+		l.Errors = append(l.Errors, err)
+		return
+	}
+
 	l.Errors = append(l.Errors, galaerr.NewSyntaxError(line, column, msg))
+}
+
+// currentCompositeLiteral returns the rule the parser was inside when it
+// reported an error, if that rule is a compositeLiteral. Any other rule — and
+// any non-parser recognizer, i.e. the lexer — yields nil.
+func currentCompositeLiteral(recognizer antlr.Recognizer) *grammar.CompositeLiteralContext {
+	psr, ok := recognizer.(antlr.Parser)
+	if !ok {
+		return nil
+	}
+	lit, _ := psr.GetParserRuleContext().(*grammar.CompositeLiteralContext)
+	return lit
+}
+
+// goTypeInExpressionError turns the parse failure behind ANTLR's
+// "missing '{' at …" into GALA-E0040 when — and only when — its cause is a Go
+// slice or map type written in expression position. It returns nil for every
+// other failure, so the raw syntax error still reaches the user unchanged.
+//
+// The gate is structural rather than message-based, because ANTLR's recovery
+// wording is not part of any contract:
+//
+//   - the innermost rule is `compositeLiteral` (`type ('{' … '}')`). The parser
+//     only lands there for a bracketed expression when the bracket contents are
+//     not an expression list, which for `f[…](…)` means a type the expression
+//     grammar cannot spell;
+//   - that context has exactly one child, the `type` — so the parse died at the
+//     '{' slot, before consuming a brace. A malformed but genuine composite
+//     literal (`[]int{1, 2,`) has consumed its brace by the time it fails and
+//     is left to the ordinary syntax error;
+//   - and that `type` actually contains a Go slice or map type. Without this
+//     the code would fire on a func type, which is a different problem.
+func goTypeInExpressionError(lit *grammar.CompositeLiteralContext) error {
+	if lit == nil || lit.GetChildCount() != 1 {
+		return nil
+	}
+	typeCtx := lit.Type_()
+	if typeCtx == nil {
+		return nil
+	}
+	offender := findGoSliceOrMapType(typeCtx)
+	if offender == nil {
+		return nil
+	}
+
+	start := offender.GetStart()
+	stop := offender.GetStop()
+	if start == nil {
+		return nil
+	}
+
+	text := offender.GetText()
+	kind := "slice"
+	if strings.HasPrefix(text, "map[") {
+		kind = "map"
+	}
+
+	err := galaerr.NewCodedSemanticError(
+		galaerr.CodeGoTypeInExpression,
+		start.GetLine(),
+		start.GetColumn(),
+		fmt.Sprintf("Go %s type %s is not allowed in an expression", kind, text),
+		// The suggestion leads and is separated by "; " so the renderer's
+		// terse caret annotation — which cuts the hint at its first clause —
+		// shows the replacement rather than a truncated rule.
+		galaTypeSuggestion(offender, text)+"; Go slice and map types are an interop surface, allowed only where a type is expected: a function signature, a struct field, a val/var annotation, or a type alias",
+	)
+
+	// Span the offending type exactly, so the caret covers `[]byte` rather
+	// than the single token the renderer would otherwise scan out. Only when
+	// the type sits on one line; a multi-line type leaves the span unset and
+	// falls back to that scan.
+	if stop != nil && stop.GetLine() == start.GetLine() {
+		err = err.WithSpan(start.GetColumn() + len([]rune(text)))
+	}
+	return err
+}
+
+// galaTypeSuggestion spells the offending Go type the GALA way, so the message
+// leaves the reader with the replacement and not just the prohibition.
+func galaTypeSuggestion(offender grammar.ITypeContext, text string) string {
+	args := offender.AllType_()
+	switch {
+	case strings.HasPrefix(text, "map[") && len(args) >= 2:
+		return fmt.Sprintf("use HashMap[%s, %s] instead", args[0].GetText(), args[1].GetText())
+	case strings.HasPrefix(text, "[]") && len(args) >= 1:
+		// A byte slice is GALA's `string` far more often than it is a
+		// collection of numbers, so name both rather than send text handling
+		// through Array[byte].
+		if args[0].GetText() == "byte" {
+			return "use Array[byte], or string for text, instead"
+		}
+		return fmt.Sprintf("use Array[%s] instead", args[0].GetText())
+	}
+	return "use a GALA collection type (Array/HashMap) instead"
+}
+
+// findGoSliceOrMapType returns the first Go slice or map type at or below node,
+// in source order, or nil when there is none. Searching the whole subtree is
+// what lets the outer type be an ordinary generic — the offender in
+// `EmptyHashMap[string, []byte]` is the type argument, not the literal's type.
+func findGoSliceOrMapType(node antlr.Tree) grammar.ITypeContext {
+	if node == nil {
+		return nil
+	}
+	if ty, ok := node.(*grammar.TypeContext); ok {
+		if txt := ty.GetText(); strings.HasPrefix(txt, "[]") || strings.HasPrefix(txt, "map[") {
+			return ty
+		}
+	}
+	for _, child := range node.GetChildren() {
+		if found := findGoSliceOrMapType(child); found != nil {
+			return found
+		}
+	}
+	return nil
 }

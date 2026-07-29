@@ -400,6 +400,36 @@ func main() {
 			code:   galaerr.CodeInvalidStringEscape, // GALA-E0038
 			render: renderEscapeVariant(`val s = "it\'s"`),
 		},
+		{
+			name: "Go slice type as an explicit type argument",
+			code: galaerr.CodeGoTypeInExpression, // GALA-E0040
+			render: func(t *testing.T) string {
+				return renderRepro(t, "typearg.gala", `package main
+
+import "martianoff/gala/collection_immutable"
+
+func main() {
+    val m = collection_immutable.EmptyHashMap[string, []byte]()
+    Println(m.Size())
+}
+`)
+			},
+		},
+		{
+			name: "Go map type as an explicit type argument",
+			code: galaerr.CodeGoTypeInExpression, // GALA-E0040
+			render: func(t *testing.T) string {
+				return renderRepro(t, "maparg.gala", `package main
+
+import "martianoff/gala/collection_immutable"
+
+func main() {
+    val m = collection_immutable.EmptyHashMap[string, map[string]int]()
+    Println(m.Size())
+}
+`)
+			},
+		},
 		// The GALA-E0038 page also documents the rune-literal shape in prose
 		// (`'\d'`), but quotes no output for it, so there is nothing to pin.
 		// Its numeric forms (`'\x41'`) are not guardable here at all: GALA's

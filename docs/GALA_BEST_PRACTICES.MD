@@ -47,6 +47,17 @@ Use `collection_immutable.{Array, List, HashMap}` for general work. Use `go_inte
 | Pass to Go libraries | `SliceOf(...)` from `go_interop`, or `.ToGoSlice()` |
 | Variadic call | Go slice (`[]T`) via `SliceOf` |
 
+- **Go slice/map types go in type positions only.** `[]T` and `map[K]V` may be
+  written wherever a type is expected — signature, struct field, `val`/`var`
+  annotation, lambda parameter annotation, type alias, or as a type argument of a
+  generic type in one of those — and **never inside an expression**. So
+  `func take(m HashMap[string, []byte])` is fine, but
+  `EmptyHashMap[string, []byte]()` is not: write `EmptyHashMap[string, Array[byte]]()`,
+  or `EmptyHashMap[string, string]()` when the bytes are text. Name the Go type
+  with a type alias (`type Bytes []byte`) if it really has to stay a Go slice.
+  ([GALA-E0040](errors/GALA-E0040.md),
+  [§9 positional rule](GALA.MD#where-go-slice-and-map-types-may-be-written))
+
 - **Use functional ops, not loops:** `arr.Map`, `arr.Filter`, `arr.FoldLeft`, `arr.ForEach`, `arr.MkString`, `arr.ZipWithIndex`, `arr.Collect`.
 - **Short-circuit ops still loop:** `Exists`, `ForAll`, `Find`, `Contains` — keep these.
 - **Safe access:** `arr.GetOption(i)` returns `Option[T]` instead of panicking.

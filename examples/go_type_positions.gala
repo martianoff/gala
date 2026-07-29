@@ -1,0 +1,80 @@
+package main
+
+import . "martianoff/gala/go_interop"
+import "martianoff/gala/collection_immutable"
+
+// Verification: every position where a Go slice or map type may legitimately be
+// written. Go slices and maps are an interop surface, not first-class GALA
+// types: they are valid wherever a TYPE is expected, and never inside an
+// expression (an explicit type argument on a call, or a conversion — both
+// GALA-E0040; a composite literal — GALA-E0007 / GALA-E0008).
+//
+// This example pins the ACCEPT half of that rule. Its counterpart, the reject
+// half, lives in internal/parser/go_type_in_expression_test.go.
+
+// Position: type alias.
+type Bytes []byte
+
+type Counts map[string]int
+
+// Position: struct field.
+type Box struct {
+    data []byte
+    seen map[string]int
+}
+
+// Position: interface method result.
+type Reader interface {
+    Read() []byte
+}
+
+// Position: function parameter and function return type.
+func widen(b []byte) []byte = b
+
+// Position: map as a parameter and as a return type.
+func passthrough(m map[string]int) map[string]int = m
+
+// Position: inside a func type (both as a parameter of the func type and as its
+// result), alongside an ordinary slice parameter.
+func apply(f func([]byte) string, b []byte) string = f(b)
+
+// Position: type argument of a GENERIC TYPE, in a signature. This is the row
+// most easily mistaken for the rejected shape — `HashMap[string, []byte]` is
+// fine here because a parameter list is a type position.
+func countEntries(m collection_immutable.HashMap[string, []byte]) int = m.Size()
+
+// Position: type argument of a generic type, as a return type.
+func emptyByteMap() collection_immutable.HashMap[string, []byte] =
+    collection_immutable.EmptyHashMap[string, Bytes]()
+
+type Holder struct {}
+
+// Position: method parameter and method return type.
+func (h Holder) take(xs []int) map[string]int = MapEmpty[string, int]()
+
+func main() {
+    // Position: val/var annotation.
+    val b []byte = ToBytes("hi")
+    var m map[string]int = MapEmpty[string, int]()
+
+    Println(ToString(widen(b)))
+    Println(MapLen(passthrough(m)))
+
+    // Position: lambda parameter annotation.
+    val decode = (xs []byte) => ToString(xs)
+    Println(apply(decode, ToBytes("lambda")))
+
+    // The alias makes the Go slice type nameable in an EXPRESSION — the type
+    // argument below sits in a call, where `[]byte` itself may not be written.
+    val aliased = collection_immutable.EmptyHashMap[string, Bytes]()
+    Println(aliased.Size())
+
+    val counts Counts = MapPut(MapEmpty[string, int](), "a", 1)
+    Println(MapLen(counts))
+
+    val boxed = Box{data: ToBytes("field"), seen: m}
+    Println(ToString(boxed.data))
+
+    Println(countEntries(emptyByteMap()))
+    Println(MapLen(Holder{}.take(SliceOf(1, 2, 3))))
+}

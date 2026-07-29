@@ -432,7 +432,11 @@ func (t *GalaToGoTranspiler) Transpile(input string, filePath string) (string, e
 	tree, err := t.parser.Parse(input)
 	done()
 	if err != nil {
-		return "", err
+		// Same stamping the analyze phase does below: a coded parse-phase
+		// diagnostic carries a position but not the file it came from, and the
+		// CLI renderer needs the path to re-read the source for its snippet.
+		// Uncoded ANTLR syntax errors are not SemanticErrors and are untouched.
+		return "", galaerr.WithFilePath(err, filePath)
 	}
 
 	done = prof.Phase("analyze")
