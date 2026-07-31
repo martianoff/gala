@@ -124,6 +124,8 @@ Only `gala.mod` is required. A `go.mod` is not needed — the build generates on
 
 There is no restriction on nesting depth or on directory names: `internal/`, `pkg/foo/`, and `lib/a/b/` all work, and an intermediate directory (`internal/` above) need not contain any source files of its own.
 
+`internal` is the one directory name that carries meaning beyond layout: a package under it is importable only from the tree rooted at that directory's parent. The example above is legal because `cmd/myapp` sits inside `example.com/myapp`, the parent of `internal/`. Another module importing `example.com/myapp/internal/greet` is rejected with [GALA-E0041](errors/GALA-E0041.md). See [Package Visibility](#package-visibility).
+
 > **Version note.** Projects where *no* top-level directory directly contains `.gala` files require a build containing the fix from PR #465. Earlier versions failed with `cannot find module providing package …: 404 Not Found`, because the project's own module path was not redirected into the build workspace. Bazel builds were never affected.
 
 Bazel builds the same layout with one `gala_library` per directory; `bazel run //:gazelle` generates and maintains them. See [DEPENDENCY_MANAGEMENT.MD](DEPENDENCY_MANAGEMENT.MD) for depending on *other* modules, which is a separate mechanism from importing your own packages.
@@ -3171,6 +3173,56 @@ func main() {
     fmt.Println(w2.V)
 }
 ```
+
+### Package Visibility
+
+GALA controls visibility at two levels.
+
+**Identifier level** — casing, as in Go. A `PascalCase` type, function, field or method is exported from its package; a `camelCase` one is not. This is per-package: everything in a package sees everything else in that package, regardless of casing.
+
+**Package level** — `internal` directories. A package that lives under a directory named `internal` is importable only from within the tree rooted at that directory's parent:
+
+```
+mylib/
+  gala.mod                     module example.com/mylib
+  mylib.gala                   package mylib          — public
+  internal/
+    detail/detail.gala         package detail         — private to example.com/mylib
+  sub/
+    sub.gala                   package sub            — public
+    internal/
+      deep/deep.gala           package deep           — private to example.com/mylib/sub
+```
+
+The rule is Go's, applied to GALA import paths: `a/b/c/internal/d` is importable only from the tree rooted at `a/b/c`. Concretely, for the layout above:
+
+| Importer | `.../mylib/internal/detail` | `.../mylib/sub/internal/deep` |
+|---|---|---|
+| `example.com/mylib` | ✅ | ❌ — not under `sub/` |
+| `example.com/mylib/sub` | ✅ | ✅ |
+| `example.com/mylib/sub/other` | ✅ | ✅ |
+| another module | ❌ | ❌ |
+
+Only whole path elements count — a directory named `internalize` is an ordinary public package.
+
+This lets a library share code across its own packages without adding it to the API it has to keep supporting. Consumers of `example.com/mylib` can call whatever `mylib` exports; they cannot reach `internal/detail`, so it can be renamed, resplit or deleted without breaking them.
+
+A forbidden import is rejected at the `import` line with [GALA-E0041](errors/GALA-E0041.md):
+
+```
+error[GALA-E0041]: package "example.com/mylib/sub/internal/deep" is internal to
+"example.com/mylib/sub" and cannot be imported from "example.com/mylib"
+  --> main.gala:3:8
+  |
+3 | import "example.com/mylib/sub/internal/deep"
+  |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ internal packages are private to their parent tree
+```
+
+There is no exemption for the standard library: `martianoff/gala/*` packages resolve through the same mechanism as any other GALA library and obey the same rule.
+
+To make an internal package public, move it out of the `internal` directory. Because visibility is directory layout, this changes the package's import path — so the decision to publish a package is worth making deliberately, and reversing it is a breaking change for anyone who has started importing it.
+
+> **When to reach for it.** `internal` earns its keep when you ship a library to consumers you do not control and want a small supported surface. For an application or a single-binary project, the whole module is already private to you, and an `internal` tree mostly adds a directory level. Use it where there is a real API boundary to defend, not as a default layout.
 
 ### Creating GALA Libraries
 

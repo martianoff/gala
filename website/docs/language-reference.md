@@ -4,7 +4,7 @@ title: "GALA Language Reference - Complete Specification"
 description: "Complete GALA language specification. Variables, functions, structs, sealed types, pattern matching, generics, lambdas, interfaces, control flow, and standard library types — the full reference for the Go alternative language."
 keywords: "gala language reference, gala specification, gala syntax, gala language guide, go alternative language reference, gala documentation"
 permalink: /docs/language-reference/
-last_modified_at: 2026-07-05
+last_modified_at: 2026-07-30
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / Language Reference</p>
@@ -581,6 +581,28 @@ func main() {
     val sum = Add(10, 20) // from mathlib via dot import
 }
 ```
+
+### Package Visibility {#package-visibility}
+
+Visibility is controlled at two levels. **Identifiers** use casing, as in Go: a `PascalCase` type, function, field or method is exported from its package; a `camelCase` one is not.
+
+**Packages** use `internal` directories. A package under a directory named `internal` is importable only from the tree rooted at that directory's parent — Go's rule, applied to GALA import paths:
+
+```
+mylib/
+  mylib.gala                   package mylib    — public
+  internal/
+    detail/detail.gala         package detail   — private to example.com/mylib
+  sub/
+    internal/
+      deep/deep.gala           package deep     — private to example.com/mylib/sub
+```
+
+`a/b/c/internal/d` is importable only from the tree rooted at `a/b/c`. Only whole path elements count — a directory named `internalize` is an ordinary public package. There is no exemption for the standard library.
+
+This lets a library share code across its own packages without adding it to the API it must keep supporting: consumers call what the parent package exports and cannot reach `internal/detail`, so it can be renamed or deleted freely. A forbidden import is rejected with [GALA-E0041](/docs/errors/gala-e0041/).
+
+Publishing an internal package means moving it out of the `internal` directory, which changes its import path — so it is worth deciding deliberately. For an application, the whole module is already private to you; reach for `internal` where there is a real API boundary to defend, not as a default layout.
 
 See [Dependency Management](/docs/dependency-management/) for managing external packages.
 

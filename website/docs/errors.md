@@ -1,10 +1,10 @@
 ---
 layout: default
-title: "GALA Compiler Error Codes — Complete Reference (GALA-E0001 to GALA-E0038)"
-description: "Every GALA compile-time error code explained: what it means, the code that triggers it, the exact compiler message, and how to fix it. Searchable reference for GALA-E0001 through GALA-E0038."
-keywords: "gala error codes, gala compiler errors, gala-e0001, gala-e0038, gala semantic error, gala transpiler error, gala compile error reference, golang transpiler error codes"
+title: "GALA Compiler Error Codes — Complete Reference (GALA-E0001 to GALA-E0041)"
+description: "Every GALA compile-time error code explained: what it means, the code that triggers it, the exact compiler message, and how to fix it. Searchable reference for GALA-E0001 through GALA-E0041."
+keywords: "gala error codes, gala compiler errors, gala-e0001, gala-e0038, gala-e0041, gala semantic error, gala transpiler error, gala compile error reference, golang transpiler error codes"
 permalink: /docs/errors/
-last_modified_at: 2026-07-27
+last_modified_at: 2026-07-30
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / Error Codes</p>
@@ -93,6 +93,7 @@ Same code, same message; the column is zero-based in the terse form. See [Compil
 | [GALA-E0036](/docs/errors/gala-e0036/) | Bare Go statement keyword (`defer`, `go`, `select`, …) | Go surface |
 | [GALA-E0037](/docs/errors/gala-e0037/) | Non-shareable value crosses a goroutine boundary | Concurrency safety |
 | [GALA-E0038](/docs/errors/gala-e0038/) | Invalid escape sequence in a string literal | Literals |
+| [GALA-E0041](/docs/errors/gala-e0041/) | Import of an internal package from outside its tree | Packages |
 
 Every code the compiler can emit now has a page. Codes are never renumbered and never change meaning, so a code you find in an old build log still means the same thing here.
 
@@ -126,7 +127,7 @@ Five codes exist in the compiler but no valid source reaches them. Each still ha
 
 **Type inference** — [E0018](/docs/errors/gala-e0018/), [E0021](/docs/errors/gala-e0021/), [E0022](/docs/errors/gala-e0022/), [E0023](/docs/errors/gala-e0023/), [E0033](/docs/errors/gala-e0033/). See [Type Inference](/features/type-inference/).
 
-**Packages and imports** — [E0010](/docs/errors/gala-e0010/), [E0020](/docs/errors/gala-e0020/), [E0025](/docs/errors/gala-e0025/), [E0026](/docs/errors/gala-e0026/), [E0032](/docs/errors/gala-e0032/). See [Dependency Management](/docs/dependency-management/).
+**Packages and imports** — [E0010](/docs/errors/gala-e0010/), [E0020](/docs/errors/gala-e0020/), [E0025](/docs/errors/gala-e0025/), [E0026](/docs/errors/gala-e0026/), [E0032](/docs/errors/gala-e0032/), [E0041](/docs/errors/gala-e0041/) internal-package visibility. See [Dependency Management](/docs/dependency-management/).
 
 **Go constructs with no GALA surface** — [E0007](/docs/errors/gala-e0007/) slice literals · [E0008](/docs/errors/gala-e0008/) map literals · [E0035](/docs/errors/gala-e0035/) builtins like `len` and `panic` · [E0036](/docs/errors/gala-e0036/) statement keywords like `defer` and `go`. Each names its GALA replacement.
 

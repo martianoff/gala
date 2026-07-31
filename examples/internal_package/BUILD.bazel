@@ -1,0 +1,11 @@
+load("@rules_gala//gala:defs.bzl", "gala_exec_test")
+
+# Verifies that a public package can serve an API built on top of a package
+# under its own internal/ directory, while the consumer sees only the facade.
+gala_exec_test(
+    name = "internal_package",
+    src = "main.gala",
+    expected = "main.out",
+    gala_deps = ["//examples/internal_package/greeting"],
+    deps = ["//collection_immutable"],
+)

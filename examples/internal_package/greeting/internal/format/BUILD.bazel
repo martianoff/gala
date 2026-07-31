@@ -1,0 +1,10 @@
+load("@rules_gala//gala:defs.bzl", "gala_library")
+
+# Private to the greeting tree. The Bazel visibility mirrors the GALA rule:
+# only targets under examples/internal_package/greeting may depend on it.
+gala_library(
+    name = "format",
+    srcs = ["format.gala"],
+    importpath = "martianoff/gala/greeting/internal/format",
+    visibility = ["//examples/internal_package/greeting:__subpackages__"],
+)

@@ -374,6 +374,29 @@ const (
 	// rule, and pointed at the token after it, which sent readers looking for an
 	// unbalanced brace instead of the Go type they had written.
 	CodeGoTypeInExpression ErrorCode = "GALA-E0040"
+
+	// E0041: an import names a package under an `internal` directory that the
+	// importing package is not allowed to see. GALA uses Go's rule verbatim:
+	// `a/b/c/internal/d` is importable only from the tree rooted at `a/b/c`,
+	// so a dependency's internal packages are private to that dependency, and
+	// a nested `sub/internal/...` is private to `sub/`.
+	//
+	// The rule was always enforced — but by the Go compiler, against the
+	// GENERATED code, long after the transpiler had already resolved and
+	// transpiled the forbidden package. That produced errors like
+	//
+	//	gen\main.gen.go:6:8: use of internal package
+	//	gala-build-workspace/gen/sub/internal/deep not allowed
+	//
+	// naming a file the user never wrote and an import path that exists only
+	// inside the build workspace. Checking at import-resolution time reports
+	// the violation at the `import` line of the .gala file, in terms of the
+	// path the user actually typed.
+	//
+	// The check fails open when the importing package's own import path cannot
+	// be determined (no module root, or a file outside it), leaving the Go
+	// compiler as the backstop rather than guessing.
+	CodeInternalPackageImport ErrorCode = "GALA-E0041"
 )
 
 // MultiError collects multiple GALA errors.

@@ -14,7 +14,10 @@ go_library(
 
 go_test(
     name = "module_test",
-    srcs = ["resolver_test.go"],
+    srcs = [
+        "internal_visibility_test.go",
+        "resolver_test.go",
+    ],
     embed = [":module"],
     deps = [
         "@com_github_stretchr_testify//assert",

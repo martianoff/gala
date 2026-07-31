@@ -1,0 +1,7 @@
+package greeting
+
+import "martianoff/gala/greeting/internal/format"
+
+// Greet is the package's public API. It is free to call into the private
+// format package because greeting is the parent of format's internal/ directory.
+func Greet(name string) string = s"Hello, ${format.Decorate(name)}!"
