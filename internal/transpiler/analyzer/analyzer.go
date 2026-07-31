@@ -25,6 +25,67 @@ import (
 	"martianoff/gala/internal/transpiler/transformer"
 )
 
+// checkInternalImport rejects an import of a package under an `internal`
+// directory that the importing package is not inside the tree of, reporting it
+// at the import's own position in the .gala source.
+//
+// GALA applies Go's rule unchanged, including to the standard library: there
+// is no exemption for `martianoff/gala/...`, because std resolves through the
+// same mechanism as any other GALA library.
+//
+// TWO signals must agree before anything is reported:
+//
+//  1. the import path — importPath names an internal package that importerPath
+//     is outside of; and
+//  2. the layout on disk — the importing file really does sit outside the
+//     internal directory's parent.
+//
+// Requiring both is what keeps the check honest under Bazel, where a
+// gala_library's declared `importpath` need not mirror where its sources live.
+// This repository's own examples do exactly that, so signal 1 alone would
+// reject a package importing its own internal/ subtree.
+//
+// Every path that cannot establish a violation returns nil. The Go compiler
+// still rejects the generated code, so failing open costs a worse error
+// message rather than a missed violation.
+func (a *galaAnalyzer) checkInternalImport(importerPath, importPath string, spec *grammar.ImportSpecContext, filePath string) error {
+	if module.AllowsInternalImport(importerPath, importPath) {
+		return nil
+	}
+
+	// Signal 1 fired. Corroborate against the layout before reporting.
+	importedDir, err := a.resolver.ResolvePackagePath(importPath)
+	if err != nil || importedDir == "" {
+		return nil
+	}
+	if !module.DirContainsInternalViolation(filepath.Dir(filePath), importedDir) {
+		return nil
+	}
+
+	root, _ := module.InternalPackageRoot(importPath)
+	msg := fmt.Sprintf("package %q is internal to %q and cannot be imported from %q",
+		importPath, root, importerPath)
+	// The first clause becomes the inline caret annotation (see
+	// galaerr.terseHint), so it is kept short and free of interpolation —
+	// a long module path would push it past the 60-rune cap and be truncated
+	// mid-word. The specifics belong in the footer clause.
+	hint := fmt.Sprintf(
+		"internal packages are private to their parent tree; "+
+			"import something %q exports instead, or move this package out of internal/ to make it public",
+		root)
+
+	tok := spec.STRING().GetSymbol()
+	violation := galaerr.NewCodedSemanticError(
+		galaerr.CodeInternalPackageImport,
+		tok.GetLine(),
+		tok.GetColumn(),
+		msg,
+		hint,
+	)
+	violation.FilePath = filePath
+	return violation
+}
+
 // CheckStdConflict returns an error if the given name conflicts with std library exports.
 // This prevents user code from shadowing std types and functions.
 //
@@ -606,11 +667,23 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 	phaseStart = time.Now()
 
 	// 0.5 Scan imports
+	//
+	// importerPath is this file's own package import path. It is computed once
+	// for the whole scan and is "" whenever the module is unknown or the file
+	// sits outside its root (a cached dependency being analyzed recursively,
+	// an editor buffer with no gala.mod) — which makes every internal-package
+	// check below fail open. See module.AllowsInternalImport.
+	importerPath := a.resolver.PackageImportPath(filePath)
+
 	for _, impDecl := range sourceFile.AllImportDeclaration() {
 		ctx := impDecl.(*grammar.ImportDeclarationContext)
 		for _, spec := range ctx.AllImportSpec() {
 			s := spec.(*grammar.ImportSpecContext)
 			path := strings.Trim(s.STRING().GetText(), "\"")
+
+			if err := a.checkInternalImport(importerPath, path, s, filePath); err != nil {
+				return nil, err
+			}
 
 			// Check if this is a GALA package (internal or external)
 			isInternalGala := strings.HasPrefix(path, "martianoff/gala/")

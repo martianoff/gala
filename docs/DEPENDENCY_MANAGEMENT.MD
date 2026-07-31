@@ -451,6 +451,26 @@ When you add a GALA dependency (without the `--go` flag), the source `.gala` fil
 
 GALA library packages with multiple `.gala` files are fully supported. The transpiler uses `NewGalaAnalyzerWithPackageFiles` to enable cross-file type resolution within the dependency.
 
+### What You Can Import From a Dependency
+
+Not every package in a dependency is part of its API. A package under a directory named `internal` is private to the module that ships it:
+
+```
+github.com/user/lib-a/
+  liba.gala                  package liba      — importable by you
+  internal/
+    detail/detail.gala       package detail    — private to github.com/user/lib-a
+```
+
+```gala
+import "github.com/user/lib-a"                    // OK
+import "github.com/user/lib-a/internal/detail"    // GALA-E0041
+```
+
+The dependency uses its own `internal` packages freely — you just cannot reach past its public surface to them. This is the same rule Go applies, stated in full in [Package Visibility](GALA.MD#package-visibility): `a/b/c/internal/d` is importable only from the tree rooted at `a/b/c`.
+
+It applies to your own project too. A package under `internal/` at your module root is visible anywhere in your module but to no one who depends on it, which is what makes it a safe place for code you are not ready to commit to supporting. See [GALA-E0041](errors/GALA-E0041.md) for the diagnostic and how to resolve it.
+
 ### Transitive Dependencies
 
 Dependencies of dependencies are handled automatically:

@@ -1,0 +1,15 @@
+package main
+
+import (
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/greeting"
+)
+
+// Demonstrates package-level visibility. This file may import the public
+// greeting package, but NOT martianoff/gala/greeting/internal/format —
+// that import is rejected with GALA-E0041, because main sits outside the
+// tree rooted at martianoff/gala/greeting.
+func main() {
+    val names = ArrayOf("ada", "grace", "alan")
+    names.Map((n) => greeting.Greet(n)).ForEach((g) => Println(g))
+}

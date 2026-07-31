@@ -166,6 +166,14 @@ func copyFile(src string, dst string) Try[Int] = Try(() => {
   GET("/", (req) => Ok("hello"))
   ```
 - **Avoid `any` in callback signatures** — it forces callers to annotate lambdas.
+- **Keep shared-but-unsupported code in `internal/`** when you ship a library to consumers you do not control. A package under `internal/` is importable only from the tree rooted at that directory's parent, so it can be split, renamed or deleted without breaking anyone:
+  ```
+  mylib/
+    mylib.gala             # public API
+    internal/
+      detail/detail.gala   # shared across mylib's packages, invisible to consumers
+  ```
+  Not a default layout — for an application the whole module is already private, and an `internal/` tree just adds a directory level. Reach for it where there is a real API boundary to defend. Publishing later means moving the directory, which changes the import path. See [Package Visibility](GALA.MD#package-visibility).
 
 ---
 

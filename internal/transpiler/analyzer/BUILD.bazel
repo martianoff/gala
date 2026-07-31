@@ -41,6 +41,7 @@ go_test(
         "go_src_dirs_test.go",
         "go_types_debug_test.go",
         "go_types_test.go",
+        "internal_import_test.go",
         "multipackage_panic_test.go",
         "parallel_parse_test.go",
         "parsedfile_cache_test.go",
@@ -66,6 +67,7 @@ go_test(
     ],
     embed = [":analyzer"],
     deps = [
+        "//galaerr",
         "//internal/transpiler",
         "//internal/transpiler/module",
         "//internal/transpiler/registry",

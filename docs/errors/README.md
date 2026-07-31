@@ -60,6 +60,7 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0038` | Invalid string escape sequence | [GALA-E0038.md](GALA-E0038.md) |
 | `GALA-E0039` | Bare variant name in a match pattern | [GALA-E0039.md](GALA-E0039.md) |
 | `GALA-E0040` | Go slice or map type in an expression | [GALA-E0040.md](GALA-E0040.md) |
+| `GALA-E0041` | Import of an internal package from outside its tree | [GALA-E0041.md](GALA-E0041.md) |
 
 ## Adding a new code
 

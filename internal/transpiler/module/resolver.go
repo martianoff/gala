@@ -129,6 +129,159 @@ func (r *Resolver) ModuleName() string {
 	return r.moduleName
 }
 
+// InternalPackageRoot reports whether importPath names a package that lives
+// under an "internal" directory, and if so returns the import path of the
+// subtree that is allowed to import it.
+//
+// The rule is Go's, applied to GALA import paths: a package
+// "a/b/c/internal/d/e" is importable only from the tree rooted at "a/b/c".
+// Only a whole path ELEMENT counts — "a/b/internalize/c" has no internal
+// element, and a leading "internal/d" yields the empty root, meaning the
+// module's own root tree.
+//
+// The LAST internal element wins, matching cmd/go's findInternal: for
+// "a/internal/b/internal/c" the binding root is "a/internal/b", the innermost
+// (and therefore narrowest) constraint.
+func InternalPackageRoot(importPath string) (root string, isInternal bool) {
+	elems := strings.Split(importPath, "/")
+	i := lastInternalElement(elems)
+	if i < 0 {
+		return "", false
+	}
+	return strings.Join(elems[:i], "/"), true
+}
+
+// lastInternalElement returns the index of the last path element equal to
+// "internal", or -1 when there is none. Shared by the import-path rule and the
+// on-disk rule so the two cannot drift apart on what counts as "internal".
+func lastInternalElement(elems []string) int {
+	for i := len(elems) - 1; i >= 0; i-- {
+		if elems[i] == "internal" {
+			return i
+		}
+	}
+	return -1
+}
+
+// relWithin reports the slash-separated path of target relative to root, and
+// whether target lies inside root (root itself counts as inside). Both
+// arguments must already be absolute.
+func relWithin(root, target string) (rel string, inside bool) {
+	r, err := filepath.Rel(root, target)
+	if err != nil {
+		return "", false
+	}
+	r = filepath.ToSlash(r)
+	if r == ".." || strings.HasPrefix(r, "../") {
+		return r, false
+	}
+	return r, true
+}
+
+// DirContainsInternalViolation reports whether importerDir sits outside the
+// tree that may import a package located at importedDir, judging by the
+// directory layout on disk rather than by import path.
+//
+// This is the corroborating signal for AllowsInternalImport. Import paths are
+// not always a faithful picture of the layout: under Bazel a gala_library
+// declares its `importpath` explicitly, and it need not mirror where the
+// sources live (this repository's own examples declare
+// "martianoff/gala/greeting" for sources under examples/internal_package/).
+// Judging visibility from the derived path alone would reject those builds.
+//
+// Returns false — no violation — whenever the layout does not clearly show
+// one, including when either path is unknown or the imported package has no
+// "internal" ancestor on disk.
+func DirContainsInternalViolation(importerDir, importedDir string) bool {
+	if importerDir == "" || importedDir == "" {
+		return false
+	}
+
+	absImporter, err := filepath.Abs(importerDir)
+	if err != nil {
+		return false
+	}
+	absImported, err := filepath.Abs(importedDir)
+	if err != nil {
+		return false
+	}
+
+	// Find the innermost "internal" element of the imported package's path and
+	// take its parent — the root of the tree allowed to import it.
+	elems := strings.Split(filepath.ToSlash(absImported), "/")
+	idx := lastInternalElement(elems)
+	if idx <= 0 {
+		return false // no internal ancestor on disk (or it is the filesystem root)
+	}
+	allowedRoot := filepath.FromSlash(strings.Join(elems[:idx], "/"))
+
+	_, inside := relWithin(allowedRoot, absImporter)
+	return !inside
+}
+
+// AllowsInternalImport reports whether a package whose own import path is
+// importerPath may import importPath.
+//
+// Non-internal imports are always allowed. An internal import is allowed only
+// when the importer sits inside the tree rooted at the internal directory's
+// parent — that is, when importerPath is that root or a package below it.
+//
+// An empty importerPath means the caller could not determine which package is
+// doing the importing (no module root, or a file outside it). The check then
+// fails OPEN and allows the import: reporting a visibility violation against
+// an unknown importer would turn "we don't know where this file lives" into a
+// hard compile error, and the Go compiler still backstops the real rule.
+func AllowsInternalImport(importerPath, importPath string) bool {
+	root, isInternal := InternalPackageRoot(importPath)
+	if !isInternal {
+		return true
+	}
+	if importerPath == "" {
+		return true
+	}
+	if root == "" {
+		// "internal/..." with no prefix: importable from anywhere in the
+		// module that declares it. The importer path alone cannot prove
+		// membership, so leave this to the resolver — an unqualified
+		// internal path never crosses a module boundary by import path.
+		return true
+	}
+	return importerPath == root || strings.HasPrefix(importerPath, root+"/")
+}
+
+// PackageImportPath returns the import path of the package that contains the
+// source file filePath, derived from the module root and module name.
+//
+// filePath names a FILE; its parent directory is the package. The function
+// touches no filesystem — it is pure path arithmetic.
+//
+// Returns "" when the module is unknown or filePath lies outside the module
+// root — callers treat that as "importer unknown" and skip visibility checks
+// rather than guessing.
+func (r *Resolver) PackageImportPath(filePath string) string {
+	if r.moduleName == "" || r.moduleRoot == "" || filePath == "" {
+		return ""
+	}
+
+	absDir, err := filepath.Abs(filepath.Dir(filePath))
+	if err != nil {
+		return ""
+	}
+	absRoot, err := filepath.Abs(r.moduleRoot)
+	if err != nil {
+		return ""
+	}
+
+	rel, inside := relWithin(absRoot, absDir)
+	if !inside {
+		return ""
+	}
+	if rel == "." {
+		return r.moduleName
+	}
+	return r.moduleName + "/" + rel
+}
+
 // ResolvePackagePath converts an import path to a filesystem path.
 //
 // Resolution strategy:

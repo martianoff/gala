@@ -1,0 +1,9 @@
+package format
+
+// Decorate renders a name in the greeting package's house style.
+//
+// This package sits under greeting/internal/, so it is importable only from
+// the tree rooted at martianoff/gala/greeting. Consumers of the greeting
+// package cannot reach it, which is what lets the styling change without
+// breaking them.
+func Decorate(name string) string = s"[$name]"
