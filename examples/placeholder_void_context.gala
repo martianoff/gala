@@ -7,7 +7,7 @@ import . "martianoff/gala/collection_immutable"
 // Emitting a result type in that position produces the non-existent Go type
 // `void`, which does not compile.
 func shout(s string) {
-    Println(s + "!")
+    Println(s"${s}!")
 }
 
 func main() {
