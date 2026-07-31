@@ -330,6 +330,21 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
+# Regression: bare reference to a function in ANOTHER package passed to a
+# generic method (Array.Map) whose result feeds a second generic method. The
+# cross-package function's signature must be resolved so Map's type parameter
+# binds; otherwise the uninstantiated method type parameter leaks into the
+# generated Go.
+gala_exec_test(
+    name = "crosspkg_funcref_chain",
+    src = "crosspkg_funcref_chain.gala",
+    expected = "crosspkg_funcref_chain.out",
+    deps = [
+        "//collection_immutable",
+        "//examples/crosspkg_funcref_lib",
+    ],
+)
+
 # Regression: placeholder-lambda `_.Field` must be equivalent to the explicit
 # lambda `(p) => p.Field`, including the Immutable field auto-unwrap. Prior to
 # the fix `_.Name` bound `_` to `any`, hiding the struct metadata from the

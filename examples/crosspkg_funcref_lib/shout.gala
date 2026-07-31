@@ -1,0 +1,13 @@
+package crosspkg_funcref_lib
+
+// Shout is a plain, non-generic function that lives in a DIFFERENT package
+// from its caller. Passing a bare reference to it (`crosspkg_funcref_lib.Shout`)
+// into a generic method such as Array.Map requires the transpiler to resolve
+// the function's signature across the package boundary so the method's own
+// type parameter can be bound.
+func Shout(s string) string = s"$s!"
+
+// Length is a second cross-package function whose result type differs from its
+// parameter type, so Map's type parameter cannot accidentally fall back to the
+// element type of the receiver.
+func Length(s string) int = s.Size()
