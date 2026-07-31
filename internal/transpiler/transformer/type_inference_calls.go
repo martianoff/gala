@@ -52,6 +52,20 @@ func (t *galaASTTransformer) inferSelectorExprType(e *ast.SelectorExpr) transpil
 			// Check if this is a Go constant or variable (not a type)
 			// e.g., runtime.GOOS is a string constant, not a type
 			qualName := pkgName + "." + e.Sel.Name
+			// A bare reference to a function in another GALA package
+			// (e.g. `helper.Shout` passed to Array.Map). The same-package
+			// form is resolved from FunctionMetadata in the *ast.Ident case
+			// of getExprTypeNameManualUncached; do the same here from the
+			// imported package's metadata so the reference carries a
+			// FuncType. Without it the reference resolves to a NamedType and
+			// unification cannot bind the consuming method's type parameter,
+			// leaving the method type-param sentinel in the emitted Go.
+			// Generic functions are excluded for the same reason as the
+			// Ident case: they need instantiation, not a raw signature whose
+			// type variables would leak.
+			if fm, ok := t.functions[qualName]; ok && fm != nil && len(fm.TypeParams) == 0 {
+				return t.funcMetaToRawType(fm)
+			}
 			if t.goTypeInfo != nil {
 				if constType, ok := t.goTypeInfo.Constants[qualName]; ok && constType != nil {
 					return constType

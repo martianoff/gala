@@ -70,6 +70,7 @@ go_test(
         "coverage_regression_test.go",
         "cross_module_matrix_test.go",
         "crossfile_package_val_test.go",
+        "crosspkg_funcref_chain_test.go",
         "default_immutability_test.go",
         "dot_import_generic_namedarg_test.go",
         "dot_import_test.go",

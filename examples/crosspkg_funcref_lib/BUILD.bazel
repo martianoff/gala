@@ -1,0 +1,8 @@
+load("@rules_gala//gala:defs.bzl", "gala_library")
+
+gala_library(
+    name = "crosspkg_funcref_lib",
+    src = "shout.gala",
+    importpath = "martianoff/gala/examples/crosspkg_funcref_lib",
+    visibility = ["//visibility:public"],
+)

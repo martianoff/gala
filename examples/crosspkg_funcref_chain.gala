@@ -1,0 +1,27 @@
+package main
+
+import (
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/examples/crosspkg_funcref_lib"
+)
+
+// A bare reference to a function in ANOTHER package, passed to a generic
+// method (Array.Map) whose result is then consumed by a SECOND generic method
+// (ForEach / Map). The transpiler must resolve the cross-package function's
+// signature to bind Map's result type parameter; otherwise the uninstantiated
+// method type parameter leaks into the generated Go.
+func main() {
+    // Cross-package bare ref chained into a generic consumer.
+    ArrayOf("a", "b").Map(crosspkg_funcref_lib.Shout).ForEach((g) => Println(g))
+
+    // Cross-package bare ref whose result type differs from the element type,
+    // chained into another generic method.
+    val lengths = ArrayOf("aa", "bbb").Map(crosspkg_funcref_lib.Length)
+    Println(lengths.Map((n) => n * 2).String())
+
+    // Cross-package bare ref with a non-generic consumer.
+    Println(ArrayOf("c").Map(crosspkg_funcref_lib.Shout).String())
+
+    // Explicit lambda over the same cross-package function.
+    ArrayOf("d").Map((s) => crosspkg_funcref_lib.Shout(s)).ForEach((g) => Println(g))
+}
