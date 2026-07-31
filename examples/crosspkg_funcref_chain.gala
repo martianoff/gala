@@ -17,7 +17,7 @@ func main() {
     // Cross-package bare ref whose result type differs from the element type,
     // chained into another generic method.
     val lengths = ArrayOf("aa", "bbb").Map(crosspkg_funcref_lib.Length)
-    Println(lengths.Map((n) => n * 2).String())
+    Println(lengths.Map(_ * 2).String())
 
     // Cross-package bare ref with a non-generic consumer.
     Println(ArrayOf("c").Map(crosspkg_funcref_lib.Shout).String())
