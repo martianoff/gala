@@ -94,8 +94,19 @@ GALA has two categories of tests:
 gala/
   cmd/gala/                        # CLI entry point (Cobra)
   internal/
+    build/                         # `gala build` / `gala test` driver: transpile into a
+                                   #   workspace, generate its go.mod, invoke the Go toolchain
+    depman/                        # Module resolution and the gala.mod reader/writer
+    lsp/                           # Language server (diagnostics, hover, completion)
+    stdlib/                        # Embedded standard-library snapshot + extraction
     parser/grammar/                # ANTLR4 grammar and generated parser
     transpiler/
+      analyzer/                    # Package metadata extraction; Go type info via the Go SDK
+      infer/                       # Hindley-Milner inference (Layer 2)
+      module/                      # Module/import path resolution
+      profiler/                    # Optional phase timing (GALA_PROFILE)
+      registry/                    # Type and function registries
+      resolver/                    # Symbol resolution
       generator/                   # Go source code generation from Go AST
       transformer/                 # GALA parse tree -> Go AST transformation
   std/                             # Standard library (Option, Either, Try, etc.)
