@@ -112,6 +112,7 @@ go_test(
         "panic_audit_test.go",
         "phantom_reexport_funconly_test.go",
         "placeholder_field_immutable_test.go",
+        "placeholder_void_context_test.go",
         "pointer_receiver_test.go",
         "qualified_namedarg_shadow_test.go",
         "recursive_immutable_test.go",
