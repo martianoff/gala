@@ -99,6 +99,35 @@ gala_binary(
 
 The transpiler automatically passes sibling file information so that each file can resolve types, sealed types, and methods defined in other files of the same package.
 
+### Multi-Package Projects
+
+A project can contain many packages. One directory is one package, and a package imports another in the same module by its **full module path plus the directory path** — the same spelling Go uses:
+
+```
+myapp/
+  gala.mod                     module example.com/myapp
+  cmd/myapp/main.gala          package main
+  internal/greet/greet.gala    package greet
+```
+
+```gala
+package main
+
+import "example.com/myapp/internal/greet"
+
+func main() {
+    Println(greet.Hello("world"))
+}
+```
+
+Only `gala.mod` is required. A `go.mod` is not needed — the build generates one for its workspace.
+
+There is no restriction on nesting depth or on directory names: `internal/`, `pkg/foo/`, and `lib/a/b/` all work, and an intermediate directory (`internal/` above) need not contain any source files of its own.
+
+> **Version note.** Projects where *no* top-level directory directly contains `.gala` files require a build containing the fix from PR #465. Earlier versions failed with `cannot find module providing package …: 404 Not Found`, because the project's own module path was not redirected into the build workspace. Bazel builds were never affected.
+
+Bazel builds the same layout with one `gala_library` per directory; `bazel run //:gazelle` generates and maintains them. See [DEPENDENCY_MANAGEMENT.MD](DEPENDENCY_MANAGEMENT.MD) for depending on *other* modules, which is a separate mechanism from importing your own packages.
+
 ## 2. Variable Declarations
 
 GALA distinguishes between immutable and mutable variables.
