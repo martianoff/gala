@@ -1,0 +1,22 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// Regression: a placeholder lambda whose expected callback returns nothing must
+// lower to a result-less Go func literal (`func(s string) { shout(s) }`).
+// Emitting a result type in that position produces the non-existent Go type
+// `void`, which does not compile.
+func shout(s string) {
+    Println(s"${s}!")
+}
+
+func main() {
+    // Placeholder calling a user-declared void function.
+    ArrayOf("a", "b").ForEach(shout(_))
+
+    // Placeholder calling the Println sugar (multi-return Go call, discarded).
+    ArrayOf(1, 2).ForEach(Println(_))
+
+    // Value context is unaffected: the result type is still inferred.
+    Println(ArrayOf(1, 2, 3).Map(_ + 1).FoldLeft(0, _ + _))
+}

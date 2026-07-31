@@ -1668,6 +1668,13 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 		})
 	}
 
+	// A callback that returns nothing must lower to a result-less func literal.
+	// This mirrors the explicit lambda path, where an expected FuncType with no
+	// results is signalled by the ExpectedVoid sentinel and produces
+	// `func(x T) { body }`. Go has no `void` type, so neither the expected
+	// result nor a VoidType inferred from the body may be emitted as a result.
+	expectsVoid := len(ft.Results) == 0 || isVoidTypeIdent(bodyResultType)
+
 	// Build the result type. Prefer the concrete type inferred from the body —
 	// this matches the explicit lambda path and avoids widening a resolvable
 	// result (e.g. `string`) to the callback's unresolved `any`. Fall back to
@@ -1675,6 +1682,8 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 	// be resolved concretely.
 	var resultField *ast.FieldList
 	switch {
+	case expectsVoid:
+		// No results: the func literal returns nothing.
 	case !isAnyTypeExpr(bodyResultType):
 		resultField = &ast.FieldList{
 			List: []*ast.Field{{Type: bodyResultType}},
@@ -1689,13 +1698,30 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 		}
 	}
 
+	// A result-less literal evaluates the body for its side effects: `return
+	// body` is invalid Go when the literal declares no results (and when the
+	// body itself yields no value). Only a call may stand alone as a statement.
+	var bodyStmt ast.Stmt = &ast.ReturnStmt{Results: []ast.Expr{body}}
+	if resultField == nil {
+		if _, isCall := body.(*ast.CallExpr); isCall {
+			// Same contract as the explicit void lambda: silently dropping an
+			// error-only return is a bug, not a discard.
+			if funcName := t.goCallReturnsErrorOnly(body); funcName != "" {
+				return nil, false, galaerr.NewSemanticErrorAt(
+					exprCtx.GetStart().GetLine(), exprCtx.GetStart().GetColumn(),
+					fmt.Sprintf("cannot discard error return from %s in void lambda — use FromError(%s) to handle the error", funcName, funcName))
+			}
+			bodyStmt = &ast.ExprStmt{X: body}
+		}
+	}
+
 	funcLit := &ast.FuncLit{
 		Type: &ast.FuncType{
 			Params:  fieldList,
 			Results: resultField,
 		},
 		Body: &ast.BlockStmt{
-			List: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{body}}},
+			List: []ast.Stmt{bodyStmt},
 		},
 	}
 	return funcLit, true, nil

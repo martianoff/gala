@@ -722,6 +722,16 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
+# Regression: a placeholder lambda in a void position (ForEach) must lower to a
+# result-less Go func literal. Prior to the fix it emitted the non-existent Go
+# type `void` as the literal's result, so the generated file did not compile.
+gala_exec_test(
+    name = "placeholder_void_context",
+    src = "placeholder_void_context.gala",
+    expected = "placeholder_void_context.out",
+    deps = ["//collection_immutable"],
+)
+
 gala_exec_test(
     name = "sealed_recursive_list",
     src = "sealed_recursive_list.gala",
