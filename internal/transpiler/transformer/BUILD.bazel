@@ -184,6 +184,23 @@ go_test(
         # locally. Staging these makes the guards measure the same set
         # everywhere.
         "//examples:gala_sources",
+        # The rest of the standard library. Examples importing any of these
+        # could not resolve them under the sandbox and were counted as skipped,
+        # so the corpus guards covered a fifth less on CI than locally.
+        "//concurrent:gala_sources",
+        "//crypto:gala_sources",
+        "//fs:gala_sources",
+        "//io:gala_sources",
+        "//json:gala_sources",
+        "//path:gala_sources",
+        "//regex:gala_sources",
+        "//resource:gala_sources",
+        "//stream:gala_sources",
+        "//strings:gala_sources",
+        "//subprocess:gala_sources",
+        "//test:gala_sources",
+        "//validation:gala_sources",
+        "//yaml:gala_sources",
         "//std:gala_sources",
         "//time_utils:gala_sources",
         # go_interop is a pure-Go stdlib package (no .gala). The Sendable
