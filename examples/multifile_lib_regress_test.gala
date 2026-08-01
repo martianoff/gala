@@ -464,4 +464,17 @@ func main() {
         case Off    => Println("flag-off")
         case On(lb) => Println(s"flag-on $lb")
     }
+    // --- Regression: a GALA package imported by one file of a package must not
+    // rebind that package name for its siblings. pkg_name_collision.gala imports
+    // GALA's strings; pkg_name_collision_go.gala imports Go's. Each must resolve
+    // to its own. The match in GoStringsClassify is load-bearing: the old bug only
+    // surfaced where a concrete type was required.
+    Println(multifile_lib_regress.GalaStringsUpper("gala"))
+    Println(s"${multifile_lib_regress.GalaStringsSplitSize("a:b")}")
+    Println(multifile_lib_regress.GoStringsClassify("header:X-Api-Key"))
+    Println(multifile_lib_regress.GoStringsClassify("query:q"))
+    Println(multifile_lib_regress.GoStringsClassify("nope"))
+    Println(multifile_lib_regress.GoStringsClassify("cookie:c"))
+    Println(multifile_lib_regress.GoStringsUpper("go"))
+
 }

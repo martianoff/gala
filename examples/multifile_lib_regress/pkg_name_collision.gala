@@ -1,0 +1,24 @@
+package multifile_lib_regress
+
+// Regression: a GALA package imported by ONE file of a package must not rebind
+// that package name for its SIBLING files.
+//
+// GALA ships packages whose names collide with Go stdlib ones — strings, io,
+// path, json, crypto, fs. Function metadata is keyed by package NAME
+// ("strings.SplitN") and merged across every file in a package, so once any file
+// imported GALA's `strings`, a sibling file's Go `strings.SplitN` resolved
+// against GALA's signature (returning Array[string]) while codegen still emitted
+// the Go import (returning []string). Inference and emission disagreed, and the
+// error surfaced in the innocent file naming types it never wrote.
+//
+// This file imports GALA's strings. Its sibling pkg_name_collision_go.gala
+// imports Go's. Both must resolve to their own.
+
+import gstr "martianoff/gala/strings"
+
+// GalaStringsUpper goes through GALA's strings package.
+func GalaStringsUpper(s string) string = gstr.ToUpper(s)
+
+// GalaStringsSplitSize proves GALA's SplitN returns an Array (element count via
+// .Size()), which is exactly the signature that used to leak into the sibling.
+func GalaStringsSplitSize(s string) int = gstr.SplitN(s, ":", 2).Size()
