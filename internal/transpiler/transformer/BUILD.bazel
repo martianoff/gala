@@ -53,6 +53,12 @@ go_library(
 
 go_test(
     name = "transformer_test",
+    # The corpus-wide guards (unresolved_corpus_test.go,
+    # type_erasure_corpus_test.go) transpile every single-file example. They
+    # share one pass via exampleCorpus, but that pass alone is minutes of work
+    # and the default medium timeout (300s) is not enough for it plus the rest
+    # of the package's tests.
+    size = "large",
     srcs = [
         "apply_test.go",
         "assignment_test.go",
