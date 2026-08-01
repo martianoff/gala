@@ -177,6 +177,13 @@ go_test(
         "//collection_immutable:gala_sources",
         "//collection_mutable:gala_sources",
         "//examples:single_file_gala_sources",
+        # The sibling packages that multi-file examples import. Without them
+        # the corpus guards cover far less under the Linux sandbox than they do
+        # on Windows, where there is no sandbox and the real tree supplies them:
+        # 76 of 303 examples failed to resolve their imports on CI versus 7
+        # locally. Staging these makes the guards measure the same set
+        # everywhere.
+        "//examples:gala_sources",
         "//std:gala_sources",
         "//time_utils:gala_sources",
         # go_interop is a pure-Go stdlib package (no .gala). The Sendable
