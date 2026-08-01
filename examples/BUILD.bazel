@@ -345,6 +345,22 @@ gala_exec_test(
     ],
 )
 
+# Regression: bare reference to a GENERIC function (same-package and
+# cross-package) passed to Array.Map, with the result consumed by something
+# that must write the element type down (a ForEach lambda parameter, a chained
+# Map). The function's own type parameter must be instantiated from the
+# expected parameter type, otherwise Map's result type parameter never binds
+# and its sentinel leaks into the generated Go.
+gala_exec_test(
+    name = "generic_funcref_chain",
+    src = "generic_funcref_chain.gala",
+    expected = "generic_funcref_chain.out",
+    deps = [
+        "//collection_immutable",
+        "//examples/generic_funcref_lib",
+    ],
+)
+
 # Regression: placeholder-lambda `_.Field` must be equivalent to the explicit
 # lambda `(p) => p.Field`, including the Immutable field auto-unwrap. Prior to
 # the fix `_.Name` bound `_` to `any`, hiding the struct metadata from the

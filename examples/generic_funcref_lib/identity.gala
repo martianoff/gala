@@ -1,0 +1,15 @@
+package generic_funcref_lib
+
+import . "martianoff/gala/collection_immutable"
+
+// Identity is a GENERIC function that lives in a DIFFERENT package from its
+// caller. Passing a bare reference to it (`generic_funcref_lib.Identity`) into
+// a generic method such as Array.Map requires the transpiler to instantiate the
+// function's OWN type parameter from the expected parameter type before the
+// method's result type parameter can be bound.
+func Identity[T any](x T) T = x
+
+// Repeat is a generic function whose result type has a different SHAPE from its
+// parameter, so the consuming method's type parameter cannot accidentally fall
+// back to the receiver's element type.
+func Repeat[T any](x T) Array[T] = ArrayOf(x)

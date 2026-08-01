@@ -1,0 +1,9 @@
+load("@rules_gala//gala:defs.bzl", "gala_library")
+
+gala_library(
+    name = "generic_funcref_lib",
+    src = "identity.gala",
+    importpath = "martianoff/gala/examples/generic_funcref_lib",
+    visibility = ["//visibility:public"],
+    deps = ["//collection_immutable"],
+)

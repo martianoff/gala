@@ -392,6 +392,80 @@ func (t *galaASTTransformer) instantiateFuncMetaType(fm *transpiler.FunctionMeta
 	return raw
 }
 
+// lookupBareFuncRefMeta resolves an expression that is a bare (unapplied)
+// reference to a GALA function — either a plain identifier `fn` or a
+// package-qualified selector `pkg.Fn` — to its FunctionMetadata. Returns nil
+// when the expression is anything else.
+func (t *galaASTTransformer) lookupBareFuncRefMeta(expr ast.Expr) *transpiler.FunctionMetadata {
+	switch e := expr.(type) {
+	case *ast.Ident:
+		if fm, ok := t.functions[e.Name]; ok {
+			return fm
+		}
+	case *ast.SelectorExpr:
+		x, ok := e.X.(*ast.Ident)
+		if !ok || t.importManager == nil || !t.importManager.IsPackage(x.Name) {
+			return nil
+		}
+		pkgName := x.Name
+		if actual, ok := t.importManager.ResolveAlias(pkgName); ok {
+			pkgName = actual
+		}
+		if fm, ok := t.functions[pkgName+"."+e.Sel.Name]; ok {
+			return fm
+		}
+	}
+	return nil
+}
+
+// bareGenericFuncRefType resolves a bare reference to a GENERIC GALA function
+// against the expected parameter type and returns the function's signature with
+// its OWN type parameters instantiated.
+//
+// unifyForInference only binds type params that appear on its *pattern* side,
+// so the function's declared signature is the pattern here and the expected
+// type is the concrete side (the reverse of the usual argument direction). That
+// is what binds e.g. the `T` of `func Identity[T any](x T) T` to `string` when
+// the expected param type is `func(string) U`.
+//
+// A binding is only accepted when it is fully concrete: `foreign` lists the
+// consumer's own (still unresolved) type-param names, and any binding that
+// mentions one of them would merely trade the function's type variable for the
+// consumer's, so the whole reference is rejected instead.
+func (t *galaASTTransformer) bareGenericFuncRefType(expr ast.Expr, expected transpiler.Type, foreign []string) (transpiler.FuncType, bool) {
+	expectedFT, isFT := expected.(transpiler.FuncType)
+	if !isFT {
+		return transpiler.FuncType{}, false
+	}
+	fm := t.lookupBareFuncRefMeta(expr)
+	if fm == nil || len(fm.TypeParams) == 0 {
+		return transpiler.FuncType{}, false
+	}
+	raw := t.funcMetaToRawType(fm)
+	if len(raw.Params) != len(expectedFT.Params) {
+		return transpiler.FuncType{}, false
+	}
+	inferred := make(map[string]transpiler.Type)
+	t.unifyForInference(raw, expectedFT, fm.TypeParams, inferred)
+
+	typeArgs := make([]transpiler.Type, 0, len(fm.TypeParams))
+	for _, tp := range fm.TypeParams {
+		bound, ok := inferred[tp]
+		if !ok || bound == nil || transpiler.IsUnusableOrAny(bound) {
+			return transpiler.FuncType{}, false
+		}
+		if len(foreign) > 0 {
+			mentions := make(map[string]bool)
+			t.collectReferencedParams(bound, foreign, mentions)
+			if len(mentions) > 0 {
+				return transpiler.FuncType{}, false
+			}
+		}
+		typeArgs = append(typeArgs, bound)
+	}
+	return t.instantiateFuncMetaType(fm, typeArgs), true
+}
+
 // substituteConcreteTypes substitutes type parameters in a type with concrete types.
 // For example, if returnType is Pair[B, A], typeParams is ["A", "B"], and concreteTypes is [int, string],
 // the result will be Pair[string, int].
@@ -468,12 +542,27 @@ func (t *galaASTTransformer) inferMethodTypeParamsFromArgs(methodMeta *transpile
 	// Build a mapping from method type param names to inferred concrete types
 	inferredMap := make(map[string]transpiler.Type)
 
+	// Type-param names that are NOT resolved yet at this point: binding a
+	// referenced function's own type param to one of these would just swap one
+	// type variable for another.
+	foreign := append(append([]string{}, freshParamNames...), structTypeParams...)
+
 	// Try to infer type params from each argument
 	for i, arg := range args {
 		if i >= len(substitutedParamTypes) {
 			break
 		}
 		paramType := substitutedParamTypes[i]
+
+		// A bare (unapplied) reference to a GENERIC function has no type of its
+		// own: its signature still contains its own type variables, so neither
+		// getExprTypeNameManual nor inferExprType can hand back something that
+		// unifies usefully. Instantiate it against the expected parameter type
+		// first, then unify with the concrete signature.
+		if instFT, ok := t.bareGenericFuncRefType(arg, paramType, foreign); ok {
+			t.unifyForInference(paramType, instFT, freshParamNames, inferredMap)
+			continue
+		}
 
 		// Get the actual type of the argument
 		argType := t.getExprTypeNameManual(arg)
