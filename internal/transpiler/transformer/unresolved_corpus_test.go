@@ -49,12 +49,7 @@ const unresolvedBudget = 735
 func TestUnresolvedTypeInventory(t *testing.T) {
 	files := exampleCorpus(t)
 
-	type siteCount struct {
-		key   string
-		count int
-	}
-	bySite := map[string]int{}
-	total := 0
+	var sites []string
 	var skipped int
 
 	for _, f := range files {
@@ -68,37 +63,28 @@ func TestUnresolvedTypeInventory(t *testing.T) {
 			continue
 		}
 		for _, u := range f.Unresolved {
-			total++
-			bySite[fmt.Sprintf("%s\t%s:%d\t%s", u.Site, f.Name, u.Line, u.Expr)]++
+			sites = append(sites, fmt.Sprintf("%s:%d\t%s", f.Name, u.Line, u.Expr))
 		}
 	}
+	total := len(sites)
 
 	t.Logf("corpus: %d files, %d transpiled, %d skipped", len(files), len(files)-skipped, skipped)
 	require.Less(t, skipped, len(files),
 		"every example failed to transpile; the inventory is measuring nothing")
 
 	if total > unresolvedBudget {
-		sites := make([]siteCount, 0, len(bySite))
-		for k, c := range bySite {
-			sites = append(sites, siteCount{k, c})
-		}
-		sort.Slice(sites, func(i, j int) bool {
-			if sites[i].count != sites[j].count {
-				return sites[i].count > sites[j].count
-			}
-			return sites[i].key < sites[j].key
-		})
+		sort.Strings(sites)
 		var b strings.Builder
 		for i, s := range sites {
 			if i == 40 {
 				fmt.Fprintf(&b, "  ... and %d more\n", len(sites)-i)
 				break
 			}
-			fmt.Fprintf(&b, "  %3d  %s\n", s.count, s.key)
+			fmt.Fprintf(&b, "  %s\n", s)
 		}
 		t.Fatalf("unresolved-type inventory is %d, budget is %d.\n"+
 			"Each line is an expression whose type could not be determined, "+
-			"most frequent first:\n%s"+
+			"in source order:\n%s"+
 			"If this change legitimately introduces a construct that cannot be typed yet, "+
 			"raise unresolvedBudget and say why. Otherwise this is a type-resolution "+
 			"regression — see unresolved_types.go.",

@@ -57,19 +57,14 @@ func exampleCorpus(t *testing.T) []corpusFile {
 			}
 		}()
 
-		for _, path := range discoverExampleSources() {
+		for _, path := range discoverExampleSources(t) {
 			src, err := os.ReadFile(path)
 			if err != nil {
 				corpusFiles = append(corpusFiles, corpusFile{Name: filepath.Base(path), Err: err})
 				continue
 			}
 
-			p := transpiler.NewAntlrGalaParser()
-			a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
-			tr := transformer.NewGalaASTTransformer()
-			g := generator.NewGoCodeGenerator()
-			trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
-
+			trans, tr := newTranspilerWithTransformer()
 			out, err := trans.Transpile(string(src), filepath.Base(path))
 			corpusFiles = append(corpusFiles, corpusFile{
 				Name:       filepath.Base(path),
@@ -85,23 +80,34 @@ func exampleCorpus(t *testing.T) []corpusFile {
 }
 
 // discoverExampleSources returns the single-file example sources staged for
-// this target, sorted for a stable report order.
-func discoverExampleSources() []string {
-	roots := getStdSearchPath()
-	if len(roots) == 0 {
-		return nil
-	}
-	entries, err := os.ReadDir(filepath.Join(roots[0], "examples"))
-	if err != nil {
-		return nil
-	}
+// this target, sorted for a stable report order. It uses findExamplesDir so
+// that every corpus-wide guard in this package resolves examples/ the same
+// way; two strategies in one binary can disagree after a layout change and
+// then quietly measure different file sets.
+func discoverExampleSources(t *testing.T) []string {
+	t.Helper()
+	dir := findExamplesDir(t)
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err, "cannot read %s", dir)
+
 	var out []string
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".gala") {
 			continue
 		}
-		out = append(out, filepath.Join(roots[0], "examples", e.Name()))
+		out = append(out, filepath.Join(dir, e.Name()))
 	}
 	sort.Strings(out)
 	return out
+}
+
+// newTranspilerWithTransformer builds the standard pipeline and also returns
+// the transformer, which the corpus guards need in order to read the
+// diagnostics it collected. newTranspiler discards it.
+func newTranspilerWithTransformer() (*transpiler.GalaToGoTranspiler, transpiler.ASTTransformer) {
+	p := transpiler.NewAntlrGalaParser()
+	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
+	tr := transformer.NewGalaASTTransformer()
+	g := generator.NewGoCodeGenerator()
+	return transpiler.NewGalaToGoTranspiler(p, a, tr, g), tr
 }

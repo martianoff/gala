@@ -1,6 +1,7 @@
 package transformer
 
 import (
+	"bufio"
 	"fmt"
 	"go/ast"
 	"go/printer"
@@ -68,6 +69,7 @@ type galaASTTransformer struct {
 	warnTypeInference     bool                        // when true, log warnings about type inference fallbacks
 	inferenceWarnings     []string                    // collected type inference warnings
 	unresolvedTypes       []UnresolvedType             // expressions whose type could not be determined; collected only under GALA_WARN_TYPES=1. See unresolved_types.go.
+	unresolvedSeen        map[ast.Expr]bool            // AST nodes already recorded, so a re-queried expression is rendered once; diagnostics only
 	diagPackageNames      map[string]bool              // package qualifiers derived from Go type info, for the unresolved-type filter; built lazily, diagnostics only
 	structMetas           map[string]*structMetaConfig  // generated StructMeta structs (keyed by generated name)
 	instanceInterfaceNames map[string]string            // type name -> actual generated interface name (for collision avoidance)
@@ -186,6 +188,7 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 	t.typeTraces = nil
 	t.inferenceWarnings = nil
 	t.unresolvedTypes = nil
+	t.unresolvedSeen = nil
 	t.diagPackageNames = nil
 	t.filePath = richAST.FilePath
 	if richAST.SourceContent != "" {
@@ -453,11 +456,14 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 	// for why every give-up is listed and not just the ones that went on to
 	// produce a visible failure.
 	if t.warnTypeInference && len(t.unresolvedTypes) > 0 {
-		fmt.Fprintf(os.Stderr, "=== Unresolved Types (%s) ===\n", t.filePath)
-		for _, u := range dedupeUnresolved(t.unresolvedTypes) {
-			fmt.Fprintf(os.Stderr, "  UNRESOLVED %s:%d:%d [%s] %s\n", u.File, u.Line, u.Col, u.Site, u.Expr)
+		unresolved := dedupeUnresolved(t.unresolvedTypes)
+		w := bufio.NewWriter(os.Stderr)
+		fmt.Fprintf(w, "=== Unresolved Types (%s) ===\n", t.filePath)
+		for _, u := range unresolved {
+			fmt.Fprintf(w, "  UNRESOLVED %s:%d:%d %s\n", t.filePath, u.Line, u.Col, u.Expr)
 		}
-		fmt.Fprintf(os.Stderr, "=== End Unresolved (%d) ===\n", len(dedupeUnresolved(t.unresolvedTypes)))
+		fmt.Fprintf(w, "=== End Unresolved (%d) ===\n", len(unresolved))
+		w.Flush()
 	}
 
 	// Remove unused imports from the generated AST.

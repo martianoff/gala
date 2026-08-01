@@ -3,9 +3,6 @@ package transformer_test
 import (
 	"testing"
 
-	"martianoff/gala/internal/transpiler"
-	"martianoff/gala/internal/transpiler/analyzer"
-	"martianoff/gala/internal/transpiler/generator"
 	"martianoff/gala/internal/transpiler/transformer"
 
 	"github.com/stretchr/testify/require"
@@ -149,12 +146,7 @@ func main() {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			p := transpiler.NewAntlrGalaParser()
-			a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
-			tr := transformer.NewGalaASTTransformer()
-			g := generator.NewGoCodeGenerator()
-			trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
-
+			trans, tr := newTranspilerWithTransformer()
 			_, err := trans.Transpile(tc.input, "scoped_state_test.gala")
 			if tc.expectErr {
 				require.Error(t, err, "expected this input to fail")

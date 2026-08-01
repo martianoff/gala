@@ -16,11 +16,11 @@ import (
 // field added to galaASTTransformer without a classification would be silently
 // exempt, and the leak detector would quietly cover less than it appears to.
 // This test fails the moment that happens, forcing the author to decide
-// whether the new field is scoped (restore it, list it in scopedStateFields,
+// whether the new field is scoped (restore it, add it to scopedStateChecks,
 // and add a residue check) or accumulated (list it in accumulatedStateFields).
 func TestEveryTransformerFieldIsClassified(t *testing.T) {
-	classified := make(map[string]string, len(scopedStateFields)+len(accumulatedStateFields))
-	for _, name := range scopedStateFields {
+	classified := make(map[string]string, len(scopedStateFieldNames())+len(accumulatedStateFields))
+	for _, name := range scopedStateFieldNames() {
 		classified[name] = "scoped"
 	}
 	for _, name := range accumulatedStateFields {
@@ -44,7 +44,7 @@ func TestEveryTransformerFieldIsClassified(t *testing.T) {
 	require.Empty(t, unclassified,
 		"new galaASTTransformer field(s) %v are neither scoped nor accumulated. "+
 			"Scoped state must be restored on every exit path (including error returns) "+
-			"and listed in scopedStateFields with a check in scopedStateResidue; "+
+			"and added to scopedStateChecks in scoped_state.go; "+
 			"results and configuration go in accumulatedStateFields. See scoped_state.go.",
 		unclassified)
 
@@ -79,14 +79,14 @@ var setScopedFieldNonZero = map[string]func(*galaASTTransformer){
 }
 
 // TestScopedStateResidueCoversEveryScopedField asserts the hand-written
-// residue checks stay in step with scopedStateFields: setting a scoped field
+// residue checks stay in step with scopedStateChecks: setting a scoped field
 // must make it show up in the residue. A field listed without a matching check
 // would otherwise be reported clean no matter what it held.
 func TestScopedStateResidueCoversEveryScopedField(t *testing.T) {
-	require.Len(t, setScopedFieldNonZero, len(scopedStateFields),
+	require.Len(t, setScopedFieldNonZero, len(scopedStateFieldNames()),
 		"every scoped field needs an entry in setScopedFieldNonZero")
 
-	for _, name := range scopedStateFields {
+	for _, name := range scopedStateFieldNames() {
 		t.Run(name, func(t *testing.T) {
 			set, ok := setScopedFieldNonZero[name]
 			require.True(t, ok, "no setter for scoped field %q", name)
@@ -97,7 +97,7 @@ func TestScopedStateResidueCoversEveryScopedField(t *testing.T) {
 
 			set(tr)
 			require.Contains(t, tr.scopedStateResidue(), name,
-				"scopedStateFields lists %q but scopedStateResidue has no check for it", name)
+				"scopedStateChecks lists %q but scopedStateResidue has no check for it", name)
 		})
 	}
 }

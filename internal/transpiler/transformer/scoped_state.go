@@ -21,31 +21,55 @@ import (
 //     discovered type metadata, the expression-type cache, LSP hints. It is
 //     expected to be non-zero when Transform returns; that is the point of it.
 //
-// A scoped field that is still set after Transform means some save/restore
-// pair leaked. Historically these were written four different ways in four
-// files — defer-restore, manual restore, per-branch re-set, and
-// consume-and-clear — and the manual forms silently skipped their restore on
-// early error returns. scopedStateResidue turns that class of mistake into a
-// test failure instead of a mis-inferred type somewhere downstream.
+// A scoped field still set after Transform means some save/restore pair
+// leaked. These are written several ways across the package — defer-restore,
+// manual restore, per-branch re-set, consume-and-clear — and the manual forms
+// skip their restore on early error returns. scopedStateResidue turns that
+// into a test failure rather than a mis-inferred type somewhere downstream.
 //
-// The one field here that is already leak-proof by construction is
-// expectedArgTypes: it is a LIFO stack whose push returns an idempotent
-// unwind function (see expected_arg_stack.go). It is checked anyway, because
-// an unbalanced stack is the same bug wearing a different shape.
+// expectedArgTypes is already leak-proof by construction: a LIFO stack whose
+// push returns an idempotent unwind function (see expected_arg_stack.go).
+// That is the pattern the rest should converge on. It is checked here anyway,
+// since an unbalanced stack is the same bug in a different shape.
 
-// scopedStateFields lists fields that must be zero once Transform returns.
-// Keep in sync with scopedStateResidue below.
-var scopedStateFields = []string{
-	"currentScope",
-	"currentFuncReturnType",
-	"currentMatchSubjectType",
-	"expectedIfExprType",
-	"expectedLambdaParamTypes",
-	"expectedLambdaRetType",
-	"expectedArgTypes",
-	"matchInStatementPos",
-	"blockLastStmtIsValue",
-	"pendingMatchStmtBlock",
+// scopedStateChecks pairs each scoped field with the test for "still set".
+//
+// One table rather than a list plus a parallel if-chain, so the names and the
+// checks cannot drift apart. The tests are written out rather than derived by
+// reflection because the zero test differs per field: expectedArgTypes is a
+// struct wrapping a slice whose backing array is retained across pops, so it
+// is empty at len 0 rather than at its zero value.
+func (t *galaASTTransformer) scopedStateChecks() []struct {
+	name  string
+	isSet bool
+} {
+	return []struct {
+		name  string
+		isSet bool
+	}{
+		{"currentScope", t.currentScope != nil},
+		{"currentFuncReturnType", t.currentFuncReturnType != nil},
+		{"currentMatchSubjectType", t.currentMatchSubjectType != nil},
+		{"expectedIfExprType", t.expectedIfExprType != nil},
+		{"expectedLambdaParamTypes", t.expectedLambdaParamTypes != nil},
+		{"expectedLambdaRetType", t.expectedLambdaRetType != nil},
+		{"expectedArgTypes", len(t.expectedArgTypes.stack) != 0},
+		{"matchInStatementPos", t.matchInStatementPos},
+		{"blockLastStmtIsValue", t.blockLastStmtIsValue},
+		{"pendingMatchStmtBlock", t.pendingMatchStmtBlock != nil},
+	}
+}
+
+// scopedStateFieldNames lists the fields that must be zero once Transform
+// returns, derived from the same table that checks them.
+func scopedStateFieldNames() []string {
+	var zero galaASTTransformer
+	checks := zero.scopedStateChecks()
+	names := make([]string, 0, len(checks))
+	for _, c := range checks {
+		names = append(names, c.name)
+	}
+	return names
 }
 
 // accumulatedStateFields lists fields that are results or configuration and
@@ -79,6 +103,7 @@ var accumulatedStateFields = []string{
 	"warnTypeInference",
 	"inferenceWarnings",
 	"unresolvedTypes",
+	"unresolvedSeen",
 	"diagPackageNames",
 	"structMetas",
 	"instanceInterfaceNames",
@@ -93,44 +118,12 @@ var accumulatedStateFields = []string{
 // scopedStateResidue reports the scoped fields that are still set. It is the
 // leak detector: an empty result means every save/restore pair in the
 // traversal balanced.
-//
-// The checks are written out rather than derived by reflection because the
-// zero test differs per field — expectedArgTypes is a struct wrapping a slice
-// whose backing array is retained across pops, so it is empty at len 0 rather
-// than at its zero value.
 func (t *galaASTTransformer) scopedStateResidue() []string {
 	var residue []string
-	add := func(name string) { residue = append(residue, name) }
-
-	if t.currentScope != nil {
-		add("currentScope")
-	}
-	if t.currentFuncReturnType != nil {
-		add("currentFuncReturnType")
-	}
-	if t.currentMatchSubjectType != nil {
-		add("currentMatchSubjectType")
-	}
-	if t.expectedIfExprType != nil {
-		add("expectedIfExprType")
-	}
-	if t.expectedLambdaParamTypes != nil {
-		add("expectedLambdaParamTypes")
-	}
-	if t.expectedLambdaRetType != nil {
-		add("expectedLambdaRetType")
-	}
-	if len(t.expectedArgTypes.stack) != 0 {
-		add("expectedArgTypes")
-	}
-	if t.matchInStatementPos {
-		add("matchInStatementPos")
-	}
-	if t.blockLastStmtIsValue {
-		add("blockLastStmtIsValue")
-	}
-	if t.pendingMatchStmtBlock != nil {
-		add("pendingMatchStmtBlock")
+	for _, c := range t.scopedStateChecks() {
+		if c.isSet {
+			residue = append(residue, c.name)
+		}
 	}
 	return residue
 }

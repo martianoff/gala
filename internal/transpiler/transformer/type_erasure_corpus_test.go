@@ -69,18 +69,21 @@ func TestNoTypeErasureInGeneratedGo(t *testing.T) {
 	t.Logf("corpus: %d files, %d checked, %d skipped, %d exempt (source names `any`)",
 		len(files), checked, skipped, len(exempt))
 
-	// A coverage floor, so the guard cannot quietly stop meaning anything. If
-	// examples start failing to transpile in this harness, or the `any`
-	// exemption starts matching far more sources than it should, the count
-	// drops and this fails — rather than the suite going green over three
-	// files. The floor is well below the current 239 so ordinary additions and
-	// removals do not trip it.
-	const minChecked = 200
-	require.GreaterOrEqual(t, checked, minChecked,
-		"only %d examples were checked (floor %d): %d skipped, %d exempt. "+
-			"Either the corpus shrank, or examples stopped transpiling in this harness, "+
-			"or the `any` exemption widened. Any of those makes this guard weaker than it looks.",
-		checked, minChecked, skipped, len(exempt))
+	// Ceilings on the two ways coverage erodes, kept separate because they
+	// mean different things. Examples silently ceasing to transpile is the
+	// more serious of the two and would otherwise hide behind slack in the
+	// exemption count. Both sit a little above their current values (7 and
+	// 57), so ordinary additions do not trip them.
+	const maxSkipped, maxExempt = 15, 70
+	require.LessOrEqual(t, skipped, maxSkipped,
+		"%d examples failed to transpile in this harness (ceiling %d). Each one is "+
+			"a file this guard no longer checks; find out why before raising this.",
+		skipped, maxSkipped)
+	require.LessOrEqual(t, len(exempt), maxExempt,
+		"%d examples are exempt because their source names `any` (ceiling %d). "+
+			"The exemption is whole-file, so each one hides every widened value in "+
+			"that file.",
+		len(exempt), maxExempt)
 
 	if len(found) > 0 {
 		sort.Slice(found, func(i, j int) bool {
@@ -160,20 +163,24 @@ func findErasedTypes(t *testing.T, name, src string) []string {
 		return strings.Join(names, ", ")
 	}
 
-	// Value positions only. `any` is correct and idiomatic in two places that
-	// dominate any raw count of the word, and neither is erasure:
+	// Value positions only: a declared variable, a struct field, a map key or
+	// element, a slice element. `var first any` in a sequence pattern is the
+	// shape this is for — an element type that could not be worked out,
+	// widened rather than reported.
 	//
-	//   - a type-parameter constraint. `type Box[T any]` and
-	//     `func f[T any](...)` are how an unconstrained GALA type parameter
-	//     lowers. Flagging them would flag every generic in the corpus.
-	//   - the extractor protocol. `func (s Foo) Unapply(v any)` takes the
-	//     match subject and type-asserts it; accepting a concrete type would
-	//     defeat the purpose.
+	// Function signatures are deliberately not covered, because `any` is
+	// correct and idiomatic in two shapes that dominate any raw count of the
+	// word. A type-parameter constraint — `type Box[T any]`, `func f[T any]`
+	// — is how an unconstrained GALA type parameter lowers, and flagging it
+	// would flag every generic in the corpus. The extractor protocol,
+	// `func (s Foo) Unapply(v any)`, takes the match subject and type-asserts
+	// it; a concrete type there would defeat the purpose.
 	//
-	// What remains is a value whose type the transpiler was supposed to know:
-	// a declared variable, or a field of a generated struct. `var first any`
-	// in a sequence pattern is the shape this is for — an element type that
-	// could not be worked out, widened rather than reported.
+	// So this is narrower than "no erasure anywhere": a widened parameter or
+	// result type passes. Covering those means excluding those two shapes
+	// precisely — TypeParams field lists, and FuncDecls named Unapply — which
+	// is worth doing, but is a bigger guard than this one and belongs with
+	// whatever first needs it.
 	ast.Inspect(file, func(n ast.Node) bool {
 		switch v := n.(type) {
 		case *ast.ValueSpec:
@@ -196,6 +203,12 @@ func findErasedTypes(t *testing.T, name, src string) []string {
 		case *ast.MapType:
 			if isErased(v.Key) || isErased(v.Value) {
 				note("map type", v.Pos())
+			}
+		case *ast.ArrayType:
+			// Catches `[]any` / `[N]any` wherever it appears, including inside
+			// a declaration whose outer type is not itself `any`.
+			if isErased(v.Elt) {
+				note("slice/array element", v.Pos())
 			}
 		}
 		return true

@@ -31,7 +31,9 @@ import (
 // that uses it as an example of the format and reports a missing page for a
 // code that does not exist; parsing sees only what is declared.
 func TestEveryErrorCodeHasADocPage(t *testing.T) {
-	root := repoRoot(t)
+	roots := getStdSearchPath()
+	require.NotEmpty(t, roots, "cannot locate the repository root")
+	root := roots[0]
 
 	codes := declaredErrorCodes(t, filepath.Join(root, "galaerr", "errors.go"))
 	require.NotEmpty(t, codes, "no error codes parsed; this guard would pass vacuously")
@@ -114,13 +116,4 @@ func declaredErrorCodes(t *testing.T, path string) []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-// repoRoot returns the staged repository root, reusing the search path the
-// rest of this package already resolves.
-func repoRoot(t *testing.T) string {
-	t.Helper()
-	roots := getStdSearchPath()
-	require.NotEmpty(t, roots, "cannot locate the repository root")
-	return roots[0]
 }

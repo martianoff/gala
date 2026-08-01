@@ -12,73 +12,69 @@ import (
 // transpiler.NilType is the "I could not work out this type" answer. It is not
 // an error: a caller that receives it usually has a fallback — another
 // inference route, a declared annotation, an expected type from context, or,
-// last of all, `any`. That layering is why GALA compiles as much as it does.
+// last of all, `any`.
 //
-// It is also why type bugs stay hidden. A NilType that some later fallback
-// rescues looks identical, from the outside, to one that nothing rescues.
+// That layering is also why type bugs stay hidden. A NilType some later
+// fallback rescues looks identical, from the outside, to one nothing rescues.
 // Users only file the second kind, so the reported bugs are a sample of the
-// unresolved sites rather than the whole set, and fixing one says nothing
-// about the rest.
+// unresolved sites rather than the whole set, and fixing one says nothing about
+// the rest.
 //
-// UnresolvedType records the first kind alongside the second. Every
-// expression whose type could not be determined is logged with its source
-// position, whatever the caller went on to do about it. The result is a
-// finite, ranked list of places inference gives up — which is the thing that
-// can be driven down deliberately, instead of waiting for whichever site a
-// user trips over next.
+// UnresolvedType records both kinds, with a source position, whatever the
+// caller went on to do. The result is a finite, ranked list of places inference
+// gives up, which can be driven down deliberately.
 //
 // Recording is gated on GALA_WARN_TYPES=1 so a normal transpile pays nothing.
+// The gate is tested by the caller, before this file is reached.
 
 // UnresolvedType is one expression whose type the transformer could not
 // determine.
 type UnresolvedType struct {
-	// File is the .gala source being transformed.
-	File string
 	// Line and Col are the last known source position. The transformer builds
-	// Go AST nodes without positions, so this is the enclosing GALA construct's
-	// position rather than the expression's own — close enough to find it.
+	// Go AST nodes without positions, so this is the enclosing GALA
+	// construct's position rather than the expression's own — close enough to
+	// find it. The file is not recorded: a transform covers one file, and both
+	// readers already know which.
 	Line int
 	Col  int
 	// Expr renders the Go expression that could not be typed.
 	Expr string
-	// Site names the query that gave up, so sites can be grouped by cause.
-	Site string
 }
 
 // recordUnresolved logs an expression whose type could not be determined.
+// Callers test warnTypeInference first; see getExprTypeNameManual.
 //
-// It is called from the type-query choke points rather than from each
+// It is called from the type-query choke point rather than from each
 // individual `return NilType{}`. Most of those returns are interior: a helper
 // reporting "not my case" to a sibling that then succeeds. Logging them would
-// bury the real signal. What matters is the boundary — a top-level query that
-// has exhausted its routes and is handing NilType back to a caller that must
-// now fall back.
-func (t *galaASTTransformer) recordUnresolved(site string, expr ast.Expr) {
-	if !t.warnTypeInference || t.hasNoTypeByConstruction(expr) {
+// bury the real signal. What matters is a top-level query that has exhausted
+// its routes and is handing NilType back to a caller that must now fall back.
+func (t *galaASTTransformer) recordUnresolved(expr ast.Expr) {
+	if t.hasNoTypeByConstruction(expr) {
 		return
 	}
+	// Deduplicate on the AST node, before rendering. A failed lookup is not
+	// cached — it may succeed once more scope is known — so one expression can
+	// be queried, and reach here, several times. Rendering runs go/printer and
+	// allocates a FileSet per call, so paying it per query rather than per
+	// distinct expression is most of the cost of having diagnostics on.
+	if t.unresolvedSeen == nil {
+		t.unresolvedSeen = map[ast.Expr]bool{}
+	}
+	if t.unresolvedSeen[expr] {
+		return
+	}
+	t.unresolvedSeen[expr] = true
+
 	t.unresolvedTypes = append(t.unresolvedTypes, UnresolvedType{
-		File: t.filePath,
 		Line: t.lastLine,
 		Col:  t.lastCol,
-		Expr: renderExprForDiagnostics(expr),
-		Site: site,
+		Expr: strings.Join(strings.Fields(formatExprForTrace(expr)), " "),
 	})
 }
 
-// noteUnresolved records typ when it is the give-up answer and returns it
-// unchanged, so a query can be instrumented in place:
-//
-//	return t.noteUnresolved("getExprTypeNameManual", expr, result)
-func (t *galaASTTransformer) noteUnresolved(site string, expr ast.Expr, typ transpiler.Type) transpiler.Type {
-	if typ == nil || typ.IsNil() {
-		t.recordUnresolved(site, expr)
-	}
-	return typ
-}
-
-// UnresolvedTypes returns the deduplicated unresolved-type inventory collected
-// by the most recent transform. It is empty unless GALA_WARN_TYPES=1 was set.
+// UnresolvedTypes returns the unresolved-type inventory collected by the most
+// recent transform. It is empty unless GALA_WARN_TYPES=1 was set.
 //
 // Exported for the corpus harness, which lives outside this package because
 // the analyzer imports the transformer.
@@ -92,19 +88,43 @@ func UnresolvedTypes(a transpiler.ASTTransformer) []UnresolvedType {
 	return dedupeUnresolved(t.unresolvedTypes)
 }
 
+// dedupeUnresolved collapses entries that describe the same site.
+//
+// Recording already skips an AST node it has seen, which is what keeps the
+// rendering cost down. This is the second, coarser pass: distinct nodes can
+// still render identically at one position — a desugaring that builds the same
+// sub-expression twice, say — and to anyone reading the report those are one
+// place to go and look, not two. Order is preserved so the report follows the
+// source.
+func dedupeUnresolved(in []UnresolvedType) []UnresolvedType {
+	if len(in) == 0 {
+		return nil
+	}
+	seen := make(map[UnresolvedType]bool, len(in))
+	out := make([]UnresolvedType, 0, len(in))
+	for _, u := range in {
+		if seen[u] {
+			continue
+		}
+		seen[u] = true
+		out = append(out, u)
+	}
+	return out
+}
+
 // hasNoTypeByConstruction reports whether asking for this expression's type is
 // a category error rather than a failed inference.
 //
 // The type query is called on whatever the traversal is holding, which is not
 // always a value. A package qualifier is the common case: the `fmt` in
-// `fmt.Println` is a name in package scope, not an expression, and it has no
-// type for the same reason a keyword has none. Counting those would swamp the
-// inventory — they were the majority of the first run — and none of them is a
-// place inference could be improved.
+// `fmt.Println` is a name in package scope, not an expression, and has no type
+// for the same reason a keyword has none. Counting those would swamp the
+// inventory — they were the majority of the first run — and none is a place
+// inference could be improved.
 //
-// This is deliberately narrow. Anything genuinely value-shaped stays in, even
-// when the transformer has a good reason to fail on it, because "we have a
-// reason" is how a real gap gets filtered out and stops being counted.
+// Deliberately narrow. Anything genuinely value-shaped stays in, even when the
+// transformer has a good reason to fail on it, because "we have a reason" is
+// how a real gap gets filtered out and stops being counted.
 func (t *galaASTTransformer) hasNoTypeByConstruction(expr ast.Expr) bool {
 	ident, ok := expr.(*ast.Ident)
 	if !ok {
@@ -121,12 +141,23 @@ func (t *galaASTTransformer) hasNoTypeByConstruction(expr ast.Expr) bool {
 // isPackageQualifier reports whether name refers to a package rather than a
 // value.
 //
-// importManager alone is not enough. GALA's `Println` needs no import in
-// source — the transformer synthesizes the `fmt` qualifier during lowering —
-// so the qualifier can be queried before, or without, any import entry
-// existing for it. Names known from Go type info cover that: they are keyed
-// "pkg.Name", so their prefixes are exactly the package qualifiers that can
-// appear in generated code.
+// importManager alone is not enough. Three imports are synthesized during
+// lowering rather than declared in GALA source — `Println` becomes
+// `fmt.Println`, a rune-length operation becomes `utf8.RuneCountInString`, an
+// embed val needs `embed` — and the import is added after lowering, so the
+// qualifier can be queried before any entry exists for it.
+//
+// Those three are named, not read off the matching needs*Import flags, and the
+// distinction matters: the flags record that a synthesized import *has been*
+// emitted, so they are set as lowering proceeds. A qualifier queried before
+// its flag is set would not be recognised. Deriving from the flags was tried
+// and let 21 corpus sites through for exactly that reason.
+//
+// Names known from Go type info cover the rest: they are keyed "pkg.Name", so
+// their prefixes are exactly the package qualifiers that can appear in
+// generated code. That source is empty when the Go SDK is not on the path —
+// under the Bazel test sandbox, for one — which is the other reason the
+// synthesized three are listed rather than discovered.
 func (t *galaASTTransformer) isPackageQualifier(name string) bool {
 	if t.importManager.IsPackage(name) {
 		return true
@@ -140,19 +171,15 @@ func (t *galaASTTransformer) isPackageQualifier(name string) bool {
 	return t.diagPackageNames[name]
 }
 
-// synthesizedImportQualifiers are the package qualifiers the transformer emits
-// on its own, without a corresponding import in GALA source.
+// synthesizedImportQualifiers are the qualifiers the transformer emits without
+// a corresponding import in GALA source. They pair with the needsFmtImport /
+// needsUtf8Import / needsEmbedImport flags and the import-injection blocks in
+// transformer.go; a fourth synthesized import belongs in all three places.
 //
-// `Println` lowers to `fmt.Println`, a rune-length operation lowers to
-// `utf8.RuneCountInString`, an embed val lowers to an `embed` directive. In
-// each case the qualifier is created during lowering and the import is added
-// afterwards, so it is not in importManager at the point the type query runs.
-// Go type info would normally supply these names, but it is unavailable
-// whenever the Go SDK is not on the path — under the Bazel test sandbox, for
-// one — and the inventory should not measure something different there.
-//
-// This mirrors the needs*Import flags on the transformer; a new synthesized
-// import belongs in both places.
+// The real fix is for lowering to record the qualifier into ImportManager at
+// the point it emits it, which would make IsPackage answer for these too and
+// delete this list. That is a change to the import mechanism, not to
+// diagnostics.
 var synthesizedImportQualifiers = map[string]bool{
 	"fmt":   true,
 	"utf8":  true,
@@ -188,31 +215,4 @@ func (t *galaASTTransformer) collectGoPackageNames() map[string]bool {
 		addPrefix(k)
 	}
 	return names
-}
-
-// dedupeUnresolved collapses repeats of the same site.
-//
-// A failed lookup is not cached — it may succeed once more scope is known — so
-// one expression can be queried, and recorded, several times. Counting those
-// repeats would make the inventory track how often the transformer retries
-// rather than how many places it gives up. Order is preserved so the report
-// follows the source.
-func dedupeUnresolved(in []UnresolvedType) []UnresolvedType {
-	seen := make(map[UnresolvedType]bool, len(in))
-	out := make([]UnresolvedType, 0, len(in))
-	for _, u := range in {
-		if seen[u] {
-			continue
-		}
-		seen[u] = true
-		out = append(out, u)
-	}
-	return out
-}
-
-// renderExprForDiagnostics prints a Go expression compactly for a diagnostic
-// line, collapsing any wrapped output onto one line so an inventory entry
-// stays greppable. Rendering itself is formatExprForTrace's job.
-func renderExprForDiagnostics(expr ast.Expr) string {
-	return strings.Join(strings.Fields(formatExprForTrace(expr)), " ")
 }
