@@ -39,6 +39,12 @@ import (
 func TestImmutableFieldUnwrapAcrossSpellings(t *testing.T) {
 	// Each case is one way to read a field of a shorthand struct. They are
 	// deliberately equivalent: whatever a spelling does, the others must do.
+	//
+	// Several bodies bind a single-use `val out`, which /gala-lint flags as an
+	// unnecessary intermediate. It is load-bearing here: inlining
+	// `val out = alice.Name; Println(out)` yields `Println(alice.Name)`, which
+	// is already its own case, so collapsing them would merge two distinct
+	// spellings into a duplicate and drop the one under test.
 	spellings := []struct {
 		name string
 		// body is GALA statements inside main. The struct `Person(Name string,
@@ -91,7 +97,7 @@ func TestImmutableFieldUnwrapAcrossSpellings(t *testing.T) {
 			name: "field access through a block-bodied lambda",
 			body: `val f = (p Person) => {
         val n = p.Name
-        n
+        return n
     }
     Println(f(alice))`,
 		},
