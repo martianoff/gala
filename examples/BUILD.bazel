@@ -6,6 +6,25 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+# Every .gala under examples/, including the sibling packages that multi-file
+# examples import. The curated :gala_sources list below names only the ones its
+# build targets need; the corpus guards in //internal/transpiler/transformer
+# have to resolve whatever any example imports, and an import they cannot
+# resolve silently drops that example from coverage. A glob keeps a newly added
+# helper package from quietly shrinking what those guards check.
+filegroup(
+    name = "all_gala_sources",
+    srcs = glob(["**/*.gala"]),
+    visibility = ["//visibility:public"],
+)
+
+# The Go bridge files that go-interop examples import.
+filegroup(
+    name = "all_go_bridge_sources",
+    srcs = glob(["**/*.go"]),
+    visibility = ["//visibility:public"],
+)
+
 filegroup(
     name = "gala_sources",
     srcs = [

@@ -183,7 +183,8 @@ go_test(
         # 76 of 303 examples failed to resolve their imports on CI versus 7
         # locally. Staging these makes the guards measure the same set
         # everywhere.
-        "//examples:gala_sources",
+        "//examples:all_gala_sources",
+        "//examples:all_go_bridge_sources",
         # The rest of the standard library. Examples importing any of these
         # could not resolve them under the sandbox and were counted as skipped,
         # so the corpus guards covered a fifth less on CI than locally.
@@ -192,6 +193,7 @@ go_test(
         "//fs:gala_sources",
         "//io:gala_sources",
         "//json:gala_sources",
+        "//lazy:gala_sources",
         "//path:gala_sources",
         "//regex:gala_sources",
         "//resource:gala_sources",
