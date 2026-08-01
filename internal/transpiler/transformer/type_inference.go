@@ -37,7 +37,12 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 	if !result.IsNil() {
 		t.exprTypeCache[expr] = result
 	}
-	return result
+	// Record the give-up for the unresolved-type inventory. This is the choke
+	// point for the main type query, so one call here covers every interior
+	// NilType return that funnels through it. Failed lookups are deliberately
+	// not cached above, so the same expression can be recorded more than once;
+	// the inventory is deduplicated when it is reported.
+	return t.noteUnresolved("getExprTypeNameManual", expr, result)
 }
 
 func (t *galaASTTransformer) getExprTypeNameManualUncached(expr ast.Expr) transpiler.Type {

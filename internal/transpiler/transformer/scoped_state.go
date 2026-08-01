@@ -78,6 +78,8 @@ var accumulatedStateFields = []string{
 	"exprTypeCache",
 	"warnTypeInference",
 	"inferenceWarnings",
+	"unresolvedTypes",
+	"diagPackageNames",
 	"structMetas",
 	"instanceInterfaceNames",
 	"synthesizedReturns",
