@@ -2,16 +2,9 @@ package transformer_test
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
-
-	"martianoff/gala/internal/transpiler"
-	"martianoff/gala/internal/transpiler/analyzer"
-	"martianoff/gala/internal/transpiler/generator"
-	"martianoff/gala/internal/transpiler/transformer"
 
 	"github.com/stretchr/testify/require"
 )
@@ -54,10 +47,7 @@ const unresolvedBudget = 735
 // known to compile: whatever they fail to type, they fail to type while
 // otherwise succeeding, which is exactly the hidden case.
 func TestUnresolvedTypeInventory(t *testing.T) {
-	t.Setenv("GALA_WARN_TYPES", "1")
-
-	files := findExampleSources(t)
-	require.NotEmpty(t, files, "no example sources found; the corpus harness would pass vacuously")
+	files := exampleCorpus(t)
 
 	type siteCount struct {
 		key   string
@@ -67,17 +57,8 @@ func TestUnresolvedTypeInventory(t *testing.T) {
 	total := 0
 	var skipped int
 
-	for _, path := range files {
-		src, err := os.ReadFile(path)
-		require.NoError(t, err)
-
-		p := transpiler.NewAntlrGalaParser()
-		a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
-		tr := transformer.NewGalaASTTransformer()
-		g := generator.NewGoCodeGenerator()
-		trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
-
-		if _, err := trans.Transpile(string(src), filepath.Base(path)); err != nil {
+	for _, f := range files {
+		if f.Err != nil {
 			// Some examples are intentional negative cases, and some need
 			// sibling files this single-file harness does not stage. Neither
 			// tells us anything about unresolved types, so they are skipped —
@@ -86,10 +67,9 @@ func TestUnresolvedTypeInventory(t *testing.T) {
 			skipped++
 			continue
 		}
-
-		for _, u := range transformer.UnresolvedTypes(tr) {
+		for _, u := range f.Unresolved {
 			total++
-			bySite[fmt.Sprintf("%s\t%s:%d\t%s", u.Site, filepath.Base(path), u.Line, u.Expr)]++
+			bySite[fmt.Sprintf("%s\t%s:%d\t%s", u.Site, f.Name, u.Line, u.Expr)]++
 		}
 	}
 
@@ -124,27 +104,4 @@ func TestUnresolvedTypeInventory(t *testing.T) {
 			"regression — see unresolved_types.go.",
 			total, unresolvedBudget, b.String())
 	}
-}
-
-// findExampleSources returns the single-file example sources staged for this
-// test target.
-func findExampleSources(t *testing.T) []string {
-	t.Helper()
-	roots := getStdSearchPath()
-	require.NotEmpty(t, roots, "cannot locate the repository root")
-
-	dir := filepath.Join(roots[0], "examples")
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Skipf("examples directory not staged for this target: %v", err)
-	}
-	var out []string
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".gala") {
-			continue
-		}
-		out = append(out, filepath.Join(dir, e.Name()))
-	}
-	sort.Strings(out)
-	return out
 }
