@@ -2,9 +2,9 @@
 layout: default
 title: "GALA Compiler Error Codes — Complete Reference (GALA-E0001 to GALA-E0041)"
 description: "Every GALA compile-time error code explained: what it means, the code that triggers it, the exact compiler message, and how to fix it. Searchable reference for GALA-E0001 through GALA-E0041."
-keywords: "gala error codes, gala compiler errors, gala-e0001, gala-e0038, gala-e0041, gala semantic error, gala transpiler error, gala compile error reference, golang transpiler error codes"
+keywords: "gala error codes, gala compiler errors, gala-e0001, gala-e0038, gala-e0039, gala-e0040, gala-e0041, gala semantic error, gala transpiler error, gala compile error reference, golang transpiler error codes"
 permalink: /docs/errors/
-last_modified_at: 2026-07-30
+last_modified_at: 2026-07-31
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / Error Codes</p>
@@ -93,6 +93,8 @@ Same code, same message; the column is zero-based in the terse form. See [Compil
 | [GALA-E0036](/docs/errors/gala-e0036/) | Bare Go statement keyword (`defer`, `go`, `select`, …) | Go surface |
 | [GALA-E0037](/docs/errors/gala-e0037/) | Non-shareable value crosses a goroutine boundary | Concurrency safety |
 | [GALA-E0038](/docs/errors/gala-e0038/) | Invalid escape sequence in a string literal | Literals |
+| [GALA-E0039](/docs/errors/gala-e0039/) | Bare variant name in a match pattern | Pattern matching |
+| [GALA-E0040](/docs/errors/gala-e0040/) | Go slice or map type in an expression | Go surface |
 | [GALA-E0041](/docs/errors/gala-e0041/) | Import of an internal package from outside its tree | Packages |
 
 Every code the compiler can emit now has a page. Codes are never renumbered and never change meaning, so a code you find in an old build log still means the same thing here.
@@ -117,7 +119,7 @@ Five codes exist in the compiler but no valid source reaches them. Each still ha
 
 ## By category
 
-**Pattern matching and sealed types** — [E0002](/docs/errors/gala-e0002/), [E0003](/docs/errors/gala-e0003/), [E0004](/docs/errors/gala-e0004/), [E0005](/docs/errors/gala-e0005/), [E0006](/docs/errors/gala-e0006/), [E0015](/docs/errors/gala-e0015/), [E0018](/docs/errors/gala-e0018/), [E0031](/docs/errors/gala-e0031/). Start with [Pattern Matching](/features/pattern-matching/) and [Sealed Types](/features/sealed-types/).
+**Pattern matching and sealed types** — [E0002](/docs/errors/gala-e0002/), [E0003](/docs/errors/gala-e0003/), [E0004](/docs/errors/gala-e0004/), [E0005](/docs/errors/gala-e0005/), [E0006](/docs/errors/gala-e0006/), [E0015](/docs/errors/gala-e0015/), [E0018](/docs/errors/gala-e0018/), [E0031](/docs/errors/gala-e0031/), [E0039](/docs/errors/gala-e0039/) bare variant name. Start with [Pattern Matching](/features/pattern-matching/) and [Sealed Types](/features/sealed-types/).
 
 **Collections and Go interop** — [E0007](/docs/errors/gala-e0007/), [E0008](/docs/errors/gala-e0008/). See [Collections](/features/collections/) and [Go Interop](/features/go-interop/).
 
@@ -129,7 +131,7 @@ Five codes exist in the compiler but no valid source reaches them. Each still ha
 
 **Packages and imports** — [E0010](/docs/errors/gala-e0010/), [E0020](/docs/errors/gala-e0020/), [E0025](/docs/errors/gala-e0025/), [E0026](/docs/errors/gala-e0026/), [E0032](/docs/errors/gala-e0032/), [E0041](/docs/errors/gala-e0041/) internal-package visibility. See [Dependency Management](/docs/dependency-management/).
 
-**Go constructs with no GALA surface** — [E0007](/docs/errors/gala-e0007/) slice literals · [E0008](/docs/errors/gala-e0008/) map literals · [E0035](/docs/errors/gala-e0035/) builtins like `len` and `panic` · [E0036](/docs/errors/gala-e0036/) statement keywords like `defer` and `go`. Each names its GALA replacement.
+**Go constructs with no GALA surface** — [E0007](/docs/errors/gala-e0007/) slice literals · [E0008](/docs/errors/gala-e0008/) map literals · [E0035](/docs/errors/gala-e0035/) builtins like `len` and `panic` · [E0036](/docs/errors/gala-e0036/) statement keywords like `defer` and `go` · [E0040](/docs/errors/gala-e0040/) slice/map types in an expression. Each names its GALA replacement.
 
 **Literals** — [E0038](/docs/errors/gala-e0038/) invalid string escape · [E0019](/docs/errors/gala-e0019/) empty `()` used as a value.
 
