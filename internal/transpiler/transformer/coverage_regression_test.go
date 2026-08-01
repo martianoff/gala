@@ -6,9 +6,6 @@ import (
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
-	"martianoff/gala/internal/transpiler/analyzer"
-	"martianoff/gala/internal/transpiler/generator"
-	"martianoff/gala/internal/transpiler/transformer"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -16,11 +13,8 @@ import (
 
 // newTranspiler is a tiny factory used by the coverage regressions below.
 func newTranspiler() *transpiler.GalaToGoTranspiler {
-	p := transpiler.NewAntlrGalaParser()
-	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
-	tr := transformer.NewGalaASTTransformer()
-	g := generator.NewGoCodeGenerator()
-	return transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+	trans, _ := newTranspilerWithTransformer()
+	return trans
 }
 
 // TestT1PhantomTypeParamFallback pins the current behaviour of a generic

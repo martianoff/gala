@@ -171,7 +171,17 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 	// body lambda so its params/return resolve to the declared types instead of
 	// `any`. Set here (and cleared after the body transform) so it reaches only
 	// the body's bare lambda, which consumes it in transformLambda.
+	// restoreInner is idempotent: the eager call after the body preserves the
+	// success-path timing the code below depends on, and the defer covers the
+	// two error returns in between. No input is known to observe the
+	// difference — the enclosing setter already restores via defer — so this
+	// is about the invariant holding locally rather than by the caller's good
+	// behaviour. See scoped_state.go.
 	prevInnerParams, prevInnerRet := t.expectedLambdaParamTypes, t.expectedLambdaRetType
+	restoreInner := func() {
+		t.expectedLambdaParamTypes, t.expectedLambdaRetType = prevInnerParams, prevInnerRet
+	}
+	defer restoreInner()
 	if retType != nil && retType != ExpectedVoid {
 		if innerFT := t.resolveReturnTypeAsFuncType(retType); innerFT != nil {
 			var innerRet ast.Expr
@@ -204,7 +214,7 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 			retType = inferredRet
 		}
 	}
-	t.expectedLambdaParamTypes, t.expectedLambdaRetType = prevInnerParams, prevInnerRet
+	restoreInner()
 
 	// Build the function literal
 	funcType := &ast.FuncType{

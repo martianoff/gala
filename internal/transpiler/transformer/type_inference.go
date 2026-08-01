@@ -36,6 +36,18 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 	// Only cache non-nil results; failed lookups may succeed later as more scope info becomes available.
 	if !result.IsNil() {
 		t.exprTypeCache[expr] = result
+	} else if t.warnTypeInference {
+		// Record the give-up for the unresolved-type inventory. This is the
+		// choke point for the main type query, so one call here covers every
+		// interior NilType return that funnels through it.
+		//
+		// The flag is tested here, in the branch that has already established
+		// the result is NilType, rather than inside the recording helper: this
+		// is the transpiler's busiest type query, and an unconditional call
+		// would put a non-inlinable frame and a second interface dispatch on
+		// the hot path for every expression in every file. Same convention as
+		// warnInference in utils.go.
+		t.recordUnresolved(expr)
 	}
 	return result
 }

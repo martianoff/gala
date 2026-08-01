@@ -25,3 +25,14 @@ gala_test(
         "//go_interop",
     ],
 )
+
+# Staged as test data by consumers that need to resolve `lazy` imports under
+# the Bazel sandbox, matching the other stdlib packages.
+filegroup(
+    name = "gala_sources",
+    srcs = glob(
+        ["*.gala"],
+        exclude = ["*_test.gala"],
+    ),
+    visibility = ["//visibility:public"],
+)

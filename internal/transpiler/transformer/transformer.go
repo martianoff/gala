@@ -1,6 +1,7 @@
 package transformer
 
 import (
+	"bufio"
 	"fmt"
 	"go/ast"
 	"go/printer"
@@ -67,6 +68,9 @@ type galaASTTransformer struct {
 	needsEmbedImport      bool                        // true when embed val declarations require import "embed"
 	warnTypeInference     bool                        // when true, log warnings about type inference fallbacks
 	inferenceWarnings     []string                    // collected type inference warnings
+	unresolvedTypes       []UnresolvedType             // expressions whose type could not be determined; collected only under GALA_WARN_TYPES=1. See unresolved_types.go.
+	unresolvedSeen        map[ast.Expr]bool            // AST nodes already recorded, so a re-queried expression is rendered once; diagnostics only
+	diagPackageNames      map[string]bool              // package qualifiers derived from Go type info, for the unresolved-type filter; built lazily, diagnostics only
 	structMetas           map[string]*structMetaConfig  // generated StructMeta structs (keyed by generated name)
 	instanceInterfaceNames map[string]string            // type name -> actual generated interface name (for collision avoidance)
 	expectedIfExprType     ast.Expr                     // expected return type for if-expression IIFE (set by expression-bodied function handler)
@@ -183,6 +187,9 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 	t.warnTypeInference = os.Getenv("GALA_WARN_TYPES") == "1"
 	t.typeTraces = nil
 	t.inferenceWarnings = nil
+	t.unresolvedTypes = nil
+	t.unresolvedSeen = nil
+	t.diagPackageNames = nil
 	t.filePath = richAST.FilePath
 	if richAST.SourceContent != "" {
 		t.sourceLines = strings.Split(richAST.SourceContent, "\n")
@@ -443,6 +450,20 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 			fmt.Fprintf(os.Stderr, "  WARN: %s\n", w)
 		}
 		fmt.Fprintf(os.Stderr, "=== End Warnings (%d) ===\n", len(t.inferenceWarnings))
+	}
+
+	// Dump the unresolved-type inventory if enabled. See unresolved_types.go
+	// for why every give-up is listed and not just the ones that went on to
+	// produce a visible failure.
+	if t.warnTypeInference && len(t.unresolvedTypes) > 0 {
+		unresolved := dedupeUnresolved(t.unresolvedTypes)
+		w := bufio.NewWriter(os.Stderr)
+		fmt.Fprintf(w, "=== Unresolved Types (%s) ===\n", t.filePath)
+		for _, u := range unresolved {
+			fmt.Fprintf(w, "  UNRESOLVED %s:%d:%d %s\n", t.filePath, u.Line, u.Col, u.Expr)
+		}
+		fmt.Fprintf(w, "=== End Unresolved (%d) ===\n", len(unresolved))
+		w.Flush()
 	}
 
 	// Remove unused imports from the generated AST.

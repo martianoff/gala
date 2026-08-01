@@ -23,6 +23,7 @@ go_library(
         "patterns.go",
         "postfix.go",
         "scope.go",
+        "scoped_state.go",
         "sealed.go",
         "spread.go",
         "statements.go",
@@ -32,6 +33,7 @@ go_library(
         "type_inference.go",
         "type_inference_calls.go",
         "types.go",
+        "unresolved_types.go",
         "utils.go",
     ],
     importpath = "martianoff/gala/internal/transpiler/transformer",
@@ -51,6 +53,12 @@ go_library(
 
 go_test(
     name = "transformer_test",
+    # The corpus-wide guards (unresolved_corpus_test.go,
+    # type_erasure_corpus_test.go) transpile every single-file example. They
+    # share one pass via exampleCorpus, but that pass alone is minutes of work
+    # and the default medium timeout (300s) is not enough for it plus the rest
+    # of the package's tests.
+    size = "large",
     srcs = [
         "apply_test.go",
         "assignment_test.go",
@@ -60,6 +68,7 @@ go_test(
         "bind_test.go",
         "chained_flatmap_test.go",
         "codec_boundary_test.go",
+        "corpus_shared_test.go",
         "collect_partial_function_test.go",
         "collection_default_param_test.go",
         "compilation_gate_test.go",
@@ -76,6 +85,7 @@ go_test(
         "dot_import_test.go",
         "equal_test.go",
         "error_codes_test.go",
+        "error_docs_completeness_test.go",
         "error_docs_guard_test.go",
         "expected_arg_stack_test.go",
         "expected_type_sealed_variant_overlap_test.go",
@@ -90,6 +100,7 @@ go_test(
         "go_generic_multireturn_instantiation_test.go",
         "go_generic_return_instantiation_test.go",
         "immutable_test.go",
+        "immutable_unwrap_matrix_test.go",
         "immutable_unwrapping_test.go",
         "import_test.go",
         "imports_test.go",
@@ -120,6 +131,10 @@ go_test(
         "recursive_immutable_test.go",
         "resource_inference_test.go",
         "rich_diagnostics_test.go",
+        "scoped_state_pipeline_test.go",
+        "scoped_state_test.go",
+        "type_erasure_corpus_test.go",
+        "unresolved_corpus_test.go",
         "sealed_apply_dispatch_test.go",
         "sealed_call_arg_widen_test.go",
         "sealed_equal_synth_test.go",
@@ -157,9 +172,38 @@ go_test(
         # (error_docs_guard_test.go), which asserts each page quotes the
         # compiler's real output verbatim.
         "//docs/errors:error_docs",
+        # Parsed by error_docs_completeness_test.go to enumerate the declared
+        # error codes, so a new code without a page fails the build.
+        "//galaerr:errors_src",
         "//collection_immutable:gala_sources",
         "//collection_mutable:gala_sources",
         "//examples:single_file_gala_sources",
+        # The sibling packages that multi-file examples import. Without them
+        # the corpus guards cover far less under the Linux sandbox than they do
+        # on Windows, where there is no sandbox and the real tree supplies them:
+        # 76 of 303 examples failed to resolve their imports on CI versus 7
+        # locally. Staging these makes the guards measure the same set
+        # everywhere.
+        "//examples:all_gala_sources",
+        "//examples:all_go_bridge_sources",
+        # The rest of the standard library. Examples importing any of these
+        # could not resolve them under the sandbox and were counted as skipped,
+        # so the corpus guards covered a fifth less on CI than locally.
+        "//concurrent:gala_sources",
+        "//crypto:gala_sources",
+        "//fs:gala_sources",
+        "//io:gala_sources",
+        "//json:gala_sources",
+        "//lazy:gala_sources",
+        "//path:gala_sources",
+        "//regex:gala_sources",
+        "//resource:gala_sources",
+        "//stream:gala_sources",
+        "//strings:gala_sources",
+        "//subprocess:gala_sources",
+        "//test:gala_sources",
+        "//validation:gala_sources",
+        "//yaml:gala_sources",
         "//std:gala_sources",
         "//time_utils:gala_sources",
         # go_interop is a pure-Go stdlib package (no .gala). The Sendable
