@@ -58,7 +58,7 @@ local_path_override(
 # language), so a single `bazel run //:gazelle` manages Go, GALA, and mixed
 # GALA+Go BUILD files. Wired via the gala_gazelle() macro in //BUILD.bazel,
 # which drives the import helper from the registered GALA toolchain.
-bazel_dep(name = "gala_gazelle", version = "0.2.4", dev_dependency = True)
+bazel_dep(name = "gala_gazelle", version = "0.3.1", dev_dependency = True)
 
 # ANTLR tool jar (not in BCR, loaded via use_repo_rule)
 http_jar = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_jar")
