@@ -171,7 +171,23 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 	// body lambda so its params/return resolve to the declared types instead of
 	// `any`. Set here (and cleared after the body transform) so it reaches only
 	// the body's bare lambda, which consumes it in transformLambda.
+	// restoreInner is idempotent and runs on every exit path. The eager call
+	// after the body transform keeps the success-path timing that the code
+	// below depends on (it must observe the outer expectation); the defer
+	// covers the two error returns in between, which would otherwise leave
+	// this lambda's inner expectation set.
+	//
+	// No input is known to observe that: the bare-lambda path consumes the
+	// hint before the body runs, and the enclosing setter in
+	// transformValDeclaration already restores via defer. This is the
+	// belt-and-braces half of that pair, so the invariant holds locally
+	// rather than only by the caller's good behaviour — which is what
+	// TestNoScopedStateLeaksAfterTransform asserts.
 	prevInnerParams, prevInnerRet := t.expectedLambdaParamTypes, t.expectedLambdaRetType
+	restoreInner := func() {
+		t.expectedLambdaParamTypes, t.expectedLambdaRetType = prevInnerParams, prevInnerRet
+	}
+	defer restoreInner()
 	if retType != nil && retType != ExpectedVoid {
 		if innerFT := t.resolveReturnTypeAsFuncType(retType); innerFT != nil {
 			var innerRet ast.Expr
@@ -204,7 +220,7 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 			retType = inferredRet
 		}
 	}
-	t.expectedLambdaParamTypes, t.expectedLambdaRetType = prevInnerParams, prevInnerRet
+	restoreInner()
 
 	// Build the function literal
 	funcType := &ast.FuncType{
