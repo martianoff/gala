@@ -686,6 +686,16 @@ func (t *galaASTTransformer) astTypeToTranspilerType(expr ast.Expr) transpiler.T
 		return transpiler.PointerType{Elem: t.astTypeToTranspilerType(e.X)}
 	case *ast.ArrayType:
 		return transpiler.ArrayType{Elem: t.astTypeToTranspilerType(e.Elt)}
+	case *ast.MapType:
+		// A Go map is legal in every type position a Go slice is, so it has to
+		// round-trip here for the same reasons. Without this case a declared
+		// `map[K]V` collapsed to NilType, and anything typed from it — a struct
+		// field read, a val annotated with a map type — lost its type silently
+		// and only failed further downstream.
+		return transpiler.MapType{
+			Key:  t.astTypeToTranspilerType(e.Key),
+			Elem: t.astTypeToTranspilerType(e.Value),
+		}
 	case *ast.FuncType:
 		// Handle function types like func(S) Option[Tuple[T, S]]
 		var params []transpiler.Type

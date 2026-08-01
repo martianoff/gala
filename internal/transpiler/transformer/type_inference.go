@@ -1246,41 +1246,40 @@ func (t *galaASTTransformer) getGoFuncReturnTypeForCall(qualifiedName string, e 
 	return t.instantiateGoSignatureReturn(sig, args, typeArgs, hasEllipsis)
 }
 
-// instantiateGoSignatureReturn substitutes a Go generic signature's type
-// parameters into its first return type, using explicit type arguments when the
-// call supplied them and otherwise unifying the DECLARED parameter types against
-// the actual argument types — the same inference inferFuncTypeParamsFromArgs
+// inferGoSignatureTypeArgs determines what a call site binds a Go generic
+// callee's own type parameters to, using explicit type arguments when the call
+// supplied them and otherwise unifying the DECLARED parameter types against the
+// actual argument types — the same inference inferFuncTypeParamsFromArgs
 // performs for GALA callees, driven off GoFuncSignature instead of
 // FunctionMetadata.
 //
-// Substitution is best-effort by design: a type parameter that no argument
-// determines is left alone, so the result is never worse than the un-instantiated
-// declared type, and getExprTypeName's existing "still has type params -> try
-// Hindley-Milner" fallback continues to apply.
-func (t *galaASTTransformer) instantiateGoSignatureReturn(
+// Inference is best-effort by design: a type parameter that neither an explicit
+// type argument nor an argument determines is simply absent from the returned
+// map, so substituting with it leaves that parameter alone and the result is
+// never worse than the un-instantiated declared type. Returns nil when the
+// callee is not generic or nothing could be determined.
+func (t *galaASTTransformer) inferGoSignatureTypeArgs(
 	sig *transpiler.GoFuncSignature,
 	args []ast.Expr,
 	typeArgs []transpiler.Type,
 	hasEllipsis bool,
-) transpiler.Type {
-	ret := sig.Returns[0]
+) map[string]transpiler.Type {
 	if len(sig.TypeParams) == 0 {
-		return ret
-	}
-
-	// A fully explicit instantiation (`go_interop.MapEmpty[string, int]()`)
-	// determines every type param on its own, arguments or not.
-	if len(typeArgs) == len(sig.TypeParams) {
-		return t.substituteConcreteTypes(ret, sig.TypeParams, typeArgs)
+		return nil
 	}
 
 	inferred := make(map[string]transpiler.Type, len(sig.TypeParams))
-	// A partial explicit prefix (`f[int](x)`) binds its positions; argument
-	// unification below fills in the rest.
+	// Explicit type arguments bind their positions directly; a partial prefix
+	// (`f[int](x)`) leaves the rest to the argument unification below.
 	for i, ta := range typeArgs {
 		if i < len(sig.TypeParams) && ta != nil && !ta.IsNil() {
 			inferred[sig.TypeParams[i]] = ta
 		}
+	}
+	// A fully explicit instantiation (`go_interop.MapEmpty[string, int]()`)
+	// determines every type param on its own, arguments or not.
+	if len(inferred) == len(sig.TypeParams) {
+		return inferred
 	}
 
 	for i, arg := range args {
@@ -1316,9 +1315,55 @@ func (t *galaASTTransformer) instantiateGoSignatureReturn(
 	}
 
 	if len(inferred) == 0 {
+		return nil
+	}
+	return inferred
+}
+
+// instantiateGoSignatureReturn substitutes a Go generic signature's type
+// parameters into its first return type. See inferGoSignatureTypeArgs for how
+// the substitution is derived and why it is best-effort; getExprTypeName's
+// existing "still has type params -> try Hindley-Milner" fallback continues to
+// apply to whatever is left un-substituted.
+func (t *galaASTTransformer) instantiateGoSignatureReturn(
+	sig *transpiler.GoFuncSignature,
+	args []ast.Expr,
+	typeArgs []transpiler.Type,
+	hasEllipsis bool,
+) transpiler.Type {
+	ret := sig.Returns[0]
+	subst := t.inferGoSignatureTypeArgs(sig, args, typeArgs, hasEllipsis)
+	if len(subst) == 0 {
 		return ret
 	}
-	return t.substituteInType(ret, inferred)
+	return t.substituteInType(ret, subst)
+}
+
+// instantiateGoSignatureReturns is the multi-value counterpart of
+// instantiateGoSignatureReturn: it instantiates EVERY return slot, for the
+// paths that consume more than the first one — a destructuring binding
+// (`val v, ok = go_interop.MapGet(m, k)`) and the (T, error) auto-destructure
+// wrapper. Those paths write each bound name's type down, so leaving the
+// callee's declared type parameters in place there materializes identifiers
+// like `V` that exist only inside the callee's signature.
+func (t *galaASTTransformer) instantiateGoSignatureReturns(
+	sig *transpiler.GoFuncSignature,
+	args []ast.Expr,
+	typeArgs []transpiler.Type,
+	hasEllipsis bool,
+) []transpiler.Type {
+	subst := t.inferGoSignatureTypeArgs(sig, args, typeArgs, hasEllipsis)
+	if len(subst) == 0 {
+		return sig.Returns
+	}
+	out := make([]transpiler.Type, len(sig.Returns))
+	for i, ret := range sig.Returns {
+		if ret == nil {
+			continue
+		}
+		out[i] = t.substituteInType(ret, subst)
+	}
+	return out
 }
 
 // getGoMethodReturnType returns the first return type of a method on a Go type.

@@ -87,6 +87,7 @@ go_test(
         "generic_funcref_chain_test.go",
         "generic_sealed_exhaustive_test.go",
         "generics_test.go",
+        "go_generic_multireturn_instantiation_test.go",
         "go_generic_return_instantiation_test.go",
         "immutable_test.go",
         "immutable_unwrapping_test.go",

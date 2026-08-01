@@ -117,3 +117,39 @@ func GoGenericOptionLambda(key string) string {
         case None()  => "absent"
     }
 }
+
+// --- Regression: destructuring a Go generic's MULTI-VALUE return.
+//
+// `go_interop.MapGet[K, V](m map[K]V, k K) (V, bool)` binds two names at once.
+// The binding used to take the callee's DECLARED return types, so `v` was typed
+// `V` — a type parameter that exists only inside the callee's signature. The
+// binding itself never complained and any use that does not pin a type kept
+// working; the build broke wherever the value was first boxed, naming `V` at a
+// line that was not the cause.
+//
+// Batch mode matters here for the same reason as the lambda case above: the
+// signature (and its type-parameter names) is rehydrated from the analysis
+// cache rather than a fresh go/types run.
+func GoGenericDestructureOption(key string) string {
+    val m = go_interop.MapPut(go_interop.MapEmpty[string, int](), "k", 7)
+    val v, ok = go_interop.MapGet(m, key)
+    return When(ok, v) match {
+        case Some(n) => s"found ${n}"
+        case None()  => "absent"
+    }
+}
+
+// Same binding, reached through a struct field rather than a local, and boxed
+// directly with Some rather than through When.
+func GoGenericDestructureFromField(key string) Option[int] {
+    val idx = GoMapIndex{entries: go_interop.MapPut(go_interop.MapEmpty[string, int](), "k", 7)}
+    val v, ok = go_interop.MapGet(idx.entries, key)
+    if ok {
+        return Some(v)
+    }
+    return None[int]()
+}
+
+type GoMapIndex struct {
+    entries map[string]int
+}

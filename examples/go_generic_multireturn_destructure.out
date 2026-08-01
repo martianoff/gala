@@ -1,0 +1,10 @@
+interpolated: 1 ok=true
+Some(1)
+Some(1) true
+Some(1)
+None()
+Some(1)
+Some(1)
+Some(1)
+None()
+found 42

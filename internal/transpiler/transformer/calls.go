@@ -3,6 +3,7 @@ package transformer
 import (
 	"fmt"
 	"go/ast"
+	"go/token"
 	"strings"
 
 	"github.com/antlr4-go/antlr/v4"
@@ -3584,7 +3585,8 @@ func (t *galaASTTransformer) resolveGoCallSignature(expr ast.Expr) *transpiler.G
 	if !ok {
 		return nil
 	}
-	switch fun := callExpr.Fun.(type) {
+	funExpr, _ := splitCallFunTypeArgs(callExpr.Fun)
+	switch fun := funExpr.(type) {
 	case *ast.SelectorExpr:
 		if id, ok := fun.X.(*ast.Ident); ok {
 			if sig := t.goTypeInfo.GetFuncSignature(id.Name + "." + fun.Sel.Name); sig != nil {
@@ -3600,6 +3602,51 @@ func (t *galaASTTransformer) resolveGoCallSignature(expr ast.Expr) *transpiler.G
 		}
 	}
 	return nil
+}
+
+// splitCallFunTypeArgs separates a call's function expression from any explicit
+// type arguments written at the call site, so `go_interop.MapGet[string, int]`
+// resolves against the same signature lookup as the bare `go_interop.MapGet`
+// while the type arguments stay available for instantiation.
+func splitCallFunTypeArgs(fun ast.Expr) (ast.Expr, []ast.Expr) {
+	switch idx := fun.(type) {
+	case *ast.IndexExpr:
+		return idx.X, []ast.Expr{idx.Index}
+	case *ast.IndexListExpr:
+		return idx.X, idx.Indices
+	}
+	return fun, nil
+}
+
+// resolveGoCallReturnTypes resolves a Go call's return types with the callee's
+// own type parameters instantiated to whatever the call binds them to. A
+// generic callee's recorded signature still names its declared type parameters
+// (`func MapGet[K comparable, V any](m map[K]V, k K) (V, bool)` returns `V`), so
+// every consumer that writes a return type down — rather than merely passing it
+// along — must go through here or it emits an identifier the user never wrote.
+func (t *galaASTTransformer) resolveGoCallReturnTypes(expr ast.Expr) []transpiler.Type {
+	callExpr, ok := expr.(*ast.CallExpr)
+	if !ok {
+		return nil
+	}
+	sig := t.resolveGoCallSignature(callExpr)
+	if sig == nil {
+		return nil
+	}
+	return t.instantiateGoSignatureReturns(sig, callExpr.Args, t.callSiteTypeArgs(callExpr), callExpr.Ellipsis != token.NoPos)
+}
+
+// callSiteTypeArgs converts a call's explicit type arguments to transpiler types.
+func (t *galaASTTransformer) callSiteTypeArgs(callExpr *ast.CallExpr) []transpiler.Type {
+	_, typeArgExprs := splitCallFunTypeArgs(callExpr.Fun)
+	if len(typeArgExprs) == 0 {
+		return nil
+	}
+	typeArgs := make([]transpiler.Type, 0, len(typeArgExprs))
+	for _, ta := range typeArgExprs {
+		typeArgs = append(typeArgs, t.astTypeToTranspilerType(ta))
+	}
+	return typeArgs
 }
 
 // splitQualifiedName splits "pkg.Name" into ["pkg", "Name"], or returns nil for bare names.
