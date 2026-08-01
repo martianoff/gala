@@ -87,6 +87,7 @@ var accumulatedStateFields = []string{
 	"structFieldTypes",
 	"genericMethods",
 	"functions",
+	"galaPkgPaths",
 	"typeMetas",
 	"companionObjects",
 	"importManager",
