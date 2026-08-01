@@ -78,6 +78,7 @@ go_test(
         "dot_import_test.go",
         "equal_test.go",
         "error_codes_test.go",
+        "error_docs_completeness_test.go",
         "error_docs_guard_test.go",
         "expected_arg_stack_test.go",
         "expected_type_sealed_variant_overlap_test.go",
@@ -162,6 +163,9 @@ go_test(
         # (error_docs_guard_test.go), which asserts each page quotes the
         # compiler's real output verbatim.
         "//docs/errors:error_docs",
+        # Parsed by error_docs_completeness_test.go to enumerate the declared
+        # error codes, so a new code without a page fails the build.
+        "//galaerr:errors_src",
         "//collection_immutable:gala_sources",
         "//collection_mutable:gala_sources",
         "//examples:single_file_gala_sources",

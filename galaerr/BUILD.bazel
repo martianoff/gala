@@ -11,6 +11,17 @@ go_library(
     visibility = ["//visibility:public"],
 )
 
+# errors.go as test data, for the completeness guard in
+# //internal/transpiler/transformer that parses the declared ErrorCode
+# constants and asserts each one has a page under docs/errors/. It reads the
+# declarations rather than the compiled constants so it can also catch a page
+# left behind by a code that was removed.
+filegroup(
+    name = "errors_src",
+    srcs = ["errors.go"],
+    visibility = ["//visibility:public"],
+)
+
 go_test(
     name = "galaerr_test",
     srcs = [
