@@ -1,0 +1,33 @@
+package main
+
+import (
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/examples/generic_funcref_lib"
+)
+
+// A bare reference to a GENERIC function — same-package AND cross-package —
+// passed to Array.Map, whose result is then consumed by something that must
+// WRITE the element type down (a ForEach lambda parameter, a chained Map).
+// Unless the referenced function's own type parameter is instantiated from the
+// expected parameter type, Map's result type parameter never binds and its
+// sentinel leaks into the generated Go.
+//
+// Consuming the result with only `.String()` hides the leak, which is why every
+// case below feeds a consumer that names the element type.
+
+func ident[T any](x T) T = x
+
+func main() {
+    // Same-package generic bare ref -> type-writing consumer.
+    ArrayOf("a", "b").Map(ident).ForEach((g) => Println(g))
+
+    // Same-package generic bare ref on a different element type, chained into
+    // a second generic method.
+    Println(ArrayOf(1, 2).Map(ident).Map(_ * 2).String())
+
+    // Cross-package generic bare ref -> type-writing consumer.
+    ArrayOf("c").Map(generic_funcref_lib.Identity).ForEach((g) => Println(g))
+
+    // Cross-package generic bare ref whose result type has a different shape.
+    ArrayOf(3).Map(generic_funcref_lib.Repeat).ForEach((g) => Println(g.String()))
+}
