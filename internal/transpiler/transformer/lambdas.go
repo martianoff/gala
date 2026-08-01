@@ -474,7 +474,8 @@ func (t *galaASTTransformer) tryWrapGoMultiReturnWithErrorPanic(expr ast.Expr) (
 	// Case 1: simple pkg.Func() call — look up by qualified name.
 	// Case 2: chained call like expr.Method() — resolve receiver type, then look up method.
 	var sig *transpiler.GoFuncSignature
-	switch fun := callExpr.Fun.(type) {
+	funExpr, _ := splitCallFunTypeArgs(callExpr.Fun)
+	switch fun := funExpr.(type) {
 	case *ast.SelectorExpr:
 		if id, ok := fun.X.(*ast.Ident); ok {
 			// Simple case: pkg.Func() or receiver.Method() where receiver is an ident
@@ -494,14 +495,19 @@ func (t *galaASTTransformer) tryWrapGoMultiReturnWithErrorPanic(expr ast.Expr) (
 		return nil, nil
 	}
 
+	// The value types are written into the generated func literal's result
+	// clause, so a generic callee's declared returns have to be instantiated
+	// first — otherwise the emitted Go names the callee's own type parameters.
+	returns := t.instantiateGoSignatureReturns(sig, callExpr.Args, t.callSiteTypeArgs(callExpr), callExpr.Ellipsis != token.NoPos)
+
 	// Check that the LAST return is error
-	lastRet := sig.Returns[len(sig.Returns)-1]
+	lastRet := returns[len(returns)-1]
 	if lastRet == nil || lastRet.String() != "error" {
 		return nil, nil
 	}
 
 	// Number of non-error return values
-	valueCount := len(sig.Returns) - 1
+	valueCount := len(returns) - 1
 
 	// Build LHS variable names: _v0, _v1, ... _vN, _err
 	var lhsExprs []ast.Expr
@@ -516,7 +522,7 @@ func (t *galaASTTransformer) tryWrapGoMultiReturnWithErrorPanic(expr ast.Expr) (
 	if valueCount == 1 {
 		// (T, error) -> return _v0, type is T
 		returnExpr = ast.NewIdent("_v0")
-		returnTypeExpr = t.typeToExpr(sig.Returns[0])
+		returnTypeExpr = t.typeToExpr(returns[0])
 	} else {
 		// (A, B, error) -> return std.Tuple[A, B]{V1: _v0, V2: _v1}
 		// (A, B, C, error) -> return std.Tuple3[A, B, C]{V1: _v0, V2: _v1, V3: _v2}
@@ -526,7 +532,7 @@ func (t *galaASTTransformer) tryWrapGoMultiReturnWithErrorPanic(expr ast.Expr) (
 		// Build type args from the non-error return types
 		var typeArgs []ast.Expr
 		for i := 0; i < valueCount; i++ {
-			typeArgs = append(typeArgs, t.typeToExpr(sig.Returns[i]))
+			typeArgs = append(typeArgs, t.typeToExpr(returns[i]))
 		}
 
 		// Build tuple type expression: std.Tuple[A, B] or std.Tuple3[A, B, C]

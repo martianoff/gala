@@ -1,0 +1,81 @@
+package main
+
+import "martianoff/gala/go_interop"
+
+// Destructuring a Go generic's multi-value return must bind each name to the
+// call's INSTANTIATED return type. The transpiler used to bind the callee's
+// DECLARED type parameter instead: `val v, ok = go_interop.MapGet(m, "a")` gave
+// `v` the type `V` from
+// `func MapGet[K comparable, V any](m map[K]V, k K) (V, bool)`.
+//
+// Nothing complained at the binding, and any use that does not pin a type —
+// string interpolation, Println — kept working. The build broke only once the
+// value reached a position needing a concrete type, naming a type parameter the
+// user never wrote (`undefined: V`) at a line that was not the cause.
+//
+// Reading a Go map and lifting the (value, found) pair into an Option is the
+// idiomatic thing to do with it, so this shape is the common one.
+//
+// Every route below reaches the map differently, because instantiation depends
+// on the ARGUMENT's type resolving: a map read out of a struct field also
+// needed `map[K]V` to survive the AST-to-type round trip, which it did not.
+
+type Index struct {
+    entries map[string]int
+}
+
+// The map comes from a receiver field.
+func (ix Index) Lookup(key string) Option[int] {
+    val v, ok = go_interop.MapGet(ix.entries, key)
+    if ok {
+        return Some(v)
+    }
+    return None[int]()
+}
+
+// The map is copied to a local first.
+func (ix Index) LookupViaLocal(key string) Option[int] {
+    val entries = ix.entries
+    val v, ok = go_interop.MapGet(entries, key)
+    return When(ok, v)
+}
+
+// The map comes from a struct passed as a parameter.
+func lookupField(ix Index, key string) Option[int] {
+    val v, ok = go_interop.MapGet(ix.entries, key)
+    return When(ok, v)
+}
+
+// The map itself is the parameter.
+func lookupIn(m map[string]int, key string) Option[int] {
+    val v, ok = go_interop.MapGet(m, key)
+    return When(ok, v)
+}
+
+func main() {
+    val m = go_interop.MapPut(go_interop.MapEmpty[string, int](), "a", 1)
+    val ix = Index{entries: m}
+
+    // The reported repro: bind, then box. Boxing is what used to fail.
+    val v, ok = go_interop.MapGet(m, "a")
+    Println(s"interpolated: $v ok=$ok")
+    Println(Some(v))
+
+    // Explicit type arguments at the call site must instantiate the same way.
+    val ev, eok = go_interop.MapGet[string, int](m, "a")
+    Println(s"${Some(ev)} $eok")
+
+    Println(ix.Lookup("a"))
+    Println(ix.Lookup("missing"))
+    Println(ix.LookupViaLocal("a"))
+    Println(lookupField(ix, "a"))
+    Println(lookupIn(m, "a"))
+    Println(lookupIn(m, "missing"))
+
+    // The bound value is a real int, not an opaque one: it has to match and
+    // arithmetic on it has to type-check.
+    Some(v) match {
+        case Some(n) => Println(s"found ${n + 41}")
+        case None()  => Println("absent")
+    }
+}

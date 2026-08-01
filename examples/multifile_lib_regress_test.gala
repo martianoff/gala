@@ -405,6 +405,14 @@ func main() {
     // go/types' unparseable "invalid type" display string.
     Println(multifile_lib_regress.GoGenericOptionLambda("k"))
     Println(multifile_lib_regress.GoGenericOptionLambda("nope"))
+    // Same instantiation gap, reached by destructuring a Go generic's
+    // MULTI-VALUE return (`val v, ok = go_interop.MapGet(m, k)`). Each bound
+    // name must take the call's instantiated return type; binding the declared
+    // `V` deferred the failure to the first use that pinned a type.
+    Println(multifile_lib_regress.GoGenericDestructureOption("k"))
+    Println(multifile_lib_regress.GoGenericDestructureOption("nope"))
+    Println(multifile_lib_regress.GoGenericDestructureFromField("k"))
+    Println(multifile_lib_regress.GoGenericDestructureFromField("nope"))
 
     Println(multifile_lib_regress.ScopeReport(1))
     Println(multifile_lib_regress.ScopeLambdaCapture(3))

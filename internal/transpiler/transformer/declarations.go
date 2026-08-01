@@ -286,9 +286,14 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 		// no explicit annotation is given, so e.g. `val entries, err =
 		// os.ReadDir(p)` types `entries` as its `[]os.DirEntry` return (enabling
 		// `.Size()` and other receiver-typed inference) instead of NilType.
-		var callSig *transpiler.GoFuncSignature
+		//
+		// The returns are instantiated at the call site: a generic callee's
+		// declared returns still name its own type parameters, and binding one
+		// of those to a name defers the failure to wherever the name is next
+		// used in a position that needs a concrete type.
+		var callReturns []transpiler.Type
 		if ctx.Type_() == nil {
-			callSig = t.resolveGoCallSignature(callValue)
+			callReturns = t.resolveGoCallReturnTypes(callValue)
 		}
 
 		// Create specs for each named variable, wrapping the temp in NewImmutable
@@ -301,8 +306,8 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 				if t.isImmutableType(typeName) {
 					return nil, t.semanticErrorAt(ctx, "recursive Immutable wrapping is not allowed")
 				}
-			} else if callSig != nil && i < len(callSig.Returns) && callSig.Returns[i] != nil {
-				typeName = callSig.Returns[i]
+			} else if i < len(callReturns) && callReturns[i] != nil {
+				typeName = callReturns[i]
 			}
 
 			if qName := t.getType(typeName.String()); !qName.IsNil() {
