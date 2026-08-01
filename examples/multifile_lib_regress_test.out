@@ -112,3 +112,10 @@ slot-holds q
 slot-vacant
 flag-on lit
 flag-off
+GALA
+2
+header=X-Api-Key
+query=q
+malformed
+other
+GO

@@ -2917,6 +2917,8 @@ gala_library(
         "multifile_lib_regress/generic_sealed.gala",
         "multifile_lib_regress/go_interop.gala",
         "multifile_lib_regress/logic.gala",
+        "multifile_lib_regress/pkg_name_collision.gala",
+        "multifile_lib_regress/pkg_name_collision_go.gala",
         "multifile_lib_regress/pointer_method_field.gala",
         "multifile_lib_regress/proc_session.gala",
         "multifile_lib_regress/symbol_scope.gala",
@@ -2935,6 +2937,7 @@ gala_library(
         "//collection_immutable",
         "//examples/go_struct_bridge",
         "//go_interop",
+        "//strings",
     ],
 )
 

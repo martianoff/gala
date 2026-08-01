@@ -268,7 +268,7 @@ func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.Sel
 	}
 
 	if id, ok := sel.X.(*ast.Ident); ok {
-		if t.importManager.IsPackage(id.Name) {
+		if t.importManager.IsPackage(id.Name) && t.qualifierIsGalaPackage(id.Name) {
 			pkgName := id.Name
 			if actual, ok := t.importManager.ResolveAlias(pkgName); ok {
 				pkgName = actual
@@ -721,4 +721,29 @@ func (t *galaASTTransformer) inferGetMethodType(e *ast.CallExpr, sel *ast.Select
 		return transpiler.NilType{}
 	}
 	return xType
+}
+
+// qualifierIsGalaPackage reports whether a package qualifier used in this file
+// refers to a GALA package rather than a Go one.
+//
+// It exists because `t.functions` is keyed by package NAME ("strings.SplitN")
+// and is merged across every file in the package. GALA ships packages whose
+// names collide with Go stdlib ones — strings, io, path, json, crypto, fs — so
+// once ANY file in a package imports GALA's `strings`, the key "strings.SplitN"
+// exists package-wide. A sibling file that imports Go's `strings` would then
+// resolve its calls against GALA's signature (Array[string]) while codegen
+// emits the Go import ([]string). Inference and emission disagree, and the
+// error surfaces in the innocent file naming types it never wrote.
+//
+// The check is per-file and metadata-driven: it resolves the qualifier through
+// this file's own ImportManager and asks whether that import path is one the
+// analyzer classified as GALA. It is not an import-path heuristic.
+func (t *galaASTTransformer) qualifierIsGalaPackage(alias string) bool {
+	entry, ok := t.importManager.GetByAlias(alias)
+	if !ok {
+		// No entry to judge by (transitive or synthesized qualifier) — keep the
+		// previous behaviour rather than silently dropping a valid lookup.
+		return true
+	}
+	return t.galaPkgPaths[entry.Path]
 }

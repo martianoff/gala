@@ -41,6 +41,14 @@ type galaASTTransformer struct {
 	structFieldTypes      map[string]map[string]transpiler.Type // structName -> fieldName -> typeName
 	genericMethods        map[string]map[string]bool            // receiverType -> methodName -> isGeneric
 	functions             map[string]*transpiler.FunctionMetadata
+	// galaPkgPaths is the set of import paths that are GALA packages, taken from
+	// richAST.Packages (the analyzer fills that map only inside its GALA-package
+	// branch). It lets a qualified call tell whether its qualifier names a GALA
+	// package or a Go one. `functions` is keyed by package NAME and merged across
+	// every file in the package, so GALA's `strings` and Go's `strings` collide
+	// there — as do io, path, json, crypto and fs. Membership here is metadata,
+	// not an import-path heuristic.
+	galaPkgPaths          map[string]bool
 	typeMetas             map[string]*transpiler.TypeMetadata
 	companionObjects      map[string]*transpiler.CompanionObjectMetadata // companion name -> metadata
 	importManager         *ImportManager                                 // unified import tracking (includes transitive imports and dot-import usage)
@@ -95,6 +103,7 @@ func NewGalaASTTransformer() transpiler.ASTTransformer {
 		structFieldTypes:  make(map[string]map[string]transpiler.Type, 32),
 		genericMethods:    make(map[string]map[string]bool, 16),
 		functions:         make(map[string]*transpiler.FunctionMetadata, 64),
+		galaPkgPaths:      make(map[string]bool, 16),
 		typeMetas:         make(map[string]*transpiler.TypeMetadata, 64),
 		companionObjects:  make(map[string]*transpiler.CompanionObjectMetadata, 16),
 		importManager:     NewImportManager(),
@@ -183,6 +192,9 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 
 	// Populate imports from richAST.Packages (includes implicit std import from analyzer)
 	t.importManager.AddFromPackages(richAST.Packages)
+	for path := range richAST.Packages {
+		t.galaPkgPaths[path] = true
+	}
 
 	// Populate metadata from RichAST
 	for typeName, meta := range richAST.Types {
