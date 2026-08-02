@@ -12,36 +12,45 @@ import (
 // unresolvedBudget is the number of distinct expressions in the example corpus
 // whose type the transformer cannot determine.
 //
-// This is a ratchet, not a target. It may only go down. Lowering it is the
-// point: each unresolved site is a place inference gives up and something
-// downstream falls back, and the fallback is what turns into a wrong type, an
-// `any`, or a bug report — depending on which caller reached it first. Driving
-// this number down closes those before anyone trips over them.
+// It is a ratchet, and a regression detector rather than a list of defects to
+// burn down.
+//
+// Every one of the current entries sits in a program that compiles and runs
+// correctly. The examples corpus is covered by gala_exec_test targets, which
+// build the generated Go and diff its stdout, and they all pass. That is not a
+// coincidence: GALA emits Go, and where the transformer gives up, Go's own type
+// checker finishes the job. `b.value = b.thunk()` inside a method on `Box[T]`
+// is the shape — the transformer cannot say what `T` is, the emitted Go needs
+// no help saying it.
+//
+// So a high number is not a backlog, and driving it to zero would mean teaching
+// the transformer to re-derive types Go already derives: no user-visible
+// payoff, and every added inference route is a speculative fallback of the kind
+// this project has reverted before for lacking a guarding test.
+//
+// What the number is good for:
+//
+//   - A rise means something that used to resolve stopped resolving. That is
+//     worth investigating even when the output is still correct, because the
+//     next fallback along may not be as lucky.
+//   - When a type bug *is* reported, the inventory says where inference gave up
+//     nearby, which is usually where the fix goes.
+//
+// The guard that catches actually-wrong output is the type-erasure check in
+// type_erasure_corpus_test.go, which asserts no value position widened to
+// `any`. That one finding zero is the meaningful "no defects" signal; this one
+// finding 541 is not a contradiction of it.
 //
 // When a change legitimately adds a construct the transformer cannot type yet,
 // raise it deliberately and say why. When a change resolves types that were
 // previously unresolved, lower it in the same commit so the slack is not
 // silently available to the next regression.
 //
-// What is left is dominated by four shapes, which is what makes it a worklist
-// rather than a wall:
-//
-//   - a val that loses its type, and every read through it
-//     (arr, arr.Get(), copied, copied.Get())
-//   - an Option or Immutable chain that stops resolving partway
-//     (result.Get().Get, m.Get().Get, opt.Get().Map, ptr.Get().Deref)
-//   - a method on a Go value, named through an interface
-//     (err.Error(), e.Error(), node.Ptr)
-//   - a generic function passed as a value (tickerAdvance, splitGeneric),
-//     which has to be instantiated against the parameter it is passed to
-//
-// The first is the one to pull on: an unresolved val makes every later use of
-// it unresolved too, so these counts are not independent.
-//
-// The fourth is small — about a dozen — but it is the one to leave alone in the
-// count. Those idents were briefly filtered out as "a generic function has no
-// standalone type", which is true, and it hid the reports that would show an
-// instantiation failing. See hasNoTypeByConstruction.
+// One shape to leave alone rather than filter: a generic function passed as a
+// value (tickerAdvance, splitGeneric), about a dozen entries. Those were
+// briefly excluded as "a generic function has no standalone type", which is
+// true, and it hid exactly the reports that would show an instantiation
+// failing. See hasNoTypeByConstruction.
 //
 // This is a ceiling rather than an equality check on purpose. Go type info is
 // unavailable when the Go SDK is not on the path, and without it some
