@@ -122,16 +122,23 @@ func dedupeUnresolved(in []UnresolvedType) []UnresolvedType {
 // inventory — they were the majority of the first run — and none is a place
 // inference could be improved.
 //
-// Deliberately narrow. Anything genuinely value-shaped stays in, even when the
-// transformer has a good reason to fail on it, because "we have a reason" is
-// how a real gap gets filtered out and stops being counted.
+// Deliberately narrow, and it stays that way. Generic function names were also
+// most of an early inventory, and filtering them here looked equally
+// justified — but the filter resolved names better than the instantiation path
+// it deferred to, so in a package other than main it would have suppressed
+// exactly the reports that matter. They are kept out at the source instead, by
+// not asking: see the function-name early-out in unwrapImmutable.
+//
+// The lesson generalises. Anything genuinely value-shaped stays in, even when
+// the transformer has a good reason to fail on it, because "we have a reason"
+// is how a real gap gets filtered out and stops being counted.
 func (t *galaASTTransformer) hasNoTypeByConstruction(expr ast.Expr) bool {
 	ident, ok := expr.(*ast.Ident)
 	if !ok {
 		return false
 	}
-	// A local val or param shadowing a package name is a value; the scope
-	// lookup wins over the package-name check.
+	// A local val or param shadowing a package or function name is a value; the
+	// scope lookup wins over the checks below.
 	if !t.getValType(ident.Name).IsNil() {
 		return false
 	}

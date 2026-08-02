@@ -23,22 +23,32 @@ import (
 // previously unresolved, lower it in the same commit so the slack is not
 // silently available to the next regression.
 //
-// The current inventory is dominated by three shapes, which is what makes it a
-// worklist rather than a wall:
+// What is left is dominated by four shapes, which is what makes it a worklist
+// rather than a wall:
 //
-//   - bare references to a function passed as a value (tickerAdvance,
-//     splitGeneric, consList, FutureOf, New)
-//   - vals and Option chains that lose their type partway along
-//     (arr, arr.Get(), d1.Get().Age.Get())
-//   - a method named but not called, as the receiver of a further call
-//     (.FlatMap, .GetOrElse, .Get)
+//   - a val that loses its type, and every read through it
+//     (arr, arr.Get(), copied, copied.Get())
+//   - an Option or Immutable chain that stops resolving partway
+//     (result.Get().Get, m.Get().Get, opt.Get().Map, ptr.Get().Deref)
+//   - a method on a Go value, named through an interface
+//     (err.Error(), e.Error(), node.Ptr)
+//   - a generic function passed as a value (tickerAdvance, splitGeneric),
+//     which has to be instantiated against the parameter it is passed to
+//
+// The first is the one to pull on: an unresolved val makes every later use of
+// it unresolved too, so these counts are not independent.
+//
+// The fourth is small — about a dozen — but it is the one to leave alone in the
+// count. Those idents were briefly filtered out as "a generic function has no
+// standalone type", which is true, and it hid the reports that would show an
+// instantiation failing. See hasNoTypeByConstruction.
 //
 // This is a ceiling rather than an equality check on purpose. Go type info is
 // unavailable when the Go SDK is not on the path, and without it some
 // expressions that would otherwise resolve do not. A run with more type
 // information available resolves more and comes in under the ceiling; it
 // should not have to move the number to stay green.
-const unresolvedBudget = 735
+const unresolvedBudget = 541
 
 // TestUnresolvedTypeInventory transpiles the single-file example corpus with
 // the unresolved-type inventory enabled and holds the total to a budget.

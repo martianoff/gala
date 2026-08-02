@@ -959,6 +959,19 @@ func (t *galaASTTransformer) unwrapImmutable(expr ast.Expr) ast.Expr {
 			if !t.getType(ident.Name).IsNil() {
 				return expr
 			}
+			// Nor a function name, for the same reason. This arrives via
+			// resolveIndexAccess: `ArrayOf[Tuple[bool, string]](...)` parses as
+			// an index access, so the base is probed for an Immutable wrapper
+			// on the way past. Asking is not free — a generic function's ident
+			// resolves to NilType, which getExprTypeNameManual declines to
+			// cache, so getExprTypeName re-runs manual inference and then falls
+			// through to Hindley-Milner on every such query.
+			//
+			// getFunction is checked last: it builds a resolver and an imports
+			// slice per call, so the cheap scope and type lookups go first.
+			if t.getFunction(ident.Name) != nil {
+				return expr
+			}
 		}
 	}
 	if sel, ok := expr.(*ast.SelectorExpr); ok {
