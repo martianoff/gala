@@ -1,15 +1,42 @@
 package org.gala.ide.intellij.psi
 
+import com.intellij.extapi.psi.ASTWrapperPsiElement
 import com.intellij.lang.ASTNode
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiNameIdentifierOwner
 import com.intellij.psi.PsiReference
-import org.antlr.intellij.adaptor.psi.ANTLRPsiNode
+import com.intellij.psi.util.PsiUtilCore
 
 /**
  * Base PSI node for GALA elements backed by ANTLR parse tree nodes.
+ *
+ * Extends [ASTWrapperPsiElement] directly instead of the ANTLR adaptor's
+ * `ANTLRPsiNode`. The adaptor routes `getChildren()` and `getContext()` through
+ * `org.antlr.intellij.adaptor.psi.Trees` / `SymtabUtils`, and `Trees` can no
+ * longer be loaded: it holds an anonymous subclass of `WriteCommandAction`,
+ * which recent IntelliJ platforms made final, so the JVM rejects the class with
+ * `IncompatibleClassChangeError` and every PSI walk (go to definition,
+ * annotator, inspections, structure view) dies. The only adaptor behaviour the
+ * plugin actually relies on is reimplemented below.
  */
-open class GalaPsiNode(node: ASTNode) : ANTLRPsiNode(node)
+open class GalaPsiNode(node: ASTNode) : ASTWrapperPsiElement(node) {
+    /**
+     * All children, token leaves included.
+     *
+     * The platform default keeps composite nodes only; GALA declarations locate
+     * their name identifier and keywords by walking this list, so leaves must
+     * stay visible.
+     */
+    override fun getChildren(): Array<PsiElement> {
+        var child: PsiElement? = firstChild ?: return PsiElement.EMPTY_ARRAY
+        val result = ArrayList<PsiElement>()
+        while (child != null) {
+            result.add(child)
+            child = child.nextSibling
+        }
+        return PsiUtilCore.toPsiElementArray(result)
+    }
+}
 
 /**
  * PSI node for identifier references (usages, not declarations).
