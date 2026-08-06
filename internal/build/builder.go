@@ -143,28 +143,71 @@ func (b *Builder) Build(outputPath string) (string, error) {
 		return "", fmt.Errorf("generating go.mod: %w", err)
 	}
 
-	// Step 4.5: Check if library package — if so, compile-check only
-	// Skip this check in multi-package mode (sourceDir set) since the consumer is package main
-	if b.sourceDir == "" || b.sourceDir == b.workspace.ProjectDir {
-		isLib, pkgName := b.isLibraryPackage()
-		if isLib {
-			if b.verbose {
-				fmt.Printf("Package %q is a library, running compile check...\n", pkgName)
-			}
-			if err := b.goCompileCheck(); err != nil {
-				return "", fmt.Errorf("go build (compile check): %w", err)
-			}
-			return "", nil
+	// Step 4.5: Decide what to build.
+	buildTarget, err := b.buildTarget()
+	if err != nil {
+		return "", err
+	}
+	if buildTarget == "" {
+		// Nothing executable to produce — compile-check the libraries.
+		if err := b.goCompileCheck(); err != nil {
+			return "", fmt.Errorf("go build (compile check): %w", err)
 		}
+		return "", nil
 	}
 
 	// Step 5: Run go build (executable)
-	finalPath, err := b.goBuild(outputPath)
+	finalPath, err := b.goBuild(outputPath, buildTarget)
 	if err != nil {
 		return "", fmt.Errorf("go build: %w", err)
 	}
 
 	return finalPath, nil
+}
+
+// buildTarget returns the `go build` target for this build, or "" when there is
+// nothing executable and the caller should compile-check instead.
+//
+// The project root is the target when it holds code of its own. When it holds
+// none — the conventional cmd/<name> layout, where the root is just a container
+// for subpackages — the single main package below it is the target. Without
+// this the build fell through to `go build ./gen` on a directory with no Go
+// files in it, and the user got the Go toolchain's "no Go files in
+// <workspace hash>/gen" naming a path they have no way to reason about.
+func (b *Builder) buildTarget() (string, error) {
+	if b.sourceDir != "" && b.sourceDir != b.workspace.ProjectDir {
+		// Multi-package mode: the consumer was transpiled into gen/cmd/main,
+		// and is package main by construction.
+		return "./gen/cmd/main", nil
+	}
+
+	switch pkg := PackageNameIn(b.workspace.GenDir); pkg {
+	case "main":
+		return "./gen", nil
+	case "":
+		// No package at the root — look for one below.
+	default:
+		if b.verbose {
+			fmt.Printf("Package %q is a library, running compile check...\n", pkg)
+		}
+		return "", nil
+	}
+
+	mains, err := b.workspace.MainPackageDirs()
+	if err != nil {
+		return "", fmt.Errorf("scanning for main packages: %w", err)
+	}
+	switch len(mains) {
+	case 0:
+		return "", nil // libraries only
+	case 1:
+		if b.verbose {
+			fmt.Printf("No package in the project root; building main package ./%s\n", mains[0])
+		}
+		return "./gen/" + mains[0], nil
+	default:
+		return "", &MultipleMainPackagesError{Candidates: mains}
+	}
 }
 
 // ensureDeps fetches any GALA dependencies that are not yet cached locally.
@@ -1067,40 +1110,6 @@ func (b *Builder) generateGoMod() error {
 	return nil
 }
 
-// isLibraryPackage checks whether the generated code is a library (non-main) package.
-// Returns (true, packageName) for libraries, (false, "") for executables.
-func (b *Builder) isLibraryPackage() (bool, string) {
-	genFiles, err := b.workspace.GenFiles()
-	if err != nil {
-		return false, ""
-	}
-
-	// Read the first generated file to determine the package name
-	var pkgName string
-	for _, f := range genFiles {
-		content, err := os.ReadFile(f)
-		if err != nil {
-			continue
-		}
-		for _, line := range strings.Split(string(content), "\n") {
-			line = strings.TrimSpace(line)
-			if strings.HasPrefix(line, "package ") {
-				pkgName = strings.TrimPrefix(line, "package ")
-				break
-			}
-		}
-		if pkgName != "" {
-			break
-		}
-	}
-
-	if pkgName != "" && pkgName != "main" {
-		return true, pkgName
-	}
-
-	return false, ""
-}
-
 // ensureGoToolchain verifies that the Go toolchain is available on PATH.
 // Pre-built GALA binaries depend on `go build` to finish the compilation pipeline,
 // so if `go` is not on PATH we surface a clear actionable error before shelling
@@ -1140,8 +1149,9 @@ func (b *Builder) goCompileCheck() error {
 	return cmd.Run()
 }
 
-// goBuild runs `go build` in the workspace and returns the output path.
-func (b *Builder) goBuild(outputPath string) (string, error) {
+// goBuild runs `go build` of buildTarget in the workspace and returns the
+// output path.
+func (b *Builder) goBuild(outputPath, buildTarget string) (string, error) {
 	if err := ensureGoToolchain(); err != nil {
 		return "", err
 	}
@@ -1164,15 +1174,9 @@ func (b *Builder) goBuild(outputPath string) (string, error) {
 		outputPath += ".exe"
 	}
 
-	// Build command — in multi-package mode, build the consumer subpackage.
-	// `go build -o <path> ./gen/...` fails with "cannot write multiple
-	// packages to non-directory" when gen/ contains a main package alongside
-	// library subpackages, so we narrow the target to the root gen package
-	// (which is main, assuming the project itself is executable).
-	buildTarget := "./gen"
-	if b.sourceDir != "" && b.sourceDir != b.workspace.ProjectDir {
-		buildTarget = "./gen/cmd/main"
-	}
+	// The target is always a single package: `go build -o <path> ./gen/...`
+	// fails with "cannot write multiple packages to non-directory" as soon as
+	// gen/ holds a main package alongside library subpackages.
 	args := []string{"build", "-o", outputPath, buildTarget}
 
 	cmd := exec.Command("go", args...)
@@ -1410,13 +1414,20 @@ func (b *Builder) Test(verbose bool) error {
 	// We look at a file that actually lives in the project root (not a
 	// subpackage) to classify the project — subpackages always are libraries
 	// and must not influence the root classification.
+	// A root that declares no package of its own (cmd/<name> layout) takes the
+	// library route too: it is a container for subpackages, and the per-package
+	// test harness is what handles those — including the ones that are main.
 	rootPkgName := rootPackageName(sourceFiles, b.workspace.ProjectDir)
-	isLib := rootPkgName != "" && rootPkgName != "main"
+	isLib := rootPkgName != "main"
 
-	// Always force-retranspile for tests (test files change independently)
+	// Always force-retranspile for tests (test files change independently).
+	// Dropping the source hash matters as much as wiping gen/: the two commands
+	// share one gen tree, so a later `gala build` that trusted the hash would
+	// skip transpiling and compile the test runner left behind here.
 	if err := b.workspace.CleanGen(); err != nil {
 		return fmt.Errorf("cleaning gen dir: %w", err)
 	}
+	os.Remove(filepath.Join(b.workspace.Dir, ".gala-source-hash"))
 
 	// Step 5: Transpile files
 	if isLib {
@@ -1927,10 +1938,16 @@ func (b *Builder) transpileFilesToDir(files []string, allSiblings []string, outD
 	return nil
 }
 
-// rootPackageName returns the GALA package name declared by a source file
-// that lives in projectDir (i.e. not under a subdirectory). If no such file
-// exists the function falls back to the first source file, preserving the
-// original single-package behaviour. Returns "" when no source files exist.
+// rootPackageName returns the GALA package name declared by a source file that
+// lives in projectDir (i.e. not under a subdirectory), or "" when the root
+// holds no source of its own.
+//
+// It deliberately does NOT fall back to an arbitrary subpackage file. A project
+// laying its code out as cmd/app + internal/store has no root package, and
+// answering "main" because cmd/app/main.gala happened to sort first made
+// `gala test` treat the whole project as one root-level main package: it wrote
+// a test runner into the gen root referencing tests that live in a subpackage,
+// and the build failed with "undefined: TestXxx".
 func rootPackageName(sourceFiles []string, projectDir string) string {
 	absRoot, _ := filepath.Abs(projectDir)
 	for _, f := range sourceFiles {
@@ -1938,9 +1955,6 @@ func rootPackageName(sourceFiles []string, projectDir string) string {
 		if filepath.Dir(abs) == absRoot {
 			return detectPackageName(f)
 		}
-	}
-	if len(sourceFiles) > 0 {
-		return detectPackageName(sourceFiles[0])
 	}
 	return ""
 }

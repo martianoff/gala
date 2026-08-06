@@ -4,6 +4,7 @@ go_library(
     name = "commands",
     srcs = [
         "build.go",
+        "buildfail.go",
         "cache.go",
         "clean.go",
         "imports.go",

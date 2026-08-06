@@ -4,8 +4,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -136,6 +138,76 @@ func (w *Workspace) GenFiles() ([]string, error) {
 	}
 
 	return files, nil
+}
+
+// MainPackageDirs returns every directory under GenDir that holds a
+// `package main`, relative to GenDir and slash-separated. The gen root is
+// excluded: it is the project's own package, which callers check separately.
+//
+// Directories mirroring a nested Go module — one carrying its own go.mod in the
+// project — are skipped. Their sources are copied into the workspace but they
+// resolve dependencies through their own module, so they are not buildable here
+// and must never be offered as a build target.
+//
+// TODO: that exclusion belongs at the copy step (copyNonGalaFiles), which today
+// copies a nested module's sources in while dropping its go.mod, silently
+// absorbing it into the workspace module. Skipping it here only stops us
+// offering a target that cannot build; the sources are still compiled by
+// `go build ./gen/...`.
+func (w *Workspace) MainPackageDirs() ([]string, error) {
+	var dirs []string
+	err := filepath.WalkDir(w.GenDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(w.GenDir, path)
+		if err != nil {
+			return err
+		}
+		if rel == "." {
+			return nil // the project's own package — the caller's business
+		}
+		if strings.HasPrefix(d.Name(), ".") || d.Name() == "vendor" {
+			return filepath.SkipDir
+		}
+		if _, err := os.Stat(filepath.Join(w.ProjectDir, rel, "go.mod")); err == nil {
+			return filepath.SkipDir // a nested module, not part of this build
+		}
+		if PackageNameIn(path) == "main" {
+			dirs = append(dirs, filepath.ToSlash(rel))
+		}
+		return nil
+	})
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	sort.Strings(dirs)
+	return dirs, nil
+}
+
+// PackageNameIn returns the Go package name declared by the .go files directly
+// in dir, or "" when dir holds no Go source. Only the first package clause
+// found is consulted — a directory is a single Go package by construction.
+func PackageNameIn(dir string) string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") {
+			continue
+		}
+		if name := detectPackageName(filepath.Join(dir, entry.Name())); name != "" {
+			return name
+		}
+	}
+	return ""
 }
 
 // CleanDeps removes all files from the deps directory.
