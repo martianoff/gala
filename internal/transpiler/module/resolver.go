@@ -329,7 +329,7 @@ func (r *Resolver) resolvePackagePathUncached(importPath string) (string, error)
 
 	// Strategy 1: Module-relative resolution
 	if r.moduleRoot != "" && r.moduleName != "" {
-		if relPath, ok := hasModulePrefix(importPath, r.moduleName); ok {
+		if relPath, ok := StripModulePrefix(importPath, r.moduleName); ok {
 			// Full module path: "martianoff/gala/std" -> "{moduleRoot}/std"
 			dirPath := filepath.Join(r.moduleRoot, relPath)
 			if isValidPackageDir(dirPath) {
@@ -382,7 +382,7 @@ func (r *Resolver) resolvePackagePathUncached(importPath string) (string, error)
 				return spModRoot, nil
 			}
 		}
-		if relPath, ok := hasModulePrefix(importPath, spModName); ok {
+		if relPath, ok := StripModulePrefix(importPath, spModName); ok {
 			dirPath := filepath.Join(spModRoot, relPath)
 			if isValidPackageDir(dirPath) {
 				return dirPath, nil
@@ -410,7 +410,7 @@ func (r *Resolver) resolvePackagePathUncached(importPath string) (string, error)
 	// real on-disk path). Other paths use the full import path as the suffix.
 	suffixPath := importPath
 	if r.moduleName != "" {
-		if rel, ok := hasModulePrefix(importPath, r.moduleName); ok {
+		if rel, ok := StripModulePrefix(importPath, r.moduleName); ok {
 			suffixPath = rel
 		}
 	}
@@ -486,7 +486,7 @@ func (r *Resolver) subpackageDirForCachedModule(baseDir, importPath string) stri
 	if err != nil || depMod.Module.Path == "" {
 		return ""
 	}
-	rel, ok := hasModulePrefix(importPath, depMod.Module.Path)
+	rel, ok := StripModulePrefix(importPath, depMod.Module.Path)
 	if !ok || rel == "" {
 		return ""
 	}
@@ -516,10 +516,14 @@ func matchesModuleName(importPath, moduleName string) bool {
 	return false
 }
 
-// hasModulePrefix checks if importPath starts with moduleName+"/", accounting for
-// VCS host prefix differences. Returns the relative path after the module prefix,
-// or empty string if no match.
-func hasModulePrefix(importPath, moduleName string) (relPath string, ok bool) {
+// StripModulePrefix reports whether importPath names a package inside
+// moduleName, returning the package's path relative to the module root. It
+// tolerates VCS host prefix differences, so "github.com/you/proj/internal/x"
+// and "you/proj/internal/x" both match the module either way round.
+//
+// Exported because tooling outside the transpiler needs the same matching: the
+// LSP maps an import path back to a source directory for go-to-definition.
+func StripModulePrefix(importPath, moduleName string) (relPath string, ok bool) {
 	if strings.HasPrefix(importPath, moduleName+"/") {
 		return strings.TrimPrefix(importPath, moduleName+"/"), true
 	}
@@ -555,7 +559,7 @@ func (r *Resolver) ResolveGoImportPath(importPath string) string {
 			return spModName // Return the full Go module path
 		}
 		// Handle subpackage: "martianoff/gala-server/sub" → "github.com/martianoff/gala-server/sub"
-		if relPath, ok := hasModulePrefix(importPath, spModName); ok {
+		if relPath, ok := StripModulePrefix(importPath, spModName); ok {
 			if importPath != spModName+"/"+relPath {
 				return spModName + "/" + relPath
 			}
@@ -581,7 +585,7 @@ func stripVCSHost(path string) string {
 func (r *Resolver) IsGalaPackage(importPath string) bool {
 	// Check if it's the current module (root package or subpackage)
 	if r.moduleName != "" && (matchesModuleName(importPath, r.moduleName) || func() bool {
-		_, ok := hasModulePrefix(importPath, r.moduleName)
+		_, ok := StripModulePrefix(importPath, r.moduleName)
 		return ok
 	}()) {
 		return true
@@ -615,7 +619,7 @@ func (r *Resolver) IsGalaPackage(importPath string) bool {
 	if r.galaMod != nil {
 		for _, req := range r.galaMod.Require {
 			if matchesModuleName(importPath, req.Path) || func() bool {
-				_, ok := hasModulePrefix(importPath, req.Path)
+				_, ok := StripModulePrefix(importPath, req.Path)
 				return ok
 			}() {
 				// If explicitly marked as Go in gala.mod, it's not a GALA package
@@ -640,8 +644,8 @@ func (r *Resolver) IsGalaPackage(importPath string) bool {
 		if matchesModuleName(importPath, spModName) {
 			return isValidPackageDir(spModRoot)
 		}
-		if _, ok := hasModulePrefix(importPath, spModName); ok {
-			relPath, _ := hasModulePrefix(importPath, spModName)
+		if _, ok := StripModulePrefix(importPath, spModName); ok {
+			relPath, _ := StripModulePrefix(importPath, spModName)
 			return isValidPackageDir(filepath.Join(spModRoot, relPath))
 		}
 	}

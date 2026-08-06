@@ -24,6 +24,7 @@ go_library(
         "//internal/transpiler",
         "//internal/transpiler/analyzer",
         "//internal/transpiler/generator",
+        "//internal/transpiler/module",
         "//internal/transpiler/transformer",
         "@com_github_antlr4_go_antlr_v4//:antlr",
         "@com_github_owenrumney_go_lsp//lsp",
@@ -35,6 +36,7 @@ go_test(
     name = "lsp_test",
     srcs = [
         "bom_test.go",
+        "definition_project_module_test.go",
         "error_lines_test.go",
         "repro_gala_mcp_test.go",
         "server_test.go",
