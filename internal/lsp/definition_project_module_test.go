@@ -55,13 +55,11 @@ func TestDefinition_ModuleQualifiedImport(t *testing.T) {
 	// The project's own packages, and a GALA dependency's packages, resolve by
 	// the same mechanism against different module roots.
 	for _, project := range []struct {
-		name     string
-		setup    func(t *testing.T) (root string, wantDir string)
-		respPath string
+		name  string
+		setup func(t *testing.T) (root string, wantDir string)
 	}{
 		{
-			name:     "project's own package",
-			respPath: "github.com/example/kv/internal/resp",
+			name: "project's own package",
 			setup: func(t *testing.T) (string, string) {
 				root := createTestProject(t, []testProjectFile{
 					{Name: "gala.mod", Src: "module github.com/example/kv\n\ngala 0.74.1\n"},
@@ -72,8 +70,7 @@ func TestDefinition_ModuleQualifiedImport(t *testing.T) {
 			},
 		},
 		{
-			name:     "dependency's package",
-			respPath: "github.com/example/proto/internal/resp",
+			name: "dependency's package",
 			setup: func(t *testing.T) (string, string) {
 				// A GALA dependency's sources live in the version-keyed module
 				// cache under GALA_HOME, which the handler stats when reading
