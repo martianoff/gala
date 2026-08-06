@@ -8,7 +8,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/build"
 )
 
@@ -109,15 +108,13 @@ func runRun(cmd *cobra.Command, args []string) {
 	// Run build with absolute path to workspace
 	outputPath, err := builder.Build(tempOutput)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, galaerr.RenderRich(err, galaerr.Options{Color: galaerr.ColorEnabled()}))
-		os.Exit(1)
+		exitBuildFailed(cmd, err)
 	}
 
 	if outputPath == "" {
-		fmt.Fprintln(os.Stderr, "Error: cannot run a library package. Only 'package main' projects can be run.")
+		fmt.Fprintln(os.Stderr, "Error: nothing to run — this project has no 'package main'.")
 		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "  gala build        compile-check library packages")
-		fmt.Fprintln(os.Stderr, "  bazel run //...   run executables in subdirectories (e.g., examples/)")
+		fmt.Fprintln(os.Stderr, "  gala build   compile-check library packages")
 		os.Exit(1)
 	}
 
@@ -136,4 +133,3 @@ func runRun(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 }
-
