@@ -25,4 +25,3 @@ func (e *MultipleMainPackagesError) Error() string {
 	}
 	return b.String()
 }
-

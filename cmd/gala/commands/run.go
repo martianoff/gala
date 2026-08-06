@@ -133,4 +133,3 @@ func runRun(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 }
-
