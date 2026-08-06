@@ -11,6 +11,7 @@ import (
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
+	"martianoff/gala/internal/transpiler/module"
 )
 
 func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionParams) ([]lsp.Location, error) {
@@ -488,21 +489,46 @@ func addImportSpec(imports map[string]string, spec string) {
 	}
 }
 
-// resolveImportDir resolves an import path to a filesystem directory using the
-// same search-path strategy the analyzer's resolver applies: internal
-// martianoff/gala/* paths map to a directory relative to a search path with
-// the module prefix stripped; everything else is tried as-is.
+// galaModulePath is the GALA compiler's own module path — the prefix every
+// stdlib import carries. It is needed as a literal only for the search-path
+// sweep below, where a search path can be a bare tree of package directories
+// with no gala.mod to read a module path out of.
+const galaModulePath = "martianoff/gala"
+
+// resolveImportDir resolves an import path to the directory holding that
+// package's sources, in three steps: strip the prefix of whichever gala.mod
+// module owns the path and resolve the remainder under that module's own root;
+// failing that, join the path with each search path; failing that, fall back
+// to Go source directories. It deliberately shares no code with the analyzer's
+// resolver — that one fuzzy-matches by path suffix and caches negative results
+// forever, both wrong for navigation in a live editor.
 func (h *GalaHandler) resolveImportDir(uri, importPath string) string {
-	relPath := strings.TrimPrefix(importPath, "martianoff/gala/")
+	// Resolve against the module that owns the path, under that module's own
+	// root. Joining a module-relative path against an unrelated search path is
+	// how a project package ends up pointing into a dependency's cache.
+	for _, m := range h.moduleRoots {
+		rel, ok := module.StripModulePrefix(importPath, m.path)
+		if !ok && importPath != m.path {
+			continue
+		}
+		if dir := statDir(filepath.Join(m.dir, rel)); dir != "" {
+			return dir
+		}
+	}
+	// No owning module — either the project has no gala.mod at its root, or the
+	// package belongs to a module we never learned about. Search paths are then
+	// all we have: a stdlib import resolves against a search path that IS the
+	// stdlib source root, so it needs its module prefix off; anything else is
+	// tried verbatim.
+	stdlibRel := strings.TrimPrefix(importPath, galaModulePath+"/")
 	for _, sp := range h.getSearchPaths(uriToPath(uri)) {
-		for _, cand := range []string{relPath, importPath} {
-			dir := filepath.Join(sp, cand)
-			if info, err := os.Stat(dir); err == nil && info.IsDir() {
-				if abs, err := filepath.Abs(dir); err == nil {
-					return abs
-				}
+		if stdlibRel != importPath {
+			if dir := statDir(filepath.Join(sp, stdlibRel)); dir != "" {
 				return dir
 			}
+		}
+		if dir := statDir(filepath.Join(sp, importPath)); dir != "" {
+			return dir
 		}
 	}
 	// Not on a GALA search path. Try third-party Go modules wired from the
@@ -514,6 +540,19 @@ func (h *GalaHandler) resolveImportDir(uri, importPath string) string {
 		}
 	}
 	return analyzer.GoPackageSourceDir(importPath)
+}
+
+// statDir returns path made absolute when it names an existing directory, and
+// "" otherwise — so a caller can try candidate directories in priority order.
+func statDir(path string) string {
+	info, err := os.Stat(path)
+	if err != nil || !info.IsDir() {
+		return ""
+	}
+	if abs, err := filepath.Abs(path); err == nil {
+		return abs
+	}
+	return path
 }
 
 // packageMemberDefinition resolves a `pkg.Symbol` reference where `pkg` is an

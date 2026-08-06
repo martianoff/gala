@@ -24,6 +24,18 @@ import (
 	"martianoff/gala/internal/transpiler/transformer"
 )
 
+// moduleRoot pairs a module path with the directory its packages live under.
+// Imports name packages by their module-qualified path
+// (github.com/you/proj/internal/resp) while the sources sit at internal/resp
+// under the module's own root, so navigating to one means stripping the
+// matching module's prefix and resolving the remainder under *that* module's
+// directory — joining against an unrelated root is how a project package ends
+// up pointing into a dependency's cache.
+type moduleRoot struct {
+	path string // module path as written in gala.mod, e.g. github.com/you/proj
+	dir  string // directory the module's packages are rooted at
+}
+
 // GalaHandler implements all LSP handler interfaces for the GALA language.
 //
 // Diagnostic publishing follows the cancel-and-restart pattern (like gopls):
@@ -44,9 +56,10 @@ type GalaHandler struct {
 	parser    transpiler.GalaParser
 	generator transpiler.CodeGenerator
 
-	extraSearchPaths []string      // additional search paths (for testing)
+	extraSearchPaths []string          // additional search paths (for testing)
 	goSrcDirs        map[string]string // Go module import-path prefix -> on-disk .go source dir (third-party deps)
-	client           *golsp.Client // LSP client for sending notifications
+	moduleRoots      []moduleRoot      // modules whose packages this project can import, from gala.mod
+	client           *golsp.Client     // LSP client for sending notifications
 
 	mu              sync.Mutex
 	documents       map[string]string              // URI -> source text
@@ -75,7 +88,7 @@ func (h *GalaHandler) SetSearchPaths(paths []string) {
 
 // SetGoSrcDirs wires the Go module import-path -> source-directory table used to
 // resolve third-party Go types (for testing; in production it is populated from
-// the project's gala.mod by resolveProjectDeps).
+// the project's gala.mod by loadProjectModule).
 func (h *GalaHandler) SetGoSrcDirs(dirs map[string]string) {
 	h.goSrcDirs = dirs
 }
@@ -147,7 +160,7 @@ func (h *GalaHandler) Initialize(ctx context.Context, params *lsp.InitializePara
 
 	// Auto-resolve gala.mod dependencies from project root
 	if h.rootPath != "" {
-		h.resolveProjectDeps(h.rootPath)
+		h.loadProjectModule(h.rootPath)
 	}
 
 	openClose := true
@@ -418,19 +431,22 @@ func findSiblingGalaFiles(filePath string) []string {
 	return siblings
 }
 
-// resolveProjectDeps scans for gala.mod in the project root and adds
-// dependency paths to the search paths so imported packages resolve correctly.
-func (h *GalaHandler) resolveProjectDeps(rootPath string) {
+// loadProjectModule parses the project's gala.mod and wires everything derived
+// from it: the module roots imports resolve against, the dependency search
+// paths, and the Go source directories.
+func (h *GalaHandler) loadProjectModule(rootPath string) {
 	galaModPath := filepath.Join(rootPath, "gala.mod")
 	galaMod, err := mod.ParseFile(galaModPath)
 	if err != nil {
 		return
 	}
+	h.moduleRoots = []moduleRoot{{path: galaMod.Module.Path, dir: rootPath}}
 	config := build.DefaultConfig()
 	for _, req := range galaMod.GalaRequires() {
 		depDir := config.GalaModulePath(req.Path, req.Version)
 		if info, err := os.Stat(depDir); err == nil && info.IsDir() {
 			h.extraSearchPaths = append(h.extraSearchPaths, depDir)
+			h.moduleRoots = append(h.moduleRoots, moduleRoot{path: req.Path, dir: depDir})
 		}
 	}
 	// Wire third-party Go module source directories so the analyzer can resolve
