@@ -227,6 +227,24 @@ type GalaErrorListener struct {
 	// reportedGoType is the composite-literal context a GALA-E0040 has already
 	// been reported for, if any. See SyntaxError for why it is remembered.
 	reportedGoType *grammar.CompositeLiteralContext
+
+	// bareLambdaLine is the line a GALA-E0042 has already been reported on, or
+	// 0. An unparenthesized lambda parameter derails the parser for the rest of
+	// the expression, so ANTLR re-reports it against each enclosing rule it
+	// unwinds through — four errors for one missing pair of parentheses, all on
+	// the same line.
+	//
+	// Keyed on the LINE, unlike reportedGoType above which keys on context
+	// identity. Context identity does not work for this cascade: the follow-on
+	// errors are reported from the different rules the parser unwinds through,
+	// so no single context is common to them. The line is what they share.
+	//
+	// The tradeoff is the usual one for cascade suppression: a genuinely
+	// unrelated later error on the same line is swallowed too, and a lambda
+	// whose body wraps onto the next line can still leak one follow-on. The
+	// first error on any line is always reported, so nothing is hidden that
+	// would not resurface on the next compile.
+	bareLambdaLine int
 }
 
 func (l *GalaErrorListener) SyntaxError(recognizer antlr.Recognizer, offendingSymbol interface{}, line, column int, msg string, e antlr.RecognitionException) {
@@ -248,7 +266,78 @@ func (l *GalaErrorListener) SyntaxError(recognizer antlr.Recognizer, offendingSy
 		return
 	}
 
+	// Cascade suppression for the unparenthesized lambda parameter, for the
+	// same reason as above: one missing `(` yields a pile of follow-on errors
+	// on that line, all describing the wreckage rather than the cause.
+	if l.bareLambdaLine != 0 && line == l.bareLambdaLine {
+		return
+	}
+	if err := bareLambdaParamError(recognizer, offendingSymbol); err != nil {
+		l.bareLambdaLine = line
+		l.Errors = append(l.Errors, err)
+		return
+	}
+
 	l.Errors = append(l.Errors, galaerr.NewSyntaxError(line, column, msg))
+}
+
+// bareLambdaParamError recognizes a lambda written without parentheses around
+// its single parameter — `x => e` where GALA requires `(x) => e` — and returns
+// the coded diagnostic for it, or nil when the error is something else.
+//
+// The shape is identified from the tokens rather than the parse tree, because
+// by the time ANTLR reports this the tree is already error-recovered garbage:
+// the offending token is `=>` and the token immediately before it is a plain
+// IDENTIFIER. That is enough, since every legal `=>` in GALA is preceded by
+// either `)` (a lambda's parameter list) or a pattern in a `case` arm — and a
+// `case` arm's own `=>` is reached only after `case`, which parses fine.
+func bareLambdaParamError(recognizer antlr.Recognizer, offendingSymbol interface{}) *galaerr.SemanticError {
+	tok, ok := offendingSymbol.(antlr.Token)
+	if !ok || tok == nil || tok.GetText() != "=>" {
+		return nil
+	}
+	psr, ok := recognizer.(antlr.Parser)
+	if !ok {
+		return nil
+	}
+	stream := psr.GetTokenStream()
+	if stream == nil {
+		return nil
+	}
+	idx := tok.GetTokenIndex()
+	if idx <= 0 {
+		return nil
+	}
+	prev := stream.Get(idx - 1)
+	if prev == nil || symbolicTokenName(recognizer, prev) != "IDENTIFIER" {
+		return nil
+	}
+
+	name := prev.GetText()
+	err := galaerr.NewCodedSemanticError(
+		galaerr.CodeBareLambdaParam,
+		prev.GetLine(),
+		prev.GetColumn(),
+		"lambda parameters must be parenthesized",
+		fmt.Sprintf("use `(%s) => ...`; GALA always parenthesizes a lambda's parameter list, "+
+			"including a single parameter", name),
+	)
+	// Span the parameter itself, so the caret sits under what has to change
+	// rather than under the arrow that happened to trip the parser.
+	return err.WithSpan(prev.GetColumn() + len([]rune(name)))
+}
+
+// symbolicTokenName maps a token to its grammar symbol name (e.g. "IDENTIFIER")
+// via the recognizer's vocabulary. The generated token-type constants are
+// unexported, so the vocabulary is the only way to ask this from outside the
+// grammar package.
+func symbolicTokenName(recognizer antlr.Recognizer, tok antlr.Token) string {
+	names := recognizer.GetSymbolicNames()
+	tt := tok.GetTokenType()
+	if tt < 0 || tt >= len(names) {
+		return ""
+	}
+	return names[tt]
 }
 
 // currentCompositeLiteral returns the rule the parser was inside when it

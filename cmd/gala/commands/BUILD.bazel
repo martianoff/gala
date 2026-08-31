@@ -7,6 +7,8 @@ go_library(
         "buildfail.go",
         "cache.go",
         "clean.go",
+        "doc.go",
+        "explain.go",
         "imports.go",
         "lsp.go",
         "mod.go",
@@ -35,6 +37,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//cmd/gala/commands/worker",
+        "//docs/errors:errdocs",
         "//galaerr",
         "//internal/build",
         "//internal/depman/fetch",

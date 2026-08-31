@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "bom.go",
         "errors.go",
+        "json.go",
         "render.go",
     ],
     importpath = "martianoff/gala/galaerr",
@@ -27,7 +28,9 @@ go_test(
     srcs = [
         "bom_test.go",
         "errors_test.go",
+        "json_test.go",
         "render_test.go",
+        "syntax_filepath_test.go",
     ],
     deps = [
         ":galaerr",

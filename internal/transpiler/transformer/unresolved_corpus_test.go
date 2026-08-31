@@ -57,7 +57,15 @@ import (
 // expressions that would otherwise resolve do not. A run with more type
 // information available resolves more and comes in under the ceiling; it
 // should not have to move the number to stay green.
-const unresolvedBudget = 541
+// unresolvedBudget was raised 541 -> 570 when embedded interpolation
+// expressions started reporting their real source position. They previously
+// all claimed line 1, so dedupeUnresolved — which keys on the whole record,
+// position included — merged sites that only looked identical because their
+// positions had been flattened. The 29 sites this exposed are not new: they
+// were always unresolved, just double-counted as one. Verified by attribution:
+// suppressing only the position rebasing returns the total to its old value,
+// so no expression that used to type now fails to.
+const unresolvedBudget = 570
 
 // TestUnresolvedTypeInventory transpiles the single-file example corpus with
 // the unresolved-type inventory enabled and holds the total to a budget.

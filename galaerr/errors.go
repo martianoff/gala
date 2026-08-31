@@ -39,6 +39,15 @@ type SyntaxError struct {
 	BaseError
 	Line   int
 	Column int
+	// FilePath is the file the error was found in, stamped by WithFilePath
+	// once the caller that knows the path has it. The parser itself reports a
+	// position but not a path, and without this the rich renderer had nothing
+	// to re-read for its snippet: `gala build` and `gala run` pass no fallback
+	// source, so a syntax error printed with no locus at all — no file, no
+	// line — while `gala transpile`, which does pass one, framed it correctly.
+	// Error() ignores this field, so the terse form the LSP and tests match
+	// against is unchanged.
+	FilePath string
 }
 
 func (e *SyntaxError) Error() string {
@@ -397,6 +406,52 @@ const (
 	// be determined (no module root, or a file outside it), leaving the Go
 	// compiler as the backstop rather than guessing.
 	CodeInternalPackageImport ErrorCode = "GALA-E0041"
+
+	// E0042: a lambda was written with an unparenthesized parameter, as in
+	// `xs.Map(x => x * 2)`. GALA's lambdaExpression requires a `parameters`
+	// list, so the single-parameter shorthand Scala, Kotlin, JS and C# all
+	// accept is a syntax error here — and one ANTLR reports badly: the bare
+	// form produced up to four cascading errors, each dumping the twenty-odd
+	// tokens the parser would have accepted, and none of them naming the
+	// missing parentheses.
+	//
+	// The grammar is deliberately NOT relaxed to admit the bare form. `pattern`
+	// reaches `expression`, which reaches `primaryExpr`, whose FIRST
+	// alternative is `lambdaExpression` — so a bare-identifier lambda would
+	// make `case x => body` ambiguous, and ANTLR would resolve it silently to
+	// the lambda reading rather than erroring. A mis-parse that still compiles
+	// is a worse outcome than the syntax error this code replaces.
+	CodeBareLambdaParam ErrorCode = "GALA-E0042"
+
+	// E0043: a type name was called as if it were a constructor, as in
+	// `Array(1, 2, 3)`. GALA builds collections through named constructor
+	// functions (`ArrayOf`, `ListOf`, `HashMapOf`, `EmptyArray`), so the type
+	// name itself is not callable — but Scala spells the same thing
+	// `List(1, 2, 3)`, which makes this a common first attempt.
+	//
+	// It fires only after every constructive reading has declined: a positional
+	// struct constructor, a companion `Apply`, and a sealed-variant constructor
+	// are all resolved earlier and are unaffected. Reaching the check means the
+	// call was about to be emitted verbatim and left for `go build`, which
+	// reported it as "cannot use generic type Array[T any] without
+	// instantiation" — Go's vocabulary for a mistake made in GALA.
+	CodeTypeUsedAsConstructor ErrorCode = "GALA-E0043"
+
+	// E0044: a method was called on a value whose GALA type declares no such
+	// method. The call used to be emitted verbatim and left to `go build`,
+	// which reported it against the GENERATED expression rather than the
+	// source — including the auto-unwrap `.Get()` calls the transpiler inserts
+	// for Immutable[T], which the user never wrote:
+	//
+	//	xs.Get().Filter(func(x int) bool {…}).Sum undefined
+	//	  (type collection_immutable.Array[int] has no field or method Sum)
+	//
+	// The check is deliberately conservative. It fires only when the receiver's
+	// GALA type is known AND fully concrete, and never for the methods the
+	// transformer synthesizes (Copy, Equal, Apply, Unapply, String, is<Variant>
+	// and the codec pair), which are absent from TypeMetadata.Methods because
+	// no one declared them in source.
+	CodeUnknownMethod ErrorCode = "GALA-E0044"
 )
 
 // MultiError collects multiple GALA errors.
@@ -488,6 +543,11 @@ func stampFilePath(err error, path string) {
 	var se *SemanticError
 	if errors.As(err, &se) && se.FilePath == "" {
 		se.FilePath = path
+		return
+	}
+	var sy *SyntaxError
+	if errors.As(err, &sy) && sy.FilePath == "" {
+		sy.FilePath = path
 	}
 }
 

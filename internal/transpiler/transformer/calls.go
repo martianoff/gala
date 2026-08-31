@@ -259,23 +259,23 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 		}
 
 		// Check for zero-argument generic method call (e.g., p.Swap())
+		//
+		// The resolved receiver type is hoisted so the unknown-method check at
+		// the end of this branch can reuse it. Resolving it twice for the same
+		// expression is not free: when manual inference cannot settle the type,
+		// getExprTypeName falls through to the uncached inference pass, so the
+		// expensive half would run again on the identical node.
+		var zeroArgRecvType transpiler.Type = transpiler.NilType{}
+		zeroArgLookupBase := ""
 		if sel, ok := base.(*ast.SelectorExpr); ok {
 			receiver := sel.X
 			method := sel.Sel.Name
 
-			recvType := t.getExprTypeName(receiver)
-			// If recvType is a generic type, preserve its type parameters when resolving the base name
-			if gen, ok := recvType.(transpiler.GenericType); ok {
-				if qBase := t.getType(gen.Base.String()); !qBase.IsNil() {
-					// Keep the type parameters but use the resolved base type
-					recvType = transpiler.GenericType{Base: qBase, Params: gen.Params}
-				}
-			} else if qName := t.getType(recvType.BaseName()); !qName.IsNil() {
-				recvType = qName
-			}
-			recvBaseName := recvType.BaseName()
-			// Strip pointer prefix for genericMethods lookup since methods are registered under base type name
-			lookupBaseName := strings.TrimPrefix(recvBaseName, "*")
+			// Same normalization the call dispatcher uses — resolve the
+			// receiver to its canonical form and derive the pointer-stripped
+			// registry key — rather than repeating it inline.
+			recvType, lookupBaseName := t.resolveReceiverTypeAndLookupKey(receiver)
+			zeroArgRecvType, zeroArgLookupBase = recvType, lookupBaseName
 
 			// Check if this is a generic method - try all possible package lookups
 			isGenericMethod := t.isGenericMethodWithImports(lookupBaseName, recvType.GetPackage(), method)
@@ -350,6 +350,12 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 			bl, bc = suffix.GetStart().GetLine(), suffix.GetStart().GetColumn()
 		}
 		if err := t.checkForbiddenGoBuiltinCall(base, bl, bc, exact); err != nil {
+			return nil, err
+		}
+		// Last stop for a zero-argument call: if the receiver's GALA type is
+		// known and declares no such method, say so here rather than emitting
+		// it and letting `go build` describe the generated expression.
+		if err := t.checkUnknownMethodZeroArg(base, suffix, zeroArgRecvType, zeroArgLookupBase); err != nil {
 			return nil, err
 		}
 		return &ast.CallExpr{Fun: base, Args: nil}, nil
@@ -833,6 +839,15 @@ func (t *galaASTTransformer) transformRegularMethodCall(
 		methodMeta = typeMeta.Methods[method]
 	}
 	if methodMeta == nil {
+		// The receiver's type is known but declares no such method. When that
+		// judgement can be made safely this is a GALA error (GALA-E0044) rather
+		// than something to hand to `go build`, which would report it against
+		// the generated expression. checkUnknownMethod stands down whenever the
+		// receiver is not fully concrete or the name is transformer-generated;
+		// see unknown_method.go.
+		if err := t.checkUnknownMethod(argListCtx, typeMeta, method, recvType); err != nil {
+			return nil, err
+		}
 		// method metadata unresolved → emit the method call directly.
 		return t.emitDirectMethodCall(argListCtx, receiver, method)
 	}
@@ -1076,7 +1091,8 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 	// instead of dispatching to Apply.
 	resolvedTypeName := t.resolveStructTypeName(typeName)
 	sealedWithApply := typeMeta.IsSealed && hasApply
-	if fields, structOk := t.structFields[resolvedTypeName]; structOk && len(args) > 0 && len(args) == len(fields) && !sealedWithApply {
+	if fields, structOk := t.structFields[resolvedTypeName]; structOk && len(args) > 0 && len(args) == len(fields) && !sealedWithApply &&
+		!t.positionalCtorIsUnavailable(typeMeta.Package, fields, len(args)) {
 		// Infer type args from positional arg types when the call site omitted
 		// them. Without this, a generic struct like `Tuple(a, b)` emits
 		// `Tuple{V1: a, V2: b}` — Go rejects the bare generic type.
@@ -1087,7 +1103,14 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 	if !hasApply {
 		// No Apply method. Still emit a struct literal if this is a known
 		// struct layout — callers may supply a subset of fields.
-		if fields, ok := t.structFields[resolvedTypeName]; ok && len(args) > 0 {
+		//
+		// Not, however, when those fields belong to another package and are
+		// private to it: a subset construction would map the arguments onto a
+		// prefix of fields the caller cannot even name. That is how
+		// `Array(1, 2, 3)` used to become `Array{root: 1, length: 2, depth: 3}`
+		// rather than being reported as GALA-E0043.
+		if fields, ok := t.structFields[resolvedTypeName]; ok && len(args) > 0 &&
+			!t.positionalCtorIsUnavailable(typeMeta.Package, fields, len(args)) {
 			return true, t.buildStructLiteral(fun, resolvedTypeName, fields, args, true), nil
 		}
 		return false, nil, nil
@@ -1780,6 +1803,7 @@ func (t *galaASTTransformer) tryTransformValWithApply(fun ast.Expr, args []ast.E
 //	Section 10 Companion Apply / struct construction    — tryTransformCompanionApplyOrStructCtor
 //	Section 11 CompositeLit with Apply                  — tryTransformCompositeLitApply
 //	Section 12 Variable with Apply method               — tryTransformValWithApply
+//	Section 12.9 Type name called as a constructor      — checkTypeUsedAsConstructor
 //	Section 13 Fallback: emit call verbatim             — inline
 //
 // When extending call-site behavior, add or modify a single section's helper
@@ -1926,6 +1950,15 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	// (or the enclosing function's return type) so the generated Go is concrete
 	// rather than an uninstantiated `Fn(args)` that fails with "cannot infer".
 	fun = t.injectFuncPhantomTypeArgs(fun, callCtx.funcMeta, args, hasSpread, pendingExpected)
+
+	// --- Section 12.9: a type name called as a constructor ---
+	// Runs last, immediately before the verbatim fallback: every constructive
+	// reading (struct ctor, companion Apply, sealed variant) is resolved in the
+	// sections above and has already returned, so reaching here means the
+	// callee names a type and nothing callable. See type_as_constructor.go.
+	if err := t.checkTypeUsedAsConstructor(fun, fl, fc, exact); err != nil {
+		return nil, err
+	}
 
 	// --- Section 13: Fallback — emit the call verbatim. ---
 	// The go_builtins.Panic wrapper lowers to Go's builtin `panic` in EVERY
@@ -2269,8 +2302,6 @@ func buildGoCompositeLiteralWithNamedArgs(
 	sortFn(elts)
 	return &ast.CompositeLit{Type: fun, Elts: elts}
 }
-
-
 
 // unwrapToBaseIdent recurses through generic instantiation wrappers
 // (IndexExpr for `Foo[A]`, IndexListExpr for `Foo[A, B]`) to return the

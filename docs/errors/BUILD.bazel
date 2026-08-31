@@ -1,3 +1,5 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
 # The error-code reference pages are consumed as test data by the
 # doc-verification guard in //internal/transpiler/transformer, which asserts
 # each page quotes the compiler's real output byte-for-byte. Linux CI sandboxes
@@ -6,4 +8,24 @@ filegroup(
     name = "error_docs",
     srcs = glob(["GALA-E*.md"]),
     visibility = ["//visibility:public"],
+)
+
+# The same pages, compiled into the CLI so `gala explain GALA-E0044` works
+# offline. The Go file lives here rather than under internal/ because
+# //go:embed can only reach files in its own package directory; keeping it
+# beside the content is what guarantees the served page and the published page
+# are the same bytes.
+go_library(
+    name = "errdocs",
+    srcs = ["errdocs.go"],
+    embedsrcs = glob(["GALA-E*.md"]),
+    importpath = "martianoff/gala/docs/errors",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "errdocs_test",
+    srcs = ["errdocs_test.go"],
+    embed = [":errdocs"],
+    deps = ["@com_github_stretchr_testify//require"],
 )

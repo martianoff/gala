@@ -460,6 +460,46 @@ func main() {
 			expectCode:     galaerr.CodeGoTypeInExpression,
 			expectContains: "use HashMap[string, int] instead",
 		},
+		{
+			// Like E0040, raised during PARSING rather than analysis.
+			name: "GALA-E0042 unparenthesized lambda parameter",
+			input: `package main
+
+import "martianoff/gala/collection_immutable"
+
+func main() {
+    val xs = collection_immutable.ArrayOf(1, 2, 3)
+    Println(xs.Map(x => x * 2))
+}`,
+			expectCode:     galaerr.CodeBareLambdaParam,
+			expectContains: "lambda parameters must be parenthesized",
+		},
+		{
+			name: "GALA-E0043 type name called as a constructor",
+			input: `package main
+
+import "martianoff/gala/collection_immutable"
+
+func main() {
+    val xs = collection_immutable.Array(1, 2, 3)
+    Println(xs)
+}`,
+			expectCode:     galaerr.CodeTypeUsedAsConstructor,
+			expectContains: "Array is a type, not a constructor",
+		},
+		{
+			name: "GALA-E0044 unknown method on a known type",
+			input: `package main
+
+import "martianoff/gala/collection_immutable"
+
+func main() {
+    val xs = collection_immutable.ArrayOf(1, 2, 3)
+    Println(xs.Sise())
+}`,
+			expectCode:     galaerr.CodeUnknownMethod,
+			expectContains: "has no method Sise",
+		},
 	}
 
 	for _, tc := range cases {

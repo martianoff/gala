@@ -118,12 +118,15 @@ func toDiagnostic(err error) (diagnostic, bool) {
 	}
 	var sy *SyntaxError
 	if errors.As(err, &sy) {
-		// SyntaxError has no FilePath/Code/Hint; the CLI supplies the source
-		// via the fallback path so its snippet can still be framed.
+		// SyntaxError has no Code/Hint. It does carry a FilePath once stamped,
+		// which lets the renderer resolve the source itself; a caller that
+		// supplies a fallback (transpile) still works, and one that does not
+		// (build, run) now frames the snippet too.
 		return diagnostic{
-			msg:    sy.Msg,
-			line:   sy.Line,
-			column: sy.Column,
+			msg:      sy.Msg,
+			filePath: sy.FilePath,
+			line:     sy.Line,
+			column:   sy.Column,
 		}, true
 	}
 	return diagnostic{}, false
@@ -204,6 +207,20 @@ func renderHeader(d diagnostic, opts Options) string {
 // which the caller aligns to the gutter width).
 func renderFooter(hint string, color bool) string {
 	return "= " + colorize("hint:", ansiCyan, color) + " " + hint
+}
+
+// docsBaseURL is where the published error pages live. Each code has a page at
+// <base>/gala-e00nn/, matching the permalink in website/docs/errors/.
+const docsBaseURL = "https://gala.fyi/docs/errors"
+
+// DocsURL returns the documentation page for a code, or "" when the diagnostic
+// carries no code. Exported so machine-readable output (--json) and `gala
+// explain` derive the link from one place.
+func DocsURL(code ErrorCode) string {
+	if code == "" {
+		return ""
+	}
+	return docsBaseURL + "/" + strings.ToLower(string(code)) + "/"
 }
 
 // resolveSource returns the source text for the snippet: the diagnostic's own

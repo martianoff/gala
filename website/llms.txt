@@ -1,0 +1,69 @@
+# GALA
+
+> GALA is a statically-typed, functional-first language that transpiles to Go. It has sealed types with exhaustive pattern matching, `Option`/`Try`/`Either` instead of `nil` and naked error pairs, immutability by default, and full Go interop. Source files are `.gala`; the compiler is `gala`.
+
+GALA is close enough to Scala and Kotlin to be readable on sight, and different enough in specific places to trip a model writing from memory. The differences are listed below, with the compiler error each mistake produces. Every one of them is a hard compile error, not a lint — the build stops and names the fix.
+
+## Getting the compiler to tell you
+
+- `gala build ./main.gala` — compile; diagnostics carry a stable `GALA-Exxxx` code, a source span, and a fix hint
+- `gala build --json ./main.gala` — the same diagnostics as JSON (`code`, `message`, `hint`, `file`, `line`, `column`, `endColumn`, `docsUrl`). Prefer this over parsing the framed text output
+- `gala explain GALA-E0044` — the full reference page for a code, offline; `gala explain --list` enumerates them
+- `gala run ./main.gala`, `gala test ./...`
+
+## Differences that most often produce wrong code
+
+- **Lambda parameters are always parenthesized.** `(x) => x * 2`, never `x => x * 2`. Applies to one parameter too. (`GALA-E0042`)
+- **`match` is postfix.** `value match { case ... }`, not Rust's `match value { ... }`.
+- **Methods are capitalized.** `.Map`, `.Filter`, `.Size` — not `.map`/`.filter`. `map` is additionally a reserved keyword, so `.map` fails in the parser.
+- **Collections are built by named functions, never by calling the type.** `ArrayOf(1, 2, 3)`, `ListOf(...)`, `HashMapOf(("a", 1))`, `EmptyHashMap[K, V]()`. Scala's `List(1, 2, 3)` is an error. (`GALA-E0043`)
+- **There is no `->` pair arrow.** A map entry is a tuple: `HashMapOf(("a", 1), ("b", 2))`.
+- **No bare `len`, `append`, `make`, `panic`, `recover`.** Use `.Size()` (runes/elements) or `.ByteSize()` (bytes). (`GALA-E0035`)
+- **No `defer`, no bare `go`.** Cleanup is `use` or `Using(res, (r) => ...)`; a goroutine is `go_interop.Spawn(() => f())`. (`GALA-E0036`)
+- **No slice or map literals**, and Go slice/map *types* are legal only where a type is expected. (`GALA-E0007`, `GALA-E0008`, `GALA-E0040`)
+- **`val` is immutable and is the default.** Use `var` only when reassignment is genuinely needed.
+- **Sealed matches must be exhaustive.** Adding a variant turns every incomplete match site into a compile error naming the missing case — this is the property to lean on when refactoring. (`GALA-E0002`)
+- **Prefer `Option`/`Try`/`Either` over `nil` and `(T, error)`.** Pattern-match to extract; do not call `.Get()` without checking. For a Go call returning only `error`, use `FromError(call).Get()` — wrapping it in `Try()` never fails.
+
+## Shape of a program
+
+```gala
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+sealed type Shape {
+    case Circle(R float64)
+    case Square(S float64)
+}
+
+func area(s Shape) float64 = s match {
+    case Circle(r) => 3.14 * r * r
+    case Square(a) => a * a
+}
+
+func main() {
+    val shapes = ArrayOf(Circle(1.0), Square(2.0))
+    val total = shapes.Map((s) => area(s)).FoldLeft(0.0, (acc, x) => acc + x)
+    Println(s"total = ${total}")
+}
+```
+
+`Println` and string interpolation (`s"..."`, `f"...%0.2f"`) are built in — no `fmt` import needed.
+
+## Docs
+
+- [Language reference](https://gala.fyi/docs/language-reference/): full syntax and semantics
+- [Error codes](https://gala.fyi/docs/errors/): every `GALA-Exxxx`, with a repro, the real compiler output, and the fix
+- [Examples](https://gala.fyi/docs/examples/): feature-by-feature programs
+- [Immutable collections](https://gala.fyi/docs/immutable-collections/) · [Mutable collections](https://gala.fyi/docs/mutable-collections/): the method surface
+- [Go interop](https://gala.fyi/features/go-interop/): calling Go, and where Go types are allowed
+- [Pattern matching](https://gala.fyi/features/pattern-matching/) · [Sealed types](https://gala.fyi/features/sealed-types/)
+- [For AI agents](https://gala.fyi/for-ai/): why the compiler suits a generate-check-fix loop
+
+## Optional
+
+- [Getting started](https://gala.fyi/docs/getting-started/): install and first program
+- [Dependency management](https://gala.fyi/docs/dependency-management/): `gala.mod`, modules, versions
+- [Playground](https://gala.fyi/playground/): run GALA in a browser
+- [GALA vs Go](https://gala.fyi/vs-go/): the same programs side by side
