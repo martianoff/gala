@@ -29,6 +29,18 @@ type Part struct {
 	// FormatSpec is an explicit printf spec that followed an embedded expression
 	// in a format string (e.g. "%04d"); empty otherwise.
 	FormatSpec string
+	// Offset is the BYTE index, within the content passed to Split, at which
+	// this part's Text begins — for `${expr}` the byte after the `{`, and for
+	// `$ident` the byte after the `$`. It lets a caller that knows where the
+	// host string literal sits map a position inside an embedded expression
+	// back to a real source line and column, so a diagnostic raised while
+	// transforming that expression points at the code the user wrote.
+	//
+	// Exactness caveat: for an embedded expression Text is unescaped (`\"` →
+	// `"`), so Offset locates the expression's START exactly, while positions
+	// further into an expression that contains an escaped quote drift left by
+	// one byte per escape. Literal parts carry the offset of their first byte.
+	Offset int
 }
 
 // Split parses the CONTENT of an interpolated/format string — i.e. the text
@@ -39,25 +51,36 @@ func Split(content string) []Part {
 	var parts []Part
 	var literal strings.Builder
 	i := 0
+	// litStart is the byte offset at which the literal run currently being
+	// accumulated began; it is refreshed every time the builder is empty and
+	// about to take its first byte, so a flushed literal part reports where it
+	// actually started rather than where it ended.
+	litStart := 0
+	writeLit := func(at int, b byte) {
+		if literal.Len() == 0 {
+			litStart = at
+		}
+		literal.WriteByte(b)
+	}
 
 	for i < len(content) {
 		if content[i] == '\\' && i+1 < len(content) {
 			// Escape sequence — pass through as-is.
-			literal.WriteByte(content[i])
-			literal.WriteByte(content[i+1])
+			writeLit(i, content[i])
+			writeLit(i+1, content[i+1])
 			i += 2
 			continue
 		}
 
 		if content[i] != '$' {
-			literal.WriteByte(content[i])
+			writeLit(i, content[i])
 			i++
 			continue
 		}
 
 		// Found $
 		if i+1 >= len(content) {
-			literal.WriteByte('$')
+			writeLit(i, '$')
 			i++
 			continue
 		}
@@ -66,7 +89,7 @@ func Split(content string) []Part {
 
 		// $$ → literal $
 		if next == '$' {
-			literal.WriteByte('$')
+			writeLit(i, '$')
 			i += 2
 			continue
 		}
@@ -74,13 +97,16 @@ func Split(content string) []Part {
 		// ${expr} or ${expr}%spec
 		if next == '{' {
 			if literal.Len() > 0 {
-				parts = append(parts, Part{IsLiteral: true, Text: literal.String()})
+				parts = append(parts, Part{IsLiteral: true, Text: literal.String(), Offset: litStart})
 				literal.Reset()
 			}
 
 			j := EndOfEmbeddedExpr(content, i)
 
-			exprText := unescapeExpr(content[i+2 : j])
+			// exprStart is the byte after `${`, i.e. where the expression
+			// source itself begins.
+			exprStart := i + 2
+			exprText := unescapeExpr(content[exprStart:j])
 			j++ // skip closing }
 
 			fmtSpec := ""
@@ -88,7 +114,7 @@ func Split(content string) []Part {
 				fmtSpec, j = extractFormatSpec(content, j)
 			}
 
-			parts = append(parts, Part{IsLiteral: false, Text: exprText, FormatSpec: fmtSpec})
+			parts = append(parts, Part{IsLiteral: false, Text: exprText, FormatSpec: fmtSpec, Offset: exprStart})
 			i = j
 			continue
 		}
@@ -96,34 +122,36 @@ func Split(content string) []Part {
 		// $identifier
 		if isIdentStart(next) {
 			if literal.Len() > 0 {
-				parts = append(parts, Part{IsLiteral: true, Text: literal.String()})
+				parts = append(parts, Part{IsLiteral: true, Text: literal.String(), Offset: litStart})
 				literal.Reset()
 			}
 
-			j := i + 1
+			// identStart is the byte after `$`, where the name begins.
+			identStart := i + 1
+			j := identStart
 			for j < len(content) && isIdentPart(content[j]) {
 				j++
 			}
 
-			identName := content[i+1 : j]
+			identName := content[identStart:j]
 
 			fmtSpec := ""
 			if j < len(content) && content[j] == '%' {
 				fmtSpec, j = extractFormatSpec(content, j)
 			}
 
-			parts = append(parts, Part{IsLiteral: false, Text: identName, FormatSpec: fmtSpec})
+			parts = append(parts, Part{IsLiteral: false, Text: identName, FormatSpec: fmtSpec, Offset: identStart})
 			i = j
 			continue
 		}
 
 		// $ followed by something else — treat as literal $.
-		literal.WriteByte('$')
+		writeLit(i, '$')
 		i++
 	}
 
 	if literal.Len() > 0 {
-		parts = append(parts, Part{IsLiteral: true, Text: literal.String()})
+		parts = append(parts, Part{IsLiteral: true, Text: literal.String(), Offset: litStart})
 	}
 
 	return parts

@@ -431,6 +431,11 @@ val numbers = ListOf(1, 2, 3)
 val names = ListOf("Alice", "Bob", "Charlie")
 ```
 
+Collections are built through these named constructor functions — `ListOf`,
+`ArrayOf`, `HashMapOf`, `EmptyList` — never by calling the type itself. Scala's
+`List(1, 2, 3)` is [GALA-E0043](errors/GALA-E0043.md), and calling a method a
+type does not declare is [GALA-E0044](errors/GALA-E0044.md).
+
 #### Spreading Slices
 You can spread a slice into a variadic function call using `...`.
 
@@ -1211,7 +1216,7 @@ Supported unary operators: `+`, `-`, `!`, `^`, `*` (dereference), `&` (address-o
 ## 7. Functional Features
 
 ### Lambda Expressions
-Lambdas use the `=>` syntax. Parameter types can be omitted when inferrable from context (e.g., as arguments to typed methods).
+Lambdas use the `=>` syntax. Parameter types can be omitted when inferrable from context (e.g., as arguments to typed methods). The parameter list is always parenthesized, including for a single parameter — a bare `x => e` is [GALA-E0042](errors/GALA-E0042.md).
 
 ```gala
 // Explicit parameter types

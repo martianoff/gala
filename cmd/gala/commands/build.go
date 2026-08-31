@@ -43,6 +43,7 @@ Examples:
 func init() {
 	buildCmd.Flags().StringVarP(&buildOutput, "output", "o", "", "Output binary name")
 	buildCmd.Flags().BoolVarP(&buildVerbose, "verbose", "v", false, "Verbose output")
+	addDiagnosticsJSONFlag(buildCmd)
 }
 
 func runBuild(cmd *cobra.Command, args []string) {

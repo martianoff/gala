@@ -32,6 +32,7 @@ Examples:
 
 func init() {
 	runCmd.Flags().BoolVarP(&runVerbose, "verbose", "v", false, "Verbose output")
+	addDiagnosticsJSONFlag(runCmd)
 }
 
 // splitRunArgs separates the project directory from program arguments

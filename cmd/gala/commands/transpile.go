@@ -50,6 +50,7 @@ func init() {
 	transpileCmd.Flags().StringVarP(&transpileSearch, "search", "s", ".", "Comma-separated search paths")
 	transpileCmd.Flags().StringVar(&transpilePackageFiles, "package-files", "", "Comma-separated list of sibling .gala files in the same package")
 	transpileCmd.Flags().StringVar(&transpileGoroot, "goroot", "", "Path to Go SDK root (for Go type inference)")
+	addDiagnosticsJSONFlag(transpileCmd)
 }
 
 // autoResolveSearchPaths enhances search paths by auto-discovering the stdlib
@@ -189,6 +190,9 @@ func runTranspile(cmd *cobra.Command, args []string) {
 	// Transpile
 	goCode, err := t.Transpile(string(content), inputPath)
 	if err != nil {
+		if diagnosticsJSON {
+			exitBuildFailedJSON(err, "")
+		}
 		fmt.Fprintln(os.Stderr, galaerr.RenderRich(err, galaerr.Options{
 			FallbackPath:   inputPath,
 			FallbackSource: string(content),

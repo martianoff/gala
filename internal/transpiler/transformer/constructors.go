@@ -492,13 +492,13 @@ func (t *galaASTTransformer) transformLiteral(ctx *grammar.LiteralContext) (ast.
 		if err := t.checkLiteralEscapes(ctx.INTERPOLATED_STRING(), escapeKindInterp); err != nil {
 			return nil, err
 		}
-		return t.transformInterpolatedString(ctx.INTERPOLATED_STRING().GetText())
+		return t.transformInterpolatedString(ctx.INTERPOLATED_STRING())
 	}
 	if ctx.FORMAT_STRING() != nil {
 		if err := t.checkLiteralEscapes(ctx.FORMAT_STRING(), escapeKindFormat); err != nil {
 			return nil, err
 		}
-		return t.transformFormatString(ctx.FORMAT_STRING().GetText())
+		return t.transformFormatString(ctx.FORMAT_STRING())
 	}
 	if ctx.GetText() == "true" || ctx.GetText() == "false" {
 		return ast.NewIdent(ctx.GetText()), nil
