@@ -17,9 +17,11 @@ package analyzer
 // identifying the concrete variant; nil interface values use tag 0.
 //
 // Backward compatibility: the cache directory key embeds CacheVersion,
-// which is bumped from "v1" to "v2" alongside this codec change.
-// Pre-v2 caches live under the old version-keyed directory and are
-// pruned by the existing stale-cache GC.
+// which is bumped alongside every layout change (v2 introduced this
+// codec; v3 added doc comments). Older caches live under their own
+// version-keyed directory and are pruned by the existing stale-cache GC.
+// The magic's trailing byte is the second line of defence, for a blob
+// that reaches a newer reader some other way.
 import (
 	"encoding/binary"
 	"errors"
@@ -31,7 +33,7 @@ import (
 
 // codecMagic identifies a binary cache blob. The trailing byte is the
 // format version; bump alongside CacheVersion when the layout changes.
-var codecMagic = [4]byte{'G', 'A', 'C', 0x02}
+var codecMagic = [4]byte{'G', 'A', 'C', 0x03}
 
 const (
 	typeTagNil     uint8 = 0 // nil interface
@@ -58,6 +60,7 @@ func encodeCachedRichAST(c *CachedRichAST) ([]byte, error) {
 	e := &encoder{buf: make([]byte, 0, 256*1024)}
 	e.buf = append(e.buf, codecMagic[:]...)
 	e.writeString(c.PackageName)
+	e.writeString(c.PackageDoc)
 	e.writeStringTypeMetaMap(c.Types)
 	e.writeStringFuncMetaMap(c.Functions)
 	e.writeStringStringMap(c.Packages)
@@ -90,6 +93,7 @@ func decodeCachedRichAST(data []byte) (*CachedRichAST, error) {
 	d := &decoder{buf: data[len(codecMagic):]}
 	out := &CachedRichAST{}
 	out.PackageName = d.readString()
+	out.PackageDoc = d.readString()
 	out.Types = d.readStringTypeMetaMap()
 	out.Functions = d.readStringFuncMetaMap()
 	out.Packages = d.readStringStringMap()

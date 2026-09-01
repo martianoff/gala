@@ -22,10 +22,10 @@ func docFor(t *testing.T, src, declPrefix string) string {
 
 func TestDocComments(t *testing.T) {
 	tests := []struct {
-		name    string
-		src     string
-		decl    string
-		want    string
+		name string
+		src  string
+		decl string
+		want string
 	}{
 		{
 			name: "function",
@@ -100,6 +100,18 @@ func TestDocComments(t *testing.T) {
 			want: "Package main is the entry point.",
 		},
 		{
+			name: "multi-line boxed block comment",
+			src:  "package main\n\n/*\n * Boxed documentation.\n *\n * Second paragraph.\n */\nfunc Boxed() int = 1\n",
+			decl: "func Boxed",
+			want: "Boxed documentation.\n\nSecond paragraph.",
+		},
+		{
+			name: "trailing comment after a multi-line raw string",
+			src:  "package main\n\nval s = `line one\nline two` // trailing\nfunc AfterRaw() int = 1\n",
+			decl: "func AfterRaw",
+			want: "",
+		},
+		{
 			name: "undocumented declaration",
 			src:  "package main\n\nfunc Bare() int = 1\n",
 			decl: "func Bare",
@@ -114,5 +126,29 @@ func TestDocComments(t *testing.T) {
 				t.Errorf("doc mismatch\n got: %q\nwant: %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// A comment between a lambda parameter and its arrow must not mask the
+// bare-lambda-parameter diagnostic. Comments now occupy real token indices
+// (hidden channel), so any token-index arithmetic has to skip them.
+func TestBareLambdaDiagnosticSurvivesComment(t *testing.T) {
+	for _, src := range []string{
+		"package main\n\nfunc main() {\n    val f = x => x + 1\n}\n",
+		"package main\n\nfunc main() {\n    val f = x /* note */ => x + 1\n}\n",
+	} {
+		_, _, errs := NewAntlrGalaParser().ParseLenient(src)
+		if len(errs) == 0 {
+			t.Fatalf("expected a diagnostic for %q", src)
+		}
+		var found bool
+		for _, e := range errs {
+			if strings.Contains(e.Error(), "parenthesized") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("bare-lambda diagnostic lost for %q; got %v", src, errs)
+		}
 	}
 }

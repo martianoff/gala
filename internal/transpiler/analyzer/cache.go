@@ -80,6 +80,7 @@ var binarySelfHash = func() string {
 // package in a deep dependency graph.
 type CachedRichAST struct {
 	PackageName      string
+	PackageDoc       string
 	Types            map[string]*transpiler.TypeMetadata
 	Functions        map[string]*transpiler.FunctionMetadata
 	Packages         map[string]string
@@ -187,6 +188,7 @@ func toCachedRichAST(r *transpiler.RichAST, depsHash string, directImports []str
 
 	return &CachedRichAST{
 		PackageName:      r.PackageName,
+		PackageDoc:       r.PackageDoc,
 		Types:            ownTypes,
 		Functions:        ownFuncs,
 		Packages:         nil, // reconstructed at load time from DirectImports
@@ -338,6 +340,7 @@ func projectOwnRichAST(r *transpiler.RichAST) *transpiler.RichAST {
 
 	return &transpiler.RichAST{
 		PackageName:      r.PackageName,
+		PackageDoc:       r.PackageDoc,
 		Types:            ownTypes,
 		Functions:        ownFuncs,
 		Packages:         nil, // re-established by mergeAnalyzedClosureAt walker
@@ -382,6 +385,7 @@ func fromCachedRichAST(c *CachedRichAST) *transpiler.RichAST {
 	}
 	return &transpiler.RichAST{
 		PackageName:      c.PackageName,
+		PackageDoc:       c.PackageDoc,
 		Types:            c.Types,
 		Functions:        c.Functions,
 		Packages:         c.Packages,

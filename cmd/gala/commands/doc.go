@@ -164,11 +164,11 @@ func loadPackageDoc(pkgName, dir string) (*docPackage, error) {
 	if err != nil {
 		return nil, err
 	}
-	tree, _, parseErrs := p.ParseLenient(string(content))
+	tree, docs, parseErrs := p.ParseLenient(string(content))
 	if len(parseErrs) > 0 {
 		return nil, parseErrs[0]
 	}
-	rich, err := a.Analyze(tree, nil, files[0])
+	rich, err := a.Analyze(tree, docs, files[0])
 	if err != nil {
 		return nil, err
 	}
