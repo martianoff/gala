@@ -470,7 +470,6 @@ func pruneStaleCaches(parent, keepName string) {
 		return
 	}
 	cutoff := time.Now().Add(-staleCacheMaxAge)
-	prefix := CacheVersion // e.g. "v1"
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
@@ -479,10 +478,12 @@ func pruneStaleCaches(parent, keepName string) {
 		if name == keepName {
 			continue
 		}
-		// Only consider directories that look like analysis caches:
-		// either exactly the version (e.g. "v1") or version-prefixed
-		// (e.g. "v1-dev-abcdef"). This avoids touching unrelated dirs.
-		if name != prefix && !strings.HasPrefix(name, prefix+"-") {
+		// Only consider directories that look like analysis caches: a version
+		// token, optionally suffixed (e.g. "v1", "v2-dev-abcdef"). Matching ANY
+		// version rather than only the current one is what lets a CacheVersion
+		// bump reclaim the directories it just orphaned; keying on the current
+		// version left every previous generation on disk forever.
+		if !looksLikeCacheDir(name) {
 			continue
 		}
 		if e.ModTime().After(cutoff) {
@@ -490,6 +491,30 @@ func pruneStaleCaches(parent, keepName string) {
 		}
 		_ = os.RemoveAll(filepath.Join(parent, name))
 	}
+}
+
+// looksLikeCacheDir reports whether a directory name is one of this analyzer's
+// version-keyed cache directories: "v" followed by digits, optionally followed
+// by "-" and a build/hash suffix (e.g. "v2", "v3-dev-abcdef").
+//
+// Deliberately matches every generation, not just the current CacheVersion. The
+// prune runs beside the directory currently in use, so a version bump is exactly
+// the moment its predecessors become garbage — and those entries run to hundreds
+// of megabytes per project.
+func looksLikeCacheDir(name string) bool {
+	rest, ok := strings.CutPrefix(name, "v")
+	if !ok {
+		return false
+	}
+	digits := 0
+	for digits < len(rest) && rest[digits] >= '0' && rest[digits] <= '9' {
+		digits++
+	}
+	if digits == 0 {
+		return false
+	}
+	rest = rest[digits:]
+	return rest == "" || rest[0] == '-'
 }
 
 // staleCacheMaxAge is the age threshold beyond which a non-matching

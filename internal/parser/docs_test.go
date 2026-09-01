@@ -100,6 +100,18 @@ func TestDocComments(t *testing.T) {
 			want: "Package main is the entry point.",
 		},
 		{
+			name: "adjacent block and line comment on one line join",
+			src:  "package main\n\n/* Deprecated. */ // Use Bar instead.\nfunc Foo() int = 1\n",
+			decl: "func Foo",
+			want: "Deprecated.\nUse Bar instead.",
+		},
+		{
+			name: "block comment preserves indented code sample",
+			src:  "package main\n\n/*\n * Example:\n *     val x = 1\n */\nfunc Sample() int = 1\n",
+			decl: "func Sample",
+			want: "Example:\n    val x = 1",
+		},
+		{
 			name: "multi-line boxed block comment",
 			src:  "package main\n\n/*\n * Boxed documentation.\n *\n * Second paragraph.\n */\nfunc Boxed() int = 1\n",
 			decl: "func Boxed",

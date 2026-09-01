@@ -264,7 +264,12 @@ func (r *RichAST) Merge(other *RichAST) {
 			r.TypeAliases[k] = v
 		}
 	}
-	if r.PackageDoc == "" {
+	// PackageDoc describes the package being analyzed, so it may only travel
+	// between files of that SAME package. Merge is also how an import closure
+	// is folded in, and without the name check an undocumented package would
+	// adopt the first documented dependency's package doc — then persist it to
+	// the on-disk cache.
+	if r.PackageDoc == "" && r.PackageName != "" && r.PackageName == other.PackageName {
 		r.PackageDoc = other.PackageDoc
 	}
 	if len(other.ImportPathMap) > 0 {
