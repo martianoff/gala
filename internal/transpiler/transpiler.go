@@ -213,7 +213,15 @@ func (r *RichAST) Merge(other *RichAST) {
 			copied.Doc = v.Doc
 		}
 		if fieldDocsNeeded {
-			copied.FieldDocs = v.FieldDocs
+			// Clone rather than alias. The analyzer writes into FieldDocs as it
+			// walks a struct body (addFieldDoc), so a shared map would let one
+			// RichAST mutate another's metadata — exactly the hazard the
+			// copy-on-write above exists to prevent.
+			cloned := make(map[string]string, len(v.FieldDocs))
+			for fn, fd := range v.FieldDocs {
+				cloned[fn] = fd
+			}
+			copied.FieldDocs = cloned
 		}
 		r.Types[k] = &copied
 	}
@@ -255,6 +263,9 @@ func (r *RichAST) Merge(other *RichAST) {
 		for k, v := range other.TypeAliases {
 			r.TypeAliases[k] = v
 		}
+	}
+	if r.PackageDoc == "" {
+		r.PackageDoc = other.PackageDoc
 	}
 	if len(other.ImportPathMap) > 0 {
 		if r.ImportPathMap == nil {

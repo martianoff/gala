@@ -970,10 +970,9 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 				meta.FieldNames = nil
 				meta.ImmutFlags = nil
 				meta.FieldPositions = nil
+				meta.FieldDocs = nil
 				meta.Pos = transpiler.PosFromToken(ctx.Identifier().GetStart())
-				if d := docAt(docs, ctx.GetStart()); d != "" {
-					meta.Doc = d
-				}
+				setDoc(&meta.Doc, docs, ctx.GetStart())
 			} else {
 				meta = &transpiler.TypeMetadata{
 					Name:    typeName,
@@ -1032,12 +1031,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 						meta.FieldPositions = make(map[string]transpiler.SourcePos)
 					}
 					meta.FieldPositions[fieldName] = transpiler.PosFromToken(fctx.Identifier().GetStart())
-					if d := docAt(docs, fctx.GetStart()); d != "" {
-						if meta.FieldDocs == nil {
-							meta.FieldDocs = make(map[string]string)
-						}
-						meta.FieldDocs[fieldName] = d
-					}
+					addFieldDoc(meta, fieldName, docAt(docs, fctx.GetStart()))
 				}
 				meta.DefinedIn = filePath
 			}
@@ -1066,6 +1060,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 					methodMeta := &transpiler.MethodMetadata{
 						Name:      methodName,
 						Package:   pkgName,
+						Doc:       docAt(docs, msCtx.GetStart()),
 						DefinedIn: filePath,
 					}
 					if msCtx.TypeParameters() != nil {
@@ -1128,10 +1123,9 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 				meta.FieldNames = nil
 				meta.ImmutFlags = nil
 				meta.FieldPositions = nil
+				meta.FieldDocs = nil
 				meta.Pos = pos
-				if d := docAt(docs, ctx.GetStart()); d != "" {
-					meta.Doc = d
-				}
+				setDoc(&meta.Doc, docs, ctx.GetStart())
 			} else {
 				meta = &transpiler.TypeMetadata{
 					Name:    typeName,
@@ -2020,6 +2014,7 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 		companionMeta := &transpiler.TypeMetadata{
 			Name:       companionName,
 			Package:    pkgName,
+			Doc:        vi.doc,
 			Pos:        vi.pos,
 			Methods:    make(map[string]*transpiler.MethodMetadata),
 			Fields:     make(map[string]transpiler.Type),
@@ -3682,8 +3677,8 @@ func siblingTypeRedefinedError(typeName, pkgName string, existing *transpiler.Ty
 // by — the first declaration and reaching the Go compiler as "already
 // declared".
 func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileContext, pkgName string, richAST *transpiler.RichAST, sibFilePath string, decls *packageDecls) error {
-	docs := a.docsForFile(sibFilePath)
-	absSibPath, _ := filepath.Abs(sibFilePath)
+	absSibPath := a.parsedFileCacheKey(sibFilePath)
+	docs := a.docsForAbsPath(absSibPath)
 	// sibDisplay is how diagnostics name this sibling: the caller's spelling,
 	// which matches how the caret path is printed for the file under
 	// compilation. absSibPath stays the identity used for comparisons.
@@ -3760,12 +3755,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 						meta.FieldPositions = make(map[string]transpiler.SourcePos)
 					}
 					meta.FieldPositions[fieldName] = transpiler.PosFromToken(fctx.Identifier().GetStart())
-					if d := docAt(docs, fctx.GetStart()); d != "" {
-						if meta.FieldDocs == nil {
-							meta.FieldDocs = make(map[string]string)
-						}
-						meta.FieldDocs[fieldName] = d
-					}
+					addFieldDoc(meta, fieldName, docAt(docs, fctx.GetStart()))
 				}
 				if meta.DefinedIn == "" {
 					meta.DefinedIn = absSibPath
@@ -4420,14 +4410,11 @@ var _ transpiler.Analyzer = (*galaAnalyzer)(nil)
 // sibling parsing across BatchAnalyzer calls) and by analyzePackage (so
 // when the same project files were just parsed during sibling discovery,
 // the import-resolution pass does not redo the work).
-func (a *galaAnalyzer) parseFileCached(path string) (*grammar.SourceFileContext, string, map[int]string, error) {
-	canonPath, err := filepath.Abs(path)
-	if err != nil {
-		canonPath = path
-	}
+func (a *galaAnalyzer) parseFileCached(path string) (*grammar.SourceFileContext, string, error) {
+	canonPath := a.parsedFileCacheKey(path)
 	info, err := os.Stat(canonPath)
 	if err != nil {
-		return nil, "", nil, nil
+		return nil, "", nil
 	}
 	if a.parsedFileCache != nil {
 		a.parsedFileCacheMu.Lock()
@@ -4435,7 +4422,7 @@ func (a *galaAnalyzer) parseFileCached(path string) (*grammar.SourceFileContext,
 		if ok {
 			if entry.mtime.Equal(info.ModTime()) && entry.size == info.Size() {
 				a.parsedFileCacheMu.Unlock()
-				return entry.tree, entry.pkgName, entry.docs, nil
+				return entry.tree, entry.pkgName, nil
 			}
 			delete(a.parsedFileCache, canonPath)
 		}
@@ -4443,19 +4430,19 @@ func (a *galaAnalyzer) parseFileCached(path string) (*grammar.SourceFileContext,
 	}
 	content, err := ioutil.ReadFile(canonPath)
 	if err != nil {
-		return nil, "", nil, nil
+		return nil, "", nil
 	}
 	tree, docs, err := a.parser.Parse(string(content))
 	if err != nil {
-		return nil, "", nil, nil
+		return nil, "", nil
 	}
 	otherSF, ok := tree.(*grammar.SourceFileContext)
 	if !ok {
-		return nil, "", nil, nil
+		return nil, "", nil
 	}
 	pkgClause, ok := otherSF.PackageClause().(*grammar.PackageClauseContext)
 	if !ok || pkgClause.Identifier() == nil {
-		return nil, "", nil, nil
+		return nil, "", nil
 	}
 	pkgName := pkgClause.Identifier().GetText()
 	if a.parsedFileCache != nil {
@@ -4469,7 +4456,7 @@ func (a *galaAnalyzer) parseFileCached(path string) (*grammar.SourceFileContext,
 		}
 		a.parsedFileCacheMu.Unlock()
 	}
-	return otherSF, pkgName, docs, nil
+	return otherSF, pkgName, nil
 }
 
 // docAt returns the doc comment attached to the declaration whose first token is
@@ -4486,23 +4473,62 @@ func docAt(docs map[int]string, start antlr.Token) string {
 	return docs[start.GetStart()]
 }
 
+// setDoc records a doc comment on a metadata entry that may already carry one.
+//
+// The re-analysis and sibling-merge paths reuse a TypeMetadata that an earlier
+// pass — or a cache load — already populated. Those passes may run with a nil
+// docs map (a caller that did not thread one), and assigning unconditionally
+// would erase documentation that is already correct. An empty result therefore
+// leaves the existing value alone; only a real doc comment overwrites.
+func setDoc(dst *string, docs map[int]string, start antlr.Token) {
+	if d := docAt(docs, start); d != "" {
+		*dst = d
+	}
+}
+
+// addFieldDoc records a struct field's doc comment, allocating the map on first
+// use. A blank doc is dropped rather than stored, so FieldDocs holds only fields
+// that are actually documented.
+func addFieldDoc(meta *transpiler.TypeMetadata, fieldName, doc string) {
+	if doc == "" {
+		return
+	}
+	if meta.FieldDocs == nil {
+		meta.FieldDocs = make(map[string]string)
+	}
+	meta.FieldDocs[fieldName] = doc
+}
+
 // docsForFile returns the doc comments harvested when `path` was parsed, keyed
 // by declaration start offset, or nil when the file has not been parsed through
 // parseFileCached.
 //
-// Sibling files reach the analyzer as bare trees through several routes (the
-// explicit package-file list, the in-memory sibling cache, a fresh directory
-// scan), and threading a parallel docs slice through all three would triple the
-// bookkeeping. parseFileCached already stores docs alongside each tree keyed by
-// canonical path, so looking them up by path afterwards keeps one source of
-// truth. A miss degrades to no documentation, never to wrong documentation.
+// Sibling files reach the analyzer as bare trees through three routes — the
+// explicit package-file list, an in-memory sibling-tree cache hit, and a fresh
+// directory scan — and all three go through parseFileCached, which stores docs
+// alongside each tree under the same key. Looking them up by path afterwards
+// therefore keeps one source of truth instead of threading a parallel docs
+// slice down all three.
+//
+// Invariant this relies on: the tree a caller holds and the docs returned here
+// come from the same parse. That holds because parsedFileCache is only ever
+// replaced wholesale by parseFileCached (mtime+size keyed) and the sibling-tree
+// cache is populated from it. A file edited in place between the two lookups
+// would pair fresh offsets with a stale tree, so anything that starts mutating
+// either cache independently must revisit this.
 func (a *galaAnalyzer) docsForFile(path string) map[int]string {
-	if a.parsedFileCache == nil || path == "" {
+	if path == "" {
 		return nil
 	}
-	canonPath, err := filepath.Abs(path)
-	if err != nil {
-		canonPath = path
+	return a.docsForAbsPath(a.parsedFileCacheKey(path))
+}
+
+// docsForAbsPath is docsForFile for a caller that already resolved the absolute
+// path. Sibling extraction runs per file per Analyze, so re-deriving the same
+// path there turned one filepath.Abs per sibling into two.
+func (a *galaAnalyzer) docsForAbsPath(canonPath string) map[int]string {
+	if a.parsedFileCache == nil || canonPath == "" {
+		return nil
 	}
 	a.parsedFileCacheMu.Lock()
 	defer a.parsedFileCacheMu.Unlock()
@@ -4510,6 +4536,18 @@ func (a *galaAnalyzer) docsForFile(path string) map[int]string {
 		return entry.docs
 	}
 	return nil
+}
+
+// parsedFileCacheKey derives the parsedFileCache key for a path. Writer
+// (parseFileCached) and readers (docsForAbsPath) must agree exactly: a
+// divergence makes every doc lookup miss silently, since a miss is a legal
+// "undocumented" result.
+func (a *galaAnalyzer) parsedFileCacheKey(path string) string {
+	canonPath, err := filepath.Abs(path)
+	if err != nil {
+		return path
+	}
+	return canonPath
 }
 
 // parseFilesConcurrent parses the given paths in parallel, populating
@@ -4539,7 +4577,7 @@ func (a *galaAnalyzer) parseFilesConcurrent(paths []string) []*grammar.SourceFil
 		return out
 	}
 	if len(paths) == 1 {
-		tree, _, _, _ := a.parseFileCached(paths[0])
+		tree, _, _ := a.parseFileCached(paths[0])
 		out[0] = tree
 		return out
 	}
@@ -4561,7 +4599,7 @@ func (a *galaAnalyzer) parseFilesConcurrent(paths []string) []*grammar.SourceFil
 		go func() {
 			defer wg.Done()
 			for i := range idxCh {
-				tree, _, _, _ := a.parseFileCached(paths[i])
+				tree, _, _ := a.parseFileCached(paths[i])
 				out[i] = tree
 			}
 		}()

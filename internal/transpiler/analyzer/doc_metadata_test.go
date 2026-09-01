@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/antlr4-go/antlr/v4"
+
 	"martianoff/gala/internal/parser"
 	"martianoff/gala/internal/transpiler"
 )
@@ -273,3 +275,105 @@ func findRepoRoot(t *testing.T) string {
 	t.Skip("repo root not found")
 	return ""
 }
+
+// Re-analysis must not resurrect documentation for fields that no longer exist,
+// and must not wipe documentation when the caller threads no docs map.
+func TestDocsAcrossReanalysis(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "r.gala")
+	const v1 = `package rpkg
+
+// Holder holds things.
+type Holder struct {
+    // gone is documented in v1 only.
+    val gone int
+    val kept string
+}
+`
+	const v2 = `package rpkg
+
+// Holder holds things.
+type Holder struct {
+    val kept string
+}
+`
+	p := parser.NewAntlrGalaParser()
+	a := NewGalaAnalyzer(p, nil)
+
+	tree1, docs1, err := p.Parse(v1)
+	if err != nil {
+		t.Fatalf("parse v1: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(v1), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rich, err := a.Analyze(tree1, docs1, path)
+	if err != nil {
+		t.Fatalf("analyze v1: %v", err)
+	}
+	if got := rich.Types["rpkg.Holder"].FieldDocs["gone"]; got != "gone is documented in v1 only." {
+		t.Fatalf("v1 FieldDocs[gone] = %q", got)
+	}
+
+	// Re-analyze the edited source through the SAME analyzer, so the existing
+	// TypeMetadata is reused rather than rebuilt.
+	tree2, docs2, err := p.Parse(v2)
+	if err != nil {
+		t.Fatalf("parse v2: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(v2), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rich2, err := a.Analyze(tree2, docs2, path)
+	if err != nil {
+		t.Fatalf("analyze v2: %v", err)
+	}
+	holder := rich2.Types["rpkg.Holder"]
+	if got, ok := holder.FieldDocs["gone"]; ok {
+		t.Errorf("FieldDocs kept a doc for the removed field %q: %q", "gone", got)
+	}
+	if holder.Doc != "Holder holds things." {
+		t.Errorf("Holder.Doc = %q after re-analysis", holder.Doc)
+	}
+
+}
+
+// setDoc backs the re-analysis and sibling-merge paths, where a TypeMetadata
+// may already carry documentation from a cache load or an earlier pass. An
+// absent doc must leave that value alone; a real one must replace it.
+func TestSetDocKeepsExistingWhenAbsent(t *testing.T) {
+	docs := map[int]string{10: "fresh doc"}
+	tok := &stubToken{start: 10}
+	missing := &stubToken{start: 99}
+
+	cases := []struct {
+		name  string
+		start antlr.Token
+		docs  map[int]string
+		in    string
+		want  string
+	}{
+		{"absent leaves existing", missing, docs, "existing", "existing"},
+		{"nil map leaves existing", tok, nil, "existing", "existing"},
+		{"present replaces existing", tok, docs, "existing", "fresh doc"},
+		{"present fills empty", tok, docs, "", "fresh doc"},
+		{"absent leaves empty", missing, docs, "", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := tc.in
+			setDoc(&got, tc.docs, tc.start)
+			if got != tc.want {
+				t.Errorf("setDoc = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// stubToken is the minimal antlr.Token surface setDoc/docAt touch.
+type stubToken struct {
+	antlr.Token
+	start int
+}
+
+func (s *stubToken) GetStart() int { return s.start }

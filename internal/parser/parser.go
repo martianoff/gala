@@ -310,11 +310,7 @@ func bareLambdaParamError(recognizer antlr.Recognizer, offendingSymbol interface
 	if stream == nil {
 		return nil
 	}
-	idx := tok.GetTokenIndex()
-	if idx <= 0 {
-		return nil
-	}
-	prev := stream.Get(idx - 1)
+	prev := prevCodeToken(stream, tok.GetTokenIndex())
 	if prev == nil || symbolicTokenName(recognizer, prev) != "IDENTIFIER" {
 		return nil
 	}
@@ -331,6 +327,27 @@ func bareLambdaParamError(recognizer antlr.Recognizer, offendingSymbol interface
 	// Span the parameter itself, so the caret sits under what has to change
 	// rather than under the arrow that happened to trip the parser.
 	return err.WithSpan(prev.GetColumn() + len([]rune(name)))
+}
+
+// prevCodeToken returns the nearest default-channel token before idx, skipping
+// comments.
+//
+// Comments ride the hidden channel (see docs.go), so they occupy real token
+// indices: `x /* note */ => ...` puts a COMMENT between the identifier and the
+// arrow. Walking back a single index would land on the comment and silently
+// drop this diagnostic in favour of the generic parse error. Any other
+// token-index arithmetic on this stream needs the same treatment.
+func prevCodeToken(stream antlr.TokenStream, idx int) antlr.Token {
+	for i := idx - 1; i >= 0; i-- {
+		tok := stream.Get(i)
+		if tok == nil {
+			return nil
+		}
+		if tok.GetChannel() == antlr.TokenDefaultChannel {
+			return tok
+		}
+	}
+	return nil
 }
 
 // symbolicTokenName maps a token to its grammar symbol name (e.g. "IDENTIFIER")
