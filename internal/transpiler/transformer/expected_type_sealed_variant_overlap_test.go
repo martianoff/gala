@@ -129,9 +129,9 @@ func wrap(errOpt Option[error], q string) T {
 		p := transpiler.NewAntlrGalaParser()
 		searchPaths := append([]string{tmpDir}, getStdSearchPath()...)
 		a := analyzer.NewGalaAnalyzerWithPackageFiles(p, searchPaths, []string{typesPath})
-		tree, err := p.Parse(wrapSrc)
+		tree, _, err := p.Parse(wrapSrc)
 		require.NoError(t, err, "iteration %d: parse", i)
-		richAST, err := a.Analyze(tree, wrapPath)
+		richAST, err := a.Analyze(tree, nil, wrapPath)
 		require.NoError(t, err, "iteration %d: analyze", i)
 
 		tr := transformer.NewGalaASTTransformer()
@@ -222,9 +222,9 @@ func wrap(x string) A {
 	p := transpiler.NewAntlrGalaParser()
 	searchPaths := append([]string{tmpDir}, getStdSearchPath()...)
 	a := analyzer.NewGalaAnalyzer(p, searchPaths)
-	tree, err := p.Parse(hostSrc)
+	tree, _, err := p.Parse(hostSrc)
 	require.NoError(t, err)
-	richAST, err := a.Analyze(tree, hostPath)
+	richAST, err := a.Analyze(tree, nil, hostPath)
 	require.NoError(t, err)
 
 	tr := transformer.NewGalaASTTransformer()

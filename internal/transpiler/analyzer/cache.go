@@ -27,7 +27,12 @@ import (
 // transpile rehydrates. The on-disk projection is unchanged; only the
 // bytes-format differs. v1 caches sit under a separate version-keyed
 // directory and are pruned by the existing stale-cache GC.
-const CacheVersion = "v2"
+//
+// v3: metadata carries doc comments (TypeMetadata.Doc/FieldDocs,
+// MethodMetadata.Doc, FunctionMetadata.Doc, SealedVariant.Doc). The codec
+// gained a string per declaration, so v2 payloads cannot be decoded by
+// this reader.
+const CacheVersion = "v3"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

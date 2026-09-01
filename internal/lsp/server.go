@@ -324,20 +324,20 @@ func (h *GalaHandler) publishDiagnostics(uri, text string) {
 func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 	diagnostics := make([]lsp.Diagnostic, 0) // must be [] not null in JSON
 
-	tree, err := h.parser.Parse(text)
+	tree, docs, err := h.parser.Parse(text)
 	if err != nil {
 		diagnostics = append(diagnostics, errorsToDiagnostics(err)...)
 		// Primary parse failed — try ANTLR's error-recovered partial tree.
 		// If the analyzer can extract type metadata from it, cache the
 		// richAST so completion/hover/definition work while mid-edit.
-		partialTree, _ := h.parser.ParseLenient(text)
+		partialTree, partialDocs, _ := h.parser.ParseLenient(text)
 		if partialTree != nil {
 			h.mu.Lock()
 			h.parseTrees[uri] = partialTree
 			h.parseTexts[uri] = text
 			h.mu.Unlock()
 		}
-		h.tryAnalyzePartial(uri, filePath, partialTree)
+		h.tryAnalyzePartial(uri, filePath, partialTree, partialDocs)
 		return diagnostics
 	}
 
@@ -348,7 +348,7 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 			s.SetGoSrcDirs(h.goSrcDirs)
 		}
 	}
-	richAST, err := a.Analyze(tree, filePath)
+	richAST, err := a.Analyze(tree, docs, filePath)
 	if err != nil {
 		diagnostics = append(diagnostics, errorsToDiagnostics(err)...)
 		return diagnostics
@@ -463,7 +463,7 @@ func (h *GalaHandler) loadProjectModule(rootPath string) {
 // completion and go-to-def working while the user is mid-edit.
 // tryAnalyzePartial runs the analyzer on ANTLR's error-recovered tree.
 // The tree may have nil/error nodes, so this is wrapped in panic recovery.
-func (h *GalaHandler) tryAnalyzePartial(uri, filePath string, tree antlr.Tree) {
+func (h *GalaHandler) tryAnalyzePartial(uri, filePath string, tree antlr.Tree, docs map[int]string) {
 	if tree == nil {
 		return
 	}
@@ -476,7 +476,7 @@ func (h *GalaHandler) tryAnalyzePartial(uri, filePath string, tree antlr.Tree) {
 			s.SetGoSrcDirs(h.goSrcDirs)
 		}
 	}
-	richAST, err := a.Analyze(tree, filePath)
+	richAST, err := a.Analyze(tree, docs, filePath)
 	if err != nil || richAST == nil {
 		return
 	}
@@ -582,7 +582,7 @@ func (h *GalaHandler) ensureAnalysisForSignature(uri string, line, char int) {
 // analysis is logged and silently skipped; LSP features then fall back
 // to their normal "no data" behavior.
 func (h *GalaHandler) analyzeAndCache(uri, cleanText, caller string) {
-	tree, err := h.parser.Parse(cleanText)
+	tree, docs, err := h.parser.Parse(cleanText)
 	if err != nil {
 		return
 	}
@@ -595,7 +595,7 @@ func (h *GalaHandler) analyzeAndCache(uri, cleanText, caller string) {
 			s.SetGoSrcDirs(h.goSrcDirs)
 		}
 	}
-	richAST, aerr := a.Analyze(tree, filePath)
+	richAST, aerr := a.Analyze(tree, docs, filePath)
 	if aerr != nil {
 		fmt.Fprintf(os.Stderr, "[%s] analyze failed: %v\n", caller, aerr)
 		return

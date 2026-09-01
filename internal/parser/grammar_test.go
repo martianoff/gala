@@ -47,7 +47,7 @@ val x = 10`,
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := p.Parse(tt.input)
+			_, _, err := p.Parse(tt.input)
 			if tt.wantErr {
 				assert.Error(t, err, "Expected error for input: %s", tt.input)
 			} else {
