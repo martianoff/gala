@@ -253,6 +253,7 @@ func (e *encoder) writeMethodMeta(m *transpiler.MethodMetadata) {
 	e.writeBool(true)
 	e.writeString(m.Name)
 	e.writeString(m.Package)
+	e.writeString(m.Doc)
 	e.writeSourcePos(m.Pos)
 	e.writeTypeSlice(m.ParamTypes)
 	e.writeStringSlice(m.ParamNames)
@@ -280,6 +281,7 @@ func (e *encoder) writeStringMethodMap(m map[string]*transpiler.MethodMetadata) 
 
 func (e *encoder) writeSealedVariant(v transpiler.SealedVariant) {
 	e.writeString(v.Name)
+	e.writeString(v.Doc)
 	e.writeSourcePos(v.Pos)
 	e.writeStringSlice(v.FieldNames)
 	e.writeTypeSlice(v.FieldTypes)
@@ -300,6 +302,8 @@ func (e *encoder) writeTypeMeta(t *transpiler.TypeMetadata) {
 	e.writeBool(true)
 	e.writeString(t.Name)
 	e.writeString(t.Package)
+	e.writeString(t.Doc)
+	e.writeStringStringMap(t.FieldDocs)
 	e.writeSourcePos(t.Pos)
 	e.writeStringMethodMap(t.Methods)
 	e.writeStringTypeMap(t.Fields)
@@ -329,6 +333,7 @@ func (e *encoder) writeFuncMeta(f *transpiler.FunctionMetadata) {
 	e.writeBool(true)
 	e.writeString(f.Name)
 	e.writeString(f.Package)
+	e.writeString(f.Doc)
 	e.writeSourcePos(f.Pos)
 	e.writeTypeSlice(f.ParamTypes)
 	e.writeStringSlice(f.ParamNames)
@@ -674,6 +679,7 @@ func (d *decoder) readMethodMeta() *transpiler.MethodMetadata {
 	m := &transpiler.MethodMetadata{}
 	m.Name = d.readString()
 	m.Package = d.readString()
+	m.Doc = d.readString()
 	m.Pos = d.readSourcePos()
 	m.ParamTypes = d.readTypeSlice()
 	m.ParamNames = d.readStringSlice()
@@ -716,6 +722,7 @@ func (d *decoder) readSealedVariantSlice() []transpiler.SealedVariant {
 	out := make([]transpiler.SealedVariant, n)
 	for i := range out {
 		out[i].Name = d.readString()
+		out[i].Doc = d.readString()
 		out[i].Pos = d.readSourcePos()
 		out[i].FieldNames = d.readStringSlice()
 		out[i].FieldTypes = d.readTypeSlice()
@@ -730,6 +737,8 @@ func (d *decoder) readTypeMeta() *transpiler.TypeMetadata {
 	t := &transpiler.TypeMetadata{}
 	t.Name = d.readString()
 	t.Package = d.readString()
+	t.Doc = d.readString()
+	t.FieldDocs = d.readStringStringMap()
 	t.Pos = d.readSourcePos()
 	t.Methods = d.readStringMethodMap()
 	t.Fields = d.readStringTypeMap()
@@ -765,6 +774,7 @@ func (d *decoder) readFuncMeta() *transpiler.FunctionMetadata {
 	f := &transpiler.FunctionMetadata{}
 	f.Name = d.readString()
 	f.Package = d.readString()
+	f.Doc = d.readString()
 	f.Pos = d.readSourcePos()
 	f.ParamTypes = d.readTypeSlice()
 	f.ParamNames = d.readStringSlice()

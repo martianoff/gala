@@ -58,7 +58,7 @@ func (h *GalaHandler) SignatureHelp(ctx context.Context, params *lsp.SignatureHe
 	if cursorOffset < 0 {
 		return nil, nil
 	}
-	tree, _ := h.parser.ParseLenient(treeText)
+	tree, _, _ := h.parser.ParseLenient(treeText)
 	if tree == nil {
 		return nil, nil
 	}

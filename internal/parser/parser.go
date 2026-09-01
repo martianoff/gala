@@ -19,12 +19,12 @@ func NewAntlrGalaParser() *AntlrGalaParser {
 	return &AntlrGalaParser{}
 }
 
-func (p *AntlrGalaParser) Parse(input string) (antlr.Tree, error) {
-	tree, errs := p.ParseLenient(input)
+func (p *AntlrGalaParser) Parse(input string) (antlr.Tree, map[int]string, error) {
+	tree, docs, errs := p.ParseLenient(input)
 	if len(errs) > 0 {
-		return nil, &galaerr.MultiError{Errors: errs}
+		return nil, nil, &galaerr.MultiError{Errors: errs}
 	}
-	return tree, nil
+	return tree, docs, nil
 }
 
 // ParseLenient always returns ANTLR's error-recovered tree alongside any
@@ -44,7 +44,7 @@ func (p *AntlrGalaParser) Parse(input string) (antlr.Tree, error) {
 // mutex-protected DFA set (built once) so DFA state is still reused across
 // files. The deserialized ATN stays shared too (it is read-mostly and guards
 // its own lazily-cached token sets with a mutex).
-func (p *AntlrGalaParser) ParseLenient(input string) (antlr.Tree, []error) {
+func (p *AntlrGalaParser) ParseLenient(input string) (antlr.Tree, map[int]string, []error) {
 	// Drop a leading UTF-8 BOM once, up front: the lexer has no rule for
 	// U+FEFF and would otherwise reject the file outright. Go, which GALA
 	// transpiles to, ignores a leading BOM the same way.
@@ -67,13 +67,19 @@ func (p *AntlrGalaParser) ParseLenient(input string) (antlr.Tree, []error) {
 
 	tree := parser.SourceFile()
 
+	// Harvest doc comments off the hidden channel. The parse has already
+	// materialized these tokens, so this is a linear walk with no extra lexing;
+	// Fill is a no-op once a complete parse has consumed the stream.
+	stream.Fill()
+	docs := extractDocComments(stream.GetAllTokens())
+
 	var errs []error
 	errs = append(errs, errorListener.Errors...)
 	if err := p.checkEmptyLines(is, tree); err != nil {
 		errs = append(errs, err)
 	}
 
-	return tree, errs
+	return tree, docs, errs
 }
 
 // ParseExpression parses a single GALA expression (not a whole source file)

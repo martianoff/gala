@@ -515,7 +515,7 @@ func (a *galaAnalyzer) packageTopLevelNames(relPath string) map[string]bool {
 		if e.IsDir() || filepath.Ext(n) != ".gala" || strings.HasSuffix(n, "_test.gala") {
 			continue
 		}
-		tree, _, perr := a.parseFileCached(filepath.Join(dirPath, n))
+		tree, _, _, perr := a.parseFileCached(filepath.Join(dirPath, n))
 		if perr != nil || tree == nil {
 			continue
 		}

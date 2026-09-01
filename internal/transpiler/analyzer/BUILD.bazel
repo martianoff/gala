@@ -37,6 +37,7 @@ go_test(
         "cache_e2e_test.go",
         "cache_test.go",
         "cross_file_method_import_test.go",
+        "doc_metadata_test.go",
         "go_sdk_bazel_test.go",
         "go_src_dirs_test.go",
         "go_types_debug_test.go",
@@ -68,6 +69,7 @@ go_test(
     embed = [":analyzer"],
     deps = [
         "//galaerr",
+        "//internal/parser",
         "//internal/transpiler",
         "//internal/transpiler/module",
         "//internal/transpiler/registry",

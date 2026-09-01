@@ -127,6 +127,7 @@ type RichAST struct {
 	FilePath         string                              // source file path (for error reporting)
 	SourceContent    string                              // raw source text (for error snippets)
 	AnalysisWarnings []string                            // warnings from package analysis (e.g., unresolved GALA imports)
+	PackageDoc       string                              // doc comment above the `package` clause
 }
 
 // Merge combines metadata from another RichAST into this one.
@@ -174,7 +175,10 @@ func (r *RichAST) Merge(other *RichAST) {
 		fieldsNeeded := len(v.FieldNames) > 0 && len(existing.FieldNames) == 0
 		typeParamsNeeded := len(v.TypeParams) > 0 && len(existing.TypeParams) == 0
 		sealedNeeded := v.IsSealed && !existing.IsSealed
-		if methodsToAdd == 0 && !fieldsNeeded && !typeParamsNeeded && !sealedNeeded {
+		docNeeded := v.Doc != "" && existing.Doc == ""
+		fieldDocsNeeded := len(v.FieldDocs) > 0 && len(existing.FieldDocs) == 0
+		if methodsToAdd == 0 && !fieldsNeeded && !typeParamsNeeded && !sealedNeeded &&
+			!docNeeded && !fieldDocsNeeded {
 			continue
 		}
 		// Copy-on-write: clone `existing` so we never mutate a pointer
@@ -204,6 +208,12 @@ func (r *RichAST) Merge(other *RichAST) {
 		if sealedNeeded {
 			copied.IsSealed = v.IsSealed
 			copied.SealedVariants = v.SealedVariants
+		}
+		if docNeeded {
+			copied.Doc = v.Doc
+		}
+		if fieldDocsNeeded {
+			copied.FieldDocs = v.FieldDocs
 		}
 		r.Types[k] = &copied
 	}
@@ -259,7 +269,9 @@ func (r *RichAST) Merge(other *RichAST) {
 type TypeMetadata struct {
 	Name                 string
 	Package              string
-	Pos                  SourcePos // Position of the type name identifier in DefinedIn
+	Doc                  string            // Doc comment above the declaration ("" when undocumented)
+	FieldDocs            map[string]string // Field name -> doc comment
+	Pos                  SourcePos         // Position of the type name identifier in DefinedIn
 	Methods              map[string]*MethodMetadata
 	Fields               map[string]Type // Name -> Type
 	FieldNames           []string        // To preserve order
@@ -298,6 +310,7 @@ func PosFromToken(tok antlrToken) SourcePos {
 // SealedVariant holds metadata about a single case in a sealed type declaration.
 type SealedVariant struct {
 	Name       string
+	Doc        string    // Doc comment above the case ("" when undocumented)
 	Pos        SourcePos // Position of the variant identifier in the enclosing sealed type's DefinedIn
 	FieldNames []string
 	FieldTypes []Type
@@ -306,6 +319,7 @@ type SealedVariant struct {
 type MethodMetadata struct {
 	Name         string
 	Package      string
+	Doc          string    // Doc comment above the declaration ("" when undocumented)
 	Pos          SourcePos // Position of the method name identifier in DefinedIn
 	ParamTypes   []Type
 	ParamNames   []string         // Parameter names (for named argument matching)
@@ -320,6 +334,7 @@ type MethodMetadata struct {
 type FunctionMetadata struct {
 	Name       string
 	Package    string
+	Doc        string    // Doc comment above the declaration ("" when undocumented)
 	Pos        SourcePos // Position of the function name identifier in DefinedIn
 	ParamTypes []Type
 	ParamNames []string // Parameter names (for named argument matching and default injection)
@@ -345,19 +360,25 @@ type CompanionObjectMetadata struct {
 }
 
 // GalaParser defines the interface for parsing Gala source code.
+//
+// Both entry points return `docs` alongside the tree: doc comments keyed by the
+// character offset of the declaration's first token. Comments ride the lexer's
+// hidden channel, so they cost the parse nothing and never reach the grammar;
+// pairing them with declarations happens in a linear walk afterwards. Callers
+// that do not need documentation discard the map.
 type GalaParser interface {
-	Parse(input string) (antlr.Tree, error)
+	Parse(input string) (tree antlr.Tree, docs map[int]string, err error)
 	// ParseLenient always returns ANTLR's error-recovered tree alongside any
 	// syntax errors. The tree may contain error nodes but is structurally
 	// valid enough for the analyzer to extract types, methods, and functions.
 	// Used by the LSP so completion/hover/definition keep working while the
 	// user is mid-edit.
-	ParseLenient(input string) (tree antlr.Tree, errors []error)
+	ParseLenient(input string) (tree antlr.Tree, docs map[int]string, errors []error)
 }
 
 // Analyzer analyzes a Gala ANTLR parse tree and produces a RichAST.
 type Analyzer interface {
-	Analyze(tree antlr.Tree, filePath string) (*RichAST, error)
+	Analyze(tree antlr.Tree, docs map[int]string, filePath string) (*RichAST, error)
 }
 
 // TransformResult holds the output of a GALA-to-Go AST transformation.
@@ -430,7 +451,7 @@ func (t *GalaToGoTranspiler) Transpile(input string, filePath string) (string, e
 	defer prof.Report()
 
 	done := prof.Phase("parse")
-	tree, err := t.parser.Parse(input)
+	tree, docs, err := t.parser.Parse(input)
 	done()
 	if err != nil {
 		// Same stamping the analyze phase does below: a parse-phase diagnostic
@@ -443,7 +464,7 @@ func (t *GalaToGoTranspiler) Transpile(input string, filePath string) (string, e
 	}
 
 	done = prof.Phase("analyze")
-	richAST, err := t.analyzer.Analyze(tree, filePath)
+	richAST, err := t.analyzer.Analyze(tree, docs, filePath)
 	done()
 	if err != nil {
 		// Stamp the file being compiled onto any positional error that lacks

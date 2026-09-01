@@ -74,7 +74,7 @@ func TestParseConcurrentStress(t *testing.T) {
 			<-start // all goroutines hit the cold cache simultaneously
 			for i := 0; i < iterations; i++ {
 				src := sources[base*iterations+i]
-				if _, err := p.Parse(src); err != nil {
+				if _, _, err := p.Parse(src); err != nil {
 					errCh <- err
 					return
 				}
