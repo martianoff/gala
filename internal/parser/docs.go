@@ -67,7 +67,11 @@ func extractDocComments(toks []antlr.Token) map[int]string {
 				continue // trailing comment on a line that already had code
 			}
 			text := tk.GetText()
-			if startLine != blockEndLine+1 {
+			// Continue the run when this comment sits on the line right after
+			// the previous one, or on the same line as where it ended —
+			// `/* Deprecated. */ // Use Bar instead.` is one doc comment, not
+			// two, and treating it as two silently drops the first.
+			if startLine != blockEndLine && startLine != blockEndLine+1 {
 				block = block[:0] // a blank line severed the run
 			}
 			block = appendDocLines(block, text)
@@ -109,13 +113,18 @@ func appendDocLines(dst []string, raw string) []string {
 	}
 	start := len(dst)
 	for _, line := range strings.Split(strings.TrimSuffix(rest, "*/"), "\n") {
+		line = strings.TrimRight(line, " \t\r")
 		// Strip the leading star of the conventional boxed block-comment style.
-		line = strings.TrimSpace(line)
-		if star, ok := strings.CutPrefix(line, "*"); ok {
-			line = strings.TrimSpace(star)
+		if star, ok := strings.CutPrefix(strings.TrimLeft(line, " \t"), "*"); ok {
+			line = star
 		}
 		dst = append(dst, line)
 	}
+	// Remove the indentation the whole block shares, rather than trimming each
+	// line to the left margin: an indented run inside a doc comment is a code
+	// sample, and flattening it destroys the only thing marking it as one. The
+	// `//` path preserves relative indentation for the same reason.
+	dedentBlock(dst[start:])
 	// Drop the blank first/last lines a boxed block comment leaves behind.
 	for len(dst) > start && dst[start] == "" {
 		dst = append(dst[:start], dst[start+1:]...)
@@ -124,6 +133,31 @@ func appendDocLines(dst []string, raw string) []string {
 		dst = dst[:len(dst)-1]
 	}
 	return dst
+}
+
+// dedentBlock strips the longest leading run of spaces/tabs common to every
+// non-blank line, in place. Blank lines are left empty.
+func dedentBlock(lines []string) {
+	indent := -1
+	for _, line := range lines {
+		trimmed := strings.TrimLeft(line, " \t")
+		if trimmed == "" {
+			continue
+		}
+		if n := len(line) - len(trimmed); indent < 0 || n < indent {
+			indent = n
+		}
+	}
+	if indent <= 0 {
+		return
+	}
+	for i, line := range lines {
+		if len(line) >= indent {
+			lines[i] = line[indent:]
+		} else {
+			lines[i] = ""
+		}
+	}
 }
 
 // isPragmaBody reports whether a `//` comment body is a compiler directive

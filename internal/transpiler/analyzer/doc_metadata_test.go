@@ -9,6 +9,7 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 
 	"martianoff/gala/internal/parser"
+	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -377,3 +378,83 @@ type stubToken struct {
 }
 
 func (s *stubToken) GetStart() int { return s.start }
+
+// PackageDoc describes the package being analyzed. Merge is also how an import
+// closure is folded in, so without a package-name check an undocumented package
+// would adopt a documented dependency's package doc — and persist it to cache.
+func TestPackageDocDoesNotCrossPackages(t *testing.T) {
+	documented := &transpiler.RichAST{PackageName: "dep", PackageDoc: "Package dep does things."}
+
+	t.Run("foreign package does not donate", func(t *testing.T) {
+		consumer := &transpiler.RichAST{PackageName: "app"}
+		consumer.Merge(documented)
+		if consumer.PackageDoc != "" {
+			t.Errorf("app adopted dep's package doc: %q", consumer.PackageDoc)
+		}
+	})
+
+	t.Run("same package donates", func(t *testing.T) {
+		sibling := &transpiler.RichAST{PackageName: "dep"}
+		sibling.Merge(documented)
+		if sibling.PackageDoc != "Package dep does things." {
+			t.Errorf("sibling file did not pick up the package doc: %q", sibling.PackageDoc)
+		}
+	})
+
+	t.Run("existing doc is not overwritten", func(t *testing.T) {
+		own := &transpiler.RichAST{PackageName: "dep", PackageDoc: "Own doc."}
+		own.Merge(documented)
+		if own.PackageDoc != "Own doc." {
+			t.Errorf("own package doc was replaced: %q", own.PackageDoc)
+		}
+	})
+}
+
+// Doc offsets are parse-local, so docs must only be handed to the caller
+// holding the tree they were harvested from.
+func TestDocsForTreeRejectsForeignTree(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "s.gala")
+	src := "package spkg\n\n// Thing does a thing.\nfunc Thing() int = 1\n"
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	p := parser.NewAntlrGalaParser()
+	a := NewGalaAnalyzer(p, nil).(*galaAnalyzer)
+
+	tree, _, err := a.parseFileCached(path)
+	if err != nil || tree == nil {
+		t.Fatalf("parseFileCached: %v", err)
+	}
+	key := a.parsedFileCacheKey(path)
+	if got := a.docsForTree(key, tree); len(got) == 0 {
+		t.Fatal("matching tree returned no docs")
+	}
+
+	// A tree from a different parse of the same path must not be paired with
+	// the cached offsets, even though the path matches.
+	otherTree, _, _ := p.Parse(src)
+	other, _ := otherTree.(*grammar.SourceFileContext)
+	if other == nil {
+		t.Fatal("second parse produced no source file")
+	}
+	if got := a.docsForTree(key, other); got != nil {
+		t.Errorf("docs handed to a tree from a different parse: %v", got)
+	}
+}
+
+func TestLooksLikeCacheDir(t *testing.T) {
+	// A CacheVersion bump must leave previous generations prunable, or every
+	// bump strands hundreds of megabytes per project forever.
+	for _, name := range []string{"v1", "v2", "v3", "v2-dev-abcdef", "v10-0.74.2-hash"} {
+		if !looksLikeCacheDir(name) {
+			t.Errorf("looksLikeCacheDir(%q) = false, want true", name)
+		}
+	}
+	for _, name := range []string{"", "v", "vx", "version2", "notes", "v2x", "1v"} {
+		if looksLikeCacheDir(name) {
+			t.Errorf("looksLikeCacheDir(%q) = true, want false", name)
+		}
+	}
+}
