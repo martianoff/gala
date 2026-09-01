@@ -46,7 +46,7 @@ func TestCrossFileMethodImport_MethodFileImport(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		tree, err := p.Parse(string(content))
+		tree, _, err := p.Parse(string(content))
 		if err != nil {
 			t.Fatalf("parse %s: %v", fp, err)
 		}
@@ -57,7 +57,7 @@ func TestCrossFileMethodImport_MethodFileImport(t *testing.T) {
 			}
 		}
 		batch.SetPackageFiles(siblings)
-		if _, err := batch.Analyze(tree, fp); err != nil {
+		if _, err := batch.Analyze(tree, nil, fp); err != nil {
 			t.Fatalf("analyze %s: unexpected error (a cross-file method may use its own file's imports): %v", fp, err)
 		}
 	}

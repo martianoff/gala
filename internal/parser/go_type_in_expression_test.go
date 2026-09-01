@@ -134,7 +134,7 @@ func main() {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := p.Parse(tt.input)
+			_, _, err := p.Parse(tt.input)
 			se := firstSemanticError(t, err)
 
 			assert.Equal(t, galaerr.CodeGoTypeInExpression, se.Code)
@@ -246,7 +246,7 @@ func total(xs ...int) int = 0`,
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := p.Parse(tt.input)
+			_, _, err := p.Parse(tt.input)
 			assert.NoError(t, err)
 		})
 	}
@@ -302,7 +302,7 @@ func main() {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := p.Parse(tt.input)
+			_, _, err := p.Parse(tt.input)
 			require.Error(t, err)
 
 			var multi *galaerr.MultiError
@@ -340,7 +340,7 @@ func main() {
     Println(m)
 }`,
 	} {
-		_, err := p.Parse(src)
+		_, _, err := p.Parse(src)
 		assert.NoError(t, err, "literal should parse; rejection belongs to the analyzer")
 	}
 }

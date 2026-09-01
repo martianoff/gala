@@ -70,8 +70,8 @@ val x = 10`,
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, plainErrs := p.ParseLenient(tt.input)
-			_, bomErrs := p.ParseLenient(utf8BOM + tt.input)
+			_, _, plainErrs := p.ParseLenient(tt.input)
+			_, _, bomErrs := p.ParseLenient(utf8BOM + tt.input)
 
 			if tt.wantErr {
 				assert.NotEmpty(t, plainErrs, "expected the BOM-free input to fail")
@@ -105,7 +105,7 @@ func main() {
 }
 `
 
-	tree, errs := NewAntlrGalaParser().ParseLenient(utf8BOM + src)
+	tree, _, errs := NewAntlrGalaParser().ParseLenient(utf8BOM + src)
 
 	require.NotNil(t, tree)
 	for _, err := range errs {
@@ -123,8 +123,8 @@ func TestParseWithLeadingBOMPreservesPositions(t *testing.T) {
 	// whose column we can compare across both inputs.
 	const src = "@@@\n\npackage main\n"
 
-	_, plainErrs := NewAntlrGalaParser().ParseLenient(src)
-	_, bomErrs := NewAntlrGalaParser().ParseLenient(utf8BOM + src)
+	_, _, plainErrs := NewAntlrGalaParser().ParseLenient(src)
+	_, _, bomErrs := NewAntlrGalaParser().ParseLenient(utf8BOM + src)
 
 	require.NotEmpty(t, plainErrs)
 	require.Equal(t, len(plainErrs), len(bomErrs))
@@ -139,7 +139,7 @@ func TestParseWithLeadingBOMPreservesPositions(t *testing.T) {
 func TestParseBOMOnlyAtStartIsStripped(t *testing.T) {
 	src := "package main\n\nval s = \"a" + utf8BOM + "b\"\n"
 
-	_, errs := NewAntlrGalaParser().ParseLenient(src)
+	_, _, errs := NewAntlrGalaParser().ParseLenient(src)
 	assert.Empty(t, errs, "a BOM inside a string literal is content, not a marker: %v", errs)
 }
 

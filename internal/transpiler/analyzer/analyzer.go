@@ -258,6 +258,7 @@ type pkgResultCacheEntry struct {
 type parsedFileEntry struct {
 	tree    *grammar.SourceFileContext
 	pkgName string
+	docs    map[int]string // doc comments keyed by declaration start offset
 	mtime   time.Time
 	size    int64
 }
@@ -410,8 +411,8 @@ func (b *BatchAnalyzer) SetGoSrcDirs(dirs map[string]string) {
 }
 
 // Analyze delegates to the inner analyzer, sharing the package cache.
-func (b *BatchAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.RichAST, error) {
-	return b.inner.Analyze(tree, filePath)
+func (b *BatchAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath string) (*transpiler.RichAST, error) {
+	return b.inner.Analyze(tree, docs, filePath)
 }
 
 // SetGoSrcDirs wires module-aware Go source directories into the analyzer
@@ -458,8 +459,13 @@ func ResolveGoSrcDir(goSrcDirs map[string]string, importPath string) (string, bo
 	return filepath.Join(goSrcDirs[bestKey], filepath.FromSlash(rel)), true
 }
 
-// Analyze walk the ANTLR tree and collects metadata for RichAST.
-func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.RichAST, error) {
+// Analyze walks the ANTLR tree and collects metadata for RichAST.
+//
+// docs carries the file's doc comments keyed by the character offset of the
+// declaration they document (see parser.extractDocComments). It may be nil —
+// callers that do not care about documentation pass nothing, and every
+// attachment site degrades to an empty Doc rather than failing.
+func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath string) (*transpiler.RichAST, error) {
 	a.analyzeDepth++
 	isTopLevel := a.analyzeDepth == 1
 	defer func() { a.analyzeDepth-- }()
@@ -618,6 +624,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 	richAST := &transpiler.RichAST{
 		Tree:             tree,
 		PackageName:      pkgName,
+		PackageDoc:       docAt(docs, sourceFile.PackageClause().GetStart()),
 		Types:            make(map[string]*transpiler.TypeMetadata),
 		Functions:        make(map[string]*transpiler.FunctionMetadata),
 		Packages:         make(map[string]string),
@@ -963,11 +970,14 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 				meta.FieldNames = nil
 				meta.ImmutFlags = nil
 				meta.FieldPositions = nil
+				meta.FieldDocs = nil
 				meta.Pos = transpiler.PosFromToken(ctx.Identifier().GetStart())
+				setDoc(&meta.Doc, docs, ctx.GetStart())
 			} else {
 				meta = &transpiler.TypeMetadata{
 					Name:    typeName,
 					Package: pkgName,
+					Doc:     docAt(docs, ctx.GetStart()),
 					Pos:     transpiler.PosFromToken(ctx.Identifier().GetStart()),
 					Methods: make(map[string]*transpiler.MethodMetadata),
 					Fields:  make(map[string]transpiler.Type),
@@ -1021,6 +1031,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 						meta.FieldPositions = make(map[string]transpiler.SourcePos)
 					}
 					meta.FieldPositions[fieldName] = transpiler.PosFromToken(fctx.Identifier().GetStart())
+					addFieldDoc(meta, fieldName, docAt(docs, fctx.GetStart()))
 				}
 				meta.DefinedIn = filePath
 			}
@@ -1049,6 +1060,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 					methodMeta := &transpiler.MethodMetadata{
 						Name:      methodName,
 						Package:   pkgName,
+						Doc:       docAt(docs, msCtx.GetStart()),
 						DefinedIn: filePath,
 					}
 					if msCtx.TypeParameters() != nil {
@@ -1111,11 +1123,14 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 				meta.FieldNames = nil
 				meta.ImmutFlags = nil
 				meta.FieldPositions = nil
+				meta.FieldDocs = nil
 				meta.Pos = pos
+				setDoc(&meta.Doc, docs, ctx.GetStart())
 			} else {
 				meta = &transpiler.TypeMetadata{
 					Name:    typeName,
 					Package: pkgName,
+					Doc:     docAt(docs, ctx.GetStart()),
 					Pos:     pos,
 					Methods: make(map[string]*transpiler.MethodMetadata),
 					Fields:  make(map[string]transpiler.Type),
@@ -1194,7 +1209,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 					ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
 					existing.DefinedIn, filePath, existing.Pos)
 			}
-			if err := a.analyzeSealedType(ctx, pkgName, richAST); err != nil {
+			if err := a.analyzeSealedType(ctx, pkgName, richAST, docs); err != nil {
 				return nil, err
 			}
 			if meta, ok := richAST.Types[fullSealedName]; ok {
@@ -1279,6 +1294,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 					methodMeta := &transpiler.MethodMetadata{
 						Name:         methodName,
 						Package:      pkgName,
+						Doc:          docAt(docs, ctx.GetStart()),
 						Pos:          transpiler.PosFromToken(ctx.Identifier().GetStart()),
 						ReceiverName: recvCtx.Identifier().GetText(),
 					}
@@ -1397,6 +1413,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, filePath string) (*transpiler.Ri
 				funcMeta := &transpiler.FunctionMetadata{
 					Name:      funcName,
 					Package:   pkgName,
+					Doc:       docAt(docs, ctx.GetStart()),
 					Pos:       transpiler.PosFromToken(ctx.Identifier().GetStart()),
 					DefinedIn: filePath,
 				}
@@ -1826,7 +1843,7 @@ func countErrors(warnings []ValidationWarning) int {
 // companion types for each case, and Apply/Unapply/IsXxx methods.
 // Returns a non-nil error if the declaration is rejected (e.g. duplicate
 // variant case names within the same sealed type).
-func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationContext, pkgName string, richAST *transpiler.RichAST) error {
+func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationContext, pkgName string, richAST *transpiler.RichAST, docs map[int]string) error {
 	typeName := ctx.Identifier().GetText()
 
 	fullTypeName := typeName
@@ -1850,6 +1867,7 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 	parentMeta := &transpiler.TypeMetadata{
 		Name:       typeName,
 		Package:    pkgName,
+		Doc:        docAt(docs, ctx.GetStart()),
 		Pos:        transpiler.PosFromToken(ctx.Identifier().GetStart()),
 		Methods:    make(map[string]*transpiler.MethodMetadata),
 		Fields:     make(map[string]transpiler.Type),
@@ -1864,6 +1882,7 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 	}
 	type variantInfo struct {
 		name   string
+		doc    string
 		pos    transpiler.SourcePos
 		fields []variantFieldInfo
 	}
@@ -1891,6 +1910,7 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 		}
 		vi := variantInfo{
 			name: variantName,
+			doc:  docAt(docs, sc.GetStart()),
 			pos:  transpiler.PosFromToken(sc.Identifier().GetStart()),
 		}
 
@@ -1956,7 +1976,7 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 
 	// Store variant metadata on parent
 	for _, vi := range variants {
-		sv := transpiler.SealedVariant{Name: vi.name, Pos: vi.pos}
+		sv := transpiler.SealedVariant{Name: vi.name, Doc: vi.doc, Pos: vi.pos}
 		for _, f := range vi.fields {
 			sv.FieldNames = append(sv.FieldNames, f.name)
 			sv.FieldTypes = append(sv.FieldTypes, a.resolveTypeWithParams(f.typeName, pkgName, typeParams))
@@ -1994,6 +2014,7 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 		companionMeta := &transpiler.TypeMetadata{
 			Name:       companionName,
 			Package:    pkgName,
+			Doc:        vi.doc,
 			Pos:        vi.pos,
 			Methods:    make(map[string]*transpiler.MethodMetadata),
 			Fields:     make(map[string]transpiler.Type),
@@ -2760,7 +2781,7 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (_ *transpiler.RichAST, re
 		// recursive work and is intentionally serialized; parsing is the
 		// part that benefited from parallelism above.
 		{
-			res, err := a.Analyze(tree, filePath)
+			res, err := a.Analyze(tree, a.docsForFile(filePath, tree), filePath)
 			if err == nil {
 				if pkgAST.PackageName == "" {
 					pkgAST.PackageName = res.PackageName
@@ -3409,7 +3430,7 @@ func (a *galaAnalyzer) ensureTranspiled(importPath string) error {
 		}
 
 		// Parse the file
-		tree, err := a.parser.Parse(string(content))
+		tree, docs, err := a.parser.Parse(string(content))
 		if err != nil {
 			return fmt.Errorf("failed to parse %s: %w", srcPath, err)
 		}
@@ -3443,7 +3464,7 @@ func (a *galaAnalyzer) ensureTranspiled(importPath string) error {
 			packageLoadFailures: a.packageLoadFailures,
 		}
 
-		richAST, err := tempAnalyzer.Analyze(tree, srcPath)
+		richAST, err := tempAnalyzer.Analyze(tree, docs, srcPath)
 		if err != nil {
 			return fmt.Errorf("failed to analyze %s: %w", srcPath, err)
 		}
@@ -3656,7 +3677,8 @@ func siblingTypeRedefinedError(typeName, pkgName string, existing *transpiler.Ty
 // by — the first declaration and reaching the Go compiler as "already
 // declared".
 func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileContext, pkgName string, richAST *transpiler.RichAST, sibFilePath string, decls *packageDecls) error {
-	absSibPath, _ := filepath.Abs(sibFilePath)
+	absSibPath := a.parsedFileCacheKey(sibFilePath)
+	docs := a.docsForTree(absSibPath, sibTree)
 	// sibDisplay is how diagnostics name this sibling: the caller's spelling,
 	// which matches how the caret path is printed for the file under
 	// compilation. absSibPath stays the identity used for comparisons.
@@ -3695,6 +3717,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 			meta := &transpiler.TypeMetadata{
 				Name:    typeName,
 				Package: pkgName,
+				Doc:     docAt(docs, ctx.GetStart()),
 				Pos:     transpiler.PosFromToken(ctx.Identifier().GetStart()),
 				Methods: existingMethods,
 				Fields:  make(map[string]transpiler.Type),
@@ -3732,6 +3755,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 						meta.FieldPositions = make(map[string]transpiler.SourcePos)
 					}
 					meta.FieldPositions[fieldName] = transpiler.PosFromToken(fctx.Identifier().GetStart())
+					addFieldDoc(meta, fieldName, docAt(docs, fctx.GetStart()))
 				}
 				if meta.DefinedIn == "" {
 					meta.DefinedIn = absSibPath
@@ -3745,6 +3769,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 					methodMeta := &transpiler.MethodMetadata{
 						Name:      methodName,
 						Package:   pkgName,
+						Doc:       docAt(docs, msCtx.GetStart()),
 						Pos:       transpiler.PosFromToken(msCtx.Identifier().GetStart()),
 						DefinedIn: absSibPath,
 					}
@@ -3821,6 +3846,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 			meta := &transpiler.TypeMetadata{
 				Name:    typeName,
 				Package: pkgName,
+				Doc:     docAt(docs, ctx.GetStart()),
 				Pos:     transpiler.PosFromToken(ctx.Identifier().GetStart()),
 				Methods: existingMethods,
 				Fields:  make(map[string]transpiler.Type),
@@ -3894,7 +3920,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 					continue
 				}
 			}
-			if err := a.analyzeSealedType(ctx, pkgName, richAST); err != nil {
+			if err := a.analyzeSealedType(ctx, pkgName, richAST, docs); err != nil {
 				return err
 			}
 			// Set DefinedIn on the parent and all companion variants (only when empty).
@@ -3954,6 +3980,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 				methodMeta := &transpiler.MethodMetadata{
 					Name:         methodName,
 					Package:      pkgName,
+					Doc:          docAt(docs, ctx.GetStart()),
 					Pos:          sibPos,
 					ReceiverName: recvCtx.Identifier().GetText(),
 					DefinedIn:    absSibPath,
@@ -4057,6 +4084,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 					funcMeta := &transpiler.FunctionMetadata{
 						Name:      funcName,
 						Package:   pkgName,
+						Doc:       docAt(docs, ctx.GetStart()),
 						Pos:       sibPos,
 						DefinedIn: absSibPath,
 					}
@@ -4383,10 +4411,7 @@ var _ transpiler.Analyzer = (*galaAnalyzer)(nil)
 // when the same project files were just parsed during sibling discovery,
 // the import-resolution pass does not redo the work).
 func (a *galaAnalyzer) parseFileCached(path string) (*grammar.SourceFileContext, string, error) {
-	canonPath, err := filepath.Abs(path)
-	if err != nil {
-		canonPath = path
-	}
+	canonPath := a.parsedFileCacheKey(path)
 	info, err := os.Stat(canonPath)
 	if err != nil {
 		return nil, "", nil
@@ -4407,7 +4432,7 @@ func (a *galaAnalyzer) parseFileCached(path string) (*grammar.SourceFileContext,
 	if err != nil {
 		return nil, "", nil
 	}
-	tree, err := a.parser.Parse(string(content))
+	tree, docs, err := a.parser.Parse(string(content))
 	if err != nil {
 		return nil, "", nil
 	}
@@ -4425,12 +4450,108 @@ func (a *galaAnalyzer) parseFileCached(path string) (*grammar.SourceFileContext,
 		a.parsedFileCache[canonPath] = &parsedFileEntry{
 			tree:    otherSF,
 			pkgName: pkgName,
+			docs:    docs,
 			mtime:   info.ModTime(),
 			size:    info.Size(),
 		}
 		a.parsedFileCacheMu.Unlock()
 	}
 	return otherSF, pkgName, nil
+}
+
+// docAt returns the doc comment attached to the declaration whose first token is
+// `start`, or "" when the declaration is undocumented or docs is nil.
+//
+// Pass the DECLARATION's start token (`ctx.GetStart()` — the `func`, `type`,
+// `sealed`, `case` or `val` keyword), not the identifier token: a doc comment
+// sits to the left of the keyword, and for a method the identifier is preceded
+// only by the receiver's closing paren.
+func docAt(docs map[int]string, start antlr.Token) string {
+	if docs == nil || start == nil {
+		return ""
+	}
+	return docs[start.GetStart()]
+}
+
+// setDoc records a doc comment on a metadata entry that may already carry one.
+//
+// The re-analysis and sibling-merge paths reuse a TypeMetadata that an earlier
+// pass — or a cache load — already populated. Those passes may run with a nil
+// docs map (a caller that did not thread one), and assigning unconditionally
+// would erase documentation that is already correct. An empty result therefore
+// leaves the existing value alone; only a real doc comment overwrites.
+func setDoc(dst *string, docs map[int]string, start antlr.Token) {
+	if d := docAt(docs, start); d != "" {
+		*dst = d
+	}
+}
+
+// addFieldDoc records a struct field's doc comment, allocating the map on first
+// use. A blank doc is dropped rather than stored, so FieldDocs holds only fields
+// that are actually documented.
+func addFieldDoc(meta *transpiler.TypeMetadata, fieldName, doc string) {
+	if doc == "" {
+		return
+	}
+	if meta.FieldDocs == nil {
+		meta.FieldDocs = make(map[string]string)
+	}
+	meta.FieldDocs[fieldName] = doc
+}
+
+// docsForFile returns the doc comments harvested when `path` was parsed, for a
+// caller that holds the matching tree.
+//
+// Sibling files reach the analyzer as bare trees through three routes — the
+// explicit package-file list, an in-memory sibling-tree cache hit, and a fresh
+// directory scan — and all three go through parseFileCached, which stores docs
+// alongside each tree under the same key. Looking them up by path afterwards
+// keeps one source of truth instead of threading a parallel docs slice down all
+// three; docsForTree then checks that what came back belongs to this tree.
+func (a *galaAnalyzer) docsForFile(path string, tree *grammar.SourceFileContext) map[int]string {
+	if path == "" {
+		return nil
+	}
+	return a.docsForTree(a.parsedFileCacheKey(path), tree)
+}
+
+// docsForTree returns the doc comments for canonPath, but only if they came
+// from the very parse that produced `tree`.
+//
+// Doc offsets are parse-local: they mean nothing except against the token stream
+// they were harvested from. Callers hold a tree from one cache
+// (siblingTreeCache, revalidated by the directory's file count) while the docs
+// live in another (parsedFileCache, revalidated by mtime+size), and those two
+// can in principle disagree — a sibling edited in place keeps the file count
+// intact but gets fresh offsets on its next parse. Comparing the tree pointer
+// makes the pairing structural instead of a documented hope: a mismatch yields
+// no documentation rather than another declaration's.
+//
+// Taking the absolute path from the caller also matters: sibling extraction runs
+// per file per Analyze, so re-deriving it here turned one filepath.Abs per
+// sibling into two.
+func (a *galaAnalyzer) docsForTree(canonPath string, tree *grammar.SourceFileContext) map[int]string {
+	if a.parsedFileCache == nil || canonPath == "" {
+		return nil
+	}
+	a.parsedFileCacheMu.Lock()
+	defer a.parsedFileCacheMu.Unlock()
+	if entry, ok := a.parsedFileCache[canonPath]; ok && entry.tree == tree {
+		return entry.docs
+	}
+	return nil
+}
+
+// parsedFileCacheKey derives the parsedFileCache key for a path. Writer
+// (parseFileCached) and readers (docsForTree) must agree exactly: a
+// divergence makes every doc lookup miss silently, since a miss is a legal
+// "undocumented" result.
+func (a *galaAnalyzer) parsedFileCacheKey(path string) string {
+	canonPath, err := filepath.Abs(path)
+	if err != nil {
+		return path
+	}
+	return canonPath
 }
 
 // parseFilesConcurrent parses the given paths in parallel, populating

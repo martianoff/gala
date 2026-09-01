@@ -300,5 +300,5 @@ STRING: '"' (~["\r\n\\] | '\\' .)* '"';
 CHAR_LIT: '\'' (~['\r\n\\] | '\\' .) '\'';
 RAW_STRING: '`' ~[`]* '`';
 WS: [ \t\r\n]+ -> skip;
-COMMENT: '//' ~[\r\n]* -> skip;
-MULTILINE_COMMENT: '/*' .*? '*/' -> skip;
+COMMENT: '//' ~[\r\n]* -> channel(HIDDEN);
+MULTILINE_COMMENT: '/*' .*? '*/' -> channel(HIDDEN);

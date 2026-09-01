@@ -86,7 +86,7 @@ func extractImports(p *parser.AntlrGalaParser, file, src string) fileImports {
 		Imports: []importInfo{},
 	}
 
-	tree, err := p.Parse(src)
+	tree, _, err := p.Parse(src)
 	if err != nil {
 		result.Error = err.Error()
 		return result
