@@ -413,7 +413,8 @@ func resolveCallSignature(call *callContext, enclosingFunc string, richAST *tran
 }
 
 func functionSignature(name string, fm *transpiler.FunctionMetadata) *lsp.SignatureInformation {
-	params, labels := buildParamList(fm.ParamNames, fm.ParamTypes)
+	summary, paramDocs := splitDoc(fm.Doc, fm.ParamNames)
+	params, labels := buildParamList(fm.ParamNames, fm.ParamTypes, paramDocs)
 	var label strings.Builder
 	label.WriteString("func " + name)
 	if len(fm.TypeParams) > 0 {
@@ -424,13 +425,15 @@ func functionSignature(name string, fm *transpiler.FunctionMetadata) *lsp.Signat
 		label.WriteString(" " + fm.ReturnType.String())
 	}
 	return &lsp.SignatureInformation{
-		Label:      label.String(),
-		Parameters: params,
+		Label:         label.String(),
+		Documentation: markdown(summary),
+		Parameters:    params,
 	}
 }
 
 func methodSignature(name string, m *transpiler.MethodMetadata) *lsp.SignatureInformation {
-	params, labels := buildParamList(m.ParamNames, m.ParamTypes)
+	summary, paramDocs := splitDoc(m.Doc, m.ParamNames)
+	params, labels := buildParamList(m.ParamNames, m.ParamTypes, paramDocs)
 	var label strings.Builder
 	label.WriteString(name)
 	if len(m.TypeParams) > 0 {
@@ -441,8 +444,9 @@ func methodSignature(name string, m *transpiler.MethodMetadata) *lsp.SignatureIn
 		label.WriteString(" " + m.ReturnType.String())
 	}
 	return &lsp.SignatureInformation{
-		Label:      label.String(),
-		Parameters: params,
+		Label:         label.String(),
+		Documentation: markdown(summary),
+		Parameters:    params,
 	}
 }
 
@@ -451,12 +455,24 @@ func typeConstructorSignature(name string, tm *transpiler.TypeMetadata) *lsp.Sig
 	for _, fn := range tm.FieldNames {
 		types = append(types, tm.Fields[fn])
 	}
-	params, labels := buildParamList(tm.FieldNames, types)
+	summary, fieldDocs := splitDoc(tm.Doc, tm.FieldNames)
+	// A constructor's parameters are the type's fields, so each field's own doc
+	// comment documents the corresponding argument.
+	for fn, fd := range tm.FieldDocs {
+		if fieldDocs == nil {
+			fieldDocs = make(map[string]string)
+		}
+		if _, ok := fieldDocs[fn]; !ok {
+			fieldDocs[fn] = fd
+		}
+	}
+	params, labels := buildParamList(tm.FieldNames, types, fieldDocs)
 	var label strings.Builder
 	label.WriteString(name + "(" + strings.Join(labels, ", ") + ")")
 	return &lsp.SignatureInformation{
-		Label:      label.String(),
-		Parameters: params,
+		Label:         label.String(),
+		Documentation: markdown(summary),
+		Parameters:    params,
 	}
 }
 
@@ -465,7 +481,7 @@ func typeConstructorSignature(name string, tm *transpiler.TypeMetadata) *lsp.Sig
 // slices are returned so each Parameter's Label matches the corresponding
 // substring inside the signature label — clients use that substring to
 // visually highlight the active parameter.
-func buildParamList(names []string, types []transpiler.Type) ([]lsp.ParameterInformation, []string) {
+func buildParamList(names []string, types []transpiler.Type, docs map[string]string) ([]lsp.ParameterInformation, []string) {
 	params := make([]lsp.ParameterInformation, 0, len(names))
 	labels := make([]string, 0, len(names))
 	for i, n := range names {
@@ -476,7 +492,10 @@ func buildParamList(names []string, types []transpiler.Type) ([]lsp.ParameterInf
 			labelPart = n
 		}
 		labels = append(labels, labelPart)
-		params = append(params, lsp.ParameterInformation{Label: labelPart})
+		params = append(params, lsp.ParameterInformation{
+			Label:         labelPart,
+			Documentation: markdown(docs[n]),
+		})
 	}
 	return params, labels
 }

@@ -45,20 +45,20 @@ func (h *GalaHandler) Completion(ctx context.Context, params *lsp.CompletionPara
 		if strings.HasPrefix(receiverType, packagePrefix) {
 			// Package dot completion — show types and functions from that package
 			pkgName := strings.TrimPrefix(receiverType, packagePrefix)
-			items = append(items, packageCompletions(richAST, pkgName)...)
+			items = append(items, packageCompletions(richAST, pkgName, uri)...)
 		} else if receiverType != "" {
-			items = append(items, typeSpecificCompletions(richAST, receiverType)...)
+			items = append(items, typeSpecificCompletions(richAST, receiverType, uri)...)
 		}
 	} else if isNamedArgContext(text, line, char) && richAST != nil {
 		typeName := extractConstructorName(text, line, char)
-		items = append(items, namedArgCompletions(richAST, typeName)...)
+		items = append(items, namedArgCompletions(richAST, typeName, uri)...)
 	} else if isMatchCaseContext(text, line, char) && richAST != nil {
 		matchedType := extractMatchSubjectType(text, line, richAST, varTypeMap)
-		items = append(items, matchCaseCompletions(richAST, matchedType)...)
+		items = append(items, matchCaseCompletions(richAST, matchedType, uri)...)
 	} else {
 		if richAST != nil {
-			items = append(items, typeCompletions(richAST)...)
-			items = append(items, functionCompletions(richAST)...)
+			items = append(items, typeCompletions(richAST, uri)...)
+			items = append(items, functionCompletions(richAST, uri)...)
 		}
 		items = append(items, keywordCompletions()...)
 	}
@@ -96,7 +96,7 @@ func isDotCompletion(text string, line, char int) bool {
 	return false
 }
 
-func typeCompletions(richAST *transpiler.RichAST) []lsp.CompletionItem {
+func typeCompletions(richAST *transpiler.RichAST, uri string) []lsp.CompletionItem {
 	items := make([]lsp.CompletionItem, 0)
 	seen := make(map[string]bool)
 	for key, tm := range richAST.Types {
@@ -117,40 +117,42 @@ func typeCompletions(richAST *transpiler.RichAST) []lsp.CompletionItem {
 		if tm.IsSealed {
 			detail = "sealed type"
 		}
-		items = append(items, lsp.CompletionItem{Label: name, Kind: kindPtr(kind), Detail: detail})
+		items = append(items, withRef(
+			lsp.CompletionItem{Label: name, Kind: kindPtr(kind), Detail: detail},
+			completionRef{URI: uri, Kind: refKindType, Name: name}))
 
 		for _, v := range tm.SealedVariants {
 			if !seen[v.Name] {
 				seen[v.Name] = true
-				items = append(items, lsp.CompletionItem{
+				items = append(items, withRef(lsp.CompletionItem{
 					Label:  v.Name,
 					Kind:   kindPtr(lsp.CompletionItemKindConstructor),
 					Detail: "case of " + name,
-				})
+				}, completionRef{URI: uri, Kind: refKindVariant, Owner: name, Name: v.Name}))
 			}
 		}
 	}
 	return items
 }
 
-func functionCompletions(richAST *transpiler.RichAST) []lsp.CompletionItem {
+func functionCompletions(richAST *transpiler.RichAST, uri string) []lsp.CompletionItem {
 	items := make([]lsp.CompletionItem, 0)
 	for _, fm := range richAST.Functions {
 		if !isExported(fm.Name) {
 			continue
 		}
 		sig := formatFuncSig(fm)
-		items = append(items, lsp.CompletionItem{
+		items = append(items, withRef(lsp.CompletionItem{
 			Label:  fm.Name,
 			Kind:   kindPtr(lsp.CompletionItemKindFunction),
 			Detail: sig,
-		})
+		}, completionRef{URI: uri, Kind: refKindFunc, Name: fm.Name}))
 	}
 	return items
 }
 
 // packageCompletions returns exported types and functions from a specific package.
-func packageCompletions(richAST *transpiler.RichAST, pkgName string) []lsp.CompletionItem {
+func packageCompletions(richAST *transpiler.RichAST, pkgName, uri string) []lsp.CompletionItem {
 	items := make([]lsp.CompletionItem, 0)
 	seen := make(map[string]bool)
 
@@ -169,11 +171,11 @@ func packageCompletions(richAST *transpiler.RichAST, pkgName string) []lsp.Compl
 		if tm.Package == pkgName || strings.HasPrefix(key, pkgName+".") {
 			seen[name] = true
 			kind := lsp.CompletionItemKindClass
-			items = append(items, lsp.CompletionItem{
+			items = append(items, withRef(lsp.CompletionItem{
 				Label:  name,
 				Kind:   kindPtr(kind),
 				Detail: "type from " + pkgName,
-			})
+			}, completionRef{URI: uri, Kind: refKindPkgType, Owner: pkgName, Name: name}))
 		}
 	}
 
@@ -182,11 +184,11 @@ func packageCompletions(richAST *transpiler.RichAST, pkgName string) []lsp.Compl
 		if fm.Package == pkgName && isExported(fm.Name) && !seen[fm.Name] {
 			seen[fm.Name] = true
 			sig := formatFuncSig(fm)
-			items = append(items, lsp.CompletionItem{
+			items = append(items, withRef(lsp.CompletionItem{
 				Label:  fm.Name,
 				Kind:   kindPtr(lsp.CompletionItemKindFunction),
 				Detail: sig,
-			})
+			}, completionRef{URI: uri, Kind: refKindPkgFunc, Owner: pkgName, Name: fm.Name}))
 		}
 	}
 
@@ -206,7 +208,7 @@ func packageCompletions(richAST *transpiler.RichAST, pkgName string) []lsp.Compl
 	return items
 }
 
-func methodCompletions(richAST *transpiler.RichAST) []lsp.CompletionItem {
+func methodCompletions(richAST *transpiler.RichAST, uri string) []lsp.CompletionItem {
 	items := make([]lsp.CompletionItem, 0)
 	seen := make(map[string]bool)
 	for _, tm := range richAST.Types {
@@ -333,7 +335,7 @@ func extractConstructorName(text string, line, char int) string {
 	return ""
 }
 
-func namedArgCompletions(richAST *transpiler.RichAST, typeName string) []lsp.CompletionItem {
+func namedArgCompletions(richAST *transpiler.RichAST, typeName, uri string) []lsp.CompletionItem {
 	items := make([]lsp.CompletionItem, 0)
 	if typeName == "" {
 		return items
@@ -353,12 +355,12 @@ func namedArgCompletions(richAST *transpiler.RichAST, typeName string) []lsp.Com
 		for _, fn := range tm.FieldNames {
 			ft := tm.Fields[fn]
 			insertText := fn + " = "
-			items = append(items, lsp.CompletionItem{
+			items = append(items, withRef(lsp.CompletionItem{
 				Label:      fn,
 				Kind:       kindPtr(lsp.CompletionItemKindField),
 				Detail:     ft.String(),
 				InsertText: insertText,
-			})
+			}, completionRef{URI: uri, Kind: refKindField, Owner: typeName, Name: fn}))
 		}
 		if len(items) > 0 {
 			return items
@@ -428,7 +430,7 @@ func isMatchCaseContext(text string, line, _ int) bool {
 	return strings.HasPrefix(trimmed, "case ") || trimmed == "case"
 }
 
-func matchCaseCompletions(richAST *transpiler.RichAST, matchedType string) []lsp.CompletionItem {
+func matchCaseCompletions(richAST *transpiler.RichAST, matchedType, uri string) []lsp.CompletionItem {
 	items := make([]lsp.CompletionItem, 0)
 	seen := make(map[string]bool)
 	for _, tm := range richAST.Types {
@@ -450,12 +452,12 @@ func matchCaseCompletions(richAST *transpiler.RichAST, matchedType string) []lsp
 			} else {
 				insertText = v.Name + "() => "
 			}
-			items = append(items, lsp.CompletionItem{
+			items = append(items, withRef(lsp.CompletionItem{
 				Label:      v.Name,
 				Kind:       kindPtr(lsp.CompletionItemKindEnumMember),
 				Detail:     "case of " + tm.Name,
 				InsertText: insertText,
-			})
+			}, completionRef{URI: uri, Kind: refKindVariant, Owner: tm.Name, Name: v.Name}))
 		}
 	}
 	wildcard := "_ => "
@@ -524,7 +526,7 @@ func goSizeSugarCompletions(typeName string) []lsp.CompletionItem {
 }
 
 // typeSpecificCompletions returns methods and fields for a specific type.
-func typeSpecificCompletions(richAST *transpiler.RichAST, typeName string) []lsp.CompletionItem {
+func typeSpecificCompletions(richAST *transpiler.RichAST, typeName, uri string) []lsp.CompletionItem {
 	items := make([]lsp.CompletionItem, 0)
 
 	// GALA's `.Size()` / `.ByteSize()` sugar is available on Go primitive
@@ -551,24 +553,24 @@ func typeSpecificCompletions(richAST *transpiler.RichAST, typeName string) []lsp
 		} else {
 			insertText = name + "("
 		}
-		items = append(items, lsp.CompletionItem{
+		items = append(items, withRef(lsp.CompletionItem{
 			Label:      name + sig,
 			Kind:       kindPtr(lsp.CompletionItemKindMethod),
 			Detail:     sig,
 			InsertText: insertText,
 			FilterText: name,
 			SortText:   name,
-		})
+		}, completionRef{URI: uri, Kind: refKindMethod, Owner: typeName, Name: name}))
 	}
 
 	// Fields
 	for _, fn := range tm.FieldNames {
 		ft := tm.Fields[fn]
-		items = append(items, lsp.CompletionItem{
+		items = append(items, withRef(lsp.CompletionItem{
 			Label:  fn,
 			Kind:   kindPtr(lsp.CompletionItemKindField),
 			Detail: ft.String(),
-		})
+		}, completionRef{URI: uri, Kind: refKindField, Owner: typeName, Name: fn}))
 	}
 
 	// Sealed variant IsXxx() methods

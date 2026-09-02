@@ -4,7 +4,9 @@ go_library(
     name = "lsp",
     srcs = [
         "completion.go",
+        "completion_resolve.go",
         "definition.go",
+        "docsplit.go",
         "diagnostics.go",
         "gotype.go",
         "hover.go",
@@ -36,6 +38,7 @@ go_test(
     name = "lsp_test",
     srcs = [
         "bom_test.go",
+        "completion_docs_test.go",
         "definition_project_module_test.go",
         "error_lines_test.go",
         "hover_coverage_test.go",

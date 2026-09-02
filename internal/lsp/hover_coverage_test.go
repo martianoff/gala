@@ -1,6 +1,7 @@
 package lsp_test
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -78,6 +79,7 @@ func hoverAt(t *testing.T, h hoverHarness, uri lsp.DocumentURI, anchor, word str
 
 type hoverHarness interface {
 	Hover(uri lsp.DocumentURI, line, char int) (*lsp.Hover, error)
+	Call(method string, params any) (json.RawMessage, error)
 }
 
 func TestHoverCoverage(t *testing.T) {

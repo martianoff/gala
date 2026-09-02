@@ -177,6 +177,9 @@ func (h *GalaHandler) Initialize(ctx context.Context, params *lsp.InitializePara
 			DefinitionProvider: boolPtr(true),
 			CompletionProvider: &lsp.CompletionOptions{
 				TriggerCharacters: []string{".", "("},
+				// Documentation is attached per item on demand rather than for the
+				// whole list — see completion_resolve.go.
+				ResolveProvider: boolPtr(true),
 			},
 			SignatureHelpProvider: &lsp.SignatureHelpOptions{
 				TriggerCharacters:   []string{"(", ","},
