@@ -161,8 +161,22 @@ func findPackageDir(pkgName string) (string, error) {
 // the surface. The analyzer is given the sibling list so a type declared in one
 // file and extended in another reports its whole method set.
 func loadPackageDoc(pkgName, dir string) (*docPackage, error) {
-	files, err := filepath.Glob(filepath.Join(dir, "*.gala"))
-	if err != nil || len(files) == 0 {
+	found, err := filepath.Glob(filepath.Join(dir, "*.gala"))
+	if err != nil {
+		return nil, fmt.Errorf("no .gala files in %s", dir)
+	}
+	// Tests are not part of a package's documented API, and a `_test.gala` file
+	// declares `package main` by convention — it is a runnable program, not a
+	// member of the package under test. Including them made the analyzer reject
+	// the package for declaring two different names, so documenting any package
+	// that has tests — the standard library included — failed outright.
+	files := make([]string, 0, len(found))
+	for _, f := range found {
+		if !strings.HasSuffix(f, "_test.gala") {
+			files = append(files, f)
+		}
+	}
+	if len(files) == 0 {
 		return nil, fmt.Errorf("no .gala files in %s", dir)
 	}
 	sort.Strings(files)

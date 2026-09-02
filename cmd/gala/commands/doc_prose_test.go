@@ -3,6 +3,8 @@ package commands
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -357,5 +359,33 @@ func TestDocHidesMergedSealedFields(t *testing.T) {
 	}
 	if !strings.Contains(got, "case Add(Left int, Right int)") {
 		t.Errorf("case fields not rendered\n--- got ---\n%s", got)
+	}
+}
+
+// A package's tests are not part of its documented API, and by convention a
+// `_test.gala` file declares `package main` — it is a runnable program, not a
+// member of the package under test. Globbing every .gala file made the analyzer
+// reject the package for declaring two different names, so `gala doc std`, the
+// single most likely thing to type, failed outright.
+func TestLoadPackageDocIgnoresTestFiles(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, src string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("shapes.gala", "package shapes\n\n// Box holds a size.\ntype Box struct {\n    val Size int\n}\n")
+	write("shapes_test.gala", "package main\n\nfunc main() {\n    Println(\"testing\")\n}\n")
+
+	pkg, err := loadPackageDoc("shapes", dir)
+	if err != nil {
+		t.Fatalf("a package with tests failed to document: %v", err)
+	}
+	if len(pkg.Types) != 1 || pkg.Types[0].Name != "Box" {
+		t.Fatalf("types = %+v", pkg.Types)
+	}
+	if pkg.Types[0].Doc != "Box holds a size." {
+		t.Errorf("Box.Doc = %q", pkg.Types[0].Doc)
 	}
 }
