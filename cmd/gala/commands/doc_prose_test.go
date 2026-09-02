@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"bytes"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -183,8 +184,8 @@ func TestDocHidesGeneratedCaseCompanions(t *testing.T) {
 	pkg := collectPackageDoc("shapes", rich)
 
 	names := make([]string, 0, len(pkg.Types))
-	for _, t := range pkg.Types {
-		names = append(names, t.Name)
+	for _, dt := range pkg.Types {
+		names = append(names, dt.Name)
 	}
 	for _, leaked := range []string{"Circle", "Square"} {
 		for _, got := range names {
@@ -221,5 +222,140 @@ func TestDocHidesGeneratedCaseCompanions(t *testing.T) {
 	}
 	if shape.Variants[0].Params[0].Name != "Radius" || shape.Variants[0].Params[0].Type != "float64" {
 		t.Errorf("case fields wrong: %+v", shape.Variants[0].Params)
+	}
+}
+
+// A sealed case is not a type a user can name — its companion is filtered as
+// lowering detail — but asking about one is reasonable, and the answer is the
+// type that declares it.
+func TestDocNarrowsCaseToItsSealedType(t *testing.T) {
+	rich := &transpiler.RichAST{
+		PackageName: "shapes",
+		Types: map[string]*transpiler.TypeMetadata{
+			"shapes.Shape": {
+				Name: "Shape", Package: "shapes", Doc: "Shape is drawable.", IsSealed: true,
+				SealedVariants: []transpiler.SealedVariant{{Name: "Circle", Doc: "Circle is round."}},
+			},
+			"shapes.Circle": {Name: "Circle", Package: "shapes"},
+		},
+		Functions: map[string]*transpiler.FunctionMetadata{},
+	}
+	pkg := collectPackageDoc("shapes", rich)
+
+	narrowed, ok := narrowToType(pkg, "Circle")
+	if !ok {
+		t.Fatal("asking about a sealed case reported no such type")
+	}
+	if len(narrowed.Types) != 1 || narrowed.Types[0].Name != "Shape" {
+		t.Fatalf("case did not resolve to its declaring type: %+v", narrowed.Types)
+	}
+
+	// A name that is neither a type nor a case still reports nothing.
+	if _, ok := narrowToType(pkg, "Nonexistent"); ok {
+		t.Error("an unknown name resolved to something")
+	}
+	// The declaring type still resolves by its own name.
+	if got, ok := narrowToType(pkg, "Shape"); !ok || got.Types[0].Name != "Shape" {
+		t.Error("the sealed type no longer resolves by its own name")
+	}
+}
+
+// The text rendering is the default, human-facing output. It previously
+// dropped the package's own documentation and every function's — collected,
+// present in --json, and invisible where people actually read it.
+func TestRenderPackageDocPrintsAllProse(t *testing.T) {
+	var buf bytes.Buffer
+	renderPackageDoc(&buf, collectPackageDoc("shapes", richWithDocs()))
+	got := buf.String()
+
+	for _, want := range []string{
+		"Package shapes draws things.",     // the package's own doc
+		"Box holds a width and a height.",  // a type
+		"Width is the horizontal extent.",  // a field
+		"Area returns width times height.", // a method
+		"Circle is round.",                 // a sealed case
+		"NewBox builds a Box.",             // a function
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("rendered output missing %q\n--- got ---\n%s", want, got)
+		}
+	}
+}
+
+// An undocumented declaration must not push a blank line into the output, and
+// neither must a doc comment that ends in a bare `//`.
+func TestRenderProseTrimsAndOmits(t *testing.T) {
+	var buf bytes.Buffer
+	renderProse(&buf, "", "    ")
+	if buf.String() != "" {
+		t.Errorf("an absent doc produced output: %q", buf.String())
+	}
+
+	buf.Reset()
+	renderProse(&buf, "\nCircle is round.\n", "    ")
+	if got, want := buf.String(), "    Circle is round.\n"; got != want {
+		t.Errorf("surrounding blank lines were not trimmed\n got: %q\nwant: %q", got, want)
+	}
+
+	buf.Reset()
+	renderProse(&buf, "First.\n\nSecond.", "  ")
+	if got, want := buf.String(), "  First.\n\n  Second.\n"; got != want {
+		t.Errorf("paragraph break not preserved\n got: %q\nwant: %q", got, want)
+	}
+}
+
+// When two cases declare the same field name with different types, the analyzer
+// prefixes the merged struct field with the case name. Those synthesised names
+// must not surface as fields of the sealed type.
+func TestDocHidesMergedSealedFields(t *testing.T) {
+	rich := &transpiler.RichAST{
+		PackageName: "expr",
+		Types: map[string]*transpiler.TypeMetadata{
+			"expr.Expr": {
+				Name: "Expr", Package: "expr", IsSealed: true,
+				// What the analyzer actually produces for
+				//   case Add(Left int, Right int) / case Scale(Left float64)
+				FieldNames: []string{"AddLeft", "Right", "ScaleLeft", "_variant"},
+				Fields: map[string]transpiler.Type{
+					"AddLeft":   transpiler.BasicType{Name: "int"},
+					"Right":     transpiler.BasicType{Name: "int"},
+					"ScaleLeft": transpiler.BasicType{Name: "float64"},
+					"_variant":  transpiler.BasicType{Name: "uint8"},
+				},
+				SealedVariants: []transpiler.SealedVariant{
+					{
+						Name:       "Add",
+						FieldNames: []string{"Left", "Right"},
+						FieldTypes: []transpiler.Type{transpiler.BasicType{Name: "int"}, transpiler.BasicType{Name: "int"}},
+					},
+					{
+						Name:       "Scale",
+						FieldNames: []string{"Left"},
+						FieldTypes: []transpiler.Type{transpiler.BasicType{Name: "float64"}},
+					},
+				},
+			},
+		},
+		Functions: map[string]*transpiler.FunctionMetadata{},
+	}
+
+	pkg := collectPackageDoc("expr", rich)
+	if len(pkg.Types) != 1 {
+		t.Fatalf("types = %+v", pkg.Types)
+	}
+	if len(pkg.Types[0].Fields) != 0 {
+		t.Errorf("a sealed type reported fields of its own: %+v", pkg.Types[0].Fields)
+	}
+
+	var buf bytes.Buffer
+	renderPackageDoc(&buf, pkg)
+	got := buf.String()
+	for _, synthesised := range []string{"AddLeft", "ScaleLeft", "_variant"} {
+		if strings.Contains(got, synthesised) {
+			t.Errorf("synthesised field %q reached the output\n--- got ---\n%s", synthesised, got)
+		}
+	}
+	if !strings.Contains(got, "case Add(Left int, Right int)") {
+		t.Errorf("case fields not rendered\n--- got ---\n%s", got)
 	}
 }
