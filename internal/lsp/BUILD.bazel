@@ -38,6 +38,8 @@ go_test(
         "bom_test.go",
         "definition_project_module_test.go",
         "error_lines_test.go",
+        "hover_coverage_test.go",
+        "hover_internal_test.go",
         "repro_gala_mcp_test.go",
         "server_test.go",
         "signature_help_test.go",
