@@ -145,3 +145,131 @@ func TestHoverVariantHidesInternals(t *testing.T) {
 		}
 	}
 }
+
+// A selector whose receiver resolves but whose member does not must render
+// nothing, rather than falling through to a global name search and answering
+// with an unrelated same-named type.
+func TestHoverUnresolvedMemberDoesNotFallThrough(t *testing.T) {
+	h := newHarness(t)
+	src := `package main
+
+// Body is a top-level type that must not be used to answer a member lookup.
+type Body struct {
+    val text string
+}
+
+type Resp struct {
+    val code int
+}
+
+func main() {
+    val r = Resp(code = 1)
+    Println(r.Body, Body(text = "x"))
+}
+`
+	uri := openFileOnDisk(t, h, src)
+	time.Sleep(2500 * time.Millisecond)
+
+	lines := strings.Split(src, "\n")
+	var line, col int
+	for i, l := range lines {
+		if idx := strings.Index(l, "r.Body"); idx >= 0 {
+			line, col = i, idx+len("r.")+1
+			break
+		}
+	}
+	hv, err := h.Hover(uri, line, col)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hv != nil && strings.Contains(hv.Contents.Value, "type Body") {
+		t.Errorf("member lookup fell through to an unrelated top-level type\n--- got ---\n%s", hv.Contents.Value)
+	}
+}
+
+// Mutability must not be guessed from the cursor's line: every reference to a
+// `var` that is not its declaration would be reported as `val`.
+func TestHoverLocalDoesNotClaimMutability(t *testing.T) {
+	h := newHarness(t)
+	src := `package main
+
+func main() {
+    var count = 1
+    count = count + 1
+    Println(count)
+}
+`
+	uri := openFileOnDisk(t, h, src)
+	time.Sleep(2500 * time.Millisecond)
+
+	lines := strings.Split(src, "\n")
+	var line, col int
+	for i, l := range lines {
+		if idx := strings.Index(l, "count = count + 1"); idx >= 0 {
+			line, col = i, idx+1
+			break
+		}
+	}
+	hv, err := h.Hover(uri, line, col)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hv == nil {
+		t.Skip("local not resolved in this harness")
+	}
+	if strings.Contains(hv.Contents.Value, "val count") {
+		t.Errorf("a var was reported as val at a non-declaration reference\n--- got ---\n%s", hv.Contents.Value)
+	}
+}
+
+// Grouped imports must resolve; scanning only the cursor line for a quoted path
+// went dead inside `import ( ... )`.
+func TestHoverGroupedImportAlias(t *testing.T) {
+	h := newHarness(t)
+	src := `package main
+
+import (
+    im "martianoff/gala/collection_immutable"
+)
+
+func main() {
+    val arr = im.ArrayOf(1, 2, 3)
+    Println(arr)
+}
+`
+	uri := openFileOnDisk(t, h, src)
+	time.Sleep(2500 * time.Millisecond)
+
+	lines := strings.Split(src, "\n")
+	var line, col int
+	for i, l := range lines {
+		if idx := strings.Index(l, "= im."); idx >= 0 {
+			line, col = i, idx+2+1
+			break
+		}
+	}
+	hv, err := h.Hover(uri, line, col)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hv == nil || !strings.Contains(hv.Contents.Value, "collection_immutable") {
+		got := ""
+		if hv != nil {
+			got = hv.Contents.Value
+		}
+		t.Errorf("grouped-import alias did not resolve\n--- got ---\n%s", got)
+	}
+}
+
+// locate returns the LSP position of `word` inside the first line of src
+// containing `anchor`.
+func locate(t *testing.T, src, anchor, word string) (line, col int) {
+	t.Helper()
+	for i, l := range strings.Split(src, "\n") {
+		if ai := strings.Index(l, anchor); ai >= 0 {
+			return i, ai + strings.Index(anchor, word) + 1
+		}
+	}
+	t.Fatalf("anchor %q not found", anchor)
+	return 0, 0
+}

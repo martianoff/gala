@@ -3,7 +3,10 @@ package lsp
 import (
 	"context"
 	"fmt"
-	"sort"
+	"maps"
+	"path/filepath"
+	"runtime"
+	"slices"
 	"strings"
 
 	"github.com/owenrumney/go-lsp/lsp"
@@ -35,7 +38,7 @@ func (h *GalaHandler) Hover(ctx context.Context, params *lsp.HoverParams) (*lsp.
 	}
 
 	line, char := int(params.Position.Line), int(params.Position.Character)
-	info := h.hoverInfo(text, richAST, varTypes, line, char)
+	info := h.hoverInfo(text, uriToPath(uri), richAST, varTypes, line, char)
 	if info == "" {
 		return nil, nil
 	}
@@ -49,7 +52,11 @@ func (h *GalaHandler) Hover(ctx context.Context, params *lsp.HoverParams) (*lsp.
 }
 
 // hoverInfo renders the hover body for a position, or "" when nothing resolves.
-func (h *GalaHandler) hoverInfo(text string, richAST *transpiler.RichAST, varTypes map[string]string, line, char int) string {
+//
+// path is the on-disk path of the document being hovered; it is what the
+// analyzer recorded as DefinedIn, and is how a declaration in this file is told
+// apart from a same-named one elsewhere in the package.
+func (h *GalaHandler) hoverInfo(text, path string, richAST *transpiler.RichAST, varTypes map[string]string, line, char int) string {
 	lines := strings.Split(text, "\n")
 	if line >= len(lines) {
 		return ""
@@ -58,97 +65,108 @@ func (h *GalaHandler) hoverInfo(text string, richAST *transpiler.RichAST, varTyp
 	if word == "" {
 		return ""
 	}
-	funcScope := findEnclosingFunc(lines, line)
 
-	// An import line names a package rather than a symbol; the word under the
-	// cursor is a path segment, not something in the type table.
-	if isImportLine(lines[line]) {
-		return packageHover(richAST, word, lines[line])
-	}
-
-	// `qualifier.word` — the qualifier decides where to look.
-	if qualifier, wordStart, ok := qualifierBefore(lines[line], char); ok {
-		if pkg := resolvePackageQualifier(richAST, qualifier); pkg != "" {
-			if info := packageMemberHover(richAST, pkg, word); info != "" {
-				return info
-			}
-		}
-		// typeAtDot expects the cursor just past the dot, which is where the
-		// word starts.
-		if recv := typeAtDot(text, line, wordStart, richAST, varTypes); recv != "" {
-			if info := memberHover(richAST, recv, word); info != "" {
-				return info
-			}
-		}
-	}
-
-	// A method or field declaration: the receiver is the enclosing type, not
-	// anything to the left of the cursor.
-	if info := declarationSiteHover(richAST, lines, line, word); info != "" {
+	// The cursor sits ON a declaration: a method name, a struct field, a sealed
+	// case, or a type. Resolved by position against the metadata the analyzer
+	// already recorded rather than by re-reading the source — the same anchor
+	// go-to-definition uses.
+	if info := declarationAt(richAST, path, line, char, word); info != "" {
 		return info
+	}
+
+	// `qualifier.word`. typeAtDot resolves the qualifier for us, returning a
+	// packagePrefix-marked name for a package and a type name otherwise — the
+	// same single call completion dispatches on, so the two cannot disagree
+	// about what an expression is.
+	if recv := typeAtDot(text, line, char, richAST, varTypes); recv != "" {
+		// Both branches return unconditionally. A selector whose receiver resolved
+		// but whose member did not must produce nothing, not fall through to a
+		// global name search — that answers `resp.Body` with whatever unrelated
+		// type happens to be called Body. Go-to-definition guards the same class
+		// of wrong answer.
+		if pkg, isPkg := strings.CutPrefix(recv, packagePrefix); isPkg {
+			return packageMemberHover(richAST, pkg, word)
+		}
+		return memberHover(richAST, recv, word)
 	}
 
 	// A local val/var carries no metadata entry — its type comes from the
 	// transformer's resolved scope, the same source inlay hints read.
+	funcScope := findEnclosingFunc(lines, line)
 	if typStr := lookupVarType(varTypes, funcScope, word); typStr != "" {
-		return localHover(richAST, word, typStr, lines[line])
+		return localHover(richAST, word, typStr)
 	}
 
-	if pkg := resolvePackageQualifier(richAST, word); pkg != "" {
-		return packageHover(richAST, word, lines[line])
+	if info := packageHover(richAST, text, word); info != "" {
+		return info
 	}
 
 	return lookupSymbol(richAST, word)
 }
 
-// qualifierBefore returns the identifier chain qualifying the word at `char`,
-// the column the word starts at, and whether the word was dot-qualified at all.
-func qualifierBefore(line string, char int) (qualifier string, wordStart int, ok bool) {
-	if char > len(line) {
-		return "", 0, false
-	}
-	start := char
-	for start > 0 && isIdentChar(line[start-1]) {
-		start--
-	}
-	if start == 0 || line[start-1] != '.' {
-		return "", start, false
-	}
-	end := start - 1
-	i := end - 1
-	for i >= 0 && (isIdentChar(line[i]) || line[i] == '.') {
-		i--
-	}
-	return line[i+1 : end], start, true
-}
-
-// resolvePackageQualifier maps an import alias or package name to its package
-// name, or "" when the qualifier is a value rather than a package.
-func resolvePackageQualifier(richAST *transpiler.RichAST, qualifier string) string {
-	if qualifier == "" || strings.Contains(qualifier, ".") {
+// declarationAt resolves the cursor against declaration positions recorded
+// during analysis, returning "" when the cursor is not on one.
+//
+// Text-scanning for `func (r Recv) Name(` and friends is the thing this package
+// tells itself not to do: the shapes are ambiguous (generic receivers, one-line
+// bodies, comments, string literals) and the transpiler has already resolved
+// them exactly. SourcePos is 1-based line, 0-based column, matching
+// definition.go's locationAt.
+func declarationAt(richAST *transpiler.RichAST, path string, line, char int, word string) string {
+	if path == "" {
 		return ""
 	}
-	if pkg, ok := richAST.ImportAliases[qualifier]; ok {
-		return pkg
+	for _, tm := range richAST.Types {
+		if !sameSourceFile(tm.DefinedIn, path) {
+			continue
+		}
+		if tm.Name == word && posCovers(tm.Pos, line, char, word) {
+			return formatTypeMeta(tm)
+		}
+		if pos, ok := tm.FieldPositions[word]; ok && posCovers(pos, line, char, word) {
+			if ft, ok := tm.Fields[word]; ok {
+				return formatField(tm, word, ft)
+			}
+		}
+		for i := range tm.SealedVariants {
+			v := &tm.SealedVariants[i]
+			if v.Name == word && posCovers(v.Pos, line, char, word) {
+				return formatVariant(v, tm)
+			}
+		}
+		if m, ok := tm.Methods[word]; ok && sameSourceFile(m.DefinedIn, path) && posCovers(m.Pos, line, char, word) {
+			return formatMethodMeta(tm, m)
+		}
 	}
-	for _, pkg := range richAST.Packages {
-		if pkg == qualifier {
-			return pkg
+	for _, fm := range richAST.Functions {
+		if fm.Name == word && sameSourceFile(fm.DefinedIn, path) && posCovers(fm.Pos, line, char, word) {
+			return formatFuncMeta(fm)
 		}
 	}
 	return ""
 }
 
+// posCovers reports whether an analyzer SourcePos names the identifier under an
+// LSP cursor.
+func posCovers(pos transpiler.SourcePos, line, char int, name string) bool {
+	if pos.Line == 0 {
+		return false
+	}
+	return pos.Line-1 == line && char >= pos.Column && char <= pos.Column+len(name)
+}
+
 // packageMemberHover renders a symbol accessed through a package qualifier.
 func packageMemberHover(richAST *transpiler.RichAST, pkg, name string) string {
 	qualified := pkg + "." + name
-	if variant, parent := findSealedVariant(richAST, name); variant != nil {
+	// Scoped to pkg: an unscoped variant search here would answer `mypkg.Some`
+	// with std's Some, defeating the qualifier the user typed.
+	if variant, parent := findSealedVariant(richAST, name, pkg); variant != nil && parent != nil && parent.Package == pkg {
 		return formatVariant(variant, parent)
 	}
-	if tm, ok := richAST.Types[qualified]; ok {
+	if tm := findType(richAST, qualified); tm != nil {
 		return formatTypeMeta(tm)
 	}
-	if fm, ok := richAST.Functions[qualified]; ok {
+	if fm := findFunction(richAST, qualified); fm != nil {
 		return formatFuncMeta(fm)
 	}
 	return ""
@@ -169,118 +187,54 @@ func memberHover(richAST *transpiler.RichAST, recvType, name string) string {
 	return ""
 }
 
-// declarationSiteHover handles the cursor sitting on a declaration rather than a
-// use: a method name in `func (r Recv) Name(...)`, or a field in a struct body.
-// Neither has a receiver expression to the cursor's left, so the enclosing
-// declaration supplies it.
-func declarationSiteHover(richAST *transpiler.RichAST, lines []string, line int, word string) string {
-	if recv := receiverTypeOnLine(lines[line], word); recv != "" {
-		if tm := findType(richAST, recv); tm != nil {
-			if m, ok := tm.Methods[word]; ok {
-				return formatMethodMeta(tm, m)
-			}
-		}
-	}
-	if enclosing := enclosingTypeDecl(lines, line); enclosing != "" {
-		if tm := findType(richAST, enclosing); tm != nil {
-			if ft, ok := tm.Fields[word]; ok && isFieldDeclLine(lines[line], word) {
-				return formatField(tm, word, ft)
-			}
-			for _, v := range tm.SealedVariants {
-				if v.Name == word {
-					return formatVariant(&v, tm)
-				}
-			}
-		}
-	}
-	return ""
-}
-
-// receiverTypeOnLine extracts `Recv` from `func (r Recv) word(...)`, or "" when
-// the line is not that method's declaration.
-func receiverTypeOnLine(line, word string) string {
-	trimmed := strings.TrimSpace(line)
-	if !strings.HasPrefix(trimmed, "func (") {
-		return ""
-	}
-	close := strings.Index(trimmed, ")")
-	if close < 0 {
-		return ""
-	}
-	after := strings.TrimSpace(trimmed[close+1:])
-	if !strings.HasPrefix(after, word) {
-		return ""
-	}
-	recv := strings.Fields(trimmed[len("func ("):close])
-	if len(recv) < 2 {
-		return ""
-	}
-	return stripTypeParams(recv[1])
-}
-
-// enclosingTypeDecl scans upward for the `type`/`sealed type` header whose body
-// the given line sits in.
-func enclosingTypeDecl(lines []string, line int) string {
-	for i := line; i >= 0; i-- {
-		trimmed := strings.TrimSpace(lines[i])
-		if i != line && trimmed == "}" {
-			return ""
-		}
-		rest, ok := strings.CutPrefix(trimmed, "sealed type ")
-		if !ok {
-			rest, ok = strings.CutPrefix(trimmed, "type ")
-		}
-		if !ok {
-			continue
-		}
-		name := rest
-		for j := 0; j < len(name); j++ {
-			if !isIdentChar(name[j]) {
-				name = name[:j]
-				break
-			}
-		}
-		return name
-	}
-	return ""
-}
-
-// isFieldDeclLine reports whether the line declares `word` as a struct field.
-func isFieldDeclLine(line, word string) bool {
-	trimmed := strings.TrimSpace(line)
-	for _, kw := range []string{"val ", "var "} {
-		if rest, ok := strings.CutPrefix(trimmed, kw); ok {
-			return strings.HasPrefix(rest, word)
-		}
-	}
-	return false
-}
-
-// findSealedVariant locates a `case` by name across every sealed type.
-func findSealedVariant(richAST *transpiler.RichAST, name string) (*transpiler.SealedVariant, *transpiler.TypeMetadata) {
-	for _, tm := range richAST.Types {
-		if !tm.IsSealed {
+// findSealedVariant locates a `case` by name, preferring one declared in
+// preferPkg.
+//
+// Iteration is over sorted keys, not Go map order: `std` alone contributes the
+// case names Some, None, Success, Failure, Left and Right, so a file with a
+// sealed type of its own reusing one of those would otherwise get a parent —
+// and a rendered hover — that changed between invocations.
+func findSealedVariant(richAST *transpiler.RichAST, name, preferPkg string) (*transpiler.SealedVariant, *transpiler.TypeMetadata) {
+	var anyV *transpiler.SealedVariant
+	var anyT *transpiler.TypeMetadata
+	for _, key := range slices.Sorted(maps.Keys(richAST.Types)) {
+		tm := richAST.Types[key]
+		if tm == nil || !tm.IsSealed {
 			continue
 		}
 		for i := range tm.SealedVariants {
-			if tm.SealedVariants[i].Name == name {
+			if tm.SealedVariants[i].Name != name {
+				continue
+			}
+			if tm.Package == preferPkg {
 				return &tm.SealedVariants[i], tm
+			}
+			if anyV == nil {
+				anyV, anyT = &tm.SealedVariants[i], tm
 			}
 		}
 	}
-	return nil, nil
+	return anyV, anyT
 }
 
 func lookupSymbol(richAST *transpiler.RichAST, name string) string {
-	// Sealed cases are checked before the type table, not after. The transpiler
-	// generates a standalone type per variant, carrying Apply and Unapply, and
-	// registers it under the variant's own name — so an exact-key lookup finds
-	// that lowering artifact first and reports `type Circle` with plumbing the
-	// user never wrote, instead of `case Circle(radius float64)`.
-	if variant, parent := findSealedVariant(richAST, name); variant != nil {
-		return formatVariant(variant, parent)
+	typeMeta, hasType := richAST.Types[name]
+	// The transpiler generates a standalone companion type per sealed case,
+	// carrying Apply and Unapply, and registers it under the case's own name. When
+	// the exact-key type IS that artifact, the case is what the user actually
+	// wrote and should win — reporting `type Circle` with plumbing nobody wrote
+	// misrepresents the language.
+	//
+	// A same-named type from a DIFFERENT package is not an artifact and must not
+	// be shadowed: `std` exports cases called Success, Failure, Some, Left and
+	// Right, and a user's own `type Success struct` has to keep answering for
+	// itself.
+	if variant, parent := findSealedVariant(richAST, name, richAST.PackageName); variant != nil {
+		if !hasType || (parent != nil && parent.Package == typeMeta.Package) {
+			return formatVariant(variant, parent)
+		}
 	}
-	if typeMeta, ok := richAST.Types[name]; ok {
+	if hasType {
 		return formatTypeMeta(typeMeta)
 	}
 	for key, typeMeta := range richAST.Types {
@@ -375,7 +329,7 @@ func formatTypeMeta(meta *transpiler.TypeMetadata) string {
 	}
 	if len(meta.Methods) > 0 {
 		b.WriteString("\n**Methods:**\n")
-		for _, name := range sortedMethodNames(meta.Methods) {
+		for _, name := range slices.Sorted(maps.Keys(meta.Methods)) {
 			m := meta.Methods[name]
 			b.WriteString(fmt.Sprintf("- `%s(%s) %s`\n", name, formatMethodParams(m), m.ReturnType))
 		}
@@ -384,17 +338,6 @@ func formatTypeMeta(meta *transpiler.TypeMetadata) string {
 		b.WriteString(fmt.Sprintf("\n*Package: %s*\n", meta.Package))
 	}
 	return b.String()
-}
-
-// sortedMethodNames keeps the method list stable across hovers; Go map order is
-// randomized, so an unsorted list reshuffles every time the popup opens.
-func sortedMethodNames(methods map[string]*transpiler.MethodMetadata) []string {
-	names := make([]string, 0, len(methods))
-	for name := range methods {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
 }
 
 func formatFuncMeta(meta *transpiler.FunctionMetadata) string {
@@ -484,68 +427,23 @@ func variantSignature(v *transpiler.SealedVariant) string {
 	return fmt.Sprintf("case %s(%s)", v.Name, strings.Join(fields, ", "))
 }
 
-// localHover renders a local val/var. The declaration keyword comes from the
-// source line so `val` and `var` are not conflated.
-func localHover(richAST *transpiler.RichAST, name, typStr, line string) string {
-	kw := "val"
-	if trimmed := strings.TrimSpace(line); strings.HasPrefix(trimmed, "var ") {
-		kw = "var"
-	}
-	body := renderHover(fmt.Sprintf("%s %s %s", kw, name, typStr), "", "")
-	// Carry the type's own documentation, so hovering a binding explains what it
-	// holds rather than only naming it.
+// localHover renders a local binding: its name and inferred type.
+//
+// Mutability is deliberately not claimed. The transformer knows whether a
+// binding was `val` or `var` (scope.go's addVal/addVar), but that fact is not
+// carried into the LSP's var channel, and deriving it from the cursor's line
+// reports `val` at every reference to a `var` that is not its own declaration.
+// Saying nothing beats saying something false; formatField gets this right
+// because ImmutFlags is real metadata.
+func localHover(richAST *transpiler.RichAST, name, typStr string) string {
+	body := renderHover(name+" "+typStr, "", "")
+	// The binding's own doc comment is not available, so the type's doc is
+	// offered instead — attributed, so it does not read as documentation of the
+	// binding itself.
 	if tm := findType(richAST, stripTypeParams(typStr)); tm != nil && tm.Doc != "" {
-		body += "\n" + tm.Doc + "\n"
+		body += fmt.Sprintf("\n*Type* `%s` — %s\n", tm.Name, tm.Doc)
 	}
 	return body
-}
-
-// packageHover renders an import alias or a package named in an import line.
-func packageHover(richAST *transpiler.RichAST, word, line string) string {
-	pkg := resolvePackageQualifier(richAST, word)
-	path := importPathOnLine(line)
-	if pkg == "" {
-		// On an import line the word is a path segment; the package is whatever
-		// that path resolves to.
-		if path != "" {
-			if p, ok := richAST.Packages[path]; ok {
-				pkg = p
-			}
-		}
-		if pkg == "" {
-			return ""
-		}
-	}
-	if path == "" {
-		for p, name := range richAST.Packages {
-			if name == pkg {
-				path = p
-				break
-			}
-		}
-	}
-	sig := "package " + pkg
-	if path != "" {
-		sig += "\nimport \"" + path + "\""
-	}
-	return renderHover(sig, richAST.PackageDoc, "")
-}
-
-func isImportLine(line string) bool {
-	return strings.HasPrefix(strings.TrimSpace(line), "import ")
-}
-
-func importPathOnLine(line string) string {
-	first := strings.Index(line, `"`)
-	if first < 0 {
-		return ""
-	}
-	rest := line[first+1:]
-	last := strings.Index(rest, `"`)
-	if last < 0 {
-		return ""
-	}
-	return rest[:last]
 }
 
 func formatMethodParams(m *transpiler.MethodMetadata) string {
@@ -586,4 +484,51 @@ func isIdentChar(c byte) bool {
 
 func isExported(name string) bool {
 	return len(name) > 0 && name[0] >= 'A' && name[0] <= 'Z'
+}
+
+// packageHover renders an import alias or package name.
+//
+// The import table comes from parseGalaImports, which understands the grouped
+// `import ( ... )` form as well as single-line imports; hand-scanning the cursor
+// line for a quoted path silently went dead inside a group.
+func packageHover(richAST *transpiler.RichAST, text, word string) string {
+	path, ok := parseGalaImports(text)[word]
+	if !ok {
+		// Not an alias — it may be the package's own name.
+		for p, name := range richAST.Packages {
+			if name == word {
+				path, ok = p, true
+				break
+			}
+		}
+	}
+	if !ok {
+		return ""
+	}
+	pkg := word
+	if name, found := richAST.Packages[path]; found {
+		pkg = name
+	}
+	return renderHover("package "+pkg+"\nimport \""+path+"\"", "", "")
+}
+
+// sameSourceFile compares two paths for identity the way the analyzer does when
+// it records DefinedIn: absolute, cleaned, and case-insensitively on Windows,
+// where the client's URI casing need not match the analyzer's.
+func sameSourceFile(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	if a == b {
+		return true
+	}
+	absA, errA := filepath.Abs(a)
+	absB, errB := filepath.Abs(b)
+	if errA != nil || errB != nil {
+		return false
+	}
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(filepath.Clean(absA), filepath.Clean(absB))
+	}
+	return filepath.Clean(absA) == filepath.Clean(absB)
 }
