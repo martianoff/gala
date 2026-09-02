@@ -116,26 +116,46 @@ func declarationAt(richAST *transpiler.RichAST, path string, line, char int, wor
 	if path == "" {
 		return ""
 	}
+
+	// Members first, across every type — sealed cases, fields, then methods.
+	//
+	// The order is load-bearing, not stylistic. For each sealed case the
+	// analyzer registers a companion TypeMetadata named after the case and
+	// carrying the SAME Pos as the parent's SealedVariant, so a case
+	// declaration matches two entries at once: the case, and a generated type
+	// whose only methods are Apply and Unapply. Resolving members in their own
+	// pass means the case always wins; interleaved with the type-name check,
+	// Go's map order decided it, and roughly one hover in ten showed the
+	// plumbing instead.
 	for _, tm := range richAST.Types {
 		if !sameSourceFile(tm.DefinedIn, path) {
 			continue
 		}
-		if tm.Name == word && posCovers(tm.Pos, line, char, word) {
-			return formatTypeMeta(tm)
+		for i := range tm.SealedVariants {
+			if v := &tm.SealedVariants[i]; v.Name == word && posCovers(v.Pos, line, char, word) {
+				return formatVariant(v, tm)
+			}
 		}
 		if pos, ok := tm.FieldPositions[word]; ok && posCovers(pos, line, char, word) {
 			if ft, ok := tm.Fields[word]; ok {
 				return formatField(tm, word, ft)
 			}
 		}
-		for i := range tm.SealedVariants {
-			v := &tm.SealedVariants[i]
-			if v.Name == word && posCovers(v.Pos, line, char, word) {
-				return formatVariant(v, tm)
-			}
-		}
+	}
+
+	// Methods are matched on the METHOD's own DefinedIn, not the type's: a
+	// method may be declared in a different file from the type it extends, and
+	// gating on the type's file skipped it entirely — after which the bare-name
+	// fallback could answer with an unrelated same-named type from any package.
+	for _, tm := range richAST.Types {
 		if m, ok := tm.Methods[word]; ok && sameSourceFile(m.DefinedIn, path) && posCovers(m.Pos, line, char, word) {
 			return formatMethodMeta(tm, m)
+		}
+	}
+
+	for _, tm := range richAST.Types {
+		if tm.Name == word && sameSourceFile(tm.DefinedIn, path) && posCovers(tm.Pos, line, char, word) {
+			return formatTypeMeta(tm)
 		}
 	}
 	for _, fm := range richAST.Functions {
@@ -163,9 +183,16 @@ func packageMemberHover(richAST *transpiler.RichAST, pkg, name string) string {
 	if variant, parent := findSealedVariant(richAST, name, pkg); variant != nil && parent != nil && parent.Package == pkg {
 		return formatVariant(variant, parent)
 	}
-	if tm := findType(richAST, qualified); tm != nil {
+	// findType falls back to a simple-name match across every package, in map
+	// order, so it must be re-checked against pkg: otherwise `mypkg.Some`, where
+	// mypkg has no Some, renders std's Some — the precise wrong answer the
+	// qualifier exists to prevent — and varies between hovers when two packages
+	// share a type name.
+	if tm := findType(richAST, qualified); tm != nil && tm.Package == pkg {
 		return formatTypeMeta(tm)
 	}
+	// findFunction is safe unchecked: a qualified name never matches its
+	// simple-name loop.
 	if fm := findFunction(richAST, qualified); fm != nil {
 		return formatFuncMeta(fm)
 	}
@@ -492,17 +519,17 @@ func isExported(name string) bool {
 // `import ( ... )` form as well as single-line imports; hand-scanning the cursor
 // line for a quoted path silently went dead inside a group.
 func packageHover(richAST *transpiler.RichAST, text, word string) string {
+	// Resolved from the file's OWN import table. richAST.Packages holds every
+	// package the analyzer loaded, including merely transitive ones, and is
+	// keyed path -> name — so consulting it first would claim an import the file
+	// never wrote, and would pick between two paths sharing a name in map order.
 	path, ok := parseGalaImports(text)[word]
 	if !ok {
-		// Not an alias — it may be the package's own name.
-		for p, name := range richAST.Packages {
-			if name == word {
-				path, ok = p, true
-				break
-			}
+		// The file's own package name is the one legitimate non-import case, and
+		// PackageDoc describes exactly that package.
+		if word == richAST.PackageName {
+			return renderHover("package "+word, richAST.PackageDoc, "")
 		}
-	}
-	if !ok {
 		return ""
 	}
 	pkg := word

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/owenrumney/go-lsp/lsp"
+	"github.com/owenrumney/go-lsp/servertest"
 )
 
 const hoverSrc = `package main
@@ -82,7 +83,7 @@ type hoverHarness interface {
 func TestHoverCoverage(t *testing.T) {
 	h := newHarness(t)
 	uri := openFileOnDisk(t, h, hoverSrc)
-	time.Sleep(2500 * time.Millisecond)
+	settle(t, h, uri, hoverSrc, "type Greeter", "Greeter")
 
 	tests := []struct {
 		name   string
@@ -136,7 +137,7 @@ func TestHoverCoverage(t *testing.T) {
 func TestHoverVariantHidesInternals(t *testing.T) {
 	h := newHarness(t)
 	uri := openFileOnDisk(t, h, hoverSrc)
-	time.Sleep(2500 * time.Millisecond)
+	settle(t, h, uri, hoverSrc, "type Greeter", "Greeter")
 
 	got := hoverAt(t, h, uri, "= Circle", "Circle")
 	for _, leak := range []string{"Unapply", "_variant"} {
@@ -168,16 +169,8 @@ func main() {
 }
 `
 	uri := openFileOnDisk(t, h, src)
-	time.Sleep(2500 * time.Millisecond)
-
-	lines := strings.Split(src, "\n")
-	var line, col int
-	for i, l := range lines {
-		if idx := strings.Index(l, "r.Body"); idx >= 0 {
-			line, col = i, idx+len("r.")+1
-			break
-		}
-	}
+	settle(t, h, uri, src, "type Resp", "Resp")
+	line, col := locate(t, src, "r.Body", "Body")
 	hv, err := h.Hover(uri, line, col)
 	if err != nil {
 		t.Fatal(err)
@@ -200,22 +193,14 @@ func main() {
 }
 `
 	uri := openFileOnDisk(t, h, src)
-	time.Sleep(2500 * time.Millisecond)
-
-	lines := strings.Split(src, "\n")
-	var line, col int
-	for i, l := range lines {
-		if idx := strings.Index(l, "count = count + 1"); idx >= 0 {
-			line, col = i, idx+1
-			break
-		}
-	}
+	line, col := locate(t, src, "count = count + 1", "count")
+	settle(t, h, uri, src, "count = count + 1", "count")
 	hv, err := h.Hover(uri, line, col)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if hv == nil {
-		t.Skip("local not resolved in this harness")
+		t.Fatal("local did not resolve")
 	}
 	if strings.Contains(hv.Contents.Value, "val count") {
 		t.Errorf("a var was reported as val at a non-declaration reference\n--- got ---\n%s", hv.Contents.Value)
@@ -238,16 +223,8 @@ func main() {
 }
 `
 	uri := openFileOnDisk(t, h, src)
-	time.Sleep(2500 * time.Millisecond)
-
-	lines := strings.Split(src, "\n")
-	var line, col int
-	for i, l := range lines {
-		if idx := strings.Index(l, "= im."); idx >= 0 {
-			line, col = i, idx+2+1
-			break
-		}
-	}
+	line, col := locate(t, src, "= im.", "im")
+	settle(t, h, uri, src, "= im.", "im")
 	hv, err := h.Hover(uri, line, col)
 	if err != nil {
 		t.Fatal(err)
@@ -272,4 +249,24 @@ func locate(t *testing.T, src, anchor, word string) (line, col int) {
 	}
 	t.Fatalf("anchor %q not found", anchor)
 	return 0, 0
+}
+
+// settle waits until the document has been analyzed, by polling the position of
+// a symbol known to resolve.
+//
+// Analysis runs in a background goroutine, so a fixed sleep is wrong in both
+// directions: it wastes wall clock on a fast machine and still races on a loaded
+// one. Polling a known-good anchor is both faster in the common case and
+// deterministic.
+func settle(t *testing.T, h *servertest.Harness, uri lsp.DocumentURI, src, anchor, word string) {
+	t.Helper()
+	line, col := locate(t, src, anchor, word)
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if hv, err := h.Hover(uri, line, col); err == nil && hv != nil {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatalf("document was not analyzed within the deadline (anchor %q)", anchor)
 }

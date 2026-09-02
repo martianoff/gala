@@ -111,3 +111,74 @@ func TestPosCovers(t *testing.T) {
 		t.Error("an unset position must not match")
 	}
 }
+
+// A sealed case declaration matches two metadata entries at the same position:
+// the case itself, and the companion type the analyzer generates for it, whose
+// only methods are Apply and Unapply. Resolution must be stable and must always
+// pick the case — interleaved with the type-name check, Go's map order decided
+// it and roughly one hover in ten showed the generated plumbing.
+func TestDeclarationAtPrefersCaseOverGeneratedCompanion(t *testing.T) {
+	const path = "/proj/shapes.gala"
+	rich := &transpiler.RichAST{
+		PackageName: "main",
+		Types: map[string]*transpiler.TypeMetadata{
+			"Shape": {
+				Name: "Shape", Package: "main", DefinedIn: path, IsSealed: true,
+				Pos: transpiler.SourcePos{Line: 2, Column: 12},
+				SealedVariants: []transpiler.SealedVariant{
+					{Name: "Circle", Doc: "Circle is round.", Pos: transpiler.SourcePos{Line: 3, Column: 9}},
+				},
+			},
+			// The generated companion: same name, same position as the case.
+			"Circle": {
+				Name: "Circle", Package: "main", DefinedIn: path,
+				Pos: transpiler.SourcePos{Line: 3, Column: 9},
+				Methods: map[string]*transpiler.MethodMetadata{
+					"Apply":   {Name: "Apply"},
+					"Unapply": {Name: "Unapply"},
+				},
+				Fields: map[string]transpiler.Type{},
+			},
+		},
+		Functions: map[string]*transpiler.FunctionMetadata{},
+	}
+
+	for i := 0; i < 200; i++ {
+		got := declarationAt(rich, path, 2, 10, "Circle")
+		if !strings.Contains(got, "case Circle") {
+			t.Fatalf("iteration %d: case declaration resolved to the companion type\n--- got ---\n%s", i, got)
+		}
+		if strings.Contains(got, "Unapply") {
+			t.Fatalf("iteration %d: hover leaked generated plumbing\n--- got ---\n%s", i, got)
+		}
+	}
+}
+
+// A method may be declared in a different file from the type it extends. Gating
+// the method search on the TYPE's file skipped it, after which a bare-name
+// fallback could answer with an unrelated same-named type.
+func TestDeclarationAtFindsMethodDeclaredInAnotherFile(t *testing.T) {
+	const typePath, methodPath = "/proj/widget.gala", "/proj/fluent.gala"
+	rich := &transpiler.RichAST{
+		PackageName: "main",
+		Types: map[string]*transpiler.TypeMetadata{
+			"Widget": {
+				Name: "Widget", Package: "main", DefinedIn: typePath,
+				Pos: transpiler.SourcePos{Line: 1, Column: 5},
+				Methods: map[string]*transpiler.MethodMetadata{
+					"AsFixed": {
+						Name: "AsFixed", Package: "main", DefinedIn: methodPath,
+						Doc: "AsFixed pins the widget.",
+						Pos: transpiler.SourcePos{Line: 4, Column: 20},
+					},
+				},
+			},
+		},
+		Functions: map[string]*transpiler.FunctionMetadata{},
+	}
+
+	got := declarationAt(rich, methodPath, 3, 21, "AsFixed")
+	if !strings.Contains(got, "AsFixed pins the widget.") {
+		t.Errorf("method declared in another file than its type did not resolve\n--- got ---\n%s", got)
+	}
+}
