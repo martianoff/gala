@@ -50,7 +50,8 @@ GALA (Go Alternative LAnguage) is a modern programming language that transpiles 
 16. [Best Practices](#16-best-practices)
 17. [Dependency Management](#17-dependency-management)
 18. [Further Reading](#18-further-reading)
-19. [IDE Support](#19-ide-support)
+19. [Documentation Comments](#19-documentation-comments)
+20. [IDE Support](#20-ide-support)
 
 ---
 
@@ -4120,7 +4121,97 @@ import "github.com/google/uuid"
 - [Mutable Collections](MUTABLE_COLLECTIONS.MD) - Mutable collection types.
 - [`bind` / `also` notation](BIND_NOTATION.MD) - Monadic binding notation: flat, named, in-scope bindings over `Try`/`Option`/`Either`/`Future`/`Validated` — and any user-defined monad — that lower to `FlatMap`/`Zip`, with an applicative independence axis (`also`). OCaml `let*`/`and*` semantics without the `*`.
 
-## 19. IDE Support
+## 19. Documentation Comments
+
+A `//` comment run directly above a declaration documents it. There is no
+separate doc syntax — no `///`, no `/** */` — because GALA transpiles to Go and
+follows Go's convention exactly.
+
+```gala
+// GetOrElse returns the option's value if the option is Some, otherwise
+// returns the result of evaluating defaultValue.
+// defaultValue: the default value to return if the option is empty.
+func (o Option[T]) GetOrElse(defaultValue T) T {
+    if o.isSome() {
+        return o.Value
+    }
+    return defaultValue
+}
+```
+
+### What counts as documentation
+
+- The run must sit **directly above** the declaration. A blank line between them
+  severs it — the comment then documents nothing.
+- A comment that **begins on the same line as code** is a trailing remark, not
+  documentation:
+  ```gala
+  val x = 1 // this documents nothing
+  func Next() int = 2
+  ```
+- A blank `//` line is a **paragraph break**. Indented lines are preserved, so an
+  indented run reads as a code sample.
+- `//go:` and `//line` are **directives**, not prose. They contribute nothing to
+  the text but do not break a run that continues past them.
+- Comment syntax inside a string is not a comment — `val s = "// not a comment"`
+  is a string, and the declaration below it is undocumented.
+
+Every kind of declaration can be documented: packages, types, struct fields,
+methods, functions, and sealed cases.
+
+```gala
+// Package shapes draws things.
+package shapes
+
+// Shape is a closed set of drawable things.
+sealed type Shape {
+    // Circle is round.
+    case Circle(Radius float64)
+    case Square(Side float64)
+}
+
+// Box holds a width and a height.
+type Box struct {
+    // Width is the horizontal extent.
+    val Width int
+    val Height int
+}
+```
+
+### Documenting parameters
+
+A line of the form `name: description`, where `name` matches a declared
+parameter, documents that parameter. Signature help shows it against the
+parameter being typed rather than repeating the whole comment.
+
+```gala
+// Map builds a new option by applying a function to all values of this option.
+// f: the function to apply.
+// Returns a new Option containing the result if this option is nonempty.
+func (o Option[T]) Map[U any](f func(T) U) Option[U] { ... }
+```
+
+Only labels matching a real parameter are treated this way, so ordinary prose is
+safe — `Note: ...` and `Example: ...` stay in the summary. Each parameter's
+description is a single line; text on the following line is prose, which is why
+the `Returns ...` sentence above stays with the summary rather than attaching
+itself to `f`.
+
+### Where documentation surfaces
+
+Doc comments are captured during parsing and travel with the metadata the
+transpiler already builds, so every tool reads the same source of truth:
+
+| Surface | Shows |
+|---|---|
+| Hover | the declaration's signature and its documentation |
+| Completion | documentation for the highlighted entry, fetched on demand |
+| Signature help | the callee's summary, plus each parameter's own line |
+| `gala doc` | the package's whole documented API, as text or `--json` |
+
+Nothing needs to be enabled, and no separate doc build step exists.
+
+## 20. IDE Support
 
 GALA provides a full-featured GoLand/IntelliJ plugin and a Language Server Protocol (LSP) server for editor-agnostic IDE support. The plugin runs a local ANTLR parser for instant feedback, while the LSP server (`gala lsp`) connects to the transpiler for type-aware features.
 
@@ -4175,13 +4266,14 @@ The plugin includes a full ANTLR-based parser that builds a complete PSI tree, p
 The LSP server leverages the full transpiler pipeline for deep, type-aware analysis:
 
 - **Real-time diagnostics** — parse errors, transpilation errors, unused variables, match exhaustiveness warnings
-- **Hover** — type signatures with fields, methods, sealed cases, built-in function documentation
+- **Hover** — signatures and [documentation](#19-documentation-comments) for types, methods, fields, functions, local bindings, sealed cases and packages
 - **Go to Definition** — cross-file navigation via analyzer metadata, local declarations, pattern bindings, named arg fields
 - **Find References** — find all occurrences in the same file
-- **Completion** — type-aware dot completion (fields, methods), named argument fields, sealed case patterns with destructuring, keywords, built-in functions
+- **Completion** — type-aware dot completion (fields, methods), named argument fields, sealed case patterns with destructuring, keywords, built-in functions; documentation is fetched per entry as it is highlighted
+- **Signature help** — the callee's summary and each parameter's own documentation line as you type the argument
 - **Inlay hints** — displays inferred types from the transpiler's VarTypes for `val`, `var`, and other declarations
 - **Document symbols** — types, functions, sealed variants in the document outline
-- **Debounced analysis** — 500ms delay to prevent noise while typing; analysis runs on save or after idle
+- **Cancel-and-restart analysis** — each edit starts a fresh analysis and abandons the one in flight, so results always reflect the current buffer
 
 ### VS Code
 
@@ -4224,7 +4316,7 @@ Any editor with LSP support can use the GALA language server. Point your editor'
 - **File types:** `gala`
 - **Root markers:** `gala.mod`, `.git`
 
-## 20. Performance Profiling
+## 21. Performance Profiling
 
 ### Compilation Profiling
 

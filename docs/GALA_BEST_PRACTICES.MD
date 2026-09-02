@@ -200,6 +200,32 @@ func copyFile(src string, dst string) Try[Int] = Try(() => {
 
 ---
 
+## Documentation comments
+
+Document every exported declaration with a `//` run directly above it — Go's
+convention, no separate syntax. ([§19 Documentation Comments](GALA.MD#19-documentation-comments))
+
+- **Start with the name**: `// GetOrElse returns ...`, not `// Returns ...`.
+- **Document parameters** with a `name: description` line after the summary,
+  where `name` is the parameter. Signature help attaches it to that parameter.
+- **Leave no blank line** between the comment and the declaration; a blank line
+  severs the run and the declaration ends up undocumented.
+- **Keep each parameter's description to one line.** A following line is prose,
+  so a trailing `Returns ...` sentence stays with the summary rather than
+  attaching itself to the last parameter.
+
+```gala
+// Filter returns this option if it is nonempty and the predicate holds.
+// p: the predicate used for testing.
+func (o Option[T]) Filter(p func(T) bool) Option[T] { ... }
+```
+
+This is not cosmetic: the comment is what hover, completion, signature help and
+`gala doc` show. An undocumented export is invisible to everyone reading your
+API from an editor.
+
+---
+
 ## Testing
 
 Use the GALA test framework from `martianoff/gala/test` — not Go's `testing`/`testify`. ([§15 Testing](GALA.MD#15-testing))
