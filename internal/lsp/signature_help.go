@@ -455,23 +455,16 @@ func typeConstructorSignature(name string, tm *transpiler.TypeMetadata) *lsp.Sig
 	for _, fn := range tm.FieldNames {
 		types = append(types, tm.Fields[fn])
 	}
-	summary, fieldDocs := splitDoc(tm.Doc, tm.FieldNames)
-	// A constructor's parameters are the type's fields, so each field's own doc
-	// comment documents the corresponding argument.
-	for fn, fd := range tm.FieldDocs {
-		if fieldDocs == nil {
-			fieldDocs = make(map[string]string)
-		}
-		if _, ok := fieldDocs[fn]; !ok {
-			fieldDocs[fn] = fd
-		}
-	}
-	params, labels := buildParamList(tm.FieldNames, types, fieldDocs)
+	// A constructor's parameters are its type's fields, and each field carries its
+	// own doc comment — so the type comment needs no parameter lines, and running
+	// splitDoc over it would risk stealing a "Note:"-style line out of the
+	// summary whenever its label happened to match a field name.
+	params, labels := buildParamList(tm.FieldNames, types, tm.FieldDocs)
 	var label strings.Builder
 	label.WriteString(name + "(" + strings.Join(labels, ", ") + ")")
 	return &lsp.SignatureInformation{
 		Label:         label.String(),
-		Documentation: markdown(summary),
+		Documentation: markdown(tm.Doc),
 		Parameters:    params,
 	}
 }

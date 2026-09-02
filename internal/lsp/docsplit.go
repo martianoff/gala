@@ -35,25 +35,20 @@ func splitDoc(doc string, paramNames []string) (summary string, params map[strin
 		declared[n] = true
 	}
 
+	// One line per parameter. A description is NOT continued onto the following
+	// line: the standard library writes a trailing "Returns ..." sentence after
+	// its parameter lines, and treating an unlabelled line as a continuation
+	// silently moved that sentence out of the summary and into the last
+	// parameter's documentation. Text that does not announce a parameter stays
+	// prose, which is the safe failure mode — visible in the wrong place beats
+	// invisible.
 	var prose []string
-	var current string // parameter whose description we are still accumulating
 	for _, line := range strings.Split(doc, "\n") {
 		if name, rest, ok := strings.Cut(line, ":"); ok && declared[strings.TrimSpace(name)] {
-			current = strings.TrimSpace(name)
 			if params == nil {
 				params = make(map[string]string)
 			}
-			params[current] = strings.TrimSpace(rest)
-			continue
-		}
-		// A parameter's description may wrap onto the following line; a blank
-		// line ends it and returns to prose.
-		if current != "" {
-			if strings.TrimSpace(line) == "" {
-				current = ""
-				continue
-			}
-			params[current] = strings.TrimSpace(params[current] + " " + strings.TrimSpace(line))
+			params[strings.TrimSpace(name)] = strings.TrimSpace(rest)
 			continue
 		}
 		prose = append(prose, line)

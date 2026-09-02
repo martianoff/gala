@@ -21,35 +21,67 @@ import (
 // the client asks for documentation only for the entry it is about to display.
 // That is what completionItem/resolve is for.
 
-// completion item kinds a reference can point at.
+// Kinds a completion reference can point at.
 const (
 	refKindType    = "type"
 	refKindFunc    = "func"
-	refKindMethod  = "method"
-	refKindField   = "field"
-	refKindVariant = "variant"
-	refKindPkgType = "pkgtype"
-	refKindPkgFunc = "pkgfunc"
+	refKindMember  = "member"  // a method or field of Key
+	refKindVariant = "variant" // a sealed case of Key
 )
 
 // completionRef identifies the symbol behind a completion item well enough to
 // find its documentation later. It travels to the client as the item's `data`
-// and comes back untouched, so it must survive a JSON round-trip: the client
+// and comes back untouched, so it must survive a JSON round-trip: a real client
 // hands it back as generic JSON, never as this struct.
+//
+// Key is the RichAST map key the item was built from — not the label shown.
+// That distinction matters: findType and findFunction fall back to matching a
+// simple name across every package, in Go map order, while the lists are built
+// by their own separate walk over the same maps. Resolving by name could
+// therefore answer with a different package's symbol than the one the user is
+// looking at, whenever two packages export the same name. Carrying the key the
+// item actually came from makes the documentation provably the item's own.
 type completionRef struct {
-	URI   string `json:"uri"`
-	Kind  string `json:"kind"`
-	Owner string `json:"owner,omitempty"` // receiver type, or package name
-	Name  string `json:"name"`
+	URI  string `json:"uri"`
+	Kind string `json:"kind"`
+	Key  string `json:"key"`
+	Name string `json:"name,omitempty"` // member or case name, when Key names its owner
+}
+
+// typeKey reconstructs the RichAST map key for a type, so a reference can name
+// its owner exactly rather than by a display name that findType would have to
+// search for again. The analyzer qualifies a type with its package except in
+// main and test, where the key is bare — see the fullTypeName construction in
+// the analyzer.
+func typeKey(tm *transpiler.TypeMetadata) string {
+	if tm == nil || tm.Name == "" {
+		return ""
+	}
+	switch tm.Package {
+	case "", "main", "test":
+		return tm.Name
+	}
+	return tm.Package + "." + tm.Name
 }
 
 // withRef tags a completion item so its documentation can be resolved on demand.
+// The URI is filled in once for the whole list by stampRefURI.
 func withRef(item lsp.CompletionItem, ref completionRef) lsp.CompletionItem {
-	if ref.Name == "" || ref.URI == "" {
+	if ref.Key == "" {
 		return item
 	}
 	item.Data = ref
 	return item
+}
+
+// stampRefURI records the document every tagged item in a list came from.
+func stampRefURI(items []lsp.CompletionItem, uri string) {
+	for i := range items {
+		if ref, ok := items[i].Data.(completionRef); ok {
+			ref.URI = uri
+			items[i].Data = ref
+		}
+	}
 }
 
 // ResolveCompletionItem fills in the documentation for a single completion item.
@@ -70,6 +102,9 @@ func (h *GalaHandler) ResolveCompletionItem(ctx context.Context, item *lsp.Compl
 	h.mu.Lock()
 	richAST := h.richASTs[ref.URI]
 	h.mu.Unlock()
+	// The document may have been closed, or re-analyzed into a state where the
+	// symbol no longer exists, between the list and this request. An item
+	// without documentation is the correct outcome, not an error.
 	if richAST == nil {
 		return item, nil
 	}
@@ -85,7 +120,8 @@ func (h *GalaHandler) ResolveCompletionItem(ctx context.Context, item *lsp.Compl
 // The value arrives as whatever encoding/json produced for it — a
 // map[string]any in the normal client round-trip, or the original struct when a
 // caller passes an item straight back in-process. Re-marshalling handles both
-// without assuming which.
+// without assuming which, and yields `false` rather than panicking for a data
+// value that is not an object at all.
 func decodeCompletionRef(data any) (completionRef, bool) {
 	if data == nil {
 		return completionRef{}, false
@@ -98,7 +134,7 @@ func decodeCompletionRef(data any) (completionRef, bool) {
 	if err := json.Unmarshal(raw, &ref); err != nil {
 		return completionRef{}, false
 	}
-	if ref.Name == "" || ref.Kind == "" {
+	if ref.Key == "" || ref.Kind == "" {
 		return completionRef{}, false
 	}
 	return ref, true
@@ -108,33 +144,22 @@ func decodeCompletionRef(data any) (completionRef, bool) {
 func resolveRefDoc(richAST *transpiler.RichAST, ref completionRef) string {
 	switch ref.Kind {
 	case refKindType:
-		if tm := findType(richAST, ref.Name); tm != nil {
+		if tm := richAST.Types[ref.Key]; tm != nil {
 			return tm.Doc
 		}
 	case refKindFunc:
-		if fm := findFunction(richAST, ref.Name); fm != nil {
+		if fm := richAST.Functions[ref.Key]; fm != nil {
 			return fm.Doc
 		}
-	case refKindPkgType:
-		if tm := findType(richAST, ref.Owner+"."+ref.Name); tm != nil && tm.Package == ref.Owner {
-			return tm.Doc
-		}
-	case refKindPkgFunc:
-		if fm := findFunction(richAST, ref.Owner+"."+ref.Name); fm != nil {
-			return fm.Doc
-		}
-	case refKindMethod:
-		if tm := findType(richAST, ref.Owner); tm != nil {
+	case refKindMember:
+		if tm := richAST.Types[ref.Key]; tm != nil {
 			if m, ok := tm.Methods[ref.Name]; ok {
 				return m.Doc
 			}
-		}
-	case refKindField:
-		if tm := findType(richAST, ref.Owner); tm != nil {
 			return tm.FieldDocs[ref.Name]
 		}
 	case refKindVariant:
-		if tm := findType(richAST, ref.Owner); tm != nil {
+		if tm := richAST.Types[ref.Key]; tm != nil {
 			for i := range tm.SealedVariants {
 				if tm.SealedVariants[i].Name == ref.Name {
 					return tm.SealedVariants[i].Doc

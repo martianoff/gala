@@ -182,3 +182,85 @@ func TestDeclarationAtFindsMethodDeclaredInAnotherFile(t *testing.T) {
 		t.Errorf("method declared in another file than its type did not resolve\n--- got ---\n%s", got)
 	}
 }
+
+// Completion documentation must belong to the item the user is looking at.
+//
+// findType and findFunction fall back to matching a simple name across every
+// package, in Go map order, and the completion lists are built by a separate
+// walk over the same maps. Resolving by name therefore answered with a
+// different package's symbol whenever two packages export the same one — and
+// this repo has several real collisions (json.Naming vs yaml.Naming,
+// json.Codec vs yaml.Codec, collection_immutable.List vs collection_mutable.List).
+func TestResolveRefDocIsExactAcrossPackages(t *testing.T) {
+	rich := &transpiler.RichAST{
+		PackageName: "app",
+		Types: map[string]*transpiler.TypeMetadata{
+			"json.Naming": {
+				Name: "Naming", Package: "json", IsSealed: true,
+				Doc: "Naming controls how json converts field names.",
+				SealedVariants: []transpiler.SealedVariant{
+					{Name: "SnakeCase", Doc: "SnakeCase is json's snake_case."},
+				},
+				Methods:   map[string]*transpiler.MethodMetadata{"Apply": {Name: "Apply", Doc: "json Apply."}},
+				FieldDocs: map[string]string{"sep": "json separator."},
+			},
+			"yaml.Naming": {
+				Name: "Naming", Package: "yaml", IsSealed: true,
+				Doc: "Naming mirrors json.Naming for the yaml codec.",
+				SealedVariants: []transpiler.SealedVariant{
+					{Name: "SnakeCase", Doc: "SnakeCase is yaml's snake_case."},
+				},
+				Methods:   map[string]*transpiler.MethodMetadata{"Apply": {Name: "Apply", Doc: "yaml Apply."}},
+				FieldDocs: map[string]string{"sep": "yaml separator."},
+			},
+		},
+		Functions: map[string]*transpiler.FunctionMetadata{
+			"strings.Repeat": {Name: "Repeat", Package: "strings", Doc: "strings.Repeat repeats a string."},
+			"stream.Repeat":  {Name: "Repeat", Package: "stream", Doc: "stream.Repeat repeats a stream."},
+		},
+	}
+
+	cases := []struct {
+		name string
+		ref  completionRef
+		want string
+	}{
+		{"type", completionRef{Kind: refKindType, Key: "yaml.Naming"}, "Naming mirrors json.Naming for the yaml codec."},
+		{"func", completionRef{Kind: refKindFunc, Key: "stream.Repeat"}, "stream.Repeat repeats a stream."},
+		{"method", completionRef{Kind: refKindMember, Key: "yaml.Naming", Name: "Apply"}, "yaml Apply."},
+		{"field", completionRef{Kind: refKindMember, Key: "json.Naming", Name: "sep"}, "json separator."},
+		{"variant", completionRef{Kind: refKindVariant, Key: "json.Naming", Name: "SnakeCase"}, "SnakeCase is json's snake_case."},
+	}
+
+	// Repeated, because the failure mode was a randomized map walk picking a
+	// different package's symbol between one resolve and the next.
+	for i := 0; i < 100; i++ {
+		for _, tc := range cases {
+			if got := resolveRefDoc(rich, tc.ref); got != tc.want {
+				t.Fatalf("iteration %d, %s: resolved another package's doc\n got: %q\nwant: %q", i, tc.name, got, tc.want)
+			}
+		}
+	}
+}
+
+// typeKey must reproduce the analyzer's map-key convention exactly, or every
+// member lookup misses and documentation silently disappears.
+func TestTypeKeyMatchesAnalyzerConvention(t *testing.T) {
+	cases := []struct {
+		pkg, name, want string
+	}{
+		{"json", "Naming", "json.Naming"},
+		{"main", "Greeter", "Greeter"},
+		{"test", "Fixture", "Fixture"},
+		{"", "Bare", "Bare"},
+	}
+	for _, tc := range cases {
+		got := typeKey(&transpiler.TypeMetadata{Name: tc.name, Package: tc.pkg})
+		if got != tc.want {
+			t.Errorf("typeKey(%q, %q) = %q, want %q", tc.pkg, tc.name, got, tc.want)
+		}
+	}
+	if got := typeKey(nil); got != "" {
+		t.Errorf("typeKey(nil) = %q, want empty", got)
+	}
+}
