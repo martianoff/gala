@@ -646,17 +646,22 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	// dedupe wastes cycles but never produces wrong results.
 	mergeVisited := make(map[string]bool)
 
-	// 0.25 Load std package metadata
-	// For non-std packages: add as implicit import
-	// For std package: still load for intra-package type resolution, but don't add to Packages
-	if cachedStd, ok := a.analyzedPkgs[registry.StdImportPath]; ok && cachedStd != nil {
+	// 0.25 Load std package metadata as an implicit import.
+	//
+	// Skipped entirely when the file being analyzed IS part of std. Merging a
+	// prebuilt copy of std into the RichAST of a std file puts every declaration
+	// in that file into the AST before the file's own walk reaches it, so each
+	// one meets itself and is reported as a redefinition of itself. std's own
+	// types resolve from the file and its siblings, the same way every other
+	// package's do — it needs no prebuilt copy of itself.
+	if pkgName == registry.StdPackageName {
+		// nothing to import: this file is std
+	} else if cachedStd, ok := a.analyzedPkgs[registry.StdImportPath]; ok && cachedStd != nil {
 		// Use cached std metadata — walk its closure to materialize transitive
 		// types (analyzedPkgs entries are own-only projections; see
 		// projectOwnRichAST + mergeAnalyzedClosureAt for rationale).
 		a.mergeAnalyzedClosureAt(richAST, registry.StdImportPath, mergeVisited)
-		if pkgName != registry.StdPackageName {
-			richAST.Packages[registry.StdImportPath] = registry.StdPackageName
-		}
+		richAST.Packages[registry.StdImportPath] = registry.StdPackageName
 	} else if _, inProgress := a.analyzedPkgs[registry.StdImportPath]; !inProgress {
 		// First time analyzing std - set placeholder to prevent infinite recursion
 		a.analyzedPkgs[registry.StdImportPath] = nil
@@ -664,9 +669,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		if err == nil {
 			a.storeAnalyzedPkg(registry.StdImportPath, stdAST)
 			a.mergeAnalyzedClosureAt(richAST, registry.StdImportPath, mergeVisited)
-			if pkgName != registry.StdPackageName {
-				richAST.Packages[registry.StdImportPath] = registry.StdPackageName
-			}
+			richAST.Packages[registry.StdImportPath] = registry.StdPackageName
 		}
 	}
 
