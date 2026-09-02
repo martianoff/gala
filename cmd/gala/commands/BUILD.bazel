@@ -66,6 +66,7 @@ go_library(
 go_test(
     name = "commands_test",
     srcs = [
+        "doc_prose_test.go",
         "imports_test.go",
         "new_test.go",
         "project_test.go",

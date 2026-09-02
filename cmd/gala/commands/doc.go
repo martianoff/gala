@@ -40,22 +40,32 @@ func init() {
 
 // docType is one type's public surface.
 type docType struct {
-	Name       string      `json:"name"`
-	TypeParams []string    `json:"typeParams,omitempty"`
-	Sealed     bool        `json:"sealed,omitempty"`
-	Variants   []string    `json:"variants,omitempty"`
-	Fields     []docField  `json:"fields,omitempty"`
-	Methods    []docSignat `json:"methods,omitempty"`
+	Name       string       `json:"name"`
+	Doc        string       `json:"doc,omitempty"`
+	TypeParams []string     `json:"typeParams,omitempty"`
+	Sealed     bool         `json:"sealed,omitempty"`
+	Variants   []docVariant `json:"variants,omitempty"`
+	Fields     []docField   `json:"fields,omitempty"`
+	Methods    []docSignat  `json:"methods,omitempty"`
+}
+
+// docVariant is one case of a sealed type.
+type docVariant struct {
+	Name   string     `json:"name"`
+	Doc    string     `json:"doc,omitempty"`
+	Params []docField `json:"params,omitempty"`
 }
 
 type docField struct {
 	Name string `json:"name"`
+	Doc  string `json:"doc,omitempty"`
 	Type string `json:"type"`
 }
 
 // docSignat is a callable: a method or a package-level function.
 type docSignat struct {
 	Name       string     `json:"name"`
+	Doc        string     `json:"doc,omitempty"`
 	TypeParams []string   `json:"typeParams,omitempty"`
 	Params     []docField `json:"params"`
 	Returns    string     `json:"returns,omitempty"`
@@ -63,6 +73,7 @@ type docSignat struct {
 
 type docPackage struct {
 	Package   string      `json:"package"`
+	Doc       string      `json:"doc,omitempty"`
 	Types     []docType   `json:"types,omitempty"`
 	Functions []docSignat `json:"functions,omitempty"`
 }
@@ -179,7 +190,8 @@ func loadPackageDoc(pkgName, dir string) (*docPackage, error) {
 // collectPackageDoc filters the analyzed metadata down to what this package
 // declares, dropping anything reached only because it was imported.
 func collectPackageDoc(pkgName string, rich *transpiler.RichAST) *docPackage {
-	out := &docPackage{Package: pkgName}
+	out := &docPackage{Package: pkgName, Doc: rich.PackageDoc}
+	companions := generatedCaseCompanions(rich, pkgName)
 
 	// Both maps are keyed by QUALIFIED name (`collection_immutable.Array`), so
 	// the export test has to run on the bare half — otherwise every entry is
@@ -188,6 +200,9 @@ func collectPackageDoc(pkgName string, rich *transpiler.RichAST) *docPackage {
 	for name, meta := range rich.Types {
 		bare := bareTypeName(name)
 		if meta == nil || !declaredBy(meta.Package, pkgName) || !ast.IsExported(bare) || seen[bare] {
+			continue
+		}
+		if companions[bare] {
 			continue
 		}
 		seen[bare] = true
@@ -203,6 +218,7 @@ func collectPackageDoc(pkgName string, rich *transpiler.RichAST) *docPackage {
 		}
 		out.Functions = append(out.Functions, docSignat{
 			Name:       bare,
+			Doc:        meta.Doc,
 			TypeParams: meta.TypeParams,
 			Params:     namedTypes(meta.ParamNames, meta.ParamTypes),
 			Returns:    typeString(meta.ReturnType),
@@ -217,17 +233,33 @@ func collectPackageDoc(pkgName string, rich *transpiler.RichAST) *docPackage {
 func buildDocType(name string, meta *transpiler.TypeMetadata) docType {
 	dt := docType{
 		Name:       bareTypeName(name),
+		Doc:        meta.Doc,
 		TypeParams: meta.TypeParams,
 		Sealed:     meta.IsSealed,
 	}
+	// A sealed type's Fields are the MERGED representation of every case, so a
+	// case's own fields would otherwise be listed twice: once under the case that
+	// declares them, and again as though the parent declared them itself.
+	variantFields := make(map[string]bool)
 	for _, v := range meta.SealedVariants {
-		dt.Variants = append(dt.Variants, v.Name)
+		dt.Variants = append(dt.Variants, docVariant{
+			Name:   v.Name,
+			Doc:    v.Doc,
+			Params: namedTypes(v.FieldNames, v.FieldTypes),
+		})
+		for _, fn := range v.FieldNames {
+			variantFields[fn] = true
+		}
 	}
 	for _, fieldName := range meta.FieldNames {
-		if !ast.IsExported(fieldName) {
+		if !ast.IsExported(fieldName) || variantFields[fieldName] {
 			continue
 		}
-		dt.Fields = append(dt.Fields, docField{Name: fieldName, Type: typeString(meta.Fields[fieldName])})
+		dt.Fields = append(dt.Fields, docField{
+			Name: fieldName,
+			Doc:  meta.FieldDocs[fieldName],
+			Type: typeString(meta.Fields[fieldName]),
+		})
 	}
 	for methodName, m := range meta.Methods {
 		if m == nil || !ast.IsExported(methodName) {
@@ -235,6 +267,7 @@ func buildDocType(name string, meta *transpiler.TypeMetadata) docType {
 		}
 		dt.Methods = append(dt.Methods, docSignat{
 			Name:       methodName,
+			Doc:        m.Doc,
 			TypeParams: m.TypeParams,
 			Params:     namedTypes(m.ParamNames, m.ParamTypes),
 			Returns:    typeString(m.ReturnType),
@@ -302,15 +335,19 @@ func printPackageDoc(pkg *docPackage) {
 			header = "type " + header
 		}
 		fmt.Println(header)
+		printProse(t.Doc, "    ")
 
-		if len(t.Variants) > 0 {
-			fmt.Printf("    variants: %s\n", strings.Join(t.Variants, ", "))
+		for _, v := range t.Variants {
+			fmt.Printf("    case %s(%s)\n", v.Name, joinParams(v.Params))
+			printProse(v.Doc, "        ")
 		}
 		for _, f := range t.Fields {
 			fmt.Printf("    %s %s\n", f.Name, f.Type)
+			printProse(f.Doc, "        ")
 		}
 		for _, m := range t.Methods {
 			fmt.Printf("    %s\n", formatSignature(m))
+			printProse(m.Doc, "        ")
 		}
 	}
 
@@ -320,6 +357,22 @@ func printPackageDoc(pkg *docPackage) {
 		for _, f := range pkg.Functions {
 			fmt.Printf("    %s\n", formatSignature(f))
 		}
+	}
+}
+
+// printProse writes a doc comment under the declaration it documents, indented
+// to sit beneath it. Nothing is printed for an undocumented declaration — a
+// blank line there would suggest the documentation was empty rather than absent.
+func printProse(doc, indent string) {
+	if doc == "" {
+		return
+	}
+	for _, line := range strings.Split(doc, "\n") {
+		if line == "" {
+			fmt.Println()
+			continue
+		}
+		fmt.Printf("%s%s\n", indent, line)
 	}
 }
 
@@ -344,4 +397,33 @@ func formatSignature(s docSignat) string {
 		b.WriteString(" " + s.Returns)
 	}
 	return b.String()
+}
+
+// generatedCaseCompanions names the types the transpiler synthesises for sealed
+// cases — one per case, registered under the case's own name and carrying only
+// Apply and Unapply.
+//
+// They are lowering detail, not API. Documenting them presents `type Circle`
+// with two methods nobody wrote, alongside the `case Circle(...)` the user
+// actually declared, and buries the real types among them.
+func generatedCaseCompanions(rich *transpiler.RichAST, pkgName string) map[string]bool {
+	companions := make(map[string]bool)
+	for _, meta := range rich.Types {
+		if meta == nil || !meta.IsSealed || !declaredBy(meta.Package, pkgName) {
+			continue
+		}
+		for _, v := range meta.SealedVariants {
+			companions[v.Name] = true
+		}
+	}
+	return companions
+}
+
+// joinParams renders a case's fields as they were declared.
+func joinParams(params []docField) string {
+	parts := make([]string, 0, len(params))
+	for _, p := range params {
+		parts = append(parts, p.Name+" "+p.Type)
+	}
+	return strings.Join(parts, ", ")
 }
