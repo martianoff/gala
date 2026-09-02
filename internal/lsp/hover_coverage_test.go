@@ -86,35 +86,39 @@ func TestHoverCoverage(t *testing.T) {
 	settle(t, h, uri, hoverSrc, "type Greeter", "Greeter")
 
 	tests := []struct {
-		name   string
-		anchor string
-		word   string
-		want   []string // all must appear
+		name    string
+		anchor  string
+		word    string
+		want    []string // all must appear
+		notWant []string // none may appear
 	}{
-		{"type declaration carries its doc", "type Greeter", "Greeter",
-			[]string{"Greeter", "Greeter greets people politely."}},
-		{"function declaration carries its doc", "func makeGreeter", "makeGreeter",
-			[]string{"makeGreeter", "makeGreeter builds a Greeter with the default prefix."}},
-		{"method declaration", ") Greet(", "Greet",
-			[]string{"Greet", "string", "Greet builds a greeting for name."}},
-		{"method call on a local", "gr.Greet", "Greet",
-			[]string{"Greet", "Greet builds a greeting for name."}},
-		{"field declaration", "val prefix", "prefix",
-			[]string{"prefix", "string", "prefix is placed before the name."}},
-		{"field access", "gr.prefix", "prefix",
-			[]string{"prefix", "string"}},
-		{"local val shows inferred type", "val gr =", "gr",
-			[]string{"gr", "Greeter"}},
-		{"stdlib method carries stdlib doc", "opt.GetOrElse", "GetOrElse",
-			[]string{"GetOrElse", "returns the option's value"}},
-		{"stdlib collection method", "arr.Size", "Size",
-			[]string{"Size"}},
-		{"package alias", "= im.", "im",
-			[]string{"collection_immutable"}},
-		{"sealed variant reads as a case, not a type", "= Circle", "Circle",
-			[]string{"Circle", "radius", "Shape"}},
-		{"sealed type declaration", "sealed type Shape", "Shape",
-			[]string{"Shape", "Shape is a closed set of drawable things."}},
+		{name: "type declaration carries its doc", anchor: "type Greeter", word: "Greeter",
+			want: []string{"Greeter", "Greeter greets people politely."}},
+		{name: "function declaration carries its doc", anchor: "func makeGreeter", word: "makeGreeter",
+			want: []string{"makeGreeter", "makeGreeter builds a Greeter with the default prefix."}},
+		{name: "method declaration", anchor: ") Greet(", word: "Greet",
+			want: []string{"Greet", "string", "Greet builds a greeting for name."}},
+		{name: "method call on a local", anchor: "gr.Greet", word: "Greet",
+			want: []string{"Greet", "Greet builds a greeting for name."}},
+		{name: "field declaration", anchor: "val prefix", word: "prefix",
+			want: []string{"prefix", "string", "prefix is placed before the name."}},
+		{name: "field access", anchor: "gr.prefix", word: "prefix",
+			want: []string{"prefix", "string"}},
+		{name: "local val shows inferred type", anchor: "val gr =", word: "gr",
+			want: []string{"gr", "Greeter"}},
+		{name: "stdlib method carries stdlib doc", anchor: "opt.GetOrElse", word: "GetOrElse",
+			want: []string{"GetOrElse", "returns the option's value"}},
+		{name: "stdlib collection method", anchor: "arr.Size", word: "Size",
+			want: []string{"Size"}},
+		{name: "package alias", anchor: "= im.", word: "im",
+			want: []string{"collection_immutable"}},
+		{name: "sealed variant reads as a case, not a type", anchor: "= Circle", word: "Circle",
+			want: []string{"Circle", "radius", "Shape"},
+			// The transpiler generates a companion type per case carrying Apply
+			// and Unapply; that lowering detail must never reach the popup.
+			notWant: []string{"Unapply", "_variant"}},
+		{name: "sealed type declaration", anchor: "sealed type Shape", word: "Shape",
+			want: []string{"Shape", "Shape is a closed set of drawable things."}},
 	}
 
 	for _, tt := range tests {
@@ -129,21 +133,6 @@ func TestHoverCoverage(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-// A sealed variant must not be presented as a bare type with the transpiler's
-// Apply/Unapply plumbing on show.
-func TestHoverVariantHidesInternals(t *testing.T) {
-	h := newHarness(t)
-	uri := openFileOnDisk(t, h, hoverSrc)
-	settle(t, h, uri, hoverSrc, "type Greeter", "Greeter")
-
-	got := hoverAt(t, h, uri, "= Circle", "Circle")
-	for _, leak := range []string{"Unapply", "_variant"} {
-		if strings.Contains(got, leak) {
-			t.Errorf("hover leaks transpiler internal %q\n--- got ---\n%s", leak, got)
-		}
 	}
 }
 
