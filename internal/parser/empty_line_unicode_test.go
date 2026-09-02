@@ -89,7 +89,7 @@ func main() {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			tree, err := p.Parse(tc.input)
+			tree, _, err := p.Parse(tc.input)
 			require.NoError(t, err, "well-formed source must parse")
 			assert.NotNil(t, tree)
 		})
@@ -153,7 +153,7 @@ func main() {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := p.Parse(tc.input)
+			_, _, err := p.Parse(tc.input)
 			require.Error(t, err, "layout violation must still be rejected")
 			assert.Contains(t, err.Error(), tc.wantMsg)
 		})

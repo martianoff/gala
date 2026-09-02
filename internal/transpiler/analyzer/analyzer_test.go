@@ -127,10 +127,10 @@ func (e External) Action() = 1`,
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tree, err := p.Parse(tt.input)
+			tree, _, err := p.Parse(tt.input)
 			require.NoError(t, err)
 
-			richAST, err := a.Analyze(tree, "")
+			richAST, err := a.Analyze(tree, nil, "")
 			require.NoError(t, err)
 			require.NotNil(t, richAST)
 
@@ -219,9 +219,9 @@ func Describe(s Shape) string = s match {
 	t.Run("sibling shorthand struct has full field metadata", func(t *testing.T) {
 		// Analyze ops.gala with types.gala as package file
 		a := analyzer.NewGalaAnalyzerWithPackageFiles(p, searchPaths, []string{typesPath})
-		tree, err := p.Parse(opsContent)
+		tree, _, err := p.Parse(opsContent)
 		require.NoError(t, err)
-		richAST, err := a.Analyze(tree, opsPath)
+		richAST, err := a.Analyze(tree, nil, opsPath)
 		require.NoError(t, err)
 
 		// Point should be registered with full field info
@@ -234,9 +234,9 @@ func Describe(s Shape) string = s match {
 
 	t.Run("sibling sealed type has full metadata", func(t *testing.T) {
 		a := analyzer.NewGalaAnalyzerWithPackageFiles(p, searchPaths, []string{typesPath})
-		tree, err := p.Parse(opsContent)
+		tree, _, err := p.Parse(opsContent)
 		require.NoError(t, err)
-		richAST, err := a.Analyze(tree, opsPath)
+		richAST, err := a.Analyze(tree, nil, opsPath)
 		require.NoError(t, err)
 
 		// Shape should be registered as sealed
@@ -275,9 +275,9 @@ func (s Shape) Tag() string = s match {
 		require.NoError(t, os.WriteFile(methodPath, []byte(methodContent), 0644))
 
 		a := analyzer.NewGalaAnalyzerWithPackageFiles(p, searchPaths, []string{typesPath})
-		tree, err := p.Parse(methodContent)
+		tree, _, err := p.Parse(methodContent)
 		require.NoError(t, err)
-		richAST, err := a.Analyze(tree, methodPath)
+		richAST, err := a.Analyze(tree, nil, methodPath)
 		require.NoError(t, err)
 
 		shapeMeta, ok := richAST.Types["shapes.Shape"]
@@ -304,9 +304,9 @@ func (p Person) Greet() string = fmt.Sprintf("Hi %s", p.Name)
 		require.NoError(t, os.WriteFile(mainOpsPath, []byte(mainOpsContent), 0644))
 
 		a := analyzer.NewGalaAnalyzerWithPackageFiles(p, searchPaths, []string{mainTypesPath})
-		tree, err := p.Parse(mainOpsContent)
+		tree, _, err := p.Parse(mainOpsContent)
 		require.NoError(t, err)
-		richAST, err := a.Analyze(tree, mainOpsPath)
+		richAST, err := a.Analyze(tree, nil, mainOpsPath)
 		require.NoError(t, err)
 
 		personMeta, ok := richAST.Types["Person"]
@@ -339,9 +339,9 @@ struct Box[T any](Mode Mode[T])
 		require.NoError(t, os.WriteFile(filePath, []byte(src), 0644))
 
 		a := analyzer.NewGalaAnalyzer(p, searchPaths)
-		tree, err := p.Parse(src)
+		tree, _, err := p.Parse(src)
 		require.NoError(t, err)
-		_, err = a.Analyze(tree, filePath)
+		_, err = a.Analyze(tree, nil, filePath)
 		require.Error(t, err, "should reject field named after a sealed type")
 		assert.Contains(t, err.Error(), "GALA-E0016")
 		assert.Contains(t, err.Error(), `"Mode"`)
@@ -360,9 +360,9 @@ struct Outer[T any](Inner Inner[T])
 		require.NoError(t, os.WriteFile(filePath, []byte(src), 0644))
 
 		a := analyzer.NewGalaAnalyzer(p, searchPaths)
-		tree, err := p.Parse(src)
+		tree, _, err := p.Parse(src)
 		require.NoError(t, err)
-		_, err = a.Analyze(tree, filePath)
+		_, err = a.Analyze(tree, nil, filePath)
 		require.Error(t, err, "should reject field named after another generic struct in same package")
 		assert.Contains(t, err.Error(), "GALA-E0016")
 		assert.Contains(t, err.Error(), `"Inner"`)
@@ -384,9 +384,9 @@ struct Route(Method string, Pattern string, Handler Handler)
 		require.NoError(t, os.WriteFile(filePath, []byte(src), 0644))
 
 		a := analyzer.NewGalaAnalyzer(p, searchPaths)
-		tree, err := p.Parse(src)
+		tree, _, err := p.Parse(src)
 		require.NoError(t, err)
-		_, err = a.Analyze(tree, filePath)
+		_, err = a.Analyze(tree, nil, filePath)
 		assert.NoError(t, err, "non-generic field-type collision should not trigger E0016")
 	})
 
@@ -402,9 +402,9 @@ struct Foo(Foo int)
 		require.NoError(t, os.WriteFile(filePath, []byte(src), 0644))
 
 		a := analyzer.NewGalaAnalyzer(p, searchPaths)
-		tree, err := p.Parse(src)
+		tree, _, err := p.Parse(src)
 		require.NoError(t, err)
-		_, err = a.Analyze(tree, filePath)
+		_, err = a.Analyze(tree, nil, filePath)
 		assert.NoError(t, err, "self-named field should not trigger E0016")
 	})
 
@@ -425,9 +425,9 @@ struct Harness[M any, T any](Mode HarnessMode[T])
 		require.NoError(t, os.WriteFile(filePath, []byte(src), 0644))
 
 		a := analyzer.NewGalaAnalyzer(p, searchPaths)
-		tree, err := p.Parse(src)
+		tree, _, err := p.Parse(src)
 		require.NoError(t, err)
-		_, err = a.Analyze(tree, filePath)
+		_, err = a.Analyze(tree, nil, filePath)
 		assert.NoError(t, err, "field name distinct from type name should compile")
 	})
 }
@@ -456,9 +456,9 @@ struct Person(Email string)
 
 		// Analyze file2 with file1 as package-file sibling
 		a := analyzer.NewGalaAnalyzerWithPackageFiles(p, searchPaths, []string{file1Path})
-		tree, err := p.Parse(file2)
+		tree, _, err := p.Parse(file2)
 		require.NoError(t, err)
-		_, err = a.Analyze(tree, file2Path)
+		_, err = a.Analyze(tree, nil, file2Path)
 		require.Error(t, err, "should error on type redefinition")
 		assert.Contains(t, err.Error(), "redefined")
 		assert.Contains(t, err.Error(), "Person")
@@ -481,9 +481,9 @@ struct Point(A float64, B float64)
 		require.NoError(t, os.WriteFile(file2Path, []byte(file2), 0644))
 
 		a := analyzer.NewGalaAnalyzerWithPackageFiles(p, searchPaths, []string{file1Path})
-		tree, err := p.Parse(file2)
+		tree, _, err := p.Parse(file2)
 		require.NoError(t, err)
-		_, err = a.Analyze(tree, file2Path)
+		_, err = a.Analyze(tree, nil, file2Path)
 		require.Error(t, err, "should error on shorthand struct redefinition")
 		assert.Contains(t, err.Error(), "redefined")
 		assert.Contains(t, err.Error(), "Point")
@@ -512,9 +512,9 @@ sealed type Color {
 		require.NoError(t, os.WriteFile(file2Path, []byte(file2), 0644))
 
 		a := analyzer.NewGalaAnalyzerWithPackageFiles(p, searchPaths, []string{file1Path})
-		tree, err := p.Parse(file2)
+		tree, _, err := p.Parse(file2)
 		require.NoError(t, err)
-		_, err = a.Analyze(tree, file2Path)
+		_, err = a.Analyze(tree, nil, file2Path)
 		require.Error(t, err, "should error on sealed type redefinition")
 		assert.Contains(t, err.Error(), "redefined")
 		assert.Contains(t, err.Error(), "Color")
@@ -533,9 +533,9 @@ type Person struct {
 }
 `
 		a := analyzer.NewGalaAnalyzer(p, searchPaths)
-		tree, err := p.Parse(src)
+		tree, _, err := p.Parse(src)
 		require.NoError(t, err)
-		_, err = a.Analyze(tree, "test.gala")
+		_, err = a.Analyze(tree, nil, "test.gala")
 		require.Error(t, err, "should error on same-file struct redefinition")
 		assert.Contains(t, err.Error(), "redefined")
 		assert.Contains(t, err.Error(), "Person")
@@ -549,9 +549,9 @@ struct Point(X int, Y int)
 struct Point(A float64)
 `
 		a := analyzer.NewGalaAnalyzer(p, searchPaths)
-		tree, err := p.Parse(src)
+		tree, _, err := p.Parse(src)
 		require.NoError(t, err)
-		_, err = a.Analyze(tree, "test.gala")
+		_, err = a.Analyze(tree, nil, "test.gala")
 		require.Error(t, err, "should error on same-file shorthand struct redefinition")
 		assert.Contains(t, err.Error(), "redefined")
 		assert.Contains(t, err.Error(), "Point")
@@ -570,9 +570,9 @@ sealed type Color {
 }
 `
 		a := analyzer.NewGalaAnalyzer(p, searchPaths)
-		tree, err := p.Parse(src)
+		tree, _, err := p.Parse(src)
 		require.NoError(t, err)
-		_, err = a.Analyze(tree, "test.gala")
+		_, err = a.Analyze(tree, nil, "test.gala")
 		require.Error(t, err, "should error on same-file sealed type redefinition")
 		assert.Contains(t, err.Error(), "redefined")
 		assert.Contains(t, err.Error(), "Color")
@@ -588,9 +588,9 @@ func (p Person) Greet() string = "hello"
 func (p Person) Greet() string = "hi"
 `
 		a := analyzer.NewGalaAnalyzer(p, searchPaths)
-		tree, err := p.Parse(src)
+		tree, _, err := p.Parse(src)
 		require.NoError(t, err)
-		_, err = a.Analyze(tree, "test.gala")
+		_, err = a.Analyze(tree, nil, "test.gala")
 		require.Error(t, err, "should error on same-file method redefinition")
 		assert.Contains(t, err.Error(), "redefined")
 		assert.Contains(t, err.Error(), "Greet")
@@ -617,9 +617,9 @@ func (p Person) Greet() string = fmt.Sprintf("Hello %s", p.Name)
 		require.NoError(t, os.WriteFile(file2Path, []byte(file2), 0644))
 
 		a := analyzer.NewGalaAnalyzerWithPackageFiles(p, searchPaths, []string{file1Path})
-		tree, err := p.Parse(file2)
+		tree, _, err := p.Parse(file2)
 		require.NoError(t, err)
-		_, err = a.Analyze(tree, file2Path)
+		_, err = a.Analyze(tree, nil, file2Path)
 		assert.NoError(t, err, "methods on sibling types should not trigger redefinition error")
 	})
 }
@@ -671,9 +671,9 @@ func main() {
 		require.NoError(t, os.WriteFile(file2Path, []byte(file2), 0644))
 
 		a := analyzer.NewGalaAnalyzer(p, searchPaths)
-		tree, err := p.Parse(file1)
+		tree, _, err := p.Parse(file1)
 		require.NoError(t, err)
-		_, err = a.Analyze(tree, file1Path)
+		_, err = a.Analyze(tree, nil, file1Path)
 		assert.NoError(t, err,
 			"main-package sibling scanning must be skipped; otherwise prog2's Foo would collide with prog1's")
 	})
@@ -696,9 +696,9 @@ struct Bar(Y string)
 		require.NoError(t, os.WriteFile(file2Path, []byte(file2), 0644))
 
 		a := analyzer.NewGalaAnalyzer(p, searchPaths)
-		tree, err := p.Parse(file1)
+		tree, _, err := p.Parse(file1)
 		require.NoError(t, err)
-		_, err = a.Analyze(tree, file1Path)
+		_, err = a.Analyze(tree, nil, file1Path)
 		assert.NoError(t, err,
 			"test-package sibling scanning must be skipped")
 	})
@@ -723,9 +723,9 @@ struct Widget(B string)
 		require.NoError(t, os.WriteFile(file2Path, []byte(file2), 0644))
 
 		a := analyzer.NewGalaAnalyzer(p, searchPaths)
-		tree, err := p.Parse(file1)
+		tree, _, err := p.Parse(file1)
 		require.NoError(t, err)
-		_, err = a.Analyze(tree, file1Path)
+		_, err = a.Analyze(tree, nil, file1Path)
 		require.Error(t, err,
 			"library sibling scanning should fire redefinition error")
 		assert.Contains(t, err.Error(), "GALA-E0011")
@@ -765,9 +765,9 @@ struct Label(Text string)
 	a := analyzer.NewGalaAnalyzer(p, searchPaths)
 
 	// First Analyze — populates the sibling cache for tmpDir.
-	tree1, err := p.Parse(file1)
+	tree1, _, err := p.Parse(file1)
 	require.NoError(t, err)
-	ast1, err := a.Analyze(tree1, file1Path)
+	ast1, err := a.Analyze(tree1, nil, file1Path)
 	require.NoError(t, err)
 	require.Contains(t, ast1.Types, "demo.Label",
 		"sibling Label should be resolved via directory scan on first call")
@@ -778,9 +778,9 @@ struct Label(Text string)
 	// f2 from disk, it would see the garbage and fail.
 	require.NoError(t, os.WriteFile(file2Path, []byte("!! not valid GALA !!"), 0644))
 
-	tree1b, err := p.Parse(file1)
+	tree1b, _, err := p.Parse(file1)
 	require.NoError(t, err)
-	ast2, err := a.Analyze(tree1b, file1Path)
+	ast2, err := a.Analyze(tree1b, nil, file1Path)
 	require.NoError(t, err,
 		"second Analyze call must reuse the cached sibling tree and not re-parse from disk (would have failed otherwise)")
 	assert.Contains(t, ast2.Types, "demo.Label",
@@ -806,9 +806,9 @@ struct Point(X int, Y int)
 
 	a := analyzer.NewGalaAnalyzer(p, searchPaths)
 
-	tree1, err := p.Parse(file1)
+	tree1, _, err := p.Parse(file1)
 	require.NoError(t, err)
-	ast1, err := a.Analyze(tree1, file1Path)
+	ast1, err := a.Analyze(tree1, nil, file1Path)
 	require.NoError(t, err)
 	// Only Point is present; no siblings yet.
 	assert.Contains(t, ast1.Types, "demo.Point")
@@ -821,9 +821,9 @@ struct Point(X int, Y int)
 struct Widget(Name string)
 `), 0644))
 
-	tree1b, err := p.Parse(file1)
+	tree1b, _, err := p.Parse(file1)
 	require.NoError(t, err)
-	ast2, err := a.Analyze(tree1b, file1Path)
+	ast2, err := a.Analyze(tree1b, nil, file1Path)
 	require.NoError(t, err)
 	// The new sibling appears — cache was invalidated by the size change.
 	assert.Contains(t, ast2.Types, "demo.Widget",

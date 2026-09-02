@@ -22,12 +22,12 @@ type countingParser struct {
 	calls int64
 }
 
-func (c *countingParser) Parse(input string) (antlr.Tree, error) {
+func (c *countingParser) Parse(input string) (antlr.Tree, map[int]string, error) {
 	atomic.AddInt64(&c.calls, 1)
 	return c.inner.Parse(input)
 }
 
-func (c *countingParser) ParseLenient(input string) (antlr.Tree, []error) {
+func (c *countingParser) ParseLenient(input string) (antlr.Tree, map[int]string, []error) {
 	atomic.AddInt64(&c.calls, 1)
 	return c.inner.ParseLenient(input)
 }
@@ -58,14 +58,14 @@ func TestBatchAnalyzer_StdAnalyzedOnce(t *testing.T) {
 	parse := func(p string) antlr.Tree {
 		body, err := os.ReadFile(p)
 		require.NoError(t, err)
-		tree, err := innerParser.Parse(string(body))
+		tree, _, err := innerParser.Parse(string(body))
 		require.NoError(t, err)
 		return tree
 	}
 
 	// First Analyze: std is loaded cold. Counter snapshots a high number.
 	batch.SetPackageFiles([]string{b})
-	_, err := batch.Analyze(parse(a), a)
+	_, err := batch.Analyze(parse(a), nil, a)
 	require.NoError(t, err)
 	first := atomic.LoadInt64(&counter.calls)
 
@@ -76,7 +76,7 @@ func TestBatchAnalyzer_StdAnalyzedOnce(t *testing.T) {
 	// previous call's parsedFileCache, or 0 if cached).
 	atomic.StoreInt64(&counter.calls, 0)
 	batch.SetPackageFiles([]string{a})
-	_, err = batch.Analyze(parse(b), b)
+	_, err = batch.Analyze(parse(b), nil, b)
 	require.NoError(t, err)
 	second := atomic.LoadInt64(&counter.calls)
 

@@ -21,7 +21,7 @@ func wrapBody(body string) string {
 
 func parseSource(t *testing.T, src string) antlr.Tree {
 	t.Helper()
-	tree, err := parser.NewAntlrGalaParser().Parse(src)
+	tree, _, err := parser.NewAntlrGalaParser().Parse(src)
 	require.NoError(t, err, "snippet failed to parse:\n%s", src)
 	return tree
 }

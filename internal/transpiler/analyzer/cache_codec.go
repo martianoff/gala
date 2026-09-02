@@ -17,9 +17,11 @@ package analyzer
 // identifying the concrete variant; nil interface values use tag 0.
 //
 // Backward compatibility: the cache directory key embeds CacheVersion,
-// which is bumped from "v1" to "v2" alongside this codec change.
-// Pre-v2 caches live under the old version-keyed directory and are
-// pruned by the existing stale-cache GC.
+// which is bumped alongside every layout change (v2 introduced this
+// codec; v3 added doc comments). Older caches live under their own
+// version-keyed directory and are pruned by the existing stale-cache GC.
+// The magic's trailing byte is the second line of defence, for a blob
+// that reaches a newer reader some other way.
 import (
 	"encoding/binary"
 	"errors"
@@ -31,7 +33,7 @@ import (
 
 // codecMagic identifies a binary cache blob. The trailing byte is the
 // format version; bump alongside CacheVersion when the layout changes.
-var codecMagic = [4]byte{'G', 'A', 'C', 0x02}
+var codecMagic = [4]byte{'G', 'A', 'C', 0x03}
 
 const (
 	typeTagNil     uint8 = 0 // nil interface
@@ -58,6 +60,7 @@ func encodeCachedRichAST(c *CachedRichAST) ([]byte, error) {
 	e := &encoder{buf: make([]byte, 0, 256*1024)}
 	e.buf = append(e.buf, codecMagic[:]...)
 	e.writeString(c.PackageName)
+	e.writeString(c.PackageDoc)
 	e.writeStringTypeMetaMap(c.Types)
 	e.writeStringFuncMetaMap(c.Functions)
 	e.writeStringStringMap(c.Packages)
@@ -90,6 +93,7 @@ func decodeCachedRichAST(data []byte) (*CachedRichAST, error) {
 	d := &decoder{buf: data[len(codecMagic):]}
 	out := &CachedRichAST{}
 	out.PackageName = d.readString()
+	out.PackageDoc = d.readString()
 	out.Types = d.readStringTypeMetaMap()
 	out.Functions = d.readStringFuncMetaMap()
 	out.Packages = d.readStringStringMap()
@@ -253,6 +257,7 @@ func (e *encoder) writeMethodMeta(m *transpiler.MethodMetadata) {
 	e.writeBool(true)
 	e.writeString(m.Name)
 	e.writeString(m.Package)
+	e.writeString(m.Doc)
 	e.writeSourcePos(m.Pos)
 	e.writeTypeSlice(m.ParamTypes)
 	e.writeStringSlice(m.ParamNames)
@@ -280,6 +285,7 @@ func (e *encoder) writeStringMethodMap(m map[string]*transpiler.MethodMetadata) 
 
 func (e *encoder) writeSealedVariant(v transpiler.SealedVariant) {
 	e.writeString(v.Name)
+	e.writeString(v.Doc)
 	e.writeSourcePos(v.Pos)
 	e.writeStringSlice(v.FieldNames)
 	e.writeTypeSlice(v.FieldTypes)
@@ -300,6 +306,8 @@ func (e *encoder) writeTypeMeta(t *transpiler.TypeMetadata) {
 	e.writeBool(true)
 	e.writeString(t.Name)
 	e.writeString(t.Package)
+	e.writeString(t.Doc)
+	e.writeStringStringMap(t.FieldDocs)
 	e.writeSourcePos(t.Pos)
 	e.writeStringMethodMap(t.Methods)
 	e.writeStringTypeMap(t.Fields)
@@ -329,6 +337,7 @@ func (e *encoder) writeFuncMeta(f *transpiler.FunctionMetadata) {
 	e.writeBool(true)
 	e.writeString(f.Name)
 	e.writeString(f.Package)
+	e.writeString(f.Doc)
 	e.writeSourcePos(f.Pos)
 	e.writeTypeSlice(f.ParamTypes)
 	e.writeStringSlice(f.ParamNames)
@@ -674,6 +683,7 @@ func (d *decoder) readMethodMeta() *transpiler.MethodMetadata {
 	m := &transpiler.MethodMetadata{}
 	m.Name = d.readString()
 	m.Package = d.readString()
+	m.Doc = d.readString()
 	m.Pos = d.readSourcePos()
 	m.ParamTypes = d.readTypeSlice()
 	m.ParamNames = d.readStringSlice()
@@ -716,6 +726,7 @@ func (d *decoder) readSealedVariantSlice() []transpiler.SealedVariant {
 	out := make([]transpiler.SealedVariant, n)
 	for i := range out {
 		out[i].Name = d.readString()
+		out[i].Doc = d.readString()
 		out[i].Pos = d.readSourcePos()
 		out[i].FieldNames = d.readStringSlice()
 		out[i].FieldTypes = d.readTypeSlice()
@@ -730,6 +741,8 @@ func (d *decoder) readTypeMeta() *transpiler.TypeMetadata {
 	t := &transpiler.TypeMetadata{}
 	t.Name = d.readString()
 	t.Package = d.readString()
+	t.Doc = d.readString()
+	t.FieldDocs = d.readStringStringMap()
 	t.Pos = d.readSourcePos()
 	t.Methods = d.readStringMethodMap()
 	t.Fields = d.readStringTypeMap()
@@ -765,6 +778,7 @@ func (d *decoder) readFuncMeta() *transpiler.FunctionMetadata {
 	f := &transpiler.FunctionMetadata{}
 	f.Name = d.readString()
 	f.Package = d.readString()
+	f.Doc = d.readString()
 	f.Pos = d.readSourcePos()
 	f.ParamTypes = d.readTypeSlice()
 	f.ParamNames = d.readStringSlice()

@@ -170,13 +170,13 @@ type concurrencyProbeParser struct {
 
 var _ transpiler.GalaParser = (*concurrencyProbeParser)(nil)
 
-func (p *concurrencyProbeParser) Parse(input string) (antlr.Tree, error) {
+func (p *concurrencyProbeParser) Parse(input string) (antlr.Tree, map[int]string, error) {
 	p.enter()
 	defer p.leave()
 	return p.inner.Parse(input)
 }
 
-func (p *concurrencyProbeParser) ParseLenient(input string) (antlr.Tree, []error) {
+func (p *concurrencyProbeParser) ParseLenient(input string) (antlr.Tree, map[int]string, []error) {
 	p.enter()
 	defer p.leave()
 	return p.inner.ParseLenient(input)

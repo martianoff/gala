@@ -45,7 +45,7 @@ func (c *collector) sorted() []string {
 func walkFuncBody(t *testing.T, src string, opts scopewalk.Options) *collector {
 	t.Helper()
 	p := parser.NewAntlrGalaParser()
-	tree, errs := p.Parse(src)
+	tree, _, errs := p.Parse(src)
 	require.Empty(t, errs, "source must parse")
 	sf, ok := tree.(*grammar.SourceFileContext)
 	require.True(t, ok)
