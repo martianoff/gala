@@ -258,6 +258,10 @@ to a future reviewer searching `git log` for the change.
 
 ## Reporting Bugs
 
+**Security issues are not bug reports.** If the problem has security impact, do not
+open a public issue — follow [SECURITY.md](SECURITY.md) and report it privately
+through GitHub security advisories.
+
 When filing a bug report, include:
 
 - GALA source code that reproduces the issue (minimal example)
