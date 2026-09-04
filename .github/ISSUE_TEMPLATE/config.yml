@@ -3,3 +3,6 @@ contact_links:
   - name: Questions and Discussion
     url: https://github.com/martianoff/gala/discussions
     about: Ask questions and discuss GALA features
+  - name: Report a Security Vulnerability
+    url: https://github.com/martianoff/gala/security/advisories/new
+    about: Report a security issue privately -- do not open a public issue
