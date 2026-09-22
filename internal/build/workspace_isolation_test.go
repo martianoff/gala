@@ -407,7 +407,7 @@ func TestLockTimeoutEnvOverride(t *testing.T) {
 func TestLockWaitAnnouncesItself(t *testing.T) {
 	dir := t.TempDir()
 
-	held, err := lockDir(dir, time.Second)
+	held, err := lockDir(dir, time.Second, workspaceNotice)
 	require.NoError(t, err)
 
 	stderr := os.Stderr
@@ -423,7 +423,7 @@ func TestLockWaitAnnouncesItself(t *testing.T) {
 		held.Release()
 	}()
 
-	h, err := lockDir(dir, 10*time.Second)
+	h, err := lockDir(dir, 10*time.Second, workspaceNotice)
 	require.NoError(t, err)
 	h.Release()
 
@@ -435,4 +435,71 @@ func TestLockWaitAnnouncesItself(t *testing.T) {
 	assert.Contains(t, string(out), "waiting for the build workspace lock")
 	assert.Contains(t, string(out), "pid=")
 	assert.Contains(t, string(out), "workspace lock acquired after")
+}
+
+// TestLockWaitIsSilentForCallersThatWantNoNotice pins that the wait notice is
+// the caller's to supply. `gala clean` skips a held workspace by design, so a
+// notice there would report a non-event as a problem; the stdlib cache is
+// shared by every project, so the build-dir hint cannot help there.
+func TestLockWaitIsSilentForCallersThatWantNoNotice(t *testing.T) {
+	dir := t.TempDir()
+
+	held, err := lockDir(dir, time.Second, workspaceNotice)
+	require.NoError(t, err)
+
+	stderr := os.Stderr
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	os.Stderr = w
+	defer func() { os.Stderr = stderr }()
+
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		held.Release()
+	}()
+
+	// The empty notice is what removeWorkspaceDir passes.
+	h, err := lockDir(dir, 10*time.Second, lockNotice{})
+	require.NoError(t, err)
+	h.Release()
+
+	require.NoError(t, w.Close())
+	os.Stderr = stderr
+	out, err := io.ReadAll(r)
+	require.NoError(t, err)
+
+	assert.Empty(t, string(out), "a caller that supplies no notice must print nothing")
+}
+
+// TestStdlibLockNoticeOmitsTheBuildDirHint pins that a lock the user cannot
+// avoid by moving their build does not advise them to move their build.
+func TestStdlibLockNoticeOmitsTheBuildDirHint(t *testing.T) {
+	dir := t.TempDir()
+
+	held, err := lockDir(dir, time.Second, workspaceNotice)
+	require.NoError(t, err)
+
+	stderr := os.Stderr
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	os.Stderr = w
+	defer func() { os.Stderr = stderr }()
+
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		held.Release()
+	}()
+
+	h, err := lockDir(dir, 10*time.Second, lockNotice{what: "stdlib cache"})
+	require.NoError(t, err)
+	h.Release()
+
+	require.NoError(t, w.Close())
+	os.Stderr = stderr
+	out, err := io.ReadAll(r)
+	require.NoError(t, err)
+
+	assert.Contains(t, string(out), "waiting for the stdlib cache lock")
+	assert.NotContains(t, string(out), "--build-dir",
+		"the stdlib cache is shared by every project; a private build dir cannot avoid this lock")
 }

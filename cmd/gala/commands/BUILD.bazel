@@ -51,6 +51,7 @@ go_library(
         "//internal/transpiler",
         "//internal/transpiler/analyzer",
         "//internal/transpiler/generator",
+        "//internal/transpiler/module",
         "//internal/transpiler/profiler",
         "//internal/transpiler/transformer",
         "@com_github_owenrumney_go_lsp//server",

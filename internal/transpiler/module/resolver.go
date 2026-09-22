@@ -390,6 +390,27 @@ func (r *Resolver) resolvePackagePathUncached(importPath string) (string, error)
 		}
 	}
 
+	// Strategy 5.5: a search path's immediate CHILD whose own module file
+	// declares this exact import path.
+	//
+	// Strategy 5 walks UP from a search path to find a module root, which
+	// covers a vendored module whose root is (or is above) the search path. It
+	// does not cover a directory that is a *collection* of modules — which is
+	// exactly the shape of the extracted stdlib cache: ~/.gala/stdlib/<ver>/
+	// has no module file of its own, and each package beneath it carries a
+	// generated `module martianoff/gala/<pkg>`. So a fully-qualified stdlib
+	// path resolved from a project that is not itself martianoff/gala fell
+	// through every strategy.
+	//
+	// Matching on the declared path keeps this generic: the standard library
+	// resolves here through the same mechanism any other GALA library would,
+	// with no prefix hardcoded.
+	for _, sp := range r.searchPaths {
+		if dir := findChildDeclaringModule(sp, importPath); dir != "" {
+			return dir, nil
+		}
+	}
+
 	// Strategy 6: Recursive directory search — when the import path's directory name
 	// doesn't match the filesystem layout (e.g., importpath "martianoff/gala/crossfile"
 	// maps to "crossfile" but the actual directory is "examples/.../crossfile/").
@@ -1153,4 +1174,50 @@ func isGalaDir(dirPath string) bool {
 		return true
 	}
 	return hasGalaFiles(dirPath)
+}
+
+// findChildDeclaringModule returns the immediate child of root whose own module
+// file declares importPath, or "" when none does.
+//
+// Only one level down, and only an exact match on the declared path: a
+// recursive scan is Strategy 6's job and is far more expensive, and a prefix
+// match would let a namesake in an unrelated module claim the lookup.
+func findChildDeclaringModule(root, importPath string) string {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return ""
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		dir := filepath.Join(root, e.Name())
+		if DeclaredModulePath(dir) == importPath && isValidPackageDir(dir) {
+			return dir
+		}
+	}
+	return ""
+}
+
+// DeclaredModulePath returns the module path a directory declares in its
+// gala.mod, or failing that its go.mod — "" when it declares neither.
+//
+// StripBOM first: TrimSpace does not drop a U+FEFF, so a leading BOM would
+// hide the module directive and silently demote the module to a plain
+// directory. That is the same guard findGalaModuleRoot carries, and the reason
+// this lives here rather than being re-spelled by each caller.
+func DeclaredModulePath(dir string) string {
+	for _, name := range []string{"gala.mod", "go.mod"} {
+		content, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			continue
+		}
+		for line := range strings.SplitSeq(galaerr.StripBOM(string(content)), "\n") {
+			line = strings.TrimSpace(line)
+			if rest, ok := strings.CutPrefix(line, "module "); ok {
+				return strings.TrimSpace(rest)
+			}
+		}
+	}
+	return ""
 }

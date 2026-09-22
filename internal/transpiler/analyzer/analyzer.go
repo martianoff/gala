@@ -4762,42 +4762,28 @@ func recordFieldDefault(meta *transpiler.TypeMetadata, fieldName string, pctx *g
 //
 // Only a same-name repeat is rejected. Go permits the same path under two
 // different aliases (`import "strings"` plus `import gostr "strings"`), and
-// that emits two distinct identifiers, so it stays legal here.
-func checkDuplicateImports(sourceFile grammar.ISourceFileContext) error {
-	type importSite struct {
-		line, column int
-	}
-	seen := make(map[string]importSite)
-
-	for _, impDecl := range sourceFile.AllImportDeclaration() {
-		ctx := impDecl.(*grammar.ImportDeclarationContext)
-		for _, spec := range ctx.AllImportSpec() {
-			s := spec.(*grammar.ImportSpecContext)
-			path := strings.Trim(s.STRING().GetText(), "\"")
-
-			// Key on path plus local name so two aliases of one path do not
-			// collide. A dot import binds no name of its own, but repeating
-			// one still redeclares every symbol it introduces.
-			local := ""
-			switch {
-			case s.Identifier() != nil:
-				local = s.Identifier().GetText()
-			case s.GetChildCount() > 1:
-				local = "." // dot import
-			}
-			key := path + " " + local
-
-			tok := s.GetStart()
-			if first, ok := seen[key]; ok {
-				return galaerr.NewCodedSemanticError(
-					galaerr.CodeDuplicateImport,
-					tok.GetLine(), tok.GetColumn(),
-					fmt.Sprintf("package %q is already imported at line %d", path, first.line),
-					"remove this import — a file's import blocks are merged, so a package listed in one block is in scope for the whole file",
-				)
-			}
-			seen[key] = importSite{line: tok.GetLine(), column: tok.GetColumn()}
+// that emits two distinct identifiers, so it stays legal here — which is why
+// the key is the path plus the LOCAL name rather than the path alone.
+func checkDuplicateImports(sourceFile *grammar.SourceFileContext) error {
+	seen := make(map[string]int) // path+local -> line of the first occurrence
+	for _, imp := range scanFileImports(sourceFile) {
+		local := imp.LocalName()
+		if imp.IsDot {
+			// A dot import binds no name of its own, but repeating one still
+			// redeclares every symbol it introduces.
+			local = "."
 		}
+		key := imp.Path + " " + local
+
+		if first, ok := seen[key]; ok {
+			return galaerr.NewCodedSemanticError(
+				galaerr.CodeDuplicateImport,
+				imp.Tok.GetLine(), imp.Tok.GetColumn(),
+				fmt.Sprintf("package %q is already imported at line %d", imp.Path, first),
+				"remove this import — a file's import blocks are merged, so a package listed in one block is in scope for the whole file",
+			)
+		}
+		seen[key] = imp.Tok.GetLine()
 	}
 	return nil
 }

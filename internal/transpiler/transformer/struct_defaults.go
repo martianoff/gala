@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"go/ast"
 	"sort"
+	"strconv"
+	"strings"
 
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/transpiler"
 )
 
 // Shorthand struct fields may carry a default: `struct Cfg(Name string, Tries
@@ -50,25 +51,26 @@ func (t *galaASTTransformer) structFieldDefaults(resolvedTypeName string) (defau
 // needs for the fields it did not supply, and reports the first required field
 // it left out.
 //
-// provided answers whether the call site gave a value for a field; the named
-// and positional paths compute it differently, so they pass their own.
-// Ordering follows the declaration order in fields, which keeps the emitted
-// literal stable and readable.
+// provided answers whether the call site gave a value for the field at index i;
+// the named and positional paths compute it differently, so they pass their own
+// — positional construction fills left to right, so its answer is just
+// `i < len(args)`. Ordering follows the declaration order in fields, which keeps
+// the emitted literal stable and readable.
 func (t *galaASTTransformer) fillOmittedStructFields(
 	typeName, resolvedTypeName string,
 	fields []string,
-	provided func(fieldName string) bool,
-	immutFlags []bool,
-	fieldTypes map[string]transpiler.Type,
+	provided func(i int, fieldName string) bool,
 	typeArgSubst map[string]ast.Expr,
 	line, col int,
 ) ([]ast.Expr, error) {
 	defaults, isShorthand := t.structFieldDefaults(resolvedTypeName)
+	immutFlags := t.structImmutFields[resolvedTypeName]
+	fieldTypes := t.structFieldTypes[resolvedTypeName]
 
 	var missing []string
 	var elts []ast.Expr
 	for i, fieldName := range fields {
-		if provided(fieldName) {
+		if provided(i, fieldName) {
 			continue
 		}
 		defaultText, hasDefault := defaults[fieldName]
@@ -97,6 +99,27 @@ func (t *galaASTTransformer) fillOmittedStructFields(
 	return elts, nil
 }
 
+// unknownStructFieldError reports a named argument that matches no field.
+//
+// Without it the mistake surfaces only as its consequence: `Cfg(Nmae = "a")`
+// drops the unmatched argument and then reports the missing "Name", which
+// names the field the author thought they had supplied. Function calls already
+// report `unknown parameter` for the same slip, and call-syntax construction is
+// meant to follow the same rules.
+func unknownStructFieldError(typeName string, unknown, fields []string, line, col int) error {
+	sort.Strings(unknown)
+	label := "field"
+	if len(unknown) > 1 {
+		label = "fields"
+	}
+	return galaerr.NewCodedSemanticError(
+		galaerr.CodeMissingStructField,
+		line, col,
+		fmt.Sprintf("unknown %s %s in construction of %q", label, quoteJoin(unknown), typeName),
+		fmt.Sprintf("%s declares: %s", typeName, strings.Join(fields, ", ")),
+	)
+}
+
 // missingStructFieldsError reports the required fields a constructor call left
 // out. It names every one of them rather than only the first, so a call site
 // missing several fields takes one round trip instead of several, and closes
@@ -114,9 +137,10 @@ func missingStructFieldsError(
 	if len(missing) > 1 {
 		label = "fields"
 	}
+	named := quoteJoin(missing)
 
 	hint := fmt.Sprintf("pass %s, or give the %s a default in the declaration (e.g. %s int = 0)",
-		quoteJoin(missing), label, missing[0])
+		named, label, missing[0])
 	if len(defaults) == 0 && len(missing) == len(fields) {
 		// Every field is missing and none is defaulted — most likely the caller
 		// meant a Go-style literal, which is allowed to be partial.
@@ -126,29 +150,48 @@ func missingStructFieldsError(
 	return galaerr.NewCodedSemanticError(
 		galaerr.CodeMissingStructField,
 		line, col,
-		fmt.Sprintf("missing required %s %s in construction of %q", label, quoteJoin(missing), typeName),
+		fmt.Sprintf("missing required %s %s in construction of %q", label, named, typeName),
 		hint,
 	)
 }
 
 // quoteJoin renders a field-name list as `"a", "b" and "c"`.
 func quoteJoin(names []string) string {
-	switch len(names) {
-	case 0:
-		return ""
-	case 1:
-		return fmt.Sprintf("%q", names[0])
-	}
-	out := ""
+	q := make([]string, len(names))
 	for i, n := range names {
-		switch {
-		case i == 0:
-			out = fmt.Sprintf("%q", n)
-		case i == len(names)-1:
-			out += fmt.Sprintf(" and %q", n)
-		default:
-			out += fmt.Sprintf(", %q", n)
+		q[i] = strconv.Quote(n)
+	}
+	if len(q) < 2 {
+		return strings.Join(q, "")
+	}
+	return strings.Join(q[:len(q)-1], ", ") + " and " + q[len(q)-1]
+}
+
+// checkUnknownStructFields reports named arguments that match no field of the
+// struct. Shorthand-only, for the same reason the required-field check is: a
+// block-form struct is a Go-shaped layout, and its construction is checked by
+// the Go compiler against the real field set.
+func (t *galaASTTransformer) checkUnknownStructFields(
+	typeName, resolvedTypeName string,
+	fields []string,
+	namedArgs map[string]ast.Expr,
+	line, col int,
+) error {
+	if _, isShorthand := t.structFieldDefaults(resolvedTypeName); !isShorthand {
+		return nil
+	}
+	known := make(map[string]bool, len(fields))
+	for _, f := range fields {
+		known[f] = true
+	}
+	var unknown []string
+	for name := range namedArgs {
+		if !known[name] {
+			unknown = append(unknown, name)
 		}
 	}
-	return out
+	if len(unknown) == 0 {
+		return nil
+	}
+	return unknownStructFieldError(typeName, unknown, fields, line, col)
 }

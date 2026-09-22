@@ -160,7 +160,9 @@ func (w *Workspace) Clean() error {
 // directory, and removing it by path could unlink a lock a later process has
 // already taken.
 func removeWorkspaceDir(dir string) (bool, error) {
-	lock, err := lockDir(dir, cleanLockTimeout)
+	// A silent notice: a held workspace is skipped by design (false, no error),
+	// so announcing the wait would report a non-event as a problem.
+	lock, err := lockDir(dir, cleanLockTimeout, lockNotice{})
 	if err != nil {
 		if errors.Is(err, ErrLockBusy) {
 			return false, nil

@@ -14,6 +14,7 @@ import (
 
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
+	"martianoff/gala/internal/transpiler/module"
 )
 
 var docJSON bool
@@ -150,99 +151,55 @@ func findPackageDir(pkgName string) (string, error) {
 	// file in the working directory.
 	paths := autoResolveSearchPaths(filepath.Join(cwd, "doc.gala"), []string{cwd})
 
-	for _, p := range paths {
-		candidate := filepath.Join(p, pkgName)
-		if files, globErr := filepath.Glob(filepath.Join(candidate, "*.gala")); globErr == nil && len(files) > 0 {
-			return candidate, nil
-		}
-	}
-
-	// Fall back to matching the argument against each candidate package's
-	// DECLARED import path. Joining the argument onto a search path only ever
-	// resolves the trailing segment (`test`), so the fully-qualified spelling
-	// a source file imports by — `martianoff/gala/test` — missed, which is the
-	// most natural thing to paste: it is copied from the import line directly
-	// above the code being read.
-	if dir := findPackageDirByImportPath(paths, pkgName); dir != "" {
+	if dir := locatePackageByName(paths, pkgName); dir != "" {
 		return dir, nil
 	}
 
-	if suggestion := docBareNameSuggestion(paths, pkgName); suggestion != "" {
-		return "", fmt.Errorf("package %q not found in any search path; did you mean %q?", pkgName, suggestion)
+	// A fully-qualified path (`martianoff/gala/test`) names a package by the
+	// module path it declares rather than by its directory, which is the
+	// spelling every source file imports by — and so the one a reader has in
+	// hand. The resolver knows how to do this; going through it is what keeps
+	// the comment above true.
+	if dir, rerr := module.NewResolver(paths).ResolvePackagePath(pkgName); rerr == nil && dirHasGalaFiles(dir) {
+		return dir, nil
+	}
+
+	// Naming the spelling that works beats pointing at gala.mod, which is the
+	// wrong advice for a package already on a search path.
+	if bare := packageShortName(pkgName); bare != pkgName && locatePackageByName(paths, bare) != "" {
+		return "", fmt.Errorf("package %q not found in any search path; did you mean %q?", pkgName, bare)
 	}
 	return "", fmt.Errorf("package %q not found in any search path; "+
 		"check the name, or add it to gala.mod if it comes from a module", pkgName)
 }
 
-// findPackageDirByImportPath resolves a fully-qualified package path by reading
-// the module line each candidate directory declares, rather than by assuming
-// the path mirrors the directory layout.
-//
-// Every package the stdlib extracts carries a generated go.mod naming its own
-// import path (`module martianoff/gala/test`), and a vendored GALA module lays
-// its packages out the same way. Matching on that declaration keeps this
-// resolution generic — the standard library resolves through exactly the same
-// mechanism as any other GALA library, with no prefix hardcoded here.
-func findPackageDirByImportPath(searchPaths []string, importPath string) string {
-	for _, root := range searchPaths {
-		entries, err := os.ReadDir(root)
-		if err != nil {
-			continue
-		}
-		for _, e := range entries {
-			if !e.IsDir() {
-				continue
-			}
-			dir := filepath.Join(root, e.Name())
-			if declaredModulePath(dir) != importPath {
-				continue
-			}
-			if files, err := filepath.Glob(filepath.Join(dir, "*.gala")); err == nil && len(files) > 0 {
-				return dir
-			}
-		}
-	}
-	return ""
+// dirHasGalaFiles reports whether a directory holds any GALA source — the
+// single definition of "this is a package directory" for this command.
+func dirHasGalaFiles(dir string) bool {
+	files, err := filepath.Glob(filepath.Join(dir, "*.gala"))
+	return err == nil && len(files) > 0
 }
 
-// declaredModulePath returns the module path a directory declares in its
-// gala.mod or go.mod, or "" when it declares neither.
-func declaredModulePath(dir string) string {
-	for _, name := range []string{"gala.mod", "go.mod"} {
-		data, err := os.ReadFile(filepath.Join(dir, name))
-		if err != nil {
-			continue
-		}
-		for _, line := range strings.Split(string(data), "\n") {
-			line = strings.TrimSpace(line)
-			if rest, ok := strings.CutPrefix(line, "module "); ok {
-				return strings.TrimSpace(rest)
-			}
-		}
-	}
-	return ""
-}
-
-// docBareNameSuggestion offers the bare package name when the argument looks
-// like a qualified path whose trailing segment does resolve. It exists so the
-// error names the spelling that works instead of pointing at gala.mod, which is
-// the wrong advice for a package that is already on a search path.
-func docBareNameSuggestion(searchPaths []string, pkgName string) string {
-	i := strings.LastIndex(pkgName, "/")
-	if i < 0 {
-		return ""
-	}
-	bare := pkgName[i+1:]
-	if bare == "" {
+// locatePackageByName joins a bare package name onto each search path in turn.
+func locatePackageByName(searchPaths []string, name string) string {
+	if name == "" {
 		return ""
 	}
 	for _, p := range searchPaths {
-		candidate := filepath.Join(p, bare)
-		if files, err := filepath.Glob(filepath.Join(candidate, "*.gala")); err == nil && len(files) > 0 {
-			return bare
+		if candidate := filepath.Join(p, name); dirHasGalaFiles(candidate) {
+			return candidate
 		}
 	}
 	return ""
+}
+
+// packageShortName reduces an import path to the identifier the package is
+// referred to by — the trailing segment.
+func packageShortName(importPath string) string {
+	if i := strings.LastIndex(importPath, "/"); i >= 0 {
+		return importPath[i+1:]
+	}
+	return importPath
 }
 
 // loadPackageDoc analyzes every .gala file in dir as one package and collects
@@ -552,11 +509,3 @@ func generatedCaseCompanions(rich *transpiler.RichAST, pkgName string) map[strin
 
 // joinParams renders a case's fields as they were declared.
 
-// packageShortName reduces an import path to the identifier the package is
-// referred to by — the trailing segment.
-func packageShortName(importPath string) string {
-	if i := strings.LastIndex(importPath, "/"); i >= 0 {
-		return importPath[i+1:]
-	}
-	return importPath
-}

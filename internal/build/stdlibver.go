@@ -118,7 +118,10 @@ func (c *Config) ensureStdlibExtracted(version string) (dir string, extracted bo
 	// would each delete the other's half-written tree, so extraction is
 	// serialized on the cache root. Different versions serialize too; extraction
 	// happens about once per toolchain upgrade, so that costs nothing.
-	lock, lockErr := lockDir(c.StdlibDir, stdlibLockTimeout)
+	// Worth announcing — extraction can take a moment and the wait is otherwise
+	// invisible — but with no hint: this cache is shared by every project on the
+	// machine, so a private build dir would not avoid it.
+	lock, lockErr := lockDir(c.StdlibDir, stdlibLockTimeout, lockNotice{what: "stdlib cache"})
 	if lockErr != nil {
 		return "", false, lockErr
 	}

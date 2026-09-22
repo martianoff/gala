@@ -1385,15 +1385,8 @@ func (t *galaASTTransformer) buildStructLiteral(typeExpr ast.Expr, typeName, res
 	if truncate {
 		defaulted, err := t.fillOmittedStructFields(
 			typeName, resolvedTypeName, fields,
-			func(fieldName string) bool {
-				for i, f := range fields {
-					if f == fieldName {
-						return i < len(args)
-					}
-				}
-				return false
-			},
-			immutFlags, fieldTypes, typeArgSubst, line, col)
+			func(i int, _ string) bool { return i < len(args) },
+			typeArgSubst, line, col)
 		if err != nil {
 			return nil, err
 		}
@@ -2260,13 +2253,21 @@ func (t *galaASTTransformer) buildStructLiteralWithNamedArgs(
 		elts = append(elts, &ast.KeyValueExpr{Key: ast.NewIdent(fieldName), Value: valExpr})
 	}
 
+	// A named argument matching no field was silently dropped, so the slip
+	// surfaced only as the missing field it was meant to supply. Report it as
+	// itself — and before the missing-field check, which would otherwise name
+	// the field the author thought they had just written.
+	if err := t.checkUnknownStructFields(typeName, resolvedTypeName, fields, namedArgs, line, col); err != nil {
+		return nil, err
+	}
+
 	// Fields the call site left out take their declared default; one with no
 	// default is required, and omitting it is an error rather than a silent
 	// Go zero value. See struct_defaults.go.
 	defaulted, err := t.fillOmittedStructFields(
 		typeName, resolvedTypeName, fields,
-		func(fieldName string) bool { _, ok := namedArgs[fieldName]; return ok },
-		immutFlags, fieldTypes, typeArgSubst, line, col)
+		func(_ int, fieldName string) bool { _, ok := namedArgs[fieldName]; return ok },
+		typeArgSubst, line, col)
 	if err != nil {
 		return nil, err
 	}

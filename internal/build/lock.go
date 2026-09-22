@@ -117,20 +117,38 @@ func lockTimeout(def time.Duration) time.Duration {
 	return d
 }
 
+// lockNotice is what a caller says while it waits, because only the caller
+// knows what the lock it is taking protects.
+//
+// `what` names the thing in "waiting for the <what> lock"; an empty `what`
+// means say nothing at all, which is what a `gala clean` sweep wants — it
+// skips a held workspace by design, so a notice there would be an alarming
+// report of a non-event. `hint` is the "how to proceed" line, omitted when
+// there is no useful advice: the stdlib cache is shared by every project on
+// the machine, so telling the user to set --build-dir cannot help there.
+type lockNotice struct {
+	what string
+	hint string
+}
+
+// workspaceNotice is the wording for the per-project build/test workspace, the
+// only one of these locks a user can resolve by moving their build elsewhere.
+var workspaceNotice = lockNotice{what: "build workspace", hint: buildDirHint}
+
 // Lock takes the workspace's exclusive lock, waiting up to timeout for a
 // concurrent holder to finish. A zero timeout waits forever.
 //
 // The lock is advisory and cooperative — it exists to serialize this tool
 // against itself, not to defend the directory from arbitrary writers.
 func (w *Workspace) Lock(timeout time.Duration) (*lockHandle, error) {
-	return lockDir(w.Dir, timeout)
+	return lockDir(w.Dir, timeout, workspaceNotice)
 }
 
 // lockDir is Lock over a bare directory path. `gala clean` sweeps workspaces it
 // finds on disk rather than ones it constructed, so it has a directory and no
 // Workspace — and deleting a workspace needs the lock just as much as building
 // one does.
-func lockDir(dir string, timeout time.Duration) (*lockHandle, error) {
+func lockDir(dir string, timeout time.Duration, notice lockNotice) (*lockHandle, error) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, fmt.Errorf("creating workspace dir: %w", err)
 	}
@@ -141,19 +159,25 @@ func lockDir(dir string, timeout time.Duration) (*lockHandle, error) {
 		deadline = time.Now().Add(timeout)
 	}
 
-	waiting := false
-	waitStart := time.Now()
+	var waitStart time.Time // zero until the first blocked attempt
+	waited := func() time.Duration {
+		if waitStart.IsZero() {
+			return 0
+		}
+		// Whole seconds; the sub-millisecond tail is noise for a human.
+		return time.Since(waitStart).Round(time.Second)
+	}
+
 	for {
 		h, err := tryLock(path)
 		if err == nil {
-			if waiting {
-				fmt.Fprintf(os.Stderr, "gala: workspace lock acquired after %s\n",
-					waitDuration(time.Since(waitStart)))
+			if !waitStart.IsZero() && notice.what != "" {
+				fmt.Fprintf(os.Stderr, "gala: %s lock acquired after %s\n", notice.what, waited())
 			}
 			return h, nil
 		}
 		if !errors.Is(err, fs.ErrExist) {
-			return nil, fmt.Errorf("locking build workspace: %w", err)
+			return nil, fmt.Errorf("locking %s: %w", dir, err)
 		}
 
 		if breakIfStale(path) {
@@ -162,30 +186,31 @@ func lockDir(dir string, timeout time.Duration) (*lockHandle, error) {
 
 		// Say what the wait is for, once, the first time round. Without this
 		// the process produces no output at all while it blocks, and the first
-		// reading of a build that sits for minutes is that it has hung — the
+		// reading of a command that sits for minutes is that it has hung — the
 		// wait is invisible, so it gets attributed to the slowest thing the
 		// command was known to be doing.
-		if !waiting {
-			waiting = true
-			fmt.Fprintf(os.Stderr, "gala: waiting for the build workspace lock (%s)\n", holderDescription(path))
-			fmt.Fprintf(os.Stderr, "gala: %s\n", buildDirHint)
+		if waitStart.IsZero() {
+			waitStart = time.Now()
+			if notice.what != "" {
+				fmt.Fprintf(os.Stderr, "gala: waiting for the %s lock (%s)\n", notice.what, holderDescription(path))
+				if notice.hint != "" {
+					fmt.Fprintf(os.Stderr, "gala: %s\n", notice.hint)
+				}
+			}
 		}
 
 		if !deadline.IsZero() && time.Now().After(deadline) {
-			return nil, fmt.Errorf(
-				"%w: %s\nheld by: %s\nwaited: %s\n"+
-					"Another gala process is building this project. Wait for it to finish, or\n%s",
-				ErrLockBusy, dir, holderDescription(path), waitDuration(time.Since(waitStart)), buildDirHint)
+			err := fmt.Errorf("%w: %s\nheld by: %s\nwaited: %s",
+				ErrLockBusy, dir, holderDescription(path), waited())
+			if notice.hint != "" {
+				err = fmt.Errorf("%w\nAnother gala process is using this. Wait for it to finish, or\n%s",
+					err, notice.hint)
+			}
+			return nil, err
 		}
 
 		time.Sleep(lockPoll)
 	}
-}
-
-// waitDuration renders a wait for a human: whole seconds are enough, and the
-// sub-millisecond tail time.Duration prints by default is noise here.
-func waitDuration(d time.Duration) time.Duration {
-	return d.Round(time.Second)
 }
 
 // tryLock creates the lock file, failing with fs.ErrExist when it is taken.
