@@ -110,7 +110,7 @@ func (b *Builder) Build(outputPath string) (string, error) {
 	// Step 1.1: Take the workspace lock. The workspace is a single mutable
 	// tree, so a second gala process working in it would delete this build's
 	// files mid-transpile.
-	lock, err := b.workspace.Lock(workspaceLockTimeout)
+	lock, err := b.workspace.Lock(lockTimeout(workspaceLockTimeout))
 	if err != nil {
 		return "", err
 	}
@@ -1489,7 +1489,7 @@ func (b *Builder) Test(verbose bool) error {
 	}
 
 	// Step 1.1: Take the workspace lock — see the note in Build.
-	lock, err := b.workspace.Lock(workspaceLockTimeout)
+	lock, err := b.workspace.Lock(lockTimeout(workspaceLockTimeout))
 	if err != nil {
 		return err
 	}

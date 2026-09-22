@@ -367,6 +367,35 @@ Anything still pointed at the same workspace — two builds at once, two test
 runs — is serialized by a lock. The second invocation waits for the first and,
 if the wait does not clear, reports which process holds it.
 
+A wait announces itself on stderr as soon as it begins, and again when the lock
+comes free:
+
+```
+gala: waiting for the build workspace lock (pid=54321 started=2026-09-21T18:04:11Z)
+gala: Give this build a workspace of its own:
+  gala <command> --build-dir <dir>   (or set GALA_BUILD_DIR=<dir>)
+gala: workspace lock acquired after 47s
+```
+
+Note that the language server does **not** take this lock: `gala lsp` reads
+configuration paths only and never builds into a workspace, so an editor session
+never contends with a build or a test run.
+
+### Failing fast instead of waiting
+
+A build waits up to ten minutes by default. `GALA_BUILD_LOCK_TIMEOUT` overrides
+that — a Go duration (`30s`, `2m`), bare seconds (`45`), or `0` to wait forever:
+
+```shell
+GALA_BUILD_LOCK_TIMEOUT=30s gala test   # fail after 30s rather than blocking
+GALA_BUILD_LOCK_TIMEOUT=0 gala build    # wait as long as it takes
+```
+
+Scripted and CI runs usually want the short form: there is no one watching to
+notice the wait, and a job that sits behind a stray process burns the runner for
+nothing. An unparseable value is ignored with a warning rather than failing the
+build.
+
 ### Giving a build its own workspace
 
 Set `GALA_BUILD_DIR`, or pass `--build-dir`, to move build workspaces somewhere

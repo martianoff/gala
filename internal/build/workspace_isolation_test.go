@@ -1,12 +1,14 @@
 package build
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -363,4 +365,74 @@ func TestDiscardLeavesTheLockFile(t *testing.T) {
 	require.FileExists(t, lockPath, "Discard must not unlink the lock file")
 
 	require.NoError(t, os.Remove(lockPath))
+}
+
+// TestLockTimeoutEnvOverride covers GALA_BUILD_LOCK_TIMEOUT. A scripted or CI
+// run wants to fail fast rather than block behind a stray process for the
+// default ten minutes.
+func TestLockTimeoutEnvOverride(t *testing.T) {
+	const def = 10 * time.Minute
+
+	cases := []struct {
+		name string
+		env  string
+		want time.Duration
+	}{
+		{name: "unset falls back to the default", env: "", want: def},
+		{name: "go duration", env: "30s", want: 30 * time.Second},
+		{name: "minutes", env: "2m", want: 2 * time.Minute},
+		{name: "bare seconds", env: "45", want: 45 * time.Second},
+		{name: "zero waits forever", env: "0", want: 0},
+		// A typo must not fail a build that would otherwise work.
+		{name: "unparseable falls back", env: "soon", want: def},
+		{name: "negative falls back", env: "-5s", want: def},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.env == "" {
+				os.Unsetenv(lockTimeoutEnv)
+			} else {
+				t.Setenv(lockTimeoutEnv, tc.env)
+			}
+			require.Equal(t, tc.want, lockTimeout(def))
+		})
+	}
+}
+
+// TestLockWaitAnnouncesItself pins that a build blocked on the workspace lock
+// says so. Without the message the process produces no output at all while it
+// waits, and the first reading of a build that sits for minutes is that it has
+// hung.
+func TestLockWaitAnnouncesItself(t *testing.T) {
+	dir := t.TempDir()
+
+	held, err := lockDir(dir, time.Second)
+	require.NoError(t, err)
+
+	stderr := os.Stderr
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	os.Stderr = w
+	defer func() { os.Stderr = stderr }()
+
+	// Release from under the waiter so it reports both the wait and the
+	// acquisition.
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		held.Release()
+	}()
+
+	h, err := lockDir(dir, 10*time.Second)
+	require.NoError(t, err)
+	h.Release()
+
+	require.NoError(t, w.Close())
+	os.Stderr = stderr
+	out, err := io.ReadAll(r)
+	require.NoError(t, err)
+
+	assert.Contains(t, string(out), "waiting for the build workspace lock")
+	assert.Contains(t, string(out), "pid=")
+	assert.Contains(t, string(out), "workspace lock acquired after")
 }
