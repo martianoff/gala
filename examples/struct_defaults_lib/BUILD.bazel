@@ -1,0 +1,9 @@
+load("@rules_gala//gala:defs.bzl", "gala_library")
+
+gala_library(
+    name = "struct_defaults_lib",
+    src = "config.gala",
+    importpath = "martianoff/gala/examples/struct_defaults_lib",
+    visibility = ["//visibility:public"],
+    deps = ["//collection_immutable"],
+)

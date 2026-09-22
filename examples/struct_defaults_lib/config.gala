@@ -1,0 +1,23 @@
+package struct_defaults_lib
+
+import . "martianoff/gala/collection_immutable"
+
+// Entry is a type this package owns. A default expression that names it is
+// lowered at the CONSTRUCTION site — in whatever package that is — so the
+// emitted Go has to qualify it. Left bare, a cross-package construction failed
+// with `undefined: Entry`, naming a type the author never wrote there.
+struct Entry(Id string)
+
+// DefaultTag must be exported for the same reason: a default is evaluated at
+// each construction site, so everything it names has to be visible there.
+func DefaultTag() string = "none"
+
+// Config exercises three shapes of default across a package boundary — a
+// literal, a generic call whose TYPE ARGUMENT is package-local, and a call to
+// a function of the declaring package.
+struct Config(
+    Name    string,
+    Entries Array[Entry] = EmptyArray[Entry](),
+    Tag     string       = DefaultTag(),
+    Retries int          = 3,
+)

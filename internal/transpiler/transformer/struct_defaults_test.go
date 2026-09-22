@@ -71,6 +71,22 @@ func main() {
 			contains: []string{"Tries:", "9"},
 		},
 		{
+			// `Cfg()` carries no argument list, so it never reaches the
+			// positional dispatcher — it is handled with the other zero-arg
+			// forms. Before that, it was emitted as a bare `Cfg()`, which Go
+			// reads as a conversion: "missing argument in conversion to Cfg".
+			name: "zero-argument construction fills every default",
+			input: `package main
+
+struct Cfg(Name string = "n", Tries int = 3)
+
+func main() {
+    val a = Cfg()
+    Println(a.Name, a.Tries)
+}`,
+			contains: []string{"Cfg{", "Name:", `"n"`, "Tries:", "3"},
+		},
+		{
 			// A Go-style composite literal is not a constructor call. It keeps
 			// Go's semantics: partial, and no defaults consulted.
 			name: "go-style literal stays partial",
@@ -207,4 +223,63 @@ func main() {
 	body := out[strings.Index(out, "func main()"):]
 	assert.Equal(t, 2, strings.Count(body, "next()"),
 		"each construction must emit its own call to the default expression")
+}
+
+// TestZeroArgConstructionReportsMissingFields pins that a zero-argument call on
+// a struct with a required field names that field, rather than falling through
+// to Go and returning as "missing argument in conversion to Cfg" — a message
+// about a conversion the author never wrote.
+func TestZeroArgConstructionReportsMissingFields(t *testing.T) {
+	trans := newDefaultsTranspiler()
+
+	_, err := trans.Transpile(`package main
+
+struct Partial(Name string, Tries int = 3)
+
+func main() {
+    Println(Partial().Name)
+}`, "struct_defaults_test.gala")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "GALA-E0045")
+	assert.Contains(t, err.Error(), `missing required field "Name"`)
+	assert.NotContains(t, err.Error(), "conversion")
+}
+
+// TestZeroFieldStructStillConstructs pins that the all-defaults path did not
+// disturb the zero-field spelling, which the Apply/companion paths own.
+func TestZeroFieldStructStillConstructs(t *testing.T) {
+	trans := newDefaultsTranspiler()
+
+	out, err := trans.Transpile(`package main
+
+struct Zero()
+
+func main() {
+    Println(Zero())
+}`, "struct_defaults_test.gala")
+
+	require.NoError(t, err)
+	assert.Contains(t, out, "Zero{}")
+}
+
+// TestUnknownStructFieldReportsItself pins that a named argument matching no
+// field is reported as itself. It used to be dropped silently, so the slip
+// surfaced only as the missing field it was meant to supply — naming the field
+// the author thought they had just written.
+func TestUnknownStructFieldReportsItself(t *testing.T) {
+	trans := newDefaultsTranspiler()
+
+	_, err := trans.Transpile(`package main
+
+struct Cfg(Name string, Tries int = 3)
+
+func main() {
+    val c = Cfg(Nmae = "a")
+    Println(c.Name)
+}`, "struct_defaults_test.gala")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `unknown field "Nmae"`)
+	assert.NotContains(t, err.Error(), "missing required field")
 }

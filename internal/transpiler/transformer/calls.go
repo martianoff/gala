@@ -339,8 +339,32 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 		// is non-nil); zero-field sealed variants carry a zero-arg Apply method
 		// and are already handled above.
 		if typeName := t.getBaseTypeName(base); typeName != "" {
-			if fields, ok := t.structFields[t.resolveStructTypeName(typeName)]; ok && len(fields) == 0 && t.isTypeBaseExpr(base) {
-				return &ast.CompositeLit{Type: base}, nil
+			resolved := t.resolveStructTypeName(typeName)
+			if fields, ok := t.structFields[resolved]; ok && t.isTypeBaseExpr(base) {
+				if len(fields) == 0 {
+					return &ast.CompositeLit{Type: base}, nil
+				}
+				// A shorthand struct called with no arguments is a real
+				// construction meaning "all defaults". It has to be handled
+				// here with the other zero-argument forms: `Cfg()` carries no
+				// argument list, so it never reaches the positional dispatcher.
+				//
+				// Routing it through the same helper as every other
+				// construction is what makes a struct with a required field
+				// report that field by name, instead of falling through to Go
+				// and coming back as "missing argument in conversion to Cfg" —
+				// a message about a conversion the author never wrote.
+				if t.isShorthandStruct(resolved) {
+					elts, derr := t.fillOmittedStructFields(
+						typeName, resolved, fields,
+						func(int, string) bool { return false },
+						t.structTypeArgSubst(base, resolved),
+						suffix.GetStart().GetLine(), suffix.GetStart().GetColumn())
+					if derr != nil {
+						return nil, derr
+					}
+					return &ast.CompositeLit{Type: base, Elts: elts}, nil
+				}
 			}
 		}
 		// Zero-argument bare builtin (e.g. `recover()`) is forbidden too. Point

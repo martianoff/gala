@@ -85,6 +85,12 @@ func (t *galaASTTransformer) fillOmittedStructFields(
 		if err != nil {
 			return nil, err
 		}
+		// The expression was resolved in THIS package's scope; names it borrows
+		// from the declaring package need qualifying. See qualifyDefaultExpr.
+		val, err = t.qualifyDefaultExpr(val, t.declaringPackageOf(resolvedTypeName))
+		if err != nil {
+			return nil, err
+		}
 		if immutFlags != nil && i < len(immutFlags) && immutFlags[i] {
 			val = t.wrapImmutableFieldValue(val, fieldTypes[fieldName], typeArgSubst)
 		}
@@ -194,4 +200,147 @@ func (t *galaASTTransformer) checkUnknownStructFields(
 		return nil
 	}
 	return unknownStructFieldError(typeName, unknown, fields, line, col)
+}
+
+// isShorthandStruct reports whether a type came from the shorthand form and
+// declares at least one field — the shape for which `Cfg()` is a construction
+// meaning "all defaults" rather than a Go type conversion.
+//
+// A zero-field struct is excluded because the Apply/companion paths already
+// own that spelling, and a block-form struct because it is a Go-shaped layout
+// whose construction Go itself checks.
+func (t *galaASTTransformer) isShorthandStruct(resolvedTypeName string) bool {
+	meta := t.getTypeMeta(resolvedTypeName)
+	return meta != nil && meta.IsShorthand && len(meta.FieldNames) > 0
+}
+
+// qualifyDefaultExpr rewrites a lowered default expression so the names in it
+// resolve from the package doing the CONSTRUCTING, not the one that declared
+// the default.
+//
+// A default is source text on the declaring package's metadata, and it is
+// transformed at the construction site — so it is resolved in the caller's
+// scope. For a same-package construction that is correct. Across packages it is
+// not: `struct Snap(Entries Array[Entry] = EmptyArray[Entry]())` declared in
+// `lib` lowers at a call site in `main` as `EmptyArray[Entry]()`, and `Entry`
+// names nothing there. The generated Go then fails with `undefined: Entry`,
+// pointing at a type the author never wrote at that call site.
+//
+// Only bare identifiers that the declaring package actually declares are
+// rewritten. Anything already qualified, any std type (those lower to a
+// selector, not an ident) and any Go builtin is left alone — as is everything,
+// when the declaring package is dot-imported and its names are already in
+// scope.
+func (t *galaASTTransformer) qualifyDefaultExpr(expr ast.Expr, owningPkg string) (ast.Expr, error) {
+	if expr == nil || owningPkg == "" || owningPkg == t.packageName {
+		return expr, nil
+	}
+	// A dot import puts the declaring package's names in scope unqualified, so
+	// they resolve here as written and qualifying would invent an identifier
+	// (`struct_defaults_lib.Entry`) that the file never binds.
+	for _, dotted := range t.importManager.GetDotImports() {
+		if dotted == owningPkg {
+			return expr, nil
+		}
+	}
+
+	var err error
+	var walk func(ast.Expr) ast.Expr
+	rewriteIdent := func(id *ast.Ident) ast.Expr {
+		if id == nil || !t.packageDeclares(owningPkg, id.Name) {
+			return id
+		}
+		// An unexported name cannot be reached from another package at all, so
+		// qualifying it would only trade one Go error for another. Say what is
+		// actually wrong.
+		if !ast.IsExported(id.Name) {
+			err = galaerr.NewSemanticErrorAt(0, 0, fmt.Sprintf(
+				"default expression for a field of %q refers to %q, which is unexported in package %q — "+
+					"a default is evaluated at each construction site, so everything it names must be visible there; "+
+					"export it or use a literal default",
+				owningPkg, id.Name, owningPkg))
+			return id
+		}
+		return &ast.SelectorExpr{X: ast.NewIdent(owningPkg), Sel: ast.NewIdent(id.Name)}
+	}
+	walk = func(e ast.Expr) ast.Expr {
+		switch n := e.(type) {
+		case nil:
+			return nil
+		case *ast.Ident:
+			return rewriteIdent(n)
+		case *ast.CallExpr:
+			n.Fun = walk(n.Fun)
+			for i := range n.Args {
+				n.Args[i] = walk(n.Args[i])
+			}
+		case *ast.IndexExpr:
+			n.X = walk(n.X)
+			n.Index = walk(n.Index)
+		case *ast.IndexListExpr:
+			n.X = walk(n.X)
+			for i := range n.Indices {
+				n.Indices[i] = walk(n.Indices[i])
+			}
+		case *ast.SelectorExpr:
+			// Already qualified. The one thing to check is that what it names
+			// is reachable: a default that calls the declaring package's own
+			// unexported helper cannot be evaluated at a call site in another
+			// package, and emitting `lib.helper()` would just hand the author
+			// a Go visibility error about code they never wrote.
+			if base, ok := n.X.(*ast.Ident); ok && base.Name == owningPkg && !ast.IsExported(n.Sel.Name) {
+				err = galaerr.NewSemanticErrorAt(0, 0, fmt.Sprintf(
+					"default expression refers to %q, which is unexported in package %q — "+
+						"a default is evaluated at each construction site, so everything it names "+
+						"must be visible there; export it or use a literal default",
+					n.Sel.Name, owningPkg))
+			}
+		case *ast.StarExpr:
+			n.X = walk(n.X)
+		case *ast.UnaryExpr:
+			n.X = walk(n.X)
+		case *ast.BinaryExpr:
+			n.X = walk(n.X)
+			n.Y = walk(n.Y)
+		case *ast.ParenExpr:
+			n.X = walk(n.X)
+		case *ast.CompositeLit:
+			n.Type = walk(n.Type)
+			for i := range n.Elts {
+				n.Elts[i] = walk(n.Elts[i])
+			}
+		case *ast.KeyValueExpr:
+			// The key of a struct literal is a field name, not a reference.
+			n.Value = walk(n.Value)
+		}
+		return e
+	}
+
+	out := walk(expr)
+	return out, err
+}
+
+// packageDeclares reports whether a package declares a type or function of this
+// name, using the same "pkg.Name" keys the metadata tables are built with.
+func (t *galaASTTransformer) packageDeclares(pkg, name string) bool {
+	qualified := pkg + "." + name
+	if _, ok := t.structFields[qualified]; ok {
+		return true
+	}
+	if t.typeMetas[qualified] != nil {
+		return true
+	}
+	if fns, ok := t.functions[pkg]; ok && fns != nil && fns.Name == name {
+		return true
+	}
+	return false
+}
+
+// declaringPackageOf returns the package a type was declared in, or "" when
+// that is unknown.
+func (t *galaASTTransformer) declaringPackageOf(resolvedTypeName string) string {
+	if meta := t.getTypeMeta(resolvedTypeName); meta != nil {
+		return meta.Package
+	}
+	return ""
 }

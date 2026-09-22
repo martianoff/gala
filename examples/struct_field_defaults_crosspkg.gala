@@ -1,0 +1,26 @@
+package main
+
+import (
+    "martianoff/gala/examples/struct_defaults_lib"
+)
+
+// Field defaults declared in one package, applied at a construction site in
+// another. The default is source text on the declaring package's metadata and
+// is transformed where the construction happens, so every name it borrows has
+// to be re-qualified for that scope: `EmptyArray[Entry]()` must reach Go as
+// `EmptyArray[struct_defaults_lib.Entry]()`, and `DefaultTag()` as
+// `struct_defaults_lib.DefaultTag()`.
+
+func main() {
+    // Omits all three defaulted fields.
+    val a = struct_defaults_lib.Config(Name = "a")
+    Println(a.Name, a.Entries.Size(), a.Tag, a.Retries)
+
+    // Positional, stopping after the required field.
+    val b = struct_defaults_lib.Config("b")
+    Println(b.Name, b.Entries.Size(), b.Tag, b.Retries)
+
+    // Explicit values still win.
+    val c = struct_defaults_lib.Config(Name = "c", Tag = "set", Retries = 9)
+    Println(c.Name, c.Entries.Size(), c.Tag, c.Retries)
+}

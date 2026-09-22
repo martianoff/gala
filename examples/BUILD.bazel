@@ -3178,3 +3178,17 @@ gala_exec_test(
     src = "struct_field_defaults.gala",
     expected = "struct_field_defaults.out",
 )
+
+# Field defaults declared in one package and applied at a construction site in
+# another. The default is source text transformed where the construction
+# happens, so a package-local type inside it (`EmptyArray[Entry]()`) has to be
+# re-qualified — left bare it reached Go as `undefined: Entry`.
+gala_exec_test(
+    name = "struct_field_defaults_crosspkg",
+    src = "struct_field_defaults_crosspkg.gala",
+    expected = "struct_field_defaults_crosspkg.out",
+    deps = [
+        "//collection_immutable",
+        "//examples/struct_defaults_lib",
+    ],
+)
