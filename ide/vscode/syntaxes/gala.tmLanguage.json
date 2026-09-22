@@ -1,0 +1,263 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "GALA",
+  "scopeName": "source.gala",
+  "fileTypes": [
+    "gala"
+  ],
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#types"
+    },
+    {
+      "include": "#functions"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#punctuation"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.gala",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.gala",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "include": "#interpolated-string"
+        },
+        {
+          "name": "string.quoted.double.gala",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.gala",
+              "match": "\\\\."
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.single.gala",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            {
+              "name": "constant.character.escape.gala",
+              "match": "\\\\."
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.raw.gala",
+          "begin": "`",
+          "end": "`"
+        }
+      ]
+    },
+    "interpolated-string": {
+      "name": "string.interpolated.gala",
+      "begin": "\\b([sf])\"",
+      "beginCaptures": {
+        "1": {
+          "name": "storage.type.string.gala"
+        }
+      },
+      "end": "\"",
+      "patterns": [
+        {
+          "include": "#interpolation"
+        },
+        {
+          "name": "constant.character.escape.gala",
+          "match": "\\\\."
+        },
+        {
+          "name": "constant.other.placeholder.gala",
+          "match": "%[-+#0 ]*[0-9]*(?:\\.[0-9]+)?[a-zA-Z]"
+        }
+      ]
+    },
+    "interpolation": {
+      "name": "meta.embedded.expression.gala",
+      "begin": "\\$\\{",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.section.interpolation.begin.gala"
+        }
+      },
+      "end": "\\}",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.interpolation.end.gala"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#embedded-expression"
+        }
+      ]
+    },
+    "embedded-expression": {
+      "patterns": [
+        {
+          "include": "#balanced-braces"
+        },
+        {
+          "include": "#comments"
+        },
+        {
+          "include": "#strings"
+        },
+        {
+          "include": "#keywords"
+        },
+        {
+          "include": "#numbers"
+        },
+        {
+          "include": "#types"
+        },
+        {
+          "include": "#functions"
+        },
+        {
+          "include": "#operators"
+        },
+        {
+          "include": "#punctuation"
+        }
+      ]
+    },
+    "balanced-braces": {
+      "name": "meta.braces.gala",
+      "begin": "\\{",
+      "end": "\\}",
+      "patterns": [
+        {
+          "include": "#embedded-expression"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.gala",
+          "match": "\\b(?:if|else|for|range|match|case|return)\\b"
+        },
+        {
+          "name": "keyword.declaration.gala",
+          "match": "\\b(?:val|var|bind|also|use|func|type|struct|interface|sealed|package|import|embed)\\b"
+        },
+        {
+          "name": "constant.language.gala",
+          "match": "\\b(?:true|false|nil)\\b"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.hex.gala",
+          "match": "\\b0[xX][0-9a-fA-F]+\\b"
+        },
+        {
+          "name": "constant.numeric.binary.gala",
+          "match": "\\b0[bB][01]+\\b"
+        },
+        {
+          "name": "constant.numeric.octal.gala",
+          "match": "\\b0[oO][0-7]+\\b"
+        },
+        {
+          "name": "constant.numeric.float.gala",
+          "match": "\\b(?:[0-9]+\\.[0-9]*|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?\\b|\\b[0-9]+[eE][+-]?[0-9]+\\b"
+        },
+        {
+          "name": "constant.numeric.integer.gala",
+          "match": "\\b[0-9]+\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "storage.type.primitive.gala",
+          "match": "\\b(?:any|bool|byte|rune|error|int|int8|int16|int32|int64|uint|uint8|uint16|uint32|uint64|uintptr|float32|float64|complex64|complex128|string)\\b"
+        },
+        {
+          "name": "support.type.gala",
+          "match": "\\b(?:Option|Either|Try|Future|IO|List|Array|HashMap|HashSet|TreeSet|TreeMap|Validated|ConstPtr|Stream|Tuple)\\b"
+        },
+        {
+          "name": "entity.name.type.gala",
+          "match": "\\b[A-Z][A-Za-z0-9_]*\\b"
+        }
+      ]
+    },
+    "functions": {
+      "patterns": [
+        {
+          "name": "entity.name.function.gala",
+          "match": "\\b[a-z_][A-Za-z0-9_]*(?=\\s*\\()"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.gala",
+          "match": "=>|->|<-|:=|\\.\\.\\.|&&|\\|\\||[=!<>]=|[+\\-*/%<>=!&|^]"
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.section.blocks.gala",
+          "match": "[{}]"
+        },
+        {
+          "name": "punctuation.section.parens.gala",
+          "match": "[()]"
+        },
+        {
+          "name": "punctuation.section.brackets.gala",
+          "match": "[\\[\\]]"
+        },
+        {
+          "name": "punctuation.separator.gala",
+          "match": "[,;]"
+        },
+        {
+          "name": "punctuation.accessor.gala",
+          "match": "\\."
+        }
+      ]
+    }
+  }
+}

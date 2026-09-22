@@ -132,3 +132,26 @@ jobs:
             --test_timeout=1800 \
             --test_output=errors --verbose_failures \
             --action_env=GOROOT="$GOROOT" --action_env=PATH
+
+  vscode-extension:
+    name: Build VS Code Extension
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ide/vscode/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ide/vscode
+        run: npm ci
+
+      - name: Typecheck and bundle
+        working-directory: ide/vscode
+        run: npm run compile

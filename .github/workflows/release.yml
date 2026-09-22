@@ -242,9 +242,46 @@ jobs:
           name: gala-intellij-plugin
           path: bazel-bin/ide/intellij/gala-intellij-plugin.zip
 
+  vscode-extension:
+    name: Build VS Code Extension
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ide/vscode/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ide/vscode
+        run: npm ci
+
+      - name: Set extension version from release tag
+        working-directory: ide/vscode
+        env:
+          GITHUB_REF_NAME: ${{ github.event.release.tag_name }}
+        run: npm pkg set "version=${GITHUB_REF_NAME#v}"
+
+      - name: Package extension
+        working-directory: ide/vscode
+        run: npm run package
+
+      - name: Rename vsix for release
+        run: mv ide/vscode/gala-*.vsix "ide/vscode/gala-vscode-${{ github.event.release.tag_name }}.vsix"
+
+      - name: Upload extension artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gala-vscode-extension
+          path: ide/vscode/gala-vscode-*.vsix
+
   upload-release:
     name: Upload Release Assets
-    needs: [build, intellij-plugin]
+    needs: [build, intellij-plugin, vscode-extension]
     runs-on: ubuntu-latest
     permissions:
       contents: write  # attach assets to the release
@@ -258,8 +295,8 @@ jobs:
         run: |
           cd artifacts
           mkdir -p release
-          find . -mindepth 2 -type f \( -name 'gala-*' -o -name '*.zip' \) -exec mv {} release/ \;
-          rm -rf gala-*/ gala-intellij-plugin/
+          find . -mindepth 2 -type f \( -name 'gala-*' -o -name '*.zip' -o -name '*.vsix' \) -exec mv {} release/ \;
+          rm -rf gala-*/ gala-intellij-plugin/ gala-vscode-extension/
           mv release/* .
           rmdir release
           sha256sum gala-linux-* gala-darwin-* gala-windows-* *.zip > checksums-sha256.txt
@@ -272,6 +309,7 @@ jobs:
             artifacts/gala-darwin-*
             artifacts/gala-windows-*
             artifacts/*.zip
+            artifacts/*.vsix
             artifacts/checksums-sha256.txt
 
   # Publishes the standard library as the Go module go.gala.fyi/stdlib from
