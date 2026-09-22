@@ -89,7 +89,9 @@ jobs:
     # migration, so it is pinned by commit until one is cut.
     env:
       GALA_TUI_REF: cd234574bdd942e789c93c6c91048b10c2517aa2
-      GALA_TEAM_REF: "0.12.0"
+      # Pinned past the struct-field-default adoption (#136): 0.12.0 predates it
+      # and constructs ClaudeChunk/Policy partially, which GALA-E0045 now rejects.
+      GALA_TEAM_REF: "6bea25c3a765987bec3571fa3c6eaf80b1aa15e8"
       WARM_BUDGET_SECONDS: "500"
       COLD_BUDGET_SECONDS: "850"
 
