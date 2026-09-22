@@ -324,6 +324,12 @@ func (a *galaAnalyzer) checkUndefinedSymbols(
 	c.walker = scopewalk.New(c, undefWalkOptions())
 	c.walkSourceFile(sourceFile)
 
+	// Type positions are invisible to the value walker, so they get their own
+	// pass over the same qualifier set. It runs under this function's
+	// eligibility guards, which is why it lives here rather than standing
+	// alone. See checkTypeQualifiers.
+	c.errs = append(c.errs, checkTypeQualifiers(sourceFile, c.qualifiers, a.hintRoots, a.importPathResolvesTo)...)
+
 	sort.SliceStable(c.errs, func(i, j int) bool {
 		if c.errs[i].Line != c.errs[j].Line {
 			return c.errs[i].Line < c.errs[j].Line
@@ -1268,4 +1274,77 @@ func packageClauseOf(src string) string {
 		}
 	}
 	return ""
+}
+
+// --- type-position qualifiers ------------------------------------------------
+
+// checkTypeQualifiers reports a package qualifier used in TYPE position that no
+// import brings into scope, so `var sb strings.Builder` in a file that never
+// imports `strings` is a GALA diagnostic rather than a Go one.
+//
+// The shared scope walker is a VALUE-reference walker: it short-circuits
+// TypeContext by design, because a type name is not a value and leaking one
+// into the reference stream would break the capture analysis built on the same
+// walker. That left type positions unchecked. The call half of
+//
+//	var sb strings.Builder                 // unreported
+//	sb.WriteString(strings.Repeat("-", n)) // GALA-E0023
+//
+// was caught and the type half was not; a file whose ONLY offending use was a
+// type position got no GALA error at all and fell through to `go build`.
+//
+// Only the QUALIFIER is checked, never the member. `strings.Builder` asks
+// whether `strings` is in scope, not whether it exports `Builder` — the
+// qualifier is unambiguously a package name, while resolving the member would
+// need the full type surface of every imported Go package and would misfire
+// whenever that surface is incomplete (no Go SDK, an unanalyzed package).
+// Unqualified type names are left alone entirely: a bare `Foo` may be a type
+// parameter, a local declaration, or a dot-imported name.
+func checkTypeQualifiers(
+	sourceFile *grammar.SourceFileContext,
+	qualifiers map[string]bool,
+	hintRoots func() []hintRoot,
+	importResolves func(importPath, dir string) bool,
+) []*galaerr.SemanticError {
+	c := &undefChecker{
+		qualifiers:     qualifiers,
+		hintRoots:      hintRoots,
+		importResolves: importResolves,
+		reported:       make(map[string]bool),
+	}
+	walkTypeContexts(sourceFile, func(tc *grammar.TypeContext) {
+		qi := tc.QualifiedIdentifier()
+		if qi == nil {
+			return
+		}
+		ids := qi.(*grammar.QualifiedIdentifierContext).AllIdentifier()
+		if len(ids) < 2 {
+			return // unqualified: not a package reference
+		}
+		name := ids[0].GetText()
+		if qualifiers[name] {
+			return
+		}
+		c.report(name, ids[0].GetStart())
+	})
+
+	sort.SliceStable(c.errs, func(i, j int) bool {
+		if c.errs[i].Line != c.errs[j].Line {
+			return c.errs[i].Line < c.errs[j].Line
+		}
+		return c.errs[i].Column < c.errs[j].Column
+	})
+	return c.errs
+}
+
+// walkTypeContexts visits every TypeContext in the tree, including the nested
+// ones a composite type holds — `map[string]strings.Builder` and `[]pkg.T` both
+// carry their qualified type below an outer TypeContext.
+func walkTypeContexts(node antlr.Tree, visit func(*grammar.TypeContext)) {
+	if tc, ok := node.(*grammar.TypeContext); ok {
+		visit(tc)
+	}
+	for i := 0; i < node.GetChildCount(); i++ {
+		walkTypeContexts(node.GetChild(i), visit)
+	}
 }

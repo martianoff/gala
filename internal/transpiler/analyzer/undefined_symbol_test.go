@@ -897,3 +897,151 @@ func TestCrossPackageImportCheckStillFires(t *testing.T) {
 	require.Error(t, err, "a sibling's import must not satisfy this file's use of Array")
 	assert.Contains(t, err.Error(), "GALA-E0025")
 }
+
+// TestTypeQualifierUndefined covers the type-position half of GALA-E0023. The
+// shared scope walker sees value positions only, so a package qualifier used
+// solely in a type annotation used to escape the analyzer entirely and surface
+// from `go build` against generated code.
+func TestTypeQualifierUndefined(t *testing.T) {
+	cases := []struct {
+		name      string
+		main      string
+		expectErr bool
+	}{
+		{
+			name: "qualifier in type position with no import",
+			main: `package main
+
+func pad() string {
+    var sb strings.Builder
+    return sb.String()
+}
+
+func main() {
+    Println(pad())
+}`,
+			expectErr: true,
+		},
+		{
+			name: "qualifier nested inside a composite type",
+			main: `package main
+
+func pad() string {
+    var m map[string]strings.Builder
+    _ = m
+    return ""
+}
+
+func main() {
+    Println(pad())
+}`,
+			expectErr: true,
+		},
+		{
+			// The control: the same file with the import is clean.
+			name: "qualifier in type position with the import present",
+			main: `package main
+
+import (
+    "strings"
+)
+
+func pad() string {
+    var sb strings.Builder
+    return sb.String()
+}
+
+func main() {
+    Println(pad())
+}`,
+			expectErr: false,
+		},
+		{
+			// An unqualified type name stays unchecked — it may be a type
+			// parameter, a local declaration, or a dot-imported name, and
+			// flagging it would cost the zero-false-positive property.
+			name: "unqualified type name is not checked here",
+			main: `package main
+
+struct Box[T any](Value T)
+
+func wrap[T any](v T) Box[T] = Box(Value = v)
+
+func main() {
+    Println(wrap(1).Value)
+}`,
+			expectErr: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := analyzeSources(t, tc.main, nil)
+			if !tc.expectErr {
+				require.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "GALA-E0023")
+			assert.Contains(t, err.Error(), "undefined: strings")
+		})
+	}
+}
+
+// TestDuplicateImportRejected covers GALA-E0046. Import declarations are
+// concatenated on emit without deduping, so a repeated path used to reach
+// `go build` as two identical import lines and be reported as a redeclaration
+// in generated code.
+func TestDuplicateImportRejected(t *testing.T) {
+	t.Run("same package twice under the same name", func(t *testing.T) {
+		err := analyzeSources(t, `package main
+
+import (
+    "strings"
+)
+
+import (
+    "strings"
+)
+
+func main() {
+    Println(strings.Repeat("-", 3))
+}`, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "GALA-E0046")
+		assert.Contains(t, err.Error(), `package "strings" is already imported at line 4`)
+	})
+
+	t.Run("same package under two different aliases stays legal", func(t *testing.T) {
+		// Go permits this and it emits two distinct identifiers, so the check
+		// must key on the local name rather than the path alone.
+		err := analyzeSources(t, `package main
+
+import "strings"
+import gostr "strings"
+
+func main() {
+    Println(strings.Repeat("-", 3), gostr.Repeat("+", 2))
+}`, nil)
+		require.NoError(t, err)
+	})
+
+	t.Run("two different packages in separate blocks stay legal", func(t *testing.T) {
+		err := analyzeSources(t, `package main
+
+import (
+    "strings"
+)
+
+import (
+    "sort"
+)
+
+func main() {
+    var xs []string
+    sort.Strings(xs)
+    Println(strings.Repeat("-", 3))
+}`, nil)
+		require.NoError(t, err)
+	})
+}

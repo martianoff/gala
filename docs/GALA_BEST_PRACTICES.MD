@@ -174,6 +174,18 @@ func copyFile(src string, dst string) Try[Int] = Try(() => {
       detail/detail.gala   # shared across mylib's packages, invisible to consumers
   ```
   Not a default layout — for an application the whole module is already private, and an `internal/` tree just adds a directory level. Reach for it where there is a real API boundary to defend. Publishing later means moving the directory, which changes the import path. See [Package Visibility](GALA.MD#package-visibility).
+- **Prefer the shorthand `struct Cfg(...)` for GALA-native types; keep `type Cfg struct { ... }` for types that exist to meet Go.** The shorthand declares a *constructor*, so the compiler can promise a fully-initialized value: an omitted field takes its declared default, and omitting one that has no default is [GALA-E0045](errors/GALA-E0045.md). The block form declares a *layout* that mirrors a Go declaration field for field, so it stays partially constructable like Go — as do Go-imported types and the `Cfg{...}` literal spelling, whose zero-value behaviour is the Go interop contract.
+  ```gala
+  struct Cfg(Name string, Tries int = 3)   // GALA-native: Cfg(Name = "a") ⇒ Tries = 3
+  val c = Cfg(Name = "a")                  // missing a required field is a compile error
+
+  type Opts struct {       // Go-shaped: partial, zero-filled
+      Timeout int
+      Retries int
+  }
+  val o = Opts(Timeout = 5)                // Retries = 0, no error
+  ```
+- **Give a new field on a published struct a default** rather than letting existing call sites zero-fill it. That is what keeps them compiling *and* correct; before defaults were lowered, a defaulted `rune` silently became NUL at every site written before the field existed. See [Struct Field Defaults](GALA.MD#struct-field-defaults).
 
 ---
 

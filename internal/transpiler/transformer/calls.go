@@ -1152,6 +1152,7 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 	fun ast.Expr,
 	typeName string,
 	args []ast.Expr,
+	line, col int,
 ) (handled bool, result ast.Expr, err error) {
 	// Tuple → TupleN arity rewrite for the bare positional constructor.
 	// Routes through the unified helper (B2) so every site agrees. Without
@@ -1193,7 +1194,8 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 		// them. Without this, a generic struct like `Tuple(a, b)` emits
 		// `Tuple{V1: a, V2: b}` — Go rejects the bare generic type.
 		typedFun := t.inferTypeArgsFromPositionalArgs(fun, typeName, resolvedTypeName, fields, args)
-		return true, t.buildStructLiteral(typedFun, resolvedTypeName, fields, args, false), nil
+		lit, err := t.buildStructLiteral(typedFun, typeName, resolvedTypeName, fields, args, false, line, col)
+		return true, lit, err
 	}
 
 	if !hasApply {
@@ -1207,7 +1209,8 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 		// rather than being reported as GALA-E0043.
 		if fields, ok := t.structFields[resolvedTypeName]; ok && len(args) > 0 &&
 			!t.positionalCtorIsUnavailable(typeMeta.Package, fields, len(args)) {
-			return true, t.buildStructLiteral(fun, resolvedTypeName, fields, args, true), nil
+			lit, err := t.buildStructLiteral(fun, typeName, resolvedTypeName, fields, args, true, line, col)
+			return true, lit, err
 		}
 		return false, nil, nil
 	}
@@ -1353,16 +1356,13 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 // true, excess args are silently dropped (used when the arg count exceeds the
 // field count); otherwise the caller is responsible for matching the counts.
 // Extracted from transformCallWithArgsCtx as part of A1 cont.
-func (t *galaASTTransformer) buildStructLiteral(typeExpr ast.Expr, resolvedTypeName string, fields []string, args []ast.Expr, truncate bool) ast.Expr {
+func (t *galaASTTransformer) buildStructLiteral(typeExpr ast.Expr, typeName, resolvedTypeName string, fields []string, args []ast.Expr, truncate bool, line, col int) (ast.Expr, error) {
 	immutFlags := t.structImmutFields[resolvedTypeName]
 	fieldTypes := t.structFieldTypes[resolvedTypeName]
 	typeArgSubst := t.structTypeArgSubst(typeExpr, resolvedTypeName)
 	var elts []ast.Expr
 	for i, fieldName := range fields {
 		if i >= len(args) {
-			if truncate {
-				break
-			}
 			break
 		}
 		var valExpr ast.Expr
@@ -1376,7 +1376,31 @@ func (t *galaASTTransformer) buildStructLiteral(typeExpr ast.Expr, resolvedTypeN
 			Value: valExpr,
 		})
 	}
-	return &ast.CompositeLit{Type: typeExpr, Elts: elts}
+
+	// Positional construction fills fields left to right, so anything past
+	// len(args) was omitted. `truncate` marks the under-filled call: it takes
+	// each omitted field's declared default, and reports the ones that have
+	// none. A full call (len(args) == len(fields)) omits nothing and skips
+	// this entirely. See struct_defaults.go.
+	if truncate {
+		defaulted, err := t.fillOmittedStructFields(
+			typeName, resolvedTypeName, fields,
+			func(fieldName string) bool {
+				for i, f := range fields {
+					if f == fieldName {
+						return i < len(args)
+					}
+				}
+				return false
+			},
+			immutFlags, fieldTypes, typeArgSubst, line, col)
+		if err != nil {
+			return nil, err
+		}
+		elts = append(elts, defaulted...)
+	}
+
+	return &ast.CompositeLit{Type: typeExpr, Elts: elts}, nil
 }
 
 // transformFunctionArgs handles Section 6 of the call dispatcher: walk the
@@ -2017,7 +2041,8 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 
 	// --- Section 10: Companion Apply / positional struct construction ---
 	if typeName != "" {
-		handled, expr, err := t.tryTransformCompanionApplyOrStructCtor(fun, typeName, args)
+		handled, expr, err := t.tryTransformCompanionApplyOrStructCtor(fun, typeName, args,
+			argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
 		if err != nil {
 			return nil, err
 		}
@@ -2234,6 +2259,19 @@ func (t *galaASTTransformer) buildStructLiteralWithNamedArgs(
 		}
 		elts = append(elts, &ast.KeyValueExpr{Key: ast.NewIdent(fieldName), Value: valExpr})
 	}
+
+	// Fields the call site left out take their declared default; one with no
+	// default is required, and omitting it is an error rather than a silent
+	// Go zero value. See struct_defaults.go.
+	defaulted, err := t.fillOmittedStructFields(
+		typeName, resolvedTypeName, fields,
+		func(fieldName string) bool { _, ok := namedArgs[fieldName]; return ok },
+		immutFlags, fieldTypes, typeArgSubst, line, col)
+	if err != nil {
+		return nil, err
+	}
+	elts = append(elts, defaulted...)
+
 	return &ast.CompositeLit{Type: typeExpr, Elts: elts}, nil
 }
 

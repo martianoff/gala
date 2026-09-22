@@ -3169,3 +3169,12 @@ gala_exec_test(
         ":cross_pkg_try_chain_session",
     ],
 )
+
+# Shorthand struct field defaults: an omitted field takes its declared default
+# instead of Go's zero value, and omitting a field that has none is GALA-E0045.
+# Go-style literals stay partial. See docs/errors/GALA-E0045.md.
+gala_exec_test(
+    name = "struct_field_defaults",
+    src = "struct_field_defaults.gala",
+    expected = "struct_field_defaults.out",
+)

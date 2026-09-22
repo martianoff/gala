@@ -692,6 +692,13 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	// check below fail open. See module.AllowsInternalImport.
 	importerPath := a.resolver.PackageImportPath(filePath)
 
+	// Reject a package imported twice before resolving anything, so the
+	// duplicate is reported against the source rather than escaping into the
+	// generated Go as a redeclaration.
+	if err := checkDuplicateImports(sourceFile); err != nil {
+		return nil, err
+	}
+
 	for _, impDecl := range sourceFile.AllImportDeclaration() {
 		ctx := impDecl.(*grammar.ImportDeclarationContext)
 		for _, spec := range ctx.AllImportSpec() {
@@ -1134,6 +1141,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 				meta.ImmutFlags = nil
 				meta.FieldPositions = nil
 				meta.FieldDocs = nil
+				meta.FieldDefaults = nil
 				meta.Pos = pos
 				setDoc(&meta.Doc, docs, ctx.GetStart())
 			} else {
@@ -1194,8 +1202,10 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 							meta.FieldPositions = make(map[string]transpiler.SourcePos)
 						}
 						meta.FieldPositions[fieldName] = transpiler.PosFromToken(pctx.Identifier().GetStart())
+						recordFieldDefault(meta, fieldName, pctx)
 					}
 				}
+				meta.IsShorthand = true
 				meta.DefinedIn = filePath
 			}
 		}
@@ -3900,9 +3910,11 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 							meta.FieldPositions = make(map[string]transpiler.SourcePos)
 						}
 						meta.FieldPositions[fieldName] = transpiler.PosFromToken(pctx.Identifier().GetStart())
+						recordFieldDefault(meta, fieldName, pctx)
 					}
 				}
 			}
+			meta.IsShorthand = true
 			richAST.Types[fullTypeName] = meta
 		}
 	}
@@ -4712,3 +4724,80 @@ func (a *galaAnalyzer) filterSiblingsForCurrentFile(
 	return outTrees, outPaths, nil
 }
 
+
+// recordFieldDefault stores the source text of a shorthand struct field's
+// default expression on the type metadata.
+//
+// The shorthand form `struct Cfg(Name string, Tries int = 3)` reuses the
+// grammar's `parameter` rule, so `= 3` parses as a `paramDefault` exactly as it
+// would on a function parameter. Capturing it here is what lets construction
+// sites fill an omitted field with its declared default instead of leaving Go's
+// zero value in place, and lets them tell an omitted-but-defaulted field apart
+// from an omitted required one.
+func recordFieldDefault(meta *transpiler.TypeMetadata, fieldName string, pctx *grammar.ParameterContext) {
+	if pctx.ParamDefault() == nil {
+		return
+	}
+	if meta.FieldDefaults == nil {
+		meta.FieldDefaults = make(map[string]string)
+	}
+	meta.FieldDefaults[fieldName] = pctx.ParamDefault().(*grammar.ParamDefaultContext).Expression().GetText()
+}
+
+// checkDuplicateImports rejects a file that imports the same package twice
+// under the same local name.
+//
+// The emitter concatenates a file's import declarations without deduping them,
+// so a repeated path reached `go build` as two identical import lines and was
+// reported against the generated file:
+//
+//	gen/main.gen.go:6:8: strings redeclared in this block
+//	  gen/main.gen.go:5:8: other declaration of strings
+//	gen/main.gen.go:6:8: "strings" imported and not used
+//
+// Nothing in that points at the source, and the second line is actively
+// misleading — the package is used exactly as often as it is imported. The
+// case arises in practice by adding an import block to a file that already has
+// one further down, past a comment banner.
+//
+// Only a same-name repeat is rejected. Go permits the same path under two
+// different aliases (`import "strings"` plus `import gostr "strings"`), and
+// that emits two distinct identifiers, so it stays legal here.
+func checkDuplicateImports(sourceFile grammar.ISourceFileContext) error {
+	type importSite struct {
+		line, column int
+	}
+	seen := make(map[string]importSite)
+
+	for _, impDecl := range sourceFile.AllImportDeclaration() {
+		ctx := impDecl.(*grammar.ImportDeclarationContext)
+		for _, spec := range ctx.AllImportSpec() {
+			s := spec.(*grammar.ImportSpecContext)
+			path := strings.Trim(s.STRING().GetText(), "\"")
+
+			// Key on path plus local name so two aliases of one path do not
+			// collide. A dot import binds no name of its own, but repeating
+			// one still redeclares every symbol it introduces.
+			local := ""
+			switch {
+			case s.Identifier() != nil:
+				local = s.Identifier().GetText()
+			case s.GetChildCount() > 1:
+				local = "." // dot import
+			}
+			key := path + " " + local
+
+			tok := s.GetStart()
+			if first, ok := seen[key]; ok {
+				return galaerr.NewCodedSemanticError(
+					galaerr.CodeDuplicateImport,
+					tok.GetLine(), tok.GetColumn(),
+					fmt.Sprintf("package %q is already imported at line %d", path, first.line),
+					"remove this import — a file's import blocks are merged, so a package listed in one block is in scope for the whole file",
+				)
+			}
+			seen[key] = importSite{line: tok.GetLine(), column: tok.GetColumn()}
+		}
+	}
+	return nil
+}

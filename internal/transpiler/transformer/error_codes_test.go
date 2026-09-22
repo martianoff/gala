@@ -500,6 +500,33 @@ func main() {
 			expectCode:     galaerr.CodeUnknownMethod,
 			expectContains: "has no method Sise",
 		},
+		{
+			name: "GALA-E0045 named construction omits a required field",
+			input: `package main
+
+struct Cfg(Name string, Tries int)
+
+func main() {
+    val c = Cfg(Name = "a")
+    Println(c.Tries)
+}`,
+			expectCode:     galaerr.CodeMissingStructField,
+			expectContains: `missing required field "Tries"`,
+		},
+		{
+			name: "GALA-E0045 positional construction omits required fields",
+			input: `package main
+
+struct Cfg(Name string, Tries int, Extra string)
+
+func main() {
+    val c = Cfg("a")
+    Println(c.Tries)
+}`,
+			expectCode: galaerr.CodeMissingStructField,
+			// Every omitted field is named at once, not just the first.
+			expectContains: `missing required fields "Extra" and "Tries"`,
+		},
 	}
 
 	for _, tc := range cases {

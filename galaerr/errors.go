@@ -452,6 +452,34 @@ const (
 	// and the codec pair), which are absent from TypeMetadata.Methods because
 	// no one declared them in source.
 	CodeUnknownMethod ErrorCode = "GALA-E0044"
+
+	// E0045: a struct constructor call omitted a field that declares no
+	// default. Call syntax — `Cfg(Name = "a")` and `Cfg("a")` alike — is a
+	// constructor call and follows the rule function calls already follow:
+	// an omitted parameter takes its default, and omitting one that has no
+	// default is an error.
+	//
+	// Previously the omitted field silently took Go's zero value, which made
+	// a declared default decorative (`Mask rune = '•'` produced NUL) and let
+	// a literal that simply forgot a field compile with a zero in it. Both
+	// are invisible at the call site, and a zero-valued rune/int/bool is
+	// often a legal value, so nothing downstream could tell "omitted" from
+	// "meant 0".
+	//
+	// Go-style literals (`Cfg{Name: "a"}`) are unaffected: they keep Go's
+	// semantics, stay partial, and never consult defaults.
+	CodeMissingStructField ErrorCode = "GALA-E0045"
+
+	// E0046: a file imports the same package twice under the same local name.
+	// A file's import declarations are merged on emit without deduping, so the
+	// repeat reached `go build` as two identical import lines and was reported
+	// against the generated file ("strings redeclared in this block", plus a
+	// misleading "imported and not used" for a package used exactly as often
+	// as it was imported). Neither message points at the source. The case
+	// arises by adding an import block to a file that already has one further
+	// down, past a comment banner. The same path under two different aliases
+	// stays legal, as in Go.
+	CodeDuplicateImport ErrorCode = "GALA-E0046"
 )
 
 // MultiError collects multiple GALA errors.

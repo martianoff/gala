@@ -53,10 +53,10 @@ Go compiler, pointed at generated code rather than the `.gala` line the
 author wrote.
 
 This check closes both outcomes for a name in **value position**,
-including inside an interpolated string. It does **not** close them for
-a name in **type position**, where the same erasure still reaches the
-generated Go and the author still gets the Go compiler's message rather
-than a framed one — see the first entry under *Not covered*.
+including inside an interpolated string. In **type position** it closes
+them for the *package qualifier* only — `strings.Builder` asks whether
+`strings` is in scope — and not for the type name itself; see the first
+entry under *Not covered*.
 
 **Scope.** Analyzer post-pass, run once per top-level file after all
 metadata for the file, its siblings and its imports has been collected
@@ -84,10 +84,23 @@ and is caught by E0025 on the signature that mentions `Array`.
 Not covered. Each of these is a deliberate trade of a missed detection
 for a guaranteed absence of false positives:
 
-- **Type positions.** `func f(x Foo)`, `val v Foo = ...` and `Foo{}`
-  are skipped, because the analyzer's type resolution is lossy enough
-  (Go generics, constraints, `map[K]V`, func types) that flagging here
-  would produce false positives. [GALA-E0025](GALA-E0025.md) covers a
+- **Unqualified type names.** `func f(x Foo)`, `val v Foo = ...` and
+  `Foo{}` are skipped, because the analyzer's type resolution is lossy
+  enough (Go generics, constraints, `map[K]V`, func types) that flagging
+  here would produce false positives. A bare `Foo` may also be a type
+  parameter or a dot-imported name.
+
+  The **qualifier** of a qualified type *is* checked: `var sb
+  strings.Builder` in a file that never imports `strings` is reported
+  here, at the qualifier. That half carries no false-positive risk,
+  because a qualifier is unambiguously a package name — the lossiness
+  above is entirely in resolving the *member*, which this does not
+  attempt. Before it existed, a file whose only offending use was a type
+  position got no GALA diagnostic at all: the call half of
+  `strings.Repeat(...)` was reported while `strings.Builder` fell
+  through to `go build`.
+
+  [GALA-E0025](GALA-E0025.md) covers a
   signature type whose package reached the compilation but whose
   import this file omitted; it does **not** cover a type name nothing
   in the compilation declares, because it works from the resolved

@@ -299,6 +299,24 @@ type TypeMetadata struct {
 	Fields               map[string]Type // Name -> Type
 	FieldNames           []string        // To preserve order
 	FieldPositions       map[string]SourcePos // Name -> (line, column) of the field declaration identifier
+	// FieldDefaults maps a field name to the source text of its declared
+	// default expression, for the shorthand form `struct Cfg(Tries int = 3)`.
+	// A field absent from this map is required: constructing the struct with
+	// call syntax and omitting it is an error. The text is re-parsed and
+	// transformed at each construction site, so the default is evaluated per
+	// construction — matching how function parameter defaults behave.
+	FieldDefaults        map[string]string
+	// IsShorthand is true when the type came from the shorthand form
+	// `struct Cfg(Name string, Tries int = 3)` rather than the block form
+	// `type Cfg struct { ... }`.
+	//
+	// It gates the required-field check on call-syntax construction. The
+	// shorthand's field list IS a constructor signature — it reuses the
+	// grammar's `parameter` rule, so a field can be made optional with
+	// `= value`. Block-form fields have no such syntax, so requiring all of
+	// them would leave no way to opt out; block structs keep Go's partial
+	// construction.
+	IsShorthand          bool
 	TypeParams           []string
 	TypeParamConstraints map[string]string // TypeParam name -> constraint (e.g., "T" -> "comparable")
 	ImmutFlags           []bool

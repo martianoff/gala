@@ -1,0 +1,49 @@
+package main
+
+// Shorthand struct fields may carry a default. A construction that omits the
+// field takes that default — the field list reuses the grammar's parameter
+// rule, so `= value` means what it means on a function parameter.
+//
+// Omitting a field that has NO default is GALA-E0045, so a literal cannot
+// quietly leave a zero where a value belongs. Go-style literals (`Cfg{...}`)
+// keep Go's semantics and stay partial.
+
+struct Cfg(
+    Name  string,
+    Mask  rune = '•',
+    Tries int  = 3,
+)
+
+// Defaults may reference other declarations, and are evaluated at each
+// construction rather than once at declaration.
+func defaultLabel() string = "unnamed"
+
+struct Labeled(Id int, Label string = defaultLabel())
+
+func main() {
+    // Named construction omitting both defaulted fields.
+    val a = Cfg(Name = "a")
+    Println(a.Name, int(a.Mask), a.Tries)
+
+    // Positional construction stopping after the required field.
+    val b = Cfg("b")
+    Println(b.Name, int(b.Mask), b.Tries)
+
+    // Explicit values win over the defaults.
+    val c = Cfg(Name = "c", Mask = 'x', Tries = 9)
+    Println(c.Name, int(c.Mask), c.Tries)
+
+    // Copy carries fields forward from the receiver — it does not re-default.
+    val d = c.Copy(Name = "d")
+    Println(d.Name, int(d.Mask), d.Tries)
+
+    // A default that calls a function.
+    val e = Labeled(Id = 7)
+    Println(e.Id, e.Label)
+
+    // Go-style literals stay partial and never consult defaults. The brace
+    // form is deliberate here and must NOT be rewritten to `Cfg(Name = "f")`:
+    // the contrast between the two spellings is what this example pins.
+    val f = Cfg{Name: "f"}
+    Println(f.Name, int(f.Mask), f.Tries)
+}

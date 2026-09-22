@@ -456,6 +456,42 @@ func main() {
 `)
 			},
 		},
+		{
+			name: "named construction omits a required field",
+			code: galaerr.CodeMissingStructField, // GALA-E0045
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+struct Cfg(Name string, Tries int)
+
+func main() {
+    val c = Cfg(Name = "a")
+    Println(c.Tries)
+}
+`)
+			},
+		},
+		{
+			name: "same package imported twice",
+			code: galaerr.CodeDuplicateImport, // GALA-E0046
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+import (
+    "strings"
+)
+
+// A second block importing the SAME package.
+import (
+    "strings"
+)
+
+func main() {
+    Println(strings.Repeat("-", 3))
+}
+`)
+			},
+		},
 		// The GALA-E0038 page also documents the rune-literal shape in prose
 		// (`'\d'`), but quotes no output for it, so there is nothing to pin.
 		// Its numeric forms (`'\x41'`) are not guardable here at all: GALA's

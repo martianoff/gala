@@ -32,7 +32,12 @@ import (
 // MethodMetadata.Doc, FunctionMetadata.Doc, SealedVariant.Doc). The codec
 // gained a string per declaration, so v2 payloads cannot be decoded by
 // this reader.
-const CacheVersion = "v3"
+//
+// v4: TypeMetadata carries FieldDefaults, the source text of shorthand
+// struct field default expressions. Construction sites read it to fill an
+// omitted field, so a v3 payload would silently drop every cross-package
+// default back to the zero value — the exact bug the field exists to fix.
+const CacheVersion = "v4"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

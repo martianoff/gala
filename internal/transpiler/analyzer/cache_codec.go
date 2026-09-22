@@ -33,7 +33,7 @@ import (
 
 // codecMagic identifies a binary cache blob. The trailing byte is the
 // format version; bump alongside CacheVersion when the layout changes.
-var codecMagic = [4]byte{'G', 'A', 'C', 0x03}
+var codecMagic = [4]byte{'G', 'A', 'C', 0x04}
 
 const (
 	typeTagNil     uint8 = 0 // nil interface
@@ -313,6 +313,8 @@ func (e *encoder) writeTypeMeta(t *transpiler.TypeMetadata) {
 	e.writeStringTypeMap(t.Fields)
 	e.writeStringSlice(t.FieldNames)
 	e.writeStringSourcePosMap(t.FieldPositions)
+	e.writeStringStringMap(t.FieldDefaults)
+	e.writeBool(t.IsShorthand)
 	e.writeStringSlice(t.TypeParams)
 	e.writeStringStringMap(t.TypeParamConstraints)
 	e.writeBoolSlice(t.ImmutFlags)
@@ -748,6 +750,8 @@ func (d *decoder) readTypeMeta() *transpiler.TypeMetadata {
 	t.Fields = d.readStringTypeMap()
 	t.FieldNames = d.readStringSlice()
 	t.FieldPositions = d.readStringSourcePosMap()
+	t.FieldDefaults = d.readStringStringMap()
+	t.IsShorthand = d.readBool()
 	t.TypeParams = d.readStringSlice()
 	t.TypeParamConstraints = d.readStringStringMap()
 	t.ImmutFlags = d.readBoolSlice()

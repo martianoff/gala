@@ -510,6 +510,76 @@ val p2 = Person("Bob", 25)
 val p3 = Person(age = 20, name = "Charlie")
 ```
 
+#### Struct Field Defaults
+
+A shorthand struct's field list reuses the parameter syntax, so a field can
+declare a default. A construction that omits the field gets that default:
+
+```gala
+struct Cfg(Name string, Mask rune = '•', Tries int = 3)
+
+val a = Cfg(Name = "a")            // Mask = '•', Tries = 3
+val b = Cfg("b")                   // same, positionally
+val c = Cfg(Name = "c", Tries = 9) // Mask = '•', Tries = 9
+```
+
+Defaults are evaluated at each construction, not once at declaration — the same
+rule [default parameter values](#default-parameter-values) follow:
+
+```gala
+struct Entry(Msg string, At time.Time = time.Now())
+```
+
+Omitting a field that declares **no** default is an error
+([GALA-E0045](errors/GALA-E0045.md)), so a constructor call cannot quietly leave
+a zero where a value belongs:
+
+```gala
+struct Cfg(Name string, Tries int)
+
+val c = Cfg(Name = "a")
+// error[GALA-E0045]: missing required field "Tries" in construction of "Cfg"
+```
+
+##### What stays partial, and why
+
+The check applies to **shorthand-declared GALA structs only**. Everything that is
+or mirrors a Go struct keeps Go's partial-literal semantics, because Go's
+zero-value contract is what the Go boundary runs on:
+
+| Form | Partial construction | Consults defaults |
+|------|----------------------|-------------------|
+| `struct Cfg(...)` via call syntax — `Cfg(Name = "a")`, `Cfg("a")` | rejected | yes |
+| `struct Cfg(...)` via literal — `Cfg{Name: "a"}` | allowed | no |
+| `type Cfg struct { ... }` — any syntax | allowed | n/a (cannot declare one) |
+| A Go-imported type — `url.URL{...}` or `url.URL(Scheme = "x")` | allowed | n/a |
+
+This is the Go-interop boundary, not an inconsistency:
+
+- **A Go struct can only be constructed partially.** `url.URL` has ten fields and
+  callers set two; `http.Server` and `tls.Config` are the same shape. Requiring
+  every field would make the entire Go standard library unconstructable. So a
+  Go-imported type stays partial *whichever syntax names it* — the call form is
+  sugar for the literal, not a GALA constructor.
+- **The block form is GALA's Go-shaped struct.** `type Cfg struct { ... }`
+  mirrors a Go declaration field for field, which is what makes it the right
+  choice for a type crossing into Go — and it has no syntax for a field default,
+  so requiring every field would leave no way to opt out. The standard library
+  depends on this: a HAMT node in `collection_immutable` sets two of its four
+  fields and means the rest to be zero.
+- **`Cfg{...}` is a composite literal, not a constructor call.** The braces are
+  Go's spelling, and they behave like Go's: omitted fields take the zero value
+  and no default is consulted. Reach for them when you want exactly that.
+
+The shorthand form is the one place GALA declares a *constructor* rather than a
+*layout*, so it is the one place the language can promise a fully-initialized
+value. Prefer it for GALA-native types; use the block form for types that exist
+to meet Go.
+
+`Copy` is unaffected by all of this: it carries every field forward from the
+receiver, so an omitted field keeps its current value rather than being
+re-defaulted.
+
 ### Automatic Copy and Equal Methods
 Every GALA struct automatically provides `Copy()` and `Equal(other)` methods.
 
