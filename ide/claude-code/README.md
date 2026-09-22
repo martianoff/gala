@@ -18,12 +18,30 @@ your editor has:
 - **Go to definition and find references**, across GALA packages, the Go
   standard library and third-party Go modules.
 
-The plugin also ships a `gala-code-intelligence` skill that Claude loads when it
-works on `.gala` files. It tells Claude to edit them with its Edit and Write
-tools (shell edits never reach the language server, so they get no
-diagnostics), to look up inferred types and std signatures through the language
-server instead of guessing or grepping cache directories, and to finish with a
-build.
+## Skills
+
+The plugin ships two skills.
+
+- **`gala-code-intelligence`** loads automatically when Claude works on `.gala`
+  files. It tells Claude to edit them with its Edit and Write tools (shell edits
+  never reach the language server, so they get no diagnostics), to look up
+  inferred types and std signatures through the language server instead of
+  guessing or grepping cache directories, and to finish with a build.
+- **`/gala-lint`** is the best-practice rulebook: the `GALA-E*` hard errors, the
+  immutability and sealed-type conventions, the `Option`-over-sentinel rules and
+  the expression-body style the compiler's own codebase follows. Run it on a
+  file, a directory, or the whole project.
+
+The rulebook applies to any GALA project, which is why it ships here rather than
+staying in the compiler repo — a downstream project is where a linter is most
+needed. This directory holds the canonical copy; the compiler repo's own
+`.claude/skills/gala-lint` symlinks to it, so there is one copy to keep current.
+
+Three skills in the compiler repo are deliberately **not** shipped, because they
+assume that repo: `gala-code` (generates GALA with tests, but its layout and
+build steps are Bazel- and monorepo-shaped), `gala-ide-sync` (re-syncs the
+IntelliJ plugin and LSP server against the grammar) and `gala-lsp`
+(language-server development).
 
 ## Install
 

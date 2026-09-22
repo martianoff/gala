@@ -1,6 +1,6 @@
 {
   "name": "gala",
-  "description": "GALA code intelligence for Claude Code via `gala lsp`: diagnostics after every edit, hover types, go-to-definition and references. Requires the GALA CLI (`gala`) installed and on PATH; the plugin does not include it.",
+  "description": "GALA for Claude Code: code intelligence via `gala lsp` (diagnostics after every edit, hover types, go-to-definition and references), plus the `gala-lint` best-practice rulebook. Requires the GALA CLI (`gala`) installed and on PATH; the plugin does not include it.",
   "author": {
     "name": "Maksim Martianov",
     "url": "https://github.com/martianoff"
