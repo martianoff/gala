@@ -298,11 +298,17 @@ func (t *galaASTTransformer) transformBlockLambdaBody(ctx *grammar.LambdaExpress
 	// used as value". Leaving it as a bare expression statement lets the
 	// lambda's return type fall through to void.
 	if !isVoidExpected && len(b.List) > 0 {
-		if exprStmt, ok := b.List[len(b.List)-1].(*ast.ExprStmt); ok {
-			shouldPromote := (isIIFE(exprStmt.X) || expectsReturnValue) && !isVoidIIFE(exprStmt.X)
-			if shouldPromote {
-				b.List[len(b.List)-1] = &ast.ReturnStmt{Results: []ast.Expr{exprStmt.X}}
+		if expectsReturnValue {
+			// A trailing bare expression, a trailing `match` and a trailing
+			// `if (c) { a } else { b }` all carry the block's value; the shared
+			// helper covers each shape.
+			if promoted, ok := promoteTrailingValue(b, plainReturn); ok {
+				b.List = promoted.List
 			}
+		} else if last, ok := b.List[len(b.List)-1].(*ast.ExprStmt); ok && isIIFE(last.X) && !isVoidIIFE(last.X) {
+			// With no caller signal, only an IIFE is known to produce a value —
+			// a bare call could equally be a discarded side effect.
+			b.List[len(b.List)-1] = &ast.ReturnStmt{Results: []ast.Expr{last.X}}
 		}
 	}
 	var retType ast.Expr
@@ -1789,3 +1795,136 @@ func placeholderScopeType(paramTypes []transpiler.Type) transpiler.Type {
 
 // isGenericMethodName checks if a method is marked as generic for a given type name
 // isGenericMethodName, isGenericMethodWithImports, isMethodGenericViaTypeMeta moved to calls.go
+
+// plainReturn is the promoteTrailingValue hook for a block whose returns need
+// no further marking. Match arm bodies pass markSynthesizedArmReturn instead,
+// so a void arm can have the synthesized returns stripped again.
+func plainReturn(ret *ast.ReturnStmt) ast.Stmt { return ret }
+
+// promoteTrailingValue returns blk with its trailing expression rewritten into
+// a return built by mkReturn, so the block can stand as the value of an
+// enclosing value-producing context. A block already ending in a return is
+// returned unchanged; a trailing if/else chain carries the value in its
+// branches and recurses through promoteIfBranchValues.
+//
+// It reports ok=false when the trailing statement produces no value — a void
+// IIFE (a statement-position match whose every arm is void), or any other
+// statement kind — leaving the block as written.
+func promoteTrailingValue(blk *ast.BlockStmt, mkReturn func(*ast.ReturnStmt) ast.Stmt) (*ast.BlockStmt, bool) {
+	if blk == nil || len(blk.List) == 0 {
+		return nil, false
+	}
+	switch last := blk.List[len(blk.List)-1].(type) {
+	case *ast.ReturnStmt:
+		// A bare `return` carries no value, so the branch cannot supply the
+		// chain's result type.
+		return blk, len(last.Results) > 0
+	case *ast.ExprStmt:
+		// A no-return call such as `Panic(...)` never falls through, so the
+		// branch needs no value and is left as written — `if c { return x }
+		// else { panic(...) }` is what Go wants here. `return panic(...)` is
+		// not a Go expression.
+		if isNoReturnCallExpr(last.X) {
+			return blk, true
+		}
+		// A void IIFE (a statement-position match whose every arm is void)
+		// produces nothing and does not diverge, so the chain has no value.
+		if isVoidIIFE(last.X) {
+			return nil, false
+		}
+		return replaceLastStmt(blk, mkReturn(&ast.ReturnStmt{Results: []ast.Expr{last.X}})), true
+	case *ast.IfStmt:
+		promoted, ok := promoteIfBranchValues(last, mkReturn)
+		if !ok {
+			return nil, false
+		}
+		return replaceLastStmt(blk, promoted), true
+	}
+	return nil, false
+}
+
+// promoteIfBranchValues rewrites the trailing expression of every branch in an
+// if/else chain into a return, letting the chain stand as the value of an
+// enclosing value-producing context. GALA's `statement` rule lists ifStatement
+// before simpleStatement, so a trailing if-expression is parsed as a statement
+// and its value is carried by the branches rather than by an IIFE.
+//
+// It applies only to a complete chain whose every branch ends in a value. An
+// `if` with no `else` has a fall-through path that produces nothing, so the
+// chain is left as written.
+func promoteIfBranchValues(stmt *ast.IfStmt, mkReturn func(*ast.ReturnStmt) ast.Stmt) (*ast.IfStmt, bool) {
+	if stmt.Body == nil || stmt.Else == nil {
+		return nil, false
+	}
+	body, ok := promoteTrailingValue(stmt.Body, mkReturn)
+	if !ok {
+		return nil, false
+	}
+	var elseStmt ast.Stmt
+	switch e := stmt.Else.(type) {
+	case *ast.BlockStmt:
+		promoted, ok := promoteTrailingValue(e, mkReturn)
+		if !ok {
+			return nil, false
+		}
+		elseStmt = promoted
+	case *ast.IfStmt:
+		promoted, ok := promoteIfBranchValues(e, mkReturn)
+		if !ok {
+			return nil, false
+		}
+		elseStmt = promoted
+	default:
+		return nil, false
+	}
+	// Copy so a rejected else-branch leaves the original chain untouched; the
+	// copy also carries the `if` token position the printer needs.
+	promoted := *stmt
+	promoted.Body = body
+	promoted.Else = elseStmt
+	return &promoted, true
+}
+
+// firstBranchResult returns the expression the first value-producing branch of
+// an if/else chain returns. Callers that record an arm's result type infer it
+// from this, since every branch of a promoted chain yields the same type.
+//
+// It searches past branches that carry no value — one ending in a diverging
+// call such as `panic(...)` — so a chain whose first branch aborts still
+// reports the type the rest of it produces.
+func firstBranchResult(stmt *ast.IfStmt) ast.Expr {
+	if result := blockResult(stmt.Body); result != nil {
+		return result
+	}
+	switch e := stmt.Else.(type) {
+	case *ast.BlockStmt:
+		return blockResult(e)
+	case *ast.IfStmt:
+		return firstBranchResult(e)
+	}
+	return nil
+}
+
+func blockResult(blk *ast.BlockStmt) ast.Expr {
+	if blk == nil || len(blk.List) == 0 {
+		return nil
+	}
+	switch last := blk.List[len(blk.List)-1].(type) {
+	case *ast.ReturnStmt:
+		if len(last.Results) > 0 {
+			return last.Results[0]
+		}
+	case *ast.IfStmt:
+		return firstBranchResult(last)
+	}
+	return nil
+}
+
+// replaceLastStmt returns a copy of blk with its final statement swapped. The
+// copy is what lets a rejected branch leave the original block untouched.
+func replaceLastStmt(blk *ast.BlockStmt, stmt ast.Stmt) *ast.BlockStmt {
+	list := make([]ast.Stmt, len(blk.List))
+	copy(list, blk.List)
+	list[len(list)-1] = stmt
+	return &ast.BlockStmt{Lbrace: blk.Lbrace, List: list, Rbrace: blk.Rbrace}
+}

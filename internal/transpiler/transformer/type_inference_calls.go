@@ -137,13 +137,7 @@ func (t *galaASTTransformer) inferCallExprType(e *ast.CallExpr) transpiler.Type 
 			// This handles chained calls like Logger()(req, handler) where Logger()
 			// returns Filter which is func(Request, Handler) Future[Response].
 			if !funType.IsNil() {
-				aliasKey := funType.BaseName()
-				if _, ok := t.typeAliases[aliasKey]; !ok {
-					if dotIdx := strings.LastIndex(aliasKey, "."); dotIdx != -1 {
-						aliasKey = aliasKey[dotIdx+1:]
-					}
-				}
-				if underlyingType, ok := t.typeAliases[aliasKey]; ok {
+				if underlyingType, ok := t.lookupTypeAlias(funType.BaseName()); ok {
 					if funcType, ok := underlyingType.(transpiler.FuncType); ok && len(funcType.Results) > 0 {
 						t.traceType(e, funcType.Results[0], "chained-call-type-alias")
 						return funcType.Results[0]
@@ -542,17 +536,7 @@ func (t *galaASTTransformer) inferCallIdentType(e *ast.CallExpr, id *ast.Ident, 
 		}
 		// If the variable has a named type (e.g., Handler), check if it's a type alias
 		// for a function type and use the underlying function type's return type.
-		typeName := varType.BaseName()
-		// Try full name first (e.g., "Handler"), then strip package prefix
-		// (e.g., "server.Handler" -> "Handler") since type aliases from siblings
-		// are stored by simple name.
-		aliasKey := typeName
-		if _, ok := t.typeAliases[aliasKey]; !ok {
-			if dotIdx := strings.LastIndex(typeName, "."); dotIdx != -1 {
-				aliasKey = typeName[dotIdx+1:]
-			}
-		}
-		if underlyingType, ok := t.typeAliases[aliasKey]; ok {
+		if underlyingType, ok := t.lookupTypeAlias(varType.BaseName()); ok {
 			if funcType, ok := underlyingType.(transpiler.FuncType); ok {
 				if len(funcType.Results) > 0 {
 					t.traceType(e, funcType.Results[0], "type-alias-call")

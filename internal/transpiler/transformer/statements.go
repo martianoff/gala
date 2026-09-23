@@ -320,6 +320,16 @@ func (t *galaASTTransformer) transformShortVarDeclWithMutability(ctx *grammar.Sh
 		return nil, err
 	}
 
+	// `a, b := f()` — several names from one multi-value expression. Lowered
+	// like the `val a, b = f()` form; the per-name walk below handles only the
+	// one-expression-per-name case.
+	if len(rhsExprs) == 1 && len(idsCtx) > 1 {
+		return t.shortVarDeclFromMultiValue(ctx, idsCtx, rhsExprs[0], mutable)
+	}
+	if len(rhsExprs) != len(idsCtx) {
+		return nil, t.semanticErrorAt(ctx, "assignment mismatch")
+	}
+
 	lhs := make([]ast.Expr, 0)
 	rhs := make([]ast.Expr, 0)
 	for i, idCtx := range idsCtx {
@@ -336,12 +346,7 @@ func (t *galaASTTransformer) transformShortVarDeclWithMutability(ctx *grammar.Sh
 		}
 		lhs = append(lhs, ast.NewIdent(name))
 
-		var val ast.Expr
-		if i < len(rhsExprs) {
-			val = t.unwrapImmutable(rhsExprs[i])
-		} else {
-			val = &ast.IndexExpr{X: t.unwrapImmutable(rhsExprs[0]), Index: &ast.BasicLit{Kind: token.INT, Value: fmt.Sprintf("%d", i)}}
-		}
+		val := t.unwrapImmutable(rhsExprs[i])
 
 		// Auto-destructure Go functions returning (T, error)
 		val = t.wrapGoMultiReturnAsIIFE(val)
@@ -366,6 +371,104 @@ func (t *galaASTTransformer) transformShortVarDeclWithMutability(ctx *grammar.Sh
 		Tok: token.DEFINE,
 		Rhs: rhs,
 	}, nil
+}
+
+// shortVarDeclFromMultiValue lowers `a, b := f()`, binding several names from
+// one multi-value expression. The call is evaluated once into temporaries and
+// each name takes its own, mirroring the `val a, b = f()` lowering in
+// transformVarDeclaration.
+func (t *galaASTTransformer) shortVarDeclFromMultiValue(
+	ctx *grammar.ShortVarDeclContext,
+	idsCtx []grammar.IIdentifierContext,
+	rhs ast.Expr,
+	mutable bool,
+) (ast.Stmt, error) {
+	callValue := t.unwrapImmutable(rhs)
+	// Only a call yields several values. Anything else — a literal, a name, an
+	// arithmetic expression — is one value, and binding it to several names is
+	// a mismatch Go would otherwise report against the generated temporaries.
+	if _, isCall := callValue.(*ast.CallExpr); !isCall {
+		return nil, t.semanticErrorAt(ctx, fmt.Sprintf(
+			"assignment mismatch: %d names but the right-hand side is a single value", len(idsCtx)))
+	}
+	// Each name takes its type from the callee's corresponding declared return,
+	// so `n, err := strconv.Atoi(s)` types `n` as int.
+	callReturns := t.resolveGoCallReturnTypes(callValue)
+	// The callee's return count is known only for a resolved Go signature; a
+	// GALA callee reports none, and the mismatch surfaces later.
+	if len(callReturns) > 0 && len(callReturns) != len(idsCtx) {
+		return nil, t.semanticErrorAt(ctx, fmt.Sprintf(
+			"assignment mismatch: %d names but the call returns %d values", len(idsCtx), len(callReturns)))
+	}
+	typeOf := func(i int) transpiler.Type {
+		var typeName transpiler.Type = transpiler.NilType{}
+		if i < len(callReturns) && callReturns[i] != nil {
+			typeName = callReturns[i]
+		}
+		if typeName.IsNil() {
+			return typeName
+		}
+		if qName := t.getType(typeName.String()); !qName.IsNil() {
+			typeName = qName
+		}
+		return typeName
+	}
+
+	// A mutable binding (the `for` init position) takes the results directly.
+	// With no Immutable wrapper the statement stays a SimpleStmt, which is what
+	// Go's for-clause accepts.
+	if mutable {
+		lhs := make([]ast.Expr, 0, len(idsCtx))
+		for i, idCtx := range idsCtx {
+			name := idCtx.GetText()
+			t.addVar(name, typeOf(i))
+			t.markMutable(name)
+			lhs = append(lhs, ast.NewIdent(name))
+		}
+		return &ast.AssignStmt{Lhs: lhs, Tok: token.DEFINE, Rhs: []ast.Expr{callValue}}, nil
+	}
+
+	tempIdents := make([]*ast.Ident, len(idsCtx))
+	for i := range idsCtx {
+		tempIdents[i] = ast.NewIdent(t.nextTempVar())
+	}
+	specs := []ast.Spec{&ast.ValueSpec{Names: tempIdents, Values: []ast.Expr{callValue}}}
+	for i, idCtx := range idsCtx {
+		name := idCtx.GetText()
+		t.addVal(name, typeOf(i))
+		specs = append(specs, &ast.ValueSpec{
+			Names: []*ast.Ident{ast.NewIdent(name)},
+			Values: []ast.Expr{&ast.CallExpr{
+				Fun:  t.stdIdent("NewImmutable"),
+				Args: []ast.Expr{tempIdents[i]},
+			}},
+		})
+	}
+	return &ast.DeclStmt{Decl: &ast.GenDecl{Tok: token.VAR, Specs: specs}}, nil
+}
+
+// forClauseSlots splits a `for init; cond; post` clause into its two statement
+// slots. Either may be omitted, so the statements are assigned by counting the
+// `;` separators that precede each one rather than by their position in the
+// list: nothing before the first separator is the init, anything after the
+// second is the post.
+func forClauseSlots(forClause *grammar.ForClauseContext) (init, post *grammar.SimpleStatementContext) {
+	semis := 0
+	for _, child := range forClause.GetChildren() {
+		switch node := child.(type) {
+		case antlr.TerminalNode:
+			if node.GetText() == ";" {
+				semis++
+			}
+		case *grammar.SimpleStatementContext:
+			if semis == 0 {
+				init = node
+			} else {
+				post = node
+			}
+		}
+	}
+	return init, post
 }
 
 func (t *galaASTTransformer) transformBlock(ctx *grammar.BlockContext) (*ast.BlockStmt, error) {
@@ -648,11 +751,18 @@ func (t *galaASTTransformer) transformForStatement(ctx *grammar.ForStatementCont
 		var post ast.Stmt
 		var err error
 
+		// Both slots of `for init; cond; post` are optional, so the statement
+		// list is positionally ambiguous: with the init omitted, the post is
+		// the only entry and reading it as element 0 turned `for ; i < 3; i =
+		// i + 1` into `for i = i + 1; i < 3; {`, running the step once before
+		// the loop instead of on every iteration. The slot is decided by how
+		// many `;` separators precede each statement.
+		initCtx, postCtx := forClauseSlots(forClause)
+
 		// Process init FIRST so variables are in scope for condition and body
 		// Note: init uses transformForLoopInitStatement to make := declarations mutable
-		simpleStmts := forClause.AllSimpleStatement()
-		if len(simpleStmts) >= 1 && simpleStmts[0] != nil {
-			init, err = t.transformForLoopInitStatement(simpleStmts[0].(*grammar.SimpleStatementContext))
+		if initCtx != nil {
+			init, err = t.transformForLoopInitStatement(initCtx)
 			if err != nil {
 				return nil, err
 			}
@@ -669,10 +779,18 @@ func (t *galaASTTransformer) transformForStatement(ctx *grammar.ForStatementCont
 		}
 
 		// Process post (can use init variables)
-		if len(simpleStmts) >= 2 && simpleStmts[1] != nil {
-			post, err = t.transformSimpleStatement(simpleStmts[1].(*grammar.SimpleStatementContext))
+		if postCtx != nil {
+			post, err = t.transformSimpleStatement(postCtx)
 			if err != nil {
 				return nil, err
+			}
+			// A multi-value `a, b := f()` lowers to a `var (...)` block, which
+			// Go accepts in neither the post nor any other SimpleStmt slot. It
+			// reads as a loop step but binds names nothing can use, so it is
+			// reported here rather than reaching the Go parser as an
+			// unparseable-output internal error.
+			if _, isDecl := post.(*ast.DeclStmt); isDecl {
+				return nil, t.semanticErrorAt(postCtx, "a `for` post statement cannot bind a multi-value call; move the binding into the loop body")
 			}
 		}
 
@@ -820,6 +938,10 @@ func (t *galaASTTransformer) isDirectVariableExpression(ctx grammar.IExpressionC
 }
 
 func (t *galaASTTransformer) transformIfStatement(ctx *grammar.IfStatementContext) (ast.Stmt, error) {
+	if err := checkIfInitializer(ctx); err != nil {
+		return nil, err
+	}
+
 	cond, err := t.transformExpression(ctx.Expression())
 	if err != nil {
 		return nil, err
@@ -834,14 +956,6 @@ func (t *galaASTTransformer) transformIfStatement(ctx *grammar.IfStatementContex
 	stmt := &ast.IfStmt{
 		Cond: cond,
 		Body: body,
-	}
-
-	if ctx.SimpleStatement() != nil {
-		init, err := t.transformSimpleStatement(ctx.SimpleStatement().(*grammar.SimpleStatementContext))
-		if err != nil {
-			return nil, err
-		}
-		stmt.Init = init
 	}
 
 	if ctx.ELSE() != nil {
@@ -861,4 +975,27 @@ func (t *galaASTTransformer) transformIfStatement(ctx *grammar.IfStatementContex
 	}
 
 	return stmt, nil
+}
+
+// checkIfInitializer rejects Go's `if init; cond { }` with GALA-E0047.
+//
+// The initializer slot exists in the grammar (`ifStatement: 'if'
+// (simpleStatement ';')? expression block`) but is not part of GALA's
+// statement surface, alongside the Go-only keywords in
+// forbiddenStatementKeywordSuggestions. Only the initializer is rejected; a
+// plain condition, `else`, `else if` and the if-expression are unaffected.
+//
+// The hint points at `Try`, which auto-wraps the Go `(T, error)` return this
+// slot is typically used to nil-test into Success/Failure.
+func checkIfInitializer(ctx *grammar.IfStatementContext) error {
+	if ctx.SimpleStatement() == nil {
+		return nil
+	}
+	line, col := ctx.GetStart().GetLine(), ctx.GetStart().GetColumn()
+	return galaerr.NewCodedSemanticError(
+		galaerr.CodeIfInitializer,
+		line, col,
+		"`if` takes no initializer statement",
+		"wrap the call in `Try(...)` and `match` on `Success(v)` / `Failure(e)` — a Go `(T, error)` return is auto-wrapped",
+	).WithSpan(col + len("if"))
 }

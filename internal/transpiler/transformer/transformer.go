@@ -8,6 +8,7 @@ import (
 	"go/token"
 	"io"
 	"os"
+	"runtime/debug"
 	"strings"
 
 	"github.com/antlr4-go/antlr/v4"
@@ -141,6 +142,9 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 			if semErr, ok := r.(*galaerr.SemanticError); ok {
 				err = semErr
 				return
+			}
+			if os.Getenv("GALA_PANIC_STACK") == "1" {
+				fmt.Fprintf(os.Stderr, "%v\n%s\n", r, debug.Stack())
 			}
 			// B4: convert any other panic into a coded internal error so CLI
 			// users see a single search target (GALA-E0017) instead of a raw
@@ -591,17 +595,64 @@ func (t *galaASTTransformer) buildTypeResolver() *resolver.TypeResolver {
 	}
 }
 
+// lookupTypeAlias resolves name to the type it aliases. typeAliases is keyed by
+// simple name while callers often hold a package-qualified one, so a qualified
+// miss retries on the bare half.
+func (t *galaASTTransformer) lookupTypeAlias(name string) (transpiler.Type, bool) {
+	if underlying, ok := t.typeAliases[name]; ok {
+		return underlying, true
+	}
+	if dotIdx := strings.LastIndex(name, "."); dotIdx != -1 {
+		if underlying, ok := t.typeAliases[name[dotIdx+1:]]; ok {
+			return underlying, true
+		}
+	}
+	return transpiler.NilType{}, false
+}
+
 // resolveStructTypeName resolves a type name to the key used in structFields/structImmutFields maps.
 // Returns the original typeName if not found (for backward compatibility).
 func (t *galaASTTransformer) resolveStructTypeName(typeName string) string {
-	resolved, found := t.resolveTypeName(typeName, func(name string) bool {
+	declares := func(name string) bool {
 		_, ok := t.structFields[name]
 		return ok
-	})
-	if found {
+	}
+	resolved, found := t.resolveTypeName(typeName, declares)
+	if !found {
+		resolved = typeName
+	} else if len(t.structFields[resolved]) > 0 {
 		return resolved
 	}
-	return typeName
+
+	// Every declared type has a structFields entry, empty for a `type Coord
+	// Point` alias, so the lookup above stops at the alias itself. Follow the
+	// alias chain to reach the original's field list, which is what lets an
+	// alias be constructed through. The walk starts from the name as written
+	// because typeAliases is keyed by simple name.
+	//
+	// A chain longer than the alias map has revisited a name, so that length
+	// bounds it.
+	name := typeName
+	for hop := 0; hop < len(t.typeAliases); hop++ {
+		alias, ok := t.lookupTypeAlias(name)
+		if !ok || alias.IsNil() {
+			break
+		}
+		// BaseName drops the type arguments: `type Coords Point[int]` has to
+		// look up `Point`, which is the name the field map is keyed by.
+		next := alias.BaseName()
+		// A primitive target has no fields and never will, so the resolver
+		// sweep it would trigger can only miss.
+		if next == "" || next == name || transpiler.IsPrimitiveType(next) {
+			break
+		}
+		if r, ok := t.resolveTypeName(next, declares); ok && len(t.structFields[r]) > 0 {
+			return r
+		}
+		name = next
+	}
+
+	return resolved
 }
 
 // resolveTypeMetaName resolves a type name to the key used in typeMetas map.

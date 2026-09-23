@@ -343,6 +343,13 @@ func (t *galaASTTransformer) markSynthesizedArmReturn(ret *ast.ReturnStmt) *ast.
 	return ret
 }
 
+// armReturn is the promoteTrailingValue hook for a match arm body: it marks
+// each synthesized return so stripSynthesizedArmReturns can undo them when the
+// arm turns out to be void.
+func (t *galaASTTransformer) armReturn(ret *ast.ReturnStmt) ast.Stmt {
+	return t.markSynthesizedArmReturn(ret)
+}
+
 // isSynthesizedArmReturn reports whether ret was created by the match-arm
 // tail synthesizer (see markSynthesizedArmReturn).
 func (t *galaASTTransformer) isSynthesizedArmReturn(ret *ast.ReturnStmt) bool {
@@ -814,6 +821,17 @@ func (t *galaASTTransformer) transformMatchClauses(ctx grammar.IExpressionContex
 						defaultBody[len(defaultBody)-1] = stmt
 						resultTypes = append(resultTypes, typ)
 						casePatterns = append(casePatterns, "case _")
+					} else if ifStmt, ok := lastStmt.(*ast.IfStmt); ok {
+						// A trailing if/else is the arm's value too, carried by
+						// its branches. Every branch yields the same type, so
+						// the first one gives the arm's result type.
+						if promoted, ok := promoteIfBranchValues(ifStmt, t.armReturn); ok {
+							defaultBody[len(defaultBody)-1] = promoted
+							if result := firstBranchResult(promoted); result != nil {
+								resultTypes = append(resultTypes, t.inferResultType(result))
+								casePatterns = append(casePatterns, "case _")
+							}
+						}
 					}
 				}
 			} else if ccCtx.GetBodyStmt() != nil {
@@ -1552,6 +1570,16 @@ func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClause
 					resultType = typ
 				} else if ret, ok := lastStmt.(*ast.ReturnStmt); ok && len(ret.Results) > 0 {
 					resultType = t.inferResultType(ret.Results[0])
+				} else if ifStmt, ok := lastStmt.(*ast.IfStmt); ok {
+					// A trailing if/else is the arm's value too, carried by its
+					// branches. Every branch yields the same type, so the first
+					// one gives the arm's result type.
+					if promoted, ok := promoteIfBranchValues(ifStmt, t.armReturn); ok {
+						body[len(body)-1] = promoted
+						if result := firstBranchResult(promoted); result != nil {
+							resultType = t.inferResultType(result)
+						}
+					}
 				}
 			}
 		}

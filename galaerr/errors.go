@@ -480,6 +480,29 @@ const (
 	// down, past a comment banner. The same path under two different aliases
 	// stays legal, as in Go.
 	CodeDuplicateImport ErrorCode = "GALA-E0046"
+
+	// E0047: an `if` was written with Go's initializer statement, as in
+	// `if n, err := strconv.Atoi(s); err != nil { ... }`. The slot is in the
+	// grammar — `ifStatement: 'if' (simpleStatement ';')? expression block` —
+	// but is not part of GALA's statement surface, alongside the Go-only
+	// keywords E0036 turns away. No documentation, stdlib source, example or
+	// test uses it.
+	//
+	// It never lowered correctly either. The binding was transformed after the
+	// condition and body that reference it, so the condition compared the
+	// `std.Immutable[T]` wrapper rather than the value:
+	//
+	//	invalid operation: err != nil (mismatched types std.Immutable[error] and untyped nil)
+	//
+	// naming a wrapper the author never wrote. A multi-value initializer
+	// lowers to a `var (...)` block, which Go rejects in that position
+	// outright.
+	//
+	// Only the initializer is rejected: a plain condition, `else`, `else if`
+	// and the if-expression `if (cond) a else b` are unaffected. The hint
+	// names `Try`, which auto-wraps the Go `(T, error)` return this slot is
+	// typically used to nil-test into Success/Failure.
+	CodeIfInitializer ErrorCode = "GALA-E0047"
 )
 
 // MultiError collects multiple GALA errors.

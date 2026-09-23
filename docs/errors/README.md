@@ -61,6 +61,12 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0039` | Bare variant name in a match pattern | [GALA-E0039.md](GALA-E0039.md) |
 | `GALA-E0040` | Go slice or map type in an expression | [GALA-E0040.md](GALA-E0040.md) |
 | `GALA-E0041` | Import of an internal package from outside its tree | [GALA-E0041.md](GALA-E0041.md) |
+| `GALA-E0042` | Lambda parameter is not parenthesized | [GALA-E0042.md](GALA-E0042.md) |
+| `GALA-E0043` | Type name called as a constructor | [GALA-E0043.md](GALA-E0043.md) |
+| `GALA-E0044` | Type has no such method | [GALA-E0044.md](GALA-E0044.md) |
+| `GALA-E0045` | Missing required field in struct construction | [GALA-E0045.md](GALA-E0045.md) |
+| `GALA-E0046` | Package already imported | [GALA-E0046.md](GALA-E0046.md) |
+| `GALA-E0047` | `if` takes no initializer statement | [GALA-E0047.md](GALA-E0047.md) |
 
 ## Adding a new code
 

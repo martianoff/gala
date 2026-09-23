@@ -1197,6 +1197,17 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 	// Update typeName to resolved name for subsequent lookups.
 	typeName = resolvedTypeMeta
 
+	resolvedTypeName := t.resolveStructTypeName(typeName)
+
+	// A type alias naming a non-struct is a conversion target, not a
+	// construction target: `Millis(v)` for `type Millis int64` emits the Go
+	// conversion `Millis(v)`, the same form as `int64(v)`. An alias naming a
+	// struct falls through to the construction paths below, since its resolved
+	// name carries the struct's fields.
+	if _, isAlias := t.lookupTypeAlias(typeName); isAlias && len(args) == 1 && len(t.structFields[resolvedTypeName]) == 0 {
+		return true, &ast.CallExpr{Fun: fun, Args: args}, nil
+	}
+
 	methodMeta, hasApply := typeMeta.Methods["Apply"]
 
 	// Positional struct construction has priority over Apply: when arg count
@@ -1210,7 +1221,6 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 	// synthetic field count (e.g. `Future[T](() => x, ec)` where the parent has
 	// `state` + `_variant`) silently miscompiles into a wrong struct literal
 	// instead of dispatching to Apply.
-	resolvedTypeName := t.resolveStructTypeName(typeName)
 	sealedWithApply := typeMeta.IsSealed && hasApply
 	if fields, structOk := t.structFields[resolvedTypeName]; structOk && len(args) > 0 && len(args) == len(fields) && !sealedWithApply &&
 		!t.positionalCtorIsUnavailable(typeMeta.Package, fields, len(args)) {
@@ -1231,7 +1241,11 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 		// prefix of fields the caller cannot even name. That is how
 		// `Array(1, 2, 3)` used to become `Array{root: 1, length: 2, depth: 3}`
 		// rather than being reported as GALA-E0043.
-		if fields, ok := t.structFields[resolvedTypeName]; ok && len(args) > 0 &&
+		// Subset construction fills fields left to right, so it applies only
+		// while there are at least as many fields as arguments. A call with
+		// more arguments than fields is left unhandled and reported by the
+		// type-used-as-constructor check rather than dropping the surplus.
+		if fields, ok := t.structFields[resolvedTypeName]; ok && len(args) > 0 && len(args) <= len(fields) &&
 			!t.positionalCtorIsUnavailable(typeMeta.Package, fields, len(args)) {
 			lit, err := t.buildStructLiteral(fun, typeName, resolvedTypeName, fields, args, true, line, col)
 			return true, lit, err
@@ -2324,6 +2338,14 @@ func (t *galaASTTransformer) inferTypeArgsFromPositionalArgs(
 
 	typeMeta := t.getTypeMeta(resolvedTypeName)
 	if typeMeta == nil || len(typeMeta.TypeParams) == 0 {
+		return fun
+	}
+
+	// An alias standing in for an instantiated generic — `type IntPair
+	// Pair[int]` — already names the instantiation, so adding type arguments
+	// to the alias itself would emit `IntPair[int]`, which Go rejects because
+	// the alias is not generic.
+	if _, isAlias := t.lookupTypeAlias(typeName); isAlias && typeName != resolvedTypeName {
 		return fun
 	}
 

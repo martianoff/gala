@@ -32,6 +32,15 @@ value in the message is the most useful part of the report.
 Reducing the input to the smallest snippet that still panics helps the report —
 but that is a bug report, not a fix.
 
+**Diagnosing one.** Set `GALA_PANIC_STACK=1` to print the recovered value and
+the Go stack behind the panic to stderr before it is wrapped. The framed
+GALA-E0017 message names the source position but not the transformer site; the
+stack names the function that panicked.
+
+```
+GALA_PANIC_STACK=1 gala transpile repro.gala
+```
+
 **Fix (transpiler).** Replace the underlying `panic(...)` site with either
 `galaerr.NewCodedSemanticError(...)` — when the cause is something user-facing
 that deserves its own code — or a documented invariant comment plus a panic that

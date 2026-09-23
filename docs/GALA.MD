@@ -2829,6 +2829,35 @@ undocumented, fragile artifact GALA removes. The replacements:
 Like the builtin check, this is **resolver-aware**: a symbol the program itself
 declared is left alone.
 
+### The `if` initializer statement is forbidden
+
+Go's `if init; cond { … }` — a binding, a `;`, then the condition — is **not**
+part of GALA's statement surface. A use is a hard transpile error
+(**GALA-E0047**).
+
+```gala
+// NOT GALA
+if n, err := strconv.Atoi(text); err != nil { … }
+```
+
+A Go `(T, error)` call is the shape this form is reached for, and `Try` wraps
+exactly that shape — the pair is auto-wrapped into `Success` / `Failure`:
+
+```gala
+func parseOr(text string, fallback int) int =
+    Try(strconv.Atoi(text)) match {
+        case Success(n) => n
+        case Failure(_) => fallback
+    }
+
+// Or, when the failure is simply a fallback:
+func parseOr2(text string, fallback int) int =
+    Try(strconv.Atoi(text)).GetOrElse(fallback)
+```
+
+Only the initializer slot is rejected. A plain condition, `else`, `else if`,
+and the if-*expression* `if (cond) a else b` are all unaffected.
+
 #### `use` — scoped resource binding
 
 `use x = acquire` binds `x` for the rest of the enclosing block and guarantees

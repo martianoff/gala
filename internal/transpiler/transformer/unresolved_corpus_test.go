@@ -65,7 +65,12 @@ import (
 // were always unresolved, just double-counted as one. Verified by attribution:
 // suppressing only the position rebasing returns the total to its old value,
 // so no expression that used to type now fails to.
-const unresolvedBudget = 570
+//
+// Raised 570 -> 573 by examples/short_var_decl_multi_value.gala. All three
+// sites are the temporaries a multi-value binding inside a lambda body lowers
+// to; the documented `val a, b, c = f()` spelling reports the same three, so
+// this is the existing cost of that shape rather than a new one.
+const unresolvedBudget = 573
 
 // TestUnresolvedTypeInventory transpiles the single-file example corpus with
 // the unresolved-type inventory enabled and holds the total to a budget.

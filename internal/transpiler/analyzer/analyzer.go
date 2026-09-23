@@ -3823,10 +3823,22 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 				}
 			}
 			// Extract type aliases (e.g., type Handler func(Request) Future[Response])
+			//
+			// `typeAlias: identifier | type`, and both branches name an alias:
+			// `type Millis int64` and `type Coord Point` take the identifier
+			// branch. Reading only the `type` branch left those invisible to
+			// sibling files and to anything declared above them, so an alias
+			// used before its declaration was reported as an unknown type.
 			if ctx.TypeAlias() != nil {
 				aliasCtx := ctx.TypeAlias().(*grammar.TypeAliasContext)
+				aliasTarget := ""
 				if aliasCtx.Type_() != nil {
-					underlyingType := a.resolveTypeWithParams(aliasCtx.Type_().GetText(), pkgName, meta.TypeParams)
+					aliasTarget = aliasCtx.Type_().GetText()
+				} else if aliasCtx.Identifier() != nil {
+					aliasTarget = aliasCtx.Identifier().GetText()
+				}
+				if aliasTarget != "" {
+					underlyingType := a.resolveTypeWithParams(aliasTarget, pkgName, meta.TypeParams)
 					if !underlyingType.IsNil() {
 						if richAST.TypeAliases == nil {
 							richAST.TypeAliases = make(map[string]transpiler.Type)

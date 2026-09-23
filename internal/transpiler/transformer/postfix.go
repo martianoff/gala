@@ -557,6 +557,17 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 						defaultBody[len(defaultBody)-1] = t.markSynthesizedArmReturn(&ast.ReturnStmt{Results: []ast.Expr{exprStmt.X}})
 						resultTypes = append(resultTypes, t.inferResultType(exprStmt.X))
 						casePatterns = append(casePatterns, "case _")
+					} else if ifStmt, ok := lastStmt.(*ast.IfStmt); ok {
+						// A trailing if/else is the arm's value too, carried by
+						// its branches. Every branch yields the same type, so
+						// the first one gives the arm's result type.
+						if promoted, ok := promoteIfBranchValues(ifStmt, t.armReturn); ok {
+							defaultBody[len(defaultBody)-1] = promoted
+							if result := firstBranchResult(promoted); result != nil {
+								resultTypes = append(resultTypes, t.inferResultType(result))
+								casePatterns = append(casePatterns, "case _")
+							}
+						}
 					}
 				}
 			} else if ccCtx.GetBodyStmt() != nil {

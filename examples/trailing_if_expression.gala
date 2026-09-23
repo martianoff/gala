@@ -1,0 +1,57 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// A block used as a value returns its trailing expression, and the
+// if-expression form counts. Written with block branches it parses as a
+// statement, so the value is carried by each branch's trailing expression
+// rather than by an IIFE — in a block lambda and in a match arm alike.
+func sumScaled(items Array[int]) int =
+    items.FoldLeft(0, (acc, x) => {
+        val scaled = x * 2
+        if (scaled > acc) { acc + scaled } else { acc - scaled }
+    })
+
+// An else-if chain promotes through every branch.
+func classify(items Array[int]) Array[string] =
+    items.Map((x) => {
+        if (x < 0) {
+            "negative"
+        } else if (x == 0) {
+            "zero"
+        } else {
+            "positive"
+        }
+    })
+
+// A branch that already returns explicitly is left as written.
+func orPlaceholder(items Array[string]) Array[string] =
+    items.Map((s) => {
+        if (s == "") {
+            return "(empty)"
+        } else {
+            s
+        }
+    })
+
+// A match arm's block body follows the same rule — both the pattern arms and
+// the default arm.
+func describe(n int) string = n match {
+    case 0 => {
+        val label = "none"
+        if (label == "none") { "zero" } else { label }
+    }
+    case _ => {
+        val doubled = n * 2
+        if (doubled > 10) { "big" } else { "small" }
+    }
+}
+
+func main() {
+    Println(sumScaled(ArrayOf(1, -2, 3, -4)))
+    Println(classify(ArrayOf(-1, 0, 5)))
+    Println(orPlaceholder(ArrayOf("hi", "")))
+    Println(describe(0))
+    Println(describe(9))
+    Println(describe(2))
+}

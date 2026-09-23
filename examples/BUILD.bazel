@@ -568,6 +568,26 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "short_var_decl_multi_value",
+    src = "short_var_decl_multi_value.gala",
+    expected = "short_var_decl_multi_value.out",
+    deps = ["//collection_immutable"],
+)
+
+gala_exec_test(
+    name = "trailing_if_expression",
+    src = "trailing_if_expression.gala",
+    expected = "trailing_if_expression.out",
+    deps = ["//collection_immutable"],
+)
+
+gala_exec_test(
+    name = "type_alias_conversion",
+    src = "type_alias_conversion.gala",
+    expected = "type_alias_conversion.out",
+)
+
+gala_exec_test(
     name = "chained_flatmap_type_args",
     src = "chained_flatmap_type_args.gala",
     expected = "chained_flatmap_type_args.out",

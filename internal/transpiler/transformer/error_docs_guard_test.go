@@ -492,6 +492,28 @@ func main() {
 `)
 			},
 		},
+		{
+			name: "if written with a Go initializer statement",
+			code: galaerr.CodeIfInitializer, // GALA-E0047
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+import "strconv"
+
+func isParsable(text string) bool {
+    if n, err := strconv.Atoi(text); err != nil {
+        Println(n)
+        return false
+    }
+    return true
+}
+
+func main() {
+    Println(isParsable("42"))
+}
+`)
+			},
+		},
 		// The GALA-E0038 page also documents the rune-literal shape in prose
 		// (`'\d'`), but quotes no output for it, so there is nothing to pin.
 		// Its numeric forms (`'\x41'`) are not guardable here at all: GALA's

@@ -1,0 +1,28 @@
+package main
+
+// A type alias and its original are interchangeable, so `Millis(v)` is the
+// ordinary Go-style type conversion spelled with the alias name — the same
+// construct as `int64(v)`. Every declared type carries a (possibly empty) field
+// list, and an alias to a non-struct used to satisfy the struct-literal path
+// with zero fields: `Millis(v)` became `Millis{}` and the argument vanished.
+type Millis int64
+type Name string
+
+func toMillis(v int64) Millis = Millis(v)
+
+func toName(s string) Name = Name(s)
+
+// An alias that names a struct is a real construction target: the alias has to
+// reach the original's field list.
+struct Point(X int, Y int)
+
+type Coord Point
+
+func origin() Coord = Coord(1, 2)
+
+func main() {
+    Println(toMillis(1500))
+    Println(toName("gala"))
+    val c = origin()
+    Println(s"${c.X},${c.Y}")
+}

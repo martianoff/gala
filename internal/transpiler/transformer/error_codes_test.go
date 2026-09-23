@@ -527,6 +527,40 @@ func main() {
 			// Every omitted field is named at once, not just the first.
 			expectContains: `missing required fields "Extra" and "Tries"`,
 		},
+		{
+			name: "GALA-E0047 if written with a Go initializer statement",
+			input: `package main
+
+import "strconv"
+
+func isParsable(text string) bool {
+    if n, err := strconv.Atoi(text); err != nil {
+        Println(n)
+        return false
+    }
+    return true
+}
+
+func main() {
+    Println(isParsable("42"))
+}`,
+			expectCode:     galaerr.CodeIfInitializer,
+			expectContains: "`if` takes no initializer statement",
+		},
+		{
+			name: "GALA-E0047 single-value initializer is rejected too",
+			input: `package main
+
+func doIt(text string) error = nil
+
+func main() {
+    if err := doIt("x"); err != nil {
+        Println("failed")
+    }
+}`,
+			expectCode:     galaerr.CodeIfInitializer,
+			expectContains: "Try(...)",
+		},
 	}
 
 	for _, tc := range cases {

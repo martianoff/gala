@@ -1,0 +1,25 @@
+package main
+
+import "strings"
+import . "martianoff/gala/collection_immutable"
+
+// `a, b, c := f()` binds a Go multi-value return across several names in the
+// short spelling — the same construct as `val a, b, c = f()`. The call is
+// evaluated once into temporaries and each name takes its own result.
+func describe(email string) string {
+    user, host, found := strings.Cut(email, "@")
+    return if (found) s"$user at $host" else s"no host in $email"
+}
+
+// The same form inside a lambda body.
+func hosts(items Array[string]) Array[string] =
+    items.Map((e) => {
+        user, host, found := strings.Cut(e, "@")
+        if (found) host else s"($user)"
+    })
+
+func main() {
+    Println(describe("ada@lovelace.dev"))
+    Println(describe("nobody"))
+    Println(hosts(ArrayOf("a@b.com", "plain")))
+}
