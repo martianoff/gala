@@ -1434,6 +1434,12 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "composite_lit_if_expr_cond",
+    src = "composite_lit_if_expr_cond.gala",
+    expected = "composite_lit_if_expr_cond.out",
+)
+
+gala_exec_test(
     name = "match_any_struct_pattern",
     src = "match_any_struct_pattern.gala",
     expected = "match_any_struct_pattern.out",

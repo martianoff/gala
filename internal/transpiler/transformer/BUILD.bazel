@@ -80,6 +80,7 @@ go_test(
         "compilation_gate_test.go",
         "concurrency_check_test.go",
         "conflict_test.go",
+        "control_clause_composite_lit_test.go",
         "control_flow_test.go",
         "copy_test.go",
         "corpus_shared_test.go",

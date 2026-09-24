@@ -1,0 +1,37 @@
+package main
+
+sealed type Dir {
+    case LeftToRight()
+    case RightToLeft()
+}
+
+// if-EXPRESSION condition: the IIFE it lowers to puts `RightToLeft{}.Apply()`
+// into a Go `if` header, where a bare '{' would start the block body.
+func flip(d Dir) string = if (d == RightToLeft()) "rtl" else "ltr"
+
+// Nested if-expression: the same shape in the else-branch condition.
+func name(d Dir) string =
+    if (d == LeftToRight()) "left-to-right"
+    else if (d == RightToLeft()) "right-to-left"
+    else "unknown"
+
+// Match arm guard: the guard is emitted as an `if` condition too.
+func guarded(d Dir) string = d match {
+    case other if other == RightToLeft() => "guard-rtl"
+    case _ => "guard-ltr"
+}
+
+// Tail-recursive if-expression: the condition lands in an `if` inside the
+// generated loop.
+func countdown(d Dir, n int) int =
+    if (d == RightToLeft() && n > 0) countdown(d, n - 1) else n
+
+func main() {
+    Println(flip(RightToLeft()))
+    Println(flip(LeftToRight()))
+    Println(name(RightToLeft()))
+    Println(guarded(RightToLeft()))
+    Println(guarded(LeftToRight()))
+    Println(countdown(RightToLeft(), 3))
+    Println(countdown(LeftToRight(), 3))
+}
