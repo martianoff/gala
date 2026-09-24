@@ -4435,21 +4435,9 @@ The LSP server leverages the full transpiler pipeline for deep, type-aware analy
 
 ### VS Code
 
-GALA works in VS Code via any LSP client plugin. Add to `.vscode/settings.json`:
+Install the GALA extension from the [releases page](https://github.com/martianoff/gala/releases) — `code --install-extension gala-vscode-<version>.vsix`, or **Extensions** > `...` > **Install from VSIX...**. Unlike VS Code's built-in language support, the extension registers the `gala` language for `.gala` files and starts `gala lsp`; it requires the GALA CLI on `PATH`, or `gala.serverPath` / `GALA_PATH` pointing at it.
 
-```json
-{
-  "lsp.servers": {
-    "gala": {
-      "command": "gala",
-      "args": ["lsp"],
-      "filetypes": ["gala"]
-    }
-  }
-}
-```
-
-This gives you diagnostics, hover, go-to-definition, completion, and inlay hints — all the LSP features listed above.
+This gives you syntax highlighting plus diagnostics, hover, go-to-definition, references, completion, signature help, and inlay hints — all the LSP features listed above.
 
 ### Neovim
 

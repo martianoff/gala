@@ -15,7 +15,7 @@ last_modified_at: 2026-09-13
 
 # IDE Support
 
-GALA ships with a **GoLand/IntelliJ plugin** and an **LSP server** that work together to provide a full development experience. The plugin handles local features instantly (syntax highlighting, code folding, live templates), while the LSP server (`gala lsp`) adds type-aware intelligence (diagnostics, completion, inlay hints, go-to-definition).
+GALA ships with a **GoLand/IntelliJ plugin**, a **VS Code extension** and an **LSP server** that work together to provide a full development experience. The plugins handle local features instantly (syntax highlighting, code folding, live templates), while the LSP server (`gala lsp`) adds type-aware intelligence (diagnostics, completion, inlay hints, go-to-definition).
 
 ---
 
@@ -122,19 +122,13 @@ The structure view displays sealed type `Shape` with its variants (`Circle`, `Re
 
 ### VS Code
 
-Add to `.vscode/settings.json`:
+Install the GALA extension from the [releases](https://github.com/martianoff/gala/releases) page:
 
-```json
-{
-  "lsp.servers": {
-    "gala": {
-      "command": "gala",
-      "args": ["lsp"],
-      "filetypes": ["gala"]
-    }
-  }
-}
+```bash
+code --install-extension gala-vscode-<version>.vsix
 ```
+
+Or in VS Code: **Extensions** > `...` > **Install from VSIX...**. The extension is a thin client: it registers the `gala` language for `.gala` files (syntax highlighting, comments, brackets) and starts `gala lsp` for every feature listed above — diagnostics, completion, inlay hints, go-to-definition and symbols. It requires the GALA CLI on `PATH` (check `gala version`); point it elsewhere with the `gala.serverPath` setting or the `GALA_PATH` environment variable.
 
 ### Neovim
 

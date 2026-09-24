@@ -17,6 +17,7 @@ Run `/gala-ide-sync` to automatically verify and fix sync issues.
 **Source of truth:** `internal/parser/grammar/gala.g4` — named lexer rules (VAL, VAR, FUNC, etc.) and inline keyword literals in parser rules ('true', 'false', 'nil', 'map', 'return', etc.)
 
 **How to extract:**
+
 ```bash
 # Named keyword tokens
 grep "^[A-Z_]*:" internal/parser/grammar/gala.g4 | grep "'" | head -20
@@ -32,6 +33,7 @@ grep -oP "'[a-z]+'" internal/parser/grammar/gala.g4 | sort -u
 **Source of truth:** `internal/transpiler/types.go` — `IsPrimitiveType()` function
 
 **How to extract:**
+
 ```bash
 grep -A20 "func IsPrimitiveType" internal/transpiler/types.go
 ```
@@ -53,6 +55,7 @@ via the analyzer's `RichAST`; the plugin set only drives semantic highlighting.
 **Important:** Types from other packages (`collection_immutable`, `collection_mutable`, `io`, `stream`, `concurrent`, etc.) require explicit `import` and should NOT be in static completion lists. They will be suggested by the LSP server (Phase 5) when imports are resolved.
 
 **How to extract auto-imported types:**
+
 ```bash
 # Sealed types + constructors
 grep -h "^sealed type \|^    case " std/*.gala | head -20
@@ -69,6 +72,7 @@ dynamically by the analyzer's `RichAST` method metadata; no hardcoded method lis
 **Source of truth:** `std/*.gala` — public method definitions (`func (receiver) MethodName(...)`)
 
 **How to extract:**
+
 ```bash
 # Public methods (capitalized) on std types
 grep -h "^func (" std/*.gala | grep -oP '\) [A-Z]\w+' | sed 's/) //' | sort -u
@@ -80,6 +84,7 @@ Collection types, IO types, stream types, etc. are NOT in static completion list
 They require explicit `import` and will be handled by the LSP server (Phase 5).
 
 Packages with importable types:
+
 - `collection_immutable` — Array, List, HashMap, HashSet, TreeMap, TreeSet
 - `collection_mutable` — Array, List, HashMap, HashSet, TreeMap, TreeSet
 - `io` — Reader, Writer, etc.
@@ -99,6 +104,7 @@ Packages with importable types:
 ## When to Sync
 
 Sync the plugin after any of these changes:
+
 - **Grammar change** (`gala.g4`) — keywords, new syntax
 - **New std type** (`std/*.gala`) — types, sealed cases, methods
 - **New collection type** (`collection_immutable/`, `collection_mutable/`)
@@ -107,6 +113,7 @@ Sync the plugin after any of these changes:
 ## Automated Sync
 
 Run the Claude skill:
+
 ```
 /gala-ide-sync
 ```
@@ -177,6 +184,7 @@ The LSP server is the `gala lsp` subcommand of the main `gala` binary, so
 installing `gala` on PATH is all that is required.
 
 1. Copy the binary to PATH:
+
    ```bash
    # Linux/macOS
    cp bazel-bin/cmd/gala/gala_/gala ~/.local/bin/
@@ -184,6 +192,7 @@ installing `gala` on PATH is all that is required.
    # Windows
    copy bazel-bin\cmd\gala\gala_\gala.exe %USERPROFILE%\bin\
    ```
+
 2. Or set the `GALA_PATH` environment variable to the `gala` binary path
 3. Restart GoLand — the LSP server (`gala lsp`) starts automatically when a `.gala` file is opened
 
@@ -191,20 +200,16 @@ installing `gala` on PATH is all that is required.
 
 The LSP server works with any LSP-capable editor:
 
-**VS Code:** Create `.vscode/settings.json`:
-```json
-{
-  "lsp.servers": {
-    "gala": {
-      "command": "gala",
-      "args": ["lsp"],
-      "filetypes": ["gala"]
-    }
-  }
-}
+**VS Code:** install the GALA extension from [releases](https://github.com/martianoff/gala/releases):
+
+```bash
+code --install-extension gala-vscode-<version>.vsix
 ```
 
+The extension registers the `gala` language for `.gala` files and starts `gala lsp`. It requires the `gala` binary on `PATH` (or `gala.serverPath` / `GALA_PATH`).
+
 **Neovim (lspconfig):**
+
 ```lua
 require('lspconfig.configs').gala = {
   default_config = {

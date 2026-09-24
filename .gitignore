@@ -102,6 +102,12 @@ ide/intellij/src/main/gen/
 ide/intellij/.intellijPlatform/
 ide/intellij/.kotlin/
 
+# VS Code extension build artifacts
+ide/vscode/node_modules/
+ide/vscode/dist/
+ide/vscode/.vscode-test/
+ide/vscode/*.vsix
+
 ### Gradle template
 .gradle
 **/build/
@@ -152,3 +158,10 @@ bazel_test_fixtures/**/*.gen.go
 # .bazelrc. Machine-specific paths (e.g. --disk_cache) belong here, never
 # in the checked-in .bazelrc.
 .bazelrc.user
+
+# Nix build/dev-shell outputs (`nix build`, `nix develop` result symlinks).
+/result
+/result-*
+
+# directory used by direnv
+.direnv

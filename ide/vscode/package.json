@@ -1,0 +1,102 @@
+{
+  "name": "gala",
+  "displayName": "GALA",
+  "description": "GALA language support: syntax highlighting plus the full GALA language server (`gala lsp`) — diagnostics, hover, go-to-definition, references, completion, signature help, inlay hints and symbols.",
+  "version": "0.81.0",
+  "publisher": "martianoff",
+  "license": "Apache-2.0",
+  "icon": "icon.png",
+  "homepage": "https://gala.fyi/features/ide-support/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/martianoff/gala.git",
+    "directory": "ide/vscode"
+  },
+  "bugs": {
+    "url": "https://github.com/martianoff/gala/issues"
+  },
+  "keywords": [
+    "gala",
+    "language-server",
+    "lsp",
+    "golang"
+  ],
+  "categories": [
+    "Programming Languages"
+  ],
+  "engines": {
+    "vscode": "^1.138.0"
+  },
+  "activationEvents": [
+    "onLanguage:gala"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "gala",
+        "aliases": [
+          "GALA",
+          "gala"
+        ],
+        "extensions": [
+          ".gala"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "gala",
+        "scopeName": "source.gala",
+        "path": "./syntaxes/gala.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "GALA",
+      "properties": {
+        "gala.serverPath": {
+          "type": "string",
+          "default": "gala",
+          "markdownDescription": "Path to the GALA CLI. The extension runs `<path> lsp` and talks to it over stdio. When this setting is not explicitly set, the `GALA_PATH` environment variable is used, then `gala` on `PATH`. Requires a GALA CLI build that includes the `lsp` subcommand."
+        },
+        "gala.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Traces the communication between VS Code and the GALA language server."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "gala.restartServer",
+        "title": "GALA: Restart Language Server"
+      }
+    ]
+  },
+  "scripts": {
+    "typecheck": "tsc -p ./ --noEmit",
+    "bundle": "node esbuild.mjs",
+    "compile": "npm run typecheck && npm run bundle",
+    "watch": "node esbuild.mjs --watch",
+    "test": "npm run compile && node dist/test/runTest.js",
+    "vscode:prepublish": "npm run compile",
+    "package": "vsce package --no-dependencies"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^10.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "@types/vscode": "^1.138.0",
+    "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^4.0.0",
+    "esbuild": "^0.28.0",
+    "typescript": "^7.0.2"
+  }
+}

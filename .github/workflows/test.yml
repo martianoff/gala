@@ -48,3 +48,26 @@ jobs:
       - name: IntelliJ Plugin Build & Test
         run: |
           bazel build //ide/intellij:plugin --action_env=PATH
+
+  vscode-extension:
+    name: Build VS Code Extension
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ide/vscode/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ide/vscode
+        run: npm ci
+
+      - name: Typecheck and bundle
+        working-directory: ide/vscode
+        run: npm run compile
