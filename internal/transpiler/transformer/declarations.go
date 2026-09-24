@@ -631,9 +631,7 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		originalRecvTypeExpr = recvTypeExpr // Store before potential Immutable wrapping
 
 		recvBaseName := t.getBaseTypeName(recvTypeExpr)
-		if err := t.checkMethodReceiverAlias(recvCtx, recvBaseName); err != nil {
-			return nil, err
-		}
+		t.recordMethodReceiver(recvCtx, recvBaseName)
 
 		receiverType := t.resolveType(recvBaseName)
 		receiverBaseName := receiverType.BaseName()

@@ -593,6 +593,22 @@ func main() {
 			expectContains: "it resolves to the built-in type int64",
 		},
 		{
+			name: "GALA-E0048 method declared above its own alias",
+			input: `package main
+
+func (d Millis) Ms() int64 = 1
+
+type Millis int64
+
+func main() {
+    Println(Millis(5).Ms())
+}`,
+			expectCode: galaerr.CodeMethodOnNonLocalAlias,
+			// The alias table fills as declarations are walked, so this shape
+			// only resolves because receivers are checked after the whole file.
+			expectContains: "it resolves to the built-in type int64",
+		},
+		{
 			name: "GALA-E0048 method on an alias to an unnamed func type",
 			input: `package main
 

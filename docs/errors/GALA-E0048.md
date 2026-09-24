@@ -102,6 +102,9 @@ Note that `type Handler func(Request) Response` — a shape this reference itsel
 uses as an alias example — is affected: the alias is fine, a method on it is
 not.
 
+Declaration order does not matter: receivers are validated once the whole file
+has been read, so a method written above its own alias is caught too.
+
 **Scope.** This code covers methods on aliases. The alias rules as a whole are
 in [Type Aliases](../GALA.MD#type-aliases); GALA has no newtype declaration, so
 a distinct type with its own methods is a single-field struct.

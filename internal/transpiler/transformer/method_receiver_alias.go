@@ -21,6 +21,33 @@ import (
 // Both name a locality property of a file the author never wrote, for a type
 // they declared in GALA, and both appear only after a clean transpile.
 
+// recordMethodReceiver notes a method's receiver for checkMethodReceivers to
+// validate once the whole file has been walked.
+func (t *galaASTTransformer) recordMethodReceiver(recvCtx *grammar.ReceiverContext, recvTypeName string) {
+	if recvTypeName == "" || recvCtx == nil {
+		return
+	}
+	t.methodReceivers = append(t.methodReceivers, methodReceiver{ctx: recvCtx, typeName: recvTypeName})
+}
+
+// checkMethodReceivers validates every receiver recorded during the walk. It
+// runs after the last declaration so that aliases declared below a method that
+// names them are still in the table.
+func (t *galaASTTransformer) checkMethodReceivers() error {
+	for _, recv := range t.methodReceivers {
+		if err := t.checkMethodReceiverAlias(recv.ctx, recv.typeName); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// methodReceiver is one method's receiver, held until the file is fully walked.
+type methodReceiver struct {
+	ctx      *grammar.ReceiverContext
+	typeName string
+}
+
 // checkMethodReceiverAlias rejects a method whose receiver names a type alias
 // that cannot carry one.
 //

@@ -79,6 +79,7 @@ type galaASTTransformer struct {
 	expectedLambdaRetType    ast.Expr                   // expected return type paired with expectedLambdaParamTypes for the bare lambda initializer path
 	expectedArgTypes       expectedArgTypeStack         // (B1) LIFO stack of expected-type hints for downward inference; replaces a single-field side-channel. See expected_arg_stack.go for the contract.
 	matchInStatementPos    bool                         // set when transforming a `subject match { ... }` whose value is discarded (statement-position match); causes the IIFE to be lowered as void so void-returning arm calls do not appear as `return d.Skip()`
+	methodReceivers        []methodReceiver             // receivers collected during the walk, validated once the file is complete (see method_receiver_alias.go)
 	blockLastStmtIsValue   bool                         // set by callers of transformBlock that consume the block's last expression (function body with return type, lambda body, match arm body, partial-function body); without this, transformBlock treats the trailing statement as discarded — same as the trailing statement of for/if bodies — and marks any trailing bare `match` as statement-position
 	synthesizedReturns     map[*ast.ReturnStmt]bool     // tracks ReturnStmt nodes synthesized by lowering match-arm tail expressions (vs. user-written `return X`). Used to inline a statement-position match whose arms contain user returns: stripReturnStatements would otherwise convert user `return X` into a bare return that only exits the synthetic match-IIFE, leaving the enclosing function — and any surrounding `for` loop — to spin without the intended exit.
 	pendingMatchStmtBlock  *ast.BlockStmt               // side-channel: when transformMatchExpression detects a statement-position match with user-written returns inside arm bodies, it stores the inlined block here and returns a placeholder expression. transformBlock consumes this field and replaces the placeholder ExprStmt with the inlined block, so the user's `return X` becomes a real Go return from the enclosing function.
@@ -192,6 +193,7 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 	t.typeTraces = nil
 	t.inferenceWarnings = nil
 	t.unresolvedTypes = nil
+	t.methodReceivers = nil
 	t.unresolvedSeen = nil
 	t.diagPackageNames = nil
 	t.filePath = richAST.FilePath
@@ -321,6 +323,14 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 			}
 			file.Decls = append(file.Decls, decls...)
 		}
+	}
+
+	// Method receivers are validated here, not as each method is transformed,
+	// because t.typeAliases fills as declarations are walked: a method written
+	// above its own alias would otherwise see an empty table and escape the
+	// check. By this point every alias in the file is registered.
+	if err := t.checkMethodReceivers(); err != nil {
+		return nil, nil, err
 	}
 
 	// Finalize codec/StructMeta declarations (generate Go AST for all collected intrinsics)
