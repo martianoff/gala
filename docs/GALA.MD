@@ -648,23 +648,34 @@ alias declared in one file is visible to every file in the same package.
 | Annotate a type | `val s MyString = "hello"` | The alias stands wherever the target does |
 | Convert | `Millis(v)`, `MyString(s)` | The ordinary [type conversion](#type-conversions) — `Millis(v)` *is* `int64(v)` |
 | Construct, when the target is a struct | `Coord(1, 2)` | Reaches the target's fields, so named and positional construction both work |
-| Carry a generic instantiation | `type IntPair Pair[int]` then `IntPair(1, 2)` | The alias names the instantiation; do not re-apply type arguments |
-| Take methods, when the target is **local** | `func (c Coord) Sum() int = c.X + c.Y` | Legal because the receiver base type `Point` is declared in this package |
+| Carry a generic instantiation | `type IntPair Pair[int]` then `IntPair(1, 2)` | The alias names the instantiation; do not re-apply type arguments. It takes no methods — see below |
+| Take methods, when the target is a **plain local type** | `func (c Coord) Sum() int = c.X + c.Y` | Legal because the receiver base type `Point` is declared in this package |
 
 #### What an alias cannot do
 
-**It cannot take a method when its target is a built-in or an imported type.**
-The receiver base type is the *target*, and a method may only be declared on a
-type its own package declares. Both of these are
+**It cannot take a method unless its target is a plain type declared in this
+package.** The receiver base type is the *target*, and Go accepts a method only
+on a plain, locally declared type — so a built-in, an imported type, an unnamed
+composite (slice, map, func) and an instantiated type are all
 [GALA-E0048](errors/GALA-E0048.md):
 
 ```gala
 type Millis int64
-func (d Millis) Value() int64 = int64(d)     // GALA-E0048 — target is a built-in
+func (d Millis) Value() int64 = int64(d)     // built-in target
 
 type Dur time.Duration
-func (d Dur) Ticks() int64 = 1               // GALA-E0048 — target is imported
+func (d Dur) Ticks() int64 = 1               // imported target
+
+type Handler func(Request) Response
+func (h Handler) Name() string = "h"         // unnamed composite
+
+type IntPair Pair[int]
+func (p IntPair) First() int = p.A           // instantiated type
 ```
+
+The alias chain is followed to its end, so `type A int64; type B A` makes a
+method on `B` illegal for the same reason. A pointer target is fine when it
+points at a local type — `type PP *Point` puts the method on `Point`.
 
 Wrap the value in a struct when you need methods of your own:
 

@@ -19,6 +19,7 @@ go_library(
         "lambdas.go",
         "line_directives.go",
         "match.go",
+        "method_receiver_alias.go",
         "methods.go",
         "patterns.go",
         "postfix.go",

@@ -1,7 +1,8 @@
 # GALA-E0048 — method on an alias to a non-local type
 
-**When it fires.** A method is declared on a type alias whose target this
-package did not declare — a built-in, or a type from another package:
+**When it fires.** A method is declared on a type alias that does not resolve
+to a plain type this package declares — a built-in, a type from another
+package, an unnamed composite (slice, map, func) or an instantiated type:
 
 ```gala
 type Millis int64
@@ -26,7 +27,7 @@ func main() {
 **Error output.**
 
 ```
-error[GALA-E0048]: cannot declare a method on "DateTime": "DateTime" aliases the built-in type "int64"
+error[GALA-E0048]: cannot declare a method on "DateTime": it resolves to the built-in type int64
   --> main.gala:5:6
   |
 5 | func (d DateTime) Millis() int64 = int64(d)
@@ -54,8 +55,20 @@ func millisOf(d DateTime) int64 = int64(d)
 
 **Rationale.** `type X Y` is an *alias*, not a new type: it lowers to Go's
 `type X = Y`, so `X` and `Y` are one type and the method's receiver base type
-is `Y`. Go permits a method only on a type its own package declares, so an
-alias to `int64` or to `time.Duration` is not a legal receiver.
+is `Y`. Aliases chain, and Go collapses the whole chain — `type A int64; type
+B A` gives `B` the base type `int64` — so the rule is applied to where the
+chain ends, not to its first hop.
+
+The shapes that fail each get a different message out of Go, which is why the
+check enumerates them rather than relying on one:
+
+```
+cannot define new methods on non-local type DateTime
+invalid receiver type Handler
+cannot define new methods on instantiated type Pair[int]
+``` Go permits a method only on a type its own package declares, so an
+alias to `int64`, to `time.Duration` or to `func(int) int` is not a legal
+receiver.
 
 The declaration used to be emitted unchecked, which meant the rejection arrived
 from `go build` against generated code:
@@ -68,8 +81,11 @@ That names a Go rule, and a locality property of generated code, for a type the
 author declared in GALA — and it appeared only at build time, after a clean
 transpile.
 
-**Where it stands down.** An alias whose target is declared in **this** package
-is a legal receiver, because the base type is then local. This keeps working:
+**Where it stands down.** An alias whose chain ends at a plain type declared in
+**this** package is a legal receiver, because the base type is then local. That
+includes a type declared in a handwritten `.go` sibling of the same package,
+and a pointer to a local type (`type PP *Point` puts the method on `Point`).
+This keeps working:
 
 ```gala
 struct Point(X int, Y int)
@@ -81,6 +97,10 @@ func (c Coord) Sum() int = c.X + c.Y
 
 Everything else an alias does is unaffected — annotating a type, converting
 (`Millis(v)`), and constructing through an alias to a struct (`Coord(1, 2)`).
+
+Note that `type Handler func(Request) Response` — a shape this reference itself
+uses as an alias example — is affected: the alias is fine, a method on it is
+not.
 
 **Scope.** This code covers methods on aliases. The alias rules as a whole are
 in [Type Aliases](../GALA.MD#type-aliases); GALA has no newtype declaration, so

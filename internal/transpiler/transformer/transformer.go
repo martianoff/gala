@@ -610,6 +610,25 @@ func (t *galaASTTransformer) lookupTypeAlias(name string) (transpiler.Type, bool
 	return transpiler.NilType{}, false
 }
 
+// followAliasChain walks typ through successive alias declarations and returns
+// the type the chain ends at. `type A int64; type B A` resolves B to int64,
+// which is the type Go sees as the base of any receiver or literal naming B.
+//
+// The hop count bounds a chain that refers back to itself.
+func (t *galaASTTransformer) followAliasChain(typ transpiler.Type) transpiler.Type {
+	// Exact keys only. lookupTypeAlias falls back to the bare half of a
+	// qualified name, which on a chain would let `geom.Point` continue through
+	// an unrelated local alias that happens to be called `Point`.
+	for hop := 0; hop < len(t.typeAliases); hop++ {
+		next, ok := t.typeAliases[typ.BaseName()]
+		if !ok || next.IsNil() || next.BaseName() == typ.BaseName() {
+			break
+		}
+		typ = next
+	}
+	return typ
+}
+
 // resolveStructTypeName resolves a type name to the key used in structFields/structImmutFields maps.
 // Returns the original typeName if not found (for backward compatibility).
 func (t *galaASTTransformer) resolveStructTypeName(typeName string) string {
