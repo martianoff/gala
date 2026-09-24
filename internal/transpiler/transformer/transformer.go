@@ -483,10 +483,6 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 	// Remove unused imports from the generated AST.
 	t.importManager.PruneUnused(file, richAST)
 
-	// Parenthesize composite literals sitting in an if/for/switch header, where
-	// Go reads their '{' as the start of the block body.
-	parenthesizeControlClauseLits(file)
-
 	return fset, file, nil
 }
 

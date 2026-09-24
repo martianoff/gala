@@ -2,7 +2,10 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "generator",
-    srcs = ["generator.go"],
+    srcs = [
+        "generator.go",
+        "parens.go",
+    ],
     importpath = "martianoff/gala/internal/transpiler/generator",
     visibility = ["//:__subpackages__"],
     deps = ["//internal/transpiler"],
@@ -10,7 +13,13 @@ go_library(
 
 go_test(
     name = "generator_test",
-    srcs = ["generator_test.go"],
+    srcs = [
+        "generator_test.go",
+        "parens_test.go",
+    ],
     embed = [":generator"],
-    deps = ["@com_github_stretchr_testify//assert"],
+    deps = [
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
 )
