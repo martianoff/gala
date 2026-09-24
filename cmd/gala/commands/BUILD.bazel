@@ -37,7 +37,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//cmd/gala/commands/worker",
-        "//docs/errors:errdocs",
+        "//docs/errors",
         "//galaerr",
         "//internal/build",
         "//internal/depman/fetch",

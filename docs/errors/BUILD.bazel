@@ -15,17 +15,26 @@ filegroup(
 # //go:embed can only reach files in its own package directory; keeping it
 # beside the content is what guarantees the served page and the published page
 # are the same bytes.
+#
+# The targets are named for the directory, not for the Go package (`errdocs`),
+# because that is the name gazelle derives from the importpath: matching it is
+# what makes `bazel run //:gazelle` merge into these rules instead of appending
+# a second, broken pair beside them.
 go_library(
-    name = "errdocs",
+    name = "errors",
     srcs = ["errdocs.go"],
+    # The glob is what makes a newly added page reachable without regenerating
+    # this file; gazelle would otherwise expand the //go:embed pattern into a
+    # fixed list.
+    # keep
     embedsrcs = glob(["GALA-E*.md"]),
     importpath = "martianoff/gala/docs/errors",
     visibility = ["//visibility:public"],
 )
 
 go_test(
-    name = "errdocs_test",
+    name = "errors_test",
     srcs = ["errdocs_test.go"],
-    embed = [":errdocs"],
+    embed = [":errors"],
     deps = ["@com_github_stretchr_testify//require"],
 )
