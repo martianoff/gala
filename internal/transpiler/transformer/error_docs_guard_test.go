@@ -514,6 +514,22 @@ func main() {
 `)
 			},
 		},
+		{
+			name: "method declared on an alias to a built-in type",
+			code: galaerr.CodeMethodOnNonLocalAlias, // GALA-E0048
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+type DateTime int64
+
+func (d DateTime) Millis() int64 = int64(d)
+
+func main() {
+    Println(DateTime(5).Millis())
+}
+`)
+			},
+		},
 		// The GALA-E0038 page also documents the rune-literal shape in prose
 		// (`'\d'`), but quotes no output for it, so there is nothing to pin.
 		// Its numeric forms (`'\x41'`) are not guardable here at all: GALA's

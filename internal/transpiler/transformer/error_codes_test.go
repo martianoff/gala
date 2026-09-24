@@ -548,6 +548,36 @@ func main() {
 			expectContains: "`if` takes no initializer statement",
 		},
 		{
+			name: "GALA-E0048 method on an alias to a built-in type",
+			input: `package main
+
+type DateTime int64
+
+func (d DateTime) Millis() int64 = int64(d)
+
+func main() {
+    Println(DateTime(5).Millis())
+}`,
+			expectCode:     galaerr.CodeMethodOnNonLocalAlias,
+			expectContains: `aliases the built-in type "int64"`,
+		},
+		{
+			name: "GALA-E0048 method on an alias to an imported type",
+			input: `package main
+
+import "time"
+
+type Dur time.Duration
+
+func (d Dur) Ticks() int64 = 1
+
+func main() {
+    Println(Dur(5).Ticks())
+}`,
+			expectCode:     galaerr.CodeMethodOnNonLocalAlias,
+			expectContains: "declared in another package",
+		},
+		{
 			name: "GALA-E0047 single-value initializer is rejected too",
 			input: `package main
 

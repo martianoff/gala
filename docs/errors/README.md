@@ -67,6 +67,7 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0045` | Missing required field in struct construction | [GALA-E0045.md](GALA-E0045.md) |
 | `GALA-E0046` | Package already imported | [GALA-E0046.md](GALA-E0046.md) |
 | `GALA-E0047` | `if` takes no initializer statement | [GALA-E0047.md](GALA-E0047.md) |
+| `GALA-E0048` | Method on an alias to a non-local type | [GALA-E0048.md](GALA-E0048.md) |
 
 ## Adding a new code
 

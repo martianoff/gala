@@ -633,6 +633,10 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		receiverType := t.resolveType(t.getBaseTypeName(recvTypeExpr))
 		receiverBaseName := receiverType.BaseName()
 
+		if err := t.checkMethodReceiverAlias(recvCtx, t.getBaseTypeName(recvTypeExpr)); err != nil {
+			return nil, err
+		}
+
 		// For non-pointer receivers, try to preserve type parameters for lambda type inference
 		// Pointer receivers keep using the simple type to avoid field lookup issues
 		typeForScope := receiverType
@@ -1310,6 +1314,51 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 	}
 
 	return decls, nil
+}
+
+// checkMethodReceiverAlias rejects a method whose receiver names a type alias
+// to something this package did not declare.
+//
+// `type X Y` lowers to Go's `type X = Y`, so the receiver base type is Y. Go
+// accepts a method there only when Y is local, which holds for an alias to a
+// struct in this package but not for a primitive (`type Millis int64`) or an
+// imported type (`type Dur time.Duration`). Those two emitted Go that `go
+// build` then rejected as "cannot define new methods on non-local type".
+func (t *galaASTTransformer) checkMethodReceiverAlias(recvCtx *grammar.ReceiverContext, recvTypeName string) error {
+	if recvTypeName == "" {
+		return nil
+	}
+	alias, isAlias := t.lookupTypeAlias(recvTypeName)
+	if !isAlias || alias.IsNil() {
+		return nil
+	}
+
+	target := alias.BaseName()
+	reason := ""
+	switch {
+	case transpiler.IsPrimitiveType(target):
+		reason = fmt.Sprintf("%q aliases the built-in type %q", recvTypeName, target)
+	default:
+		pkg := alias.GetPackage()
+		if pkg != "" && pkg != t.packageName {
+			// BaseName already carries the qualifier for a named type, so it
+			// is printed as-is rather than re-prefixed with the package.
+			reason = fmt.Sprintf("%q aliases %s, declared in another package", recvTypeName, target)
+		}
+	}
+	if reason == "" {
+		// The alias names a type this package declares, so the receiver base
+		// type is local and the method is valid.
+		return nil
+	}
+
+	line, col := recvCtx.GetStart().GetLine(), recvCtx.GetStart().GetColumn()
+	return galaerr.NewCodedSemanticError(
+		galaerr.CodeMethodOnNonLocalAlias,
+		line, col,
+		fmt.Sprintf("cannot declare a method on %q: %s", recvTypeName, reason),
+		"a type alias is the same type as its target, so it takes no methods of its own — declare a struct that wraps the value, or write the method as a plain function",
+	)
 }
 
 func (t *galaASTTransformer) transformImportDeclaration(ctx *grammar.ImportDeclarationContext) (ast.Decl, error) {

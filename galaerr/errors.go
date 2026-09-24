@@ -503,6 +503,23 @@ const (
 	// names `Try`, which auto-wraps the Go `(T, error)` return this slot is
 	// typically used to nil-test into Success/Failure.
 	CodeIfInitializer ErrorCode = "GALA-E0047"
+
+	// E0048: a method was declared on a type alias whose target is not a type
+	// declared in this package — a primitive (`type Millis int64`) or an
+	// imported type (`type Dur time.Duration`).
+	//
+	// `type X Y` lowers to the Go alias `type X = Y`, so the method's receiver
+	// base type is Y itself. Go allows that only when Y is local, and the
+	// transpiler emitted the declaration unchecked, so the rejection arrived
+	// from the Go compiler against generated code:
+	//
+	//	cannot define new methods on non-local type DateTime
+	//
+	// naming a Go rule for a type the author declared in GALA.
+	//
+	// An alias to a struct declared in the same package keeps working, because
+	// there the receiver base type is local and Go accepts it.
+	CodeMethodOnNonLocalAlias ErrorCode = "GALA-E0048"
 )
 
 // MultiError collects multiple GALA errors.
