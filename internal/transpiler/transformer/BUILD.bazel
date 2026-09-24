@@ -126,6 +126,7 @@ go_test(
         "match_stmt_dispatch_test.go",
         "match_test.go",
         "match_void_dispatch_test.go",
+        "method_receiver_alias_test.go",
         "methods_test.go",
         "multi_file_some_none_test.go",
         "multi_var_test.go",
