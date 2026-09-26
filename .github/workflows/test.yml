@@ -75,10 +75,15 @@ jobs:
     # consumer of the shared ANTLR parser in the tree, and nothing covered that
     # before; the rationale is in internal/lsp/concurrent_analysis_test.go, and
     # the first run of this job found a real race there. All three targets run
-    # whole. Parts of the LSP suite budget for analysis with fixed sleeps, so if
-    # one goes red here, reproduce it in isolation before trusting the red — a
-    # box running several race-instrumented jobs at once squeezes those budgets
-    # enough to fail them for reasons that have nothing to do with concurrency.
+    # whole.
+    #
+    # Known weakness, recorded rather than tolerated: parts of the LSP suite
+    # assert on analysis results after a fixed time.Sleep (one budgets 300ms for
+    # a 300ms debounce plus a full parse, analyse and transform). Instrumentation
+    # is exactly what those budgets cannot absorb. If one goes red here, the fix
+    # is to make that test wait on a condition — ClearDiagnostics then
+    # WaitForDiagnostics, as the concurrency test does — not to retry the job or
+    # narrow this one. A red nobody is allowed to act on is not a gate.
     #
     # //internal/transpiler/transformer is deliberately NOT here. Under -race
     # it dies with `fatal error: traceback` /

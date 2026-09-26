@@ -639,6 +639,14 @@ func (h *GalaHandler) analyzeAndCache(uri, cleanText, caller string) {
 //
 // Publication is unconditional: a failed transform still leaves the analyzer's
 // metadata available, which is what publishing early was really buying.
+//
+// It also cost something, worth naming: for the duration of the transform,
+// hover, completion and signature help keep answering from the PREVIOUS
+// version's tree and text, where before they saw the new ones immediately. The
+// pair stays mutually consistent, so no answer is wrong, only staler. Buying
+// that latency back means giving readers a view that is not the map the
+// transformer writes — a copy, or a per-URI generation — not resurrecting the
+// ordering that crashed the server.
 func (h *GalaHandler) transformAndPublish(uri string, richAST *transpiler.RichAST, tree antlr.Tree, text string) (*transpiler.TransformResult, error) {
 	result, err := transformer.NewGalaASTTransformer().TransformForLSP(richAST)
 

@@ -70,15 +70,18 @@ func TestConcurrentAnalysesAcrossDocuments(t *testing.T) {
 
 	const docs = 6
 	const rounds = 3
-
 	uris := make([]lsp.DocumentURI, docs)
 	for i := range uris {
 		uris[i] = openNamedFileOnDisk(t, h, fmt.Sprintf("doc%d.gala", i), concurrentDoc(i, 1))
 	}
 
-	// Captured after the documents are open so the baseline excludes the
-	// harness's own goroutines; the drain at the end compares against it.
-	baseline := runtime.NumGoroutine()
+	// Drop the diagnostics DidOpen already published. Without this the barrier
+	// below is a no-op: GalaHandler.DidOpen calls publishDiagnostics
+	// synchronously, so every URI has an entry in the harness's store before the
+	// first edit, and WaitForDiagnostics returns whatever is already there
+	// ("If diagnostics already exist, they are returned immediately") rather
+	// than waiting for anything this test caused.
+	h.ClearDiagnostics()
 
 	// Fire every edit without waiting in between: the point is to have several
 	// analyzeFile goroutines alive at the same moment.
@@ -97,13 +100,16 @@ func TestConcurrentAnalysesAcrossDocuments(t *testing.T) {
 			_, _ = h.Completion(uri, 20, 8)
 		}
 	}
-	// Let the in-flight analyses land so the test does not return while
-	// goroutines are still touching its temp files.
+
+	// Wait for one post-clear publication per document, which is the last
+	// round's analysis — a superseded analysis is discarded without publishing,
+	// so publications can never account for all of them. That is what the
+	// settle below is for.
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	for i, uri := range uris {
 		if _, err := h.WaitForDiagnostics(ctx, uri); err != nil {
-			t.Fatalf("doc%d never published diagnostics: %v", i, err)
+			t.Fatalf("doc%d published no diagnostics after %d edits: %v", i, rounds, err)
 		}
 	}
 
@@ -114,22 +120,26 @@ func TestConcurrentAnalysesAcrossDocuments(t *testing.T) {
 		}
 	}
 
-	// Drain before returning. WaitForDiagnostics is not sufficient on its own:
-	// DidChange cancels the previous analysis for a URI, but cancellation is
-	// only checked after analyzeFile has already returned, so a superseded
-	// analysis still runs to completion and publishes nothing. Waiting on
-	// publications therefore lets up to docs*rounds analyses — each fanning out
-	// its own pool of parse workers — run on into whatever test follows. That is
-	// not hypothetical: without this drain, the suite's timing-sensitive
-	// diagnostics tests began failing while passing in isolation.
+	// Settle the superseded analyses before returning, so they do not run on
+	// into the next test with their own pools of parse workers. DidChange
+	// cancels the previous analysis for a URI, but cancellation is only checked
+	// after analyzeFile has returned, so those goroutines finish regardless and
+	// publish nothing.
 	//
-	// The handler exposes no completion signal, so the goroutine count is the
-	// honest proxy. Slack and a deadline keep it from being brittle.
-	deadline := time.Now().Add(60 * time.Second)
-	for runtime.NumGoroutine() > baseline+2 && time.Now().Before(deadline) {
+	// This waits for the goroutine count to stop falling rather than comparing
+	// against a baseline: NumGoroutine is process-wide, so a baseline captured
+	// mid-suite is inflated by goroutines earlier tests leaked, which can make a
+	// baseline comparison exit immediately without waiting for anything. Best
+	// effort by nature — the handler exposes no completion signal — so it is
+	// bounded and never fails the test.
+	// Capped at ~2s: the count can keep drifting for reasons that have nothing
+	// to do with this test (GC workers), so it must not be able to spin.
+	for i, prev := 0, -1; i < 100; i++ {
+		n := runtime.NumGoroutine()
+		if n == prev {
+			break
+		}
+		prev = n
 		time.Sleep(20 * time.Millisecond)
-	}
-	if n := runtime.NumGoroutine(); n > baseline+2 {
-		t.Logf("drain incomplete: %d goroutines still live (baseline %d)", n, baseline)
 	}
 }
