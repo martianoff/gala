@@ -1,0 +1,12 @@
+# Maintainer review is requested for the files that define how contributors and
+# AI agents are expected to work, and for the checks that enforce it.
+
+/AGENTS.md                       @martianoff
+/CLAUDE.MD                       @martianoff
+/GEMINI.md                       @martianoff
+/CONTRIBUTING.MD                 @martianoff
+/SECURITY.md                     @martianoff
+/.github/                        @martianoff
+/.claude/                        @martianoff
+/tools/check_repo_policy.sh      @martianoff
+/internal/parser/grammar/gala.g4 @martianoff

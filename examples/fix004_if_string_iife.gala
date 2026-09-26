@@ -4,7 +4,7 @@ import (
     . "martianoff/gala/collection_immutable"
 )
 
-// Repro for FIX-004: `if (cond) sStr1 else sStr2` previously produced a
+// Repro: `if (cond) sStr1 else sStr2` previously produced a
 // `func() any { ... }()` IIFE instead of `func() string { ... }()`, because
 // the lowered `fmt.Sprintf` CallExpr was not tagged with its return type.
 // When the if-expression appears in a `var` initialiser or argument position

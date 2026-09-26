@@ -25,3 +25,12 @@
 ## Test Plan
 
 <!-- How was this tested? Which test files cover the change? -->
+
+## AI Assistance
+
+<!-- AI-assisted PRs are welcome. See CONTRIBUTING.MD#ai-assisted-contributions. -->
+
+- [ ] No AI assistance
+- [ ] AI-assisted — tool/model: <!-- e.g. Claude Code, Codex, Cursor -->
+  - [ ] I have read and understood the whole diff, and I will answer review questions about it
+  - [ ] The agent followed `AGENTS.md`, and commits it wrote carry a `Co-Authored-By:` trailer

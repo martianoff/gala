@@ -1,4 +1,28 @@
+# GALA welcomes AI crawlers, AI search, and model training on this site.
+# The named groups below are redundant with "User-agent: *" and exist to make
+# that explicit. Agent-oriented summary of the language: /llms.txt
+# Policy: https://github.com/martianoff/gala/blob/master/CONTRIBUTING.MD#ai-assisted-contributions
+
 User-agent: *
+Allow: /
+
+User-agent: GPTBot
+User-agent: OAI-SearchBot
+User-agent: ChatGPT-User
+User-agent: ClaudeBot
+User-agent: Claude-User
+User-agent: Claude-SearchBot
+User-agent: anthropic-ai
+User-agent: Google-Extended
+User-agent: Applebot-Extended
+User-agent: PerplexityBot
+User-agent: Perplexity-User
+User-agent: Meta-ExternalAgent
+User-agent: Amazonbot
+User-agent: CCBot
+User-agent: cohere-ai
+User-agent: MistralAI-User
+User-agent: DuckAssistBot
 Allow: /
 
 Sitemap: https://gala.fyi/sitemap.xml

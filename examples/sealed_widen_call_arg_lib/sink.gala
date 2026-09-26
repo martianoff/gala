@@ -1,5 +1,6 @@
 package sealed_widen_call_arg_lib
 
 // Sink ensures the lib is multi-file (forces batch transpilation).
-// The cross-package + multi-file shape is what fired FIX-013 originally.
+// The cross-package + multi-file shape is what originally broke
+// multi-arg sealed widening at call arguments.
 func Sink(s Status) string = DescribeStatus(s)

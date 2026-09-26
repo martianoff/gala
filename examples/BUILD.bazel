@@ -2220,7 +2220,7 @@ gala_library(
 )
 
 # Regression: library-with-sublibrary layout used to panic the analyzer
-# (FIX-001). The example keeps a main package at examples/multipackage_subpkg/
+# when one batch mixed files from different packages. The example keeps a main package at examples/multipackage_subpkg/
 # with a sibling subpackage in examples/multipackage_subpkg/state/ — the
 # combination that reproduced the ANTLR nil-pointer dereference.
 gala_library(
@@ -3043,7 +3043,7 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
-# FIX-004: if-expression with both arms producing s-string interpolations
+# Regression: if-expression with both arms producing s-string interpolations
 # must lower to `func() string { ... }()`, not `func() any { ... }()`.
 # Otherwise downstream callers expecting a concrete string (e.g. a
 # `string`-typed val initialiser) fail to compile in the generated Go.

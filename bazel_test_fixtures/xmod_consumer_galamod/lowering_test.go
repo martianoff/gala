@@ -15,8 +15,9 @@ import (
 // directive (no `replace`) and the dep is supplied via Bazel's
 // bazel_dep + local_path_override mechanism.
 //
-// This is the regression test for the BUG-10/BUG-15/BUG-16 trio reported
-// against gala-server. The earlier external_gala_consumer fixture passed
+// This is the regression test for three cross-module lowering bugs
+// (zero-field sealed cases, fielded sealed cases, and plain-struct lambda
+// params) reported against gala-server. The earlier external_gala_consumer fixture passed
 // because its consumer had no gala.mod at all, so the resolver never
 // walked the require list and the bug never fired in that fixture. This
 // fixture differs in exactly one way: gala.mod is present with a require
@@ -42,20 +43,20 @@ func TestCrossModuleApplyLoweringWithRequireDirective(t *testing.T) {
 	require.NoError(t, err)
 	got := string(data)
 
-	// BUG-10: zero-field sealed case must lower to {}.Apply().
+	// Zero-field sealed case must lower to {}.Apply().
 	require.True(t, strings.Contains(got, "Halt[int]{}.Apply()"),
 		"expected Halt[int]{}.Apply() in generated Go, got:\n%s", got)
 	require.False(t, containsBareConversion(got, "Halt[int]"),
 		"unexpected bare conversion Halt[int]() in generated Go, got:\n%s", got)
 
-	// BUG-16: fielded sealed case must lower to {}.Apply(arg), never
+	// Fielded sealed case must lower to {}.Apply(arg), never
 	// to a named-field struct literal against the zero-field variant struct.
 	require.True(t, strings.Contains(got, "Yield[int]{}.Apply("),
 		"expected Yield[int]{}.Apply(...) in generated Go, got:\n%s", got)
 	require.False(t, strings.Contains(got, "Yield[int]{Val:"),
 		"unexpected named-field struct literal Yield[int]{Val: ...} on zero-field variant struct, got:\n%s", got)
 
-	// BUG-15: plain struct must keep concrete-typed lambda parameters.
+	// Plain struct must keep concrete-typed lambda parameters.
 	// Cross-module struct field metadata must be loaded so the consumer
 	// emits `func(x int) int` rather than `func(x any) any`.
 	require.True(t, strings.Contains(got, "Container[int]{"),

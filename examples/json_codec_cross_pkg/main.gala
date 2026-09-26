@@ -8,8 +8,8 @@ import (
 )
 
 // Cross-package nested struct codec: parent (Wrap) is in main, inner
-// (Part) is in a sibling package.  Acceptance criterion #6 from
-// FIX-025 — codec recursion works across module boundaries.
+// (Part) is in a sibling package. Verifies that codec recursion works
+// across module boundaries.
 
 struct Msg(Content Array[Part])
 struct Wrap(Type string, Message Msg)

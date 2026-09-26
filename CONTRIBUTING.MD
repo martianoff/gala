@@ -363,6 +363,34 @@ its own (`fix/null-pointer-in-immutable-unwrap`, not `fix/FIX-001`).
 This is a recommendation, not enforced by tooling. Pick what reads best
 to a future reviewer searching `git log` for the change.
 
+## AI-assisted contributions
+
+GALA is built to be written by humans and AI agents alike, and so is this repository.
+**Contributions made with AI coding agents are welcome** — including PRs written largely or
+entirely by an agent. Three things are required:
+
+1. **A human is accountable.** Whoever opens the PR has read the whole diff, understands
+   it, has run the checks, and will answer review questions about it. "The agent wrote it"
+   is not an answer to a review comment.
+2. **Disclose it.** Tick the AI-assistance box in the PR template, and add a
+   `Co-Authored-By:` trailer naming the tool or model to commits the agent wrote, e.g.
+   `Co-Authored-By: <agent name> <noreply@example.com>`. Disclosure is not a mark against a
+   PR; it tells the reviewer where to look harder.
+3. **The agent follows [AGENTS.md](AGENTS.md).** It is the single rulebook for every agent
+   (Claude Code, Codex, Cursor, Copilot, Gemini CLI, …); `CLAUDE.MD`, `GEMINI.md`, and
+   `.github/copilot-instructions.md` just point to it. Point any other tool at it too.
+   The hard lines — no hand-written generated parser, no internal ticket IDs — are also
+   checked in CI by `tools/check_repo_policy.sh`.
+
+Things that get an AI-assisted PR closed without detailed review: a description that
+doesn't match the diff, tests weakened or `.out` files edited to make CI pass, a
+transpiler bug worked around instead of fixed, or no response from a human to review.
+
+Using GALA's code and docs to train or evaluate models, and indexing them for AI search
+and assistants, is welcome under the [Apache 2.0 license](LICENSE). For writing GALA with
+an agent, start from [gala.fyi/llms.txt](https://gala.fyi/llms.txt) and
+[GALA for AI](https://gala.fyi/for-ai/).
+
 ## Reporting Bugs
 
 **Security issues are not bug reports.** If the problem has security impact, do not
