@@ -82,6 +82,17 @@ func buildSyntheticCache() *CachedRichAST {
 			},
 		},
 		ImportPathMap: map[string]string{"std": "martianoff/gala/std"},
+		PackageVals: map[string]*transpiler.PackageValMetadata{
+			"Green": {
+				Name:      "Green",
+				Type:      transpiler.NamedType{Package: "synthetic", Name: "Color"},
+				IsVal:     true,
+				Doc:       "Green is the default accent.",
+				Pos:       transpiler.SourcePos{Line: 7, Column: 4},
+				DefinedIn: "/src/synthetic/colors.gala",
+			},
+			"Counter": {Name: "Counter", Type: transpiler.BasicType{Name: "int"}},
+		},
 		DepsHash:      "deadbeef",
 		DirectImports: []string{"martianoff/gala/std", "martianoff/gala/lazy"},
 	}

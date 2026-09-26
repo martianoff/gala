@@ -1,6 +1,7 @@
 package transformer
 
 import (
+	"go/ast"
 	"martianoff/gala/internal/transpiler"
 	"strings"
 )
@@ -229,6 +230,93 @@ func (t *galaASTTransformer) lookupLocalBinding(name string) (transpiler.Type, b
 		s = s.parent
 	}
 	return transpiler.NilType{}, false
+}
+
+// importedPackageVal returns the package-level `val`/`var` binding that the
+// selector `x.sel` names in an imported GALA package, or nil when `x` is not a
+// package reference or the package declares no such binding.
+//
+// A local binding named like the package shadows it (`colors.Green` on a local
+// `colors` is a field access), so scope is consulted before the import table.
+// The import alias is resolved to the package's real name, which is what
+// RichAST.ImportedVals is keyed by.
+func (t *galaASTTransformer) importedPackageVal(x, sel string) *transpiler.PackageValMetadata {
+	if t.richAST == nil || len(t.richAST.ImportedVals) == 0 || t.importManager == nil {
+		return nil
+	}
+	if t.isVal(x) || t.isVar(x) || !t.importManager.IsPackage(x) {
+		return nil
+	}
+	pkgName := x
+	if actual, ok := t.importManager.ResolveAlias(x); ok {
+		pkgName = actual
+	}
+	return t.richAST.ImportedVals[pkgName+"."+sel]
+}
+
+// importedValSelector reports whether sel is `pkg.Name` naming a `val` of an
+// imported package, returning its metadata.
+func (t *galaASTTransformer) importedValSelector(sel *ast.SelectorExpr) (*transpiler.PackageValMetadata, bool) {
+	x, ok := sel.X.(*ast.Ident)
+	if !ok {
+		return nil, false
+	}
+	pv := t.importedPackageVal(x.Name, sel.Sel.Name)
+	return pv, pv != nil && pv.IsVal
+}
+
+// importedValRead reports whether expr is the `pkg.Name.Get()` read
+// resolveFieldAccess emits for an imported package-level val, returning the
+// source-level name `pkg.Name`.
+func (t *galaASTTransformer) importedValRead(expr ast.Expr) (string, bool) {
+	call, ok := expr.(*ast.CallExpr)
+	if !ok || len(call.Args) != 0 {
+		return "", false
+	}
+	get, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || get.Sel.Name != transpiler.MethodGet {
+		return "", false
+	}
+	sel, ok := get.X.(*ast.SelectorExpr)
+	if !ok {
+		return "", false
+	}
+	if _, isVal := t.importedValSelector(sel); !isVal {
+		return "", false
+	}
+	return sel.X.(*ast.Ident).Name + "." + sel.Sel.Name, true
+}
+
+// registerDotImportedVals binds the package-level vals/vars of every
+// dot-imported GALA package in the global scope under their bare names, so a
+// bare `Green` under `import . "…/colors"` unwraps from std.Immutable[T] the
+// same way a same-package reference does. Call it once the imports are known.
+//
+// The current package's own bindings are registered first and win: a clash is
+// a Go redeclaration error either way, and the own declaration is the one the
+// rest of the file was written against. Local bindings shadow these through
+// ordinary scoping.
+func (t *galaASTTransformer) registerDotImportedVals() {
+	if t.richAST == nil || len(t.richAST.ImportedVals) == 0 || t.currentScope == nil {
+		return
+	}
+	for _, pkg := range t.importManager.GetDotImports() {
+		prefix := pkg + "."
+		for key, meta := range t.richAST.ImportedVals {
+			if meta == nil || !strings.HasPrefix(key, prefix) {
+				continue
+			}
+			name := key[len(prefix):]
+			if _, bound := t.currentScope.vals[name]; bound {
+				continue
+			}
+			if meta.IsVal {
+				t.addVal(name, meta.Type)
+			} else {
+				t.addVar(name, meta.Type)
+			}
+		}
+	}
 }
 
 func (t *galaASTTransformer) getFunction(name string) *transpiler.FunctionMetadata {

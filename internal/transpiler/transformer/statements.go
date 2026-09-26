@@ -134,6 +134,9 @@ func (t *galaASTTransformer) transformIncDecStmt(ctx *grammar.IncDecStmtContext)
 			return nil, t.semanticErrorAt(ctx, fmt.Sprintf("cannot increment/decrement immutable variable %s", ident.Name))
 		}
 	}
+	if name, ok := t.importedValRead(expr); ok {
+		return nil, t.semanticErrorAt(ctx, fmt.Sprintf("cannot increment/decrement immutable variable %s", name))
+	}
 
 	// Determine the token (++ or --)
 	tok := token.INC
@@ -258,6 +261,14 @@ func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext)
 	lhsExprs, err := t.transformExpressionList(lhsCtx)
 	if err != nil {
 		return nil, err
+	}
+	// `pkg.Name = ...` on an imported package-level val — which the LHS
+	// transform has already turned into a `pkg.Name.Get()` read — is as
+	// immutable as reassigning a same-package val.
+	for _, lhs := range lhsExprs {
+		if name, ok := t.importedValRead(lhs); ok {
+			return nil, t.semanticErrorAt(ctx, fmt.Sprintf("cannot assign to immutable variable %s", name))
+		}
 	}
 
 	// Downward type-inference for sealed-variant constructors on the RHS:

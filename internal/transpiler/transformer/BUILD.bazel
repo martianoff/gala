@@ -89,6 +89,7 @@ go_test(
         "crossfile_package_val_test.go",
         "crossfile_type_alias_test.go",
         "crosspkg_funcref_chain_test.go",
+        "crosspkg_package_val_test.go",
         "default_immutability_test.go",
         "dot_import_generic_namedarg_test.go",
         "dot_import_test.go",

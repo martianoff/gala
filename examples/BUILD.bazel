@@ -2348,6 +2348,33 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
+# Package-level `val`s read from another package (qualified and dot-imported)
+# must unwrap from std.Immutable[T] at the use site; a `var` stays plain.
+gala_library(
+    name = "crosspkg_package_val_colors",
+    srcs = ["crosspkg_package_val/colors/colors.gala"],
+    importpath = "martianoff/gala/examples/crosspkg_package_val/colors",
+    visibility = ["//visibility:public"],
+)
+
+gala_library(
+    name = "crosspkg_package_val_palette",
+    srcs = ["crosspkg_package_val/palette/palette.gala"],
+    importpath = "martianoff/gala/examples/crosspkg_package_val/palette",
+    visibility = ["//visibility:public"],
+    deps = [":crosspkg_package_val_colors"],
+)
+
+gala_exec_test(
+    name = "crosspkg_package_val",
+    src = "crosspkg_package_val.gala",
+    expected = "crosspkg_package_val.out",
+    deps = [
+        ":crosspkg_package_val_colors",
+        ":crosspkg_package_val_palette",
+    ],
+)
+
 # Repro: type alias for func type in library package + match through alias
 # Exercises: sibling type alias extraction, NamedType.BaseName() package qualification,
 # chained function call inference, match result type in lambda context

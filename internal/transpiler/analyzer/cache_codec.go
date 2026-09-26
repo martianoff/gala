@@ -33,7 +33,7 @@ import (
 
 // codecMagic identifies a binary cache blob. The trailing byte is the
 // format version; bump alongside CacheVersion when the layout changes.
-var codecMagic = [4]byte{'G', 'A', 'C', 0x04}
+var codecMagic = [4]byte{'G', 'A', 'C', 0x05}
 
 const (
 	typeTagNil     uint8 = 0 // nil interface
@@ -69,6 +69,7 @@ func encodeCachedRichAST(c *CachedRichAST) ([]byte, error) {
 	e.writeGoTypeInfoPtr(c.GoTypeInfo)
 	e.writeStringTypeMap(c.TypeAliases)
 	e.writeStringStringMap(c.ImportPathMap)
+	e.writeStringPackageValMap(c.PackageVals)
 	e.writeString(c.DepsHash)
 	e.writeStringSlice(c.DirectImports)
 	if e.err != nil {
@@ -102,6 +103,7 @@ func decodeCachedRichAST(data []byte) (*CachedRichAST, error) {
 	out.GoTypeInfo = d.readGoTypeInfoPtr()
 	out.TypeAliases = d.readStringTypeMap()
 	out.ImportPathMap = d.readStringStringMap()
+	out.PackageVals = d.readStringPackageValMap()
 	out.DepsHash = d.readString()
 	out.DirectImports = d.readStringSlice()
 	if d.err != nil {
@@ -359,6 +361,24 @@ func (e *encoder) writeStringFuncMetaMap(m map[string]*transpiler.FunctionMetada
 	for k, v := range m {
 		e.writeString(k)
 		e.writeFuncMeta(v)
+	}
+}
+
+func (e *encoder) writeStringPackageValMap(m map[string]*transpiler.PackageValMetadata) {
+	e.writeUvarint(uint64(len(m)))
+	for k, v := range m {
+		e.writeString(k)
+		if v == nil {
+			e.writeBool(false)
+			continue
+		}
+		e.writeBool(true)
+		e.writeString(v.Name)
+		e.writeType(v.Type)
+		e.writeBool(v.IsVal)
+		e.writeString(v.Doc)
+		e.writeSourcePos(v.Pos)
+		e.writeString(v.DefinedIn)
 	}
 }
 
@@ -810,6 +830,30 @@ func (d *decoder) readStringFuncMetaMap() map[string]*transpiler.FunctionMetadat
 	for i := uint64(0); i < n; i++ {
 		k := d.readString()
 		v := d.readFuncMeta()
+		out[k] = v
+	}
+	return out
+}
+
+func (d *decoder) readStringPackageValMap() map[string]*transpiler.PackageValMetadata {
+	n := d.readUvarint()
+	if d.err != nil || n == 0 {
+		return nil
+	}
+	out := make(map[string]*transpiler.PackageValMetadata, n)
+	for i := uint64(0); i < n; i++ {
+		k := d.readString()
+		if !d.readBool() {
+			out[k] = nil
+			continue
+		}
+		v := &transpiler.PackageValMetadata{}
+		v.Name = d.readString()
+		v.Type = d.readType()
+		v.IsVal = d.readBool()
+		v.Doc = d.readString()
+		v.Pos = d.readSourcePos()
+		v.DefinedIn = d.readString()
 		out[k] = v
 	}
 	return out

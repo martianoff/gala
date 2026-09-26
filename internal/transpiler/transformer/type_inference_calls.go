@@ -52,6 +52,20 @@ func (t *galaASTTransformer) inferSelectorExprType(e *ast.SelectorExpr) transpil
 			// Check if this is a Go constant or variable (not a type)
 			// e.g., runtime.GOOS is a string constant, not a type
 			qualName := pkgName + "." + e.Sel.Name
+			// A package-level binding of an imported GALA package: a `var` is
+			// its element type, a `val` the std.Immutable[T] it lowers to
+			// (resolveFieldAccess reads it through .Get()). An unknown element
+			// type stays unknown rather than falling through to the NamedType
+			// guess below, which would claim the binding is a type.
+			if pv := t.importedPackageVal(x.Name, e.Sel.Name); pv != nil {
+				if !pv.IsVal || transpiler.IsUnusable(pv.Type) {
+					return pv.Type
+				}
+				return transpiler.GenericType{
+					Base:   transpiler.NamedType{Package: registry.StdPackageName, Name: transpiler.TypeImmutable},
+					Params: []transpiler.Type{pv.Type},
+				}
+			}
 			// A bare reference to a function in another GALA package
 			// (e.g. `helper.Shout` passed to Array.Map). The same-package
 			// form is resolved from FunctionMetadata in the *ast.Ident case
@@ -618,6 +632,14 @@ func (t *galaASTTransformer) inferGetMethodType(e *ast.CallExpr, sel *ast.Select
 			// For vals, the stored type is already the inner type (e.g., Array[int] not Immutable[Array[int]])
 			// So x.Get() returns the stored type directly
 			xType = t.getType(id.Name)
+		}
+	}
+	// `pkg.Name.Get()` reading an imported package-level val: the .Get()
+	// unwraps the val's Immutable wrapper, so it yields the element type.
+	if pkgSel, ok := sel.X.(*ast.SelectorExpr); ok {
+		if pv, ok := t.importedValSelector(pkgSel); ok {
+			isVal = true
+			xType = pv.Type
 		}
 	}
 	// Check if sel.X is an immutable struct field access (e.g., c.value where value is an immutable field)

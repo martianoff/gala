@@ -413,6 +413,11 @@ func (m *ImportManager) dotImportUsedInAST(file *ast.File, pkgName string, richA
 			exports[sym] = true
 		}
 	}
+	for key, meta := range richAST.ImportedVals {
+		if meta != nil && strings.HasPrefix(key, pkgName+".") {
+			exports[meta.Name] = true
+		}
+	}
 	if len(exports) == 0 {
 		return true // conservatively keep — can't determine if symbols are used
 	}

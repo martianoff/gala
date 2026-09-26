@@ -552,6 +552,19 @@ For most use cases, prefer GALA's collection types and their methods over Go bui
 
 ## 12. Immutability Under the Hood {#12-immutability-under-the-hood}
 
+### Package-Level Bindings
+A package-level `val` is a `std.Immutable[T]` in the generated Go but reads as a plain `T` everywhere — its own file, sibling files, and other packages (qualified, aliased, or dot-imported). A package-level `var` stays a plain, reassignable variable.
+```gala
+// package colors
+val Green = NamedColor(2)
+var Hits = 0
+
+// package main
+Println(colors.ToSgr(colors.Green))  // Green reads as colors.Color
+colors.Hits = colors.Hits + 1        // OK: a var
+// colors.Green = NamedColor(3)      // ERROR: cannot assign to immutable variable colors.Green
+```
+
 ### Pointer Types and Immutability
 ```gala
 var data = 42
