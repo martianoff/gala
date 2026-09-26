@@ -5,7 +5,7 @@ import (
     . "martianoff/gala/std"
 )
 
-// FIX-001 regression: reassigning `Some(...)` to a `var` of inferred
+// Regression: reassigning `Some(...)` to a `var` of inferred
 // `Option[string]` must inherit the LHS type so the variant is emitted
 // as `Some[string]{}.Apply(...)` (not `Some{}.Apply(...)` which Go
 // rejects as "generic type Some[T any] without instantiation").

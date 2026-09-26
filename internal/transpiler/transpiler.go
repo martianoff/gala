@@ -546,8 +546,21 @@ func NewGalaToGoTranspiler(
 
 // Transpile executes the full transpilation pipeline.
 func (t *GalaToGoTranspiler) Transpile(input string, filePath string) (string, error) {
+	return t.transpile(input, filePath, nil)
+}
+
+func (t *GalaToGoTranspiler) TranspileWithSummary(input string, filePath string, summary *profiler.Summary) (string, error) {
+	return t.transpile(input, filePath, summary)
+}
+
+func (t *GalaToGoTranspiler) transpile(input string, filePath string, summary *profiler.Summary) (string, error) {
 	prof := profiler.New(filePath)
-	defer prof.Report()
+	defer func() {
+		if summary != nil {
+			summary.Add(prof)
+		}
+		prof.Report()
+	}()
 
 	done := prof.Phase("parse")
 	tree, docs, err := t.parser.Parse(input)
@@ -594,7 +607,9 @@ func (t *GalaToGoTranspiler) Transpile(input string, filePath string) (string, e
 	// The Go AST doesn't support attaching pragmas to synthetic nodes (position 0),
 	// so we insert them as a string transformation on the formatted output.
 	if len(richAST.EmbedDirectives) > 0 {
+		done = prof.Phase("postprocess-embed")
 		code = insertEmbedDirectives(code, richAST.EmbedDirectives)
+		done()
 	}
 
 	// Post-process: rewrite the transformer's per-statement / per-declaration
@@ -603,7 +618,7 @@ func (t *GalaToGoTranspiler) Transpile(input string, filePath string) (string, e
 	// originating file — an empty filePath (e.g. LSP snippet transpilation) has
 	// no source map to point at, so markers are simply not emitted upstream.
 	if filePath != "" {
-		code, err = insertLineDirectives(code, filePath)
+		code, err = insertLineDirectivesWithProfiler(code, filePath, prof)
 		if err != nil {
 			return "", galaerr.WithFilePath(err, filePath)
 		}
@@ -717,8 +732,14 @@ func describeUnparseableDump(code, sourceFile string) string {
 // The unparseable case additionally dumps the offending Go (see
 // describeUnparseableDump) — it is the only copy that will ever exist.
 func insertLineDirectives(code, sourceFile string) (string, error) {
+	return insertLineDirectivesWithProfiler(code, sourceFile, nil)
+}
+
+func insertLineDirectivesWithProfiler(code, sourceFile string, prof *profiler.Profiler) (string, error) {
+	parseDone := prof.Phase("postprocess-line-parse")
 	fset := token.NewFileSet()
 	astFile, err := parser.ParseFile(fset, "", code, parser.ParseComments)
+	parseDone()
 	if err != nil {
 		return "", galaerr.NewCodedSemanticError(
 			galaerr.CodeInternalTransformerPanic, 0, 0,
@@ -749,6 +770,7 @@ func insertLineDirectives(code, sourceFile string) (string, error) {
 	// POSITION; it does not prove the map is one entry per marker.
 	var identCount, claimedCount int
 
+	scanDone := prof.Phase("postprocess-line-scan")
 	ast.Inspect(astFile, func(n ast.Node) bool {
 		switch node := n.(type) {
 		case *ast.Ident:
@@ -778,6 +800,7 @@ func insertLineDirectives(code, sourceFile string) (string, error) {
 		}
 		return true
 	})
+	scanDone()
 
 	// A marker identifier anywhere else would be emitted verbatim as Go code and
 	// fail to compile as an undefined identifier the user never wrote.
@@ -794,6 +817,7 @@ func insertLineDirectives(code, sourceFile string) (string, error) {
 		return code, nil
 	}
 
+	rewriteDone := prof.Phase("postprocess-line-rewrite")
 	slashPath := filepath.ToSlash(sourceFile)
 	lines := strings.Split(code, "\n")
 	result := make([]string, 0, len(lines))
@@ -813,13 +837,17 @@ func insertLineDirectives(code, sourceFile string) (string, error) {
 	}
 
 	rewritten := strings.Join(result, "\n")
+	rewriteDone()
 
 	// Canonicalize so the emitted directives are gofmt-idempotent. The generated
 	// header comment is preserved by gofmt as a leading comment. If gofmt rejects
 	// the buffer (should not happen on the build path), fall back to the
 	// rewritten text — directives are still correctly placed, only the blank-line
 	// canonicalization is skipped.
-	if formatted, err := format.Source([]byte(rewritten)); err == nil {
+	formatDone := prof.Phase("postprocess-line-format")
+	formatted, formatErr := format.Source([]byte(rewritten))
+	formatDone()
+	if formatErr == nil {
 		return string(formatted), nil
 	}
 	return rewritten, nil

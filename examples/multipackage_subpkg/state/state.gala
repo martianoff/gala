@@ -3,7 +3,7 @@ package state
 import . "martianoff/gala/std"
 
 // Simple library in a subpackage — exercises library-with-sublibrary layouts
-// (FIX-001). The root consumer at examples/multipackage_subpkg/main.gala
+// (these used to panic the analyzer). The root consumer at examples/multipackage_subpkg/main.gala
 // imports this file and prints values returned from it.
 struct AppState(Count int, Label string)
 

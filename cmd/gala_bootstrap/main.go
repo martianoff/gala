@@ -12,10 +12,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
 	"martianoff/gala/internal/transpiler/generator"
+	"martianoff/gala/internal/transpiler/profiler"
 	"martianoff/gala/internal/transpiler/transformer"
 )
 
@@ -98,6 +100,14 @@ func runBatch(inList, outList, paths []string) error {
 
 	p := transpiler.NewAntlrGalaParser()
 	a := analyzer.NewBatchAnalyzer(p, paths)
+	summary := profiler.NewSummary()
+	batchStart := time.Now()
+	defer func() {
+		if profiler.Enabled {
+			fmt.Fprintf(os.Stderr, "\n=== BATCH TOTAL: %d files in %s ===\n", len(inList), time.Since(batchStart).Round(time.Millisecond))
+		}
+		summary.Report()
+	}()
 
 	for i, in := range inList {
 		content, err := os.ReadFile(in)
@@ -116,7 +126,7 @@ func runBatch(inList, outList, paths []string) error {
 		g := generator.NewGoCodeGenerator()
 		t := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
 
-		goCode, err := t.Transpile(string(content), in)
+		goCode, err := t.TranspileWithSummary(string(content), in, summary)
 		if err != nil {
 			return fmt.Errorf("%s: %w", in, err)
 		}

@@ -4,7 +4,7 @@ title: "GALA for AI — a stricter compiler is a tighter agent loop"
 description: "Why GALA suits AI coding agents: a strict, expressive compiler turns bugs into an instant, precise, deterministic worklist — the exact feedback an agent's generate-check-fix loop converges on."
 keywords: "gala for ai, ai coding agents, llm code generation, compiler feedback loop, exhaustive pattern matching ai, sealed types refactoring, ai code correctness, agent friendly language, static types llm, go for ai agents"
 permalink: /for-ai/
-last_modified_at: 2026-07-10
+last_modified_at: 2026-09-26
 ---
 
 <div class="breadcrumb">
@@ -154,3 +154,15 @@ Every one converts a "write a test and hope" turn into a "read the compiler" tur
 - [Getting Started]({{ '/getting-started/' | relative_url }}) — install and write your first program
 - [Claude Code plugin]({{ '/features/ide-support/#claude-code' | relative_url }}) — `gala lsp` diagnostics reach the agent after every edit, before any build
 - [Sealed Types]({{ '/features/sealed-types/' | relative_url }}) &middot; [Pattern Matching]({{ '/features/pattern-matching/' | relative_url }}) — the exhaustiveness that drives the loop
+
+---
+
+## AI policy
+
+GALA is open to AI end to end. Crawlers, AI search, and model training on this site and
+the [repository](https://github.com/martianoff/gala) are welcome — see
+[`/llms.txt`]({{ '/llms.txt' | relative_url }}) for the agent-oriented summary.
+AI-assisted pull requests are welcome too, with a human accountable for the change and the
+assistance disclosed. Agents working on GALA itself follow
+[`AGENTS.md`](https://github.com/martianoff/gala/blob/master/AGENTS.md), which Codex,
+Cursor, Copilot, Gemini CLI, and Claude Code all read.

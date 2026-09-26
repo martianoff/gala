@@ -8,7 +8,7 @@ sealed type Event {
 }
 
 // Generic dispatcher: every branch returns T (the function's type parameter).
-// Regression for FIX-005: previously the match-as-IIFE collapsed the result
+// Regression: previously the match-as-IIFE collapsed the result
 // type to `any`, so the Go compiler rejected the IIFE result with
 // "cannot use ... (value of type any) as T value in return statement".
 // Fix: when every branch is typed as a type parameter and the enclosing

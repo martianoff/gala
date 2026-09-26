@@ -1,4 +1,5 @@
-"""Cross-module Bazel regression test for the BUG-10/BUG-15/BUG-16 trio.
+"""Cross-module Bazel regression test for three cross-module lowering bugs:
+zero-field sealed cases, fielded sealed cases, and plain-struct lambda params.
 
 Unlike the sibling external_gala_consumer fixture, this consumer declares its
 own gala.mod with a `require` entry pointing at the dep's module path:

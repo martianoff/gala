@@ -37,7 +37,7 @@ func TestResolveGoModuleForImport(t *testing.T) {
 			wantOK:      true,
 		},
 		{
-			name:        "package path resolves to module prefix (BUG-1)",
+			name:        "package path resolves to module prefix",
 			importPath:  "golang.org/x/sys/windows",
 			wantModule:  "golang.org/x/sys",
 			wantVersion: "v0.26.0",

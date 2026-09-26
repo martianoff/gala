@@ -33,3 +33,87 @@ func TestUnresolvedLocalIsStillRecordedAsABinding(t *testing.T) {
 		t.Errorf("resolved type was lost: got %q, want int", got)
 	}
 }
+
+const lspCollectionSource = `package main
+
+func run() {
+	val count = 1
+	val label = "ok"
+	val identity func(int) int = (value) => value
+	Println(count, label, identity(1))
+}
+`
+
+func lspCollectionRichAST(tb testing.TB) *transpiler.RichAST {
+	tb.Helper()
+	tree, _, err := transpiler.NewAntlrGalaParser().Parse(lspCollectionSource)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	return &transpiler.RichAST{
+		Tree:             tree,
+		PackageName:      "main",
+		Types:            make(map[string]*transpiler.TypeMetadata),
+		Functions:        make(map[string]*transpiler.FunctionMetadata),
+		Packages:         make(map[string]string),
+		ImportAliases:    make(map[string]string),
+		CompanionObjects: make(map[string]*transpiler.CompanionObjectMetadata),
+		GoExports:        make(map[string][]string),
+		TypeAliases:      make(map[string]transpiler.Type),
+		PackageVals:      make(map[string]*transpiler.PackageValMetadata),
+		FilePath:         "lsp_collection.gala",
+		SourceContent:    lspCollectionSource,
+	}
+}
+
+func TestTransformCollectsLSPMetadataOnlyForLSP(t *testing.T) {
+	richAST := lspCollectionRichAST(t)
+	tr := NewGalaASTTransformer().(*galaASTTransformer)
+
+	if _, _, err := tr.Transform(richAST); err != nil {
+		t.Fatal(err)
+	}
+	if tr.lspVarTypes != nil || tr.lspLambdaParamHints != nil {
+		t.Fatal("normal transform retained LSP metadata")
+	}
+
+	result, err := tr.TransformForLSP(richAST)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := result.VarTypes["run.count"]; !ok {
+		t.Fatalf("LSP variable metadata is missing run.count: %v", result.VarTypes)
+	}
+	if len(result.LambdaParamHints) != 1 {
+		t.Fatalf("LSP lambda hints = %d, want 1", len(result.LambdaParamHints))
+	}
+
+	if _, _, err := tr.Transform(richAST); err != nil {
+		t.Fatal(err)
+	}
+	if tr.lspVarTypes != nil || tr.lspLambdaParamHints != nil {
+		t.Fatal("normal transform retained metadata after an LSP transform")
+	}
+}
+
+func BenchmarkTransformNormalMetadata(b *testing.B) {
+	richAST := lspCollectionRichAST(b)
+	tr := NewGalaASTTransformer()
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, _, err := tr.Transform(richAST); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkTransformLSPMetadata(b *testing.B) {
+	richAST := lspCollectionRichAST(b)
+	tr := NewGalaASTTransformer()
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := tr.TransformForLSP(richAST); err != nil {
+			b.Fatal(err)
+		}
+	}
+}

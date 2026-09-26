@@ -9,7 +9,7 @@ import (
 	"martianoff/gala/internal/transpiler/analyzer"
 )
 
-// TestMultiPackageBatch_NoPanic reproduces the FIX-001 scenario where a
+// TestMultiPackageBatch_NoPanic reproduces the scenario where a
 // BatchAnalyzer is reused across files that belong to different Go-level
 // packages (e.g., root.gala in `package repro` and state/state.gala in
 // `package state`). Previously this triggered an ANTLR nil-pointer
@@ -48,7 +48,7 @@ func TestMultiPackageBatch_NoPanic(t *testing.T) {
 			t.Fatalf("parse %s: %v", fp, err)
 		}
 		// Simulate the builder: pass ALL files as siblings regardless of package,
-		// mimicking the old (pre-FIX-007) code path.
+		// mimicking the old code path that did not filter siblings by package.
 		var siblings []string
 		for _, other := range files {
 			if other != fp {

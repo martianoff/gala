@@ -33,6 +33,11 @@ type ImportManager struct {
 	// explicitly declared in the source file, e.g., when a lambda parameter type
 	// references a package from a dependency's method signature)
 	transitiveImports map[string]string // path -> alias
+
+	// revision changes whenever the entry set, or a field of an existing
+	// entry, changes. It is what lets a consumer that copies entries out of
+	// this manager notice that its copy went stale: see Revision.
+	revision uint64
 }
 
 // ImportEntry represents a single import declaration.
@@ -56,11 +61,22 @@ func NewImportManager() *ImportManager {
 	}
 }
 
+// Revision returns a token that changes whenever the imports this manager
+// resolves against have changed: an entry added or removed, or an entry
+// renamed. A consumer that caches a copy of the entries compares this before
+// using its copy, and so stays correct without being told when they change.
+//
+// It is a change token rather than a count — Add removes and re-adds an entry
+// when a path repeats, so one Add can move it twice. Only the non-zero matters.
+func (m *ImportManager) Revision() uint64 { return m.revision }
+
 // Add registers an import. If actualPkgName is empty, it defaults to the last
 // component of the path. If alias is empty, it defaults to actualPkgName.
 // If an import with the same path already exists, it will be replaced.
 // Returns the created ImportEntry.
 func (m *ImportManager) Add(path, alias string, isDot bool, actualPkgName string) *ImportEntry {
+	m.revision++
+
 	// Derive package name from path if not provided
 	if actualPkgName == "" {
 		parts := strings.Split(path, "/")
@@ -102,6 +118,8 @@ func (m *ImportManager) Add(path, alias string, isDot bool, actualPkgName string
 
 // removeEntry removes an entry from all indexes.
 func (m *ImportManager) removeEntry(entry *ImportEntry) {
+	m.revision++
+
 	// Remove from entries slice
 	for i, e := range m.entries {
 		if e == entry {
@@ -162,6 +180,7 @@ func (m *ImportManager) UpdateActualPackageName(path, actualPkgName string) {
 
 	// Update byPkgName index
 	if oldPkgName != actualPkgName {
+		m.revision++
 		// Remove old entry if it points to this import
 		if existing, ok := m.byPkgName[oldPkgName]; ok && existing == entry {
 			delete(m.byPkgName, oldPkgName)
@@ -305,6 +324,10 @@ func (m *ImportManager) GetTransitiveImports() map[string]string {
 // Dot imports are only kept if their package was marked as used via MarkDotImportUsed
 // or if the AST contains identifiers matching the package's exported symbols.
 // The std dot import is always kept.
+//
+// It rewrites the generated file only. The manager keeps every entry it was
+// given, including the ones just dropped from the output, so pruning leaves
+// Revision — and anything cached against it — untouched.
 func (m *ImportManager) PruneUnused(file *ast.File, richAST *transpiler.RichAST) {
 	usedPkgs := make(map[string]bool)
 	ast.Inspect(file, func(n ast.Node) bool {

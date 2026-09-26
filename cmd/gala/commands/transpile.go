@@ -83,8 +83,9 @@ func autoResolveSearchPaths(inputPath string, basePaths []string) []string {
 		// own gala.mod — the dep's gala.mod gets loaded as if it were the
 		// project's, completely masking the consumer's require/replace
 		// directives. Without that masking the cross-module sealed-case
-		// Apply lowering and Go-style struct field metadata break (the
-		// BUG-10 / BUG-15 / BUG-16 trio against gala-tui consumers).
+		// Apply lowering and Go-style struct field metadata break (zero-field
+		// and fielded sealed cases lower wrongly and plain-struct lambda
+		// params lose their concrete types in gala-tui consumers).
 		// The .gala source's gala.mod (the one walking up from inputPath
 		// finds) is unambiguously the right answer, so it must win the
 		// findGalaModRoot race.

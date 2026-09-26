@@ -142,7 +142,7 @@ func transpilePackage(inputs, outputs []string, search, goroot string, scan bool
 		g := generator.NewGoCodeGenerator()
 		t := transpiler.NewGalaToGoTranspiler(p, batchAnalyzer, tr, g)
 
-		goCode, err := t.Transpile(string(content), inputPath)
+		goCode, err := t.TranspileWithSummary(string(content), inputPath, summary)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error transpiling %s: %v\n", inputPath, err)
 			failed++

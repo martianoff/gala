@@ -329,6 +329,9 @@ func (t *galaASTTransformer) registerStructMetaTypeMeta(genName, targetTypeName 
 		FieldNames: nil,
 	}
 	t.typeMetas[genName] = meta
+	// getType resolves unqualified names through typeMetas, which the cached
+	// function environment has already normalized.
+	t.invalidateTypeEnv()
 }
 
 // autoInjectStructMeta prepends a generated _StructMeta_T{} before existing args.

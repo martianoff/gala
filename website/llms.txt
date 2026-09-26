@@ -67,3 +67,4 @@ func main() {
 - [Dependency management](https://gala.fyi/docs/dependency-management/): `gala.mod`, modules, versions
 - [Playground](https://gala.fyi/playground/): run GALA in a browser
 - [GALA vs Go](https://gala.fyi/vs-go/): the same programs side by side
+- [Contributing with an agent](https://github.com/martianoff/gala/blob/master/AGENTS.md): the rules any AI agent must follow when changing the GALA repository itself; AI-assisted PRs are welcome with disclosure
