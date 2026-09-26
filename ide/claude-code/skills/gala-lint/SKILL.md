@@ -17,7 +17,7 @@ Search for `.gala` files in the target path (or entire project), excluding build
 
 ### Step 2: Analyze each file
 
-For each `.gala` file, check all linting rules below and collect violations.
+For each `.gala` file, check all linting rules below and collect violations. Run the mechanical `grep` passes given in each rule's **Check** line (especially rule 7c, which requires every `for` to be classified) rather than relying on reading alone.
 
 ### Step 3: Generate report
 
@@ -149,7 +149,7 @@ each code has a page with the full explanation (`gala explain GALA-Exxxx`).
 
 **Check**: Search for `var ` declarations and verify each is reassigned later in the same scope.
 
-**Acceptable `var` uses**: loop counters, accumulators in Fold-like operations, stream traversal cursors.
+**Acceptable `var` uses**: loop counters, accumulators in Fold-like operations, stream traversal cursors. A counter being acceptable does not make its loop acceptable — every `for` is still checked against rule 7c.
 
 ### 2. Pattern Matching (HIGH priority)
 
@@ -549,6 +549,311 @@ val results = items.Collect({ case x if x.IsValid() => x.Transform() })
 // GOOD: Collect with sealed type extractor
 val values = options.Collect({ case Some(v) => v * 2 })
 ```
+
+### 7c. Imperative Loops — every `for` must justify itself (HIGH priority)
+
+The table rows in rule 7b are written in C-style `for i := 0; i < n; i++` form,
+but GALA code almost always writes the counter loop **while-style**, which
+those rows do not visibly match:
+
+```gala
+var i = 0
+for i < n {
+    ...
+    i = i + 1
+}
+```
+
+Treat every while-style loop exactly like the C-style form. Rule 1's
+"loop counters are an acceptable `var`" excuses the *counter*; it does **not**
+excuse the *loop*. The question for every `for` is whether a combinator — or a
+function that already exists — already says it.
+
+**Mechanical pass (run it; do not rely on reading).** Enumerate every loop and
+classify each hit — none may be left unclassified in the report:
+
+```bash
+FILES=$(find . -type f -name '*.gala' -not -path './bazel-*' -not -path './.claude/*' -not -path './.gala/*' -not -path './.git/*' -not -path '*/node_modules/*' -not -path '*/vendor/*')
+grep -nE '^\s*for\b' $FILES
+```
+
+Every hit is either a finding or an **Accepted loop** with its reason number
+written in the report (see "Acceptable loops" below). A report that does not
+account for each `for` is incomplete. Tests, demos, examples and tools are
+scanned too.
+
+**Before recommending a replacement, check behaviour parity.** Hand-rolled
+helpers often differ from the library at the edges: a split that drops a
+trailing `""`, ASCII-only case mapping, rune count vs. **display width**, an early
+exit a `Fold` would lose, a stable sort vs. `SortBy`. State the difference in
+the finding when there is one; the fix must keep the behaviour the call sites
+rely on (or the finding must say the change is intended).
+
+#### 7c-0. Verified API (checked on GALA 0.82) — only recommend what exists
+
+Recommendations must compile. These were checked against the stdlib source;
+do not invent others (`stream.Range(...).Count(p)`, `Str.HeadOption`,
+`Array.IndexWhere` do **not** exist).
+
+| Receiver | Available |
+|---|---|
+| `Array[T]` | `ArrayTabulate(n, f)`, `ArrayFill(n, v)`, `Map`, `FlatMap`, `Filter`, `Collect`, `FoldLeft`, `FoldRight`, `Reduce`, `ReduceOption`, `ForEach`, `ForAll`, `Exists`, `Find`, `FindLast`, `Count(p)`, `Contains`, `IndexOf(elem)`, `LastIndexOf(elem)`, `Distinct`, `Zip`, `ZipWithIndex`, `Sliding`, `Grouped`, `Take`, `Drop`, `TakeWhile`, `DropWhile`, `Span`, `Partition`, `GroupBy`, `Slice`, `Reverse`, `HeadOption`, `LastOption`, `Init`, `Updated`, `MkString(sep)`, `Sorted`, `SortWith`, `SortBy` |
+| `stream` (import `"martianoff/gala/stream"`) | `stream.Range(lo, hi)`, `stream.RangeStep(lo, hi, step)`, `stream.Iterate(seed, f)`, `stream.Unfold(seed, f)`, `stream.FromArray(xs)`; methods `Map`, `Filter`, `Find`, `Exists`, `ForAll`, `ForEach`, `Fold`, `Scan` (emits the seed first), `IndexWhere`, `IndexOf`, `TakeWhile`, `DropWhile`, `Take`, `Drop`, `Zip`, `ZipWithIndex`, `Intersperse`, `MkString`, `Count()` (**no predicate** — use `.Filter(p).Count()`), `ToArray` |
+| `Str` via `S(s)` (import `. "martianoff/gala/strings"`) | `ToChars()`, `ToString()` (not `.String()`), `Length`, `Take`, `Drop`, `TakeRight`, `DropRight`, `Substring(lo, hi)`, `SplitAt(i)` (returns `Tuple[Str, Str]`), `Lines()`, `Split`, `Words`, `Contains`, `ContainsAny`, `Count(sub)`, `IndexOf(sub)` (returns `Option[int]`), `IndexOfChar`, `LastIndexOf`, `StartsWith`, `EndsWith`, `CharAt`, `Trim*`, `PadLeft/PadRight(n, r)`, `Center`, `Repeat`, `Replace*`, `ToLower/ToUpper`, `Map`, `Filter`, `Exists`, `ForAll`, `Fold`, `Find`, `Reverse`, `ZipWithIndex` |
+| GALA `strings` free functions | `Contains`, `HasPrefix`, `HasSuffix`, `EqualFold`, `LastIndex`, `Trim*`, `ToLower`, `ToUpper`, `Repeat`, `Replace`, `ReplaceAll`, `Split` / `SplitN` / `Fields` (return `Array[string]`), `Join(Array[string], sep)` — there is **no** free `Count`/`Index` (use `S(s).Count`, or Go `strings` where that is the import) |
+| `string` | `s.Size()` — characters (runes), not bytes; `s.ByteSize()` for bytes |
+| Go stdlib | `strconv.Itoa` / `Atoi`, `strings.NewReplacer`, `strings.IndexRune`, `strings.LastIndexAny`, `unicode/utf8`, `math.Mod`, `slices.EqualFunc` — fine to call |
+
+**`SortBy` / `SortWith` are not stable** (the merge takes the right element on
+ties). Replacing a hand-written stable sort needs an index tie-break:
+`xs.ZipWithIndex().SortWith((a, b) => key(a.V1) < key(b.V1) || (key(a.V1) == key(b.V1) && a.V2 < b.V2)).Map((t) => t.V1)`.
+
+`Array` values are not `==`-comparable; compare windows with
+`w.Zip(needle).ForAll((t) => t.V1 == t.V2)`.
+
+The table lists the non-obvious methods; the core accessors (`Get`, `Length`,
+`Size`, `Append`, `AppendAll`, `Head`, `Last`, `IsEmpty`, `NonEmpty`,
+`ToGoSlice`, `ArrayFromSlice(goSlice)`) exist too. Verified edge behaviour:
+
+| Call | Behaviour |
+|---|---|
+| `Array[rune]` → `string` | `string(rs.ToGoSlice())`. **Not** `rs.MkString("")` — that prints code points (`104233…`) |
+| `string` → runes | `S(s).ToChars()`. `[]rune(s)` is not GALA syntax |
+| `stream.….IndexWhere(p)`, `.IndexOf(x)` on `Array` | `int`, `-1` when absent |
+| `S(s).IndexOf(sub)`, `S(s).IndexOfChar(r)` | `Option[int]` |
+| `S(s).Lines()`, `strings.Split(s, "\n")` | keep a trailing `""` (`"a\nb\n"` → 3 items); `Split("", sep)` → one `""`. A helper that drops them is **not** a drop-in match |
+| `S(s).Fold(z, f)` | returns the accumulator type `U` |
+| Go `[]rune` / `[]byte` parameters | `ArrayFromSlice(rs)` to get combinators; `string(rs[a:b])` to measure a range with a string helper |
+
+#### 7c-1. Counter loops with a combinator equivalent
+
+| Loop shape | Replacement |
+|---|---|
+| `var out = EmptyArray[T](); var i = 0; for i < n { out = out.Append(f(i)); i = i + 1 }` | `ArrayTabulate(n, f)` |
+| `for i < n { out = out.Append(v) }` (same value) | `ArrayFill(n, v)` |
+| `for i < n { g(xs.Get(i)); i = i + 1 }` | `xs.ForEach(g)` |
+| `for i < n { g(xs.Get(i), i) }` | `xs.ZipWithIndex().ForEach((t) => g(t.V1, t.V2))` |
+| Parallel arrays: `for i < n { g(a.Get(i), b.Get(i)) }` | `a.Zip(b).ForEach(...)` (or `.Map`) |
+| Consecutive pairs: `for i < n-1 { g(xs.Get(i), xs.Get(i+1)) }` | `xs.Zip(xs.Drop(1))` or `xs.Sliding(2)` |
+| Running total emitted per step: `for { out = out.Append(pos); pos = pos + d(i) }` | `stream.FromArray(ds).Scan(start, (p, d) => p + d).Take(n).ToArray()` (`Scan` emits the seed first, so this yields the n start positions), or `FoldLeft` over a `(pos, out)` tuple |
+| Accumulator carried in several vars: `var acc; var given; var out; for {...}` | `FoldLeft` over a tuple `(acc, given, out)` |
+| Repeat a state update N times: `for i < N { m = Update(m, X); i = i + 1 }` | `stream.Range(0, N).Fold(m, (m, _) => Update(m, X))` |
+| Search: `for i < n { if p(i) { return i }; i = i + 1 }; return n` | `stream.Range(start, n).Find(p).GetOrElse(n)` / `.IndexWhere(p)` |
+| Last match: loop keeping the latest index/element that satisfies `p` | `xs.FindLast(p)`; for an index, `xs.ZipWithIndex().FindLast((t) => p(t.V1)).Map((t) => t.V2)` |
+| Cyclic search from `sel` (next/prev enabled item) | `stream.Range(1, n + 1).Map((k) => (sel + k) % n).Find(p).GetOrElse(sel)` |
+| Count: `var c = 0; for ... { if p(x) { c = c + 1 } }` | `xs.Count(p)`; over a range, `stream.Range(a, b).Filter(p).Count()` |
+| Max/min tracking: `if cur > best { best = cur }` inside a loop | `xs.Map(f).FoldLeft(0, (a, b) => if (a > b) a else b)` / `ReduceOption` |
+| Sum: `total = total + f(x)` | `xs.FoldLeft(0, (t, x) => t + f(x))` |
+| Join with a separator (manual `if i > 0 { out = out + sep }`) | `strings.Join(xs, sep)` / `xs.MkString(sep)` |
+| Separator between items (intersperse) | `stream.FromArray(xs).Intersperse(sep)` or `FlatMap` over `ZipWithIndex` |
+| Run-length grouping into runs (`run`, `runKey`, `started`) | `FoldLeft` over `(out, current)` seeded from the head — the run-length step is the fold body |
+| Non-unit or geometric step: `for w < 40 { ...; w = w + 4 }`, `for c <= 256 { c = c * 2 }` | `stream.RangeStep(12, 41, 4)`; `stream.Iterate(1, (c) => c * 2).TakeWhile((c) => c <= 256)` |
+| Fixed-step loop over a range: `for y < yEnd { ...; y = y + 1 }` | `stream.Range(y0, yEnd).ForEach(...)` |
+| Worklist that grows while processed, or an early-exit fold (stop when a pure step reports it is done) | a tail-recursive helper over the state tuple; `FoldLeft` cannot stop early, so do not force it |
+| Test assertion sweep threading `T`: `for { t = Eq(t, got(i), want(i)) }` | `cases.FoldLeft(t, (t, c) => Eq(t, got(c), want(c)))` / `stream.Range(a, b).Fold(t, ...)` — keeps the per-case message, which `ForAll` would lose |
+
+Two combinator passes (e.g. first *and* last index) are an acceptable price
+for removing a loop — unless the loop is on a documented hot path (reason 1).
+
+#### 7c-2. Exiting a loop by clobbering its counter or a flag
+
+| Issue | Pattern to Flag | Recommended Fix |
+|---|---|---|
+| Break-by-assignment | `i = n`, `j = nn`, `k = -1`, `i = xs.Length()` used only to end the loop — including inline forms `{ ok = false; j = nn }`, `{ i = n; continue }` | Prefer the combinator the loop is hiding (`Exists`, `ForAll`, `Find`, `IndexWhere`, `TakeWhile`); if the loop is genuinely justified, use `break` or `return` |
+| Sentinel in the loop condition | `for i < n && !found`, `for i < n && idx < 0`, `for !done` — set in the body, even if also read after the loop | the combinator that returns that value (`Exists` / `Find` / `IndexWhere`), or `break` at the point the flag is set |
+| Flag checked by a `break` at the loop head | `if done { break }` at the top, `done = true` further down | `break` where `done` is set |
+| Counter assignment inside a `range` loop | `for _, c := range s { ...; i = end }` — this does **not** exit a `range` loop; it silently keeps iterating | always a bug: `break`, or the combinator |
+| Flag + inner loop for substring/sequence match | `var ok = true; for j < nn { if a.Get(i+j) != b.Get(j) { ok = false; j = nn } }` | `strings.Contains` / `S(h).Contains` for text; `xs.Sliding(nn).Exists((w) => w.Zip(needle).ForAll((t) => t.V1 == t.V2))` for arrays |
+| One flag stopping nested loops | `fits = false` ending both an inner and an outer loop | extract the loops into a function and `return`, or precompute the stop point (`Scan` + `TakeWhile`) before the side effects |
+
+`break` and `continue` are valid GALA. A counter set to its bound is not an
+idiom; it is a missing `break` — and usually a missing combinator.
+
+**Check**:
+```bash
+# counter/flag clobbers, standalone or inline
+grep -nE '\b[a-z]\w* = (n|nn|hn|pn|k|end|total|count|size|[a-z]+\.(Length|Size)\(\))\s*($|;|\})' $FILES | grep -vE '\b(val|var) '
+grep -nE '\b(ok|found|done|fits|hit|matched|stop)\w* = (true|false)' $FILES
+# sentinels in loop conditions
+grep -nE '^\s*for .*&& *(!\w+|\w+ *[<>]=? *-?[0-9]+)' $FILES
+```
+Discard clamps (`if end > n { end = n }`) — they are not exits.
+
+#### 7c-3. Rune loops and string building
+
+`for _, c := range s` that builds a new string with `out = out + string(c)` is
+**quadratic** as well as imperative. Any `+`-concatenation of a string inside a
+loop is a finding: use the library call below, slicing, or a
+`strings.Builder` (a Builder-backed loop may then qualify for reason 1).
+
+| Loop shape | Replacement |
+|---|---|
+| Append every rune to an `Array[rune]` | `S(s).ToChars()` |
+| Count runes: `var n = 0; for _ = range s { n = n + 1 }` | `s.Size()` (characters, not bytes) |
+| Count a rune: `for _, c := range s { if c == '\n' { n = n + 1 } }` | `S(s).Count("\n")` |
+| Split on a rune, accumulating `cur` and `out` | `strings.Split(s, "\n")` (GALA `strings` returns `Array[string]`) / `S(s).Lines()` — check the trailing-`""` behaviour |
+| Join lines back | `strings.Join(lines, "\n")` |
+| Keep all but the last rune (`seen < total - 1`) | `S(s).DropRight(1).ToString()` |
+| Split at a rune column (`if i < col { lhs } else { rhs }`) | `S(s).SplitAt(col)` |
+| Take / drop the first `k` runes, or a rune range | `S(s).Take(k)` / `S(s).Drop(k)` / `S(s).Substring(lo, hi)` |
+| First / last rune | `S(s).ToChars().HeadOption()` / `.LastOption()` |
+| Leading run (`TakeWhile`) / leading count | `S(s).ToChars().TakeWhile(p)`; leading spaces: `s.Size() - strings.TrimLeft(s, " ").Size()` |
+| Trim trailing spaces | `strings.TrimRight(s, " ")` |
+| Case-map by arithmetic (`c + 32` for `'A'..'Z'`) | `strings.ToLower` / `strings.ToUpper` — ASCII arithmetic is also wrong for non-ASCII |
+| `for _, c := range s { return c == '.' }` (first-rune test) | `strings.HasPrefix(s, ".")` |
+| Contains a rune | `S(s).Exists((c) => c == r)` / Go `strings.ContainsRune` |
+| Find a rune from an index | `strings.IndexRune` / `S(s).IndexOfChar(r)`; over `Array[rune]`, `stream.FromArray(rs).Drop(start).IndexWhere(p)` + `start` |
+| Widest line: `if current > width { width = current }` on `'\n'` | `strings.Split(s, "\n").Map((l) => l.Size()).FoldLeft(0, (a, b) => if (a > b) a else b)` — use a display-width function instead of `Size()` if display columns, not runes, are meant |
+| Digit parse / int → string | `strconv.Atoi` / `strconv.Itoa` / `s"$n"` |
+| Escape / multi-replace | `strings.NewReplacer(...).Replace(s)` / `ReplaceAll` |
+| Per-rune transform / filter / predicate / fold | `S(s).Map(f)`, `S(s).Filter(p)`, `S(s).Exists(p)`, `S(s).ForAll(p)`, `S(s).Fold(z, f)` |
+
+**Check**: `grep -nE 'for _?,? ?\w* ?:?= range ' $FILES` and
+`grep -nE '= \w+ \+ (string\(|\w+\b)' $FILES` inside loop bodies.
+
+#### 7c-4. Reimplemented library functions — including the project's own
+
+Before accepting any small helper, check whether its body is a hand-rolled
+version of something that already exists in:
+
+- Go stdlib (`strings`, `strconv`, `unicode/utf8`, `math`, `slices`);
+- GALA's `martianoff/gala/strings` (`Str`), `collection_immutable`, `stream`;
+- **the project's own exported or package-level primitives** — e.g. setting
+  elements one by one in a loop when the container has a bulk `Fill`/`Set`
+  method, summing per-element widths when a width function exists, a test
+  helper copying a function the package already exports, a private
+  contains/lower-case pair re-implementing an exported matcher. Grep the
+  package's exported functions and compare.
+
+Flag it regardless of how the loop is written, and whether or not it has a
+loop at all. Signals:
+
+- Name echoes a library function, often with a file/module prefix or suffix:
+  `strContains`, `xToLower`, `xSplitLines`, `xDropLast`, `stringRunes`,
+  `xRunes`, `RuneCount`, `intToStr`, `xTrim`, `xEscape`, `indexOfX`, `…Join…`,
+  `…Contains…`, `…Repeat…`.
+- A helper whose body is a loop and whose signature is one of: `(string) string`,
+  `(string) int`, `(int) string`, `(string) Array[string]`, `(string) Array[rune]`,
+  `(string, string) bool`, `(string, int) string`, `(string, int) Tuple[…]`,
+  `(Array[rune], int, int) string`, `(Array[rune], int, …) bool|int`,
+  `(Array[T], T) bool|int`, `(Array[string], string) string`, `(*T, …) string`.
+- A loop that writes the same value into a contiguous region (a range, a row,
+  a column, a rectangle) of a container.
+- A `for t < 0 { t += 2π }` style reduction (`math.Mod`), or hand-rolled
+  sin/cos/sqrt.
+
+| Hand-written helper | Library call |
+|---|---|
+| substring search | `strings.Contains(h, n)` / `S(h).Contains(n)` |
+| lower/upper-case | `strings.ToLower` / `strings.ToUpper` |
+| split / join lines | `strings.Split(s, "\n")` / `S(s).Lines()`; `strings.Join(xs, "\n")` / `xs.MkString("\n")` |
+| string → runes | `S(s).ToChars()` |
+| rune count | `s.Size()` (`utf8.RuneCountInString(s)` at a Go boundary) |
+| prefix / suffix test | `strings.HasPrefix` / `strings.HasSuffix` |
+| occurrence count | `S(s).Count(sub)` / `xs.Count(p)` |
+| repeat / pad | `strings.Repeat`, `S(s).PadLeft(n, ' ')`, `S(s).PadRight(n, ' ')` |
+| trim | `strings.TrimRight/TrimLeft/TrimSpace` |
+| int ↔ string | `strconv.Itoa` / `strconv.Atoi` / `s"$n"` |
+| last separator | `strings.LastIndex` / `strings.LastIndexAny(path, "/\\")` |
+| escape | `strings.NewReplacer(...)` |
+| membership / position in an array | `xs.Contains(x)` / `xs.Exists(p)` / `xs.IndexOf(x)` |
+| reverse / distinct / sort | `xs.Reverse()`, `xs.Distinct()`, `xs.SortBy(f)` (not stable — see 7c-0) |
+| element-wise equality of Go slices | `slices.EqualFunc(a, b, eq)` |
+| angle reduction | `math.Mod` |
+| fill a region with one value | the container's own bulk primitive (`Fill`, `SetRange`, …) |
+
+A thin **exported** wrapper kept for API stability (e.g. a public `RuneCount`
+or `XContains`) is fine — but its body must be the library call, not a loop.
+
+#### 7c-5. Duplicated helpers — across files and within one file
+
+The same helper body copied under a different name (`stringRunes`, `strRunes`,
+`parserRunes`, … one per file; a "join rows into text" helper in every test
+file), or the same loop body repeated inside one file (the same dispatch block
+pasted four times; a function whose body is another function's inner loop), is
+a finding on **every** copy. Report the group together — including copies in files outside
+the requested scope — and recommend one helper, or, usually, deleting all of
+them for the library call.
+
+**Check**: compare private function bodies that are identical after renaming,
+for *any* parameter list, not just `(s string)`:
+
+```bash
+# helpers grouped by signature shape; read bodies within each group
+grep -nE '^func [a-z]\w*\(' $FILES | sed -E 's/^([^:]+:[0-9]+):func ([a-z]\w*)(\(.*)$/\3  \2  \1/' | sort
+```
+Also compare test helpers against the package's exported functions (a test
+copy of an exported function is a duplicate), and look for repeated multi-line
+blocks within a file.
+
+#### Acceptable loops (record the reason number in the report)
+
+A `for` may stay when it does one of these, and the report must say which:
+
+1. **Implements a mutable store's own primitive, or sits on a documented hot
+   path.** The loops *inside* a mutable container's own bulk methods (its
+   `Fill`, its serializer, its diff), a `strings.Builder` or Go scratch slice
+   that *is* the output, or a read/write loop on a per-request / per-event /
+   per-frame path whose comment says why (no allocation, early exit). This does
+   **not** cover calling code that loops `x.Set` over a region — call the
+   primitive — nor a Go slice used as an intermediate that a `Map` would build.
+2. **Performs ordered side effects and stops on a condition that the side
+   effects themselves determine.** If the stop condition can be computed
+   *before* the side effects (a size budget, an item count, the result of a
+   pure step function), it is not this case: precompute with `Scan` +
+   `TakeWhile`, or recurse.
+3. **Drives stateful I/O or a wire protocol** — reading until EOF, parsing a
+   byte stream that carries state between chunks, emitting control sequences
+   whose order matters, polling. Stateless output such as one `Println` per
+   line is *not* this case: `ForEach`.
+4. **Builds a test fixture element-by-element** where the nested loop *is* the
+   readable form. Assertion sweeps are not fixtures — see the `T`-threading row
+   in 7c-1.
+5. **Is a scanner, lexer or parser with variable stride and lookahead** —
+   advancing by a token length the body decides. Such a loop may stay, but
+   7c-2 and 7c-3 still apply: exit with `break`/`return`, and slice or use a
+   Builder instead of `+`-concatenating.
+
+Even an accepted loop gets 7c-2 and 7c-3 applied. Report such a loop as
+`ACCEPTED-WITH-FIX file:line | reason # | the 7c-2/7c-3 fix` — the loop stays,
+its body changes.
+
+#### Deciding the borderline cases
+
+- **"Documented" means a comment.** Reason 1's hot-path clause needs a comment
+  at the loop saying why (per frame / per event, allocation-free, early exit).
+  No comment → finding; if the author believes it is hot, the fix may be the
+  comment, and the report says so.
+- **Measuring twice is acceptable.** A size budget that can be precomputed is
+  not reason 2, even on a hot path, unless the loop carries a reason-1
+  comment.
+- **Pure scans inside protocol or lexer code are 7c-1 searches.** Reason 3 and
+  reason 5 cover the loop that consumes the stream; an inner run-scan or
+  lookup (find a terminator sequence, find the end of a run of one character
+  class, collect a delimited block) is `Find` / `IndexWhere` / `TakeWhile`.
+- **Stride advances are not clobbers.** In a reason-5 loop, `i = end` that
+  moves to the next token is the loop's step; the clobber grep will list it —
+  discard it along with clamps. A candidate from the sentinel grep is a finding
+  only if the body *sets* the tested value; a pure predicate or data bound in
+  the condition (`!isClosingLine(l)`, `depth < max`) is a `TakeWhile`/search, not a
+  flag. The greps are candidate lists, not verdicts, and compound conditions
+  (`a || b`, `x < n && f(x) == y`) must still be read.
+- **No primitive, no combinator.** When 7c-4 fires ("writes a region") but
+  the project has no primitive for the operation (e.g. a region copy between
+  two containers), respelling the loop as `stream.Range(...).ForEach` is not a fix:
+  report `ACCEPTED 1` and suggest adding the primitive.
+- **Early exit with a pure step.** A guarded fold
+  (`FoldLeft(s, (c, m) => if (c.Done) c else step(c, m))`) is fine when the
+  skipped steps cost nothing; use recursion when `step` is expensive or the
+  work list grows while processing.
+- **7c-5 stops at behaviour.** Bodies identical after renaming — or differing
+  only by axis (`X`/`Width` vs `Y`/`Height`) — are duplicates. Variants whose
+  semantics differ (breadth-first vs depth-first processing) are not, unless
+  they can be unified without changing behaviour; say which.
+- **Nested assertion sweeps** use nested `Fold`s; they are not fixtures.
+- **Report latent bugs found while linting** (an off-by-one guard, rune count
+  used where display width is meant) as a separate `BUG` line — a replacement that
+  fixes one is an intended behaviour change and the report must say so.
 
 ### 8. Option.When and Conditional Construction (HIGH priority)
 
