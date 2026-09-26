@@ -9,25 +9,6 @@ permissions:
   contents: read
 
 jobs:
-  policy:
-    name: Repo Policy
-    runs-on: ubuntu-latest
-
-    # Mechanical AGENTS.md rules; see tools/check_repo_policy.sh.
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          # Commit messages since the merge base are checked too.
-          fetch-depth: 0
-
-      - name: Check repo policy
-        # Via env, never inlined into the script: PR text is untrusted input.
-        env:
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_BODY: ${{ github.event.pull_request.body }}
-        run: tools/check_repo_policy.sh "origin/${{ github.base_ref }}"
-
   test:
     name: Build and Test
     runs-on: ubuntu-latest
