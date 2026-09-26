@@ -2940,6 +2940,23 @@ never on the GALA surface.
 
 When GALA transpiles to Go, immutable values are wrapped in a `std.Immutable[T]` container to ensure safety and provide consistent semantics, especially for struct fields and global variables.
 
+### Package-Level Bindings
+
+A package-level `val` is a `std.Immutable[T]` in the generated Go, but it reads as a plain `T` wherever it is referenced: in its own file, in another file of the same package, and from another package — qualified (`colors.Green`), through an import alias (`c.Green`), or bare under a dot-import. A package-level `var` is a plain Go variable and stays reassignable from any package that can see it. Reassigning another package's `val` is an error, as it is for a same-package one.
+
+```gala
+// package colors
+val Green = NamedColor(2)
+var Hits = 0
+
+// package main
+import "example.com/app/colors"
+
+Println(colors.ToSgr(colors.Green))  // Green reads as colors.Color
+colors.Hits = colors.Hits + 1        // OK: a var
+// colors.Green = NamedColor(3)      // ERROR: cannot assign to immutable variable colors.Green
+```
+
 ### Pointer Types and Immutability
 
 GALA distinguishes between **pointer binding immutability** (whether the pointer itself can be reassigned) and **pointed-to data mutability** (whether the target data can be modified through the pointer).

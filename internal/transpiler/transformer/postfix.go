@@ -81,6 +81,22 @@ func (t *galaASTTransformer) applyPostfixSuffix(base ast.Expr, suffix *grammar.P
 
 // resolveFieldAccess handles member access with automatic Immutable/ConstPtr unwrapping.
 func (t *galaASTTransformer) resolveFieldAccess(base ast.Expr, selName string) (ast.Expr, error) {
+	// `pkg.Name` naming a package-level binding of an imported GALA package.
+	// A `val` lowers to std.Immutable[T] there, so reading it takes the same
+	// .Get() a same-package reference gets in transformPrimary; a `var` is a
+	// plain T and stays as written.
+	if xIdent, ok := base.(*ast.Ident); ok {
+		if pv := t.importedPackageVal(xIdent.Name, selName); pv != nil {
+			selExpr := &ast.SelectorExpr{X: base, Sel: ast.NewIdent(selName)}
+			if !pv.IsVal {
+				return selExpr, nil
+			}
+			return &ast.CallExpr{
+				Fun: &ast.SelectorExpr{X: selExpr, Sel: ast.NewIdent(transpiler.MethodGet)},
+			}, nil
+		}
+	}
+
 	xType := t.getExprTypeName(base)
 	isImmutable := t.isImmutableType(xType)
 

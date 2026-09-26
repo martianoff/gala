@@ -94,7 +94,8 @@ type EmbedDirective struct {
 }
 
 // PackageValMetadata describes a package-level `val`/`var` declaration so that
-// references from other files of the same package resolve correctly.
+// references from other files of the same package — and, through
+// RichAST.ImportedVals, from other packages — resolve correctly.
 //
 // A package-level `val` lowers to a `std.Immutable[T]` value; reading it
 // requires a `.Get()` unwrap before it can be passed where a plain `T` is
@@ -130,6 +131,13 @@ type RichAST struct {
 	TypeAliases      map[string]Type                     // type alias name -> underlying type (e.g., "Handler" -> func(Request) Future[Response])
 	EmbedDirectives  []EmbedDirective                    // embed val declarations
 	PackageVals      map[string]*PackageValMetadata      // package-level val/var name -> metadata (for cross-file Immutable unwrap)
+	// ImportedVals holds the exported package-level `val`/`var` bindings of the
+	// GALA packages this file imports, keyed by package-qualified name
+	// ("colors.Green"). It is kept apart from PackageVals on purpose: those are
+	// the current package's own names, which the transformer pre-registers
+	// unqualified, while these are reachable only through their package — a
+	// selector `colors.Green`, or a bare `Green` under a dot-import.
+	ImportedVals map[string]*PackageValMetadata
 	ImportPathMap    map[string]string                   // GALA import path -> actual Go module path (when they differ due to VCS host prefix)
 	FilePath         string                              // source file path (for error reporting)
 	SourceContent    string                              // raw source text (for error snippets)
@@ -279,6 +287,7 @@ func (r *RichAST) Merge(other *RichAST) {
 	if r.PackageDoc == "" && r.PackageName != "" && r.PackageName == other.PackageName {
 		r.PackageDoc = other.PackageDoc
 	}
+	r.mergeImportedVals(other)
 	if len(other.ImportPathMap) > 0 {
 		if r.ImportPathMap == nil {
 			r.ImportPathMap = make(map[string]string)
@@ -286,6 +295,42 @@ func (r *RichAST) Merge(other *RichAST) {
 		for k, v := range other.ImportPathMap {
 			r.ImportPathMap[k] = v
 		}
+	}
+}
+
+// mergeImportedVals folds the package-level bindings `other` contributes into
+// r.ImportedVals, qualified by the package that declares them.
+//
+// other.PackageVals are other's OWN bindings, so they are qualified with
+// other.PackageName — but only when other is a different package: between
+// files of one package (analyzePackage folding its files together) they are
+// that package's own unqualified names, not imports. Unexported names are
+// skipped because no other package can reference them. other.ImportedVals are
+// already qualified and pass straight through, so a merged closure keeps them.
+//
+// A binding whose type is known is never replaced by one whose type is not.
+func (r *RichAST) mergeImportedVals(other *RichAST) {
+	add := func(key string, pv *PackageValMetadata) {
+		if pv == nil {
+			return
+		}
+		if r.ImportedVals == nil {
+			r.ImportedVals = make(map[string]*PackageValMetadata)
+		}
+		if existing, ok := r.ImportedVals[key]; ok && !IsUnusable(existing.Type) && IsUnusable(pv.Type) {
+			return
+		}
+		r.ImportedVals[key] = pv
+	}
+	if other.PackageName != "" && other.PackageName != r.PackageName {
+		for name, pv := range other.PackageVals {
+			if ast.IsExported(name) {
+				add(other.PackageName+"."+name, pv)
+			}
+		}
+	}
+	for key, pv := range other.ImportedVals {
+		add(key, pv)
 	}
 }
 

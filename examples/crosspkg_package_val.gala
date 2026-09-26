@@ -1,0 +1,50 @@
+package main
+
+import "martianoff/gala/examples/crosspkg_package_val/colors"
+import . "martianoff/gala/examples/crosspkg_package_val/palette"
+
+// Package-level `val`s read from ANOTHER package must unwrap from
+// std.Immutable[T] at every use site, the way same-package references do.
+// Without that, each reference below emitted the raw wrapper where a plain T
+// was expected and `go build` rejected it.
+
+func show(c colors.Color) string = colors.ToSgr(c)
+
+func identity[T any](x T) T = x
+
+func main() {
+    // Passed straight to a function parameter.
+    Println(show(colors.Green))
+
+    // Passed through a generic function: the element type must be known.
+    val passed = identity(colors.Green)
+    Println(show(passed))
+
+    // Assigned to a typed val.
+    val typed colors.Color = colors.Green
+    Println(show(typed))
+
+    // Read in string interpolation.
+    Println(s"greeting=${colors.Greeting} sgr=${colors.ToSgr(colors.Green)}")
+
+    // A struct-typed val: field access goes through the unwrapped value.
+    Println(s"theme=${colors.Default.Name} accent=${show(colors.Default.Accent)}")
+
+    // Pattern matching on an imported val.
+    val idx = colors.Green match {
+        case colors.NamedColor(i) => i
+        case _ => -1
+    }
+    Println(s"idx=$idx")
+
+    // Dot-imported package: bare references.
+    Println(show(Blue))
+    Println(s"label=$Label accent=${Accent.Name}")
+
+    // A package-level `var` stays a plain, mutable variable.
+    colors.Hit()
+    colors.Hit()
+    Println(s"hits=${colors.Hits}")
+    colors.Hits = colors.Hits + 10
+    Println(s"hits=${colors.Hits}")
+}

@@ -1,0 +1,28 @@
+package colors
+
+// Package-level bindings read from another package. Each `val` lowers to a
+// std.Immutable[T] wrapper, so an importer's `colors.Green` must unwrap it to
+// plain T at the use site, exactly as a same-package reference does.
+sealed type Color {
+    case Red()
+    case NamedColor(Idx int)
+}
+
+struct Theme(Name string, Accent Color)
+
+val Green = NamedColor(2)
+val Default = Theme("classic", Red())
+val Greeting = "hello"
+
+// A `var` is a plain, reassignable Go variable: it is never wrapped, so it
+// must never be unwrapped either.
+var Hits = 0
+
+func Hit() {
+    Hits = Hits + 1
+}
+
+func ToSgr(c Color) string = c match {
+    case Red() => "31"
+    case NamedColor(i) => s"3$i"
+}

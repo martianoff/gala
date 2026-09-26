@@ -469,14 +469,13 @@ func goPackageContributed(rich *transpiler.RichAST, importPath string) bool {
 //
 // It is a deliberate safety net rather than the primary resolution path. The
 // merged metadata is the primary path, but it is not a complete record of what
-// a package exports: package-level `val`/`var` declarations, for instance,
-// live in RichAST.PackageVals, which Merge does not carry across a package
-// boundary (it exists for the current package's Immutable-unwrap decisions, and
-// widening it would change how the transformer pre-registers names). Rather
-// than reshape that map — and risk changing generated code for a check that
-// only needs to know whether a name exists — the declarations are read
-// directly. Any future export kind the metadata does not model is covered by
-// the same net.
+// a package exports. Package-level `val`/`var` declarations, for instance,
+// cross a package boundary only as RichAST.ImportedVals — exported names,
+// keyed by the declaring package — never into the importer's own PackageVals,
+// which the transformer pre-registers as the current package's names. Rather
+// than tie this existence check to how each export kind is modelled for code
+// generation, the declarations are read directly. Any future export kind the
+// metadata does not model is covered by the same net.
 //
 // Names are collected only for the *existence* test; nothing here influences
 // type resolution or code generation. Results are cached per package directory:

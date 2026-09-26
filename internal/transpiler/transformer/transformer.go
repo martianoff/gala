@@ -314,6 +314,7 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 	if err := t.importManager.ValidateDotImports(richAST, importLine, importCol); err != nil {
 		return nil, nil, err
 	}
+	t.registerDotImportedVals()
 
 	for _, topDeclCtx := range sourceFile.AllTopLevelDeclaration() {
 		decls, err := t.transformTopLevelDeclaration(topDeclCtx)

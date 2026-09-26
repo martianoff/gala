@@ -37,7 +37,12 @@ import (
 // struct field default expressions. Construction sites read it to fill an
 // omitted field, so a v3 payload would silently drop every cross-package
 // default back to the zero value — the exact bug the field exists to fix.
-const CacheVersion = "v4"
+//
+// v5: the package's own package-level val/var bindings (PackageVals) are
+// persisted. An importer reads them to unwrap `pkg.Name` from
+// std.Immutable[T]; a v4 payload carries none, so every cross-package val
+// reference served from it would emit the raw wrapper again.
+const CacheVersion = "v5"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path
@@ -94,6 +99,7 @@ type CachedRichAST struct {
 	GoTypeInfo       *transpiler.GoTypeInfo
 	TypeAliases      map[string]transpiler.Type
 	ImportPathMap    map[string]string
+	PackageVals      map[string]*transpiler.PackageValMetadata // this package's own package-level val/var bindings
 	DepsHash         string   // hash of transitive dependency content (for invalidation)
 	DirectImports    []string // GALA import paths this package directly imports (for re-merge on load)
 }
@@ -202,6 +208,7 @@ func toCachedRichAST(r *transpiler.RichAST, depsHash string, directImports []str
 		GoTypeInfo:       ownGoTypeInfo,
 		TypeAliases:      r.TypeAliases, // small; alias entries originate from this package's source
 		ImportPathMap:    r.ImportPathMap,
+		PackageVals:      r.PackageVals, // own by construction: Merge never widens it across packages
 		DepsHash:         depsHash,
 		DirectImports:    directImports,
 	}
@@ -354,6 +361,7 @@ func projectOwnRichAST(r *transpiler.RichAST) *transpiler.RichAST {
 		GoTypeInfo:       ownGoTypeInfo,
 		TypeAliases:      r.TypeAliases,
 		ImportPathMap:    r.ImportPathMap,
+		PackageVals:      r.PackageVals,
 	}
 }
 
@@ -399,6 +407,7 @@ func fromCachedRichAST(c *CachedRichAST) *transpiler.RichAST {
 		GoTypeInfo:       c.GoTypeInfo,
 		TypeAliases:      c.TypeAliases,
 		ImportPathMap:    c.ImportPathMap,
+		PackageVals:      c.PackageVals,
 	}
 }
 

@@ -1,0 +1,10 @@
+package palette
+
+import "martianoff/gala/examples/crosspkg_package_val/colors"
+
+// Dot-imported by the consumer, so these are read as bare names there. Their
+// initializers also reach into another package, so their element types come
+// from that package's metadata.
+val Blue = colors.NamedColor(4)
+val Accent = colors.Default
+val Label = "palette"
