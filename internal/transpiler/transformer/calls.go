@@ -397,12 +397,21 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 // Extracted from transformCallWithArgsCtx as part of A1.
 func (t *galaASTTransformer) resolveReceiverTypeAndLookupKey(receiver ast.Expr) (transpiler.Type, string) {
 	recvType := t.getExprTypeName(receiver)
+	// Normalize through a pointer receiver (`*Array[Row]`): getType never
+	// resolves a `*`-prefixed name, so the pointee is qualified and re-wrapped.
+	ptr, isPtr := recvType.(transpiler.PointerType)
+	if isPtr {
+		recvType = ptr.Elem
+	}
 	if gen, ok := recvType.(transpiler.GenericType); ok {
 		if qBase := t.getType(gen.Base.String()); !qBase.IsNil() {
 			recvType = transpiler.GenericType{Base: qBase, Params: gen.Params}
 		}
 	} else if qName := t.getType(recvType.BaseName()); !qName.IsNil() {
 		recvType = qName
+	}
+	if isPtr {
+		recvType = transpiler.PointerType{Elem: recvType}
 	}
 	// Strip pointer prefix for genericMethods lookup since methods are
 	// registered under the base type name without the pointer marker.

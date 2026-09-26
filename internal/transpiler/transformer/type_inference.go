@@ -318,13 +318,11 @@ func (t *galaASTTransformer) resolveMethodCallTypeWithParams(
 	}
 
 	// Determine the receiver's concrete generic type params for substitution.
-	// Use pre-resolved params if provided, otherwise extract from the receiver argument.
+	// Use pre-resolved params if provided, otherwise extract from the receiver
+	// argument — through the pointer for a pointer receiver (`*Array[Row]`).
 	receiverGenericParams := preResolvedGenericParams
 	if len(receiverGenericParams) == 0 && receiverArgIndex >= 0 && receiverArgIndex < len(args) {
-		receiverArgType := t.getExprTypeNameManual(args[receiverArgIndex])
-		if genType, ok := receiverArgType.(transpiler.GenericType); ok {
-			receiverGenericParams = genType.Params
-		}
+		receiverGenericParams = t.getReceiverTypeArgTypes(t.getExprTypeNameManual(args[receiverArgIndex]))
 	}
 
 	// Alpha-rename the method's own type params to fresh sentinel names BEFORE
@@ -1209,6 +1207,7 @@ func (t *galaASTTransformer) getReceiverTypeArgStrings(recvType transpiler.Type)
 // keeps a foreign type whose package name collides with the current GALA package
 // (io/fs's "fs" vs GALA's own `fs`, distinguishable only by ImportPath) correctly
 // qualified when substituted into a monadic combinator's lambda param type.
+// The result aliases the receiver type's params; callers must not mutate it.
 func (t *galaASTTransformer) getReceiverTypeArgTypes(recvType transpiler.Type) []transpiler.Type {
 	if transpiler.IsUnusable(recvType) {
 		return nil
@@ -1217,7 +1216,7 @@ func (t *galaASTTransformer) getReceiverTypeArgTypes(recvType transpiler.Type) [
 		return t.getReceiverTypeArgTypes(ptr.Elem)
 	}
 	if gen, ok := recvType.(transpiler.GenericType); ok {
-		return append([]transpiler.Type(nil), gen.Params...)
+		return gen.Params
 	}
 	return nil
 }

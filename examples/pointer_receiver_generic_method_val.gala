@@ -1,0 +1,40 @@
+package main
+
+import (
+    im "martianoff/gala/collection_immutable"
+    mu "martianoff/gala/collection_mutable"
+)
+
+// Generic methods on pointer-receiver (mutable) collections keep the receiver's type arguments.
+
+struct Row(Name string, K int)
+
+func main() {
+    // Mutable Array: val bound to SortBy, then a follow-up generic call.
+    val rows = mu.ArrayOf(Row("a", 2), Row("b", 0), Row("c", 1))
+    val sorted = rows.SortBy((r) => r.K)
+    Println(sorted.Map((r) => r.Name).MkString(","))
+
+    // Mutable Array: val bound to Map (a type change), then a follow-up call.
+    val names = rows.Map((r) => r.Name)
+    Println(names.SortBy((n) => n).Reversed().MkString(","))
+
+    // Mutable Array: val bound to Zip, whose result is built from both
+    // the receiver's T and the method's U.
+    val zipped = rows.Zip(names)
+    Println(zipped.Map((p) => s"${p.V1.K}${p.V2}").MkString(","))
+
+    // Mutable HashMap: SortBy returns Array[Tuple[K, V]], a different generic
+    // type built from the receiver's params. Chained and val-bound forms.
+    val counts = mu.HashMapOf(("x", 3), ("y", 1), ("z", 2))
+    Println(counts.SortBy((e) => e.V2).Map((e) => e.V1).MkString(","))
+    val byCount = counts.SortBy((e) => e.V2)
+    Println(byCount.Map((e) => e.V2).FoldLeft(0, (acc, n) => acc + n))
+
+    // Immutable Array (value receiver): same shape, as a control.
+    val irows = im.ArrayOf(Row("a", 2), Row("b", 0), Row("c", 1))
+    val isorted = irows.SortBy((r) => r.K)
+    Println(isorted.Map((r) => r.Name).MkString(","))
+    val inames = irows.Map((r) => r.Name)
+    Println(inames.SortBy((n) => n).Reverse().MkString(","))
+}

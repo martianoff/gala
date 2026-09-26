@@ -281,8 +281,8 @@ func TestListZip(t T) T {
     val zipped = list1.Zip[string](list2)
     val t1 = Eq[int](t, zipped.Length(), 3)
     val first = zipped.Get(0)
-    val t2 = Eq[int](t1, first.V1.Get(), 1)
-    return Eq[string](t2, first.V2.Get(), "a")
+    val t2 = Eq[int](t1, first.V1, 1)
+    return Eq[string](t2, first.V2, "a")
 }
 
 func TestListString(t T) T {

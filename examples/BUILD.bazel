@@ -794,6 +794,17 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
+# Regression: generic methods on pointer receivers keep the receiver's type arguments.
+gala_exec_test(
+    name = "pointer_receiver_generic_method_val",
+    src = "pointer_receiver_generic_method_val.gala",
+    expected = "pointer_receiver_generic_method_val.out",
+    deps = [
+        "//collection_immutable",
+        "//collection_mutable",
+    ],
+)
+
 gala_exec_test(
     name = "sealed_recursive_list",
     src = "sealed_recursive_list.gala",
