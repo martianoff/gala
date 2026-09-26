@@ -4609,13 +4609,25 @@ func (a *galaAnalyzer) parsedFileCacheKey(path string) string {
 // index, mirroring parseFileCached's silent-skip behaviour so callers
 // can keep their existing slice-position semantics.
 //
-// Concurrency: ANTLR's antlr4-go/v4 runtime is thread-safe by default
-// (its DFA caches are guarded by sync.Mutex inside the library; see
-// mutex.go in the antlr module). Each Parse call also constructs its
-// own InputStream / Lexer / Parser instances, so the only shared state
-// across goroutines is the global ATN/DFA cache that the runtime
-// already protects. parsedFileCache writes go through
-// parsedFileCacheMu, taken inside parseFileCached.
+// Concurrency: ANTLR's antlr4-go/v4 runtime is NOT thread-safe out of the
+// box, and this function is only safe because the parser layer works
+// around that. Each Parse call constructs its own InputStream / Lexer /
+// Parser, but the generated constructors hand every instance the same
+// package-global PredictionContextCache, whose Put is an unsynchronised
+// map write. parser.ParseLenient therefore rebinds each parse's ATN
+// simulator to a private cache (see isolateLexerCaches /
+// isolateParserCaches in internal/parser/parser.go) — do not remove that
+// isolation on the strength of the mutexes in the antlr module's
+// mutex.go, which guard only the ATN's DFA state and edge maps.
+// parsedFileCache writes go through parsedFileCacheMu, taken inside
+// parseFileCached.
+//
+// Because the failure mode is a low-rate heisenbug that surfaces as a
+// panic blamed on whichever file a worker happened to hold, this path is
+// covered by race-detector tests rather than by reasoning alone:
+// TestParseConcurrentStress in internal/parser and
+// TestConcurrentSiblingParse in this package. The `race` job in
+// .github/workflows/test.yml runs them under -race on every PR.
 //
 // Parallelism is capped at min(len(paths), GOMAXPROCS) to avoid
 // over-saturating small CI runners (ubuntu-latest = 4 vCPU). For the

@@ -48,3 +48,69 @@ jobs:
       - name: IntelliJ Plugin Build & Test
         run: |
           bazel build //ide/intellij:plugin --action_env=PATH
+
+  race:
+    name: Race Detector
+    runs-on: ubuntu-latest
+
+    # The analyzer parses a package's files concurrently
+    # (analyzer.parseFilesConcurrent), and ANTLR's Go runtime is not
+    # thread-safe out of the box — internal/parser/parser.go works around that
+    # by giving every parse its own prediction-context cache. Nothing ran the
+    # instrumented binary, so nothing verified it, and the failure mode is a
+    # low-rate heisenbug: a memory fault in a parse worker, surfaced as
+    # GALA-E0017 against whichever innocent line that worker happened to hold,
+    # gone on the next run. One report logged ~12 aborts in a day of work and
+    # then 26 consecutive clean runs while trying to reproduce them — which is
+    # how little a green suite proves about this class of bug.
+    #
+    # Both suites run whole, not filtered to the tests whose names mention
+    # concurrency. Those tests are the narrowest possible coverage: the
+    # analyzer suite analyses real stdlib packages, so it parses the 20-35KB
+    # generics-heavy collection sources that drive ANTLR into full-context
+    # prediction, which is where the reported crashes lived. A filtered job
+    # would re-open the blind spot this one exists to close.
+    #
+    # //internal/transpiler/transformer is deliberately NOT here. Under -race
+    # it dies with `fatal error: traceback` /
+    # `unexpected SPWRITE function runtime.systemstack`, reproducibly, ~7
+    # minutes in. That is golang/go#64934: the runtime throws while panicking
+    # on the system stack, which SWALLOWS the original panic, so the
+    # underlying fault is unreported. The race detector itself finds no data
+    # race, and the fault hits ordinary test goroutines as well as parse
+    # workers, so it is not the concurrency bug this job hunts — but it does
+    # mean the package cannot be gated until someone recovers the real panic
+    # behind it.
+    #
+    # --test_timeout is raised because instrumentation costs roughly 5x: the
+    # analyzer suite runs ~11 minutes under -race against ~2 minutes without.
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        id: setup-go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: false
+
+      - name: Export GOROOT
+        run: echo "GOROOT=$(go env GOROOT)" >> "$GITHUB_ENV"
+
+      - name: Setup Bazel
+        uses: bazel-contrib/setup-bazel@0.14.0
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}-race-go${{ steps.setup-go.outputs.go-version }}
+          repository-cache: true
+
+      - name: Test under -race
+        run: |
+          bazel test \
+            //internal/parser:parser_test \
+            //internal/transpiler/analyzer:analyzer_test \
+            --@rules_go//go/config:race \
+            --test_timeout=1800 \
+            --test_output=errors --verbose_failures \
+            --action_env=GOROOT="$GOROOT" --action_env=PATH
