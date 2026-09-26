@@ -78,6 +78,38 @@ LSP, build driver, stdlib. Then work through the checklists below.
 - **Nil safety.** Writes to maps that may now be nil, receivers that may be nil,
   deferred calls skipped by `os.Exit`.
 
+### Breaking changes
+
+Flag anything that can make existing user code, downstream repos, or tooling stop
+working or behave differently. GALA is in beta, so breaking changes are allowed, but
+they must be **intentional and stated in the PR description** so they reach the release
+notes. Don't ask for deprecation shims, compatibility flags, or migration notes.
+
+Look for:
+
+- **Language:** changes to `internal/parser/grammar/gala.g4`, new or removed keywords
+  (a new keyword breaks identifiers with that name), changed semantics of existing
+  syntax, new or stricter errors on code that used to compile, changed inference results.
+- **Generated Go:** renamed or reshaped generated identifiers (types, methods,
+  companion objects, `_StructMeta_*`, sealed-type variants), changed signatures, or
+  changed runtime behaviour. Go code that imports GALA packages depends on these.
+- **Stdlib API:** removed, renamed, or re-typed exported functions, methods, and types in
+  `std/` and the other stdlib packages, including changed defaults and error behaviour.
+- **CLI and build interfaces:** `gala` commands, flags, exit codes, and output formats
+  (`transpile-package`, the persistent-worker protocol, `gala imports --json`), the
+  `gala.mod` format, `GALA_*` environment variables, the stdlib cache layout, and
+  anything `rules_gala` or `gala_gazelle` relies on.
+- **Diagnostics:** renumbered or repurposed `GALA-Exxxx` codes, removed error pages.
+- **Toolchain:** Go or Bazel version bumps, new required tools.
+- **Tests as a signal:** changed `.out` files under `examples/`, or tests edited to
+  accept new behaviour, usually mean user-visible behaviour changed.
+
+For each breaking change, say who is affected and how. For a language, stdlib, or
+generated-Go change, check the downstream repos (gala_tui, gala_team, gala-acp) with
+`git grep` on a fresh checkout at their default branch, or ask for a manual run of
+`.github/workflows/downstream-drift.yml`. An undeclared breaking change is a blocking
+finding; a declared one is fine if the description names what breaks.
+
 ### Repository policy (`CLAUDE.MD`)
 
 - No edits to generated `internal/parser/grammar/*.go`.
@@ -194,8 +226,8 @@ Check the description against the diff in both directions:
 
 Order by severity:
 
-1. **Blocking:** correctness regressions, policy violations, files that must not be
-   checked in.
+1. **Blocking:** correctness regressions, breaking changes not declared in the
+   description, policy violations, files that must not be checked in.
 2. **Should fix:** false, overstated, or missing claims in the description (Step 4), missing coverage of invariants, misleading comments.
 3. **Non-blocking:** scope, style, naming.
 
