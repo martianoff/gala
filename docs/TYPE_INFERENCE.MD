@@ -342,10 +342,10 @@ The `getType(name)` method in scope.go implements this resolution order.
 | `arr[i]` | Array element type |
 | `Some(x)`, `None[T]()` | Option type construction |
 | `Left(x)`, `Right(x)` | Either type construction |
-| `expr.Get()` | Immutable inner type, generic container element (`Array[T].Get()` → `T`), or — when the receiver is a non-generic named type with a user-declared `Get` method — that method's declared return type |
+| `expr.Get()` | Immutable inner type, generic container element (`Array[T].Get()` → `T`), or — when the receiver is a non-generic named type (or a pointer to one) with a user-declared `Get` method — that method's declared return type |
 | `NewImmutable(x)` | Immutable wrapper type |
 
-> **Note:** `Get` is special-cased because it backs implicit `Immutable` unwrapping and the built-in container accessors. A user type may still declare its own `Get` method (e.g. a `Get() Option[T]` accessor); its declared return type is honored so that chained higher-order calls on the result (`expr.Get().FlatMap(...)`, `.Map(...)`) keep their concrete element type instead of widening to `any`.
+> **Note:** `Get` is special-cased because it backs implicit `Immutable` unwrapping and the built-in container accessors. A user type may still declare its own `Get` method (e.g. a `Get() Option[T]` accessor); its declared return type is honored so that chained higher-order calls on the result (`expr.Get().FlatMap(...)`, `.Map(...)`) keep their concrete element type instead of widening to `any`. Pointer receivers (`func (b *Buffer) Get() Cell`) resolve the same way, so field chains on the result (`b.Get().St.Bold`) unwrap each immutable field.
 
 ### Hindley-Milner Inference (`inferExprType`)
 
