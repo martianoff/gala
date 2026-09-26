@@ -14,7 +14,7 @@ GALA is a programming language that transpiles to Go. Build system: Bazel.
 
 3. **ALWAYS generate concrete types** - GALA is type-safe. The transpiler MUST generate concrete Go types, NEVER `any`/`interface{}` unless explicitly requested in GALA source. If type cannot be resolved, fail with an error.
 
-4. **ALWAYS use bazel for testing, compilation** - Both GO and GALA have build-in bazel actions for compilation and testing.
+4. **ALWAYS use bazel for testing, compilation** - Both GO and GALA have built-in bazel actions for compilation and testing.
 
 5. **ALWAYS research GALA syntax and best practices before writing GALA code** - Start with [docs/GALA_BEST_PRACTICES.MD](docs/GALA_BEST_PRACTICES.MD) for the rule list; fall back to [docs/GALA.MD](docs/GALA.MD) for full specification details. GALA is a functional language that extensively relies on pattern matching.
 
@@ -32,10 +32,16 @@ GALA is a programming language that transpiles to Go. Build system: Bazel.
 | `internal/transpiler/infer` | Hindley-Milner inference (Layer 2) |
 | `internal/transpiler/transformer` | GALA AST to Go AST transformation |
 | `internal/transpiler/generator` | Go code generation from AST |
+| `internal/lsp` | Language server (`gala lsp`) |
+| `internal/build` | `gala build` / `gala test` driver |
 | `std` | Standard library (written in GALA) |
 | `test` | Test framework |
 | `examples` | Verification programs |
-| `docs` | Documentation |
+| `docs` | Documentation (mirrored for the site in `website/`) |
+| `ide/intellij`, `ide/claude-code` | IntelliJ plugin; Claude Code plugin (ships `/gala-lint`) |
+| `.claude/skills` | Project skills: `gala-code`, `gala-lint`, `gala-pr-review`, `gala-ide-sync`, `gala-lsp` |
+
+The full layout and the feature-by-feature workflow are in [CONTRIBUTING.MD](CONTRIBUTING.MD).
 
 ---
 
@@ -90,6 +96,8 @@ Two things to know:
   [docs/BUILD_DISK_USAGE.MD](docs/BUILD_DISK_USAGE.MD) for why Bazel 9's repo
   contents cache does not reduce the per-worktree duplication.
 - **Go SDK**: required for Go type inference. Ensure `go` is on PATH or set `GOROOT`.
+  Bazel compiles with its own pinned Go (`go_sdk.download` in `MODULE.bazel`,
+  1.25.5), downloaded per output base; the host Go is only used for type inference.
 
 Builds are disk-hungry and need occasional maintenance — see
 [docs/BUILD_DISK_USAGE.MD](docs/BUILD_DISK_USAGE.MD) and `tools/bazel_gc.sh`.
@@ -138,6 +146,9 @@ See [docs/GALA_BEST_PRACTICES.MD](docs/GALA_BEST_PRACTICES.MD) for the full rule
 - Write table-driven tests
 - Use multi-line strings for test inputs requiring newlines
 - **When adding GALA language features:** MUST add verification example in `examples/`
+- Use `bazel test`, not `go test` — CI runs Bazel. CI also runs the parser and analyzer
+  suites under the race detector (`--@rules_go//go/config:race`); run them that way when
+  touching concurrent code.
 
 ---
 
@@ -147,6 +158,10 @@ When modifying grammar or adding features, update:
 - `docs/GALA.MD` - Language reference
 - `docs/TYPE_INFERENCE.MD` - Type inference rules
 - `docs/EXAMPLES.MD` - Feature examples (use concise functional syntax)
+- The matching page under `website/docs/` — the site is a hand-maintained mirror, not
+  generated from `docs/`
+- New diagnostic codes need a page in both `docs/errors/` and `website/docs/errors/`
+- Grammar, keyword, or stdlib type changes: re-sync the IDE plugin and LSP data (`/gala-ide-sync`)
 
 ---
 
@@ -159,3 +174,19 @@ MUST complete ALL steps in order before considering work done:
 3. [ ] `bazel run //:gazelle` (if files added/removed — manages Go, GALA, and mixed GALA+GO BUILD files)
 4. [ ] Examples in `examples/` compile without errors
 5. [ ] Documentation updated (if grammar/features changed)
+
+## Pull Request Checklist
+
+EVERY pull request MUST go through all of these before it is considered ready:
+
+1. [ ] Pre-commit checklist above is complete
+2. [ ] `/gala-lint` on the changed `.gala` files — every finding fixed or explicitly justified
+3. [ ] `/simplify` on the change — reuse, simplification, and efficiency cleanups applied
+4. [ ] `/review` on the change — every correctness finding fixed or explicitly justified
+5. [ ] The PR description matches the actual diff: every claim is true, every notable
+       change (including breaking changes) is mentioned
+6. [ ] **CI is all green on the final commit.** This is the last gate. Re-check after every
+       push. "No checks reported" usually means the branch conflicts with `master`, not
+       that it passed — rebase and wait for the checks to run.
+
+To review someone else's PR, use `/gala-pr-review`.

@@ -45,7 +45,9 @@ user-defined function that happens to share one of these names (e.g. a local
 | `make([]T, n)` | `go_interop.SliceWithSize` / `SliceWithCapacity`; `MapEmpty` for maps; or an empty `Array`/`HashMap` |
 | `new(T)` | `go_interop.New[T]()` (pointer), or a zero value / `Option[T]` |
 | `delete(m, k)` | `go_interop.MapDelete(m, k)`, or `HashMap.Remove(k)` |
-| `close`/`complex`/`real`/`imag` | `go_interop.CloseChan` / `Complex` / `Real` / `Imag` |
+| `copy(dst, src)` | `go_interop.SliceCopy(...)`, or copy an `Array` |
+| `close(ch)` | `go_interop.CloseChan(ch)`, or `go_interop.CloseSignal(s)` for a signal channel |
+| `complex`/`real`/`imag` | `go_interop.Complex` / `Real` / `Imag` |
 | `panic(v)` | `go_builtins.Panic(v)` — **only** where a panic is genuinely intended (see rule 11); prefer `Option`/`Try`/`Either` |
 | `recover()` | not available — `Try` captures panics (`Try(() => …)` / `TryApply`) |
 
@@ -68,7 +70,7 @@ resolver-aware — a symbol the program itself declared is left alone.
 | Forbidden statement | Sanctioned replacement |
 |---|---|
 | `defer x.Close()` | a `use x = acquire` binding (closes at block exit, LIFO), or a `resource` combinator — `Using` / `Bracket` / `WithLock` from `martianoff/gala/resource` |
-| `go f()` | `go_interop.Spawn(() => f())` — the sanctioned goroutine primitive |
+| `go f()` | prefer `concurrent.Future` (its captures are checked, see `GALA-E0037`); `go_interop.Spawn(() => f())` is the unchecked escape hatch |
 | `goto`, `fallthrough` | structured control flow — pattern matching (`match`), recursion, or a `for` loop |
 | `select`, `chan` | the `go_interop` channel helpers |
 
@@ -115,6 +117,26 @@ For a non-`Closeable` cleanup (e.g. `os.RemoveAll(dir)`), use
 `Bracket(resource, release, body)` — it runs `release` after `body` on every
 exit path.
 
+### 0c. Other idiom-level HARD ERRORS
+
+These Go habits are also rejected by the compiler. Any occurrence is a must-fix;
+each code has a page with the full explanation (`gala explain GALA-Exxxx`).
+
+| Code | Pattern to Flag | Fix |
+|---|---|---|
+| `GALA-E0007` | Slice literal `[]int{1, 2, 3}` | `ArrayOf(1, 2, 3)`; `go_interop.SliceOf(...)` only for a raw Go slice at an interop boundary |
+| `GALA-E0008` | Map literal `map[string]int{"a": 1}` | `HashMapOf(("a", 1))`; `go_interop.MapPut(go_interop.MapEmpty[K, V](), ...)` only at a Go boundary |
+| `GALA-E0013` | Defaulted parameter before a required one | Move defaulted parameters to the end |
+| `GALA-E0034` | Untyped / grouped parameters: `func add(a, b int)`, `struct Point(X, Y int)` | One type per parameter: `func add(a int, b int)` |
+| `GALA-E0037` | A `Future` closure capturing mutable or unshareable state | Snapshot into a `val` before the boundary; prefer immutable collections |
+| `GALA-E0039` | Bare variant name in a pattern: `case Circle =>` | `case Circle(_) =>` |
+| `GALA-E0040` | Go slice or map type inside an expression: `EmptyHashMap[string, []byte]()` | Name a GALA type: `Array[T]` / `HashMap[K, V]`; text is `string`, not `[]byte` |
+| `GALA-E0041` | Importing another tree's `internal/` package | Use the parent package's public API, or move the importer into the tree |
+| `GALA-E0042` | Unparenthesised lambda parameter: `x => x * 2` | `(x) => x * 2` |
+| `GALA-E0043` | Type name called as a constructor: `Array(1, 2, 3)` | `ArrayOf(1, 2, 3)` |
+| `GALA-E0045` | Struct constructed without a required field | Pass the field, or give it a default in the struct declaration |
+| `GALA-E0047` | `if` with an initializer: `if v, err := f(); err == nil { ... }` | `Try(f()) match { case Success(v) => ...; case Failure(_) => ... }` |
+
 ### 1. Immutability (HIGH priority)
 
 | Issue | Pattern to Flag | Recommended Fix |
@@ -135,17 +157,17 @@ exit path.
 |-------|-----------------|-----------------|
 | If-else on Option | `if opt.IsDefined() { opt.Get() }` | `opt match { case Some(x) => ... }` |
 | If-else on Either | `if either.IsRight() { either.Right() }` | `either match { case Right(x) => ... }` |
-| Type assertion chains | `if _, ok := x.(T); ok { }` | `x match { case t: T => ... }` |
+| Type assertion chains | `if _, ok := x.(T); ok { }` — an `if` initializer is a hard error (`GALA-E0047`) | `x match { case t: T => ... }` |
 | Long if-else chains | 3+ else-if branches | Use `match` expression |
-| If-else on isEmpty/NonEmpty | `if x.IsEmpty() { ... } else { ... }` | Use extractors: `x match { case Empty() => ...; case NonEmpty(h, t) => ... }` |
+| If-else on isEmpty/NonEmpty | `if x.IsEmpty() { ... } else { ... }` | Pattern match: `case Array(h, tail...)` / `case _` for an `Array`; `case Cons(h, t)` / `case Nil()` for a `List` |
 | Head/Tail after empty check | `if !list.IsEmpty() { list.Head(); list.Tail() }` | `list match { case Cons(h, t) => ... }` |
 | Unused extractors | Defining `Unapply` extractors but using if-else internally | Use your own extractors! |
 | Get(0) after length check | `if x.Length() > 0 { x.Get(0) }` | `x.HeadOption()` or pattern match |
 | Unnecessary default on sealed | `case _ =>` when all sealed variants are covered | Remove `case _ =>`; exhaustive match is verified by the transpiler |
 | IsXxx() chains on sealed type | `if s.IsCircle() { ... } else if s.IsRectangle() { ... }` | `s match { case Circle(r) => ... case Rectangle(w, h) => ... }` |
-| If-err-nil on Go error return | `val x, err = f(); if err == nil { ... }` | Wrap with `Try(f)` (if f takes no args) or `Try(() => f(args))` then use `.Map`, `.GetOrElse`, or `match` |
-| Sequential if-err-nil fallback | Multiple `val x, err = f(); if err == nil { return x }` in sequence | `Try(f1).OrElse(Try(f2))` chain (or `Try(() => f1(args)).OrElse(Try(() => f2(args)))` if args needed) |
-| Lambda wrapper for zero-arg func | `Try(() => f())` where f takes no arguments | `Try(f)` — pass function reference directly (for any other single-expression body, drop `() =>` instead — see rule 11e) |
+| If-err-nil on Go error return | `val x, err = f(); if err == nil { ... }` | Wrap with `Try(f)` (if f takes no args) or `Try(f(args))` then use `.Map`, `.GetOrElse`, or `match` |
+| Sequential if-err-nil fallback | Multiple `val x, err = f(); if err == nil { return x }` in sequence | `Try(f1).OrElse(Try(f2))` chain (or `Try(f1(args)).OrElse(Try(f2(args)))` if args needed) |
+| Lambda wrapper for zero-arg func | `Try(() => f())` where f takes no arguments | `Try(f)` — pass function reference directly (for any other single-expression body, drop `() =>` instead — see rule 11d) |
 
 ### 3. Sealed Types (HIGH priority)
 
@@ -231,7 +253,7 @@ If the value is also:
 - Local `var xs []T` / `var m map[K]V` that is only read and written inside GALA code (no Go call consumes it)
 - `for _, x := range xs` over a Go slice when `xs.ForEach(f)` would work on an `Array[T]`
 - `collection_immutable` already imported in the same file but a Go slice/map is used anyway for similar work
-- Helper functions named `mapOf`, `sliceOf`, `indexBy` that build Go maps/slices — usually a sign `HashMap.GroupBy` / `Array.FoldLeft` were overlooked
+- Helper functions named `mapOf`, `sliceOf`, `indexBy` that build Go maps/slices — usually a sign `Array.GroupBy` / `Array.FoldLeft` were overlooked
 
 Apply these heuristics before flagging; record the inferred boundary/internal classification in the issue so the user can contest borderline cases.
 
@@ -252,7 +274,7 @@ Apply these heuristics before flagging; record the inferred boundary/internal cl
 | Internal function returning `[]T` | `func groupBy(xs Array[T]) []Group` — GALA-private helper returning Go slice | Return `Array[Group]` / `List[Group]` so the caller keeps functional ops |
 | Internal function taking `[]T` | Non-interop helper with `[]T` param | Take `Array[T]` / `List[T]` and let the Go boundary do the conversion |
 | Local `var xs []T` inspected in GALA code | `var xs []T; ...; for _, x := range xs` / `xs[i]` / `len(xs)` with no Go call consuming `xs` | Rebuild with `Array[T]` / `List[T]`; use `.Size()` / `.Get(i)` / `.ForEach` |
-| Scratch buffer used beyond the Go read | `val dst = SliceWithSize[byte](n); lr.Read(dst); for _, b := range dst { ... }` | Read into a scratch buffer, then `ArrayFromSlice(dst[:n])` before further processing |
+| Scratch buffer used beyond the Go read | `val dst = SliceWithSize[byte](n); lr.Read(dst); for _, b := range dst { ... }` | Read into a scratch buffer, then `ArrayFromSlice(go_interop.SliceTo(dst, n))` before further processing |
 
 **Check**: Search for `SliceOf`, `SliceEmpty`, `SliceWithCapacity`, `SliceWithSize`, `[]T` declarations, `append(` calls, and manual loops over variadic parameters. Apply the §4.0 boundary heuristics. Only flag when the slice is observed internally (index, range, len, returned from a GALA-internal function) rather than exclusively at a Go call site.
 
@@ -267,17 +289,17 @@ Apply these heuristics before flagging; record the inferred boundary/internal cl
 
 | Issue | Pattern to Flag | Recommended Fix |
 |-------|-----------------|-----------------|
-| Go map for general use | `val m = map[string]int{}` or `make(map[K]V)` for internal logic | `EmptyHashMap[string, int]()` from `collection_immutable` |
-| Go map literal | `map[K]V{"a": 1, "b": 2}` for application data | Build with `EmptyHashMap[K,V]().Put("a", 1).Put("b", 2)` |
-| Manual map iteration | `for k, v := range m { ... }` for transform/filter | Use `HashMap.Map()`, `.Filter()`, `.ForEach()`, `.FoldLeft()` |
+| Go map for general use | `val m = map[string]int{}` (map literal, a hard error `GALA-E0008`) or `make(map[K]V)` (`GALA-E0035`) | `EmptyHashMap[string, int]()` from `collection_immutable` |
+| Go map literal | `map[K]V{"a": 1, "b": 2}` — a hard error (`GALA-E0008`) | `HashMapOf(("a", 1), ("b", 2))`; `go_interop.MapPut(go_interop.MapEmpty[K, V](), ...)` only at a Go boundary |
+| Manual map iteration | `for k, v := range m { ... }` for transform/filter | Use `HashMap.MapValues()`, `.Filter()`, `.ForEachKV()`, `.FoldLeftKV()`, `.Collect()` |
 | Go map in struct field | `type Cache struct { data map[string]Entry }` | Use `HashMap[string, Entry]` for immutability + functional ops |
 | Manual map lookup with default | `val v, ok = m[key]; if !ok { v = defaultVal }` | `hashMap.GetOrElse(key, defaultVal)` |
 | Manual map existence check | `val _, ok = m[key]; if ok { ... }` | `hashMap.Contains(key)` or `hashMap.Get(key) match { case Some(v) => ... }` |
-| MapForEach from go_interop | `MapForEach(goMap, func)` for internal processing | Convert to HashMap first: `HashMapFromGoMap(goMap).ForEach(...)` |
+| MapForEach from go_interop | `MapForEach(goMap, func)` for internal processing | Convert to HashMap first: `HashMapFromGoMap(goMap).ForEachKV(...)` |
 | Mutable map accumulation | `var m = map[K]V{}; for { m[k] = v }` | Use `FoldLeft` to build HashMap, or use `collection_mutable.HashMap` |
 | Internal function returning `map[K]V` | `func countBy(xs Array[T]) map[K]int` — GALA-private helper returning Go map | Return `HashMap[K, int]` so the caller keeps functional ops |
 | Internal function taking `map[K]V` | Non-interop helper with `map[K]V` param | Take `HashMap[K, V]` and convert at the Go boundary |
-| Index-by-build-up pattern | `var m = map[K]V{}; xs.ForEach((x) => m[f(x)] = g(x))` | `xs.GroupBy(f).Map((k, vs) => (k, vs.Map(g).Head()))` or `HashMap` builder |
+| Index-by-build-up pattern | `var m = map[K]V{}; xs.ForEach((x) => m[f(x)] = g(x))` | `xs.FoldLeft(EmptyHashMap[K, V](), (m, x) => m.Put(f(x), g(x)))`; for grouping, `HashMapFromGoMap(xs.GroupBy(f))` (`GroupBy` returns a Go map) |
 
 **Check**: Apply the §4.0 boundary heuristics. Search for `map[`, `make(map`, `MapEmpty`, `MapForEach`, `MapPut` from go_interop. Flag when the map is observed internally (range-loop, indexed assignment, passed to another GALA function) rather than exclusively at a Go call site.
 
@@ -296,13 +318,13 @@ val config = EmptyHashMap[string, string]()
     .Put("host", "localhost")
     .Put("port", "8080")
 
-val upper = config.Map((k, v) => (k, strings.ToUpper(v)))
+val upper = config.MapValues((v) => strings.ToUpper(v))
 val port = config.Get("port").GetOrElse("3000")
 ```
 
 **Bad pattern** — Go map for internal logic:
 ```gala
-// BAD: Go map with manual iteration
+// BAD: Go map with manual iteration (the map literal is also GALA-E0008)
 var config = map[string]string{}
 config["host"] = "localhost"
 config["port"] = "8080"
@@ -315,13 +337,13 @@ for k, v := range config {
 
 | Issue | Pattern to Flag | Recommended Fix |
 |-------|-----------------|-----------------|
-| Channel for single async result | `ch := make(chan T, 1); go func() { ch <- f() }(); <-ch` | `Future[T](() => f())` then `.Await()` or `.Map()` |
-| Channel for timeout | `select { case r := <-ch: ... case <-time.After(d): ... }` | `future.WithTimeout(d)` or `FirstCompletedOf` |
-| Channel for fan-out | Spawning goroutines writing to shared channel | `Future.Sequence(futures)` or `Future.Traverse(items, f)` |
-| WaitGroup for completion | `sync.WaitGroup` + goroutines | `Future.Sequence(ArrayOf(futures...))` |
-| Mutex for shared state | `sync.Mutex` protecting shared map/counter | Use immutable data + `Future` composition, or `Promise[T]` |
+| Channel for single async result | `ch := make(chan T, 1); go func() { ch <- f() }(); <-ch` — `make`, `go`, and `chan` are hard errors (`GALA-E0035` / `GALA-E0036`) | `Future(f())` then `.Await()` or `.Map()` |
+| Channel for timeout | `select { case r := <-ch: ... case <-time.After(d): ... }` — `select` is a hard error (`GALA-E0036`) | `future.WithTimeout(d)` or `FirstCompletedOf` |
+| Channel for fan-out | Spawning goroutines writing to shared channel | `Sequence(futures)` or `Traverse(items, f)` (top-level functions in `concurrent`) |
+| WaitGroup for completion | `sync.WaitGroup` + goroutines | `Sequence(ArrayOf(futures...))` |
+| Mutex for shared state | `sync.Mutex` protecting shared map/counter | Use immutable data + `Future` composition, or `WithLock(mu, () => ...)` from `resource` with a `go_interop.Mutex` |
 
-**Check**: Search for `make(chan`, `go func()`, `sync.WaitGroup`, `sync.Mutex`, `select {` in non-interop code. These often indicate Go concurrency patterns that GALA's Future/Promise can express more safely.
+**Check**: Search for `make(chan`, `go func()`, `select {` (hard errors, rules 0 and 0b) and `sync.WaitGroup`, `sync.Mutex` in non-interop code. A closure passed to `Future` must not capture unshareable state (`GALA-E0037`).
 
 **Acceptable Go concurrency uses**:
 - Long-running goroutines (servers, workers) that don't fit the Future model
@@ -428,14 +450,13 @@ func createServer(host string, port int = 8080, tls bool = true, maxConnections 
 | Multiple wrapper functions | `func NewFoo()`, `func NewFooWithBar()`, `func NewFooWithBarAndBaz()` | Single function with defaults: `func NewFoo(bar int = 0, baz string = "")` |
 | Boolean flag parameter without name | `connect("localhost", 8080, true)` where `true` is ambiguous | Use named arg: `connect("localhost", tls = true)` |
 | Positional args reducing readability | `createUser("Alice", 30, "admin", true, false)` | Use named args for clarity: `createUser(name = "Alice", age = 30, role = "admin")` |
-| Default after required without default | `func f(a int = 1, b int, c string = "x")` | Defaults must be contiguous at end: `func f(b int, a int = 1, c string = "x")` |
+| Default before a required parameter | `func f(a int = 1, b int, c string = "x")` — a hard error (`GALA-E0013`) | Defaults must be contiguous at end: `func f(b int, a int = 1, c string = "x")` |
 
 **Check**: Search for the functional options pattern (structs named `*Option` or `*Config` with `With*` functions), multiple function overloads with incremental parameters, and call sites with 3+ positional boolean/int literal arguments where named args would clarify intent.
 
 **Acceptable patterns**: Go interop functions that must match Go signatures cannot use defaults.
 
 ### 7. Type Inference (MEDIUM priority)
-<!-- Note: sections below renumbered after inserting rule 6 -->
 
 | Issue | Pattern to Flag | Recommended Fix |
 |-------|-----------------|-----------------|
@@ -445,7 +466,7 @@ func createServer(host string, port int = 8080, tls bool = true, maxConnections 
 | Redundant collection types | `ListOf[int](1, 2, 3)` | `ListOf(1, 2, 3)` |
 | Redundant single-param struct constructor | `Box[int](Value = 42)` | `Box(Value = 42)` (type inferred from named field value) |
 | Redundant generic function call type params | `Try[int](() => { return 1 })` | `Try(() => { return 1 })` (type inferred from lambda return) |
-| Unnecessary lambda for zero-arg func | `Try(() => os.TempDir())` | `Try(os.TempDir)` — pass function reference directly when func takes no args; for any other single-expression body drop `() =>` (see rule 11e) |
+| Unnecessary lambda for zero-arg func | `Try(() => os.TempDir())` | `Try(os.TempDir)` — pass function reference directly when func takes no args; for any other single-expression body drop `() =>` (see rule 11d) |
 | Redundant generic function call type params | `NewCons[int](head, tail)` | `NewCons(head, tail)` (type inferred from arguments) |
 | Redundant lambda param type | `list.Map((x int) => x * 2)` | `list.Map((x) => x * 2)` (type inferred from method signature) |
 | Redundant method type param | `list.Map[int]((x) => x * 2)` | `list.Map((x) => x * 2)` (Go infers from lambda) |
@@ -479,7 +500,7 @@ func createServer(host string, port int = 8080, tls bool = true, maxConnections 
 - Standalone lambdas not passed to a typed method (e.g., `val f = (x int) => x * 2`)
 - Ambiguous cases where removing the type param would cause a compile error
 
-### 7. Functional Patterns (HIGH priority)
+### 7b. Functional Patterns (HIGH priority)
 
 | Issue | Pattern to Flag | Recommended Fix |
 |-------|-----------------|-----------------|
@@ -489,7 +510,7 @@ func createServer(host string, port int = 8080, tls bool = true, maxConnections 
 | Filter then Map | `list.Filter(p).Map(f)` | `list.Collect({ case x if p(x) => f(x) })` |
 | Map then Filter (flatMap pattern) | `list.Map(f).Filter(p)` when f returns Option-like | `list.Collect({ case x if p(x) => f(x) })` |
 | FlatMap + Option for filter+transform | `list.FlatMap((x) => if p(x) { Some(f(x)) } else { None })` | `list.Collect({ case x if p(x) => f(x) })` |
-| Index-based iteration | `for i := 0; i < x.Length(); i++` | `x.ForEach(f)` or `for _, elem := range x` |
+| Index-based iteration | `for i := 0; i < x.Size(); i++` | `x.ForEach(f)`, or `x.ZipWithIndex()` when the index is needed |
 | Option side effects | `if opt.IsDefined() { f(opt.Get()) }` | `opt.ForEach(f)` |
 | Reimplementing collection methods | Defining `Map`, `Filter`, `Fold` etc. with manual loops when wrapping a collection | Delegate to underlying collection's method |
 | Manual ForAll pattern | `for { if !p(x) { return false } }; return true` | `collection.ForAll(p)` |
@@ -497,7 +518,7 @@ func createServer(host string, port int = 8080, tls bool = true, maxConnections 
 | Manual Find pattern | `for { if p(x) { return Some(x) } }; return None` | `collection.Find(p)` |
 | Manual Reverse | `for i := len-1; i >= 0; i-- { append }` | `collection.Reverse()` |
 | Manual ZipWithIndex | `for i := 0; ...; result.Append((elem, i))` | `collection.ZipWithIndex()` |
-| Manual IndexOf | `for i := 0; ...; if elem == target { return i }` | `collection.IndexOfFirst(x => x == target)` |
+| Manual IndexOf | `for i := 0; ...; if elem == target { return i }` | `collection.IndexOf(target)`; for a predicate, `collection.Find(p)` or `ZipWithIndex().Find(...)` |
 
 **Check**: Also search for `.Filter(` followed by `.Map(` on the same collection (chained or via intermediate val). These should use `.Collect` with a partial function instead.
 
@@ -554,7 +575,7 @@ val fallback = Unless(isDisabled, defaultValue)
 
 // Nil-safe Go map lookup
 val params = OptionFromMap(queryMap, "page")
-    .Map((v) => strconv.Atoi(v))
+    .FlatMap((v) => Try(strconv.Atoi(v)).ToOption())
     .GetOrElse(1)
 
 // Nil-safe Go slice iteration
@@ -575,7 +596,7 @@ val values = qp[name]
 if values == nil { return EmptyArray[string]() }
 ```
 
-### 8b. Go Struct Construction (MEDIUM priority)
+### 8b. Go Struct Construction (HIGH priority)
 
 | Issue | Pattern to Flag | Recommended Fix |
 |-------|-----------------|-----------------|
@@ -645,7 +666,7 @@ return lastResp
 |-------|-----------------|----------------|
 | Block body for single expr | `func f() T { return expr }` | `func f() T = expr` |
 | Lambda block for single expr | `(x) => { return x * 2 }` | `(x) => x * 2` |
-| Missing return in block | `(x) => { val y = x * 2; y }` | Add explicit `return y` |
+| Block lambda with no typed context | `val f = (x int) => { val y = x * 2; y }` — a standalone block lambda is treated as void | Add `return y`, or use an expression body. When the lambda is passed where a value is expected (e.g. `xs.Map(...)`), the trailing expression is already the result; no `return` needed |
 | Multi-line when one-liner works | `if cond { return a } else { return b }` | Use if-expression: `if (cond) a else b` |
 
 ### 8e. If-Expressions (MEDIUM priority)
@@ -712,7 +733,7 @@ When creating wrapper types around collections (like `Str` wrapping `string` as 
 
 **Good pattern**:
 ```gala
-// Str wraps string, converts to Array[rune] for operations
+// Illustrative: a string wrapper that delegates to Array[rune] operations
 func (s Str) Map(f func(rune) rune) Str =
     Str(value = runesToString(toRunes(s.value).Map(f)))
 
@@ -731,13 +752,13 @@ func (s Str) IsAlpha() bool = s.NonEmpty() && toRunes(s.value).ForAll(unicode.Is
 |-------|-----------------|-----------------|
 | Nullable without Option | `func f() *T` returning nil | `func f() Option[T]` |
 | Bare `panic` for errors | `panic("error message")` — a hard error (`GALA-E0035`) | Return `Try[T]` or `Either[E, T]` |
-| `go_builtins.Panic` to propagate an error | `val x, err = f(); if err != nil { go_builtins.Panic(err) }` (or the same inside a `Try` block) | Wrap the `(T, error)` call in `Try`: `Try(f(args))` returns `Try[T]` (the error becomes a `Failure`); compose with `.Map`/`.FlatMap`/`bind` and return the `Try` — do not `.Get()` it inside a function that returns `Try` (rule 11f) |
+| `go_builtins.Panic` to propagate an error | `val x, err = f(); if err != nil { go_builtins.Panic(err) }` (or the same inside a `Try` block) | Wrap the `(T, error)` call in `Try`: `Try(f(args))` returns `Try[T]` (the error becomes a `Failure`); compose with `.Map`/`.FlatMap`/`bind` and return the `Try` — do not `.Get()` it inside a function that returns `Try` (rule 11e) |
 | `Try` around an error-**only** Go call | `Try(os.Rename(a, b))` — wrapping a Go func that returns ONLY `error` (no value) | `FromError(os.Rename(a, b))` — `Try(...)` of an error-only call compiles to `Try[error]` that captures the error as a *value*, so `IsFailure` is ALWAYS false (silent no-op). `FromError` (from `std`) returns `Try[Void]` and fails on non-nil error; compose/return it (don't `.Get()`). Reserve `Try(call)` for `(T, error)` calls |
 | `.Get()` inside an enclosing `Try(() => {...})` | `Try[T](() => { val x = Try(call()).Get(); return f(x) })` — the inner `.Get()` re-raises a `Failure` as a *panic* the outer `Try` re-catches | Compose with the monadic API: `Try(call()).Map((x) => f(x))` (or `.FlatMap` / `bind`). Nesting `.Get()` inside an outer `Try` defeats `Try`'s purpose — it round-trips a value through a panic |
 | Ignored error | `result, _ := fallibleOp()` | Handle with `Try` or check error |
 | Sentinel return value | Returning `""`, `0`, `-1`, or `nil` to signal "not found" / failure | Return `Option[T]` or `Try[T]` instead |
-| Go-style if-err-nil | `val x, err = f(); if err == nil { use(x) }` | `Try(() => f())` then `.Map`, `.GetOrElse`, or `match` |
-| Sequential if-err-nil fallback | Multiple `val x, err = f(); if err == nil { return x }` blocks trying alternatives | `Try(() => f1()).OrElse(Try(() => f2()))` chain |
+| Go-style if-err-nil | `val x, err = f(); if err == nil { use(x) }` | `Try(f)` (or `Try(f(args))`) then `.Map`, `.GetOrElse`, or `match` |
+| Sequential if-err-nil fallback | Multiple `val x, err = f(); if err == nil { return x }` blocks trying alternatives | `Try(f1).OrElse(Try(f2))` chain |
 | FlatMap vs OrElse confusion | Using `FlatMap` when fallback calls are independent | `OrElse` for independent fallbacks; `FlatMap` only when second call depends on first result |
 
 **Check**: Search for patterns like `val x, err = ...; if err == nil` or `if err != nil`. Multiple such blocks in sequence (trying alternatives and returning the first success) should use `Try` + `OrElse`. Single error checks should use `Try` + `Map`/`GetOrElse`/`match`.
@@ -762,8 +783,8 @@ func findBinary() string {
 ```gala
 // GOOD: functional fallback chain, no sentinel value
 func findBinary() Option[string] =
-    Try(() => exec.LookPath("gala"))
-        .OrElse(Try(() => exec.LookPath("gala.exe")))
+    Try(exec.LookPath("gala"))
+        .OrElse(Try(exec.LookPath("gala.exe")))
         .ToOption()
 ```
 
@@ -777,10 +798,10 @@ val answer = Try(getAnswer)              // works with GALA functions too
 **When to use FlatMap vs OrElse**:
 ```gala
 // OrElse: independent fallbacks (second doesn't need first's result)
-Try(() => lookupInCache(key)).OrElse(Try(() => lookupInDB(key)))
+Try(lookupInCache(key)).OrElse(Try(lookupInDB(key)))
 
 // FlatMap: dependent chain (second uses first's result)
-Try(() => findConfig()).FlatMap((path) => Try(() => readFile(path)))
+Try(findConfig).FlatMap((path) => Try(readFile(path)))
 ```
 
 **`go_builtins.Panic(err)` to propagate an error is the same anti-pattern as bare
@@ -863,7 +884,7 @@ FromError(os.Rename(a, b)).Get()
 `Failure`) — use it ONLY at a genuine edge (a test, `io.UnsafeRun`, or truly
 terminal code), NEVER inside a function that returns `Try` (compose with
 `.Map`/`.FlatMap`/`bind` and return the `Try`). Consistent with the
-unsafe-`.Get()` rule (11f) below.
+unsafe-`.Get()` rule (11e) below.
 
 **Verify by exercising an error path** — assert `IsFailure` on a deliberately
 bad call (`os.Rename` of a missing source, `os.WriteFile` into a missing dir) so
@@ -898,13 +919,91 @@ func RemoveAll(path string) Try[bool] =
     FromError(os.RemoveAll(path)).Map((_) => true)
 ```
 
-`.Get()` is safe only at the genuine edges enumerated in rule 11f (a test,
+`.Get()` is safe only at the genuine edges enumerated in rule 11e (a test,
 `io.UnsafeRun`, a guarded unwrap, an `Immutable` field). It is NOT made safe by
 sitting in a non-`Try` function that "must abort": a library function that
 produces a value from a fallible call should return `Try[T]` and let its caller
 decide — compose with `.Map`/`.FlatMap`/`bind`, don't `.Get()`-and-panic.
 
-### 11f. Unsafe `.Get()` unwrap (HIGH priority)
+### 11b. `Array.Grouped` / `Array.Sliding` over Index Loops (HIGH priority)
+
+| Issue | Pattern to Flag | Recommended Fix |
+|-------|-----------------|-----------------|
+| Index-stepping loop by 2 | `var i = 0; for i < x.Size() - 1 { use(x[i], x[i+1]); i += 2 }` | `ArrayOf(x...).Grouped(2).FoldLeft(...)` |
+| Sliding window loop | Manual index loop with window | `ArrayOf(x...).Sliding(n)` |
+
+### 11c. `val _ =` is a code smell — use a bare statement (HIGH priority)
+
+`val _ = <expr>` is **always** a smell. Whatever the right-hand side is, it should stand on its own as a statement.
+
+| Issue | Pattern to Flag | Recommended Fix |
+|-------|-----------------|-----------------|
+| Discard call result | `val _ = fs.WriteFileString(p, s, mode)` | `fs.WriteFileString(p, s, mode)` — bare call |
+| Discard match result | `val _ = x match { ... }` | `x match { ... }` — bare match |
+| Discard `error`-returning call | `val _ = file.Close()` | `file.Close()` — bare call (function-body), or `FromError(file.Close())` if inside a void lambda |
+| ForEach when match fits | `opt.ForEach((v) => ...)` when multiple cases needed | `opt match { case Some(v) => ...; case None() => ... }` |
+
+Rationale: `val _ = ...` adds noise without expressing any intent the bare expression doesn't already express. If the result genuinely matters, bind it to a real name and use it (e.g. assert `.IsSuccess()` in tests). If it doesn't, the call/match should stand alone.
+
+**Void-lambda exception.** Inside a lambda whose body is `func()` (no return), the analyzer rejects bare `error`-returning calls — error: "cannot discard error return from X — use FromError(X) to handle the error". Use `FromError(call())` from `std`: it returns `Try[Void]` and can itself stand as a bare statement (or chain `.OnFailure((err) => ...)`). Function-body bare calls are unaffected.
+
+**If bare-statement form does not transpile elsewhere** — that is a **transpiler bug**, not a license to keep `val _ =`. Open a repro test against the transpiler and fix the bug. Never work around a transpiler bug: report it with a minimal reproduction.
+
+### 11d. By-Name Argument Sugar for Zero-Arg Thunks (MEDIUM priority)
+
+When a parameter's expected type is a **zero-arg** function type (`func() T`, or
+void `func()`), a bare expression can be passed instead of an explicit `() => expr`
+lambda — the transpiler lifts it into a thunk automatically (`f(expr)` means
+`f(() => expr)`). Prefer the bare-expression form; it strips ceremony from the
+most common `Try` and `Future` call sites while preserving the lazy, panic/error-
+catching semantics.
+
+| Issue | Pattern to Flag | Recommended Fix |
+|-------|-----------------|-----------------|
+| Zero-arg lambda wrapping a single expression | `Try(() => strconv.Atoi(s))` | `Try(strconv.Atoi(s))` |
+| Zero-arg lambda for a Future body | `Future(() => compute())` / `Future[int](() => compute())` | `Future(compute())` / `Future[int](compute())` |
+| Zero-arg lambda over a Go `(T, error)` call | `Try(() => os.ReadFile(p))` | `Try(os.ReadFile(p))` — the error is still caught as `Failure` |
+| Zero-arg lambda in any thunk param | `FutureOn(() => compute(), pool)` | `FutureOn(compute(), pool)` |
+
+**Preferred forms, most concise first:**
+1. **Bare function reference** — when the lambda body is *exactly* a call to a
+   zero-arg function with no other arguments, pass the reference (see rules 2 and
+   11): `Try(() => os.TempDir())` → `Try(os.TempDir)`.
+2. **Bare expression (by-name sugar)** — for every other single-expression body,
+   drop the `() =>`: `Try(() => f(x))` → `Try(f(x))`, `Future(() => a * b)` →
+   `Future(a * b)`.
+
+**Check**: Grep for `(() => ` — an open paren immediately followed by a zero-arg
+lambda (empty parameter list). When the lambda body is a **single expression**
+(the char after `=>` is not `{`), flag it and remove the `() => `. Applies to
+`Try`, `Future`, `FutureOn`, and any call whose argument is a zero-parameter
+lambda.
+
+**Do NOT flag** (keep the explicit lambda):
+- **Block bodies** — `Future(() => { setup(); compute() })` cannot be desugared;
+  only single-expression lambdas convert.
+- **Lambdas with parameters** — `xs.Map((x) => x * 2)` is a `func(T) U`, not a
+  zero-arg thunk. This rule is strictly about `() =>` (empty parameter list).
+- **A body that is itself a function value** — e.g. `schedule(() => makeHandler())`
+  where `makeHandler()` returns a `func()`. Dropping `() =>` would pass the inner
+  function through directly (the sugar never re-wraps an existing function value),
+  changing meaning. Keep the lambda when the body's own type is a zero-arg function.
+
+**Good pattern**:
+```gala
+val parsed = Try(strconv.Atoi(input))   // was Try(() => strconv.Atoi(input))
+val result = Try(riskyDivide(10, 2))    // was Try(() => riskyDivide(10, 2))
+val async  = Future(loadFromDB(id))     // was Future(() => loadFromDB(id))
+val onPool = FutureOn(compute(), pool)  // was FutureOn(() => compute(), pool)
+```
+
+**Bad pattern** — redundant zero-arg lambda wrapper:
+```gala
+val parsed = Try(() => strconv.Atoi(input))
+val async  = Future(() => loadFromDB(id))
+```
+
+### 11e. Unsafe `.Get()` unwrap (HIGH priority)
 
 `.Get()` on a `Try`/`Option`/`Either` **panics on the empty/failure case**. It
 throws away the type system's proof obligation instead of discharging it — the
@@ -963,90 +1062,6 @@ The three `.Get()`-related rules are mutually consistent — none recommends a b
 prefers `match`/`.GetOrElse`/composition, reserving `.Get()` for guarded or
 terminal edges.
 
-### 11b. `Array.Grouped` / `Array.Sliding` over Index Loops (HIGH priority)
-
-| Issue | Pattern to Flag | Recommended Fix |
-|-------|-----------------|-----------------|
-| Index-stepping loop by 2 | `var i = 0; for i < x.Size() - 1 { use(x[i], x[i+1]); i += 2 }` | `ArrayOf(x...).Grouped(2).FoldLeft(...)` |
-| Sliding window loop | Manual index loop with window | `ArrayOf(x...).Sliding(n)` |
-
-### 11c. Go Struct Named-Arg Construction (HIGH priority)
-
-| Issue | Pattern to Flag | Recommended Fix |
-|-------|-----------------|-----------------|
-| Go struct colon literal | `GoType{Field: value}` | `GoType(Field = value)` — GALA named-arg syntax works for Go structs |
-
-### 11d. `val _ =` is a code smell — use a bare statement (HIGH priority)
-
-`val _ = <expr>` is **always** a smell. Whatever the right-hand side is, it should stand on its own as a statement.
-
-| Issue | Pattern to Flag | Recommended Fix |
-|-------|-----------------|-----------------|
-| Discard call result | `val _ = fs.WriteFileString(p, s, mode)` | `fs.WriteFileString(p, s, mode)` — bare call |
-| Discard match result | `val _ = x match { ... }` | `x match { ... }` — bare match |
-| Discard `error`-returning call | `val _ = file.Close()` | `file.Close()` — bare call (function-body), or `FromError(file.Close())` if inside a void lambda |
-| ForEach when match fits | `opt.ForEach((v) => ...)` when multiple cases needed | `opt match { case Some(v) => ...; case None() => ... }` |
-
-Rationale: `val _ = ...` adds noise without expressing any intent the bare expression doesn't already express. If the result genuinely matters, bind it to a real name and use it (e.g. assert `.IsSuccess()` in tests). If it doesn't, the call/match should stand alone.
-
-**Void-lambda exception.** Inside a lambda whose body is `func()` (no return), the analyzer rejects bare `error`-returning calls — error: "cannot discard error return from X — use FromError(X) to handle the error". Use `FromError(call())` from `std`: it returns `Try[Void]` and can itself stand as a bare statement (or chain `.OnFailure((err) => ...)`). Function-body bare calls are unaffected.
-
-**If bare-statement form does not transpile elsewhere** — that is a **transpiler bug**, not a license to keep `val _ =`. Open a repro test against the transpiler and fix the bug. Per CLAUDE.md rule 6, never work around transpiler bugs.
-
-### 11e. By-Name Argument Sugar for Zero-Arg Thunks (MEDIUM priority)
-
-When a parameter's expected type is a **zero-arg** function type (`func() T`, or
-void `func()`), a bare expression can be passed instead of an explicit `() => expr`
-lambda — the transpiler lifts it into a thunk automatically (`f(expr)` means
-`f(() => expr)`). Prefer the bare-expression form; it strips ceremony from the
-most common `Try` and `Future` call sites while preserving the lazy, panic/error-
-catching semantics.
-
-| Issue | Pattern to Flag | Recommended Fix |
-|-------|-----------------|-----------------|
-| Zero-arg lambda wrapping a single expression | `Try(() => strconv.Atoi(s))` | `Try(strconv.Atoi(s))` |
-| Zero-arg lambda for a Future body | `Future(() => compute())` / `Future[int](() => compute())` | `Future(compute())` / `Future[int](compute())` |
-| Zero-arg lambda over a Go `(T, error)` call | `Try(() => os.ReadFile(p))` | `Try(os.ReadFile(p))` — the error is still caught as `Failure` |
-| Zero-arg lambda in any thunk param | `FutureOn(() => compute(), pool)` | `FutureOn(compute(), pool)` |
-
-**Preferred forms, most concise first:**
-1. **Bare function reference** — when the lambda body is *exactly* a call to a
-   zero-arg function with no other arguments, pass the reference (see rules 2 and
-   11): `Try(() => os.TempDir())` → `Try(os.TempDir)`.
-2. **Bare expression (by-name sugar)** — for every other single-expression body,
-   drop the `() =>`: `Try(() => f(x))` → `Try(f(x))`, `Future(() => a * b)` →
-   `Future(a * b)`.
-
-**Check**: Grep for `(() => ` — an open paren immediately followed by a zero-arg
-lambda (empty parameter list). When the lambda body is a **single expression**
-(the char after `=>` is not `{`), flag it and remove the `() => `. Applies to
-`Try`, `Future`, `FutureOn`, and any call whose argument is a zero-parameter
-lambda.
-
-**Do NOT flag** (keep the explicit lambda):
-- **Block bodies** — `Future(() => { setup(); compute() })` cannot be desugared;
-  only single-expression lambdas convert.
-- **Lambdas with parameters** — `xs.Map((x) => x * 2)` is a `func(T) U`, not a
-  zero-arg thunk. This rule is strictly about `() =>` (empty parameter list).
-- **A body that is itself a function value** — e.g. `schedule(() => makeHandler())`
-  where `makeHandler()` returns a `func()`. Dropping `() =>` would pass the inner
-  function through directly (the sugar never re-wraps an existing function value),
-  changing meaning. Keep the lambda when the body's own type is a zero-arg function.
-
-**Good pattern**:
-```gala
-val parsed = Try(strconv.Atoi(input))   // was Try(() => strconv.Atoi(input))
-val result = Try(riskyDivide(10, 2))    // was Try(() => riskyDivide(10, 2))
-val async  = Future(loadFromDB(id))     // was Future(() => loadFromDB(id))
-val onPool = FutureOn(compute(), pool)  // was FutureOn(() => compute(), pool)
-```
-
-**Bad pattern** — redundant zero-arg lambda wrapper:
-```gala
-val parsed = Try(() => strconv.Atoi(input))
-val async  = Future(() => loadFromDB(id))
-```
-
 ### 12. Naming Conventions (LOW priority)
 
 | Issue | Pattern to Flag | Recommended Fix |
@@ -1064,6 +1079,22 @@ val async  = Future(() => loadFromDB(id))
 
 ---
 
+### 14. Other Best-Practice Checks (MEDIUM priority)
+
+| Area | Pattern to Flag | Recommended Fix |
+|---|---|---|
+| Byte vs character size | `.Size()` used as the bound of a byte loop or byte offset on a string (it counts characters, so multibyte input is truncated) | `.ByteSize()` when you mean bytes; `.Size()` when you mean characters |
+| Safe indexing | `arr.Get(i)` after a manual bounds check | `arr.GetOption(i)` |
+| Nested `FlatMap` pyramids | `FlatMap` nested more than once, or a later step reusing an earlier value | a `bind` / `also` block |
+| Trivial lambdas | `nums.Map((x) => x * 2)`, `people.Map((p) => p.Name)` | underscore shorthand: `nums.Map(_ * 2)`, `people.Map(_.Name)` |
+| Verbose tuples | `Tuple[int, string](V1 = 1, V2 = "a")` | `(1, "a")`; destructure with `val (x, y) = t` or `case (a, b) =>` |
+| Go conversions | `[]byte(s)`, `string(bytes)` | `ToBytes(s)`, `ToString(bytes)`, `ToRunes(s)` from `go_interop` |
+| Callback signatures | `any` in a public callback parameter (forces callers to annotate lambdas) | a named function type with concrete params: `type Handler func(Request) Response` |
+| Struct declaration form | block `type Cfg struct { ... }` for a GALA-native type | shorthand `struct Cfg(Name string, Tries int = 3)`; keep the block form for Go-shaped types |
+| New field on a published struct | added without a default | give it a default so existing call sites stay correct |
+| Undocumented export | an exported declaration with no `//` comment directly above it, a comment not starting with the name, or a blank line between comment and declaration | `// Name does ...` directly above; parameters as `name: description` lines |
+| Go-style tests | `testing.T` / testify in `_test.gala` files | `martianoff/gala/test`: `func TestXxx(t T) T` with `Eq`, `IsTrue`, ...; table-driven with `RunCases` |
+
 ## Directories to Skip
 
 - `bazel-*` (build outputs)
@@ -1073,6 +1104,7 @@ val async  = Future(() => loadFromDB(id))
 
 ## Severity Levels
 
+- **ERROR**: Code the compiler rejects — any `GALA-Exxxx` hard error (rules 0, 0b, 0c, and rows marked as hard errors elsewhere). Must be fixed; the file does not compile.
 - **HIGH**: Violations of core GALA principles (immutability, pattern matching, functional patterns, sealed types, collection delegation, error handling with Try/Option)
 - **MEDIUM**: Missed opportunities for type inference, unnecessary variables, expression-bodied functions
 - **LOW**: Style and naming conventions
@@ -1093,6 +1125,7 @@ Generate a report in this format:
 
 | Severity | Count |
 |----------|-------|
+| ERROR    | W     |
 | HIGH     | X     |
 | MEDIUM   | Y     |
 | LOW      | Z     |

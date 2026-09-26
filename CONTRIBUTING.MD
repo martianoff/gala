@@ -309,12 +309,28 @@ bazel run //:gazelle       # if files were added or removed
    - `build:` / `ci:` -- Bazel, toolchain, or CI workflow changes
    - `chore:` -- maintenance (version bumps, housekeeping)
 
-5. Push and open a pull request against `master`.
+5. Run the project's review passes over your change. They are Claude Code skills in
+   `.claude/skills` and built-in commands:
+   - `/gala-lint` on the changed `.gala` files
+   - `/simplify` for reuse, simplification, and efficiency cleanups
+   - `/review` for correctness
 
-6. In the PR description, include:
+   Fix each finding or explain in the PR why it doesn't apply.
+
+6. Push and open a pull request against `master`.
+
+7. In the PR description, include:
    - What the change does and why
    - Example GALA code demonstrating the feature (if applicable)
    - Which documentation files were updated
+   - Any breaking change, and who it affects
+
+   Keep it accurate: every claim should be true of the diff, and every notable change in
+   the diff should be mentioned.
+
+8. Wait for CI to be green on your final commit. A PR is ready for review only when
+   every check has passed. "No checks reported" usually means the branch conflicts with
+   `master`; rebase so the checks can run.
 
 ## Branch naming
 

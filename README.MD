@@ -694,6 +694,8 @@ Contributions are welcome. Please ensure:
 3. `bazel run //:gazelle` has been run if files were added or removed
 4. New features include examples in `examples/`
 5. Documentation is updated for grammar/feature changes
+6. The change has been through `/gala-lint`, `/simplify`, and `/review`
+7. CI is green on the final commit
 
 See [CONTRIBUTING.MD](CONTRIBUTING.MD) for details.
 

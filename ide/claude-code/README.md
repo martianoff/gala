@@ -35,7 +35,8 @@ The plugin ships two skills.
 The rulebook applies to any GALA project, which is why it ships here rather than
 staying in the compiler repo — a downstream project is where a linter is most
 needed. This directory holds the canonical copy; the compiler repo's own
-`.claude/skills/gala-lint` symlinks to it, so there is one copy to keep current.
+`.claude/skills/gala-lint` is a short pointer to it (not a symlink, so it also
+works on Windows checkouts), so there is one copy to keep current.
 
 Three skills in the compiler repo are deliberately **not** shipped, because they
 assume that repo: `gala-code` (generates GALA with tests, but its layout and
