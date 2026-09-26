@@ -471,8 +471,9 @@ func goPackageContributed(rich *transpiler.RichAST, importPath string) bool {
 // merged metadata is the primary path, but it is not a complete record of what
 // a package exports. Package-level `val`/`var` declarations, for instance,
 // cross a package boundary only as RichAST.ImportedVals — exported names,
-// keyed by the declaring package — never into the importer's own PackageVals,
-// which the transformer pre-registers as the current package's names. Rather
+// keyed by the declaring package's import path — never into the importer's
+// own PackageVals, which the transformer pre-registers as the current
+// package's names. Rather
 // than tie this existence check to how each export kind is modelled for code
 // generation, the declarations are read directly. Any future export kind the
 // metadata does not model is covered by the same net.

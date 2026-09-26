@@ -436,9 +436,11 @@ func (m *ImportManager) dotImportUsedInAST(file *ast.File, pkgName string, richA
 			exports[sym] = true
 		}
 	}
-	for key, meta := range richAST.ImportedVals {
-		if meta != nil && strings.HasPrefix(key, pkgName+".") {
-			exports[meta.Name] = true
+	for _, entry := range m.dotImports {
+		if entry.PkgName == pkgName {
+			for name := range richAST.ImportedVals[entry.Path] {
+				exports[name] = true
+			}
 		}
 	}
 	if len(exports) == 0 {

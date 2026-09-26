@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// crossPkgValFixture is a module with one library package declaring
-// package-level vals and a var, read from another package in the tests below.
+// crossPkgValFixture is a module whose library packages declare package-level
+// vals and vars, read from another package in the tests below.
 func crossPkgValFixture(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
@@ -33,10 +33,21 @@ sealed type Color {
 
 struct Theme(Name string, Accent Color)
 
+struct Adder(N int)
+
+func (a Adder) Apply(x int) int = a.N + x
+
+struct Halver()
+
+func (h Halver) Unapply(n int) Option[int] = When(n % 2 == 0, n / 2)
+
 val Green = NamedColor(2)
 val Default = Theme("classic", Red())
 val Greeting = "hello"
+val Silent = s"$Greeting" == ""
 val Limit = 50
+val AddTen = Adder(10)
+val Halve = Halver()
 val secret = 7
 var Hits = 0
 
@@ -45,6 +56,16 @@ func ToSgr(c Color) string = c match {
     case NamedColor(i) => s"3$i"
 }
 `)
+	// Builds a colors struct through an import alias.
+	write("theme/theme.gala", `package theme
+
+import c "example.com/xpkg/colors"
+
+val Dark = c.Theme("dark", c.Red())
+`)
+	// Two packages that share a name: their bindings must not collide.
+	write("a/util/util.gala", "package util\n\nval Limit = 3\n")
+	write("b/util/util.gala", "package util\n\nvar Limit = 4\n")
 	return root
 }
 
@@ -122,6 +143,48 @@ func main() {
 }`,
 			notContains: []string{"colors.Green.Get().Get()"},
 		},
+		{
+			name: "calling an imported val whose type has Apply",
+			src: `package main
+
+import "example.com/xpkg/colors"
+
+func main() {
+    Println(colors.AddTen(5))
+}`,
+			contains: []string{"colors.AddTen.Get().Apply(5)"},
+		},
+		{
+			name: "an imported val as an extractor",
+			src: `package main
+
+import "example.com/xpkg/colors"
+
+func half(n int) int = n match {
+    case colors.Halve(h) => h
+    case _ => -1
+}
+
+func main() {
+    Println(half(8))
+}`,
+			contains: []string{"colors.Halve.Get().Unapply("},
+		},
+		{
+			name: "same-named packages keep their own bindings",
+			src: `package main
+
+import (
+    ua "example.com/xpkg/a/util"
+    ub "example.com/xpkg/b/util"
+)
+
+func main() {
+    Println(ua.Limit + ub.Limit)
+}`,
+			contains:    []string{"ua.Limit.Get() + ub.Limit"},
+			notContains: []string{"ub.Limit.Get()"},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -137,8 +200,9 @@ func main() {
 	}
 }
 
-// TestCrossPackageValAssignmentRejected: reassigning another package's `val`
-// is as immutable as reassigning a same-package one.
+// TestCrossPackageValAssignmentRejected: reassigning a `val` is rejected
+// whether it is another package's or this one's, and whichever assignment form
+// is used.
 func TestCrossPackageValAssignmentRejected(t *testing.T) {
 	root := crossPkgValFixture(t)
 	tests := []struct {
@@ -147,7 +211,9 @@ func TestCrossPackageValAssignmentRejected(t *testing.T) {
 		wantErr string
 	}{
 		{"assignment", "colors.Green = colors.NamedColor(9)", "cannot assign to immutable variable colors.Green"},
+		{"compound assignment", "colors.Limit += 1", "cannot assign to immutable variable colors.Limit"},
 		{"increment", "colors.Limit++", "cannot increment/decrement immutable variable colors.Limit"},
+		{"same-package increment", "local++", "cannot increment/decrement immutable variable local"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -155,8 +221,11 @@ func TestCrossPackageValAssignmentRejected(t *testing.T) {
 
 import "example.com/xpkg/colors"
 
+val local = 1
+
 func main() {
     `+tc.stmt+`
+    Println(colors.Limit, local)
 }`)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tc.wantErr)
@@ -165,16 +234,19 @@ func main() {
 }
 
 // TestCrossPackageValMetadata: the analyzer surfaces an imported package's
-// exported bindings package-qualified, with the element types their
+// exported bindings keyed by import path, with the element types their
 // initializers settle, and keeps them out of the importer's own PackageVals.
 func TestCrossPackageValMetadata(t *testing.T) {
 	root := crossPkgValFixture(t)
 	const src = `package main
 
-import "example.com/xpkg/colors"
+import (
+    "example.com/xpkg/colors"
+    "example.com/xpkg/theme"
+)
 
 func main() {
-    Println(colors.ToSgr(colors.Green))
+    Println(colors.ToSgr(colors.Green), theme.Dark.Name)
 }`
 	p := transpiler.NewAntlrGalaParser()
 	tree, _, err := p.Parse(src)
@@ -185,20 +257,28 @@ func main() {
 
 	assert.Empty(t, richAST.PackageVals, "imported bindings must not become the importer's own")
 
-	want := map[string]struct {
-		typ   string
-		isVal bool
+	const colorsPath, themePath = "example.com/xpkg/colors", "example.com/xpkg/theme"
+	want := []struct {
+		path, name, typ string
+		isVal           bool
 	}{
-		"colors.Green":    {"colors.Color", true},
-		"colors.Default":  {"colors.Theme", true},
-		"colors.Greeting": {"string", true},
-		"colors.Hits":     {"int", false},
+		{colorsPath, "Green", "colors.Color", true},
+		{colorsPath, "Default", "colors.Theme", true},
+		{colorsPath, "Greeting", "string", true},
+		{colorsPath, "AddTen", "colors.Adder", true},
+		{colorsPath, "Halve", "colors.Halver", true},
+		{colorsPath, "Hits", "int", false},
+		// Built through the alias `c`: the type names the package, not the alias.
+		{themePath, "Dark", "colors.Theme", true},
 	}
-	for key, w := range want {
-		pv := richAST.ImportedVals[key]
-		require.NotNil(t, pv, "ImportedVals missing %s", key)
-		assert.Equal(t, w.typ, pv.Type.String(), "type of %s", key)
-		assert.Equal(t, w.isVal, pv.IsVal, "val/var classification of %s", key)
+	for _, w := range want {
+		pv := richAST.ImportedVals[w.path][w.name]
+		require.NotNil(t, pv, "ImportedVals missing %s %s", w.path, w.name)
+		assert.Equal(t, w.typ, pv.Type.String(), "type of %s", w.name)
+		assert.Equal(t, w.isVal, pv.IsVal, "val/var classification of %s", w.name)
 	}
-	assert.NotContains(t, richAST.ImportedVals, "colors.secret", "unexported bindings are not importable")
+	// `s"$Greeting" == ""` is a comparison, not a string literal.
+	require.NotNil(t, richAST.ImportedVals[colorsPath]["Silent"])
+	assert.NotEqual(t, "string", richAST.ImportedVals[colorsPath]["Silent"].Type.String())
+	assert.NotContains(t, richAST.ImportedVals[colorsPath], "secret", "unexported bindings are not importable")
 }

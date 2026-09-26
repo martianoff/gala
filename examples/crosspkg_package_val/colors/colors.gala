@@ -13,6 +13,18 @@ sealed type Color {
 // Theme pairs a display name with its accent color.
 struct Theme(Name string, Accent Color)
 
+// Adder adds N to its argument when called.
+struct Adder(N int)
+
+// Apply returns x plus the adder's N.
+func (a Adder) Apply(x int) int = a.N + x
+
+// Halver extracts half of an even number.
+struct Halver()
+
+// Unapply yields n / 2 for an even n.
+func (h Halver) Unapply(n int) Option[int] = When(n % 2 == 0, n / 2)
+
 // Green is a sealed-variant val whose element type is the parent Color.
 val Green = NamedColor(2)
 
@@ -21,6 +33,12 @@ val Default = Theme("classic", Red())
 
 // Greeting is a string val.
 val Greeting = "hello"
+
+// AddTen is a callable val: importers call it as `colors.AddTen(5)`.
+val AddTen = Adder(10)
+
+// Halve is an extractor val: importers match with `case colors.Halve(h)`.
+val Halve = Halver()
 
 // Hits is a `var`: a plain, reassignable Go variable. It is never wrapped, so
 // it must never be unwrapped either.

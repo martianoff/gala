@@ -37,6 +37,14 @@ func main() {
     }
     Println(s"idx=$idx")
 
+    // Calling a val whose type defines Apply, and matching with a val extractor.
+    Println(s"added=${colors.AddTen(5)}")
+    val half = 8 match {
+        case colors.Halve(h) => h
+        case _ => -1
+    }
+    Println(s"half=$half")
+
     // Dot-imported package: bare references.
     Println(show(Blue))
     Println(s"label=$Label accent=${Accent.Name}")

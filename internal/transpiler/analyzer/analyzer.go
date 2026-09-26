@@ -2,6 +2,7 @@ package analyzer
 
 import (
 	"fmt"
+	"go/ast"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -2946,28 +2947,18 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (_ *transpiler.RichAST, re
 	return pkgAST, nil
 }
 
-// mergeOwnPackageVals folds one file's package-level bindings into the
-// package-wide metadata analyzePackage is assembling. RichAST.Merge leaves
-// PackageVals alone (between files of one package it has no package boundary
-// to qualify them by), yet a package's bindings are part of what it exports:
-// an importer needs them to unwrap `pkg.Name` from std.Immutable[T].
-//
-// Each file's analysis records its siblings' bindings too, but a binding's
-// type is inferred most completely by its OWN file's pass — that pass runs
-// after every sibling's types and functions are known. So an entry declared in
-// the file just analyzed always wins; a sibling's view only fills a gap or
-// replaces an unknown type.
+// mergeOwnPackageVals folds one file's exported package-level bindings into the
+// package metadata, which importers read to unwrap `pkg.Name`. A binding's own
+// file infers its type most completely, so its entry beats a sibling's view.
 func mergeOwnPackageVals(pkgAST, res *transpiler.RichAST, isThisFile func(string) bool) {
 	for name, pv := range res.PackageVals {
-		if pv == nil {
+		if pv == nil || !ast.IsExported(name) {
 			continue
 		}
 		if pkgAST.PackageVals == nil {
 			pkgAST.PackageVals = make(map[string]*transpiler.PackageValMetadata)
 		}
-		existing, ok := pkgAST.PackageVals[name]
-		if !ok || isThisFile(pv.DefinedIn) ||
-			(transpiler.IsUnusable(existing.Type) && !transpiler.IsUnusable(pv.Type)) {
+		if isThisFile(pv.DefinedIn) || transpiler.PreferPackageVal(pkgAST.PackageVals[name], pv) {
 			pkgAST.PackageVals[name] = pv
 		}
 	}
@@ -3029,6 +3020,7 @@ func (a *galaAnalyzer) mergeAnalyzedClosureAt(target *transpiler.RichAST, path s
 		return ""
 	}
 	target.Merge(cached)
+	target.AddImportedVals(path, cached.PackageVals)
 	for _, imp := range a.analyzedPkgImports[path] {
 		if imp == "" || imp == path {
 			continue
@@ -4311,8 +4303,8 @@ func validateDefaultParams(funcMeta *transpiler.FunctionMetadata, line, column i
 // a same-file reference already is. Without this, the cross-file reference emits
 // the raw wrapper where a plain `T` is expected and `go build` rejects it.
 //
-// The same records cross package boundaries as RichAST.ImportedVals (see
-// RichAST.Merge), which is how an importer unwraps `pkg.Name`.
+// A package's exported records reach its importers as RichAST.ImportedVals
+// (see RichAST.AddImportedVals), which is how an importer unwraps `pkg.Name`.
 //
 // The element type is recorded when it can be determined cheaply (an explicit
 // annotation, or an initializer shape inferPackageValInitType understands);
@@ -4320,6 +4312,7 @@ func validateDefaultParams(funcMeta *transpiler.FunctionMetadata, line, column i
 // classification, so an unknown type still produces correct code — it merely
 // yields weaker downstream type inference for that identifier.
 func (a *galaAnalyzer) extractPackageVals(sourceFile *grammar.SourceFileContext, pkgName string, richAST *transpiler.RichAST, docs map[int]string, absFilePath string) {
+	var importPaths map[string]string // built on first use
 	for _, topDecl := range sourceFile.AllTopLevelDeclaration() {
 		var (
 			idList   grammar.IIdentifierListContext
@@ -4362,16 +4355,13 @@ func (a *galaAnalyzer) extractPackageVals(sourceFile *grammar.SourceFileContext,
 			if typeCtx != nil {
 				valType = a.resolveTypeWithParams(typeCtx.GetText(), pkgName, nil)
 			} else if len(exprs) == len(names) {
-				valType = a.inferPackageValInitType(exprs[i].GetText(), pkgName, richAST)
+				if importPaths == nil {
+					importPaths = importPathsByQualifier(sourceFile, richAST)
+				}
+				valType = a.inferPackageValInitType(exprs[i].GetText(), pkgName, richAST, importPaths)
 			}
 			if richAST.PackageVals == nil {
 				richAST.PackageVals = make(map[string]*transpiler.PackageValMetadata)
-			}
-			// Prefer a known type: don't let a later (e.g. sibling) Nil entry
-			// clobber a precise one already recorded for the same name.
-			if existing, ok := richAST.PackageVals[name]; ok &&
-				!transpiler.IsUnusable(existing.Type) && transpiler.IsUnusable(valType) {
-				continue
 			}
 			// Doc, position and file are written together with the type, as one
 			// declaration's description: merging them field-wise across passes
@@ -4380,7 +4370,7 @@ func (a *galaAnalyzer) extractPackageVals(sourceFile *grammar.SourceFileContext,
 			// The doc is the declaration's, shared by every name it binds
 			// (`val a, b = 1, 2`), the way Go documents a grouped declaration;
 			// the position is each identifier's own.
-			richAST.PackageVals[name] = &transpiler.PackageValMetadata{
+			pv := &transpiler.PackageValMetadata{
 				Name:      name,
 				Type:      valType,
 				IsVal:     isVal,
@@ -4388,50 +4378,54 @@ func (a *galaAnalyzer) extractPackageVals(sourceFile *grammar.SourceFileContext,
 				Pos:       transpiler.PosFromToken(idCtx.GetStart()),
 				DefinedIn: absFilePath,
 			}
+			if transpiler.PreferPackageVal(richAST.PackageVals[name], pv) {
+				richAST.PackageVals[name] = pv
+			}
 		}
 	}
 }
 
 // inferPackageValInitType determines the element type of a package-level
-// binding from its initializer's source text, for the shapes whose type the
-// collected metadata settles without full expression inference:
+// binding from its initializer's source text, for the shapes the collected
+// metadata settles without full expression inference:
 //
 //   - a literal (`3`, `"x"`, `true`, `s"..."`);
 //   - a reference to another package-level binding (`Other`, `pkg.Other`);
-//   - a constructor or function call (`Name(...)`, `pkg.Name(...)`): a
-//     companion's (e.g. a sealed variant's) Apply result, a struct's own type,
-//     or a function's declared return type.
+//   - a non-generic constructor or function call (`Name(...)`, `pkg.Name(...)`):
+//     a companion's (e.g. a sealed variant's) Apply result, a struct's own
+//     type, or a function's declared return type.
 //
-// Generic callees are left alone — their result depends on type arguments this
-// text-level view cannot infer — and anything else yields NilType. An unknown
-// type still produces correct unwrapping at the use site (that needs only the
-// val/var classification); what it costs is downstream inference, e.g. which
-// fields of an imported struct-typed val are themselves Immutable.
-func (a *galaAnalyzer) inferPackageValInitType(expr, pkgName string, richAST *transpiler.RichAST) transpiler.Type {
+// Anything else yields NilType. That still unwraps correctly at a use site
+// (which needs only the val/var classification) but weakens downstream
+// inference, e.g. which fields of an imported struct-typed val are Immutable.
+// A reference to a binding declared later in the same file is not resolved.
+//
+// importPaths maps each import qualifier of the declaring file to its path.
+func (a *galaAnalyzer) inferPackageValInitType(expr, pkgName string, richAST *transpiler.RichAST, importPaths map[string]string) transpiler.Type {
 	if lit := inferLiteralType(expr); lit != "" {
 		return transpiler.BasicType{Name: lit}
-	}
-	if len(expr) >= 3 && (expr[0] == 's' || expr[0] == 'f') && expr[1] == '"' && expr[len(expr)-1] == '"' {
-		return transpiler.BasicType{Name: "string"}
 	}
 
 	qualifier, name, rest := splitQualifiedHead(expr)
 	if name == "" {
 		return transpiler.NilType{}
 	}
-	pkg := qualifier
+	var importPath, pkg string
 	if qualifier != "" {
-		if actual, ok := richAST.ImportAliases[qualifier]; ok {
-			pkg = actual
+		var ok bool
+		if importPath, ok = importPaths[qualifier]; !ok {
+			return transpiler.NilType{}
+		}
+		pkg = richAST.Packages[importPath]
+		if pkg == "" {
+			pkg = qualifier
 		}
 	}
 
 	if rest == "" { // a reference to another binding
-		var pv *transpiler.PackageValMetadata
-		if qualifier == "" {
-			pv = richAST.PackageVals[name]
-		} else {
-			pv = richAST.ImportedVals[pkg+"."+name]
+		pv := richAST.PackageVals[name]
+		if qualifier != "" {
+			pv = richAST.ImportedVals[importPath][name]
 		}
 		if pv == nil {
 			return transpiler.NilType{}
@@ -4439,7 +4433,7 @@ func (a *galaAnalyzer) inferPackageValInitType(expr, pkgName string, richAST *tr
 		return pv.Type
 	}
 
-	if rest[0] != '(' || closingParen(rest) != len(rest)-1 {
+	if rest[0] != '(' || balancedEnd(rest) != len(rest)-1 {
 		return transpiler.NilType{}
 	}
 	key := name
@@ -4452,26 +4446,53 @@ func (a *galaAnalyzer) inferPackageValInitType(expr, pkgName string, richAST *tr
 		if len(meta.TypeParams) > 0 {
 			return transpiler.NilType{}
 		}
+		// Mirror the transformer's constructor dispatch: a struct whose field
+		// count matches the arguments is built as a literal, otherwise an Apply
+		// (a sealed case's companion, or the struct's own) is called.
 		apply := meta.Methods["Apply"]
+		fields, args := len(meta.FieldNames), callArgCount(rest)
 		switch {
-		case apply != nil && len(meta.FieldNames) == 0:
-			if len(apply.TypeParams) > 0 || transpiler.IsUnusable(apply.ReturnType) {
-				return transpiler.NilType{}
-			}
-			return apply.ReturnType
-		case apply == nil && len(meta.FieldNames) > 0:
-			typeText := name
+		case fields > 0 && (apply == nil || args == fields) && !(meta.IsSealed && apply != nil),
+			fields == 0 && apply == nil && args == 0:
 			if qualifier != "" {
-				typeText = qualifier + "." + name
+				return transpiler.NamedType{Package: pkg, Name: name}
 			}
-			return a.resolveTypeWithParams(typeText, pkgName, nil)
+			return a.resolveTypeWithParams(name, pkgName, nil)
+		case apply != nil && len(apply.TypeParams) == 0:
+			return apply.ReturnType
 		}
 		return transpiler.NilType{}
 	}
-	if fn := richAST.Functions[key]; fn != nil && len(fn.TypeParams) == 0 && !transpiler.IsUnusable(fn.ReturnType) {
+	if fn := richAST.Functions[key]; fn != nil && len(fn.TypeParams) == 0 {
 		return fn.ReturnType
 	}
 	return transpiler.NilType{}
+}
+
+// importPathsByQualifier maps each named (non-dot, non-blank) import of
+// sourceFile to its path, keyed by the qualifier the file writes: the explicit
+// alias, else the package's real name.
+func importPathsByQualifier(sourceFile *grammar.SourceFileContext, richAST *transpiler.RichAST) map[string]string {
+	out := make(map[string]string)
+	for _, impDecl := range sourceFile.AllImportDeclaration() {
+		for _, spec := range impDecl.(*grammar.ImportDeclarationContext).AllImportSpec() {
+			s := spec.(*grammar.ImportSpecContext)
+			path := strings.Trim(s.STRING().GetText(), "\"")
+			qualifier := richAST.Packages[path]
+			if aliasIdent := s.Identifier(); aliasIdent != nil {
+				qualifier = aliasIdent.GetText()
+			} else if s.GetChildCount() > 1 {
+				continue // dot import
+			}
+			if qualifier == "" {
+				qualifier = path[strings.LastIndex(path, "/")+1:]
+			}
+			if qualifier != "." && qualifier != "_" {
+				out[qualifier] = path
+			}
+		}
+	}
+	return out
 }
 
 // splitQualifiedHead splits the leading `name` or `qualifier.name` identifier
@@ -4503,25 +4524,82 @@ func splitQualifiedHead(expr string) (qualifier, name, rest string) {
 	return "", name, rest
 }
 
-// closingParen returns the index of the parenthesis closing the one at s[0],
-// skipping string and rune literals, or -1 when it is unbalanced.
-func closingParen(s string) int {
+// callArgCount returns the number of top-level arguments in the balanced,
+// parenthesized list s, or -1 when a literal in it is unterminated.
+func callArgCount(s string) int {
+	inner := s[1 : len(s)-1]
+	if inner == "" {
+		return 0
+	}
+	n, depth := 1, 0
+	for i := 0; i < len(inner); i++ {
+		switch c := inner[i]; c {
+		case '(', '[', '{':
+			depth++
+		case ')', ']', '}':
+			depth--
+		case ',':
+			if depth == 0 {
+				n++
+			}
+		case '"', '\'', '`':
+			interpolated := c == '"' && i > 0 && (inner[i-1] == 's' || inner[i-1] == 'f')
+			end := quotedLiteralEnd(inner[i:], interpolated)
+			if end < 0 {
+				return -1
+			}
+			i += end
+		}
+	}
+	return n
+}
+
+// balancedEnd returns the index of the bracket closing the one at s[0] ('(' or
+// '{'), skipping quoted literals, or -1 when it is unbalanced.
+func balancedEnd(s string) int {
+	open, closer := s[0], byte(')')
+	if open == '{' {
+		closer = '}'
+	}
 	depth := 0
 	for i := 0; i < len(s); i++ {
-		switch c := s[i]; c {
-		case '(':
+		switch c := s[i]; {
+		case c == open:
 			depth++
-		case ')':
+		case c == closer:
 			depth--
 			if depth == 0 {
 				return i
 			}
-		case '"', '\'', '`':
-			for i++; i < len(s) && s[i] != c; i++ {
-				if s[i] == '\\' && c != '`' {
-					i++
-				}
+		case c == '"' || c == '\'' || c == '`':
+			interpolated := c == '"' && i > 0 && (s[i-1] == 's' || s[i-1] == 'f')
+			end := quotedLiteralEnd(s[i:], interpolated)
+			if end < 0 {
+				return -1
 			}
+			i += end
+		}
+	}
+	return -1
+}
+
+// quotedLiteralEnd returns the index of the quote closing the literal that
+// opens at s[0] ('"', '\'' or '`'), or -1. In an interpolated (s"/f") literal
+// a `${...}` block may itself contain quoted text.
+func quotedLiteralEnd(s string, interpolated bool) int {
+	q := s[0]
+	for i := 1; i < len(s); i++ {
+		switch {
+		case s[i] == '\\' && q != '`':
+			i++
+		case s[i] == q:
+			return i
+		case interpolated && s[i] == '$' && i+1 < len(s) && s[i+1] == '{':
+			end := balancedEnd(s[i+1:])
+			if end < 0 {
+				return -1
+			}
+			i += 1 + end
 		}
 	}
 	return -1
@@ -4535,11 +4613,17 @@ func inferLiteralType(expr string) string {
 	if expr == "nil" {
 		return "" // nil is compatible with many types
 	}
-	if len(expr) >= 2 && expr[0] == '"' && expr[len(expr)-1] == '"' {
-		return "string"
-	}
-	if len(expr) >= 2 && expr[0] == '\'' && expr[len(expr)-1] == '\'' {
-		return "rune"
+	// A quoted literal must span the whole expression: `"a" == "b"` starts and
+	// ends with a quote but is a bool.
+	if n := len(expr); n >= 2 {
+		switch {
+		case (expr[0] == '"' || expr[0] == '`') && quotedLiteralEnd(expr, false) == n-1:
+			return "string"
+		case expr[0] == '\'' && quotedLiteralEnd(expr, false) == n-1:
+			return "rune"
+		case n >= 3 && (expr[0] == 's' || expr[0] == 'f') && expr[1] == '"' && quotedLiteralEnd(expr[1:], true) == n-2:
+			return "string"
+		}
 	}
 	// Check for float (contains . or e/E)
 	if isNumericLiteral(expr) {

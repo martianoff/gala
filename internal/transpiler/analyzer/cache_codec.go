@@ -33,7 +33,7 @@ import (
 
 // codecMagic identifies a binary cache blob. The trailing byte is the
 // format version; bump alongside CacheVersion when the layout changes.
-var codecMagic = [4]byte{'G', 'A', 'C', 0x05}
+var codecMagic = [4]byte{'G', 'A', 'C', 0x06}
 
 const (
 	typeTagNil     uint8 = 0 // nil interface
@@ -373,7 +373,6 @@ func (e *encoder) writeStringPackageValMap(m map[string]*transpiler.PackageValMe
 			continue
 		}
 		e.writeBool(true)
-		e.writeString(v.Name)
 		e.writeType(v.Type)
 		e.writeBool(v.IsVal)
 		e.writeString(v.Doc)
@@ -848,7 +847,7 @@ func (d *decoder) readStringPackageValMap() map[string]*transpiler.PackageValMet
 			continue
 		}
 		v := &transpiler.PackageValMetadata{}
-		v.Name = d.readString()
+		v.Name = k
 		v.Type = d.readType()
 		v.IsVal = d.readBool()
 		v.Doc = d.readString()

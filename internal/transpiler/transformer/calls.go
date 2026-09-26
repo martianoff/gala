@@ -1901,31 +1901,17 @@ func (t *galaASTTransformer) tryTransformCompositeLitApply(fun ast.Expr, args []
 	}, true
 }
 
-// tryTransformValWithApply handles Section 12: when `fun` is a variable
-// (or val.Get() call) whose type has an Apply method, rewrite `fun(args)` as
-// `fun.Apply(args)`. This enables `val add5 = Adder(5); add5(10)` to work.
+// tryTransformValWithApply handles Section 12: when `fun` reads a val/var —
+// `name`, or an imported `pkg.Name` — whose type has an Apply method, rewrite
+// `fun(args)` as `fun.Apply(args)`. This enables `val add5 = Adder(5); add5(10)`.
 // Returns handled=false for all other shapes of `fun`.
 // Extracted from transformCallWithArgsCtx as part of A1 cont.
 func (t *galaASTTransformer) tryTransformValWithApply(fun ast.Expr, args []ast.Expr) (ast.Expr, bool) {
-	var valName string
-	if id, ok := fun.(*ast.Ident); ok {
-		if t.isVal(id.Name) || t.isVar(id.Name) {
-			valName = id.Name
-		}
-	} else if call, ok := fun.(*ast.CallExpr); ok {
-		// Check if this is valName.Get()
-		if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == transpiler.MethodGet && len(call.Args) == 0 {
-			if id, ok := sel.X.(*ast.Ident); ok {
-				if t.isVal(id.Name) {
-					valName = id.Name
-				}
-			}
-		}
-	}
-	if valName == "" {
+	name := t.bindingRef(fun)
+	if name == "" {
 		return nil, false
 	}
-	varType := t.getType(valName)
+	varType, _, _ := t.resolveBinding(name)
 	if varType.IsNil() {
 		return nil, false
 	}

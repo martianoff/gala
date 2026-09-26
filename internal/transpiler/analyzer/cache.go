@@ -42,7 +42,10 @@ import (
 // persisted. An importer reads them to unwrap `pkg.Name` from
 // std.Immutable[T]; a v4 payload carries none, so every cross-package val
 // reference served from it would emit the raw wrapper again.
-const CacheVersion = "v5"
+//
+// v6: PackageVals holds exported bindings only, and each entry's name is taken
+// from its map key instead of being written twice.
+const CacheVersion = "v6"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path
@@ -99,7 +102,7 @@ type CachedRichAST struct {
 	GoTypeInfo       *transpiler.GoTypeInfo
 	TypeAliases      map[string]transpiler.Type
 	ImportPathMap    map[string]string
-	PackageVals      map[string]*transpiler.PackageValMetadata // this package's own package-level val/var bindings
+	PackageVals      map[string]*transpiler.PackageValMetadata // this package's own exported package-level val/var bindings
 	DepsHash         string   // hash of transitive dependency content (for invalidation)
 	DirectImports    []string // GALA import paths this package directly imports (for re-merge on load)
 }

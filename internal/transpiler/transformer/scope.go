@@ -232,88 +232,114 @@ func (t *galaASTTransformer) lookupLocalBinding(name string) (transpiler.Type, b
 	return transpiler.NilType{}, false
 }
 
-// importedPackageVal returns the package-level `val`/`var` binding that the
-// selector `x.sel` names in an imported GALA package, or nil when `x` is not a
-// package reference or the package declares no such binding.
-//
-// A local binding named like the package shadows it (`colors.Green` on a local
-// `colors` is a field access), so scope is consulted before the import table.
-// The import alias is resolved to the package's real name, which is what
-// RichAST.ImportedVals is keyed by.
+// importedPackageVal returns the package-level binding the selector `x.sel`
+// names in an imported GALA package, or nil when x is not a named import, the
+// package declares no such binding, or a local binding named x shadows it.
+// Called for every qualified selector, so the map lookups run before the
+// scope walk.
 func (t *galaASTTransformer) importedPackageVal(x, sel string) *transpiler.PackageValMetadata {
 	if t.richAST == nil || len(t.richAST.ImportedVals) == 0 || t.importManager == nil {
 		return nil
 	}
-	if t.isVal(x) || t.isVar(x) || !t.importManager.IsPackage(x) {
+	entry, ok := t.importManager.GetByAlias(x)
+	if !ok || entry.IsDot {
 		return nil
 	}
-	pkgName := x
-	if actual, ok := t.importManager.ResolveAlias(x); ok {
-		pkgName = actual
+	pv := t.richAST.ImportedVals[entry.Path][sel]
+	if pv == nil {
+		return nil
 	}
-	return t.richAST.ImportedVals[pkgName+"."+sel]
+	if _, shadowed := t.lookupLocalBinding(x); shadowed {
+		return nil
+	}
+	return pv
 }
 
-// importedValSelector reports whether sel is `pkg.Name` naming a `val` of an
-// imported package, returning its metadata.
-func (t *galaASTTransformer) importedValSelector(sel *ast.SelectorExpr) (*transpiler.PackageValMetadata, bool) {
-	x, ok := sel.X.(*ast.Ident)
-	if !ok {
-		return nil, false
+// resolveBinding resolves a val/var reference written `Name` (a scoped binding,
+// dot-imported ones included) or `pkg.Name` (an imported package's binding) to
+// its element type and whether it is a val.
+func (t *galaASTTransformer) resolveBinding(name string) (typ transpiler.Type, isVal, ok bool) {
+	if x, sel, qualified := strings.Cut(name, "."); qualified {
+		if pv := t.importedPackageVal(x, sel); pv != nil {
+			return pv.Type, pv.IsVal, true
+		}
+		return transpiler.NilType{}, false, false
 	}
-	pv := t.importedPackageVal(x.Name, sel.Sel.Name)
-	return pv, pv != nil && pv.IsVal
+	for s := t.currentScope; s != nil; s = s.parent {
+		if immutable, bound := s.vals[name]; bound {
+			return s.valTypes[name], immutable, true
+		}
+	}
+	return transpiler.NilType{}, false, false
 }
 
-// importedValRead reports whether expr is the `pkg.Name.Get()` read
-// resolveFieldAccess emits for an imported package-level val, returning the
-// source-level name `pkg.Name`.
-func (t *galaASTTransformer) importedValRead(expr ast.Expr) (string, bool) {
-	call, ok := expr.(*ast.CallExpr)
-	if !ok || len(call.Args) != 0 {
-		return "", false
+// bindingRef returns the source name (`Name` or `pkg.Name`) of the binding that
+// expr reads — the reference itself, or a val's `.Get()` unwrap of it — or "".
+func (t *galaASTTransformer) bindingRef(expr ast.Expr) string {
+	var name string
+	switch e := expr.(type) {
+	case *ast.CallExpr:
+		get, ok := e.Fun.(*ast.SelectorExpr)
+		if !ok || get.Sel.Name != transpiler.MethodGet || len(e.Args) != 0 {
+			return ""
+		}
+		if name = t.bindingRef(get.X); name != "" {
+			if _, isVal, _ := t.resolveBinding(name); isVal {
+				return name
+			}
+		}
+		return ""
+	case *ast.Ident:
+		name = e.Name
+	case *ast.SelectorExpr:
+		x, ok := e.X.(*ast.Ident)
+		if !ok {
+			return ""
+		}
+		name = x.Name + "." + e.Sel.Name
+	default:
+		return ""
 	}
-	get, ok := call.Fun.(*ast.SelectorExpr)
-	if !ok || get.Sel.Name != transpiler.MethodGet {
-		return "", false
+	if _, _, ok := t.resolveBinding(name); ok {
+		return name
 	}
-	sel, ok := get.X.(*ast.SelectorExpr)
-	if !ok {
-		return "", false
-	}
-	if _, isVal := t.importedValSelector(sel); !isVal {
-		return "", false
-	}
-	return sel.X.(*ast.Ident).Name + "." + sel.Sel.Name, true
+	return ""
 }
 
-// registerDotImportedVals binds the package-level vals/vars of every
-// dot-imported GALA package in the global scope under their bare names, so a
-// bare `Green` under `import . "…/colors"` unwraps from std.Immutable[T] the
-// same way a same-package reference does. Call it once the imports are known.
-//
-// The current package's own bindings are registered first and win: a clash is
-// a Go redeclaration error either way, and the own declaration is the one the
-// rest of the file was written against. Local bindings shadow these through
-// ordinary scoping.
+// bindingRead builds the Go expression reading the binding `Name` or
+// `pkg.Name`, with a val unwrapped from its std.Immutable[T].
+func (t *galaASTTransformer) bindingRead(name string) ast.Expr {
+	if x, sel, qualified := strings.Cut(name, "."); qualified {
+		return t.unwrapImmutable(&ast.SelectorExpr{X: ast.NewIdent(x), Sel: ast.NewIdent(sel)})
+	}
+	if t.isVal(name) {
+		return &ast.CallExpr{Fun: &ast.SelectorExpr{X: ast.NewIdent(name), Sel: ast.NewIdent(transpiler.MethodGet)}}
+	}
+	return ast.NewIdent(name)
+}
+
+// registerPackageVal binds a package-level val/var in the current scope.
+func (t *galaASTTransformer) registerPackageVal(name string, meta *transpiler.PackageValMetadata) {
+	if meta.IsVal {
+		t.addVal(name, meta.Type)
+	} else {
+		t.addVar(name, meta.Type)
+	}
+}
+
+// registerDotImportedVals binds the bindings of every dot-imported GALA package
+// under their bare names, after the current package's own (which win a clash).
 func (t *galaASTTransformer) registerDotImportedVals() {
 	if t.richAST == nil || len(t.richAST.ImportedVals) == 0 || t.currentScope == nil {
 		return
 	}
-	for _, pkg := range t.importManager.GetDotImports() {
-		prefix := pkg + "."
-		for key, meta := range t.richAST.ImportedVals {
-			if meta == nil || !strings.HasPrefix(key, prefix) {
-				continue
-			}
-			name := key[len(prefix):]
-			if _, bound := t.currentScope.vals[name]; bound {
-				continue
-			}
-			if meta.IsVal {
-				t.addVal(name, meta.Type)
-			} else {
-				t.addVar(name, meta.Type)
+	for _, entry := range t.importManager.All() {
+		if !entry.IsDot {
+			continue
+		}
+		for name, meta := range t.richAST.ImportedVals[entry.Path] {
+			if _, bound := t.currentScope.vals[name]; !bound && meta != nil {
+				t.registerPackageVal(name, meta)
 			}
 		}
 	}
