@@ -8,35 +8,39 @@ import . "martianoff/gala/collection_immutable"
 // sharpest case because it shares its name with the Immutable accessor. The
 // `var` bindings are never reassigned on purpose: they exercise that path.
 
+// Style is the innermost struct of the field chain.
 struct Style(Bold bool)
+
+// Cell nests a Style, so reading St.Bold crosses two immutable fields.
 struct Cell(Ch rune, St Style)
 
+// MakeCell builds a Cell.
 func MakeCell(ch rune, bold bool) Cell = Cell(Ch = ch, St = Style(Bold = bold))
 
 func same[V comparable](a V, b V) bool = a == b
 
-// Pointer receiver, method named like the Immutable accessor.
+// PtrBuffer has a pointer-receiver method named like the Immutable accessor.
 type PtrBuffer struct {
     cell Cell
 }
 
 func (b *PtrBuffer) Get() Cell = b.cell
 
-// Pointer receiver backed by a GALA collection, method takes an index.
+// Grid has a pointer-receiver Get backed by a GALA collection, taking an index.
 type Grid struct {
     cells Array[Cell]
 }
 
 func (g *Grid) Get(i int) Cell = g.cells.Get(i)
 
-// Value receiver.
+// ValBuffer has a value-receiver Get.
 type ValBuffer struct {
     cell Cell
 }
 
 func (b ValBuffer) Get() Cell = b.cell
 
-// Shorthand struct with a pointer-receiver method under another name.
+// Holder is a shorthand struct with a pointer-receiver method under another name.
 struct Holder(cell Cell)
 
 func (h *Holder) Current() Cell = h.cell
