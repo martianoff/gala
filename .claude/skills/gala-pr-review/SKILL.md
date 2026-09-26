@@ -40,8 +40,13 @@ can walk through one at a time, each with a ready-to-paste comment.
 
 Before reading code, list every factual statement in the PR description: what it
 changes, what it fixes, what was "already" true, what tests cover, benchmark numbers,
-and what the environment was. Each one is checked in Step 4. False or overstated claims
-are findings: the description is what stays on record.
+and what the environment was. Each one is checked against the actual work in Step 4.
+The description is what stays on record, so a description that doesn't match the diff
+is a finding in its own right.
+
+Also read commit messages, code comments, and test names the PR adds. They are claims
+too: a comment saying "disabled under tracing" or a test named "…MatchesLL" must be
+true of the code it sits on.
 
 ## Step 3: Review the diff
 
@@ -146,8 +151,32 @@ full build, not just `gala transpile`.
 
 ## Step 4: Verify
 
-- Check every Step 2 claim against the code and the base branch
-  (`git show origin/master:<file>`, `git log -S`).
+### Description vs. actual work
+
+Check the description against the diff in both directions:
+
+- **Every claim is backed by the work.** For each Step 2 claim, find the code, test, or
+  measurement that proves it. Mark each claim as confirmed, false, overstated, or
+  unverifiable.
+  - "Already" / "previously" statements: check the base branch
+    (`git show origin/master:<file>`, `git log -S <symbol>`). Work credited to this PR
+    that landed earlier, and behaviour described as existing that never existed, are
+    both false claims.
+  - Test claims: open the test and confirm it exercises what the description says (a
+    test "comparing SLL and LL" must actually force SLL; a test "per invalidation site"
+    must drive the real sites).
+  - Numbers: check they come from a run whose environment matches ours (Go version,
+    pinned toolchain, OS). If they can't be reproduced, say where they came from rather
+    than repeating them as fact.
+  - "No behaviour change" / "byte-identical": look for output, diagnostics, ordering, or
+    debug-output changes in the diff.
+- **Every change is described.** List diff changes the description doesn't mention:
+  removed fields, renamed output labels, behaviour fixes bundled into a refactor, new
+  flags or env vars, new files. Undisclosed changes are findings: ask for them to be
+  listed, or split out if they're unrelated.
+
+### Code
+
 - For each suspected bug, write a minimal failing test in the review worktree and run it.
   A reproduced finding is stated as fact; an unreproduced one is either verified another
   way or dropped.
@@ -167,7 +196,7 @@ Order by severity:
 
 1. **Blocking:** correctness regressions, policy violations, files that must not be
    checked in.
-2. **Should fix:** false claims, missing coverage of invariants, misleading comments.
+2. **Should fix:** false, overstated, or missing claims in the description (Step 4), missing coverage of invariants, misleading comments.
 3. **Non-blocking:** scope, style, naming.
 
 For each finding give: location (`path:line`), what is wrong, the evidence, the
