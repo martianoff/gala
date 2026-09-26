@@ -3,25 +3,35 @@ package colors
 // Package-level bindings read from another package. Each `val` lowers to a
 // std.Immutable[T] wrapper, so an importer's `colors.Green` must unwrap it to
 // plain T at the use site, exactly as a same-package reference does.
+
+// Color is a terminal color: the default red, or an indexed named color.
 sealed type Color {
     case Red()
     case NamedColor(Idx int)
 }
 
+// Theme pairs a display name with its accent color.
 struct Theme(Name string, Accent Color)
 
+// Green is a sealed-variant val whose element type is the parent Color.
 val Green = NamedColor(2)
+
+// Default is a struct-typed val; importers read its fields through the unwrap.
 val Default = Theme("classic", Red())
+
+// Greeting is a string val.
 val Greeting = "hello"
 
-// A `var` is a plain, reassignable Go variable: it is never wrapped, so it
-// must never be unwrapped either.
+// Hits is a `var`: a plain, reassignable Go variable. It is never wrapped, so
+// it must never be unwrapped either.
 var Hits = 0
 
+// Hit increments Hits from inside its own package.
 func Hit() {
     Hits = Hits + 1
 }
 
+// ToSgr returns the SGR foreground code for c.
 func ToSgr(c Color) string = c match {
     case Red() => "31"
     case NamedColor(i) => s"3$i"
