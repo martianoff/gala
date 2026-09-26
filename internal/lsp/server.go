@@ -367,17 +367,33 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 		return diagnostics
 	}
 
+	// Transform BEFORE publishing richAST, not after.
+	//
+	// The transformer aliases the RichAST's Types map rather than copying it
+	// (`t.typeMetas = richAST.Types` in transformer.go), and it writes to that
+	// map while it runs — registerEmbeddedFSMetadata is one such write. So
+	// publishing richAST first left every hover and completion arriving during
+	// the transform iterating a map the transformer was still assigning into,
+	// which Go turns into a `concurrent map read and map write` fatal: the
+	// language server dies and takes the editor's GALA features with it.
+	//
+	// The fresh transformer per analysis was already there to keep
+	// concurrent analyses off each other's internal state; it does nothing for
+	// the RichAST they all hand it, which is the map that actually escapes.
+	//
+	// Publishing after costs nothing a reader wants: before the transform the
+	// metadata is incomplete anyway. Publication is unconditional so a failed
+	// transform still leaves the analyzer's results available, which is what
+	// the old ordering was really buying.
+	xformer := transformer.NewGalaASTTransformer()
+	result, transformErr := xformer.TransformForLSP(richAST)
+
 	h.mu.Lock()
 	h.richASTs[uri] = richAST
 	h.parseTrees[uri] = tree
 	h.parseTexts[uri] = text
 	h.mu.Unlock()
 
-	// Use a fresh transformer per analysis to avoid race conditions between
-	// concurrent debounce timers (the transformer has mutable internal state).
-	// Run transformer for type inference and diagnostic reporting.
-	xformer := transformer.NewGalaASTTransformer()
-	result, transformErr := xformer.TransformForLSP(richAST)
 	if transformErr != nil {
 		diagnostics = append(diagnostics, errorsToDiagnostics(transformErr)...)
 	}
@@ -618,14 +634,18 @@ func (h *GalaHandler) analyzeAndCache(uri, cleanText, caller string) {
 		return
 	}
 
+	// Transform before publishing, for the reason given in analyzeFile: the
+	// transformer writes the RichAST's Types map in place, so a reader that
+	// sees richAST early can be iterating it mid-assignment.
+	xformer := transformer.NewGalaASTTransformer()
+	result, _ := xformer.TransformForLSP(richAST)
+
 	h.mu.Lock()
 	h.richASTs[uri] = richAST
 	h.parseTrees[uri] = tree
 	h.parseTexts[uri] = cleanText
 	h.mu.Unlock()
 
-	xformer := transformer.NewGalaASTTransformer()
-	result, _ := xformer.TransformForLSP(richAST)
 	if result != nil && result.VarTypes != nil {
 		typeMap := make(map[string]string, len(result.VarTypes))
 		for name, typ := range result.VarTypes {

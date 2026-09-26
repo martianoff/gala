@@ -71,13 +71,26 @@ jobs:
     # prediction, which is where the reported crashes lived. A filtered job
     # would re-open the blind spot this one exists to close.
     #
-    # //internal/lsp is here because the language server is the heaviest
-    # concurrent consumer of the shared ANTLR parser in the tree, heavier than
-    # any CLI transpile: DidChange returns as soon as it has spawned
+    # The LSP is covered because the language server is the heaviest concurrent
+    # consumer of the shared ANTLR parser in the tree, heavier than any CLI
+    # transpile: DidChange returns as soon as it has spawned
     # `go h.analyzeFile(...)`, so editing several documents leaves several
     # analyses running at once and each one fans out again through
     # parseFilesConcurrent. Nothing covered that before — no LSP test spawned a
-    # goroutine, so every DidChange in the suite was sequential.
+    # goroutine, so every DidChange in the suite was sequential. The first run
+    # of this job found a real race there: the handler published a RichAST to
+    # hover/completion while the transformer was still assigning into the Types
+    # map it aliases.
+    #
+    # That one runs filtered, unlike the two suites above, and the distinction
+    # matters. Filtering the parser and analyzer suites would remove coverage,
+    # which is why they run whole. Filtering here removes the OPPOSITE: the rest
+    # of the LSP suite drives diagnostics through fixed `time.Sleep` windows
+    # ("debounce 300ms + analysis" in 600ms), which instrumentation makes
+    # unreliable regardless of what it is testing. Gating on them would produce
+    # reds that mean nothing about concurrency. The concurrency test is the one
+    # that found the race and is the one kept. Make those tests wait on
+    # conditions instead of clocks and this can drop the filter.
     #
     # //internal/transpiler/transformer is deliberately NOT here. Under -race
     # it dies with `fatal error: traceback` /
@@ -121,7 +134,13 @@ jobs:
           bazel test \
             //internal/parser:parser_test \
             //internal/transpiler/analyzer:analyzer_test \
-            //internal/lsp:lsp_test \
+            --@rules_go//go/config:race \
+            --test_timeout=1800 \
+            --test_output=errors --verbose_failures \
+            --action_env=GOROOT="$GOROOT" --action_env=PATH
+
+          bazel test //internal/lsp:lsp_test \
+            --test_filter=TestConcurrentAnalysesAcrossDocuments \
             --@rules_go//go/config:race \
             --test_timeout=1800 \
             --test_output=errors --verbose_failures \
