@@ -694,8 +694,21 @@ func (t *galaASTTransformer) inferGetMethodType(e *ast.CallExpr, sel *ast.Select
 	// receiver type instead of Option, producing an undefined monomorphized helper).
 	// The generic-type branches above already handle generic receivers with
 	// substitution, so this only fills the non-generic named-type gap.
+	//
+	// A pointer receiver (`b *Buffer` with `func (b *Buffer) Get() Cell`) is
+	// looked up through its element type: methods are registered under the base
+	// type name, and `*Buffer`'s BaseName ("*main.Buffer") has no metadata.
+	// Without the unwrap the fallback below returned `*Buffer` as the result
+	// type, so field chains on the result (`b.Get().St.Bold`) skipped their
+	// Immutable unwraps and produced Go that does not compile.
 	if !transpiler.IsUnusable(xType) {
-		if typeMeta := t.getTypeMeta(xBaseName); typeMeta != nil {
+		metaName := xBaseName
+		if ptr, ok := xType.(transpiler.PointerType); ok {
+			if _, isGeneric := ptr.Elem.(transpiler.GenericType); !isGeneric {
+				metaName = ptr.Elem.BaseName()
+			}
+		}
+		if typeMeta := t.getTypeMeta(metaName); typeMeta != nil {
 			if methodMeta, ok := typeMeta.Methods[sel.Sel.Name]; ok {
 				return methodMeta.ReturnType
 			}
