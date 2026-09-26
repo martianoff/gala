@@ -31,18 +31,18 @@ type TypeTraceEntry struct {
 }
 
 type galaASTTransformer struct {
-	currentScope          *scope
-	packageName           string
-	immutFields           map[string]bool
-	structImmutFields     map[string][]bool
-	needsStdImport        bool
-	needsFmtImport        bool
-	needsUtf8Import       bool
-	activeTypeParams      map[string]bool
-	structFields          map[string][]string
-	structFieldTypes      map[string]map[string]transpiler.Type // structName -> fieldName -> typeName
-	genericMethods        map[string]map[string]bool            // receiverType -> methodName -> isGeneric
-	functions             map[string]*transpiler.FunctionMetadata
+	currentScope      *scope
+	packageName       string
+	immutFields       map[string]bool
+	structImmutFields map[string][]bool
+	needsStdImport    bool
+	needsFmtImport    bool
+	needsUtf8Import   bool
+	activeTypeParams  map[string]bool
+	structFields      map[string][]string
+	structFieldTypes  map[string]map[string]transpiler.Type // structName -> fieldName -> typeName
+	genericMethods    map[string]map[string]bool            // receiverType -> methodName -> isGeneric
+	functions         map[string]*transpiler.FunctionMetadata
 	// galaPkgPaths is the set of import paths that are GALA packages, taken from
 	// richAST.Packages (the analyzer fills that map only inside its GALA-package
 	// branch). It lets a qualified call tell whether its qualifier names a GALA
@@ -50,44 +50,50 @@ type galaASTTransformer struct {
 	// every file in the package, so GALA's `strings` and Go's `strings` collide
 	// there — as do io, path, json, crypto and fs. Membership here is metadata,
 	// not an import-path heuristic.
-	galaPkgPaths          map[string]bool
-	typeMetas             map[string]*transpiler.TypeMetadata
-	companionObjects      map[string]*transpiler.CompanionObjectMetadata // companion name -> metadata
-	importManager         *ImportManager                                 // unified import tracking (includes transitive imports and dot-import usage)
-	tempVarCount          int
-	inferer               *infer.Inferer
-	currentFuncReturnType    transpiler.Type            // return type of the function currently being transformed
-	currentMatchSubjectType transpiler.Type            // type of the match expression's subject (for branch type inference)
-	typeAliases           map[string]transpiler.Type // type alias name -> underlying type (e.g., "Handler" -> func(string) Future[string])
-	goTypeInfo            *transpiler.GoTypeInfo     // type info from Go packages (stdlib, local Go files, third-party)
-	filePath              string                      // source file path (for error reporting)
-	sourceLines           []string                    // source lines (for error snippets)
-	richAST               *transpiler.RichAST         // reference to the primary RichAST for live metadata access
-	traceTypeResolution   bool                        // when true, type resolution events are recorded
-	typeTraces            []TypeTraceEntry             // recorded type resolution events (only when tracing is enabled)
-	exprTypeCache         map[ast.Expr]transpiler.Type // cache for getExprTypeNameManual results
-	needsEmbedImport      bool                        // true when embed val declarations require import "embed"
-	warnTypeInference     bool                        // when true, log warnings about type inference fallbacks
-	inferenceWarnings     []string                    // collected type inference warnings
-	unresolvedTypes       []UnresolvedType             // expressions whose type could not be determined; collected only under GALA_WARN_TYPES=1. See unresolved_types.go.
-	unresolvedSeen        map[ast.Expr]bool            // AST nodes already recorded, so a re-queried expression is rendered once; diagnostics only
-	diagPackageNames      map[string]bool              // package qualifiers derived from Go type info, for the unresolved-type filter; built lazily, diagnostics only
-	structMetas           map[string]*structMetaConfig  // generated StructMeta structs (keyed by generated name)
-	instanceInterfaceNames map[string]string            // type name -> actual generated interface name (for collision avoidance)
-	expectedIfExprType     ast.Expr                     // expected return type for if-expression IIFE (set by expression-bodied function handler)
-	expectedLambdaParamTypes []transpiler.Type          // expected param types threaded into a bare lambda initializer (e.g. `val f func(int) int = (x) => ...`); consulted by transformLambda for the otherwise context-free lambda path
-	expectedLambdaRetType    ast.Expr                   // expected return type paired with expectedLambdaParamTypes for the bare lambda initializer path
-	expectedArgTypes       expectedArgTypeStack         // (B1) LIFO stack of expected-type hints for downward inference; replaces a single-field side-channel. See expected_arg_stack.go for the contract.
-	matchInStatementPos    bool                         // set when transforming a `subject match { ... }` whose value is discarded (statement-position match); causes the IIFE to be lowered as void so void-returning arm calls do not appear as `return d.Skip()`
-	methodReceivers        []methodReceiver             // receivers collected during the walk, validated once the file is complete (see method_receiver_alias.go)
-	blockLastStmtIsValue   bool                         // set by callers of transformBlock that consume the block's last expression (function body with return type, lambda body, match arm body, partial-function body); without this, transformBlock treats the trailing statement as discarded — same as the trailing statement of for/if bodies — and marks any trailing bare `match` as statement-position
-	synthesizedReturns     map[*ast.ReturnStmt]bool     // tracks ReturnStmt nodes synthesized by lowering match-arm tail expressions (vs. user-written `return X`). Used to inline a statement-position match whose arms contain user returns: stripReturnStatements would otherwise convert user `return X` into a bare return that only exits the synthetic match-IIFE, leaving the enclosing function — and any surrounding `for` loop — to spin without the intended exit.
-	pendingMatchStmtBlock  *ast.BlockStmt               // side-channel: when transformMatchExpression detects a statement-position match with user-written returns inside arm bodies, it stores the inlined block here and returns a placeholder expression. transformBlock consumes this field and replaces the placeholder ExprStmt with the inlined block, so the user's `return X` becomes a real Go return from the enclosing function.
-	lspVarTypes            map[string]transpiler.Type   // LSP: collects all resolved var types during transformation
-	lspCurrentFunc         string                       // LSP: name of the function currently being transformed (for scoping)
-	lspLambdaParamHints    []transpiler.LambdaParamHint // LSP: positions of lambda params with inferred types
-	lastLine               int                          // last known ANTLR source line (for error reporting in deeply-nested helpers)
-	lastCol                int                          // last known ANTLR source column (for error reporting in deeply-nested helpers)
+	galaPkgPaths             map[string]bool
+	typeMetas                map[string]*transpiler.TypeMetadata
+	companionObjects         map[string]*transpiler.CompanionObjectMetadata // companion name -> metadata
+	importManager            *ImportManager                                 // unified import tracking (includes transitive imports and dot-import usage)
+	cachedTypeResolver       *resolver.TypeResolver
+	cachedTypeResolverRev    uint64 // import-manager revision cachedTypeResolver was built at
+	tempVarCount             int
+	inferer                  *infer.Inferer
+	currentFuncReturnType    transpiler.Type              // return type of the function currently being transformed
+	currentMatchSubjectType  transpiler.Type              // type of the match expression's subject (for branch type inference)
+	typeAliases              map[string]transpiler.Type   // type alias name -> underlying type (e.g., "Handler" -> func(string) Future[string])
+	goTypeInfo               *transpiler.GoTypeInfo       // type info from Go packages (stdlib, local Go files, third-party)
+	filePath                 string                       // source file path (for error reporting)
+	richAST                  *transpiler.RichAST          // reference to the primary RichAST for live metadata access
+	traceTypeResolution      bool                         // when true, type resolution events are recorded
+	typeTraces               []TypeTraceEntry             // recorded type resolution events (only when tracing is enabled)
+	exprTypeCache            map[ast.Expr]transpiler.Type // cache for getExprTypeNameManual results
+	needsEmbedImport         bool                         // true when embed val declarations require import "embed"
+	warnTypeInference        bool                         // when true, log warnings about type inference fallbacks
+	inferenceWarnings        []string                     // collected type inference warnings
+	unresolvedTypes          []UnresolvedType             // expressions whose type could not be determined; collected only under GALA_WARN_TYPES=1. See unresolved_types.go.
+	unresolvedSeen           map[ast.Expr]bool            // AST nodes already recorded, so a re-queried expression is rendered once; diagnostics only
+	diagPackageNames         map[string]bool              // package qualifiers derived from Go type info, for the unresolved-type filter; built lazily, diagnostics only
+	structMetas              map[string]*structMetaConfig // generated StructMeta structs (keyed by generated name)
+	instanceInterfaceNames   map[string]string            // type name -> actual generated interface name (for collision avoidance)
+	expectedIfExprType       ast.Expr                     // expected return type for if-expression IIFE (set by expression-bodied function handler)
+	expectedLambdaParamTypes []transpiler.Type            // expected param types threaded into a bare lambda initializer (e.g. `val f func(int) int = (x) => ...`); consulted by transformLambda for the otherwise context-free lambda path
+	expectedLambdaRetType    ast.Expr                     // expected return type paired with expectedLambdaParamTypes for the bare lambda initializer path
+	expectedArgTypes         expectedArgTypeStack         // (B1) LIFO stack of expected-type hints for downward inference; replaces a single-field side-channel. See expected_arg_stack.go for the contract.
+	matchInStatementPos      bool                         // set when transforming a `subject match { ... }` whose value is discarded (statement-position match); causes the IIFE to be lowered as void so void-returning arm calls do not appear as `return d.Skip()`
+	methodReceivers          []methodReceiver             // receivers collected during the walk, validated once the file is complete (see method_receiver_alias.go)
+	blockLastStmtIsValue     bool                         // set by callers of transformBlock that consume the block's last expression (function body with return type, lambda body, match arm body, partial-function body); without this, transformBlock treats the trailing statement as discarded — same as the trailing statement of for/if bodies — and marks any trailing bare `match` as statement-position
+	synthesizedReturns       map[*ast.ReturnStmt]bool     // tracks ReturnStmt nodes synthesized by lowering match-arm tail expressions (vs. user-written `return X`). Used to inline a statement-position match whose arms contain user returns: stripReturnStatements would otherwise convert user `return X` into a bare return that only exits the synthetic match-IIFE, leaving the enclosing function — and any surrounding `for` loop — to spin without the intended exit.
+	pendingMatchStmtBlock    *ast.BlockStmt               // side-channel: when transformMatchExpression detects a statement-position match with user-written returns inside arm bodies, it stores the inlined block here and returns a placeholder expression. transformBlock consumes this field and replaces the placeholder ExprStmt with the inlined block, so the user's `return X` becomes a real Go return from the enclosing function.
+	lspVarTypes              map[string]transpiler.Type   // LSP: collects all resolved var types during transformation
+	lspCurrentFunc           string                       // LSP: name of the function currently being transformed (for scoping)
+	lspLambdaParamHints      []transpiler.LambdaParamHint // LSP: positions of lambda params with inferred types
+	lastLine                 int                          // last known ANTLR source line (for error reporting in deeply-nested helpers)
+	lastCol                  int                          // last known ANTLR source column (for error reporting in deeply-nested helpers)
+	typeEnvEpoch             uint32                       // invalidates funcTypeEnv; see invalidateTypeEnv
+	funcTypeEnv              infer.TypeEnv                // cached function-derived half of the Hindley-Milner environment for the current file; see functionTypeEnv
+	funcTypeEnvEpoch         uint32                       // typeEnvEpoch the cache above was built at
+	funcTypeEnvNames         map[string]struct{}          // unqualified type names the cached environment normalized; binding one of them in scope makes the cache stale (see scopeShadowsFuncTypeNames)
+	typeNameScratch          typeNameMemo                 // reusable memo for the per-call scope-to-typeEnv conversion in buildTypeEnv
 }
 
 // NewGalaASTTransformer creates a new instance of ASTTransformer for GALA.
@@ -121,7 +127,7 @@ func NewGalaASTTransformer() transpiler.ASTTransformer {
 }
 
 func (t *galaASTTransformer) TransformForLSP(richAST *transpiler.RichAST) (*transpiler.TransformResult, error) {
-	fset, file, transformErr := t.Transform(richAST)
+	fset, file, transformErr := t.transform(richAST, true)
 	// Always return collected var types, even on error (partial results)
 	varTypes := make(map[string]transpiler.Type, len(t.lspVarTypes))
 	for name, typ := range t.lspVarTypes {
@@ -137,7 +143,19 @@ func (t *galaASTTransformer) TransformForLSP(richAST *transpiler.RichAST) (*tran
 	}, transformErr
 }
 
-func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token.FileSet, file *ast.File, err error) {
+func (t *galaASTTransformer) resetExprTypeCache() {
+	if t.exprTypeCache == nil {
+		t.exprTypeCache = make(map[ast.Expr]transpiler.Type, 256)
+	} else {
+		clear(t.exprTypeCache)
+	}
+}
+
+func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (*token.FileSet, *ast.File, error) {
+	return t.transform(richAST, false)
+}
+
+func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMetadata bool) (fset *token.FileSet, file *ast.File, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			if semErr, ok := r.(*galaerr.SemanticError); ok {
@@ -167,8 +185,14 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 	}()
 	tree := richAST.Tree
 	t.currentScope = nil
-	t.lspVarTypes = make(map[string]transpiler.Type)
-	t.lspLambdaParamHints = t.lspLambdaParamHints[:0]
+	t.resetExprTypeCache()
+	if collectLSPMetadata {
+		t.lspVarTypes = make(map[string]transpiler.Type)
+		t.lspLambdaParamHints = t.lspLambdaParamHints[:0]
+	} else {
+		t.lspVarTypes = nil
+		t.lspLambdaParamHints = nil
+	}
 	t.needsStdImport = false
 	t.needsFmtImport = false
 	t.needsUtf8Import = false
@@ -185,11 +209,16 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 		t.companionObjects = make(map[string]*transpiler.CompanionObjectMetadata)
 	}
 	t.importManager = NewImportManager()
+	t.cachedTypeResolver = nil
+	t.cachedTypeResolverRev = 0
 	t.typeAliases = make(map[string]transpiler.Type)
 	// Load type aliases from sibling files (extracted by analyzer)
 	for name, underlyingType := range richAST.TypeAliases {
 		t.typeAliases[name] = underlyingType
 	}
+	// t.functions, t.typeMetas, t.typeAliases and the import manager have all
+	// just been replaced, so a cached function environment no longer matches.
+	t.invalidateTypeEnv()
 	t.goTypeInfo = richAST.GoTypeInfo
 	t.tempVarCount = 0
 	t.structMetas = make(map[string]*structMetaConfig)
@@ -203,11 +232,6 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 	t.unresolvedSeen = nil
 	t.diagPackageNames = nil
 	t.filePath = richAST.FilePath
-	if richAST.SourceContent != "" {
-		t.sourceLines = strings.Split(richAST.SourceContent, "\n")
-	} else {
-		t.sourceLines = nil
-	}
 
 	// Populate imports from richAST.Packages (includes implicit std import from analyzer)
 	t.importManager.AddFromPackages(richAST.Packages)
@@ -303,6 +327,10 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 	for path, actualPkgName := range richAST.Packages {
 		t.importManager.UpdateActualPackageName(path, actualPkgName)
 	}
+	// The renames above change the package names a bare name resolves against,
+	// so the function environment has to be rebuilt. The resolver snapshot does
+	// not need telling: it compares the import manager's revision on use.
+	t.invalidateTypeEnv()
 
 	// Error on symbol clashes between dot-imported packages.
 	// Use the first import declaration's position for error reporting.
@@ -314,6 +342,7 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 	if err := t.importManager.ValidateDotImports(richAST, importLine, importCol); err != nil {
 		return nil, nil, err
 	}
+	t.cacheTypeResolver()
 
 	for _, topDeclCtx := range sourceFile.AllTopLevelDeclaration() {
 		decls, err := t.transformTopLevelDeclaration(topDeclCtx)
@@ -486,7 +515,8 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 		w.Flush()
 	}
 
-	// Remove unused imports from the generated AST.
+	// Remove unused imports from the generated AST. PruneUnused rewrites the
+	// file without touching the import manager, so no cache is invalidated.
 	t.importManager.PruneUnused(file, richAST)
 
 	return fset, file, nil
@@ -593,17 +623,35 @@ func (t *galaASTTransformer) resolveTypeName(typeName string, exists func(string
 // by trying various package prefixes in order of precedence.
 // Delegates to the shared resolver.TypeResolver for consistent resolution logic.
 func (t *galaASTTransformer) tryResolveSimpleName(name string, exists func(string) bool) (string, bool) {
-	return t.buildTypeResolver().Resolve(name, exists)
+	// Validity is derived rather than announced: the snapshot records the
+	// import manager's revision, and every mutation of the entry set moves
+	// that revision. A site that adds, renames or drops an import therefore
+	// cannot leave resolution reading a stale copy, whether or not it knows
+	// this cache exists. Rebuilding here rather than only on a nil pointer
+	// also puts the cache back, so an import added mid-walk costs one rebuild
+	// instead of a fresh allocation on every later resolution in the file.
+	if t.cachedTypeResolver == nil || t.cachedTypeResolverRev != t.importManager.Revision() {
+		t.cacheTypeResolver()
+	}
+	return t.cachedTypeResolver.Resolve(name, exists)
+}
+
+// cacheTypeResolver snapshots the imports this file resolves names against,
+// stamped with the revision they were taken at.
+func (t *galaASTTransformer) cacheTypeResolver() {
+	t.cachedTypeResolver = t.buildTypeResolver()
+	t.cachedTypeResolverRev = t.importManager.Revision()
 }
 
 // buildTypeResolver creates a resolver.TypeResolver from the transformer's current state.
 func (t *galaASTTransformer) buildTypeResolver() *resolver.TypeResolver {
-	var imports []resolver.PackageInfo
-	for _, entry := range t.importManager.All() {
-		imports = append(imports, resolver.PackageInfo{
+	entries := t.importManager.All()
+	imports := make([]resolver.PackageInfo, len(entries))
+	for i, entry := range entries {
+		imports[i] = resolver.PackageInfo{
 			PkgName: entry.PkgName,
 			IsDot:   entry.IsDot,
-		})
+		}
 	}
 	return &resolver.TypeResolver{
 		PackageName: t.packageName,
@@ -818,6 +866,7 @@ func (t *galaASTTransformer) registerEmbeddedFSMetadata() {
 	if _, exists := t.typeMetas[transpiler.TypeEmbeddedFS]; !exists {
 		t.typeMetas[transpiler.TypeEmbeddedFS] = meta
 	}
+	t.invalidateTypeEnv()
 }
 
 // DumpTypeTrace writes all recorded type resolution events to w.

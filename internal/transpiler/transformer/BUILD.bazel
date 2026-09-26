@@ -101,6 +101,7 @@ go_test(
         "forbidden_builtins_test.go",
         "forbidden_statement_keywords_test.go",
         "func_phantom_typearg_test.go",
+        "func_type_env_test.go",
         "functions_test.go",
         "generated_format_test.go",
         "generic_funcref_chain_test.go",

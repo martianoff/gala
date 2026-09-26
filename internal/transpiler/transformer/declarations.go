@@ -612,10 +612,11 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 	defer t.popScope()
 	name := ctx.Identifier().GetText()
 
-	// Track current function name for LSP variable scoping
-	prevFunc := t.lspCurrentFunc
-	t.lspCurrentFunc = name
-	defer func() { t.lspCurrentFunc = prevFunc }()
+	if t.lspVarTypes != nil {
+		prevFunc := t.lspCurrentFunc
+		t.lspCurrentFunc = name
+		defer func() { t.lspCurrentFunc = prevFunc }()
+	}
 
 	// Receiver
 	var receiver *ast.FieldList
@@ -1296,6 +1297,9 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 					)
 				}
 				t.typeAliases[name] = underlyingType
+				// A newly visible alias can change how an unqualified name
+				// normalizes, which is baked into the cached function env.
+				t.invalidateTypeEnv()
 			}
 		}
 
@@ -1364,6 +1368,11 @@ func (t *galaASTTransformer) transformImportDeclaration(ctx *grammar.ImportDecla
 		}
 		specs = append(specs, importSpec)
 	}
+	// The Adds above extend byAlias, which getType consults to resolve a
+	// qualified type name, so the cached function environment is stale once
+	// this import block has been walked. The resolver snapshot needs no
+	// equivalent: it compares the import manager's revision on every use.
+	t.invalidateTypeEnv()
 	return &ast.GenDecl{
 		Tok:   token.IMPORT,
 		Specs: specs,

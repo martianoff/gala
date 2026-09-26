@@ -1,8 +1,12 @@
 package parser
 
 import (
+	"fmt"
 	"testing"
 
+	"martianoff/gala/galaerr"
+
+	"github.com/antlr4-go/antlr/v4"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -253,6 +257,65 @@ bind x = foo()`,
 			} else {
 				assert.NoError(t, err)
 			}
+		})
+	}
+}
+
+func treeFingerprint(tree antlr.Tree) string {
+	if tree == nil {
+		return "<nil>"
+	}
+	result := fmt.Sprintf("%T:%d", tree, tree.GetChildCount())
+	if parseTree, ok := tree.(antlr.ParseTree); ok {
+		result += ":" + parseTree.GetText()
+	}
+	for i := 0; i < tree.GetChildCount(); i++ {
+		result += "[" + treeFingerprint(tree.GetChild(i)) + "]"
+	}
+	return result
+}
+
+func parseFingerprint(input string, mode int) (string, map[int]string, []string) {
+	p := NewAntlrGalaParser()
+	input = galaerr.StripBOM(input)
+	result := parseSourceFileAttempt(input, mode)
+	errs := append([]error(nil), result.errors...)
+	if err := p.checkEmptyLines(result.input, result.tree); err != nil {
+		errs = append(errs, err)
+	}
+	messages := make([]string, len(errs))
+	for i, err := range errs {
+		messages[i] = fmt.Sprintf("%T:%s", err, err)
+	}
+	return treeFingerprint(result.tree), extractDocComments(result.tokens), messages
+}
+
+func publicParseFingerprint(input string) (string, map[int]string, []string) {
+	tree, docs, errs := NewAntlrGalaParser().ParseLenient(input)
+	messages := make([]string, len(errs))
+	for i, err := range errs {
+		messages[i] = fmt.Sprintf("%T:%s", err, err)
+	}
+	return treeFingerprint(tree), docs, messages
+}
+
+func TestPredictionModeFallbackMatchesLL(t *testing.T) {
+	cases := []string{
+		"package main\n\n// Value is documented.\nval value = 1",
+		"package main\n\nfunc f(x int) int = ((x + 1) * 2) - x\n",
+		"package main\n\nval f = (x int) => x match {\n\tcase 0 => 1\n\tcase _ => x\n}\n",
+		"package main\n\nfunc f() { val x = (1 }\n",
+		"package main\n\nval f = (x) => x\n",
+		"package main\n\nval x = []int{1, 2}\n",
+	}
+
+	for _, input := range cases {
+		t.Run(fmt.Sprintf("case_%d", len(input)), func(t *testing.T) {
+			llTree, llDocs, llErrors := parseFingerprint(input, antlr.PredictionModeLL)
+			publicTree, publicDocs, publicErrors := publicParseFingerprint(input)
+			assert.Equal(t, llTree, publicTree)
+			assert.Equal(t, llDocs, publicDocs)
+			assert.Equal(t, llErrors, publicErrors)
 		})
 	}
 }

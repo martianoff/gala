@@ -91,12 +91,13 @@ var accumulatedStateFields = []string{
 	"typeMetas",
 	"companionObjects",
 	"importManager",
+	"cachedTypeResolver",
+	"cachedTypeResolverRev",
 	"tempVarCount",
 	"inferer",
 	"typeAliases",
 	"goTypeInfo",
 	"filePath",
-	"sourceLines",
 	"richAST",
 	"traceTypeResolution",
 	"typeTraces",
@@ -115,6 +116,11 @@ var accumulatedStateFields = []string{
 	"lspLambdaParamHints",
 	"lastLine",
 	"lastCol",
+	"typeEnvEpoch",
+	"funcTypeEnv",
+	"funcTypeEnvEpoch",
+	"funcTypeEnvNames",
+	"typeNameScratch",
 }
 
 // scopedStateResidue reports the scoped fields that are still set. It is the

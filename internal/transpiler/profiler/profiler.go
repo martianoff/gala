@@ -4,6 +4,7 @@ package profiler
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -22,10 +23,11 @@ type event struct {
 
 // Profiler collects timing events for a single transpilation run.
 type Profiler struct {
-	mu     sync.Mutex
-	events []event
-	start  time.Time
-	file   string
+	mu        sync.Mutex
+	events    []event
+	start     time.Time
+	completed time.Time
+	file      string
 }
 
 // New creates a Profiler for the given file. Returns nil if profiling is disabled.
@@ -53,34 +55,48 @@ func (p *Profiler) Phase(label string) func() {
 	}
 }
 
+func (p *Profiler) snapshot() (time.Duration, []event) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.completed.IsZero() {
+		p.completed = time.Now()
+	}
+	events := append([]event(nil), p.events...)
+	return p.completed.Sub(p.start), events
+}
+
 // Report prints the profiling summary to stderr.
 // Safe to call on nil Profiler.
 func (p *Profiler) Report() {
-	if p == nil {
+	p.ReportTo(os.Stderr)
+}
+
+func (p *Profiler) ReportTo(w io.Writer) {
+	if p == nil || w == nil {
 		return
 	}
-	total := time.Since(p.start)
+	total, events := p.snapshot()
 
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	fmt.Fprintf(os.Stderr, "\n=== GALA PROFILE: %s (total: %s) ===\n", p.file, total)
+	fmt.Fprintf(w, "\n=== GALA PROFILE: %s (total: %s) ===\n", p.file, total)
 
 	// Find max label width for alignment
 	maxWidth := 0
-	for _, e := range p.events {
+	for _, e := range events {
 		if len(e.label) > maxWidth {
 			maxWidth = len(e.label)
 		}
 	}
 
-	for _, e := range p.events {
-		pct := float64(e.duration) / float64(total) * 100
+	for _, e := range events {
+		pct := 0.0
+		if total > 0 {
+			pct = float64(e.duration) / float64(total) * 100
+		}
 		bar := strings.Repeat("█", int(pct/2))
-		fmt.Fprintf(os.Stderr, "  %-*s  %8s  %5.1f%%  %s\n",
+		fmt.Fprintf(w, "  %-*s  %8s  %5.1f%%  %s\n",
 			maxWidth, e.label, e.duration.Round(time.Millisecond), pct, bar)
 	}
-	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(w)
 }
 
 // Summary is a top-level summary across all files in a batch.
@@ -110,16 +126,14 @@ func (s *Summary) Add(p *Profiler) {
 	if s == nil || p == nil {
 		return
 	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
+	total, events := p.snapshot()
 	entry := summaryEntry{
 		file:   p.file,
-		total:  time.Since(p.start),
+		total:  total,
 		phases: make(map[string]time.Duration),
 	}
-	for _, e := range p.events {
-		entry.phases[e.label] = e.duration
+	for _, e := range events {
+		entry.phases[e.label] += e.duration
 	}
 
 	s.mu.Lock()
@@ -129,64 +143,87 @@ func (s *Summary) Add(p *Profiler) {
 
 // Report prints the batch summary to stderr.
 func (s *Summary) Report() {
-	if s == nil {
+	s.ReportTo(os.Stderr)
+}
+
+func (s *Summary) ReportTo(w io.Writer) {
+	if s == nil || w == nil {
 		return
 	}
+
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	wallTime := time.Since(s.start)
-
-	// Collect all phase names
-	phaseSet := make(map[string]bool)
-	for _, e := range s.entries {
-		for phase := range e.phases {
-			phaseSet[phase] = true
+	entries := make([]summaryEntry, len(s.entries))
+	for i, entry := range s.entries {
+		entries[i] = summaryEntry{
+			file:   entry.file,
+			total:  entry.total,
+			phases: make(map[string]time.Duration, len(entry.phases)),
+		}
+		for phase, duration := range entry.phases {
+			entries[i].phases[phase] = duration
 		}
 	}
-	var phases []string
+	start := s.start
+	s.mu.Unlock()
+
+	wallTime := time.Since(start)
+
+	// Collect all phase names
+	phaseSet := make(map[string]struct{})
+	for _, entry := range entries {
+		for phase := range entry.phases {
+			phaseSet[phase] = struct{}{}
+		}
+	}
+	phases := make([]string, 0, len(phaseSet))
 	for phase := range phaseSet {
 		phases = append(phases, phase)
 	}
 	sort.Strings(phases)
 
 	// Aggregate
-	totalCPU := time.Duration(0)
+	totalFileWall := time.Duration(0)
 	phaseTotal := make(map[string]time.Duration)
-	for _, e := range s.entries {
-		totalCPU += e.total
-		for phase, d := range e.phases {
-			phaseTotal[phase] += d
+	for _, entry := range entries {
+		totalFileWall += entry.total
+		for phase, duration := range entry.phases {
+			phaseTotal[phase] += duration
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "\n╔══ GALA BATCH PROFILE SUMMARY ══════════════════════════════════╗\n")
-	fmt.Fprintf(os.Stderr, "║  Files: %d   Wall: %s   CPU: %s\n", len(s.entries), wallTime.Round(time.Millisecond), totalCPU.Round(time.Millisecond))
-	fmt.Fprintf(os.Stderr, "╠═══════════════════════════════════════════════════════════════════╣\n")
+	fmt.Fprintf(w, "\n╔══ GALA BATCH PROFILE SUMMARY ══════════════════════════════════╗\n")
+	fmt.Fprintf(w, "║  Files: %d   Wall: %s   File wall sum: %s\n", len(entries), wallTime.Round(time.Millisecond), totalFileWall.Round(time.Millisecond))
+	fmt.Fprintf(w, "╠═══════════════════════════════════════════════════════════════════╣\n")
 
 	// Per-phase aggregate
-	fmt.Fprintf(os.Stderr, "║  Phase totals (sum across all files):\n")
+	fmt.Fprintf(w, "║  Phase totals (sum across all files):\n")
 	for _, phase := range phases {
-		d := phaseTotal[phase]
-		pct := float64(d) / float64(totalCPU) * 100
+		duration := phaseTotal[phase]
+		pct := 0.0
+		if totalFileWall > 0 {
+			pct = float64(duration) / float64(totalFileWall) * 100
+		}
 		bar := strings.Repeat("█", int(pct/2))
-		fmt.Fprintf(os.Stderr, "║    %-30s  %8s  %5.1f%%  %s\n",
-			phase, d.Round(time.Millisecond), pct, bar)
+		fmt.Fprintf(w, "║    %-30s  %8s  %5.1f%%  %s\n",
+			phase, duration.Round(time.Millisecond), pct, bar)
 	}
 
 	// Slowest files
-	sort.Slice(s.entries, func(i, j int) bool {
-		return s.entries[i].total > s.entries[j].total
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].total != entries[j].total {
+			return entries[i].total > entries[j].total
+		}
+		return entries[i].file < entries[j].file
 	})
-	fmt.Fprintf(os.Stderr, "║\n║  Slowest files:\n")
+	fmt.Fprintf(w, "║\n║  Slowest files:\n")
 	limit := 10
-	if len(s.entries) < limit {
-		limit = len(s.entries)
+	if len(entries) < limit {
+		limit = len(entries)
 	}
 	for i := 0; i < limit; i++ {
-		e := s.entries[i]
-		fmt.Fprintf(os.Stderr, "║    %8s  %s\n", e.total.Round(time.Millisecond), e.file)
+		entry := entries[i]
+		fmt.Fprintf(w, "║    %8s  %s\n", entry.total.Round(time.Millisecond), entry.file)
 	}
 
-	fmt.Fprintf(os.Stderr, "╚═══════════════════════════════════════════════════════════════════╝\n\n")
+	fmt.Fprintf(w, "╚═══════════════════════════════════════════════════════════════════╝\n\n")
 }
