@@ -318,13 +318,11 @@ func (t *galaASTTransformer) resolveMethodCallTypeWithParams(
 	}
 
 	// Determine the receiver's concrete generic type params for substitution.
-	// Use pre-resolved params if provided, otherwise extract from the receiver argument.
+	// Use pre-resolved params if provided, otherwise extract from the receiver
+	// argument — through the pointer for a pointer receiver (`*Array[Row]`).
 	receiverGenericParams := preResolvedGenericParams
 	if len(receiverGenericParams) == 0 && receiverArgIndex >= 0 && receiverArgIndex < len(args) {
-		receiverArgType := t.getExprTypeNameManual(args[receiverArgIndex])
-		if genType, ok := receiverArgType.(transpiler.GenericType); ok {
-			receiverGenericParams = genType.Params
-		}
+		receiverGenericParams = t.getReceiverTypeArgTypes(t.getExprTypeNameManual(args[receiverArgIndex]))
 	}
 
 	// Alpha-rename the method's own type params to fresh sentinel names BEFORE

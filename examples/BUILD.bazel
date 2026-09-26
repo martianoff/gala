@@ -794,6 +794,20 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
+# Regression: a generic method (SortBy, Map, Zip) on a pointer receiver
+# (collection_mutable) must substitute the receiver's type arguments into its
+# result, or a val bound to it (or a chained call) emits the receiver's own
+# T/K/V and the generated Go does not compile.
+gala_exec_test(
+    name = "pointer_receiver_generic_method_val",
+    src = "pointer_receiver_generic_method_val.gala",
+    expected = "pointer_receiver_generic_method_val.out",
+    deps = [
+        "//collection_immutable",
+        "//collection_mutable",
+    ],
+)
+
 gala_exec_test(
     name = "sealed_recursive_list",
     src = "sealed_recursive_list.gala",
