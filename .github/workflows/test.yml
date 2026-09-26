@@ -71,26 +71,14 @@ jobs:
     # prediction, which is where the reported crashes lived. A filtered job
     # would re-open the blind spot this one exists to close.
     #
-    # The LSP is covered because the language server is the heaviest concurrent
-    # consumer of the shared ANTLR parser in the tree, heavier than any CLI
-    # transpile: DidChange returns as soon as it has spawned
-    # `go h.analyzeFile(...)`, so editing several documents leaves several
-    # analyses running at once and each one fans out again through
-    # parseFilesConcurrent. Nothing covered that before — no LSP test spawned a
-    # goroutine, so every DidChange in the suite was sequential. The first run
-    # of this job found a real race there: the handler published a RichAST to
-    # hover/completion while the transformer was still assigning into the Types
-    # map it aliases.
-    #
-    # All three run whole. An earlier version of this job filtered the LSP
-    # target down to the concurrency test, on the theory that the rest of that
-    # suite — which drives diagnostics through fixed time.Sleep windows, 600ms
-    # for "debounce 300ms + analysis" — could not survive instrumentation. That
-    # was wrong, and wrong in an instructive way: those tests had already passed
-    # under -race in this job, unfiltered, on the run that found the race. The
-    # flakiness came from running several race-instrumented containers at once
-    # on a dev box, which inflates timings enough to blow the sleep windows. If
-    # one of them goes red here, reproduce it in isolation before believing it.
+    # The LSP is here because the language server is the heaviest concurrent
+    # consumer of the shared ANTLR parser in the tree, and nothing covered that
+    # before; the rationale is in internal/lsp/concurrent_analysis_test.go, and
+    # the first run of this job found a real race there. All three targets run
+    # whole. Parts of the LSP suite budget for analysis with fixed sleeps, so if
+    # one goes red here, reproduce it in isolation before trusting the red — a
+    # box running several race-instrumented jobs at once squeezes those budgets
+    # enough to fail them for reasons that have nothing to do with concurrency.
     #
     # //internal/transpiler/transformer is deliberately NOT here. Under -race
     # it dies with `fatal error: traceback` /

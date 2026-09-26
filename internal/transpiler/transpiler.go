@@ -447,6 +447,19 @@ type LambdaParamHint struct {
 }
 
 // ASTTransformer transforms a Gala RichAST into a Go AST file and its FileSet.
+//
+// Both methods MUTATE richAST in place. The transformer adopts richAST.Types as
+// its live type table rather than copying it, and adds entries to it while it
+// runs — std.EmbeddedFS metadata among them. That is deliberate: callers read
+// those additions back off richAST afterwards, so copying instead would hide
+// them.
+//
+// The consequence is an ownership rule. A caller must not publish richAST
+// anywhere concurrent readers can reach it until the call has returned. The LSP
+// broke this once, storing richAST for hover and completion before transforming
+// it, and a request arriving mid-transform iterated a map that was still being
+// assigned into — a `concurrent map read and map write` fatal that kills the
+// server. See GalaHandler.transformAndPublish for the shape that holds.
 type ASTTransformer interface {
 	Transform(richAST *RichAST) (*token.FileSet, *ast.File, error)
 	// TransformForLSP is like Transform but also returns resolved variable types.

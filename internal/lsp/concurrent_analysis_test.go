@@ -14,7 +14,7 @@ import (
 // named per seed, so several documents can be analysed at once without
 // colliding, and whose bodies are heavy enough (match arms, generics, a lambda,
 // an interpolated string) to keep ANTLR's adaptive prediction busy.
-func concurrentDoc(seed, round int) string {
+func concurrentDoc(seed, version int) string {
 	return fmt.Sprintf(`package main
 
 sealed type Signal%[1]d {
@@ -39,7 +39,7 @@ func main() {
     Println(s"r=${fn(%[2]d)} c=${classify%[1]d(Ping%[1]d(Seq = %[1]d))}")
     Println(wrap%[1]d[string]("done"))
 }
-`, seed, round+1)
+`, seed, version)
 }
 
 // TestConcurrentAnalysesAcrossDocuments overlaps several document analyses and
@@ -73,7 +73,7 @@ func TestConcurrentAnalysesAcrossDocuments(t *testing.T) {
 
 	uris := make([]lsp.DocumentURI, docs)
 	for i := range uris {
-		uris[i] = openNamedFileOnDisk(t, h, fmt.Sprintf("doc%d.gala", i), concurrentDoc(i, 0))
+		uris[i] = openNamedFileOnDisk(t, h, fmt.Sprintf("doc%d.gala", i), concurrentDoc(i, 1))
 	}
 
 	// Captured after the documents are open so the baseline excludes the
@@ -82,10 +82,12 @@ func TestConcurrentAnalysesAcrossDocuments(t *testing.T) {
 
 	// Fire every edit without waiting in between: the point is to have several
 	// analyzeFile goroutines alive at the same moment.
-	for round := 1; round <= rounds; round++ {
+	// The document version doubles as the fixture's multiplier, so each round
+	// really does produce different source rather than re-sending the same text.
+	for version := 2; version <= rounds+1; version++ {
 		for i, uri := range uris {
-			if err := h.DidChange(uri, round+1, concurrentDoc(i, round)); err != nil {
-				t.Fatalf("DidChange doc%d round%d: %v", i, round, err)
+			if err := h.DidChange(uri, version, concurrentDoc(i, version)); err != nil {
+				t.Fatalf("DidChange doc%d v%d: %v", i, version, err)
 			}
 		}
 		// Read while those analyses are still running. Errors are fine (the

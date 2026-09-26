@@ -367,33 +367,7 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 		return diagnostics
 	}
 
-	// Transform BEFORE publishing richAST, not after.
-	//
-	// The transformer aliases the RichAST's Types map rather than copying it
-	// (`t.typeMetas = richAST.Types` in transformer.go), and it writes to that
-	// map while it runs — registerEmbeddedFSMetadata is one such write. So
-	// publishing richAST first left every hover and completion arriving during
-	// the transform iterating a map the transformer was still assigning into,
-	// which Go turns into a `concurrent map read and map write` fatal: the
-	// language server dies and takes the editor's GALA features with it.
-	//
-	// The fresh transformer per analysis was already there to keep
-	// concurrent analyses off each other's internal state; it does nothing for
-	// the RichAST they all hand it, which is the map that actually escapes.
-	//
-	// Publishing after costs nothing a reader wants: before the transform the
-	// metadata is incomplete anyway. Publication is unconditional so a failed
-	// transform still leaves the analyzer's results available, which is what
-	// the old ordering was really buying.
-	xformer := transformer.NewGalaASTTransformer()
-	result, transformErr := xformer.TransformForLSP(richAST)
-
-	h.mu.Lock()
-	h.richASTs[uri] = richAST
-	h.parseTrees[uri] = tree
-	h.parseTexts[uri] = text
-	h.mu.Unlock()
-
+	result, transformErr := h.transformAndPublish(uri, richAST, tree, text)
 	if transformErr != nil {
 		diagnostics = append(diagnostics, errorsToDiagnostics(transformErr)...)
 	}
@@ -523,6 +497,11 @@ func (h *GalaHandler) tryAnalyzePartial(uri, filePath, text string, tree antlr.T
 		return
 	}
 
+	// Published untransformed on purpose: this path exists to keep completion
+	// and go-to-def answering mid-edit from an error-recovered tree, and running
+	// the transformer over one is what the recover above is guarding against. No
+	// transform means no in-place mutation, so publishing directly is safe here
+	// — if a transform is ever added, it has to go through transformAndPublish.
 	h.mu.Lock()
 	h.richASTs[uri] = richAST
 	h.mu.Unlock()
@@ -634,18 +613,7 @@ func (h *GalaHandler) analyzeAndCache(uri, cleanText, caller string) {
 		return
 	}
 
-	// Transform before publishing, for the reason given in analyzeFile: the
-	// transformer writes the RichAST's Types map in place, so a reader that
-	// sees richAST early can be iterating it mid-assignment.
-	xformer := transformer.NewGalaASTTransformer()
-	result, _ := xformer.TransformForLSP(richAST)
-
-	h.mu.Lock()
-	h.richASTs[uri] = richAST
-	h.parseTrees[uri] = tree
-	h.parseTexts[uri] = cleanText
-	h.mu.Unlock()
-
+	result, _ := h.transformAndPublish(uri, richAST, tree, cleanText)
 	if result != nil && result.VarTypes != nil {
 		typeMap := make(map[string]string, len(result.VarTypes))
 		for name, typ := range result.VarTypes {
@@ -656,6 +624,31 @@ func (h *GalaHandler) analyzeAndCache(uri, cleanText, caller string) {
 		h.lambdaHints[uri] = result.LambdaParamHints
 		h.mu.Unlock()
 	}
+}
+
+// transformAndPublish runs the transformer over richAST and only then stores it,
+// with the parse tree and the text it came from, where request handlers read it.
+//
+// The ordering is the whole reason this is a helper rather than five lines at
+// each call site. TransformForLSP mutates richAST in place — it adopts
+// richAST.Types as its type table and keeps adding to it (see
+// transpiler.ASTTransformer) — so publishing first hands hover and completion a
+// map the transformer is still assigning into, which Go turns into a
+// `concurrent map read and map write` fatal. Routing both analysis paths through
+// here means a third cannot reintroduce the order that caused it.
+//
+// Publication is unconditional: a failed transform still leaves the analyzer's
+// metadata available, which is what publishing early was really buying.
+func (h *GalaHandler) transformAndPublish(uri string, richAST *transpiler.RichAST, tree antlr.Tree, text string) (*transpiler.TransformResult, error) {
+	result, err := transformer.NewGalaASTTransformer().TransformForLSP(richAST)
+
+	h.mu.Lock()
+	h.richASTs[uri] = richAST
+	h.parseTrees[uri] = tree
+	h.parseTexts[uri] = text
+	h.mu.Unlock()
+
+	return result, err
 }
 
 // --- Helpers ---
