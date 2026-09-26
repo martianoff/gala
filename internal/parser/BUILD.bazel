@@ -30,6 +30,7 @@ go_test(
     embed = [":parser"],
     deps = [
         "//galaerr",
+        "@com_github_antlr4_go_antlr_v4//:antlr",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],

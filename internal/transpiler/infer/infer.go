@@ -21,7 +21,13 @@ const typeMismatchHint = "the expression's type does not match what the surround
 type TypeEnv map[string]*Scheme
 
 func (e TypeEnv) Apply(s Substitution) TypeEnv {
-	res := make(TypeEnv)
+	res := make(TypeEnv, len(e))
+	if len(s) == 0 {
+		for k, v := range e {
+			res[k] = v
+		}
+		return res
+	}
 	for k, v := range e {
 		res[k] = v.Apply(s)
 	}
@@ -53,7 +59,10 @@ func (inf *Inferer) NewTypeVar() *TypeVariable {
 }
 
 func (inf *Inferer) instantiate(s *Scheme) Type {
-	sub := make(Substitution)
+	if len(s.Vars) == 0 {
+		return s.Type
+	}
+	sub := make(Substitution, len(s.Vars))
 	for _, v := range s.Vars {
 		sub[v] = inf.NewTypeVar()
 	}

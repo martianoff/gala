@@ -78,8 +78,12 @@ func runBuild(cmd *cobra.Command, args []string) {
 	}
 
 	// Run build
+	startCPUProfileIfRequested()
+	defer stopCPUProfile()
+
 	outputPath, err := builder.Build(buildOutput)
 	if err != nil {
+		stopCPUProfile()
 		exitBuildFailed(cmd, err)
 	}
 

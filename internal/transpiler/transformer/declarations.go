@@ -612,10 +612,11 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 	defer t.popScope()
 	name := ctx.Identifier().GetText()
 
-	// Track current function name for LSP variable scoping
-	prevFunc := t.lspCurrentFunc
-	t.lspCurrentFunc = name
-	defer func() { t.lspCurrentFunc = prevFunc }()
+	if t.lspVarTypes != nil {
+		prevFunc := t.lspCurrentFunc
+		t.lspCurrentFunc = name
+		defer func() { t.lspCurrentFunc = prevFunc }()
+	}
 
 	// Receiver
 	var receiver *ast.FieldList
@@ -1296,6 +1297,9 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 					)
 				}
 				t.typeAliases[name] = underlyingType
+				// A newly visible alias can change how an unqualified name
+				// normalizes, which is baked into the cached function env.
+				t.invalidateTypeEnv()
 			}
 		}
 
