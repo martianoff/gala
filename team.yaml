@@ -17,7 +17,7 @@ teams:
     # Team-wide onboarding — every member reads these BEFORE their first
     # prompt. Paths are relative to --project.
     onboarding:
-      - CLAUDE.MD
+      - AGENTS.md
       - docs/GALA_BEST_PRACTICES.MD
       - docs/GALA.MD
 

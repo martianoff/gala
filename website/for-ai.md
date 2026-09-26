@@ -159,10 +159,6 @@ Every one converts a "write a test and hope" turn into a "read the compiler" tur
 
 ## AI policy
 
-GALA is open to AI end to end. Crawlers, AI search, and model training on this site and
-the [repository](https://github.com/martianoff/gala) are welcome — see
-[`/llms.txt`]({{ '/llms.txt' | relative_url }}) for the agent-oriented summary.
-AI-assisted pull requests are welcome too, with a human accountable for the change and the
-assistance disclosed. Agents working on GALA itself follow
-[`AGENTS.md`](https://github.com/martianoff/gala/blob/master/AGENTS.md), which Codex,
-Cursor, Copilot, Gemini CLI, and Claude Code all read.
+GALA is open to AI: crawlers, AI search, model training, and AI-assisted pull requests
+are all welcome — see the
+[AI policy](https://github.com/martianoff/gala/blob/master/CONTRIBUTING.MD#ai-assisted-contributions).

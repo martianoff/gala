@@ -2219,10 +2219,11 @@ gala_library(
     visibility = ["//visibility:public"],
 )
 
-# Regression: library-with-sublibrary layout used to panic the analyzer
-# when one batch mixed files from different packages. The example keeps a main package at examples/multipackage_subpkg/
-# with a sibling subpackage in examples/multipackage_subpkg/state/ — the
-# combination that reproduced the ANTLR nil-pointer dereference.
+# Regression: a library-with-sublibrary layout used to panic the analyzer
+# when one batch mixed files from different packages. The example keeps a main
+# package at examples/multipackage_subpkg/ with a sibling subpackage in
+# examples/multipackage_subpkg/state/ — the combination that reproduced the
+# ANTLR nil-pointer dereference.
 gala_library(
     name = "multipackage_subpkg_state",
     srcs = ["multipackage_subpkg/state/state.gala"],

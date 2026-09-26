@@ -23,8 +23,7 @@ func SameKey(a lib.Team, b lib.Team) bool = a.Key == b.Key
 
 // Chained method on cross-package field: `model.Teams.Map(...)`
 // requires unwrapping `model.Teams` (Immutable[Array[Team]]) before
-// the .Map() call (method dispatch through an Immutable-wrapped
-// cross-package field reached via a chained accessor).
+// the .Map() call.
 func KeysOf(m lib.AppModel) Array[string] =
     m.Teams.Map((t) => t.Key)
 

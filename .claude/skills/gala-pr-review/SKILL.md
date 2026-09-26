@@ -110,23 +110,13 @@ generated-Go change, check the downstream repos (gala_tui, gala_team, gala-acp) 
 `.github/workflows/downstream-drift.yml`. An undeclared breaking change is a blocking
 finding; a declared one is fine if the description names what breaks.
 
-### Repository policy (`CLAUDE.MD`)
+### Repository policy (`AGENTS.md`)
 
-- No edits to generated `internal/parser/grammar/*.go`.
-- No special treatment of `std` or any stdlib package in the transpiler.
-- Generated Go uses concrete types, never `any` / `interface{}` unless the GALA source
-  asks for it; unresolved types are errors.
-- Transpiler bugs are fixed with a repro test, not worked around in GALA code.
-- No internal references in checked-in files: ticket IDs, private tracker links, agent
-  session logs, machine-local paths, fork-only commit SHAs.
-- Strict checks are not softened to warnings, and no opt-in flags are added to restore
-  strictness.
-- No new GALA syntax for Go slices (`arr[:]`, `arr[a:b]`).
-- `gala_go_test` auto-injects only `//std` and `//test`.
-- A new stdlib package must be registered for the CLI (`gala build` / `gala run`), not
-  only for Bazel.
-- Language features add a verification example under `examples/` with a `.out` file,
-  and update `docs/GALA.MD`, `docs/TYPE_INFERENCE.MD`, and `docs/EXAMPLES.MD` as relevant.
+Check the diff against every rule in `AGENTS.md` → **CRITICAL RULES**, and its
+**Testing** and **Documentation** sections (verification example under `examples/` with
+a `.out` file; `docs/GALA.MD`, `docs/TYPE_INFERENCE.MD`, `docs/EXAMPLES.MD` updated).
+`tools/check_repo_policy.sh` covers the mechanical part of rules 1 and 7; the rest is
+yours to judge.
 
 ### Simplicity and tool creep
 
