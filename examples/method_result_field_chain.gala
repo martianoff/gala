@@ -5,7 +5,8 @@ import . "martianoff/gala/collection_immutable"
 // Field chains through the result of a method call must unwrap each
 // immutable field, whether the method has a value or a pointer receiver and
 // whether the receiver is bound with val or var. A method named Get is the
-// sharpest case because it shares its name with the Immutable accessor.
+// sharpest case because it shares its name with the Immutable accessor. The
+// `var` bindings are never reassigned on purpose: they exercise that path.
 
 struct Style(Bold bool)
 struct Cell(Ch rune, St Style)
@@ -57,6 +58,6 @@ func main() {
     var vvar = ValBuffer(cell = MakeCell('f', false))
     Println(s"value var: ${vvar.Get().St.Bold} ${same(vvar.Get().Ch, 'f')}")
 
-    var holder = &Holder(MakeCell('g', true))
+    val holder = &Holder(MakeCell('g', true))
     Println(s"holder:    ${holder.Current().St.Bold} ${same(holder.Current().Ch, 'g')}")
 }
