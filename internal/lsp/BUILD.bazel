@@ -44,6 +44,7 @@ go_test(
         "bom_test.go",
         "call_argument_completion_test.go",
         "completion_docs_test.go",
+        "concurrent_analysis_test.go",
         "declarations_internal_test.go",
         "definition_project_module_test.go",
         "definition_sibling_function_test.go",
