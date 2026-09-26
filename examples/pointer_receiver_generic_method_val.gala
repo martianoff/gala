@@ -5,11 +5,7 @@ import (
     mu "martianoff/gala/collection_mutable"
 )
 
-// Generic methods with their own type parameter (SortBy[K], Map[U], Zip[U],
-// HashMap.SortBy[S]) called on pointer-receiver collections. The result must
-// carry the receiver's concrete type arguments, so a val bound to it (or a
-// call chained onto it) sees Row / string / Tuple[string, int], never the
-// receiver's own T, K, V.
+// Generic methods on pointer-receiver (mutable) collections keep the receiver's type arguments.
 
 struct Row(Name string, K int)
 
