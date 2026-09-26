@@ -1,7 +1,6 @@
 ptr var:   true true
 ptr bound: true true
 ptr val:   false true
-ptr bound: false true
 grid:      true false true
 value val: true true
 value var: false true

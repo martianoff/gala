@@ -49,7 +49,8 @@ func TestImmutableFieldUnwrapAcrossSpellings(t *testing.T) {
 		name string
 		// body is GALA statements inside main. The struct `Person(Name string,
 		// Age int)` and a `people` Array are already in scope, along with a
-		// single `alice`.
+		// single `alice`, a `Registry` (pointer-receiver `Get`, value-receiver
+		// `First`) and a generic `same`.
 		body string
 	}{
 		{

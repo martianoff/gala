@@ -48,8 +48,6 @@ func main() {
 
     val pval = &PtrBuffer(cell = MakeCell('b', false))
     Println(s"ptr val:   ${pval.Get().St.Bold} ${same(pval.Get().Ch, 'b')}")
-    val fromVal = pval.Get()
-    Println(s"ptr bound: ${fromVal.St.Bold} ${same(fromVal.Ch, 'b')}")
 
     val grid = &Grid(cells = ArrayOf(MakeCell('c', true), MakeCell('d', false)))
     Println(s"grid:      ${grid.Get(0).St.Bold} ${grid.Get(1).St.Bold} ${same(grid.Get(1).Ch, 'd')}")
