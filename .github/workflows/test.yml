@@ -82,8 +82,11 @@ jobs:
     # mean the package cannot be gated until someone recovers the real panic
     # behind it.
     #
-    # --test_timeout is raised because instrumentation costs roughly 5x: the
-    # analyzer suite runs ~11 minutes under -race against ~2 minutes without.
+    # --test_timeout is raised as headroom rather than need: this job measured
+    # 5m18s end to end on ubuntu-latest, build included, with both suites
+    # running in parallel from a cold cache. Instrumentation is not the tax a
+    # sequential local run suggests — do not let a stale estimate of it argue
+    # against widening this job.
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
