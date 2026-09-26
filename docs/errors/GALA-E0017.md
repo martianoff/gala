@@ -18,11 +18,22 @@ to be fixed, not a documented trigger.
 **Error output.** The shape the code produces, from the emit site:
 
 ```
-[SemanticError GALA-E0017] line L:C internal transpiler panic: <recovered value> (hint: please file an issue at https://github.com/martianoff/gala/issues with the source that triggered this panic)
+[SemanticError GALA-E0017] line L:C internal transpiler panic: <recovered value> (hint: not this line's fault: an internal transpiler defect; the position is the transformer's last known location, not a diagnosis, and a panic raised on a parse worker can name a different line on every run, so re-running may succeed. Please file an issue at https://github.com/martianoff/gala/issues with the source that triggered this panic)
 ```
 
-The position is the last source location the transformer recorded before the
-panic, so it is a hint about where the failure happened, not a precise span.
+**The position is not a diagnosis.** It is the last source location the
+transformer recorded before the panic. When the panic is raised on one of the
+analyzer's concurrent parse workers it is not even approximately the cause: it
+is whichever file and line the crashing worker happened to hold, and it can
+differ on the next run of byte-identical input. One report of about a dozen
+such aborts in a single day named five unrelated lines — a generic call, a
+range loop, a plain call, a named-argument list — sharing no construct at all,
+and every one of them transpiled cleanly on retry with no edit.
+
+So: if you hit E0017, re-run the same command before investigating anything. A
+success on retry does not mean the problem is gone, but it does tell you the
+line in the message is innocent and saves you from reading it. Either way the
+transpiler is at fault and the report is worth filing.
 
 **What to do.** File an issue at
 [github.com/martianoff/gala/issues](https://github.com/martianoff/gala/issues)

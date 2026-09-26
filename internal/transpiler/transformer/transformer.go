@@ -151,11 +151,17 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (fset *token
 			// users see a single search target (GALA-E0017) instead of a raw
 			// Go stack trace. The recovered value is preserved in the message
 			// for issue-filing context.
+			//
+			// t.lastLine/t.lastCol is wherever the transformer happened to be,
+			// which for a panic raised on a concurrent parse worker is not even
+			// approximately the cause. The hint says so — see
+			// galaerr.InternalTransformerPanicHint for why its clause order
+			// matters.
 			err = galaerr.NewCodedSemanticError(
 				galaerr.CodeInternalTransformerPanic,
 				t.lastLine, t.lastCol,
 				fmt.Sprintf("internal transpiler panic: %v", r),
-				"please file an issue at https://github.com/martianoff/gala/issues with the source that triggered this panic",
+				galaerr.InternalTransformerPanicHint,
 			)
 		}
 	}()

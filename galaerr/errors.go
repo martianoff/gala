@@ -522,6 +522,23 @@ const (
 	CodeMethodOnNonLocalAlias ErrorCode = "GALA-E0048"
 )
 
+// InternalTransformerPanicHint is the hint attached to every GALA-E0017.
+//
+// It leads with whose fault the line is NOT, and that ordering is load-bearing:
+// E0017 carries the transformer's last known position, the renderer draws a
+// caret under it exactly as for a real semantic error, and the caret's inline
+// annotation is only the hint's FIRST clause (see terseHint in render.go). A
+// panic raised on one of the analyzer's concurrent parse workers can name a
+// different, unrelated line on each run of byte-identical input, so the first
+// clause has to say so — otherwise the reader studies innocent code. Reordering
+// the clauses silently drops the warning from the caret row; the render test
+// TestRenderRichInternalPanicHint guards against that.
+const InternalTransformerPanicHint = "not this line's fault: an internal transpiler defect; " +
+	"the position is the transformer's last known location, not a diagnosis, and a " +
+	"panic raised on a parse worker can name a different line on every run, so " +
+	"re-running may succeed. Please file an issue at " +
+	"https://github.com/martianoff/gala/issues with the source that triggered this panic"
+
 // MultiError collects multiple GALA errors.
 type MultiError struct {
 	Errors []error

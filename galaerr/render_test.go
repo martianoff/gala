@@ -153,3 +153,35 @@ func TestRenderRich(t *testing.T) {
 type assertError string
 
 func (e assertError) Error() string { return string(e) }
+
+// TestRenderRichInternalPanicHint guards the one property of GALA-E0017 that a
+// reader depends on: the caret row has to say the line is not the cause.
+//
+// E0017 is emitted with the transformer's last known position, and the renderer
+// frames it like any semantic error — source line, caret, hint. For a panic
+// raised on one of the analyzer's concurrent parse workers that position is
+// whichever line the crashing worker happened to hold; it moves between runs on
+// byte-identical input. The caret's inline annotation is only the hint's first
+// clause, so reordering InternalTransformerPanicHint would keep the full
+// warning in the footer while silently dropping it from the caret row, which is
+// the part a reader acts on first.
+func TestRenderRichInternalPanicHint(t *testing.T) {
+	err := galaerr.NewCodedSemanticError(
+		galaerr.CodeInternalTransformerPanic, 4, 12,
+		"internal transpiler panic: runtime error: invalid memory address or nil pointer dereference",
+		galaerr.InternalTransformerPanicHint,
+	)
+
+	out := galaerr.RenderRich(err, galaerr.Options{FallbackPath: "innocent.gala", FallbackSource: multiLineSrc})
+
+	caret := caretLineOf(out)
+	require.NotEmpty(t, caret, "expected a caret line")
+	assert.Contains(t, afterPipe(caret), "not this line's fault",
+		"the caret annotation must disown the line it points at")
+
+	// The rest of the warning is allowed to live in the footer, but it has to
+	// be there: nondeterminism is the fact that saves a reader from bisecting
+	// their own source.
+	assert.Contains(t, out, "re-running may succeed")
+	assert.Contains(t, out, "https://github.com/martianoff/gala/issues")
+}
