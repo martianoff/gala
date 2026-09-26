@@ -5,7 +5,7 @@ import (
     . "martianoff/gala/collection_immutable"
 )
 
-// FIX-007 reproducer: tuple literal as call argument should infer concrete element types
+// Reproducer: tuple literal as call argument should infer concrete element types
 // from the call-site expected parameter type, not collapse to `Tuple[any, error]`.
 func collectFailures() Array[Tuple[string, error]] {
     var failures = EmptyArray[Tuple[string, error]]()

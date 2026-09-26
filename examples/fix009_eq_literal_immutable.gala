@@ -5,7 +5,7 @@ import (
     . "martianoff/gala/test"
 )
 
-// FIX-009 regression: when a function's call-site expected parameter
+// Regression: when a function's call-site expected parameter
 // type is Immutable[T] and the actual arg is a bare T literal, the
 // transpiler must lift the literal with NewImmutable[T] — Go rejects
 // the bare literal as "cannot use \"notify\" (untyped string constant)

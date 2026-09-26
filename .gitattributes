@@ -7,3 +7,5 @@ BUILD text eol=lf
 WORKSPACE text eol=lf
 WORKSPACE.bazel text eol=lf
 MODULE.bazel text eol=lf
+# Shell scripts run on Linux CI; a CRLF checkout breaks the shebang line.
+*.sh text eol=lf

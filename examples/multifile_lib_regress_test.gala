@@ -321,7 +321,7 @@ func main() {
     })
 
     // --- Regression: chained accessor `cfg.Members.Get(N).Model match`
-    // (FIX-008 + FIX-010 shape). Cfg.Members is `Array[Member]`,
+    // (match on a field reached through Immutable-wrapped accessors). Cfg.Members is `Array[Member]`,
     // .Get(N) returns `Member`, .Model is `Option[string]`. The match
     // subject must be typed as `Option[string]` — not `Option[any]`,
     // and the match-IIFE param must accept the Immutable wrapper unwrap.
@@ -337,20 +337,20 @@ func main() {
 
     // --- Regression: `.IsDefined()` / `.GetOrElse(...)` on
     // `Immutable[Option[T]]` reached through a chained accessor
-    // (FIX-010 shape). The auto-unwrap codegen must dispatch through
+    // (method call on an Immutable-wrapped Option). The auto-unwrap codegen must dispatch through
     // the Immutable wrapper before the method lookup.
     Println(s"hasModel(0)=${cfg.Members.Get(0).Model.IsDefined()}")
     Println(s"hasModel(1)=${cfg.Members.Get(1).Model.IsDefined()}")
     Println(s"modelOr(0)=${cfg.Members.Get(0).Model.GetOrElse(\"<none>\")}")
 
     // --- Regression: `.Size()` on `Immutable[Array[T]]` reached
-    // through a chained accessor (FIX-011 shape). cfg.Hooks.Get(0)
+    // through a chained accessor. cfg.Hooks.Get(0)
     // returns `Immutable[Hook]`, .Args returns `Immutable[Array[string]]`,
     // .Size() must auto-unwrap before dispatching the method.
     Println(s"hook0.args.size=${cfg.Hooks.Get(0).Args.Size()}")
 
-    // --- Regression: 3-deep chain `cfgs.Get(N).Lead.Name` (FIX-012
-    // shape). The chain goes Cfg → Array[Cfg] → Cfg → Member → string,
+    // --- Regression: 3-deep chain `cfgs.Get(N).Lead.Name` compared
+    // against a string literal. The chain goes Cfg → Array[Cfg] → Cfg → Member → string,
     // each traversed through Immutable wrappers. .Name on
     // `Immutable[Member]` must resolve to the field's `Immutable[string]`
     // and Go must accept a bare string literal at the Eq site.

@@ -17,7 +17,7 @@ import (
 // parent sealed type, regardless of whether the call uses positional
 // args, named args, or zero args.
 //
-// The gala_team report (FIX-013) was that `f(StRecovering(Attempt = a,
+// The gala_team report was that `f(StRecovering(Attempt = a,
 // Max = m))` failed to widen at call-arg sites for multi-arg cases
 // while `return StRecovering(Attempt = a, Max = m)` did. The
 // workaround was to wrap construction in a return-typed helper. This

@@ -699,6 +699,14 @@ Contributions are welcome. Please ensure:
 
 See [CONTRIBUTING.MD](CONTRIBUTING.MD) for details.
 
+### AI policy
+
+GALA is open to AI. AI-assisted pull requests are welcome, as long as a human is
+accountable for them and the assistance is disclosed ([policy](CONTRIBUTING.MD#ai-assisted-contributions)).
+Agents working in this repository follow [AGENTS.md](AGENTS.md). Crawlers, AI search, and
+model training on GALA's code and docs are welcome too. For writing GALA with an agent,
+see [llms.txt](https://gala.fyi/llms.txt) and [GALA for AI](https://gala.fyi/for-ai/).
+
 ---
 
 ## License

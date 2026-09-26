@@ -34,6 +34,6 @@ func main() {
 
     // Multi-arg positional case at call-arg site
     Println(describe(StRecovering(1, 2)))
-    // Multi-arg named-args case at call-arg site (the FIX-013 shape)
+    // Multi-arg named-args case at call-arg site (used to fail to widen)
     Println(describe(StRecovering(Attempt = 3, Max = 4)))
 }

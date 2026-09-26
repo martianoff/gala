@@ -396,7 +396,7 @@ func TestResolver_PrefersGalaModOverParentGoMod(t *testing.T) {
 
 // TestResolver_IsGalaPackage_RequireWithoutCache_FallsThroughToSearchPath
 // captures the failure mode that breaks gala-server's cross-module Bazel build
-// (the BUG-10/BUG-15/BUG-16 trio). The consumer's gala.mod declares
+// (sealed-case Apply lowering and struct field metadata are lost). The consumer's gala.mod declares
 //
 //	require example.com/dep v0.1.0
 //
