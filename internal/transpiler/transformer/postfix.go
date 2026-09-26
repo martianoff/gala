@@ -176,39 +176,12 @@ func (t *galaASTTransformer) isImmutableField(xType transpiler.Type, selExpr *as
 	// We do NOT scan all known types — that's too broad and causes false
 	// positives (e.g., "Err" matching std.Try.Err on a context.Context val).
 	if xTypeName == "" || xType.IsNil() {
+		// bindingRef accepts a call only as a val's `.Get()` (`v` or `pkg.V`).
+		// The recursion runs with a known type, so it cannot come back here.
 		if _, isCall := selExpr.X.(*ast.CallExpr); isCall {
-			// bindingRef accepts a call only as a val's `.Get()` (`v` or `pkg.V`).
-			if name := t.bindingRef(selExpr.X); name != "" {
-				if valType, _, _ := t.resolveBinding(name); !valType.IsNil() {
-					innerType := valType
-					// Unwrap Immutable[T] → T
-					if gen, ok := valType.(transpiler.GenericType); ok && len(gen.Params) > 0 {
-						baseName := gen.Base.String()
-						if baseName == transpiler.TypeImmutable || baseName == "std."+transpiler.TypeImmutable {
-							innerType = gen.Params[0]
-						}
-					}
-					// Check if the resolved inner type has this field as immutable
-					innerName := innerType.String()
-					if idx := strings.Index(innerName, "["); idx != -1 {
-						innerName = innerName[:idx]
-					}
-					innerName = strings.TrimPrefix(innerName, "*")
-					resolvedInner := t.resolveStructTypeName(innerName)
-					if fields, ok := t.structFields[resolvedInner]; ok {
-						for i, f := range fields {
-							if f == selName {
-								return t.structImmutFields[resolvedInner][i]
-							}
-						}
-					}
-					if typeMeta := t.getTypeMeta(innerName); typeMeta != nil {
-						for i, f := range typeMeta.FieldNames {
-							if f == selName {
-								return i < len(typeMeta.ImmutFlags) && typeMeta.ImmutFlags[i]
-							}
-						}
-					}
+			if b, ok := t.bindingRef(selExpr.X); ok {
+				if inner := unwrapGalaType(b.typ); !inner.IsNil() {
+					return t.isImmutableField(inner, selExpr, selName)
 				}
 			}
 		}

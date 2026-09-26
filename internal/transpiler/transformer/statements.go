@@ -882,27 +882,20 @@ func (t *galaASTTransformer) singleAssignmentLHSName(lhsCtx *grammar.ExpressionL
 // with no postfix operations (field access, indexing, or method calls).
 // Returns true for `v`, false for `v.data`, `v[i]`, `v.Method()`, etc.
 func (t *galaASTTransformer) isDirectVariableExpression(ctx grammar.IExpressionContext) bool {
-	postfix := solePostfixExpr(ctx)
+	postfix := LeadingPostfixExpr(ctx, true)
 	return postfix != nil && len(postfix.AllPostfixSuffix()) == 0
 }
 
-// immutableBindingName returns the source name of the val that ctx names
+// immutableBindingName returns the source spelling of the val that ctx names
 // directly — `Name`, or `pkg.Name` for an imported package-level val — or ""
 // for anything else (a var, a field or index through a val, a call).
 func (t *galaASTTransformer) immutableBindingName(ctx grammar.IExpressionContext) string {
-	postfix := solePostfixExpr(ctx)
-	if postfix == nil {
+	postfix := LeadingPostfixExpr(ctx, true)
+	primary := PrimaryOf(postfix)
+	if primary == nil || primary.Identifier() == nil {
 		return ""
 	}
-	primaryExpr, ok := postfix.PrimaryExpr().(*grammar.PrimaryExprContext)
-	if !ok || primaryExpr == nil {
-		return ""
-	}
-	primary, ok := primaryExpr.Primary().(*grammar.PrimaryContext)
-	if !ok || primary == nil || primary.Identifier() == nil {
-		return ""
-	}
-	name := primary.Identifier().GetText()
+	pkg, name := "", primary.Identifier().GetText()
 	switch suffixes := postfix.AllPostfixSuffix(); len(suffixes) {
 	case 0:
 	case 1:
@@ -910,52 +903,14 @@ func (t *galaASTTransformer) immutableBindingName(ctx grammar.IExpressionContext
 		if sel == nil {
 			return ""
 		}
-		name += "." + sel.GetText()
+		pkg, name = name, sel.GetText()
 	default:
 		return ""
 	}
-	if _, isVal, ok := t.resolveBinding(name); ok && isVal {
-		return name
+	if b, ok := t.lookupBinding(pkg, name); ok && b.isVal {
+		return b.String()
 	}
 	return ""
-}
-
-// solePostfixExpr returns the postfix expression ctx consists of when it has
-// no binary or unary operator, or nil.
-func solePostfixExpr(ctx grammar.IExpressionContext) *grammar.PostfixExprContext {
-	if ctx == nil {
-		return nil
-	}
-	orExpr := ctx.OrExpr()
-	if orExpr == nil {
-		return nil
-	}
-	andExprs := orExpr.(*grammar.OrExprContext).AllAndExpr()
-	if len(andExprs) != 1 {
-		return nil
-	}
-	eqExprs := andExprs[0].(*grammar.AndExprContext).AllEqualityExpr()
-	if len(eqExprs) != 1 {
-		return nil
-	}
-	relExprs := eqExprs[0].(*grammar.EqualityExprContext).AllRelationalExpr()
-	if len(relExprs) != 1 {
-		return nil
-	}
-	addExprs := relExprs[0].(*grammar.RelationalExprContext).AllAdditiveExpr()
-	if len(addExprs) != 1 {
-		return nil
-	}
-	mulExprs := addExprs[0].(*grammar.AdditiveExprContext).AllMultiplicativeExpr()
-	if len(mulExprs) != 1 {
-		return nil
-	}
-	unaryExprs := mulExprs[0].(*grammar.MultiplicativeExprContext).AllUnaryExpr()
-	if len(unaryExprs) != 1 {
-		return nil
-	}
-	postfix, _ := unaryExprs[0].(*grammar.UnaryExprContext).PostfixExpr().(*grammar.PostfixExprContext)
-	return postfix
 }
 
 func (t *galaASTTransformer) transformIfStatement(ctx *grammar.IfStatementContext) (ast.Stmt, error) {

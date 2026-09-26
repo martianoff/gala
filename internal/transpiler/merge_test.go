@@ -138,6 +138,9 @@ func TestPreferPackageVal(t *testing.T) {
 		want                bool
 	}{
 		{"nothing recorded", nil, unknown, true},
+		{"nil candidate", nil, nil, false},
+		{"nil Type counts as unknown", &PackageValMetadata{}, known, true},
+		{"known kept over nil Type", known, &PackageValMetadata{}, false},
 		{"unknown replaced by known", unknown, known, true},
 		{"known kept over unknown", known, unknown, false},
 		{"known kept over known", known, &PackageValMetadata{Type: BasicType{Name: "string"}}, false},

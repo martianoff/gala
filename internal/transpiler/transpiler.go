@@ -309,8 +309,11 @@ func (r *RichAST) AddImportedVals(importPath string, vals map[string]*PackageVal
 
 // PreferPackageVal reports whether candidate should replace existing as the
 // record of a package-level binding: a known type is never traded for an
-// unknown one.
+// unknown one (a nil Type counts as unknown), and a nil candidate never wins.
 func PreferPackageVal(existing, candidate *PackageValMetadata) bool {
+	if candidate == nil {
+		return false
+	}
 	return existing == nil || (IsUnusable(existing.Type) && !IsUnusable(candidate.Type))
 }
 

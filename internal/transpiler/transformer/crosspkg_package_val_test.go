@@ -66,6 +66,12 @@ val Dark = c.Theme("dark", c.Red())
 	// Two packages that share a name: their bindings must not collide.
 	write("a/util/util.gala", "package util\n\nval Limit = 3\n")
 	write("b/util/util.gala", "package util\n\nvar Limit = 4\n")
+	// A val whose initializer reads a sibling file's val: its type is settled
+	// by its own file's pass, whichever file is analyzed first.
+	write("split/a.gala", "package split\n\nval Base = 3\n")
+	write("split/b.gala", "package split\n\nval Derived = Base\n")
+	// A void initializer has no type, and must not record a nil one.
+	write("voids/voids.gala", "package voids\n\nfunc setup() {\n}\n\nval Done = setup()\n")
 	return root
 }
 
@@ -242,11 +248,13 @@ func TestCrossPackageValMetadata(t *testing.T) {
 
 import (
     "example.com/xpkg/colors"
+    "example.com/xpkg/split"
     "example.com/xpkg/theme"
+    "example.com/xpkg/voids"
 )
 
 func main() {
-    Println(colors.ToSgr(colors.Green), theme.Dark.Name)
+    Println(colors.ToSgr(colors.Green), theme.Dark.Name, split.Derived, voids.Done)
 }`
 	p := transpiler.NewAntlrGalaParser()
 	tree, _, err := p.Parse(src)
@@ -270,6 +278,7 @@ func main() {
 		{colorsPath, "Hits", "int", false},
 		// Built through the alias `c`: the type names the package, not the alias.
 		{themePath, "Dark", "colors.Theme", true},
+		{"example.com/xpkg/split", "Derived", "int", true},
 	}
 	for _, w := range want {
 		pv := richAST.ImportedVals[w.path][w.name]
@@ -281,4 +290,8 @@ func main() {
 	require.NotNil(t, richAST.ImportedVals[colorsPath]["Silent"])
 	assert.NotEqual(t, "string", richAST.ImportedVals[colorsPath]["Silent"].Type.String())
 	assert.NotContains(t, richAST.ImportedVals[colorsPath], "secret", "unexported bindings are not importable")
+	done := richAST.ImportedVals["example.com/xpkg/voids"]["Done"]
+	require.NotNil(t, done)
+	require.NotNil(t, done.Type, "a void initializer must record NilType, not a nil interface")
+	assert.True(t, done.Type.IsNil())
 }

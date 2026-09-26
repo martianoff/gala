@@ -352,64 +352,63 @@ func (t *galaASTTransformer) isBinaryOperator(op string) bool {
 // getPrimaryFromExpression navigates the new grammar structure to find the primary
 // This is used for backward compatibility with code that expects expr.Primary()
 func (t *galaASTTransformer) getPrimaryFromExpression(ctx grammar.IExpressionContext) *grammar.PrimaryContext {
+	return PrimaryOf(LeadingPostfixExpr(ctx, false))
+}
+
+// LeadingPostfixExpr walks the precedence chain (or → and → equality →
+// relational → additive → multiplicative → unary) down to the postfix
+// expression of ctx's first operand, or nil when a unary operator or no
+// operand intervenes. With sole set, every level must hold exactly one
+// operand, i.e. ctx has no binary operator at all.
+func LeadingPostfixExpr(ctx grammar.IExpressionContext, sole bool) *grammar.PostfixExprContext {
 	if ctx == nil {
 		return nil
 	}
-	// expression -> orExpr
-	orExpr := ctx.OrExpr()
+	fits := func(n int) bool { return n > 0 && (!sole || n == 1) }
+	orExpr, _ := ctx.OrExpr().(*grammar.OrExprContext)
 	if orExpr == nil {
 		return nil
 	}
-	// orExpr -> andExpr
-	andExprs := orExpr.(*grammar.OrExprContext).AllAndExpr()
-	if len(andExprs) == 0 {
+	andExprs := orExpr.AllAndExpr()
+	if !fits(len(andExprs)) {
 		return nil
 	}
-	// andExpr -> equalityExpr
 	eqExprs := andExprs[0].(*grammar.AndExprContext).AllEqualityExpr()
-	if len(eqExprs) == 0 {
+	if !fits(len(eqExprs)) {
 		return nil
 	}
-	// equalityExpr -> relationalExpr
 	relExprs := eqExprs[0].(*grammar.EqualityExprContext).AllRelationalExpr()
-	if len(relExprs) == 0 {
+	if !fits(len(relExprs)) {
 		return nil
 	}
-	// relationalExpr -> additiveExpr
 	addExprs := relExprs[0].(*grammar.RelationalExprContext).AllAdditiveExpr()
-	if len(addExprs) == 0 {
+	if !fits(len(addExprs)) {
 		return nil
 	}
-	// additiveExpr -> multiplicativeExpr
 	mulExprs := addExprs[0].(*grammar.AdditiveExprContext).AllMultiplicativeExpr()
-	if len(mulExprs) == 0 {
+	if !fits(len(mulExprs)) {
 		return nil
 	}
-	// multiplicativeExpr -> unaryExpr
 	unaryExprs := mulExprs[0].(*grammar.MultiplicativeExprContext).AllUnaryExpr()
-	if len(unaryExprs) == 0 {
+	if !fits(len(unaryExprs)) {
 		return nil
 	}
-	// unaryExpr -> postfixExpr (if no unaryOp)
-	unaryCtx := unaryExprs[0].(*grammar.UnaryExprContext)
-	postfixExpr := unaryCtx.PostfixExpr()
-	if postfixExpr == nil {
+	postfix, _ := unaryExprs[0].(*grammar.UnaryExprContext).PostfixExpr().(*grammar.PostfixExprContext)
+	return postfix
+}
+
+// PrimaryOf returns the primary a postfix expression starts from, or nil when
+// it starts from a lambda, if-expression or partial function instead.
+func PrimaryOf(postfix *grammar.PostfixExprContext) *grammar.PrimaryContext {
+	if postfix == nil {
 		return nil
 	}
-	// postfixExpr -> primaryExpr
-	primaryExpr := postfixExpr.(*grammar.PostfixExprContext).PrimaryExpr()
+	primaryExpr, _ := postfix.PrimaryExpr().(*grammar.PrimaryExprContext)
 	if primaryExpr == nil {
 		return nil
 	}
-	// primaryExpr -> primary. The primaryExpr alternation also covers
-	// lambdaExpression, ifExpression, and partialFunctionLiteral; for those
-	// shapes Primary() returns a typed-nil interface and the cast below would
-	// panic. Callers all check for nil already, so just bail out.
-	primary := primaryExpr.(*grammar.PrimaryExprContext).Primary()
-	if primary == nil {
-		return nil
-	}
-	return primary.(*grammar.PrimaryContext)
+	primary, _ := primaryExpr.Primary().(*grammar.PrimaryContext)
+	return primary
 }
 
 // getCallPatternFromExpression checks if an expression is a call pattern like Left(n)

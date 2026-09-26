@@ -1907,15 +1907,11 @@ func (t *galaASTTransformer) tryTransformCompositeLitApply(fun ast.Expr, args []
 // Returns handled=false for all other shapes of `fun`.
 // Extracted from transformCallWithArgsCtx as part of A1 cont.
 func (t *galaASTTransformer) tryTransformValWithApply(fun ast.Expr, args []ast.Expr) (ast.Expr, bool) {
-	name := t.bindingRef(fun)
-	if name == "" {
+	b, ok := t.bindingRef(fun)
+	if !ok || b.typ.IsNil() {
 		return nil, false
 	}
-	varType, _, _ := t.resolveBinding(name)
-	if varType.IsNil() {
-		return nil, false
-	}
-	varTypeName := varType.BaseName()
+	varTypeName := b.typ.BaseName()
 	typeMeta := t.getTypeMeta(varTypeName)
 	if typeMeta == nil {
 		return nil, false

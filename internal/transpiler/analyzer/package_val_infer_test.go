@@ -2,51 +2,97 @@ package analyzer
 
 import "testing"
 
-// TestInferLiteralType: a quoted literal must span the whole initializer;
-// an expression that merely starts and ends with quotes is not a literal.
-func TestInferLiteralType(t *testing.T) {
-	tests := []struct {
-		expr, want string
-	}{
-		{`"x"`, "string"},
-		{"`raw`", "string"},
-		{`s"hi $name"`, "string"},
-		{`f"${x}%.2f"`, "string"},
-		{`s"${f("a")}"`, "string"},
-		{`s"${m["k"]}"`, "string"},
-		{`'a'`, "rune"},
-		{`"a"=="b"`, ""},
-		{`s"$X"==""`, ""},
-		{`'a'=='b'`, ""},
-		{`"a"+"b"`, ""},
-		{`"\"quoted\""`, "string"},
-		{"3", "int"},
-		{"true", "bool"},
-		{"x", ""},
+const packageValSrc = `package pv
+
+struct Box(V int)
+
+struct Adder(N int)
+
+func (a Adder) Apply(x int) int = a.N + x
+
+func setup() {
+}
+
+func count() int = 3
+
+val I = 3
+val Neg = -3
+val F = 1.5
+val S = "x"
+val Interp = s"v=$I"
+val R = 'r'
+val B = true
+val Eq = s"$S" == ""
+val StrEq = "a" == "b"
+val Ref = I
+val MkBox = Box(1)
+val AddTen = Adder(10)
+val N = count()
+val Void = setup()
+var VoidVar = setup()
+`
+
+// TestPackageValInitTypes: the element type a package-level binding records
+// for each initializer shape. A comparison is not its operands' type, and a
+// void call has no type — it must be recorded as NilType, never a nil
+// interface.
+func TestPackageValInitTypes(t *testing.T) {
+	rich := analyzeSrc(t, packageValSrc)
+	tests := []struct{ name, want string }{
+		{"I", "int"},
+		{"Neg", "int"},
+		{"F", "float64"},
+		{"S", "string"},
+		{"Interp", "string"},
+		{"R", "rune"},
+		{"B", "bool"},
+		{"Ref", "int"},
+		{"MkBox", "pv.Box"},
+		{"AddTen", "pv.Adder"},
+		{"N", "int"},
+		{"Eq", ""},
+		{"StrEq", ""},
+		{"Void", ""},
+		{"VoidVar", ""},
 	}
 	for _, tc := range tests {
-		if got := inferLiteralType(tc.expr); got != tc.want {
-			t.Errorf("inferLiteralType(%s) = %q, want %q", tc.expr, got, tc.want)
+		pv := rich.PackageVals[tc.name]
+		if pv == nil {
+			t.Fatalf("PackageVals missing %s", tc.name)
+		}
+		if pv.Type == nil {
+			t.Fatalf("%s: Type is a nil interface", tc.name)
+		}
+		got := pv.Type.String()
+		if pv.Type.IsNil() {
+			got = ""
+		}
+		if got != tc.want {
+			t.Errorf("%s: type = %q, want %q", tc.name, got, tc.want)
 		}
 	}
 }
 
-// TestCallArgCount counts top-level arguments, skipping nested brackets and
-// commas inside literals.
-func TestCallArgCount(t *testing.T) {
-	tests := []struct {
-		args string
-		want int
-	}{
-		{"()", 0},
-		{"(10)", 1},
-		{`("classic",Red())`, 2},
-		{`(f(a,b),[1,2],"x,y")`, 3},
-		{`(s"${g(1,2)}",'c')`, 2},
+// TestVoidPackageValSurvivesCache: a void initializer's NilType round-trips
+// through the cache codec as NilType, so an importer served from the cache
+// never meets a nil Type.
+func TestVoidPackageValSurvivesCache(t *testing.T) {
+	rich := analyzeSrc(t, packageValSrc)
+	blob, err := encodeCachedRichAST(&CachedRichAST{PackageName: "pv", PackageVals: rich.PackageVals})
+	if err != nil {
+		t.Fatalf("encode: %v", err)
 	}
-	for _, tc := range tests {
-		if got := callArgCount(tc.args); got != tc.want {
-			t.Errorf("callArgCount(%s) = %d, want %d", tc.args, got, tc.want)
+	got, err := decodeCachedRichAST(blob)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	for _, name := range []string{"Void", "VoidVar"} {
+		pv := got.PackageVals[name]
+		if pv == nil || pv.Type == nil || !pv.Type.IsNil() {
+			t.Fatalf("%s after round-trip = %+v, want a NilType entry", name, pv)
+		}
+		if pv.Name != name {
+			t.Errorf("%s: decoded Name = %q", name, pv.Name)
 		}
 	}
 }
