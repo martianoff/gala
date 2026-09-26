@@ -13,9 +13,7 @@ jobs:
     name: Repo Policy
     runs-on: ubuntu-latest
 
-    # The AGENTS.md rules a reviewer should never have to catch by eye: no
-    # committed generated parser, no internal ticket IDs in files or PR commit
-    # messages, and the tool-specific agent files still pointing at AGENTS.md.
+    # Mechanical AGENTS.md rules; see tools/check_repo_policy.sh.
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -24,6 +22,10 @@ jobs:
           fetch-depth: 0
 
       - name: Check repo policy
+        # Via env, never inlined into the script: PR text is untrusted input.
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
         run: tools/check_repo_policy.sh "origin/${{ github.base_ref }}"
 
   test:

@@ -354,11 +354,11 @@ fix/PR260-panic-as-match-arm
 fix/issue142-windows-path-normalization
 ```
 
-**Avoid sequence-number-only slugs** like `fix/FIX-001-...`. Per-author or
+**Avoid sequence-number-only slugs** like `fix/FIX-<n>-...`. Per-author or
 per-batch counters get reused, so two unrelated branches end up with the
 same ID and can't be told apart in `git log` or PR titles. Without a GitHub
 issue/PR number to anchor against, write a slug that identifies the bug on
-its own (`fix/null-pointer-in-immutable-unwrap`, not `fix/FIX-001`).
+its own (`fix/null-pointer-in-immutable-unwrap`, not `fix/FIX-<n>`).
 
 This is a recommendation, not enforced by tooling. Pick what reads best
 to a future reviewer searching `git log` for the change.

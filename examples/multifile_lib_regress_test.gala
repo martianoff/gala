@@ -321,7 +321,7 @@ func main() {
     })
 
     // --- Regression: chained accessor `cfg.Members.Get(N).Model match`
-    // (match on a field reached through Immutable-wrapped accessors). Cfg.Members is `Array[Member]`,
+    // Cfg.Members is `Array[Member]`,
     // .Get(N) returns `Member`, .Model is `Option[string]`. The match
     // subject must be typed as `Option[string]` — not `Option[any]`,
     // and the match-IIFE param must accept the Immutable wrapper unwrap.
@@ -337,7 +337,7 @@ func main() {
 
     // --- Regression: `.IsDefined()` / `.GetOrElse(...)` on
     // `Immutable[Option[T]]` reached through a chained accessor
-    // (method call on an Immutable-wrapped Option). The auto-unwrap codegen must dispatch through
+    // The auto-unwrap codegen must dispatch through
     // the Immutable wrapper before the method lookup.
     Println(s"hasModel(0)=${cfg.Members.Get(0).Model.IsDefined()}")
     Println(s"hasModel(1)=${cfg.Members.Get(1).Model.IsDefined()}")

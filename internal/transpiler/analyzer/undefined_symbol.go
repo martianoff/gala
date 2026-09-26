@@ -362,7 +362,7 @@ func (a *galaAnalyzer) checkUndefinedSymbols(
 //     Dot-importing is what makes a Go package's exports reachable unqualified,
 //     so they have to be enumerable; they normally are, via GoTypeInfo, and
 //     then the check stays fully live. They are not when the Go SDK is absent
-//     (type inference is silently disabled — see the note in CLAUDE.md) or when
+//     (type inference is silently disabled — see the note in AGENTS.md) or when
 //     the package's name differs from its path's last segment, and only then
 //     does the file stand down.
 //

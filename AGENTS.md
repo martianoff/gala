@@ -8,13 +8,13 @@ GALA is a programming language that transpiles to Go. Build system: Bazel.
 
 **AI-assisted contributions are welcome.** The policy for them — human accountability and
 disclosure — is in [CONTRIBUTING.MD](CONTRIBUTING.MD#ai-assisted-contributions). The rules
-below apply to every change, whoever or whatever wrote it. Several are also enforced by CI.
+below apply to every change, whoever or whatever wrote it.
 
 ---
 
 ## CRITICAL RULES (NEVER VIOLATE)
 
-1. **NEVER hand-write or commit the generated parser (`internal/parser/grammar/*.go`)** -
+1. **NEVER hand-write or commit the generated parser (`internal/parser/grammar/*.go`, `*.java`)** -
    Bazel generates it from `internal/parser/grammar/gala.g4`, which is the only source of
    truth. Change the grammar by editing `gala.g4`. *(CI-enforced.)*
 
@@ -27,7 +27,7 @@ below apply to every change, whoever or whatever wrote it. Several are also enfo
    If a type cannot be resolved, fail with an error.
 
 4. **ALWAYS use bazel for testing, compilation** - Both Go and GALA have built-in bazel
-   actions for compilation and testing. Use `bazel test`, not `go test`.
+   actions for compilation and testing.
 
 5. **ALWAYS research GALA syntax and best practices before writing GALA code** - Start with
    [docs/GALA_BEST_PRACTICES.MD](docs/GALA_BEST_PRACTICES.MD) for the rule list; fall back to
@@ -40,15 +40,25 @@ below apply to every change, whoever or whatever wrote it. Several are also enfo
    repro test case and fix the transpiler before moving forward. Do not rewrite the GALA code
    to dodge it.
 
-7. **NEVER put internal references in the repo** - No internal issue numbers, ticket IDs
-   (`FIX-001`, `BUG-10`, …), incident tags, private bug-tracker links, or other internal-only
-   identifiers in source code, tests, comments, docs, commit messages, or any other checked-in
-   file. Describe the problem and fix on their own terms. Public GitHub issue/PR numbers
-   (`#123`) are fine. *(CI-enforced for files and PR commit messages.)*
+7. **NEVER put internal references in the repo** - No internal issue numbers, tracker-style
+   ticket IDs (an uppercase key, a dash, a number), incident tags, private bug-tracker links,
+   agent session logs, machine-local paths, fork-only commit SHAs, or other internal-only
+   identifiers in source code, tests, comments, docs, commit messages, PR titles and
+   descriptions, or any other checked-in file. Describe the problem and fix on their own
+   terms. Public GitHub issue/PR numbers (`#123`) are fine. *(Ticket IDs are CI-enforced in
+   files, commit messages, and the PR title and description.)*
 
 8. **NEVER weaken a check to get green** - Don't delete or skip failing tests, loosen
    assertions, downgrade errors to warnings, or edit `.out` expectations to match wrong
-   output. Fix the cause, or stop and report it.
+   output. Fix the cause, or stop and report it. Never soften a strict compiler check into
+   a warning or add an opt-in flag to restore strictness.
+
+9. **NEVER add GALA syntax for Go slices** (`arr[:]`, `arr[a:b]`) - Slices are Go-interop
+   only; hide them behind `go_interop` wrappers, not syntax.
+
+10. **Stdlib packaging** - `gala_go_test` auto-injects only `//std` and `//test`; never add
+    other stdlib packages to it. A new stdlib package must be registered for the CLI
+    (`gala build` / `gala run`), not only wired up for Bazel.
 
 ---
 
@@ -83,7 +93,7 @@ The full layout and the feature-by-feature workflow are in [CONTRIBUTING.MD](CON
 | Test (verbose) | `bazel test //... --test_output=errors --verbose_failures` |
 | Test single target | `bazel test //examples:match_type_inference` |
 | Generate BUILD files | `bazel run //:gazelle` (covers Go, GALA, and mixed GALA+GO packages) |
-| Repo policy checks | `tools/check_repo_policy.sh` (what CI runs for rules 1 and 7) |
+| Repo policy checks | `tools/check_repo_policy.sh` |
 
 **Update Go dependencies (run in order):**
 ```shell
@@ -185,8 +195,7 @@ See [docs/GALA_BEST_PRACTICES.MD](docs/GALA_BEST_PRACTICES.MD) for the full rule
 - Write table-driven tests
 - Use multi-line strings for test inputs requiring newlines
 - **When adding GALA language features:** MUST add verification example in `examples/`
-- Use `bazel test`, not `go test` — CI runs Bazel. CI also runs the parser and analyzer
-  suites under the race detector (`--@rules_go//go/config:race`); run them that way when
+- CI also runs the parser and analyzer suites under the race detector (`--@rules_go//go/config:race`); run them that way when
   touching concurrent code.
 
 ---
