@@ -1,0 +1,64 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// Field chains through the result of a method call must unwrap each
+// immutable field, whether the method has a value or a pointer receiver and
+// whether the receiver is bound with val or var. A method named Get is the
+// sharpest case because it shares its name with the Immutable accessor.
+
+struct Style(Bold bool)
+struct Cell(Ch rune, St Style)
+
+func MakeCell(ch rune, bold bool) Cell = Cell(Ch = ch, St = Style(Bold = bold))
+
+func same[V comparable](a V, b V) bool = a == b
+
+// Pointer receiver, method named like the Immutable accessor.
+type PtrBuffer struct {
+    cell Cell
+}
+
+func (b *PtrBuffer) Get() Cell = b.cell
+
+// Pointer receiver backed by a GALA collection, method takes an index.
+type Grid struct {
+    cells Array[Cell]
+}
+
+func (g *Grid) Get(i int) Cell = g.cells.Get(i)
+
+// Value receiver.
+type ValBuffer struct {
+    cell Cell
+}
+
+func (b ValBuffer) Get() Cell = b.cell
+
+// Shorthand struct with a pointer-receiver method under another name.
+struct Holder(cell Cell)
+
+func (h *Holder) Current() Cell = h.cell
+
+func main() {
+    var pvar = &PtrBuffer(cell = MakeCell('a', true))
+    Println(s"ptr var:   ${pvar.Get().St.Bold} ${same(pvar.Get().Ch, 'a')}")
+    val fromVar = pvar.Get()
+    Println(s"ptr bound: ${fromVar.St.Bold} ${same(fromVar.Ch, 'a')}")
+
+    val pval = &PtrBuffer(cell = MakeCell('b', false))
+    Println(s"ptr val:   ${pval.Get().St.Bold} ${same(pval.Get().Ch, 'b')}")
+    val fromVal = pval.Get()
+    Println(s"ptr bound: ${fromVal.St.Bold} ${same(fromVal.Ch, 'b')}")
+
+    val grid = &Grid(cells = ArrayOf(MakeCell('c', true), MakeCell('d', false)))
+    Println(s"grid:      ${grid.Get(0).St.Bold} ${grid.Get(1).St.Bold} ${same(grid.Get(1).Ch, 'd')}")
+
+    val vval = ValBuffer(cell = MakeCell('e', true))
+    Println(s"value val: ${vval.Get().St.Bold} ${same(vval.Get().Ch, 'e')}")
+    var vvar = ValBuffer(cell = MakeCell('f', false))
+    Println(s"value var: ${vvar.Get().St.Bold} ${same(vvar.Get().Ch, 'f')}")
+
+    var holder = &Holder(MakeCell('g', true))
+    Println(s"holder:    ${holder.Current().St.Bold} ${same(holder.Current().Ch, 'g')}")
+}

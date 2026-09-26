@@ -3218,3 +3218,12 @@ gala_exec_test(
         "//examples/struct_defaults_lib",
     ],
 )
+
+# Field chains through a method-call result unwrap immutable fields for
+# value- and pointer-receiver methods, including a method named Get.
+gala_exec_test(
+    name = "method_result_field_chain",
+    src = "method_result_field_chain.gala",
+    expected = "method_result_field_chain.out",
+    deps = ["//collection_immutable"],
+)

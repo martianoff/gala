@@ -105,6 +105,35 @@ func TestImmutableFieldUnwrapAcrossSpellings(t *testing.T) {
 			name: "field access in a comparison",
 			body: `Println(if (alice.Name == "Alice") "yes" else "no")`,
 		},
+		// Reads through a method-call result. `Registry` has a pointer-receiver
+		// `Get()` (sharing its name with the Immutable accessor) and a
+		// value-receiver `First()`, both returning Person.
+		{
+			name: "field of a pointer-receiver method result on a var",
+			body: `var reg = &Registry(p = alice)
+    Println(reg.Get().Name)`,
+		},
+		{
+			name: "field of a pointer-receiver method result on a val",
+			body: `val reg = &Registry(p = alice)
+    Println(reg.Get().Name)`,
+		},
+		{
+			name: "field of a val bound to a pointer-receiver method result",
+			body: `var reg = &Registry(p = alice)
+    val out = reg.Get()
+    Println(out.Name)`,
+		},
+		{
+			name: "field of a pointer-receiver method result passed to a generic function",
+			body: `var reg = &Registry(p = alice)
+    Println(same(reg.Get().Name, "Alice"))`,
+		},
+		{
+			name: "field of a value-receiver method result",
+			body: `val reg = Registry(p = alice)
+    Println(same(reg.First().Name, "Alice"))`,
+		},
 	}
 
 	for _, sp := range spellings {
@@ -114,6 +143,16 @@ func TestImmutableFieldUnwrapAcrossSpellings(t *testing.T) {
 import . "martianoff/gala/collection_immutable"
 
 struct Person(Name string, Age int)
+
+type Registry struct {
+    p Person
+}
+
+func (r *Registry) Get() Person = r.p
+
+func (r Registry) First() Person = r.p
+
+func same[V comparable](a V, b V) bool = a == b
 
 func main() {
     val alice = Person(Name = "Alice", Age = 30)
