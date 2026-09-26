@@ -82,15 +82,15 @@ jobs:
     # hover/completion while the transformer was still assigning into the Types
     # map it aliases.
     #
-    # That one runs filtered, unlike the two suites above, and the distinction
-    # matters. Filtering the parser and analyzer suites would remove coverage,
-    # which is why they run whole. Filtering here removes the OPPOSITE: the rest
-    # of the LSP suite drives diagnostics through fixed `time.Sleep` windows
-    # ("debounce 300ms + analysis" in 600ms), which instrumentation makes
-    # unreliable regardless of what it is testing. Gating on them would produce
-    # reds that mean nothing about concurrency. The concurrency test is the one
-    # that found the race and is the one kept. Make those tests wait on
-    # conditions instead of clocks and this can drop the filter.
+    # All three run whole. An earlier version of this job filtered the LSP
+    # target down to the concurrency test, on the theory that the rest of that
+    # suite — which drives diagnostics through fixed time.Sleep windows, 600ms
+    # for "debounce 300ms + analysis" — could not survive instrumentation. That
+    # was wrong, and wrong in an instructive way: those tests had already passed
+    # under -race in this job, unfiltered, on the run that found the race. The
+    # flakiness came from running several race-instrumented containers at once
+    # on a dev box, which inflates timings enough to blow the sleep windows. If
+    # one of them goes red here, reproduce it in isolation before believing it.
     #
     # //internal/transpiler/transformer is deliberately NOT here. Under -race
     # it dies with `fatal error: traceback` /
@@ -134,13 +134,7 @@ jobs:
           bazel test \
             //internal/parser:parser_test \
             //internal/transpiler/analyzer:analyzer_test \
-            --@rules_go//go/config:race \
-            --test_timeout=1800 \
-            --test_output=errors --verbose_failures \
-            --action_env=GOROOT="$GOROOT" --action_env=PATH
-
-          bazel test //internal/lsp:lsp_test \
-            --test_filter=TestConcurrentAnalysesAcrossDocuments \
+            //internal/lsp:lsp_test \
             --@rules_go//go/config:race \
             --test_timeout=1800 \
             --test_output=errors --verbose_failures \
