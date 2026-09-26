@@ -224,19 +224,28 @@ Check the description against the diff in both directions:
 
 ## Step 5: Present findings
 
-Order by severity:
+Every finding gets exactly one label, ordered by severity:
 
-1. **Blocking:** correctness regressions, breaking changes not declared in the
-   description, policy violations, files that must not be checked in.
-2. **Should fix:** false, overstated, or missing claims in the description (Step 4), missing coverage of invariants, misleading comments.
-3. **Non-blocking:** scope, style, naming.
+| Label | Meaning | Examples |
+|---|---|---|
+| **Blocking** | Must be fixed before merge. | Correctness regressions, breaking changes not declared in the description, policy violations, files that must not be checked in. |
+| **Should fix** | Expected to be fixed in this PR; can be argued. | False, overstated, or missing claims in the description (Step 4), missing coverage of invariants, misleading comments. |
+| **Optional** | A real improvement, but the PR is acceptable without it. Fine as a follow-up. | Splitting unrelated changes out, a nicer structure, an extra test for an unlikely case. |
+| **Nit** | Trivial and cosmetic. Take it or leave it. | Naming, wording, comment typos, import order. |
 
-For each finding give: location (`path:line`), what is wrong, the evidence, the
+Don't inflate: if the PR would be fine without the change, it's Optional or Nit, not
+Should fix. Don't hunt for nits to pad a review; skip them entirely if there are
+blocking findings to focus on.
+
+For each finding give: label, location (`path:line`), what is wrong, the evidence, the
 suggested fix, and a draft comment. Also list what you checked and found fine, so the
 user knows it was covered.
 
 ### Writing comments
 
+- Start every comment with its label in bold (`**Blocking:**`, `**Should fix:**`,
+  `**Optional:**`, `**Nit:**`), so the author can tell at a glance what must change.
+  Group the review summary by label the same way.
 - One issue per comment, anchored to the line it concerns.
 - First sentence states the problem. No preamble, no praise padding.
 - Quote the PR's own words when correcting a claim.
