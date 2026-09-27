@@ -117,21 +117,14 @@ func (t *galaASTTransformer) isNoneCall(expr ast.Expr) bool {
 	return registry.Global.IsPreludePackage(x.Name) && sel.Sel.Name == "None"
 }
 
+// stdIdent references a std name, qualified unless std is in scope, and marks
+// the std import as needed when it is qualified.
 func (t *galaASTTransformer) stdIdent(name string) ast.Expr {
-	// If we're in the std package, no prefix needed
-	if t.packageName == registry.StdPackageName {
-		return ast.NewIdent(name)
+	ref := t.stdHelperIdent(name)
+	if _, qualified := ref.(*ast.SelectorExpr); qualified {
+		t.needsStdImport = true
 	}
-	// If std is dot-imported, no prefix needed
-	if t.importManager.IsDotImported(registry.StdPackageName) {
-		return ast.NewIdent(name)
-	}
-	// Otherwise, need the std. prefix and import
-	t.needsStdImport = true
-	return &ast.SelectorExpr{
-		X:   ast.NewIdent(registry.StdPackageName),
-		Sel: ast.NewIdent(name),
-	}
+	return ref
 }
 
 func (t *galaASTTransformer) ident(name string) ast.Expr {

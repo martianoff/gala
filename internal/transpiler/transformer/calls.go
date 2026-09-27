@@ -1254,7 +1254,7 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 	// qualified selector); explicit type args have already been resolved
 	// to the right arity by transformType.
 	if n := len(args); n >= 3 && n <= 10 && isStdTupleIdent(fun) {
-		typeName, _ = tupleArityName(n)
+		typeName, _ = transpiler.TupleArityName(n)
 		fun = t.rewriteStdTupleIdent(fun, n)
 	}
 

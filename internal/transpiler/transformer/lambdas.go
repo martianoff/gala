@@ -448,38 +448,23 @@ func (t *galaASTTransformer) goCallReturnsErrorOnly(expr ast.Expr) string {
 		return ""
 	}
 	callExpr, ok := expr.(*ast.CallExpr)
-	if !ok {
+	if !ok || !t.isGoErrorOnlyCall(callExpr) {
 		return ""
 	}
-
-	var sig *transpiler.GoFuncSignature
-	var funcName string
-	switch fun := callExpr.Fun.(type) {
+	fun, _ := splitCallFunTypeArgs(callExpr.Fun)
+	switch f := fun.(type) {
+	case *ast.Ident:
+		return f.Name
 	case *ast.SelectorExpr:
-		if id, ok := fun.X.(*ast.Ident); ok {
-			funcName = id.Name + "." + fun.Sel.Name
-			sig = t.goTypeInfo.GetFuncSignature(t.goQualifiedName(id.Name, fun.Sel.Name))
-			if sig == nil {
-				sig = t.resolveMethodSignatureOnExpr(fun.X, fun.Sel.Name)
-			}
-		} else {
-			sig = t.resolveMethodSignatureOnExpr(fun.X, fun.Sel.Name)
-			if sel, ok := fun.X.(*ast.SelectorExpr); ok {
-				funcName = sel.Sel.Name + "." + fun.Sel.Name
-			} else {
-				funcName = fun.Sel.Name
-			}
+		switch x := f.X.(type) {
+		case *ast.Ident:
+			return x.Name + "." + f.Sel.Name
+		case *ast.SelectorExpr:
+			return x.Sel.Name + "." + f.Sel.Name
 		}
+		return f.Sel.Name
 	}
-	if sig == nil {
-		return ""
-	}
-
-	// Only reject when the sole return type is error
-	if len(sig.Returns) == 1 && sig.Returns[0] != nil && sig.Returns[0].String() == "error" {
-		return funcName
-	}
-	return ""
+	return "call"
 }
 
 // tryWrapGoMultiReturnWithErrorPanic checks if expr is a call to a Go function
@@ -538,7 +523,7 @@ func (t *galaASTTransformer) tryWrapGoMultiReturnWithErrorPanic(expr ast.Expr) (
 		// (A, B, error) -> return std.Tuple[A, B]{V1: _v0, V2: _v1}
 		// (A, B, C, error) -> return std.Tuple3[A, B, C]{V1: _v0, V2: _v1, V3: _v2}
 		// etc.
-		tupleName, _ := tupleArityName(valueCount)
+		tupleName, _ := transpiler.TupleArityName(valueCount)
 
 		// Build type args from the non-error return types
 		var typeArgs []ast.Expr

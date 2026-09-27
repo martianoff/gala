@@ -548,7 +548,7 @@ func (t *galaASTTransformer) generateSealedUnapply(parentName string, vi sealedV
 			tupleFieldTypes = append(tupleFieldTypes, typ)
 		}
 
-		tupleName, _ := tupleArityName(len(vi.fields))
+		tupleName, _ := transpiler.TupleArityName(len(vi.fields))
 		var tupleType ast.Expr
 		if len(tupleFieldTypes) == 1 {
 			tupleType = &ast.IndexExpr{

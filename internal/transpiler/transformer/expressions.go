@@ -46,12 +46,9 @@ func (t *galaASTTransformer) transformOrExpr(ctx *grammar.OrExprContext) (ast.Ex
 		if err != nil {
 			return nil, err
 		}
-		if err := t.checkGoResultOperands("||", ctx, result, right); err != nil {
+		if result, err = t.binaryOperation("||", token.LOR, ctx, result, right); err != nil {
 			return nil, err
 		}
-		result = t.unwrapImmutable(result)
-		right = t.unwrapImmutable(right)
-		result = &ast.BinaryExpr{X: result, Op: token.LOR, Y: right}
 	}
 
 	return result, nil
@@ -73,12 +70,9 @@ func (t *galaASTTransformer) transformAndExpr(ctx *grammar.AndExprContext) (ast.
 		if err != nil {
 			return nil, err
 		}
-		if err := t.checkGoResultOperands("&&", ctx, result, right); err != nil {
+		if result, err = t.binaryOperation("&&", token.LAND, ctx, result, right); err != nil {
 			return nil, err
 		}
-		result = t.unwrapImmutable(result)
-		right = t.unwrapImmutable(right)
-		result = &ast.BinaryExpr{X: result, Op: token.LAND, Y: right}
 	}
 
 	return result, nil
@@ -106,12 +100,9 @@ func (t *galaASTTransformer) transformEqualityExpr(ctx *grammar.EqualityExprCont
 		if err != nil {
 			return nil, err
 		}
-		if err := t.checkGoResultOperands(opText, ctx, result, right); err != nil {
+		if result, err = t.binaryOperation(opText, t.getBinaryToken(opText), ctx, result, right); err != nil {
 			return nil, err
 		}
-		result = t.unwrapImmutable(result)
-		right = t.unwrapImmutable(right)
-		result = &ast.BinaryExpr{X: result, Op: t.getBinaryToken(opText), Y: right}
 	}
 
 	return result, nil
@@ -137,12 +128,9 @@ func (t *galaASTTransformer) transformRelationalExpr(ctx *grammar.RelationalExpr
 		if err != nil {
 			return nil, err
 		}
-		if err := t.checkGoResultOperands(opText, ctx, result, right); err != nil {
+		if result, err = t.binaryOperation(opText, t.getBinaryToken(opText), ctx, result, right); err != nil {
 			return nil, err
 		}
-		result = t.unwrapImmutable(result)
-		right = t.unwrapImmutable(right)
-		result = &ast.BinaryExpr{X: result, Op: t.getBinaryToken(opText), Y: right}
 	}
 
 	return result, nil
@@ -168,12 +156,9 @@ func (t *galaASTTransformer) transformAdditiveExpr(ctx *grammar.AdditiveExprCont
 		if err != nil {
 			return nil, err
 		}
-		if err := t.checkGoResultOperands(opText, ctx, result, right); err != nil {
+		if result, err = t.binaryOperation(opText, t.getBinaryToken(opText), ctx, result, right); err != nil {
 			return nil, err
 		}
-		result = t.unwrapImmutable(result)
-		right = t.unwrapImmutable(right)
-		result = &ast.BinaryExpr{X: result, Op: t.getBinaryToken(opText), Y: right}
 	}
 
 	return result, nil
@@ -199,12 +184,9 @@ func (t *galaASTTransformer) transformMultiplicativeExpr(ctx *grammar.Multiplica
 		if err != nil {
 			return nil, err
 		}
-		if err := t.checkGoResultOperands(opText, ctx, result, right); err != nil {
+		if result, err = t.binaryOperation(opText, t.getBinaryToken(opText), ctx, result, right); err != nil {
 			return nil, err
 		}
-		result = t.unwrapImmutable(result)
-		right = t.unwrapImmutable(right)
-		result = &ast.BinaryExpr{X: result, Op: t.getBinaryToken(opText), Y: right}
 	}
 
 	return result, nil
@@ -370,6 +352,16 @@ func (t *galaASTTransformer) transformExpressionListAgainst(ctx *grammar.Express
 		return nil, err
 	}
 	return []ast.Expr{e}, nil
+}
+
+// binaryOperation builds `left op right` from two lowered operands: it rejects
+// a Go call's Try or Tuple as an operand (GALA-E0049) and reads vals through
+// their Immutable wrapper.
+func (t *galaASTTransformer) binaryOperation(op string, tok token.Token, ctx antlr.ParserRuleContext, left, right ast.Expr) (ast.Expr, error) {
+	if err := t.checkGoResultOperands(op, ctx, left, right); err != nil {
+		return nil, err
+	}
+	return &ast.BinaryExpr{X: t.unwrapImmutable(left), Op: tok, Y: t.unwrapImmutable(right)}, nil
 }
 
 func (t *galaASTTransformer) isBinaryOperator(op string) bool {

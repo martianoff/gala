@@ -369,7 +369,7 @@ func (t *galaASTTransformer) resolveIndexAccess(base ast.Expr, suffix *grammar.P
 	if exprList == nil {
 		return nil, galaerr.NewSemanticErrorAt(suffix.GetStart().GetLine(), suffix.GetStart().GetColumn(), "index expression requires expression list")
 	}
-	if res := t.goResultOf(base); res != nil && !res.Type.IsNil() {
+	if res := t.goResultOf(base); res != nil {
 		return nil, t.goResultMisuse(res, "it cannot be indexed", suffix)
 	}
 	base = t.unwrapImmutable(base)
@@ -799,7 +799,7 @@ func (t *galaASTTransformer) transformTupleLiteralWithExpected(exprs []ast.Expr,
 	}
 
 	// Determine tuple type name based on arity (B2 — single source of truth).
-	typeName, _ := tupleArityName(n)
+	typeName, _ := transpiler.TupleArityName(n)
 
 	// Build the per-element fallback ladder. The most-specific source —
 	// the explicit per-element expected types passed in by the caller —

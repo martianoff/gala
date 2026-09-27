@@ -254,7 +254,7 @@ func (t *galaASTTransformer) goResultOf(expr ast.Expr) *goResult {
 			expr = sel.X
 		}
 	}
-	if id, ok := expr.(*ast.Ident); ok && t.isVal(id.Name) || ok && t.isVar(id.Name) {
+	if id, ok := expr.(*ast.Ident); ok && (t.isVal(id.Name) || t.isVar(id.Name)) {
 		if res := t.boundGoResult(id.Name); res != nil {
 			named := *res
 			named.via = id.Name
@@ -315,29 +315,21 @@ func (t *galaASTTransformer) dropDiscardedGoResults(file *ast.File) {
 	if len(t.goResults) == 0 {
 		return
 	}
-	raw := func(e ast.Expr) *ast.CallExpr {
-		if call, ok := e.(*ast.CallExpr); ok {
-			if res := t.goResults[call]; res != nil {
-				return res.raw
-			}
+	raw := func(call *ast.CallExpr) *ast.CallExpr {
+		if res := t.goResults[call]; res != nil {
+			return res.raw
 		}
-		return nil
+		return call
 	}
 	needsStd := !t.stdIsInScope()
 	ast.Inspect(file, func(n ast.Node) bool {
 		switch s := n.(type) {
 		case *ast.ExprStmt:
-			if r := raw(s.X); r != nil {
-				s.X = r
-			}
+			s.X = t.rawGoCall(s.X)
 		case *ast.GoStmt:
-			if r := raw(s.Call); r != nil {
-				s.Call = r
-			}
+			s.Call = raw(s.Call)
 		case *ast.DeferStmt:
-			if r := raw(s.Call); r != nil {
-				s.Call = r
-			}
+			s.Call = raw(s.Call)
 		case *ast.CallExpr:
 			if needsStd && t.goResults[s] != nil {
 				t.needsStdImport = true
