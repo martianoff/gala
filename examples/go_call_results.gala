@@ -45,19 +45,19 @@ func splitAddr(addr string) string = net.SplitHostPort(addr) match {
 // (A, B, C) is a Tuple3; `val (...)` destructures it.
 func setting(line string) string {
     val (key, value, found) = strings.Cut(line, "=")
-    return if (found) s"$key -> $value" else s"$key has no value"
+    if (found) s"$key -> $value" else s"$key has no value"
 }
 
 // (A, B) is a Tuple.
 func parts(x float64) string {
     val split = math.Modf(x)
-    return s"whole=${split.V1} frac=${split.V2}"
+    s"whole=${split.V1} frac=${split.V2}"
 }
 
 // A multi-name binding still takes the results one by one, Go-style.
 func goStyle(text string) string {
     val n, err = strconv.Atoi(text)
-    return if (err == nil) s"n=$n" else "err"
+    if (err == nil) s"n=$n" else "err"
 }
 
 // Several steps that can fail, sequenced with bind.
