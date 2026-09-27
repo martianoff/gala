@@ -294,6 +294,8 @@ val p2 = p1.Copy(age = 31) // p2 is Person("Alice", 31)
 val same = p1.Equal(p2)    // false
 ```
 
+A `Copy` override can be any expression, lambdas included. A lambda's parameter types come from the field's declared type, as with a named constructor argument: `calc.Copy(Op = (x) => x + 1)`.
+
 ### Sealed Types (Algebraic Data Types)
 
 ```gala

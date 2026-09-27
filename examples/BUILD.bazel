@@ -2467,6 +2467,24 @@ gala_exec_test(
     ],
 )
 
+# `.Copy(...)` overrides accept any expression — lambdas (zero-arg, untyped
+# params inferred from the field type, block body, void), partial functions,
+# if/match expressions — on plain, generic, pointer, ConstPtr and
+# cross-package receivers.
+gala_library(
+    name = "copy_lambda_override_handlers",
+    srcs = ["copy_lambda_override/handlers/handlers.gala"],
+    importpath = "martianoff/gala/examples/copy_lambda_override/handlers",
+    visibility = ["//visibility:public"],
+)
+
+gala_exec_test(
+    name = "copy_lambda_override",
+    src = "copy_lambda_override.gala",
+    expected = "copy_lambda_override.out",
+    deps = [":copy_lambda_override_handlers"],
+)
+
 # Repro: type alias for func type in library package + match through alias
 # Exercises: sibling type alias extraction, NamedType.BaseName() package qualification,
 # chained function call inference, match result type in lambda context

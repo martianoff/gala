@@ -1,0 +1,8 @@
+package handlers
+
+// Handler is copied from another package in examples/copy_lambda_override.gala.
+struct Handler[T any](Name string, Run func(T) T)
+
+// Rename copies inside the declaring package with a lambda override.
+func Rename[T any](h Handler[T], name string) Handler[T] =
+    h.Copy(Name = name, Run = (x) => h.Run(h.Run(x)))
