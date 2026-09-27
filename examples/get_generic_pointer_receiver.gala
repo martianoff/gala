@@ -4,7 +4,9 @@ package main
 // where the receiver's type argument is still a type parameter. The result of
 // `b.Get()` is `T` — not the receiver type — for both pointer and value
 // receivers, so it flows into `Some(v)`, arithmetic and string interpolation
-// with its real type.
+// with its real type. A Go type's own `Get` method is typed from Go type info.
+
+import "net/url"
 
 struct Box[T any](Value T)
 
@@ -28,7 +30,12 @@ func viaValue[T any](c Cell[T], fallback T) T {
     return Some(v).GetOrElse(fallback)
 }
 
-func viaPointerOption[T any](s *Slot[T]) string = s.Get().Map((v) => s"slot holds $v").GetOrElse("empty slot")
+func viaPointerOption[T any](s *Slot[T]) string =
+    s.Get().Map((v) => s"slot holds $v").GetOrElse("empty slot")
+
+// url.Values.Get returns a string, so the lambda's result is the value's size.
+func queryValueSize(raw string) int =
+    Try(url.ParseQuery(raw)).Map((q) => q.Get("a").Size()).GetOrElse(-1)
 
 func main() {
     var b = Box(41)
@@ -38,4 +45,6 @@ func main() {
 
     var s = Slot(true)
     Println(viaPointerOption(&s))
+
+    Println(queryValueSize("a=hello&b=x"))
 }

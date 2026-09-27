@@ -81,6 +81,22 @@ func main() {
 			wantContains: "std.Option_Map(b.Get(), func(v T) string",
 			wantAbsent:   "b.Get().Map(",
 		},
+		{
+			// A Go type's Get method has no GALA metadata; its result comes
+			// from Go type info, not from the receiver type (url.Values).
+			name: "Go type's own Get method",
+			src: `package main
+
+import "net/url"
+
+func size(raw string) int = Try(url.ParseQuery(raw)).Map((q) => q.Get("a").Size()).GetOrElse(-1)
+
+func main() {
+    Println(size("a=hello"))
+}`,
+			wantContains: "func(q url.Values) int",
+			wantAbsent:   `q.Get("a").Size()`,
+		},
 	}
 
 	for _, tc := range cases {
@@ -89,7 +105,7 @@ func main() {
 			require.NoError(t, err)
 			require.Contains(t, out, tc.wantContains)
 			require.NotContains(t, out, tc.wantAbsent,
-				"Get() on a generic receiver must not be typed as the receiver itself")
+				"Get() must be typed by the method's result, not as the receiver itself")
 		})
 	}
 }
