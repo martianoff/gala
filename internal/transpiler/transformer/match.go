@@ -103,6 +103,42 @@ func extractVariantName(patternText string) string {
 	return name
 }
 
+// hasIrrefutableTupleArm reports whether any unguarded case clause is an
+// irrefutable tuple pattern (see isIrrefutableTuplePattern) whose arity
+// matches the matched tuple type. Such an arm matches every value, so the
+// match needs no explicit default.
+func (t *galaASTTransformer) hasIrrefutableTupleArm(caseClauses []grammar.ICaseClauseContext, matchedType transpiler.Type) bool {
+	genType, ok := matchedType.(transpiler.GenericType)
+	if !ok || genType.Base == nil || !isTupleTypeName(stripStdPrefix(genType.Base.BaseName())) {
+		return false
+	}
+	for _, cc := range caseClauses {
+		ccCtx, ok := cc.(*grammar.CaseClauseContext)
+		if !ok || ccCtx.GetGuard() != nil {
+			continue
+		}
+		pat := ccCtx.Pattern().GetText()
+		if !isIrrefutableTuplePattern(pat) {
+			continue
+		}
+		if elems, _ := splitTuplePatternElements(pat); len(elems) == len(genType.Params) {
+			return true
+		}
+	}
+	return false
+}
+
+// unreachableDefaultBody is the synthetic `panic("unreachable")` else-branch
+// that closes a match whose arms already cover every value.
+func unreachableDefaultBody() []ast.Stmt {
+	return []ast.Stmt{
+		&ast.ExprStmt{X: &ast.CallExpr{
+			Fun:  ast.NewIdent("panic"),
+			Args: []ast.Expr{&ast.BasicLit{Kind: token.STRING, Value: `"unreachable"`}},
+		}},
+	}
+}
+
 // isExhaustiveMatch checks if a set of case patterns exhaustively covers all possible
 // values of the matched type. Supports booleans (true/false) and sealed types.
 // Returns (isExhaustive type, isExhaustive, missingCases).

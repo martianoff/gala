@@ -1,0 +1,44 @@
+package main
+
+// A tuple pattern whose every element is a wildcard, a plain binding, or a
+// nested tuple of those always matches, so it closes a match without an
+// explicit `case _ =>` default.
+
+func divmod(a int, b int) Tuple3[int, int, string] {
+    if (b == 0) {
+        return (0, 0, "division by zero")
+    }
+    return (a / b, a % b, "ok")
+}
+
+func describe(a int, b int) string = divmod(a, b) match {
+    case (q, r, "ok") => s"$q remainder $r"
+    case (_, _, err)  => s"Error: $err"
+}
+
+func classify(p Tuple[int, Tuple[string, bool]]) string = p match {
+    case (0, _)           => "zero"
+    case (n, ("x", true)) => s"x-flag $n"
+    case (n, (label, _))  => s"$n $label"
+}
+
+func main() {
+    Println(describe(10, 3))
+    Println(describe(1, 0))
+
+    val result = divmod(17, 5) match {
+        case (q, r, "ok") => s"$q remainder $r"
+        case (_, _, err)  => s"Error: $err"
+    }
+    Println(result)
+
+    Println(classify((0, ("a", false))))
+    Println(classify((4, ("x", true))))
+    Println(classify((7, ("y", false))))
+
+    // Statement-position match with an irrefutable last arm.
+    divmod(9, 0) match {
+        case (_, _, "ok") => Println("fine")
+        case (_, _, msg)  => Println(s"statement: $msg")
+    }
+}

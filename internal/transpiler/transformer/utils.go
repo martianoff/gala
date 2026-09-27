@@ -60,6 +60,63 @@ func isDefaultPattern(text string) bool {
 	return isWildcard(text) || isBindingPattern(text)
 }
 
+// isIrrefutableTuplePattern reports whether a pattern's text is a
+// parenthesized tuple pattern — `(a, _, err)` — whose every element is itself
+// irrefutable: a wildcard, a plain binding, or a nested irrefutable tuple.
+// Such a pattern matches every value of the tuple type it is checked against,
+// so an unguarded arm using it covers the match the way `case _` does.
+//
+// text is the pattern's parse-tree text (whitespace already dropped). Only
+// the literal tuple syntax qualifies; extractor forms such as `Tuple(a, b)`
+// run a user-overridable Unapply and are deliberately not treated as
+// irrefutable here.
+func isIrrefutableTuplePattern(text string) bool {
+	elems, ok := splitTuplePatternElements(text)
+	if !ok || len(elems) < 2 || len(elems) > 10 {
+		return false
+	}
+	for _, e := range elems {
+		if !isDefaultPattern(e) && !isIrrefutableTuplePattern(e) {
+			return false
+		}
+	}
+	return true
+}
+
+// splitTuplePatternElements splits `(e1,e2,...)` into its top-level elements.
+// It reports false when text is not a single parenthesized group spanning the
+// whole string (e.g. `(a)(b)`, `f(a)`) or contains quotes or unbalanced
+// brackets — none of which can be an irrefutable tuple pattern.
+func splitTuplePatternElements(text string) ([]string, bool) {
+	if len(text) < 2 || text[0] != '(' || text[len(text)-1] != ')' {
+		return nil, false
+	}
+	var elems []string
+	depth, start := 0, 1
+	for i := 0; i < len(text); i++ {
+		switch text[i] {
+		case '(', '[', '{':
+			depth++
+		case ')', ']', '}':
+			depth--
+			if depth < 0 || (depth == 0 && i != len(text)-1) {
+				return nil, false
+			}
+		case '"', '\'', '`':
+			return nil, false
+		case ',':
+			if depth == 1 {
+				elems = append(elems, text[start:i])
+				start = i + 1
+			}
+		}
+	}
+	if depth != 0 {
+		return nil, false
+	}
+	return append(elems, text[start:len(text)-1]), true
+}
+
 // isLiteralTrue checks if an expression is the literal `true` identifier.
 func isLiteralTrue(expr ast.Expr) bool {
 	if id, ok := expr.(*ast.Ident); ok {

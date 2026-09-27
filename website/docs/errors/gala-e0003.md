@@ -13,6 +13,8 @@ last_modified_at: 2026-07-27
 
 **What it means.** A `match` expression over a non-sealed type — a primitive, a plain struct, anything with an unbounded instance set — has no default branch. The compiler cannot prove exhaustiveness for open types, so a default is mandatory.
 
+A default is any unguarded arm that matches every value: `case _`, a plain binding such as `case other`, or a tuple pattern whose every element is one of those (or a nested such tuple) — `case (_, _, err)` over a `Tuple3`.
+
 ---
 
 ## Code that triggers it
