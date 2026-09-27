@@ -173,27 +173,30 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 						if isType {
 							// Zero-argument Apply method: TypeName[T]{}.Apply()
 							receiverType := base
-							// If the type is generic but no explicit type args were provided,
-							// try to infer them from the match subject type via companion relationship.
-							// e.g., None() inside `Option[int] match { ... }` → None[int]{}.Apply()
-							if len(typeMeta.TypeParams) > 0 && baseExpr == base {
-								if inferredBase := t.inferZeroArgTypeParams(typeName, typeMeta); inferredBase != nil {
-									receiverType = inferredBase
-								}
-							}
 							// Downward inference: a sealed-variant zero-arg constructor
 							// (e.g. `NoCmd()`) inside a context that expects the parent
 							// sealed type (`Cmd[int]`) needs explicit type args injected
 							// onto the variant — without them Go cannot pin the
 							// vestigial type parameter from an empty composite literal.
 							// Consume the top expected-type hint set by enclosing val
-							// declarations / argument transforms (B1).
-							if receiverType == base {
-								if pending := t.expectedArgTypes.peek(); pending != nil && !pending.IsNil() {
-									if rewritten, ok := t.injectSealedVariantTypeArgs(base, pending); ok {
-										receiverType = rewritten
-										t.expectedArgTypes.consume()
-									}
+							// declarations / argument transforms (B1). It is the type
+							// of the slot the constructor itself fills, so it wins
+							// over the enclosing result type and match subject:
+							// `None()` passed for `d Option[Drag]` in a function
+							// returning `Option[int]` is `None[Drag]`.
+							if pending := t.expectedArgTypes.peek(); pending != nil && !pending.IsNil() {
+								if rewritten, ok := t.injectSealedVariantTypeArgs(base, pending); ok {
+									receiverType = rewritten
+									t.expectedArgTypes.consume()
+								}
+							}
+							// Otherwise, if the type is generic but no explicit type
+							// args were provided, infer them from the enclosing result
+							// type or the match subject via the companion relationship.
+							// e.g., None() inside `Option[int] match { ... }` → None[int]{}.Apply()
+							if receiverType == base && len(typeMeta.TypeParams) > 0 && baseExpr == base {
+								if inferredBase := t.inferZeroArgTypeParams(typeName, typeMeta); inferredBase != nil {
+									receiverType = inferredBase
 								}
 							}
 							// B6 fail-loud: if neither inference path resolved the
@@ -3576,6 +3579,11 @@ func (t *galaASTTransformer) lambdaActualFuncType(expr ast.Expr) transpiler.Type
 // "Downward Inference for Generic Sealed-Type Case Constructors" in
 // docs/TYPE_INFERENCE.MD.
 func (t *galaASTTransformer) inferZeroArgTypeParams(typeName string, typeMeta *transpiler.TypeMetadata) ast.Expr {
+	// A branch typed by its siblings (see lowerBranches) is in neither
+	// context: its type is the construct's, which is not yet known.
+	if t.siblingTypedBranch {
+		return nil
+	}
 	// Look up companion relationship for this type
 	companion := t.lookupCompanion(typeName)
 	if companion == nil {

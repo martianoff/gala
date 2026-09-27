@@ -1,0 +1,95 @@
+package main
+
+// A bare `None()` that is the value of a match arm or an if/else branch takes
+// the type of the value the match or if produces, never the type of the
+// matched value. With an expected type (a typed val, a result type, an
+// argument) that type is used; without one, the type the other arms or
+// branches produce, whichever order they come in.
+
+struct Drag(X int)
+
+func describe(d Option[Drag]) string = d match {
+    case Some(Drag(x)) => s"drag at $x"
+    case _ => "no drag"
+}
+
+// Typed by the sibling arm `Some(v)`: Option[T], not the subject's Option[int].
+func pick[T comparable](o Option[int], v T, fallback T) T {
+    val m = o match {
+        case Some(_) => Some(v)
+        case None() => None()
+    }
+    m.GetOrElse(fallback)
+}
+
+// The same with the `None()` arm first.
+func pickReversed[T comparable](o Option[int], v T, fallback T) T {
+    val m = o match {
+        case None() => None()
+        case Some(_) => Some(v)
+    }
+    m.GetOrElse(fallback)
+}
+
+// The sibling arm wins over the enclosing result type (Option[int]).
+func labelLength(o Option[int]) Option[int] {
+    val m = o match {
+        case Some(n) => Some(s"n=$n")
+        case _ => {
+            Println("  (empty)")
+            None()
+        }
+    }
+    m.Map(_.Size())
+}
+
+// A typed val.
+func flipped(o Option[int]) string {
+    val m Option[string] = o match {
+        case Some(_) => None()
+        case _ => Some("was empty")
+    }
+    m.GetOrElse("was full")
+}
+
+// A result type.
+func flip(o Option[int]) Option[string] = o match {
+    case Some(_) => None()
+    case _ => Some("was empty")
+}
+
+// An argument.
+func dragOf(o Option[int]) string = describe(o match {
+    case Some(_) => None()
+    case _ => Some(Drag(3))
+})
+
+// If/else branches, either order.
+func choose[T comparable](b bool, v T, fallback T) T {
+    val m = if (b) Some(v) else None()
+    m.GetOrElse(fallback)
+}
+
+func chooseReversed[T comparable](b bool, v T, fallback T) T {
+    val m = if (b) None() else Some(v)
+    m.GetOrElse(fallback)
+}
+
+func main() {
+    Println(pick(Some(1), "x", "fallback"))
+    Println(pick(None(), "x", "fallback"))
+    Println(pickReversed(Some(1), 2.5, 0.5))
+    Println(pickReversed(None(), 2.5, 0.5))
+    Println(labelLength(Some(42)))
+    Println(labelLength(None()))
+    Println(flipped(Some(1)))
+    Println(flipped(None()))
+    Println(flip(Some(1)).IsEmpty())
+    Println(flip(None()).GetOrElse("?"))
+    Println(dragOf(Some(1)))
+    Println(dragOf(None()))
+    Println(choose(true, "yes", "no"))
+    Println(choose(false, "yes", "no"))
+    Println(chooseReversed(true, 1, 0))
+    Println(chooseReversed(false, 1, 0))
+}

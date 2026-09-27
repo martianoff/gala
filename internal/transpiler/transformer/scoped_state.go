@@ -51,6 +51,7 @@ func (t *galaASTTransformer) scopedStateChecks() []struct {
 		{"currentScope", t.currentScope != nil},
 		{"returnSlot", t.returnSlot.typ != nil || t.returnSlot.fillable || t.returnSlot.deferred != nil || t.returnSlot.typeParams != nil},
 		{"currentMatchSubjectType", t.currentMatchSubjectType != nil},
+		{"siblingTypedBranch", t.siblingTypedBranch},
 		{"expectedArgTypes", len(t.expectedArgTypes.stack) != 0},
 		{"loweringDefault", t.loweringDefault != nil},
 		{"matchInStatementPos", t.matchInStatementPos},
