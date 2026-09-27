@@ -70,6 +70,7 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0050` | Codec field type has no encoding | [GALA-E0050.md](GALA-E0050.md) |
 | `GALA-E0051` | Illegal character in source (invalid UTF-8, NUL, stray byte order mark) | [GALA-E0051.md](GALA-E0051.md) |
 | `GALA-E0052` | Function declared inside a function body | [GALA-E0052.md](GALA-E0052.md) |
+| `GALA-E0053` | Pointer method on a copy of a value that must not be copied | [GALA-E0053.md](GALA-E0053.md) |
 
 ### Retired codes
 

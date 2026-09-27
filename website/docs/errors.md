@@ -105,6 +105,7 @@ Same code, same message; the column is zero-based in the terse form. See [Compil
 | [GALA-E0050](/docs/errors/gala-e0050/) | Codec field type has no encoding | Types |
 | [GALA-E0051](/docs/errors/gala-e0051/) | Illegal character in source (invalid UTF-8, NUL, stray byte order mark) | Literals |
 | [GALA-E0052](/docs/errors/gala-e0052/) | Function declared inside a function body | Declarations |
+| [GALA-E0053](/docs/errors/gala-e0053/) | Pointer method on a copy of a value that must not be copied | Immutability |
 
 Every code the compiler can emit now has a page. Codes are never renumbered and never change meaning, so a code you find in an old build log still means the same thing here.
 
@@ -148,7 +149,7 @@ Five codes exist in the compiler but no valid source reaches them. Each still ha
 
 **Syntax** — [E0042](/docs/errors/gala-e0042/) unparenthesized lambda parameter (`x => e`); GALA always writes `(x) => e`.
 
-**Immutability and concurrency safety** — [E0001](/docs/errors/gala-e0001/), [E0037](/docs/errors/gala-e0037/). See [Immutability](/features/immutability/) and [Concurrency Safety](/features/concurrency-safety/).
+**Immutability and concurrency safety** — [E0001](/docs/errors/gala-e0001/), [E0037](/docs/errors/gala-e0037/), [E0053](/docs/errors/gala-e0053/) pointer method on a copy of a lock or builder. See [Immutability](/features/immutability/) and [Concurrency Safety](/features/concurrency-safety/).
 
 **Transpiler bugs** — [E0009](/docs/errors/gala-e0009/), [E0017](/docs/errors/gala-e0017/), [E0024](/docs/errors/gala-e0024/). These mean the transpiler hit a case it does not handle; please [file an issue](https://github.com/martianoff/gala/issues) with the source snippet.
 

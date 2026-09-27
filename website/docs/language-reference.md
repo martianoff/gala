@@ -701,6 +701,30 @@ val value = *ptr // OK: read
 // *ptr = 100    // ERROR: cannot write through ConstPtr
 ```
 
+### Pointer-Receiver Methods on a `val`
+A method with a pointer receiver (a GALA `func (c *Counter) Bump()`, or Go's `url.URL.String`) can be called on a `val`, a field reached through one, a call result or a literal. Go only calls such a method on an addressable value, so it runs on a fresh copy and whatever it assigns to the receiver's own fields is lost. A `var`, a function parameter and a pattern binding are addressable, so there the method changes the variable itself.
+
+```gala
+struct Counter(var n int)
+
+func (c *Counter) Bump() int {
+    c.n = c.n + 1
+    return c.n
+}
+
+func main() {
+    val c = Counter(n = 1)
+    Println(c.Bump())  // 2 — bumped a copy
+    Println(c.n)       // 1 — the val is unchanged
+
+    var m = Counter(n = 10)
+    m.Bump()
+    Println(m.n)       // 11
+}
+```
+
+The copy is shallow: writes through a map, slice or pointer the value holds reach data the `val` shares. A value that must not be copied is rejected instead with [GALA-E0053](/docs/errors/gala-e0053/): any `sync` or `sync/atomic` type, a type whose pointer has `Lock()`/`Unlock()`, a `noCopy` marker, a struct holding one of them, `strings.Builder` and `bytes.Buffer`. Hold such a value in a `var` or behind a pointer (`&sync.Mutex{}`).
+
 ## 13. GALA Packages {#13-gala-packages}
 
 GALA supports Go-style imports with aliases and dot imports.

@@ -581,6 +581,30 @@ func main() {
 `)
 			},
 		},
+		{
+			name: "pointer method on a val field that holds a Mutex",
+			code: galaerr.CodeNoCopyReceiverCopied, // GALA-E0053
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+import "sync"
+
+struct Counter(mu sync.Mutex, var n int)
+
+func (c *Counter) Inc() {
+    c.mu.Lock()
+    c.n = c.n + 1
+    c.mu.Unlock()
+}
+
+func main() {
+    var c = Counter(sync.Mutex{}, 0)
+    c.Inc()
+    Println(c.n)
+}
+`)
+			},
+		},
 		// The GALA-E0038 page also documents the rune-literal shape in prose
 		// (`'\d'`), but quotes no output for it, so there is nothing to pin.
 		// Its numeric forms (`'\x41'`) are not guardable here at all: GALA's

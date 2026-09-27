@@ -555,6 +555,19 @@ const (
 	// default parameter value, or a method has no lambda form, and its hint
 	// points at the top level instead.
 	CodeNestedFunctionDeclaration ErrorCode = "GALA-E0052"
+
+	// E0053: a pointer-receiver method is called on a value that must not be
+	// copied — one holding a sync.Mutex, WaitGroup, atomic value, a
+	// strings.Builder, bytes.Buffer, or a type with pointer Lock/Unlock
+	// methods — and Go cannot address the receiver (a val, a val field, a
+	// call result, a literal).
+	//
+	// Such a call runs on a copy (std.AddrOfCopy), which is harmless for
+	// `url.URL.String` but wrong for these types: a copied Mutex locks
+	// nothing and its Unlock is a fatal runtime error, and writes to a copied
+	// Builder or Buffer are lost. The value has to live in a `var` or behind a
+	// pointer.
+	CodeNoCopyReceiverCopied ErrorCode = "GALA-E0053"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.
