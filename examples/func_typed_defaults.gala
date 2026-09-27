@@ -30,6 +30,9 @@ func runOrZero(f func() int = nil) int = if (f == nil) 0 else f()
 // here inferred from `x`.
 func twice[T any](x T, combine func(T, T) T = (a, b) => a) T = combine(x, x)
 
+// Labeled is generic: its field default takes `T` from the instantiation.
+struct Labeled[T any](Value T, Show func(T) string = (v) => s"<$v>")
+
 // Counter carries a method whose only parameter is a defaulted lambda.
 struct Counter(N int)
 
@@ -53,6 +56,7 @@ func main() {
     Println(Counter(1).Step())
     Println(Counter(1).Step((n) => n * 100))
     Println(twice(21), twice(21, (a, b) => a + b), twice("ab", (a, b) => a + b))
+    Println(Labeled[int](Value = 1).Show(5), Labeled(Value = "x").Show("y"))
 
     // Declared in another package, constructed here with every hook omitted.
     val b = func_defaults_lib.Backend(Name = "tui")
