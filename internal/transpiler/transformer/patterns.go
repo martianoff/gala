@@ -207,7 +207,7 @@ func (t *galaASTTransformer) transformConstructorCallPattern(rawName string, arg
 	// Use direct field access for known structs
 	resolvedStructName := t.resolveStructTypeName(rawName)
 	if fields, ok := t.structFields[resolvedStructName]; ok && len(fields) > 0 {
-		return t.generateDirectStructFieldMatch(objExpr, argList, fields, resolvedStructName, matchedType)
+		return t.generateDirectStructFieldMatch(objExpr, argList, explicitTypeArgs, fields, resolvedStructName, matchedType, patExprCtx)
 	}
 
 	// Check if rawName is a variable whose type has an Unapply method (instance extractor).
@@ -636,7 +636,7 @@ func (t *galaASTTransformer) generateDirectTupleStructMatch(objExpr ast.Expr, ar
 // For example, Person(name, age) matching against Person{Name: "Alice", Age: 25}
 // generates: name := obj.Name; age := obj.Age
 // The condition is always true since we're just extracting fields.
-func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, argList *grammar.ArgumentListContext, fields []string, structName string, matchedType transpiler.Type) (ast.Expr, []ast.Stmt, error) {
+func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, argList *grammar.ArgumentListContext, explicitTypeArgs *grammar.ExpressionListContext, fields []string, structName string, matchedType transpiler.Type, patExprCtx grammar.IExpressionContext) (ast.Expr, []ast.Stmt, error) {
 	var stmts []ast.Stmt
 	var conds []ast.Expr
 
@@ -650,12 +650,22 @@ func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, ar
 	// subject keeps reading fields straight off objExpr.)
 	baseExpr := objExpr
 	if matchedType != nil && matchedType.IsAny() {
+		// A generic struct can only be asserted to one of its instantiations,
+		// which an `any` subject cannot supply: the pattern must name the type
+		// arguments (`case Box[int](v, tag)`). They then type the fields too.
+		assertType, instantiated, err := t.structPatternAssertType(structName, explicitTypeArgs, patExprCtx)
+		if err != nil {
+			return nil, nil, err
+		}
+		if instantiated != nil {
+			matchedType = instantiated
+		}
 		castName := t.nextTempVar()
 		okName := t.nextTempVar()
 		stmts = append(stmts, &ast.AssignStmt{
 			Lhs: []ast.Expr{ast.NewIdent(castName), ast.NewIdent(okName)},
 			Tok: token.DEFINE,
-			Rhs: []ast.Expr{&ast.TypeAssertExpr{X: objExpr, Type: t.ident(structName)}},
+			Rhs: []ast.Expr{&ast.TypeAssertExpr{X: objExpr, Type: assertType}},
 		})
 		conds = append(conds, ast.NewIdent(okName))
 		baseExpr = ast.NewIdent(castName)
@@ -788,6 +798,45 @@ func combineStructMatchConds(conds []ast.Expr, stmts []ast.Stmt) (ast.Expr, []as
 		finalCond = &ast.BinaryExpr{X: finalCond, Op: token.LAND, Y: conds[i]}
 	}
 	return finalCond, stmts, nil
+}
+
+// structPatternAssertType returns the type a struct pattern asserts an `any`
+// subject to. A non-generic struct asserts to itself. A generic struct needs
+// one of its instantiations, so the pattern must spell the type arguments
+// (`case Box[int](...)`); the instantiated type is returned as well so the
+// fields can be typed by it. Without them the pattern is rejected: Go cannot
+// assert to an uninstantiated generic type.
+func (t *galaASTTransformer) structPatternAssertType(structName string, explicitTypeArgs *grammar.ExpressionListContext, patExprCtx grammar.IExpressionContext) (ast.Expr, transpiler.Type, error) {
+	meta := t.getTypeMeta(structName)
+	if meta == nil || len(meta.TypeParams) == 0 {
+		return t.ident(structName), nil, nil
+	}
+	var typeArgExprs []grammar.IExpressionContext
+	if explicitTypeArgs != nil {
+		typeArgExprs = explicitTypeArgs.AllExpression()
+	}
+	if len(typeArgExprs) != len(meta.TypeParams) {
+		return nil, nil, galaerr.NewSemanticErrorAt(patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn(),
+			fmt.Sprintf("cannot match generic struct '%s' against a value of type 'any' without its %d type argument(s): Go can only type-assert to an instantiated type. Write the type arguments in the pattern, e.g. `case %s[%s](...)`",
+				stripPackagePrefix(structName), len(meta.TypeParams), stripPackagePrefix(structName), strings.Join(meta.TypeParams, ", ")))
+	}
+	goArgs := make([]ast.Expr, len(typeArgExprs))
+	typeArgs := make([]transpiler.Type, len(typeArgExprs))
+	for i, e := range typeArgExprs {
+		typeAst, err := t.transformExpression(e)
+		if err != nil {
+			return nil, nil, err
+		}
+		goArgs[i] = typeAst
+		typeArgs[i] = t.astTypeToTranspilerType(typeAst)
+	}
+	var assertType ast.Expr
+	if len(goArgs) == 1 {
+		assertType = &ast.IndexExpr{X: t.ident(structName), Index: goArgs[0]}
+	} else {
+		assertType = &ast.IndexListExpr{X: t.ident(structName), Indices: goArgs}
+	}
+	return assertType, transpiler.GenericType{Base: transpiler.BasicType{Name: structName}, Params: typeArgs}, nil
 }
 
 // hasRestPattern checks if any argument in the argument list is a rest pattern (ends with ...).
@@ -951,18 +1000,21 @@ func scanSeqPatternArgs(args []grammar.IArgumentContext) (restIndex int, restNam
 // It orchestrates the extracted helpers scanSeqPatternArgs, emitSizeCheck,
 // emitNonRestBindings, and emitRestBinding.
 //
-// For example, Array(first, second, rest...) matching against Array[int] generates:
+// For example, Array(first, Some(n), rest...) matching against
+// Array[Option[int]] generates:
 //
 //	_tmp_ok := obj.Size() >= 2
-//	var first int
-//	var second int
-//	var rest Array[int]
+//	var _tmp_1 Option[int]
+//	var _tmp_2 Option[int]
+//	var rest Array[Option[int]]
 //	if _tmp_ok {
-//	    first = obj.Get(0)
-//	    second = obj.Get(1)
-//	    rest = obj.SeqDrop(2).(Array[int])
+//	    _tmp_1 = obj.Get(0)
+//	    _tmp_2 = obj.Get(1)
+//	    rest = obj.SeqDrop(2).(Array[Option[int]])
 //	}
-//	if _tmp_ok { ... body }
+//	first := _tmp_1
+//	... Some(n) lowered against _tmp_2, declaring n ...
+//	if _tmp_ok && <Some(n) condition> { ... body }
 func (t *galaASTTransformer) generateSeqPatternMatch(objExpr ast.Expr, argList *grammar.ArgumentListContext, matchedType transpiler.Type) (ast.Expr, []ast.Stmt, error) {
 	if argList == nil {
 		return ast.NewIdent("true"), nil, nil
@@ -993,7 +1045,7 @@ func (t *galaASTTransformer) generateSeqPatternMatch(objExpr ast.Expr, argList *
 	}
 
 	// Emit bindings for the non-rest arguments.
-	varDecls, guardedAssigns, extraConds, err := t.emitNonRestBindings(args, objExpr, elemType, elemTypeExpr)
+	varDecls, guardedAssigns, postGuard, extraConds, err := t.emitNonRestBindings(args, objExpr, elemType, elemTypeExpr)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1006,6 +1058,7 @@ func (t *galaASTTransformer) generateSeqPatternMatch(objExpr ast.Expr, argList *
 
 	stmts = append(stmts, varDecls...)
 	stmts = assembleSeqPatternGuardBlock(stmts, sizeCheckName, guardedAssigns)
+	stmts = append(stmts, postGuard...)
 
 	t.needsStdImport = true
 
@@ -1052,6 +1105,8 @@ func (t *galaASTTransformer) emitSizeCheck(objExpr ast.Expr, nonRestCount int) (
 //
 //	varDecls       — zero-value declarations outside the guard block
 //	guardedAssigns — assignments that run only when the size check passes
+//	postGuard      — sub-pattern statements that read the guarded temps and
+//	                 declare the arm's bindings; they run after the guard
 //	extraConds     — additional boolean conditions introduced by typed/nested
 //	                 patterns (e.g., the `ok` result of a type assertion)
 //
@@ -1061,7 +1116,7 @@ func (t *galaASTTransformer) emitNonRestBindings(
 	objExpr ast.Expr,
 	elemType transpiler.Type,
 	elemTypeExpr ast.Expr,
-) (varDecls []ast.Stmt, guardedAssigns []ast.Stmt, extraConds []ast.Expr, err error) {
+) (varDecls []ast.Stmt, guardedAssigns []ast.Stmt, postGuard []ast.Stmt, extraConds []ast.Expr, err error) {
 	argIndex := 0
 	for _, argCtx := range args {
 		arg := argCtx.(*grammar.ArgumentContext)
@@ -1081,27 +1136,22 @@ func (t *galaASTTransformer) emitNonRestBindings(
 		}
 
 		if exprPat, ok := patCtx.(*grammar.ExpressionPatternContext); ok {
-			// Simple binding: `case Array(head, tail...)` → `head` is just an identifier.
-			if p := t.getPrimaryFromExpression(exprPat.Expression()); p != nil && p.Identifier() != nil {
-				name := p.Identifier().GetText()
-				t.currentScope.vals[name] = false
-				t.currentScope.valTypes[name] = elemType
-				varDecls = append(varDecls, seqVarDecl(name, elemTypeExpr))
-				guardedAssigns = append(guardedAssigns, seqGetAssign(name, objExpr, argIndex))
-				argIndex++
-				continue
-			}
-
-			// Nested pattern: generate a temp, then recursively transform the
-			// pattern against the temp as its match subject.
+			// A binding (`head`) or a nested pattern (`Circle(r)`): read the
+			// element into a temp under the size guard, then lower the
+			// sub-pattern against that temp through the general dispatcher.
+			// The sub-pattern's statements run after the guard, so the
+			// bindings they declare are visible to the arm; the arm itself is
+			// still gated on the size check, the same way a nested extractor
+			// sub-pattern reads its guarded temp (see
+			// generateDirectUnapplyPattern).
 			tempName := t.nextTempVar()
 			varDecls = append(varDecls, seqVarDecl(tempName, elemTypeExpr))
 			guardedAssigns = append(guardedAssigns, seqGetAssign(tempName, objExpr, argIndex))
 			nestedCond, nestedStmts, nerr := t.transformExpressionPatternWithType(exprPat.Expression(), ast.NewIdent(tempName), elemType)
 			if nerr != nil {
-				return nil, nil, nil, nerr
+				return nil, nil, nil, nil, nerr
 			}
-			guardedAssigns = append(guardedAssigns, nestedStmts...)
+			postGuard = append(postGuard, nestedStmts...)
 			if ident, ok := nestedCond.(*ast.Ident); !ok || ident.Name != "true" {
 				extraConds = append(extraConds, nestedCond)
 			}
@@ -1110,13 +1160,15 @@ func (t *galaASTTransformer) emitNonRestBindings(
 			varName := typedPat.Identifier().GetText()
 			typeExpr, terr := t.transformType(typedPat.Type_())
 			if terr != nil {
-				return nil, nil, nil, terr
+				return nil, nil, nil, nil, terr
 			}
 			expectedType := t.resolveType(t.getBaseTypeName(typeExpr))
 			t.currentScope.vals[varName] = false
 			t.currentScope.valTypes[varName] = expectedType
-			varDecls = append(varDecls, seqVarDecl(varName, typeExpr))
+			// The binding and its ok flag are both declared outside the size
+			// guard and assigned inside it, so the arm and its condition see them.
 			okName := t.nextTempVar()
+			varDecls = append(varDecls, seqVarDecl(varName, typeExpr), seqVarDecl(okName, ast.NewIdent("bool")))
 			asCall := &ast.CallExpr{
 				Fun: &ast.IndexExpr{
 					X:     t.stdIdent("As"),
@@ -1131,14 +1183,14 @@ func (t *galaASTTransformer) emitNonRestBindings(
 			}
 			guardedAssigns = append(guardedAssigns, &ast.AssignStmt{
 				Lhs: []ast.Expr{ast.NewIdent(varName), ast.NewIdent(okName)},
-				Tok: token.DEFINE,
+				Tok: token.ASSIGN,
 				Rhs: []ast.Expr{asCall},
 			})
 			extraConds = append(extraConds, ast.NewIdent(okName))
 		}
 		argIndex++
 	}
-	return varDecls, guardedAssigns, extraConds, nil
+	return varDecls, guardedAssigns, postGuard, extraConds, nil
 }
 
 // seqVarDecl builds `var name T` as a DeclStmt for seq-pattern bindings.

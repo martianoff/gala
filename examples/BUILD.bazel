@@ -2482,6 +2482,16 @@ gala_exec_test(
     gala_deps = [":generic_struct_extractor_cell"],
 )
 
+# Nested constructor, literal and typed sub-patterns inside sequence patterns
+# (bindings visible to the arm, still gated on the size check), and generic
+# struct patterns with explicit type arguments against an `any` subject.
+gala_exec_test(
+    name = "sequence_pattern_nested_ctor",
+    src = "sequence_pattern_nested_ctor.gala",
+    expected = "sequence_pattern_nested_ctor.out",
+    deps = ["//collection_immutable"],
+)
+
 gala_library(
     name = "cross_pkg_sealed_var_step",
     srcs = ["cross_pkg_sealed_var/step/step.gala"],
