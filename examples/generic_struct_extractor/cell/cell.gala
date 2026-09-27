@@ -1,0 +1,9 @@
+package cell
+
+// Cell is a generic struct declared in its own package and imported qualified,
+// so a consumer's `case cell.Cell(v, tag)` has to resolve the struct's field
+// types from package metadata and substitute the subject's type arguments.
+struct Cell[T any](Value T, Tag string)
+
+// Of builds a Cell holding v under tag.
+func Of[T any](v T, tag string) Cell[T] = Cell[T](Value = v, Tag = tag)

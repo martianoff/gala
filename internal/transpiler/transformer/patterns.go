@@ -671,9 +671,12 @@ func (t *galaASTTransformer) isDirectStructMatch(patternTypeName string, matched
 
 	normalizedContainer := stripStdPrefix(containerBaseName)
 
-	// Check for exact match
+	// Check for exact match. Only a tuple is read positionally (V1, V2, …);
+	// any other declared generic struct is matched through its own fields by
+	// generateDirectStructFieldMatch, so `Box(md, in)` against Box[int] reads
+	// Md and In rather than tuple accessors typed by Box's type arguments.
 	if normalizedPattern == normalizedContainer {
-		return true
+		return t.isTupleType(normalizedContainer) || len(t.structFields[t.resolveStructTypeName(patternTypeName)]) == 0
 	}
 
 	// Check for tuple pattern matching with parentheses syntax
@@ -749,26 +752,9 @@ func (t *galaASTTransformer) generateDirectTupleStructMatch(objExpr ast.Expr, ar
 			},
 		}
 
-		// Check if this is a simple binding or a nested pattern
+		// A binding or a nested pattern, both lowered by the general dispatcher.
 		patCtx := arg.Pattern()
 		if exprPat, ok := patCtx.(*grammar.ExpressionPatternContext); ok {
-			if p := t.getPrimaryFromExpression(exprPat.Expression()); p != nil && p.Identifier() != nil {
-				// Simple binding: name := obj.V{i+1}.Get()
-				// Note: .Get() already returns the concrete type, so no type assertion needed
-				name := p.Identifier().GetText()
-				t.currentScope.vals[name] = false
-				t.currentScope.valTypes[name] = elemType
-
-				assign := &ast.AssignStmt{
-					Lhs: []ast.Expr{ast.NewIdent(name)},
-					Tok: token.DEFINE,
-					Rhs: []ast.Expr{elemExpr},
-				}
-				stmts = append(stmts, assign)
-				continue
-			}
-
-			// Nested pattern - transform recursively
 			nestedCond, nestedStmts, err := t.transformExpressionPatternWithType(exprPat.Expression(), elemExpr, elemType)
 			if err != nil {
 				return nil, nil, err
@@ -839,8 +825,22 @@ func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, ar
 		return nil, nil, galaerr.NewSemanticErrorAt(argList.GetStart().GetLine(), argList.GetStart().GetColumn(), fmt.Sprintf("struct '%s' has %d fields but pattern has %d arguments", structName, len(fields), len(args)))
 	}
 
-	// Get field types if available
+	// Get field types if available. They are the declared types, so for a
+	// generic struct they mention its type parameters: substitute the matched
+	// type's arguments (Box[int] turns `Md Mode[T]` into Mode[int]).
 	fieldTypes := t.structFieldTypes[structName]
+	substituteFieldType := func(ft transpiler.Type) transpiler.Type { return ft }
+	if meta := t.getTypeMeta(structName); meta != nil && len(meta.TypeParams) > 0 {
+		subject := matchedType
+		if ptr, ok := subject.(transpiler.PointerType); ok {
+			subject = ptr.Elem
+		}
+		if gen, ok := subject.(transpiler.GenericType); ok && len(gen.Params) == len(meta.TypeParams) {
+			substituteFieldType = func(ft transpiler.Type) transpiler.Type {
+				return t.substituteConcreteTypes(ft, meta.TypeParams, gen.Params)
+			}
+		}
+	}
 
 	// Generate bindings for each pattern argument using direct field access
 	for i, argCtx := range args {
@@ -859,7 +859,7 @@ func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, ar
 		var fieldType transpiler.Type = transpiler.BasicType{Name: "any"}
 		if fieldTypes != nil {
 			if ft, ok := fieldTypes[fieldName]; ok {
-				fieldType = ft
+				fieldType = substituteFieldType(ft)
 			}
 		}
 
@@ -876,25 +876,11 @@ func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, ar
 			},
 		}
 
-		// Check if this is a simple binding or a nested pattern
+		// A binding (`name := obj.Field.Get()`) or a nested pattern such as
+		// `Circle(r)`, both lowered by the general dispatcher against the
+		// field's type.
 		patCtx := arg.Pattern()
 		if exprPat, ok := patCtx.(*grammar.ExpressionPatternContext); ok {
-			if p := t.getPrimaryFromExpression(exprPat.Expression()); p != nil && p.Identifier() != nil {
-				// Simple binding: name := obj.FieldName.Get()
-				name := p.Identifier().GetText()
-				t.currentScope.vals[name] = false
-				t.currentScope.valTypes[name] = fieldType
-
-				assign := &ast.AssignStmt{
-					Lhs: []ast.Expr{ast.NewIdent(name)},
-					Tok: token.DEFINE,
-					Rhs: []ast.Expr{elemExpr},
-				}
-				stmts = append(stmts, assign)
-				continue
-			}
-
-			// Nested pattern - transform recursively
 			nestedCond, nestedStmts, err := t.transformExpressionPatternWithType(exprPat.Expression(), elemExpr, fieldType)
 			if err != nil {
 				return nil, nil, err
@@ -1387,24 +1373,7 @@ func (t *galaASTTransformer) transformTuplePattern(patternExprs []grammar.IExpre
 			},
 		}
 
-		// Check if this is a simple binding (identifier) or nested pattern
-		if p := t.getPrimaryFromExpression(patExpr); p != nil && p.Identifier() != nil {
-			// Simple binding: x := obj.V{i+1}.Get()
-			// Note: .Get() already returns the concrete type, so no type assertion needed
-			name := p.Identifier().GetText()
-			t.currentScope.vals[name] = false
-			t.currentScope.valTypes[name] = elemType
-
-			assign := &ast.AssignStmt{
-				Lhs: []ast.Expr{ast.NewIdent(name)},
-				Tok: token.DEFINE,
-				Rhs: []ast.Expr{elemExpr},
-			}
-			stmts = append(stmts, assign)
-			continue
-		}
-
-		// Handle nested patterns recursively. Bindings from the nested pattern
+		// A binding or a nested pattern, both lowered recursively. Bindings
 		// must be appended BEFORE we accumulate the condition so any later
 		// element pattern (e.g. `code` in `(true, code)`) still gets bound.
 		nestedCond, nestedStmts, err := t.transformExpressionPatternWithType(patExpr, elemExpr, elemType)

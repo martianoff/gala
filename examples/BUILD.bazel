@@ -55,6 +55,8 @@ filegroup(
         "generic_field_named_like_type/lib/lib.gala",
         "generic_field_named_like_type/lib/types.gala",
         "generic_field_named_like_type/main.gala",
+        "generic_struct_extractor.gala",
+        "generic_struct_extractor/cell/cell.gala",
         "go_type_inference_lib/textutil.gala",
         "go_type_inference_multifile/helpers.gala",
         "go_type_inference_multifile/main.gala",
@@ -2428,6 +2430,23 @@ gala_exec_test(
     src = "cross_pkg_sealed_qualified_match_test.gala",
     expected = "cross_pkg_sealed_qualified_match_test.out",
     gala_deps = [":cross_pkg_sealed_qualified_match_event"],
+)
+
+# Struct extractor patterns on generic structs: field types substituted with the
+# subject's type arguments, single-field and type-parameter receivers, nested
+# variants/structs/literals, guards, and a generic struct from another package.
+gala_library(
+    name = "generic_struct_extractor_cell",
+    srcs = ["generic_struct_extractor/cell/cell.gala"],
+    importpath = "martianoff/gala/examples/generic_struct_extractor/cell",
+    visibility = ["//visibility:public"],
+)
+
+gala_exec_test(
+    name = "generic_struct_extractor",
+    src = "generic_struct_extractor.gala",
+    expected = "generic_struct_extractor.out",
+    gala_deps = [":generic_struct_extractor_cell"],
 )
 
 gala_library(

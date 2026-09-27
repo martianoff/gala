@@ -1,0 +1,118 @@
+package main
+
+import "martianoff/gala/examples/generic_struct_extractor/cell"
+
+// Struct extractor patterns on GENERIC structs. A pattern `Box(a, b)` against a
+// Box[int] reads Box's own fields, typed by their declarations with the
+// subject's type arguments substituted (Md Mode[T] -> Mode[int]). Nested
+// constructor patterns inside such an extractor (sealed variants, nested
+// structs, literals) are patterns against that substituted field type, never
+// bindings of the constructor's name.
+
+sealed type Mode[T any] {
+    case A(Fn func(int) T)
+    case B(Fn func(string) T)
+}
+
+struct Inner[T any](X T)
+struct Box[T any](Md Mode[T], In Inner[T])
+struct Pair[K any, V any](Key K, Val V)
+struct Outer[T any](P Pair[string, T])
+
+sealed type Shape {
+    case Circle(R int)
+    case Square(S int)
+}
+
+struct Holder(Sh Shape, N int)
+
+// The extracted field keeps its declared type with T substituted: `md` is a
+// Mode[int], so it can be matched exhaustively on its variants.
+func modeName(b Box[int]) string = b match {
+    case Box(md, _) => md match {
+        case A(_) => "A"
+        case B(_) => "B"
+    }
+    case _ => "none"
+}
+
+// Nested sealed variants inside a generic struct extractor.
+func run(b Box[int]) int = b match {
+    case Box(A(f), _) => f(10)
+    case Box(B(g), _) => g("xy")
+    case _            => -1
+}
+
+// A single-field generic struct matched on a type-parameter receiver.
+func (b Box[T]) Inside() T = b.In match {
+    case Inner(x) => x
+    case _        => b.In.X
+}
+
+// Nested generic struct with a guard.
+func classify(b Box[int]) string = b match {
+    case Box(_, Inner(x)) if x > 5 => s"big $x"
+    case Box(_, Inner(x))          => s"small $x"
+    case _                         => "none"
+}
+
+// Two type parameters, each field typed by its own argument; a literal nested
+// sub-pattern compares the key.
+func describePair(p Pair[string, int]) string = p match {
+    case Pair("answer", v) => s"the answer is $v"
+    case Pair(k, v)        => s"$k=${v + 1}"
+    case _                 => "none"
+}
+
+// A generic struct nested in a generic struct, both destructured at once.
+func outerKey(o Outer[bool]) string = o match {
+    case Outer(Pair(k, true)) => s"$k on"
+    case Outer(Pair(k, _))    => s"$k off"
+    case _                    => "none"
+}
+
+// The non-generic control: a nested variant inside a plain struct extractor.
+func holderArea(h Holder) int = h match {
+    case Holder(Circle(r), n) => r * r * n
+    case Holder(Square(s), n) => s * s * n
+    case _                    => -1
+}
+
+// A tuple pattern with a nested variant.
+func tupleArea(t Tuple[Shape, int]) int = t match {
+    case (Circle(r), n) => r * n
+    case (Square(s), n) => s + n
+    case _              => -1
+}
+
+// A generic struct from another package, imported qualified.
+func doubled(c cell.Cell[int]) string = c match {
+    case cell.Cell(v, tag) => s"$tag:${v * 2}"
+    case _                 => "none"
+}
+
+func main() {
+    val a = Box[int](Md = A[int]((x) => x + 1), In = Inner(X = 7))
+    val b = Box[int](Md = B[int]((s) => s.Size()), In = Inner(X = 3))
+
+    Println(modeName(a))
+    Println(modeName(b))
+    Println(run(a))
+    Println(run(b))
+    Println(a.Inside())
+    Println(Box[string](Md = A[string]((x) => s"$x"), In = Inner(X = "hi")).Inside())
+    Println(classify(a))
+    Println(classify(b))
+
+    Println(describePair(Pair[string, int](Key = "answer", Val = 42)))
+    Println(describePair(Pair[string, int](Key = "k", Val = 1)))
+    Println(outerKey(Outer[bool](P = Pair[string, bool](Key = "lamp", Val = true))))
+    Println(outerKey(Outer[bool](P = Pair[string, bool](Key = "fan", Val = false))))
+
+    Println(holderArea(Holder(Sh = Circle(2), N = 3)))
+    Println(holderArea(Holder(Sh = Square(4), N = 2)))
+    Println(tupleArea((Circle(5), 2)))
+    Println(tupleArea((Square(5), 2)))
+
+    Println(doubled(cell.Of(21, "n")))
+}
