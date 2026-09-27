@@ -19,8 +19,9 @@ name: Downstream drift — build gala_team against moving refs
 #   - no timing budget — the question is "does it build", not "how fast"
 #
 # A red run here means the downstream and master have drifted apart. Fix the
-# drift, then bump the pins in perf-real-build.yml to match (and the gala_tui
-# pin in cli-path.yml, which builds more downstream projects with the CLI).
+# drift, then bump the pins in perf-real-build.yml to match, and the matching
+# downstream pins (gala-tui, gala-acp) in cli-path.yml, which builds
+# downstream projects with the CLI.
 
 on:
   workflow_dispatch:

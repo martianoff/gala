@@ -53,10 +53,12 @@ jobs:
           disk-cache: cli-path-build
           repository-cache: true
 
-      # Same target, stamping and platforms as release.yml. Windows is
-      # cross-compiled here rather than built on a Windows runner: the binary
-      # is pure Go, and one Linux build job is several times faster than a
-      # cold Bazel on windows-latest.
+      # Same target and stamping as release.yml. Unlike release.yml, the
+      # Windows binary is cross-compiled here from the Linux checkout rather
+      # than built on a Windows runner: it is pure Go, and one Linux build job
+      # is several times faster than a cold Bazel on windows-latest. What this
+      # lane does not cover is a stdlib snapshot embedded from a Windows (CRLF)
+      # checkout; the Windows jobs below cover running on Windows.
       - name: Build linux/amd64 and windows/amd64 binaries
         run: |
           set -euo pipefail
@@ -196,15 +198,11 @@ jobs:
             ref: 2ad65e1650cfac290c94367b8393b65e55a9efa5
             commands: test
             goflags: -p=1
-          # gala-server is pinned where it is until two things land: a gala-tui
-          # release it can require in place of v0.11.0 (which fails GALA-E0045),
-          # and the GALA fix for Go subpackage types imported by directory path.
-          # Bump it after both, the same way as above.
-          - name: gala-server
-            repo: martianoff/gala-server
-            ref: c68fc093eb6b2598b1b3a4f2fe9e45404a0ce57f
-            commands: build test
-            goflags: ""
+          # gala-server (martianoff/gala-server, `commands: build test`) is not
+          # listed yet: it requires gala-tui v0.11.0, which fails GALA-E0045
+          # (missing struct-field defaults) against GALA >= 0.81. Re-add it
+          # once gala-tui publishes a release with that fix and gala-server
+          # requires it, pinned to that gala-server commit.
           - name: gala-acp
             repo: martianoff/gala-acp
             ref: b79743ba1faa2cfd1a5cc24e36f80cfaa4c12a85

@@ -22,14 +22,22 @@
 set -euo pipefail
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+repo=$(cd "$here/../../.." && pwd)
 : "${GALA:?set GALA to the gala binary under test}"
 work=${1:?usage: run_fixtures.sh <work-dir> [fixture...]}
 shift
 mkdir -p "$work"
 work=$(cd "$work" && pwd)
+# Under the repository, the CLI would find the repo's own gala.mod.
+case "$work/" in
+  "$repo/"*) echo "::error::work dir $work must be outside the repository"; exit 2 ;;
+esac
 
 # One GALA_HOME for the whole run, starting empty, plus a second one that the
-# sequence fixture uses as its from-scratch reference.
+# sequence fixture uses as its from-scratch reference. GALA_BUILD_DIR and
+# GALA_CACHE would move build workspaces and fetched modules out of it, so an
+# inherited value is dropped.
+unset GALA_BUILD_DIR GALA_CACHE
 export GALA_HOME="$work/gala-home"
 fresh_home="$work/gala-home-fresh"
 rm -rf "$GALA_HOME" "$fresh_home"
@@ -83,6 +91,17 @@ expect_line() {
   fi
 }
 
+# expect_tests_ran <label> <file> — `gala test` passed and actually ran tests:
+# a test binary whose TestXxx functions were dropped still prints "ok", with a
+# "[no tests to run]" note. ("[no test files]" is fine: it marks packages that
+# have no tests, such as cmd/app.)
+expect_tests_ran() {
+  expect_line "$1" "$2" '^(ok |PASS$)'
+  if normalize <"$2" | grep -q -- 'no tests to run'; then
+    fail "$1: gala test found no tests to run"
+  fi
+}
+
 # stage <fixture> — fresh copy of a fixture under the work dir; prints its path.
 stage() {
   local dest="$work/$1"
@@ -117,7 +136,7 @@ fixture_cmd_app() {
   gala_ok run.log run ./cmd/app || return 0
   expect_output "gala run ./cmd/app" expected.out run.log
   gala_ok test.log test || return 0
-  expect_line "root library test ran" test.log '^ok '
+  expect_tests_ran "root library test ran" test.log
 }
 
 # nested: main -> internal/a -> internal/a/b, a BOM-prefixed source with
@@ -132,7 +151,7 @@ fixture_nested() {
   gala_ok run.log run || return 0
   expect_output "gala run" expected.out run.log
   gala_ok test.log test || return 0
-  expect_line "subpackage test ran" test.log '^(ok |PASS$)'
+  expect_tests_ran "subpackage test ran" test.log
 }
 
 # lib_only: no package main at all.
@@ -143,7 +162,7 @@ fixture_lib_only() {
   gala_ok build.log build || return 0
   expect_line "library compile check" build.log '^ok \(library compiled successfully\)'
   gala_ok test.log test || return 0
-  expect_line "tests ran" test.log '^ok '
+  expect_tests_ran "tests ran" test.log
 }
 
 # go_subpkg: a hand-written Go package inside the module, whose types reach
@@ -181,7 +200,7 @@ fixture_sequence() {
   gala_ok s1.log build -o root1 || return 0
   gala_ok s2.log build -o app1 ./cmd/app || return 0
   gala_ok s3.log test || return 0
-  expect_line "test in the sequence" s3.log '^(ok |PASS$)'
+  expect_tests_ran "test in the sequence" s3.log
   gala_ok s4.log build -o root2 || return 0
   "$(exe "$dir/root1")" >root1.txt
   "$(exe "$dir/app1")" >app1.txt
@@ -225,7 +244,16 @@ for name in "${fixtures[@]}"; do
   fi
   echo
   echo "=== $name"
-  ( "fixture_$name" ) || fail "$name: aborted (see the output above)"
+  # Not `( ... ) || fail`: bash ignores errexit anywhere inside the left of
+  # `||`, so a built binary exiting non-zero would go unnoticed. The subshell
+  # runs with errexit on and its status is checked afterwards.
+  set +e
+  ( set -e; "fixture_$name" )
+  status=$?
+  set -e
+  if [ "$status" -ne 0 ]; then
+    fail "$name: aborted with status $status (see the output above)"
+  fi
 done
 
 echo

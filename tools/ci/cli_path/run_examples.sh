@@ -76,15 +76,24 @@ fi
 work=${1:?usage: run_examples.sh <work-dir>}
 mkdir -p "$work"
 work=$(cd "$work" && pwd)
+# Under the repository, every example would find the repo's own gala.mod
+# instead of running as a one-file program.
+case "$work/" in
+  "$repo/"*) echo "::error::work dir $work must be outside the repository"; exit 2 ;;
+esac
 
-export GALA_HOME="${GALA_HOME:-$work/gala-home}"
+# A GALA_HOME that starts empty; an inherited GALA_HOME, GALA_BUILD_DIR or
+# GALA_CACHE could hand back a previously extracted stdlib or build workspace.
+unset GALA_BUILD_DIR GALA_CACHE
+export GALA_HOME="$work/gala-home"
+rm -rf "$GALA_HOME"
 jobs=${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)}
 
 # "<source> <expected>" for every enabled single-source gala_exec_test without
 # gala_deps. Built without spawning a process per example: that alone takes
 # minutes on a Windows runner.
 list="$work/examples.txt"
-needs_module=" $(cd "$repo/examples" && grep -rl --include='*.gala' '"martianoff/gala/examples/' . | sed 's|^\./||' | tr '\n' ' ') "
+needs_module=" $(cd "$repo/examples" && { grep -rl --include='*.gala' '"martianoff/gala/examples/' . || true; } | sed 's|^\./||' | tr '\n' ' ') "
 : >"$list"
 while read -r src expected; do
   case "$needs_module" in *" $src "*) continue ;; esac
@@ -97,6 +106,12 @@ done < <(awk '
   inb && /gala_deps/ { deps = 1 }
 ' "$repo/examples/BUILD.bazel")
 total=$(wc -l <"$list")
+# An empty list means the BUILD.bazel parse above stopped matching, not that
+# there is nothing to test.
+if [ "$total" -eq 0 ]; then
+  echo "::error::no gala_exec_test examples found in examples/BUILD.bazel; the parser in run_examples.sh needs updating"
+  exit 1
+fi
 echo "Running $total examples with $jobs concurrent jobs; GALA_HOME=$GALA_HOME"
 
 start=$(date +%s)
