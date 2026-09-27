@@ -2,7 +2,7 @@
 # Runs the single-file programs in examples/ through `gala run` and compares
 # their stdout with the checked-in .out file.
 #
-#   GALA=/path/to/gala tools/ci/cli_path/run_examples.sh [work-dir]
+#   GALA=/path/to/gala tools/ci/cli_path/run_examples.sh <work-dir>
 #
 # Bazel already runs these as gala_exec_test targets, but against the stdlib
 # sources in the repository. `gala run` transpiles against the snapshot of the
@@ -23,7 +23,36 @@ set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repo=$(cd "$here/../../.." && pwd)
 : "${GALA:?set GALA to the gala binary under test}"
-work=${1:-$(mktemp -d)}
+
+# run_one <work-dir> <example> — one example; prints "ok" or "FAIL" + details.
+# Invoked through xargs as `run_examples.sh --one`, which works the same under
+# Git Bash on Windows (where exported shell functions do not survive the trip
+# through xargs).
+run_one() {
+  local work=$1 name=$2
+  local dir="$work/ex/$name"
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  cp "$repo/examples/$name.gala" "$dir/main.gala"
+  if ! (cd "$dir" && "$GALA" run main.gala >stdout.txt 2>stderr.txt); then
+    echo "FAIL $name (gala run exited non-zero)"
+    sed 's/^/    /' "$dir/stderr.txt" | head -40
+    return 1
+  fi
+  if ! diff -u <(tr -d '\r' <"$repo/examples/$name.out") <(tr -d '\r' <"$dir/stdout.txt") >"$dir/diff.txt"; then
+    echo "FAIL $name (stdout differs from $name.out)"
+    sed 's/^/    /' "$dir/diff.txt" | head -40
+    return 1
+  fi
+  echo "ok   $name"
+}
+
+if [ "${1:-}" = "--one" ]; then
+  run_one "$2" "$3"
+  exit
+fi
+
+work=${1:?usage: run_examples.sh <work-dir>}
 mkdir -p "$work"
 work=$(cd "$work" && pwd)
 
@@ -45,39 +74,21 @@ done
 total=$(wc -l <"$list")
 echo "Running $total examples with $jobs concurrent jobs; GALA_HOME=$GALA_HOME"
 
-# Warm the shared GALA_HOME with one example first, so the stdlib is extracted
-# and compiled once rather than raced by every job at startup (the concurrent
-# path is still exercised by everything after it).
-run_one() {
-  local name=$1 dir="$work/ex/$1"
-  rm -rf "$dir"
-  mkdir -p "$dir"
-  cp "$repo/examples/$name.gala" "$dir/main.gala"
-  if ! (cd "$dir" && "$GALA" run main.gala >stdout.txt 2>stderr.txt); then
-    echo "FAIL $name (gala run exited non-zero)"
-    sed 's/^/    /' "$dir/stderr.txt" | head -40
-    return 1
-  fi
-  if ! diff -u <(tr -d '\r' <"$repo/examples/$name.out") <(tr -d '\r' <"$dir/stdout.txt") >"$dir/diff.txt"; then
-    echo "FAIL $name (stdout differs from $name.out)"
-    sed 's/^/    /' "$dir/diff.txt" | head -40
-    return 1
-  fi
-  echo "ok   $name"
-}
-export -f run_one
-export GALA work repo
-
 start=$(date +%s)
-failed=0
-head -1 "$list" | while read -r n; do run_one "$n"; done || failed=1
-tail -n +2 "$list" | xargs -P "$jobs" -I{} bash -c 'run_one "$1"' _ {} >"$work/results.txt" 2>&1 || true
-cat "$work/results.txt"
-fails=$(grep -c '^FAIL ' "$work/results.txt" || true)
-fails=$((fails + failed))
+results="$work/results.txt"
+# The first example runs alone, so the stdlib is extracted and compiled once
+# rather than raced by every job at startup; everything after it still runs
+# concurrently against the shared GALA_HOME.
+run_one "$work" "$(head -1 "$list")" >"$results" 2>&1 || true
+tail -n +2 "$list" |
+  xargs -P "$jobs" -n 1 bash "${BASH_SOURCE[0]}" --one "$work" >>"$results" 2>&1 || true
+cat "$results"
+ran=$(grep -cE '^(ok  |FAIL )' "$results" || true)
+fails=$(grep -c '^FAIL ' "$results" || true)
 echo
-echo "examples: $total run, $fails failed, $(( $(date +%s) - start ))s"
-if [ "$fails" -gt 0 ]; then
-  grep '^FAIL ' "$work/results.txt" | sed 's/^/::error::/'
+echo "examples: $total listed, $ran run, $fails failed, $(( $(date +%s) - start ))s"
+if [ "$fails" -gt 0 ] || [ "$ran" -ne "$total" ]; then
+  grep '^FAIL ' "$results" | sed 's/^/::error::/' || true
+  [ "$ran" -eq "$total" ] || echo "::error::only $ran of $total examples reported a result"
   exit 1
 fi
