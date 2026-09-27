@@ -517,6 +517,23 @@ const (
 	// An alias to a struct declared in the same package keeps working, because
 	// there the receiver base type is local and Go accepts it.
 	CodeMethodOnNonLocalAlias ErrorCode = "GALA-E0048"
+
+	// E0049: a Go call returning two or more values stands where GALA needs a
+	// single value — a match subject, `val (a, b) = ...` tuple destructuring,
+	// an if-expression branch, an expression-lambda body, a single-name
+	// binding, or a call argument.
+	//
+	// GALA has no multi-value expressions, and a Go multi-return is not a
+	// Tuple. The call was emitted verbatim and typed as its first result, so
+	// `os.ReadFile(p) match { case (data, nil) => ... }` failed in Go with
+	//
+	//	obj.V1 undefined (type []byte has no field or method V1)
+	//
+	// The hint names `Try(...)` for a `(T, error)`-shaped call and a
+	// multi-name binding `val a, b = call(...)` otherwise. A single-name
+	// binding and an expression-lambda body keep the documented `(T, error)`
+	// lowering (the error panics) and are rejected only for other shapes.
+	CodeGoMultiValueInSingleValueSlot ErrorCode = "GALA-E0049"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

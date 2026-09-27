@@ -397,6 +397,14 @@ func (t *galaASTTransformer) transformPostfixMatchExpressionAgainst(ctx *grammar
 		}
 	}
 
+	subjectStop := primaryExpr.GetStop()
+	if len(suffixes) > 0 {
+		subjectStop = suffixes[len(suffixes)-1].GetStop()
+	}
+	if err := t.checkGoMultiValueInSpan(subject, primaryExpr.GetStart(), subjectStop, "a match subject"); err != nil {
+		return nil, err
+	}
+
 	// Now handle the match expression
 	caseClauses := ctx.AllCaseClause()
 	return t.buildMatchExpressionFromClauses(subject, "obj", caseClauses, ctx, s)

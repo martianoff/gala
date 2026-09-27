@@ -365,6 +365,11 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 		// Auto-destructure Go functions returning (T, error): wrap in IIFE that
 		// panics on error and returns only the non-error value.
 		val = t.wrapGoMultiReturnAsIIFE(val)
+		if i < len(rhsExprs) {
+			if err := t.checkGoMultiValueInSingleValueSlot(val, exprCtxAt(ctx.ExpressionList(), i), "a binding of one name"); err != nil {
+				return nil, err
+			}
+		}
 
 		if t.isNoneCall(val) && ctx.Type_() == nil {
 			return nil, t.semanticErrorAt(ctx, "variable assigned to None() must have an explicit type")
@@ -429,6 +434,9 @@ func (t *galaASTTransformer) transformValTuplePattern(ctx *grammar.ValDeclaratio
 
 	if len(rhsExprs) != 1 {
 		return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "tuple destructuring requires exactly one expression on the right side")
+	}
+	if err := t.checkGoMultiValueTupleDestructure(rhsExprs[0], ctx.ExpressionList()); err != nil {
+		return nil, err
 	}
 
 	// Get the type of the tuple for type inference
@@ -554,6 +562,11 @@ func (t *galaASTTransformer) transformVarDeclaration(ctx *grammar.VarDeclaration
 		unwrappedRhs := make([]ast.Expr, len(rhsExprs))
 		for i, r := range rhsExprs {
 			unwrappedRhs[i] = t.unwrapImmutable(r)
+			if len(rhsExprs) == len(namesCtx) {
+				if err := t.checkGoMultiValueInSingleValueSlot(unwrappedRhs[i], exprCtxAt(ctx.ExpressionList(), i), "a binding of one name"); err != nil {
+					return nil, err
+				}
+			}
 		}
 		spec.Values = unwrappedRhs
 	}

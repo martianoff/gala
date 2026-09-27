@@ -1566,6 +1566,11 @@ func (t *galaASTTransformer) transformFunctionArgs(
 		if aerr != nil {
 			return nil, nil, false, aerr
 		}
+		if lambdaCtx == nil && t.isSingleValueArgSlot(len(argListCtx.AllArgument()), expectedType) {
+			if cerr := t.checkGoMultiValueInSingleValueSlot(expr, exprCtx, "this argument"); cerr != nil {
+				return nil, nil, false, cerr
+			}
+		}
 		positional = append(positional, expr)
 		argIdx++
 	}

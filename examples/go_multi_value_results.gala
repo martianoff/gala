@@ -1,0 +1,51 @@
+package main
+
+import (
+    "net"
+    "strconv"
+    "strings"
+)
+
+// A Go function that returns several values is not a GALA Tuple. Its results
+// are reached through one of three forms; matching on the call directly, or
+// destructuring it with `val (a, b) = ...`, is rejected as GALA-E0049.
+
+// 1. Try: a `(T, error)` return becomes Success(v) / Failure(e).
+func parsePort(text string) string = Try(strconv.Atoi(text)) match {
+    case Success(n) if n > 0 && n < 65536 => s"port $n"
+    case Success(n) => s"out of range: $n"
+    case Failure(_) => s"not a number: $text"
+}
+
+// Try over `(A, B, error)` carries the values as a Tuple, so a tuple pattern
+// applies inside Success.
+func splitAddr(addr string) string = Try(net.SplitHostPort(addr)) match {
+    case Success((host, port)) => s"host=$host port=$port"
+    case Failure(_) => s"bad address: $addr"
+}
+
+// 2. Bind every result by name, then build a Tuple to match on.
+func setting(line string) string {
+    val key, value, found = strings.Cut(line, "=")
+    return (key, value, found) match {
+        case (k, v, true) => s"$k -> $v"
+        case _ => s"$key has no value"
+    }
+}
+
+// 3. A single name takes the value of a `(T, error)` call; the error panics.
+func mustParse(text string) int {
+    val n = strconv.Atoi(text)
+    return n * 2
+}
+
+func main() {
+    Println(parsePort("8080"))
+    Println(parsePort("70000"))
+    Println(parsePort("http"))
+    Println(splitAddr("localhost:8080"))
+    Println(splitAddr("localhost"))
+    Println(setting("mode=fast"))
+    Println(setting("verbose"))
+    Println(mustParse("21"))
+}

@@ -1627,6 +1627,36 @@ val result = divmod(10, 3) match {
 var data, err = goFunction()  // var avoids Immutable wrapping
 ```
 
+**A Go multi-return is not a Tuple.** A Go function returning several values is
+reached in exactly one of these ways:
+
+| Form | Meaning |
+|------|---------|
+| `val a, b = goCall()` | Bind every result by name (no parentheses) |
+| `Try(goCall())` | `(T, error)` → `Try[T]`; `(A, B, error)` → `Try[Tuple[A, B]]` |
+| `val v = goCall()` | `(T, error)` only: the value, and the error panics (same for an expression-lambda body) |
+
+Anywhere else — as a match subject, in `val (a, b) = goCall()` destructuring, as
+an if-expression branch, or as an argument that must be one value — the call is
+rejected with [GALA-E0049](errors/GALA-E0049.md). To match on the results, go
+through `Try`, or bind them by name and match on a Tuple built from the names:
+
+```gala
+import "strconv"
+import "strings"
+
+val parsed = Try(strconv.Atoi("42")) match {
+    case Success(n) => s"number $n"
+    case Failure(_) => "not a number"
+}
+
+val key, value, found = strings.Cut("mode=fast", "=")
+val setting = (key, value, found) match {
+    case (k, v, true) => s"$k -> $v"
+    case _ => s"$key has no value"
+}
+```
+
 See [Either](#either) for typed error handling, and [Try](#try-monad) for exception-safe error handling.
 
 ### Either

@@ -415,6 +415,9 @@ func (t *galaASTTransformer) transformExpressionLambdaBody(ctx *grammar.LambdaEx
 		}
 		return body, retType, nil
 	}
+	if err := t.checkGoMultiValueInSingleValueSlot(expr, ctx.Expression(), "a lambda body"); err != nil {
+		return nil, nil, err
+	}
 	body = &ast.BlockStmt{
 		List: []ast.Stmt{
 			&ast.ReturnStmt{Results: []ast.Expr{expr}},

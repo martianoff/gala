@@ -623,6 +623,23 @@ func main() {
 			expectContains: "which names no type of its own",
 		},
 		{
+			name: "GALA-E0049 match on a Go multi-value call",
+			input: `package main
+
+import "os"
+
+func describe(path string) string = os.ReadFile(path) match {
+    case (_, nil) => "read"
+    case _ => "failed"
+}
+
+func main() {
+    Println(describe("missing.txt"))
+}`,
+			expectCode:     galaerr.CodeGoMultiValueInSingleValueSlot,
+			expectContains: "os.ReadFile returns 2 values, but a match subject takes a single value",
+		},
+		{
 			name: "GALA-E0047 single-value initializer is rejected too",
 			input: `package main
 

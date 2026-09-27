@@ -919,6 +919,9 @@ func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchCont
 		if err != nil {
 			return nil, nil, false, err
 		}
+		if err := t.checkGoMultiValueInSingleValueSlot(expr, exprCtx, "an if-expression branch"); err != nil {
+			return nil, nil, false, err
+		}
 		return nil, expr, false, nil
 	}
 
@@ -945,6 +948,9 @@ func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchCont
 	if exprCtx := trailingValueExpression(lastStmtCtx); exprCtx != nil {
 		expr, err := t.lowerAgainst(exprCtx, s, true)
 		if err != nil {
+			return nil, nil, false, err
+		}
+		if err := t.checkGoMultiValueInSingleValueSlot(expr, exprCtx, "an if-expression branch"); err != nil {
 			return nil, nil, false, err
 		}
 		return preceding, expr, false, nil

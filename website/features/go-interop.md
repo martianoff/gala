@@ -78,6 +78,22 @@ val result = Try(os.Getwd())
 val dir = result.GetOrElse("/tmp")
 ```
 
+A Go multi-return is not a Tuple. Bind its results by name (`val a, b = call()`)
+or go through `Try`; matching on the call directly, or destructuring it with
+`val (a, b) = call()`, is rejected as
+[GALA-E0049](/docs/errors/gala-e0049/). To match on the results, bind them and
+match on a Tuple built from the names:
+
+```gala
+import "strings"
+
+val key, value, found = strings.Cut("mode=fast", "=")
+val setting = (key, value, found) match {
+    case (k, v, true) => s"$k -> $v"
+    case _ => s"$key has no value"
+}
+```
+
 ---
 
 ## Third-Party Go Modules

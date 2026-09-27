@@ -294,6 +294,9 @@ func (t *galaASTTransformer) transformShortVarDeclWithMutability(ctx *grammar.Sh
 
 		// Auto-destructure Go functions returning (T, error)
 		val = t.wrapGoMultiReturnAsIIFE(val)
+		if err := t.checkGoMultiValueInSingleValueSlot(val, exprCtxAt(ctx.ExpressionList(), i), "a binding of one name"); err != nil {
+			return nil, err
+		}
 
 		if t.isNoneCall(val) {
 			return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "variable assigned to None() must have an explicit type")

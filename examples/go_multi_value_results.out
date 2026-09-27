@@ -1,0 +1,8 @@
+port 8080
+out of range: 70000
+not a number: http
+host=localhost port=8080
+bad address: localhost
+mode -> fast
+verbose has no value
+42

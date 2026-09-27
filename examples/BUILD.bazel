@@ -2664,6 +2664,15 @@ gala_exec_test(
     expected = "try_go_transitive_import.out",
 )
 
+# Verification: the GALA forms for reaching a Go multi-value call's results
+# (Try, a multi-name binding, a single name over (T, error)); matching on the
+# call directly is GALA-E0049
+gala_exec_test(
+    name = "go_multi_value_results",
+    src = "go_multi_value_results.gala",
+    expected = "go_multi_value_results.out",
+)
+
 # Verification: auto-destructure (T, error) Go returns in val declarations
 gala_exec_test(
     name = "try_val_destructure",

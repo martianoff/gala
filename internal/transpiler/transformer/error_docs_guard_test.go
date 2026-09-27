@@ -530,6 +530,25 @@ func main() {
 `)
 			},
 		},
+		{
+			name: "match on a Go multi-value call",
+			code: galaerr.CodeGoMultiValueInSingleValueSlot, // GALA-E0049
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+import "os"
+
+func describe(path string) string = os.ReadFile(path) match {
+    case (_, nil) => "read"
+    case _ => "failed"
+}
+
+func main() {
+    Println(describe("missing.txt"))
+}
+`)
+			},
+		},
 		// The GALA-E0038 page also documents the rune-literal shape in prose
 		// (`'\d'`), but quotes no output for it, so there is nothing to pin.
 		// Its numeric forms (`'\x41'`) are not guardable here at all: GALA's
