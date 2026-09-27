@@ -1486,9 +1486,10 @@ func (t *galaASTTransformer) lowerDefaultMatchArm(ctx *grammar.CaseClauseContext
 // result type are not the construct's type, so a zero-arg constructor may not
 // guess from them (siblingTypedBranch): such a branch fails its first lowering
 // with GALA-E0018 and is lowered again against the type the other branches
-// unify to, in either order. When they unify to no settled type, it is
-// lowered again as before, guesses included. Any other error is reported as
-// it is.
+// unify to, in either order. When they unify to no settled type, or the
+// constructor still has none against it (it is not the branch's value, as in
+// `val d = None()` inside the branch), it is lowered again as before, guesses
+// included. Any other error is reported as it is.
 func (t *galaASTTransformer) lowerBranches(n int, s slot, siblingTyped bool, lower func(i int, s slot) (transpiler.Type, error)) error {
 	outer := t.siblingTypedBranch
 	t.siblingTypedBranch = outer || siblingTyped
@@ -1510,11 +1511,22 @@ func (t *galaASTTransformer) lowerBranches(n int, s slot, siblingTyped bool, low
 	if len(retry) == 0 {
 		return nil
 	}
-	if common := t.siblingsType(types); common != nil {
-		s = argSlot(common)
-		defer t.enterReturnSlot(returnSlot{typ: common})()
-	}
+	common := t.siblingsType(types)
 	for _, i := range retry {
+		if common != nil {
+			restore := t.enterReturnSlot(returnSlot{typ: common})
+			_, err := lower(i, argSlot(common))
+			restore()
+			if err == nil {
+				continue
+			}
+			if !isUninferredVariantError(err) {
+				return err
+			}
+			// The constructor that has no type is not the branch's value
+			// (`val d = None()` inside it): the siblings' type does not
+			// apply to it, so it keeps the guesses it had before.
+		}
 		if _, err := lower(i, s); err != nil {
 			return err
 		}
