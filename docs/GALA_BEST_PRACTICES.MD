@@ -95,7 +95,7 @@ func readAll(path string) string =
 
 <!-- doc-check: fragment -->
 ```gala
-func copyFile(src string, dst string) Try[Int] = Try(() => {
+func copyFile(src string, dst string) Try[int] = Try(() => {
     use in  = OpenFile(src)     // in.Close()  runs last
     use out = CreateFile(dst)   // out.Close() runs first (LIFO)
     out.Write(in.ReadString())

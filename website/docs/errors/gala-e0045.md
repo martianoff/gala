@@ -50,6 +50,7 @@ Every omitted field is named at once, so a call missing several takes one round 
 
 Either pass the field:
 
+<!-- doc-check: fragment -->
 ```gala
 val c = Cfg(Name = "a", Tries = 3)
 ```

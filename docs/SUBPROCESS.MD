@@ -290,7 +290,7 @@ import (
     "martianoff/gala/go_interop"
 )
 
-func echoOpts(): SpawnOpts = SpawnOpts(
+func echoOpts() SpawnOpts = SpawnOpts(
     Cmd  = "echo",
     Args = go_interop.SliceOf("hello world"),
     Env  = go_interop.SliceEmpty[string](),

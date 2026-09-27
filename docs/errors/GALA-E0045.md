@@ -42,6 +42,7 @@ trip rather than several.
 
 **Fix.** Either pass the field:
 
+<!-- doc-check: fragment -->
 ```gala
 val c = Cfg(Name = "a", Tries = 3)
 ```

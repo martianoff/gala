@@ -339,7 +339,7 @@ func harnesses(b block) []struct{ name, src string } {
 		{"top-level", header + rest + mainStub},
 		{"main body", header + "func main() {\n" + rest + "}\n"},
 	}
-	if decls != "" && stmts != "" && !funcMain.MatchString(decls) {
+	if decls != "" && strings.TrimSpace(stmts) != "" && !funcMain.MatchString(decls) {
 		out = append(out, struct{ name, src string }{"split", header + decls + "\nfunc main() {\n" + stmts + "}\n"})
 	}
 	return out
@@ -504,11 +504,25 @@ func missingImports(err error) []string {
 		return []string{`import . "martianoff/gala/` + m[1] + `"`}
 	}
 	if m := galaPackageHint.FindStringSubmatch(msg); m != nil {
+		// Only the paths the hint itself lists (not those of later errors in a
+		// MultiError), each once, and only standard-library packages: the
+		// search root also holds examples/, whose helpers must never make a
+		// fragment that forgot to define them count as compiling.
+		hint := msg[strings.Index(msg, m[0]):]
+		if end := strings.IndexByte(hint, '\n'); end >= 0 {
+			hint = hint[:end]
+		}
 		var out []string
-		for _, q := range quoted.FindAllStringSubmatch(msg[strings.Index(msg, m[0]):], -1) {
-			if strings.Contains(q[1], "/") {
-				out = append(out, `import . "`+q[1]+`"`)
+		seen := map[string]bool{}
+		for _, q := range quoted.FindAllStringSubmatch(hint, -1) {
+			// Standard-library packages sit directly under the module
+			// (martianoff/gala/json); examples/ packages are nested.
+			pkg, inModule := strings.CutPrefix(q[1], "martianoff/gala/")
+			if !inModule || strings.Contains(pkg, "/") || seen[pkg] {
+				continue
 			}
+			seen[pkg] = true
+			out = append(out, `import . "`+q[1]+`"`)
 		}
 		return out
 	}
@@ -576,12 +590,22 @@ func updateMarkers(t *testing.T, root string, mark, unmark []block) {
 		// Edit bottom-up so earlier line numbers stay valid.
 		sort.Slice(edits, func(i, j int) bool { return edits[i].b.line > edits[j].b.line })
 		for _, e := range edits {
+			// The line numbers come from the tested copy; the checkout being
+			// edited may differ from it. Touch only the line they describe.
 			if !e.insert {
 				idx := e.b.directiveLine - 1
+				if idx < 0 || idx >= len(lines) || !directiveLine.MatchString(lines[idx]) {
+					t.Errorf("%s:%d: expected a doc-check marker to remove; the checkout differs from the tested copy", file, idx+1)
+					continue
+				}
 				lines = append(lines[:idx], lines[idx+1:]...)
 				continue
 			}
 			idx := e.b.line - 1
+			if idx < 0 || idx >= len(lines) || !fenceOpen.MatchString(lines[idx]) {
+				t.Errorf("%s:%d: expected a ```gala fence to mark; the checkout differs from the tested copy", file, idx+1)
+				continue
+			}
 			marker := e.b.indent + "<!-- doc-check: fragment -->"
 			ins := []string{marker}
 			if idx > 0 && strings.TrimSpace(lines[idx-1]) != "" && !strings.HasPrefix(strings.TrimSpace(lines[idx-1]), "<") {

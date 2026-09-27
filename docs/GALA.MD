@@ -3075,7 +3075,7 @@ needed.
 <!-- doc-check: fragment -->
 ```gala
 // Two resources; `out` (acquired last) closes first, `in` closes last.
-func copyFile(src string, dst string) Try[Int] = Try(() => {
+func copyFile(src string, dst string) Try[int] = Try(() => {
     use in  = OpenFile(src)
     use out = CreateFile(dst)
     out.Write(in.ReadString())
