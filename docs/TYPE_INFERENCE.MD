@@ -566,7 +566,14 @@ Five contexts feed the expected type:
   inside `func firstName(v) Option[string]` — the subject is
   `Option[Array[JField]]` but the result must be `Option[string]`, so
   the return type wins and the subject stays a fallback for the
-  no-return-type case.
+  no-return-type case. A context type is skipped only when it names a
+  type parameter nobody has bound yet (the `T` of a callee's
+  `Option[T]`). The type parameters of the declaration being lowered —
+  its own and its receiver's — are known types, so `return None()` in
+  `func (b Box[T]) Pick[U any](o Option[U]) Option[U]` lowers to
+  `None[U]`, and so does an early `return None()` in a lambda whose
+  slot is filled with `Option[U]`. Generic functions and generic
+  methods behave the same way.
 - For the **non-zero-arg call** path, `transformCallWithArgsCtx`
   consumes the top hint at dispatcher entry and invokes the same
   rewrite.

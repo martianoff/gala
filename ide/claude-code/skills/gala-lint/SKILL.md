@@ -486,7 +486,7 @@ func createServer(host string, port int = 8080, tls bool = true, maxConnections 
   - an `if`/`else` branch whose sibling branch is a `Some(...)` of known concrete type — `if (c) Some(x) else None[int]()`
 
   Do NOT flag (explicit typing is still REQUIRED) when:
-  - the pinning type is an **abstract type parameter** of the enclosing generic function/method, e.g. `func (a Array[T]) HeadOption() Option[T] = … None[T]()` or `func (o Option[T]) OrElse(...) = … None[T]()`. The transpiler cannot infer an unresolved `T` from context and rejects bare `None()` with `GALA-E0018`. Keep `None[T]()`. (This is the common case inside the collection/std library — do not flag those.)
+  - the pinning type is an **abstract type parameter** of the enclosing generic function/method, e.g. `func (a Array[T]) HeadOption() Option[T] = … None[T]()` or `func (o Option[T]) OrElse(...) = … None[T]()`. A bare `None()` does compile here (the declaration's own and receiver type parameters count as known types), but the explicit `None[T]()` is common in the collection/std library and is not worth churning — do not flag it.
   - no context pins the type at all — most commonly a bare `None[int]()` inside a lambda whose result type is unconstrained, e.g. `arr.Map((x) => None[int]())`: removing `[int]` makes the type undeterminable (`GALA-E0018`). Keep it.
 
   Rule of thumb: only flag when the type argument you would remove is a **concrete** type (`int`, `string`, `Array[JField]`, …), never when it is an in-scope abstract type parameter.

@@ -3479,3 +3479,9 @@ gala_exec_test(
     expected = "method_result_field_chain.out",
     deps = ["//collection_immutable"],
 )
+
+gala_exec_test(
+    name = "generic_type_param_none",
+    src = "generic_type_param_none.gala",
+    expected = "generic_type_param_none.out",
+)

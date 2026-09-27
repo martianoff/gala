@@ -370,6 +370,76 @@ func (b Box[T]) With[U any](o Option[U], skip bool) Option[Tuple[T, U]] = o.Flat
 `,
 			contains: []string{"return std.None[std.Tuple[T, U]]{}"},
 		},
+		{
+			name: "generic method: FlatMap guard whose trailing value calls a function parameter",
+			body: `
+func (b Box[T]) Lift[U any](f func(T) Option[U]) Option[U] = Some(b.V).FlatMap((v) => {
+    if (false) {
+        return None()
+    }
+    f(v)
+})
+`,
+			contains: []string{"return std.None[U]{}", "func(v T) std.Option[U] {"},
+		},
+		{
+			name: "generic function: FlatMap guard whose trailing value calls a function parameter",
+			body: `
+func lift[T any, U any](t T, f func(T) Option[U]) Option[U] = Some(t).FlatMap((v) => {
+    if (false) {
+        return None()
+    }
+    f(v)
+})
+`,
+			contains: []string{"return std.None[U]{}", "func(v T) std.Option[U] {"},
+		},
+		{
+			name: "generic function: return None() typed by a declared type parameter",
+			body: `
+func direct[U any](b bool, o Option[U]) Option[U] {
+    if (b) {
+        return None()
+    }
+    return o
+}
+`,
+			contains: []string{"return std.None[U]{}"},
+		},
+		{
+			name: "generic method: return None() typed by a receiver type parameter",
+			body: `
+func (b Box[T]) Direct(k bool) Option[T] {
+    if (k) {
+        return None()
+    }
+    return Some(b.V)
+}
+`,
+			contains: []string{"return std.None[T]{}"},
+		},
+		{
+			name: "generic method: return None() typed by the method's own type parameter",
+			body: `
+func (b Box[T]) Pick[U any](k bool, o Option[U]) Option[U] {
+    if (k) {
+        return None()
+    }
+    return o
+}
+`,
+			contains: []string{"return std.None[U]{}"},
+		},
+		{
+			name: "generic method: None() in a match arm typed by the method's own type parameter",
+			body: `
+func (b Box[T]) Keep[U any](o Option[U]) Option[U] = o match {
+    case Some(u) => Some(u)
+    case _ => None()
+}
+`,
+			contains: []string{"std.None[U]{}"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

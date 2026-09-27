@@ -1,0 +1,63 @@
+package main
+
+// Inside a generic function or method, a bare `None()` takes its type
+// argument from a result type that names the declaration's own type
+// parameters (or its receiver's): `Option[U]` gives `None[U]`. Methods and
+// functions behave the same.
+
+struct Box[T any](V T, Enabled bool)
+
+// Method: an early `return None()` guard in a FlatMap lambda whose trailing
+// value calls a function-typed parameter.
+func (b Box[T]) Lift[U any](f func(T) Option[U]) Option[U] = Some(b.V).FlatMap((v) => {
+    if (!b.Enabled) {
+        return None()
+    }
+    f(v)
+})
+
+// Function: the same shape.
+func lift[T any, U any](
+    t T,
+    enabled bool,
+    f func(T) Option[U],
+) Option[U] = Some(t).FlatMap((v) => {
+    if (!enabled) {
+        return None()
+    }
+    f(v)
+})
+
+// Method: `return None()` typed by the receiver's type parameter.
+func (b Box[T]) Value() Option[T] {
+    if (!b.Enabled) {
+        return None()
+    }
+    return Some(b.V)
+}
+
+// Function: `return None()` typed by the function's type parameter.
+func firstOf[U any](enabled bool, o Option[U]) Option[U] {
+    if (!enabled) {
+        return None()
+    }
+    return o
+}
+
+// Method: `None()` in a match arm typed by the method's own type parameter.
+func (b Box[T]) Keep[U any](o Option[U]) Option[U] = o match {
+    case Some(u) if b.Enabled => Some(u)
+    case _ => None()
+}
+
+func main() {
+    val half = (x int) => When(x % 2 == 0, x / 2)
+    Println(s"method lift on: ${Box(8, true).Lift(half)}")
+    Println(s"method lift off: ${Box(8, false).Lift(half)}")
+    Println(s"method lift odd: ${Box(7, true).Lift(half)}")
+    Println(s"function lift on: ${lift(8, true, half)}")
+    Println(s"function lift off: ${lift(8, false, half)}")
+    Println(s"method value: ${Box("k", true).Value()} ${Box("k", false).Value()}")
+    Println(s"function first: ${firstOf(true, Some(3))} ${firstOf(false, Some(3))}")
+    Println(s"method keep: ${Box(1, true).Keep(Some("x"))} ${Box(1, false).Keep(Some("x"))}")
+}
