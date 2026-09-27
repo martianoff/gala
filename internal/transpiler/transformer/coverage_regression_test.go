@@ -5,14 +5,13 @@ import (
 	"testing"
 
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/transpiler"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 // newTranspiler is a tiny factory used by the coverage regressions below.
-func newTranspiler() *transpiler.GalaToGoTranspiler {
+func newTranspiler() *checkedTranspiler {
 	trans, _ := newTranspilerWithTransformer()
 	return trans
 }
@@ -20,27 +19,52 @@ func newTranspiler() *transpiler.GalaToGoTranspiler {
 // TestT1PhantomTypeParamFallback pins the current behaviour of a generic
 // function whose type parameter appears only in the return position.
 //
-// The transpiler no longer erases an uninferable T to `any`; it emits a
-// concrete Go generic (`func magic[T any]() std.Option[T]`) and leaves
-// inference to Go at the call site. This test guards against a regression
-// into a panic, corrupted output, or a silent `any` erasure.
+// The declaration keeps T a real Go type parameter rather than erasing it to
+// `any`. Go infers type arguments from call arguments only, so a call site
+// gets T from what the call is expected to return; with nothing to say, the
+// call is a GALA error rather than Go that fails with "cannot infer T".
 func TestT1PhantomTypeParamFallback(t *testing.T) {
-	trans := newTranspiler()
-	// `magic[T any]() Option[T]` — T is only in the return position.
-	input := `package main
-
-func magic[T any]() Option[T] = None[T]()
-
-func main() {
-    val r = magic()
-    _ = r
-}`
-	out, err := trans.Transpile(input, "")
-	require.NoError(t, err, "phantom type param should transpile (not panic)")
-	assert.NotEmpty(t, out)
-	// The return-only T is preserved as a real Go type parameter rather than
-	// erased to `any`.
-	assert.Contains(t, out, "func magic[T any]()", "expected phantom T to stay a concrete generic param")
+	const decl = "package main\n\nfunc magic[T any]() Option[T] = None[T]()\n\n"
+	tests := []struct {
+		name    string
+		body    string
+		want    string // expected in the output; empty means an error is expected
+		wantErr string
+	}{
+		{
+			name: "val annotation pins T",
+			body: "func main() {\n    val r Option[int] = magic()\n    Println(r)\n}",
+			want: "magic[int]()",
+		},
+		{
+			name: "enclosing return type pins T",
+			body: "func typed() Option[string] = magic()\n\nfunc main() {\n    Println(typed())\n}",
+			want: "magic[string]()",
+		},
+		{
+			name: "explicit type argument",
+			body: "func main() {\n    val r = magic[bool]()\n    Println(r)\n}",
+			want: "magic[bool]()",
+		},
+		{
+			name:    "nothing pins T",
+			body:    "func main() {\n    val r = magic()\n    Println(r)\n}",
+			wantErr: "cannot infer type parameter T of magic()",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, err := newTranspiler().Transpile(decl+tt.body, "")
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Contains(t, out, "func magic[T any]()", "T stays a concrete generic param")
+			assert.Contains(t, out, tt.want)
+		})
+	}
 }
 
 // TestT2UntypedLambdaFallback pins the behaviour of a lambda whose parameter

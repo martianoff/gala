@@ -400,6 +400,10 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 		if err := t.checkUnknownMethodZeroArg(base, suffix, zeroArgRecvType, zeroArgLookupBase); err != nil {
 			return nil, err
 		}
+		base, err := t.instantiateNullaryGenericCall(base, bl, bc)
+		if err != nil {
+			return nil, err
+		}
 		return &ast.CallExpr{Fun: base, Args: nil}, nil
 	}
 
@@ -1248,6 +1252,7 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 		fun = t.rewriteStdTupleIdent(fun, n)
 	}
 
+	origTypeName := typeName
 	typeMeta, resolvedTypeMeta := t.getTypeMetaResolved(typeName)
 	if typeMeta == nil {
 		return false, nil, nil
@@ -1264,6 +1269,15 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 	// name carries the struct's fields.
 	if _, isAlias := t.lookupTypeAlias(typeName); isAlias && len(args) == 1 && len(t.structFields[resolvedTypeName]) == 0 {
 		return true, &ast.CallExpr{Fun: fun, Args: args}, nil
+	}
+	// An alias called on a value of the type it names is a conversion too,
+	// whatever that type is: `Figure(Dot())` for `type Figure Shape`. Read as
+	// a construction it would map the value onto the struct's first field.
+	if target, isAlias := t.lookupTypeAlias(origTypeName); isAlias && len(args) == 1 {
+		want := stripPackagePrefix(t.followAliasChain(target).BaseName())
+		if got := t.getExprTypeName(args[0]); !got.IsNil() && want != "" && stripPackagePrefix(got.BaseName()) == want {
+			return true, &ast.CallExpr{Fun: fun, Args: args}, nil
+		}
 	}
 
 	methodMeta, hasApply := typeMeta.Methods["Apply"]

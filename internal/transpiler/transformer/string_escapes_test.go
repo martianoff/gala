@@ -30,12 +30,12 @@ import (
 // GALA source position with GALA-E0038, and every escape Go does accept still
 // transpiles unchanged.
 
-func newEscapeTranspiler() *transpiler.GalaToGoTranspiler {
+func newEscapeTranspiler() *checkedTranspiler {
 	p := transpiler.NewAntlrGalaParser()
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	return transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+	return newCheckedTranspiler(p, a, tr, g)
 }
 
 // TestInvalidStringEscapeRejected covers the negative path: each malformed

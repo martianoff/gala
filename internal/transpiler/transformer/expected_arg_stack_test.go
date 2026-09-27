@@ -36,10 +36,10 @@ func TestExpectedArgStackInvariant_NestedSealedConstructors(t *testing.T) {
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+	trans := newCheckedTranspiler(p, a, tr, g)
 
 	// Nested generic sealed-variant constructor: outer slot expects
-	// Cmd[Option[Int]], so the inner Some(7) needs Option[Int] from
+	// Cmd[Option[int]], so the inner Some(7) needs Option[int] from
 	// the outer hint, threaded through RunCmd's parameter inference.
 	src := `package main
 
@@ -49,7 +49,7 @@ sealed type Cmd[T any] {
 }
 
 func main() {
-    val nested Cmd[Option[Int]] = RunCmd(Some(7))
+    val nested Cmd[Option[int]] = RunCmd(Some(7))
     Println(nested)
 }`
 	out, err := trans.Transpile(src, "")
@@ -57,12 +57,12 @@ func main() {
 		"nested sealed-variant ctor must transpile cleanly — "+
 			"a stack imbalance surfaces here as GALA-E0017 or a type widening")
 
-	// The annotation `Cmd[Option[Int]]` should round-trip into the
+	// The annotation `Cmd[Option[int]]` should round-trip into the
 	// generated Go with both type params resolved. No `any` should
 	// appear in any Cmd or Option ctor.
-	assert.True(t, strings.Contains(out, "Cmd[std.Option[Int]]") ||
-		strings.Contains(out, "Cmd[Option[Int]]"),
-		"Cmd[Option[Int]] should round-trip into generated Go\n--- generated ---\n%s", out)
+	assert.True(t, strings.Contains(out, "Cmd[std.Option[int]]") ||
+		strings.Contains(out, "Cmd[Option[int]]"),
+		"Cmd[Option[int]] should round-trip into generated Go\n--- generated ---\n%s", out)
 	assert.False(t, strings.Contains(out, "Cmd[any]"),
 		"Cmd[any] indicates downward inference leaked\n--- generated ---\n%s", out)
 }
@@ -77,7 +77,7 @@ func TestExpectedArgStackInvariant_SiblingValDecls(t *testing.T) {
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+	trans := newCheckedTranspiler(p, a, tr, g)
 
 	src := `package main
 
@@ -87,9 +87,9 @@ sealed type Cmd[T any] {
 }
 
 func main() {
-    val first Cmd[Int]    = NoCmd()
-    val second Cmd[String] = NoCmd()
-    val third Cmd[Bool]   = NoCmd()
+    val first Cmd[int]    = NoCmd()
+    val second Cmd[string] = NoCmd()
+    val third Cmd[bool]   = NoCmd()
     Println(first)
     Println(second)
     Println(third)
@@ -99,9 +99,8 @@ func main() {
 
 	// Each NoCmd() should resolve to its own slot's type. If the stack
 	// leaked across siblings, one of these would carry the prior frame's
-	// type parameter. (GALA preserves the source-level `Int`/`String`/
-	// `Bool` type aliases through codegen.)
-	for _, want := range []string{"Cmd[Int]", "Cmd[String]", "Cmd[Bool]"} {
+	// type parameter.
+	for _, want := range []string{"Cmd[int]", "Cmd[string]", "Cmd[bool]"} {
 		assert.True(t, strings.Contains(out, want),
 			"missing %q — sibling val decls must not contaminate each other's expected-type frames\n--- generated ---\n%s",
 			want, out)

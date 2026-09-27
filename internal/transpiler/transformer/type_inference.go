@@ -1,10 +1,12 @@
 package transformer
 
 import (
+	"fmt"
 	"go/ast"
 	"go/token"
 	"strings"
 
+	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
 )
@@ -817,6 +819,40 @@ func (t *galaASTTransformer) injectFuncPhantomTypeArgs(fun ast.Expr, funcMeta *t
 		return &ast.IndexExpr{X: fun, Index: typeArgs[0]}
 	}
 	return &ast.IndexListExpr{X: fun, Indices: typeArgs}
+}
+
+// instantiateNullaryGenericCall gives a call to a generic GALA function that
+// takes no parameters, such as `magic[T any]() Option[T]`, its type arguments.
+// Go infers type arguments from call arguments only, so without them every
+// such call fails with "cannot infer T". They come from the expected type or
+// the enclosing function's return type, as for any phantom type parameter
+// (injectFuncPhantomTypeArgs). When neither pins them, the call is reported
+// here rather than emitted uninstantiated. line/col locate the callee.
+func (t *galaASTTransformer) instantiateNullaryGenericCall(fun ast.Expr, line, col int) (ast.Expr, error) {
+	switch fun.(type) {
+	case *ast.IndexExpr, *ast.IndexListExpr:
+		return fun, nil
+	}
+	name := t.extractFuncName(fun)
+	if name == "" {
+		return fun, nil
+	}
+	meta := t.getFunction(name)
+	if meta == nil || len(meta.TypeParams) == 0 || len(meta.ParamTypes) > 0 {
+		return fun, nil
+	}
+	pending := t.expectedArgTypes.peek()
+	if rewritten := t.injectFuncPhantomTypeArgs(fun, meta, nil, false, pending); rewritten != fun {
+		if pending != nil {
+			t.expectedArgTypes.consume()
+		}
+		return rewritten, nil
+	}
+	return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
+		"cannot infer type parameter %s of %s(): it appears only in the return type, and nothing "+
+			"here says what the call should return. Give the result a declared type "+
+			"(`val x %s = %s()`) or pass the type arguments explicitly (`%s[...]()`)",
+		strings.Join(meta.TypeParams, ", "), name, meta.ReturnType, name, name))
 }
 
 // collectReferencedParams records, into out, every name from params that appears

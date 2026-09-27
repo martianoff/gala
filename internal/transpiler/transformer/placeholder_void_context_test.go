@@ -19,7 +19,7 @@ func transpileForVoidPlaceholder(t *testing.T, src string) (string, error) {
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	return transpiler.NewGalaToGoTranspiler(p, a, tr, g).Transpile(src, "main.gala")
+	return newCheckedTranspiler(p, a, tr, g).Transpile(src, "main.gala")
 }
 
 func TestPlaceholderInVoidContext_UserDefinedFunction(t *testing.T) {

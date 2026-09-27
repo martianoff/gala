@@ -55,12 +55,12 @@ const (
 	panicDemoDivideLine = "4"
 )
 
-func newLineDirectiveTranspiler() *transpiler.GalaToGoTranspiler {
+func newLineDirectiveTranspiler() *checkedTranspiler {
 	p := transpiler.NewAntlrGalaParser()
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	return transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+	return newCheckedTranspiler(p, a, tr, g)
 }
 
 // TestLineDirectives_EmittedWithSourceFile is the transformer unit test: the

@@ -63,6 +63,7 @@ func main() {
 		assert.NoError(t, err)
 		result, err := g.Generate(fset, file)
 		assert.NoError(t, err)
+		checkGeneratedGo(t, result)
 		assert.Contains(t, result, ".Apply(", "single-file should produce Apply pattern")
 	})
 
@@ -85,6 +86,7 @@ func main() {
 		assert.NoError(t, err)
 		result, err := g.Generate(fset, file)
 		assert.NoError(t, err)
+		checkGeneratedGo(t, result)
 		assert.Contains(t, result, ".Apply(", "multi-file should produce Apply pattern")
 		assert.NotContains(t, result, "std.Some(\"found\")", "must NOT produce type-conversion style Some()")
 	})

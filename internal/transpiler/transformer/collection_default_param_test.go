@@ -96,7 +96,7 @@ func main() {
 			a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 			tr := transformer.NewGalaASTTransformer()
 			g := generator.NewGoCodeGenerator()
-			trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+			trans := newCheckedTranspiler(p, a, tr, g)
 
 			got, err := trans.Transpile(c.src, "")
 			assert.NoError(t, err, "expected transpile to succeed")

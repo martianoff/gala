@@ -177,6 +177,16 @@ func (t *galaASTTransformer) transformStatement(ctx *grammar.StatementContext) (
 func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext) (ast.Stmt, error) {
 	lhsCtx := ctx.GetChild(0).(*grammar.ExpressionListContext)
 	for _, exprCtx := range lhsCtx.AllExpression() {
+		// `if (c) a() else x = v` parses as an assignment to the whole
+		// if-expression: an if-expression's branch is an expression, and an
+		// assignment is not one. Lowering it would assign to a function
+		// call's result, which Go rejects; the intent is the braced
+		// if-statement.
+		if t.findIfExpressionInExpression(exprCtx) != nil {
+			return nil, t.semanticErrorAt(ctx, "cannot assign to an if-expression: its else branch is an "+
+				"expression, so `if (c) a() else x = v` assigns to the whole if. "+
+				"Use braces to make the assignment part of a branch: `if (c) { a() } else { x = v }`")
+		}
 		// Only direct reassignment of a val (`v = ...`, `pkg.V = ...`) is blocked
 		// here; a field or index through a val binding is checked below or by Go.
 		if name := t.immutableBindingName(exprCtx); name != "" {

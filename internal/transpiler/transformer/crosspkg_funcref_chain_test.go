@@ -40,7 +40,7 @@ func transpileCrossPkg(t *testing.T, root, src string) (string, error) {
 	a := analyzer.NewGalaAnalyzer(p, searchPaths, root)
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	return transpiler.NewGalaToGoTranspiler(p, a, tr, g).
+	return newCheckedTranspiler(p, a, tr, g).
 		Transpile(src, filepath.Join(root, "main.gala"))
 }
 

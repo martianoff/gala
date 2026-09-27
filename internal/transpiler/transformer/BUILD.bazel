@@ -160,6 +160,8 @@ go_test(
         "none_expected_type_test.go",
         "none_qualified_downward_inference_test.go",
         "option_test.go",
+        "oracle_findings_test.go",
+        "oracle_test.go",
         "panic_audit_test.go",
         "phantom_reexport_funconly_test.go",
         "placeholder_field_immutable_test.go",
@@ -276,7 +278,18 @@ go_test(
         # it staged, std's import of go_builtins fails under the Linux sandbox
         # and every fixture using `Panic` loses the name.
         "//go_builtins:builtins.go",
-    ],
+        # The oracle type-checks outputs importing std by transpiling std's
+        # .gala and joining it with std's hand-written Go. The same goes for
+        # every other package with hand-written Go beside its .gala.
+        "//concurrent:execution_context.go",
+        "//std:embedded_fs.go",
+        "//std:interfaces.go",
+        "//std:types.go",
+    ] + glob(
+        # Read by TestOracleCoversEveryTranspiler, which checks every test
+        # here constructs its transpiler through the oracle.
+        ["*_test.go"],
+    ),
     embed = [":transformer"],
     deps = [
         "//galaerr",
@@ -284,6 +297,7 @@ go_test(
         "//internal/transpiler",
         "//internal/transpiler/analyzer",
         "//internal/transpiler/generator",
+        "//internal/transpiler/gooracle",
         "//internal/transpiler/infer",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

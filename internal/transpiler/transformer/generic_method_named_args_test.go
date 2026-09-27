@@ -43,7 +43,7 @@ func (b Box) Pick[T any](first T, second T, useSecond bool = false) T = if (useS
 			src := decls + "func main() {\n    val b = Box(n = 3)\n    Println(" + tt.call + ")\n}\n"
 			p := transpiler.NewAntlrGalaParser()
 			a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
-			trans := transpiler.NewGalaToGoTranspiler(p, a, transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator())
+			trans := newCheckedTranspiler(p, a, transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator())
 
 			got, err := trans.Transpile(src, "")
 			if tt.wantErr != "" {

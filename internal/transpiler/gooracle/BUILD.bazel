@@ -1,0 +1,22 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "gooracle",
+    testonly = True,
+    srcs = [
+        "oracle.go",
+        "typecheck.go",
+    ],
+    importpath = "martianoff/gala/internal/transpiler/gooracle",
+    visibility = ["//:__subpackages__"],
+)
+
+go_test(
+    name = "gooracle_test",
+    srcs = ["oracle_test.go"],
+    embed = [":gooracle"],
+    deps = [
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
+)
