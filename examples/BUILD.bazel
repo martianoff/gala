@@ -1689,6 +1689,17 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
+# Sorted/SortWith/SortBy are stable (immutable + mutable)
+gala_exec_test(
+    name = "sort_stable",
+    src = "sort_stable.gala",
+    expected = "sort_stable.out",
+    deps = [
+        "//collection_immutable",
+        "//collection_mutable",
+    ],
+)
+
 # Tuple String() methods
 gala_exec_test(
     name = "tuple_string",

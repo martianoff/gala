@@ -585,7 +585,7 @@ scanned too.
 **Before recommending a replacement, check behaviour parity.** Hand-rolled
 helpers often differ from the library at the edges: a split that drops a
 trailing `""`, ASCII-only case mapping, rune count vs. **display width**, an early
-exit a `Fold` would lose, a stable sort vs. `SortBy`. State the difference in
+exit a `Fold` would lose. State the difference in
 the finding when there is one; the fix must keep the behaviour the call sites
 rely on (or the finding must say the change is intended).
 
@@ -604,9 +604,8 @@ do not invent others (`stream.Range(...).Count(p)`, `Str.HeadOption`,
 | `string` | `s.Size()` — characters (runes), not bytes; `s.ByteSize()` for bytes |
 | Go stdlib | `strconv.Itoa` / `Atoi`, `strings.NewReplacer`, `strings.IndexRune`, `strings.LastIndexAny`, `unicode/utf8`, `math.Mod`, `slices.EqualFunc` — fine to call |
 
-**`SortBy` / `SortWith` are not stable** (the merge takes the right element on
-ties). Replacing a hand-written stable sort needs an index tie-break:
-`xs.ZipWithIndex().SortWith((a, b) => key(a.V1) < key(b.V1) || (key(a.V1) == key(b.V1) && a.V2 < b.V2)).Map((t) => t.V1)`.
+`Sorted` / `SortWith` / `SortBy` are stable (ties keep their input order), so
+they replace a hand-written stable sort directly.
 
 `Array` values are not `==`-comparable; compare windows with
 `w.Zip(needle).ForAll((t) => t.V1 == t.V2)`.
@@ -757,7 +756,7 @@ loop at all. Signals:
 | last separator | `strings.LastIndex` / `strings.LastIndexAny(path, "/\\")` |
 | escape | `strings.NewReplacer(...)` |
 | membership / position in an array | `xs.Contains(x)` / `xs.Exists(p)` / `xs.IndexOf(x)` |
-| reverse / distinct / sort | `xs.Reverse()`, `xs.Distinct()`, `xs.SortBy(f)` (not stable — see 7c-0) |
+| reverse / distinct / sort | `xs.Reverse()`, `xs.Distinct()`, `xs.SortBy(f)` (stable) |
 | element-wise equality of Go slices | `slices.EqualFunc(a, b, eq)` |
 | angle reduction | `math.Mod` |
 | fill a region with one value | the container's own bulk primitive (`Fill`, `SetRange`, …) |

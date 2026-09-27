@@ -1,0 +1,27 @@
+package main
+
+import (
+    . "martianoff/gala/collection_immutable"
+    m "martianoff/gala/collection_mutable"
+)
+
+// Sorted, SortWith and SortBy are stable in both collection libraries: elements
+// whose keys compare equal keep their original relative order.
+
+struct Row(Name string, K int)
+
+func main() {
+    val rows = ArrayOf(Row("a", 1), Row("b", 0), Row("c", 1), Row("d", 0))
+    Println(rows.SortBy((r) => r.K).Map((r) => r.Name))
+
+    // With every key equal, a stable sort returns the input unchanged.
+    val same = ArrayOf(Row("a", 0), Row("b", 0), Row("c", 0), Row("d", 0))
+    Println(same.SortBy((r) => r.K).Map((r) => r.Name))
+    Println(same.SortWith((x, y) => x.K < y.K).Map((r) => r.Name))
+    Println(same.ToList().SortBy((r) => r.K).Map((r) => r.Name))
+
+    // More than 12 elements, so the mutable sort goes past insertion sort.
+    val big = ArrayTabulate(40, (i) => Row(string(rune('A' + i % 26)), i % 2))
+    val sorted = m.ArrayFromSlice(big.ToGoSlice()).SortBy((r) => r.K)
+    Println(sorted.Map((r) => r.Name).MkString(""))
+}

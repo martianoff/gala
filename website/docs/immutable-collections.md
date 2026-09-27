@@ -539,6 +539,8 @@ arr.Sliding(3)
 
 ### Sorting
 
+`Sorted`, `SortWith` and `SortBy` are stable: elements that compare equal keep their original relative order.
+
 ```gala
 val arr = ArrayOf(3, 1, 4, 1, 5, 9)
 

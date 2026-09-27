@@ -1,7 +1,6 @@
 package collection_mutable
 
 import (
-    "sort"
     . "martianoff/gala/std"
     "martianoff/gala/go_interop"
 )
@@ -684,28 +683,40 @@ func (a *Array[T]) ToList() *List[T] {
 
 // === Sorting ===
 
+// lessToCompare orders x and y by less as a three-way comparison. If less reports
+// true both ways (a non-strict comparator such as <=), x and y count as equal, so
+// the sort keeps them in their original order.
+func lessToCompare[T any](less func(T, T) bool, x T, y T) int =
+    if (less(x, y)) (if (less(y, x)) 0 else -1) else if (less(y, x)) 1 else 0
+
 // Sorted returns a new Array with elements sorted in natural order.
 // Elements must be primitive types or implement std.Ordered[T].
+// The sort is stable: equal elements keep their original relative order.
 func (a *Array[T]) Sorted() *Array[T] {
-    var sorted = ArrayFromSlice(a.ToGoSlice())
-    sort.Slice(sorted.elements, (i int, j int) => CompareValues(sorted.elements[i], sorted.elements[j]) < 0)
-    return sorted
+    val elements = a.elements
+    return &Array[T](elements = go_interop.SliceSortedStable(elements, (i, j) => CompareValues(elements[i], elements[j])))
 }
 
 // SortWith returns a new Array sorted using the given comparison function.
-// The function should return true if x should come before y.
+// The function should return true if x should come before y; it should be a strict
+// ordering (use <, not <=).
+// The sort is stable: elements that compare equal keep their original relative order.
 func (a *Array[T]) SortWith(less func(T, T) bool) *Array[T] {
-    var sorted = ArrayFromSlice(a.ToGoSlice())
-    sort.Slice(sorted.elements, (i int, j int) => less(sorted.elements[i], sorted.elements[j]))
-    return sorted
+    val elements = a.elements
+    return &Array[T](elements = go_interop.SliceSortedStable(elements, (i, j) => lessToCompare(less, elements[i], elements[j])))
 }
 
 // SortBy returns a new Array sorted by a key extracted from each element.
 // Keys must be primitive types or implement std.Ordered.
+// The sort is stable: elements with equal keys keep their original relative order.
+// f runs once per element: keys are computed up front, not on every comparison.
 func (a *Array[T]) SortBy[K comparable](f func(T) K) *Array[T] {
-    var sorted = ArrayFromSlice(a.ToGoSlice())
-    sort.Slice(sorted.elements, (i int, j int) => CompareValues(f(sorted.elements[i]), f(sorted.elements[j])) < 0)
-    return sorted
+    val elements = a.elements
+    val keys = go_interop.SliceWithSize[K](elements.Size())
+    for i := 0; i < elements.Size(); i++ {
+        keys[i] = f(elements[i])
+    }
+    return &Array[T](elements = go_interop.SliceSortedStable(elements, (i, j) => CompareValues(keys[i], keys[j])))
 }
 
 // SeqDrop implements the Seq interface for sequence pattern matching.
