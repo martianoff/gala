@@ -388,6 +388,18 @@ func PosFromToken(tok antlrToken) SourcePos {
 	return SourcePos{Line: tok.GetLine(), Column: tok.GetColumn()}
 }
 
+// SourceText returns the source characters a rule context spans, whitespace
+// included — GetText() joins the tokens, turning `(a int) int` into
+// `(aint)int`. It falls back to GetText() only when the tokens carry no input
+// stream (a tree built by hand rather than parsed).
+func SourceText(ctx antlr.ParserRuleContext) string {
+	start, stop := ctx.GetStart(), ctx.GetStop()
+	if start == nil || stop == nil || start.GetInputStream() == nil || stop.GetStop() < start.GetStart() {
+		return ctx.GetText()
+	}
+	return start.GetInputStream().GetTextFromInterval(antlr.NewInterval(start.GetStart(), stop.GetStop()))
+}
+
 // SealedVariant holds metadata about a single case in a sealed type declaration.
 type SealedVariant struct {
 	Name       string

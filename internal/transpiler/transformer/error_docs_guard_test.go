@@ -566,6 +566,21 @@ func main() {
 			code:   galaerr.CodeIllegalSourceCharacter, // GALA-E0051
 			render: renderEscapeVariant("val s = \"caf\xe9\""),
 		},
+		{
+			name: "named function declared inside a function body",
+			code: galaerr.CodeNestedFunctionDeclaration, // GALA-E0052
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func main() {
+    func helper(x int) int {
+        return x + 1
+    }
+    Println(helper(2))
+}
+`)
+			},
+		},
 		// The GALA-E0038 page also documents the rune-literal shape in prose
 		// (`'\d'`), but quotes no output for it, so there is nothing to pin.
 		// Its numeric forms (`'\x41'`) are not guardable here at all: GALA's
