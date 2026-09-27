@@ -34,6 +34,7 @@ func main() {
 
 Or a type that exists but is not an extractor:
 
+<!-- doc-check: fragment -->
 ```gala
 type Bucket struct { items Array[int] }
 
@@ -74,6 +75,7 @@ func (e Even) Unapply(i int) bool = i % 2 == 0
 
 A generic extractor that pulls a value out of a container follows this signature shape (the compiler message spells it out too):
 
+<!-- doc-check: fragment -->
 ```gala
 func (e Extractor[T]) Unapply(v ContainerType[T]) Option[T]
 ```

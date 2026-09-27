@@ -1,0 +1,12 @@
+# The language documentation pages whose ```gala blocks
+# //internal/doccheck:doccheck_test compiles.
+filegroup(
+    name = "language_docs",
+    srcs = [
+        "EXAMPLES.MD",
+        "GALA.MD",
+        "GALA_BEST_PRACTICES.MD",
+        "TYPE_INFERENCE.MD",
+    ],
+    visibility = ["//visibility:public"],
+)

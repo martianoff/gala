@@ -19,6 +19,7 @@ Go's `switch` is limited to value comparison. Runtime pattern matching libraries
 
 The `match` expression takes a subject and tests it against a series of `case` branches. The first matching branch wins, and its body becomes the result. A `case _` default is required unless the match is provably exhaustive (sealed types with all variants covered, or booleans with both `true` and `false`).
 
+<!-- doc-check: fragment -->
 ```gala
 val result = x match {
     case 1 => "one"
@@ -35,6 +36,7 @@ Every match branch is an expression. You can assign the result directly to a `va
 
 Match against literal values or bind the subject to a new variable:
 
+<!-- doc-check: fragment -->
 ```gala
 val result = x match {
     case 1 => "one"
@@ -46,6 +48,7 @@ val result = x match {
 
 **Unused variable rule:** All variables extracted in match patterns must be referenced in the branch body or guard. Use `_` to discard values you do not need:
 
+<!-- doc-check: fragment -->
 ```gala
 // ERROR: unused variable 'y' in match branch
 case Some(y) => "has value"
@@ -88,6 +91,7 @@ people.ForEach((p) => {
 
 You can match on specific field values and ignore others with `_`:
 
+<!-- doc-check: fragment -->
 ```gala
 val msg = p match {
     case Person(name, 30) => name + " is 30"
@@ -124,6 +128,7 @@ Forget a variant and the compiler rejects your code.
 
 Add `if` conditions after a pattern to refine the match. Guards have access to all variables extracted by the pattern:
 
+<!-- doc-check: fragment -->
 ```gala
 val res = x match {
     case i: int if i > 100 => "Large integer"
@@ -304,6 +309,7 @@ val parts = "user@example.com" match {
 
 The `json` package's `Codec[T]` works the same way — a codec value is an instance extractor that attempts to parse a JSON string into the target type:
 
+<!-- doc-check: fragment -->
 ```gala
 import . "martianoff/gala/json"
 
@@ -323,6 +329,7 @@ val result = jsonStr match {
 
 Matching on a boolean with both `true` and `false` branches is exhaustive — no `case _` needed:
 
+<!-- doc-check: fragment -->
 ```gala
 val desc = flag match {
     case true  => "enabled"

@@ -43,6 +43,7 @@ val decoded = codec.Decode(yamlStr)
 
 Create a codec with `Codec[T](naming)` and configure it with fluent builder methods:
 
+<!-- doc-check: fragment -->
 ```gala
 val codec = Codec[Person](SnakeCase())
     .Omit("Password")
@@ -65,6 +66,7 @@ Each builder method returns a new immutable codec instance — safe to share acr
 
 ## Serialization
 
+<!-- doc-check: fragment -->
 ```gala
 val person = Person("Alice", "Smith", 30)
 val yamlStr = codec.Encode(person).Get()
@@ -80,6 +82,7 @@ Block-style YAML is already human-readable, so there is no separate pretty-print
 
 ## Deserialization
 
+<!-- doc-check: fragment -->
 ```gala
 val decoded = codec.Decode(yamlStr)
 // decoded: Try[Person]
@@ -99,6 +102,7 @@ decoded.ForEach((p) => {
 
 Codec instances work as pattern matching extractors via `Unapply`. If decoding fails, the case does not match — no exception, no panic:
 
+<!-- doc-check: fragment -->
 ```gala
 val result = yamlStr match {
     case codec(p) => s"Found: ${p.FirstName}, age ${p.Age}"
@@ -108,6 +112,7 @@ val result = yamlStr match {
 
 This is especially useful when handling input from external sources:
 
+<!-- doc-check: fragment -->
 ```gala
 val commandCodec = Codec[Command](SnakeCase())
 val eventCodec = Codec[Event](SnakeCase())
@@ -176,6 +181,7 @@ Skipping handles all YAML scalar and nested-mapping/sequence shapes, so an unkno
 
 For projects that prefer explicit package prefixes:
 
+<!-- doc-check: fragment -->
 ```gala
 import "martianoff/gala/yaml"
 
@@ -189,6 +195,7 @@ codec.Encode(person)
 
 `Codec[T]` is powered by `StructMeta[T]` — a compiler intrinsic that generates type-safe field access at compile time. When you write:
 
+<!-- doc-check: fragment -->
 ```gala
 val codec = Codec[Person](SnakeCase())
 ```

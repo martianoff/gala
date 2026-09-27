@@ -25,6 +25,7 @@ Four shapes trigger it:
    with a `var` field, a Go-interop reference type, a bare slice/map/pointer, …).
    The goroutine and the enclosing scope then alias the same mutable contents.
 
+   <!-- doc-check: fragment -->
    ```gala
    val buffer = collection_mutable.ArrayOf(1, 2, 3)
    Future(() => buffer.Size())  // ← GALA-E0037 (buffer's own type is unshareable)
@@ -43,6 +44,7 @@ Four shapes trigger it:
    non-terminal (chained) calls stay conservative and still mark the capture
    whole.
 
+   <!-- doc-check: fragment -->
    ```gala
    struct AppModel(team string, statuses Array[int], var attempts int)
    val model = AppModel("qa", ArrayOf(1, 2, 3), 0)
@@ -51,6 +53,7 @@ Four shapes trigger it:
    Future(() => project(model.team, model.statuses))
    ```
 
+   <!-- doc-check: fragment -->
    ```gala
    // ACCEPTED — a trailing method call defers to the leaf field's shareability.
    Future(() => model.team.Size())
@@ -148,6 +151,7 @@ The caret points at the exact offending capture identifier.
 - **Snapshot to a `val`.** Copy the value into an immutable `val` *before* the
   boundary; the closure then captures a stable copy.
 
+  <!-- doc-check: fragment -->
   ```gala
   val snapshot = counter
   Future(() => snapshot + 1)

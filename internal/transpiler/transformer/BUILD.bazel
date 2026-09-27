@@ -217,6 +217,9 @@ go_test(
         # Parsed by error_docs_completeness_test.go to enumerate the declared
         # error codes, so a new code without a page fails the build.
         "//galaerr:errors_src",
+        # The site mirror of the error pages, and its index, which
+        # error_docs_completeness_test.go also checks for every code.
+        "//website:pages",
         "//collection_immutable:gala_sources",
         "//collection_mutable:gala_sources",
         "//examples:single_file_gala_sources",

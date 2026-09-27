@@ -21,6 +21,7 @@ func create(a int = "not-an-int") int = a
 **Fix.** Either adjust the default expression to match the parameter type
 or change the parameter type to match the intended default:
 
+<!-- doc-check: fragment -->
 ```gala
 func create(a int    = 0)            int    = a
 func create(a string = "not-an-int") string = a

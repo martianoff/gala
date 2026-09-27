@@ -25,6 +25,7 @@ import . "martianoff/gala/time_utils"
 
 ### Creating Durations
 
+<!-- doc-check: fragment -->
 ```gala
 // From various time units
 val ns = Nanoseconds(1000)
@@ -118,6 +119,7 @@ val custom = Parse(time.Kitchen, "3:04PM")             // Option[Instant]
 
 ### Instant Operations
 
+<!-- doc-check: fragment -->
 ```gala
 val i1 = FromUnixSeconds(1000)
 val i2 = FromUnixSeconds(2000)

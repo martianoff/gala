@@ -50,6 +50,7 @@ val xs = ArrayOf(1, 2, 3)
 **What still works.** This code fires only after every *constructive* reading of
 the call has been tried and declined. All of these are unaffected:
 
+<!-- doc-check: fragment -->
 ```gala
 struct Point(X int, Y int)
 val p = Point(1, 2)                 // positional struct constructor

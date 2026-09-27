@@ -116,6 +116,7 @@ val countdown = Unfold[int, int](
 
 `Suspend` creates a stream where even the existence of elements is deferred:
 
+<!-- doc-check: fragment -->
 ```gala
 val s = Suspend[int](() => expensiveComputation())
 ```
@@ -369,6 +370,7 @@ The package provides two styles of pattern matching for streams.
 
 Use `StreamCons` and `StreamNil` extractors for type-based matching:
 
+<!-- doc-check: fragment -->
 ```gala
 val result = myStream match {
     case StreamCons(head, tail) => {

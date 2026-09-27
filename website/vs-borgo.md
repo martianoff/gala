@@ -54,6 +54,7 @@ Borgo does not publish a license, which leaves its legal status ambiguous for an
 
 GALA treats the Go ecosystem as first-class. `gala mod add` pulls both GALA and Go dependencies, including third-party Go modules, and the transpiler reads the Go SDK to infer return types — `(T, error)` results are wrapped into `Try[T]` at the call site:
 
+<!-- doc-check: fragment -->
 ```gala
 import . "martianoff/gala/std"
 

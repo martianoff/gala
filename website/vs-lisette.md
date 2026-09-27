@@ -67,6 +67,7 @@ Both languages can call third-party Go modules — but through different mechani
 
 **GALA reads the Go SDK directly** to infer types. There are no declaration files to write or generate: you add a Go dependency, import it, and GALA infers return types from the Go source, wrapping `(T, error)` results into `Try[T]` at the call site.
 
+<!-- doc-check: fragment -->
 ```gala
 // A Go function returning (T, error) is inferred as Try[T] — no declaration step
 val user = fetchUser(id)          // Try[User]

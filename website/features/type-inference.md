@@ -44,6 +44,7 @@ val opt = Some(42)          // Option[int]
 
 You can add an explicit type annotation when needed — for example, to assign to an interface type or to use a wider type:
 
+<!-- doc-check: fragment -->
 ```gala
 val x float64 = 42          // float64 (not int)
 val s Shaper = Circle(5.0)  // interface type
@@ -91,6 +92,7 @@ val hasVowel = s.Exists((r) => r == 'a')     // r inferred as rune
 
 **Free function calls** — Lambda parameters are also inferred when passed to generic free functions:
 
+<!-- doc-check: fragment -->
 ```gala
 val result = identity((x) => x * 2)
 ```
@@ -182,6 +184,7 @@ from. GALA fills it in by **downward inference**: the type flows in from the
 surrounding context, so you write `None()`, not `None[T]()`, whenever the
 context pins the type.
 
+<!-- doc-check: fragment -->
 ```gala
 // Return type pins the element type
 func parseObject(v JsonValue) Option[Array[JField]] = v match {
@@ -218,6 +221,7 @@ func greet(name string) string = s"Hello, $name"
 
 **Interface implementations** — when a value needs to satisfy an interface, you may need to annotate the variable:
 
+<!-- doc-check: fragment -->
 ```gala
 val s Shaper = Circle(5.0)  // explicit interface type
 ```

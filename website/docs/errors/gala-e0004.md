@@ -57,6 +57,7 @@ The caret sits on the match subject — the check runs over the whole match — 
 
 Bind every field, using `_` for the ones you do not care about:
 
+<!-- doc-check: fragment -->
 ```gala
 case Rect(w, h, _) => w * h
 ```

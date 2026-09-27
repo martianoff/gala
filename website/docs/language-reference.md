@@ -226,6 +226,7 @@ void `func()`), you can pass a plain expression where a lambda is expected — i
 is automatically lifted into `() => expr` and evaluated lazily each time the
 thunk is called. This is what lets `Try` and `Future` read like direct calls:
 
+<!-- doc-check: fragment -->
 ```gala
 func runTwice(body func() int) int = body() + body()
 
@@ -248,7 +249,7 @@ untouched, and multi-argument function parameters still require an explicit lamb
 func sum(numbers ...int) int {
     var total = 0
     var i = 0
-    for ; i < len(numbers) ; {
+    for ; i < numbers.Size() ; {
         total = total + numbers[i]
         i = i + 1
     }
@@ -281,6 +282,8 @@ type Person struct {
 ```
 
 ### Struct Construction
+
+<!-- doc-check: fragment -->
 ```gala
 val p1 = Person{Name: "Alice", Age: 30}   // Named fields (Go-style)
 val p2 = Person("Bob", 25)                 // Positional (Functional-style)
@@ -288,6 +291,8 @@ val p3 = Person(age = 20, name = "Charlie") // Named arguments
 ```
 
 ### Automatic Copy and Equal Methods
+
+<!-- doc-check: fragment -->
 ```gala
 val p1 = Person("Alice", 30)
 val p2 = p1.Copy(age = 31) // p2 is Person("Alice", 31)
@@ -335,6 +340,8 @@ func (r Rect) Area() float64 = r.width * r.height
 ## 6. Control Flow {#6-control-flow}
 
 ### If Statement and Expression
+
+<!-- doc-check: fragment -->
 ```gala
 val status = if (score > 50) "pass" else "fail"
 ```
@@ -342,6 +349,7 @@ val status = if (score > 50) "pass" else "fail"
 ### Match Expression
 A default case is required unless the arms cover every value: all variants of a sealed type, both `true` and `false`, or an unguarded arm that matches anything — `case _`, a plain binding (`case n`), or a tuple pattern made only of wildcards, bindings and nested such tuples (`case (_, _, err)`).
 
+<!-- doc-check: fragment -->
 ```gala
 val result = x match {
     case 1 => "one"
@@ -372,6 +380,8 @@ func mode(env Environment, limit Environment) string = env match {
 ```
 
 #### Type-Based Pattern Matching
+
+<!-- doc-check: fragment -->
 ```gala
 val res = x match {
     case s: string => s"Found string: $s"
@@ -392,6 +402,8 @@ func (e Even) Unapply(i int) Option[int] = if (i % 2 == 0) Some(i) else None[int
 ```
 
 #### Pattern Matching Filters (Guards)
+
+<!-- doc-check: fragment -->
 ```gala
 val res = x match {
     case i: int if i > 100 => "Large integer"
@@ -413,6 +425,7 @@ val res = arr match {
 
 Inside a function whose result type is a monad `M`, `bind name = expr` unwraps `M` and binds the success value; the block lowers to a `FlatMap` chain, so every bound name stays in scope for later statements. `also` marks an *independent* clause: a `bind`+`also` group lowers through `Zip{N}` when the monad provides it — `Validated` (in the `validation` package) accumulates all errors, `Future` runs the clauses concurrently — and falls back to the sequential `FlatMap` chain for fail-fast monads (`Try`/`Option`/`Either`).
 
+<!-- doc-check: fragment -->
 ```gala
 // bind: each value stays in scope; the first Failure short-circuits.
 func processOrder(id int) Try[Receipt] {
@@ -434,6 +447,8 @@ func makePerson(name string, email string, age int) Validated[string, Person] {
 Bound names are immutable `val`s. `bind`/`also` work over any user-defined monad that defines `FlatMap[U](f func(T) M[U]) M[U]`; a type without `FlatMap` is rejected with a clear compiler error. See [`bind` / `also` notation](https://github.com/martianoff/gala/blob/master/docs/BIND_NOTATION.MD) for the full specification and the user-monad extension guide.
 
 ### For Statement
+
+<!-- doc-check: fragment -->
 ```gala
 for i := 0; i < 10; i++ {
     Println(i)
@@ -451,6 +466,8 @@ for _, v := range items {
 ## 7. Functional Features {#7-functional-features}
 
 ### Lambda Expressions
+
+<!-- doc-check: fragment -->
 ```gala
 val f = (x int) => x * x
 
@@ -462,6 +479,8 @@ opt.ForEach((x) => { Println(x) })
 ```
 
 ### Partial Function Literals
+
+<!-- doc-check: fragment -->
 ```gala
 val pf = { case 1 => "one" case 2 => "two" }
 val r1 = pf(1)  // Some("one")
@@ -511,6 +530,8 @@ val msg = e match {
 ```
 
 ### Try Monad
+
+<!-- doc-check: fragment -->
 ```gala
 val result = Try(riskyDivide(10, 0))  // by-name sugar: runs () => riskyDivide(...) lazily
 val parsed = Try(strconv.Atoi("42"))  // Go (T, error) auto-wrapped
@@ -523,6 +544,8 @@ val msg = result match {
 ```
 
 ### Future Monad
+
+<!-- doc-check: fragment -->
 ```gala
 import . "martianoff/gala/concurrent"
 
@@ -549,6 +572,8 @@ val goSlice = SliceOf(1, 2, 3)
 ## 10. Literals and Type Conversions {#10-literals-and-type-conversions}
 
 ### String Interpolation
+
+<!-- doc-check: fragment -->
 ```gala
 val name = "Alice"
 val age = 30
@@ -580,14 +605,26 @@ val s = string(r)           // "A"
 
 ## 11. Go Built-in Functions {#11-go-built-in-functions}
 
-Go's built-in functions are available: `len`, `cap`, `make`, `new`, `append`, `delete`, `close`, `panic`, `recover`.
+Bare Go builtins are **not** part of GALA's surface: calling one is a transpile error ([GALA-E0035](/docs/errors/gala-e0035/)). Each has a GALA-native form or a sanctioned interop wrapper:
 
-For most use cases, prefer GALA's collection types and their methods over Go built-ins.
+| Forbidden builtin | Use instead |
+|---|---|
+| `len(x)` | `x.Size()` (logical size; **characters** for strings) or `x.ByteSize()` (string bytes) |
+| `cap(x)` | `go_interop.SliceCap(x)` |
+| `new(T)` | `go_interop.New[T]()` (pointer), or a zero value / `Option[T]` |
+| `append(s, v)` | `go_interop.SliceAppend(s, v)` / `SliceAppendAll(s, more)`, or an `Array`/`List` |
+| `make([]T, n)` | `go_interop.SliceWithSize` / `SliceWithCapacity`; `MapEmpty` for maps |
+| `delete(m, k)` | `go_interop.MapDelete(m, k)`, or `HashMap.Remove(k)` |
+| `close(ch)` | `go_interop.CloseChan(ch)` (or `CloseSignal` for a signal channel) |
+| `panic(v)` | `go_builtins.Panic(v)` — but prefer `Option` / `Try` / `Either` |
+| `recover()` | not available — `Try` captures panics |
 
 ## 12. Immutability Under the Hood {#12-immutability-under-the-hood}
 
 ### Package-Level Bindings
 A package-level `val` is a `std.Immutable[T]` in the generated Go but reads as a plain `T` everywhere — its own file, sibling files, and other packages (qualified, aliased, or dot-imported). A package-level `var` stays a plain, reassignable variable.
+
+<!-- doc-check: fragment -->
 ```gala
 // package colors
 val Green = NamedColor(2)

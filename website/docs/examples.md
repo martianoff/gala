@@ -433,6 +433,7 @@ func main() {
 
 Boolean pattern matching is exhaustive when both `true` and `false` cases are covered:
 
+<!-- doc-check: fragment -->
 ```gala
 val desc = flag match {
     case true  => "enabled"

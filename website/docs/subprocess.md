@@ -86,6 +86,7 @@ val opts = SpawnOpts(
 
 ### Spawn
 
+<!-- doc-check: fragment -->
 ```gala
 func Spawn(opts SpawnOpts) Try[Process]
 ```
@@ -98,6 +99,7 @@ child short-circuits to `Failure`.
 > called. Long-running consumers **must** call `Wait` or `Kill` exactly once when
 > done, otherwise the child becomes a zombie.
 
+<!-- doc-check: fragment -->
 ```gala
 Spawn(opts) match {
     case Success(p) => Println(s"started pid ${p.Pid()}")
@@ -113,6 +115,7 @@ All methods below block the calling goroutine.
 
 ### Writing to stdin
 
+<!-- doc-check: fragment -->
 ```gala
 func (p Process) WriteLine(s string) Try[Void]
 func (p Process) CloseStdin() Try[Void]
@@ -127,6 +130,7 @@ func (p Process) CloseStdin() Try[Void]
 
 ### Reading output
 
+<!-- doc-check: fragment -->
 ```gala
 func (p Process) ReadLine() Try[string]
 func (p Process) ReadStderrLine() Try[string]
@@ -150,6 +154,7 @@ func pump(p Process) {
 
 ### Waiting and exit codes
 
+<!-- doc-check: fragment -->
 ```gala
 func (p Process) Wait() Try[int]
 ```
@@ -164,6 +169,7 @@ is reserved for a genuine wait error, in which case the code is `-1`.
 
 ### Killing and status
 
+<!-- doc-check: fragment -->
 ```gala
 func (p Process) Kill() Try[Void]
 func (p Process) IsAlive() bool
@@ -187,6 +193,7 @@ goroutine-safety invariant and dispatches the work through the sanctioned
 `go_interop` escape hatch internally — your app code just calls these typed,
 Future-returning methods and captures nothing unshareable.
 
+<!-- doc-check: fragment -->
 ```gala
 func (p Process) ReadLineAsync() Future[Try[string]]
 func (p Process) ReadStderrLineAsync() Future[Try[string]]
@@ -211,6 +218,7 @@ For `ReadLineAsync`:
 Unwrap the two layers with two `Get()`s — outer awaits the Future, inner unwraps
 the `Try` — or pattern-match each layer:
 
+<!-- doc-check: fragment -->
 ```gala
 val line = p.ReadLineAsync().Get().Get()   // outer awaits, inner unwraps
 ```
@@ -219,6 +227,7 @@ val line = p.ReadLineAsync().Get().Get()   // outer awaits, inner unwraps
 
 ## Timed kill: KillAfter / KillTimer
 
+<!-- doc-check: fragment -->
 ```gala
 func (p Process) KillAfter(d Duration) KillTimer
 
@@ -234,6 +243,7 @@ and alive-checked, a late fire after the child has exited is a safe no-op.
 
 `KillTimer.Cancel()` aborts the pending kill. Call it **at most once**.
 
+<!-- doc-check: fragment -->
 ```gala
 import . "martianoff/gala/time_utils"
 
@@ -261,7 +271,7 @@ import (
     "martianoff/gala/go_interop"
 )
 
-func shellOpts(script string): SpawnOpts = {
+func shellOpts(script string) SpawnOpts {
     val cmd = if (runtime.GOOS == "windows") "cmd" else "sh"
     val flag = if (runtime.GOOS == "windows") "/c" else "-c"
     return SpawnOpts(
@@ -272,7 +282,7 @@ func shellOpts(script string): SpawnOpts = {
     )
 }
 
-func sortOpts(): SpawnOpts = SpawnOpts(
+func sortOpts() SpawnOpts = SpawnOpts(
     Cmd  = "sort",
     Args = go_interop.SliceEmpty[string](),
     Env  = go_interop.SliceEmpty[string](),

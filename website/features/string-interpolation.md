@@ -124,6 +124,7 @@ If you omit the `%spec` after a variable in an `f"..."` string, the format verb 
 
 `Println` and `Print` are available globally in GALA — no `import "fmt"` required. They map directly to `fmt.Println` and `fmt.Print` in the generated Go code:
 
+<!-- doc-check: fragment -->
 ```gala
 // No import needed
 Println("Hello, World!")

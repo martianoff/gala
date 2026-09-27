@@ -59,6 +59,7 @@ The caret marks the start of the match arms; the header names the variants you l
 
 Cover every variant explicitly:
 
+<!-- doc-check: fragment -->
 ```gala
 func name(c Color) string = c match {
     case Red()   => "red"
@@ -69,6 +70,7 @@ func name(c Color) string = c match {
 
 Or add a default when the remaining variants collapse to the same result:
 
+<!-- doc-check: fragment -->
 ```gala
 func name(c Color) string = c match {
     case Red() => "red"

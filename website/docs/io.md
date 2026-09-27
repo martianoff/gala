@@ -21,6 +21,7 @@ import "martianoff/gala/io"
 
 ## Creating IO Values
 
+<!-- doc-check: fragment -->
 ```gala
 // Pure value — no side effects
 val pure = io.Of(42)
@@ -120,6 +121,7 @@ safe.Run()  // Success(-1)
 
 ### RecoverWith — Handle Errors with a New IO
 
+<!-- doc-check: fragment -->
 ```gala
 val retried = io.RecoverWith(
     io.Fail[int](errors.New("oops")),

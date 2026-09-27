@@ -1126,6 +1126,7 @@ A `FlatMap` chain has to *nest* whenever a later step needs a value from an earl
 
 **Before — the nested `FlatMap` pyramid** (`o` survives three levels of nesting, `[Receipt]` repeated at each link, ending in a `))))` pile):
 
+<!-- doc-check: fragment -->
 ```gala
 func processOrder(id int) Try[Receipt] =
     fetchOrder(id).FlatMap[Receipt]((o) =>
@@ -1136,6 +1137,7 @@ func processOrder(id int) Try[Receipt] =
 
 **After — a flat `bind` block** (every value in scope, top-to-bottom, no repeated type args, no paren pile):
 
+<!-- doc-check: fragment -->
 ```gala
 func processOrder(id int) Try[Receipt] {
     bind o = fetchOrder(id)
@@ -1151,6 +1153,7 @@ Both forms are equivalent — the `bind` block *lowers* to exactly that pyramid 
 
 Validating several independent fields with a fail-fast monad only ever surfaces the **first** error: `vName(name).FlatMap((n) => vEmail(email).FlatMap((e) => vAge(age).Map((a) => Person(n, e, a))))` stops at the first failure. `Validated` (in the `validation` package) accumulates instead, and `also` opts into that accumulation:
 
+<!-- doc-check: fragment -->
 ```gala
 import . "martianoff/gala/validation"
 
@@ -1182,6 +1185,7 @@ Swap the three `also`s for `bind`s (or use `Try`) and `bad errors` would be `1`.
 
 Over `Future`, an `also` group runs its clauses **concurrently** instead of threading each through the next:
 
+<!-- doc-check: fragment -->
 ```gala
 import . "martianoff/gala/concurrent"
 

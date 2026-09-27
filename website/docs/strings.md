@@ -206,6 +206,7 @@ These methods delegate to `Array[rune]` for efficiency:
 
 ### Pattern Matching Extractors
 
+<!-- doc-check: fragment -->
 ```gala
 // NonEmptyStr extracts (head, tail)
 type NonEmptyStr struct {}
@@ -326,6 +327,7 @@ val sb3 = NewStringBuilderFromString("hello")  // from Go string
 
 All append methods return `*StringBuilder` for chaining:
 
+<!-- doc-check: fragment -->
 ```gala
 // Str-based (primary API)
 sb.Append(S("hello"))             // append Str
@@ -346,6 +348,7 @@ val result = NewStringBuilder()
 
 ### Output
 
+<!-- doc-check: fragment -->
 ```gala
 sb.ToStr()     // returns Str (primary)
 sb.ToString()  // returns Go string
@@ -354,6 +357,7 @@ sb.String()    // Go Stringer interface
 
 ### State
 
+<!-- doc-check: fragment -->
 ```gala
 sb.Length()     // byte length
 sb.RuneCount() // character count

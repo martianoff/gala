@@ -17,6 +17,7 @@ Every Future runs on an `ExecutionContext` that controls goroutine scheduling. T
 
 Two things make Futures more than a callback wrapper: [structured concurrency](#structured-concurrency--cancellation-timeouts-and-race) — cancellation, timeouts, and `Race` that short-circuit the stages they own — and [compile-time data-race safety]({{ '/features/concurrency-safety/' | relative_url }}), which statically checks that an async body only captures values that are safe to share.
 
+<!-- doc-check: fragment -->
 ```gala
 import . "martianoff/gala/concurrent"
 
@@ -35,6 +36,7 @@ Println(combined.Get())
 
 `Future[T]` represents an asynchronous computation that will eventually produce a value of type T or fail with an error.
 
+<!-- doc-check: fragment -->
 ```gala
 import . "martianoff/gala/concurrent"
 import "errors"
@@ -57,6 +59,7 @@ val failed = FutureFailed[int](errors.New("oops"))
 
 `Map` transforms a successful result. `FlatMap` chains a function that returns another Future. Both propagate errors automatically:
 
+<!-- doc-check: fragment -->
 ```gala
 val userId = Future[int](lookupUserId("alice"))
 
@@ -75,6 +78,7 @@ If the original Future fails, Map and FlatMap short-circuit — the error propag
 
 `Zip` runs two Futures concurrently and combines their results into a Tuple when both complete:
 
+<!-- doc-check: fragment -->
 ```gala
 val f1 = Future[int](fetchCount())
 val f2 = Future[string](fetchLabel())
@@ -86,6 +90,7 @@ Println(s"${pair.V2}: ${pair.V1}")
 
 Use `ZipWith` to combine results with a custom function:
 
+<!-- doc-check: fragment -->
 ```gala
 val total = f1.ZipWith(f2, (count, label) => s"$label = $count")
 ```
@@ -96,6 +101,7 @@ val total = f1.ZipWith(f2, (count, label) => s"$label = $count")
 
 `Recover` provides a fallback value when a Future fails. `RecoverWith` provides a fallback Future:
 
+<!-- doc-check: fragment -->
 ```gala
 val risky = Future[int](riskyOperation())
 
@@ -115,6 +121,7 @@ val withFallback = risky.Fallback(FutureOf[int](0))
 
 Block the current goroutine until a Future completes:
 
+<!-- doc-check: fragment -->
 ```gala
 val f = Future[int](compute())
 
@@ -139,6 +146,7 @@ Async work that cannot be called off is a leak waiting to happen. `Future[T]` ca
 
 ### Cancel a chain
 
+<!-- doc-check: fragment -->
 ```gala
 val chain = source.Map((v) => step1(v)).FlatMap((v) => step2(v))
 chain.Cancel()   // pending stages that haven't started fail with CancellationError
@@ -173,6 +181,7 @@ When the timeout fires, `WithTimeout` also cancels the underlying Future's token
 
 ### Race — first result wins, losers are cancelled
 
+<!-- doc-check: fragment -->
 ```gala
 val winner = Race[int](ArrayOf[Future[int]](a, b))  // first result, cancels losers
 ```
@@ -185,6 +194,7 @@ val winner = Race[int](ArrayOf[Future[int]](a, b))  // first result, cancels los
 
 Register callbacks that fire when a Future completes, without blocking:
 
+<!-- doc-check: fragment -->
 ```gala
 val f = Future[int](compute())
 
@@ -211,6 +221,7 @@ val msg = f match {
 
 Nested matching with the `Completed` extractor and `Try`:
 
+<!-- doc-check: fragment -->
 ```gala
 val msg = f match {
     case Completed(Success(v)) => s"Success: $v"
@@ -225,6 +236,7 @@ val msg = f match {
 
 Combine arrays of Futures into a single Future:
 
+<!-- doc-check: fragment -->
 ```gala
 val futures = ArrayOf(FutureOf(1), FutureOf(2), FutureOf(3))
 
@@ -243,6 +255,7 @@ val sum = Fold[int, int](futures, 0, (acc, v) => acc + v)
 
 Pattern matching on Future arrays:
 
+<!-- doc-check: fragment -->
 ```gala
 val msg = futures match {
     case AllSucceeded(values) => s"All: $values"
@@ -267,6 +280,7 @@ Each Future has an associated `ExecutionContext` that determines where callbacks
 
 ### Using a Custom ExecutionContext
 
+<!-- doc-check: fragment -->
 ```gala
 import . "martianoff/gala/concurrent"
 
@@ -290,6 +304,7 @@ pool.Shutdown()
 
 `Promise[T]` is a writable, single-assignment container that completes a Future. Use it when you need to complete a Future from external code — for example, bridging callback-based APIs:
 
+<!-- doc-check: fragment -->
 ```gala
 import . "martianoff/gala/concurrent"
 

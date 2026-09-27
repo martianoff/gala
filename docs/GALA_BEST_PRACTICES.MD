@@ -85,6 +85,7 @@ Import `martianoff/gala/resource` and wrap the using-code in a combinator that g
 - **`Bracket(res, release, body)`** — the general run-then-release primitive over an eagerly-acquired resource.
 - **`WithLock(mu, () => …)`** — hold a `go_interop.Mutex` for the body, unlock after.
 
+<!-- doc-check: fragment -->
 ```gala
 func readAll(path string) string =
     Using(OpenFile(path), (f) => f.ReadString())  // Close() guaranteed
@@ -92,6 +93,7 @@ func readAll(path string) string =
 
 - **`use x = acquire`** — the top-to-bottom binding form (no nesting pyramid): `x` is bound for the rest of the block and `x.Close()` runs when the function returns, on every path. Multiple `use` bindings release LIFO. No import needed.
 
+<!-- doc-check: fragment -->
 ```gala
 func copyFile(src string, dst string) Try[Int] = Try(() => {
     use in  = OpenFile(src)     // in.Close()  runs last
@@ -160,6 +162,8 @@ func copyFile(src string, dst string) Try[Int] = Try(() => {
 ## Library API design
 
 - **Use named function types with concrete params** so callers can write `(req) => ...`:
+
+  <!-- doc-check: fragment -->
   ```gala
   type Handler func(Request) Response
   func GET(path string, handler Handler) { ... }
@@ -226,6 +230,7 @@ convention, no separate syntax. ([§19 Documentation Comments](GALA.MD#19-docume
   so a trailing `Returns ...` sentence stays with the summary rather than
   attaching itself to the last parameter.
 
+<!-- doc-check: fragment -->
 ```gala
 // Filter returns this option if it is nonempty and the predicate holds.
 // p: the predicate used for testing.

@@ -53,6 +53,7 @@ The caret sits on the already-wrapped inner value. This code emits no hint, so t
 
 Assign the inner value directly and let the `val` binding do the wrapping:
 
+<!-- doc-check: fragment -->
 ```gala
 val x = 1                // the compiler wraps this as Immutable[int]
 val y = getImm().Get()   // unwrap once; the outer val wraps it again

@@ -59,6 +59,7 @@ error[GALA-E0044]: Array has no method Sum
 
 **Fix.** Call a method that exists. For the `Sum` case, GALA folds:
 
+<!-- doc-check: fragment -->
 ```gala
 val total = xs.FoldLeft(0, (acc, x) => acc + x)
 ```

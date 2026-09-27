@@ -351,6 +351,7 @@ m.RangeTo("c")           // TreeMap(a -> 1, b -> 2, c -> 3)
 
 ### Mutable-Specific Operations
 
+<!-- doc-check: fragment -->
 ```gala
 var m = TreeMapOf(("a", 1), ("b", 2))
 
@@ -419,6 +420,7 @@ func describeArray[T any](arr *Array[T]) string {
 
 ### Option Pattern Matching with Collections
 
+<!-- doc-check: fragment -->
 ```gala
 func findFirstEven(arr *Array[int]) string {
     var found = arr.Find((x) => x % 2 == 0)

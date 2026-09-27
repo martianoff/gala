@@ -49,6 +49,7 @@ error[GALA-E0042]: lambda parameters must be parenthesized
 
 **Fix.** Add the parentheses:
 
+<!-- doc-check: fragment -->
 ```gala
 xs.Map((x) => x * 2)
 ```
@@ -56,13 +57,14 @@ xs.Map((x) => x * 2)
 The same applies wherever a lambda is written, not only in an argument:
 
 ```gala
-val double = (x) => x * 2          // not: val double = x => x * 2
-val add    = (a, b) => a + b       // already a list, already correct
+val double = (x int) => x * 2      // not: val double = x => x * 2
+val add    = (a int, b int) => a + b  // already a list, already correct
 ```
 
 Zero-parameter lambdas keep the empty list, and a lambda stored in a `val`
 without a target type still annotates its parameters:
 
+<!-- doc-check: fragment -->
 ```gala
 Try(() => risky())
 val f = (x int) => x * 2

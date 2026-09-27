@@ -19,6 +19,7 @@ last_modified_at: 2026-07-27
 
 Two files in one package — `a.gala` dot-imports `collection_immutable`, `b.gala` uses `Array` without importing it:
 
+<!-- doc-check: fragment -->
 ```gala
 // b.gala — no import of its own
 package main
