@@ -61,6 +61,7 @@ type galaASTTransformer struct {
 	returnSlot               returnSlot                   // result type of the innermost function or lambda body (see return_slot.go)
 	currentMatchSubjectType  transpiler.Type              // type of the match expression's subject (for branch type inference)
 	typeAliases              map[string]transpiler.Type   // type alias name -> underlying type (e.g., "Handler" -> func(string) Future[string])
+	fileTypeDeclTargets      map[string]transpiler.Type   // this file's `type X Y` declarations, name -> target parsed as written; complete before any declaration is transformed
 	goTypeInfo               *transpiler.GoTypeInfo       // type info from Go packages (stdlib, local Go files, third-party)
 	filePath                 string                       // source file path (for error reporting)
 	richAST                  *transpiler.RichAST          // reference to the primary RichAST for live metadata access
@@ -352,6 +353,18 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	// import-derived setup step has run.
 	t.registerDotImportedVals()
 	t.cacheTypeResolver()
+
+	// t.typeAliases fills as declarations are walked, so a declaration above
+	// `type Millis int64` would not see it. Record every alias target up front
+	// for the lookups that must not depend on declaration order.
+	t.fileTypeDeclTargets = make(map[string]transpiler.Type)
+	for _, topDeclCtx := range sourceFile.AllTopLevelDeclaration() {
+		typeDecl, ok := topDeclCtx.TypeDeclaration().(*grammar.TypeDeclarationContext)
+		if !ok || typeDecl == nil || typeDecl.Identifier() == nil || typeDecl.TypeAlias() == nil {
+			continue
+		}
+		t.fileTypeDeclTargets[typeDecl.Identifier().GetText()] = transpiler.ParseType(typeDecl.TypeAlias().GetText())
+	}
 
 	for _, topDeclCtx := range sourceFile.AllTopLevelDeclaration() {
 		decls, err := t.transformTopLevelDeclaration(topDeclCtx)

@@ -3303,6 +3303,16 @@ gala_exec_test(
     expected = "fix005_sized_field_literal.out",
 )
 
+# An untyped numeric constant adopts the type of every immutable slot it lands
+# in — Copy overrides, tuple elements with an expected type, field and parameter
+# defaults, sealed variants — for predeclared numeric types, GALA types declared
+# over one (even below their first use), and Go named numeric types.
+gala_exec_test(
+    name = "untyped_const_immutable_slots",
+    src = "untyped_const_immutable_slots.gala",
+    expected = "untyped_const_immutable_slots.out",
+)
+
 # Gap #10 regression: tuple literal passed to Append on Array[Tuple[A,B]]
 # infers A,B from the receiver, not falling back to any.
 gala_exec_test(

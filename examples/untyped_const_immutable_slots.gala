@@ -1,0 +1,151 @@
+package main
+
+import (
+    "math"
+    "time"
+)
+
+// An untyped numeric constant adopts the type of the immutable slot it lands
+// in, at every site that wraps it for one. `val` fields, tuple elements and
+// Copy overrides are stored as `Immutable[T]`, and Go infers the wrapper's T
+// from the argument, where an untyped constant collapses to its default type
+// (`0` → int, `0.5` → float64). Each site below used to emit the bare wrapper
+// and fail to compile with "cannot use Immutable[int] as Immutable[int64]".
+//
+// The slot kinds covered: every predeclared numeric width, GALA types declared
+// over a numeric type (including one declared below its first use), and a Go
+// named numeric type.
+
+// Declared above the type it names.
+func window() Tuple[Late, float32] = (1, 2)
+
+type Millis int64
+type Ratio float32
+
+struct Nums(
+    i8 int8,
+    i16 int16,
+    i32 int32,
+    i64 int64,
+    u uint,
+    u8 uint8,
+    u16 uint16,
+    u32 uint32,
+    u64 uint64,
+    f32 float32,
+    f64 float64,
+    ms Millis,
+    r Ratio,
+)
+
+func show(n Nums) string =
+    s"${n.i8} ${n.i16} ${n.i32} ${n.i64} ${n.u} ${n.u8} ${n.u16} ${n.u32} ${n.u64} ${n.f32} ${n.f64} ${n.ms} ${n.r}"
+
+// Field defaults of every kind.
+struct Defaults(
+    i8 int8 = 1,
+    i64 int64 = 2,
+    u32 uint32 = 3,
+    f32 float32 = 0.5,
+    ms Millis = 250,
+    r Ratio = 0.25,
+    late Late = 7,
+)
+
+// Parameter defaults of declared and Go named numeric types.
+func wait(
+    ms Millis = 12,
+    r Ratio = 0.5,
+    d time.Duration = 5,
+    late Late = 8,
+) string = s"$ms $r $d $late"
+
+struct Box[T any](item T)
+
+struct Wait(d time.Duration)
+
+struct Span(t Tuple[int64, int64])
+
+func pair() Tuple[int64, float32] = (1, 2)
+
+func triple() Tuple3[int8, Millis, float64] = (3, 4, 5)
+
+// Go's untyped constants behave like literals.
+struct Limits(lo int8 = math.MinInt8, hi uint32 = math.MaxUint32)
+
+func bounds() Tuple[int8, float32] = (math.MaxInt8, math.Pi)
+
+func sum(t Tuple[int64, float32]) string = s"${t.V1} ${t.V2}"
+
+sealed type Reading {
+    case Count(n uint16)
+    case Elapsed(ms Millis)
+    case Scale(r Ratio)
+}
+
+func describe(r Reading) string = r match {
+    case Count(n) => s"count $n"
+    case Elapsed(ms) => s"elapsed $ms"
+    case Scale(x) => s"scale $x"
+}
+
+type Late int64
+
+func main() {
+    // Constructor: positional, named, composite literal.
+    Println(show(Nums(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13)))
+    Println(show(Nums(i8 = 1, i16 = 2, i32 = 3, i64 = 4, u = 5, u8 = 6, u16 = 7, u32 = 8, u64 = 9, f32 = 0.5, f64 = 1.5, ms = 60 * 1000, r = 0.25)))
+    Println(show(Nums{i8: -1, i16: -2, i32: -3, i64: -4, u: 5, u8: 6, u16: 7, u32: 8, u64: 9, f32: 10, f64: 11, ms: 12, r: 13}))
+
+    // Copy overrides.
+    val base = Nums(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+    Println(show(base.Copy(i8 = 1, i16 = 2, i32 = 3, i64 = 4, u = 5, u8 = 6, u16 = 7, u32 = 8, u64 = 9, f32 = 0.5, f64 = 1.5, ms = 12, r = 13)))
+    Println(Box[int64](1).Copy(item = 2).item)
+    Println(Box[Millis](3).Copy(item = 4).item)
+
+    // Generic struct instantiated with a declared numeric type.
+    Println(Box[Millis](5).item)
+    Println(Box[Ratio](0.75).item)
+
+    // Field and parameter defaults.
+    val d = Defaults()
+    Println(s"${d.i8} ${d.i64} ${d.u32} ${d.f32} ${d.ms} ${d.r} ${d.late}")
+    Println(wait())
+    Println(wait(r = 2))
+
+    // Go named numeric type.
+    val w = Wait(5)
+    Println(w.d)
+    Println(w.Copy(d = 7).d)
+
+    // Tuple literals whose element types come from the context.
+    val p = pair()
+    Println(s"${p.V1} ${p.V2}")
+    val tr = triple()
+    Println(s"${tr.V1} ${tr.V2} ${tr.V3}")
+    val win = window()
+    Println(s"${win.V1} ${win.V2}")
+    Println(sum((6, 7)))
+    val declared Tuple[int64, float32] = (8, 9)
+    Println(s"${declared.V1} ${declared.V2}")
+    Println(Span((10, 11)).t.V2)
+    Println(Span(t = (12, 13)).t.V1)
+
+    // Sealed variants.
+    Println(describe(Count(1)))
+    Println(describe(Elapsed(2)))
+    Println(describe(Scale(0.5)))
+
+    // Go untyped constants: constructor, default, Copy, tuple.
+    val lim = Limits()
+    Println(s"${lim.lo} ${lim.hi}")
+    Println(show(Nums(math.MinInt8, math.MinInt16, math.MinInt32, math.MinInt64, math.MaxUint32, math.MaxUint8, math.MaxUint16, math.MaxUint32, math.MaxUint64, math.Pi, math.E, math.MaxInt32, math.Pi)))
+    Println(lim.Copy(lo = math.MaxInt8 - 1).lo)
+    val b = bounds()
+    Println(s"${b.V1} ${b.V2}")
+    Println(Wait(time.Second).d)
+
+    // Negative case: a tuple with no expected type keeps its default types.
+    val plain = (1, 2.5)
+    Println(s"${plain.V1 + 1} ${plain.V2 * 2}")
+}

@@ -26,10 +26,11 @@ GALA implements a custom type inference and unwrapping system to handle its uniq
 8. [Supported Expressions](#supported-expressions)
 9. [`bind` / `also` Element and Result Inference](#bind--also-element-and-result-inference)
 10. [Downward Inference for Generic Sealed-Type Case Constructors](#downward-inference-for-generic-sealed-type-case-constructors)
-11. [Downward Inference for Generic Function Phantom Type Parameters](#downward-inference-for-generic-function-phantom-type-parameters)
-12. [Go Type Inference](#go-type-inference)
-13. [Limitations and Edge Cases](#limitations-and-edge-cases)
-14. [Key Files](#key-files)
+11. [Untyped Constants in Immutable Slots](#untyped-constants-in-immutable-slots)
+12. [Downward Inference for Generic Function Phantom Type Parameters](#downward-inference-for-generic-function-phantom-type-parameters)
+13. [Go Type Inference](#go-type-inference)
+14. [Limitations and Edge Cases](#limitations-and-edge-cases)
+15. [Key Files](#key-files)
 
 ---
 
@@ -626,6 +627,40 @@ side-effect dispatch still rely on per-arm inference.
 | `transformer/constructors.go::transformPrimary` (paren/tuple case) | Pushes per-element expected type for tuple literals |
 | `transformer/declarations.go::transformValDeclaration` / `transformVarDeclaration` | Pushes the explicit declared type before transforming RHS |
 | `transformer/postfix.go::buildMatchExpressionFromClauses` | Promotes a pending slot type to `returnSlot.typ` for arm bodies |
+
+---
+
+## Untyped Constants in Immutable Slots
+
+An untyped numeric constant takes the type of the slot it initialises, exactly
+as a Go assignment converts it: `Entry(0)` for a field declared `int64`,
+`p.Copy(ratio = 0.5)` for a `float32` field, `(1, 2)` returned as
+`Tuple[int64, float32]`. Immutable slots are stored as `Immutable[T]`, and Go
+infers `NewImmutable`'s `T` from its argument, where an untyped constant
+collapses to its default type (`int`, `float64`, `rune`). So every site that
+wraps a value for a slot whose type it knows goes through one helper,
+`newImmutableFor` (`transformer/constructors.go`), which spells the slot type
+(`std.NewImmutable[int64](0)`) whenever that default differs.
+
+A Go package's untyped constant is untyped in Go exactly as a literal is, so
+`math.MinInt8`, `math.Pi` and constant arithmetic over them (`math.MaxInt8 -
+1`) follow the same rule; the analyzer records which Go constants are untyped
+(`GoTypeInfo.UntypedConstants`). A typed constant such as `time.Second` keeps
+its own type.
+
+A slot counts as numeric when its type is a predeclared numeric type, a GALA
+type declared over one (`type Millis int64`, through alias chains, including
+one declared further down the file), or a Go named numeric type
+(`time.Duration`). The sites are the struct constructor (positional, named,
+composite literal, field defaults), Copy overrides, and tuple literals with an
+expected element type (return position, call argument, typed `val`, struct
+field). Only the slot the tuple literal itself fills counts: a local
+`val t = (1, 2)` inside a function returning `Tuple[int64, int64]` is still a
+`Tuple[int, int]`. A bare `nil` always takes the slot's declared type.
+
+Parameter defaults follow the same rule at analysis time: `func f(ms Millis =
+12)` is accepted because `Millis` is declared over `int64`, while
+`ms Millis = "soon"` is still GALA-E0014.
 
 ---
 
