@@ -3,6 +3,7 @@ package transformer
 import (
 	"fmt"
 	"go/ast"
+	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
 	"strings"
 )
@@ -145,8 +146,7 @@ func (t *galaASTTransformer) ident(name string) ast.Expr {
 			t.markDotImportUsed(pkg)
 			return ast.NewIdent(base)
 		}
-		// Check if we have an alias for this actual package name
-		if alias, ok := t.importManager.GetAlias(pkg); ok {
+		if alias, ok := t.packageQualifier(pkg); ok {
 			pkg = alias
 		}
 		return &ast.SelectorExpr{
@@ -155,6 +155,118 @@ func (t *galaASTTransformer) ident(name string) ast.Expr {
 		}
 	}
 	return ast.NewIdent(name)
+}
+
+// importForQualifier resolves a qualifier as this file wrote it to its import,
+// and reports whether that import is a GALA package. It is the transformer's
+// one answer to "what does qualifier X mean in this file"; GALA metadata keyed
+// by package NAME resolves through ImportManager.Qualifier instead.
+func (t *galaASTTransformer) importForQualifier(qualifier string) (entry *ImportEntry, isGala, ok bool) {
+	entry, ok = t.importManager.GetByAlias(qualifier)
+	if !ok {
+		return nil, false, false
+	}
+	return entry, t.galaPkgPaths[entry.Path], true
+}
+
+// packageQualifier is this file's qualifier for the GALA package named pkg,
+// recording the import it needs — the package may have reached this file only
+// through a sibling, or through a value another package returned (a generic
+// method lowered to `collection_immutable.Array_Map`).
+func (t *galaASTTransformer) packageQualifier(pkg string) (string, bool) {
+	entry, ok := t.importManager.Qualifier(pkg)
+	if !ok {
+		return "", false
+	}
+	t.importManager.AddTransitive(entry.Path, entry.Alias)
+	return entry.Alias, true
+}
+
+// isGoTyped reports whether nt is a Go type: one carrying the import path of
+// a package that is not GALA.
+func (t *galaASTTransformer) isGoTyped(nt transpiler.NamedType) bool {
+	return nt.ImportPath != "" && !t.galaPkgPaths[nt.ImportPath]
+}
+
+// resolveTypeQualifier emits the package-qualified type v (v.Package != "",
+// not std) as this file refers to it — the transformer's one resolver for a
+// type's qualifier:
+//   - a type carrying its import path resolves by that path, before any check
+//     keyed by package name: a Go `strings.Builder` keeps the Go qualifier
+//     even when this file also imports, or dot-imports, a GALA package named
+//     `strings`;
+//   - a Go type whose path was lost resolves through this file's Go import of
+//     that name (goImportForPathlessType);
+//   - a dot-imported package emits the bare name; the current package too;
+//   - a GALA type uses this file's qualifier for its package (e.g., im for
+//     collection_immutable), with the import recorded in case the package
+//     reached this file through a sibling.
+func (t *galaASTTransformer) resolveTypeQualifier(v transpiler.NamedType) ast.Expr {
+	if v.ImportPath != "" {
+		return t.selectorForImportPath(v)
+	}
+	if entry, ok := t.goImportForPathlessType(v); ok {
+		return &ast.SelectorExpr{X: ast.NewIdent(entry.QualifierFor(v.Package)), Sel: ast.NewIdent(v.Name)}
+	}
+	if t.importManager.IsDotImported(v.Package) {
+		t.markDotImportUsed(v.Package)
+		return ast.NewIdent(v.Name)
+	}
+	if v.Package == t.packageName {
+		return ast.NewIdent(v.Name)
+	}
+	qualifier := v.Package
+	if alias, ok := t.packageQualifier(v.Package); ok {
+		qualifier = alias
+	}
+	return &ast.SelectorExpr{X: ast.NewIdent(qualifier), Sel: ast.NewIdent(v.Name)}
+}
+
+// selectorForImportPath emits a type that carries its import path, resolved
+// by that path.
+func (t *galaASTTransformer) selectorForImportPath(v transpiler.NamedType) ast.Expr {
+	entry, ok := t.importManager.GetByPath(v.ImportPath)
+	if ok && entry.IsDot {
+		t.markDotImportUsed(entry.PkgName)
+		return ast.NewIdent(v.Name)
+	}
+	var qualifier string
+	if ok {
+		qualifier = entry.QualifierFor(v.Package)
+		if entry.Implicit() {
+			t.importManager.AddTransitive(entry.Path, qualifier)
+		}
+	} else {
+		// Not imported by this file (e.g., os.Stat returns fs.FileInfo —
+		// "io/fs"): a qualifier no import of this file binds.
+		qualifier = t.importManager.TransitiveQualifier(v.ImportPath, v.Package)
+		t.importManager.AddTransitive(v.ImportPath, qualifier)
+	}
+	return &ast.SelectorExpr{X: ast.NewIdent(qualifier), Sel: ast.NewIdent(v.Name)}
+}
+
+// goImportForPathlessType reports the Go import this file means by a
+// package-qualified type that carries no import path — one that lost it in
+// the transformer's string round-trips, since the analyzer records it on a
+// type written against a Go import. If only one of the Go import and the
+// GALA package of that name declares the type, that one is meant. A name both
+// declare (`fs.FileInfo` in Go's `io/fs` and GALA's `fs`) is taken as GALA
+// when this file imports the GALA package itself, and as Go otherwise.
+func (t *galaASTTransformer) goImportForPathlessType(v transpiler.NamedType) (*ImportEntry, bool) {
+	entry, isGala, ok := t.importForQualifier(v.Package)
+	if !ok || isGala || entry.IsDot {
+		return nil, false
+	}
+	key := v.Package + "." + v.Name
+	if _, galaDeclares := t.richAST.Types[key]; galaDeclares {
+		if owner, ok := t.importManager.Qualifier(v.Package); ok && !owner.Implicit() {
+			return nil, false
+		}
+		if !t.richAST.GoTypeInfo.DeclaresType(v.Package, v.Name) {
+			return nil, false
+		}
+	}
+	return entry, true
 }
 
 // qualifyTypeExpr recursively transforms a type expression to ensure std types

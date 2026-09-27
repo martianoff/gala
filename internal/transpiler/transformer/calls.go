@@ -3743,7 +3743,7 @@ func (t *galaASTTransformer) resolveGoFuncParamTypes(funcName string) []transpil
 	// For qualified calls (alias.Func), resolve the alias to the actual package name
 	if parts := splitQualifiedName(funcName); len(parts) == 2 {
 		alias, name := parts[0], parts[1]
-		if entry, ok := t.importManager.GetByAlias(alias); ok && entry.PkgName != alias {
+		if entry, _, ok := t.importForQualifier(alias); ok && entry.PkgName != alias {
 			qualName := entry.PkgName + "." + name
 			if sig := t.goTypeInfo.GetFuncSignature(qualName); sig != nil {
 				return sigToParams(sig)

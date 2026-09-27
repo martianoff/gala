@@ -1264,7 +1264,7 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 					} else if t.importManager.IsDotImported(pkg) {
 						t.markDotImportUsed(pkg)
 					} else {
-						if alias, ok := t.importManager.GetAlias(pkg); ok {
+						if alias, ok := t.packageQualifier(pkg); ok {
 							targetType = &ast.SelectorExpr{X: ast.NewIdent(alias), Sel: ast.NewIdent(identName)}
 						}
 					}
@@ -1319,6 +1319,16 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 	return decls, nil
 }
 
+// importPackageName is the real name of the package at path, empty when the
+// analyzer did not learn it: the GALA package's name, or the Go package's as
+// its type info reports it (k8s.io/api/core/v1 is package v1).
+func (t *galaASTTransformer) importPackageName(path string) string {
+	if name := t.richAST.Packages[path]; name != "" {
+		return name
+	}
+	return t.richAST.GoImportNames[path]
+}
+
 func (t *galaASTTransformer) transformImportDeclaration(ctx *grammar.ImportDeclarationContext) (ast.Decl, error) {
 	// import "pkg"  or import ( "pkg1" "pkg2" )
 	var specs []ast.Spec
@@ -1341,7 +1351,7 @@ func (t *galaASTTransformer) transformImportDeclaration(ctx *grammar.ImportDecla
 			importSpec.Name = ast.NewIdent(alias)
 			actualPkgName := ""
 			if t.richAST != nil {
-				actualPkgName = t.richAST.Packages[path]
+				actualPkgName = t.importPackageName(path)
 			}
 			t.importManager.Add(path, alias, false, actualPkgName)
 		} else if s.GetChildCount() > 1 {
@@ -1351,7 +1361,7 @@ func (t *galaASTTransformer) transformImportDeclaration(ctx *grammar.ImportDecla
 					importSpec.Name = ast.NewIdent(".")
 					actualPkgName := ""
 					if t.richAST != nil {
-						actualPkgName = t.richAST.Packages[path]
+						actualPkgName = t.importPackageName(path)
 					}
 					t.importManager.Add(path, "", true, actualPkgName)
 				}
@@ -1362,7 +1372,7 @@ func (t *galaASTTransformer) transformImportDeclaration(ctx *grammar.ImportDecla
 			// "type_alias_lib_match" but package declaration is "typealiaslib").
 			actualPkgName := ""
 			if t.richAST != nil {
-				actualPkgName = t.richAST.Packages[path]
+				actualPkgName = t.importPackageName(path)
 			}
 			t.importManager.Add(path, "", false, actualPkgName)
 		}
@@ -1571,7 +1581,7 @@ func (t *galaASTTransformer) transformFuncTypeSignature(ctx *grammar.SignatureCo
 							// Dot-imported package: use unqualified name
 							t.markDotImportUsed(pkg)
 							field.Type = ast.NewIdent(typeName)
-						} else if alias, ok := t.importManager.GetAlias(pkg); ok {
+						} else if alias, ok := t.packageQualifier(pkg); ok {
 							field.Type = &ast.SelectorExpr{X: ast.NewIdent(alias), Sel: ast.NewIdent(typeName)}
 						} else {
 							field.Type = ast.NewIdent(typeName)

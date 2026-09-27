@@ -77,6 +77,8 @@ func BuildLabels(n int) collection_immutable.Array[string] =
     collection_immutable.ArrayTabulate(n, (i) => s"row=$i")
 ```
 
+**Go and GALA packages with the same name.** GALA's `strings`, `io`, `json`, `path`, `fs`, `crypto` and `regex` share their names with Go packages. A type you write against your own Go import (`*strings.Builder` after `import "strings"`) is a Go type, so this error does not fire for it even if another file imports GALA's `strings`. When a *bare* name such as `Str` resolves to the GALA package through a sibling's dot import while this file's `strings` is the Go import, the hint says so, and tells you to import the GALA package here too: dot-imported, or under an alias such as `gstrings`.
+
 ---
 
 ## Why the rule exists

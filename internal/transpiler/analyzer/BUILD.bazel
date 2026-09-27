@@ -7,6 +7,7 @@ go_library(
         "cache.go",
         "cache_codec.go",
         "go_types.go",
+        "qualifiers.go",
         "undefined_symbol.go",
         "validation.go",
     ],
@@ -39,10 +40,12 @@ go_test(
         "concurrent_sibling_parse_test.go",
         "cross_file_method_import_test.go",
         "doc_metadata_test.go",
+        "go_qualifier_import_test.go",
         "go_sdk_bazel_test.go",
         "go_src_dirs_test.go",
         "go_types_debug_test.go",
         "go_types_test.go",
+        "import_name_test.go",
         "internal_import_test.go",
         "multipackage_panic_test.go",
         "package_val_infer_test.go",
@@ -59,10 +62,15 @@ go_test(
         # The undefined-symbol negative cases must genuinely resolve names
         # from these packages rather than have the check stand down on an
         # unloadable import, so their sources have to be in runfiles.
+        # strings (with its collection_mutable and lazy imports) backs the
+        # GALA-E0025 cases where a GALA package shares a Go package's name.
         "//collection_immutable:gala_sources",
+        "//collection_mutable:gala_sources",
         "//go_interop:types.go",
         "//io:gala_sources",
+        "//lazy:gala_sources",
         "//std:gala_sources",
+        "//strings:gala_sources",
         # std dot-imports go_builtins, so loading std pulls it in. If it is
         # not staged, that import fails under the Linux sandbox, which now
         # stands the undefined-symbol check down for every file — silently

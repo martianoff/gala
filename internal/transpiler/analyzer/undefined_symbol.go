@@ -209,17 +209,14 @@ type fileImport struct {
 	Tok antlr.Token
 }
 
-// LocalName is how the package is referred to in source: its alias when one was
-// given, otherwise the trailing segment of its path.
-func (fi fileImport) LocalName() string {
+// SpelledName is the alias, else the path's last segment, taken as written.
+// For one path, equal spelled names mean the same binding repeated, whatever
+// package name Go assigns — which is what the duplicate-import check keys on.
+func (fi fileImport) SpelledName() string {
 	if fi.Alias != "" {
 		return fi.Alias
 	}
-	name := fi.Path
-	if idx := strings.LastIndex(name, "/"); idx >= 0 {
-		name = name[idx+1:]
-	}
-	return name
+	return transpiler.LastPathSegment(fi.Path)
 }
 
 // scanFileImports decodes every import spec the file declares.
@@ -413,26 +410,38 @@ func (a *galaAnalyzer) fileImportsFullyLoaded(imports []fileImport, richAST *tra
 }
 
 // goPackageContributed reports whether the analyzer learned any symbol of the
-// Go package at `importPath`. Go metadata is keyed by package name, which is
-// the path's last segment for the overwhelming majority of packages; a package
-// that renames itself simply reads as "contributed nothing", which is the safe
-// answer for the caller.
+// Go package at `importPath`. Go metadata is keyed by package name: the real
+// one when the analyzer learned it (RichAST.GoImportNames), else one of the
+// names the path may bind. A package that renames itself beyond those simply
+// reads as "contributed nothing", which is the safe answer for the caller.
 func goPackageContributed(rich *transpiler.RichAST, importPath string) bool {
 	if rich == nil {
 		return false
 	}
-	name := importPath
-	if idx := strings.LastIndex(name, "/"); idx >= 0 {
-		name = name[idx+1:]
+	for _, n := range transpiler.ImportNames(importPath, "", rich.GoImportNames[importPath]) {
+		if n.Name != "" && (len(rich.GoExports[n.Name]) > 0 || goInfoDeclaresPackage(rich.GoTypeInfo, n.Name)) {
+			return true
+		}
 	}
-	if name == "" {
-		return false
+	return false
+}
+
+// goPackageName is the real name of the Go package at importPath, read from
+// its type info: whichever name the path may bind that the package's symbols
+// are filed under. Empty when none is.
+func goPackageName(gi *transpiler.GoTypeInfo, importPath string) string {
+	for _, n := range transpiler.ImportNames(importPath, "", "") {
+		if goInfoDeclaresPackage(gi, n.Name) {
+			return n.Name
+		}
 	}
-	if len(rich.GoExports[name]) > 0 {
-		return true
-	}
-	gi := rich.GoTypeInfo
-	if gi == nil {
+	return ""
+}
+
+// goInfoDeclaresPackage reports whether any symbol in gi is filed under the
+// package name `name`.
+func goInfoDeclaresPackage(gi *transpiler.GoTypeInfo, name string) bool {
+	if gi == nil || name == "" {
 		return false
 	}
 	prefix := name + "."
@@ -829,11 +838,17 @@ func collectQualifiers(imports []fileImport, rich *transpiler.RichAST) map[strin
 			addQualifierOf(q, k)
 		}
 	}
-	// This file's own imports: the alias when one is given, otherwise the
-	// trailing path segment — how a Go import is referenced.
+	// This file's own imports: every name each may bind (transpiler.ImportNames)
+	// — how a Go import is referenced.
 	for _, imp := range imports {
-		if name := imp.LocalName(); name != "" {
-			q[name] = true
+		pkgName := rich.GoImportNames[imp.Path]
+		if pkgName == "" {
+			pkgName = rich.Packages[imp.Path]
+		}
+		for _, n := range transpiler.ImportNames(imp.Path, imp.Alias, pkgName) {
+			if n.Name != "" {
+				q[n.Name] = true
+			}
 		}
 	}
 	return q

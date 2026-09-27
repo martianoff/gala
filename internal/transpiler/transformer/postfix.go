@@ -123,6 +123,16 @@ func (t *galaASTTransformer) resolveFieldAccess(base ast.Expr, selName string) (
 
 // isImmutableField checks if a field access should be auto-unwrapped via .Get().
 func (t *galaASTTransformer) isImmutableField(xType transpiler.Type, selExpr *ast.SelectorExpr, selName string) bool {
+	// A Go type has no Immutable fields. Its package NAME can match a GALA
+	// package (io/fs's `fs.FileInfo` beside GALA's `fs.FileInfo`), so the
+	// name-keyed lookups below must not see it.
+	base := xType
+	if p, ok := base.(transpiler.PointerType); ok {
+		base = p.Elem
+	}
+	if nt, ok := base.(transpiler.NamedType); ok && t.isGoTyped(nt) {
+		return false
+	}
 	xTypeName := xType.String()
 	baseTypeName := stripTypeNameDecorations(xTypeName)
 

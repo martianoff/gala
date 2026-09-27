@@ -48,10 +48,10 @@ func TestImportManager_AddWithAlias(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, "mylib", pkgName)
 
-	// GetAlias should return the alias for package name
-	alias, ok := m.GetAlias("mylib")
+	// Qualifier should return the aliased entry for the package name
+	q, ok := m.Qualifier("mylib")
 	assert.True(t, ok)
-	assert.Equal(t, "lib", alias)
+	assert.Equal(t, "lib", q.Alias)
 }
 
 func TestImportManager_DotImport(t *testing.T) {
@@ -85,7 +85,7 @@ func TestImportManager_AddFromPackages(t *testing.T) {
 	assert.True(t, m.IsPackage("std"))
 	assert.True(t, m.IsPackage("collection_immutable"))
 
-	path, ok := m.GetPath("std")
+	path, ok := m.PathForQualifier("std")
 	assert.True(t, ok)
 	assert.Equal(t, "martianoff/gala/std", path)
 }
@@ -104,10 +104,10 @@ func TestImportManager_UpdateActualPackageName(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, "realpkg", pkgName)
 
-	// GetAlias should work with new name
-	alias, ok := m.GetAlias("realpkg")
+	// Qualifier should work with new name
+	q, ok := m.Qualifier("realpkg")
 	assert.True(t, ok)
-	assert.Equal(t, "mypkg", alias)
+	assert.Equal(t, "mypkg", q.Alias)
 }
 
 func TestImportManager_DerivePkgNameFromPath(t *testing.T) {
@@ -238,4 +238,138 @@ func TestImportManager_AddFromPackagesSkipsExistingPaths(t *testing.T) {
 	entry, ok := m.GetByPath("martianoff/gala/std")
 	assert.True(t, ok)
 	assert.Equal(t, "mystd", entry.Alias) // First (explicit) one preserved
+}
+
+// TestImportManager_SamePathUnderTwoNames: Go allows one path to be imported
+// plainly and under an alias in the same file, and both names must resolve.
+// Only the implicit seed from AddFromPackages is replaced by an explicit import.
+func TestImportManager_SamePathUnderTwoNames(t *testing.T) {
+	m := transformer.NewImportManager()
+	m.AddFromPackages(map[string]string{"martianoff/gala/strings": "strings"})
+	m.Add("martianoff/gala/strings", "", false, "strings")
+	m.Add("martianoff/gala/strings", "gs", false, "strings")
+
+	for _, alias := range []string{"strings", "gs"} {
+		entry, ok := m.GetByAlias(alias)
+		if assert.True(t, ok, alias) {
+			assert.Equal(t, "martianoff/gala/strings", entry.Path)
+		}
+	}
+	entry, ok := m.GetByPath("martianoff/gala/strings")
+	assert.True(t, ok)
+	assert.Equal(t, "strings", entry.Alias, "GetByPath keeps the first explicit import")
+	assert.Len(t, m.All(), 2, "the implicit seed is replaced, the two explicit imports stay")
+}
+
+// TestImportManager_GalaImportOwnsSharedName: when a GALA import and a Go
+// import share a package name, Qualifier — which maps a GALA metadata package
+// name back to this file's qualifier — must answer with the GALA import's
+// alias whatever the declaration order.
+func TestImportManager_GalaImportOwnsSharedName(t *testing.T) {
+	for _, galaFirst := range []bool{true, false} {
+		m := transformer.NewImportManager()
+		m.AddFromPackages(map[string]string{"martianoff/gala/strings": "strings"})
+		if galaFirst {
+			m.Add("martianoff/gala/strings", "gs", false, "strings")
+			m.Add("strings", "", false, "")
+		} else {
+			m.Add("strings", "", false, "")
+			m.Add("martianoff/gala/strings", "gs", false, "strings")
+		}
+		m.UpdateActualPackageName("martianoff/gala/strings", "strings")
+		m.ClaimGalaPackageNames(map[string]bool{"martianoff/gala/strings": true})
+
+		q, ok := m.Qualifier("strings")
+		if assert.True(t, ok) {
+			assert.Equal(t, "gs", q.Alias, "galaFirst=%v", galaFirst)
+		}
+		goEntry, ok := m.GetByAlias("strings")
+		if assert.True(t, ok) {
+			assert.Equal(t, "strings", goEntry.Path, "the Go import still answers to its own name")
+		}
+	}
+}
+
+// TestImportManager_ImplicitGalaPackageGetsFreeQualifier: a GALA package this
+// file does not import (it reached the file through a sibling's imports) still
+// owns its package name for GALA lookups, but its qualifier must not collide
+// with a Go import of the same name that the file does declare.
+func TestImportManager_ImplicitGalaPackageGetsFreeQualifier(t *testing.T) {
+	m := transformer.NewImportManager()
+	m.AddFromPackages(map[string]string{"martianoff/gala/strings": "strings"})
+	m.Add("strings", "", false, "")
+	m.UpdateActualPackageName("martianoff/gala/strings", "strings")
+	m.ClaimGalaPackageNames(map[string]bool{"martianoff/gala/strings": true})
+
+	q, ok := m.Qualifier("strings")
+	if assert.True(t, ok) {
+		assert.Equal(t, "martianoff/gala/strings", q.Path)
+		assert.Equal(t, "gala_strings", q.Alias)
+		assert.True(t, q.Implicit())
+	}
+	goEntry, ok := m.GetByAlias("strings")
+	if assert.True(t, ok) {
+		assert.Equal(t, "strings", goEntry.Path)
+	}
+}
+
+// TestImportManager_TransitiveQualifier: a Go package the file does not import
+// gets its own name unless an import or another transitive import binds it.
+func TestImportManager_TransitiveQualifier(t *testing.T) {
+	m := transformer.NewImportManager()
+	m.Add("martianoff/gala/fs", "", false, "fs")
+	assert.Equal(t, "fs2", m.TransitiveQualifier("io/fs", "fs"))
+	m.AddTransitive("io/fs", "fs2")
+	assert.Equal(t, "fs2", m.TransitiveQualifier("io/fs", "fs"), "a path keeps the qualifier chosen for it")
+	assert.Equal(t, "io", m.TransitiveQualifier("io", "io"))
+}
+
+// TestImportManager_UnaliasedGoImportNames: an unaliased Go import answers to
+// its real package name when the analyzer learned it. Otherwise it answers to
+// every name its path may bind, since a `/vN` suffix does not settle the name
+// (math/rand/v2 is package rand, k8s.io/api/core/v1 is package v1), and a
+// guessed name never shadows a surer binding.
+func TestImportManager_UnaliasedGoImportNames(t *testing.T) {
+	cases := []struct {
+		path, realName string
+		unknownNames   []string
+	}{
+		{"k8s.io/api/core/v1", "v1", []string{"v1", "core"}},
+		{"math/rand/v2", "rand", []string{"v2", "rand"}},
+		{"gopkg.in/yaml.v3", "yaml", []string{"yaml"}},
+		{"github.com/mattn/go-sqlite3", "sqlite3", []string{"sqlite3"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.path, func(t *testing.T) {
+			known := transformer.NewImportManager()
+			known.Add(tc.path, "", false, tc.realName)
+			entry, ok := known.GetByAlias(tc.realName)
+			if assert.True(t, ok) {
+				assert.Equal(t, tc.path, entry.Path)
+				assert.Equal(t, tc.realName, entry.QualifierFor(tc.realName))
+			}
+
+			unknown := transformer.NewImportManager()
+			unknown.Add(tc.path, "", false, "")
+			for _, name := range tc.unknownNames {
+				entry, ok := unknown.GetByAlias(name)
+				if assert.True(t, ok, name) {
+					assert.Equal(t, tc.path, entry.Path)
+				}
+			}
+		})
+	}
+
+	// A guessed `core` from the k8s path does not shadow a package that
+	// really is `core`, declared after it.
+	m := transformer.NewImportManager()
+	m.Add("k8s.io/api/core/v1", "", false, "")
+	m.Add("example.com/core", "", false, "core")
+	entry, _ := m.GetByAlias("core")
+	assert.Equal(t, "example.com/core", entry.Path)
+	entry, _ = m.GetByAlias("v1")
+	assert.Equal(t, "k8s.io/api/core/v1", entry.Path)
+
+	aliased := transformer.NewImportManager().Add("math/rand/v2", "r2", false, "")
+	assert.Equal(t, "r2", aliased.QualifierFor("rand"), "a written alias wins")
 }

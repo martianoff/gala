@@ -1012,6 +1012,25 @@ func main() {
 		assert.Contains(t, err.Error(), `package "strings" is already imported at line 4`)
 	})
 
+	t.Run("go package repeated in one block beside a gala package of the same name", func(t *testing.T) {
+		// A merge can leave one import at the top and one at the bottom of a
+		// block; the repeat must be reported rather than reach codegen.
+		err := analyzeSources(t, `package main
+
+import (
+    "strings"
+    gs "martianoff/gala/strings"
+    "strings"
+)
+
+func main() {
+    Println(strings.TrimSpace(" x "), gs.S("ab").Fold(0, (n, c) => n + 1))
+}`, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "GALA-E0046")
+		assert.Contains(t, err.Error(), `package "strings" is already imported at line 4`)
+	})
+
 	t.Run("same package under two different aliases stays legal", func(t *testing.T) {
 		// Go permits this and it emits two distinct identifiers, so the check
 		// must key on the local name rather than the path alone.

@@ -496,25 +496,25 @@ func isUnresolvedType(t transpiler.Type) bool {
 	return false
 }
 
-// fileImportPaths maps the name a file refers to each import by (its alias, or the
-// last path segment) to that import's path.
+// fileImportPaths maps the names a file refers to each import by to that
+// import's path, ranked as transpiler.ImportNames describes.
 func fileImportPaths(f *ast.File) map[string]string {
-	out := make(map[string]string, len(f.Imports))
+	names := transpiler.NewRankedNames[string]()
 	for _, imp := range f.Imports {
 		if imp.Path == nil {
 			continue
 		}
 		path := strings.Trim(imp.Path.Value, `"`)
-		name := path
-		if idx := strings.LastIndex(name, "/"); idx != -1 {
-			name = name[idx+1:]
+		alias := ""
+		if imp.Name != nil {
+			if imp.Name.Name == "." {
+				continue
+			}
+			alias = imp.Name.Name
 		}
-		if imp.Name != nil && imp.Name.Name != "" && imp.Name.Name != "_" && imp.Name.Name != "." {
-			name = imp.Name.Name
-		}
-		out[name] = path
+		names.Bind(path, alias, "", path)
 	}
-	return out
+	return names.Map()
 }
 
 // funcDeclTypeParams returns the declaration's type-parameter names as a set, so
