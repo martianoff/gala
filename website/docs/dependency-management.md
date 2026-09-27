@@ -168,7 +168,7 @@ Each line contains:
 - Module path
 - Version
 - Optional file suffix (e.g., `/gala.mod`)
-- Hash prefix (`h1:`) and SHA-256 hash
+- Hash scheme and SHA-256 hash. `h2:` covers every file of the module except VCS metadata (`.git` and the like), so data files a build embeds are verified too. `h1:` is the earlier scheme and covers only `.gala`/`.go` sources, `gala.mod`, `go.sum` and `BUILD.bazel`; existing `h1:` entries still verify, and `gala mod tidy` rewrites them as `h2:`.
 
 ---
 
@@ -399,7 +399,7 @@ All GALA caches are stored in `~/.gala/`:
 | `build/<hash>/gen/` | Transpiled `.gen.go` files from your project |
 | `build/<hash>/deps/` | Transpiled GALA library dependencies |
 | `stdlib/v<version>/` | GALA standard library |
-| `pkg/mod/` | GALA module cache (`.gala` source files) |
+| `pkg/mod/` | GALA module cache: each module's full tree minus VCS metadata. `GALA_CACHE` moves it; `gala build` and the `gala mod` commands both use that location |
 | `go/pkg/mod/` | Go module cache |
 
 ---

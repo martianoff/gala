@@ -68,8 +68,8 @@ func parseLine(line string) (Entry, error) {
 
 	// Last part is the hash
 	hash := parts[len(parts)-1]
-	if !strings.HasPrefix(hash, "h1:") {
-		return Entry{}, fmt.Errorf("invalid hash format: expected 'h1:...'")
+	if !strings.HasPrefix(hash, hashPrefixH1) && !strings.HasPrefix(hash, hashPrefixH2) {
+		return Entry{}, fmt.Errorf("invalid hash format: expected 'h1:...' or 'h2:...'")
 	}
 
 	// First part is the path

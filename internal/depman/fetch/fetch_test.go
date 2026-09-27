@@ -81,9 +81,12 @@ func TestCache_Store(t *testing.T) {
 	require.NoError(t, err)
 	err = os.WriteFile(filepath.Join(sourceDir, "gala.mod"), []byte("module github.com/test/lib\n"), 0644)
 	require.NoError(t, err)
-	// This file should not be copied
+	// Non-source files are module content too (a build may embed them)...
 	err = os.WriteFile(filepath.Join(sourceDir, "README.md"), []byte("# Test\n"), 0644)
 	require.NoError(t, err)
+	// ...VCS metadata is not.
+	require.NoError(t, os.MkdirAll(filepath.Join(sourceDir, ".git"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, ".git", "HEAD"), []byte("ref: refs/heads/main\n"), 0644))
 
 	config := &Config{
 		CacheDir:    tmpDir,
@@ -99,7 +102,8 @@ func TestCache_Store(t *testing.T) {
 	modPath := config.ModulePath("github.com/test/lib", "v1.0.0")
 	assert.FileExists(t, filepath.Join(modPath, "lib.gala"))
 	assert.FileExists(t, filepath.Join(modPath, "gala.mod"))
-	assert.NoFileExists(t, filepath.Join(modPath, "README.md"))
+	assert.FileExists(t, filepath.Join(modPath, "README.md"))
+	assert.NoDirExists(t, filepath.Join(modPath, ".git"))
 }
 
 func TestCache_ListVersions(t *testing.T) {
@@ -158,7 +162,7 @@ func TestCache_Hash(t *testing.T) {
 	hash, err := cache.Hash("github.com/test/lib", "v1.0.0")
 	require.NoError(t, err)
 	assert.True(t, len(hash) > 3)
-	assert.True(t, hash[:3] == "h1:")
+	assert.True(t, hash[:3] == "h2:")
 }
 
 func TestCache_Remove(t *testing.T) {

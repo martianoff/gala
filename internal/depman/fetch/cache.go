@@ -88,7 +88,7 @@ func (c *Cache) ListVersions(modulePath string) ([]version.Version, error) {
 }
 
 // Store stores a module in the cache from a source directory.
-// It copies all .gala files and gala.mod to the cache.
+// It copies the module tree, minus VCS metadata, into the cache.
 //
 // The module is assembled in a private staging directory next to its final
 // location and published with a single rename, with the completion marker
@@ -221,23 +221,20 @@ func copyModuleFiles(sourceDir, destDir string) error {
 			return err
 		}
 
-		// Skip hidden directories
+		// The whole module tree is kept, minus VCS metadata: a build needs
+		// more than sources — `//go:embed` assets, templates and other data
+		// files — and a module fetched without them fails to build, or builds
+		// with the data missing. The set matches what sum.HashDir covers, so
+		// gala.sum verifies exactly what was stored.
 		if info.IsDir() {
-			name := info.Name()
-			if strings.HasPrefix(name, ".") || name == "vendor" || name == "testdata" {
+			if path != sourceDir && !sum.IsModuleContent(info.Name(), true) {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-
-		// Copy .gala files, .go files, gala.mod, go.sum, and BUILD.bazel
-		// .go files are needed for pure Go subpackages within GALA modules
-		ext := filepath.Ext(path)
-		name := info.Name()
-		if ext != ".gala" && ext != ".go" && name != "gala.mod" && name != "go.sum" && name != "BUILD.bazel" {
+		if !sum.IsModuleContent(info.Name(), false) {
 			return nil
 		}
-
 		// Calculate relative path
 		relPath, err := filepath.Rel(sourceDir, path)
 		if err != nil {

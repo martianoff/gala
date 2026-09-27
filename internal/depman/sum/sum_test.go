@@ -211,7 +211,7 @@ func TestHashDir(t *testing.T) {
 	hash1, err := HashDir(tmpDir)
 	require.NoError(t, err)
 	assert.True(t, len(hash1) > 3, "hash should not be empty")
-	assert.True(t, hash1[:3] == "h1:", "hash should start with h1:")
+	assert.True(t, hash1[:3] == "h2:", "hash should start with h2:")
 
 	hash2, err := HashDir(tmpDir)
 	require.NoError(t, err)
