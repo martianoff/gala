@@ -132,7 +132,7 @@ jobs:
         # list and the others stay independently green. Adding a layout: a
         # directory under tools/ci/cli_path/testdata, a fixture_<name>
         # function in run_fixtures.sh, and an entry here.
-        fixture: [root_main, cmd_app, nested, lib_only, gala_dep, sequence]
+        fixture: [root_main, cmd_app, nested, lib_only, go_subpkg, gala_dep, sequence]
     defaults:
       run:
         shell: bash

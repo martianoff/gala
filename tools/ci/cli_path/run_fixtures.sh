@@ -4,7 +4,7 @@
 #   GALA=/path/to/gala tools/ci/cli_path/run_fixtures.sh <work-dir> [fixture...]
 #
 # With no fixture names, every fixture runs. Fixtures: root_main, cmd_app,
-# nested, lib_only, gala_dep, sequence.
+# nested, lib_only, go_subpkg, gala_dep, sequence.
 #
 # Every other test lane builds GALA with Bazel from repo sources. Users build
 # with the CLI, which transpiles against the stdlib snapshot embedded in the
@@ -145,6 +145,17 @@ fixture_lib_only() {
   expect_line "tests ran" test.log '^ok '
 }
 
+# go_subpkg: a hand-written Go package inside the module, whose types reach
+# GALA code through inference.
+fixture_go_subpkg() {
+  local dir
+  dir=$(stage go_subpkg)
+  cd "$dir"
+  gala_ok build.log build || return 0
+  "$(exe "$dir/go_subpkg")" >out.txt
+  expect_output "built binary" expected.out out.txt
+}
+
 # gala_dep: a published GALA module in gala.mod, fetched from GitHub into the
 # empty GALA_HOME and built against. Needs network access.
 fixture_gala_dep() {
@@ -203,7 +214,7 @@ fixture_sequence() {
 
 fixtures=("$@")
 if [ ${#fixtures[@]} -eq 0 ]; then
-  fixtures=(root_main cmd_app nested lib_only gala_dep sequence)
+  fixtures=(root_main cmd_app nested lib_only go_subpkg gala_dep sequence)
 fi
 
 for name in "${fixtures[@]}"; do
