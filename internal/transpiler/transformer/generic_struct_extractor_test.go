@@ -133,7 +133,7 @@ func TestGenericStructExtractor(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			p := transpiler.NewAntlrGalaParser()
 			a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
-			trans := transpiler.NewGalaToGoTranspiler(p, a, transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator())
+			trans := newCheckedTranspiler(p, a, transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator())
 
 			got, err := trans.Transpile(genericStructExtractorPrelude+tt.body+"\n", "")
 			require.NoError(t, err)
@@ -152,7 +152,7 @@ func TestGenericStructExtractor(t *testing.T) {
 func TestGenericStructExtractorBindingTypeMismatch(t *testing.T) {
 	p := transpiler.NewAntlrGalaParser()
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
-	trans := transpiler.NewGalaToGoTranspiler(p, a, transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator())
+	trans := newCheckedTranspiler(p, a, transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator())
 
 	_, err := trans.Transpile(genericStructExtractorPrelude+`func main() {
     val b = Box[int](Md = A[int]((x) => x), In = Inner[int](X = 7))

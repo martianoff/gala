@@ -15,9 +15,7 @@ import (
 
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
-	"martianoff/gala/internal/transpiler/generator"
 	"martianoff/gala/internal/transpiler/gooracle"
-	"martianoff/gala/internal/transpiler/transformer"
 
 	"github.com/stretchr/testify/require"
 )
@@ -102,18 +100,30 @@ func (r *oracleRecorder) record(input, filePath, output string) {
 	r.mu.Unlock()
 }
 
+// oracleAllowance lets one known finding through: only when every finding the
+// rule reports for the output contains match, so a new, different failure in
+// the same test is still caught.
+type oracleAllowance struct {
+	reason string
+	match  string
+}
+
 // oracleAllowlist names tests whose output the oracle knowingly lets through,
 // keyed by test function and gooracle rule ("parse", a LeakRules name, or
-// "typecheck"). Each entry needs a reason. An entry that no longer matches
-// anything fails the run, so the list only shrinks.
-var oracleAllowlist = map[string]string{
+// "typecheck"). Each entry needs a reason and the text of the finding it
+// covers. An entry that no longer matches anything fails the run, so the list
+// only shrinks.
+var oracleAllowlist = map[string]oracleAllowance{
 	// A `val` holding a Go struct whose method has a pointer receiver:
 	// `val u = url.URL{...}; u.String()` lowers to `u.Get().String()`, and
 	// Immutable.Get() returns a non-addressable copy, so Go rejects it
 	// ("cannot call pointer method String on url.URL"). Fixing it needs the
 	// Go method set at the call site and an addressable temporary for the
 	// receiver — an open transpiler bug, not a fixture problem.
-	"TestGoImportedTypeStaysPartial/typecheck": "pointer-receiver Go method on a val-held struct",
+	"TestGoImportedTypeStaysPartial/typecheck": {
+		reason: "pointer-receiver Go method on a val-held struct",
+		match:  "cannot call pointer method String on url.URL",
+	},
 }
 
 func TestMain(m *testing.M) {
@@ -151,21 +161,27 @@ func runOracle() bool {
 
 	fail := func(o oracleOutput, rule string, findings []string) {
 		key := o.test + "/" + rule
-		if _, ok := oracleAllowlist[key]; ok {
+		if allow, ok := oracleAllowlist[key]; ok && allFindingsContain(findings, allow.match) {
 			usedAllow[key] = true
 			return
 		}
 		failures = append(failures, failure{o, rule, findings})
 	}
 
+	// Test/rule pairs a skipped type-check left unexamined: their allowlist
+	// entries cannot be judged stale on this run.
+	unexamined := map[string]bool{}
+
 	for _, o := range outputs {
 		tests[o.test] = true
 		// Identical outputs recur across table cases and shared fixtures;
-		// check each distinct output once.
-		if seen[o.output] {
+		// check each distinct output once per test, so a finding is always
+		// attributed to — and allowlisted for — the test that produced it.
+		seenKey := o.test + "\x00" + o.output
+		if seen[seenKey] {
 			continue
 		}
-		seen[o.output] = true
+		seen[seenKey] = true
 
 		byRule := map[string][]string{}
 		var rules []string
@@ -184,12 +200,14 @@ func runOracle() bool {
 
 		if reason := multiFileReason(o.filePath); reason != "" {
 			skipReasons[reason]++
+			unexamined[o.test+"/typecheck"] = true
 			continue
 		}
 		res := imp.TypeCheck("out.go", o.output)
 		switch {
 		case res.Skipped != "":
 			skipReasons[res.Skipped]++
+			unexamined[o.test+"/typecheck"] = true
 		case len(res.Errors) > 0:
 			fail(o, "typecheck", res.Errors)
 		default:
@@ -202,7 +220,7 @@ func runOracle() bool {
 	for _, n := range skipReasons {
 		skipped += n
 	}
-	fmt.Printf("gooracle: %d Transpile outputs from %d tests; %d distinct outputs parse+leak checked; "+
+	fmt.Printf("gooracle: %d Transpile outputs from %d tests; %d distinct outputs per test parse+leak checked; "+
 		"%d type-checked clean, %d type-check skipped, %d soft (unused) errors ignored\n",
 		len(outputs), len(tests), len(seen), typeChecked, skipped, softTotal)
 	reasons := make([]string, 0, len(skipReasons))
@@ -217,7 +235,7 @@ func runOracle() bool {
 	ok := true
 	var stale []string
 	for key := range oracleAllowlist {
-		if !usedAllow[key] {
+		if !usedAllow[key] && !unexamined[key] {
 			stale = append(stale, key)
 		}
 	}
@@ -244,6 +262,15 @@ func runOracle() bool {
 	return ok
 }
 
+func allFindingsContain(findings []string, match string) bool {
+	for _, f := range findings {
+		if !strings.Contains(f, match) {
+			return false
+		}
+	}
+	return len(findings) > 0
+}
+
 func runFiltered() bool {
 	for _, a := range os.Args[1:] {
 		if strings.HasPrefix(a, "-test.run") || strings.HasPrefix(a, "-test.skip") {
@@ -256,7 +283,9 @@ func runFiltered() bool {
 // multiFileReason explains why an output cannot be type-checked on its own
 // because it is one file of a larger package, or returns "".
 func multiFileReason(filePath string) string {
-	if filePath == "" {
+	// A bare file name ("main.gala") names no package directory; reading "."
+	// would find the test's own sources and skip every such output.
+	if filePath == "" || filepath.Dir(filePath) == "." {
 		return ""
 	}
 	entries, err := os.ReadDir(filepath.Dir(filePath))
@@ -281,13 +310,12 @@ func multiFileReason(filePath string) string {
 // newOracleImporter resolves the Go standard library from the SDK the analyzer
 // found, and every GALA package under this module from source.
 func newOracleImporter() *gooracle.Importer {
+	// One pipeline for every imported file, so the analyzer's package cache
+	// is shared instead of reloading std's metadata once per file.
+	trans, _ := newCorpusTranspiler()
 	cfg := gooracle.ImporterConfig{
 		ModulePath: "martianoff/gala",
-		Transpile: func(src, path string) (string, error) {
-			p := transpiler.NewAntlrGalaParser()
-			a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
-			return transpiler.NewGalaToGoTranspiler(p, a, transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator()).Transpile(src, path)
-		},
+		Transpile:  trans.Transpile,
 	}
 	if roots := getStdSearchPath(); len(roots) > 0 {
 		cfg.Root = roots[0]
@@ -356,7 +384,10 @@ func TestOracleCoversEveryTranspiler(t *testing.T) {
 			offenders = append(offenders, f+" (calls Generate without checkGeneratedGo)")
 		}
 	}
-	require.Empty(t, offenders, "these tests produce Go the generated-Go oracle never sees")
+	require.Empty(t, offenders, "these tests produce Go the generated-Go oracle never sees: build the "+
+		"transpiler with newCheckedTranspiler (same arguments as transpiler.NewGalaToGoTranspiler), pass "+
+		"Generate output through checkGeneratedGo, or, for a file whose output another check covers, add "+
+		"it to unwrappedTranspilerFiles with the reason")
 }
 
 // TestGeneratedGoOracleCorpus runs the oracle's parse and leak check over

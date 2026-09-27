@@ -47,6 +47,11 @@ func TestT1PhantomTypeParamFallback(t *testing.T) {
 			want: "magic[bool]()",
 		},
 		{
+			name: "a parameter of the same name shadows the generic function",
+			body: "func call(magic func() int) int = magic()\n\nfunc main() {\n    Println(call(() => 1))\n}",
+			want: "return magic()",
+		},
+		{
 			name:    "nothing pins T",
 			body:    "func main() {\n    val r = magic()\n    Println(r)\n}",
 			wantErr: "cannot infer type parameter T of magic()",
