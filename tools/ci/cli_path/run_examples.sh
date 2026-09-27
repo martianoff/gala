@@ -47,9 +47,13 @@ run_one() {
   echo "ok   $name"
 }
 
+# Each example writes its report to a file of its own: concurrent appends to
+# one shared file interleave and leave gaps under Git Bash on Windows.
 if [ "${1:-}" = "--one" ]; then
-  run_one "$2" "$3"
-  exit
+  mkdir -p "$2/ex/$3"
+  run_one "$2" "$3" >"$2/ex/$3.result" 2>&1 || true
+  head -1 "$2/ex/$3.result"
+  exit 0
 fi
 
 work=${1:?usage: run_examples.sh <work-dir>}
@@ -75,20 +79,31 @@ total=$(wc -l <"$list")
 echo "Running $total examples with $jobs concurrent jobs; GALA_HOME=$GALA_HOME"
 
 start=$(date +%s)
-results="$work/results.txt"
+rm -rf "$work/ex"
 # The first example runs alone, so the stdlib is extracted and compiled once
 # rather than raced by every job at startup; everything after it still runs
-# concurrently against the shared GALA_HOME.
-run_one "$work" "$(head -1 "$list")" >"$results" 2>&1 || true
-tail -n +2 "$list" |
-  xargs -P "$jobs" -n 1 bash "${BASH_SOURCE[0]}" --one "$work" >>"$results" 2>&1 || true
-cat "$results"
-ran=$(grep -cE '^(ok  |FAIL )' "$results" || true)
-fails=$(grep -c '^FAIL ' "$results" || true)
+# concurrently against the shared GALA_HOME. Progress lines stream as they
+# finish; the full report is assembled afterwards in list order.
+bash "${BASH_SOURCE[0]}" --one "$work" "$(head -1 "$list")"
+tail -n +2 "$list" | xargs -P "$jobs" -n 1 bash "${BASH_SOURCE[0]}" --one "$work" || true
+
+ran=0
+fails=0
+while read -r name; do
+  report="$work/ex/$name.result"
+  [ -f "$report" ] || continue
+  ran=$((ran + 1))
+  if [ "$(head -c 4 "$report")" = "FAIL" ]; then
+    fails=$((fails + 1))
+    echo
+    cat "$report"
+    echo "::error::$(head -1 "$report")"
+  fi
+done <"$list"
 echo
 echo "examples: $total listed, $ran run, $fails failed, $(( $(date +%s) - start ))s"
-if [ "$fails" -gt 0 ] || [ "$ran" -ne "$total" ]; then
-  grep '^FAIL ' "$results" | sed 's/^/::error::/' || true
-  [ "$ran" -eq "$total" ] || echo "::error::only $ran of $total examples reported a result"
+if [ "$ran" -ne "$total" ]; then
+  echo "::error::only $ran of $total examples produced a result"
   exit 1
 fi
+[ "$fails" -eq 0 ]
