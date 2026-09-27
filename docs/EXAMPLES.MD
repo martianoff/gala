@@ -457,6 +457,23 @@ func main() {
 }
 ```
 
+A tuple arm made only of wildcards and bindings (or nested such tuples) matches every value, so it closes a match too:
+
+```gala
+package main
+
+func divmod(a int, b int) Tuple3[int, int, string] =
+    if (b == 0) (0, 0, "division by zero") else (a / b, a % b, "ok")
+
+func main() {
+    val result = divmod(17, 0) match {
+        case (q, r, "ok") => s"$q remainder $r"
+        case (_, _, err)  => s"Error: $err"   // covers every other Tuple3
+    }
+    Println(result)
+}
+```
+
 ## For Loops
 
 GALA supports Go-style `for` in its familiar forms: a three-clause counting loop

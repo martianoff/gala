@@ -4,12 +4,8 @@ package main
 // nested tuple of those always matches, so it closes a match without an
 // explicit `case _ =>` default.
 
-func divmod(a int, b int) Tuple3[int, int, string] {
-    if (b == 0) {
-        return (0, 0, "division by zero")
-    }
-    return (a / b, a % b, "ok")
-}
+func divmod(a int, b int) Tuple3[int, int, string] =
+    if (b == 0) (0, 0, "division by zero") else (a / b, a % b, "ok")
 
 func describe(a int, b int) string = divmod(a, b) match {
     case (q, r, "ok") => s"$q remainder $r"

@@ -104,6 +104,38 @@ func main() {
 			wantCode: galaerr.CodeMissingDefault,
 		},
 		{
+			// A lowercase name that is a zero-field variant of the element's
+			// sealed type is a variant test, not a binding.
+			name: "lowercase sealed variant element still needs a default",
+			body: `sealed type St {
+    case idle()
+    case busy(N int)
+}
+
+func show(p Tuple[St, int]) string = p match {
+    case (busy(n), 0) => s"busy $n"
+    case (idle, x)    => s"idle $x"
+}
+
+func main() {
+    Println(show((idle(), 1)))
+}`,
+			wantCode: galaerr.CodeMissingDefault,
+		},
+		{
+			// A tuple pattern shorter than its subject reads only the first
+			// elements; it must not close the match.
+			name: "tuple pattern shorter than the subject still needs a default",
+			body: `func main() {
+    val result = divmod(10, 3) match {
+        case (q, r, "ok") => s"$q remainder $r"
+        case (q, r)       => s"$q $r"
+    }
+    Println(result)
+}`,
+			wantCode: galaerr.CodeMissingDefault,
+		},
+		{
 			name: "nested refutable tuple still needs a default",
 			body: `func classify(p Tuple[int, Tuple[string, bool]]) string = p match {
     case (n, (label, true)) => s"$n $label"

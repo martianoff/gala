@@ -958,7 +958,7 @@ val label = if (count > 1) {
 Both forms compile to a Go IIFE (immediately invoked function expression), so they can be used anywhere an expression is expected: `val` initializers, function arguments, return values, etc.
 
 ### Match Expression
-The `match` expression provides powerful pattern matching, supporting literals, variable bindings, and extractors. GALA follows Scala semantics for pattern matching, where the pattern (or an extractor) is responsible for matching against the object. A default case (`_`) is required unless matching on a sealed type with all variants covered (exhaustive match) or matching on boolean values with both `true` and `false` cases. An unguarded arm that matches every value serves as the default: `case _`, a plain binding (`case n`), or a tuple pattern whose every element is a wildcard, a binding, or a nested such tuple (`case (_, _, err)` over a `Tuple3`).
+The `match` expression provides powerful pattern matching, supporting literals, variable bindings, and extractors. GALA follows Scala semantics for pattern matching, where the pattern (or an extractor) is responsible for matching against the object. A default case (`_`) is required unless matching on a sealed type with all variants covered (exhaustive match) or matching on boolean values with both `true` and `false` cases. An unguarded arm that matches every value serves as the default: `case _`, a plain binding (`case n`), or a tuple pattern of the subject's arity whose every element is a wildcard, a binding, or a nested such tuple (`case (_, _, err)` over a `Tuple3`).
 
 ```gala
 val result = x match {

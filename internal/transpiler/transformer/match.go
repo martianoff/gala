@@ -103,29 +103,39 @@ func extractVariantName(patternText string) string {
 	return name
 }
 
-// hasIrrefutableTupleArm reports whether any unguarded case clause is an
-// irrefutable tuple pattern (see isIrrefutableTuplePattern) whose arity
-// matches the matched tuple type. Such an arm matches every value, so the
-// match needs no explicit default.
-func (t *galaASTTransformer) hasIrrefutableTupleArm(caseClauses []grammar.ICaseClauseContext, matchedType transpiler.Type) bool {
+// armMatchesEverything reports whether a lowered case clause (see
+// transformCaseClauseWithType) tests nothing: its condition is the constant
+// `true`, so it matches every value. The decision reads the lowering itself, so
+// every pattern rule — a lowercase sealed variant, a zero-field extractor, a
+// literal — counts exactly as it runs. A guard makes the condition a
+// conjunction, never the bare constant.
+func armMatchesEverything(clause ast.Stmt) bool {
+	if block, ok := clause.(*ast.BlockStmt); ok && len(block.List) > 0 {
+		clause = block.List[len(block.List)-1]
+	}
+	ifStmt, ok := clause.(*ast.IfStmt)
+	return ok && isLiteralTrue(ifStmt.Cond)
+}
+
+// isTuplePatternOfSubjectArity reports whether a case pattern is the
+// parenthesized tuple syntax `(p1, …, pn)` and the subject is a Tuple of the
+// same arity. A tuple pattern shorter than its subject also lowers to an
+// unconditional clause (it reads only the first elements), so the arity has to
+// match before such an arm may close the match.
+func (t *galaASTTransformer) isTuplePatternOfSubjectArity(pat grammar.IPatternContext, matchedType transpiler.Type) bool {
+	exprPat, ok := pat.(*grammar.ExpressionPatternContext)
+	if !ok {
+		return false
+	}
+	p := t.getPrimaryFromExpression(exprPat.Expression())
+	if p == nil || p.TupleExpressionList() == nil {
+		return false
+	}
 	genType, ok := matchedType.(transpiler.GenericType)
 	if !ok || genType.Base == nil || !isTupleTypeName(stripStdPrefix(genType.Base.BaseName())) {
 		return false
 	}
-	for _, cc := range caseClauses {
-		ccCtx, ok := cc.(*grammar.CaseClauseContext)
-		if !ok || ccCtx.GetGuard() != nil {
-			continue
-		}
-		pat := ccCtx.Pattern().GetText()
-		if !isIrrefutableTuplePattern(pat) {
-			continue
-		}
-		if elems, _ := splitTuplePatternElements(pat); len(elems) == len(genType.Params) {
-			return true
-		}
-	}
-	return false
+	return len(p.TupleExpressionList().AllExpression()) == len(genType.Params)
 }
 
 // unreachableDefaultBody is the synthetic `panic("unreachable")` else-branch

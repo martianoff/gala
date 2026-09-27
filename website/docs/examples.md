@@ -403,6 +403,15 @@ val desc = flag match {
 }
 ```
 
+A tuple arm made only of wildcards and bindings (or nested such tuples) matches every value, so it closes a match too:
+
+```gala
+val result = divmod(17, 0) match {
+    case (q, r, "ok") => s"$q remainder $r"
+    case (_, _, err)  => s"Error: $err"   // covers every other Tuple3
+}
+```
+
 ## Void Closures and Lambda Parameter Inference
 
 Functions can accept void closures (no return value), and lambda parameter types can be inferred from context. Prefer omitting parameter types in lambdas — the compiler infers them from the method signature:
