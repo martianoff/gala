@@ -1235,49 +1235,6 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		}
 	}
 
-	// 1.6 Reject struct field names that collide with another type's name in
-	// the same package, but ONLY when both the containing struct and the
-	// shadowed type are generic. The IIFE param-type generator produces
-	// invalid Go (duplicated type args, e.g. `Mode[T][T]`) when a method
-	// receiver's `match` scrutinee is a field whose name shadows a generic
-	// type in scope; without generics on either side, the codegen works.
-	// Narrowing to "both generic" preserves legitimate non-generic patterns
-	// like `struct Route(Handler Handler)`.
-	for _, meta := range richAST.Types {
-		if meta.Package != pkgName || meta.DefinedIn != filePath {
-			continue
-		}
-		if len(meta.FieldNames) == 0 || len(meta.TypeParams) == 0 {
-			continue
-		}
-		for _, fieldName := range meta.FieldNames {
-			otherFullName := fieldName
-			if pkgName != "" && pkgName != "main" && pkgName != "test" {
-				otherFullName = pkgName + "." + fieldName
-			}
-			otherMeta, ok := richAST.Types[otherFullName]
-			if !ok || otherMeta.Package != pkgName {
-				continue
-			}
-			// A field named after the struct's own type is a separate concern; skip.
-			if otherMeta.Name == meta.Name {
-				continue
-			}
-			// Only flag when the shadowed type is itself generic — that's the
-			// case where the IIFE param-type doubling kicks in.
-			if len(otherMeta.TypeParams) == 0 {
-				continue
-			}
-			pos := meta.FieldPositions[fieldName]
-			return nil, galaerr.NewCodedSemanticError(
-				galaerr.CodeFieldNameCollidesWithType,
-				pos.Line, pos.Column,
-				fmt.Sprintf("field %q in generic %q shares its name with generic type %q in package %q", fieldName, meta.Name, otherMeta.Name, pkgName),
-				fmt.Sprintf("rename the field (e.g. %q → %q) so it does not shadow the type name", fieldName, "M"),
-			)
-		}
-	}
-
 	// decls remembers which file of this package declared each method and each
 	// top-level function, for the duration of this call. Section 2 below fills
 	// it from the file being analyzed; the sibling-metadata pass (section 2.5)

@@ -316,120 +316,142 @@ func (p Person) Greet() string = fmt.Sprintf("Hi %s", p.Name)
 	})
 }
 
-func TestStructFieldNameCollidesWithType(t *testing.T) {
+// A struct field may share its name with a type of the same package, generic
+// or not. The analyzer accepts the declaration and records the field's type as
+// declared — the field name never stands in for the type in type position.
+func TestStructFieldNamedLikeTypeIsAccepted(t *testing.T) {
 	p := transpiler.NewAntlrGalaParser()
 	searchPaths := getStdSearchPath()
 
-	t.Run("field name matches sealed type in same file", func(t *testing.T) {
-		// Repro for the IIFE param-type doubling bug surfaced by gala-tui:
-		// `func (b Box[T]) Run() T = b.Mode match { ... }` emits
-		// `func(obj Mode[T][T]) T {...}` (invalid Go) when the field is named
-		// after its sealed type. We reject at the analyzer instead.
-		tmpDir := t.TempDir()
-		src := `package mylib
+	const types = `package mylib
 
 sealed type Mode[T any] {
     case A(Fn func(int) T)
     case B(Fn func(string) T)
 }
 
-struct Box[T any](Mode Mode[T])
-`
-		filePath := filepath.Join(tmpDir, "file.gala")
-		require.NoError(t, os.WriteFile(filePath, []byte(src), 0644))
-
-		a := analyzer.NewGalaAnalyzer(p, searchPaths)
-		tree, _, err := p.Parse(src)
-		require.NoError(t, err)
-		_, err = a.Analyze(tree, nil, filePath)
-		require.Error(t, err, "should reject field named after a sealed type")
-		assert.Contains(t, err.Error(), "GALA-E0016")
-		assert.Contains(t, err.Error(), `"Mode"`)
-		assert.Contains(t, err.Error(), `"Box"`)
-	})
-
-	t.Run("field name matches generic struct in same file", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		src := `package mylib
-
 struct Inner[T any](X T)
 
-struct Outer[T any](Inner Inner[T])
-`
-		filePath := filepath.Join(tmpDir, "file.gala")
-		require.NoError(t, os.WriteFile(filePath, []byte(src), 0644))
-
-		a := analyzer.NewGalaAnalyzer(p, searchPaths)
-		tree, _, err := p.Parse(src)
-		require.NoError(t, err)
-		_, err = a.Analyze(tree, nil, filePath)
-		require.Error(t, err, "should reject field named after another generic struct in same package")
-		assert.Contains(t, err.Error(), "GALA-E0016")
-		assert.Contains(t, err.Error(), `"Inner"`)
-	})
-
-	t.Run("non-generic field-type collision is allowed", func(t *testing.T) {
-		// Pre-existing pattern in examples/cross_file_unwrap/types.gala —
-		// `struct Route(Handler Handler)` works fine because no type-param
-		// substitution is needed. Stay narrow: only flag when both the
-		// containing struct and the shadowed type are generic.
-		tmpDir := t.TempDir()
-		src := `package mylib
-
 struct Handler(Name string)
-
-struct Route(Method string, Pattern string, Handler Handler)
 `
-		filePath := filepath.Join(tmpDir, "file.gala")
-		require.NoError(t, os.WriteFile(filePath, []byte(src), 0644))
+	tests := []struct {
+		name      string
+		decl      string
+		typeName  string
+		fieldName string
+		fieldType string
+	}{
+		{
+			name:      "generic struct field named like a generic sealed type",
+			decl:      `struct Box[T any](Mode Mode[T])`,
+			typeName:  "mylib.Box",
+			fieldName: "Mode",
+			fieldType: "mylib.Mode[T]",
+		},
+		{
+			name:      "generic struct field named like a generic struct",
+			decl:      `struct Outer[T any](Inner Inner[T])`,
+			typeName:  "mylib.Outer",
+			fieldName: "Inner",
+			fieldType: "mylib.Inner[T]",
+		},
+		{
+			name:      "two type parameters",
+			decl:      `struct Harness[M any, T any](Inner Inner[M], Mode Mode[T])`,
+			typeName:  "mylib.Harness",
+			fieldName: "Mode",
+			fieldType: "mylib.Mode[T]",
+		},
+		{
+			name:      "non-generic struct field named like a generic type",
+			decl:      `struct Plain(Mode Mode[int])`,
+			typeName:  "mylib.Plain",
+			fieldName: "Mode",
+			fieldType: "mylib.Mode[int]",
+		},
+		{
+			name:      "non-generic struct field named like a non-generic type",
+			decl:      `struct Route(Method string, Handler Handler)`,
+			typeName:  "mylib.Route",
+			fieldName: "Handler",
+			fieldType: "mylib.Handler",
+		},
+		{
+			name:      "field named like its own struct",
+			decl:      `struct Foo(Foo int)`,
+			typeName:  "mylib.Foo",
+			fieldName: "Foo",
+			fieldType: "int",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			src := types + "\n" + tc.decl + "\n"
+			filePath := filepath.Join(t.TempDir(), "file.gala")
+			require.NoError(t, os.WriteFile(filePath, []byte(src), 0644))
 
-		a := analyzer.NewGalaAnalyzer(p, searchPaths)
-		tree, _, err := p.Parse(src)
-		require.NoError(t, err)
-		_, err = a.Analyze(tree, nil, filePath)
-		assert.NoError(t, err, "non-generic field-type collision should not trigger E0016")
-	})
+			a := analyzer.NewGalaAnalyzer(p, searchPaths)
+			tree, _, err := p.Parse(src)
+			require.NoError(t, err)
+			richAST, err := a.Analyze(tree, nil, filePath)
+			require.NoError(t, err)
 
-	t.Run("field named after own struct is allowed", func(t *testing.T) {
-		// `struct Foo(Foo int)` is non-idiomatic but does not trigger the
-		// IIFE codegen bug; Go itself accepts it. Stay narrow and pass it.
-		tmpDir := t.TempDir()
-		src := `package mylib
-
-struct Foo(Foo int)
-`
-		filePath := filepath.Join(tmpDir, "file.gala")
-		require.NoError(t, os.WriteFile(filePath, []byte(src), 0644))
-
-		a := analyzer.NewGalaAnalyzer(p, searchPaths)
-		tree, _, err := p.Parse(src)
-		require.NoError(t, err)
-		_, err = a.Analyze(tree, nil, filePath)
-		assert.NoError(t, err, "self-named field should not trigger E0016")
-	})
-
-	t.Run("renamed field passes (positive control)", func(t *testing.T) {
-		// User's gala-tui Harness pattern — field `Mode` on `Harness[M, T]` whose
-		// type is `HarnessMode[T]` (different identifier). Should compile.
-		tmpDir := t.TempDir()
-		src := `package mylib
-
-sealed type HarnessMode[T any] {
-    case KeyMode(Fn func(int) T)
-    case FullMode(Fn func(string) T)
+			meta, ok := richAST.Types[tc.typeName]
+			require.True(t, ok, "%s should exist in Types", tc.typeName)
+			fType, ok := meta.Fields[tc.fieldName]
+			require.True(t, ok, "field %s should be recorded", tc.fieldName)
+			assert.Equal(t, tc.fieldType, fType.String())
+		})
+	}
 }
 
-struct Harness[M any, T any](Mode HarnessMode[T])
-`
-		filePath := filepath.Join(tmpDir, "file.gala")
-		require.NoError(t, os.WriteFile(filePath, []byte(src), 0644))
+// The same holds when the type is declared in a sibling file of the package:
+// a struct field and a sealed-variant field named like that generic type are
+// accepted and keep their declared types.
+func TestFieldNamedLikeTypeFromSiblingFileIsAccepted(t *testing.T) {
+	p := transpiler.NewAntlrGalaParser()
+	tmpDir := t.TempDir()
 
-		a := analyzer.NewGalaAnalyzer(p, searchPaths)
-		tree, _, err := p.Parse(src)
-		require.NoError(t, err)
-		_, err = a.Analyze(tree, nil, filePath)
-		assert.NoError(t, err, "field name distinct from type name should compile")
-	})
+	typesPath := filepath.Join(tmpDir, "types.gala")
+	require.NoError(t, os.WriteFile(typesPath, []byte(`package mylib
+
+sealed type Mode[T any] {
+    case A(Fn func(int) T)
+    case B(Fn func(string) T)
+}
+`), 0644))
+
+	mainSrc := `package mylib
+
+struct Box[T any](Mode Mode[T])
+
+sealed type Slot[T any] {
+    case Filled(Mode Mode[T])
+    case Vacant()
+}
+`
+	mainPath := filepath.Join(tmpDir, "main.gala")
+	require.NoError(t, os.WriteFile(mainPath, []byte(mainSrc), 0644))
+
+	a := analyzer.NewGalaAnalyzerWithPackageFiles(p, getStdSearchPath(), []string{typesPath})
+	tree, _, err := p.Parse(mainSrc)
+	require.NoError(t, err)
+	richAST, err := a.Analyze(tree, nil, mainPath)
+	require.NoError(t, err)
+
+	box, ok := richAST.Types["mylib.Box"]
+	require.True(t, ok, "mylib.Box should exist in Types")
+	require.Contains(t, box.Fields, "Mode")
+	assert.Equal(t, "mylib.Mode[T]", box.Fields["Mode"].String())
+
+	slot, ok := richAST.Types["mylib.Slot"]
+	require.True(t, ok, "mylib.Slot should exist in Types")
+	require.NotEmpty(t, slot.SealedVariants)
+	filled := slot.SealedVariants[0]
+	require.Equal(t, "Filled", filled.Name)
+	require.Equal(t, []string{"Mode"}, filled.FieldNames)
+	require.Len(t, filled.FieldTypes, 1)
+	assert.Equal(t, "mylib.Mode[T]", filled.FieldTypes[0].String())
 }
 
 func TestTypeRedefinitionError(t *testing.T) {

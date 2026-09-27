@@ -501,6 +501,22 @@ val b = Box[int](Value = 42)
 val p = Pair(First = 1, Second = "two") // type params inferred from arguments
 ```
 
+A field may share its name with a type, generic or not. In type position the name always means the type, so `b.Mode` below is the field and `Mode[T]` is the sealed type:
+
+```gala
+sealed type Mode[T any] {
+    case Count(Fn func(int) T)
+    case Text(Fn func(string) T)
+}
+
+struct Box[T any](Mode Mode[T])
+
+func (b Box[T]) Run(n int) T = b.Mode match {
+    case Count(fn) => fn(n)
+    case Text(fn) => fn(s"$n")
+}
+```
+
 #### Block Struct Declaration
 Traditional Go-style declaration.
 

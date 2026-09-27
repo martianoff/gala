@@ -75,8 +75,8 @@ Because the resulting failure surfaced in generated code, it pointed at a line
 the author never wrote. Rejecting in the analyzer keeps the error on the
 declaration.
 
-**Scope.** Fields within one struct declaration. A field name that collides with
-a *type* name in the same package is [GALA-E0016](GALA-E0016.md); duplicate
+**Scope.** Fields within one struct declaration. A field may share its name with
+a *type* of the same package — that is not a redeclaration. Duplicate
 sealed-variant case names are [GALA-E0031](GALA-E0031.md).
 
 **Related redeclaration codes.** [GALA-E0011](GALA-E0011.md) types · [GALA-E0012](GALA-E0012.md) methods · [GALA-E0027](GALA-E0027.md) functions · [GALA-E0028](GALA-E0028.md) type aliases · [GALA-E0029](GALA-E0029.md) interface method specs · [GALA-E0030](GALA-E0030.md) struct fields · [GALA-E0031](GALA-E0031.md) sealed cases.

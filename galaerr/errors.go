@@ -171,12 +171,9 @@ const (
 	// pattern-match on the value first and then return outside the match).
 	CodeBareReturnInValueMatch ErrorCode = "GALA-E0015"
 
-	// E0016: a struct field's name collides with a type name in the same
-	// package. The transpiler's IIFE param-type generator can produce
-	// invalid Go (e.g., duplicated type args like `Mode[T][T]`) when the
-	// collided type appears in a `match` on the field; rejecting at the
-	// analyzer keeps the failure local and points to a rename.
-	CodeFieldNameCollidesWithType ErrorCode = "GALA-E0016"
+	// E0016 is retired and its number is not reused. It rejected a generic
+	// struct field named like another generic type of the same package; such
+	// fields are now accepted.
 
 	// E0017: an unhandled panic inside the transformer was caught and
 	// surfaced as a coded error. Indicates a transpiler bug; the user is
