@@ -88,15 +88,67 @@ func (c *Cache) ListVersions(modulePath string) ([]version.Version, error) {
 
 // Store stores a module in the cache from a source directory.
 // It copies all .gala files and gala.mod to the cache.
+//
+// The module is assembled in a private staging directory next to its final
+// location and published with a single rename, with the completion marker
+// already inside (see IsCompleteModuleDir). Copying straight into the final
+// directory made the module visible — and, since presence was all the cache
+// checked, trusted — from its first file on: a fetch that was interrupted, or
+// that another process read while it was still copying, left a partial module
+// that was never fetched again.
+//
+// Two processes storing the same version each stage their own copy; the first
+// rename wins and the other discards its copy.
 func (c *Cache) Store(modulePath, ver, sourceDir string) error {
 	destDir := c.config.ModulePath(modulePath, ver)
 
-	// Create destination directory
-	if err := os.MkdirAll(destDir, 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(destDir), 0755); err != nil {
 		return fmt.Errorf("failed to create cache directory: %w", err)
 	}
+	// A dot-prefixed sibling: on the same filesystem, so the rename is atomic,
+	// and invisible to ListVersions' "<module>@*" glob and to source walks.
+	staging, err := os.MkdirTemp(filepath.Dir(destDir), "."+filepath.Base(destDir)+".staging-")
+	if err != nil {
+		return fmt.Errorf("failed to create cache staging directory: %w", err)
+	}
+	defer os.RemoveAll(staging) // no-op once the rename succeeds
 
-	// Walk source directory and copy relevant files
+	if err := copyModuleFiles(sourceDir, staging); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(staging, completeMarkerName), nil, 0644); err != nil {
+		return fmt.Errorf("failed to mark cached module complete: %w", err)
+	}
+	return publishModuleDir(staging, destDir)
+}
+
+// publishModuleDir moves a fully staged module into place.
+func publishModuleDir(staging, destDir string) error {
+	if IsCompleteModuleDir(destDir) {
+		return nil // another process published this version first
+	}
+	// A directory without the marker was left by an interrupted fetch (or by a
+	// gala that predates the marker). It cannot be trusted, and a directory
+	// cannot be renamed over it, so it goes. The completeness check is repeated
+	// right before the delete so a copy another process just published is not
+	// the one removed.
+	if _, err := os.Stat(destDir); err == nil && !IsCompleteModuleDir(destDir) {
+		if err := os.RemoveAll(destDir); err != nil {
+			return fmt.Errorf("failed to remove incomplete cached module %s: %w", destDir, err)
+		}
+	}
+	if err := os.Rename(staging, destDir); err != nil {
+		if IsCompleteModuleDir(destDir) {
+			return nil // lost the race to a concurrent fetch of the same version
+		}
+		return fmt.Errorf("failed to publish cached module %s: %w", destDir, err)
+	}
+	return nil
+}
+
+// copyModuleFiles copies the files a cached module keeps from sourceDir into
+// destDir.
+func copyModuleFiles(sourceDir, destDir string) error {
 	return filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
