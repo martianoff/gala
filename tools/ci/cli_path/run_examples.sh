@@ -84,7 +84,7 @@ jobs=${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)}
 # gala_deps. Built without spawning a process per example: that alone takes
 # minutes on a Windows runner.
 list="$work/examples.txt"
-needs_module=" $(cd "$repo/examples" && grep -l '"martianoff/gala/examples/' -- *.gala | tr '\n' ' ') "
+needs_module=" $(cd "$repo/examples" && grep -rl --include='*.gala' '"martianoff/gala/examples/' . | sed 's|^\./||' | tr '\n' ' ') "
 : >"$list"
 while read -r src expected; do
   case "$needs_module" in *" $src "*) continue ;; esac
