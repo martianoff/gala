@@ -4,12 +4,47 @@ on:
   release:
     types: [created]
 
+# Read-only by default; only the job that attaches assets to the release
+# gets write access.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
+  # A release tag must name the version the repo declares. Without this gate a
+  # tag pushed before the version bump (or with a typo) ships binaries whose
+  # `gala version` disagrees with gala.mod and with the Bazel module the
+  # registry serves under that tag.
+  verify-version:
+    name: Verify tag matches declared version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Compare tag with gala.mod and MODULE.bazel
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          # Tags are bare versions (0.83.1), never v-prefixed.
+          gala_mod_version="$(awk '$1 == "gala" { print $2; exit }' gala.mod)"
+          module_version="$(sed -n '/^module(/,/^)/ s/^[[:space:]]*version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' MODULE.bazel | head -n 1)"
+          echo "tag:          ${TAG}"
+          echo "gala.mod:     ${gala_mod_version}"
+          echo "MODULE.bazel: ${module_version}"
+          status=0
+          if [ "${TAG}" != "${gala_mod_version}" ]; then
+            echo "::error file=gala.mod::release tag '${TAG}' does not match gala.mod version '${gala_mod_version}' (line 'gala X')"
+            status=1
+          fi
+          if [ "${TAG}" != "${module_version}" ]; then
+            echo "::error file=MODULE.bazel::release tag '${TAG}' does not match MODULE.bazel module version '${module_version}'"
+            status=1
+          fi
+          exit "${status}"
+
   build:
     name: Build ${{ matrix.os }}-${{ matrix.arch }}
+    needs: verify-version
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -20,6 +55,7 @@ jobs:
             runner: ubuntu-latest
             platform: "@rules_go//go/toolchain:linux_amd64"
             ext: ""
+            smoke: true  # the runner executes this binary natively
           - os: linux
             arch: arm64
             runner: ubuntu-latest
@@ -35,11 +71,13 @@ jobs:
             runner: macos-latest
             platform: "@rules_go//go/toolchain:darwin_arm64"
             ext: ""
+            smoke: true  # macos-latest is arm64
           - os: windows
             arch: amd64
             runner: windows-latest
             platform: "@rules_go//go/toolchain:windows_amd64"
             ext: ".exe"
+            smoke: true
 
     steps:
       - name: Checkout code
@@ -47,11 +85,27 @@ jobs:
         with:
           fetch-depth: 0  # Needed for git describe
 
+      # Same Go the test workflow uses: the stdlib transpile actions use the
+      # host Go SDK for type inference, and the smoke test below compiles a
+      # program with it.
+      - name: Setup Go
+        id: setup-go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: false
+
+      - name: Export GOROOT
+        shell: bash
+        run: echo "GOROOT=$(go env GOROOT)" >> "$GITHUB_ENV"
+
       - name: Setup Bazel
         uses: bazel-contrib/setup-bazel@0.14.0
         with:
           bazelisk-cache: true
-          disk-cache: ${{ github.workflow }}
+          # Keyed on the Go patch version, as in test.yml: GOROOT is part of
+          # every transpile action key.
+          disk-cache: ${{ github.workflow }}-go${{ steps.setup-go.outputs.go-version }}
           repository-cache: true
 
       - name: Make workspace status script executable (Unix)
@@ -103,6 +157,58 @@ jobs:
           New-Item -ItemType Directory -Force -Path dist
           Copy-Item bazel-bin/cmd/gala/gala_/gala.exe dist/gala-${{ matrix.os }}-${{ matrix.arch }}.exe
 
+      # Runs on every row whose binary the runner can execute natively
+      # (linux/amd64, darwin/arm64, windows/amd64). It checks the two things a
+      # release can get wrong after compiling fine: the stamped version, and
+      # that the embedded stdlib is enough for `gala run` on a clean machine
+      # (fresh GALA_HOME, nothing cached from the repo).
+      - name: Smoke test binary
+        if: matrix.smoke
+        shell: bash
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          GALA_BIN: dist/gala-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}
+        run: |
+          set -euo pipefail
+          gala="$PWD/$GALA_BIN"
+
+          if ! version_output="$("$gala" version)"; then
+            echo "::error::'gala version' failed"
+            exit 1
+          fi
+          echo "$version_output"
+          if [ "$(head -n 1 <<<"$version_output")" != "GALA version ${TAG}" ]; then
+            echo "::error::'gala version' does not report the release tag '${TAG}'"
+            exit 1
+          fi
+
+          # RUNNER_TEMP is a native path on every OS, which the Windows binary
+          # needs (it does not understand Git Bash's /tmp).
+          work="${RUNNER_TEMP}/gala-smoke"
+          export GALA_HOME="${RUNNER_TEMP}/gala-smoke-home"
+          export GALA_CACHE="$GALA_HOME/pkg/mod"
+          rm -rf "$work" "$GALA_HOME"
+          mkdir -p "$work"
+          cat > "$work/main.gala" <<'EOF'
+          package main
+
+          func main() {
+              val name = "GALA"
+              Println(s"Hello, $name!")
+          }
+          EOF
+          if ! run_output="$(cd "$work" && "$gala" run main.gala)"; then
+            echo "$run_output"
+            echo "::error::'gala run' of a hello-world program failed"
+            exit 1
+          fi
+          run_output="$(tr -d '\r' <<<"$run_output")"
+          echo "$run_output"
+          if [ "$run_output" != "Hello, GALA!" ]; then
+            echo "::error::'gala run' of a hello-world program printed '${run_output}', expected 'Hello, GALA!'"
+            exit 1
+          fi
+
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
@@ -111,6 +217,7 @@ jobs:
 
   intellij-plugin:
     name: Build IntelliJ Plugin
+    needs: verify-version
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -139,6 +246,8 @@ jobs:
     name: Upload Release Assets
     needs: [build, intellij-plugin]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # attach assets to the release
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
