@@ -5,8 +5,9 @@ read, a call target, a bare function reference — resolves to nothing.
 The analyzer walks each file with a scope chain and checks every such
 identifier against the complete symbol table it built for that file:
 enclosing bindings, the current package's declarations (including
-sibling files'), every imported package's exports, the implicitly
-dot-imported `std` prelude, package qualifiers, and the language
+sibling files'), the exports of the packages this file dot-imports, the
+implicitly dot-imported `std` prelude, package qualifiers (a package
+imported by name is reached through its qualifier), and the language
 builtins. A name that matches none of them is rejected here rather than
 being deferred to the Go compiler.
 
@@ -53,10 +54,10 @@ Go compiler, pointed at generated code rather than the `.gala` line the
 author wrote.
 
 This check closes both outcomes for a name in **value position**,
-including inside an interpolated string. In **type position** it closes
-them for the *package qualifier* only — `strings.Builder` asks whether
-`strings` is in scope — and not for the type name itself; see the first
-entry under *Not covered*.
+including inside an interpolated string. In **type position** it checks
+the *package qualifier* — `strings.Builder` asks whether `strings` is in
+scope — and an unqualified type name only against the scope rule below;
+see the first entry under *Not covered*.
 
 **Scope.** Analyzer post-pass, run once per top-level file after all
 metadata for the file, its siblings and its imports has been collected
@@ -93,14 +94,16 @@ func main() {
 ```
 
 ```
-[SemanticError GALA-E0023] line 6:13 undefined: ArrayOf (hint: ArrayOf is declared in a package this file imports by name; call it as `collection_immutable.ArrayOf`, or dot-import that package to use it unqualified.)
+[SemanticError GALA-E0023] line 6:12 undefined: ArrayOf (hint: ArrayOf is declared in a package this file imports by name; call it as `collection_immutable.ArrayOf`, or dot-import that package to use it unqualified.)
 ```
 
 A sibling file's dot import does not carry over. The one allowance is
-the one [GALA-E0025](GALA-E0025.md) makes: a method whose receiver type
-is declared in another file may use that file's imports in its
-signature. Bare *Go* names are not held to this rule, because the Go
-compiler rejects one that no dot import provides.
+the bare-name form of the one [GALA-E0025](GALA-E0025.md) makes: the
+signature of a method whose receiver type is declared in another file
+may use names that file dot-imports. The method body gets no allowance,
+and neither does that file's named imports. Bare *Go* names are not held
+to this rule, because the Go compiler rejects one that no dot import
+provides.
 
 [GALA-E0025](GALA-E0025.md) covers the remaining import question: a
 signature type that resolved to a package this file never imported.
@@ -115,8 +118,9 @@ for a guaranteed absence of false positives:
   skipped, because the analyzer's type resolution is lossy enough (Go
   generics, constraints, `map[K]V`, func types) that flagging it would
   produce false positives. A bare `Foo` may also be a type parameter.
-  Type parameters are recognised file-wide, which can only suppress a
-  report.
+  Type parameters, including the names a method receiver binds
+  (`func (b Box[T]) ...`), are recognised file-wide, which can only
+  suppress a report.
 
   The **qualifier** of a qualified type *is* checked: `var sb
   strings.Builder` in a file that never imports `strings` is reported

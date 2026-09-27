@@ -111,6 +111,58 @@ func seed() Array[int] = ArrayOf(1)
 			symbol: "ArrayOf",
 			hint:   "none of which this file imports",
 		},
+		{
+			// The receiver file's named import is reached through its
+			// qualifier there; it does not make the bare name visible here.
+			name: "type reached only through the receiver file's named import",
+			src: `package main
+
+func (b Box) Items() Array[int] = b.seed()
+
+func main() {
+    Println(Box(1).Items())
+}
+`,
+			siblings: map[string]string{
+				"other.gala": `package main
+
+import "martianoff/gala/collection_immutable"
+
+struct Box(N int)
+
+func (b Box) seed() collection_immutable.Array[int] = collection_immutable.ArrayOf(b.N)
+`,
+			},
+			symbol: "Array",
+			hint:   "none of which this file imports",
+		},
+		{
+			// The receiver-file allowance covers the signature only.
+			name: "type in a method body is not covered by the receiver file's dot import",
+			src: `package main
+
+func (b Box) Count() int {
+    val xs Array[int] = b.seed()
+    return xs.Size()
+}
+
+func main() {
+    Println(Box(1).Count())
+}
+`,
+			siblings: map[string]string{
+				"other.gala": `package main
+
+import . "martianoff/gala/collection_immutable"
+
+struct Box(N int)
+
+func (b Box) seed() Array[int] = ArrayOf(b.N)
+`,
+			},
+			symbol: "Array",
+			hint:   "none of which this file imports",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -196,6 +248,59 @@ func main() {
     Println(wrap(strings.ToUpper("x")).Items)
 }
 `,
+		},
+		{
+			name: "package val sharing a name with a transitively loaded declaration",
+			src: `package main
+
+import "martianoff/gala/strings"
+
+val EmptyStr = ""
+
+func main() {
+    Println(EmptyStr + strings.ToUpper("x"))
+}
+`,
+		},
+		{
+			name: "receiver type argument sharing a name with a transitively loaded type",
+			src: `package main
+
+import "martianoff/gala/strings"
+
+func (b Box[Str]) Get() Str = b.V
+
+func main() {
+    Println(Box(strings.ToUpper("x")).Get())
+}
+`,
+			siblings: map[string]string{
+				"other.gala": `package main
+
+struct Box[T any](V T)
+`,
+			},
+		},
+		{
+			name: "receiver file's dot import in the method signature",
+			src: `package main
+
+func (b Box) Items() Array[int] = b.seed()
+
+func main() {
+    Println(Box(1).Items())
+}
+`,
+			siblings: map[string]string{
+				"other.gala": `package main
+
+import . "martianoff/gala/collection_immutable"
+
+struct Box(N int)
+
+func (b Box) seed() Array[int] = ArrayOf(b.N)
+`,
+			},
 		},
 	}
 	for _, tt := range tests {

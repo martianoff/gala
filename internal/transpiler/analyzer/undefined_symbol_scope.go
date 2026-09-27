@@ -3,6 +3,7 @@ package analyzer
 import (
 	"sort"
 	"strconv"
+	"strings"
 
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
@@ -29,7 +30,8 @@ type galaScope struct {
 	// declares it (functions, types, companion objects).
 	declarers map[string][]string
 	// visible holds the package names a bare name may come from: this file's
-	// package, std, and every GALA package the file dot-imports.
+	// package, the prelude packages, and every GALA package the file
+	// dot-imports.
 	visible map[string]bool
 	// named maps a GALA package imported by name to the qualifier it is
 	// bound to in this file, for the hint.
@@ -46,10 +48,15 @@ type galaScope struct {
 func (a *galaAnalyzer) buildGalaScope(imports []fileImport, rich *transpiler.RichAST, filePath string) galaScope {
 	s := galaScope{
 		declarers: make(map[string][]string),
-		visible:   map[string]bool{registry.StdPackageName: true, rich.PackageName: true},
+		visible:   map[string]bool{rich.PackageName: true},
 		named:     make(map[string]string),
 		goNames:   make(map[string]bool),
 		paths:     make(map[string][]string),
+	}
+	// The prelude is an implicit dot import of every registered prelude
+	// package, the same set the transformer resolves prelude names from.
+	for _, p := range registry.Global.PreludePackages() {
+		s.visible[p.Name] = true
 	}
 	for path, pkg := range rich.Packages {
 		if pkg != "" {
@@ -74,12 +81,13 @@ func (a *galaAnalyzer) buildGalaScope(imports []fileImport, rich *transpiler.Ric
 	declare := func(key, pkg string) {
 		if pkg == "" {
 			// A key qualified as "pkg.Name" carries its package; a bare key
-			// with no recorded package is treated as this package's own, so
-			// it can never be hidden.
-			if dot := lastDotIndex(key); dot > 0 {
+			// with no recorded package is this package's own. Recording it
+			// under this package keeps it in scope even when a loaded
+			// package declares the same name.
+			if dot := strings.LastIndexByte(key, '.'); dot > 0 {
 				pkg = key[:dot]
 			} else {
-				return
+				pkg = rich.PackageName
 			}
 		}
 		name := simpleNameOf(key)
@@ -104,6 +112,14 @@ func (a *galaAnalyzer) buildGalaScope(imports []fileImport, rich *transpiler.Ric
 		if co != nil {
 			declare(k, co.Package)
 		}
+	}
+	// Package-level vals and type aliases carry no package field: a bare key
+	// is this package's own, a qualified one names its package.
+	for k := range rich.PackageVals {
+		declare(k, "")
+	}
+	for k := range rich.TypeAliases {
+		declare(k, "")
 	}
 	for name := range s.declarers {
 		sort.Strings(s.declarers[name])
@@ -184,13 +200,4 @@ func quoteAll(ss []string) []string {
 		out[i] = strconv.Quote(s)
 	}
 	return out
-}
-
-func lastDotIndex(s string) int {
-	for i := len(s) - 1; i >= 0; i-- {
-		if s[i] == '.' {
-			return i
-		}
-	}
-	return -1
 }

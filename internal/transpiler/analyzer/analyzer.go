@@ -940,9 +940,23 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	// strictly per-file.
 	fileImportSets := make(map[string]map[string]bool)
 	fileImportSets[canonicalPath(filePath)] = explicitImportPkgs
+	// The GALA packages each file dot-imports. GALA-E0023's version of the
+	// receiver-file allowance needs these alone: a bare name can come from
+	// the receiver file's dot imports, never from its named imports.
+	dotPkgsForFile := func(q fileQualifiers) map[string]bool {
+		set := make(map[string]bool)
+		for _, b := range q.dots {
+			if b.IsGala && b.PkgName != "" {
+				set[b.PkgName] = true
+			}
+		}
+		return set
+	}
+	fileDotImportSets := map[string]map[string]bool{canonicalPath(filePath): dotPkgsForFile(fileQuals)}
 	for i, q := range siblingQuals {
 		if i < len(siblingPaths) {
 			fileImportSets[canonicalPath(siblingPaths[i])] = importPkgsForFile(q)
+			fileDotImportSets[canonicalPath(siblingPaths[i])] = dotPkgsForFile(q)
 		}
 	}
 
@@ -1641,7 +1655,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		// invisible to the symbol table, and reporting those as undefined
 		// would blame the author for a gap on the analyzer's side.
 		if !a.skipUndefinedCheck && a.fileImportsFullyLoaded(scanFileImports(sourceFile), richAST) {
-			if errs := a.checkUndefinedSymbols(sourceFile, richAST, filePath, fileImportSets); len(errs) > 0 {
+			if errs := a.checkUndefinedSymbols(sourceFile, richAST, filePath, fileDotImportSets); len(errs) > 0 {
 				return nil, errs[0]
 			}
 		}

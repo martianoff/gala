@@ -317,15 +317,16 @@ type undefChecker struct {
 }
 
 // checkUndefinedSymbols runs the existence check over `sourceFile` and returns
-// the collected errors in source order. fileImportSets maps each file of the
-// package (by canonical path) to the GALA package names it imports; a method
-// whose receiver type lives in another file may use that file's imports in
-// its signature, the same allowance GALA-E0025 makes.
+// the collected errors in source order. fileDotImportSets maps each file of
+// the package (by canonical path) to the GALA package names it dot-imports; a
+// method whose receiver type lives in another file may use that file's dot
+// imports in its signature, the bare-name form of the allowance GALA-E0025
+// makes.
 func (a *galaAnalyzer) checkUndefinedSymbols(
 	sourceFile *grammar.SourceFileContext,
 	richAST *transpiler.RichAST,
 	filePath string,
-	fileImportSets map[string]map[string]bool,
+	fileDotImportSets map[string]map[string]bool,
 ) []*galaerr.SemanticError {
 	imports := scanFileImports(sourceFile)
 	declared := indexDeclaredSymbols(richAST)
@@ -356,7 +357,7 @@ func (a *galaAnalyzer) checkUndefinedSymbols(
 	// under this function's eligibility guards, which is why it lives here
 	// rather than standing alone. See checkTypeQualifiers.
 	c.checkTypeQualifiers(sourceFile, func(recvType string) map[string]bool {
-		return receiverFileImports(richAST, recvType, filePath, fileImportSets)
+		return receiverFileImports(richAST, recvType, filePath, fileDotImportSets)
 	})
 
 	sort.SliceStable(c.errs, func(i, j int) bool {
@@ -1416,17 +1417,28 @@ func scanHintSource(src string, keywords []string) (string, map[string]bool) {
 // parameters are recognised file-wide rather than per scope, which can only
 // suppress a report, never invent one.
 //
-// Inside a method whose receiver type is declared in another file of the
-// package, the packages that file imports count as well — the allowance
-// GALA-E0025 makes for method signatures. receiverImports returns them.
+// In the signature of a method whose receiver type is declared in another
+// file of the package, the packages that file dot-imports count as well — the
+// allowance GALA-E0025 makes for method signatures. receiverImports returns
+// them. The method body gets no allowance, for type and value names alike.
 func (c *undefChecker) checkTypeQualifiers(sourceFile *grammar.SourceFileContext, receiverImports func(recvType string) map[string]bool) {
 	typeParams := collectTypeParameterNames(sourceFile)
 	var walk func(n antlr.Tree, extra map[string]bool)
 	walk = func(n antlr.Tree, extra map[string]bool) {
 		if fd, ok := n.(*grammar.FunctionDeclarationContext); ok && fd.Receiver() != nil {
+			var sigExtra map[string]bool
 			if rc, ok := fd.Receiver().(*grammar.ReceiverContext); ok && rc.Type_() != nil {
-				extra = receiverImports(receiverBaseTypeName(rc.Type_().GetText()))
+				sigExtra = receiverImports(receiverBaseTypeName(rc.Type_().GetText()))
 			}
+			for i := 0; i < n.GetChildCount(); i++ {
+				switch child := n.GetChild(i).(type) {
+				case *grammar.BlockContext, *grammar.ExpressionContext:
+					walk(child, nil)
+				case antlr.ParserRuleContext:
+					walk(child, sigExtra)
+				}
+			}
+			return
 		}
 		// Nested TypeContexts are visited too: `map[string]strings.Builder`
 		// and `[]pkg.T` carry their named type below an outer TypeContext.
@@ -1490,8 +1502,35 @@ func receiverFileImports(rich *transpiler.RichAST, recvType, filePath string, fi
 	return fileImportSets[declaring]
 }
 
+// collectReceiverTypeArgs adds the names a receiver type's arguments bind:
+// `Box[K, V]` and `*Box[T]` bind K, V and T.
+func collectReceiverTypeArgs(n antlr.Tree, out map[string]bool) {
+	if ta, ok := n.(*grammar.TypeArgumentsContext); ok {
+		tl, ok := ta.TypeList().(*grammar.TypeListContext)
+		if !ok {
+			return
+		}
+		for _, t := range tl.AllType_() {
+			tc, ok := t.(*grammar.TypeContext)
+			if !ok || tc.QualifiedIdentifier() == nil {
+				continue
+			}
+			if ids := tc.QualifiedIdentifier().(*grammar.QualifiedIdentifierContext).AllIdentifier(); len(ids) == 1 {
+				out[ids[0].GetText()] = true
+			}
+		}
+		return
+	}
+	for i := 0; i < n.GetChildCount(); i++ {
+		if child, ok := n.GetChild(i).(antlr.ParserRuleContext); ok {
+			collectReceiverTypeArgs(child, out)
+		}
+	}
+}
+
 // collectTypeParameterNames returns every type-parameter name the file
-// declares, on any function, method or type.
+// declares, on any function, method or type — including the names a method
+// receiver binds (`func (b Box[T]) ...` binds T).
 func collectTypeParameterNames(node antlr.Tree) map[string]bool {
 	out := make(map[string]bool)
 	var walk func(antlr.Tree)
@@ -1499,6 +1538,12 @@ func collectTypeParameterNames(node antlr.Tree) map[string]bool {
 		if tp, ok := n.(*grammar.TypeParameterContext); ok {
 			if ids := tp.AllIdentifier(); len(ids) > 0 {
 				out[ids[0].GetText()] = true
+			}
+			return
+		}
+		if rc, ok := n.(*grammar.ReceiverContext); ok {
+			if rt, ok := rc.Type_().(*grammar.TypeContext); ok {
+				collectReceiverTypeArgs(rt, out)
 			}
 			return
 		}
