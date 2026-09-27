@@ -45,6 +45,7 @@ go_test(
         "go_toolchain_test.go",
         "gomod_test.go",
         "main_package_test.go",
+        "main_root_subpackage_test_test.go",
         "nested_subpackage_test.go",
         "sourcehash_test.go",
         "sourcemap_stacktrace_test.go",

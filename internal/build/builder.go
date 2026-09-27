@@ -1,6 +1,7 @@
 package build
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -1475,9 +1476,11 @@ func findGalaFilesRecursive(dir string) ([]string, error) {
 	return files, err
 }
 
-// Test runs the test flow: transpile source + test files, discover test functions,
-// generate a test main, build, and execute the test binary.
-// If verbose is true, passes -v-style output. Returns the exit code from the test run.
+// Test runs the test flow: transpile source + test files, discover test
+// functions, and run them. Each package's tests run through a generated
+// `go test` harness in that package; a package-main root's own tests run as a
+// synthesized test binary instead. If verbose is true, `go test` runs with -v.
+// Returns an error when any test fails.
 func (b *Builder) Test(verbose bool) error {
 	// Step 1: Ensure workspace exists
 	if b.verbose {
@@ -1615,7 +1618,7 @@ func (b *Builder) Test(verbose bool) error {
 		// own package — otherwise the root harness would fail to compile when
 		// a subpackage owns a test function that the root package cannot see.
 		// Tests run via `go test ./gen/...`.
-		if err := b.writeLibraryTestHarnesses(testFiles); err != nil {
+		if _, err := b.writeLibraryTestHarnesses(testFiles); err != nil {
 			return fmt.Errorf("writing test harnesses: %w", err)
 		}
 		if b.verbose {
@@ -1623,31 +1626,32 @@ func (b *Builder) Test(verbose bool) error {
 		}
 
 		// Step 9: Run tests via `go test`
-		args := []string{"test", "-count=1"}
-		if verbose {
-			args = append(args, "-v")
-		}
-		args = append(args, "./gen/...")
-		cmd := exec.Command("go", args...)
-		cmd.Dir = b.workspace.Dir
-		cmd.Env = append(os.Environ(), "GOMODCACHE="+b.config.GoPkgDir)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
+		return b.runGoTest(verbose, []string{"./gen/..."})
+	}
 
-		if b.verbose {
-			fmt.Printf("Running: go %s\n", strings.Join(args, " "))
+	// For a package-main root, the synthesized test binary runs the root's own
+	// tests only. A subpackage's TestXxx is declared in that subpackage, which
+	// the root package cannot name (and a root test_main listing it fails with
+	// "undefined: TestXxx"), so subpackage tests run through a harness in their
+	// own package — the library route — via `go test`.
+	rootTestFiles, subTestFiles := splitRootTestFiles(b.workspace.ProjectDir, testFiles)
+	var rootTestFuncs []string
+	for _, tf := range rootTestFiles {
+		funcs, err := FindTestFunctions(tf)
+		if err != nil {
+			return fmt.Errorf("scanning %s for test functions: %w", tf, err)
 		}
+		rootTestFuncs = append(rootTestFuncs, funcs...)
+	}
+	subTestDirs, err := b.writeLibraryTestHarnesses(subTestFiles)
+	if err != nil {
+		return fmt.Errorf("writing test harnesses: %w", err)
+	}
 
-		if err := cmd.Run(); err != nil {
-			if exitErr, ok := err.(*exec.ExitError); ok {
-				return fmt.Errorf("tests failed (exit code %d)", exitErr.ExitCode())
-			}
-			return fmt.Errorf("go test: %w", err)
-		}
-	} else {
-		// For main packages: generate test_main.gen.go with func main() and
-		// build a test binary.
-		testMainCode := GenerateTestMain(allTestFuncs)
+	var rootErr error
+	if len(rootTestFuncs) > 0 {
+		// Generate test_main.gen.go with func main() and build a test binary.
+		testMainCode := GenerateTestMain(rootTestFuncs)
 		testMainPath := filepath.Join(b.workspace.GenDir, "test_main.gen.go")
 		if err := os.WriteFile(testMainPath, []byte(testMainCode), 0644); err != nil {
 			return fmt.Errorf("writing test_main.gen.go: %w", err)
@@ -1697,13 +1701,71 @@ func (b *Builder) Test(verbose bool) error {
 
 		if err := execCmd.Run(); err != nil {
 			if exitErr, ok := err.(*exec.ExitError); ok {
-				return fmt.Errorf("tests failed (exit code %d)", exitErr.ExitCode())
+				rootErr = fmt.Errorf("tests failed (exit code %d)", exitErr.ExitCode())
+			} else {
+				return fmt.Errorf("running test binary: %w", err)
 			}
-			return fmt.Errorf("running test binary: %w", err)
 		}
 	}
 
+	// The subpackages' tests run even when the root's failed, so one run
+	// reports every test failure.
+	var subErr error
+	if len(subTestDirs) > 0 {
+		pkgs := make([]string, len(subTestDirs))
+		for i, dir := range subTestDirs {
+			pkgs[i] = "./gen/" + filepath.ToSlash(dir)
+		}
+		subErr = b.runGoTest(verbose, pkgs)
+	}
+	return errors.Join(rootErr, subErr)
+}
+
+// runGoTest runs `go test` on pkgs (patterns relative to the workspace) — the
+// packages that carry a generated test harness.
+func (b *Builder) runGoTest(verbose bool, pkgs []string) error {
+	args := []string{"test", "-count=1"}
+	if verbose {
+		args = append(args, "-v")
+	}
+	args = append(args, pkgs...)
+	cmd := exec.Command("go", args...)
+	cmd.Dir = b.workspace.Dir
+	cmd.Env = append(os.Environ(), "GOMODCACHE="+b.config.GoPkgDir)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if b.verbose {
+		fmt.Printf("Running: go %s\n", strings.Join(args, " "))
+	}
+
+	if err := cmd.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return fmt.Errorf("tests failed (exit code %d)", exitErr.ExitCode())
+		}
+		return fmt.Errorf("go test: %w", err)
+	}
 	return nil
+}
+
+// splitRootTestFiles separates the test files in the project root directory
+// from those in its subpackages.
+func splitRootTestFiles(projectDir string, testFiles []string) (root, sub []string) {
+	absRoot, _ := filepath.Abs(projectDir)
+	for _, tf := range testFiles {
+		if inDir(absRoot, tf) {
+			root = append(root, tf)
+		} else {
+			sub = append(sub, tf)
+		}
+	}
+	return root, sub
+}
+
+// inDir reports whether file f sits directly in the directory absDir.
+func inDir(absDir, f string) bool {
+	abs, _ := filepath.Abs(f)
+	return filepath.Dir(abs) == absDir
 }
 
 // transpileTestMain transpiles source + test files together for package main projects.
@@ -1820,7 +1882,10 @@ func renameUserMainInDir(dir string, sourceNames map[string]bool, verbose bool) 
 // references tests declared in its own source directory — bundling all test
 // funcs into a single root-level harness would fail to compile when a
 // subpackage owns a test that the root package cannot see.
-func (b *Builder) writeLibraryTestHarnesses(testFiles []string) error {
+//
+// It returns the directories, relative to gen/ and in sorted order, that
+// received a harness.
+func (b *Builder) writeLibraryTestHarnesses(testFiles []string) ([]string, error) {
 	// Group tests by the gen subdirectory they will land in.
 	type bucket struct {
 		pkgName string
@@ -1830,7 +1895,7 @@ func (b *Builder) writeLibraryTestHarnesses(testFiles []string) error {
 	for _, tf := range testFiles {
 		funcs, err := FindTestFunctions(tf)
 		if err != nil {
-			return fmt.Errorf("scanning %s for test functions: %w", tf, err)
+			return nil, fmt.Errorf("scanning %s for test functions: %w", tf, err)
 		}
 		if len(funcs) == 0 {
 			continue
@@ -1848,6 +1913,7 @@ func (b *Builder) writeLibraryTestHarnesses(testFiles []string) error {
 		}
 	}
 
+	var written []string
 	for relDir, bkt := range byDir {
 		if bkt.pkgName == "" {
 			continue
@@ -1857,15 +1923,17 @@ func (b *Builder) writeLibraryTestHarnesses(testFiles []string) error {
 			harnessDir = filepath.Join(b.workspace.GenDir, relDir)
 		}
 		if err := os.MkdirAll(harnessDir, 0755); err != nil {
-			return fmt.Errorf("creating harness dir %s: %w", harnessDir, err)
+			return nil, fmt.Errorf("creating harness dir %s: %w", harnessDir, err)
 		}
 		harnessPath := filepath.Join(harnessDir, "gala_test_harness_test.go")
 		harnessCode := GenerateGoTestHarness(bkt.pkgName, bkt.funcs)
 		if err := os.WriteFile(harnessPath, []byte(harnessCode), 0644); err != nil {
-			return fmt.Errorf("writing %s: %w", harnessPath, err)
+			return nil, fmt.Errorf("writing %s: %w", harnessPath, err)
 		}
+		written = append(written, relDir)
 	}
-	return nil
+	sort.Strings(written)
+	return written, nil
 }
 
 // transpileTestLibrary transpiles source files and test files into gen/ as the
@@ -2095,8 +2163,7 @@ func (b *Builder) transpileFilesToDir(files []string, allSiblings []string, outD
 func rootPackageName(sourceFiles []string, projectDir string) string {
 	absRoot, _ := filepath.Abs(projectDir)
 	for _, f := range sourceFiles {
-		abs, _ := filepath.Abs(f)
-		if filepath.Dir(abs) == absRoot {
+		if inDir(absRoot, f) {
 			return detectPackageName(f)
 		}
 	}
