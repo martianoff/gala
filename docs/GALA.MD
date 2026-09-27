@@ -174,6 +174,28 @@ func add(a int, b int) int {
 }
 ```
 
+A block-bodied function with a result type returns its trailing expression, exactly as
+a block lambda or a match arm does — the `return` is optional. The trailing value takes
+its type from the result type, as a `return` value would, and a trailing `if`/`else`
+carries the value in its branches:
+
+```gala
+func logged[U any](o Option[U]) Option[U] {
+    Println("visited")
+    o                                  // same as `return o`
+}
+
+func sign(n int) string {
+    if (n < 0) { "negative" } else { "non-negative" }
+}
+```
+
+The body must end in a value, a `return`, or a diverging call such as `Panic(...)`. A
+body that can finish without a value — a trailing `Println(...)`, an assignment, an `if`
+with no `else` — is a compile error. A value computed only to be thrown away (a bare
+name, literal or operator expression as a statement, including the trailing statement
+of a function with no result type) is rejected as evaluated but not used.
+
 > **Note:** Every parameter states its own type. GALA does not support Go-style
 > grouped parameters (`func add(a, b int)`); write `func add(a int, b int)`
 > instead. The same applies to struct-shorthand fields. A grouped declaration

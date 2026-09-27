@@ -154,6 +154,7 @@ func copyFile(src string, dst string) Try[Int] = Try(() => {
 
 - **Bind the result** — `val x = if (cond) a else b`. Don't `var x = a; if (cond) { x = b }`.
 - **Block branches** — last expression is the value: `val u = if (q != "") { val e = encode(q); s"$base?$e" } else { base }`.
+- **Function bodies too** — a block-bodied function with a result type returns its trailing expression: `func f(o Option[int]) Option[int] { Println("x"); o }`. A body that can finish without a value, or a bare value used as a statement, is a compile error. ([§3 Block Functions](GALA.MD#block-functions))
 
 ---
 
