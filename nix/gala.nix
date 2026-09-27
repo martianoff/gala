@@ -259,8 +259,8 @@ let
   #
   # Every non-test .gala file on disk is transpiled (release transpile-package
   # calls list all of them, so its sibling set matches a directory scan), but
-  # only the generate_embedded set is staged — the concurrent package's
-  # unlisted retry.gala is transpiled and dropped.
+  # only the generate_embedded set is staged; a file missing from that list is
+  # transpiled and dropped (//internal/stdlib:stdlib_test fails on such a gap).
   mkTranspiled =
     {
       name,
