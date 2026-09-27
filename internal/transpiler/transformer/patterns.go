@@ -334,10 +334,14 @@ func (t *galaASTTransformer) transformSimpleBindingOrLiteral(patExprCtx grammar.
 			// Type is unknown, explicitly set to any so type inference works correctly
 			t.currentScope.valTypes[name] = transpiler.BasicType{Name: "any"}
 		}
-		// An unknown or `any` subject type leaves the declared type to the
-		// temp being bound (see hoistPatternDecls).
+		// A subject declared `any` binds as `any`: that is its type. An
+		// unknown subject type records nothing, so a binding that has to be
+		// hoisted out of a guard takes the bound temp's declared type or is
+		// rejected (see hoistPatternDecls), never silently erased to `any`.
 		var bindingType ast.Expr
-		if matchedType != nil && !matchedType.IsAny() {
+		if matchedType != nil && matchedType.IsAny() {
+			bindingType = ast.NewIdent("any")
+		} else if matchedType != nil {
 			bindingType = t.knownTypeExpr(matchedType)
 		}
 		assign := t.patternDefine([]string{name}, []ast.Expr{bindingType}, objExpr)
@@ -573,7 +577,7 @@ func (t *galaASTTransformer) generateDirectTupleStructMatch(objExpr ast.Expr, ar
 		}
 
 		// Determine the type for this element
-		var elemType transpiler.Type = transpiler.BasicType{Name: "any"}
+		var elemType transpiler.Type = transpiler.NilType{} // unknown, never erased to any
 		if i < len(elementTypes) {
 			elemType = elementTypes[i]
 		}
@@ -701,7 +705,7 @@ func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, ar
 
 		// Get the field name and type
 		fieldName := fields[i]
-		var fieldType transpiler.Type = transpiler.BasicType{Name: "any"}
+		var fieldType transpiler.Type = transpiler.NilType{} // unknown, never erased to any
 		if fieldTypes != nil {
 			if ft, ok := fieldTypes[fieldName]; ok {
 				fieldType = substituteFieldType(ft)
@@ -1234,7 +1238,7 @@ func (t *galaASTTransformer) transformTuplePattern(patternExprs []grammar.IExpre
 		}
 
 		// Determine the type for this element
-		var elemType transpiler.Type = transpiler.BasicType{Name: "any"}
+		var elemType transpiler.Type = transpiler.NilType{} // unknown, never erased to any
 		if i < len(elementTypes) {
 			elemType = elementTypes[i]
 		}

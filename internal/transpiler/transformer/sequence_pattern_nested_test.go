@@ -27,6 +27,7 @@ struct Box[T any](V T, Tag string)
 struct Pair[K any, V any](Key K, Val V)
 struct Plain(N int)
 struct Node(V int)
+struct AnyHolder(V any)
 
 var probes = 0
 
@@ -159,6 +160,92 @@ func TestExtractorSubPatternRunsInsideGuard(t *testing.T) {
 	assert.Contains(t, guard, "v = ")
 	assert.Contains(t, got[:start], "var v int", "v must be declared before the guard")
 	assert.NotContains(t, got, "v := ")
+}
+
+// A binding whose declared type is `any` (a field declared `any`, a tuple
+// element typed `any`) is hoisted as `any`: that is its type, not an erasure.
+func TestHoistedBindingOfDeclaredAnyType(t *testing.T) {
+	tests := []struct {
+		name     string
+		body     string
+		contains []string
+	}{
+		{
+			name: "struct field declared any inside an extractor payload",
+			body: `func f(o Option[AnyHolder]) string = o match {
+    case Some(AnyHolder(v)) => s"$v"
+    case _                  => ""
+}`,
+			contains: []string{"var v any", "v = "},
+		},
+		{
+			name: "tuple element typed any inside an extractor payload",
+			body: `func f(o Option[Tuple[any, int]]) string = o match {
+    case Some(Tuple(a, n)) => s"$a${n + 1}"
+    case _                 => ""
+}`,
+			contains: []string{"var a any", "var n int"},
+		},
+		{
+			name: "struct field declared any inside a sequence element",
+			body: `func f(xs Array[AnyHolder]) string = xs match {
+    case Array(AnyHolder(v), _) => s"$v"
+    case _                      => ""
+}`,
+			contains: []string{"var v any", "v = "},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := transpileSequencePattern(t, tt.body)
+			require.NoError(t, err)
+			for _, want := range tt.contains {
+				assert.Contains(t, got, want)
+			}
+		})
+	}
+}
+
+// A binding hoisted out of a guard is a `var`, not a `:=`; the GALA
+// unused-binding check must still see it.
+func TestHoistedBindingUnusedIsReported(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "extractor payload",
+			body: `func f(o Option[AnyHolder]) string = o match {
+    case Some(AnyHolder(v)) => "yes"
+    case _                  => "no"
+}`,
+			want: "unused variable 'v' in match branch",
+		},
+		{
+			name: "nested sequence element",
+			body: `func f(xs Array[Shape]) string = xs match {
+    case Array(Square(s), _) => "square"
+    case _                   => "other"
+}`,
+			want: "unused variable 's' in match branch",
+		},
+		{
+			name: "plain sequence element",
+			body: `func f(xs Array[int]) string = xs match {
+    case Array(first, _) => "some"
+    case _               => "none"
+}`,
+			want: "unused variable 'first' in match branch",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := transpileSequencePattern(t, tt.body)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.want)
+		})
+	}
 }
 
 // A typed element's ok flag is assigned (not declared) inside the guard, so

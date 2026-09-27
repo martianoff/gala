@@ -1150,14 +1150,29 @@ func extractUserPatternVarNames(bindings []ast.Stmt) []string {
 }
 
 func extractUserVarsFromStmt(stmt ast.Stmt, names *[]string) {
+	addName := func(name string) {
+		if name != "_" && !strings.HasPrefix(name, "_tmp_") {
+			*names = append(*names, name)
+		}
+	}
 	switch s := stmt.(type) {
 	case *ast.AssignStmt:
 		if s.Tok == token.DEFINE {
 			for _, lhs := range s.Lhs {
 				if ident, ok := lhs.(*ast.Ident); ok {
-					name := ident.Name
-					if name != "_" && !strings.HasPrefix(name, "_tmp_") {
-						*names = append(*names, name)
+					addName(ident.Name)
+				}
+			}
+		}
+	case *ast.DeclStmt:
+		// A binding declared before a guard and assigned inside it (a
+		// sequence element, a rest binding, a sub-pattern hoisted out of an
+		// extractor's guard) is a `var`, not a `:=`.
+		if gen, ok := s.Decl.(*ast.GenDecl); ok && gen.Tok == token.VAR {
+			for _, spec := range gen.Specs {
+				if vs, ok := spec.(*ast.ValueSpec); ok {
+					for _, n := range vs.Names {
+						addName(n.Name)
 					}
 				}
 			}
