@@ -13,9 +13,10 @@ func logged[U any](label string, o Option[U]) Option[U] {
 }
 
 // A method: the trailing local val is the result.
-func (c Counter) Doubled() int {
-    val d = c.hits * 2
-    d
+func (c Counter) Scaled(factor int) int {
+    val scaled = c.hits * factor
+    Println(s"${c.name} scaled to $scaled")
+    scaled
 }
 
 // A zero-argument constructor takes its type argument from the result type.
@@ -45,7 +46,7 @@ func mustPositive(n int) int {
 
 func main() {
     Println(logged("a", Some(3)))
-    Println(Counter("c", 21).Doubled())
+    Println(Counter("c", 21).Scaled(2))
     Println(nothing("empty"))
     Println(sign(-5))
     Println(sign(0))

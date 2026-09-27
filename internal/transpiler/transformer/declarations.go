@@ -719,7 +719,10 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 
 	// Track the current function's return type so tuple literals in return statements
 	// can use it as a fallback when element type inference fails.
-	funcSlot := returnSlot{typeParams: declaredTypeParams(typeParams, t.extractTypeParams(originalRecvTypeExpr))}
+	funcSlot := returnSlot{
+		typeParams: declaredTypeParams(typeParams, t.extractTypeParams(originalRecvTypeExpr)),
+		funcName:   t.sourceFunctionName(ctx, receiverTypeName),
+	}
 	if funcType.Results != nil && len(funcType.Results.List) > 0 {
 		funcSlot.typ = t.astTypeToTranspilerType(funcType.Results.List[0].Type)
 	}
@@ -743,7 +746,7 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 			return nil, err
 		}
 		if hasResult && !isTerminatingStmt(b) {
-			return nil, t.missingReturnError(ctx.Block().(*grammar.BlockContext), t.sourceFunctionName(ctx, receiverTypeName), funcSlot.typ)
+			return nil, t.missingReturnError(ctx.Block().(*grammar.BlockContext), funcSlot.funcName, funcSlot.typ)
 		}
 		body = b
 	} else if ctx.Expression() != nil {

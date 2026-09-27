@@ -116,6 +116,24 @@ func pick(e Engine, n int) int = n match {
 			contains: []string{`return e.Panic("zero")`},
 		},
 		{
+			name: "a match at the tail of a lambda's if branch is the branch value",
+			body: `
+func apply[U any](x int, f func(int) U) U = f(x)
+
+func g() string = apply(2, (x) => {
+    if (x > 1) {
+        x match {
+            case 2 => "two"
+            case _ => "many"
+        }
+    } else {
+        "one"
+    }
+})
+`,
+			contains: []string{`return "one"`, `return "two"`},
+		},
+		{
 			name: "a trailing explicit return is unchanged",
 			body: `
 func twice(n int) int {
@@ -176,7 +194,7 @@ func w() int {
     Println("w")
 }
 `,
-			wantErr: "function returning int ends in `Println(\"w\")`, which produces no value",
+			wantErr: "function w returns int, but ends in `Println(\"w\")`, which produces no value",
 		},
 		{
 			name: "trailing assignment in a value-returning function",
@@ -250,7 +268,7 @@ func v() {
     f(1)
 }
 `,
-			wantErr: "`x` is evaluated but not used",
+			wantErr: "`x` is evaluated but not used; remove it, or make it the lambda's result",
 		},
 		{
 			name: "if/else with a non-value branch at the tail of a match arm",
@@ -263,7 +281,29 @@ func v(n int) int = n match {
     }
 }
 `,
-			wantErr: "`n` is evaluated but not used",
+			wantErr: "this branch of the `if` produces no value, but another branch does",
+		},
+		{
+			name: "if/else with a void-call branch at the tail of a value lambda",
+			body: `
+func apply[U any](x int, f func(int) U) U = f(x)
+
+func g() int = apply(2, (x) => {
+    if (x > 1) { x * 10 } else { Println("a") }
+})
+`,
+			wantErr: "this branch of the `if` produces no value, but another branch does",
+		},
+		{
+			name: "trailing void call in a method names the method",
+			body: `
+struct Box(n int)
+
+func (b Box) Pick() int {
+    Println("w")
+}
+`,
+			wantErr: "function Box.Pick returns int, but ends in `Println(\"w\")`, which produces no value",
 		},
 		{
 			name: "empty body of a value-returning function",

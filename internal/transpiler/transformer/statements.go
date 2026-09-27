@@ -472,8 +472,9 @@ func (t *galaASTTransformer) transformFunctionBody(ctx *grammar.BlockContext) (*
 // state, so nested and sibling blocks cannot inherit them.
 func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, tail blockTail, lastValueExpected slot) (*ast.BlockStmt, error) {
 	// A match or if-expression at the tail of every value-carrying block is
-	// value-consumed, not statement-position.
-	lastStmtIsValue := tail != tailDiscarded && tail != tailBranch
+	// value-consumed, not statement-position — including a branch of a value
+	// block's trailing if, whose tail the chain promotes like a lambda's.
+	lastStmtIsValue := tail != tailDiscarded
 	t.pushScope()
 	defer t.popScope()
 
@@ -574,7 +575,9 @@ func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, t
 				// The consumer promotes the chain only when every branch
 				// ends in a value; otherwise its branch tails are discarded.
 				if _, promotes := t.promoteIfBranchValues(ifStmt, plainReturn); !promotes {
-					err = t.checkUnpromotedBranchTails(ifCtx, ifStmt)
+					if err = t.checkMixedBranchValues(ifCtx, ifStmt); err == nil {
+						err = t.checkUnpromotedBranchTails(ifCtx, ifStmt)
+					}
 				}
 			}
 		} else if isTrailing && lastStmtIsValue &&
@@ -616,7 +619,11 @@ func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, t
 		discarded := !isTrailing || tail == tailDiscarded ||
 			(tail == tailIIFE && !t.needsExpectedType(valueExpr))
 		if discarded && valueExpr != nil {
-			if err := t.checkValueUsed(valueExpr, stmt); err != nil {
+			hint := functionDiscardHint
+			if isTrailing && tail == tailIIFE {
+				hint = lambdaDiscardHint
+			}
+			if err := t.checkValueUsedHint(valueExpr, stmt, hint); err != nil {
 				return nil, err
 			}
 		}
@@ -744,8 +751,8 @@ func (t *galaASTTransformer) lowerFunctionTail(exprCtx grammar.IExpressionContex
 	}
 	if _, void := t.getExprTypeName(value).(transpiler.VoidType); void || isVoidIIFE(value) {
 		return nil, t.semanticErrorAt(exprCtx, fmt.Sprintf(
-			"function returning %s ends in `%s`, which produces no value; end the body in the value to return, or add a `return`",
-			t.returnSlot.typ, exprCtx.GetText()))
+			"function %s returns %s, but ends in `%s`, which produces no value; end the body in the value to return, or add a `return`",
+			t.returnSlot.funcName, t.returnSlot.typ, exprCtx.GetText()))
 	}
 	return ret, nil
 }
@@ -811,6 +818,74 @@ func isTerminatingStmt(s ast.Stmt) bool {
 	return false
 }
 
+// checkMixedBranchValues rejects a complete if/else chain, lowered with
+// tailBranch at the tail of a value block, where one branch ends in a value
+// and another produces none (a void call, an assignment, an empty block). The
+// chain is then not the block's value, and neither is the value the other
+// branch computes. A branch ending in a `return` or a diverging call needs no
+// value; an `if` with no `else`, here or nested at a branch's tail, is left to
+// checkUnpromotedBranchTails.
+func (t *galaASTTransformer) checkMixedBranchValues(ifCtx *grammar.IfStatementContext, stmt *ast.IfStmt) error {
+	if stmt.Else == nil {
+		return nil
+	}
+	valueSeen := false
+	var noValue antlr.ParserRuleContext
+	var walk func(*grammar.IfStatementContext, *ast.IfStmt)
+	branch := func(blockCtx grammar.IBlockContext, blk *ast.BlockStmt) {
+		stmts := blockCtx.(*grammar.BlockContext).AllStatement()
+		if len(stmts) == 0 || blk == nil || len(blk.List) == 0 {
+			if noValue == nil {
+				noValue = blockCtx.(*grammar.BlockContext)
+			}
+			return
+		}
+		last := stmts[len(stmts)-1].(*grammar.StatementContext)
+		yields := false
+		switch lowered := blk.List[len(blk.List)-1].(type) {
+		case *ast.IfStmt:
+			if innerCtx := ifStatementOf(last); innerCtx != nil {
+				if lowered.Else != nil {
+					walk(innerCtx, lowered)
+				}
+				return
+			}
+		case *ast.ReturnStmt:
+			return
+		case *ast.ExprStmt:
+			if t.isNoReturnCallExpr(lowered.X) {
+				return
+			}
+			_, void := t.getExprTypeName(lowered.X).(transpiler.VoidType)
+			yields = !void && !isVoidIIFE(lowered.X)
+		}
+		if yields {
+			valueSeen = true
+		} else if noValue == nil {
+			noValue = last
+		}
+	}
+	walk = func(ifCtx *grammar.IfStatementContext, stmt *ast.IfStmt) {
+		branch(ifCtx.Block(0), stmt.Body)
+		switch e := stmt.Else.(type) {
+		case *ast.BlockStmt:
+			if ifCtx.Block(1) != nil {
+				branch(ifCtx.Block(1), e)
+			}
+		case *ast.IfStmt:
+			if elseIf, ok := ifCtx.IfStatement().(*grammar.IfStatementContext); ok && elseIf != nil {
+				walk(elseIf, e)
+			}
+		}
+	}
+	walk(ifCtx, stmt)
+	if valueSeen && noValue != nil {
+		return t.semanticErrorAt(noValue,
+			"this branch of the `if` produces no value, but another branch does; end every branch in a value, since the `if` is the block's value")
+	}
+	return nil
+}
+
 // checkUnpromotedBranchTails runs checkValueUsed on the trailing statement of
 // every branch of an if/else chain lowered with tailBranch, once it is known
 // the chain will not be promoted: its branch tails are then discarded like
@@ -855,6 +930,20 @@ func (t *galaASTTransformer) checkUnpromotedBranchTails(ifCtx *grammar.IfStateme
 // bare `val` name also lowers to a call (its `.Get()`), which Go would accept
 // silently, so the GALA source decides. stmt is exprCtx's lowering.
 func (t *galaASTTransformer) checkValueUsed(exprCtx grammar.IExpressionContext, stmt ast.Stmt) error {
+	return t.checkValueUsedHint(exprCtx, stmt, functionDiscardHint)
+}
+
+// Hints for checkValueUsedHint's diagnostic: how to keep a discarded value.
+const (
+	functionDiscardHint = "remove it, or return it from a function that declares a result type"
+	// lambdaDiscardHint is for the trailing value of a block lambda with no
+	// value expected of it, which a declared result type or a `return` makes
+	// the lambda's result.
+	lambdaDiscardHint = "remove it, or make it the lambda's result: declare a result type, as in `(x int) int => { ... }`, or write `return` before it"
+)
+
+// checkValueUsedHint is checkValueUsed with the diagnostic's hint given.
+func (t *galaASTTransformer) checkValueUsedHint(exprCtx grammar.IExpressionContext, stmt ast.Stmt, hint string) error {
 	exprStmt, ok := stmt.(*ast.ExprStmt)
 	if !ok {
 		return nil
@@ -881,8 +970,7 @@ func (t *galaASTTransformer) checkValueUsed(exprCtx grammar.IExpressionContext, 
 		}
 	}
 	return t.semanticErrorAt(exprCtx, fmt.Sprintf(
-		"`%s` is evaluated but not used; remove it, or return it from a function that declares a result type",
-		exprCtx.GetText()))
+		"`%s` is evaluated but not used; %s", exprCtx.GetText(), hint))
 }
 
 func (t *galaASTTransformer) transformForStatement(ctx *grammar.ForStatementContext) (ast.Stmt, error) {

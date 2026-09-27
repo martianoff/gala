@@ -1818,8 +1818,8 @@ func plainReturn(ret *ast.ReturnStmt) ast.Stmt { return ret }
 // branches and recurses through promoteIfBranchValues.
 //
 // It reports ok=false when the trailing statement produces no value — a void
-// IIFE (a statement-position match whose every arm is void), or any other
-// statement kind — leaving the block as written.
+// call, a void IIFE (a statement-position match whose every arm is void), or
+// any other statement kind — leaving the block as written.
 func (t *galaASTTransformer) promoteTrailingValue(blk *ast.BlockStmt, mkReturn func(*ast.ReturnStmt) ast.Stmt) (*ast.BlockStmt, bool) {
 	if blk == nil || len(blk.List) == 0 {
 		return nil, false
@@ -1840,6 +1840,11 @@ func (t *galaASTTransformer) promoteTrailingValue(blk *ast.BlockStmt, mkReturn f
 		// A void IIFE (a statement-position match whose every arm is void)
 		// produces nothing and does not diverge, so the chain has no value.
 		if isVoidIIFE(last.X) {
+			return nil, false
+		}
+		// Nor does a void call such as `Println(...)`: `return Println(...)`
+		// is not Go.
+		if _, void := t.getExprTypeName(last.X).(transpiler.VoidType); void {
 			return nil, false
 		}
 		return replaceLastStmt(blk, mkReturn(&ast.ReturnStmt{Results: []ast.Expr{last.X}})), true
