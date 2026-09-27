@@ -459,10 +459,14 @@ func (t *galaASTTransformer) validateNoBareReturnsInValueMatch(
 }
 
 // validateSealedVariantArity checks that each sealed-variant extractor pattern
-// binds the same number of fields as the variant declares. Wildcards and
-// binding names each count as one field. Patterns that do not target a known
-// sealed variant are skipped. Returns nil if all patterns are well-formed.
-func (t *galaASTTransformer) validateSealedVariantArity(matchedType transpiler.Type, patternTexts []string, ctx antlr.ParserRuleContext) error {
+// binds the same number of fields as the variant declares. Each argument of
+// the pattern counts as one field whatever its shape: a binding, `_`, a
+// literal, a nested constructor, or a parenthesized tuple pattern such as the
+// `(n, s)` in `Some((n, s))`. The count comes from the parse tree, so commas
+// inside nested patterns or string literals are never miscounted. Patterns
+// that do not target a known sealed variant are skipped. The error points at
+// the offending pattern.
+func (t *galaASTTransformer) validateSealedVariantArity(matchedType transpiler.Type, patterns []grammar.IPatternContext) error {
 	if transpiler.IsUnusable(matchedType) {
 		return nil
 	}
@@ -475,8 +479,12 @@ func (t *galaASTTransformer) validateSealedVariantArity(matchedType transpiler.T
 		v := &meta.SealedVariants[i]
 		variantByName[v.Name] = v
 	}
-	for _, pat := range patternTexts {
-		name := extractVariantName(pat)
+	for _, pat := range patterns {
+		exprPat, ok := pat.(*grammar.ExpressionPatternContext)
+		if !ok {
+			continue
+		}
+		name := extractVariantName(pat.GetText())
 		if name == "" {
 			continue
 		}
@@ -484,16 +492,20 @@ func (t *galaASTTransformer) validateSealedVariantArity(matchedType transpiler.T
 		if !ok {
 			continue
 		}
-		got, wellFormed := countTopLevelArgs(pat)
-		if !wellFormed {
+		argList, isCall := t.patternArgumentList(exprPat.Expression())
+		if !isCall {
 			continue
+		}
+		got := 0
+		if argList != nil {
+			got = len(argList.AllArgument())
 		}
 		want := len(variant.FieldNames)
 		if got != want {
 			return galaerr.NewCodedSemanticError(
 				galaerr.CodeVariantArityMismatch,
-				ctx.GetStart().GetLine(),
-				ctx.GetStart().GetColumn(),
+				pat.GetStart().GetLine(),
+				pat.GetStart().GetColumn(),
 				fmt.Sprintf("sealed variant %q pattern binds %d field(s) but declares %d",
 					name, got, want),
 				"use `_` for unused fields",
@@ -503,48 +515,17 @@ func (t *galaASTTransformer) validateSealedVariantArity(matchedType transpiler.T
 	return nil
 }
 
-// countTopLevelArgs counts the number of comma-separated arguments inside the
-// outermost parentheses of a pattern text (e.g., "Rect(w, h)" → 2, "Point()" → 0,
-// "Wrap(Pair(a, b), c)" → 2). Returns (count, wellFormed). wellFormed is false
-// if the pattern does not contain a balanced top-level `(...)`.
-func countTopLevelArgs(patternText string) (int, bool) {
-	open := strings.Index(patternText, "(")
-	if open < 0 {
-		return 0, false
+// patternArgumentList returns the argument list of a call-shaped pattern —
+// `Ctor(...)`, `Ctor[T](...)` or `pkg.Ctor(...)` — and whether the pattern is
+// call-shaped at all. An empty call (`Ctor()`) returns a nil list.
+func (t *galaASTTransformer) patternArgumentList(expr grammar.IExpressionContext) (*grammar.ArgumentListContext, bool) {
+	if _, _, argList, ok := t.getQualifiedCallPattern(expr); ok {
+		return argList, true
 	}
-	depth := 0
-	args := 0
-	sawContent := false
-	for i := open; i < len(patternText); i++ {
-		c := patternText[i]
-		switch c {
-		case '(', '[', '{':
-			if c == '(' && depth == 0 {
-				depth++
-				continue
-			}
-			depth++
-		case ')', ']', '}':
-			depth--
-			if c == ')' && depth == 0 {
-				if sawContent {
-					args++
-				}
-				return args, true
-			}
-		case ',':
-			if depth == 1 {
-				args++
-				sawContent = false
-				continue
-			}
-		default:
-			if depth == 1 && c != ' ' && c != '\t' {
-				sawContent = true
-			}
-		}
+	if primary, argList, _ := t.getCallPatternWithTypeArgsFromExpression(expr); primary != nil {
+		return argList, true
 	}
-	return 0, false
+	return nil, false
 }
 
 // inferMatchedTypeFromCases attempts to infer the sealed parent type from case pattern names.
