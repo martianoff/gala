@@ -188,6 +188,36 @@ func TestValidateTypeReferences_TypeParamsByScope(t *testing.T) {
 			},
 		},
 		{
+			// `func (b Box[E]) Get() E` on `struct Box[T any]`.
+			name: "receiver renames the type's param",
+			setup: func(ast *transpiler.RichAST) {
+				ast.Types["Box"] = &transpiler.TypeMetadata{
+					Name: "Box", Package: "myapp", TypeParams: []string{"T"},
+					Methods: map[string]*transpiler.MethodMetadata{
+						"Get": {Name: "Get", ReturnType: transpiler.BasicType{Name: "E"}},
+					},
+				}
+			},
+		},
+		{
+			name: "more unknown names than the receiver can rename",
+			setup: func(ast *transpiler.RichAST) {
+				ast.Types["Box"] = &transpiler.TypeMetadata{
+					Name: "Box", Package: "myapp", TypeParams: []string{"T"},
+					Methods: map[string]*transpiler.MethodMetadata{
+						"Pair": {
+							Name: "Pair",
+							ReturnType: transpiler.FuncType{
+								Params:  []transpiler.Type{transpiler.BasicType{Name: "E"}},
+								Results: []transpiler.Type{transpiler.BasicType{Name: "Zed"}},
+							},
+						},
+					},
+				}
+			},
+			wantMissing: "not found in metadata",
+		},
+		{
 			name: "function type param",
 			setup: func(ast *transpiler.RichAST) {
 				ast.Functions["Id"] = &transpiler.FunctionMetadata{

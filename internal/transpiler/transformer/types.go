@@ -818,6 +818,10 @@ func (t *galaASTTransformer) hasTypeParams(typ transpiler.Type) bool {
 	case transpiler.BasicType:
 		return t.isActiveTypeParam(v.Name)
 	case transpiler.NamedType:
+		// Keep the qualifier: `testing.B` is Go's type, not a parameter B.
+		if v.Package != "" {
+			return t.isActiveTypeParam(v.Package + "." + v.Name)
+		}
 		return t.isActiveTypeParam(v.Name)
 	case transpiler.GenericType:
 		for _, p := range v.Params {

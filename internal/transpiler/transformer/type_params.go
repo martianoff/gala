@@ -124,6 +124,10 @@ func (t *galaASTTransformer) declaredTypeParamNames() map[string]bool {
 // empty) names a type visible from the file being transformed: a primitive, a
 // GALA type or alias, or a Go type of an imported package.
 func (t *galaASTTransformer) declaresType(qualifier, bare string) bool {
+	if qualifier == t.packageName {
+		// This package's own types are keyed by their bare name.
+		qualifier = ""
+	}
 	name := bare
 	if qualifier != "" {
 		name = qualifier + "." + bare

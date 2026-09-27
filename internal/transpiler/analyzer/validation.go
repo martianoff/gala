@@ -78,7 +78,7 @@ func validateTypeReferences(ast *transpiler.RichAST) []ValidationWarning {
 		// Check method signatures
 		for methodName, methodMeta := range typeMeta.Methods {
 			loc := fmt.Sprintf("method %s.%s", typeName, methodName)
-			methodScope := typeParamScope(typeScope, methodMeta.TypeParams)
+			methodScope := receiverTypeArgScope(ast, methodMeta, len(typeMeta.TypeParams), typeParamScope(typeScope, methodMeta.TypeParams))
 			for i, paramType := range methodMeta.ParamTypes {
 				if w := checkTypeExists(ast, paramType, methodScope, fmt.Sprintf("%s param[%d]", loc, i)); w != nil {
 					warnings = append(warnings, *w)
@@ -139,6 +139,64 @@ func typeParamScope(outer map[string]bool, params []string) map[string]bool {
 		scope[name] = true
 	}
 	return scope
+}
+
+// receiverTypeArgScope adds to scope the names a method's receiver gives its
+// type's parameters. A receiver may rename them (`func (b Box[E]) Get() E` on
+// `struct Box[T any]`), and the method metadata keeps the names as written. A
+// bare name in the signature that resolves to nothing else is taken as such a
+// name, provided there are no more of them than the type has parameters.
+func receiverTypeArgScope(ast *transpiler.RichAST, m *transpiler.MethodMetadata, typeParamCount int, scope map[string]bool) map[string]bool {
+	if typeParamCount == 0 {
+		return scope
+	}
+	unresolved := make(map[string]bool)
+	var walk func(transpiler.Type)
+	walk = func(t transpiler.Type) {
+		switch ty := t.(type) {
+		case transpiler.BasicType:
+			if checkTypeExists(ast, ty, scope, "") != nil {
+				unresolved[ty.Name] = true
+			}
+		case transpiler.NamedType:
+			if ty.Package == "" {
+				walk(transpiler.BasicType{Name: ty.Name})
+			}
+		case transpiler.GenericType:
+			walk(ty.Base)
+			for _, p := range ty.Params {
+				walk(p)
+			}
+		case transpiler.ArrayType:
+			walk(ty.Elem)
+		case transpiler.PointerType:
+			walk(ty.Elem)
+		case transpiler.MapType:
+			walk(ty.Key)
+			walk(ty.Elem)
+		case transpiler.FuncType:
+			for _, p := range ty.Params {
+				walk(p)
+			}
+			for _, r := range ty.Results {
+				walk(r)
+			}
+		}
+	}
+	for _, p := range m.ParamTypes {
+		walk(p)
+	}
+	if m.ReturnType != nil {
+		walk(m.ReturnType)
+	}
+	if len(unresolved) == 0 || len(unresolved) > typeParamCount {
+		return scope
+	}
+	names := make([]string, 0, len(unresolved))
+	for name := range unresolved {
+		names = append(names, name)
+	}
+	return typeParamScope(scope, names)
 }
 
 // checkTypeExists verifies that a referenced type can be resolved. scope holds

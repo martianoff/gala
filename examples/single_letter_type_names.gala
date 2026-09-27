@@ -9,13 +9,9 @@ import (
 // generic declaration's own type parameters are type parameters, and those
 // shadow a same-named package type inside that declaration.
 
-type A struct {
-    Name string
-}
+struct A(Name string)
 
-type T struct {
-    N int
-}
+struct T(N int)
 
 sealed type V {
     case Small(n int)
@@ -39,16 +35,13 @@ func benchN(bs Array[*testing.B], fallback *testing.B) int {
 }
 
 // The type parameter A shadows the package struct A.
-func firstOr[A any](xs Array[A], d A) A {
-    val r = xs.Find((x) => true) match {
-        case Some(a) => a
-        case None() => d
-    }
-    return r
+func firstOr[A any](xs Array[A], d A) A = xs.Find((x) => true) match {
+    case Some(a) => a
+    case None() => d
 }
 
 // A multi-letter type parameter.
-func countIf[Elem any](xs Array[Elem], p func(Elem) bool) int = xs.Filter((x) => p(x)).Size()
+func countIf[Elem any](xs Array[Elem], p func(Elem) bool) int = xs.Count((x) => p(x))
 
 func main() {
     val as = ArrayOf(A(Name = "x"), A(Name = "yy"))

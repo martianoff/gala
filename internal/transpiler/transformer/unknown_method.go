@@ -173,7 +173,10 @@ func (t *galaASTTransformer) unknownMethodError(
 
 // receiverTypeIsConcrete reports whether every type parameter of the receiver's
 // type is bound to a real type argument, as opposed to a type parameter (see
-// isActiveTypeParam) — the same test transformRegularMethodCall applies.
+// isActiveTypeParam). Unlike transformRegularMethodCall, which only cares about
+// a callee's unbound placeholder, a parameter the enclosing declaration binds
+// counts as not concrete too, so no unknown-method error is raised inside a
+// generic body.
 func (t *galaASTTransformer) receiverTypeIsConcrete(typeMeta *transpiler.TypeMetadata, recvType transpiler.Type) bool {
 	if len(typeMeta.TypeParams) == 0 {
 		return true

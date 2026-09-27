@@ -210,11 +210,13 @@ func casePatternHints(line string, lineNum int, richAST *transpiler.RichAST) []l
 		if i < len(variant.FieldTypes) {
 			// A field typed by the sealed type's own type parameter has no
 			// type to show until the subject is known; any other name — a
-			// user type called `A` included — is a real type.
-			if slices.Contains(owner.TypeParams, variant.FieldTypes[i].String()) {
+			// user type called `A` included — is a real type. Compare the
+			// display form: metadata loaded from another package can spell
+			// the parameter `std.T` or `Immutable[T]`.
+			typeName := cleanGoTypeForDisplay(variant.FieldTypes[i].String())
+			if slices.Contains(owner.TypeParams, typeName) {
 				continue
 			}
-			typeName := cleanGoTypeForDisplay(variant.FieldTypes[i].String())
 			pos := findWholeWord(line[bindingsStart:], binding)
 			if pos >= 0 {
 				pos += bindingsStart
