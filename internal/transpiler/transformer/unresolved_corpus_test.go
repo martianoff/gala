@@ -80,13 +80,13 @@ import (
 // generic-typed parameter (`d.GetOrElse`), and the `Apply` selector of a
 // constructor. No example that transpiled before reports a new site.
 //
-// Lowered 598 -> 169 when method names stopped being counted as values. About
-// 400 entries were the `.Map` in `opt.Map(f)`: the Immutable-field check asked
+// Lowered 598 -> 168 when method names stopped being counted as values. About
+// 430 entries were the `.Map` in `opt.Map(f)`: the Immutable-field check asked
 // a std type's method for its field type, and the Hindley-Milner bridge asked
 // for the type of every call's callee. A method call is typed as a call, and
 // the call is still recorded when it fails; a method taken as a value
 // (`val get = b.Get`) still counts. See unresolved_types_test.go.
-const unresolvedBudget = 169
+const unresolvedBudget = 168
 
 // TestUnresolvedTypeInventory transpiles the single-file example corpus with
 // the unresolved-type inventory enabled and holds the total to a budget.
