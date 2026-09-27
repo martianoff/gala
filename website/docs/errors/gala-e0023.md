@@ -58,7 +58,16 @@ val label = shape match {
 }
 ```
 
-If the name is meant to come from a dot-imported package, confirm the import is present in *this* file — sibling files' imports do not propagate. That case reports as [GALA-E0025](/docs/errors/gala-e0025/) instead, which names the package you are missing.
+If the name is meant to come from a dot-imported package, confirm the import is present in *this* file — sibling files' imports do not propagate.
+
+A bare GALA name must come from this file's package, a package this file dot-imports, or the `std` prelude. A package that is loaded only because one of your imports uses it does not count. The GALA `strings` package loads the collection packages, but a file that imports only `strings` still cannot call `ArrayOf` or write `Array[int]` unqualified. A package imported by name is reached through its qualifier:
+
+```gala
+import "martianoff/gala/collection_immutable"
+
+val xs = ArrayOf(1, 2)                       // GALA-E0023
+val ys = collection_immutable.ArrayOf(1, 2)  // ok
+```
 
 ---
 
@@ -66,7 +75,7 @@ If the name is meant to come from a dot-imported package, confirm the import is 
 
 Undefined names are the most common failure during early development, and the alternative was letting them fall through to the Go compiler, which reports them against generated code. Resolving every identifier at the GALA level keeps the error on the line you wrote, and the stable code lets editors and CI tools attach extra context.
 
-**Scope.** Identifier resolution. A name that resolves to a *known* symbol in a package this file did not import gets the more specific [GALA-E0025](/docs/errors/gala-e0025/). Type *mismatches* between names that both resolve are [GALA-E0021](/docs/errors/gala-e0021/), most of which are still left to the Go compiler.
+**Scope.** Identifier resolution, in value and type position. A signature type that the analyzer resolved to a package this file did not import gets the more specific [GALA-E0025](/docs/errors/gala-e0025/). Type *mismatches* between names that both resolve are [GALA-E0021](/docs/errors/gala-e0021/), most of which are still left to the Go compiler.
 
 ---
 

@@ -1641,7 +1641,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		// invisible to the symbol table, and reporting those as undefined
 		// would blame the author for a gap on the analyzer's side.
 		if !a.skipUndefinedCheck && a.fileImportsFullyLoaded(scanFileImports(sourceFile), richAST) {
-			if errs := a.checkUndefinedSymbols(sourceFile, richAST, filePath); len(errs) > 0 {
+			if errs := a.checkUndefinedSymbols(sourceFile, richAST, filePath, fileImportSets); len(errs) > 0 {
 				return nil, errs[0]
 			}
 		}

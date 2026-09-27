@@ -21,8 +21,8 @@ func CloseSession(s Member) Try[bool] = Success(true)
 
 func memberKey(m Member) string = s"${m.Name}<${m.Email}>"
 
-func CloseAll(sessions HashMap[string, Member]) Array[string] {
-    var failures = EmptyArray[string]()
+func CloseAll(sessions im.HashMap[string, Member]) im.Array[string] {
+    var failures = im.EmptyArray[string]()
     sessions.ForEachKV((name, s) => {
         CloseSession(s) match {
             case Success(_)   => {}
@@ -34,8 +34,8 @@ func CloseAll(sessions HashMap[string, Member]) Array[string] {
 
 // Plain (non-generic) usage with an unannotated `(k, v) =>` lambda whose
 // body uses both `k` as K=string and `v` as V=Member with field access.
-func DumpKV(sessions HashMap[string, Member]) Array[string] {
-    var out = EmptyArray[string]()
+func DumpKV(sessions im.HashMap[string, Member]) im.Array[string] {
+    var out = im.EmptyArray[string]()
     sessions.ForEachKV((k, v) => {
         out = out.Append(s"$k=${memberKey(v)}")
     })
