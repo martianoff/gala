@@ -84,10 +84,8 @@ func (t *galaASTTransformer) checkForbiddenGoBuiltinCall(fun ast.Expr, line, col
 	if t.getFunction(id.Name) != nil { // user-defined function (delete/copy stay legal)
 		return nil
 	}
-	if !t.getType(id.Name).IsNil() { // local val/var/param, or a type in scope
-		return nil
-	}
-	if t.getTypeMeta(id.Name) != nil { // declared type / companion
+	// A local val/var/param, a type in scope, or a declared type / companion.
+	if !t.getType(id.Name).IsNil() || t.getTypeMeta(id.Name) != nil {
 		return nil
 	}
 	if _, ok := t.structFields[id.Name]; ok { // struct layout used as a constructor
@@ -159,7 +157,7 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 
 						if id, ok := baseExpr.(*ast.Ident); ok {
 							if !t.isVal(id.Name) && !t.isVar(id.Name) {
-								if !t.getType(id.Name).IsNil() {
+								if !t.lookupTypeName(id.Name).IsNil() {
 									isType = true
 								}
 							}
@@ -1280,7 +1278,7 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 	isType := false
 	if id, ok := baseExpr.(*ast.Ident); ok {
 		if !t.isVal(id.Name) && !t.isVar(id.Name) {
-			if !t.getType(id.Name).IsNil() {
+			if !t.lookupTypeName(id.Name).IsNil() {
 				isType = true
 			}
 		}

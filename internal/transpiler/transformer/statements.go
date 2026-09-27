@@ -105,10 +105,7 @@ func (t *galaASTTransformer) checkForbiddenStatementKeyword(exprCtx grammar.IExp
 	if t.getFunction(name) != nil {
 		return nil
 	}
-	if !t.getType(name).IsNil() {
-		return nil
-	}
-	if t.getTypeMeta(name) != nil {
+	if !t.getType(name).IsNil() || t.getTypeMeta(name) != nil {
 		return nil
 	}
 	if _, ok := t.structFields[name]; ok {

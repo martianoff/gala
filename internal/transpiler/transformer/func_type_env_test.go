@@ -334,6 +334,29 @@ func TestBuildTypeEnvLetsFunctionNamesWinOverLocalBindings(t *testing.T) {
 	require.Equal(t, "string", asTypeConst(t, asTypeApp(t, tr.funcTypeEnv["plain"].Type).Args[0]).Name)
 }
 
+// The name memo outlives a single inference, since normalization does not read
+// the scope, but is dropped when the state it answered from changes: an
+// announced write (typeEnvEpoch) or an import change (the manager's revision).
+func TestSharedTypeNameMemoKeptUntilTypeStateChanges(t *testing.T) {
+	tr := funcTypeEnvFixture(t)
+	tr.currentScope.valTypes["y"] = transpiler.NamedType{Name: "Thing"}
+	tr.buildTypeEnv()
+	require.Contains(t, tr.typeNameCache.resolved, "Thing")
+
+	tr.buildTypeEnv()
+	require.Contains(t, tr.typeNameCache.resolved, "Thing", "the memo was dropped between inferences")
+
+	tr.invalidateTypeEnv()
+	require.NotContains(t, tr.sharedTypeNameMemo().resolved, "Thing", "an announced write did not reset the memo")
+
+	tr.buildTypeEnv()
+	tr.importManager.Add("example.com/b", "", true, "b")
+	require.NotContains(t, tr.sharedTypeNameMemo().resolved, "Thing", "an import change did not reset the memo")
+
+	tr.traceTypeResolution = true
+	require.Nil(t, tr.sharedTypeNameMemo(), "tracing must not be served from a memo")
+}
+
 func TestBuildTypeEnvKeepsDistinctScopesDistinct(t *testing.T) {
 	tr := funcTypeEnvFixture(t)
 

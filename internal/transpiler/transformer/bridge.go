@@ -271,16 +271,7 @@ func (t *galaASTTransformer) inferIfType(cond, then, elseExpr ast.Expr) (transpi
 func (t *galaASTTransformer) buildTypeEnv() infer.TypeEnv {
 	fnEnv := t.functionTypeEnv()
 
-	// The memo is reused across calls so a per-call conversion costs no
-	// allocation. It is scratch: nothing retains the infer.Type trees it
-	// produces beyond this map.
-	memo := &t.typeNameScratch
-	clear(memo.resolved)
-	if t.traceTypeResolution {
-		// Tracing records every resolution, so it must not be served from
-		// a memo that would collapse repeats into one event.
-		memo = nil
-	}
+	memo := t.sharedTypeNameMemo()
 
 	// A function of the same name is about to overwrite the entry anyway,
 	// so skip the conversion instead of allocating a scheme to discard.
@@ -351,14 +342,11 @@ func (t *galaASTTransformer) functionTypeEnv() infer.TypeEnv {
 		return t.funcTypeEnv
 	}
 
-	// Tracing records every resolution, so it must not be served from a
-	// memo, and the cache would turn a per-inference conversion into a
-	// per-file one. Under tracing, build fresh and keep nothing, which is
-	// what buildTypeEnv does for the scope half.
-	var memo *typeNameMemo
-	if !t.traceTypeResolution {
-		memo = &typeNameMemo{resolved: make(map[string]string, 32)}
-	}
+	// Under tracing the memo is nil (see sharedTypeNameMemo), and the cache
+	// would turn a per-inference conversion into a per-file one, so build
+	// fresh and keep nothing, which is what buildTypeEnv does for the scope
+	// half.
+	memo := t.sharedTypeNameMemo()
 
 	env := make(infer.TypeEnv, len(t.functions))
 	for name, meta := range t.functions {
@@ -394,6 +382,30 @@ func (t *galaASTTransformer) functionTypeEnv() infer.TypeEnv {
 	t.funcTypeEnvEpoch = t.typeEnvEpoch
 	t.funcTypeEnvImportRev = t.importManager.Revision()
 	return env
+}
+
+// sharedTypeNameMemo returns the name-normalization memo shared by
+// functionTypeEnv and buildTypeEnv. normalizeTypeName reads only the type
+// namespace, never the scope chain, so a memoized answer stays right for as
+// long as the state the function-environment cache is keyed on stays put: the
+// memo is reset when typeEnvEpoch or the import manager's revision moves, and
+// kept across inferences otherwise.
+//
+// Under tracing it returns nil: every resolution must be recorded, so none
+// may be served from a memo that would collapse repeats into one event.
+func (t *galaASTTransformer) sharedTypeNameMemo() *typeNameMemo {
+	if t.traceTypeResolution {
+		return nil
+	}
+	rev := t.importManager.Revision()
+	if t.typeNameCache.resolved == nil {
+		t.typeNameCache.resolved = make(map[string]string, 32)
+	} else if t.typeNameCacheEpoch != t.typeEnvEpoch || t.typeNameCacheImportRev != rev {
+		clear(t.typeNameCache.resolved)
+	}
+	t.typeNameCacheEpoch = t.typeEnvEpoch
+	t.typeNameCacheImportRev = rev
+	return &t.typeNameCache
 }
 
 // invalidateTypeEnv marks the cached function environment stale. Every write

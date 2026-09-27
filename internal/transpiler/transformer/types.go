@@ -624,7 +624,7 @@ func (t *galaASTTransformer) astTypeToTranspilerType(expr ast.Expr) transpiler.T
 	}
 	switch e := expr.(type) {
 	case *ast.Ident:
-		// Try to resolve via getType first (handles dot imports, std types, etc.)
+		// Resolve in the type namespace first (handles dot imports, std types, etc.)
 		if resolved := t.lookupTypeName(e.Name); !resolved.IsNil() {
 			return resolved
 		}
@@ -746,7 +746,7 @@ func (t *galaASTTransformer) isTypeBaseExpr(expr ast.Expr) bool {
 	case *ast.IndexListExpr:
 		return t.isTypeBaseExpr(e.X)
 	case *ast.Ident:
-		return !t.isVal(e.Name) && !t.isVar(e.Name) && !t.getType(e.Name).IsNil()
+		return !t.isVal(e.Name) && !t.isVar(e.Name) && !t.lookupTypeName(e.Name).IsNil()
 	case *ast.SelectorExpr:
 		if id, ok := e.X.(*ast.Ident); ok {
 			return t.importManager.IsPackage(id.Name) || id.Name == registry.StdPackageName

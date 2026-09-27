@@ -93,7 +93,9 @@ type galaASTTransformer struct {
 	funcTypeEnv              infer.TypeEnv                // cached function-derived half of the Hindley-Milner environment for the current file; see functionTypeEnv
 	funcTypeEnvEpoch         uint32                       // typeEnvEpoch the cache above was built at
 	funcTypeEnvImportRev     uint64                       // importManager.Revision the cache above was built at, so an import change rebuilds it without being announced
-	typeNameScratch          typeNameMemo                 // reusable memo for the per-call scope-to-typeEnv conversion in buildTypeEnv
+	typeNameCache            typeNameMemo                 // name-normalization memo shared by functionTypeEnv and buildTypeEnv; see sharedTypeNameMemo
+	typeNameCacheEpoch       uint32                       // typeEnvEpoch the memo above was filled at
+	typeNameCacheImportRev   uint64                       // importManager.Revision the memo above was filled at
 }
 
 // NewGalaASTTransformer creates a new instance of ASTTransformer for GALA.

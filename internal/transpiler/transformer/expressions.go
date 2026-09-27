@@ -955,7 +955,7 @@ func (t *galaASTTransformer) unwrapImmutable(expr ast.Expr) ast.Expr {
 	// Don't unwrap if it's a type name (identifier or selector)
 	if ident, ok := expr.(*ast.Ident); ok {
 		if !t.isVal(ident.Name) && !t.isVar(ident.Name) {
-			if !t.getType(ident.Name).IsNil() {
+			if !t.lookupTypeName(ident.Name).IsNil() {
 				return expr
 			}
 			// Nor a function name, for the same reason. This arrives via
@@ -977,7 +977,7 @@ func (t *galaASTTransformer) unwrapImmutable(expr ast.Expr) ast.Expr {
 		if xIdent, ok := sel.X.(*ast.Ident); ok {
 			fullPath := xIdent.Name + "." + sel.Sel.Name
 			if !t.isVal(fullPath) && !t.isVar(fullPath) {
-				if !t.getType(fullPath).IsNil() {
+				if !t.lookupTypeName(fullPath).IsNil() {
 					return expr
 				}
 			}
