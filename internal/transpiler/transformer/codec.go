@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"go/types"
 	"sort"
 
 	"martianoff/gala/galaerr"
@@ -111,10 +112,13 @@ func (t *galaASTTransformer) finalizeCodecs(file *ast.File) error {
 // and registers fresh entries for any nested struct types that we have
 // metadata for.  Repeats until the set is closed.
 func (t *galaASTTransformer) expandNestedStructMetas() {
+	// Seed in name order: a nested struct inherits its use site from whichever
+	// parent reaches it first, and that must not depend on map iteration.
 	worklist := make([]string, 0, len(t.structMetas))
 	for genName := range t.structMetas {
 		worklist = append(worklist, genName)
 	}
+	sort.Strings(worklist)
 	for len(worklist) > 0 {
 		genName := worklist[0]
 		worklist = worklist[1:]
@@ -170,6 +174,7 @@ func (t *galaASTTransformer) collectNestedStructTypeNames(ty transpiler.Type, cb
 	if ty == nil {
 		return
 	}
+	ty = t.codecUnalias(ty)
 	switch kind, params := codecContainer(ty); kind {
 	case "Immutable", "Option", "Array", "List":
 		t.collectNestedStructTypeNames(params[0], cb)
@@ -178,7 +183,7 @@ func (t *galaASTTransformer) collectNestedStructTypeNames(ty transpiler.Type, cb
 		t.collectNestedStructTypeNames(params[1], cb)
 		return
 	}
-	if name := t.codecStructName(ty); name != "" {
+	if name := codecStructName(ty); name != "" {
 		cb(name)
 	}
 }
@@ -320,24 +325,37 @@ func (t *galaASTTransformer) registerStructMetaTypeMeta(genName, targetTypeName 
 
 // autoInjectStructMeta prepends a generated _StructMeta_T{} before existing args.
 // This enables: Codec[Person](SnakeCase()) → Apply(_StructMeta_Person{}, SnakeCase())
-func (t *galaASTTransformer) autoInjectStructMeta(args []ast.Expr, methodMeta *transpiler.MethodMetadata, typeArgs []ast.Expr, line, col int) []ast.Expr {
+//
+// A root type the codec cannot describe — a generic struct, or a struct with
+// no fields — fails with GALA-E0050 here rather than as a Go compile error
+// about a StructMeta that was never generated.
+func (t *galaASTTransformer) autoInjectStructMeta(args []ast.Expr, methodMeta *transpiler.MethodMetadata, typeArgs []ast.Expr, line, col int) ([]ast.Expr, error) {
 	if len(typeArgs) == 0 {
-		return args
+		return args, nil
 	}
 	typeArgName := ""
-	if id, ok := typeArgs[0].(*ast.Ident); ok {
-		typeArgName = id.Name
-	} else if sel, ok := typeArgs[0].(*ast.SelectorExpr); ok {
-		typeArgName = sel.Sel.Name
+	switch arg := typeArgs[0].(type) {
+	case *ast.Ident:
+		typeArgName = arg.Name
+	case *ast.SelectorExpr:
+		typeArgName = arg.Sel.Name
+	case *ast.IndexExpr, *ast.IndexListExpr:
+		root := types.ExprString(arg)
+		return nil, t.codecError(&structMetaConfig{rootName: root, line: line, col: col},
+			fmt.Sprintf("generic type %s has no codec encoding", root))
 	}
 	if typeArgName == "" {
-		return args
+		return args, nil
 	}
 
 	// Ensure StructMeta is generated for this type
 	genName := "_StructMeta_" + typeArgName
 	if _, exists := t.structMetas[genName]; !exists {
 		typeMeta, resolved := t.getTypeMetaResolved(typeArgName)
+		if typeMeta != nil && !typeMeta.IsSealed && len(typeMeta.FieldNames) == 0 {
+			return nil, t.codecError(&structMetaConfig{rootName: typeArgName, line: line, col: col},
+				noFieldsReason(typeArgName))
+		}
 		if typeMeta != nil && len(typeMeta.FieldNames) > 0 {
 			t.structMetas[genName] = &structMetaConfig{
 				typeName:      typeArgName,
@@ -353,7 +371,7 @@ func (t *galaASTTransformer) autoInjectStructMeta(args []ast.Expr, methodMeta *t
 	}
 
 	// Prepend StructMeta before existing args
-	return append([]ast.Expr{&ast.CompositeLit{Type: ast.NewIdent(genName)}}, args...)
+	return append([]ast.Expr{&ast.CompositeLit{Type: ast.NewIdent(genName)}}, args...), nil
 }
 
 func buildFieldAccess(receiver ast.Expr, fieldName string, isImmut bool) ast.Expr {
@@ -404,8 +422,9 @@ func exprStmt(expr ast.Expr) *ast.ExprStmt {
 	return &ast.ExprStmt{X: expr}
 }
 
-func methodCall(receiver, method string) *ast.CallExpr {
+func methodCall(receiver, method string, args ...ast.Expr) *ast.CallExpr {
 	return &ast.CallExpr{
-		Fun: &ast.SelectorExpr{X: ast.NewIdent(receiver), Sel: ast.NewIdent(method)},
+		Fun:  &ast.SelectorExpr{X: ast.NewIdent(receiver), Sel: ast.NewIdent(method)},
+		Args: args,
 	}
 }

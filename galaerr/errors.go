@@ -521,7 +521,8 @@ const (
 	// E0050: a codec (`json.Codec[T]`, `yaml.Codec[T]`, `StructMeta[T]()`)
 	// was requested for a struct with a field whose type has no encoding — a
 	// function, a pointer, a Go slice or map, a sealed type, a generic struct,
-	// a HashMap with non-string keys, or an Option directly inside an Option.
+	// a struct with no fields, a HashMap with non-string keys, or an Option
+	// inside an Option — or for a requested type that is itself one of these.
 	//
 	// The generated EncodeFields/DecodeFields used to emit `null` for such a
 	// field and skip it on decode, so the value was silently lost: encoding

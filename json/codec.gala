@@ -263,34 +263,15 @@ func (d *JsonDecoderImpl) ReadString() string {
     return d.readJsonString()
 }
 
-func (d *JsonDecoderImpl) ReadInt() int {
-    d.consumeElemComma()
-    d.skipWs()
-    val s = d.readNumberStr()
-    val v, err = strconv.Atoi(s)
-    if err != nil {
-        go_builtins.Panic(f"json at pos ${d.pos}: invalid int ${s}%q")
-    }
-    return v
-}
+func (d *JsonDecoderImpl) ReadInt() int = int(d.ReadIntN(0))
 
-func (d *JsonDecoderImpl) ReadInt64() int64 {
-    d.consumeElemComma()
-    d.skipWs()
-    val s = d.readNumberStr()
-    val v, err = strconv.ParseInt(s, 10, 64)
-    if err != nil {
-        go_builtins.Panic(f"json at pos ${d.pos}: invalid int64 ${s}%q")
-    }
-    return v
-}
+func (d *JsonDecoderImpl) ReadInt64() int64 = d.ReadIntN(64)
 
-// ReadIntN reads a signed integer that must fit in bitSize bits. A value
-// outside the range is a decode error, never a silent wrap.
+// ReadIntN reads a signed integer that must fit in bitSize bits (0 is the
+// platform int size). A value outside the range is a decode error, never a
+// silent wrap.
 func (d *JsonDecoderImpl) ReadIntN(bitSize int) int64 {
-    d.consumeElemComma()
-    d.skipWs()
-    val s = d.readNumberStr()
+    val s = d.numberToken()
     val v, err = strconv.ParseInt(s, 10, bitSize)
     if err != nil {
         go_builtins.Panic(f"json at pos ${d.pos}: invalid ${intKindName("int", bitSize)} ${s}%q")
@@ -301,9 +282,7 @@ func (d *JsonDecoderImpl) ReadIntN(bitSize int) int64 {
 // ReadUintN reads an unsigned integer that must fit in bitSize bits (0 is
 // the platform uint size). Negative and out-of-range values are errors.
 func (d *JsonDecoderImpl) ReadUintN(bitSize int) uint64 {
-    d.consumeElemComma()
-    d.skipWs()
-    val s = d.readNumberStr()
+    val s = d.numberToken()
     val v, err = strconv.ParseUint(s, 10, bitSize)
     if err != nil {
         go_builtins.Panic(f"json at pos ${d.pos}: invalid ${intKindName("uint", bitSize)} ${s}%q")
@@ -314,9 +293,7 @@ func (d *JsonDecoderImpl) ReadUintN(bitSize int) uint64 {
 // ReadFloat32 reads a float that fits a finite float32; a literal that
 // overflows it is an error rather than a silent infinity.
 func (d *JsonDecoderImpl) ReadFloat32() float32 {
-    d.consumeElemComma()
-    d.skipWs()
-    val s = d.readNumberStr()
+    val s = d.numberToken()
     val v, err = strconv.ParseFloat(s, 32)
     if err != nil {
         go_builtins.Panic(f"json at pos ${d.pos}: invalid float32 ${s}%q")
@@ -325,9 +302,7 @@ func (d *JsonDecoderImpl) ReadFloat32() float32 {
 }
 
 func (d *JsonDecoderImpl) ReadFloat64() float64 {
-    d.consumeElemComma()
-    d.skipWs()
-    val s = d.readNumberStr()
+    val s = d.numberToken()
     val v, err = strconv.ParseFloat(s, 64)
     if err != nil {
         go_builtins.Panic(f"json at pos ${d.pos}: invalid float ${s}%q")
@@ -474,7 +449,15 @@ func (d *JsonDecoderImpl) readJsonString() string {
 // intKindName names the Go integer kind a strconv bit size stands for; 0 is
 // the platform-sized int or uint.
 func intKindName(prefix string, bitSize int) string =
-    if (bitSize == 0) prefix else prefix + strconv.Itoa(bitSize)
+    if (bitSize == 0) prefix else s"$prefix$bitSize"
+
+// numberToken steps over an array element separator and whitespace, then
+// returns the number literal that follows.
+func (d *JsonDecoderImpl) numberToken() string {
+    d.consumeElemComma()
+    d.skipWs()
+    return d.readNumberStr()
+}
 
 func (d *JsonDecoderImpl) readNumberStr() string {
     val start = d.pos

@@ -34,6 +34,9 @@ import (
 
 type Millis int64
 type Label string
+type Wait time.Duration
+type Tags Array[Label]
+type Point Inner
 
 struct Inner(X int16)
 
@@ -51,6 +54,9 @@ struct Rec(
     K HashMap[Label, uint16],
     L Array[Option[int32]],
     M uintptr,
+    N Wait,
+    O Tags,
+    P Point,
 )
 
 func main() {
@@ -72,20 +78,23 @@ func main() {
 		"_E = r.ReadUintN(64)",
 		"w.WriteFloat32(t.F.Get())",
 		"_F = r.ReadFloat32()",
-		// A GALA alias is a Go alias: convert through the wire type.
-		"w.WriteInt64(int64(t.G.Get()))",
-		"_G = Millis(r.ReadInt64())",
+		// A GALA alias is a Go alias, so it is encoded as the type it names.
+		"w.WriteInt64(t.G.Get())",
+		"_G = r.ReadInt64()",
 		// A Go named type over a scalar converts through its underlying type.
 		"w.WriteInt64(int64(t.H.Get()))",
 		"_H = time.Duration(r.ReadInt64())",
+		// Aliases of a Go named type, of a container and of a struct resolve
+		// to their targets.
+		"w.WriteInt64(int64(t.N.Get()))",
+		"_N = time.Duration(r.ReadInt64())",
+		"_O = ArrayFromSlice(",
+		"_StructMeta_Inner{}.EncodeFields(w, t.P.Get()",
 		"_I = byte(r.ReadUintN(8))",
 		"_M = uintptr(r.ReadUintN(0))",
 		// Option of a struct dispatches to the nested meta instead of null.
 		"_StructMeta_Inner{}.EncodeFields(w, t.J.Get().Get()",
 		"Some[Inner]{}.Apply(",
-		// A string-shaped map key converts to and from string.
-		"w.WriteKey(string(",
-		"Label(r.ReadKey())",
 		"_X = int16(r.ReadIntN(16))",
 	} {
 		assert.Contains(t, out, want)
@@ -154,6 +163,19 @@ struct Drawing(S Shape)`,
 			contains: "None and Some(None) would both be null",
 		},
 		{
+			name:     "option of an immutable option",
+			decls:    "struct Maybe(V Option[Immutable[Option[int]]])",
+			use:      "Maybe",
+			contains: "None and Some(None) would both be null",
+		},
+		{
+			name: "struct with no fields",
+			decls: `struct Marker()
+struct Evt(Name string, M Marker)`,
+			use:      "Evt",
+			contains: "field Evt.M has type Marker: Marker has no fields",
+		},
+		{
 			name:     "complex number",
 			decls:    "struct Wave(Z complex128)",
 			use:      "Wave",
@@ -173,6 +195,42 @@ struct Outer(Name string, In Array[Inner])`,
 			src := "package main\n\nimport (\n    . \"martianoff/gala/std\"\n    . \"martianoff/gala/collection_immutable\"\n)\n\n" + tc.decls +
 				"\n\nfunc main() {\n    val m = StructMeta[" + tc.use + "]()\n    Println(m.NumFields())\n}\n"
 			_, err := trans.Transpile(src, "codec_unsupported.gala")
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), string(galaerr.CodeUnsupportedCodecField))
+			assert.Contains(t, err.Error(), tc.contains)
+		})
+	}
+}
+
+// TestCodecFieldKinds_UnsupportedRoot checks that a Codec[T] whose T itself has
+// no encoding is GALA-E0050, not a Go compile error about a StructMeta that was
+// never generated.
+func TestCodecFieldKinds_UnsupportedRoot(t *testing.T) {
+	cases := []struct {
+		name     string
+		decls    string
+		use      string
+		contains string
+	}{
+		{
+			name:     "generic struct",
+			decls:    "struct Box[T any](V T)",
+			use:      "Box[int]",
+			contains: "cannot generate a codec for Box[int]: generic type Box[int] has no codec encoding",
+		},
+		{
+			name:     "struct with no fields",
+			decls:    "struct Marker()",
+			use:      "Marker",
+			contains: "cannot generate a codec for Marker: Marker has no fields",
+		},
+	}
+	trans := newCodecTestTranspiler()
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			src := "package main\n\nimport \"martianoff/gala/json\"\n\n" + tc.decls +
+				"\n\nfunc main() {\n    val c = json.Codec[" + tc.use + "](json.AsIs())\n    Println(c)\n}\n"
+			_, err := trans.Transpile(src, "codec_unsupported_root.gala")
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), string(galaerr.CodeUnsupportedCodecField))
 			assert.Contains(t, err.Error(), tc.contains)

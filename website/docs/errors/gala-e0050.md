@@ -13,13 +13,15 @@ last_modified_at: 2026-09-27
 
 **When it fires.** A codec is requested — `json.Codec[T]`, `yaml.Codec[T]` or
 `StructMeta[T]()` — for a struct that has a field (directly, or in a struct it
-nests) whose type the codec cannot serialize:
+nests) whose type the codec cannot serialize, or for a `T` that is itself one of
+the shapes below:
 
 - a function, a pointer, or a Go slice or map (`[]T`, `map[K]V`)
 - a sealed type
-- a generic struct, or any type that is neither a scalar nor a GALA struct
+- a generic struct, a struct with no fields, or any type that is neither a scalar
+  nor a GALA struct
 - a `HashMap` whose key is not a string (or an alias of `string`)
-- an `Option` directly inside an `Option`
+- an `Option` inside an `Option` (also through `Immutable`)
 
 **Minimal repro.**
 

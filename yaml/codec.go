@@ -616,14 +616,15 @@ func parseYamlFloat(raw string, bitSize int) float64 {
 }
 
 // yamlSpecialFloat recognises the YAML 1.2 core-schema spellings of NaN and
-// the infinities.
+// the infinities, and Go's NaN / +Inf / -Inf, which earlier releases of this
+// encoder wrote, so documents they produced still decode.
 func yamlSpecialFloat(s string) (float64, bool) {
 	switch s {
-	case ".nan", ".NaN", ".NAN":
+	case ".nan", ".NaN", ".NAN", "NaN":
 		return math.NaN(), true
-	case ".inf", ".Inf", ".INF", "+.inf", "+.Inf", "+.INF":
+	case ".inf", ".Inf", ".INF", "+.inf", "+.Inf", "+.INF", "+Inf":
 		return math.Inf(1), true
-	case "-.inf", "-.Inf", "-.INF":
+	case "-.inf", "-.Inf", "-.INF", "-Inf":
 		return math.Inf(-1), true
 	}
 	return 0, false

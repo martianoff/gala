@@ -24,11 +24,13 @@ import (
 
 type Millis int64
 type Label string
+type Wait time.Duration
+type Tags Array[Label]
 
 struct Ints(A int, B int8, C int16, D int32, E int64)
 struct Uints(A uint, B uint8, C uint16, D uint32, E uint64, F uintptr, G byte)
 struct Floats(A float32, B float64)
-struct Named(A Millis, B time.Duration, C Label)
+struct Named(A Millis, B time.Duration, C Label, D Wait, E Tags)
 struct Wrapped(
     A Option[int8],
     B Array[uint16],
@@ -61,24 +63,37 @@ func finite32(f float32) float32 = if (math.IsNaN(float64(f)) || math.IsInf(floa
 func randomInts(r *rand.Rand) Ints =
     Ints(int(r.Uint64()), int8(r.Uint64()), int16(r.Uint64()), int32(r.Uint64()), int64(r.Uint64()))
 
-func randomUints(r *rand.Rand) Uints =
-    Uints(uint(r.Uint64()), uint8(r.Uint64()), uint16(r.Uint64()), uint32(r.Uint64()), r.Uint64(), uintptr(r.Uint64()), byte(r.Uint64()))
+func randomUints(r *rand.Rand) Uints = Uints(
+    uint(r.Uint64()),
+    uint8(r.Uint64()),
+    uint16(r.Uint64()),
+    uint32(r.Uint64()),
+    r.Uint64(),
+    uintptr(r.Uint64()),
+    byte(r.Uint64()),
+)
 
 // randomFloats draws every bit pattern, so subnormals, extremes and -0 all
 // appear; the non-finite ones are covered by their own tests.
 func randomFloats(r *rand.Rand) Floats =
     Floats(finite32(math.Float32frombits(r.Uint32())), finite64(math.Float64frombits(r.Uint64())))
 
-func randomNamed(r *rand.Rand) Named =
-    Named(Millis(int64(r.Uint64())), time.Duration(int64(r.Uint64())), Label(s"label-${r.Intn(1000)}"))
+func randomNamed(r *rand.Rand) Named = Named(
+    Millis(int64(r.Uint64())),
+    time.Duration(int64(r.Uint64())),
+    Label(s"label-${r.Intn(1000)}"),
+    Wait(int64(r.Uint64())),
+    ArrayTabulate(r.Intn(4), (i) => Label(s"tag-$i")),
+)
 
 func randomWrapped(r *rand.Rand) Wrapped {
-    val a = if (r.Intn(2) == 0) None[int8]() else Some(int8(r.Uint64()))
+    val a = Unless(r.Intn(2) == 0, int8(r.Uint64()))
     val b = ArrayTabulate(r.Intn(4), (i) => uint16(r.Uint64()))
     val c = ArrayTabulate(r.Intn(4), (i) => finite32(math.Float32frombits(r.Uint32()))).ToList()
-    val d = ArrayTabulate(r.Intn(4), (i) => i).FoldLeft(EmptyHashMap[Label, Millis](), (m, i) => m.Put(Label(s"k${i}"), Millis(int64(r.Uint64()))))
-    val e = if (r.Intn(3) == 0) None[Array[Option[uint64]]]() else Some(ArrayTabulate(r.Intn(4), (i) => if (r.Intn(2) == 0) None[uint64]() else Some(r.Uint64())))
-    val f = if (r.Intn(2) == 0) None[Ints]() else Some(randomInts(r))
+    val d = ArrayTabulate(r.Intn(4), (i) => i)
+        .FoldLeft(EmptyHashMap[Label, Millis](), (m, i) => m.Put(Label(s"k${i}"), Millis(int64(r.Uint64()))))
+    val e = Unless(r.Intn(3) == 0, ArrayTabulate(r.Intn(4), (i) => Unless(r.Intn(2) == 0, r.Uint64())))
+    val f = Unless(r.Intn(2) == 0, randomInts(r))
     return Wrapped(a, b, c, d, e, f)
 }
 
@@ -100,7 +115,15 @@ func TestRoundTrip_UintKinds(t T) T {
     val j = json.Codec[Uints](json.AsIs())
     val y = yaml.Codec[Uints](yaml.AsIs())
     val bounds = ArrayOf(
-        Uints(uint(math.MaxUint), uint8(math.MaxUint8), uint16(math.MaxUint16), uint32(math.MaxUint32), uint64(math.MaxUint64), uintptr(math.MaxUint), byte(math.MaxUint8)),
+        Uints(
+            uint(math.MaxUint),
+            uint8(math.MaxUint8),
+            uint16(math.MaxUint16),
+            uint32(math.MaxUint32),
+            uint64(math.MaxUint64),
+            uintptr(math.MaxUint),
+            byte(math.MaxUint8),
+        ),
         Uints(0, 0, 0, 0, 0, 0, 0),
         Uints(1, 1, 1, 1, 1, 1, 1),
     )
@@ -129,8 +152,8 @@ func TestRoundTrip_NamedKinds(t T) T {
     val j = json.Codec[Named](json.AsIs())
     val y = yaml.Codec[Named](yaml.AsIs())
     val bounds = ArrayOf(
-        Named(Millis(math.MinInt64), time.Duration(math.MaxInt64), Label("")),
-        Named(Millis(0), time.Duration(-1), Label("x")),
+        Named(Millis(math.MinInt64), time.Duration(math.MaxInt64), Label(""), Wait(math.MinInt64), EmptyArray[Label]()),
+        Named(Millis(0), time.Duration(-1), Label("x"), Wait(0), ArrayOf(Label(""))),
     )
     val r = rand.New(rand.NewSource(4))
     val t1 = bounds.FoldLeft(t, (acc, v) => roundTrip(acc, j, y, v))
@@ -143,8 +166,22 @@ func TestRoundTrip_WrappedKinds(t T) T {
     // Empty containers and None elements inside an array are the shapes a
     // format is most likely to confuse with null.
     val bounds = ArrayOf(
-        Wrapped(None[int8](), EmptyArray[uint16](), EmptyList[float32](), EmptyHashMap[Label, Millis](), Some(EmptyArray[Option[uint64]]()), None[Ints]()),
-        Wrapped(Some(int8(-1)), ArrayOf(uint16(0)), ListOf(float32(-0.5)), EmptyHashMap[Label, Millis]().Put(Label(""), Millis(-1)), Some(ArrayOf(None[uint64](), Some(uint64(0)), None[uint64]())), Some(Ints(0, 0, 0, 0, 0))),
+        Wrapped(
+            None[int8](),
+            EmptyArray[uint16](),
+            EmptyList[float32](),
+            EmptyHashMap[Label, Millis](),
+            Some(EmptyArray[Option[uint64]]()),
+            None[Ints](),
+        ),
+        Wrapped(
+            Some(int8(-1)),
+            ArrayOf(uint16(0)),
+            ListOf(float32(-0.5)),
+            EmptyHashMap[Label, Millis]().Put(Label(""), Millis(-1)),
+            Some(ArrayOf(None[uint64](), Some(uint64(0)), None[uint64]())),
+            Some(Ints(0, 0, 0, 0, 0)),
+        ),
     )
     val r = rand.New(rand.NewSource(5))
     val t1 = bounds.FoldLeft(t, (acc, v) => roundTrip(acc, j, y, v))
@@ -167,6 +204,16 @@ func TestYaml_NonFiniteFloatsRoundTrip(t T) T {
     val got = decoded.GetOrElse(Floats(0, 0))
     val t3 = IsTrue(t2, math.IsInf(float64(got.A), -1))
     return IsTrue(t3, math.IsNaN(got.B))
+}
+
+// Earlier releases wrote Go's spelling (NaN, +Inf, -Inf); it still decodes.
+func TestYaml_LegacyNonFiniteSpellingsDecode(t T) T {
+    val y = yaml.Codec[Floats](yaml.AsIs())
+    val decoded = y.Decode("A: +Inf\nB: NaN")
+    val got = decoded.GetOrElse(Floats(0, 0))
+    val t1 = IsSuccess(t, decoded)
+    val t2 = IsTrue(t1, math.IsInf(float64(got.A), 1))
+    return IsTrue(t2, math.IsNaN(got.B))
 }
 
 // A value outside the field's range is a decode error, never a wrap.
